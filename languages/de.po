@@ -1,17 +1,17 @@
 # Diffractor translation de
 msgid ""
 msgstr ""
-"Language: de\n"
-"Content-Type: text/plain; charset=UTF-8\n"
 "Project-Id-Version: \n"
 "POT-Creation-Date: \n"
 "PO-Revision-Date: \n"
 "Last-Translator: \n"
 "Language-Team: \n"
+"Language: de\n"
 "MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"X-Generator: Poedit 3.0\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"X-Generator: Poedit 3.0.1\n"
 
 # about_info
 msgid "Diffractor provides simple tools to make you more productive when sorting, comparing and organizing photos or videos."
@@ -152,8 +152,8 @@ msgid "Changes"
 msgstr "Änderungen"
 
 # click_to_search
-msgid "Click to search for similar items."
-msgstr "Klicken Sie hier, um nach ähnlichen Items zu suchen."
+msgid "Click to search for similar items in the collection."
+msgstr "Klicken Sie hier, um nach ähnlichen Items in der Kollektion zu suchen."
 
 # close
 msgid "Close"
@@ -253,7 +253,7 @@ msgstr "Test Crash Report"
 
 # command_customise
 msgid "Customise sidebar"
-msgstr "Individuell anpassen"
+msgstr "Seitenleiste individuell anpassen"
 
 # #-#-#-#-#  catalog.po  #-#-#-#-#
 # command_delete
@@ -357,11 +357,11 @@ msgstr "Gruppieren nach Änderungsdatum"
 
 # command_group_resolution
 msgid "Group by Resolution"
-msgstr "Gruppieren nach Pixel"
+msgstr "Gruppieren nach Auflösung"
 
 # command_group_presence
 msgid "Group by Collection presence"
-msgstr "Gruppieren nach Präsenz"
+msgstr "Gruppieren nach Kollektion-Präsenz"
 
 # command_group_rating
 msgid "Group by Rating/Label"
@@ -524,8 +524,8 @@ msgid "Refresh"
 msgstr "Refresh"
 
 # command_related
-msgid "Duplicate or related items"
-msgstr "Doppelte oder verwandte Items"
+msgid "Duplicate or related items in the collection"
+msgstr "Doppelte oder verwandte Items in der Kollektion"
 
 # command_rename
 msgid "Rename"
@@ -772,8 +772,8 @@ msgid "Sidebar"
 msgstr "Seitenleiste"
 
 # customise_sidebar_desc
-msgid "Define what items are shown in the sidebar.";
-msgstr "";
+msgid "Define what items are shown in the sidebar."
+msgstr "Definieren Sie, welche Items in der Seitenleiste gezeigt werden."
 
 # customise_tags_help
 msgid "Add a list of your favorite tags here to save time when tagging."
@@ -805,8 +805,8 @@ msgid "Show favorite searches"
 msgstr "Favorisierte Suchen zeigen"
 
 # customize_show_tags
-msgid "Show favorite tags"
-msgstr "Favorisierte Tags zeigen"
+msgid "Show tags"
+msgstr "Tags zeigen"
 
 # customize_show_total
 msgid "Show total items pie chart"
@@ -909,8 +909,8 @@ msgid "Duplicates"
 msgstr "Duplikate"
 
 # duplicates_tooltip
-msgid "Show duplicate items"
-msgstr "Doppelte Items zeigen"
+msgid "Duplicated or similar items in the collection."
+msgstr "Doppelte oder ähnliche Items in der Kollektion."
 
 # eject_close_info
 msgid "Close without ejecting"
@@ -2110,7 +2110,7 @@ msgstr "Kein Standort"
 
 # group_title_no_resolution
 msgid "No resolution"
-msgstr "Keine Pixel"
+msgstr "Keine Auflösung"
 
 # group_title_no_rating
 msgid "No rating"
@@ -2218,7 +2218,7 @@ msgstr "Internetdateien"
 
 # collection_options_info
 msgid "You can select which folders are indexed and searchable in collection options (Ctrl-F6)."
-msgstr "In den Kollektionsoptionen (Strg-F6) können Sie auswählen, welche Ordner indiziert und durchsuchbar sind."
+msgstr "Sie können in den Kollektionsoptionen (Strg-F6) auswählen, welche Ordner indiziert und durchsuchbar sein sollen."
 
 # collection_options_local_folders_title
 msgid "Local folders"
@@ -2259,7 +2259,7 @@ msgstr "Indizierung"
 
 # indexing_message
 msgid "Diffractor indexes your photos and videos to enable searching and duplicate detection. You can choose what is indexed in collection options (press Ctrl-F6)."
-msgstr "Diffractor indiziert Ihre Fotos und Videos, um die Suche und Duplikaterkennung zu ermöglichen. Sie können wählen, was in den Kollektionsoptionen indiziert werden soll (Strg-F6 drücken)."
+msgstr "Diffractor indiziert Ihre Fotos und Videos, um die Suche und Duplikaterkennung zu ermöglichen. Sie können in den Kollektionsoptionen wählen, was indiziert werden soll (Strg-F6 drücken)."
 
 # install_welcome_text1
 msgid "Super-fast searching, viewing and comparing of photos or videos."
@@ -2626,8 +2626,8 @@ msgid "Cannot updated metadata of readonly items."
 msgstr "Metadaten von schreibgeschützten (readonly) Items können nicht aktualisiert werden."
 
 # not_supported_save_format
-msgid "Diffractor can only save or update JPG, TIF, GIF and PNG image files."
-msgstr "Diffractor kann nur JPG-, TIF-, GIF- und PNG-Bilddateien speichern oder aktualisieren."
+msgid "Diffractor can only save or update JPG, WEBP and PNG image files."
+msgstr "Diffractor kann nur JPG-, WEBP- und PNG-Bilddateien speichern oder aktualisieren."
 
 # nothing_found1
 msgid "Nothing found."
@@ -2835,7 +2835,7 @@ msgstr "Icon"
 
 # pixels_none
 msgid "no resolution"
-msgstr "Keine Pixel"
+msgstr "Keine Auflösung"
 
 # pixels_small
 msgid "small"
@@ -3276,8 +3276,8 @@ msgid "{} {} and {} {} (total {} items {})"
 msgstr "{} {} und {} {} (total {} Items {})"
 
 # show_related
-msgid "press R to view duplicate or related items"
-msgstr "Drücken Sie R, um doppelte oder verwandte Items einzusehen"
+msgid "press R to view duplicate or related items in the collection"
+msgstr "Drücken Sie R, um doppelte oder verwandte Items in der Kollektion einzusehen"
 
 # sort_by_album_show
 msgid "Album-Show"
@@ -3309,7 +3309,7 @@ msgstr "Name"
 
 # sort_by_resolution
 msgid "Resolution"
-msgstr "Pixel"
+msgstr "Auflösung"
 
 # sort_by_presence
 msgid "Presence"
@@ -3321,11 +3321,11 @@ msgstr "Kaufen"
 
 # buy_or_verify
 msgid "Buy or verify purchase"
-msgstr "Kaufe oder verifiziere den Kauf"
+msgstr "Kaufen oder Erwerb verifizieren"
 
-#buy_already_purchased 
-msgid "Verify if you already purchased.";
-msgstr ""
+# buy_already_purchased
+msgid "Verify if you already purchased."
+msgstr "Verifizieren, ob Sie bereits erworben haben."
 
 # buy_diffractor
 msgid "Buy Diffractor online."
@@ -3537,7 +3537,7 @@ msgstr "Gekürzt auf 1 MB"
 
 # type_to_search
 msgid "Type to search"
-msgstr "Standort zur Suche eintippen"
+msgstr "Zur Suche eintippen"
 
 # update
 msgid "Update"
@@ -3769,7 +3769,7 @@ msgstr "Diffractor indiziert Ihre Fotos und Videos, um die Suche und Duplikaterk
 
 # collection_options_help
 msgid "You can choose what is indexed in collection options (press Ctrl-F6)."
-msgstr "Sie können wählen, was in den Kollektionsoptionen indiziert werden soll (Strg-F6 drücken)."
+msgstr "Sie können in den Kollektionsoptionen wählen, was indiziert werden soll (Strg-F6 drücken)."
 
 # collection_title
 msgid "Your collection"
@@ -3902,8 +3902,8 @@ msgstr[1] "{count} Items werden aktualisiert."
 # edit_metadata_fmt
 msgid "Add or overwrite specific metadata in {first-name}."
 msgid_plural "Add or overwrite specific metadata in {count} items."
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "Spezifische Metadaten in {first-name} hinzufügen oder überschreiben."
+msgstr[1] "Spezifische Metadaten in {count} Items hinzufügen oder überschreiben."
 
 # convert_info_fmt
 msgid "{first-name} will be converted and copied to a folder."
@@ -4258,7 +4258,7 @@ msgstr "Suche in Unterordnern"
 
 # search_not_in_collection
 msgid "Find files not in collection"
-msgstr " Nicht in Kollektion befindliche Dateien finden"
+msgstr "Nicht in Kollektion befindliche Dateien finden    "
 
 # search_all_terms
 msgid "All these terms"
@@ -4482,16 +4482,60 @@ msgstr "Automatische Wiedergabe selektierter Medien"
 
 # command_filter_photos
 msgid "Photo filter"
-msgstr ""
+msgstr "Fotofilter"
 
 # command_filter_videos
 msgid "Video filter"
-msgstr ""
+msgstr "Videofilter"
 
 # command_filter_audio
 msgid "Audio filter"
-msgstr ""
+msgstr "Audiofilter"
 
 # all_items_filtered
-msgid "All items filtered out.\nClick to clear filter."
+msgid ""
+"All items filtered out.\n"
+"Click to clear filter."
 msgstr ""
+"Alle Items herausgefiltert.\n"
+"Klicken Sie hier, um Filter zu löschen."
+
+# click_to_search
+msgid "Click to search the collection"
+msgstr "Klicken Sie hier, um in der Kollektion zu suchen"
+
+# click_to_open
+msgid "Click to open"
+msgstr "Klicken Sie hier zum Öffnen"
+
+# collection_contains
+msgid "The collection contains {} {} ({})."
+msgstr "Die Kollektion enthält {} {} ({})."
+
+# collection_contains2
+msgid "The collection contains:"
+msgstr "Die Kollektion enthält:"
+
+# items_created_fmt
+msgid "Items created {} {}"
+msgstr "Items erstellt {} {}"
+
+# items_modified_fmt
+msgid "Items modified {} {}"
+msgstr "Items modifiziert {} {}"
+
+# click_to_open_created_modified
+msgid ""
+"Click to open created items.\n"
+"Control-click to open modified items."
+msgstr ""
+"Klicken Sie hier, um erstellte Items zu öffnen.\n"
+"Strg-Klick, um modifizierte Items zu öffnen."
+
+# click_items_from_fmt
+msgid "{} items from {} in the collection."
+msgstr "{} Items aus {} in der Kollektion."
+
+# items_created_on_fmt
+msgid "The collection contains {} items created on {}."
+msgstr "Die Kollektion enthält {} Items erstellt am {}."
