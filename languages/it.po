@@ -167,11 +167,6 @@ msgstr "CANC è stato premuto dopo che "
 msgid "Cannot updated metadata of this file type."
 msgstr "Impossibile aggiornare i metadati di questo tipo di file."
 
-#. caption
-#: 
-msgid "Caption"
-msgstr "Didascalia"
-
 #. changes
 #: 
 msgid "Changes"
@@ -448,7 +443,7 @@ msgstr "Raggruppa per voto/etichetta"
 #. #-#-#-#-#  catalog.po  #-#-#-#-#
 #. sort_by_shuffle
 #: 
-msgid "Shuffle"
+msgid "Show items in random order"
 msgstr "Rimescola"
 
 #. command_group_size
@@ -1104,7 +1099,7 @@ msgstr "Duplicati"
 
 #. duplicates_tooltip
 #: 
-msgid "Duplicated or similar items in the collection."
+msgid "Duplicate or similar items in the collection."
 msgstr ""
 
 #. eject_close_info
@@ -2617,8 +2612,8 @@ msgstr "Nessun valore"
 
 #. group_title_shuffle
 #: 
-msgid "shuffle"
-msgstr "shuffle"
+msgid "random"
+msgstr "random"
 
 #. group_title_size_range
 #: 
@@ -2830,6 +2825,10 @@ msgstr "Mostra gli elementi ruotati"
 #: 
 msgid "This item is shown oriented based on camera information. [{}]"
 msgstr "Questo elemento viene mostrato orientato in base alle informazioni della telecamera. [{}]"
+
+# text_t item_show_oriented
+msgid "Click to toggle if all items are shown rotated."
+msgstr ""
 
 #. jpeg_best
 #: 
@@ -3435,6 +3434,22 @@ msgstr "Utilizzare l'accelerazione hardware per decodificare il video (quando di
 msgid "Use NV12 and P010 format textures (Automatically turned off if problems detected)"
 msgstr "Usa texture in formato NV12 e P010 (Disattivato automaticamente se vengono rilevati problemi)"
 
+# options_show_shadow 
+msgid "Show an inset shadow surrounding the image view panel."
+msgstr ""
+
+# options_update_modified 
+msgid "Update file date modified when editing."
+msgstr ""
+
+# options_last_played_pos 
+msgid "Resume playing media from the last position played."
+msgstr ""
+
+# options_show_help_tooltips 
+msgid "Show tooltips with help on buttons and links."
+msgstr ""
+
 #. orientation_bottom_left
 #: 
 msgid "bottom-left"
@@ -3999,21 +4014,6 @@ msgstr "Natale"
 msgid "Last 7 days"
 msgstr "Ultimi 7 giorni"
 
-#. search_matched
-#: 
-msgid "Search matched {}"
-msgstr "Ricerca abbinata {}"
-
-#. search_matched_file_created
-#: 
-msgid "Search matched file created date"
-msgstr "Cerca la data di creazione del file corrispondente"
-
-#. search_matched_metadata_created
-#: 
-msgid "Search matched metadata created date"
-msgstr "Cerca la data di creazione dei metadati abbinati"
-
 #. search_or_folder
 #: 
 msgid "Search criteria or folder"
@@ -4464,6 +4464,10 @@ msgstr "Tieni premuto il tasto sinistro del mouse per zoomare la foto al 100%."
 msgid "Help or more information"
 msgstr "Aiuto o maggiori informazioni"
 
+# help_send_info
+msgid "Send anonymous log information to Diffractor HQ.";
+msgstr ""
+
 #. text_t click_collection_options
 #: 
 msgid "Click for collection options"
@@ -4879,7 +4883,7 @@ msgstr "Modifica di"
 
 #. command_toggle_group_by
 #: 
-msgid "Toggle group by"
+msgid "Toggle item grouping"
 msgstr "Commuta il gruppo per"
 
 #. tooltip_toggle_details2
@@ -5378,8 +5382,12 @@ msgstr "&Sincronizzare"
 
 #. import_from
 #: 
-msgid "Source of import."
-msgstr "Fonte di importazione."
+msgid "Source of import:"
+msgstr "Fonte di importazione:"
+
+# import_src_filter
+msgid "Source files filter:"
+msgstr ""
 
 #. import_other_folder
 #: 
@@ -5410,6 +5418,18 @@ msgstr "Sovrascrivere"
 #: 
 msgid "Ignore"
 msgstr "Ignora"
+
+# import_rename_different_attributes
+msgid "Rename if files have same name but different attributes.";
+msgstr ""
+
+# import_custom_folder_structure
+msgid "Destination folder structure:"
+msgstr ""
+
+# import_set_created_date 
+msgid "Set file date created to metadata date created."
+msgstr ""
 
 #. selected_items_fmt
 #: 
@@ -5511,6 +5531,10 @@ msgstr "Riproduzione"
 msgid "Autoplay selected media"
 msgstr "Riproduzione automatica dei media selezionati"
 
+# command_last_played_pos
+msgid "Resume playing media from last position"
+msgstr ""
+
 #. command_filter_photos
 #: 
 msgid "Photo filter"
@@ -5534,7 +5558,7 @@ msgstr "Tutti gli elementi sono stati filtrati.\n"
 "Clicca per cancellare il filtro."
 
 # click_to_search
-msgid "Click to search the collection"
+msgid "Click to search in the collection"
 msgstr ""
 
 # click_to_open

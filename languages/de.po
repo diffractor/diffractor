@@ -143,10 +143,6 @@ msgstr "Abbrechen wurde gedrückt nach "
 msgid "Cannot updated metadata of this file type."
 msgstr "Metadaten von diesem Dateityp können nicht aktualisiert werden."
 
-# caption
-msgid "Caption"
-msgstr "Caption (Bildlegende)"
-
 # changes
 msgid "Changes"
 msgstr "Änderungen"
@@ -371,8 +367,8 @@ msgstr "Gruppieren nach Rating/Label"
 # command_group_shuffle
 # #-#-#-#-#  catalog.po  #-#-#-#-#
 # sort_by_shuffle
-msgid "Shuffle"
-msgstr "Zufallsmodus"
+msgid "Show items in random order"
+msgstr "Items in zufälliger Reihenfolge zeigen"
 
 # command_group_size
 msgid "Group by Size"
@@ -909,7 +905,7 @@ msgid "Duplicates"
 msgstr "Duplikate"
 
 # duplicates_tooltip
-msgid "Duplicated or similar items in the collection."
+msgid "Duplicate or similar items in the collection."
 msgstr "Doppelte oder ähnliche Items in der Kollektion."
 
 # eject_close_info
@@ -1022,7 +1018,7 @@ msgstr "Die Umbenennen-Operation wurde spezifiziert, aber der Zielpfad ist ein a
 
 # error_dst_root_dir
 msgid "Destination is a root directory and cannot be renamed."
-msgstr "Ziel ist ein Stammverzeichnis (Root Directory) und kann nicht umbenannt werden."
+msgstr "Ziel ist ein Stammverzeichnis und kann nicht umbenannt werden."
 
 # error_file_dest_is_fld
 msgid "The destination path is an existing folder."
@@ -1062,7 +1058,7 @@ msgstr "Dateinamen dürfen die folgenden Zeichen nicht enthalten:"
 
 # error_many_dest
 msgid "The operation involved multiple destination paths, which can fail in the case of a move operation."
-msgstr "Die Operation involviert mehrere Zielpfade, die im Falle einer Verschieben-Operation fehlschlagen können."
+msgstr "Die Operation involviert mehrere Zielpfade, welche im Falle einer Verschieben-Operation fehlschlagen können."
 
 # error_many_src_1_dest
 msgid "Multiple file paths were specified in the source buffer, but only one destination file path."
@@ -1126,7 +1122,7 @@ msgstr "Die Quelle ist eine schreibgeschützte DVD, möglicherweise unformatiert
 
 # error_src_root_dir
 msgid "The source is a root directory, which cannot be moved or renamed."
-msgstr "Die Quelle ist ein Stammverzeichnis (Root Directory), das nicht verschoben oder umbenannt werden kann."
+msgstr "Die Quelle ist ein Stammverzeichnis, welches nicht verschoben oder umbenannt werden kann."
 
 # error_sse2_needed
 msgid "Diffractor requires a processor with sse2."
@@ -1455,7 +1451,7 @@ msgstr "Familie"
 
 # genre_fashion
 msgid "Fashion"
-msgstr "Mode"
+msgstr "Fashion"
 
 # genre_fast_fusion
 msgid "Fast Fusion"
@@ -2121,8 +2117,8 @@ msgid "No value"
 msgstr "Kein Wert"
 
 # group_title_shuffle
-msgid "shuffle"
-msgstr "Zufallsmodus"
+msgid "random"
+msgstr "Zufällig"
 
 # group_title_size_range
 msgid "{} to {}"
@@ -2293,6 +2289,10 @@ msgstr "Items rotiert zeigen"
 msgid "This item is shown oriented based on camera information. [{}]"
 msgstr "Dieses Item wird auf der Grundlage von Kamerainformationen orientiert gezeigt. [{}]"
 
+# text_t item_show_oriented
+msgid "Click to toggle if all items are shown rotated."
+msgstr "Klicken Sie hier, um umzuschalten, wenn alle Items rotiert gezeigt werden."
+
 # jpeg_best
 msgid "JPEG - Best compression for photos"
 msgstr "JPEG - Beste Kompression für Fotos"
@@ -2327,7 +2327,7 @@ msgstr "Esc"
 
 # keyboard_escape_desc
 msgid "Gets you out of full screen, zoom or other modes."
-msgstr "Holt Sie aus dem Vollbild-, Zoom- oder anderen Modi heraus."
+msgstr "Holt Sie aus dem Vollbild, Zoom oder anderen Modi heraus."
 
 # keyboard_file_management_title
 msgid "File management"
@@ -2444,10 +2444,6 @@ msgstr "Kein Standort selektiert."
 # location_overwrite_gps
 msgid "Overwrite GPS coordinates when setting a location."
 msgstr "GPS-Koordinaten bei Einstellung eines Standortes überschreiben."
-
-# locations_no_results
-msgid "If you buy Diffractor, Google can be used to provide more locations."
-msgstr "Wenn Sie Diffractor kaufen, kann Google verwendet werden, um mehr Standorte anzubieten."
 
 # maximize_image
 msgid "Maximize image"
@@ -2711,7 +2707,7 @@ msgstr "Updates automatisch installieren, wenn möglich"
 
 # options_backup_copy
 msgid "When overwriting a photo with irreversible changes make an original backup copy"
-msgstr "Beim Überschreiben eines Fotos mit irreversiblen Änderungen eine Sicherungskopie des Originals anfertigen"
+msgstr "Beim Überschreiben eines Fotos mit irreversiblen Änderungen eine Backup-Kopie des Originals anfertigen"
 
 # options_beta_tester
 msgid "Help test Diffractor. Automatically install test and preview versions."
@@ -2747,7 +2743,7 @@ msgstr "Informationen zum Debugging der Applikation zeigen (für die Programmier
 
 # options_show_dups_on_thumbs
 msgid "Show duplicate file markers on thumbnails"
-msgstr "Marker für doppelte Dateien auf Thumbnails zeigen"
+msgstr "Doppelte Datei-Marker auf Thumbnails zeigen"
 
 # options_show_hidden
 msgid "Show hidden files"
@@ -2776,6 +2772,22 @@ msgstr "Hardware-Beschleunigung verwenden, um Video zu decodieren (wenn verfügb
 # options_use_yuv_tex
 msgid "Use NV12 and P010 format textures (Automatically turned off if problems detected)"
 msgstr "Texturen im NV12- und P010-Format verwenden (automatisch ausgeschaltet, wenn Probleme erkannt werden)"
+
+# options_show_shadow
+msgid "Show an inset shadow surrounding the image view panel."
+msgstr "Einen eingelassenen Schatten (Inset) zeigen, der das Bildansichtsfenster umgibt.  "
+
+# options_update_modified
+msgid "Update file date modified when editing."
+msgstr "Änderungsdatum der Datei beim Bearbeiten aktualisieren."
+
+# options_last_played_pos
+msgid "Resume playing media from the last position played."
+msgstr "Wiedergabe von Medien ab der zuletzt abgespielten Position fortsetzen."
+
+# options_show_help_tooltips
+msgid "Show tooltips with help on buttons and links."
+msgstr "Tooltips (Quickinfos) mit Hilfe zu Buttons und Links zeigen."
 
 # orientation_bottom_left
 msgid "bottom-left"
@@ -3235,18 +3247,6 @@ msgstr "Weihnachten"
 msgid "Last 7 days"
 msgstr "Letzten 7 Tage"
 
-# search_matched
-msgid "Search matched {}"
-msgstr "Suche hat gefunden {}"
-
-# search_matched_file_created
-msgid "Search matched file created date"
-msgstr "Suche hat gefunden Datei erstellt am"
-
-# search_matched_metadata_created
-msgid "Search matched metadata created date"
-msgstr "Suche hat gefunden Metadaten erstellt am"
-
 # search_or_folder
 msgid "Search criteria or folder"
 msgstr "Suchkriterien oder Ordner"
@@ -3315,53 +3315,17 @@ msgstr "Auflösung"
 msgid "Presence"
 msgstr "Präsenz"
 
-# buy
-msgid "Buy"
-msgstr "Kaufen"
+# donate
+msgid "Donate"
+msgstr "Spenden"
 
-# buy_or_verify
-msgid "Buy or verify purchase"
-msgstr "Kaufen oder Erwerb verifizieren"
+# donate_help
+msgid "Diffractor can be used for free. If you find it useful, please help the project by donating."
+msgstr "Diffractor kann kostenlos verwendet werden. Wenn Sie es nützlich finden, helfen Sie dem Projekt bitte mit einer Spende."
 
-# buy_already_purchased
-msgid "Verify if you already purchased."
-msgstr "Verifizieren, ob Sie bereits erworben haben."
-
-# buy_diffractor
-msgid "Buy Diffractor online."
-msgstr "Kaufen Sie Diffractor online."
-
-# buy_help1
-msgid "Diffractor can be used freely for evaluation."
-msgstr "Diffractor kann zur Evaluierung frei verwendet werden."
-
-# buy_help2
-msgid "For continued use, please buy Diffractor."
-msgstr "Für die weitere Nutzung kaufen Sie bitte Diffractor."
-
-# buy_verified
-msgid "Your Diffractor purchase has been verified using the email address '{}'. Thanks for investing in the future of Diffractor."
-msgstr "Ihr Erwerb von Diffractor ist unter Verwendung der E-Mail-Adresse '{}' verifiziert worden. Danke für Ihre Investition in die Zukunft von Diffractor."
-
-# buy_verify
-msgid "Verify"
-msgstr "Verifizieren"
-
-# buy_verify_failed
-msgid "That's weird. Diffractor failed to verify your email address '{}'."
-msgstr "Das ist seltsam. Diffractor konnte Ihre E-Mail-Adresse '{}' nicht verifizieren."
-
-# buy_verify_help
-msgid "Verify the purchase email address."
-msgstr "Die bei Erwerb verwandte E-Mail-Adresse verifizieren."
-
-# buy_not_verified_text
-msgid "If you already purchased Diffractor, enter your email address below and click Verify."
-msgstr "Wenn Sie Diffractor bereits erworben haben, geben Sie unten Ihre E-Mail-Adresse ein und klicken auf »Verifizieren«."
-
-# buy_verifying
-msgid "Verifying"
-msgstr "Verifikation"
+# donate_link
+msgid "Donate online."
+msgstr "Online spenden."
 
 # staring
 msgid "Staring"
@@ -3397,7 +3361,7 @@ msgstr "Verschieben oder kopieren Sie selektierte Items in eine Jahr/Tag-Ordners
 
 # structured_dest_folder
 msgid "Destination root folder. Structured folders will be created under this folder."
-msgstr "Ziel-Stammordner (Root Folder). Strukturierte Ordner werden unter diesem Ordner erstellt."
+msgstr "Ziel-Stammordner. Strukturierte Ordner werden unter diesem Ordner erstellt."
 
 # tag_add_or_remove_label
 msgid "Tags to add or remove:"
@@ -3615,6 +3579,10 @@ msgstr "Halten Sie die linke Maustaste gedrückt, um das gezeigte Foto auf 100 %
 msgid "Help or more information"
 msgstr "Hilfe oder weitere Informationen"
 
+# help_send_info
+msgid "Send anonymous log information to Diffractor HQ."
+msgstr "Anonyme Log-Informationen an das Diffractor-HQ senden."
+
 # text_t click_collection_options
 msgid "Click for collection options"
 msgstr "Klicken Sie für Kollektionsoptionen"
@@ -3657,7 +3625,7 @@ msgstr "Entf"
 
 # keyboard_down
 msgid "down"
-msgstr "Nach unten"
+msgstr "Abwärts"
 
 # keyboard_f1
 msgid "F1"
@@ -3749,7 +3717,7 @@ msgstr "Tab"
 
 # keyboard_up
 msgid "up"
-msgstr "Nach oben"
+msgstr "Aufwärts"
 
 # keyboard_volume_down
 msgid "volume-down"
@@ -3948,11 +3916,11 @@ msgstr "Abwählen von {}"
 
 # command_save_and_back_tooltip
 msgid "Save the current item and open the previous item."
-msgstr "Aktuelles Item speichern und vorheriges Item öffnen."
+msgstr "Das aktuelle Item speichern und das vorherige Item öffnen."
 
 # command_save_and_next_tooltip
 msgid "Save the current item and open the next item."
-msgstr "Aktuelles Item speichern und nächstes Item öffnen."
+msgstr "Das aktuelle Item speichern und das nächste Item öffnen."
 
 # folder_title
 msgid "Folder"
@@ -3963,8 +3931,8 @@ msgid "Editing"
 msgstr "Bearbeitung"
 
 # command_toggle_group_by
-msgid "Toggle group by"
-msgstr "Gruppieren nach umschalten"
+msgid "Toggle item grouping"
+msgstr "Item-Gruppierung umschalten"
 
 # tooltip_toggle_details2
 msgid "Toggle between thumbnails or details view"
@@ -4258,7 +4226,7 @@ msgstr "Suche in Unterordnern"
 
 # search_not_in_collection
 msgid "Find files not in collection"
-msgstr "Nicht in Kollektion befindliche Dateien finden    "
+msgstr "Nicht in Kollektion befindliche Dateien finden  "
 
 # search_all_terms
 msgid "All these terms"
@@ -4373,8 +4341,12 @@ msgid "&Synchronize"
 msgstr "&Synchronisieren"
 
 # import_from
-msgid "Source of import."
-msgstr "Quelle des Imports."
+msgid "Source of import:"
+msgstr "Quelle des Imports:"
+
+# import_src_filter
+msgid "Source files filter:"
+msgstr "Filter für Quelldateien:"
 
 # import_other_folder
 msgid "Other folder"
@@ -4399,6 +4371,18 @@ msgstr "Überschreiben"
 # import_ignore
 msgid "Ignore"
 msgstr "Ignorieren"
+
+# import_rename_different_attributes
+msgid "Rename if files have same name but different attributes."
+msgstr "Umbenennen, wenn Dateien denselben Namen, aber unterschiedliche Attribute haben."
+
+# import_custom_folder_structure
+msgid "Destination folder structure:"
+msgstr "Zielordner-Struktur:"
+
+# import_set_created_date
+msgid "Set file date created to metadata date created."
+msgstr "Erstellungsdatum der Datei auf Erstellungsdatum der Metadaten setzen."
 
 # selected_items_fmt
 msgid "Selected items [{}]"
@@ -4480,6 +4464,10 @@ msgstr "Playback"
 msgid "Autoplay selected media"
 msgstr "Automatische Wiedergabe selektierter Medien"
 
+# command_last_played_pos
+msgid "Resume playing media from last position"
+msgstr "Wiedergabe von Medien ab letzter Position fortsetzen"
+
 # command_filter_photos
 msgid "Photo filter"
 msgstr "Fotofilter"
@@ -4501,7 +4489,7 @@ msgstr ""
 "Klicken Sie hier, um Filter zu löschen."
 
 # click_to_search
-msgid "Click to search the collection"
+msgid "Click to search in the collection"
 msgstr "Klicken Sie hier, um in der Kollektion zu suchen"
 
 # click_to_open
