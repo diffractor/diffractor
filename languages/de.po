@@ -11,7 +11,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
-"X-Generator: Poedit 3.0.1\n"
+"X-Generator: Poedit 3.1\n"
 
 # about_info
 msgid "Diffractor provides simple tools to make you more productive when sorting, comparing and organizing photos or videos."
@@ -3321,11 +3321,11 @@ msgstr "Spenden"
 
 # donate_help
 msgid "Diffractor can be used for free. If you find it useful, please help the project by donating."
-msgstr "Diffractor kann kostenlos verwendet werden. Wenn Sie es nützlich finden, helfen Sie dem Projekt bitte mit einer Spende."
+msgstr "Diffractor kann kostenlos (for free) verwendet werden. Wenn Sie es nützlich finden, helfen Sie dem Projekt bitte durch eine Spende."
 
 # donate_link
 msgid "Donate online."
-msgstr "Online spenden."
+msgstr "Spenden Sie online."
 
 # staring
 msgid "Staring"
