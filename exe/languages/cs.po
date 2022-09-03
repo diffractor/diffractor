@@ -1,0 +1,4429 @@
+# Diffractor translation cs
+msgid ""
+msgstr ""
+"Language: cs\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Plural-Forms: nplurals=3; plural=(n==1 ? 0 : n>=2 && n<=4 ? 1 : 2);\n"
+"Project-Id-Version: \n"
+"POT-Creation-Date: \n"
+"PO-Revision-Date: \n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"MIME-Version: 1.0\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: Poedit 2.4.2\n"
+
+# nav_folders_title
+msgid "Folders"
+msgstr "Složky"
+
+# nav_drives_title
+msgid "Drives"
+msgstr "Mechaniky"
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# nav_search_title
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# command_file_search
+msgid "Search"
+msgstr "Hledat"
+
+# nav_history_title
+msgid "History"
+msgstr "Historie"
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# nav_tags_title
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# tags_favorite_label
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# customise_tags_title
+msgid "Favorite Tags"
+msgstr ""
+
+# nav_countries_title
+msgid "Countries"
+msgstr "Země"
+
+# error_invalid_path1
+msgid "The file name you have chosen '{}' is invalid."
+msgstr ""
+
+# error_invalid_path2
+msgid "File names cannot contain the following characters:"
+msgstr ""
+
+# error_save_failed
+msgid "Diffractor could not save the updated image file."
+msgstr ""
+
+# error_create_file_failed_fmt
+msgid "The destination file '{}' cannot be opened or created."
+msgstr ""
+
+# error_rename_failed
+msgid "Failed to rename."
+msgstr ""
+
+# error_ole_failed
+msgid "OleInitialize Failed"
+msgstr ""
+
+# error_windows_common_controls_failed
+msgid "Failed to register windows common control classes."
+msgstr ""
+
+# error_create_folder_failed
+msgid "The destination folder '{}' cannot be opened or created."
+msgstr ""
+
+# error_mapi_failed
+msgid ""
+"Failed to send EMail using MAPI. Your Email client may not be configured in "
+"a compatible way with Diffractor."
+msgstr ""
+
+# error_atl_failed
+msgid "Failed to Initialize ATL"
+msgstr ""
+
+# error_create_window_failed
+msgid "Diffractor cannot be started. The main window could not be created."
+msgstr ""
+
+# error_winsock_failed
+msgid "Failed to initialize Winsock"
+msgstr ""
+
+# error_sse2_needed
+msgid "Diffractor requires a processor with sse2."
+msgstr ""
+
+# error_unsupported_os
+msgid "Diffractor requires Windows 7 or newer."
+msgstr ""
+
+# error_index_database_failed
+msgid "Index database failed."
+msgstr ""
+
+# error_cannot_continue
+msgid "Diffractor has a serious problem and cannot continue."
+msgstr ""
+
+# command_menu_group_sort
+msgid "Group or Sort"
+msgstr ""
+
+# command_view_sort
+msgid "Sort"
+msgstr ""
+
+# command_view_menu
+msgid "Menu"
+msgstr "Nabídka"
+
+# tooltip_view_menu
+msgid "More options and controls"
+msgstr ""
+
+# command_rotate_reset
+msgid "Reset rotation"
+msgstr ""
+
+# tooltip_rotate_reset
+msgid "Reset straighten and rotate"
+msgstr ""
+
+# command_color_reset
+msgid "Reset color changes"
+msgstr ""
+
+# tooltip_color_reset
+msgid "Reset color adjustments"
+msgstr "Resetovat úpravy barev"
+
+# command_view_select
+msgid "Select"
+msgstr "Vybrat"
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# command_view_rate_flag
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# keyboard_rate_flag_title
+msgid "Rate or flag"
+msgstr ""
+
+# command_navigate
+msgid "Navigate"
+msgstr ""
+
+# command_display_options
+msgid "Display options"
+msgstr ""
+
+# command_view_help
+msgid "About Diffractor"
+msgstr ""
+
+# command_browse_parent
+msgid "Parent"
+msgstr ""
+
+# command_browse_back
+msgid "Back"
+msgstr "Zpět"
+
+# command_browse_forward
+msgid "Forward"
+msgstr "Vpřed"
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# command_new_folder
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# new_folder_name
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# new_folder_title
+msgid "New Folder"
+msgstr "Nová Složka"
+
+# command_rename
+msgid "Rename"
+msgstr "Přejmenovat"
+
+# command_locate
+msgid "Add location"
+msgstr ""
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# command_print
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# print_title
+msgid "Print"
+msgstr "Tisk"
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# command_tag
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# command_tag_with
+msgid "Tag"
+msgstr ""
+
+# command_nav_bar
+msgid "Show sidebar"
+msgstr "Zobrazit postranní lištu"
+
+# tooltip_nav_bar
+msgid "Contains common folders, searches and favorites"
+msgstr "Obsahuje používané  soubory, hledané a oblíbené"
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# command_delete
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# menu_delete
+msgid "Delete"
+msgstr "Smazat"
+
+# command_revert
+msgid "Revert to original"
+msgstr ""
+
+# tooltip_revert
+msgid "Only possible after a non-loss-less photo edit."
+msgstr ""
+
+# command_select_invert
+msgid "Invert selection"
+msgstr "Invertovat výběr"
+
+# command_copy
+msgid "Copy to folder"
+msgstr "Kopírovat do složky"
+
+# command_move
+msgid "Move to folder"
+msgstr "Přesunout do složky"
+
+# command_file_properties
+msgid "Open properties"
+msgstr ""
+
+# command_share_email
+msgid "Email"
+msgstr "Email"
+
+# command_resize
+msgid "Resize"
+msgstr "Změnit velikost"
+
+# command_desktop_background
+msgid "Desktop background"
+msgstr ""
+
+# command_select_nothing
+msgid "Select none"
+msgstr "Vybrat nic"
+
+# command_download
+msgid "Download"
+msgstr "Stáhnout"
+
+# command_options
+msgid "General options"
+msgstr "Obecné volby"
+
+# command_customise
+msgid "Customise"
+msgstr "Přizpůsobit"
+
+# command_index_options
+msgid "Index options"
+msgstr ""
+
+# command_view_items
+msgid "Show items"
+msgstr ""
+
+# command_flatten
+msgid "Show items in subfolders"
+msgstr ""
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# command_show_flagged_for_delete
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# for_delete_tooltip
+msgid "Show items flagged for delete"
+msgstr ""
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# command_show_flagged_for_action
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# for_action_tooltip
+msgid "Show items flagged for action"
+msgstr ""
+
+# command_refresh
+msgid "Refresh"
+msgstr "Aktualizovat"
+
+# command_fullscreen
+msgid "Fullscreen"
+msgstr "Celá obrazovka"
+
+# tooltip_fullscreen
+msgid "Toggle full screen for media-items or open non-media-items."
+msgstr ""
+
+# command_show_thumbnails
+msgid "Hide/Show thumbnails"
+msgstr ""
+
+# command_autoplay
+msgid "Autoplay next media item"
+msgstr ""
+
+# command_last_played_pos
+msgid "Resume playing media from last position"
+msgstr ""
+
+# tooltip_autoplay
+msgid ""
+"When one media item plays to the end, start playing the next automatically."
+msgstr ""
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# command_repeat
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# repeat_one_help
+msgid "Repeat play single media item"
+msgstr ""
+
+# command_repeat_toggle
+msgid "Repeat/Autoplay"
+msgstr ""
+
+# tooltip_repeat_toggle
+msgid "Toggle repeat mode and autoplay"
+msgstr ""
+
+# command_scale_up
+msgid "Scale up items"
+msgstr ""
+
+# tooltip_scale_up
+msgid ""
+"Scale up small photos and videos. Large media is automatically scaled down "
+"to fit on the screen."
+msgstr ""
+
+# command_select_all
+msgid "Select all"
+msgstr "Vybrat vše"
+
+# command_related
+msgid "Duplicate or related items"
+msgstr ""
+
+# command_show_media_tools
+msgid "Show Media tools"
+msgstr ""
+
+# tooltip_show_media_tools
+msgid "Show tools when displaying photos or media full screen."
+msgstr ""
+
+# command_pin
+msgid "Pin or hold item"
+msgstr ""
+
+# tooltip_pin
+msgid ""
+"Pinned items stay selected. Use this when you want to quickly compare an "
+"item to other items."
+msgstr ""
+
+# command_toggle_item_size
+msgid "Toggle thumbnail size"
+msgstr ""
+
+# command_convert
+msgid "Convert to jpeg"
+msgstr ""
+
+# command_combine_pdf
+msgid "Combine to pdf"
+msgstr ""
+
+# command_album_artist
+msgid "Update artist and album"
+msgstr ""
+
+# command_copyright
+msgid "Update copyright"
+msgstr ""
+
+# command_burn
+msgid "Burn to disk"
+msgstr ""
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# command_keyboard
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# keyboard_ref_title
+msgid "Keyboard reference"
+msgstr ""
+
+# command_open_with
+msgid "Open with"
+msgstr ""
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# command_open
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# keyboard_open_title
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# open_with_title
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# open_title
+msgid "Open"
+msgstr "Otevřít"
+
+# tooltip_open
+msgid "Open selected items with external app"
+msgstr ""
+
+# command_language
+msgid "Language"
+msgstr "Jazyk"
+
+# tooltip_tag_with
+msgid "Tag or un-tag selected items"
+msgstr ""
+
+# tooltip_language
+msgid "Change language"
+msgstr ""
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# command_tools
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# keyboard_tools_title
+msgid "Tools"
+msgstr "Nástroje"
+
+# tooltip_tools
+msgid "Process selected items"
+msgstr ""
+
+# command_eject
+msgid "Eject"
+msgstr "Vysunout"
+
+# command_minimize
+msgid "Minimize"
+msgstr ""
+
+# command_maximize
+msgid "Maximize"
+msgstr ""
+
+# command_restore
+msgid "Restore"
+msgstr ""
+
+# command_close
+msgid "Cancel"
+msgstr "Zrušit"
+
+# command_import
+msgid "Import or structured copy"
+msgstr ""
+
+# command_browse_previous_group
+msgid "Previous item group"
+msgstr ""
+
+# command_browse_next_group
+msgid "Next item group"
+msgstr ""
+
+# command_browse_previous_folder
+msgid "Previous folder or search"
+msgstr ""
+
+# command_browse_next_folder
+msgid "Next folder or search"
+msgstr ""
+
+# command_browse_previous_item
+msgid "Select previous item"
+msgstr ""
+
+# command_browse_previous_item_extend
+msgid "Extend selection to previous item"
+msgstr ""
+
+# command_browse_next_item
+msgid "Select next item"
+msgstr ""
+
+# command_browse_next_item_extend
+msgid "Extend selection to next item"
+msgstr ""
+
+# command_play
+msgid "Play/Pause"
+msgstr "Přehrát/Pozastavit"
+
+# tooltip_play
+msgid ""
+"Play or pause video and audio files. Start a slide show if a photo is "
+"selected. Select the first media item if not selected."
+msgstr ""
+
+# command_zoom
+msgid "Zoom 100%"
+msgstr "Zvětšit 100%"
+
+# command_volume
+msgid "Toggle volume"
+msgstr ""
+
+# command_rotate_anticlockwise
+msgid "Rotate anticlockwise"
+msgstr ""
+
+# command_rotate_clockwise
+msgid "Rotate clockwise"
+msgstr ""
+
+# command_show_in_folder
+msgid "Open containing folder"
+msgstr ""
+
+# command_show_in_file_browser
+msgid "Show in file browser"
+msgstr ""
+
+# command_toggle_details
+msgid "Toggle thumbnails and details"
+msgstr ""
+
+# tooltip_toggle_details
+msgid "Toggle between thumbnails and details view for selected item group"
+msgstr ""
+
+# command_capture
+msgid "Save current video frame"
+msgstr ""
+
+# command_edit
+msgid "Edit"
+msgstr "Upravit"
+
+# tooltip_edit
+msgid "Color, straighten or crop photos. Add and edit metadata."
+msgstr ""
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# command_edit_copy
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# menu_copy
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# menu_move
+msgid "Copy"
+msgstr "Kopírovat"
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# command_edit_cut
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# menu_cut
+msgid "Cut"
+msgstr "Vyjmout"
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# command_edit_paste
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# menu_paste
+msgid "Paste"
+msgstr "Vložit"
+
+# command_app_exit
+msgid "Exit"
+msgstr ""
+
+# command_rate_1
+msgid "Rate 1 star"
+msgstr ""
+
+# command_rate_2
+msgid "Rate 2 stars"
+msgstr ""
+
+# command_rate_3
+msgid "Rate 3 stars"
+msgstr ""
+
+# command_rate_4
+msgid "Rate 4 stars"
+msgstr ""
+
+# command_rate_5
+msgid "Rate 5 stars"
+msgstr ""
+
+# command_rate_0
+msgid "Remove rating"
+msgstr ""
+
+# command_view_tests
+msgid "Tests"
+msgstr ""
+
+# tooltip_view_tests
+msgid "Tests and updates"
+msgstr ""
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# command_group_shuffle
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# sort_by_shuffle
+msgid "Show items in random order"
+msgstr "Zamíchat"
+
+# command_toggle_group_by
+msgid "Toggle item grouping"
+msgstr ""
+
+# command_group_file_type
+msgid "Group by File type"
+msgstr "Seskupit podle typu souboru"
+
+# command_group_size
+msgid "Group by Size"
+msgstr ""
+
+# command_group_extension
+msgid "Group by Extension"
+msgstr ""
+
+# command_group_location
+msgid "Group by Location"
+msgstr ""
+
+# command_group_rating
+msgid "Group by Rating"
+msgstr ""
+
+# command_group_created
+msgid "Group by Date Created"
+msgstr ""
+
+# command_group_modified
+msgid "Group by Date Modified"
+msgstr ""
+
+# command_group_pixels
+msgid "Group by Pixels"
+msgstr ""
+
+# command_group_camera
+msgid "Group by Camera"
+msgstr ""
+
+# command_group_album
+msgid "Group by Album/Show"
+msgstr ""
+
+# command_group_presence
+msgid "Group by Presence"
+msgstr ""
+
+# command_sort_name
+msgid "Sort by name"
+msgstr ""
+
+# command_sort_size
+msgid "Sort by size"
+msgstr ""
+
+# command_sort_def
+msgid "Sort by default"
+msgstr ""
+
+# command_sort_date_modified
+msgid "Sort by date modified"
+msgstr ""
+
+# command_run_tests
+msgid "Run tests"
+msgstr ""
+
+# command_crash
+msgid "Test crash report"
+msgstr ""
+
+# command_test_new_version
+msgid "Test new version"
+msgstr ""
+
+# command_show_duplicate_marker
+msgid "Show duplicate markers in red"
+msgstr ""
+
+# command_show_sidecar_marker
+msgid "Show sidecar markers in green"
+msgstr ""
+
+# command_highlight_large_items
+msgid "Highlight large items in yellow"
+msgstr ""
+
+# command_open_google_map
+msgid "Open in google maps"
+msgstr ""
+
+# command_open_cloud
+msgid "Open in web browser"
+msgstr ""
+
+# command_flag_for_action
+msgid "Flag for action"
+msgstr ""
+
+# tooltip_flag_for_action
+msgid "Items can be flagged for later action."
+msgstr ""
+
+# command_flag_for_delete
+msgid "Flag for delete"
+msgstr ""
+
+# tooltip_flag_for_delete
+msgid "Items can be flagged for later delete."
+msgstr ""
+
+# command_select_flagged_for_delete
+msgid "Select items flagged for delete"
+msgstr ""
+
+# command_select_flagged_for_action
+msgid "Select items flagged for action"
+msgstr ""
+
+# command_adjust_date
+msgid "Adjust date and time"
+msgstr "Opravit datum a čas"
+
+# command_view_large_font
+msgid "Large font"
+msgstr ""
+
+# command_scan
+msgid "Scan"
+msgstr "Oskenovat dokument nebo fotku"
+
+# command_save
+msgid "Save and close"
+msgstr "Uložit a zavřít"
+
+# command_save_as
+msgid "Save as"
+msgstr "Uložit jako"
+
+# command_save_and_back
+msgid "Save and open previous"
+msgstr "Uložit a otevřít předchozí"
+
+# command_save_and_next
+msgid "Save and open next"
+msgstr "Uložit a otevřít další"
+
+# command_save_options
+msgid "Change save options"
+msgstr ""
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# command_new_version
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# update_title
+msgid "New version available"
+msgstr "Nová verze je dostupná"
+
+# searching_text
+msgid "Searching..."
+msgstr "Hledání..."
+
+# no_results
+msgid "No results"
+msgstr "Žádné výsledky"
+
+# folder_onedrive
+msgid "onedrive"
+msgstr "onedrive"
+
+# folder_picture
+msgid "picture"
+msgstr "Obrázek"
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# folder_video
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# videos
+msgid "videos"
+msgstr "Videa"
+
+# folder_music
+msgid "music"
+msgstr "muzika"
+
+# label
+msgid "label"
+msgstr "Popisek"
+
+# disk_capacity
+msgid "capacity"
+msgstr "kapacyta"
+
+# disk_free
+msgid "free"
+msgstr ""
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# disk_used
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# space_used
+msgid "used"
+msgstr "Využito"
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# disk_system
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# prop_name_system
+msgid "system"
+msgstr "sistém"
+
+# for_action
+msgid "For action"
+msgstr "Pro akci"
+
+# for_delete
+msgid "For delete"
+msgstr "Pro odstranění"
+
+# duplicates
+msgid "Duplicates"
+msgstr ""
+
+# duplicates_tooltip
+msgid "Show duplicate items"
+msgstr ""
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# unknown
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# genre_unknown
+msgid "Unknown"
+msgstr "neznámý"
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# sort_by_presence
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# presence_tile
+msgid "Presence"
+msgstr ""
+
+# sort_by_file_type
+msgid "Type"
+msgstr "Typ"
+
+# sort_by_name
+msgid "Name"
+msgstr "Název"
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# sort_by_size
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# size
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# size_title
+msgid "Size"
+msgstr "Velikost"
+
+# sort_by_def
+msgid "Default"
+msgstr "Výchozí"
+
+# sort_by_extension
+msgid "Extension"
+msgstr ""
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# sort_by_location
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# location_title
+msgid "Location"
+msgstr "Umístění"
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# sort_by_rating
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# rating
+msgid "Rating"
+msgstr "Hodnocení"
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# sort_by_date_created
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# created_title
+msgid "Created"
+msgstr "Vytvořeno"
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# sort_by_date_modified
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# modified_title
+msgid "Modified"
+msgstr "Změněno"
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# sort_by_camera
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# camera_title
+msgid "Camera"
+msgstr "Fotoaparát"
+
+# sort_by_album_show
+msgid "Album-Show"
+msgstr ""
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# sort_by_pixels
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# pixels_title
+msgid "Pixels"
+msgstr "pixelů"
+
+# no_items_are_selected
+msgid "No items are selected"
+msgstr ""
+
+# not_supported_cloud
+msgid "Cloud items are not supported."
+msgstr ""
+
+# not_supported_readonly
+msgid "Readonly items are not supported."
+msgstr ""
+
+# not_supported_readonly_metadata
+msgid "Cannot updated metadata of readonly items."
+msgstr ""
+
+# not_supported_photo
+msgid "Items must be a photo or image."
+msgstr ""
+
+# not_supported_save_format
+msgid "Diffractor can only save or update JPG, TIF, GIF and PNG image files."
+msgstr ""
+"Diffractor může ukládat nebo aktualizovat pouze obrazové soubory JPG, TIF, "
+"GIF a PNG."
+
+# cannot_edit
+msgid "Cannot updated metadata of this file type."
+msgstr ""
+
+# not_supported_folder
+msgid "Folders are not supported."
+msgstr ""
+
+# rating_remove
+msgid "Click {} to remove rating"
+msgstr "Zmáčkněte {} aby jste daly pryč hodnocení"
+
+# rating_keys
+msgid "Number keys 0-5"
+msgstr "Čísla 0-5"
+
+# flag_toggle
+msgid "Toggle flag for action or deletion."
+msgstr ""
+
+# flag_tooltip
+msgid ""
+"Use flags to mark items for later action or deletion. Flagged items can be "
+"found using a search."
+msgstr ""
+
+# flag_keys
+msgid "press P for action or M for delete"
+msgstr "stiskněte P pro akci nebo M pro odstranění"
+
+# show_related
+msgid "Click to view duplicate or related items."
+msgstr ""
+
+# related_keys
+msgid "press R"
+msgstr "zmáčknete R"
+
+# item_oriented
+msgid "Show items rotated"
+msgstr "Ukázat otočené soubory"
+
+# item_oriented_tooltip
+msgid "This item is shown oriented based on camera information. [{}]"
+msgstr ""
+
+# num_of
+msgid "of"
+msgstr "z"
+
+# title
+msgid "Title"
+msgstr "Název"
+
+# before
+msgid "Before"
+msgstr "Předtim"
+
+# after
+msgid "After"
+msgstr "Potom"
+
+# search_or_folder
+msgid "Search criteria or folder"
+msgstr "Hledat kritéria nebo složky"
+
+# button_change
+msgid "Change..."
+msgstr "Změnit…"
+
+# button_ok
+msgid "&OK"
+msgstr "a DOBRÍ"
+
+# button_cancel
+msgid "&Cancel"
+msgstr "&Zrušit"
+
+# button_close
+msgid "&Close"
+msgstr "&Zavřít"
+
+# version
+msgid "Version: {} [{}]"
+msgstr ""
+
+# orientation_top_left
+msgid "top-left"
+msgstr "Vlevo nahoře"
+
+# orientation_top_right
+msgid "top-right"
+msgstr "Vpravo nahoře"
+
+# orientation_bottom_right
+msgid "bottom-right"
+msgstr "Vpravo dole"
+
+# orientation_bottom_left
+msgid "bottom-left"
+msgstr "Vlevo dole"
+
+# orientation_left_top
+msgid "left-top"
+msgstr "Vlevo nahoře"
+
+# orientation_right_top
+msgid "right-top"
+msgstr "Vpravo nahoře"
+
+# orientation_right_bottom
+msgid "right-bottom"
+msgstr "Vpravo dole"
+
+# orientation_left_bottom
+msgid "left-bottom"
+msgstr "Vlevo dole"
+
+# default_favourite_tags
+msgid ""
+"family food friends landscape nature night portrait selfie todo travel urban "
+"viewed"
+msgstr ""
+
+# default_write_name
+msgid "results"
+msgstr "Výsledky"
+
+# authorized
+msgid "Diffractor has been authorized"
+msgstr ""
+
+# failed_authorized
+msgid "That is weird. Diffractor has failed to be authorized."
+msgstr ""
+
+# indexed_locations_makes_collection
+msgid "All indexed locations combined form the collection."
+msgstr ""
+
+# click_to_search
+msgid "Click to search for similar items."
+msgstr ""
+
+# title_rate
+msgid "rate"
+msgstr "Míra"
+
+# title_folder
+msgid "folder:{}"
+msgstr ""
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# title_tag
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# prop_name_tag
+msgid "tag"
+msgstr "oštítkovat"
+
+# title_error
+msgid "Diffractor ERROR"
+msgstr "Diffractor CHYBA"
+
+# type_to_search
+msgid "Type to search"
+msgstr ""
+
+# prop_name_album
+msgid "album"
+msgstr "Album"
+
+# prop_name_show
+msgid "show"
+msgstr ""
+
+# prop_name_season
+msgid "season"
+msgstr "Série"
+
+# prop_name_episode
+msgid "episode"
+msgstr "Epizoda"
+
+# prop_name_artist
+msgid "artist"
+msgstr "Umělec"
+
+# prop_name_albumartist
+msgid "album artist"
+msgstr "Umělec"
+
+# prop_name_audiocodec
+msgid "audio codec"
+msgstr "Zvukový kodek"
+
+# prop_name_bitrate
+msgid "bitrate"
+msgstr "Datový tok"
+
+# prop_name_cameramanufacturer
+msgid "camera manufacturer"
+msgstr ""
+
+# prop_name_camera
+msgid "camera"
+msgstr "fotoaparát"
+
+# prop_name_channels
+msgid "channels"
+msgstr "Kanály"
+
+# prop_name_samplerate
+msgid "sample rate"
+msgstr "Vzorkovací frekvence"
+
+# prop_name_sampletype
+msgid "sample type"
+msgstr ""
+
+# prop_name_place
+msgid "place"
+msgstr "místo"
+
+# prop_name_comment
+msgid "comment"
+msgstr "Komentář"
+
+# prop_name_description
+msgid "description"
+msgstr "Popis"
+
+# prop_name_composer
+msgid "composer"
+msgstr "Skladatel"
+
+# prop_name_copyrightcredit
+msgid "copyright credit"
+msgstr ""
+
+# prop_name_copyrightsource
+msgid "copyright source"
+msgstr ""
+
+# prop_name_copyrightcreator
+msgid "copyright creator"
+msgstr ""
+
+# prop_name_copyrightnotice
+msgid "copyright notice"
+msgstr "Poznámka o autorských právech"
+
+# prop_name_country
+msgid "country"
+msgstr "Country"
+
+# prop_name_createdexif
+msgid "created exif"
+msgstr ""
+
+# prop_name_digitized
+msgid "digitized"
+msgstr ""
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# prop_name_created
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# query_created
+msgid "created"
+msgstr "Vytvořeno"
+
+# prop_name_disk
+msgid "disk"
+msgstr "disk"
+
+# prop_name_dimensions
+msgid "dimensions"
+msgstr ""
+
+# prop_name_duration
+msgid "duration"
+msgstr "Délka"
+
+# prop_name_encoder
+msgid "encoder"
+msgstr ""
+
+# prop_name_encodingtool
+msgid "encoding tool"
+msgstr ""
+
+# prop_name_exposure
+msgid "exposure"
+msgstr "Expozice"
+
+# prop_name_fnumber
+msgid "fnumber"
+msgstr ""
+
+# prop_name_focallength
+msgid "focal length"
+msgstr "Ohnisková vzdálenost"
+
+# prop_name_35mmequivalent
+msgid "focal length 35mm equivalent"
+msgstr ""
+
+# prop_name_pixelformat
+msgid "pixel format"
+msgstr ""
+
+# prop_name_genre
+msgid "genre"
+msgstr "Žánr"
+
+# prop_name_iso
+msgid "iso"
+msgstr "ISO"
+
+# prop_name_latitude
+msgid "latitude"
+msgstr "Zeměpisná šířka"
+
+# prop_name_lens
+msgid "lens"
+msgstr "Čočky"
+
+# prop_name_longitude
+msgid "longitude"
+msgstr "Zeměpisná délka"
+
+# prop_name_mediacategory
+msgid "media category"
+msgstr ""
+
+# prop_name_megapixels
+msgid "megapixels"
+msgstr ""
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# prop_name_modified
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# query_modified
+msgid "modified"
+msgstr "Změněno"
+
+# prop_name_null
+msgid "null"
+msgstr "NULL"
+
+# prop_name_orientation
+msgid "orientation"
+msgstr "Cíl"
+
+# prop_name_publisher
+msgid "publisher"
+msgstr "Nakladatel"
+
+# prop_name_performer
+msgid "performer"
+msgstr "Protagonista"
+
+# prop_name_rating
+msgid "rating"
+msgstr "Hodnocení"
+
+# prop_name_size
+msgid "size"
+msgstr "Velikost"
+
+# prop_name_state
+msgid "state"
+msgstr ""
+
+# prop_name_streams
+msgid "streams"
+msgstr ""
+
+# prop_name_synopsis
+msgid "synopsis"
+msgstr ""
+
+# prop_name_title
+msgid "title"
+msgstr "Název"
+
+# prop_name_track
+msgid "track"
+msgstr "Stopa"
+
+# prop_name_videocodec
+msgid "video codec"
+msgstr "Video kodek"
+
+# prop_name_year
+msgid "year"
+msgstr "Rok"
+
+# prop_name_id
+msgid "id"
+msgstr "ID"
+
+# prop_name_filename
+msgid "filename"
+msgstr "Název souboru"
+
+# prop_name_rawfile
+msgid "raw file"
+msgstr ""
+
+# prop_name_game
+msgid "game"
+msgstr "Hra"
+
+# search_matched
+msgid "Search matched {}"
+msgstr ""
+
+# search_matched_file_created
+msgid "Search matched file created date"
+msgstr ""
+
+# search_matched_metadata_created
+msgid "Search matched metadata created date"
+msgstr ""
+
+# menu_add
+msgid "Add '{}'"
+msgstr ""
+
+# menu_undo
+msgid "Undo"
+msgstr "Zpět"
+
+# menu_select_all
+msgid "Select All"
+msgstr "Vybrat vše"
+
+# error_same_file
+msgid "The source and destination files are the same file."
+msgstr ""
+
+# error_many_src_1_dest
+msgid ""
+"Multiple file paths were specified in the source buffer, but only one "
+"destination file path."
+msgstr ""
+
+# error_diff_dir
+msgid ""
+"Rename operation was specified but the destination path is a different "
+"directory. Use the move operation instead."
+msgstr ""
+
+# error_src_root_dir
+msgid "The source is a root directory, which cannot be moved or renamed."
+msgstr ""
+
+# error_op_cancelled
+msgid ""
+"The operation was canceled by the user, or silently canceled if the "
+"appropriate flags were supplied to SHFileOperation."
+msgstr ""
+
+# error_dest_subtree
+msgid "The destination is a subtree of the source."
+msgstr ""
+
+# error_access_denied_src
+msgid "Security settings denied access to the source."
+msgstr ""
+
+# error_path_too_deep
+msgid "The source or destination path exceeded or would exceed MAX_PATH."
+msgstr ""
+
+# error_many_dest
+msgid ""
+"The operation involved multiple destination paths, which can fail in the "
+"case of a move operation."
+msgstr ""
+
+# error_invalid_files
+msgid "The path in the source or destination or both was invalid."
+msgstr ""
+
+# error_dest_same_tree
+msgid "The source and destination have the same parent folder."
+msgstr ""
+
+# error_fld_dest_is_file
+msgid "The destination path is an existing file."
+msgstr ""
+
+# error_file_dest_is_fld
+msgid "The destination path is an existing folder."
+msgstr ""
+
+# error_filename_too_long
+msgid "The name of the file exceeds MAX_PATH."
+msgstr ""
+
+# error_dest_is_cd_rom
+msgid "The destination is a read-only CD-ROM, possibly unformatted."
+msgstr ""
+
+# error_dest_is_dvd
+msgid "The destination is a read-only DVD, possibly unformatted."
+msgstr ""
+
+# error_dest_is_cd_record
+msgid "The destination is a writable CD-ROM, possibly unformatted."
+msgstr ""
+
+# error_file_too_large
+msgid ""
+"The file involved in the operation is too large for the destination media or "
+"file system."
+msgstr ""
+
+# error_src_is_cdrom
+msgid "The source is a read-only CD-ROM, possibly unformatted."
+msgstr ""
+
+# error_src_is_dvd
+msgid "The source is a read-only DVD, possibly unformatted."
+msgstr ""
+
+# error_src_is_cd_record
+msgid "The source is a writable CD-ROM, possibly unformatted."
+msgstr ""
+
+# error_max
+msgid "MAX_PATH was exceeded during the operation."
+msgstr ""
+
+# error_unknown
+msgid "An unknown error occurred."
+msgstr ""
+
+# error_on_dest
+msgid "An unspecified error occurred on the destination."
+msgstr ""
+
+# error_dst_root_dir
+msgid "Destination is a root directory and cannot be renamed."
+msgstr ""
+
+# select_folder
+msgid "Select Folder..."
+msgstr ""
+
+# jpeg_best
+msgid "JPEG - Best compression for photos"
+msgstr ""
+
+# png_best
+msgid "PNG - Best for non photos"
+msgstr ""
+
+# webp_best
+msgid "WEBP - Best for the web"
+msgstr "WEBP - nejlepší pro web"
+
+# error_connect_scanner
+msgid "Could not connect to scanner"
+msgstr ""
+
+# error_scanner
+msgid "Scanner reported an error"
+msgstr ""
+
+# error_save_image
+msgid "Failed to save image."
+msgstr ""
+
+# indexing
+msgid "Indexing"
+msgstr ""
+
+# detecting_folders
+msgid "Detecting {} folders"
+msgstr ""
+
+# indexing_message
+msgid ""
+"Diffractor indexes your photos and videos to enable searching and duplicate "
+"detection."
+msgstr ""
+
+# index_options_help
+msgid "You can choose what is indexed in index settings (press Ctrl-F6)."
+msgstr ""
+
+# index_later
+msgid "Please index later"
+msgstr ""
+
+# index_settings
+msgid "Show indexing settings"
+msgstr ""
+
+# empty
+msgid "Empty"
+msgstr ""
+
+# loading
+msgid "Loading..."
+msgstr ""
+
+# nothing_found1
+msgid "Nothing found."
+msgstr ""
+
+# nothing_found2
+msgid ""
+"Diffractor only searches in folders that are indexed. Use index options to "
+"add more folders. (ctrl-F6)"
+msgstr ""
+
+# button_save
+msgid "&Save"
+msgstr "&Uložit"
+
+# button_dont_save
+msgid "&Don't Save"
+msgstr ""
+
+# save_changes
+msgid "Save Changes"
+msgstr ""
+
+# save_as_jpeg
+msgid ""
+"Diffractor cannot crop, rotate or color {} files. You can save the file as a "
+"JPEG?"
+msgstr ""
+
+# button_save_as_jpeg
+msgid "As &JPEG"
+msgstr ""
+
+# changes
+msgid "Changes"
+msgstr ""
+
+# has_changes
+msgid "{} has modifications"
+msgstr ""
+
+# saving_file_name
+msgid "Saving {}..."
+msgstr ""
+
+# options_backup_copy
+msgid ""
+"When overwriting a photo with irreversible changes make an original backup "
+"copy"
+msgstr ""
+
+# options_jpeg_quality
+msgid "JPEG save quality"
+msgstr ""
+
+# help_tag1
+msgid "Separate each tag with a space : Australia holiday camping."
+msgstr ""
+
+# help_tag2
+msgid "Join 2 words together in one tag using quotes: \\\"national park\\\"."
+msgstr ""
+
+# help_artist
+msgid ""
+"Multiple artists can be entered. Separate each with a comma ',' or slash '/'"
+msgstr ""
+
+# straighten
+msgid "Straighten"
+msgstr "Narovnat"
+
+# color
+msgid "Color"
+msgstr "Barva"
+
+# vibrance
+msgid "Vibrance"
+msgstr ""
+
+# darks
+msgid "Darks"
+msgstr ""
+
+# midtones
+msgid "Midtones"
+msgstr ""
+
+# lights
+msgid "Lights"
+msgstr ""
+
+# contrast
+msgid "Contrast"
+msgstr "Kontrast"
+
+# brightness
+msgid "Brightness"
+msgstr "Jas"
+
+# saturation
+msgid "Saturation"
+msgstr "Saturace"
+
+# metadata
+msgid "Metadata"
+msgstr ""
+
+# caption
+msgid "Caption"
+msgstr ""
+
+# comment
+msgid "Comment"
+msgstr "Komentář"
+
+# description
+msgid "Description"
+msgstr "Popis"
+
+# synopsis
+msgid "Synopsis"
+msgstr ""
+
+# staring
+msgid "Staring"
+msgstr ""
+
+# tags_title
+msgid "Tags"
+msgstr ""
+
+# show
+msgid "Show"
+msgstr ""
+
+# artist_title
+msgid "Artist"
+msgstr "Umělec"
+
+# album_artist
+msgid "Album Artist"
+msgstr "Umělec"
+
+# album_title
+msgid "Album"
+msgstr ""
+
+# genre
+msgid "Genre"
+msgstr "Žánr"
+
+# year
+msgid "Year"
+msgstr "Rok"
+
+# episode
+msgid "Episode"
+msgstr "Epizoda"
+
+# season
+msgid "Season"
+msgstr "Série"
+
+# track
+msgid "Track"
+msgstr "Stopa"
+
+# disk
+msgid "Disk"
+msgstr ""
+
+# copyright_title
+msgid "Copyright"
+msgstr "Autorská práva"
+
+# month_january
+msgid "January"
+msgstr "Leden"
+
+# month_february
+msgid "February"
+msgstr "Únor"
+
+# month_march
+msgid "March"
+msgstr "Březen"
+
+# month_april
+msgid "April"
+msgstr "Duben"
+
+# month_may
+msgid "May"
+msgstr "Květen"
+
+# month_june
+msgid "June"
+msgstr "Červen"
+
+# month_july
+msgid "July"
+msgstr "Červenec"
+
+# month_august
+msgid "August"
+msgstr "Srpen"
+
+# month_september
+msgid "September"
+msgstr "Září"
+
+# month_october
+msgid "October"
+msgstr "Říjen"
+
+# month_november
+msgid "November"
+msgstr "Listopad"
+
+# month_december
+msgid "December"
+msgstr "Prosinec"
+
+# month_short_jan
+msgid "jan"
+msgstr ""
+
+# month_short_feb
+msgid "feb"
+msgstr ""
+
+# month_short_mar
+msgid "mar"
+msgstr ""
+
+# month_short_apr
+msgid "apr"
+msgstr ""
+
+# month_short_may
+msgid "may"
+msgstr "Květen"
+
+# month_short_jun
+msgid "jun"
+msgstr ""
+
+# month_short_jul
+msgid "jul"
+msgstr ""
+
+# month_short_aug
+msgid "aug"
+msgstr ""
+
+# month_short_sep
+msgid "sep"
+msgstr ""
+
+# month_short_oct
+msgid "oct"
+msgstr ""
+
+# month_short_nov
+msgid "nov"
+msgstr ""
+
+# month_short_dec
+msgid "dec"
+msgstr ""
+
+# text_true
+msgid "true"
+msgstr ""
+
+# text_false
+msgid "false"
+msgstr ""
+
+# compare
+msgid "Compare"
+msgstr ""
+
+# compare_tooltip
+msgid "Hold down left mouse button to compare items."
+msgstr ""
+
+# zoom_tooltip
+msgid "Hold down left mouse button to zoom into shown photo 100%."
+msgstr ""
+
+# zoom_kb
+msgid "press ctrl-Space"
+msgstr ""
+
+# query_or
+msgid "or"
+msgstr ""
+
+# query_and
+msgid "and"
+msgstr ""
+
+# query_with
+msgid "with"
+msgstr "s"
+
+# query_without
+msgid "without"
+msgstr "bez"
+
+# query_related
+msgid "related"
+msgstr "Spojeno s"
+
+# query_action
+msgid "action"
+msgstr "Činnost"
+
+# query_delete
+msgid "delete"
+msgstr "Smazat"
+
+# query_duplicates
+msgid "duplicates"
+msgstr ""
+
+# query_duplicates_alt1
+msgid "dups"
+msgstr ""
+
+# query_duplicates_alt2
+msgid "duplicate"
+msgstr ""
+
+# pixels_icon
+msgid "icon"
+msgstr "Ikona"
+
+# pixels_small
+msgid "small"
+msgstr "Malá"
+
+# pixels_none
+msgid "no pixels"
+msgstr ""
+
+# group_title_no_extension
+msgid "No extension"
+msgstr ""
+
+# group_title_no_location
+msgid "No location"
+msgstr ""
+
+# group_title_no_rating
+msgid "No rating"
+msgstr ""
+
+# group_title_no_pixels
+msgid "No pixels"
+msgstr ""
+
+# group_title_no_camera
+msgid "No camera"
+msgstr ""
+
+# group_title_no_album_or_show
+msgid "No album or show"
+msgstr ""
+
+# group_title_no_value
+msgid "No value"
+msgstr ""
+
+# group_title_shuffle
+msgid "random"
+msgstr "Zamíchat"
+
+# group_title_size_range
+msgid "{} to {}"
+msgstr ""
+
+# group_title_today
+msgid "Today"
+msgstr ""
+
+# group_title_yesterday
+msgid "Yesterday"
+msgstr "Včera"
+
+# group_title_items
+msgid "Items"
+msgstr "položek"
+
+# cancel_was_pressed_after
+msgid "Cancel was pressed after "
+msgstr ""
+
+# rate_title
+msgid "Rate selected items"
+msgstr ""
+
+# flag_title
+msgid "Flag"
+msgstr ""
+
+# open_in_browser_title
+msgid "Open in file browser"
+msgstr ""
+
+# burn_title
+msgid "Burn"
+msgstr "Ztmavit"
+
+# remove_metadata_title
+msgid "Remove Metadata"
+msgstr ""
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# folder_noun
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# folder
+msgid "folder"
+msgstr "Složka"
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# folder_noun_plural
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# folders
+msgid "folders"
+msgstr "Složky"
+
+# item_noun
+msgid "item"
+msgstr "položka"
+
+# item_noun_plural
+msgid "items"
+msgstr "položek"
+
+# rename_template_help
+msgid ""
+"Specify a template to use for renaming files.\n"
+" - Use #'s to specify position of the numeric sequence.\n"
+" - Use ? to insert original filename character in pattern.\n"
+" - Example 'My photo ###'"
+msgstr ""
+
+# rename_template_label
+msgid "Template:"
+msgstr ""
+
+# rename_template_start_label
+msgid "Start at:"
+msgstr ""
+
+# single_will_be_renamed_fmt
+msgid "{} will be renamed."
+msgstr ""
+
+# rename_label
+msgid "New name:"
+msgstr ""
+
+# open_properties_title
+msgid "Open Properties"
+msgstr ""
+
+# pated_file_name
+msgid "pasted"
+msgstr ""
+
+# resized_max_label
+msgid "Maximum photo dimension in pixels:"
+msgstr ""
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# dest_folder_label
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# destination_folder
+msgid "Destination folder:"
+msgstr ""
+
+# open_dest
+msgid "Open destination folder afterwards"
+msgstr ""
+
+# button_resize
+msgid "&Resize"
+msgstr "&Změnit velikost"
+
+# failed_to_create_folder_fmt
+msgid "Failed to create folder: {}"
+msgstr ""
+
+# button_rotate
+msgid "&Rotate"
+msgstr "&Otočit"
+
+# desktop_background_info
+msgid "Set the desktop background to the current image."
+msgstr ""
+
+# maximize_image
+msgid "Maximize image."
+msgstr ""
+
+# button_background
+msgid "&Background"
+msgstr ""
+
+# button_delete
+msgid "&Delete"
+msgstr "O&dstranit"
+
+# delete_error
+msgid "Failed to Delete Selected File."
+msgstr ""
+
+# button_update
+msgid "&Update"
+msgstr ""
+
+# copyright_notice
+msgid "Notice"
+msgstr ""
+
+# copyright_creator
+msgid "Creator"
+msgstr "Tvůrce"
+
+# copyright_source
+msgid "Source"
+msgstr "Zdroj"
+
+# copyright_credit
+msgid "Credit"
+msgstr "Zásluhy"
+
+# locations_no_results
+msgid ""
+"If you are a sponsor, Diffractor will also use google to search for "
+"locations."
+msgstr ""
+
+# location_overwrite_gps
+msgid "Overwrite GPS coordinates when setting a location."
+msgstr ""
+
+# location_not_selected
+msgid "No location selected."
+msgstr ""
+
+# location_not_loaded
+msgid "Location could not be loaded from database or internet."
+msgstr ""
+
+# limit_output_dimensions
+msgid "Limit output to a maximum dimension in pixels."
+msgstr ""
+
+# button_convert
+msgid "&Convert"
+msgstr ""
+
+# dest_name_label
+msgid "Destination name:"
+msgstr ""
+
+# button_combine
+msgid "&Combine"
+msgstr ""
+
+# failed_ro_create_pdf_fmt
+msgid "Failed to create PDF file: {}"
+msgstr ""
+
+# tag_add_remove
+msgid "Add or remove Tags"
+msgstr ""
+
+# help_tag_add_remove
+msgid "Tags can be removed by prefixing with a minus: -removeme"
+msgstr ""
+
+# tag_add_or_remove_label
+msgid "Tags to add or remove:"
+msgstr ""
+
+# tags_common_label
+msgid "Common Tags"
+msgstr ""
+
+# tags_remove_label
+msgid "Removable Tags"
+msgstr ""
+
+# button_tag
+msgid "&Tag"
+msgstr ""
+
+# adjust_date_help
+msgid ""
+"Items in this date range will be modified to start at a new date and time. "
+"The time gap between items will be preserved.\n"
+"For example, if you have 2 photos taken one hour apart, after the update "
+"they will still be one hour apart.\n"
+"This is useful if your camera date was set wrongly and you need to fix photo "
+"and video dates."
+msgstr ""
+
+# selected_date_range_label
+msgid "Selected items are in the date range:"
+msgstr ""
+
+# starting_fmt
+msgid "Starting {}"
+msgstr ""
+
+# ending_fmt
+msgid "Ending {}"
+msgstr ""
+
+# starting_date_label
+msgid "New Starting Date (local time):"
+msgstr ""
+
+# command_rate
+msgid "Rate"
+msgstr "Míra"
+
+# is_not_valid_folder_fmt
+msgid "'{}' is not a valid folder."
+msgstr ""
+
+# facebook
+msgid "Facebook"
+msgstr ""
+
+# facebook_authorize
+msgid ""
+"Diffractor requires your authorization before it can connect to Facebook."
+msgstr ""
+
+# facebook_connecting
+msgid "Connecting to Facebook..."
+msgstr ""
+
+# facebook_failed
+msgid "That's weird. Diffractor failed to connect to Facebook."
+msgstr ""
+
+# using_account_fmt
+msgid "Using account {}"
+msgstr ""
+
+# command_label
+msgid "Comment:"
+msgstr ""
+
+# select_enter_album_label
+msgid "Select an album or enter a new album name:"
+msgstr ""
+
+# button_share
+msgid "&Share"
+msgstr ""
+
+# twitter
+msgid "Twitter"
+msgstr ""
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# twitter_authorize
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# flickr_authorize
+msgid ""
+"Diffractor requires your authorization before it can connect to Twitter."
+msgstr ""
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# twitter_authorize_help
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# flickr_authorize_help
+msgid ""
+"Authorizing is a simple process which takes place in your web browser. When "
+"you are finished, return to this window to complete authorization and begin "
+"using Diffractor."
+msgstr ""
+
+# must_connect_authorize
+msgid ""
+"You must be connected to the internet in order to authorize this program."
+msgstr ""
+
+# twitter_return_after_auth
+msgid ""
+"Return to this window after you have finished the authorization process on "
+"twitter.com"
+msgstr ""
+
+# twitter_click_when_done
+msgid ""
+"Once you are done, click OK below and you can begin using Diffractor to post "
+"to twitter."
+msgstr ""
+
+# twitter_revoke
+msgid ""
+"You can revoke this program's authorization at any time in your account page "
+"on twitter.com"
+msgstr ""
+
+# twitter_fail
+msgid "That's weird. Diffractor failed to connect to Twitter."
+msgstr ""
+
+# twitter_connecting
+msgid "Connection to Twitter..."
+msgstr ""
+
+# limit_photos_upload
+msgid ""
+"Limit photos to a maximum dimension in pixels. Smaller photos are quicker to "
+"upload."
+msgstr ""
+
+# flickr
+msgid "Flickr"
+msgstr ""
+
+# flickr_connecting
+msgid "Connecting to Flickr..."
+msgstr ""
+
+# flickr_fail
+msgid "That's weird. Diffractor failed to connect to Flickr."
+msgstr ""
+
+# flickr_transfer_info
+msgid ""
+"If you Photos contain description or tag information, that information will "
+"be transferred to Flickr."
+msgstr ""
+
+# flickr_return_after_auth
+msgid ""
+"Return to this window after you have finished the authorization process on "
+"Flickr"
+msgstr ""
+
+# flickr_click_when_done
+msgid ""
+"Once you are done, click OK below and you can begin using Diffractor share "
+"Flickr."
+msgstr ""
+
+# flickr_revoke
+msgid ""
+"You can revoke this program's authorization at any time in your account page "
+"on Flickr"
+msgstr ""
+
+# open_with_app_tool
+msgid "Open with app or tool"
+msgstr ""
+
+# open_with_tool
+msgid "tool"
+msgstr "Nástroj"
+
+# open_with_app
+msgid "app"
+msgstr ""
+
+# structured_copy_info
+msgid ""
+"Move or copy selected items into a year/day folder structure. Existing items "
+"are ignored."
+msgstr ""
+
+# structured_dest_folder
+msgid ""
+"Destination root folder. Structured folders will be created under this "
+"folder."
+msgstr ""
+
+# structured_copy_ignore_previous
+msgid "Ignore previously imported items."
+msgstr ""
+
+# move_items
+msgid "Move items."
+msgstr ""
+
+# button_import
+msgid "&Import"
+msgstr "&Importovat"
+
+# eject_help
+msgid ""
+"To avoid losing data, eject an external hard drive or USB drive before "
+"removing it."
+msgstr ""
+
+# eject_failed_fmt
+msgid "Failed to eject {}."
+msgstr ""
+
+# close
+msgid "Close"
+msgstr "Blízký"
+
+# eject_close_info
+msgid "Close without ejecting"
+msgstr ""
+
+# eject_title_fmt
+msgid "Eject {}"
+msgstr ""
+
+# scan_failed
+msgid "Failed to Scan."
+msgstr ""
+
+# update_help_fmt
+msgid ""
+"Version {} of Diffractor is available. You are currently using version {}."
+msgstr ""
+
+# update
+msgid "Update"
+msgstr "Aktualizovat"
+
+# update_help
+msgid ""
+"Download and install now. Diffractor will need to be closed briefly during "
+"the install."
+msgstr ""
+
+# update_not_now
+msgid "Not now"
+msgstr ""
+
+# update_not_now_help
+msgid "Remind me again in a week"
+msgstr ""
+
+# update_more_info
+msgid "More info"
+msgstr ""
+
+# update_more_info_help
+msgid "Learn more about this update at Diffractor.com"
+msgstr ""
+
+# update_please_wait
+msgid "Please wait while the update is downloaded..."
+msgstr ""
+
+# update_failed
+msgid "Update failed."
+msgstr ""
+
+# sponsor_help_text
+msgid ""
+"You can use Diffractor for free but if you find it useful please become a "
+"sponsor. Diffractor developers and testers are unpaid volunteers, we rely on "
+"sponsors to pay our costs. If you use it at work, get your company to become "
+"a sponsor."
+msgstr ""
+
+# sponsor_text_fmt
+msgid ""
+"You are a verified Diffractor sponsor using the email address '{}'. Thanks "
+"for helping to make Diffractor better!"
+msgstr ""
+
+# non_sponsor_text
+msgid ""
+"If you are already a Sponsor, enter your sponsor email address below and "
+"click Verify."
+msgstr ""
+
+# sponsor
+msgid "Sponsor"
+msgstr ""
+
+# sponsor_verify
+msgid "Verify"
+msgstr ""
+
+# sponsor_verify_help
+msgid "I am already a Sponsor. Verify the address I have entered above."
+msgstr ""
+
+# sponsor_help
+msgid "Go online and become a sponsor."
+msgstr ""
+
+# maybe_later
+msgid "OK - maybe later."
+msgstr ""
+
+# sponsor_verifying
+msgid "Verifying"
+msgstr ""
+
+# sponsor_verify_failed
+msgid "That's weird. Diffractor failed to verify your email address '{}'."
+msgstr ""
+
+# error_internet
+msgid ""
+"Could be a problem with the internet connection? Try again later if that "
+"seems likely."
+msgstr ""
+
+# failed_connect_internet
+msgid "Failed to connect to the internet"
+msgstr ""
+
+# sponsor_verifying_help
+msgid ""
+"Verifying Sponsorship.\n"
+"Contacting the Diffractor server."
+msgstr ""
+
+# learn
+msgid "Learn"
+msgstr ""
+
+# keyboard
+msgid "Keyboard"
+msgstr "Klávesnice"
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# help
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# keyboard_help_title
+msgid "Help"
+msgstr "Nápověda"
+
+# ok_got_it
+msgid "OK - got it."
+msgstr ""
+
+# ask_question
+msgid "Ask the Diffractor team a question."
+msgstr ""
+
+# sponsor_diffractor
+msgid "Sponsor Diffractor."
+msgstr ""
+
+# list_of_accelerators
+msgid "List of keyboard accelerators"
+msgstr "Seznam klávesových akcelerátorů"
+
+# learn_more_diffractor_com
+msgid "Learn more at Diffractor.com"
+msgstr ""
+
+# ok_all_done
+msgid "OK - all done."
+msgstr ""
+
+# optimize
+msgid "Optimize"
+msgstr ""
+
+# defragment_and_compact
+msgid ""
+"Defragment and compact database.\n"
+"All data is preserved."
+msgstr ""
+
+# reset_database
+msgid ""
+"Clean database and reindex.\n"
+"All data is regenerated."
+msgstr ""
+
+# reset
+msgid "Reset"
+msgstr "Obnovit"
+
+# need_some_maintenance
+msgid "After long periods of use, the index may need some maintenance."
+msgstr ""
+
+# keyboard_basics_title
+msgid "Basics"
+msgstr ""
+
+# keyboard_navigation_title
+msgid "Navigation"
+msgstr "Navigace"
+
+# keyboard_playback_title
+msgid "Media playback"
+msgstr ""
+
+# keyboard_file_management_title
+msgid "File management"
+msgstr ""
+
+# keyboard_selection_title
+msgid "Selection"
+msgstr "Výběr"
+
+# keyboard_options_title
+msgid "Options"
+msgstr "Možnosti"
+
+# keyboard_enter
+msgid "ENTER"
+msgstr "Enter"
+
+# keyboard_enter_desc
+msgid "Opens an image full screen."
+msgstr ""
+
+# keyboard_space
+msgid "SPACE"
+msgstr "Space"
+
+# keyboard_space_desc
+msgid "Stops or starts a slideshow or playing a video/audio file."
+msgstr ""
+
+# keyboard_escape
+msgid "ESCAPE"
+msgstr ""
+
+# keyboard_escape_desc
+msgid "Gets you out of full screen, zoom or other modes."
+msgstr ""
+
+# keyboard_left_right
+msgid "LEFT or RIGHT"
+msgstr ""
+
+# keyboard_left
+msgid "left"
+msgstr "Vlevo"
+
+# keyboard_right
+msgid "right"
+msgstr "Vpravo"
+
+# keyboard_back
+msgid "back"
+msgstr "Zpět"
+
+# keyboard_browser_back
+msgid "browser-back"
+msgstr ""
+
+# keyboard_browser_favorites
+msgid "browser-favorites"
+msgstr ""
+
+# keyboard_browser_forward
+msgid "browser-forward"
+msgstr ""
+
+# keyboard_browser_home
+msgid "browser-home"
+msgstr ""
+
+# keyboard_browser_refresh
+msgid "browser-refresh"
+msgstr ""
+
+# keyboard_browser_search
+msgid "browser-search"
+msgstr ""
+
+# keyboard_browser_stop
+msgid "browser-stop"
+msgstr ""
+
+# keyboard_del
+msgid "del"
+msgstr ""
+
+# keyboard_down
+msgid "down"
+msgstr "Dolů"
+
+# keyboard_f1
+msgid "F1"
+msgstr ""
+
+# keyboard_f10
+msgid "F10"
+msgstr ""
+
+# keyboard_f11
+msgid "F11"
+msgstr ""
+
+# keyboard_f2
+msgid "F2"
+msgstr ""
+
+# keyboard_f3
+msgid "F3"
+msgstr ""
+
+# keyboard_f4
+msgid "F4"
+msgstr ""
+
+# keyboard_f5
+msgid "F5"
+msgstr ""
+
+# keyboard_f6
+msgid "F6"
+msgstr ""
+
+# keyboard_f7
+msgid "F7"
+msgstr ""
+
+# keyboard_f8
+msgid "F8"
+msgstr ""
+
+# keyboard_f9
+msgid "F9"
+msgstr ""
+
+# keyboard_insert
+msgid "insert"
+msgstr "Vložit"
+
+# keyboard_media_next_track
+msgid "media-next-track"
+msgstr ""
+
+# keyboard_media_play_pause
+msgid "media-play-pause"
+msgstr ""
+
+# keyboard_media_prev_track
+msgid "media-prev-track"
+msgstr ""
+
+# keyboard_media_stop
+msgid "media-stop"
+msgstr ""
+
+# keyboard_next
+msgid "page-down"
+msgstr ""
+
+# keyboard_oem_4
+msgid "["
+msgstr ""
+
+# keyboard_oem_6
+msgid "]"
+msgstr ""
+
+# keyboard_oem_plus
+msgid "+"
+msgstr ""
+
+# keyboard_prior
+msgid "page-up"
+msgstr ""
+
+# keyboard_tab
+msgid "tab"
+msgstr "Tabulátor"
+
+# keyboard_up
+msgid "up"
+msgstr "Nahoru"
+
+# keyboard_volume_down
+msgid "volume-down"
+msgstr ""
+
+# keyboard_volume_mute
+msgid "volume-mute"
+msgstr ""
+
+# keyboard_volume_up
+msgid "volume-up"
+msgstr ""
+
+# keyboard_left_right_desc
+msgid "Move to the next or previous item."
+msgstr ""
+
+# keyboard_ctrl_left_right
+msgid "Control LEFT or RIGHT"
+msgstr ""
+
+# keyboard_ctrl_left_right_desc
+msgid "Extend the current item selection and allow comparing of items."
+msgstr ""
+
+# about_info
+msgid ""
+"Diffractor provides simple tools to make you more productive when sorting, "
+"comparing and organizing photos or videos. It integrates with other more "
+"specialized software like photo editors or video players etc."
+msgstr ""
+
+# about_learn_info
+msgid ""
+"The Diffractor website contains information on how to be productive with "
+"Diffractor. Click the learn button bellow to find out more."
+msgstr ""
+
+# defragmenting
+msgid "Defragmenting..."
+msgstr ""
+
+# resetting
+msgid "Resetting..."
+msgstr ""
+
+# options_app_settings
+msgid "Application Settings"
+msgstr ""
+
+# options_save_settings
+msgid "When saving"
+msgstr ""
+
+# options_updates
+msgid "Updates"
+msgstr ""
+
+# options_advanced
+msgid "Advanced"
+msgstr "Pokročilé"
+
+# index_info_fmt
+msgid ""
+"Diffractor stores information in an index (or database) to enable fast "
+"searching. Currently the database contains {} items ({}). All indexed "
+"locations combined form the collection."
+msgstr ""
+
+# index_maintenance_title
+msgid "Index maintenance"
+msgstr ""
+
+# options_show_rotated
+msgid "Show photos rotated based on recorded camera orientation"
+msgstr ""
+
+# options_show_hidden
+msgid "Show hidden files"
+msgstr "Zobrazit podrobnosti"
+
+# options_show_dups_on_thumbs
+msgid "Show duplicate file markers on thumbnails"
+msgstr ""
+
+# options_show_sidecars_on_thumbs
+msgid ""
+"Show sidecar markers on thumbnails. Sidecars are additional metadata, "
+"subtitle or thumbnail files."
+msgstr ""
+
+# options_confirm_del
+msgid ""
+"Confirm when deleting items. Deleted items are moved to the recycle bin."
+msgstr ""
+
+# option_overwrite_gps
+msgid ""
+"Overwrite GPS coordinates when setting a location. Otherwise only place, "
+"state and country names are updated."
+msgstr ""
+
+# option_slideshow_delay
+msgid "Slideshow seconds delay between photos"
+msgstr ""
+
+# options_check_for_update
+msgid "Check for updates by connecting to the internet"
+msgstr ""
+
+# options_auto_update
+msgid "Automatically install updates when possible"
+msgstr ""
+
+# options_beta_tester
+msgid "Help test Diffractor. Automatically install test and preview versions."
+msgstr ""
+
+# options_use_gpu
+msgid ""
+"Use hardware acceleration to draw the Diffractor user interface (requires "
+"restart)"
+msgstr ""
+
+# options_use_gpu_video
+msgid "Use hardware acceleration to decode video (when available)"
+msgstr ""
+
+# options_use_yuv_tex
+msgid ""
+"Use NV12 and P010 format textures (Automatically turned off if problems "
+"detected)"
+msgstr ""
+
+# options_send_crash_reports
+msgid ""
+"Help make Diffractor better. If Diffractor crashes send anonymous "
+"diagnostics to Diffractor HQ. No personal data is sent - just crash "
+"diagnostics."
+msgstr ""
+
+# options_show_debug_info
+msgid "Show application debugging information (for the programmers)."
+msgstr ""
+
+# index_maintenance_help
+msgid ""
+"After long periods of use, the index can benefit from one of the maintenance "
+"steps below. The index stores a copy of metadata from your media files. It "
+"can be rebuilt from the original files."
+msgstr ""
+
+# index_maintenance_reset_recommended
+msgid "The index is reporting errors. Resetting the index is recommended."
+msgstr ""
+
+# index_options_soponsor_for_more
+msgid ""
+"Scotty, we need more power! More custom locations are available to sponsors. "
+"Click the 'Sponsor' button below to find out more about becoming a sponsor."
+msgstr ""
+
+# index_options_sponsor_locations
+msgid "Sponsor custom locations:"
+msgstr ""
+
+# cloud_account_remove
+msgid "Remove cloud account"
+msgstr ""
+
+# cloud_account_remove_help_fmt
+msgid "Cloud account '{}' ({}) will be removed from indexing."
+msgstr ""
+
+# button_remove
+msgid "&Remove"
+msgstr ""
+
+# cloud_account_add_title
+msgid "Add cloud account"
+msgstr ""
+
+# experimental_feature
+msgid "This is an experimental feature."
+msgstr ""
+
+# cloud_account_name_label
+msgid "Account Name:"
+msgstr ""
+
+# cloud_connecting
+msgid "Connecting to the internet..."
+msgstr ""
+
+# index_options_local_folders_title
+msgid "Local folders"
+msgstr ""
+
+# index_options_standard_locations
+msgid "Standard locations to be indexed."
+msgstr ""
+
+# index_options_pictures
+msgid "Pictures"
+msgstr ""
+
+# index_options_videos
+msgid "Videos"
+msgstr ""
+
+# index_options_music
+msgid "Music"
+msgstr "Muzikál"
+
+# index_options_desktop
+msgid "Desktop"
+msgstr "Pracovní plocha"
+
+# index_options_downloads
+msgid "Downloads"
+msgstr ""
+
+# index_options_documents
+msgid "Documents"
+msgstr "Dokumenty"
+
+# index_options_dropbox
+msgid "Local DropBox Folder"
+msgstr ""
+
+# index_options_onedrive
+msgid "Local OneDrive Folder"
+msgstr ""
+
+# index_options_google_drive
+msgid "Local GoogleDrive Folder"
+msgstr ""
+
+# index_options_custom_folders_title
+msgid "Custom folders"
+msgstr ""
+
+# index_options_custom_folders_help
+msgid ""
+"Custom locations to be indexed or excluded. Prefix the folder name with "
+"minus '-' to exclude it from searches."
+msgstr ""
+
+# more_power
+msgid "Scotty, we need more power!"
+msgstr ""
+
+# index_options_custom_locations_help
+msgid ""
+"Local locations can either be drives, folders or device labels. Labels can "
+"be useful for removable or network devices because mapped drive letters can "
+"change."
+msgstr ""
+
+# index_options_inet_title
+msgid "Internet files"
+msgstr ""
+
+# index_options_inet_help
+msgid ""
+"Diffractor can also index files from your Google Photos account. Add your "
+"accounts below. This is an experimental feature."
+msgstr ""
+
+# customise_tags_help
+msgid "Add a list of your favorite tags here to save time when tagging."
+msgstr ""
+
+# customise_searches_title
+msgid "Favorite Searches"
+msgstr ""
+
+# customise_sidebar_title
+msgid "Sidebar"
+msgstr ""
+
+# customize_show_total
+msgid "Show total items pie chart"
+msgstr ""
+
+# customize_show_history
+msgid "Show history chart"
+msgstr ""
+
+# customize_show_world_map
+msgid "Show world map"
+msgstr ""
+
+# customize_show_indexed_folders
+msgid "Show indexed folders"
+msgstr ""
+
+# customize_show_drives
+msgid "Show drives"
+msgstr ""
+
+# customize_show_searches
+msgid "Show favorite searches"
+msgstr ""
+
+# customize_show_tags
+msgid "Show favorite tags"
+msgstr ""
+
+# email_small_help
+msgid ""
+"Email sizes can be reduced using the following options. Smaller emails are "
+"faster to send."
+msgstr ""
+
+# email_zip
+msgid "Zip files in the email"
+msgstr ""
+
+# email_convert_to_jpeg
+msgid "Convert all photos to JPEG"
+msgstr ""
+
+# email_limit_dimensions
+msgid ""
+"Limit photos to a maximum dimension in pixels. Only supported for JPEG and "
+"PNG files."
+msgstr ""
+
+# button_send
+msgid "&Send"
+msgstr ""
+
+# email_processing_fmt
+msgid "Processing {}"
+msgstr ""
+
+# email_connecting_to_mapi
+msgid "Connecting to MAPI..."
+msgstr ""
+
+# email_sending
+msgid "Sending email using MAPI..."
+msgstr ""
+
+# email_failed
+msgid "Failed to send email using MAPI."
+msgstr ""
+
+# keyboard_shortcut_or
+msgid "OR"
+msgstr ""
+
+# keyboard_shortcut_alt
+msgid "alt"
+msgstr ""
+
+# keyboard_shortcut_control
+msgid "ctrl"
+msgstr ""
+
+# keyboard_shortcut_shift
+msgid "shift"
+msgstr "Posun"
+
+# keyboard_shortcut_enter
+msgid "enter"
+msgstr "Enter"
+
+# keyboard_shortcut_backspace
+msgid "backspace"
+msgstr "Backspace"
+
+# keyboard_shortcut_left
+msgid "left arrow"
+msgstr ""
+
+# keyboard_shortcut_right
+msgid "right arrow"
+msgstr ""
+
+# open_with_fmt
+msgid "Open with {}"
+msgstr ""
+
+# open_with_failed
+msgid "Failed to open selected items."
+msgstr ""
+
+# tag_selected
+msgid "Tag selected items"
+msgstr ""
+
+# group_sort_tooltip
+msgid "Group and sort items"
+msgstr ""
+
+# group_sort_click
+msgid "Click to group or sort"
+msgstr ""
+
+# listed
+msgid "Listed"
+msgstr ""
+
+# listed_sub_folders
+msgid "Including sub folders:"
+msgstr ""
+
+# cloud_preview_download
+msgid ""
+"A preview of an item in the cloud is currently being displayed. Download "
+"original item."
+msgstr ""
+
+# repeat_help
+msgid ""
+"When one media item plays to the end, start playing the next automatically"
+msgstr ""
+
+# repeat_off_help
+msgid "Don't repeat or auto play"
+msgstr ""
+
+# update_available
+msgid "Update available"
+msgstr "Aktualizace k dispozici"
+
+# update_avail_version_fmt
+msgid "Version {} of Diffractor is available."
+msgstr ""
+
+# update_current_version_fmt
+msgid "You are currently using version {}."
+msgstr ""
+
+# keyboard_accelerator_press
+msgid "press"
+msgstr ""
+
+# invalid
+msgid "invalid"
+msgstr ""
+
+# dates_title
+msgid "Dates"
+msgstr ""
+
+# dates_metadata_created
+msgid "Metadata created:"
+msgstr ""
+
+# dates_file_created
+msgid "File created:"
+msgstr ""
+
+# dates_file_modified
+msgid "File modified:"
+msgstr ""
+
+# audio_track_name_fmt
+msgid "Audio {}"
+msgstr ""
+
+# audio_track_select_fmt
+msgid "Click to select audio track {}"
+msgstr ""
+
+# copy_to_join
+msgid "to"
+msgstr ""
+
+# save_new_photo
+msgid "Save new photo"
+msgstr ""
+
+# genre_a_capella
+msgid "A capella"
+msgstr ""
+
+# genre_abstract
+msgid "Abstract"
+msgstr "Shrnutí"
+
+# genre_acidjazz
+msgid "Acid Jazz"
+msgstr ""
+
+# genre_acidpunk
+msgid "Acid Punk"
+msgstr ""
+
+# genre_acid
+msgid "Acid"
+msgstr "Žíravina"
+
+# genre_acoustic
+msgid "Acoustic"
+msgstr "Akustická"
+
+# genre_action_adventure
+msgid "Action & Adventure"
+msgstr ""
+
+# genre_action
+msgid "Action"
+msgstr "Činnost"
+
+# genre_aerial
+msgid "Aerial"
+msgstr ""
+
+# genre_alternative
+msgid "Alternative"
+msgstr "Alternativní"
+
+# genre_alternrock
+msgid "AlternRock"
+msgstr ""
+
+# genre_ambient
+msgid "Ambient"
+msgstr ""
+
+# genre_analog
+msgid "Analog"
+msgstr ""
+
+# genre_animation
+msgid "Animation"
+msgstr "Informace"
+
+# genre_anime
+msgid "Anime"
+msgstr ""
+
+# genre_architectural
+msgid "Architectural"
+msgstr ""
+
+# genre_avantgarde
+msgid "Avantgarde"
+msgstr "Avantgarda"
+
+# genre_aviation
+msgid "Aviation"
+msgstr ""
+
+# genre_ballad
+msgid "Ballad"
+msgstr "Balada"
+
+# genre_bass
+msgid "Bass"
+msgstr "Basy"
+
+# genre_bebob
+msgid "Bebob"
+msgstr ""
+
+# genre_bigband
+msgid "Big Band"
+msgstr ""
+
+# genre_bluegrass
+msgid "Bluegrass"
+msgstr ""
+
+# genre_blues
+msgid "Blues"
+msgstr ""
+
+# genre_booty_bass
+msgid "Booty Bass"
+msgstr ""
+
+# genre_brazilian
+msgid "Brazilian"
+msgstr ""
+
+# genre_cabaret
+msgid "Cabaret"
+msgstr "Kabaret"
+
+# genre_candid
+msgid "Candid"
+msgstr ""
+
+# genre_celtic
+msgid "Celtic"
+msgstr "Keltský"
+
+# genre_chambermusic
+msgid "Chamber Music"
+msgstr "Komorní hudba"
+
+# genre_chanson
+msgid "Chanson"
+msgstr "Šanson"
+
+# genre_childrens
+msgid "Children's"
+msgstr "Dětech"
+
+# genre_chorus
+msgid "Chorus"
+msgstr "Sbor"
+
+# genre_christian_gospel
+msgid "Christian & Gospel"
+msgstr ""
+
+# genre_christianran_reap
+msgid "Christian Rap"
+msgstr "Křesťanský rap"
+
+# genre_classic_rock
+msgid "Classic Rock"
+msgstr "Klasický rock"
+
+# genre_classic
+msgid "Classic"
+msgstr "Klasické"
+
+# genre_classical
+msgid "Classical"
+msgstr "Klasika"
+
+# genre_close_up
+msgid "Close-up"
+msgstr "Blízko"
+
+# genre_cloudscape
+msgid "Cloudscape"
+msgstr ""
+
+# genre_club
+msgid "Club"
+msgstr "Klub"
+
+# genre_comedy
+msgid "Comedy"
+msgstr "Komedie"
+
+# genre_conceptual
+msgid "Conceptual"
+msgstr ""
+
+# genre_concert_films
+msgid "Concert Films"
+msgstr ""
+
+# genre_concert
+msgid "Concert"
+msgstr ""
+
+# genre_conservation
+msgid "Conservation"
+msgstr ""
+
+# genre_country
+msgid "Country"
+msgstr "Země"
+
+# genre_cult
+msgid "Cult"
+msgstr "Kultovní"
+
+# genre_dance_hall
+msgid "Dance Hall"
+msgstr ""
+
+# genre_dance
+msgid "Dance"
+msgstr "Taneční"
+
+# genre_darkwave
+msgid "Darkwave"
+msgstr ""
+
+# genre_death_metal
+msgid "Death Metal"
+msgstr ""
+
+# genre_disco
+msgid "Disco"
+msgstr "Disko"
+
+# genre_documentary
+msgid "Documentary"
+msgstr ""
+
+# genre_drama
+msgid "Drama"
+msgstr "Drama"
+
+# genre_dream
+msgid "Dream"
+msgstr "Sen"
+
+# genre_drum_solo
+msgid "Drum Solo"
+msgstr "Bubnové sólo"
+
+# genre_duet
+msgid "Duet"
+msgstr ""
+
+# genre_easylistening
+msgid "Easy Listening"
+msgstr "Lehký poslech"
+
+# genre_electronic
+msgid "Electronic"
+msgstr "Elektronická"
+
+# genre_ethnic
+msgid "Ethnic"
+msgstr "Etnická"
+
+# genre_euro_dance
+msgid "Eurodance"
+msgstr ""
+
+# genre_euro_house
+msgid "Euro-House"
+msgstr ""
+
+# genre_euro_techno
+msgid "Euro-Techno"
+msgstr ""
+
+# genre_family
+msgid "Family"
+msgstr "Rodina"
+
+# genre_fashion
+msgid "Fashion"
+msgstr "Móda"
+
+# genre_fast_fusion
+msgid "Fast Fusion"
+msgstr "Fast-Fusion"
+
+# genre_film_still
+msgid "Film still"
+msgstr ""
+
+# genre_fine_art
+msgid "Fine-art"
+msgstr ""
+
+# genre_fire
+msgid "Fire"
+msgstr "Oheň"
+
+# genre_fireworks
+msgid "Fireworks"
+msgstr "Ohňostroj"
+
+# genre_fitness_workout
+msgid "Fitness & Workout"
+msgstr ""
+
+# genre_folk
+msgid "Folk"
+msgstr ""
+
+# genre_folklore
+msgid "Folklore"
+msgstr "Folk"
+
+# genre_folk_rock
+msgid "Folk-Rock"
+msgstr "Folk/Rock"
+
+# genre_food
+msgid "Food"
+msgstr "Jídlo"
+
+# genre_foreign
+msgid "Foreign"
+msgstr ""
+
+# genre_forensic
+msgid "Forensic"
+msgstr ""
+
+# genre_freestyle
+msgid "Freestyle"
+msgstr ""
+
+# genre_funk
+msgid "Funk"
+msgstr ""
+
+# genre_fusion
+msgid "Fusion"
+msgstr ""
+
+# genre_game
+msgid "Game"
+msgstr "Hra"
+
+# genre_gangsta
+msgid "Gangsta"
+msgstr ""
+
+# genre_geophotography
+msgid "Geo-photography"
+msgstr ""
+
+# genre_glamour
+msgid "Glamour"
+msgstr ""
+
+# genre_gospel
+msgid "Gospel"
+msgstr ""
+
+# genre_gothic_rock
+msgid "Gothic Rock"
+msgstr "Gotický rock"
+
+# genre_gothic
+msgid "Gothic"
+msgstr "Gotická"
+
+# genre_grunge
+msgid "Grunge"
+msgstr ""
+
+# genre_hardrock
+msgid "Hard Rock"
+msgstr ""
+
+# genre_highke
+msgid "High key"
+msgstr ""
+
+# genre_high_speed
+msgid "High-speed"
+msgstr ""
+
+# genre_hip_hop
+msgid "Hip-Hop"
+msgstr ""
+
+# genre_hip_hop_rap
+msgid "Hip-Hop/Rap"
+msgstr ""
+
+# genre_holiday
+msgid "Holiday"
+msgstr ""
+
+# genre_horror
+msgid "Horror"
+msgstr ""
+
+# genre_house
+msgid "House"
+msgstr ""
+
+# genre_humour
+msgid "Humour"
+msgstr ""
+
+# genre_independent
+msgid "Independent"
+msgstr "Nezávislé"
+
+# genre_industrial
+msgid "Industrial"
+msgstr "Industriální"
+
+# genre_instrumental_pop
+msgid "Instrumental Pop"
+msgstr "Instrumentální pop"
+
+# genre_instrumental_rock
+msgid "Instrumental Rock"
+msgstr "Instrumentální rock"
+
+# genre_instrumental
+msgid "Instrumental"
+msgstr "Instrumentální"
+
+# genre_jazz
+msgid "Jazz"
+msgstr ""
+
+# genre_jazzfun
+msgid "Jazz + Funk"
+msgstr ""
+
+# genre_jungle
+msgid "Jungle"
+msgstr ""
+
+# genre_kids_family
+msgid "Kids & Family"
+msgstr ""
+
+# genre_kids
+msgid "Kids"
+msgstr ""
+
+# genre_kirlian
+msgid "Kirlian"
+msgstr ""
+
+# genre_landscape
+msgid "Landscape"
+msgstr "Na šířku"
+
+# genre_latin
+msgid "Latin"
+msgstr "Latinský"
+
+# genre_lifestyle
+msgid "Lifestyle"
+msgstr ""
+
+# genre_lo_fi
+msgid "Lo-fi"
+msgstr "Lo-Fi"
+
+# genre_lomography
+msgid "Lomography"
+msgstr ""
+
+# genre_long_exposure
+msgid "Long-exposure"
+msgstr ""
+
+# genre_low_key
+msgid "Low key"
+msgstr ""
+
+# genre_macro
+msgid "Macro"
+msgstr "Makro"
+
+# genre_medical
+msgid "Medical"
+msgstr ""
+
+# genre_meditative
+msgid "Meditative"
+msgstr "Meditační"
+
+# genre_metal
+msgid "Metal"
+msgstr ""
+
+# genre_monochrome
+msgid "Monochrome"
+msgstr "Černobílý"
+
+# genre_music_documentaries
+msgid "Music Documentaries"
+msgstr ""
+
+# genre_music_feature_films
+msgid "Music Feature Films"
+msgstr ""
+
+# genre_musical
+msgid "Musical"
+msgstr "Muzikál"
+
+# genre_musicals
+msgid "Musicals"
+msgstr ""
+
+# genre_narrative
+msgid "Narrative"
+msgstr ""
+
+# genre_nationa_folk
+msgid "National Folk"
+msgstr "Národní folk"
+
+# genre_native_american
+msgid "Native American"
+msgstr "Původní americká"
+
+# genre_new_age
+msgid "New Age"
+msgstr ""
+
+# genre_new_wave
+msgid "New Wave"
+msgstr "Nová vlna"
+
+# genre_night
+msgid "Night"
+msgstr "Noc"
+
+# genre_noise
+msgid "Noise"
+msgstr "Šum"
+
+# genre_nonfiction
+msgid "Nonfiction"
+msgstr ""
+
+# genre_oldies
+msgid "Oldies"
+msgstr ""
+
+# genre_opera
+msgid "Opera"
+msgstr ""
+
+# genre_other
+msgid "Other"
+msgstr "Jiné"
+
+# genre_panorama
+msgid "Panorama"
+msgstr "Panorama"
+
+# genre_panoramic
+msgid "Panoramic"
+msgstr ""
+
+# genre_pellier_noir
+msgid "Pellier Noir"
+msgstr ""
+
+# genre_photo_op
+msgid "Photo op"
+msgstr ""
+
+# genre_photobiography
+msgid "Photobiography"
+msgstr ""
+
+# genre_photojournalism
+msgid "Photojournalism"
+msgstr ""
+
+# genre_photowalking
+msgid "Photowalking"
+msgstr ""
+
+# genre_podcast
+msgid "Podcast"
+msgstr ""
+
+# genre_polaroid
+msgid "Polaroid"
+msgstr ""
+
+# genre_polka
+msgid "Polka"
+msgstr ""
+
+# genre_pop
+msgid "Pop"
+msgstr ""
+
+# genre_pop_funk
+msgid "Pop/Funk"
+msgstr ""
+
+# genre_pop_folk
+msgid "Pop-Folk"
+msgstr ""
+
+# genre_porn_groove
+msgid "Porn Groove"
+msgstr ""
+
+# genre_portrait
+msgid "Portrait"
+msgstr "Na výšku"
+
+# genre_power_ballad
+msgid "Power Ballad"
+msgstr "Power Balada"
+
+# genre_pranks
+msgid "Pranks"
+msgstr ""
+
+# genre_primus
+msgid "Primus"
+msgstr ""
+
+# genre_progressive_rock
+msgid "Progressive Rock"
+msgstr "Progresivní rock"
+
+# genre_psychadelic
+msgid "Psychadelic"
+msgstr ""
+
+# genre_psychedelic_rock
+msgid "Psychedelic Rock"
+msgstr "Psychedelický rock"
+
+# genre_punk_rock
+msgid "Punk Rock"
+msgstr ""
+
+# genre_punk
+msgid "Punk"
+msgstr ""
+
+# genre_randb
+msgid "R&B"
+msgstr ""
+
+# genre_rap
+msgid "Rap"
+msgstr ""
+
+# genre_rave
+msgid "Rave"
+msgstr ""
+
+# genre_reality_tv
+msgid "Reality TV"
+msgstr ""
+
+# genre_reggae
+msgid "Reggae"
+msgstr ""
+
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# genre_retro
+# #-#-#-#-#  catalog.po  #-#-#-#-#
+# retro_title
+msgid "Retro"
+msgstr ""
+
+# genre_revival
+msgid "Revival"
+msgstr ""
+
+# genre_rhythmic_soul
+msgid "Rhythmic Soul"
+msgstr "Rytmický soul"
+
+# genre_rock_and_roll
+msgid "Rock & Roll"
+msgstr ""
+
+# genre_rock
+msgid "Rock"
+msgstr ""
+
+# genre_romance
+msgid "Romance"
+msgstr ""
+
+# genre_samba
+msgid "Samba"
+msgstr ""
+
+# genre_satellite
+msgid "Satellite"
+msgstr ""
+
+# genre_satire
+msgid "Satire"
+msgstr "Satira"
+
+# genre_scifi_and_fantasy
+msgid "Sci-Fi & Fantasy"
+msgstr ""
+
+# genre_short_films
+msgid "Short Films"
+msgstr ""
+
+# genre_show_tunes
+msgid "Show tunes"
+msgstr ""
+
+# genre_singer_songwriter
+msgid "Singer/Songwriter"
+msgstr ""
+
+# genre_ska
+msgid "Ska"
+msgstr ""
+
+# genre_slow_jam
+msgid "Slow Jam"
+msgstr "Pomalý jam"
+
+# genre_slow_rock
+msgid "Slow Rock"
+msgstr "Pomalý rock"
+
+# genre_social
+msgid "Social"
+msgstr ""
+
+# genre_soft_focus
+msgid "Soft focus"
+msgstr ""
+
+# genre_sonata
+msgid "Sonata"
+msgstr ""
+
+# genre_soul
+msgid "Soul"
+msgstr ""
+
+# genre_sound_clip
+msgid "Sound Clip"
+msgstr "Zvuková ukázka"
+
+# genre_soundtrack
+msgid "Soundtrack"
+msgstr ""
+
+# genre_southern_rock
+msgid "Southern Rock"
+msgstr "Jižanský rock"
+
+# genre_space
+msgid "Space"
+msgstr ""
+
+# genre_special_interest
+msgid "Special Interest"
+msgstr ""
+
+# genre_speech
+msgid "Speech"
+msgstr "Mluvené slovo"
+
+# genre_sports
+msgid "Sports"
+msgstr "Sport"
+
+# genre_star_trail
+msgid "Star trail"
+msgstr ""
+
+# genre_still_life
+msgid "Still life"
+msgstr ""
+
+# genre_stock
+msgid "Stock"
+msgstr ""
+
+# genre_street
+msgid "Street"
+msgstr ""
+
+# genre_subminiature
+msgid "Subminiature"
+msgstr ""
+
+# genre_swing
+msgid "Swing"
+msgstr ""
+
+# genre_symphonic_rock
+msgid "Symphonic Rock"
+msgstr "Symfonický rock"
+
+# genre_symphony
+msgid "Symphony"
+msgstr "Symfonie"
+
+# genre_tango
+msgid "Tango"
+msgstr ""
+
+# genre_techno
+msgid "Techno"
+msgstr ""
+
+# genre_techno_industrial
+msgid "Techno-Industrial"
+msgstr ""
+
+# genre_teens
+msgid "Teens"
+msgstr ""
+
+# genre_thriller
+msgid "Thriller"
+msgstr ""
+
+# genre_time_lapse
+msgid "Time-lapse"
+msgstr ""
+
+# genre_top40
+msgid "Top 40"
+msgstr ""
+
+# genre_trailer
+msgid "Trailer"
+msgstr ""
+
+# genre_trance
+msgid "Trance"
+msgstr ""
+
+# genre_travel
+msgid "Travel"
+msgstr ""
+
+# genre_tribal
+msgid "Tribal"
+msgstr "Domorodá"
+
+# genre_trip_hop
+msgid "Trip-Hop"
+msgstr ""
+
+# genre_ultraviolet
+msgid "Ultraviolet"
+msgstr ""
+
+# genre_underwater
+msgid "Underwater"
+msgstr "Pod vodou"
+
+# genre_urban
+msgid "Urban"
+msgstr ""
+
+# genre_vernacular
+msgid "Vernacular"
+msgstr ""
+
+# genre_vintage
+msgid "Vintage"
+msgstr ""
+
+# genre_vocal
+msgid "Vocal"
+msgstr "Vokál"
+
+# genre_war
+msgid "War"
+msgstr ""
+
+# genre_western
+msgid "Western"
+msgstr ""
+
+# genre_world
+msgid "World"
+msgstr ""
+
+# search_last_7_days
+msgid "Last 7 days"
+msgstr "Posledních 7 dní"
+
+# search_top_rated
+msgid "Top rated"
+msgstr ""
+
+# search_christmas
+msgid "Christmas"
+msgstr "Vánoce"
+
+# install_welcome_text1
+msgid "Super-fast searching, viewing and comparing of photos or videos."
+msgstr ""
+
+# install_welcome_text2
+msgid "Optimized for your graphics card and PC."
+msgstr ""
+
+# total_title
+msgid "{} ({}) total items indexed in {} folders."
+msgstr ""
+
+# count
+msgid "Count"
+msgstr ""
+
+# photo
+msgid "photo"
+msgstr ""
+
+# photos
+msgid "photos"
+msgstr ""
+
+# video
+msgid "video"
+msgstr ""
+
+# audio
+msgid "audio"
+msgstr "zvuk"
+
+# audio_title
+msgid "Audio"
+msgstr "Zvuk"
+
+# archive
+msgid "archive"
+msgstr ""
+
+# archives
+msgid "archives"
+msgstr ""
+
+# retro
+msgid "retro"
+msgstr "Retro"
+
+# other
+msgid "other"
+msgstr "Jiné"
+
+# others
+msgid "others"
+msgstr ""
+
+# truncated_at_one_mb
+msgid "Truncated at 1MB"
+msgstr ""
+
+# help_more_info
+msgid "Click for help or more information"
+msgstr ""
+
+# click_index_options
+msgid "Click for index options"
+msgstr ""
+
+# collection_title
+msgid "Collection"
+msgstr ""
+
+# customize_display_title
+msgid "Display"
+msgstr "Zobrazit"
+
+# including_folders_fmt
+msgid "In total {} items {} ({} subfolders)."
+msgstr ""
+
+# including_items_fmt
+msgid "In total {} items {}."
+msgstr ""
+
+# duration_title
+msgid "Duration"
+msgstr "Délka"
+
+# unselect_fmt
+msgid "Unselect {}"
+msgstr ""
+
+# folder_title
+msgid "Folder"
+msgstr "Složka"
+
+# command_save_and_back_tooltip
+msgid "Save the current item and open the previous item."
+msgstr ""
+
+# command_save_and_next_tooltip
+msgid "Save the current item and open the next item."
+msgstr ""
+
+# editing_title
+msgid "Editing"
+msgstr ""
+
+# rotate_info_fmt
+msgid "rotate {first-name}."
+msgid_plural "rotate {count} selected items overwriting originals."
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+# title_folder_count_fmt
+msgid "{count} folder"
+msgid_plural "{count} folders"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+# title_item_count_fmt
+msgid "{count} item"
+msgid_plural "{count} items"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+# rating_set_fmt
+msgid "Click to set item 1 star"
+msgid_plural "Click to set item {count} stars"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+# cannot_process_fmt
+msgid "Cannot process {first-name}."
+msgid_plural "Cannot process {first-name} and {other} other items."
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+# multiple_will_be_renamed_fmt
+msgid "{first-name} will be renamed."
+msgid_plural "{count} items will be renamed in an incrementing sequence."
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+# dup_count_fmt
+msgid "1 duplicate item"
+msgid_plural "{count} duplicate items"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+# sidecar_count_fmt
+msgid "1 sidecar item"
+msgid_plural "{count} sidecar items"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+# processed_x_of_x_fmt
+msgid "{count} of 1 item was processed."
+msgid_plural "{count} of {total} items were processed."
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+# processed_fmt
+msgid "1 item was processed."
+msgid_plural "{count} items were processed."
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+# failed_items_fmt
+msgid "{first-name} failed."
+msgid_plural "{count} items failed."
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+# ignored_exist_already_fmt
+msgid ""
+"{first-name} was ignored because it exist already in the destination "
+"location."
+msgid_plural ""
+"{count} items were ignored because they exist already in the destination "
+"location."
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+# ignored_previous_fmt
+msgid "{first-name} was ignored because it was previously imported."
+msgid_plural ""
+"{count} items were ignored because they were previously imported."
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+# dates_items_created_this_day_fmt
+msgid "1 item was created on this day."
+msgid_plural "{count} items were created on this day."
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+# delete_info_fmt
+msgid "{first-name} will be moved to the recycle bin."
+msgid_plural "{count} items ({size}) will be moved to the recycle bin."
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+# copy_fmt
+msgid "{first-name} will be copied."
+msgid_plural "{count} items ({size}) will be copied."
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+# move_fmt
+msgid "{first-name} will be moved."
+msgid_plural "{count} items ({size}) will be moved."
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+# resized_info_fmt
+msgid "{first-name} will be resized and saved to a folder."
+msgid_plural "{count} items will be resized and saved to a folder."
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+# properties_set_info_fmt
+msgid "{first-name} will have properties updated."
+msgid_plural "{count} items will have properties updated."
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+# convert_info_fmt
+msgid "{first-name} will be converted to JPEG and copied to a folder."
+msgid_plural "{count} items will be converted to JPEG and copied to a folder."
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+# pdf_info_fmt
+msgid "{first-name} will be converted into a PDF."
+msgid_plural "{count} items will be combined into a PDF."
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+# tag_info_fmt
+msgid "{first-name} will have tags added or removed."
+msgid_plural "{count} items will have tags added or removed."
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+# adjust_date_info_fmt
+msgid "{first-name} will have the date adjusted."
+msgid_plural "{count} items will have the date adjusted."
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+# shared_fmt
+msgid "{first-name} will be shared."
+msgid_plural "{count} items will be shared."
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+# structured_copy_fmt
+msgid "{first-name} will be copied or moved."
+msgid_plural "{count} items will be copied or moved."
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+# email_info_fmt
+msgid "{first-name} will be sent using your desktop email client."
+msgid_plural "{count} items will be sent using your desktop email client."
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""

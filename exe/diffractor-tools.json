@@ -1,0 +1,25 @@
+{
+  "tools": {
+    "folders": [
+      "C:\\tools",
+      "C:\\Program Files (x86)",
+      "C:\\Program Files"
+    ],
+    "apps": [
+      {
+        "exe": "paintdotnet",
+        "invoke": "{exe-path} {item-path}",
+        "extensions": "gif,tiff,tif,png,jpg,jpeg,jpe,webp",
+	  "group": "",
+        "text": "Paint.Net"
+      },
+      {
+        "exe": "vlc",
+        "invoke": "{exe-path} {item-path}",
+        "extensions": "",
+	  "group": "video",
+        "text": "VLC media player"
+      }
+    ]
+  }
+}

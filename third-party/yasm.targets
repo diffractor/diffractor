@@ -1,0 +1,81 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <PropertyPageSchema
+      Include="$(MSBuildThisFileDirectory)$(MSBuildThisFileName).xml" />
+    <AvailableItemName
+      Include="yasm">
+      <Targets>_yasm</Targets>
+    </AvailableItemName>
+  </ItemGroup>
+  <UsingTask
+    TaskName="yasm"
+    TaskFactory="XamlTaskFactory"
+    AssemblyName="Microsoft.Build.Tasks.v4.0">
+    <Task>$(MSBuildThisFileDirectory)$(MSBuildThisFileName).xml</Task>
+  </UsingTask>
+  <Target
+    Name="_yasm"
+    BeforeTargets="$(yasmBeforeTargets)"
+    AfterTargets="$(yasmAfterTargets)"
+    Condition="'@(yasm)' != ''"
+    DependsOnTargets="$(yasmDependsOn);ComputeyasmOutput"
+    Outputs="%(yasm.Outputs)"
+    Inputs="%(yasm.Identity);%(yasm.AdditionalDependencies);$(MSBuildProjectFile)">
+    <ItemGroup
+      Condition="'@(SelectedFiles)' != ''">
+      <yasm
+        Remove="@(yasm)"
+        Condition="'%(Identity)' != '@(SelectedFiles)'" />
+    </ItemGroup>
+    <ItemGroup>
+      <yasm_tlog
+        Include="%(yasm.Outputs)"
+        Condition="'%(yasm.Outputs)' != '' and '%(yasm.ExcludedFromBuild)' != 'true'">
+        <Source>@(yasm, '|')</Source>
+      </yasm_tlog>
+    </ItemGroup>
+    <Message
+      Importance="High"
+      Text="%(yasm.ExecutionDescription)" />
+    <WriteLinesToFile
+      Condition="'@(yasm_tlog)' != '' and '%(yasm_tlog.ExcludedFromBuild)' != 'true'"
+      File="$(IntDir)$(ProjectName).write.1.tlog"
+      Lines="^%(yasm_tlog.Source);@(yasm_tlog-&gt;'%(Fullpath)')" />
+    <yasm
+      Condition="'@(yasm)' != '' and '%(yasm.ExcludedFromBuild)' != 'true'"
+      CommandLineTemplate="%(yasm.CommandLineTemplate)"
+      AdditionalOptions="%(yasm.AdditionalOptions)"
+      Inputs="%(yasm.Identity)" />
+  </Target>
+  <PropertyGroup>
+    <ComputeLinkInputsTargets>
+            $(ComputeLinkInputsTargets);
+            ComputeyasmOutput;
+          </ComputeLinkInputsTargets>
+    <ComputeLibInputsTargets>
+            $(ComputeLibInputsTargets);
+            ComputeyasmOutput;
+          </ComputeLibInputsTargets>
+  </PropertyGroup>
+  <Target
+    Name="ComputeyasmOutput"
+    Condition="'@(yasm)' != ''">
+    <ItemGroup>
+      <yasmDirsToMake
+        Condition="'@(yasm)' != '' and '%(yasm.ExcludedFromBuild)' != 'true'"
+        Include="%(yasm.Outputs)" />
+      <Link
+        Include="%(yasmDirsToMake.Identity)"
+        Condition="'%(Extension)'=='.obj' or '%(Extension)'=='.res' or '%(Extension)'=='.rsc' or '%(Extension)'=='.lib'" />
+      <Lib
+        Include="%(yasmDirsToMake.Identity)"
+        Condition="'%(Extension)'=='.obj' or '%(Extension)'=='.res' or '%(Extension)'=='.rsc' or '%(Extension)'=='.lib'" />
+      <ImpLib
+        Include="%(yasmDirsToMake.Identity)"
+        Condition="'%(Extension)'=='.obj' or '%(Extension)'=='.res' or '%(Extension)'=='.rsc' or '%(Extension)'=='.lib'" />
+    </ItemGroup>
+    <MakeDir
+      Directories="@(yasmDirsToMake-&gt;'%(RootDir)%(Directory)')" />
+  </Target>
+</Project>

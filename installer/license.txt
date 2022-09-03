@@ -1,0 +1,22 @@
+End User License Agreement
+
+The Diffractor SOFTWARE PRODUCT is protected by copyright laws and international copyright treaties, as well as other intellectual property laws and treaties. Diffractor Software is licensed, not sold.
+
+Diffractor is the trading name of Zachariah David Walker (abbreviated Zac Walker) registered in the Czech Republic - number 87852969 sole trader. Zac Walker is the maker and licensor of Diffractor software and owns all title including but not limited to copyrights.
+
+Use of Diffractor software indicates acceptance of this license agreement and warranty.
+
+Diffractor is free software; you can redistribute it and / or modify it under the terms of the LGPL License either version 2.1 or later.
+License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
+
+The Diffractor project does not collect personal information about users.
+
+You must not remove or alter any copyright notices on any copy of Diffractor.
+
+You may not distribute or sell Diffractor to third parties. Licenses will be revoked if distributed or sold to third parties.
+
+You may not rent, lease, or lend Diffractor licenses.
+
+Diffractor software and the accompanying files are licensed "as is" and without warranties as to performance of merchantability or any other warranties whether expressed or implied.
+
+In no event shall Zac Walker or any other member of the Diffractor project be liable for any special, incidental, indirect or consequential damages of any kind, or any damages whatsoever resulting from loss of use, data or profits, whether or not advised of the possibility of damage, and on any theory of liability, arising out of or in connection with the use or performance of this software.

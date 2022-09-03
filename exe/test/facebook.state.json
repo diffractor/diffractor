@@ -1,0 +1,107 @@
+{
+   "id": "804051981",
+   "name": "Zac Walker",
+   "first_name": "Zac",
+   "last_name": "Walker",
+   "link": "http://www.facebook.com/zac.walk",
+   "username": "zac.walk",
+   "birthday": "05/25/1972",
+   "hometown": {
+      "id": "101883149853721",
+      "name": "Auckland, New Zealand"
+   },
+   "location": {
+      "id": "110589025635590",
+      "name": "Prague, Czech Republic"
+   },
+   "bio": "New Zealander living in Prague. Likes travel and taking photos. Writes code. Founder of diffractor.com",
+   "work": [
+      {
+         "employer": {
+            "id": "289853797743761",
+            "name": "Diffractor"
+         },
+         "location": {
+            "id": "110589025635590",
+            "name": "Prague, Czech Republic"
+         },
+         "position": {
+            "id": "107957955904825",
+            "name": "Founder"
+         },
+         "description": "Lightweight photo and media management.",
+         "start_date": "0000-00"
+      },
+      {
+         "employer": {
+            "id": "108526095838792",
+            "name": "ThoughtWorks"
+         },
+         "location": {
+            "id": "106078429431815",
+            "name": "London, United Kingdom"
+         },
+         "position": {
+            "id": "140248679339948",
+            "name": "Tech Lead"
+         },
+         "description": "Talked Agile, Wrote Code",
+         "start_date": "2005-01",
+         "end_date": "2008-01"
+      },
+      {
+         "employer": {
+            "id": "135300309839838",
+            "name": "Sherwood Computer Services"
+         }
+      },
+      {
+         "employer": {
+            "id": "109060992456797",
+            "name": "Casewise Systems"
+         }
+      }
+   ],
+   "education": [
+      {
+         "school": {
+            "id": "114645088547924",
+            "name": "Corinda State High School"
+         },
+         "year": {
+            "id": "112936752090738",
+            "name": "1989"
+         },
+         "type": "High School"
+      },
+      {
+         "school": {
+            "id": "111948492153741",
+            "name": "Queensland University of Technology"
+         },
+         "concentration": [
+            {
+               "id": "104076956295773",
+               "name": "Computer Science"
+            }
+         ],
+         "type": "College"
+      }
+   ],
+   "gender": "male",
+   "interested_in": [
+      "female"
+   ],
+   "relationship_status": "Married",
+   "significant_other": {
+      "name": "Jana Walker",
+      "id": "578008293"
+   },
+   "religion": "Worship everything that is divine",
+   "political": "Moderate",
+   "website": "http://www.diffractor.com/",
+   "timezone": 2,
+   "locale": "en_GB",
+   "verified": true,
+   "updated_time": "2012-08-27T20:11:57+0000"
+}
