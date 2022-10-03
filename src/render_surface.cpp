@@ -574,11 +574,11 @@ void ui::surface::fill_pie(const pointi center, const int radius, const color32 
 	const auto cy = _dimensions.cy;
 
 
-	constexpr uint32_t dither_matrix[4][4] = {
-		{1, 9, 3, 11},
-		{13, 5, 15, 7},
-		{4, 12, 2, 10},
-		{16, 8, 14, 6}
+	constexpr float dither_matrix[4][4] = {
+		{1.0f / 64.0f, 9.0f / 64.0f, 3.0f / 64.0f, 11.0f / 64.0f},
+		{13.0f / 64.0f, 5.0f / 64.0f, 15.0f / 64.0f, 7.0f / 64.0f},
+		{4.0f / 64.0f, 12.0f / 64.0f, 2.0f / 64.0f, 10.0f / 64.0f},
+		{16.0f / 64.0f, 8.0f / 64.0f, 14.0f / 64.0f, 6.0f / 64.0f}
 	};
 
 
@@ -597,7 +597,8 @@ void ui::surface::fill_pie(const pointi center, const int radius, const color32 
 			if (r < inner_radius_limit1)
 			{
 				c = color_center;
-				c = lighten(c, 64 - df::mul_div(r, 64, outer_radius_limit2) + dither_matrix[x % 4][y % 4]);
+				const auto ff = ((static_cast<float>(r) / static_cast<float>(outer_radius_limit2)) + dither_matrix[x % 4][y % 4]) * 0.25f;
+				c = lighten(c, ff);
 			}
 			else if (r < outer_radius_limit2)
 			{
@@ -618,7 +619,8 @@ void ui::surface::fill_pie(const pointi center, const int radius, const color32 
 					c = lerp(color_center, c, df::mul_div(r - inner_radius_limit1, 255, inner_radius_diff));
 				}
 
-				c = lighten(c, 64 - df::mul_div(r, 64, outer_radius_limit2) + dither_matrix[x % 4][y % 4]);
+				const auto ff = ((static_cast<float>(r) / static_cast<float>(outer_radius_limit2)) + dither_matrix[x % 4][y % 4]) * 0.25f;
+				c = lighten(c, ff);
 			}
 			else
 			{

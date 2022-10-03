@@ -117,35 +117,32 @@ struct interaction_context
 	bool invalidate_view = false;
 };
 
-constexpr ui::color32 view_handle_color(const bool selected, const bool hover, const bool tracking,
+constexpr ui::color view_handle_color(const bool selected, const bool hover, const bool tracking,
                                         const bool view_has_focus, const bool text_over,
-                                        ui::color32 bg_clr = ui::style::color::group_background)
+										ui::color bg_clr = ui::style::color::group_background)
 {
 	if (tracking)
 	{
-		const auto tracking_base_color = selected
-			                                 ? ui::style::color::view_selected_background
-			                                 : ui::average(bg_clr, ui::style::color::view_text);
-		const auto clr = ui::lighten(tracking_base_color, hover ? 44 : 0);
-		return ui::adjust_a(clr, 0xEE);
+		const auto clr = selected ? ui::color(ui::style::color::view_selected_background) : bg_clr.average(ui::style::color::view_text);
+		
+		return clr.scale(hover ? 1.22f : 1.0f).aa(0.9f);
 	}
 
 	if (selected)
 	{
 		const auto clr = view_has_focus
-			                 ? ui::lighten(ui::style::color::view_selected_background, hover ? 44 : 0)
-			                 : ui::lighten(ui::average(ui::style::color::view_selected_background, bg_clr),
-			                               hover ? 88 : 0);
-		return ui::adjust_a(clr, 0xEE);
+			                 ? ui::color(ui::style::color::view_selected_background).scale(hover ? 1.22f : 1.0f)
+			                 : bg_clr.average(ui::style::color::view_selected_background).scale(hover ? 1.33f : 1.0f);
+		return clr.aa(0.9f);
 	}
 
 	if (hover)
 	{
-		const auto hover_base_color = ui::average(bg_clr, ui::style::color::view_text);
-		return ui::adjust_a(text_over ? ui::darken(hover_base_color, 33) : hover_base_color, 0xEE);
+		const auto clr = bg_clr.average(ui::style::color::view_text);
+		return text_over ? clr.scale(0.8f).aa(0.9f) : clr.aa(0.9f);
 	}
 
-	return ui::adjust_a(ui::lighten(bg_clr, text_over ? 44 : 99), 0xEE);
+	return bg_clr.scale(text_over ? 1.22f : 1.44f).aa(0.9f);
 }
 
 class view_controller

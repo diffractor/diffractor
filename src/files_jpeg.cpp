@@ -1100,32 +1100,32 @@ file_scan_result scan_jpg(read_stream& s)
 	switch (channels)
 	{
 	case 1:
-		result.pixel_format = str::cache(u8"gray8");
+		result.pixel_format = u8"gray8"_c;
 		break;
 
 	case 3:
 		if (has_jfif_marker)
 		{
-			result.pixel_format = str::cache(u8"YCbCr");
+			result.pixel_format = u8"YCbCr"_c;
 		}
 		else if (has_adobe_marker)
 		{
 			switch (adobe_transform)
 			{
 			case 0:
-				result.pixel_format = str::cache(u8"rgb24");
+				result.pixel_format = u8"rgb24"_c;
 				break;
 			case 1:
-				result.pixel_format = str::cache(u8"YCbCr");
+				result.pixel_format = u8"YCbCr"_c;
 				break;
 			default:
-				result.pixel_format = str::cache(u8"YCbCr");
+				result.pixel_format = u8"YCbCr"_c;
 				break;
 			}
 		}
 		else
 		{
-			result.pixel_format = str::cache(u8"YCbCr");
+			result.pixel_format = u8"YCbCr"_c;
 		}
 		break;
 
@@ -1135,24 +1135,24 @@ file_scan_result scan_jpg(read_stream& s)
 			switch (adobe_transform)
 			{
 			case 0:
-				result.pixel_format = str::cache(u8"cmyk");
+				result.pixel_format = u8"cmyk"_c;
 				break;
 			case 2:
-				result.pixel_format = str::cache(u8"ycck");
+				result.pixel_format = u8"ycck"_c;
 				break;
 			default:
-				result.pixel_format = str::cache(u8"ycck");
+				result.pixel_format = u8"ycck"_c;
 				break;
 			}
 		}
 		else
 		{
-			result.pixel_format = str::cache(u8"cmyk");
+			result.pixel_format = u8"cmyk"_c;
 		}
 		break;
 
 	default:
-		result.pixel_format = str::cache(u8"YCbCr");
+		result.pixel_format = u8"YCbCr"_c;
 		break;
 	}
 

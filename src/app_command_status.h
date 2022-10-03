@@ -43,14 +43,14 @@ private:
 
 public:
 	command_status(async_strategy& as, const dialog_ptr& dlg, const icon_index& icon, const std::u8string_view title,
-	               int total) :
+	               const size_t total) :
 		_async(as),
 		_dlg(dlg),
 		_icon(icon),
 		_title(title),
 		_progress(std::make_shared<ui::progress_control>(dlg->_frame, title)),
 		_cancel(std::make_shared<ui::close_control>(dlg->_frame, true, tt.button_cancel)),
-		_total(total)
+		_total(static_cast<int>(total))
 	{
 		const std::vector<view_element_ptr> controls{
 			set_margin(std::make_shared<ui::title_control2>(dlg->_frame, icon, title, std::u8string{})),

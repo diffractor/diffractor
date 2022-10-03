@@ -370,28 +370,28 @@ file_scan_result scan_psd(read_stream& s)
 		switch (mode)
 		{
 		case BitmapMode:
-			result.pixel_format = str::cache(u8"mono");
+			result.pixel_format = u8"mono"_c;
 			break;
 		case RGBMode:
-			result.pixel_format = channels >= 4 ? str::cache(u8"argb32") : str::cache(u8"rgb32");
+			result.pixel_format = channels >= 4 ? u8"argb32"_c : u8"rgb32"_c;
 			break;
 		case LabMode:
-			result.pixel_format = str::cache(u8"lab");
+			result.pixel_format = u8"lab"_c;
 			break;
 		case CMYKMode:
-			result.pixel_format = str::cache(u8"cmyk");
+			result.pixel_format = u8"cmyk"_c;
 			break;
 		case GrayscaleMode:
-			result.pixel_format = str::cache(u8"gray8");
+			result.pixel_format = u8"gray8"_c;
 			break;
 		case IndexedMode:
-			result.pixel_format = str::cache(u8"pal8");
+			result.pixel_format = u8"pal8"_c;
 			break;
 		case MultichannelMode:
-			result.pixel_format = str::cache(u8"multichannel");
+			result.pixel_format = u8"multichannel"_c;
 			break;
 		case DuotoneMode:
-			result.pixel_format = str::cache(u8"duotone");
+			result.pixel_format = u8"duotone"_c;
 			break;
 		}
 
@@ -479,7 +479,7 @@ ui::surface_ptr load_psd(read_stream& s)
 	const auto depth = stream.read_u16();
 	const auto mode = stream.read_u16();
 
-	auto pf = str::cache(u8"argb_32");
+	auto pf = u8"argb_32"_c;
 	const int cx = columns;
 	const int cy = rows;
 	bool has_alpha = false;
@@ -489,27 +489,27 @@ ui::surface_ptr load_psd(read_stream& s)
 	switch (mode)
 	{
 	case BitmapMode:
-		pf = str::cache(u8"mono");
+		pf = u8"mono"_c;
 		break;
 	case RGBMode:
 	case LabMode:
 		has_alpha = (channels >= 4);
-		pf = has_alpha ? str::cache(u8"argb_32") : str::cache(u8"rgb_24");
+		pf = has_alpha ? u8"argb_32"_c : u8"rgb_24"_c;
 		break;
 
 	case CMYKMode:
 		has_alpha = (channels >= 5);
-		pf = has_alpha ? str::cache(u8"argb_32") : str::cache(u8"rgb_24");
+		pf = has_alpha ? u8"argb_32"_c : u8"rgb_24"_c;
 		break;
 
 	case GrayscaleMode:
-		pf = str::cache(u8"gray_8");
+		pf = u8"gray_8"_c;
 		is_single_channel = true;
 		break;
 	case IndexedMode:
 	case MultichannelMode:
 	case DuotoneMode:
-		pf = str::cache(u8"pal_8");
+		pf = u8"pal_8"_c;
 		is_single_channel = true;
 		break;
 	}

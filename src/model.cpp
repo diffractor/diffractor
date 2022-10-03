@@ -182,16 +182,6 @@ void display_state_t::update_av_session(const std::shared_ptr<av_session>& ses)
 		view_invalid::command_state);
 }
 
-inline ui::pixel_difference_result texture_state::calc_pixel_difference(const std::shared_ptr<texture_state>& other) const
-{
-	if (other)
-	{
-		return _loaded.calc_pixel_difference(other->_loaded);
-	}
-
-	return {};
-}
-
 void display_state_t::calc_pixel_difference() 
 {
 	auto st1 = _selected_texture1;
@@ -202,9 +192,9 @@ void display_state_t::calc_pixel_difference()
 		const auto t = shared_from_this();
 
 		_async.queue_media_preview(
-			[t, st1, st2](media_preview_state& decoder)
+			[t, loaded1 = st1->_loaded, loaded2 = st2->_loaded](media_preview_state& decoder)
 			{
-				t->_pixel_difference = st1->calc_pixel_difference(st2);
+				t->_pixel_difference = loaded1.calc_pixel_difference(loaded2);
 				t->_async.invalidate_view(view_invalid::view_layout | view_invalid::media_elements);
 			});
 	}

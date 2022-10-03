@@ -273,7 +273,7 @@ public:
 	{
 		const auto handle_color = view_handle_color(false, true, _tracking, rc.frame_has_focus, true);
 		const auto hover_alpha = _alpha * 0.77f;
-		const auto hover_color = ui::color(handle_color, hover_alpha);
+		const auto hover_color = handle_color.aa(hover_alpha);
 
 		if (_tracking)
 		{
@@ -656,8 +656,7 @@ view_controller_ptr view_element::controller_from_location(const view_host_ptr& 
 
 static ui::color calc_clr(const view_element_style& style)
 {
-	auto result_clr = 0x000000u;
-	auto result_alpha = 0.0f;
+	auto result_clr = ui::color();
 
 	const auto tracking = style && view_element_style::tracking;
 	const auto hover = style && view_element_style::hover;
@@ -667,35 +666,32 @@ static ui::color calc_clr(const view_element_style& style)
 	if (tracking || hover || selected || highlight)
 	{
 		result_clr = view_handle_color(selected || highlight, hover, tracking, true, true);
-		result_alpha = 1.0f;
+		result_clr.a = 1.0f;
 	}
 	else if (style && view_element_style::checked)
 	{
-		result_clr = 0x00;
-		result_alpha = 0.22f;
+		result_clr.a = 0.22f;
 	}
 	else if (style && view_element_style::important)
 	{
 		result_clr = ui::style::color::important_background;
-		result_alpha = 1.0f;
+		result_clr.a = 1.0f;
 	}
 	else if (style && view_element_style::info)
 	{
 		result_clr = ui::style::color::info_background;
-		result_alpha = 1.0f;
+		result_clr.a = 1.0f;
 	}
 	else if (style && view_element_style::dark_background)
 	{
-		result_clr = 0;
-		result_alpha = 0.777f;
+		result_clr.a = 0.777f;
 	}
 	else if (style && view_element_style::background)
 	{
-		result_clr = 0;
-		result_alpha = 0.222f;
+		result_clr.a = 0.222f;
 	}
 
-	return ui::color(result_clr, result_alpha);
+	return result_clr;
 }
 
 void view_element::update_background_color()

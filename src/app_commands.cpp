@@ -1151,7 +1151,7 @@ public:
 							if (!loc.is_empty())
 							{
 								results.emplace_back(
-									std::make_shared<location_auto_complete>(*t, loc, 100 - results.size()));
+									std::make_shared<location_auto_complete>(*t, loc, 100 - static_cast<int>(results.size())));
 							}
 						}
 						else
@@ -1172,7 +1172,7 @@ public:
 									               results.emplace_back(
 										               std::make_shared<location_auto_complete>(
 											               *t, recent_place_id, formatted_search, highlights,
-											               100 - results.size()));
+											               100 - static_cast<int>(results.size())));
 								               }
 
 								               event_wait.set();
@@ -1190,7 +1190,7 @@ public:
 						if (!loc.is_empty())
 						{
 							results.emplace_back(
-								std::make_shared<location_auto_complete>(*t, loc, 100 - results.size()));
+								std::make_shared<location_auto_complete>(*t, loc, 100 - static_cast<int>(results.size())));
 						}
 					}
 
@@ -2678,15 +2678,15 @@ static import_result import_copy(index_state& index, item_results_ptr results, c
 
 	if (!existing.empty())
 	{
-		result_text += format_plural_text(tt.ignored_exist_already_fmt, existing.front().item.name, existing.size(), {},
-		                                  src_items.size());
+		result_text += format_plural_text(tt.ignored_exist_already_fmt, existing.front().item.name, static_cast<int>(existing.size()), {},
+		                                  static_cast<int>(src_items.size()));
 	}
 
 	if (!previous.empty())
 	{
 		if (!result_text.empty()) result_text += u8"\n\n";
-		result_text += format_plural_text(tt.ignored_previous_fmt, previous.front().item.name, previous.size(), {},
-		                                  src_items.size());
+		result_text += format_plural_text(tt.ignored_previous_fmt, previous.front().item.name, static_cast<int>(previous.size()), {},
+		                                  static_cast<int>(src_items.size()));
 	}
 
 	rr.complete(result_text);

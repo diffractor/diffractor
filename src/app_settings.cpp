@@ -266,7 +266,7 @@ settings_t::settings_t()
 	search.title[4] = u8"Pictures";
 	search.path[4] = known_path(platform::known_folder::pictures).text();
 	search.title[5] = u8"Videos";
-	search.path[6] = known_path(platform::known_folder::video).text();
+	search.path[5] = known_path(platform::known_folder::video).text();
 
 	rename.name_template = u8"Item ###";
 	rename.start_index = u8"1";

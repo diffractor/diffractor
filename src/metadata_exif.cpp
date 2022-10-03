@@ -324,7 +324,7 @@ public:
 			}
 			else
 			{
-				return str::cache(u8"?");
+				return u8"?"_c;
 			}
 		}
 
@@ -461,7 +461,7 @@ struct exif_dir_entry
 	str::cached get_cached_string(const bool probably_unicode) const
 	{
 		if (FMT_STRING != _format && FMT_UNDEFINED != _format)
-			return str::cache(u8"?");
+			return u8"?"_c;
 
 		return _data.cached_string(data_offset(), size(), probably_unicode);
 	}

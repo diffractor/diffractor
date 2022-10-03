@@ -99,30 +99,30 @@ public:
 	{
 		metadata_kv_list result;
 
-		result.emplace_back(str::cache(u8"Size"), str::print(u8"%x", profileSize_));
-		result.emplace_back(str::cache(u8"CMM Type"), dump4(cmmType_));
-		result.emplace_back(str::cache(u8"Version"),
+		result.emplace_back(u8"Size"_c, str::print(u8"%x", profileSize_));
+		result.emplace_back(u8"CMM Type"_c, dump4(cmmType_));
+		result.emplace_back(u8"Version"_c,
 		                    str::print(u8"%x (version %d)", profileVersion_, (profileVersion_ >> 24) & 0xFF));
-		result.emplace_back(str::cache(u8"Class"), dump4(profileClass_));
-		result.emplace_back(str::cache(u8"Color Space Data"), dump4(colorSpace_));
-		result.emplace_back(str::cache(u8"Connection Space"), dump4(connectionSpace_));
-		result.emplace_back(str::cache(u8"Date Time"),
+		result.emplace_back(u8"Class"_c, dump4(profileClass_));
+		result.emplace_back(u8"Color Space Data"_c, dump4(colorSpace_));
+		result.emplace_back(u8"Connection Space"_c, dump4(connectionSpace_));
+		result.emplace_back(u8"Date Time"_c,
 		                    str::print(u8"%d-%d-%d,%d:%d,%d", dtime_.year_, dtime_.month_, dtime_.day_, dtime_.hour_,
 		                               dtime_.min_, dtime_.sec_));
-		result.emplace_back(str::cache(u8"File Signature"), dump4(acsp_));
-		result.emplace_back(str::cache(u8"Primary Platform"), dump4(platform_));
-		result.emplace_back(str::cache(u8"CMM Flags"), str::print(u8"%x", flags_));
-		result.emplace_back(str::cache(u8"Device Manufacturer"), dump4(deviceManufacture_));
-		result.emplace_back(str::cache(u8"Device Model"), dump4(deviceModel_));
-		result.emplace_back(str::cache(u8"Device Attributes"), str::print(u8"%I64x", deviceAttrib_));
-		result.emplace_back(str::cache(u8"Rendering Intent"), str::print(u8"%d", intent_));
-		result.emplace_back(str::cache(u8"Connection Space Illuminant"),
+		result.emplace_back(u8"File Signature"_c, dump4(acsp_));
+		result.emplace_back(u8"Primary Platform"_c, dump4(platform_));
+		result.emplace_back(u8"CMM Flags"_c, str::print(u8"%x", flags_));
+		result.emplace_back(u8"Device Manufacturer"_c, dump4(deviceManufacture_));
+		result.emplace_back(u8"Device Model"_c, dump4(deviceModel_));
+		result.emplace_back(u8"Device Attributes"_c, str::print(u8"%I64x", deviceAttrib_));
+		result.emplace_back(u8"Rendering Intent"_c, str::print(u8"%d", intent_));
+		result.emplace_back(u8"Connection Space Illuminant"_c,
 		                    str::print(u8"(%f,%f,%f)", connectionIllum_.x_, connectionIllum_.y_, connectionIllum_.z_));
-		result.emplace_back(str::cache(u8"Creator"), dump4(creator_));
+		result.emplace_back(u8"Creator"_c, dump4(creator_));
 
 		for (const auto& t : tags_)
 		{
-			auto name = str::print(u8"%c%c%c%c:%c%c%c%c\n", (t.first >> 24) & 0xFF, (t.first >> 16) & 0xFF,
+			auto name = str::print(u8"%c%c%c%c:%c%c%c%c", (t.first >> 24) & 0xFF, (t.first >> 16) & 0xFF,
 			                       (t.first >> 8) & 0xFF,
 			                       t.first & 0xFF, (t.second.type_ >> 24) & 0xFF, (t.second.type_ >> 16) & 0xFF,
 			                       (t.second.type_ >> 8) & 0xFF, t.second.type_ & 0xFF);

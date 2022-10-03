@@ -2035,7 +2035,7 @@ static void should_not_match_folder_without()
 	const auto now_days = df::date_t(2000, 1, 1).to_days();
 	const auto search = df::search_t::parse(u8"without:tag");
 	const df::search_matcher matcher(search, now_days);
-	assert_equal(false, matcher.match_folder(str::cache(u8"test")).is_match(), u8"folder name test");
+	assert_equal(false, matcher.match_folder(u8"test"_c).is_match(), u8"folder name test");
 }
 
 static void should_match_date(const std::u8string_view query, const df::date_t d)
@@ -2636,7 +2636,7 @@ static void should_split()
 	assert_equal(u8"H:\\2-Archief VIDEO privé\\Eigen video's", parts[0], u8"Split 1");
 	assert_equal(u8"F:\\1-Archief FOTOGRAFIE privé", parts[1], u8"Split 2");
 
-	const auto* const to_be_split2 = u8"aaa 'bbb ccc' ddd \"\ee ff \"";
+	const auto* const to_be_split2 = u8"aaa 'bbb ccc' ddd \"ee ff \"";
 	const auto parts2 = str::split(to_be_split2, true);
 
 	assert_equal(u8"aaa", parts2[0], u8"Split 1");
@@ -2988,7 +2988,7 @@ static void should_not_crash(const std::u8string_view name)
 	for (auto i = 0u; i < truncation_steps && !df::is_closing; i++)
 	{
 		const auto save_path = _temps.next_path(ext);
-		write_binary_file(save_path, data, df::mul_div(size, i, truncation_steps));
+		write_binary_file(save_path, data, df::mul_div(static_cast<int>(size), i, truncation_steps));
 		ff_scan_and_load_thumb(ff, save_path);
 	}
 }

@@ -864,8 +864,8 @@ public:
 	{
 		std::array<char_entry, 256> result;
 
-		const auto cl = ui::lighten(ui::style::color::view_selected_background, 64);
-		const auto ch = ui::lighten(ui::style::color::duplicate_background, 155);
+		const auto cl = ui::lighten(ui::style::color::view_selected_background, 0.22f);
+		const auto ch = ui::lighten(ui::style::color::duplicate_background, 0.66f);
 
 		for (auto i = 0; i < 256; i++)
 		{
@@ -1502,8 +1502,7 @@ public:
 			r.top += 1;
 			r.bottom -= 1;
 
-			dc.draw_rounded_rect(r, ui::color(view_handle_color(false, is_hover, is_tracking, dc.frame_has_focus, true),
-			                                  dc.colors.alpha));
+			dc.draw_rounded_rect(r, view_handle_color(false, is_hover, is_tracking, dc.frame_has_focus, true).aa(dc.colors.alpha));
 
 			auto time_bounds = logical_bounds;
 			time_bounds.right = _display->_scrubber_bounds.left;

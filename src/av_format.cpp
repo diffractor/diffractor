@@ -1077,14 +1077,14 @@ bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path
 					s.audio_channels = codec->channels;
 					s.audio_sample_type = to_sample_type(static_cast<AVSampleFormat>(codec->format));
 				}
-				s.metadata.emplace_back(str::cache(u8"codec"),
+				s.metadata.emplace_back(u8"codec"_c,
 				                        std::u8string(str::utf8_cast(avcodec_get_name(codec->codec_id))));
 				//s.metadata.emplace_back( "profile", av_get_profile_name(avcodec_find_decoder(stream->codecpar->codec_id), stream->codecpar->profile) });
 
 				if (codec->codec_tag)
 				{
 					char name[AV_FOURCC_MAX_STRING_SIZE];
-					s.metadata.emplace_back(str::cache(u8"fourcc"),
+					s.metadata.emplace_back(u8"fourcc"_c,
 					                        std::u8string(
 						                        str::utf8_cast(av_fourcc_make_string(name, codec->codec_tag))));
 				}

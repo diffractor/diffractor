@@ -429,19 +429,19 @@ file_scan_result scan_png(read_stream& rs)
 
 	if (color_type == PNG_COLOR_TYPE_GRAY)
 	{
-		result.pixel_format = str::cache(u8"gray");
+		result.pixel_format = u8"gray"_c;
 	}
 	else if (color_type == PNG_COLOR_TYPE_PALETTE)
 	{
-		result.pixel_format = str::cache(u8"palette");
+		result.pixel_format = u8"palette"_c;
 	}
 	else if (color_type == PNG_COLOR_TYPE_RGB)
 	{
-		result.pixel_format = str::cache(u8"rgb");
+		result.pixel_format = u8"rgb"_c;
 	}
 	else if (color_type == PNG_COLOR_TYPE_RGB_ALPHA)
 	{
-		result.pixel_format = str::cache(u8"rgba");
+		result.pixel_format = u8"rgba"_c;
 	}
 
 	// png_set_swap_alpha(png_ptr);

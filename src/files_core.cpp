@@ -2067,7 +2067,7 @@ av_media_info file_scan_result::to_info() const
 			std::u8string text;
 			text.assign(std::bit_cast<const char8_t*>(metadata.xmp.data()), metadata.xmp.size());
 			metadata_kv_list text_kv;
-			text_kv.emplace_back(str::cache(u8""), text);
+			text_kv.emplace_back(u8""_c, text);
 			result.metadata.emplace_back(metadata_standard::xmp, text_kv);
 		}
 		else

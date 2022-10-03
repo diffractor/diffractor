@@ -420,7 +420,7 @@ public:
 	platform::task_queue load_task_queue;
 	platform::task_queue load_raw_task_queue;
 	platform::task_queue location_task_queue;
-	platform::task_queue nav_task_queue;
+	platform::task_queue sidebar_task_queue;
 	platform::task_queue web_task_queue;
 	platform::task_queue predictions_task_queue;
 	platform::task_queue summary_task_queue;

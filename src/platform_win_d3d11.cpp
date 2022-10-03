@@ -2979,14 +2979,14 @@ void d3d11_draw_context_impl::draw_texture(const ui::texture_ptr& t, const quadd
                                            const float alpha, const ui::texture_sampler sampler)
 {
 	const auto tt = std::dynamic_pointer_cast<d3d11_texture>(t);
-	draw_texture(tt, dst, src, ui::color::aa(alpha), sampler);
+	draw_texture(tt, dst, src, ui::color::from_a(alpha), sampler);
 }
 
 void d3d11_draw_context_impl::draw_texture(const ui::texture_ptr& t, const recti dst, const recti src,
                                            const float alpha, const ui::texture_sampler sampler, const float radius)
 {
 	const auto tt = std::dynamic_pointer_cast<d3d11_texture>(t);
-	draw_texture(tt, dst, src, ui::color::aa(alpha), sampler, radius);
+	draw_texture(tt, dst, src, ui::color::from_a(alpha), sampler, radius);
 }
 
 void d3d11_draw_context_impl::draw_vertices(const ui::vertices_ptr& v)

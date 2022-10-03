@@ -455,7 +455,7 @@ namespace df
 			                              {
 				                              return left.count < right.count;
 			                              }));
-			return file_group_from_index(ft)->icon;
+			return file_group_from_index(static_cast<int>(ft))->icon;
 		}
 
 		void record(const index_folder_info_const_ptr& folder)
@@ -1086,7 +1086,7 @@ namespace df
 			}
 			else
 			{
-				result = format_plural_text(tt.cannot_process_fmt, first_file_name, items_count, {});
+				result = format_plural_text(tt.cannot_process_fmt, first_file_name, static_cast<int>(items_count), {});
 				result += u8" ";
 
 				if (code == process_result_code::cloud_item)

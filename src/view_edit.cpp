@@ -296,8 +296,7 @@ public:
 
 		const recti logical_bounds = _extent;
 		const auto bg = _hover
-			                ? ui::color(view_handle_color(false, _hover, false, dc.frame_has_focus, true),
-			                            dc.colors.alpha)
+			                ? view_handle_color(false, _hover, false, dc.frame_has_focus, true).aa(dc.colors.alpha)
 			                : ui::color{};
 		const auto rating = _hover ? _hover_rating : _rating;
 		const auto clr = ui::color(dc.colors.foreground, dc.colors.alpha);

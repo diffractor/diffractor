@@ -616,7 +616,7 @@ file_scan_result scan_photo(read_stream& s)
 		{
 			result = scan_gif(s);
 			result.format = detected_format::GIF;
-			result.pixel_format = str::cache(u8"pal8");
+			result.pixel_format = u8"pal8"_c;
 		}
 		else if (expected == detected_format::JPEG) // && memcmp(p, sig_jpg, 3) == 0)
 		{

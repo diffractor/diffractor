@@ -508,8 +508,7 @@ void items_view::draw_splitter(ui::draw_context& dc, const recti bounds, const b
 
 	if (active)
 	{
-		const auto clr = ui::color(view_handle_color(false, _splitter_active, tracking, dc.frame_has_focus, false),
-		                           dc.colors.alpha);
+		const auto clr = view_handle_color(false, _splitter_active, tracking, dc.frame_has_focus, false).aa(dc.colors.alpha);
 		dc.draw_rounded_rect(r.inflate(-1), clr);
 	}
 }
@@ -1040,6 +1039,7 @@ void items_view::layout(ui::measure_context& mc, const sizei extent)
 			                          ? focus
 			                          : _layout_center_item;
 
+		
 		const auto media_height = stack_elements(mc, positions, avail_media_bounds, _media_elements, true);
 		const auto split_x = splitter_pos();
 		const auto control_padding = view_scroller::def_width / 2;

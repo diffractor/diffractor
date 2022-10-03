@@ -287,7 +287,7 @@ static df::group_key resolution_key(const df::item_element_ptr& i)
 				result.order1 = 1;
 				result.order2 = 0;
 				result.text1 = str::cache(display_name);
-				result.text2 = str::cache(u8"icon size");
+				result.text2 = u8"icon size"_c;
 			}
 			else
 			{
@@ -299,7 +299,7 @@ static df::group_key resolution_key(const df::item_element_ptr& i)
 					result.order1 = 1;
 					result.order2 = 1;
 					result.text1 = str::cache(display_name);
-					result.text2 = str::cache(u8"small size");
+					result.text2 = u8"small size"_c;
 				}
 				else
 				{
@@ -1774,8 +1774,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 	{
 		const auto alpha = dc.colors.alpha;
 		const auto text_color = ui::color(dc.colors.foreground, alpha);
-		const auto group_text_color = ui::color(
-			ui::lighten(ft->text_color(dc.colors.foreground), background_is_highlighted ? 100 : 0), alpha);
+		const auto group_text_color = ui::color(ft->text_color(dc.colors.foreground), alpha).emphasize(background_is_highlighted);
 		const auto bg_disk = ui::color(ui::style::color::view_selected_background, dc.colors.alpha * 0.77f);
 		const auto bg_dups = ui::color(ui::style::color::duplicate_background, dc.colors.alpha * 0.77f);
 		const auto bg_sidecars = ui::color(ui::style::color::sidecar_background, dc.colors.alpha * 0.77f);
@@ -2036,8 +2035,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 		const auto bg_bounds = device_bounds.inflate(bg_padding.cx, bg_padding.cy);
 		const auto text_alpha = thumb_is_valid && !show_text ? bg_color.a * dc.colors.alpha : dc.colors.alpha;
 		const auto text_color = ui::color(dc.colors.foreground, text_alpha);
-		const auto group_text_color = ui::color(
-			ui::lighten(ft->text_color(dc.colors.foreground), background_is_highlighted ? 100 : 0), text_alpha);
+		const auto group_text_color = ui::color(ft->text_color(dc.colors.foreground), text_alpha).emphasize(background_is_highlighted);
 		const auto bg_disk = ui::color(ui::style::color::view_selected_background, text_alpha * 0.77f);
 		const auto bg_dups = ui::color(ui::style::color::duplicate_background, text_alpha * 0.77f);
 		const auto bg_sidecars = ui::color(ui::style::color::sidecar_background, text_alpha * 0.77f);

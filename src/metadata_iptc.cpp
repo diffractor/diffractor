@@ -805,7 +805,7 @@ static str::cached tag_name(const iptc_record r, const iptc_tag t)
 		++p;
 	}
 
-	return str::cache(u8"?");
+	return u8"?"_c;
 }
 
 metadata_kv_list metadata_iptc::to_info(df::cspan cs)

@@ -448,7 +448,7 @@ public:
 			static_cast<int64_t>(used_bounds.width()), static_cast<int64_t>(_drive.used.to_int64()),
 			static_cast<int64_t>(_drive.capacity.to_int64())));
 
-		dc.draw_rect(graph_bounds, ui::color(ui::lighten(ui::style::color::sidebar_background), draw_clr.a));
+		dc.draw_rect(graph_bounds, ui::color(ui::style::color::sidebar_background, draw_clr.a).scale(1.22f));
 		dc.draw_rect(used_bounds,
 		             ui::color(
 			             ui::average(ui::style::color::sidebar_background, ui::style::color::important_background),
@@ -1128,7 +1128,7 @@ public:
 			{
 				if (rad >= e.start_rad && rad <= e.end_rad)
 				{
-					c = ui::lighten(ui::bgr(e.clr), e.focus ? 32 : 0);
+					c = e.focus ? ui::lighten(ui::bgr(e.clr), 0.11f) : ui::bgr(e.clr);
 					break;
 				}
 			}
@@ -1158,7 +1158,7 @@ public:
 		{
 			//render_background(rc, element_offset, clr);
 			const auto bg_clr = ui::style::color::sidebar_background;
-			auto center_clr = ui::style::color::sidebar_background;
+			auto center_clr = ui::color(ui::style::color::sidebar_background);
 
 			const auto tracking = is_style_bit_set(view_element_style::tracking);
 			const auto hover = is_style_bit_set(view_element_style::hover);
@@ -1176,7 +1176,7 @@ public:
 				center_clr = ui::style::color::important_background;
 			}
 
-			draw_draw_pie_chart(_tex, logical_bounds.extent(), _file_type_entries, bg_clr, center_clr);
+			draw_draw_pie_chart(_tex, logical_bounds.extent(), _file_type_entries, bg_clr, center_clr.rgba());
 			_pie_invalid = false;
 		}
 

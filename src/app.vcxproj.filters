@@ -469,6 +469,9 @@
     <ClInclude Include="util_simd.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="secrets.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Image Include="Res\search.png">

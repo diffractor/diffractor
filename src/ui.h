@@ -320,34 +320,31 @@ namespace ui
 		return den ? ((n * num) + (den / 2)) / den : -1;
 	}
 
-	constexpr color32 lighten(const color32 c, const uint32_t n = 32) noexcept
+	constexpr color32 darken(const color32 c, const float ff) noexcept
 	{
-		const auto rr = get_r(c);
-		const auto gg = get_g(c);
-		const auto bb = get_b(c);
+		const auto rr = static_cast<float>(get_r(c)) / 255.0f;
+		const auto gg = static_cast<float>(get_g(c)) / 255.0f;
+		const auto bb = static_cast<float>(get_b(c)) / 255.0f;
+		const auto aa = static_cast<float>(get_a(c)) / 255.0f;
 
-		return saturate_rgba(rr + mul_div_u32(rr, n, 255u),
-		                     gg + mul_div_u32(gg, n, 255u),
-		                     bb + mul_div_u32(bb, n, 255u),
-		                     get_a(c));
+		return saturate_rgba(rr - rr * ff, gg - gg * ff, bb - bb * ff, aa);
 	}
 
-	constexpr color32 darken(const color32 c, const uint32_t n = 32) noexcept
+	constexpr color32 lighten(const color32 c, const float ff) noexcept
 	{
-		const auto rr = get_r(c);
-		const auto gg = get_g(c);
-		const auto bb = get_b(c);
+		const auto rr = static_cast<float>(get_r(c)) / 255.0f;
+		const auto gg = static_cast<float>(get_g(c)) / 255.0f;
+		const auto bb = static_cast<float>(get_b(c)) / 255.0f;
+		const auto aa = static_cast<float>(get_a(c)) / 255.0f;
 
-		return saturate_rgba(rr - mul_div_u32(rr, n, 255u),
-		                     gg - mul_div_u32(gg, n, 255u),
-		                     bb - mul_div_u32(bb, n, 255u),
-		                     get_a(c));
+		return saturate_rgba(rr + rr * ff, gg + gg * ff, bb + bb * ff, aa);
 	}
 
-	constexpr color32 emphasize(const color32 c, const uint32_t n = 48) noexcept
+
+	constexpr color32 emphasize(const color32 c, const float ff = 0.22f) noexcept
 	{
 		const bool is_bright = get_b(c) > 0x80 || get_g(c) > 0x80 || get_r(c) > 0x80;
-		return is_bright ? darken(c, n) : lighten(c, n);
+		return is_bright ? darken(c, ff) : lighten(c, ff);
 	}
 
 	constexpr color32 abgr(const color32 c, const uint32_t a = 0xFF) noexcept
@@ -902,20 +899,6 @@ namespace ui
 			multiline,
 			multiline_center
 		};
-	};
-
-
-	constexpr color32 dialog_handle_color(const bool highlight, const bool tracking)
-	{
-		if (tracking)
-		{
-			return adjust_a(style::color::dialog_selected_background, 0xEE);
-		}
-		if (highlight)
-		{
-			return adjust_a(lighten(style::color::dialog_background, 80), 0xEE);
-		}
-		return adjust_a(lighten(style::color::dialog_background, 40), 0xcc);
 	}
 
 	class color
@@ -1024,6 +1007,25 @@ namespace ui
 			a = other.a + inv_other_a;
 		}
 
+		static constexpr float sat_f(const float x)
+		{
+			return std::clamp(x, 0.0f, 1.0f);
+		}
+
+		color scale(const float x) const
+		{
+			return { sat_f(r * x), sat_f(g * x), sat_f(b * x), a };
+		}
+
+		color average(const color other) const
+		{
+			return {
+				(r + other.r) / 2.0f,
+				(g + other.g) / 2.0f,
+				(b + other.b) / 2.0f,
+				(a + other.a) / 2.0f };
+		}
+
 		static float femphasize(const float f)
 		{
 			return ((f - 0.5f) * 0.9f) + 0.5f;
@@ -1034,15 +1036,26 @@ namespace ui
 			return color(femphasize(r), femphasize(g), femphasize(b), a);
 		}
 
+		color emphasize(const bool can_emphasize) const
+		{
+			return can_emphasize ? color(femphasize(r), femphasize(g), femphasize(b), a) : *this;
+		}
+
 		uint16_t get_r16() const { return static_cast<uint16_t>(r * 0xffff); }
 		uint16_t get_g16() const { return static_cast<uint16_t>(g * 0xffff); }
 		uint16_t get_b16() const { return static_cast<uint16_t>(b * 0xffff); }
 		uint16_t get_a16() const { return static_cast<uint16_t>(a * 0xffff); }
 
-		static color aa(const float a)
+		static color from_a(const float a)
 		{
 			df::assert_true(a < 1.1f);
-			return {1.0f, 1.0f, 1.0f, a};
+			return { 1.0f, 1.0f, 1.0f, a };
+		}
+
+		color aa(const float a) const
+		{
+			df::assert_true(a < 1.1f);
+			return {r, g, b, a};
 		}
 	};
 

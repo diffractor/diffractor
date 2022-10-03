@@ -1101,7 +1101,7 @@ namespace ui
 				if (!_val.empty()) _val += u8" ";
 				_val += term;
 				_edit->window_text(_val);
-				_edit->select(original_len, -1);
+				_edit->select(static_cast<int>(original_len), -1);
 				_edit->focus();
 			}
 		}
@@ -2116,10 +2116,11 @@ namespace ui
 		{
 			if (!progress_rect.is_empty())
 			{
+				const auto cc = color(dc.colors.background, dc.colors.alpha).scale(1.22f);
+
 				if (pos > 0)
-				{
-					const auto c = color(lighten(dc.colors.background), dc.colors.alpha);
-					dc.draw_rect(progress_rect, c);
+				{					
+					dc.draw_rect(progress_rect, cc);
 
 					auto r = progress_rect.inflate(-2);
 					r.right = r.left + df::mul_div(std::min(pos, 1000), r.width(), 1000);
@@ -2127,7 +2128,7 @@ namespace ui
 				}
 				else
 				{
-					dc.draw_rect(progress_rect, color(lighten(dc.colors.background), dc.colors.alpha));
+					dc.draw_rect(progress_rect, cc);
 					dc.draw_rect(progress_rect.inflate(-2), color(style::color::important_background, dc.colors.alpha));
 				}
 			}
@@ -2327,7 +2328,7 @@ namespace ui
 		{
 			auto dims = surface_dims();
 
-			const auto cx_slot = df::mul_div(avail_width, 2, dims.size());
+			const auto cx_slot = df::mul_div(avail_width, 2, static_cast<int>(dims.size()));
 
 			for (auto&& d : dims)
 			{
@@ -2804,7 +2805,7 @@ namespace ui
 			auto bounds = bounds_in;
 			bounds.top = bounds.bottom - 8;
 
-			dc.draw_rect(bounds, color(lighten(dc.colors.background, dc.colors.alpha)));
+			dc.draw_rect(bounds, color(lighten(dc.colors.background, 0.11f), dc.colors.alpha));
 
 			const auto inner = bounds.inflate(-2);
 			const auto cx = inner.width() / 5;
@@ -3391,7 +3392,7 @@ namespace ui
 
 			if (_is_popup)
 			{
-				const auto border_clr = color(emphasize(_colors.background, 33), dc.colors.alpha);
+				const auto border_clr = color(emphasize(_colors.background, 0.123f), dc.colors.alpha);
 				dc.draw_border(recti(_extent).inflate(-3), recti(_extent), border_clr, border_clr);
 			}
 

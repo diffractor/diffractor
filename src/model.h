@@ -337,6 +337,8 @@ public:
 	ui::texture_ptr _vid_tex;
 	async_strategy& _async;
 
+	friend class display_state_t;
+
 private:
 	df::file_path _path;
 	file_load_result _loaded;
@@ -447,8 +449,6 @@ public:
 	{
 		return _preview_rendering != 0;
 	}
-
-	ui::pixel_difference_result calc_pixel_difference(const std::shared_ptr<texture_state>& other) const;
 };
 
 struct common_display_state_t

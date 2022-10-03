@@ -26,7 +26,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "libraw", "third-party\LibRa
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "libjpeg", "third-party\LibJpeg\LibJpeg.vcxproj", "{2C15C400-4CB7-4EB7-9EC6-4C0716B26706}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ffmpeg", "third-party\ffmpeg\ffmpeg.vcxproj", "{D712C975-039A-4381-990E-9E4B33435EC8}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ffmpeg", "third-party\FFmpeg\ffmpeg.vcxproj", "{D712C975-039A-4381-990E-9E4B33435EC8}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "bzip2", "third-party\bzip2\bzip2.vcxproj", "{F24B293B-E1E5-44DB-BC4D-089A916343CF}"
 EndProject

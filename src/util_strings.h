@@ -78,7 +78,7 @@ namespace str
 				return 0;
 			}
 
-			wchar_t c = (*in_ptr++ & 0x1F) << 6;
+			char32_t c = (*in_ptr++ & 0x1F) << 6;
 			c |= ((*in_ptr++ & 0x3F) << 0);
 			return c;
 		}
@@ -90,7 +90,7 @@ namespace str
 				return 0;
 			}
 
-			wchar_t c = ((*in_ptr++ & 0x0F) << 12);
+			char32_t c = ((*in_ptr++ & 0x0F) << 12);
 			c |= ((*in_ptr++ & 0x3F) << 6);
 			c |= ((*in_ptr++ & 0x3F) << 0);
 			return c;

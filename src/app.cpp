@@ -45,7 +45,7 @@ static std::atomic_int index_version;
 const wchar_t* s_app_name_l = L"Diffractor";
 const std::u8string_view s_app_name = u8"Diffractor";
 const std::u8string_view s_app_version = u8"125.0";
-const std::u8string_view g_app_build = u8"1153";
+const std::u8string_view g_app_build = u8"1154";
 const std::u8string_view stage_file_name = u8"diffractor-setup-update.exe";
 static constexpr std::u8string_view installed_file_name = u8"diffractor-setup-installed.exe";
 static constexpr std::u8string_view s_search = u8"search";
@@ -2411,7 +2411,7 @@ void app_frame::queue_async(const async_queue q, std::function<void()> f)
 		index_task_queue.enqueue(std::move(f));
 		break;
 	case async_queue::sidebar:
-		nav_task_queue.enqueue(std::move(f));
+		sidebar_task_queue.enqueue(std::move(f));
 		break;
 	case async_queue::web:
 		web_task_queue.enqueue(std::move(f));
@@ -3608,7 +3608,7 @@ void app_frame::start_workers()
 	_threads.start([&q = query_task_queue] { start_worker(q, u8"query"); });
 	_threads.start([&q = auto_complete_task_queue] { start_worker(q, u8"auto_complete"); });
 	_threads.start([&q = location_task_queue] { start_worker(q, u8"locations"); });
-	_threads.start([&q = nav_task_queue] { start_worker(q, u8"nav"); });
+	_threads.start([&q = sidebar_task_queue] { start_worker(q, u8"sidebar"); });
 	_threads.start([&q = web_task_queue] { start_worker(q, u8"web"); });
 
 	_threads.start([&q = cloud_task_queue] { start_worker(q, u8"cloud"); });

@@ -1235,9 +1235,9 @@ static void draw_toolbar_button(const ui::command_ptr& command, const owner_cont
 	const bool is_drop_down = (button_info.fsStyle & TBSTYLE_DROPDOWN) != 0;
 	const bool is_drop_whole = (button_info.fsStyle & BTNS_WHOLEDROPDOWN) != 0;
 
-	const auto clr_checked_bg = ui::darken(bg_clr);
+	const auto clr_checked_bg = ui::darken(bg_clr, 0.22f);
 	const auto clr_selected_bg = selected_clr;
-	const auto clr_hover_bg = ui::lighten(bg_clr, 80);
+	const auto clr_hover_bg = ui::lighten(bg_clr, 0.33f);
 	auto draw_clr = text_clr;
 	auto icon_bg_clr = bg_clr;
 
@@ -1390,7 +1390,7 @@ static void draw_menu_item(const ui::command_ptr& command, LPDRAWITEMSTRUCT lpDr
 
 		if (is_selected)
 		{
-			bg_clr = ui::lighten(menu_background);
+			bg_clr = ui::lighten(menu_background, 0.22f);
 		}
 
 		fill_solid_rect(dc, item_bounds, bg_clr);
@@ -1449,7 +1449,7 @@ recti desktop_bounds_impl(HWND hwnd, const bool work_area)
 
 		if (GetMonitorInfo(monitor, &monitorInfo))
 		{
-			return win_rect(work_area ? monitorInfo.rcMonitor : monitorInfo.rcMonitor);
+			return win_rect(work_area ? monitorInfo.rcWork : monitorInfo.rcMonitor);
 		}
 	}
 
@@ -3443,9 +3443,9 @@ public:
 		else if (is_disabled)
 		{
 			clr_bg = ui::average(ui::style::color::dialog_background, clr_bg);
-			const auto c2 = ui::emphasize(clr_bg, 32);
+			const auto c2 = ui::emphasize(clr_bg, 0.123f);
 			draw_gradient(dc, button_bounds, clr_bg, c2);
-			frame_rect(dc, button_bounds, ui::darken(clr_bg), ui::darken(c2));
+			frame_rect(dc, button_bounds, ui::darken(clr_bg, 0.22f), ui::darken(c2, 0.22f));
 		}
 		else if (is_selected)
 		{
@@ -3454,15 +3454,15 @@ public:
 		else if (is_default)
 		{
 			clr_bg = ui::average(ui::style::color::dialog_selected_background, clr_bg);
-			const auto c2 = ui::emphasize(clr_bg, 32);
+			const auto c2 = ui::emphasize(clr_bg, 0.123f);
 			draw_gradient(dc, button_bounds, clr_bg, c2);
-			frame_rect(dc, button_bounds, ui::darken(clr_bg), ui::darken(c2));
+			frame_rect(dc, button_bounds, ui::darken(clr_bg, 0.22f), ui::darken(c2, 0.22f));
 		}
 		else
 		{
-			const auto c2 = ui::emphasize(clr_bg, 32);
+			const auto c2 = ui::emphasize(clr_bg, 0.123f);
 			draw_gradient(dc, button_bounds, clr_bg, c2);
-			frame_rect(dc, button_bounds, ui::darken(clr_bg), ui::darken(c2));
+			frame_rect(dc, button_bounds, ui::darken(clr_bg, 0.22f), ui::darken(c2, 0.22f));
 		}
 
 		if (is_disabled)
@@ -4635,6 +4635,7 @@ public:
 		if (uMsg == WM_MOUSEACTIVATE) return on_window_mouse_activate(uMsg, wParam, lParam);
 		if (uMsg == WM_GESTURENOTIFY) return on_window_gesture_notify(uMsg, wParam, lParam);
 		if (uMsg == WM_GESTURE) return on_window_gesture(uMsg, wParam, lParam);
+		if (uMsg == WM_NCHITTEST) return on_window_nc_hit_test(uMsg, wParam, lParam);
 		return DefWindowProc(hwnd, uMsg, wParam, lParam);
 	}
 
@@ -4795,12 +4796,15 @@ public:
 			win_rect rc;
 			GetWindowRect(GetParent(m_hWnd), &rc);
 
-			if (rc.right >= loc.x && (rc.right - nonclient_border_thickness) <= loc.x)
+			const auto scale_factor = _draw_ctx ? _draw_ctx->scale_factor : 1.0;
+			const auto border_thickness = df::round(nonclient_border_thickness * scale_factor);
+
+			if (rc.right >= loc.x && (rc.right - border_thickness) <= loc.x)
 			{
 				return HTTRANSPARENT;
 			}
 
-			if (rc.left <= loc.x && (rc.left + nonclient_border_thickness) >= loc.x)
+			if (rc.left <= loc.x && (rc.left + border_thickness) >= loc.x)
 			{
 				return HTTRANSPARENT;
 			}
@@ -6459,7 +6463,7 @@ public:
 
 	static void draw_menu(HDC dc, const win_rect& rcWin)
 	{
-		fill_solid_rect(dc, rcWin, ui::lighten(ui::style::color::menu_background));
+		fill_solid_rect(dc, rcWin, ui::lighten(ui::style::color::menu_background, 0.22f));
 		fill_solid_rect(dc, rcWin.inflate(-menu_size_border.cx, -menu_size_border.cy),
 		                ui::style::color::menu_background);
 	}
@@ -7009,12 +7013,15 @@ LRESULT control_host_impl::on_window_nc_hit_test(const uint32_t uMsg, const WPAR
 		RECT rc;
 		GetClientRect(m_hWnd, &rc);
 
+		const auto scale_factor = _draw_ctx ? _draw_ctx->scale_factor : 1.0;
+		const auto border_thickness = df::round(nonclient_border_thickness * scale_factor);
+
 		enum { left = 1, top = 2, right = 4, bottom = 8 };
 		int hit = 0;
-		if (loc.x < rc.left + nonclient_border_thickness) hit |= left;
-		if (loc.x > rc.right - nonclient_border_thickness) hit |= right;
-		if (loc.y < rc.top + nonclient_border_thickness) hit |= top;
-		if (loc.y > rc.bottom - nonclient_border_thickness) hit |= bottom;
+		if (loc.x < rc.left + border_thickness) hit |= left;
+		if (loc.x > rc.right - border_thickness) hit |= right;
+		if (loc.y < rc.top + border_thickness) hit |= top;
+		if (loc.y > rc.bottom - border_thickness) hit |= bottom;
 
 		if (hit & top && hit & left) return HTTOPLEFT;
 		if (hit & top && hit & right) return HTTOPRIGHT;
@@ -7150,24 +7157,6 @@ static bool IsProcessPerMonitorDpiAware()
 	return per_monitor_dpi_aware == PerMonitorDpiAware::PER_MONITOR_DPI_AWARE;
 }
 
-static int GetSystemMetricsForScaleFactor(float scale_factor, int metric)
-{
-	if (IsProcessPerMonitorDpiAware())
-	{
-		if (ptrGetSystemMetricsForDpi)
-		{
-			return ptrGetSystemMetricsForDpi(metric, ptrGetSystemMetricsForDpi(scale_factor, metric));
-		}
-	}
-
-	const auto device_scale_factor = 1.0f;
-
-	// Windows 8.1 doesn't support GetSystemMetricsForDpi(), yet does support
-	// per-process dpi awareness.
-	return df::round(GetSystemMetrics(metric) * scale_factor / device_scale_factor);
-}
-
-
 float GetScalingFactorFromDPI(int dpi)
 {
 	return static_cast<float>(dpi) / kDefaultDPI;
@@ -7297,6 +7286,8 @@ bool MonitorHasAutohideTaskbarForEdge(UINT edge, HMONITOR monitor)
 
 LRESULT control_host_impl::on_window_nc_calc_size(uint32_t, WPARAM wParam, LPARAM lParam)
 {
+	// Some of this code came from the chromium code base
+
 	const auto mode = wParam != 0;
 	const auto l_param = lParam;
 	// We only override the default handling if we need to specify a custom
@@ -7311,10 +7302,7 @@ LRESULT control_host_impl::on_window_nc_calc_size(uint32_t, WPARAM wParam, LPARA
 	if (_is_first_nccalc_)
 	{
 		_is_first_nccalc_ = false;
-		//if (GetWindowLong(hwnd(), GWL_STYLE) & WS_CAPTION)
-		//{
 		return DefWindowProc(m_hWnd, WM_NCCALCSIZE, wParam, lParam);
-		//}
 	}
 
 	RECT* client_rect =
@@ -7356,6 +7344,15 @@ LRESULT control_host_impl::on_window_nc_calc_size(uint32_t, WPARAM wParam, LPARA
 
 		if (is_zoomed)
 		{
+			// maximised window should fill work area
+			MONITORINFO monitorInfo;
+			monitorInfo.cbSize = sizeof(MONITORINFO);
+
+			if (GetMonitorInfo(monitor, &monitorInfo))
+			{
+				*client_rect = monitorInfo.rcWork;
+			}
+
 			// Find all auto-hide taskbars along the screen edges and adjust in by the
 			// thickness of the auto-hide taskbar on each such edge, so the window isn't
 			// treated as a "fullscreen app", which would cause the taskbars to
