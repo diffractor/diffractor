@@ -1180,33 +1180,15 @@ void view_state::update_item_groups()
 	_item_groups = std::move(new_item_groups);
 }
 
-static inline sizei scale_thumbnail_dims(const sizei dims, const recti bounds)
-{
-	sizei result;
-
-	if (!dims.is_empty())
-	{
-		/*auto texture_dimensions = i.dimensions();
-		auto texture_scale = calc_thumb_scale(texture_dimensions, rect_draw.extent(), false);
-		auto cx_tex = rect_draw.width() / texture_scale;
-		auto cy_tex = rect_draw.height() / texture_scale;
-		result = { (int)cx_tex , (int)cy_tex };
-		*/
-
-		//const auto dims = i.calc_display_dimensions();
-		result.cx = bounds.width();
-		result.cy = df::mul_div(dims.cy, result.cx, dims.cx);
-	}
-
-	return result;
-}
-
 sizei df::item_group::measure(ui::measure_context& mc, const int width_limit) const
 {
 	_layout_bounds.resize(_items.size());
 
-	const double sy = calc_item_line_height();
-	const double cy = sy + mc.baseline_snap;
+	// maeasure and save calculated layout information
+	const double base_line_height = calc_item_line_height() * mc.scale_factor;
+	const auto base_adjust = base_line_height * 0.33;
+
+	const double cy = base_line_height + mc.baseline_snap;
 	double y = 0;
 	double y_max = 0;
 
@@ -1235,24 +1217,25 @@ sizei df::item_group::measure(ui::measure_context& mc, const int width_limit) co
 		else
 		{
 			const auto max_cols = 100;
-			const auto gap = 2.0;
+			const auto gap = 2.0 * mc.scale_factor;;
 			double dst_widths[max_cols];
 			double src_widths[max_cols];
 
-			auto total_extra_cx = 0.0;
-			auto item_extra_count = 0;
-			const auto default_cols = std::max(1.0, width_limit / (sy + (mc.baseline_snap * 2.0)));
+			auto total_adjust_cx_ratio = 0.0;
+			auto count_adjust_cx_ratio = 0;
+			auto prev_col_count = 0;
+			const auto default_cols = std::max(1.0, width_limit / (base_line_height + (mc.baseline_snap * 2.0)));
 			const double x_limit = width_limit;
 			auto n = 0;
 
 			while (n < item_count)
 			{
 				double x = 0;
-
-				int col_count = 0;
+				int col_count = 0;				
 				const int line_start = n;
 				double total_src_width = 0.0;
 
+				// calc line
 				while (n < item_count && col_count < max_cols)
 				{
 					const auto& item = _items[n];
@@ -1290,23 +1273,41 @@ sizei df::item_group::measure(ui::measure_context& mc, const int width_limit) co
 					}
 				}
 
+				// post processing on line
 				if (col_count > 0)
-				{
+				{					
 					const auto is_end_break = n == item_count;
-					double extra_cx = (width_limit - mc.baseline_snap - (gap * (col_count - 1))) - x;
-					if (is_end_break && extra_cx > 0.0)
-						extra_cx = item_extra_count > 0
-							           ? (total_extra_cx * col_count / item_extra_count)
-							           : 0.0;
-					total_extra_cx += extra_cx;
-					item_extra_count += col_count;
+					const auto avail_cx = (width_limit - mc.baseline_snap);
+					double extra_cx = avail_cx - (gap * (col_count - 1)) - x;
 					auto cy_av = 0.0;
-					x = 0;
+					auto total_width = 0.0;
+					auto x_gap = gap;
 
 					for (int nn = 0; nn < col_count; nn++)
-					{
-						const auto adjust_cx = extra_cx * src_widths[nn] / total_src_width;
-						const auto cx = std::max(20.0, dst_widths[nn] + adjust_cx);
+					{						
+						auto adjust_cx = std::min(base_adjust, extra_cx * (src_widths[nn] / total_src_width));
+
+						if (is_end_break)
+						{
+							// Limit maximum size of adjust for last line of group
+							// Unless we are reducing in size already
+							if (adjust_cx > 0.0)
+							{
+								if (prev_col_count > 1 && count_adjust_cx_ratio > 0)
+								{
+									// use average of previous lines
+									const auto av_adjust_cx = total_adjust_cx_ratio / count_adjust_cx_ratio;
+									adjust_cx = std::min(av_adjust_cx, adjust_cx);
+								}
+							}
+						}
+						else
+						{
+							total_adjust_cx_ratio += adjust_cx;
+							count_adjust_cx_ratio += 1;
+						}
+						
+						const auto cx = std::max(20.0 * mc.scale_factor, dst_widths[nn] + adjust_cx);
 						const auto& item = _items[line_start + nn];
 						const auto orientation = item->thumbnail_orientation();
 						auto dims = item->thumbnail_dims();
@@ -1326,20 +1327,30 @@ sizei df::item_group::measure(ui::measure_context& mc, const int width_limit) co
 						}
 
 						dst_widths[nn] = cx;
+						total_width += cx;
+					}
+
+					if (!is_end_break)
+					{
+						x_gap = std::clamp((avail_cx - total_width) / (col_count - 1), gap, gap * 3.3);
 					}
 
 					const double cy_line = std::clamp(cy_av / col_count, cy * 0.77, cy * 1.33);
 
+					double xx = 0;
+
 					for (int nn = 0; nn < col_count; nn++)
 					{
 						const auto cx = dst_widths[nn];
-						_layout_bounds[line_start + nn] = recti(round(x), round(y), round(x + cx), round(y + cy_line));
-						x += cx + gap;
+						_layout_bounds[line_start + nn] = recti(round(xx), round(y), round(xx + cx), round(y + cy_line));
+						xx += cx + x_gap;
 					}
 
 					y += cy_line + gap;
 					y_max = std::max(y_max, y + mc.baseline_snap);
 				}
+
+				prev_col_count = col_count;
 			}
 		}
 	}

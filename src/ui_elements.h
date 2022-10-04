@@ -297,7 +297,7 @@ class view_flow_layout
 public:
 	view_flow_layout() = default;
 
-	sizei calc_layout(const std::vector<view_element_ptr>& elements, ui::measure_context& mc, int width_limit) const
+	sizei calc_layout(const std::vector<view_element_ptr>& elements, ui::measure_context& mc, const int width_limit) const
 	{
 		_extents.resize(elements.size());
 
@@ -348,8 +348,8 @@ public:
 				el.line_end = false;
 
 				const auto x_right = x + extent.cx + (element_padding.cx * 2);
-				const auto should_break = items_on_line > 0 && !previous_no_break && (previous_line_break ||
-					(x_right - left_x) > current_width_limit || ev->is_row_title() || ev->is_new_line_style());
+				const auto should_break = items_on_line > 0 && !previous_no_break && 
+					(previous_line_break || (x_right - left_x) > current_width_limit || ev->is_row_title() || ev->is_new_line_style());
 
 				if (should_break)
 				{

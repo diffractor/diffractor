@@ -1289,9 +1289,12 @@ file_scan_result files::scan_raw(const df::file_path path, const std::u8string_v
 					result.thumbnail_surface = thumb_to_surface(t, ui::orientation::top_left);
 				}
 
-				result.thumbnail_surface->orientation(calc_orientation(result.thumbnail_surface->dimensions(),
-				                                                       result.thumbnail_surface->orientation(),
-				                                                       rp.processor->imgdata));
+				if (result.thumbnail_surface)
+				{
+					result.thumbnail_surface->orientation(calc_orientation(result.thumbnail_surface->dimensions(),
+						result.thumbnail_surface->orientation(),
+						rp.processor->imgdata));
+				}
 			}
 		}
 	}

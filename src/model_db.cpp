@@ -62,7 +62,7 @@ public:
 		}
 	}
 
-	void compile(std::u8string_view sql)
+	void compile(const std::u8string_view sql)
 	{
 		const int ret = sqlite3_prepare(_db, std::bit_cast<const char*>(sql.data()), sql.size(), &_handle, nullptr);
 
@@ -70,7 +70,7 @@ public:
 			db_trace_error(_db, u8"sqlite3_prepare");
 	}
 
-	void bind(int i, const std::u8string_view v) const
+	void bind(const int i, const std::u8string_view v) const
 	{
 		if (_handle != nullptr)
 		{
@@ -78,73 +78,73 @@ public:
 			                                  SQLITE_STATIC);
 
 			if (ret != SQLITE_OK)
-				db_trace_error(_db, u8"sqlite3_bind_text");
+				db_trace_error(_db, str::format(u8"sqlite3_bind_text {} {}", i, v));
 		}
 	}
 
-	void bind(int i, int32_t n) const
+	void bind(const int i, const int32_t n) const
 	{
 		if (_handle != nullptr)
 		{
 			const int ret = sqlite3_bind_int(_handle, i, n);
 
 			if (ret != SQLITE_OK)
-				db_trace_error(_db, u8"sqlite3_bind_int");
+				db_trace_error(_db, str::format(u8"sqlite3_bind_int {} {}", i, n));
 		}
 	}
 
-	void bind(int i, uint32_t n) const
+	void bind(const int i, const uint32_t n) const
 	{
 		if (_handle != nullptr)
 		{
 			const int ret = sqlite3_bind_int(_handle, i, static_cast<int>(n));
 
 			if (ret != SQLITE_OK)
-				db_trace_error(_db, u8"sqlite3_bind_int");
+				db_trace_error(_db, str::format(u8"sqlite3_bind_int {} {}", i, n));
 		}
 	}
 
-	void bind(int i, double n) const
+	void bind(const int i, const double n) const
 	{
 		if (_handle != nullptr)
 		{
 			const int ret = sqlite3_bind_double(_handle, i, n);
 
 			if (ret != SQLITE_OK)
-				db_trace_error(_db, u8"sqlite3_bind_double");
+				db_trace_error(_db, str::format(u8"sqlite3_bind_double {} {}", i, n));
 		}
 	}
 
-	void bind(int i, int64_t n) const
+	void bind(const int i, const int64_t n) const
 	{
 		if (_handle != nullptr)
 		{
 			const int ret = sqlite3_bind_int64(_handle, i, n);
 
 			if (ret != SQLITE_OK)
-				db_trace_error(_db, u8"sqlite3_bind_int64");
+				db_trace_error(_db, str::format(u8"sqlite3_bind_int64 {} {}", i, n));
 		}
 	}
 
-	void bind(int i, uint64_t n) const
+	void bind(const int i, const uint64_t n) const
 	{
 		if (_handle != nullptr)
 		{
 			const int ret = sqlite3_bind_int64(_handle, i, n);
 
 			if (ret != SQLITE_OK)
-				db_trace_error(_db, u8"sqlite3_bind_int64");
+				db_trace_error(_db, str::format(u8"sqlite3_bind_int64 {} {}", i, n));
 		}
 	}
 
-	void bind(int i, df::cspan cs) const
+	void bind(const int i, const df::cspan cs) const
 	{
 		if (_handle != nullptr && !cs.empty())
 		{
 			const int ret = sqlite3_bind_blob(_handle, i, cs.data, cs.size, SQLITE_STATIC);
 
 			if (ret != SQLITE_OK)
-				db_trace_error(_db, u8"sqlite3_bind_blob");
+				db_trace_error(_db, str::format(u8"sqlite3_bind_blob {}", i));
 		}
 	}
 
@@ -187,7 +187,7 @@ public:
 		}
 	}
 
-	int int32(int i) const
+	int int32(const int i) const
 	{
 		if (_handle != nullptr)
 		{
@@ -196,7 +196,7 @@ public:
 		return 0;
 	}
 
-	int64_t int64(int i) const
+	int64_t int64(const int i) const
 	{
 		if (_handle != nullptr)
 		{
@@ -205,7 +205,7 @@ public:
 		return 0;
 	}
 
-	std::u8string_view text(int i) const
+	std::u8string_view text(const int i) const
 	{
 		if (_handle != nullptr)
 		{
@@ -214,7 +214,7 @@ public:
 		return {};
 	}
 
-	df::blob blob(int i) const
+	df::blob blob(const int i) const
 	{
 		if (_handle != nullptr)
 		{
@@ -225,7 +225,7 @@ public:
 		return {};
 	}
 
-	df::cspan data(int i) const
+	df::cspan data(const int i) const
 	{
 		df::cspan r = {nullptr, 0};
 		if (_handle != nullptr)
@@ -248,7 +248,7 @@ class transaction
 	bool _acquired;
 
 public:
-	transaction(sqlite3* db, bool start = true) : _db(db), _acquired(false)
+	transaction(sqlite3* db, const bool start = true) : _db(db), _acquired(false)
 	{
 		if (start)
 		{
@@ -511,13 +511,13 @@ void metadata_unpacker::unpack(const prop::item_metadata_ptr& md)
 		else if (t == prop::bitrate) read_val(md->bitrate);
 		else if (t == prop::orientation)
 		{
-			uint8_t val;
+			uint8_t val {};
 			read_val(val);
 			md->orientation = static_cast<ui::orientation>(val);
 		}
 		else if (t == prop::dimensions)
 		{
-			df::xy32 xy;
+			df::xy32 xy {};
 			read_val(xy);
 			md->width = xy.x;
 			md->height = xy.y;

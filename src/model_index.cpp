@@ -313,16 +313,15 @@ static void iterate_items(const df::search_t& search,
 					for (const auto& file_node : folder_node.second->files)
 					{
 						if (token.is_cancelled()) break;
-						const auto& file = file_node;
 
-						if (!(file.flags && df::index_item_flags::is_sidecar) || show_sidecars)
+						if (!(file_node.flags && df::index_item_flags::is_sidecar) || show_sidecars)
 						{
 							const auto path = folder_node.first.combine_file(file_node.name);
-							const auto match = matcher.match_item(path, file);
+							const auto match = matcher.match_item(path, file_node);
 
 							if (match.is_match())
 							{
-								results.match_item(path, file, match, is_indexed_location);
+								results.match_item(path, file_node, match, is_indexed_location);
 							}
 						}
 					}

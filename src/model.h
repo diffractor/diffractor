@@ -1065,10 +1065,10 @@ public:
 	{
 		const auto d = _display;
 
-		if (d && d->is_one())
+		if (d && d->is_one() && _selected.size() == 1)
 		{
 			const auto i = d->_item1;
-			return i != nullptr && _selected.size() == 1 && i->is_media();
+			return i && i->is_media();
 		}
 
 		return false;

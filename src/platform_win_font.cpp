@@ -527,6 +527,12 @@ font_renderer_ptr factories::font_face(const ui::style::font_size type, const in
 		result = create_font_face(L"Arial", base_font_size);
 	}
 
+	if (!result)
+	{
+		// backup font 2
+		result = create_font_face(L"Tahoma", base_font_size);
+	}
+
 	return result;
 }
 

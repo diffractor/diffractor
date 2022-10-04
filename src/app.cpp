@@ -45,7 +45,7 @@ static std::atomic_int index_version;
 const wchar_t* s_app_name_l = L"Diffractor";
 const std::u8string_view s_app_name = u8"Diffractor";
 const std::u8string_view s_app_version = u8"125.0";
-const std::u8string_view g_app_build = u8"1154";
+const std::u8string_view g_app_build = u8"1155";
 const std::u8string_view stage_file_name = u8"diffractor-setup-update.exe";
 static constexpr std::u8string_view installed_file_name = u8"diffractor-setup-installed.exe";
 static constexpr std::u8string_view s_search = u8"search";
@@ -3708,6 +3708,11 @@ bool app_frame::init(const std::u8string_view command_line_text)
 	if (command_line.run_tests)
 	{
 		queue_ui([this] { invoke(commands::run_tests); });
+	}
+
+	if (!setting.sound_device.empty())
+	{
+		_state.change_audio_device(setting.sound_device);
 	}
 
 	_state.group_order(_starting_group_order, _starting_sort_order);

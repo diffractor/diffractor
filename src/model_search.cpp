@@ -1408,9 +1408,6 @@ static compare_result compare_val(const df::search_term& term, const df::index_f
 	{
 		if (term.key == prop::tag || term.key == prop::artist || term.key == prop::album_artist)
 		{
-			const auto md = file.metadata;
-			bool match_prop = false;
-
 			compare_result comp_result;
 			auto cmp = [&comp_result, &term](const std::u8string_view part)
 			{

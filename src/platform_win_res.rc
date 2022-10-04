@@ -155,8 +155,8 @@ IDR_MANIFEST            RT_MANIFEST             "platform_win.manifest"
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1, 25, 0, 1154
- PRODUCTVERSION 1, 25, 0, 1154
+ FILEVERSION 1, 25, 0, 1155
+ PRODUCTVERSION 1, 25, 0, 1155
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -173,12 +173,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "Diffractor"
             VALUE "FileDescription", "Diffractor"
-            VALUE "FileVersion", "1.25.0.1154"
+            VALUE "FileVersion", "1.25.0.1155"
             VALUE "InternalName", "Diffractor.exe"
             VALUE "LegalCopyright", "Copyright (C) Diffractor - Zac Walker"
             VALUE "OriginalFilename", "Diffractor.exe"
             VALUE "ProductName", "Diffractor"
-            VALUE "ProductVersion", "1.25.0.1154"
+            VALUE "ProductVersion", "1.25.0.1155"
         END
     END
     BLOCK "VarFileInfo"

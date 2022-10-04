@@ -592,11 +592,8 @@ static void rotate_invoke(view_state& s, const ui::control_frame_ptr& parent, co
 						image_edits pt_edit;
 						metadata_edits md_edits;
 
-						const auto current_orientation = setting.show_rotated
-							                                 ? load_result.i->orientation()
-							                                 : ui::orientation::top_left;
-						const auto crop = quadd(load_result.i->dimensions()).transform(
-							to_simple_transform(current_orientation)).transform(t);
+						const auto current_orientation = setting.show_rotated ? load_result.orientation() : ui::orientation::top_left;
+						const auto crop = quadd(load_result.dimensions()).transform(to_simple_transform(current_orientation)).transform(t);
 
 						if (current_orientation != ui::orientation::top_left)
 						{
@@ -604,8 +601,7 @@ static void rotate_invoke(view_state& s, const ui::control_frame_ptr& parent, co
 						}
 
 						pt_edit.crop_bounds(crop);
-						update_result = ff.update(path, path, md_edits, pt_edit, make_file_encode_params(), false,
-						                          i->xmp());
+						update_result = ff.update(path, path, md_edits, pt_edit, make_file_encode_params(), false, i->xmp());
 						if (!update_result.success()) message = update_result.format_error();
 					}
 
@@ -5478,6 +5474,7 @@ void app_frame::initialise_commands()
 				command->invoke = [this, d]
 				{
 					_state.change_audio_device(d.id);
+					setting.sound_device = d.id;
 					invalidate_view(view_invalid::options);
 				};
 

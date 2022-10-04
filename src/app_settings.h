@@ -89,6 +89,7 @@ public:
 	std::u8string last_tags;
 	std::u8string favourite_tags;
 	std::u8string language;
+	std::u8string sound_device;
 
 	bool set_copyright_credit;
 	std::u8string copyright_credit;

@@ -139,6 +139,7 @@ static constexpr std::u8string_view s_show_shadow = u8"show_shadow";
 static constexpr std::u8string_view s_update_modified = u8"update_modified";
 static constexpr std::u8string_view s_last_played_pos = u8"last_played_pos";
 static constexpr std::u8string_view s_show_help_tooltips = u8"show_help_tooltips";
+static constexpr std::u8string_view s_sound_device = u8"sound_device";
 
 settings_t setting;
 
@@ -538,6 +539,7 @@ void settings_t::read(const platform::setting_file_ptr& store_in)
 	store.read({}, s_verbose_metadata, verbose_metadata);
 	store.read({}, s_raw_preview, raw_preview);
 	store.read({}, s_lang, language);
+	store.read({}, s_sound_device, sound_device);
 	store.read({}, s_out_name, write_name);
 	store.read({}, s_out_folder, write_folder);
 	store.read({}, s_show_rotated, show_rotated);
@@ -690,6 +692,7 @@ void settings_t::write(const platform::setting_file_ptr& store_in) const
 	store.write({}, s_verbose_metadata, verbose_metadata);
 	store.write({}, s_raw_preview, raw_preview);
 	store.write({}, s_lang, language);
+	store.write({}, s_sound_device, sound_device);
 	store.write({}, s_out_name, write_name);
 	store.write({}, s_out_folder, write_folder);
 	store.write({}, s_show_rotated, show_rotated);

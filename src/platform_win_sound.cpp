@@ -11,8 +11,8 @@
 #include "platform_win.h"
 
 #include <mmdeviceapi.h>
-#include <audioclient.h>
-#include <Functiondiscoverykeys_devpkey.h>
+#include <Audioclient.h>
+#include <functiondiscoverykeys_devpkey.h>
 
 
 #define __restrict__
@@ -164,7 +164,7 @@ public:
 		//data_event.create(false, false);
 	}
 
-	~wasapi_sound()
+	virtual ~wasapi_sound()
 	{
 		clear();
 	}
@@ -345,7 +345,7 @@ public:
 			if (SUCCEEDED(_clock->GetFrequency(&device_frequency)) &&
 				SUCCEEDED(_clock->GetPosition(&position, nullptr)))
 			{
-				return (static_cast<double>(position) / device_frequency);
+				return device_frequency > 0 ? (static_cast<double>(position) / static_cast<double>(device_frequency)) : 0.0;
 			}
 		}
 
