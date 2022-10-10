@@ -219,6 +219,9 @@
     <ClCompile Include="dng_xmp_sdk.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="dng_update_meta.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="dng_1d_function.h">
@@ -456,6 +459,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="dng_xy_coord.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="dng_update_meta.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

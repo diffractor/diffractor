@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -74,7 +74,7 @@ class dng_linearization_info
 
 		/// Repeating pattern of black level deltas fBlackLevelRepeatRows by fBlackLevelRepeatCols in size.
 		
-		real64 fBlackLevel [kMaxBlackPattern] [kMaxBlackPattern] [kMaxSamplesPerPixel];
+		real64 fBlackLevel [kMaxBlackPattern] [kMaxBlackPattern] [kMaxColorPlanes];
 
 		/// Memory block of double-precision floating point deltas between baseline black level and a given column's black level
 
@@ -86,7 +86,7 @@ class dng_linearization_info
 		
 		/// Single white level (maximum sensor value) for each sample plane.
 
-		real64 fWhiteLevel [kMaxSamplesPerPixel];
+		real64 fWhiteLevel [kMaxColorPlanes];
 		
 	protected:
 	
@@ -101,12 +101,12 @@ class dng_linearization_info
 		void RoundBlacks ();
 		
 		virtual void Parse (dng_host &host,
-						    dng_stream &stream,
-						    dng_info &info);
-						    
+							dng_stream &stream,
+							dng_info &info);
+							
 		virtual void PostParse (dng_host &host,
 								dng_negative &negative);
-						    
+							
 		/// Compute the maximum black level for a given sample plane taking into account base
 		/// black level, repeated black level patter, and row/column delta maps.
 
@@ -114,12 +114,12 @@ class dng_linearization_info
 		
 		/// Convert raw data from in-file format to a true linear image using linearization data from DNG.
 		/// \param host Used to allocate buffers, check for aborts, and post progress updates.
-        /// \param negative Used to remember preserved black point.
+		/// \param negative Used to remember preserved black point.
 		/// \param srcImage Input pre-linearization RAW samples.
 		/// \param dstImage Output linearized image.
 
 		virtual void Linearize (dng_host &host,
-                                dng_negative &negative,
+								dng_negative &negative,
 								const dng_image &srcImage,
 								dng_image &dstImage);
 

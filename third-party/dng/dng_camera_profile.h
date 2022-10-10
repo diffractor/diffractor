@@ -1,26 +1,28 @@
 /******************************************************************************/
-// Copyright 2006-2019 Adobe Systems Incorporated
+// Copyright 2006-2020 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /******************************************************************************/
 
 /** \file
  * Support for DNG camera color profile information.
- *  Per the \ref spec_dng "DNG 1.1.0 specification", a DNG file can store up to
- *  two sets of color profile information for a camera in the DNG file from that
- *  camera. The second set is optional and when there are two sets, they represent
- *  profiles made under different illumination.
  *
- *  Profiling information is optionally separated into two parts. One part represents
- *  a profile for a reference camera. (ColorMatrix1 and ColorMatrix2 here.) The 
- *  second is a per-camera calibration that takes into account unit-to-unit variation.
- *  This is designed to allow replacing the reference color matrix with one of one's
- *  own construction while maintaining any unit-specific calibration the camera 
- *  manufacturer may have provided.
+ * Per the \ref spec_dng "DNG 1.6.0.0 specification", a DNG file can store up
+ * to three sets of color profile information for a camera in the DNG file
+ * from that camera. The second and third sets are optional and when there are
+ * multiple sets, they represent profiles made under different illumination.
  *
- * See Appendix 6 of the \ref spec_dng "DNG 1.1.0 specification" for more information.
+ * Profiling information is optionally separated into two parts. One part
+ * represents a profile for a reference camera. The second is a per-camera
+ * calibration that takes into account unit-to-unit variation. This is
+ * designed to allow replacing the reference color matrix with one of one's
+ * own construction while maintaining any unit-specific calibration the camera
+ * manufacturer may have provided.
+ *
+ * See Chapter 6 of the \ref spec_dng "DNG 1.6.0 specification" for more
+ * information.
  */
 
 #ifndef __dng_camera_profile__
@@ -37,6 +39,7 @@
 #include "dng_string.h"
 #include "dng_tag_values.h"
 #include "dng_tone_curve.h"
+#include "dng_xy_coord.h"
 
 /******************************************************************************/
 
@@ -63,7 +66,7 @@ class dng_camera_profile_id
 
 		dng_camera_profile_id ()
 		
-			:	fName        ()
+			:	fName		 ()
 			,	fFingerprint ()
 			
 			{
@@ -144,7 +147,7 @@ class dng_camera_profile_id
 
 		bool operator== (const dng_camera_profile_id &id) const
 			{
-			return fName        == id.fName &&
+			return fName		== id.fName &&
 				   fFingerprint == id.fFingerprint;
 			}
 
@@ -180,20 +183,28 @@ class dng_camera_profile_id
 class dng_camera_profile
 	{
 	
-	protected:
+	private:
 	
 		// Name of this camera profile.
 		
 		dng_string fName;
 	
-		// Light sources for up to two calibrations. These use the EXIF
+		// Light sources for up to three calibrations. These use the EXIF
 		// encodings for illuminant and are used to distinguish which
 		// matrix to use.
 		
 		uint32 fCalibrationIlluminant1;
 		uint32 fCalibrationIlluminant2;
+		uint32 fCalibrationIlluminant3;		 // DNG 1.6
+
+		// Illuminant data if corresponding fCalibrationIlluminantX tag is set
+		// to 255 (Other).
+
+		dng_illuminant_data fIlluminantData1; // DNG 1.6
+		dng_illuminant_data fIlluminantData2; // DNG 1.6
+		dng_illuminant_data fIlluminantData3; // DNG 1.6
 		
-		// Color matrices for up to two calibrations.
+		// Color matrices for up to three calibrations.
 		
 		// These matrices map XYZ values to non-white balanced camera values. 
 		// Adobe needs to go that direction in order to determine the clipping
@@ -203,6 +214,7 @@ class dng_camera_profile
 		
 		dng_matrix fColorMatrix1;
 		dng_matrix fColorMatrix2;
+		dng_matrix fColorMatrix3;
 
 		// These matrices map white balanced camera values to XYZ chromatically
 		// adapted to D50 (the ICC profile PCS white point).  If the matrices
@@ -211,18 +223,25 @@ class dng_camera_profile
 		
 		dng_matrix fForwardMatrix1;
 		dng_matrix fForwardMatrix2;
+		dng_matrix fForwardMatrix3;
 	
 		// Dimensionality reduction hints for more than three color cameras.
 		// This is an optional matrix that maps the camera's color components
-		// to 3 components.  These are only used if the forward matrices don't
+		// to 3 components.	 These are only used if the forward matrices don't
 		// exist, and are used invert the color matrices.
 		
 		dng_matrix fReductionMatrix1;
 		dng_matrix fReductionMatrix2;
+		dng_matrix fReductionMatrix3;
 		
 		// MD5 hash for all data bits of the profile.
 
 		mutable dng_fingerprint fFingerprint;
+		
+		// MD5 hash for all data bits of the profile that affect
+		// color rendering.
+		
+		mutable dng_fingerprint fRenderDataFingerprint;
 
 		// Copyright notice from creator of profile.
 
@@ -236,6 +255,7 @@ class dng_camera_profile
 
 		dng_hue_sat_map fHueSatDeltas1;
 		dng_hue_sat_map fHueSatDeltas2;
+		dng_hue_sat_map fHueSatDeltas3;
 		
 		// Value (V of HSV) encoding for hue/sat tables.
 
@@ -274,7 +294,7 @@ class dng_camera_profile
 
 		dng_string fUniqueCameraModelRestriction;
 
-		// Was this profile read from inside a DNG file? (If so, we wnat
+		// Was this profile read from inside a DNG file? (If so, we want
 		// to be sure to include it again when writing out an updated
 		// DNG file)
 		
@@ -285,12 +305,6 @@ class dng_camera_profile
 		// directory.)
 		
 		bool fWasReadFromDisk;
-		
-		// Was this profile a built-in "Matrix" profile? (If so, we may need to
-		// refresh -- i.e., remove it from the list of available profiles -- when
-		// changes are made externally to the profile directory.)
-		
-		bool fWasBuiltinMatrix;
 		
 		// Was this profile stubbed to save memory (and no longer valid
 		// for building color conversion tables)?
@@ -331,8 +345,15 @@ class dng_camera_profile
 			}
 			
 		// API for calibration illuminants:
+
+		/// Getter for the illuminant model. Result will be 1, 2, or 3.
+		/// A value of 1 means the single-illuminant model, using ColorMatrix1 and related tags.
+		/// A value of 2 means the dual-illuminant model, using ColorMatrix1 and ColorMatrix2 and related tags.
+		/// A value of 3 means the triple-illuminant model, using ColorMatrix1, ColorMatrix2, ColorMatrix3 and related tags.
+
+		uint32 IlluminantModel () const;
 		
-		/// Setter for first of up to two light sources used for calibration. 
+		/// Setter for first of up to three light sources used for calibration. 
 		/// Uses the EXIF encodings for illuminant and is used to distinguish which
 		/// matrix to use.
 		/// Corresponds to the DNG CalibrationIlluminant1 tag.
@@ -343,7 +364,7 @@ class dng_camera_profile
 			ClearFingerprint ();
 			}
 			
-		/// Setter for second of up to two light sources used for calibration. 
+		/// Setter for second of up to three light sources used for calibration. 
 		/// Uses the EXIF encodings for illuminant and is used to distinguish which
 		/// matrix to use.
 		/// Corresponds to the DNG CalibrationIlluminant2 tag.
@@ -354,7 +375,18 @@ class dng_camera_profile
 			ClearFingerprint ();
 			}
 			
-		/// Getter for first of up to two light sources used for calibration. 
+		/// Setter for third of up to three light sources used for calibration. 
+		/// Uses the EXIF encodings for illuminant and is used to distinguish which
+		/// matrix to use.
+		/// Corresponds to the DNG CalibrationIlluminant3 tag.
+
+		void SetCalibrationIlluminant3 (uint32 light)
+			{
+			fCalibrationIlluminant3 = light;
+			ClearFingerprint ();
+			}
+			
+		/// Getter for first of up to three light sources used for calibration. 
 		/// Uses the EXIF encodings for illuminant and is used to distinguish which
 		/// matrix to use.
 		/// Corresponds to the DNG CalibrationIlluminant1 tag.
@@ -364,7 +396,7 @@ class dng_camera_profile
 			return fCalibrationIlluminant1;
 			}
 			
-		/// Getter for second of up to two light sources used for calibration. 
+		/// Getter for second of up to three light sources used for calibration. 
 		/// Uses the EXIF encodings for illuminant and is used to distinguish which
 		/// matrix to use.
 		/// Corresponds to the DNG CalibrationIlluminant2 tag.
@@ -374,46 +406,109 @@ class dng_camera_profile
 			return fCalibrationIlluminant2;
 			}
 		
-		/// Getter for first of up to two light sources used for calibration, returning
+		/// Getter for third of up to three light sources used for calibration. 
+		/// Uses the EXIF encodings for illuminant and is used to distinguish which
+		/// matrix to use.
+		/// Corresponds to the DNG CalibrationIlluminant3 tag.
+
+		uint32 CalibrationIlluminant3 () const
+			{
+			return fCalibrationIlluminant3;
+			}
+
+		void SetIlluminantData1 (const dng_illuminant_data &data)
+			{
+			fIlluminantData1 = data;
+			ClearFingerprint ();
+			}
+		
+		const dng_illuminant_data & IlluminantData1 () const
+			{
+			return fIlluminantData1;
+			}
+			
+		void SetIlluminantData2 (const dng_illuminant_data &data)
+			{
+			fIlluminantData2 = data;
+			ClearFingerprint ();
+			}
+		
+		const dng_illuminant_data & IlluminantData2 () const
+			{
+			return fIlluminantData2;
+			}
+			
+		void SetIlluminantData3 (const dng_illuminant_data &data)
+			{
+			fIlluminantData3 = data;
+			ClearFingerprint ();
+			}
+		
+		const dng_illuminant_data & IlluminantData3 () const
+			{
+			return fIlluminantData3;
+			}
+			
+		/// Getter for first of up to three light sources used for calibration, returning
 		/// result as color temperature.
 
 		real64 CalibrationTemperature1 () const
 			{
-			return IlluminantToTemperature (CalibrationIlluminant1 ());
+			return IlluminantToTemperature (CalibrationIlluminant1 (),
+											IlluminantData1 ());
 			}
 
-		/// Getter for second of up to two light sources used for calibration, returning
+		/// Getter for second of up to three light sources used for calibration, returning
 		/// result as color temperature.
 
 		real64 CalibrationTemperature2 () const
 			{
-			return IlluminantToTemperature (CalibrationIlluminant2 ());
+			return IlluminantToTemperature (CalibrationIlluminant2 (),
+											IlluminantData2 ());
 			}
 			
+		/// Getter for third of up to three light sources used for calibration, returning
+		/// result as color temperature.
+
+		real64 CalibrationTemperature3 () const
+			{
+			return IlluminantToTemperature (CalibrationIlluminant3 (),
+											IlluminantData3 ());
+			}
+
 		// API for color matrices:
 		
 		/// Utility function to normalize the scale of the color matrix.
 		
 		static void NormalizeColorMatrix (dng_matrix &m);
 		
-		/// Setter for first of up to two color matrices used for reference camera calibrations.
-		/// These matrices map XYZ values to camera values.  The DNG SDK needs to map colors
+		/// Setter for first of up to three color matrices used for reference camera calibrations.
+		/// These matrices map XYZ values to camera values.	 The DNG SDK needs to map colors
 		/// that direction in order to determine the clipping points for
-		/// highlight recovery logic based on the white point.  If cameras
+		/// highlight recovery logic based on the white point.	If cameras
 		/// were all three-color, the matrix could be stored as a forward matrix.
 		/// The inverse matrix is requried to support four-color cameras.
 
 		void SetColorMatrix1 (const dng_matrix &m);
 
-		/// Setter for second of up to two color matrices used for reference camera calibrations.
-		/// These matrices map XYZ values to camera values.  The DNG SDK needs to map colors
+		/// Setter for second of up to three color matrices used for reference camera calibrations.
+		/// These matrices map XYZ values to camera values.	 The DNG SDK needs to map colors
 		/// that direction in order to determine the clipping points for
-		/// highlight recovery logic based on the white point.  If cameras
+		/// highlight recovery logic based on the white point.	If cameras
 		/// were all three-color, the matrix could be stored as a forward matrix.
 		/// The inverse matrix is requried to support four-color cameras.
 
 		void SetColorMatrix2 (const dng_matrix &m);
-						    		    
+										
+		/// Setter for third of up to three color matrices used for reference camera calibrations.
+		/// These matrices map XYZ values to camera values.	 The DNG SDK needs to map colors
+		/// that direction in order to determine the clipping points for
+		/// highlight recovery logic based on the white point.	If cameras
+		/// were all three-color, the matrix could be stored as a forward matrix.
+		/// The inverse matrix is requried to support four-color cameras.
+
+		void SetColorMatrix3 (const dng_matrix &m);
+										
 		/// Predicate to test if first camera matrix is set
 
 		bool HasColorMatrix1 () const;
@@ -422,18 +517,29 @@ class dng_camera_profile
 
 		bool HasColorMatrix2 () const;
 		
-		/// Getter for first of up to two color matrices used for calibrations.
+		/// Predicate to test if third camera matrix is set
+
+		bool HasColorMatrix3 () const;
+		
+		/// Getter for first of up to three color matrices used for calibrations.
 
 		const dng_matrix & ColorMatrix1 () const
 			{
 			return fColorMatrix1;
 			}
 			
-		/// Getter for second of up to two color matrices used for calibrations.
+		/// Getter for second of up to three color matrices used for calibrations.
 
 		const dng_matrix & ColorMatrix2 () const
 			{
 			return fColorMatrix2;
+			}
+			
+		/// Getter for third of up to three color matrices used for calibrations.
+
+		const dng_matrix & ColorMatrix3 () const
+			{
+			return fColorMatrix3;
 			}
 			
 		// API for forward matrices:
@@ -442,68 +548,108 @@ class dng_camera_profile
 		
 		static void NormalizeForwardMatrix (dng_matrix &m);
 		
-		/// Setter for first of up to two forward matrices used for calibrations.
+		/// Setter for first of up to three forward matrices used for calibrations.
 
 		void SetForwardMatrix1 (const dng_matrix &m);
 
-		/// Setter for second of up to two forward matrices used for calibrations.
+		/// Setter for second of up to three forward matrices used for calibrations.
 
 		void SetForwardMatrix2 (const dng_matrix &m);
 
-		/// Getter for first of up to two forward matrices used for calibrations.
+		/// Setter for third of up to three forward matrices used for calibrations.
+
+		void SetForwardMatrix3 (const dng_matrix &m);
+
+		/// Getter for first of up to three forward matrices used for calibrations.
 
 		const dng_matrix & ForwardMatrix1 () const
 			{
 			return fForwardMatrix1;
 			}
 			
-		/// Getter for second of up to two forward matrices used for calibrations.
+		/// Getter for second of up to three forward matrices used for calibrations.
 
 		const dng_matrix & ForwardMatrix2 () const
 			{
 			return fForwardMatrix2;
 			}
 		
+		/// Getter for third of up to three forward matrices used for calibrations.
+
+		const dng_matrix & ForwardMatrix3 () const
+			{
+			return fForwardMatrix3;
+			}
+		
 		// API for reduction matrices:
 		
-		/// Setter for first of up to two dimensionality reduction hints for four-color cameras.
+		/// Setter for first of up to three dimensionality reduction hints for four-color cameras.
 		/// This is an optional matrix that maps four components to three.
 		/// See Appendix 6 of the \ref spec_dng "DNG 1.1.0 specification."
 
 		void SetReductionMatrix1 (const dng_matrix &m);
 
-		/// Setter for second of up to two dimensionality reduction hints for four-color cameras.
+		/// Setter for second of up to three dimensionality reduction hints for four-color cameras.
 		/// This is an optional matrix that maps four components to three.
 		/// See Appendix 6 of the \ref spec_dng "DNG 1.1.0 specification."
 
 		void SetReductionMatrix2 (const dng_matrix &m);
 		
-		/// Getter for first of up to two dimensionality reduction hints for four color cameras.
+		/// Setter for third of up to three dimensionality reduction hints for four-color cameras.
+		/// This is an optional matrix that maps four components to three.
+		/// See Appendix 6 of the \ref spec_dng "DNG 1.1.0 specification."
+
+		void SetReductionMatrix3 (const dng_matrix &m);
+		
+		/// Getter for first of up to three dimensionality reduction hints for four color cameras.
 
 		const dng_matrix & ReductionMatrix1 () const
 			{
 			return fReductionMatrix1;
 			}
 			
-		/// Getter for second of up to two dimensionality reduction hints for four color cameras.
+		/// Getter for second of up to three dimensionality reduction hints for four color cameras.
 
 		const dng_matrix & ReductionMatrix2 () const
 			{
 			return fReductionMatrix2;
 			}
 			
-		/// Getter function from profile fingerprint.
+		/// Getter for third of up to three dimensionality reduction hints for four color cameras.
+
+		const dng_matrix & ReductionMatrix3 () const
+			{
+			return fReductionMatrix3;
+			}
 			
-		const dng_fingerprint &Fingerprint () const
+		/// Getter function for profile fingerprint.
+			
+		const dng_fingerprint & Fingerprint () const
 			{
 
 			if (!fFingerprint.IsValid ())
-				CalculateFingerprint ();
+				{
+				fFingerprint = CalculateFingerprint (false);
+				}
 
 			return fFingerprint;
 
 			}
 
+		/// Getter function for profile render data fingerprint.
+
+		const dng_fingerprint & RenderDataFingerprint () const
+			{
+
+			if (!fRenderDataFingerprint.IsValid ())
+				{
+				fRenderDataFingerprint = CalculateFingerprint (true);
+				}
+
+			return fRenderDataFingerprint;
+
+			}
+		
 		/// Getter for camera profile unique ID. Use this ID for uniquely
 		/// identifying profiles (e.g., for syncing purposes).
 
@@ -560,7 +706,7 @@ class dng_camera_profile
 			{
 			return WasReadFromDNG () ||
 				   EmbedPolicy () == pepAllowCopying ||
-				   EmbedPolicy () == pepEmbedIfUsed  ||
+				   EmbedPolicy () == pepEmbedIfUsed	 ||
 				   EmbedPolicy () == pepNoRestrictions;
 			}
 			
@@ -594,6 +740,17 @@ class dng_camera_profile
 		/// Setter for second HueSatMap color table (for calibration illuminant 2).
 
 		void SetHueSatDeltas2 (const dng_hue_sat_map &deltas2);
+
+		/// Getter for third HueSatMap color table (for calibration illuminant 3).
+
+		const dng_hue_sat_map & HueSatDeltas3 () const
+			{
+			return fHueSatDeltas3;
+			}
+
+		/// Setter for third HueSatMap color table (for calibration illuminant 3).
+
+		void SetHueSatDeltas3 (const dng_hue_sat_map &deltas3);
 
 		// Accessors for hue sat map encoding.
 
@@ -778,23 +935,6 @@ class dng_camera_profile
 			return fWasReadFromDisk;
 			}
 
-		// Accessors for was built-in matrix flag.
-		
-		/// Sets internal flag to indicate this profile was originally a built-in
-		/// matrix profile.
-
-		void SetWasBuiltinMatrix (bool state = true)
-			{
-			fWasBuiltinMatrix = state;
-			}
-			
-		/// Was this profile a built-in matrix profile?
-
-		bool WasBuiltinMatrix () const
-			{
-			return fWasBuiltinMatrix;
-			}
-
 		/// Determines if this a valid profile for this number of color channels?
 		/// \retval true if the profile is valid.
 
@@ -804,7 +944,10 @@ class dng_camera_profile
 		/// the profile name.
 		/// \param profile Camera profile to compare to.
 
-		bool EqualData (const dng_camera_profile &profile) const;
+		bool EqualData (const dng_camera_profile &profile) const
+			{
+			return RenderDataFingerprint () == profile.RenderDataFingerprint ();
+			}
 		
 		/// Parse profile from dng_camera_profile_info data.
 
@@ -836,16 +979,36 @@ class dng_camera_profile
 			return fWasStubbed;
 			}
 
-	protected:
+		// DNG 1.6 compatibility API.
+
+		/// Does this profile use any features introduced in DNG 1.6?
+		/// If true, then the DNGVersion tag should be set to at least
+		/// 1.6.0.0.
+
+		bool Uses_1_6_Features () const;
+		
+		/// Note that a profile that uses DNG 1.6 tags might still be
+		/// considered backwards compatible with older DNG readers in
+		/// some cases.
+
+		bool Requires_1_6_Reader () const;
+
+		/// Does this profile require a DNG 1.6 reader?
+		/// If true, then the DNGBackwardVersion tag must be set to
+		/// 1.6.0.0 or later.
+
+	private:
 	
-		static real64 IlluminantToTemperature (uint32 light);
+		static real64 IlluminantToTemperature (uint32 light,
+											   const dng_illuminant_data &data);
 		
 		void ClearFingerprint ()
 			{
 			fFingerprint.Clear ();
+			fRenderDataFingerprint.Clear ();
 			}
 
-		void CalculateFingerprint () const;
+		dng_fingerprint CalculateFingerprint (bool renderDataOnly) const;
 
 		static bool ValidForwardMatrix (const dng_matrix &m);
 
@@ -855,7 +1018,50 @@ class dng_camera_profile
 								   uint32 sats,
 								   uint32 vals,
 								   bool skipSat0);
+
+		dng_hue_sat_map * HueSatMapForWhite_Dual (const dng_xy_coord &white) const;	
 								   
+		dng_hue_sat_map * HueSatMapForWhite_Triple (const dng_xy_coord &white) const;	
+								   
+	};
+
+/******************************************************************************/
+
+class dng_camera_profile_metadata
+	{
+	
+	public:
+	
+		dng_camera_profile_id fProfileID;
+		
+		dng_fingerprint fRenderDataFingerprint;
+		
+		bool fIsLegalToEmbed;
+		
+		bool fWasReadFromDNG;
+		
+		bool fWasReadFromDisk;
+		
+		dng_fingerprint fUniqueID;	// Only valid if fWasReadFromDisk true
+		
+		dng_string fFilePath;		// Only valid if fWasReadFromDisk true
+		
+		bool fReadOnly;				// Only valid if fWasReadFromDisk true
+		
+		int32 fIndex;				// Only valid if attached to negative
+		
+	public:
+	
+		dng_camera_profile_metadata (const dng_camera_profile &profile,
+									 int32 index = -1);
+		
+		bool operator== (const dng_camera_profile_metadata &metadata) const;
+		
+		bool operator!= (const dng_camera_profile_metadata &metadata) const
+			{
+			return !(*this == metadata);
+			}
+	
 	};
 
 /******************************************************************************/

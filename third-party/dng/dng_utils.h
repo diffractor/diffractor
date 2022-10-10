@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -11,12 +11,22 @@
 
 /*****************************************************************************/
 
+#include <cmath>
+#include <limits>
+
 #include "dng_classes.h"
 #include "dng_flags.h"
 #include "dng_memory.h"
 #include "dng_safe_arithmetic.h"
 #include "dng_types.h"
 #include "dng_uncopyable.h"
+
+/*****************************************************************************/
+
+#if qWinOS
+#undef min
+#undef max
+#endif
 
 /*****************************************************************************/
 
@@ -37,10 +47,10 @@ inline uint32 Abs_int32 (int32 x)
 	
 	// Branchless version.
 	
-    uint32 mask = (uint32) (x >> 31);
-    
-    return (uint32) (((uint32) x + mask) ^ mask);
-    
+	uint32 mask = (uint32) (x >> 31);
+	
+	return (uint32) (((uint32) x + mask) ^ mask);
+	
 	#endif
 	
 	}
@@ -464,9 +474,10 @@ inline real32 Pin_real32 (real32 x)
 
 	}
 
-inline real32 Pin_real32_Overrange (real32 min, 
-									real32 x, 
-									real32 max)
+DNG_ALWAYS_INLINE
+real32 Pin_real32_Overrange (real32 min, 
+							 real32 x, 
+							 real32 max)
 	{
 	
 	// Normal numbers in (min,max). No change.
@@ -590,6 +601,36 @@ inline real64 Lerp_real64 (real64 a, real64 b, real64 t)
 
 /*****************************************************************************/
 
+inline uint8 Floor_uint8 (real32 x)
+	{
+
+	return (uint8) Max_real32 (0.0f, x);
+
+	}
+
+inline uint8 Floor_uint8 (real64 x)
+	{
+
+	return (uint8) Max_real64 (0.0, x);
+
+	}
+
+inline uint8 Round_uint8 (real32 x)
+	{
+
+	return Floor_uint8 (x + 0.5f);
+
+	}
+
+inline uint8 Round_uint8 (real64 x)
+	{
+
+	return Floor_uint8 (x + 0.5);
+
+	}
+
+/*****************************************************************************/
+
 inline int32 Round_int32 (real32 x)
 	{
 	
@@ -597,27 +638,65 @@ inline int32 Round_int32 (real32 x)
 	
 	}
 
+/*****************************************************************************/
+
 inline int32 Round_int32 (real64 x)
 	{
 	
-	return (int32) (x > 0.0 ? x + 0.5 : x - 0.5);
+	const real64 temp = x > 0.0 ? x + 0.5 : x - 0.5;
+	
+	// NaNs will fail this test (because NaNs compare false against
+	// everything) and will therefore also take the else branch.
+
+	if (temp > real64 (std::numeric_limits<int32>::min ()) - 1.0 &&
+		temp < real64 (std::numeric_limits<int32>::max ()) + 1.0)
+		{
+		return (int32) temp;
+		}
+	
+	else
+		{
+		ThrowProgramError ("Overflow in Round_int32");
+		// Dummy return.
+		return 0;
+		}
 	
 	}
+
+/*****************************************************************************/
+
+inline uint32 Floor_uint32 (real64 x)
+	{
+
+	const real64 temp = Max_real64 (0.0, x);
+
+	// NaNs will fail this test (because NaNs compare false against
+	// everything) and will therefore also take the else branch.
+	
+	if (temp < real64 (std::numeric_limits<uint32>::max ()) + 1.0)
+		{
+		return (uint32) temp;
+		}
+	
+	else
+		{
+		ThrowProgramError ("Overflow in Floor_uint32");
+		// Dummy return.
+		return 0;
+		}
+	
+	}
+
+/*****************************************************************************/
 
 inline uint32 Floor_uint32 (real32 x)
 	{
 	
-	return (uint32) Max_real32 (0.0f, x);
+	return Floor_uint32 (static_cast<real64> (x));
 	
 	}
 
-DNG_ATTRIB_NO_SANITIZE("float-cast-overflow")
-inline uint32 Floor_uint32 (real64 x)
-	{
-	
-	return (uint32) Max_real64 (0.0, x);
-	
-	}
+/*****************************************************************************/
 
 inline uint32 Round_uint32 (real32 x)
 	{
@@ -625,6 +704,8 @@ inline uint32 Round_uint32 (real32 x)
 	return Floor_uint32 (x + 0.5f);
 	
 	}
+
+/*****************************************************************************/
 
 inline uint32 Round_uint32 (real64 x)
 	{
@@ -737,11 +818,11 @@ inline bool IsAligned128 (const void *p)
 // 6.0 for hue, and 0.0 to 1.0 for saturation and value).
 
 inline void DNG_RGBtoHSV (real32 r,
-					      real32 g,
-					      real32 b,
-					      real32 &h,
-					      real32 &s,
-					      real32 &v)
+						  real32 g,
+						  real32 b,
+						  real32 &h,
+						  real32 &s,
+						  real32 &v)
 	{
 	
 	v = Max_real32 (r, Max_real32 (g, b));
@@ -801,11 +882,13 @@ inline void DNG_HSVtoRGB (real32 h,
 	if (s > 0.0f)
 		{
 		
+		if (!std::isfinite (h))
+			ThrowProgramError ("Unexpected NaN or Inf");
+
+		h = std::fmod (h, 6.0f);
+		
 		if (h < 0.0f)
 			h += 6.0f;
-			
-		if (h >= 6.0f)
-			h -= 6.0f;
 			
 		int32  i = (int32) h;
 		real32 f = h - (real32) i;
@@ -895,10 +978,10 @@ real64 MaxDistancePointToRect (const dng_point_real64 &point,
 inline uint32 DNG_HalfToFloat (uint16 halfValue)
 	{
 
-	int32 sign 	   = (halfValue >> 15) & 0x00000001;
+	int32 sign	   = (halfValue >> 15) & 0x00000001;
 	int32 exponent = (halfValue >> 10) & 0x0000001f;
 	int32 mantissa =  halfValue		   & 0x000003ff;
-   	
+	
 	if (exponent == 0)
 		{
 		
@@ -919,7 +1002,7 @@ inline uint32 DNG_HalfToFloat (uint16 halfValue)
 			while (!(mantissa & 0x00000400))
 				{
 				mantissa <<= 1;
-				exponent -=  1;
+				exponent -=	 1;
 				}
 
 			exponent += 1;
@@ -968,7 +1051,7 @@ inline uint32 DNG_HalfToFloat (uint16 halfValue)
 inline uint16 DNG_FloatToHalf (uint32 i)
 	{
 	
-	int32 sign     =  (i >> 16) & 0x00008000;
+	int32 sign	   =  (i >> 16) & 0x00008000;
 	int32 exponent = ((i >> 23) & 0x000000ff) - (127 - 15);
 	int32 mantissa =   i		& 0x007fffff;
 
@@ -984,7 +1067,7 @@ inline uint16 DNG_FloatToHalf (uint32 i)
 			
 			}
 
-		// E is between -10 and 0.  We convert f to a denormalized half.
+		// E is between -10 and 0.	We convert f to a denormalized half.
 
 		mantissa = (mantissa | 0x00800000) >> (1 - exponent);
 
@@ -995,7 +1078,7 @@ inline uint16 DNG_FloatToHalf (uint32 i)
 		// are laid out, we don't have to treat this case separately;
 		// the code below will handle it correctly.
 
-		if (mantissa &  0x00001000)
+		if (mantissa &	0x00001000)
 			mantissa += 0x00002000;
 
 		// Assemble the half from sign, exponent (zero) and mantissa.
@@ -1030,7 +1113,7 @@ inline uint16 DNG_FloatToHalf (uint32 i)
 	
 		}
 
-	// E is greater than zero.  F is a normalized float.
+	// E is greater than zero.	F is a normalized float.
 	// We try to convert f to a normalized half.
 
 	// Round to nearest, round "0.5" up
@@ -1042,7 +1125,7 @@ inline uint16 DNG_FloatToHalf (uint32 i)
 
 		if (mantissa & 0x00800000)
 			{
-			mantissa =  0;		// overflow in significand,
+			mantissa =	0;		// overflow in significand,
 			exponent += 1;		// adjust exponent
 			}
 
@@ -1066,10 +1149,10 @@ inline uint16 DNG_FloatToHalf (uint32 i)
 inline uint32 DNG_FP24ToFloat (const uint8 *input)
 	{
 
-	int32 sign     = (input [0] >> 7) & 0x01;
-	int32 exponent = (input [0]     ) & 0x7F;
+	int32 sign	   = (input [0] >> 7) & 0x01;
+	int32 exponent = (input [0]		) & 0x7F;
 	int32 mantissa = (((int32) input [1]) << 8) | input[2];
-   	
+	
 	if (exponent == 0)
 		{
 		
@@ -1090,7 +1173,7 @@ inline uint32 DNG_FP24ToFloat (const uint8 *input)
 			while (!(mantissa & 0x00010000))
 				{
 				mantissa <<= 1;
-				exponent -=  1;
+				exponent -=	 1;
 				}
 
 			exponent += 1;
@@ -1378,6 +1461,22 @@ class CFReleaseHelper
 
 /*****************************************************************************/
 
-#endif
+// x is assumed to be in [0,1].
+// Result will also be in [0,1].
+//
+// Applies smooth cubic function f(x) such that first and second derivatives
+// at endpoints are both zero, i.e., f'(x) = 0 and f''(x) = 0 for x = 0 and x
+// = 1.
+
+static inline real64 SmoothStep (real64 x)
+	{
+	
+	return x * x * (3.0 - 2.0 * x);
+	
+	}
+
+/*****************************************************************************/
+
+#endif	// __dng_utils__
 	
 /*****************************************************************************/

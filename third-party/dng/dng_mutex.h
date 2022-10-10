@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -39,8 +39,8 @@ class dng_mutex: private dng_uncopyable
 	
 		enum
 			{
-			kDNGMutexLevelLeaf   = 0x70000000u,
-            kDNGMutexLevelIgnore = 0x7FFFFFFFu
+			kDNGMutexLevelLeaf	 = 0x70000000u,
+			kDNGMutexLevelIgnore = 0x7FFFFFFFu
 			};
 
 		dng_mutex (const char *mutexName,
@@ -86,7 +86,7 @@ class dng_lock_mutex: private dng_uncopyable
 	public:
 	
 		dng_lock_mutex (dng_mutex *mutex);
-        
+		
 		dng_lock_mutex (dng_mutex &mutex);
 			
 		~dng_lock_mutex ();
@@ -105,7 +105,7 @@ class dng_unlock_mutex: private dng_uncopyable
 	public:
 	
 		dng_unlock_mutex (dng_mutex *mutex);
-        
+		
 		dng_unlock_mutex (dng_mutex &mutex);
 			
 		~dng_unlock_mutex ();

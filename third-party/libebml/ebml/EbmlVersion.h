@@ -40,9 +40,9 @@
 
 #include "EbmlConfig.h"
 
-START_LIBEBML_NAMESPACE
+namespace libebml {
 
-#define LIBEBML_VERSION 0x010400
+#define LIBEBML_VERSION 0x010403
 
 extern const EBML_DLL_API std::string EbmlCodeVersion;
 extern const EBML_DLL_API std::string EbmlCodeDate;
@@ -51,6 +51,6 @@ extern const EBML_DLL_API std::string EbmlCodeDate;
   \todo Closer relation between an element and the context it comes from (context is an element attribute ?)
 */
 
-END_LIBEBML_NAMESPACE
+} // namespace libebml
 
 #endif // LIBEBML_VERSION_H

@@ -32,7 +32,7 @@
     \file
     \version \$Id: EbmlEndian.h 1298 2008-02-21 22:14:18Z mosu $
     \author Ingo Ralf Blum   <ingoralfblum @ users.sf.net>
-    \author Lasse K‰rkk‰inen <tronic @ users.sf.net>
+    \author Lasse K√§rkk√§inen <tronic @ users.sf.net>
     \author Steve Lhomme     <robux4 @ users.sf.net>
 */
 #ifndef LIBEBML_ENDIAN_H
@@ -43,7 +43,7 @@
 
 #include "EbmlConfig.h" // contains _ENDIANESS_
 
-START_LIBEBML_NAMESPACE
+namespace libebml {
 
 enum endianess {
     big_endian,   ///< PowerPC, Alpha, 68000
@@ -84,7 +84,7 @@ template<class TYPE, endianess ENDIAN> class Endian
     //  inline TYPE endian() const   { return endian_value; }
       inline const TYPE &endian() const       { return endian_value; }
       inline size_t size() const   { return sizeof(TYPE); }
-      inline bool operator!=(const binary *buffer) const {return *((TYPE*)buffer) == platform_value;}
+      inline bool operator!=(const binary *buffer) const {return *(reinterpret_cast<TYPE*>(buffer)) == platform_value;}
 
 #if defined(EBML_STRICT_API)
     private:
@@ -117,6 +117,6 @@ template<class TYPE, endianess ENDIAN> class Endian
       }
 };
 
-END_LIBEBML_NAMESPACE
+} // namespace libebml
 
 #endif // LIBEBML_ENDIAN_H

@@ -2,7 +2,7 @@
 // Copyright 2002-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -53,7 +53,7 @@ extern "C"
 
 /*****************************************************************************/
 
-#define DNG_ETIMEDOUT       60              /* Operation timed out */
+#define DNG_ETIMEDOUT		60				/* Operation timed out */
 
 struct dng_timespec {
 	long tv_sec;
@@ -130,7 +130,7 @@ int dng_pthread_rwlock_tryrdlock(dng_pthread_rwlock_t * rwlock);
 int dng_pthread_rwlock_trywrlock(dng_pthread_rwlock_t * rwlock);
 int dng_pthread_rwlock_unlock(dng_pthread_rwlock_t * rwlock);
 int dng_pthread_rwlock_wrlock(dng_pthread_rwlock_t * rwlock);
-    
+	
 // dng_pthread may maintain per-thread global state. This routine frees that global state.
 // there is no need to call this for threads created by dng_pthread and one can call
 // dng_pthread routines of a thread after dng_pthread_disassociate as the global state will

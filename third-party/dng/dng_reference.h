@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -27,10 +27,10 @@ void RefCopyBytes (const void *sPtr,
 /*****************************************************************************/
 
 void RefSwapBytes16 (uint16 *dPtr,
-				     uint32 count);
+					 uint32 count);
 				   
 void RefSwapBytes32 (uint32 *dPtr,
-				     uint32 count);
+					 uint32 count);
 				   
 /*****************************************************************************/
 
@@ -44,7 +44,7 @@ void RefSetArea8 (uint8 *dPtr,
 				  int32 planeStep);
 
 template <SIMDType simd, typename destType>
-void RefSetArea   (destType *dPtr,
+void RefSetArea	  (destType *dPtr,
 				   destType value,
 				   uint32 rows,
 				   uint32 cols,
@@ -129,16 +129,16 @@ void RefCopyArea8_32 (const uint8 *sPtr,
 
 template <SIMDType simd>
 void RefCopyArea16_S16 (const uint16 *sPtr,
-					    int16 *dPtr,
-					    uint32 rows,
-					    uint32 cols,
-					    uint32 planes,
-					    int32 sRowStep,
-					    int32 sColStep,
-					    int32 sPlaneStep,
-					    int32 dRowStep,
-					    int32 dColStep,
-					    int32 dPlaneStep);
+						int16 *dPtr,
+						uint32 rows,
+						uint32 cols,
+						uint32 planes,
+						int32 sRowStep,
+						int32 sColStep,
+						int32 sPlaneStep,
+						int32 dRowStep,
+						int32 dColStep,
+						int32 dPlaneStep);
 
 void RefCopyArea16_32 (const uint16 *sPtr,
 					   uint32 *dPtr,
@@ -166,29 +166,29 @@ void RefCopyArea8_R32 (const uint8 *sPtr,
 					   uint32 pixelRange);
 
 void RefCopyArea16_R32 (const uint16 *sPtr,
-					    real32 *dPtr,
-					    uint32 rows,
-					    uint32 cols,
-					    uint32 planes,
-					    int32 sRowStep,
-					    int32 sColStep,
-					    int32 sPlaneStep,
-					    int32 dRowStep,
-					    int32 dColStep,
-					    int32 dPlaneStep,
+						real32 *dPtr,
+						uint32 rows,
+						uint32 cols,
+						uint32 planes,
+						int32 sRowStep,
+						int32 sColStep,
+						int32 sPlaneStep,
+						int32 dRowStep,
+						int32 dColStep,
+						int32 dPlaneStep,
 						uint32 pixelRange);
 
 void RefCopyAreaS16_R32 (const int16 *sPtr,
-					     real32 *dPtr,
-					     uint32 rows,
-					     uint32 cols,
-					     uint32 planes,
-					     int32 sRowStep,
-					     int32 sColStep,
-					     int32 sPlaneStep,
-					     int32 dRowStep,
-					     int32 dColStep,
-					     int32 dPlaneStep,
+						 real32 *dPtr,
+						 uint32 rows,
+						 uint32 cols,
+						 uint32 planes,
+						 int32 sRowStep,
+						 int32 sColStep,
+						 int32 sPlaneStep,
+						 int32 dRowStep,
+						 int32 dColStep,
+						 int32 dPlaneStep,
 						 uint32 pixelRange);
 
 void RefCopyAreaR32_8 (const real32 *sPtr,
@@ -205,29 +205,29 @@ void RefCopyAreaR32_8 (const real32 *sPtr,
 					   uint32 pixelRange);
 
 void RefCopyAreaR32_16 (const real32 *sPtr,
-					    uint16 *dPtr,
-					    uint32 rows,
-					    uint32 cols,
-					    uint32 planes,
-					    int32 sRowStep,
-					    int32 sColStep,
-					    int32 sPlaneStep,
-					    int32 dRowStep,
-					    int32 dColStep,
-					    int32 dPlaneStep,
+						uint16 *dPtr,
+						uint32 rows,
+						uint32 cols,
+						uint32 planes,
+						int32 sRowStep,
+						int32 sColStep,
+						int32 sPlaneStep,
+						int32 dRowStep,
+						int32 dColStep,
+						int32 dPlaneStep,
 						uint32 pixelRange);
 
 void RefCopyAreaR32_S16 (const real32 *sPtr,
-					     int16 *dPtr,
-					     uint32 rows,
-					     uint32 cols,
-					     uint32 planes,
-					     int32 sRowStep,
-					     int32 sColStep,
-					     int32 sPlaneStep,
-					     int32 dRowStep,
-					     int32 dColStep,
-					     int32 dPlaneStep,
+						 int16 *dPtr,
+						 uint32 rows,
+						 uint32 cols,
+						 uint32 planes,
+						 int32 sRowStep,
+						 int32 sColStep,
+						 int32 sPlaneStep,
+						 int32 dRowStep,
+						 int32 dColStep,
+						 int32 dPlaneStep,
 						 uint32 pixelRange);
 
 /*****************************************************************************/
@@ -290,7 +290,7 @@ void RefBilinearRow16 (const uint16 *sPtr,
 					   uint32 patPhase,
 					   uint32 patCount,
 					   const uint32 * kernCounts,
-					   const int32  * const * kernOffsets,
+					   const int32	* const * kernOffsets,
 					   const uint16 * const * kernWeights,
 					   uint32 sShift);
 
@@ -300,7 +300,7 @@ void RefBilinearRow32 (const real32 *sPtr,
 					   uint32 patPhase,
 					   uint32 patCount,
 					   const uint32 * kernCounts,
-					   const int32  * const * kernOffsets,
+					   const int32	* const * kernOffsets,
 					   const real32 * const * kernWeights,
 					   uint32 sShift);
 
@@ -490,7 +490,7 @@ void RefVignette32 (real32 *sPtr,
 					int32 sPlaneStep,
 					int32 mRowStep,
 					uint32 mBits,
-                    uint16 blackLevel);
+					uint16 blackLevel);
 
 /*****************************************************************************/
 
@@ -513,10 +513,25 @@ void RefBaselineMapPoly32 (real32 *dPtr,
 						   const uint32 colPitch,
 						   const real32 *coefficients,
 						   const uint32 degree,
-                           uint16 blackLevel);
+						   uint16 blackLevel);
 
 /*****************************************************************************/
 
-#endif
+void RefBaselineProfileGainTableMap (const real32 *rSrcPtr,
+									 const real32 *gSrcPtr,
+									 const real32 *bSrcPtr,
+									 real32 *rDstPtr,
+									 real32 *gDstPtr,
+									 real32 *bDstPtr,
+									 const uint32 cols,
+									 const int32 top,
+									 const int32 left,
+									 const dng_rect &imageArea,
+									 const real32 exposureWeightGain,
+									 const dng_gain_table_map &gainTableMap);
+
+/*****************************************************************************/
+
+#endif	// __dng_reference__
 	
 /*****************************************************************************/

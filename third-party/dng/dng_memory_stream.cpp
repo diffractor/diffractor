@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -17,8 +17,8 @@
 
 dng_memory_stream::dng_memory_stream (dng_memory_allocator &allocator,
 									  dng_abort_sniffer *sniffer,
-						   			  uint32 pageSize)
-						   			  
+									  uint32 pageSize)
+									  
 	:	dng_stream (sniffer, 
 					kDefaultBufferSize,
 					kDNGStreamInvalidOffset)
@@ -26,13 +26,13 @@ dng_memory_stream::dng_memory_stream (dng_memory_allocator &allocator,
 	,	fAllocator (allocator)
 	,	fPageSize  (pageSize )
 	
-	,	fPageCount      (0)
+	,	fPageCount		(0)
 	,	fPagesAllocated (0)
-	,	fPageList       (NULL)
+	,	fPageList		(NULL)
 	
 	,	fMemoryStreamLength (0)
 
-    ,   fLengthLimit (0)
+	,	fLengthLimit (0)
 	
 	{
 	
@@ -71,8 +71,8 @@ uint64 dng_memory_stream::DoGetLength ()
 /*****************************************************************************/
 		
 void dng_memory_stream::DoRead (void *data,
-							    uint32 count,
-							    uint64 offset)
+								uint32 count,
+								uint64 offset)
 	{
 	
 	if (offset + count > fMemoryStreamLength)
@@ -93,7 +93,7 @@ void dng_memory_stream::DoRead (void *data,
 		uint32 blockCount = Min_uint32 (fPageSize - pageOffset, count);
 		
 		const uint8 *sPtr = fPageList [pageIndex]->Buffer_uint8 () +
-						    pageOffset;
+							pageOffset;
 		
 		uint8 *dPtr = ((uint8 *) data) + (uint32) (offset - baseOffset);
 		
@@ -110,16 +110,16 @@ void dng_memory_stream::DoRead (void *data,
 
 void dng_memory_stream::DoSetLength (uint64 length)
 	{
-    
-    if (fLengthLimit && length > fLengthLimit)
-        {
-        
-        Throw_dng_error (dng_error_end_of_file,
-                         "dng_memory_stream::fLengthLimit",
-                         NULL,
-                         true);
-        
-        }
+	
+	if (fLengthLimit && length > fLengthLimit)
+		{
+		
+		Throw_dng_error (dng_error_end_of_file,
+						 "dng_memory_stream::fLengthLimit",
+						 NULL,
+						 true);
+		
+		}
 	
 	while (length > fPageCount * (uint64) fPageSize)
 		{
@@ -130,7 +130,7 @@ void dng_memory_stream::DoSetLength (uint64 length)
 			uint32 newSizeTemp1 = 0;
 			uint32 newSizeTemp2 = 0;
 
-			if (!SafeUint32Add  (fPagesAllocated, 32u, &newSizeTemp1) ||
+			if (!SafeUint32Add	(fPagesAllocated, 32u, &newSizeTemp1) ||
 				!SafeUint32Mult (fPagesAllocated,  2u, &newSizeTemp2))
 				{
 				ThrowOverflow ("Arithmetic overflow in DoSetLength");
@@ -197,8 +197,8 @@ void dng_memory_stream::DoSetLength (uint64 length)
 /*****************************************************************************/
 
 void dng_memory_stream::DoWrite (const void *data,
-							     uint32 count,
-							     uint64 offset)
+								 uint32 count,
+								 uint64 offset)
 	{
 	
 	DoSetLength (Max_uint64 (fMemoryStreamLength,

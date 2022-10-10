@@ -30,6 +30,7 @@
 #include <memory>
 #include <map>
 #include <set>
+#include <utility>
 
 
 namespace heif {
@@ -121,17 +122,21 @@ namespace heif {
 
     Error scale_nearest_neighbor(std::shared_ptr<HeifPixelImage>& output, int width, int height) const;
 
-    void set_color_profile_nclx(std::shared_ptr<const color_profile_nclx> profile) { m_color_profile_nclx = profile; }
+    void set_color_profile_nclx(const std::shared_ptr<const color_profile_nclx>& profile) { m_color_profile_nclx = profile; }
 
-    std::shared_ptr<const color_profile_nclx> get_color_profile_nclx() const { return m_color_profile_nclx; }
+    const std::shared_ptr<const color_profile_nclx>& get_color_profile_nclx() const { return m_color_profile_nclx; }
 
-    void set_color_profile_icc(std::shared_ptr<const color_profile_raw> profile) { m_color_profile_icc = profile; }
+    void set_color_profile_icc(const std::shared_ptr<const color_profile_raw>& profile) { m_color_profile_icc = profile; }
 
-    std::shared_ptr<const color_profile_raw> get_color_profile_icc() const { return m_color_profile_icc; }
+    const std::shared_ptr<const color_profile_raw>& get_color_profile_icc() const { return m_color_profile_icc; }
 
     void debug_dump() const;
 
     bool extend_padding_to_size(int width, int height);
+
+    void add_warning(Error warning) { m_warnings.emplace_back(std::move(warning)); }
+
+    const std::vector<Error>& get_warnings() const { return m_warnings; }
 
   private:
     struct ImagePlane
@@ -162,6 +167,8 @@ namespace heif {
     std::shared_ptr<const color_profile_raw> m_color_profile_icc;
 
     std::map<heif_channel, ImagePlane> m_planes;
+
+    std::vector<Error> m_warnings;
   };
 
 }

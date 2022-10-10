@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -20,7 +20,7 @@
 
 dng_area_task::dng_area_task (const char *name)
 
-	:	fMaxThreads   (kMaxMPThreads)
+	:	fMaxThreads	  (kMaxMPThreads)
 	
 	,	fMinTaskArea  (256 * 256)
 	
@@ -140,7 +140,7 @@ dng_point dng_area_task::FindTileSize (const dng_rect &area) const
 	// What this is doing is, if the smallest repeating image tile is larger than the 
 	// maximum tile size, adjusting the tile size down so that the tiles are as small
 	// as possible while still having the same number of tiles covering the
-	// repeat area.  This makes the areas more equal in size, making MP
+	// repeat area.	 This makes the areas more equal in size, making MP
 	// algorithms work better.
 						
 	// The image core team did not understand this code, and disabled it.
@@ -180,12 +180,12 @@ dng_point dng_area_task::FindTileSize (const dng_rect &area) const
 		tileSize.h = (maxTileSize.h / unitCell.h) * unitCell.h;
 		}
 		
-    if (gPrintTimings)
+	if (gPrintTimings)
 		{
-        fprintf (stdout,
-                 "\nRender tile for below: %d x %d\n",
-                 (int32) tileSize.h,
-                 (int32) tileSize.v);
+		fprintf (stdout,
+				 "\nRender tile for below: %d x %d\n",
+				 (int32) tileSize.h,
+				 (int32) tileSize.v);
 		}	
 
 	return tileSize;
@@ -198,7 +198,7 @@ void dng_area_task::ProcessOnThread (uint32 threadIndex,
 									 const dng_rect &area,
 									 const dng_point &tileSize,
 									 dng_abort_sniffer *sniffer,
-                                     dng_area_task_progress *progress)
+									 dng_area_task_progress *progress)
 	{
 
 	dng_rect repeatingTile1 = RepeatingTile1 ();
@@ -265,10 +265,10 @@ void dng_area_task::ProcessOnThread (uint32 threadIndex,
 					
 					Process (threadIndex, tile4, sniffer);
 
-                    if (progress)
-                        {
-                        progress->FinishedTile (tile4);
-                        }
+					if (progress)
+						{
+						progress->FinishedTile (tile4);
+						}
 					
 					}
 					
@@ -305,10 +305,10 @@ dng_base_tile_iterator * dng_area_task::MakeTileIterator (uint32 /* threadIndex 
 /*****************************************************************************/
 
 void dng_area_task::Perform (dng_area_task &task,
-				  			 const dng_rect &area,
-				  			 dng_memory_allocator *allocator,
-				  			 dng_abort_sniffer *sniffer,
-                             dng_area_task_progress *progress)
+							 const dng_rect &area,
+							 dng_memory_allocator *allocator,
+							 dng_abort_sniffer *sniffer,
+							 dng_area_task_progress *progress)
 	{
 	
 	dng_point tileSize (task.FindTileSize (area));

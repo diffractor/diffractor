@@ -2,7 +2,7 @@
 // Copyright 2008-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -36,7 +36,7 @@ enum dng_opcode_id
 	// Warp image to correct distortion and lateral chromatic aberration for
 	// rectilinear lenses.
 	
-	dngOpcode_WarpRectilinear 		= 1,
+	dngOpcode_WarpRectilinear		= 1,
 	
 	// Warp image to correction distortion for fisheye lenses (i.e., map the
 	// fisheye projection to a perspective projection).
@@ -49,7 +49,7 @@ enum dng_opcode_id
 	
 	// Patch bad Bayer pixels which are marked with a special value in the image.
 	
-	dngOpcode_FixBadPixelsConstant  = 4,
+	dngOpcode_FixBadPixelsConstant	= 4,
 	
 	// Patch bad Bayer pixels/rectangles at a list of specified coordinates.
 	
@@ -85,7 +85,14 @@ enum dng_opcode_id
 	
 	// Apply a per-column scale to an area.
 	
-	dngOpcode_ScalePerColumn		= 13
+	dngOpcode_ScalePerColumn		= 13,
+
+	// Opcodes introduced in DNG 1.6.
+	
+	// Warp image to correct distortion and lateral chromatic aberration for
+	// rectilinear lenses. Extension of WarpRectilinear.
+
+	dngOpcode_WarpRectilinear2		= 14,
 	
 	};
 
@@ -103,7 +110,7 @@ class dng_opcode
 		enum
 			{
 			kFlag_None			= 0,	//!< No flag.
-			kFlag_Optional      = 1,	//!< This opcode is optional.
+			kFlag_Optional		= 1,	//!< This opcode is optional.
 			kFlag_SkipIfPreview = 2		//!< May skip opcode for preview images.
 			};
 	
@@ -239,7 +246,16 @@ class dng_opcode
 		virtual void Apply (dng_host &host,
 							dng_negative &negative,
 							AutoPtr<dng_image> &image) = 0;
-							
+
+		/// Apply scale factor to account for a resized image. Example is
+		/// stage 3 image being scaled to 2x the linear dimension of the stage
+		/// 2 image. Opcodes that express their internal parameters using
+		/// normalized (relative) image coordinates do not need any changes.
+
+		virtual void ApplyAreaScale (const dng_urational & /* scale */)
+			{
+			}
+		
 	};
 
 /*****************************************************************************/
@@ -423,12 +439,12 @@ class dng_inplace_opcode: public dng_opcode
 	protected:
 	
 		dng_inplace_opcode (uint32 opcodeID,
-						    uint32 minVersion,
-						    uint32 flags);
+							uint32 minVersion,
+							uint32 flags);
 					
 		dng_inplace_opcode (uint32 opcodeID,
-						    dng_stream &stream,
-						    const char *name);
+							dng_stream &stream,
+							const char *name);
 					
 	public:
 	

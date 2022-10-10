@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -14,6 +14,7 @@
 #include "dng_host.h"
 #include "dng_tag_codes.h"
 #include "dng_parse_utils.h"
+#include "dng_safe_arithmetic.h"
 #include "dng_tag_types.h"
 #include "dng_tag_values.h"
 #include "dng_utils.h"
@@ -22,7 +23,7 @@
 
 dng_info::dng_info ()
 
-	:	fTIFFBlockOffset         (0)
+	:	fTIFFBlockOffset		 (0)
 	,	fTIFFBlockOriginalOffset (kDNGStreamInvalidOffset)
 	,	fBigEndian				 (false)
 	,	fMagic					 (0)
@@ -30,11 +31,11 @@ dng_info::dng_info ()
 	,	fShared					 ()
 	,	fMainIndex				 (-1)
 	,	fMaskIndex				 (-1)
-    ,   fDepthIndex              (-1)
-    ,   fEnhancedIndex           (-1)
-	,	fIFD				     ()
-	,	fChainedIFD   		     ()
-    ,   fChainedSubIFD           ()
+	,	fDepthIndex				 (-1)
+	,	fEnhancedIndex			 (-1)
+	,	fIFD					 ()
+	,	fChainedIFD				 ()
+	,	fChainedSubIFD			 ()
 	,	fMakerNoteNextIFD		 (0)
 	
 	{
@@ -46,43 +47,43 @@ dng_info::dng_info ()
 dng_info::~dng_info ()
 	{
 
-    for (size_t index = 0; index < fIFD.size (); index++)
-        {
+	for (size_t index = 0; index < fIFD.size (); index++)
+		{
 
-        if (fIFD [index])
-            {
-            delete fIFD [index];
-            fIFD [index] = NULL;
-            }
+		if (fIFD [index])
+			{
+			delete fIFD [index];
+			fIFD [index] = NULL;
+			}
 
-        }
+		}
 	
-    for (size_t index2 = 0; index2 < fChainedIFD.size (); index2++)
-        {
+	for (size_t index2 = 0; index2 < fChainedIFD.size (); index2++)
+		{
 
-        if (fChainedIFD [index2])
-            {
-            delete fChainedIFD [index2];
-            fChainedIFD [index2] = NULL;
-            }
+		if (fChainedIFD [index2])
+			{
+			delete fChainedIFD [index2];
+			fChainedIFD [index2] = NULL;
+			}
 
-        }
+		}
 
-    for (size_t index3 = 0; index3 < fChainedSubIFD.size (); index3++)
-        {
+	for (size_t index3 = 0; index3 < fChainedSubIFD.size (); index3++)
+		{
 
-        for (size_t index4 = 0; index4 < fChainedSubIFD [index3].size (); index4++)
-            {
+		for (size_t index4 = 0; index4 < fChainedSubIFD [index3].size (); index4++)
+			{
 
-            if (fChainedSubIFD [index3] [index4])
-                {
-                delete fChainedSubIFD [index3] [index4];
-                fChainedSubIFD [index3] [index4] = NULL;
-                }
+			if (fChainedSubIFD [index3] [index4])
+				{
+				delete fChainedSubIFD [index3] [index4];
+				fChainedSubIFD [index3] [index4] = NULL;
+				}
 
-            }
+			}
 
-        }
+		}
 	
 	}
 
@@ -95,6 +96,7 @@ void dng_info::ValidateMagic ()
 		{
 		
 		case magicTIFF:
+		case magicBigTIFF:
 		case magicExtendedProfile:
 		case magicRawCache:
 		case magicPanasonic:
@@ -144,14 +146,14 @@ void dng_info::ParseTag (dng_host &host,
 	bool isMainIFD = (parentCode == 0 || isSubIFD) &&
 					 ifd &&
 					 ifd->fUsesNewSubFileType &&
-			 		 ifd->fNewSubFileType == sfMainImage;
-			 		 
+					 ifd->fNewSubFileType == sfMainImage;
+					 
 	// Panasonic RAW format stores private tags using tag codes < 254 in
 	// IFD 0.  Redirect the parsing of these tags into a logical
 	// "PanasonicRAW" IFD.
 	
 	// Panasonic is starting to use some higher numbers also (280..283).
-			 		 
+					 
 	if (fMagic == 85 && parentCode == 0 && (tagCode < tcNewSubFileType ||
 											(tagCode >= 280 && tagCode <= 283)))
 		{
@@ -164,12 +166,13 @@ void dng_info::ParseTag (dng_host &host,
 	
 	stream.SetReadPosition (tagOffset);
 		
-	if (ifd && ifd->ParseTag (stream,
-						 	  parentCode,
-						 	  tagCode,
-						 	  tagType,
-						 	  tagCount,
-						 	  tagOffset))
+	if (ifd && ifd->ParseTag (host,
+							  stream,
+							  parentCode,
+							  tagCode,
+							  tagType,
+							  tagCount,
+							  tagOffset))
 		{
 		
 		return;
@@ -196,13 +199,13 @@ void dng_info::ParseTag (dng_host &host,
 		
 	if (shared && exif && shared->ParseTag (stream,
 											*exif,
-								    		parentCode,
-								    		isMainIFD,
-								    		tagCode,
-								    		tagType,
-								    		tagCount,
-								    		tagOffset,
-								    		offsetDelta))
+											parentCode,
+											isMainIFD,
+											tagCode,
+											tagType,
+											tagCount,
+											tagOffset,
+											offsetDelta))
 		{
 		
 		return;
@@ -277,12 +280,12 @@ void dng_info::ParseTag (dng_host &host,
 			
 			if (ParseMakerNoteIFD (host,
 								   stream,
-							       stream.Length () - tagOffset,
-				   	  		       tagOffset,
-				   	  		       offsetDelta,
-				   	  		       tagOffset,
-				   	  		       stream.Length (),
-				   	  		       olympusMakerParent))
+								   stream.Length () - tagOffset,
+								   tagOffset,
+								   offsetDelta,
+								   tagOffset,
+								   stream.Length (),
+								   olympusMakerParent))
 				{
 				
 				return;
@@ -311,11 +314,11 @@ void dng_info::ParseTag (dng_host &host,
 			ParseMakerNoteIFD (host,
 							   stream,
 							   tagCount - 20,
-				   	  		   tagOffset + 20,
-				   	  		   offsetDelta,
-				   	  		   tagOffset + 20,
-				   	  		   tagOffset + tagCount,
-				   	  		   tcRicohMakerNoteCameraInfo);
+							   tagOffset + 20,
+							   offsetDelta,
+							   tagOffset + 20,
+							   tagOffset + tagCount,
+							   tcRicohMakerNoteCameraInfo);
 
 			return;
 			
@@ -369,13 +372,15 @@ void dng_info::ParseTag (dng_host &host,
 /*****************************************************************************/
 
 bool dng_info::ValidateIFD (dng_stream &stream,
-						    uint64 ifdOffset,
-						    int64 offsetDelta)
+							uint64 ifdOffset,
+							int64 offsetDelta)
 	{
+	
+	bool isBigTIFF = (fMagic == magicBigTIFF);
 	
 	// Make sure we have a count.
 	
-	if (ifdOffset + 2 > stream.Length ())
+	if (ifdOffset + (isBigTIFF ? 8 : 2) > stream.Length ())
 		{
 		return false;
 		}
@@ -384,7 +389,8 @@ bool dng_info::ValidateIFD (dng_stream &stream,
 		
 	stream.SetReadPosition (ifdOffset);
 	
-	uint32 ifdEntries = stream.Get_uint16 ();
+	uint64 ifdEntries = isBigTIFF ? stream.Get_uint64 ()
+								  : stream.Get_uint16 ();
 	
 	if (ifdEntries < 1)
 		{
@@ -393,40 +399,52 @@ bool dng_info::ValidateIFD (dng_stream &stream,
 		
 	// Make sure we have room for all entries and next IFD link.
 		
-	if (ifdOffset + 2 + ifdEntries * 12 + 4 > stream.Length ())
+	if (ifdOffset + (isBigTIFF ? 8 + ifdEntries * 20 + 8
+							   : 2 + ifdEntries * 12 + 4) > stream.Length ())
 		{
 		return false;
 		}
 		
 	// Check each entry.
 	
-	for (uint32 tag_index = 0; tag_index < ifdEntries; tag_index++)
+	for (uint64 tag_index = 0; tag_index < ifdEntries; tag_index++)
 		{
 		
-		stream.SetReadPosition (ifdOffset + 2 + tag_index * 12);
+		stream.SetReadPosition (isBigTIFF ? ifdOffset + 8 + tag_index * 20
+										  : ifdOffset + 2 + tag_index * 12);
 		
 		stream.Skip (2);		// Ignore tag code.
 		
-		uint32 tagType  = stream.Get_uint16 ();
-		uint32 tagCount = stream.Get_uint32 ();
+		uint32 tagType = stream.Get_uint16 ();
 		
-		uint32 tag_type_size = TagTypeSize (tagType);
+		uint64 tagCount = isBigTIFF ? stream.Get_uint64 ()
+									: stream.Get_uint32 ();
+		
+		uint64 tag_type_size = (uint64) TagTypeSize (tagType);
 		
 		if (tag_type_size == 0)
 			{
 			return false;
 			}
-			
-		uint32 tag_data_size = tagCount * tag_type_size;
-						
-		if (tag_data_size > 4)
+
+		uint64 tag_data_size = tagCount * tag_type_size;
+
+		// Check overflow.
+		
+		if (tag_data_size < tagCount ||
+			tag_data_size < tag_type_size)
+			return false;
+		
+		if (tag_data_size > (isBigTIFF ? 8 : 4))
 			{
 			
-			uint64 tagOffset = stream.Get_uint32 ();
+			uint64 tagOffset = isBigTIFF ? stream.Get_uint64 ()
+										 : stream.Get_uint32 ();
 							
 			tagOffset += offsetDelta;
 			
-			if (tagOffset + tag_data_size > stream.Length ())
+			if (SafeUint64Add (tagOffset,
+							   tag_data_size) > stream.Length ())
 				{
 				return false;
 				}
@@ -457,13 +475,15 @@ void dng_info::ParseIFD (dng_host &host,
 						parentCode <= tcLastMakerNoteIFD);
 	
 	#endif
-    
-    // TIFF IFDs often read from two very different places in the file,
-    // one for the IFD itself (and small tags), and elsewhere in the file
-    // for large tags.  We can reduce the number of calls to the OS
-    // by double buffering reads for the two areas of the file.
-    
-    dng_stream_double_buffered ifdStream (stream);
+	
+	bool isBigTIFF = (fMagic == magicBigTIFF);
+	
+	// TIFF IFDs often read from two very different places in the file,
+	// one for the IFD itself (and small tags), and elsewhere in the file
+	// for large tags.	We can reduce the number of calls to the OS
+	// by double buffering reads for the two areas of the file.
+	
+	dng_stream_double_buffered ifdStream (stream);
 
 	ifdStream.SetReadPosition (ifdOffset);
 	
@@ -472,26 +492,24 @@ void dng_info::ParseIFD (dng_host &host,
 		ifd->fThisIFD = ifdOffset;
 		}
 	
-	uint32 ifdEntries = ifdStream.Get_uint16 ();
+	uint64 ifdEntries = isBigTIFF ? ifdStream.Get_uint64 ()
+								  : ifdStream.Get_uint16 ();
 	
 	#if qDNGValidate
-        
-    // IC hits these warnings on JPG
-    bool generateOddOffsetWarnings = true;
-    if (gImagecore)
-        generateOddOffsetWarnings = false;
-        
+		
+	bool generateOddOffsetWarnings = !gImagecore;
+		
 	if (gVerbose)
 		{
 		
-		printf ("%s: Offset = %u, Entries = %u\n\n",
+		printf ("%s: Offset = %llu, Entries = %llu\n\n",
 				LookupParentCode (parentCode),
-			    (unsigned) ifdOffset, 
-			    (unsigned) ifdEntries);
+				(unsigned long long) ifdOffset,
+				(unsigned long long) ifdEntries);
 		
 		}
 		
-	if (generateOddOffsetWarnings && (ifdOffset & 1) && !isMakerNote) 
+	if (generateOddOffsetWarnings && (ifdOffset & 1) && !isMakerNote)
 		{
 		
 		char message [256];
@@ -509,16 +527,17 @@ void dng_info::ParseIFD (dng_host &host,
 		
 	uint32 prev_tag_code = 0;
 		
-	for (uint32 tag_index = 0; tag_index < ifdEntries; tag_index++)
+	for (uint64 tag_index = 0; tag_index < ifdEntries; tag_index++)
 		{
 		
-		ifdStream.SetReadPosition (ifdOffset + 2 + tag_index * 12);
+		ifdStream.SetReadPosition (isBigTIFF ? ifdOffset + 8 + tag_index * 20
+											 : ifdOffset + 2 + tag_index * 12);
 		
-		uint32 tagCode  = ifdStream.Get_uint16 ();
-		uint32 tagType  = ifdStream.Get_uint16 ();
+		uint32 tagCode	= ifdStream.Get_uint16 ();
+		uint32 tagType	= ifdStream.Get_uint16 ();
 		
 		// Minolta 7D files have a bug in the EXIF block where the count
-		// is wrong, and we run off into next IFD link.  So if abort parsing
+		// is wrong, and we run off into next IFD link.	 So if abort parsing
 		// if we get a zero code/type combinations.
 		
 		if (tagCode == 0 && tagType == 0)
@@ -540,7 +559,8 @@ void dng_info::ParseIFD (dng_host &host,
 			
 			}
 		
-		uint32 tagCount = ifdStream.Get_uint32 ();
+		uint64 tagCount = isBigTIFF ? ifdStream.Get_uint64 ()
+									: ifdStream.Get_uint32 ();
 		
 		#if qDNGValidate
 
@@ -591,25 +611,36 @@ void dng_info::ParseIFD (dng_host &host,
 			continue;
 			
 			}
-            
-        bool localTag = true;
 			
-		uint64 tagOffset = ifdOffset + 2 + tag_index * 12 + 8;
+		bool localTag = true;
+			
+		uint64 tagOffset = isBigTIFF ? ifdOffset + 8 + tag_index * 20 + 12
+									 : ifdOffset + 2 + tag_index * 12 +	 8;
+
+		const uint64 tag_data_size = tagCount * (uint64) tag_type_size;
+
+		// tag_type_size is at least 1.
 		
-		if (tagCount * tag_type_size > 4)
+		if (tag_data_size < tagCount)
+			{
+			ThrowBadFormat ("overflow in tag_data_size");
+			}
+		
+		if (tag_data_size > (isBigTIFF ? 8 : 4))
 			{
 			
-			tagOffset = ifdStream.Get_uint32 ();
+			tagOffset = isBigTIFF ? ifdStream.Get_uint64 ()
+								  : ifdStream.Get_uint32 ();
 			
 			#if qDNGValidate
 			
 				{
 			
 				if (generateOddOffsetWarnings &&
-                    !(ifdOffset & 1) &&
-				     (tagOffset & 1) &&
-				    !isMakerNote     &&
-				    parentCode != tcKodakDCRPrivateIFD &&
+					!(ifdOffset & 1) &&
+					 (tagOffset & 1) &&
+					!isMakerNote	 &&
+					parentCode != tcKodakDCRPrivateIFD &&
 					parentCode != tcKodakKDCPrivateIFD)
 					{
 					
@@ -617,8 +648,8 @@ void dng_info::ParseIFD (dng_host &host,
 		
 					sprintf (message,
 							 "%s %s has odd data offset (%u)",
-						 	 LookupParentCode (parentCode),
-						 	 LookupTagCode (parentCode, tagCode),
+							 LookupParentCode (parentCode),
+							 LookupTagCode (parentCode, tagCode),
 							 (unsigned) tagOffset);
 							 
 					ReportWarning (message);
@@ -630,40 +661,69 @@ void dng_info::ParseIFD (dng_host &host,
 			#endif
 				
 			tagOffset += offsetDelta;
-            
-            localTag = ifdStream.DataInBuffer (tagCount * tag_type_size,
-                                               tagOffset);
+			
+			localTag = ifdStream.DataInBuffer (tagCount * tag_type_size,
+											   tagOffset);
 				
-            if (localTag)
-                ifdStream.SetReadPosition (tagOffset);
-            else
-                stream.SetReadPosition (tagOffset);
+			if (localTag)
+				ifdStream.SetReadPosition (tagOffset);
+			else
+				stream.SetReadPosition (tagOffset);
 			
 			}
 			
-		ParseTag (host,
-				  localTag ? ifdStream : stream,
-			      exif,
-				  shared,
-				  ifd,
-				  parentCode,
-				  tagCode,
-				  tagType,
-				  tagCount,
-				  tagOffset,
-				  offsetDelta);
+		// Big TIFF support 64-bit tag counts, but we don't need
+		// that support yet, so ignore tags with huge counts for now.
+			
+		if (tagCount <= 0x0FFFFFFFF)
+			{
+			
+			ParseTag (host,
+					  localTag ? ifdStream : stream,
+					  exif,
+					  shared,
+					  ifd,
+					  parentCode,
+					  tagCode,
+					  tagType,
+					  (uint32) tagCount,
+					  tagOffset,
+					  offsetDelta);
+					  
+			}
+			
+		#if qDNGValidate
+		
+		else
+			{
+			
+			char message [256];
+
+			sprintf (message,
+					 "%s %s has larger than 32-bit tag count (%llu)",
+					 LookupParentCode (parentCode),
+					 LookupTagCode (parentCode, tagCode),
+					 (unsigned long long) tagCount);
+					 
+			ReportWarning (message);
+								 
+			}
+		
+		#endif
 			
 		}
 		
-	ifdStream.SetReadPosition (ifdOffset + 2 + ifdEntries * 12);
+	ifdStream.SetReadPosition (isBigTIFF ? ifdOffset + 8 + ifdEntries * 20
+										 : ifdOffset + 2 + ifdEntries * 12);
 	
-	uint32 nextIFD = ifdStream.Get_uint32 ();
+	uint64 nextIFD = isBigTIFF ? ifdStream.Get_uint64 ()
+							   : ifdStream.Get_uint32 ();
 	
 	#if qDNGValidate
 		
 	if (gVerbose)
 		{
-		printf ("NextIFD = %u\n", (unsigned) nextIFD);
+		printf ("NextIFD = %llu\n", (unsigned long long) nextIFD);
 		}
 		
 	#endif
@@ -680,15 +740,15 @@ void dng_info::ParseIFD (dng_host &host,
 		
 		if (parentCode != 0 &&
 				(parentCode < tcFirstChainedIFD ||
-				 parentCode > tcLastChainedIFD  ))
+				 parentCode > tcLastChainedIFD	))
 			{
 
 			char message [256];
 
 			sprintf (message,
-					 "%s has an unexpected non-zero NextIFD (%u)",
-				 	 LookupParentCode (parentCode),
-				 	 (unsigned) nextIFD);
+					 "%s has an unexpected non-zero NextIFD (%llu)",
+					 LookupParentCode (parentCode),
+					 (unsigned long long) nextIFD);
 					 
 			ReportWarning (message);
 					 
@@ -700,8 +760,8 @@ void dng_info::ParseIFD (dng_host &host,
 		{
 		printf ("\n");
 		}
-        
-    stream.SetReadPosition (ifdStream.Position ());
+		
+	stream.SetReadPosition (ifdStream.Position ());
 
 	#endif
 		
@@ -712,11 +772,11 @@ void dng_info::ParseIFD (dng_host &host,
 bool dng_info::ParseMakerNoteIFD (dng_host &host,
 								  dng_stream &stream,
 								  uint64 ifdSize,
-						 		  uint64 ifdOffset,
+								  uint64 ifdOffset,
 								  int64 offsetDelta,
 								  uint64 minOffset,
 								  uint64 maxOffset,
-						 		  uint32 parentCode)
+								  uint32 parentCode)
 	{
 	
 	uint32 tagIndex;
@@ -736,8 +796,8 @@ bool dng_info::ParseMakerNoteIFD (dng_host &host,
 		}
 		
 	// Get entry count.
-    
-    dng_stream_double_buffered ifdStream (stream);
+	
+	dng_stream_double_buffered ifdStream (stream);
 	
 	ifdStream.SetReadPosition (ifdOffset);
 	
@@ -760,7 +820,7 @@ bool dng_info::ParseMakerNoteIFD (dng_host &host,
 		tagType = ifdStream.Get_uint16 ();
 		
 		// Kludge: Some Canon MakerNotes contain tagType = 0 tags, so we
-		// need to ignore them.  This was a "firmware 1.0.4" Canon 40D raw file.
+		// need to ignore them.	 This was a "firmware 1.0.4" Canon 40D raw file.
 		
 		if (parentCode == tcCanonMakerNote && tagType == 0)
 			{
@@ -783,8 +843,8 @@ bool dng_info::ParseMakerNoteIFD (dng_host &host,
 		
 		printf ("%s: Offset = %u, Entries = %u\n\n",
 				LookupParentCode (parentCode),
-			    (unsigned) ifdOffset, 
-			    (unsigned) ifdEntries);
+				(unsigned) ifdOffset, 
+				(unsigned) ifdEntries);
 		
 		}
 		
@@ -795,8 +855,8 @@ bool dng_info::ParseMakerNoteIFD (dng_host &host,
 		
 		ifdStream.SetReadPosition (ifdOffset + 2 + tagIndex * 12);
 		
-		tagCode  = ifdStream.Get_uint16 ();
-		tagType  = ifdStream.Get_uint16 ();
+		tagCode	 = ifdStream.Get_uint16 ();
+		tagType	 = ifdStream.Get_uint16 ();
 		tagCount = ifdStream.Get_uint32 ();
 		
 		if (tagType == 0)
@@ -804,19 +864,20 @@ bool dng_info::ParseMakerNoteIFD (dng_host &host,
 			continue;
 			}
 		
-		uint32 tagSize = tagCount * TagTypeSize (tagType);
+		uint32 tagSize = SafeUint32Mult (tagCount,
+										 TagTypeSize (tagType));
 		
 		uint64 tagOffset = ifdOffset + 2 + tagIndex * 12 + 8;
-        
-        bool localTag = true;
+		
+		bool localTag = true;
 		
 		if (tagSize > 4)
 			{
 			
 			tagOffset = ifdStream.Get_uint32 () + offsetDelta;
 			
-			if (tagOffset           < minOffset ||
-				tagOffset + tagSize > maxOffset)
+			if (tagOffset < minOffset ||
+				SafeUint64Add (tagOffset, tagSize) > maxOffset)
 				{
 				
 				// Tag data is outside the valid offset range,
@@ -825,10 +886,10 @@ bool dng_info::ParseMakerNoteIFD (dng_host &host,
 				continue;
 				
 				}
-                
-            localTag = ifdStream.DataInBuffer (tagSize, tagOffset);
-            
-            ifdStream.SetReadPosition (tagOffset);
+				
+			localTag = ifdStream.DataInBuffer (tagSize, tagOffset);
+			
+			ifdStream.SetReadPosition (tagOffset);
 			
 			stream.SetReadPosition (tagOffset);
 			
@@ -977,12 +1038,12 @@ void dng_info::ParseMakerNote (dng_host &host,
 			ParseMakerNoteIFD (host,
 							   stream,
 							   makerNoteCount - 8,
-				   	  		   makerNoteOffset + 8,
-				   	  		   offsetDelta,
-				   	  		   minOffset,
-				   	  		   maxOffset,
-				   	  		   tcEpsonMakerNote);
-				   	  		   
+							   makerNoteOffset + 8,
+							   offsetDelta,
+							   minOffset,
+							   maxOffset,
+							   tcEpsonMakerNote);
+							   
 			}
 			
 		return;
@@ -1158,12 +1219,12 @@ void dng_info::ParseMakerNote (dng_host &host,
 			ParseMakerNoteIFD (host,
 							   stream,
 							   makerNoteCount - 12,
-				   	  		   makerNoteOffset + 12,
-				   	  		   makerNoteOffset,
-				   	  		   minOffset,
-				   	  		   maxOffset,
-				   	  		   tcOlympusMakerNote);
-				   	  		   
+							   makerNoteOffset + 12,
+							   makerNoteOffset,
+							   minOffset,
+							   maxOffset,
+							   tcOlympusMakerNote);
+							   
 			}
 			
 		return;
@@ -1181,12 +1242,62 @@ void dng_info::ParseMakerNote (dng_host &host,
 			ParseMakerNoteIFD (host,
 							   stream,
 							   makerNoteCount - 8,
-				   	  		   makerNoteOffset + 8,
-				   	  		   offsetDelta,
-				   	  		   minOffset,
-				   	  		   maxOffset,
-				   	  		   tcOlympusMakerNote);
-				   	  		   
+							   makerNoteOffset + 8,
+							   offsetDelta,
+							   minOffset,
+							   maxOffset,
+							   tcOlympusMakerNote);
+							   
+			}
+			
+		return;
+		
+		}
+	
+	// OM Digital Solutions cameras (formerly Olympus brand).
+	// The tags and parent code are the same as Olympus.
+	// Just a new header identifier "OM SYSTEM" and BOM.
+	
+	if (memcmp (firstBytes, "OM SYSTEM\000", 10) == 0)
+		{
+		
+		stream.SetReadPosition (makerNoteOffset + 12);
+		
+		bool bigEndian = false;
+		
+		uint16 endianMark = stream.Get_uint16 ();
+		
+		if (endianMark == byteOrderMM)
+			{
+			bigEndian = true;
+			}
+			
+		else if (endianMark != byteOrderII)
+			{
+			return;
+			}
+			
+		TempBigEndian temp_endian (stream, bigEndian);
+		
+		uint16 version = stream.Get_uint16 ();
+		
+		if (version != 4)
+			{
+			return;
+			}
+		
+		if (makerNoteCount > 16)
+			{
+		
+			ParseMakerNoteIFD (host,
+							   stream,
+							   makerNoteCount - 16,
+							   makerNoteOffset + 16,
+							   makerNoteOffset,
+							   minOffset,
+							   maxOffset,
+							   tcOlympusMakerNote);
+							   
 			}
 			
 		return;
@@ -1312,12 +1423,12 @@ void dng_info::ParseMakerNote (dng_host &host,
 			ParseMakerNoteIFD (host,
 							   stream,
 							   makerNoteCount - 8,
-				   	  		   makerNoteOffset + 8,
-				   	  		   offsetDelta,
-				   	  		   minOffset,
-				   	  		   maxOffset,
-				   	  		   tcRicohMakerNote);
-				   	  		   
+							   makerNoteOffset + 8,
+							   offsetDelta,
+							   minOffset,
+							   maxOffset,
+							   tcRicohMakerNote);
+							   
 			}
 			
 		return;
@@ -1332,12 +1443,12 @@ void dng_info::ParseMakerNote (dng_host &host,
 		ParseMakerNoteIFD (host,
 						   stream,
 						   makerNoteCount,
-			   	  		   makerNoteOffset,
-			   	  		   offsetDelta,
-			   	  		   minOffset,
-			   	  		   maxOffset,
-			   	  		   tcNikonMakerNote);
-			   	  		   
+						   makerNoteOffset,
+						   offsetDelta,
+						   minOffset,
+						   maxOffset,
+						   tcNikonMakerNote);
+						   
 		return;
 			
 		}
@@ -1350,11 +1461,11 @@ void dng_info::ParseMakerNote (dng_host &host,
 		ParseMakerNoteIFD (host,
 						   stream,
 						   makerNoteCount,
-			   	  		   makerNoteOffset,
-			   	  		   offsetDelta,
-			   	  		   minOffset,
-			   	  		   maxOffset,
-			   	  		   tcCanonMakerNote);
+						   makerNoteOffset,
+						   offsetDelta,
+						   minOffset,
+						   maxOffset,
+						   tcCanonMakerNote);
 			
 		return;
 		
@@ -1362,7 +1473,7 @@ void dng_info::ParseMakerNote (dng_host &host,
 		
 	// Minolta MakerNote.
 	
-	if (fExif->fMake.StartsWith ("MINOLTA"       ) ||
+	if (fExif->fMake.StartsWith ("MINOLTA"		 ) ||
 		fExif->fMake.StartsWith ("KONICA MINOLTA"))
 		{
 
@@ -1405,12 +1516,12 @@ void dng_info::ParseMakerNote (dng_host &host,
 		ParseMakerNoteIFD (host,
 						   stream,
 						   makerNoteCount,
-			   	  		   makerNoteOffset,
-			   	  		   offsetDelta,
-			   	  		   minOffset,
-			   	  		   maxOffset,
-			   	  		   tcKodakMakerNote);
-			   	  		   
+						   makerNoteOffset,
+						   offsetDelta,
+						   minOffset,
+						   maxOffset,
+						   tcKodakMakerNote);
+						   
 		return;
 			
 		}
@@ -1423,17 +1534,17 @@ void dng_info::ParseMakerNote (dng_host &host,
 		ParseMakerNoteIFD (host,
 						   stream,
 						   makerNoteCount,
-			   	  		   makerNoteOffset,
-			   	  		   offsetDelta,
-			   	  		   minOffset,
-			   	  		   maxOffset,
-			   	  		   tcMamiyaMakerNote);
+						   makerNoteOffset,
+						   offsetDelta,
+						   minOffset,
+						   maxOffset,
+						   tcMamiyaMakerNote);
 						   
 		// Mamiya uses a MakerNote chain.
 						   
 		while (fMakerNoteNextIFD)
 			{
-			   	  		   
+						   
 			ParseMakerNoteIFD (host,
 							   stream,
 							   makerNoteCount,
@@ -1444,7 +1555,7 @@ void dng_info::ParseMakerNote (dng_host &host,
 							   tcMamiyaMakerNote);
 							   
 			}
-			   	  		   
+						   
 		return;
 			
 		}
@@ -1457,12 +1568,12 @@ void dng_info::ParseMakerNote (dng_host &host,
 		ParseMakerNoteIFD (host,
 						   stream,
 						   makerNoteCount,
-			   	  		   makerNoteOffset,
-			   	  		   offsetDelta,
-			   	  		   minOffset,
-			   	  		   maxOffset,
-			   	  		   tcHasselbladMakerNote);
-			   	  		   
+						   makerNoteOffset,
+						   offsetDelta,
+						   minOffset,
+						   maxOffset,
+						   tcHasselbladMakerNote);
+						   
 		return;
 			
 		}
@@ -1505,7 +1616,7 @@ void dng_info::ParseMakerNote (dng_host &host,
 		}
 	
 	}
-							   		 
+									 
 /*****************************************************************************/
 
 void dng_info::ParseSonyPrivateData (dng_host & /* host */,
@@ -1518,7 +1629,7 @@ void dng_info::ParseSonyPrivateData (dng_host & /* host */,
 	// Sony private data is encrypted, sorry.
 	
 	}
-							   		 
+									 
 /*****************************************************************************/
 
 void dng_info::ParseDNGPrivateData (dng_host &host,
@@ -1609,12 +1720,13 @@ void dng_info::ParseDNGPrivateData (dng_host &host,
 	
 	uint32 section_offset = 6;
 	
-	while (section_offset + 8 < fShared->fDNGPrivateDataCount)
+	while (SafeUint32Add (section_offset, 8) < fShared->fDNGPrivateDataCount)
 		{
 		
-		stream.SetReadPosition (fShared->fDNGPrivateDataOffset + section_offset);
+		stream.SetReadPosition (SafeUint64Add (fShared->fDNGPrivateDataOffset,
+											   section_offset));
 		
-		uint32 section_key   = stream.Get_uint32 ();
+		uint32 section_key	 = stream.Get_uint32 ();
 		uint32 section_count = stream.Get_uint32 ();
 		
 		if (section_key == DNG_CHAR4 ('M','a','k','N') && section_count > 6)
@@ -1630,9 +1742,9 @@ void dng_info::ParseDNGPrivateData (dng_host &host,
 			#endif
 				
 			uint16 order_mark = stream.Get_uint16 ();
-			uint64 old_offset = stream.Get_uint32 ();
+			int64 old_offset  = stream.Get_uint32 ();
 
-			uint32 tempSize = section_count - 6;
+			uint32 tempSize = SafeUint32Sub (section_count, 6);
 			
 			AutoPtr<dng_memory_block> tempBlock (host.Allocate (tempSize));
 			
@@ -1676,7 +1788,7 @@ void dng_info::ParseDNGPrivateData (dng_host &host,
 			TempBigEndian sr2_order (stream, order_mark == byteOrderMM);
 			
 			ParseSonyPrivateData (host,
-							  	  stream,
+								  stream,
 								  section_count - 6,
 								  old_offset,
 								  new_offset);
@@ -1718,7 +1830,7 @@ void dng_info::ParseDNGPrivateData (dng_host &host,
 						  tagOffset,
 						  0);
 						  
-				stream.SetReadPosition (tagOffset + tagCount);
+				stream.SetReadPosition (SafeUint64Add (tagOffset, tagCount));
 				
 				}
 			
@@ -1743,7 +1855,7 @@ void dng_info::ParseDNGPrivateData (dng_host &host,
 						  tagOffset,
 						  0);
 						  
-				stream.SetReadPosition (tagOffset + tagCount);
+				stream.SetReadPosition (SafeUint64Add (tagOffset, tagCount));
 				
 				}
 			
@@ -1768,7 +1880,7 @@ void dng_info::ParseDNGPrivateData (dng_host &host,
 						  tagOffset,
 						  0);
 						  
-				stream.SetReadPosition (tagOffset + tagCount);
+				stream.SetReadPosition (SafeUint64Add (tagOffset, tagCount));
 				
 				}
 			
@@ -1788,7 +1900,7 @@ void dng_info::ParseDNGPrivateData (dng_host &host,
 			
 			uint16 order_mark = stream.Get_uint16 ();
 			
-			uint32 tagCount  = stream.Get_uint32 ();
+			uint32 tagCount	 = stream.Get_uint32 ();
 			
 			uint64 tagOffset = stream.Position ();
 				
@@ -1826,7 +1938,7 @@ void dng_info::ParseDNGPrivateData (dng_host &host,
 			#endif
 				
 			uint16 order_mark = stream.Get_uint16 ();
-			uint32 entries    = stream.Get_uint16 ();
+			uint32 entries	  = stream.Get_uint16 ();
 			
 			uint64 crwTagStart = stream.Position ();
 			
@@ -1879,7 +1991,7 @@ void dng_info::ParseDNGPrivateData (dng_host &host,
 			
 			uint32 parentCode = 0;
 			
-			bool code32  = false;
+			bool code32	 = false;
 			bool hasType = true;
 			
 			switch (section_key)
@@ -1888,8 +2000,8 @@ void dng_info::ParseDNGPrivateData (dng_host &host,
 				case DNG_CHAR4 ('M','R','W',' '):
 					{
 					parentCode = tcMinoltaMRW;
-					code32     = true;
-					hasType    = false;
+					code32	   = true;
+					hasType	   = false;
 					break;
 					}
 				
@@ -1936,7 +2048,7 @@ void dng_info::ParseDNGPrivateData (dng_host &host,
 				#endif
 				
 				uint16 order_mark = stream.Get_uint16 ();
-				uint32 entries    = stream.Get_uint16 ();
+				uint32 entries	  = stream.Get_uint16 ();
 				
 				for (uint32 index = 0; index < entries; index++)
 					{
@@ -1944,12 +2056,12 @@ void dng_info::ParseDNGPrivateData (dng_host &host,
 					uint32 tagCode = code32 ? stream.Get_uint32 ()
 											: stream.Get_uint16 ();
 											 
-					uint32 tagType  = hasType ? stream.Get_uint16 () 
+					uint32 tagType	= hasType ? stream.Get_uint16 () 
 											  : ttUndefined;
 					
 					uint32 tagCount = stream.Get_uint32 ();
 					
-					uint32 tagSize = tagCount * TagTypeSize (tagType);
+					uint32 tagSize = SafeUint32Mult (tagCount, TagTypeSize (tagType));
 					
 					uint64 tagOffset = stream.Position ();
 					
@@ -1967,7 +2079,7 @@ void dng_info::ParseDNGPrivateData (dng_host &host,
 							  tagOffset,
 							  0);
 					
-					stream.SetReadPosition (tagOffset + tagSize);
+					stream.SetReadPosition (SafeUint64Add (tagOffset, tagSize));
 					
 					}
 					
@@ -1975,11 +2087,12 @@ void dng_info::ParseDNGPrivateData (dng_host &host,
 			
 			}
 		
-		section_offset += 8 + section_count;
+		section_offset = SafeUint32Add (section_offset, 8);
+		section_offset = SafeUint32Add (section_offset, section_count);
 		
 		if (section_offset & 1)
 			{
-			section_offset++;
+			section_offset = SafeUint32Add (section_offset, 1);
 			}
 		
 		}
@@ -2064,9 +2177,33 @@ void dng_info::Parse (dng_host &host,
 	
 	ValidateMagic ();
 	
+	// Validate BigTIFF header, if any.
+	
+	if (fMagic == magicBigTIFF)
+		{
+		
+		uint16 byteSize = stream.Get_uint16 ();
+		uint16 zeroPad	= stream.Get_uint16 ();
+		
+		if (byteSize != 8 || zeroPad != 0)
+			{
+			
+			#if qDNGValidate
+			
+			ReportError ("Invalid BigTIFF header");
+			
+			#endif
+			
+			ThrowBadFormat ();
+			
+			}
+		
+		}
+	
 	// Parse IFD 0.
 	
-	uint64 next_offset = stream.Get_uint32 ();
+	uint64 next_offset = (fMagic == magicBigTIFF) ? stream.Get_uint64 ()
+												  : stream.Get_uint32 ();
 	
 	fExif.Reset (host.Make_dng_exif ());
 	
@@ -2082,7 +2219,7 @@ void dng_info::Parse (dng_host &host,
 			  fTIFFBlockOffset + next_offset,
 			  fTIFFBlockOffset,
 			  0);
-			  	
+				
 	next_offset = fIFD [0]->fNextIFD;
 	
 	// Parse chained IFDs.
@@ -2148,7 +2285,7 @@ void dng_info::Parse (dng_host &host,
 			
 		fChainedIFD.push_back (host.Make_dng_ifd ());
 		
-        fChainedSubIFD.push_back (std::vector <dng_ifd *> ());
+		fChainedSubIFD.push_back (std::vector <dng_ifd *> ());
 			
 		ParseIFD (host,
 				  stream,
@@ -2180,8 +2317,8 @@ void dng_info::Parse (dng_host &host,
 			{
 			
 			for (uint32 subIndex = 0;
-			     subIndex < fIFD [searchIndex]->fSubIFDsCount;
-			     subIndex++)
+				 subIndex < fIFD [searchIndex]->fSubIFDsCount;
+				 subIndex++)
 				{
 				
 				if (IFDCount () == kMaxSubIFDs + 1)
@@ -2192,11 +2329,13 @@ void dng_info::Parse (dng_host &host,
 					break;
 					
 					}
+					
+				uint32 subIFDType = fIFD [searchIndex]->fSubIFDsType;
 				
 				stream.SetReadPosition (fIFD [searchIndex]->fSubIFDsOffset +
-							 			subIndex * 4);
+										subIndex * TagTypeSize (subIFDType));
 				
-				uint32 sub_ifd_offset = stream.Get_uint32 ();
+				uint64 sub_ifd_offset = stream.TagValue_uint64 (subIFDType);
 				
 				fIFD.push_back (host.Make_dng_ifd ());
 				
@@ -2232,51 +2371,53 @@ void dng_info::Parse (dng_host &host,
 		
 	#endif
 
-    // Parse SubIFDs in Chained IFDs.  Don't currently need to make this a
-    // recursive search.
+	// Parse SubIFDs in Chained IFDs.  Don't currently need to make this a
+	// recursive search.
 
-    for (uint32 chainedIndex = 0;
-         chainedIndex < ChainedIFDCount ();
-         chainedIndex++)
-        {
+	for (uint32 chainedIndex = 0;
+		 chainedIndex < ChainedIFDCount ();
+		 chainedIndex++)
+		{
 
-        for (uint32 subIndex = 0;
-             subIndex < fChainedIFD [chainedIndex]->fSubIFDsCount;
-             subIndex++)
-            {
-            
-            if (subIndex == kMaxSubIFDs)
-                {
-                
-                #if qDNGValidate
+		for (uint32 subIndex = 0;
+			 subIndex < fChainedIFD [chainedIndex]->fSubIFDsCount;
+			 subIndex++)
+			{
+			
+			if (subIndex == kMaxSubIFDs)
+				{
+				
+				#if qDNGValidate
 
-                ReportWarning ("Chained SubIFD count exceeds DNG SDK parsing limit");
+				ReportWarning ("Chained SubIFD count exceeds DNG SDK parsing limit");
 
-                #endif
+				#endif
 
-                break;
-                
-                }
-            
-            stream.SetReadPosition (fChainedIFD [chainedIndex]->fSubIFDsOffset +
-                                    subIndex * 4);
-            
-            uint32 sub_ifd_offset = stream.Get_uint32 ();
-            
-            fChainedSubIFD [chainedIndex].push_back (host.Make_dng_ifd ());
-            
-            ParseIFD (host,
-                      stream,
-                      fExif.Get (),
-                      fShared.Get (),
-                      fChainedSubIFD [chainedIndex] [subIndex],
-                      fTIFFBlockOffset + sub_ifd_offset,
-                      fTIFFBlockOffset,
-                      tcFirstSubIFD + subIndex);
-            
-            }
+				break;
+				
+				}
+			
+			uint32 subIFDType = fChainedIFD [chainedIndex]->fSubIFDsType;
+			
+			stream.SetReadPosition (fChainedIFD [chainedIndex]->fSubIFDsOffset +
+									subIndex * TagTypeSize (subIFDType));
+			
+			uint64 sub_ifd_offset = stream.TagValue_uint64 (subIFDType);
+			
+			fChainedSubIFD [chainedIndex].push_back (host.Make_dng_ifd ());
+			
+			ParseIFD (host,
+					  stream,
+					  fExif.Get (),
+					  fShared.Get (),
+					  fChainedSubIFD [chainedIndex] [subIndex],
+					  fTIFFBlockOffset + sub_ifd_offset,
+					  fTIFFBlockOffset,
+					  tcFirstSubIFD + subIndex);
+			
+			}
 
-        }
+		}
 		
 	// Parse EXIF IFD.
 		
@@ -2344,7 +2485,7 @@ void dng_info::Parse (dng_host &host,
 			}
 			
 		#endif
-					   	 
+						 
 		}
 
 	// Parse Kodak DCR Private IFD.
@@ -2580,66 +2721,80 @@ void dng_info::PostParse (dng_host &host)
 				
 			}
    
-        // Find depth index.
-        
-        for (index = 0; index < IFDCount (); index++)
-            {
-            
-            if (fIFD [index]->fNewSubFileType == sfDepthMap)
-                {
-                
-                if (fDepthIndex == -1)
-                    {
-                    
-                    fDepthIndex = index;
-                    
-                    }
-                    
-                #if qDNGValidate
-                    
-                else
-                    {
+		// Find depth index.
+		
+		for (index = 0; index < IFDCount (); index++)
+			{
+			
+			if (fIFD [index]->fNewSubFileType == sfDepthMap)
+				{
+				
+				if (fDepthIndex == -1)
+					{
+					
+					fDepthIndex = index;
+					
+					}
+					
+				#if qDNGValidate
+					
+				else
+					{
 
-                    ReportError ("Multiple IFDs marked as depth map image");
-                    
-                    }
-                    
-                #endif
-                    
-                }
-                
-            }
-            
-        // Find enhanced ifd index.
-        
-        for (index = 0; index < IFDCount (); index++)
-            {
-            
-            if (fIFD [index]->fNewSubFileType == sfEnhancedImage)
-                {
-                
-                if (fEnhancedIndex == -1)
-                    {
-                    
-                    fEnhancedIndex = index;
-                    
-                    }
-                    
-                #if qDNGValidate
-                    
-                else
-                    {
+					ReportError ("Multiple IFDs marked as depth map image");
+					
+					}
+					
+				#endif
+					
+				}
+				
+			}
+			
+		// Find enhanced ifd index.
+		
+		for (index = 0; index < IFDCount (); index++)
+			{
+			
+			if (fIFD [index]->fNewSubFileType == sfEnhancedImage)
+				{
+				
+				if (fEnhancedIndex == -1)
+					{
+					
+					fEnhancedIndex = index;
+					
+					}
+					
+				#if qDNGValidate
+					
+				else
+					{
 
-                    ReportError ("Multiple IFDs marked as enhanced image");
-                    
-                    }
-                    
-                #endif
-                    
-                }
-                
-            }
-            
+					ReportError ("Multiple IFDs marked as enhanced image");
+					
+					}
+					
+				#endif
+					
+				}
+				
+			}
+
+		// Find semantic mask ifd indices.
+
+		for (index = 0; index < IFDCount (); index++)
+			{
+			
+			if (fIFD [index]->fNewSubFileType == sfSemanticMask)
+				{
+
+				fSemanticMaskIndices.push_back (index);
+					
+				}
+				
+			}
+
 		// Warn about Chained IFDs.
 			
 		#if qDNGValidate
@@ -2673,7 +2828,7 @@ bool dng_info::IsValidDNG ()
 	
 	// Check TIFF magic number.
 		
-	if (fMagic != 42)
+	if (fMagic != magicTIFF && fMagic != magicBigTIFF)
 		{
 		
 		#if qDNGValidate
@@ -2709,7 +2864,7 @@ bool dng_info::IsValidDNG ()
 		uint32 parentCode = (index == 0 ? 0 : tcFirstSubIFD + index - 1);
 		
 		if (!fIFD [index]->IsValidDNG (*fShared.Get (),
-								       parentCode))
+									   parentCode))
 			{
 			
 			// Only errors in the main and transparency mask IFDs are fatal to parsing.
@@ -2721,16 +2876,27 @@ bool dng_info::IsValidDNG ()
 				return false;
 				
 				}
-    
-            // Also errors to depth map...
-            
-            if (index == (uint32) fDepthIndex)
-                {
-                
-                return false;
-                
-                }
-            
+	
+			// Also errors to depth map...
+			
+			if (index == (uint32) fDepthIndex)
+				{
+				
+				return false;
+				
+				}
+			
+			// Also errors to enhanced image...
+			
+			if (index == (uint32) fEnhancedIndex)
+				{
+				
+				return false;
+				
+				}
+
+			// For now, treat errors in semantic mask images as non-fatal.
+				
 			}
 		
 		}

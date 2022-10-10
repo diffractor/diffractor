@@ -43,6 +43,7 @@ extern "C" {
 //  1.9.2        1             2            2             1             1            1
 //  1.10         1             2            3             1             1            1
 //  1.11         1             2            4             1             1            1
+//  1.13         1             3            4             1             1            1
 
 
 #if defined(_MSC_VER) && !defined(LIBHEIF_STATIC_BUILD)
@@ -207,6 +208,12 @@ enum heif_suberror_code
 
   heif_suberror_Wrong_tile_image_pixel_depth = 132,
 
+  heif_suberror_Unknown_NCLX_color_primaries = 133,
+
+  heif_suberror_Unknown_NCLX_transfer_characteristics = 134,
+
+  heif_suberror_Unknown_NCLX_matrix_coefficients = 135,
+
 
   // --- Memory_allocation_error ---
 
@@ -282,6 +289,30 @@ struct heif_error
 
 typedef uint32_t heif_item_id;
 
+
+
+// ========================= library initialization ======================
+
+// You should call heif_init() when you start using libheif and heif_deinit() when you are finished.
+// These calls are reference counted. Each call to heif_init() should be matched by one call to heif_deinit().
+// For backwards compatibility, it is not really necessary to call heif_init(), but if you don't, the plugins
+// registered by default may not be freed correctly.
+// However, this should not be mixed, i.e. one part of your program does use heif_init()/heif_deinit() and another doesn't.
+// If in doubt, enclose everything with init/deinit.
+
+struct heif_init_params {
+  int version;
+
+  // currently no parameters
+};
+
+
+// You may pass nullptr to get default parameters. Currently, no parameters are supported.
+LIBHEIF_API
+struct heif_error heif_init(struct heif_init_params*);
+
+LIBHEIF_API
+void heif_deinit();
 
 
 // ========================= file type check ======================
@@ -493,6 +524,9 @@ void heif_context_debug_dump_boxes_to_file(struct heif_context* ctx, int fd);
 
 LIBHEIF_API
 void heif_context_set_maximum_image_size_limit(struct heif_context* ctx, int maximum_width);
+
+LIBHEIF_API
+void heif_context_set_max_decoding_threads(struct heif_context* ctx, int max_threads);
 
 
 // ========================= heif_image_handle =========================
@@ -800,6 +834,15 @@ struct heif_color_profile_nclx
   float color_primary_white_x, color_primary_white_y;
 };
 
+LIBHEIF_API
+struct heif_error heif_nclx_color_profile_set_color_primaries(struct heif_color_profile_nclx* nclx, uint16_t cp);
+
+LIBHEIF_API
+struct heif_error heif_nclx_color_profile_set_transfer_characteristics(struct heif_color_profile_nclx* nclx, uint16_t transfer_characteristics);
+
+LIBHEIF_API
+struct heif_error heif_nclx_color_profile_set_matrix_coefficients(struct heif_color_profile_nclx* nclx, uint16_t matrix_coefficients);
+
 // Returns 'heif_error_Color_profile_does_not_exist' when there is no NCLX profile.
 // TODO: This function does currently not return an NCLX profile if it is stored in the image bitstream.
 //       Only NCLX profiles stored as colr boxes are returned. This may change in the future.
@@ -922,6 +965,12 @@ struct heif_decoding_options
   // version 2 options
 
   uint8_t convert_hdr_to_8bit;
+
+  // version 3 options
+
+  // When enabled, an error is returned for invalid input. Otherwise, it will try its best and
+  // add decoding warnings to the decoded heif_image. Default is non-strict.
+  uint8_t strict_decoding;
 };
 
 
@@ -1039,6 +1088,23 @@ struct heif_error heif_image_set_nclx_color_profile(struct heif_image* image,
 // TODO: this function does not make any sense yet, since we currently cannot modify existing HEIF files.
 //LIBHEIF_API
 //void heif_image_remove_color_profile(struct heif_image* image);
+
+// Fills the image decoding warnings into the provided 'out_warnings' array.
+// The size of the array has to be provided in max_output_buffer_entries.
+// If max_output_buffer_entries==0, the number of decoder warnings is returned.
+// The function fills the warnings into the provided buffer, starting with 'first_warning_idx'.
+// It returns the number of warnings filled into the buffer.
+// Note: you can iterate through all warnings by using 'max_output_buffer_entries=1' and iterate 'first_warning_idx'.
+LIBHEIF_API
+int heif_image_get_decoding_warnings(struct heif_image* image,
+                                     int first_warning_idx,
+                                     struct heif_error* out_warnings,
+                                     int max_output_buffer_entries);
+
+// This function is only for decoder plugin implementors.
+LIBHEIF_API
+void heif_image_add_decoding_warning(struct heif_image* image,
+                                     struct heif_error err);
 
 // Release heif_image.
 LIBHEIF_API
@@ -1431,8 +1497,6 @@ struct heif_error heif_register_decoder_plugin(const struct heif_decoder_plugin*
 
 LIBHEIF_API
 struct heif_error heif_register_encoder_plugin(const struct heif_encoder_plugin*);
-
-
 
 // DEPRECATED, typo in function name
 LIBHEIF_API

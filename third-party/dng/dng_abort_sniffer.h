@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -30,14 +30,16 @@
 enum dng_priority
 	{
 	
-	dng_priority_low,
-	dng_priority_medium,
-	dng_priority_high,
+	dng_priority_background = 0,
+	dng_priority_low		= 1,
+	dng_priority_medium		= 2,
+	dng_priority_high		= 3,
+	dng_priority_very_high	= 4,
 	
 	dng_priority_count,
 	
-	dng_priority_minimum = dng_priority_low,
-	dng_priority_maximum = dng_priority_high
+	dng_priority_minimum = dng_priority_background,
+	dng_priority_maximum = dng_priority_very_high
 	
 	};
 
@@ -129,6 +131,14 @@ class dng_abort_sniffer
 		
 		virtual bool SupportsPriorityWait () const;
 
+		// Recommended time (in seconds) to wait between sniffs.
+		// Default is 0.1 (i.e., 100 ms). Subclass can override to change this.
+
+		virtual real64 SuggestedTimeBetweenSniffs () const
+			{
+			return 0.1;
+			}
+
 	protected:
 	
 		/// Should be implemented by derived classes to check for an user
@@ -180,8 +190,8 @@ class dng_sniffer_task: private dng_uncopyable
 		/// to take, from 0.0 to 1.0 . 
 
 		dng_sniffer_task (dng_abort_sniffer *sniffer,
-					      const char *name = NULL,
-					      real64 fract = 0.0)
+						  const char *name = NULL,
+						  real64 fract = 0.0)
 					 
 			:	fSniffer (sniffer)
 			

@@ -2,15 +2,18 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
 #include "dng_ifd.h"
 
+#include "dng_big_table.h"
 #include "dng_exceptions.h"
 #include "dng_flags.h"
+#include "dng_gain_map.h"
 #include "dng_globals.h"
+#include "dng_host.h"
 #include "dng_ifd.h"
 #include "dng_types.h"
 #include "dng_parse_utils.h"
@@ -25,14 +28,14 @@
 
 dng_preview_info::dng_preview_info ()
 	
-	:	fIsPrimary          (true)
-	,	fApplicationName    ()
+	:	fIsPrimary			(true)
+	,	fApplicationName	()
 	,	fApplicationVersion ()
-	,	fSettingsName       ()
-	,	fSettingsDigest     ()
+	,	fSettingsName		()
+	,	fSettingsDigest		()
 	,	fColorSpace			(previewColorSpace_MaxEnum)
 	,	fDateTime			()
-	,	fRawToPreviewGain   (1.0)
+	,	fRawToPreviewGain	(1.0)
 	,	fCacheVersion		(0)
 	
 	{
@@ -51,45 +54,46 @@ dng_preview_info::~dng_preview_info ()
 dng_ifd::dng_ifd ()
 
 	:	fUsesNewSubFileType (false)
-	,	fNewSubFileType     (0)
+	,	fNewSubFileType		(0)
 
-	,	fImageWidth  (0)
+	,	fImageWidth	 (0)
 	,	fImageLength (0)
 
 	,	fCompression (ccUncompressed)
-	,	fPredictor   (cpNullPredictor)
+	,	fPredictor	 (cpNullPredictor)
 
 	,	fPhotometricInterpretation (0xFFFFFFFF)
 
 	,	fFillOrder (1)
 
-	,	fOrientation          (0)
-	,	fOrientationType      (0)
-	,	fOrientationOffset    (kDNGStreamInvalidOffset)
+	,	fOrientation		  (0)
+	,	fOrientationType	  (0)
+	,	fOrientationOffset	  (kDNGStreamInvalidOffset)
 	,	fOrientationBigEndian (false)
 
 	,	fSamplesPerPixel (1)
 
 	,	fPlanarConfiguration (pcInterleaved)
 
-	,	fXResolution    (0.0)
-	,	fYResolution    (0.0)
+	,	fXResolution	(0.0)
+	,	fYResolution	(0.0)
 	,	fResolutionUnit (0)
 		
 	,	fUsesStrips (false)
-	,	fUsesTiles  (false)
+	,	fUsesTiles	(false)
 	
-	,	fTileWidth  (0)
+	,	fTileWidth	(0)
 	,	fTileLength (0)
 	
 	,	fTileOffsetsType   (0)
 	,	fTileOffsetsCount  (0)
 	,	fTileOffsetsOffset (0)
 	
-	,	fTileByteCountsType   (0)
+	,	fTileByteCountsType	  (0)
 	,	fTileByteCountsCount  (0)
 	,	fTileByteCountsOffset (0)
 	
+	,	fSubIFDsType   (0)
 	,	fSubIFDsCount  (0)
 	,	fSubIFDsOffset (0)
 	
@@ -115,19 +119,19 @@ dng_ifd::dng_ifd ()
 	
 	,	fCFALayout (1)
 	
-	,	fLinearizationTableType   (0)
+	,	fLinearizationTableType	  (0)
 	,	fLinearizationTableCount  (0)
 	,	fLinearizationTableOffset (0)
 
 	,	fBlackLevelRepeatRows (1)
 	,	fBlackLevelRepeatCols (1)
 	
-	,	fBlackLevelDeltaHType   (0)
-	,	fBlackLevelDeltaHCount  (0)
+	,	fBlackLevelDeltaHType	(0)
+	,	fBlackLevelDeltaHCount	(0)
 	,	fBlackLevelDeltaHOffset (0)
 
-	,	fBlackLevelDeltaVType   (0)
-	,	fBlackLevelDeltaVCount  (0)
+	,	fBlackLevelDeltaVType	(0)
+	,	fBlackLevelDeltaVCount	(0)
 	,	fBlackLevelDeltaVOffset (0)
 	
 	,	fDefaultScaleH (1, 1)
@@ -172,13 +176,13 @@ dng_ifd::dng_ifd ()
 	,	fOpcodeList3Count  (0)
 	,	fOpcodeList3Offset (0)
 
-    ,   fNoiseProfile ()
+	,	fNoiseProfile ()
 
-    ,   fEnhanceParams ()
+	,	fEnhanceParams ()
 
-    ,   fBaselineSharpness (0, 0)
+	,	fBaselineSharpness (0, 0)
 
-    ,   fNoiseReductionApplied (0, 0)
+	,	fNoiseReductionApplied (0, 0)
 
 	,	fLosslessJPEGBug16 (false)
 	
@@ -204,7 +208,7 @@ dng_ifd::dng_ifd ()
 	
 	for (j = 0; j < kMaxTileInfo; j++)
 		{
-		fTileOffset    [j] = 0;
+		fTileOffset	   [j] = 0;
 		fTileByteCount [j] = 0;
 		}
 	
@@ -236,15 +240,17 @@ dng_ifd::dng_ifd ()
 		
 	for (j = 0; j < kMaxBlackPattern; j++)
 		for (k = 0; k < kMaxBlackPattern; k++)
-			for (n = 0; n < kMaxSamplesPerPixel; n++)
+			for (n = 0; n < kMaxColorPlanes; n++)
 				{
 				fBlackLevel [j] [k] [n] = 0.0;
 				}
 			
-	for (j = 0; j < kMaxSamplesPerPixel; j++)
+	for (j = 0; j < kMaxColorPlanes; j++)
 		{
 		fWhiteLevel [j] = -1.0;		// Don't know real default yet.
 		}
+
+	memset (fMaskSubArea, 0, sizeof (fMaskSubArea));
 	
 	}
 	
@@ -268,14 +274,15 @@ dng_ifd * dng_ifd::Clone () const
 
 // Parses tags that should only appear in IFDs that contain images.
 
-bool dng_ifd::ParseTag (dng_stream &stream,
+bool dng_ifd::ParseTag (dng_host &host,
+						dng_stream &stream,
 						uint32 parentCode,
 						uint32 tagCode,
 						uint32 tagType,
 						uint32 tagCount,
 						uint64 tagOffset)
 	{
-	
+
 	uint32 j;
 	uint32 k;
 	uint32 n;
@@ -295,6 +302,21 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 			fNewSubFileType = stream.TagValue_uint32 (tagType);
 			
 			fPreviewInfo.fIsPrimary = (fNewSubFileType == sfPreviewImage);
+			
+			if (fNewSubFileType == sfEnhancedImage)
+				{
+				
+				// Enhanced IFDs different defaults for some tags.
+				
+				fDefaultScaleH.Clear ();
+				fDefaultScaleV.Clear ();
+				
+				fBestQualityScale.Clear ();
+				
+				fDefaultCropOriginH.Clear ();
+				fDefaultCropOriginV.Clear ();
+				
+				}
 			
 			#if qDNGValidate
 			
@@ -452,8 +474,8 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 				{
 				
 				printf ("Compression: %s\n",
-					    LookupCompression (fCompression));
-					    
+						LookupCompression (fCompression));
+						
 				}
 				
 			#endif
@@ -537,7 +559,7 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 		case tcStripOffsets:
 			{
 			
-			CheckTagType (parentCode, tagCode, tagType, ttShort, ttLong);
+			CheckTagType (parentCode, tagCode, tagType, ttShort, ttLong, ttLong8);
 			
 			fUsesStrips = true;
 			
@@ -551,7 +573,7 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 				for (j = 0; j < tagCount; j++)
 					{
 				
-					fTileOffset [j] = stream.TagValue_uint32 (tagType);
+					fTileOffset [j] = stream.TagValue_uint64 (tagType);
 					
 					}
 					
@@ -586,8 +608,8 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 			
 			CheckTagCount (parentCode, tagCode, tagCount, 1);
 			
-			fOrientationType      = tagType;
-			fOrientationOffset    = stream.PositionInOriginalFile ();
+			fOrientationType	  = tagType;
+			fOrientationOffset	  = stream.PositionInOriginalFile ();
 			fOrientationBigEndian = stream.BigEndian ();
 			
 			fOrientation = stream.TagValue_uint32 (tagType);
@@ -598,7 +620,7 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 				{
 				
 				printf ("Orientation: %s\n",
-					    LookupOrientation (fOrientation));
+						LookupOrientation (fOrientation));
 				
 				}
 				
@@ -657,11 +679,11 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 		case tcStripByteCounts:
 			{
 			
-			CheckTagType (parentCode, tagCode, tagType, ttShort, ttLong);
+			CheckTagType (parentCode, tagCode, tagType, ttShort, ttLong, ttLong8);
 			
 			fUsesStrips = true;
 			
-			fTileByteCountsType   = tagType;
+			fTileByteCountsType	  = tagType;
 			fTileByteCountsCount  = tagCount;
 			fTileByteCountsOffset = tagOffset;
 			
@@ -671,7 +693,7 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 				for (j = 0; j < tagCount; j++)
 					{
 				
-					fTileByteCount [j] = stream.TagValue_uint32 (tagType);
+					fTileByteCount [j] = stream.TagValue_uint64 (tagType);
 					
 					}
 					
@@ -780,7 +802,7 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 				{
 				
 				printf ("ResolutionUnit: %s\n",
-					    LookupResolutionUnit (fResolutionUnit));
+						LookupResolutionUnit (fResolutionUnit));
 				
 				}
 				
@@ -806,7 +828,7 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 				
 				printf ("Predictor: %s\n",
 						LookupPredictor (fPredictor));
-					    
+						
 				}
 				
 			#endif
@@ -866,7 +888,7 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 		case tcTileOffsets:
 			{
 			
-			CheckTagType (parentCode, tagCode, tagType, ttLong);
+			CheckTagType (parentCode, tagCode, tagType, ttLong, ttLong8);
 			
 			fUsesTiles = true;
 			
@@ -880,7 +902,7 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 				for (j = 0; j < tagCount; j++)
 					{
 				
-					fTileOffset [j] = stream.TagValue_uint32 (tagType);
+					fTileOffset [j] = stream.TagValue_uint64 (tagType);
 					
 					}
 					
@@ -911,11 +933,11 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 		case tcTileByteCounts:
 			{
 			
-			CheckTagType (parentCode, tagCode, tagType, ttShort, ttLong);
+			CheckTagType (parentCode, tagCode, tagType, ttShort, ttLong, ttLong8);
 			
 			fUsesTiles = true;
 			
-			fTileByteCountsType   = tagType;
+			fTileByteCountsType	  = tagType;
 			fTileByteCountsCount  = tagCount;
 			fTileByteCountsOffset = tagOffset;
 			
@@ -925,7 +947,7 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 				for (j = 0; j < tagCount; j++)
 					{
 				
-					fTileByteCount [j] = stream.TagValue_uint32 (tagType);
+					fTileByteCount [j] = stream.TagValue_uint64 (tagType);
 					
 					}
 					
@@ -956,8 +978,9 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 		case tcSubIFDs:
 			{
 			
-			CheckTagType (parentCode, tagCode, tagType, ttLong, ttIFD);
+			CheckTagType (parentCode, tagCode, tagType, ttLong, ttIFD, ttLong8, ttIFD8);
 			
+			fSubIFDsType   = tagType;
 			fSubIFDsCount  = tagCount;
 			fSubIFDsOffset = tagOffset;
 			
@@ -970,7 +993,7 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 							   "IFD",
 							   parentCode,
 							   tagCode,
-							   ttLong,
+							   tagType,
 							   tagCount);
 				
 				}
@@ -1339,8 +1362,11 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 				return false;
 				}
 			
-			if (!CheckTagCount (parentCode, tagCode, tagCount, fCFARepeatPatternRows *
-															   fCFARepeatPatternCols))
+			if (!CheckTagCount (parentCode,
+								tagCode,
+								tagCount,
+								SafeUint32Mult (fCFARepeatPatternRows,
+												fCFARepeatPatternCols)))
 				{
 				return false;
 				}
@@ -1486,7 +1512,7 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 
 			CheckTagType (parentCode, tagCode, tagType, ttShort);
 			
-			fLinearizationTableType   = tagType;
+			fLinearizationTableType	  = tagType;
 			fLinearizationTableCount  = tagCount;
 			fLinearizationTableOffset = tagOffset;
 			
@@ -1549,16 +1575,19 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 
 			CheckTagType (parentCode, tagCode, tagType, ttShort, ttLong, ttRational);
 
-			if (!CheckTagCount (parentCode, tagCode, tagCount, fBlackLevelRepeatRows *
-															   fBlackLevelRepeatCols *
-															   fSamplesPerPixel))
+			if (!CheckTagCount (parentCode,
+								tagCode,
+								tagCount,
+								SafeUint32Mult (fBlackLevelRepeatRows,
+												fBlackLevelRepeatCols,
+												fSamplesPerPixel)))
 				{
 				return false;
 				}
 			
-			if (fBlackLevelRepeatRows < 1 || fBlackLevelRepeatRows > kMaxBlackPattern   ||
-				fBlackLevelRepeatCols < 1 || fBlackLevelRepeatCols > kMaxBlackPattern   ||
-				fSamplesPerPixel      < 1 || fSamplesPerPixel      > kMaxSamplesPerPixel)
+			if (fBlackLevelRepeatRows < 1 || fBlackLevelRepeatRows > kMaxBlackPattern	||
+				fBlackLevelRepeatCols < 1 || fBlackLevelRepeatCols > kMaxBlackPattern	||
+				fSamplesPerPixel	  < 1 || fSamplesPerPixel	   > kMaxColorPlanes)
 				{
 				return false;
 				}
@@ -1602,13 +1631,13 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 						
 						if (fSamplesPerPixel > 1)
 							{
-							printf ("    Sample: %u\n", (unsigned) n);
+							printf ("\tSample: %u\n", (unsigned) n);
 							}
 							
 						for (j = 0; j < fBlackLevelRepeatRows; j++)
 							{
 							
-							printf ("   ");
+							printf ("\t");
 							
 							for (k = 0; k < fBlackLevelRepeatCols; k++)
 								{
@@ -1640,8 +1669,8 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 
 			CheckTagType (parentCode, tagCode, tagType, ttSRational);
 			
-			fBlackLevelDeltaHType   = tagType;
-			fBlackLevelDeltaHCount  = tagCount;
+			fBlackLevelDeltaHType	= tagType;
+			fBlackLevelDeltaHCount	= tagCount;
 			fBlackLevelDeltaHOffset = tagOffset;
 			
 			#if qDNGValidate
@@ -1671,8 +1700,8 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 
 			CheckTagType (parentCode, tagCode, tagType, ttSRational);
 			
-			fBlackLevelDeltaVType   = tagType;
-			fBlackLevelDeltaVCount  = tagCount;
+			fBlackLevelDeltaVType	= tagType;
+			fBlackLevelDeltaVCount	= tagCount;
 			fBlackLevelDeltaVOffset = tagOffset;
 			
 			#if qDNGValidate
@@ -1705,7 +1734,7 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 			if (!CheckTagCount (parentCode, tagCode, tagCount, fSamplesPerPixel))
 				return false;
 				
-			for (j = 0; j < tagCount && j < kMaxSamplesPerPixel; j++)
+			for (j = 0; j < tagCount && j < kMaxColorPlanes; j++)
 				{
 
 				fWhiteLevel [j] = stream.TagValue_real64 (tagType);
@@ -1719,7 +1748,7 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 				
 				printf ("WhiteLevel:");
 				
-				for (j = 0; j < tagCount && j < kMaxSamplesPerPixel; j++)
+				for (j = 0; j < tagCount && j < kMaxColorPlanes; j++)
 					{
 
 					printf (" %0.0f", fWhiteLevel [j]);
@@ -1739,7 +1768,10 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 		case tcDefaultScale:
 			{
 			
-			CheckMainIFD (parentCode, tagCode, fNewSubFileType);
+			if (fNewSubFileType != sfEnhancedImage)
+				{
+				CheckMainIFD (parentCode, tagCode, fNewSubFileType);
+				}
 			
 			CheckTagType (parentCode, tagCode, tagType, ttRational);
 			
@@ -1769,7 +1801,7 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 		case tcDefaultCropOrigin:
 			{
 			
-			CheckMainIFD (parentCode, tagCode, fNewSubFileType);
+			CheckMainOrEnhancedIFD (parentCode, tagCode, fNewSubFileType);
 			
 			CheckTagType (parentCode, tagCode, tagType, ttShort, ttLong, ttRational);
 			
@@ -1799,7 +1831,7 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 		case tcDefaultCropSize:
 			{
 			
-			CheckMainIFD (parentCode, tagCode, fNewSubFileType);
+			CheckMainOrEnhancedIFD (parentCode, tagCode, fNewSubFileType);
 			
 			CheckTagType (parentCode, tagCode, tagType, ttShort, ttLong, ttRational);
 			
@@ -1942,7 +1974,10 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 		case tcBestQualityScale:
 			{
 			
-			CheckMainIFD (parentCode, tagCode, fNewSubFileType);
+			if (fNewSubFileType != sfEnhancedImage)
+				{
+				CheckMainIFD (parentCode, tagCode, fNewSubFileType);
+				}
 			
 			CheckTagType (parentCode, tagCode, tagType, ttRational);
 			
@@ -2037,7 +2072,7 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 				for (j = 0; j < fMaskedAreaCount; j++)
 					{
 				
-					printf ("    Area [%u]: T = %d L = %d B = %d R = %d\n",
+					printf ("\tArea [%u]: T = %d L = %d B = %d R = %d\n",
 							(unsigned) j,
 							(int) fMaskedArea [j].t,
 							(int) fMaskedArea [j].l,
@@ -2424,15 +2459,15 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 			// This tag will be parsed even in non-raw IFDs (such as
 			// thumbnails, previews, etc.) to support legacy DNGs that have
 			// the tag in the wrong IFD, but we'll now issue a warning.
-            // (Turn off the warning for IFD0 since we are writing it
-            // there for backward compatiblity).
-            
-            if (parentCode != 0)
-                {
+			// (Turn off the warning for IFD0 since we are writing it
+			// there for backward compatiblity).
+			
+			if (parentCode != 0)
+				{
 
-			    CheckRawIFD (parentCode, tagCode, fPhotometricInterpretation);
-       
-                }
+				CheckRawIFD (parentCode, tagCode, fPhotometricInterpretation);
+	   
+				}
 			
 			// Must be an even, positive number of doubles in a noise profile.
 			
@@ -2538,126 +2573,431 @@ bool dng_ifd::ParseTag (dng_stream &stream,
 			
 			}
    
-        case tcEnhanceParams:
-            {
-            
-            #if qDNGValidate
-                
-            if (fNewSubFileType != sfEnhancedImage)
-                {
-                    
-                char message [256];
-                
-                sprintf (message,
-                         "%s %s is not allowed IFDs with NewSubFileType != EnhancedImage",
-                         LookupParentCode (parentCode),
-                         LookupTagCode (parentCode, tagCode));
-                    
-                ReportWarning (message);
-                    
-                }
-                
-            #endif
-            
-            CheckTagType (parentCode, tagCode, tagType, ttAscii, ttByte);
-            
-            ParseStringTag (stream,
-                            parentCode,
-                            tagCode,
-                            tagCount,
-                            fEnhanceParams,
-                            false);
-            
-            #if qDNGValidate
+		case tcEnhanceParams:
+			{
+			
+			#if qDNGValidate
+				
+			if (fNewSubFileType != sfEnhancedImage)
+				{
+					
+				char message [256];
+				
+				sprintf (message,
+						 "%s %s is not allowed IFDs with NewSubFileType != EnhancedImage",
+						 LookupParentCode (parentCode),
+						 LookupTagCode (parentCode, tagCode));
+					
+				ReportWarning (message);
+					
+				}
+				
+			#endif
 
-            if (gVerbose)
-                {
-                
-                printf ("EnhanceParams: ");
-                
-                DumpString (fEnhanceParams);
-                
-                printf ("\n");
-                
-                }
-                
-            #endif
-            
-            break;
+			CheckTagType (parentCode, tagCode, tagType, ttAscii, ttByte);
+			
+			ParseStringTag (stream,
+							parentCode,
+							tagCode,
+							tagCount,
+							fEnhanceParams,
+							false);
+			
+			#if qDNGValidate
 
-            }
-        
-        case tcBaselineSharpness:
-            {
-            
-            if (fNewSubFileType != sfEnhancedImage)
-                {
-                return false;
-                }
+			if (gVerbose)
+				{
+				
+				printf ("EnhanceParams: ");
+				
+				DumpString (fEnhanceParams);
+				
+				printf ("\n");
+				
+				}
+				
+			#endif
+			
+			break;
 
-            CheckTagType (parentCode, tagCode, tagType, ttRational);
-            
-            CheckTagCount (parentCode, tagCode, tagCount, 1);
-            
-            fBaselineSharpness = stream.TagValue_urational (tagType);
-            
-            #if qDNGValidate
+			}
+		
+		case tcBaselineSharpness:
+			{
+			
+			if (fNewSubFileType != sfEnhancedImage)
+				{
+				return false;
+				}
 
-            if (gVerbose)
-                {
-                
-                printf ("BaselineSharpness (EnhancedImage): %0.2f\n",
-                        fBaselineSharpness.As_real64 ());
-                
-                }
-                
-            #endif
-                
-            break;
-            
-            }
-            
-        case tcNoiseReductionApplied:
-            {
-            
-            if (!CheckTagType (parentCode, tagCode, tagType, ttRational))
-                return false;
-            
-            if (!CheckTagCount (parentCode, tagCode, tagCount, 1))
-                return false;
-            
-            // This tag will be parsed even in non-raw IFDs (such as
-            // thumbnails, previews, etc.) to support legacy DNGs that have
-            // the tag in the wrong IFD, but we'll now issue a warning.
-            // (Turn off the warning for IFD0 since we are writing it
-            // there for backward compatiblity).
-            
-            if (parentCode != 0)
-                {
+			CheckTagType (parentCode, tagCode, tagType, ttRational);
+			
+			CheckTagCount (parentCode, tagCode, tagCount, 1);
+			
+			fBaselineSharpness = stream.TagValue_urational (tagType);
+			
+			#if qDNGValidate
 
-                CheckRawIFD (parentCode, tagCode, fPhotometricInterpretation);
-       
-                }
-            
-            fNoiseReductionApplied = stream.TagValue_urational (tagType);
-            
-            #if qDNGValidate
+			if (gVerbose)
+				{
+				
+				printf ("BaselineSharpness (EnhancedImage): %0.2f\n",
+						fBaselineSharpness.As_real64 ());
+				
+				}
+				
+			#endif
+				
+			break;
+			
+			}
+			
+		case tcNoiseReductionApplied:
+			{
+			
+			if (!CheckTagType (parentCode, tagCode, tagType, ttRational))
+				return false;
+			
+			if (!CheckTagCount (parentCode, tagCode, tagCount, 1))
+				return false;
+			
+			// This tag will be parsed even in non-raw IFDs (such as
+			// thumbnails, previews, etc.) to support legacy DNGs that have
+			// the tag in the wrong IFD, but we'll now issue a warning.
+			// (Turn off the warning for IFD0 since we are writing it
+			// there for backward compatiblity).
+			
+			if (parentCode != 0)
+				{
 
-            if (gVerbose)
-                {
-                
-                printf ("NoiseReductionApplied: %u/%u\n",
-                        (unsigned) fNoiseReductionApplied.n,
-                        (unsigned) fNoiseReductionApplied.d);
-                    
-                }
-                
-            #endif
-                
-            break;
-            
-            }
-            
+				CheckRawIFD (parentCode, tagCode, fPhotometricInterpretation);
+	   
+				}
+			
+			fNoiseReductionApplied = stream.TagValue_urational (tagType);
+			
+			#if qDNGValidate
+
+			if (gVerbose)
+				{
+				
+				printf ("NoiseReductionApplied: %u/%u\n",
+						(unsigned) fNoiseReductionApplied.n,
+						(unsigned) fNoiseReductionApplied.d);
+					
+				}
+				
+			#endif
+				
+			break;
+			
+			}
+
+		case tcProfileGainTableMap:
+			{
+
+			if (!CheckTagType (parentCode, tagCode, tagType, ttUndefined))
+				return false;
+			
+			if (parentCode != 0)
+				{
+
+				CheckRawIFD (parentCode, tagCode, fPhotometricInterpretation);
+	   
+				}
+
+			fProfileGainTableMap.reset (dng_gain_table_map::GetStream (host,
+																	   stream));
+
+			#if qDNGValidate
+
+			if (gVerbose)
+				{
+
+				dng_md5_printer printer;
+				
+				fProfileGainTableMap->AddDigest (printer);
+
+				auto digest = printer.Result ();
+
+				char str [2 * dng_fingerprint::kDNGFingerprintSize + 1];
+
+				digest.ToUtf8HexString (str);
+
+				printf ("ProfileGainTableMap (digest): %s\n", str);
+				
+				}
+
+			#endif	// qDNGValidate
+			
+			if (stream.Position () > tagOffset + (uint64) tagCount)
+				{
+				
+				ThrowBadFormat ("tcProfileGainTableMap parse error");
+				
+				}
+			
+			break;
+			
+			}
+
+		case tcRGBTablesDraft:
+		case tcRGBTables:
+			{
+			
+			if (!CheckTagType (parentCode, tagCode, tagType, ttUndefined))
+				return false;
+			
+			if (parentCode != 0)
+				{
+
+				CheckMainIFD (parentCode, tagCode, fNewSubFileType);
+	   
+				}
+
+			const bool isDraft = (tagCode == tcRGBTablesDraft);
+
+			fMaskedRGBTables.reset (dng_masked_rgb_tables::GetStream (host,
+																	  stream,
+																	  isDraft));
+
+			#if qDNGValidate
+
+			if (gVerbose && fMaskedRGBTables)
+				{
+
+				dng_md5_printer printer;
+				
+				fMaskedRGBTables->AddDigest (printer);
+
+				const dng_fingerprint &digest = printer.Result ();
+
+				dng_string str = digest.ToUtf8HexString ();
+
+				const char *tagName = isDraft ? "RGBTablesDraft" : "RGBTables";
+
+				printf ("%s (digest): %s\n", tagName, str.Get ());
+
+				fMaskedRGBTables->Dump ();
+				
+				}
+
+			#endif	// qDNGValidate
+			
+			if (stream.Position () > tagOffset + (uint64) tagCount)
+				{
+				
+				ThrowBadFormat ("tcRGBTables parse error");
+				
+				}
+			
+			break;
+			
+			}
+
+		case tcSemanticName:
+			{
+
+			#if qDNGValidate
+				
+			if (fNewSubFileType != sfSemanticMask)
+				{
+					
+				char message [256];
+				
+				sprintf (message,
+						 "%s %s is not allowed in IFDs with NewSubFileType != SemanticMask",
+						 LookupParentCode (parentCode),
+						 LookupTagCode (parentCode, tagCode));
+					
+				ReportWarning (message);
+					
+				}
+				
+			#endif
+
+			CheckTagType (parentCode, tagCode, tagType, ttAscii, ttByte);
+			
+			ParseStringTag (stream,
+							parentCode,
+							tagCode,
+							tagCount,
+							fSemanticName,
+							false);
+			
+			#if qDNGValidate
+
+			if (gVerbose)
+				{
+				
+				printf ("SemanticName: ");
+				
+				DumpString (fSemanticName);
+				
+				printf ("\n");
+				
+				}
+				
+			#endif
+			
+			break;
+			
+			}
+
+		case tcSemanticInstanceID:
+			{
+
+			#if qDNGValidate
+				
+			if (fNewSubFileType != sfSemanticMask)
+				{
+					
+				char message [256];
+				
+				sprintf (message,
+						 "%s %s is not allowed in IFDs with NewSubFileType != SemanticMask",
+						 LookupParentCode (parentCode),
+						 LookupTagCode (parentCode, tagCode));
+					
+				ReportWarning (message);
+					
+				}
+				
+			#endif
+
+			CheckTagType (parentCode, tagCode, tagType, ttAscii, ttByte);
+			
+			ParseStringTag (stream,
+							parentCode,
+							tagCode,
+							tagCount,
+							fSemanticInstanceID,
+							false);
+			
+			#if qDNGValidate
+
+			if (gVerbose)
+				{
+				
+				printf ("SemanticInstanceID: ");
+				
+				DumpString (fSemanticInstanceID);
+				
+				printf ("\n");
+				
+				}
+				
+			#endif
+			
+			break;
+			
+			}
+
+		case tcXMP:
+			{
+
+			if (fNewSubFileType == sfSemanticMask)
+				{
+					
+				const uint32 bytes = tagCount;
+
+				// Fuzz: Limit to some reasonable size.
+
+				const uint32 kMaxBytes = 16 * 1024 * 1024;
+
+				if (bytes <= kMaxBytes)
+					{
+
+					AutoPtr<dng_memory_block> block (host.Allocate (bytes));
+
+					stream.Get (block->Buffer (),
+								bytes);
+
+					fSemanticXMP.reset (block.Release ());
+
+					#if qDNGValidate
+
+					if (gVerbose)
+						{
+
+						uint64 offset = bytes ? tagOffset : 0;
+
+						printf ("SemanticMaskXMP: Count = %u, Offset = %u\n",
+								(unsigned) bytes,
+								(unsigned) offset);
+
+						if (bytes)
+							{
+
+							stream.SetReadPosition (offset);
+
+							DumpXMP (stream, bytes);
+
+							}
+
+						}
+
+					#endif	// qDNGValidate
+
+					return true;
+
+					}
+
+				}
+				
+			return false;
+			
+			}
+
+		case tcMaskSubArea:
+			{
+
+			#if qDNGValidate
+				
+			if (fNewSubFileType != sfSemanticMask)
+				{
+					
+				char message [256];
+				
+				sprintf (message,
+						 "%s %s is not allowed in IFDs with NewSubFileType != SemanticMask",
+						 LookupParentCode (parentCode),
+						 LookupTagCode (parentCode, tagCode));
+					
+				ReportWarning (message);
+					
+				}
+				
+			#endif
+
+			CheckTagType (parentCode, tagCode, tagType, ttLong);
+
+			fMaskSubArea [0] = stream.TagValue_uint32 (tagType);
+			fMaskSubArea [1] = stream.TagValue_uint32 (tagType);
+			fMaskSubArea [2] = stream.TagValue_uint32 (tagType);
+			fMaskSubArea [3] = stream.TagValue_uint32 (tagType);
+
+			#if qDNGValidate
+
+			if (gVerbose)
+				{
+				
+				printf ("MaskSubArea: "
+						"origin (t=%u, l=%u), "
+						"whole size (w=%u, h=%u)\n",
+						fMaskSubArea [0],
+						fMaskSubArea [1],
+						fMaskSubArea [2],
+						fMaskSubArea [3]);
+
+				}
+				
+			#endif	// qDNGValidate
+
+			break;
+			
+			}
+
 		default:
 			{
 			
@@ -2708,15 +3048,20 @@ void dng_ifd::PostParse ()
 		}
 		
 	// Default crop size.
-		
-	if (fDefaultCropSizeH.d == 0)
+	
+	if (fNewSubFileType != sfEnhancedImage)
 		{
-		fDefaultCropSizeH = dng_urational (fActiveArea.W (), 1);
-		}
 		
-	if (fDefaultCropSizeV.d == 0)
-		{
-		fDefaultCropSizeV = dng_urational (fActiveArea.H (), 1);
+		if (fDefaultCropSizeH.d == 0)
+			{
+			fDefaultCropSizeH = dng_urational (fActiveArea.W (), 1);
+			}
+			
+		if (fDefaultCropSizeV.d == 0)
+			{
+			fDefaultCropSizeV = dng_urational (fActiveArea.H (), 1);
+			}
+			
 		}
 		
 	// Default white level.
@@ -2725,7 +3070,7 @@ void dng_ifd::PostParse ()
 						  1 :
 						  (uint32) ((((uint64) 1) << fBitsPerSample [0]) - 1);
 						
-	for (j = 0; j < kMaxSamplesPerPixel; j++)
+	for (j = 0; j < kMaxColorPlanes; j++)
 		{
 		
 		if (fWhiteLevel [j] < 0.0)
@@ -2943,7 +3288,7 @@ bool dng_ifd::IsValidCFA (dng_shared &shared,
 /*****************************************************************************/
 
 bool dng_ifd::IsValidDNG (dng_shared &shared,
-					      uint32 parentCode)
+						  uint32 parentCode)
 	{
 	
 	uint32 j;
@@ -2957,9 +3302,13 @@ bool dng_ifd::IsValidDNG (dng_shared &shared,
 						  (uint32) ((((uint64) 1) << fBitsPerSample [0]) - 1);
 						
 	bool isMonochrome = (shared.fCameraProfile.fColorPlanes == 1);
-	bool isColor      = !isMonochrome;
+	bool isColor	  = !isMonochrome;
 		
 	bool isMainIFD = (fNewSubFileType == sfMainImage);
+	
+	bool isEnhancedIFD = (fNewSubFileType == sfEnhancedImage);
+
+	bool isMainOrEnhancedIFD = isMainIFD || isEnhancedIFD;
 	
 	// Check NewSubFileType.
 	
@@ -2980,11 +3329,12 @@ bool dng_ifd::IsValidDNG (dng_shared &shared,
 	if (fNewSubFileType != sfMainImage		  &&
 		fNewSubFileType != sfPreviewImage	  &&
 		fNewSubFileType != sfTransparencyMask &&
-		fNewSubFileType != sfPreviewMask      &&
-        fNewSubFileType != sfDepthMap         &&
-        fNewSubFileType != sfPreviewDepthMap  &&
-        fNewSubFileType != sfEnhancedImage    &&
-		fNewSubFileType != sfAltPreviewImage)
+		fNewSubFileType != sfPreviewMask	  &&
+		fNewSubFileType != sfDepthMap		  &&
+		fNewSubFileType != sfPreviewDepthMap  &&
+		fNewSubFileType != sfEnhancedImage	  &&
+		fNewSubFileType != sfAltPreviewImage  &&
+		fNewSubFileType != sfSemanticMask)
 		{
 		
 		#if qDNGValidate
@@ -3028,7 +3378,7 @@ bool dng_ifd::IsValidDNG (dng_shared &shared,
 		
 		}
 		
-	if (fImageWidth  > kMaxImageSide ||
+	if (fImageWidth	 > kMaxImageSide ||
 		fImageLength > kMaxImageSide)
 		{
 		
@@ -3064,26 +3414,73 @@ bool dng_ifd::IsValidDNG (dng_shared &shared,
 		
 		}
   
-    else if (fNewSubFileType == sfDepthMap ||
-             fNewSubFileType == sfPreviewDepthMap)
-        {
-        
-        if (fPhotometricInterpretation != piDepth)
-            {
-            
-            #if qDNGValidate
-    
-            ReportError ("NewSubFileType requires PhotometricInterpretation = Depth",
-                         LookupParentCode (parentCode));
-                
-            #endif
-                
-            return false;
-            
-            }
-        
-        }
-  
+	else if (fNewSubFileType == sfDepthMap ||
+			 fNewSubFileType == sfPreviewDepthMap)
+		{
+		
+		if (fPhotometricInterpretation != piDepth)
+			{
+			
+			#if qDNGValidate
+	
+			ReportError ("NewSubFileType requires PhotometricInterpretation = Depth",
+						 LookupParentCode (parentCode));
+				
+			#endif
+				
+			return false;
+			
+			}
+		
+		}
+
+	else if (fNewSubFileType == sfSemanticMask)
+		{
+
+		if (fPhotometricInterpretation != piPhotometricMask)
+			{
+			
+			#if qDNGValidate
+	
+			ReportError ("NewSubFileType requires PhotometricInterpretation = PhotometricMask",
+						 LookupParentCode (parentCode));
+				
+			#endif
+				
+			return false;
+			
+			}
+
+		if (fSamplesPerPixel != 1)
+			{
+			
+			#if qDNGValidate
+	
+			ReportError ("NewSubFileType requires SamplesPerPixel = 1",
+						 LookupParentCode (parentCode));
+				
+			#endif
+				
+			return false;
+			
+			}
+		
+		if (fBitsPerSample [0] != 8)
+			{
+			
+			#if qDNGValidate
+	
+			ReportError ("NewSubFileType requires 8 bits per sample",
+						 LookupParentCode (parentCode));
+				
+			#endif
+				
+			return false;
+			
+			}
+		
+		}
+
 	else
 		{
 		
@@ -3281,12 +3678,12 @@ bool dng_ifd::IsValidDNG (dng_shared &shared,
 			break;
 			}
    
-        case piDepth:
-            {
-            minBitsPerSample = 8;
-            maxBitsPerSample = 16;
-            break;
-            }
+		case piDepth:
+			{
+			minBitsPerSample = 8;
+			maxBitsPerSample = 16;
+			break;
+			}
    
 		}
 		
@@ -3456,12 +3853,13 @@ bool dng_ifd::IsValidDNG (dng_shared &shared,
 		case ccLossyJPEG:
 			{
 			
-			if (fPhotometricInterpretation != piLinearRaw)
+			if (fPhotometricInterpretation != piLinearRaw &&
+				fPhotometricInterpretation != piPhotometricMask)
 				{
 				
 				#if qDNGValidate
 
-				ReportError ("Lossy JPEG compression code requires PhotometricInterpretation = LinearRaw",
+				ReportError ("Lossy JPEG compression code requires PhotometricInterpretation = LinearRaw or PhotometricMask",
 							 LookupParentCode (parentCode));
 							 
 				#endif
@@ -3494,13 +3892,14 @@ bool dng_ifd::IsValidDNG (dng_shared &shared,
 			if (!isFloatingPoint &&
 				fBitsPerSample [0] != 32 &&
 				fPhotometricInterpretation != piTransparencyMask &&
-                fPhotometricInterpretation != piDepth)
+				fPhotometricInterpretation != piPhotometricMask &&
+				fPhotometricInterpretation != piDepth)
 				{
 				
 				#if qDNGValidate
 
 				ReportError ("ZIP compression is limited to floating point, 32-bit integer,"
-                             " transparency masks, and depth maps",
+							 " transparency masks, semantic masks, and depth maps",
 							 LookupParentCode (parentCode));
 							 
 				#endif
@@ -3530,7 +3929,7 @@ bool dng_ifd::IsValidDNG (dng_shared &shared,
 	// Check Predictor.
 	
 	if (isFloatingPoint && fCompression == ccDeflate &&
-				(fPredictor == cpFloatingPoint   ||
+				(fPredictor == cpFloatingPoint	 ||
 				 fPredictor == cpFloatingPointX2 ||
 				 fPredictor == cpFloatingPointX4))
 		{
@@ -3540,7 +3939,7 @@ bool dng_ifd::IsValidDNG (dng_shared &shared,
 		}
 	
 	else if (!isFloatingPoint && fCompression == ccDeflate &&
-				(fPredictor == cpHorizontalDifference   ||
+				(fPredictor == cpHorizontalDifference	||
 				 fPredictor == cpHorizontalDifferenceX2 ||
 				 fPredictor == cpHorizontalDifferenceX4))
 		{
@@ -3700,8 +4099,8 @@ bool dng_ifd::IsValidDNG (dng_shared &shared,
 		
 	// Check tile info.
 		
-	uint32 tilesWide = (fImageWidth  + fTileWidth  - 1) / fTileWidth;
-	uint32 tilesHigh = (fImageLength + fTileLength - 1) / fTileLength;
+	uint32 tilesWide = SafeUint32DivideUp (fImageWidth,	 fTileWidth);
+	uint32 tilesHigh = SafeUint32DivideUp (fImageLength, fTileLength);
 	
 	uint32 tileCount = tilesWide * tilesHigh;
 	
@@ -3915,7 +4314,7 @@ bool dng_ifd::IsValidDNG (dng_shared &shared,
 		for (uint32 k = 0; k < kMaxBlackPattern; k++)
 			{
 			
-			for (uint32 s = 0; s < kMaxSamplesPerPixel; s++)
+			for (uint32 s = 0; s < kMaxColorPlanes; s++)
 				{
 
 				const real64 black = fBlackLevel [j][k][s];
@@ -3940,25 +4339,42 @@ bool dng_ifd::IsValidDNG (dng_shared &shared,
 		
 		}
 		
-	// Check DefaultScale.
+	// Check DefaultScaleH.	 Enhanced IFDs default to invalid, so allow that.
 		
-	if (fDefaultScaleH.As_real64 () <= 0.0 ||
-		fDefaultScaleV.As_real64 () <= 0.0)
+	if ((fNewSubFileType != sfEnhancedImage || fDefaultScaleH.IsValid ()) &&
+		fDefaultScaleH.As_real64 () <= 0.0)
 		{
 			
 		#if qDNGValidate
 
-		ReportError ("Invalid DefaultScale");
+		ReportError ("Invalid DefaultScaleH");
 					 
 		#endif
 					 
 		return false;
 
 		}
+			
+	// Check DefaultScaleV.	 Enhanced IFDs default to invalid, so allow that.
 		
-	// Check BestQualityScale.
+	if ((fNewSubFileType != sfEnhancedImage || fDefaultScaleV.IsValid ()) &&
+		fDefaultScaleV.As_real64 () <= 0.0)
+		{
+			
+		#if qDNGValidate
+
+		ReportError ("Invalid DefaultScaleV");
+					 
+		#endif
+					 
+		return false;
+
+		}
+			
+	// Check BestQualityScale.	Enhanced IFDs default to invalid, so allow that.
 		
-	if (fBestQualityScale.As_real64 () < 1.0)
+	if ((fNewSubFileType != sfEnhancedImage || fBestQualityScale.IsValid ()) &&
+		fBestQualityScale.As_real64 () < 1.0)
 		{
 		
 		#if qDNGValidate
@@ -3989,22 +4405,29 @@ bool dng_ifd::IsValidDNG (dng_shared &shared,
 
 		}
 		
-	// Check DefaultCropSize.
-		
-	if (fDefaultCropSizeH.As_real64 () <= 0.0 					   ||
-		fDefaultCropSizeV.As_real64 () <= 0.0 					   ||
-		fDefaultCropSizeH.As_real64 () > (real64) fActiveArea.W () ||
-		fDefaultCropSizeV.As_real64 () > (real64) fActiveArea.H ())
+	// Check DefaultCropSize.  Enhanced IFDs default to invalid, so allow that.
+	
+	if (fNewSubFileType != sfEnhancedImage ||
+		fDefaultCropSizeH.IsValid () ||
+		fDefaultCropSizeV.IsValid ())
 		{
-		
-		#if qDNGValidate
+	
+		if (fDefaultCropSizeH.As_real64 () <= 0.0					   ||
+			fDefaultCropSizeV.As_real64 () <= 0.0					   ||
+			fDefaultCropSizeH.As_real64 () > (real64) fActiveArea.W () ||
+			fDefaultCropSizeV.As_real64 () > (real64) fActiveArea.H ())
+			{
+			
+			#if qDNGValidate
 
-		ReportError ("Invalid DefaultCropSize");
-					 
-		#endif
-					 
-		return false;
+			ReportError ("Invalid DefaultCropSize");
+						 
+			#endif
+						 
+			return false;
 
+			}
+			
 		}
 		
 	// Check DefaultCrop area.
@@ -4045,10 +4468,10 @@ bool dng_ifd::IsValidDNG (dng_shared &shared,
 
 		}
 		
-	// The default crop and default user crop tags are not allowed for the
-	// non-main image. If they are there, at least require that they be NOPs.
+	// The default crop tags are restricted to the main and enhanced IFDs. If
+	// found elsewhere, at least require that they be NOPs.
 	
-	if (!isMainIFD)
+	if (!isMainOrEnhancedIFD)
 		{
 		
 		if (Round_int32 (fDefaultCropOriginH.As_real64 ()) != 0 ||
@@ -4078,6 +4501,14 @@ bool dng_ifd::IsValidDNG (dng_shared &shared,
 			return false;
 
 			}
+
+		}
+
+	// The default user crop tag is restricted to the main IFD. If found
+	// elsewhere, at least require that it be a NOP.
+	
+	if (!isMainIFD)
+		{
 
 		if (fDefaultUserCropT.As_real64 () != 0.0 ||
 			fDefaultUserCropL.As_real64 () != 0.0 ||
@@ -4201,7 +4632,7 @@ bool dng_ifd::IsValidDNG (dng_shared &shared,
 			}
 			
 		if ((fTileLength % fSubTileBlockRows) != 0 ||
-			(fTileWidth  % fSubTileBlockCols) != 0)
+			(fTileWidth	 % fSubTileBlockCols) != 0)
 			{
 			
 			#if qDNGValidate
@@ -4296,16 +4727,16 @@ uint32 dng_ifd::TilesPerImage () const
 /*****************************************************************************/
 
 dng_rect dng_ifd::TileArea (uint32 rowIndex,
-						    uint32 colIndex) const
+							uint32 colIndex) const
 	{
 	
 	dng_rect r;
 	
 	r.t = rowIndex * fTileLength;
-	r.b = r.t      + fTileLength;
+	r.b = r.t	   + fTileLength;
 	
 	r.l = colIndex * fTileWidth;
-	r.r = r.l      + fTileWidth;
+	r.r = r.l	   + fTileWidth;
 	
 	// If this IFD is using strips rather than tiles, the last strip
 	// is trimmed so it does not extend beyond the end of the image.
@@ -4329,26 +4760,28 @@ uint32 dng_ifd::TileByteCount (const dng_rect &tile) const
 	if (fCompression == ccUncompressed)
 		{
 		
-		uint32 bitsPerRow = tile.W () *
-							fBitsPerSample [0];
+		uint32 bitsPerRow = SafeUint32Mult (tile.W (),
+											fBitsPerSample [0]);
 							
 		if (fPlanarConfiguration == pcInterleaved)
 			{
 			
-			bitsPerRow *= fSamplesPerPixel;
+			bitsPerRow = SafeUint32Mult (bitsPerRow,
+										 fSamplesPerPixel);
 			
 			}
 							
-		uint32 bytesPerRow = (bitsPerRow + 7) >> 3;
+		uint32 bytesPerRow = SafeUint32DivideUp (bitsPerRow, 8);
 		
 		if (fPlanarConfiguration == pcRowInterleaved)
 			{
 			
-			bytesPerRow *= fSamplesPerPixel;
+			bytesPerRow = SafeUint32Mult (bytesPerRow,
+										  fSamplesPerPixel);
 			
 			}
 		
-		return bytesPerRow * tile.H ();
+		return SafeUint32Mult (bytesPerRow, tile.H ());
 		
 		}
 
@@ -4358,13 +4791,59 @@ uint32 dng_ifd::TileByteCount (const dng_rect &tile) const
 		
 /*****************************************************************************/
 
+uint64 dng_ifd::MaxImageDataByteCount () const
+	{
+	
+	uint64 bitsPerRow = (uint64) fTileWidth *
+						(uint64) fSamplesPerPixel *
+						(uint64) fBitsPerSample [0];
+						
+	uint64 bytesPerRow = (bitsPerRow + 7) >> 3;
+	
+	uint64 bytesPerTile = bytesPerRow * fTileLength;
+	
+	// Round up for TIFF format tile data alignment.
+	
+	if (bytesPerTile & 1) bytesPerTile++;
+	
+	// Deal with possible compression expansion.
+	
+	if (fCompression != ccUncompressed)
+		{
+	
+		if (fCompression == ccDeflate)
+			{
+			
+			// ZLib says maximum is source size + 0.1% + 12 bytes.
+			
+			bytesPerTile += (bytesPerTile >> 8) + 12;
+			
+			}
+	
+		else
+			{
+			
+			// Add a slop factor for compression expansion.
+		
+			bytesPerTile += (bytesPerTile >> 2) + 1024;
+			
+			}
+			
+		}
+		
+	return bytesPerTile * TilesPerImage ();
+	
+	}
+		
+/*****************************************************************************/
+
 void dng_ifd::SetSingleStrip ()
 	{
 	
-	fTileWidth  = fImageWidth;
+	fTileWidth	= fImageWidth;
 	fTileLength = fImageLength;
 	
-	fUsesTiles  = false;
+	fUsesTiles	= false;
 	fUsesStrips = true;
 	
 	}
@@ -4372,8 +4851,8 @@ void dng_ifd::SetSingleStrip ()
 /*****************************************************************************/
 
 void dng_ifd::FindTileSize (uint32 bytesPerTile,
-						    uint32 cellH,
-						    uint32 cellV)
+							uint32 cellH,
+							uint32 cellV)
 	{
 	
 	uint32 bytesPerSample = fSamplesPerPixel *
@@ -4385,6 +4864,8 @@ void dng_ifd::FindTileSize (uint32 bytesPerTile,
 	
 	fTileWidth = Min_uint32 (fImageWidth, tileSide);
 		
+	fTileWidth = Min_uint32 (fTileWidth, 32 * 1024);
+
 	uint32 across = TilesAcross ();
 
 	DNG_REQUIRE (across > 0, "Bad number of tiles across in dng_ifd::FindTileSize");
@@ -4393,9 +4874,13 @@ void dng_ifd::FindTileSize (uint32 bytesPerTile,
 	
 	fTileWidth = ((fTileWidth + cellH - 1) / cellH) * cellH;
 		
+	fTileWidth = Min_uint32 (fTileWidth, fImageWidth);
+		
 	fTileLength = Pin_uint32 (1,
-						      samplesPerTile / fTileWidth,
-						      fImageLength);
+							  samplesPerTile / fTileWidth,
+							  fImageLength);
+							  
+	fTileLength = Min_uint32 (fTileLength, 32 * 1024);
 								  
 	uint32 down = TilesDown ();
 								 
@@ -4403,7 +4888,9 @@ void dng_ifd::FindTileSize (uint32 bytesPerTile,
 		
 	fTileLength = ((fTileLength + cellV - 1) / cellV) * cellV;
 	
-	fUsesTiles  = true;
+	fTileLength = Min_uint32 (fTileLength, fImageLength);
+	
+	fUsesTiles	= true;
 	fUsesStrips = false;
 		
 	}
@@ -4411,7 +4898,7 @@ void dng_ifd::FindTileSize (uint32 bytesPerTile,
 /*****************************************************************************/
 
 void dng_ifd::FindStripSize (uint32 bytesPerStrip,
-						     uint32 cellV)
+							 uint32 cellV)
 	{
 	
 	uint32 bytesPerSample = fSamplesPerPixel *
@@ -4422,8 +4909,8 @@ void dng_ifd::FindStripSize (uint32 bytesPerStrip,
 	fTileWidth = fImageWidth;
 		
 	fTileLength = Pin_uint32 (1,
-						      samplesPerStrip / fTileWidth,
-						      fImageLength);
+							  samplesPerStrip / fTileWidth,
+							  fImageLength);
 								  
 	uint32 down = TilesDown ();
 								 
@@ -4431,7 +4918,9 @@ void dng_ifd::FindStripSize (uint32 bytesPerStrip,
 		
 	fTileLength = ((fTileLength + cellV - 1) / cellV) * cellV;
 		
-	fUsesTiles  = false;
+	fTileLength = Min_uint32 (fTileLength, fImageLength);
+	
+	fUsesTiles	= false;
 	fUsesStrips = true;
 		
 	}
@@ -4495,7 +4984,7 @@ bool dng_ifd::IsBaselineJPEG () const
 			
 		case piYCbCr:
 			{
-			return (fSamplesPerPixel     == 3            ) &&
+			return (fSamplesPerPixel	 == 3			 ) &&
 				   (fPlanarConfiguration == pcInterleaved);
 			}
 			

@@ -38,18 +38,18 @@
 
 #include "EbmlBinary.h"
 
-START_LIBEBML_NAMESPACE
+namespace libebml {
 
 class EBML_DLL_API EbmlDummy : public EbmlBinary {
   public:
     EbmlDummy() :DummyId(DummyRawId) {}
-    EbmlDummy(const EbmlId & aId) :EbmlBinary(), DummyId(aId) {}
-    EbmlDummy(const EbmlDummy & ElementToClone):EbmlBinary(ElementToClone), DummyId(ElementToClone.DummyId) {}
+    EbmlDummy(const EbmlId & aId) : DummyId(aId) {}
+    EbmlDummy(const EbmlDummy & ElementToClone) = default;
 
-    bool IsDummy() const {return true;}
-    bool IsDefaultValue() const {return true;}
+    bool IsDummy() const override {return true;}
+    bool IsDefaultValue() const override {return true;}
 
-        virtual operator const EbmlId &() const {
+        operator const EbmlId &() const override {
             return DummyId;
         }
 
@@ -64,6 +64,6 @@ class EBML_DLL_API EbmlDummy : public EbmlBinary {
         EBML_CONCRETE_DUMMY_CLASS(EbmlDummy)
 };
 
-END_LIBEBML_NAMESPACE
+} // namespace libebml
 
 #endif // LIBEBML_DUMMY_H

@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -27,17 +27,17 @@
 /*****************************************************************************/
 
 class dng_area_task_progress: private dng_uncopyable
-    {
+	{
 
-    public:
+	public:
 
-        virtual ~dng_area_task_progress ()
-            {
-            }
+		virtual ~dng_area_task_progress ()
+			{
+			}
 
-        virtual void FinishedTile (const dng_rect & /* tile */) = 0;
+		virtual void FinishedTile (const dng_rect & /* tile */) = 0;
 
-    };
+	};
 
 /*****************************************************************************/
 
@@ -89,7 +89,7 @@ class dng_area_task
 		/// partitioning. Default is 256x256 pixels.
 		///
 		/// \retval Minimum area for a partitoned tile in order to give performant
-        /// operation. (Partitions can be smaller due to small inputs and edge cases.)
+		/// operation. (Partitions can be smaller due to small inputs and edge cases.)
 
 		virtual uint32 MinTaskArea () const
 			{
@@ -168,10 +168,10 @@ class dng_area_task
 		/// overridden to allocate temporary buffers, etc.
 		///
 		/// \param threadCount Total number of threads that will be used for processing.
-        /// Less than or equal to MaxThreads.
+		/// Less than or equal to MaxThreads.
 		/// \param dstArea Area to be processed in the current run of the task.
 		/// \param tileSize Size of source tiles which will be processed.
-        /// (Not all tiles will be this size due to edge conditions.)
+		/// (Not all tiles will be this size due to edge conditions.)
 		/// \param allocator dng_memory_allocator to use for allocating temporary buffers, etc.
 		/// \param sniffer Sniffer to test for user cancellation and to set up progress.
 
@@ -190,10 +190,10 @@ class dng_area_task
 		/// Start.
 		///
 		/// \param threadIndex 0 to threadCount - 1 index indicating which thread this is.
-        /// (Can be used to get a thread-specific buffer allocated in the Start method.)
+		/// (Can be used to get a thread-specific buffer allocated in the Start method.)
 		/// \param tile Area to process.
 		/// \param sniffer dng_abort_sniffer to use to check for user cancellation
-        /// and progress updates.
+		/// and progress updates.
 
 		virtual void Process (uint32 threadIndex,
 							  const dng_rect &tile,
@@ -228,7 +228,7 @@ class dng_area_task
 							  const dng_rect &area,
 							  const dng_point &tileSize,
 							  dng_abort_sniffer *sniffer,
-                              dng_area_task_progress *progress);
+							  dng_area_task_progress *progress);
 
 		/// Factory method to make a tile iterator. This iterator will be used
 		/// by a thread to process tiles in an area in a specific order. The
@@ -272,10 +272,10 @@ class dng_area_task
 		/// \param progress optional pointer to progress reporting object.
 
 		static void Perform (dng_area_task &task,
-				  			 const dng_rect &area,
-				  			 dng_memory_allocator *allocator,
-				  			 dng_abort_sniffer *sniffer,
-                             dng_area_task_progress *progress);
+							 const dng_rect &area,
+							 dng_memory_allocator *allocator,
+							 dng_abort_sniffer *sniffer,
+							 dng_area_task_progress *progress);
 
 	};
 

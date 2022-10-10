@@ -1028,8 +1028,8 @@ bool exif_gps_coordinate_builder::is_valid() const
 
 	return alat < invalid_coordinate &&
 		alon < invalid_coordinate &&
-		alat != 0 &&
-		alon != 0;
+		alat > 0.0 &&
+		alon > 0.0;
 }
 
 gps_coordinate exif_gps_coordinate_builder::build() const
@@ -1219,7 +1219,8 @@ public:
 			break;
 
 		case EXIF_TAG_IMAGE_UNIQUE_ID:
-			// XXXX _metadata.unique_id = entry.get_cached_string(false);
+			// This is not unique for most cameras
+			// _metadata.unique_id = entry.get_cached_string(false);
 			break;
 
 		case EXIF_TAG_COPYRIGHT:
@@ -1746,9 +1747,7 @@ df::blob metadata_exif::make_exif(const prop::item_metadata_ptr& md)
 		if (!prop::is_null(md->exposure_time)) add_tag(exif, EXIF_TAG_EXPOSURE_TIME, md->exposure_time);
 		if (!prop::is_null(md->iso_speed)) add_tag(exif, EXIF_TAG_ISO_SPEED_RATINGS, md->iso_speed);
 		if (!prop::is_null(md->focal_length)) add_tag(exif, EXIF_TAG_FOCAL_LENGTH, md->focal_length);
-		if (!prop::is_null(md->focal_length_35mm_equivalent))
-			add_tag(exif, EXIF_TAG_FOCAL_LENGTH_IN_35MM_FILM,
-			        md->focal_length_35mm_equivalent);
+		if (!prop::is_null(md->focal_length_35mm_equivalent)) add_tag(exif, EXIF_TAG_FOCAL_LENGTH_IN_35MM_FILM, md->focal_length_35mm_equivalent);
 		if (!prop::is_null(md->camera_manufacturer)) add_tag(exif, EXIF_TAG_MAKE, md->camera_manufacturer);
 		if (!prop::is_null(md->camera_model)) add_tag(exif, EXIF_TAG_MODEL, md->camera_model);
 		if (!prop::is_null(md->lens)) add_tag(exif, EXIF_TAG_LENS_MODEL, md->lens);

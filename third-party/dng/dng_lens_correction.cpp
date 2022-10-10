@@ -276,8 +276,8 @@ void dng_warp_params::Dump () const
 	printf ("Planes: %u\n", (unsigned) fPlanes);
 
 	printf ("  Optical center:\n"
-			"    h = %.6lf\n"
-			"    v = %.6lf\n",
+			"\th = %.6lf\n"
+			"\tv = %.6lf\n",
 			fCenter.h,
 			fCenter.v);
 
@@ -285,6 +285,237 @@ void dng_warp_params::Dump () const
 	
 	}
 
+/*****************************************************************************/
+/*****************************************************************************/
+/*****************************************************************************/
+
+dng_warp_params_radial::dng_warp_params_radial ()
+	{
+
+	SetNOP ();
+	
+	}
+
+/*****************************************************************************/
+
+bool dng_warp_params_radial::IsValid (uint32 plane) const
+	{
+
+	DNG_REQUIRE (plane < kMaxColorPlanes, "Bad plane");
+
+	const real64 minValidRadius = fValidRange [plane] [0];
+	const real64 maxValidRadius = fValidRange [plane] [1];
+
+	if (!(0.0			 <= minValidRadius &&
+		  minValidRadius <	maxValidRadius &&
+		  maxValidRadius <= 1.0))
+		{
+		
+		return false;
+		
+		}
+	
+	return true;
+	
+	}
+
+/*****************************************************************************/
+
+bool dng_warp_params_radial::IsNOP (uint32 plane) const
+	{
+
+	DNG_REQUIRE (plane < kMaxColorPlanes, "Bad plane");
+
+	const real64 *data = fData [plane];
+	
+	if (data [0] != 1.0)
+		{
+		return false;
+		}
+
+	for (uint32 i = 1; i < kMaxTerms; i++)
+		{
+		
+		if (data [i] != 0.0)
+			{
+			return false;
+			}
+		
+		}
+
+	return true;
+	
+	}
+
+/*****************************************************************************/
+
+void dng_warp_params_radial::SetNOP ()
+	{
+
+	for (uint32 i = 0; i < kMaxColorPlanes; i++)
+		{
+		SetNOP (i);
+		}
+	
+	}
+
+/*****************************************************************************/
+
+void dng_warp_params_radial::SetNOP (uint32 plane)
+	{
+
+	DNG_REQUIRE (plane < kMaxColorPlanes, "Bad plane");
+
+	real64 *data = fData [plane];
+	
+	data [0] = 1.0;
+
+	for (uint32 i = 1; i < kMaxTerms; i++)
+		{
+		
+		data [i] = 0.0;
+		
+		}
+
+	fValidRange [plane] [0] = 0.0;
+	fValidRange [plane] [1] = 1.0;
+	
+	}
+
+/*****************************************************************************/
+
+void dng_warp_params_radial::SetWarpRectilinear_1_3 (const uint32 plane,
+													 const dng_vector &params)
+	{
+
+	DNG_REQUIRE (plane < kMaxColorPlanes, "Bad plane");
+
+	real64 *dst = fData [plane];
+	
+	dst [0] = params [0];					 // offset
+	dst [1] = 0.0;
+	dst [2] = params [1];					 // r^2
+	dst [3] = 0.0;
+	dst [4] = params [2];					 // r^4
+	dst [5] = 0.0;
+	dst [6] = params [3];					 // r^6
+
+	// Also clear the higher-order terms.
+	
+	for (uint32 i = 7; i < dng_warp_params_radial::kMaxTerms; i++)
+		{
+		dst [i] = 0.0;
+		}
+
+	// Don't use the reciprocal model.
+
+	fUseReciprocal = false;
+
+	// Set the valid range to wide-open.
+
+	fValidRange [plane] [0] = 0.0;
+	fValidRange [plane] [1] = 1.0;
+	
+	}
+
+/*****************************************************************************/
+
+bool dng_warp_params_radial::CompatibleWithWarpRectilinear_1_3 (const uint32 plane) const
+	{
+
+	// DNG 1.3 model doesn't support reciprocal mode.
+	
+	if (fUseReciprocal)
+		{
+		return false;
+		}
+
+	DNG_REQUIRE (plane < kMaxColorPlanes, "Bad plane");
+
+	// Check valid range.
+
+	if (fValidRange [plane] [0] != 0.0 ||
+		fValidRange [plane] [1] != 1.0)
+		{
+		return false;
+		}
+
+	// Check low-order terms.
+
+	const real64 *data = fData [plane];
+
+	if (data [1] != 0.0 ||					 // r
+		data [3] != 0.0 ||					 // r^3
+		data [5] != 0.0)					 // r^5
+		{
+		return false;
+		}
+
+	// Also check higher-order terms.
+		
+	for (uint32 i = 7; i < dng_warp_params_radial::kMaxTerms; i++)
+		{
+
+		if (data [i] != 0.0)
+			{
+			return false;
+			}
+
+		}
+	
+	return true;	
+	
+	}
+
+/*****************************************************************************/
+
+real64 dng_warp_params_radial::Evaluate (uint32 plane,
+										 real64 r) const
+	{
+	
+	return r * EvaluateRatio (plane, r * r);
+	
+	}
+
+/*****************************************************************************/
+
+real64 dng_warp_params_radial::EvaluateRatio (uint32 plane,
+											  real64 r2) const
+	{
+
+	DNG_REQUIRE (plane < kMaxColorPlanes, "Bad plane");
+
+	const real64 minValidRadius = fValidRange [plane] [0];
+	const real64 maxValidRadius = fValidRange [plane] [1];
+	
+	const real64 minValidRadiusSqr = minValidRadius * minValidRadius;
+	const real64 maxValidRadiusSqr = maxValidRadius * maxValidRadius;
+	
+	const real64 *data = fData [plane];
+	
+	// Limit r2 to valid range.
+
+	r2 = Pin_real64 (minValidRadiusSqr,
+					 r2,
+					 maxValidRadiusSqr);
+
+	const real64 r = sqrt (r2);
+
+	real64 poly = data [kMaxTerms - 1];
+
+	for (int32 i = ((int32) kMaxTerms) - 2; i >= 0; i--)
+		{
+		
+		poly = (poly * r) + data [i];
+		
+		}
+
+	return fUseReciprocal ? (1.0 / poly) : poly;
+	
+	}
+
+/*****************************************************************************/
+/*****************************************************************************/
 /*****************************************************************************/
 
 dng_warp_params_rectilinear::dng_warp_params_rectilinear ()
@@ -296,10 +527,7 @@ dng_warp_params_rectilinear::dng_warp_params_rectilinear ()
 	for (uint32 plane = 0; plane < kMaxColorPlanes; plane++)
 		{
 
-		fRadParams [plane] = dng_vector (4);
 		fTanParams [plane] = dng_vector (2);
-
-		fRadParams [plane][0] = 1.0;
 
 		}
 	
@@ -308,18 +536,19 @@ dng_warp_params_rectilinear::dng_warp_params_rectilinear ()
 /*****************************************************************************/
 
 dng_warp_params_rectilinear::dng_warp_params_rectilinear (uint32 planes,
-														  const dng_vector radParams [],
+														  const dng_warp_params_radial &radParams,
 														  const dng_vector tanParams [],
 														  const dng_point_real64 &center)
 
 	:	dng_warp_params (planes, 
 						 center)
 
+	,	fRadParams (radParams)
+
 	{
-	
+
 	for (uint32 i = 0; i < fPlanes; i++)
 		{
-		fRadParams [i] = radParams [i];
 		fTanParams [i] = tanParams [i];
 		}
 	
@@ -337,15 +566,10 @@ dng_warp_params_rectilinear::~dng_warp_params_rectilinear ()
 bool dng_warp_params_rectilinear::IsRadNOP (uint32 plane) const
 	{
 
-	DNG_ASSERT (plane < fPlanes, "plane out of range.");
+	DNG_REQUIRE (plane < fPlanes, "plane out of range.");
 
-	const dng_vector &r = fRadParams [plane];
+	return fRadParams.IsNOP (plane);
 
-	return (r [0] == 1.0 &&
-			r [1] == 0.0 &&
-			r [2] == 0.0 &&
-			r [3] == 0.0);
-	
 	}
 
 /*****************************************************************************/
@@ -353,7 +577,7 @@ bool dng_warp_params_rectilinear::IsRadNOP (uint32 plane) const
 bool dng_warp_params_rectilinear::IsTanNOP (uint32 plane) const
 	{
 	
-	DNG_ASSERT (plane < fPlanes, "plane out of range.");
+	DNG_REQUIRE (plane < fPlanes, "plane out of range.");
 
 	const dng_vector &t = fTanParams [plane];
 
@@ -369,12 +593,12 @@ bool dng_warp_params_rectilinear::IsValid () const
 
 	for (uint32 plane = 0; plane < fPlanes; plane++)
 		{
-		
-		if (fRadParams [plane].Count () != 4)
+
+		if (!fRadParams.IsValid (plane))
 			{
 			return false;
 			}
-		
+
 		if (fTanParams [plane].Count () < 2)
 			{
 			return false;
@@ -394,7 +618,14 @@ void dng_warp_params_rectilinear::PropagateToAllPlanes (uint32 totalPlanes)
 	for (uint32 plane = fPlanes; plane < totalPlanes; plane++)
 		{
 
-		fRadParams [plane] = fRadParams [0];
+		memcpy (fRadParams.fData [plane],
+				fRadParams.fData [0],
+				sizeof (fRadParams.fData [0]));
+
+		memcpy (fRadParams.fValidRange [plane],
+				fRadParams.fValidRange [0],
+				sizeof (fRadParams.fValidRange [0]));
+
 		fTanParams [plane] = fTanParams [0];
 
 		}
@@ -409,12 +640,8 @@ real64 dng_warp_params_rectilinear::Evaluate (uint32 plane,
 											  real64 x) const
 	{
 
-	const dng_vector &K = fRadParams [plane]; // Coefficients.
+	return fRadParams.Evaluate (plane, x);
 
-	const real64 x2 = x * x;
-	
-	return x * (K [0] + x2 * (K [1] + x2 * (K [2] + x2 * K [3])));
-	
 	}
 
 /*****************************************************************************/
@@ -422,11 +649,9 @@ real64 dng_warp_params_rectilinear::Evaluate (uint32 plane,
 real64 dng_warp_params_rectilinear::EvaluateRatio (uint32 plane,
 												   real64 r2) const
 	{
-	
-	const dng_vector &K = fRadParams [plane]; // Coefficients.
 
-	return K [0] + r2 * (K [1] + r2 * (K [2] + r2 * K [3]));
-	
+	return fRadParams.EvaluateRatio (plane, r2);
+
 	}
 		
 /*****************************************************************************/
@@ -455,172 +680,43 @@ dng_point_real64 dng_warp_params_rectilinear::EvaluateTangential (uint32 plane,
 
 real64 dng_warp_params_rectilinear::MaxSrcRadiusGap (real64 maxDstGap) const
 	{
-	
+
 	real64 maxSrcGap = 0.0;
 
 	for (uint32 plane = 0; plane < fPlanes; plane++)
 		{
 
-		const dng_vector &coefs = fRadParams [plane];
-		
-		const real64 k3 = coefs [1];
-		const real64 k5 = coefs [2];
-		const real64 k7 = coefs [3];
+		// Find minimum and maximum ratio by discretizing over r2.
 
-		//
-		//	Let f (r) be the radius warp function. Consider the function
-		//
-		//	  gap (r) = f (r + maxDstGap) - f (r)
-		//
-		//	We wish to maximize gap (r) over the domain [0, 1 - maxDstGap]. This will
-		//	give us a reasonable upper bound on the src tile size, independent of
-		//	dstBounds.
-		//
-		//	As usual, we maximize gap (r) by examining its critical points, i.e., by
-		//	considering the roots of its derivative which lie in the domain [0, 1 -
-		//	maxDstGap]. gap' (r) is a 5th-order polynomial. One of its roots is
-		//	-maxDstGap / 2, which is negative and hence lies outside the domain of
-		//	interest. This leaves 4 other possible roots. We solve for these
-		//	analytically below.
-		//
+		const int32 kSamples = 65000;
 
-		real64 roots [4];
-		uint32 numRoots = 0;
+		real64 norm = 1.0 / (real64) (kSamples - 1);
 
-		if (k7 == 0.0)
+		real64 minRatio = 1.0;
+		real64 maxRatio = 1.0;
+
+		for (int32 i = 1; i < kSamples; i++)
 			{
-			
-			if (k5 == 0.0)
-				{
-				
-				// No roots in [0,1].
-				
-				}
 
-			else
-				{
-				
-				// k7 is zero, but k5 is non-zero. At most two real roots. 
+			real64 r2 = i * norm;
 
-				const real64 discrim = 25.0 * (-6.0 * k3 * k5 - 5.0 * k5 * maxDstGap * maxDstGap);
+			real64 s = EvaluateRatio (plane, r2);
 
-				if (discrim >= 0.0)
-					{
-					
-					// Two real roots.
-
-					const real64 scale	  =	 0.1 * k5;
-					const real64 offset	  = -5.0 * maxDstGap * k5;
-					const real64 sDiscrim =	 sqrt (discrim);
-
-					roots [numRoots++] = scale * (offset + sDiscrim);
-					roots [numRoots++] = scale * (offset - sDiscrim);
-					
-					}
-				
-				}
-			
-			}
-
-		else
-			{
-			
-			// k7 is non-zero. Up to 4 real roots.
-
-			const real64 d	= maxDstGap;
-			const real64 d2 = d	 * d;
-			const real64 d4 = d2 * d2;
-
-			const real64 discrim = 25.0 * k5 * k5 
-								 - 63.0 * k3 * k7 
-								 + 35.0 * d2 * k5 * k7 
-								 + 49.0 * d4 * k7 * k7;
-			
-			if (discrim >= 0.0)
-				{
-				
-				const real64 sDiscrim = 4.0 * k7 * sqrt (discrim);
-
-				const real64 offset = -20.0 * k5 * k7 - 35.0 * d2 * k7 * k7;
-
-				const real64 discrim1 = offset - sDiscrim;
-				const real64 discrim2 = offset + sDiscrim;
-				
-				const real64 scale = sqrt (21.0) / (42.0 * k7);
-
-				if (discrim1 >= 0.0)
-					{
-					
-					const real64 offset1 = -d * 0.5;
-					const real64 sDiscrim1 = scale * sqrt (discrim1);
-
-					roots [numRoots++] = offset1 + sDiscrim1;
-					roots [numRoots++] = offset1 - sDiscrim1;
-					
-					}
-				
-				if (discrim2 >= 0.0)
-					{
-					
-					const real64 offset2 = -d * 0.5;
-					const real64 sDiscrim2 = scale * sqrt (discrim2);
-
-					roots [numRoots++] = offset2 + sDiscrim2;
-					roots [numRoots++] = offset2 - sDiscrim2;
-					
-					}
-				
-				}
+			minRatio = Min_real64 (s, minRatio);
+			maxRatio = Max_real64 (s, maxRatio);
 
 			}
 
-		real64 planeMaxSrcGap = 0.0;
+		real64 maxGapScaleFactor = maxRatio / minRatio;
 
-		// Examine the endpoints.
+		real64 srcGap = maxGapScaleFactor * maxDstGap;
 
-			{
-
-			// Check left endpoint: f (maxDstGap) - f (0). Remember that f (0) == 0.
-			
-			const real64 gap1 = Evaluate (plane, maxDstGap);
-			
-			planeMaxSrcGap = Max_real64 (planeMaxSrcGap, gap1);
-
-			// Check right endpoint: f (1) - f (1 - maxDstGap).
-			
-			const real64 gap2 = Evaluate (plane, 1.0)
-							  - Evaluate (plane, 1.0 - maxDstGap);
-			
-			planeMaxSrcGap = Max_real64 (planeMaxSrcGap, gap2);
-
-			}
-
-		// Examine the roots we found, if any.
-
-		for (uint32 i = 0; i < numRoots; i++)
-			{
-				
-			const real64 r = roots [i];
-
-			if (r > 0.0 && r < 1.0 - maxDstGap)
-				{
-				
-				const real64 gap = Evaluate (plane, r + maxDstGap)
-								 - Evaluate (plane, r);
-				
-				planeMaxSrcGap = Max_real64 (planeMaxSrcGap, gap);
-
-				}
-				
-			}
-		
-		maxSrcGap = Max_real64 (maxSrcGap,
-								planeMaxSrcGap);
+		maxSrcGap = Max_real64 (maxSrcGap, srcGap);
 
 		}
 
 	return maxSrcGap;
-	
+
 	}
 
 /*****************************************************************************/
@@ -709,19 +805,35 @@ void dng_warp_params_rectilinear::Dump () const
 
 		printf ("  Plane %u:\n", (unsigned) plane);
 
-		printf ("    Radial params:     %.6lf, %.6lf, %.6lf, %.6lf\n",
-				fRadParams [plane][0],
-				fRadParams [plane][1],
-				fRadParams [plane][2],
-				fRadParams [plane][3]);
+		printf ("\tRadial params:		");
 
-		printf ("    Tangential params: %.6lf, %.6lf\n",
+		for (uint32 i = 0; i < dng_warp_params_radial::kMaxTerms; i++)
+			{
+
+			bool isLast = (i + 1 == dng_warp_params_radial::kMaxTerms);
+			
+			printf ("%.6lf%s",
+					fRadParams.fData [plane] [i],
+					isLast ? "\n" : ", ");
+			
+			}
+
+		printf ("\tTangential params: %.6lf, %.6lf\n",
 				fTanParams [plane][0],
 				fTanParams [plane][1]);
 
-		}		
+		printf ("\tmin_valid_radius: %g\n",
+				fRadParams.fValidRange [plane] [0]);
 
-	#endif
+		printf ("\tmax_valid_radius: %g\n",
+				fRadParams.fValidRange [plane] [1]);
+
+		}
+
+	printf ("\tUse radial reciprocal? %s\n",
+			fRadParams.fUseReciprocal ? "yes" : "no");
+
+	#endif	// qDNGValidate
 	
 	}
 
@@ -972,7 +1084,7 @@ void dng_warp_params_fisheye::Dump () const
 
 		printf ("  Plane %u:\n", (unsigned) plane);
 
-		printf ("    Radial params:     %.6lf, %.6lf, %.6lf, %.6lf\n",
+		printf ("\tRadial params: %.6lf, %.6lf, %.6lf, %.6lf\n",
 				fRadParams [plane][0],
 				fRadParams [plane][1],
 				fRadParams [plane][2],
@@ -1172,7 +1284,7 @@ dng_rect dng_filter_warp::SrcArea (const dng_rect &dstArea)
 
 				const dng_point_real64 src = GetSrcPixelPosition (dst, plane);
 
-				const int32 y = (int32) floor (src.v);
+				const int32 y = ConvertDoubleToInt32 (floor (src.v));
 				
 				yMin = Min_int32 (yMin, y);
 
@@ -1186,7 +1298,7 @@ dng_rect dng_filter_warp::SrcArea (const dng_rect &dstArea)
 
 				const dng_point_real64 src = GetSrcPixelPosition (dst, plane);
 
-				const int32 y = (int32) ceil (src.v);
+				const int32 y = ConvertDoubleToInt32 (ceil (src.v));
 				
 				yMax = Max_int32 (yMax, y);
 				
@@ -1207,7 +1319,7 @@ dng_rect dng_filter_warp::SrcArea (const dng_rect &dstArea)
 
 				const dng_point_real64 src = GetSrcPixelPosition (dst, plane);
 
-				const int32 x = (int32) floor (src.h);
+				const int32 x = ConvertDoubleToInt32 (floor (src.h));
 				
 				xMin = Min_int32 (xMin, x);
 
@@ -1221,7 +1333,7 @@ dng_rect dng_filter_warp::SrcArea (const dng_rect &dstArea)
 
 				const dng_point_real64 src = GetSrcPixelPosition (dst, plane);
 
-				const int32 x = (int32) ceil (src.h);
+				const int32 x = ConvertDoubleToInt32 (ceil (src.h));
 				
 				xMax = Max_int32 (xMax, x);
 
@@ -1233,15 +1345,15 @@ dng_rect dng_filter_warp::SrcArea (const dng_rect &dstArea)
 
 	// Pad each side by filter radius.
 
-	const int32 pad = (int32) fWeights.Radius ();
+	const int32 pad = ConvertUint32ToInt32 (fWeights.Radius ());
 
-	xMin -= pad;
-	yMin -= pad;
-	xMax += pad;
-	yMax += pad;
+	xMin = SafeInt32Sub (xMin, pad);
+	yMin = SafeInt32Sub (yMin, pad);
+	xMax = SafeInt32Add (xMax, pad);
+	yMax = SafeInt32Add (yMax, pad);
 
-	xMax += 1;
-	yMax += 1;
+	xMax = SafeInt32Add (xMax, 1);
+	yMax = SafeInt32Add (yMax, 1);
 
 	dng_rect srcArea (yMin,
 					  xMin,
@@ -1294,14 +1406,14 @@ dng_point dng_filter_warp::SrcTileSize (const dng_point &dstTileSize)
 
 		const real64 maxSrcGap = fParams->MaxSrcRadiusGap (maxDstGap);
 
-		const int32 dim = (int32) ceil (maxSrcGap * fNormRadius);
+		const int32 dim = ConvertDoubleToInt32 (ceil (maxSrcGap * fNormRadius));
 
 		srcTileSize = dng_point (dim, dim);
 
 		}
 
-	srcTileSize.h += (int32) (fWeights.Width ());
-	srcTileSize.v += (int32) (fWeights.Width ());
+	srcTileSize.h += ConvertUint32ToInt32 (fWeights.Width ());
+	srcTileSize.v += ConvertUint32ToInt32 (fWeights.Width ());
 
 	// Get upper bound on src tile size from tangential warp.
 
@@ -1318,9 +1430,9 @@ dng_point dng_filter_warp::SrcTileSize (const dng_point &dstTileSize)
 
 	// Add the two bounds together.
 
-	srcTileSize.v += (int32) ceil (srcTanGap.v * fNormRadius);
-	srcTileSize.h += (int32) ceil (srcTanGap.h * fNormRadius);
-
+	srcTileSize.v += ConvertDoubleToInt32 (ceil (srcTanGap.v * fNormRadius));
+	srcTileSize.h += ConvertDoubleToInt32 (ceil (srcTanGap.h * fNormRadius));
+	
 	DNG_REQUIRE (srcTileSize.v > 0, "Bad srcTileSize.v in dng_filter_warp::SrcTileSize");
 	DNG_REQUIRE (srcTileSize.h > 0, "Bad srcTileSize.h in dng_filter_warp::SrcTileSize");
 	
@@ -1393,7 +1505,7 @@ void dng_filter_warp::ProcessArea (uint32 /* threadIndex */,
 
 				dng_point_real64 sPos = GetSrcPixelPosition (dPos,
 															 plane);
-
+				
 				// Limit to source image area.
 
 				sPos.h = Max_real64 (sPos.h, srcImageArea.l);
@@ -1403,11 +1515,11 @@ void dng_filter_warp::ProcessArea (uint32 /* threadIndex */,
 
 				// Decompose into integer and fractional parts.
 
-				dng_point sInt ((int32) floor (sPos.v),
-								(int32) floor (sPos.h));
+				dng_point sInt (ConvertDoubleToInt32 (floor (sPos.v)),
+								ConvertDoubleToInt32 (floor (sPos.h)));
 
-				dng_point sFct ((int32) ((sPos.v - (real64) sInt.v) * numSubsamples),
-								(int32) ((sPos.h - (real64) sInt.h) * numSubsamples));
+				dng_point sFct (ConvertDoubleToInt32 ((sPos.v - (real64) sInt.v) * numSubsamples),
+								ConvertDoubleToInt32 ((sPos.h - (real64) sInt.h) * numSubsamples));
 
 				// Add resample offset.
 
@@ -1554,11 +1666,14 @@ dng_point_real64 dng_filter_warp::GetSrcPixelPosition (const dng_point_real64 &d
 
 /*****************************************************************************/
 
-dng_opcode_WarpRectilinear::dng_opcode_WarpRectilinear (const dng_warp_params_rectilinear &params,
-														uint32 flags)
+dng_opcode_BaseWarpRectilinear::dng_opcode_BaseWarpRectilinear
+	(uint32 opcodeTag,
+	 uint32 minVersion,
+	 const dng_warp_params_rectilinear &params,
+	 uint32 flags)
 
-	:	dng_opcode (dngOpcode_WarpRectilinear,
-					dngVersion_1_3_0_0,
+	:	dng_opcode (opcodeTag,
+					minVersion,
 					flags)
 
 	,	fWarpParams (params)
@@ -1573,81 +1688,22 @@ dng_opcode_WarpRectilinear::dng_opcode_WarpRectilinear (const dng_warp_params_re
 	}
 
 /*****************************************************************************/
-		
-dng_opcode_WarpRectilinear::dng_opcode_WarpRectilinear (dng_stream &stream)
 
-	:	dng_opcode (dngOpcode_WarpRectilinear,
+dng_opcode_BaseWarpRectilinear::dng_opcode_BaseWarpRectilinear (uint32 opcodeTag,
+																const char *name,
+																dng_stream &stream)
+																
+	:	dng_opcode (opcodeTag,
 					stream,
-					"WarpRectilinear")
-
-	,	fWarpParams ()
+					name)
 
 	{
 
-	// Grab the size in bytes.
-
-	const uint32 bytes = stream.Get_uint32 ();
-
-	// Grab the number of planes to warp.
-
-	fWarpParams.fPlanes = stream.Get_uint32 ();
-
-	// Verify number of planes.
-
-	if (fWarpParams.fPlanes == 0 ||
-		fWarpParams.fPlanes > kMaxColorPlanes)
-		{
-		ThrowBadFormat ();
-		}
-
-	// Verify the size.
-
-	if (bytes != ParamBytes (fWarpParams.fPlanes))
-		{
-		ThrowBadFormat ();
-		}
-
-	// Read warp parameters for each plane.
-
-	for (uint32 plane = 0; plane < fWarpParams.fPlanes; plane++)
-		{
-
-		fWarpParams.fRadParams [plane][0] = stream.Get_real64 ();
-		fWarpParams.fRadParams [plane][1] = stream.Get_real64 ();
-		fWarpParams.fRadParams [plane][2] = stream.Get_real64 ();
-		fWarpParams.fRadParams [plane][3] = stream.Get_real64 ();
-		
-		fWarpParams.fTanParams [plane][0] = stream.Get_real64 ();
-		fWarpParams.fTanParams [plane][1] = stream.Get_real64 ();
-
-		}
-
-	// Read the image center.
-
-	fWarpParams.fCenter.h = stream.Get_real64 ();
-	fWarpParams.fCenter.v = stream.Get_real64 ();
-	
-	#if qDNGValidate
-	
-	if (gVerbose)
-		{
-
-		fWarpParams.Dump ();
-
-		}
-		
-	#endif
-
-	if (!fWarpParams.IsValid ())
-		{
-		ThrowBadFormat ();
-		}
-	
 	}
-	
+
 /*****************************************************************************/
 
-bool dng_opcode_WarpRectilinear::IsNOP () const
+bool dng_opcode_BaseWarpRectilinear::IsNOP () const
 	{
 
 	return fWarpParams.IsNOPAll ();
@@ -1656,7 +1712,7 @@ bool dng_opcode_WarpRectilinear::IsNOP () const
 
 /*****************************************************************************/
 
-bool dng_opcode_WarpRectilinear::IsValidForNegative (const dng_negative &negative) const
+bool dng_opcode_BaseWarpRectilinear::IsValidForNegative (const dng_negative &negative) const
 	{
 
 	return fWarpParams.IsValidForNegative (negative);
@@ -1665,43 +1721,14 @@ bool dng_opcode_WarpRectilinear::IsValidForNegative (const dng_negative &negativ
 
 /*****************************************************************************/
 
-void dng_opcode_WarpRectilinear::PutData (dng_stream &stream) const
-	{
-
-	const uint32 bytes = ParamBytes (fWarpParams.fPlanes);
-	
-	stream.Put_uint32 (bytes);
-
-	stream.Put_uint32 (fWarpParams.fPlanes);
-
-	for (uint32 plane = 0; plane < fWarpParams.fPlanes; plane++)
-		{
-
-		stream.Put_real64 (fWarpParams.fRadParams [plane][0]);
-		stream.Put_real64 (fWarpParams.fRadParams [plane][1]);
-		stream.Put_real64 (fWarpParams.fRadParams [plane][2]);
-		stream.Put_real64 (fWarpParams.fRadParams [plane][3]);
-		
-		stream.Put_real64 (fWarpParams.fTanParams [plane][0]);
-		stream.Put_real64 (fWarpParams.fTanParams [plane][1]);
-
-		}
-
-	stream.Put_real64 (fWarpParams.fCenter.h);
-	stream.Put_real64 (fWarpParams.fCenter.v);
-	
-	}
-
-/*****************************************************************************/
-
-void dng_opcode_WarpRectilinear::Apply (dng_host &host,
-										dng_negative &negative,
-										AutoPtr<dng_image> &image)
+void dng_opcode_BaseWarpRectilinear::Apply (dng_host &host,
+											dng_negative &negative,
+											AutoPtr<dng_image> &image)
 	{
 
 	#if qDNGValidate
 
-	dng_timer timer ("WarpRectilinear time");
+	dng_timer timer ("BaseWarpRectilinear time");
 
 	#endif
 
@@ -1733,7 +1760,7 @@ void dng_opcode_WarpRectilinear::Apply (dng_host &host,
 
 /*****************************************************************************/
 
-bool dng_opcode_WarpRectilinear::HasDistort () const
+bool dng_opcode_BaseWarpRectilinear::HasDistort () const
 	{
 
 	for (uint32 plane = 0; plane < fWarpParams.fPlanes; plane++)
@@ -1752,7 +1779,7 @@ bool dng_opcode_WarpRectilinear::HasDistort () const
 
 /*****************************************************************************/
 
-bool dng_opcode_WarpRectilinear::HasLateralCA () const
+bool dng_opcode_BaseWarpRectilinear::HasLateralCA () const
 	{
 	
 	if (fWarpParams.fPlanes <= 1)
@@ -1775,6 +1802,125 @@ bool dng_opcode_WarpRectilinear::HasLateralCA () const
 	}
 
 /*****************************************************************************/
+/*****************************************************************************/
+/*****************************************************************************/
+
+dng_opcode_WarpRectilinear::dng_opcode_WarpRectilinear (const dng_warp_params_rectilinear &params,
+														uint32 flags)
+
+	:	dng_opcode_BaseWarpRectilinear (dngOpcode_WarpRectilinear,
+										dngVersion_1_3_0_0,
+										params,
+										flags)
+
+	{
+
+	}
+
+/*****************************************************************************/
+		
+dng_opcode_WarpRectilinear::dng_opcode_WarpRectilinear (dng_stream &stream)
+
+	:	dng_opcode_BaseWarpRectilinear (dngOpcode_WarpRectilinear,
+										"WarpRectilinear",
+										stream)
+
+	{
+
+	// Grab the size in bytes.
+
+	const uint32 bytes = stream.Get_uint32 ();
+
+	// Grab the number of planes to warp.
+
+	fWarpParams.fPlanes = stream.Get_uint32 ();
+
+	// Verify number of planes.
+
+	if (fWarpParams.fPlanes == 0 ||
+		fWarpParams.fPlanes > kMaxColorPlanes)
+		{
+		ThrowBadFormat ();
+		}
+
+	// Verify the size.
+
+	if (bytes != ParamBytes (fWarpParams.fPlanes))
+		{
+		ThrowBadFormat ();
+		}
+
+	// Read warp parameters for each plane.
+
+	for (uint32 plane = 0; plane < fWarpParams.fPlanes; plane++)
+		{
+
+		fWarpParams.fRadParams.fData [plane][0] = stream.Get_real64 (); // offset
+		fWarpParams.fRadParams.fData [plane][2] = stream.Get_real64 (); // r^2
+		fWarpParams.fRadParams.fData [plane][4] = stream.Get_real64 (); // r^4
+		fWarpParams.fRadParams.fData [plane][6] = stream.Get_real64 (); // r^6
+
+		fWarpParams.fTanParams [plane][0] = stream.Get_real64 ();
+		fWarpParams.fTanParams [plane][1] = stream.Get_real64 ();
+
+		}
+
+	// Read the image center.
+
+	fWarpParams.fCenter.h = stream.Get_real64 ();
+	fWarpParams.fCenter.v = stream.Get_real64 ();
+	
+	#if qDNGValidate
+	
+	if (gVerbose)
+		{
+
+		fWarpParams.Dump ();
+
+		}
+		
+	#endif
+
+	if (!fWarpParams.IsValid ())
+		{
+		ThrowBadFormat ();
+		}
+	
+	}
+	
+/*****************************************************************************/
+
+void dng_opcode_WarpRectilinear::PutData (dng_stream &stream) const
+	{
+
+	const uint32 bytes = ParamBytes (fWarpParams.fPlanes);
+	
+	stream.Put_uint32 (bytes);
+
+	stream.Put_uint32 (fWarpParams.fPlanes);
+
+	for (uint32 plane = 0; plane < fWarpParams.fPlanes; plane++)
+		{
+
+		DNG_ASSERT (fWarpParams.fRadParams.CompatibleWithWarpRectilinear_1_3 (plane),
+					"Incompatible WarpRectilinear DNG 1.3 params");
+
+		stream.Put_real64 (fWarpParams.fRadParams.fData [plane][0]); // offset
+		stream.Put_real64 (fWarpParams.fRadParams.fData [plane][2]); // r^2
+		stream.Put_real64 (fWarpParams.fRadParams.fData [plane][4]); // r^4
+		stream.Put_real64 (fWarpParams.fRadParams.fData [plane][6]); // r^6
+
+		stream.Put_real64 (fWarpParams.fTanParams [plane][0]);
+		stream.Put_real64 (fWarpParams.fTanParams [plane][1]);
+
+		}
+
+	stream.Put_real64 (fWarpParams.fCenter.h);
+	stream.Put_real64 (fWarpParams.fCenter.v);
+	
+	}
+
+/*****************************************************************************/
 
 uint32 dng_opcode_WarpRectilinear::ParamBytes (uint32 planes)
 	{
@@ -1785,6 +1931,212 @@ uint32 dng_opcode_WarpRectilinear::ParamBytes (uint32 planes)
 	
 	}
 
+/*****************************************************************************/
+/*****************************************************************************/
+/*****************************************************************************/
+
+/*
+
+	WarpRectilinear2 format:
+
+	uint32 planes
+
+	for each plane:
+
+		real64 kr0
+		real64 kr1
+		real64 kr2
+		...
+		real64 kr13
+		real64 kr14
+
+		real64 kt0
+		real64 kt1
+
+		real64 min_valid_radius
+		real64 max_valid_radius
+
+	real64 cx
+	real64 cy
+
+	uint32 useReciprocal
+
+ */
+
+/*****************************************************************************/
+
+dng_opcode_WarpRectilinear2::dng_opcode_WarpRectilinear2 (const dng_warp_params_rectilinear &params,
+														  uint32 flags)
+
+	:	dng_opcode_BaseWarpRectilinear (dngOpcode_WarpRectilinear2,
+										dngVersion_1_6_0_0,
+										params,
+										flags)
+
+	{
+
+	}
+
+/*****************************************************************************/
+		
+dng_opcode_WarpRectilinear2::dng_opcode_WarpRectilinear2 (dng_stream &stream)
+
+	:	dng_opcode_BaseWarpRectilinear (dngOpcode_WarpRectilinear2,
+										"WarpRectilinear2",
+										stream)
+
+	{
+
+	// Grab the size in bytes.
+
+	const uint32 bytes = stream.Get_uint32 ();
+
+	// Grab the number of planes to warp.
+
+	fWarpParams.fPlanes = stream.Get_uint32 ();
+
+	// Verify number of planes.
+
+	if (fWarpParams.fPlanes == 0 ||
+		fWarpParams.fPlanes > kMaxColorPlanes)
+		{
+		ThrowBadFormat ();
+		}
+
+	// Verify the size.
+
+	if (bytes != ParamBytes (fWarpParams.fPlanes))
+		{
+		ThrowBadFormat ();
+		}
+
+	// Read warp parameters for each plane.
+
+	for (uint32 plane = 0; plane < fWarpParams.fPlanes; plane++)
+		{
+
+		// Radial terms.
+
+		for (uint32 i = 0; i < dng_warp_params_radial::kMaxTerms; i++)
+			{
+
+			fWarpParams.fRadParams.fData [plane] [i] = stream.Get_real64 ();
+
+			}
+
+		// Tangential terms.
+		
+		fWarpParams.fTanParams [plane] [0] = stream.Get_real64 ();
+		fWarpParams.fTanParams [plane] [1] = stream.Get_real64 ();
+
+		// Min & max valid radius.
+
+		fWarpParams.fRadParams.fValidRange [plane] [0] = stream.Get_real64 ();
+		fWarpParams.fRadParams.fValidRange [plane] [1] = stream.Get_real64 ();
+
+		}
+
+	// Read the image center.
+
+	fWarpParams.fCenter.h = stream.Get_real64 ();
+	fWarpParams.fCenter.v = stream.Get_real64 ();
+
+	// Read the reciprocal radial flag.
+
+	fWarpParams.fRadParams.fUseReciprocal = (stream.Get_uint32 () != 0);
+	
+	#if qDNGValidate
+	
+	if (gVerbose)
+		{
+
+		fWarpParams.Dump ();
+
+		}
+		
+	#endif
+
+	if (!fWarpParams.IsValid ())
+		{
+		ThrowBadFormat ();
+		}
+	
+	}
+	
+/*****************************************************************************/
+
+void dng_opcode_WarpRectilinear2::PutData (dng_stream &stream) const
+	{
+
+	// Write the variable tag size (byte count).
+
+	const uint32 bytes = ParamBytes (fWarpParams.fPlanes);
+	
+	stream.Put_uint32 (bytes);
+
+	// Write # of planes.
+
+	stream.Put_uint32 (fWarpParams.fPlanes);
+
+	// Write coefficient data for each plane.
+
+	for (uint32 plane = 0; plane < fWarpParams.fPlanes; plane++)
+		{
+
+		// Radial.
+
+		for (uint32 i = 0; i < dng_warp_params_radial::kMaxTerms; i++)
+			{
+
+			stream.Put_real64 (fWarpParams.fRadParams.fData [plane] [i]);
+
+			}
+
+		// Tangential.
+		
+		stream.Put_real64 (fWarpParams.fTanParams [plane] [0]);
+		stream.Put_real64 (fWarpParams.fTanParams [plane] [1]);
+
+		// Min & max valid radius.
+
+		stream.Put_real64 (fWarpParams.fRadParams.fValidRange [plane] [0]);
+		stream.Put_real64 (fWarpParams.fRadParams.fValidRange [plane] [1]);
+
+		}
+
+	// Optical center.
+
+	stream.Put_real64 (fWarpParams.fCenter.h);
+	stream.Put_real64 (fWarpParams.fCenter.v);
+
+	// Reciprocal radial model.
+
+	stream.Put_uint32 (fWarpParams.fRadParams.fUseReciprocal ? 1 : 0);
+	
+	}
+
+/*****************************************************************************/
+
+uint32 dng_opcode_WarpRectilinear2::ParamBytes (uint32 planes)
+	{
+
+	uint32 numRadialTerms = dng_warp_params_radial::kMaxTerms;
+
+	uint32 numValidRangeTerms = 2;
+
+	uint32 numTangentialTerms = 2;
+
+	uint32 warpTerms = numRadialTerms + numValidRangeTerms + numTangentialTerms;
+
+	return (1		  * (uint32) sizeof (uint32)		 ) + // Number of planes
+		   (warpTerms * (uint32) sizeof (real64) * planes) + // Warp coefficients
+		   (2		  * (uint32) sizeof (real64)		 ) + // Optical center
+		   (1		  * (uint32) sizeof (uint32)		 );	 // Reciprocal
+	
+	}
+
+/*****************************************************************************/
+/*****************************************************************************/
 /*****************************************************************************/
 
 dng_opcode_WarpFisheye::dng_opcode_WarpFisheye (const dng_warp_params_fisheye &params,
@@ -2132,7 +2484,7 @@ class dng_vignette_radial_function: public dng_1d_function
 dng_opcode_FixVignetteRadial::dng_opcode_FixVignetteRadial (const dng_vignette_radial_params &params,
 															uint32 flags)
 
-	: 	dng_inplace_opcode (dngOpcode_FixVignetteRadial,
+	:	dng_inplace_opcode (dngOpcode_FixVignetteRadial,
 							dngVersion_1_3_0_0,
 							flags)
 
@@ -2146,7 +2498,7 @@ dng_opcode_FixVignetteRadial::dng_opcode_FixVignetteRadial (const dng_vignette_r
 	,	fSrcStepH (0)
 	,	fSrcStepV (0)
 	
-	,	fTableInputBits  (0)
+	,	fTableInputBits	 (0)
 	,	fTableOutputBits (0)
 	
 	,	fGainTable ()
@@ -2178,7 +2530,7 @@ dng_opcode_FixVignetteRadial::dng_opcode_FixVignetteRadial (dng_stream &stream)
 	,	fSrcStepH (0)
 	,	fSrcStepV (0)
 	
-	,	fTableInputBits  (0)
+	,	fTableInputBits	 (0)
 	,	fTableOutputBits (0)
 
 	,	fGainTable ()
@@ -2397,7 +2749,7 @@ void dng_opcode_FixVignetteRadial::Prepare (dng_negative &negative,
 		
 			real32 y = table32.Interpolate (x) * scale1;
 		
-			table16 [index] = (uint16) Round_uint32 (y);
+			ConvertUnsigned<uint32, uint16>(Round_uint32(y), &table16[index]);
 		
 			}
 
@@ -2467,7 +2819,7 @@ void dng_opcode_FixVignetteRadial::ProcessArea (dng_negative &negative,
 
 	// Apply mask.
  
-    uint16 blackLevel = (Stage () >= 2) ? negative.Stage3BlackLevel () : 0;
+	uint16 blackLevel = (Stage () >= 2) ? negative.Stage3BlackLevel () : 0;
 
 	DoVignette32 (buffer.DirtyPixel_real32 (dstArea.t, dstArea.l),
 				  maskPixelBuffer.ConstPixel_uint16 (dstArea.t, dstArea.l),
@@ -2478,7 +2830,7 @@ void dng_opcode_FixVignetteRadial::ProcessArea (dng_negative &negative,
 				  buffer.PlaneStep (),
 				  maskPixelBuffer.RowStep (),
 				  fTableOutputBits,
-                  blackLevel);
+				  blackLevel);
 
 	}
 

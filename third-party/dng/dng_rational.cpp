@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -136,6 +136,97 @@ void dng_urational::ReduceByFactor (uint32 factor)
 		{
 		n /= factor;
 		d /= factor;
+		}
+	
+	}
+		
+/*****************************************************************************/
+
+void dng_urational::ScaleBy (real64 scale)
+	{
+	
+	if (scale <= 0.0)
+		{
+		*this = dng_urational (0, 1);
+		return;
+		}
+		
+	if (IsValid ())
+		{
+		
+		if (d > 1)
+			{
+			ReduceByFactor (d);
+			}
+
+		ReduceByFactor (2);
+		ReduceByFactor (3);
+		ReduceByFactor (5);
+
+		while (true)
+			{
+		
+			if (scale == 1.0)
+				{
+				break;
+				}
+		
+			else if (scale > 1.0)
+				{
+				
+				uint32 x = Round_uint32 (scale);
+				
+				if (scale == (real64) x)
+					{
+					
+					if (d % x == 0)
+						{
+						d /= x;
+						break;
+						}
+						
+					else if (n * (uint64) x <= 0xFFFFFFFF)
+						{
+						n *= x;
+						break;
+						}
+						
+					}
+					
+				}
+				
+			else
+				{
+				
+				uint32 x = Round_uint32 (1.0 / scale);
+				
+				if (scale == (1.0 / (real64) x))
+					{
+					
+					if (n % x == 0)
+						{
+						n /= x;
+						break;
+						}
+						
+					else if (d * (uint64) x <= 0xFFFFFFFF)
+						{
+						d *= x;
+						break;
+						}
+					
+					}
+				
+				}
+			
+			Set_real64 (As_real64 () * scale);
+			
+			break;
+			
+			}
+		
+		ReduceByFactor (2);
+
 		}
 	
 	}

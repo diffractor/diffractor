@@ -443,7 +443,13 @@ public:
 	void query_items(const df::search_t& search, const df::unique_items& existing,
 	                 const std::function<void(df::item_set, bool)>& found_callback, df::cancel_token token);
 
-	df::index_folder_item_ptr validate_folder(df::folder_path folder_path, bool mark_is_indexed,
+	struct validate_folder_result
+	{
+		df::index_folder_item_ptr folder;
+		bool was_updated = false;
+	};
+
+	validate_folder_result validate_folder(df::folder_path folder_path,
 	                                          bool refresh_from_file_system, df::date_t timestamp);
 	void scan_item(const df::index_folder_item_ptr& folder, df::file_path file_path, bool load_thumbnails,
 	               bool scan_if_offline, const df::file_item_ptr& i, file_type_ref ft);

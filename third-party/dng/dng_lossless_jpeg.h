@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -18,6 +18,7 @@
 /*****************************************************************************/
 
 #include "dng_classes.h"
+#include "dng_simd_type.h"
 #include "dng_types.h"
 
 /*****************************************************************************/
@@ -40,15 +41,15 @@ class dng_spooler
 						   
 /*****************************************************************************/
 
+template<SIMDType simd>
 void DecodeLosslessJPEG (dng_stream &stream,
-					     dng_spooler &spooler,
-					     uint32 minDecodedSize,
-					     uint32 maxDecodedSize,
+						 dng_spooler &spooler,
+						 uint32 minDecodedSize,
+						 uint32 maxDecodedSize,
 						 bool bug16,
 						 uint64 endOfData);
-						   
-/*****************************************************************************/
 
+template<SIMDType simd>
 void EncodeLosslessJPEG (const uint16 *srcData,
 						 uint32 srcRows,
 						 uint32 srcCols,
@@ -57,7 +58,7 @@ void EncodeLosslessJPEG (const uint16 *srcData,
 						 int32 srcRowStep,
 						 int32 srcColStep,
 						 dng_stream &stream);
-						 
+
 /*****************************************************************************/
 
 #endif

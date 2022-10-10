@@ -284,7 +284,7 @@ static void populate_properties(AVFormatContext* ctx, file_scan_result& result)
 	}
 }
 
-static AVSampleFormat to_AVSampleFormat(prop::audio_sample_t sample_fmt)
+static AVSampleFormat to_AVSampleFormat(const prop::audio_sample_t sample_fmt)
 {
 	switch (sample_fmt)
 	{
@@ -307,7 +307,7 @@ static AVSampleFormat to_AVSampleFormat(prop::audio_sample_t sample_fmt)
 	return AV_SAMPLE_FMT_NONE;
 }
 
-prop::audio_sample_t to_sample_type(AVSampleFormat format)
+static prop::audio_sample_t to_sample_type(const AVSampleFormat format)
 {
 	switch (format)
 	{
@@ -370,7 +370,7 @@ static void populate_properties(AVStream* s, file_scan_result& result)
 			if (found) result.audio_codec = str::cache(found->name);
 
 			result.audio_sample_rate = codec->sample_rate;
-			result.audio_channels = codec->channels;
+			result.audio_channels = codec->ch_layout.nb_channels;
 			result.audio_sample_type = to_sample_type(static_cast<AVSampleFormat>(codec->format));
 		}
 
@@ -643,12 +643,6 @@ bool av_is_frame_empty(const av_frame_ptr& f)
 	return f ? f->is_empty() : false;
 }
 
-uint64_t av_get_def_channel_layout(const int num_channels)
-{
-	return av_get_default_channel_layout(num_channels);
-}
-
-
 static bool is_yuv_format(AVPixelFormat f)
 {
 	return f == AV_PIX_FMT_YUV420P || f == AV_PIX_FMT_YUVJ420P;
@@ -692,16 +686,27 @@ video_info_t av_format_decoder::video_information() const
 	return result;
 }
 
+channel_layout_ptr av_get_def_channel_layout(const int num_channels)
+{
+	auto dst = std::make_shared<AVChannelLayout>();
+	av_channel_layout_default(dst.get(), num_channels);
+	return dst;
+}
+
+static channel_layout_ptr av_copy_to_ptr(const AVChannelLayout& src)
+{
+	auto dst = std::make_shared<AVChannelLayout>();
+	av_channel_layout_copy(dst.get(), &src);	
+	return dst;
+}
+
 audio_info_t av_format_decoder::audio_info() const
 {
 	audio_info_t result;
 
 	if (_audio_context)
 	{
-		result.channel_layout = _audio_context->channel_layout
-			                        ? _audio_context->channel_layout
-			                        : av_get_default_channel_layout(_audio_context->channels);
-
+		result.channel_layout = av_copy_to_ptr(_audio_context->ch_layout);
 		result.sample_rate = _audio_context->sample_rate;
 		result.sample_fmt = to_sample_type(_audio_context->sample_fmt);
 	}
@@ -1074,7 +1079,7 @@ bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path
 				if (codec->codec_type == AVMEDIA_TYPE_AUDIO)
 				{
 					s.audio_sample_rate = codec->sample_rate;
-					s.audio_channels = codec->channels;
+					s.audio_channels = codec->ch_layout.nb_channels;
 					s.audio_sample_type = to_sample_type(static_cast<AVSampleFormat>(codec->format));
 				}
 				s.metadata.emplace_back(u8"codec"_c,
@@ -1154,7 +1159,7 @@ void av_format_decoder::init_streams(int video_track, int audio_track, bool can_
 
 				vc->workaround_bugs = FF_BUG_AUTODETECT;
 
-				const auto has_hw_config = video_codec->hw_configs && *video_codec->hw_configs;
+				const auto has_hw_config = avcodec_get_hw_config(video_codec, 0) != nullptr;
 				const auto use_d3d11va = can_use_hw && has_hw_config;
 
 				if (use_d3d11va)
@@ -1201,7 +1206,9 @@ void av_format_decoder::init_streams(int video_track, int audio_track, bool can_
 					avcodec_parameters_to_context(ac, audio_stream->codecpar);
 					ac->workaround_bugs = FF_BUG_AUTODETECT;
 					ac->request_sample_fmt = AV_SAMPLE_FMT_S16;
-					ac->request_channel_layout = AV_CH_LAYOUT_STEREO;
+					// TODO investigate if it is worth using
+					// "downmix" codec private option
+					//ac->request_channel_layout = AV_CH_LAYOUT_STEREO;
 
 					_has_audio = avcodec_open2(ac, aud_decoder, nullptr) == 0;
 					_audio_base = {audio_stream->time_base.num, audio_stream->time_base.den};
@@ -1217,25 +1224,6 @@ void av_format_decoder::init_streams(int video_track, int audio_track, bool can_
 	{
 		st.is_playing = st.index == _audio_stream_index || st.index == _video_stream_index;
 	}
-
-	//const double start_time_context = 1000;
-	//double start_time_video = 1000;
-	//double start_time_audio = 1000;
-
-	////if (_format_context && _format_context->start_time != AV_NOPTS_VALUE)
-	////{
-	////	start_time_context = CalcTime(_format_context->start_time, _format_context->start_time);
-	////}
-
-	//if (video_stream && video_stream->start_time != AV_NOPTS_VALUE)
-	//{
-	//	start_time_video = calc_duration(video_stream->start_time, video_stream->time_base, AV_NOPTS_VALUE);
-	//}
-
-	//if (audio_stream && audio_stream->start_time != AV_NOPTS_VALUE)
-	//{
-	//	start_time_audio = calc_duration(audio_stream->start_time, audio_stream->time_base, AV_NOPTS_VALUE);
-	//}
 
 	double end_time_context = 0;
 	double end_time_video = 0;
@@ -1333,7 +1321,7 @@ av_media_info av_format_decoder::info() const
 					}
 
 					result.audio_sample_rate = codec->sample_rate;
-					result.audio_channels = codec->channels;
+					result.audio_channels = codec->ch_layout.nb_channels;
 					result.audio_sample_type = to_sample_type(static_cast<AVSampleFormat>(codec->format));
 				}
 			}
@@ -1635,12 +1623,14 @@ void audio_resampler::flush()
 void audio_resampler::resample(const av_frame_ptr& frame, audio_buffer& audio_buffer)
 {
 	audio_info_t source_format;
-	source_format.channel_layout = frame->frm.channel_layout == 0
+	source_format.channel_layout = frame->frm.ch_layout.nb_channels == 0
 		                               ? _stream_info.channel_layout
-		                               : frame->frm.channel_layout;
+		                               : av_copy_to_ptr(frame->frm.ch_layout);
+
 	source_format.sample_fmt = frame->frm.format == 0
 		                           ? _stream_info.sample_fmt
 		                           : to_sample_type(static_cast<AVSampleFormat>(frame->frm.format));
+
 	source_format.sample_rate = frame->frm.sample_rate == 0 ? _stream_info.sample_rate : frame->frm.sample_rate;
 
 	const auto dest_format = audio_buffer.format;
@@ -1653,21 +1643,23 @@ void audio_resampler::resample(const av_frame_ptr& frame, audio_buffer& audio_bu
 		SwrContext* swr = nullptr;
 		std::swap(swr, _aud_resampler);
 
-		swr = swr_alloc_set_opts(swr,
-		                         dest_format.channel_layout,
-		                         dest_sample_fmt,
-		                         dest_format.sample_rate,
-		                         source_format.channel_layout,
-		                         to_AVSampleFormat(source_format.sample_fmt),
-		                         source_format.sample_rate,
-		                         0,
-		                         nullptr);
-
-		if (swr)
+		if (0 == swr_alloc_set_opts2(&swr,
+			dest_format.channel_layout.get(),
+			dest_sample_fmt,
+			dest_format.sample_rate,
+			source_format.channel_layout.get(),
+			to_AVSampleFormat(source_format.sample_fmt),
+			source_format.sample_rate,
+			0,
+			nullptr))
 		{
-			if (swr_init(swr) == 0)
+
+			if (swr)
 			{
-				_aud_resampler = swr;
+				if (swr_init(swr) == 0)
+				{
+					_aud_resampler = swr;
+				}
 			}
 		}
 	}
@@ -1679,7 +1671,7 @@ void audio_resampler::resample(const av_frame_ptr& frame, audio_buffer& audio_bu
 		const int in_samples = frame->frm.nb_samples;
 		const auto expected_out_samples = swr_get_out_samples(_aud_resampler, in_samples);
 		const auto is_planar = av_sample_fmt_is_planar(static_cast<AVSampleFormat>(frame->frm.format));
-		const auto planes_expected = is_planar ? av_get_channel_layout_nb_channels(frame->frm.channel_layout) : 1;
+		const auto planes_expected = is_planar ? frame->frm.ch_layout.nb_channels : 1;
 
 		bool is_valid = true;
 
@@ -2048,10 +2040,32 @@ uint32_t audio_info_t::bytes_per_second() const
 
 uint32_t audio_info_t::channel_count() const
 {
-	return av_get_channel_layout_nb_channels(channel_layout);
+	if (!channel_layout) return 0;
+	return channel_layout->nb_channels;
 }
 
 uint32_t audio_info_t::bytes_per_sample() const
 {
 	return av_get_bytes_per_sample(to_AVSampleFormat(sample_fmt));
+}
+
+bool operator==(const audio_info_t& lhs, const audio_info_t& rhs)
+{
+	if (lhs.sample_rate != rhs.sample_rate ||
+		lhs.sample_fmt != rhs.sample_fmt)
+	{
+		return false;
+	}
+
+	if (lhs.channel_layout == nullptr && rhs.channel_layout == nullptr)
+	{
+		return true;
+	}
+
+	if (lhs.channel_layout == nullptr || rhs.channel_layout == nullptr)
+	{
+		return false;
+	}
+
+	return av_channel_layout_compare(lhs.channel_layout.get(), rhs.channel_layout.get()) == 0;
 }

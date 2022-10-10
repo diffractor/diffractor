@@ -4,7 +4,9 @@
 !define PRODUCT32_EXE "diffractor.exe"
 !define PRODUCT64_EXE "diffractor64.exe"
 !define PRODUCT_PUBLISHER "Diffractor"
+!define BUILD_NUM "1157"
 !define PRODUCT_VERSION "125.0"
+!define FILE_VERSION "1.25.0.${BUILD_NUM}"
 !define PRODUCT_WEB_SITE "http://www.Diffractor.com/"
 !define PRODUCT_STARTMENU_REGVAL "NSIS:StartMenuDir"
 !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"
@@ -16,8 +18,6 @@
 !define MUI_LANGDLL_REGISTRY_ROOT "${PRODUCT_UNINST_ROOT_KEY}"
 !define MUI_LANGDLL_REGISTRY_KEY "${PRODUCT_UNINST_KEY}"
 !define MUI_LANGDLL_REGISTRY_VALUENAME "NSIS:Language"
-
-
 !define MUI_PAGE_CUSTOMFUNCTION_SHOW MyWelcomeShowCallback
 
 Unicode True
@@ -32,8 +32,6 @@ Unicode True
 !include FileFunc.nsh
 !include StrFunc.nsh
 !include x64.nsh
-
-
 
 ${StrStr} # Supportable for Install Sections and Functions
  
@@ -96,7 +94,7 @@ FunctionEnd
 
 Name "${PRODUCT_NAME}"
 Caption "${PRODUCT_NAME} ${PRODUCT_VERSION} Setup"
-BrandingText "${PRODUCT_NAME} ${PRODUCT_VERSION}"
+BrandingText "${PRODUCT_NAME} ${PRODUCT_VERSION}.${BUILD_NUM}"
 
 OutFile "..\diffractor-setup.exe"
 InstallDir "$LOCALAPPDATA\${PRODUCT_NAME}"
@@ -109,12 +107,12 @@ Icon "Diffractor.ico"
 XPStyle on
 RequestExecutionLevel user
 
-VIProductVersion "0.0.${PRODUCT_VERSION}"
+VIProductVersion "${FILE_VERSION}"
 VIAddVersionKey ProductName "${PRODUCT_NAME}"
-VIAddVersionKey ProductVersion "${PRODUCT_VERSION}"
+VIAddVersionKey ProductVersion "${FILE_VERSION}"
 VIAddVersionKey CompanyName "${PRODUCT_PUBLISHER}"
 VIAddVersionKey CompanyWebsite "${PRODUCT_WEB_SITE}"
-VIAddVersionKey FileVersion "${PRODUCT_VERSION}"
+VIAddVersionKey FileVersion "${FILE_VERSION}"
 VIAddVersionKey FileDescription ""
 VIAddVersionKey LegalCopyright "Copyright (C) 2022 Zac Walker"
 

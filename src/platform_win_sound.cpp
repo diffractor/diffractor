@@ -558,8 +558,8 @@ std::vector<sound_device> list_audio_playback_devices()
 								hr = pProps->GetValue(PKEY_Device_FriendlyName, &varName.v);
 
 								if (SUCCEEDED(hr))
-								{
-									d.name = str::utf16_to_utf8(varName.v.pwszVal);
+								{									
+									d.name = str::is_empty(varName.v.pwszVal) ? str::format(u8"Audio device {}", static_cast<int>(i)) : str::utf16_to_utf8(varName.v.pwszVal);
 								}
 							}
 

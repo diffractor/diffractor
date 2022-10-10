@@ -66,7 +66,7 @@ it under the terms of the one of two licenses as you choose:
 #endif
 #define qDNGXMPDocOps 0
 #define qDNGUseLibJPEG 1
-#define qDNGXMPFiles 1
+#define qDNGXMPFiles 0
 #define qDNGExperimental 1
 #define qDNGThreadSafe 1
 #include "dng_stream.h"

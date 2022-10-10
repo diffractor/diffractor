@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -23,6 +23,8 @@
 #include "dng_types.h"
 #include "dng_xy_coord.h"
 
+#include <vector>
+
 /*****************************************************************************/
 
 class dng_camera_profile_info
@@ -36,15 +38,23 @@ class dng_camera_profile_info
 		
 		uint32 fCalibrationIlluminant1;
 		uint32 fCalibrationIlluminant2;
+		uint32 fCalibrationIlluminant3;
+
+		dng_illuminant_data fIlluminantData1;
+		dng_illuminant_data fIlluminantData2;
+		dng_illuminant_data fIlluminantData3;
 		
 		dng_matrix fColorMatrix1;
 		dng_matrix fColorMatrix2;
+		dng_matrix fColorMatrix3;
 		
 		dng_matrix fForwardMatrix1;
 		dng_matrix fForwardMatrix2;
+		dng_matrix fForwardMatrix3;
 		
 		dng_matrix fReductionMatrix1;
 		dng_matrix fReductionMatrix2;
+		dng_matrix fReductionMatrix3;
 
 		dng_string fProfileCalibrationSignature;
 
@@ -63,6 +73,9 @@ class dng_camera_profile_info
 
 		uint64 fHueSatDeltas2Offset;
 		uint32 fHueSatDeltas2Count;
+		
+		uint64 fHueSatDeltas3Offset;
+		uint32 fHueSatDeltas3Count;
 		
 		uint32 fHueSatMapEncoding;
 		
@@ -136,6 +149,7 @@ class dng_shared
 
 		dng_matrix fCameraCalibration1;
 		dng_matrix fCameraCalibration2;
+		dng_matrix fCameraCalibration3;
 		
 		dng_string fCameraCalibrationSignature;
 
@@ -189,12 +203,16 @@ class dng_shared
 		dng_urational fOriginalDefaultCropSizeH;
 		dng_urational fOriginalDefaultCropSizeV;
   
-        uint32        fDepthFormat;
+		uint32		  fDepthFormat;
 		dng_urational fDepthNear;
-        dng_urational fDepthFar;
-        uint32        fDepthUnits;
-        uint32        fDepthMeasureType;
-        
+		dng_urational fDepthFar;
+		uint32		  fDepthUnits;
+		uint32		  fDepthMeasureType;
+		
+		dng_std_vector<dng_fingerprint> fBigTableDigests;
+		dng_std_vector<uint64>			fBigTableOffsets;
+		dng_std_vector<uint32>			fBigTableByteCounts;
+		
 	public:
 	
 		dng_shared ();

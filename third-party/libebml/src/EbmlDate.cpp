@@ -35,9 +35,7 @@
 
 #include "ebml/EbmlDate.h"
 
-START_LIBEBML_NAMESPACE
-
-const uint64 EbmlDate::UnixEpochDelay = 978307200; // 2001/01/01 00:00:00 UTC
+namespace libebml {
 
 EbmlDate::EbmlDate(const EbmlDate & ElementToClone)
 :EbmlElement(ElementToClone)
@@ -51,6 +49,12 @@ filepos_t EbmlDate::ReadData(IOCallback & input, ScopeMode ReadFully)
     return GetSize();
 
   assert(GetSize() == 8);
+  if (GetSize() != 8) {
+    // impossible to read, skip it
+    input.setFilePointer(GetSize(), seek_current);
+    return GetSize();
+  }
+
   binary Buffer[8];
   input.readFully(Buffer, GetSize());
 
@@ -59,7 +63,6 @@ filepos_t EbmlDate::ReadData(IOCallback & input, ScopeMode ReadFully)
 
   myDate = b64;
   SetValueIsSet();
-
   return GetSize();
 }
 
@@ -83,4 +86,4 @@ bool EbmlDate::IsSmallerThan(const EbmlElement *Cmp) const
   return false;
 }
 
-END_LIBEBML_NAMESPACE
+} // namespace libebml

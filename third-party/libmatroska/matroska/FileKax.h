@@ -45,9 +45,9 @@
 //#include "Cluster.h"
 //#include "CodecHeader.h"
 
-using namespace LIBEBML_NAMESPACE;
+using namespace libebml;
 
-START_LIBMATROSKA_NAMESPACE
+namespace libmatroska {
 
 //class Track;
 //class Frame;
@@ -147,7 +147,7 @@ class MATROSKA_DLL_API FileMatroska {
 
 };
 
-END_LIBMATROSKA_NAMESPACE
+} // namespace libmatroska
 
 #ifdef __cplusplus
 extern "C" {

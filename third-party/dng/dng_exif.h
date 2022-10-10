@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -48,13 +48,13 @@ class dng_exif
 		dng_string fCopyright2;
 		dng_string fUserComment;
 		
-		dng_date_time_info         fDateTime;
+		dng_date_time_info		   fDateTime;
 		dng_date_time_storage_info fDateTimeStorageInfo;
 		
 		dng_date_time_info		   fDateTimeOriginal;
 		dng_date_time_storage_info fDateTimeOriginalStorageInfo;
 
-		dng_date_time_info 		   fDateTimeDigitized;
+		dng_date_time_info		   fDateTimeDigitized;
 		dng_date_time_storage_info fDateTimeDigitizedStorageInfo;
 		
 		uint32 fTIFF_EP_StandardID;
@@ -75,7 +75,7 @@ class dng_exif
 		dng_urational fGamma;
 		
 		dng_urational fBatteryLevelR;
-		dng_string    fBatteryLevelA;
+		dng_string	  fBatteryLevelA;
 		
 		uint32 fExposureProgram;
 		uint32 fMeteringMode;
@@ -133,37 +133,37 @@ class dng_exif
 		
 		dng_fingerprint fImageUniqueID;
 		
-		uint32 	      fGPSVersionID;
-		dng_string    fGPSLatitudeRef;
+		uint32		  fGPSVersionID;
+		dng_string	  fGPSLatitudeRef;
 		dng_urational fGPSLatitude [3];
-		dng_string    fGPSLongitudeRef;
+		dng_string	  fGPSLongitudeRef;
 		dng_urational fGPSLongitude [3];
-		uint32	      fGPSAltitudeRef;
+		uint32		  fGPSAltitudeRef;
 		dng_urational fGPSAltitude;
 		dng_urational fGPSTimeStamp [3];
-		dng_string    fGPSSatellites;
-		dng_string    fGPSStatus;
-		dng_string    fGPSMeasureMode;
+		dng_string	  fGPSSatellites;
+		dng_string	  fGPSStatus;
+		dng_string	  fGPSMeasureMode;
 		dng_urational fGPSDOP;
-		dng_string    fGPSSpeedRef;
+		dng_string	  fGPSSpeedRef;
 		dng_urational fGPSSpeed;
-		dng_string    fGPSTrackRef;
+		dng_string	  fGPSTrackRef;
 		dng_urational fGPSTrack;
-		dng_string    fGPSImgDirectionRef;
+		dng_string	  fGPSImgDirectionRef;
 		dng_urational fGPSImgDirection;
-		dng_string    fGPSMapDatum;
-		dng_string    fGPSDestLatitudeRef;
+		dng_string	  fGPSMapDatum;
+		dng_string	  fGPSDestLatitudeRef;
 		dng_urational fGPSDestLatitude [3];
-		dng_string    fGPSDestLongitudeRef;
+		dng_string	  fGPSDestLongitudeRef;
 		dng_urational fGPSDestLongitude [3];
-		dng_string    fGPSDestBearingRef;
+		dng_string	  fGPSDestBearingRef;
 		dng_urational fGPSDestBearing;
-		dng_string    fGPSDestDistanceRef;
+		dng_string	  fGPSDestDistanceRef;
 		dng_urational fGPSDestDistance;
-		dng_string    fGPSProcessingMethod;
-		dng_string    fGPSAreaInformation;
-		dng_string    fGPSDateStamp;
-		uint32 	      fGPSDifferential;
+		dng_string	  fGPSProcessingMethod;
+		dng_string	  fGPSAreaInformation;
+		dng_string	  fGPSDateStamp;
+		uint32		  fGPSDifferential;
 		dng_urational fGPSHPositioningError;
 		
 		dng_string fInteroperabilityIndex;
@@ -201,24 +201,35 @@ class dng_exif
 		dng_string fOwnerName;				 // EXIF 2.3: CameraOwnerName.
 		dng_string fFirmware;
   
-        // EXIF 2.3.1:
-        
-        dng_srational fTemperature;
-        dng_urational fHumidity;
-        dng_urational fPressure;
-        dng_srational fWaterDepth;
-        dng_urational fAcceleration;
-        dng_srational fCameraElevationAngle;
-        
-        // Not really part of EXIF, but some formats may use.
-        
-        dng_string fTitle;
+		// EXIF 2.3.1:
+		
+		dng_srational fTemperature;
+		dng_urational fHumidity;
+		dng_urational fPressure;
+		dng_srational fWaterDepth;
+		dng_urational fAcceleration;
+		dng_srational fCameraElevationAngle;
+		
+		// Not really part of EXIF, but some formats may use.
+		
+		dng_string fTitle;
 
 		// Image-specific radial distortion correction metadata that can be
 		// used later during (UI-driven) lens profile corrections. Same model
-		// as DNG opcode model.
+		// as DNG 1.3 opcode model.
 
 		dng_srational fLensDistortInfo [4];
+
+		// Some cameras have a built-in neutral density filter. If the ND
+		// filter is applied, it reduces the incoming light by a linear factor
+		// K. This field stores the value of K. For example, if the camera has
+		// applied a 3-stop neutral density filter, this reduces the incoming
+		// light by a linear factor of 8, so this field should store 8/1.
+		//
+		// The default value is invalid (0/0) which means ND is not present or
+		// unknown.
+
+		dng_urational fNeutralDensityFactor;
 		
 	public:
 	
@@ -302,13 +313,13 @@ class dng_exif
 
 		bool AtLeastVersion0230 () const;
   
-        /// Returns true iff the EXIF version is at least 2.3.1.
-        
-        bool AtLeastVersion0231 () const;
-        
-        /// Sets the EXIF version to 2.3.1.
-        
-        void SetVersion0231 ();
+		/// Returns true iff the EXIF version is at least 2.3.1.
+		
+		bool AtLeastVersion0231 () const;
+		
+		/// Sets the EXIF version to 2.3.1.
+		
+		void SetVersion0231 ();
 
 		bool HasLensDistortInfo () const;
 		
@@ -329,40 +340,40 @@ class dng_exif
 	protected:
 		
 		virtual bool Parse_ifd0 (dng_stream &stream,
-							     dng_shared &shared,
-							 	 uint32 parentCode,
-							 	 uint32 tagCode,
-							 	 uint32 tagType,
-							 	 uint32 tagCount,
-							 	 uint64 tagOffset);
-							 		 
+								 dng_shared &shared,
+								 uint32 parentCode,
+								 uint32 tagCode,
+								 uint32 tagType,
+								 uint32 tagCount,
+								 uint64 tagOffset);
+									 
 		virtual bool Parse_ifd0_main (dng_stream &stream,
-							          dng_shared &shared,
-						 		 	  uint32 parentCode,
-						 		 	  uint32 tagCode,
-						 		 	  uint32 tagType,
-						 		 	  uint32 tagCount,
-						 		 	  uint64 tagOffset);
+									  dng_shared &shared,
+									  uint32 parentCode,
+									  uint32 tagCode,
+									  uint32 tagType,
+									  uint32 tagCount,
+									  uint64 tagOffset);
 
 		virtual bool Parse_ifd0_exif (dng_stream &stream,
-							          dng_shared &shared,
-						 		 	  uint32 parentCode,
-						 		 	  uint32 tagCode,
-						 		 	  uint32 tagType,
-						 		 	  uint32 tagCount,
-						 		 	  uint64 tagOffset);
+									  dng_shared &shared,
+									  uint32 parentCode,
+									  uint32 tagCode,
+									  uint32 tagType,
+									  uint32 tagCount,
+									  uint64 tagOffset);
 	
 		virtual bool Parse_gps (dng_stream &stream,
-							    dng_shared &shared,
-						 		uint32 parentCode,
-						 		uint32 tagCode,
-						 		uint32 tagType,
-						 		uint32 tagCount,
-						 		uint64 tagOffset);
+								dng_shared &shared,
+								uint32 parentCode,
+								uint32 tagCode,
+								uint32 tagType,
+								uint32 tagCount,
+								uint64 tagOffset);
 	
 		virtual bool Parse_interoperability (dng_stream &stream,
-							    			 dng_shared &shared,
-						 					 uint32 parentCode,
+											 dng_shared &shared,
+											 uint32 parentCode,
 											 uint32 tagCode,
 											 uint32 tagType,
 											 uint32 tagCount,

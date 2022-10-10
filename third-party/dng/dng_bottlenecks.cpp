@@ -2,11 +2,13 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
 #include "dng_bottlenecks.h"
+#include "dng_flags.h"
+#include "dng_lossless_jpeg.h"
 
 #include "dng_reference.h"
 
@@ -60,7 +62,10 @@ dng_suite gDNGSuite =
 	RefVignette16,
 	RefVignette32,
 	RefMapArea16,
-	RefBaselineMapPoly32
+	RefBaselineMapPoly32,
+	DecodeLosslessJPEG<Scalar>,
+	EncodeLosslessJPEG<Scalar>,
+	RefBaselineProfileGainTableMap,
 	};
 
 /*****************************************************************************/

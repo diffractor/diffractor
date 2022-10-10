@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -20,22 +20,22 @@
 
 dng_filter_task::dng_filter_task (const char *name,
 								  const dng_image &srcImage,
-						 		  dng_image &dstImage)
+								  dng_image &dstImage)
 
 	:	dng_area_task (name)
 	
-	,	fSrcImage     (srcImage)
-	,	fDstImage     (dstImage)
+	,	fSrcImage	  (srcImage)
+	,	fDstImage	  (dstImage)
 	
-	,	fSrcPlane     (0                    )
-	,	fSrcPlanes    (srcImage.Planes    ())
+	,	fSrcPlane	  (0					)
+	,	fSrcPlanes	  (srcImage.Planes	  ())
 	,	fSrcPixelType (srcImage.PixelType ())
 	
-	,	fDstPlane     (0                    )
-	,	fDstPlanes    (dstImage.Planes    ())
+	,	fDstPlane	  (0					)
+	,	fDstPlanes	  (dstImage.Planes	  ())
 	,	fDstPixelType (dstImage.PixelType ())
 	
-	,	fSrcRepeat    (1, 1)
+	,	fSrcRepeat	  (1, 1)
 	,	fSrcTileSize  (0, 0)
 	
 	{
@@ -79,10 +79,10 @@ void dng_filter_task::Start (uint32 threadCount,
 		
 		// Zero buffers so any pad bytes have defined values.
 		
-		DoZeroBytes (fSrcBuffer [threadIndex]->Buffer      (),
+		DoZeroBytes (fSrcBuffer [threadIndex]->Buffer	   (),
 					 fSrcBuffer [threadIndex]->LogicalSize ());
 		
-		DoZeroBytes (fDstBuffer [threadIndex]->Buffer      (),
+		DoZeroBytes (fDstBuffer [threadIndex]->Buffer	   (),
 					 fDstBuffer [threadIndex]->LogicalSize ());
 		
 		}

@@ -40,20 +40,20 @@
 #include "matroska/KaxDefines.h"
 #include "matroska/KaxBlock.h"
 
-using namespace LIBEBML_NAMESPACE;
+using namespace libebml;
 
-START_LIBMATROSKA_NAMESPACE
+namespace libmatroska {
 
 /*!
   \brief element used for B frame-likes
 */
 DECLARE_MKX_SINTEGER_CONS(KaxReferenceBlock)
   public:
-        ~KaxReferenceBlock();
+        ~KaxReferenceBlock() override;
     /*!
       \brief override this method to compute the timecode value
     */
-    virtual filepos_t UpdateSize(bool bSaveDefault = false, bool bForceRender = false);
+    filepos_t UpdateSize(bool bSaveDefault = false, bool bForceRender = false) override;
 
     const KaxBlockBlob & RefBlock() const;
     void SetReferencedBlock(const KaxBlockBlob * aRefdBlock);
@@ -62,13 +62,13 @@ DECLARE_MKX_SINTEGER_CONS(KaxReferenceBlock)
     void SetReferencedTimecode(int64 refTimecode) {*static_cast<EbmlSInteger*>(this) = refTimecode; bTimecodeSet = true;};
 
   protected:
-    const KaxBlockBlob * RefdBlock;
-    const KaxBlockGroup * ParentBlock;
-    bool bTimecodeSet;
-        bool bOurBlob;
+    const KaxBlockBlob * RefdBlock{nullptr};
+    const KaxBlockGroup * ParentBlock{nullptr};
+    bool bTimecodeSet{false};
+        bool bOurBlob{false};
         void FreeBlob();
 };
 
-END_LIBMATROSKA_NAMESPACE
+} // namespace libmatroska
 
 #endif // LIBMATROSKA_BLOCK_ADDITIONAL_H

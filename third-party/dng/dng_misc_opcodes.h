@@ -2,7 +2,7 @@
 // Copyright 2008-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -20,6 +20,7 @@
 #include "dng_classes.h"
 
 #include "dng_opcodes.h"
+#include "dng_rational.h"
 
 /*****************************************************************************/
 
@@ -74,6 +75,8 @@ class dng_area_spec
 		
 		uint32 fRowPitch;
 		uint32 fColPitch;
+
+		dng_urational fAreaScale;
 		
 	public:
 
@@ -85,11 +88,12 @@ class dng_area_spec
 					   uint32 rowPitch = 1,
 					   uint32 colPitch = 1)
 					   
-			:	fArea     (area)
-			,	fPlane    (plane)
-			,	fPlanes   (planes)
-			,	fRowPitch (rowPitch)
-			,	fColPitch (colPitch)
+			:	fArea	   (area)
+			,	fPlane	   (plane)
+			,	fPlanes	   (planes)
+			,	fRowPitch  (rowPitch)
+			,	fColPitch  (colPitch)
+			,	fAreaScale (1, 1)
 			
 			{
 			}
@@ -100,6 +104,8 @@ class dng_area_spec
 			{
 			return fArea;
 			}
+
+		dng_rect ScaledArea () const;
 
 		/// The first plane.
 		
@@ -142,6 +148,20 @@ class dng_area_spec
 		
 		dng_rect Overlap (const dng_rect &tile) const;
 
+		/// Same as Overlap but uses the area scale factor (see
+		/// ApplyAreaScale, below).
+		
+		dng_rect ScaledOverlap (const dng_rect &tile) const;
+
+		/// Apply scale factor to account for a resized image. The scale
+		/// factor is not cumulative; the new scale factor replaces the
+		/// previous factor. The scale factor is only applied to the area for
+		/// the purposes of applying the opcode (see ScaledArea); it is not an
+		/// intrinsic part of this object and will not be included in the data
+		/// stream.
+
+		void ApplyAreaScale (const dng_urational & /* scale */);
+
 	};
 
 /*****************************************************************************/
@@ -160,7 +180,7 @@ class dng_opcode_MapTable: public dng_inplace_opcode
 		
 		uint32 fCount;
   
-        AutoPtr<dng_memory_block> fBlackAdjustedTable;
+		AutoPtr<dng_memory_block> fBlackAdjustedTable;
 		
 	public:
 
@@ -175,26 +195,31 @@ class dng_opcode_MapTable: public dng_inplace_opcode
 		dng_opcode_MapTable (dng_host &host,
 							 dng_stream &stream);
 	
-		virtual void PutData (dng_stream &stream) const;
+		void PutData (dng_stream &stream) const override;
 
-		virtual uint32 BufferPixelType (uint32 imagePixelType);
+		uint32 BufferPixelType (uint32 imagePixelType) override;
 			
-		virtual dng_rect ModifiedBounds (const dng_rect &imageBounds);
+		dng_rect ModifiedBounds (const dng_rect &imageBounds) override;
 	
-        virtual void Prepare (dng_negative &negative,
-                              uint32 threadCount,
-                              const dng_point &tileSize,
-                              const dng_rect &imageBounds,
-                              uint32 imagePlanes,
-                              uint32 bufferPixelType,
-                              dng_memory_allocator &allocator);
+		void Prepare (dng_negative &negative,
+					  uint32 threadCount,
+					  const dng_point &tileSize,
+					  const dng_rect &imageBounds,
+					  uint32 imagePlanes,
+					  uint32 bufferPixelType,
+					  dng_memory_allocator &allocator) override;
 
-		virtual void ProcessArea (dng_negative &negative,
-								  uint32 threadIndex,
-								  dng_pixel_buffer &buffer,
-								  const dng_rect &dstArea,
-								  const dng_rect &imageBounds);
+		void ProcessArea (dng_negative &negative,
+						  uint32 threadIndex,
+						  dng_pixel_buffer &buffer,
+						  const dng_rect &dstArea,
+						  const dng_rect &imageBounds) override;
 								  
+		void ApplyAreaScale (const dng_urational &scale) override
+			{
+			fAreaSpec.ApplyAreaScale (scale);
+			}
+		
 	private:
 	
 		void ReplicateLastEntry ();
@@ -243,17 +268,17 @@ class dng_opcode_MapPolynomial: public dng_inplace_opcode
 	
 		dng_opcode_MapPolynomial (dng_stream &stream);
 	
-		virtual void PutData (dng_stream &stream) const;
+		virtual void PutData (dng_stream &stream) const override;
 
-		virtual uint32 BufferPixelType (uint32 imagePixelType);
+		virtual uint32 BufferPixelType (uint32 imagePixelType) override;
 			
-		virtual dng_rect ModifiedBounds (const dng_rect &imageBounds);
+		virtual dng_rect ModifiedBounds (const dng_rect &imageBounds) override;
 	
 		virtual void ProcessArea (dng_negative &negative,
 								  uint32 threadIndex,
 								  dng_pixel_buffer &buffer,
 								  const dng_rect &dstArea,
-								  const dng_rect &imageBounds);
+								  const dng_rect &imageBounds) override;
 
 		uint32 Degree () const
 			{
@@ -265,6 +290,11 @@ class dng_opcode_MapPolynomial: public dng_inplace_opcode
 			return fCoefficient;
 			}
 								  
+		void ApplyAreaScale (const dng_urational &scale) override
+			{
+			fAreaSpec.ApplyAreaScale (scale);
+			}
+		
 	protected:
 
 		virtual void DoProcess (dng_pixel_buffer &buffer,
@@ -274,7 +304,7 @@ class dng_opcode_MapPolynomial: public dng_inplace_opcode
 								const uint32 colPitch,
 								const real32 *coefficients,
 								const uint32 degree,
-                                uint16 blackLevel) const;
+								uint16 blackLevel) const;
 
 	};
 

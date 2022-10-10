@@ -2,12 +2,12 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
 /** \file
- *  DNG image file directory support.
+ *	DNG image file directory support.
  */
 
 /*****************************************************************************/
@@ -17,6 +17,7 @@
 
 /*****************************************************************************/
 
+#include "dng_classes.h"
 #include "dng_fingerprint.h"
 #include "dng_negative.h"
 #include "dng_rect.h"
@@ -25,6 +26,8 @@
 #include "dng_string.h"
 #include "dng_sdk_limits.h"
 #include "dng_tag_values.h"
+
+#include <memory>
 
 /*****************************************************************************/
 
@@ -120,8 +123,9 @@ class dng_ifd
 		uint32 fTileByteCountsType;
 		uint32 fTileByteCountsCount;
 		uint64 fTileByteCountsOffset;
-		uint32 fTileByteCount [kMaxTileInfo];
+		uint64 fTileByteCount [kMaxTileInfo];
 
+		uint32 fSubIFDsType;
 		uint32 fSubIFDsCount;
 		uint64 fSubIFDsOffset;
 		
@@ -163,7 +167,7 @@ class dng_ifd
 		uint32 fBlackLevelRepeatRows;
 		uint32 fBlackLevelRepeatCols;
 		
-		real64 fBlackLevel [kMaxBlackPattern] [kMaxBlackPattern] [kMaxSamplesPerPixel];
+		real64 fBlackLevel [kMaxBlackPattern] [kMaxBlackPattern] [kMaxColorPlanes];
 		
 		uint32 fBlackLevelDeltaHType;
 		uint32 fBlackLevelDeltaHCount;
@@ -173,7 +177,7 @@ class dng_ifd
 		uint32 fBlackLevelDeltaVCount;
 		uint64 fBlackLevelDeltaVOffset;
 		
-		real64 fWhiteLevel [kMaxSamplesPerPixel];
+		real64 fWhiteLevel [kMaxColorPlanes];
 		
 		dng_urational fDefaultScaleH;
 		dng_urational fDefaultScaleV;
@@ -199,7 +203,7 @@ class dng_ifd
 		
 		dng_rect fActiveArea;
 		
-		uint32   fMaskedAreaCount;
+		uint32	 fMaskedAreaCount;
 		dng_rect fMaskedArea [kMaxMaskedAreas];
 		
 		uint32 fRowInterleaveFactor;
@@ -220,12 +224,12 @@ class dng_ifd
 
 		dng_noise_profile fNoiseProfile;
   
-        dng_string fEnhanceParams;
-        
-        dng_urational fBaselineSharpness;
-        
-        dng_urational fNoiseReductionApplied;
-        
+		dng_string fEnhanceParams;
+		
+		dng_urational fBaselineSharpness;
+		
+		dng_urational fNoiseReductionApplied;
+		
 		bool fLosslessJPEGBug16;
 		
 		uint32 fSampleBitShift;
@@ -237,6 +241,15 @@ class dng_ifd
 		
 		bool fPatchFirstJPEGByte;
 
+		dng_string fSemanticName;
+		dng_string fSemanticInstanceID;
+		std::shared_ptr<const dng_memory_block> fSemanticXMP;
+		uint32 fMaskSubArea [4];
+
+		std::shared_ptr<const dng_gain_table_map> fProfileGainTableMap;
+
+		std::shared_ptr<const dng_masked_rgb_tables> fMaskedRGBTables;
+
 	public:
 	
 		dng_ifd ();
@@ -245,7 +258,8 @@ class dng_ifd
 
 		virtual dng_ifd * Clone () const;
 		
-		virtual bool ParseTag (dng_stream &stream,
+		virtual bool ParseTag (dng_host &host,
+							   dng_stream &stream,
 							   uint32 parentCode,
 							   uint32 tagCode,
 							   uint32 tagType,
@@ -264,7 +278,7 @@ class dng_ifd
 							 fImageLength,
 							 fImageWidth);
 			}
-					      		 
+								 
 		uint32 TilesAcross () const;
 		
 		uint32 TilesDown () const;
@@ -276,6 +290,8 @@ class dng_ifd
 						   
 		virtual uint32 TileByteCount (const dng_rect &tile) const;
 		
+		virtual uint64 MaxImageDataByteCount () const;
+		
 		void SetSingleStrip ();
 		
 		void FindTileSize (uint32 bytesPerTile = 128 * 1024,
@@ -283,7 +299,7 @@ class dng_ifd
 						   uint32 cellV = 16);
 		
 		void FindStripSize (uint32 bytesPerStrip = 128 * 1024,
-						    uint32 cellV = 16);
+							uint32 cellV = 16);
 		
 		virtual uint32 PixelType () const;
 		
@@ -300,8 +316,8 @@ class dng_ifd
 	protected:
 							   
 		virtual bool IsValidCFA (dng_shared &shared,
-					      		 uint32 parentCode);
-					      
+								 uint32 parentCode);
+						  
 	};
 	
 /*****************************************************************************/

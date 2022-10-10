@@ -35,6 +35,19 @@
 #include <aom/aom_encoder.h>
 #include <aom/aomcx.h>
 
+// Detect whether the aom_codec_set_option() function is available.
+// See https://aomedia.googlesource.com/aom/+/c1d42fe6615c96fc929257ed53c41fa094f38836%5E%21/aom/aom_codec.h.
+#if AOM_CODEC_ABI_VERSION >= (6 + AOM_IMAGE_ABI_VERSION)
+#define HAVE_AOM_CODEC_SET_OPTION 1
+#endif
+
+#if defined(HAVE_AOM_CODEC_SET_OPTION)
+struct custom_option
+{
+    std::string name;
+    std::string value;
+};
+#endif
 
 struct encoder_struct_aom
 {
@@ -44,13 +57,32 @@ struct encoder_struct_aom
   int cpu_used;  // = parameter 'speed'. I guess this is a better name than 'cpu_used'.
 
   int quality;
+  int alpha_quality;
   int min_q;
   int max_q;
+  int alpha_min_q;
+  int alpha_max_q;
   int threads;
+  bool lossless;
+  bool lossless_alpha;
+
+#if defined(HAVE_AOM_CODEC_SET_OPTION)
+  std::vector<custom_option> custom_options;
+
+  void add_custom_option(const custom_option&);
+
+  void add_custom_option(std::string name, std::string value);
+#endif
 
   aom_tune_metric tune;
 
   heif_chroma chroma = heif_chroma_420;
+
+  // --- input
+
+  bool alpha_quality_set = false;
+  bool alpha_min_q_set = false;
+  bool alpha_max_q_set = false;
 
   // --- output
 
@@ -58,11 +90,44 @@ struct encoder_struct_aom
   bool data_read = false;
 };
 
+#if defined(HAVE_AOM_CODEC_SET_OPTION)
+void encoder_struct_aom::add_custom_option(const custom_option& p)
+{
+  // if there is already a parameter of that name, remove it from list
+
+  for (size_t i = 0; i < custom_options.size(); i++) {
+    if (custom_options[i].name == p.name) {
+      for (size_t k = i + 1; k < custom_options.size(); k++) {
+        custom_options[k - 1] = custom_options[k];
+      }
+      custom_options.pop_back();
+      break;
+    }
+  }
+
+  // and add the new parameter at the end of the list
+
+  custom_options.push_back(p);
+}
+
+void encoder_struct_aom::add_custom_option(std::string name, std::string value)
+{
+    custom_option p;
+    p.name = name;
+    p.value = value;
+    add_custom_option(p);
+}
+#endif
+
 static const char* kError_out_of_memory = "Out of memory";
 static const char* kError_encode_frame = "Failed to encode frame";
 
 static const char* kParam_min_q = "min-q";
 static const char* kParam_max_q = "max-q";
+static const char* kParam_alpha_quality = "alpha-quality";
+static const char* kParam_alpha_min_q = "alpha-min-q";
+static const char* kParam_alpha_max_q = "alpha-max-q";
+static const char* kParam_lossless_alpha = "lossless-alpha";
 static const char* kParam_threads = "threads";
 static const char* kParam_realtime = "realtime";
 static const char* kParam_speed = "speed";
@@ -100,7 +165,7 @@ static const char* aom_plugin_name()
 }
 
 
-#define MAX_NPARAMETERS 10
+#define MAX_NPARAMETERS 14
 
 static struct heif_encoder_parameter aom_encoder_params[MAX_NPARAMETERS];
 static const struct heif_encoder_parameter* aom_encoder_parameter_ptrs[MAX_NPARAMETERS + 1];
@@ -216,6 +281,50 @@ static void aom_init_parameters()
   p->integer.num_valid_values = 0;
   d[i++] = p++;
 
+  assert(i < MAX_NPARAMETERS);
+  p->version = 2;
+  p->name = kParam_alpha_quality;
+  p->type = heif_encoder_parameter_type_integer;
+  p->has_default = false;
+  p->integer.have_minimum_maximum = true;
+  p->integer.minimum = 0;
+  p->integer.maximum = 100;
+  p->integer.valid_values = NULL;
+  p->integer.num_valid_values = 0;
+  d[i++] = p++;
+
+  assert(i < MAX_NPARAMETERS);
+  p->version = 2;
+  p->name = kParam_alpha_min_q;
+  p->type = heif_encoder_parameter_type_integer;
+  p->has_default = false;
+  p->integer.have_minimum_maximum = true;
+  p->integer.minimum = 1;
+  p->integer.maximum = 62;
+  p->integer.valid_values = NULL;
+  p->integer.num_valid_values = 0;
+  d[i++] = p++;
+
+  assert(i < MAX_NPARAMETERS);
+  p->version = 2;
+  p->name = kParam_alpha_max_q;
+  p->type = heif_encoder_parameter_type_integer;
+  p->has_default = false;
+  p->integer.have_minimum_maximum = true;
+  p->integer.minimum = 0;
+  p->integer.maximum = 63;
+  p->integer.valid_values = NULL;
+  p->integer.num_valid_values = 0;
+  d[i++] = p++;
+
+  assert(i < MAX_NPARAMETERS);
+  p->version = 2;
+  p->name = kParam_lossless_alpha;
+  p->type = heif_encoder_parameter_type_boolean;
+  p->boolean.default_value = false;
+  p->has_default = true;
+  d[i++] = p++;
+
   d[i++] = nullptr;
 }
 
@@ -286,7 +395,13 @@ struct heif_error aom_set_parameter_lossless(void* encoder_raw, int enable)
   if (enable) {
     encoder->min_q = 0;
     encoder->max_q = 0;
+    encoder->alpha_min_q = 0;
+    encoder->alpha_min_q_set = true;
+    encoder->alpha_max_q = 0;
+    encoder->alpha_max_q_set = true;
   }
+
+  encoder->lossless = enable;
 
   return heif_error_ok;
 }
@@ -295,7 +410,7 @@ struct heif_error aom_get_parameter_lossless(void* encoder_raw, int* enable)
 {
   struct encoder_struct_aom* encoder = (struct encoder_struct_aom*) encoder_raw;
 
-  *enable = (encoder->min_q == 0 && encoder->max_q == 0);
+  *enable = encoder->lossless;
 
   return heif_error_ok;
 }
@@ -342,6 +457,25 @@ struct heif_error aom_set_parameter_integer(void* encoder_raw, const char* name,
   else if (strcmp(name, heif_encoder_parameter_name_lossless) == 0) {
     return aom_set_parameter_lossless(encoder, value);
   }
+  else if (strcmp(name, kParam_alpha_quality) == 0) {
+      if (value < 0 || value > 100) {
+          return heif_error_invalid_parameter_value;
+      }
+
+      encoder->alpha_quality = value;
+      encoder->alpha_quality_set = true;
+      return heif_error_ok;
+  }
+  else if (strcmp(name, kParam_alpha_min_q) == 0) {
+      encoder->alpha_min_q = value;
+      encoder->alpha_min_q_set = true;
+      return heif_error_ok;
+  }
+  else if (strcmp(name, kParam_alpha_max_q) == 0) {
+      encoder->alpha_max_q = value;
+      encoder->alpha_max_q_set = true;
+      return heif_error_ok;
+  }
 
   set_value(kParam_min_q, min_q);
   set_value(kParam_max_q, max_q);
@@ -361,6 +495,18 @@ struct heif_error aom_get_parameter_integer(void* encoder_raw, const char* name,
   else if (strcmp(name, heif_encoder_parameter_name_lossless) == 0) {
     return aom_get_parameter_lossless(encoder, value);
   }
+  else if (strcmp(name, kParam_alpha_quality) == 0) {
+      *value = encoder->alpha_quality_set ? encoder->alpha_quality : encoder->quality;
+      return heif_error_ok;
+  }
+  else if (strcmp(name, kParam_alpha_max_q) == 0) {
+      *value = encoder->alpha_max_q_set ? encoder->alpha_max_q : encoder->max_q;
+      return heif_error_ok;
+  }
+  else if (strcmp(name, kParam_alpha_min_q) == 0) {
+      *value = encoder->alpha_min_q_set ? encoder->alpha_min_q : encoder->min_q;
+      return heif_error_ok;
+  }
 
   get_value(kParam_min_q, min_q);
   get_value(kParam_max_q, max_q);
@@ -378,6 +524,16 @@ struct heif_error aom_set_parameter_boolean(void* encoder_raw, const char* name,
   if (strcmp(name, heif_encoder_parameter_name_lossless) == 0) {
     return aom_set_parameter_lossless(encoder, value);
   }
+  else if (strcmp(name, kParam_lossless_alpha) == 0) {
+      encoder->lossless_alpha = value;
+      if (value) {
+          encoder->alpha_max_q = 0;
+          encoder->alpha_max_q_set = true;
+          encoder->alpha_min_q = 0;
+          encoder->alpha_min_q_set = true;
+      }
+      return heif_error_ok;
+  }
 
   set_value(kParam_realtime, realtime_mode);
 
@@ -393,6 +549,7 @@ struct heif_error aom_get_parameter_boolean(void* encoder_raw, const char* name,
   }
 
   get_value(kParam_realtime, realtime_mode);
+  get_value(kParam_lossless_alpha, lossless_alpha);
 
   return heif_error_unsupported_parameter;
 }
@@ -433,6 +590,13 @@ struct heif_error aom_set_parameter_string(void* encoder_raw, const char* name, 
       return heif_error_invalid_parameter_value;
     }
   }
+
+#if defined(HAVE_AOM_CODEC_SET_OPTION)
+  if (strncmp(name, "aom:", 4) == 0) {
+    encoder->add_custom_option(std::string(name).substr(4), std::string(value));
+    return heif_error_ok;
+  }
+#endif
 
   return heif_error_unsupported_parameter;
 }
@@ -530,8 +694,8 @@ void aom_query_input_colorspace2(void* encoder_raw, heif_colorspace* colorspace,
 void aom_query_encoded_size(void* encoder, uint32_t input_width, uint32_t input_height,
                             uint32_t* encoded_width, uint32_t* encoded_height)
 {
-  *encoded_width = std::max(input_width, 16U);
-  *encoded_height = std::max(input_height, 16U);
+  *encoded_width = input_width;
+  *encoded_height = input_height;
 }
 
 
@@ -563,16 +727,8 @@ struct heif_error aom_encode_image(void* encoder_raw, const struct heif_image* i
 
   struct heif_error err;
 
-  // --- round image size to minimum size
-
-  uint32_t rounded_width, rounded_height;
-  aom_query_encoded_size(encoder,
-                         image->image->get_width(),
-                         image->image->get_height(),
-                         &rounded_width,
-                         &rounded_height);
-
-  bool success = image->image->extend_padding_to_size(rounded_width, rounded_height);
+  bool success = image->image->extend_padding_to_size(image->image->get_width(),
+                                                      image->image->get_height());
   if (!success) {
     err = {heif_error_Memory_allocation_error,
            heif_suberror_Unspecified,
@@ -595,23 +751,28 @@ struct heif_error aom_encode_image(void* encoder_raw, const struct heif_image* i
   aom_img_fmt_t img_format = AOM_IMG_FMT_NONE;
 
   int chroma_height = 0;
+  int chroma_sample_position = AOM_CSP_UNKNOWN;
 
   switch (chroma) {
     case heif_chroma_420:
     case heif_chroma_monochrome:
       img_format = AOM_IMG_FMT_I420;
       chroma_height = (source_height+1)/2;
+      chroma_sample_position = AOM_CSP_UNKNOWN; // TODO: change this to CSP_CENTER in the future (https://github.com/AOMediaCodec/av1-avif/issues/88)
       break;
     case heif_chroma_422:
       img_format = AOM_IMG_FMT_I422;
       chroma_height = (source_height+1)/2;
+      chroma_sample_position = AOM_CSP_COLOCATED;
       break;
     case heif_chroma_444:
       img_format = AOM_IMG_FMT_I444;
       chroma_height = source_height;
+      chroma_sample_position = AOM_CSP_COLOCATED;
       break;
     default:
       img_format = AOM_IMG_FMT_NONE;
+      chroma_sample_position = AOM_CSP_UNKNOWN;
       assert(false);
       break;
   }
@@ -696,7 +857,10 @@ struct heif_error aom_encode_image(void* encoder_raw, const struct heif_image* i
 
 
   unsigned int aomUsage = 0;
-#if defined(AOM_USAGE_REALTIME)
+#if defined(AOM_USAGE_ALL_INTRA)
+  // aom 3.1.0
+  aomUsage = (encoder->realtime_mode ? AOM_USAGE_REALTIME : AOM_USAGE_ALL_INTRA);
+#elif defined(AOM_USAGE_REALTIME)
   // aom 2.0
   aomUsage = (encoder->realtime_mode ? AOM_USAGE_REALTIME : AOM_USAGE_GOOD_QUALITY);
 #endif
@@ -725,8 +889,17 @@ struct heif_error aom_encode_image(void* encoder_raw, const struct heif_image* i
   cfg.g_input_bit_depth = bpp_y;
 
   cfg.rc_end_usage = AOM_Q;
-  cfg.rc_min_quantizer = encoder->min_q;
-  cfg.rc_max_quantizer = encoder->max_q;
+
+  int min_q = encoder->min_q;
+  int max_q = encoder->max_q;
+
+  if (input_class == heif_image_input_class_alpha && encoder->alpha_min_q_set && encoder->alpha_max_q_set) {
+      min_q = encoder->alpha_min_q;
+      max_q = encoder->alpha_max_q;
+  }
+
+  cfg.rc_min_quantizer = min_q;
+  cfg.rc_max_quantizer = max_q;
   cfg.g_error_resilient = 0;
   cfg.g_threads = encoder->threads;
 
@@ -750,7 +923,13 @@ struct heif_error aom_encode_image(void* encoder_raw, const struct heif_image* i
 
   aom_codec_control(&codec, AOME_SET_CPUUSED, encoder->cpu_used);
 
-  int cq_level = ((100 - encoder->quality) * 63 + 50) / 100;
+  int quality = encoder->quality;
+
+  if (input_class == heif_image_input_class_alpha && encoder->alpha_quality_set) {
+      quality = encoder->alpha_quality;
+  }
+
+  int cq_level = ((100 - quality) * 63 + 50) / 100;
   aom_codec_control(&codec, AOME_SET_CQ_LEVEL, cq_level);
 
   if (encoder->threads > 1) {
@@ -765,6 +944,7 @@ struct heif_error aom_encode_image(void* encoder_raw, const struct heif_image* i
 
   // In aom, color_range defaults to limited range (0). Set it to full range (1).
   aom_codec_control(&codec, AV1E_SET_COLOR_RANGE, nclx ? nclx->get_full_range_flag() : 1);
+  aom_codec_control(&codec, AV1E_SET_CHROMA_SAMPLE_POSITION, chroma_sample_position);
 
   if (nclx &&
       (input_class == heif_image_input_class_normal ||
@@ -776,6 +956,17 @@ struct heif_error aom_encode_image(void* encoder_raw, const struct heif_image* i
 
   aom_codec_control(&codec, AOME_SET_TUNING, encoder->tune);
 
+  if (encoder->lossless || (input_class == heif_image_input_class_alpha && encoder->lossless_alpha)) {
+    aom_codec_control(&codec, AV1E_SET_LOSSLESS, 1);
+  }
+
+#if defined(HAVE_AOM_CODEC_SET_OPTION)
+  // Apply the custom AOM encoder options.
+  // These should always be applied last as they can override the values that were set above.
+  for (const auto& p : encoder->custom_options) {
+    aom_codec_set_option(&codec, p.name.c_str(), p.value.c_str());
+  }
+#endif
 
   // --- encode frame
 

@@ -38,9 +38,9 @@
 #include "ebml/EbmlConfig.h"
 #include "matroska/KaxConfig.h"
 
-START_LIBMATROSKA_NAMESPACE
+namespace libmatroska {
 
-#define LIBMATROSKA_VERSION 0x010602
+#define LIBMATROSKA_VERSION 0x010700
 
 extern const MATROSKA_DLL_API std::string KaxCodeVersion;
 extern const MATROSKA_DLL_API std::string KaxCodeDate;
@@ -49,6 +49,6 @@ extern const MATROSKA_DLL_API std::string KaxCodeDate;
   \todo Improve the CRC/ECC system (backward and forward possible ?) to fit streaming/live writing/simple reading
 */
 
-END_LIBMATROSKA_NAMESPACE
+} // namespace libmatroska
 
 #endif // LIBMATROSKA_VERSION_H

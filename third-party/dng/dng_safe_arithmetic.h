@@ -2,7 +2,7 @@
 // Copyright 2015-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -35,6 +35,14 @@
 #include "dng_exceptions.h"
 #include "dng_types.h"
 
+#ifndef __has_builtin
+#define __has_builtin(x) 0	// Compatibility with non-Clang compilers.
+#endif
+
+#if !defined(DNG_HAS_INT128) && defined(__SIZEOF_INT128__)
+#define DNG_HAS_INT128
+#endif
+
 // If the result of adding arg1 and arg2 will fit in an int32_t (without
 // under-/overflow), stores this result in *result and returns true. Otherwise,
 // returns false and leaves *result unchanged.
@@ -52,10 +60,11 @@ int64 SafeInt64Add(int64 arg1, int64 arg2);
 bool SafeUint32Add(uint32 arg1, uint32 arg2,
 				   uint32 *result);
 
-// Returns the result of adding arg1 and arg2 if it will fit in a uint32_t
+// Returns the result of adding arg1 and arg2 if it will fit in the result type
 // (without wraparound). Otherwise, throws a dng_exception with error code
 // dng_error_unknown.
 uint32 SafeUint32Add(uint32 arg1, uint32 arg2);
+uint64 SafeUint64Add(uint64 arg1, uint64 arg2);
 
 // If the subtraction of arg2 from arg1 will not result in an int32_t under- or
 // overflow, stores this result in *result and returns true. Otherwise,
@@ -66,6 +75,17 @@ bool SafeInt32Sub(int32 arg1, int32 arg2, int32 *result);
 // result in an int32_t under- or overflow. Otherwise, throws a dng_exception
 // with error code dng_error_unknown.
 int32 SafeInt32Sub(int32 arg1, int32 arg2);
+
+// Returns the result of subtracting arg2 from arg1 if this operation will not
+// result in wraparound. Otherwise, throws a dng_exception with error code
+// dng_error_unknown.
+uint32 SafeUint32Sub(uint32 arg1, uint32 arg2);
+
+// Returns the result of multiplying arg1 and arg2 if it will fit in a int32_t
+// (without overflow). Otherwise, throws a dng_exception with error code
+// dng_error_unknown.
+int32 SafeInt32Mult(int32 arg1, int32 arg2);
+bool SafeInt32Mult(int32 arg1, int32 arg2, int32 *result);
 
 // If the result of multiplying arg1, ..., argn will fit in a uint32_t (without
 // wraparound), stores this result in *result and returns true. Otherwise,
@@ -91,10 +111,87 @@ uint32 SafeUint32Mult(uint32 arg1, uint32 arg2,
 // dng_error_unknown.
 std::size_t SafeSizetMult(std::size_t arg1, std::size_t arg2);
 
+namespace dng_internal {
+
+// Internal function used as fallback for SafeInt64Mult() if other optimized
+// computation is not supported. Don't call this function directly.
+int64 SafeInt64MultSlow(int64 arg1, int64 arg2);
+
+#ifdef __clang__
+#ifdef __ANDROID__
+// While clang says it supports __builtin_smull_overflow, the Android NDK
+// doesn't use the right runtime library per https://bugs.llvm.org/show_bug.cgi?id=28629
+#define __USE_BUILTIN_SMULL_OVERFLOW !defined(__NDK_MAJOR__) && __has_builtin(__builtin_smull_overflow)
+#else
+#define __USE_BUILTIN_SMULL_OVERFLOW __has_builtin(__builtin_smull_overflow)
+#endif // __ANDROID__
+#endif // __clang__
+
+// Internal function used as optimization for SafeInt64Mult() if Clang
+// __builtin_smull_overflow is supported. Don't call this function directly.
+#if __USE_BUILTIN_SMULL_OVERFLOW
+inline int64 SafeInt64MultByClang(int64 arg1, int64 arg2) {
+	int64 result;
+	bool failed;
+	// sizeof() is a compile time constant so this compiles efficiently.
+	if (sizeof(long) >= 8) {
+	  long temp_result;
+	  failed = __builtin_smull_overflow((long)arg1, (long)arg2, &temp_result);
+	  if (sizeof(long) > 8 && !failed) {
+		  failed = (temp_result > std::numeric_limits<int64>::max() ||
+				temp_result < std::numeric_limits<int64>::min());
+	  }
+	  result = (int64)temp_result;
+	} else if (sizeof(long long) >= 8) {
+	  long long temp_result;
+	  failed = __builtin_smulll_overflow((long long)arg1, (long long)arg2, &temp_result);
+	  if (sizeof(long long) > 8 && !failed) {
+		  failed = (temp_result > std::numeric_limits<int64>::max() ||
+				temp_result < std::numeric_limits<int64>::min());
+	  }
+	  result = (int64)temp_result;
+	} else {
+	  ThrowNotYetImplemented("No 64-bit capable multiply with overflow builtin.");
+	}
+	if (failed) {
+	  ThrowProgramError("Arithmetic overflow");
+	  abort();	// Never reached.
+	}
+	return result;
+}
+#endif
+
+// Internal function used as optimization for SafeInt64Mult() if __int128 type
+// is supported. Don't call this function directly.
+#ifdef DNG_HAS_INT128
+inline int64 SafeInt64MultByInt128(int64 arg1,
+										  int64 arg2) {
+  const __int128 kInt64Max =
+	  static_cast<__int128>(std::numeric_limits<int64>::max());
+  const __int128 kInt64Min =
+	  static_cast<__int128>(std::numeric_limits<int64>::min());
+  __int128 result = static_cast<__int128>(arg1) * static_cast<__int128>(arg2);
+  if (result > kInt64Max || result < kInt64Min) {
+	ThrowProgramError("Arithmetic overflow");
+  }
+  return static_cast<int64>(result);
+}
+#endif
+
+}  // namespace dng_internal
+
 // Returns the result of multiplying arg1 and arg2 if it will fit in an int64_t
 // (without overflow). Otherwise, throws a dng_exception with error code
 // dng_error_unknown.
-int64 SafeInt64Mult(int64 arg1, int64 arg2);
+inline int64 SafeInt64Mult(int64 arg1, int64 arg2) {
+#if __USE_BUILTIN_SMULL_OVERFLOW
+  return dng_internal::SafeInt64MultByClang(arg1, arg2);
+#elif defined(DNG_HAS_INT128)
+  return dng_internal::SafeInt64MultByInt128(arg1, arg2);
+#else
+  return dng_internal::SafeInt64MultSlow(arg1, arg2);
+#endif
+}
 
 // Returns the result of dividing arg1 by arg2; if the result is not an integer,
 // rounds up to the next integer. If arg2 is zero, throws a dng_exception with
@@ -110,9 +207,21 @@ uint32 SafeUint32DivideUp(uint32 arg1, uint32 arg2);
 bool RoundUpUint32ToMultiple(uint32 val, uint32 multiple_of,
 							 uint32 *result);
 
+// Returns the smallest integer multiple of 'multiple_of' that is greater than
+// or equal to 'val'. If the result will not fit in a uint32 or if
+// 'multiple_of' is zero, throws a dng_exception with error code
+// dng_error_unknown.
+uint32 RoundUpUint32ToMultiple(uint32 val,
+									  uint32 multiple_of);
+
 // If the uint32_t value val will fit in a int32_t, converts it to a int32_t and
 // stores it in *result. Otherwise, returns false and leaves *result unchanged.
 bool ConvertUint32ToInt32(uint32 val, int32 *result);
+
+// Returns the result of converting val to an int32_t if it can be converted
+// without overflow. Otherwise, throws a dng_exception with error code
+// dng_error_unknown.
+int32 ConvertUint32ToInt32(uint32 val);
 
 // Converts a value of the unsigned integer type TSrc to the unsigned integer
 // type TDest. If the value in 'src' cannot be converted to the type TDest
@@ -128,33 +237,44 @@ bool ConvertUint32ToInt32(uint32 val, int32 *result);
 template <class TSrc, class TDest>
 static void ConvertUnsigned(TSrc src, TDest *dest) {
 #if 0
-// sub-optimal run-time implementation pre-C++11
- if (!(std::numeric_limits<TSrc>::is_integer &&
-	   !std::numeric_limits<TSrc>::is_signed &&
-	   std::numeric_limits<TDest>::is_integer &&
-	   !std::numeric_limits<TDest>::is_signed))
-	 {
-	 ThrowProgramError ("TSrc and TDest must be unsigned integer types");
-	 }
+	// sub-optimal run-time implementation pre-C++11
+	if (!(std::numeric_limits<TSrc>::is_integer &&
+		  !std::numeric_limits<TSrc>::is_signed &&
+		  std::numeric_limits<TDest>::is_integer &&
+		  !std::numeric_limits<TDest>::is_signed))
+	{
+	ThrowProgramError ("TSrc and TDest must be unsigned integer types");
+	}
 #else
- // preferred compile-time implementation; requires C++11
-  static_assert(std::numeric_limits<TSrc>::is_integer &&
-					!std::numeric_limits<TSrc>::is_signed &&
-					std::numeric_limits<TDest>::is_integer &&
-					!std::numeric_limits<TDest>::is_signed,
-				"TSrc and TDest must be unsigned integer types");
+	// preferred compile-time implementation; requires C++11
+	static_assert(std::numeric_limits<TSrc>::is_integer &&
+				  !std::numeric_limits<TSrc>::is_signed &&
+				  std::numeric_limits<TDest>::is_integer &&
+				  !std::numeric_limits<TDest>::is_signed,
+				  "TSrc and TDest must be unsigned integer types");
 #endif
 
-  const TDest converted = static_cast<TDest>(src);
+	const TDest converted = static_cast<TDest>(src);
 
-  // Convert back to TSrc to check whether truncation occurred in the
-  // conversion to TDest.
-  if (static_cast<TSrc>(converted) != src) {
-	ThrowProgramError("Overflow in unsigned integer conversion");
-  }
+	// Convert back to TSrc to check whether truncation occurred in the
+	// conversion to TDest.
+	if (static_cast<TSrc>(converted) != src) {
+		ThrowProgramError("Overflow in unsigned integer conversion");
+	}
 
-  *dest = converted;
+	*dest = converted;
 }
+
+// Returns the result of converting val to the result type using truncation if
+// val is in range of the result type values. Otherwise, throws a dng_exception
+// with error code dng_error_unknown.
+int32 ConvertDoubleToInt32(double val);
+uint32 ConvertDoubleToUint32(double val);
+
+// Returns the result of converting val to float. If val is outside of
+// [-FLT_MAX, FLT_MAX], -infinity and infinity is returned respectively. NaN is
+// returned as NaN.
+float ConvertDoubleToFloat(double val);
 
 /*****************************************************************************/
 

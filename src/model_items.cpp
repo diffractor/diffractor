@@ -1186,7 +1186,7 @@ sizei df::item_group::measure(ui::measure_context& mc, const int width_limit) co
 
 	// maeasure and save calculated layout information
 	const double base_line_height = calc_item_line_height() * mc.scale_factor;
-	const auto base_adjust = base_line_height * 0.33;
+	const auto base_adjust = base_line_height * 1.11;
 
 	const double cy = base_line_height + mc.baseline_snap;
 	double y = 0;
@@ -1217,7 +1217,7 @@ sizei df::item_group::measure(ui::measure_context& mc, const int width_limit) co
 		else
 		{
 			const auto max_cols = 100;
-			const auto gap = 2.0 * mc.scale_factor;;
+			const auto gap = 2.0 * mc.scale_factor;
 			double dst_widths[max_cols];
 			double src_widths[max_cols];
 
@@ -1278,7 +1278,7 @@ sizei df::item_group::measure(ui::measure_context& mc, const int width_limit) co
 				{					
 					const auto is_end_break = n == item_count;
 					const auto avail_cx = (width_limit - mc.baseline_snap);
-					double extra_cx = avail_cx - (gap * (col_count - 1)) - x;
+					const double extra_cx = avail_cx - (gap * (col_count - 1)) - x;
 					auto cy_av = 0.0;
 					auto total_width = 0.0;
 					auto x_gap = gap;
@@ -1332,7 +1332,7 @@ sizei df::item_group::measure(ui::measure_context& mc, const int width_limit) co
 
 					if (!is_end_break)
 					{
-						x_gap = std::clamp((avail_cx - total_width) / (col_count - 1), gap, gap * 3.3);
+						x_gap = std::clamp((avail_cx - total_width) / (col_count - 1), gap, gap * 5.5);
 					}
 
 					const double cy_line = std::clamp(cy_av / col_count, cy * 0.77, cy * 1.33);
@@ -2537,12 +2537,11 @@ void df::file_item::open(view_state& s, const view_host_base_ptr& view) const
 ////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////
 
-void df::file_item::update(const file_path path, const index_file_item& info, const bool is_indexed_location) noexcept
+void df::file_item::update(const file_path path, const index_file_item& info) noexcept
 {
 	const auto md = info.metadata;
 
 	_name = path.name();
-	_is_indexed_location = is_indexed_location;
 	_online_status = info.calc_online_status();
 	_is_read_only = (info.flags && index_item_flags::is_read_only);
 	_path = path;

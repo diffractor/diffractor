@@ -44,7 +44,7 @@
 #define INVALID_SET_FILE_POINTER ((DWORD)-1)
 #endif // INVALID_SET_FILE_POINTER
 
-START_LIBEBML_NAMESPACE
+namespace libebml {
 
 WinIOCallback::WinIOCallback(const char* Path, const open_mode aMode, DWORD dwFlags)
   :mFile(NULL), mOk(false)
@@ -146,7 +146,7 @@ bool WinIOCallback::open(const wchar_t* Path, const open_mode aMode, DWORD dwFla
       assert(false);
   }
 
-  //if ((LONG)GetVersion() >= 0) {
+// if ((LONG)GetVersion() >= 0) {
     mFile = CreateFileW(Path, AccessMode, ShareMode, NULL, Disposition, dwFlags, NULL);
 //  } else {
 //    int errCode;
@@ -273,4 +273,4 @@ bool WinIOCallback::SetEOF()
   return SetEndOfFile(mFile) != 0;
 }
 
-END_LIBEBML_NAMESPACE
+} // namespace libebml

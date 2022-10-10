@@ -41,15 +41,15 @@
 #include "ebml/EbmlMaster.h"
 #include "matroska/KaxBlock.h"
 
-using namespace LIBEBML_NAMESPACE;
+using namespace libebml;
 
-START_LIBMATROSKA_NAMESPACE
+namespace libmatroska {
 
 class KaxCuePoint;
 
 DECLARE_MKX_MASTER(KaxCues)
   public:
-    ~KaxCues();
+    ~KaxCues() override;
 
     //bool AddBlockGroup(const KaxBlockGroup & BlockReference); // deprecated
     bool AddBlockBlob(const KaxBlockBlob & BlockReference);
@@ -86,6 +86,6 @@ DECLARE_MKX_MASTER(KaxCues)
     uint64 mGlobalTimecodeScale;
 };
 
-END_LIBMATROSKA_NAMESPACE
+} // namespace libmatroska
 
 #endif // LIBMATROSKA_CUES_H

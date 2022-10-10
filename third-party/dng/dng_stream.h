@@ -2,12 +2,12 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
 /** Data stream abstraction for serializing and deserializing sequences of
- *  basic types and RAW image data.
+ *	basic types and RAW image data.
  */
 
 /*****************************************************************************/
@@ -44,8 +44,8 @@ class dng_stream: private dng_uncopyable
 		enum
 			{
 			
-			kSmallBufferSize =  8 * 1024,
-			kBigBufferSize   = 64 * 1024,
+			kSmallBufferSize =	8 * 1024,
+			kBigBufferSize	 = 64 * 1024,
 			
 			kDefaultBufferSize = kSmallBufferSize
 			
@@ -159,10 +159,10 @@ class dng_stream: private dng_uncopyable
 			return fBufferSize;
 			}
 
-        /// Change the buffer size on the stream, if possible.
-                
-        void SetBufferSize (dng_memory_allocator &allocator,
-                            uint32 newBufferSize);
+		/// Change the buffer size on the stream, if possible.
+				
+		void SetBufferSize (dng_memory_allocator &allocator,
+							uint32 newBufferSize);
 
 		/// Getter for length of data in stream.
 		/// \retval Length of readable data in stream.
@@ -226,16 +226,16 @@ class dng_stream: private dng_uncopyable
 			{
 			SetReadPosition (Position () + delta);
 			}
-        
-        /// Quick check to see if data range in completely buffered.
+		
+		/// Quick check to see if data range in completely buffered.
 
-        bool DataInBuffer (uint32 count,
-                           uint64 offset)
-            {
-            return (offset         >= fBufferStart &&
-                    offset + count <= fBufferEnd);
-            }
-        
+		bool DataInBuffer (uint64 count,
+						   uint64 offset)
+			{
+			return (offset		   >= fBufferStart &&
+					offset + count <= fBufferEnd);
+			}
+		
 		/// Get data from stream. Exception is thrown and no data is read if 
 		/// insufficient data available in stream.
 		/// \param data Buffer to put data into. Must be valid for count bytes.
@@ -297,8 +297,8 @@ class dng_stream: private dng_uncopyable
 		void Put_uint8 (uint8 x)
 			{
 			
-			if (fBufferDirty               &&
-			    fPosition  >= fBufferStart &&
+			if (fBufferDirty			   &&
+				fPosition  >= fBufferStart &&
 				fPosition  <= fBufferEnd   &&
 				fPosition  <  fBufferLimit)
 				{
@@ -535,6 +535,16 @@ class dng_stream: private dng_uncopyable
 
 		uint32 TagValue_uint32 (uint32 tagType);
 
+		/// Get a value of size indicated by tag type from stream and advance
+		/// read position. Byte swap if byte swapping is turned on and tag type
+		/// is larger than a byte. Value is returned as an unsigned 64-bit integer.
+		/// \param tagType Tag type of data stored in stream.
+		/// \retval One unsigned 64-bit integer.
+		/// \exception dng_exception with fErrorCode equal to dng_error_end_of_file
+		/// if not enough data in stream.
+
+		uint64 TagValue_uint64 (uint32 tagType);
+
 		/// Get a value of size indicated by tag type from stream and advance read
 		/// position. Byte swap if byte swapping is turned on and tag type is larger
 		/// than a byte. Value is returned as a 32-bit integer. 
@@ -545,7 +555,17 @@ class dng_stream: private dng_uncopyable
 
 		int32 TagValue_int32 (uint32 tagType);
 		
-		/// Get a value of size indicated by tag type from stream and advance read 
+		/// Get a value of size indicated by tag type from stream and advance read
+		/// position. Byte swap if byte swapping is turned on and tag type is larger
+		/// than a byte. Value is returned as a 64-bit integer.
+		/// \param tagType Tag type of data stored in stream.
+		/// \retval One 64-bit integer.
+		/// \exception dng_exception with fErrorCode equal to dng_error_end_of_file
+		/// if not enough data in stream.
+
+		int64 TagValue_int64 (uint32 tagType);
+		
+		/// Get a value of size indicated by tag type from stream and advance read
 		/// position. Byte swap if byte swapping is turned on and tag type is larger
 		/// than a byte. Value is returned as a dng_urational. 
 		/// \param tagType Tag type of data stored in stream.
@@ -608,67 +628,67 @@ class dng_stream: private dng_uncopyable
 /*****************************************************************************/
 
 class dng_stream_double_buffered : public dng_stream
-    {
-    
-    private:
-    
-        dng_stream &fStream;
-        
-    public:
-    
-        dng_stream_double_buffered (dng_stream &stream,
-                                    uint32 bufferSize = kDefaultBufferSize)
-        
-            :   dng_stream ((dng_abort_sniffer *) NULL,
-                            bufferSize,
-                            stream.OffsetInOriginalFile ())
-        
-            ,   fStream (stream)
-        
-            {
-            SetBigEndian (fStream.BigEndian ());
-            }
-        
-    protected:
-    
+	{
+	
+	private:
+	
+		dng_stream &fStream;
+		
+	public:
+	
+		dng_stream_double_buffered (dng_stream &stream,
+									uint32 bufferSize = kDefaultBufferSize)
+		
+			:	dng_stream ((dng_abort_sniffer *) NULL,
+							bufferSize,
+							stream.OffsetInOriginalFile ())
+		
+			,	fStream (stream)
+		
+			{
+			SetBigEndian (fStream.BigEndian ());
+			}
+		
+	protected:
+	
 		virtual uint64 DoGetLength ()
-            {
-            return fStream.Length ();
-            }
+			{
+			return fStream.Length ();
+			}
 	
 		virtual void DoRead (void *data,
 							 uint32 count,
 							 uint64 offset)
-            {
-            fStream.SetReadPosition (offset);
-            fStream.Get (data, count);
-            }
+			{
+			fStream.SetReadPosition (offset);
+			fStream.Get (data, count);
+			}
 
-    };
+	};
 
 /*****************************************************************************/
 
 class dng_stream_contiguous_read_hint
-    {
-    
-    private:
-    
-        dng_stream &fStream;
-        
-        dng_memory_allocator &fAllocator;
-        
-        uint32 fOldBufferSize;
-        
-    public:
-        
-        dng_stream_contiguous_read_hint (dng_stream &stream,
-                                         dng_memory_allocator &allocator,
-                                         uint64 offset,
-                                         uint64 count);
-        
-        ~dng_stream_contiguous_read_hint ();
-     
-    };
+	{
+	
+	private:
+	
+		dng_stream &fStream;
+		
+		dng_memory_allocator &fAllocator;
+		
+		uint32 fOldBufferSize;
+		
+	public:
+		
+		dng_stream_contiguous_read_hint (dng_stream &stream,
+										 dng_memory_allocator &allocator,
+										 uint64 offset,
+										 uint64 count);
+		
+		~dng_stream_contiguous_read_hint ();
+	 
+	};
 
 /*****************************************************************************/
 
@@ -725,7 +745,7 @@ class TempStreamSniffer: private dng_uncopyable
 	public:
 	
 		TempStreamSniffer (dng_stream &stream,
-					       dng_abort_sniffer *sniffer);
+						   dng_abort_sniffer *sniffer);
 						 
 		~TempStreamSniffer ();
 		

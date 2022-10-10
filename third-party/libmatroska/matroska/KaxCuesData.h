@@ -38,9 +38,9 @@
 #include "ebml/EbmlMaster.h"
 #include "matroska/KaxDefines.h"
 
-using namespace LIBEBML_NAMESPACE;
+using namespace libebml;
 
-START_LIBMATROSKA_NAMESPACE
+namespace libmatroska {
 
 class KaxBlockGroup;
 class KaxBlockBlob;
@@ -55,7 +55,7 @@ DECLARE_MKX_MASTER(KaxCuePoint)
     void PositionSet(const KaxSimpleBlock & BlockReference, uint64 GlobalTimecodeScale);
     void PositionSet(const KaxInternalBlock & BlockReference, const KaxBlockGroup *BlockGroup, uint64 GlobalTimecodeScale);
 
-    virtual bool IsSmallerThan(const EbmlElement *Cmp) const;
+    bool IsSmallerThan(const EbmlElement *Cmp) const override;
 
     const KaxCueTrackPositions * GetSeekPosition() const;
     bool Timecode(uint64 & aTimecode, uint64 GlobalTimecodeScale) const;
@@ -73,6 +73,6 @@ DECLARE_MKX_MASTER(KaxCueReference)
     void AddReference(const KaxBlockBlob & BlockReferenced, uint64 GlobalTimecodeScale);
 };
 
-END_LIBMATROSKA_NAMESPACE
+} // namespace libmatroska
 
 #endif // LIBMATROSKA_CUES_DATA_H

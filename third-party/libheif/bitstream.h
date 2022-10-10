@@ -43,8 +43,7 @@ namespace heif {
   class StreamReader
   {
   public:
-    virtual ~StreamReader()
-    {}
+    virtual ~StreamReader() = default;
 
     virtual int64_t get_position() const = 0;
 
@@ -94,7 +93,7 @@ namespace heif {
   public:
     StreamReader_memory(const uint8_t* data, int64_t size, bool copy);
 
-    ~StreamReader_memory();
+    ~StreamReader_memory() override;
 
     int64_t get_position() const override;
 
@@ -272,7 +271,7 @@ namespace heif {
 
     int64_t get_bits_remaining() const
     {
-      return bytes_remaining*8 + nextbits_cnt;
+      return ((int64_t) bytes_remaining) * 8 + nextbits_cnt;
     }
 
   private:

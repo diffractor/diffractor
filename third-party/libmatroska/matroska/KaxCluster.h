@@ -42,9 +42,9 @@
 #include "matroska/KaxCues.h"
 #include "matroska/KaxDefines.h"
 
-using namespace LIBEBML_NAMESPACE;
+using namespace libebml;
 
-START_LIBMATROSKA_NAMESPACE
+namespace libmatroska {
 
 class KaxSegment;
 
@@ -127,7 +127,7 @@ DECLARE_MKX_MASTER_CONS(KaxCluster)
     bool SetSilentTrackUsed()
     {
       bSilentTracksUsed = true;
-      return FindFirstElt(EBML_INFO(KaxClusterSilentTracks), true) != NULL;
+      return FindFirstElt(EBML_INFO(KaxClusterSilentTracks), true) != nullptr;
     }
 
     bool AddBlockBlob(KaxBlockBlob * NewBlob);
@@ -137,16 +137,16 @@ DECLARE_MKX_MASTER_CONS(KaxCluster)
   protected:
     KaxBlockBlob     * currentNewBlob;
     std::vector<KaxBlockBlob*> Blobs;
-    KaxBlockGroup    * currentNewBlock;
-    const KaxSegment * ParentSegment;
+    KaxBlockGroup    * currentNewBlock{nullptr};
+    const KaxSegment * ParentSegment{nullptr};
 
     uint64 MinTimecode, MaxTimecode, PreviousTimecode;
     int64  TimecodeScale;
 
-    bool bFirstFrameInside; // used to speed research
-    bool bPreviousTimecodeIsSet;
-    bool bTimecodeScaleIsSet;
-    bool bSilentTracksUsed;
+    bool   bFirstFrameInside{false}; // used to speed research
+    bool   bPreviousTimecodeIsSet{false};
+    bool   bTimecodeScaleIsSet{false};
+    bool   bSilentTracksUsed{false};
 
     /*!
       \note method used internally
@@ -154,6 +154,6 @@ DECLARE_MKX_MASTER_CONS(KaxCluster)
     bool AddFrameInternal(const KaxTrackEntry & track, uint64 timecode, DataBuffer & buffer, KaxBlockGroup * & MyNewBlock, const KaxBlockGroup * PastBlock, const KaxBlockGroup * ForwBlock, LacingType lacing);
 };
 
-END_LIBMATROSKA_NAMESPACE
+} // namespace libmatroska
 
 #endif // LIBMATROSKA_CLUSTER_H

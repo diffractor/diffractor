@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -19,18 +19,18 @@
 dng_tile_iterator::dng_tile_iterator (const dng_image &image,
 									  const dng_rect &area)
 									  
-	:	fArea           ()
-	,	fTileWidth      (0)
-	,	fTileHeight     (0)
-	,	fTileTop        (0)
-	,	fTileLeft       (0)
-	,	fRowLeft        (0)
-	,	fLeftPage       (0)
-	,	fRightPage      (0)
-	,	fTopPage        (0)
-	,	fBottomPage     (0)
+	:	fArea			()
+	,	fTileWidth		(0)
+	,	fTileHeight		(0)
+	,	fTileTop		(0)
+	,	fTileLeft		(0)
+	,	fRowLeft		(0)
+	,	fLeftPage		(0)
+	,	fRightPage		(0)
+	,	fTopPage		(0)
+	,	fBottomPage		(0)
 	,	fHorizontalPage (0)
-	,	fVerticalPage   (0)
+	,	fVerticalPage	(0)
 	
 	{
 	
@@ -42,20 +42,20 @@ dng_tile_iterator::dng_tile_iterator (const dng_image &image,
 /*****************************************************************************/
 
 dng_tile_iterator::dng_tile_iterator (const dng_point &tileSize,
-						   			  const dng_rect &area)
+									  const dng_rect &area)
 									  
-	:	fArea           ()
-	,	fTileWidth      (0)
-	,	fTileHeight     (0)
-	,	fTileTop        (0)
-	,	fTileLeft       (0)
-	,	fRowLeft        (0)
-	,	fLeftPage       (0)
-	,	fRightPage      (0)
-	,	fTopPage        (0)
-	,	fBottomPage     (0)
+	:	fArea			()
+	,	fTileWidth		(0)
+	,	fTileHeight		(0)
+	,	fTileTop		(0)
+	,	fTileLeft		(0)
+	,	fRowLeft		(0)
+	,	fLeftPage		(0)
+	,	fRightPage		(0)
+	,	fTopPage		(0)
+	,	fBottomPage		(0)
 	,	fHorizontalPage (0)
-	,	fVerticalPage   (0)
+	,	fVerticalPage	(0)
 	
 	{
 	
@@ -72,20 +72,20 @@ dng_tile_iterator::dng_tile_iterator (const dng_point &tileSize,
 /*****************************************************************************/
 
 dng_tile_iterator::dng_tile_iterator (const dng_rect &tile,
-						   			  const dng_rect &area)
+									  const dng_rect &area)
 									  
-	:	fArea           ()
-	,	fTileWidth      (0)
-	,	fTileHeight     (0)
-	,	fTileTop        (0)
-	,	fTileLeft       (0)
-	,	fRowLeft        (0)
-	,	fLeftPage       (0)
-	,	fRightPage      (0)
-	,	fTopPage        (0)
-	,	fBottomPage     (0)
+	:	fArea			()
+	,	fTileWidth		(0)
+	,	fTileHeight		(0)
+	,	fTileTop		(0)
+	,	fTileLeft		(0)
+	,	fRowLeft		(0)
+	,	fLeftPage		(0)
+	,	fRightPage		(0)
+	,	fTopPage		(0)
+	,	fBottomPage		(0)
 	,	fHorizontalPage (0)
-	,	fVerticalPage   (0)
+	,	fVerticalPage	(0)
 	
 	{
 	
@@ -97,7 +97,7 @@ dng_tile_iterator::dng_tile_iterator (const dng_rect &tile,
 /*****************************************************************************/
 
 void dng_tile_iterator::Initialize (const dng_rect &tile,
-						 			const dng_rect &area)
+									const dng_rect &area)
 	{
 	
 	fArea = area;
@@ -105,8 +105,8 @@ void dng_tile_iterator::Initialize (const dng_rect &tile,
 	if (area.IsEmpty ())
 		{
 		
-		fVerticalPage =  0;
-		fBottomPage   = -1;
+		fVerticalPage =	 0;
+		fBottomPage	  = -1;
 		
 		return;
 		
@@ -116,23 +116,23 @@ void dng_tile_iterator::Initialize (const dng_rect &tile,
 	int32 hOffset = tile.l;
 	
 	int32 tileHeight = tile.b - vOffset;
-	int32 tileWidth  = tile.r - hOffset;
+	int32 tileWidth	 = tile.r - hOffset;
 	
 	fTileHeight = tileHeight;
-	fTileWidth  = tileWidth;
+	fTileWidth	= tileWidth;
 	
-	fLeftPage  = (fArea.l - hOffset    ) / tileWidth;
+	fLeftPage  = (fArea.l - hOffset	   ) / tileWidth;
 	fRightPage = (fArea.r - hOffset - 1) / tileWidth;
 	
 	fHorizontalPage = fLeftPage;
 	
-	fTopPage    = (fArea.t - vOffset    ) / tileHeight;
+	fTopPage	= (fArea.t - vOffset	) / tileHeight;
 	fBottomPage = (fArea.b - vOffset - 1) / tileHeight;
 	
 	fVerticalPage = fTopPage;
 	
-	fTileLeft = fHorizontalPage * tileWidth  + hOffset;
-	fTileTop  = fVerticalPage   * tileHeight + vOffset;
+	fTileLeft = fHorizontalPage * tileWidth	 + hOffset;
+	fTileTop  = fVerticalPage	* tileHeight + vOffset;
 
 	fRowLeft = fTileLeft;
 			

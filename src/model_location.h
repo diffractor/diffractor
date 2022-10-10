@@ -71,8 +71,8 @@ public:
 	{
 		const auto absolute_latitude = abs(_latitude);
 		const auto absolute_longitude = abs(_longitude);
-		return (absolute_latitude >= 0 && absolute_latitude < invalid_coordinate) &&
-			(absolute_longitude >= 0 && absolute_longitude < invalid_coordinate);
+		return (absolute_latitude >= 0.0 && absolute_latitude < invalid_coordinate) &&
+			(absolute_longitude >= 0.0 && absolute_longitude < invalid_coordinate);
 	}
 
 	double latitude() const

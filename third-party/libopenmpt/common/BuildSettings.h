@@ -23,7 +23,14 @@
 #if MPT_OS_WINDOWS
 
 #if !defined(WINVER) && !defined(_WIN32_WINDOWS) && !defined(_WIN32_WINNT)
+#if MPT_COMPILER_CLANG
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreserved-id-macro"
+#endif // MPT_COMPILER_CLANG
 #define _WIN32_WINNT 0x0601 // _WIN32_WINNT_WIN7
+#if MPT_COMPILER_CLANG
+#pragma clang diagnostic pop
+#endif // MPT_COMPILER_CLANG
 #endif
 
 #ifndef WINVER
@@ -500,7 +507,9 @@
 
 // windows.h excludes
 #define NOMEMMGR          // GMEM_*, LMEM_*, GHND, LHND, associated routines
+#ifndef NOMINMAX
 #define NOMINMAX          // Macros min(a,b) and max(a,b)
+#endif
 #define NOSERVICE         // All Service Controller routines, SERVICE_ equates, etc.
 #define NOCOMM            // COMM driver routines
 #define NOKANJI           // Kanji support stuff.

@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -21,21 +21,25 @@
 #include <stddef.h>
 #endif
 
-#include <stdint.h>
+#include <cstdint>
 
 /*****************************************************************************/
 
-#if qDNGUseStdInt || 1
+#if qDNGUseCustomIntegralTypes
 
-typedef int8_t  int8;
-typedef int16_t int16;
-typedef int32_t int32;
-typedef int64_t int64;
+#include "dng_custom_integral_types.h"
 
-typedef uint8_t  uint8;
-typedef uint16_t uint16;
-typedef uint32_t uint32;
-typedef uint64_t uint64;
+#elif qDNGUseStdInt || 1
+
+typedef std::int8_t  int8;
+typedef std::int16_t int16;
+typedef std::int32_t int32;
+typedef std::int64_t int64;
+
+typedef std::uint8_t  uint8;
+typedef std::uint16_t uint16;
+typedef std::uint32_t uint32;
+typedef std::uint64_t uint64;
 
 #else
 
@@ -48,7 +52,7 @@ typedef signed long		 int32;
 #endif
 typedef signed long long int64;
 
-typedef unsigned char      uint8;
+typedef unsigned char	   uint8;
 typedef unsigned short	   uint16;
 /*Some Mac OS X 10.5 SDK headers already define uint32.*/
 #ifndef _UINT32
@@ -77,7 +81,7 @@ typedef double real64;
 #define DNG_CHAR4(a,b,c,d)	((((uint32) a) << 24) |\
 							 (((uint32) b) << 16) |\
 							 (((uint32) c) <<  8) |\
-							 (((uint32) d)      ))
+							 (((uint32) d)		))
 
 /*****************************************************************************/
 
@@ -90,8 +94,10 @@ typedef double real64;
 /*****************************************************************************/
 
 // Visual Studio now prefers _hypot to hypot
+// Note: since Visual Studio 2010, there is a definition of hypot (in math.h),
+// we only define hypot here for the older Visual Studio versions.
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER) && _MSC_VER < 1600
 
 #ifdef hypot
 #undef hypot

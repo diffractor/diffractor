@@ -27,13 +27,13 @@
 #include <cstring>
 #include <cassert>
 
-#ifdef _MSC_VER
+#if defined(__MINGW32__) || defined(__MINGW64__) || defined(_MSC_VER)
 
 #ifndef NOMINMAX
 #define NOMINMAX 1
 #endif
 
-#include <Windows.h>
+#include <windows.h>
 #endif
 
 using namespace heif;
@@ -42,15 +42,9 @@ using namespace heif;
 #define STRICT_PARSING false
 
 
-HeifFile::HeifFile()
-{
-}
+HeifFile::HeifFile() = default;
 
-
-HeifFile::~HeifFile()
-{
-}
-
+HeifFile::~HeifFile() = default;
 
 std::vector<heif_item_id> HeifFile::get_item_IDs() const
 {
@@ -66,7 +60,7 @@ std::vector<heif_item_id> HeifFile::get_item_IDs() const
 
 Error HeifFile::read_from_file(const char* input_filename)
 {
-#ifdef _MSC_VER
+#if defined(__MINGW32__) || defined(__MINGW64__) || defined(_MSC_VER)
   auto input_stream_istr = std::unique_ptr<std::istream>(new std::ifstream(convert_utf8_path_to_utf16(input_filename).c_str(), std::ios_base::binary));
 #else
   auto input_stream_istr = std::unique_ptr<std::istream>(new std::ifstream(input_filename, std::ios_base::binary));
@@ -90,7 +84,7 @@ Error HeifFile::read_from_memory(const void* data, size_t size, bool copy)
 }
 
 
-Error HeifFile::read(std::shared_ptr<StreamReader> reader)
+Error HeifFile::read(const std::shared_ptr<StreamReader>& reader)
 {
   m_input_stream = reader;
 
@@ -837,7 +831,7 @@ void HeifFile::set_primary_item_id(heif_item_id id)
 }
 
 void HeifFile::add_iref_reference(uint32_t type, heif_item_id from,
-                                  std::vector<heif_item_id> to)
+                                  const std::vector<heif_item_id>& to)
 {
   if (!m_iref_box) {
     m_iref_box = std::make_shared<Box_iref>();
@@ -847,7 +841,7 @@ void HeifFile::add_iref_reference(uint32_t type, heif_item_id from,
   m_iref_box->add_reference(type, from, to);
 }
 
-void HeifFile::set_auxC_property(heif_item_id id, std::string type)
+void HeifFile::set_auxC_property(heif_item_id id, const std::string& type)
 {
   auto auxC = std::make_shared<Box_auxC>();
   auxC->set_aux_type(type);
@@ -857,7 +851,7 @@ void HeifFile::set_auxC_property(heif_item_id id, std::string type)
   m_ipma_box->add_property_for_item_ID(id, Box_ipma::PropertyAssociation{true, uint16_t(index + 1)});
 }
 
-void HeifFile::set_color_profile(heif_item_id id, const std::shared_ptr<const color_profile> profile)
+void HeifFile::set_color_profile(heif_item_id id, const std::shared_ptr<const color_profile>& profile)
 {
   auto colr = std::make_shared<Box_colr>();
   colr->set_color_profile(profile);
@@ -868,7 +862,7 @@ void HeifFile::set_color_profile(heif_item_id id, const std::shared_ptr<const co
 
 
 // TODO: the hdlr box is probably not the right place for this. Into which box should we write comments?
-void HeifFile::set_hdlr_library_info(std::string encoder_plugin_version)
+void HeifFile::set_hdlr_library_info(const std::string& encoder_plugin_version)
 {
   std::stringstream sstr;
   sstr << "libheif (" << LIBHEIF_VERSION << ") / " << encoder_plugin_version;
@@ -876,15 +870,15 @@ void HeifFile::set_hdlr_library_info(std::string encoder_plugin_version)
 }
 
 
-#ifdef _MSC_VER
+#if defined(__MINGW32__) || defined(__MINGW64__) || defined(_MSC_VER)
 std::wstring HeifFile::convert_utf8_path_to_utf16(std::string str)
 {
   std::wstring ret;
-  int len = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), str.length(), NULL, 0);
+  int len = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), (int)str.length(), NULL, 0);
   if (len > 0)
   {
     ret.resize(len);
-    MultiByteToWideChar(CP_UTF8, 0, str.c_str(), str.length(), &ret[0], len);
+    MultiByteToWideChar(CP_UTF8, 0, str.c_str(), (int)str.length(), &ret[0], len);
   }
   return ret;
 }

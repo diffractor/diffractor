@@ -2,13 +2,18 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
 #include "dng_file_stream.h"
 
 #include "dng_exceptions.h"
+#include "dng_flags.h"
+
+#if qAndroid
+#include <unistd.h>
+#endif
 
 /*****************************************************************************/
 
@@ -45,6 +50,74 @@ dng_file_stream::dng_file_stream (const char *filename,
 		}
 	
 	}
+
+/*****************************************************************************/
+
+dng_file_stream::dng_file_stream (FILE *file,
+								  uint32 bufferSize)
+
+	:	dng_stream ((dng_abort_sniffer *) NULL,
+					bufferSize,
+					0)
+	
+	,	fFile (file)
+	
+	{
+
+	if (!fFile)
+		{
+		
+		ThrowOpenFile ("Unable to open FILE *");
+
+		}
+	
+	}
+
+/*****************************************************************************/
+
+#if qAndroid
+
+/*****************************************************************************/
+
+dng_file_stream::dng_file_stream (int fd,
+								  bool output,
+								  uint32 bufferSize)
+
+	:	dng_stream ((dng_abort_sniffer *) NULL,
+					bufferSize,
+					0)
+
+	,	fFile (NULL)
+
+	{
+
+	// Note: Use dup here as caller is responsible for separately managing fd.
+
+	fFile = fdopen (dup (fd), output ? "wb" : "rb");
+
+	if (!fFile)
+		{
+
+		#if qDNGValidate
+
+		ReportError ("Unable to open file",
+					 filename);
+
+		ThrowSilentError ();
+
+		#else
+
+		ThrowOpenFile ();
+
+		#endif
+
+		}
+
+	}
+
+/*****************************************************************************/
+
+#endif	// qAndroid
 
 /*****************************************************************************/
 

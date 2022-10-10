@@ -2,12 +2,12 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
 /** \file
- *  Standard gamma functions and color spaces used within the DNG SDK.
+ *	Standard gamma functions and color spaces used within the DNG SDK.
  */
 
 #ifndef __dng_color_space__

@@ -42,7 +42,7 @@
 #include "ebml/EbmlContexts.h"
 #include "ebml/MemIOCallback.h"
 
-START_LIBEBML_NAMESPACE
+namespace libebml {
 
 EbmlMaster::EbmlMaster(const EbmlSemanticContext & aContext, bool bSizeIsknown)
  :EbmlElement(0), Context(aContext), bChecksumUsed(bChecksumUsedByDefault)
@@ -304,24 +304,15 @@ EbmlElement *EbmlMaster::FindFirstElt(const EbmlCallbacks & Callbacks) const
 */
 EbmlElement *EbmlMaster::FindNextElt(const EbmlElement & PastElt, bool bCreateIfNull)
 {
-  size_t Index;
+  auto it = std::find(ElementList.begin(), ElementList.end(), &PastElt);
+  if (it != ElementList.end()) {
+    it = std::find_if(it + 1, ElementList.end(), [&](auto &&element) {
+      return EbmlId(PastElt) == EbmlId(*element);
+    });
 
-  for (Index = 0; Index < ElementList.size(); Index++) {
-    if ((ElementList[Index]) == &PastElt) {
-      // found past element, new one is :
-      Index++;
-      break;
-    }
+    if (it != ElementList.end())
+      return *it;
   }
-
-  while (Index < ElementList.size()) {
-    if (EbmlId(PastElt) == EbmlId(*ElementList[Index]))
-      break;
-    Index++;
-  }
-
-  if (Index != ElementList.size())
-    return ElementList[Index];
 
   if (bCreateIfNull) {
     // add the element
@@ -424,6 +415,10 @@ void EbmlMaster::Read(EbmlStream & inDataStream, const EbmlSemanticContext & sCo
         try {
           ElementLevelA->Read(inDataStream, EBML_CONTEXT(ElementLevelA), UpperEltFound, FoundElt, AllowDummyElt, ReadFully);
         } catch (...) {
+          if (ElementLevelA == FoundElt) {
+            UpperEltFound = 0;
+            FoundElt = nullptr;
+          }
           delete ElementLevelA;
           throw;
         }
@@ -571,4 +566,4 @@ bool EbmlMaster::InsertElement(EbmlElement & element, const EbmlElement & before
 }
 
 
-END_LIBEBML_NAMESPACE
+} // namespace libebml

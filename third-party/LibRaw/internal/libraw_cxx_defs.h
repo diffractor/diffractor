@@ -123,7 +123,7 @@ CameraMetaDataLR *make_camera_metadata();
 #ifndef CLIP
 #define CLIP(x) LIM(x, 0, 65535)
 #endif
-#define THUMB_READ_BEYOND (1024*128) /*16384*/
+#define THUMB_READ_BEYOND 16384
 
 #define ZERO(a) memset(&a, 0, sizeof(a))
 

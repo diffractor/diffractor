@@ -275,7 +275,7 @@ constexpr int expected_cached_item_count = 34;
 
 static df::file_item_ptr load_item(index_state& index, const df::file_path path, bool load_thumb)
 {
-	auto i = std::make_shared<df::file_item>(path, index.find_item(path), false);
+	auto i = std::make_shared<df::file_item>(path, index.find_item(path));
 	index.scan_item(i, load_thumb, false);
 	return i;
 }
@@ -722,8 +722,9 @@ void assert_metadata(const prop::item_metadata& expected, const prop::item_metad
 
 static prop::item_metadata_ptr metadata_from_cache(index_state& index, const df::file_path path)
 {
-	const auto f = index.validate_folder(path.folder(), true, true, platform::now());
-	index.scan_item(f, path, false, false, nullptr, files::file_type_from_name(path.name()));
+	const auto node = index.validate_folder(path.folder(), true, platform::now());
+	node.folder->is_indexed = true;
+	index.scan_item(node.folder, path, false, false, nullptr, files::file_type_from_name(path.name()));
 	return index.find_item(path).metadata;
 }
 
@@ -2160,7 +2161,7 @@ static void should_match_related(test_view::shared_test_context& stc)
 	stc.lazy_load_index();
 
 	const df::file_path path(test_files_folder, u8"Test.jpg");
-	const auto i = std::make_shared<df::file_item>(path, stc.index.find_item(path), false);
+	const auto i = std::make_shared<df::file_item>(path, stc.index.find_item(path));
 	stc.index.scan_item(i, true, false);
 
 	df::related_info r;
@@ -2730,7 +2731,7 @@ static void should_not_reload_thumb_when_valid()
 	files ff;
 	const auto loaded = ff.load(load_path, false);
 
-	const auto i_local = std::make_shared<df::file_item>(load_path, make_index_file_info(date), false);
+	const auto i_local = std::make_shared<df::file_item>(load_path, make_index_file_info(date));
 	assert_equal(false, i_local->should_load_thumbnail(), u8"should not load by default");
 
 	i_local->db_thumb_query_complete();
@@ -2742,7 +2743,7 @@ static void should_not_reload_thumb_when_valid()
 	i_local->thumbnail(loaded.i, date);
 	assert_equal(false, i_local->should_load_thumbnail(), u8"should load if thumb but not hash");
 
-	i_local->update(load_path, make_index_file_info(date2), false);
+	i_local->update(load_path, make_index_file_info(date2));
 	assert_equal(true, i_local->should_load_thumbnail(), u8"should if date changes");
 }
 
@@ -3020,12 +3021,12 @@ static void should_detect_duplicates(test_view::shared_test_context& stc)
 	const auto path5 = df::file_path(test_files_folder, u8"Small.jpg");
 	const auto path_sony = df::file_path(test_files_folder, u8"Sony.jpg");
 
-	const auto test_item1 = std::make_shared<df::file_item>(path1, index.find_item(path1), true);
-	const auto test_item2 = std::make_shared<df::file_item>(path2, index.find_item(path2), true);
-	const auto test_item3 = std::make_shared<df::file_item>(path3, index.find_item(path3), true);
-	const auto test_item4 = std::make_shared<df::file_item>(path4, index.find_item(path4), true);
-	const auto test_item5 = std::make_shared<df::file_item>(path5, index.find_item(path5), true);
-	const auto sony_item = std::make_shared<df::file_item>(path_sony, index.find_item(path_sony), true);
+	const auto test_item1 = std::make_shared<df::file_item>(path1, index.find_item(path1));
+	const auto test_item2 = std::make_shared<df::file_item>(path2, index.find_item(path2));
+	const auto test_item3 = std::make_shared<df::file_item>(path3, index.find_item(path3));
+	const auto test_item4 = std::make_shared<df::file_item>(path4, index.find_item(path4));
+	const auto test_item5 = std::make_shared<df::file_item>(path5, index.find_item(path5));
+	const auto sony_item = std::make_shared<df::file_item>(path_sony, index.find_item(path_sony));
 
 	df::item_set items({test_item1, test_item2, test_item3, test_item4, test_item5, sony_item});
 	db.load_thumbnails(index, items);
@@ -3064,7 +3065,7 @@ static void should_detect_rotation(test_view::shared_test_context& stc)
 	index.index_folders(test_token);
 
 	const auto path_test = df::file_path(test_files_folder, u8"exif-rotated.jpg");
-	const auto test_item = std::make_shared<df::file_item>(path_test, index.find_item(path_test), false);
+	const auto test_item = std::make_shared<df::file_item>(path_test, index.find_item(path_test));
 
 	assert_equal(ui::orientation::top_left, test_item->thumbnail_orientation());
 

@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -20,11 +20,14 @@
 #include "dng_classes.h"
 #include "dng_types.h"
 
+#include <vector>
+
 /*****************************************************************************/
 
 /// \brief A 1D floating-point function.
 ///
-/// The domain (input) is always from 0.0 to 1.0, while the range (output) can be an arbitrary interval.
+/// The domain (input) is always from 0.0 to 1.0, while the range (output) can
+/// be an arbitrary interval.
 
 class dng_1d_function
 	{
@@ -33,22 +36,24 @@ class dng_1d_function
 	
 		virtual ~dng_1d_function ();
 
-		/// Returns true if this function is the map x -> y such that x == y for all x . That is if Evaluate(x) == x for all x.
+		/// Returns true if this function is the map x -> y such that x == y for all x.
+		/// That is if Evaluate(x) == x for all x.
 
 		virtual bool IsIdentity () const;
 
 		/// Return the mapping for value x.
-		/// This method must be implemented by a derived class of dng_1d_function and the derived class determines the
-		/// lookup method and function used.
+		/// This method must be implemented by a derived class of dng_1d_function and
+		/// the derived class determines the lookup method and function used.
 		/// \param x A value between 0.0 and 1.0 (inclusive).
 		/// \retval Mapped value for x
 
 		virtual real64 Evaluate (real64 x) const = 0;
 
 		/// Return the reverse mapped value for y.
-		/// This method can be implemented by derived classes. The default implementation uses Newton's method to solve
-		/// for x such that Evaluate(x) == y.
-		/// \param y A value to reverse map. Should be within the range of the function implemented by this dng_1d_function .
+		/// This method can be implemented by derived classes. The default implementation
+		/// uses Newton's method to solve for x such that Evaluate(x) == y.
+		/// \param y A value to reverse map. Should be within the range of the function
+		/// implemented by this dng_1d_function.
 		/// \retval A value x such that Evaluate(x) == y (to very close approximation).
 
 		virtual real64 EvaluateInverse (real64 y) const;
@@ -75,7 +80,8 @@ class dng_1d_identity: public dng_1d_function
 
 		virtual real64 EvaluateInverse (real64 y) const;
 
-		/// This class is a singleton, and is entirely threadsafe. Use this method to get an instance of the class.
+		/// This class is a singleton, and is entirely threadsafe. Use this
+		/// method to get an instance of the class.
 
 		static const dng_1d_function & Get ();
 	
@@ -83,7 +89,8 @@ class dng_1d_identity: public dng_1d_function
 
 /*****************************************************************************/
 
-/// A dng_1d_function that represents the composition (curry) of two other dng_1d_functions.
+/// A dng_1d_function that represents the composition (curry) of two other
+/// dng_1d_functions.
 
 class dng_1d_concatenate: public dng_1d_function
 	{
@@ -96,9 +103,14 @@ class dng_1d_concatenate: public dng_1d_function
 	
 	public:
 	
-		/// Create a dng_1d_function which computes y = function2.Evaluate(function1.Evaluate(x)).
-		/// Compose function1 and function2 to compute y = function2.Evaluate(function1.Evaluate(x)). The range of function1.Evaluate must be a subset of 0.0 to 1.0 inclusive,
-		/// otherwise the result of function1(x) will be pinned (clipped) to 0.0 if <0.0 and to 1.0 if > 1.0 .
+		/// Create a dng_1d_function which computes
+		///
+		/// y = function2.Evaluate (function1.Evaluate (x))
+		///
+		/// The range of function1.Evaluate must be a subset of 0.0 to 1.0 inclusive,
+		/// otherwise the result of function1(x) will be pinned (clipped) to 0.0
+		/// if < 0.0 and to 1.0 if > 1.0.
+		///
 		/// \param function1 Inner function of composition.
 		/// \param function2 Outer function of composition.
 
@@ -116,9 +128,11 @@ class dng_1d_concatenate: public dng_1d_function
 		virtual real64 Evaluate (real64 x) const;
 	
 		/// Return the reverse mapped value for y.
-		/// Be careful using this method with compositions where the inner function does not have a range 0.0 to 1.0 . (Or better yet, do not use such functions.)
+		/// Be careful using this method with compositions where the inner function
+		/// does not have a range 0.0 to 1.0 . (Or better yet, do not use such functions.)
 		/// \param y A value to reverse map. Should be within the range of function2.Evaluate.
-		/// \retval A value x such that function2.Evaluate(function1.Evaluate(x)) == y (to very close approximation).
+		/// \retval A value x such that function2.Evaluate(function1.Evaluate(x)) == y
+		/// (to very close approximation).
 
 		virtual real64 EvaluateInverse (real64 y) const;
 	
@@ -145,6 +159,55 @@ class dng_1d_inverse: public dng_1d_function
 	
 		virtual real64 EvaluateInverse (real64 y) const;
 	
+	};
+
+/*****************************************************************************/
+
+// Piecewise-linear 1D function.
+
+class dng_piecewise_linear: public dng_1d_function
+	{
+		
+	public:
+
+		std::vector<real64> X;
+		std::vector<real64> Y;
+		
+	public:
+
+		dng_piecewise_linear ();
+
+		virtual ~dng_piecewise_linear ();
+	
+		void Reset ();
+
+		void Add (real64 x, real64 y);
+
+		bool IsValid () const
+			{
+			return (X.size () >= 2) && (X.size () == Y.size ());
+			}
+
+		bool NotValid () const
+			{
+			return !IsValid ();
+			}
+
+		virtual bool IsIdentity () const;
+
+		virtual real64 Evaluate (real64 x) const;
+		
+		virtual real64 EvaluateInverse (real64 y) const;
+
+		void PutFingerprintData (dng_stream &stream) const;
+
+		bool operator== (const dng_piecewise_linear &piecewise) const;
+		
+		bool operator!= (const dng_piecewise_linear &piecewise) const
+			{
+			return !(*this == piecewise);
+			}
+
 	};
 
 /*****************************************************************************/

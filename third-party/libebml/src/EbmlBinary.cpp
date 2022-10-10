@@ -40,10 +40,10 @@
 #include "ebml/EbmlBinary.h"
 #include "ebml/StdIOCallback.h"
 
-START_LIBEBML_NAMESPACE
+namespace libebml {
 
 EbmlBinary::EbmlBinary()
-  :EbmlElement(0, false), Data(nullptr)
+  :EbmlElement(0, false) 
 {}
 
 EbmlBinary::EbmlBinary(const EbmlBinary & ElementToClone)
@@ -52,9 +52,9 @@ EbmlBinary::EbmlBinary(const EbmlBinary & ElementToClone)
   if (ElementToClone.Data == nullptr)
     Data = nullptr;
   else {
-    Data = static_cast<binary *>(malloc(GetSize() * sizeof(binary)));
-    assert(Data != nullptr);
-    memcpy(Data, ElementToClone.Data, GetSize());
+    Data = static_cast<binary *>(malloc(GetSize()));
+    if(Data != nullptr)
+      memcpy(Data, ElementToClone.Data, GetSize());
   }
 }
 
@@ -83,21 +83,21 @@ uint64 EbmlBinary::UpdateSize(bool /* bWithDefault */, bool /* bForceRender */)
 
 filepos_t EbmlBinary::ReadData(IOCallback & input, ScopeMode ReadFully)
 {
-  if (Data != nullptr)
+  if (Data != nullptr) {
     free(Data);
+    Data = nullptr;
+  }
 
   if (ReadFully == SCOPE_NO_DATA) {
-    Data = nullptr;
     return GetSize();
   }
 
   if (!GetSize()) {
     SetValueIsSet();
-    Data = nullptr;
     return 0;
   }
 
-  Data = static_cast<binary *>(malloc(GetSize()));
+  Data = (GetSize() < SIZE_MAX) ? static_cast<binary *>(malloc(GetSize())) : nullptr;
   if (Data == nullptr)
     throw CRTError(std::string("Error allocating data"));
   SetValueIsSet();
@@ -109,4 +109,4 @@ bool EbmlBinary::operator==(const EbmlBinary & ElementToCompare) const
   return ((GetSize() == ElementToCompare.GetSize()) && (GetSize() == 0 || !memcmp(Data, ElementToCompare.Data, GetSize())));
 }
 
-END_LIBEBML_NAMESPACE
+} // namespace libebml

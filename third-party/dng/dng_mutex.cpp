@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -24,7 +24,7 @@
 #if qDNGThreadTestMutexLevels
 namespace
 	{
-        
+		
 	class InnermostMutexHolder
 		{
 		
@@ -109,7 +109,7 @@ dng_mutex::dng_mutex (const char *mutexName, uint32 mutexLevel)
 	
 	{
 	
-    #if qDNGThreadSafe
+	#if qDNGThreadSafe
 
 	#if qWinOS
 	
@@ -120,13 +120,13 @@ dng_mutex::dng_mutex (const char *mutexName, uint32 mutexLevel)
 		}
 		
 	#else
-    
-    // make recursive mutex, can lock within itself
-    pthread_mutexattr_t   mta;
-    pthread_mutexattr_init(&mta);
-    pthread_mutexattr_settype(&mta, PTHREAD_MUTEX_RECURSIVE);
-        
-    if (pthread_mutex_init (&fPthreadMutex, &mta) != 0)
+	
+	// make recursive mutex, can lock within itself
+	pthread_mutexattr_t	  mta;
+	pthread_mutexattr_init(&mta);
+	pthread_mutexattr_settype(&mta, PTHREAD_MUTEX_RECURSIVE);
+		
+	if (pthread_mutex_init (&fPthreadMutex, &mta) != 0)
 		{
 		ThrowMemoryFull ();
 		}
@@ -154,7 +154,7 @@ dng_mutex::~dng_mutex ()
 void dng_mutex::Lock ()
 	{
 
-    #if qDNGThreadSafe
+	#if qDNGThreadSafe
 	#if qDNGThreadTestMutexLevels
 
 	dng_mutex *innermostMutex = gInnermostMutexHolder.GetInnermostMutex ();
@@ -176,36 +176,36 @@ void dng_mutex::Lock ()
 
 				}
 
-            fRecursiveLockCount++;
+			fRecursiveLockCount++;
 
 			return;
 
 			}
 
-        bool lockOrderPreserved = fMutexLevel > innermostMutex->fMutexLevel;
-            
-        // to allow cloning of class internals both with a dng_mutex and get closer to the C++ mutex,
-        //  test for MutexLevelIgnore and don't generate level violations
-        if (!lockOrderPreserved)
-            {
-                
-            if ((fMutexLevel == kDNGMutexLevelIgnore) || (innermostMutex->fMutexLevel == kDNGMutexLevelIgnore))
-                lockOrderPreserved = true;
-                
-            }
-           
+		bool lockOrderPreserved = fMutexLevel > innermostMutex->fMutexLevel;
+			
+		// to allow cloning of class internals both with a dng_mutex and get closer to the C++ mutex,
+		//	test for MutexLevelIgnore and don't generate level violations
 		if (!lockOrderPreserved)
 			{
-                
-            char msg[1024];
-                
-            sprintf(msg,
-                     "Lock order violation: This mutex: %s v Innermost mutex: %s",
-                     this->MutexName (),
-                     innermostMutex->MutexName ());
-                
-            DNG_REPORT(msg); // asserts inside of mutex lock, any locks within that must be lower
-                
+				
+			if ((fMutexLevel == kDNGMutexLevelIgnore) || (innermostMutex->fMutexLevel == kDNGMutexLevelIgnore))
+				lockOrderPreserved = true;
+				
+			}
+		   
+		if (!lockOrderPreserved)
+			{
+				
+			char msg[1024];
+				
+			sprintf(msg,
+					 "Lock order violation: This mutex: %s v Innermost mutex: %s",
+					 this->MutexName (),
+					 innermostMutex->MutexName ());
+				
+			DNG_REPORT(msg); // asserts inside of mutex lock, any locks within that must be lower
+				
 			}
 
 		}
@@ -225,8 +225,8 @@ void dng_mutex::Lock ()
 
 	gInnermostMutexHolder.SetInnermostMutex (this);
 
-    #else
-     
+	#else
+	 
 	// Register the fact that we're trying to lock this mutex.
 
 	int result = pthread_mutex_lock (&fPthreadMutex);
@@ -243,8 +243,8 @@ void dng_mutex::Lock ()
 	// Register the fact that we've now successfully acquired the mutex.
 
 	#endif
-    #endif
-        
+	#endif
+		
 	}
 
 /*****************************************************************************/
@@ -253,17 +253,17 @@ void dng_mutex::Unlock ()
 	{
 	
 	#if qDNGThreadSafe
-    #if qDNGThreadTestMutexLevels
+	#if qDNGThreadTestMutexLevels
 	
 	DNG_ASSERT (gInnermostMutexHolder.GetInnermostMutex () == this, "Mutexes unlocked out of order!!!");
 
 	if (fRecursiveLockCount > 0)
 		{
-            
+			
 		fRecursiveLockCount--;
 
-        pthread_mutex_unlock (&fPthreadMutex);
-            
+		pthread_mutex_unlock (&fPthreadMutex);
+			
 		return;
 
 		}
@@ -272,12 +272,12 @@ void dng_mutex::Unlock ()
 
 	fPrevHeldMutex = NULL;
 
-    #endif
+	#endif
 
 	pthread_mutex_unlock (&fPthreadMutex);
 
 	#endif
-        
+		
 	}
 
 /*****************************************************************************/
@@ -410,8 +410,8 @@ bool dng_condition::Wait (dng_mutex &mutex, double timeoutSecs)
 #if qDNGThreadSafe
 	bool timedOut = false;
 
-    #if qDNGThreadTestMutexLevels
-        
+	#if qDNGThreadTestMutexLevels
+		
 	dng_mutex *innermostMutex = gInnermostMutexHolder.GetInnermostMutex ();
 
 	DNG_ASSERT (innermostMutex == &mutex, "Attempt to wait on non-innermost mutex.");
@@ -423,9 +423,9 @@ bool dng_condition::Wait (dng_mutex &mutex, double timeoutSecs)
 	gInnermostMutexHolder.SetInnermostMutex (innermostMutex);
 
 	mutex.fPrevHeldMutex = NULL;
-        
-    #endif
-        
+		
+	#endif
+		
 	if (timeoutSecs < 0)
 		{
 		
@@ -443,7 +443,7 @@ bool dng_condition::Wait (dng_mutex &mutex, double timeoutSecs)
 		timeoutSecs += now.tv_sec;
 		timeoutSecs += now.tv_nsec / 1000000000.0;
 
-		now.tv_sec  = (long) timeoutSecs;
+		now.tv_sec	= (long) timeoutSecs;
 		now.tv_nsec = (long) ((timeoutSecs - now.tv_sec) * 1000000000);
 
 		#if defined(_MSC_VER) && _MSC_VER >= 1900 
@@ -463,14 +463,14 @@ bool dng_condition::Wait (dng_mutex &mutex, double timeoutSecs)
 
 		}
 
-    #if qDNGThreadTestMutexLevels
-    
+	#if qDNGThreadTestMutexLevels
+	
 	mutex.fPrevHeldMutex = innermostMutex;
 
 	gInnermostMutexHolder.SetInnermostMutex (&mutex);
-    
-    #endif
-        
+	
+	#endif
+		
 	return !timedOut;
 #else
 	return true;

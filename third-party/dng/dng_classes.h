@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -25,15 +25,21 @@ class dng_area_task_progress;
 class dng_base_tile_iterator;
 class dng_basic_tag_set;
 class dng_big_table;
+class dng_big_table_accessor;
+class dng_big_table_cache;
+class dng_big_table_dictionary;
+class dng_big_table_storage;
 class dng_camera_profile;
 class dng_camera_profile_id;
 class dng_camera_profile_info;
+class dng_camera_profile_metadata;
 class dng_color_space;
 class dng_color_spec;
 class dng_date_time;
 class dng_date_time_info;
 class dng_exif;
 class dng_fingerprint;
+class dng_gain_table_map;
 class dng_host;
 class dng_hue_sat_map;
 class dng_ifd;
@@ -47,6 +53,9 @@ class dng_jpeg_preview;
 class dng_linearization_info;
 class dng_local_string;
 class dng_look_table;
+class dng_lossless_jpeg_handler;
+class dng_masked_rgb_table;
+class dng_masked_rgb_tables;
 class dng_matrix;
 class dng_matrix_3by3;
 class dng_matrix_4by3;
@@ -64,6 +73,8 @@ class dng_opcode;
 class dng_opcode_list;
 class dng_orientation;
 class dng_negative;
+class dng_oriented_bounding_box;
+class dng_piecewise_linear;
 class dng_pixel_buffer;
 class dng_point;
 class dng_point_real64;
@@ -82,6 +93,7 @@ class dng_rgb_table;
 class dng_set_minimum_priority;
 class dng_shared;
 class dng_spline_solver;
+class dng_spooler;
 class dng_srational;
 class dng_stream;
 class dng_string;
@@ -99,6 +111,7 @@ class dng_xy_coord;
 
 /*****************************************************************************/
 
+struct dng_fingerprint_hash;
 struct dng_xmp_namespace;
 
 /*****************************************************************************/

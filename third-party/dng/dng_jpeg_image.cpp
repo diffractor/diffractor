@@ -2,7 +2,7 @@
 // Copyright 2011-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -25,11 +25,11 @@
 
 dng_jpeg_image::dng_jpeg_image ()
 
-	:	fImageSize  ()
-	,	fTileSize   ()
+	:	fImageSize	()
+	,	fTileSize	()
 	,	fUsesStrips (false)
 	,	fJPEGTables ()
-	,	fJPEGData   ()
+	,	fJPEGData	()
 	
 	{
 	
@@ -71,15 +71,15 @@ class dng_jpeg_image_encode_task : public dng_area_task,
 			,	fHost			  (host)
 			,	fWriter			  (writer)
 			,	fImage			  (image)
-			,	fJPEGImage        (jpegImage)
+			,	fJPEGImage		  (jpegImage)
 			,	fTileCount		  (tileCount)
-			,	fIFD		      (ifd)
+			,	fIFD			  (ifd)
 			,	fNextTileIndex	  (0)
 			
 			{
 			
 			fMinTaskArea = 16 * 16;
-			fUnitCell    = dng_point (16, 16);
+			fUnitCell	 = dng_point (16, 16);
 			fMaxTileSize = dng_point (16, 16);
 			
 			}
@@ -133,7 +133,7 @@ class dng_jpeg_image_encode_task : public dng_area_task,
 								   uncompressedBuffer,
 								   subTileBlockBuffer,
 								   tempBuffer,
-                                   true);
+								   true);
 								  
 				fJPEGImage.fJPEGData [tileIndex].Reset (stream.AsMemoryBlock (fHost.Allocator ()));
 					
@@ -161,7 +161,7 @@ void dng_jpeg_image::Encode (dng_host &host,
 	
 	dng_ifd ifd;
 	
-	ifd.fImageWidth  = fImageSize.h;
+	ifd.fImageWidth	 = fImageSize.h;
 	ifd.fImageLength = fImageSize.v;
 	
 	ifd.fSamplesPerPixel = image.Planes ();
@@ -199,11 +199,11 @@ void dng_jpeg_image::Encode (dng_host &host,
 		}
 	
 	uint32 tilesAcross = ifd.TilesAcross ();
-	uint32 tilesDown   = ifd.TilesDown   ();
+	uint32 tilesDown   = ifd.TilesDown	 ();
 	
 	uint32 tileCount = tilesAcross * tilesDown;
 	
-	fJPEGData.Reset (new dng_jpeg_image_tile_ptr [tileCount]);
+	fJPEGData.Reset (tileCount);
 	
 	uint32 threadCount = Min_uint32 (tileCount,
 									 host.PerformAreaTaskThreads ());
@@ -244,7 +244,7 @@ class dng_jpeg_image_find_digest_task : public dng_area_task,
 
 			:	dng_area_task ("dng_jpeg_image_find_digest_task")
 		
-			,	fJPEGImage        (jpegImage)
+			,	fJPEGImage		  (jpegImage)
 			,	fTileCount		  (tileCount)
 			,	fDigests		  (digests)
 			,	fNextTileIndex	  (0)
@@ -252,7 +252,7 @@ class dng_jpeg_image_find_digest_task : public dng_area_task,
 			{
 			
 			fMinTaskArea = 16 * 16;
-			fUnitCell    = dng_point (16, 16);
+			fUnitCell	 = dng_point (16, 16);
 			fMaxTileSize = dng_point (16, 16);
 			
 			}
@@ -278,7 +278,7 @@ class dng_jpeg_image_find_digest_task : public dng_area_task,
 				
 				dng_md5_printer printer;
 				
-				printer.Process (fJPEGImage.fJPEGData [tileIndex]->Buffer      (),
+				printer.Process (fJPEGImage.fJPEGData [tileIndex]->Buffer	   (),
 								 fJPEGImage.fJPEGData [tileIndex]->LogicalSize ());
 								 
 				fDigests [tileIndex] = printer.Result ();
@@ -298,7 +298,7 @@ dng_fingerprint dng_jpeg_image::FindDigest (dng_host &host) const
 	
 	uint32 arrayCount = tileCount + (fJPEGTables.Get () ? 1 : 0);
 	
-	AutoArray<dng_fingerprint> digests (new dng_fingerprint [arrayCount]);
+	AutoArray<dng_fingerprint> digests (arrayCount);
 	
 	// Compute digest of each compressed tile.
 
@@ -323,7 +323,7 @@ dng_fingerprint dng_jpeg_image::FindDigest (dng_host &host) const
 		
 		dng_md5_printer printer;
 		
-		printer.Process (fJPEGTables->Buffer      (),
+		printer.Process (fJPEGTables->Buffer	  (),
 						 fJPEGTables->LogicalSize ());
 						 
 		digests [tileCount] = printer.Result ();

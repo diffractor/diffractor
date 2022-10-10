@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -16,8 +16,11 @@
 #ifndef __dng_auto_ptr__
 #define __dng_auto_ptr__
 
+#include <memory>
 #include <stddef.h>
+#include <stdlib.h>
 
+#include "dng_memory.h"
 #include "dng_uncopyable.h"
 
 /*****************************************************************************/
@@ -162,73 +165,84 @@ void AutoPtr<T>::Alloc ()
 
 /*****************************************************************************/
 
-/// \brief A class intended to be used similarly to AutoPtr but for arrays.
+/// \brief A class that provides a variable-length array that automatically
+/// deletes the underlying memory on scope exit.
+///
+/// T is not required to be movable. The class is implemented using
+/// dng_std_vector but purposely does not use any member functions that
+/// require T to be movable.
 
 template<typename T>
 class AutoArray: private dng_uncopyable
 	{
 
 	public:
+		
+		/// Construct an AutoArray that refers to a null pointer.
 
-		/// Construct an AutoArray which owns the argument pointer.
-		/// \param p_ array pointer which constructed AutoArray takes ownership of. p_
-		/// will be deleted on destruction or Reset unless Release is called first.
+		AutoArray () { }
+		
+		/// Construct an AutoArray containing 'count' elements, which are
+		/// default-constructed. If an out-of-memory condition occurs, a
+		/// dng_exception with error code dng_error_memory is thrown.
 
-		explicit AutoArray (T *p_ = 0) : p (p_) { }
-
-		/// Reset is called on destruction.
-
-		~AutoArray ()
+		explicit AutoArray (size_t count)
+			: fVector (new dng_std_vector<T> (count))
 			{
-			delete [] p;
-			p = 0;
 			}
 
-		/// Return the owned array pointer of this AutoArray, NULL if none. The
-		/// AutoArray gives up ownership and takes NULL as its value.
+		/// Changes the size of the AutoArray to 'count' elements. The new
+		/// elements are default-constructed. The previously existing elements
+		/// of the array are destroyed. If an out-of-memory condition occurs, a
+		/// dng_exception with error code dng_error_memory is thrown.
 
-		T *Release ()
+		void Reset (size_t count)
 			{
-			T *p_ = p;
-			p = 0;
-			return p_;
+			fVector.reset (new dng_std_vector<T> (count));
 			}
 
-		/// If an array pointer is owned, it is deleted. Ownership is
-		/// taken of the passed in pointer p_.
-		/// \param p_ array pointer which constructed AutoArray takes ownership of. p_
-		/// will be deleted on destruction or Reset unless Release is called first.
+		/// Allows indexing into the AutoArray. The index 'i' must be
+		/// non-negative and smaller than size of the array (the value that was
+		/// passed to the constructor or to Reset()).
 
-		void Reset (T *p_ = 0)
+		T &operator[] (ptrdiff_t i)
 			{
-			if (p != p_)
-				{
-				delete [] p;
-				p = p_;
-				}
+			return (*fVector) [i];
+			}
+		const T &operator[] (ptrdiff_t i) const
+			{
+			return (*fVector) [i];
 			}
 
-		/// Allows indexing into the AutoArray. It is an error to call this if the
-		/// AutoArray has NULL as its value.
+		/// Return a pointer to the beginning of the array.
 
-		T &operator[] (ptrdiff_t i) const
+		T *Get ()
 			{
-			return p [i];
+			if (fVector)
+				return fVector->data ();
+			else
+				return nullptr;
 			}
-
-		/// Return the owned pointer of this AutoArray, NULL if none. No change in
-		/// ownership or other effects occur.
-
-		T *Get () const
+		
+		const T *Get () const
 			{
-			return p;
+			if (fVector)
+				return fVector->data ();
+			else
+				return nullptr;
 			}
 
 	private:
 
-		// Owned pointer or NULL.
+		// Hidden copy constructor and assignment operator.
 
-		T *p;
+		AutoArray (const AutoArray &);
+
+		const AutoArray & operator= (const AutoArray &);
+
+	private:
+
+		std::unique_ptr<dng_std_vector<T> > fVector;
 
 	};
 

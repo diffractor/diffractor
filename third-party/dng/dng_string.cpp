@@ -1,8 +1,8 @@
 /*****************************************************************************/
-// Copyright 2006-2019 Adobe Systems Incorporated
+// Copyright 2006-2020 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -10,12 +10,19 @@
 
 #include "dng_assertions.h"
 #include "dng_exceptions.h"
+#include "dng_fingerprint.h"
 #include "dng_flags.h"
 #include "dng_mutex.h"
 #include "dng_utils.h"
 #include "dng_safe_arithmetic.h"
 
 #if qMacOS
+#include <TargetConditionals.h>
+#if TARGET_OS_IPHONE || TARGET_IPHONE_SIMULATOR
+#include <MobileCoreServices/MobileCoreServices.h>
+#else
+#include <CoreServices/CoreServices.h>
+#endif
 #include <CoreServices/CoreServices.h>
 #endif
 
@@ -23,7 +30,7 @@
 #include <windows.h>
 #endif
 
-#if qiPhone || qAndroid
+#if qiPhone || qAndroid || qLinux
 #include <ctype.h> // for isdigit
 #endif
 
@@ -44,28 +51,6 @@ static uint32 strlenAsUint32 (const char *s)
 	ConvertUnsigned (strlen (s), &lengthAsUint32);
 	
 	return lengthAsUint32;
-	
-	}
-
-/*****************************************************************************/
-
-// Checks whether there is enough space left in the buffer pointed to by
-// 'currentPos' to write at least 'space' elements of type T (to positions
-// currentPos[0] through currentPos[space - 1]. Throws a dng_exception if
-// there is not enough space left in the buffer. 'bufferEnd' should point one
-// element beyond the end of the buffer. For example, if the buffer is "T
-// buffer[3];", then bufferEnd should point to T + 3.
-
-template <class T>
-static void CheckSpaceLeftInBuffer(const T *currentPos,
-								   const T *bufferEnd,
-								   size_t space)
-	{
-	
-	if (bufferEnd < currentPos || static_cast<size_t> (bufferEnd - currentPos) < space)
-		{
-		ThrowMemoryFull ("Buffer overrun");
-		}
 	
 	}
 
@@ -93,8 +78,8 @@ static void Assign_Multibyte (dng_string &dngString,
 														 kUnicodeNoSubset,
 														 kUnicodeUTF8Format);
 														 
-		aMapping.otherEncoding   = encoding;
-		aMapping.mappingVersion  = kUnicodeUseLatestMapping;
+		aMapping.otherEncoding	 = encoding;
+		aMapping.mappingVersion	 = kUnicodeUseLatestMapping;
 
 		TextToUnicodeInfo aInfo = NULL;
 		
@@ -106,17 +91,17 @@ static void Assign_Multibyte (dng_string &dngString,
 			
 			::ConvertFromTextToUnicode (aInfo,
 										aSize.Get (),
-									    otherString,
-									    kUnicodeUseFallbacksMask |
-									    kUnicodeLooseMappingsMask,
-									    0,
-									    NULL,
-									    NULL,
-									    NULL,
-									    aBufSize.Get (),
-									    &aInput,
-									    &aOutput,
-									    (UniChar *) aBuf.Buffer ());
+										otherString,
+										kUnicodeUseFallbacksMask |
+										kUnicodeLooseMappingsMask,
+										0,
+										NULL,
+										NULL,
+										NULL,
+										aBufSize.Get (),
+										&aInput,
+										&aOutput,
+										(UniChar *) aBuf.Buffer ());
 									   
 			::DisposeTextToUnicodeInfo (&aInfo);
 			
@@ -142,8 +127,8 @@ static void Assign_Multibyte (dng_string &dngString,
 	}
 
 static uint32 Extract_Multibyte (const dng_string &dngString,
-							     dng_memory_data &buffer,
-							     TextEncoding encoding)
+								 dng_memory_data &buffer,
+								 TextEncoding encoding)
 	{
 	
 	dng_safe_uint32 aSize (dngString.Length ());
@@ -161,8 +146,8 @@ static uint32 Extract_Multibyte (const dng_string &dngString,
 														 kUnicodeNoSubset,
 														 kUnicodeUTF8Format);
 														 
-		aMapping.otherEncoding   = encoding;
-		aMapping.mappingVersion  = kUnicodeUseLatestMapping;
+		aMapping.otherEncoding	 = encoding;
+		aMapping.mappingVersion	 = kUnicodeUseLatestMapping;
 
 		UnicodeToTextInfo aInfo = NULL;
 		
@@ -175,18 +160,18 @@ static uint32 Extract_Multibyte (const dng_string &dngString,
 			::ConvertFromUnicodeToText (aInfo,
 										aSize.Get (),
 										(const UniChar *) dngString.Get (),
-									    kUnicodeUseFallbacksMask  |
-									    kUnicodeLooseMappingsMask |
-									    kUnicodeDefaultDirectionMask,
-									    0,
-									    NULL,
-									    NULL,
-									    NULL,
-									    aBufSize.Get (),
-									    &aInput,
-									    &aOutput,
-									    tempBuffer.Buffer_char ());
-									    
+										kUnicodeUseFallbacksMask  |
+										kUnicodeLooseMappingsMask |
+										kUnicodeDefaultDirectionMask,
+										0,
+										NULL,
+										NULL,
+										NULL,
+										aBufSize.Get (),
+										&aInput,
+										&aOutput,
+										tempBuffer.Buffer_char ());
+										
 			::DisposeUnicodeToTextInfo (&aInfo);
 			
 			if (aOutput > 0)
@@ -221,7 +206,7 @@ static uint32 Extract_Multibyte (const dng_string &dngString,
 	}
 	
 static void Assign_SystemEncoding (dng_string &dngString,
-							       const char *otherString)
+								   const char *otherString)
 	{ 
 	
 	TextEncoding aEncoding;
@@ -239,7 +224,7 @@ static void Assign_SystemEncoding (dng_string &dngString,
 	}
 	
 static uint32 Extract_SystemEncoding (const dng_string &dngString,
-							   		  dng_memory_data &buffer)
+									  dng_memory_data &buffer)
 	{ 
 	
 	TextEncoding aEncoding;
@@ -251,13 +236,13 @@ static uint32 Extract_SystemEncoding (const dng_string &dngString,
 									   &aEncoding);
 									   
 	return Extract_Multibyte (dngString,
-					   		  buffer,
-					   		  aEncoding);
+							  buffer,
+							  aEncoding);
 
 	}
 	
 static void Assign_JIS_X208_1990 (dng_string &dngString,
-							      const char *otherString)
+								  const char *otherString)
 	{
 	
 	Assign_Multibyte (dngString,
@@ -321,8 +306,8 @@ static void Assign_Multibyte (dng_string &dngString,
 	}
 
 static uint32 Extract_Multibyte (const dng_string &dngString,
-							     dng_memory_data &buffer,
-							     UINT encoding)
+								 dng_memory_data &buffer,
+								 UINT encoding)
 	{
 	
 	DNG_ASSERT (sizeof (WCHAR) == 2, "WCHAR must be 2 bytes");
@@ -369,7 +354,7 @@ static uint32 Extract_Multibyte (const dng_string &dngString,
 	}
 
 static void Assign_SystemEncoding (dng_string &dngString,
-							       const char *otherString)
+								   const char *otherString)
 	{ 
 	
 	Assign_Multibyte (dngString,
@@ -379,17 +364,17 @@ static void Assign_SystemEncoding (dng_string &dngString,
 	}
 	
 static uint32 Extract_SystemEncoding (const dng_string &dngString,
-							   		  dng_memory_data &buffer)
+									  dng_memory_data &buffer)
 	{ 
 	
 	return Extract_Multibyte (dngString,
-					   		  buffer,
-					   		  ::GetACP ());
+							  buffer,
+							  ::GetACP ());
 
 	}
 	
 static void Assign_JIS_X208_1990 (dng_string &dngString,
-							      const char *otherString)
+								  const char *otherString)
 	{
 	
 	// From MSDN documentation: 20932 = JIS X 0208-1990 & 0121-1990
@@ -455,11 +440,21 @@ dng_string::dng_string ()
 
 dng_string::dng_string (const dng_string &s)
 
+	:	fData (s.fData)
+	
+	{
+	
+	}
+
+/*****************************************************************************/
+
+dng_string::dng_string (const char *s)
+
 	:	fData ()
 	
 	{
 	
-	Set (s.Get ());
+	Set (s);
 	
 	}
 
@@ -471,7 +466,7 @@ dng_string & dng_string::operator= (const dng_string &s)
 	if (this != &s)
 		{
 		
-		Set (s.Get ());
+		fData = s.fData;
 				
 		}
 		
@@ -491,10 +486,10 @@ dng_string::~dng_string ()
 const char * dng_string::Get () const
 	{
 	
-	if (fData.Buffer ())
+	if (fData.get ())
 		{
 		
-		return fData.Buffer_char ();
+		return fData->c_str ();
 		
 		}
 		
@@ -525,7 +520,7 @@ void dng_string::Set (const char *s)
 	if (newLen == 0)
 		{
 		
-		fData.Clear ();
+		fData.reset ();
 		
 		}
 		
@@ -534,30 +529,13 @@ void dng_string::Set (const char *s)
 	else
 		{
 	
-		uint32 oldLen = Length ();
+		if (!fData.get () || fData->compare (s) != 0)
+			{
 			
-		// We might be setting this string to a sub-string of itself,
-		// so don't reallocate the data unless the string is getting
-		// longer.
+			fData.reset (new dng_std_string (s));
+			
+			}
 		
-		if (newLen > oldLen)
-			{
-			
-			fData.Clear ();
-			
-			fData.Allocate (dng_safe_uint32 (newLen) + 1u);
-			
-			}
-			
-		char *d = fData.Buffer_char ();
-			
-		for (uint32 k = 0; k <= newLen; k++)
-			{
-			
-			d [k] = s [k];
-			
-			}
-			
 		}
 				
 	}
@@ -585,6 +563,58 @@ void dng_string::Set_ASCII (const char *s)
 		
 /*****************************************************************************/
 
+static void AppendUnicodeChar32 (dng_std_string &buffer, uint32 aChar)
+	{
+	
+	if (aChar < 0x00000080)
+		{
+		buffer.push_back ((char) aChar);
+		}
+		
+	else if (aChar < 0x00000800)
+		{
+		buffer.push_back ((char) ((aChar >> 6) | 0x000000C0));
+		buffer.push_back ((char) ((aChar & 0x0000003F) | 0x00000080));
+		}
+		
+	else if (aChar < 0x00010000)
+		{
+		buffer.push_back ((char) ( (aChar >> 12) | 0x000000E0));
+		buffer.push_back ((char) (((aChar >>  6) & 0x0000003F) | 0x00000080));
+		buffer.push_back ((char) ( (aChar & 0x0000003F) | 0x00000080));
+		}
+		
+	else if (aChar < 0x00200000)
+		{
+		buffer.push_back ((char) ( (aChar >> 18) | 0x000000F0));
+		buffer.push_back ((char) (((aChar >> 12) & 0x0000003F) | 0x00000080));
+		buffer.push_back ((char) (((aChar >>  6) & 0x0000003F) | 0x00000080));
+		buffer.push_back ((char) ( (aChar & 0x0000003F) | 0x00000080));
+		}
+		
+	else if (aChar < 0x04000000)
+		{
+		buffer.push_back ((char) ( (aChar >> 24) | 0x000000F8));
+		buffer.push_back ((char) (((aChar >> 18) & 0x0000003F) | 0x00000080));
+		buffer.push_back ((char) (((aChar >> 12) & 0x0000003F) | 0x00000080));
+		buffer.push_back ((char) (((aChar >>  6) & 0x0000003F) | 0x00000080));
+		buffer.push_back ((char) ( (aChar & 0x0000003F) | 0x00000080));
+		}
+		
+	else
+		{
+		buffer.push_back ((char) ( (aChar >> 30) | 0x000000FC));
+		buffer.push_back ((char) (((aChar >> 24) & 0x0000003F) | 0x00000080));
+		buffer.push_back ((char) (((aChar >> 18) & 0x0000003F) | 0x00000080));
+		buffer.push_back ((char) (((aChar >> 12) & 0x0000003F) | 0x00000080));
+		buffer.push_back ((char) (((aChar >>  6) & 0x0000003F) | 0x00000080));
+		buffer.push_back ((char) ( (aChar & 0x0000003F) | 0x00000080));
+		}
+	
+	}
+
+/*****************************************************************************/
+
 void dng_string::Set_UTF8 (const char *s)
 	{
 	
@@ -595,13 +625,12 @@ void dng_string::Set_UTF8 (const char *s)
 	// Worst case expansion is 1-byte characters expanding to
 	// replacement character, which requires 3 bytes.
 	
-	const dng_safe_uint32 destBufferLength = len * 3u + 1u;
+	dng_safe_uint32 destBufferLength (len * 3u);
 
-	dng_memory_data buffer (destBufferLength);
+	dng_std_string buffer;
 	
-	uint8 *d = buffer.Buffer_uint8 ();
-	uint8 * const destEnd = d + destBufferLength.Get ();
-	
+	buffer.reserve (destBufferLength.Get ());
+
 	while (s < sEnd)
 		{
 		
@@ -620,64 +649,12 @@ void dng_string::Set_UTF8 (const char *s)
 			}
 		
 		#endif
-			
-		if (aChar < 0x00000080) 
-			{
-			CheckSpaceLeftInBuffer (d, destEnd, 1);
-			*(d++) = (uint8) aChar;
-			}
-			
-		else if (aChar < 0x00000800)
-			{
-			CheckSpaceLeftInBuffer (d, destEnd, 2);
-			*(d++) = (uint8) ((aChar >> 6) | 0x000000C0);
-			*(d++) = (uint8) ((aChar & 0x0000003F) | 0x00000080);
-			}
-			
-		else if (aChar < 0x00010000)
-			{
-			CheckSpaceLeftInBuffer (d, destEnd, 3);
-			*(d++) = (uint8) ( (aChar >> 12) | 0x000000E0);
-			*(d++) = (uint8) (((aChar >>  6) & 0x0000003F) | 0x00000080);
-			*(d++) = (uint8) ( (aChar & 0x0000003F) | 0x00000080);
-			}
-			
-		else if (aChar < 0x00200000)
-			{
-			CheckSpaceLeftInBuffer (d, destEnd, 4);
-			*(d++) = (uint8) ( (aChar >> 18) | 0x000000F0);
-			*(d++) = (uint8) (((aChar >> 12) & 0x0000003F) | 0x00000080);
-			*(d++) = (uint8) (((aChar >>  6) & 0x0000003F) | 0x00000080);
-			*(d++) = (uint8) ( (aChar & 0x0000003F) | 0x00000080);
-			}
-			
-		else if (aChar < 0x04000000)
-			{
-			CheckSpaceLeftInBuffer (d, destEnd, 5);
-			*(d++) = (uint8) ( (aChar >> 24) | 0x000000F8);
-			*(d++) = (uint8) (((aChar >> 18) & 0x0000003F) | 0x00000080);
-			*(d++) = (uint8) (((aChar >> 12) & 0x0000003F) | 0x00000080);
-			*(d++) = (uint8) (((aChar >>  6) & 0x0000003F) | 0x00000080);
-			*(d++) = (uint8) ( (aChar & 0x0000003F) | 0x00000080);
-			}
-			
-		else
-			{
-			CheckSpaceLeftInBuffer (d, destEnd, 6);
-			*(d++) = (uint8) ( (aChar >> 30) | 0x000000FC);
-			*(d++) = (uint8) (((aChar >> 24) & 0x0000003F) | 0x00000080);
-			*(d++) = (uint8) (((aChar >> 18) & 0x0000003F) | 0x00000080);
-			*(d++) = (uint8) (((aChar >> 12) & 0x0000003F) | 0x00000080);
-			*(d++) = (uint8) (((aChar >>  6) & 0x0000003F) | 0x00000080);
-			*(d++) = (uint8) ( (aChar & 0x0000003F) | 0x00000080);
-			}
+		
+		AppendUnicodeChar32 (buffer, aChar);
 			
 		}
 		
-	CheckSpaceLeftInBuffer (d, destEnd, 1);
-	*d = 0;
-	
-	Set (buffer.Buffer_char ());
+	Set (buffer.c_str ());
 	
 	}
 	
@@ -750,12 +727,9 @@ void dng_string::Set_SystemEncoding (const char *s)
 		
 		dng_safe_uint32 len = strlenAsUint32 (s);
 		
-		const dng_safe_uint32 destBufferLength = len + 1u;
-
-		dng_memory_data buffer (destBufferLength);
-		
-		uint8 *d = buffer.Buffer_uint8 ();
-		uint8 * const destEnd = d + destBufferLength.Get ();
+		dng_std_string buffer;
+	
+		buffer.reserve (len.Get ());
 		
 		while (*s)
 			{
@@ -765,18 +739,14 @@ void dng_string::Set_SystemEncoding (const char *s)
 			if ((c & 0x80) == 0)
 				{
 				
-				CheckSpaceLeftInBuffer (d, destEnd, 1);
-				*(d++) = c;
+				buffer.push_back ((char) c);
 				
 				}
 				
 			}
 			
-		CheckSpaceLeftInBuffer (d, destEnd, 1);
-		*d = 0;
+		Set (buffer.c_str ());
 		
-		Set (buffer.Buffer_char ());
-			
 		#endif
 	
 		}
@@ -937,7 +907,7 @@ uint32 dng_string::DecodeUTF8 (const char *&s,
 		case 3:
 			{
 			
-			aChar =  ((((aChar << 6) + nBuf [1])
+			aChar =	 ((((aChar << 6) + nBuf [1])
 							   << 6) + nBuf [2]) - (uint32) 0x000E2080UL;
 							   
 			break;
@@ -948,7 +918,7 @@ uint32 dng_string::DecodeUTF8 (const char *&s,
 			{
 			
 			aChar = ((((((aChar << 6) + nBuf [1])
-							    << 6) + nBuf [2])
+								<< 6) + nBuf [2])
 								<< 6) + nBuf [3]) - (uint32) 0x03C82080UL;
 								
 			break;
@@ -971,10 +941,10 @@ uint32 dng_string::DecodeUTF8 (const char *&s,
 			{
 			
 			aChar = ((((((((((aChar << 6) + nBuf [1])
-								    << 6) + nBuf [2])
-								    << 6) + nBuf [3])
-								    << 6) + nBuf [4])
-								    << 6) + nBuf [5]) - (uint32) 0x82082080UL;
+									<< 6) + nBuf [2])
+									<< 6) + nBuf [3])
+									<< 6) + nBuf [4])
+									<< 6) + nBuf [5]) - (uint32) 0x82082080UL;
 									
 			break;
 			
@@ -1058,6 +1028,8 @@ void dng_string::Set_UTF8_or_System (const char *s)
 uint32 dng_string::Get_UTF16 (dng_memory_data &buffer) const
 	{
 	
+	// Count *exactly* how many 16-bit words required in buffer.
+	
 	dng_safe_uint32 count = 0u;
 	
 	const char *sPtr = Get ();
@@ -1068,7 +1040,7 @@ uint32 dng_string::Get_UTF16 (dng_memory_data &buffer) const
 		uint32 x = DecodeUTF8 (sPtr);
 		
 		if (x <= 0x0000FFFF ||
-			x >  0x0010FFFF)
+			x >	 0x0010FFFF)
 			{
 			
 			count += 1u;
@@ -1090,7 +1062,6 @@ uint32 dng_string::Get_UTF16 (dng_memory_data &buffer) const
 					 sizeof (uint16));
 	
 	uint16 *dPtr = buffer.Buffer_uint16 ();
-	uint16 * const destEnd = dPtr + destBufferLength.Get ();
 	
 	sPtr = Get ();
 	
@@ -1102,7 +1073,6 @@ uint32 dng_string::Get_UTF16 (dng_memory_data &buffer) const
 		if (x <= 0x0000FFFF)
 			{
 			
-			CheckSpaceLeftInBuffer (dPtr, destEnd, 1);
 			*(dPtr++) = (uint16) x;
 			
 			}
@@ -1110,7 +1080,6 @@ uint32 dng_string::Get_UTF16 (dng_memory_data &buffer) const
 		else if (x > 0x0010FFFF)
 			{
 			
-			CheckSpaceLeftInBuffer (dPtr, destEnd, 1);
 			*(dPtr++) = (uint16) kREPLACEMENT_CHARACTER;
 			
 			}
@@ -1120,7 +1089,6 @@ uint32 dng_string::Get_UTF16 (dng_memory_data &buffer) const
 			
 			x -= 0x00010000;
 			
-			CheckSpaceLeftInBuffer (dPtr, destEnd, 2);
 			*(dPtr++) = (uint16) ((x >> 10		 ) + 0x0000D800);
 			*(dPtr++) = (uint16) ((x & 0x000003FF) + 0x0000DC00);
 			
@@ -1128,7 +1096,6 @@ uint32 dng_string::Get_UTF16 (dng_memory_data &buffer) const
 			
 		}
 		
-	CheckSpaceLeftInBuffer (dPtr, destEnd, 1);
 	*dPtr = 0;
 	
 	return count.Get ();
@@ -1168,13 +1135,12 @@ void dng_string::Set_UTF16 (const uint16 *s)
 		
 	const uint16 *sEnd = s + length16.Get ();
 	
-	const dng_safe_uint32 destBufferSize = length16 * 6u + 1u;
+	const dng_safe_uint32 destBufferSize = length16 * 6u;
+	
+	dng_std_string buffer;
+	
+	buffer.reserve (destBufferSize.Get ());
 
-	dng_memory_data buffer (destBufferSize);
-	
-	uint8 *d = buffer.Buffer_uint8 ();
-	uint8 * const destEnd = d + destBufferSize.Get ();
-	
 	while (s < sEnd)
 		{
 		
@@ -1199,8 +1165,8 @@ void dng_string::Set_UTF16 (const uint16 *s)
 				{
 				
 				aChar = ((aChar - 0x0000D800) << 10) +
-					    (aLow - 0x0000DC00) +
-					    0x00010000;
+						(aLow - 0x0000DC00) +
+						0x00010000;
 				
 				s++;
 				
@@ -1213,63 +1179,11 @@ void dng_string::Set_UTF16 (const uint16 *s)
 			aChar = kREPLACEMENT_CHARACTER;
 			}
 			
-		if (aChar < 0x00000080) 
-			{
-			CheckSpaceLeftInBuffer (d, destEnd, 1);
-			*(d++) = (uint8) aChar;
-			}
-			
-		else if (aChar < 0x00000800)
-			{
-			CheckSpaceLeftInBuffer (d, destEnd, 2);
-			*(d++) = (uint8) ((aChar >> 6) | 0x000000C0);
-			*(d++) = (uint8) ((aChar & 0x0000003F) | 0x00000080);
-			}
-			
-		else if (aChar < 0x00010000)
-			{
-			CheckSpaceLeftInBuffer (d, destEnd, 3);
-			*(d++) = (uint8) ( (aChar >> 12) | 0x000000E0);
-			*(d++) = (uint8) (((aChar >>  6) & 0x0000003F) | 0x00000080);
-			*(d++) = (uint8) ( (aChar & 0x0000003F) | 0x00000080);
-			}
-			
-		else if (aChar < 0x00200000)
-			{
-			CheckSpaceLeftInBuffer (d, destEnd, 4);
-			*(d++) = (uint8) ( (aChar >> 18) | 0x000000F0);
-			*(d++) = (uint8) (((aChar >> 12) & 0x0000003F) | 0x00000080);
-			*(d++) = (uint8) (((aChar >>  6) & 0x0000003F) | 0x00000080);
-			*(d++) = (uint8) ( (aChar & 0x0000003F) | 0x00000080);
-			}
-			
-		else if (aChar < 0x04000000)
-			{
-			CheckSpaceLeftInBuffer (d, destEnd, 5);
-			*(d++) = (uint8) ( (aChar >> 24) | 0x000000F8);
-			*(d++) = (uint8) (((aChar >> 18) & 0x0000003F) | 0x00000080);
-			*(d++) = (uint8) (((aChar >> 12) & 0x0000003F) | 0x00000080);
-			*(d++) = (uint8) (((aChar >>  6) & 0x0000003F) | 0x00000080);
-			*(d++) = (uint8) ( (aChar & 0x0000003F) | 0x00000080);
-			}
-			
-		else
-			{
-			CheckSpaceLeftInBuffer (d, destEnd, 6);
-			*(d++) = (uint8) ( (aChar >> 30) | 0x000000FC);
-			*(d++) = (uint8) (((aChar >> 24) & 0x0000003F) | 0x00000080);
-			*(d++) = (uint8) (((aChar >> 18) & 0x0000003F) | 0x00000080);
-			*(d++) = (uint8) (((aChar >> 12) & 0x0000003F) | 0x00000080);
-			*(d++) = (uint8) (((aChar >>  6) & 0x0000003F) | 0x00000080);
-			*(d++) = (uint8) ( (aChar & 0x0000003F) | 0x00000080);
-			}
+		AppendUnicodeChar32 (buffer, aChar);
 			
 		}
 		
-	CheckSpaceLeftInBuffer (d, destEnd, 1);
-	*d = 0;
-	
-	Set (buffer.Buffer_char ());
+	Set (buffer.c_str ());
 	
 	}
 				
@@ -1278,7 +1192,7 @@ void dng_string::Set_UTF16 (const uint16 *s)
 void dng_string::Clear ()
 	{
 	
-	Set (NULL);
+	fData.reset ();
 	
 	}
 		
@@ -1292,7 +1206,9 @@ void dng_string::Truncate (uint32 maxBytes)
 	if (len > maxBytes)
 		{
 		
-		uint8 *s = fData.Buffer_uint8 ();
+		dng_std_string newData (*fData);
+		
+		uint8 *s = (uint8 *) newData.data ();
 		
 		// Don't truncate on an extension character.  Extensions characters
 		// in UTF-8 have the 0x80 bit set and the 0x40 bit clear.
@@ -1306,6 +1222,8 @@ void dng_string::Truncate (uint32 maxBytes)
 			
 		s [maxBytes] = 0;
 		
+		Set (newData.c_str ());
+
 		}
 	
 	}
@@ -1317,10 +1235,10 @@ bool dng_string::TrimTrailingBlanks ()
 	
 	bool didTrim = false;
 	
-	if (fData.Buffer ())
+	if (fData.get () && fData->back () == ' ')
 		{
 		
-		char *s = fData.Buffer_char ();
+		const char *s = fData->c_str ();
 		
 		uint32 len = strlenAsUint32 (s);
 		
@@ -1330,8 +1248,12 @@ bool dng_string::TrimTrailingBlanks ()
 			didTrim = true;
 			}
 			
-		s [len] = 0;
+		dng_std_string newData (*fData);
 		
+		newData.erase (len);
+
+		Set (newData.c_str ());
+			
 		}
 		
 	return didTrim;
@@ -1367,9 +1289,7 @@ bool dng_string::TrimLeadingBlanks ()
 bool dng_string::IsEmpty () const
 	{
 	
-	const char *s = Get ();
-	
-	return *s == 0;
+	return !fData.get ();
 	
 	}
 		
@@ -1378,9 +1298,14 @@ bool dng_string::IsEmpty () const
 uint32 dng_string::Length () const
 	{
 	
-	const char *s = Get ();
+	uint32 lengthAsUint32 = 0;
 	
-	return strlenAsUint32 (s);
+	if (fData.get ())
+		{
+		ConvertUnsigned (fData->length (), &lengthAsUint32);
+		}
+		
+	return lengthAsUint32;
 	
 	}
 
@@ -1389,11 +1314,29 @@ uint32 dng_string::Length () const
 bool dng_string::operator== (const dng_string &s) const
 	{
 	
-	const char *s1 =   Get ();
-	const char *s2 = s.Get ();
-	
-	return strcmp (s1, s2) == 0; 
-	
+	if (fData.get ())
+		{
+		if (s.fData.get ())
+			{
+			return *fData == *s.fData;
+			}
+		else
+			{
+			return false;
+			}
+		}
+	else
+		{
+		if (s.fData.get ())
+			{
+			return false;
+			}
+		else
+			{
+			return true;
+			}
+		}
+		
 	}
 
 /*****************************************************************************/
@@ -1439,7 +1382,7 @@ bool dng_string::Matches (const char *s,
 /*****************************************************************************/
 
 bool dng_string::StartsWith (const char *s,
-						     bool case_sensitive) const
+							 bool case_sensitive) const
 	{
 	
 	const char *t = Get ();
@@ -1584,82 +1527,14 @@ bool dng_string::Replace (const char *old_string,
 				  &match_offset))
 		{
 		
-		uint32 len1 = Length ();
-		
 		uint32 len2 = strlenAsUint32 (old_string);
-		uint32 len3 = strlenAsUint32 (new_string);
 		
-		if (len2 == len3)
-			{
-
-			DNG_REQUIRE (fData.Buffer_char (), "Bad string in dng_string::Replace");
-			
-			strncpy (fData.Buffer_char () + match_offset,
-					 new_string,
-					 len3);
-			
-			}
-			
-		else if (len2 > len3)
-			{
-			
-			DNG_REQUIRE (fData.Buffer_char (), "Bad string in dng_string::Replace");
-			
-			strncpy (fData.Buffer_char () + match_offset,
-					 new_string,
-					 len3);
-					 
-			const char *s = fData.Buffer_char () + match_offset + len2;
-				  char *d = fData.Buffer_char () + match_offset + len3;
-				  
-			uint32 extra = len1 - match_offset - len2 + 1;	// + 1 for NULL termination
-			
-			for (uint32 j = 0; j < extra; j++)
-				{
-				*(d++) = *(s++);
-				}
-			
-			}
-			
-		else
-			{
-			
-			// "len1 - len2" cannot wrap around because we know that if this
-			// string contains old_string, len1 >= len2 must hold.
-
-			dng_memory_data tempBuffer
-				(dng_safe_uint32 (len1 - len2) + len3 + 1u);
-			
-			if (match_offset)
-				{
-				
-				strncpy (tempBuffer.Buffer_char (),
-						 fData     .Buffer_char (),
-						 match_offset);
-						 
-				}
-				
-			if (len3)
-				{
-
-				strncpy (tempBuffer.Buffer_char () + match_offset,
-						 new_string,
-						 len3);
-						 
-				}
-				
-			uint32 extra = len1 - match_offset - len2 + 1;	// + 1 for NULL termination
-
-			DNG_REQUIRE (fData.Buffer_char (), "Bad string in dng_string::Replace");
-			
-			strncpy (tempBuffer.Buffer_char () + match_offset + len3,
-					 fData     .Buffer_char () + match_offset + len2,
-					 extra);
-					 
-			Set (tempBuffer.Buffer_char ());
-
-			}
-			
+		dng_std_string newData (*fData);
+		
+		newData.replace (match_offset, len2, new_string);
+		
+		Set (newData.c_str ());
+		
 		return true;
 		
 		}
@@ -1671,26 +1546,57 @@ bool dng_string::Replace (const char *old_string,
 /*****************************************************************************/
 
 void dng_string::ReplaceChars (char oldChar,
-                               char newChar)
+							   char newChar)
 	{
 	
-	if (fData.Buffer ())
+	if (fData.get ())
 		{
 		
-		uint32 len = Length ();
+		// Find index of first character that needs to be changed.
 		
-		char *dPtr = fData.Buffer_char ();
+		const char *sPtr = fData->c_str ();
 		
-		for (uint32 j = 0; j < len; j++)
+		uint32 index = 0;
+		
+		while (char c = sPtr [index])
 			{
 			
-			if (dPtr [j] == oldChar)
+			if (c == oldChar)
 				{
-				
-				dPtr [j] = newChar;
-				
+				break;
 				}
 				
+			index++;
+
+			}
+			
+		// Did we find one?
+			
+		if (sPtr [index])
+			{
+			
+			// Allocate new copy.
+			
+			dng_std_string * newData (new dng_std_string (*fData));
+			
+			// Start fixing at index of first character to change.
+			
+			while (char c = sPtr [index])
+				{
+				
+				if (c == oldChar)
+					{
+					(*newData) [index] = newChar;
+					}
+					
+				index++;
+
+				}
+				
+			// Swap in new copy.
+				
+			fData.reset (newData);
+			
 			}
 			
 		}
@@ -1700,7 +1606,7 @@ void dng_string::ReplaceChars (char oldChar,
 /*****************************************************************************/
 
 bool dng_string::TrimLeading (const char *s,
-						      bool case_sensitive)
+							  bool case_sensitive)
 	{
 	
 	if (StartsWith (s, case_sensitive))
@@ -1721,25 +1627,26 @@ bool dng_string::TrimLeading (const char *s,
 void dng_string::Append (const char *s)
 	{
 	
-	dng_safe_uint32 len2 (strlenAsUint32 (s));
-	
-	if (len2.Get ())
+	if (*s)
 		{
-	
-		dng_safe_uint32 len1 (Length ());
 		
-		dng_memory_data temp (len1 + len2 + 1u);
-		
-		char *buffer = temp.Buffer_char ();
-		
-		if (len1.Get ())
+		if (fData.get ())
 			{
-			memcpy (buffer, Get (), len1.Get ());
+			
+			std::unique_ptr<dng_std_string> newData (new dng_std_string (*fData));
+			
+			newData->append (s);
+			
+			fData.reset (newData.release ());
+			
 			}
 			
-		memcpy (buffer + len1.Get (), s, (len2 + 1u).Get ());
-		
-		Set (buffer);
+		else
+			{
+			
+			Set (s);
+			
+			}
 		
 		}
 	
@@ -1750,25 +1657,54 @@ void dng_string::Append (const char *s)
 void dng_string::SetUppercase ()
 	{
 	
-	if (fData.Buffer ())
+	if (fData.get ())
 		{
 		
-		uint32 len = Length ();
+		// Find index of first character that needs to be changed.
 		
-		char *dPtr = fData.Buffer_char ();
+		const char *sPtr = fData->c_str ();
 		
-		for (uint32 j = 0; j < len; j++)
+		uint32 index = 0;
+		
+		while (char c = sPtr [index])
 			{
-			
-			char c = dPtr [j];
 			
 			if (c >= 'a' && c <= 'z')
 				{
-				
-				dPtr [j] = c - 'a' + 'A';
-				
+				break;
 				}
 				
+			index++;
+
+			}
+			
+		// Did we find one?
+			
+		if (sPtr [index])
+			{
+			
+			// Allocate new copy.
+			
+			dng_std_string * newData (new dng_std_string (*fData));
+			
+			// Start fixing at index of first character to change.
+			
+			while (char c = sPtr [index])
+				{
+				
+				if (c >= 'a' && c <= 'z')
+					{
+					(*newData) [index] = c - 'a' + 'A';
+					}
+					
+				index++;
+
+				}
+				
+			// Swap in new copy.
+				
+			fData.reset (newData);
+			
 			}
 			
 		}
@@ -1780,25 +1716,54 @@ void dng_string::SetUppercase ()
 void dng_string::SetLowercase ()
 	{
 	
-	if (fData.Buffer ())
+	if (fData.get ())
 		{
 		
-		uint32 len = Length ();
+		// Find index of first character that needs to be changed.
 		
-		char *dPtr = fData.Buffer_char ();
+		const char *sPtr = fData->c_str ();
 		
-		for (uint32 j = 0; j < len; j++)
+		uint32 index = 0;
+		
+		while (char c = sPtr [index])
 			{
-			
-			char c = dPtr [j];
 			
 			if (c >= 'A' && c <= 'Z')
 				{
-				
-				dPtr [j] = c - 'A' + 'a';
-				
+				break;
 				}
 				
+			index++;
+
+			}
+			
+		// Did we find one?
+			
+		if (sPtr [index])
+			{
+			
+			// Allocate new copy.
+			
+			dng_std_string * newData (new dng_std_string (*fData));
+			
+			// Start fixing at index of first character to change.
+			
+			while (char c = sPtr [index])
+				{
+				
+				if (c >= 'A' && c <= 'Z')
+					{
+					(*newData) [index] = c - 'A' + 'a';
+					}
+					
+				index++;
+
+				}
+				
+			// Swap in new copy.
+				
+			fData.reset (newData);
+			
 			}
 			
 		}
@@ -1810,54 +1775,67 @@ void dng_string::SetLowercase ()
 void dng_string::SetLineEndings (char ending)
 	{
 	
-	if (fData.Buffer ())
+	DNG_ASSERT (ending == '\n' || ending == '\r',
+				"Unexpected line ending in dng_string::SetLineEndings");
+	
+	if (fData.get ())
 		{
 		
-		const char *sPtr = fData.Buffer_char ();
-		      char *dPtr = fData.Buffer_char ();
+		char otherEnding = (ending == '\n' ? '\r' : '\n');
 		
-		while (*sPtr)
+		if (fData->find (otherEnding) != dng_std_string::npos)
 			{
 			
-			char c = *(sPtr++);
+			dng_std_string newData;
 			
-			char nc = sPtr [0];
+			newData.reserve (fData->length ());
 			
-			if ((c == '\r' && nc == '\n') ||
-				(c == '\n' && nc == '\r'))
+			const char *sPtr = fData->c_str ();
+			
+			while (*sPtr)
 				{
 				
-				sPtr++;
+				char c = *(sPtr++);
 				
-				if (ending)
+				char nc = sPtr [0];
+				
+				if ((c == '\r' && nc == '\n') ||
+					(c == '\n' && nc == '\r'))
 					{
-					*(dPtr++) = ending;
+					
+					sPtr++;
+					
+					if (ending)
+						{
+						newData.push_back (ending);
+						}
+					
 					}
-				
-				}
-				
-			else if (c == '\n' ||
-					 c == '\r')
-				{
-				
-				if (ending)
+					
+				else if (c == '\n' ||
+						 c == '\r')
 					{
-					*(dPtr++) = ending;
+					
+					if (ending)
+						{
+						newData.push_back (ending);
+						}
+					
 					}
-				
+					
+				else
+					{
+					
+					newData.push_back (c);
+					
+					}
+					
 				}
 				
-			else
-				{
-				
-				*(dPtr++) = c;
-				
-				}
-				
+			Set (newData.c_str ());
+			
 			}
 			
-		*dPtr = 0;
-		
 		}
 		
 	}
@@ -1867,28 +1845,53 @@ void dng_string::SetLineEndings (char ending)
 void dng_string::StripLowASCII ()
 	{
 	
-	if (fData.Buffer ())
+	if (fData.get ())
 		{
 		
-		const char *sPtr = fData.Buffer_char ();
-		      char *dPtr = fData.Buffer_char ();
+		bool hasLowASCII = false;
+		
+		const char *sPtr = fData->c_str ();
 		
 		while (*sPtr)
 			{
 			
 			char c = *(sPtr++);
+		
+			if (!(c == '\r' || c == '\n' || (uint8) c >= ' '))
+				{
+				hasLowASCII = true;
+				break;
+				}
+				
+			}
 			
-			if (c == '\r' || c == '\n' || (uint8) c >= ' ')
+		if (hasLowASCII)
+			{
+
+			dng_std_string newData;
+			
+			newData.reserve (fData->length ());
+			
+			sPtr = fData->c_str ();
+			
+			while (*sPtr)
 				{
 				
-				*(dPtr++) = c;
+				char c = *(sPtr++);
 				
+				if (c == '\r' || c == '\n' || (uint8) c >= ' ')
+					{
+					
+					newData.push_back (c);
+					
+					}
+								
 				}
-							
+			
+			Set (newData.c_str ());
+			
 			}
 
-		*dPtr = 0;
-		
 		}
 		
 	}
@@ -1898,12 +1901,15 @@ void dng_string::StripLowASCII ()
 void dng_string::NormalizeAsCommaSeparatedNumbers ()
 	{
 	
-	if (fData.Buffer ())
+	if (fData.get ())
 		{
 		
-		const char *sPtr = fData.Buffer_char ();
-			  char *dPtr = fData.Buffer_char ();
+		dng_std_string newData;
 		
+		newData.reserve (fData->length ());
+		
+		const char *sPtr = fData->c_str ();
+			
 		bool commaInserted = false;
 
 		while (*sPtr)
@@ -1917,7 +1923,7 @@ void dng_string::NormalizeAsCommaSeparatedNumbers ()
 			if (isdigit ((int) c) || c == '.' || c == '-' || c == '+' || c == 'e' || c == 'E')
 				{
 				
-				*(dPtr++) = (char) c;
+				newData.push_back ((char) c);
 				
 				if (commaInserted)
 					{
@@ -1926,12 +1932,12 @@ void dng_string::NormalizeAsCommaSeparatedNumbers ()
 
 					}
 				
-				} 
+				}
 
-			else if (!commaInserted) 
+			else if (!commaInserted)
 				{
 				
-				*(dPtr++) = ',';
+				newData.push_back (',');
 
 				commaInserted = true;
 				
@@ -1939,7 +1945,7 @@ void dng_string::NormalizeAsCommaSeparatedNumbers ()
 			
 			}
 		
-		*dPtr = 0;
+		Set (newData.c_str ());
 		
 		}
 	
@@ -2064,13 +2070,12 @@ void dng_string::ForceASCII ()
 	if (!IsASCII ())
 		{
 		
-		dng_safe_uint32 tempBufferSize = dng_safe_uint32 (Length ()) * 3u + 1u;
+		dng_safe_uint32 tempBufferSize = dng_safe_uint32 (Length ()) * 3u;
+		
+		dng_std_string buffer;
+		
+		buffer.reserve (tempBufferSize.Get ());
 
-		dng_memory_data tempBuffer (tempBufferSize);
-		
-		char *dPtr = tempBuffer.Buffer_char ();
-		char * const destEnd = dPtr + tempBufferSize.Get ();
-		
 		const char *sPtr = Get ();
 		
 		while (*sPtr)
@@ -2081,8 +2086,7 @@ void dng_string::ForceASCII ()
 			if (x <= 0x007F)
 				{
 				
-				CheckSpaceLeftInBuffer (dPtr, destEnd, 1);
-				*(dPtr++) = (char) x;
+				buffer.push_back ((char) x);
 				
 				}
 				
@@ -2091,8 +2095,8 @@ void dng_string::ForceASCII ()
 				
 				const char *ascii = NULL;
 				
-				const uint32 kTableEntrys = sizeof (kUnicodeToLowASCII    ) /
-									        sizeof (kUnicodeToLowASCII [0]);
+				const uint32 kTableEntrys = sizeof (kUnicodeToLowASCII	  ) /
+											sizeof (kUnicodeToLowASCII [0]);
 				
 				for (uint32 entry = 0; entry < kTableEntrys; entry++)
 					{
@@ -2111,32 +2115,22 @@ void dng_string::ForceASCII ()
 				if (ascii)
 					{
 					
-					while (*ascii)
-						{
-						
-						CheckSpaceLeftInBuffer (dPtr, destEnd, 1);
-						*(dPtr++) = *(ascii++);
-						
-						}
-						
+					buffer.append (ascii);
+											
 					}
 					
 				else
 					{
 					
-					CheckSpaceLeftInBuffer (dPtr, destEnd, 1);
-					*(dPtr++) ='?';
-					
+					buffer.push_back ('?');
+				
 					}
 				
 				}
 				
 			}
 			
-		CheckSpaceLeftInBuffer (dPtr, destEnd, 1);
-		*dPtr = 0;
-			
-		Set (tempBuffer.Buffer_char ());
+		Set (buffer.c_str ());
 		
 		}
 	
@@ -2144,12 +2138,14 @@ void dng_string::ForceASCII ()
 	
 /******************************************************************************/
 
+#if qMacOS
 static dng_std_mutex gProtectUCCalls;
+#endif
 				
 /******************************************************************************/
 
 int32 dng_string::Compare (const dng_string &s,
-                           bool digitsAsNumber) const
+						   bool digitsAsNumber) const
 	{
 	
 	#if qMacOS
@@ -2160,7 +2156,7 @@ int32 dng_string::Compare (const dng_string &s,
 		dng_memory_data aStrB;
 		
 		uint32 aLenA = this->Get_UTF16 (aStrA);
-		uint32 aLenB = s    .Get_UTF16 (aStrB);
+		uint32 aLenB = s	.Get_UTF16 (aStrB);
 		
 		if (aLenA > 0)
 			{
@@ -2175,14 +2171,14 @@ int32 dng_string::Compare (const dng_string &s,
 
 				UCCollateOptions aOptions = kUCCollateStandardOptions |
 											kUCCollatePunctuationSignificantMask;
-           
-                if (digitsAsNumber)
-                    {
-                    
-                    aOptions |= kUCCollateDigitsOverrideMask |
-                                kUCCollateDigitsAsNumberMask;
-                        
-                    }
+		   
+				if (digitsAsNumber)
+					{
+					
+					aOptions |= kUCCollateDigitsOverrideMask |
+								kUCCollateDigitsAsNumberMask;
+						
+					}
 											   
 				SInt32 aOrder = -1;
 				
@@ -2254,7 +2250,7 @@ int32 dng_string::Compare (const dng_string &s,
 		dng_memory_data aStrB;
 		
 		uint32 aLenA = this->Get_UTF16 (aStrA);
-		uint32 aLenB = s    .Get_UTF16 (aStrB);
+		uint32 aLenB = s	.Get_UTF16 (aStrB);
 			
 		if (aLenA > 0)
 			{
@@ -2327,7 +2323,7 @@ int32 dng_string::Compare (const dng_string &s,
 		for (uint32 pass = 0; pass < 2; pass++)
 			{
 		
-			const char *aPtr =   Get ();
+			const char *aPtr =	 Get ();
 			const char *bPtr = s.Get ();
 			
 			while (*aPtr || *bPtr)
@@ -2362,76 +2358,76 @@ int32 dng_string::Compare (const dng_string &s,
 						}
 				
 					}
-     
-                if (digitsAsNumber)
-                    {
-                    
-                    uint32 aNumber = 0;
-                    uint32 aDigits = 0;
-                    
-                    if (a >= (uint32) '0' && a <= (uint32) '9')
-                        {
-                        
-                        aNumber = a - (uint32) '0';
-                        aDigits = 1;
-                        
-                        while (aDigits < 6 && *aPtr >= '0' && *aPtr <= '9')
-                            {
-                            aNumber = aNumber * 10 + ((uint32) *aPtr -
-                                                      (uint32) '0');
-                            aDigits++;
-                            aPtr++;
-                            }
-                            
-                        }
-                    
-                    uint32 bNumber = 0;
-                    uint32 bDigits = 0;
-                    
-                    if (b >= (uint32) '0' && b <= (uint32) '9')
-                        {
-                        
-                        bNumber = b - (uint32) '0';
-                        bDigits = 1;
-                        
-                        while (bDigits < 6 && *bPtr >= '0' && *bPtr <= '9')
-                            {
-                            bNumber = bNumber * 10 + ((uint32) *bPtr -
-                                                      (uint32) '0');
-                            bDigits++;
-                            bPtr++;
-                            }
-                            
-                        }
-                        
-                    if (aDigits > 0 && bDigits > 0)
-                        {
-                        
-                        if (aNumber > bNumber)
-                            {
-                            return 1;
-                            }
-                            
-                        if (aNumber < bNumber)
-                            {
-                            return -1;
-                            }
-                            
-                        if (aDigits > bDigits)
-                            {
-                            return 1;
-                            }
-                            
-                        if (aDigits < bDigits)
-                            {
-                            return -1;
-                            }
-                            
-                        continue;
-                        
-                        }
-                    
-                    }
+	 
+				if (digitsAsNumber)
+					{
+					
+					uint32 aNumber = 0;
+					uint32 aDigits = 0;
+					
+					if (a >= (uint32) '0' && a <= (uint32) '9')
+						{
+						
+						aNumber = a - (uint32) '0';
+						aDigits = 1;
+						
+						while (aDigits < 6 && *aPtr >= '0' && *aPtr <= '9')
+							{
+							aNumber = aNumber * 10 + ((uint32) *aPtr -
+													  (uint32) '0');
+							aDigits++;
+							aPtr++;
+							}
+							
+						}
+					
+					uint32 bNumber = 0;
+					uint32 bDigits = 0;
+					
+					if (b >= (uint32) '0' && b <= (uint32) '9')
+						{
+						
+						bNumber = b - (uint32) '0';
+						bDigits = 1;
+						
+						while (bDigits < 6 && *bPtr >= '0' && *bPtr <= '9')
+							{
+							bNumber = bNumber * 10 + ((uint32) *bPtr -
+													  (uint32) '0');
+							bDigits++;
+							bPtr++;
+							}
+							
+						}
+						
+					if (aDigits > 0 && bDigits > 0)
+						{
+						
+						if (aNumber > bNumber)
+							{
+							return 1;
+							}
+							
+						if (aNumber < bNumber)
+							{
+							return -1;
+							}
+							
+						if (aDigits > bDigits)
+							{
+							return 1;
+							}
+							
+						if (aDigits < bDigits)
+							{
+							return -1;
+							}
+							
+						continue;
+						
+						}
+					
+					}
 					
 				if (a > b)
 					{
@@ -2452,6 +2448,21 @@ int32 dng_string::Compare (const dng_string &s,
 	#endif
 			
 	return 0;
+	
+	}
+
+/*****************************************************************************/
+
+size_t dng_string_hash::operator () (const dng_string &s) const
+	{
+	
+	dng_md5_printer printer;
+
+	printer.Process (s.Get ());
+
+	auto digest = printer.Result ();
+
+	return (size_t) digest.Collapse32 ();
 	
 	}
 

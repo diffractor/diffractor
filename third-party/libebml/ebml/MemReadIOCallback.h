@@ -36,7 +36,7 @@
 #include "EbmlBinary.h"
 #include "IOCallback.h"
 
-START_LIBEBML_NAMESPACE
+namespace libebml {
 
 class EBML_DLL_API MemReadIOCallback : public IOCallback {
 protected:
@@ -46,13 +46,13 @@ public:
   MemReadIOCallback(void const *Ptr, size_t Size);
   MemReadIOCallback(EbmlBinary const &Binary);
   MemReadIOCallback(MemReadIOCallback const &Mem);
-  virtual ~MemReadIOCallback() = default;
+  ~MemReadIOCallback() override = default;
 
-  uint32 read(void *Buffer, size_t Size);
-  void setFilePointer(int64 Offset, seek_mode Mode = seek_beginning);
-  size_t write(void const *, size_t) { return 0; }
-  virtual uint64 getFilePointer() { return mPtr - mStart; }
-  void close() {}
+  uint32 read(void *Buffer, size_t Size) override;
+  void setFilePointer(int64 Offset, seek_mode Mode = seek_beginning) override;
+  size_t write(void const *, size_t) override { return 0; }
+  uint64 getFilePointer() override { return mPtr - mStart; }
+  void close() override {}
   binary const *GetDataBuffer() const { return mPtr; }
   uint64 GetDataBufferSize() const { return mEnd - mStart; }
 
@@ -60,6 +60,6 @@ protected:
   void Init(void const *Ptr, size_t Size);
 };
 
-END_LIBEBML_NAMESPACE
+} // namespace libebml
 
 #endif // LIBEBML_MEMREADIOCALLBACK_H

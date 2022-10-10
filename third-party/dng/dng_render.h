@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -29,21 +29,21 @@
 /// \brief Curve for removing zero offset from stage3 image.
 
 class dng_function_zero_offset: public dng_1d_function
-    {
-    
-    public:
-    
-        real64 fZeroOffset;
-        
-        real64 fScale;
-        
-    public:
-        
-        dng_function_zero_offset (real64 zeroOffset);
-        
-        virtual real64 Evaluate (real64 x) const;
+	{
+	
+	public:
+	
+		real64 fZeroOffset;
+		
+		real64 fScale;
+		
+	public:
+		
+		dng_function_zero_offset (real64 zeroOffset);
+		
+		virtual real64 Evaluate (real64 x) const;
 
-    };
+	};
 
 /******************************************************************************/
 
@@ -66,8 +66,8 @@ class dng_function_exposure_ramp: public dng_1d_function
 	public:
 		
 		dng_function_exposure_ramp (real64 white,
-				   					real64 black,
-				   					real64 minBlack);
+									real64 black,
+									real64 minBlack);
 			
 		virtual real64 Evaluate (real64 x) const;
 

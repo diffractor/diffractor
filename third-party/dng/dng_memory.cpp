@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -10,6 +10,7 @@
 
 #include "dng_bottlenecks.h"
 #include "dng_exceptions.h"
+#include "dng_safe_arithmetic.h"
 
 #ifdef _MSC_VER
 #include <Windows.h>
@@ -193,14 +194,14 @@ dng_malloc_block::dng_malloc_block (uint32 logicalSize)
 		}
 
 	#elif qAndroid
-        
+		
 	fMalloc = memalign (16, (size_t) PhysicalSize ());
-        
+		
 	if (!fMalloc)
 		{
-            
+			
 		ThrowMemoryFull ();
-            
+			
 		}
 	
 	#else

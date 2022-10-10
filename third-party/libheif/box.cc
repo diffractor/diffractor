@@ -59,6 +59,14 @@ Fraction::Fraction(int32_t num, int32_t den)
   }
 }
 
+Fraction::Fraction(uint32_t num, uint32_t den)
+{
+  assert(num <= (uint32_t)std::numeric_limits<int32_t>::max());
+  assert(den <= (uint32_t)std::numeric_limits<int32_t>::max());
+
+  *this = Fraction(int32_t(num), int32_t(den));
+}
+
 Fraction Fraction::operator+(const Fraction& b) const
 {
   if (denominator == b.denominator) {
@@ -136,9 +144,7 @@ static std::string to_fourcc(uint32_t code)
 }
 
 
-heif::BoxHeader::BoxHeader()
-{
-}
+heif::BoxHeader::BoxHeader() = default;
 
 
 std::vector<uint8_t> heif::BoxHeader::get_type() const
@@ -232,7 +238,9 @@ heif::Error heif::BoxHeader::parse(BitstreamRange& range)
 
     if (range.prepare_read(16)) {
       m_uuid_type.resize(16);
-      range.get_istream()->read((char*) m_uuid_type.data(), 16);
+      bool success = range.get_istream()->read((char*) m_uuid_type.data(), 16);
+      assert(success);
+      (void) success;
     }
 
     m_header_size += 16;
@@ -1053,7 +1061,7 @@ std::string Box_iloc::dump(Indent& indent) const
 
 
 Error Box_iloc::read_data(const Item& item,
-                          std::shared_ptr<StreamReader> istr,
+                          const std::shared_ptr<StreamReader>& istr,
                           const std::shared_ptr<Box_idat>& idat,
                           std::vector<uint8_t>* dest) const
 {
@@ -1120,6 +1128,7 @@ Error Box_iloc::read_data(const Item& item,
       dest->resize(static_cast<size_t>(old_size + extent.length));
       success = istr->read((char*) dest->data() + old_size, static_cast<size_t>(extent.length));
       assert(success);
+      (void) success;
     }
     else if (item.construction_method == 1) {
       if (!idat) {
@@ -1685,10 +1694,25 @@ Error color_profile_nclx::get_nclx_color_profile(struct heif_color_profile_nclx*
 
   struct heif_color_profile_nclx* nclx = *out_data;
 
+  struct heif_error err;
+
   nclx->version = 1;
-  nclx->color_primaries = (enum heif_color_primaries) get_colour_primaries();
-  nclx->transfer_characteristics = (enum heif_transfer_characteristics) get_transfer_characteristics();
-  nclx->matrix_coefficients = (enum heif_matrix_coefficients) get_matrix_coefficients();
+
+  err = heif_nclx_color_profile_set_color_primaries(nclx, get_colour_primaries());
+  if (err.code) {
+    return {err.code, err.subcode};
+  }
+
+  err = heif_nclx_color_profile_set_transfer_characteristics(nclx, get_transfer_characteristics());
+  if (err.code) {
+    return {err.code, err.subcode};
+  }
+
+  err = heif_nclx_color_profile_set_matrix_coefficients(nclx, get_matrix_coefficients());
+  if (err.code) {
+    return {err.code, err.subcode};
+  }
+
   nclx->full_range_flag = get_full_range_flag();
 
   // fill color primaries
@@ -1801,12 +1825,12 @@ std::string Box_colr::dump(Indent& indent) const
   std::ostringstream sstr;
   sstr << Box::dump(indent);
 
-  sstr << indent << "colour_type: " << to_fourcc(get_color_profile_type()) << "\n";
-
   if (m_color_profile) {
+    sstr << indent << "colour_type: " << to_fourcc(get_color_profile_type()) << "\n";
     sstr << m_color_profile->dump(indent);
   }
   else {
+    sstr << indent << "colour_type: ---\n";
     sstr << "no color profile\n";
   }
 
@@ -2265,10 +2289,10 @@ Error Box_imir::parse(BitstreamRange& range)
 
   uint16_t axis = range.read8();
   if (axis & 1) {
-    m_axis = MirrorAxis::Horizontal;
+    m_axis = MirrorDirection::Horizontal;
   }
   else {
-    m_axis = MirrorAxis::Vertical;
+    m_axis = MirrorDirection::Vertical;
   }
 
   return range.get_error();
@@ -2280,12 +2304,12 @@ std::string Box_imir::dump(Indent& indent) const
   std::ostringstream sstr;
   sstr << Box::dump(indent);
 
-  sstr << indent << "mirror axis: ";
+  sstr << indent << "mirror direction: ";
   switch (m_axis) {
-    case MirrorAxis::Vertical:
+    case MirrorDirection::Vertical:
       sstr << "vertical\n";
       break;
-    case MirrorAxis::Horizontal:
+    case MirrorDirection::Horizontal:
       sstr << "horizontal\n";
       break;
   }
@@ -2298,20 +2322,35 @@ Error Box_clap::parse(BitstreamRange& range)
 {
   //parse_full_box_header(range);
 
-  int32_t clean_aperture_width_num = range.read32();
-  int32_t clean_aperture_width_den = range.read32();
-  int32_t clean_aperture_height_num = range.read32();
-  int32_t clean_aperture_height_den = range.read32();
-  int32_t horizontal_offset_num = range.read32();
-  int32_t horizontal_offset_den = range.read32();
-  int32_t vertical_offset_num = range.read32();
-  int32_t vertical_offset_den = range.read32();
+  uint32_t clean_aperture_width_num = range.read32();
+  uint32_t clean_aperture_width_den = range.read32();
+  uint32_t clean_aperture_height_num = range.read32();
+  uint32_t clean_aperture_height_den = range.read32();
+
+  // Note: in the standard document 14496-12(2015), it says that the offset values should also be unsigned integers,
+  // but this is obviously an error. Even the accompanying standard text says that offsets may be negative.
+  int32_t horizontal_offset_num = (int32_t) range.read32();
+  uint32_t horizontal_offset_den = (int32_t)range.read32();
+  int32_t vertical_offset_num = (int32_t) range.read32();
+  uint32_t vertical_offset_den = (int32_t)range.read32();
+
+  if (clean_aperture_width_num > (uint32_t) std::numeric_limits<int32_t>::max() ||
+      clean_aperture_width_den > (uint32_t) std::numeric_limits<int32_t>::max() ||
+      clean_aperture_height_num > (uint32_t) std::numeric_limits<int32_t>::max() ||
+      clean_aperture_height_den > (uint32_t) std::numeric_limits<int32_t>::max() ||
+      horizontal_offset_den > (uint32_t)std::numeric_limits<int32_t>::max() ||
+      vertical_offset_den > (uint32_t)std::numeric_limits<int32_t>::max()) {
+    return Error(heif_error_Invalid_input,
+                 heif_suberror_Invalid_fractional_number,
+                 "Exceeded supported value range.");
+  }
+
   m_clean_aperture_width = Fraction(clean_aperture_width_num,
                                     clean_aperture_width_den);
   m_clean_aperture_height = Fraction(clean_aperture_height_num,
                                      clean_aperture_height_den);
-  m_horizontal_offset = Fraction(horizontal_offset_num, horizontal_offset_den);
-  m_vertical_offset = Fraction(vertical_offset_num, vertical_offset_den);
+  m_horizontal_offset = Fraction(horizontal_offset_num, (int32_t)horizontal_offset_den);
+  m_vertical_offset = Fraction(vertical_offset_num, (int32_t)vertical_offset_den);
   if (!m_clean_aperture_width.is_valid() || !m_clean_aperture_height.is_valid() ||
       !m_horizontal_offset.is_valid() || !m_vertical_offset.is_valid()) {
     return Error(heif_error_Invalid_input,
@@ -2416,8 +2455,8 @@ void Box_clap::set(uint32_t clap_width, uint32_t clap_height,
   assert(image_width >= clap_width);
   assert(image_height >= clap_height);
 
-  m_clean_aperture_width = Fraction(clap_width, 1);
-  m_clean_aperture_height = Fraction(clap_height, 1);
+  m_clean_aperture_width = Fraction(clap_width, 1U);
+  m_clean_aperture_height = Fraction(clap_height, 1U);
 
   m_horizontal_offset = Fraction(-(int32_t) (image_width - clap_width), 2);
   m_vertical_offset = Fraction(-(int32_t) (image_height - clap_height), 2);
@@ -2572,7 +2611,7 @@ std::vector<uint32_t> Box_iref::get_references(uint32_t itemID, uint32_t ref_typ
 }
 
 
-void Box_iref::add_reference(heif_item_id from_id, uint32_t type, std::vector<heif_item_id> to_ids)
+void Box_iref::add_reference(heif_item_id from_id, uint32_t type, const std::vector<heif_item_id>& to_ids)
 {
   Reference ref;
   ref.header.set_short_type(type);
@@ -2644,7 +2683,9 @@ Error Box_hvcC::parse(BitstreamRange& range)
 
       if (range.prepare_read(size)) {
         nal_unit.resize(size);
-        range.get_istream()->read((char*) nal_unit.data(), size);
+        bool success = range.get_istream()->read((char*) nal_unit.data(), size);
+        assert(success);
+        (void) success;
       }
 
       array.m_nal_units.push_back(std::move(nal_unit));
@@ -2988,7 +3029,7 @@ std::string Box_idat::dump(Indent& indent) const
 }
 
 
-Error Box_idat::read_data(std::shared_ptr<StreamReader> istr,
+Error Box_idat::read_data(const std::shared_ptr<StreamReader>& istr,
                           uint64_t start, uint64_t length,
                           std::vector<uint8_t>& out_data) const
 {
@@ -3038,6 +3079,7 @@ Error Box_idat::read_data(std::shared_ptr<StreamReader> istr,
 
     success = istr->read((char*) data, static_cast<size_t>(length));
     assert(success);
+    (void) success;
   }
 
   return Error::Ok;

@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -105,12 +105,14 @@ void dng_priority_manager::Increment (dng_priority priority,
 
 	#if 0
 
-	printf ("increment priority %d (%s) (%d, %d, %d)\n", 
+	printf ("increment priority %d (%s) (%d, %d, %d, %d, %d)\n", 
 			(int) priority,
 			name,
+			fCounter [dng_priority_background],
 			fCounter [dng_priority_low],
 			fCounter [dng_priority_medium],
-			fCounter [dng_priority_high]);
+			fCounter [dng_priority_high]
+			fCounter [dng_priority_very_high]);
 
 	#else
 

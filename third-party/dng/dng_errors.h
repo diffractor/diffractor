@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -28,7 +28,7 @@ typedef int32 dng_error_code;
 enum
 	{
 	dng_error_none					= 0,		//!< No error. Success.
-	dng_error_unknown       		= 100000,	//!< Logic or program error or other unclassifiable error.
+	dng_error_unknown				= 100000,	//!< Logic or program error or other unclassifiable error.
 	dng_error_not_yet_implemented,				//!< Functionality requested is not yet implemented.
 	dng_error_silent,							//!< An error which should not be signalled to user.
 	dng_error_user_canceled,					//!< Processing stopped by user (or host application) request

@@ -10,6 +10,9 @@
 #define MPT_OS_DJGPP 1
 #elif defined(__EMSCRIPTEN__)
 #define MPT_OS_EMSCRIPTEN 1
+#if !defined(__EMSCRIPTEN_major__) || !defined(__EMSCRIPTEN_minor__) || !defined(__EMSCRIPTEN_tiny__)
+#include <emscripten/version.h>
+#endif
 #if defined(__EMSCRIPTEN_major__) && defined(__EMSCRIPTEN_minor__)
 #if (__EMSCRIPTEN_major__ > 1)
 // ok
@@ -35,7 +38,12 @@
 #endif // WINAPI_FAMILY
 #elif defined(__APPLE__)
 #define MPT_OS_MACOSX_OR_IOS 1
-//#include "TargetConditionals.h"
+#include <TargetConditionals.h>
+#if defined(TARGET_OS_OSX)
+#if (TARGET_OS_OSX != 0)
+#include <AvailabilityMacros.h>
+#endif
+#endif
 //#if TARGET_IPHONE_SIMULATOR
 //#elif TARGET_OS_IPHONE
 //#elif TARGET_OS_MAC

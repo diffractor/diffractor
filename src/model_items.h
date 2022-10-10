@@ -112,7 +112,7 @@ namespace df
 	using index_folder_info_const_ptr = std::shared_ptr<const index_folder_item>;
 	using index_item_info_map = hash_map<str::cached, index_file_item, ihash, ieq>;
 	using index_item_infos = std::vector<index_file_item>;
-	using index_folder_info_map = hash_map<str::cached, index_folder_item_ptr, ihash, ieq>;
+	using index_folder_info_map = hash_map<folder_path, index_folder_item_ptr, ihash, ieq>;
 	using index_folder_infos = std::vector<index_folder_item_ptr>;
 
 	enum class item_group_display
@@ -831,12 +831,11 @@ namespace df
 		bool _is_loading_thumbnail = false;
 		bool _failed_loading_thumbnail = false;
 		bool _shell_thumbnail_pending = false;
-		bool _is_indexed_location = false;
 
 	public:
-		file_item(const file_path id, const index_file_item& info, const bool is_indexed_location) noexcept
+		file_item(const file_path id, const index_file_item& info) noexcept
 		{
-			update(id, info, is_indexed_location);
+			update(id, info);
 		}
 
 		file_item(const file_item& other) = delete;
@@ -973,7 +972,7 @@ namespace df
 			return split_count(sidecars(), true);
 		}
 
-		void update(file_path path, const index_file_item& info, bool is_indexed_location) noexcept;
+		void update(file_path path, const index_file_item& info) noexcept;
 		void add_to(item_set& results) override;
 		void add_to(paths& results) override;
 		void add_to(unique_paths& paths) override;
@@ -991,16 +990,6 @@ namespace df
 		}
 
 		search_t containing() const override { return search_t().add_selector(_path.folder()); }
-
-		/*bool operator==(const file_item& other) const
-		{
-			return compare(other) == 0;
-		}*/
-
-		bool is_indexed_location() const
-		{
-			return _is_indexed_location;
-		}
 
 		uint32_t crc32c() const
 		{

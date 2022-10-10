@@ -231,6 +231,27 @@
     <ClCompile Include="src\liblzma\simple\x86.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\liblzma\check\crc32_small.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\common\tuklib_exit.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\common\tuklib_mbstr_fw.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\common\tuklib_mbstr_width.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\common\tuklib_open_stdxxx.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\common\tuklib_physmem.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\common\tuklib_progname.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\common\mythread.h">
@@ -432,6 +453,21 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\common\tuklib_physmem.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\common\tuklib_exit.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\common\tuklib_gettext.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\common\tuklib_mbstr.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\common\tuklib_open_stdxxx.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\common\tuklib_progname.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

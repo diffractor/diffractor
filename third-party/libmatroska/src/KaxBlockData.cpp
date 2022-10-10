@@ -38,9 +38,9 @@
 #include "matroska/KaxDefines.h"
 #include "matroska/KaxSemantic.h"
 
-using namespace LIBEBML_NAMESPACE;
+using namespace libebml;
 
-START_LIBMATROSKA_NAMESPACE
+namespace libmatroska {
 
 const KaxBlockBlob & KaxReferenceBlock::RefBlock() const
 {
@@ -49,21 +49,13 @@ const KaxBlockBlob & KaxReferenceBlock::RefBlock() const
 }
 
 KaxReferenceBlock::KaxReferenceBlock(EBML_EXTRA_DEF)
-  :EBML_DEF_SINTEGER(KaxReferenceBlock)EBML_DEF_SEP
-  RefdBlock(nullptr)
-  ,ParentBlock(nullptr)
-  ,bTimecodeSet(false)
-  ,bOurBlob(false)
 {
   bTimecodeSet = false;
 }
 
 KaxReferenceBlock::KaxReferenceBlock(const KaxReferenceBlock & ElementToClone)
   :EbmlSInteger(ElementToClone)
-  ,RefdBlock(nullptr)
-  ,ParentBlock(nullptr)
   ,bTimecodeSet(ElementToClone.bTimecodeSet)
-  ,bOurBlob(false)
 {
 }
 
@@ -86,7 +78,7 @@ filepos_t KaxReferenceBlock::UpdateSize(bool bSaveDefault, bool bForceRender)
     assert(ParentBlock != nullptr);
 
     const KaxInternalBlock &block = *RefdBlock;
-    *static_cast<EbmlSInteger*>(this) = (int64(block.GlobalTimecode()) - int64(ParentBlock->GlobalTimecode())) / int64(ParentBlock->GlobalTimecodeScale());
+    *static_cast<EbmlSInteger*>(this) = (static_cast<int64>(block.GlobalTimecode()) - static_cast<int64>(ParentBlock->GlobalTimecode())) / static_cast<int64>(ParentBlock->GlobalTimecodeScale());
   }
   return EbmlSInteger::UpdateSize(bSaveDefault, bForceRender);
 }
@@ -111,4 +103,4 @@ void KaxReferenceBlock::SetReferencedBlock(const KaxBlockGroup & aRefdBlock)
   SetValueIsSet();
 }
 
-END_LIBMATROSKA_NAMESPACE
+} // namespace libmatroska

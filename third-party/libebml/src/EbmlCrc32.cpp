@@ -39,16 +39,16 @@
 #include "ebml/MemIOCallback.h"
 
 #ifdef WORDS_BIGENDIAN
-# define CRC32_INDEX(c) (c >> 24)
-# define CRC32_SHIFTED(c) (c << 8)
+static constexpr uint32_t CRC32_INDEX(uint32_t c) { return c >> 24; }
+static constexpr uint32_t CRC32_SHIFTED(uint32_t c) { return c << 8; }
 #else
-# define CRC32_INDEX(c) (c & 0xff)
-# define CRC32_SHIFTED(c) (c >> 8)
+static constexpr uint32_t CRC32_INDEX(uint32_t c) { return c & 0xFF; }
+static constexpr uint32_t CRC32_SHIFTED(uint32_t c) { return c >> 8; }
 #endif
 
-const uint32 CRC32_NEGL = 0xffffffffL;
+static constexpr uint32 CRC32_NEGL = 0xffffffffL;
 
-START_LIBEBML_NAMESPACE
+namespace libebml {
 
 DEFINE_EBML_CLASS_GLOBAL(EbmlCrc32, 0xBF, 1, "EBMLCrc32\0ratamadabapa")
 
@@ -232,19 +232,17 @@ filepos_t EbmlCrc32::RenderData(IOCallback & output, bool /* bForceRender */, bo
 
 filepos_t EbmlCrc32::ReadData(IOCallback & input, ScopeMode ReadFully)
 {
-  if (ReadFully != SCOPE_NO_DATA) {
-    auto Buffer = new (std::nothrow) binary[GetSize()];
-    if (Buffer == nullptr) {
-      // impossible to read, skip it
-      input.setFilePointer(GetSize(), seek_current);
-    } else {
-      input.readFully(Buffer, GetSize());
+  if (ReadFully == SCOPE_NO_DATA)
+    return GetSize();
 
-      memcpy((void *)&m_crc_final, Buffer, 4);
-      delete [] Buffer;
-      SetValueIsSet();
-    }
+  if (GetSize() != 4) {
+    // impossible to read, skip it
+    input.setFilePointer(GetSize(), seek_current);
+    return GetSize();
   }
+
+  input.readFully(&m_crc_final, GetSize());
+  SetValueIsSet();
 
   return GetSize();
 }
@@ -344,4 +342,4 @@ void EbmlCrc32::Finalize()
   SetValueIsSet();
 }
 
-END_LIBEBML_NAMESPACE
+} // namespace libebml

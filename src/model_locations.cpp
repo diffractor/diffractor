@@ -104,12 +104,12 @@ void gps_coordinate::decimal_to_dms(const double coord, uint32_t& deg, uint32_t&
 	sec = total_sec % 60;
 }
 
-double gps_coordinate::dms_to_decimal(int deg, int min, int sec)
+double gps_coordinate::dms_to_decimal(const int deg, const int min, const int sec)
 {
 	return deg + (min / 60.0) + (sec / 3600.0);
 }
 
-double gps_coordinate::dms_to_decimal(double deg, double min, double sec)
+double gps_coordinate::dms_to_decimal(const double deg, const double min, const double sec)
 {
 	return deg + (min / 60.0) + (sec / 3600.0);
 }
@@ -570,7 +570,7 @@ int location_cache::scan_entries(const std::u8string_view line, csv_entry* entri
 	return col_count;
 }
 
-int location_cache::scan_entries(u8istream& file, std::u8string& line, std::streamoff offset, csv_entry* entries) const
+int location_cache::scan_entries(u8istream& file, std::u8string& line, const std::streamoff offset, csv_entry* entries) const
 {
 	if (file.is_open())
 	{
@@ -586,7 +586,7 @@ int location_cache::scan_entries(u8istream& file, std::u8string& line, std::stre
 	return 0;
 }
 
-location_t location_cache::build_location(u8istream& file, int offset) const
+location_t location_cache::build_location(u8istream& file, const int offset) const
 {
 	location_t result;
 	std::u8string line;
@@ -934,7 +934,7 @@ location_matches location_cache::auto_complete(const std::u8string_view query, c
 	return result;
 }
 
-location_t location_cache::find_by_id(uint32_t id) const
+location_t location_cache::find_by_id(const uint32_t id) const
 {
 	platform::shared_lock lock(_mutex);
 	location_t result;
@@ -956,7 +956,7 @@ location_t location_cache::find_by_id(uint32_t id) const
 	return result;
 }
 
-country_loc location_cache::find_country(double x, double y) const
+country_loc location_cache::find_country(const double x, const double y) const
 {
 	platform::shared_lock lock(_mutex);
 	const kd_coordinates_t xy = {static_cast<float>(x), static_cast<float>(y)};
@@ -967,7 +967,7 @@ country_loc location_cache::find_country(double x, double y) const
 		       : country_loc{};
 }
 
-location_t location_cache::find_closest(double x, double y) const
+location_t location_cache::find_closest(const double x, const double y) const
 {
 	platform::shared_lock lock(_mutex);
 	location_t result;

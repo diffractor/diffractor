@@ -38,9 +38,9 @@
 #include "matroska/KaxTypes.h"
 #include "ebml/EbmlElement.h"
 
-using namespace LIBEBML_NAMESPACE;
+using namespace libebml;
 
-START_LIBMATROSKA_NAMESPACE
+namespace libmatroska {
 
 extern const EbmlSemanticContext MATROSKA_DLL_API KaxMatroska_Context;
 extern const EbmlSemanticContext MATROSKA_DLL_API KaxSegment_Context;
@@ -98,6 +98,6 @@ extern const EbmlSemanticContext MATROSKA_DLL_API KaxTrackOverlay_Context;
 extern MATROSKA_DLL_API const EbmlSemanticContext & GetKaxGlobal_Context();
 //extern MATROSKA_DLL_API const EbmlSemanticContext & GetKaxTagsGlobal_Context();
 
-END_LIBMATROSKA_NAMESPACE
+} // namespace libmatroska
 
 #endif // LIBMATROSKA_CONTEXTS_H

@@ -1,8 +1,8 @@
 /*****************************************************************************/
-// Copyright 2006-2019 Adobe Systems Incorporated
+// Copyright 2006-2020 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -18,7 +18,10 @@
 /*****************************************************************************/
 
 #include "dng_classes.h"
+#include "dng_rational.h"
 #include "dng_types.h"
+
+#include <vector>
 
 /*****************************************************************************/
 
@@ -177,6 +180,87 @@ dng_vector_3 PCStoXYZ ();
 
 /*****************************************************************************/
 
-#endif
+class dng_illuminant_data
+	{
+
+	private:
+
+		enum type
+			{
+			kWhiteXY,				   // x-y chromaticity coordinate
+			kSpectrum,				   // spectral power distribution function
+			};
+
+		type fType = kWhiteXY;
+
+		dng_xy_coord fDerivedWhite;
+
+		// x-y representation.
+		
+		dng_urational fWhiteX;
+		dng_urational fWhiteY;
+
+		// Spectrum representation.
+
+		dng_urational fMinLambda;
+
+		dng_urational fLambdaSpacing;
+
+		std::vector<dng_urational> fSpectrum;
+
+	public:
+
+		dng_illuminant_data ()
+			{
+			}
+
+		dng_illuminant_data (uint32 tagCode,
+							 const dng_illuminant_data *otherDataPtr);
+
+		void Clear ();
+
+		bool IsValid () const;
+		
+		void SetWhiteXY (const dng_xy_coord &white);
+
+		void SetWhiteXY (const dng_urational &x,
+						 const dng_urational &y);
+
+		const dng_xy_coord & WhiteXY () const
+			{
+			return fDerivedWhite;
+			}
+
+		void SetSpectrum (const dng_urational &minLambda,
+						  const dng_urational &lambdaSpacing,
+						  const std::vector<dng_urational> &data);
+
+		void Get (dng_stream &stream,
+				  const uint32 tagCount,
+				  const char *tagName);
+		
+		void Put (dng_stream &stream) const;
+
+		uint32 TagCount () const;
+		
+	private:
+
+		void CalculateSpectrumXY ();
+
+	};
+
+/*****************************************************************************/
+
+void CalculateTripleIlluminantWeights (const dng_xy_coord &white,
+									   const dng_illuminant_data &light1,
+									   const dng_illuminant_data &light2,
+									   const dng_illuminant_data &light3,
+									   real64 &w1,
+									   real64 &w2,
+									   real64 &w3);
+
+/*****************************************************************************/
+
+#endif	// __dng_xy_coord__
 	
 /*****************************************************************************/

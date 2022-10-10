@@ -91,13 +91,11 @@ int LibRaw::unpack_thumb(void)
 #endif
       else
       {
-        const auto tend = INT64(ID.toffset) + INT64(T.tlength);
-        const auto tmax = ID.input->size() + THUMB_READ_BEYOND;
-
-        if (tend < 1)
+        if (INT64(ID.toffset) + INT64(T.tlength) < 1)
           throw LIBRAW_EXCEPTION_IO_CORRUPT;
 
-        if (tend > tmax)
+        if (INT64(ID.toffset) + INT64(T.tlength) >
+            ID.input->size() + THUMB_READ_BEYOND)
           throw LIBRAW_EXCEPTION_IO_EOF;
       }
 

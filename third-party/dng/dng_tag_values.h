@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -31,26 +31,31 @@ enum
 	// Transparency mask
 	
 	sfTransparencyMask			= 4,
-        
+		
 	// Preview (reduced resolution raw) transparency mask.
 	
 	sfPreviewMask				= sfPreviewImage + sfTransparencyMask,
 	
-    // Depth map.
-    
-    sfDepthMap                  = 8,
-        
-    // Preview (reduced resolution raw) depth map.
-        
-    sfPreviewDepthMap           = sfPreviewImage + sfDepthMap,
-    
-    // Enhanced image (processed stage 3).
-    
-    sfEnhancedImage             = 16,
-        
+	// Depth map.
+	
+	sfDepthMap					= 8,
+		
+	// Preview (reduced resolution raw) depth map.
+		
+	sfPreviewDepthMap			= sfPreviewImage + sfDepthMap,
+	
+	// Enhanced image (processed stage 3).
+	
+	sfEnhancedImage				= 16,
+		
 	// Preview image for non-primary settings.
 	
-	sfAltPreviewImage			= 0x10001
+	sfAltPreviewImage			= 0x10001,
+
+	// Semantic mask.
+
+	sfSemanticMask				= 0x10004,	 // Added in DNG 1.6
+	sfPreviewSemanticMask		= sfPreviewImage + sfSemanticMask,
 	
 	};
 
@@ -61,7 +66,7 @@ enum
 enum
 	{
 
-	piWhiteIsZero 				= 0,
+	piWhiteIsZero				= 0,
 	piBlackIsZero				= 1,
 	piRGB						= 2,
 	piRGBPalette				= 3,
@@ -75,8 +80,10 @@ enum
 
 	piLinearRaw					= 34892,
 
-    piDepth                     = 51177
-        
+	piDepth						= 51177,
+
+	piPhotometricMask			= 52527			// Added in DNG 1.6
+	
 	};
 
 /******************************************************************************/
@@ -339,7 +346,7 @@ enum
 	pepEmbedIfUsed				= 1,
 	
 	// Can only be used if installed on the machine processing the file. 
-	// Note that this only applies to stand-alone profiles.  Profiles that
+	// Note that this only applies to stand-alone profiles.	 Profiles that
 	// are already embedded inside a DNG file allowed to remain embedded 
 	// in that DNG, even if the DNG is resaved.
 	
@@ -405,7 +412,7 @@ enum PreviewColorSpaceEnum
 	previewColorSpace_Unknown		= 0,
 	previewColorSpace_GrayGamma22	= 1,
 	previewColorSpace_sRGB			= 2,
-	previewColorSpace_AdobeRGB      = 3,
+	previewColorSpace_AdobeRGB		= 3,
 	previewColorSpace_ProPhotoRGB	= 4,
 	
 	previewColorSpace_LastValid		= previewColorSpace_ProPhotoRGB,
@@ -449,28 +456,28 @@ enum
 // Values for the DepthFormat tag.
 
 enum
-    {
-    depthFormatUnknown              = 0,
-    depthFormatLinear               = 1,
-    depthFormatInverse              = 2
-    };
+	{
+	depthFormatUnknown				= 0,
+	depthFormatLinear				= 1,
+	depthFormatInverse				= 2
+	};
 
 // Values for the DepthUnits tag.
 
 enum
-    {
-    depthUnitsUnknown               = 0,
-    depthUnitsMeters                = 1
-    };
+	{
+	depthUnitsUnknown				= 0,
+	depthUnitsMeters				= 1
+	};
 
 // Values for DepthMeasureType tag.
 
 enum
-    {
-    depthMeasureUnknown             = 0,
-    depthMeasureOpticalAxis         = 1,
-    depthMeasureOpticalRay          = 2
-    };
+	{
+	depthMeasureUnknown				= 0,
+	depthMeasureOpticalAxis			= 1,
+	depthMeasureOpticalRay			= 2
+	};
 
 /*****************************************************************************/
 
@@ -494,6 +501,7 @@ enum
 	// DNG related.
 	
 	magicTIFF					= 42,			// TIFF (and DNG)
+	magicBigTIFF				= 43,			// BigTIFF (and "BigDNG")
 	magicExtendedProfile		= 0x4352,		// 'CR'
 	magicRawCache				= 1022,			// Raw cache (fast load data)
 	
@@ -519,11 +527,12 @@ enum
 	dngVersion_1_2_0_0			= 0x01020000,
 	dngVersion_1_3_0_0			= 0x01030000,
 	dngVersion_1_4_0_0			= 0x01040000,
-    dngVersion_1_5_0_0          = 0x01050000,
+	dngVersion_1_5_0_0			= 0x01050000,
+	dngVersion_1_6_0_0			= 0x01060000,
 
-	dngVersion_Current			= dngVersion_1_5_0_0,
-	
-	dngVersion_SaveDefault		= dngVersion_1_4_0_0
+	dngVersion_Current			= dngVersion_1_6_0_0,
+
+	dngVersion_SaveDefault		= dngVersion_1_6_0_0,
 	
 	};
 

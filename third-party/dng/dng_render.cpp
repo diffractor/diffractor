@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -25,22 +25,22 @@
 
 dng_function_zero_offset::dng_function_zero_offset (real64 zeroOffset)
 
-    :   fZeroOffset (zeroOffset)
+	:	fZeroOffset (zeroOffset)
 
-    ,   fScale (1.0 / (1.0 - zeroOffset))
+	,	fScale (1.0 / (1.0 - zeroOffset))
 
-    {
-    
-    }
+	{
+	
+	}
 
 /*****************************************************************************/
 
 real64 dng_function_zero_offset::Evaluate (real64 x) const
-    {
-    
-    return Pin_real64 (0.0, (x - fZeroOffset) * fScale, 1.0);
-    
-    }
+	{
+	
+	return Pin_real64 (0.0, (x - fZeroOffset) * fScale, 1.0);
+	
+	}
 
 /*****************************************************************************/
 
@@ -407,7 +407,7 @@ real64 dng_tone_curve_acr3_default::Evaluate (real64 x) const
 		1.00000f
 		};
 		
-	const uint32 kTableSize = sizeof (kTable    ) /
+	const uint32 kTableSize = sizeof (kTable	) /
 							  sizeof (kTable [0]);
 		
 	real32 y = (real32) x * (real32) (kTableSize - 1);
@@ -416,8 +416,8 @@ real64 dng_tone_curve_acr3_default::Evaluate (real64 x) const
 	
 	real32 fract = y - (real32) index;
 	
-	return kTable [index    ] * (1.0f - fract) +
-		   kTable [index + 1] * (       fract);
+	return kTable [index	] * (1.0f - fract) +
+		   kTable [index + 1] * (		fract);
 	
 	}
 
@@ -687,7 +687,7 @@ real64 dng_tone_curve_acr3_default::EvaluateInverse (real64 x) const
 		1.00000f
 		};
 		
-	const uint32 kTableSize = sizeof (kTable    ) /
+	const uint32 kTableSize = sizeof (kTable	) /
 							  sizeof (kTable [0]);
 		
 	real32 y = (real32) x * (real32) (kTableSize - 1);
@@ -696,8 +696,8 @@ real64 dng_tone_curve_acr3_default::EvaluateInverse (real64 x) const
 	
 	real32 fract = y - (real32) index;
 	
-	return kTable [index    ] * (1.0f - fract) +
-		   kTable [index + 1] * (       fract);
+	return kTable [index	] * (1.0f - fract) +
+		   kTable [index + 1] * (		fract);
 	
 	}
 
@@ -719,7 +719,7 @@ class dng_render_task: public dng_filter_task
 	
 	protected:
  
-        const dng_image *fSrcMask;
+		const dng_image *fSrcMask;
 	
 		const dng_negative &fNegative;
 	
@@ -727,12 +727,14 @@ class dng_render_task: public dng_filter_task
 		
 		dng_point fSrcOffset;
 		
-        dng_1d_table fZeroOffsetRamp;
-        
+		dng_1d_table fZeroOffsetRamp;
+		
 		dng_vector fCameraWhite;
 		dng_matrix fCameraToRGB;
 		
 		AutoPtr<dng_hue_sat_map> fHueSatMap;
+
+		real64 fBaselineExposure = 0.0;
 		
 		dng_1d_table fExposureRamp;
 		
@@ -752,12 +754,12 @@ class dng_render_task: public dng_filter_task
 	
 		AutoPtr<dng_memory_block> fTempBuffer [kMaxMPThreads];
   
-        AutoPtr<dng_memory_block> fMaskBuffer [kMaxMPThreads];
+		AutoPtr<dng_memory_block> fMaskBuffer [kMaxMPThreads];
 		
 	public:
 	
 		dng_render_task (const dng_image &srcImage,
-                         const dng_image *srcMask,
+						 const dng_image *srcMask,
 						 dng_image &dstImage,
 						 const dng_negative &negative,
 						 const dng_render &params,
@@ -780,7 +782,7 @@ class dng_render_task: public dng_filter_task
 /*****************************************************************************/
 
 dng_render_task::dng_render_task (const dng_image &srcImage,
-                                  const dng_image *srcMask,
+								  const dng_image *srcMask,
 								  dng_image &dstImage,
 								  const dng_negative &negative,
 								  const dng_render &params,
@@ -790,12 +792,12 @@ dng_render_task::dng_render_task (const dng_image &srcImage,
 						 srcImage,
 						 dstImage)
 
-    ,   fSrcMask   (srcMask  )
+	,	fSrcMask   (srcMask	 )
 	,	fNegative  (negative )
-	,	fParams    (params   )
+	,	fParams	   (params	 )
 	,	fSrcOffset (srcOffset)
 
-    ,   fZeroOffsetRamp ()
+	,	fZeroOffsetRamp ()
 
 	,	fCameraWhite ()
 	,	fCameraToRGB ()
@@ -848,17 +850,17 @@ void dng_render_task::Start (uint32 threadCount,
 							tileSize,
 							allocator,
 							sniffer);
-       
-    // Compute zero offset ramp, if any.
-    
-    if (fNegative.Stage3BlackLevel ())
-        {
-        
-        dng_function_zero_offset offsetFunction (fNegative.Stage3BlackLevelNormalized ());
-            
-        fZeroOffsetRamp.Initialize (*allocator, offsetFunction);
+	   
+	// Compute zero offset ramp, if any.
+	
+	if (fNegative.Stage3BlackLevel ())
+		{
+		
+		dng_function_zero_offset offsetFunction (fNegative.Stage3BlackLevelNormalized ());
+			
+		fZeroOffsetRamp.Initialize (*allocator, offsetFunction);
 
-        }
+		}
 							
 	// Compute camera space to linear ProPhoto RGB parameters.
 	
@@ -904,36 +906,36 @@ void dng_render_task::Start (uint32 threadCount,
 					   
 		// Find Hue/Sat table, if any.
 		
-		const dng_camera_profile *profile = fNegative.ProfileByID (profileID);
+		dng_camera_profile profile;
 		
-		if (profile)
+		if (fNegative.GetProfileByID (profileID, profile))
 			{
 			
-			fHueSatMap.Reset (profile->HueSatMapForWhite (spec->WhiteXY ()));
+			fHueSatMap.Reset (profile.HueSatMapForWhite (spec->WhiteXY ()));
 			
-			if (profile->HasLookTable ())
+			if (profile.HasLookTable ())
 				{
 				
-				fLookTable.Reset (new dng_hue_sat_map (profile->LookTable ()));
+				fLookTable.Reset (new dng_hue_sat_map (profile.LookTable ()));
 				
 				}
 
-			if (profile->HueSatMapEncoding () != encoding_Linear)
+			if (profile.HueSatMapEncoding () != encoding_Linear)
 				{
 					
 				BuildHueSatMapEncodingTable (*allocator,
-											 profile->HueSatMapEncoding (),
+											 profile.HueSatMapEncoding (),
 											 fHueSatMapEncode,
 											 fHueSatMapDecode,
 											 false);
 					
 				}
 			
-			if (profile->LookTableEncoding () != encoding_Linear)
+			if (profile.LookTableEncoding () != encoding_Linear)
 				{
 					
 				BuildHueSatMapEncodingTable (*allocator,
-											 profile->LookTableEncoding (),
+											 profile.LookTableEncoding (),
 											 fLookTableEncode,
 											 fLookTableDecode,
 											 false);
@@ -946,9 +948,10 @@ void dng_render_task::Start (uint32 threadCount,
 		
 	// Compute exposure/shadows ramp.
 
-	real64 exposure = fParams.Exposure () +
-					  fNegative.TotalBaselineExposure (profileID) -
-					  (log (fNegative.Stage3Gain ()) / log (2.0));
+	fBaselineExposure = (fNegative.TotalBaselineExposure (profileID) -
+						 (log (fNegative.Stage3Gain ()) / log (2.0)));
+
+	real64 exposure = fParams.Exposure () + fBaselineExposure;
 	
 		{
 		
@@ -1018,29 +1021,29 @@ void dng_render_task::Start (uint32 threadCount,
 		
 		}
   
-    // Allocate mask buffer to hold one tile of mask data, if needed.
-    
-    if (fSrcMask)
-        {
-        
-        uint32 maskBufferSize = 0;
-        
-        if (!SafeUint32Mult (tileSize.h, tileSize.v, &maskBufferSize) ||
-            !SafeUint32Mult (maskBufferSize, (uint32) sizeof (real32), &maskBufferSize))
-            {
-            
-            ThrowOverflow ("Arithmetic overflow computing buffer size.");
-            
-            }
-    
-        for (uint32 threadIndex = 0; threadIndex < threadCount; threadIndex++)
-            {
-            
-            fMaskBuffer [threadIndex] . Reset (allocator->Allocate (maskBufferSize));
-            
-            }
-        
-        }
+	// Allocate mask buffer to hold one tile of mask data, if needed.
+	
+	if (fSrcMask)
+		{
+		
+		uint32 maskBufferSize = 0;
+		
+		if (!SafeUint32Mult (tileSize.h, tileSize.v, &maskBufferSize) ||
+			!SafeUint32Mult (maskBufferSize, (uint32) sizeof (real32), &maskBufferSize))
+			{
+			
+			ThrowOverflow ("Arithmetic overflow computing buffer size.");
+			
+			}
+	
+		for (uint32 threadIndex = 0; threadIndex < threadCount; threadIndex++)
+			{
+			
+			fMaskBuffer [threadIndex] . Reset (allocator->Allocate (maskBufferSize));
+			
+			}
+		
+		}
 
 	}
 							
@@ -1061,49 +1064,49 @@ void dng_render_task::ProcessArea (uint32 threadIndex,
 	real32 *tPtrG = tPtrR + srcCols;
 	real32 *tPtrB = tPtrG + srcCols;
 	
-    dng_pixel_buffer maskBuffer;
-        
-    if (fSrcMask)
-        {
-        
-        maskBuffer.fArea      = srcArea;
-        maskBuffer.fPlane     = 0;
-        maskBuffer.fPlanes    = 1;
-        maskBuffer.fRowStep   = srcArea.W ();
-        maskBuffer.fColStep   = 1;
-        maskBuffer.fPlaneStep = 0;
-        maskBuffer.fPixelType = ttFloat;
-        maskBuffer.fPixelSize = sizeof (real32);
-        maskBuffer.fData      = fMaskBuffer [threadIndex]->Buffer_real32 ();
-        maskBuffer.fDirty     = true;
-        
-        fSrcMask->Get (maskBuffer);
-         
-        }
+	dng_pixel_buffer maskBuffer;
+		
+	if (fSrcMask)
+		{
+		
+		maskBuffer.fArea	  = srcArea;
+		maskBuffer.fPlane	  = 0;
+		maskBuffer.fPlanes	  = 1;
+		maskBuffer.fRowStep	  = srcArea.W ();
+		maskBuffer.fColStep	  = 1;
+		maskBuffer.fPlaneStep = 0;
+		maskBuffer.fPixelType = ttFloat;
+		maskBuffer.fPixelSize = sizeof (real32);
+		maskBuffer.fData	  = fMaskBuffer [threadIndex]->Buffer_real32 ();
+		maskBuffer.fDirty	  = true;
+		
+		fSrcMask->Get (maskBuffer);
+		 
+		}
 
 	for (int32 srcRow = srcArea.t; srcRow < srcArea.b; srcRow++)
 		{
   
-        if (fNegative.Stage3BlackLevel ())
-            {
-            
-            for (uint32 plane = 0; plane < fSrcPlanes; plane++)
-                {
-                
-                real32 *sPtr = (real32 *)
-                               srcBuffer.DirtyPixel (srcRow,
-                                                     srcArea.l,
-                                                     plane);
+		if (fNegative.Stage3BlackLevel ())
+			{
+			
+			for (uint32 plane = 0; plane < fSrcPlanes; plane++)
+				{
+				
+				real32 *sPtr = (real32 *)
+							   srcBuffer.DirtyPixel (srcRow,
+													 srcArea.l,
+													 plane);
 
-                DoBaseline1DTable (sPtr,
-                                   sPtr,
-                                   srcCols,
-                                   fZeroOffsetRamp);
-                    
-                }
-            
-            }
-        
+				DoBaseline1DTable (sPtr,
+								   sPtr,
+								   srcCols,
+								   fZeroOffsetRamp);
+					
+				}
+			
+			}
+		
 		// First convert from camera native space to linear PhotoRGB,
 		// applying the white balance and camera profile.
 		
@@ -1111,8 +1114,8 @@ void dng_render_task::ProcessArea (uint32 threadIndex,
 		
 			const real32 *sPtrA = (const real32 *)
 								  srcBuffer.ConstPixel (srcRow,
-													    srcArea.l,
-													    0);
+														srcArea.l,
+														0);
 													   
 			if (fSrcPlanes == 1)
 				{
@@ -1136,14 +1139,14 @@ void dng_render_task::ProcessArea (uint32 threadIndex,
 					{
 					
 					DoBaselineABCtoRGB (sPtrA,
-									    sPtrB,
-									    sPtrC,
-									    tPtrR,
-									    tPtrG,
-									    tPtrB,
-									    srcCols,
-									    fCameraWhite,
-									    fCameraToRGB);
+										sPtrB,
+										sPtrC,
+										tPtrR,
+										tPtrG,
+										tPtrB,
+										srcCols,
+										fCameraWhite,
+										fCameraToRGB);
 					
 					}
 					
@@ -1153,15 +1156,15 @@ void dng_render_task::ProcessArea (uint32 threadIndex,
 					const real32 *sPtrD = sPtrC + srcBuffer.fPlaneStep;
 				
 					DoBaselineABCDtoRGB (sPtrA,
-									     sPtrB,
-									     sPtrC,
-									     sPtrD,
-									     tPtrR,
-									     tPtrG,
-									     tPtrB,
-									     srcCols,
-									     fCameraWhite,
-									     fCameraToRGB);
+										 sPtrB,
+										 sPtrC,
+										 sPtrD,
+										 tPtrR,
+										 tPtrG,
+										 tPtrB,
+										 srcCols,
+										 fCameraWhite,
+										 fCameraToRGB);
 					
 					}
 					
@@ -1187,6 +1190,38 @@ void dng_render_task::ProcessArea (uint32 threadIndex,
 				
 			}
 			
+		// Apply ProfileGainTableMap.
+		//
+		// This step should be normally be done after applying
+		// BaselineExposure. In this sample render pipeline, the
+		// BaselineExposure step is combined with other steps (such as black
+		// subtraction) into the exposure curve. Therefore, we choose to apply
+		// the ProfileGainTableMap before the exposure adjustment and obtain
+		// the correct result by effectively scaling the MapInputWeights
+		// parameter by the baseline exposure.
+
+		if (fNegative.HasProfileGainTableMap ())
+			{
+
+			const dng_rect activeArea = fNegative.Stage3Image ()->Bounds ();
+
+			const real32 exposureWeightGain = (real32) pow (2.0, fBaselineExposure);
+
+			DoBaselineProfileGainTableMap (tPtrR, // src
+										   tPtrG,
+										   tPtrB,
+										   tPtrR, // dst
+										   tPtrG,
+										   tPtrB,
+										   srcCols,	  // columns
+										   srcRow,	  // top of tile
+										   srcArea.l, // left of tile
+										   activeArea,
+										   exposureWeightGain,
+										   fNegative.ProfileGainTableMap ());
+										   
+			}
+
 		// Apply exposure curve.
 		
 		DoBaseline1DTable (tPtrR,
@@ -1203,7 +1238,7 @@ void dng_render_task::ProcessArea (uint32 threadIndex,
 						   tPtrB,
 						   srcCols,
 						   fExposureRamp);
-		
+
 		// Apply look table, if any.
 		
 		if (fLookTable.Get ())
@@ -1225,10 +1260,10 @@ void dng_render_task::ProcessArea (uint32 threadIndex,
 		// Apply baseline tone curve.
 		
 		DoBaselineRGBTone (tPtrR,
-					       tPtrG,
+						   tPtrG,
 						   tPtrB,
 						   tPtrR,
-					       tPtrG,
+						   tPtrG,
 						   tPtrB,
 						   srcCols,
 						   fToneCurve);
@@ -1294,32 +1329,32 @@ void dng_render_task::ProcessArea (uint32 threadIndex,
 							   
 			}
    
-        if (fSrcMask)
-            {
-            
-            const real32 *mPtr = maskBuffer.ConstPixel_real32 (srcRow,
-                                                               srcArea.l,
-                                                               0);
-                
-            for (uint32 dstPlane = 0; dstPlane < fDstPlanes; dstPlane++)
-                {
-                
-                real32 *dPtr = dstBuffer.DirtyPixel_real32 (dstRow,
-                                                            dstArea.l,
-                                                            dstPlane);
-                    
-                for (uint32 col = 0; col < srcCols; col++)
-                    {
-                    
-                    // White Matte
-                    
-                    dPtr [col] = 1.0f - (1.0f - dPtr [col]) * mPtr [col];
-                    
-                    }
-                    
-                }
+		if (fSrcMask)
+			{
+			
+			const real32 *mPtr = maskBuffer.ConstPixel_real32 (srcRow,
+															   srcArea.l,
+															   0);
+				
+			for (uint32 dstPlane = 0; dstPlane < fDstPlanes; dstPlane++)
+				{
+				
+				real32 *dPtr = dstBuffer.DirtyPixel_real32 (dstRow,
+															dstArea.l,
+															dstPlane);
+					
+				for (uint32 col = 0; col < srcCols; col++)
+					{
+					
+					// White Matte
+					
+					dPtr [col] = 1.0f - (1.0f - dPtr [col]) * mPtr [col];
+					
+					}
+					
+				}
 
-            }
+			}
 		
 		}
 	
@@ -1362,26 +1397,31 @@ dng_render::dng_render (dng_host &host,
 		
 	// Use default tone curve from profile if any.
 	
-	const dng_camera_profile *profile = fNegative.ProfileByID (dng_camera_profile_id ());
+	dng_camera_profile profile;
 	
-	if (profile && profile->ToneCurve ().IsValid ())
+	if (fNegative.GetProfileByID (dng_camera_profile_id (), profile))
 		{
-		
-		fProfileToneCurve.Reset (new dng_spline_solver);
-		
-		profile->ToneCurve ().Solve (*fProfileToneCurve.Get ());
-		
-		fToneCurve = fProfileToneCurve.Get ();
-		
-		}
+	
+		if (profile.ToneCurve ().IsValid ())
+			{
+			
+			fProfileToneCurve.Reset (new dng_spline_solver);
+			
+			profile.ToneCurve ().Solve (*fProfileToneCurve.Get ());
+			
+			fToneCurve = fProfileToneCurve.Get ();
+			
+			}
 
-	// Turn off default shadow mapping if requested by profile.
+		// Turn off default shadow mapping if requested by profile.
 
-	if (profile && (profile->DefaultBlackRender () == defaultBlackRender_None))
-		{
-		
-		fShadows = 0.0;
-		
+		if (profile.DefaultBlackRender () == defaultBlackRender_None)
+			{
+			
+			fShadows = 0.0;
+			
+			}
+			
 		}
 	
 	}
@@ -1393,13 +1433,13 @@ dng_image * dng_render::Render ()
 	
 	const dng_image *srcImage = fNegative.Stage3Image ();
  
-    const dng_image *srcMask = fNegative.TransparencyMask ();
+	const dng_image *srcMask = fNegative.TransparencyMask ();
 	
 	dng_rect srcBounds = fNegative.DefaultCropArea ();
  
 	dng_point dstSize;
 	
-	dstSize.h =	fNegative.DefaultFinalWidth  ();
+	dstSize.h =	fNegative.DefaultFinalWidth	 ();
 	dstSize.v = fNegative.DefaultFinalHeight ();
 								   
 	if (MaximumSize ())
@@ -1428,13 +1468,13 @@ dng_image * dng_render::Render ()
 		
 	AutoPtr<dng_image> tempImage;
  
-    AutoPtr<dng_image> tempMask;
+	AutoPtr<dng_image> tempMask;
 	
 	if (srcBounds.Size () != dstSize)
 		{
 
 		tempImage.Reset (fHost.Make_dng_image (dstSize,
-											   srcImage->Planes    (),
+											   srcImage->Planes	   (),
 											   srcImage->PixelType ()));
 											 
 		ResampleImage (fHost,
@@ -1443,24 +1483,24 @@ dng_image * dng_render::Render ()
 					   srcBounds,
 					   tempImage->Bounds (),
 					   dng_resample_bicubic::Get ());
-        
-        if (srcMask != NULL)
-            {
-            
-            tempMask.Reset (fHost.Make_dng_image (dstSize,
-                                                  srcMask->Planes    (),
-                                                  srcMask->PixelType ()));
-                
-            ResampleImage (fHost,
-                           *srcMask,
-                           *tempMask.Get (),
-                           srcBounds,
-                           tempMask->Bounds (),
-                           dng_resample_bicubic::Get ());
-                
-            srcMask = tempMask.Get ();
+		
+		if (srcMask != NULL)
+			{
+			
+			tempMask.Reset (fHost.Make_dng_image (dstSize,
+												  srcMask->Planes	 (),
+												  srcMask->PixelType ()));
+				
+			ResampleImage (fHost,
+						   *srcMask,
+						   *tempMask.Get (),
+						   srcBounds,
+						   tempMask->Bounds (),
+						   dng_resample_bicubic::Get ());
+				
+			srcMask = tempMask.Get ();
  
-            }
+			}
 						   
 		srcImage = tempImage.Get ();
 		
@@ -1475,7 +1515,7 @@ dng_image * dng_render::Render ()
 													   FinalPixelType ()));
 													 
 	dng_render_task task (*srcImage,
-                          srcMask,
+						  srcMask,
 						  *dstImage.Get (),
 						  fNegative,
 						  *this,

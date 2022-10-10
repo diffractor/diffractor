@@ -10,20 +10,18 @@
 #pragma once
 #include "model_propery.h"
 
-uint64_t av_get_def_channel_layout(int num_channels);
+typedef struct AVChannelLayout;
+using channel_layout_ptr = std::shared_ptr<AVChannelLayout>;
+
+channel_layout_ptr av_get_def_channel_layout(const int num_channels);
 
 struct audio_info_t
 {
 	uint32_t sample_rate = 0;
 	prop::audio_sample_t sample_fmt = prop::audio_sample_t::none;
-	uint64_t channel_layout = 0;
+	channel_layout_ptr channel_layout;
 
-	friend bool operator==(const audio_info_t& lhs, const audio_info_t& rhs)
-	{
-		return lhs.sample_rate == rhs.sample_rate
-			&& lhs.sample_fmt == rhs.sample_fmt
-			&& lhs.channel_layout == rhs.channel_layout;
-	}
+	friend bool operator==(const audio_info_t& lhs, const audio_info_t& rhs);
 
 	friend bool operator!=(const audio_info_t& lhs, const audio_info_t& rhs)
 	{

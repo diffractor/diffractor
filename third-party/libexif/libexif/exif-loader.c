@@ -52,7 +52,6 @@ typedef uintmax_t ssize_t;  /* last resort, chux suggestion */
 #else
 #error platform has exotic SIZE_MAX
 #endif
-
 #undef JPEG_MARKER_DCT
 #define JPEG_MARKER_DCT  0xc0
 #undef JPEG_MARKER_DHT

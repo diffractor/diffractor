@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -17,6 +17,7 @@
 
 /*****************************************************************************/
 
+#include "dng_flags.h"
 #include "dng_types.h"
 
 /*****************************************************************************/
@@ -26,21 +27,25 @@
 
 const uint32 kMaxDNGPreviews = 20;
 
+/// Maximum supported number of semantic masks.
+
+const uint32 kMaxSemanticMasks = 100;
+
 /// The maximum number of SubIFDs that will be parsed.
 
-const uint32 kMaxSubIFDs = kMaxDNGPreviews + 1;
+const uint32 kMaxSubIFDs = kMaxDNGPreviews + kMaxSemanticMasks + 1;
 
 /// The maximum number of chained IFDs that will be parsed.
 
 const uint32 kMaxChainedIFDs = 10;
 
-/// The maximum number of samples per pixel.
+/// The maximum number of samples per pixel.  (CMYK + transparency needs 5)
 
-const uint32 kMaxSamplesPerPixel = 4;
+const uint32 kMaxSamplesPerPixel = 5;
 
 /// Maximum number of color planes.
 
-const uint32 kMaxColorPlanes = kMaxSamplesPerPixel;
+const uint32 kMaxColorPlanes = 4;
 
 /// The maximum size of a CFA repeating pattern.
 
@@ -56,7 +61,11 @@ const uint32 kMaxMaskedAreas = 4;
 
 /// The maximum image size supported (pixels per side).
 
+#if qDNGBigImage
+const uint32 kMaxImageSide = 300000;
+#else
 const uint32 kMaxImageSide = 65000;
+#endif
 
 /// The maximum number of tone curve points supported.
 
@@ -74,8 +83,28 @@ const uint32 kMaxMPThreads = 8;
 
 const real64 kMaxStage3BlackLevelNormalized = 0.2;
 
+/// Maximum supported number of points in a ProfileGainTableMap. Currently set
+/// to 64 megabytes.
+
+const uint32 kMaxProfileGainTableMapPoints = 16777216;
+
+/// Minimum and maximum gain values in a ProfileGainTableMap. The
+/// specification only requires that values be positive, but this SDK
+/// implementation assumes that values outside the following range are errors.
+
+const real32 kProfileGainTableMap_MinGainValue = 0.000244140625f; // 1 / 4096
+const real32 kProfileGainTableMap_MaxGainValue = 4096.0f;
+
+const uint32 kMinSpectrumSamples = 2;
+
+/// The maximum number of spectral power samples for an illuminant.
+/// A sampling that covers 360 to 730 nm in 1 nm steps is just 371 samples,
+/// so 1000 seems more than enough.
+
+const uint32 kMaxSpectrumSamples = 1000;
+
 /*****************************************************************************/
 
-#endif
+#endif	// __dng_sdk_limits__
 	
 /*****************************************************************************/

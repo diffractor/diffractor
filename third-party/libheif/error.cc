@@ -27,16 +27,12 @@ const char heif::Error::kSuccess[] = "Success";
 const char* cUnknownError = "Unknown error";
 
 
-heif::Error::Error()
-    : error_code(heif_error_Ok),
-      sub_error_code(heif_suberror_Unspecified)
-{
-}
+heif::Error::Error() = default;
 
 
 heif::Error::Error(heif_error_code c,
                    heif_suberror_code sc,
-                   std::string msg)
+                   const std::string& msg)
     : error_code(c),
       sub_error_code(sc),
       message(msg)
@@ -149,6 +145,12 @@ const char* heif::Error::get_error_string(heif_suberror_code err)
       return "Invalid pixi box";
     case heif_suberror_Wrong_tile_image_pixel_depth:
       return "Wrong tile image pixel depth";
+    case heif_suberror_Unknown_NCLX_color_primaries:
+      return "Unknown NCLX color primaries";
+    case heif_suberror_Unknown_NCLX_transfer_characteristics:
+      return "Unknown NCLX transfer characteristics";
+    case heif_suberror_Unknown_NCLX_matrix_coefficients:
+      return "Unknown NCLX matrix coefficients";
 
 
       // --- Memory_allocation_error ---

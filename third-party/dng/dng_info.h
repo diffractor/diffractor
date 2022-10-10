@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -55,15 +55,17 @@ class dng_info: private dng_uncopyable
 		
 		int32 fMaskIndex;
   
-        int32 fDepthIndex;
+		int32 fDepthIndex;
 			
-        int32 fEnhancedIndex;
-        
-        std::vector <dng_ifd *> fIFD;
+		int32 fEnhancedIndex;
 
-        std::vector <dng_ifd *> fChainedIFD;
+		std::vector<uint32> fSemanticMaskIndices;
+		
+		std::vector <dng_ifd *> fIFD;
 
-        std::vector <std::vector <dng_ifd *> > fChainedSubIFD;
+		std::vector <dng_ifd *> fChainedIFD;
+
+		std::vector <std::vector <dng_ifd *> > fChainedSubIFD;
 
 	protected:
 	
@@ -75,29 +77,29 @@ class dng_info: private dng_uncopyable
 		
 		virtual ~dng_info ();
 
-        /// Returns the number of parsed SubIFDs (including the main IFD).
+		/// Returns the number of parsed SubIFDs (including the main IFD).
 
-        uint32 IFDCount () const
-            {
-            return (uint32) fIFD.size ();
-            }
+		uint32 IFDCount () const
+			{
+			return (uint32) fIFD.size ();
+			}
 
-        /// Returns the number of chained IFDs.
+		/// Returns the number of chained IFDs.
 
-        uint32 ChainedIFDCount () const
-            {
-            return (uint32) fChainedIFD.size ();
-            }
+		uint32 ChainedIFDCount () const
+			{
+			return (uint32) fChainedIFD.size ();
+			}
 
-        /// Returns number SubIFDs for a chained IFD.
+		/// Returns number SubIFDs for a chained IFD.
 
-        uint32 ChainedSubIFDCount (uint32 chainIndex) const
-            {
-            if (chainIndex >= fChainedSubIFD.size ())
-                return 0;
-            else
-                return (uint32) fChainedSubIFD [chainIndex].size ();
-            }
+		uint32 ChainedSubIFDCount (uint32 chainIndex) const
+			{
+			if (chainIndex >= fChainedSubIFD.size ())
+				return 0;
+			else
+				return (uint32) fChainedSubIFD [chainIndex].size ();
+			}
 
 		/// Read dng_info from a dng_stream
 		/// \param host DNG host used for progress updating, abort testing, buffer allocation, etc.
@@ -122,51 +124,51 @@ class dng_info: private dng_uncopyable
 		virtual void ParseTag (dng_host &host,
 							   dng_stream &stream,
 							   dng_exif *exif,
-						 	   dng_shared *shared,
-						 	   dng_ifd *ifd,
-						 	   uint32 parentCode,
-						 	   uint32 tagCode,
-						 	   uint32 tagType,
-						 	   uint32 tagCount,
-						 	   uint64 tagOffset,
-						 	   int64 offsetDelta);
+							   dng_shared *shared,
+							   dng_ifd *ifd,
+							   uint32 parentCode,
+							   uint32 tagCode,
+							   uint32 tagType,
+							   uint32 tagCount,
+							   uint64 tagOffset,
+							   int64 offsetDelta);
 
 		virtual bool ValidateIFD (dng_stream &stream,
-						 	      uint64 ifdOffset,
-						 	      int64 offsetDelta);
+								  uint64 ifdOffset,
+								  int64 offsetDelta);
 
 		virtual void ParseIFD (dng_host &host,
 							   dng_stream &stream,
 							   dng_exif *exif,
-						 	   dng_shared *shared,
-						 	   dng_ifd *ifd,
-						 	   uint64 ifdOffset,
-						 	   int64 offsetDelta,
-						 	   uint32 parentCode);
+							   dng_shared *shared,
+							   dng_ifd *ifd,
+							   uint64 ifdOffset,
+							   int64 offsetDelta,
+							   uint32 parentCode);
 
 		virtual bool ParseMakerNoteIFD (dng_host &host,
 										dng_stream &stream,
 										uint64 ifdSize,
-								 	    uint64 ifdOffset,
-								 	    int64 offsetDelta,
-								 	    uint64 minOffset,
-								 	    uint64 maxOffset,
-								 	    uint32 parentCode);
+										uint64 ifdOffset,
+										int64 offsetDelta,
+										uint64 minOffset,
+										uint64 maxOffset,
+										uint32 parentCode);
 
 		virtual void ParseMakerNote (dng_host &host,
 									 dng_stream &stream,
-							   		 uint32 makerNoteCount,
-							   		 uint64 makerNoteOffset,
-							   		 int64 offsetDelta,
-							   		 uint64 minOffset,
-							   		 uint64 maxOffset);
-							   		 
+									 uint32 makerNoteCount,
+									 uint64 makerNoteOffset,
+									 int64 offsetDelta,
+									 uint64 minOffset,
+									 uint64 maxOffset);
+									 
 		virtual void ParseSonyPrivateData (dng_host &host,
 										   dng_stream &stream,
 										   uint64 count,
 										   uint64 oldOffset,
 										   uint64 newOffset);
-							   		 
+									 
 		virtual void ParseDNGPrivateData (dng_host &host,
 										  dng_stream &stream);
 

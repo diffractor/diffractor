@@ -40,6 +40,7 @@ extern "C" {
 //  1.1          1         1          1
 //  1.4          1         1          2
 //  1.8          1         2          2
+//  1.13         2         3          2
 
 
 // ====================================================================================================
@@ -50,8 +51,8 @@ extern "C" {
 
 struct heif_decoder_plugin
 {
-  // API version supported by this plugin
-  int plugin_api_version; // current version: 1
+  // API version supported by this plugin (see table above for supported versions)
+  int plugin_api_version;
 
 
   // --- version 1 functions ---
@@ -87,6 +88,8 @@ struct heif_decoder_plugin
 
 
   // --- version 2 functions will follow below ... ---
+
+  void (*set_strict_decoding)(void* decoder, int flag);
 
   // If not NULL, this can provide a specialized function to convert YCbCr to sRGB, because
   // only the codec itself knows how to interpret the chroma samples and their locations.
@@ -124,8 +127,8 @@ enum heif_image_input_class
 
 struct heif_encoder_plugin
 {
-  // API version supported by this plugin
-  int plugin_api_version; // current version: 2
+  // API version supported by this plugin (see table above for supported versions)
+  int plugin_api_version;
 
 
   // --- version 1 functions ---
@@ -229,6 +232,7 @@ struct heif_encoder_plugin
 
 // For use only by the encoder plugins.
 // Application programs should use the access functions.
+// NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 struct heif_encoder_parameter
 {
   int version; // current version: 2
@@ -275,6 +279,18 @@ extern struct heif_error heif_error_ok;
 extern struct heif_error heif_error_unsupported_parameter;
 extern struct heif_error heif_error_invalid_parameter_value;
 
+#define HEIF_WARN_OR_FAIL(strict, image, cmd, cleanupBlock) \
+{ struct heif_error e = cmd;                  \
+  if (e.code != heif_error_Ok) {              \
+    if (strict) {                             \
+      cleanupBlock                            \
+      return e;                               \
+    }                                         \
+    else {                                    \
+      heif_image_add_decoding_warning(image, e); \
+    }                                         \
+  }                                           \
+}
 #ifdef __cplusplus
 }
 #endif

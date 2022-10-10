@@ -428,7 +428,7 @@ struct string_index_t
 
 		str::chached_string_storage_t* result = nullptr;
 
-		const auto exists = [&result](str::chached_string_storage_t* v) { result = v; };
+		const auto exists = [&result](const std::pair<const string_index_t::K, string_index_t::V>& kv) { result = kv.second; };
 		const auto emplace = [this, sv, &result](const storage_t::constructor& ctor)
 		{
 			result = make_entry(sv);

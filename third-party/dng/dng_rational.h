@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -134,6 +134,8 @@ class dng_urational
 		void Set_real64 (real64 x, uint32 dd = 0);
 
 		void ReduceByFactor (uint32 factor);
+		
+		void ScaleBy (real64 scale);
 		
 	};
 

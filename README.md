@@ -19,9 +19,24 @@ Diffractor has a built-in test runner. If the application is started from Visual
 
 ## Dependancies (3rd party libraries)
  
+- [bzip2](https://sourceware.org/bzip2/) 1.0.8
+- [dng-sdk](https://helpx.adobe.com/camera-raw/digital-negative.html) 1.6
+- [expat](https://libexpat.github.io/) 2.4.9 
 - [ffmpeg](https://ffmpeg.org/) 5.0.1
-- [libjpeg-turbo](https://github.com/libjpeg-turbo/libjpeg-turbo) 2.1.3
-- [sqlite](https://www.sqlite.org/index.html) 3.38.5 
-- [libwebp](https://github.com/webmproject/libwebp) 1.2.2
-- [hunspell](https://github.com/hunspell/hunspell) 1.7.0
-- [LibRaw](https://www.libraw.org) 0.20
+- [hunspell](https://github.com/hunspell/hunspell) 1.7.1
+- [libde265](https://github.com/strukturag/libde265) 1.0.8
+- [libebml](https://github.com/Matroska-Org/libebml) 1.4.3
+- [libexif](https://github.com/libexif/libexif) 0.6.24
+- [libheif](https://github.com/strukturag/libheif) 1.13.0
+- [libjpeg-turbo](https://github.com/libjpeg-turbo/libjpeg-turbo) 2.1.4
+- [liblzma](https://tukaani.org/xz/) 5.2.7
+- [libmatroska](https://github.com/Matroska-Org/libmatroska) 1.7.0
+- [libopenmpt](https://lib.openmpt.org) 0.6.6
+- [LibPng](http://www.libpng.org/pub/png/libpng.html) 1.6.38
+- [LibRaw](https://www.libraw.org) 0.20.2
+- [libwebp](https://github.com/webmproject/libwebp) 1.2.4
+- [minizip-ng](https://github.com/zlib-ng/minizip-ng) 3.0.6
+- [parallel-hashmap](https://github.com/greg7mdp/parallel-hashmap) 1.3.8
+- [sqlite](https://www.sqlite.org/index.html) 3.39.4
+- [utf-cpp](https://github.com/nemtrif/utfcpp) 3.2.1
+- [zlib-ng](https://github.com/zlib-ng/zlib-ng) 2.0.6

@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -22,7 +22,10 @@
 #include "dng_resample.h"
 #include "dng_shared.h"
 #include "dng_simple_image.h"
+
+#if qDNGUseXMP
 #include "dng_xmp.h"
+#endif
 
 /*****************************************************************************/
 
@@ -32,16 +35,17 @@ dng_host::dng_host (dng_memory_allocator *allocator,
 	:	fAllocator	(allocator)
 	,	fSniffer	(sniffer)
 	
-	,	fNeedsMeta  		(true)
-	,	fNeedsImage 		(true)
-	,	fForPreview 		(false)
-	,	fMinimumSize 		(0)
-	,	fPreferredSize      (0)
-	,	fMaximumSize    	(0)
+	,	fNeedsMeta			(true)
+	,	fNeedsImage			(true)
+	,	fForPreview			(false)
+	,	fMinimumSize		(0)
+	,	fPreferredSize		(0)
+	,	fMaximumSize		(0)
 	,	fCropFactor			(1.0)
 	,	fSaveDNGVersion		(dngVersion_None)
 	,	fSaveLinearDNG		(false)
 	,	fKeepOriginalFile	(false)
+	,	fIgnoreEnhanced		(false)
 	,	fForFastSaveToDNG	(false)
 	,	fFastSaveToDNGSize	(0)
 	,	fPreserveStage2		(false)
@@ -105,7 +109,7 @@ void dng_host::ValidateSizes ()
 	
 	if (MaximumSize ())
 		{
-		SetMinimumSize   (Min_uint32 (MinimumSize   (), MaximumSize ()));
+		SetMinimumSize	 (Min_uint32 (MinimumSize	(), MaximumSize ()));
 		SetPreferredSize (Min_uint32 (PreferredSize (), MaximumSize ()));
 		}
 		
@@ -146,7 +150,7 @@ void dng_host::ValidateSizes ()
 			}
 			
 		// Many sensors are near a multiple of 1024 pixels in size, but after
-		// the default crop, they are a just under.  We can get an extra factor
+		// the default crop, they are a just under.	 We can get an extra factor
 		// of size reduction if we allow a slight undershoot in the final size
 		// when computing large previews.
 		
@@ -276,14 +280,14 @@ bool dng_host::IsTransientError (dng_error_code code)
 
 void dng_host::PerformAreaTask (dng_area_task &task,
 								const dng_rect &area,
-                                dng_area_task_progress *progress)
+								dng_area_task_progress *progress)
 	{
 	
 	dng_area_task::Perform (task,
 							area,
 							&Allocator (),
 							Sniffer (),
-                            progress);
+							progress);
 	
 	}
 		
@@ -316,6 +320,10 @@ dng_exif * dng_host::Make_dng_exif ()
 
 /*****************************************************************************/
 
+#if qDNGUseXMP
+
+/*****************************************************************************/
+
 dng_xmp * dng_host::Make_dng_xmp ()
 	{
 	
@@ -331,6 +339,10 @@ dng_xmp * dng_host::Make_dng_xmp ()
 	return result;
 	
 	}
+
+/*****************************************************************************/
+
+#endif	// qDNGUseXMP
 
 /*****************************************************************************/
 
@@ -419,7 +431,16 @@ dng_opcode * dng_host::Make_dng_opcode (uint32 opcodeID,
 			break;
 			
 			}
+
+		case dngOpcode_WarpRectilinear2:
+			{
 			
+			result = new dng_opcode_WarpRectilinear2 (stream);
+			
+			break;
+			
+			}
+
 		case dngOpcode_WarpFisheye:
 			{
 			
@@ -498,7 +519,7 @@ dng_opcode * dng_host::Make_dng_opcode (uint32 opcodeID,
 			{
 			
 			result = new dng_opcode_DeltaPerRow (*this,
-											     stream);
+												 stream);
 			
 			break;
 			
@@ -508,7 +529,7 @@ dng_opcode * dng_host::Make_dng_opcode (uint32 opcodeID,
 			{
 			
 			result = new dng_opcode_DeltaPerColumn (*this,
-											        stream);
+													stream);
 			
 			break;
 			
@@ -518,7 +539,7 @@ dng_opcode * dng_host::Make_dng_opcode (uint32 opcodeID,
 			{
 			
 			result = new dng_opcode_ScalePerRow (*this,
-											     stream);
+												 stream);
 			
 			break;
 			
@@ -528,7 +549,7 @@ dng_opcode * dng_host::Make_dng_opcode (uint32 opcodeID,
 			{
 			
 			result = new dng_opcode_ScalePerColumn (*this,
-											        stream);
+													stream);
 			
 			break;
 			

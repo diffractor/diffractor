@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -40,8 +40,8 @@ class dng_memory_stream: public dng_stream
 		dng_memory_block **fPageList;
 		
 		uint64 fMemoryStreamLength;
-        
-        uint64 fLengthLimit;
+		
+		uint64 fLengthLimit;
 		
 	public:
 
@@ -55,13 +55,13 @@ class dng_memory_stream: public dng_stream
 						   uint32 pageSize = 64 * 1024);
 						   
 		virtual ~dng_memory_stream ();
-        
-        /// Sets a maximum length limit.
-        
-        void SetLengthLimit (uint64 limit)
-            {
-            fLengthLimit = limit;
-            }
+		
+		/// Sets a maximum length limit.
+		
+		void SetLengthLimit (uint64 limit)
+			{
+			fLengthLimit = limit;
+			}
 
 		/// Copy a specified number of bytes to a target stream.
 		/// \param dstStream The target stream.

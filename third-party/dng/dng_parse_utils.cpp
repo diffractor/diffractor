@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -21,7 +21,7 @@
 
 /*****************************************************************************/
 
-#if qDNGValidate
+#if qDNGValidate || qDNGDebug
 
 /*****************************************************************************/
 
@@ -34,8 +34,8 @@ struct dng_name_table
 /*****************************************************************************/
 
 static const char * LookupName (uint32 key,
-						 		const dng_name_table *table,
-						 		uint32 table_entries)
+								const dng_name_table *table,
+								uint32 table_entries)
 	{
 	
 	for (uint32 index = 0; index < table_entries; index++)
@@ -105,13 +105,13 @@ const char * LookupParentCode (uint32 parentCode)
 		{	tcFoveonX3F,				"Foveon X3F"					},
 		{	tcJPEG,						"JPEG"							},
 		{	tcAdobePSD,					"Adobe PSD"						},
-		{	tcPNG,                      "PNG"						    },
+		{	tcPNG,						"PNG"							},
 		{	tcHEIC,						"HEIC"							}
 		};
 
 	const char *name = LookupName (parentCode,
 								   kParentCodeNames,
-								   sizeof (kParentCodeNames    ) /
+								   sizeof (kParentCodeNames	   ) /
 								   sizeof (kParentCodeNames [0]));
 								   
 	if (name)
@@ -239,9 +239,9 @@ const char * LookupTagCode (uint32 parentCode,
 		{	tcExifVersion,						"ExifVersion"					},
 		{	tcDateTimeOriginal,					"DateTimeOriginal"				},
 		{	tcDateTimeDigitized,				"DateTimeDigitized"				},
-        {   tcOffsetTime,                       "OffsetTime"                    },
-        {   tcOffsetTimeOriginal,               "OffsetTimeOriginal"            },
-        {   tcOffsetTimeDigitized,              "OffsetTimeDigitized"           },
+		{	tcOffsetTime,						"OffsetTime"					},
+		{	tcOffsetTimeOriginal,				"OffsetTimeOriginal"			},
+		{	tcOffsetTimeDigitized,				"OffsetTimeDigitized"			},
 		{	tcComponentsConfiguration,			"ComponentsConfiguration"		},
 		{	tcCompressedBitsPerPixel,			"CompressedBitsPerPixel"		},
 		{	tcShutterSpeedValue,				"ShutterSpeedValue"				},
@@ -273,12 +273,12 @@ const char * LookupTagCode (uint32 parentCode,
 		{	tcSubsecTimeOriginal,				"SubsecTimeOriginal"			},
 		{	tcSubsecTimeDigitized,				"SubsecTimeDigitized"			},
 		{	tcAdobeLayerData,					"AdobeLayerData"				},
-        {   tcTemperature,                      "Temperature"                   },
-        {   tcHumidity,                         "Humidity"                      },
-        {   tcPressure,                         "Pressure"                      },
-        {   tcWaterDepth,                       "WaterDepth"                    },
-        {   tcAcceleration,                     "Acceleration"                  },
-        {   tcCameraElevationAngle,             "CameraElevationAngle"          },
+		{	tcTemperature,						"Temperature"					},
+		{	tcHumidity,							"Humidity"						},
+		{	tcPressure,							"Pressure"						},
+		{	tcWaterDepth,						"WaterDepth"					},
+		{	tcAcceleration,						"Acceleration"					},
+		{	tcCameraElevationAngle,				"CameraElevationAngle"			},
 		{	tcFlashPixVersion,					"FlashPixVersion"				},
 		{	tcColorSpace,						"ColorSpace"					},
 		{	tcPixelXDimension,					"PixelXDimension"				},
@@ -335,10 +335,13 @@ const char * LookupTagCode (uint32 parentCode,
 		{	tcDefaultUserCrop,					"DefaultUserCrop"				},
 		{	tcColorMatrix1,						"ColorMatrix1"					},
 		{	tcColorMatrix2,						"ColorMatrix2"					},
+		{	tcColorMatrix3,						"ColorMatrix3"					},
 		{	tcCameraCalibration1,				"CameraCalibration1"			},
 		{	tcCameraCalibration2,				"CameraCalibration2"			},
+		{	tcCameraCalibration3,				"CameraCalibration3"			},
 		{	tcReductionMatrix1,					"ReductionMatrix1"				},
 		{	tcReductionMatrix2,					"ReductionMatrix2"				},
+		{	tcReductionMatrix3,					"ReductionMatrix3"				},
 		{	tcAnalogBalance,					"AnalogBalance"					},
 		{	tcAsShotNeutral,					"AsShotNeutral"					},
 		{	tcAsShotWhiteXY,					"AsShotWhiteXY"					},
@@ -356,6 +359,10 @@ const char * LookupTagCode (uint32 parentCode,
 		{	tcMakerNoteSafety,					"MakerNoteSafety"				},
 		{	tcCalibrationIlluminant1,			"CalibrationIlluminant1"		},
 		{	tcCalibrationIlluminant2,			"CalibrationIlluminant2"		},
+		{	tcCalibrationIlluminant3,			"CalibrationIlluminant3"		},
+		{	tcIlluminantData1,					"IlluminantData1"				},
+		{	tcIlluminantData2,					"IlluminantData2"				},
+		{	tcIlluminantData3,					"IlluminantData3"				},
 		{	tcBestQualityScale,					"BestQualityScale"				},
 		{	tcRawDataUniqueID,					"RawDataUniqueID"				},
 		{	tcOriginalRawFileName,				"OriginalRawFileName"			},
@@ -376,16 +383,18 @@ const char * LookupTagCode (uint32 parentCode,
 		{	tcProfileHueSatMapDims,				"ProfileHueSatMapDims"			},
 		{	tcProfileHueSatMapData1,			"ProfileHueSatMapData1"			},
 		{	tcProfileHueSatMapData2,			"ProfileHueSatMapData2"			},
+		{	tcProfileHueSatMapData3,			"ProfileHueSatMapData3"			},
 		{	tcProfileHueSatMapEncoding,			"ProfileHueSatMapEncoding"		},
 		{	tcProfileToneCurve,					"ProfileToneCurve"				},
 		{	tcProfileEmbedPolicy,				"ProfileEmbedPolicy"			},
 		{	tcProfileCopyright,					"ProfileCopyright"				},
 		{	tcForwardMatrix1,					"ForwardMatrix1"				},
 		{	tcForwardMatrix2,					"ForwardMatrix2"				},
+		{	tcForwardMatrix3,					"ForwardMatrix3"				},
 		{	tcPreviewApplicationName,			"PreviewApplicationName"		},
 		{	tcPreviewApplicationVersion,		"PreviewApplicationVersion"		},
-		{	tcPreviewSettingsName,				"PreviewSettingsName"		    },
-		{	tcPreviewSettingsDigest,			"PreviewSettingsDigest"		    },
+		{	tcPreviewSettingsName,				"PreviewSettingsName"			},
+		{	tcPreviewSettingsDigest,			"PreviewSettingsDigest"			},
 		{	tcPreviewColorSpace,				"PreviewColorSpace"				},
 		{	tcPreviewDateTime,					"PreviewDateTime"				},
 		{	tcRawImageDigest,					"RawImageDigest"				},
@@ -411,15 +420,22 @@ const char * LookupTagCode (uint32 parentCode,
 		{	tcNewRawImageDigest,				"NewRawImageDigest"				},
 		{	tcRawToPreviewGain,					"RawToPreviewGain"				},
 		{	tcCacheBlob,						"CacheBlob"						},
-        {   tcCacheVersion,                     "CacheVersion"                  },
-        {   tcDefaultUserCrop,                  "DefaultUserCrop"               },
-        {   tcDepthFormat,                      "DepthFormat"                   },
-        {   tcDepthNear,                        "DepthNear"                     },
-        {   tcDepthFar,                         "DepthFar"                      },
-        {   tcDepthUnits,                       "DepthUnits"                    },
-        {   tcDepthMeasureType,                 "DepthMeasureType"              },
-        {   tcEnhanceParams,                    "EnhanceParams"                 },
- 		{	tcKodakKDCPrivateIFD,				"KodakKDCPrivateIFD"			}
+		{	tcCacheVersion,						"CacheVersion"					},
+		{	tcDefaultUserCrop,					"DefaultUserCrop"				},
+		{	tcDepthFormat,						"DepthFormat"					},
+		{	tcDepthNear,						"DepthNear"						},
+		{	tcDepthFar,							"DepthFar"						},
+		{	tcDepthUnits,						"DepthUnits"					},
+		{	tcDepthMeasureType,					"DepthMeasureType"				},
+		{	tcEnhanceParams,					"EnhanceParams"					},
+		{	tcProfileGainTableMap,				"ProfileGainTableMap"			},
+		{	tcRGBTablesDraft,					"RGBTablesDraft"				},
+		{	tcRGBTables,						"RGBTables"						},
+		{	tcBigTableDigests,					"BigTableDigests"				},
+		{	tcBigTableOffsets,					"BigTableOffsets"				},
+		{	tcBigTableByteCounts,				"BigTableByteCounts"			},
+		{	tcMaskSubArea,						"MaskSubArea"					},
+		{	tcKodakKDCPrivateIFD,				"KodakKDCPrivateIFD"			}
 		};
 
 	const dng_name_table kGPSTagNames [] =
@@ -481,16 +497,16 @@ const char * LookupTagCode (uint32 parentCode,
 
 	const char *name = NULL;
 	
-	if (parentCode == 0         										 ||
-		parentCode == tcExifIFD 										 ||
-		parentCode == tcLeafMOS 										 ||
-		(parentCode >= tcFirstSubIFD     && parentCode <= tcLastSubIFD)  ||
+	if (parentCode == 0													 ||
+		parentCode == tcExifIFD											 ||
+		parentCode == tcLeafMOS											 ||
+		(parentCode >= tcFirstSubIFD	 && parentCode <= tcLastSubIFD)	 ||
 		(parentCode >= tcFirstChainedIFD && parentCode <= tcLastChainedIFD))
 		{
 		
 		name = LookupName (tagCode,
 						   kTagNames,
-						   sizeof (kTagNames    ) /
+						   sizeof (kTagNames	) /
 						   sizeof (kTagNames [0]));
 						   
 		}
@@ -500,7 +516,7 @@ const char * LookupTagCode (uint32 parentCode,
 		
 		name = LookupName (tagCode,
 						   kGPSTagNames,
-						   sizeof (kGPSTagNames    ) /
+						   sizeof (kGPSTagNames	   ) /
 						   sizeof (kGPSTagNames [0]));
 
 		}
@@ -510,7 +526,7 @@ const char * LookupTagCode (uint32 parentCode,
 								   
 		name = LookupName (tagCode,
 						   kInteroperabilityTagNames,
-						   sizeof (kInteroperabilityTagNames    ) /
+						   sizeof (kInteroperabilityTagNames	) /
 						   sizeof (kInteroperabilityTagNames [0]));
 						   
 		}
@@ -520,7 +536,7 @@ const char * LookupTagCode (uint32 parentCode,
 								   
 		name = LookupName (tagCode,
 						   kFujiTagNames,
-						   sizeof (kFujiTagNames    ) /
+						   sizeof (kFujiTagNames	) /
 						   sizeof (kFujiTagNames [0]));
 						   
 		}
@@ -530,7 +546,7 @@ const char * LookupTagCode (uint32 parentCode,
 								   
 		name = LookupName (tagCode,
 						   kContaxTagNames,
-						   sizeof (kContaxTagNames    ) /
+						   sizeof (kContaxTagNames	  ) /
 						   sizeof (kContaxTagNames [0]));
 						   
 		}
@@ -553,7 +569,7 @@ const char * LookupTagCode (uint32 parentCode,
 		char c1 = (char) ((tagCode >> 24) & 0xFF);
 		char c2 = (char) ((tagCode >> 16) & 0xFF);
 		char c3 = (char) ((tagCode >>  8) & 0xFF);
-		char c4 = (char) ((tagCode      ) & 0xFF);
+		char c4 = (char) ((tagCode		) & 0xFF);
 		
 		if (c1 < ' ') c1 = '_';
 		if (c2 < ' ') c2 = '_';
@@ -604,12 +620,15 @@ const char * LookupTagType (uint32 tagType)
 		{	ttDouble,		"Double"	},
 		{	ttIFD,			"IFD"		},
 		{	ttUnicode,		"Unicode"	},
-		{	ttComplex,		"Complex"	}
+		{	ttComplex,		"Complex"	},
+		{	ttLong8,		"Long8"		},
+		{	ttSLong8,		"SLong8"	},
+		{	ttIFD8,			"IFD8"		}
 		};
 
 	const char *name = LookupName (tagType,
 								   kTagTypeNames,
-								   sizeof (kTagTypeNames    ) /
+								   sizeof (kTagTypeNames	) /
 								   sizeof (kTagTypeNames [0]));
 								   
 	if (name)
@@ -638,13 +657,14 @@ const char * LookupNewSubFileType (uint32 key)
 		{	sfPreviewMask		, "Preview Mask"		},
 		{	sfDepthMap			, "Depth Map"			},
 		{	sfPreviewDepthMap	, "Preview Depth Map"	},
-        {   sfEnhancedImage     , "Enhanced Image"      },
-		{	sfAltPreviewImage	, "Alt Preview Image"	}
+		{	sfEnhancedImage		, "Enhanced Image"		},
+		{	sfAltPreviewImage	, "Alt Preview Image"	},
+		{	sfSemanticMask		, "Semantic Mask"		}
 		};
 
 	const char *name = LookupName (key,
 								   kNewSubFileTypeNames,
-								   sizeof (kNewSubFileTypeNames    ) /
+								   sizeof (kNewSubFileTypeNames	   ) /
 								   sizeof (kNewSubFileTypeNames [0]));
 								   
 	if (name)
@@ -679,7 +699,7 @@ const char * LookupCompression (uint32 key)
 
 	const char *name = LookupName (key,
 								   kCompressionNames,
-								   sizeof (kCompressionNames    ) /
+								   sizeof (kCompressionNames	) /
 								   sizeof (kCompressionNames [0]));
 								   
 	if (name)
@@ -713,7 +733,7 @@ const char * LookupPredictor (uint32 key)
 
 	const char *name = LookupName (key,
 								   kPredictorNames,
-								   sizeof (kPredictorNames    ) /
+								   sizeof (kPredictorNames	  ) /
 								   sizeof (kPredictorNames [0]));
 								   
 	if (name)
@@ -744,7 +764,7 @@ const char * LookupSampleFormat (uint32 key)
 
 	const char *name = LookupName (key,
 								   kSampleFormatNames,
-								   sizeof (kSampleFormatNames    ) /
+								   sizeof (kSampleFormatNames	 ) /
 								   sizeof (kSampleFormatNames [0]));
 								   
 	if (name)
@@ -783,7 +803,7 @@ const char * LookupPhotometricInterpretation (uint32 key)
 
 	const char *name = LookupName (key,
 								   kPhotometricInterpretationNames,
-								   sizeof (kPhotometricInterpretationNames    ) /
+								   sizeof (kPhotometricInterpretationNames	  ) /
 								   sizeof (kPhotometricInterpretationNames [0]));
 								   
 	if (name)
@@ -806,7 +826,7 @@ const char * LookupOrientation (uint32 key)
 	
 	const dng_name_table kOrientationNames [] =
 		{
-		{	1, 	"1 - 0th row is top, 0th column is left"		},
+		{	1,	"1 - 0th row is top, 0th column is left"		},
 		{	2,	"2 - 0th row is top, 0th column is right"		},
 		{	3,	"3 - 0th row is bottom, 0th column is right"	},
 		{	4,	"4 - 0th row is bottom, 0th column is left"		},
@@ -819,7 +839,7 @@ const char * LookupOrientation (uint32 key)
 
 	const char *name = LookupName (key,
 								   kOrientationNames,
-								   sizeof (kOrientationNames    ) /
+								   sizeof (kOrientationNames	) /
 								   sizeof (kOrientationNames [0]));
 								   
 	if (name)
@@ -842,7 +862,7 @@ const char * LookupResolutionUnit (uint32 key)
 	
 	const dng_name_table kResolutionUnitNames [] =
 		{
-		{	ruNone, 	"None"			},
+		{	ruNone,		"None"			},
 		{	ruInch,		"Inch"			},
 		{	ruCM,		"cm"			},
 		{	ruMM,		"mm"			},
@@ -851,7 +871,7 @@ const char * LookupResolutionUnit (uint32 key)
 
 	const char *name = LookupName (key,
 								   kResolutionUnitNames,
-								   sizeof (kResolutionUnitNames    ) /
+								   sizeof (kResolutionUnitNames	   ) /
 								   sizeof (kResolutionUnitNames [0]));
 								   
 	if (name)
@@ -885,7 +905,7 @@ const char * LookupCFAColor (uint32 key)
 		
 	const char *name = LookupName (key,
 								   kCFAColorNames,
-								   sizeof (kCFAColorNames    ) /
+								   sizeof (kCFAColorNames	 ) /
 								   sizeof (kCFAColorNames [0]));
 								   
 	if (name)
@@ -921,7 +941,7 @@ const char * LookupSensingMethod (uint32 key)
 		
 	const char *name = LookupName (key,
 								   kSensingMethodNames,
-								   sizeof (kSensingMethodNames    ) /
+								   sizeof (kSensingMethodNames	  ) /
 								   sizeof (kSensingMethodNames [0]));
 								   
 	if (name)
@@ -948,7 +968,7 @@ const char * LookupExposureProgram (uint32 key)
 		{	epManual,			"Manual"			},
 		{	epProgramNormal,	"Program Normal"	},
 		{	epAperturePriority,	"Aperture Priority"	},
-		{	epShutterPriority, 	"Shutter Priority"	},
+		{	epShutterPriority,	"Shutter Priority"	},
 		{	epProgramCreative,	"Program Creative"	},
 		{	epProgramAction,	"Program Action"	},
 		{	epPortraitMode,		"Portrait Mode"		},
@@ -957,7 +977,7 @@ const char * LookupExposureProgram (uint32 key)
 		
 	const char *name = LookupName (key,
 								   kExposureProgramNames,
-								   sizeof (kExposureProgramNames    ) /
+								   sizeof (kExposureProgramNames	) /
 								   sizeof (kExposureProgramNames [0]));
 								   
 	if (name)
@@ -980,19 +1000,19 @@ const char * LookupMeteringMode (uint32 key)
 	
 	const dng_name_table kMeteringModeNames [] =
 		{
-		{	mmUnidentified,   			"Unknown"				},
-		{	mmAverage,   				"Average"				},
+		{	mmUnidentified,				"Unknown"				},
+		{	mmAverage,					"Average"				},
 		{	mmCenterWeightedAverage,	"CenterWeightedAverage"	},
-		{	mmSpot,   					"Spot"					},
-		{	mmMultiSpot,   				"MultiSpot"				},
-		{	mmPattern,   				"Pattern"				},
-		{	mmPartial,   				"Partial"				},
-		{	mmOther, 					"Other"					}
+		{	mmSpot,						"Spot"					},
+		{	mmMultiSpot,				"MultiSpot"				},
+		{	mmPattern,					"Pattern"				},
+		{	mmPartial,					"Partial"				},
+		{	mmOther,					"Other"					}
 		};
 		
 	const char *name = LookupName (key,
 								   kMeteringModeNames,
-								   sizeof (kMeteringModeNames    ) /
+								   sizeof (kMeteringModeNames	 ) /
 								   sizeof (kMeteringModeNames [0]));
 								   
 	if (name)
@@ -1041,7 +1061,7 @@ const char * LookupLightSource (uint32 key)
 		
 	const char *name = LookupName (key,
 								   kLightSourceNames,
-								   sizeof (kLightSourceNames    ) /
+								   sizeof (kLightSourceNames	) /
 								   sizeof (kLightSourceNames [0]));
 								   
 	if (name)
@@ -1082,7 +1102,7 @@ const char * LookupColorSpace (uint32 key)
 		
 	const char *name = LookupName (key,
 								   kColorSpaceNames,
-								   sizeof (kColorSpaceNames    ) /
+								   sizeof (kColorSpaceNames	   ) /
 								   sizeof (kColorSpaceNames [0]));
 								   
 	if (name)
@@ -1110,7 +1130,7 @@ const char * LookupFileSource (uint32 key)
 		
 	const char *name = LookupName (key,
 								   kFileSourceNames,
-								   sizeof (kFileSourceNames    ) /
+								   sizeof (kFileSourceNames	   ) /
 								   sizeof (kFileSourceNames [0]));
 								   
 	if (name)
@@ -1138,7 +1158,7 @@ const char * LookupSceneType (uint32 key)
 		
 	const char *name = LookupName (key,
 								   kSceneTypeNames,
-								   sizeof (kSceneTypeNames    ) /
+								   sizeof (kSceneTypeNames	  ) /
 								   sizeof (kSceneTypeNames [0]));
 								   
 	if (name)
@@ -1167,7 +1187,7 @@ const char * LookupCustomRendered (uint32 key)
 		
 	const char *name = LookupName (key,
 								   kCustomRenderedNames,
-								   sizeof (kCustomRenderedNames    ) /
+								   sizeof (kCustomRenderedNames	   ) /
 								   sizeof (kCustomRenderedNames [0]));
 								   
 	if (name)
@@ -1197,7 +1217,7 @@ const char * LookupExposureMode (uint32 key)
 		
 	const char *name = LookupName (key,
 								   kExposureModeNames,
-								   sizeof (kExposureModeNames    ) /
+								   sizeof (kExposureModeNames	 ) /
 								   sizeof (kExposureModeNames [0]));
 								   
 	if (name)
@@ -1226,7 +1246,7 @@ const char * LookupWhiteBalance (uint32 key)
 		
 	const char *name = LookupName (key,
 								   kWhiteBalanceNames,
-								   sizeof (kWhiteBalanceNames    ) /
+								   sizeof (kWhiteBalanceNames	 ) /
 								   sizeof (kWhiteBalanceNames [0]));
 								   
 	if (name)
@@ -1257,7 +1277,7 @@ const char * LookupSceneCaptureType (uint32 key)
 		
 	const char *name = LookupName (key,
 								   kSceneCaptureTypeNames,
-								   sizeof (kSceneCaptureTypeNames    ) /
+								   sizeof (kSceneCaptureTypeNames	 ) /
 								   sizeof (kSceneCaptureTypeNames [0]));
 								   
 	if (name)
@@ -1289,7 +1309,7 @@ const char * LookupGainControl (uint32 key)
 		
 	const char *name = LookupName (key,
 								   kGainControlNames,
-								   sizeof (kGainControlNames    ) /
+								   sizeof (kGainControlNames	) /
 								   sizeof (kGainControlNames [0]));
 								   
 	if (name)
@@ -1319,7 +1339,7 @@ const char * LookupContrast (uint32 key)
 		
 	const char *name = LookupName (key,
 								   kContrastNames,
-								   sizeof (kContrastNames    ) /
+								   sizeof (kContrastNames	 ) /
 								   sizeof (kContrastNames [0]));
 								   
 	if (name)
@@ -1349,7 +1369,7 @@ const char * LookupSaturation (uint32 key)
 		
 	const char *name = LookupName (key,
 								   kSaturationNames,
-								   sizeof (kSaturationNames    ) /
+								   sizeof (kSaturationNames	   ) /
 								   sizeof (kSaturationNames [0]));
 								   
 	if (name)
@@ -1379,7 +1399,7 @@ const char * LookupSharpness (uint32 key)
 		
 	const char *name = LookupName (key,
 								   kSharpnessNames,
-								   sizeof (kSharpnessNames    ) /
+								   sizeof (kSharpnessNames	  ) /
 								   sizeof (kSharpnessNames [0]));
 								   
 	if (name)
@@ -1410,7 +1430,7 @@ const char * LookupSubjectDistanceRange (uint32 key)
 		
 	const char *name = LookupName (key,
 								   kSubjectDistanceRangeNames,
-								   sizeof (kSubjectDistanceRangeNames    ) /
+								   sizeof (kSubjectDistanceRangeNames	 ) /
 								   sizeof (kSubjectDistanceRangeNames [0]));
 								   
 	if (name)
@@ -1444,7 +1464,7 @@ const char * LookupComponent (uint32 key)
 		
 	const char *name = LookupName (key,
 								   kComponentNames,
-								   sizeof (kComponentNames    ) /
+								   sizeof (kComponentNames	  ) /
 								   sizeof (kComponentNames [0]));
 								   
 	if (name)
@@ -1480,7 +1500,7 @@ const char * LookupCFALayout (uint32 key)
 
 	const char *name = LookupName (key,
 								   kCFALayoutNames,
-								   sizeof (kCFALayoutNames    ) /
+								   sizeof (kCFALayoutNames	  ) /
 								   sizeof (kCFALayoutNames [0]));
 								   
 	if (name)
@@ -1509,7 +1529,7 @@ const char * LookupMakerNoteSafety (uint32 key)
 
 	const char *name = LookupName (key,
 								   kMakerNoteSafetyNames,
-								   sizeof (kMakerNoteSafetyNames    ) /
+								   sizeof (kMakerNoteSafetyNames	) /
 								   sizeof (kMakerNoteSafetyNames [0]));
 								   
 	if (name)
@@ -1538,7 +1558,7 @@ const char * LookupColorimetricReference (uint32 key)
 
 	const char *name = LookupName (key,
 								   kColorimetricReferenceNames,
-								   sizeof (kColorimetricReferenceNames    ) /
+								   sizeof (kColorimetricReferenceNames	  ) /
 								   sizeof (kColorimetricReferenceNames [0]));
 								   
 	if (name)
@@ -1561,16 +1581,16 @@ const char * LookupPreviewColorSpace (uint32 key)
 	
 	const dng_name_table kPreviewColorSpaceNames [] =
 		{
-		{	previewColorSpace_Unknown    ,	"Unknown"			},
+		{	previewColorSpace_Unknown	 ,	"Unknown"			},
 		{	previewColorSpace_GrayGamma22,	"Gray Gamma 2.2"	},
-		{	previewColorSpace_sRGB       ,	"sRGB"				},
-		{	previewColorSpace_AdobeRGB   ,	"Adobe RGB (1998)"	},
-		{	previewColorSpace_ProPhotoRGB,	"Pro Photo RGB"	    }
+		{	previewColorSpace_sRGB		 ,	"sRGB"				},
+		{	previewColorSpace_AdobeRGB	 ,	"Adobe RGB (1998)"	},
+		{	previewColorSpace_ProPhotoRGB,	"Pro Photo RGB"		}
 		};
 
 	const char *name = LookupName (key,
 								   kPreviewColorSpaceNames,
-								   sizeof (kPreviewColorSpaceNames    ) /
+								   sizeof (kPreviewColorSpaceNames	  ) /
 								   sizeof (kPreviewColorSpaceNames [0]));
 								   
 	if (name)
@@ -1662,7 +1682,7 @@ const char * LookupJPEGMarker (uint32 key)
 
 	const char *name = LookupName (key,
 								   kJPEGMarkerNames,
-								   sizeof (kJPEGMarkerNames    ) /
+								   sizeof (kJPEGMarkerNames	   ) /
 								   sizeof (kJPEGMarkerNames [0]));
 								   
 	if (name)
@@ -1716,91 +1736,91 @@ const char * LookupSensitivityType (uint32 key)
 /*****************************************************************************/
 
 const char * LookupDepthFormat (uint32 key)
-    {
-    
-    const dng_name_table kDepthFormatNames [] =
-        {
-        {    depthFormatUnknown,    "Unknown"   },
-        {    depthFormatLinear,     "Linear"    },
-        {    depthFormatInverse,    "Inverse"   },
-        };
+	{
+	
+	const dng_name_table kDepthFormatNames [] =
+		{
+		{	 depthFormatUnknown,	"Unknown"	},
+		{	 depthFormatLinear,		"Linear"	},
+		{	 depthFormatInverse,	"Inverse"	},
+		};
 
-    const char *name = LookupName (key,
-                                   kDepthFormatNames,
-                                   sizeof (kDepthFormatNames    ) /
-                                   sizeof (kDepthFormatNames [0]));
-        
-    if (name)
-        {
-        return name;
-        }
-        
-    static char s [32];
-        
-    sprintf (s, "%u", (unsigned) key);
-        
-    return s;
+	const char *name = LookupName (key,
+								   kDepthFormatNames,
+								   sizeof (kDepthFormatNames	) /
+								   sizeof (kDepthFormatNames [0]));
+		
+	if (name)
+		{
+		return name;
+		}
+		
+	static char s [32];
+		
+	sprintf (s, "%u", (unsigned) key);
+		
+	return s;
 
-    }
+	}
 
 /*****************************************************************************/
 
 const char * LookupDepthUnits (uint32 key)
-    {
-    
-    const dng_name_table kDepthUnitNames [] =
-        {
-        {    depthUnitsUnknown,    "Unknown"   },
-        {    depthUnitsMeters,     "Meters"    },
-        };
+	{
+	
+	const dng_name_table kDepthUnitNames [] =
+		{
+		{	 depthUnitsUnknown,	   "Unknown"   },
+		{	 depthUnitsMeters,	   "Meters"	   },
+		};
 
-    const char *name = LookupName (key,
-                                   kDepthUnitNames,
-                                   sizeof (kDepthUnitNames    ) /
-                                   sizeof (kDepthUnitNames [0]));
-        
-    if (name)
-        {
-        return name;
-        }
-        
-    static char s [32];
-        
-    sprintf (s, "%u", (unsigned) key);
-        
-    return s;
+	const char *name = LookupName (key,
+								   kDepthUnitNames,
+								   sizeof (kDepthUnitNames	  ) /
+								   sizeof (kDepthUnitNames [0]));
+		
+	if (name)
+		{
+		return name;
+		}
+		
+	static char s [32];
+		
+	sprintf (s, "%u", (unsigned) key);
+		
+	return s;
 
-    }
+	}
 
 /*****************************************************************************/
 
 const char * LookupDepthMeasureType (uint32 key)
-    {
-    
-    const dng_name_table kDepthMeasureTypeNames [] =
-        {
-        {    depthMeasureUnknown,       "Unknown"       },
-        {    depthMeasureOpticalAxis,   "Optical Axis"  },
-        {    depthMeasureOpticalRay,    "Optical Ray"   },
-        };
+	{
+	
+	const dng_name_table kDepthMeasureTypeNames [] =
+		{
+		{	 depthMeasureUnknown,		"Unknown"		},
+		{	 depthMeasureOpticalAxis,	"Optical Axis"	},
+		{	 depthMeasureOpticalRay,	"Optical Ray"	},
+		};
 
-    const char *name = LookupName (key,
-                                   kDepthMeasureTypeNames,
-                                   sizeof (kDepthMeasureTypeNames    ) /
-                                   sizeof (kDepthMeasureTypeNames [0]));
-        
-    if (name)
-        {
-        return name;
-        }
-        
-    static char s [32];
-        
-    sprintf (s, "%u", (unsigned) key);
-        
-    return s;
+	const char *name = LookupName (key,
+								   kDepthMeasureTypeNames,
+								   sizeof (kDepthMeasureTypeNames	 ) /
+								   sizeof (kDepthMeasureTypeNames [0]));
+		
+	if (name)
+		{
+		return name;
+		}
+		
+	static char s [32];
+		
+	sprintf (s, "%u", (unsigned) key);
+		
+	return s;
 
-    }
+	}
 
 /*****************************************************************************/
 
@@ -1816,7 +1836,7 @@ void DumpHexAscii (dng_stream &stream,
 	for (uint32 row = 0; row < rows; row++)
 		{
 		
-		printf ("    ");
+		printf ("	 ");
 		
 		uint32 col;
 		
@@ -1843,12 +1863,12 @@ void DumpHexAscii (dng_stream &stream,
 				
 			else
 				{
-				printf ("   ");
+				printf ("	");
 				}
 			
 			}
 			
-		printf ("   ");
+		printf ("	");
 		
 		for (col = 0; col < 16; col++)
 			{
@@ -1871,7 +1891,7 @@ void DumpHexAscii (dng_stream &stream,
 		
 	if (count > rows * 16)
 		{
-		printf ("    ... %u more bytes\n", (unsigned) (count - rows * 16));
+		printf ("	 ... %u more bytes\n", (unsigned) (count - rows * 16));
 		}
 		
 	}
@@ -1890,7 +1910,7 @@ void DumpHexAscii (const uint8 *buf,
 	for (uint32 row = 0; row < rows; row++)
 		{
 		
-		printf ("    ");
+		printf ("	 ");
 		
 		uint32 col;
 		
@@ -1917,12 +1937,12 @@ void DumpHexAscii (const uint8 *buf,
 				
 			else
 				{
-				printf ("   ");
+				printf ("	");
 				}
 			
 			}
 			
-		printf ("   ");
+		printf ("	");
 		
 		for (col = 0; col < 16; col++)
 			{
@@ -1945,7 +1965,7 @@ void DumpHexAscii (const uint8 *buf,
 		
 	if (count > rows * 16)
 		{
-		printf ("    ... %u more bytes\n", (unsigned) (count - rows * 16));
+		printf ("	 ... %u more bytes\n", (unsigned) (count - rows * 16));
 		}
 		
 	}
@@ -2127,6 +2147,9 @@ void DumpTagValues (dng_stream &stream,
 		case ttSRational:
 		case ttFloat:
 		case ttDouble:
+		case ttLong8:
+		case ttSLong8:
+		case ttIFD8:
 			{
 			
 			if (tagCount > kMaxDumpSingleLine)
@@ -2156,7 +2179,7 @@ void DumpTagValues (dng_stream &stream,
 				else
 					{
 					
-					printf ("\n    %s [%u] = ", entry_name, (unsigned) j);
+					printf ("\n	   %s [%u] = ", entry_name, (unsigned) j);
 					
 					}
 					
@@ -2177,6 +2200,18 @@ void DumpTagValues (dng_stream &stream,
 						
 						}
 						
+					case ttLong8:
+					case ttIFD8:
+						{
+						
+						uint64 x = stream.TagValue_uint64 (tagType);
+						
+						printf ("%llu", (unsigned long long) x);
+						
+						break;
+						
+						}
+						
 					case ttSByte:
 					case ttSShort:
 					case ttSLong:
@@ -2185,6 +2220,17 @@ void DumpTagValues (dng_stream &stream,
 						int32 x = stream.TagValue_int32 (tagType);
 						
 						printf ("%d", (int) x);
+						
+						break;
+						
+						}
+						
+					case ttSLong8:
+						{
+						
+						int64 x = stream.TagValue_int64 (tagType);
+						
+						printf ("%lld", (long long) x);
 						
 						break;
 						
@@ -2230,7 +2276,7 @@ void DumpTagValues (dng_stream &stream,
 			if (tagCount > kMaxDumpArray)
 				{
 				
-				printf ("    ... %u more entries\n", (unsigned) (tagCount - kMaxDumpArray));
+				printf ("	 ... %u more entries\n", (unsigned) (tagCount - kMaxDumpArray));
 				
 				}
 				
@@ -2302,7 +2348,7 @@ void DumpMatrix (const dng_matrix &m)
 			{
 			
 			if (col == 0)
-				printf ("    ");
+				printf ("	 ");
 			else
 				printf (" ");
 			
@@ -2400,7 +2446,7 @@ void DumpFingerprint (const dng_fingerprint &p)
 /*****************************************************************************/
 
 void DumpHueSatMap (dng_stream &stream,
-				    uint32 hues,
+					uint32 hues,
 					uint32 sats,
 					uint32 vals,
 					bool skipSat0)
@@ -2431,7 +2477,7 @@ void DumpHueSatMap (dng_stream &stream,
 					if (vals == 1)
 						{
 					
-						printf ("    h [%2u] s [%2u]:  h=%8.4f s=%6.4f v=%6.4f\n",
+						printf ("	 h [%2u] s [%2u]:  h=%8.4f s=%6.4f v=%6.4f\n",
 								(unsigned) h,
 								(unsigned) s,
 								(double) dh,
@@ -2443,7 +2489,7 @@ void DumpHueSatMap (dng_stream &stream,
 					else
 						{
 					
-						printf ("    v [%2u] h [%2u] s [%2u]:  h=%8.4f s=%6.4f v=%6.4f\n",
+						printf ("	 v [%2u] h [%2u] s [%2u]:  h=%8.4f s=%6.4f v=%6.4f\n",
 								(unsigned) v,
 								(unsigned) h,
 								(unsigned) s,
@@ -2471,7 +2517,7 @@ void DumpHueSatMap (dng_stream &stream,
 	if (skipLines > 0)
 		{
 		
-		printf ("    ... %u more entries\n", (unsigned) skipLines);
+		printf ("	 ... %u more entries\n", (unsigned) skipLines);
 				
 		}
 	
@@ -2533,9 +2579,9 @@ bool CheckTagType (uint32 parentCode,
 
 bool CheckTagCount (uint32 parentCode,
 					uint32 tagCode,
-				    uint32 tagCount,
-				    uint32 minCount,
-				    uint32 maxCount)
+					uint32 tagCount,
+					uint32 minCount,
+					uint32 maxCount)
 	{
 	
 	if (maxCount < minCount)
@@ -2580,7 +2626,7 @@ bool CheckTagCount (uint32 parentCode,
 
 bool CheckColorImage (uint32 parentCode,
 					  uint32 tagCode,
-				      uint32 colorPlanes)
+					  uint32 colorPlanes)
 	{
 	
 	if (colorPlanes == 0)
@@ -2683,6 +2729,47 @@ bool CheckMainIFD (uint32 parentCode,
 
 /*****************************************************************************/
 
+bool CheckMainOrEnhancedIFD (uint32 parentCode,
+							 uint32 tagCode,
+							 uint32 newSubFileType)
+	{
+	
+	if (newSubFileType != sfMainImage &&
+		newSubFileType != sfEnhancedImage)
+		{
+		
+		#if qDNGValidate
+		
+			{
+				
+			char message [256];
+			
+			sprintf (message,
+					 "%s %s is not allowed IFDs with NewSubFileType != 0",
+					 LookupParentCode (parentCode),
+					 LookupTagCode (parentCode, tagCode));
+					 
+			ReportWarning (message);
+						 
+			}
+			
+		#else
+		
+		(void) parentCode;		// Unused
+		(void) tagCode;			// Unused
+			
+		#endif
+			
+		return false;
+		
+		}
+		
+	return true;
+	
+	}
+
+/*****************************************************************************/
+
 bool CheckRawIFD (uint32 parentCode,
 				  uint32 tagCode,
 				  uint32 photometricInterpretation)
@@ -2726,7 +2813,7 @@ bool CheckRawIFD (uint32 parentCode,
 
 bool CheckCFA (uint32 parentCode,
 			   uint32 tagCode,
-		       uint32 photometricInterpretation)
+			   uint32 photometricInterpretation)
 	{
 	
 	if (photometricInterpretation != piCFA)
@@ -2767,9 +2854,9 @@ bool CheckCFA (uint32 parentCode,
 void ParseStringTag (dng_stream &stream,
 					 uint32 parentCode,
 					 uint32 tagCode,
-				     uint32 tagCount,
-				     dng_string &s,
-				     bool trimBlanks)
+					 uint32 tagCount,
+					 dng_string &s,
+					 bool trimBlanks)
 	{
 	
 	if (tagCount == 0 ||
@@ -2856,11 +2943,11 @@ void ParseStringTag (dng_stream &stream,
 /*****************************************************************************/
 
 void ParseDualStringTag (dng_stream &stream,
-					 	 uint32 parentCode,
-					 	 uint32 tagCode,
-				     	 uint32 tagCount,
-				     	 dng_string &s1,
-				     	 dng_string &s2)
+						 uint32 parentCode,
+						 uint32 tagCode,
+						 uint32 tagCount,
+						 dng_string &s1,
+						 dng_string &s2)
 	{
 	
 	if (tagCount == 0 ||
@@ -2940,7 +3027,7 @@ void ParseDualStringTag (dng_stream &stream,
 		{
 		
 		if (buffer [j - 1] != 0 &&
-			buffer [j    ] == 0)
+			buffer [j	 ] == 0)
 			{
 			
 			// Medata working group - Allow UTF-8
@@ -2963,8 +3050,8 @@ void ParseDualStringTag (dng_stream &stream,
 void ParseEncodedStringTag (dng_stream &stream,
 							uint32 parentCode,
 							uint32 tagCode,
-				    		uint32 tagCount,
-				    		dng_string &s)
+							uint32 tagCount,
+							dng_string &s)
 	{
 	
 	if (tagCount < 8)
@@ -3003,7 +3090,7 @@ void ParseEncodedStringTag (dng_stream &stream,
 	
 	stream.Get (label, 8);
 	
-	// Sometimes lowercase is used by mistake.  Accept this, but issue
+	// Sometimes lowercase is used by mistake.	Accept this, but issue
 	// warning.
 	
 		{
@@ -3146,7 +3233,7 @@ void ParseEncodedStringTag (dng_stream &stream,
 			{
 			
 			// Some Nikon D1 files have UserComment tags with zero encoding bits and
-			// garbage text values.  So don't try to parse tags with unknown text
+			// garbage text values.	 So don't try to parse tags with unknown text
 			// encoding unless all the characters are printing ASCII.
 			
 			#if qDNGValidate
@@ -3274,7 +3361,7 @@ void ParseEncodedStringTag (dng_stream &stream,
 	s.TrimTrailingBlanks ();
 		
 	}
-				    		
+							
 /*****************************************************************************/
 
 bool ParseMatrixTag (dng_stream &stream,
@@ -3309,7 +3396,7 @@ bool ParseMatrixTag (dng_stream &stream,
 	return false;
 	
 	}
-				    		
+							
 /*****************************************************************************/
 
 bool ParseVectorTag (dng_stream &stream,
@@ -3342,7 +3429,7 @@ bool ParseVectorTag (dng_stream &stream,
 	return false;
 	
 	}
-				    		
+							
 /*****************************************************************************/
 
 bool ParseDateTimeTag (dng_stream &stream,
@@ -3359,8 +3446,8 @@ bool ParseDateTimeTag (dng_stream &stream,
 		}
 		
 	// Kludge: Some versions of PaintShop Pro write these fields
-	// with a length of 21 rather than 20.  Otherwise they are
-	// correctly formated.  So relax this test and allow these
+	// with a length of 21 rather than 20.	Otherwise they are
+	// correctly formated.	So relax this test and allow these
 	// these longer than standard tags to be parsed.
 		
 	(void) CheckTagCount (parentCode, tagCode, tagCount, 20);
@@ -3427,5 +3514,5 @@ bool ParseDateTimeTag (dng_stream &stream,
 	return false;
 	
 	}
-				    		
+							
 /*****************************************************************************/

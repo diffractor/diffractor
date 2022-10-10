@@ -2,7 +2,7 @@
 // Copyright 2007-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -248,6 +248,16 @@ class dng_hue_sat_map
 		static dng_hue_sat_map * Interpolate (const dng_hue_sat_map &map1,
 											  const dng_hue_sat_map &map2,
 											  real64 weight1);
+
+		/// Compute a linearly-interpolated hue sat map (i.e., delta and scale factors)
+		/// from the specified tables, with the specified weight. All three maps must
+		/// have the same dimensions.
+
+		static dng_hue_sat_map * Interpolate (const dng_hue_sat_map &map1,
+											  const dng_hue_sat_map &map2,
+											  const dng_hue_sat_map &map3,
+											  real64 weight1,
+											  real64 weight2);
 
 	};
 

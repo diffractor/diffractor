@@ -5,7 +5,63 @@ Changelog {#changelog}
 For fully detailed change log, please see the source repository directly. This
 is just a high-level summary.
 
-### libopenmpt 0.6.3-pre
+### libopenmpt 0.6.6 (2022-09-25)
+
+ *  [**Sec**] Possible crash when playing manipulated IT / MPTM files with a T00
+    command. (r17789)
+
+ *  MTM: In MultiTracker, setting speed and tempo are mutually exclusive
+    commands. Still, some MultiTracker modules were made to be played with
+    external players such as DMP, so they actually rely on "standard" speed /
+    tempo behaviour. Decide which behaviour to use by checking of speed and
+    tempo commands are found on the same row.
+ *  MTM: Ignore sample loops if the loop end is <= 2.
+ *  Echo DMO: Migrate left and right delay values in modules made with OpenMPT
+    versions between 1.27.01.00 and 1.30.05.00 to the correct interpretation.
+
+ *  FLAC: Update to v1.4.1 (2022-09-22).
+
+### libopenmpt 0.6.5 (2022-08-21)
+
+ *  [**Bug**] `Makefile` now also uses `CC`, `CXX`, `LD`, and `AR` when set as
+    environment variables.
+ *  [**Bug**] libopenmpt can now be built to target macOS down to version 10.13
+    again.
+
+ *  [**New**] `Makefile` now uses `PKG_CONFIG` as path to `pkg-config`.
+
+ *  DBM: Sample middle-C frequencies were slightly off.
+    laffik_-_marynarze.dbm sounds much more bearable now.
+ *  DBM: Fixed pattern break parameter interpretation.
+ *  Echo DMO: Setting the delay parameter to 0 yielded a 2-second echo delay
+    instead of 1ms.
+ *  Digi Booster Echo: Setting the delay parameter to 0 yielded a 510ms echo
+    delay instead of approximately 334ms.
+
+ *  mpg123: Update to v1.30.2 (2022-08-01).
+
+### libopenmpt 0.6.4 (2022-06-12)
+
+ *  [**Bug**] openmpt123: Linking failed when using Autotools build system
+    targeting MinGW.
+ *  [**Bug**] tests: Linking failed when using Autotools build system targeting
+    MinGW.
+ *  [**Bug**] examples: Linking failed when using Autotools build system
+    targeting MinGW.
+
+ *  [**Change**] Support for mingw-std-threads when building for MinGW targets
+    is now deprecated because this is not supported for GCC 11 or later (see
+    <https://github.com/meganz/mingw-std-threads/issues/79>).
+
+ *  Ping-pong sample loops sometimes stopped playing at the end of the loop.
+
+### libopenmpt 0.6.3 (2022-04-24)
+
+ *  Pitch / Pan Separation and Random Variation instrument properties were not
+    resetting properly when seeking, potentially causing instruments to be
+    played e.g. at a vastly different pan position compared to playing the
+    module continuously.
+ *  MED: Stereo samples were not imported correctly.
 
  *  zlib: Update to v1.2.12 (2022-03-27).
 

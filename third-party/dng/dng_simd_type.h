@@ -2,7 +2,7 @@
 // Copyright 2017-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -26,9 +26,10 @@ enum SIMDType
 
 	Scalar,
 
-	SSE2,       // Pentium 4
-	AVX,        // Sandy Bridge
-	AVX2,       // Haswell
+	SSE2,		// Pentium 4
+	arm64_neon = SSE2,
+	AVX,		// Sandy Bridge
+	AVX2,		// Haswell
 	F16C = AVX2, //Ivy bridge
 	AVX512_SKX, // Sky Lake Server
 
@@ -96,9 +97,9 @@ extern SIMDType	gDNGMaxSIMD;
 
 // Pre-defined feature levels.
 
-#define CR_SIMD_MIN_FEATURE   (_FEATURE_SSE2)
-#define CR_AVX_FEATURE        (_FEATURE_AVX)
-#define CR_AVX2_FEATURE       (_FEATURE_AVX|_FEATURE_FMA|_FEATURE_AVX2)
+#define CR_SIMD_MIN_FEATURE	  (_FEATURE_SSE2)
+#define CR_AVX_FEATURE		  (_FEATURE_AVX)
+#define CR_AVX2_FEATURE		  (_FEATURE_AVX|_FEATURE_FMA|_FEATURE_AVX2)
 #define CR_F16C_FEATURE			CR_AVX2_FEATURE
 #define CR_AVX512_SKX_FEATURE (_FEATURE_AVX512F|_FEATURE_AVX512CD|_FEATURE_AVX512BW|_FEATURE_AVX512DQ|_FEATURE_AVX512VL)
 #define CR_COMPILER_USING_AVX512_SKX (__AVX512F__ && __AVX512VL__ && __AVX512BW__ && __AVX512DQ__ && __AVX512CD__)
@@ -106,45 +107,31 @@ extern SIMDType	gDNGMaxSIMD;
 #define __SIMDTYPE_TFY(x) #x
 #define _SIMDTYPE_TFY(x) __SIMDTYPE_TFY(x)
 
+#define INTEL_OMP_SIMD_SIMDLEN_ASSERT(s) omp simd simdlen(s) if(simd: s>1) assert
+
 #if qDNGDebug
 
 // Debug build.
 
 //#define INTEL_PRAGMA_SIMD_ASSERT_C(clause) _Pragma(PM2__STR1__(simd clause))
-#define INTEL_PRAGMA_SIMD_ASSERT _Pragma("simd")
-#define INTEL_PRAGMA_SIMD_ASSERT_VECLEN_FLOAT(s) _Pragma(_SIMDTYPE_TFY(simd vectorlength( SIMDTraits<s>::kVecSizeFloat ) ))
-#define INTEL_PRAGMA_SIMD_ASSERT_VECLEN_INT32(s) _Pragma(_SIMDTYPE_TFY(simd vectorlength( SIMDTraits<s>::kVecSizeInt32 ) ))
-#define INTEL_PRAGMA_SIMD_ASSERT_VECLEN_INT16(s) _Pragma(_SIMDTYPE_TFY(simd vectorlength( SIMDTraits<s>::kVecSizeInt32*2 ) ))
-#define INTEL_PRAGMA_SIMD_ASSERT_VECLEN_INT8(s) _Pragma(_SIMDTYPE_TFY(simd vectorlength( SIMDTraits<s>::kVecSizeInt32*4 ) ))
+#define INTEL_PRAGMA_SIMD_ASSERT _Pragma("omp simd")
+#define INTEL_PRAGMA_SIMD_ASSERT_VECLEN_FLOAT(s) _Pragma(_SIMDTYPE_TFY(omp simd simdlen( SIMDTraits<s>::kVecSizeFloat ) ))
+#define INTEL_PRAGMA_SIMD_ASSERT_VECLEN_INT32(s) _Pragma(_SIMDTYPE_TFY(omp simd simdlen( SIMDTraits<s>::kVecSizeInt32 ) ))
+#define INTEL_PRAGMA_SIMD_ASSERT_VECLEN_INT16(s) _Pragma(_SIMDTYPE_TFY(omp simd simdlen( SIMDTraits<s>::kVecSizeInt32*2 ) ))
+#define INTEL_PRAGMA_SIMD_ASSERT_VECLEN_INT8(s) _Pragma(_SIMDTYPE_TFY(omp simd simdlen( SIMDTraits<s>::kVecSizeInt32*4 ) ))
 
-#else
+#else  // qDNGDebug
 
 // Release build.
 
 //#define INTEL_PRAGMA_SIMD_ASSERT_C(clause) _Pragma(PM2__STR1__(simd assert clause))
-#define INTEL_PRAGMA_SIMD_ASSERT _Pragma("simd assert")
-#if 1
-#if (__INTEL_COMPILER < 1800)
-#define INTEL_PRAGMA_SIMD_ASSERT_VECLEN_FLOAT(s) _Pragma(_SIMDTYPE_TFY(simd assert vectorlength( SIMDTraits<s>::kVecSizeFloat ) ))
-#define INTEL_PRAGMA_SIMD_ASSERT_VECLEN_INT32(s) _Pragma(_SIMDTYPE_TFY(simd assert vectorlength( SIMDTraits<s>::kVecSizeInt32 ) ))
-#define INTEL_PRAGMA_SIMD_ASSERT_VECLEN_INT16(s) _Pragma(_SIMDTYPE_TFY(simd assert vectorlength( SIMDTraits<s>::kVecSizeInt32*2 ) ))
-#define INTEL_PRAGMA_SIMD_ASSERT_VECLEN_INT8(s) _Pragma(_SIMDTYPE_TFY(simd assert vectorlength( SIMDTraits<s>::kVecSizeInt32*4 ) ))
-#else
-// FIX_ME_ERIC_CHAN: I removed the assert to fix compile time error when using Intel compiler version 18.
-// Need to figure out correct fix when we switch to newer version. - tknoll 10/30/2017.
-#define INTEL_PRAGMA_SIMD_ASSERT_VECLEN_FLOAT(s) _Pragma(_SIMDTYPE_TFY(simd vectorlength( SIMDTraits<s>::kVecSizeFloat ) ))
-#define INTEL_PRAGMA_SIMD_ASSERT_VECLEN_INT32(s) _Pragma(_SIMDTYPE_TFY(simd vectorlength( SIMDTraits<s>::kVecSizeInt32 ) ))
-#define INTEL_PRAGMA_SIMD_ASSERT_VECLEN_INT16(s) _Pragma(_SIMDTYPE_TFY(simd vectorlength( SIMDTraits<s>::kVecSizeInt32*2 ) ))
-#define INTEL_PRAGMA_SIMD_ASSERT_VECLEN_INT8(s) _Pragma(_SIMDTYPE_TFY(simd vectorlength( SIMDTraits<s>::kVecSizeInt32*4 ) ))
-#endif
-#else
-// Don't force
-#define INTEL_PRAGMA_SIMD_ASSERT_VECLEN_FLOAT(s) _Pragma(_SIMDTYPE_TFY(simd assert))
-#define INTEL_PRAGMA_SIMD_ASSERT_VECLEN_INT32(s) _Pragma(_SIMDTYPE_TFY(simd assert))
-#define INTEL_PRAGMA_SIMD_ASSERT_VECLEN_INT16(s) _Pragma(_SIMDTYPE_TFY(simd assert))
-#define INTEL_PRAGMA_SIMD_ASSERT_VECLEN_INT8(s) _Pragma(_SIMDTYPE_TFY(simd assert))
-#endif
-#endif
+#define INTEL_PRAGMA_SIMD_ASSERT _Pragma("omp simd assert")
+#define INTEL_PRAGMA_SIMD_ASSERT_VECLEN_FLOAT(s) _Pragma(_SIMDTYPE_TFY(INTEL_OMP_SIMD_SIMDLEN_ASSERT( SIMDTraits<s>::kVecSizeFloat	 ) ))
+#define INTEL_PRAGMA_SIMD_ASSERT_VECLEN_INT32(s) _Pragma(_SIMDTYPE_TFY(INTEL_OMP_SIMD_SIMDLEN_ASSERT( SIMDTraits<s>::kVecSizeInt32	 ) ))
+#define INTEL_PRAGMA_SIMD_ASSERT_VECLEN_INT16(s) _Pragma(_SIMDTYPE_TFY(INTEL_OMP_SIMD_SIMDLEN_ASSERT( SIMDTraits<s>::kVecSizeInt32*2 ) ))
+#define INTEL_PRAGMA_SIMD_ASSERT_VECLEN_INT8(s)	 _Pragma(_SIMDTYPE_TFY(INTEL_OMP_SIMD_SIMDLEN_ASSERT( SIMDTraits<s>::kVecSizeInt32*4 ) ))
+
+#endif	// qDNGDebug
 
 #define SET_CPU_FEATURE(simd) _allow_cpu_features( (simd >= AVX512_SKX) ? CR_AVX512_SKX_FEATURE : (simd >= AVX2) ? CR_AVX2_FEATURE : ((simd >= AVX) ? CR_AVX_FEATURE : CR_SIMD_MIN_FEATURE) )
 //#define SET_CPU_FEATURE_NOFMA(simd) _allow_cpu_features( ((simd >= AVX512_SKX) ? CR_AVX512_SKX_FEATURE : (simd >= AVX2) ? CR_AVX2_FEATURE : ((simd >= AVX) ? CR_AVX_FEATURE : CR_SIMD_MIN_FEATURE)) & ~_FEATURE_FMA )
@@ -152,7 +139,7 @@ extern SIMDType	gDNGMaxSIMD;
 #define INTEL_PRAGMA_NOVECTOR _Pragma("novector")
 #define INTEL_COMPILER_NEEDED_NOTE
 
-#else
+#else  // qDNGIntelCompiler
 
 // Non-Intel compiler. Use empty definitions for the macros.
 // Credit: http://www.highprogrammer.com/alan/windev/visualstudio.html, but avoid using $ character
@@ -160,8 +147,8 @@ extern SIMDType	gDNGMaxSIMD;
 #define MakeString( M, L )		M(L)
 #define _x_Line					MakeString( Stringize, __LINE__ )
 
-#if qDNGValidateTarget
-// Do not warn about Intel compiler if building dng_validate.
+#if qDNGValidateTarget || qMacOS
+// Do not warn about Intel compiler if building dng_validate or if we're on macOS.
 #define INTEL_COMPILER_NEEDED_NOTE
 #else
 #if !(defined (IOS_ENV) || defined(ANDROID_ENV)) && (defined(__x86_64__) || defined(__i386__))

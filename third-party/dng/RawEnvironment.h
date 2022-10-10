@@ -14,5 +14,6 @@
 #elif defined(_WIN32)
 #define qMacOS 0
 #define qWinOS 1
+#define qDNGXMPDocOps 0
 #endif
 #endif  // __dng_RawEnvironment__

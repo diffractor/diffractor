@@ -53,7 +53,7 @@ ToSigned(uint64 u) {
 
 } // namespace
 
-START_LIBEBML_NAMESPACE
+namespace libebml {
 
 EbmlSInteger::EbmlSInteger()
   :EbmlElement(DEFAULT_INT_SIZE, false)
@@ -65,9 +65,9 @@ EbmlSInteger::EbmlSInteger(int64 aDefaultValue)
   SetDefaultIsSet();
 }
 
-EbmlSInteger::operator int8() const {return  int8(Value);}
-EbmlSInteger::operator int16() const {return int16(Value);}
-EbmlSInteger::operator int32() const {return int32(Value);}
+EbmlSInteger::operator int8() const {return  static_cast<int8>(Value);}
+EbmlSInteger::operator int16() const {return static_cast<int16>(Value);}
+EbmlSInteger::operator int32() const {return static_cast<int32>(Value);}
 EbmlSInteger::operator int64() const {return Value;}
 
 int64 EbmlSInteger::GetValue() const {return Value;}
@@ -89,7 +89,7 @@ filepos_t EbmlSInteger::RenderData(IOCallback & output, bool /* bForceRender */,
 
   int64 TempValue = Value;
   for (i=0; i<GetSize();i++) {
-    FinalData[GetSize()-i-1] = binary(TempValue & 0xFF);
+    FinalData[GetSize()-i-1] = static_cast<binary>(TempValue & 0xFF);
     TempValue >>= 8;
   }
 
@@ -133,22 +133,28 @@ uint64 EbmlSInteger::UpdateSize(bool bWithDefault, bool /* bForceRender */)
 
 filepos_t EbmlSInteger::ReadData(IOCallback & input, ScopeMode ReadFully)
 {
-  if (ReadFully != SCOPE_NO_DATA) {
-    binary Buffer[8];
-    input.readFully(Buffer, GetSize());
+  if (ReadFully == SCOPE_NO_DATA)
+    return GetSize();
 
-    uint64 TempValue = Buffer[0] & 0x80 ? std::numeric_limits<uint64>::max() : 0;
-
-    for (unsigned int i=0; i<GetSize(); i++) {
-      TempValue <<= 8;
-      TempValue |= Buffer[i];
-    }
-
-    Value = ToSigned(TempValue);
-
-    SetValueIsSet();
+  if (GetSize() > 8) {
+    // impossible to read, skip it
+    input.setFilePointer(GetSize(), seek_current);
+    return GetSize();
   }
 
+  binary Buffer[8];
+  input.readFully(Buffer, GetSize());
+
+  uint64 TempValue = Buffer[0] & 0x80 ? std::numeric_limits<uint64>::max() : 0;
+
+  for (unsigned int i=0; i<GetSize(); i++) {
+    TempValue <<= 8;
+    TempValue |= Buffer[i];
+  }
+
+  Value = ToSigned(TempValue);
+
+  SetValueIsSet();
   return GetSize();
 }
 
@@ -160,4 +166,4 @@ bool EbmlSInteger::IsSmallerThan(const EbmlElement *Cmp) const
   return false;
 }
 
-END_LIBEBML_NAMESPACE
+} // namespace libebml

@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -20,9 +20,22 @@
 #include "dng_exceptions.h"
 #include "dng_flags.h"
 
+
 /*****************************************************************************/
 
-#if qDNGDebug
+#if qWinOS
+
+/// Windows-only function to emit a message to the Debugger Output pane
+/// if a debug session is in progress.
+/// \param s C string to emit.
+/// \param nl Optional newline (or suffix) C string to be emitted after s.
+
+void dng_outputdebugstring (const char *s,
+							const char *nl = NULL);
+
+#endif
+
+/*****************************************************************************/
 
 /// Platform-specific function to display an assert.
 
@@ -31,8 +44,6 @@ void dng_show_message (const char *s);
 /// Show a formatted error message.
 
 void dng_show_message_f (const char *fmt, ...);
-
-#endif
 
 /*****************************************************************************/
 

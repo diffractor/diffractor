@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -11,6 +11,7 @@
 #include "dng_1d_function.h"
 #include "dng_assertions.h"
 #include "dng_memory.h"
+#include "dng_safe_arithmetic.h"
 #include "dng_utils.h"
 
 /*****************************************************************************/
@@ -142,7 +143,7 @@ void dng_1d_table::Initialize (dng_memory_allocator &allocator,
 			
 			real64 y = function.Evaluate (x);
 			
-			fTable [j] = (real32) y;
+			fTable [j] = ConvertDoubleToFloat (y);
 			
 			}
 			
@@ -162,7 +163,7 @@ void dng_1d_table::Expand16 (uint16 *table16) const
 	real64 y0 = fTable [0];
 	real64 y1 = fTable [1];
 	
-	real64 base  = y0 * 65535.0 + 0.5;
+	real64 base	 = y0 * 65535.0 + 0.5;
 	real64 slope = (y1 - y0) * 65535.0;
 	
 	uint32 index = 1;

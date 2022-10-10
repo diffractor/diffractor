@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -93,7 +93,7 @@ class dng_read_image
 						   dng_fingerprint *jpegDigest);
 						   
 	protected:
-							    
+								
 		virtual bool ReadUncompressed (dng_host &host,
 									   const dng_ifd &ifd,
 									   dng_stream &stream,
@@ -112,7 +112,7 @@ class dng_read_image
 									  uint32 photometricInterpretation,
 									  uint32 jpegDataSize,
 									  uint8 *jpegDataInMemory,
-                                      bool usingMultipleThreads);
+									  bool usingMultipleThreads);
 	
 		virtual bool ReadBaselineJPEG (dng_host &host,
 									   const dng_ifd &ifd,
@@ -123,7 +123,7 @@ class dng_read_image
 									   uint32 planes,
 									   uint32 tileByteCount,
 									   uint8 *jpegDataInMemory,
-                                       bool usingMultipleThreads);
+									   bool usingMultipleThreads);
 	
 		virtual bool ReadLosslessJPEG (dng_host &host,
 									   const dng_ifd &ifd,
@@ -145,7 +145,7 @@ class dng_read_image
 
 		virtual void DecodePredictor (dng_host &host,
 									  const dng_ifd &ifd,
-						        	  dng_pixel_buffer &buffer);
+									  dng_pixel_buffer &buffer);
 
 		virtual void ReadTile (dng_host &host,
 							   const dng_ifd &ifd,
@@ -158,7 +158,7 @@ class dng_read_image
 							   AutoPtr<dng_memory_block> &compressedBuffer,
 							   AutoPtr<dng_memory_block> &uncompressedBuffer,
 							   AutoPtr<dng_memory_block> &subTileBlockBuffer,
-                               bool usingMultipleThreads);
+							   bool usingMultipleThreads);
 
 		virtual void DoReadTiles (dng_host &host,
 								  const dng_ifd &ifd,

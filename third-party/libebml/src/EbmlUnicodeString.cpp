@@ -36,30 +36,22 @@
 */
 
 #include <cassert>
+#include <limits>
 
 #include "ebml/EbmlUnicodeString.h"
 
 #include "utf8-cpp/utf8/checked.h"
 
-START_LIBEBML_NAMESPACE
+namespace libebml {
 
 // ===================== UTFstring class ===================
 
-UTFstring::UTFstring()
-  :_Length(0)
-  ,_Data(nullptr)
-{}
-
 UTFstring::UTFstring(const wchar_t * _aBuf)
-  :_Length(0)
-  ,_Data(nullptr)
 {
   *this = _aBuf;
 }
 
 UTFstring::UTFstring(std::wstring const &_aBuf)
-  :_Length(0)
-  ,_Data(nullptr)
 {
   *this = _aBuf.c_str();
 }
@@ -70,8 +62,6 @@ UTFstring::~UTFstring()
 }
 
 UTFstring::UTFstring(const UTFstring & _aBuf)
-  :_Length(0)
-  ,_Data(nullptr)
 {
   *this = _aBuf.c_str();
 }
@@ -302,29 +292,30 @@ uint64 EbmlUnicodeString::UpdateSize(bool bWithDefault, bool /* bForceRender */)
 */
 filepos_t EbmlUnicodeString::ReadData(IOCallback & input, ScopeMode ReadFully)
 {
-  if (ReadFully != SCOPE_NO_DATA) {
-    if (GetSize() == 0) {
-      Value = UTFstring::value_type(0);
-      SetValueIsSet();
-    } else {
-      auto Buffer = new (std::nothrow) char[GetSize()+1];
-      if (Buffer == nullptr) {
-        // impossible to read, skip it
-        input.setFilePointer(GetSize(), seek_current);
-      } else {
-        input.readFully(Buffer, GetSize());
-        if (Buffer[GetSize()-1] != 0) {
-          Buffer[GetSize()] = 0;
-        }
+  if (ReadFully == SCOPE_NO_DATA)
+    return GetSize();
 
-        Value.SetUTF8(Buffer); // implicit conversion to std::string
-        delete [] Buffer;
-        SetValueIsSet();
+  if (GetSize() == 0) {
+    Value = static_cast<UTFstring::value_type>(0);
+    SetValueIsSet();
+  } else {
+    auto Buffer = (GetSize() + 1 < std::numeric_limits<std::size_t>::max()) ? new (std::nothrow) char[GetSize()+1] : nullptr;
+    if (Buffer == nullptr) {
+      // impossible to read, skip it
+      input.setFilePointer(GetSize(), seek_current);
+    } else {
+      input.readFully(Buffer, GetSize());
+      if (Buffer[GetSize()-1] != 0) {
+        Buffer[GetSize()] = 0;
       }
+
+      Value.SetUTF8(Buffer); // implicit conversion to std::string
+      delete [] Buffer;
+      SetValueIsSet();
     }
   }
 
   return GetSize();
 }
 
-END_LIBEBML_NAMESPACE
+} // namespace libebml

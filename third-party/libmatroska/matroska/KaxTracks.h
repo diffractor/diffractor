@@ -41,9 +41,9 @@
 #include "matroska/KaxDefines.h"
 #include "matroska/KaxSemantic.h"
 
-using namespace LIBEBML_NAMESPACE;
+using namespace libebml;
 
-START_LIBMATROSKA_NAMESPACE
+namespace libmatroska {
 
 DECLARE_MKX_MASTER(KaxTrackEntry)
   public:
@@ -55,8 +55,8 @@ DECLARE_MKX_MASTER(KaxTrackEntry)
       \note lacing set by default
     */
     inline bool LacingEnabled() const {
-      KaxTrackFlagLacing * myLacing = static_cast<KaxTrackFlagLacing *>(FindFirstElt(EBML_INFO(KaxTrackFlagLacing)));
-      return((myLacing == NULL) || (uint8(*myLacing) != 0));
+      auto myLacing = static_cast<KaxTrackFlagLacing *>(FindFirstElt(EBML_INFO(KaxTrackFlagLacing)));
+      return((myLacing == nullptr) || (static_cast<uint8>(*myLacing) != 0));
     }
 
     void SetGlobalTimecodeScale(uint64 aGlobalTimecodeScale) {
@@ -69,10 +69,10 @@ DECLARE_MKX_MASTER(KaxTrackEntry)
     }
 
   protected:
-    bool   bGlobalTimecodeScaleIsSet;
+    bool   bGlobalTimecodeScaleIsSet{false};
     uint64 mGlobalTimecodeScale;
 };
 
-END_LIBMATROSKA_NAMESPACE
+} // namespace libmatroska
 
 #endif // LIBMATROSKA_TRACKS_H

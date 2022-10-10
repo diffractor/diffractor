@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -86,6 +86,13 @@ class dng_1d_table: private dng_uncopyable
 			real32 y = x * (real32) fTableCount;
 			
 			int32 index = (int32) y;
+
+			if (index < 0 || index > (int32) fTableCount)
+				{
+				
+				ThrowBadFormat ("Index out of range.");
+				
+				}
 
 			// Enable vectorization by using DNG_ASSERT instead of DNG_REQUIRE
 			DNG_ASSERT(!(index < 0 || index >(int32) fTableCount), "dng_1d_table::Interpolate parameter out of range");

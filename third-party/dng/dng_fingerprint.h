@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -21,8 +21,11 @@
 #include "dng_exceptions.h"
 #include "dng_types.h"
 #include "dng_stream.h"
+#include "dng_string.h"
 
 #include <cstring>
+#include <unordered_set>
+#include <vector>
 
 /*****************************************************************************/
 
@@ -40,8 +43,8 @@ class dng_fingerprint
 	public:
 	
 		dng_fingerprint ();
-        
-        dng_fingerprint (const char *hex);
+		
+		explicit dng_fingerprint (const char *hex);
 		
 		/// Check if fingerprint is all zeros.
 
@@ -72,10 +75,10 @@ class dng_fingerprint
 			return !(*this == print);
 			}
 			
-		/// Comparision test for fingerprints.
+		/// Comparison test for fingerprints.
 			
-        bool operator< (const dng_fingerprint &print) const;
-        
+		bool operator< (const dng_fingerprint &print) const;
+		
 		/// Produce a 32-bit hash value from fingerprint used for faster hashing of
 		/// fingerprints.
 			
@@ -88,6 +91,10 @@ class dng_fingerprint
 
 		void ToUtf8HexString (char resultStr [2 * kDNGFingerprintSize + 1]) const;
 
+		/// Convert fingerprint to UTF-8 string and return result as a dng_string.
+
+		dng_string ToUtf8HexString () const;
+
 		/// Convert UTF-8 string to fingerprint. Returns true on success, false on
 		/// failure.
 		///
@@ -97,6 +104,16 @@ class dng_fingerprint
 		/// \retval True indicates success.
 
 		bool FromUtf8HexString (const char inputStr [2 * kDNGFingerprintSize + 1]);
+
+		/// Convert dng_string string to fingerprint. Returns true on success,
+		/// false on failure.
+		///
+		/// \param inputStr The input dng_string from which the UTF-8 encoding of the
+		/// fingerprint will be read.
+		///
+		/// \retval True indicates success.
+
+		bool FromUtf8HexString (const dng_string &inputStr);
 
 	};
 
@@ -138,6 +155,15 @@ struct dng_fingerprint_hash
 		}
 
 	};
+
+/******************************************************************************/
+
+typedef std::unordered_set<dng_fingerprint,
+						   dng_fingerprint_hash> dng_fingerprint_table;
+
+/******************************************************************************/
+
+typedef std::vector<dng_fingerprint> dng_fingerprint_vector;
 
 /******************************************************************************/
 
@@ -306,11 +332,11 @@ class dng_md5_printer
 		
 	private:
 	
-	  	uint32 state [4];
-	  	
-	  	uint32 count [2];
-	  	
-	  	uint8 buffer [64];
+		uint32 state [4];
+		
+		uint32 count [2];
+		
+		uint8 buffer [64];
 		
 		bool final;
 		

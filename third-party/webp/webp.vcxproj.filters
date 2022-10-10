@@ -360,6 +360,21 @@
     <ClCompile Include="src\utils\utils.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="sharpyuv\sharpyuv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="sharpyuv\sharpyuv_csp.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="sharpyuv\sharpyuv_dsp.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="sharpyuv\sharpyuv_gamma.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="sharpyuv\sharpyuv_sse2.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\dec\alphai_dec.h">

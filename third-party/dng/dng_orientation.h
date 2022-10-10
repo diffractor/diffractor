@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -30,15 +30,15 @@ class dng_orientation
 
 		enum
 			{
-			kNormal      = 0,
-			kRotate90CW  = 1,
-			kRotate180   = 2,
+			kNormal		 = 0,
+			kRotate90CW	 = 1,
+			kRotate180	 = 2,
 			kRotate90CCW = 3,
 			kMirror		 = 4,
-			kMirror90CW  = 5,
+			kMirror90CW	 = 5,
 			kMirror180	 = 6,
 			kMirror90CCW = 7,
-			kUnknown     = 8
+			kUnknown	 = 8
 			};
 	
 		dng_orientation ()
@@ -145,6 +145,8 @@ class dng_orientation
 		
 		bool FlipV () const;
 		
+		bool IsMirrored () const;
+		
 		bool operator== (const dng_orientation &b) const
 			{
 			return fAdobeOrientation == b.fAdobeOrientation;
@@ -156,6 +158,33 @@ class dng_orientation
 			}
 		
 		dng_orientation operator- () const;
+		
+		// Be careful when composing orientations using the + and - operators.
+		// In mathematics, the + operator is commutative, namely,
+		//
+		//	 a + b == b + a
+		//
+		// An orientation transform represents a linear transform, so
+		// composing two orientation transforms amounts to a matrix
+		// multiplication, which is associative but NOT commutative.
+		//
+		// For example, suppose we know that A, B, and C are dng_orientation
+		// objects such that
+		//
+		//	 C = A + B
+		//
+		// That is, C is the orientation obtained by applying A then B. If
+		// we're given A and C and want to calculate B, the correct expression
+		// is:
+		//
+		//	 B = -A + C		// correct
+		//
+		// and not
+		//
+		//	 B =  C - A		// incorrect
+		//
+		// On first glance, these appear to be the same expressions but they
+		// are not.
 		
 		dng_orientation operator+ (const dng_orientation &b) const;
 		

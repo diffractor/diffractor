@@ -46,7 +46,7 @@
 #include "ebml/EbmlDummy.h"
 #include "ebml/EbmlContexts.h"
 
-START_LIBEBML_NAMESPACE
+namespace libebml {
 
 /*!
   \todo handle more than CodedSize of 5
@@ -234,13 +234,7 @@ const EbmlSemantic & EbmlSemanticContext::GetSemantic(size_t i) const
 
 EbmlElement::EbmlElement(uint64 aDefaultSize, bool bValueSet)
   :DefaultSize(aDefaultSize)
-  ,SizeLength(0) ///< write optimal size by default
-  ,bSizeIsFinite(true)
-  ,ElementPosition(0)
-  ,SizePosition(0)
-  ,bValueIsSet(bValueSet)
-  ,DefaultIsSet(false)
-  ,bLocked(false)
+  , bValueIsSet(bValueSet)
 {
   Size = DefaultSize;
 }
@@ -710,7 +704,9 @@ filepos_t EbmlElement::OverwriteData(IOCallback & output, bool bKeepPosition)
   }
 
   auto HeaderSize = EbmlId(*this).GetLength() + CodedSizeLength(Size, SizeLength, bSizeIsFinite);
+#if !defined(NDEBUG)
   auto DataSize   = GetSize();
+#endif
 
   auto CurrentPosition = output.getFilePointer();
   output.setFilePointer(GetElementPosition() + HeaderSize);
@@ -731,4 +727,4 @@ uint64 EbmlElement::VoidMe(IOCallback & output, bool bWithDefault)
   return Dummy.Overwrite(*this, output, true, bWithDefault);
 }
 
-END_LIBEBML_NAMESPACE
+} // namespace libebml

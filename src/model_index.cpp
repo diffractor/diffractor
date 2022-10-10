@@ -140,18 +140,17 @@ struct query_items_result
 	const df::unique_items& existing;
 	df::item_set results;
 
-	void match_item(const df::file_path id, const df::index_file_item& file, const df::search_result& match,
-	                const bool is_indexed_location)
+	void match_item(const df::file_path id, const df::index_file_item& file, const df::search_result& match)
 	{
 		auto found = existing.find(id);
 
 		if (found)
 		{
-			found->update(id, file, is_indexed_location);
+			found->update(id, file);
 		}
 		else
 		{
-			found = std::make_shared<df::file_item>(id, file, is_indexed_location);
+			found = std::make_shared<df::file_item>(id, file);
 		}
 
 		found->search(match);
@@ -171,8 +170,7 @@ struct count_items_result
 {
 	df::file_group_histogram summary;
 
-	void match_item(const df::file_path id, const df::index_file_item& file, const df::search_result& match,
-	                const bool is_indexed_location)
+	void match_item(const df::file_path id, const df::index_file_item& file, const df::search_result& match)
 	{
 		summary.record(file);
 	}
@@ -224,12 +222,11 @@ static void iterate_items(const df::search_t& search,
 				{
 					folders_scanned.emplace(current_folder);
 
-					const auto found_folder = state.validate_folder(current_folder, false, refresh_from_file_system,
-					                                                now);
+					const auto found_node = state.validate_folder(current_folder, refresh_from_file_system, now);
 
-					if (found_folder)
+					if (found_node.folder)
 					{
-						for (const auto& folder_entry : found_folder->folders)
+						for (const auto& folder_entry : found_node.folder->folders)
 						{
 							if (token.is_cancelled()) break;
 
@@ -253,20 +250,18 @@ static void iterate_items(const df::search_t& search,
 
 						if (matcher.need_metadata)
 						{
-							for (const auto& f : found_folder->files)
+							for (const auto& f : found_node.folder->files)
 							{
 								if (token.is_cancelled())
 									break;
 
-								state.scan_item(found_folder, {current_folder, f.name}, false, false, nullptr, f.ft);
+								state.scan_item(found_node.folder, {current_folder, f.name}, false, false, nullptr, f.ft);
 							}
 						}
 
-						if (matcher.potential_match(found_folder->bloom_filter))
+						if (matcher.potential_match(found_node.folder->bloom_filter))
 						{
-							const auto is_indexed_location = found_folder->is_indexed;
-
-							for (const auto& file_node : found_folder->files)
+							for (const auto& file_node : found_node.folder->files)
 							{
 								if (token.is_cancelled())
 									break;
@@ -282,7 +277,7 @@ static void iterate_items(const df::search_t& search,
 
 										if (match.is_match())
 										{
-											results.match_item(id, file, match, is_indexed_location);
+											results.match_item(id, file, match);
 										}
 									}
 								}
@@ -308,8 +303,6 @@ static void iterate_items(const df::search_t& search,
 					matcher.can_match_folder ||
 					matcher.potential_match(folder_node.second->bloom_filter))
 				{
-					const auto is_indexed_location = folder_node.second->is_indexed;
-
 					for (const auto& file_node : folder_node.second->files)
 					{
 						if (token.is_cancelled()) break;
@@ -321,7 +314,7 @@ static void iterate_items(const df::search_t& search,
 
 							if (match.is_match())
 							{
-								results.match_item(path, file_node, match, is_indexed_location);
+								results.match_item(path, file_node, match);
 							}
 						}
 					}
@@ -379,11 +372,16 @@ void index_state::query_items(const df::search_t& search, const df::unique_items
 	{
 		const auto id = search.related().path;
 		const auto found_related = existing.find(id);
-
-		if (found_related && !found_related->is_indexed_location())
+		
+		if (found_related)
 		{
-			found_related->search({df::search_result_type::similar});
-			results.results.add(found_related);
+			const auto folder = _items.find(id.folder());
+
+			if (!(folder && folder->is_indexed))
+			{
+				found_related->search({ df::search_result_type::similar });
+				results.results.add(found_related);
+			}
 		}
 	}
 
@@ -669,8 +667,8 @@ void populate_file_info(df::index_file_item& file_node, const platform::file_inf
 	}
 }
 
-df::index_folder_item_ptr index_state::validate_folder(const df::folder_path folder_path, const bool mark_is_indexed,
-                                                       const bool refresh_from_file_system, const df::date_t timestamp)
+index_state::validate_folder_result index_state::validate_folder(const df::folder_path folder_path,
+                                                                 const bool refresh_from_file_system, const df::date_t timestamp)
 {
 	auto existing_folder = _items.find(folder_path);
 
@@ -935,7 +933,7 @@ df::index_folder_item_ptr index_state::validate_folder(const df::folder_path fol
 				folder_node->name = existing_folder->name;
 				folder_node->is_read_only = existing_folder->is_read_only;
 				folder_node->is_excluded = existing_folder->is_excluded;
-				folder_node->is_indexed = mark_is_indexed || existing_folder->is_indexed;
+				folder_node->is_indexed = existing_folder->is_indexed;
 				folder_node->volume = existing_folder->volume;
 				folder_node->bloom_filter = existing_folder->bloom_filter;
 				folder_node->created = existing_folder->created;
@@ -944,7 +942,6 @@ df::index_folder_item_ptr index_state::validate_folder(const df::folder_path fol
 			else
 			{
 				folder_node->name = folder_path.name();
-				folder_node->is_indexed = mark_is_indexed;
 			}
 
 			df::assert_true(!is_empty(folder_node->name));
@@ -953,12 +950,7 @@ df::index_folder_item_ptr index_state::validate_folder(const df::folder_path fol
 			_items.replace(folder_path, folder_node);
 			_items.erase(removed_folders);
 
-			if (folder_node->is_indexed)
-			{
-				_async.invalidate_view(view_invalid::index_summary);
-			}
-
-			return folder_node;
+			return { folder_node, changes_detected };
 		}
 	}
 
@@ -967,7 +959,7 @@ df::index_folder_item_ptr index_state::validate_folder(const df::folder_path fol
 		_summary._distinct_other_folders.emplace(folder_path);
 	}
 
-	return existing_folder;
+	return { existing_folder, false };
 }
 
 std::vector<std::pair<df::file_path, df::index_file_item>> index_state::duplicate_list(const uint32_t group) const
@@ -1442,6 +1434,8 @@ std::vector<folder_scan_item> index_state::scan_items(const df::index_roots& roo
 	std::vector<folder_scan_item> results;
 	std::vector<df::folder_path> folders_to_scan = {roots.folders.begin(), roots.folders.end()};
 
+	auto update_index_summary = false;
+
 	while (!folders_to_scan.empty())
 	{
 		if (token.is_cancelled()) break;
@@ -1451,37 +1445,44 @@ std::vector<folder_scan_item> index_state::scan_items(const df::index_roots& roo
 
 		if (!roots.excludes.contains(folder_path))
 		{
-			const auto node = validate_folder(folder_path, false, true, now);
+			const auto node = validate_folder(folder_path, true, now);
 
-			for (const auto& file : node->files)
+			for (const auto& file : node.folder->files)
 			{
 				if (token.is_cancelled()) break;
-				scan_item(node, folder_path.combine_file(file.name), false, scan_if_offline, nullptr, file.ft);
+				scan_item(node.folder, folder_path.combine_file(file.name), false, scan_if_offline, nullptr, file.ft);
 				results.emplace_back(folder_path, file);
 			}
 
 			if (recursive)
 			{
-				for (const auto& sub_folder : node->folders)
+				for (const auto& sub_folder : node.folder->folders)
 				{
 					folders_to_scan.emplace_back(folder_path.combine(sub_folder->name));
 				}
 			}
+
+			update_index_summary = update_index_summary || (node.folder->is_indexed && node.was_updated);
 		}
 	}
 
 	for (const auto& file_path : roots.files)
 	{
-		const auto node = validate_folder(file_path.folder(), false, true, now);
+		const auto node = validate_folder(file_path.folder(), true, now);
 
 		if (token.is_cancelled()) break;
-		const auto found_file = find_file(node->files, file_path.name());
+		const auto found_file = find_file(node.folder->files, file_path.name());
 
-		if (found_file != node->files.end())
+		if (found_file != node.folder->files.end())
 		{
-			scan_item(node, file_path, false, scan_if_offline, nullptr, found_file->ft);
+			scan_item(node.folder, file_path, false, scan_if_offline, nullptr, found_file->ft);
 			results.emplace_back(file_path.folder(), *found_file);
 		}
+	}
+	
+	if (update_index_summary)
+	{
+		_async.invalidate_view(view_invalid::index_summary);
 	}
 
 	return results;
@@ -1683,18 +1684,18 @@ void index_state::scan_item(const df::index_folder_item_ptr& folder,
 						prop::is_null(metadata->location_state) &&
 						prop::is_null(metadata->location_place))
 					{
-						if (folder->is_indexed)
-							_async.queue_location(
-								[this, folder, file_path, coord = metadata->coordinate](location_cache& locations)
-								{
-									save_location(
-										file_path, locations.find_closest(coord.latitude(), coord.longitude()));
+						
+						_async.queue_location(
+							[this, folder, file_path, coord = metadata->coordinate](location_cache& locations)
+							{
+								const auto loc = locations.find_closest(coord.latitude(), coord.longitude());
+								save_location(file_path, loc);
 
-									if (folder->is_indexed)
-									{
-										_async.invalidate_view(view_invalid::index_summary);
-									}
-								});
+								if (folder->is_indexed)
+								{
+									_async.invalidate_view(view_invalid::index_summary);
+								}
+							});
 					}
 
 					if (folder->is_indexed)
@@ -1720,15 +1721,15 @@ void index_state::scan_item(const df::index_folder_item_ptr& folder,
 
 		if (item)
 		{
-			item->update(file_path, file, folder->is_indexed);
+			item->update(file_path, file);
 		}
 	}
 }
 
 void index_state::scan_item(const df::file_item_ptr& i, const bool load_thumb, const bool scan_if_offline)
 {
-	const auto folder = validate_folder(i->folder(), false, true, platform::now());
-	scan_item(folder, i->path(), load_thumb, scan_if_offline, i, i->file_type());
+	const auto node = validate_folder(i->folder(), true, platform::now());
+	scan_item(node.folder, i->path(), load_thumb, scan_if_offline, i, i->file_type());
 }
 
 bool index_state::needs_scan(const df::file_item_ptr& item) const
@@ -2019,10 +2020,10 @@ void index_state::index_folders(df::cancel_token token)
 
 		if (!roots.excludes.contains(folder_path))
 		{
-			const auto group_node = validate_folder(folder_path, true, true, now);
-			group_node->is_indexed = true;
+			const auto node = validate_folder(folder_path, true, now);
+			node.folder->is_indexed = true;
 
-			for (const auto& file : group_node->files)
+			for (const auto& file : node.folder->files)
 			{
 				histograms.record(_locations, file);
 
@@ -2032,7 +2033,7 @@ void index_state::index_folders(df::cancel_token token)
 				}
 			}
 
-			for (const auto& sub_folder : group_node->folders)
+			for (const auto& sub_folder : node.folder->folders)
 			{
 				const auto sub_folder_path = folder_path.combine(sub_folder->name);
 				const auto is_excluded = roots.excludes.contains(sub_folder_path);
@@ -2355,6 +2356,7 @@ void index_state::update_presence(const df::item_set& items)
 	{
 		df::measure_ms ms(stats.update_presence_ms);
 		df::file_items_by_folder items_by_folder;
+		df::index_folder_info_map indexed_folders;
 
 		for (const auto& i : items.items())
 		{
@@ -2373,8 +2375,13 @@ void index_state::update_presence(const df::item_set& items)
 
 					if (file != folder->files.end())
 					{
-						i->update(i->path(), *file, folder->is_indexed);
+						i->update(i->path(), *file);
 					}
+				}
+
+				if (folder->is_indexed)
+				{
+					indexed_folders[ff.first] = folder;
 				}
 			}
 		}
@@ -2384,9 +2391,9 @@ void index_state::update_presence(const df::item_set& items)
 
 		for (const auto& i : items.items())
 		{
-			const auto is_indexed = i->is_indexed_location();
+			const auto is_indexed_folder = indexed_folders.contains(i->folder());
 
-			if (is_indexed)
+			if (is_indexed_folder)
 			{
 				item_presence[i] = item_presence::this_in;
 			}
@@ -2494,7 +2501,7 @@ void index_state::scan_items(const df::item_set& items_to_scan,
 		{
 			if (token.is_cancelled()) break;
 
-			const auto folder = validate_folder(ff.first, false, refresh_from_file_system, now);
+			const auto node = validate_folder(ff.first, refresh_from_file_system, now);
 
 			for (const auto& i : ff.second)
 			{
@@ -2502,7 +2509,7 @@ void index_state::scan_items(const df::item_set& items_to_scan,
 
 				if (!only_if_needed || i->should_load_thumbnail())
 				{
-					scan_item(folder, i->path(), load_thumbs, scan_if_offline, i, i->file_type());
+					scan_item(node.folder, i->path(), load_thumbs, scan_if_offline, i, i->file_type());
 				}
 			}
 		}
@@ -2510,8 +2517,8 @@ void index_state::scan_items(const df::item_set& items_to_scan,
 		for (const auto& folder : items_to_scan.folders())
 		{
 			if (token.is_cancelled()) break;
-
-			folder->info(validate_folder(folder->path(), false, refresh_from_file_system, now));
+			const auto node = validate_folder(folder->path(), refresh_from_file_system, now);
+			folder->info(node.folder);
 			folder->calc_folder_summary(token);
 		}
 	}
@@ -2536,8 +2543,14 @@ void index_state::scan_folder(const df::folder_path folder_path, const df::index
 void index_state::scan_folder(const df::folder_path folder_path, const bool mark_is_indexed, const df::date_t timestamp)
 {
 	df::scope_locked_inc l(scanning_items);
-	const auto folder = validate_folder(folder_path, mark_is_indexed, true, timestamp);
-	scan_folder(folder_path, folder);
+	const auto node = validate_folder(folder_path, true, timestamp);
+	node.folder->is_indexed = mark_is_indexed;
+	scan_folder(folder_path, node.folder);
+
+	if (node.folder->is_indexed && node.was_updated)
+	{
+		_async.invalidate_view(view_invalid::index_summary);
+	}
 }
 
 void index_state::queue_scan_listed_items(df::item_set listed_items)

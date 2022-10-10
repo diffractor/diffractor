@@ -2,7 +2,7 @@
 **  DO NOT EDIT, GENERATED WITH schema_2_kaxsemantic_cpp.xsl
 **  https://github.com/Matroska-Org/foundation-source/tree/master/spectool
 **
-**  libmatroska : parse Matroska files, see http://www.matroska.org/
+**  libmatroska : parse Matroska files, see https://www.matroska.org/
 **
 **  Copyright (c) 2002-2020, Matroska (non-profit organisation)
 **  All rights reserved.
@@ -40,7 +40,7 @@
 #include "matroska/KaxBlockData.h"
 #include "matroska/KaxCuesData.h"
 
-START_LIBMATROSKA_NAMESPACE
+namespace libmatroska {
 
 DEFINE_START_SEMANTIC(KaxSegment)
 DEFINE_SEMANTIC_ITEM(false, false, KaxSeekHead)
@@ -49,7 +49,7 @@ DEFINE_SEMANTIC_ITEM(false, false, KaxCluster)
 DEFINE_SEMANTIC_ITEM(false, false, KaxTracks)
 DEFINE_SEMANTIC_ITEM(false, true, KaxCues)
 DEFINE_SEMANTIC_ITEM(false, true, KaxAttachments)
-DEFINE_SEMANTIC_ITEM(false, true, KaxChapters)
+DEFINE_SEMANTIC_ITEM(false, false, KaxChapters)
 DEFINE_SEMANTIC_ITEM(false, false, KaxTags)
 DEFINE_END_SEMANTIC(KaxSegment)
 
@@ -97,15 +97,15 @@ DEFINE_MKX_UNISTRING(KaxNextFilename, 0x3E83BB, 3, KaxInfo, "NextFilename")
 DEFINE_MKX_BINARY (KaxSegmentFamily, 0x4444, 2, KaxInfo, "SegmentFamily")
 
 DEFINE_START_SEMANTIC(KaxChapterTranslate)
-DEFINE_SEMANTIC_ITEM(false, false, KaxChapterTranslateEditionUID)
-DEFINE_SEMANTIC_ITEM(true, true, KaxChapterTranslateCodec)
 DEFINE_SEMANTIC_ITEM(true, true, KaxChapterTranslateID)
+DEFINE_SEMANTIC_ITEM(true, true, KaxChapterTranslateCodec)
+DEFINE_SEMANTIC_ITEM(false, false, KaxChapterTranslateEditionUID)
 DEFINE_END_SEMANTIC(KaxChapterTranslate)
 
 DEFINE_MKX_MASTER(KaxChapterTranslate, 0x6924, 2, KaxInfo, "ChapterTranslate")
-DEFINE_MKX_UINTEGER(KaxChapterTranslateEditionUID, 0x69FC, 2, KaxChapterTranslate, "ChapterTranslateEditionUID")
-DEFINE_MKX_UINTEGER(KaxChapterTranslateCodec, 0x69BF, 2, KaxChapterTranslate, "ChapterTranslateCodec")
 DEFINE_MKX_BINARY (KaxChapterTranslateID, 0x69A5, 2, KaxChapterTranslate, "ChapterTranslateID")
+DEFINE_MKX_UINTEGER(KaxChapterTranslateCodec, 0x69BF, 2, KaxChapterTranslate, "ChapterTranslateCodec")
+DEFINE_MKX_UINTEGER(KaxChapterTranslateEditionUID, 0x69FC, 2, KaxChapterTranslate, "ChapterTranslateEditionUID")
 DEFINE_MKX_UINTEGER_DEF(KaxTimecodeScale, 0x2AD7B1, 3, KaxInfo, "TimecodeScale", 1000000)
 DEFINE_MKX_FLOAT(KaxDuration, 0x4489, 2, KaxInfo, "Duration")
 DEFINE_MKX_DATE    (KaxDateUTC, 0x4461, 2, KaxInfo, "DateUTC")
@@ -115,7 +115,7 @@ DEFINE_MKX_UNISTRING(KaxWritingApp, 0x5741, 2, KaxInfo, "WritingApp")
 
 DEFINE_START_SEMANTIC(KaxCluster)
 DEFINE_SEMANTIC_ITEM(true, true, KaxClusterTimecode)
-DEFINE_SEMANTIC_ITEM(false, true, KaxClusterSilentTracks)
+DEFINE_SEMANTIC_ITEM(false, true, KaxClusterSilentTracks) // not supported
 DEFINE_SEMANTIC_ITEM(false, true, KaxClusterPosition)
 DEFINE_SEMANTIC_ITEM(false, true, KaxClusterPrevSize)
 DEFINE_SEMANTIC_ITEM(false, false, KaxSimpleBlock)
@@ -127,7 +127,7 @@ DEFINE_MKX_MASTER_CONS(KaxCluster, 0x1F43B675, 4, KaxSegment, "Cluster")
 DEFINE_MKX_UINTEGER(KaxClusterTimecode, 0xE7, 1, KaxCluster, "ClusterTimecode")
 
 DEFINE_START_SEMANTIC(KaxClusterSilentTracks)
-DEFINE_SEMANTIC_ITEM(false, false, KaxClusterSilentTrackNumber)
+DEFINE_SEMANTIC_ITEM(false, false, KaxClusterSilentTrackNumber) // not supported
 DEFINE_END_SEMANTIC(KaxClusterSilentTracks)
 
 DEFINE_MKX_MASTER(KaxClusterSilentTracks, 0x5854, 2, KaxCluster, "ClusterSilentTracks")
@@ -146,7 +146,7 @@ DEFINE_SEMANTIC_ITEM(false, false, KaxReferenceBlock)
 DEFINE_SEMANTIC_ITEM(false, true, KaxReferenceVirtual) // not supported
 DEFINE_SEMANTIC_ITEM(false, true, KaxCodecState)
 DEFINE_SEMANTIC_ITEM(false, true, KaxDiscardPadding)
-DEFINE_SEMANTIC_ITEM(false, true, KaxSlices)
+DEFINE_SEMANTIC_ITEM(false, true, KaxSlices) // not supported
 DEFINE_SEMANTIC_ITEM(false, true, KaxReferenceFrame) // DivX specific
 DEFINE_END_SEMANTIC(KaxBlockGroup)
 
@@ -161,13 +161,13 @@ DEFINE_END_SEMANTIC(KaxBlockAdditions)
 DEFINE_MKX_MASTER(KaxBlockAdditions, 0x75A1, 2, KaxBlockGroup, "BlockAdditions")
 
 DEFINE_START_SEMANTIC(KaxBlockMore)
-DEFINE_SEMANTIC_ITEM(true, true, KaxBlockAddID)
 DEFINE_SEMANTIC_ITEM(true, true, KaxBlockAdditional)
+DEFINE_SEMANTIC_ITEM(true, true, KaxBlockAddID)
 DEFINE_END_SEMANTIC(KaxBlockMore)
 
 DEFINE_MKX_MASTER(KaxBlockMore, 0xA6, 1, KaxBlockAdditions, "BlockMore")
-DEFINE_MKX_UINTEGER_DEF(KaxBlockAddID, 0xEE, 1, KaxBlockMore, "BlockAddID", 1)
 DEFINE_MKX_BINARY (KaxBlockAdditional, 0xA5, 1, KaxBlockMore, "BlockAdditional")
+DEFINE_MKX_UINTEGER_DEF(KaxBlockAddID, 0xEE, 1, KaxBlockMore, "BlockAddID", 1)
 DEFINE_MKX_UINTEGER(KaxBlockDuration, 0x9B, 1, KaxBlockGroup, "BlockDuration")
 DEFINE_MKX_UINTEGER_DEF(KaxReferencePriority, 0xFA, 1, KaxBlockGroup, "FlagReferenced", 0)
 DEFINE_MKX_SINTEGER_CONS(KaxReferenceBlock, 0xFB, 1, KaxBlockGroup, "ReferenceBlock")
@@ -176,13 +176,13 @@ DEFINE_MKX_BINARY (KaxCodecState, 0xA4, 1, KaxBlockGroup, "CodecState")
 DEFINE_MKX_SINTEGER(KaxDiscardPadding, 0x75A2, 2, KaxBlockGroup, "DiscardPadding")
 
 DEFINE_START_SEMANTIC(KaxSlices)
-DEFINE_SEMANTIC_ITEM(false, false, KaxTimeSlice)
+DEFINE_SEMANTIC_ITEM(false, false, KaxTimeSlice) // not supported
 DEFINE_END_SEMANTIC(KaxSlices)
 
 DEFINE_MKX_MASTER(KaxSlices, 0x8E, 1, KaxBlockGroup, "Slices")
 
 DEFINE_START_SEMANTIC(KaxTimeSlice)
-DEFINE_SEMANTIC_ITEM(false, true, KaxSliceLaceNumber)
+DEFINE_SEMANTIC_ITEM(false, true, KaxSliceLaceNumber) // not supported
 DEFINE_SEMANTIC_ITEM(false, true, KaxSliceFrameNumber) // not supported
 DEFINE_SEMANTIC_ITEM(false, true, KaxSliceBlockAddID) // not supported
 DEFINE_SEMANTIC_ITEM(false, true, KaxSliceDelay) // not supported
@@ -190,7 +190,7 @@ DEFINE_SEMANTIC_ITEM(false, true, KaxSliceDuration) // not supported
 DEFINE_END_SEMANTIC(KaxTimeSlice)
 
 DEFINE_MKX_MASTER(KaxTimeSlice, 0xE8, 1, KaxSlices, "TimeSlice")
-DEFINE_MKX_UINTEGER_DEF(KaxSliceLaceNumber, 0xCC, 1, KaxTimeSlice, "SliceLaceNumber", 0)
+DEFINE_MKX_UINTEGER(KaxSliceLaceNumber, 0xCC, 1, KaxTimeSlice, "SliceLaceNumber")
 DEFINE_MKX_UINTEGER_DEF(KaxSliceFrameNumber, 0xCD, 1, KaxTimeSlice, "SliceFrameNumber", 0)
 DEFINE_MKX_UINTEGER_DEF(KaxSliceBlockAddID, 0xCB, 1, KaxTimeSlice, "SliceBlockAddID", 0)
 DEFINE_MKX_UINTEGER_DEF(KaxSliceDelay, 0xCE, 1, KaxTimeSlice, "SliceDelay", 0)
@@ -219,6 +219,11 @@ DEFINE_SEMANTIC_ITEM(true, true, KaxTrackType)
 DEFINE_SEMANTIC_ITEM(true, true, KaxTrackFlagEnabled)
 DEFINE_SEMANTIC_ITEM(true, true, KaxTrackFlagDefault)
 DEFINE_SEMANTIC_ITEM(true, true, KaxTrackFlagForced)
+DEFINE_SEMANTIC_ITEM(false, true, KaxFlagHearingImpaired)
+DEFINE_SEMANTIC_ITEM(false, true, KaxFlagVisualImpaired)
+DEFINE_SEMANTIC_ITEM(false, true, KaxFlagTextDescriptions)
+DEFINE_SEMANTIC_ITEM(false, true, KaxFlagOriginal)
+DEFINE_SEMANTIC_ITEM(false, true, KaxFlagCommentary)
 DEFINE_SEMANTIC_ITEM(true, true, KaxTrackFlagLacing)
 DEFINE_SEMANTIC_ITEM(true, true, KaxTrackMinCache)
 DEFINE_SEMANTIC_ITEM(false, true, KaxTrackMaxCache)
@@ -229,7 +234,7 @@ DEFINE_SEMANTIC_ITEM(false, true, KaxTrackOffset) // not supported
 DEFINE_SEMANTIC_ITEM(true, true, KaxMaxBlockAdditionID)
 DEFINE_SEMANTIC_ITEM(false, false, KaxBlockAdditionMapping)
 DEFINE_SEMANTIC_ITEM(false, true, KaxTrackName)
-DEFINE_SEMANTIC_ITEM(false, true, KaxTrackLanguage)
+DEFINE_SEMANTIC_ITEM(true, true, KaxTrackLanguage)
 DEFINE_SEMANTIC_ITEM(false, true, KaxLanguageIETF)
 DEFINE_SEMANTIC_ITEM(true, true, KaxCodecID)
 DEFINE_SEMANTIC_ITEM(false, true, KaxCodecPrivate)
@@ -238,9 +243,9 @@ DEFINE_SEMANTIC_ITEM(false, true, KaxTrackAttachmentLink)
 DEFINE_SEMANTIC_ITEM(false, true, KaxCodecSettings) // not supported
 DEFINE_SEMANTIC_ITEM(false, false, KaxCodecInfoURL) // not supported
 DEFINE_SEMANTIC_ITEM(false, false, KaxCodecDownloadURL) // not supported
-DEFINE_SEMANTIC_ITEM(true, true, KaxCodecDecodeAll)
+DEFINE_SEMANTIC_ITEM(true, true, KaxCodecDecodeAll) // not supported
 DEFINE_SEMANTIC_ITEM(false, false, KaxTrackOverlay)
-DEFINE_SEMANTIC_ITEM(false, true, KaxCodecDelay)
+DEFINE_SEMANTIC_ITEM(true, true, KaxCodecDelay)
 DEFINE_SEMANTIC_ITEM(true, true, KaxSeekPreRoll)
 DEFINE_SEMANTIC_ITEM(false, false, KaxTrackTranslate)
 DEFINE_SEMANTIC_ITEM(false, true, KaxTrackVideo)
@@ -261,6 +266,11 @@ DEFINE_MKX_UINTEGER(KaxTrackType, 0x83, 1, KaxTrackEntry, "TrackType")
 DEFINE_MKX_UINTEGER_DEF(KaxTrackFlagEnabled, 0xB9, 1, KaxTrackEntry, "TrackFlagEnabled", 1)
 DEFINE_MKX_UINTEGER_DEF(KaxTrackFlagDefault, 0x88, 1, KaxTrackEntry, "TrackFlagDefault", 1)
 DEFINE_MKX_UINTEGER_DEF(KaxTrackFlagForced, 0x55AA, 2, KaxTrackEntry, "TrackFlagForced", 0)
+DEFINE_MKX_UINTEGER(KaxFlagHearingImpaired, 0x55AB, 2, KaxTrackEntry, "FlagHearingImpaired")
+DEFINE_MKX_UINTEGER(KaxFlagVisualImpaired, 0x55AC, 2, KaxTrackEntry, "FlagVisualImpaired")
+DEFINE_MKX_UINTEGER(KaxFlagTextDescriptions, 0x55AD, 2, KaxTrackEntry, "FlagTextDescriptions")
+DEFINE_MKX_UINTEGER(KaxFlagOriginal, 0x55AE, 2, KaxTrackEntry, "FlagOriginal")
+DEFINE_MKX_UINTEGER(KaxFlagCommentary, 0x55AF, 2, KaxTrackEntry, "FlagCommentary")
 DEFINE_MKX_UINTEGER_DEF(KaxTrackFlagLacing, 0x9C, 1, KaxTrackEntry, "TrackFlagLacing", 1)
 DEFINE_MKX_UINTEGER_DEF(KaxTrackMinCache, 0x6DE7, 2, KaxTrackEntry, "TrackMinCache", 0)
 DEFINE_MKX_UINTEGER(KaxTrackMaxCache, 0x6DF8, 2, KaxTrackEntry, "TrackMaxCache")
@@ -298,32 +308,32 @@ DEFINE_MKX_UINTEGER_DEF(KaxCodecDelay, 0x56AA, 2, KaxTrackEntry, "CodecDelay", 0
 DEFINE_MKX_UINTEGER_DEF(KaxSeekPreRoll, 0x56BB, 2, KaxTrackEntry, "SeekPreRoll", 0)
 
 DEFINE_START_SEMANTIC(KaxTrackTranslate)
-DEFINE_SEMANTIC_ITEM(false, false, KaxTrackTranslateEditionUID)
-DEFINE_SEMANTIC_ITEM(true, true, KaxTrackTranslateCodec)
 DEFINE_SEMANTIC_ITEM(true, true, KaxTrackTranslateTrackID)
+DEFINE_SEMANTIC_ITEM(true, true, KaxTrackTranslateCodec)
+DEFINE_SEMANTIC_ITEM(false, false, KaxTrackTranslateEditionUID)
 DEFINE_END_SEMANTIC(KaxTrackTranslate)
 
 DEFINE_MKX_MASTER(KaxTrackTranslate, 0x6624, 2, KaxTrackEntry, "TrackTranslate")
-DEFINE_MKX_UINTEGER(KaxTrackTranslateEditionUID, 0x66FC, 2, KaxTrackTranslate, "TrackTranslateEditionUID")
-DEFINE_MKX_UINTEGER(KaxTrackTranslateCodec, 0x66BF, 2, KaxTrackTranslate, "TrackTranslateCodec")
 DEFINE_MKX_BINARY (KaxTrackTranslateTrackID, 0x66A5, 2, KaxTrackTranslate, "TrackTranslateTrackID")
+DEFINE_MKX_UINTEGER(KaxTrackTranslateCodec, 0x66BF, 2, KaxTrackTranslate, "TrackTranslateCodec")
+DEFINE_MKX_UINTEGER(KaxTrackTranslateEditionUID, 0x66FC, 2, KaxTrackTranslate, "TrackTranslateEditionUID")
 
 DEFINE_START_SEMANTIC(KaxTrackVideo)
 DEFINE_SEMANTIC_ITEM(true, true, KaxVideoFlagInterlaced)
 DEFINE_SEMANTIC_ITEM(true, true, KaxVideoFieldOrder)
-DEFINE_SEMANTIC_ITEM(false, true, KaxVideoStereoMode)
-DEFINE_SEMANTIC_ITEM(false, true, KaxVideoAlphaMode)
-DEFINE_SEMANTIC_ITEM(false, true, KaxOldStereoMode) // not supported
+DEFINE_SEMANTIC_ITEM(true, true, KaxVideoStereoMode)
+DEFINE_SEMANTIC_ITEM(true, true, KaxVideoAlphaMode)
+DEFINE_SEMANTIC_ITEM(false, true, KaxOldStereoMode)
 DEFINE_SEMANTIC_ITEM(true, true, KaxVideoPixelWidth)
 DEFINE_SEMANTIC_ITEM(true, true, KaxVideoPixelHeight)
-DEFINE_SEMANTIC_ITEM(false, true, KaxVideoPixelCropBottom)
-DEFINE_SEMANTIC_ITEM(false, true, KaxVideoPixelCropTop)
-DEFINE_SEMANTIC_ITEM(false, true, KaxVideoPixelCropLeft)
-DEFINE_SEMANTIC_ITEM(false, true, KaxVideoPixelCropRight)
+DEFINE_SEMANTIC_ITEM(true, true, KaxVideoPixelCropBottom)
+DEFINE_SEMANTIC_ITEM(true, true, KaxVideoPixelCropTop)
+DEFINE_SEMANTIC_ITEM(true, true, KaxVideoPixelCropLeft)
+DEFINE_SEMANTIC_ITEM(true, true, KaxVideoPixelCropRight)
 DEFINE_SEMANTIC_ITEM(false, true, KaxVideoDisplayWidth)
 DEFINE_SEMANTIC_ITEM(false, true, KaxVideoDisplayHeight)
-DEFINE_SEMANTIC_ITEM(false, true, KaxVideoDisplayUnit)
-DEFINE_SEMANTIC_ITEM(false, true, KaxVideoAspectRatio)
+DEFINE_SEMANTIC_ITEM(true, true, KaxVideoDisplayUnit)
+DEFINE_SEMANTIC_ITEM(false, true, KaxVideoAspectRatio) // not supported
 DEFINE_SEMANTIC_ITEM(false, true, KaxVideoColourSpace)
 DEFINE_SEMANTIC_ITEM(false, true, KaxVideoGamma) // not supported
 DEFINE_SEMANTIC_ITEM(false, true, KaxVideoFrameRate) // not supported
@@ -352,17 +362,17 @@ DEFINE_MKX_FLOAT(KaxVideoGamma, 0x2FB523, 3, KaxTrackVideo, "VideoGamma")
 DEFINE_MKX_FLOAT(KaxVideoFrameRate, 0x2383E3, 3, KaxTrackVideo, "VideoFrameRate")
 
 DEFINE_START_SEMANTIC(KaxVideoColour)
-DEFINE_SEMANTIC_ITEM(false, true, KaxVideoColourMatrix)
-DEFINE_SEMANTIC_ITEM(false, true, KaxVideoBitsPerChannel)
+DEFINE_SEMANTIC_ITEM(true, true, KaxVideoColourMatrix)
+DEFINE_SEMANTIC_ITEM(true, true, KaxVideoBitsPerChannel)
 DEFINE_SEMANTIC_ITEM(false, true, KaxVideoChromaSubsampHorz)
 DEFINE_SEMANTIC_ITEM(false, true, KaxVideoChromaSubsampVert)
 DEFINE_SEMANTIC_ITEM(false, true, KaxVideoCbSubsampHorz)
 DEFINE_SEMANTIC_ITEM(false, true, KaxVideoCbSubsampVert)
-DEFINE_SEMANTIC_ITEM(false, true, KaxVideoChromaSitHorz)
-DEFINE_SEMANTIC_ITEM(false, true, KaxVideoChromaSitVert)
-DEFINE_SEMANTIC_ITEM(false, true, KaxVideoColourRange)
-DEFINE_SEMANTIC_ITEM(false, true, KaxVideoColourTransferCharacter)
-DEFINE_SEMANTIC_ITEM(false, true, KaxVideoColourPrimaries)
+DEFINE_SEMANTIC_ITEM(true, true, KaxVideoChromaSitHorz)
+DEFINE_SEMANTIC_ITEM(true, true, KaxVideoChromaSitVert)
+DEFINE_SEMANTIC_ITEM(true, true, KaxVideoColourRange)
+DEFINE_SEMANTIC_ITEM(true, true, KaxVideoColourTransferCharacter)
+DEFINE_SEMANTIC_ITEM(true, true, KaxVideoColourPrimaries)
 DEFINE_SEMANTIC_ITEM(false, true, KaxVideoColourMaxCLL)
 DEFINE_SEMANTIC_ITEM(false, true, KaxVideoColourMaxFALL)
 DEFINE_SEMANTIC_ITEM(false, true, KaxVideoColourMasterMeta)
@@ -429,6 +439,7 @@ DEFINE_SEMANTIC_ITEM(false, true, KaxAudioOutputSamplingFreq)
 DEFINE_SEMANTIC_ITEM(true, true, KaxAudioChannels)
 DEFINE_SEMANTIC_ITEM(false, true, KaxAudioPosition) // not supported
 DEFINE_SEMANTIC_ITEM(false, true, KaxAudioBitDepth)
+DEFINE_SEMANTIC_ITEM(true, true, KaxEmphasis)
 DEFINE_END_SEMANTIC(KaxTrackAudio)
 
 DEFINE_MKX_MASTER(KaxTrackAudio, 0xE1, 1, KaxTrackEntry, "TrackAudio")
@@ -437,6 +448,7 @@ DEFINE_MKX_FLOAT(KaxAudioOutputSamplingFreq, 0x78B5, 2, KaxTrackAudio, "AudioOut
 DEFINE_MKX_UINTEGER_DEF(KaxAudioChannels, 0x9F, 1, KaxTrackAudio, "AudioChannels", 1)
 DEFINE_MKX_BINARY (KaxAudioPosition, 0x7D7B, 2, KaxTrackAudio, "AudioPosition")
 DEFINE_MKX_UINTEGER(KaxAudioBitDepth, 0x6264, 2, KaxTrackAudio, "AudioBitDepth")
+DEFINE_MKX_UINTEGER_DEF(KaxEmphasis, 0x52F1, 2, KaxTrackAudio, "Emphasis", 0)
 
 DEFINE_START_SEMANTIC(KaxTrackOperation)
 DEFINE_SEMANTIC_ITEM(false, true, KaxTrackCombinePlanes)
@@ -504,10 +516,10 @@ DEFINE_START_SEMANTIC(KaxContentEncryption)
 DEFINE_SEMANTIC_ITEM(true, true, KaxContentEncAlgo)
 DEFINE_SEMANTIC_ITEM(false, true, KaxContentEncKeyID)
 DEFINE_SEMANTIC_ITEM(false, true, KaxContentEncAESSettings)
-DEFINE_SEMANTIC_ITEM(false, true, KaxContentSignature)
-DEFINE_SEMANTIC_ITEM(false, true, KaxContentSigKeyID)
-DEFINE_SEMANTIC_ITEM(false, true, KaxContentSigAlgo)
-DEFINE_SEMANTIC_ITEM(false, true, KaxContentSigHashAlgo)
+DEFINE_SEMANTIC_ITEM(false, true, KaxContentSignature) // not supported
+DEFINE_SEMANTIC_ITEM(false, true, KaxContentSigKeyID) // not supported
+DEFINE_SEMANTIC_ITEM(false, true, KaxContentSigAlgo) // not supported
+DEFINE_SEMANTIC_ITEM(false, true, KaxContentSigHashAlgo) // not supported
 DEFINE_END_SEMANTIC(KaxContentEncryption)
 
 DEFINE_MKX_MASTER(KaxContentEncryption, 0x5035, 2, KaxContentEncoding, "ContentEncryption")
@@ -545,7 +557,7 @@ DEFINE_SEMANTIC_ITEM(true, true, KaxCueClusterPosition)
 DEFINE_SEMANTIC_ITEM(false, true, KaxCueRelativePosition)
 DEFINE_SEMANTIC_ITEM(false, true, KaxCueDuration)
 DEFINE_SEMANTIC_ITEM(false, true, KaxCueBlockNumber)
-DEFINE_SEMANTIC_ITEM(false, true, KaxCueCodecState)
+DEFINE_SEMANTIC_ITEM(true, true, KaxCueCodecState)
 DEFINE_SEMANTIC_ITEM(false, false, KaxCueReference)
 DEFINE_END_SEMANTIC(KaxCueTrackPositions)
 
@@ -554,7 +566,7 @@ DEFINE_MKX_UINTEGER(KaxCueTrack, 0xF7, 1, KaxCueTrackPositions, "CueTrack")
 DEFINE_MKX_UINTEGER(KaxCueClusterPosition, 0xF1, 1, KaxCueTrackPositions, "CueClusterPosition")
 DEFINE_MKX_UINTEGER(KaxCueRelativePosition, 0xF0, 1, KaxCueTrackPositions, "CueRelativePosition")
 DEFINE_MKX_UINTEGER(KaxCueDuration, 0xB2, 1, KaxCueTrackPositions, "CueDuration")
-DEFINE_MKX_UINTEGER_DEF(KaxCueBlockNumber, 0x5378, 2, KaxCueTrackPositions, "CueBlockNumber", 1)
+DEFINE_MKX_UINTEGER(KaxCueBlockNumber, 0x5378, 2, KaxCueTrackPositions, "CueBlockNumber")
 DEFINE_MKX_UINTEGER_DEF(KaxCueCodecState, 0xEA, 1, KaxCueTrackPositions, "CueCodecState", 0)
 
 DEFINE_START_SEMANTIC(KaxCueReference)
@@ -607,7 +619,8 @@ DEFINE_START_SEMANTIC(KaxEditionEntry)
 DEFINE_SEMANTIC_ITEM(false, true, KaxEditionUID)
 DEFINE_SEMANTIC_ITEM(true, true, KaxEditionFlagHidden)
 DEFINE_SEMANTIC_ITEM(true, true, KaxEditionFlagDefault)
-DEFINE_SEMANTIC_ITEM(false, true, KaxEditionFlagOrdered)
+DEFINE_SEMANTIC_ITEM(true, true, KaxEditionFlagOrdered)
+DEFINE_SEMANTIC_ITEM(false, false, KaxEditionDisplay)
 DEFINE_SEMANTIC_ITEM(true, false, KaxChapterAtom)
 DEFINE_END_SEMANTIC(KaxEditionEntry)
 
@@ -616,6 +629,15 @@ DEFINE_MKX_UINTEGER(KaxEditionUID, 0x45BC, 2, KaxEditionEntry, "EditionUID")
 DEFINE_MKX_UINTEGER_DEF(KaxEditionFlagHidden, 0x45BD, 2, KaxEditionEntry, "EditionFlagHidden", 0)
 DEFINE_MKX_UINTEGER_DEF(KaxEditionFlagDefault, 0x45DB, 2, KaxEditionEntry, "EditionFlagDefault", 0)
 DEFINE_MKX_UINTEGER_DEF(KaxEditionFlagOrdered, 0x45DD, 2, KaxEditionEntry, "EditionFlagOrdered", 0)
+
+DEFINE_START_SEMANTIC(KaxEditionDisplay)
+DEFINE_SEMANTIC_ITEM(true, true, KaxEditionString)
+DEFINE_SEMANTIC_ITEM(false, false, KaxEditionLanguageIETF)
+DEFINE_END_SEMANTIC(KaxEditionDisplay)
+
+DEFINE_MKX_MASTER(KaxEditionDisplay, 0x4520, 2, KaxEditionEntry, "EditionDisplay")
+DEFINE_MKX_UNISTRING(KaxEditionString, 0x4521, 2, KaxEditionDisplay, "EditionString")
+DEFINE_MKX_STRING(KaxEditionLanguageIETF, 0x45E4, 2, KaxEditionDisplay, "EditionLanguageIETF")
 
 DEFINE_START_SEMANTIC(KaxChapterAtom)
 DEFINE_SEMANTIC_ITEM(false, false, KaxChapterAtom) // recursive
@@ -626,6 +648,7 @@ DEFINE_SEMANTIC_ITEM(false, true, KaxChapterTimeEnd)
 DEFINE_SEMANTIC_ITEM(true, true, KaxChapterFlagHidden)
 DEFINE_SEMANTIC_ITEM(true, true, KaxChapterFlagEnabled)
 DEFINE_SEMANTIC_ITEM(false, true, KaxChapterSegmentUID)
+DEFINE_SEMANTIC_ITEM(false, true, KaxChapterSkipType)
 DEFINE_SEMANTIC_ITEM(false, true, KaxChapterSegmentEditionUID)
 DEFINE_SEMANTIC_ITEM(false, true, KaxChapterPhysicalEquiv)
 DEFINE_SEMANTIC_ITEM(false, true, KaxChapterTrack)
@@ -641,6 +664,7 @@ DEFINE_MKX_UINTEGER(KaxChapterTimeEnd, 0x92, 1, KaxChapterAtom, "ChapterTimeEnd"
 DEFINE_MKX_UINTEGER_DEF(KaxChapterFlagHidden, 0x98, 1, KaxChapterAtom, "ChapterFlagHidden", 0)
 DEFINE_MKX_UINTEGER_DEF(KaxChapterFlagEnabled, 0x4598, 2, KaxChapterAtom, "ChapterFlagEnabled", 1)
 DEFINE_MKX_BINARY (KaxChapterSegmentUID, 0x6E67, 2, KaxChapterAtom, "ChapterSegmentUID")
+DEFINE_MKX_UINTEGER(KaxChapterSkipType, 0x4588, 2, KaxChapterAtom, "ChapterSkipType")
 DEFINE_MKX_UINTEGER(KaxChapterSegmentEditionUID, 0x6EBC, 2, KaxChapterAtom, "ChapterSegmentEditionUID")
 DEFINE_MKX_UINTEGER(KaxChapterPhysicalEquiv, 0x63C3, 2, KaxChapterAtom, "ChapterPhysicalEquiv")
 
@@ -697,7 +721,7 @@ DEFINE_END_SEMANTIC(KaxTag)
 DEFINE_MKX_MASTER(KaxTag, 0x7373, 2, KaxTags, "Tag")
 
 DEFINE_START_SEMANTIC(KaxTagTargets)
-DEFINE_SEMANTIC_ITEM(false, true, KaxTagTargetTypeValue)
+DEFINE_SEMANTIC_ITEM(true, true, KaxTagTargetTypeValue)
 DEFINE_SEMANTIC_ITEM(false, true, KaxTagTargetType)
 DEFINE_SEMANTIC_ITEM(false, false, KaxTagTrackUID)
 DEFINE_SEMANTIC_ITEM(false, false, KaxTagEditionUID)
@@ -719,6 +743,7 @@ DEFINE_SEMANTIC_ITEM(true, true, KaxTagName)
 DEFINE_SEMANTIC_ITEM(true, true, KaxTagLangue)
 DEFINE_SEMANTIC_ITEM(false, true, KaxTagLanguageIETF)
 DEFINE_SEMANTIC_ITEM(true, true, KaxTagDefault)
+DEFINE_SEMANTIC_ITEM(true, true, KaxTagDefaultBogus) // not supported
 DEFINE_SEMANTIC_ITEM(false, true, KaxTagString)
 DEFINE_SEMANTIC_ITEM(false, true, KaxTagBinary)
 DEFINE_END_SEMANTIC(KaxTagSimple)
@@ -728,8 +753,19 @@ DEFINE_MKX_UNISTRING(KaxTagName, 0x45A3, 2, KaxTagSimple, "TagName")
 DEFINE_MKX_STRING_DEF(KaxTagLangue, 0x447A, 2, KaxTagSimple, "TagLanguage", "und")
 DEFINE_MKX_STRING(KaxTagLanguageIETF, 0x447B, 2, KaxTagSimple, "TagLanguageIETF")
 DEFINE_MKX_UINTEGER_DEF(KaxTagDefault, 0x4484, 2, KaxTagSimple, "TagDefault", 1)
+DEFINE_MKX_UINTEGER_DEF(KaxTagDefaultBogus, 0x44B4, 2, KaxTagSimple, "TagDefaultBogus", 1)
 DEFINE_MKX_UNISTRING(KaxTagString, 0x4487, 2, KaxTagSimple, "TagString")
 DEFINE_MKX_BINARY (KaxTagBinary, 0x4485, 2, KaxTagSimple, "TagBinary")
+
+filepos_t KaxClusterSilentTracks::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
+  assert(false); // no you are not allowed to use this element !
+  return 0;
+}
+
+filepos_t KaxClusterSilentTrackNumber::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
+  assert(false); // no you are not allowed to use this element !
+  return 0;
+}
 
 filepos_t KaxBlockVirtual::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
   assert(false); // no you are not allowed to use this element !
@@ -737,6 +773,11 @@ filepos_t KaxBlockVirtual::RenderData(IOCallback & /* output */, bool /* bForceR
 }
 
 filepos_t KaxReferenceVirtual::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
+  assert(false); // no you are not allowed to use this element !
+  return 0;
+}
+
+filepos_t KaxSlices::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
   assert(false); // no you are not allowed to use this element !
   return 0;
 }
@@ -771,7 +812,27 @@ filepos_t KaxSliceDuration::RenderData(IOCallback & /* output */, bool /* bForce
   return 0;
 }
 
+filepos_t KaxReferenceFrame::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
+  assert(false); // no you are not allowed to use this element !
+  return 0;
+}
+
+filepos_t KaxReferenceOffset::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
+  assert(false); // no you are not allowed to use this element !
+  return 0;
+}
+
+filepos_t KaxReferenceTimeCode::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
+  assert(false); // no you are not allowed to use this element !
+  return 0;
+}
+
 filepos_t KaxEncryptedBlock::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
+  assert(false); // no you are not allowed to use this element !
+  return 0;
+}
+
+filepos_t KaxTrackTimecodeScale::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
   assert(false); // no you are not allowed to use this element !
   return 0;
 }
@@ -801,7 +862,17 @@ filepos_t KaxCodecDownloadURL::RenderData(IOCallback & /* output */, bool /* bFo
   return 0;
 }
 
+filepos_t KaxCodecDecodeAll::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
+  assert(false); // no you are not allowed to use this element !
+  return 0;
+}
+
 filepos_t KaxOldStereoMode::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
+  assert(false); // no you are not allowed to use this element !
+  return 0;
+}
+
+filepos_t KaxVideoAspectRatio::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
   assert(false); // no you are not allowed to use this element !
   return 0;
 }
@@ -817,6 +888,51 @@ filepos_t KaxVideoFrameRate::RenderData(IOCallback & /* output */, bool /* bForc
 }
 
 filepos_t KaxAudioPosition::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
+  assert(false); // no you are not allowed to use this element !
+  return 0;
+}
+
+filepos_t KaxTrickTrackUID::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
+  assert(false); // no you are not allowed to use this element !
+  return 0;
+}
+
+filepos_t KaxTrickTrackSegmentUID::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
+  assert(false); // no you are not allowed to use this element !
+  return 0;
+}
+
+filepos_t KaxTrickTrackFlag::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
+  assert(false); // no you are not allowed to use this element !
+  return 0;
+}
+
+filepos_t KaxTrickMasterTrackUID::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
+  assert(false); // no you are not allowed to use this element !
+  return 0;
+}
+
+filepos_t KaxTrickMasterTrackSegmentUID::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
+  assert(false); // no you are not allowed to use this element !
+  return 0;
+}
+
+filepos_t KaxContentSignature::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
+  assert(false); // no you are not allowed to use this element !
+  return 0;
+}
+
+filepos_t KaxContentSigKeyID::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
+  assert(false); // no you are not allowed to use this element !
+  return 0;
+}
+
+filepos_t KaxContentSigAlgo::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
+  assert(false); // no you are not allowed to use this element !
+  return 0;
+}
+
+filepos_t KaxContentSigHashAlgo::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
   assert(false); // no you are not allowed to use this element !
   return 0;
 }
@@ -851,4 +967,9 @@ filepos_t KaxFileUsedEndTime::RenderData(IOCallback & /* output */, bool /* bFor
   return 0;
 }
 
-END_LIBMATROSKA_NAMESPACE
+filepos_t KaxTagDefaultBogus::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
+  assert(false); // no you are not allowed to use this element !
+  return 0;
+}
+
+} // namespace libmatroska

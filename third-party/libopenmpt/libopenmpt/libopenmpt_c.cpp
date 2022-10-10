@@ -32,12 +32,11 @@
 namespace openmpt {
 
 static const char * strdup( const char * src ) {
-	size_t len = std::strlen( src ) + 1;
-	char * dst = (char*)std::calloc( len, sizeof( char ) );
+	char * dst = (char*)std::calloc( std::strlen( src ) + 1, sizeof( char ) );
 	if ( !dst ) {
 		return NULL;
 	}
-	strcpy_s( dst, len, src );
+	std::strcpy( dst, src );
 	return dst;
 }
 

@@ -39,6 +39,8 @@ struct aom_decoder
   bool codec_initialized = false;
 
   aom_codec_iface_t* iface;
+
+  bool strict_decoding = false;
 };
 
 static const char kSuccess[] = "Success";
@@ -97,7 +99,7 @@ struct heif_error aom_new_decoder(void** dec)
 
     delete decoder;
 
-    struct heif_error err = {heif_error_Decoder_plugin_error, heif_suberror_Unspecified, kSuccess};
+    struct heif_error err = {heif_error_Decoder_plugin_error, heif_suberror_Unspecified, aom_codec_err_to_string(aomerr)};
     return err;
   }
 
@@ -126,14 +128,25 @@ void aom_free_decoder(void* decoder_raw)
 }
 
 
+void aom_set_strict_decoding(void* decoder_raw, int flag)
+{
+  struct aom_decoder* decoder = (aom_decoder*) decoder_raw;
+
+  decoder->strict_decoding = flag;
+}
+
+
 struct heif_error aom_push_data(void* decoder_raw, const void* frame_data, size_t frame_size)
 {
   struct aom_decoder* decoder = (struct aom_decoder*) decoder_raw;
 
+  const char* ver = aom_codec_version_str();
+  (void)ver;
+
   aom_codec_err_t aomerr;
   aomerr = aom_codec_decode(&decoder->codec, (const uint8_t*) frame_data, frame_size, NULL);
   if (aomerr) {
-    struct heif_error err = {heif_error_Invalid_input, heif_suberror_Unspecified, kSuccess};
+    struct heif_error err = {heif_error_Invalid_input, heif_suberror_Unspecified, aom_codec_err_to_string(aomerr)};
     return err;
   }
 
@@ -200,9 +213,10 @@ struct heif_error aom_decode_image(void* decoder_raw, struct heif_image** out_im
   // --- read nclx parameters from decoded AV1 bitstream
 
   heif_color_profile_nclx nclx;
-  nclx.color_primaries = (heif_color_primaries) img->cp;
-  nclx.transfer_characteristics = (heif_transfer_characteristics) img->tc;
-  nclx.matrix_coefficients = (heif_matrix_coefficients) img->mc;
+  nclx.version = 1;
+  HEIF_WARN_OR_FAIL(decoder->strict_decoding, heif_img, heif_nclx_color_profile_set_color_primaries(&nclx, img->cp), { heif_image_release(heif_img); });
+  HEIF_WARN_OR_FAIL(decoder->strict_decoding, heif_img, heif_nclx_color_profile_set_transfer_characteristics(&nclx, img->tc), { heif_image_release(heif_img); });
+  HEIF_WARN_OR_FAIL(decoder->strict_decoding, heif_img, heif_nclx_color_profile_set_matrix_coefficients(&nclx, img->mc), { heif_image_release(heif_img); });
   nclx.full_range_flag = (img->range == AOM_CR_FULL_RANGE);
   heif_image_set_nclx_color_profile(heif_img, &nclx);
 
@@ -256,7 +270,7 @@ struct heif_error aom_decode_image(void* decoder_raw, struct heif_image** out_im
 
 static const struct heif_decoder_plugin decoder_aom
     {
-        1,
+        2,
         aom_plugin_name,
         aom_init_plugin,
         aom_deinit_plugin,
@@ -264,7 +278,8 @@ static const struct heif_decoder_plugin decoder_aom
         aom_new_decoder,
         aom_free_decoder,
         aom_push_data,
-        aom_decode_image
+        aom_decode_image,
+        aom_set_strict_decoding
     };
 
 

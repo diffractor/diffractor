@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -56,9 +56,9 @@ class dng_resample_bicubic: public dng_resample_function
 	
 /******************************************************************************/
 
-const uint32 kResampleSubsampleBits  = 7;
+const uint32 kResampleSubsampleBits	 = 7;
 const uint32 kResampleSubsampleCount = 1 << kResampleSubsampleBits;
-const uint32 kResampleSubsampleMask  = kResampleSubsampleCount - 1;
+const uint32 kResampleSubsampleMask	 = kResampleSubsampleCount - 1;
 
 /*****************************************************************************/
 
@@ -155,6 +155,13 @@ class dng_resample_weights
 			
 			}
 
+		uint32 Weights32BufferLogicalSize () const
+			{
+
+			return fWeights32->LogicalSize ();
+
+			}
+
 		const int16 *Weights16 (uint32 fract) const
 			{
 			
@@ -169,6 +176,13 @@ class dng_resample_weights
 			
 			return fWeights16->Buffer_int16 () + fract * fWeightStep;
 			
+			}
+
+		uint32 Weights16BufferLogicalSize () const
+			{
+
+			return fWeights16->LogicalSize ();
+
 			}
 
 	};
@@ -233,8 +247,17 @@ class dng_resample_weights_2d
 			
 			DNG_ASSERT (fWeights32->Buffer (), "Weights32 is NULL");
 			
+			if (fract.v < 0 || fract.h < 0
+				 || fract.v >= static_cast<int32> (kResampleSubsampleCount2D)
+				 || fract.h >= static_cast<int32> (kResampleSubsampleCount2D))
+				{
+				
+				ThrowBadFormat ();
+				
+				}
+			
 			const uint32 offset = fract.v * fRowStep + fract.h * fColStep;
-
+			
 			return fWeights32->Buffer_real32 () + offset;
 			
 			}
@@ -243,6 +266,15 @@ class dng_resample_weights_2d
 			{
 			
 			DNG_ASSERT (fWeights16->Buffer (), "Weights16 is NULL");
+			
+			if (fract.v < 0 || fract.h < 0
+				 || fract.v >= static_cast<int32> (kResampleSubsampleCount2D)
+				 || fract.h >= static_cast<int32> (kResampleSubsampleCount2D))
+				{
+				
+				ThrowBadFormat ();
+				
+				}
 			
 			const uint32 offset = fract.v * fRowStep + fract.h * fColStep;
 			

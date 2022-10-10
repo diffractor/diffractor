@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -13,6 +13,7 @@
 
 #include "dng_auto_ptr.h"
 #include "dng_image.h"
+#include "dng_memory.h"
 #include "dng_pixel_buffer.h"
 
 /*****************************************************************************/
@@ -33,9 +34,12 @@ class dng_simple_image : public dng_image
 	public:
 	
 		dng_simple_image (const dng_rect &bounds,
-				  		  uint32 planes,
-				  		  uint32 pixelType,
-				  		  dng_memory_allocator &allocator);
+						  uint32 planes,
+						  uint32 pixelType,
+						  dng_memory_allocator &allocator = gDefaultDNGMemoryAllocator);
+		
+		dng_simple_image (dng_pixel_buffer &buffer,
+						  dng_memory_allocator &allocator = gDefaultDNGMemoryAllocator);
 		
 		virtual ~dng_simple_image ();
 	
@@ -52,6 +56,10 @@ class dng_simple_image : public dng_image
 		/// Rotate image according to orientation.
 		
 		virtual void Rotate (const dng_orientation &orientation);
+		
+		/// Offset image.
+		
+		virtual void Offset (const dng_point &offset);
 		
 		/// Get the buffer for direct processing. (Unique to dng_simple_image.)
 		

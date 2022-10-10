@@ -545,7 +545,10 @@ std::vector<GetLengthType> CSoundFile::GetLength(enmGetLengthResetMode adjustMod
 					memory.chnSettings[nChn].vol = 0xFF;
 				}
 				if(chn.rowCommand.IsNote())
+				{
 					chn.nLastNote = note;
+					chn.RestorePanAndFilter();
+				}
 
 				// Update channel panning
 				if(chn.rowCommand.IsNote() || chn.rowCommand.instr)
@@ -2229,8 +2232,12 @@ CHANNELINDEX CSoundFile::CheckNNA(CHANNELINDEX nChn, uint32 instr, int note, boo
 					case DuplicateNoteAction::NoteOff:
 					case DuplicateNoteAction::NoteFade:
 						// Switch off duplicated note played on this plugin
-						SendMIDINote(i, chn.GetPluginNote(m_playBehaviour[kITRealNoteMapping]) + NOTE_MAX_SPECIAL, 0);
-						chn.nArpeggioLastNote = NOTE_NONE;
+						if(const auto oldNote = chn.GetPluginNote(m_playBehaviour[kITRealNoteMapping]); oldNote != NOTE_NONE)
+						{
+							SendMIDINote(i, oldNote + NOTE_MAX_SPECIAL, 0);
+							chn.nArpeggioLastNote = NOTE_NONE;
+							chn.nNote = NOTE_NONE;
+						}
 						break;
 					}
 				}
@@ -2282,7 +2289,8 @@ CHANNELINDEX CSoundFile::CheckNNA(CHANNELINDEX nChn, uint32 instr, int note, boo
 			{
 				// apply NNA to this plugin iff it is currently playing a note on this tracker channel
 				// (and if it is playing a note, we know that would be the last note played on this chan).
-				applyNNAtoPlug = pPlugin->IsNotePlaying(srcChn.GetPluginNote(m_playBehaviour[kITRealNoteMapping]), nChn);
+				const auto oldNote = srcChn.GetPluginNote(m_playBehaviour[kITRealNoteMapping]);
+				applyNNAtoPlug = (oldNote != NOTE_NONE) && pPlugin->IsNotePlaying(oldNote, nChn);
 			}
 		}
 	}
@@ -2291,6 +2299,24 @@ CHANNELINDEX CSoundFile::CheckNNA(CHANNELINDEX nChn, uint32 instr, int note, boo
 	// New Note Action
 	if(!srcChn.IsSamplePlaying() && !applyNNAtoPlug)
 		return CHANNELINDEX_INVALID;
+
+#ifndef NO_PLUGINS
+	if(applyNNAtoPlug && pPlugin)
+	{
+		switch(srcChn.nNNA)
+		{
+			case NewNoteAction::NoteOff:
+			case NewNoteAction::NoteCut:
+			case NewNoteAction::NoteFade:
+				// Switch off note played on this plugin, on this tracker channel and midi channel
+				SendMIDINote(nChn, NOTE_KEYOFF, 0);
+				srcChn.nArpeggioLastNote = NOTE_NONE;
+				break;
+			case NewNoteAction::Continue:
+				break;
+		}
+	}
+#endif  // NO_PLUGINS
 
 	CHANNELINDEX nnaChn = GetNNAChannel(nChn);
 	if(nnaChn == CHANNELINDEX_INVALID)
@@ -2306,23 +2332,6 @@ CHANNELINDEX CSoundFile::CheckNNA(CHANNELINDEX nChn, uint32 instr, int note, boo
 
 	chn.nMasterChn = nChn < GetNumChannels() ? nChn + 1 : 0;
 	chn.nCommand = CMD_NONE;
-#ifndef NO_PLUGINS
-	if(applyNNAtoPlug && pPlugin)
-	{
-		switch(srcChn.nNNA)
-		{
-		case NewNoteAction::NoteOff:
-		case NewNoteAction::NoteCut:
-		case NewNoteAction::NoteFade:
-			// Switch off note played on this plugin, on this tracker channel and midi channel
-			SendMIDINote(nChn, NOTE_KEYOFF, 0);
-			srcChn.nArpeggioLastNote = NOTE_NONE;
-			break;
-		case NewNoteAction::Continue:
-			break;
-		}
-	}
-#endif // NO_PLUGINS
 
 	// Key Off the note
 	switch(srcChn.nNNA)
@@ -2806,23 +2815,7 @@ bool CSoundFile::ProcessEffects()
 					CheckNNA(nChn, instr, note, false);
 				}
 
-				if(chn.nRestorePanOnNewNote > 0)
-				{
-					chn.nPan = (chn.nRestorePanOnNewNote & 0x7FFF) - 1;
-					if(chn.nRestorePanOnNewNote & 0x8000)
-						chn.dwFlags.set(CHN_SURROUND);
-					chn.nRestorePanOnNewNote = 0;
-				}
-				if(chn.nRestoreResonanceOnNewNote > 0)
-				{
-					chn.nResonance = chn.nRestoreResonanceOnNewNote - 1;
-					chn.nRestoreResonanceOnNewNote = 0;
-				}
-				if(chn.nRestoreCutoffOnNewNote > 0)
-				{
-					chn.nCutOff = chn.nRestoreCutoffOnNewNote - 1;
-					chn.nRestoreCutoffOnNewNote = 0;
-				}
+				chn.RestorePanAndFilter();
 			}
 
 			// Instrument Change ?

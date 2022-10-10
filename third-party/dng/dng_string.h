@@ -1,8 +1,8 @@
 /*****************************************************************************/
-// Copyright 2006-2019 Adobe Systems Incorporated
+// Copyright 2006-2020 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -20,6 +20,16 @@
 #include "dng_types.h"
 #include "dng_memory.h"
 
+#include <memory>
+#include <string>
+#include <unordered_set>
+
+/*****************************************************************************/
+
+typedef std::basic_string<char,
+						  std::char_traits<char>,
+						  dng_std_allocator<char>> dng_std_string;
+						  
 /*****************************************************************************/
 
 class dng_string
@@ -27,15 +37,20 @@ class dng_string
 	
 	private:
 	
-		// Always stored internally as a UTF-8 encoded string.
-	
-		dng_memory_data fData;
+		// Strings are always stored using UTF-8 encoding. Shared pointers
+		// are used to provide copy-on-write optimizations.	 Null strings
+		// are always encoded as a null shared pointer (not pointer to a
+		// null string).
+		
+		std::shared_ptr<const dng_std_string> fData;
 		
 	public:
 	
 		dng_string ();
 		
 		dng_string (const dng_string &s);
+		
+		dng_string (const char *s);
 		
 		dng_string & operator= (const dng_string &s);
 		
@@ -120,8 +135,8 @@ class dng_string
 					  const char *new_string,
 					  bool case_sensitive = true);
 		
-        void ReplaceChars (char oldChar,
-                           char newChar);
+		void ReplaceChars (char oldChar,
+						   char newChar);
 		
 		bool TrimLeading (const char *s,
 						  bool case_sensitive = false);
@@ -131,7 +146,7 @@ class dng_string
 		void SetUppercase ();
 		
 		void SetLowercase ();
-        
+		
 		void SetLineEndings (char ending);
 		
 		void SetLineEndingsToNewLines ()
@@ -149,7 +164,7 @@ class dng_string
 		void ForceASCII ();
 		
 		int32 Compare (const dng_string &s,
-                       bool digitsAsNumber = true) const;
+					   bool digitsAsNumber = true) const;
 
 		// A utility to convert fields of numbers into comma separated numbers.
 
@@ -159,6 +174,22 @@ class dng_string
 	
 /*****************************************************************************/
 
-#endif
+class dng_string_hash
+	{
+
+	public:
+		
+		size_t operator () (const dng_string &s) const;
+		
+	};
+
+/*****************************************************************************/
+
+typedef std::unordered_set<dng_string,
+						   dng_string_hash> dng_string_table;
+
+/*****************************************************************************/
+
+#endif	// __dng_string__
 	
 /*****************************************************************************/

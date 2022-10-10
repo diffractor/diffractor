@@ -2,12 +2,12 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
 /** \file
- *  Support for working with image data in DNG SDK.
+ *	Support for working with image data in DNG SDK.
  */
 
 /*****************************************************************************/
@@ -155,7 +155,20 @@ class dng_image
 			
 			/// Repeat edge pixels, except for last plane which is zero padded.
 			
-			edge_repeat_zero_last
+			edge_repeat_zero_last,
+
+			/// Wrap edge pixels horizontally, repeat edge pixels vertically.
+
+			edge_wrap_horizontal,
+			
+			/// Wrap edge pixels vertically, repeat edge pixels horizontally.
+
+			edge_wrap_vertical,
+			
+			/// Wrap edge pixels in all directions (horizontal, vertical,
+			/// diagonal).
+
+			edge_wrap_all
 			
 			};
 	
@@ -240,9 +253,11 @@ class dng_image
 		/// \param buffer Receives resulting pixel buffer.
 		/// \param edgeOption edge_option describing how to pad edges.
 		/// \param repeatV Amount of repeated padding needed in vertical for
-		/// edge_repeat and edge_repeat_zero_last edgeOption cases.
-		/// \param repeatH Amount of repeated padding needed in horizontal for 
-		/// edge_repeat and edge_repeat_zero_last edgeOption cases.
+		/// edge_repeat, edge_repeat_zero_last, and edge_wrap_horizontal
+		/// edgeOption cases.
+		/// \param repeatH Amount of repeated padding needed in horizontal for
+		/// edge_repeat, edge_repeat_zero_last, and edge_wrap_vertical
+		/// edgeOption cases.
 
 		void Get (dng_pixel_buffer &buffer,
 				  edge_option edgeOption = edge_none,
@@ -263,6 +278,11 @@ class dng_image
 		/// \param orientation Directive to rotate image in a certain way.
 
 		virtual void Rotate (const dng_orientation &orientation);
+		
+		/// Offset image.
+		/// \param offset Offset amount.
+		
+		virtual void Offset (const dng_point &offset);
 		
 		/// Copy image data from an area of one image to same area of another.
 		/// \param src Image to copy from.
@@ -392,6 +412,11 @@ class dng_image
 		void SetConstant_real32 (real32 value)
 			{
 			SetConstant_real32 (value, Bounds ());
+			}
+
+		void SetZero (const dng_rect &area)
+			{
+			SetConstant (0, area);
 			}
 		
 		virtual void GetRepeat (dng_pixel_buffer &buffer,

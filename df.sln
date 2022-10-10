@@ -50,6 +50,11 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "libde265", "third-party\lib
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "libheif", "third-party\libheif\libheif.vcxproj", "{ABB9A353-8CCE-40CF-ACC5-9B3BD2B18746}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "setup", "setup", "{027D6ECE-CA72-477C-A418-833FD49D4ACE}"
+	ProjectSection(SolutionItems) = preProject
+		installer\diff.nsi = installer\diff.nsi
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|ARM64 = Debug|ARM64

@@ -6,6 +6,7 @@
 
 
 #include "mpt/base/detect_compiler.hpp"
+#include "mpt/base/detect_libcxx.hpp"
 #include "mpt/base/detect_os.hpp"
 
 
@@ -121,6 +122,24 @@
 #endif
 #ifndef MPT_COMPILER_QUIRK_FLOAT_NOTIEEE754
 #define MPT_COMPILER_QUIRK_FLOAT_NOTIEEE754 0
+#endif
+
+
+
+#if MPT_OS_MACOSX_OR_IOS
+#if defined(TARGET_OS_OSX)
+#if TARGET_OS_OSX
+#if (MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_15)
+#define MPT_LIBCXX_QUIRK_NO_TO_CHARS_INT
+#endif
+#endif
+#endif
+#endif
+
+
+
+#if (MPT_LIBCXX_MS && (MPT_MSVC_BEFORE(2019, 4) || !MPT_COMPILER_MSVC)) || (MPT_LIBCXX_GNU && (MPT_GCC_BEFORE(11, 0, 0) || !MPT_COMPILER_GCC)) || MPT_LIBCXX_LLVM || MPT_LIBCXX_GENERIC
+#define MPT_LIBCXX_QUIRK_NO_TO_CHARS_FLOAT
 #endif
 
 

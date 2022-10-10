@@ -28,7 +28,7 @@ using namespace heif;
 // https://aomediacodec.github.io/av1-spec/av1-spec.pdf
 
 
-Error heif::fill_av1C_configuration(Box_av1C::configuration* inout_config, std::shared_ptr<HeifPixelImage> image)
+Error heif::fill_av1C_configuration(Box_av1C::configuration* inout_config, const std::shared_ptr<HeifPixelImage>& image)
 {
   int bpp = image->get_bits_per_pixel(heif_channel_Y);
   heif_chroma chroma = image->get_chroma_format();
@@ -76,7 +76,7 @@ Error heif::fill_av1C_configuration(Box_av1C::configuration* inout_config, std::
   // 2 - CSP_COLOCATED
   // 3 - CSP_RESERVED
 
-  inout_config->chroma_sample_position = 0;
+  inout_config->chroma_sample_position = (chroma == heif_chroma_420 ? 0 : 2);
 
 
   return Error::Ok;
@@ -87,7 +87,7 @@ static uint64_t leb128(BitReader& reader)
 {
   uint64_t val = 0;
   for (int i = 0; i < 8; i++) {
-    int v = reader.get_bits(8);
+    int64_t v = reader.get_bits(8);
     val |= (v & 0x7F) << (i * 7);
     if (!(v & 0x80)) {
       break;

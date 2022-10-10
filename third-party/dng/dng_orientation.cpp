@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -174,6 +174,15 @@ bool dng_orientation::FlipV () const
 	else
 		return FlipD () != FlipH ();
 		
+	}
+
+/*****************************************************************************/
+
+bool dng_orientation::IsMirrored () const
+	{
+	
+	return (fAdobeOrientation & 4) != 0;
+	
 	}
 
 /*****************************************************************************/

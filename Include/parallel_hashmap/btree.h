@@ -248,7 +248,7 @@ namespace phmap {
 
         enum class ncmp : value_type { unordered = -127 };
 
-#ifdef __cpp_inline_variables
+#if defined(__cpp_inline_variables) && !defined(_MSC_VER)
 
 #define PHMAP_COMPARE_INLINE_BASECLASS_DECL(name)
 
@@ -837,7 +837,7 @@ namespace priv {
 
         using allocator_type = Alloc;
         using key_type = Key;
-        using size_type = std::make_signed<size_t>::type;
+        using size_type = std::size_t ;
         using difference_type = ptrdiff_t;
 
         // True if this is a multiset or multimap.
@@ -858,14 +858,14 @@ namespace priv {
             // Upper bound for the available space for values. This is largest for leaf
             // nodes, which have overhead of at least a pointer + 4 bytes (for storing
             // 3 field_types and an enum).
-            kNodeValueSpace =
-            TargetNodeSize - /*minimum overhead=*/(sizeof(void *) + 4),
+            kNodeSlotSpace =
+                TargetNodeSize - /*minimum overhead=*/(sizeof(void *) + 4),
         };
 
         // This is an integral type large enough to hold as many
         // ValueSize-values as will fit a node of TargetNodeSize bytes.
         using node_count_type =
-            phmap::conditional_t<(kNodeValueSpace / sizeof(value_type) >
+            phmap::conditional_t<(kNodeSlotSpace / sizeof(slot_type) >
                                    (std::numeric_limits<uint8_t>::max)()),
             uint16_t, uint8_t>;  // NOLINT
 
@@ -1188,10 +1188,10 @@ namespace priv {
         field_type max_count() const {
             // Internal nodes have max_count==kInternalNodeMaxCount.
             // Leaf nodes have max_count in [1, kNodeValues].
-            const field_type max_count = GetField<1>()[3];
-            return max_count == field_type{kInternalNodeMaxCount}
+            const field_type max_cnt = GetField<1>()[3];
+            return max_cnt == field_type{kInternalNodeMaxCount}
             ? field_type{kNodeValues}
-            : max_count;
+            : max_cnt;
         }
 
         // Getter for the parent of this node.
@@ -1210,6 +1210,10 @@ namespace priv {
         reference value(size_type i) { return params_type::element(slot(i)); }
         const_reference value(size_type i) const { return params_type::element(slot(i)); }
 
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#endif
         // Getters/setter for the child at position i in the node.
         btree_node *child(size_type i) const { return GetField<3>()[i]; }
         btree_node *&mutable_child(size_type i) { return GetField<3>()[i]; }
@@ -1221,6 +1225,9 @@ namespace priv {
             mutable_child(i) = c;
             c->set_position((field_type)i);
         }
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
         void init_child(int i, btree_node *c) {
             set_child(i, c);
             c->set_parent(this);
@@ -1377,14 +1384,14 @@ namespace priv {
 
         // Node allocation/deletion routines.
         static btree_node *init_leaf(btree_node *n, btree_node *parent,
-                                     int max_count) {
+                                     int max_cnt) {
             n->set_parent(parent);
             n->set_position(0);
             n->set_start(0);
             n->set_count(0);
-            n->set_max_count((field_type)max_count);
+            n->set_max_count((field_type)max_cnt);
             phmap::priv::SanitizerPoisonMemoryRegion(
-                n->slot(0), max_count * sizeof(slot_type));
+                n->slot(0), max_cnt * sizeof(slot_type));
             return n;
         }
         static btree_node *init_internal(btree_node *n, btree_node *parent) {
@@ -1435,7 +1442,7 @@ namespace priv {
         // Destroys a range of n values, starting at index i.
         void value_destroy_n(const size_type i, const size_type n,
                              allocator_type *alloc) {
-            for (int j = 0; j < n; ++j) {
+            for (size_type j = 0; j < n; ++j) {
                 value_destroy(i + j, alloc);
             }
         }
@@ -1528,6 +1535,12 @@ namespace priv {
         bool operator!=(const const_iterator &x) const {
             return node != x.node || position != x.position;
         }
+        bool operator==(const iterator &x) const {
+            return node == x.node && position == x.position;
+        }
+        bool operator!=(const iterator &x) const {
+            return node != x.node || position != x.position;
+        }
 
         // Accessors for the key/value the iterator is pointing at.
         reference operator*() const {
@@ -1609,10 +1622,10 @@ namespace priv {
 
         static node_type *EmptyNode() {
 #ifdef _MSC_VER
-            static EmptyNodeType* empty_node = new EmptyNodeType;
+            static EmptyNodeType empty_node;
             // This assert fails on some other construction methods.
-            assert(empty_node->parent == empty_node);
-            return empty_node;
+            assert(empty_node.parent == &empty_node);
+            return &empty_node;
 #else
             static constexpr EmptyNodeType empty_node(
                 const_cast<EmptyNodeType *>(&empty_node));
@@ -1834,8 +1847,8 @@ namespace priv {
         // Returns a count of the number of times the key appears in the btree.
         template <typename K>
         size_type count_unique(const K &key) const {
-            const iterator begin = internal_find(key);
-            if (begin.node == nullptr) {
+            const iterator beg = internal_find(key);
+            if (beg.node == nullptr) {
                 // The key doesn't exist in the tree.
                 return 0;
             }
@@ -1967,10 +1980,10 @@ namespace priv {
 
         // Allocates a correctly aligned node of at least size bytes using the
         // allocator.
-        node_type *allocate(const size_type size) {
+        node_type *allocate(const size_type sz) {
             return reinterpret_cast<node_type *>(
                 phmap::priv::Allocate<node_type::Alignment()>(
-                    mutable_allocator(), (size_t)size));
+                    mutable_allocator(), (size_t)sz));
         }
 
         // Node creation/deletion routines.
@@ -1993,9 +2006,9 @@ namespace priv {
         iterator rebalance_after_delete(iterator iter);
 
         // Deallocates a node of a certain size in bytes using the allocator.
-        void deallocate(const size_type size, node_type *node) {
+        void deallocate(const size_type sz, node_type *node) {
             phmap::priv::Deallocate<node_type::Alignment()>(
-                mutable_allocator(), node, (size_t)size);
+                mutable_allocator(), node, (size_t)sz);
         }
 
         void delete_internal_node(node_type *node) {
@@ -2079,8 +2092,8 @@ namespace priv {
         void internal_clear(node_type *node);
 
         // Verifies the tree structure of node.
-        int internal_verify(const node_type *node,
-                            const key_type *lo, const key_type *hi) const;
+        size_type internal_verify(const node_type *node,
+                                  const key_type *lo, const key_type *hi) const;
 
         node_stats internal_stats(const node_type *node) const {
             // The root can be a static empty node.
@@ -2138,7 +2151,7 @@ namespace priv {
         set_count((field_type)(count() + 1));
 
         if (!leaf() && count() > i + 1) {
-            for (int j = count(); j > i + 1; --j) {
+            for (int j = count(); j > (int)(i + 1); --j) {
                 set_child(j, child(j - 1));
             }
             clear_child(i + 1);
@@ -2233,11 +2246,13 @@ namespace priv {
             // 1) Shift existing values in the right node to their correct positions.
             right->uninitialized_move_n(to_move, right->count() - to_move,
                                         right->count(), right, alloc);
-            for (slot_type *src = right->slot(right->count() - to_move - 1),
-                     *dest = right->slot(right->count() - 1),
-                     *end = right->slot(0);
-                 src >= end; --src, --dest) {
-                params_type::move(alloc, src, dest);
+            if (right->count() > to_move) {
+                for (slot_type *src = right->slot(right->count() - to_move - 1),
+                         *dest = right->slot(right->count() - 1),
+                         *end = right->slot(0);
+                     src >= end; --src, --dest) {
+                    params_type::move(alloc, src, dest);
+                }
             }
 
             // 2) Move the delimiting value in the parent to the right node.
@@ -2501,7 +2516,7 @@ namespace priv {
             "key comparison function must return phmap::{weak,strong}_ordering or "
             "bool.");
 
-        // Test the assumption made in setting kNodeValueSpace.
+        // Test the assumption made in setting kNodeSlotSpace.
         static_assert(node_type::MinimumOverhead() >= sizeof(void *) + 4,
                       "node space assumption incorrect");
 
@@ -2746,82 +2761,82 @@ namespace priv {
     }
 
     template <typename P>
-    auto btree<P>::erase(iterator begin, iterator end)
+    auto btree<P>::erase(iterator _begin, iterator _end)
         -> std::pair<size_type, iterator> {
-        difference_type count = std::distance(begin, end);
+        difference_type count = std::distance(_begin, _end);
         assert(count >= 0);
 
         if (count == 0) {
-            return {0, begin};
+            return {0, _begin};
         }
 
-        if (count == size_) {
+        if (count == (difference_type)size_) {
             clear();
             return {count, this->end()};
         }
 
-        if (begin.node == end.node) {
-            erase_same_node(begin, end);
+        if (_begin.node == _end.node) {
+            erase_same_node(_begin, _end);
             size_ -= count;
-            return {count, rebalance_after_delete(begin)};
+            return {count, rebalance_after_delete(_begin)};
         }
 
         const size_type target_size = size_ - count;
         while (size_ > target_size) {
-            if (begin.node->leaf()) {
+            if (_begin.node->leaf()) {
                 const size_type remaining_to_erase = size_ - target_size;
-                const size_type remaining_in_node = begin.node->count() - begin.position;
-                begin = erase_from_leaf_node(
-                    begin, (std::min)(remaining_to_erase, remaining_in_node));
+                const size_type remaining_in_node = _begin.node->count() - _begin.position;
+                _begin = erase_from_leaf_node(
+                    _begin, (std::min)(remaining_to_erase, remaining_in_node));
             } else {
-                begin = erase(begin);
+                _begin = erase(_begin);
             }
         }
-        return {count, begin};
+        return {count, _begin};
     }
 
     template <typename P>
-    void btree<P>::erase_same_node(iterator begin, iterator end) {
-        assert(begin.node == end.node);
-        assert(end.position > begin.position);
+    void btree<P>::erase_same_node(iterator _begin, iterator _end) {
+        assert(_begin.node == _end.node);
+        assert(_end.position > _begin.position);
 
-        node_type *node = begin.node;
-        size_type to_erase = end.position - begin.position;
+        node_type *node = _begin.node;
+        size_type to_erase = _end.position - _begin.position;
         if (!node->leaf()) {
-            // Delete all children between begin and end.
+            // Delete all children between _begin and _end.
             for (size_type i = 0; i < to_erase; ++i) {
-                internal_clear(node->child(begin.position + i + 1));
+                internal_clear(node->child(_begin.position + i + 1));
             }
-            // Rotate children after end into new positions.
-            for (size_type i = begin.position + to_erase + 1; i <= node->count(); ++i) {
+            // Rotate children after _end into new positions.
+            for (size_type i = _begin.position + to_erase + 1; i <= node->count(); ++i) {
                 node->set_child(i - to_erase, node->child(i));
                 node->clear_child(i);
             }
         }
-        node->remove_values_ignore_children(begin.position, to_erase,
+        node->remove_values_ignore_children(_begin.position, to_erase,
                                             mutable_allocator());
 
         // Do not need to update rightmost_, because
-        // * either end == this->end(), and therefore node == rightmost_, and still
+        // * either _end == this->end(), and therefore node == rightmost_, and still
         //   exists
-        // * or end != this->end(), and therefore rightmost_ hasn't been erased, since
-        //   it wasn't covered in [begin, end)
+        // * or _end != this->end(), and therefore rightmost_ hasn't been erased, since
+        //   it wasn't covered in [_begin, _end)
     }
 
     template <typename P>
-    auto btree<P>::erase_from_leaf_node(iterator begin, size_type to_erase)
+    auto btree<P>::erase_from_leaf_node(iterator _begin, size_type to_erase)
         -> iterator {
-        node_type *node = begin.node;
+        node_type *node = _begin.node;
         assert(node->leaf());
-        assert(node->count() > begin.position);
-        assert(begin.position + to_erase <= node->count());
+        assert(node->count() > _begin.position);
+        assert(_begin.position + to_erase <= node->count());
 
-        node->remove_values_ignore_children(begin.position, to_erase,
+        node->remove_values_ignore_children(_begin.position, to_erase,
                                             mutable_allocator());
 
         size_ -= to_erase;
 
-        return rebalance_after_delete(begin);
+        return rebalance_after_delete(_begin);
     }
 
     template <typename P>
@@ -2839,14 +2854,14 @@ namespace priv {
     template <typename P>
     template <typename K>
     auto btree<P>::erase_multi(const K &key) -> size_type {
-        const iterator begin = internal_lower_bound(key);
-        if (begin.node == nullptr) {
+        const iterator _begin = internal_lower_bound(key);
+        if (_begin.node == nullptr) {
             // The key doesn't exist in the tree, return nothing done.
             return 0;
         }
-        // Delete all of the keys between begin and upper_bound(key).
-        const iterator end = internal_end(internal_upper_bound(key));
-        return erase(begin, end).first;
+        // Delete all of the keys between _begin and upper_bound(key).
+        const iterator _end = internal_end(internal_upper_bound(key));
+        return erase(_begin, _end).first;
     }
 
     template <typename P>
@@ -2933,7 +2948,7 @@ namespace priv {
                 assert(right->max_count() == kNodeValues);
                 if (right->count() < kNodeValues) {
                     // We bias rebalancing based on the position being inserted. If we're
-                    // inserting at the beginning of the left node then we bias rebalancing
+                    // inserting at the _beginning of the left node then we bias rebalancing
                     // to fill up the right node.
                     int to_move =
                         (kNodeValues - right->count()) / (1 + (insert_position > 0));
@@ -3226,7 +3241,7 @@ namespace priv {
     }
 
     template <typename P>
-    int btree<P>::internal_verify(
+    typename btree<P>::size_type btree<P>::internal_verify(
         const node_type *node, const key_type *lo, const key_type *hi) const {
         assert(node->count() > 0);
         assert(node->count() <= node->max_count());
@@ -3239,7 +3254,7 @@ namespace priv {
         for (int i = 1; i < node->count(); ++i) {
             assert(!compare_keys(node->key(i), node->key(i - 1)));
         }
-        int count = node->count();
+        size_type count = node->count();
         if (!node->leaf()) {
             for (int i = 0; i <= node->count(); ++i) {
                 assert(node->child(i) != nullptr);
@@ -3314,6 +3329,12 @@ namespace priv {
         const_reverse_iterator crend() const   { return tree_.rend(); }
 
         // Lookup routines.
+        // ----------------
+        template <typename K = key_type>
+        size_type count(const key_arg<K> &key) const {
+            auto equal_range = this->equal_range(key);
+            return std::distance(equal_range.first, equal_range.second);
+        }
         template <typename K = key_type>
         iterator find(const key_arg<K> &key) {
             return tree_.find(key);
@@ -3350,7 +3371,11 @@ namespace priv {
         iterator erase(const_iterator first, const_iterator last) {
             return tree_.erase(iterator(first), iterator(last)).second;
         }
-
+        template <typename K = key_type>
+        size_type erase(const key_arg<K> &key) {
+            auto equal_range = this->equal_range(key);
+            return tree_.erase_range(equal_range.first, equal_range.second).first;
+        }
         node_type extract(iterator position) {
             // Use Move instead of Transfer, because the rebalancing code expects to
             // have a valid object to scribble metadata bits on top of.
@@ -3449,6 +3474,10 @@ namespace priv {
                             const allocator_type &alloc = allocator_type())
             : btree_set_container(init.begin(), init.end(), comp, alloc) {}
 
+        btree_set_container(std::initializer_list<init_type> init,
+                            const allocator_type &alloc)
+            : btree_set_container(init.begin(), init.end(), alloc) {}
+
         // Lookup routines.
         template <typename K = key_type>
         size_type count(const key_arg<K> &key) const {
@@ -3467,23 +3496,23 @@ namespace priv {
             init_type v(std::forward<Args>(args)...);
             return this->tree_.insert_unique(params_type::key(v), std::move(v));
         }
-        iterator insert(const_iterator position, const value_type &x) {
+        iterator insert(const_iterator hint, const value_type &x) {
             return this->tree_
-                .insert_hint_unique(iterator(position), params_type::key(x), x)
+                .insert_hint_unique(iterator(hint), params_type::key(x), x)
                 .first;
         }
-        iterator insert(const_iterator position, value_type &&x) {
+        iterator insert(const_iterator hint, value_type &&x) {
             return this->tree_
-                .insert_hint_unique(iterator(position), params_type::key(x),
+                .insert_hint_unique(iterator(hint), params_type::key(x),
                                     std::move(x))
                 .first;
         }
 
         template <typename... Args>
-        iterator emplace_hint(const_iterator position, Args &&... args) {
+        iterator emplace_hint(const_iterator hint, Args &&... args) {
             init_type v(std::forward<Args>(args)...);
             return this->tree_
-                .insert_hint_unique(iterator(position), params_type::key(v),
+                .insert_hint_unique(iterator(hint), params_type::key(v),
                                     std::move(v))
                 .first;
         }
@@ -3705,11 +3734,11 @@ namespace priv {
         iterator insert(value_type &&x) {
             return this->tree_.insert_multi(std::move(x));
         }
-        iterator insert(const_iterator position, const value_type &x) {
-            return this->tree_.insert_hint_multi(iterator(position), x);
+        iterator insert(const_iterator hint, const value_type &x) {
+            return this->tree_.insert_hint_multi(iterator(hint), x);
         }
-        iterator insert(const_iterator position, value_type &&x) {
-            return this->tree_.insert_hint_multi(iterator(position), std::move(x));
+        iterator insert(const_iterator hint, value_type &&x) {
+            return this->tree_.insert_hint_multi(iterator(hint), std::move(x));
         }
         template <typename InputIterator>
         void insert(InputIterator b, InputIterator e) {
@@ -3723,9 +3752,9 @@ namespace priv {
             return this->tree_.insert_multi(init_type(std::forward<Args>(args)...));
         }
         template <typename... Args>
-        iterator emplace_hint(const_iterator position, Args &&... args) {
+        iterator emplace_hint(const_iterator hint, Args &&... args) {
             return this->tree_.insert_hint_multi(
-                iterator(position), init_type(std::forward<Args>(args)...));
+                iterator(hint), init_type(std::forward<Args>(args)...));
         }
         iterator insert(node_type &&node) {
             if (!node) return this->end();
@@ -3770,7 +3799,7 @@ namespace priv {
                     std::is_same<typename params_type::is_map_container,
                                  typename T::params_type::is_map_container>>::value,
                 int> = 0>
-            void merge(btree_container<T> &src) {  // NOLINT
+        void merge(btree_container<T> &src) {  // NOLINT
             insert(std::make_move_iterator(src.begin()),
                    std::make_move_iterator(src.end()));
             src.clear();
@@ -3785,7 +3814,7 @@ namespace priv {
                     std::is_same<typename params_type::is_map_container,
                                  typename T::params_type::is_map_container>>::value,
                 int> = 0>
-            void merge(btree_container<T> &&src) {
+        void merge(btree_container<T> &&src) {
             merge(src);
         }
     };
@@ -3839,6 +3868,8 @@ namespace priv {
         using Base::contains;
         using Base::count;
         using Base::equal_range;
+        using Base::lower_bound;
+        using Base::upper_bound;
         using Base::find;
         using Base::get_allocator;
         using Base::key_comp;
@@ -3896,6 +3927,8 @@ namespace priv {
         using Base::contains;
         using Base::count;
         using Base::equal_range;
+        using Base::lower_bound;
+        using Base::upper_bound;
         using Base::find;
         using Base::get_allocator;
         using Base::key_comp;
@@ -3956,6 +3989,8 @@ namespace priv {
         using Base::contains;
         using Base::count;
         using Base::equal_range;
+        using Base::lower_bound;
+        using Base::upper_bound;
         using Base::find;
         using Base::operator[];
         using Base::get_allocator;
@@ -4013,6 +4048,8 @@ namespace priv {
         using Base::contains;
         using Base::count;
         using Base::equal_range;
+        using Base::lower_bound;
+        using Base::upper_bound;
         using Base::find;
         using Base::get_allocator;
         using Base::key_comp;

@@ -2,7 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated
 // All Rights Reserved.
 //
-// NOTICE:  Adobe permits you to use, modify, and distribute this file in
+// NOTICE:	Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying it.
 /*****************************************************************************/
 
@@ -27,13 +27,13 @@
 
 // Make sure a platform is defined
 
-#if !(defined(qMacOS) || defined(qWinOS) || defined(qAndroid) || defined(qiPhone) || defined(qLinux))
+#if !(defined(qMacOS) || defined(qWinOS) || defined(qAndroid) || defined(qiPhone) || defined(qLinux) || defined(qWeb))
 #include "RawEnvironment.h"
 #endif
 
 // This requires a force include or compiler define.  These are the unique platforms.
 
-#if !(defined(qMacOS) || defined(qWinOS) || defined(qAndroid) || defined(qiPhone) || defined(qLinux))
+#if !(defined(qMacOS) || defined(qWinOS) || defined(qAndroid) || defined(qiPhone) || defined(qLinux) || defined(qWeb))
 #error Unable to figure out platform
 #endif
 
@@ -90,24 +90,36 @@
 
 /*****************************************************************************/
 
-// arm and neon support
+// arm and arm64 support
 
 // arm detect (apple vs. win)
-#if defined(__arm__) || defined(__arm64__) || defined(_M_ARM)
+#if defined(__arm__) || defined(__arm64__) || defined(_M_ARM) || defined(_M_ARM64) || defined(__aarch64__)
 #define qARM 1
 #endif
 
-// arm_neon detect
-#if defined(__ARM_NEON__) || defined(_M_ARM)
-#define qARMNeon 1
+#if defined(__arm64__) || defined(_M_ARM64) || defined(__aarch64__)
+#define qARM64 1
 #endif
 
 #ifndef qARM 
 #define qARM 0
 #endif
 
-#ifndef qARMNeon
-#define qARMNeon 0
+#ifndef qARM64 
+#define qARM64 0
+#endif
+
+/*****************************************************************************/
+
+/// \def qX86_64
+/// 1 if and only if this target platform is 64-bit x86 architecture
+
+#if defined(__x86_64__)
+#define qX86_64 1
+#endif
+
+#ifndef qX86_64
+#define qX86_64 0
 #endif
 
 /*****************************************************************************/
@@ -208,7 +220,11 @@
 #elif defined(__BIG_ENDIAN__)
 #define qDNGBigEndian 1
 
-#elif defined(_ARM_)  || defined(_M_ARM64)
+#elif defined(_ARM_) || defined(__ARM_NEON) || defined(__mips__)
+#define qDNGBigEndian 0
+
+#elif defined(_M_ARM64)
+// See https://docs.microsoft.com/en-us/cpp/build/arm64-windows-abi-conventions?view=vs-2019
 #define qDNGBigEndian 0
 
 #else
@@ -238,7 +254,7 @@
 #if qMacOS
 
 #ifdef __LP64__
-#if    __LP64__
+#if	   __LP64__
 #define qDNG64Bit 1
 #endif
 #endif
@@ -246,7 +262,7 @@
 #elif qWinOS
 
 #ifdef WIN64
-#if    WIN64
+#if	   WIN64
 #define qDNG64Bit 1
 #endif
 #endif
@@ -254,7 +270,15 @@
 #elif qLinux
 
 #ifdef __LP64__
-#if    __LP64__
+#if	   __LP64__
+#define qDNG64Bit 1
+#endif
+#endif
+
+#elif qAndroid
+
+#ifdef __LP64__
+#if	   __LP64__
 #define qDNG64Bit 1
 #endif
 #endif
@@ -262,10 +286,26 @@
 #endif
 
 #ifndef qDNG64Bit
+#ifdef qXCodeRez
+#define qDNG64Bit qXCodeRez
+#else
 #define qDNG64Bit 0
+#endif
 #endif
 
 #endif
+
+/*****************************************************************************/
+
+#ifdef __cplusplus
+#if defined(__clang__)
+	#define DNG_RESTRICT __restrict__
+	#define DNG_ALWAYS_INLINE __attribute((__always_inline__)) inline
+#else
+	#define DNG_RESTRICT 
+	#define DNG_ALWAYS_INLINE inline
+#endif
+#endif	// __cplusplus
 
 /*****************************************************************************/
 
@@ -328,7 +368,7 @@
 /// 1 to use XMPDocOps.
 
 #ifndef qDNGXMPDocOps
-//#define qDNGXMPDocOps (!qDNGValidateTarget)
+#define qDNGXMPDocOps (!qDNGValidateTarget)
 #endif
 
 /*****************************************************************************/
@@ -377,23 +417,41 @@
 
 /*****************************************************************************/
 
-/// \def qDNGDepthSupport
-/// 1 to add support for depth maps in DNG format.
-/// Deprecated 2018-09-19.
+// Big image support?
+//
+// When set to true:
+// - maximum linear image dimensions is 300000 pixels
+// - maximum total number of pixels is 10 gigapixels (10 * 1000 * 1000 * 1000 pixels)
+//
+// When set to false:
+// - maximum linear image dimensions is 65000 pixels
+// - maximum total number of pixels is 512 megapixels (512 * 1024 * 1024 pixels)
 
-#ifdef __cplusplus
-#define qDNGDepthSupport #error
+#ifndef qDNGBigImage
+#define qDNGBigImage (qDNGExperimental && 1)
 #endif
 
 /*****************************************************************************/
 
-/// \def qDNGPreserveBlackPoint
-/// 1 to add support for non-zero black point in early raw pipeline.
-/// Deprecated 2018-09-19.
+// Enable XMP support in the DNG SDK?
 
-#ifdef __cplusplus
-#define qDNGPreserveBlackPoint #error
+#ifndef qDNGUseXMP
+#define qDNGUseXMP 1
 #endif
+
+/*****************************************************************************/
+
+// Use custom integral types?
+
+#ifndef qDNGUseCustomIntegralTypes
+#define qDNGUseCustomIntegralTypes 0
+#endif
+
+/*****************************************************************************/
+
+// Place deprecated flags into this file.
+
+#include "dng_deprecated_flags.h"
 
 /*****************************************************************************/
 

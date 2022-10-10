@@ -13,7 +13,10 @@
 #ifndef LZMA_CHECK_H
 #define LZMA_CHECK_H
 
+#include <stdint.h>
+
 #include "common.h"
+#include "lzma.h"
 
 // If the function for external SHA-256 is missing, use the internal SHA-256
 // code. Due to how configure works, these defines can only get defined when

@@ -33,17 +33,14 @@
   \author Moritz Bunkus <moritz @ bunkus.org>
 */
 
-#if !defined(__GNUC__) || (__GNUC__ > 2)
 #include <sstream>
-#endif // GCC2
 #include <stdexcept>
-
 
 #include "ebml/IOCallback.h"
 
 using namespace std;
 
-START_LIBEBML_NAMESPACE
+namespace libebml {
 
 void IOCallback::writeFully(const void*Buffer,size_t Size)
 {
@@ -54,11 +51,9 @@ void IOCallback::writeFully(const void*Buffer,size_t Size)
     throw;
 
   if(write(Buffer,Size) != Size) {
-#if !defined(__GNUC__) || (__GNUC__ > 2)
     stringstream Msg;
     Msg<<"EOF in writeFully("<<Buffer<<","<<Size<<")";
     throw runtime_error(Msg.str());
-#endif // GCC2
   }
 }
 
@@ -70,12 +65,10 @@ void IOCallback::readFully(void*Buffer,size_t Size)
     throw;
 
   if(read(Buffer,Size) != Size) {
-#if !defined(__GNUC__) || (__GNUC__ > 2)
     stringstream Msg;
     Msg<<"EOF in readFully("<<Buffer<<","<<Size<<")";
     throw runtime_error(Msg.str());
-#endif // GCC2
   }
 }
 
-END_LIBEBML_NAMESPACE
+} // namespace libebml
