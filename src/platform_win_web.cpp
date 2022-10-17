@@ -64,17 +64,17 @@ static std::u8string format_path(const platform::web_request& req)
 	if (!req.query.empty())
 	{
 		bool is_first = true;
-		result += u8"?";
+		result += u8"?"sv;
 
 		for (const auto& qp : req.query)
 		{
 			if (!is_first)
 			{
-				result += u8"&";
+				result += u8"&"sv;
 			}
 
 			result += df::url_encode(qp.first);
-			result += u8"=";
+			result += u8"="sv;
 			result += df::url_encode(qp.second);
 			is_first = false;
 		}
@@ -91,7 +91,7 @@ platform::web_response platform::send_request(const web_request& req)
 
 	for (const auto& h : req.headers)
 	{
-		header << h.first << ": " << h.second << "\r\n";
+		header << h.first << u8": "sv << h.second << u8"\r\n"sv;
 	}
 
 	if (!req.form_data.empty())
@@ -100,23 +100,23 @@ platform::web_response platform::send_request(const web_request& req)
 
 		for (const auto& f : req.form_data)
 		{
-			content << u8"--" << boundary << u8"\r\n";
-			content << "Content-Disposition: form-data; name=\"" << f.first << "\"\r\n";
-			content << "Content-Type: text/plain; charset=\"utf-8\"\r\n";
-			content << u8"\r\n";
-			content << f.second << u8"\r\n";
+			content << u8"--"sv << boundary << u8"\r\n"sv;
+			content << u8"Content-Disposition: form-data; name=\""sv << f.first << u8"\"\r\n"sv;
+			content << u8"Content-Type: text/plain; charset=\"utf-8\"\r\n"sv;
+			content << u8"\r\n"sv;
+			content << f.second << u8"\r\n"sv;
 		}
 
 		if (!req.file_path.is_empty() && !req.file_form_data_name.empty())
 		{
-			const auto* content_type = u8"application/octet-stream";
-			if (str::ends(req.file_path.extension(), u8"zip")) content_type = u8"application/x-zip-compressed";
+			auto content_type = u8"application/octet-stream"sv;
+			if (str::ends(req.file_path.extension(), u8"zip"sv)) content_type = u8"application/x-zip-compressed"sv;
 
-			content << u8"--" << boundary << u8"\r\n";
-			content << u8"Content-Disposition: form-data; name=\"" << req.file_form_data_name << u8"\"; filename=\"" <<
-				req.file_name << u8"\"\r\n";
-			content << u8"Content-Type: " << content_type << u8"\r\n";
-			content << u8"\r\n";
+			content << u8"--"sv << boundary << u8"\r\n"sv;
+			content << u8"Content-Disposition: form-data; name=\""sv << req.file_form_data_name << u8"\"sv; filename=\""sv <<
+				req.file_name << u8"\"\r\n"sv;
+			content << u8"Content-Type: "sv << content_type << u8"\r\n"sv;
+			content << u8"\r\n"sv;
 
 			df::file f;
 
@@ -128,11 +128,11 @@ platform::web_response platform::send_request(const web_request& req)
 				}
 			}
 
-			content << u8"\r\n";
+			content << u8"\r\n"sv;
 		}
 
-		content << "--" << boundary << "--";
-		header << "Content-Type: multipart/form-data; boundary=" << boundary << "\r\n";
+		content << u8"--"sv << boundary << u8"--"sv;
+		header << u8"Content-Type: multipart/form-data; boundary="sv << boundary << u8"\r\n"sv;
 	}
 
 
@@ -148,7 +148,7 @@ platform::web_response platform::send_request(const web_request& req)
 
 		if (conn)
 		{
-			const auto* const wverb = req.verb == web_request_verb::GET ? L"GET" : L"POST";
+			const auto wverb = req.verb == web_request_verb::GET ? L"GET" : L"POST";
 			const auto wpath = str::utf8_to_utf16(format_path(req));
 			auto flags = INTERNET_FLAG_KEEP_CONNECTION | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_NO_AUTH |
 				INTERNET_FLAG_RELOAD;
@@ -165,10 +165,10 @@ platform::web_response platform::send_request(const web_request& req)
 				buffers.dwStructSize = sizeof(INTERNET_BUFFERS);
 				buffers.Next = nullptr;
 				buffers.lpcszHeader = headerW.c_str();
-				buffers.dwHeadersTotal = buffers.dwHeadersLength = headerW.size();
+				buffers.dwHeadersTotal = buffers.dwHeadersLength = static_cast<DWORD>(headerW.size());
 				buffers.lpvBuffer = nullptr;
 				buffers.dwBufferLength = 0;
-				buffers.dwBufferTotal = content_data.size();
+				buffers.dwBufferTotal = static_cast<DWORD>(content_data.size());
 				buffers.dwOffsetLow = 0;
 				buffers.dwOffsetHigh = 0;
 

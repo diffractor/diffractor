@@ -96,14 +96,14 @@ namespace df
 	inline bool is_probably_selector(const std::u8string_view text)
 	{
 		return item_selector::can_iterate(text) &&
-			text.find(u8" #") == std::u8string::npos &&
-			text.find(u8" @") == std::u8string::npos &&
-			text.find(u8" *") == std::u8string::npos &&
-			text.find(u8"** ") == std::u8string::npos &&
-			text.find(u8"**\\ ") == std::u8string::npos &&
-			text.find(u8"**/ ") == std::u8string::npos &&
-			text.find(u8"\\ ") == std::u8string::npos &&
-			text.find(u8"/ ") == std::u8string::npos;
+			text.find(u8" #"sv) == std::u8string::npos &&
+			text.find(u8" @"sv) == std::u8string::npos &&
+			text.find(u8" *"sv) == std::u8string::npos &&
+			text.find(u8"** "sv) == std::u8string::npos &&
+			text.find(u8"**\\ "sv) == std::u8string::npos &&
+			text.find(u8"**/ "sv) == std::u8string::npos &&
+			text.find(u8"\\ "sv) == std::u8string::npos &&
+			text.find(u8"/ "sv) == std::u8string::npos;
 	}
 
 	enum class search_term_modifier_bool

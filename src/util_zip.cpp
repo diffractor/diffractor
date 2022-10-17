@@ -23,15 +23,15 @@ df::blob df::zlib_compress(cspan data_in)
 {
 	blob result;
 
-	const size_t BUFSIZE = 128 * 1024;
-	uint8_t temp_buffer[BUFSIZE];
+	constexpr auto BUFSIZE = 128_z * 1024_z;
+	const auto temp_buffer = unique_alloc<uint8_t>(BUFSIZE);
 
 	z_stream strm;
 	strm.zalloc = nullptr;
 	strm.zfree = nullptr;
 	strm.next_in = data_in.data;
 	strm.avail_in = data_in.size;
-	strm.next_out = temp_buffer;
+	strm.next_out = temp_buffer.get();
 	strm.avail_out = BUFSIZE;
 
 	deflateInit(&strm, Z_BEST_COMPRESSION);
@@ -42,8 +42,8 @@ df::blob df::zlib_compress(cspan data_in)
 		assert_true(res == Z_OK);
 		if (strm.avail_out == 0)
 		{
-			result.insert(result.end(), temp_buffer, temp_buffer + BUFSIZE);
-			strm.next_out = temp_buffer;
+			result.insert(result.end(), temp_buffer.get(), temp_buffer.get() + BUFSIZE);
+			strm.next_out = temp_buffer.get();
 			strm.avail_out = BUFSIZE;
 		}
 	}
@@ -53,15 +53,15 @@ df::blob df::zlib_compress(cspan data_in)
 	{
 		if (strm.avail_out == 0)
 		{
-			result.insert(result.end(), temp_buffer, temp_buffer + BUFSIZE);
-			strm.next_out = temp_buffer;
+			result.insert(result.end(), temp_buffer.get(), temp_buffer.get() + BUFSIZE);
+			strm.next_out = temp_buffer.get();
 			strm.avail_out = BUFSIZE;
 		}
 		deflate_res = deflate(&strm, Z_FINISH);
 	}
 
 	assert_true(deflate_res == Z_STREAM_END);
-	result.insert(result.end(), temp_buffer, temp_buffer + BUFSIZE - strm.avail_out);
+	result.insert(result.end(), temp_buffer.get(), temp_buffer.get() + BUFSIZE - strm.avail_out);
 	deflateEnd(&strm);
 
 	return result;
@@ -117,7 +117,7 @@ bool df::zip_file::add(const file_path path, const std::u8string_view name_in)
 
 		if (err != ZIP_OK)
 		{
-			df::log(__FUNCTION__, str::format(u8"error in opening {} in zip file", name));
+			df::log(__FUNCTION__, str::format(u8"error in opening {} in zip file"sv, name));
 			return false;
 		}
 
@@ -133,7 +133,7 @@ bool df::zip_file::add(const file_path path, const std::u8string_view name_in)
 			if (err != ZIP_OK)
 			{
 				//We could not write the file in the ZIP-File for whatever reason.
-				df::log(__FUNCTION__, str::format(u8"error writing {} in zip file", name));
+				df::log(__FUNCTION__, str::format(u8"error writing {} in zip file"sv, name));
 				return false;
 			}
 		}
@@ -142,7 +142,7 @@ bool df::zip_file::add(const file_path path, const std::u8string_view name_in)
 
 		if (err != ZIP_OK)
 		{
-			df::log(__FUNCTION__, str::format(u8"error closing {} in zip file", name));
+			df::log(__FUNCTION__, str::format(u8"error closing {} in zip file"sv, name));
 			return false;
 		}
 
@@ -222,7 +222,7 @@ size_t df::zip_file::extract(const file_path zip_file_path, const folder_path de
 
 		if (move_result.failed())
 		{
-			throw app_exception(str::format(u8"Failed to write file {}\n{}", m.second, move_result.format_error()));
+			throw app_exception(str::format(u8"Failed to write file {}\n{}"sv, m.second, move_result.format_error()));
 		}
 	}
 

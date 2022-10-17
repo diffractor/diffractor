@@ -52,8 +52,8 @@ namespace crypto
 		void transform(const uint8_t* message, uint32_t block_nb);
 		void reset();
 
-		uint32_t m_tot_len = 0;
-		uint32_t m_len = 0;
+		size_t m_tot_len = 0;
+		size_t m_len = 0;
 		uint8_t m_block[2 * SHA224_256_BLOCK_SIZE];
 		uint32_t m_h[8];
 	};

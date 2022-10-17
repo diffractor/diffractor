@@ -269,11 +269,11 @@ static bool lab_to_rgb(ui::surface_ptr& imageIn)
 	const auto cx = imageIn->width();
 	auto* const pixels = std::bit_cast<uint32_t*>(imageIn->pixels());
 
-	for (auto y = 0; y < cy; y++)
+	for (auto y = 0u; y < cy; y++)
 	{
 		auto* const line = pixels + (y * cx);
 
-		for (auto x = 0; x < cx; x++)
+		for (auto x = 0u; x < cx; x++)
 		{
 			const auto c = line[x];
 
@@ -296,11 +296,11 @@ static bool cmy_to_rgb(ui::surface_ptr& imageIn)
 	const auto cx = imageIn->width();
 	auto* const pixels = std::bit_cast<uint32_t*>(imageIn->pixels());
 
-	for (auto y = 0; y < cy; y++)
+	for (auto y = 0u; y < cy; y++)
 	{
 		auto* const line = pixels + (y * cx);
 
-		for (auto x = 0; x < cx; x++)
+		for (auto x = 0u; x < cx; x++)
 		{
 			const auto c = line[x];
 
@@ -365,7 +365,7 @@ file_scan_result scan_psd(read_stream& s)
 		const auto depth = stream.read_u16();
 		const auto mode = stream.read_u16();
 
-		//auto pixel_format_description = "RGB";
+		//auto pixel_format_description = "RGB"sv;
 
 		switch (mode)
 		{

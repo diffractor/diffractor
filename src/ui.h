@@ -497,8 +497,8 @@ namespace ui
 	{
 	private:
 		sizei _dimensions;
-		int _stride = 0;
-		int _size = 0;
+		size_t _stride = 0;
+		size_t _size = 0;
 
 		std::unique_ptr<uint8_t, df::free_delete> _pixels;
 		texture_format _format = texture_format::None;
@@ -530,7 +530,7 @@ namespace ui
 			memset(_pixels.get(), 0, _size);
 		}
 
-		int size() const
+		size_t size() const
 		{
 			return _size;
 		}
@@ -555,7 +555,7 @@ namespace ui
 			return _dimensions.cy;
 		}
 
-		int stride() const noexcept
+		size_t stride() const noexcept
 		{
 			return _stride;
 		}
@@ -619,14 +619,14 @@ namespace ui
 			if (cx < 1 || cy < 1)
 			{
 				df::assert_true(false);
-				const auto message = str::format(u8"invalid pixel size {}x{}", cx, cy);
+				const auto message = str::format(u8"invalid pixel size {}x{}"sv, cx, cy);
 				df::log(__FUNCTION__, message);
 				throw app_exception(message);
 			}
 
 			_stride = calc_stride(cx, calc_bytes_per_pixel(fmt));
 			_size = _stride * cy;
-			_pixels = df::unique_alloc<uint8_t>(_size + 64);
+			_pixels = df::unique_alloc<uint8_t>(_size + 64_z);
 			_dimensions.cx = cx;
 			_dimensions.cy = cy;
 			_format = fmt;
@@ -639,9 +639,9 @@ namespace ui
 		{
 			alloc(r.extent(), s.format(), s.orientation(), s.time());
 
-			const auto stride_out = _stride;
-			const auto stride_in = s._stride;
-			const auto* const p = s._pixels.get() + (r.left * 4) + (r.top * stride_in);
+			const ssize_t stride_out = _stride;
+			const ssize_t stride_in = s._stride;
+			const auto* const p = s._pixels.get() + (r.left * 4_z) + (r.top * stride_in);
 
 			for (int y = 0; y < _dimensions.cy; ++y)
 			{
@@ -651,9 +651,9 @@ namespace ui
 
 		void draw(const surface& s, const pointi location, const recti src)
 		{
-			const auto stride_this = _stride;
-			const auto stride_src = s._stride;
-			const auto copy_bytes_len = src.width() * calc_bytes_per_pixel(_format);
+			const ssize_t stride_this = _stride;
+			const ssize_t stride_src = s._stride;
+			const ssize_t copy_bytes_len = src.width() * calc_bytes_per_pixel(_format);
 
 			for (int y = 0; y < src.height(); ++y)
 			{
@@ -684,7 +684,6 @@ namespace ui
 		void clear(color32 clr);
 		surface_ptr transform(simple_transform t) const;
 
-		void fill_ellipse(recti bounds, color32 color);
 		void fill_pie(pointi center, int radius, const color32 color[64], color32 color_center, color32 color_bg);
 
 		const_surface_ptr transform(const image_edits& photo_edits) const;
@@ -782,15 +781,15 @@ namespace ui
 		{
 			switch (_format)
 			{
-			case image_format::JPEG: return u8"jpg";
-			case image_format::PNG: return u8"png";
-			case image_format::WEBP: return u8"webp";
+			case image_format::JPEG: return u8"jpg"sv;
+			case image_format::PNG: return u8"png"sv;
+			case image_format::WEBP: return u8"webp"sv;
 			case image_format::Unknown: break;
 			default: break;
 			}
 
 			df::assert_true(false); // Unknown extension
-			return u8"x";
+			return u8"x"sv;
 		}
 	};
 
@@ -1076,27 +1075,27 @@ namespace ui
 	{
 		switch (format)
 		{
-		case texture_format::ARGB: return u8"ARGB";
-		case texture_format::P010: return u8"p010";
-		case texture_format::NV12: return u8"NV12";
-		case texture_format::RGB: return u8"RGB";
+		case texture_format::ARGB: return u8"ARGB"sv;
+		case texture_format::P010: return u8"p010"sv;
+		case texture_format::NV12: return u8"NV12"sv;
+		case texture_format::RGB: return u8"RGB"sv;
 		default: break;
 		}
 
-		return u8"?";
+		return u8"?"sv;
 	}
 
 	constexpr std::u8string_view to_string(const texture_sampler sampler)
 	{
 		switch (sampler)
 		{
-		case texture_sampler::point: return u8"point";
-		case texture_sampler::bicubic: return u8"bicubic";
-		case texture_sampler::bilinear: return u8"bilinear";
+		case texture_sampler::point: return u8"point"sv;
+		case texture_sampler::bicubic: return u8"bicubic"sv;
+		case texture_sampler::bilinear: return u8"bilinear"sv;
 		default: break;
 		}
 
-		return u8"?";
+		return u8"?"sv;
 	}
 
 	class color_adjust
@@ -1111,10 +1110,10 @@ namespace ui
 	public:
 		void color_params(double vibrance, double saturation, double darks, double midtones, double lights,
 		                  double contrast, double brightness);
-		void apply(const const_surface_ptr& src, uint8_t* dst, int dst_stride, df::cancel_token token) const;
+		void apply(const const_surface_ptr& src, uint8_t* dst, const size_t dst_stride, df::cancel_token token) const;
 
 	private:
-		color32 adjust_color(float y, float u, float v, int a) const;
+		color32 adjust_color(double y, double u, double v, double a) const;
 	};
 
 	enum class texture_update_result
@@ -1157,7 +1156,7 @@ namespace ui
 		virtual texture_update_result update(const av_frame_ptr& frame) = 0;
 		virtual texture_update_result update(const const_surface_ptr& surface) = 0;
 		virtual texture_update_result update(sizei dims, texture_format format, orientation orientation,
-		                                     const uint8_t* pixels, int stride, int buffer_size) = 0;
+		                                     const uint8_t* pixels, size_t stride, size_t buffer_size) = 0;
 
 		virtual bool is_valid() const = 0;
 	};
@@ -1329,14 +1328,14 @@ namespace ui
 
 	struct edit_styles
 	{
-		bool xES_AUTOHSCROLL = false;
-		bool xES_CENTER = false;
-		bool xES_NUMBER = false;
-		bool xES_PASSWORD = false;
-		bool xES_AUTOVSCROLL = false;
-		bool xES_MULTILINE = false;
+		bool horizontal_scroll = false;
+		bool align_center = false;
+		bool number = false;
+		bool password = false;
+		bool vertical_scroll = false;
+		bool multi_line = false;
 		bool spelling = false;
-		bool xES_WANTRETURN = false;
+		bool want_return = false;
 		bool file_system_auto_complete = false;
 		bool rounded_corners = false;
 		bool select_all_on_focus = false;

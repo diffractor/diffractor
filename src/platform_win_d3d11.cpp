@@ -45,21 +45,21 @@ static constexpr std::u8string_view to_string(D3D_FEATURE_LEVEL fl)
 {
 	switch (fl)
 	{
-	case D3D_FEATURE_LEVEL_1_0_CORE: return u8"1.0.CORE";
-	case D3D_FEATURE_LEVEL_9_1: return u8"9.1";
-	case D3D_FEATURE_LEVEL_9_2: return u8"9.2";
-	case D3D_FEATURE_LEVEL_9_3: return u8"9.3";
-	case D3D_FEATURE_LEVEL_10_0: return u8"10.0";
-	case D3D_FEATURE_LEVEL_10_1: return u8"10.1";
-	case D3D_FEATURE_LEVEL_11_0: return u8"11.0";
-	case D3D_FEATURE_LEVEL_11_1: return u8"11.1";
-	case D3D_FEATURE_LEVEL_12_0: return u8"12.0";
-	case D3D_FEATURE_LEVEL_12_1: return u8"12.1";
+	case D3D_FEATURE_LEVEL_1_0_CORE: return u8"1.0.CORE"sv;
+	case D3D_FEATURE_LEVEL_9_1: return u8"9.1"sv;
+	case D3D_FEATURE_LEVEL_9_2: return u8"9.2"sv;
+	case D3D_FEATURE_LEVEL_9_3: return u8"9.3"sv;
+	case D3D_FEATURE_LEVEL_10_0: return u8"10.0"sv;
+	case D3D_FEATURE_LEVEL_10_1: return u8"10.1"sv;
+	case D3D_FEATURE_LEVEL_11_0: return u8"11.0"sv;
+	case D3D_FEATURE_LEVEL_11_1: return u8"11.1"sv;
+	case D3D_FEATURE_LEVEL_12_0: return u8"12.0"sv;
+	case D3D_FEATURE_LEVEL_12_1: return u8"12.1"sv;
 	default:
 		break;
 	}
 
-	return u8"?";
+	return u8"?"sv;
 }
 
 void factories::reset_fonts()
@@ -81,7 +81,7 @@ bool factories::init(bool use_gpu)
 
 	if (FAILED(hr))
 	{
-		df::log(__FUNCTION__, str::format(u8"Failed to create ID2D1Factory2 {:x}", hr));
+		df::log(__FUNCTION__, str::format(u8"Failed to create ID2D1Factory2 {:x}"sv, hr));
 	}
 
 	if (SUCCEEDED(hr))
@@ -91,7 +91,7 @@ bool factories::init(bool use_gpu)
 
 		if (FAILED(hr))
 		{
-			df::log(__FUNCTION__, str::format(u8"Failed to create IDWriteFactory {:x}", hr));
+			df::log(__FUNCTION__, str::format(u8"Failed to create IDWriteFactory {:x}"sv, hr));
 		}
 	}
 
@@ -106,7 +106,7 @@ bool factories::init(bool use_gpu)
 
 		if (FAILED(hr))
 		{
-			df::log(__FUNCTION__, str::format(u8"Failed to create IDXGIFactory {:x}", hr));
+			df::log(__FUNCTION__, str::format(u8"Failed to create IDXGIFactory {:x}"sv, hr));
 		}
 	}
 
@@ -117,7 +117,7 @@ bool factories::init(bool use_gpu)
 
 		if (FAILED(hr))
 		{
-			df::log(__FUNCTION__, str::format(u8"Failed to create IWICImagingFactory {:x}", hr));
+			df::log(__FUNCTION__, str::format(u8"Failed to create IWICImagingFactory {:x}"sv, hr));
 		}
 	}
 
@@ -189,7 +189,7 @@ bool factories::init(bool use_gpu)
 
 			if (hr == E_INVALIDARG)
 			{
-				df::log(__FUNCTION__, "D3D11CreateDevice failed with 11_1 - trying 11");
+				df::log(__FUNCTION__, "D3D11CreateDevice failed with 11_1 - trying 11"sv);
 				hr = D3D11CreateDevice(intel_adapter.Get(), driver_type, nullptr, create_device_flags,
 				                       feature_levels_11, static_cast<uint32_t>(std::size(feature_levels_11)),
 				                       D3D11_SDK_VERSION, &device, &feature_level, &context);
@@ -198,7 +198,7 @@ bool factories::init(bool use_gpu)
 
 		if (FAILED(hr) || !use_gpu)
 		{
-			df::log(__FUNCTION__, "D3D11CreateDevice failed - trying software rendering");
+			df::log(__FUNCTION__, "D3D11CreateDevice failed - trying software rendering"sv);
 
 			driver_type = D3D_DRIVER_TYPE_WARP;
 
@@ -243,20 +243,20 @@ bool factories::init(bool use_gpu)
 			if (SUCCEEDED(adapter->GetDesc(&adapter_desc)))
 			{
 				const auto description = str::utf16_to_utf8(adapter_desc.Description);
-				const auto gpu_id = str::format(u8"{:x}|{:x}|{:x}|{:x}", adapter_desc.VendorId, adapter_desc.DeviceId,
+				const auto gpu_id = str::format(u8"{:x}|{:x}|{:x}|{:x}"sv, adapter_desc.VendorId, adapter_desc.DeviceId,
 				                                adapter_desc.SubSysId, adapter_desc.Revision);
 
 				df::gpu_desc = description;
 				df::gpu_id = gpu_id;
 
-				df::log(__FUNCTION__, u8"     " + description);
-				df::log(__FUNCTION__, u8"     " + gpu_id);
+				df::log(__FUNCTION__, u8"     "s + description);
+				df::log(__FUNCTION__, u8"     "s + gpu_id);
 				df::log(__FUNCTION__,
-				        u8"     DedicatedVideoMemory " + df::file_size(adapter_desc.DedicatedVideoMemory).str());
+				        u8"     DedicatedVideoMemory "s + df::file_size(adapter_desc.DedicatedVideoMemory).str());
 				df::log(__FUNCTION__,
-				        u8"     DedicatedSystemMemory " + df::file_size(adapter_desc.DedicatedSystemMemory).str());
+				        u8"     DedicatedSystemMemory "s + df::file_size(adapter_desc.DedicatedSystemMemory).str());
 				df::log(__FUNCTION__,
-				        u8"     SharedSystemMemory " + df::file_size(adapter_desc.SharedSystemMemory).str());
+				        u8"     SharedSystemMemory "s + df::file_size(adapter_desc.SharedSystemMemory).str());
 			}
 		}
 
@@ -462,7 +462,7 @@ static_assert(std::is_trivial_v<vertex_2d>);
 
 #pragma comment(lib, "d3d11")
 #pragma comment(lib, "dxgi")
-//#pragma comment(lib, "d3dcompiler")
+//#pragma comment(lib, "d3dcompiler"sv)
 
 // vlc renderer
 // https://github.com/videolan/vlc-unity/blob/master/Assets/PluginSource/RenderAPI_D3D11.cpp
@@ -661,7 +661,7 @@ public:
 	ui::texture_update_result update(const av_frame_ptr& frame) override;
 	ui::texture_update_result update(const ui::const_surface_ptr& surface) override;
 	ui::texture_update_result update(sizei dims, ui::texture_format format, ui::orientation orientation,
-	                                 const uint8_t* pixels, int stride, int buffer_size) override;
+	                                 const uint8_t* pixels, size_t stride, size_t buffer_size) override;
 
 	friend class av_video_frames;
 };
@@ -1010,7 +1010,7 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, ComPtr<IDXGISwapCha
 
 	if (swap_chain)
 	{
-		df::log(__FUNCTION__, str::format(u8"D3D11CreateDevice success {}", to_string(_f->d3d_feature_level)));
+		df::log(__FUNCTION__, str::format(u8"D3D11CreateDevice success {}"sv, to_string(_f->d3d_feature_level)));
 
 
 		uint32_t support = 0;
@@ -1021,8 +1021,8 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, ComPtr<IDXGISwapCha
 		_supports_nv12 = SUCCEEDED(_f->d3d_device->CheckFormatSupport(to_format(ui::texture_format::NV12), &support))
 			&& (support & D3D11_FORMAT_SUPPORT_TEXTURE2D);
 
-		df::log(__FUNCTION__, _supports_p010 ? "     p010 supported" : "     p010 not-supported");
-		df::log(__FUNCTION__, _supports_nv12 ? "     nv12 supported" : "     nv12 not-supported");
+		df::log(__FUNCTION__, _supports_p010 ? "     p010 supported"sv : "     p010 not-supported"sv);
+		df::log(__FUNCTION__, _supports_nv12 ? "     nv12 supported"sv : "     nv12 not-supported"sv);
 
 
 		if (SUCCEEDED(hr))
@@ -1128,7 +1128,7 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, ComPtr<IDXGISwapCha
 
 			if (FAILED(hr))
 			{
-				df::log(__FUNCTION__, str::format(u8"CreateBlendState failed {:x}", hr));
+				df::log(__FUNCTION__, str::format(u8"CreateBlendState failed {:x}"sv, hr));
 			}
 		}
 
@@ -1143,7 +1143,7 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, ComPtr<IDXGISwapCha
 
 			if (FAILED(hr))
 			{
-				df::log(__FUNCTION__, str::format(u8"CreateRasterizerState failed {:x}", hr));
+				df::log(__FUNCTION__, str::format(u8"CreateRasterizerState failed {:x}"sv, hr));
 			}
 		}
 
@@ -1165,7 +1165,7 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, ComPtr<IDXGISwapCha
 
 			if (FAILED(hr))
 			{
-				df::log(__FUNCTION__, str::format(u8"CreateSamplerState point failed {:x}", hr));
+				df::log(__FUNCTION__, str::format(u8"CreateSamplerState point failed {:x}"sv, hr));
 			}
 
 			sampler_desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
@@ -1174,7 +1174,7 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, ComPtr<IDXGISwapCha
 
 			if (FAILED(hr))
 			{
-				df::log(__FUNCTION__, str::format(u8"CreateSamplerState bilinear failed {:x}", hr));
+				df::log(__FUNCTION__, str::format(u8"CreateSamplerState bilinear failed {:x}"sv, hr));
 			}
 		}
 
@@ -1183,11 +1183,11 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, ComPtr<IDXGISwapCha
 
 	if (FAILED(hr))
 	{
-		df::log(__FUNCTION__, str::format(u8"draw_context_d3d11_impl::create failed {:x}", hr));
+		df::log(__FUNCTION__, str::format(u8"draw_context_d3d11_impl::create failed {:x}"sv, hr));
 
 		if (use_gpu)
 		{
-			df::log(__FUNCTION__, "Retry without gpu.");
+			df::log(__FUNCTION__, "Retry without gpu."sv);
 			create(_f, swap_chain, base_font_size, false);
 			return;
 		}
@@ -2195,7 +2195,7 @@ int d3d11_draw_context_impl::line_height(ui::style::font_size font)
 
 static void log_update_texture_crash(const ui::texture_format fmt)
 {
-	df::log(__FUNCTION__, str::format(u8"UpdateSubresource {} ****** crashed ******", to_string(fmt)));
+	df::log(__FUNCTION__, str::format(u8"UpdateSubresource {} ****** crashed ******"sv, to_string(fmt)));
 }
 
 static HRESULT try_create_tex(ID3D11Device* pDevice, const D3D11_TEXTURE2D_DESC& desc, D3D11_SUBRESOURCE_DATA* p_source,
@@ -2244,7 +2244,7 @@ static HRESULT try_update_tex(ID3D11DeviceContext* context, ID3D11Texture2D* tex
 
 ui::texture_update_result d3d11_texture::update(const sizei dims, const ui::texture_format fmt,
                                                 const ui::orientation orientation, const uint8_t* pixels,
-                                                const int stride, const int buffer_size)
+                                                size_t stride, size_t buffer_size)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	auto result = ui::texture_update_result::failed;
@@ -2285,8 +2285,8 @@ ui::texture_update_result d3d11_texture::update(const sizei dims, const ui::text
 	D3D11_SUBRESOURCE_DATA source_data;
 	memset(&source_data, 0, sizeof(source_data));
 	source_data.pSysMem = pixels;
-	source_data.SysMemPitch = stride;
-	source_data.SysMemSlicePitch = buffer_size;
+	source_data.SysMemPitch = static_cast<UINT>(stride);
+	source_data.SysMemSlicePitch = static_cast<UINT>(buffer_size);
 
 	D3D11_SUBRESOURCE_DATA* p_source = nullptr;
 
@@ -2311,13 +2311,13 @@ ui::texture_update_result d3d11_texture::update(const sizei dims, const ui::text
 		{
 			if (hr == E_FAIL)
 			{
-				df::log(__FUNCTION__, str::format(u8"CreateTexture2D {} ({} x {}) ****** crashed ******",
+				df::log(__FUNCTION__, str::format(u8"CreateTexture2D {} ({} x {}) ****** crashed ******"sv,
 				                                  to_string(fmt), cx, cy, hr));
 			}
 			else
 			{
 				df::log(__FUNCTION__,
-				        str::format(u8"CreateTexture2D {} ({} x {}) failed: {:x}", to_string(fmt), cx, cy, hr));
+				        str::format(u8"CreateTexture2D {} ({} x {}) failed: {:x}"sv, to_string(fmt), cx, cy, hr));
 			}
 		}
 	}

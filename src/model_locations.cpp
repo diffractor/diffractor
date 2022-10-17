@@ -18,9 +18,9 @@ static_assert(std::is_trivially_copyable_v<location_t>);
 static_assert(std::is_move_constructible_v<country_t>);
 static_assert(std::is_move_constructible_v<location_match>);
 
-static constexpr auto countries_file_name = u8"location-countries.txt";
-static constexpr auto states_file_name = u8"location-states.txt";
-static constexpr auto places_file_name = u8"location-places.txt";
+static constexpr auto countries_file_name = u8"location-countries.txt"sv;
+static constexpr auto states_file_name = u8"location-states.txt"sv;
+static constexpr auto places_file_name = u8"location-places.txt"sv;
 
 const auto max_location_cols = 32;
 
@@ -85,9 +85,9 @@ void location_t::clear()
 std::u8string location_t::str() const
 {
 	std::u8string result;
-	join(result, place, u8", ", false);
-	join(result, state, u8", ", false);
-	join(result, country, u8", ", false);
+	join(result, place, u8", "sv, false);
+	join(result, state, u8", "sv, false);
+	join(result, country, u8", "sv, false);
 	return result;
 }
 
@@ -169,10 +169,11 @@ static void skip_bom(u8istream& file)
 	}
 }
 
-using county_normalize_map = std::unordered_map<str::cached, str::cached, df::ihash, df::ieq>;
-static county_normalize_map county_abbreviations;
-static county_normalize_map county_names;
 static platform::mutex normalize_mutex;
+using county_normalize_map = std::unordered_map<str::cached, str::cached, df::ihash, df::ieq>;
+_Guarded_by_(normalize_mutex) static county_normalize_map county_abbreviations;
+_Guarded_by_(normalize_mutex) static county_normalize_map county_names;
+
 
 str::cached normalize_county_abbreviation(const str::cached country)
 {
@@ -615,7 +616,7 @@ location_t location_cache::build_location(const csv_entry* entries) const
 
 void location_cache::load_index()
 {
-	platform::exclusive_lock lock(_mutex);
+	platform::exclusive_lock lock(_rw);
 	const auto expected_number_of_locations = 500000;
 
 	load_countries();
@@ -760,7 +761,7 @@ static bool find_match(const country_t& country, const std::u8string_view query,
 location_matches location_cache::auto_complete(const std::u8string_view query, const uint32_t max_results,
                                                const gps_coordinate default_location) const
 {
-	platform::shared_lock lock(_mutex);
+	platform::shared_lock lock(_rw);
 
 	location_matches result;
 	std::vector<uint32_t> ngram_matches;
@@ -936,7 +937,7 @@ location_matches location_cache::auto_complete(const std::u8string_view query, c
 
 location_t location_cache::find_by_id(const uint32_t id) const
 {
-	platform::shared_lock lock(_mutex);
+	platform::shared_lock lock(_rw);
 	location_t result;
 	const auto found = std::lower_bound(_locations_by_id.begin(), _locations_by_id.end(),
 	                                    location_id_and_offset{id, 0});
@@ -958,7 +959,7 @@ location_t location_cache::find_by_id(const uint32_t id) const
 
 country_loc location_cache::find_country(const double x, const double y) const
 {
-	platform::shared_lock lock(_mutex);
+	platform::shared_lock lock(_rw);
 	const kd_coordinates_t xy = {static_cast<float>(x), static_cast<float>(y)};
 	const auto closest = _tree.find_closest(_coords, xy);
 	const auto found = _countries.find(closest.country);
@@ -969,7 +970,7 @@ country_loc location_cache::find_country(const double x, const double y) const
 
 location_t location_cache::find_closest(const double x, const double y) const
 {
-	platform::shared_lock lock(_mutex);
+	platform::shared_lock lock(_rw);
 	location_t result;
 	u8istream file;
 	file.open(platform::to_file_system_path(_locations_path), u8istream::binary);

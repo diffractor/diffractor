@@ -52,30 +52,30 @@ std::atomic_int df::dragging_items = 0;
 std::atomic_int df::handling_crash = 0;
 const char* df::rendering_func = "";
 
-std::u8string df::gpu_desc = u8"unknown";
-std::u8string df::gpu_id = u8"unknown";
-std::u8string df::d3d_info = u8"unknown";
+std::u8string df::gpu_desc = u8"unknown"s;
+std::u8string df::gpu_id = u8"unknown"s;
+std::u8string df::d3d_info = u8"unknown"s;
 
 df::date_t df::start_time;
 std::atomic_int df::cancel_token::empty;
 df::file_path df::last_loaded_path;
-df::file_path df::log_path = known_path(platform::known_folder::running_app_folder).combine_file(u8"diffractor.log");
+df::file_path df::log_path = known_path(platform::known_folder::running_app_folder).combine_file(u8"diffractor.log"sv);
 df::file_path df::previous_log_path = known_path(platform::known_folder::running_app_folder).combine_file(
-	u8"diffractor.previous.log");
+	u8"diffractor.previous.log"sv);
 
-static std::basic_ofstream<char8_t, std::char_traits<char8_t>> log_file;
+static platform::mutex log_mutex;
+_Guarded_by_(log_mutex) static std::basic_ofstream<char8_t, std::char_traits<char8_t>> log_file;
 
 
 void df::log(const std::u8string_view context, const std::u8string_view message)
-{
-	static platform::mutex s_mutex;
-	platform::exclusive_lock ll(s_mutex);
+{	
+	platform::exclusive_lock ll(log_mutex);
 	static auto start_time = platform::tick_count();
 	static bool did_try_open = false;
 
 #ifdef _DEBUG
 
-	platform::trace(str::format(u8"{}:{}\n", context, message));
+	platform::trace(str::format(u8"{}:{}\n"sv, context, message));
 
 #endif
 
@@ -97,9 +97,9 @@ void df::log(const std::u8string_view context, const std::u8string_view message)
 		const auto thread_id = platform::current_thread_id();
 
 		log_file << std::right << std::setfill(u8'0') << std::setw(8) << thread_id
-			<< " "
+			<< u8" "sv
 			<< std::setw(8) << time
-			<< " "
+			<< u8" "sv
 			<< std::setfill(u8' ')
 			<< std::left << std::setw(33) << context
 			<< message << std::endl;
@@ -122,7 +122,7 @@ void df::log(const std::string_view context, const std::string_view message)
 void df::trace(const std::u8string_view message)
 {
 #ifdef _DEBUG
-	platform::trace(str::format(u8"{}\n", message));
+	platform::trace(str::format(u8"{}\n"sv, message));
 #endif
 }
 
@@ -130,7 +130,7 @@ void df::trace(const std::string_view message)
 {
 #ifdef _DEBUG
 	const auto message8 = str::utf8_cast(message.data());
-	platform::trace(str::format(u8"{}\n", message8));
+	platform::trace(str::format(u8"{}\n"sv, message8));
 #endif
 }
 
@@ -203,7 +203,7 @@ df::version::version(const std::u8string_view version)
 std::u8string df::date_t::to_xmp_date() const
 {
 	const auto st = date();
-	return str::format(u8"{}-{}-{}T{}:{}:{}", st.year, st.month, st.day, st.hour, st.minute, st.second);
+	return str::format(u8"{}-{}-{}T{}:{}:{}"sv, st.year, st.month, st.day, st.hour, st.minute, st.second);
 }
 
 df::date_t df::date_t::system_to_local() const
@@ -442,7 +442,7 @@ df::blob df::blob_from_file(const file_path path, size_t max_load)
 
 		if (load_len > max_blob_size)
 		{
-			const auto message = str::format(u8"Cannot read file into memory ({} bytes)", file_len);
+			const auto message = str::format(u8"Cannot read file into memory ({} bytes)"sv, file_len);
 			df::log(__FUNCTION__, message);
 			throw app_exception(message);
 		}

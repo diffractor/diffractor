@@ -15,7 +15,7 @@ namespace df
 	{
 	private:
 		folder_path _root;
-		std::u8string _wildcard = u8"*.*";
+		std::u8string _wildcard = u8"*.*"s;
 		bool _recursive = false;
 
 	public:
@@ -27,7 +27,7 @@ namespace df
 			assert_true(is_valid());
 		}
 
-		item_selector(const folder_path f, const bool recursive = false, const std::u8string_view wildcard = u8"*.*") :
+		item_selector(const folder_path f, const bool recursive = false, const std::u8string_view wildcard = u8"*.*"sv) :
 			_root(f), _wildcard(wildcard), _recursive(recursive)
 		{
 			assert_true(is_valid());
@@ -46,7 +46,7 @@ namespace df
 				is_match = icmp(path.folder().text(), _root.text()) == 0;
 			}
 
-			if (str::icmp(_wildcard, u8"*.*") != 0)
+			if (str::icmp(_wildcard, u8"*.*"sv) != 0)
 			{
 				is_match = wildcard_icmp(path.name(), _wildcard);
 			}
@@ -54,7 +54,7 @@ namespace df
 			return is_match;
 		}
 
-		static int count_ending_stars(const std::u8string_view sv, int& star_start)
+		static int count_ending_stars(const std::u8string_view sv, size_t& star_start)
 		{
 			auto stars = 0;
 			auto n = sv.size() - 1;
@@ -85,7 +85,7 @@ namespace df
 
 			if (len >= 2)
 			{
-				auto star_start = 0;
+				auto star_start = 0_z;
 				auto stars = count_ending_stars(sv, star_start);
 
 				if (stars >= 2)
@@ -95,14 +95,14 @@ namespace df
 				}
 				else
 				{
-					const auto last_slash = sv.find_last_of(u8"/\\");
+					const auto last_slash = sv.find_last_of(u8"/\\"sv);
 
 					if (last_slash != std::u8string_view::npos && last_slash < sv.size())
 					{
 						const auto tail = sv.substr(last_slash + 1);
 						auto root = sv;
 
-						if (tail.find_first_of(u8"*?") != std::u8string_view::npos)
+						if (tail.find_first_of(u8"*?"sv) != std::u8string_view::npos)
 						{
 							_wildcard = str::cache(tail);
 							root = sv.substr(0, last_slash);
@@ -134,7 +134,7 @@ namespace df
 			if (_recursive)
 			{
 				if (result.back() != '\\') result += '\\';
-				result += u8"**";
+				result += u8"**"sv;
 			}
 
 			if (has_wildcard())
@@ -163,7 +163,7 @@ namespace df
 
 		bool has_wildcard() const
 		{
-			return _wildcard != u8"*.*";
+			return _wildcard != u8"*.*"sv;
 		}
 
 		bool is_recursive() const

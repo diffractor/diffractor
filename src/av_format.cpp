@@ -61,125 +61,7 @@ void av_initialise(file_type_by_extension& file_types)
 	av_log_set_callback(av_log);
 	//#endif
 
-	//const AVInputFormat* fmt = NULL;
-	//void* fmt_opaque = NULL;
 
-	//while ((fmt = av_demuxer_iterate(&fmt_opaque)))
-	//{
-	//	if (fmt->flags & AVFMT_NOFILE)
-	//		continue;
-
-	//	auto extensions = str::safe_string(fmt->extensions);
-	//	auto name = str::safe_string(fmt->name);
-	//	auto long_name = str::safe_string(fmt->long_name);
-
-	//	//if (extensions.empty()) extensions = name;
-
-	//	str::split2(extensions, [&file_types, name, long_name](const std::u8string_view ext)
-	//		{
-	//			const auto found = file_types.find(ext);
-
-	//			if (found != file_types.end())
-	//			{
-	//				found->second->is_av = true;
-	//			}
-	//			else
-	//			{
-	//				df::trace(str::format(u8"ffmpeg extension {} ({}:{}) has no file type", ext, name, long_name));
-	//			}
-	//		});
-	//}
-
-	//static std::vector<std::u8string_view> extra_av_extensions = {
-	//	"mts",
-	//	"mpe",
-	//	"vob",
-	//	"nsf",
-	//	"dnxhr",
-	//	"chk",
-	//	"vgm",
-	//	"vgz",
-	//	"hes",
-	//	"oga",
-	//	"dvd",
-	//	"gbs",
-	//	"wmv",
-	//	"opus",
-	//	"ts",
-	//	"ogm",
-	//	"m2ts",
-	//	"m4p",
-	//	"pam",
-	//	"web",
-	//	"mp4a",
-	//	"lrv",
-	//	"aif",
-	//	"dff",
-	//	"divx",
-	//	"dpx",
-	//	"m1v",
-	//	"m2p",
-	//	"ra",
-	//	"sap",
-	//	"mpd",
-	//	"aifc",
-	//	"ogv",
-	//	"jss",
-	//	"gym",
-	//	"id3",
-	//	"fwse",
-	//	"drc",
-	//	"ay",
-	//	"pgmyuv",
-	//	"mpeg4",
-	//	"obu",
-	//	"ssa",
-	//	"A64",
-	//	"wma",
-	//	"webm",
-	//	"cpk",
-	//	"m2t",
-	//	"lbc",
-	//	"spc",
-	//	"adts",
-	//	"nsfe",
-	//	"mp4v",
-	//	"kux",
-	//	"cavs",
-	//	"m4r",
-	//	"jls",
-	//	"m2v",
-	//	"dav",
-	//	"vc2",
-	//	"tod",
-	//	"ifv",
-	//	"ljpg",
-	//	"ogx",
-	//	"spx",
-	//	"hca",
-	//	"xx",
-	//	"kss",
-	//	"latm",
-	//	"mpg",
-	//};
-
-	//for (const auto& extra : extra_av_extensions)
-	//{
-	//	const auto found = file_types.find(extra);
-
-	//	if (found != file_types.end())
-	//	{
-	//		found->second->is_av = true;
-	//	}
-	//}
-
-	//for (const auto& ft : file_types)
-	//{
-	//	if ((ft.second->is_audio || ft.second->is_video) && !ft.second->is_av)
-	//	{
-	//		df::trace(str::format(u8"audio/video extension {} not av", ft.second->extension));
-	//	}
-	//}
 }
 
 static double calc_duration(int64_t t, const AVRational& base, const int64_t start)
@@ -188,12 +70,6 @@ static double calc_duration(int64_t t, const AVRational& base, const int64_t sta
 	if (start != AV_NOPTS_VALUE) t -= start;
 	return (t * base.num) / static_cast<double>(base.den);
 }
-
-//static double calc_duration(int64_t t, const AVRational& base)
-//{
-//	if (t == AV_NOPTS_VALUE) t = 0;
-//	return (t * base.num) / static_cast<double>(base.den);
-//}
 
 static double calc_duration(int64_t t, const int64_t& start)
 {
@@ -272,7 +148,7 @@ static void populate_properties(AVFormatContext* ctx, file_scan_result& result)
 
 		while ((tag = av_dict_get(ctx->metadata, "", tag, AV_DICT_IGNORE_SUFFIX)))
 		{
-			if (str::icmp(tag->key, "xmp") == 0 || str::icmp(tag->key, "id3v2_priv.XMP") == 0)
+			if (str::icmp(tag->key, "xmp"sv) == 0 || str::icmp(tag->key, "id3v2_priv.XMP"sv) == 0)
 			{
 				result.metadata.xmp = unescape_xmp(tag->value);
 			}
@@ -776,7 +652,7 @@ bool av_format_decoder::seek(const double wanted, const double current) const
 
 	if (fc)
 	{
-		df::trace(str::format(u8"av_format_decoder::seek {}", wanted));
+		df::trace(str::format(u8"av_format_decoder::seek {}"sv, wanted));
 
 		const auto target = static_cast<int64_t>(wanted * AV_TIME_BASE);
 		const auto target_min = static_cast<int64_t>(std::max(_start_time, wanted - 1.0) * AV_TIME_BASE);
@@ -801,7 +677,7 @@ bool av_format_decoder::seek(const double wanted, const double current) const
 
 		if (_eof)
 		{
-			df::trace("av_format_decoder:seek end of stream");
+			df::trace("av_format_decoder:seek end of stream"sv);
 		}
 
 		if (success)
@@ -829,7 +705,7 @@ av_packet_ptr av_format_decoder::read_packet() const
 			_eof = true;
 			result = std::make_shared<av_packet>();
 			result->eof = true;
-			df::trace("av_format_decoder:read_packet end of stream");
+			df::trace("av_format_decoder:read_packet end of stream"sv);
 		}
 		else if (0 == ret)
 		{
@@ -861,7 +737,7 @@ void av_format_decoder::extract_metadata(file_scan_result& sr) const
 
 				while (stream->metadata && (tag = av_dict_get(stream->metadata, {}, tag, AV_DICT_IGNORE_SUFFIX)))
 				{
-					if (is_key(tag->key, "title")) md.store(prop::title, str::cache(tag->value));
+					if (is_key(tag->key, "title"sv)) md.store(prop::title, str::cache(tag->value));
 				}*/
 
 				const auto ct = stream->codecpar->codec_type;
@@ -988,7 +864,7 @@ bool av_format_decoder::open(const df::file_path path)
 		return false;
 	}
 
-	df::trace(format(u8"av_format_decoder::open {}", path.name()));
+	df::trace(format(u8"av_format_decoder::open {}"sv, path.name()));
 
 	return open(file, path);
 }
@@ -1011,8 +887,8 @@ bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path
 
 	AVDictionary* opts = nullptr;
 	av_dict_set_int(&opts, "export_xmp", 1, 0);
-	// av_dict_set_int(&opts, "analyzeduration", 100, 0);
-	// av_dict_set_int(&opts, "probesize", 10000000, 0);
+	// av_dict_set_int(&opts, "analyzeduration"sv, 100, 0);
+	// av_dict_set_int(&opts, "probesize"sv, 10000000, 0);
 	// Consider increasing the value for the 'analyzeduration' (0) and 'probesize' (5000000) options
 
 	if (avformat_open_input(&fc, str::utf8_to_a(path.str()).c_str(), nullptr, &opts) != 0)
@@ -1045,10 +921,10 @@ bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path
 
 			while (stream->metadata && (tag = av_dict_get(stream->metadata, "", tag, AV_DICT_IGNORE_SUFFIX)))
 			{
-				if (is_key(tag->key, u8"title")) s.title = str::utf8_cast(tag->value);
-				if (is_key(tag->key, u8"codec")) s.codec = str::utf8_cast(tag->value);
-				if (is_key(tag->key, u8"FourCC")) s.fourcc = str::utf8_cast(tag->value);
-				if (is_key(tag->key, u8"language")) s.language = str::utf8_cast(tag->value);
+				if (is_key(tag->key, u8"title"sv)) s.title = str::utf8_cast(tag->value);
+				if (is_key(tag->key, u8"codec"sv)) s.codec = str::utf8_cast(tag->value);
+				if (is_key(tag->key, u8"FourCC"sv)) s.fourcc = str::utf8_cast(tag->value);
+				if (is_key(tag->key, u8"language"sv)) s.language = str::utf8_cast(tag->value);
 				s.metadata.emplace_back(str::cache(tag->key), str::utf8_cast(tag->value));
 			}
 
@@ -1084,7 +960,7 @@ bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path
 				}
 				s.metadata.emplace_back(u8"codec"_c,
 				                        std::u8string(str::utf8_cast(avcodec_get_name(codec->codec_id))));
-				//s.metadata.emplace_back( "profile", av_get_profile_name(avcodec_find_decoder(stream->codecpar->codec_id), stream->codecpar->profile) });
+				//s.metadata.emplace_back( "profile"sv, av_get_profile_name(avcodec_find_decoder(stream->codecpar->codec_id), stream->codecpar->profile) });
 
 				if (codec->codec_tag)
 				{
@@ -1121,14 +997,15 @@ bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path
 	}
 
 	_has_multiple_audio_streams = audio_stream_count > 1;
+	_is_open = true;
 
-	return _is_open = true;
+	return true;
 }
 
 void av_format_decoder::init_streams(int video_track, int audio_track, bool can_use_hw, bool video_only)
 {
 	auto* const fc = _format_context;
-	//str::format2(fc->url, sizeof(fc->url), "{}", path.str());
+	//str::format2(fc->url, sizeof(fc->url), "{}"sv, path.str());
 
 #ifdef _DEBUG
 	//av_dump_format(fc, 0, fc->url, 0);
@@ -1273,7 +1150,7 @@ av_media_info av_format_decoder::info() const
 
 		while ((tag = av_dict_get(ctx->metadata, "", tag, AV_DICT_IGNORE_SUFFIX)))
 		{
-			if (str::icmp(tag->key, "id3v2_priv.XMP") == 0 || str::icmp(tag->key, "xmp") == 0)
+			if (str::icmp(tag->key, "id3v2_priv.XMP"sv) == 0 || str::icmp(tag->key, "xmp"sv) == 0)
 			{
 				const auto xmp_kv = metadata_xmp::to_info(unescape_xmp(tag->value));
 				result.metadata.emplace_back(metadata_standard::xmp, xmp_kv);
@@ -1820,7 +1697,7 @@ bool av_scaler::scale_frame(const AVFrame& frame, ui::surface_ptr& surface, cons
 
 		if (!success)
 		{
-			df::log(__FUNCTION__, "sws_scale failed");
+			df::log(__FUNCTION__, "sws_scale failed"sv);
 		}
 	}
 
@@ -1888,7 +1765,7 @@ void av_format_decoder::receive_frames(av_packet_queue& packets, av_frame_queue&
 		AVRational base;
 		int64_t start = AV_NOPTS_VALUE;
 		const auto si = packet->pkt->stream_index;
-		const auto* stream_name = u8"unknown stream";
+		auto stream_name = u8"unknown stream"sv;
 
 		if (packet->eof)
 		{
@@ -1903,7 +1780,7 @@ void av_format_decoder::receive_frames(av_packet_queue& packets, av_frame_queue&
 			pts_c = &_pts_vid;
 			base = {_video_base.num, _video_base.den};
 			start = _video_start_time;
-			stream_name = u8"video stream";
+			stream_name = u8"video stream"sv;
 		}
 		else if (si == _audio_stream_index)
 		{
@@ -1911,7 +1788,7 @@ void av_format_decoder::receive_frames(av_packet_queue& packets, av_frame_queue&
 			pts_c = &_pts_aud;
 			base = {_audio_base.num, _audio_base.den};
 			start = _audio_start_time;
-			stream_name = u8"audio stream";
+			stream_name = u8"audio stream"sv;
 		}
 
 		if (c != nullptr)
@@ -1922,7 +1799,7 @@ void av_format_decoder::receive_frames(av_packet_queue& packets, av_frame_queue&
 				pts_c->clear();
 
 				avcodec_flush_buffers(c);
-				df::trace(str::format(u8"av_format_decoder::receive_frames avcodec_flush_buffers {}", stream_name));
+				df::trace(str::format(u8"av_format_decoder::receive_frames avcodec_flush_buffers {}"sv, stream_name));
 
 				//try_avcodec_send_packet(c, &packet.pkt);
 
@@ -1933,13 +1810,13 @@ void av_format_decoder::receive_frames(av_packet_queue& packets, av_frame_queue&
 			else
 			{
 				auto send_res = try_avcodec_send_packet(c, packet->pkt);
-				//df::trace(str::format(u8"[{}] try_avcodec_send_packet 111 {}", si, send_res));
+				//df::trace(str::format(u8"[{}] try_avcodec_send_packet 111 {}"sv, si, send_res));
 
 				if (send_res == 0)
 				{
 					auto frame = std::make_shared<av_frame>();
 					auto rec_res = avcodec_receive_frame(c, &frame->frm);
-					//df::trace(str::format(u8"[{}] avcodec_receive_frame 111 {}", si, rec_res));
+					//df::trace(str::format(u8"[{}] avcodec_receive_frame 111 {}"sv, si, rec_res));
 
 					while (rec_res == 0)
 					{
@@ -1950,20 +1827,20 @@ void av_format_decoder::receive_frames(av_packet_queue& packets, av_frame_queue&
 
 						frame = std::make_shared<av_frame>();
 						rec_res = avcodec_receive_frame(c, &frame->frm);
-						//df::trace(str::format(u8"[{}] avcodec_receive_frame 222 {} {}", si, rec_res, frame->time));
+						//df::trace(str::format(u8"[{}] avcodec_receive_frame 222 {} {}"sv, si, rec_res, frame->time));
 					}
 				}
 
 				while (AVERROR(EAGAIN) == send_res)
 				{
 					send_res = try_avcodec_send_packet(c, packet->pkt);
-					//df::trace(str::format(u8"[{}] try_avcodec_send_packet 333 {}", si, send_res));
+					//df::trace(str::format(u8"[{}] try_avcodec_send_packet 333 {}"sv, si, send_res));
 
 					if (send_res == 0 || AVERROR(EAGAIN) == send_res)
 					{
 						auto frame = std::make_shared<av_frame>();
 						auto rec_res = avcodec_receive_frame(c, &frame->frm);
-						//df::trace(str::format(u8"[{}] avcodec_receive_frame 333 {}", si, rec_res));
+						//df::trace(str::format(u8"[{}] avcodec_receive_frame 333 {}"sv, si, rec_res));
 
 						while (rec_res == 0)
 						{
@@ -1974,7 +1851,7 @@ void av_format_decoder::receive_frames(av_packet_queue& packets, av_frame_queue&
 
 							frame = std::make_shared<av_frame>();
 							rec_res = avcodec_receive_frame(c, &frame->frm);
-							//df::trace(str::format(u8"[{}] avcodec_receive_frame 444 {} {}", si, rec_res, frame->time));
+							//df::trace(str::format(u8"[{}] avcodec_receive_frame 444 {} {}"sv, si, rec_res, frame->time));
 						}
 					}
 				}

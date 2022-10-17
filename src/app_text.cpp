@@ -13,21 +13,21 @@
 std::u8string language_name(const std::u8string_view code)
 {
 	static const df::hash_map<std::u8string_view, std::u8string_view> code_to_name = {
-		{u8"en", u8"English"sv},
-		{u8"de", u8"Deutsch (German)"sv},
-		{u8"br", u8"brezhoneg (Breton)"sv},
-		{u8"cs", u8"čeština (Czech)"sv},
-		{u8"es", u8"Español (Spanish)"sv},
-		{u8"fr", u8"Français (French)"sv},
-		{u8"it", u8"Italiano (Italian)"sv},
-		{u8"ja", u8"日本語 (Japanese)"sv},
-		{u8"lv", u8"Latviešu Valoda (Latvian)"sv},
-		{u8"nl", u8"Nederlands (Dutch)"sv},
-		{u8"pl", u8"Polszczyzna (Polish)"sv},
-		{u8"pt", u8"Português (Portuguese)"sv},
-		{u8"ru", u8"Русский (Russian)"sv},
-		{u8"sr", u8"српски језик (Serbian)"sv},
-		{u8"zh", u8"中文 (Chinese)"sv},
+		{u8"en"sv, u8"English"sv},
+		{u8"de"sv, u8"Deutsch (German)"sv},
+		{u8"br"sv, u8"brezhoneg (Breton)"sv},
+		{u8"cs"sv, u8"čeština (Czech)"sv},
+		{u8"es"sv, u8"Español (Spanish)"sv},
+		{u8"fr"sv, u8"Français (French)"sv},
+		{u8"it"sv, u8"Italiano (Italian)"sv},
+		{u8"ja"sv, u8"日本語 (Japanese)"sv},
+		{u8"lv"sv, u8"Latviešu Valoda (Latvian)"sv},
+		{u8"nl"sv, u8"Nederlands (Dutch)"sv},
+		{u8"pl"sv, u8"Polszczyzna (Polish)"sv},
+		{u8"pt"sv, u8"Português (Portuguese)"sv},
+		{u8"ru"sv, u8"Русский (Russian)"sv},
+		{u8"sr"sv, u8"српски језик (Serbian)"sv},
+		{u8"zh"sv, u8"中文 (Chinese)"sv},
 	};
 
 	const auto found = code_to_name.find(code);
@@ -37,7 +37,7 @@ std::u8string language_name(const std::u8string_view code)
 std::u8string un_quote_and_un_escape(const std::u8string& text)
 {
 	auto result = std::u8string(text);
-	const auto n = result.find_first_not_of(u8" \t\r\n");
+	const auto n = result.find_first_not_of(u8" \t\r\n"sv);
 	const std::u8string quoted(result, n);
 
 	if (quoted.size() > 1 && quoted[0] == '"' && quoted[quoted.size() - 1] == '"')
@@ -49,15 +49,15 @@ std::u8string un_quote_and_un_escape(const std::u8string& text)
 		result = quoted;
 	}
 
-	result = str::replace(result, u8"\\n", u8"\n");
-	result = str::replace(result, u8"\\\"", u8"\"");
-	result = str::replace(result, u8"\\\\", u8"\\");
+	result = str::replace(result, u8"\\n"sv, u8"\n"sv);
+	result = str::replace(result, u8"\\\""sv, u8"\""sv);
+	result = str::replace(result, u8"\\\\"sv, u8"\\"sv);
 	return result;
 }
 
 std::u8string_view tt_prep(std::u8string_view result)
 {
-	const auto comment = result.find(u8"//");
+	const auto comment = result.find(u8"//"sv);
 
 	if (comment != std::u8string::npos)
 	{
@@ -89,7 +89,7 @@ static lang_def load_po(const df::file_path lang_file)
 {
 	lang_def result;
 	std::basic_ifstream<char8_t, std::char_traits<char8_t>> fs(platform::to_file_system_path(lang_file));
-	//fs.imbue(std::locale("en_US.UTF-8"));
+	//fs.imbue(std::locale("en_US.UTF-8"sv));
 
 	struct po_mapping
 	{
@@ -117,7 +117,7 @@ static lang_def load_po(const df::file_path lang_file)
 		std::u8string line;
 		std::getline(fs, line);
 
-		std::u8string::size_type pos = line.find_last_not_of(u8" \t\r\n");
+		std::u8string::size_type pos = line.find_last_not_of(u8" \t\r\n"sv);
 		if (pos != std::u8string::npos && pos < line.size() - 1)
 		{
 			line.erase(pos + 1, std::u8string::npos);
@@ -1278,11 +1278,12 @@ void app_text_t::load_lang(const df::file_path lang_file)
 
 			if (found != translations.end())
 			{
-				e.get() = str::cache(found->second);
+				const auto found_value = found->second;
+				e.get() = str::cache(found_value);
 			}
 			else
 			{
-				df::log(__FUNCTION__, str::format(u8"Missing language text {} - {}", lang_file, e.get()));
+				df::log(__FUNCTION__, str::format(u8"Missing language text {} - {}"sv, lang_file, e.get()));
 			}
 		}
 
@@ -1292,22 +1293,24 @@ void app_text_t::load_lang(const df::file_path lang_file)
 
 			if (found_one != translations.end())
 			{
-				p.get().one = str::cache(found_one->second);
+				const auto found_val = found_one->second;
+				p.get().one = str::cache(found_val);
 			}
 			else
 			{
-				df::log(__FUNCTION__, str::format(u8"Missing language text {} - {}", lang_file, p.get().one));
+				df::log(__FUNCTION__, str::format(u8"Missing language text {} - {}"sv, lang_file, p.get().one));
 			}
 
 			const auto found_plural = translations.find(std::u8string(p.get().plural));
 
 			if (found_plural != translations.end())
 			{
-				p.get().plural = str::cache(found_plural->second);
+				auto found_val = found_plural->second;
+				p.get().plural = str::cache(found_val);
 			}
 			else
 			{
-				df::log(__FUNCTION__, str::format(u8"Missing language text {} - {}", lang_file, p.get().plural));
+				df::log(__FUNCTION__, str::format(u8"Missing language text {} - {}"sv, lang_file, p.get().plural));
 			}
 		}
 	}
@@ -1317,7 +1320,7 @@ std::u8string app_text_t::translate_text(const std::u8string& text, const std::u
 {
 	if (!scope.empty())
 	{
-		const auto found = translations.find(str::format(u8"{}//{}", text, scope));
+		const auto found = translations.find(str::format(u8"{}//{}"sv, text, scope));
 
 		if (found != translations.end())
 		{

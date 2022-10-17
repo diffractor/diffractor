@@ -42,7 +42,7 @@ class rating_control final : public std::enable_shared_from_this<rating_control>
 {
 	view_state& _state;
 
-	mutable int _icon_cxy;
+	mutable int _icon_cxy = 0;
 	int _hover_rating = 0;
 	int last_hover_rating = 0;
 	const bool show_accelerator = false;
@@ -890,7 +890,7 @@ public:
 
 			//else if (std::ispunct(c)) {}
 			//else if (std::isalnum(c)) {}
-			//else { c = "."; };
+			//else { c = "."sv; };
 
 			result[i] = {c, clr};
 		}
@@ -950,7 +950,7 @@ public:
 
 					x += 2;
 
-					for (auto j = 0u; j < limit; ++j)
+					for (auto j = 0; j < limit; ++j)
 					{
 						const auto byte = data[j];
 						const auto cc = char_map[byte & 0xff].clr;
@@ -970,7 +970,7 @@ public:
 					if (x > x_ascii) x_ascii = x;
 					x = x_ascii;
 
-					for (auto j = 0u; j < limit; ++j)
+					for (auto j = 0; j < limit; ++j)
 					{
 						const auto& ce = char_map[data[j] & 0xff];
 						const auto cc = ce.clr;
@@ -1000,7 +1000,7 @@ public:
 
 	int calc_line_count() const
 	{
-		return _bytes_per_line > 0 ? df::round_up(_display->_selected_item_data.size(), _bytes_per_line) : 0;
+		return _bytes_per_line > 0 ? df::round_up(static_cast<int>(_display->_selected_item_data.size()), _bytes_per_line) : 0;
 	}
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
@@ -1033,16 +1033,16 @@ public:
 struct d64_entry
 {
 	bool available = false;
-	uint8_t next_track;
-	uint8_t next_sector;
+	uint8_t next_track = 0;
+	uint8_t next_sector = 0;
 	std::u8string file_type;
-	uint8_t start_track;
-	uint8_t start_sector;
+	uint8_t start_track = 0;
+	uint8_t start_sector = 0;
 	std::u8string pet_name;
-	uint32_t adress_start;
-	uint32_t adress_end;
-	uint16_t sector_size;
-	uint8_t sectors;
+	uint32_t adress_start = 0;
+	uint32_t adress_end = 0;
+	uint16_t sector_size = 0;
+	uint8_t sectors = 0;
 };
 
 /*
@@ -1101,11 +1101,11 @@ struct d64_parser
 	{
 		if (data_blob.size >= expected_disk_size)
 		{
-			FILE_TYPE[0x80] = u8"DEL";
-			FILE_TYPE[0x81] = u8"SEQ";
-			FILE_TYPE[0x82] = u8"PRG";
-			FILE_TYPE[0x83] = u8"USR";
-			FILE_TYPE[0x84] = u8"REL";
+			FILE_TYPE[0x80] = u8"DEL"sv;
+			FILE_TYPE[0x81] = u8"SEQ"sv;
+			FILE_TYPE[0x82] = u8"PRG"sv;
+			FILE_TYPE[0x83] = u8"USR"sv;
+			FILE_TYPE[0x84] = u8"REL"sv;
 
 			const auto* const data = data_blob.data;
 
@@ -1265,19 +1265,19 @@ struct d64_parser
 	std::u8string format()
 	{
 		u8ostringstream result;
-		result << u8"\t\t" << diskname << u8"\n";
+		result << u8"\t\t"sv << diskname << u8"\n"sv;
 
 		for (auto& entrie : entries)
 		{
 			if (entrie.available)
 			{
-				result << entrie.file_type << u8"\t";
+				result << entrie.file_type << u8"\t"sv;
 				result << std::hex << +entrie.start_track;
-				result << u8"/";
-				result << std::hex << +entrie.start_sector << u8"\t";
-				result << entrie.pet_name << u8"\t" << std::dec << entrie.sector_size;
-				result << u8"\t" << std::hex << entrie.adress_start << u8" -> " << std::hex << entrie.adress_end <<
-					u8"\n";
+				result << u8"/"sv;
+				result << std::hex << +entrie.start_sector << u8"\t"sv;
+				result << entrie.pet_name << u8"\t"sv << std::dec << entrie.sector_size;
+				result << u8"\t"sv << std::hex << entrie.adress_start << u8" -> "sv << std::hex << entrie.adress_end <<
+					u8"\n"sv;
 			}
 		}
 		return result.str();
@@ -1382,7 +1382,7 @@ public:
 
 		_line_width = extent.cx;
 		_line_height = extent.cy + padding;
-		_line_count = _dir.size();
+		_line_count = static_cast<int>(_dir.size());
 
 		return {width_limit, static_cast<int>(_line_height * _line_count)};
 	}
@@ -1521,7 +1521,7 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		const auto extent = mc.measure_text(u8"00:00:00", ui::style::font_size::dialog,
+		const auto extent = mc.measure_text(u8"00:00:00"sv, ui::style::font_size::dialog,
 		                                    ui::style::text_style::single_line, 200);
 		_display->_time_width = extent.cx + mc.component_snap;
 		return {width_limit, std::max(extent.cy, 20)};
@@ -1929,7 +1929,7 @@ public:
 
 	sizei measure_zoom(ui::measure_context& mc) const
 	{
-		const auto text_extent = mc.measure_text(u8"000%", ui::style::font_size::dialog,
+		const auto text_extent = mc.measure_text(u8"000%"sv, ui::style::font_size::dialog,
 		                                         ui::style::text_style::single_line, 100);
 		return {text_extent.cx + (padding.cx * 3) + mc.icon_cxy, text_extent.cy + (padding.cy * 2)};
 	}
@@ -1943,7 +1943,7 @@ public:
 
 			if (_scale_percent > 0)
 			{
-				const auto text = str::format(u8"{}%", _scale_percent);
+				const auto text = str::format(u8"{}%"sv, _scale_percent);
 				const auto logical_bounds = _zoom_text_bounds.offset(element_offset);
 				const auto inner_bounds = logical_bounds.inflate(-padding.cx, -padding.cy);
 				const recti icon_bounds(inner_bounds.left, inner_bounds.top, inner_bounds.left + dc.icon_cxy,
@@ -1960,7 +1960,7 @@ public:
 			if (_display->_item_pos > 0)
 			{
 				const auto pos_text = str::format(
-					_display->_break_count == _display->_total_count ? u8"{}|{}" : u8"{}|{}|{}", _display->_item_pos,
+					_display->_break_count == _display->_total_count ? u8"{}|{}"sv : u8"{}|{}|{}"sv, _display->_item_pos,
 					_display->_break_count, _display->_total_count);
 				const auto pos_text_extent = dc.measure_text(pos_text, ui::style::font_size::dialog,
 				                                             ui::style::text_style::single_line, 100);

@@ -154,16 +154,16 @@ void ui::color_adjust::color_params(const double vibrance, const double saturati
 	}
 }
 
-ui::color32 ui::color_adjust::adjust_color(float y, float u, float v, const int a) const
+ui::color32 ui::color_adjust::adjust_color(double y, double u, double v, double a) const
 {
 	y = _curve[std::clamp(static_cast<int>(y * curve_len), 0, curve_len - 1)];
 
 	if (!df::is_zero(_vibrance))
 	{
-		const auto xx = -0.105f - u;
-		const auto yy = 0.227f - v;
-		const auto d = sqrtf(xx * xx + yy * yy);
-		const auto sat = _saturation * (1.0f + (_vibrance * d * 4.0f));
+		const auto xx = -0.105 - u;
+		const auto yy = 0.227 - v;
+		const auto d = sqrt(xx * xx + yy * yy);
+		const auto sat = _saturation * (1.0 + (_vibrance * d * 4.0));
 
 		u *= sat;
 		v *= sat;
@@ -174,17 +174,17 @@ ui::color32 ui::color_adjust::adjust_color(float y, float u, float v, const int 
 		v *= _saturation;
 	}
 
-	u = std::clamp(u, -1.0f, 1.0f);
-	v = std::clamp(v, -1.0f, 1.0f);
+	u = std::clamp(u, -1.0, 1.0);
+	v = std::clamp(v, -1.0, 1.0);
 
-	const auto r = y + 1.140f * v;
-	const auto g = y - 0.396f * u - 0.581f * v;
-	const auto b = y + 2.029f * u;
+	const auto r = y + 1.140 * v;
+	const auto g = y - 0.396 * u - 0.581 * v;
+	const auto b = y + 2.029 * u;
 
-	return saturate_rgba(static_cast<int>(b * 255), static_cast<int>(g * 255), static_cast<int>(r * 255), a);
+	return saturate_rgba(b, g, r, a);
 }
 
-void ui::color_adjust::apply(const const_surface_ptr& src, uint8_t* dst, const int dst_stride,
+void ui::color_adjust::apply(const const_surface_ptr& src, uint8_t* dst, const size_t dst_stride,
                              df::cancel_token token) const
 {
 	const auto dims = src->dimensions();
@@ -207,15 +207,16 @@ void ui::color_adjust::apply(const const_surface_ptr& src, uint8_t* dst, const i
 		{
 			const auto c = *s++;
 
-			const auto r = get_b(c) / 255.0f;
-			const auto g = get_g(c) / 255.0f;
-			const auto b = get_r(c) / 255.0f;
+			const auto r = get_b(c) / 255.0;
+			const auto g = get_g(c) / 255.0;
+			const auto b = get_r(c) / 255.0;
+			const auto a = get_a(c) / 255.0;
 
-			const auto y = 0.299f * r + 0.587f * g + 0.114f * b;
-			const auto u = -0.147f * r - 0.289f * g + 0.436f * b;
-			const auto v = 0.615f * r - 0.515f * g - 0.100f * b;
-
-			*d++ = adjust_color(y, u, v, get_a(c));
+			const auto y = 0.299 * r + 0.587 * g + 0.114 * b;
+			const auto u = -0.147 * r - 0.289 * g + 0.436 * b;
+			const auto v = 0.615 * r - 0.515 * g - 0.100 * b;
+			
+			*d++ = adjust_color(y, u, v, a);
 		}
 
 		if (token.is_cancelled())

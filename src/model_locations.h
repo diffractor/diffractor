@@ -138,10 +138,10 @@ using location_matches = std::vector<location_match>;
 class location_cache final : public df::no_copy
 {
 private:
-	mutable platform::mutex _mutex;
-	kd_tree _tree;
-	df::hash_map<uint32_t, country_t> _countries;
-	const df::file_path _locations_path;
+	mutable platform::mutex _rw;
+	_Guarded_by_(_rw)  kd_tree _tree;
+	_Guarded_by_(_rw)  df::hash_map<uint32_t, country_t> _countries;
+	_Guarded_by_(_rw)  const df::file_path _locations_path;
 
 	struct location_id_and_offset
 	{
@@ -229,9 +229,9 @@ private:
 		}
 	};
 
-	std::vector<kd_coordinates_t> _coords;
-	std::vector<location_id_and_offset> _locations_by_id;
-	std::vector<location_ngram_and_offset> _locations_by_ngram;
+	_Guarded_by_(_rw) std::vector<kd_coordinates_t> _coords;
+	_Guarded_by_(_rw) std::vector<location_id_and_offset> _locations_by_id;
+	_Guarded_by_(_rw) std::vector<location_ngram_and_offset> _locations_by_ngram;
 
 	void load_countries();
 	void load_states();
@@ -250,7 +250,7 @@ public:
 
 	bool is_index_loaded() const
 	{
-		platform::shared_lock lock(_mutex);
+		platform::shared_lock lock(_rw);
 		return !_tree.is_empty();
 	}
 
@@ -263,7 +263,7 @@ public:
 
 	const country_t& find_country(const uint32_t code) const
 	{
-		platform::shared_lock lock(_mutex);
+		platform::shared_lock lock(_rw);
 		const auto found = _countries.find(code);
 		return (found != _countries.cend()) ? found->second : country_t::null;
 	}

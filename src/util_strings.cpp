@@ -233,7 +233,7 @@ static void format_render_arg(inserter&& result, const str::format_arg& arg, con
 			break;
 		case str::format_arg::FILE_PATH:
 			copy_sv(result, arg.text_value);
-			copy_sv(result, u8"\\");
+			copy_sv(result, u8"\\"sv);
 			copy_sv(result, arg.text_value2);
 			break;
 		case str::format_arg::FILE_SIZE:
@@ -282,7 +282,7 @@ std::u8string str::format_impl(const std::u8string_view fmt, const format_arg* a
 
 			if (c == '{')
 			{
-				utf16_to_utf8(inserter, c);
+				char32_to_utf8(inserter, c);
 			}
 			else
 			{
@@ -334,14 +334,29 @@ std::u8string str::format_impl(const std::u8string_view fmt, const format_arg* a
 
 				if (c != '}')
 				{
-					utf16_to_utf8(inserter, c);
+					char32_to_utf8(inserter, c);
 				}
 			}
 
-			utf16_to_utf8(inserter, c);
+			char32_to_utf8(inserter, c);
 		}
 	}
 
+	return result;
+}
+
+std::u8string str::print(const std::u8string_view svformat, ...)
+{
+	const std::string szFormat = str::utf8_cast2(svformat);
+	va_list argList;
+	va_start(argList, svformat);
+	const auto* const format = std::bit_cast<const char*>(szFormat.c_str());
+	const auto result_length = _vscprintf(szFormat.c_str(), argList);
+	std::u8string result;
+	result.resize(result_length + 1, 0);
+	vsprintf_s(std::bit_cast<char*>(result.data()), result_length + 1, format, argList);
+	result.resize(result_length);
+	va_end(argList);
 	return result;
 }
 
@@ -550,8 +565,8 @@ bool str::is_probably_num(const std::u8string_view sv)
 
 bool str::ends(const std::u8string_view text, const std::u8string_view sub_string)
 {
-	int text_len = text.size();
-	int sub_len = sub_string.size();
+	auto text_len = text.size();
+	auto sub_len = sub_string.size();
 
 	while (text_len > 0 && sub_len > 0 && to_lower(text[text_len - 1]) == to_lower(sub_string[sub_len - 1]))
 	{
@@ -822,35 +837,35 @@ std::u8string str::replace(const std::u8string_view s, const std::u8string_view 
 static constexpr std::u8string_view months[] =
 {
 	{},
-	u8"January",
-	u8"February",
-	u8"March",
-	u8"April",
-	u8"May",
-	u8"June",
-	u8"July",
-	u8"August",
-	u8"September",
-	u8"October",
-	u8"November",
-	u8"December",
+	u8"January"sv,
+	u8"February"sv,
+	u8"March"sv,
+	u8"April"sv,
+	u8"May"sv,
+	u8"June"sv,
+	u8"July"sv,
+	u8"August"sv,
+	u8"September"sv,
+	u8"October"sv,
+	u8"November"sv,
+	u8"December"sv,
 };
 
 static constexpr std::u8string_view short_months[] =
 {
 	{},
-	u8"jan",
-	u8"feb",
-	u8"mar",
-	u8"apr",
-	u8"may",
-	u8"jun",
-	u8"jul",
-	u8"aug",
-	u8"sep",
-	u8"oct",
-	u8"nov",
-	u8"dec",
+	u8"jan"sv,
+	u8"feb"sv,
+	u8"mar"sv,
+	u8"apr"sv,
+	u8"may"sv,
+	u8"jun"sv,
+	u8"jul"sv,
+	u8"aug"sv,
+	u8"sep"sv,
+	u8"oct"sv,
+	u8"nov"sv,
+	u8"dec"sv,
 };
 
 static const std::u8string_view tt_months(const int m)
@@ -962,6 +977,7 @@ std::u8string str::to_string(const int v)
 {
 	static constexpr int size = 64;
 	char8_t result[size];
+	result[0] = 0;
 	_itoa_s(v, std::bit_cast<char*>(static_cast<char8_t*>(result)), size, 10);
 	return result;
 }
@@ -970,6 +986,7 @@ std::u8string str::to_string(const uint32_t v)
 {
 	static constexpr int size = 64;
 	char8_t result[size];
+	result[0] = 0;
 	_ultoa_s(v, std::bit_cast<char*>(static_cast<char8_t*>(result)), size, 10);
 	return result;
 }
@@ -978,6 +995,7 @@ std::u8string str::to_string(const long v)
 {
 	static constexpr int size = 64;
 	char8_t result[size];
+	result[0] = 0;
 	_ltoa_s(v, std::bit_cast<char*>(static_cast<char8_t*>(result)), size, 10);
 	return result;
 }
@@ -986,6 +1004,7 @@ std::u8string str::to_string(const int64_t v)
 {
 	static constexpr int size = 128;
 	char8_t result[size];
+	result[0] = 0;
 	_i64toa_s(v, std::bit_cast<char*>(static_cast<char8_t*>(result)), size, 10);
 	return result;
 }
@@ -994,6 +1013,7 @@ std::u8string str::to_string(const uint64_t v)
 {
 	static constexpr int size = 128;
 	char8_t result[size];
+	result[0] = 0;
 	_ui64toa_s(v, std::bit_cast<char*>(static_cast<char8_t*>(result)), size, 10);
 	return result;
 }
@@ -1003,6 +1023,7 @@ std::u8string str::to_string(const double v, int num_digits)
 	std::u8string result;
 	static constexpr int size = 128;
 	char8_t text[size];
+	text[0] = 0;
 	int decimal = 0;
 	int sign = 0;
 	bool strip_trailing_zeros = false;
@@ -1056,7 +1077,7 @@ std::u8string str::to_string(const double v, int num_digits)
 
 std::u8string str::to_string(const sizei v)
 {
-	return format(u8"{}x{}", v.cx, v.cy);
+	return format(u8"{}x{}"sv, v.cx, v.cy);
 }
 
 std::u8string str::format_count(const int total, const bool show_zero)
@@ -1067,11 +1088,11 @@ std::u8string str::format_count(const int total, const bool show_zero)
 	{
 		if (total > 900000)
 		{
-			result = format(u8"{}m", df::round(total, 1000000));
+			result = format(u8"{}m"sv, df::round(total, 1000000));
 		}
 		else if (total >= 900)
 		{
-			result = format(u8"{}k", df::round(total, 1000));
+			result = format(u8"{}k"sv, df::round(total, 1000));
 		}
 		else
 		{
@@ -1266,178 +1287,8 @@ df::string_counts top_totals(const word_counts_t& counts, int limit)
 	return results;
 }
 
-
-static const df::hash_set<std::u8string_view, df::ihash, df::ieq> english_stopwords = {
-	u8"0o", u8"0s", u8"3a",
-	u8"3b", u8"3d", u8"6b", u8"6o", u8"a", u8"a1", u8"a2", u8"a3", u8"a4", u8"ab", u8"able", u8"about", u8"above",
-	u8"abst", u8"ac",
-	u8"accordance", u8"according", u8"accordingly", u8"across", u8"act", u8"actually", u8"ad", u8"added", u8"adj",
-	u8"ae",
-	u8"af", u8"affected", u8"affecting", u8"affects", u8"after", u8"afterwards", u8"ag", u8"again", u8"against", u8"ah",
-	u8"ain", u8"ain't", u8"aj", u8"al", u8"all", u8"allow", u8"allows", u8"almost", u8"alone", u8"along", u8"already",
-	u8"also", u8"although", u8"always", u8"am", u8"among", u8"amongst", u8"amoungst", u8"amount", u8"an", u8"and",
-	u8"announce", u8"another", u8"any", u8"anybody", u8"anyhow", u8"anymore", u8"anyone", u8"anything", u8"anyway",
-	u8"anyways", u8"anywhere", u8"ao", u8"ap", u8"apart", u8"apparently", u8"appear", u8"appreciate", u8"appropriate",
-	u8"approximately", u8"ar", u8"are", u8"aren", u8"arent", u8"aren't", u8"arise", u8"around", u8"as", u8"a's",
-	u8"aside",
-	u8"ask", u8"asking", u8"associated", u8"at", u8"au", u8"auth", u8"av", u8"available", u8"aw", u8"away", u8"awfully",
-	u8"ax", u8"ay", u8"az", u8"b", u8"b1", u8"b2", u8"b3", u8"ba", u8"back", u8"bc", u8"bd", u8"be", u8"became",
-	u8"because",
-	u8"become", u8"becomes", u8"becoming", u8"been", u8"before", u8"beforehand", u8"begin", u8"beginning",
-	u8"beginnings", u8"begins", u8"behind", u8"being", u8"believe", u8"below", u8"beside", u8"besides", u8"best",
-	u8"better", u8"between", u8"beyond", u8"bi", u8"bill", u8"biol", u8"bj", u8"bk", u8"bl", u8"bn", u8"both",
-	u8"bottom",
-	u8"bp", u8"br", u8"brief", u8"briefly", u8"bs", u8"bt", u8"bu", u8"but", u8"bx", u8"by", u8"c", u8"c1", u8"c2",
-	u8"c3", u8"ca",
-	u8"call", u8"came", u8"can", u8"cannot", u8"cant", u8"can't", u8"cause", u8"causes", u8"cc", u8"cd", u8"ce",
-	u8"certain",
-	u8"certainly", u8"cf", u8"cg", u8"ch", u8"changes", u8"ci", u8"cit", u8"cj", u8"cl", u8"clearly", u8"cm", u8"c'mon",
-	u8"cn",
-	u8"co", u8"com", u8"come", u8"comes", u8"con", u8"concerning", u8"consequently", u8"consider", u8"considering",
-	u8"contain", u8"containing", u8"contains", u8"corresponding", u8"could", u8"couldn", u8"couldnt", u8"couldn't",
-	u8"course", u8"cp", u8"cq", u8"cr", u8"cry", u8"cs", u8"c's", u8"ct", u8"cu", u8"currently", u8"cv", u8"cx", u8"cy",
-	u8"cz",
-	u8"d", u8"d2", u8"da", u8"date", u8"dc", u8"dd", u8"de", u8"definitely", u8"describe", u8"described", u8"despite",
-	u8"detail", u8"df", u8"di", u8"did", u8"didn", u8"didn't", u8"different", u8"dj", u8"dk", u8"dl", u8"do", u8"does",
-	u8"doesn", u8"doesn't", u8"doing", u8"don", u8"done", u8"don't", u8"down", u8"downwards", u8"dp", u8"dr", u8"ds",
-	u8"dt",
-	u8"du", u8"due", u8"during", u8"dx", u8"dy", u8"e", u8"e2", u8"e3", u8"ea", u8"each", u8"ec", u8"ed", u8"edu",
-	u8"ee", u8"ef",
-	u8"effect", u8"eg", u8"ei", u8"eight", u8"eighty", u8"either", u8"ej", u8"el", u8"eleven", u8"else", u8"elsewhere",
-	u8"em",
-	u8"empty", u8"en", u8"end", u8"ending", u8"enough", u8"entirely", u8"eo", u8"ep", u8"eq", u8"er", u8"es",
-	u8"especially",
-	u8"est", u8"et", u8"et-al", u8"etc", u8"eu", u8"ev", u8"even", u8"ever", u8"every", u8"everybody", u8"everyone",
-	u8"everything", u8"everywhere", u8"ex", u8"exactly", u8"example", u8"except", u8"ey", u8"f", u8"f2", u8"fa",
-	u8"far",
-	u8"fc", u8"few", u8"ff", u8"fi", u8"fifteen", u8"fifth", u8"fify", u8"fill", u8"find", u8"fire", u8"first",
-	u8"five",
-	u8"fix", u8"fj", u8"fl", u8"fn", u8"fo", u8"followed", u8"following", u8"follows", u8"for", u8"former",
-	u8"formerly",
-	u8"forth", u8"forty", u8"found", u8"four", u8"fr", u8"from", u8"front", u8"fs", u8"ft", u8"fu", u8"full",
-	u8"further",
-	u8"furthermore", u8"fy", u8"g", u8"ga", u8"gave", u8"ge", u8"get", u8"gets", u8"getting", u8"gi", u8"give",
-	u8"given",
-	u8"gives", u8"giving", u8"gj", u8"gl", u8"go", u8"goes", u8"going", u8"gone", u8"got", u8"gotten", u8"gr",
-	u8"greetings",
-	u8"gs", u8"gy", u8"h", u8"h2", u8"h3", u8"had", u8"hadn", u8"hadn't", u8"happens", u8"hardly", u8"has", u8"hasn",
-	u8"hasnt",
-	u8"hasn't", u8"have", u8"haven", u8"haven't", u8"having", u8"he", u8"hed", u8"he'd", u8"he'll", u8"hello", u8"help",
-	u8"hence", u8"her", u8"here", u8"hereafter", u8"hereby", u8"herein", u8"heres", u8"here's", u8"hereupon", u8"hers",
-	u8"herself", u8"hes", u8"he's", u8"hh", u8"hi", u8"hid", u8"him", u8"himself", u8"his", u8"hither", u8"hj", u8"ho",
-	u8"home",
-	u8"hopefully", u8"how", u8"howbeit", u8"however", u8"how's", u8"hr", u8"hs", u8"http", u8"hu", u8"hundred", u8"hy",
-	u8"i",
-	u8"i2", u8"i3", u8"i4", u8"i6", u8"i7", u8"i8", u8"ia", u8"ib", u8"ibid", u8"ic", u8"id", u8"i'd", u8"ie", u8"if",
-	u8"ig",
-	u8"ignored", u8"ih", u8"ii", u8"ij", u8"il", u8"i'll", u8"im", u8"i'm", u8"immediate", u8"immediately",
-	u8"importance",
-	u8"important", u8"in", u8"inasmuch", u8"inc", u8"indeed", u8"index", u8"indicate", u8"indicated", u8"indicates",
-	u8"information", u8"inner", u8"insofar", u8"instead", u8"interest", u8"into", u8"invention", u8"inward", u8"io",
-	u8"ip", u8"iq", u8"ir", u8"is", u8"isn", u8"isn't", u8"it", u8"itd", u8"it'd", u8"it'll", u8"its", u8"it's",
-	u8"itself",
-	u8"iv", u8"i've", u8"ix", u8"iy", u8"iz", u8"j", u8"jj", u8"jr", u8"js", u8"jt", u8"ju", u8"just", u8"k", u8"ke",
-	u8"keep",
-	u8"keeps", u8"kept", u8"kg", u8"kj", u8"km", u8"know", u8"known", u8"knows", u8"ko", u8"l", u8"l2", u8"la",
-	u8"largely",
-	u8"last", u8"lately", u8"later", u8"latter", u8"latterly", u8"lb", u8"lc", u8"le", u8"least", u8"les", u8"less",
-	u8"lest",
-	u8"let", u8"lets", u8"let's", u8"lf", u8"like", u8"liked", u8"likely", u8"line", u8"little", u8"lj", u8"ll", u8"ll",
-	u8"ln",
-	u8"lo", u8"look", u8"looking", u8"looks", u8"los", u8"lr", u8"ls", u8"lt", u8"ltd", u8"m", u8"m2", u8"ma", u8"made",
-	u8"mainly", u8"make", u8"makes", u8"many", u8"may", u8"maybe", u8"me", u8"mean", u8"means", u8"meantime",
-	u8"meanwhile",
-	u8"merely", u8"mg", u8"might", u8"mightn", u8"mightn't", u8"mill", u8"million", u8"mine", u8"miss", u8"ml", u8"mn",
-	u8"mo",
-	u8"more", u8"moreover", u8"most", u8"mostly", u8"move", u8"mr", u8"mrs", u8"ms", u8"mt", u8"mu", u8"much", u8"mug",
-	u8"must",
-	u8"mustn", u8"mustn't", u8"my", u8"myself", u8"n", u8"n2", u8"na", u8"name", u8"namely", u8"nay", u8"nc", u8"nd",
-	u8"ne",
-	u8"near", u8"nearly", u8"necessarily", u8"necessary", u8"need", u8"needn", u8"needn't", u8"needs", u8"neither",
-	u8"never", u8"nevertheless", u8"new", u8"next", u8"ng", u8"ni", u8"nine", u8"ninety", u8"nj", u8"nl", u8"nn",
-	u8"no",
-	u8"nobody", u8"non", u8"none", u8"nonetheless", u8"noone", u8"nor", u8"normally", u8"nos", u8"not", u8"noted",
-	u8"nothing", u8"novel", u8"now", u8"nowhere", u8"nr", u8"ns", u8"nt", u8"ny", u8"o", u8"oa", u8"ob", u8"obtain",
-	u8"obtained", u8"obviously", u8"oc", u8"od", u8"of", u8"off", u8"often", u8"og", u8"oh", u8"oi", u8"oj", u8"ok",
-	u8"okay",
-	u8"ol", u8"old", u8"om", u8"omitted", u8"on", u8"once", u8"one", u8"ones", u8"only", u8"onto", u8"oo", u8"op",
-	u8"oq", u8"or",
-	u8"ord", u8"os", u8"ot", u8"other", u8"others", u8"otherwise", u8"ou", u8"ought", u8"our", u8"ours", u8"ourselves",
-	u8"out", u8"outside", u8"over", u8"overall", u8"ow", u8"owing", u8"own", u8"ox", u8"oz", u8"p", u8"p1", u8"p2",
-	u8"p3",
-	u8"page", u8"pagecount", u8"pages", u8"par", u8"part", u8"particular", u8"particularly", u8"pas", u8"past", u8"pc",
-	u8"pd", u8"pe", u8"per", u8"perhaps", u8"pf", u8"ph", u8"pi", u8"pj", u8"pk", u8"pl", u8"placed", u8"please",
-	u8"plus", u8"pm",
-	u8"pn", u8"po", u8"poorly", u8"possible", u8"possibly", u8"potentially", u8"pp", u8"pq", u8"pr", u8"predominantly",
-	u8"present", u8"presumably", u8"previously", u8"primarily", u8"probably", u8"promptly", u8"proud", u8"provides",
-	u8"ps", u8"pt", u8"pu", u8"put", u8"py", u8"q", u8"qj", u8"qu", u8"que", u8"quickly", u8"quite", u8"qv", u8"r",
-	u8"r2", u8"ra",
-	u8"ran", u8"rather", u8"rc", u8"rd", u8"re", u8"readily", u8"really", u8"reasonably", u8"recent", u8"recently",
-	u8"ref",
-	u8"refs", u8"regarding", u8"regardless", u8"regards", u8"related", u8"relatively", u8"research",
-	u8"research-articl", u8"respectively", u8"resulted", u8"resulting", u8"results", u8"rf", u8"rh", u8"ri", u8"right",
-	u8"rj", u8"rl", u8"rm", u8"rn", u8"ro", u8"rq", u8"rr", u8"rs", u8"rt", u8"ru", u8"run", u8"rv", u8"ry", u8"s",
-	u8"s2", u8"sa",
-	u8"said", u8"same", u8"saw", u8"say", u8"saying", u8"says", u8"sc", u8"sd", u8"se", u8"sec", u8"second",
-	u8"secondly",
-	u8"section", u8"see", u8"seeing", u8"seem", u8"seemed", u8"seeming", u8"seems", u8"seen", u8"self", u8"selves",
-	u8"sensible", u8"sent", u8"serious", u8"seriously", u8"seven", u8"several", u8"sf", u8"shall", u8"shan", u8"shan't",
-	u8"she", u8"shed", u8"she'd", u8"she'll", u8"shes", u8"she's", u8"should", u8"shouldn", u8"shouldn't",
-	u8"should've",
-	u8"show", u8"showed", u8"shown", u8"showns", u8"shows", u8"si", u8"side", u8"significant", u8"significantly",
-	u8"similar", u8"similarly", u8"since", u8"sincere", u8"six", u8"sixty", u8"sj", u8"sl", u8"slightly", u8"sm",
-	u8"sn",
-	u8"so", u8"some", u8"somebody", u8"somehow", u8"someone", u8"somethan", u8"something", u8"sometime", u8"sometimes",
-	u8"somewhat", u8"somewhere", u8"soon", u8"sorry", u8"sp", u8"specifically", u8"specified", u8"specify",
-	u8"specifying", u8"sq", u8"sr", u8"ss", u8"st", u8"still", u8"stop", u8"strongly", u8"sub", u8"substantially",
-	u8"successfully", u8"such", u8"sufficiently", u8"suggest", u8"sup", u8"sure", u8"sy", u8"system", u8"sz", u8"t",
-	u8"t1",
-	u8"t2", u8"t3", u8"take", u8"taken", u8"taking", u8"tb", u8"tc", u8"td", u8"te", u8"tell", u8"ten", u8"tends",
-	u8"tf", u8"th",
-	u8"than", u8"thank", u8"thanks", u8"thanx", u8"that", u8"that'll", u8"thats", u8"that's", u8"that've", u8"the",
-	u8"their", u8"theirs", u8"them", u8"themselves", u8"then", u8"thence", u8"there", u8"thereafter", u8"thereby",
-	u8"thered", u8"therefore", u8"therein", u8"there'll", u8"thereof", u8"therere", u8"theres", u8"there's",
-	u8"thereto",
-	u8"thereupon", u8"there've", u8"these", u8"they", u8"theyd", u8"they'd", u8"they'll", u8"theyre", u8"they're",
-	u8"they've", u8"thickv", u8"thin", u8"think", u8"third", u8"this", u8"thorough", u8"thoroughly", u8"those",
-	u8"thou",
-	u8"though", u8"thoughh", u8"thousand", u8"three", u8"throug", u8"through", u8"throughout", u8"thru", u8"thus",
-	u8"ti",
-	u8"til", u8"tip", u8"tj", u8"tl", u8"tm", u8"tn", u8"to", u8"together", u8"too", u8"took", u8"top", u8"toward",
-	u8"towards",
-	u8"tp", u8"tq", u8"tr", u8"tried", u8"tries", u8"truly", u8"try", u8"trying", u8"ts", u8"t's", u8"tt", u8"tv",
-	u8"twelve",
-	u8"twenty", u8"twice", u8"two", u8"tx", u8"u", u8"u201d", u8"ue", u8"ui", u8"uj", u8"uk", u8"um", u8"un", u8"under",
-	u8"unfortunately", u8"unless", u8"unlike", u8"unlikely", u8"until", u8"unto", u8"uo", u8"up", u8"upon", u8"ups",
-	u8"ur",
-	u8"us", u8"use", u8"used", u8"useful", u8"usefully", u8"usefulness", u8"uses", u8"using", u8"usually", u8"ut",
-	u8"v",
-	u8"va", u8"value", u8"various", u8"vd", u8"ve", u8"ve", u8"very", u8"via", u8"viz", u8"vj", u8"vo", u8"vol",
-	u8"vols",
-	u8"volumtype", u8"vq", u8"vs", u8"vt", u8"vu", u8"w", u8"wa", u8"want", u8"wants", u8"was", u8"wasn", u8"wasnt",
-	u8"wasn't",
-	u8"way", u8"we", u8"wed", u8"we'd", u8"welcome", u8"well", u8"we'll", u8"well-b", u8"went", u8"were", u8"we're",
-	u8"weren",
-	u8"werent", u8"weren't", u8"we've", u8"what", u8"whatever", u8"what'll", u8"whats", u8"what's", u8"when",
-	u8"whence",
-	u8"whenever", u8"when's", u8"where", u8"whereafter", u8"whereas", u8"whereby", u8"wherein", u8"wheres", u8"where's",
-	u8"whereupon", u8"wherever", u8"whether", u8"which", u8"while", u8"whim", u8"whither", u8"who", u8"whod",
-	u8"whoever",
-	u8"whole", u8"who'll", u8"whom", u8"whomever", u8"whos", u8"who's", u8"whose", u8"why", u8"why's", u8"wi",
-	u8"widely",
-	u8"will", u8"willing", u8"wish", u8"with", u8"within", u8"without", u8"wo", u8"won", u8"wonder", u8"wont",
-	u8"won't",
-	u8"words", u8"world", u8"would", u8"wouldn", u8"wouldnt", u8"wouldn't", u8"www", u8"x", u8"x1", u8"x2", u8"x3",
-	u8"xf",
-	u8"xi", u8"xj", u8"xk", u8"xl", u8"xn", u8"xo", u8"xs", u8"xt", u8"xv", u8"xx", u8"y", u8"y2", u8"yes", u8"yet",
-	u8"yj", u8"yl",
-	u8"you", u8"youd", u8"you'd", u8"you'll", u8"your", u8"youre", u8"you're", u8"yours", u8"yourself", u8"yourselves",
-	u8"you've", u8"yr", u8"ys", u8"yt", u8"z", u8"zero", u8"zi", u8"zz",
-};
-
-
 static const df::hash_set<std::u8string_view, df::ihash, df::ieq> unwanted_english_word = {
-	u8"and",
+	u8"and"sv,
 };
 
 static bool is_range_separator(const wchar_t c)
@@ -1540,9 +1391,9 @@ df::string_counts str::guess_word(df::string_counts& counts, const std::u8string
 	return top_totals(totals, max_results);
 }
 
-static df::hash_map<int, int> make_normalizations()
+static df::dense_hash_map<int, int> make_normalizations()
 {
-	df::hash_map<int, int> normalizations = {
+	df::dense_hash_map<int, int> normalizations = {
 		{0x20, ' '}, // space 
 		{0x0c, ' '}, // form feed 
 		{0x0a, ' '}, // line feed 
@@ -1648,7 +1499,7 @@ static df::hash_map<int, int> make_normalizations()
 		{0x00ee, 'i'}, // latin small letter i with circumflex
 		{0x00ef, 'i'}, // latin small letter i with diaeresis
 		{0x00f0, 'd'},
-		// latin small letter eth -- no decomposition         // small eth, u8"d" for benefit of vietnamese
+		// latin small letter eth -- no decomposition         // small eth, "d" for benefit of vietnamese
 		{0x00f1, 'n'}, // latin small letter n with tilde
 		{0x00f2, 'o'}, // latin small letter o with grave
 		{0x00f3, 'o'}, // latin small letter o with acute
@@ -2779,7 +2630,7 @@ bool str::wildcard_icmp(const std::u8string_view text_in, const std::u8string_vi
 			if (*wildcard == '*')
 			{
 				++wildcard;
-				continue; // "x*" matches "x" or "xy"
+				continue; // "x*" matches "x"sv or "xy"
 			}
 			if (pos_last_text != text_in.end())
 			{

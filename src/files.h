@@ -539,7 +539,7 @@ public:
 	template <typename T>
 	T peek(uint64_t pos)
 	{
-		if (pos + sizeof(T) > _file_size) throw app_exception("invalid peek");
+		if (pos + sizeof(T) > _file_size) throw app_exception(u8"invalid peek"s);
 		return *std::bit_cast<const T*>(_data + pos);
 	}
 
@@ -570,13 +570,13 @@ public:
 
 	void read(uint64_t pos, uint8_t* buffer, size_t len) override
 	{
-		if (pos + len > _file_size) throw app_exception("invalid read");
+		if (pos + len > _file_size) throw app_exception(u8"invalid read"s);
 		memcpy(buffer, _data + pos, len);
 	}
 
 	df::blob read(uint64_t pos, size_t len) override
 	{
-		if (pos + len > _file_size) throw app_exception("invalid read");
+		if (pos + len > _file_size) throw app_exception(u8"invalid read"s);
 		df::blob result;
 		result.resize(len);
 		memcpy(result.data(), _data + pos, len);
@@ -1056,14 +1056,14 @@ public:
 	{
 		switch (f)
 		{
-		case ui::image_format::JPEG: return u8"JPEG";
-		case ui::image_format::PNG: return u8"PNG";
-		case ui::image_format::WEBP: return u8"WEBP";
+		case ui::image_format::JPEG: return u8"JPEG"sv;
+		case ui::image_format::PNG: return u8"PNG"sv;
+		case ui::image_format::WEBP: return u8"WEBP"sv;
 		case ui::image_format::Unknown: break;
 		default: ;
 		}
 
-		return u8"Unknown";
+		return u8"Unknown"sv;
 	}
 
 	static detected_format detect_format(df::cspan image_buffer_in);

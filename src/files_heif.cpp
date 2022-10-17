@@ -19,26 +19,25 @@
 
 static ui::surface_ptr image_to_surface(heif_image_handle* handle, heif_image* img)
 {
-	ui::surface_ptr result;
 	const auto width = heif_image_get_primary_width(img);
 	const auto height = heif_image_get_primary_height(img);
 	const auto has_alpha = heif_image_handle_has_alpha_channel(handle);
 
-	int heif_stride = 0;
+	int heif_stride = 0_z;
 	const auto* heif_image_data = heif_image_get_plane_readonly(img, heif_channel_interleaved, &heif_stride);
 
-	result = std::make_shared<ui::surface>();
+	auto result = std::make_shared<ui::surface>();
 
 	if (result->alloc(width, height, has_alpha ? ui::texture_format::ARGB : ui::texture_format::RGB))
 	{
 		const auto dest_stride = result->stride();
-		const auto stride = std::min(heif_stride, dest_stride);
+		const auto copy_stride = std::min(static_cast<size_t>(heif_stride), dest_stride);
 
 		for (auto y = 0; y < height; y++)
 		{
 			const auto dst = result->pixels_line(y);
-			const auto src = heif_image_data + (heif_stride * y);
-			std::memcpy(dst, src, stride);
+			const auto src = heif_image_data + (static_cast<size_t>(heif_stride) * y);
+			std::memcpy(dst, src, copy_stride);
 		}
 
 		result->swap_rb();
@@ -98,7 +97,7 @@ static metadata_parts extract_metadata(heif_image_handle* handle)
 		{
 			const auto metadata_type = heif_image_handle_get_metadata_type(handle, id);
 
-			if (str::icmp(metadata_type, "Exif") == 0)
+			if (str::icmp(metadata_type, "Exif"sv) == 0)
 			{
 				const auto metadataSize = heif_image_handle_get_metadata_size(handle, id);
 				df::blob raw_metatdata(metadataSize, 0);
@@ -121,7 +120,7 @@ static metadata_parts extract_metadata(heif_image_handle* handle)
 					result.exif = std::move(raw_metatdata);
 				}
 			}
-			else if (str::icmp(metadata_type, "XMP") == 0)
+			else if (str::icmp(metadata_type, "XMP"sv) == 0)
 			{
 				const size_t metadataSize = heif_image_handle_get_metadata_size(handle, id);
 				df::blob raw_metatdata(metadataSize, 0);
@@ -132,7 +131,7 @@ static metadata_parts extract_metadata(heif_image_handle* handle)
 					result.xmp = std::move(raw_metatdata);
 				}
 			}
-			else if (str::icmp(metadata_type, "iptc") == 0)
+			else if (str::icmp(metadata_type, "iptc"sv) == 0)
 			{
 				const size_t metadataSize = heif_image_handle_get_metadata_size(handle, id);
 				df::blob raw_metatdata(metadataSize, 0);

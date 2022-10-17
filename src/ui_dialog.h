@@ -91,8 +91,8 @@ namespace ui
 		slider_control(const control_frame_ptr& h, int& v, int min, int max) : _val(v), _min(min), _max(max)
 		{
 			edit_styles style;
-			style.xES_NUMBER = true;
-			style.xES_CENTER = true;
+			style.number = true;
+			style.align_center = true;
 			_edit = h->create_edit(style, {}, [this](const std::u8string_view text) { edit_change(text); });
 			_slider = h->create_slider(min, max, [this](int pos, bool is_tracking) { slider_change(pos); });
 
@@ -169,14 +169,14 @@ namespace ui
 		             std::u8string& v) : _val(v), _label(label)
 		{
 			edit_styles style;
-			style.xES_AUTOHSCROLL = true;
+			style.horizontal_scroll = true;
 			_edit = h->create_edit(style, v, [this](const std::u8string_view text) { _val = text; });
 		}
 
 		edit_control(const control_frame_ptr& h, std::u8string& v) : _val(v)
 		{
 			edit_styles style;
-			style.xES_AUTOHSCROLL = true;
+			style.horizontal_scroll = true;
 			_edit = h->create_edit(style, v, [this](const std::u8string_view text) { _val = text; });
 		}
 
@@ -184,7 +184,7 @@ namespace ui
 		             const std::vector<std::u8string>& auto_completes) : _val(v)
 		{
 			edit_styles style;
-			style.xES_AUTOHSCROLL = true;
+			style.horizontal_scroll = true;
 			style.auto_complete_list = auto_completes;
 			_edit = h->create_edit(style, v, [this](const std::u8string_view text) { _val = text; });
 		}
@@ -193,7 +193,7 @@ namespace ui
 		             const std::vector<std::u8string>& auto_completes) : _val(v), _label(label)
 		{
 			edit_styles style;
-			style.xES_AUTOHSCROLL = true;
+			style.horizontal_scroll = true;
 			style.auto_complete_list = auto_completes;
 			_edit = h->create_edit(style, v, [this](const std::u8string_view text) { _val = text; });
 		}
@@ -269,7 +269,7 @@ namespace ui
 			_auto_completes(auto_completes), _parent(h)
 		{
 			edit_styles style;
-			style.xES_AUTOHSCROLL = true;
+			style.horizontal_scroll = true;
 			_edit = h->create_edit(style, v, [this](const std::u8string_view text) { _val = text; });
 
 			const auto c = std::make_shared<command>();
@@ -286,7 +286,7 @@ namespace ui
 			_auto_completes(auto_completes), _parent(h)
 		{
 			edit_styles style;
-			style.xES_AUTOHSCROLL = true;
+			style.horizontal_scroll = true;
 			_edit = h->create_edit(style, v, [this](const std::u8string_view text) { _val = text; });
 		}
 
@@ -381,16 +381,16 @@ namespace ui
 		                 std::u8string& v) : _val(v), _label(label)
 		{
 			edit_styles style;
-			style.xES_AUTOHSCROLL = true;
-			style.xES_PASSWORD = true;
+			style.horizontal_scroll = true;
+			style.password = true;
 			_edit = h->create_edit(style, v, [this](const std::u8string_view text) { _val = text; });
 		}
 
 		password_control(const control_frame_ptr& h, std::u8string& v) : _val(v)
 		{
 			edit_styles style;
-			style.xES_AUTOHSCROLL = true;
-			style.xES_PASSWORD = true;
+			style.horizontal_scroll = true;
+			style.password = true;
 			_edit = h->create_edit(style, v, [this](const std::u8string_view text) { _val = text; });
 		}
 
@@ -451,9 +451,9 @@ namespace ui
 		                        bool wants_return = false) : _text(v), _edit_height(height)
 		{
 			edit_styles style;
-			style.xES_AUTOVSCROLL = true;
-			style.xES_MULTILINE = true;
-			style.xES_WANTRETURN = wants_return;
+			style.vertical_scroll = true;
+			style.multi_line = true;
+			style.want_return = wants_return;
 			style.spelling = true;
 			_edit = h->create_edit(style, v, [this](const std::u8string_view text) { _text = text; });
 		}
@@ -561,8 +561,8 @@ namespace ui
 		num_control(const control_frame_ptr& h, const std::u8string_view label, int& v) : _val(v), _label(label)
 		{
 			edit_styles style;
-			style.xES_AUTOHSCROLL = true;
-			style.xES_NUMBER = true;
+			style.horizontal_scroll = true;
+			style.number = true;
 			_edit = h->create_edit(style, str::to_string(v), [this](const std::u8string_view text)
 			{
 				_val = str::to_int(text);
@@ -629,8 +629,8 @@ namespace ui
 		float_control(const control_frame_ptr& h, const std::u8string_view label, double& v) : _val(v), _label(label)
 		{
 			edit_styles style;
-			style.xES_AUTOHSCROLL = true;
-			style.xES_NUMBER = true;
+			style.horizontal_scroll = true;
+			style.number = true;
 			_edit = h->create_edit(style, str::to_string(v, 5), [this](const std::u8string_view text)
 			{
 				_val = str::to_double(text);
@@ -640,8 +640,8 @@ namespace ui
 		float_control(const control_frame_ptr& h, double& v) : _val(v)
 		{
 			edit_styles style;
-			style.xES_AUTOHSCROLL = true;
-			style.xES_NUMBER = true;
+			style.horizontal_scroll = true;
+			style.number = true;
 			_edit = h->create_edit(style, str::to_string(v, 5), [this](const std::u8string_view text)
 			{
 				_val = str::to_double(text);
@@ -710,8 +710,8 @@ namespace ui
 		                 df::xy8& v) : _val(v), _label(label)
 		{
 			edit_styles style;
-			style.xES_AUTOHSCROLL = true;
-			style.xES_NUMBER = true;
+			style.horizontal_scroll = true;
+			style.number = true;
 			_edit1 = h->create_edit(style, str::to_string(_val.x), [this](const std::u8string_view text)
 			{
 				_val.x = str::to_int(text);
@@ -738,7 +738,8 @@ namespace ui
 			if (event.type == view_element_event_type::populate)
 			{
 				_edit1->window_text(str::to_string(_val.x));
-				_edit2->window_text(_val.y == 0 ? std::u8string_view{} : str::to_string(_val.y));
+				const auto y_val = _val.y == 0 ? std::u8string{} : str::to_string(_val.y);
+				_edit2->window_text(y_val);
 			}
 		}
 
@@ -802,7 +803,7 @@ namespace ui
 			_val1(v1), _val2(v2), _row_count(row_count), _edit1(row_count), _edit2(row_count)
 		{
 			edit_styles style;
-			style.xES_AUTOHSCROLL = true;
+			style.horizontal_scroll = true;
 
 			for (auto i = 0; i < row_count; i++)
 			{
@@ -892,15 +893,15 @@ namespace ui
 			_multiline(multiline)
 		{
 			edit_styles style;
-			style.xES_AUTOHSCROLL = true;
+			style.horizontal_scroll = true;
 			style.file_system_auto_complete = !_multiline;
-			style.xES_MULTILINE = _multiline;
-			style.xES_WANTRETURN = _multiline;
+			style.multi_line = _multiline;
+			style.want_return = _multiline;
 			_edit = h->create_edit(style, path, [this](const std::u8string_view text) { _text = text; });
 
 			const auto c = std::make_shared<command>();
 			c->icon = icon_index::folder;
-			c->text = _multiline ? tt.add_folder : std::u8string{};
+			c->text = _multiline ? tt.add_folder : std::u8string_view {};
 			if (_multiline) c->toolbar_text = c->text;
 			c->invoke = [this]() { browse_for_folder(); };
 
@@ -980,8 +981,8 @@ namespace ui
 				if (_multiline)
 				{
 					const auto text = std::u8string(browse_path.text());
-					const auto original_len = _text.size();
-					if (!_text.empty()) _text += u8"\r\n";
+					const auto original_len = static_cast<int>(_text.size());
+					if (!_text.empty()) _text += u8"\r\n"sv;
 					_text += text;
 					_edit->window_text(_text);
 					_edit->select(original_len, -1);
@@ -1015,7 +1016,7 @@ namespace ui
 		                    std::u8string& v) : _parent(h), _state(state), _val(v), _label(label)
 		{
 			edit_styles style;
-			style.xES_AUTOHSCROLL = true;
+			style.horizontal_scroll = true;
 			_edit = h->create_edit(style, v, [this](const std::u8string_view text) { _val = text; });
 
 			const auto c = std::make_shared<command>();
@@ -1098,7 +1099,7 @@ namespace ui
 			if (ui::browse_for_term(_state, _parent, term))
 			{
 				const auto original_len = _val.size();
-				if (!_val.empty()) _val += u8" ";
+				if (!_val.empty()) _val += u8" "sv;
 				_val += term;
 				_edit->window_text(_val);
 				_edit->select(static_cast<int>(original_len), -1);
@@ -1139,8 +1140,8 @@ namespace ui
 			_tb = h->create_toolbar(styles, {_tb_command});
 
 			edit_styles style;
-			style.xES_AUTOHSCROLL = true;
-			style.xES_NUMBER = true;
+			style.horizontal_scroll = true;
+			style.number = true;
 			_edit = h->create_edit(style, str::to_string(_val.km, 2), [this](const std::u8string_view text)
 			{
 				_val.km = str::to_double(text);
@@ -1159,7 +1160,7 @@ namespace ui
 		{
 			if (_val.position.is_valid())
 			{
-				_tb_command->toolbar_text = str::format(u8"GPS {} {}", _val.position.latitude(),
+				_tb_command->toolbar_text = str::format(u8"GPS {} {}"sv, _val.position.latitude(),
 				                                        _val.position.longitude());
 			}
 			else
@@ -3511,7 +3512,7 @@ namespace ui
 		               const complete_strategy_ptr& s) : _val(v), _completes(s)
 		{
 			edit_styles e_style;
-			e_style.xES_AUTOHSCROLL = true;
+			e_style.horizontal_scroll = true;
 			e_style.font = style::font_size::title;
 			e_style.capture_key_down = [this](int c, const key_state keys) { return key_down(c, keys); };
 			_edit = h->create_edit(e_style, v, [this](const std::u8string_view text) { edit_change(text); });
@@ -3734,8 +3735,8 @@ public:
 	void show_status(icon_index icon, const std::u8string_view text, int cx = 333, int cy = 600)
 	{
 		const auto scale_factor = _frame->scale_factor();
-		_frame->position(center_rect(sizei{df::round(cx, scale_factor), df::round(cy, scale_factor)},
-		                             _parent->window_bounds()));
+		const auto extent = sizei{df::round(static_cast<double>(cx) * scale_factor), df::round(static_cast<double>(cy) * scale_factor)};
+		_frame->position(center_rect(extent,_parent->window_bounds()));
 
 		const std::vector<view_element_ptr> controls = {std::make_shared<ui::busy_control>(_frame, icon, text)};
 		show_controls(controls, cx, cy);
@@ -4073,7 +4074,7 @@ public:
 	{
 		if (_place_id != place_id)
 		{
-			_win->eval_in_browser(str::print(u8"try { set_place_marker('%s'); } catch(e) {}", place_id.c_str()));
+			_win->eval_in_browser(str::print(u8"try { set_place_marker('%s'); } catch(e) {}"sv, place_id.c_str()));
 			_place_id = place_id;
 		}
 	}
@@ -4083,7 +4084,7 @@ public:
 		if (_location != loc)
 		{
 			_win->eval_in_browser(str::print(
-				u8"try { set_location_marker(new google.maps.LatLng(%f, %f)); } catch(e) {}", loc.latitude(),
+				u8"try { set_location_marker(new google.maps.LatLng(%f, %f)); } catch(e) {}"sv, loc.latitude(),
 				loc.longitude()));
 			_location = loc;
 		}
@@ -4091,7 +4092,7 @@ public:
 
 	void init_map(const std::u8string& key)
 	{
-		_win->eval_in_browser(str::print(u8"function init() { try { init_map('%s'); } catch(e) {} } setTimeout(init, 1);", key.c_str()));
+		_win->eval_in_browser(str::print(u8"function init() { try { init_map('%s'); } catch(e) {} } setTimeout(init, 1);"sv, key.c_str()));
 	}
 
 	void navigation_complete(const std::u8string_view url) override

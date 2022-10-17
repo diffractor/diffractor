@@ -226,8 +226,7 @@ static void parse_xmp(const SXMPMeta& xmp, prop::item_metadata& md)
 	{
 		md.title = str::strip_and_cache(utf8);
 	}
-
-	//if (xmp.GetProperty(kXMP_NS_EXIF, "UserComment", &utf8, &flags))
+	
 	if (xmp.GetLocalizedText(kXMP_NS_EXIF, "UserComment", "", "x-default", nullptr, &utf8, &flags))
 	{
 		md.comment = str::strip_and_cache(utf8);
@@ -242,8 +241,7 @@ static void parse_xmp(const SXMPMeta& xmp, prop::item_metadata& md)
 	{
 		md.description = str::strip_and_cache(utf8);
 	}
-
-	XMP_Int32 n;
+	
 	if (xmp.GetProperty(kXMP_NS_XMP, "Rating", &utf8, &flags))
 	{
 		md.rating = str::to_int(str::utf8_cast(utf8));
@@ -378,7 +376,7 @@ void metadata_xmp::initialise()
 	SXMPFiles::Initialize(0UL);
 
 	// https://github.com/nomacs/nomacs/blob/master/exiv2-0.25/src/xmp.cpp	
-	//SXMPMeta::RegisterNamespace(kXMP_NS_MicrosoftPhoto, "MicrosoftPhoto", &microsoft_photo_prefix);
+	//SXMPMeta::RegisterNamespace(kXMP_NS_MicrosoftPhoto, "MicrosoftPhoto"sv, &microsoft_photo_prefix);
 }
 
 void metadata_xmp::term()
@@ -400,8 +398,8 @@ void metadata_edits::apply(SXMPMeta& meta) const
 		meta.SetProperty(kXMP_NS_EXIF, "GPSLongitude",
 		                 str::utf8_cast2(gps_coordinate::decimal_to_dms_str(position.longitude(), false)));
 
-		// meta.SetProperty_Float(kXMP_NS_EXIF, "GPSLatitude", position.Latitude());
-		// meta.SetProperty_Float(kXMP_NS_EXIF, "GPSLongitude", position.Longitude());
+		// meta.SetProperty_Float(kXMP_NS_EXIF, "GPSLatitude"sv, position.Latitude());
+		// meta.SetProperty_Float(kXMP_NS_EXIF, "GPSLongitude"sv, position.Longitude());
 	}
 
 
@@ -575,9 +573,9 @@ void metadata_edits::apply(SXMPMeta& meta) const
 			}
 		}
 
-		/*while(meta.CountArrayItems(kXMP_NS_DC, "subject") > 0)
+		/*while(meta.CountArrayItems(kXMP_NS_DC, "subject"sv) > 0)
 		{
-			meta.DeleteArrayItem(kXMP_NS_DC, "subject", 1);
+			meta.DeleteArrayItem(kXMP_NS_DC, "subject"sv, 1);
 		}*/
 
 		tags.remove(remove_tags);
@@ -692,7 +690,7 @@ df::file_path probe_xmp_path(const df::file_path src_path, const std::u8string_v
 		return src_path.folder().combine_file(xmp_name);
 	}
 
-	return src_path.extension(u8".xmp");
+	return src_path.extension(u8".xmp"sv);
 }
 
 xmp_update_result metadata_xmp::update(const df::file_path update_path, const df::file_path src_path,

@@ -92,8 +92,8 @@ public:
 
 	bool has_errors() const;
 
-	std::u8string web_service_cache(const std::u8string& key) const;
-	void web_service_cache(const std::u8string& key, const std::u8string& value) const;
+	std::u8string web_service_cache(const std::u8string_view key) const;
+	void web_service_cache(const std::u8string_view key, const std::u8string_view value) const;
 
 	item_import_set load_item_imports();
 	void writes_item_imports(const item_import_set& items);

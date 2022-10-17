@@ -268,9 +268,6 @@
     <ClInclude Include="metadata_exif.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="metadata_mp4.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="metadata_xmp.h">
       <Filter>Header Files</Filter>
     </ClInclude>

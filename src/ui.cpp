@@ -1033,8 +1033,8 @@ void rate_label_control::tooltip(view_hover_element& hover, const pointi loc, co
 	                                                  view_element_style::line_break));
 
 	const auto table = std::make_shared<ui::table_element>();
-	table->add(str::format(u8"{}:", tt.prop_name_label), _item->label());
-	table->add(str::format(u8"{}:", tt.prop_name_rating), prop::format_rating(_item->rating()));
+	table->add(str::format(u8"{}:"sv, tt.prop_name_label), _item->label());
+	table->add(str::format(u8"{}:"sv, tt.prop_name_rating), prop::format_rating(_item->rating()));
 
 	hover.elements.add(table);
 

@@ -70,7 +70,7 @@ public:
 		_tags.clear();
 	}
 
-	std::u8string to_string(const std::u8string_view join = u8" ", bool quote = true) const
+	std::u8string to_string(const std::u8string_view join = u8" "sv, bool quote = true) const
 	{
 		return str::combine(_tags, join, quote);
 	}

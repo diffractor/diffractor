@@ -44,7 +44,7 @@ enum class png_chunk : uint32_t
 	eXIf = 'eXIf',
 };
 
-static const auto png_xmp_header = "XML:com.adobe.xmp\0\0\0\0\0";
+static const auto png_xmp_header = "XML:com.adobe.xmp\0\0\0\0\0"sv;
 static const int png_xmp_header_len = 22;
 
 class buffer_stream
@@ -60,14 +60,14 @@ public:
 
 	void read(uint8_t* dest, size_t len)
 	{
-		if ((_pos + len) > _size) throw app_exception("invalid read");
+		if ((_pos + len) > _size) throw app_exception(u8"invalid read"s);
 		memcpy_s(dest, len, _data + _pos, len);
 		_pos += len;
 	}
 
 	void skip(size_t len)
 	{
-		if (_pos > _size - len) throw app_exception("invalid skip");
+		if (_pos > _size - len) throw app_exception(u8"invalid skip"s);
 		_pos += len;
 	}
 };
@@ -116,7 +116,7 @@ ui::image_ptr save_png(const ui::const_surface_ptr& surface_in, const metadata_p
 
 		/*if (setjmp(png_jmpbuf(png.get())))
 		{
-			throw app_exception("write_png failed");
+			throw app_exception(u8"write_png failed"sv);
 		}*/
 
 		df::blob result;
@@ -211,7 +211,7 @@ ui::surface_ptr load_png(df::cspan data)
 {
 	if (data.size < 8 || png_sig_cmp(data.data, 0, 8))
 	{
-		throw app_exception("load_png invalid png header");
+		throw app_exception(u8"load_png invalid png header"s);
 	}
 
 	buffer_stream stream(data);
@@ -227,7 +227,7 @@ ui::surface_ptr load_png(df::cspan data)
 
 	/*if (setjmp(png_jmpbuf(png.get())))
 	{
-		throw app_exception("load_png failed");
+		throw app_exception(u8"load_png failed"sv);
 	}*/
 
 	png_set_read_fn(png.get(), &stream, png_read_callback);
@@ -392,7 +392,7 @@ file_scan_result scan_png(read_stream& rs)
 
 	if (rs.size() < sig_len || png_sig_cmp(sig, 0, sig_len))
 	{
-		throw app_exception("load_png invalid png header");
+		throw app_exception(u8"load_png invalid png header"s);
 	}
 
 	buffer_stream2 stream(rs);
@@ -408,7 +408,7 @@ file_scan_result scan_png(read_stream& rs)
 
 	/*if (setjmp(png_jmpbuf(png.get())))
 	{
-		throw app_exception("load_png failed");
+		throw app_exception(u8"load_png failed"sv);
 	}*/
 
 	png_set_read_fn(png.get(), &stream, png_read_callback2);

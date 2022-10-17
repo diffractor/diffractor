@@ -72,13 +72,13 @@ class search_tokenizer
 		{
 			if (current_term.scope.empty())
 			{
-				if (str::icmp(current_text, u8"or") == 0 || str::icmp(current_text, tt.query_or) == 0)
+				if (str::icmp(current_text, u8"or"sv) == 0 || str::icmp(current_text, tt.query_or) == 0)
 				{
 					current_term.modifier.logical_op = df::search_term_modifier_bool::m_or;
 					current_text.clear();
 					return;
 				}
-				if (str::icmp(current_text, u8"and") == 0 || str::icmp(current_text, tt.query_and) == 0)
+				if (str::icmp(current_text, u8"and"sv) == 0 || str::icmp(current_text, tt.query_and) == 0)
 				{
 					current_term.modifier.logical_op = df::search_term_modifier_bool::m_and;
 					current_text.clear();
@@ -209,12 +209,12 @@ public:
 				else if (c == '#')
 				{
 					append_current_term();
-					current_term.scope = u8"tag";
+					current_term.scope = u8"tag"sv;
 				}
 				else if (c == '@')
 				{
 					append_current_term();
-					current_term.scope = u8"@";
+					current_term.scope = u8"@"sv;
 				}
 				else if (c == ':')
 				{

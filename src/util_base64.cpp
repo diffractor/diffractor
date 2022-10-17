@@ -40,11 +40,19 @@ René Nyffenegger rene.nyffenegger@adp-gmbh.ch
 #include "pch.h"
 #include "util_base64.h"
 
-static constexpr std::u8string_view base64_chars =
-	u8"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	u8"abcdefghijklmnopqrstuvwxyz"
-	u8"0123456789+/";
+static const char* const base64_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
+static constexpr uint8_t base64_char_index[256] =
+{
+	0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  62, 63, 62, 62, 63,
+	52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 0,  0,  0,  0,  0,  0,
+	0,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14,
+	15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 0,  0,  0,  0,  63,
+	0,  26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
+	41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51
+};
 
 static bool is_base64(uint8_t c)
 {
@@ -102,7 +110,7 @@ std::vector<uint8_t> base64_decode(const char8_t* encoded_string, size_t in_len)
 	auto i = 0;
 	auto j = 0;
 	auto in_ = 0;
-	uint32_t char_array_4[4], char_array_3[3];
+	uint8_t char_array_4[4], char_array_3[3];
 
 	std::vector<uint8_t> result;
 
@@ -113,7 +121,9 @@ std::vector<uint8_t> base64_decode(const char8_t* encoded_string, size_t in_len)
 		if (i == 4)
 		{
 			for (i = 0; i < 4; i++)
-				char_array_4[i] = base64_chars.find(char_array_4[i]);
+			{
+				char_array_4[i] = base64_char_index[char_array_4[i]];
+			}
 
 			char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
 			char_array_3[1] = ((char_array_4[1] & 0xf) << 4) + ((char_array_4[2] & 0x3c) >> 2);
@@ -131,7 +141,7 @@ std::vector<uint8_t> base64_decode(const char8_t* encoded_string, size_t in_len)
 			char_array_4[j] = 0;
 
 		for (j = 0; j < 4; j++)
-			char_array_4[j] = base64_chars.find(char_array_4[j]);
+			char_array_4[j] = base64_char_index[char_array_4[j]];
 
 		char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
 		char_array_3[1] = ((char_array_4[1] & 0xf) << 4) + ((char_array_4[2] & 0x3c) >> 2);

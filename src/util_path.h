@@ -43,7 +43,7 @@ namespace df
 
 		if (s[1] == L':' && (is_path_sep(s[2]) || s[2] == 0))
 		{
-			const auto first_char = std::tolower(s[0]);
+			const auto first_char = str::to_lower(s[0]);
 			return first_char >= 'a' && first_char <= 'z';
 		}
 
@@ -58,19 +58,19 @@ namespace df
 
 	constexpr std::u8string_view::size_type find_last_slash(const std::u8string_view path)
 	{
-		return path.find_last_of(u8"/\\");
+		return path.find_last_of(u8"/\\"sv);
 	}
 
 	constexpr std::u8string_view::size_type find_ext(const std::u8string_view path)
 	{
-		const auto last = path.find_last_of(u8"./\\");
+		const auto last = path.find_last_of(u8"./\\"sv);
 		if (last == std::u8string_view::npos || path[last] != '.') return path.size();
 		return last;
 	}
 
 	constexpr std::u8string_view::size_type find_filename(const std::u8string_view path)
 	{
-		const auto last_slash = path.find_last_of(u8"/\\");
+		const auto last_slash = path.find_last_of(u8"/\\"sv);
 		if (last_slash != std::u8string_view::npos && path.size() > last_slash) return last_slash;
 		return std::u8string_view::npos;
 	}
@@ -82,7 +82,7 @@ namespace df
 			return true;
 		}
 
-		constexpr char8_t illegal[] = u8"\\/:*?\"<>|";
+		constexpr auto illegal = u8"\\/:*?\"<>|"sv;
 
 		return name.find_first_of(illegal) != std::u8string_view::npos;
 	}
@@ -271,7 +271,7 @@ namespace df
 			if (len != 3 && len != 2) return false;
 			if (s[1] != ':') return false;
 			if (len == 3 && !is_path_sep(s[2])) return false;
-			const auto first_char = std::tolower(s[0]);
+			const auto first_char = str::to_lower(s[0]);
 			return first_char >= 'a' && first_char <= 'z';
 		}
 
@@ -281,7 +281,7 @@ namespace df
 			if (len != 3 && len != 2) return false;
 			if (a[1] != ':') return false;
 			if (len == 3 && !is_path_sep(a[2])) return false;
-			const auto first_char = std::tolower(a[0]);
+			const auto first_char = str::to_lower(a[0]);
 			return first_char >= 'a' && first_char <= 'z';
 		}*/
 
@@ -302,7 +302,7 @@ namespace df
 
 		static bool is_computer(const std::u8string_view path)
 		{
-			return str::icmp(path, u8"Computer") == 0;
+			return str::icmp(path, u8"Computer"sv) == 0;
 		}
 
 		bool is_computer() const
@@ -316,7 +316,7 @@ namespace df
 			strcpy_s(result, _s);
 			if (!str::is_empty(part))
 			{
-				if (!is_path_sep(str::last_char(result)) && !is_path_sep(part[0])) strcat_s(result, "\\");
+				if (!is_path_sep(str::last_char(result)) && !is_path_sep(part[0])) strcat_s(result, "\\"sv);
 				strcat_s(result, part);
 			}
 			return result;
@@ -520,7 +520,7 @@ namespace df
 
 		static bool is_link(const std::u8string_view path)
 		{
-			return str::ends(path, u8".lnk");
+			return str::ends(path, u8".lnk"sv);
 		}
 
 		std::u8string_view file_name_without_extension() const
@@ -610,7 +610,7 @@ namespace df
 		return file_path(*this, part);
 	}
 
-	static std::u8string combine_paths(__in const folder_paths& paths, __in_z const char8_t* join = u8" ",
+	static std::u8string combine_paths(__in const folder_paths& paths, const std::u8string_view join = u8" "sv,
 	                                   __in bool quote = true)
 	{
 		std::u8string result;

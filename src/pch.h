@@ -52,8 +52,8 @@
 
 using namespace std::literals;
 
-const double M_PI = 3.141592653589793238463;
-const float M_PIF = 3.14159265358979f;
+constexpr double M_PI = 3.141592653589793238463;
+constexpr float M_PIF = 3.14159265358979f;
 // std::numbers c++ 20
 
 #include "util.h"

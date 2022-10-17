@@ -60,7 +60,8 @@ private:
 	av_frame_queue _audio_frames;
 	av_frame_queue _video_frames;
 
-	av_format_decoder _decoder;
+	mutable platform::mutex _decoder_rw;
+	_Guarded_by_(_decoder_rw)  av_format_decoder _decoder;
 
 	double _end_time = 0;
 	double _last_frame_decoded = 0;
@@ -91,8 +92,6 @@ private:
 	mutable double _last_frame_time = -1;
 	mutable double _last_texture_time = -1;
 	mutable pointi _last_frame_offset;
-
-	mutable platform::mutex _decoder_rw;
 
 	av_frame_ptr _frame;
 	ui::orientation _orientation = ui::orientation::none;
@@ -205,8 +204,8 @@ public:
 			const auto end_time = _decoder.end_time();
 			const auto duration = end_time - start_time;
 
-			//df::log(__FUNCTION__, "start_time " << start_time;
-			//df::log(__FUNCTION__, "end_time" << end_time;
+			//df::log(__FUNCTION__, "start_time "sv << start_time;
+			//df::log(__FUNCTION__, "end_time"sv << end_time;
 
 			_audio_buffer_time = 0;
 			_end_time = end_time;
@@ -356,7 +355,7 @@ public:
 										pr->flush();
 										vr->flush();
 
-										df::trace(str::format(u8"Player clear audio_buffer on seek_ver {}", sv));
+										df::trace(str::format(u8"Player clear audio_buffer on seek_ver {}"sv, sv));
 									}
 
 									pr->resample(frame, playback_buffer);
@@ -531,10 +530,10 @@ private:
 	platform::mutex _thread_mutex;
 	std::shared_ptr<av_session> _thread_session;
 
-	mutable std::u8string _audio_device_id;
+	mutable _Guarded_by_(_thread_mutex)  std::u8string _audio_device_id;
 	mutable std::u8string _play_audio_device_id;
 
-	std::deque<std::function<void(std::shared_ptr<av_player>)>> _q;
+	_Guarded_by_(_queue_mutex) std::deque<std::function<void(std::shared_ptr<av_player>)>> _q;
 	av_host& _host;
 
 public:
@@ -833,14 +832,14 @@ public:
 
 							if (ds_is_stopped)
 							{
-								//df::log(__FUNCTION__, "av_player.start-ds " << ds.time();
+								//df::log(__FUNCTION__, "av_player.start-ds "sv << ds.time();
 								ds->start();
 							}
 
 							if (session->_pending_time_sync)
 							{
 								const auto time = base_time + ds->time();
-								//df::log(__FUNCTION__, str::format(u8"sound.clock {}", time));
+								//df::log(__FUNCTION__, str::format(u8"sound.clock {}"sv, time));
 								session->_time_offset = df::now() - time;
 								session->_pending_time_sync = false;
 							}

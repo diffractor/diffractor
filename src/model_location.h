@@ -103,7 +103,7 @@ public:
 	{
 		uint32_t n[3];
 		decimal_to_dms(coord, n);
-		return str::print(u8"%lu,%lu,%lu%c", n[0], n[1], n[2],
+		return str::print(u8"%lu,%lu,%lu%c"sv, n[0], n[1], n[2],
 		                  is_ns ? (coord < 0 ? 'S' : 'N') : (coord < 0 ? 'W' : 'E'));
 	}
 

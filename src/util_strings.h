@@ -63,14 +63,28 @@ namespace str
 		return is_empty(sz) ? std::string{} : sz;
 	}
 
-	__forceinline constexpr char32_t pop_utf8_char(std::u8string_view::const_iterator& in_ptr,
+	__forceinline constexpr uint32_t pop_utf8_char(std::u8string_view::const_iterator& in_ptr,
 	                                               const std::u8string_view::const_iterator& end)
 	{
-		if (!(*in_ptr & 0x80))
+		const auto c1 = *in_ptr++;
+
+		if (c1 < 0x80) // 1 octet
 		{
-			return *in_ptr++;
+			return c1;
 		}
-		if ((*in_ptr & 0xE0) == 0xC0)
+		if ((c1 >> 5) == 0x6) // 2 octets
+		{
+			if (std::distance(in_ptr, end) < 1)
+			{
+				in_ptr = end;
+				return 0;
+			}
+
+			uint32_t c = (c1 & 0x1F) << 6;
+			c |= ((*in_ptr++ & 0x3F) << 0);
+			return c;
+		}
+		if ((c1 >> 4) == 0xe)  // 3 octets
 		{
 			if (std::distance(in_ptr, end) < 2)
 			{
@@ -78,11 +92,12 @@ namespace str
 				return 0;
 			}
 
-			char32_t c = (*in_ptr++ & 0x1F) << 6;
+			uint32_t c = ((c1 & 0x0F) << 12);
+			c |= ((*in_ptr++ & 0x3F) << 6);
 			c |= ((*in_ptr++ & 0x3F) << 0);
 			return c;
 		}
-		if ((*in_ptr & 0xF0) == 0xE0)
+		if ((c1 >> 3) == 0x1e)  // 4 octets
 		{
 			if (std::distance(in_ptr, end) < 3)
 			{
@@ -90,13 +105,13 @@ namespace str
 				return 0;
 			}
 
-			char32_t c = ((*in_ptr++ & 0x0F) << 12);
+			uint32_t c = ((c1 & 0x0F) << 18);
+			c |= ((*in_ptr++ & 0x3F) << 12);
 			c |= ((*in_ptr++ & 0x3F) << 6);
 			c |= ((*in_ptr++ & 0x3F) << 0);
 			return c;
 		}
 
-		++in_ptr;
 		return '?';
 	}
 
@@ -169,7 +184,7 @@ namespace str
 		{
 			// capture storage for better thread safety
 			const auto s = storage;
-			df::assert_true(s != nullptr || s->len < i);
+			df::assert_true(s != nullptr && s->len > i);
 			if (s == nullptr || s->len >= i) return 0;
 			return s->sz[i];
 		}
@@ -232,27 +247,52 @@ namespace str
 	}
 
 	template <class output_it>
-	void utf16_to_utf8(output_it&& inserter, const int ch)
+	void char32_to_utf8(output_it&& inserter, const uint32_t ch)
 	{
-		if (ch <= 0x7F)
+		if (ch < 0x80)
 		{
-			*inserter++ = static_cast<uint8_t>(ch);
+			*(inserter++) = static_cast<uint8_t>(ch);
 		}
-		else if (ch <= 0x7FF)
+		else if (ch < 0x800)
 		{
-			*inserter++ = static_cast<uint8_t>(0xC0 | ((ch >> 6) & 0x1F));
-			*inserter++ = static_cast<uint8_t>(0x80 | ((ch >> 0) & 0x3F));
+			*(inserter++) = static_cast<uint8_t>(0xC0 | (ch >> 6));
+			*(inserter++) = static_cast<uint8_t>(0x80 | ((ch >> 0) & 0x3F));
 		}
-		else if (ch <= 0xFFFF)
+		else if (ch < 0x10000)
 		{
-			*inserter++ = static_cast<uint8_t>(0xE0 | ((ch >> 12) & 0x0F));
-			*inserter++ = static_cast<uint8_t>(0x80 | ((ch >> 6) & 0x3F));
-			*inserter++ = static_cast<uint8_t>(0x80 | ((ch >> 0) & 0x3F));
+			*(inserter++) = static_cast<uint8_t>(0xE0 | (ch >> 12));
+			*(inserter++) = static_cast<uint8_t>(0x80 | ((ch >> 6) & 0x3F));
+			*(inserter++) = static_cast<uint8_t>(0x80 | ((ch >> 0) & 0x3F));
 		}
 		else
 		{
-			*inserter++ = '?';
+			*(inserter++) = static_cast<uint8_t>((ch >> 18) | 0xf0);
+			*(inserter++) = static_cast<uint8_t>(((ch >> 12) & 0x3f) | 0x80);
+			*(inserter++) = static_cast<uint8_t>(((ch >> 6) & 0x3f) | 0x80);
+			*(inserter++) = static_cast<uint8_t>((ch & 0x3f) | 0x80);
 		}
+	}
+
+	constexpr uint32_t LEAD_SURROGATE_MIN = 0xd800u;
+	constexpr uint32_t LEAD_SURROGATE_MAX = 0xdbffu;
+	constexpr uint32_t TRAIL_SURROGATE_MIN = 0xdc00u;
+	constexpr uint32_t TRAIL_SURROGATE_MAX = 0xdfffu;
+	constexpr uint32_t LEAD_OFFSET = LEAD_SURROGATE_MIN - (0x10000 >> 10);
+	constexpr uint32_t SURROGATE_OFFSET = 0xfca02400u; //  0x10000u - (LEAD_SURROGATE_MIN << 10) - TRAIL_SURROGATE_MIN;
+
+	inline bool is_lead_surrogate(const uint32_t cp)
+	{
+		return (cp >= LEAD_SURROGATE_MIN && cp <= LEAD_SURROGATE_MAX);
+	}
+
+	inline bool is_trail_surrogate(const uint32_t cp)
+	{
+		return (cp >= TRAIL_SURROGATE_MIN && cp <= TRAIL_SURROGATE_MAX);
+	}
+
+	inline uint16_t mask16(const uint32_t oc)
+	{
+		return static_cast<uint16_t>(0xffff & oc);
 	}
 
 	inline std::u8string utf16_to_utf8(const std::wstring_view s)
@@ -261,9 +301,41 @@ namespace str
 		result.reserve(s.size() * 3);
 		auto inserter = std::back_inserter(result);
 
-		for (const auto& ch : s)
+		auto start = s.begin();
+		const auto end = s.end();
+
+		while (start != end)
 		{
-			utf16_to_utf8(inserter, ch);
+			uint32_t cp = mask16(*start++);
+
+			if (is_lead_surrogate(cp)) 
+			{
+				if (start != end) 
+				{
+					const uint32_t trail_surrogate = mask16(*start++);
+
+					if (is_trail_surrogate(trail_surrogate))
+					{
+						cp = (cp << 10) + trail_surrogate + SURROGATE_OFFSET;
+					}
+					else
+					{
+						throw std::invalid_argument("Invalid input string"s);
+					}
+				}
+				else
+				{
+					throw std::invalid_argument("Invalid input string"s);
+				}
+
+			}
+			// Lone trail surrogate
+			else if (is_trail_surrogate(cp))
+			{
+				throw std::invalid_argument("Invalid input string"s);
+			}
+
+			char32_to_utf8(inserter, cp);
 		}
 
 		return result;
@@ -274,7 +346,20 @@ namespace str
 		std::wstring result;
 		result.reserve(s.size());
 		auto i = s.begin();
-		while (i < s.end()) result += pop_utf8_char(i, s.end());
+		while (i < s.end())
+		{
+			const auto cp = pop_utf8_char(i, s.end());
+
+			if (cp > 0xffff) 
+			{
+				result += static_cast<uint16_t>((cp >> 10) + LEAD_OFFSET);
+				result += static_cast<uint16_t>((cp & 0x3ff) + TRAIL_SURROGATE_MIN);
+			}
+			else
+			{
+				result += static_cast<uint16_t>(cp);
+			}
+		}
 		return result;
 	}
 
@@ -309,23 +394,47 @@ namespace str
 		return {val.begin(), val.end()};
 	}
 
-	constexpr wchar_t to_lower(const wchar_t c)
+	constexpr int to_lower(const int c)
 	{
 		if (c < 128) return ((c >= L'A') && (c <= L'Z')) ? c - L'A' + L'a' : c;
-		return iswupper(c) ? towlower(c) : c;
+		return std::tolower(c);
 	}
 
-	inline std::u8string to_lower(const std::u8string_view source)
+	constexpr int to_upper(const int c)
+	{
+		if (c < 128) return ((c >= L'a') && (c <= L'z')) ? c - L'a' + L'A' : c;
+		return std::toupper(c);
+	}
+
+	inline std::u8string to_lower(const std::u8string_view s)
 	{
 		std::u8string result;
-		for (const auto c : source) result += static_cast<char8_t>(to_lower(c));
+		result.reserve(s.size());
+		auto inserter = std::back_inserter(result);
+
+		auto i = s.begin();
+		while (i < s.end())
+		{
+			const auto cp = pop_utf8_char(i, s.end());
+			char32_to_utf8(inserter, to_lower(cp));
+		}
+
 		return result;
 	}
 
-	inline std::u8string to_upper(const std::u8string_view source)
+	inline std::u8string to_upper(const std::u8string_view s)
 	{
 		std::u8string result;
-		for (const auto c : source) result += static_cast<char8_t>(towupper(c));
+		result.reserve(s.size());
+		auto inserter = std::back_inserter(result);
+
+		auto i = s.begin();
+		while (i < s.end())
+		{
+			const auto cp = pop_utf8_char(i, s.end());
+			char32_to_utf8(inserter, to_upper(cp));
+		}
+
 		return result;
 	}
 
@@ -561,18 +670,22 @@ namespace str
 
 		format_arg(const std::u8string_view value) : type(TEXT), text_value(value)
 		{
+			u.int32_value = 0;
 		}
 
 		format_arg(const char8_t* value) : type(TEXT), text_value(value)
 		{
+			u.int32_value = 0;
 		}
 
 		format_arg(const std::u8string& value) : type(TEXT), text_value(value)
 		{
+			u.int32_value = 0;
 		}
 
 		format_arg(const cached value) : type(TEXT), text_value(value)
 		{
+			u.int32_value = 0;
 		}
 
 		format_arg(const df::file_size& value) : type(FILE_SIZE) { u.int64_value = value.to_int64(); }
@@ -591,6 +704,7 @@ namespace str
 	}
 
 	std::u8string print(const char8_t* szFormat, ...);
+	std::u8string print(const std::u8string_view format, ...);
 
 	constexpr bool is_cr_or_lf(const wchar_t c)
 	{
@@ -660,7 +774,7 @@ namespace str
 	}
 
 
-	inline void join(std::u8string& result, const std::u8string_view s, const std::u8string_view sep = u8" ",
+	inline void join(std::u8string& result, const std::u8string_view s, const std::u8string_view sep = u8" "sv,
 	                 const bool quote = true)
 	{
 		//trim(s);
@@ -699,7 +813,7 @@ namespace str
 	}
 
 	template <class T>
-	std::u8string combine(const T& strings, const std::u8string_view sep = u8" ", const bool quote = true)
+	std::u8string combine(const T& strings, const std::u8string_view sep = u8" "sv, const bool quote = true)
 	{
 		std::u8string result;
 		for (const auto& s : strings) str::join(result, s, sep, quote);
@@ -707,7 +821,7 @@ namespace str
 	}
 
 	inline std::u8string combine2(const std::u8string_view s1, const std::u8string_view s2,
-	                              const std::u8string_view sep = u8" ")
+	                              const std::u8string_view sep = u8" "sv)
 	{
 		std::u8string result;
 		result.reserve(s1.size() + s2.size() + sep.size());
@@ -764,7 +878,7 @@ namespace str
 			'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'
 		};
 		std::u8string result;
-		result.reserve(data_length * 2);
+		result.reserve(data_length * 2_z);
 
 		auto remove_leading_zeros = remove_leading_zeros_in;
 
@@ -800,7 +914,7 @@ namespace str
 			return input - 'A' + 10;
 		if (input >= 'a' && input <= 'f')
 			return input - 'a' + 10;
-		throw std::invalid_argument("Invalid input string");
+		throw std::invalid_argument("Invalid input string"s);
 	}
 
 	inline void hex_to_data(const std::u8string_view src, uint8_t* dst, const size_t dst_len)
@@ -809,14 +923,13 @@ namespace str
 
 		for (auto i = 0u; i < limit; i++)
 		{
-			*(dst++) = (hex_char_to_num(src[i * 2]) << 4) + hex_char_to_num(src[(i * 2) + 1]);
+			*(dst++) = (hex_char_to_num(src[i * 2_z]) << 4) + hex_char_to_num(src[(i * 2_z) + 1_z]);
 		}
 	}
 
 	inline uint32_t hex_to_num(const std::u8string_view src)
 	{
 		uint32_t result = 0;
-		const auto limit = std::min(src.size() / 2, src.size());
 
 		for (const auto input : src)
 		{

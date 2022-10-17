@@ -68,16 +68,16 @@ public:
 	static int item_scale_snaps[item_scale_count];
 
 	sizei thumbnail_max_dimension;
-	int resize_max_dimension;
-	int media_volume;
-	int slideshow_delay;
+	int resize_max_dimension = 0;
+	int media_volume = 0;
+	int slideshow_delay = 0;
 	int item_scale = 5;
 	int item_splitter_pos = 5;
 	int min_show_update_day = 0;
 
-	int jpeg_save_quality;
-	int webp_quality;
-	bool webp_lossless;
+	int jpeg_save_quality = 0;
+	int webp_quality = 0;
+	bool webp_lossless = false;
 
 	uint64_t features_used_since_last_report = 0;
 	uint32_t instantiations = 0;
@@ -91,54 +91,54 @@ public:
 	std::u8string language;
 	std::u8string sound_device;
 
-	bool set_copyright_credit;
+	bool set_copyright_credit = false;
 	std::u8string copyright_credit;
-	bool set_copyright_source;
+	bool set_copyright_source = false;
 	std::u8string copyright_source;
-	bool set_copyright_creator;
+	bool set_copyright_creator = false;
 	std::u8string copyright_creator;
-	bool set_copyright_notice;
+	bool set_copyright_notice = false;
 	std::u8string copyright_notice;
-	bool set_copyright_url;
+	bool set_copyright_url = false;
 	std::u8string copyright_url;
 
-	bool set_artist;
+	bool set_artist = false;
 	std::u8string artist;
-	bool set_caption;
+	bool set_caption = false;
 	std::u8string caption;
-	bool set_album;
+	bool set_album = false;
 	std::u8string album;
-	bool set_album_artist;
+	bool set_album_artist = false;
 	std::u8string album_artist;
-	bool set_genre;
+	bool set_genre = false;
 	std::u8string genre;
-	bool set_tv_show;
+	bool set_tv_show = false;
 	std::u8string tv_show;
 
-	bool is_tester;
-	bool show_hidden;
-	bool show_debug_info;
-	bool confirm_deletions;
-	bool first_run_today;
-	bool first_run_ever;
-	bool show_rotated;
-	bool show_results;
-	bool create_originals;
-	bool check_for_updates;
-	bool install_updates;
-	bool can_animate;
-	repeat_mode repeat;
-	bool auto_play;
-	bool scale_up;
-	bool highlight_large_items;
-	bool sort_dates_descending;
-	bool show_sidebar;
-	bool use_gpu;
-	bool use_d3d11va;
-	bool use_yuv;
-	bool send_crash_dumps;
+	bool is_tester = false;
+	bool show_hidden = false;
+	bool show_debug_info = false;
+	bool confirm_deletions = false;
+	bool first_run_today = false;
+	bool first_run_ever = false;
+	bool show_rotated = false;
+	bool show_results = false;
+	bool create_originals = false;
+	bool check_for_updates = false;
+	bool install_updates = false;
+	bool can_animate = false;
+	repeat_mode repeat = repeat_mode::repeat_none;
+	bool auto_play = false;
+	bool scale_up = false;
+	bool highlight_large_items = false;
+	bool sort_dates_descending = false;
+	bool show_sidebar = false;
+	bool use_gpu = false;
+	bool use_d3d11va = false;
+	bool use_yuv = false;
+	bool send_crash_dumps = false;
 	bool force_available_version = false;
-	bool large_font;
+	bool large_font = false;
 	bool verbose_metadata = false;
 	bool raw_preview = true;
 	bool detail_folder_items = true;
@@ -150,15 +150,15 @@ public:
 
 	struct sidebar_t
 	{
-		bool show_total_items;
-		bool show_history;
-		bool show_world_map;
-		bool show_indexed_folders;
-		bool show_drives;
-		bool show_favorite_searches;
-		bool show_favorite_tags;
-		bool show_ratings;
-		bool show_labels;
+		bool show_total_items = false;
+		bool show_history = false;
+		bool show_world_map = false;
+		bool show_indexed_folders = false;
+		bool show_drives = false;
+		bool show_favorite_searches = false;
+		bool show_favorite_tags = false;
+		bool show_ratings = false;
+		bool show_labels = false;
 	} sidebar;
 
 	struct import_t
@@ -167,27 +167,27 @@ public:
 		std::u8string source_path;
 		std::u8string source_filter;
 		std::u8string dest_folder_structure;
-		bool is_move;
-		bool set_created_date;
-		bool ignore_previous;
-		bool overwrite_if_newer;
-		bool rename_different_attributes;
+		bool is_move = false;
+		bool set_created_date = false;
+		bool ignore_previous = false;
+		bool overwrite_if_newer = false;
+		bool rename_different_attributes = false;
 	} import;
 
 	struct sync_t
 	{
 		std::u8string local_path;
 		std::u8string remote_path;
-		bool sync_collection;
-		bool sync_local_remote;
-		bool sync_remote_local;
-		bool sync_delete_local;
-		bool sync_delete_remote;
+		bool sync_collection = false;
+		bool sync_local_remote = false;
+		bool sync_remote_local = false;
+		bool sync_delete_local = false;
+		bool sync_delete_remote = false;
 	} sync;
 
 	struct
 	{
-		bool maximize;
+		bool maximize = false;
 	} desktop_background;
 
 	struct email_t
@@ -196,22 +196,22 @@ public:
 		std::u8string subject;
 		std::u8string message;
 
-		bool zip;
-		bool limit;
-		bool convert;
-		int max_side;
+		bool zip = false;
+		bool limit = false;
+		bool convert = false;
+		int max_side = 0;
 	} email;
 
 	struct convert_t
 	{
-		bool to_jpeg;
-		bool to_png;
-		bool to_webp;
-		int jpeg_quality;
-		int webp_quality;
-		bool webp_lossless;
-		bool limit_dimension;
-		int max_side;
+		bool to_jpeg = false;
+		bool to_png = false;
+		bool to_webp = false;
+		int jpeg_quality = 0;
+		int webp_quality = 0;
+		bool webp_lossless = false;
+		bool limit_dimension = false;
+		int max_side = 0;
 	} convert;
 
 	struct rename_t
@@ -222,13 +222,13 @@ public:
 
 	struct index_t
 	{
-		bool pictures;
-		bool video;
-		bool music;
-		bool drop_box;
-		bool onedrive_pictures;
-		bool onedrive_video;
-		bool onedrive_music;
+		bool pictures = false;
+		bool video = false;
+		bool music = false;
+		bool drop_box = false;
+		bool onedrive_pictures = false;
+		bool onedrive_video = false;
+		bool onedrive_music = false;
 
 		std::u8string more_folders;
 

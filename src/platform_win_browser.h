@@ -254,8 +254,9 @@ public:
 	{
 		const HWND hwnd = _wnd_parent;
 
-		(*ppFrame) = nullptr;
-		(*ppDoc) = nullptr;
+		if (ppFrame) *ppFrame = nullptr;
+		if (ppDoc) *ppDoc = nullptr;
+
 		(*lprcPosRect).left = _bounds.left;
 		(*lprcPosRect).top = _bounds.top;
 		(*lprcPosRect).right = _bounds.right;
@@ -606,7 +607,7 @@ public:
 				0,
 				_bstr_t(pDispParams->rgvarg[3].bstrVal),
 				NULL,
-				_bstr_t(""),
+				_bstr_t(""sv),
 				NULL);*/
 			return S_OK;
 		}
@@ -761,7 +762,7 @@ public:
 
 		if (doc2)
 		{
-			const bstr_t javascript(L"javascript");
+			const bstr_t javascript(L"javascript"sv);
 			ComPtr<IHTMLWindow2> pWin2;
 
 			if (SUCCEEDED(doc2->get_parentWindow(&pWin2)))
@@ -778,7 +779,7 @@ public:
 				}
 				catch (...)
 				{
-					df::trace(u8"Browser Exception");
+					df::trace(u8"Browser Exception"sv);
 				}
 			}
 		}

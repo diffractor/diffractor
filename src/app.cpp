@@ -38,29 +38,29 @@
 
 platform::thread_event media_preview_event(false, false);
 static platform::mutex media_preview_mutex;
-static std::function<void(media_preview_state&)> next_media_preview;
+static _Guarded_by_(media_preview_mutex) std::function<void(media_preview_state&)> next_media_preview;
 command_line_t command_line;
 static std::atomic_int index_version;
 
 const wchar_t* s_app_name_l = L"Diffractor";
-const std::u8string_view s_app_name = u8"Diffractor";
-const std::u8string_view s_app_version = u8"125.0";
-const std::u8string_view g_app_build = u8"1157";
-const std::u8string_view stage_file_name = u8"diffractor-setup-update.exe";
-static constexpr std::u8string_view installed_file_name = u8"diffractor-setup-installed.exe";
-static constexpr std::u8string_view s_search = u8"search";
+const std::u8string_view s_app_name = u8"Diffractor"sv;
+const std::u8string_view s_app_version = u8"125.0"sv;
+const std::u8string_view g_app_build = u8"1158"sv;
+const std::u8string_view stage_file_name = u8"diffractor-setup-update.exe"sv;
+static constexpr std::u8string_view installed_file_name = u8"diffractor-setup-installed.exe"sv;
+static constexpr std::u8string_view s_search = u8"search"sv;
 
 std::u8string df::format_version(const bool short_text)
 {
 	if (short_text)
 	{
-		return str::format(u8"{}.{}", s_app_version, g_app_build);
+		return str::format(u8"{}.{}"sv, s_app_version, g_app_build);
 	}
 
-	return str::format(u8"{}: {}.{}  |  {}", tt.version, s_app_version, g_app_build, str::utf8_cast(__DATE__));
+	return str::format(u8"{}: {}.{}  |  {}"sv, tt.version, s_app_version, g_app_build, str::utf8_cast(__DATE__));
 };
 
-crash_files_db crash_files(df::probe_data_file(u8"diffractor-files-that-crash.txt"));
+crash_files_db crash_files(df::probe_data_file(u8"diffractor-files-that-crash.txt"sv));
 
 void flush_open_files_to_crash_files_list()
 {
@@ -71,60 +71,60 @@ std::vector<std::pair<std::u8string_view, std::u8string>> calc_app_info(const in
 	const bool include_state)
 {
 	std::vector<std::pair<std::u8string_view, std::u8string>> result;
-	const auto* arch = u8"32-bit";
-	const auto* config = u8"release";
+	auto arch = u8"32-bit"sv;
+	auto config = u8"release"sv;
 
 #ifdef _M_X64
-	arch = u8"64-bit";
+	arch = u8"64-bit"sv;
 #endif
 
 #ifdef _DEBUG
-	config = u8"debug";
+	config = u8"debug"sv;
 #endif //_DEBUG
 
 	const auto seconds_running = platform::now().to_seconds() - df::start_time.to_seconds();
 
-	result.emplace_back(u8"Version:", df::format_version(true));
-	result.emplace_back(u8"Windows:", str::format(u8"{} {} {}", platform::OS(), arch, config));
-	result.emplace_back(u8"Id:", str::to_hex(crypto::crc32c(platform::user_name()), false));
-	result.emplace_back(u8"Running:", str::format(u8"{} seconds", seconds_running));
+	result.emplace_back(u8"Version:"sv, df::format_version(true));
+	result.emplace_back(u8"Windows:"sv, str::format(u8"{} {} {}"sv, platform::OS(), arch, config));
+	result.emplace_back(u8"Id:"sv, str::to_hex(crypto::crc32c(platform::user_name()), false));
+	result.emplace_back(u8"Running:"sv, str::format(u8"{} seconds"sv, seconds_running));
 	int64_t current, peak;
 
 	if (platform::working_set(current, peak))
 	{
-		result.emplace_back(u8"Memory:", str::format(u8"{} (peak {})", df::file_size(current), df::file_size(peak)));
+		result.emplace_back(u8"Memory:"sv, str::format(u8"{} (peak {})"sv, df::file_size(current), df::file_size(peak)));
 	}
 
-	result.emplace_back(u8"Static Memory:", df::file_size(platform::static_memory_usage).str());
+	result.emplace_back(u8"Static Memory:"sv, df::file_size(platform::static_memory_usage).str());
 
-	result.emplace_back(u8"GPU:", df::gpu_desc);
-	result.emplace_back(u8"GPU Id:", df::gpu_id);
-	result.emplace_back(u8"D3D:", df::d3d_info);
+	result.emplace_back(u8"GPU:"sv, df::gpu_desc);
+	result.emplace_back(u8"GPU Id:"sv, df::gpu_id);
+	result.emplace_back(u8"D3D:"sv, df::d3d_info);
 
-	result.emplace_back(u8"Indexed items:", str::to_string(index.stats.index_item_count));
-	result.emplace_back(u8"Indexed folders:", str::to_string(index.stats.index_folder_count));
-	result.emplace_back(u8"Duplicates:",
-		str::format(u8"g={} mcomp={}", index.stats.indexed_dup_folder_count,
+	result.emplace_back(u8"Indexed items:"sv, str::to_string(index.stats.index_item_count));
+	result.emplace_back(u8"Indexed folders:"sv, str::to_string(index.stats.index_folder_count));
+	result.emplace_back(u8"Duplicates:"sv,
+		str::format(u8"g={} mcomp={}"sv, index.stats.indexed_dup_folder_count,
 			index.stats.indexed_max_compare_count));
-	result.emplace_back(u8"Hashes:",
-		str::format(u8"crc={}", index.stats.indexed_crc_count));
-	result.emplace_back(u8"DB size:", index.stats.database_size.str());
-	result.emplace_back(u8"Saved:", str::format(u8"{} items | {} thumbs", index.stats.items_saved,
+	result.emplace_back(u8"Hashes:"sv,
+		str::format(u8"crc={}"sv, index.stats.indexed_crc_count));
+	result.emplace_back(u8"DB size:"sv, index.stats.database_size.str());
+	result.emplace_back(u8"Saved:"sv, str::format(u8"{} items | {} thumbs"sv, index.stats.items_saved,
 		index.stats.thumbs_saved));
 
 
-	result.emplace_back(u8"Index load:", str::format(u8"{} ms", index.stats.index_load_ms));
-	result.emplace_back(u8"Predictions:", str::format(u8"{} ms", index.stats.predictions_ms));
-	result.emplace_back(u8"Count Matches:", str::format(u8"{} ms", index.stats.count_matches_ms));
+	result.emplace_back(u8"Index load:"sv, str::format(u8"{} ms"sv, index.stats.index_load_ms));
+	result.emplace_back(u8"Predictions:"sv, str::format(u8"{} ms"sv, index.stats.predictions_ms));
+	result.emplace_back(u8"Count Matches:"sv, str::format(u8"{} ms"sv, index.stats.count_matches_ms));
 
 	if (include_state)
 	{
-		result.emplace_back(u8"Jobs running: ", str::to_string(df::jobs_running));
-		result.emplace_back(u8"Is indexing: ", str::to_string(index.indexing));
-		result.emplace_back(u8"Is searching: ", str::to_string(index.searching));
-		result.emplace_back(u8"Is command active: ", str::to_string(df::command_active));
-		result.emplace_back(u8"Is closing: ", str::to_string(df::is_closing));
-		result.emplace_back(u8"Rendering function: ", str::utf8_cast(df::rendering_func));
+		result.emplace_back(u8"Jobs running: "sv, str::to_string(df::jobs_running));
+		result.emplace_back(u8"Is indexing: "sv, str::to_string(index.indexing));
+		result.emplace_back(u8"Is searching: "sv, str::to_string(index.searching));
+		result.emplace_back(u8"Is command active: "sv, str::to_string(df::command_active));
+		result.emplace_back(u8"Is closing: "sv, str::to_string(df::is_closing));
+		result.emplace_back(u8"Rendering function: "sv, str::utf8_cast(df::rendering_func));
 	}
 
 	return result;
@@ -270,7 +270,7 @@ static bool install_update_if_exists()
 
 	if (stage_path.exists())
 	{
-		df::log(__FUNCTION__, u8"Staged install found");
+		df::log(__FUNCTION__, u8"Staged install found"sv);
 
 		if (const auto move_file_result = platform::move_file(stage_path, installed_path, false); move_file_result.
 			success())
@@ -327,15 +327,15 @@ public:
 		_state.history.count_strings(_known, 1);
 		_state.recent_folders.count_strings(_known, 1);
 		//_state.recent_apps.count_strings(_recents, 1);
-		_state.recent_tags.count_strings(_known, 1, u8"#");
+		_state.recent_tags.count_strings(_known, 1, u8"#"sv);
 		_state.recent_tags.count_strings(_known, 1);
 		//_state.recent_locations.count_strings(_recents, 1);
 		if (!setting.write_folder.empty()) ++_known[str::cache(setting.write_folder)];
 
 		for (const auto ks : prop::key_scopes())
 		{
-			++_known[str::cache(str::format(u8"with:{}", ks.scope))];
-			++_known[str::cache(str::format(u8"without:{}", ks.scope))];
+			++_known[str::cache(str::format(u8"with:{}"sv, ks.scope))];
+			++_known[str::cache(str::format(u8"without:{}"sv, ks.scope))];
 		}
 	}
 
@@ -461,7 +461,7 @@ public:
 
 					if (found.size() < max_predictions)
 					{
-						const auto found_groups = _state.item_index.auto_complete_words(u8"@", max_predictions);
+						const auto found_groups = _state.item_index.auto_complete_words(u8"@"sv, max_predictions);
 
 						for (const auto& word : found_groups)
 						{
@@ -472,7 +472,7 @@ public:
 
 					if (found.size() < max_predictions)
 					{
-						const auto found_tags = _state.item_index.auto_complete_words(u8"#", max_predictions);
+						const auto found_tags = _state.item_index.auto_complete_words(u8"#"sv, max_predictions);
 
 						for (const auto& word : found_tags)
 						{
@@ -484,7 +484,7 @@ public:
 
 				if (found.size() < max_predictions)
 				{
-					for (const auto k : _known)
+					for (const auto &k : _known)
 					{
 						const auto trimmed = str::trim(query);
 
@@ -546,9 +546,9 @@ void command_line_t::parse(const std::u8string_view command_line_text)
 				if ((stripped[0] == '-' || stripped[0] == '/') && stripped.size() > 1)
 				{
 					const auto op = stripped.substr(stripped[1] == '-' ? 2 : 1);
-					no_gpu = str::icmp(op, u8"no-gpu") == 0;
-					no_indexing = str::icmp(op, u8"no-indexing") == 0;
-					run_tests = str::icmp(op, u8"run-tests") == 0;
+					no_gpu = str::icmp(op, u8"no-gpu"sv) == 0;
+					no_indexing = str::icmp(op, u8"no-indexing"sv) == 0;
+					run_tests = str::icmp(op, u8"run-tests"sv) == 0;
 				}
 				else if (df::is_path(stripped))
 				{
@@ -578,8 +578,8 @@ void command_line_t::parse(const std::u8string_view command_line_text)
 std::u8string command_line_t::format_restart_cmd_line() const
 {
 	std::u8string result;
-	if (no_gpu) result += u8" -no-gpu";
-	if (no_indexing) result += u8" -no-indexing";
+	if (no_gpu) result += u8" -no-gpu"sv;
+	if (no_indexing) result += u8" -no-indexing"sv;
 	return result;
 }
 
@@ -590,11 +590,11 @@ std::u8string format_plural_text(const plural_text& fmt, const std::u8string_vie
 
 	auto substitute = [&](u8ostringstream& result, const std::u8string_view token)
 	{
-		if (token == u8"first-name") result << first_name;
-		else if (token == u8"count") result << platform::format_number(str::to_string(count));
-		else if (token == u8"other") result << platform::format_number(str::to_string(count - 1));
-		else if (token == u8"total") result << platform::format_number(str::to_string(of_total));
-		else if (token == u8"size") result << prop::format_size(size);
+		if (token == u8"first-name"sv) result << first_name;
+		else if (token == u8"count"sv) result << platform::format_number(str::to_string(count));
+		else if (token == u8"other"sv) result << platform::format_number(str::to_string(count - 1));
+		else if (token == u8"total"sv) result << platform::format_number(str::to_string(of_total));
+		else if (token == u8"size"sv) result << prop::format_size(size);
 		else if (token.empty()) result << platform::format_number(str::to_string(count));
 	};
 
@@ -615,7 +615,7 @@ std::u8string format_plural_text(const plural_text& fmt, const df::item_set& ite
 
 std::u8string format_plural_text(const plural_text& fmt, const std::vector<std::u8string>& result)
 {
-	return format_plural_text(fmt, result.front(), result.size(), {}, 0);
+	return format_plural_text(fmt, result.front(), static_cast<int>(result.size()), {}, 0);
 }
 
 void rating_control::dispatch_event(const view_element_event& event)
@@ -623,8 +623,7 @@ void rating_control::dispatch_event(const view_element_event& event)
 	if (event.type == view_element_event_type::invoke)
 	{
 		auto dlg = make_dlg(event.host->owner());
-		const auto results = std::make_shared<command_status>(_state._async, dlg, icon_index::star, tt.rate_title,
-			_state.selected_count());
+		const auto results = std::make_shared<command_status>(_state._async, dlg, icon_index::star, tt.rate_title, _state.selected_count());
 		_state.toggle_rating(results, { _item }, _hover_rating, event.host);
 	}
 }
@@ -702,7 +701,7 @@ app_frame::~app_frame()
 	_threads.clear();
 	_state.close();
 
-	df::log(__FUNCTION__, u8"destruct");
+	df::log(__FUNCTION__, u8"destruct"sv);
 }
 
 static gps_coordinate parse_coordinates(const std::u8string_view text, const gps_coordinate def_coords)
@@ -732,11 +731,11 @@ struct log_func
 	{
 		if (!str::is_empty(context2))
 		{
-			df::log(context, str::format(u8"start {}", context2));
+			df::log(context, str::format(u8"start {}"sv, context2));
 		}
 		else
 		{
-			df::log(context, u8"start");
+			df::log(context, u8"start"sv);
 		}
 	}
 
@@ -744,11 +743,11 @@ struct log_func
 	{
 		if (!str::is_empty(context2))
 		{
-			df::log(context, str::format(u8"exit {}", context2));
+			df::log(context, str::format(u8"exit {}"sv, context2));
 		}
 		else
 		{
-			df::log(context, u8"exit");
+			df::log(context, u8"exit"sv);
 		}
 	}
 };
@@ -756,7 +755,7 @@ struct log_func
 static void start_media_decode_video(const std::shared_ptr<av_player>& player)
 {
 	log_func lf(__FUNCTION__);
-	platform::set_thread_description(u8"media decode_video");
+	platform::set_thread_description(u8"media decode_video"sv);
 	platform::thread_init c;
 	player->decode_video();
 }
@@ -764,7 +763,7 @@ static void start_media_decode_video(const std::shared_ptr<av_player>& player)
 static void start_media_decode_audio(const std::shared_ptr<av_player>& player)
 {
 	log_func lf(__FUNCTION__);
-	platform::set_thread_description(u8"media decode_audio");
+	platform::set_thread_description(u8"media decode_audio"sv);
 	platform::thread_init c;
 	player->decode_audio();
 }
@@ -772,7 +771,7 @@ static void start_media_decode_audio(const std::shared_ptr<av_player>& player)
 static void start_media_reading(const std::shared_ptr<av_player>& player)
 {
 	log_func lf(__FUNCTION__);
-	platform::set_thread_description(u8"media read");
+	platform::set_thread_description(u8"media read"sv);
 	platform::thread_init c;
 	player->reading();
 }
@@ -808,7 +807,7 @@ struct app_updates_and_location_params
 static void check_for_updates_and_location(const app_frame_ptr& app, view_state& s)
 {
 	log_func lf(__FUNCTION__);
-	platform::set_thread_description(u8"CheckForUpdates");
+	platform::set_thread_description(u8"CheckForUpdates"sv);
 	platform::thread_init c;
 
 	if (platform::is_online())
@@ -818,15 +817,15 @@ static void check_for_updates_and_location(const app_frame_ptr& app, view_state&
 			s.queue_async(async_queue::web, [app, &s]()
 				{
 					platform::web_request req;
-					req.host = u8"diffractor.com";
-					req.path = u8"/ver";
+					req.host = u8"diffractor.com"sv;
+					req.path = u8"/ver"sv;
 					req.query = platform::web_params{
-						{u8"v", std::u8string(s_app_version)},
-						{u8"b", std::u8string(g_app_build)},
-						{u8"f", setting.first_run_ever ? u8"1" : u8"0"},
-						{u8"ft", str::to_hex(setting.features_used_since_last_report)},
-						{u8"i", str::to_hex(setting.instantiations)},
-						{u8"os", platform::OS()},
+						{u8"v"s, std::u8string(s_app_version)},
+						{u8"b"s, std::u8string(g_app_build)},
+						{u8"f"s, setting.first_run_ever ? u8"1"s : u8"0"s},
+						{u8"ft"s, str::to_hex(setting.features_used_since_last_report)},
+						{u8"i"s, str::to_hex(setting.instantiations)},
+						{u8"os"s, platform::OS()},
 					};
 
 					const auto response = send_request(req);
@@ -839,7 +838,7 @@ static void check_for_updates_and_location(const app_frame_ptr& app, view_state&
 						app_updates_and_location_params params;
 						params.version = df::util::json::safe_string(json, u8"current_version");
 						params.test_version = df::util::json::safe_string(json, u8"test_version");
-						params.should_update = str::icmp(df::util::json::safe_string(json, u8"action"), u8"update") == 0;
+						params.should_update = str::icmp(df::util::json::safe_string(json, u8"action"), u8"update"sv) == 0;
 
 						params.city = df::util::json::safe_string(json, u8"city");
 						params.country = df::util::json::safe_string(json, u8"country");
@@ -865,12 +864,12 @@ static void start_database(database& db, platform::task_queue& database_task_que
 	const app_frame_ptr& app, std::function<void()> index_loaded_func)
 {
 	log_func lf(__FUNCTION__);
-	platform::set_thread_description(u8"database");
+	platform::set_thread_description(u8"database"sv);
 
 	try
 	{
 		platform::thread_init c;
-		db.open(known_path(platform::known_folder::app_data), u8"diffractor-cache");
+		db.open(known_path(platform::known_folder::app_data), u8"diffractor-cache"sv);
 		async.queue_ui(std::move(index_loaded_func));
 
 		if (db.is_open())
@@ -931,7 +930,7 @@ static void start_database(database& db, platform::task_queue& database_task_que
 static void start_media_preview()
 {
 	log_func lf(__FUNCTION__);
-	platform::set_thread_description(u8"media_preview");
+	platform::set_thread_description(u8"media_preview"sv);
 
 	try
 	{
@@ -1019,13 +1018,13 @@ static void start_worker(platform::task_queue& q, const std::u8string_view name)
 //
 //	info.add(c.image_to_surface(image), ui_element_style::center);
 //	info.add(s_app_name, render::style::font_size::title, render::style::text_style::multiline, ui_element_style::line_break | ui_element_style::center);
-//	info.add(u8"Diffractor is a fast way to search, compare and organize photos or videos on your PC.", render::style::font_size::dialog, render::style::text_style::multiline, ui_element_style::line_break);
+//	info.add(u8"Diffractor is a fast way to search, compare and organize photos or videos on your PC."sv, render::style::font_size::dialog, render::style::text_style::multiline, ui_element_style::line_break);
 //
 //	auto summary = s.item_index.summary();
 //
 //	if (summary.total > 0)
 //	{
-//		info.add(u8"Total items indexed:", render::style::font_size::dialog, render::style::text_style::multiline, ui_element_style::line_break);
+//		info.add(u8"Total items indexed:"sv, render::style::font_size::dialog, render::style::text_style::multiline, ui_element_style::line_break);
 //		info.add(std::make_shared<summary_control>(summary, ui_element_style::line_break)).padding(16);
 //	}
 //
@@ -1038,7 +1037,7 @@ static void start_worker(platform::task_queue& q, const std::u8string_view name)
 //		}
 //	}
 //
-//	info.add(u8"Click for help or more information.", render::style::font_size::dialog, render::style::text_style::multiline, ui_element_style::new_line);
+//	info.add(u8"Click for help or more information."sv, render::style::font_size::dialog, render::style::text_style::multiline, ui_element_style::new_line);
 //
 //	popup._info = info;
 //}
@@ -1265,13 +1264,13 @@ void app_frame::tick()
 	}
 }
 
-static constexpr std::u8string_view s_recent_folders = u8"RecentFolders";
-static constexpr std::u8string_view s_recent_searches = u8"RecentSearches";
-static constexpr std::u8string_view s_recent_apps = u8"RecentApps";
-static constexpr std::u8string_view s_recent_tags = u8"RecentTags";
-static constexpr std::u8string_view s_recent_locations = u8"RecentLocations";
-static constexpr std::u8string_view s_group_order = u8"GroupOrder";
-static constexpr std::u8string_view s_sort_order = u8"SortOrder";
+static constexpr std::u8string_view s_recent_folders = u8"RecentFolders"sv;
+static constexpr std::u8string_view s_recent_searches = u8"RecentSearches"sv;
+static constexpr std::u8string_view s_recent_apps = u8"RecentApps"sv;
+static constexpr std::u8string_view s_recent_tags = u8"RecentTags"sv;
+static constexpr std::u8string_view s_recent_locations = u8"RecentLocations"sv;
+static constexpr std::u8string_view s_group_order = u8"GroupOrder"sv;
+static constexpr std::u8string_view s_sort_order = u8"SortOrder"sv;
 
 void app_frame::load_options(const platform::setting_file_ptr& store)
 {
@@ -2129,7 +2128,7 @@ void app_frame::element_broadcast(const view_element_event& event)
 
 void app_frame::focus_changed(const bool has_focus, const ui::control_base_ptr& child)
 {
-	df::trace(str::format(u8"app_frame::focus {}", has_focus));
+	df::trace(str::format(u8"app_frame::focus {}"sv, has_focus));
 	focus_search(_search_edit->has_focus());
 
 	_filter_has_focus = _filter_edit->has_focus();
@@ -2144,7 +2143,7 @@ void app_frame::focus_changed(const bool has_focus, const ui::control_base_ptr& 
 
 void app_frame::item_focus_changed(const df::item_element_ptr& focus, const df::item_element_ptr& previous)
 {
-	df::trace(u8"app_frame::focus_changed");
+	df::trace(u8"app_frame::focus_changed"sv);
 
 	if (_view_items->is_visible(previous))
 	{
@@ -2329,7 +2328,7 @@ void app_frame::on_window_paint(ui::draw_context& dc)
 
 		if (i)
 		{
-			const std::u8string title = format(u8"{}: {}", tt.editing_title, i->name());
+			const std::u8string title = format(u8"{}: {}"sv, tt.editing_title, i->name());
 			dc.draw_text(title, _title_bounds, ui::style::font_size::title, ui::style::text_style::single_line,
 				ui::color(dc.colors.foreground, dc.colors.alpha), {});
 		}
@@ -2684,10 +2683,10 @@ static std::u8string format_items_summary(const group_by grouping, const sort_by
 
 		if (group_text == sort_text || grouping == group_by::shuffle || sort_text.empty() || order == sort_by::def)
 		{
-			return str::format(u8"{}|{} - {}", total_count, total_size, group_text);
+			return str::format(u8"{}|{} - {}"sv, total_count, total_size, group_text);
 		}
 
-		return str::format(u8"{}|{} - {}|{}", total_count, total_size, group_text, sort_text);
+		return str::format(u8"{}|{} - {}|{}"sv, total_count, total_size, group_text, sort_text);
 	}
 	const auto total_folders = summary.total_folders();
 
@@ -2697,59 +2696,35 @@ static std::u8string format_items_summary(const group_by grouping, const sort_by
 
 		if (group_text == sort_text || grouping == group_by::shuffle || sort_text.empty() || order == sort_by::def)
 		{
-			return str::format(u8"{} {} - {}", total_count, tt.folders, group_text);
+			return str::format(u8"{} {} - {}"sv, total_count, tt.folders, group_text);
 		}
 
-		return str::format(u8"{} {} - {}|{}", total_count, tt.folders, group_text, sort_text);
+		return str::format(u8"{} {} - {}|{}"sv, total_count, tt.folders, group_text, sort_text);
 	}
 
 	return std::u8string(is_init_complete ? tt.empty : tt.loading);
 }
 
-int media_volumes[] = { 999, 777, 555, 333, 0 };
-
 icon_index volumes_icons[] = {
 	icon_index::volume3, icon_index::volume2, icon_index::volume1, icon_index::volume0, icon_index::mute
 };
 
-void app_frame::toggle_volume(const bool down, const bool can_wrap)
+void app_frame::toggle_volume()
 {
-	const auto vol_count = std::size(media_volumes);
 	auto v = setting.media_volume;
 
-	if (down)
+	if (v == 0)
 	{
-		if (v == 0 && can_wrap)
-		{
-			v = media_volumes[0];
-		}
-		else
-		{
-			for (const int Volume : media_volumes)
-			{
-				if (v > Volume)
-				{
-					v = Volume;
-					break;
-				}
-			}
-		}
+		v = media_volumes[0];
 	}
 	else
 	{
-		if (v == media_volumes[0] && can_wrap)
+		for (const int volume : media_volumes)
 		{
-			v = 0;
-		}
-		else
-		{
-			for (auto i = vol_count - 1; i >= 0; i--)
+			if (v > volume)
 			{
-				if (v < media_volumes[i])
-				{
-					v = media_volumes[i];
-					break;
-				}
+				v = volume;
+				break;
 			}
 		}
 	}
@@ -2940,7 +2915,7 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::sort_name]->checked = _state.sort_order() == sort_by::name;
 	_commands[commands::sort_size]->checked = _state.sort_order() == sort_by::size;
 	_commands[commands::sort_date_modified]->checked = _state.sort_order() == sort_by::date_modified;
-	_commands[commands::english]->checked = setting.language == u8"en";
+	_commands[commands::english]->checked = setting.language == u8"en"sv;
 
 	_commands[commands::playback_volume100]->checked = setting.media_volume == media_volumes[0];
 	_commands[commands::playback_volume75]->checked = setting.media_volume == media_volumes[1];
@@ -2988,7 +2963,7 @@ void app_frame::update_address() const
 	switch (_state.view_mode())
 	{
 	case view_type::Test:
-		text = u8"Testing";
+		text = u8"Testing"sv;
 		icon = icon_index::check;
 		break;
 	case view_type::media:
@@ -3065,7 +3040,7 @@ void app_frame::update_command_text()
 		tt.command_desktop_background);
 	def_command(commands::menu_display_options, command_group::none, icon_index::none, tt.command_display_options);
 	def_command(commands::tool_edit, command_group::tools, icon_index::edit, tt.command_edit,
-		str::format(u8"{}\n{}", tt.tooltip_edit1, tt.tooltip_edit2));
+		str::format(u8"{}\n{}"sv, tt.tooltip_edit1, tt.tooltip_edit2));
 	def_command(commands::edit_copy, command_group::file_management, icon_index::edit_copy, tt.command_edit_copy);
 	def_command(commands::edit_cut, command_group::file_management, icon_index::edit_cut, tt.command_edit_cut);
 	def_command(commands::edit_paste, command_group::file_management, icon_index::edit_paste, tt.command_edit_paste);
@@ -3165,7 +3140,7 @@ void app_frame::update_command_text()
 	def_command(commands::menu_tag_with, command_group::none, icon_index::tag, tt.prop_name_tag, tt.tooltip_tag_with);
 	def_command(commands::menu_language, command_group::none, icon_index::language, tt.command_language,
 		tt.tooltip_language);
-	def_command(commands::english, command_group::none, icon_index::none, u8"English", u8"English language");
+	def_command(commands::english, command_group::none, icon_index::none, u8"English"sv, u8"English language"sv);
 	def_command(commands::test_new_version, command_group::none, icon_index::none, tt.command_test_new_version);
 	def_command(commands::option_toggle_details, command_group::options, icon_index::details, tt.command_toggle_details,
 		tt.tooltip_toggle_details_all);
@@ -3526,7 +3501,7 @@ void app_frame::tooltip(view_hover_element& hover, const commands id)
 
 	if (!keyboard_accelerator.empty())
 	{
-		keyboard_accelerator = str::format(u8"{} {}", tt.keyboard_accelerator_press, keyboard_accelerator);
+		keyboard_accelerator = str::format(u8"{} {}"sv, tt.keyboard_accelerator_press, keyboard_accelerator);
 		hover.elements.add(std::make_shared<action_element>(keyboard_accelerator));
 	}
 }
@@ -3534,11 +3509,11 @@ void app_frame::tooltip(view_hover_element& hover, const commands id)
 
 bool app_frame::pre_init()
 {
-	df::log(u8"main", df::format_version(false));
+	df::log(u8"main"sv, df::format_version(false));
 
 	if (install_update_if_exists())
 	{
-		df::log(__FUNCTION__, u8"Exit because of install");
+		df::log(__FUNCTION__, u8"Exit because of install"sv);
 		return false;
 	}
 
@@ -3572,13 +3547,13 @@ void app_frame::start_workers()
 						view_invalid::index_summary);
 				});
 
-			_threads.start([&q = crc_task_queue] { start_worker(q, u8"crc"); });
-			_threads.start([&q = scan_folder_task_queue] { start_worker(q, u8"scan_folder"); });
-			_threads.start([&q = scan_modified_items_task_queue] { start_worker(q, u8"scan_modified_items"); });
-			_threads.start([&q = scan_displayed_items_task_queue] { start_worker(q, u8"scan_displayed_items"); });
-			_threads.start([&q = predictions_task_queue] { start_worker(q, u8"predictions"); });
-			_threads.start([&q = summary_task_queue] { start_worker(q, u8"summary"); });
-			_threads.start([&q = presence_task_queue] { start_worker(q, u8"presence"); });
+			_threads.start([&q = crc_task_queue] { start_worker(q, u8"crc"sv); });
+			_threads.start([&q = scan_folder_task_queue] { start_worker(q, u8"scan_folder"sv); });
+			_threads.start([&q = scan_modified_items_task_queue] { start_worker(q, u8"scan_modified_items"sv); });
+			_threads.start([&q = scan_displayed_items_task_queue] { start_worker(q, u8"scan_displayed_items"sv); });
+			_threads.start([&q = predictions_task_queue] { start_worker(q, u8"predictions"sv); });
+			_threads.start([&q = summary_task_queue] { start_worker(q, u8"summary"sv); });
+			_threads.start([&q = presence_task_queue] { start_worker(q, u8"presence"sv); });
 		}
 
 		invalidate_view(view_invalid::sidebar |
@@ -3602,17 +3577,17 @@ void app_frame::start_workers()
 			start_database(db, q, async, app, index_loaded_func);
 		});
 
-	_threads.start([&q = load_task_queue] { start_worker(q, u8"load"); });
-	_threads.start([&q = load_raw_task_queue] { start_worker(q, u8"load_raw"); });
-	_threads.start([&q = render_task_queue] { start_worker(q, u8"render"); });
-	_threads.start([&q = query_task_queue] { start_worker(q, u8"query"); });
-	_threads.start([&q = auto_complete_task_queue] { start_worker(q, u8"auto_complete"); });
-	_threads.start([&q = location_task_queue] { start_worker(q, u8"locations"); });
-	_threads.start([&q = sidebar_task_queue] { start_worker(q, u8"sidebar"); });
-	_threads.start([&q = web_task_queue] { start_worker(q, u8"web"); });
+	_threads.start([&q = load_task_queue] { start_worker(q, u8"load"sv); });
+	_threads.start([&q = load_raw_task_queue] { start_worker(q, u8"load_raw"sv); });
+	_threads.start([&q = render_task_queue] { start_worker(q, u8"render"sv); });
+	_threads.start([&q = query_task_queue] { start_worker(q, u8"query"sv); });
+	_threads.start([&q = auto_complete_task_queue] { start_worker(q, u8"auto_complete"sv); });
+	_threads.start([&q = location_task_queue] { start_worker(q, u8"locations"sv); });
+	_threads.start([&q = sidebar_task_queue] { start_worker(q, u8"sidebar"sv); });
+	_threads.start([&q = web_task_queue] { start_worker(q, u8"web"sv); });
 
-	_threads.start([&q = cloud_task_queue] { start_worker(q, u8"cloud"); });
-	_threads.start([&q = index_task_queue] { start_worker(q, u8"index"); });
+	_threads.start([&q = cloud_task_queue] { start_worker(q, u8"cloud"sv); });
+	_threads.start([&q = index_task_queue] { start_worker(q, u8"index"sv); });
 
 	index_task_queue.enqueue([this, scan_uncached_func]
 		{
@@ -3651,10 +3626,10 @@ bool app_frame::init(const std::u8string_view command_line_text)
 	load_options(store);
 	setting.instantiations++;
 
-	if (setting.language != u8"en")
+	if (setting.language != u8"en"sv)
 	{
-		const auto lang_folder = known_path(platform::known_folder::running_app_folder).combine(u8"languages");
-		const auto lang_path = lang_folder.combine_file(setting.language + u8".po");
+		const auto lang_folder = known_path(platform::known_folder::running_app_folder).combine(u8"languages"sv);
+		const auto lang_path = lang_folder.combine_file(setting.language + u8".po"s);
 		tt.load_lang(lang_path);
 	}
 
@@ -3679,6 +3654,7 @@ bool app_frame::init(const std::u8string_view command_line_text)
 
 	ui::edit_styles edit_styles;
 	edit_styles.rounded_corners = true;
+	edit_styles.horizontal_scroll = true;
 	edit_styles.bg_clr = ui::style::color::toolbar_background;
 	edit_styles.select_all_on_focus = true;
 
@@ -3693,7 +3669,7 @@ bool app_frame::init(const std::u8string_view command_line_text)
 	_search_completes = std::make_shared<search_auto_complete>(_state, _search_edit);
 	_bubble = _app_frame->create_bubble();
 	_state.view_mode(view_type::items);
-	_threads.start([&q = work_task_queue] { start_worker(q, u8"work"); });
+	_threads.start([&q = work_task_queue] { start_worker(q, u8"work"sv); });
 
 	open_default_folder();
 	invalidate_view(view_invalid::address);
@@ -3896,7 +3872,7 @@ void app_frame::system_event(const ui::os_event_type ost)
 
 void app_frame::final_exit()
 {
-	df::log(u8"main", u8"exit");
+	df::log(u8"main"sv, u8"exit"sv);
 	df::close_log();
 }
 
@@ -3920,16 +3896,16 @@ void app_frame::crash(const df::file_path dump_file_path)
 
 		if (setting.send_crash_dumps)
 		{
-			df::log(__FUNCTION__, u8"*** CRASH ***");
+			df::log(__FUNCTION__, u8"*** CRASH ***"sv);
 
 			if (!df::last_loaded_path.is_empty())
 			{
-				df::log(__FUNCTION__, str::format(u8"Last file type opened: {}", df::last_loaded_path.extension()));
+				df::log(__FUNCTION__, str::format(u8"Last file type opened: {}"sv, df::last_loaded_path.extension()));
 			}
 
 			if (!str::is_empty(df::rendering_func))
 			{
-				df::log(__FUNCTION__, str::format(u8"Rendering function: {}", str::utf8_cast(df::rendering_func)));
+				df::log(__FUNCTION__, str::format(u8"Rendering function: {}"sv, str::utf8_cast(df::rendering_func)));
 			}
 
 			const auto log_file_path = df::close_log();
@@ -3939,7 +3915,7 @@ void app_frame::crash(const df::file_path dump_file_path)
 			const auto now = platform::now();
 			const auto date = now.date();
 
-			const auto name = str::format(u8"Diffractor-{}-{}-{:04}{:02}{:02}-{:02}{:02}{:02}.dmp",
+			const auto name = str::format(u8"Diffractor-{}-{}-{:04}{:02}{:02}-{:02}{:02}{:02}.dmp"sv,
 				s_app_version, g_app_build, date.year, date.month, date.day,
 				date.hour, date.minute, date.second);
 
@@ -3957,23 +3933,23 @@ void app_frame::crash(const df::file_path dump_file_path)
 
 			for (const auto& i : calc_app_info(_state.item_index, true))
 			{
-				message << i.first << " " << i.second << std::endl;
+				message << i.first << u8" "sv << i.second << std::endl;
 			}
 
 			platform::web_request req;
 			req.verb = platform::web_request_verb::POST;
-			req.host = u8"diffractor.com";
-			req.path = u8"/crash";
-			req.form_data.emplace_back(u8"message", message.str());
-			//req.form_data.emplace_back(u8"contactname", platform::user_name());
-			//req.form_data.emplace_back(u8"email", setting.buy_email);
-			req.form_data.emplace_back(u8"version", platform::OS());
-			req.form_data.emplace_back(u8"diffractor", s_app_version);
-			req.form_data.emplace_back(u8"build", g_app_build);
-			req.form_data.emplace_back(u8"subject", u8"Diffractor CRASH report");
-			req.form_data.emplace_back(u8"submit", u8"Send Report");
-			req.file_form_data_name = u8"ff";
-			req.file_name = u8"crash.zip";
+			req.host = u8"diffractor.com"sv;
+			req.path = u8"/crash"sv;
+			req.form_data.emplace_back(u8"message"sv, message.str());
+			//req.form_data.emplace_back(u8"contactname"sv, platform::user_name());
+			//req.form_data.emplace_back(u8"email"sv, setting.buy_email);
+			req.form_data.emplace_back(u8"version"sv, platform::OS());
+			req.form_data.emplace_back(u8"diffractor"sv, s_app_version);
+			req.form_data.emplace_back(u8"build"sv, g_app_build);
+			req.form_data.emplace_back(u8"subject"sv, u8"Diffractor CRASH report"sv);
+			req.form_data.emplace_back(u8"submit"sv, u8"Send Report"sv);
+			req.file_form_data_name = u8"ff"sv;
+			req.file_name = u8"crash.zip"sv;
 			req.file_path = crash_zip_path;
 
 			send_request(req);

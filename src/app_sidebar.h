@@ -128,8 +128,8 @@ struct plasma
 		df::assert_true(dims.cx <= _width);
 		df::assert_true(dims.cy <= _height);
 
-		tex->update({_height, _width}, ui::texture_format::RGB, ui::orientation::top_left, _pixels.get(), _stride,
-		            _height * _stride);
+		tex->update({ _height, _width }, ui::texture_format::RGB, ui::orientation::top_left, _pixels.get(), _stride,
+			_height * _stride);
 	}
 
 	bool is_active() const
@@ -158,7 +158,7 @@ static std::u8string format_total_text(const df::count_and_size total, const boo
 	{
 		if (!total.size.is_empty())
 		{
-			result += u8"\n";
+			result += u8"\n"sv;
 			result += prop::format_size(total.size);
 		}
 	}
@@ -386,7 +386,7 @@ public:
 	{
 		if (!str::is_empty(_drive.vol_name))
 		{
-			title_layout.text = str::format(u8"{} ({})", _drive.name, _drive.vol_name);
+			title_layout.text = str::format(u8"{} ({})"sv, _drive.name, _drive.vol_name);
 		}
 		else
 		{
@@ -454,7 +454,7 @@ public:
 			             ui::average(ui::style::color::sidebar_background, ui::style::color::important_background),
 			             draw_clr.a));
 
-		const auto total_text = str::format(u8"{}|{}", prop::format_size(_drive.used),
+		const auto total_text = str::format(u8"{}|{}"sv, prop::format_size(_drive.used),
 		                                    prop::format_size(_drive.capacity));
 
 		if (!str::is_empty(total_text))
@@ -535,10 +535,10 @@ public:
 	{
 		const auto path_text = path.text();
 		if (platform::is_server(path_text) || path.is_unc_path()) return icon_index::network;
-		if (contains(path_text, u8"onedrive") || contains(path_text, tt.folder_onedrive)) return icon_index::cloud;
-		if (contains(path_text, u8"picture") || contains(path_text, tt.folder_picture)) return icon_index::photo;
-		if (contains(path_text, u8"video") || contains(path_text, tt.folder_video)) return icon_index::video;
-		if (contains(path_text, u8"music") || contains(path_text, tt.folder_music)) return icon_index::audio;
+		if (contains(path_text, u8"onedrive"sv) || contains(path_text, tt.folder_onedrive)) return icon_index::cloud;
+		if (contains(path_text, u8"picture"sv) || contains(path_text, tt.folder_picture)) return icon_index::photo;
+		if (contains(path_text, u8"video"sv) || contains(path_text, tt.folder_video)) return icon_index::video;
+		if (contains(path_text, u8"music"sv) || contains(path_text, tt.folder_music)) return icon_index::audio;
 		return icon_index::folder;
 	}
 
@@ -548,7 +548,7 @@ public:
 
 		for (auto folder : s.item_index.index_roots().folders)
 		{
-			auto key = str::format(u8"f:{}", folder);
+			auto key = str::format(u8"f:{}"sv, folder);
 			auto i = create_or_find_item(s, existing, key);
 			i->tooltip_icon = i->icon = calc_folder_icon(folder);
 			i->title_layout.text = folder.name();
@@ -594,7 +594,7 @@ public:
 			if (!title.empty() && !path.empty())
 			{
 				auto search = df::search_t::parse(path);
-				auto item = create_or_find_item(s, existing, u8"s:" + path);
+				auto item = create_or_find_item(s, existing, u8"s:"s + path);
 
 				item->tooltip_icon = item->icon = search.has_selector() ? icon_index::folder : icon_index::search;
 				item->title_layout.text = tt.translate_text(title);
@@ -607,7 +607,7 @@ public:
 			}
 		}
 
-		results.emplace_back(create_item(s, existing, u8"@duplicates", icon_index::compare, tt.duplicates,
+		results.emplace_back(create_item(s, existing, u8"@duplicates"s, icon_index::compare, tt.duplicates,
 		                                 tt.duplicates_tooltip, 0));
 
 		return results;
@@ -668,7 +668,7 @@ public:
 
 			if (!str::is_empty(tag) && !search.is_empty())
 			{
-				auto key = str::format(u8"t:{}", tag);
+				auto key = str::format(u8"t:{}"sv, tag);
 				auto i = create_or_find_item(s, existing, key);
 
 				i->tooltip_icon = icon_index::tag;
@@ -715,13 +715,13 @@ public:
 	std::vector<search_item_ptr> create_ratings(view_state& s, const search_items_by_key_t& existing) const
 	{
 		std::vector<search_item_ptr> results;
-		results.emplace_back(create_rating_item(s, existing, u8"rating:5", 5));
-		results.emplace_back(create_rating_item(s, existing, u8"rating:4", 4));
-		results.emplace_back(create_rating_item(s, existing, u8"rating:3", 3));
-		results.emplace_back(create_rating_item(s, existing, u8"rating:2", 2));
-		results.emplace_back(create_rating_item(s, existing, u8"rating:1", 1));
+		results.emplace_back(create_rating_item(s, existing, u8"rating:5"s, 5));
+		results.emplace_back(create_rating_item(s, existing, u8"rating:4"s, 4));
+		results.emplace_back(create_rating_item(s, existing, u8"rating:3"s, 3));
+		results.emplace_back(create_rating_item(s, existing, u8"rating:2"s, 2));
+		results.emplace_back(create_rating_item(s, existing, u8"rating:1"s, 1));
 
-		results.emplace_back(create_item(s, existing, u8"rating:-1", icon_index::cancel, tt.command_rate_rejected, {},
+		results.emplace_back(create_item(s, existing, u8"rating:-1"s, icon_index::cancel, tt.command_rate_rejected, {},
 		                                 color_rate_rejected));
 		return results;
 	}
@@ -730,28 +730,28 @@ public:
 	{
 		static df::hash_map<std::u8string_view, ui::color32, df::ihash, df::ieq> colors =
 		{
-			{u8"select", color_label_select},
-			{u8"second", color_label_second},
-			{u8"approved", color_label_approved},
-			{u8"review", color_label_review},
-			{u8"to do", color_label_to_do},
+			{u8"select"sv, color_label_select},
+			{u8"second"sv, color_label_second},
+			{u8"approved"sv, color_label_approved},
+			{u8"review"sv, color_label_review},
+			{u8"to do"sv, color_label_to_do},
 		};
 
 		std::vector<search_item_ptr> results;
 
 		auto labels = s.item_index.distinct_labels();
-		labels.emplace_back(u8"select", df::file_group_histogram{});
-		labels.emplace_back(u8"second", df::file_group_histogram{});
-		labels.emplace_back(u8"approved", df::file_group_histogram{});
-		labels.emplace_back(u8"review", df::file_group_histogram{});
-		labels.emplace_back(u8"to do", df::file_group_histogram{});
+		labels.emplace_back(u8"select"sv, df::file_group_histogram{});
+		labels.emplace_back(u8"second"sv, df::file_group_histogram{});
+		labels.emplace_back(u8"approved"sv, df::file_group_histogram{});
+		labels.emplace_back(u8"review"sv, df::file_group_histogram{});
+		labels.emplace_back(u8"to do"sv, df::file_group_histogram{});
 
 		compact_summary(labels);
 
 		for (const auto& lab : labels)
 		{
 			auto label = std::u8string(lab.first);
-			auto key = str::format(u8"l:{}", label);
+			auto key = str::format(u8"l:{}"sv, label);
 			auto search = df::search_t().with(prop::label, label);
 
 			if (!str::is_empty(label) && !search.is_empty())
@@ -817,7 +817,7 @@ public:
 
 	std::u8string format_text() const
 	{
-		return str::format(u8"{} {}%", tt.indexing, calc_indexing_perc(_s.item_index.stats));
+		return str::format(u8"{} {}%"sv, tt.indexing, calc_indexing_perc(_s.item_index.stats));
 	}
 
 	void render(ui::draw_context& dc, const pointi element_offset) const override
@@ -877,7 +877,7 @@ public:
 		double start_rad = 0.0;
 		double end_rad = 0.0;
 		bool focus = false;
-		ui::color32 clr;
+		ui::color32 clr = 0;
 	};
 
 	using file_type_entries_t = std::vector<pie_chart_entry>;
@@ -1221,8 +1221,8 @@ struct sidebar_history_element final : public view_element, public std::enable_s
 	std::array<double, col_count * row_count> dates{};
 	std::array<df::date_counts, col_count * row_count> _counts;
 
-	int _min_val = 0;
-	int _max_val = 0;
+	double _min_val = 0.0;
+	double _max_val = 0.0;
 	int _hover_month = invalid_hover_month;
 	int _current_year = 0;
 	int _current_month = 0;
@@ -1237,8 +1237,8 @@ struct sidebar_history_element final : public view_element, public std::enable_s
 
 	void populate(const df::date_histogram& summary)
 	{
-		_min_val = INT_MAX;
-		_max_val = 0;
+		_min_val = std::numeric_limits<double>::max();
+		_max_val = 0.0;
 		_counts = summary.dates;
 
 		for (auto i = 0u; i < summary.dates.size(); i++)
@@ -1274,7 +1274,7 @@ struct sidebar_history_element final : public view_element, public std::enable_s
 					const auto xx2 = logical_bounds.left + df::mul_div(m + 1, logical_bounds.width(), col_count);
 
 					const auto val = dates[y * 12 + m];
-					const auto scale = std::max(df::round((val - _min_val) * 255 / (_max_val - _min_val)), 5);
+					const auto scale = std::max(df::round((val - _min_val) * 255.0 / (_max_val - _min_val)), 5);
 					const recti cell = {xx1, yy1, xx2, yy2};
 					dc.draw_rect(cell.inflate(-1),
 					             ui::color(ui::lerp(ui::style::color::sidebar_background, dc.colors.foreground, scale),
@@ -1921,7 +1921,7 @@ public:
 				add_elements(f.create_tags(s, existing));
 			}
 
-			df::trace(str::format(u8"Sidebar populate {} elements", item_elements.size()));
+			df::trace(str::format(u8"Sidebar populate {} elements"sv, item_elements.size()));
 
 			s.queue_ui(
 				[t, items = std::move(items), drives = std::move(drives), item_elements = std::move(item_elements)]
@@ -2031,7 +2031,7 @@ public:
 				}
 			}
 
-			df::trace(str::format(u8"Sidebar update {} predictions", update_count));
+			df::trace(str::format(u8"Sidebar update {} predictions"sv, update_count));
 		});
 	}
 
@@ -2104,14 +2104,14 @@ public:
 
 	int prefered_width(ui::measure_context& mc)
 	{
-		const auto extent = mc.measure_text(u8"Documents", ui::style::font_size::dialog,
+		const auto extent = mc.measure_text(u8"Documents"sv, ui::style::font_size::dialog,
 		                                    ui::style::text_style::single_line, 200);
 		return df::mul_div(extent.cx, 5, 2);
 	}
 
 	void focus_changed(bool has_focus, const ui::control_base_ptr& child) override
 	{
-		df::trace(str::format(u8"Sidebar navigation_controls::focus {}", has_focus));
+		df::trace(str::format(u8"Sidebar navigation_controls::focus {}"sv, has_focus));
 
 		_has_focus = has_focus;
 		_frame->invalidate();

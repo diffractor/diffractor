@@ -120,7 +120,7 @@ namespace df
 		str::cached load_and_cache_string(const uint32_t size_in) const
 		{
 			const auto size = std::min(size_in, sixty_four_k);
-			const auto buffer = df::unique_alloc<char8_t>(size + 2);
+			const auto buffer = df::unique_alloc<char8_t>(size + 2_z);
 
 			if (buffer)
 			{
@@ -148,7 +148,7 @@ namespace df
 			const auto delta = static_cast<int>(dataSize) - static_cast<int>(replace);
 
 			const uint64_t buffer_size = sixty_four_k;
-			uint8_t buffer[buffer_size] = {0};
+			const auto buffer = df::unique_alloc<char8_t>(buffer_size);
 
 			if (delta < 0)
 			{
@@ -160,8 +160,9 @@ namespace df
 				{
 					const auto blockSize = std::min(remaining, buffer_size);
 
-					if (!seek_from_begin(pos) || !read(buffer, blockSize) || !seek_from_begin(pos + delta) || !write(
-						buffer, blockSize))
+					if (!seek_from_begin(pos) || !read(buffer.get(), blockSize) || 
+						!seek_from_begin(pos + delta) || 
+						!write(buffer.get(), blockSize))
 					{
 						assert_true(false);
 						return false;
@@ -184,9 +185,9 @@ namespace df
 					const auto block_size = std::min(remaining, buffer_size);
 
 					if (!seek_from_begin(pos - block_size) ||
-						!read(buffer, block_size) ||
+						!read(buffer.get(), block_size) ||
 						!seek_from_begin(pos + delta - block_size) ||
-						!write(buffer, block_size))
+						!write(buffer.get(), block_size))
 					{
 						assert_true(false);
 						return false;

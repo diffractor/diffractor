@@ -52,7 +52,7 @@ HGLOBAL image_to_handle(const file_load_result& loaded)
 
 	if (h == nullptr)
 	{
-		df::log(__FUNCTION__, "GlobalAlloc failed");
+		df::log(__FUNCTION__, "GlobalAlloc failed"sv);
 		throw std::bad_alloc();
 	}
 
@@ -60,7 +60,7 @@ HGLOBAL image_to_handle(const file_load_result& loaded)
 
 	if (buffer_out == nullptr)
 	{
-		df::log(__FUNCTION__, "GlobalLock failed");
+		df::log(__FUNCTION__, "GlobalLock failed"sv);
 		throw std::bad_alloc();
 	}
 
@@ -70,7 +70,7 @@ HGLOBAL image_to_handle(const file_load_result& loaded)
 
 	if (is_valid(s))
 	{
-		const auto stride_out = dimensions.cx * 4;
+		const auto stride_out = dimensions.cx * 4_z;
 		const auto stride_in = s->stride();
 		const auto copy_len = std::min(stride_out, stride_in);
 		const auto* const pixels_in = s->pixels();
@@ -96,25 +96,25 @@ static CLSID wic_encoder_clsid(const std::u8string_view format)
 
 	static const df::hash_map<std::u8string_view, CLSID, df::ihash, df::ieq> extensions
 	{
-		{u8".jpg", GUID_ContainerFormatJpeg},
-		{u8".jpeg", GUID_ContainerFormatJpeg},
-		{u8".jpe", GUID_ContainerFormatJpeg},
-		{u8".png", GUID_ContainerFormatPng},
-		{u8".tiff", GUID_ContainerFormatTiff},
-		{u8".tif", GUID_ContainerFormatTiff},
-		{u8".gif", GUID_ContainerFormatGif},
-		{u8".bmp", GUID_ContainerFormatBmp},
-		{u8".webp", GUID_ContainerFormatWebp},
-		{u8"jpg", GUID_ContainerFormatJpeg},
-		{u8"jpeg", GUID_ContainerFormatJpeg},
-		{u8"jpe", GUID_ContainerFormatJpeg},
-		{u8"png", GUID_ContainerFormatPng},
-		{u8"tiff", GUID_ContainerFormatTiff},
-		{u8"tif", GUID_ContainerFormatTiff},
-		{u8"gif", GUID_ContainerFormatGif},
-		{u8"bmp", GUID_ContainerFormatBmp},
-		{u8"webp", GUID_ContainerFormatWebp},
-		{u8"heic", GUID_ContainerFormatHeif},
+		{u8".jpg"sv, GUID_ContainerFormatJpeg},
+		{u8".jpeg"sv, GUID_ContainerFormatJpeg},
+		{u8".jpe"sv, GUID_ContainerFormatJpeg},
+		{u8".png"sv, GUID_ContainerFormatPng},
+		{u8".tiff"sv, GUID_ContainerFormatTiff},
+		{u8".tif"sv, GUID_ContainerFormatTiff},
+		{u8".gif"sv, GUID_ContainerFormatGif},
+		{u8".bmp"sv, GUID_ContainerFormatBmp},
+		{u8".webp"sv, GUID_ContainerFormatWebp},
+		{u8"jpg"sv, GUID_ContainerFormatJpeg},
+		{u8"jpeg"sv, GUID_ContainerFormatJpeg},
+		{u8"jpe"sv, GUID_ContainerFormatJpeg},
+		{u8"png"sv, GUID_ContainerFormatPng},
+		{u8"tiff"sv, GUID_ContainerFormatTiff},
+		{u8"tif"sv, GUID_ContainerFormatTiff},
+		{u8"gif"sv, GUID_ContainerFormatGif},
+		{u8"bmp"sv, GUID_ContainerFormatBmp},
+		{u8"webp"sv, GUID_ContainerFormatWebp},
+		{u8"heic"sv, GUID_ContainerFormatHeif},
 	};
 
 	const auto found = extensions.find(format.substr(df::find_ext(format)));
@@ -149,7 +149,7 @@ platform::file_op_result save_bitmap_info(const df::folder_path save_path, const
 	{
 		auto i = 2;
 		const auto folder = save_path;
-		const auto* const ext = as_png ? u8"png" : u8"jpg";
+		const auto ext = as_png ? u8"png"sv : u8"jpg"sv;
 
 		df::file_path path(folder, name, ext);
 		const auto encoder_format = wic_encoder_clsid(ext);
@@ -157,7 +157,7 @@ platform::file_op_result save_bitmap_info(const df::folder_path save_path, const
 
 		while (path.exists() && i < max_file_name)
 		{
-			path = df::file_path(folder, str::format(u8"{}{}", name, i++), ext);
+			path = df::file_path(folder, str::format(u8"{}{}"sv, name, i++), ext);
 		}
 
 		if (i < max_file_name)
@@ -396,9 +396,9 @@ ui::const_surface_ptr platform::create_segoe_md2_icon(const wchar_t ch)
 					rc.Height = cxy;
 
 					hr = pConverter->CopyPixels(&rc,
-					                            surface_result->stride(),
-					                            surface_result->size(),
-					                            surface_result->pixels());
+						static_cast<uint32_t>(surface_result->stride()),
+						static_cast<uint32_t>(surface_result->size()),
+					    surface_result->pixels());
 				}
 			}
 
@@ -538,8 +538,8 @@ ui::surface_ptr platform::image_to_surface(const df::cspan image_buffer_in, cons
 					rc.Height = uiHeight;
 
 					hr = pSource->CopyPixels(&rc,
-					                         surface_result->stride(),
-					                         surface_result->size(),
+					                         static_cast<uint32_t>(surface_result->stride()),
+					                         static_cast<uint32_t>(surface_result->size()),
 					                         surface_result->pixels());
 				}
 				else

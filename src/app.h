@@ -18,7 +18,7 @@ class items_view;
 class edit_view;
 class media_view;
 
-int media_volumes[];
+constexpr std::array media_volumes = { 999, 777, 555, 333, 0 };
 icon_index volumes_icons[];
 
 std::vector<std::pair<std::u8string_view, std::u8string>> calc_app_info(const index_state& index, bool include_state);
@@ -198,7 +198,7 @@ public:
 
 	void focus_changed(bool has_focus, const ui::control_base_ptr& child) override
 	{
-		df::trace(str::format(u8"render_window::focus {}", has_focus));
+		df::trace(str::format(u8"render_window::focus {}"sv, has_focus));
 		_view->focus(has_focus);
 		_frame->invalidate();
 	}
@@ -282,7 +282,7 @@ public:
 							platform::drop_effect::copy);
 
 						update_status(is_copy ? tt.menu_copy : tt.menu_move,
-						              format(u8"{}\n{}\n{}", desc.first_name, tt.copy_to_join, dest_path.text()));
+						              format(u8"{}\n{}\n{}"sv, desc.first_name, tt.copy_to_join, dest_path.text()));
 
 						result = is_copy ? platform::drop_effect::copy : platform::drop_effect::move;
 					}
@@ -335,7 +335,7 @@ public:
 					}
 					else if (data.has_bitmap())
 					{
-						const auto save_result = data.save_bitmap(_state.save_path(), u8"dropped", false);
+						const auto save_result = data.save_bitmap(_state.save_path(), u8"dropped"sv, false);
 
 						if (save_result.success())
 						{
@@ -545,7 +545,7 @@ public:
 	bool update_toolbar_text(commands cc, const std::u8string& text);
 	void update_button_state(bool resize);
 	void update_address() const;
-	void toggle_volume(bool down, bool can_wrap);
+	void toggle_volume();
 	icon_index sound_icon() const;
 	void def_command(commands id, command_group group, icon_index icon, std::u8string_view text,
 	                 std::u8string_view tooltip = {});

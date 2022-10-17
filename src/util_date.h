@@ -174,13 +174,13 @@ namespace df
 		std::u8string to_iptc_date() const
 		{
 			const auto st = date();
-			return str::format(u8"{:04}{:02}{:02}", st.year, st.month, st.day);
+			return str::format(u8"{:04}{:02}{:02}"sv, st.year, st.month, st.day);
 		}
 
 		std::u8string to_polish_date() const
 		{
 			const auto st = date();
-			return str::format(u8"{:04}-{:02}-{:02}", st.year, st.month, st.day);
+			return str::format(u8"{:04}-{:02}-{:02}"sv, st.year, st.month, st.day);
 		}
 
 		std::u8string to_xmp_date() const;

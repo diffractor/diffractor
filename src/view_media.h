@@ -41,7 +41,7 @@ public:
 
 	~media_view() override
 	{
-		df::log(__FUNCTION__, "destruct");
+		df::log(__FUNCTION__, "destruct"sv);
 	}
 
 	recti calc_media_bounds() const

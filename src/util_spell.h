@@ -14,8 +14,9 @@ class Hunspell;
 class spell_check
 {
 private:
-	std::unique_ptr<Hunspell> _hunspell;
-	mutable platform::mutex _mutex;
+	mutable platform::mutex _rw;
+
+	_Guarded_by_(_rw) std::unique_ptr<Hunspell> _hunspell;
 	df::file_path _custom_dic_path;
 	df::folder_path _dictionaries_folder;
 

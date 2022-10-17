@@ -171,7 +171,7 @@ public:
 			return S_OK;
 		}
 
-		df::log(__FUNCTION__, str::format(u8"E_NOINTERFACE {}", format_guid(riid)));
+		df::log(__FUNCTION__, str::format(u8"E_NOINTERFACE {}"sv, format_guid(riid)));
 		*ppvObject = nullptr;
 		return E_NOINTERFACE;
 	}
@@ -248,7 +248,7 @@ public:
 			return S_OK;
 		}
 
-		df::log(__FUNCTION__, str::format(u8"E_NOINTERFACE {}", format_guid(riid)));
+		df::log(__FUNCTION__, str::format(u8"E_NOINTERFACE {}"sv, format_guid(riid)));
 
 		*ppvObject = nullptr;
 		return E_NOINTERFACE;
@@ -287,7 +287,7 @@ public:
 				&font_loader,
 				&current);
 
-			df::log(__FUNCTION__, str::format(u8"CreateCustomFontFileReference {}", hr));
+			df::log(__FUNCTION__, str::format(u8"CreateCustomFontFileReference {}"sv, hr));
 
 			if (SUCCEEDED(hr))
 			{
@@ -326,7 +326,7 @@ public:
 			return S_OK;
 		}
 
-		df::log(__FUNCTION__, str::format(u8"E_NOINTERFACE {}", format_guid(riid)));
+		df::log(__FUNCTION__, str::format(u8"E_NOINTERFACE {}"sv, format_guid(riid)));
 		*ppvObject = nullptr;
 		return E_NOINTERFACE;
 	}
@@ -400,11 +400,11 @@ static font_renderer_ptr create_font_renderer(IDWriteFactory* dwrite, IDWriteFon
 
 	if (SUCCEEDED(hr))
 	{
-		df::log(__FUNCTION__, str::format(u8"Created font {}", str::utf16_to_utf8(font_name)));
+		df::log(__FUNCTION__, str::format(u8"Created font {}"sv, str::utf16_to_utf8(font_name)));
 		return std::make_shared<font_renderer>(dwrite, font_face, text_format, font_height);
 	}
 
-	df::log(__FUNCTION__, str::format(u8"Failed to create font {}", str::utf16_to_utf8(font_name)));
+	df::log(__FUNCTION__, str::format(u8"Failed to create font {}"sv, str::utf16_to_utf8(font_name)));
 
 	return nullptr;
 }
@@ -427,7 +427,7 @@ font_renderer_ptr factories::create_icon_font_face(const int font_height)
 	}
 	else
 	{
-		df::log(__FUNCTION__, str::format(u8"CreateCustomFontCollection failed {:x}", hr));
+		df::log(__FUNCTION__, str::format(u8"CreateCustomFontCollection failed {:x}"sv, hr));
 	}
 
 	if (!result)
@@ -454,9 +454,9 @@ void factories::register_fonts()
 	{
 		auto hr = dwrite->RegisterFontFileLoader(&font_loader);
 		df::assert_true(SUCCEEDED(hr));
-		df::log(__FUNCTION__, str::format(u8"RegisterFontFileLoader {:x}", hr));
+		df::log(__FUNCTION__, str::format(u8"RegisterFontFileLoader {:x}"sv, hr));
 		hr = dwrite->RegisterFontCollectionLoader(&font_collection_loader);
-		df::log(__FUNCTION__, str::format(u8"RegisterFontCollectionLoader {:x}", hr));
+		df::log(__FUNCTION__, str::format(u8"RegisterFontCollectionLoader {:x}"sv, hr));
 		df::assert_true(SUCCEEDED(hr));
 	}
 }

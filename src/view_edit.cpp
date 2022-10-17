@@ -44,8 +44,8 @@ public:
 		_changed(std::move(changed))
 	{
 		ui::edit_styles style;
-		style.xES_NUMBER = true;
-		style.xES_CENTER = true;
+		style.number = true;
+		style.align_center = true;
 		_edit = h->create_edit(style, {}, [this](const std::u8string_view text) { edit_change(text); });
 		_slider = h->create_slider(-Range, Range,
 		                           [this](int pos, bool is_tracking) { slider_change(pos, is_tracking); });
@@ -125,7 +125,7 @@ public:
 	void update_edit()
 	{
 		const auto actual = _edit->window_text();
-		const auto expected = str::format(u8"{:.2}", _val);
+		const auto expected = str::format(u8"{:.2}"sv, _val);
 
 		if (actual.empty() || actual != expected)
 		{
@@ -341,8 +341,8 @@ public:
 	rating_bar_control(const ui::control_frame_ptr& owner, std::u8string_view label, int& v) : _label(label), _val(v)
 	{
 		ui::edit_styles style;
-		style.xES_NUMBER = true;
-		style.xES_CENTER = true;
+		style.number = true;
+		style.align_center = true;
 		_edit = owner->create_edit(style, {}, [this](const std::u8string_view text) { edit_change(text); });
 		_stars = std::make_shared<edit_rating_control>(_edit);
 		_stars->init(owner);
@@ -623,7 +623,7 @@ bool select_path(df::file_path& path)
 {
 	if (!files::can_save(path))
 	{
-		path = path.extension(u8".jpg");
+		path = path.extension(u8".jpg"sv);
 	}
 
 	return platform::prompt_for_save_path(path);
@@ -632,7 +632,7 @@ bool select_path(df::file_path& path)
 std::u8string format_invalid_name_message(const std::u8string_view name)
 {
 	const auto name_error = str::format(tt.error_invalid_path_fmt, name);
-	return str::format(u8"{}\n{} \\ / : * ? \" < > |", name_error, tt.error_invalid_path);
+	return str::format(u8"{}\n{} \\ / : * ? \" < > |"sv, name_error, tt.error_invalid_path);
 }
 
 bool edit_view::check_path(df::file_path& path, const ui::control_frame_ptr& owner)
@@ -664,7 +664,7 @@ bool edit_view::check_path(df::file_path& path, const ui::control_frame_ptr& own
 
 			if (result == ui::close_result::ok)
 			{
-				path = path.extension(u8".jpg");
+				path = path.extension(u8".jpg"sv);
 			}
 			else
 			{
@@ -872,7 +872,7 @@ void edit_view::save_as()
 
 	while (path.exists())
 	{
-		auto name = std::u8string(path.file_name_without_extension()) + u8"-edit";
+		auto name = std::u8string(path.file_name_without_extension()) + u8"-edit"s;
 		path = df::file_path(path.folder(), name, path.extension());
 	}
 
@@ -991,8 +991,8 @@ void edit_view::changed()
 static std::u8string fix_crlf(const std::u8string_view s)
 {
 	std::u8string result;
-	result = str::replace(s, u8"\r\n", u8"\n");
-	result = str::replace(result, u8"\n", u8"\r\n");
+	result = str::replace(s, u8"\r\n"sv, u8"\n"sv);
+	result = str::replace(result, u8"\n"sv, u8"\r\n"sv);
 	return result;
 }
 
@@ -1560,13 +1560,13 @@ void edit_view::render(ui::draw_context& dc, view_controller_ptr controller)
 		const auto text_x = (bounding.left + bounding.right - text_size.cx) / 2;
 		const recti draw_text_rect(text_x, bounding.top - text_size.cy, text_x + text_size.cx, bounding.top);
 
-		const auto text_dims = str::format(u8"{}x{}", df::round(actual_size.Width), df::round(actual_size.Height));
+		const auto text_dims = str::format(u8"{}x{}"sv, df::round(actual_size.Width), df::round(actual_size.Height));
 		dc.draw_text(text_dims, draw_text_rect, ui::style::font_size::dialog, ui::style::text_style::single_line_center,
 		             ui::color(dc.colors.foreground, alpha), {});
 
 		if (setting.show_debug_info)
 		{
-			const auto text_degs = str::print(u8"%3.3f degrees", selection_angle);
+			const auto text_degs = str::print(u8"%3.3f degrees"sv, selection_angle);
 			dc.draw_text(text_degs, crop_bounding.round().inflate(100), ui::style::font_size::title,
 			             ui::style::text_style::single_line_center,
 			             ui::color(ui::style::color::warning_background, alpha), {});

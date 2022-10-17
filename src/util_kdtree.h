@@ -63,7 +63,7 @@ private:
 		{
 			if (n <= MAX_PTS_PER_NODE)
 			{
-				_num_points = n;
+				_num_points = static_cast<int>(n);
 				_offset = offset;
 				return;
 			}

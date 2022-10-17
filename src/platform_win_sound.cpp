@@ -123,7 +123,7 @@ private:
 	{
 		auto* const map = std::bit_cast<device_map*>(lpContext);
 		const auto id = lpGUID == nullptr ? GUID_NULL : *lpGUID;
-		const auto name = str::cache(lpszDesc == nullptr ? L"Default" : lpszDesc);
+		const auto name = str::cache(lpszDesc == nullptr ? L"Default"sv : lpszDesc);
 
 		map->emplace_back(id, name);
 		return TRUE;
@@ -140,19 +140,19 @@ private:
 class wasapi_sound : public av_audio_device
 {
 private:
-	mutable platform::mutex _mutex;
-	device_map _devices;
+	mutable platform::mutex _rw;
+	_Guarded_by_(_rw) device_map _devices;
 
-	ComPtr<IMMDevice> _device;
-	ComPtr<IAudioClient> _audio;
-	ComPtr<IAudioRenderClient> _render;
-	ComPtr<ISimpleAudioVolume> _sav;
-	ComPtr<IAudioClock> _clock;
+	_Guarded_by_(_rw) ComPtr<IMMDevice> _device;
+	_Guarded_by_(_rw) ComPtr<IAudioClient> _audio;
+	_Guarded_by_(_rw) ComPtr<IAudioRenderClient> _render;
+	_Guarded_by_(_rw) ComPtr<ISimpleAudioVolume> _sav;
+	_Guarded_by_(_rw) ComPtr<IAudioClock> _clock;
 
 	//ComPtr<IAudioRenderClient> _render;
 	//ComPtr<IMMDeviceEnumerator> _enumerator;
 
-	WAVEFORMATEX* _pwfx = nullptr;
+	_Guarded_by_(_rw) WAVEFORMATEX* _pwfx = nullptr;
 	bool _device_lost = false;
 	bool _playing = false;
 	double _vol = -1;
@@ -160,7 +160,7 @@ private:
 public:
 	wasapi_sound()
 	{
-		platform::exclusive_lock lock(_mutex);
+		//platform::exclusive_lock lock(_rw);
 		//data_event.create(false, false);
 	}
 
@@ -171,7 +171,7 @@ public:
 
 	void clear()
 	{
-		platform::exclusive_lock lock(_mutex);
+		platform::exclusive_lock lock(_rw);
 
 		if (_audio)
 		{
@@ -272,7 +272,7 @@ public:
 	{
 		clear();
 
-		platform::exclusive_lock lock(_mutex);
+		platform::exclusive_lock lock(_rw);
 		bool success = false;
 		//LPCGUID p_device_id = nullptr;
 		//GUID device_guid;
@@ -320,7 +320,7 @@ public:
 
 	audio_info_t format() override
 	{
-		platform::exclusive_lock lock(_mutex);
+		platform::exclusive_lock lock(_rw);
 		audio_info_t result;
 
 		if (_pwfx)
@@ -335,7 +335,7 @@ public:
 
 	double time() const override
 	{
-		platform::shared_lock lock(_mutex);
+		platform::shared_lock lock(_rw);
 
 		if (_clock)
 		{
@@ -359,7 +359,7 @@ public:
 
 	void stop() override
 	{
-		platform::shared_lock lock(_mutex);
+		platform::shared_lock lock(_rw);
 
 		if (_audio)
 		{
@@ -375,7 +375,7 @@ public:
 
 	void reset() override
 	{
-		platform::shared_lock lock(_mutex);
+		platform::shared_lock lock(_rw);
 
 		if (_audio)
 		{
@@ -387,7 +387,7 @@ public:
 
 	void start() override
 	{
-		platform::shared_lock lock(_mutex);
+		platform::shared_lock lock(_rw);
 
 		if (_audio)
 		{
@@ -411,7 +411,7 @@ public:
 
 	void write(audio_buffer& buffer) override
 	{
-		platform::shared_lock lock(_mutex);
+		platform::shared_lock lock(_rw);
 
 		if (_render)
 		{
@@ -529,7 +529,7 @@ std::vector<sound_device> list_audio_playback_devices()
 			{
 				if (count == 0)
 				{
-					printf("No endpoints found.\n");
+					df::log(u8"list_audio_playback_devices"sv, u8"No sound endpoints found."sv);
 				}
 
 				// Each loop prints the name of an endpoint device.
@@ -559,7 +559,7 @@ std::vector<sound_device> list_audio_playback_devices()
 
 								if (SUCCEEDED(hr))
 								{									
-									d.name = str::is_empty(varName.v.pwszVal) ? str::format(u8"Audio device {}", static_cast<int>(i)) : str::utf16_to_utf8(varName.v.pwszVal);
+									d.name = str::is_empty(varName.v.pwszVal) ? str::format(u8"Audio device {}"sv, static_cast<int>(i)) : str::utf16_to_utf8(varName.v.pwszVal);
 								}
 							}
 

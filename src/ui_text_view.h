@@ -44,7 +44,7 @@ public:
 			else if (std::isspace(c)) { c = ' '; }
 			//else if (std::ispunct(c)) {}
 			//else if (std::isalnum(c)) {}
-			//else { c = "."; };
+			//else { c = "."sv; };
 
 			result[i] = c;
 		}
@@ -124,7 +124,7 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		const auto extent = mc.measure_text("00000000", _font, ui::style::text_style::single_line, 200);
+		const auto extent = mc.measure_text("00000000"sv, _font, ui::style::text_style::single_line, 200);
 
 		_char_width = extent.cx / 8;
 		_line_height = extent.cy + padding;

@@ -21,9 +21,9 @@ static property_map all_props;
 int prop::exp_round(const double d)
 {
 	const auto n = df::round(d);
-	if (n >= 950) return df::round64(n, 1000) * 1000;
-	if (n >= 95) return df::round64(n, 100) * 100;
-	if (n >= 5) return df::round64(n, 10) * 10;
+	if (n >= 950ull) return df::round64(n, 1000ull) * 1000ull;
+	if (n >= 95ull) return df::round64(n, 100ull) * 100ull;
+	if (n >= 5ull) return df::round64(n, 10ull) * 10ull;
 	return n;
 }
 
@@ -76,153 +76,153 @@ std::u8string prop::key::text() const
 	return tt.translate_text(std::u8string(text_key), u8"propertry"sv);
 }
 
-static std::u8string_view prop_name_crc32c = u8"crc32c";
+static std::u8string_view prop_name_crc32c = u8"crc32c"sv;
 
-prop::key prop::album('al', u8"", u8"album", tt.prop_name_album, icon_index::star, data_type::string,
+prop::key prop::album('al', u8""sv, u8"album"sv, tt.prop_name_album, icon_index::star, data_type::string,
                       style::groupable | style::sortable | style::auto_complete, bloom_bits::album);
-prop::key prop::show('sw', u8"", u8"show", tt.prop_name_show, icon_index::star, data_type::string,
+prop::key prop::show('sw', u8""sv, u8"show"sv, tt.prop_name_show, icon_index::star, data_type::string,
                      style::groupable | style::sortable | style::auto_complete, 0);
-prop::key prop::season('ss', u8"", u8"season", tt.prop_name_season, icon_index::star, data_type::int32,
+prop::key prop::season('ss', u8""sv, u8"season"sv, tt.prop_name_season, icon_index::star, data_type::int32,
                        style::groupable | style::sortable, 0);
-prop::key prop::episode('ep', u8"", u8"episode", tt.prop_name_episode, icon_index::star, data_type::int_pair,
+prop::key prop::episode('ep', u8""sv, u8"episode"sv, tt.prop_name_episode, icon_index::star, data_type::int_pair,
                         style::groupable | style::sortable, 0);
-prop::key prop::artist('ar', u8"", u8"artist", tt.prop_name_artist, icon_index::person, data_type::string,
+prop::key prop::artist('ar', u8""sv, u8"artist"sv, tt.prop_name_artist, icon_index::person, data_type::string,
                        style::groupable | style::sortable | style::auto_complete, bloom_bits::artist);
-prop::key prop::album_artist('aa', u8"", u8"album.artist", tt.prop_name_albumartist, icon_index::person,
+prop::key prop::album_artist('aa', u8""sv, u8"album.artist"sv, tt.prop_name_albumartist, icon_index::person,
                              data_type::string, style::groupable | style::sortable | style::auto_complete,
                              bloom_bits::artist);
-prop::key prop::audio_codec('ac', u8"", u8"audio.codec", tt.prop_name_audiocodec, icon_index::audio, data_type::string,
+prop::key prop::audio_codec('ac', u8""sv, u8"audio.codec"sv, tt.prop_name_audiocodec, icon_index::audio, data_type::string,
                             style::groupable | style::sortable | style::auto_complete, bloom_bits::codec);
-prop::key prop::bitrate('br', u8"", u8"bitrate", tt.prop_name_bitrate, icon_index::star, data_type::string,
+prop::key prop::bitrate('br', u8""sv, u8"bitrate"sv, tt.prop_name_bitrate, icon_index::star, data_type::string,
                         style::fuzzy_search | style::groupable | style::sortable | style::auto_complete, 0);
-prop::key prop::camera_manufacturer('ca', u8"", u8"camera.manufacturer", tt.prop_name_cameramanufacturer,
+prop::key prop::camera_manufacturer('ca', u8""sv, u8"camera.manufacturer"sv, tt.prop_name_cameramanufacturer,
                                     icon_index::camera, data_type::string,
                                     style::groupable | style::sortable | style::auto_complete, bloom_bits::camera);
-prop::key prop::camera_model('cm', u8"", u8"camera", tt.prop_name_camera, icon_index::camera, data_type::string,
+prop::key prop::camera_model('cm', u8""sv, u8"camera"sv, tt.prop_name_camera, icon_index::camera, data_type::string,
                              style::groupable | style::sortable | style::auto_complete, bloom_bits::camera);
-prop::key prop::audio_channels('ch', u8"", u8"audio.channels", tt.prop_name_channels, icon_index::star,
+prop::key prop::audio_channels('ch', u8""sv, u8"audio.channels"sv, tt.prop_name_channels, icon_index::star,
                                data_type::int32, style::sortable, bloom_bits::audio_codec);
-prop::key prop::audio_sample_rate('sr', u8"", u8"audio.sample.rate", tt.prop_name_samplerate, icon_index::star,
+prop::key prop::audio_sample_rate('sr', u8""sv, u8"audio.sample.rate"sv, tt.prop_name_samplerate, icon_index::star,
                                   data_type::int32, style::groupable | style::sortable | style::auto_complete,
                                   bloom_bits::audio_codec);
-prop::key prop::audio_sample_type('sa', u8"", u8"audio.sample.type", tt.prop_name_sampletype, icon_index::star,
+prop::key prop::audio_sample_type('sa', u8""sv, u8"audio.sample.type"sv, tt.prop_name_sampletype, icon_index::star,
                                   data_type::int32, style::groupable | style::sortable | style::auto_complete,
                                   bloom_bits::audio_codec);
-prop::key prop::location_place('ci', u8"", u8"place", tt.prop_name_place, icon_index::world, data_type::string,
+prop::key prop::location_place('ci', u8""sv, u8"place"sv, tt.prop_name_place, icon_index::world, data_type::string,
                                style::groupable | style::sortable | style::auto_complete, bloom_bits::location);
-prop::key prop::comment('ct', u8"", u8"comment", tt.prop_name_comment, icon_index::star, data_type::string2,
+prop::key prop::comment('ct', u8""sv, u8"comment"sv, tt.prop_name_comment, icon_index::star, data_type::string2,
                         style::none, bloom_bits::text);
-prop::key prop::description('de', u8"", u8"description", tt.prop_name_description, icon_index::star, data_type::string2,
+prop::key prop::description('de', u8""sv, u8"description"sv, tt.prop_name_description, icon_index::star, data_type::string2,
                             style::none, bloom_bits::text);
-prop::key prop::composer('co', u8"", u8"composer", tt.prop_name_composer, icon_index::star, data_type::string,
+prop::key prop::composer('co', u8""sv, u8"composer"sv, tt.prop_name_composer, icon_index::star, data_type::string,
                          style::sortable, bloom_bits::artist);
-prop::key prop::copyright_credit('cd', u8"", u8"copyright.credit", tt.prop_name_copyrightcredit, icon_index::copyright,
+prop::key prop::copyright_credit('cd', u8""sv, u8"copyright.credit"sv, tt.prop_name_copyrightcredit, icon_index::copyright,
                                  data_type::string, style::groupable | style::sortable | style::auto_complete,
                                  bloom_bits::credit);
-prop::key prop::copyright_source('cs', u8"", u8"copyright.source", tt.prop_name_copyrightsource, icon_index::copyright,
+prop::key prop::copyright_source('cs', u8""sv, u8"copyright.source"sv, tt.prop_name_copyrightsource, icon_index::copyright,
                                  data_type::string, style::groupable | style::sortable | style::auto_complete,
                                  bloom_bits::credit);
-prop::key prop::copyright_creator('cc', u8"", u8"copyright.creator", tt.prop_name_copyrightcreator,
+prop::key prop::copyright_creator('cc', u8""sv, u8"copyright.creator"sv, tt.prop_name_copyrightcreator,
                                   icon_index::copyright, data_type::string,
                                   style::groupable | style::sortable | style::auto_complete, bloom_bits::credit);
-prop::key prop::copyright_notice('cp', u8"", u8"copyright.notice", tt.prop_name_copyrightnotice, icon_index::copyright,
+prop::key prop::copyright_notice('cp', u8""sv, u8"copyright.notice"sv, tt.prop_name_copyrightnotice, icon_index::copyright,
                                  data_type::string, style::groupable | style::sortable | style::auto_complete,
                                  bloom_bits::credit);
-prop::key prop::copyright_url('cw', u8"", u8"copyright.url", tt.prop_name_copyrighturl, icon_index::copyright,
+prop::key prop::copyright_url('cw', u8""sv, u8"copyright.url"sv, tt.prop_name_copyrighturl, icon_index::copyright,
                               data_type::string, style::groupable | style::sortable | style::auto_complete,
                               bloom_bits::credit);
-prop::key prop::location_country('cn', u8"", u8"country", tt.prop_name_country, icon_index::world, data_type::string,
+prop::key prop::location_country('cn', u8""sv, u8"country"sv, tt.prop_name_country, icon_index::world, data_type::string,
                                  style::groupable | style::sortable | style::auto_complete, bloom_bits::location);
-prop::key prop::created_exif('c', u8"", u8"created.exif", tt.prop_name_createdexif, icon_index::time, data_type::date,
+prop::key prop::created_exif('c', u8""sv, u8"created.exif"sv, tt.prop_name_createdexif, icon_index::time, data_type::date,
                              style::groupable | style::sortable | style::auto_complete, bloom_bits::created);
-prop::key prop::created_digitized('cz', u8"", u8"digitized", tt.prop_name_digitized, icon_index::time, data_type::date,
+prop::key prop::created_digitized('cz', u8""sv, u8"digitized"sv, tt.prop_name_digitized, icon_index::time, data_type::date,
                                   style::groupable | style::sortable | style::auto_complete, bloom_bits::created);
-prop::key prop::created_utc('cu', u8"", u8"created", tt.prop_name_created, icon_index::time, data_type::date,
+prop::key prop::created_utc('cu', u8""sv, u8"created"sv, tt.prop_name_created, icon_index::time, data_type::date,
                             style::groupable | style::sortable | style::auto_complete, bloom_bits::created);
-prop::key prop::disk_num('dk', u8"", u8"disk", tt.prop_name_disk, icon_index::star, data_type::int_pair,
+prop::key prop::disk_num('dk', u8""sv, u8"disk"sv, tt.prop_name_disk, icon_index::star, data_type::int_pair,
                          style::groupable | style::sortable, 0);
-prop::key prop::dimensions('di', u8"", u8"dimensions", tt.prop_name_dimensions, icon_index::star, data_type::int_pair,
+prop::key prop::dimensions('di', u8""sv, u8"dimensions"sv, tt.prop_name_dimensions, icon_index::star, data_type::int_pair,
                            style::groupable | style::sortable, 0);
-prop::key prop::duration('du', u8"", u8"duration", tt.prop_name_duration, icon_index::time, data_type::int32,
+prop::key prop::duration('du', u8""sv, u8"duration"sv, tt.prop_name_duration, icon_index::time, data_type::int32,
                          style::fuzzy_search | style::groupable | style::sortable | style::auto_complete,
                          bloom_bits::duration);
-prop::key prop::encoder('en', u8"", u8"encoder", tt.prop_name_encoder, icon_index::star, data_type::string,
+prop::key prop::encoder('en', u8""sv, u8"encoder"sv, tt.prop_name_encoder, icon_index::star, data_type::string,
                         style::groupable | style::sortable | style::auto_complete, 0);
-prop::key prop::encoding_tool('es', u8"", u8"encoding.tool", tt.prop_name_encodingtool, icon_index::star,
+prop::key prop::encoding_tool('es', u8""sv, u8"encoding.tool"sv, tt.prop_name_encodingtool, icon_index::star,
                               data_type::string, style::groupable | style::sortable | style::auto_complete, 0);
-prop::key prop::exposure_time('et', u8"", u8"exposure", tt.prop_name_exposure, icon_index::camera, data_type::float32,
+prop::key prop::exposure_time('et', u8""sv, u8"exposure"sv, tt.prop_name_exposure, icon_index::camera, data_type::float32,
                               style::fuzzy_search | style::groupable | style::sortable | style::auto_complete,
                               bloom_bits::camera_settings);
-prop::key prop::f_number('fs', u8"", u8"fnumber", tt.prop_name_fnumber, icon_index::star, data_type::float32,
+prop::key prop::f_number('fs', u8""sv, u8"fnumber"sv, tt.prop_name_fnumber, icon_index::star, data_type::float32,
                          style::groupable | style::sortable | style::auto_complete, bloom_bits::camera_settings);
-prop::key prop::focal_length('fl', u8"", u8"focal.length", tt.prop_name_focallength, icon_index::star,
+prop::key prop::focal_length('fl', u8""sv, u8"focal.length"sv, tt.prop_name_focallength, icon_index::star,
                              data_type::float32,
                              style::fuzzy_search | style::groupable | style::sortable | style::auto_complete,
                              bloom_bits::camera_settings);
-prop::key prop::focal_length_35mm_equivalent('f3', u8"", u8"focal.length.35mm.equivalent", tt.prop_name_35mmequivalent,
+prop::key prop::focal_length_35mm_equivalent('f3', u8""sv, u8"focal.length.35mm.equivalent"sv, tt.prop_name_35mmequivalent,
                                              icon_index::star, data_type::int32, style::none,
                                              bloom_bits::camera_settings);
-prop::key prop::pixel_format('pf', u8"", u8"pixel.format", tt.prop_name_pixelformat, icon_index::star,
+prop::key prop::pixel_format('pf', u8""sv, u8"pixel.format"sv, tt.prop_name_pixelformat, icon_index::star,
                              data_type::string, style::groupable | style::sortable | style::auto_complete, 0);
-prop::key prop::genre('gn', u8"", u8"genre", tt.prop_name_genre, icon_index::star, data_type::string,
+prop::key prop::genre('gn', u8""sv, u8"genre"sv, tt.prop_name_genre, icon_index::star, data_type::string,
                       style::groupable | style::sortable | style::auto_complete, bloom_bits::genre);
-prop::key prop::iso_speed('is', u8"", u8"iso", tt.prop_name_iso, icon_index::star, data_type::int32,
+prop::key prop::iso_speed('is', u8""sv, u8"iso"sv, tt.prop_name_iso, icon_index::star, data_type::int32,
                           style::groupable | style::sortable | style::auto_complete, bloom_bits::camera_settings);
-prop::key prop::latitude('lx', u8"", u8"latitude", tt.prop_name_latitude, icon_index::world, data_type::float32,
+prop::key prop::latitude('lx', u8""sv, u8"latitude"sv, tt.prop_name_latitude, icon_index::world, data_type::float32,
                          style::none, bloom_bits::location);
-prop::key prop::lens('lm', u8"", u8"lens", tt.prop_name_lens, icon_index::camera, data_type::string,
+prop::key prop::lens('lm', u8""sv, u8"lens"sv, tt.prop_name_lens, icon_index::camera, data_type::string,
                      style::groupable | style::sortable | style::auto_complete, bloom_bits::camera);
-prop::key prop::longitude('ly', u8"", u8"longitude", tt.prop_name_longitude, icon_index::world, data_type::float32,
+prop::key prop::longitude('ly', u8""sv, u8"longitude"sv, tt.prop_name_longitude, icon_index::world, data_type::float32,
                           style::none, bloom_bits::location);
-prop::key prop::media_category('mc', u8"", u8"media.category", tt.prop_name_mediacategory, icon_index::star,
+prop::key prop::media_category('mc', u8""sv, u8"media.category"sv, tt.prop_name_mediacategory, icon_index::star,
                                data_type::int32, style::groupable | style::sortable | style::auto_complete, 0);
-prop::key prop::megapixels('mp', u8"", u8"megapixels", tt.prop_name_megapixels, icon_index::star, data_type::float32,
+prop::key prop::megapixels('mp', u8""sv, u8"megapixels"sv, tt.prop_name_megapixels, icon_index::star, data_type::float32,
                            style::fuzzy_search | style::groupable | style::sortable | style::auto_complete, 0);
-prop::key prop::modified('m', u8"", u8"modified", tt.prop_name_modified, icon_index::time, data_type::date,
+prop::key prop::modified('m', u8""sv, u8"modified"sv, tt.prop_name_modified, icon_index::time, data_type::date,
                          style::groupable | style::sortable | style::auto_complete, 0);
-prop::key prop::null(0, u8"", u8"null", tt.prop_name_null, icon_index::star, data_type::int32, style::none, 0);
-prop::key prop::orientation('or', u8"", u8"orientation", tt.prop_name_orientation, icon_index::star, data_type::int32,
+prop::key prop::null(0, u8""sv, u8"null"sv, tt.prop_name_null, icon_index::star, data_type::int32, style::none, 0);
+prop::key prop::orientation('or', u8""sv, u8"orientation"sv, tt.prop_name_orientation, icon_index::star, data_type::int32,
                             style::none, bloom_bits::camera_settings);
-prop::key prop::publisher('pb', u8"", u8"publisher", tt.prop_name_publisher, icon_index::star, data_type::string,
+prop::key prop::publisher('pb', u8""sv, u8"publisher"sv, tt.prop_name_publisher, icon_index::star, data_type::string,
                           style::groupable | style::sortable | style::auto_complete, bloom_bits::artist);
-prop::key prop::performer('pm', u8"", u8"performer", tt.prop_name_performer, icon_index::star, data_type::string,
+prop::key prop::performer('pm', u8""sv, u8"performer"sv, tt.prop_name_performer, icon_index::star, data_type::string,
                           style::groupable | style::sortable | style::auto_complete, bloom_bits::artist);
-prop::key prop::rating('rt', u8"", u8"rating", tt.prop_name_rating, icon_index::star, data_type::int32,
+prop::key prop::rating('rt', u8""sv, u8"rating"sv, tt.prop_name_rating, icon_index::star, data_type::int32,
                        style::groupable | style::sortable | style::auto_complete, bloom_bits::rating_label);
-prop::key prop::file_size('s', u8"", u8"size", tt.prop_name_size, icon_index::star, data_type::size,
+prop::key prop::file_size('s', u8""sv, u8"size"sv, tt.prop_name_size, icon_index::star, data_type::size,
                           style::fuzzy_search | style::groupable | style::sortable | style::auto_complete, 0);
-prop::key prop::location_state('st', u8"", u8"state", tt.prop_name_state, icon_index::world, data_type::string,
+prop::key prop::location_state('st', u8""sv, u8"state"sv, tt.prop_name_state, icon_index::world, data_type::string,
                                style::groupable | style::sortable | style::auto_complete, bloom_bits::location);
-prop::key prop::streams('sm', u8"", u8"streams", tt.prop_name_streams, icon_index::star, data_type::int32,
+prop::key prop::streams('sm', u8""sv, u8"streams"sv, tt.prop_name_streams, icon_index::star, data_type::int32,
                         style::groupable | style::sortable, 0);
-prop::key prop::synopsis('sy', u8"", u8"synopsis", tt.prop_name_synopsis, icon_index::star, data_type::string,
+prop::key prop::synopsis('sy', u8""sv, u8"synopsis"sv, tt.prop_name_synopsis, icon_index::star, data_type::string,
                          style::none, bloom_bits::text);
-prop::key prop::tag('tg', u8"", u8"tag", tt.prop_name_tag, icon_index::tag, data_type::string,
+prop::key prop::tag('tg', u8""sv, u8"tag"sv, tt.prop_name_tag, icon_index::tag, data_type::string,
                     style::groupable | style::multi_value | style::auto_complete, bloom_bits::tag);
-prop::key prop::title('tt', u8"", u8"title", tt.prop_name_title, icon_index::star, data_type::string, style::sortable,
+prop::key prop::title('tt', u8""sv, u8"title"sv, tt.prop_name_title, icon_index::star, data_type::string, style::sortable,
                       bloom_bits::text);
-prop::key prop::track_num('tr', u8"", u8"track", tt.prop_name_track, icon_index::star, data_type::int_pair,
+prop::key prop::track_num('tr', u8""sv, u8"track"sv, tt.prop_name_track, icon_index::star, data_type::int_pair,
                           style::sortable, 0);
-prop::key prop::video_codec('vc', u8"", u8"video.codec", tt.prop_name_videocodec, icon_index::video, data_type::string,
+prop::key prop::video_codec('vc', u8""sv, u8"video.codec"sv, tt.prop_name_videocodec, icon_index::video, data_type::string,
                             style::groupable | style::sortable | style::auto_complete, bloom_bits::codec);
-prop::key prop::year('yr', u8"", u8"year", tt.prop_name_year, icon_index::time, data_type::int32,
+prop::key prop::year('yr', u8""sv, u8"year"sv, tt.prop_name_year, icon_index::time, data_type::int32,
                      style::groupable | style::sortable | style::auto_complete, bloom_bits::year);
-prop::key prop::unique_id('id', u8"", u8"id", tt.prop_name_id, icon_index::star, data_type::string2, style::none, 0);
-prop::key prop::file_name('fn', u8"", u8"file.name", tt.prop_name_filename, icon_index::star, data_type::string,
+prop::key prop::unique_id('id', u8""sv, u8"id"sv, tt.prop_name_id, icon_index::star, data_type::string2, style::none, 0);
+prop::key prop::file_name('fn', u8""sv, u8"file.name"sv, tt.prop_name_filename, icon_index::star, data_type::string,
                           style::none, 0);
-prop::key prop::raw_file_name('rf', u8"", u8"raw.file", tt.prop_name_rawfile, icon_index::star, data_type::string,
+prop::key prop::raw_file_name('rf', u8""sv, u8"raw.file"sv, tt.prop_name_rawfile, icon_index::star, data_type::string,
                               style::none, 0);
-prop::key prop::system('se', u8"", u8"system", tt.prop_name_system, icon_index::star, data_type::string, style::none,
+prop::key prop::system('se', u8""sv, u8"system"sv, tt.prop_name_system, icon_index::star, data_type::string, style::none,
                        bloom_bits::game);
-prop::key prop::game('gm', u8"", u8"game", tt.prop_name_game, icon_index::star, data_type::string, style::none,
+prop::key prop::game('gm', u8""sv, u8"game"sv, tt.prop_name_game, icon_index::star, data_type::string, style::none,
                      bloom_bits::game);
 
-prop::key prop::crc32c('cr', u8"", u8"crc32c", prop_name_crc32c, icon_index::star, data_type::int32, style::none,
+prop::key prop::crc32c('cr', u8""sv, u8"crc32c"sv, prop_name_crc32c, icon_index::star, data_type::int32, style::none,
                        bloom_bits::hash);
 
-prop::key prop::label('lb', u8"", u8"label", tt.prop_name_label, icon_index::flag, data_type::string,
+prop::key prop::label('lb', u8""sv, u8"label"sv, tt.prop_name_label, icon_index::flag, data_type::string,
                       style::groupable | style::sortable | style::auto_complete, bloom_bits::rating_label);
-prop::key prop::doc_id('ii', u8"", u8"document.id", tt.prop_name_doc_id, icon_index::star, data_type::int32,
+prop::key prop::doc_id('ii', u8""sv, u8"document.id"sv, tt.prop_name_doc_id, icon_index::star, data_type::int32,
                        style::none, bloom_bits::doc_id);
 
 
@@ -381,7 +381,7 @@ std::vector<prop::prop_scope> prop::search_scopes()
 		return str::icmp(left.scope, right.scope) < 0;
 	});
 
-	result.emplace(result.begin(), u8"any", null);
+	result.emplace(result.begin(), u8"any"s, null);
 
 	return result;
 }
@@ -545,9 +545,9 @@ std::u8string prop::format_exposure(const double d)
 	{
 		if (d < 1.0)
 		{
-			return str::format(u8"1/{}s", df::round(1.0 / d));
+			return str::format(u8"1/{}s"sv, df::round(1.0 / d));
 		}
-		return str::format(u8"{}s", df::round(d));
+		return str::format(u8"{}s"sv, df::round(d));
 	}
 
 	return {};
@@ -582,12 +582,12 @@ std::u8string prop::format_fstop(const double d)
 
 		if (_finite(dd) && dd > 0)
 		{
-			return str::format(u8"f/{:.1}f", dd);
+			return str::format(u8"f/{:.1}f"sv, dd);
 		}
 	}
 	else
 	{
-		return u8"f/0";
+		return u8"f/0"s;
 	}
 
 	return {};
@@ -599,12 +599,12 @@ std::u8string prop::format_focal_length(const double d, int filmEquivalent)
 	{
 		if (filmEquivalent != 0)
 		{
-			return str::format(u8"{:.1}fmm ({}mm film eq)", d, filmEquivalent);
+			return str::format(u8"{:.1}fmm ({}mm film eq)"sv, d, filmEquivalent);
 		}
-		return str::format(d < 1 ? u8"{:.1}fmm" : u8"{:.0}mm", d);
+		return str::format(d < 1 ? u8"{:.1}fmm"sv : u8"{:.0}mm"sv, d);
 	}
 
-	return u8"0mm";
+	return u8"0mm"s;
 }
 
 std::u8string prop::format_rating(const int i)
@@ -616,19 +616,19 @@ std::u8string prop::format_rating(const int i)
 
 std::u8string prop::format_white_balance(const int i)
 {
-	return str::format(u8"{}", i);
+	return str::format(u8"{}"sv, i);
 }
 
 std::u8string prop::format_iso(const int i)
 {
-	return str::format(u8"ISO{}", i);
+	return str::format(u8"ISO{}"sv, i);
 }
 
 std::u8string prop::format_gps(const double d)
 {
 	if (fabs(d - gps_coordinate::invalid_coordinate) > 0.001)
 	{
-		return str::format(u8"{:.5}", d);
+		return str::format(u8"{:.5}"sv, d);
 	}
 
 	return {};
@@ -639,7 +639,7 @@ std::u8string prop::format_gps(const double lat, const double lon)
 	if (lat != static_cast<double>(gps_coordinate::invalid_coordinate) &&
 		lon != static_cast<double>(gps_coordinate::invalid_coordinate))
 	{
-		return str::format(u8"{.5},{.5}", lat, lon);
+		return str::format(u8"{.5},{.5}"sv, lat, lon);
 	}
 
 	return {};
@@ -659,7 +659,7 @@ std::u8string prop::format_four_cc(const uint32_t v)
 
 std::u8string prop::format_streams(const int v)
 {
-	return str::format(u8"{}", v);
+	return str::format(u8"{}"sv, v);
 }
 
 const static uint64_t KB = 1024;
@@ -670,19 +670,19 @@ const static uint64_t TB = GB * 1024;
 
 std::u8string prop::format_bit_rate(const int64_t br)
 {
-	const auto* units = u8"kbit/s";
+	auto units = u8"kbit/s"sv;
 	auto div = KB;
 	auto i = br;
 
 	if (i >= GB)
 	{
 		div = GB;
-		units = u8"Gbit/s";
+		units = u8"Gbit/s"sv;
 	}
 	else if (i >= MB)
 	{
 		div = MB;
-		units = u8"Mbit/s";
+		units = u8"Mbit/s"sv;
 	}
 
 	if (i < KB)
@@ -693,9 +693,7 @@ std::u8string prop::format_bit_rate(const int64_t br)
 	const auto n = static_cast<int>(i / div);
 	const auto r = static_cast<int>(((i * 10) / div) % 10);
 
-	return str::format(u8"{}{}{} {}", n, platform::number_dec_sep(), r, units);
-
-	return {};
+	return str::format(u8"{}{}{} {}"sv, n, platform::number_dec_sep(), r, units);
 }
 
 
@@ -703,27 +701,27 @@ prop::size_rounded prop::round_size(const uint64_t s)
 {
 	size_rounded result;
 
-	result.unit = u8"KB";
-	result.short_unit = u8"K";
+	result.unit = u8"KB"sv;
+	result.short_unit = u8"K"sv;
 	result.div = KB;
 
 	if (s > (TB / 5))
 	{
 		result.div = TB;
-		result.unit = u8"TB";
-		result.short_unit = u8"T";
+		result.unit = u8"TB"sv;
+		result.short_unit = u8"T"sv;
 	}
 	else if (s > (GB / 5))
 	{
 		result.div = GB;
-		result.unit = u8"GB";
-		result.short_unit = u8"G";
+		result.unit = u8"GB"sv;
+		result.short_unit = u8"G"sv;
 	}
 	else if (s > (MB / 5))
 	{
 		result.div = MB;
-		result.unit = u8"MB";
-		result.short_unit = u8"M";
+		result.unit = u8"MB"sv;
+		result.short_unit = u8"M"sv;
 	}
 
 	if (s < KB)
@@ -743,8 +741,8 @@ std::u8string prop::format_size(const df::file_size& s)
 {
 	const auto rounded = round_size(s.to_int64());
 	return rounded.dec == 0
-		       ? str::format(u8"{} {}", rounded.n, rounded.unit)
-		       : str::format(u8"{}{}{} {}", rounded.n, platform::number_dec_sep(), rounded.dec, rounded.unit);
+		       ? str::format(u8"{} {}"sv, rounded.n, rounded.unit)
+		       : str::format(u8"{}{}{} {}"sv, rounded.n, platform::number_dec_sep(), rounded.dec, rounded.unit);
 }
 
 struct magnitude
@@ -835,9 +833,9 @@ std::u8string prop::format_audio_sample_rate(const int v)
 	const auto remainder = (v % 1000) / 100;
 	const auto khz = v / 1000;
 
-	if (v > 1000 && (remainder == 0)) return str::format(u8"{}kHz", khz);
-	if (v > 1000) return str::format(u8"{}{}{}kHz", khz, platform::number_dec_sep(), remainder);
-	if (v > 0) return str::format(u8"{}Hz", v);
+	if (v > 1000 && (remainder == 0)) return str::format(u8"{}kHz"sv, khz);
+	if (v > 1000) return str::format(u8"{}{}{}kHz"sv, khz, platform::number_dec_sep(), remainder);
+	if (v > 0) return str::format(u8"{}Hz"sv, v);
 	return {};
 }
 
@@ -846,9 +844,9 @@ std::u8string prop::format_audio_sample_rate(const uint16_t v)
 	const auto remainder = (v % 1000) / 100;
 	const auto khz = v / 1000;
 
-	if (v > 1000 && (remainder == 0)) return str::format(u8"{}kHz", khz);
-	if (v > 1000) return str::format(u8"{}{}{}kHz", khz, platform::number_dec_sep(), remainder);
-	if (v > 0) return str::format(u8"{}Hz", v);
+	if (v > 1000 && (remainder == 0)) return str::format(u8"{}kHz"sv, khz);
+	if (v > 1000) return str::format(u8"{}{}{}kHz"sv, khz, platform::number_dec_sep(), remainder);
+	if (v > 0) return str::format(u8"{}Hz"sv, v);
 	return {};
 }
 
@@ -856,19 +854,19 @@ std::u8string prop::format_audio_sample_type(const audio_sample_t v)
 {
 	switch (v)
 	{
-	case audio_sample_t::none: return u8"none";
-	case audio_sample_t::unsigned_8bit: return u8"8bit";
-	case audio_sample_t::signed_16bit: return u8"16bit";
-	case audio_sample_t::signed_32bit: return u8"32bit";
-	case audio_sample_t::signed_64bit: return u8"64bit";
-	case audio_sample_t::signed_float: return u8"float";
-	case audio_sample_t::signed_double: return u8"double";
-	case audio_sample_t::unsigned_planar_8bit: return u8"8bit";
-	case audio_sample_t::signed_planar_16bit: return u8"16bit";
-	case audio_sample_t::signed_planar_32bit: return u8"32bit";
-	case audio_sample_t::signed_planar_64bit: return u8"64bit";
-	case audio_sample_t::planar_float: return u8"float";
-	case audio_sample_t::planar_double: return u8"double";
+	case audio_sample_t::none: return u8"none"s;
+	case audio_sample_t::unsigned_8bit: return u8"8bit"s;
+	case audio_sample_t::signed_16bit: return u8"16bit"s;
+	case audio_sample_t::signed_32bit: return u8"32bit"s;
+	case audio_sample_t::signed_64bit: return u8"64bit"s;
+	case audio_sample_t::signed_float: return u8"float"s;
+	case audio_sample_t::signed_double: return u8"double"s;
+	case audio_sample_t::unsigned_planar_8bit: return u8"8bit"s;
+	case audio_sample_t::signed_planar_16bit: return u8"16bit"s;
+	case audio_sample_t::signed_planar_32bit: return u8"32bit"s;
+	case audio_sample_t::signed_planar_64bit: return u8"64bit"s;
+	case audio_sample_t::planar_float: return u8"float"s;
+	case audio_sample_t::planar_double: return u8"double"s;
 	default:
 		break;
 	}
@@ -880,21 +878,21 @@ std::u8string prop::format_audio_channels(const int v)
 	switch (v)
 	{
 	case 1:
-		return u8"mono";
+		return u8"mono"s;
 	case 2:
-		return u8"stereo";
+		return u8"stereo"s;
 	case 3:
-		return u8"3.0 surround";
+		return u8"3.0 surround"s;
 	case 4:
-		return u8"quad";
+		return u8"quad"s;
 	case 5:
-		return u8"5.0 surround";
+		return u8"5.0 surround"s;
 	case 6:
-		return u8"5.1 surround";
+		return u8"5.1 surround"s;
 	case 8:
-		return u8"7.1 surround";
+		return u8"7.1 surround"s;
 	default:
-		return str::format(u8"{} channels", v);
+		return str::format(u8"{} channels"sv, v);
 	}
 
 	return {};
@@ -902,12 +900,12 @@ std::u8string prop::format_audio_channels(const int v)
 
 std::u8string prop::format_f_num(const double d)
 {
-	return str::format(u8"f/{:.01}", d);
+	return str::format(u8"f/{:.01}"sv, d);
 }
 
 std::u8string prop::format_dimensions(const sizei v)
 {
-	return str::format(u8"{}x{}", v.cx, v.cy);
+	return str::format(u8"{}x{}"sv, v.cx, v.cy);
 }
 
 std::u8string prop::format_video_resolution(const sizei vv)
@@ -916,87 +914,87 @@ std::u8string prop::format_video_resolution(const sizei vv)
 
 	if (v.cx == 7680 && v.cy == 4320)
 	{
-		return u8"8K";
+		return u8"8K"s;
 	}
 	if (v.cx == 4096)
 	{
-		return u8"4K";
+		return u8"4K"s;
 	}
 	if (v.cx == 3840 && v.cy == 2160)
 	{
-		return u8"2160p-UHD";
+		return u8"2160p-UHD"s;
 	}
 	if (v.cx == 2048)
 	{
-		return u8"2K";
+		return u8"2K"s;
 	}
 	if (v.cx == 1920 && v.cy == 1200)
 	{
-		return u8"WUXGA";
+		return u8"WUXGA"s;
 	}
 	if (v.cx == 2560 && v.cy == 1440)
 	{
-		return u8"1440p";
+		return u8"1440p"s;
 	}
 	if (v.cx == 1920 && v.cy == 1080)
 	{
-		return u8"1080p";
+		return u8"1080p"s;
 	}
 	if (v.cx == 1280 && v.cy == 720)
 	{
-		return u8"720p";
+		return u8"720p"s;
 	}
 	if (v.cx == 1280 && v.cy == 720)
 	{
-		return u8"720p";
+		return u8"720p"s;
 	}
 	if (v.cx == 854 && v.cy == 480)
 	{
-		return u8"480p";
+		return u8"480p"s;
 	}
 	if (v.cx == 640 && v.cy == 360)
 	{
-		return u8"360p";
+		return u8"360p"s;
 	}
 	if (v.cx == 426 && v.cy == 240)
 	{
-		return u8"240p";
+		return u8"240p"s;
 	}
 	if (v.cx == 640 && v.cy == 360)
 	{
-		return u8"360p";
+		return u8"360p"s;
 	}
 	if (v.cx == 480 && v.cy == 360)
 	{
-		return u8"360p";
+		return u8"360p"s;
 	}
 	if (v.cx == 320 && v.cy == 240)
 	{
-		return u8"240p";
+		return u8"240p"s;
 	}
 	if (v.cx == 320 && v.cy == 240)
 	{
-		return u8"240p";
+		return u8"240p"s;
 	}
 	if (v.cx == 320 && v.cy == 180)
 	{
-		return u8"180p";
+		return u8"180p"s;
 	}
 	if (v.cx == 256 && v.cy == 144)
 	{
-		return u8"144p";
+		return u8"144p"s;
 	}
 	if (v.cx == 256 && v.cy == 144)
 	{
-		return u8"144p";
+		return u8"144p"s;
 	}
 	if (v.cx == 176 && v.cy == 144)
 	{
-		return u8"144p";
+		return u8"144p"s;
 	}
 	if (v.cx == 160 && v.cy == 120)
 	{
-		return u8"120p";
+		return u8"120p"s;
 	}
 
 	return {};
@@ -1022,18 +1020,18 @@ std::u8string prop::replace_tokens(const std::u8string_view text, const item_met
 		{
 			const auto token = str::to_lower(token_in);
 
-			if (token == u8"created" || token == u8"created.date")
+			if (token == u8"created"sv || token == u8"created.date"sv)
 			{
 				if (created.is_valid())
 				{
-					result << str::format(u8"{:04}-{:02}-{:02}", created.year(), created.month(), created.day());
+					result << str::format(u8"{:04}-{:02}-{:02}"sv, created.year(), created.month(), created.day());
 				}
 				else
 				{
 					result << tt.unknown;
 				}
 			}
-			else if (token == u8"year" || token == u8"created.year")
+			else if (token == u8"year"sv || token == u8"created.year"sv)
 			{
 				if (md->year)
 				{
@@ -1048,13 +1046,13 @@ std::u8string prop::replace_tokens(const std::u8string_view text, const item_met
 					result << tt.unknown;
 				}
 			}
-			else if (token == u8"artist")
+			else if (token == u8"artist"sv)
 				result << text_or_default(
 					md->album_artist.is_empty() ? md->artist.sv() : md->album_artist.sv(), tt.unknown);
-			else if (token == u8"album") result << text_or_default(md->album, tt.unknown);
-			else if (token == u8"show") result << text_or_default(md->show, tt.unknown);
-			else if (token == u8"season") result << text_or_default(str::to_string(md->season), tt.unknown);
-			else if (token == u8"country") result << text_or_default(md->location_country, tt.unknown);
+			else if (token == u8"album"sv) result << text_or_default(md->album, tt.unknown);
+			else if (token == u8"show"sv) result << text_or_default(md->show, tt.unknown);
+			else if (token == u8"season"sv) result << text_or_default(str::to_string(md->season), tt.unknown);
+			else if (token == u8"country"sv) result << text_or_default(md->location_country, tt.unknown);
 			else
 			{
 				result << text_or_default(md->format(token), tt.unknown);
@@ -1098,13 +1096,13 @@ std::u8string prop::format_pixels(const sizei v, const file_type_ref ft)
 
 		if (mp >= 2.0)
 		{
-			return str::print(u8"%dmp", df::round(mp));
+			return str::print(u8"%dmp"sv, df::round(mp));
 		}
 
-		return str::print(u8"%1.1fmp", mp);
+		return str::print(u8"%1.1fmp"sv, mp);
 	}
 
-	return str::format(u8"{}x{}", v.cx, v.cy);
+	return str::format(u8"{}x{}"sv, v.cx, v.cy);
 }
 
 std::u8string prop::format_duration(const int n)
@@ -1126,7 +1124,7 @@ std::u8string prop::format_polish_date(const df::date_t ft)
 	}
 
 	const auto st = ft.date();
-	return str::format(u8"{}-{}-{}", st.year, st.month, st.day);
+	return str::format(u8"{}-{}-{}"sv, st.year, st.month, st.day);
 }
 
 std::u8string df::xy32::str() const
@@ -1136,7 +1134,7 @@ std::u8string df::xy32::str() const
 		return str::to_string(x);
 	}
 
-	return str::format(u8"{}/{}", x, y);
+	return str::format(u8"{}/{}"sv, x, y);
 }
 
 std::u8string df::xy8::str() const
@@ -1146,5 +1144,5 @@ std::u8string df::xy8::str() const
 		return str::to_string(x);
 	}
 
-	return str::format(u8"{}/{}", x, y);
+	return str::format(u8"{}/{}"sv, x, y);
 }

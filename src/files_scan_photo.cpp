@@ -59,7 +59,7 @@ static file_scan_result scan_gif(read_stream& s)
 
 	if (!isGif87a && !isGif89a)
 	{
-		throw app_exception("no gif header");
+		throw app_exception(u8"no gif header"s);
 	}
 
 	result.width = *std::bit_cast<const uint16_t*>(header + 6);
@@ -608,7 +608,7 @@ file_scan_result scan_photo(read_stream& s)
 
 			result.width = abs(bmp_info->biWidth);
 			result.height = abs(bmp_info->biHeight);
-			result.pixel_format = str::cache(str::format(u8"RGB{}", bmp_info->biBitCount));
+			result.pixel_format = str::cache(str::format(u8"RGB{}"sv, bmp_info->biBitCount));
 			result.format = detected_format::BMP;
 			result.success = true;
 		}

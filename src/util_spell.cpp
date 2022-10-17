@@ -17,8 +17,8 @@ spell_check spell;
 
 spell_check::spell_check()
 {
-	const auto module_folder = known_path(platform::known_folder::running_app_folder).combine(u8"dictionaries");
-	const auto app_data_folder = known_path(platform::known_folder::app_data).combine(u8"dictionaries");
+	const auto module_folder = known_path(platform::known_folder::running_app_folder).combine(u8"dictionaries"sv);
+	const auto app_data_folder = known_path(platform::known_folder::app_data).combine(u8"dictionaries"sv);
 
 	if (module_folder.exists())
 	{
@@ -34,12 +34,12 @@ spell_check::spell_check()
 		}
 	}
 
-	_custom_dic_path = _dictionaries_folder.combine_file(u8"custom.dic");
+	_custom_dic_path = _dictionaries_folder.combine_file(u8"custom.dic"sv);
 }
 
 spell_check::~spell_check()
 {
-	platform::exclusive_lock lock(_mutex);
+	platform::exclusive_lock lock(_rw);
 	_hunspell.reset();
 }
 
@@ -50,8 +50,8 @@ static void download_dic(df::async_i& async, const df::file_path path)
 	const auto temp_path = platform::temp_file(path.extension());
 
 	platform::web_request req;
-	req.host = u8"diffractor.com";
-	req.path = format(u8"/static/dictionaries/{}", path.name());
+	req.host = u8"diffractor.com"sv;
+	req.path = format(u8"/static/dictionaries/{}"sv, path.name());
 	req.download_file_path = temp_path;
 
 	async.queue_async(async_queue::web, [req, path, temp_path]()
@@ -69,51 +69,51 @@ void spell_check::lazy_download(df::async_i& async)
 {
 	const std::unordered_set<std::u8string_view, df::ihash, df::ieq> known_dics =
 	{
-		u8"bg_BG",
-		u8"ca_ES",
-		u8"cs_CZ",
-		u8"cy_GB",
-		u8"da_DK",
-		u8"de_DE",
-		u8"el_GR",
-		u8"en_AU",
-		u8"en_CA",
-		u8"en_GB",
-		u8"en_US",
-		u8"es_ES",
-		u8"et_EE",
-		u8"fa_IR",
-		u8"fr_FR",
-		u8"he_IL",
-		u8"hi_IN",
-		u8"hr_HR",
-		u8"hu-HU",
-		u8"id_ID",
-		u8"it_IT",
-		u8"lt_LT",
-		u8"lv_LV",
-		u8"nb_NO",
-		u8"nl_NL",
-		u8"pl_PL",
-		u8"pt_BR",
-		u8"pt_PT",
-		u8"ro_RO",
-		u8"ru_RU",
-		u8"sk_SK",
-		u8"sl_SI",
-		u8"sv_SE",
-		u8"ta_IN",
-		u8"tg_TG",
-		u8"uk_UA",
-		u8"vi_VI",
+		u8"bg_BG"sv,
+		u8"ca_ES"sv,
+		u8"cs_CZ"sv,
+		u8"cy_GB"sv,
+		u8"da_DK"sv,
+		u8"de_DE"sv,
+		u8"el_GR"sv,
+		u8"en_AU"sv,
+		u8"en_CA"sv,
+		u8"en_GB"sv,
+		u8"en_US"sv,
+		u8"es_ES"sv,
+		u8"et_EE"sv,
+		u8"fa_IR"sv,
+		u8"fr_FR"sv,
+		u8"he_IL"sv,
+		u8"hi_IN"sv,
+		u8"hr_HR"sv,
+		u8"hu-HU"sv,
+		u8"id_ID"sv,
+		u8"it_IT"sv,
+		u8"lt_LT"sv,
+		u8"lv_LV"sv,
+		u8"nb_NO"sv,
+		u8"nl_NL"sv,
+		u8"pl_PL"sv,
+		u8"pt_BR"sv,
+		u8"pt_PT"sv,
+		u8"ro_RO"sv,
+		u8"ru_RU"sv,
+		u8"sk_SK"sv,
+		u8"sl_SI"sv,
+		u8"sv_SE"sv,
+		u8"ta_IN"sv,
+		u8"tg_TG"sv,
+		u8"uk_UA"sv,
+		u8"vi_VI"sv,
 	};
 
 	const auto language = platform::user_language();
 
 	if (known_dics.contains(language))
 	{
-		const auto aff_path = _dictionaries_folder.combine_file(language + u8".aff");
-		const auto dic_path = _dictionaries_folder.combine_file(language + u8".dic");
+		const auto aff_path = _dictionaries_folder.combine_file(language + u8".aff"s);
+		const auto dic_path = _dictionaries_folder.combine_file(language + u8".dic"s);
 
 		if (!aff_path.exists())
 		{
@@ -130,19 +130,19 @@ void spell_check::lazy_download(df::async_i& async)
 
 void spell_check::lazy_load()
 {
-	platform::exclusive_lock lock(_mutex);
+	platform::exclusive_lock lock(_rw);
 
 	if (!_hunspell)
 	{
 		const auto language = platform::user_language();
-		auto aff_path = _dictionaries_folder.combine_file(language + u8".aff");
-		auto dic_path = _dictionaries_folder.combine_file(language + u8".dic");
-		const auto custom_path = _dictionaries_folder.combine_file(u8"custom.dic");
+		auto aff_path = _dictionaries_folder.combine_file(language + u8".aff"s);
+		auto dic_path = _dictionaries_folder.combine_file(language + u8".dic"s);
+		const auto custom_path = _dictionaries_folder.combine_file(u8"custom.dic"sv);
 
 		if (!aff_path.exists())
 		{
-			aff_path = _dictionaries_folder.combine_file(u8"en_US.aff");
-			dic_path = _dictionaries_folder.combine_file(u8"en_US.dic");
+			aff_path = _dictionaries_folder.combine_file(u8"en_US.aff"sv);
+			dic_path = _dictionaries_folder.combine_file(u8"en_US.dic"sv);
 		}
 
 		if (aff_path.exists())
@@ -169,14 +169,14 @@ void spell_check::lazy_load()
 
 bool spell_check::is_word_valid(const std::u8string_view word) const
 {
-	platform::shared_lock lock(_mutex);
+	platform::shared_lock lock(_rw);
 	if (!_hunspell) return true;
 	return _hunspell->spell(str::utf8_cast2(word));
 }
 
 std::vector<std::u8string> spell_check::suggest(const std::u8string_view word) const
 {
-	platform::shared_lock lock(_mutex);
+	platform::shared_lock lock(_rw);
 	if (!_hunspell) return {};
 	const auto suggestions = _hunspell->suggest(str::utf8_cast2(word));
 
@@ -191,7 +191,7 @@ std::vector<std::u8string> spell_check::suggest(const std::u8string_view word) c
 
 void spell_check::add_word(const std::u8string_view word)
 {
-	platform::exclusive_lock lock(_mutex);
+	platform::exclusive_lock lock(_rw);
 
 	if (_hunspell)
 	{

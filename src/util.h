@@ -20,6 +20,14 @@
 #endif
 
 
+#if defined(_MSC_VER)
+#  if defined(_WIN64)
+typedef __int64 ssize_t;
+#  else
+typedef long ssize_t;
+#  endif
+#endif
+
 using u8ostringstream = std::basic_ostringstream<char8_t, std::char_traits<char8_t>, std::allocator<char8_t>>;
 using u8istringstream = std::basic_istringstream<char8_t, std::char_traits<char8_t>, std::allocator<char8_t>>;
 
@@ -921,7 +929,7 @@ namespace df
 			}
 			else
 			{
-				static constexpr std::u8string_view chars = u8"0123456789ABCDEF";
+				static constexpr std::u8string_view chars = u8"0123456789ABCDEF"sv;
 
 				result += '%';
 				result += chars[(c & 0xF0) >> 4];

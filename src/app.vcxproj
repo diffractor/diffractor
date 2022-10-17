@@ -231,56 +231,76 @@
     <RunCodeAnalysis>false</RunCodeAnalysis>
     <GenerateManifest>false</GenerateManifest>
     <EmbedManifest>false</EmbedManifest>
+    <EnableMicrosoftCodeAnalysis>false</EnableMicrosoftCodeAnalysis>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <RunCodeAnalysis>false</RunCodeAnalysis>
     <GenerateManifest>false</GenerateManifest>
     <EmbedManifest>false</EmbedManifest>
     <TargetName>diffractor</TargetName>
+    <EnableMicrosoftCodeAnalysis>false</EnableMicrosoftCodeAnalysis>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Code Analysis (Release)|Win32'">
-    <RunCodeAnalysis>true</RunCodeAnalysis>
+    <RunCodeAnalysis>false</RunCodeAnalysis>
     <GenerateManifest>false</GenerateManifest>
     <EmbedManifest>false</EmbedManifest>
+    <EnableMicrosoftCodeAnalysis>false</EnableMicrosoftCodeAnalysis>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Template|Win32'">
     <RunCodeAnalysis>false</RunCodeAnalysis>
     <GenerateManifest>false</GenerateManifest>
     <EmbedManifest>false</EmbedManifest>
+    <EnableMicrosoftCodeAnalysis>false</EnableMicrosoftCodeAnalysis>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <GenerateManifest>false</GenerateManifest>
     <EmbedManifest>false</EmbedManifest>
+    <RunCodeAnalysis>false</RunCodeAnalysis>
+    <EnableMicrosoftCodeAnalysis>false</EnableMicrosoftCodeAnalysis>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
     <GenerateManifest>false</GenerateManifest>
     <EmbedManifest>false</EmbedManifest>
     <OutDir>$(SolutionDir)Exe\</OutDir>
+    <RunCodeAnalysis>false</RunCodeAnalysis>
+    <EnableMicrosoftCodeAnalysis>false</EnableMicrosoftCodeAnalysis>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <GenerateManifest>false</GenerateManifest>
     <EmbedManifest>false</EmbedManifest>
+    <RunCodeAnalysis>false</RunCodeAnalysis>
+    <EnableMicrosoftCodeAnalysis>false</EnableMicrosoftCodeAnalysis>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
     <GenerateManifest>false</GenerateManifest>
     <EmbedManifest>false</EmbedManifest>
     <OutDir>$(SolutionDir)Exe\</OutDir>
+    <RunCodeAnalysis>false</RunCodeAnalysis>
+    <EnableMicrosoftCodeAnalysis>false</EnableMicrosoftCodeAnalysis>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Code Analysis (Release)|x64'">
     <GenerateManifest>false</GenerateManifest>
     <EmbedManifest>false</EmbedManifest>
+    <RunCodeAnalysis>false</RunCodeAnalysis>
+    <EnableMicrosoftCodeAnalysis>false</EnableMicrosoftCodeAnalysis>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Code Analysis (Release)|ARM64'">
     <GenerateManifest>false</GenerateManifest>
     <EmbedManifest>false</EmbedManifest>
+    <RunCodeAnalysis>false</RunCodeAnalysis>
+    <EnableMicrosoftCodeAnalysis>false</EnableMicrosoftCodeAnalysis>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Template|x64'">
     <GenerateManifest>false</GenerateManifest>
     <EmbedManifest>false</EmbedManifest>
+    <RunCodeAnalysis>false</RunCodeAnalysis>
+    <EnableMicrosoftCodeAnalysis>false</EnableMicrosoftCodeAnalysis>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Template|ARM64'">
     <GenerateManifest>false</GenerateManifest>
     <EmbedManifest>false</EmbedManifest>
+    <RunCodeAnalysis>false</RunCodeAnalysis>
+    <EnableMicrosoftCodeAnalysis>false</EnableMicrosoftCodeAnalysis>
   </PropertyGroup>
   <PropertyGroup Label="Vcpkg" Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
     <VcpkgUseStatic>true</VcpkgUseStatic>
@@ -1640,7 +1660,6 @@
     <ClInclude Include="view_media.h" />
     <ClInclude Include="util_file.h" />
     <ClInclude Include="model_tags.h" />
-    <ClInclude Include="metadata_mp4.h" />
     <ClInclude Include="app_settings.h" />
     <ClInclude Include="util_path.h" />
     <ClInclude Include="platform.h" />

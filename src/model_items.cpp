@@ -277,7 +277,7 @@ static df::group_key resolution_key(const df::item_element_ptr& i)
 			result.order1 = ft->group->id;
 			result.order2 = 1 + df::isqrt(extent.cx * extent.cy);
 			result.text1 = str::cache(display_name);
-			result.text2 = str::cache(str::format(u8"{}x{}", extent.cx, extent.cy));
+			result.text2 = str::cache(str::format(u8"{}x{}"sv, extent.cx, extent.cy));
 		}
 		else
 		{
@@ -308,7 +308,7 @@ static df::group_key resolution_key(const df::item_element_ptr& i)
 					result.order1 = 1;
 					result.order2 = 1 + df::isqrt(n);
 					result.text1 = str::cache(display_name);
-					result.text2 = str::cache(str::format(u8"{} megapixels", n));
+					result.text2 = str::cache(str::format(u8"{} megapixels"sv, n));
 				}
 			}
 		}
@@ -820,7 +820,7 @@ std::shared_ptr<group_title_control> df::build_group_title(view_state& s, const 
 				const auto month = 100 - key.order2;
 				const auto year = 3000 - key.order1;
 
-				add_title_link(str::format(u8"{} {}", str::month(month, true), year),
+				add_title_link(str::format(u8"{} {}"sv, str::month(month, true), year),
 				               search_t(current_search).day(0, month, year, target));
 			}
 		}
@@ -828,7 +828,7 @@ std::shared_ptr<group_title_control> df::build_group_title(view_state& s, const 
 		{
 			if (!is_empty(key.text1) && !is_empty(key.text2))
 			{
-				add_title_link(format(u8"{}:{}", key.text1, key.text2), {});
+				add_title_link(format(u8"{}:{}"sv, key.text1, key.text2), {});
 			}
 		}
 		else if (order == group_by::camera)
@@ -852,7 +852,7 @@ std::shared_ptr<group_title_control> df::build_group_title(view_state& s, const 
 
 			if (key.order3 != 0)
 			{
-				add_title_link(str::format(u8"{} {}", prop::season.text(), key.order3),
+				add_title_link(str::format(u8"{} {}"sv, prop::season.text(), key.order3),
 				               search_t(current_search).with(prop::season, key.order3));
 			}
 
@@ -2501,7 +2501,7 @@ df::item_display_info df::file_item::populate_info() const
 			result.duration = md->duration;
 			result.rating = md->rating;
 			result.label = md->label;
-			result.sidecars = sidecars_count();
+			result.sidecars = static_cast<int>(sidecars_count());
 			result.bitrate = md->bitrate;
 			result.pixel_format = md->pixel_format;
 			result.dimensions = md->dimensions();

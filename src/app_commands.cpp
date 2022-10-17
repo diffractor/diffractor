@@ -27,14 +27,14 @@
 #if __has_include("secrets.h") 
 # include "secrets.h"
 #else
-static const std::u8string google_maps_api_key = u8"";
+static const std::u8string google_maps_api_key = u8""sv;
 #endif
 
 static std::atomic_int analyse_version;
 
-static const std::u8string_view docs_url = u8"https://www.diffractor.com/docs";
-static const std::u8string_view support_url = u8"https://diffractor.com/help";
-static const std::u8string_view donate_url = u8"https://www.paypal.com/donate/?hosted_button_id=HX5NRS9JGKLRL";
+static const std::u8string_view docs_url = u8"https://www.diffractor.com/docs"sv;
+static const std::u8string_view support_url = u8"https://diffractor.com/help"sv;
+static const std::u8string_view donate_url = u8"https://www.paypal.com/donate/?hosted_button_id=HX5NRS9JGKLRL"sv;
 
 static void zoom_invoke(view_state& s, const ui::control_frame_ptr& parent)
 {
@@ -120,7 +120,7 @@ static void new_folder_invoke(view_state& s, const ui::control_frame_ptr& parent
 
 	while (platform::exists(new_path) && (i < 100))
 	{
-		new_name = str::format(u8"{} {}", tt.new_folder_name, i++);
+		new_name = str::format(u8"{} {}"sv, tt.new_folder_name, i++);
 		new_path = folder.combine(new_name);
 	}
 
@@ -199,7 +199,7 @@ class result_scope
 	bool _completed = false;
 
 public:
-	explicit result_scope(const df::results_ptr r) : _r(std::move(r))
+	explicit result_scope(df::results_ptr r) : _r(std::move(r))
 	{
 	}
 
@@ -287,7 +287,7 @@ public:
 
 	std::u8string format_new_name(const std::u8string_view original_name) const
 	{
-		static auto numbers = u8"0123456789";
+		static auto numbers = u8"0123456789"sv;
 		std::u8string result;
 
 		if (!_template.empty())
@@ -641,8 +641,8 @@ static void desktop_background_invoke(view_state& s, const ui::control_frame_ptr
 
 		if (dlg->show_modal(controls) == ui::close_result::ok)
 		{
-			const auto write_extension = u8".png";
-			const auto write_path = df::file_path(known_path(platform::known_folder::app_data), u8"wallpaper",
+			const auto write_extension = u8".png"sv;
+			const auto write_path = df::file_path(known_path(platform::known_folder::app_data), u8"wallpaper"sv,
 			                                      write_extension);
 			const auto path_temp = platform::temp_file(write_extension);
 			const auto bounds = ui::desktop_bounds(true);
@@ -684,14 +684,14 @@ static void capture_invoke(view_state& s, const ui::control_frame_ptr& parent)
 		{
 			auto i = 1;
 			const auto source_path = item->path();
-			const auto save_ext = lr.is_jpeg() ? u8"jpg" : u8"png";
+			const auto save_ext = lr.is_jpeg() ? u8"jpg"sv : u8"png"sv;
 			const auto save_folder = s.save_path();
 			const auto save_name = source_path.file_name_without_extension();
 			auto save_path = df::file_path(save_folder, save_name, save_ext);
 
 			while (save_path.exists())
 			{
-				save_path = df::file_path(save_folder, str::format(u8"{}-{}", save_name, i++), save_ext);
+				save_path = df::file_path(save_folder, str::format(u8"{}-{}"sv, save_name, i++), save_ext);
 			}
 
 			if (platform::prompt_for_save_path(save_path))
@@ -990,15 +990,15 @@ public:
 
 	void fetch_place(const std::u8string_view place_id, std::function<void(std::u8string)> f)
 	{
-		const auto url = str::format(u8"/maps/api/place/details/json?placeid={}&key={}", df::url_encode(place_id), google_maps_api_key);
-		const auto key = str::format(u8"place_details:{}", place_id);
-		fetch(key, u8"maps.googleapis.com", url, std::move(f));
+		const auto url = str::format(u8"/maps/api/place/details/json?placeid={}&key={}"sv, df::url_encode(place_id), google_maps_api_key);
+		const auto key = str::format(u8"place_details:{}"sv, place_id);
+		fetch(key, u8"maps.googleapis.com"s, url, std::move(f));
 	}
 
 	void fetch(std::u8string key, std::u8string host, std::u8string path, std::function<void(std::u8string)> f)
 	{
 		_state._async.web_service_cache(
-			key, [t = shared_from_this(), key = std::move(key), host = std::move(host), path = std::move(path), f =
+			key, [t = shared_from_this(), key, host = std::move(host), path = std::move(path), f =
 				std::move(f)](const std::u8string& cache_response)
 			{
 				if (cache_response.empty())
@@ -1009,7 +1009,7 @@ public:
 
 					t->_state.queue_async(async_queue::web, [req, t, f, key]()
 					{
-						const auto response = send_request(req);
+						auto response = send_request(req);
 
 						// only cache if success
 						if (response.status_code == 200)
@@ -1079,12 +1079,12 @@ public:
 					else
 					{
 						// Only use google for queries over length 3
-						const auto key = str::format(u8"auto_complete_location:{}", query);
+						const auto key = str::format(u8"auto_complete_location:{}"sv, query);
 						const auto path = str::format(
-							u8"/maps/api/place/autocomplete/json?input={}&key={}",
+							u8"/maps/api/place/autocomplete/json?input={}&key={}"sv,
 							df::url_encode(query), google_maps_api_key);
 
-						t->fetch(key, u8"maps.googleapis.com", path,
+						t->fetch(key, u8"maps.googleapis.com"s, path,
 						         [t, query, complete, locally_found](std::u8string response)
 						         {
 							         ui::auto_complete_results found;
@@ -1108,7 +1108,7 @@ public:
 
 									         std::vector<str::part_t> selections;
 
-									         if (loc.HasMember(u8"matched_substrings"))
+									         if (loc.HasMember(u8"matched_substrings"s))
 									         {
 										         for (const auto& match : loc[u8"matched_substrings"].GetArray())
 										         {
@@ -1561,7 +1561,7 @@ static void convert_resize_invoke(view_state& s, const ui::control_frame_ptr& pa
 
 			bool can_process = true;
 			const auto folder = df::folder_path(setting.write_folder);
-			const auto overwrite_result = check_overwrite(folder, items, u8"jpg");
+			const auto overwrite_result = check_overwrite(folder, items, u8"jpg"sv);
 
 			if (!overwrite_result.empty())
 			{
@@ -1611,9 +1611,9 @@ static void convert_resize_invoke(view_state& s, const ui::control_frame_ptr& pa
 									encode_params.webp_quality = setting.convert.webp_quality;
 									encode_params.webp_lossless = setting.convert.webp_lossless;
 
-									auto ext = u8".jpg";
-									if (setting.convert.to_png) ext = u8".png";
-									if (setting.convert.to_webp) ext = u8".webp";
+									auto ext = u8".jpg"sv;
+									if (setting.convert.to_png) ext = u8".png"sv;
+									if (setting.convert.to_webp) ext = u8".webp"sv;
 
 									const auto write_path = df::file_path(
 										write_folder, i->path().file_name_without_extension(), ext);
@@ -1738,7 +1738,7 @@ static void tag_invoke(view_state& s, const ui::control_frame_ptr& parent, const
 			list_control->add(set_margin(std::make_shared<ui::recommended_words_control>(
 				dlg->_frame, existing, [edit](const std::u8string_view tag)
 				{
-					edit->add_word(str::format(u8"-{}", str::quote_if_white_space(tag)));
+					edit->add_word(str::format(u8"-{}"sv, str::quote_if_white_space(tag)));
 				})));
 		}
 
@@ -2050,7 +2050,7 @@ public:
 			}
 
 			std::vector<folder_match_ptr> found;
-			for (const auto& r : results) found.emplace_back(std::move(r.second));
+			for (auto&& r : results) found.emplace_back(std::move(r.second));
 			std::ranges::sort(found, compare_weight);
 			if (found.size() > max_predictions) found.resize(max_predictions);
 			complete(ui::auto_complete_results{found.begin(), found.end()});
@@ -2327,7 +2327,7 @@ public:
 			df::assert_true(!str::is_empty(name));
 
 			entry h;
-			h.name = str::format(u8"{} ({})", name, tt.open_with_tool);
+			h.name = str::format(u8"{} ({})"sv, name, tt.open_with_tool);
 			h.invoke = [c](const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders)
 			{
 				c->invoke();
@@ -2346,7 +2346,7 @@ public:
 			for (const auto& h : platform_handlers)
 			{
 				entry e;
-				e.name = str::format(u8"{} ({})", h.name, tt.open_with_app);
+				e.name = str::format(u8"{} ({})"sv, h.name, tt.open_with_app);
 				e.invoke = h.invoke;
 				e.weight = h.weight;
 				_handlers[h.name] = e;
@@ -2680,7 +2680,7 @@ static import_result import_copy(index_state& index, item_results_ptr results, c
 
 	if (!previous.empty())
 	{
-		if (!result_text.empty()) result_text += u8"\n\n";
+		if (!result_text.empty()) result_text += u8"\n\n"sv;
 		result_text += format_plural_text(tt.ignored_previous_fmt, previous.front().item.name, static_cast<int>(previous.size()), {},
 		                                  static_cast<int>(src_items.size()));
 	}
@@ -2818,7 +2818,7 @@ static void import_invoke(view_state& s, const ui::control_frame_ptr& parent, co
 		{
 			if (d.type == platform::drive_type::removable)
 			{
-				const auto text = str::format(u8"{} {} {}", d.name, d.vol_name, d.used);
+				const auto text = str::format(u8"{} {} {}"sv, d.name, d.vol_name, d.used);
 				sources_temp.emplace_back(text, df::folder_path(d.name));
 			}
 		}
@@ -2980,7 +2980,7 @@ static void import_invoke(view_state& s, const ui::control_frame_ptr& parent, co
 							              element2->foreground_color(clr2);
 							              element3->foreground_color(clr3);
 
-							              analysis_table->add(u8"...\\" + i.second.front().sub_folder, element1,
+							              analysis_table->add(u8"...\\"s + i.second.front().sub_folder, element1,
 							                                  element2, element3);
 						              }
 
@@ -3518,7 +3518,7 @@ static void sync_invoke(view_state& s, const ui::control_frame_ptr& parent)
 						element3->foreground_color(clr3);
 						element4->foreground_color(clr4);
 
-						analysis_table->add(u8"...\\" + i.first, element1, element2, element3, element4);
+						analysis_table->add(u8"...\\"s + i.first, element1, element2, element3, element4);
 					}
 				}
 
@@ -3612,7 +3612,7 @@ static void eject_invoke(view_state& s, const ui::control_frame_ptr& parent)
 		if (d.type == platform::drive_type::removable)
 		{
 			auto name = str::format(tt.eject_title_fmt, d.name);
-			auto details = str::format(u8"{} {} {} ({} {})", d.vol_name, d.file_system, d.capacity, d.used,
+			auto details = str::format(u8"{} {} {} ({} {})"sv, d.vol_name, d.file_system, d.capacity, d.used,
 			                           tt.space_used);
 			controls.emplace_back(std::make_shared<ui::button_control>(dlg->_frame, drive_icon(d.type), d.name, details,
 			                                                           [dlg, d, title]
@@ -3659,7 +3659,7 @@ static void scan_invoke(view_state& s, const ui::control_frame_ptr& parent, cons
 	{
 		const auto dlg = make_dlg(parent);
 		dlg->show_message(icon_index::error, tt.command_scan,
-		                  str::format(u8"{}\n{}", tt.scan_failed, scan_result.error_message));
+		                  str::format(u8"{}\n{}"sv, tt.scan_failed, scan_result.error_message));
 	}
 };
 
@@ -3797,13 +3797,13 @@ bool ui::browse_for_term(view_state& vs, const control_frame_ptr& parent, std::u
 
 	if (dlg->show_modal(controls) == close_result::ok)
 	{
-		if (str::is_empty(str::trim(scope)) || str::icmp(str::trim(scope), u8"any") == 0)
+		if (str::is_empty(str::trim(scope)) || str::icmp(str::trim(scope), u8"any"sv) == 0)
 		{
 			result = text;
 		}
 		else
 		{
-			result = str::format(u8"{}:{}", scope, str::quote_if_white_space(text));
+			result = str::format(u8"{}:{}"sv, scope, str::quote_if_white_space(text));
 		}
 
 		return true;
@@ -4009,7 +4009,7 @@ static void upgrade_invoke(view_state& s, const ui::control_frame_ptr& parent)
 	controls.emplace_back(std::make_shared<ui::button_control>(dlg->_frame, icon_index::question, tt.update_more_info,
 	                                                           tt.update_more_info_help, [f = dlg->_frame]()
 	                                                           {
-		                                                           platform::open(u8"https://www.diffractor.com/blog");
+		                                                           platform::open(u8"https://www.diffractor.com/blog"sv);
 		                                                           f->close(true);
 	                                                           }));
 
@@ -4107,20 +4107,20 @@ std::u8string format_keyboard_accelerator(const std::vector<keyboard_accelerator
 		// Add Accelerator
 		if (!result.empty())
 		{
-			result += str::format(u8" {} ", tt.keyboard_or);
+			result += str::format(u8" {} "sv, tt.keyboard_or);
 		}
 
 		if (ac.key_state & alt)
 		{
-			result += str::format(u8"{}-", tt.keyboard_alt);
+			result += str::format(u8"{}-"sv, tt.keyboard_alt);
 		}
 		if (ac.key_state & control)
 		{
-			result += str::format(u8"{}-", tt.keyboard_control);
+			result += str::format(u8"{}-"sv, tt.keyboard_control);
 		}
 		if (ac.key_state & shift)
 		{
-			result += str::format(u8"{}-", tt.keyboard_shift);
+			result += str::format(u8"{}-"sv, tt.keyboard_shift);
 		}
 
 		if (ac.key == keys::RETURN)
@@ -4181,7 +4181,7 @@ static void show_keyboard_reference(view_state& s, const ui::control_frame_ptr& 
 	add_keyboard_commands(dlg, col2, c, command_group::tools, tt.keyboard_tools_title);
 	add_keyboard_commands(dlg, col3, c, command_group::open, tt.keyboard_open_title);
 	add_keyboard_commands(dlg, col3, c, command_group::navigation, tt.keyboard_navigation_title);
-	//add_commands(dlg, col3, c, command_group::sorting, u8"Sorting");
+	//add_commands(dlg, col3, c, command_group::sorting, u8"Sorting"sv);
 	add_keyboard_commands(dlg, col4, c, command_group::selection, tt.keyboard_selection_title);
 	add_keyboard_commands(dlg, col4, c, command_group::rate_flag, tt.keyboard_rate_label_title);
 	add_keyboard_commands(dlg, col5, c, command_group::options, tt.keyboard_options_title);
@@ -4224,7 +4224,7 @@ void send_info(view_state& s)
 
 	if (zip.create(crash_zip_path))
 	{
-		if (log_file_copy.exists()) zip.add(log_file_copy, u8"diffractor.log");
+		if (log_file_copy.exists()) zip.add(log_file_copy, u8"diffractor.log"sv);
 		if (previous_log_path.exists()) zip.add(previous_log_path);
 		zip.close();
 	}
@@ -4233,21 +4233,21 @@ void send_info(view_state& s)
 
 	for (const auto& i : calc_app_info(s.item_index, true))
 	{
-		message << i.first << " " << i.second << std::endl;
+		message << i.first << u8" "sv << i.second << std::endl;
 	}
 
 	platform::web_request req;
 	req.verb = platform::web_request_verb::POST;
-	req.host = u8"diffractor.com";
-	req.path = u8"/crash";
-	req.form_data.emplace_back(u8"message", message.str());
-	req.form_data.emplace_back(u8"version", platform::OS());
-	req.form_data.emplace_back(u8"diffractor", s_app_version);
-	req.form_data.emplace_back(u8"build", g_app_build);
-	req.form_data.emplace_back(u8"subject", u8"Diffractor LOG");
-	req.form_data.emplace_back(u8"submit", u8"Send Report");
-	req.file_form_data_name = u8"ff";
-	req.file_name = u8"logs.zip";
+	req.host = u8"diffractor.com"sv;
+	req.path = u8"/crash"sv;
+	req.form_data.emplace_back(u8"message"sv, message.str());
+	req.form_data.emplace_back(u8"version"sv, platform::OS());
+	req.form_data.emplace_back(u8"diffractor"sv, s_app_version);
+	req.form_data.emplace_back(u8"build"sv, g_app_build);
+	req.form_data.emplace_back(u8"subject"sv, u8"Diffractor LOG"sv);
+	req.form_data.emplace_back(u8"submit"sv, u8"Send Report"sv);
+	req.file_form_data_name = u8"ff"sv;
+	req.file_name = u8"logs.zip"sv;
 	req.file_path = crash_zip_path;
 
 	send_request(req);
@@ -4542,7 +4542,7 @@ static void index_settings_invoke(view_state& s, const ui::control_frame_ptr& pa
 
 	auto more_folders_parts = str::split(setting.index.more_folders, true,
 	                                     [](wchar_t c) { return c == '\n' || c == '\r'; });
-	auto more_folders_text = str::combine(more_folders_parts, u8"\r\n", false);
+	auto more_folders_text = str::combine(more_folders_parts, u8"\r\n"sv, false);
 
 	custom_index->add(
 		more_custom_index_paths = std::make_shared<ui::folder_picker_control>(dlg_parent, more_folders_text, true));
@@ -4566,7 +4566,7 @@ static void index_settings_invoke(view_state& s, const ui::control_frame_ptr& pa
 	dlg->_frame->destroy();
 
 	more_folders_parts = str::split(more_folders_text, false, [](wchar_t c) { return c == '\n' || c == '\r'; });
-	setting.index.more_folders = str::combine(more_folders_parts, u8"\n", true);
+	setting.index.more_folders = str::combine(more_folders_parts, u8"\n"sv, true);
 
 	//buttons.clear()
 	s.invalidate_view(view_invalid::index | view_invalid::options);
@@ -4685,7 +4685,7 @@ static void email_invoke(view_state& s, const ui::control_frame_ptr& parent, con
 
 				if (zip)
 				{
-					zip_path = platform::temp_file(u8"zip");
+					zip_path = platform::temp_file(u8"zip"sv);
 					zip_file.create(zip_path);
 				}
 
@@ -4708,7 +4708,7 @@ static void email_invoke(view_state& s, const ui::control_frame_ptr& parent, con
 						if (ft->has_trait(file_type_traits::bitmap))
 						{
 							image_edits edits;
-							const auto ext = !is_jpeg && convert_to_jpeg ? u8".jpg" : path.extension();
+							const auto ext = !is_jpeg && convert_to_jpeg ? u8".jpg"sv : path.extension();
 							const auto edited_path = platform::temp_file(ext);
 
 							if (scale)
@@ -4743,7 +4743,7 @@ static void email_invoke(view_state& s, const ui::control_frame_ptr& parent, con
 				{
 					if (zip_file.close())
 					{
-						attachments.emplace_back(u8"items.zip", zip_path);
+						attachments.emplace_back(u8"items.zip"sv, zip_path);
 						temp_file_paths.emplace_back(zip_path);
 						is_valid = true;
 					}
@@ -4880,7 +4880,7 @@ void app_frame::initialise_commands()
 	                   [this] { copy_move_invoke(_state, _app_frame, _view_frame, false); });
 	add_command_invoke(commands::test_crash, [this]
 	{
-		crash(known_path(platform::known_folder::test_files_folder).combine_file(u8"Test.jpg"));
+		crash(known_path(platform::known_folder::test_files_folder).combine_file(u8"Test.jpg"sv));
 		_app_frame->show(true);
 	});
 	add_command_invoke(commands::test_boom, [this]
@@ -5033,7 +5033,7 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::view_help, [this] { about_invoke(_state, _app_frame, _commands); });
 	add_command_invoke(commands::view_items, [this] { view_invoke(_state, _app_frame, view_type::items); });
 	add_command_invoke(commands::large_font, [this] { font_invoke(_state, _app_frame); });
-	add_command_invoke(commands::playback_volume_toggle, [this] { toggle_volume(true, true); });
+	add_command_invoke(commands::playback_volume_toggle, [this] { toggle_volume(); });
 	add_command_invoke(commands::playback_volume100, [this] { setting.media_volume = media_volumes[0]; });
 	add_command_invoke(commands::playback_volume75, [this] { setting.media_volume = media_volumes[1]; });
 	add_command_invoke(commands::playback_volume50, [this] { setting.media_volume = media_volumes[2]; });
@@ -5079,7 +5079,7 @@ void app_frame::initialise_commands()
 
 	add_command_invoke(commands::english, [this]
 	{
-		setting.language = u8"en";
+		setting.language = u8"en"sv;
 		tt.load_lang({});
 		invalidate_view(view_invalid::options);
 	});
@@ -5240,7 +5240,7 @@ void app_frame::initialise_commands()
 	};
 	_commands[commands::menu_language]->menu = [this]
 	{
-		const auto lang_folder = known_path(platform::known_folder::running_app_folder).combine(u8"languages");
+		const auto lang_folder = known_path(platform::known_folder::running_app_folder).combine(u8"languages"sv);
 		const auto folder_contents = platform::iterate_file_items(lang_folder, false);
 
 		std::vector<ui::command_ptr> result;
@@ -5252,7 +5252,7 @@ void app_frame::initialise_commands()
 			const auto lang_path = lang_folder.combine_file(f.name);
 			const auto extension = lang_path.extension();
 
-			if (str::icmp(extension, u8".po") == 0)
+			if (str::icmp(extension, u8".po"sv) == 0)
 			{
 				const auto lang_code = lang_path.file_name_without_extension();
 

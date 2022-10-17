@@ -54,7 +54,7 @@
 #pragma comment(lib, "Dwmapi")
 #pragma comment(lib, "Netapi32")
 #pragma comment(lib, "Advapi32")
-//#pragma comment(lib, "SetupAPI")
+//#pragma comment(lib, "SetupAPI"sv)
 
 size_t platform::static_memory_usage = 0;
 platform::thread_event platform::event_exit(true, false);
@@ -131,7 +131,7 @@ public:
 
 	STDMETHOD(QueryInterface)(_In_ REFIID iid, _Deref_out_ void** ppvObject) noexcept override
 	{
-		df::trace(str::format(u8"items_data_object::QueryInterface {}", win32_to_string(iid)));
+		df::trace(str::format(u8"items_data_object::QueryInterface {}"sv, win32_to_string(iid)));
 
 		if (IsEqualGUID(iid, IID_IDataObject))
 		{
@@ -160,7 +160,7 @@ public:
 		const auto n = --_refs;
 		if (n <= 0)
 		{
-			df::trace("items_data::release - delete");
+			df::trace("items_data::release - delete"sv);
 			delete this;
 		}
 		return n;
@@ -188,7 +188,7 @@ public:
 
 	STDMETHOD(QueryInterface)(_In_ REFIID iid, _Deref_out_ void** ppvObject) noexcept override
 	{
-		df::trace(str::format(u8"items_drop_source::QueryInterface {}", win32_to_string(iid)));
+		df::trace(str::format(u8"items_drop_source::QueryInterface {}"sv, win32_to_string(iid)));
 
 		if (IsEqualGUID(iid, IID_IDropSource))
 		{
@@ -217,7 +217,7 @@ public:
 		const auto n = --_refs;
 		if (n <= 0)
 		{
-			df::trace("items_drop_source::release - delete");
+			df::trace("items_drop_source::release - delete"sv);
 			delete this;
 		}
 		return n;
@@ -282,7 +282,7 @@ public:
 
 	STDMETHOD(QueryInterface)(_In_ REFIID iid, _Deref_out_ void** ppvObject) noexcept override
 	{
-		df::trace(str::format(u8"CEnumFORMATETCImpl::QueryInterface {}", win32_to_string(iid)));
+		df::trace(str::format(u8"CEnumFORMATETCImpl::QueryInterface {}"sv, win32_to_string(iid)));
 
 		if (IsEqualGUID(iid, IID_IEnumFORMATETC))
 		{
@@ -311,7 +311,7 @@ public:
 		const auto n = --_refs;
 		if (n <= 0)
 		{
-			df::trace("CEnumFORMATETCImpl::release - delete");
+			df::trace("CEnumFORMATETCImpl::release - delete"sv);
 			delete this;
 		}
 		return n;
@@ -501,7 +501,7 @@ static uint32_t file_attributes(const df::folder_path path)
 std::wstring platform::to_file_system_path(const df::file_path path)
 {
 	auto result = str::utf8_to_utf16(path.pack());
-	if (result.size() >= MAX_PATH) result.insert(0, L"\\\\?\\");
+	if (result.size() >= MAX_PATH) result.insert(0, L"\\\\?\\"sv);
 	return result;
 };
 
@@ -542,7 +542,7 @@ std::wstring platform::to_file_system_path(const df::folder_path path)
 		result = str::utf8_to_utf16(path.text());
 	}
 
-	if (result.size() >= MAX_PATH) result.insert(0, L"\\\\?\\");
+	if (result.size() >= MAX_PATH) result.insert(0, L"\\\\?\\"sv);
 	return result;
 }
 
@@ -683,15 +683,23 @@ STDMETHODIMP items_data_object::GetData(FORMATETC* pformatetcIn, STGMEDIUM* pmed
 		if (_has_prefered_drop && pformatetcIn->cfFormat == clipboard_formats::PREFERREDDROPEFFECT)
 		{
 			auto* const h = GlobalAlloc(GMEM_ZEROINIT | GMEM_MOVEABLE | GMEM_DDESHARE, sizeof(DWORD));
-			auto* const p = static_cast<DWORD*>(GlobalLock(h));
-			*p = _is_move ? DROPEFFECT_MOVE : DROPEFFECT_COPY;
-			GlobalUnlock(h);
 
-			pmedium->tymed = TYMED_HGLOBAL;
-			pmedium->hGlobal = h;
-			pmedium->pUnkForRelease = nullptr;
+			if (h)
+			{
+				auto* const p = static_cast<DWORD*>(GlobalLock(h));
+				*p = _is_move ? DROPEFFECT_MOVE : DROPEFFECT_COPY;
+				GlobalUnlock(h);
 
-			return S_OK;
+				pmedium->tymed = TYMED_HGLOBAL;
+				pmedium->hGlobal = h;
+				pmedium->pUnkForRelease = nullptr;
+
+				return S_OK;
+			}
+			else
+			{
+				return E_OUTOFMEMORY;
+			}
 		}
 
 		if (pformatetcIn->cfFormat == clipboard_formats::SHELLIDLIST && has_paths)
@@ -825,11 +833,11 @@ STDMETHODIMP items_data_object::EnumFormatEtc(DWORD dwDirection, IEnumFORMATETC*
 		if (GetClipboardFormatNameW(it->cfFormat, szBuf, MAX_PATH))
 		{
 			// remaining entries read from "fmt" members
-			df::log(__FUNCTION__, str::format(u8"EnumFormatEtc ", str::utf16_to_utf8(szBuf)));
+			df::log(__FUNCTION__, str::format(u8"EnumFormatEtc "sv, str::utf16_to_utf8(szBuf)));
 		}
 		else
 		{
-			df::log(__FUNCTION__, "EnumFormatEtc (Unknown)");
+			df::log(__FUNCTION__, "EnumFormatEtc (Unknown)"sv);
 		}
 	}
 
@@ -1485,7 +1493,7 @@ platform::file_op_result platform::replace_file(const df::file_path destination,
 		if (create_originals)
 		{
 			// Create original
-			const auto org_name = std::u8string(destination.file_name_without_extension()) + u8".original";
+			const auto org_name = std::u8string(destination.file_name_without_extension()) + u8".original"s;
 			const auto original_path = df::file_path(existing.folder(), org_name, destination.extension());
 
 			if (!original_path.exists())
@@ -1606,7 +1614,7 @@ bool platform::run(const std::u8string_view cmd)
 
 static bool run_explorer(const std::wstring& path)
 {
-	const auto command_line = L"explorer.exe /select,\"" + path + L"\"";
+	const auto command_line = L"explorer.exe /select,\""s + path + L"\""s;
 	return run_command_line(command_line);
 }
 
@@ -1657,7 +1665,7 @@ void platform::show_text_in_notepad(const std::u8string_view s)
 
 	if (started)
 	{
-		//df::log(__FUNCTION__, piProcInfo.dwProcessId << " Notepad Process Id";
+		//df::log(__FUNCTION__, piProcInfo.dwProcessId << " Notepad Process Id"sv;
 
 		WaitForInputIdle(piProcInfo.hProcess, 1000);
 
@@ -1793,14 +1801,15 @@ bool platform::prompt_for_save_path(df::file_path& path)
 	memset(&ofn, 0, sizeof(ofn));
 
 	wchar_t w[MAX_PATH];
+	w[0] = 0;
 	wcscpy_s(w, to_file_system_path(path).c_str());
 	const auto extension = str::utf8_to_utf16(path.extension());
 
 	std::u8string filter_a;
-	filter_a += str::format(u8"{} (*.jpg)|*.jpg;*.jpe;*.jpeg|", tt.jpeg_best);
-	filter_a += str::format(u8"{} (*.png)|*.png|", tt.png_best);
-	filter_a += str::format(u8"{} (*.webp)|*.webp|", tt.webp_best);
-	filter_a += u8"|";
+	filter_a += str::format(u8"{} (*.jpg)|*.jpg;*.jpe;*.jpeg|"sv, tt.jpeg_best);
+	filter_a += str::format(u8"{} (*.png)|*.png|"sv, tt.png_best);
+	filter_a += str::format(u8"{} (*.webp)|*.webp|"sv, tt.webp_best);
+	filter_a += u8"|"sv;
 
 	auto filter = str::utf8_to_utf16(filter_a);
 
@@ -1817,8 +1826,8 @@ bool platform::prompt_for_save_path(df::file_path& path)
 	ofn.Flags = OFN_EXPLORER | OFN_OVERWRITEPROMPT;
 	ofn.lpstrDefExt = extension.c_str();
 	ofn.nFilterIndex = 1;
-	if (str::icmp(extension, L".png") == 0) ofn.nFilterIndex = 2;
-	if (str::icmp(extension, L".webp") == 0) ofn.nFilterIndex = 3;
+	if (str::icmp(extension, L".png"sv) == 0) ofn.nFilterIndex = 2;
+	if (str::icmp(extension, L".webp"sv) == 0) ofn.nFilterIndex = 3;
 
 	const auto success = GetSaveFileName(&ofn) != 0;
 	path = df::file_path(w);
@@ -1853,7 +1862,7 @@ platform::scan_result platform::scan(const df::folder_path save_path)
 	{
 		//create a scan dialog and a select device UI
 		const bstr_t folder(to_file_system_path(save_path).c_str());
-		const bstr_t name(L"scan");
+		const bstr_t name(L"scan"sv);
 
 		hr = pWiaDevMgr2->GetImageDlg(0, nullptr, app_wnd(), folder, name, &num_files, &file_paths, &pItem);
 
@@ -1906,7 +1915,7 @@ str::cached cache_string_var(const PROPVARIANT& propVariant)
 			{
 				if (!value.empty())
 				{
-					value += L", ";
+					value += L"sv, "sv;
 				}
 				value += strings[index];
 				CoTaskMemFree(strings[index]);
@@ -2619,7 +2628,7 @@ platform::drives platform::scan_drives(const bool scan_contents)
 								if (wcscmp(name, description) != 0)
 								{
 									text = description;
-									text += L"\n";
+									text += L"\n"sv;
 								}
 
 								text += manufacturer;
@@ -2738,7 +2747,7 @@ df::blob platform::load_resource(const resource_item i)
 std::u8string platform::resource_url(const resource_item map_html)
 {
 	const auto app_path = running_app_path();
-	return str::format(u8"res://{}/{}", app_path, IDR_MAP);
+	return str::format(u8"res://{}/{}"sv, app_path, IDR_MAP);
 }
 
 
@@ -2790,7 +2799,7 @@ static bool verify_package(const df::file_path path_in)
 	const auto path = platform::to_file_system_path(path_in);
 	const auto cert_name = read_cert_name(path);
 
-	if (str::icmp(cert_name, L"Zachariah Walker") != 0)
+	if (str::icmp(cert_name, L"Zachariah Walker"sv) != 0)
 		return false;
 
 	WINTRUST_FILE_INFO FileData = {sizeof(WINTRUST_FILE_INFO)};
@@ -2809,11 +2818,11 @@ static bool verify_package(const df::file_path path_in)
 
 void platform::download_and_verify(const bool test_version, const std::function<void(df::file_path)>& complete)
 {
-	const auto download_path = temp_file(u8"exe");
+	const auto download_path = temp_file(u8"exe"sv);
 
 	web_request req;
-	req.host = u8"diffractor.com";
-	req.path = test_version ? u8"diffractor-setup-test.exe" : u8"diffractor-setup.exe";
+	req.host = u8"diffractor.com"sv;
+	req.path = test_version ? u8"diffractor-setup-test.exe"sv : u8"diffractor-setup.exe"sv;
 	req.download_file_path = download_path;
 
 	const auto response = send_request(req);
@@ -2831,10 +2840,10 @@ void platform::download_and_verify(const bool test_version, const std::function<
 platform::file_op_result platform::install(const df::file_path installer_path, const df::folder_path destination_folder,
                                            bool silent, bool run_app_after_install)
 {
-	auto command_line = L"\"" + to_file_system_path(installer_path) + L"\"";
-	if (silent) command_line += L" /S";
+	auto command_line = L"\""s + to_file_system_path(installer_path) + L"\""s;
+	if (silent) command_line += L" /S"s;
 	if (run_app_after_install) command_line += L" /RR";
-	command_line += L" /D=" + to_file_system_path(destination_folder);
+	command_line += L" /D="s + to_file_system_path(destination_folder);
 
 	const auto success = verify_package(installer_path) &&
 		run_command_line(command_line);
@@ -2859,7 +2868,7 @@ df::file_path platform::temp_file(const std::u8string_view ext, const df::folder
 	static auto counter = GetTickCount64();
 	counter += 1;
 
-	std::u8string name = u8"diffractor_";
+	auto name = u8"diffractor_"s;
 	name += str::to_hex(std::bit_cast<const uint8_t*>(&counter), 8);
 
 	if (!str::is_empty(ext))
@@ -3277,9 +3286,15 @@ uint32_t platform::file_crc32(const df::file_path path)
 		do
 		{
 			const auto read_size = std::min(max_chunk, static_cast<uint32_t>(size));
-			ReadFile(hFile, buffer.get(), read_size, &dwReadChunk, nullptr);
-			result = crypto::crc32c(result, buffer.get(), dwReadChunk);
-			total_read += dwReadChunk;
+			if (ReadFile(hFile, buffer.get(), read_size, &dwReadChunk, nullptr))
+			{
+				result = crypto::crc32c(result, buffer.get(), dwReadChunk);
+				total_read += dwReadChunk;
+			}
+			else
+			{
+				dwReadChunk = 0;
+			}
 		}
 		while (total_read < size && dwReadChunk > 0 && !df::is_closing);
 
@@ -3303,7 +3318,7 @@ bool platform::eject(const df::folder_path path)
 
 	if (hDevice == INVALID_HANDLE_VALUE)
 	{
-		df::log(__FUNCTION__, str::format(u8"IOCTL_STORAGE_EJECT_MEDIA: {}", last_os_error()));
+		df::log(__FUNCTION__, str::format(u8"IOCTL_STORAGE_EJECT_MEDIA: {}"sv, last_os_error()));
 		return false;
 	}
 
@@ -3311,7 +3326,7 @@ bool platform::eject(const df::folder_path path)
 
 	if (!res)
 	{
-		df::log(__FUNCTION__, str::format(u8"FSCTL_DISMOUNT_VOLUME: {}", last_os_error()));
+		df::log(__FUNCTION__, str::format(u8"FSCTL_DISMOUNT_VOLUME: {}"sv, last_os_error()));
 	}
 
 	PREVENT_MEDIA_REMOVAL PMRBuffer;
@@ -3322,14 +3337,14 @@ bool platform::eject(const df::folder_path path)
 
 	if (!res)
 	{
-		df::log(__FUNCTION__, str::format(u8"IOCTL_STORAGE_MEDIA_REMOVAL: {}", last_os_error()));
+		df::log(__FUNCTION__, str::format(u8"IOCTL_STORAGE_MEDIA_REMOVAL: {}"sv, last_os_error()));
 	}
 
 	res = DeviceIoControl(hDevice, IOCTL_STORAGE_EJECT_MEDIA, nullptr, 0, nullptr, 0, &returned, nullptr);
 
 	if (!res)
 	{
-		df::log(__FUNCTION__, str::format(u8"IOCTL_STORAGE_EJECT_MEDIA: {}", last_os_error()));
+		df::log(__FUNCTION__, str::format(u8"IOCTL_STORAGE_EJECT_MEDIA: {}"sv, last_os_error()));
 	}
 
 	res = CloseHandle(hDevice);
@@ -3469,19 +3484,19 @@ std::u8string platform::file_op_result::format_error(const std::u8string_view te
 
 	if (!more_text.empty())
 	{
-		str::join(result, more_text, u8"\n", false);
+		str::join(result, more_text, u8"\n"sv, false);
 	}
 
 	if (error_message.empty())
 	{
 		if (more_text.empty())
 		{
-			str::join(result, tt.error_unknown, u8"\n", false);
+			str::join(result, tt.error_unknown, u8"\n"sv, false);
 		}
 	}
 	else
 	{
-		str::join(result, error_message, u8"\n", false);
+		str::join(result, error_message, u8"\n"sv, false);
 	}
 
 	return result;
@@ -3596,10 +3611,10 @@ static df::folder_path shell_known_folder(REFIID id)
 
 static df::folder_path dropbox(const std::u8string_view sub_folder)
 {
-	const auto dropbox = path_from_csidl(CSIDL_PROFILE).combine(u8"Dropbox");
+	const auto dropbox = path_from_csidl(CSIDL_PROFILE).combine(u8"Dropbox"sv);
 	if (dropbox.exists()) return dropbox;
 
-	const auto info_path = path_from_csidl(CSIDL_LOCAL_APPDATA).combine(u8"Dropbox").combine_file(u8"info.json");
+	const auto info_path = path_from_csidl(CSIDL_LOCAL_APPDATA).combine(u8"Dropbox"sv).combine_file(u8"info.json"sv);
 
 	if (info_path.exists())
 	{
@@ -3663,7 +3678,7 @@ static df::folder_path onedrive_root_folder()
 	}
 	else
 	{
-		result = path_from_csidl(CSIDL_PROFILE).combine(u8"OneDrive");
+		result = path_from_csidl(CSIDL_PROFILE).combine(u8"OneDrive"sv);
 	}
 
 	return result;
@@ -3696,7 +3711,7 @@ df::folder_path platform::known_path(const known_folder f)
 	switch (f)
 	{
 	case known_folder::running_app_folder: return running_app_path().folder();
-	case known_folder::test_files_folder: return running_app_path().folder().combine(u8"test");
+	case known_folder::test_files_folder: return running_app_path().folder().combine(u8"test"sv);
 	case known_folder::app_data: return app_data();
 	case known_folder::downloads: return shell_known_folder(FOLDERID_Downloads);
 	case known_folder::pictures: return path_from_csidl(CSIDL_MYPICTURES);
@@ -3704,11 +3719,11 @@ df::folder_path platform::known_path(const known_folder f)
 	case known_folder::music: return path_from_csidl(CSIDL_MYMUSIC);
 	case known_folder::documents: return path_from_csidl(CSIDL_MYDOCUMENTS);
 	case known_folder::desktop: return path_from_csidl(CSIDL_DESKTOP);
-	case known_folder::dropbox_photos: return dropbox(u8"photos");
-	case known_folder::onedrive_pictures: return onedrive(u8"pictures");
-	case known_folder::onedrive_video: return onedrive(u8"video");
-	case known_folder::onedrive_music: return onedrive(u8"music");
-	case known_folder::onedrive_camera_roll: return onedrive(u8"pictures", u8"Camera Roll");
+	case known_folder::dropbox_photos: return dropbox(u8"photos"sv);
+	case known_folder::onedrive_pictures: return onedrive(u8"pictures"sv);
+	case known_folder::onedrive_video: return onedrive(u8"video"sv);
+	case known_folder::onedrive_music: return onedrive(u8"music"sv);
+	case known_folder::onedrive_camera_roll: return onedrive(u8"pictures"sv, u8"Camera Roll"sv);
 	default: ;
 	}
 
@@ -3831,7 +3846,7 @@ bool platform::mapi_send(const std::u8string_view to, const std::u8string_view s
 	SetFocus(nullptr);
 
 	HINSTANCE handle = LoadLibraryExA("MAPI32.DLL", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
-	//::LoadLibrary(L"MAPI32.DLL");
+	//::LoadLibrary(L"MAPI32.DLL"sv);
 	bool success = false;
 
 	if (handle)
@@ -3998,17 +4013,11 @@ platform::thread_init::~thread_init()
 class CPropVariant : public PROPVARIANT
 {
 public:
-	/// <summary>
-	/// Instantiate a new <cref name="CPropVariant"/> instance.
-	/// </summary>
 	CPropVariant()
 	{
 		memset(this, 0, sizeof(this));
 	}
 
-	/// <summary>
-	/// Destructor.
-	/// </summary>
 	~CPropVariant()
 	{
 		const HRESULT hr = PropVariantClear(this);
@@ -4016,17 +4025,11 @@ public:
 		(void)hr;
 	}
 
-	/// <summary>
-	/// Check the prop variant's current type.
-	/// </summary>
 	bool IsType(_In_ VARTYPE type) const
 	{
 		return vt == type;
 	}
 
-	/// <summary>
-	/// Address-of overload.
-	/// </summary>
 	PROPVARIANT* operator &()
 	{
 		return this;
@@ -4038,453 +4041,8 @@ static void confirm(HRESULT hr, const std::u8string_view context)
 {
 	if (FAILED(hr))
 	{
-		throw app_exception(str::format(u8"{} hr={:x}", context, hr));
+		throw app_exception(str::format(u8"{} hr={:x}"sv, context, hr));
 	}
-}
-
-static void md_store(IPropertyStore* pMetadata, const PROPERTYKEY& key, const char8_t* value)
-{
-	auto wv = str::utf8_to_utf16(value);
-
-	PROPVARIANT propVar = {};
-	propVar.vt = VT_LPWSTR;
-	propVar.pwszVal = const_cast<LPWSTR>(wv.c_str());
-
-	confirm(pMetadata->SetValue(key, propVar), str::utf8_cast(__FUNCTION__));
-}
-
-static void md_store(IPropertyStore* pMetadata, const PROPERTYKEY& key, const uint32_t value)
-{
-	PROPVARIANT propVar = {};
-	propVar.vt = VT_UI4;
-	propVar.uintVal = value;
-
-	confirm(pMetadata->SetValue(key, propVar), str::utf8_cast(__FUNCTION__));
-}
-
-static void md_store(IPropertyStore* pMetadata, const PROPERTYKEY& key, const df::xy16 value)
-{
-	PROPVARIANT propVar = {};
-	propVar.vt = VT_UI4;
-	propVar.uintVal = value.x;
-
-	//propVar.vt = VT_UI4 | VT_VECTOR;
-	//ULONG longs[] = { value.x, value.y };
-	//propVar.caul = { 2, longs };	
-
-	confirm(pMetadata->SetValue(key, propVar), str::utf8_cast(__FUNCTION__));
-}
-
-static void md_store(IPropertyStore* pMetadata, const PROPERTYKEY& key, const metadata_edits& edits)
-{
-	auto additions = edits.add_tags;
-	auto removals = edits.remove_tags;
-
-	PROPVARIANT propvar = {0};
-	HRESULT hr = pMetadata->GetValue(PKEY_Keywords, &propvar);
-
-	if (SUCCEEDED(hr))
-	{
-		// PKEY_Keywords is expected to produce a VT_VECTOR | VT_LPWSTR, or VT_EMPTY
-		// PropVariantToStringVectorAlloc will return an error for VT_EMPTY
-		LPWSTR* prgKeywords;
-		ULONG cElem;
-		hr = PropVariantToStringVectorAlloc(propvar, &prgKeywords, &cElem);
-		if (SUCCEEDED(hr))
-		{
-			// prgKeywords contains cElem strings
-			for (ULONG i = 0; i < cElem; i++)
-			{
-				CoTaskMemFree(prgKeywords[i]);
-			}
-			CoTaskMemFree(prgKeywords);
-		}
-		else
-		{
-			// propvar either is VT_EMPTY, or contains something other than a vector of  strings
-		}
-		PropVariantClear(&propvar);
-	}
-}
-
-static void md_store(IPropertyStore* pMetadata, const PROPERTYKEY& key, const ui::const_image_ptr& value)
-{
-	prop_variant_t propVar;
-
-	//blob_stream stream(value.data().data(), value.data().size());
-	//propVar.vt = VT_STREAM;
-	//propVar.pStream = &stream;
-
-	////propVar.blob.pBlobData = (BYTE*)value.data().data();
-
-	////propVar.vt = VT_UI4 | VT_VECTOR;
-	////ULONG longs[] = { value.x, value.y };
-	////propVar.caul = { 2, longs };	
-
-	//confirm(pMetadata->SetValue(key, propVar));
-}
-
-static void update_prop_array(ComPtr<IPropertyStore>& store, const PROPERTYKEY& propType,
-                              const std::vector<const char8_t*>& additions, const std::vector<const char8_t*>& removals)
-{
-	CPropVariant pv;
-	confirm(store->GetValue(propType, &pv), str::utf8_cast(__FUNCTION__));
-
-	std::vector<std::wstring> vOut;
-
-	ULONG index = 0;
-	if (pv.vt == VT_EMPTY)
-	{
-	}
-	else if (pv.vt == VT_LPWSTR)
-	{
-		vOut.emplace_back(pv.pwszVal);
-	}
-	else if (pv.vt == VT_BSTR)
-	{
-		vOut.emplace_back(pv.bstrVal);
-	}
-	else if (pv.vt == (VT_LPWSTR | VT_VECTOR))
-	{
-		for (index = 0; index < pv.calpwstr.cElems; index++)
-		{
-			vOut.emplace_back(pv.calpwstr.pElems[index]);
-		}
-	}
-	else if (pv.vt == (VT_BSTR | VT_VECTOR))
-	{
-		for (index = 0; index < pv.cabstr.cElems; index++)
-		{
-			vOut.emplace_back(pv.cabstr.pElems[index]);
-		}
-	}
-
-	df::hash_set<std::u8string, df::ihash, df::ieq> existing;
-
-	for (const auto& tag : vOut)
-	{
-		existing.emplace(str::utf16_to_utf8(tag));
-	}
-
-	for (const auto& tag : additions)
-	{
-		existing.emplace(tag);
-	}
-
-	for (const auto& tag : removals)
-	{
-		existing.erase(tag);
-	}
-
-
-	std::vector<std::wstring> updated;
-	std::vector<const wchar_t*> updated_raw;
-	std::ranges::transform(existing, std::back_inserter(updated),
-	                       [](const std::u8string_view v) { return str::utf8_to_utf16(v); });
-
-	for (const auto& tag : updated)
-	{
-		updated_raw.emplace_back(tag.c_str());
-	}
-
-	CPropVariant var;
-	confirm(InitPropVariantFromStringVector(updated_raw.data(), static_cast<uint32_t>(updated_raw.size()), &var),
-	        str::utf8_cast(__FUNCTION__));
-	confirm(store->SetValue(propType, var), str::utf8_cast(__FUNCTION__));
-}
-
-struct PropKeyMapping
-{
-	PROPERTYKEY pkey;
-	VARTYPE vt;
-	PCWSTR rgUpnpProperties[6];
-	//HRESULT(*pfn)(_In_ LeaveInfo* pInfo, _In_ CMFStringW* pstrQuery, CSearchQueryMapping* QM);
-	void* x;
-};
-
-static const PropKeyMapping rgPropKeyMapping[] =
-{
-	//{PKEY_SFGAOFlags, VT_UI4, {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr}, MapPKey_SFGAO},
-	//{PKEY_Generic_String, VT_LPWSTR, {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr}, MapPKey_Generic_String},
-	//{PKEY_Kind, VT_LPWSTR, {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr}, MapPKey_Kind},
-	{
-		PKEY_Media_Writer, VT_LPWSTR,
-		{L"upnp:author", L"upnp:author@role", L"microsoft:authorWriter", nullptr, nullptr, nullptr}, nullptr
-	},
-	{
-		PKEY_Music_Composer, VT_LPWSTR,
-		{L"upnp:author", L"upnp:author@role", L"microsoft:authorComposer", nullptr, nullptr, nullptr}, nullptr
-	},
-	{
-		PKEY_Music_DisplayArtist, VT_LPWSTR, {L"upnp:artist", L"upnp:artist@role", nullptr, nullptr, nullptr, nullptr},
-		nullptr
-	},
-	{
-		PKEY_Author, VT_LPWSTR,
-		{
-			L"upnp:artist", L"upnp:artist@role", L"dc:creator", L"upnp:actor", L"upnp:actor@role",
-			L"microsoft:artistPerformer"
-		},
-		nullptr
-	},
-	{
-		PKEY_Music_Conductor, VT_LPWSTR,
-		{L"upnp:artist", L"upnp:artist@role", L"microsoft:artistConductor", nullptr, nullptr, nullptr}, nullptr
-	},
-	{PKEY_Title, VT_LPWSTR, {L"dc:title", nullptr, nullptr, nullptr, nullptr, nullptr}, nullptr},
-	{PKEY_ItemNameDisplay, VT_LPWSTR, {L"dc:title", nullptr, nullptr, nullptr, nullptr, nullptr}, nullptr},
-	{PKEY_Music_Genre, VT_LPWSTR, {L"upnp:genre", nullptr, nullptr, nullptr, nullptr, nullptr}, nullptr},
-	{PKEY_Music_AlbumTitle, VT_LPWSTR, {L"upnp:album", nullptr, nullptr, nullptr, nullptr, nullptr}, nullptr},
-	{
-		PKEY_Music_Artist, VT_LPWSTR, {L"dc:creator", L"microsoft:artistPerformer", nullptr, nullptr, nullptr, nullptr},
-		nullptr
-	},
-	{PKEY_Size, VT_UI8, {L"res@size", nullptr, nullptr, nullptr, nullptr, nullptr}, nullptr},
-	{PKEY_Media_Duration, VT_UI8, {L"res@duration", nullptr, nullptr, nullptr, nullptr, nullptr}, nullptr},
-	{PKEY_DRM_IsProtected, VT_BOOL, {L"res@protection", nullptr, nullptr, nullptr, nullptr, nullptr}, nullptr},
-	{PKEY_Media_Publisher, VT_LPWSTR, {L"dc:publisher", nullptr, nullptr, nullptr, nullptr, nullptr}, nullptr},
-	{PKEY_Language, VT_LPWSTR, {L"dc:language", nullptr, nullptr, nullptr, nullptr, nullptr}, nullptr},
-	{
-		PKEY_Music_TrackNumber, VT_UI4, {L"upnp:originalTrackNumber", nullptr, nullptr, nullptr, nullptr, nullptr},
-		nullptr
-	},
-	{PKEY_Photo_DateTaken, VT_FILETIME, {L"dc:date", nullptr, nullptr, nullptr, nullptr, nullptr}, nullptr},
-	{PKEY_Media_Year, VT_UI4, {L"dc:date", nullptr, nullptr, nullptr, nullptr, nullptr}, nullptr},
-	{PKEY_Media_Producer, VT_LPWSTR, {L"upnp:producer", nullptr, nullptr, nullptr, nullptr, nullptr}, nullptr},
-	{PKEY_ParentalRating, VT_LPWSTR, {L"upnp:rating", nullptr, nullptr, nullptr, nullptr, nullptr}, nullptr},
-	{PKEY_Video_Director, VT_LPWSTR, {L"upnp:director", nullptr, nullptr, nullptr, nullptr, nullptr}, nullptr},
-	{PKEY_Media_MCDI, VT_LPWSTR, {L"upnp:toc", nullptr, nullptr, nullptr, nullptr, nullptr}, nullptr},
-	{PKEY_Comment, VT_LPWSTR, {L"dc:description", nullptr, nullptr, nullptr, nullptr, nullptr}, nullptr},
-	{
-		PKEY_Rating, VT_UI4,
-		{
-			L"microsoft:userRatingInStars", L"microsoft:userEffectiveRatingInStars", L"microsoft:userRating",
-			L"microsoft:userEffectiveRating", nullptr, nullptr
-		},
-		nullptr
-	},
-	{
-		PKEY_Media_ContentDistributor, VT_LPWSTR,
-		{L"microsoft:serviceProvider", nullptr, nullptr, nullptr, nullptr, nullptr}, nullptr
-	},
-	{
-		PKEY_Music_AlbumArtist, VT_LPWSTR,
-		{L"microsoft:artistAlbumArtist", nullptr, nullptr, nullptr, nullptr, nullptr}, nullptr
-	},
-	{PKEY_Keywords, VT_LPWSTR, {L"upnp:userAnnotation", nullptr, nullptr, nullptr, nullptr, nullptr}, nullptr},
-	{
-		PKEY_RecordedTV_StationName, VT_LPWSTR, {L"upnp:channelName", nullptr, nullptr, nullptr, nullptr, nullptr},
-		nullptr
-	},
-	{
-		PKEY_RecordedTV_ProgramDescription, VT_LPWSTR,
-		{L"upnp:longDescription", nullptr, nullptr, nullptr, nullptr, nullptr}, nullptr
-	},
-	{PKEY_Media_SubTitle, VT_LPWSTR, {L"upnp:programTitle", nullptr, nullptr, nullptr, nullptr, nullptr}, nullptr},
-	//{PKEY_StructuredQuery_Virtual_Artist, VT_LPWSTR, {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr}, MapPKey_StructuredQuery_Virtual_Artist},
-};
-
-
-static bool apply_metadata(ComPtr<IPropertyStore>& store, const metadata_edits& edits)
-{
-	//try
-	//{
-	//	update_prop_array(store, PKEY_Keywords, _add.read_string_vector(prop::tag), _remove.read_string_vector(prop::tag));
-
-	//	for (int i = 0; i < _add.size(); i++)
-	//	{
-	//		auto&& a = _add[i];
-
-	//		if (a.t == prop::album) md_store(store, PKEY_Music_AlbumTitle, a.s);
-	//		else if (a.t == prop::show) md_store(store, PKEY_Media_SeriesName, a.s);
-	//		else if (a.t == prop::album_artist) md_store(store, PKEY_Music_AlbumArtist, a.s);
-	//		else if (a.t == prop::artist) md_store(store, PKEY_Music_Artist, a.s);
-	//			//else if (a.t == prop::comment) md_store(store, PKEY_Comment, a.s);
-	//		else if (a.t == prop::description) md_store(store, PKEY_Comment, a.s);
-	//		else if (a.t == prop::composer) md_store(store, PKEY_Music_Composer, a.s);
-	//		else if (a.t == prop::copyright) md_store(store, PKEY_Copyright, a.s);
-	//		else if (a.t == prop::encoder) md_store(store, PKEY_Media_EncodedBy, a.s);
-	//		else if (a.t == prop::genre) md_store(store, PKEY_Music_Genre, a.s);
-	//		else if (a.t == prop::publisher) md_store(store, PKEY_Company, a.s);
-	//		else if (a.t == prop::title) md_store(store, PKEY_Title, a.s);
-	//		else if (a.t == prop::camera_manufacturer) md_store(store, PKEY_Photo_CameraManufacturer, a.s);
-	//		else if (a.t == prop::camera_model) md_store(store, PKEY_Photo_CameraModel, a.s);
-	//		else if (a.t == prop::year) md_store(store, PKEY_Media_Year, a.n); // UI4
-	//		else if (a.t == prop::disk_num) md_store(store, PKEY_Music_DiscNumber, a.xy); // ui4
-	//		else if (a.t == prop::track_num) md_store(store, PKEY_Music_TrackNumber, a.xy);
-	//		else if (a.t == prop::episode) md_store(store, PKEY_Media_EpisodeNumber, a.n); // ui4
-	//		else if (a.t == prop::season) md_store(store, PKEY_Media_SeasonNumber, a.n); // ui4
-	//		//else df::log(__FUNCTION__, "Unknown tag";
-	//	}
-	//}
-	//catch (const std::exception& e)
-	//{
-	//	return false;
-	//}
-
-	return true;
-}
-
-bool platform::update_metadata(const df::file_path path, const metadata_edits& edits)
-{
-	ComPtr<IShellItem2> shellItem;
-	auto hr = SHCreateItemFromParsingName(to_file_system_path(path).c_str(), nullptr, IID_PPV_ARGS(&shellItem));
-	if (FAILED(hr)) return false;
-
-	ComPtr<IPropertyStore> storeWrite;
-	hr = shellItem->GetPropertyStore(GPS_READWRITE, IID_PPV_ARGS(&storeWrite)); // GPS_VOLATILEPROPERTIESONLY
-	if (FAILED(hr)) return false;
-
-	if (!apply_metadata(storeWrite, edits))
-	{
-		return false;
-	}
-
-	/*hr = storeWrite->SetValue(PKEY_Author, wil::PropVariantArg(L"TyBeam"));
-	if (FAILED(hr)) return false;*/
-
-	hr = storeWrite->Commit();
-
-	const auto success = SUCCEEDED(hr);
-	//auto success = false;
-	//PIDLIST_ABSOLUTE pidl = nullptr;
-	//std::vector<PROPERTYKEY> keys_to_remove;
-
-	//if (SUCCEEDED(SHParseDisplayName(path.to_file_system_path().c_str(), nullptr, &pidl, 0, nullptr)))
-	//{
-	//	ComPtr<IShellItem> psi;
-
-	//	std::vector<LPCITEMIDLIST> pidls;
-
-	//	for (auto path : paths)
-	//	{
-	//		PIDLIST_ABSOLUTE pidl = nullptr;
-
-	//		if (SUCCEEDED(SHParseDisplayName(path.to_file_system_path().c_str(), nullptr, &pidl, 0, nullptr)))
-	//		{
-	//			pidls.emplace_back(pidl);
-
-	//			//omPtr<IShellItem2> psi;
-	//			//hr = SHCreateShellItem(nullptr, nullptr, (ITEMID_CHILD*)pidlFull[i], (IShellItem**)&psi);
-	//		}
-	//	}
-
-	//	if (SUCCEEDED(SHCreateShellItem(nullptr, nullptr, pidl, &psi)))
-	//	{
-	//		ComPtr<IPropertyChangeArray> propertyArray;
-	//		if (SUCCEEDED(PSCreatePropertyChangeArray(nullptr, nullptr, nullptr, 0, IID_PPV_ARGS(&propertyArray))))
-	//		{
-	//			PROPVARIANT emptyPropVar = {};
-	//			emptyPropVar.vt = VT_EMPTY;
-
-	//			ComPtr<IPropertyChange> propertyChange;
-	//			PSCreateSimplePropertyChange(PKA_SET, PKEY_Rating, emptyPropVar, IID_PPV_ARGS(&propertyChange));
-	//			propertyArray->Append(propertyChange);
-
-	//			ComPtr<IFileOperation> pfo;
-
-	//			if (SUCCEEDED(::CoCreateInstance(CLSID_FileOperation, nullptr, CLSCTX_ALL, IID_PPV_ARGS(&pfo))))
-	//			{
-	//				pfo->SetOwnerWindow(app_wnd());
-	//				pfo->SetOperationFlags(FOF_SILENT | FOF_NOCONFIRMATION | FOF_ALLOWUNDO);
-
-	//				pfo->SetProperties(propertyArray);
-	//				pfo->ApplyPropertiesToItem(psi);
-	//				success = SUCCEEDED(pfo->PerformOperations());
-	//			}
-	//		}
-
-	//		ComPtr<IPropertyStore> pProvider;
-	//		HRESULT hr = psia->GetPropertyStore(GPS_BESTEFFORT, IID_PPV_ARGS(&pProvider));
-
-	//		if (SUCCEEDED(hr))
-	//		{
-	//			ComPtr<IPropertyStoreCapabilities> ppsc;
-	//			hr = pProvider->QueryInterface(IID_PPV_ARGS(&ppsc));
-
-
-	//			ComPtr<IPropertyDescriptionList> pPropDescList;
-	//			hr = psia->GetPropertyDescriptionList(PKEY_PropList_FullDetails, IID_PPV_ARGS(&pPropDescList));
-
-	//			if (SUCCEEDED(hr))
-	//			{
-	//				UINT cProps;
-	//				hr = pPropDescList->GetCount(&cProps);
-
-	//				if (SUCCEEDED(hr))
-	//				{
-	//					for (UINT i = 0; i < cProps && SUCCEEDED(hr); i++)
-	//					{
-	//						ComPtr<IPropertyDescription> pPropDesc;
-	//						if (SUCCEEDED(pPropDescList->GetAt(i, IID_PPV_ARGS(&pPropDesc))))
-	//						{
-	//							PROPERTYKEY key;
-	//							if (SUCCEEDED(pPropDesc->GetPropertyKey(&key))) // Shouldn't fail
-	//							{
-	//								PROPDESC_TYPE_FLAGS flags;
-	//								pPropDesc->GetTypeFlags(PDTF_ISINNATE | PDTF_CANBEPURGED, &flags);
-	//								bool isReadOnly = flags & PDTF_ISINNATE;
-	//								bool canBePurged = false;
-
-	//								if (!isReadOnly)
-	//								{
-	//									// The schema says the property is read/write.  What does the property handler say?
-	//									isReadOnly = (ppsc->IsPropertyWritable(key) != S_OK);
-	//									canBePurged = !isReadOnly;
-	//								}
-	//								else
-	//								{
-	//									// The schema says the property is innate.  Determine if it can be purged.
-	//									canBePurged = flags & PDTF_CANBEPURGED;
-	//								}
-
-	//								if (canBePurged)
-	//								{
-	//									keys_to_remove.emplace_back(key);
-	//								}
-	//							}
-	//						}
-	//					}
-	//				}
-	//			}
-	//		}
-
-	//		if (!keys_to_remove.empty())
-	//		{
-	//			ComPtr<IPropertyChangeArray> propertyArray;
-	//			if (SUCCEEDED(PSCreatePropertyChangeArray(nullptr, nullptr, nullptr, 0, IID_PPV_ARGS(&propertyArray)
-	//			)))
-	//			{
-	//				PROPVARIANT emptyPropVar = {};
-	//				emptyPropVar.vt = VT_EMPTY;
-
-	//				for (auto key : keys_to_remove)
-	//				{
-	//					ComPtr<IPropertyChange> propertyChange;
-	//					PSCreateSimplePropertyChange(PKA_SET, key, emptyPropVar, IID_PPV_ARGS(&propertyChange));
-	//					propertyArray->Append(propertyChange);
-	//				}
-
-	//				ComPtr<IFileOperation> pfo;
-
-	//				if (SUCCEEDED(::CoCreateInstance(CLSID_FileOperation, nullptr, CLSCTX_ALL, IID_PPV_ARGS(&pfo))))
-	//				{
-	//					pfo->SetOwnerWindow(app_wnd());
-	//					pfo->SetOperationFlags(FOF_SILENT | FOF_NOCONFIRMATION | FOF_ALLOWUNDO);
-
-	//					pfo->SetProperties(propertyArray);
-	//					pfo->ApplyPropertiesToItems(psia);
-	//					success = SUCCEEDED(pfo->PerformOperations());
-	//				}
-	//			}
-	//		}
-	//	}
-
-	//	ILFree(pidl);
-	//}
-
-
-	return success;
 }
 
 df::blob platform::from_file(const df::file_path path)
@@ -4497,7 +4055,7 @@ df::blob platform::from_file(const df::file_path path)
 
 		if (file_len > df::max_blob_size)
 		{
-			throw app_exception(str::format(u8"Cannot read file into memory ({} bytes)", file_len));
+			throw app_exception(str::format(u8"Cannot read file into memory ({} bytes)"sv, file_len));
 		}
 
 		return f.read_blob(file_len);
@@ -4566,7 +4124,7 @@ std::u8string platform::format_date_time(const df::date_t d)
 			GetDateFormatW(locale, flags, &st, nullptr, sz_date, size);
 			GetTimeFormatW(locale, 0, &st, nullptr, sz_time, size);
 
-			return str::format(u8"{} {}", str::utf16_to_utf8(sz_date), str::utf16_to_utf8(sz_time));
+			return str::format(u8"{} {}"sv, str::utf16_to_utf8(sz_date), str::utf16_to_utf8(sz_time));
 		}
 	}
 
@@ -4800,7 +4358,7 @@ std::vector<platform::folder_info> platform::select_folders(const df::item_selec
 
 		const auto root_folder = selector.folder();
 		const auto root_path = to_file_system_path(root_folder);
-		const auto file_search_path = root_path + L"\\*.*";
+		const auto file_search_path = root_path + L"\\*.*"s;
 		auto* const files = FindFirstFileEx(file_search_path.c_str(), FindExInfoBasic, &fd,
 		                                    FindExSearchLimitToDirectories,
 		                                    nullptr, FIND_FIRST_EX_LARGE_FETCH);
@@ -4843,7 +4401,7 @@ static df::count_and_size calc_folder_summary_impl(const std::wstring& root_path
 		const auto path = folder_paths.back();
 		folder_paths.pop_back();
 
-		const auto find_path = path + L"\\*.*";
+		const auto find_path = path + L"\\*.*"s;
 		auto* const files = FindFirstFileEx(find_path.c_str(), FindExInfoBasic, &fd, FindExSearchNameMatch, nullptr,
 		                                    FIND_FIRST_EX_LARGE_FETCH);
 
@@ -4898,7 +4456,7 @@ platform::folder_contents platform::iterate_file_items(const df::folder_path fol
 	WIN32_FIND_DATA fd;
 
 	const auto root_path = to_file_system_path(folder);
-	const auto file_search_path = root_path + L"\\*.*";
+	const auto file_search_path = root_path + L"\\*.*"s;
 	auto* const files = FindFirstFileEx(file_search_path.c_str(), FindExInfoBasic, &fd, FindExSearchNameMatch, nullptr,
 	                                    FIND_FIRST_EX_LARGE_FETCH);
 
@@ -4992,7 +4550,7 @@ std::vector<platform::file_info> platform::select_files(const df::item_selector&
 		folders.pop_back();
 
 		auto root_path = to_file_system_path(current_folder);
-		auto file_search_path = root_path + L"\\*.*";
+		auto file_search_path = root_path + L"\\*.*"s;
 		auto* const files = FindFirstFileEx(file_search_path.c_str(), FindExInfoBasic, &fd, FindExSearchNameMatch,
 		                                    nullptr, FIND_FIRST_EX_LARGE_FETCH);
 
@@ -5042,7 +4600,7 @@ class setting_file_impl : public platform::setting_file
 public:
 	setting_file_impl()
 	{
-		constexpr std::u8string_view s_reg_key = u8"Software\\Diffractor";
+		constexpr std::u8string_view s_reg_key = u8"Software\\Diffractor"sv;
 		_root_key = create_key(HKEY_CURRENT_USER, s_reg_key, _root_created);
 	}
 
@@ -5214,32 +4772,28 @@ platform::mutex::~mutex()
 	// ??
 }
 
-void platform::mutex::lock() const
+_Acquires_exclusive_lock_(this)
+void platform::mutex::ex_lock() const
 {
 	AcquireSRWLockExclusive(std::bit_cast<PSRWLOCK>(&_cs));
 }
 
-void platform::mutex::unlock() const
+_Releases_exclusive_lock_(this)
+void platform::mutex::ex_unlock() const
 {
 	ReleaseSRWLockExclusive(std::bit_cast<PSRWLOCK>(&_cs));
 }
 
-void platform::shared_lock::unlock()
+_Acquires_shared_lock_(this)
+void platform::mutex::sh_lock() const
 {
-	if (_locked)
-	{
-		ReleaseSRWLockShared(std::bit_cast<PSRWLOCK>(&_rw._cs));
-		_locked = false;
-	}
+	AcquireSRWLockShared(std::bit_cast<PSRWLOCK>(&_cs));
 }
 
-void platform::shared_lock::lock()
+_Releases_shared_lock_(this)
+void platform::mutex::sh_unlock() const
 {
-	if (!_locked)
-	{
-		AcquireSRWLockShared(std::bit_cast<PSRWLOCK>(&_rw._cs));
-		_locked = true;
-	}
+	ReleaseSRWLockShared(std::bit_cast<PSRWLOCK>(&_cs));
 }
 
 

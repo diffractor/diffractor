@@ -870,7 +870,7 @@ namespace df
 
 		bool is_link() const
 		{
-			return ends(_name, u8".lnk");
+			return ends(_name, u8".lnk"sv);
 		}
 
 		item_online_status online_status() const
@@ -1076,7 +1076,7 @@ namespace df
 			else
 			{
 				result = format_plural_text(tt.cannot_process_fmt, first_file_name, static_cast<int>(items_count), {});
-				result += u8" ";
+				result += u8" "sv;
 
 				if (code == process_result_code::cloud_item)
 				{
@@ -1382,9 +1382,9 @@ namespace df
 				if (i != ignore)
 				{
 					const auto center = i->bounds.center();
-					const double dx = loc.x - center.x;
-					const double dy = loc.y - center.y;
-					const double d = (dx * dx) + (dy * dy);
+					const auto dx = static_cast<double>(loc.x) - static_cast<double>(center.x);
+					const auto dy = static_cast<double>(loc.y) - static_cast<double>(center.y);
+					const auto d = (dx * dx) + (dy * dy);
 
 					if (!result || distance > d)
 					{

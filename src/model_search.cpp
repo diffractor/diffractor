@@ -56,7 +56,7 @@ df::search_t df::search_t::parse_from_input(const std::u8string_view text) const
 			return result;
 	}
 
-	if (has_selector && str::starts(text, u8"*."))
+	if (has_selector && str::starts(text, u8"*."sv))
 	{
 		auto a = *this;
 		const auto s = a.selectors().front();
@@ -114,7 +114,7 @@ void df::search_t::normalize()
 
 static std::u8string term_quote(const std::u8string_view term_text)
 {
-	auto has_special_char = term_text.find_first_of(u8" \t\'\"!-#@") != std::u8string::npos;
+	auto has_special_char = term_text.find_first_of(u8" \t\'\"!-#@"sv) != std::u8string::npos;
 
 	if (!has_special_char)
 	{
@@ -157,7 +157,7 @@ static std::u8string term_quote(const std::u8string_view term_text)
 
 static std::u8string format_xy(const df::xy16 xy)
 {
-	if (xy.y) return str::format(u8"{}/{}", xy.x, xy.y);
+	if (xy.y) return str::format(u8"{}/{}"sv, xy.x, xy.y);
 	return str::to_string(xy.x);
 }
 
@@ -173,7 +173,7 @@ static std::u8string format_term_value(const df::search_term& term)
 	if (t->data_type == prop::data_type::string || !str::is_empty(term.text)) return term.text;
 	if (t->data_type == prop::data_type::date) return prop::format_date(df::date_t::from_days(n));
 	if (t == prop::f_number) return prop::format_f_num(d);
-	if (t == prop::megapixels) return str::print(u8"%1.1f", d);
+	if (t == prop::megapixels) return str::print(u8"%1.1f"sv, d);
 	if (t == prop::dimensions) return prop::format_dimensions({xy.x, xy.y});
 	if (t == prop::duration) return prop::format_duration(n);
 	if (t == prop::exposure_time) return prop::format_exposure(d);
@@ -224,10 +224,10 @@ std::u8string df::format_term(const search_term& term)
 {
 	u8ostringstream result;
 
-	if (term.modifiers.less_than) result << "<";
-	if (term.modifiers.greater_than) result << ">";
-	if (term.modifiers.equals) result << "=";
-	if (term.modifiers.less_than || term.modifiers.greater_than || term.modifiers.equals) result << " ";
+	if (term.modifiers.less_than) result << u8"<"sv;
+	if (term.modifiers.greater_than) result << u8">"sv;
+	if (term.modifiers.equals) result << u8"="sv;
+	if (term.modifiers.less_than || term.modifiers.greater_than || term.modifiers.equals) result << u8" "sv;
 
 	if (term.type == search_term_type::has_type)
 	{
@@ -278,12 +278,12 @@ std::u8string df::format_term(const search_term& term)
 			if (term.date_val.target == date_parts_prop::created)
 			{
 				result << tt.query_created;
-				result << ":";
+				result << u8":"sv;
 			}
 			else if (term.date_val.target == date_parts_prop::modified)
 			{
 				result << tt.query_modified;
-				result << ":";
+				result << u8":"sv;
 			}
 
 			if (term.date_val.age)
@@ -291,7 +291,7 @@ std::u8string df::format_term(const search_term& term)
 				if (term.date_val.target == date_parts_prop::any)
 				{
 					result << tt.query_age;
-					result << ":";
+					result << u8":"sv;
 				}
 
 				result << str::to_string(term.date_val.age);
@@ -309,7 +309,7 @@ std::u8string df::format_term(const search_term& term)
 
 				if (term.date_val.month != 0)
 				{
-					if (is_cat) result << "-";
+					if (is_cat) result << u8"-"sv;
 					result << (is_month_only
 						           ? str::month(term.date_val.month, true)
 						           : str::short_month(term.date_val.month, true));
@@ -318,7 +318,7 @@ std::u8string df::format_term(const search_term& term)
 
 				if (term.date_val.day != 0)
 				{
-					if (is_cat) result << "-";
+					if (is_cat) result << u8"-"sv;
 					result << str::to_string(term.date_val.day);
 				}
 			}
@@ -336,12 +336,12 @@ std::u8string df::format_term(const search_term& term)
 		}
 		else if (term.type == search_term_type::extension)
 		{
-			result << "ext:";
+			result << u8"ext:"sv;
 			result << term.text;
 		}
 		else if (term.type == search_term_type::duplicate)
 		{
-			result << "@";
+			result << u8"@"sv;
 			result << sv_duplicates;
 		}
 	}
@@ -355,7 +355,7 @@ static void term_join(std::u8string& result, const df::search_term& term)
 	if (term.modifiers.logical_op == df::search_term_modifier_bool::m_or)
 	{
 		result += tt.query_or;
-		result += u8" ";
+		result += u8" "sv;
 	}
 	for (auto i = 0; i < term.modifiers.begin_group; i++) result += '(';
 
@@ -673,7 +673,7 @@ void df::search_t::parse_part(const search_part& part)
 {
 	const auto* type = prop::from_prefix(part.scope);
 
-	if (part.scope == u8"@" && !part.literal)
+	if (part.scope == u8"@"sv && !part.literal)
 	{
 		const auto* const ft = parse_file_group(part.term);
 
@@ -709,19 +709,19 @@ void df::search_t::parse_part(const search_part& part)
 	auto probably_number = str::is_probably_num(part.term);
 	auto is_num = str::is_num(part.term);
 	auto is_date = date.parse(part.term) && date.is_valid();
-	double d1, d2, d3;
+	double d1, d2;
 	int n1, n2, n3;
 	search_term result;
 
-	if (part.scope == u8"@")
+	if (part.scope == u8"@"sv)
 	{
 		static const hash_map<std::u8string_view, search_term_type, ihash, ieq> pre_title_stop_words
 		{
 			{tt.query_duplicates, search_term_type::duplicate},
 			{tt.query_duplicates_alt1, search_term_type::duplicate},
 			{tt.query_duplicates_alt2, search_term_type::duplicate},
-			{u8"dups", search_term_type::duplicate},
-			{u8"duplicate", search_term_type::duplicate},
+			{u8"dups"sv, search_term_type::duplicate},
+			{u8"duplicate"sv, search_term_type::duplicate},
 			{sv_duplicates, search_term_type::duplicate},
 		};
 
@@ -732,7 +732,7 @@ void df::search_t::parse_part(const search_part& part)
 			result = search_term(found_flag->second, part.modifier);
 		}
 	}
-	else if (str::icmp(part.scope, u8"loc") == 0)
+	else if (str::icmp(part.scope, u8"loc"sv) == 0)
 	{
 		const auto loc = split_location(part.term);
 
@@ -742,13 +742,13 @@ void df::search_t::parse_part(const search_part& part)
 			result = search_term(search_term_type::location, coord, loc.z, part.modifier);
 		}
 	}
-	else if (str::icmp(part.scope, u8"ext") == 0 ||
-		str::icmp(part.scope, u8"extension") == 0 ||
-		str::icmp(part.scope, u8"type") == 0)
+	else if (str::icmp(part.scope, u8"ext"sv) == 0 ||
+		str::icmp(part.scope, u8"extension"sv) == 0 ||
+		str::icmp(part.scope, u8"type"sv) == 0)
 	{
 		result = search_term(search_term_type::extension, part.term, part.modifier);
 	}
-	else if (str::icmp(part.scope, u8"age") == 0)
+	else if (str::icmp(part.scope, u8"age"sv) == 0)
 	{
 		date_parts dd;
 		dd.age = n;
@@ -884,7 +884,7 @@ void df::search_t::parse_part(const search_part& part)
 	{
 		auto rate = n;
 
-		if (str::ends(part.term, u8"khz"))
+		if (str::ends(part.term, u8"khz"sv))
 		{
 			rate = static_cast<int>(d * 1000);
 		}
@@ -894,19 +894,19 @@ void df::search_t::parse_part(const search_part& part)
 	else if (type == prop::audio_sample_type)
 	{
 		const static hash_map<std::u8string_view, prop::audio_sample_t, ihash, ieq> audio_sample_types = {
-			{u8"none", prop::audio_sample_t::none},
-			{u8"8bit", prop::audio_sample_t::unsigned_8bit},
-			{u8"16bit", prop::audio_sample_t::signed_16bit},
-			{u8"32bit", prop::audio_sample_t::signed_32bit},
-			{u8"64bit", prop::audio_sample_t::signed_64bit},
-			{u8"float", prop::audio_sample_t::signed_float},
-			{u8"double", prop::audio_sample_t::signed_double},
-			{u8"8bit planar", prop::audio_sample_t::unsigned_planar_8bit},
-			{u8"16bit planar", prop::audio_sample_t::signed_planar_16bit},
-			{u8"32bit planar", prop::audio_sample_t::signed_planar_32bit},
-			{u8"64bit planar", prop::audio_sample_t::signed_planar_64bit},
-			{u8"float planar", prop::audio_sample_t::planar_float},
-			{u8"double planar", prop::audio_sample_t::planar_double}
+			{u8"none"sv, prop::audio_sample_t::none},
+			{u8"8bit"sv, prop::audio_sample_t::unsigned_8bit},
+			{u8"16bit"sv, prop::audio_sample_t::signed_16bit},
+			{u8"32bit"sv, prop::audio_sample_t::signed_32bit},
+			{u8"64bit"sv, prop::audio_sample_t::signed_64bit},
+			{u8"float"sv, prop::audio_sample_t::signed_float},
+			{u8"double"sv, prop::audio_sample_t::signed_double},
+			{u8"8bit planar"sv, prop::audio_sample_t::unsigned_planar_8bit},
+			{u8"16bit planar"sv, prop::audio_sample_t::signed_planar_16bit},
+			{u8"32bit planar"sv, prop::audio_sample_t::signed_planar_32bit},
+			{u8"64bit planar"sv, prop::audio_sample_t::signed_planar_64bit},
+			{u8"float planar"sv, prop::audio_sample_t::planar_float},
+			{u8"double planar"sv, prop::audio_sample_t::planar_double}
 		};
 
 		const auto found = audio_sample_types.find(part.term);
@@ -923,13 +923,13 @@ void df::search_t::parse_part(const search_part& part)
 	else if (type == prop::audio_channels)
 	{
 		const static hash_map<std::u8string_view, int, ihash, ieq> audio_channels = {
-			{u8"mono", 1},
-			{u8"stereo", 2},
-			{u8"3.0 surround", 3},
-			{u8"quad", 4},
-			{u8"5.0 surround", 5},
-			{u8"5.1 surround", 6},
-			{u8"7.1 surround", 8}
+			{u8"mono"sv, 1},
+			{u8"stereo"sv, 2},
+			{u8"3.0 surround"sv, 3},
+			{u8"quad"sv, 4},
+			{u8"5.0 surround"sv, 5},
+			{u8"5.1 surround"sv, 6},
+			{u8"7.1 surround"sv, 8}
 		};
 
 		const auto found = audio_channels.find(part.term);
@@ -959,15 +959,15 @@ void df::search_t::parse_part(const search_part& part)
 		}
 		else
 		{
-			if (str::ends(part.term, u8"m"))
+			if (str::ends(part.term, u8"m"sv))
 			{
 				duration = n * 60;
 			}
-			else if (str::ends(part.term, u8"h"))
+			else if (str::ends(part.term, u8"h"sv))
 			{
 				duration = n * 60 * 60;
 			}
-			else if (str::ends(part.term, u8"d"))
+			else if (str::ends(part.term, u8"d"sv))
 			{
 				duration = n * 60 * 60 * 24;
 			}
@@ -983,17 +983,17 @@ void df::search_t::parse_part(const search_part& part)
 	{
 		auto size = 0ull;
 
-		if (str::ends(part.term, u8"gb"))
+		if (str::ends(part.term, u8"gb"sv))
 		{
-			size = d * 1024ull * 1024ull * 1024ull;
+			size = df::round(d * 1024ull * 1024ull * 1024ull);
 		}
-		else if (str::ends(part.term, u8"mb"))
+		else if (str::ends(part.term, u8"mb"sv))
 		{
-			size = d * 1024ull * 1024ull;
+			size = df::round(d * 1024ull * 1024ull);
 		}
-		else if (str::ends(part.term, u8"kb"))
+		else if (str::ends(part.term, u8"kb"sv))
 		{
-			size = d * 1024ull;
+			size = df::round(d * 1024ull);
 		}
 		else
 		{

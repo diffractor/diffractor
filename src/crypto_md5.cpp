@@ -50,7 +50,7 @@ void md5::update(df::cspan data)
 {
 	if (_finalized)
 	{
-		throw app_exception("MD5::update: failed to update a finalized digest!");
+		throw app_exception(u8"MD5::update: failed to update a finalized digest!"s);
 	}
 
 	const auto size = data.size;
@@ -103,7 +103,7 @@ void md5::finalize()
 
 	if (_finalized)
 	{
-		throw app_exception("MD5::finalize: Already finalized this digest!");
+		throw app_exception(u8"MD5::finalize: Already finalized this digest!"s);
 	}
 
 	// save number of bits
@@ -131,7 +131,7 @@ std::u8string md5::hex_digest() const
 {
 	if (!_finalized)
 	{
-		throw app_exception("MD5 hex_digest Failed to get digest because un-finalized.");
+		throw app_exception(u8"MD5 hex_digest Failed to get digest because un-finalized."s);
 	}
 
 	return str::to_hex(digest, 16, false);

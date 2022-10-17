@@ -136,8 +136,8 @@ using index_folders_t = std::vector<std::pair<df::folder_path, df::index_folder_
 class index_items
 {
 private:
-	items_by_folder_t _index;
 	mutable platform::mutex _rw;
+	_Guarded_by_(_rw) items_by_folder_t _index;	
 
 public:
 	df::index_folder_item_ptr find(const df::folder_path folder) const
@@ -369,7 +369,7 @@ private:
 	platform::mutex _summary_rw;
 
 	index_items _items;
-	index_summary _summary;
+	_Guarded_by_(_summary_rw) index_summary _summary;
 	item_writes_t _db_writes;
 
 	bool _cache_items_loaded = false;

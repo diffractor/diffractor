@@ -201,13 +201,13 @@ private:
 
 		if (_failed_count > 0)
 		{
-			result += u8" ";
+			result += u8" "sv;
 			result += format_plural_text(tt.failed_items_fmt, _failed_first_name, _failed_count, {}, _total);
 		}
 
 		if (_ignore_count > 0)
 		{
-			result += u8" ";
+			result += u8" "sv;
 			result += format_plural_text(tt.ignored_fmt, _ignore_first_name, _ignore_count, {}, _total);
 		}
 

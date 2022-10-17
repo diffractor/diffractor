@@ -10,7 +10,7 @@
 #pragma once
 #include "model_propery.h"
 
-typedef struct AVChannelLayout;
+struct AVChannelLayout;
 using channel_layout_ptr = std::shared_ptr<AVChannelLayout>;
 
 channel_layout_ptr av_get_def_channel_layout(const int num_channels);
@@ -43,8 +43,8 @@ private:
 	uint32_t end_pos = 0;
 
 	double time = 0.0;
-	const int data_alignment = 16;
-	const int data_padding = 64;
+	const uint32_t data_alignment = 16u;
+	const uint32_t data_padding = 64u;
 
 	audio_info_t format;
 
@@ -53,7 +53,7 @@ public:
 	{
 		format = format_in;
 		size = 4 * format.bytes_per_second();
-		data = static_cast<uint8_t*>(_aligned_realloc(data, size + data_padding, data_alignment));
+		data = static_cast<uint8_t*>(_aligned_realloc(data, static_cast<size_t>(size) + static_cast<size_t>(data_padding), data_alignment));
 		end_pos = 0;
 	}
 

@@ -610,7 +610,7 @@ private:
 			}
 
 			// Canon 
-			if (icmp(_make, u8"Canon") == 0)
+			if (icmp(_make, u8"Canon"sv) == 0)
 			{
 				return EXIF_DATA_TYPE_MAKER_NOTE_CANON;
 			}
@@ -618,7 +618,7 @@ private:
 			// Pentax & some variant of Nikon 
 			if ((size >= 2) && (data[0] == 0x00) && (data[1] == 0x1b))
 			{
-				if (icmp(_make, u8"Nikon") == 0)
+				if (icmp(_make, u8"Nikon"sv) == 0)
 				{
 					return EXIF_DATA_TYPE_MAKER_NOTE_NIKON;
 				}
@@ -1096,7 +1096,7 @@ public:
 	void canon_tag(exif_dir_entry& entry) const
 	{
 		static canon_lenses lenses;
-		//df::log(__FUNCTION__, u8"Canon tag %x (%d)\n", entry.tag, entry.Size());
+		//df::log(__FUNCTION__, u8"Canon tag %x (%d)\n"sv, entry.tag, entry.Size());
 
 		switch (entry._tag)
 		{
@@ -1125,11 +1125,11 @@ public:
 
 					if (abs(low - high) < 0.1 || low < 0.1)
 					{
-						lens_text = str::cache(str::format(u8"{:.1}mm", high));
+						lens_text = str::cache(str::format(u8"{:.1}mm"sv, high));
 					}
 					else if (low >= 0.1 && high >= 0.1)
 					{
-						lens_text = str::cache(str::format(u8"{:.1}f-{:.1}mm", low, high));
+						lens_text = str::cache(str::format(u8"{:.1}f-{:.1}mm"sv, low, high));
 					}
 				}
 
@@ -1170,7 +1170,7 @@ public:
 
 	void exif_tag(exif_dir_entry& entry)
 	{
-		//df::log(__FUNCTION__, u8"Exif tag %x (%d)\n", entry.tag, entry.Size());
+		//df::log(__FUNCTION__, u8"Exif tag %x (%d)\n"sv, entry.tag, entry.Size());
 
 		switch (entry._tag)
 		{
@@ -1434,9 +1434,9 @@ static long get_int(ExifData* ed, ExifEntry* ee)
 		break;
 	default:
 		{
-			const auto* const message = "Invalid Exif byte order";
+			const auto message = "Invalid Exif byte order"sv;
 			df::log(__FUNCTION__, message);
-			throw app_exception(message);
+			throw app_exception(std::string(message));
 		}
 	}
 	return value;
@@ -1543,68 +1543,6 @@ df::blob metadata_exif::fix_dims(const df::span cs, const int image_width, const
 		free(data);
 	}
 	return result;
-}
-
-
-static ExifEntry* create_tag(const ExifData* exif, const ExifIfd ifd, const ExifTag tag, const size_t len)
-{
-	//  Create a memory allocator to manage this ExifEntry 
-	ExifMem* mem = exif_mem_new_default();
-	df::assert_true(mem != nullptr); //  catch an out of memory condition 
-
-	//  Create a new ExifEntry using our allocator 
-	auto* const entry = exif_entry_new_mem(mem);
-	df::assert_true(entry != nullptr);
-
-	//  Allocate memory to use for holding the tag data 
-	auto* const buf = static_cast<uint8_t*>(exif_mem_alloc(mem, len));
-	df::assert_true(buf != nullptr);
-
-	//  Fill in the entry 
-	entry->data = buf;
-	entry->size = len;
-	entry->tag = tag;
-	entry->components = len;
-	entry->format = EXIF_FORMAT_UNDEFINED;
-
-	//  Attach the ExifEntry to an IFD 
-	exif_content_add_entry(exif->ifd[ifd], entry);
-
-	//  The ExifMem and ExifEntry are now owned elsewhere 
-	exif_mem_unref(mem);
-	exif_entry_unref(entry);
-
-	return entry;
-}
-
-//  Get an existing tag, or create one if it doesn't exist 
-static ExifEntry* init_tag(ExifData* exif, ExifIfd ifd, ExifTag tag)
-{
-	ExifEntry* entry;
-	//  Return an existing tag if one exists 
-	if (!((entry = exif_content_get_entry(exif->ifd[ifd], tag))))
-	{
-		//  Allocate a new entry 
-		entry = exif_entry_new();
-		df::assert_true(entry != nullptr); //  catch an out of memory condition 
-		entry->tag = tag; //  tag must be set before calling
-		//	 exif_content_add_entry 
-
-		//  Attach the ExifEntry to an IFD 
-		exif_content_add_entry(exif->ifd[ifd], entry);
-
-		//  Allocate memory for the entry and fill with default data 
-		exif_entry_initialize(entry, tag);
-
-		//  Ownership of the ExifEntry has now been passed to the IFD.
-		// One must be very careful in accessing a structure after
-		// unref'ing it; in this case, we know u8"entry" won't be freed
-		// because the reference count was bumped when it was added to
-		// the IFD.
-
-		exif_entry_unref(entry);
-	}
-	return entry;
 }
 
 #define FILE_BYTE_ORDER EXIF_BYTE_ORDER_INTEL
@@ -1728,8 +1666,6 @@ void add_tag(ExifData* exif, ExifTag tag, const int val)
 df::blob metadata_exif::make_exif(const prop::item_metadata_ptr& md)
 {
 	df::blob result;
-
-	ExifEntry* entry;
 	ExifData* exif = exif_data_new();
 
 	if (exif)

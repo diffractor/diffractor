@@ -42,94 +42,92 @@ class icc_profile
 public:
 	struct DateTime
 	{
-		uint16_t year_;
-		uint16_t month_;
-		uint16_t day_;
-		uint16_t hour_;
-		uint16_t min_;
-		uint16_t sec_;
+		uint16_t year_ = 0;
+		uint16_t month_ = 0;
+		uint16_t day_ = 0;
+		uint16_t hour_ = 0;
+		uint16_t min_ = 0;
+		uint16_t sec_ = 0;
 	};
 
 	struct XYZ
 	{
-		double x_;
-		double y_;
-		double z_;
+		double x_ = 0.0;
+		double y_ = 0.0;
+		double z_ = 0.0;
 	};
 
 	struct Tag
 	{
-		uint32_t type_;
+		uint32_t type_ = 0;
 		std::vector<uint8_t> data_;
 
-		Tag()
-		{
-		}
+		Tag() = default;
 
 		Tag(const uint32_t type, std::vector<uint8_t> data) : type_(type), data_(std::move(data))
 		{
 		}
 	};
 
-	uint32_t profileSize_;
-	uint32_t cmmType_;
-	uint32_t profileVersion_;
-	uint32_t profileClass_;
-	uint32_t colorSpace_;
-	uint32_t connectionSpace_;
+	uint32_t profileSize_ = 0;
+	uint32_t cmmType_ = 0;
+	uint32_t profileVersion_ = 0;
+	uint32_t profileClass_ = 0;
+	uint32_t colorSpace_ = 0;
+	uint32_t connectionSpace_ = 0;
 	DateTime dtime_;
-	uint32_t acsp_;
-	uint32_t platform_;
-	uint32_t flags_;
-	uint32_t deviceManufacture_;
-	uint32_t deviceModel_;
-	uint64_t deviceAttrib_;
-	uint32_t intent_;
+	uint32_t acsp_ = 0;
+	uint32_t platform_ = 0;
+	uint32_t flags_ = 0;
+	uint32_t deviceManufacture_ = 0;
+	uint32_t deviceModel_ = 0;
+	uint64_t deviceAttrib_ = 0;
+	uint32_t intent_ = 0;
 	XYZ connectionIllum_;
-	uint32_t creator_;
+	uint32_t creator_ = 0;
 
 	std::map<uint32_t, Tag> tags_;
 
 	std::u8string dump4(const uint32_t u)
 	{
-		return str::print(u8"%c%c%c%c", (u >> 24) & 0xFF, (u >> 16) & 0xFF, (u >> 8) & 0xFF, u & 0xFF);
+		return str::print(u8"%c%c%c%c"sv, (u >> 24) & 0xFF, (u >> 16) & 0xFF, (u >> 8) & 0xFF, u & 0xFF);
 	}
 
 	metadata_kv_list dump()
 	{
 		metadata_kv_list result;
 
-		result.emplace_back(u8"Size"_c, str::print(u8"%x", profileSize_));
+		result.emplace_back(u8"Size"_c, str::print(u8"%x"sv, profileSize_));
 		result.emplace_back(u8"CMM Type"_c, dump4(cmmType_));
 		result.emplace_back(u8"Version"_c,
-		                    str::print(u8"%x (version %d)", profileVersion_, (profileVersion_ >> 24) & 0xFF));
+		                    str::print(u8"%x (version %d)"sv, profileVersion_, (profileVersion_ >> 24) & 0xFF));
 		result.emplace_back(u8"Class"_c, dump4(profileClass_));
 		result.emplace_back(u8"Color Space Data"_c, dump4(colorSpace_));
 		result.emplace_back(u8"Connection Space"_c, dump4(connectionSpace_));
 		result.emplace_back(u8"Date Time"_c,
-		                    str::print(u8"%d-%d-%d,%d:%d,%d", dtime_.year_, dtime_.month_, dtime_.day_, dtime_.hour_,
+		                    str::print(u8"%d-%d-%d,%d:%d,%d"sv, dtime_.year_, dtime_.month_, dtime_.day_, dtime_.hour_,
 		                               dtime_.min_, dtime_.sec_));
 		result.emplace_back(u8"File Signature"_c, dump4(acsp_));
 		result.emplace_back(u8"Primary Platform"_c, dump4(platform_));
-		result.emplace_back(u8"CMM Flags"_c, str::print(u8"%x", flags_));
+		result.emplace_back(u8"CMM Flags"_c, str::print(u8"%x"sv, flags_));
 		result.emplace_back(u8"Device Manufacturer"_c, dump4(deviceManufacture_));
 		result.emplace_back(u8"Device Model"_c, dump4(deviceModel_));
-		result.emplace_back(u8"Device Attributes"_c, str::print(u8"%I64x", deviceAttrib_));
-		result.emplace_back(u8"Rendering Intent"_c, str::print(u8"%d", intent_));
+		result.emplace_back(u8"Device Attributes"_c, str::print(u8"%I64x"sv, deviceAttrib_));
+		result.emplace_back(u8"Rendering Intent"_c, str::print(u8"%d"sv, intent_));
 		result.emplace_back(u8"Connection Space Illuminant"_c,
-		                    str::print(u8"(%f,%f,%f)", connectionIllum_.x_, connectionIllum_.y_, connectionIllum_.z_));
+		                    str::print(u8"(%f,%f,%f)"sv, connectionIllum_.x_, connectionIllum_.y_, connectionIllum_.z_));
 		result.emplace_back(u8"Creator"_c, dump4(creator_));
 
 		for (const auto& t : tags_)
 		{
-			auto name = str::print(u8"%c%c%c%c:%c%c%c%c", (t.first >> 24) & 0xFF, (t.first >> 16) & 0xFF,
+			auto name = str::print(u8"%c%c%c%c:%c%c%c%c"sv, (t.first >> 24) & 0xFF, (t.first >> 16) & 0xFF,
 			                       (t.first >> 8) & 0xFF,
 			                       t.first & 0xFF, (t.second.type_ >> 24) & 0xFF, (t.second.type_ >> 16) & 0xFF,
 			                       (t.second.type_ >> 8) & 0xFF, t.second.type_ & 0xFF);
 
-			auto max_text_len = 16_z;
+			constexpr auto max_text_len = 16_z;
 			auto hex = str::to_hex(t.second.data_.data(), std::min(t.second.data_.size(), max_text_len));
-			if (t.second.data_.size() > max_text_len) hex += u8"...";
+			if (t.second.data_.size() > max_text_len) hex += u8"..."sv;
 			result.emplace_back(str::cache(name), hex);
 		}
 
@@ -141,8 +139,8 @@ class icc_stream
 {
 public:
 	const uint8_t* buffer_;
-	size_t size_;
-	size_t index_;
+	size_t size_ = 0;
+	size_t index_ = 0;
 
 	icc_stream(const df::cspan data, const size_t index = 0)
 		: buffer_(data.data), size_(data.size), index_(index)

@@ -748,7 +748,7 @@ void items_view::update_visible_items_list()
 	if (_visible_items != new_visible_items)
 	{
 		_visible_items = std::move(new_visible_items);
-		df::trace("items_view::update_visible_items_list changed");
+		df::trace("items_view::update_visible_items_list changed"sv);
 
 		const auto visible_center_loc = logical_items_bounds.center();
 		auto visible_center_distance = INT_MAX;
@@ -1138,7 +1138,7 @@ public:
 			for (const auto& m : _kv)
 			{
 				s << m.first.sv();
-				s << ": ";
+				s << u8": "sv;
 				s << m.second;
 				s << std::endl;
 			}
@@ -1258,7 +1258,7 @@ void items_view::update_media_elements()
 				elements.emplace_back(std::make_shared<padding_element>(4));
 				elements.emplace_back(std::make_shared<file_list_control>(display, view_element_style::center));
 			}
-			else if (str::icmp(item->extension(), u8".d64") == 0)
+			else if (str::icmp(item->extension(), u8".d64"sv) == 0)
 			{
 				elements.emplace_back(media_control_style(media_control_element));
 
@@ -1359,13 +1359,13 @@ void items_view::update_media_elements()
 
 							if (st.audio_channels != 0)
 							{
-								format += u8"  ";
+								format += u8"  "sv;
 								format += prop::format_audio_channels(st.audio_channels);
 							}
 
 							if (st.audio_sample_type != prop::audio_sample_t::none)
 							{
-								format += u8"  ";
+								format += u8"  "sv;
 								format += format_audio_sample_type(st.audio_sample_type);
 							}
 						}
@@ -1382,7 +1382,7 @@ void items_view::update_media_elements()
 							std::make_shared<text_element>(format),
 							std::make_shared<text_element>(st.rotation == 0.0
 								                               ? std::u8string{}
-								                               : str::format(u8"rotation={}", st.rotation))
+								                               : str::format(u8"rotation={}"sv, st.rotation))
 						};
 
 						table->add(row);

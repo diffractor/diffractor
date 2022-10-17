@@ -9,137 +9,137 @@
 
 #include "pch.h"
 
-static constexpr std::u8string_view s_dest_path = u8"DestPath";
-static constexpr std::u8string_view s_move = u8"Move";
-static constexpr std::u8string_view s_import = u8"Import";
-static constexpr std::u8string_view s_limit = u8"Limit";
-static constexpr std::u8string_view s_jpg = u8"jpg";
-static constexpr std::u8string_view s_png = u8"png";
-static constexpr std::u8string_view s_webp = u8"webp";
-static constexpr std::u8string_view s_limit_dimension = u8"LimitDimension";
-static constexpr std::u8string_view s_max = u8"Max";
-static constexpr std::u8string_view s_start = u8"Start";
-static constexpr std::u8string_view s_album = u8"Album";
-static constexpr std::u8string_view s_maximize = u8"Maximize";
-static constexpr std::u8string_view s_favourite_tags = u8"FavouriteTags";
-static constexpr std::u8string_view s_out_folder = u8"OutFolder";
-static constexpr std::u8string_view s_resize_size = u8"ResizeSize";
-static constexpr std::u8string_view s_volume = u8"Volume";
-static constexpr std::u8string_view s_create_originals = u8"CreateOriginals";
-static constexpr std::u8string_view s_show_rotated = u8"ShowRotated";
-static constexpr std::u8string_view s_show_results = u8"ShowResults";
-static constexpr std::u8string_view s_check_for_updates = u8"CheckForUpdates";
-static constexpr std::u8string_view s_last_run = u8"LastRun";
-static constexpr std::u8string_view s_pictures = u8"Pictures";
-static constexpr std::u8string_view s_index = u8"Index";
-static constexpr std::u8string_view s_favourite_search = u8"FavouriteSearch";
-static constexpr std::u8string_view s_video = u8"Video";
-static constexpr std::u8string_view s_music = u8"Music";
-static constexpr std::u8string_view s_drop_box = u8"DropBox";
-static constexpr std::u8string_view s_title = u8"Title";
-static constexpr std::u8string_view s_path = u8"Path";
-static constexpr std::u8string_view s_more = u8"More";
-static constexpr std::u8string_view s_out_name = u8"OutName";
-static constexpr std::u8string_view s_convert = u8"Convert";
-static constexpr std::u8string_view s_available_version = u8"AvailableVersion";
-static constexpr std::u8string_view s_available_test_version = u8"AvailableTestVersion";
-static constexpr std::u8string_view s_tags = u8"Tags";
-static constexpr std::u8string_view s_is_sponsor = u8"Awesome";
-static constexpr std::u8string_view s_is_tester = u8"IsTester";
-static constexpr std::u8string_view s_first_time = u8"First";
-static constexpr std::u8string_view s_quality = u8"Quality";
-static constexpr std::u8string_view s_webp_quality = u8"webp_quality";
-static constexpr std::u8string_view s_webp_lossless = u8"webp_lossless";
-static constexpr std::u8string_view s_slideshow_delay = u8"SlideshowDelay";
-static constexpr std::u8string_view s_copyright = u8"Copyright";
-static constexpr std::u8string_view s_creator = u8"Creator";
-static constexpr std::u8string_view s_album_artist = u8"AlbumArtist";
-static constexpr std::u8string_view s_genre = u8"Genre";
-static constexpr std::u8string_view s_tv_show = u8"TvShow";
-static constexpr std::u8string_view s_to = u8"To";
-static constexpr std::u8string_view s_subject = u8"Subject";
-static constexpr std::u8string_view s_message = u8"Message";
-static constexpr std::u8string_view s_items_scale = u8"ItemsScale";
-static constexpr std::u8string_view s_item_splitter = u8"ItemSplitter";
-static constexpr std::u8string_view s_auto_play = u8"AutoPlay";
-static constexpr std::u8string_view s_scale_up = u8"ScaleUp";
-static constexpr std::u8string_view s_features = u8"Features";
-static constexpr std::u8string_view s_update_min = u8"UpdateMin";
-static constexpr std::u8string_view s_instantiations = u8"Instantiations";
-static constexpr std::u8string_view s_highlight_large_items = u8"HighlightLargeItems";
-static constexpr std::u8string_view s_sort_dates_descending = u8"SortDatesDescending";
-static constexpr std::u8string_view g_show_navigation_bar = u8"show_nav_bar";
-static constexpr std::u8string_view g_detail_folder_items = u8"detail_folder_items";
-static constexpr std::u8string_view g_detail_file_items = u8"detail_file_items";
-static constexpr std::u8string_view s_large_font = u8"large_font";
-static constexpr std::u8string_view s_use_gpu = u8"UseGpu";
-static constexpr std::u8string_view s_use_d3d11_va = u8"use_d3d11va";
-static constexpr std::u8string_view s_use_yuv = u8"use_yuv";
-static constexpr std::u8string_view s_send_crash_dumps = u8"SendCrashDumps";
-static constexpr std::u8string_view s_install_updates = u8"InstallUpdates";
-static constexpr std::u8string_view s_show_performance_timings = u8"ShowPerformanceTimings";
-static constexpr std::u8string_view s_source = u8"Source";
-static constexpr std::u8string_view s_credit = u8"Credit";
-static constexpr std::u8string_view s_artist = u8"Artist";
-static constexpr std::u8string_view s_caption = u8"caption";
-static constexpr std::u8string_view s_url = u8"url";
-static constexpr std::u8string_view s_set_url = u8"set_url";
-static constexpr std::u8string_view s_set_copyright = u8"SetCopyright";
-static constexpr std::u8string_view s_set_creator = u8"SetCreator";
-static constexpr std::u8string_view s_set_source = u8"SetSource";
-static constexpr std::u8string_view s_set_credit = u8"SetCredit";
-static constexpr std::u8string_view s_set_artist = u8"SetArtist";
-static constexpr std::u8string_view s_set_caption = u8"set_caption";
-static constexpr std::u8string_view s_set_album = u8"SetAlbum";
-static constexpr std::u8string_view s_set_album_artist = u8"SetAlbumArtist";
-static constexpr std::u8string_view s_set_genre = u8"SetGenre";
-static constexpr std::u8string_view s_set_tv_show = u8"SetTvShow";
-static constexpr std::u8string_view s_ignore_previous = u8"IgnorePrevious";
-static constexpr std::u8string_view s_overwrite_if_newer = u8"OverwriteIfNewer";
-static constexpr std::u8string_view s_hidden = u8"Hidden";
-static constexpr std::u8string_view s_email = u8"Email";
-static constexpr std::u8string_view s_rename = u8"Rename";
-static constexpr std::u8string_view s_template = u8"Template";
-static constexpr std::u8string_view s_wall_paper = u8"WallPaper";
-static constexpr std::u8string_view s_confirm = u8"Confirm";
-static constexpr std::u8string_view s_repeat = u8"repeat";
-static constexpr std::u8string_view s_zip = u8"Zip";
-static constexpr std::u8string_view s_sidebar = u8"sidebar";
-static constexpr std::u8string_view s_show_total_items = u8"show_total_items";
-static constexpr std::u8string_view s_show_history = u8"show_history";
-static constexpr std::u8string_view s_show_world_map = u8"show_world_map";
-static constexpr std::u8string_view s_show_indexed_folders = u8"show_indexed_folders";
-static constexpr std::u8string_view s_show_drives = u8"show_drives";
-static constexpr std::u8string_view s_show_favorite_searches = u8"show_favorite_searches";
-static constexpr std::u8string_view s_show_favorite_tags = u8"show_favorite_tags";
-static constexpr std::u8string_view s_show_ratings = u8"show_ratings";
-static constexpr std::u8string_view s_show_labels = u8"show_labels";
-static constexpr std::u8string_view s_lang = u8"lang";
-static constexpr std::u8string_view s_verbose_metadata = u8"verbose_metadata";
-static constexpr std::u8string_view s_location_latitude = u8"location_latitude";
-static constexpr std::u8string_view s_location_longitude = u8"location_longitude";
-static constexpr std::u8string_view s_raw_preview = u8"raw_preview";
-static constexpr std::u8string_view s_onedrive_pictures = u8"onedrive_pictures";
-static constexpr std::u8string_view s_onedrive_video = u8"onedrive_video";
-static constexpr std::u8string_view s_onedrive_music = u8"onedrive_music";
-static constexpr std::u8string_view s_set_created_date = u8"set_created_date";
-static constexpr std::u8string_view s_sync = u8"sync";
-static constexpr std::u8string_view s_local_path = u8"local_path";
-static constexpr std::u8string_view s_remote_path = u8"remote_path";
-static constexpr std::u8string_view s_sync_collection = u8"sync_collection";
-static constexpr std::u8string_view s_sync_local_remoteh = u8"sync_local_remoteh";
-static constexpr std::u8string_view s_sync_remote_local = u8"sync_remote_local";
-static constexpr std::u8string_view s_sync_delete_local = u8"sync_delete_local";
-static constexpr std::u8string_view s_sync_delete_remote = u8"sync_delete_remote";
-static constexpr std::u8string_view s_custom_folder_structure = u8"dest_folder_structure";
-static constexpr std::u8string_view s_rename_different_attributes = u8"rename_different_attributes";
-static constexpr std::u8string_view s_source_path = u8"source_path";
-static constexpr std::u8string_view s_source_filter = u8"source_filter";
-static constexpr std::u8string_view s_show_shadow = u8"show_shadow";
-static constexpr std::u8string_view s_update_modified = u8"update_modified";
-static constexpr std::u8string_view s_last_played_pos = u8"last_played_pos";
-static constexpr std::u8string_view s_show_help_tooltips = u8"show_help_tooltips";
-static constexpr std::u8string_view s_sound_device = u8"sound_device";
+static constexpr std::u8string_view s_dest_path = u8"DestPath"sv;
+static constexpr std::u8string_view s_move = u8"Move"sv;
+static constexpr std::u8string_view s_import = u8"Import"sv;
+static constexpr std::u8string_view s_limit = u8"Limit"sv;
+static constexpr std::u8string_view s_jpg = u8"jpg"sv;
+static constexpr std::u8string_view s_png = u8"png"sv;
+static constexpr std::u8string_view s_webp = u8"webp"sv;
+static constexpr std::u8string_view s_limit_dimension = u8"LimitDimension"sv;
+static constexpr std::u8string_view s_max = u8"Max"sv;
+static constexpr std::u8string_view s_start = u8"Start"sv;
+static constexpr std::u8string_view s_album = u8"Album"sv;
+static constexpr std::u8string_view s_maximize = u8"Maximize"sv;
+static constexpr std::u8string_view s_favourite_tags = u8"FavouriteTags"sv;
+static constexpr std::u8string_view s_out_folder = u8"OutFolder"sv;
+static constexpr std::u8string_view s_resize_size = u8"ResizeSize"sv;
+static constexpr std::u8string_view s_volume = u8"Volume"sv;
+static constexpr std::u8string_view s_create_originals = u8"CreateOriginals"sv;
+static constexpr std::u8string_view s_show_rotated = u8"ShowRotated"sv;
+static constexpr std::u8string_view s_show_results = u8"ShowResults"sv;
+static constexpr std::u8string_view s_check_for_updates = u8"CheckForUpdates"sv;
+static constexpr std::u8string_view s_last_run = u8"LastRun"sv;
+static constexpr std::u8string_view s_pictures = u8"Pictures"sv;
+static constexpr std::u8string_view s_index = u8"Index"sv;
+static constexpr std::u8string_view s_favourite_search = u8"FavouriteSearch"sv;
+static constexpr std::u8string_view s_video = u8"Video"sv;
+static constexpr std::u8string_view s_music = u8"Music"sv;
+static constexpr std::u8string_view s_drop_box = u8"DropBox"sv;
+static constexpr std::u8string_view s_title = u8"Title"sv;
+static constexpr std::u8string_view s_path = u8"Path"sv;
+static constexpr std::u8string_view s_more = u8"More"sv;
+static constexpr std::u8string_view s_out_name = u8"OutName"sv;
+static constexpr std::u8string_view s_convert = u8"Convert"sv;
+static constexpr std::u8string_view s_available_version = u8"AvailableVersion"sv;
+static constexpr std::u8string_view s_available_test_version = u8"AvailableTestVersion"sv;
+static constexpr std::u8string_view s_tags = u8"Tags"sv;
+static constexpr std::u8string_view s_is_sponsor = u8"Awesome"sv;
+static constexpr std::u8string_view s_is_tester = u8"IsTester"sv;
+static constexpr std::u8string_view s_first_time = u8"First"sv;
+static constexpr std::u8string_view s_quality = u8"Quality"sv;
+static constexpr std::u8string_view s_webp_quality = u8"webp_quality"sv;
+static constexpr std::u8string_view s_webp_lossless = u8"webp_lossless"sv;
+static constexpr std::u8string_view s_slideshow_delay = u8"SlideshowDelay"sv;
+static constexpr std::u8string_view s_copyright = u8"Copyright"sv;
+static constexpr std::u8string_view s_creator = u8"Creator"sv;
+static constexpr std::u8string_view s_album_artist = u8"AlbumArtist"sv;
+static constexpr std::u8string_view s_genre = u8"Genre"sv;
+static constexpr std::u8string_view s_tv_show = u8"TvShow"sv;
+static constexpr std::u8string_view s_to = u8"To"sv;
+static constexpr std::u8string_view s_subject = u8"Subject"sv;
+static constexpr std::u8string_view s_message = u8"Message"sv;
+static constexpr std::u8string_view s_items_scale = u8"ItemsScale"sv;
+static constexpr std::u8string_view s_item_splitter = u8"ItemSplitter"sv;
+static constexpr std::u8string_view s_auto_play = u8"AutoPlay"sv;
+static constexpr std::u8string_view s_scale_up = u8"ScaleUp"sv;
+static constexpr std::u8string_view s_features = u8"Features"sv;
+static constexpr std::u8string_view s_update_min = u8"UpdateMin"sv;
+static constexpr std::u8string_view s_instantiations = u8"Instantiations"sv;
+static constexpr std::u8string_view s_highlight_large_items = u8"HighlightLargeItems"sv;
+static constexpr std::u8string_view s_sort_dates_descending = u8"SortDatesDescending"sv;
+static constexpr std::u8string_view g_show_navigation_bar = u8"show_nav_bar"sv;
+static constexpr std::u8string_view g_detail_folder_items = u8"detail_folder_items"sv;
+static constexpr std::u8string_view g_detail_file_items = u8"detail_file_items"sv;
+static constexpr std::u8string_view s_large_font = u8"large_font"sv;
+static constexpr std::u8string_view s_use_gpu = u8"UseGpu"sv;
+static constexpr std::u8string_view s_use_d3d11_va = u8"use_d3d11va"sv;
+static constexpr std::u8string_view s_use_yuv = u8"use_yuv"sv;
+static constexpr std::u8string_view s_send_crash_dumps = u8"SendCrashDumps"sv;
+static constexpr std::u8string_view s_install_updates = u8"InstallUpdates"sv;
+static constexpr std::u8string_view s_show_performance_timings = u8"ShowPerformanceTimings"sv;
+static constexpr std::u8string_view s_source = u8"Source"sv;
+static constexpr std::u8string_view s_credit = u8"Credit"sv;
+static constexpr std::u8string_view s_artist = u8"Artist"sv;
+static constexpr std::u8string_view s_caption = u8"caption"sv;
+static constexpr std::u8string_view s_url = u8"url"sv;
+static constexpr std::u8string_view s_set_url = u8"set_url"sv;
+static constexpr std::u8string_view s_set_copyright = u8"SetCopyright"sv;
+static constexpr std::u8string_view s_set_creator = u8"SetCreator"sv;
+static constexpr std::u8string_view s_set_source = u8"SetSource"sv;
+static constexpr std::u8string_view s_set_credit = u8"SetCredit"sv;
+static constexpr std::u8string_view s_set_artist = u8"SetArtist"sv;
+static constexpr std::u8string_view s_set_caption = u8"set_caption"sv;
+static constexpr std::u8string_view s_set_album = u8"SetAlbum"sv;
+static constexpr std::u8string_view s_set_album_artist = u8"SetAlbumArtist"sv;
+static constexpr std::u8string_view s_set_genre = u8"SetGenre"sv;
+static constexpr std::u8string_view s_set_tv_show = u8"SetTvShow"sv;
+static constexpr std::u8string_view s_ignore_previous = u8"IgnorePrevious"sv;
+static constexpr std::u8string_view s_overwrite_if_newer = u8"OverwriteIfNewer"sv;
+static constexpr std::u8string_view s_hidden = u8"Hidden"sv;
+static constexpr std::u8string_view s_email = u8"Email"sv;
+static constexpr std::u8string_view s_rename = u8"Rename"sv;
+static constexpr std::u8string_view s_template = u8"Template"sv;
+static constexpr std::u8string_view s_wall_paper = u8"WallPaper"sv;
+static constexpr std::u8string_view s_confirm = u8"Confirm"sv;
+static constexpr std::u8string_view s_repeat = u8"repeat"sv;
+static constexpr std::u8string_view s_zip = u8"Zip"sv;
+static constexpr std::u8string_view s_sidebar = u8"sidebar"sv;
+static constexpr std::u8string_view s_show_total_items = u8"show_total_items"sv;
+static constexpr std::u8string_view s_show_history = u8"show_history"sv;
+static constexpr std::u8string_view s_show_world_map = u8"show_world_map"sv;
+static constexpr std::u8string_view s_show_indexed_folders = u8"show_indexed_folders"sv;
+static constexpr std::u8string_view s_show_drives = u8"show_drives"sv;
+static constexpr std::u8string_view s_show_favorite_searches = u8"show_favorite_searches"sv;
+static constexpr std::u8string_view s_show_favorite_tags = u8"show_favorite_tags"sv;
+static constexpr std::u8string_view s_show_ratings = u8"show_ratings"sv;
+static constexpr std::u8string_view s_show_labels = u8"show_labels"sv;
+static constexpr std::u8string_view s_lang = u8"lang"sv;
+static constexpr std::u8string_view s_verbose_metadata = u8"verbose_metadata"sv;
+static constexpr std::u8string_view s_location_latitude = u8"location_latitude"sv;
+static constexpr std::u8string_view s_location_longitude = u8"location_longitude"sv;
+static constexpr std::u8string_view s_raw_preview = u8"raw_preview"sv;
+static constexpr std::u8string_view s_onedrive_pictures = u8"onedrive_pictures"sv;
+static constexpr std::u8string_view s_onedrive_video = u8"onedrive_video"sv;
+static constexpr std::u8string_view s_onedrive_music = u8"onedrive_music"sv;
+static constexpr std::u8string_view s_set_created_date = u8"set_created_date"sv;
+static constexpr std::u8string_view s_sync = u8"sync"sv;
+static constexpr std::u8string_view s_local_path = u8"local_path"sv;
+static constexpr std::u8string_view s_remote_path = u8"remote_path"sv;
+static constexpr std::u8string_view s_sync_collection = u8"sync_collection"sv;
+static constexpr std::u8string_view s_sync_local_remoteh = u8"sync_local_remoteh"sv;
+static constexpr std::u8string_view s_sync_remote_local = u8"sync_remote_local"sv;
+static constexpr std::u8string_view s_sync_delete_local = u8"sync_delete_local"sv;
+static constexpr std::u8string_view s_sync_delete_remote = u8"sync_delete_remote"sv;
+static constexpr std::u8string_view s_custom_folder_structure = u8"dest_folder_structure"sv;
+static constexpr std::u8string_view s_rename_different_attributes = u8"rename_different_attributes"sv;
+static constexpr std::u8string_view s_source_path = u8"source_path"sv;
+static constexpr std::u8string_view s_source_filter = u8"source_filter"sv;
+static constexpr std::u8string_view s_show_shadow = u8"show_shadow"sv;
+static constexpr std::u8string_view s_update_modified = u8"update_modified"sv;
+static constexpr std::u8string_view s_last_played_pos = u8"last_played_pos"sv;
+static constexpr std::u8string_view s_show_help_tooltips = u8"show_help_tooltips"sv;
+static constexpr std::u8string_view s_sound_device = u8"sound_device"sv;
 
 settings_t setting;
 
@@ -160,8 +160,8 @@ settings_t::settings_t()
 {
 	init_item_scale_snaps();
 
-	language = u8"en";
-	write_name = u8"results";
+	language = u8"en"sv;
+	write_name = u8"results"sv;
 	show_rotated = true;
 	show_results = true;
 	create_originals = true;
@@ -192,7 +192,7 @@ settings_t::settings_t()
 	features_used_since_last_report = 0;
 	instantiations = 0;
 
-	copyright_notice = str::format(u8"\xC2\xA9 {} {} - All Rights Reserved", platform::user_name(), platform::now().year());
+	copyright_notice = str::format(u8"\xC2\xA9 {} {} - All Rights Reserved"sv, platform::user_name(), platform::now().year());
 	copyright_creator = platform::user_name();
 	artist = platform::user_name();
 
@@ -214,7 +214,7 @@ settings_t::settings_t()
 	import.rename_different_attributes = true;
 
 	sync.local_path = known_path(platform::known_folder::pictures).text();
-	sync.remote_path = known_path(platform::known_folder::onedrive_pictures).combine(u8"backup").text();
+	sync.remote_path = known_path(platform::known_folder::onedrive_pictures).combine(u8"backup"sv).text();
 	sync.sync_collection = true;
 	sync.sync_local_remote = true;
 	sync.sync_remote_local = false;
@@ -256,21 +256,21 @@ settings_t::settings_t()
 	index.onedrive_video = false;
 	index.onedrive_music = false;
 
-	search.title[0] = u8"Last 7 days";
-	search.path[0] = u8"age: 7";
-	search.title[1] = u8"Christmas";
-	search.path[1] = u8"created: dec.25";
-	search.title[2] = u8"Desktop";
+	search.title[0] = u8"Last 7 days"sv;
+	search.path[0] = u8"age: 7"sv;
+	search.title[1] = u8"Christmas"sv;
+	search.path[1] = u8"created: dec.25"sv;
+	search.title[2] = u8"Desktop"sv;
 	search.path[2] = known_path(platform::known_folder::desktop).text();
-	search.title[3] = u8"Downloads";
+	search.title[3] = u8"Downloads"sv;
 	search.path[3] = known_path(platform::known_folder::downloads).text();
-	search.title[4] = u8"Pictures";
+	search.title[4] = u8"Pictures"sv;
 	search.path[4] = known_path(platform::known_folder::pictures).text();
-	search.title[5] = u8"Videos";
+	search.title[5] = u8"Videos"sv;
 	search.path[5] = known_path(platform::known_folder::video).text();
 
-	rename.name_template = u8"Item ###";
-	rename.start_index = u8"1";
+	rename.name_template = u8"Item ###"sv;
+	rename.start_index = u8"1"sv;
 
 	set_copyright_credit = false;
 	set_copyright_source = false;
@@ -421,7 +421,7 @@ public:
 
 		for (auto i = 0; i < count; i++)
 		{
-			success &= read(section, str::format(u8"{}{}", name, i), v[i]);
+			success &= read(section, str::format(u8"{}{}"sv, name, i), v[i]);
 		}
 
 		return success;
@@ -433,7 +433,7 @@ public:
 
 		for (auto i = 0; i < count; i++)
 		{
-			success &= write(section, str::format(u8"{}{}", name, i), v[i]);
+			success &= write(section, str::format(u8"{}{}"sv, name, i), v[i]);
 		}
 
 		return success;
@@ -487,7 +487,7 @@ public:
 		const df::hash_map<std::u8string, std::u8string, df::ihash, df::ieq>& v)
 	{
 		std::u8string combined;
-		for (const auto& s : v) str::join(combined, s.first + u8":" + s.second);
+		for (const auto& s : v) str::join(combined, s.first + u8":"s + s.second);
 		return write(section, name, combined);
 	}
 

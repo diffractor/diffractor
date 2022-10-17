@@ -9,51 +9,6 @@
 
 #include "pch.h"
 
-#include <stdarg.h>
-
-////////////////////////////////////////////////
-////////////////////////////////////////////////
-////////////////////////////////////////////////
-////////////////////////////////////////////////
-
-//#pragma comment(lib, "libgcc.a")
-//#pragma comment(lib, "libmingw32.a")
-//#pragma comment(lib, "libmingwex.a")
-
-//#pragma comment(lib, "libavcodec.a")
-//#pragma comment(lib, "libavformat.a")
-//#pragma comment(lib, "libavutil.a")
-//#pragma comment(lib, "libswscale.a")
-//#pragma comment(lib, "libavresample.a")
-
-
-//#pragma comment(lib, "libx264.a")
-//
-//extern "C" int avpriv_snprintf(_Out_writes_(_BufferCount) char8_t* const _Buffer, _In_ size_t const _BufferCount,
-//	_In_z_
-//	_Printf_format_string_                                                          char8_t
-//	const* const _Format, `
-//{
-//	va_list arglist;
-//	va_start(arglist, _Format);
-//	auto result = vsnprintf(_Buffer, _BufferCount, _Format, arglist);
-//	va_end(arglist);
-//
-//	return result;
-//}
-//
-//extern "C" FILE* __iob_func()
-//{
-//	static FILE results[] = {
-//		__acrt_iob_func(0),
-//		__acrt_iob_func(1),
-//		__acrt_iob_func(2)
-//	}
-//
-//	return results;
-//}
-
-
 ////////////////////////////////////////////////
 ////////////////////////////////////////////////
 ////////////////////////////////////////////////

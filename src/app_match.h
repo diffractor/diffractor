@@ -193,8 +193,8 @@ static std::vector<ui::text_highlight_t> make_highlights(ui::match_highlights ma
 
 	for (auto i = 0u; i < match.size(); i++)
 	{
-		highlights[i].offset = match[i].offset;
-		highlights[i].length = match[i].length;
+		highlights[i].offset = static_cast<uint32_t>(match[i].offset);
+		highlights[i].length = static_cast<uint32_t>(match[i].length);
 		highlights[i].clr = highlight_clr;
 	}
 

@@ -36,54 +36,54 @@ static constexpr struct
 	std::u8string_view hrStrId; // human-readable
 	const int aux_setting;
 } WBToStr[] = {
-	{LIBRAW_WBI_Unknown, u8"WBI_Unknown", u8"Unknown", 0},
-	{LIBRAW_WBI_Daylight, u8"WBI_Daylight", u8"Daylight", 0},
-	{LIBRAW_WBI_Fluorescent, u8"WBI_Fluorescent", u8"Fluorescent", 0},
-	{LIBRAW_WBI_Tungsten, u8"WBI_Tungsten", u8"Tungsten (Incandescent)", 0},
-	{LIBRAW_WBI_Flash, u8"WBI_Flash", u8"Flash", 0},
-	{LIBRAW_WBI_FineWeather, u8"WBI_FineWeather", u8"Fine Weather", 0},
-	{LIBRAW_WBI_Cloudy, u8"WBI_Cloudy", u8"Cloudy", 0},
-	{LIBRAW_WBI_Shade, u8"WBI_Shade", u8"Shade", 0},
-	{LIBRAW_WBI_FL_D, u8"WBI_FL_D", u8"Daylight Fluorescent", 0},
-	{LIBRAW_WBI_FL_N, u8"WBI_FL_N", u8"Day White Fluorescent", 0},
-	{LIBRAW_WBI_FL_W, u8"WBI_FL_W", u8"Cool White Fluorescent", 0},
-	{LIBRAW_WBI_FL_WW, u8"WBI_FL_WW", u8"White Fluorescent", 0},
-	{LIBRAW_WBI_FL_L, u8"WBI_FL_L", u8"Warm White Fluorescent", 0},
-	{LIBRAW_WBI_Ill_A, u8"WBI_Ill_A", u8"Illuminant A", 0},
-	{LIBRAW_WBI_Ill_B, u8"WBI_Ill_B", u8"Illuminant B", 0},
-	{LIBRAW_WBI_Ill_C, u8"WBI_Ill_C", u8"Illuminant C", 0},
-	{LIBRAW_WBI_D55, u8"WBI_D55", u8"D55", 0},
-	{LIBRAW_WBI_D65, u8"WBI_D65", u8"D65", 0},
-	{LIBRAW_WBI_D75, u8"WBI_D75", u8"D75", 0},
-	{LIBRAW_WBI_D50, u8"WBI_D50", u8"D50", 0},
-	{LIBRAW_WBI_StudioTungsten, u8"WBI_StudioTungsten", u8"ISO Studio Tungsten", 0},
-	{LIBRAW_WBI_BW, u8"WBI_BW", u8"BW", 0},
-	{LIBRAW_WBI_Other, u8"WBI_Other", u8"Other", 0},
-	{LIBRAW_WBI_Sunset, u8"WBI_Sunset", u8"Sunset", 1},
-	{LIBRAW_WBI_Underwater, u8"WBI_Underwater", u8"Underwater", 1},
-	{LIBRAW_WBI_FluorescentHigh, u8"WBI_FluorescentHigh", u8"Fluorescent High", 1},
-	{LIBRAW_WBI_HT_Mercury, u8"WBI_HT_Mercury", u8"HT Mercury", 1},
-	{LIBRAW_WBI_AsShot, u8"WBI_AsShot", u8"As Shot", 1},
-	{LIBRAW_WBI_Measured, u8"WBI_Measured", u8"Camera Measured", 1},
-	{LIBRAW_WBI_Auto, u8"WBI_Auto", u8"Camera Auto", 1},
-	{LIBRAW_WBI_Auto1, u8"WBI_Auto1", u8"Camera Auto 1", 1},
-	{LIBRAW_WBI_Auto2, u8"WBI_Auto2", u8"Camera Auto 2", 1},
-	{LIBRAW_WBI_Auto3, u8"WBI_Auto3", u8"Camera Auto 3", 1},
-	{LIBRAW_WBI_Auto4, u8"WBI_Auto4", u8"Camera Auto 4", 1},
-	{LIBRAW_WBI_Custom, u8"WBI_Custom", u8"Custom", 1},
-	{LIBRAW_WBI_Custom1, u8"WBI_Custom1", u8"Custom 1", 1},
-	{LIBRAW_WBI_Custom2, u8"WBI_Custom2", u8"Custom 2", 1},
-	{LIBRAW_WBI_Custom3, u8"WBI_Custom3", u8"Custom 3", 1},
-	{LIBRAW_WBI_Custom4, u8"WBI_Custom4", u8"Custom 4", 1},
-	{LIBRAW_WBI_Custom5, u8"WBI_Custom5", u8"Custom 5", 1},
-	{LIBRAW_WBI_Custom6, u8"WBI_Custom6", u8"Custom 6", 1},
-	{LIBRAW_WBI_PC_Set1, u8"WBI_PC_Set1", u8"PC Set 1", 1},
-	{LIBRAW_WBI_PC_Set2, u8"WBI_PC_Set2", u8"PC Set 2", 1},
-	{LIBRAW_WBI_PC_Set3, u8"WBI_PC_Set3", u8"PC Set 3", 1},
-	{LIBRAW_WBI_PC_Set4, u8"WBI_PC_Set4", u8"PC Set 4", 1},
-	{LIBRAW_WBI_PC_Set5, u8"WBI_PC_Set5", u8"PC Set 5", 1},
-	{LIBRAW_WBI_Kelvin, u8"WBI_Kelvin", u8"Kelvin", 1},
-	{LIBRAW_WBI_None, u8"WBI_None", u8"None", 1},
+	{LIBRAW_WBI_Unknown, u8"WBI_Unknown"sv, u8"Unknown"sv, 0},
+	{LIBRAW_WBI_Daylight, u8"WBI_Daylight"sv, u8"Daylight"sv, 0},
+	{LIBRAW_WBI_Fluorescent, u8"WBI_Fluorescent"sv, u8"Fluorescent"sv, 0},
+	{LIBRAW_WBI_Tungsten, u8"WBI_Tungsten"sv, u8"Tungsten (Incandescent)"sv, 0},
+	{LIBRAW_WBI_Flash, u8"WBI_Flash"sv, u8"Flash"sv, 0},
+	{LIBRAW_WBI_FineWeather, u8"WBI_FineWeather"sv, u8"Fine Weather"sv, 0},
+	{LIBRAW_WBI_Cloudy, u8"WBI_Cloudy"sv, u8"Cloudy"sv, 0},
+	{LIBRAW_WBI_Shade, u8"WBI_Shade"sv, u8"Shade"sv, 0},
+	{LIBRAW_WBI_FL_D, u8"WBI_FL_D"sv, u8"Daylight Fluorescent"sv, 0},
+	{LIBRAW_WBI_FL_N, u8"WBI_FL_N"sv, u8"Day White Fluorescent"sv, 0},
+	{LIBRAW_WBI_FL_W, u8"WBI_FL_W"sv, u8"Cool White Fluorescent"sv, 0},
+	{LIBRAW_WBI_FL_WW, u8"WBI_FL_WW"sv, u8"White Fluorescent"sv, 0},
+	{LIBRAW_WBI_FL_L, u8"WBI_FL_L"sv, u8"Warm White Fluorescent"sv, 0},
+	{LIBRAW_WBI_Ill_A, u8"WBI_Ill_A"sv, u8"Illuminant A"sv, 0},
+	{LIBRAW_WBI_Ill_B, u8"WBI_Ill_B"sv, u8"Illuminant B"sv, 0},
+	{LIBRAW_WBI_Ill_C, u8"WBI_Ill_C"sv, u8"Illuminant C"sv, 0},
+	{LIBRAW_WBI_D55, u8"WBI_D55"sv, u8"D55"sv, 0},
+	{LIBRAW_WBI_D65, u8"WBI_D65"sv, u8"D65"sv, 0},
+	{LIBRAW_WBI_D75, u8"WBI_D75"sv, u8"D75"sv, 0},
+	{LIBRAW_WBI_D50, u8"WBI_D50"sv, u8"D50"sv, 0},
+	{LIBRAW_WBI_StudioTungsten, u8"WBI_StudioTungsten"sv, u8"ISO Studio Tungsten"sv, 0},
+	{LIBRAW_WBI_BW, u8"WBI_BW"sv, u8"BW"sv, 0},
+	{LIBRAW_WBI_Other, u8"WBI_Other"sv, u8"Other"sv, 0},
+	{LIBRAW_WBI_Sunset, u8"WBI_Sunset"sv, u8"Sunset"sv, 1},
+	{LIBRAW_WBI_Underwater, u8"WBI_Underwater"sv, u8"Underwater"sv, 1},
+	{LIBRAW_WBI_FluorescentHigh, u8"WBI_FluorescentHigh"sv, u8"Fluorescent High"sv, 1},
+	{LIBRAW_WBI_HT_Mercury, u8"WBI_HT_Mercury"sv, u8"HT Mercury"sv, 1},
+	{LIBRAW_WBI_AsShot, u8"WBI_AsShot"sv, u8"As Shot"sv, 1},
+	{LIBRAW_WBI_Measured, u8"WBI_Measured"sv, u8"Camera Measured"sv, 1},
+	{LIBRAW_WBI_Auto, u8"WBI_Auto"sv, u8"Camera Auto"sv, 1},
+	{LIBRAW_WBI_Auto1, u8"WBI_Auto1"sv, u8"Camera Auto 1"sv, 1},
+	{LIBRAW_WBI_Auto2, u8"WBI_Auto2"sv, u8"Camera Auto 2"sv, 1},
+	{LIBRAW_WBI_Auto3, u8"WBI_Auto3"sv, u8"Camera Auto 3"sv, 1},
+	{LIBRAW_WBI_Auto4, u8"WBI_Auto4"sv, u8"Camera Auto 4"sv, 1},
+	{LIBRAW_WBI_Custom, u8"WBI_Custom"sv, u8"Custom"sv, 1},
+	{LIBRAW_WBI_Custom1, u8"WBI_Custom1"sv, u8"Custom 1"sv, 1},
+	{LIBRAW_WBI_Custom2, u8"WBI_Custom2"sv, u8"Custom 2"sv, 1},
+	{LIBRAW_WBI_Custom3, u8"WBI_Custom3"sv, u8"Custom 3"sv, 1},
+	{LIBRAW_WBI_Custom4, u8"WBI_Custom4"sv, u8"Custom 4"sv, 1},
+	{LIBRAW_WBI_Custom5, u8"WBI_Custom5"sv, u8"Custom 5"sv, 1},
+	{LIBRAW_WBI_Custom6, u8"WBI_Custom6"sv, u8"Custom 6"sv, 1},
+	{LIBRAW_WBI_PC_Set1, u8"WBI_PC_Set1"sv, u8"PC Set 1"sv, 1},
+	{LIBRAW_WBI_PC_Set2, u8"WBI_PC_Set2"sv, u8"PC Set 2"sv, 1},
+	{LIBRAW_WBI_PC_Set3, u8"WBI_PC_Set3"sv, u8"PC Set 3"sv, 1},
+	{LIBRAW_WBI_PC_Set4, u8"WBI_PC_Set4"sv, u8"PC Set 4"sv, 1},
+	{LIBRAW_WBI_PC_Set5, u8"WBI_PC_Set5"sv, u8"PC Set 5"sv, 1},
+	{LIBRAW_WBI_Kelvin, u8"WBI_Kelvin"sv, u8"Kelvin"sv, 1},
+	{LIBRAW_WBI_None, u8"WBI_None"sv, u8"None"sv, 1},
 };
 
 struct id2hr_t
@@ -535,122 +535,119 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 
 	const auto CamMakerName = str::safe_string(LibRaw::cameramakeridx2maker(P1.maker_index));
 	const auto ColorSpaceName = ColorSpace_idx2str(P3.ColorSpace);
-	int WBi;
-	float denom;
-	int ret;
 
 	metadata_kv_list kv;
 
 	if (!str::is_empty(C.OriginalRawFileName))
-		add_metadata(kv, u8"OriginalRawFileName", C.OriginalRawFileName);
+		add_metadata(kv, u8"OriginalRawFileName"sv, C.OriginalRawFileName);
 
 	char sz[64];
 	ctime_s(sz, 64, &(P2.timestamp));
 
-	add_metadata(kv, u8"Timestamp", sz);
-	add_metadata(kv, u8"Camera",
-	             str::format(u8"{} {} ID: 0x{:x}", str::utf8_cast(P1.make), str::utf8_cast(P1.model), mnLens.CamID));
-	add_metadata(kv, u8"Normalized Make/Model",
-	             str::format(u8"{}/{}", str::utf8_cast(P1.normalized_make), str::utf8_cast(P1.normalized_model)));
-	add_metadata(kv, u8"CamMaker ID", str::to_string(P1.maker_index));
+	add_metadata(kv, u8"Timestamp"sv, sz);
+	add_metadata(kv, u8"Camera"sv,
+	             str::format(u8"{} {} ID: 0x{:x}"sv, str::utf8_cast(P1.make), str::utf8_cast(P1.model), mnLens.CamID));
+	add_metadata(kv, u8"Normalized Make/Model"sv,
+	             str::format(u8"{}/{}"sv, str::utf8_cast(P1.normalized_make), str::utf8_cast(P1.normalized_model)));
+	add_metadata(kv, u8"CamMaker ID"sv, str::to_string(P1.maker_index));
 
 	if (!CamMakerName.empty())
-		add_metadata(kv, u8"CameraMaker", CamMakerName);
+		add_metadata(kv, u8"CameraMaker"sv, CamMakerName);
 
 	if (!str::is_empty(C.UniqueCameraModel))
 	{
-		add_metadata(kv, u8"UniqueCameraModel", C.UniqueCameraModel);
+		add_metadata(kv, u8"UniqueCameraModel"sv, C.UniqueCameraModel);
 	}
 	if (!str::is_empty(C.LocalizedCameraModel))
 	{
-		add_metadata(kv, u8"LocalizedCameraModel", C.LocalizedCameraModel);
+		add_metadata(kv, u8"LocalizedCameraModel"sv, C.LocalizedCameraModel);
 	}
 	if (!str::is_empty(C.ImageUniqueID))
 	{
-		add_metadata(kv, u8"ImageUniqueID", C.ImageUniqueID);
+		add_metadata(kv, u8"ImageUniqueID"sv, C.ImageUniqueID);
 	}
 	if (!str::is_empty(C.RawDataUniqueID))
 	{
-		add_metadata(kv, u8"RawDataUniqueID", C.RawDataUniqueID);
+		add_metadata(kv, u8"RawDataUniqueID"sv, C.RawDataUniqueID);
 	}
 
 	if (!str::is_empty(ShootingInfo.BodySerial) && strcmp(ShootingInfo.BodySerial, "0"))
 	{
-		add_metadata(kv, u8"Body#", str::trim(ShootingInfo.BodySerial));
+		add_metadata(kv, u8"Body#"sv, str::trim(ShootingInfo.BodySerial));
 	}
 	else if (C.model2[0] && (!_strnicmp(P1.normalized_make, "Kodak", 5)))
 	{
-		add_metadata(kv, u8"Body#", str::trim(C.model2));
+		add_metadata(kv, u8"Body#"sv, str::trim(C.model2));
 	}
 	if (!str::is_empty(ShootingInfo.InternalBodySerial))
 	{
-		add_metadata(kv, u8"BodyAssy#", str::trim(ShootingInfo.InternalBodySerial));
+		add_metadata(kv, u8"BodyAssy#"sv, str::trim(ShootingInfo.InternalBodySerial));
 	}
 	if (!str::is_empty(exifLens.LensSerial))
 	{
-		add_metadata(kv, u8"Lens#", str::trim(exifLens.LensSerial));
+		add_metadata(kv, u8"Lens#"sv, str::trim(exifLens.LensSerial));
 	}
 	if (!str::is_empty(exifLens.InternalLensSerial))
 	{
-		add_metadata(kv, u8"LensAssy#", str::trim(exifLens.InternalLensSerial));
+		add_metadata(kv, u8"LensAssy#"sv, str::trim(exifLens.InternalLensSerial));
 	}
 	if (!str::is_empty(P2.artist))
 	{
-		add_metadata(kv, u8"Owner", str::trim(P2.artist));
+		add_metadata(kv, u8"Owner"sv, str::trim(P2.artist));
 	}
 
 	if (P1.dng_version)
 	{
 		std::u8string s;
 		for (int i = 24; i >= 0; i -= 8)
-			s += str::format(u8"{}{}", P1.dng_version >> i & 255, i ? '.' : ' ');
+			s += str::format(u8"{}{}"sv, P1.dng_version >> i & 255, i ? '.' : ' ');
 
-		add_metadata(kv, u8"DNG Version", s);
+		add_metadata(kv, u8"DNG Version"sv, s);
 	}
 
 
-	add_metadata(kv, u8"MinFocal", str::format(u8"{:0.1} mm", exifLens.MinFocal));
-	add_metadata(kv, u8"MaxFocal", str::format(u8"{:0.1} mm", exifLens.MaxFocal));
-	add_metadata(kv, u8"MaxAp @MinFocal", str::format(u8"f/{:0.1}", exifLens.MaxAp4MinFocal));
-	add_metadata(kv, u8"MaxAp @MaxFocal", str::format(u8"f/{:0.1}", exifLens.MaxAp4MaxFocal));
-	add_metadata(kv, u8"CurFocal", str::format(u8"{:0.1} mm", P2.focal_len));
-	add_metadata(kv, u8"MaxAperture @CurFocal", str::format(u8"f/{:0.1}", exifLens.EXIF_MaxAp));
-	add_metadata(kv, u8"FocalLengthIn35mmFormat", str::format(u8"{} mm", exifLens.FocalLengthIn35mmFormat));
-	add_metadata(kv, u8"LensMake", exifLens.LensMake);
-	add_metadata(kv, u8"Lens", exifLens.Lens);
+	add_metadata(kv, u8"MinFocal"sv, str::format(u8"{:0.1} mm"sv, exifLens.MinFocal));
+	add_metadata(kv, u8"MaxFocal"sv, str::format(u8"{:0.1} mm"sv, exifLens.MaxFocal));
+	add_metadata(kv, u8"MaxAp @MinFocal"sv, str::format(u8"f/{:0.1}"sv, exifLens.MaxAp4MinFocal));
+	add_metadata(kv, u8"MaxAp @MaxFocal"sv, str::format(u8"f/{:0.1}"sv, exifLens.MaxAp4MaxFocal));
+	add_metadata(kv, u8"CurFocal"sv, str::format(u8"{:0.1} mm"sv, P2.focal_len));
+	add_metadata(kv, u8"MaxAperture @CurFocal"sv, str::format(u8"f/{:0.1}"sv, exifLens.EXIF_MaxAp));
+	add_metadata(kv, u8"FocalLengthIn35mmFormat"sv, str::format(u8"{} mm"sv, exifLens.FocalLengthIn35mmFormat));
+	add_metadata(kv, u8"LensMake"sv, exifLens.LensMake);
+	add_metadata(kv, u8"Lens"sv, exifLens.Lens);
 
 
-	add_metadata(kv, u8"DriveMode", str::to_string(ShootingInfo.DriveMode));
-	add_metadata(kv, u8"FocusMode", str::to_string(ShootingInfo.FocusMode));
-	add_metadata(kv, u8"MeteringMode", str::to_string(ShootingInfo.MeteringMode));
-	add_metadata(kv, u8"AFPoint", str::to_string(ShootingInfo.AFPoint));
-	add_metadata(kv, u8"ExposureMode", str::to_string(ShootingInfo.ExposureMode));
-	add_metadata(kv, u8"ExposureProgram", str::to_string(ShootingInfo.ExposureProgram));
-	add_metadata(kv, u8"ImageStabilization", str::to_string(ShootingInfo.ImageStabilization));
+	add_metadata(kv, u8"DriveMode"sv, str::to_string(ShootingInfo.DriveMode));
+	add_metadata(kv, u8"FocusMode"sv, str::to_string(ShootingInfo.FocusMode));
+	add_metadata(kv, u8"MeteringMode"sv, str::to_string(ShootingInfo.MeteringMode));
+	add_metadata(kv, u8"AFPoint"sv, str::to_string(ShootingInfo.AFPoint));
+	add_metadata(kv, u8"ExposureMode"sv, str::to_string(ShootingInfo.ExposureMode));
+	add_metadata(kv, u8"ExposureProgram"sv, str::to_string(ShootingInfo.ExposureProgram));
+	add_metadata(kv, u8"ImageStabilization"sv, str::to_string(ShootingInfo.ImageStabilization));
 
 	if (!str::is_empty(mnLens.body))
 	{
-		add_metadata(kv, u8"Host Body", mnLens.body);
+		add_metadata(kv, u8"Host Body"sv, mnLens.body);
 	}
 
 	if (!str::is_empty(Hasselblad.CaptureSequenceInitiator))
 	{
-		add_metadata(kv, u8"Initiator", Hasselblad.CaptureSequenceInitiator);
+		add_metadata(kv, u8"Initiator"sv, Hasselblad.CaptureSequenceInitiator);
 	}
 	if (!str::is_empty(Hasselblad.SensorUnitConnector))
 	{
-		add_metadata(kv, u8"SU Connector", Hasselblad.SensorUnitConnector);
+		add_metadata(kv, u8"SU Connector"sv, Hasselblad.SensorUnitConnector);
 	}
 
 	const auto* const FormatName = lookup_id2hr(mnLens.CameraFormat, FormatNames, LIBRAW_FORMAT_TheLastOne);
 
 	if (FormatName)
 	{
-		add_metadata(kv, u8"CameraFormat", FormatName->name);
+		add_metadata(kv, u8"CameraFormat"sv, FormatName->name);
 	}
 	else
 	{
-		add_metadata(kv, u8"CameraFormat", str::to_string(mnLens.CameraFormat));
+		add_metadata(kv, u8"CameraFormat"sv, str::to_string(mnLens.CameraFormat));
 	}
 
 
@@ -660,14 +657,14 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 
 		if (Crop)
 		{
-			add_metadata(kv, u8"Nikon crop", str::format(u8"{}: {}", Nikon.HighSpeedCropFormat, Crop->name));
+			add_metadata(kv, u8"Nikon crop"sv, str::format(u8"{}: {}"sv, Nikon.HighSpeedCropFormat, Crop->name));
 		}
 		else
 		{
-			add_metadata(kv, u8"Nikon crop", str::to_string(Nikon.HighSpeedCropFormat));
+			add_metadata(kv, u8"Nikon crop"sv, str::to_string(Nikon.HighSpeedCropFormat));
 		}
 
-		add_metadata(kv, u8"Sensor used area", str::format(u8"{} x {}; crop from: {} x {} at top left pixel: ({}, {})",
+		add_metadata(kv, u8"Sensor used area"sv, str::format(u8"{} x {}; crop from: {} x {} at top left pixel: ({}, {})"sv,
 		                                                   Nikon.SensorWidth, Nikon.SensorHeight,
 		                                                   Nikon.SensorHighSpeedCrop.cwidth,
 		                                                   Nikon.SensorHighSpeedCrop.cheight,
@@ -679,132 +676,132 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 
 	if (MountName)
 	{
-		add_metadata(kv, u8"CameraMount", MountName->name);
+		add_metadata(kv, u8"CameraMount"sv, MountName->name);
 	}
 	else
 	{
-		add_metadata(kv, u8"CameraMount", str::to_string(mnLens.CameraMount));
+		add_metadata(kv, u8"CameraMount"sv, str::to_string(mnLens.CameraMount));
 	}
 
 	if (mnLens.LensID != 0xffffffff)
-		add_metadata(kv, u8"LensID", str::format(u8"{} 0x{:x}", mnLens.LensID, mnLens.LensID));
+		add_metadata(kv, u8"LensID"sv, str::format(u8"{} 0x{:x}"sv, mnLens.LensID, mnLens.LensID));
 
 	if (!str::is_empty(mnLens.Lens))
 	{
-		add_metadata(kv, u8"Lens", mnLens.Lens);
+		add_metadata(kv, u8"Lens"sv, mnLens.Lens);
 	}
 
 	const auto* const LensFormatName = lookup_id2hr(mnLens.LensFormat, FormatNames, LIBRAW_FORMAT_TheLastOne);
 
 	if (LensFormatName)
 	{
-		add_metadata(kv, u8"LensFormat", LensFormatName->name);
+		add_metadata(kv, u8"LensFormat"sv, LensFormatName->name);
 	}
 	else
 	{
-		add_metadata(kv, u8"LensFormat", str::to_string(mnLens.LensFormat));
+		add_metadata(kv, u8"LensFormat"sv, str::to_string(mnLens.LensFormat));
 	}
 
 	const auto* const LensMountName = lookup_id2hr(mnLens.LensMount, MountNames, LIBRAW_MOUNT_TheLastOne);
 
 	if (LensMountName)
 	{
-		add_metadata(kv, u8"LensMount", LensMountName->name);
+		add_metadata(kv, u8"LensMount"sv, LensMountName->name);
 	}
 	else
 	{
-		add_metadata(kv, u8"LensMount", str::to_string(mnLens.LensMount));
+		add_metadata(kv, u8"LensMount"sv, str::to_string(mnLens.LensMount));
 	}
 
 	switch (mnLens.FocalType)
 	{
 	case LIBRAW_FT_UNDEFINED:
-		add_metadata(kv, u8"FocalType", u8"Undefined");
+		add_metadata(kv, u8"FocalType"sv, u8"Undefined"sv);
 		break;
 	case LIBRAW_FT_PRIME_LENS:
-		add_metadata(kv, u8"FocalType", u8"Prime lens");
+		add_metadata(kv, u8"FocalType"sv, u8"Prime lens"sv);
 		break;
 	case LIBRAW_FT_ZOOM_LENS:
-		add_metadata(kv, u8"FocalType", u8"Zoom lens");
+		add_metadata(kv, u8"FocalType"sv, u8"Zoom lens"sv);
 		break;
 	default:
-		add_metadata(kv, u8"FocalType", str::to_string(mnLens.FocalType));
+		add_metadata(kv, u8"FocalType"sv, str::to_string(mnLens.FocalType));
 		break;
 	}
 
-	add_metadata(kv, u8"LensFeatures_pre", mnLens.LensFeatures_pre);
-	add_metadata(kv, u8"LensFeatures_suf", mnLens.LensFeatures_suf);
-	add_metadata(kv, u8"MinFocal", str::format(u8"{:0.1} mm", mnLens.MinFocal));
-	add_metadata(kv, u8"MaxFocal", str::format(u8"{:0.1} mm", mnLens.MaxFocal));
-	add_metadata(kv, u8"MaxAp @MinFocal", str::format(u8"f/{:0.1}", mnLens.MaxAp4MinFocal));
-	add_metadata(kv, u8"MaxAp @MaxFocal", str::format(u8"f/{:0.1}", mnLens.MaxAp4MaxFocal));
-	add_metadata(kv, u8"MinAp @MinFocal", str::format(u8"f/{:0.1}", mnLens.MinAp4MinFocal));
-	add_metadata(kv, u8"MinAp @MaxFocal", str::format(u8"f/{:0.1}", mnLens.MinAp4MaxFocal));
-	add_metadata(kv, u8"MaxAp", str::format(u8"f/{:0.1}", mnLens.MaxAp));
-	add_metadata(kv, u8"MinAp", str::format(u8"f/{:0.1}", mnLens.MinAp));
-	add_metadata(kv, u8"CurFocal", str::format(u8"{:0.1} mm", mnLens.CurFocal));
-	add_metadata(kv, u8"CurAp", str::format(u8"f/{:0.1}", mnLens.CurAp));
-	add_metadata(kv, u8"MaxAp @CurFocal", str::format(u8"f/{:0.1}", mnLens.MaxAp4CurFocal));
-	add_metadata(kv, u8"MinAp @CurFocal", str::format(u8"f/{:0.1}", mnLens.MinAp4CurFocal));
+	add_metadata(kv, u8"LensFeatures_pre"sv, mnLens.LensFeatures_pre);
+	add_metadata(kv, u8"LensFeatures_suf"sv, mnLens.LensFeatures_suf);
+	add_metadata(kv, u8"MinFocal"sv, str::format(u8"{:0.1} mm"sv, mnLens.MinFocal));
+	add_metadata(kv, u8"MaxFocal"sv, str::format(u8"{:0.1} mm"sv, mnLens.MaxFocal));
+	add_metadata(kv, u8"MaxAp @MinFocal"sv, str::format(u8"f/{:0.1}"sv, mnLens.MaxAp4MinFocal));
+	add_metadata(kv, u8"MaxAp @MaxFocal"sv, str::format(u8"f/{:0.1}"sv, mnLens.MaxAp4MaxFocal));
+	add_metadata(kv, u8"MinAp @MinFocal"sv, str::format(u8"f/{:0.1}"sv, mnLens.MinAp4MinFocal));
+	add_metadata(kv, u8"MinAp @MaxFocal"sv, str::format(u8"f/{:0.1}"sv, mnLens.MinAp4MaxFocal));
+	add_metadata(kv, u8"MaxAp"sv, str::format(u8"f/{:0.1}"sv, mnLens.MaxAp));
+	add_metadata(kv, u8"MinAp"sv, str::format(u8"f/{:0.1}"sv, mnLens.MinAp));
+	add_metadata(kv, u8"CurFocal"sv, str::format(u8"{:0.1} mm"sv, mnLens.CurFocal));
+	add_metadata(kv, u8"CurAp"sv, str::format(u8"f/{:0.1}"sv, mnLens.CurAp));
+	add_metadata(kv, u8"MaxAp @CurFocal"sv, str::format(u8"f/{:0.1}"sv, mnLens.MaxAp4CurFocal));
+	add_metadata(kv, u8"MinAp @CurFocal"sv, str::format(u8"f/{:0.1}"sv, mnLens.MinAp4CurFocal));
 
 	if (exifLens.makernotes.FocalLengthIn35mmFormat > 1.0f)
-		add_metadata(kv, u8"FocalLengthIn35mmFormat",
-		             str::format(u8"{:0.1} mm", exifLens.makernotes.FocalLengthIn35mmFormat));
+		add_metadata(kv, u8"FocalLengthIn35mmFormat"sv,
+		             str::format(u8"{:0.1} mm"sv, exifLens.makernotes.FocalLengthIn35mmFormat));
 
 	if (exifLens.nikon.EffectiveMaxAp > 0.1f)
-		add_metadata(kv, u8"EffectiveMaxAp", str::format(u8"f/{:0.1}", exifLens.nikon.EffectiveMaxAp));
+		add_metadata(kv, u8"EffectiveMaxAp"sv, str::format(u8"f/{:0.1}"sv, exifLens.nikon.EffectiveMaxAp));
 
 	if (exifLens.makernotes.LensFStops > 0.1f)
-		add_metadata(kv, u8"LensFStops @CurFocal", str::format(u8"{:0.2}", exifLens.makernotes.LensFStops));
+		add_metadata(kv, u8"LensFStops @CurFocal"sv, str::format(u8"{:0.2}"sv, exifLens.makernotes.LensFStops));
 
-	add_metadata(kv, u8"TeleconverterID", str::to_string(mnLens.TeleconverterID));
-	add_metadata(kv, u8"Teleconverter", mnLens.Teleconverter);
-	add_metadata(kv, u8"AdapterID", str::to_string(mnLens.AdapterID));
-	add_metadata(kv, u8"Adapter", mnLens.Adapter);
-	add_metadata(kv, u8"AttachmentID", str::to_string(mnLens.AttachmentID));
-	add_metadata(kv, u8"Attachment", mnLens.Attachment);
+	add_metadata(kv, u8"TeleconverterID"sv, str::to_string(mnLens.TeleconverterID));
+	add_metadata(kv, u8"Teleconverter"sv, mnLens.Teleconverter);
+	add_metadata(kv, u8"AdapterID"sv, str::to_string(mnLens.AdapterID));
+	add_metadata(kv, u8"Adapter"sv, mnLens.Adapter);
+	add_metadata(kv, u8"AttachmentID"sv, str::to_string(mnLens.AttachmentID));
+	add_metadata(kv, u8"Attachment"sv, mnLens.Attachment);
 
-	add_metadata(kv, u8"ISO speed", str::to_string(static_cast<int>(P2.iso_speed)));
+	add_metadata(kv, u8"ISO speed"sv, str::to_string(static_cast<int>(P2.iso_speed)));
 	if (P3.real_ISO > 0.1f)
-		add_metadata(kv, u8"real ISO speed", str::to_string(static_cast<int>(P3.real_ISO)));
+		add_metadata(kv, u8"real ISO speed"sv, str::to_string(static_cast<int>(P3.real_ISO)));
 
 	if (P2.shutter > 0 && P2.shutter < 1)
-		add_metadata(kv, u8"Shutter", str::format(u8"1/{:0.1}", 1.0f / P2.shutter));
+		add_metadata(kv, u8"Shutter"sv, str::format(u8"1/{:0.1}"sv, 1.0f / P2.shutter));
 	else if (P2.shutter >= 1)
-		add_metadata(kv, u8"Shutter", str::format(u8"{:0.1} sec", P2.shutter));
+		add_metadata(kv, u8"Shutter"sv, str::format(u8"{:0.1} sec"sv, P2.shutter));
 	else /* negative*/
-		add_metadata(kv, u8"Shutter", u8"negative value");
+		add_metadata(kv, u8"Shutter"sv, u8"negative value"sv);
 
-	add_metadata(kv, u8"Aperture", str::format(u8"f/{:0.1}", P2.aperture));
-	add_metadata(kv, u8"Focal length", str::format(u8"{:0.1} mm", P2.focal_len));
+	add_metadata(kv, u8"Aperture"sv, str::format(u8"f/{:0.1}"sv, P2.aperture));
+	add_metadata(kv, u8"Focal length"sv, str::format(u8"{:0.1} mm"sv, P2.focal_len));
 
 	if (P3.exifAmbientTemperature > -273.15f)
-		add_metadata(kv, u8"Ambient temperature (exif data)", str::format(u8"{:6.2}° C", P3.exifAmbientTemperature));
+		add_metadata(kv, u8"Ambient temperature (exif data)"sv, str::format(u8"{:6.2}° C"sv, P3.exifAmbientTemperature));
 	if (P3.CameraTemperature > -273.15f)
-		add_metadata(kv, u8"Camera temperature", str::format(u8"{:6.2}° C", P3.CameraTemperature));
+		add_metadata(kv, u8"Camera temperature"sv, str::format(u8"{:6.2}° C"sv, P3.CameraTemperature));
 	if (P3.SensorTemperature > -273.15f)
-		add_metadata(kv, u8"Sensor temperature", str::format(u8"{:6.2}° C", P3.SensorTemperature));
+		add_metadata(kv, u8"Sensor temperature"sv, str::format(u8"{:6.2}° C"sv, P3.SensorTemperature));
 	if (P3.SensorTemperature2 > -273.15f)
-		add_metadata(kv, u8"Sensor temperature2", str::format(u8"{:6.2}° C", P3.SensorTemperature2));
+		add_metadata(kv, u8"Sensor temperature2"sv, str::format(u8"{:6.2}° C"sv, P3.SensorTemperature2));
 	if (P3.LensTemperature > -273.15f)
-		add_metadata(kv, u8"Lens temperature", str::format(u8"{:6.2}° C", P3.LensTemperature));
+		add_metadata(kv, u8"Lens temperature"sv, str::format(u8"{:6.2}° C"sv, P3.LensTemperature));
 	if (P3.AmbientTemperature > -273.15f)
-		add_metadata(kv, u8"Ambient temperature", str::format(u8"{:6.2}° C", P3.AmbientTemperature));
+		add_metadata(kv, u8"Ambient temperature"sv, str::format(u8"{:6.2}° C"sv, P3.AmbientTemperature));
 	if (P3.BatteryTemperature > -273.15f)
-		add_metadata(kv, u8"Battery temperature", str::format(u8"{:6.2}° C", P3.BatteryTemperature));
+		add_metadata(kv, u8"Battery temperature"sv, str::format(u8"{:6.2}° C"sv, P3.BatteryTemperature));
 	if (P3.FlashGN > 1.0f)
-		add_metadata(kv, u8"Flash Guide Number", str::format(u8"{:6.2}", P3.FlashGN));
-	add_metadata(kv, u8"Flash exposure compensation", str::format(u8"{:0.2} EV", P3.FlashEC));
+		add_metadata(kv, u8"Flash Guide Number"sv, str::format(u8"{:6.2}"sv, P3.FlashGN));
+	add_metadata(kv, u8"Flash exposure compensation"sv, str::format(u8"{:0.2} EV"sv, P3.FlashEC));
 
 	if (C.profile)
-		add_metadata(kv, u8"Embedded ICC profile", str::format(u8"yes, {} bytes", C.profile_length));
+		add_metadata(kv, u8"Embedded ICC profile"sv, str::format(u8"yes, {} bytes"sv, C.profile_length));
 	else
-		add_metadata(kv, u8"Embedded ICC profile", u8"no");
+		add_metadata(kv, u8"Embedded ICC profile"sv, u8"no"sv);
 
 	if (C.dng_levels.baseline_exposure > -999.f)
-		add_metadata(kv, u8"Baseline exposure", str::format(u8"{:04.3}", C.dng_levels.baseline_exposure));
+		add_metadata(kv, u8"Baseline exposure"sv, str::format(u8"{:04.3}"sv, C.dng_levels.baseline_exposure));
 
-	add_metadata(kv, u8"Number of raw images", str::to_string(P1.raw_count));
+	add_metadata(kv, u8"Number of raw images"sv, str::to_string(P1.raw_count));
 
 	if (Fuji.DriveMode != -1)
 	{
@@ -812,11 +809,11 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 
 		if (DriveMode)
 		{
-			add_metadata(kv, u8"Fuji Drive Mode", DriveMode->name);
+			add_metadata(kv, u8"Fuji Drive Mode"sv, DriveMode->name);
 		}
 		else
 		{
-			add_metadata(kv, u8"Fuji Drive Mode", str::to_string(Fuji.DriveMode));
+			add_metadata(kv, u8"Fuji Drive Mode"sv, str::to_string(Fuji.DriveMode));
 		}
 	}
 
@@ -826,76 +823,76 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 
 		if (Crop)
 		{
-			add_metadata(kv, u8"Fuji Crop Mode", Crop->name);
+			add_metadata(kv, u8"Fuji Crop Mode"sv, Crop->name);
 		}
 		else
 		{
-			add_metadata(kv, u8"Fuji Crop Mode", str::to_string(Fuji.CropMode));
+			add_metadata(kv, u8"Fuji Crop Mode"sv, str::to_string(Fuji.CropMode));
 		}
 	}
 
 	if (Fuji.WB_Preset != 0xffff)
-		add_metadata(kv, u8"Fuji WB preset", str::format(u8"0x{:03x}", Fuji.WB_Preset),
+		add_metadata(kv, u8"Fuji WB preset"sv, str::format(u8"0x{:03x}"sv, Fuji.WB_Preset),
 		             Fujifilm_WhiteBalance_idx2str(Fuji.WB_Preset));
 	if (Fuji.ExpoMidPointShift > -999.f) // tag 0x9650
-		add_metadata(kv, u8"Fuji Exposure shift", str::format(u8"{:4.3}", Fuji.ExpoMidPointShift));
+		add_metadata(kv, u8"Fuji Exposure shift"sv, str::format(u8"{:4.3}"sv, Fuji.ExpoMidPointShift));
 	if (Fuji.DynamicRange != 0xffff)
-		add_metadata(kv, u8"Fuji Dynamic Range (0x1400)", str::format(u8"{}", Fuji.DynamicRange),
-		             Fuji.DynamicRange == 1 ? u8"Standard" : u8"Wide");
+		add_metadata(kv, u8"Fuji Dynamic Range (0x1400)"sv, str::format(u8"{}"sv, Fuji.DynamicRange),
+		             Fuji.DynamicRange == 1 ? u8"Standard"sv : u8"Wide"sv);
 	if (Fuji.FilmMode != 0xffff)
-		add_metadata(kv, u8"Fuji Film Mode (0x1401)", str::format(u8"0x{:03x}", Fuji.FilmMode),
+		add_metadata(kv, u8"Fuji Film Mode (0x1401)"sv, str::format(u8"0x{:03x}"sv, Fuji.FilmMode),
 		             Fujifilm_FilmMode_idx2str(Fuji.FilmMode));
 	if (Fuji.DynamicRangeSetting != 0xffff)
-		add_metadata(kv, u8"Fuji Dynamic Range Setting (0x1402)", str::format(u8"0x{:04x}", Fuji.DynamicRangeSetting),
+		add_metadata(kv, u8"Fuji Dynamic Range Setting (0x1402)"sv, str::format(u8"0x{:04x}"sv, Fuji.DynamicRangeSetting),
 		             Fujifilm_DynamicRangeSetting_idx2str(Fuji.DynamicRangeSetting));
 	if (Fuji.DevelopmentDynamicRange != 0xffff)
-		add_metadata(kv, u8"Fuji Development Dynamic Range (0x1403)", str::to_string(Fuji.DevelopmentDynamicRange));
+		add_metadata(kv, u8"Fuji Development Dynamic Range (0x1403)"sv, str::to_string(Fuji.DevelopmentDynamicRange));
 	if (Fuji.AutoDynamicRange != 0xffff)
-		add_metadata(kv, u8"Fuji Auto Dynamic Range (0x140b)", str::to_string(Fuji.AutoDynamicRange));
+		add_metadata(kv, u8"Fuji Auto Dynamic Range (0x140b)"sv, str::to_string(Fuji.AutoDynamicRange));
 	if (Fuji.DRangePriority != 0xffff)
-		add_metadata(kv, u8"Fuji Dynamic Range priority (0x1443)", str::format(u8"{}", Fuji.DRangePriority),
-		             Fuji.DRangePriority ? u8"Fixed" : u8"Auto");
+		add_metadata(kv, u8"Fuji Dynamic Range priority (0x1443)"sv, str::format(u8"{}"sv, Fuji.DRangePriority),
+		             Fuji.DRangePriority ? u8"Fixed"sv : u8"Auto"sv);
 	if (Fuji.DRangePriorityAuto)
-		add_metadata(kv, u8"Fuji Dynamic Range priority Auto (0x1444)", str::format(u8"{}", Fuji.DRangePriorityAuto),
-		             Fuji.DRangePriorityAuto == 1 ? u8"Weak" : u8"Strong");
+		add_metadata(kv, u8"Fuji Dynamic Range priority Auto (0x1444)"sv, str::format(u8"{}"sv, Fuji.DRangePriorityAuto),
+		             Fuji.DRangePriorityAuto == 1 ? u8"Weak"sv : u8"Strong"sv);
 	if (Fuji.DRangePriorityFixed)
-		add_metadata(kv, u8"Fuji Dynamic Range priority Fixed (0x1445)", str::format(u8"{}", Fuji.DRangePriorityFixed),
-		             Fuji.DRangePriorityFixed == 1 ? u8"Weak" : u8"Strong");
+		add_metadata(kv, u8"Fuji Dynamic Range priority Fixed (0x1445)"sv, str::format(u8"{}"sv, Fuji.DRangePriorityFixed),
+		             Fuji.DRangePriorityFixed == 1 ? u8"Weak"sv : u8"Strong"sv);
 
 	if (S.pixel_aspect != 1)
-		add_metadata(kv, u8"Pixel Aspect Ratio", str::format(u8"{:0.6}", S.pixel_aspect));
+		add_metadata(kv, u8"Pixel Aspect Ratio"sv, str::format(u8"{:0.6}"sv, S.pixel_aspect));
 
 	if (T.tlength)
-		add_metadata(kv, u8"Thumb size", str::format(u8"{:4} x {}", T.twidth, T.theight));
+		add_metadata(kv, u8"Thumb size"sv, str::format(u8"{:4} x {}"sv, T.twidth, T.theight));
 
-	add_metadata(kv, u8"Full size", str::format(u8"{:4} x {}", S.raw_width, S.raw_height));
+	add_metadata(kv, u8"Full size"sv, str::format(u8"{:4} x {}"sv, S.raw_width, S.raw_height));
 
 	if (S.raw_inset_crop.cwidth)
 	{
-		auto s = str::format(u8"{:4} x {} u8", S.raw_inset_crop.cwidth, S.raw_inset_crop.cheight);
+		auto s = str::format(u8"{:4} x {} u8"sv, S.raw_inset_crop.cwidth, S.raw_inset_crop.cheight);
 
 		if (S.raw_inset_crop.cleft != 0xffff)
-			s += str::format(u8" left {}", S.raw_inset_crop.cleft);
+			s += str::format(u8" left {}"sv, S.raw_inset_crop.cleft);
 		if (S.raw_inset_crop.ctop != 0xffff)
-			s += str::format(u8" top {}", S.raw_inset_crop.ctop);
+			s += str::format(u8" top {}"sv, S.raw_inset_crop.ctop);
 
-		add_metadata(kv, u8"Raw inset, width x height", s);
+		add_metadata(kv, u8"Raw inset, width x height"sv, s);
 	}
 
 	const auto* const Aspect = lookup_id2hr(S.raw_inset_crop.aspect, AspectRatios, nAspectRatios);
 
 	if (Aspect)
 	{
-		add_metadata(kv, u8"Aspect", Aspect->name);
+		add_metadata(kv, u8"Aspect"sv, Aspect->name);
 	}
 	else
 	{
-		add_metadata(kv, u8"Aspect", str::format(u8"Other {}", S.raw_inset_crop.aspect));
+		add_metadata(kv, u8"Aspect"sv, str::format(u8"Other {}"sv, S.raw_inset_crop.aspect));
 	}
 
-	add_metadata(kv, u8"Image size", str::format(u8"{:4} x {}", S.width, S.height));
-	add_metadata(kv, u8"Output size", str::format(u8"{:4} x {}", S.iwidth, S.iheight));
-	add_metadata(kv, u8"Image flip", str::to_string(S.flip));
+	add_metadata(kv, u8"Image size"sv, str::format(u8"{:4} x {}"sv, S.width, S.height));
+	add_metadata(kv, u8"Output size"sv, str::format(u8"{:4} x {}"sv, S.iwidth, S.iheight));
+	add_metadata(kv, u8"Image flip"sv, str::to_string(S.flip));
 
 	if (Canon.RecordMode)
 	{
@@ -903,44 +900,44 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 
 		if (RecordMode)
 		{
-			add_metadata(kv, u8"Canon record mode", str::format(u8"{}: {}", Canon.RecordMode, RecordMode->name));
+			add_metadata(kv, u8"Canon record mode"sv, str::format(u8"{}: {}"sv, Canon.RecordMode, RecordMode->name));
 		}
 		else
 		{
-			add_metadata(kv, u8"Canon record mode", str::to_string(Canon.RecordMode));
+			add_metadata(kv, u8"Canon record mode"sv, str::to_string(Canon.RecordMode));
 		}
 	}
 	if (Canon.SensorWidth)
-		add_metadata(kv, u8"SensorWidth", str::to_string(Canon.SensorWidth));
+		add_metadata(kv, u8"SensorWidth"sv, str::to_string(Canon.SensorWidth));
 	if (Canon.SensorHeight)
-		add_metadata(kv, u8"SensorHeight", str::to_string(Canon.SensorHeight));
+		add_metadata(kv, u8"SensorHeight"sv, str::to_string(Canon.SensorHeight));
 	if (Canon.SensorLeftBorder != -1)
-		add_metadata(kv, u8"SensorLeftBorder", str::to_string(Canon.SensorLeftBorder));
+		add_metadata(kv, u8"SensorLeftBorder"sv, str::to_string(Canon.SensorLeftBorder));
 	if (Canon.SensorTopBorder != -1)
-		add_metadata(kv, u8"SensorTopBorder", str::to_string(Canon.SensorTopBorder));
+		add_metadata(kv, u8"SensorTopBorder"sv, str::to_string(Canon.SensorTopBorder));
 	if (Canon.SensorRightBorder)
-		add_metadata(kv, u8"SensorRightBorder", str::to_string(Canon.SensorRightBorder));
+		add_metadata(kv, u8"SensorRightBorder"sv, str::to_string(Canon.SensorRightBorder));
 	if (Canon.SensorBottomBorder)
-		add_metadata(kv, u8"SensorBottomBorder", str::to_string(Canon.SensorBottomBorder));
+		add_metadata(kv, u8"SensorBottomBorder"sv, str::to_string(Canon.SensorBottomBorder));
 	if (Canon.BlackMaskLeftBorder)
-		add_metadata(kv, u8"BlackMaskLeftBorder", str::to_string(Canon.BlackMaskLeftBorder));
+		add_metadata(kv, u8"BlackMaskLeftBorder"sv, str::to_string(Canon.BlackMaskLeftBorder));
 	if (Canon.BlackMaskTopBorder)
-		add_metadata(kv, u8"BlackMaskTopBorder", str::to_string(Canon.BlackMaskTopBorder));
+		add_metadata(kv, u8"BlackMaskTopBorder"sv, str::to_string(Canon.BlackMaskTopBorder));
 	if (Canon.BlackMaskRightBorder)
-		add_metadata(kv, u8"BlackMaskRightBorder", str::to_string(Canon.BlackMaskRightBorder));
+		add_metadata(kv, u8"BlackMaskRightBorder"sv, str::to_string(Canon.BlackMaskRightBorder));
 	if (Canon.BlackMaskBottomBorder)
-		add_metadata(kv, u8"BlackMaskBottomBorder", str::to_string(Canon.BlackMaskBottomBorder));
+		add_metadata(kv, u8"BlackMaskBottomBorder"sv, str::to_string(Canon.BlackMaskBottomBorder));
 
 	if (Hasselblad.BaseISO)
-		add_metadata(kv, u8"Hasselblad base ISO", str::to_string(Hasselblad.BaseISO));
+		add_metadata(kv, u8"Hasselblad base ISO"sv, str::to_string(Hasselblad.BaseISO));
 	if (Hasselblad.Gain)
-		add_metadata(kv, u8"Hasselblad gain", str::to_string(Hasselblad.Gain, 3));
+		add_metadata(kv, u8"Hasselblad gain"sv, str::to_string(Hasselblad.Gain, 3));
 
-	add_metadata(kv, u8"Raw colors", str::to_string(P1.colors));
+	add_metadata(kv, u8"Raw colors"sv, str::to_string(P1.colors));
 
 	/*if (P1.filters)
 	{
-		add_metadata(kv, u8"Filter pattern", str::format(u8"");
+		add_metadata(kv, u8"Filter pattern"sv, str::format(u8""sv);
 		if (!P1.cdesc[3])
 			P1.cdesc[3] = 'G';
 		for (int i = 0; i < 16; i++)
@@ -949,7 +946,7 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 
 	if (Canon.ChannelBlackLevel[0])
 	{
-		add_metadata(kv, u8"Canon makernotes, ChannelBlackLevel", str::format(u8"{} {} {} {}",
+		add_metadata(kv, u8"Canon makernotes, ChannelBlackLevel"sv, str::format(u8"{} {} {} {}"sv,
 		                                                                      Canon.ChannelBlackLevel[0],
 		                                                                      Canon.ChannelBlackLevel[1],
 		                                                                      Canon.ChannelBlackLevel[2],
@@ -958,83 +955,83 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 
 	if (C.black)
 	{
-		add_metadata(kv, u8"black", str::to_string(C.black));
+		add_metadata(kv, u8"black"sv, str::to_string(C.black));
 	}
 	/*if (C.cblack[0] != 0)
 	{
-		add_metadata(kv, u8"cblack[0 .. 3]:");
+		add_metadata(kv, u8"cblack[0 .. 3]:"sv);
 		for (int c = 0; c < 4; c++)
-			add_metadata(kv, u8"{}", C.cblack[c]);
+			add_metadata(kv, u8"{}"sv, C.cblack[c]);
 	}
 	if ((C.cblack[4] * C.cblack[5]) > 0)
 	{
-		add_metadata(kv, u8"BlackLevelRepeatDim", str::format(u8"{} x {}", C.cblack[4], C.cblack[4]);
+		add_metadata(kv, u8"BlackLevelRepeatDim"sv, str::format(u8"{} x {}"sv, C.cblack[4], C.cblack[4]);
 		int n = C.cblack[4] * C.cblack[5];
-		add_metadata(kv, u8"cblack[6 .. {}]:", 6 + n - 1);
+		add_metadata(kv, u8"cblack[6 .. {}]:"sv, 6 + n - 1);
 		for (int c = 6; c < 6 + n; c++)
-			add_metadata(kv, u8"{}", C.cblack[c]);
+			add_metadata(kv, u8"{}"sv, C.cblack[c]);
 	}
 
 	if (C.linear_max[0] != 0)
 	{
-		add_metadata(kv, u8"Highlight linearity limits:");
+		add_metadata(kv, u8"Highlight linearity limits:"sv);
 		for (int c = 0; c < 4; c++)
-			add_metadata(kv, u8"%ld", C.linear_max[c]);
+			add_metadata(kv, u8"%ld"sv, C.linear_max[c]);
 	}
 
 	if (P1.colors > 1)
 	{
-		add_metadata(kv, u8"Makernotes WB data", str::format(u8"           coeffs                  EVs");
+		add_metadata(kv, u8"Makernotes WB data"sv, str::format(u8"           coeffs                  EVs"sv);
 		if ((C.cam_mul[0] > 0) && (C.cam_mul[1] > 0)) {
-			add_metadata(kv, u8"  %-23s   %g %g %g %g   %5.2f %5.2f %5.2f %5.2f",
-				"As shot",
+			add_metadata(kv, u8"  %-23s   %g %g %g %g   %5.2f %5.2f %5.2f %5.2f"sv,
+				"As shot"sv,
 				C.cam_mul[0], C.cam_mul[1], C.cam_mul[2], C.cam_mul[3],
 				roundf(log2(C.cam_mul[0] / C.cam_mul[1]) * 100.0f) / 100.0f,
 				0.0f,
 				roundf(log2(C.cam_mul[2] / C.cam_mul[1]) * 100.0f) / 100.0f,
-				C.cam_mul[3] ? roundf(log2(C.cam_mul[3] / C.cam_mul[1]) * 100.0f) / 100.0f u8", str::format(u8"0.0f);
+				C.cam_mul[3] ? roundf(log2(C.cam_mul[3] / C.cam_mul[1]) * 100.0f) / 100.0f u8"sv, str::format(u8"0.0f);
 		}
 
 		for (int cnt = 0; cnt < int(sizeof WBToStr / sizeof * WBToStr); cnt++) {
 			WBi = WBToStr[cnt].NumId;
 			if ((C.WB_Coeffs[WBi][0] > 0) && (C.WB_Coeffs[WBi][1] > 0)) {
 				denom = (float)C.WB_Coeffs[WBi][1];
-				add_metadata(kv, u8"  %-23s   {:4} {:4} {:4} {:4}   %5.2f %5.2f %5.2f %5.2f",
+				add_metadata(kv, u8"  %-23s   {:4} {:4} {:4} {:4}   %5.2f %5.2f %5.2f %5.2f"sv,
 					WBToStr[cnt].hrStrId,
 					C.WB_Coeffs[WBi][0], C.WB_Coeffs[WBi][1], C.WB_Coeffs[WBi][2], C.WB_Coeffs[WBi][3],
 					roundf(log2((float)C.WB_Coeffs[WBi][0] / denom) * 100.0f) / 100.0f,
 					0.0f,
 					roundf(log2((float)C.WB_Coeffs[WBi][2] / denom) * 100.0f) / 100.0f,
-					C.WB_Coeffs[3] ? roundf(log2((float)C.WB_Coeffs[WBi][3] / denom) * 100.0f) / 100.0f u8", str::format(u8"0.0f);
+					C.WB_Coeffs[3] ? roundf(log2((float)C.WB_Coeffs[WBi][3] / denom) * 100.0f) / 100.0f u8"sv, str::format(u8"0.0f);
 			}
 		}
 
 		if ((Nikon.ME_WB[0] != 0.0f) && (Nikon.ME_WB[0] != 1.0f))
 		{
-			add_metadata(kv, u8"Nikon multi-exposure WB multipliers:");
+			add_metadata(kv, u8"Nikon multi-exposure WB multipliers:"sv);
 			for (int c = 0; c < 4; c++)
-				add_metadata(kv, u8"%g", Nikon.ME_WB[c]);
+				add_metadata(kv, u8"%g"sv, Nikon.ME_WB[c]);
 		}
 
 		if (C.rgb_cam[0][0] > 0.0001)
 		{
-			add_metadata(kv, u8"\nCamera2RGB matrix (mode", str::format(u8"{}):", = data.params.use_camera_matrix);
+			add_metadata(kv, u8"\nCamera2RGB matrix (mode"sv, str::format(u8"{}):"sv, = data.params.use_camera_matrix);
 			for (int i = 0; i < P1.colors; i++)
-				add_metadata(kv, u8"%6.4f\t%6.4f\t%6.4f", C.rgb_cam[i][0], C.rgb_cam[i][1],
+				add_metadata(kv, u8"%6.4f\t%6.4f\t%6.4f"sv, C.rgb_cam[i][0], C.rgb_cam[i][1],
 					C.rgb_cam[i][2]);
 		}
 
-		add_metadata(kv, u8"XYZ->CamRGB matrix:");
+		add_metadata(kv, u8"XYZ->CamRGB matrix:"sv);
 		for (int i = 0; i < P1.colors; i++)
-			add_metadata(kv, u8"%6.4f\t%6.4f\t%6.4f", C.cam_xyz[i][0], C.cam_xyz[i][1],
+			add_metadata(kv, u8"%6.4f\t%6.4f\t%6.4f"sv, C.cam_xyz[i][0], C.cam_xyz[i][1],
 				C.cam_xyz[i][2]);
 
 		for (int cnt = 0; cnt < 2; cnt++) {
 			if (fabsf(C.P1_color[cnt].romm_cam[0]) > 0)
 			{
-				add_metadata(kv, u8"PhaseOne Matrix {}:", cnt + 1);
+				add_metadata(kv, u8"PhaseOne Matrix {}:"sv, cnt + 1);
 				for (int i = 0; i < 3; i++)
-					add_metadata(kv, u8"%6.4f\t%6.4f\t%6.4f", C.P1_color[cnt].romm_cam[i * 3],
+					add_metadata(kv, u8"%6.4f\t%6.4f\t%6.4f"sv, C.P1_color[cnt].romm_cam[i * 3],
 						C.P1_color[cnt].romm_cam[i * 3 + 1],
 						C.P1_color[cnt].romm_cam[i * 3 + 2]);
 			}
@@ -1042,37 +1039,37 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 
 		if (fabsf(C.cmatrix[0][0]) > 0)
 		{
-			add_metadata(kv, u8"camRGB -> sRGB Matrix:");
+			add_metadata(kv, u8"camRGB -> sRGB Matrix:"sv);
 			for (int i = 0; i < P1.colors; i++)
 			{
 				for (int j = 0; j < P1.colors; j++)
-					add_metadata(kv, u8"%6.4f\t", C.cmatrix[i][j]);
-				add_metadata(kv, u8"");
+					add_metadata(kv, u8"%6.4f\t"sv, C.cmatrix[i][j]);
+				add_metadata(kv, u8""sv);
 			}
 		}
 
 		if (fabsf(C.ccm[0][0]) > 0)
 		{
-			add_metadata(kv, u8"Color Correction Matrix:");
+			add_metadata(kv, u8"Color Correction Matrix:"sv);
 			for (int i = 0; i < P1.colors; i++)
 			{
 				for (int j = 0; j < P1.colors; j++)
-					add_metadata(kv, u8"%6.4f\t", C.ccm[i][j]);
-				add_metadata(kv, u8"");
+					add_metadata(kv, u8"%6.4f\t"sv, C.ccm[i][j]);
+				add_metadata(kv, u8""sv);
 			}
 		}
 
 		for (int cnt = 0; cnt < 2; cnt++) {
 			if (C.dng_color[cnt].illuminant != LIBRAW_WBI_None) {
 				if (C.dng_color[cnt].illuminant <= LIBRAW_WBI_StudioTungsten) {
-					add_metadata(kv, u8"DNG Illuminant {}", str::format(u8"{}",
+					add_metadata(kv, u8"DNG Illuminant {}"sv, str::format(u8"{}"sv,
 						cnt + 1, WB_idx2hrstr(C.dng_color[cnt].illuminant));
 				}
 				else if (C.dng_color[cnt].illuminant == LIBRAW_WBI_Other) {
-					add_metadata(kv, u8"DNG Illuminant {}", str::format(u8"Other", cnt + 1);
+					add_metadata(kv, u8"DNG Illuminant {}"sv, str::format(u8"Other"sv, cnt + 1);
 				}
 				else {
-					add_metadata(kv, u8"DNG Illuminant {} is out of EXIF LightSources range [0:24, 255]", str::format(u8"{}",
+					add_metadata(kv, u8"DNG Illuminant {} is out of EXIF LightSources range [0:24, 255]"sv, str::format(u8"{}"sv,
 						cnt + 1, C.dng_color[cnt].illuminant);
 				}
 			}
@@ -1081,9 +1078,9 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 		for (int n = 0; n < 2; n++) {
 			if (fabsf(C.dng_color[n].colormatrix[0][0]) > 0)
 			{
-				add_metadata(kv, u8"DNG color matrix {}:", n + 1);
+				add_metadata(kv, u8"DNG color matrix {}:"sv, n + 1);
 				for (int i = 0; i < P1.colors; i++)
-					add_metadata(kv, u8"%6.4f\t%6.4f\t%6.4f", C.dng_color[n].colormatrix[i][0],
+					add_metadata(kv, u8"%6.4f\t%6.4f\t%6.4f"sv, C.dng_color[n].colormatrix[i][0],
 						C.dng_color[n].colormatrix[i][1],
 						C.dng_color[n].colormatrix[i][2]);
 			}
@@ -1092,12 +1089,12 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 		for (int n = 0; n < 2; n++) {
 			if (fabsf(C.dng_color[n].calibration[0][0]) > 0)
 			{
-				add_metadata(kv, u8"DNG calibration matrix {}:", n + 1);
+				add_metadata(kv, u8"DNG calibration matrix {}:"sv, n + 1);
 				for (int i = 0; i < P1.colors; i++)
 				{
 					for (int j = 0; j < P1.colors; j++)
-						add_metadata(kv, u8"%6.4f\t", C.dng_color[n].calibration[j][i]);
-					add_metadata(kv, u8"");
+						add_metadata(kv, u8"%6.4f\t"sv, C.dng_color[n].calibration[j][i]);
+					add_metadata(kv, u8""sv);
 				}
 			}
 		}
@@ -1105,50 +1102,50 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 		for (int n = 0; n < 2; n++) {
 			if (fabsf(C.dng_color[n].forwardmatrix[0][0]) > 0)
 			{
-				add_metadata(kv, u8"DNG forward matrix {}:", n + 1);
+				add_metadata(kv, u8"DNG forward matrix {}:"sv, n + 1);
 				for (int i = 0; i < P1.colors; i++)
-					add_metadata(kv, u8"%6.4f\t%6.4f\t%6.4f", C.dng_color[n].forwardmatrix[0][i],
+					add_metadata(kv, u8"%6.4f\t%6.4f\t%6.4f"sv, C.dng_color[n].forwardmatrix[0][i],
 						C.dng_color[n].forwardmatrix[1][i],
 						C.dng_color[n].forwardmatrix[2][i]);
 			}
 		}
 
-		add_metadata(kv, u8"Derived D65 multipliers:");
+		add_metadata(kv, u8"Derived D65 multipliers:"sv);
 		for (int c = 0; c < P1.colors; c++)
-			add_metadata(kv, u8"%f", C.pre_mul[c]);
+			add_metadata(kv, u8"%f"sv, C.pre_mul[c]);
 	}*/
 
-	add_metadata(kv, u8"Color space (makernotes) u8", str::format(u8"{}, {}", P3.ColorSpace, ColorSpaceName));
+	add_metadata(kv, u8"Color space (makernotes) u8"sv, str::format(u8"{}, {}"sv, P3.ColorSpace, ColorSpaceName));
 
 
 	if (Sony.PixelShiftGroupID)
 	{
-		add_metadata(kv, u8"Sony PixelShiftGroupPrefix",
-		             str::format(u8"0x{:x} PixelShiftGroupID {}, u8", Sony.PixelShiftGroupPrefix,
+		add_metadata(kv, u8"Sony PixelShiftGroupPrefix"sv,
+		             str::format(u8"0x{:x} PixelShiftGroupID {}, u8"sv, Sony.PixelShiftGroupPrefix,
 		                         Sony.PixelShiftGroupID));
 
 		if (Sony.numInPixelShiftGroup)
 		{
-			add_metadata(kv, u8"shot#", str::format(u8"{} (starts at 1) of total {}", Sony.numInPixelShiftGroup,
+			add_metadata(kv, u8"shot#"sv, str::format(u8"{} (starts at 1) of total {}"sv, Sony.numInPixelShiftGroup,
 			                                        Sony.nShotsInPixelShiftGroup));
 		}
 		else
 		{
-			add_metadata(kv, u8"shots in PixelShiftGroup",
-			             str::format(u8"{}, already ARQ", Sony.nShotsInPixelShiftGroup));
+			add_metadata(kv, u8"shots in PixelShiftGroup"sv,
+			             str::format(u8"{}, already ARQ"sv, Sony.nShotsInPixelShiftGroup));
 		}
 	}
 
 	if (Sony.Sony0x9400_version)
 	{
-		add_metadata(kv, u8"SONY Sequence data", str::format(u8"tag 0x9400 version '{:x}' ReleaseMode2: {}",
+		add_metadata(kv, u8"SONY Sequence data"sv, str::format(u8"tag 0x9400 version '{:x}' ReleaseMode2: {}"sv,
 		                                                     Sony.Sony0x9400_version, Sony.Sony0x9400_ReleaseMode2));
-		add_metadata(kv, u8"SequenceImageNumber",
-		             str::format(u8"{} (starts at zero)", Sony.Sony0x9400_SequenceImageNumber));
-		add_metadata(kv, u8"SequenceLength1", str::format(u8"{} shot(s)", Sony.Sony0x9400_SequenceLength1));
-		add_metadata(kv, u8"SequenceFileNumber",
-		             str::format(u8"{} (starts at zero, exiftool starts at 1)", Sony.Sony0x9400_SequenceFileNumber));
-		add_metadata(kv, u8"SequenceLength2", str::format(u8"{} file(s)", Sony.Sony0x9400_SequenceLength2));
+		add_metadata(kv, u8"SequenceImageNumber"sv,
+		             str::format(u8"{} (starts at zero)"sv, Sony.Sony0x9400_SequenceImageNumber));
+		add_metadata(kv, u8"SequenceLength1"sv, str::format(u8"{} shot(s)"sv, Sony.Sony0x9400_SequenceLength1));
+		add_metadata(kv, u8"SequenceFileNumber"sv,
+		             str::format(u8"{} (starts at zero, exiftool starts at 1)"sv, Sony.Sony0x9400_SequenceFileNumber));
+		add_metadata(kv, u8"SequenceLength2"sv, str::format(u8"{} file(s)"sv, Sony.Sony0x9400_SequenceLength2));
 	}
 
 	result.libraw_metadata = kv;
@@ -1193,7 +1190,7 @@ static ui::surface_ptr thumb_to_surface(const libraw_thumbnail_t& thumbnail, ui:
 
 	if (LIBRAW_THUMBNAIL_BITMAP == thumbnail.tformat)
 	{
-		const auto expected_size = thumbnail.theight * thumbnail.twidth * thumbnail.tcolors;
+		const auto expected_size = thumbnail.theight * thumbnail.twidth * static_cast<uint32_t>(thumbnail.tcolors);
 
 		if (expected_size <= thumbnail.tlength)
 		{

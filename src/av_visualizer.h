@@ -270,7 +270,7 @@ private:
 
 			_q.emplace(found, frame); // .emplace_back(frame);
 
-			//df::log(__FUNCTION__, "frame_queue.push " << frame._time;
+			//df::log(__FUNCTION__, "frame_queue.push "sv << frame._time;
 		}
 
 		bool pop_merge(frame& f, double time)
@@ -294,10 +294,9 @@ private:
 		}
 	};
 
-	frame_queue _frames;
-	frame _frame;
-	uint32_t _cosinus[256];
 	mutable platform::mutex _mutex;
+	_Guarded_by_(_mutex) frame_queue _frames;
+	_Guarded_by_(_mutex) frame _frame;
 
 public:
 	av_visualizer()
@@ -308,11 +307,6 @@ public:
 		{
 			xscale[i] = df::round(0.5 + pow(FFT_BUFFER_SIZE / 2.0, static_cast<double>(i) / num_bars));
 			if (i > 0 && xscale[i] <= xscale[i - 1]) xscale[i] = xscale[i - 1] + 1;
-		}
-
-		for (int i = 0; i < 256; ++i)
-		{
-			_cosinus[i] = static_cast<uint32_t>((127 * (cos(i * M_PI / 64))) + 128);
 		}
 	}
 
@@ -374,8 +368,12 @@ public:
 		_frames.clear();
 	}
 
-	void render(const ui::vertices_ptr& verts, const recti rect, const pointi offset, const float alpha,
-	            const double time) const
+	static double calc_cosinus(const double i)
+	{
+		return cos(i * M_PI / 0.25) + 0.5;
+	}
+
+	void render(const ui::vertices_ptr& verts, const recti rect, const pointi offset, const float alpha, const double time) const
 	{
 		recti rects[num_bars];
 		ui::color colors[num_bars];
@@ -385,9 +383,9 @@ public:
 
 			const double scaleY = 444.0;
 			const double hh = rect.height() / 2.0;
-			const double y = (rect.top + rect.bottom) / 2.0;
-			const double step = std::clamp(rect.width() / (num_bars + 1.0), 3.0, 16.0);
-			double x = rect.left + (rect.width() - ((num_bars + 1) * step)) / 2.0;
+			const double y = static_cast<double>(rect.top + rect.bottom) / 2.0;
+			const double step = std::clamp(static_cast<double>(rect.width()) / (static_cast<double>(num_bars) + 1.0), 3.0, 16.0);
+			double x = static_cast<double>(rect.left) + (static_cast<double>(rect.width()) - ((static_cast<double>(num_bars) + 1.0) * static_cast<double>(step))) / 2.0;
 
 			for (auto i = 0; i < num_bars; i++)
 			{
@@ -397,7 +395,7 @@ public:
 				const auto yr = static_cast<double>(_frame._data[1][i]);
 				const double yy = yl + yr;
 				const double a = std::clamp((yy + (scaleY / 2.0)) / (scaleY * 2.0) * alpha, 0.4, 1.0);
-				const double inflate = (step / 2) + (yy * (step / 2) / (scaleY * 3));
+				const double inflate = (step / 2.0) + (yy * (step / 2.0) / (scaleY * 3.0));
 
 				// Lerp based colors
 				//float color_scale = std::clamp(yy / 555.0, 0.0, 1.0);
@@ -406,11 +404,12 @@ public:
 				//colors[i] = interpolate(c1, c2, color_scale, a / 255.0);
 
 				// Cosign palete based colors
-				const auto ic = std::clamp(df::round(50 + i + (yy * 19) / scaleY), 0, 255);
-				const auto rr = _cosinus[ic];
-				const auto gg = _cosinus[(ic - 32) & 0x0ff];
-				const auto bb = _cosinus[(ic - 64) & 0x0ff];
-				colors[i] = ui::color(ui::rgb(rr, gg, bb), static_cast<float>(a));
+				constexpr auto pi4 = M_PI / 0.25;
+				const auto ic = (0.25 + (i * 0.003) + (yy * 0.04) / scaleY) * pi4;
+				const auto rr = (cos(ic) + 1.0) / 2.0;
+				const auto gg = (cos(ic - (0.125 * pi4)) + 1.0) / 2.0;
+				const auto bb = (cos(ic - (0.25 * pi4)) + 1.0) / 2.0;
+				colors[i] = ui::color(rr, gg, bb, static_cast<float>(a));
 
 				recti col(df::round(x - inflate), df::round(y - (yl * hh / scaleY)), df::round(x + inflate),
 				          df::round(y + (yr * hh / scaleY)));

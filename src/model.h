@@ -106,7 +106,7 @@ public:
 		return _items;
 	}
 
-	void count_strings(df::string_counts& results, const int weight, const std::u8string& prefix = {})
+	void count_strings(df::string_counts& results, const int weight, const std::u8string_view prefix = {})
 	{
 		for (const auto& i : _items)
 		{
@@ -116,7 +116,7 @@ public:
 			}
 			else
 			{
-				results[str::cache(prefix + i)] += weight;
+				results[str::cache(str::format(u8"{}{}"sv, prefix, i))] += weight;
 			}
 		}
 	}
@@ -227,7 +227,7 @@ public:
 
 	static constexpr int max_history_size = 32;
 	std::vector<history_entry> _history;
-	int _pos = -1;
+	ssize_t _pos = -1;
 
 	history_state() = default;
 
@@ -490,7 +490,7 @@ public:
 	int _hover_scrubber_pos = -1;
 	mutable int _time_width = 0;
 
-	ui::pixel_difference_result _pixel_difference;
+	ui::pixel_difference_result _pixel_difference = ui::pixel_difference_result::unknown;
 
 	mutable bool _preview_changed = false;
 
@@ -803,9 +803,9 @@ public:
 	{
 		if (text.length() > 1)
 		{
-			_text = u8"*";
+			_text = u8"*"sv;
 			_text += text;
-			_text += u8"*";
+			_text += u8"*"sv;
 		}
 		else
 		{
@@ -1148,7 +1148,7 @@ public:
 			if (md && md->coordinate.is_valid())
 			{
 				const auto coordinate = md->coordinate;
-				platform::open(str::print(u8"https://www.google.com/maps/place/%f,%f", coordinate.latitude(),
+				platform::open(str::print(u8"https://www.google.com/maps/place/%f,%f"sv, coordinate.latitude(),
 				                          coordinate.longitude()));
 				return;
 			}
@@ -1365,7 +1365,7 @@ public:
 	df::date_t _item_created;
 
 	int _item_season = 0;
-	df::xy8 _item_episode;
+	df::xy8 _item_episode = { 0, 0 };
 	int _item_year = 0;
 	int _item_rating = 0;
 

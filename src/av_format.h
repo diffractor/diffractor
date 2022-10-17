@@ -117,7 +117,7 @@ class av_queue final : public df::no_copy
 {
 private:
 	mutable platform::mutex _mutex;
-	std::deque<std::shared_ptr<T>> _q;
+	_Guarded_by_(_mutex) std::deque<std::shared_ptr<T>> _q;
 
 public:
 	av_queue()

@@ -202,7 +202,7 @@ static void iterate_items(const df::search_t& search,
 			if (token.is_cancelled())
 				break;
 
-			//df::log(__FUNCTION__, "query " << selector.str();
+			//df::log(__FUNCTION__, "query "sv << selector.str();
 
 			const auto recursive = selector.is_recursive();
 			const auto wildcard = selector.wildcard();
@@ -433,8 +433,8 @@ void index_state::init_item_index()
 
 	for (const auto& f : all_file_groups())
 	{
-		++_summary._distinct_words[str::cache(str::format(u8"@{}", f->name))];
-		++_summary._distinct_words[str::cache(str::format(u8"@{}", f->plural_name))];
+		++_summary._distinct_words[str::cache(str::format(u8"@{}"sv, f->name))];
+		++_summary._distinct_words[str::cache(str::format(u8"@{}"sv, f->plural_name))];
 	}
 
 	_summary._distinct_text[prop::genre] = df::dense_unique_strings
@@ -837,7 +837,7 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 
 					sidecars.emplace(without_extension, name);
 
-					if (str::icmp(ext, u8"xmp") == 0)
+					if (str::icmp(ext, u8"xmp"sv) == 0)
 					{
 						auto ps = f.safe_ps();
 
@@ -899,7 +899,7 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 					{
 						const auto ext = sc_name.substr(df::find_ext(sc_name));
 
-						if (str::icmp(ext, u8".xmp") == 0)
+						if (str::icmp(ext, u8".xmp"sv) == 0)
 						{
 							ps->xmp = str::cache(sc_name);
 						}
@@ -1148,7 +1148,7 @@ void index_state::update_predictions()
 	stats.indexed_max_compare_count = max_compare_count;
 	stats.update_presence_ms = static_cast<int>(df::now_ms() - start_ms);
 
-	df::trace(str::format(u8"Index update predictions: {} folders in {} ms", folder_count, stats.update_presence_ms));
+	df::trace(str::format(u8"Index update predictions: {} folders in {} ms"sv, folder_count, stats.update_presence_ms));
 }
 
 
@@ -1196,7 +1196,7 @@ void index_state::update_summary()
 					       {
 						       const auto cached_tag = str::cache(part);
 						       distinct_tag_texts.emplace(cached_tag);
-						       distinct_words[str::cache(str::format(u8"#{}", part))] += 1;
+						       distinct_words[str::cache(str::format(u8"#{}"sv, part))] += 1;
 						       distinct_tags[cached_tag].record(file);
 					       });
 
@@ -1331,7 +1331,7 @@ void index_state::update_summary()
 
 	_async.invalidate_view(view_invalid::sidebar | view_invalid::tooltip);
 
-	df::trace(str::format(u8"Index update summary in {} ms", df::now_ms() - start_ms));
+	df::trace(str::format(u8"Index update summary in {} ms"sv, df::now_ms() - start_ms));
 }
 
 static bool needs_scan_impl(const df::index_folder_item_ptr& f, const df::index_file_item& file, const bool load_thumb,
@@ -1401,8 +1401,8 @@ void index_state::scan_uncached(df::cancel_token token)
 		}
 	}
 
-	stats.index_item_count = items_in_index;
-	stats.index_item_remaining = uncached.size();
+	stats.index_item_count = static_cast<int>(items_in_index);
+	stats.index_item_remaining = static_cast<int>(uncached.size());
 
 	_async.invalidate_view(view_invalid::view_layout);
 
@@ -2072,7 +2072,7 @@ void index_state::index_folders(df::cancel_token token)
 	{
 		platform::exclusive_lock lock(_summary_rw);
 		_summary._distinct_folders = std::move(unique_folder_paths);
-		stats.index_folder_count = _summary._distinct_folders.size();
+		stats.index_folder_count = static_cast<int>(_summary._distinct_folders.size());
 	}
 
 	df::unique_folders distinct_prime_folders;
@@ -2118,17 +2118,17 @@ std::u8string build_result_string(const std::vector<std::string>& tokens,
 
 	while (i < end)
 	{
-		if (*i == "[")
+		if (*i == "["sv)
 		{
 			brackets = true;
 		}
 		else if (brackets)
 		{
-			brackets = *i != "]";
+			brackets = *i != "]"sv;
 		}
 		else
 		{
-			if (!result.empty()) result += " ";
+			if (!result.empty()) result += " "sv;
 			result += *i;
 		}
 
@@ -2142,53 +2142,53 @@ media_name_props scan_info_from_title(const std::u8string_view name8)
 {
 	media_name_props result;
 
-	static const df::hash_set<std::string, df::ihash, df::ieq> stop_words
+	static const df::hash_set<std::string_view, df::ihash, df::ieq> stop_words
 	{
-		"480p",
-		"720p",
-		"720",
-		"1080p",
-		"1080",
-		"hdtv",
-		"x264",
-		"x265",
-		"h264",
-		"h265",
-		"ac3",
-		"dts",
-		"aac",
-		"brrip",
-		"bdrip",
-		"bluray",
-		"hdrip",
-		"hdtv",
-		"dvdrip",
-		"webrip",
-		"xvid",
-		"extended",
-		"5.1",
+		"480p"sv,
+		"720p"sv,
+		"720"sv,
+		"1080p"sv,
+		"1080"sv,
+		"hdtv"sv,
+		"x264"sv,
+		"x265"sv,
+		"h264"sv,
+		"h265"sv,
+		"ac3"sv,
+		"dts"sv,
+		"aac"sv,
+		"brrip"sv,
+		"bdrip"sv,
+		"bluray"sv,
+		"hdrip"sv,
+		"hdtv"sv,
+		"dvdrip"sv,
+		"webrip"sv,
+		"xvid"sv,
+		"extended"sv,
+		"5.1"sv,
 		"7.1"
 	};
 
-	static const df::hash_set<std::string, df::ihash, df::ieq> pre_title_stop_words
+	static const df::hash_set<std::string_view, df::ihash, df::ieq> pre_title_stop_words
 	{
-		"internal",
-		"web",
-		"(",
-		"[",
-		"-",
-		"PDTV",
-		"DVDScr",
-		"10bit",
-		"UNRATED",
+		"internal"sv,
+		"web"sv,
+		"("sv,
+		"["sv,
+		"-"sv,
+		"PDTV"sv,
+		"DVDScr"sv,
+		"10bit"sv,
+		"UNRATED"sv,
 	};
 
-	static const df::hash_set<std::string, df::ihash, df::ieq> pre_show_stop_words
+	static const df::hash_set<std::string_view, df::ihash, df::ieq> pre_show_stop_words
 	{
-		"-",
+		"-"sv,
 	};
 
-	static const auto split_rx = std::regex{R"([\s]+|\-|\.|\(|\[|\]|\))", std::regex_constants::icase};
+	static const auto split_rx = std::regex{R"([\s]+|\-|\.|\(|\[|\]|\))"s, std::regex_constants::icase};
 
 	const auto name = std::string_view(std::bit_cast<const char*>(name8.data()), name8.size());
 
@@ -2197,14 +2197,14 @@ media_name_props scan_info_from_title(const std::u8string_view name8)
 		std::regex_token_iterator<std::string_view::const_iterator>{}
 	);
 
-	static const auto space_rx = std::regex{R"([\s]+|\.)", std::regex_constants::icase};
+	static const auto space_rx = std::regex{R"([\s]+|\.)"s, std::regex_constants::icase};
 
 	std::erase_if(tokens, [](auto&& i) { return i.empty() || std::regex_match(i, space_rx); });
 
-	static std::regex episode_rx("s([0-9]+)e([0-9]+)", std::regex_constants::icase);
-	static std::regex episode_of_rx("([0-9]+)of([0-9]+)", std::regex_constants::icase);
-	static std::regex episode_x_rx("([0-9]+)x([0-9]+)", std::regex_constants::icase);
-	static std::regex year_rx("(19|20)[0-9][0-9]", std::regex_constants::icase);
+	static std::regex episode_rx("s([0-9]+)e([0-9]+)"s, std::regex_constants::icase);
+	static std::regex episode_of_rx("([0-9]+)of([0-9]+)"s, std::regex_constants::icase);
+	static std::regex episode_x_rx("([0-9]+)x([0-9]+)"s, std::regex_constants::icase);
+	static std::regex year_rx("(19|20)[0-9][0-9]"s, std::regex_constants::icase);
 
 	auto found_episode_num = std::ranges::find_if(tokens, [](auto&& i)
 	{
@@ -2223,7 +2223,7 @@ media_name_props scan_info_from_title(const std::u8string_view name8)
 
 	if (end_show != tokens.begin() &&
 		end_show != tokens.end() &&
-		*(end_show - 1) == ")")
+		*(end_show - 1) == "sv)"sv)
 	{
 		--end_show;
 
@@ -2235,7 +2235,7 @@ media_name_props scan_info_from_title(const std::u8string_view name8)
 
 			if (end_show != tokens.begin() &&
 				end_show != tokens.end() &&
-				*(end_show - 1) == "(")
+				*(end_show - 1) == "("sv)
 			{
 				result.year = std::stoi(*end_show);
 				--end_show;
@@ -2250,7 +2250,7 @@ media_name_props scan_info_from_title(const std::u8string_view name8)
 
 	/*for (auto t : tokens)
 	{
-		std::cout << "'" << t << "'" << std::endl;
+		std::cout << "'"sv << t << "'"sv << std::endl;
 	}*/
 
 	while (end_title != tokens.begin() &&
@@ -2475,7 +2475,7 @@ void index_state::update_presence(const df::item_set& items)
 		}
 	}
 
-	df::trace(str::format(u8"Index update presence {} items in {} ms", items.size(), stats.update_presence_ms));
+	df::trace(str::format(u8"Index update presence {} items in {} ms"sv, items.size(), stats.update_presence_ms));
 }
 
 void index_state::scan_items(const df::item_set& items_to_scan,
@@ -2523,7 +2523,7 @@ void index_state::scan_items(const df::item_set& items_to_scan,
 		}
 	}
 
-	df::trace(str::format(u8"Index scan {} items (thumbs={} refresh-fs={}) in {} ms", items_to_scan.size(), load_thumbs,
+	df::trace(str::format(u8"Index scan {} items (thumbs={} refresh-fs={}) in {} ms"sv, items_to_scan.size(), load_thumbs,
 	                      refresh_from_file_system, stats.scan_items_ms));
 }
 
@@ -2571,7 +2571,7 @@ void index_state::queue_scan_modified_items(df::item_set items_to_scan)
 		const auto start_ms = df::now_ms();
 		scan_items(items_to_scan, true, true, false, false, {});
 		_async.invalidate_view(view_invalid::index_summary | view_invalid::media_elements);
-		df::trace(str::format(u8"Index scan modified {} items in {} ms", items_to_scan.size(),
+		df::trace(str::format(u8"Index scan modified {} items in {} ms"sv, items_to_scan.size(),
 		                      df::now_ms() - start_ms));
 	});
 }
@@ -2602,7 +2602,7 @@ void index_state::queue_update_presence(df::item_set items)
 			const auto start_ms = df::now_ms();
 			update_presence(items);
 			_async.invalidate_view(view_invalid::view_layout | view_invalid::group_layout);
-			df::trace(str::format(u8"Index update presence in {} ms", df::now_ms() - start_ms));
+			df::trace(str::format(u8"Index update presence in {} ms"sv, df::now_ms() - start_ms));
 		});
 	}
 }

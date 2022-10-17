@@ -115,6 +115,7 @@ namespace platform
 
 	enum class drive_type
 	{
+		unknown,
 		removable,
 		fixed,
 		remote,
@@ -124,7 +125,7 @@ namespace platform
 
 	struct drive_t
 	{
-		drive_type type;
+		drive_type type = drive_type::unknown;
 		std::u8string name;
 		std::u8string vol_name;
 		std::u8string file_system;
@@ -263,10 +264,7 @@ namespace platform
 		std::vector<std::u8string> tags;
 		std::optional<int> rating;
 	};
-
-	bool update_metadata(df::file_path path, const metadata_edits& edits);
-	metadata_result read_metadata(df::file_path path);
-
+		
 	df::blob from_file(df::file_path path);
 	bool save_to_file(df::file_path path, df::cspan data);
 
@@ -299,7 +297,7 @@ namespace platform
 	std::u8string user_name();
 	std::u8string last_os_error();
 	void set_thread_description(std::u8string_view name);
-	df::file_path temp_file(std::u8string_view ext = u8".tmp", df::folder_path folder = {});
+	df::file_path temp_file(std::u8string_view ext = u8".tmp"sv, df::folder_path folder = {});
 
 	bool browse_for_folder(df::folder_path& path);
 	bool prompt_for_save_path(df::file_path& path);
@@ -426,8 +424,27 @@ namespace platform
 		mutex();
 		~mutex();
 
-		void lock() const;
-		void unlock() const;
+		_Acquires_exclusive_lock_(this)
+		void ex_lock() const;
+
+		_Releases_exclusive_lock_(this)
+		void ex_unlock() const;
+
+		_Acquires_shared_lock_(this)
+		void sh_lock() const;
+
+		_Releases_shared_lock_(this)
+		void sh_unlock() const;
+
+		void unlock() const
+		{
+			ex_unlock();
+		}
+
+		void lock() const
+		{
+			ex_lock();
+		}
 
 		friend class shared_lock;
 		friend class exclusive_lock;
@@ -449,8 +466,23 @@ namespace platform
 			unlock();
 		}
 
-		void unlock();
-		void lock();
+		void unlock()
+		{
+			if (_locked)
+			{
+				_rw.sh_unlock();
+				_locked = false;
+			}
+		}
+
+		void lock()
+		{
+			if (!_locked)
+			{
+				_rw.sh_lock();
+				_locked = true;
+			}
+		}
 	};
 
 	class exclusive_lock : public df::no_copy
@@ -460,12 +492,12 @@ namespace platform
 	public:
 		exclusive_lock(const mutex& rw) : _rw(rw)
 		{
-			_rw.lock();
+			_rw.ex_lock();
 		}
 
 		~exclusive_lock()
 		{
-			_rw.unlock();
+			_rw.ex_unlock();
 		}
 	};
 
@@ -490,7 +522,7 @@ namespace platform
 	struct queue
 	{
 		mutex _rw;
-		std::deque<T> _storage;
+		_Guarded_by_(_rw) std::deque<T> _storage;
 
 		bool dequeue(T& result)
 		{
@@ -595,7 +627,7 @@ namespace platform
 
 	class thread_init
 	{
-		uint32_t _hr;
+		uint32_t _hr = 0;
 
 	public:
 		thread_init();

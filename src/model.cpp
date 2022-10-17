@@ -1812,7 +1812,7 @@ view_elements_ptr view_state::create_selection_controls()
 				{
 					elements.emplace_back(std::make_shared<bullet_element>(
 						icon_index::folder,
-						std::make_shared<link_element>(format(u8"{}\\", item->folder().text()),
+						std::make_shared<link_element>(format(u8"{}\\"sv, item->folder().text()),
 						                               commands::browse_open_containingfolder),
 						view_element_style::none));
 				}
@@ -2112,7 +2112,7 @@ view_elements_ptr view_state::create_selection_controls()
 				if (item_count == 1)
 				{
 					const auto i = selected.items().front();
-					title = format(u8"{}:{}", i->file_type()->group->name, i->name());
+					title = format(u8"{}:{}"sv, i->file_type()->group->name, i->name());
 				}
 				else
 				{
@@ -2387,7 +2387,7 @@ df::search_parent view_state::parent_search() const
 
 void view_state::open(const view_host_base_ptr& view, const std::u8string_view text)
 {
-	if (_search.has_selector() && text == u8"**")
+	if (_search.has_selector() && text == u8"**"sv)
 	{
 		auto search = _search;
 		const auto s = search.selectors().front();
@@ -2395,7 +2395,7 @@ void view_state::open(const view_host_base_ptr& view, const std::u8string_view t
 
 		open(view, search.clear_selectors().add_selector(sel), {});
 	}
-	else if (text == u8"..")
+	else if (text == u8".."sv)
 	{
 		const auto p = parent_search();
 		open(view, p.parent, make_unique_paths(p.selection));
@@ -2936,7 +2936,7 @@ void view_state::tick(const view_host_base_ptr& view, const double time_now)
 
 			if (is_media_end)
 			{
-				df::trace("view_state::tick detected media played to end");
+				df::trace("view_state::tick detected media played to end"sv);
 
 				if (d->_session)
 				{
@@ -3299,7 +3299,7 @@ ui::texture_ptr texture_state::zoom_texture(ui::draw_context& rc, const sizei ex
 
 	if (!_zoom_texture)
 	{
-		throw app_exception("Failed to create zoom texture.");
+		throw app_exception(u8"Failed to create zoom texture."s);
 	}
 
 	return _zoom_texture;
@@ -3504,7 +3504,7 @@ void draw_texture_info(ui::draw_context& rc, const recti media_bounds, const ui:
 
 		auto r = media_bounds;
 
-		const auto text = str::format(u8"{} {}x{} -> {}x{} {}", to_string(tex->format()), tex_dims.cx, tex_dims.cy,
+		const auto text = str::format(u8"{} {}x{} -> {}x{} {}"sv, to_string(tex->format()), tex_dims.cx, tex_dims.cy,
 		                              r.width(), r.height(), to_string(sampler));
 
 		r.left += 8;

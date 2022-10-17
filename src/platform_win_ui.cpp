@@ -31,8 +31,8 @@
 #include "platform_win_res.h"
 #include "platform_win_browser.h"
 
-#pragma comment(lib, "wtsapi32" )
-#pragma comment(lib, "D2d1" )
+#pragma comment(lib, "wtsapi32")
+#pragma comment(lib, "D2d1")
 #pragma comment(lib, "dxgi")
 #pragma comment(lib, "d3d11")
 #pragma comment(lib, "dcomp")
@@ -46,7 +46,7 @@ static constexpr auto nonclient_border_thickness = 5;
 static constexpr auto base_icon_cxy = 18;
 int ui::ticks_since_last_user_action = 0;
 
-static constexpr std::u8string_view s_window_rect = u8"WindowRect";
+static constexpr std::u8string_view s_window_rect = u8"WindowRect"sv;
 static std::u8string restart_cmd_line;
 
 extern bool number_format_invalid;
@@ -460,7 +460,7 @@ std::u8string_view keys::format(const int key)
 	if (key == VOLUME_DOWN) return tt.keyboard_volume_down;
 	if (key == VOLUME_MUTE) return tt.keyboard_volume_mute;
 	if (key == VOLUME_UP) return tt.keyboard_volume_up;
-	return u8"?";
+	return u8"?"sv;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////
@@ -815,87 +815,6 @@ HBITMAP create_round_rect(HDC hdc_ref, COLORREF fill_clr, COLORREF edge_clr, COL
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-static bool is_rtl(int c)
-{
-	return
-		(c == 0x05BE) || (c == 0x05C0) || (c == 0x05C3) || (c == 0x05C6) ||
-		((c >= 0x05D0) && (c <= 0x05F4)) ||
-		(c == 0x0608) || (c == 0x060B) || (c == 0x060D) ||
-		((c >= 0x061B) && (c <= 0x064A)) ||
-		((c >= 0x066D) && (c <= 0x066F)) ||
-		((c >= 0x0671) && (c <= 0x06D5)) ||
-		((c >= 0x06E5) && (c <= 0x06E6)) ||
-		((c >= 0x06EE) && (c <= 0x06EF)) ||
-		((c >= 0x06FA) && (c <= 0x0710)) ||
-		((c >= 0x0712) && (c <= 0x072F)) ||
-		((c >= 0x074D) && (c <= 0x07A5)) ||
-		((c >= 0x07B1) && (c <= 0x07EA)) ||
-		((c >= 0x07F4) && (c <= 0x07F5)) ||
-		((c >= 0x07FA) && (c <= 0x0815)) ||
-		(c == 0x081A) || (c == 0x0824) || (c == 0x0828) ||
-		((c >= 0x0830) && (c <= 0x0858)) ||
-		((c >= 0x085E) && (c <= 0x08AC)) ||
-		(c == 0x200F) || (c == 0xFB1D) ||
-		((c >= 0xFB1F) && (c <= 0xFB28)) ||
-		((c >= 0xFB2A) && (c <= 0xFD3D)) ||
-		((c >= 0xFD50) && (c <= 0xFDFC)) ||
-		((c >= 0xFE70) && (c <= 0xFEFC)) ||
-		((c >= 0x10800) && (c <= 0x1091B)) ||
-		((c >= 0x10920) && (c <= 0x10A00)) ||
-		((c >= 0x10A10) && (c <= 0x10A33)) ||
-		((c >= 0x10A40) && (c <= 0x10B35)) ||
-		((c >= 0x10B40) && (c <= 0x10C48)) ||
-		((c >= 0x1EE00) && (c <= 0x1EEBB));
-}
-
-static void swap_rtl(wchar_t* begin, wchar_t* end, int* positions)
-{
-	auto* pos = begin;
-
-	while (pos < end)
-	{
-		const auto c = *pos;
-
-		if (is_rtl(c))
-		{
-			const auto* const range_begin = pos;
-
-			while (pos < end && (is_rtl(c) || str::is_white_space(c)))
-			{
-				pos += 1;
-			}
-
-			auto* const xb = positions + (range_begin - begin);
-			const auto* const xe = positions + (pos - begin);
-
-			const auto xstart = *xb;
-			const auto xend = *xe;
-			const auto len = xe - xb;
-			auto* const reversed = static_cast<int*>(alloca(sizeof(int) * len));
-
-			if (reversed)
-			{
-				for (auto i = 0; i < len; i++)
-				{
-					reversed[i] = xend - (xb[i] - xstart);
-				}
-
-				for (auto i = 0; i < len; i++)
-				{
-					xb[i] = reversed[i];
-				}
-			}
-
-			//std::reverse(range_begin, pos);
-		}
-		else
-		{
-			pos += 1;
-		}
-	}
-}
-
-
 static int global_base_font_size = normal_font_size;
 
 class owner_context
@@ -1054,12 +973,12 @@ void draw_icon(HDC hdc, const owner_context_ptr& ctx, const icon_index icon, con
 				const auto hdib = CreateDIBSection(bm_hdc, &bmi, DIB_RGB_COLORS, std::bit_cast<void**>(&dibBits),
 				                                   nullptr, 0);
 
-				if (hdib)
+				if (hdib && dibBits)
 				{
 					const auto hbm_old = SelectObject(bm_hdc, hdib);
-					const auto src_stride = cx * 4;
+					const auto src_stride = cx * 4_z;
 
-					for (auto y = 0u; y < cy; y++)
+					for (auto y = 0; y < cy; y++)
 					{
 						memset(dibBits + (src_stride * y), 0, src_stride);
 					}
@@ -1637,8 +1556,8 @@ public:
 	}
 
 	ui::texture_update_result update(const sizei dimensions, const ui::texture_format format,
-	                                 const ui::orientation orientation, const uint8_t* pixels, const int stride,
-	                                 const int buffer_size) override
+	                                 const ui::orientation orientation, const uint8_t* pixels, size_t stride,
+	                                 size_t buffer_size) override
 	{
 		auto result = ui::texture_update_result::failed;
 
@@ -1675,7 +1594,10 @@ public:
 			ComPtr<IWICBitmap> wic_bitmap;
 
 			auto hr = _f->wic->CreateBitmapFromMemory(dimensions.cx, dimensions.cy,
-			                                          pixel_format, stride, buffer_size, (uint8_t*)pixels, &wic_bitmap);
+			    pixel_format, 
+				static_cast<uint32_t>(stride), 
+				static_cast<uint32_t>(buffer_size),
+				const_cast<uint8_t*>(pixels), &wic_bitmap);
 
 			if (SUCCEEDED(hr))
 			{
@@ -2264,7 +2186,7 @@ public:
 	{
 		if (IsWindow(m_hWnd))
 		{
-			df::log(__FUNCTION__, u8"Destroying win_base of valid window");
+			df::log(__FUNCTION__, u8"Destroying win_base of valid window"sv);
 			SetWindowLongPtr(m_hWnd, GWLP_USERDATA, 0);
 		}
 	}
@@ -2798,14 +2720,14 @@ public:
 
 	HWND Create(HWND hWndParent, const std::u8string_view text, const uintptr_t id)
 	{
-		auto style = WS_CHILD | WS_TABSTOP;
-		if (_styles.xES_AUTOHSCROLL) style |= ES_AUTOHSCROLL;
-		if (_styles.xES_CENTER) style |= ES_CENTER;
-		if (_styles.xES_NUMBER) style |= ES_NUMBER;
-		if (_styles.xES_PASSWORD) style |= ES_PASSWORD;
-		if (_styles.xES_AUTOVSCROLL) style |= ES_AUTOVSCROLL;
-		if (_styles.xES_MULTILINE) style |= ES_MULTILINE;
-		if (_styles.xES_WANTRETURN) style |= ES_WANTRETURN;
+		auto style = WS_CHILD | WS_TABSTOP;		
+		if (_styles.align_center) style |= ES_CENTER;
+		if (_styles.number) style |= ES_NUMBER;
+		if (_styles.password) style |= ES_PASSWORD;
+		if (_styles.vertical_scroll) style |= ES_AUTOVSCROLL;
+		if (_styles.horizontal_scroll) style |= ES_AUTOHSCROLL;
+		if (_styles.multi_line) style |= ES_MULTILINE;
+		if (_styles.want_return) style |= ES_WANTRETURN;
 
 		const auto w = str::utf8_to_utf16(text);
 		const auto h = CreateWindowEx(
@@ -2882,7 +2804,7 @@ public:
 
 				case VK_RETURN:
 					{
-						if (_styles.xES_WANTRETURN)
+						if (_styles.want_return)
 						{
 							lres |= DLGC_WANTMESSAGE;
 						}
@@ -3188,18 +3110,21 @@ void edit_impl::on_window_nc_calc_size(LPRECT pr) const
 {
 	df::assert_true(pr);
 
-	const int line_height = gdi_text_line_height(m_hWnd, GetFont(m_hWnd));
-	const bool is_multi_line = _styles.xES_MULTILINE;
+	if (pr)
+	{
+		const int line_height = gdi_text_line_height(m_hWnd, GetFont(m_hWnd));
+		const bool is_multi_line = _styles.multi_line;
 
-	const int padding = _styles.rounded_corners ? 8 : 4;
-	const int h = pr->bottom - pr->top;
-	const int cx = padding;
-	const int cy = is_multi_line ? padding : (h - line_height) / 2;
+		const int padding = _styles.rounded_corners ? 8 : 4;
+		const int h = pr->bottom - pr->top;
+		const int cx = padding;
+		const int cy = is_multi_line ? padding : (h - line_height) / 2;
 
-	pr->left += cx + (_icon == icon_index::none ? 0 : 22);
-	pr->right -= cx;
-	pr->top += cy;
-	pr->bottom -= cy;
+		pr->left += cx + (_icon == icon_index::none ? 0 : 22);
+		pr->right -= cx;
+		pr->top += cy;
+		pr->bottom -= cy;
+	}
 }
 
 LRESULT edit_impl::on_window_nc_paint(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam)
@@ -4323,7 +4248,7 @@ void frame_base::present()
 		//		DXGI_ERROR_DEVICE_REMOVED == hr)
 		//	{
 		//		// reset the device
-		//		df::log(__FUNCTION__, str::format(u8"D3D device reset. Present returned {:x}", hr));
+		//		df::log(__FUNCTION__, str::format(u8"D3D device reset. Present returned {:x}"sv, hr));
 		//		reset_device();
 		//	}
 		//	else if (SUCCEEDED(hr))
@@ -5135,7 +5060,7 @@ public:
 
 	STDMETHOD(QueryInterface)(_In_ REFIID iid, _Deref_out_ void** ppvObject) noexcept override
 	{
-		df::trace(str::format(u8"frame_impl::QueryInterface {}", win32_to_string(iid)));
+		df::trace(str::format(u8"frame_impl::QueryInterface {}"sv, win32_to_string(iid)));
 
 		if (IsEqualGUID(iid, IID_IDropTarget))
 		{
@@ -5459,7 +5384,7 @@ public:
 	int _def_id = IDOK;
 	int _cancel_id = IDCANCEL;
 
-	WINDOWPLACEMENT restore_window_placement;
+	WINDOWPLACEMENT restore_window_placement {};
 	DWORD restore_style = 0;
 	DWORD restore_ex_style = 0;
 	recti _hover_command_bounds;
@@ -6553,7 +6478,7 @@ public:
 		{
 			/*const auto hWndMenu = std::bit_cast<HWND>(wParam);
 			::GetClassName(hWndMenu, szClassName, 7);
-			if (::lstrcmp(L"#32768", szClassName) == 0)
+			if (::lstrcmp(L"#32768"sv, szClassName) == 0)
 			{
 				df::assert_true(hWndMenu == _current->_menuStack.back());
 				_current->_menuStack.pop_back();
@@ -6992,7 +6917,7 @@ void control_host_impl::handle_composition_changed()
 		DwmSetWindowAttribute(m_hWnd, DWMWA_NCRENDERING_POLICY, &at, sizeof(DWORD));
 	}
 
-	df::log(__FUNCTION__, str::format(u8"composition_enabled {}", _composition_enabled));
+	df::log(__FUNCTION__, str::format(u8"composition_enabled {}"sv, _composition_enabled));
 
 	update_region();
 }
@@ -7355,7 +7280,7 @@ LRESULT control_host_impl::on_window_nc_calc_size(uint32_t, WPARAM wParam, LPARA
 
 			// Find all auto-hide taskbars along the screen edges and adjust in by the
 			// thickness of the auto-hide taskbar on each such edge, so the window isn't
-			// treated as a "fullscreen app", which would cause the taskbars to
+			// treated as a "fullscreen app"sv, which would cause the taskbars to
 			// disappear.
 			if (MonitorHasAutohideTaskbarForEdge(ABE_LEFT, monitor))
 				client_rect->left += kAutoHideTaskbarThicknessPx;
@@ -7939,7 +7864,7 @@ ui::button_ptr control_host_impl::create_button(icon_index icon, const std::u8st
 	if (default_button) style |= BS_DEFPUSHBUTTON;
 
 	const auto w = str::utf8_to_utf16(title);
-	const auto details_w = str::utf8_to_utf16(details);
+	auto details_w = str::utf8_to_utf16(details);
 	auto result = std::make_shared<button_impl>(_gdi_ctx);
 	const auto id = alloc_ids();
 
@@ -8154,9 +8079,9 @@ static void show_fatal_error(const std::u8string_view message)
 
 	std::wstring s;
 	s += str::utf8_to_utf16(tt.title_error);
-	s += L"\n\n";
+	s += L"\n\n"sv;
 	s += str::utf8_to_utf16(tt.error_cannot_continue);
-	s += L"\n\n";
+	s += L"\n\n"sv;
 	s += str::utf8_to_utf16(message);
 
 	::MessageBox(nullptr, s.c_str(), s_app_name_l, MB_OK | MB_ICONHAND);
@@ -8180,14 +8105,14 @@ static void unregister_restart()
 
 static DWORD WINAPI recover_callback(PVOID pContext)
 {
-	df::log(__FUNCTION__, u8"*** recover_callback");
+	df::log(__FUNCTION__, u8"*** recover_callback"sv);
 
 	BOOL bCanceled = FALSE;
 	ApplicationRecoveryInProgress(&bCanceled);
 
 	if (bCanceled)
 	{
-		df::log(__FUNCTION__, u8"Recovery was canceled by the user.");
+		df::log(__FUNCTION__, u8"Recovery was canceled by the user."sv);
 	}
 
 	const auto app = g_app.lock();
@@ -8260,7 +8185,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		}
 
 		df::start_time = platform::now();
-		platform::set_thread_description(u8"main");
+		platform::set_thread_description(u8"main"sv);
 		ui_thread_id = platform::current_thread_id();
 
 		auto hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
