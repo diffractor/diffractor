@@ -284,7 +284,7 @@ struct app_text_t
 	text_t orientation_right_top = u8"right-top"sv;
 	text_t orientation_right_bottom = u8"right-bottom"sv;
 	text_t orientation_left_bottom = u8"left-bottom"sv;
-	text_t default_favourite_tags =
+	text_t default_favorite_tags =
 		u8"family food friends landscape nature night portrait selfie todo travel urban viewed"sv;
 	text_t default_write_name = u8"results"sv;
 	text_t authorized = u8"Diffractor has been authorized"sv;
@@ -1136,6 +1136,10 @@ struct app_text_t
 	text_t value = u8"Value"sv;
 	text_t all_items_filtered = u8"All items filtered out.\nClick to clear filter."sv;
 	text_t items_created_on_fmt = u8"The collection contains {} items created on {}."sv;
+
+	text_t command_all_tags = u8"Show all tags"sv;
+	text_t command_favorite_tags = u8"Show only favorite tags"sv;
+	text_t option_favorite_tags = u8"Show only favorite tags in the sidebar"sv;
 
 	plural_text rotate_info_fmt = {
 		u8"Rotate {first-name}."sv, u8"Rotate {count} selected items. Originals will be overwritten."

@@ -1088,7 +1088,7 @@ msgstr "Vpravo dole"
 msgid "left-bottom"
 msgstr "Vlevo dole"
 
-# default_favourite_tags
+# default_favorite_tags
 msgid ""
 "family food friends landscape nature night portrait selfie todo travel urban "
 "viewed"
@@ -4427,3 +4427,15 @@ msgid_plural "{count} items will be sent using your desktop email client."
 msgstr[0] ""
 msgstr[1] ""
 msgstr[2] ""
+
+# command_all_tags
+msgid "Show all tags"
+msgstr ""
+
+# command_favorite_tags
+msgid "Show only favorite tags"
+msgstr ""
+
+# option_favorite_tags
+msgid "Show only favorite tags in the sidebar"
+msgstr ""

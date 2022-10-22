@@ -1014,7 +1014,7 @@ msgstr "Metadatos creados:"
 msgid "Dates"
 msgstr "Fecha"
 
-#. default_favourite_tags
+#. default_favorite_tags
 #: 
 msgid "family food friends landscape nature night portrait selfie todo travel urban viewed"
 msgstr "familia comida amigos paisaje naturaleza noche retrato selfie todo urbano viajar visto"
@@ -5590,3 +5590,15 @@ msgstr "{} artículos de {} en la colección."
 # items_created_on_fmt
 msgid "The collection contains {} items created on {}."
 msgstr "La colección contiene {} elementos creados el {}."
+
+# command_all_tags
+msgid "Show all tags"
+msgstr ""
+
+# command_favorite_tags
+msgid "Show only favorite tags"
+msgstr ""
+
+# option_favorite_tags
+msgid "Show only favorite tags in the sidebar"
+msgstr ""

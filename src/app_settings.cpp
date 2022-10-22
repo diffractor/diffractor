@@ -21,7 +21,7 @@ static constexpr std::u8string_view s_max = u8"Max"sv;
 static constexpr std::u8string_view s_start = u8"Start"sv;
 static constexpr std::u8string_view s_album = u8"Album"sv;
 static constexpr std::u8string_view s_maximize = u8"Maximize"sv;
-static constexpr std::u8string_view s_favourite_tags = u8"FavouriteTags"sv;
+static constexpr std::u8string_view s_favorite_tags = u8"FavoriteTags"sv;
 static constexpr std::u8string_view s_out_folder = u8"OutFolder"sv;
 static constexpr std::u8string_view s_resize_size = u8"ResizeSize"sv;
 static constexpr std::u8string_view s_volume = u8"Volume"sv;
@@ -32,7 +32,7 @@ static constexpr std::u8string_view s_check_for_updates = u8"CheckForUpdates"sv;
 static constexpr std::u8string_view s_last_run = u8"LastRun"sv;
 static constexpr std::u8string_view s_pictures = u8"Pictures"sv;
 static constexpr std::u8string_view s_index = u8"Index"sv;
-static constexpr std::u8string_view s_favourite_search = u8"FavouriteSearch"sv;
+static constexpr std::u8string_view s_favorite_search = u8"FavoriteSearch"sv;
 static constexpr std::u8string_view s_video = u8"Video"sv;
 static constexpr std::u8string_view s_music = u8"Music"sv;
 static constexpr std::u8string_view s_drop_box = u8"DropBox"sv;
@@ -111,7 +111,7 @@ static constexpr std::u8string_view s_show_world_map = u8"show_world_map"sv;
 static constexpr std::u8string_view s_show_indexed_folders = u8"show_indexed_folders"sv;
 static constexpr std::u8string_view s_show_drives = u8"show_drives"sv;
 static constexpr std::u8string_view s_show_favorite_searches = u8"show_favorite_searches"sv;
-static constexpr std::u8string_view s_show_favorite_tags = u8"show_favorite_tags"sv;
+static constexpr std::u8string_view s_show_tags = u8"show_tags"sv;
 static constexpr std::u8string_view s_show_ratings = u8"show_ratings"sv;
 static constexpr std::u8string_view s_show_labels = u8"show_labels"sv;
 static constexpr std::u8string_view s_lang = u8"lang"sv;
@@ -244,7 +244,7 @@ settings_t::settings_t()
 	sidebar.show_indexed_folders = true;
 	sidebar.show_drives = true;
 	sidebar.show_favorite_searches = true;
-	sidebar.show_favorite_tags = true;
+	sidebar.show_tags = true;
 	sidebar.show_ratings = true;
 	sidebar.show_labels = true;
 
@@ -558,7 +558,7 @@ void settings_t::read(const platform::setting_file_ptr& store_in)
 	store.read({}, s_available_version, available_version);
 	store.read({}, s_available_test_version, available_test_version);
 	store.read({}, s_tags, last_tags);
-	store.read({}, s_favourite_tags, favourite_tags);
+	store.read({}, s_favorite_tags, favorite_tags);
 
 	store.read({}, s_copyright, copyright_notice);
 	store.read({}, s_creator, copyright_creator);
@@ -641,8 +641,8 @@ void settings_t::read(const platform::setting_file_ptr& store_in)
 	store.read(s_index, s_onedrive_music, index.onedrive_music);
 	store.read(s_index, s_more, index.more_folders);
 
-	store.read(s_favourite_search, s_title, search.title, search.count);
-	store.read(s_favourite_search, s_path, search.path, search.count);
+	store.read(s_favorite_search, s_title, search.title, search.count);
+	store.read(s_favorite_search, s_path, search.path, search.count);
 
 	store.read(s_sidebar, s_show_total_items, sidebar.show_total_items);
 	store.read(s_sidebar, s_show_history, sidebar.show_history);
@@ -650,9 +650,10 @@ void settings_t::read(const platform::setting_file_ptr& store_in)
 	store.read(s_sidebar, s_show_indexed_folders, sidebar.show_indexed_folders);
 	store.read(s_sidebar, s_show_drives, sidebar.show_drives);
 	store.read(s_sidebar, s_show_favorite_searches, sidebar.show_favorite_searches);
-	store.read(s_sidebar, s_show_favorite_tags, sidebar.show_favorite_tags);
+	store.read(s_sidebar, s_show_tags, sidebar.show_tags);
 	store.read(s_sidebar, s_show_ratings, sidebar.show_ratings);
 	store.read(s_sidebar, s_show_labels, sidebar.show_labels);
+	store.read(s_sidebar, s_favorite_tags, sidebar.show_favorite_tags_only);
 }
 
 void settings_t::write(const platform::setting_file_ptr& store_in) const
@@ -664,7 +665,7 @@ void settings_t::write(const platform::setting_file_ptr& store_in) const
 	store.write({}, s_show_shadow, show_shadow);
 	store.write({}, s_update_modified, update_modified);
 	store.write({}, s_last_played_pos, last_played_pos);
-	store.write({}, s_show_help_tooltips, show_help_tooltips);
+	store.write({}, s_show_help_tooltips, show_help_tooltips);	
 	store.write({}, s_show_performance_timings, show_debug_info);
 	store.write({}, s_use_gpu, use_gpu);
 	store.write({}, s_use_d3d11_va, use_d3d11va);
@@ -706,7 +707,7 @@ void settings_t::write(const platform::setting_file_ptr& store_in) const
 	store.write({}, s_available_version, available_version);
 	store.write({}, s_available_test_version, available_test_version);
 	store.write({}, s_tags, last_tags);
-	store.write({}, s_favourite_tags, favourite_tags);
+	store.write({}, s_favorite_tags, favorite_tags);
 	store.write({}, s_first_time, first_run_ever);
 	store.write({}, s_copyright, copyright_notice);
 	store.write({}, s_creator, copyright_creator);
@@ -784,8 +785,8 @@ void settings_t::write(const platform::setting_file_ptr& store_in) const
 	store.write(s_index, s_onedrive_music, index.onedrive_music);
 	store.write(s_index, s_more, index.more_folders);
 
-	store.write(s_favourite_search, s_title, search.title, search.count);
-	store.write(s_favourite_search, s_path, search.path, search.count);
+	store.write(s_favorite_search, s_title, search.title, search.count);
+	store.write(s_favorite_search, s_path, search.path, search.count);
 
 	store.write(s_sidebar, s_show_total_items, sidebar.show_total_items);
 	store.write(s_sidebar, s_show_history, sidebar.show_history);
@@ -793,9 +794,10 @@ void settings_t::write(const platform::setting_file_ptr& store_in) const
 	store.write(s_sidebar, s_show_indexed_folders, sidebar.show_indexed_folders);
 	store.write(s_sidebar, s_show_drives, sidebar.show_drives);
 	store.write(s_sidebar, s_show_favorite_searches, sidebar.show_favorite_searches);
-	store.write(s_sidebar, s_show_favorite_tags, sidebar.show_favorite_tags);
+	store.write(s_sidebar, s_show_tags, sidebar.show_tags);
 	store.write(s_sidebar, s_show_ratings, sidebar.show_ratings);
 	store.write(s_sidebar, s_show_labels, sidebar.show_labels);
+	store.write(s_sidebar, s_favorite_tags, sidebar.show_favorite_tags_only);
 }
 
 std::vector<std::u8string> settings_t::index_t::collection_folders() const

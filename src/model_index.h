@@ -549,15 +549,15 @@ public:
 		return _summary._distinct_words;
 	}
 
-	using distinct_result_result = std::vector<std::pair<std::u8string_view, df::file_group_histogram>>;
+	using distinct_results = std::vector<std::pair<std::u8string_view, df::file_group_histogram>>;
 
-	distinct_result_result distinct_tags() const
+	distinct_results distinct_tags() const
 	{
 		platform::shared_lock lock(_summary_rw);
 		return {_summary._distinct_tags.begin(), _summary._distinct_tags.end()};
 	}
 
-	distinct_result_result distinct_labels() const
+	distinct_results distinct_labels() const
 	{
 		platform::shared_lock lock(_summary_rw);
 		return {_summary._distinct_labels.begin(), _summary._distinct_labels.end()};

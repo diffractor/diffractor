@@ -1043,6 +1043,19 @@ public:
 		return !_selected.empty();
 	}
 
+	bool has_single_media_selection() const
+	{
+		const auto d = _display;
+
+		if (d && d->is_one() && _selected.size() == 1)
+		{
+			const auto i = d->_item1;
+			return i && i->is_media();
+		}
+
+		return false;
+	}
+
 	bool all_items_filtered_out() const
 	{
 		return !_search_items.empty() &&

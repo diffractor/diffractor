@@ -2558,7 +2558,7 @@ void app_frame::create_toolbars()
 
 	const std::vector<ui::command_ptr> tbButtonsNav2 =
 	{
-		find_command(commands::favourite),
+		find_command(commands::favorite),
 		find_command(commands::browse_parent),
 		find_command(commands::browse_previous_folder),
 		find_command(commands::browse_next_folder),
@@ -2784,13 +2784,12 @@ void app_frame::update_button_state(const bool resize)
 	const auto is_editing = df::command_active == 0 && _state.is_editing();
 	const auto is_showing_media_or_items_view = df::command_active == 0 && _state.is_showing_media_or_items();
 	const auto has_selection = is_showing_media_or_items_view && _state.has_selection();
+	const auto is_single_media_selection = is_showing_media_or_items_view && _state.has_single_media_selection();
 	const auto new_version_avail = is_showing_media_or_items_view && !setting.install_updates &&
 		df::version(s_app_version) < df::version(setting.available_version) && static_cast<int>(now_days) >= setting.
 		min_show_update_day;
-	const auto show_new_version = is_showing_media_or_items_view && setting.force_available_version ||
-		new_version_avail;
+	const auto show_new_version = is_showing_media_or_items_view && setting.force_available_version || new_version_avail;
 	const auto command_item = _state.command_item();
-	const auto has_selection_and_is_media_or_items_view = has_selection && is_showing_media_or_items_view;
 	const auto is_displaying_item = is_showing_media_or_items_view && command_item;
 
 	_commands[commands::info_new_version]->visible = !is_editing && show_new_version;
@@ -2805,45 +2804,45 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::menu_open]->enable = has_selection;
 	_commands[commands::menu_tools_toolbar]->enable = has_selection;
 	_commands[commands::menu_tag_with]->enable = has_selection;
-	_commands[commands::tool_save_current_video_frame]->enable = has_selection;
-	_commands[commands::tool_tag]->enable = has_selection_and_is_media_or_items_view;
-	_commands[commands::tool_locate]->enable = has_selection_and_is_media_or_items_view;
-	_commands[commands::tool_adjust_date]->enable = has_selection_and_is_media_or_items_view;
-	_commands[commands::tool_edit_metadata]->enable = has_selection_and_is_media_or_items_view;
+	_commands[commands::tool_save_current_video_frame]->enable = is_single_media_selection;
+	_commands[commands::tool_tag]->enable = has_selection;
+	_commands[commands::tool_locate]->enable = has_selection;
+	_commands[commands::tool_adjust_date]->enable = has_selection;
+	_commands[commands::tool_edit_metadata]->enable = has_selection;
 	_commands[commands::browse_back]->enable = _state.history.can_browse_back();
 	_commands[commands::browse_forward]->enable = _state.history.can_browse_forward();
 	_commands[commands::browse_parent]->enable = _state.has_parent_search() || _state.view_mode() != view_type::items;
-	_commands[commands::tool_burn]->enable = has_selection_and_is_media_or_items_view && has_burner;
+	_commands[commands::tool_burn]->enable = has_selection && has_burner;
 	_commands[commands::view_zoom]->enable = can_zoom;
-	_commands[commands::tool_open_with]->enable = has_selection_and_is_media_or_items_view;
-	_commands[commands::tool_email]->enable = has_selection_and_is_media_or_items_view;
+	_commands[commands::tool_open_with]->enable = has_selection;
+	_commands[commands::tool_email]->enable = has_selection;
 	_commands[commands::pin_item]->enable = has_selection;
-	_commands[commands::rate_none]->enable = has_selection_and_is_media_or_items_view;
-	_commands[commands::rate_1]->enable = has_selection_and_is_media_or_items_view;
-	_commands[commands::rate_2]->enable = has_selection_and_is_media_or_items_view;
-	_commands[commands::rate_3]->enable = has_selection_and_is_media_or_items_view;
-	_commands[commands::rate_4]->enable = has_selection_and_is_media_or_items_view;
-	_commands[commands::rate_5]->enable = has_selection_and_is_media_or_items_view;
-	_commands[commands::rate_rejected]->enable = has_selection_and_is_media_or_items_view;
-	_commands[commands::label_approved]->enable = has_selection_and_is_media_or_items_view;
-	_commands[commands::label_to_do]->enable = has_selection_and_is_media_or_items_view;
-	_commands[commands::label_select]->enable = has_selection_and_is_media_or_items_view;
-	_commands[commands::label_review]->enable = has_selection_and_is_media_or_items_view;
-	_commands[commands::label_second]->enable = has_selection_and_is_media_or_items_view;
+	_commands[commands::rate_none]->enable = has_selection;
+	_commands[commands::rate_1]->enable = has_selection;
+	_commands[commands::rate_2]->enable = has_selection;
+	_commands[commands::rate_3]->enable = has_selection;
+	_commands[commands::rate_4]->enable = has_selection;
+	_commands[commands::rate_5]->enable = has_selection;
+	_commands[commands::rate_rejected]->enable = has_selection;
+	_commands[commands::label_approved]->enable = has_selection;
+	_commands[commands::label_to_do]->enable = has_selection;
+	_commands[commands::label_select]->enable = has_selection;
+	_commands[commands::label_review]->enable = has_selection;
+	_commands[commands::label_second]->enable = has_selection;
 
 	_commands[commands::browse_open_googlemap]->enable = _state.has_gps();
 	_commands[commands::browse_open_containingfolder]->enable = is_displaying_item;
-	_commands[commands::browse_open_in_file_browser]->enable = has_selection_and_is_media_or_items_view;
+	_commands[commands::browse_open_in_file_browser]->enable = has_selection;
 	_commands[commands::tool_new_folder]->enable = _state.search().has_selector();
-	_commands[commands::print]->enable = has_selection_and_is_media_or_items_view;
-	_commands[commands::tool_remove_metadata]->enable = has_selection_and_is_media_or_items_view;
-	_commands[commands::tool_rename]->enable = has_selection_and_is_media_or_items_view;
-	_commands[commands::tool_prile_properties]->enable = has_selection_and_is_media_or_items_view;
-	_commands[commands::tool_delete]->enable = has_selection_and_is_media_or_items_view;
-	_commands[commands::edit_copy]->enable = has_selection_and_is_media_or_items_view;
-	_commands[commands::edit_cut]->enable = has_selection_and_is_media_or_items_view;
-	_commands[commands::tool_move_to_folder]->enable = has_selection_and_is_media_or_items_view;
-	_commands[commands::tool_copy_to_folder]->enable = has_selection_and_is_media_or_items_view;
+	_commands[commands::print]->enable = has_selection;
+	_commands[commands::tool_remove_metadata]->enable = has_selection;
+	_commands[commands::tool_rename]->enable = has_selection;
+	_commands[commands::tool_prile_properties]->enable = has_selection;
+	_commands[commands::tool_delete]->enable = has_selection;
+	_commands[commands::edit_copy]->enable = has_selection;
+	_commands[commands::edit_cut]->enable = has_selection;
+	_commands[commands::tool_move_to_folder]->enable = has_selection;
+	_commands[commands::tool_copy_to_folder]->enable = has_selection;
 	_commands[commands::tool_convert]->enable = _state.can_process_selection(
 		_view_frame, df::process_items_type::photos_only);
 	//_commands[ID_SHARE_FACEBOOK]->enable = _state.can_process_selection(df::process_items_type::photos_only);
@@ -2852,8 +2851,8 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::edit_paste]->enable = is_showing_media_or_items_view && _state.search().has_selector();
 	_commands[commands::select_nothing]->enable = has_selection;
 	_commands[commands::browse_recursive]->enable = _state.search().has_selector();
-	_commands[commands::tool_rotate_anticlockwise]->enable = has_selection_and_is_media_or_items_view;
-	_commands[commands::tool_rotate_clockwise]->enable = has_selection_and_is_media_or_items_view;
+	_commands[commands::tool_rotate_anticlockwise]->enable = has_selection;
+	_commands[commands::tool_rotate_clockwise]->enable = has_selection;
 	_commands[commands::tool_desktop_background]->enable = display && (display->
 		display_item_has_trait(file_type_traits::bitmap) || display->player_has_video());
 	_commands[commands::search_related]->enable = is_displaying_item;
@@ -2897,6 +2896,7 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::large_font]->checked = setting.large_font;
 	_commands[commands::view_fullscreen]->checked = _state.is_full_screen;
 	_commands[commands::option_toggle_details]->checked = setting.detail_file_items;
+	_commands[commands::view_favorite_tags]->checked = setting.sidebar.show_favorite_tags_only;
 
 	_commands[commands::group_album]->checked = _state.group_order() == group_by::album_show;
 	_commands[commands::group_camera]->checked = _state.group_order() == group_by::camera;
@@ -2929,7 +2929,7 @@ void app_frame::update_button_state(const bool resize)
 		: icon_index::fullscreen;
 	_commands[commands::playback_volume_toggle]->icon = sound_icon();
 	_commands[commands::repeat_toggle]->icon = repeat_toggle_icon();
-	_commands[commands::favourite]->icon = _state.search_is_favorite() ? icon_index::star_solid : icon_index::star;
+	_commands[commands::favorite]->icon = _state.search_is_favorite() ? icon_index::star_solid : icon_index::star;
 
 
 	const auto summary_text = format_items_summary(_state.group_order(), _state.sort_order(), _state.summary_shown(),
@@ -3152,6 +3152,7 @@ void app_frame::update_command_text()
 	def_command(commands::view_help, command_group::help, icon_index::question, tt.command_view_help);
 	def_command(commands::view_items, command_group::options, icon_index::items, tt.command_view_items);
 	def_command(commands::large_font, command_group::options, icon_index::none, tt.command_view_large_font);
+	def_command(commands::view_favorite_tags, command_group::options, icon_index::tag, tt.command_favorite_tags);
 	def_command(commands::menu_main, command_group::none, icon_index::more, tt.command_view_menu, tt.tooltip_view_menu);
 	def_command(commands::menu_rate_or_label, command_group::none, icon_index::none, tt.command_view_rate_label);
 	def_command(commands::menu_select, command_group::none, icon_index::none, tt.command_view_select);
@@ -3171,7 +3172,7 @@ void app_frame::update_command_text()
 		tt.command_toggle_volume);
 	def_command(commands::view_zoom, command_group::media_playback, icon_index::zoom_in, tt.command_zoom);
 
-	def_command(commands::favourite, command_group::navigation, icon_index::star, tt.command_favorite);
+	def_command(commands::favorite, command_group::navigation, icon_index::star, tt.command_favorite);
 	def_command(commands::advanced_search, command_group::navigation, icon_index::search, tt.command_advanced_search);
 
 	def_command(commands::group_album, command_group::group_by, icon_index::none, tt.command_group_album);
@@ -3197,6 +3198,7 @@ void app_frame::update_command_text()
 	def_command(commands::sort_size, command_group::sort_by, icon_index::none, tt.command_sort_size);
 	def_command(commands::sort_def, command_group::sort_by, icon_index::none, tt.command_sort_def);
 	def_command(commands::sort_date_modified, command_group::sort_by, icon_index::none, tt.command_sort_date_modified);
+	
 
 	_commands[commands::browse_previous_item]->keyboard_accelerator_text = tt.keyboard_left;
 	_commands[commands::browse_next_item]->keyboard_accelerator_text = tt.keyboard_right;
@@ -3448,7 +3450,7 @@ void app_frame::tooltip(view_hover_element& hover, const commands id)
 				view_element_style::new_line));
 		}
 	}
-	else if (id == commands::favourite)
+	else if (id == commands::favorite)
 	{
 		const auto search = _state.search();
 
@@ -3634,7 +3636,7 @@ bool app_frame::init(const std::u8string_view command_line_text)
 	}
 
 	update_font_size();
-	if (str::is_empty(setting.favourite_tags)) setting.favourite_tags = tt.default_favourite_tags;
+	if (str::is_empty(setting.favorite_tags)) setting.favorite_tags = tt.default_favorite_tags;
 
 	initialise_commands();
 
@@ -3833,6 +3835,7 @@ std::vector<ui::command_ptr> app_frame::menu(const pointi loc)
 		result.emplace_back(nullptr);
 		result.emplace_back(find_command(commands::view_show_sidebar));
 		result.emplace_back(find_command(commands::option_show_thumbnails));
+		result.emplace_back(find_command(commands::view_favorite_tags));
 		result.emplace_back(nullptr);
 		result.emplace_back(find_command(commands::large_font));
 	}

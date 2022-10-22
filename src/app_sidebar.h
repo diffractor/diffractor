@@ -613,7 +613,7 @@ public:
 		return results;
 	}
 
-	void compact_summary(index_state::distinct_result_result& summary) const
+	void compact_summary(index_state::distinct_results& summary) const
 	{
 		std::ranges::sort(summary, [](auto&& left, auto&& right) { return str::icmp(left.first, right.first) < 0; });
 
@@ -653,8 +653,14 @@ public:
 	{
 		std::vector<search_item_ptr> results;
 
-		auto tags = s.item_index.distinct_tags();
-		str::split2(setting.favourite_tags, true, [&tags](std::u8string_view part)
+		index_state::distinct_results tags;
+
+		if (!setting.sidebar.show_favorite_tags_only)
+		{
+			tags = s.item_index.distinct_tags();
+		}
+
+		str::split2(setting.favorite_tags, true, [&tags](std::u8string_view part)
 		{
 			tags.emplace_back(part, df::file_group_histogram{});
 		});
@@ -1916,12 +1922,28 @@ public:
 				add_elements(f.create_labels(s, existing));
 			}
 
-			if (setting.sidebar.show_favorite_tags)
+			if (setting.sidebar.show_tags)
 			{
 				add_elements(f.create_tags(s, existing));
 			}
+					
 
-			df::trace(str::format(u8"Sidebar populate {} elements"sv, item_elements.size()));
+			item_elements.emplace_back(std::make_shared<divider_element>());
+
+			const auto tag_show_text = setting.sidebar.show_favorite_tags_only
+				? tt.command_all_tags
+				: tt.command_favorite_tags;
+
+			auto tags_element = std::make_shared<link_element>(tag_show_text, commands::view_favorite_tags, ui::style::font_size::dialog,
+				ui::style::text_style::multiline_center,
+				view_element_style::new_line | view_element_style::center);
+
+			auto customise_element = std::make_shared<link_element>(tt.command_customise, commands::options_sidebar, ui::style::font_size::dialog,
+				ui::style::text_style::multiline_center,
+				view_element_style::new_line | view_element_style::center);
+
+			item_elements.emplace_back(tags_element);
+			item_elements.emplace_back(customise_element);
 
 			s.queue_ui(
 				[t, items = std::move(items), drives = std::move(drives), item_elements = std::move(item_elements)]

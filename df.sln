@@ -55,6 +55,14 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "setup", "setup", "{027D6ECE
 		installer\diff.nsi = installer\diff.nsi
 	EndProjectSection
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "languages", "languages", "{FD1E6330-67CF-4027-8EF4-4CBAA6F12532}"
+	ProjectSection(SolutionItems) = preProject
+		exe\languages\cs.po = exe\languages\cs.po
+		exe\languages\de.po = exe\languages\de.po
+		exe\languages\es.po = exe\languages\es.po
+		exe\languages\it.po = exe\languages\it.po
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|ARM64 = Debug|ARM64

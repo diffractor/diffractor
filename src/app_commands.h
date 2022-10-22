@@ -43,7 +43,7 @@ enum class commands
 	edit_paste,
 	english,
 	exit,
-	favourite,
+	favorite,
 	filter_audio,
 	filter_photos,
 	filter_videos,
@@ -167,5 +167,6 @@ enum class commands
 	view_minimize,
 	view_restore,
 	view_show_sidebar,
+	view_favorite_tags,
 	view_zoom,
 };

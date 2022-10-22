@@ -446,7 +446,7 @@ public:
 	ui::toolbar_ptr _tools;
 	ui::toolbar_ptr _sorting;
 
-	std::u8string _last_favourite_tags;
+	std::u8string _last_favorite_tags;
 
 	std::shared_ptr<search_auto_complete> _search_completes;
 	ui::list_window_ptr _search_predictions_frame;

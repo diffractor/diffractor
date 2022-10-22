@@ -87,7 +87,7 @@ public:
 	std::u8string available_version;
 	std::u8string available_test_version;
 	std::u8string last_tags;
-	std::u8string favourite_tags;
+	std::u8string favorite_tags;
 	std::u8string language;
 	std::u8string sound_device;
 
@@ -147,7 +147,7 @@ public:
 	bool update_modified = true;
 	bool last_played_pos = true;
 	bool show_help_tooltips = true;
-
+	
 	struct sidebar_t
 	{
 		bool show_total_items = false;
@@ -156,9 +156,10 @@ public:
 		bool show_indexed_folders = false;
 		bool show_drives = false;
 		bool show_favorite_searches = false;
-		bool show_favorite_tags = false;
+		bool show_tags = false;
 		bool show_ratings = false;
 		bool show_labels = false;
+		bool show_favorite_tags_only = false;
 	} sidebar;
 
 	struct import_t

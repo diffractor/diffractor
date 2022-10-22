@@ -409,7 +409,7 @@ void app_text_t::load_lang(const df::file_path lang_file)
 		dates_file_modified,
 		dates_metadata_created,
 		dates_title,
-		default_favourite_tags,
+		default_favorite_tags,
 		default_write_name,
 		defragment_and_compact,
 		defragmenting,
@@ -1232,6 +1232,9 @@ void app_text_t::load_lang(const df::file_path lang_file)
 		command_filter_audio,
 		all_items_filtered,
 		items_created_on_fmt,
+		command_all_tags,
+		command_favorite_tags,
+		option_favorite_tags,
 	};
 
 	const std::vector<std::reference_wrapper<plural_text>> plurals

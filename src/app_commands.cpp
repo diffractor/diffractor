@@ -1684,15 +1684,15 @@ static void tag_invoke(view_state& s, const ui::control_frame_ptr& parent, const
 		edit_col->add(set_margin(std::make_shared<text_element>(tt.help_tag2)));
 		edit_col->add(set_margin(std::make_shared<text_element>(tt.help_tag_add_remove)));
 
-		auto favourites = str::split(setting.favourite_tags, true);
+		auto favorites = str::split(setting.favorite_tags, true);
 
-		if (!favourites.empty())
+		if (!favorites.empty())
 		{
 			list_control->add(set_margin(std::make_shared<text_element>(
 				tt.tags_favorite_label, ui::style::font_size::title, ui::style::text_style::multiline,
 				view_element_style::line_break)));
 			list_control->add(set_margin(std::make_shared<ui::recommended_words_control>(
-				dlg->_frame, favourites, [edit](const std::u8string_view tag)
+				dlg->_frame, favorites, [edit](const std::u8string_view tag)
 				{
 					edit->add_word(str::quote_if_white_space(tag));
 				})));
@@ -1709,7 +1709,7 @@ static void tag_invoke(view_state& s, const ui::control_frame_ptr& parent, const
 
 		s.recent_tags.count_strings(common_counts, 1000000);
 
-		for (const auto& f : favourites)
+		for (const auto& f : favorites)
 		{
 			common_counts.erase(f);
 		}
@@ -3681,7 +3681,7 @@ static void browse_parent_invoke(view_state& s, const view_host_base_ptr& view)
 	}
 }
 
-static void favourite_invoke(view_state& state, const ui::control_frame_ptr& parent)
+static void favorite_invoke(view_state& state, const ui::control_frame_ptr& parent)
 {
 	const auto search = state.search();
 	const bool is_favorite = state.search_is_favorite();
@@ -4590,7 +4590,8 @@ static void customise_invoke(view_state& s, const ui::control_frame_ptr& parent)
 	tags->add(set_margin(std::make_shared<text_element>(tt.customise_tags_help)));
 	tags->add(set_margin(std::make_shared<text_element>(tt.help_tag1)));
 	tags->add(set_margin(std::make_shared<text_element>(tt.help_tag2)));
-	tags->add(std::make_shared<ui::multi_line_edit_control>(dlg_parent, setting.favourite_tags));
+	tags->add(std::make_shared<ui::multi_line_edit_control>(dlg_parent, setting.favorite_tags));
+	tags->add(std::make_shared<ui::check_control>(dlg->_frame, tt.option_favorite_tags, setting.sidebar.show_favorite_tags_only));
 
 	sidebar->add(std::make_shared<ui::title_control>(tt.customise_sidebar_title));
 	sidebar->add(
@@ -4606,7 +4607,7 @@ static void customise_invoke(view_state& s, const ui::control_frame_ptr& parent)
 	sidebar->add(std::make_shared<ui::check_control>(dlg->_frame, tt.customize_show_searches,
 	                                                 setting.sidebar.show_favorite_searches));
 	sidebar->add(
-		std::make_shared<ui::check_control>(dlg->_frame, tt.customize_show_tags, setting.sidebar.show_favorite_tags));
+		std::make_shared<ui::check_control>(dlg->_frame, tt.customize_show_tags, setting.sidebar.show_tags));
 	sidebar->add(std::make_shared<ui::check_control>(dlg->_frame, tt.customize_ratings, setting.sidebar.show_ratings));
 	sidebar->add(std::make_shared<ui::check_control>(dlg->_frame, tt.customize_labels, setting.sidebar.show_labels));
 
@@ -4815,7 +4816,7 @@ void app_frame::initialise_commands()
 	_commands[commands::view_fullscreen]->icon_can_change = true;
 	_commands[commands::repeat_toggle]->icon_can_change = true;
 	_commands[commands::playback_volume_toggle]->icon_can_change = true;
-	_commands[commands::favourite]->icon_can_change = true;
+	_commands[commands::favorite]->icon_can_change = true;
 
 	_commands[commands::option_highlight_large_items]->clr = ui::style::color::rank_background;
 	_commands[commands::rate_rejected]->clr = color_rate_rejected;
@@ -4864,7 +4865,7 @@ void app_frame::initialise_commands()
 
 	add_command_invoke(commands::tool_burn, [this] { burn_command_invoke(_state, _app_frame, _view_frame); });
 	add_command_invoke(commands::tool_save_current_video_frame, [this] { capture_invoke(_state, _app_frame); });
-	add_command_invoke(commands::favourite, [this] { favourite_invoke(_state, _app_frame); });
+	add_command_invoke(commands::favorite, [this] { favorite_invoke(_state, _app_frame); });
 	add_command_invoke(commands::advanced_search, [this] { advanced_search_invoke(_state, _app_frame, _view_frame); });
 
 	add_command_invoke(commands::edit_item_exit, [this] { _view_edit->exit(); });
@@ -4993,6 +4994,11 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::option_scale_up, [this]
 	{
 		setting_invoke(_state, setting.scale_up, !setting.scale_up);
+	});
+	add_command_invoke(commands::view_favorite_tags, [this]
+	{
+		setting.sidebar.show_favorite_tags_only = !setting.sidebar.show_favorite_tags_only;
+		_state.invalidate_view(view_invalid::sidebar);
 	});
 	add_command_invoke(commands::tool_scan, [this] { scan_invoke(_state, _app_frame, _view_frame); });
 	add_command_invoke(commands::options_sidebar, [this] { customise_invoke(_state, _app_frame); });
@@ -5214,9 +5220,9 @@ void app_frame::initialise_commands()
 	{
 		std::vector<ui::command_ptr> result;
 		const bool is_enabled = _state.can_process_selection(_view_frame, df::process_items_type::can_save_metadata);
-		const auto favourite_tags = str::split(setting.favourite_tags, true);
+		const auto favorite_tags = str::split(setting.favorite_tags, true);
 
-		for (const auto& t : favourite_tags)
+		for (const auto& t : favorite_tags)
 		{
 			auto tag = str::cache(t);
 			auto command = std::make_shared<ui::command>();
@@ -5416,7 +5422,7 @@ void app_frame::initialise_commands()
 			nullptr,
 			find_command(commands::browse_recursive),
 			nullptr,
-			find_command(commands::favourite),
+			find_command(commands::favorite),
 			find_command(commands::advanced_search),
 		};
 		return result;
