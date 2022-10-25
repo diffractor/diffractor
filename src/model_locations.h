@@ -20,7 +20,7 @@ static constexpr auto max_country_alt_names = 16;
 constexpr uint32_t to_code2(const std::u8string_view s)
 {
 	uint32_t result = 0;
-	for (const auto c : s) result = (result << 8) | std::toupper(c);
+	for (const auto c : s) result = (result << 8) | str::to_upper(c);
 	return result;
 }
 

@@ -115,6 +115,12 @@ namespace str
 		return '?';
 	}
 
+	__forceinline constexpr uint32_t peek_utf8_char(std::u8string_view::const_iterator in_ptr,
+		const std::u8string_view::const_iterator& end)
+	{
+		return pop_utf8_char(in_ptr, end);
+	}
+
 	struct part_t
 	{
 		size_t offset = 0;
@@ -397,13 +403,15 @@ namespace str
 	constexpr int to_lower(const int c)
 	{
 		if (c < 128) return ((c >= L'A') && (c <= L'Z')) ? c - L'A' + L'a' : c;
-		return std::tolower(c);
+		if (c > USHRT_MAX) return c;
+		return towlower(c);
 	}
 
 	constexpr int to_upper(const int c)
 	{
 		if (c < 128) return ((c >= L'a') && (c <= L'z')) ? c - L'a' + L'A' : c;
-		return std::toupper(c);
+		if (c > USHRT_MAX) return c;
+		return towupper(c);
 	}
 
 	inline std::u8string to_lower(const std::u8string_view s)

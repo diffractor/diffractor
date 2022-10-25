@@ -2680,6 +2680,32 @@ static void should_split()
 	}
 }
 
+static void should_match_wildcard()
+{
+	assert_equal(true, str::wildcard_icmp(u8""sv, u8""sv));
+	assert_equal(true, str::wildcard_icmp(u8""sv, u8"*"sv));
+	assert_equal(true, str::wildcard_icmp(u8" "sv, u8"*"sv));
+	assert_equal(true, str::wildcard_icmp(u8" "sv, u8" *"sv));
+	assert_equal(false, str::wildcard_icmp(u8" "sv, u8"  *"sv));
+
+	assert_equal(true, str::wildcard_icmp(u8"hello world"sv, u8"hello world"sv));
+	assert_equal(true, str::wildcard_icmp(u8"hello ?! world"sv, u8"hello * world"sv));
+	assert_equal(true, str::wildcard_icmp(u8"hello-xx-world"sv, u8"hello*world"sv));
+	assert_equal(false, str::wildcard_icmp(u8"hello-xx-world"sv, u8"hello *world"sv));
+	assert_equal(true, str::wildcard_icmp(u8"hello-xx-world"sv, u8"*world"sv));
+	assert_equal(true, str::wildcard_icmp(u8"hello-xx-world"sv, u8"hello*"sv));
+
+	assert_equal(true, str::wildcard_icmp(u8"HELLO-XX-WORLD"sv, u8"hello*"sv));
+	assert_equal(true, str::wildcard_icmp(u8"HELLO-XX-WORLD"sv, u8"hello*world"sv));
+
+
+	assert_equal(0, str::icmp(u8"ДОБРОГО РАНКУ"sv, u8"Доброго ранку"sv));
+
+	assert_equal(true, str::wildcard_icmp(u8"Доброго ранку"sv, u8"Доброго*"sv));
+	assert_equal(true, str::wildcard_icmp(u8"ДОБРОГО РАНКУ"sv, u8"Доброго*"sv));
+	assert_equal(true, str::wildcard_icmp(u8"ДОБРОГО РАНКУ"sv, u8"*ранку"sv));
+}
+
 static void should_detect_wildcard()
 {
 	assert_equal(false, str::is_wildcard(u8""sv));
@@ -3332,6 +3358,7 @@ void test_view::register_tests()
 	register_test(u8"Should convert Utf8"s, should_convert_utf8);
 	register_test(u8"Should split"s, should_split);
 	register_test(u8"Should detect wildcard"s, should_detect_wildcard);
+	register_test(u8"Should match wildcard"s, should_match_wildcard);
 	register_test(u8"Should handle international characters"s, should_handle_international_characters);
 	register_test(u8"Should reset dx11"s, [this]
 	{

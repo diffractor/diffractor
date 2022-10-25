@@ -2597,7 +2597,7 @@ int str::normalze_for_compare(const int c)
 	static auto normalizations = make_normalizations();
 	const auto found = normalizations.find(c);
 	if (found != normalizations.cend()) return found->second;
-	return iswupper(c) ? towlower(c) : c;
+	return to_lower(c);
 }
 
 
@@ -2606,12 +2606,12 @@ bool str::wildcard_icmp(const std::u8string_view text_in, const std::u8string_vi
 	auto is_match = true;
 
 	// The location in the tame string, from which we started after last wildcard
-	//wchar_t t = 0, w = 0;
-
 	auto text = text_in.begin();
-	auto wildcard = wildcard_in.begin();
-	auto post_last_wildcard = wildcard_in.end(); // The location after the last '*', if we’ve encountered one
-	auto pos_last_text = text_in.end();
+	auto wildcard = wildcard_in.begin();	
+	const auto wildcard_end = wildcard_in.end();
+	const auto text_end = text_in.end();
+	auto post_last_wildcard = wildcard_end; // The location after the last '*', if we’ve encountered one
+	auto pos_last_text = text_end;
 
 	// Walk the text strings one character at a time.
 	while (true)
@@ -2620,26 +2620,27 @@ bool str::wildcard_icmp(const std::u8string_view text_in, const std::u8string_vi
 		//const auto w = *wildcard;
 
 		// How do you match a unique text string?
-		if (text == text_in.end())
+		if (text == text_end)
 		{
 			// Easy: unique up on it!
-			if (wildcard == wildcard_in.end())
+			if (wildcard == wildcard_end)
 			{
 				break; // "x" matches "x"
 			}
-			if (*wildcard == '*')
+			if (peek_utf8_char(wildcard, wildcard_end) == '*')
 			{
-				++wildcard;
+				pop_utf8_char(wildcard, wildcard_end);
 				continue; // "x*" matches "x"sv or "xy"
 			}
-			if (pos_last_text != text_in.end())
+			if (pos_last_text != text_end)
 			{
-				if (pos_last_text != text_in.end())
+				if (pos_last_text != text_end)
 				{
 					is_match = false;
 					break;
 				}
-				text = pos_last_text++;
+				pop_utf8_char(pos_last_text, text_end);
+				text = pos_last_text;
 				wildcard = post_last_wildcard;
 				continue;
 			}
@@ -2648,14 +2649,14 @@ bool str::wildcard_icmp(const std::u8string_view text_in, const std::u8string_vi
 			break; // "x" doesn't match "xy"
 		}
 
-		if (wildcard == wildcard_in.end() && text != text_in.end())
+		if (wildcard == wildcard_end && text != text_end)
 		{
 			is_match = false;
 			break;
 		}
 
-		const auto t = towlower(*text);
-		const auto w = towlower(*wildcard);
+		const auto t = normalze_for_compare(peek_utf8_char(text, text_end));
+		const auto w = normalze_for_compare(peek_utf8_char(wildcard, wildcard_end));
 
 		// How do you match a tame text string?
 		if (t != w)
@@ -2663,35 +2664,36 @@ bool str::wildcard_icmp(const std::u8string_view text_in, const std::u8string_vi
 			// The tame way: unique up on it!
 			if (w == '*')
 			{
-				post_last_wildcard = ++wildcard;
+				pop_utf8_char(wildcard, wildcard_end);
+				post_last_wildcard = wildcard;
 				pos_last_text = text;
 
-				if (wildcard == wildcard_in.end())
+				if (wildcard == wildcard_end)
 				{
 					break; // "*" matches "x"
 				}
 				continue; // "*y" matches "xy"
 			}
-			if (post_last_wildcard != wildcard_in.end())
+			if (post_last_wildcard != wildcard_end)
 			{
 				if (post_last_wildcard != wildcard)
 				{
 					wildcard = post_last_wildcard;
 
-					if (t == towlower(*wildcard))
+					if (t == normalze_for_compare(peek_utf8_char(wildcard, wildcard_end)))
 					{
-						++wildcard;
+						pop_utf8_char(wildcard, wildcard_end);
 					}
 				}
-				++text;
+				pop_utf8_char(text, text_end);
 				continue; // "*sip*" matches "mississippi"
 			}
 			is_match = false;
 			break; // "x" doesn't match "y"
 		}
 
-		++text;
-		++wildcard;
+		pop_utf8_char(text, text_end);
+		pop_utf8_char(wildcard, wildcard_end);
 	}
 
 	return is_match;

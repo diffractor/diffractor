@@ -3519,6 +3519,8 @@ bool app_frame::pre_init()
 		return false;
 	}
 
+	std::setlocale(LC_ALL, "en_US.UTF-8");
+
 	return true;
 }
 
