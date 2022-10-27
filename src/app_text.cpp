@@ -1235,6 +1235,7 @@ void app_text_t::load_lang(const df::file_path lang_file)
 		command_all_tags,
 		command_favorite_tags,
 		option_favorite_tags,
+		collection_add,
 	};
 
 	const std::vector<std::reference_wrapper<plural_text>> plurals

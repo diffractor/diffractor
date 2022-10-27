@@ -1141,6 +1141,8 @@ struct app_text_t
 	text_t command_favorite_tags = u8"Show only favorite tags"sv;
 	text_t option_favorite_tags = u8"Show only favorite tags in the sidebar"sv;
 
+	text_t collection_add = u8"Add folder to collection"sv;
+
 	plural_text rotate_info_fmt = {
 		u8"Rotate {first-name}."sv, u8"Rotate {count} selected items. Originals will be overwritten."
 	};

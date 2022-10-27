@@ -45,7 +45,7 @@ static std::atomic_int index_version;
 const wchar_t* s_app_name_l = L"Diffractor";
 const std::u8string_view s_app_name = u8"Diffractor"sv;
 const std::u8string_view s_app_version = u8"125.0"sv;
-const std::u8string_view g_app_build = u8"1158"sv;
+const std::u8string_view g_app_build = u8"1159"sv;
 const std::u8string_view stage_file_name = u8"diffractor-setup-update.exe"sv;
 static constexpr std::u8string_view installed_file_name = u8"diffractor-setup-installed.exe"sv;
 static constexpr std::u8string_view s_search = u8"search"sv;
@@ -2777,20 +2777,21 @@ void app_frame::update_button_state(const bool resize)
 	static const auto now_days = platform::now().to_days();
 	static const auto has_burner = platform::has_burner();
 
-	const auto display = _state.display_state();
-	const auto is_playing = display && display->is_playing();
-	const auto can_zoom = display && display->can_zoom();
+	const auto selection_status = _state.selection_status();
+	const auto is_playing = selection_status.is_playing;
+	const auto can_zoom = selection_status.can_zoom;
 	const auto is_maximized = _app_frame->is_maximized();
 	const auto is_editing = df::command_active == 0 && _state.is_editing();
 	const auto is_showing_media_or_items_view = df::command_active == 0 && _state.is_showing_media_or_items();
 	const auto has_selection = is_showing_media_or_items_view && _state.has_selection();
-	const auto is_single_media_selection = is_showing_media_or_items_view && _state.has_single_media_selection();
+	const auto is_single_media_selection = is_showing_media_or_items_view && selection_status.has_single_media_selection;
 	const auto new_version_avail = is_showing_media_or_items_view && !setting.install_updates &&
 		df::version(s_app_version) < df::version(setting.available_version) && static_cast<int>(now_days) >= setting.
 		min_show_update_day;
 	const auto show_new_version = is_showing_media_or_items_view && setting.force_available_version || new_version_avail;
 	const auto command_item = _state.command_item();
 	const auto is_displaying_item = is_showing_media_or_items_view && command_item;
+	const auto one_folder_selected = !is_editing && is_showing_media_or_items_view && selection_status.has_single_folder_selection;
 
 	_commands[commands::info_new_version]->visible = !is_editing && show_new_version;
 	_commands[commands::view_maximize]->visible = !is_maximized;
@@ -2853,8 +2854,7 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::browse_recursive]->enable = _state.search().has_selector();
 	_commands[commands::tool_rotate_anticlockwise]->enable = has_selection;
 	_commands[commands::tool_rotate_clockwise]->enable = has_selection;
-	_commands[commands::tool_desktop_background]->enable = display && (display->
-		display_item_has_trait(file_type_traits::bitmap) || display->player_has_video());
+	_commands[commands::tool_desktop_background]->enable = selection_status.showing_image;
 	_commands[commands::search_related]->enable = is_displaying_item;
 	_commands[commands::edit_item_exit]->enable = is_editing;
 	_commands[commands::edit_item_save]->enable = is_editing;
@@ -2916,6 +2916,9 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::sort_size]->checked = _state.sort_order() == sort_by::size;
 	_commands[commands::sort_date_modified]->checked = _state.sort_order() == sort_by::date_modified;
 	_commands[commands::english]->checked = setting.language == u8"en"sv;
+
+	_commands[commands::collection_add]->checked = one_folder_selected;
+	
 
 	_commands[commands::playback_volume100]->checked = setting.media_volume == media_volumes[0];
 	_commands[commands::playback_volume75]->checked = setting.media_volume == media_volumes[1];
@@ -3045,14 +3048,11 @@ void app_frame::update_command_text()
 	def_command(commands::edit_cut, command_group::file_management, icon_index::edit_cut, tt.command_edit_cut);
 	def_command(commands::edit_paste, command_group::file_management, icon_index::edit_paste, tt.command_edit_paste);
 	def_command(commands::tool_eject, command_group::file_management, icon_index::eject, tt.command_eject);
-	def_command(commands::tool_prile_properties, command_group::file_management, icon_index::none,
-		tt.command_file_properties);
+	def_command(commands::tool_prile_properties, command_group::file_management, icon_index::none,tt.command_file_properties);
 	def_command(commands::browse_search, command_group::navigation, icon_index::search, tt.command_file_search);
 	def_command(commands::browse_recursive, command_group::navigation, icon_index::recursive, tt.command_flatten);
-	def_command(commands::view_fullscreen, command_group::media_playback, icon_index::fullscreen, tt.command_fullscreen,
-		tt.tooltip_fullscreen);
-	def_command(commands::option_highlight_large_items, command_group::options, icon_index::none,
-		tt.command_highlight_large_items);
+	def_command(commands::view_fullscreen, command_group::media_playback, icon_index::fullscreen, tt.command_fullscreen, tt.tooltip_fullscreen);
+	def_command(commands::option_highlight_large_items, command_group::options, icon_index::none, tt.command_highlight_large_items);
 	def_command(commands::tool_import, command_group::tools, icon_index::import, tt.command_import);
 	def_command(commands::sync, command_group::tools, icon_index::sync, tt.command_sync);
 	def_command(commands::options_collection, command_group::options, icon_index::none, tt.command_collection_options);
@@ -3161,8 +3161,7 @@ void app_frame::update_command_text()
 	def_command(commands::filter_videos, command_group::selection, icon_index::video, tt.command_filter_videos);
 	def_command(commands::filter_audio, command_group::selection, icon_index::audio, tt.command_filter_audio);
 	def_command(commands::menu_group, command_group::none, icon_index::group, tt.command_menu_group_sort);
-	def_command(commands::menu_test, command_group::none, icon_index::check, tt.command_view_tests,
-		tt.tooltip_view_tests);
+	def_command(commands::menu_test, command_group::none, icon_index::check, tt.command_view_tests, tt.tooltip_view_tests);
 	def_command(commands::playback_volume100, command_group::media_playback, icon_index::volume3, tt.command_volume100);
 	def_command(commands::playback_volume75, command_group::media_playback, icon_index::volume2, tt.command_volume75);
 	def_command(commands::playback_volume50, command_group::media_playback, icon_index::volume1, tt.command_volume50);
@@ -3189,15 +3188,14 @@ void app_frame::update_command_text()
 	def_command(commands::group_extension, command_group::group_by, icon_index::none, tt.command_group_extension);
 	def_command(commands::group_folder, command_group::group_by, icon_index::none, tt.command_group_folder);
 	def_command(commands::group_toggle, command_group::group_by, icon_index::none, tt.command_toggle_group_by);
-
-	def_command(commands::sort_dates_descending, command_group::options, icon_index::none,
-		tt.command_sort_dates_descending);
-	def_command(commands::sort_dates_ascending, command_group::options, icon_index::none,
-		tt.command_sort_dates_ascending);
+	def_command(commands::sort_dates_descending, command_group::options, icon_index::none, tt.command_sort_dates_descending);
+	def_command(commands::sort_dates_ascending, command_group::options, icon_index::none, tt.command_sort_dates_ascending);
 	def_command(commands::sort_name, command_group::sort_by, icon_index::none, tt.command_sort_name);
 	def_command(commands::sort_size, command_group::sort_by, icon_index::none, tt.command_sort_size);
 	def_command(commands::sort_def, command_group::sort_by, icon_index::none, tt.command_sort_def);
 	def_command(commands::sort_date_modified, command_group::sort_by, icon_index::none, tt.command_sort_date_modified);
+
+	def_command(commands::collection_add, command_group::options, icon_index::none, tt.collection_add);
 	
 
 	_commands[commands::browse_previous_item]->keyboard_accelerator_text = tt.keyboard_left;
@@ -3809,7 +3807,7 @@ std::vector<ui::command_ptr> app_frame::menu(const pointi loc)
 			result.emplace_back(find_command(commands::menu_select));
 			result.emplace_back(find_command(commands::menu_group));
 			result.emplace_back(find_command(commands::menu_display_options));
-			result.emplace_back(find_command(commands::playback_menu));
+			result.emplace_back(find_command(commands::playback_menu));			
 			result.emplace_back(nullptr);
 			result.emplace_back(find_command(commands::tool_delete));
 			result.emplace_back(find_command(commands::tool_rename));
@@ -3821,6 +3819,7 @@ std::vector<ui::command_ptr> app_frame::menu(const pointi loc)
 			result.emplace_back(nullptr);
 			result.emplace_back(find_command(commands::option_toggle_details));
 			result.emplace_back(find_command(commands::browse_recursive));
+			result.emplace_back(find_command(commands::collection_add));
 			result.emplace_back(nullptr);
 			result.emplace_back(find_command(commands::refresh));
 			result.emplace_back(find_command(commands::tool_new_folder));

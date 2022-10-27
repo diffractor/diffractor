@@ -953,6 +953,18 @@ public:
 		return std::dynamic_pointer_cast<df::file_item>(_focus);
 	}
 
+	df::folder_item_ptr command_folder() const
+	{
+		const auto folders = _selected.folders();
+
+		if (folders.size() == 1)
+		{			
+			return folders.front();
+		}
+
+		return nullptr;
+	}
+
 	uint32_t count_total(file_group_ref fg) const;
 	uint32_t count_shown(file_group_ref fg) const;
 	uint32_t display_item_count() const;
@@ -1043,17 +1055,41 @@ public:
 		return !_selected.empty();
 	}
 
-	bool has_single_media_selection() const
+	struct selection_status_result
 	{
+		bool is_playing = false;
+		bool can_zoom = false;
+		bool has_single_media_selection = false;
+		bool has_single_folder_selection = false;
+		bool showing_image = false;
+	};
+
+	selection_status_result selection_status() const
+	{
+		selection_status_result result;
+
 		const auto d = _display;
 
-		if (d && d->is_one() && _selected.size() == 1)
+		if (d)
 		{
-			const auto i = d->_item1;
-			return i && i->is_media();
+			result.is_playing = d->is_playing();
+
+			if (d->is_one() && _selected.size() == 1)
+			{
+				const auto i = d->_item1;
+
+				if (i)
+				{
+					const auto ft = i->file_type();
+					result.can_zoom = ft->has_trait(file_type_traits::zoom);
+					result.has_single_media_selection = i->is_media();
+					result.has_single_folder_selection = ft == file_type::folder;
+					result.showing_image = ft->has_trait(file_type_traits::bitmap) || d->player_has_video();
+				}
+			}
 		}
 
-		return false;
+		return result;
 	}
 
 	bool all_items_filtered_out() const

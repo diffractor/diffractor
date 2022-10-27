@@ -113,7 +113,7 @@ platform::web_response platform::send_request(const web_request& req)
 			if (str::ends(req.file_path.extension(), u8"zip"sv)) content_type = u8"application/x-zip-compressed"sv;
 
 			content << u8"--"sv << boundary << u8"\r\n"sv;
-			content << u8"Content-Disposition: form-data; name=\""sv << req.file_form_data_name << u8"\"sv; filename=\""sv <<
+			content << u8"Content-Disposition: form-data; name=\""sv << req.file_form_data_name << u8"\"; filename=\""sv <<
 				req.file_name << u8"\"\r\n"sv;
 			content << u8"Content-Type: "sv << content_type << u8"\r\n"sv;
 			content << u8"\r\n"sv;

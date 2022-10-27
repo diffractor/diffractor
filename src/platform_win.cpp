@@ -1747,13 +1747,12 @@ df::folder_path platform::temp_folder()
 	return df::folder_path(path);
 }
 
-static int CALLBACK BrowseCallbackProc(HWND hwnd, uint32_t uMsg, LPARAM, LPARAM pData)
+static int CALLBACK browse_callback_proc(const HWND hwnd, const uint32_t uMsg, LPARAM, const LPARAM pData)
 {
 	switch (uMsg)
 	{
 	case BFFM_INITIALIZED:
 		// WParam is TRUE since you are passing a path.
-		// It would be FALSE if you were passing a pidl.
 		SendMessage(hwnd, BFFM_SETSELECTION, TRUE, pData);
 		return 1;
 
@@ -1767,31 +1766,33 @@ bool platform::browse_for_folder(df::folder_path& path)
 {
 	const auto title = str::utf8_to_utf16(tt.select_folder);
 
-	wchar_t szPath[MAX_PATH];
-	wchar_t w[MAX_PATH];
-	wcscpy_s(w, to_file_system_path(path).c_str());
+	wchar_t path_result[MAX_PATH];
+	wchar_t path_root[MAX_PATH];
+	wcscpy_s(path_root, to_file_system_path(path).c_str());
 
 	BROWSEINFO bi;
 	bi.hwndOwner = GetActiveWindow();
 	bi.pidlRoot = nullptr;
-	bi.pszDisplayName = szPath;
+	bi.pszDisplayName = path_result;
 	bi.lpszTitle = title.c_str();
 	bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
-	bi.lpfn = BrowseCallbackProc;
-	bi.lParam = std::bit_cast<LPARAM>(static_cast<wchar_t*>(w));
+	// Needed to set default folder
+	// Use reinterpret_cast over bit_cast
+	bi.lpfn = browse_callback_proc;
+	bi.lParam = reinterpret_cast<LPARAM>(static_cast<wchar_t*>(path_root));
 	bi.iImage = 0;
 
-	auto* const pidl = SHBrowseForFolder(&bi);
+	auto* const pidl_result = SHBrowseForFolder(&bi);
 
-	if (pidl)
+	if (pidl_result)
 	{
 		wchar_t sz[MAX_PATH];
-		SHGetPathFromIDListW(pidl, sz);
-		CoTaskMemFree(pidl);
+		SHGetPathFromIDListW(pidl_result, sz);
+		CoTaskMemFree(pidl_result);
 		path = df::folder_path(str::utf16_to_utf8(sz));
 	}
 
-	return pidl != nullptr;
+	return pidl_result != nullptr;
 }
 
 

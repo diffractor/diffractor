@@ -454,6 +454,30 @@ static void edit_paste_invoke(view_state& s, const ui::control_frame_ptr& parent
 	}
 }
 
+static void collection_add_invoke(view_state& s, const ui::control_frame_ptr& parent, const view_host_base_ptr& view)
+{
+	const auto ff = s.command_folder();
+
+	if (ff)
+	{
+		const auto new_folder_path = ff->path();
+		const auto existing_folders = setting.index.collection_folders();
+
+		for (const auto f : existing_folders)
+		{
+			const auto existing_folder_path = df::folder_path(f);			
+
+			if (existing_folder_path == new_folder_path)
+			{
+				return;// existing
+			}
+		}
+
+		setting.index.more_folders += u8"\r\n"sv;
+		setting.index.more_folders += new_folder_path.text();
+		s.invalidate_view(view_invalid::options | view_invalid::index);
+	}
+}
 
 static void show_flatten_invoke(view_state& s, const ui::control_frame_ptr& parent, const view_host_base_ptr& view)
 {
@@ -461,7 +485,7 @@ static void show_flatten_invoke(view_state& s, const ui::control_frame_ptr& pare
 
 	if (current_search.has_selector())
 	{
-		auto first_selector = current_search.selectors().front();
+		const auto first_selector = current_search.selectors().front();
 
 		if (first_selector.is_recursive())
 		{
@@ -4904,6 +4928,7 @@ void app_frame::initialise_commands()
 	                   [this] { file_properties_invoke(_state, _app_frame, _view_frame); });
 	add_command_invoke(commands::browse_search, [this] { _search_edit->focus(); });
 	add_command_invoke(commands::browse_recursive, [this] { show_flatten_invoke(_state, _app_frame, _view_frame); });
+	add_command_invoke(commands::collection_add, [this] { collection_add_invoke(_state, _app_frame, _view_frame); });
 	add_command_invoke(commands::view_fullscreen, [this] { toggle_full_screen(); });
 	add_command_invoke(commands::option_highlight_large_items, [this]
 	{
@@ -5422,7 +5447,6 @@ void app_frame::initialise_commands()
 			nullptr,
 			find_command(commands::browse_recursive),
 			nullptr,
-			find_command(commands::favorite),
 			find_command(commands::advanced_search),
 		};
 		return result;

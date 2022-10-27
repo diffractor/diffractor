@@ -5602,3 +5602,7 @@ msgstr ""
 # option_favorite_tags
 msgid "Show only favorite tags in the sidebar"
 msgstr ""
+
+# collection_add
+msgid "Add folder to collection"
+msgstr ""

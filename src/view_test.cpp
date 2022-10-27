@@ -2700,10 +2700,15 @@ static void should_match_wildcard()
 
 
 	assert_equal(0, str::icmp(u8"ДОБРОГО РАНКУ"sv, u8"Доброго ранку"sv));
+	assert_equal(0, str::icmp(u8"ARABIC مرحبا العالم"sv, u8"Arabic مرحبا العالم"sv));
+	assert_equal(0, str::icmp(u8"JAPANESE こんにちは世界"sv, u8"Japanese こんにちは世界"sv));
+	assert_equal(0, str::icmp(u8"💉💎👦🏻👓⚡"sv, u8"💉💎👦🏻👓⚡"sv));
 
 	assert_equal(true, str::wildcard_icmp(u8"Доброго ранку"sv, u8"Доброго*"sv));
 	assert_equal(true, str::wildcard_icmp(u8"ДОБРОГО РАНКУ"sv, u8"Доброго*"sv));
 	assert_equal(true, str::wildcard_icmp(u8"ДОБРОГО РАНКУ"sv, u8"*ранку"sv));
+	assert_equal(true, str::wildcard_icmp(u8"💉💎👦🏻👓⚡"sv, u8"*💎*"sv));
+	assert_equal(true, str::wildcard_icmp(u8"💉💎👦🏻👓⚡"sv, u8"💉*"sv));
 }
 
 static void should_detect_wildcard()
