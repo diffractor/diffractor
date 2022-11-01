@@ -686,17 +686,17 @@ void df::search_t::parse_part(const search_part& part)
 
 	if (type == prop::null)
 	{
-		if (str::icmp(part.scope, tt.query_without) == 0)
+		if (str::icmp(part.scope, u8"without"sv) == 0 || str::icmp(part.scope, tt.query_without) == 0)
 		{
 			_terms.emplace_back(search_term(prop::from_prefix(part.term), false));
 			return;
 		}
-		if (str::icmp(part.scope, tt.query_with) == 0)
+		if (str::icmp(part.scope, u8"with"sv) == 0 || str::icmp(part.scope, tt.query_with) == 0)
 		{
 			_terms.emplace_back(search_term(prop::from_prefix(part.term), true));
 			return;
 		}
-		if (str::icmp(part.scope, tt.query_related) == 0)
+		if (str::icmp(part.scope, u8"related"sv) == 0 || str::icmp(part.scope, tt.query_related) == 0)
 		{
 			_related.path = file_path(part.term);
 			return;
@@ -748,7 +748,7 @@ void df::search_t::parse_part(const search_part& part)
 	{
 		result = search_term(search_term_type::extension, part.term, part.modifier);
 	}
-	else if (str::icmp(part.scope, u8"age"sv) == 0)
+	else if (str::icmp(part.scope, u8"age"sv) == 0 || str::icmp(part.scope, tt.query_age) == 0)
 	{
 		date_parts dd;
 		dd.age = n;

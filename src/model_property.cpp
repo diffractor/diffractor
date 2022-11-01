@@ -526,12 +526,12 @@ prop::key_ref prop::from_prefix(const std::u8string_view scope)
 		return found->second;
 	}
 
-	if (str::icmp(scope, tt.query_created) == 0)
+	if (str::icmp(scope, u8"created"sv) == 0 || str::icmp(scope, tt.query_created) == 0)
 	{
 		return created_utc;
 	}
 
-	if (str::icmp(scope, tt.query_modified) == 0)
+	if (str::icmp(scope, u8"modified"sv) == 0 || str::icmp(scope, tt.query_modified) == 0)
 	{
 		return modified;
 	}

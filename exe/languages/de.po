@@ -11,7 +11,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
-"X-Generator: Poedit 3.1\n"
+"X-Generator: Poedit 3.2\n"
 
 # about_info
 msgid "Diffractor provides simple tools to make you more productive when sorting, comparing and organizing photos or videos."
@@ -2775,7 +2775,7 @@ msgstr "Texturen im NV12- und P010-Format verwenden (automatisch ausgeschaltet, 
 
 # options_show_shadow
 msgid "Show an inset shadow surrounding the image view panel."
-msgstr "Einen eingelassenen Schatten (Inset) zeigen, der das Bildansichtsfenster umgibt.  "
+msgstr "Einen eingesetzten (Inset-) Schatten zeigen, der das Bildansichtsfenster umgibt."
 
 # options_update_modified
 msgid "Update file date modified when editing."
@@ -4530,16 +4530,16 @@ msgstr "Die Kollektion enthält {} Items erstellt am {}."
 
 # command_all_tags
 msgid "Show all tags"
-msgstr ""
+msgstr "Alle Tags zeigen"
 
 # command_favorite_tags
 msgid "Show only favorite tags"
-msgstr ""
+msgstr "Nur favorisierte Tags zeigen"
 
 # option_favorite_tags
 msgid "Show only favorite tags in the sidebar"
-msgstr ""
+msgstr "Nur favorisierte Tags in der Seitenleiste zeigen"
 
 # collection_add
 msgid "Add folder to collection"
-msgstr ""
+msgstr "Ordner zu Kollektion hinzufügen"

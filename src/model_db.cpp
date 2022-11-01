@@ -699,6 +699,8 @@ std::u8string database::web_service_cache(const std::u8string_view key) const
 		result = find_web_request->text(0);
 	}
 
+	find_folder_thumbnail->reset();
+
 	return result;
 }
 
@@ -714,6 +716,7 @@ void database::web_service_cache(const std::u8string_view key, const std::u8stri
 	insert_web_request.bind(2, value);
 	insert_web_request.bind(3, today);
 	insert_web_request.exec();
+	insert_web_request.reset();
 }
 
 item_import_set database::load_item_imports()

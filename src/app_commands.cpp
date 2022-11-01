@@ -1022,8 +1022,11 @@ public:
 	void fetch(std::u8string key, std::u8string host, std::u8string path, std::function<void(std::u8string)> f)
 	{
 		_state._async.web_service_cache(
-			key, [t = shared_from_this(), key, host = std::move(host), path = std::move(path), f =
-				std::move(f)](const std::u8string& cache_response)
+			key, [t = shared_from_this(), 
+				key, 
+				host = std::move(host), 
+				path = std::move(path), 
+				f = std::move(f)](const std::u8string& cache_response)
 			{
 				if (cache_response.empty())
 				{

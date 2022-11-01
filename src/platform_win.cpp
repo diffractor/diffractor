@@ -2917,8 +2917,6 @@ bool platform::has_burner()
 {
 	bool result = false;
 
-	record_feature_use(features::burn_to_disk);
-
 	ComPtr<ICDBurn> spBurn;
 	const auto hr = CoCreateInstance(CLSID_CDBurn, nullptr, CLSCTX_ALL, IID_PPV_ARGS(spBurn.GetAddressOf()));
 
@@ -2937,24 +2935,8 @@ bool platform::has_burner()
 
 void platform::burn_to_cd(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders)
 {
-	// IDS_NO_DEFAULT_BURNER_TITLE "Burn a disc"
-	// IDS_NO_DEFAULT_BURNER_MSG "You don't have a disc drive capable of burning files to CD or DVD."
-
-	// Make sure there is a default burner available
-	/*if (!ModularWindow::HaveDefaultBurner())
-	{
-		UIControls::TaskDialogBox(Base::ResourceString(IDS_NO_DEFAULT_BURNER_TITLE),
-			Base::ResourceString(IDS_NO_DEFAULT_BURNER_MSG),
-			NULL,
-			hWnd,
-			TDCBF_OK_BUTTON,
-			IDI_ERROR);
-		return;
-	}*/
-
-	// Get the current selection
-
-	// Get the path to the root of the default burner
+	record_feature_use(features::burn_to_disk);
+	
 	ComPtr<ICDBurn> spBurn;
 	const auto hr = CoCreateInstance(CLSID_CDBurn, nullptr, CLSCTX_ALL, IID_PPV_ARGS(spBurn.GetAddressOf()));
 
