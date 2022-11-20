@@ -1010,38 +1010,6 @@ static void start_worker(platform::task_queue& q, const std::u8string_view name)
 	}
 }
 
-//void logo_popup(ui_hover_element& popup, view_state& s)
-//{
-//	ui_elements info;
-//	codecs c;
-//	const auto image = load_resource(platform::resource_item::logo);
-//
-//	info.add(c.image_to_surface(image), ui_element_style::center);
-//	info.add(s_app_name, render::style::font_size::title, render::style::text_style::multiline, ui_element_style::line_break | ui_element_style::center);
-//	info.add(u8"Diffractor is a fast way to search, compare and organize photos or videos on your PC."sv, render::style::font_size::dialog, render::style::text_style::multiline, ui_element_style::line_break);
-//
-//	auto summary = s.item_index.summary();
-//
-//	if (summary.total > 0)
-//	{
-//		info.add(u8"Total items indexed:"sv, render::style::font_size::dialog, render::style::text_style::multiline, ui_element_style::line_break);
-//		info.add(std::make_shared<summary_control>(summary, ui_element_style::line_break)).padding(16);
-//	}
-//
-//	if (setting.show_debug_info)
-//	{
-//		popup.prefered_size = 350;
-//		for (const auto& i : df::calc_app_info(false))
-//		{
-//			info.add_row(i.first, i.second);
-//		}
-//	}
-//
-//	info.add(u8"Click for help or more information."sv, render::style::font_size::dialog, render::style::text_style::multiline, ui_element_style::new_line);
-//
-//	popup._info = info;
-//}
-
 void app_frame::update_tooltip()
 {
 	static view_hover_element hover;
@@ -2257,6 +2225,7 @@ void app_frame::track_menu(const ui::frame_ptr& parent, const recti bounds,
 	const std::vector<ui::command_ptr>& commands)
 {
 	pause_media pause(_state);
+	complete_pending_events(); // process any menu updates
 	parent->track_menu(bounds, commands);
 }
 
@@ -2788,7 +2757,7 @@ void app_frame::update_button_state(const bool resize)
 	const auto new_version_avail = is_showing_media_or_items_view && !setting.install_updates &&
 		df::version(s_app_version) < df::version(setting.available_version) && static_cast<int>(now_days) >= setting.
 		min_show_update_day;
-	const auto show_new_version = is_showing_media_or_items_view && setting.force_available_version || new_version_avail;
+	const auto show_new_version = is_showing_media_or_items_view && (setting.force_available_version || new_version_avail);
 	const auto command_item = _state.command_item();
 	const auto is_displaying_item = is_showing_media_or_items_view && command_item;
 	const auto one_folder_selected = !is_editing && is_showing_media_or_items_view && selection_status.has_single_folder_selection;
@@ -2844,8 +2813,7 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::edit_cut]->enable = has_selection;
 	_commands[commands::tool_move_to_folder]->enable = has_selection;
 	_commands[commands::tool_copy_to_folder]->enable = has_selection;
-	_commands[commands::tool_convert]->enable = _state.can_process_selection(
-		_view_frame, df::process_items_type::photos_only);
+	_commands[commands::tool_convert]->enable = _state.can_process_selection(_view_frame, df::process_items_type::photos_only);
 	//_commands[ID_SHARE_FACEBOOK]->enable = _state.can_process_selection(df::process_items_type::photos_only);
 	//_commands[ID_SHARE_FLICKR]->enable = _state.can_process_selection(df::process_items_type::photos_only);
 	//_commands[ID_SHARE_TWITTER]->enable = _state.can_process_selection(df::process_items_type::photos_only);
@@ -2862,6 +2830,7 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::edit_item_save_and_next]->enable = is_editing;
 	_commands[commands::edit_item_save_as]->enable = is_editing;
 	_commands[commands::edit_item_options]->enable = is_editing;
+	_commands[commands::collection_add]->enable = one_folder_selected;
 
 	_commands[commands::playback_auto_play]->checked = setting.auto_play;
 	_commands[commands::playback_last_played_pos]->checked = setting.last_played_pos;
@@ -2917,7 +2886,7 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::sort_date_modified]->checked = _state.sort_order() == sort_by::date_modified;
 	_commands[commands::english]->checked = setting.language == u8"en"sv;
 
-	_commands[commands::collection_add]->checked = one_folder_selected;
+	
 	
 
 	_commands[commands::playback_volume100]->checked = setting.media_volume == media_volumes[0];

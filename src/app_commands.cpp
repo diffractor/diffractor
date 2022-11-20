@@ -676,19 +676,26 @@ static void desktop_background_invoke(view_state& s, const ui::control_frame_ptr
 
 			image_edits edits(dimensions);
 			files ff;
-			const auto update_result = ff.update(path_temp, write_path, {}, edits, make_file_encode_params(), false,
-			                                     {});
 
-			if (update_result.failed())
+			if (!ff.save(path_temp, loaded))
 			{
-				dlg->show_message(icon_index::error, title,
-				                  update_result.format_error(tt.error_create_file_failed_fmt));
+				dlg->show_message(icon_index::error, title, tt.update_failed);
 			}
 			else
 			{
-				platform::set_desktop_wallpaper(write_path);
-			}
+				const auto update_result = ff.update(path_temp, write_path, {}, edits, make_file_encode_params(), false,
+					{});
 
+				if (update_result.failed())
+				{
+					dlg->show_message(icon_index::error, title,
+						update_result.format_error(tt.error_create_file_failed_fmt));
+				}
+				else
+				{
+					platform::set_desktop_wallpaper(write_path);
+				}
+			}
 
 			if (path_temp.exists())
 			{
@@ -722,7 +729,7 @@ static void capture_invoke(view_state& s, const ui::control_frame_ptr& parent)
 			{
 				files ff;
 
-				if (!ff.save(save_path, std::move(lr)))
+				if (!ff.save(save_path, lr))
 				{
 					const auto dlg = make_dlg(parent);
 					dlg->show_message(icon_index::error, tt.command_capture, tt.error_save_image);

@@ -1088,6 +1088,10 @@ public:
 				}
 			}
 		}
+		else if (_selected.size() == 1)
+		{
+			result.has_single_folder_selection = _selected.folders().size() == 1;
+		}
 
 		return result;
 	}
