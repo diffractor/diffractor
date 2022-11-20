@@ -27,7 +27,7 @@
 #if __has_include("secrets.h") 
 # include "secrets.h"
 #else
-static const std::u8string google_maps_api_key = u8""sv;
+static const std::u8string google_maps_api_key = u8"";
 #endif
 
 static std::atomic_int analyse_version;
