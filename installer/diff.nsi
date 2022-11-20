@@ -4,7 +4,7 @@
 !define PRODUCT32_EXE "diffractor.exe"
 !define PRODUCT64_EXE "diffractor64.exe"
 !define PRODUCT_PUBLISHER "Diffractor"
-!define BUILD_NUM "1160"
+!define BUILD_NUM "1161"
 !define PRODUCT_VERSION "125.0"
 !define FILE_VERSION "1.25.0.${BUILD_NUM}"
 !define PRODUCT_WEB_SITE "http://www.Diffractor.com/"
