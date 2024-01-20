@@ -5010,8 +5010,14 @@ void rgb2rgb_init_aarch64()
 {
 }
 
+void ff_v210_planar_unpack_avx512icl() {};
+void ff_flac_decorrelate_indep8_16_ssse3() {};
+void ff_flac_decorrelate_indep8_32_ssse3() {};
+
 #endif
 #ifdef _M_X64
+
+void ff_v210_planar_unpack_avx512icl() {};
 
 void ff_aacdec_init_mips()
 {
@@ -5814,6 +5820,7 @@ void ff_v210_planar_unpack_unaligned_avx2() {};
 void ff_v210_planar_unpack_aligned_ssse3() {};
 void ff_v210_planar_unpack_aligned_avx() {};
 void ff_v210_planar_unpack_aligned_avx2() {};
+void ff_v210_planar_unpack_avx512icl() {};
 void __rdtsc() {};
 void ff_cpu_cpuid() {};
 void ff_cpu_xgetbv() {};

@@ -115,23 +115,33 @@ static df::blob unescape_xmp(const char* sz)
 double get_rotation(AVStream* st)
 {
 	const AVDictionaryEntry* rotate_tag = av_dict_get(st->metadata, "rotate", nullptr, 0);
-	uint8_t* displaymatrix = av_stream_get_side_data(st,
-	                                                 AV_PKT_DATA_DISPLAYMATRIX, nullptr);
-	double theta = 0;
+	//uint8_t* displaymatrix = av_stream_get_side_data(st,
+	//                                                 AV_PKT_DATA_DISPLAYMATRIX, nullptr);
 
-	if (rotate_tag && *rotate_tag->value && strcmp(rotate_tag->value, "0"))
-	{
-		char* tail;
-		theta = av_strtod(rotate_tag->value, &tail);
-		if (*tail)
-			theta = 0;
-	}
-	if (displaymatrix && !theta)
-	{
-		theta = -av_display_rotation_get(std::bit_cast<int32_t*>(displaymatrix));
-	}
+	const AVPacketSideData* side_data = av_packet_side_data_get(st->codecpar->coded_side_data,
+		st->codecpar->nb_coded_side_data,
+		AV_PKT_DATA_DISPLAYMATRIX);
 
-	theta -= 360 * floor(theta / 360 + 0.9 / 360);
+	double theta = 0.0;
+
+	if (side_data)
+	{
+		const auto *display_matrix = reinterpret_cast<const int32_t*>(side_data->data);
+
+		if (rotate_tag && *rotate_tag->value && strcmp(rotate_tag->value, "0"))
+		{
+			char* tail;
+			theta = av_strtod(rotate_tag->value, &tail);
+			if (*tail)
+				theta = 0.0;
+		}
+		if (display_matrix && abs(theta) > 0.0)
+		{
+			theta = -av_display_rotation_get(std::bit_cast<int32_t*>(display_matrix));
+		}
+
+		theta -= 360 * floor(theta / 360 + 0.9 / 360);
+	}
 
 	return theta;
 }

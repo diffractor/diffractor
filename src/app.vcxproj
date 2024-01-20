@@ -1574,6 +1574,12 @@
     <ProjectReference Include="..\third-party\libheif\libheif.vcxproj">
       <Project>{abb9a353-8cce-40cf-acc5-9b3bd2b18746}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\third-party\LibJpeg\jpeg12.vcxproj">
+      <Project>{a867397a-0c99-3588-abf3-ca22050152e1}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\third-party\LibJpeg\jpeg16.vcxproj">
+      <Project>{03af98c7-31d6-33b2-975e-0989568b23fb}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\third-party\LibJpeg\LibJpeg.vcxproj">
       <Project>{2c15c400-4cb7-4eb7-9ec6-4c0716b26706}</Project>
     </ProjectReference>

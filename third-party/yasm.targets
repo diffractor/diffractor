@@ -3,79 +3,92 @@
   <ItemGroup>
     <PropertyPageSchema
       Include="$(MSBuildThisFileDirectory)$(MSBuildThisFileName).xml" />
-    <AvailableItemName
-      Include="yasm">
-      <Targets>_yasm</Targets>
+    <AvailableItemName Include="YASM">
+      <Targets>_YASM</Targets>
     </AvailableItemName>
   </ItemGroup>
+  <PropertyGroup>
+    <ComputeLinkInputsTargets>
+      $(ComputeLinkInputsTargets);
+      ComputeYASMOutput;
+    </ComputeLinkInputsTargets>
+    <ComputeLibInputsTargets>
+      $(ComputeLibInputsTargets);
+      ComputeYASMOutput;
+    </ComputeLibInputsTargets>
+  </PropertyGroup>
   <UsingTask
-    TaskName="yasm"
+    TaskName="YASM"
     TaskFactory="XamlTaskFactory"
     AssemblyName="Microsoft.Build.Tasks.v4.0">
     <Task>$(MSBuildThisFileDirectory)$(MSBuildThisFileName).xml</Task>
   </UsingTask>
   <Target
-    Name="_yasm"
-    BeforeTargets="$(yasmBeforeTargets)"
-    AfterTargets="$(yasmAfterTargets)"
-    Condition="'@(yasm)' != ''"
-    DependsOnTargets="$(yasmDependsOn);ComputeyasmOutput"
-    Outputs="%(yasm.Outputs)"
-    Inputs="%(yasm.Identity);%(yasm.AdditionalDependencies);$(MSBuildProjectFile)">
-    <ItemGroup
-      Condition="'@(SelectedFiles)' != ''">
-      <yasm
-        Remove="@(yasm)"
-        Condition="'%(Identity)' != '@(SelectedFiles)'" />
-    </ItemGroup>
+    Name="_WriteYasmTlogs"
+    Condition="'@(YASM)' != '' and '@(SelectedFiles)' == ''">
     <ItemGroup>
-      <yasm_tlog
-        Include="%(yasm.Outputs)"
-        Condition="'%(yasm.Outputs)' != '' and '%(yasm.ExcludedFromBuild)' != 'true'">
-        <Source>@(yasm, '|')</Source>
-      </yasm_tlog>
+      <YASM Remove="@(YASM)" Condition="'%(YASM.ExcludedFromBuild)' == 'true' or '%(YASM.ObjectFileName)' == ''" />
+    </ItemGroup>
+    <ItemGroup Condition="'@(YASM)' != ''">
+      <_YasmReadTlog Include="^%(YASM.FullPath);%(YASM.AdditionalDependencies)" />
+      <_YasmWriteTlog Include="^%(YASM.FullPath);$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '%(YASM.ObjectFileName)'))" />
+    </ItemGroup>
+    <WriteLinesToFile
+      Condition="'@(_YasmReadTlog)' != ''"
+      File="$(TLogLocation)Yasm.read.1u.tlog"
+      Lines="@(_YasmReadTlog->MetaData('Identity')->ToUpperInvariant());"
+      Overwrite="true"
+      Encoding="Unicode"/>
+    <WriteLinesToFile
+      Condition="'@(_YasmWriteTlog)' != ''"
+      File="$(TLogLocation)Yasm.write.1u.tlog"
+      Lines="@(_YasmWriteTlog->MetaData('Identity')->ToUpperInvariant());"
+      Overwrite="true"
+      Encoding="Unicode"/>
+    <ItemGroup>
+      <_YasmReadTlog Remove="@(_YasmReadTlog)" />
+      <_YasmWriteTlog Remove="@(_YasmWriteTlog)" />
+    </ItemGroup>
+  </Target>
+  <Target
+    Name="_YASM"
+    BeforeTargets="$(YASMBeforeTargets)"
+    AfterTargets="$(YASMAfterTargets)"
+    Condition="'@(YASM)' != ''"
+    Outputs="%(YASM.ObjectFileName)"
+    Inputs="%(YASM.Identity);%(YASM.AdditionalDependencies);$(MSBuildProjectFile)"
+    DependsOnTargets="_SelectedFiles">
+    <ItemGroup Condition="'@(SelectedFiles)' != ''">
+      <YASM Remove="@(YASM)" Condition="'%(Identity)' != '@(SelectedFiles)'" />
     </ItemGroup>
     <Message
+      Condition="'@(YASM)' != '' and '%(YASM.ExcludedFromBuild)' != 'true'"
       Importance="High"
-      Text="%(yasm.ExecutionDescription)" />
-    <WriteLinesToFile
-      Condition="'@(yasm_tlog)' != '' and '%(yasm_tlog.ExcludedFromBuild)' != 'true'"
-      File="$(IntDir)$(ProjectName).write.1.tlog"
-      Lines="^%(yasm_tlog.Source);@(yasm_tlog-&gt;'%(Fullpath)')" />
-    <yasm
-      Condition="'@(yasm)' != '' and '%(yasm.ExcludedFromBuild)' != 'true'"
-      CommandLineTemplate="%(yasm.CommandLineTemplate)"
-      AdditionalOptions="%(yasm.AdditionalOptions)"
-      Inputs="%(yasm.Identity)" />
+      Text="%(YASM.ExecutionDescription)" />
+    <YASM
+      Condition="'@(YASM)' != '' and '%(YASM.ExcludedFromBuild)' != 'true'"
+      Inputs="%(YASM.Inputs)"
+      ObjectFileName="%(YASM.ObjectFileName)"
+      SymbolsPrefix="%(YASM.SymbolsPrefix)"
+      SymbolsPostfix="%(YASM.SymbolsPostfix)"
+      GenerateDebugInformation="%(YASM.GenerateDebugInformation)"
+      IncludePaths="%(YASM.IncludePaths)"
+      PreIncludeFiles="%(YASM.PreIncludeFiles)"
+      PreprocessorDefinitions="%(YASM.PreprocessorDefinitions)"
+      UndefinePreprocessorDefinitions="%(YASM.UndefinePreprocessorDefinitions)"
+      Preprocessor="%(YASM.Preprocessor)"
+      Parser="%(YASM.Parser)"
+      TreatWarningsAsErrors="%(YASM.TreatWarningsAsErrors)"
+      CommandLineTemplate="%(YASM.CommandLineTemplate)"
+      AdditionalOptions="%(YASM.AdditionalOptions)"
+    />
   </Target>
-  <PropertyGroup>
-    <ComputeLinkInputsTargets>
-            $(ComputeLinkInputsTargets);
-            ComputeyasmOutput;
-          </ComputeLinkInputsTargets>
-    <ComputeLibInputsTargets>
-            $(ComputeLibInputsTargets);
-            ComputeyasmOutput;
-          </ComputeLibInputsTargets>
-  </PropertyGroup>
   <Target
-    Name="ComputeyasmOutput"
-    Condition="'@(yasm)' != ''">
+    Name="ComputeYASMOutput"
+    Condition="'@(YASM)' != ''">
     <ItemGroup>
-      <yasmDirsToMake
-        Condition="'@(yasm)' != '' and '%(yasm.ExcludedFromBuild)' != 'true'"
-        Include="%(yasm.Outputs)" />
-      <Link
-        Include="%(yasmDirsToMake.Identity)"
-        Condition="'%(Extension)'=='.obj' or '%(Extension)'=='.res' or '%(Extension)'=='.rsc' or '%(Extension)'=='.lib'" />
-      <Lib
-        Include="%(yasmDirsToMake.Identity)"
-        Condition="'%(Extension)'=='.obj' or '%(Extension)'=='.res' or '%(Extension)'=='.rsc' or '%(Extension)'=='.lib'" />
-      <ImpLib
-        Include="%(yasmDirsToMake.Identity)"
-        Condition="'%(Extension)'=='.obj' or '%(Extension)'=='.res' or '%(Extension)'=='.rsc' or '%(Extension)'=='.lib'" />
+      <Link Include="@(YASM->Metadata('ObjectFileName')->Distinct()->ClearMetadata())" Condition="'%(YASM.ExcludedFromBuild)' != 'true'"/>
+      <Lib Include="@(YASM->Metadata('ObjectFileName')->Distinct()->ClearMetadata())" Condition="'%(YASM.ExcludedFromBuild)' != 'true'"/>
     </ItemGroup>
-    <MakeDir
-      Directories="@(yasmDirsToMake-&gt;'%(RootDir)%(Directory)')" />
   </Target>
 </Project>

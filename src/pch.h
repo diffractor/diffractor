@@ -19,6 +19,7 @@
 #include <cwctype>
 #include <cinttypes>
 
+#include <bit>
 #include <string>
 #include <string_view>
 #include <charconv>

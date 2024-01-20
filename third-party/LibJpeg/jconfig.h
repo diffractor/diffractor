@@ -2,7 +2,7 @@
 /* see jconfig.txt for explanations */
 
 #define JPEG_LIB_VERSION 80
-#define LIBJPEG_TURBO_VERSION 2.0.0
+#define LIBJPEG_TURBO_VERSION 3.0.0
 #define C_ARITH_CODING_SUPPORTED 1
 #define D_ARITH_CODING_SUPPORTED 1
 #define MEM_SRCDST_SUPPORTED 1
@@ -11,7 +11,11 @@
 #define HAVE_UNSIGNED_CHAR 1
 #define HAVE_UNSIGNED_SHORT 1
 #define TRANSFORMS_SUPPORTED 1
+
+#ifndef BITS_IN_JSAMPLE
 #define BITS_IN_JSAMPLE 8
+#endif
+
 
 /* #define void char */
 /* #define const */
@@ -27,7 +31,7 @@
 #undef NEON_INTRINSICS
 
 #define PACKAGE_NAME "TurboJpeg"
-#define VERSION "2.0.0"
+#define VERSION "3.0.0"
 #define BUILD __DATE__ 
 
 
