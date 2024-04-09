@@ -1,4 +1,6 @@
 # Diffractor
+[![CI](https://github.com/diffractor/diffractor/actions/workflows/msbuild.yml/badge.svg)](https://github.com/diffractor/diffractor/actions/workflows/msbuild.yml)
+
 The fastest photo and video organizer for Windows. It indexes your files to allow duplicate detection and fast search.
 
 ## Building
