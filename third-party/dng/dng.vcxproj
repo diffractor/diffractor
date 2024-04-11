@@ -257,16 +257,19 @@
     <LinkIncremental>true</LinkIncremental>
     <OutDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</OutDir>
     <IntDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</IntDir>
+    <UseStructuredOutput>false</UseStructuredOutput>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
     <OutDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</OutDir>
     <IntDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</IntDir>
+    <UseStructuredOutput>false</UseStructuredOutput>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
     <OutDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</OutDir>
     <IntDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</IntDir>
+    <UseStructuredOutput>false</UseStructuredOutput>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
     <LinkIncremental>true</LinkIncremental>
@@ -277,6 +280,7 @@
     <LinkIncremental>false</LinkIncremental>
     <OutDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</OutDir>
     <IntDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</IntDir>
+    <UseStructuredOutput>false</UseStructuredOutput>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
     <LinkIncremental>false</LinkIncremental>
@@ -328,6 +332,10 @@
       <InlineFunctionExpansion>Disabled</InlineFunctionExpansion>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <WholeProgramOptimization>false</WholeProgramOptimization>
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <SupportJustMyCode>false</SupportJustMyCode>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -361,6 +369,12 @@
       <OmitFramePointers>true</OmitFramePointers>
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <CompileAsManaged>false</CompileAsManaged>
+      <CompileAsWinRT>false</CompileAsWinRT>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -398,6 +412,10 @@
       <InlineFunctionExpansion>Disabled</InlineFunctionExpansion>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <OmitFramePointers>false</OmitFramePointers>
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <SupportJustMyCode>false</SupportJustMyCode>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -431,6 +449,8 @@
       <WholeProgramOptimization>false</WholeProgramOptimization>
       <ControlFlowGuard>Guard</ControlFlowGuard>
       <FunctionLevelLinking>true</FunctionLevelLinking>
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -467,6 +487,10 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <ControlFlowGuard>false</ControlFlowGuard>
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -505,6 +529,8 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <ControlFlowGuard>false</ControlFlowGuard>
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
     </ClCompile>
     <Link>
       <SubSystem>

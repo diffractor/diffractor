@@ -114,11 +114,13 @@
     <OutDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</OutDir>
     <IntDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</IntDir>
     <TargetName>$(ProjectName)</TargetName>
+    <UseStructuredOutput>false</UseStructuredOutput>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <OutDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</OutDir>
     <IntDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</IntDir>
     <TargetName>$(ProjectName)</TargetName>
+    <UseStructuredOutput>false</UseStructuredOutput>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
     <OutDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</OutDir>
@@ -129,11 +131,13 @@
     <OutDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</OutDir>
     <IntDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</IntDir>
     <TargetName>$(ProjectName)</TargetName>
+    <UseStructuredOutput>false</UseStructuredOutput>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <OutDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</OutDir>
     <IntDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</IntDir>
     <TargetName>$(ProjectName)</TargetName>
+    <UseStructuredOutput>false</UseStructuredOutput>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
     <OutDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</OutDir>
@@ -177,7 +181,8 @@
       <WholeProgramOptimization>false</WholeProgramOptimization>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <AdditionalOptions>/bigobj</AdditionalOptions>
-      <SupportJustMyCode>true</SupportJustMyCode>
+      <SupportJustMyCode>false</SupportJustMyCode>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
     </ClCompile>
     <ResourceCompile>
       <Culture>0x040e</Culture>
@@ -225,7 +230,8 @@
       <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <AdditionalOptions>/bigobj</AdditionalOptions>
-      <SupportJustMyCode>true</SupportJustMyCode>
+      <SupportJustMyCode>false</SupportJustMyCode>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
     </ClCompile>
     <ResourceCompile>
       <Culture>0x040e</Culture>
@@ -274,6 +280,7 @@
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <AdditionalOptions>/bigobj</AdditionalOptions>
       <SupportJustMyCode>true</SupportJustMyCode>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
     </ClCompile>
     <ResourceCompile>
       <Culture>0x040e</Culture>
@@ -326,6 +333,7 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
     </ClCompile>
     <ResourceCompile>
       <Culture>0x040e</Culture>
@@ -374,7 +382,9 @@
       <FloatingPointExceptions>false</FloatingPointExceptions>
       <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
-      <SupportJustMyCode>true</SupportJustMyCode>
+      <SupportJustMyCode>false</SupportJustMyCode>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
     </ClCompile>
     <ResourceCompile>
       <Culture>0x040e</Culture>
@@ -424,6 +434,7 @@
       <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <SupportJustMyCode>true</SupportJustMyCode>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
     </ClCompile>
     <ResourceCompile>
       <Culture>0x040e</Culture>

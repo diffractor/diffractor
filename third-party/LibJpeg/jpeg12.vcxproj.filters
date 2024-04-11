@@ -87,9 +87,6 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <CustomBuild Include="CMakeLists.txt" />
-  </ItemGroup>
-  <ItemGroup>
     <Filter Include="Source Files">
       <UniqueIdentifier>{5F2FEFA3-BB15-32EF-A533-D4B05187B69B}</UniqueIdentifier>
     </Filter>

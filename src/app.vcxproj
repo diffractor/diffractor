@@ -232,6 +232,7 @@
     <GenerateManifest>false</GenerateManifest>
     <EmbedManifest>false</EmbedManifest>
     <EnableMicrosoftCodeAnalysis>false</EnableMicrosoftCodeAnalysis>
+    <UseStructuredOutput>false</UseStructuredOutput>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <RunCodeAnalysis>false</RunCodeAnalysis>
@@ -239,6 +240,7 @@
     <EmbedManifest>false</EmbedManifest>
     <TargetName>diffractor</TargetName>
     <EnableMicrosoftCodeAnalysis>false</EnableMicrosoftCodeAnalysis>
+    <UseStructuredOutput>false</UseStructuredOutput>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Code Analysis (Release)|Win32'">
     <RunCodeAnalysis>false</RunCodeAnalysis>
@@ -257,6 +259,7 @@
     <EmbedManifest>false</EmbedManifest>
     <RunCodeAnalysis>false</RunCodeAnalysis>
     <EnableMicrosoftCodeAnalysis>false</EnableMicrosoftCodeAnalysis>
+    <UseStructuredOutput>false</UseStructuredOutput>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
     <GenerateManifest>false</GenerateManifest>
@@ -270,6 +273,7 @@
     <EmbedManifest>false</EmbedManifest>
     <RunCodeAnalysis>false</RunCodeAnalysis>
     <EnableMicrosoftCodeAnalysis>false</EnableMicrosoftCodeAnalysis>
+    <UseStructuredOutput>false</UseStructuredOutput>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
     <GenerateManifest>false</GenerateManifest>
@@ -367,7 +371,7 @@
       <CreateHotpatchableImage>false</CreateHotpatchableImage>
       <SDLCheck>true</SDLCheck>
       <CompileAsWinRT>false</CompileAsWinRT>
-      <IntrinsicFunctions>false</IntrinsicFunctions>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
       <ControlFlowGuard>Guard</ControlFlowGuard>
       <InlineFunctionExpansion>Disabled</InlineFunctionExpansion>
@@ -469,7 +473,7 @@
       <WholeProgramOptimization>false</WholeProgramOptimization>
       <FloatingPointExceptions>false</FloatingPointExceptions>
       <SDLCheck>true</SDLCheck>
-      <SupportJustMyCode>true</SupportJustMyCode>
+      <SupportJustMyCode>false</SupportJustMyCode>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -720,8 +724,8 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderOutputFile>$(IntDir)$(TargetName).pch</PrecompiledHeaderOutputFile>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
-      <ObjectFileName>$(IntDir)</ObjectFileName>
-      <ProgramDataBaseFileName>$(IntDir)vc70.pdb</ProgramDataBaseFileName>
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
+      <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
       <BrowseInformation>
       </BrowseInformation>
       <WarningLevel>Level3</WarningLevel>
@@ -990,8 +994,8 @@
       <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
       <PrecompiledHeaderOutputFile>$(IntDir)$(TargetName).pch</PrecompiledHeaderOutputFile>
       <AssemblerListingLocation>$(IntDir)/</AssemblerListingLocation>
-      <ObjectFileName>$(IntDir)</ObjectFileName>
-      <ProgramDataBaseFileName>$(IntDir)vc70.pdb</ProgramDataBaseFileName>
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
+      <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
       <BrowseInformation>
       </BrowseInformation>
       <WarningLevel>Level3</WarningLevel>
@@ -1068,8 +1072,8 @@
       <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
       <PrecompiledHeaderOutputFile>$(IntDir)$(TargetName).pch</PrecompiledHeaderOutputFile>
       <AssemblerListingLocation>$(IntDir)/</AssemblerListingLocation>
-      <ObjectFileName>$(IntDir)</ObjectFileName>
-      <ProgramDataBaseFileName>$(IntDir)vc70.pdb</ProgramDataBaseFileName>
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
+      <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
       <BrowseInformation>
       </BrowseInformation>
       <WarningLevel>Level3</WarningLevel>
@@ -1125,6 +1129,8 @@
       <EnablePREfast>false</EnablePREfast>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
     </ClCompile>
     <Midl>
       <TypeLibraryName>$(OutDir)$(TargetName).tlb</TypeLibraryName>
@@ -1148,6 +1154,8 @@
       <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\openssl\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
     </ClCompile>
     <Manifest>
       <InputResourceManifests>IDR_MANIFEST</InputResourceManifests>
@@ -1164,6 +1172,8 @@
       <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\openssl\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
     </ClCompile>
     <Manifest>
       <InputResourceManifests>IDR_MANIFEST</InputResourceManifests>
@@ -1549,6 +1559,9 @@
   <ItemGroup>
     <ProjectReference Include="..\third-party\bzip2\bzip2.vcxproj">
       <Project>{f24b293b-e1e5-44db-bc4d-089a916343cf}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\third-party\dav1d\dav1d.vcxproj">
+      <Project>{9743296c-d8b9-44c7-8df6-92e24d5f4861}</Project>
     </ProjectReference>
     <ProjectReference Include="..\third-party\dng\dng.vcxproj">
       <Project>{3c085ef4-c8c5-40ba-a9e6-a44fbc86b7b9}</Project>

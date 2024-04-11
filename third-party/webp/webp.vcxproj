@@ -272,16 +272,19 @@
     <LinkIncremental>true</LinkIncremental>
     <OutDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</OutDir>
     <IntDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</IntDir>
+    <UseStructuredOutput>false</UseStructuredOutput>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
     <OutDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</OutDir>
     <IntDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</IntDir>
+    <UseStructuredOutput>false</UseStructuredOutput>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
     <OutDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</OutDir>
     <IntDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</IntDir>
+    <UseStructuredOutput>false</UseStructuredOutput>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
     <LinkIncremental>true</LinkIncremental>
@@ -292,6 +295,7 @@
     <LinkIncremental>false</LinkIncremental>
     <OutDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</OutDir>
     <IntDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</IntDir>
+    <UseStructuredOutput>false</UseStructuredOutput>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
     <LinkIncremental>false</LinkIncremental>
@@ -311,7 +315,7 @@
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <AdditionalIncludeDirectories>$(ProjectDir);</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
-      <SupportJustMyCode>true</SupportJustMyCode>
+      <SupportJustMyCode>false</SupportJustMyCode>
       <CompileAsManaged>false</CompileAsManaged>
       <CompileAsWinRT>false</CompileAsWinRT>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
@@ -331,6 +335,7 @@
       <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <AdditionalOptions>/bigobj</AdditionalOptions>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -370,6 +375,8 @@
       <FloatingPointExceptions>false</FloatingPointExceptions>
       <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -392,7 +399,7 @@
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <AdditionalIncludeDirectories>$(ProjectDir);</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
-      <SupportJustMyCode>true</SupportJustMyCode>
+      <SupportJustMyCode>false</SupportJustMyCode>
       <CompileAsManaged>false</CompileAsManaged>
       <CompileAsWinRT>false</CompileAsWinRT>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
@@ -413,6 +420,7 @@
       <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <AdditionalOptions>/bigobj</AdditionalOptions>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -454,6 +462,7 @@
       <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <AdditionalOptions>/bigobj</AdditionalOptions>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -493,7 +502,9 @@
       <OpenMPSupport>false</OpenMPSupport>
       <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
-      <SupportJustMyCode>true</SupportJustMyCode>
+      <SupportJustMyCode>false</SupportJustMyCode>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -536,6 +547,7 @@
       <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <SupportJustMyCode>true</SupportJustMyCode>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
     </ClCompile>
     <Link>
       <SubSystem>

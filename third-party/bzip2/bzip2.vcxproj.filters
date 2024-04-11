@@ -14,4 +14,38 @@
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
   </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="blocksort.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="bzip2.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="bzlib.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="compress.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="crctable.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="decompress.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="huffman.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="randtable.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="bzlib.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="bzlib_private.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
 </Project>

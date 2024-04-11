@@ -38,6 +38,7 @@
     <ClCompile Include="heif_avif.cc" />
     <ClCompile Include="heif_colorconversion.cc" />
     <ClCompile Include="heif_context.cc" />
+    <ClCompile Include="heif_decoder_dav1d.cc" />
     <ClCompile Include="heif_decoder_libde265.cc" />
     <ClCompile Include="heif_file.cc" />
     <ClCompile Include="heif_hevc.cc" />
@@ -57,6 +58,7 @@
     <ClInclude Include="heif_colorconversion.h" />
     <ClInclude Include="heif_context.h" />
     <ClInclude Include="heif_cxx.h" />
+    <ClInclude Include="heif_decoder_dav1d.h" />
     <ClInclude Include="heif_decoder_libde265.h" />
     <ClInclude Include="heif_emscripten.h" />
     <ClInclude Include="heif_file.h" />
@@ -146,16 +148,19 @@
     <LinkIncremental>true</LinkIncremental>
     <OutDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</OutDir>
     <IntDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</IntDir>
+    <UseStructuredOutput>false</UseStructuredOutput>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
     <OutDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</OutDir>
     <IntDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</IntDir>
+    <UseStructuredOutput>false</UseStructuredOutput>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
     <OutDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</OutDir>
     <IntDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</IntDir>
+    <UseStructuredOutput>false</UseStructuredOutput>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
     <LinkIncremental>true</LinkIncremental>
@@ -166,6 +171,7 @@
     <LinkIncremental>false</LinkIncremental>
     <OutDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</OutDir>
     <IntDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</IntDir>
+    <UseStructuredOutput>false</UseStructuredOutput>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
     <LinkIncremental>false</LinkIncremental>
@@ -182,7 +188,7 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <FloatingPointModel>Fast</FloatingPointModel>
-      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\libde265</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\libde265;$(SolutionDir)\third-party\dav1d\include</AdditionalIncludeDirectories>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <OpenMPSupport>false</OpenMPSupport>
       <LanguageStandard>stdcpp20</LanguageStandard>
@@ -193,6 +199,14 @@
       <InlineFunctionExpansion>Disabled</InlineFunctionExpansion>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <WholeProgramOptimization>false</WholeProgramOptimization>
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <SupportJustMyCode>false</SupportJustMyCode>
+      <CompileAsManaged>false</CompileAsManaged>
+      <CompileAsWinRT>false</CompileAsWinRT>
+      <CreateHotpatchableImage>false</CreateHotpatchableImage>
+      <ControlFlowGuard>Guard</ControlFlowGuard>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -216,7 +230,7 @@
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <OmitFramePointers>true</OmitFramePointers>
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
-      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\libde265</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\libde265;$(SolutionDir)\third-party\dav1d\include</AdditionalIncludeDirectories>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <OpenMPSupport>false</OpenMPSupport>
       <LanguageStandard>stdcpp20</LanguageStandard>
@@ -226,6 +240,12 @@
       <ControlFlowGuard>false</ControlFlowGuard>
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <CompileAsManaged>false</CompileAsManaged>
+      <CompileAsWinRT>false</CompileAsWinRT>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -257,6 +277,14 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <OmitFramePointers>false</OmitFramePointers>
       <WholeProgramOptimization>false</WholeProgramOptimization>
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <SupportJustMyCode>false</SupportJustMyCode>
+      <CompileAsManaged>false</CompileAsManaged>
+      <CompileAsWinRT>false</CompileAsWinRT>
+      <CreateHotpatchableImage>false</CreateHotpatchableImage>
+      <ControlFlowGuard>Guard</ControlFlowGuard>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -282,6 +310,8 @@
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <StringPooling>true</StringPooling>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -315,6 +345,12 @@
       <ControlFlowGuard>false</ControlFlowGuard>
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <CompileAsManaged>false</CompileAsManaged>
+      <CompileAsWinRT>false</CompileAsWinRT>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -350,6 +386,8 @@
       <ControlFlowGuard>false</ControlFlowGuard>
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
     </ClCompile>
     <Link>
       <SubSystem>

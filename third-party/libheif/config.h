@@ -16,7 +16,7 @@
 #undef HAVE_CXX11
 
 /* Whether dav1d was found. */
-#undef HAVE_DAV1D
+#define HAVE_DAV1D 1
 
 /* Define to 1 if you have the <dlfcn.h> header file. */
 #undef HAVE_DLFCN_H

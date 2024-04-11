@@ -120,6 +120,18 @@
     <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">false</LinkIncremental>
     <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkIncremental>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <UseStructuredOutput>false</UseStructuredOutput>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <UseStructuredOutput>false</UseStructuredOutput>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <UseStructuredOutput>false</UseStructuredOutput>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <UseStructuredOutput>false</UseStructuredOutput>
+  </PropertyGroup>
   <PropertyGroup Label="Vcpkg" Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
     <VcpkgUseStatic>true</VcpkgUseStatic>
   </PropertyGroup>
@@ -151,7 +163,7 @@
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>LIBRAW_NODLL;LIBRAW_LIBRARY_BUILD;LIBRAW_WIN32_UNICODEPATHS;USE_DNGSDK;_CRT_SECURE_NO_WARNINGS;_WINDOWS;UNICODE;WIN32;QT_LARGEFILE_SUPPORT;LIBRAW_NODLL;USE_JPEG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -178,7 +190,7 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <WholeProgramOptimization>false</WholeProgramOptimization>
-      <SupportJustMyCode>true</SupportJustMyCode>
+      <SupportJustMyCode>false</SupportJustMyCode>
       <ConformanceMode>false</ConformanceMode>
     </ClCompile>
     <Link>
@@ -216,7 +228,7 @@
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>LIBRAW_NODLL;LIBRAW_LIBRARY_BUILD;LIBRAW_WIN32_UNICODEPATHS;USE_DNGSDK;_CRT_SECURE_NO_WARNINGS;_WINDOWS;UNICODE;WIN32;QT_LARGEFILE_SUPPORT;LIBRAW_NODLL;USE_JPEG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -279,7 +291,7 @@
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>LIBRAW_NODLL;LIBRAW_LIBRARY_BUILD;LIBRAW_WIN32_UNICODEPATHS;USE_DNGSDK;_CRT_SECURE_NO_WARNINGS;_WINDOWS;UNICODE;WIN32;QT_LARGEFILE_SUPPORT;LIBRAW_NODLL;USE_JPEG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -307,7 +319,7 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <WholeProgramOptimization>false</WholeProgramOptimization>
-      <SupportJustMyCode>true</SupportJustMyCode>
+      <SupportJustMyCode>false</SupportJustMyCode>
       <ConformanceMode>false</ConformanceMode>
     </ClCompile>
     <Link>
@@ -345,7 +357,7 @@
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <Optimization>MaxSpeed</Optimization>
       <PreprocessorDefinitions>LIBRAW_NODLL;LIBRAW_LIBRARY_BUILD;LIBRAW_WIN32_UNICODEPATHS;USE_DNGSDK;_CRT_SECURE_NO_WARNINGS;QT_NO_DEBUG;LIBRAW_NODLL;NDEBUG;_WINDOWS;UNICODE;WIN32;QT_LARGEFILE_SUPPORT;LIBRAW_BUILDLIB;USE_JPEG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -412,7 +424,7 @@
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <Optimization>MaxSpeed</Optimization>
       <PreprocessorDefinitions>LIBRAW_NODLL;LIBRAW_LIBRARY_BUILD;LIBRAW_WIN32_UNICODEPATHS;USE_DNGSDK;_CRT_SECURE_NO_WARNINGS;QT_NO_DEBUG;LIBRAW_NODLL;NDEBUG;_WINDOWS;UNICODE;WIN32;QT_LARGEFILE_SUPPORT;LIBRAW_BUILDLIB;USE_JPEG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -478,7 +490,7 @@
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <Optimization>MaxSpeed</Optimization>
       <PreprocessorDefinitions>LIBRAW_NODLL;LIBRAW_LIBRARY_BUILD;LIBRAW_WIN32_UNICODEPATHS;USE_DNGSDK;_CRT_SECURE_NO_WARNINGS;QT_NO_DEBUG;LIBRAW_NODLL;NDEBUG;_WINDOWS;UNICODE;WIN32;QT_LARGEFILE_SUPPORT;LIBRAW_BUILDLIB;USE_JPEG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <SuppressStartupBanner>true</SuppressStartupBanner>

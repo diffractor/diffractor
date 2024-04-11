@@ -100,12 +100,24 @@
     <TargetExt Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">.lib</TargetExt>
     <TargetExt Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">.lib</TargetExt>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <UseStructuredOutput>false</UseStructuredOutput>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <UseStructuredOutput>false</UseStructuredOutput>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <UseStructuredOutput>false</UseStructuredOutput>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <UseStructuredOutput>false</UseStructuredOutput>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
-      <DebugInformationFormat>OldStyle</DebugInformationFormat>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <ExceptionHandling>
       </ExceptionHandling>
       <InlineFunctionExpansion>Disabled</InlineFunctionExpansion>
@@ -115,11 +127,20 @@
       <UseFullPaths>false</UseFullPaths>
       <WarningLevel>Level3</WarningLevel>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;BITS_IN_JSAMPLE=12;_CRT_NONSTDC_NO_WARNINGS;CMAKE_INTDIR="Debug"</PreprocessorDefinitions>
-      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FloatingPointModel>Fast</FloatingPointModel>
+      <StringPooling>true</StringPooling>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <CompileAsManaged>false</CompileAsManaged>
+      <CompileAsWinRT>false</CompileAsWinRT>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <CreateHotpatchableImage>false</CreateHotpatchableImage>
+      <OmitFramePointers>false</OmitFramePointers>
+      <ControlFlowGuard>Guard</ControlFlowGuard>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_DEBUG;_WINDOWS;BITS_IN_JSAMPLE=12;_CRT_NONSTDC_NO_WARNINGS;CMAKE_INTDIR=\"Debug\"</PreprocessorDefinitions>
@@ -149,11 +170,13 @@
       <UseFullPaths>false</UseFullPaths>
       <WarningLevel>Level3</WarningLevel>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;BITS_IN_JSAMPLE=12;_CRT_NONSTDC_NO_WARNINGS;CMAKE_INTDIR="Debug"</PreprocessorDefinitions>
-      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FloatingPointModel>Fast</FloatingPointModel>
+      <StringPooling>true</StringPooling>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_DEBUG;_WINDOWS;BITS_IN_JSAMPLE=12;_CRT_NONSTDC_NO_WARNINGS;CMAKE_INTDIR=\"Debug\"</PreprocessorDefinitions>
@@ -173,7 +196,7 @@
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
-      <DebugInformationFormat>OldStyle</DebugInformationFormat>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <ExceptionHandling>
       </ExceptionHandling>
       <InlineFunctionExpansion>Disabled</InlineFunctionExpansion>
@@ -183,11 +206,19 @@
       <UseFullPaths>false</UseFullPaths>
       <WarningLevel>Level3</WarningLevel>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;BITS_IN_JSAMPLE=12;_CRT_NONSTDC_NO_WARNINGS;CMAKE_INTDIR="Debug"</PreprocessorDefinitions>
-      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FloatingPointModel>Fast</FloatingPointModel>
+      <StringPooling>true</StringPooling>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <CompileAsManaged>false</CompileAsManaged>
+      <CompileAsWinRT>false</CompileAsWinRT>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <CreateHotpatchableImage>false</CreateHotpatchableImage>
+      <ControlFlowGuard>Guard</ControlFlowGuard>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_DEBUG;_WINDOWS;BITS_IN_JSAMPLE=12;_CRT_NONSTDC_NO_WARNINGS;CMAKE_INTDIR=\"Debug\"</PreprocessorDefinitions>
@@ -215,8 +246,8 @@
       <UseFullPaths>false</UseFullPaths>
       <WarningLevel>Level3</WarningLevel>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;BITS_IN_JSAMPLE=12;_CRT_NONSTDC_NO_WARNINGS;CMAKE_INTDIR="Release"</PreprocessorDefinitions>
-      <ObjectFileName>$(IntDir)</ObjectFileName>
-      <DebugInformationFormat>OldStyle</DebugInformationFormat>
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <IntrinsicFunctions>true</IntrinsicFunctions>
@@ -225,6 +256,17 @@
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <FloatingPointModel>Fast</FloatingPointModel>
+      <StringPooling>true</StringPooling>
+      <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <CompileAsManaged>false</CompileAsManaged>
+      <CompileAsWinRT>false</CompileAsWinRT>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <CreateHotpatchableImage>false</CreateHotpatchableImage>
+      <ControlFlowGuard>false</ControlFlowGuard>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;BITS_IN_JSAMPLE=12;_CRT_NONSTDC_NO_WARNINGS;CMAKE_INTDIR=\"Release\"</PreprocessorDefinitions>
@@ -252,7 +294,7 @@
       <UseFullPaths>false</UseFullPaths>
       <WarningLevel>Level3</WarningLevel>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;BITS_IN_JSAMPLE=12;_CRT_NONSTDC_NO_WARNINGS;CMAKE_INTDIR="Release"</PreprocessorDefinitions>
-      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <DebugInformationFormat>OldStyle</DebugInformationFormat>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
@@ -262,6 +304,9 @@
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <FloatingPointModel>Fast</FloatingPointModel>
+      <StringPooling>true</StringPooling>
+      <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;BITS_IN_JSAMPLE=12;_CRT_NONSTDC_NO_WARNINGS;CMAKE_INTDIR=\"Release\"</PreprocessorDefinitions>
@@ -289,8 +334,8 @@
       <UseFullPaths>false</UseFullPaths>
       <WarningLevel>Level3</WarningLevel>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;BITS_IN_JSAMPLE=12;_CRT_NONSTDC_NO_WARNINGS;CMAKE_INTDIR="Release"</PreprocessorDefinitions>
-      <ObjectFileName>$(IntDir)</ObjectFileName>
-      <DebugInformationFormat>OldStyle</DebugInformationFormat>
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <IntrinsicFunctions>true</IntrinsicFunctions>
@@ -299,6 +344,17 @@
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <FloatingPointModel>Fast</FloatingPointModel>
+      <StringPooling>true</StringPooling>
+      <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <CompileAsManaged>false</CompileAsManaged>
+      <CompileAsWinRT>false</CompileAsWinRT>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <CreateHotpatchableImage>false</CreateHotpatchableImage>
+      <ControlFlowGuard>false</ControlFlowGuard>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;BITS_IN_JSAMPLE=12;_CRT_NONSTDC_NO_WARNINGS;CMAKE_INTDIR=\"Release\"</PreprocessorDefinitions>
@@ -342,14 +398,6 @@
     <ClCompile Include="jidctred.c" />
     <ClCompile Include="jquant1.c" />
     <ClCompile Include="jquant2.c" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="ZERO_CHECK.proj">
-      <Project>{01330013-D1F7-33CE-AB4F-9342E4E7FE32}</Project>
-      <Name>ZERO_CHECK</Name>
-      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

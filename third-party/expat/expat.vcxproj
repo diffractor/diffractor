@@ -148,6 +148,18 @@
     <OutDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</OutDir>
     <IntDir>$(SolutionDir)\intermediate\$(Configuration)\$(Platform)\$(ProjectName)\</IntDir>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <UseStructuredOutput>false</UseStructuredOutput>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <UseStructuredOutput>false</UseStructuredOutput>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <UseStructuredOutput>false</UseStructuredOutput>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <UseStructuredOutput>false</UseStructuredOutput>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <Optimization>Disabled</Optimization>
@@ -172,7 +184,7 @@
       <PrecompiledHeaderOutputFile>.\Debug/LibExpat.pch</PrecompiledHeaderOutputFile>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
-      <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
       <BrowseInformation>false</BrowseInformation>
       <WarningLevel>Level3</WarningLevel>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -191,7 +203,7 @@
       <CompileAsWinRT>false</CompileAsWinRT>
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
       <ControlFlowGuard>Guard</ControlFlowGuard>
-      <SupportJustMyCode>true</SupportJustMyCode>
+      <SupportJustMyCode>false</SupportJustMyCode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <WholeProgramOptimization>false</WholeProgramOptimization>
@@ -230,7 +242,7 @@
       <PrecompiledHeaderOutputFile>.\Debug/LibExpat.pch</PrecompiledHeaderOutputFile>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
-      <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
       <BrowseInformation>
       </BrowseInformation>
       <WarningLevel>Level3</WarningLevel>
@@ -252,7 +264,7 @@
       <WholeProgramOptimization>false</WholeProgramOptimization>
       <FloatingPointExceptions>false</FloatingPointExceptions>
       <AdditionalOptions>/bigobj</AdditionalOptions>
-      <SupportJustMyCode>true</SupportJustMyCode>
+      <SupportJustMyCode>false</SupportJustMyCode>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -287,7 +299,7 @@
       <PrecompiledHeaderOutputFile>.\Debug/LibExpat.pch</PrecompiledHeaderOutputFile>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
-      <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
       <BrowseInformation>false</BrowseInformation>
       <WarningLevel>Level3</WarningLevel>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -342,7 +354,7 @@
       <PrecompiledHeaderOutputFile>.\Release/LibExpat.pch</PrecompiledHeaderOutputFile>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
-      <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
       <BrowseInformation>false</BrowseInformation>
       <WarningLevel>Level3</WarningLevel>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -399,7 +411,7 @@
       <PrecompiledHeaderOutputFile>.\Release/LibExpat.pch</PrecompiledHeaderOutputFile>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
-      <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
       <BrowseInformation>
       </BrowseInformation>
       <WarningLevel>Level3</WarningLevel>
@@ -420,7 +432,7 @@
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <FloatingPointExceptions>false</FloatingPointExceptions>
       <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
-      <SupportJustMyCode>true</SupportJustMyCode>
+      <SupportJustMyCode>false</SupportJustMyCode>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -455,7 +467,7 @@
       <PrecompiledHeaderOutputFile>.\Release/LibExpat.pch</PrecompiledHeaderOutputFile>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
-      <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
       <BrowseInformation>
       </BrowseInformation>
       <WarningLevel>Level3</WarningLevel>
@@ -486,6 +498,24 @@
       <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
     </Lib>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Template|ARM64'">
+    <ClCompile>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Template|Win32'">
+    <ClCompile>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Template|x64'">
+    <ClCompile>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
+    </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="lib\xmlparse.c" />
