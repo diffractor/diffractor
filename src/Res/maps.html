@@ -1,8 +1,9 @@
 ﻿<!DOCTYPE html>
 <html>
 <head>
-	<meta http-equiv="x-ua-compatible" content="IE=edge" />
-	<meta name="viewport" content="initial-scale=1.0, user-scalable=no" />	
+	<meta charset="utf-8" />
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
 	<title>map</title>
 	<style type="text/css">
 		#map {
@@ -20,89 +21,67 @@
 <div id="map"></div>
 <script>
 	var map;
-	var places_service;
-	var start_loc = { lat: 51.477928, lng: -0.001545 };
+	var search_manager;
+	var start_loc;
 	var maxz = 16;
 	var markers = [];
 	var is_initialised = false;
 
 	function map_js_loaded() {
 
-		map = new google.maps.Map(document.getElementById('map'),
+		start_loc = new Microsoft.Maps.Location(51.477928, -0.001545);
+
+		map = new Microsoft.Maps.Map(document.getElementById('map'),
 			{
 				zoom: 8,
-				minZoom: 3,
-				maxZoom: maxz,
-				disableDoubleClickZoom: true,
-				zoomControl: true,
-				mapTypeControl: false,
-				scaleControl: false,
-				streetViewControl: false,
-				rotateControl: false,
-				fullscreenControl: false,
+                minZoom: 3,
+                maxZoom: maxz,
 				center: start_loc,
 			});
 
-		places_service = new google.maps.places.PlacesService(map);
+        Microsoft.Maps.Events.addHandler(map,
+            'click',
+            function (event) {
+               var loc = event.location;
+                delete_markers();
+                add_location_marker(loc);
+				window.external.select_place(result.location.latitude, result.location.longitude);
+            });
 
-		google.maps.event.addListener(map,
-			'click',
-			function(event) {
-				var loc = event.latLng;
-				delete_markers();
-				add_location_marker(loc);
-				window.external.select_place(loc.lat(), loc.lng(), JSON.stringify(event));
-
-			});
-
-		is_initialised = true;
+        is_initialised = true;
 	}
 
-	function set_location_marker(loc) {
+	function set_location_marker(latitude, longitude) {
 		if (is_initialised) {
 			delete_markers();
+			var loc = new Microsoft.Maps.Location(latitude, longitude);
 			add_location_marker(loc);
-			map.setCenter(loc);
+			map.setView({ center: loc });
 		} else {
-			start_loc = { lat: loc.lat(), lng: loc.lng() };;
+			start_loc = { lat: loc.latitude, lng: loc.longitude };
 		}
 	}
 
 	function add_location_marker(location) {
 		if (is_initialised) {
-			marker = new google.maps.Marker({
-				position: location,
-				map: map
-			});
+			var marker = new Microsoft.Maps.Pushpin(location, { });
+			map.entities.push(marker);
 			markers.push(marker);
 		}
 	}
 
-    function set_place_marker(place_id) {
-		places_service.getDetails({
-				placeId: place_id
-			},
-			function (result, status) {
-				if (is_initialised) {
-					var loc = result.geometry.location;
-					window.external.select_place(loc.lat(), loc.lng(), JSON.stringify(result));
-					set_location_marker(loc);
-					map.fitBounds(result.geometry.viewport);
-				}
-			});
-	}
-
 	function delete_markers() {
 		if (markers) {
-			for (i in markers) {
-				markers[i].setMap(null);
-			}
+			for (var i = 0; i < markers.length; i++) 
+			{
+              map.entities.remove(markers[i]);
+            }
 			markers.length = 0;
 		}
 	}
 
 	function init_map(key) {
-		var js_url = "https://maps.googleapis.com/maps/api/js?key=" + key + "&v=3&callback=map_js_loaded&libraries=places&v=3.47";
+		var js_url = "https://www.bing.com/api/maps/mapcontrol?callback=map_js_loaded&key=" + key;
         var tag = document.createElement("script");
 		tag.setAttribute('src', js_url);
 		tag.setAttribute('defer','');

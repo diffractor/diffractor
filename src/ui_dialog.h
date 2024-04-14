@@ -4045,10 +4045,10 @@ class map_control final : public view_element, public std::enable_shared_from_th
 	ui::web_window_ptr _win;
 	gps_coordinate _location;
 	std::u8string _place_id;
-	std::function<void(gps_coordinate, std::u8string_view)> _cb;
+	std::function<void(gps_coordinate)> _cb;
 
 public:
-	map_control(const ui::control_frame_ptr& h, std::function<void(gps_coordinate, std::u8string_view)> cb) : _cb(
+	map_control(const ui::control_frame_ptr& h, std::function<void(gps_coordinate)> cb) : _cb(
 		std::move(cb))
 	{
 		_win = h->create_web_window(resource_url(platform::resource_item::map_html), this);
@@ -4070,21 +4070,21 @@ public:
 		positions.emplace_back(_win, bounds, is_visible());
 	}
 
-	void set_place_marker(const std::u8string& place_id)
-	{
-		if (_place_id != place_id)
-		{
-			_win->eval_in_browser(str::print(u8"try { set_place_marker('%s'); } catch(e) {}"sv, place_id.c_str()));
-			_place_id = place_id;
-		}
-	}
+	//void set_place_marker(const std::u8string& place_id)
+	//{
+	//	if (_place_id != place_id)
+	//	{
+	//		_win->eval_in_browser(str::print(u8"try { set_place_marker('%s'); } catch(e) {}"sv, place_id.c_str()));
+	//		_place_id = place_id;
+	//	}
+	//}
 
 	void set_location_marker(const gps_coordinate loc)
 	{
 		if (_location != loc)
 		{
 			_win->eval_in_browser(str::print(
-				u8"try { set_location_marker(new google.maps.LatLng(%f, %f)); } catch(e) {}"sv, loc.latitude(),
+				u8"try { set_location_marker(%f, %f); } catch(e) {}"sv, loc.latitude(),
 				loc.longitude()));
 			_location = loc;
 		}
@@ -4104,13 +4104,13 @@ public:
 		return false;
 	}
 
-	void select_place(const double lat, const double lng, const std::u8string_view info) override
+	void select_place(const double lat, const double lng) override
 	{
 		df::assert_true(ui::is_ui_thread());
 
 		if (_cb)
 		{
-			_cb(gps_coordinate(lat, lng), info);
+			_cb(gps_coordinate(lat, lng));
 		}
 	}
 };

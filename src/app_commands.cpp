@@ -28,6 +28,7 @@
 # include "secrets.h"
 #else
 static const std::u8string google_maps_api_key = u8"";
+static const std::u8string microsoft_maps_api_key = u8"";
 #endif
 
 static std::atomic_int analyse_version;
@@ -972,6 +973,70 @@ public:
 	}
 };
 
+
+static void fetch(async_strategy& async, std::u8string key, std::u8string host, std::u8string path, std::function<void(std::u8string)> f)
+{
+	async.web_service_cache(
+		key, [&async, key,
+		host = std::move(host),
+		path = std::move(path),
+		f = std::move(f)](const std::u8string& cache_response)
+		{
+			if (cache_response.empty())
+			{
+				platform::web_request req;
+				req.host = host;
+				req.path = path;
+
+				async.queue_async(async_queue::web, [&async, req, f, key]()
+					{
+						auto response = send_request(req);
+
+						// only cache if success
+						if (response.status_code == 200)
+						{
+							async.web_service_cache(key, response.body);
+						}
+
+						return f(std::move(response.body));
+					});
+			}
+			else
+			{
+				f(cache_response);
+			}
+		});
+}
+
+static void fetch_place(async_strategy& async, const std::u8string_view place_id, std::function<void(std::u8string)> f)
+{
+	const auto url = str::format(u8"/maps/api/place/details/json?placeid={}&key={}"sv, df::url_encode(place_id), google_maps_api_key);
+	const auto key = str::format(u8"place_details:{}"sv, place_id);
+	fetch(async, key, u8"maps.googleapis.com"s, url, std::move(f));
+}
+
+static str::cached find_component(const rapidjson::GenericValue<rapidjson::UTF8<char8_t>>& json, const std::u8string &component_field, const std::u8string_view component_name)
+{
+	if (json.HasMember(component_field))
+	{
+		for (const auto& component : json[component_field].GetArray())
+		{
+			if (component.HasMember(u8"types"))
+			{
+				for (const auto& type : component[u8"types"].GetArray())
+				{
+					if (str::icmp(component_name, type.GetString()) == 0)
+					{
+						return str::cache(df::util::json::safe_string(component, u8"long_name"));
+					}
+				}
+			}
+		}
+	}
+
+	return {};
+}
+
 class location_auto_complete_strategy final : public std::enable_shared_from_this<location_auto_complete_strategy>,
                                               public ui::complete_strategy_t
 {
@@ -1017,48 +1082,6 @@ public:
 	void initialise(std::function<void(const ui::auto_complete_results&)> complete) override
 	{
 		search({}, std::move(complete));
-	}
-
-	void fetch_place(const std::u8string_view place_id, std::function<void(std::u8string)> f)
-	{
-		const auto url = str::format(u8"/maps/api/place/details/json?placeid={}&key={}"sv, df::url_encode(place_id), google_maps_api_key);
-		const auto key = str::format(u8"place_details:{}"sv, place_id);
-		fetch(key, u8"maps.googleapis.com"s, url, std::move(f));
-	}
-
-	void fetch(std::u8string key, std::u8string host, std::u8string path, std::function<void(std::u8string)> f)
-	{
-		_state._async.web_service_cache(
-			key, [t = shared_from_this(), 
-				key, 
-				host = std::move(host), 
-				path = std::move(path), 
-				f = std::move(f)](const std::u8string& cache_response)
-			{
-				if (cache_response.empty())
-				{
-					platform::web_request req;
-					req.host = host;
-					req.path = path;
-
-					t->_state.queue_async(async_queue::web, [req, t, f, key]()
-					{
-						auto response = send_request(req);
-
-						// only cache if success
-						if (response.status_code == 200)
-						{
-							t->_state._async.web_service_cache(key, response.body);
-						}
-
-						return f(std::move(response.body));
-					});
-				}
-				else
-				{
-					f(cache_response);
-				}
-			});
 	}
 
 	void show_results(const ui::auto_complete_results& found,
@@ -1118,7 +1141,7 @@ public:
 							u8"/maps/api/place/autocomplete/json?input={}&key={}"sv,
 							df::url_encode(query), google_maps_api_key);
 
-						t->fetch(key, u8"maps.googleapis.com"s, path,
+						fetch(t->_state._async, key, u8"maps.googleapis.com"s, path,
 						         [t, query, complete, locally_found](std::u8string response)
 						         {
 							         ui::auto_complete_results found;
@@ -1188,7 +1211,7 @@ public:
 						{
 							platform::thread_event event_wait(true, false);
 
-							t->fetch_place(recent_place_id,
+							fetch_place(t->_state._async, recent_place_id,
 							               [t, &event_wait, recent_place_id, &results](std::u8string response)
 							               {
 								               df::util::json::json_doc json_response;
@@ -1270,6 +1293,50 @@ public:
 };
 
 
+static void id_to_location(async_strategy& async, const std::u8string place_id, std::function<void(location_t)> cb)
+{
+	if (str::is_num(place_id))
+	{
+		async.queue_location([&async, place_id, cb](location_cache& locations)
+			{
+				const auto id = str::to_int(place_id);
+				auto loc = locations.find_by_id(id);
+
+				if (!loc.is_empty())
+				{
+					async.queue_ui([cb, loc]() { cb(loc);  });
+				}
+			});
+	}
+	else
+	{
+		fetch_place(async, place_id,
+			[&async, place_id, cb](std::u8string response)
+			{
+				df::util::json::json_doc json_response;
+				json_response.Parse(response);
+
+				if (json_response.HasMember(u8"result"))
+				{
+					const std::u8string component_field = u8"address_components";
+					const auto& address = json_response[u8"result"];
+					auto place = find_component(address, component_field, u8"locality");
+					if (place.is_empty())  place = find_component(address, component_field, u8"sublocality");
+					if (place.is_empty())  place = find_component(address, component_field, u8"route");
+					if (place.is_empty())  place = find_component(address, component_field, u8"postal_town");
+					const auto state = find_component(address, component_field, u8"administrative_area_level_2");
+					const auto country = find_component(address, component_field, u8"country");
+					const gps_coordinate position(address[u8"geometry"][u8"location"][u8"lat"].GetDouble(),
+						address[u8"geometry"][u8"location"][u8"lng"].GetDouble());
+
+					location_t loc(0, place, state, country, position, 0.0);
+					async.queue_ui([cb, loc]() { cb(loc);  });
+
+				}				
+			});
+	}
+}
+
 bool ui::browse_for_location(view_state& vs, const control_frame_ptr& parent, gps_coordinate& position)
 {
 	auto dlg = make_dlg(parent);
@@ -1307,7 +1374,7 @@ bool ui::browse_for_location(view_state& vs, const control_frame_ptr& parent, gp
 		dlg->layout();
 	};
 
-	auto coord_changed = [&vs, populate_place](const gps_coordinate coord, const std::u8string_view)
+	auto coord_changed = [&vs, populate_place](const gps_coordinate coord)
 	{
 		vs._async.queue_location([&vs, coord, populate_place](location_cache& locations)
 		{
@@ -1319,7 +1386,7 @@ bool ui::browse_for_location(view_state& vs, const control_frame_ptr& parent, gp
 
 	auto map = std::make_shared<map_control>(dlg->_frame, coord_changed);
 
-	auto sel_changed = [map, populate_place](const std::shared_ptr<location_auto_complete>& sel)
+	auto sel_changed = [&vs, map, populate_place](const std::shared_ptr<location_auto_complete>& sel)
 	{
 		if (str::is_empty(sel->_id))
 		{
@@ -1328,11 +1395,15 @@ bool ui::browse_for_location(view_state& vs, const control_frame_ptr& parent, gp
 		}
 		else
 		{
-			map->set_place_marker(sel->_id);
+			id_to_location(vs._async, sel->_id, [map, populate_place](location_t loc)
+			{
+					map->set_location_marker(loc.position);
+					populate_place(loc);
+			});
 		}
 	};
 
-	map->init_map(google_maps_api_key);
+	map->init_map(microsoft_maps_api_key);
 
 	auto strategy = std::make_shared<location_auto_complete_strategy>(vs, dlg->_frame, sel_changed,
 	                                                                  vs.recent_locations.items());
@@ -1422,7 +1493,7 @@ static void locate_invoke(view_state& vs, const ui::control_frame_ptr& parent, c
 			longitude_edit->dispatch_event(e);
 		};
 
-		auto coord_changed = [&vs, populate_place](const gps_coordinate coord, const std::u8string_view)
+		auto coord_changed = [&vs, populate_place](const gps_coordinate coord)
 		{
 			vs._async.queue_location([&vs, coord, populate_place](location_cache& locations)
 			{
@@ -1434,7 +1505,7 @@ static void locate_invoke(view_state& vs, const ui::control_frame_ptr& parent, c
 
 		auto map = std::make_shared<map_control>(dlg->_frame, coord_changed);
 
-		auto sel_changed = [map, populate_place](const std::shared_ptr<location_auto_complete>& sel)
+		auto sel_changed = [&vs, map, populate_place](const std::shared_ptr<location_auto_complete>& sel)
 		{
 			if (str::is_empty(sel->_id))
 			{
@@ -1443,11 +1514,15 @@ static void locate_invoke(view_state& vs, const ui::control_frame_ptr& parent, c
 			}
 			else
 			{
-				map->set_place_marker(sel->_id);
+				id_to_location(vs._async, sel->_id, [map, populate_place](location_t loc)
+					{
+						map->set_location_marker(loc.position);
+						populate_place(loc);
+					});
 			}
 		};
 
-		map->init_map(google_maps_api_key);
+		map->init_map(microsoft_maps_api_key);
 
 		auto strategy = std::make_shared<location_auto_complete_strategy>(
 			vs, dlg->_frame, sel_changed, vs.recent_locations.items());

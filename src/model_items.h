@@ -87,10 +87,8 @@ namespace df
 
 	struct item_row_draw_info;
 
-	using file_item_ptr = std::shared_ptr<file_item>;
 	using item_element_ptr = std::shared_ptr<item_element>;
 	using const_item_element_ptr = std::shared_ptr<const item_element>;
-	using folder_item_ptr = std::shared_ptr<folder_item>;
 	using item_summary_ptr = std::shared_ptr<file_group_histogram>;
 	using item_group_ptr = std::shared_ptr<item_group>;
 	using weak_item_group_ptr = std::weak_ptr<item_group>;
@@ -502,7 +500,7 @@ namespace df
 	protected:
 		str::cached _name;
 		file_type_ref _ft = file_type::other;
-		prop::item_metadata_ptr _metadata;
+		prop::item_metadata_aptr _metadata;
 
 		bool _is_read_only = true;
 		search_result _search;
@@ -673,12 +671,12 @@ namespace df
 
 		prop::item_metadata_const_ptr metadata() const
 		{
-			return _metadata;
+			return _metadata.load();
 		}
 
-		const prop::item_metadata_ptr& metadata()
+		prop::item_metadata_ptr metadata()
 		{
-			return _metadata;
+			return _metadata.load();
 		}
 
 		const file_size& file_size() const
@@ -703,7 +701,7 @@ namespace df
 
 		date_t calc_media_created() const
 		{
-			const auto md = _metadata;
+			const auto md = _metadata.load();
 
 			if (!md)
 			{
@@ -860,12 +858,14 @@ namespace df
 
 		str::cached title() const
 		{
-			return !_metadata || is_empty(_metadata->title) ? _name : _metadata->title;
+			const auto m = _metadata.load();
+			return !m || is_empty(m->title) ? _name : m->title;
 		}
 
 		bool has_title() const override
 		{
-			return _metadata && !is_empty(_metadata->title);
+			const auto m = _metadata.load();
+			return m && !is_empty(m->title);
 		}
 
 		bool is_link() const
@@ -900,13 +900,13 @@ namespace df
 
 		double media_position() const
 		{
-			const auto md = _metadata;
+			const auto md = _metadata.load();
 			return md ? md->media_position : 0;
 		}
 
 		void media_position(const double d)
 		{
-			const auto md = _metadata;
+			const auto md = _metadata.load();;
 
 			if (md)
 			{
@@ -957,13 +957,13 @@ namespace df
 
 		str::cached sidecars() const
 		{
-			const auto md = _metadata;
+			const auto md = _metadata.load();
 			return md ? md->sidecars : str::cached{};
 		}
 
 		str::cached xmp() const
 		{
-			const auto md = _metadata;
+			const auto md = _metadata.load();
 			return md ? md->xmp : str::cached{};
 		}
 
@@ -1003,18 +1003,19 @@ namespace df
 
 		bool has_gps() const
 		{
-			return _metadata && _metadata->has_gps();
+			const auto md = _metadata.load();;
+			return md && md->has_gps();
 		}
 
 		int rating() const
 		{
-			const auto md = _metadata;
+			const auto md = _metadata.load();;
 			return md ? md->rating : 0;
 		}
 
 		std::u8string_view label() const
 		{
-			const auto md = _metadata;
+			const auto md = _metadata.load();;
 			return md ? md->label : std::u8string_view{};
 		}
 	};

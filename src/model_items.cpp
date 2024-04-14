@@ -2491,7 +2491,7 @@ df::item_display_info df::file_item::populate_info() const
 		result.size = _size;
 		result.duplicates = _duplicates.count;
 
-		const auto md = _metadata;
+		const auto md = _metadata.load();
 
 		if (md)
 		{

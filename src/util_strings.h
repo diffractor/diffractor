@@ -141,7 +141,8 @@ namespace str
 
 		cached(const chached_string_storage_t* s) noexcept : storage(s)
 		{
-		};
+		}
+
 		cached(const cached&) noexcept = default;
 		cached& operator=(const cached&) noexcept = default;
 		cached(cached&&) noexcept = default;

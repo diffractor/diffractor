@@ -1315,7 +1315,7 @@ namespace ui
 		virtual void navigation_complete(std::u8string_view url) = 0;
 		virtual bool before_navigate(std::u8string_view url) = 0;
 
-		virtual void select_place(const double lat, const double lng, const std::u8string_view info)
+		virtual void select_place(const double lat, const double lng)
 		{
 		}
 	};

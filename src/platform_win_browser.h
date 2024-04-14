@@ -618,19 +618,16 @@ public:
 		}
 		if (dispIdMember == id_select_place)
 		{
-			if (pDispParams && pDispParams->cArgs == 3)
+			if (pDispParams && pDispParams->cArgs == 2)
 			{
 				const auto& a1 = pDispParams->rgvarg[2];
 				const auto& a2 = pDispParams->rgvarg[1];
-				const auto& a3 = pDispParams->rgvarg[0];
 
-				if (a3.vt == VT_BSTR &&
-					a3.bstrVal &&
-					a2.vt == VT_R8 &&
+				if (a2.vt == VT_R8 &&
 					a1.vt == VT_R8)
 				{
 					// location was selected
-					_events->select_place(a1.dblVal, a2.dblVal, str::utf16_to_utf8(a3.bstrVal));
+					_events->select_place(a1.dblVal, a2.dblVal);
 				}
 			}
 

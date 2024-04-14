@@ -410,6 +410,7 @@ namespace prop
 #pragma pack(pop)
 
 	using item_metadata_ptr = std::shared_ptr<item_metadata>;
+	using item_metadata_aptr = std::atomic<std::shared_ptr<item_metadata>>;
 	using item_metadata_const_ptr = std::shared_ptr<const item_metadata>;
 
 	const key* from_id(uint16_t id);

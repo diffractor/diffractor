@@ -70,12 +70,10 @@ namespace df
 	class item_element;
 	class file_item;
 	class folder_item;
-
-	using item_element_ptr = std::shared_ptr<item_element>;
+	struct index_file_item;
+		
 	using file_item_ptr = std::shared_ptr<file_item>;
 	using folder_item_ptr = std::shared_ptr<folder_item>;
-	using drawable_item_const_ptr = std::shared_ptr<const item_element>;
-
 
 	struct status_i
 	{

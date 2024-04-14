@@ -4,9 +4,9 @@
 !define PRODUCT32_EXE "diffractor.exe"
 !define PRODUCT64_EXE "diffractor64.exe"
 !define PRODUCT_PUBLISHER "Diffractor"
-!define BUILD_NUM "1161"
-!define PRODUCT_VERSION "125.0"
-!define FILE_VERSION "1.25.0.${BUILD_NUM}"
+!define BUILD_NUM "1170"
+!define PRODUCT_VERSION "126.0"
+!define FILE_VERSION "1.26.0.${BUILD_NUM}"
 !define PRODUCT_WEB_SITE "http://www.Diffractor.com/"
 !define PRODUCT_STARTMENU_REGVAL "NSIS:StartMenuDir"
 !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"
@@ -204,9 +204,9 @@ FunctionEnd
 Function MyWelcomeShowCallback
 	Var /global welcome_text
    ${If} $LANGUAGE == 1031
-		StrCpy  $welcome_text "Superschnelle Suche, Betrachtung und Vergleich von Fotos oder Videos.$\r$\n$\r$\nOptimiert für Ihre Grafikkarte und Ihren PC."
+		StrCpy  $welcome_text "Superschnelle Suche, Betrachtung und Vergleich von Fotos oder Videos.$\r$\n$\r$\nOptimiert fï¿½r Ihre Grafikkarte und Ihren PC."
 	${ElseIf} $LANGUAGE == 1029		
-		StrCpy  $welcome_text "Lehká správa fotografií a médií.$\r$\n$\r$\nOptimalizováno pro vaši grafickou kartu a PC."
+		StrCpy  $welcome_text "Lehkï¿½ sprï¿½va fotografiï¿½ a mï¿½diï¿½.$\r$\n$\r$\nOptimalizovï¿½no pro vaï¿½i grafickou kartu a PC."
 	${Else}
 		StrCpy  $welcome_text "Superfast searching, viewing and comparing of photos or videos.$\r$\n$\r$\nOptimized for your graphics card and PC."
 	${EndIf} 

@@ -16,10 +16,6 @@ struct search_part;
 
 namespace df
 {
-	struct index_file_item;
-	class file_item;
-	using file_item_ptr = std::shared_ptr<file_item>;
-
 	enum class search_result_type
 	{
 		no_match,
