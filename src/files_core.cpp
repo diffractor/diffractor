@@ -836,6 +836,28 @@ static bool is_heif(const df::cspan image_buffer_in)
 	});
 }
 
+inline bool is_avif(const df::cspan image_buffer_in)
+{
+	if (image_buffer_in.size < 12u)
+	{
+		return false;
+	}
+
+	const std::array<unsigned char, 4> ftyp_header = { 'f', 't', 'y', 'p' };
+	const std::array<std::array<unsigned char, 4>, 2> brand = { {
+		{'a', 'v', 'i', 'f'},
+		{'a', 'v', 'i', 's'},
+	} };
+
+	if (!std::equal(std::begin(ftyp_header), std::end(ftyp_header), image_buffer_in.data + 4))
+		return false;
+
+	return std::any_of(std::begin(brand), std::end(brand), [image_buffer_in](const auto& b)
+		{
+			return std::equal(std::begin(b), std::end(b), image_buffer_in.data + 8);
+		});
+}
+
 detected_format files::detect_format(const df::cspan image_buffer_in)
 {
 	// https://en.wikipedia.org/wiki/List_of_file_signatures
@@ -869,7 +891,7 @@ detected_format files::detect_format(const df::cspan image_buffer_in)
 		}
 	}
 
-	if (is_heif(image_buffer_in))
+	if (is_heif(image_buffer_in) || is_avif(image_buffer_in))
 	{
 		return detected_format::HEIF;
 	}

@@ -1012,6 +1012,22 @@ bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path
 	return true;
 }
 
+static enum AVPixelFormat get_hw_format(AVCodecContext* ctx,
+	const enum AVPixelFormat* pix_fmts)
+{
+	const enum AVPixelFormat* p;
+
+	for (p = pix_fmts; *p != -1; p++) {
+		if (*p == AV_PIX_FMT_D3D11)
+			return *p;
+	}
+
+	fprintf(stderr, "Failed to get HW surface format.\n");
+	return AV_PIX_FMT_NONE;
+}
+
+
+
 void av_format_decoder::init_streams(int video_track, int audio_track, bool can_use_hw, bool video_only)
 {
 	auto* const fc = _format_context;
@@ -1046,18 +1062,31 @@ void av_format_decoder::init_streams(int video_track, int audio_track, bool can_
 
 				vc->workaround_bugs = FF_BUG_AUTODETECT;
 
-				const auto has_hw_config = avcodec_get_hw_config(video_codec, 0) != nullptr;
-				const auto use_d3d11va = can_use_hw && has_hw_config;
-
-				if (use_d3d11va)
+				if (can_use_hw)
 				{
-					const auto ret = av_hwdevice_ctx_create(&_hw_device_ctx, AV_HWDEVICE_TYPE_D3D11VA, nullptr, nullptr,
-					                                        0);
+					for (int i = 0;; i++) {
 
-					if (ret == 0)
-					{
-						vc->extra_hw_frames = 16;
-						vc->hw_device_ctx = av_buffer_ref(_hw_device_ctx);
+						const auto *hw_config = avcodec_get_hw_config(video_codec, i);
+
+						if (hw_config && hw_config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX)
+						{
+							vc->get_format = get_hw_format;
+
+							const auto ret = av_hwdevice_ctx_create(&_hw_device_ctx, 
+								hw_config->device_type,
+								nullptr, nullptr, 0);
+
+							if (ret == 0)
+							{
+								vc->extra_hw_frames = 16;
+								vc->hw_device_ctx = av_buffer_ref(_hw_device_ctx);
+								break;
+							}
+						}
+						else
+						{
+							break;
+						}
 					}
 				}
 

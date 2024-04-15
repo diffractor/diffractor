@@ -35,10 +35,10 @@ Diffractor has a built-in test runner. If the application is started from Visual
 - [libmatroska](https://github.com/Matroska-Org/libmatroska) 1.7.0
 - [libopenmpt](https://lib.openmpt.org) 0.6.6
 - [LibPng](http://www.libpng.org/pub/png/libpng.html) 1.6.38
-- [LibRaw](https://www.libraw.org) 0.20.2
+- [LibRaw](https://www.libraw.org) 0.21.2
 - [libwebp](https://github.com/webmproject/libwebp) 1.2.4
 - [minizip-ng](https://github.com/zlib-ng/minizip-ng) 3.0.6
 - [parallel-hashmap](https://github.com/greg7mdp/parallel-hashmap) 1.3.8
-- [sqlite](https://www.sqlite.org/index.html) 3.39.4
+- [sqlite](https://www.sqlite.org/index.html) 3.45.2
 - [utf-cpp](https://github.com/nemtrif/utfcpp) 3.2.1
 - [zlib-ng](https://github.com/zlib-ng/zlib-ng) 2.0.6
