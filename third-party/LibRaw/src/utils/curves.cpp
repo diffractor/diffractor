@@ -1,5 +1,5 @@
 /* -*- C++ -*-
- * Copyright 2019-2020 LibRaw LLC (info@libraw.org)
+ * Copyright 2019-2021 LibRaw LLC (info@libraw.org)
  *
  LibRaw uses code from dcraw.c -- Dave Coffin's raw photo decoder,
  dcraw.c is copyright 1997-2018 by Dave Coffin, dcoffin a cybercom o net.
@@ -37,8 +37,11 @@ void LibRaw::cubic_spline(const int *x_, const int *y_, const int len)
   }
   for (i = len - 1; i > 0; i--)
   {
-    b[i] = (y[i] - y[i - 1]) / (x[i] - x[i - 1]);
-    d[i - 1] = x[i] - x[i - 1];
+	float _div = x[i] - x[i - 1];
+	if (fabs(_div) < 1.0e-15)
+		_div = 1;
+    b[i] = (y[i] - y[i - 1]) / _div;
+    d[i - 1] = _div;
   }
   for (i = 1; i < len - 1; i++)
   {

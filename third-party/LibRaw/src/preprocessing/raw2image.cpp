@@ -1,5 +1,5 @@
 /* -*- C++ -*-
- * Copyright 2019-2020 LibRaw LLC (info@libraw.org)
+ * Copyright 2019-2021 LibRaw LLC (info@libraw.org)
  *
 
  LibRaw is free software; you can redistribute it and/or modify
@@ -43,6 +43,8 @@ void LibRaw::raw2image_start()
 
   // adjust for half mode!
   IO.shrink =
+	  !imgdata.rawdata.color4_image && !imgdata.rawdata.color3_image &&
+	  !imgdata.rawdata.float4_image && !imgdata.rawdata.float3_image &&
       P1.filters &&
       (O.half_size || ((O.threshold || O.aber[0] != 1 || O.aber[2] != 1)));
 
@@ -84,10 +86,13 @@ int LibRaw::raw2image(void)
       imgdata.image =
           (ushort(*)[4])calloc(S.iheight * S.iwidth, sizeof(*imgdata.image));
 
-    merror(imgdata.image, "raw2image()");
 
     libraw_decoder_info_t decoder_info;
     get_decoder_info(&decoder_info);
+
+    // Copy area size
+    int copyheight = MAX(0, MIN(int(S.height), int(S.raw_height) - int(S.top_margin)));
+    int copywidth = MAX(0, MIN(int(S.width), int(S.raw_width) - int(S.left_margin)));
 
     // Move saved bitmap to imgdata.image
     if ((imgdata.idata.filters || P1.colors == 1) && imgdata.rawdata.raw_image)
@@ -100,7 +105,7 @@ int LibRaw::raw2image(void)
         {
           for (col = 0;
                col < IO.fuji_width
-                         << !libraw_internal_data.unpacker_data.fuji_layout;
+                         << int(!libraw_internal_data.unpacker_data.fuji_layout);
                col++)
           {
             if (libraw_internal_data.unpacker_data.fuji_layout)
@@ -113,7 +118,7 @@ int LibRaw::raw2image(void)
               r = IO.fuji_width - 1 + row - (col >> 1);
               c = row + ((col + 1) >> 1);
             }
-            if (r < S.height && c < S.width)
+            if (r < S.height && c < S.width && col + int(S.left_margin) < int(S.raw_width))
               imgdata.image[((r) >> IO.shrink) * S.iwidth + ((c) >> IO.shrink)]
                            [FC(r, c)] =
                   imgdata.rawdata
@@ -125,8 +130,8 @@ int LibRaw::raw2image(void)
       else
       {
         int row, col;
-        for (row = 0; row < S.height; row++)
-          for (col = 0; col < S.width; col++)
+        for (row = 0; row < copyheight; row++)
+          for (col = 0; col < copywidth; col++)
             imgdata.image[((row) >> IO.shrink) * S.iwidth +
                           ((col) >> IO.shrink)][fcol(row, col)] =
                 imgdata.rawdata
@@ -138,28 +143,28 @@ int LibRaw::raw2image(void)
     {
       if (imgdata.rawdata.color4_image)
       {
-        if (S.width * 8 == S.raw_pitch)
+        if (S.width * 8u == S.raw_pitch && S.height == S.raw_height)
           memmove(imgdata.image, imgdata.rawdata.color4_image,
                   S.width * S.height * sizeof(*imgdata.image));
         else
         {
-          for (int row = 0; row < S.height; row++)
+            for (int row = 0; row < copyheight; row++)
             memmove(&imgdata.image[row * S.width],
                     &imgdata.rawdata
                          .color4_image[(row + S.top_margin) * S.raw_pitch / 8 +
                                        S.left_margin],
-                    S.width * sizeof(*imgdata.image));
+                    copywidth * sizeof(*imgdata.image));
         }
       }
       else if (imgdata.rawdata.color3_image)
       {
         unsigned char *c3image = (unsigned char *)imgdata.rawdata.color3_image;
-        for (int row = 0; row < S.height; row++)
+        for (int row = 0; row < copyheight; row++)
         {
           ushort(*srcrow)[3] =
               (ushort(*)[3]) & c3image[(row + S.top_margin) * S.raw_pitch];
           ushort(*dstrow)[4] = (ushort(*)[4]) & imgdata.image[row * S.width];
-          for (int col = 0; col < S.width; col++)
+          for (int col = 0; col < copywidth; col++)
           {
             for (int c = 0; c < 3; c++)
               dstrow[col][c] = srcrow[S.left_margin + col][c];
@@ -192,7 +197,11 @@ int LibRaw::raw2image(void)
         LIBRAW_PROGRESS_SIZE_ADJUST | LIBRAW_PROGRESS_LOAD_RAW;
     return 0;
   }
-  catch (LibRaw_exceptions err)
+  catch (const std::bad_alloc&)
+  {
+      EXCEPTION_HANDLER(LIBRAW_EXCEPTION_ALLOC);
+  }
+  catch (const LibRaw_exceptions& err)
   {
     EXCEPTION_HANDLER(err);
   }
@@ -201,16 +210,15 @@ int LibRaw::raw2image(void)
 void LibRaw::copy_fuji_uncropped(unsigned short cblack[4],
                                  unsigned short *dmaxp)
 {
-  int row;
 #if defined(LIBRAW_USE_OPENMP)
-#pragma omp parallel for default(shared)
+#pragma omp parallel for schedule(dynamic) default(none) firstprivate(cblack) shared(dmaxp)
 #endif
-  for (row = 0; row < int(S.raw_height) - int(S.top_margin) * 2; row++)
+  for (int row = 0; row < int(S.raw_height) - int(S.top_margin) * 2; row++)
   {
     int col;
     unsigned short ldmax = 0;
     for (col = 0;
-         col < IO.fuji_width << !libraw_internal_data.unpacker_data.fuji_layout
+         col < IO.fuji_width << int(!libraw_internal_data.unpacker_data.fuji_layout)
          && col + int(S.left_margin) < int(S.raw_width);
          col++)
     {
@@ -256,12 +264,11 @@ void LibRaw::copy_fuji_uncropped(unsigned short cblack[4],
 void LibRaw::copy_bayer(unsigned short cblack[4], unsigned short *dmaxp)
 {
   // Both cropped and uncropped
-  int row;
-  int maxHeight = MIN(S.height,S.raw_height-S.top_margin);
+  int maxHeight = MIN(int(S.height),int(S.raw_height)-int(S.top_margin));
 #if defined(LIBRAW_USE_OPENMP)
-#pragma omp parallel for default(shared)
+#pragma omp parallel for schedule(dynamic) default(none) shared(dmaxp) firstprivate(cblack, maxHeight)
 #endif
-  for (row = 0; row < maxHeight ; row++)
+  for (int row = 0; row < maxHeight ; row++)
   {
     int col;
     unsigned short ldmax = 0;
@@ -279,9 +286,7 @@ void LibRaw::copy_bayer(unsigned short cblack[4], unsigned short *dmaxp)
       }
       else
         val = 0;
-      imgdata
-          .image[((row) >> IO.shrink) * S.iwidth + ((col) >> IO.shrink)][cc] =
-          val;
+      imgdata.image[((row) >> IO.shrink) * S.iwidth + ((col) >> IO.shrink)][cc] = val;
     }
 #if defined(LIBRAW_USE_OPENMP)
 #pragma omp critical(dataupdate)
@@ -322,11 +327,11 @@ int LibRaw::raw2image_ex(int do_subtract_black)
     if (~O.cropbox[2] && ~O.cropbox[3])
     {
       int crop[4], c, filt;
-      for (int c = 0; c < 4; c++)
+      for (int q = 0; q < 4; q++)
       {
-        crop[c] = O.cropbox[c];
-        if (crop[c] < 0)
-          crop[c] = 0;
+        crop[q] = O.cropbox[q];
+        if (crop[q] < 0)
+          crop[q] = 0;
       }
 
       if (IO.fuji_width && imgdata.idata.filters >= 1000)
@@ -380,7 +385,7 @@ int LibRaw::raw2image_ex(int do_subtract_black)
 
     if (IO.fuji_width && do_crop)
     {
-      int IO_fw = S.width >> !libraw_internal_data.unpacker_data.fuji_layout;
+      int IO_fw = S.width >> int(!libraw_internal_data.unpacker_data.fuji_layout);
       int t_alloc_width =
           (S.height >> libraw_internal_data.unpacker_data.fuji_layout) + IO_fw;
       int t_alloc_height = t_alloc_width - 1;
@@ -397,7 +402,6 @@ int LibRaw::raw2image_ex(int do_subtract_black)
     }
     else
       imgdata.image = (ushort(*)[4])calloc(alloc_sz, sizeof(*imgdata.image));
-    merror(imgdata.image, "raw2image_ex()");
 
     libraw_decoder_info_t decoder_info;
     get_decoder_info(&decoder_info);
@@ -412,6 +416,10 @@ int LibRaw::raw2image_ex(int do_subtract_black)
         cblack[i] = (unsigned short)C.cblack[i];
     }
 
+    // Max area size to definitely not overrun in/out buffers
+    int copyheight = MAX(0, MIN(int(S.height), int(S.raw_height) - int(S.top_margin)));
+    int copywidth = MAX(0, MIN(int(S.width), int(S.raw_width) - int(S.left_margin)));
+
     // Move saved bitmap to imgdata.image
     if ((imgdata.idata.filters || P1.colors == 1) && imgdata.rawdata.raw_image)
     {
@@ -420,9 +428,9 @@ int LibRaw::raw2image_ex(int do_subtract_black)
         if (do_crop)
         {
           IO.fuji_width =
-              S.width >> !libraw_internal_data.unpacker_data.fuji_layout;
+              S.width >> int(!libraw_internal_data.unpacker_data.fuji_layout);
           int IO_fwidth =
-              (S.height >> libraw_internal_data.unpacker_data.fuji_layout) +
+              (S.height >> int(libraw_internal_data.unpacker_data.fuji_layout)) +
               IO.fuji_width;
           int IO_fheight = IO_fwidth - 1;
 
@@ -480,37 +488,31 @@ int LibRaw::raw2image_ex(int do_subtract_black)
     {
       if (imgdata.rawdata.color4_image)
       {
-        if (S.raw_pitch != S.width * 8)
-        {
-          for (int row = 0; row < S.height && row + S.top_margin < S.raw_height;
-               row++)
-            memmove(&imgdata.image[row * S.width],
-                    &imgdata.rawdata
-                         .color4_image[(row + S.top_margin) * S.raw_pitch / 8 +
-                                       S.left_margin],
-                    MIN(S.width, S.raw_width - S.left_margin) *
-                        sizeof(*imgdata.image));
-        }
-        else
-        {
-          // legacy is always 4channel and not shrinked!
-          memmove(imgdata.image, imgdata.rawdata.color4_image,
-                  MAX(0,MIN(S.raw_width - S.left_margin, S.width)) *
-                      MAX(0,MIN(S.raw_height - S.top_margin, S.height)) *
-                      sizeof(*imgdata.image));
-        }
+          if (S.raw_pitch != S.width * 8u || S.height != S.raw_height)
+          {
+              for (int row = 0; row < copyheight; row++)
+                  memmove(&imgdata.image[row * S.width],
+                      &imgdata.rawdata
+                      .color4_image[(row + S.top_margin) * S.raw_pitch / 8 +
+                      S.left_margin],
+                      copywidth * sizeof(*imgdata.image));
+          }
+          else
+          {
+              // legacy is always 4channel and not shrinked!
+              memmove(imgdata.image, imgdata.rawdata.color4_image,
+                  S.width*copyheight * sizeof(*imgdata.image));
+          }
       }
       else if (imgdata.rawdata.color3_image)
       {
-        unsigned char *c3image = (unsigned char *)imgdata.rawdata.color3_image;
-        for (int row = 0; row < S.height && row + S.top_margin < S.raw_height;
-             row++)
+          unsigned char *c3image = (unsigned char *)imgdata.rawdata.color3_image;
+          for (int row = 0; row < copyheight; row++)
         {
           ushort(*srcrow)[3] =
               (ushort(*)[3]) & c3image[(row + S.top_margin) * S.raw_pitch];
           ushort(*dstrow)[4] = (ushort(*)[4]) & imgdata.image[row * S.width];
-          for (int col = 0; col < S.width && col + S.left_margin < S.raw_width;
-               col++)
+          for (int col = 0; col < copywidth; col++)
           {
             for (int c = 0; c < 3; c++)
               dstrow[col][c] = srcrow[S.left_margin + col][c];
@@ -551,7 +553,7 @@ int LibRaw::raw2image_ex(int do_subtract_black)
         LIBRAW_PROGRESS_SIZE_ADJUST | LIBRAW_PROGRESS_LOAD_RAW;
     return 0;
   }
-  catch (LibRaw_exceptions err)
+  catch (const LibRaw_exceptions& err)
   {
     EXCEPTION_HANDLER(err);
   }

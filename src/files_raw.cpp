@@ -867,27 +867,16 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 
 	add_metadata(kv, u8"Full size"sv, str::format(u8"{:4} x {}"sv, S.raw_width, S.raw_height));
 
-	if (S.raw_inset_crop.cwidth)
+	if (S.raw_inset_crops[0].cwidth)
 	{
-		auto s = str::format(u8"{:4} x {} u8"sv, S.raw_inset_crop.cwidth, S.raw_inset_crop.cheight);
+		auto s = str::format(u8"{:4} x {} u8"sv, S.raw_inset_crops[0].cwidth, S.raw_inset_crops[0].cheight);
 
-		if (S.raw_inset_crop.cleft != 0xffff)
-			s += str::format(u8" left {}"sv, S.raw_inset_crop.cleft);
-		if (S.raw_inset_crop.ctop != 0xffff)
-			s += str::format(u8" top {}"sv, S.raw_inset_crop.ctop);
+		if (S.raw_inset_crops[0].cleft != 0xffff)
+			s += str::format(u8" left {}"sv, S.raw_inset_crops[0].cleft);
+		if (S.raw_inset_crops[0].ctop != 0xffff)
+			s += str::format(u8" top {}"sv, S.raw_inset_crops[0].ctop);
 
 		add_metadata(kv, u8"Raw inset, width x height"sv, s);
-	}
-
-	const auto* const Aspect = lookup_id2hr(S.raw_inset_crop.aspect, AspectRatios, nAspectRatios);
-
-	if (Aspect)
-	{
-		add_metadata(kv, u8"Aspect"sv, Aspect->name);
-	}
-	else
-	{
-		add_metadata(kv, u8"Aspect"sv, str::format(u8"Other {}"sv, S.raw_inset_crop.aspect));
 	}
 
 	add_metadata(kv, u8"Image size"sv, str::format(u8"{:4} x {}"sv, S.width, S.height));
@@ -911,22 +900,6 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 		add_metadata(kv, u8"SensorWidth"sv, str::to_string(Canon.SensorWidth));
 	if (Canon.SensorHeight)
 		add_metadata(kv, u8"SensorHeight"sv, str::to_string(Canon.SensorHeight));
-	if (Canon.SensorLeftBorder != -1)
-		add_metadata(kv, u8"SensorLeftBorder"sv, str::to_string(Canon.SensorLeftBorder));
-	if (Canon.SensorTopBorder != -1)
-		add_metadata(kv, u8"SensorTopBorder"sv, str::to_string(Canon.SensorTopBorder));
-	if (Canon.SensorRightBorder)
-		add_metadata(kv, u8"SensorRightBorder"sv, str::to_string(Canon.SensorRightBorder));
-	if (Canon.SensorBottomBorder)
-		add_metadata(kv, u8"SensorBottomBorder"sv, str::to_string(Canon.SensorBottomBorder));
-	if (Canon.BlackMaskLeftBorder)
-		add_metadata(kv, u8"BlackMaskLeftBorder"sv, str::to_string(Canon.BlackMaskLeftBorder));
-	if (Canon.BlackMaskTopBorder)
-		add_metadata(kv, u8"BlackMaskTopBorder"sv, str::to_string(Canon.BlackMaskTopBorder));
-	if (Canon.BlackMaskRightBorder)
-		add_metadata(kv, u8"BlackMaskRightBorder"sv, str::to_string(Canon.BlackMaskRightBorder));
-	if (Canon.BlackMaskBottomBorder)
-		add_metadata(kv, u8"BlackMaskBottomBorder"sv, str::to_string(Canon.BlackMaskBottomBorder));
 
 	if (Hasselblad.BaseISO)
 		add_metadata(kv, u8"Hasselblad base ISO"sv, str::to_string(Hasselblad.BaseISO));
@@ -1244,7 +1217,7 @@ static raw_processor create_processor()
 
 	result.dng = std::make_unique<dng_host>();
 	result.processor->set_dng_host(result.dng.get());
-	result.processor->imgdata.params.use_dngsdk = LIBRAW_DNG_ALL;
+	//result.processor->imgdata.params.use_dngsdk = LIBRAW_DNG_ALL;
 	// LIBRAW_DNG_FLOAT | LIBRAW_DNG_LINEAR | LIBRAW_DNG_XTRANS | LIBRAW_DNG_OTHER;
 
 	return std::move(result);
@@ -1312,7 +1285,7 @@ file_load_result load_raw(const df::file_path path, const bool can_load_preview)
 	const auto w = platform::to_file_system_path(path);
 	const auto rp = create_processor();
 
-	if (rp.processor->open_file(w.c_str(), LIBRAW_OPEN_BIGFILE) == LIBRAW_SUCCESS)
+	if (rp.processor->open_file(w.c_str()) == LIBRAW_SUCCESS)
 	{
 		file_scan_result md;
 		const auto& image_data = rp.processor->imgdata;
