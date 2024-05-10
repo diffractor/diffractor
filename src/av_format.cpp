@@ -114,10 +114,6 @@ static df::blob unescape_xmp(const char* sz)
 
 double get_rotation(AVStream* st)
 {
-	const AVDictionaryEntry* rotate_tag = av_dict_get(st->metadata, "rotate", nullptr, 0);
-	//uint8_t* displaymatrix = av_stream_get_side_data(st,
-	//                                                 AV_PKT_DATA_DISPLAYMATRIX, nullptr);
-
 	const AVPacketSideData* side_data = av_packet_side_data_get(st->codecpar->coded_side_data,
 		st->codecpar->nb_coded_side_data,
 		AV_PKT_DATA_DISPLAYMATRIX);
@@ -127,15 +123,8 @@ double get_rotation(AVStream* st)
 	if (side_data)
 	{
 		const auto *display_matrix = reinterpret_cast<const int32_t*>(side_data->data);
-
-		if (rotate_tag && *rotate_tag->value && strcmp(rotate_tag->value, "0"))
-		{
-			char* tail;
-			theta = av_strtod(rotate_tag->value, &tail);
-			if (*tail)
-				theta = 0.0;
-		}
-		if (display_matrix && abs(theta) > 0.0)
+		
+		if (display_matrix)
 		{
 			theta = -av_display_rotation_get(std::bit_cast<int32_t*>(display_matrix));
 		}
@@ -1285,6 +1274,27 @@ ui::orientation av_format_decoder::calc_orientation() const
 	return calc_orientation_impl(_rotation);
 }
 
+void av_format_decoder::update_orientation(AVFrame* frame)
+{
+	if (frame)
+	{
+		AVFrameSideData* side_data = av_frame_get_side_data(frame, AV_FRAME_DATA_DISPLAYMATRIX);
+		double theta = 0.0;
+
+		if (side_data)
+		{
+			const auto* display_matrix = reinterpret_cast<const int32_t*>(side_data->data);
+
+			if (display_matrix)
+			{
+				theta = -av_display_rotation_get(std::bit_cast<int32_t*>(display_matrix));
+			}
+
+			_rotation -= 360 * floor(theta / 360 + 0.9 / 360);
+		}
+	}
+}
+
 bool av_format_decoder::decode_frame(ui::surface_ptr& dest_surface, AVCodecContext* ctx, const av_packet_ptr& packet,
                                      double audio_time, const sizei max_dim)
 {
@@ -1883,6 +1893,8 @@ void av_format_decoder::receive_frames(av_packet_queue& packets, av_frame_queue&
 
 						while (rec_res == 0)
 						{
+							update_orientation(&frame->frm);
+
 							frame->gen = seek_ver;
 							frame->time = calc_duration(pts_c->guess(frame->frm.pts, frame->frm.pkt_dts), base, start);
 							frame->orientation = calc_orientation();

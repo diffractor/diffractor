@@ -94,7 +94,7 @@ private:
 	mutable pointi _last_frame_offset;
 
 	av_frame_ptr _frame;
-	ui::orientation _orientation = ui::orientation::none;
+	ui::orientation _default_orientation = ui::orientation::none;
 
 	std::shared_ptr<audio_resampler> _playback_resampler;
 	std::shared_ptr<audio_resampler> _vis_resampler;
@@ -226,7 +226,7 @@ public:
 			/*file_scanner sr;
 			_decoder.extract_metadata(sr);
 			_metadata = sr.to_props();*/
-			_orientation = _decoder.calc_orientation();
+			_default_orientation = _decoder.calc_orientation();
 
 			_playback_resampler.reset();
 			_vis_resampler.reset();

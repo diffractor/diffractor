@@ -358,7 +358,9 @@ private:
 	int64_t _video_start_time = 0;
 	int64_t _audio_start_time = 0;
 
+	void update_orientation(AVFrame* frame);
 	ui::orientation calc_orientation() const;
+
 	bool decode_frame(ui::surface_ptr& dest_surface, AVCodecContext* ctx, const av_packet_ptr& packet,
 	                  double audio_time, sizei max_dim);
 

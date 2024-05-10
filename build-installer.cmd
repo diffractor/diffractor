@@ -1,6 +1,6 @@
 
 rem set VSDIR=C:\Program Files\Microsoft Visual Studio\2022\Enterprise
-set VSDIR=C:\Program Files\Microsoft Visual Studio\2022\Preview
+set VSDIR=%VSINSTALLDIR%
 set TOOLSDIR=tools
 set MSBUILDDIR=%VSDIR%\Msbuild\Current\Bin
 
