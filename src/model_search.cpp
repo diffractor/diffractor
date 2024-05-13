@@ -1252,7 +1252,7 @@ df::search_result compare_text(const df::search_term& term, const df::index_file
 	//if (str::contains(prop::format_date(file.file_modified, false), text)) return true;
 	//if (str::contains(prop::format_date(file.file_created, false), text)) return true;
 
-	const auto md = file.metadata;
+	const auto md = file.metadata.load();;
 
 	if (md)
 	{
@@ -1348,7 +1348,7 @@ df::search_result compare_text(const df::search_term& term, const df::index_file
 
 		//if (str::contains(prop::format_gps(md->coordinate), text)) return true;
 
-		const auto md = file.metadata;
+		const auto md = file.metadata.load();
 
 		compare_result comp_result;
 		prop::key_ref key = prop::null;
@@ -1402,7 +1402,7 @@ static compare_result compare_val(const df::search_term& term, const df::index_f
 	if (t == prop::modified && !prop::is_null(file.file_modified)) return compare_term(term, file.file_modified);
 	if (t == prop::file_size && !file.size.is_empty()) return compare_file_size(term, file.size.to_int64());
 
-	const auto md = file.metadata;
+	const auto md = file.metadata.load();
 
 	if (md)
 	{
@@ -1523,7 +1523,7 @@ bool has_type(const prop::key_ref t, const df::index_file_item& file)
 	if (t == prop::modified) return !prop::is_null(file.file_modified);
 	if (t == prop::file_size) return !file.size.is_empty();
 
-	const auto md = file.metadata;
+	const auto md = file.metadata.load();
 
 	if (md)
 	{
@@ -1657,7 +1657,7 @@ static bool is_date_match(const df::search_term& term, const df::index_file_item
 
 	if (term.date_val.target == df::date_parts_prop::created || is_any)
 	{
-		const auto md = file.metadata;
+		const auto md = file.metadata.load();
 
 		if (md)
 		{
@@ -1788,7 +1788,7 @@ df::search_result df::search_matcher::match_term(const index_file_item& file, co
 	}
 	else if (term.type == search_term_type::location)
 	{
-		const auto md = file.metadata;
+		const auto md = file.metadata.load();
 		const auto match_location =
 			term.coord_val.is_valid() &&
 			md &&

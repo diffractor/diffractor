@@ -1050,6 +1050,8 @@ void av_format_decoder::init_streams(int video_track, int audio_track, bool can_
 				avcodec_parameters_to_context(vc, video_stream->codecpar);
 
 				vc->workaround_bugs = FF_BUG_AUTODETECT;
+				vc->thread_count = 4;
+				vc->thread_type = FF_THREAD_FRAME;
 
 				if (can_use_hw)
 				{

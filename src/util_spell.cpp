@@ -90,6 +90,7 @@ void spell_check::lazy_download(df::async_i& async)
 		u8"hu-HU"sv,
 		u8"id_ID"sv,
 		u8"it_IT"sv,
+		u8"ja_JP"sv,
 		u8"lt_LT"sv,
 		u8"lv_LV"sv,
 		u8"nb_NO"sv,

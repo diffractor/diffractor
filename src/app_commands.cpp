@@ -2664,7 +2664,7 @@ static import_analysis_result import_analysis(const std::vector<folder_scan_item
 	{
 		if (token.is_cancelled()) break;
 
-		const auto md = i.item.metadata;
+		const auto md = i.item.metadata.load();
 
 		df::date_t created;
 

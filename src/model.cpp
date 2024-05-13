@@ -1643,7 +1643,7 @@ public:
 						table->add(i->name(), platform::format_date(i->file_modified().system_to_local()),
 						           prop::format_size(i->file_size()));
 
-						for (auto d : dups)
+						for (const auto &d : dups)
 						{
 							if (d.first != i->path())
 							{

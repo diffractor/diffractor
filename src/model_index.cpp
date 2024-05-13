@@ -66,7 +66,7 @@ struct dup_key
 
 static dup_key calc_dup_key(const df::index_file_item& i, const df::file_path id)
 {
-	const auto md = i.metadata;
+	const auto md = i.metadata.load();
 
 	if (md)
 	{
@@ -634,7 +634,7 @@ void populate_file_info(df::index_file_item& file_node, const platform::file_inf
 	if (fd.attributes.is_offline) file_node.flags |= df::index_item_flags::is_offline;
 	file_node.size = fd.attributes.size;
 
-	auto md = file_node.metadata;
+	auto md = file_node.metadata.load();
 
 	if (file_node.name != name)
 	{
@@ -792,7 +792,7 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 
 					// copy: in both
 					df::index_file_item info = *old_first;
-					info.metadata = old_first->metadata;
+					info.metadata.store(old_first->metadata);
 					info.metadata_scanned = old_first->metadata_scanned;
 					info.crc32c = old_first->crc32c;
 					populate_file_info(info, *file_first, _cache_items_loaded);
@@ -1011,7 +1011,7 @@ void index_state::update_predictions()
 			{
 				if (df::is_closing) return;
 				const auto file_item_p = &file;
-				const auto md = file.metadata; // important to hold ref
+				const auto md = file.metadata.load(); // important to hold ref
 
 				if (md)
 				{
@@ -1187,7 +1187,7 @@ void index_state::update_summary()
 			for (const auto& file : ifn.second->files)
 			{
 				if (df::is_closing) return;
-				const auto md = file.metadata;
+				const auto md = file.metadata.load();
 
 				if (md)
 				{
@@ -1652,16 +1652,17 @@ void index_state::scan_item(const df::index_folder_item_ptr& folder,
 					}
 
 					const auto item_has_no_thumb = item && !item->has_thumb();
-					const auto scan_has_thumbnail = is_valid(thumbnail_surface) || is_valid(thumbnail_image);					
+					const auto scan_has_thumbnail = is_valid(thumbnail_surface) || is_valid(thumbnail_image);
+					const auto existing_metadata = found_file->metadata.load();
 
-					if (found_file->metadata && metadata)
+					if (existing_metadata && metadata)
 					{
-						metadata->sidecars = found_file->metadata->sidecars;
-						metadata->xmp = found_file->metadata->xmp;
+						metadata->sidecars = existing_metadata->sidecars;
+						metadata->xmp = existing_metadata->xmp;
 					}
 
 					found_file->metadata_scanned = now;
-					found_file->metadata = metadata;
+					found_file->metadata.store(metadata);
 					found_file->crc32c = sr.crc32c;
 					metadata->file_name = file_path.name();
 
@@ -1773,7 +1774,7 @@ void index_histograms::record(const location_cache& locations, const df::index_f
 	constexpr auto map_width = static_cast<int>(df::location_heat_map::map_width);
 	constexpr auto map_height = static_cast<int>(df::location_heat_map::map_height);
 
-	const auto md = file.metadata;
+	const auto md = file.metadata.load();
 	auto created = file.file_created;
 
 	if (md)

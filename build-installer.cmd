@@ -35,7 +35,7 @@ TIMEOUT 1
 if %errorlevel% neq 0 exit /b %errorlevel%
 TIMEOUT 1
 
-"C:\Program Files (x86)\NSIS\makensis.exe" installer\diff.nsi
+"C:\Program Files (x86)\NSIS\makensis.exe" /INPUTCHARSET UTF8 installer\diff.nsi
 if %errorlevel% neq 0 exit /b %errorlevel%
 
 "%TOOLSDIR%\signtool" sign /fd SHA1 /t http://timestamp.sectigo.com /a /d Diffractor /n Zachariah diffractor-setup.exe

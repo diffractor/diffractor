@@ -90,10 +90,10 @@ static bool xmp_decode_rational(const std::u8string_view text, metadata_exif::ur
 {
 	const auto len = text.size();
 	unsigned long locNum = 0, locDenom = 0;
-	char8_t nextChar = 0; // Used to make sure sscanf consumes all of the string.
+	char nextChar = 0; // Used to make sure sscanf consumes all of the string.
 	const auto* const sz = std::bit_cast<const char*>(text.data());
 
-	const int items = _snscanf_s(sz, len, "%lu/%lu%c", &locNum, &locDenom, &nextChar);
+	const int items = _snscanf_s(sz, len, "%lu/%lu%c", &locNum, &locDenom, &nextChar, 1);
 	// AUDIT: This is safe, check the calls.
 
 	if (items != 2)
@@ -584,7 +584,7 @@ void metadata_edits::apply(SXMPMeta& meta) const
 
 		meta.DeleteProperty(kXMP_NS_DC, "subject");
 
-		for (auto i = 0; i < tags.size(); i++)
+		for (auto i = 0u; i < tags.size(); i++)
 		{
 			meta.AppendArrayItem(kXMP_NS_DC, "subject", kXMP_PropValueIsArray, str::utf8_cast2(tags[i]));
 		}

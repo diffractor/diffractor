@@ -1706,7 +1706,7 @@ void df::index_file_item::calc_bloom_bits() const
 	bloom = {};
 	bloom.types |= ft->group->bloom_bit();
 
-	const auto md = metadata;
+	const auto md = metadata.load();
 
 	if (md)
 	{
@@ -2539,7 +2539,7 @@ void df::file_item::open(view_state& s, const view_host_base_ptr& view) const
 
 void df::file_item::update(const file_path path, const index_file_item& info) noexcept
 {
-	const auto md = info.metadata;
+	const auto md = info.metadata.load();
 
 	_name = path.name();
 	_online_status = info.calc_online_status();

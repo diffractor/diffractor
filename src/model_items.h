@@ -254,25 +254,89 @@ namespace df
 		date_t file_created;
 		date_t file_modified;
 		mutable date_t metadata_scanned;
-		mutable prop::item_metadata_ptr metadata;
+		mutable prop::item_metadata_aptr metadata;
 		mutable bloom_bits bloom;
 		mutable duplicate_info duplicates;
 		mutable uint32_t crc32c = 0;
 
-		index_file_item() noexcept = default;
-		index_file_item(const index_file_item&) noexcept = default;
-		index_file_item& operator=(const index_file_item&) noexcept = default;
+		index_file_item() = default;
 
-		index_file_item(index_file_item&&) noexcept = default;
-		index_file_item& operator=(index_file_item&&) noexcept = default;
+		index_file_item(const index_file_item& other)
+			: flags(other.flags),
+			  ft(other.ft),
+			  name(other.name),
+			  size(other.size),
+			  file_created(other.file_created),
+			  file_modified(other.file_modified),
+			  metadata_scanned(other.metadata_scanned),
+			  metadata(other.metadata.load()),
+			  bloom(other.bloom),
+			  duplicates(other.duplicates),
+			  crc32c(other.crc32c)
+		{
+		}
+
+		index_file_item(index_file_item&& other) noexcept
+			: flags(other.flags),
+			  ft(other.ft),
+			  name(std::move(other.name)),
+			  size(std::move(other.size)),
+			  file_created(std::move(other.file_created)),
+			  file_modified(std::move(other.file_modified)),
+			  metadata_scanned(std::move(other.metadata_scanned)),
+			  metadata(other.metadata.load()),
+			  bloom(std::move(other.bloom)),
+			  duplicates(std::move(other.duplicates)),
+			  crc32c(other.crc32c)
+		{
+			other.metadata.store(nullptr);
+		}
+
+		index_file_item& operator=(const index_file_item& other)
+		{
+			if (this == &other)
+				return *this;
+			flags = other.flags;
+			ft = other.ft;
+			name = other.name;
+			size = other.size;
+			file_created = other.file_created;
+			file_modified = other.file_modified;
+			metadata_scanned = other.metadata_scanned;
+			metadata.store(other.metadata.load());
+			bloom = other.bloom;
+			duplicates = other.duplicates;
+			crc32c = other.crc32c;
+			return *this;
+		}
+
+		index_file_item& operator=(index_file_item&& other) noexcept
+		{
+			if (this == &other)
+				return *this;
+			flags = other.flags;
+			ft = other.ft;
+			name = std::move(other.name);
+			size = std::move(other.size);
+			file_created = std::move(other.file_created);
+			file_modified = std::move(other.file_modified);
+			metadata_scanned = std::move(other.metadata_scanned);
+			metadata.store(other.metadata.load());
+			other.metadata.store(nullptr);
+			bloom = std::move(other.bloom);
+			duplicates = std::move(other.duplicates);
+			crc32c = other.crc32c;
+			return *this;
+		}
 
 		date_t created() const
 		{
 			date_t d;
+			const auto md = metadata.load();
 
-			if (metadata)
+			if (md)
 			{
-				d = metadata->created();
+				d = md->created();
 			}
 
 			return d.is_valid() ? d : file_created;
@@ -288,13 +352,13 @@ namespace df
 
 		prop::item_metadata_ptr safe_ps() const
 		{
-			auto result = metadata;
+			auto result = metadata.load();
 
 			if (!result)
 			{
 				// slight safety around the not returning an invalid result;
 				result = std::make_shared<prop::item_metadata>();
-				metadata = result;
+				metadata.store(result);
 			}
 
 			return result;
@@ -302,7 +366,8 @@ namespace df
 
 		str::cached xmp() const
 		{
-			return metadata ? metadata->xmp : str::cached{};
+			const auto md = metadata.load();
+			return md ? md->xmp : str::cached{};
 		}
 
 		bool operator<(const str::cached other) const

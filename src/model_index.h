@@ -504,7 +504,7 @@ public:
 			{
 				for (const auto& file : folder.second->files)
 				{
-					const auto md = file.metadata;
+					const auto md = file.metadata.load();
 					if (file.ft->can_cache() && md)
 					{
 						item_db_write write;

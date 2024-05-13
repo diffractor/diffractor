@@ -1737,11 +1737,13 @@ static void should_store_item_properties()
 	db.load_index_values();
 
 	auto item = index.find_item(file_path);
-	assert_metadata(*md, *item.metadata, u8"index"sv);
+	auto item_md = item.metadata.load();
+
+	assert_metadata(*md, *item_md, u8"index"sv);
 	assert_equal(crc32c_expected, item.crc32c, u8"index crc32"sv);
-	assert_equal(static_cast<int>(media_pos), static_cast<int>(item.metadata->media_position),
+	assert_equal(static_cast<int>(media_pos), static_cast<int>(item_md->media_position),
 	             u8"index media position"sv);
-	assert_equal(md->orientation, item.metadata->orientation, u8"index orientation"sv);
+	assert_equal(md->orientation, item_md->orientation, u8"index orientation"sv);
 
 	const auto reloaded_crc = platform::file_crc32(file_path);
 	assert_equal(reloaded_crc, item.crc32c, u8"platform::file_crc32 crc32"sv);

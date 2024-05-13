@@ -1,0 +1,4696 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: diffractor in japanese\n"
+"POT-Creation-Date: \n"
+"PO-Revision-Date: \n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Language: ja\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+"X-Generator: Poedit 3.3.2\n"
+
+#. about_info
+msgid ""
+"Diffractor provides simple tools to make you more productive when sorting, "
+"comparing and organizing photos or videos."
+msgstr ""
+"Diffractor は、写真やビデオを分類、比較、整理する際に生産性を高めるシンプルな"
+"ツールを提供します。"
+
+#. adjust_date_help
+msgid ""
+"Items in this date range will be modified to start at a new date and time. "
+"The time gap between items will be preserved.\n"
+"For example, if you have 2 photos taken one hour apart, after the update "
+"they will still be one hour apart.\n"
+"This is useful if your camera date was set wrongly and you need to fix photo "
+"and video dates."
+msgstr ""
+"この日付範囲の項目は、新しい日付と時刻に開始するように変更されます。アイテム"
+"間の時間差は保持されます。\n"
+"例えば、1時間間隔で撮影された2枚の写真がある場合、更新後も1時間間隔のままで"
+"す。\n"
+"これは、カメラの日付設定が間違っていて、写真やビデオの日付を修正する必要があ"
+"る場合に便利です。"
+
+#. after
+msgid "After"
+msgstr "変更後"
+
+#. album_artist
+msgid "Album Artist"
+msgstr "アルバム・アーティスト"
+
+#. archive
+msgid "archive"
+msgstr "アーカイブ"
+
+#. archives
+msgid "archives"
+msgstr "アーカイブ"
+
+#. ask_question
+msgid "Ask the Diffractor team a question."
+msgstr "Diffractorチームに質問する。"
+
+#. audio
+msgid "audio"
+msgstr "オーディオ"
+
+#. stream_name_fmt
+msgid "Stream {}"
+msgstr "ストリーム {}"
+
+#. stream_select_fmt
+msgid "Click to select stream '{}'"
+msgstr "クリックしてストリーム '{}' を選択"
+
+#. authorized
+msgid "Diffractor has been authorized"
+msgstr "Diffractor が認証されました"
+
+#. before
+msgid "Before"
+msgstr "変更前"
+
+#. brightness
+msgid "Brightness"
+msgstr "明るさ"
+
+#. burn_title
+msgid "Burn"
+msgstr "ディスクに書き込み"
+
+#. button_background
+msgid "&Background"
+msgstr "背景(&B)"
+
+#. button_cancel
+msgid "&Cancel"
+msgstr "キャンセル(&C)"
+
+#. button_change
+msgid "Change..."
+msgstr "変更..."
+
+#. button_close
+msgid "&Close"
+msgstr "閉じる(&C)"
+
+#. button_convert
+msgid "&Convert"
+msgstr "変換(&C)"
+
+#. button_delete
+msgid "&Delete"
+msgstr "削除(&D)"
+
+#. button_dont_save
+msgid "&Don't Save"
+msgstr "保存しない(&D)"
+
+#. button_import
+msgid "&Import"
+msgstr "インポート(&I)"
+
+#. button_ok
+msgid "&OK"
+msgstr "OK(&O)"
+
+#. button_rotate
+msgid "&Rotate"
+msgstr "回転(&R)"
+
+#. button_save
+msgid "&Save"
+msgstr "保存(&S)"
+
+#. button_save_as_jpeg
+msgid "As &JPEG"
+msgstr "JPEG として保存(&J)"
+
+#. button_send
+msgid "&Send"
+msgstr "送信(&S)"
+
+#. button_tag
+msgid "&Tag"
+msgstr "タグ(&T)"
+
+#. button_update
+msgid "&Update"
+msgstr "アップデート(&U)"
+
+#. cancel_was_pressed_after
+msgid "Cancel was pressed after "
+msgstr "キャンセルが押されました "
+
+#. cannot_edit
+msgid "Cannot updated metadata of this file type."
+msgstr "このファイル タイプのメタデータは更新できません。"
+
+#. changes
+msgid "Changes"
+msgstr "変更"
+
+#. click_to_search
+msgid "Click to search for similar items in the collection."
+msgstr "クリックしてコレクション内の類似アイテムを検索。"
+
+#. close
+msgid "Close"
+msgstr "閉じる"
+
+#. color
+msgid "Color"
+msgstr "色"
+
+#. command_adjust_date
+msgid "Adjust date and time"
+msgstr "日付と時刻を調整"
+
+#. command_album_artist
+msgid "Update artist and album"
+msgstr "アーティストとアルバムを更新"
+
+#. command_app_exit
+msgid "Exit"
+msgstr "終了"
+
+#. command_browse_back
+msgid "Back"
+msgstr "戻る"
+
+#. command_browse_forward
+msgid "Forward"
+msgstr "進む"
+
+#. command_browse_next_folder
+msgid "Next folder or search"
+msgstr "次のフォルダーまたは検索"
+
+#. command_browse_next_group
+msgid "Next item group"
+msgstr "次の項目グループ"
+
+#. command_browse_next_item
+msgid "Select next item"
+msgstr "次の項目を選択"
+
+#. command_browse_next_item_extend
+msgid "Extend selection to next item"
+msgstr "選択範囲を次の項目まで拡張する"
+
+#. command_browse_parent
+msgid "Parent"
+msgstr "親フォルダー"
+
+#. command_browse_previous_folder
+msgid "Previous folder or search"
+msgstr "前のフォルダーまたは検索"
+
+#. command_browse_previous_group
+msgid "Previous item group"
+msgstr "前の項目グループ"
+
+#. command_browse_previous_item
+msgid "Select previous item"
+msgstr "前の項目を選択"
+
+#. command_browse_previous_item_extend
+msgid "Extend selection to previous item"
+msgstr "選択範囲を前の項目まで拡張する"
+
+#. command_burn
+msgid "Burn to disk"
+msgstr "ディスクに書き込み"
+
+#. command_capture
+msgid "Save current video frame"
+msgstr "現在のビデオフレームを保存"
+
+#. command_close
+msgid "Cancel"
+msgstr "キャンセル"
+
+#. command_color_reset
+msgid "Reset color changes"
+msgstr "色の変更をリセット"
+
+#. command_convert
+msgid "Convert or Resize"
+msgstr "変換またはサイズ変更"
+
+#. command_copy
+msgid "Copy to folder"
+msgstr "フォルダーへコピー"
+
+#. command_copyright
+msgid "Update copyright"
+msgstr "著作権を更新"
+
+#. command_crash
+msgid "Test crash report"
+msgstr "クラッシュレポートのテスト"
+
+#. command_customise
+msgid "Customise"
+msgstr "カスタマイズ"
+
+#. command_delete
+#. menu_delete
+msgid "Delete"
+msgstr "削除"
+
+#. command_desktop_background
+msgid "Desktop background"
+msgstr "デスクトップの背景"
+
+#. command_display_options
+msgid "Display options"
+msgstr "表示オプション"
+
+#. command_download
+msgid "Download"
+msgstr "ダウンロード"
+
+#. command_edit
+msgid "Edit"
+msgstr "編集"
+
+#. command_edit_copy
+#. menu_copy
+msgid "Copy"
+msgstr "コピー"
+
+#. menu_move
+msgid "Move"
+msgstr "移動"
+
+#. command_edit_cut
+#. menu_cut
+msgid "Cut"
+msgstr "切り取り"
+
+#. command_edit_paste
+#. menu_paste
+msgid "Paste"
+msgstr "貼り付け"
+
+#. command_eject
+msgid "Eject"
+msgstr "取り出し"
+
+#. command_file_properties
+msgid "Open properties"
+msgstr "プロパティを開く"
+
+#. command_file_search
+#. nav_search_title
+msgid "Search"
+msgstr "検索"
+
+#. command_flatten
+msgid "Show items in subfolders"
+msgstr "サブフォルダー内の項目を表示"
+
+#. command_fullscreen
+msgid "Fullscreen"
+msgstr "全画面"
+
+#. command_group_album
+msgid "Group by Album/Show"
+msgstr "アルバム/番組ごとにグループ化"
+
+#. command_group_camera
+msgid "Group by Camera"
+msgstr "カメラごとにグループ化"
+
+#. command_group_created
+msgid "Group by Date Created"
+msgstr "作成日時ごとにグループ化"
+
+#. command_group_extension
+msgid "Group by Extension"
+msgstr "拡張子ごとにグループ化"
+
+#. command_group_file_type
+msgid "Group by File type"
+msgstr "ファイルの種類ごとにグループ化"
+
+#. command_group_location
+msgid "Group by Location"
+msgstr "位置情報ごとにグループ化"
+
+#. command_group_modified
+msgid "Group by Date Modified"
+msgstr "更新日時ごとにグループ化"
+
+#. command_group_pixels
+msgid "Group by Pixels"
+msgstr "ピクセルごとにグループ化"
+
+#. command_group_presence
+msgid "Group by Presence"
+msgstr "プレゼンスごとにグループ化"
+
+#. command_group_rating
+msgid "Group by Rating/Label"
+msgstr "評価/ラベルごとにグループ化"
+
+#. command_group_shuffle
+#. sort_by_shuffle
+msgid "Show items in random order"
+msgstr "項目をランダムな順序で表示"
+
+#. command_group_size
+msgid "Group by Size"
+msgstr "サイズごとにグループ化"
+
+#. command_group_size
+msgid "Group by Folder"
+msgstr "フォルダーごとにグループ化"
+
+#. command_highlight_large_items
+msgid "Highlight large items in yellow"
+msgstr "大きな項目を黄色で強調表示"
+
+#. command_import
+msgid "Import"
+msgstr "インポート"
+
+#. command_collection_options
+msgid "Collection options"
+msgstr "コレクションのオプション"
+
+#. command_keyboard
+#. keyboard_ref_title
+msgid "Keyboard reference"
+msgstr "キーボードの設定"
+
+#. command_label
+msgid "Comment:"
+msgstr "コメント :"
+
+#. command_language
+msgid "Language"
+msgstr "言語"
+
+#. command_locate
+msgid "Add location"
+msgstr "場所の追加"
+
+#. command_maximize
+msgid "Maximize"
+msgstr "最大化"
+
+#. command_menu_group_sort
+msgid "Group or Sort"
+msgstr "グループまたは並べ替え"
+
+#. command_minimize
+msgid "Minimize"
+msgstr "最小化"
+
+#. command_move
+msgid "Move to folder"
+msgstr "フォルダーへ移動"
+
+#. command_nav_bar
+msgid "Show sidebar"
+msgstr "サイドバーを表示"
+
+#. command_navigate
+msgid "Navigate"
+msgstr "ナビゲート"
+
+#. command_new_folder
+#. new_folder_name
+#. new_folder_title
+msgid "New Folder"
+msgstr "新しいフォルダー"
+
+#. command_new_version
+#. update_title
+msgid "New version available"
+msgstr "新しいバージョンが利用可能です"
+
+#. command_open
+#. keyboard_open_title
+#. open_title
+#. open_with_title
+msgid "Open"
+msgstr "開く"
+
+#. command_open_google_map
+msgid "Open in google maps"
+msgstr "グーグル マップで開く"
+
+#. command_open_with
+msgid "Open with"
+msgstr "アプリケーションから開く"
+
+#. command_options
+msgid "General options"
+msgstr "全般的なオプション"
+
+#. command_pin
+msgid "Pin or hold item"
+msgstr "項目をピン留めまたはホールド"
+
+#. command_play
+msgid "Play/Pause"
+msgstr "再生/一時停止"
+
+#. command_print
+#. print_title
+msgid "Print"
+msgstr "印刷"
+
+#. command_rate
+msgid "Rate"
+msgstr "評価"
+
+#. command_rate_0
+msgid "Remove rating"
+msgstr "評価を削除"
+
+#. command_rate_1
+msgid "Rate as 1 star"
+msgstr "星1つとして評価"
+
+#. command_rate_2
+msgid "Rate as 2 stars"
+msgstr "星2つとして評価"
+
+#. command_rate_3
+msgid "Rate as 3 stars"
+msgstr "星3つとして評価"
+
+#. command_rate_4
+msgid "Rate as 4 stars"
+msgstr "星4つとして評価"
+
+#. command_rate_5
+msgid "Rate as 5 stars"
+msgstr "星5つとして評価"
+
+#. command_refresh
+msgid "Refresh"
+msgstr "更新"
+
+#. command_related
+msgid "Duplicate or related items in the collection"
+msgstr "コレクション内の重複項目または関連項目"
+
+#. command_rename
+msgid "Rename"
+msgstr "名前の変更"
+
+#. command_repeat
+#. repeat_one_help
+msgid "Repeat play single media item"
+msgstr "単一のメディアを繰り返し再生する"
+
+#. command_repeat_toggle
+msgid "Repeat/Autoplay"
+msgstr "リピート/自動再生"
+
+#. command_restore
+msgid "Restore"
+msgstr "復元"
+
+#. command_revert
+msgid "Revert to original"
+msgstr "オリジナルに戻す"
+
+#. command_rotate_anticlockwise
+msgid "Rotate anticlockwise"
+msgstr "反時計回りに回転"
+
+#. command_rotate_clockwise
+msgid "Rotate clockwise"
+msgstr "時計回りに回転"
+
+#. command_rotate_reset
+msgid "Reset rotation"
+msgstr "回転をリセット"
+
+#. command_run_tests
+msgid "Run tests"
+msgstr "テストの実行"
+
+#. command_save
+msgid "Save and close"
+msgstr "保存して閉じる"
+
+#. command_save_and_back
+msgid "Save and open previous"
+msgstr "保存して以前のファイルを開く"
+
+#. command_save_and_next
+msgid "Save and open next"
+msgstr "保存して次次のファイルを開く"
+
+#. command_save_as
+msgid "Save as"
+msgstr "名前を付けて保存"
+
+#. command_save_options
+msgid "Change save options"
+msgstr "保存オプションの変更"
+
+#. command_scale_up
+msgid "Scale up items"
+msgstr "項目をスケールアップする"
+
+#. command_scan
+msgid "Scan"
+msgstr "スキャン"
+
+#. command_select_all
+msgid "Select all"
+msgstr "すべて選択"
+
+#. command_select_invert
+msgid "Invert selection"
+msgstr "選択を反転"
+
+#. command_select_nothing
+msgid "Select none"
+msgstr "選択解除"
+
+#. command_share_email
+msgid "Email"
+msgstr "Email"
+
+#. command_show_duplicate_marker
+msgid "Show duplicate markers in red"
+msgstr "重複したマーカーを赤で表示"
+
+#. command_show_in_file_browser
+msgid "Show in file browser"
+msgstr "ファイルブラウザで表示"
+
+#. command_show_in_folder
+msgid "Open containing folder"
+msgstr "含まれているフォルダーを開く"
+
+#. command_show_sidecar_marker
+msgid "Show sidecar markers in green"
+msgstr "サイドカー マーカーを緑色で表示"
+
+#. command_show_thumbnails
+msgid "Hide/Show thumbnails"
+msgstr "サムネイルの表示/非表示"
+
+#. command_sort_date_modified
+msgid "Sort by Date modified"
+msgstr "更新日時で並べ替え"
+
+#. command_sort_def
+msgid "Sort by Default"
+msgstr "既定の順序で並べ替え"
+
+#. command_sort_name
+msgid "Sort by Name"
+msgstr "名前で並べ替え"
+
+#. command_sort_size
+msgid "Sort by Size"
+msgstr "サイズで並べ替え"
+
+#. command_tag
+#. command_tag_with
+msgid "Tag"
+msgstr "タグ"
+
+#. command_test_new_version
+msgid "Test new version"
+msgstr "新しいバージョンのテスト"
+
+#. command_toggle_details
+msgid "Toggle thumbnails or details"
+msgstr "サムネイル/詳細表示の切り替え"
+
+#. command_toggle_item_size
+msgid "Toggle thumbnail size"
+msgstr "サムネイル サイズの切り替え"
+
+#. command_tools
+#. keyboard_tools_title
+msgid "Tools"
+msgstr "ツール"
+
+#. command_view_help
+msgid "About Diffractor"
+msgstr "バージョン情報"
+
+#. command_view_items
+msgid "Show items"
+msgstr "項目の表示"
+
+#. command_view_large_font
+msgid "Large font"
+msgstr "大きいフォント"
+
+#. command_view_menu
+msgid "Menu"
+msgstr "メニュー"
+
+#. command_view_normal_font
+msgid "Normal font"
+msgstr "標準フォント"
+
+#. command_view_rate_label
+#. keyboard_rate_label_title
+msgid "Rate or Label"
+msgstr "評価またはラベル"
+
+#. command_label_select
+msgid "Select"
+msgstr "選択"
+
+#. command_view_select
+msgid "Select Items"
+msgstr "項目の選択"
+
+#. command_view_sort
+msgid "Sort"
+msgstr "並べ替え"
+
+#. command_view_tests
+msgid "Tests"
+msgstr "テスト"
+
+#. command_zoom
+msgid "Zoom 100%"
+msgstr "ズーム 100%"
+
+#. compare
+msgid "Compare"
+msgstr "比較"
+
+#. compare_tooltip
+msgid "Hold down left mouse button to compare items."
+msgstr "マウスの左ボタンを押したままにすると項目を比較できます。"
+
+#. contrast
+msgid "Contrast"
+msgstr "コントラスト"
+
+#. copy_to_join
+msgid "to"
+msgstr "to"
+
+#. copyright
+msgid "Copyright"
+msgstr "Copyright"
+
+#. copyright_creator
+msgid "Creator"
+msgstr "作成者"
+
+#. copyright_credit
+msgid "Credit"
+msgstr "クレジット"
+
+#. copyright_url
+msgid "URL"
+msgstr "URL"
+
+#. copyright_notice
+msgid "Notice"
+msgstr "注記"
+
+#. copyright_source
+msgid "Source"
+msgstr "ソース"
+
+#. count
+msgid "Count"
+msgstr "カウント"
+
+#. customise_searches_title
+msgid "Favorite Searches"
+msgstr "お気に入りの検索"
+
+#. customise_sidebar_title
+msgid "Sidebar"
+msgstr "サイドバー"
+
+#. customise_tags_help
+msgid "Add a list of your favorite tags here to save time when tagging."
+msgstr ""
+"お気に入りのタグのリストをここに追加すると、タグ付けの時間を節約できます。"
+
+#. customise_tags_title
+#. nav_tags_title
+#. tags_favorite_label
+msgid "Favorite Tags"
+msgstr "お気に入りタグ"
+
+#. customize_show_drives
+msgid "Show drives"
+msgstr "ドライブの表示"
+
+#. customize_show_history
+msgid "Show history chart"
+msgstr "履歴チャートの表示"
+
+#. customize_show_indexed_folders
+msgid "Show indexed folders"
+msgstr "インデックス付きフォルダーを表示"
+
+#. customize_show_searches
+msgid "Show favorite searches"
+msgstr "お気に入りの検索の表示"
+
+#. customize_show_tags
+msgid "Show tags"
+msgstr "タグの表示"
+
+#. customize_show_total
+msgid "Show total items pie chart"
+msgstr "項目の合計を円グラフで表示"
+
+#. customize_show_world_map
+msgid "Show world map"
+msgstr "ワールド マップの表示"
+
+#. darks
+msgid "Darks"
+msgstr "暗い"
+
+#. dates_file_created
+msgid "File created:"
+msgstr "ファイル作成日時 :"
+
+#. dates_file_modified
+msgid "File modified:"
+msgstr "ファイル更新日時 :"
+
+#. dates_items_created_fmt
+msgid "{} items created."
+msgstr "{} 個の項目が作成されました。"
+
+#. dates_metadata_created
+msgid "Metadata created:"
+msgstr "メタデータの作成日時 :"
+
+#. dates_title
+msgid "Dates"
+msgstr "日時"
+
+#. default_favorite_tags
+msgid ""
+"family food friends landscape nature night portrait selfie todo travel urban "
+"viewed"
+msgstr ""
+"家族 食べ物 友人 風景 自然 夜 ポートレート 自分撮り 撮る 旅行 都市 閲覧"
+
+#. default_write_name
+msgid "results"
+msgstr "結果"
+
+#. defragment_and_compact
+msgid "Defragment and compact database."
+msgstr "データベースのデフラグとコンパクト化。"
+
+#. defragmenting
+msgid "Defragmenting..."
+msgstr "デフラグ中..."
+
+#. delete_error
+msgid "Failed to Delete Selected File."
+msgstr "選択したファイルの削除に失敗しました。"
+
+#. desktop_background_info
+msgid "Set the desktop background to the current image."
+msgstr "デスクトップの背景を現在の画像に設定する。"
+
+#. dest_folder_label
+#. destination_folder
+msgid "Destination folder:"
+msgstr "コピー先フォルダー :"
+
+#. dest_name_label
+msgid "Destination name:"
+msgstr "コピー先の名前 :"
+
+#. detecting_folders
+msgid "Detecting {} folders"
+msgstr "{} フォルダーの検出"
+
+#. disk_capacity
+msgid "Capacity"
+msgstr "容量"
+
+#. disk_free
+msgid "Free"
+msgstr "空き領域"
+
+#. disk_system
+#. prop_name_system
+msgid "System"
+msgstr "システム"
+
+#. disk_used
+msgid "Used"
+msgstr "使用中"
+
+#. space_used
+msgid "used"
+msgstr "使用中"
+
+#. duplicates
+msgid "Duplicates"
+msgstr "重複"
+
+#. duplicates_tooltip
+msgid "Duplicate or similar items in the collection."
+msgstr "コレクション内の重複または類似項目。"
+
+#. eject_close_info
+msgid "Close without ejecting"
+msgstr "取り出さずに閉じる"
+
+#. eject_failed_fmt
+msgid "Failed to eject {}."
+msgstr "{} の取り出しに失敗しました。"
+
+#. eject_help
+msgid ""
+"To avoid losing data, eject an external hard drive or USB drive before "
+"removing it."
+msgstr ""
+"データの損失を避けるため、外付けハード ドライブまたは USB ドライブを取り外す"
+"前に取り出してください。"
+
+#. eject_title_fmt
+msgid "Eject {}"
+msgstr "{} の取り出し"
+
+#. email_connecting_to_mapi
+msgid "Connecting to MAPI..."
+msgstr "MAPI に接続中..."
+
+#. email_convert_to_jpeg
+msgid "Convert all photos to JPEG"
+msgstr "すべての写真を JPEG に変換"
+
+#. email_failed
+msgid "Failed to send email using MAPI."
+msgstr "MAPI を使用した電子メールの送信に失敗しました。"
+
+#. email_limit_dimensions
+msgid ""
+"Limit photos to a maximum dimension (in pixels). Only supported for JPEG and "
+"PNG files."
+msgstr ""
+"写真を最大サイズ (ピクセル単位) に制限します。 JPEG および PNG ファイルのみサ"
+"ポートされています。"
+
+#. email_processing_fmt
+msgid "Processing {}"
+msgstr "{} の処理中"
+
+#. email_sending
+msgid "Sending email using MAPI..."
+msgstr "MAPI を使用して電子メールを送信中..."
+
+#. email_small_help
+msgid ""
+"Email sizes can be reduced using the following options. Smaller emails are "
+"faster to send."
+msgstr ""
+"次のオプションを使用すると、電子メールのサイズを縮小できます。 メールのサイズ"
+"が小さいほど、送信が速くなります。"
+
+#. email_zip
+msgid "Zip files in the email"
+msgstr "メール内のZipファイル"
+
+#. empty
+msgid "Empty"
+msgstr "空"
+
+#. ending_fmt
+msgid "Ending {}"
+msgstr "{} の最終処理"
+
+#. error_access_denied_src
+msgid "Security options denied access to the source."
+msgstr "セキュリティ オプションによりソースへのアクセスが拒否されました。"
+
+#. error_atl_failed
+msgid "Failed to Initialize ATL"
+msgstr "ATL の初期化に失敗しました"
+
+#. error_cannot_continue
+msgid "Diffractor has a serious problem and cannot continue."
+msgstr "Diffractor に重大な問題が発生したため、続行できません。"
+
+#. error_connect_scanner
+msgid "Could not connect to scanner"
+msgstr "スキャナーに接続できませんでした"
+
+#. error_create_file_failed_fmt
+msgid "The destination file '{}' cannot be opened or created."
+msgstr "ファイル '{}' を開けないか、作成できません。"
+
+#. error_create_folder_failed
+msgid "The destination folder '{}' cannot be opened or created."
+msgstr "フォルダー '{}' を開けないか、作成できません。"
+
+#. error_create_window_failed
+msgid "Diffractor cannot be started. The main window could not be created."
+msgstr "Diffractor を起動できません。 メインウィンドウを作成できませんでした。"
+
+#. error_dest_is_cd_record
+msgid "The destination is a writable CD-ROM, possibly unformatted."
+msgstr ""
+"保存先は書き込み可能な CD-ROM で、フォーマットされていない可能性があります。"
+
+#. error_dest_is_cd_rom
+msgid "The destination is a read-only CD-ROM, possibly unformatted."
+msgstr ""
+"保存先は読み取り専用の CD-ROM で、フォーマットされていない可能性があります。"
+
+#. error_dest_is_dvd
+msgid "The destination is a read-only DVD, possibly unformatted."
+msgstr ""
+"保存先は読み取り専用の DVD で、フォーマットされていない可能性があります。"
+
+#. error_dest_same_tree
+msgid "The source and destination have the same parent folder."
+msgstr "ソースと宛先は同じ親フォルダーを持ちます。"
+
+#. error_dest_subtree
+msgid "The destination is a subtree of the source."
+msgstr "宛先はソースのサブツリーです。"
+
+#. error_diff_dir
+msgid ""
+"Rename operation was specified but the destination path is a different "
+"directory. Use the move operation instead."
+msgstr ""
+"名前変更操作が指定されましたが、宛先パスが異なるディレクトリです。 代わりに移"
+"動操作を使用してください。"
+
+#. error_dst_root_dir
+msgid "Destination is a root directory and cannot be renamed."
+msgstr "宛先はルート ディレクトリであるため、名前を変更できません。"
+
+#. error_file_dest_is_fld
+msgid "The destination path is an existing folder."
+msgstr "宛先パスは既存のフォルダーです。"
+
+#. error_file_too_large
+msgid ""
+"The file involved in the operation is too large for the destination media or "
+"file system."
+msgstr ""
+"操作に関係するファイルが宛先メディアまたはファイル システムに対して大きすぎま"
+"す。"
+
+#. error_filename_too_long
+msgid "The name of the file exceeds MAX_PATH."
+msgstr "ファイル名が MAX_PATH を超えています。"
+
+#. error_fld_dest_is_file
+msgid "The destination path is an existing file."
+msgstr "宛先パスは既存のファイルです。"
+
+#. error_index_database_failed
+msgid "Index database failed."
+msgstr "インデックスデータベースに失敗しました。"
+
+#. error_internet
+msgid ""
+"Could be a problem with the internet connection? Try again later if that "
+"seems likely."
+msgstr ""
+"インターネット接続に問題がある可能性がありますか? その可能性がある場合は、後"
+"でもう一度試してください。"
+
+#. error_invalid_files
+msgid "The path in the source or destination or both was invalid."
+msgstr "送信元または宛先、またはその両方のパスが無効でした。"
+
+#. error_invalid_path1
+msgid "The file name you have chosen '{}' is invalid."
+msgstr "選択したファイル名 '{}' は無効です。"
+
+#. error_invalid_path2
+msgid "File names cannot contain the following characters:"
+msgstr "ファイル名には次の文字を含めることはできません :"
+
+#. error_many_dest
+msgid ""
+"The operation involved multiple destination paths, which can fail in the "
+"case of a move operation."
+msgstr ""
+"この操作には複数の宛先パスが含まれており、移動操作の場合は失敗する可能性があ"
+"ります。"
+
+#. error_many_src_1_dest
+msgid ""
+"Multiple file paths were specified in the source buffer, but only one "
+"destination file path."
+msgstr ""
+"ソース バッファーに複数のファイル パスが指定されましたが、宛先ファイル パス"
+"は 1 つだけです。"
+
+#. error_mapi_failed
+msgid ""
+"Failed to send EMail using MAPI. Your Email client may not be configured in "
+"a compatible way with Diffractor."
+msgstr ""
+"MAPI を使用した電子メールの送信に失敗しました。 電子メール クライアントが "
+"Diffractor と互換性のある方法で構成されていない可能性があります。"
+
+#. error_max
+msgid "MAX_PATH was exceeded during the operation."
+msgstr "操作中に MAX_PATH を超えました。"
+
+#. error_ole_failed
+msgid "OleInitialize Failed"
+msgstr "Ole の初期化に失敗しました"
+
+#. error_on_dest
+msgid "An unspecified error occurred on the destination."
+msgstr "宛先で原因不明のエラーが発生しました。"
+
+#. error_op_cancelled
+msgid ""
+"The operation was canceled by the user, or silently canceled if the "
+"appropriate flags were supplied to SHFileOperation."
+msgstr ""
+"操作はユーザーによってキャンセルされたか、適切なフラグが SHFileOperation に指"
+"定されている場合はサイレントにキャンセルされました。"
+
+#. error_path_too_deep
+msgid "The source or destination path exceeded or would exceed MAX_PATH."
+msgstr ""
+"送信元または宛先のパスが MAX_PATH を超えているか、超える可能性があります。"
+
+#. error_rename_failed
+msgid "Failed to rename."
+msgstr "名前の変更に失敗しました。"
+
+#. error_same_file
+msgid "The source and destination files are the same file."
+msgstr "ソース ファイルと宛先ファイルは同じファイルです。"
+
+#. error_save_failed
+msgid "Diffractor could not save the updated image file."
+msgstr "Diffractor は更新された画像ファイルを保存できませんでした。"
+
+#. error_save_image
+msgid "Failed to save image."
+msgstr "画像の保存に失敗しました。"
+
+#. error_scanner
+msgid "Scanner reported an error"
+msgstr "スキャナーがエラーを報告しました"
+
+#. error_src_is_cd_record
+msgid "The source is a writable CD-ROM, possibly unformatted."
+msgstr ""
+"ソースは書き込み可能な CD-ROM で、フォーマットされていない可能性があります。"
+
+#. error_src_is_cdrom
+msgid "The source is a read-only CD-ROM, possibly unformatted."
+msgstr ""
+"ソースは読み取り専用の CD-ROM で、フォーマットされていない可能性があります。"
+
+#. error_src_is_dvd
+msgid "The source is a read-only DVD, possibly unformatted."
+msgstr ""
+"ソースは読み取り専用 DVD であり、フォーマットされていない可能性があります。"
+
+#. error_src_root_dir
+msgid "The source is a root directory, which cannot be moved or renamed."
+msgstr ""
+"ソースはルート ディレクトリであり、移動したり名前を変更したりすることはできま"
+"せん。"
+
+#. error_sse2_needed
+msgid "Diffractor requires a processor with sse2."
+msgstr "Diffractor には sse2 を搭載したプロセッサが必要です。"
+
+#. error_unknown
+msgid "An unknown error occurred."
+msgstr "不明なエラーが発生しました。"
+
+#. error_unsupported_os
+msgid "Diffractor requires Windows 7 or newer."
+msgstr "Diffractor には Windows 7 以降が必要です。"
+
+#. error_windows_common_controls_failed
+msgid "Failed to register windows common control classes."
+msgstr "Windows共通コントロールクラスの登録に失敗しました。"
+
+#. error_winsock_failed
+msgid "Failed to initialize Winsock"
+msgstr "Winsock の初期化に失敗しました"
+
+#. failed_connect_internet
+msgid "Failed to connect to the internet"
+msgstr "インターネットに接続できませんでした"
+
+#. failed_to_create_folder_fmt
+msgid "Failed to create folder: {}"
+msgstr "フォルダーの作成に失敗しました : {}"
+
+#. folder
+#. folder_noun
+msgid "folder"
+msgstr "フォルダー"
+
+#. folder_music
+msgid "music"
+msgstr "ミュージック"
+
+#. folder_noun_plural
+#. folders
+msgid "folders"
+msgstr "フォルダー"
+
+#. folder_onedrive
+msgid "onedrive"
+msgstr "onedrive"
+
+#. folder_picture
+msgid "picture"
+msgstr "ピクチャ"
+
+#. folder_video
+#. videos
+msgid "videos"
+msgstr "ビデオ"
+
+#. for_action
+msgid "For action"
+msgstr "アクション"
+
+#. for_delete
+msgid "For delete"
+msgstr "削除"
+
+#. genre_a_capella
+msgid "A capella"
+msgstr "アカペラ"
+
+#. genre_abstract
+msgid "Abstract"
+msgstr "抽象的"
+
+#. genre_acid
+msgid "Acid"
+msgstr "アシッド"
+
+#. genre_acidjazz
+msgid "Acid Jazz"
+msgstr "アシッド ジャズ"
+
+#. genre_acidpunk
+msgid "Acid Punk"
+msgstr "アシッド パンク"
+
+#. genre_acoustic
+msgid "Acoustic"
+msgstr "アコースティック"
+
+#. genre_action
+msgid "Action"
+msgstr "アクション"
+
+#. genre_action_adventure
+msgid "Action & Adventure"
+msgstr "アクション&アドベンチャー"
+
+#. genre_aerial
+msgid "Aerial"
+msgstr "航空写真"
+
+#. genre_alternative
+msgid "Alternative"
+msgstr "オルタナティブ"
+
+#. genre_alternrock
+msgid "AlternRock"
+msgstr "オルタンロック"
+
+#. genre_ambient
+msgid "Ambient"
+msgstr "環境"
+
+#. genre_analog
+msgid "Analog"
+msgstr "アナログ"
+
+#. genre_animation
+msgid "Animation"
+msgstr "アニメーション"
+
+#. genre_anime
+msgid "Anime"
+msgstr "アニメ"
+
+#. genre_architectural
+msgid "Architectural"
+msgstr "建築"
+
+#. genre_avantgarde
+msgid "Avantgarde"
+msgstr "アバンギャルド"
+
+#. genre_aviation
+msgid "Aviation"
+msgstr "航空"
+
+#. genre_ballad
+msgid "Ballad"
+msgstr "バラード"
+
+#. genre_bass
+msgid "Bass"
+msgstr "ベース"
+
+#. genre_bebob
+msgid "Bebob"
+msgstr "ベボブ"
+
+#. genre_bigband
+msgid "Big Band"
+msgstr "ビッグバンド"
+
+#. genre_bluegrass
+msgid "Bluegrass"
+msgstr "ブルーグラス"
+
+#. genre_blues
+msgid "Blues"
+msgstr "ブルース"
+
+#. genre_booty_bass
+msgid "Booty Bass"
+msgstr "ブーティ ベース"
+
+#. genre_brazilian
+msgid "Brazilian"
+msgstr "ブラジリアン"
+
+#. genre_cabaret
+msgid "Cabaret"
+msgstr "キャバレー"
+
+#. genre_candid
+msgid "Candid"
+msgstr "キャンディド"
+
+#. genre_celtic
+msgid "Celtic"
+msgstr "ケルト"
+
+#. genre_chambermusic
+msgid "Chamber Music"
+msgstr "室内楽"
+
+#. genre_chanson
+msgid "Chanson"
+msgstr "シャンソン"
+
+#. genre_childrens
+msgid "Children's"
+msgstr "子供向け"
+
+#. genre_chorus
+msgid "Chorus"
+msgstr "コーラス"
+
+#. genre_christian_gospel
+msgid "Christian & Gospel"
+msgstr "クリスチャンとゴスペル"
+
+#. genre_christianran_reap
+msgid "Christian Rap"
+msgstr "クリスチャン ラップ"
+
+#. genre_classic
+msgid "Classic"
+msgstr "クラシック"
+
+#. genre_classic_rock
+msgid "Classic Rock"
+msgstr "クラシック ロック"
+
+#. genre_classical
+msgid "Classical"
+msgstr "クラシカル"
+
+#. genre_close_up
+msgid "Close-up"
+msgstr "クローズアップ"
+
+#. genre_cloudscape
+msgid "Cloudscape"
+msgstr "雲景"
+
+#. genre_club
+msgid "Club"
+msgstr "クラブ"
+
+#. genre_comedy
+msgid "Comedy"
+msgstr "コメディー"
+
+#. genre_conceptual
+msgid "Conceptual"
+msgstr "コンセプチュアル"
+
+#. genre_concert
+msgid "Concert"
+msgstr "コンサート"
+
+#. genre_concert_films
+msgid "Concert Films"
+msgstr "コンサート フィルム"
+
+#. genre_conservation
+msgid "Conservation"
+msgstr "自然保護"
+
+#. genre_country
+msgid "Country//genre"
+msgstr "国//ジャンル"
+
+#. genre_cult
+msgid "Cult"
+msgstr "カルト"
+
+#. genre_dance
+msgid "Dance"
+msgstr "ダンス"
+
+#. genre_dance_hall
+msgid "Dance Hall"
+msgstr "ダンスホール"
+
+#. genre_darkwave
+msgid "Darkwave"
+msgstr "ダークウェーブ"
+
+#. genre_death_metal
+msgid "Death Metal"
+msgstr "デスメタル"
+
+#. genre_disco
+msgid "Disco"
+msgstr "ディスコ"
+
+#. genre_documentary
+msgid "Documentary"
+msgstr "ドキュメンタリー"
+
+#. genre_drama
+msgid "Drama"
+msgstr "ドラマ"
+
+#. genre_dream
+msgid "Dream"
+msgstr "ドリーム"
+
+#. genre_drum_solo
+msgid "Drum Solo"
+msgstr "ドラム ソロ"
+
+#. genre_duet
+msgid "Duet"
+msgstr "デュエット"
+
+#. genre_easylistening
+msgid "Easy Listening"
+msgstr "イージーリスニング"
+
+#. genre_electronic
+msgid "Electronic"
+msgstr "エレクトロニック"
+
+#. genre_ethnic
+msgid "Ethnic"
+msgstr "エスニック"
+
+#. genre_euro_dance
+msgid "Eurodance"
+msgstr "ユーロダンス"
+
+#. genre_euro_house
+msgid "Euro-House"
+msgstr "ユーロ ハウス"
+
+#. genre_euro_techno
+msgid "Euro-Techno"
+msgstr "ユーロ テクノ"
+
+#. genre_family
+msgid "Family"
+msgstr "ファミリー"
+
+#. genre_fashion
+msgid "Fashion"
+msgstr "ファッション"
+
+#. genre_fast_fusion
+msgid "Fast Fusion"
+msgstr "ファストフュージョン"
+
+#. genre_film_still
+msgid "Film still"
+msgstr "フィルムスチル"
+
+#. genre_fine_art
+msgid "Fine-art"
+msgstr "ファインアート"
+
+#. genre_fire
+msgid "Fire"
+msgstr "ファイヤー"
+
+#. genre_fireworks
+msgid "Fireworks"
+msgstr "花火"
+
+#. genre_fitness_workout
+msgid "Fitness & Workout"
+msgstr "フィットネスとワークアウト"
+
+#. genre_folk
+msgid "Folk"
+msgstr "フォーク"
+
+#. genre_folk_rock
+msgid "Folk-Rock"
+msgstr "フォークロック"
+
+#. genre_folklore
+msgid "Folklore"
+msgstr "民間伝承"
+
+#. genre_food
+msgid "Food"
+msgstr "フード"
+
+#. genre_foreign
+msgid "Foreign"
+msgstr "外国"
+
+#. genre_forensic
+msgid "Forensic"
+msgstr "法医学"
+
+#. genre_freestyle
+msgid "Freestyle"
+msgstr "フリースタイル"
+
+#. genre_funk
+msgid "Funk"
+msgstr "ファンク"
+
+#. genre_fusion
+msgid "Fusion"
+msgstr "フュージョン"
+
+#. genre_game
+msgid "Game//genre"
+msgstr "ゲーム//ジャンル"
+
+#. genre_gangsta
+msgid "Gangsta"
+msgstr "ギャングスタ"
+
+#. genre_geophotography
+msgid "Geo-photography"
+msgstr "地理写真"
+
+#. genre_glamour
+msgid "Glamour"
+msgstr "グラマー"
+
+#. genre_gospel
+msgid "Gospel"
+msgstr "ゴスペル"
+
+#. genre_gothic
+msgid "Gothic"
+msgstr "ゴシック"
+
+#. genre_gothic_rock
+msgid "Gothic Rock"
+msgstr "ゴシックロック"
+
+#. genre_grunge
+msgid "Grunge"
+msgstr "グランジ"
+
+#. genre_hardrock
+msgid "Hard Rock"
+msgstr "ハードロック"
+
+#. genre_high_speed
+msgid "High-speed"
+msgstr "ハイスピード"
+
+#. genre_highke
+msgid "High key"
+msgstr "ハイキー"
+
+#. genre_hip_hop
+msgid "Hip-Hop"
+msgstr "ヒップホップ"
+
+#. genre_hip_hop_rap
+msgid "Hip-Hop/Rap"
+msgstr "ヒップホップ/ラップ"
+
+#. genre_holiday
+msgid "Holiday"
+msgstr "休日"
+
+#. genre_horror
+msgid "Horror"
+msgstr "ホラー"
+
+#. genre_house
+msgid "House"
+msgstr "家"
+
+#. genre_humour
+msgid "Humour"
+msgstr "ユーモア"
+
+#. genre_independent
+msgid "Independent"
+msgstr "独立"
+
+#. genre_industrial
+msgid "Industrial"
+msgstr "産業"
+
+#. genre_instrumental
+msgid "Instrumental"
+msgstr "インストゥルメンタル"
+
+#. genre_instrumental_pop
+msgid "Instrumental Pop"
+msgstr "インストゥルメンタル ポップ"
+
+#. genre_instrumental_rock
+msgid "Instrumental Rock"
+msgstr "インストゥルメンタル ロック"
+
+#. genre_jazz
+msgid "Jazz"
+msgstr "ジャズ"
+
+#. genre_jazzfun
+msgid "Jazz + Funk"
+msgstr "ジャズ + ファンク"
+
+#. genre_jungle
+msgid "Jungle"
+msgstr "ジャングル"
+
+#. genre_kids
+msgid "Kids"
+msgstr "キッズ"
+
+#. genre_kids_family
+msgid "Kids & Family"
+msgstr "キッズと家族"
+
+#. genre_kirlian
+msgid "Kirlian"
+msgstr "キルリアン"
+
+#. genre_landscape
+msgid "Landscape"
+msgstr "風景"
+
+#. genre_latin
+msgid "Latin"
+msgstr "ラテン"
+
+#. genre_lifestyle
+msgid "Lifestyle"
+msgstr "ライフスタイル"
+
+#. genre_lo_fi
+msgid "Lo-fi"
+msgstr "ローファイ"
+
+#. genre_lomography
+msgid "Lomography"
+msgstr "ロモグラフィー"
+
+#. genre_long_exposure
+msgid "Long-exposure"
+msgstr "長時間露出"
+
+#. genre_low_key
+msgid "Low key"
+msgstr "ローキー"
+
+#. genre_macro
+msgid "Macro"
+msgstr "マクロ"
+
+#. genre_medical
+msgid "Medical"
+msgstr "医学"
+
+#. genre_meditative
+msgid "Meditative"
+msgstr "瞑想"
+
+#. genre_metal
+msgid "Metal"
+msgstr "メタル"
+
+#. genre_monochrome
+msgid "Monochrome"
+msgstr "モノクローム"
+
+#. genre_music_documentaries
+msgid "Music Documentaries"
+msgstr "音楽ドキュメンタリー"
+
+#. genre_music_feature_films
+msgid "Music Feature Films"
+msgstr "音楽長編映画"
+
+#. genre_musical
+msgid "Musical"
+msgstr "ミュージカル"
+
+#. genre_musicals
+msgid "Musicals"
+msgstr "ミュージカル"
+
+#. genre_narrative
+msgid "Narrative"
+msgstr "物語"
+
+#. genre_nationa_folk
+msgid "National Folk"
+msgstr "国民"
+
+#. genre_native_american
+msgid "Native American"
+msgstr "アメリカ先住民"
+
+#. genre_new_age
+msgid "New Age"
+msgstr "ニューエイジ"
+
+#. genre_new_wave
+msgid "New Wave"
+msgstr "ニューウェーブ"
+
+#. genre_night
+msgid "Night"
+msgstr "夜"
+
+#. genre_noise
+msgid "Noise"
+msgstr "ノイズ"
+
+#. genre_nonfiction
+msgid "Nonfiction"
+msgstr "ノンフィクション"
+
+#. genre_oldies
+msgid "Oldies"
+msgstr "オールディーズ"
+
+#. genre_opera
+msgid "Opera"
+msgstr "オペラ"
+
+#. genre_other
+msgid "Other"
+msgstr "その他"
+
+#. genre_panorama
+msgid "Panorama"
+msgstr "パノラマ"
+
+#. genre_panoramic
+msgid "Panoramic"
+msgstr "パノラミック"
+
+#. genre_pellier_noir
+msgid "Pellier Noir"
+msgstr "ペリエ ノワール"
+
+#. genre_photo_op
+msgid "Photo op"
+msgstr "写真撮影"
+
+#. genre_photobiography
+msgid "Photobiography"
+msgstr "写真伝"
+
+#. genre_photojournalism
+msgid "Photojournalism"
+msgstr "フォトジャーナリズム"
+
+#. genre_photowalking
+msgid "Photowalking"
+msgstr "フォトウォーキング"
+
+#. genre_podcast
+msgid "Podcast"
+msgstr "ポッドキャスト"
+
+#. genre_polaroid
+msgid "Polaroid"
+msgstr "ポラロイド"
+
+#. genre_polka
+msgid "Polka"
+msgstr "ポルカ"
+
+#. genre_pop
+msgid "Pop"
+msgstr "ホップ"
+
+#. genre_pop_folk
+msgid "Pop-Folk"
+msgstr "ポップ-フォーク"
+
+#. genre_pop_funk
+msgid "Pop/Funk"
+msgstr "ポップ/ファンク"
+
+#. genre_porn_groove
+msgid "Porn Groove"
+msgstr "ポルノ グルーヴ"
+
+#. genre_portrait
+msgid "Portrait"
+msgstr "ポートレート"
+
+#. genre_power_ballad
+msgid "Power Ballad"
+msgstr "パワーバラード"
+
+#. genre_pranks
+msgid "Pranks"
+msgstr "いたずら"
+
+#. genre_primus
+msgid "Primus"
+msgstr "プリムス"
+
+#. genre_progressive_rock
+msgid "Progressive Rock"
+msgstr "プログレッシブ ロック"
+
+#. genre_psychadelic
+msgid "Psychadelic"
+msgstr "サイケデリック"
+
+#. genre_psychedelic_rock
+msgid "Psychedelic Rock"
+msgstr "サイケデリック ロック"
+
+#. genre_punk
+msgid "Punk"
+msgstr "パンク"
+
+#. genre_punk_rock
+msgid "Punk Rock"
+msgstr "パンクロック"
+
+#. genre_randb
+msgid "R&B"
+msgstr "R&B"
+
+#. genre_rap
+msgid "Rap"
+msgstr "ラップ"
+
+#. genre_rave
+msgid "Rave"
+msgstr "レイブ"
+
+#. genre_reality_tv
+msgid "Reality TV"
+msgstr "リアリティTV"
+
+#. genre_reggae
+msgid "Reggae"
+msgstr "レゲエ"
+
+#. genre_retro
+msgid "Retro"
+msgstr "レトロ"
+
+#. genre_revival
+msgid "Revival"
+msgstr "リバイバル"
+
+#. genre_rhythmic_soul
+msgid "Rhythmic Soul"
+msgstr "リズミカルソウル"
+
+#. genre_rock
+msgid "Rock"
+msgstr "ロック"
+
+#. genre_rock_and_roll
+msgid "Rock & Roll"
+msgstr "ロックンロール"
+
+#. genre_romance
+msgid "Romance"
+msgstr "ロマンス"
+
+#. genre_samba
+msgid "Samba"
+msgstr "サンバ"
+
+#. genre_satellite
+msgid "Satellite"
+msgstr "サテライト"
+
+#. genre_satire
+msgid "Satire"
+msgstr "風刺"
+
+#. genre_scifi_and_fantasy
+msgid "Sci-Fi & Fantasy"
+msgstr "SF & ファンタジー"
+
+#. genre_short_films
+msgid "Short Films"
+msgstr "短編映画"
+
+#. genre_show_tunes
+msgid "Show tunes"
+msgstr "ショーの曲"
+
+#. genre_singer_songwriter
+msgid "Singer/Songwriter"
+msgstr "シンガーソングライター"
+
+#. genre_ska
+msgid "Ska"
+msgstr "スカ"
+
+#. genre_slow_jam
+msgid "Slow Jam"
+msgstr "スロージャム"
+
+#. genre_slow_rock
+msgid "Slow Rock"
+msgstr "スローロック"
+
+#. genre_social
+msgid "Social"
+msgstr "社交"
+
+#. genre_soft_focus
+msgid "Soft focus"
+msgstr "ソフトフォーカス"
+
+#. genre_sonata
+msgid "Sonata"
+msgstr "ソナタ"
+
+#. genre_soul
+msgid "Soul"
+msgstr "ソウル"
+
+#. genre_sound_clip
+msgid "Sound Clip"
+msgstr "サウンドクリップ"
+
+#. genre_soundtrack
+msgid "Soundtrack"
+msgstr "サウンドトラック"
+
+#. genre_southern_rock
+msgid "Southern Rock"
+msgstr "サザンロック"
+
+#. genre_space
+msgid "Space"
+msgstr "宇宙"
+
+#. genre_special_interest
+msgid "Special Interest"
+msgstr "特別な関心"
+
+#. genre_speech
+msgid "Speech"
+msgstr "スピーチ"
+
+#. genre_sports
+msgid "Sports"
+msgstr "スポーツ"
+
+#. genre_star_trail
+msgid "Star trail"
+msgstr "スタートレイル"
+
+#. genre_still_life
+msgid "Still life"
+msgstr "静物"
+
+#. genre_stock
+msgid "Stock"
+msgstr "ストック"
+
+#. genre_street
+msgid "Street"
+msgstr "ストリート"
+
+#. genre_subminiature
+msgid "Subminiature"
+msgstr "サブミニチュア"
+
+#. genre_swing
+msgid "Swing"
+msgstr "スウィング"
+
+#. genre_symphonic_rock
+msgid "Symphonic Rock"
+msgstr "シンフォニック ロック"
+
+#. genre_symphony
+msgid "Symphony"
+msgstr "シンフォニー"
+
+#. genre_tango
+msgid "Tango"
+msgstr "タンゴ"
+
+#. genre_techno
+msgid "Techno"
+msgstr "テクノ"
+
+#. genre_techno_industrial
+msgid "Techno-Industrial"
+msgstr "テクノインダストリアル"
+
+#. genre_teens
+msgid "Teens"
+msgstr "ティーン"
+
+#. genre_thriller
+msgid "Thriller"
+msgstr "スリラー"
+
+#. genre_time_lapse
+msgid "Time-lapse"
+msgstr "タイムラプス"
+
+#. genre_top40
+msgid "Top 40"
+msgstr "トップ 40"
+
+#. genre_trailer
+msgid "Trailer"
+msgstr "トレーラー"
+
+#. genre_trance
+msgid "Trance"
+msgstr "トランス"
+
+#. genre_travel
+msgid "Travel"
+msgstr "旅行"
+
+#. genre_tribal
+msgid "Tribal"
+msgstr "部族"
+
+#. genre_trip_hop
+msgid "Trip-Hop"
+msgstr "トリップホップ"
+
+#. genre_ultraviolet
+msgid "Ultraviolet"
+msgstr "紫外線"
+
+#. genre_underwater
+msgid "Underwater"
+msgstr "水中"
+
+#. genre_unknown
+#. unknown
+msgid "Unknown"
+msgstr "不明"
+
+#. genre_urban
+msgid "Urban"
+msgstr "都会"
+
+#. genre_vernacular
+msgid "Vernacular"
+msgstr "現地語"
+
+#. genre_vintage
+msgid "Vintage"
+msgstr "ビンテージ"
+
+#. genre_vocal
+msgid "Vocal"
+msgstr "ボーカル"
+
+#. genre_war
+msgid "War"
+msgstr "戦争"
+
+#. genre_western
+msgid "Western"
+msgstr "ウエスタン"
+
+#. genre_world
+msgid "World"
+msgstr "世界"
+
+#. group_sort_click
+msgid "Click to group or sort"
+msgstr "クリックしてグループ化または並べ替え"
+
+#. group_sort_tooltip
+msgid "Group and sort items"
+msgstr "項目のグループ化と並べ替え"
+
+#. group_title_items
+msgid "Items"
+msgstr "項目"
+
+#. group_title_no_album_or_show
+msgid "No album or show"
+msgstr "アルバムも番組もなし"
+
+#. group_title_no_camera
+msgid "No camera"
+msgstr "カメラがありません"
+
+#. group_title_no_extension
+msgid "No extension"
+msgstr "拡張子がありません"
+
+#. group_title_no_location
+msgid "No location"
+msgstr "場所がありません"
+
+#. group_title_no_pixels
+msgid "No pixels"
+msgstr "ピクセルがありません"
+
+#. group_title_no_rating
+msgid "No rating"
+msgstr "評価がありません"
+
+#. group_title_no_value
+msgid "No value"
+msgstr "値がありません"
+
+#. group_title_shuffle
+msgid "random"
+msgstr "ランダム"
+
+#. group_title_size_range
+msgid "{} to {}"
+msgstr "{} から {} へ"
+
+#. group_title_today
+msgid "Today"
+msgstr "今日"
+
+#. group_title_yesterday
+msgid "Yesterday"
+msgstr "昨日"
+
+#. has_changes
+msgid "{} has modifications"
+msgstr "{} には変更があります"
+
+#. support
+msgid "Support"
+msgstr "サポート"
+
+#. help_artist
+msgid "Separate each artist with a comma ',' or slash '/'"
+msgstr "各アーティストはカンマ「,」またはスラッシュ「/」で区切ります"
+
+#. help_tag1
+msgid "Separate each tag with a space: Australia holiday camping."
+msgstr "各タグはスペースで区切ります : 例 オーストラリア 休日 キャンプ。"
+
+#. help_tag2
+msgid "Join 2 words together in one tag using quotes: \"national park\"."
+msgstr ""
+"引用符を使用して 2 つの単語を 1 つのタグに結合します : 例 \"national park\"。"
+
+#. help_tag_add_remove
+msgid "Tags can be removed by prefixing with a minus: -removeme"
+msgstr "タグは、先頭にマイナスを付けることで削除できます : 例 -removeme"
+
+#. index_later
+msgid "Index later"
+msgstr "インデックス後"
+
+#. index_maintenance_help
+msgid ""
+"After long periods of use, the index can benefit from one of the maintenance "
+"steps below. The index stores a copy of metadata from your media files. It "
+"can be rebuilt from the original files."
+msgstr ""
+"長期間使用した後、インデックスは以下のメンテナンス手順のいずれかを行うことで"
+"恩恵を受けることができます。 インデックスには、メディア ファイルのメタデータ"
+"のコピーが保存されます。 元のファイルから再構築できます。"
+
+#. index_maintenance_reset_recommended
+msgid "The index is reporting errors. Resetting the index is recommended."
+msgstr ""
+"インデックスがエラーを報告しています。 インデックスをリセットすることをお勧め"
+"します。"
+
+#. index_maintenance_title
+msgid "Maintenance"
+msgstr "メンテナンス"
+
+#. collection_options_custom_folders_help
+msgid "Prefix the folder name with minus '-' to exclude it from searches."
+msgstr "検索から除外するには、フォルダー名の前にマイナス「-」を付けます。"
+
+#. collection_options_custom_folders_title
+msgid "Other folders"
+msgstr "その他のフォルダー"
+
+#. collection_options_custom_locations_help
+msgid ""
+"Folders can be drives, folders, network shares or device labels. Labels are "
+"useful for removable or network devices where mapped drive letters can "
+"change."
+msgstr ""
+"フォルダーには、ドライブ、フォルダー、ネットワーク共有、またはデバイス ラベル"
+"を指定できます。 ラベルは、マップされたドライブ文字が変更される可能性があるリ"
+"ムーバブル デバイスやネットワーク デバイスに役立ちます。"
+
+#. collection_options_desktop
+msgid "Desktop"
+msgstr "デスクトップ"
+
+#. collection_options_documents
+msgid "Documents"
+msgstr "ドキュメント"
+
+#. collection_options_downloads
+msgid "Downloads"
+msgstr "ダウンロード"
+
+#. collection_options_dropbox
+msgid "Local DropBox Folder"
+msgstr "ローカルの DropBox フォルダー"
+
+#. collection_options_google_drive
+msgid "Local GoogleDrive Folder"
+msgstr "ローカルの Google ドライブ フォルダー"
+
+#. collection_options_inet_help
+msgid ""
+"Diffractor can also index files from your Google Photos account. Add your "
+"accounts below. This is an experimental feature."
+msgstr ""
+"Diffractor は、Google フォト アカウントのファイルにインデックスを付けることも"
+"できます。 以下にアカウントを追加してください。 これは実験的な機能です。"
+
+#. collection_options_inet_title
+msgid "Internet files"
+msgstr "インターネット ファイル"
+
+#. collection_options_info
+msgid ""
+"You can select which folders are indexed and searchable in collection "
+"options (Ctrl-F6)."
+msgstr ""
+"コレクション オプション (Ctrl-F6) で、どのフォルダーにインデックスを付けて検"
+"索可能にするかを選択できます。"
+
+#. collection_options_local_folders_title
+msgid "Local folders"
+msgstr "ローカル フォルダー"
+
+#. collection_options_music
+msgid "Music"
+msgstr "ミュージック"
+
+#. collection_options_onedrive
+msgid "Local OneDrive Folder"
+msgstr "ローカルの OneDrive フォルダー"
+
+#. collection_options_pictures
+msgid "Pictures"
+msgstr "ピクチャ"
+
+#. collection_options_more
+msgid "More folders below are a paid feature. Click to learn more."
+msgstr ""
+"以下のその他のフォルダーは有料機能です。 クリックして詳細をご覧ください。"
+
+#. collection_options_locations
+msgid "More folders. Separate each folder with a new line."
+msgstr "フォルダーの追加。 各フォルダーは新しい行で区切ります。"
+
+#. collection_options_videos
+#. search_videos
+msgid "Videos"
+msgstr "ビデオ"
+
+#. indexed_locations_makes_collection
+msgid "All indexed locations combined form the collection."
+msgstr ""
+"インデックス付けされたすべての場所を組み合わせてコレクションを形成します。"
+
+#. indexing
+msgid "Indexing"
+msgstr "インデックス作成"
+
+#. indexing_message
+msgid ""
+"Diffractor indexes your photos and videos to enable searching and duplicate "
+"detection. You can choose what is indexed in collection options (press Ctrl-"
+"F6)."
+msgstr ""
+"Diffractor は写真やビデオにインデックスを付けて、検索と重複検出を可能にしま"
+"す。 コレクション オプションでインデックスの対象を選択できます (Ctrl-F6 キー"
+"を押します)。"
+
+#. install_welcome_text1
+msgid "Super-fast searching, viewing and comparing of photos or videos."
+msgstr "写真やビデオの超高速検索、表示、比較。"
+
+#. install_welcome_text2
+msgid "Optimized for your graphics card and PC."
+msgstr "グラフィックス カードと PC に合わせて最適化されています。"
+
+#. invalid
+msgid "invalid"
+msgstr "無効"
+
+#. is_not_valid_folder_fmt
+msgid "'{}' is not a valid folder."
+msgstr "'{}' は有効なフォルダーではありません。"
+
+#. item_noun
+msgid "item"
+msgstr "項目"
+
+#. item_noun_plural
+msgid "items"
+msgstr "項目"
+
+#. item_oriented
+msgid "Show items rotated"
+msgstr "項目を回転して表示"
+
+#. item_oriented_tooltip
+msgid "This item is shown oriented based on camera information. [{}]"
+msgstr "この項目はカメラ情報に基づいて向きを変えて表示されています。 [{}]"
+
+# text_t item_show_oriented
+msgid "Click to toggle if all items are shown rotated."
+msgstr "すべての項目が回転して表示される場合は、クリックして切り替えます。"
+
+#. jpeg_best
+msgid "JPEG - Best compression for photos"
+msgstr "JPEG - 写真に最適な圧縮率"
+
+#. keyboard
+msgid "Keyboard"
+msgstr "キーボード"
+
+#. keyboard_accelerator_press
+msgid "press"
+msgstr "[ キー ]"
+
+#. keyboard_basics_title
+msgid "Basics"
+msgstr "基本"
+
+#. keyboard_ctrl_left_right_desc
+msgid "Extend the current item selection and allow comparing of items."
+msgstr "現在の項目選択を拡張し、項目を比較できるようにします。"
+
+#. keyboard_enter
+msgid "enter"
+msgstr "enter"
+
+#. keyboard_enter_desc
+msgid "Opens an image full screen."
+msgstr "画像を全画面で開く。"
+
+#. keyboard_escape
+msgid "escape"
+msgstr "escape"
+
+#. keyboard_escape_desc
+msgid "Gets you out of full screen, zoom or other modes."
+msgstr "全画面表示、ズーム、その他のモードを終了。"
+
+#. keyboard_file_management_title
+msgid "File management"
+msgstr "ファイル管理"
+
+#. keyboard_general_title
+msgid "General"
+msgstr "全般"
+
+#. keyboard_left
+msgid "left"
+msgstr "左矢印"
+
+#. keyboard_left_right_desc
+msgid "Move to the next or previous item."
+msgstr "次または前の項目に移動します。"
+
+#. keyboard_navigation_title
+msgid "Navigation"
+msgstr "ナビゲーション"
+
+#. keyboard_options_title
+msgid "Options"
+msgstr "オプション"
+
+#. keyboard_playback_title
+msgid "Media playback"
+msgstr "メディアの再生"
+
+#. keyboard_right
+msgid "right"
+msgstr "右矢印"
+
+#. keyboard_selection_title
+msgid "Selection"
+msgstr "選択"
+
+#. keyboard_alt
+msgid "alt"
+msgstr "alt"
+
+#. keyboard_backspace
+msgid "backspace"
+msgstr "backspace"
+
+#. keyboard_control
+msgid "ctrl"
+msgstr "ctrl"
+
+#. keyboard_or
+msgid "OR"
+msgstr "OR"
+
+#. keyboard_shift
+msgid "shift"
+msgstr "shift"
+
+#. keyboard_space
+msgid "space"
+msgstr "space"
+
+#. keyboard_space_desc
+msgid "Stops or starts a slideshow or playing a video/audio file."
+msgstr ""
+"スライドショーまたはビデオ/オーディオファイルの再生を停止または開始します。"
+
+#. label
+#. prop_name_label
+msgid "Label"
+msgstr "ラベル"
+
+#. documentation
+msgid "Documentation"
+msgstr "ドキュメンテーション"
+
+#. learn_more_diffractor_com
+msgid "Learn more at Diffractor.com"
+msgstr "詳細については、Diffractor.com をご覧ください"
+
+#. lights
+msgid "Lights"
+msgstr "ライト"
+
+#. limit_output_dimensions
+msgid "Limit output to a maximum dimension (in pixels)."
+msgstr "出力を最大サイズ (ピクセル単位) に制限します。"
+
+#. list_of_accelerators
+msgid "List of keyboard accelerators"
+msgstr "キーボードアクセラレータのリスト"
+
+#. listed
+msgid "Listed"
+msgstr "リスト"
+
+#. listed_sub_folders
+msgid "Including sub folders:"
+msgstr "サブフォルダーを含む :"
+
+#. loading
+#. loading_text
+msgid "Loading..."
+msgstr "読み込み中..."
+
+#. location_not_loaded
+msgid "Location could not be loaded from database or internet."
+msgstr "データベースまたはインターネットから位置情報をロードできませんでした。"
+
+#. location_not_selected
+msgid "No location selected."
+msgstr "場所が選択されていません。"
+
+#. location_overwrite_gps
+msgid "Overwrite GPS coordinates when setting a location."
+msgstr "場所を設定するときに GPS 座標を上書きする。"
+
+#. locations_no_results
+msgid "If you buy Diffractor, Google can be used to provide more locations."
+msgstr ""
+"Diffractor を購入すると、Google を使用してさらに多くの場所を提供できます。"
+
+#. maximize_image
+msgid "Maximize image"
+msgstr "画像を最大化"
+
+#. maybe_later
+msgid "OK - maybe later."
+msgstr "OK - また後で。"
+
+#. menu_add
+msgid "Add '{}'"
+msgstr "'{}' の追加"
+
+#. menu_select_all
+msgid "Select All"
+msgstr "すべて選択"
+
+#. menu_undo
+msgid "Undo"
+msgstr "取り消し"
+
+#. metadata
+msgid "Metadata"
+msgstr "メタデータ"
+
+#. midtones
+msgid "Midtones"
+msgstr "中間調"
+
+#. month_april
+msgid "April"
+msgstr "4月"
+
+#. month_august
+msgid "August"
+msgstr "8月"
+
+#. month_december
+msgid "December"
+msgstr "12月"
+
+#. month_february
+msgid "February"
+msgstr "2月"
+
+#. month_january
+msgid "January"
+msgstr "1月"
+
+#. month_july
+msgid "July"
+msgstr "7月"
+
+#. month_june
+msgid "June"
+msgstr "6月"
+
+#. month_march
+msgid "March"
+msgstr "3月"
+
+#. month_may
+msgid "May"
+msgstr "5月"
+
+#. month_november
+msgid "November"
+msgstr "11月"
+
+#. month_october
+msgid "October"
+msgstr "10月"
+
+#. month_september
+msgid "September"
+msgstr "9月"
+
+#. month_short_apr
+msgid "apr"
+msgstr "4"
+
+#. month_short_aug
+msgid "aug"
+msgstr "8"
+
+#. month_short_dec
+msgid "dec"
+msgstr "12"
+
+#. month_short_feb
+msgid "feb"
+msgstr "2"
+
+#. month_short_jan
+msgid "jan"
+msgstr "1"
+
+#. month_short_jul
+msgid "jul"
+msgstr "7"
+
+#. month_short_jun
+msgid "jun"
+msgstr "6"
+
+#. month_short_mar
+msgid "mar"
+msgstr "3"
+
+#. month_short_may
+msgid "may"
+msgstr "5"
+
+#. month_short_nov
+msgid "nov"
+msgstr "11"
+
+#. month_short_oct
+msgid "oct"
+msgstr "10"
+
+#. month_short_sep
+msgid "sep"
+msgstr "9"
+
+#. more_power
+msgid "Scotty, we need more power!"
+msgstr "スコッティ、もっとパワーが必要だ！"
+
+#. nav_countries_title
+msgid "Countries"
+msgstr "国"
+
+#. nav_drives_title
+msgid "Drives"
+msgstr "ドライブ"
+
+#. nav_folders_title
+msgid "Folders"
+msgstr "フォルダー"
+
+#. nav_history_title
+msgid "History"
+msgstr "履歴"
+
+#. need_some_maintenance
+msgid "After long periods of use, the index may need some maintenance."
+msgstr ""
+"長期間使用した後は、インデックスのメンテナンスが必要になる場合があります。"
+
+#. no_items_are_selected
+msgid "No items are selected"
+msgstr "項目が選択されていません"
+
+#. no_results
+msgid "No results"
+msgstr "結果なし"
+
+#. not_supported_cloud
+msgid "Cloud items are not supported."
+msgstr "クラウドアイテムはサポートされていません。"
+
+#. not_supported_folder
+msgid "Folders are not supported."
+msgstr "フォルダーはサポートされていません。"
+
+#. not_supported_photo
+msgid "Items must be a photo or image."
+msgstr "項目は写真または画像である必要があります。"
+
+#. not_supported_readonly
+msgid "Readonly items are not supported."
+msgstr "読み取り専用項目はサポートされていません。"
+
+#. not_supported_readonly_metadata
+msgid "Cannot updated metadata of readonly items."
+msgstr "読み取り専用アイテムのメタデータを更新できません。"
+
+#. not_supported_save_format
+msgid "Diffractor can only save or update JPG, TIF, GIF and PNG image files."
+msgstr ""
+"Diffractor は、JPG、TIF、GIF、および PNG 画像ファイルのみを保存または更新でき"
+"ます。"
+
+#. nothing_found1
+msgid "Nothing found."
+msgstr "何も見つかりません。"
+
+#. nothing_found2
+msgid ""
+"Diffractor only searches in folders that are indexed. Use collection options "
+"to add more folders. (ctrl-F6)"
+msgstr ""
+"Diffractor は、インデックスが作成されたフォルダー内のみを検索します。 さらに"
+"フォルダーを追加するには、コレクション オプションを使用します。 (ctrl-F6)"
+
+#. num_of
+msgid "of"
+msgstr "of"
+
+#. ok_all_done
+msgid "OK - all done."
+msgstr "OK - すべて完了しました。"
+
+#. ok_got_it
+msgid "OK - got it."
+msgstr "OK - 了解。"
+
+#. open_dest
+msgid "Open destination folder afterwards"
+msgstr "保存先フォルダを後から開く"
+
+#. open_in_browser_title
+msgid "Open in file browser"
+msgstr "ファイルブラウザで開く"
+
+#. open_properties_title
+msgid "Open Properties"
+msgstr "プロパティを開く"
+
+#. open_with_app
+msgid "app"
+msgstr "app"
+
+#. open_with_app_tool
+msgid "Open with app or tool"
+msgstr "アプリまたはツールで開く"
+
+#. open_with_failed
+msgid "Failed to open selected items."
+msgstr "選択した項目を開けませんでした。"
+
+#. open_with_fmt
+msgid "Open with {}"
+msgstr "{} で開く"
+
+#. open_with_tool
+msgid "tool"
+msgstr "ツール"
+
+#. optimize
+msgid "Optimize"
+msgstr "最適化"
+
+#. option_overwrite_gps
+msgid ""
+"Overwrite GPS coordinates when setting a location. Otherwise only place, "
+"state and country names are updated."
+msgstr ""
+"場所を設定するときに GPS 座標を上書きします。 それ以外の場合は、場所、州、国"
+"の名前のみが更新されます。"
+
+#. option_slideshow_title
+msgid "Slideshow"
+msgstr "スライドショー"
+
+#. option_slideshow_delay
+msgid "Delay before showing the next item (in seconds)"
+msgstr "次の項目を表示するまでの遅延 (秒単位)"
+
+#. options_advanced
+msgid "Advanced"
+msgstr "高度"
+
+#. options_app_options
+msgid "Application options"
+msgstr "アプリのオプション"
+
+#. options_auto_update
+msgid "Automatically install updates when possible"
+msgstr "可能な場合はアップデートを自動的にインストールする"
+
+#. options_backup_copy
+msgid ""
+"When overwriting a photo with irreversible changes make an original backup "
+"copy"
+msgstr ""
+"写真を元に戻せない変更で上書きする場合は、元のバックアップ コピーを作成する"
+
+#. options_beta_tester
+msgid "Help test Diffractor. Automatically install test and preview versions."
+msgstr ""
+"Diffractor のテストを手伝う。 テスト バージョンとプレビュー バージョンを自動"
+"的にインストールする。"
+
+#. options_check_for_update
+msgid "Check for updates by connecting to the internet"
+msgstr "インターネットに接続してアップデートを確認"
+
+#. options_confirm_del
+msgid ""
+"Confirm when deleting items. Deleted items are moved to the recycle bin."
+msgstr "項目を削除するときに確認する。 削除された項目はごみ箱に移動されます。"
+
+#. options_jpeg_quality
+msgid "JPEG save quality"
+msgstr "JPEG保存品質"
+
+#. options_webp_quality
+msgid "WEBP save quality"
+msgstr "WEBP保存品質"
+
+#. options_save_options
+msgid "When saving"
+msgstr "保存時"
+
+#. options_send_crash_reports
+msgid ""
+"Help make Diffractor better. If Diffractor crashes send anonymous "
+"diagnostics to Diffractor HQ. No personal data is sent - just crash "
+"diagnostics."
+msgstr ""
+"Diffractor の改善にご協力ください。 Diffractor がクラッシュした場合は、匿名の"
+"診断を Diffractor HQ に送信します。 個人データは送信されません。クラッシュ診"
+"断のみが送信されます。"
+
+#. options_show_debug_info
+msgid "Show application debugging information (for the programmers)."
+msgstr "アプリケーションのデバッグ情報を表示します (プログラマ向け)。"
+
+#. options_show_dups_on_thumbs
+msgid "Show duplicate file markers on thumbnails"
+msgstr "サムネイルに重複ファイル マーカーを表示する"
+
+#. options_show_hidden
+msgid "Show hidden files"
+msgstr "隠しファイルを表示する"
+
+#. options_show_rotated
+msgid "Show photos rotated based on recorded camera orientation"
+msgstr "記録されたカメラの向きに基づいて回転した写真を表示する"
+
+#. options_show_sidecars_on_thumbs
+msgid ""
+"Show sidecar markers on thumbnails. Sidecars are additional metadata, "
+"subtitle or thumbnail files."
+msgstr ""
+"サムネイルにサイドカー マーカーを表示します。 サイドカーは追加のメタデータ、"
+"サブタイトル、またはサムネイル ファイルです。"
+
+#. options_updates
+msgid "Updates"
+msgstr "アップデート"
+
+#. options_use_gpu
+msgid ""
+"Use hardware acceleration to draw the Diffractor user interface (requires "
+"restart)"
+msgstr ""
+"ハードウェア アクセラレーションを使用して Diffractor ユーザー インターフェイ"
+"スを描画する (再起動が必要です)"
+
+#. options_use_gpu_video
+msgid "Use hardware acceleration to decode video (when available)"
+msgstr ""
+"ハードウェア アクセラレーションを使用してビデオをデコードする (利用可能な場"
+"合)"
+
+#. options_use_yuv_tex
+msgid ""
+"Use NV12 and P010 format textures (Automatically turned off if problems "
+"detected)"
+msgstr ""
+"NV12 および P010 形式のテクスチャを使用する (問題が検出された場合は自動的にオ"
+"フになります)"
+
+# options_show_shadow
+msgid "Show an inset shadow surrounding the image view panel."
+msgstr "イメージ ビュー パネルの周囲に差し込みシャドウを表示する。"
+
+# options_update_modified
+msgid "Update file date modified when editing."
+msgstr "編集時に変更されたファイルの日付を更新する。"
+
+# options_last_played_pos
+msgid "Resume playing media from the last position played."
+msgstr "最後に再生した位置からメディアの再生を再開する。"
+
+# options_show_help_tooltips
+msgid "Show tooltips with help on buttons and links."
+msgstr "ボタンとリンクに関するヘルプを含むツールチップを表示する。"
+
+#. orientation_bottom_left
+msgid "bottom-left"
+msgstr "下-左"
+
+#. orientation_bottom_right
+msgid "bottom-right"
+msgstr "下-右"
+
+#. orientation_left_bottom
+msgid "left-bottom"
+msgstr "左-下"
+
+#. orientation_left_top
+msgid "left-top"
+msgstr "左-上"
+
+#. orientation_right_bottom
+msgid "right-bottom"
+msgstr "右-下"
+
+#. orientation_right_top
+msgid "right-top"
+msgstr "右-上"
+
+#. orientation_top_left
+msgid "top-left"
+msgstr "上-左"
+
+#. orientation_top_right
+msgid "top-right"
+msgstr "上-右"
+
+#. other
+msgid "other"
+msgstr "その他"
+
+#. others
+msgid "others"
+msgstr "その他"
+
+#. pated_file_name
+msgid "pasted"
+msgstr "貼り付け"
+
+#. photo
+msgid "photo"
+msgstr "フォト"
+
+#. photos
+msgid "photos"
+msgstr "フォト"
+
+#. pixels_icon
+msgid "icon"
+msgstr "アイコン"
+
+#. pixels_none
+msgid "no pixels"
+msgstr "ピクセルなし"
+
+#. pixels_small
+msgid "small"
+msgstr "小さい"
+
+#. png_best
+msgid "PNG - Best for non photos"
+msgstr "PNG - 写真以外に最適"
+
+#. prop_name_35mmequivalent
+msgid "Focal length 35mm equivalent"
+msgstr "焦点距離35mm相当"
+
+#. prop_name_album
+msgid "Album"
+msgstr "アルバム"
+
+#. prop_name_albumartist
+msgid "Album artist"
+msgstr "アルバム アーティスト"
+
+#. prop_name_artist
+msgid "Artist"
+msgstr "アーティスト"
+
+#. prop_name_audiocodec
+msgid "Audio codec"
+msgstr "オーディオ コーデック"
+
+#. prop_name_bitrate
+msgid "Bitrate"
+msgstr "ビットレート"
+
+#. prop_name_camera
+msgid "Camera"
+msgstr "カメラ"
+
+#. prop_name_cameramanufacturer
+msgid "Camera manufacturer"
+msgstr "カメラ メーカー"
+
+#. prop_name_channels
+msgid "Channels"
+msgstr "チャンネル"
+
+#. prop_name_city
+msgid "City"
+msgstr "市"
+
+#. prop_name_comment
+msgid "Comment"
+msgstr "コメント"
+
+#. prop_name_composer
+msgid "Composer"
+msgstr "作曲家"
+
+#. prop_name_copyrightcreator
+msgid "Copyright creator"
+msgstr "著作権者"
+
+#. prop_name_copyrightcredit
+msgid "Copyright credit"
+msgstr "著作権クレジット"
+
+#. prop_name_copyrightnotice
+msgid "Copyright notice"
+msgstr "著作権表示"
+
+#. prop_name_copyrightsource
+msgid "Copyright source"
+msgstr "著作権の出典"
+
+#. prop_name_copyrighturl
+msgid "Copyright URL"
+msgstr "著作権URL"
+
+#. prop_name_country
+msgid "Country//propertry"
+msgstr "国//地域"
+
+#. prop_name_created
+#. query_created
+msgid "Created"
+msgstr "作成日時"
+
+#. prop_name_createdexif
+msgid "Created exif"
+msgstr "作成日時exif"
+
+#. prop_name_description
+msgid "Description"
+msgstr "説明"
+
+#. prop_name_digitized
+msgid "Digitized"
+msgstr "デジタル化"
+
+#. prop_name_dimensions
+msgid "Dimensions"
+msgstr "寸法"
+
+#. prop_name_disk
+msgid "Disk"
+msgstr "ディスク"
+
+#. prop_name_duration
+msgid "Duration"
+msgstr "間隔"
+
+#. prop_name_encoder
+msgid "Encoder"
+msgstr "エンコーダー"
+
+#. prop_name_encodingtool
+msgid "Encoding tool"
+msgstr "エンコードツール"
+
+#. prop_name_episode
+msgid "Episode"
+msgstr "エピソード"
+
+#. prop_name_exposure
+msgid "Exposure"
+msgstr "露出"
+
+#. prop_name_filename
+msgid "Filename"
+msgstr "ファイル名"
+
+#. prop_name_fnumber
+msgid "FNumber"
+msgstr "Fナンバー"
+
+#. prop_name_focallength
+msgid "Focal length"
+msgstr "焦点距離"
+
+#. prop_name_game
+msgid "Game//propertry"
+msgstr "ゲーム//プロパティ"
+
+#. prop_name_genre
+msgid "Genre"
+msgstr "ジャンル"
+
+#. prop_name_id
+msgid "Id"
+msgstr "Id"
+
+#. prop_name_iso
+msgid "ISO"
+msgstr "ISO"
+
+#. prop_name_latitude
+msgid "Latitude"
+msgstr "緯度"
+
+#. prop_name_lens
+msgid "Lens"
+msgstr "レンズ"
+
+#. prop_name_longitude
+msgid "Longitude"
+msgstr "経度"
+
+#. prop_name_mediacategory
+msgid "Media category"
+msgstr "メディアカテゴリー"
+
+#. prop_name_megapixels
+msgid "Megapixels"
+msgstr "メガピクセル"
+
+#. prop_name_modified
+#. query_modified
+msgid "Modified"
+msgstr "更新日時"
+
+#. prop_name_null
+msgid "Null"
+msgstr "Null"
+
+#. prop_name_orientation
+msgid "Orientation"
+msgstr "向き"
+
+#. prop_name_performer
+msgid "Performer"
+msgstr "出演者"
+
+#. prop_name_pixelformat
+msgid "Pixel format"
+msgstr "ピクセル形式"
+
+#. prop_name_publisher
+msgid "Publisher"
+msgstr "発行者"
+
+#. prop_name_rating
+msgid "Rating"
+msgstr "評価"
+
+#. prop_name_rawfile
+msgid "Raw file"
+msgstr "Raw ファイル"
+
+#. prop_name_samplerate
+msgid "Sample rate"
+msgstr "サンプリングレート"
+
+#. prop_name_sampletype
+msgid "Sample type"
+msgstr "サンプルの種類"
+
+#. prop_name_season
+msgid "Season"
+msgstr "季節"
+
+#. prop_name_show
+msgid "Show"
+msgstr "表示"
+
+#. prop_name_size
+msgid "Size"
+msgstr "サイズ"
+
+#. prop_name_state
+msgid "State"
+msgstr "州"
+
+#. prop_name_streams
+msgid "Streams"
+msgstr "ストリーム"
+
+#. prop_name_synopsis
+msgid "Synopsis"
+msgstr "概要"
+
+#. prop_name_title
+msgid "Title"
+msgstr "タイトル"
+
+#. prop_name_track
+msgid "Track"
+msgstr "トラック"
+
+#. prop_name_videocodec
+msgid "Video codec"
+msgstr "ビデオコーデック"
+
+#. prop_name_year
+msgid "Year"
+msgstr "年"
+
+#. query_and
+msgid "and"
+msgstr "and"
+
+#. query_duplicates
+msgid "duplicates"
+msgstr "重複"
+
+#. query_duplicates_alt1
+msgid "dups"
+msgstr "重複"
+
+#. query_duplicates_alt2
+msgid "duplicate"
+msgstr "重複"
+
+#. query_or
+msgid "or"
+msgstr "or"
+
+#. query_related
+msgid "related"
+msgstr "関連"
+
+#. query_with
+msgid "with"
+msgstr "with"
+
+#. query_without
+msgid "without"
+msgstr "without"
+
+#. query_age
+msgid "age"
+msgstr "年齢"
+
+#. rate_title
+msgid "Rate selected items"
+msgstr "選択した項目を評価"
+
+#. rating_keys
+msgid "Number keys 0-5"
+msgstr "数字キー 0 ～ 5"
+
+#. rating_remove
+msgid "Click {} to remove rating"
+msgstr "評価を削除するには {} をクリック"
+
+#. remove_metadata_title
+msgid "Remove Metadata"
+msgstr "メタデータの削除"
+
+#. rename_label
+msgid "New name:"
+msgstr "新しい名前 :"
+
+#. rename_template_help
+msgid ""
+"Specify a template to use for renaming files.\n"
+" - Use #'s to specify position of the numeric sequence.\n"
+" - Use ? to insert original filename character in pattern.\n"
+" - Example 'My photo ###'"
+msgstr ""
+"ファイルの名前変更に使用するテンプレートを指定。\n"
+" - 数字列の位置を指定するには「#」を使用します。\n"
+" - パターンに元のファイル名の文字を挿入するには「?」を使用します。\n"
+" - 例 'My photo ###'"
+
+#. rename_template_label
+msgid "Template:"
+msgstr "テンプレート :"
+
+#. rename_template_start_label
+msgid "Start at:"
+msgstr "開始位置 :"
+
+#. repeat_help
+msgid ""
+"When one media item plays to the end, start playing the next automatically"
+msgstr ""
+"1 つのメディア アイテムが最後まで再生されると、次のメディア アイテムの再生が"
+"自動的に開始されます"
+
+#. repeat_off_help
+msgid "Don't repeat or auto play"
+msgstr "リピート再生や自動再生はしない"
+
+#. reset
+msgid "Reset"
+msgstr "リセット"
+
+#. reset_database
+msgid ""
+"Clean database and reindex.\n"
+"All data is regenerated."
+msgstr ""
+"データベースをクリーンアップしてインデックスを再作成します。\n"
+"すべてのデータが再生成されます。"
+
+#. resetting
+msgid "Resetting..."
+msgstr "リセット中..."
+
+#. resized_max_label
+msgid "Maximum photo dimension (in pixels):"
+msgstr "写真の最大サイズ (ピクセル単位) :"
+
+#. retro
+msgid "retro"
+msgstr "レトロ"
+
+#. saturation
+msgid "Saturation"
+msgstr "彩度"
+
+#. save_as_jpeg
+msgid ""
+"Diffractor cannot crop, rotate or color {} files. You can save the file as a "
+"JPEG?"
+msgstr ""
+"Diffractor は、{} ファイルのトリミング、回転、色付けを行うことができません。 "
+"ファイルをJPEGとして保存できますか？"
+
+#. save_changes
+msgid "Save Changes"
+msgstr "変更内容を保存"
+
+#. save_new_photo
+msgid "Save new photo"
+msgstr "新しい写真を保存"
+
+#. saving_file_name
+msgid "Saving {}..."
+msgstr "{} の保存中..."
+
+#. scan_failed
+msgid "Failed to Scan."
+msgstr "スキャンに失敗しました。"
+
+#. search_christmas
+msgid "Christmas"
+msgstr "クリスマス"
+
+#. search_last_7_days
+msgid "Last 7 days"
+msgstr "過去 7 日間"
+
+#. search_or_folder
+msgid "Search criteria or folder"
+msgstr "検索条件またはフォルダー"
+
+#. search_top_rated
+msgid "Top rated"
+msgstr "最高評価"
+
+#. searching_text
+msgid "Searching..."
+msgstr "検索中..."
+
+#. select_folder
+msgid "Select Folder..."
+msgstr "フォルダーの選択..."
+
+#. selected_date_range_label
+msgid "Selected items are in the date range:"
+msgstr "選択した項目は次の日付範囲内にあります :"
+
+#. selected_folders_fmt
+msgid "{} {} (containing {} items {})"
+msgstr "{} {} ({} が含まれる {} 個の項目)"
+
+#. selected_items_fmt
+msgid "{} {} and {} {} (total {} items {})"
+msgstr "{} {} と {} {} (合計 {} 中 {} 個の項目)"
+
+#. show_related
+msgid "press R to view duplicate or related items in the collection"
+msgstr "r を押して、コレクション内の重複アイテムまたは関連アイテムを表示"
+
+#. sort_by_album_show
+msgid "Album-Show"
+msgstr "アルバム-表示"
+
+#. sort_by_rating_label
+msgid "Rating-Label"
+msgstr "評価-ラベル"
+
+#. sort_by_def
+msgid "Default"
+msgstr "既定"
+
+#. sort_by_extension
+msgid "Extension"
+msgstr "拡張子"
+
+#. sort_by_file_type
+msgid "Type"
+msgstr "種類"
+
+#. sort_by_location
+msgid "Location"
+msgstr "場所"
+
+#. sort_by_name
+msgid "Name"
+msgstr "名前"
+
+#. sort_by_pixels
+msgid "Pixels"
+msgstr "ピクセル"
+
+#. sort_by_presence
+msgid "Presence"
+msgstr "プレゼンス"
+
+#. buy
+msgid "Buy"
+msgstr "購入"
+
+#. buy_diffractor
+msgid "Buy Diffractor online."
+msgstr "Diffractor をオンラインで購入。"
+
+#. buy_help1
+msgid "Diffractor can be used freely for evaluation."
+msgstr "Diffractor は評価のために自由に使用できます。"
+
+#. buy_help2
+msgid "For continued use, please buy Diffractor."
+msgstr "継続して使用する場合は、Diffractor を購入してください。"
+
+#. buy_verified
+msgid ""
+"Your Diffractor purchase has been verified using the email address '{}'. "
+"Thanks for investing in the future of Diffractor."
+msgstr ""
+"Diffractor の購入は、メール アドレス '{}'. を使用して確認されました。 "
+"Diffractor の将来にご投資いただきありがとうございます。"
+
+#. buy_verify
+msgid "Verify"
+msgstr "検証"
+
+#. buy_verify_failed
+msgid "That's weird. Diffractor failed to verify your email address '{}'."
+msgstr "Diffractor はメール アドレス '{}' を確認できませんでした。"
+
+#. buy_verify_help
+msgid "Verify the purchase email address."
+msgstr "購入メールアドレスを確認してください。"
+
+#. buy_not_verified_text
+msgid ""
+"If you already purchased Diffractor, enter your email address below and "
+"click Verify."
+msgstr ""
+"すでに Diffractor を購入している場合は、以下に電子メール アドレスを入力し、"
+"[確認] をクリックします。"
+
+#. buy_verifying
+msgid "Verifying"
+msgstr "検証中"
+
+#. staring
+msgid "Staring"
+msgstr "開始日"
+
+#. starting_date_label
+msgid "New Starting Date (local time):"
+msgstr "新しい開始日 (現地時間) :"
+
+#. starting_fmt
+msgid "Starting {}"
+msgstr "開始日 {}"
+
+#. straighten
+msgid "Straighten"
+msgstr "矯正"
+
+#. structured_copy_ignore_previous
+msgid "Ignore previously imported items."
+msgstr "以前にインポートされた項目は無視する。"
+
+#. structured_overwrite_if_newer
+msgid "Overwrite if source items are newer."
+msgstr "ソース項目の方が新しい場合は上書きする。"
+
+#. move_items
+msgid "Move source items."
+msgstr "ソース項目を移動する。"
+
+#. structured_copy_info
+msgid "Move or copy selected items into a year/day folder structure."
+msgstr "選択した項目を年/日のフォルダー構造に移動またはコピーする。"
+
+#. structured_dest_folder
+msgid ""
+"Destination root folder. Structured folders will be created under this "
+"folder."
+msgstr ""
+"宛先のルートフォルダー。 このフォルダーの下に構造化フォルダーが作成されます。"
+
+#. tag_add_or_remove_label
+msgid "Tags to add or remove:"
+msgstr "追加または削除するタグ :"
+
+#. tag_add_remove
+msgid "Add or remove Tags"
+msgstr "タグの追加または削除"
+
+#. tag_selected
+msgid "Tag selected items"
+msgstr "選択した項目にタグを付ける"
+
+#. tags
+msgid "Tags"
+msgstr "タグ"
+
+#. tags_common_label
+msgid "Common Tags"
+msgstr "共通のタグ"
+
+#. tags_remove_label
+msgid "Removable Tags"
+msgstr "取り外し可能なタグ"
+
+#. text_false
+msgid "false"
+msgstr "false"
+
+#. text_true
+msgid "true"
+msgstr "true"
+
+#. title_error
+msgid "Diffractor ERROR"
+msgstr "Diffractor エラー"
+
+#. title_folder
+msgid "folder:{}"
+msgstr "フォルダー : {}"
+
+#. title_rate
+msgid "rate"
+msgstr "レート"
+
+#. tooltip_autoplay
+msgid ""
+"When one media item plays to the end, start playing the next automatically."
+msgstr ""
+"1 つのメディア アイテムが最後まで再生されると、次のメディア アイテムの再生が"
+"自動的に開始されます。"
+
+#. tooltip_color_reset
+msgid "Reset color adjustments"
+msgstr "カラー調整をリセット"
+
+#. tooltip_edit1
+msgid "Color, straighten or crop photos."
+msgstr "写真に色を付けたり、傾きを補正したり、トリミングしたりできます。"
+
+#. tooltip_edit2
+msgid "Add and edit metadata."
+msgstr "メタデータを追加および編集。"
+
+#. command_edit_metadata
+msgid "Edit metadata"
+msgstr "メタデータの編集"
+
+#. tooltip_flag_for_delete
+msgid "Items can be flagged for later delete."
+msgstr "後で削除するためにアイテムにフラグを付けることができます。"
+
+#. tooltip_fullscreen
+msgid "Toggle full screen for media-items or open non-media-items."
+msgstr ""
+"メディアアイテムの全画面表示を切り替えるか、非メディアアイテムを開きます。"
+
+#. tooltip_language
+msgid "Change language"
+msgstr ":使用言語の変更"
+
+#. tooltip_nav_bar
+msgid "Contains common folders, searches and favorites"
+msgstr "共通のフォルダー、検索、お気に入りが含まれます"
+
+#. tooltip_open
+msgid "Open selected items with external app"
+msgstr "選択した項目を外部アプリで開く"
+
+#. tooltip_pin
+msgid ""
+"Pinned items stay selected. Use this when you want to quickly compare an "
+"item to other items."
+msgstr ""
+"ピン留めされた項目は選択されたままになります。 項目を他の項目とすばやく比較す"
+"る場合に使用します。"
+
+#. tooltip_play
+msgid ""
+"Play or pause video and audio files. Start a slide show if a photo is "
+"selected."
+msgstr ""
+"ビデオおよびオーディオ ファイルを再生または一時停止します。 写真を選択すると"
+"スライド ショーが開始されます。"
+
+#. tooltip_repeat_toggle
+msgid "Toggle repeat mode and autoplay"
+msgstr "リピートモードと自動再生を切り替え"
+
+#. tooltip_revert
+msgid "Only possible after a non-loss-less photo edit."
+msgstr "ロスレスでない写真編集後にのみ可能。"
+
+#. tooltip_rotate_reset
+msgid "Reset straighten and rotate"
+msgstr "矯正と回転をリセット"
+
+#. tooltip_scale_up
+msgid ""
+"Scale up small photos and videos. Large media is automatically scaled down "
+"to fit on the screen."
+msgstr ""
+"小さな写真やビデオを拡大します。 大きなメディアは、画面に収まるように自動的に"
+"縮小されます。"
+
+#. tooltip_tag_with
+msgid "Tag or un-tag selected items"
+msgstr "選択した項目にタグを付ける、またはタグを解除する"
+
+#. tooltip_toggle_details
+msgid "Toggle between thumbnails or details for selected item group"
+msgstr "選択した項目グループのサムネイルまたは詳細を切り替え"
+
+#. tooltip_tools
+msgid "Process selected items"
+msgstr "選択した項目を処理する"
+
+#. tooltip_view_menu
+msgid "More options and controls"
+msgstr "その他のオプションとコントロール"
+
+#. tooltip_view_tests
+msgid "Tests and updates"
+msgstr "テストとアップデート"
+
+#. total_title
+msgid "{} ({}) total items in {} folders."
+msgstr "{} ({}) 項目の合計 {} フォルダー。"
+
+#. truncated_at_one_mb
+msgid "Truncated at 1MB"
+msgstr "1MBで切り捨て"
+
+#. type_to_search
+msgid "Type to search"
+msgstr "検索する種類"
+
+#. update
+msgid "Update"
+msgstr "アップデート"
+
+#. update_avail_version_fmt
+msgid "Version {} of Diffractor is available."
+msgstr "Diffractor のバージョン {} が利用可能です。"
+
+#. update_available
+msgid "Update available"
+msgstr "利用可能なアップデート"
+
+#. update_current_version_fmt
+msgid "You are currently using version {}."
+msgstr "現在バージョン {} を使用しています。"
+
+#. update_failed
+msgid "Update failed."
+msgstr "アップデートに失敗しました。"
+
+#. update_help
+msgid ""
+"Download and install now. Diffractor will need to be closed briefly during "
+"the install."
+msgstr ""
+"今すぐダウンロードしてインストールしてください。 インストール中は、"
+"Diffractor を一時的に閉じる必要があります。"
+
+#. update_help_fmt
+msgid ""
+"Version {} of Diffractor is available. You are currently using version {}."
+msgstr ""
+"Diffractor のバージョン {} が利用可能です。 現在バージョン {} を使用していま"
+"す。"
+
+#. update_more_info
+msgid "More info"
+msgstr "詳細はこちら"
+
+#. update_more_info_help
+msgid "Learn more about this update at Diffractor.com"
+msgstr "このアップデートの詳細については、Diffractor.com をご覧ください"
+
+#. update_not_now
+msgid "Not now"
+msgstr "今はしない"
+
+#. update_not_now_help
+msgid "Remind me again in a week"
+msgstr "1 週間後にもう一度通知する"
+
+#. update_please_wait
+msgid "Please wait while the update is downloaded..."
+msgstr "アップデートがダウンロードされるまでお待ちください..."
+
+#. version
+msgid "Version"
+msgstr "バージョン"
+
+#. vibrance
+msgid "Vibrance"
+msgstr "活気"
+
+#. video
+msgid "video"
+msgstr "ビデオ"
+
+#. webp_best
+msgid "WEBP - Best for the web"
+msgstr "WEBP - ウェブに最適"
+
+#. zoom_kb
+msgid "press ctrl-Space"
+msgstr "ctrl+スペースを押す"
+
+#. zoom_tooltip
+msgid "Hold down left mouse button to zoom into shown photo 100%."
+msgstr ""
+"マウスの左ボタンを押したままにすると、表示されている写真が 100% 拡大されま"
+"す。"
+
+#. help_more_info
+msgid "Help or more information"
+msgstr "ヘルプまたは詳細情報"
+
+# help_send_info
+msgid "Send anonymous log information to Diffractor HQ.\""
+msgstr "匿名のログ情報を Diffractor HQ に送信します。\""
+
+#. text_t click_collection_options
+msgid "Click for collection options"
+msgstr "クリックしてコレクションのオプションを表示"
+
+#. keyboard_back
+msgid "back"
+msgstr "戻る"
+
+#. keyboard_browser_back
+msgid "browser-back"
+msgstr "ブラウザ-戻る"
+
+#. keyboard_browser_favorites
+msgid "browser-favorites"
+msgstr "ブラウザ-お気に入り"
+
+#. keyboard_browser_forward
+msgid "browser-forward"
+msgstr "ブラウザ-進む"
+
+#. keyboard_browser_home
+msgid "browser-home"
+msgstr "ブラウザ-ホーム"
+
+#. keyboard_browser_refresh
+msgid "browser-refresh"
+msgstr "ブラウザ-更新"
+
+#. keyboard_browser_search
+msgid "browser-search"
+msgstr "ブラウザｰ検索"
+
+#. keyboard_browser_stop
+msgid "browser-stop"
+msgstr "ブラウザ-停止"
+
+#. keyboard_del
+msgid "del"
+msgstr "del"
+
+#. keyboard_down
+msgid "down"
+msgstr "down"
+
+#. keyboard_f1
+msgid "F1"
+msgstr "F1"
+
+#. keyboard_f10
+msgid "F10"
+msgstr "F10"
+
+#. keyboard_f11
+msgid "F11"
+msgstr "F11"
+
+#. keyboard_f2
+msgid "F2"
+msgstr "F2"
+
+#. keyboard_f3
+msgid "F3"
+msgstr "F3"
+
+#. keyboard_f4
+msgid "F4"
+msgstr "F4"
+
+#. keyboard_f5
+msgid "F5"
+msgstr "F5"
+
+#. keyboard_f6
+msgid "F6"
+msgstr "F6"
+
+#. keyboard_f7
+msgid "F7"
+msgstr "F7"
+
+#. keyboard_f8
+msgid "F8"
+msgstr "F8"
+
+#. keyboard_f9
+msgid "F9"
+msgstr "F9"
+
+#. keyboard_insert
+msgid "insert"
+msgstr "insert"
+
+#. keyboard_media_next_track
+msgid "media-next-track"
+msgstr "メディア-次-トラック"
+
+#. keyboard_media_play_pause
+msgid "media-play-pause"
+msgstr "メディア-再生-一時停止"
+
+#. keyboard_media_prev_track
+msgid "media-prev-track"
+msgstr "メディア-前-トラック"
+
+#. keyboard_media_stop
+msgid "media-stop"
+msgstr "メディア-停止"
+
+#. keyboard_next
+msgid "page-down"
+msgstr "page-down"
+
+#. keyboard_oem_4
+msgid "["
+msgstr "["
+
+#. keyboard_oem_6
+msgid "]"
+msgstr "]"
+
+#. keyboard_oem_plus
+msgid "+"
+msgstr "+"
+
+#. keyboard_prior
+msgid "page-up"
+msgstr "page-up"
+
+#. keyboard_tab
+msgid "tab"
+msgstr "tab"
+
+#. keyboard_up
+msgid "up"
+msgstr "上矢印"
+
+#. keyboard_volume_down
+msgid "volume-down"
+msgstr "ボリューム-下げる"
+
+#. keyboard_volume_mute
+msgid "volume-mute"
+msgstr "ボリューム-ミュート"
+
+#. keyboard_volume_up
+msgid "volume-up"
+msgstr "ボリューム-上げる"
+
+#. indexing_message
+msgid ""
+"Diffractor indexes your photos and videos to enable searching and duplicate "
+"detection."
+msgstr ""
+"Diffractor は写真やビデオにインデックスを付けて、検索と重複検出を可能にしま"
+"す。"
+
+#. collection_options_help
+msgid "You can choose what is indexed in collection options (press Ctrl-F6)."
+msgstr ""
+"コレクション オプションでインデックスの対象を選択できます (Ctrl-F6 キーを押し"
+"ます)。"
+
+#. collection_title
+msgid "Your collection"
+msgstr "あなたのコレクション"
+
+#. customize_display_title
+msgid "Display"
+msgstr "表示"
+
+#. rotate_info_fmt
+msgid "Rotate {first-name}."
+msgid_plural "Rotate {count} selected items. Originals will be overwritten."
+msgstr[0] "回転 {first-name}."
+
+#. title_folder_count_fmt
+msgid "1 folder"
+msgid_plural "{count} folders"
+msgstr[0] "1 フォルダー"
+
+#. title_item_count_fmt
+msgid "{count} item"
+msgid_plural "{count} items"
+msgstr[0] "{count} 項目"
+
+#. rating_set_fmt
+msgid "Click to rate as 1 star"
+msgid_plural "Click to rate as {count} stars"
+msgstr[0] "クリックして 1 つ星として評価"
+
+#. cannot_process_fmt
+msgid "Cannot process {first-name}."
+msgid_plural "Cannot process {first-name} and {other} other items."
+msgstr[0] "{first-name} を処理できません。"
+
+#. rename_fmt
+msgid "{first-name} will be renamed."
+msgid_plural "{count} items will be renamed in an incrementing sequence."
+msgstr[0] "{first-name} の名前が変更されます。"
+
+#. dup_count_fmt
+msgid "1 duplicate item"
+msgid_plural "{count} duplicate items"
+msgstr[0] "1 個の重複項目"
+
+#. sidecar_count_fmt
+msgid "1 sidecar item"
+msgid_plural "{count} sidecar items"
+msgstr[0] "1 個のサイドカー項目"
+
+#. processed_x_of_x_fmt
+msgid "{count} of 1 item was processed."
+msgid_plural "{count} of {total} items were processed."
+msgstr[0] "{count} 個のアイテムが処理されました。"
+
+#. processed_fmt
+msgid "1 item was processed."
+msgid_plural "{count} items were processed."
+msgstr[0] "1 項目が処理されました。"
+
+#. failed_items_fmt
+msgid "{first-name} failed."
+msgid_plural "{count} items failed."
+msgstr[0] "{first-name} 失敗しました。"
+
+#. ignored_fmt
+msgid "{first-name} was ignored."
+msgid_plural "{count} items were ignored."
+msgstr[0] "{first-name} は無視されました。"
+
+#. ignored_exist_already_fmt
+msgid ""
+"{first-name} was ignored because it exist already in the destination "
+"location."
+msgid_plural ""
+"{count} items were ignored because they exist already in the destination "
+"location."
+msgstr[0] "{first-name} は宛先の場所にすでに存在するため無視されました。"
+
+#. ignored_previous_fmt
+msgid "{first-name} was ignored because it was previously imported."
+msgid_plural ""
+"{count} items were ignored because they were previously imported."
+msgstr[0] "{first-name} は以前にインポートされたため無視されました。"
+
+#. dates_items_created_this_day_fmt
+msgid "1 item was created on this day."
+msgid_plural "{count} items were created on this day."
+msgstr[0] "この日は1項目が作成されました。"
+
+#. delete_info_fmt
+msgid "{first-name} will be moved to the recycle bin."
+msgid_plural "{count} items ({size}) will be moved to the recycle bin."
+msgstr[0] "{first-name} はごみ箱に移動されます。"
+
+#. copy_fmt
+msgid "{first-name} will be copied."
+msgid_plural "{count} items ({size}) will be copied."
+msgstr[0] "{first-name} がコピーされます。"
+
+#. move_fmt
+msgid "{first-name} will be moved."
+msgid_plural "{count} items ({size}) will be moved."
+msgstr[0] "{first-name} が移動されます。"
+
+#. resized_info_fmt
+msgid "{first-name} will be resized and saved to a folder."
+msgid_plural "{count} items will be resized and saved to a folder."
+msgstr[0] "{first-name} のサイズが変更され、フォルダーに保存されます。"
+
+#. properties_set_info_fmt
+msgid "{first-name} will be updated."
+msgid_plural "{count} items will be updated."
+msgstr[0] "{first-name} が更新されます。"
+
+#. convert_info_fmt
+msgid "{first-name} will be converted and copied to a folder."
+msgid_plural "{count} items will be converted and copied to a folder."
+msgstr[0] "{first-name} が変換され、フォルダーにコピーされます。"
+
+#. tag_info_fmt
+msgid "{first-name} will have tags added or removed."
+msgid_plural "{count} items will have tags added or removed."
+msgstr[0] "{first-name} にはタグが追加または削除されます。"
+
+#. adjust_date_info_fmt
+msgid "{first-name} will have the date adjusted."
+msgid_plural "{count} items will have the date adjusted."
+msgstr[0] "{first-name} の日付は調整されます。"
+
+#. shared_fmt
+msgid "{first-name} will be shared."
+msgid_plural "{count} items will be shared."
+msgstr[0] "{first-name} が共有されます。"
+
+#. structured_copy_fmt
+msgid "{first-name} will be copied or moved."
+msgid_plural "{count} items ({size}) will be copied or moved."
+msgstr[0] "{first-name} はコピーまたは移動されます。"
+
+#. email_info_fmt
+msgid "{first-name} will be sent using your desktop email client."
+msgid_plural "{count} items will be sent using your desktop email client."
+msgstr[0] ""
+"{first-name} はデスクトップ電子メール クライアントを使用して送信されます。"
+
+#. audio_title
+#. unselect_fmt
+msgid "Unselect {}"
+msgstr "{} の選択を解除"
+
+#. command_save_and_back_tooltip
+msgid "Save the current item and open the previous item."
+msgstr "現在の項目を保存し、前の項目を開きます。"
+
+#. command_save_and_next_tooltip
+msgid "Save the current item and open the next item."
+msgstr "現在の項目を保存し、次の項目を開きます。"
+
+#. folder_title
+msgid "Folder"
+msgstr "フォルダー"
+
+#. editing_title
+msgid "Editing"
+msgstr "編集"
+
+#. command_toggle_group_by
+msgid "Toggle item grouping"
+msgstr "項目のグループ化を切り替え"
+
+#. tooltip_toggle_details2
+msgid "Toggle between thumbnails or details view"
+msgstr "サムネイル表示と詳細表示を切り替え"
+
+#. prop_name_place
+msgid "Place"
+msgstr "場所"
+
+#. presence_loading
+msgid "Presence loading..."
+msgstr "プレゼンスを読み込み中..."
+
+#. presence_not_in
+msgid "NOT in collection"
+msgstr "コレクションにはありません"
+
+#. presence_this_in
+msgid "In collection"
+msgstr "コレクション中"
+
+#. presence_similar_in
+msgid "Similar in collection"
+msgstr "類似のコレクション"
+
+#. presence_newer_in
+msgid "Newer in collection"
+msgstr "新しいコレクション"
+
+#. presence_older_in
+msgid "Older in collection"
+msgstr "古いコレクション"
+
+#. presence_not_in_long
+msgid "This item is NOT in the collection."
+msgstr "この項目はコレクションにありません。"
+
+#. presence_this_in_long
+msgid "This item is in the collection."
+msgstr "この項目はコレクションにあります。"
+
+#. presence_similar_in_long
+msgid ""
+"This item is outside the collection but similar item(s) exist in the "
+"collection."
+msgstr ""
+"この項目はコレクションの外にありますが、同様の項目がコレクション内に存在しま"
+"す。"
+
+#. presence_newer_in_long
+msgid ""
+"This item is outside the collection but similar NEWER item(s) exist in the "
+"collection."
+msgstr ""
+"この項目はコレクションの外にありますが、同様の新しい項目がコレクション内に存"
+"在します。"
+
+#. presence_older_in_long
+msgid ""
+"This item is outside the collection but similar OLDER item(s) exist in the "
+"collection."
+msgstr ""
+"この項目はコレクションの外にありますが、同様の古い項目がコレクション内に存在"
+"します。"
+
+#. add_folder
+msgid "Add folder"
+msgstr "フォルダーの追加"
+
+#. text_t index_size_fmt
+msgid ""
+"Currently the index database is {} in size and contains metadata from {} "
+"items."
+msgstr ""
+"現在、インデックス データベースのサイズは {} で、{} 個の項目からのメタデータ"
+"が含まれています。"
+
+#. items_identical
+msgid "Files are identical."
+msgstr "ファイルは同一です。"
+
+#. items_not_identical
+msgid "Files are different."
+msgstr "ファイルが違います。"
+
+#. pixels_similar_files_not_identical
+msgid "Pixels are similar but files are different."
+msgstr "ピクセルは似ていますが、ファイルは異なります。"
+
+#. pixels_identical_files_not_identical
+msgid "Pixels are identical but files are different."
+msgstr "ピクセルは同じですが、ファイルは異なります。"
+
+#. pixel_difference_fmt
+msgid "Pixel difference {}"
+msgstr "ピクセルの差異 {}"
+
+#. delete_fmt
+msgid "Delete {}"
+msgstr "削除 {}"
+
+#. query_created
+msgid "created"
+msgstr "作成日時"
+
+#. query_modified
+msgid "modified"
+msgstr "更新日時"
+
+#. command_sort_dates_descending
+msgid "Sort dates descending"
+msgstr "日付を降順に並べ替え"
+
+#. command_sort_dates_descending
+msgid "Sort dates ascending"
+msgstr "日付を昇順に並べ替え"
+
+#. show_verbose_metadata
+#. verbose_metadata
+msgid "Show verbose metadata"
+msgstr "詳細なメタデータを表示"
+
+#. hide_verbose_metadata
+msgid "Hide verbose metadata"
+msgstr "冗長なメタデータを非表示"
+
+#. copy_to_clipboard
+msgid "Copy to clipboard"
+msgstr "クリップボードにコピー"
+
+#. data
+msgid "data"
+msgstr "日付"
+
+#. subtitle
+msgid "subtitle"
+msgstr "サブタイトル"
+
+#. would_overwrite_fmt
+msgid "{first-name} already exists. Do you want to replace it?"
+msgid_plural ""
+"{first-name} and {other} other items already exist. Do you want to replace "
+"them?"
+msgstr[0] "{first-name} はすでに存在します。置き換えますか？"
+
+#. prop_name_doc_id
+msgid "Document Id"
+msgstr "ドキュメント Id"
+
+#. click_map_to_select
+msgid "Click map to select a location."
+msgstr "地図をクリックして場所を選択する。"
+
+#. gps_overwrite_count_fmt
+msgid "{first-name} will have existing GPS position metadata overwritten."
+msgid_plural ""
+"{first-name} and {other} other items will have existing GPS position "
+"metadata overwritten."
+msgstr[0] "{first-name} には既存の GPS 位置メタデータが上書きされます。"
+
+#. keyboard_help_title
+msgid "Help"
+msgstr "ヘルプ"
+
+#. audio_title
+#. search_audio
+msgid "Audio"
+msgstr "オーディオ"
+
+#. customize_ratings_and_label
+msgid "Show ratings and labels"
+msgstr "評価とラベルを表示する"
+
+#. customize_ratings
+msgid "Show ratings"
+msgstr "評価を表示する"
+
+#. customize_labels
+msgid "Show labels"
+msgstr "ラベルを表示する"
+
+#. command_rate_rejected
+msgid "Reject"
+msgstr "拒否"
+
+#. command_label_approved
+msgid "Approved"
+msgstr "承認"
+
+#. command_label_to_do
+msgid "To Do"
+msgstr "すること"
+
+#. command_label_review
+msgid "Review"
+msgstr "レビュー"
+
+#. command_label_second
+msgid "Second"
+msgstr "2番"
+
+#. command_label_none
+msgid "No Label"
+msgstr "ラベルなし"
+
+#. title_updating
+msgid "Updating..."
+msgstr "アップデート中..."
+
+#. xmp_metadata_title
+msgid "XMP"
+msgstr "XMP"
+
+#. icc_metadata_title
+msgid "ICC"
+msgstr "ICC"
+
+#. media_metadata_title
+msgid "Media"
+msgstr "メディア"
+
+#. raw_metadata_title
+msgid "Raw"
+msgstr "Raw"
+
+#. exif_metadata_title
+msgid "EXIF"
+msgstr "EXIF"
+
+#. iptc_metadata_title
+msgid "IPTC"
+msgstr "IPTC"
+
+#. none
+msgid "None"
+msgstr "なし"
+
+#. collection_options_info
+msgid "Define the folders that make your collection."
+msgstr "コレクションを作成するフォルダーを定義。"
+
+#. collection_options_manage
+msgid ""
+"Diffractor is designed to manage a collection of photos and videos on a PC."
+msgstr ""
+"Diffractor は、PC 上で写真やビデオのコレクションを管理するように設計されてい"
+"ます。"
+
+#. collection_options_more_information
+msgid "More information about collection management."
+msgstr "コレクション管理の詳細。"
+
+#. preview_show
+msgid "Show this RAW photo"
+msgstr "このRAW写真を表示"
+
+#. preview_always
+msgid "Always show RAW photos (slower)"
+msgstr "RAW 写真を常に表示する (遅い)"
+
+#. preview_preview
+msgid "Show RAW preview if available (faster)"
+msgstr "利用可能な場合は RAW プレビューを表示する (高速)"
+
+#. preview_showing
+msgid "Showing a RAW photo preview."
+msgstr "RAW写真のプレビューを表示する。"
+
+#. preview_rendering
+msgid "Rendering RAW photo..."
+msgstr "RAW写真をレンダリング中..."
+
+#. preview_rendered
+msgid "Showing fully rendered RAW photo."
+msgstr "完全にレンダリングされた RAW 写真を表示。"
+
+#. command_favorite
+msgid "Favorite"
+msgstr "お気に入り"
+
+#. command_advanced_search
+msgid "Advanced Search"
+msgstr "高度な検索"
+
+#. favorite_add_fmt
+msgid "Add '{}' to favorites."
+msgstr "'{}' をお気に入りへ追加。"
+
+#. favorite_remove_fmt
+msgid "Remove '{}' from favorite folders or searches."
+msgstr "お気に入りのフォルダーまたは検索から '{}' を削除する。"
+
+#. favorite_title
+msgid "Favorite title"
+msgstr "お気に入りのタイトル"
+
+#. favorite_failed_to_add
+msgid "Failed to add. Maximum number of favorites reached."
+msgstr "追加に失敗しました。 お気に入りの最大数に達しました。"
+
+#. search_collection
+msgid "Search in the collection"
+msgstr "コレクション内を検索"
+
+#. search_folder
+msgid "Search in a folder"
+msgstr "フォルダー内を検索"
+
+#. search_sub_folders
+msgid "Search in subfolders"
+msgstr "サブフォルダー内を検索"
+
+#. search_not_in_collection
+msgid "Find files not in collection"
+msgstr "コレクションにないファイルを検索する"
+
+#. search_all_terms
+msgid "All these terms"
+msgstr "これらすべての用語"
+
+#. search_any_terms
+msgid "Any of these terms"
+msgstr "これらの用語のいずれか"
+
+#. search_none_terms
+msgid "None of these terms"
+msgstr "これらの用語が無いもの"
+
+#. search_photos
+msgid "Photos"
+msgstr "写真"
+
+#. search_located_within
+msgid "Located within"
+msgstr "中にある"
+
+#. search_select_term
+msgid "Select term"
+msgstr "用語を選択"
+
+#. search_date_from
+msgid "From"
+msgstr "から"
+
+#. search_date_until
+msgid "Until"
+msgstr "まで"
+
+#. command_sync
+msgid "Synchronize"
+msgstr "同期"
+
+#. sync_details
+msgid "Synchronize your collection with a remote location."
+msgstr "コレクションをリモートの場所と同期する。"
+
+#. sync_collection
+msgid "Synchronize whole collection"
+msgstr "コレクション全体を同期する"
+
+#. sync_other_folder
+msgid "Synchronize only one folder"
+msgstr "1 つのフォルダーのみを同期する"
+
+#. sync_remote_folder
+msgid "Remote folder"
+msgstr "リモート フォルダー"
+
+#. sync_local_remote
+msgid "Copy newer local files to remote folders"
+msgstr "新しいローカル ファイルをリモート フォルダーにコピーする"
+
+#. sync_remote_local
+msgid "Copy newer remote files to local folders"
+msgstr "新しいリモート ファイルをローカル フォルダーにコピーする"
+
+#. sync_delete_local
+msgid "Delete local files that do not exist remotely"
+msgstr "リモートに存在しないローカル ファイルを削除する"
+
+#. sync_delete_remote
+msgid "Delete remote files that do not exist locally"
+msgstr "ローカルに存在しないリモート ファイルを削除する"
+
+#. sync_local
+msgid "Source of synchronization (Local)"
+msgstr "同期元(ローカル)"
+
+#. sync_remote
+msgid "Destination of synchronization (Remote)"
+msgstr "同期先(リモート)"
+
+#. sync_copy_remote_col
+msgid ""
+"Copy\n"
+"remote"
+msgstr ""
+"コピー\n"
+"リモート"
+
+#. sync_copy_local_col
+msgid ""
+"Copy\n"
+"local"
+msgstr ""
+"コピー\n"
+"ローカル"
+
+#. sync_delete_remote_col
+msgid ""
+"Delete\n"
+"remote"
+msgstr ""
+"削除\n"
+"リモート"
+
+#. sync_delete_local_col
+msgid ""
+"Delete\n"
+"local"
+msgstr ""
+"削除\n"
+"ローカル"
+
+#. button_sync
+msgid "&Synchronize"
+msgstr "同期(&S)"
+
+#. import_from
+msgid "Source of import:"
+msgstr "インポート元 :"
+
+# import_src_filter
+msgid "Source files filter:"
+msgstr "ソース ファイル フィルター :"
+
+#. import_other_folder
+msgid "Other folder"
+msgstr "その他のフォルダー"
+
+#. import_detecting
+msgid "Detecting folders..."
+msgstr "フォルダーを検出中..."
+
+#. button_analyze
+msgid "&Analyze"
+msgstr "分析(&A)"
+
+#. select_location
+msgid "Select a location"
+msgstr "場所を選択"
+
+#. import_overwrite
+msgid "Overwrite"
+msgstr "上書き"
+
+#. import_ignore
+msgid "Ignore"
+msgstr "無視"
+
+# import_rename_different_attributes
+msgid "Rename if files have same name but different attributes.\""
+msgstr "ファイルの名前は同じだが属性が異なる場合は名前を変更する。\""
+
+# import_custom_folder_structure
+msgid "Destination folder structure:"
+msgstr "保存先のフォルダ構造 :"
+
+# import_set_created_date
+msgid "Set file date created to metadata date created."
+msgstr "ファイルの作成日をメタデータの作成日に設定する。"
+
+#. selected_items_fmt
+msgid "Selected items [{}]"
+msgstr "選択した項目 [{}]"
+
+#. analyzing
+msgid "Analyzing..."
+msgstr "分析中..."
+
+#. processing
+msgid "Processing..."
+msgstr "処理中..."
+
+#. km_from
+msgid "km from"
+msgstr "km from"
+
+#. scope
+msgid "Scope"
+msgstr "範囲"
+
+#. value
+msgid "Value"
+msgstr "値"
+
+#. lossless_compression
+msgid "Lossless compression"
+msgstr "ロスレス圧縮"
+
+#. command_toggle_volume
+msgid "Toggle volume"
+msgstr "音量の切り替え"
+
+#. command_volume100
+msgid "Volume 100%"
+msgstr "音量 100%"
+
+#. command_volume75
+msgid "Volume 75%"
+msgstr "音量 75%"
+
+#. command_volume50
+msgid "Volume 50%"
+msgstr "音量 50%"
+
+#. command_volume25
+msgid "Volume 25%"
+msgstr "音量 25%"
+
+#. command_volume0
+msgid "Mute"
+msgstr "ミュート"
+
+#. command_repeat_toggle
+msgid "Toggle repeat play"
+msgstr "リピート再生の切り替え"
+
+#. command_repeat_one
+msgid "Repeat play one item"
+msgstr "1 項目を繰り返し再生"
+
+#. command_repeat_all
+msgid "Repeat play all media items"
+msgstr "すべてのメディアアイテムを繰り返し再生"
+
+#. command_repeat_none
+msgid "Don't repeat"
+msgstr "繰り返し再生しない"
+
+#. command_playback_menu
+msgid "Playback Options"
+msgstr "再生オプション"
+
+#. command_playback_toolbar
+msgid "Playback"
+msgstr "再生"
+
+#. command_autoplay
+msgid "Autoplay selected media"
+msgstr "選択したメディアを自動再生する"
+
+# command_last_played_pos
+msgid "Resume playing media from last position"
+msgstr "メディアの再生を最後の位置から再開する"
+
+#. command_filter_photos
+msgid "Photo filter"
+msgstr "フォト フィルター"
+
+#. command_filter_videos
+msgid "Video filter"
+msgstr "ビデオ フィルター"
+
+#. command_filter_audio
+msgid "Audio filter"
+msgstr "オーディオ フィルター"
+
+#. all_items_filtered
+msgid ""
+"All items filtered out.\n"
+"Click to clear filter."
+msgstr ""
+"すべての項目がフィルタリングされて除外されました。\n"
+"クリックしてフィルターを解除。"
+
+# click_to_search
+msgid "Click to search in the collection"
+msgstr "クリックしてコレクション内を検索"
+
+# click_to_open
+msgid "Click to open"
+msgstr "クリックして開く"
+
+# collection_contains
+msgid "The collection contains {} {} ({})."
+msgstr "コレクションには {} {} ({}) が含まれています。"
+
+# collection_contains2
+msgid "The collection contains:"
+msgstr "コレクションには次のものが含まれます :"
+
+# items_created_fmt
+msgid "Items created {} {}"
+msgstr "作成された項目 {} {}"
+
+# items_modified_fmt
+msgid "Items modified {} {}"
+msgstr "変更された項目 {} {}"
+
+# click_to_open_created_modified
+msgid ""
+"Click to open created items.\n"
+"Control-click to open modified items."
+msgstr ""
+"クリックして作成した項目を開く。\n"
+"Control キーを押しながらクリックして、変更された項目を開く。"
+
+# click_items_from_fmt
+msgid "{} items from {} in the collection."
+msgstr "{} 個の項目  {} のコレクションから。"
+
+# items_created_on_fmt
+msgid "The collection contains {} items created on {}."
+msgstr "コレクションに含まれる {} 個の項目 {} で作成された。"
+
+# command_all_tags
+msgid "Show all tags"
+msgstr "すべてのタグを表示"
+
+# command_favorite_tags
+msgid "Show only favorite tags"
+msgstr "お気に入りタグのみ表示"
+
+# option_favorite_tags
+msgid "Show only favorite tags in the sidebar"
+msgstr "サイドバーにお気に入りのタグのみを表示する"
+
+# collection_add
+msgid "Add folder to collection"
+msgstr "フォルダーをコレクションに追加"

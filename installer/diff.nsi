@@ -1,10 +1,10 @@
-;NSIS Modern User Interface
+﻿;NSIS Modern User Interface
 
 !define PRODUCT_NAME "Diffractor"
 !define PRODUCT32_EXE "diffractor.exe"
 !define PRODUCT64_EXE "diffractor64.exe"
 !define PRODUCT_PUBLISHER "Diffractor"
-!define BUILD_NUM "1171"
+!define BUILD_NUM "1172"
 !define PRODUCT_VERSION "126.0"
 !define FILE_VERSION "1.26.0.${BUILD_NUM}"
 !define PRODUCT_WEB_SITE "http://www.Diffractor.com/"
@@ -160,6 +160,7 @@ VIAddVersionKey LegalCopyright "Copyright (C) 2022 Zac Walker"
 !insertmacro MUI_LANGUAGE "English" ; The first language is the default language
 !insertmacro MUI_LANGUAGE "German"
 !insertmacro MUI_LANGUAGE "Italian"
+!insertmacro MUI_LANGUAGE "Japanese"
 !insertmacro MUI_LANGUAGE "Spanish"
 ;!insertmacro MUI_LANGUAGE "Czech"
 
@@ -204,9 +205,11 @@ FunctionEnd
 Function MyWelcomeShowCallback
 	Var /global welcome_text
    ${If} $LANGUAGE == 1031
-		StrCpy  $welcome_text "Superschnelle Suche, Betrachtung und Vergleich von Fotos oder Videos.$\r$\n$\r$\nOptimiert f�r Ihre Grafikkarte und Ihren PC."
+		StrCpy  $welcome_text "Superschnelle Suche, Betrachtung und Vergleich von Fotos oder Videos.$\r$\n$\r$\nOptimiert für Ihre Grafikkarte und Ihren PC."
 	${ElseIf} $LANGUAGE == 1029		
-		StrCpy  $welcome_text "Lehk� spr�va fotografi� a m�di�.$\r$\n$\r$\nOptimalizov�no pro va�i grafickou kartu a PC."
+		StrCpy  $welcome_text "Lehká správa fotografií a médií.$\r$\n$\r$\nOptimalizováno pro vaši grafickou kartu a PC."
+	${ElseIf} $LANGUAGE == 1041		
+		StrCpy  $welcome_text "写真やビデオを超高速で検索、表示、比較します。$\r$\n$\r$\nグラフィックス カードと PC に合わせて最適化されています。"
 	${Else}
 		StrCpy  $welcome_text "Superfast searching, viewing and comparing of photos or videos.$\r$\n$\r$\nOptimized for your graphics card and PC."
 	${EndIf} 
@@ -309,6 +312,8 @@ Section "Diffractor"
 		WriteRegStr HKCU "${PRODUCT_SETTINGS_KEY}" "lang" "cs"
 	${ElseIf} $LANGUAGE == 1034
 		WriteRegStr HKCU "${PRODUCT_SETTINGS_KEY}" "lang" "es"
+	${ElseIf} $LANGUAGE == 1041
+		WriteRegStr HKCU "${PRODUCT_SETTINGS_KEY}" "lang" "ja"
 	${Else}
 		WriteRegStr HKCU "${PRODUCT_SETTINGS_KEY}" "lang" "en"
 	${EndIf} 

@@ -66,6 +66,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "languages", "languages", "{
 		exe\languages\de.po = exe\languages\de.po
 		exe\languages\es.po = exe\languages\es.po
 		exe\languages\it.po = exe\languages\it.po
+		exe\languages\ja.po = exe\languages\ja.po
 	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "libjpeg12", "third-party\LibJpeg\jpeg12.vcxproj", "{A867397A-0C99-3588-ABF3-CA22050152E1}"
