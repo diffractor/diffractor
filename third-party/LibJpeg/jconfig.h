@@ -74,3 +74,6 @@ typedef signed int INT32;
 #ifdef _M_ARM64
 #define NEON_INTRINSICS
 #endif
+
+
+#define THREAD_LOCAL __declspec(thread) 

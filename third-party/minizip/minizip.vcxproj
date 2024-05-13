@@ -465,7 +465,7 @@
     <ClCompile Include="minizip.c" />
     <ClCompile Include="mz_compat.c" />
     <ClCompile Include="mz_crypt.c" />
-    <ClCompile Include="mz_crypt_win32.c" />
+    <ClCompile Include="mz_crypt_winvista.c" />
     <ClCompile Include="mz_os.c" />
     <ClCompile Include="mz_os_win32.c" />
     <ClCompile Include="mz_strm.c" />

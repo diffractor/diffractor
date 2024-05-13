@@ -426,17 +426,9 @@ enum TJCS {
 
 
 /**
- * The number of parameters
- */
-#define TJ_NUMPARAM
-
-/**
  * Parameters
  */
 enum TJPARAM {
-#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
-  TJPARAM_MAXPIXELS = -1,
-#endif
   /**
    * Error handling behavior
    *
@@ -629,9 +621,11 @@ enum TJPARAM {
    * lossless/predictive.
    *
    * In most cases, compressing and decompressing lossless JPEG images is
-   * considerably slower than compressing and decompressing lossy JPEG images.
-   * Also note that the following features are not available with lossless JPEG
-   * images:
+   * considerably slower than compressing and decompressing lossy JPEG images,
+   * and lossless JPEG images are much larger than lossy JPEG images.  Thus,
+   * lossless JPEG images are typically used only for applications that require
+   * mathematically lossless compression.  Also note that the following
+   * features are not available with lossless JPEG images:
    * - Colorspace conversion (lossless JPEG images always use #TJCS_RGB,
    * #TJCS_GRAY, or #TJCS_CMYK, depending on the pixel format of the source
    * image)
@@ -652,6 +646,30 @@ enum TJPARAM {
    *
    * **Value**
    * - `1`-`7` *[default for compression: `1`]*
+   *
+   * Lossless JPEG compression shares no algorithms with lossy JPEG
+   * compression.  Instead, it uses differential pulse-code modulation (DPCM),
+   * an algorithm whereby each sample is encoded as the difference between the
+   * sample's value and a "predictor", which is based on the values of
+   * neighboring samples.  If Ra is the sample immediately to the left of the
+   * current sample, Rb is the sample immediately above the current sample, and
+   * Rc is the sample diagonally to the left and above the current sample, then
+   * the relationship between the predictor selection value and the predictor
+   * is as follows:
+   *
+   * PSV | Predictor
+   * ----|----------
+   * 1   | Ra
+   * 2   | Rb
+   * 3   | Rc
+   * 4   | Ra + Rb – Rc
+   * 5   | Ra + (Rb – Rc) / 2
+   * 6   | Rb + (Ra – Rc) / 2
+   * 7   | (Ra + Rb) / 2
+   *
+   * Predictors 1-3 are 1-dimensional predictors, whereas Predictors 4-7 are
+   * 2-dimensional predictors.  The best predictor for a particular image
+   * depends on the image.
    *
    * @see #TJPARAM_LOSSLESS
    */
@@ -715,10 +733,10 @@ enum TJPARAM {
    * the contents of the JPEG image.  Note that this parameter is set by
    * #tj3LoadImage8() when loading a Windows BMP file that contains pixel
    * density information, and the value of this parameter is stored to a
-   * Windows BMP file by #tj3SaveImage8() if the value of #TJPARAM_DENSITYUNIT
+   * Windows BMP file by #tj3SaveImage8() if the value of #TJPARAM_DENSITYUNITS
    * is `2`.
    *
-   * @see TJPARAM_DENSITYUNIT
+   * @see TJPARAM_DENSITYUNITS
    */
   TJPARAM_XDENSITY,
   /**
@@ -732,10 +750,10 @@ enum TJPARAM {
    * the contents of the JPEG image.  Note that this parameter is set by
    * #tj3LoadImage8() when loading a Windows BMP file that contains pixel
    * density information, and the value of this parameter is stored to a
-   * Windows BMP file by #tj3SaveImage8() if the value of #TJPARAM_DENSITYUNIT
+   * Windows BMP file by #tj3SaveImage8() if the value of #TJPARAM_DENSITYUNITS
    * is `2`.
    *
-   * @see TJPARAM_DENSITYUNIT
+   * @see TJPARAM_DENSITYUNITS
    */
   TJPARAM_YDENSITY,
   /**
@@ -758,7 +776,31 @@ enum TJPARAM {
    *
    * @see TJPARAM_XDENSITY, TJPARAM_YDENSITY
    */
-  TJPARAM_DENSITYUNITS
+  TJPARAM_DENSITYUNITS,
+  /**
+   * Memory limit for intermediate buffers
+   *
+   * **Value**
+   * - the maximum amount of memory (in megabytes) that will be allocated for
+   * intermediate buffers, which are used with progressive JPEG compression and
+   * decompression, optimized baseline entropy coding, lossless JPEG
+   * compression, and lossless transformation *[default: `0` (no limit)]*
+   */
+  TJPARAM_MAXMEMORY,
+  /**
+   * Image size limit [decompression, lossless transformation, packed-pixel
+   * image loading]
+   *
+   * Setting this parameter will cause the decompression, transform, and image
+   * loading functions to return an error if the number of pixels in the source
+   * image exceeds the specified limit.  This allows security-critical
+   * applications to guard against excessive memory consumption.
+   *
+   * **Value**
+   * - maximum number of pixels that the decompression, transform, and image
+   * loading functions will process *[default: `0` (no limit)]*
+   */
+  TJPARAM_MAXPIXELS
 };
 
 

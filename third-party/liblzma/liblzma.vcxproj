@@ -486,7 +486,6 @@
     <ClCompile Include="src\common\tuklib_progname.c" />
     <ClCompile Include="src\liblzma\check\check.c" />
     <ClCompile Include="src\liblzma\check\crc32_fast.c" />
-    <ClCompile Include="src\liblzma\check\crc32_small.c" />
     <ClCompile Include="src\liblzma\check\crc32_table.c" />
     <ClCompile Include="src\liblzma\check\crc64_fast.c" />
     <ClCompile Include="src\liblzma\check\crc64_table.c" />

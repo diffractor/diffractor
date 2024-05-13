@@ -28,6 +28,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="sharpyuv\sharpyuv.c" />
+    <ClCompile Include="sharpyuv\sharpyuv_cpu.c" />
     <ClCompile Include="sharpyuv\sharpyuv_csp.c" />
     <ClCompile Include="sharpyuv\sharpyuv_dsp.c" />
     <ClCompile Include="sharpyuv\sharpyuv_gamma.c" />
@@ -138,6 +139,7 @@
     <ClCompile Include="src\utils\filters_utils.c" />
     <ClCompile Include="src\utils\huffman_encode_utils.c" />
     <ClCompile Include="src\utils\huffman_utils.c" />
+    <ClCompile Include="src\utils\palette.c" />
     <ClCompile Include="src\utils\quant_levels_dec_utils.c" />
     <ClCompile Include="src\utils\quant_levels_utils.c" />
     <ClCompile Include="src\utils\random_utils.c" />
@@ -146,6 +148,7 @@
     <ClCompile Include="src\utils\utils.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="sharpyuv\sharpyuv_cpu.h" />
     <ClInclude Include="src\dec\alphai_dec.h" />
     <ClInclude Include="src\dec\common_dec.h" />
     <ClInclude Include="src\dec\vp8i_dec.h" />
@@ -177,6 +180,7 @@
     <ClInclude Include="src\utils\filters_utils.h" />
     <ClInclude Include="src\utils\huffman_encode_utils.h" />
     <ClInclude Include="src\utils\huffman_utils.h" />
+    <ClInclude Include="src\utils\palette.h" />
     <ClInclude Include="src\utils\quant_levels_dec_utils.h" />
     <ClInclude Include="src\utils\quant_levels_utils.h" />
     <ClInclude Include="src\utils\random_utils.h" />

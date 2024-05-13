@@ -91,3 +91,5 @@
 
 /* Define to `unsigned' if <sys/types.h> does not define. */
 /* #undef size_t */
+
+#define XML_GE 1

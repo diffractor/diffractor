@@ -89,7 +89,7 @@ static bool has_NEON() {
 
 #else  // #if defined(HAVE_SIGNAL_H) && defined(HAVE_SETJMP_H)
 
-//#warning "Don't know how to detect NEON support at runtime- will be disabled"
+#warning "Don't know how to detect NEON support at runtime- will be disabled"
 
 static bool has_NEON() {
   return false;

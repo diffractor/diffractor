@@ -1,13 +1,12 @@
 /* mz_crypt.c -- Crypto/hash functions
    part of the minizip-ng project
 
-   Copyright (C) 2010-2021 Nathan Moinvaziri
+   Copyright (C) Nathan Moinvaziri
      https://github.com/zlib-ng/minizip-ng
 
    This program is distributed under the terms of the same license as zlib.
    See the accompanying LICENSE file for the full text of the license.
 */
-
 
 #include "mz.h"
 #include "mz_os.h"
@@ -16,7 +15,7 @@
 #if defined(HAVE_ZLIB)
 #  if !defined(ZLIB_COMPAT)
 #    include "zlib-ng.h"
-#    define ZLIB_PREFIX(x) zng_ ## x
+#    define ZLIB_PREFIX(x) zng_##x
 #  else
 #    include "zlib.h"
 #    define ZLIB_PREFIX(x) x
@@ -105,26 +104,31 @@ uint32_t mz_crypt_crc32_update(uint32_t value, const uint8_t *buf, int32_t size)
 
 #if defined(HAVE_WZAES)
 int32_t  mz_crypt_pbkdf2(uint8_t *password, int32_t password_length, uint8_t *salt,
-    int32_t salt_length, int32_t iteration_count, uint8_t *key, int32_t key_length) {
+    int32_t salt_length, uint32_t iteration_count, uint8_t *key, uint16_t key_length) {
     void *hmac1 = NULL;
     void *hmac2 = NULL;
     void *hmac3 = NULL;
     int32_t err = MZ_OK;
     uint16_t i = 0;
-    uint16_t j = 0;
+    uint32_t j = 0;
     uint16_t k = 0;
     uint16_t block_count = 0;
     uint8_t uu[MZ_HASH_SHA1_SIZE];
     uint8_t ux[MZ_HASH_SHA1_SIZE];
 
-    if (password == NULL || salt == NULL || key == NULL)
+    if (!password || !salt || !key)
         return MZ_PARAM_ERROR;
 
     memset(key, 0, key_length);
 
-    mz_crypt_hmac_create(&hmac1);
-    mz_crypt_hmac_create(&hmac2);
-    mz_crypt_hmac_create(&hmac3);
+    hmac1 = mz_crypt_hmac_create();
+    hmac2 = mz_crypt_hmac_create();
+    hmac3 = mz_crypt_hmac_create();
+
+    if (!hmac1 || !hmac2 || !hmac3) {
+        err = MZ_MEM_ERROR;
+        goto pbkdf2_cleanup;
+    }
 
     mz_crypt_hmac_set_algorithm(hmac1, MZ_HASH_SHA1);
     mz_crypt_hmac_set_algorithm(hmac2, MZ_HASH_SHA1);
@@ -157,7 +161,7 @@ int32_t  mz_crypt_pbkdf2(uint8_t *password, int32_t password_length, uint8_t *sa
             if (err != MZ_OK)
                 break;
 
-            for(k = 0; k < MZ_HASH_SHA1_SIZE; k += 1)
+            for (k = 0; k < MZ_HASH_SHA1_SIZE; k += 1)
                 ux[k] ^= uu[k];
 
             err = mz_crypt_hmac_copy(hmac1, hmac3);
@@ -175,6 +179,7 @@ int32_t  mz_crypt_pbkdf2(uint8_t *password, int32_t password_length, uint8_t *sa
             key[k++] = ux[j++];
     }
 
+pbkdf2_cleanup:
     /* hmac3 uses the same provider as hmac2, so it must be deleted
        before the context is destroyed. */
     mz_crypt_hmac_delete(&hmac3);

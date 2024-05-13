@@ -71,7 +71,7 @@ void compute_transform_coeffs(encoder_context* ectx,
   enum PredMode predMode = cb->PredMode;
 
   int16_t blk[32*32]; // residual
-  int16_t* residual = 0;
+  int16_t* residual = nullptr;
 
 
   //printf("transform-coeffs %d;%d size:%d cIdx:%d\n", tb->x,tb->y,1<<tb->log2Size,cIdx);

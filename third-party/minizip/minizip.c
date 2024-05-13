@@ -1,7 +1,7 @@
 /* minizip.c
    part of the minizip-ng project
 
-   Copyright (C) 2010-2021 Nathan Moinvaziri
+   Copyright (C) Nathan Moinvaziri
      https://github.com/zlib-ng/minizip-ng
    Copyright (C) 1998-2010 Gilles Vollant
      https://www.winimage.com/zLibDll/minizip.html
@@ -9,7 +9,6 @@
    This program is distributed under the terms of the same license as zlib.
    See the accompanying LICENSE file for the full text of the license.
 */
-
 
 #include "mz.h"
 #include "mz_os.h"
@@ -36,8 +35,6 @@ typedef struct minizip_opt_s {
     int32_t     encoding;
     uint8_t     verbose;
     uint8_t     aes;
-    const char *cert_path;
-    const char *cert_pwd;
 } minizip_opt;
 
 /***************************************************************************/
@@ -87,8 +84,6 @@ int32_t minizip_help(void) {
            "  -z  Zip central directory\n" \
            "  -p  Encryption password\n" \
            "  -s  AES encryption\n" \
-           "  -h  PKCS12 certificate path\n" \
-           "  -w  PKCS12 certificate password\n" \
            "  -b  BZIP2 compression\n" \
            "  -m  LZMA compression\n" \
            "  -n  XZ compression\n" \
@@ -108,7 +103,10 @@ int32_t minizip_list(const char *path) {
     void *reader = NULL;
 
 
-    mz_zip_reader_create(&reader);
+    reader = mz_zip_reader_create();
+    if (!reader)
+        return MZ_MEM_ERROR;
+
     err = mz_zip_reader_open_file(reader, path);
     if (err != MZ_OK) {
         printf("Error %" PRId32 " opening archive %s\n", err, path);
@@ -212,7 +210,7 @@ int32_t minizip_add_overwrite_cb(void *handle, void *userdata, const char *path)
 
     MZ_UNUSED(handle);
 
-    if (options->overwrite == 0) {
+    if (!options->overwrite) {
         /* If ask the user what to do because append and overwrite args not set */
         char rep = 0;
         do {
@@ -247,7 +245,10 @@ int32_t minizip_add(const char *path, const char *password, minizip_opt *options
     printf("Archive %s\n", path);
 
     /* Create zip writer */
-    mz_zip_writer_create(&writer);
+    writer = mz_zip_writer_create();
+    if (!writer)
+        return MZ_MEM_ERROR;
+
     mz_zip_writer_set_password(writer, password);
     mz_zip_writer_set_aes(writer, options->aes);
     mz_zip_writer_set_compress_method(writer, options->compress_method);
@@ -258,8 +259,6 @@ int32_t minizip_add(const char *path, const char *password, minizip_opt *options
     mz_zip_writer_set_progress_cb(writer, options, minizip_add_progress_cb);
     mz_zip_writer_set_entry_cb(writer, options, minizip_add_entry_cb);
     mz_zip_writer_set_zip_cd(writer, options->zip_cd);
-    if (options->cert_path != NULL)
-        mz_zip_writer_set_certificate(writer, options->cert_path, options->cert_pwd);
 
     err = mz_zip_writer_open_file(writer, path, options->disk_size, options->append);
 
@@ -327,7 +326,7 @@ int32_t minizip_extract_overwrite_cb(void *handle, void *userdata, mz_zip_file *
     MZ_UNUSED(file_info);
 
     /* Verify if we want to overwrite current entry on disk */
-    if (options->overwrite == 0) {
+    if (!options->overwrite) {
         char rep = 0;
         do {
             char answer[128];
@@ -353,11 +352,13 @@ int32_t minizip_extract(const char *path, const char *pattern, const char *desti
     int32_t err = MZ_OK;
     int32_t err_close = MZ_OK;
 
-
     printf("Archive %s\n", path);
 
     /* Create zip reader */
-    mz_zip_reader_create(&reader);
+    reader = mz_zip_reader_create();
+    if (!reader)
+        return MZ_MEM_ERROR;
+
     mz_zip_reader_set_pattern(reader, pattern, 1);
     mz_zip_reader_set_password(reader, password);
     mz_zip_reader_set_encoding(reader, options->encoding);
@@ -374,7 +375,7 @@ int32_t minizip_extract(const char *path, const char *pattern, const char *desti
         err = mz_zip_reader_save_all(reader, destination);
 
         if (err == MZ_END_OF_LIST) {
-            if (pattern != NULL) {
+            if (pattern) {
                 printf("Files matching %s not found in archive\n", pattern);
             } else {
                 printf("No files in archive\n");
@@ -410,7 +411,7 @@ int32_t minizip_erase(const char *src_path, const char *target_path, int32_t arg
     char bak_path[256];
     char tmp_path[256];
 
-    if (target_path == NULL) {
+    if (!target_path) {
         /* Construct temporary zip name */
         strncpy(tmp_path, src_path, sizeof(tmp_path) - 1);
         tmp_path[sizeof(tmp_path) - 1] = 0;
@@ -418,8 +419,14 @@ int32_t minizip_erase(const char *src_path, const char *target_path, int32_t arg
         target_path_ptr = tmp_path;
     }
 
-    mz_zip_reader_create(&reader);
-    mz_zip_writer_create(&writer);
+    reader = mz_zip_reader_create();
+    if (!reader)
+        return MZ_MEM_ERROR;
+    writer = mz_zip_writer_create();
+    if (!writer) {
+        mz_zip_reader_delete(&reader);
+        return MZ_MEM_ERROR;
+    }
 
     /* Open original archive we want to erase an entry in */
     err = mz_zip_reader_open_file(reader, src_path);
@@ -487,7 +494,7 @@ int32_t minizip_erase(const char *src_path, const char *target_path, int32_t arg
     mz_zip_writer_delete(&writer);
 
     if (err == MZ_END_OF_LIST) {
-        if (target_path == NULL) {
+        if (!target_path) {
             /* Swap original archive with temporary archive, backup old archive if possible */
             strncpy(bak_path, src_path, sizeof(bak_path) - 1);
             bak_path[sizeof(bak_path) - 1] = 0;
@@ -524,7 +531,6 @@ int main(int argc, const char *argv[]) {
     const char *password = NULL;
     const char *destination = NULL;
     const char *filename_to_extract = NULL;
-
 
     minizip_banner();
     if (argc == 1) {
@@ -563,7 +569,7 @@ int main(int argc, const char *argv[]) {
             else if ((c == 'v') || (c == 'V'))
                 options.verbose = 1;
             else if ((c >= '0') && (c <= '9')) {
-                options.compress_level = (c - '0');
+                options.compress_level = (int16_t)atoi(&argv[i][1]);
                 if (options.compress_level == 0)
                     options.compress_method = MZ_COMPRESS_METHOD_STORE;
             } else if ((c == 'b') || (c == 'B'))
@@ -596,23 +602,7 @@ int main(int argc, const char *argv[]) {
 #else
                 err = MZ_SUPPORT_ERROR;
 #endif
-            else if (((c == 'h') || (c == 'H')) && (i + 1 < argc)) {
-#ifdef MZ_ZIP_SIGNING
-                options.cert_path = argv[i + 1];
-                printf("%s ", argv[i + 1]);
-#else
-                err = MZ_SUPPORT_ERROR;
-#endif
-                i += 1;
-            } else if (((c == 'w') || (c == 'W')) && (i + 1 < argc)) {
-#ifdef MZ_ZIP_SIGNING
-                options.cert_pwd = argv[i + 1];
-                printf("%s ", argv[i + 1]);
-#else
-                err = MZ_SUPPORT_ERROR;
-#endif
-                i += 1;
-            } else if (((c == 'c') || (c == 'C')) && (i + 1 < argc)) {
+            else if (((c == 'c') || (c == 'C')) && (i + 1 < argc)) {
                 options.encoding = (int32_t)atoi(argv[i + 1]);
                 i += 1;
             } else if (((c == 'k') || (c == 'K')) && (i + 1 < argc)) {

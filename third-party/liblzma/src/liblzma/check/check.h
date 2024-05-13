@@ -13,10 +13,7 @@
 #ifndef LZMA_CHECK_H
 #define LZMA_CHECK_H
 
-#include <stdint.h>
-
 #include "common.h"
-#include "lzma.h"
 
 // If the function for external SHA-256 is missing, use the internal SHA-256
 // code. Due to how configure works, these defines can only get defined when
@@ -102,19 +99,22 @@ typedef struct {
 /// lzma_crc32_table[0] is needed by LZ encoder so we need to keep
 /// the array two-dimensional.
 #ifdef HAVE_SMALL
+lzma_attr_visibility_hidden
 extern uint32_t lzma_crc32_table[1][256];
+
 extern void lzma_crc32_init(void);
+
 #else
+
+lzma_attr_visibility_hidden
 extern const uint32_t lzma_crc32_table[8][256];
+
+lzma_attr_visibility_hidden
 extern const uint64_t lzma_crc64_table[4][256];
 #endif
 
 
 /// \brief      Initialize *check depending on type
-///
-/// \return     LZMA_OK on success. LZMA_UNSUPPORTED_CHECK if the type is not
-///             supported by the current version or build of liblzma.
-///             LZMA_PROG_ERROR if type > LZMA_CHECK_ID_MAX.
 extern void lzma_check_init(lzma_check_state *check, lzma_check type);
 
 /// Update the check state

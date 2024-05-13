@@ -36,7 +36,7 @@
 
 #define PHMAP_VERSION_MAJOR 1
 #define PHMAP_VERSION_MINOR 3
-#define PHMAP_VERSION_PATCH 8
+#define PHMAP_VERSION_PATCH 12
 
 // Included for the __GLIBC__ macro (or similar macros on other systems).
 #include <limits.h>
@@ -100,7 +100,7 @@
 #endif
 
 #if CHAR_BIT != 8
-    #error "phmap assumes CHAR_BIT == 8."
+    #warning "phmap assumes CHAR_BIT == 8."
 #endif
 
 // phmap currently assumes that an int is 4 bytes. 
@@ -120,7 +120,8 @@
     #define PHMAP_HAVE_BUILTIN(x) 0
 #endif
 
-#if (defined(_MSVC_LANG) && _MSVC_LANG >= 201703) || __cplusplus >= 201703
+#if (!defined(__GNUC__) || defined(__clang__) || __GNUC__ >= 5) && \
+    ((defined(_MSVC_LANG) && _MSVC_LANG >= 201703L) || __cplusplus >= 201703L)
     #define PHMAP_HAVE_CC17 1
 #else
     #define PHMAP_HAVE_CC17 0
@@ -148,40 +149,13 @@
     #define PHMAP_INTERNAL_HAVE_MIN_CLANG_VERSION(x, y) 0
 #endif
 
-// ----------------------------------------------------------------
-// Checks whether `std::is_trivially_destructible<T>` is supported.
-// ----------------------------------------------------------------
-#ifdef PHMAP_HAVE_STD_IS_TRIVIALLY_DESTRUCTIBLE
-    #error PHMAP_HAVE_STD_IS_TRIVIALLY_DESTRUCTIBLE cannot be directly set
-#elif defined(_LIBCPP_VERSION) || defined(_MSC_VER) ||                     \
-    (!defined(__clang__) && defined(__GNUC__) && defined(__GLIBCXX__) &&  PHMAP_INTERNAL_HAVE_MIN_GNUC_VERSION(4, 8))
-    #define PHMAP_HAVE_STD_IS_TRIVIALLY_DESTRUCTIBLE 1
-#endif
-
-// --------------------------------------------------------------
-// Checks whether `std::is_trivially_default_constructible<T>` is 
-// supported.
-// --------------------------------------------------------------
-#if defined(PHMAP_HAVE_STD_IS_TRIVIALLY_CONSTRUCTIBLE)
-    #error PHMAP_HAVE_STD_IS_TRIVIALLY_CONSTRUCTIBLE cannot be directly set
-#elif defined(PHMAP_HAVE_STD_IS_TRIVIALLY_ASSIGNABLE)
-    #error PHMAP_HAVE_STD_IS_TRIVIALLY_ASSIGNABLE cannot directly set
-#elif (defined(__clang__) && defined(_LIBCPP_VERSION)) ||        \
-    (!defined(__clang__) && defined(__GNUC__) &&                 \
-     PHMAP_INTERNAL_HAVE_MIN_GNUC_VERSION(5, 1) && \
-     (defined(_LIBCPP_VERSION) || defined(__GLIBCXX__))) ||      \
-    (defined(_MSC_VER) && !defined(__NVCC__))
-    #define PHMAP_HAVE_STD_IS_TRIVIALLY_CONSTRUCTIBLE 1
-    #define PHMAP_HAVE_STD_IS_TRIVIALLY_ASSIGNABLE 1
-#endif
-
 // -------------------------------------------------------------------
 // Checks whether C++11's `thread_local` storage duration specifier is
 // supported.
 // -------------------------------------------------------------------
 #ifdef PHMAP_HAVE_THREAD_LOCAL
     #error PHMAP_HAVE_THREAD_LOCAL cannot be directly set
-#elif defined(__APPLE__)
+#elif defined(__APPLE__) && defined(__clang__)
     #if __has_feature(cxx_thread_local) && \
         !(TARGET_OS_IPHONE && __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_9_0)
         #define PHMAP_HAVE_THREAD_LOCAL 1
@@ -341,7 +315,11 @@
 #endif
 
 #if PHMAP_HAVE_CC17
-    #define PHMAP_HAVE_SHARED_MUTEX 1
+    #ifdef __has_include
+       #if __has_include(<shared_mutex>)
+           #define PHMAP_HAVE_SHARED_MUTEX 1
+       #endif
+    #endif
 #endif
 
 #ifndef PHMAP_HAVE_STD_STRING_VIEW

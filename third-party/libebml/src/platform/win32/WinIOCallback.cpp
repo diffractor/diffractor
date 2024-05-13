@@ -146,7 +146,7 @@ bool WinIOCallback::open(const wchar_t* Path, const open_mode aMode, DWORD dwFla
       assert(false);
   }
 
-// if ((LONG)GetVersion() >= 0) {
+  //if ((LONG)GetVersion() >= 0) {
     mFile = CreateFileW(Path, AccessMode, ShareMode, NULL, Disposition, dwFlags, NULL);
 //  } else {
 //    int errCode;

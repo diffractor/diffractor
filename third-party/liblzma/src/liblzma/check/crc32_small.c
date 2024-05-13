@@ -12,11 +12,13 @@
 
 #include "check.h"
 
-#ifdef HAVE_SMALL
 
 uint32_t lzma_crc32_table[1][256];
 
 
+#ifdef HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR
+__attribute__((__constructor__))
+#endif
 static void
 crc32_init(void)
 {
@@ -38,18 +40,22 @@ crc32_init(void)
 }
 
 
+#ifndef HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR
 extern void
 lzma_crc32_init(void)
 {
 	mythread_once(crc32_init);
 	return;
 }
+#endif
 
 
 extern LZMA_API(uint32_t)
 lzma_crc32(const uint8_t *buf, size_t size, uint32_t crc)
 {
+#ifndef HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR
 	lzma_crc32_init();
+#endif
 
 	crc = ~crc;
 
@@ -60,5 +66,3 @@ lzma_crc32(const uint8_t *buf, size_t size, uint32_t crc)
 
 	return ~crc;
 }
-
-#endif

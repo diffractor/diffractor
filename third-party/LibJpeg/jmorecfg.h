@@ -224,8 +224,6 @@ typedef int boolean;
 #ifdef JPEG_INTERNAL_OPTIONS
 
 
-#define THREAD_LOCAL __declspec(thread)
-
 /*
  * These defines indicate whether to include various optional functions.
  * Undefining some of these symbols will produce a smaller but less capable
