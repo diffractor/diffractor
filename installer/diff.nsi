@@ -4,7 +4,7 @@
 !define PRODUCT32_EXE "diffractor.exe"
 !define PRODUCT64_EXE "diffractor64.exe"
 !define PRODUCT_PUBLISHER "Diffractor"
-!define BUILD_NUM "1172"
+!define BUILD_NUM "1173"
 !define PRODUCT_VERSION "126.0"
 !define FILE_VERSION "1.26.0.${BUILD_NUM}"
 !define PRODUCT_WEB_SITE "http://www.Diffractor.com/"
@@ -178,6 +178,20 @@ Function .onInit
     MessageBox MB_OK "Sadly, Diffractor requires Windows 7 or above."
     Quit
   ${EndIf}
+
+  Var /GLOBAL DEF_LANG
+  ReadRegStr $DEF_LANG HKCU "${PRODUCT_SETTINGS_KEY}" "lang"
+
+  ${If} $DEF_LANG == "de"
+	StrCpy $LANGUAGE 1031
+  ${ElseIf} $DEF_LANG == "cs"
+	StrCpy $LANGUAGE 1029
+  ${ElseIf} $DEF_LANG == "es"
+	StrCpy $LANGUAGE 1034
+  ${ElseIf} $DEF_LANG == "ja"
+	StrCpy $LANGUAGE 1041
+  ${EndIf}
+
   !insertmacro MUI_LANGDLL_DISPLAY
 FunctionEnd
 Function un.onInit
@@ -317,6 +331,8 @@ Section "Diffractor"
 	${Else}
 		WriteRegStr HKCU "${PRODUCT_SETTINGS_KEY}" "lang" "en"
 	${EndIf} 
+
+	WriteRegStr HKCU "${PRODUCT_SETTINGS_KEY}" "install_lang" $LANGUAGE
 
 SectionEnd
 

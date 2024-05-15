@@ -45,7 +45,7 @@ static std::atomic_int index_version;
 const wchar_t* s_app_name_l = L"Diffractor";
 const std::u8string_view s_app_name = u8"Diffractor"sv;
 const std::u8string_view s_app_version = u8"126.0"sv;
-const std::u8string_view g_app_build = u8"1172"sv;
+const std::u8string_view g_app_build = u8"1173"sv;
 const std::u8string_view stage_file_name = u8"diffractor-setup-update.exe"sv;
 static constexpr std::u8string_view installed_file_name = u8"diffractor-setup-installed.exe"sv;
 static constexpr std::u8string_view s_search = u8"search"sv;

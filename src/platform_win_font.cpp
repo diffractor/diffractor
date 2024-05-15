@@ -598,25 +598,7 @@ calc_text_extent_result font_renderer::calc_glyph_extent(const std::u32string_vi
 
 // https://stackoverflow.com/questions/5995293/get-single-glyph-metrics-net
 
-render_char_result font_renderer::render_char(const uint32_t c, const int spacing)
-{
-	return render_glyph(char_to_glyph(c), spacing);
-}
-
-uint16_t font_renderer::char_to_glyph(const uint32_t c)
-{
-	uint16_t glyph_index{};
-
-	if (SUCCEEDED(_face->GetGlyphIndicesW(&c, 1, &glyph_index)))
-	{
-		return glyph_index;
-	}
-
-	return 0;
-}
-
-
-render_char_result font_renderer::render_glyph(const uint16_t glyph_index, const int spacing)
+render_char_result font_renderer::render_glyph(const uint16_t glyph_index, const int spacing, const DWRITE_GLYPH_RUN* glyph_run)
 {
 	render_char_result result{};
 
@@ -635,8 +617,8 @@ render_char_result font_renderer::render_glyph(const uint16_t glyph_index, const
 		glyphOffset.ascenderOffset = 0.0f;
 
 		const auto run = DWRITE_GLYPH_RUN{
-			.fontFace = _face.Get(),
-			.fontEmSize = static_cast<float>(_font_size),
+			.fontFace = glyph_run->fontFace,
+			.fontEmSize = glyph_run->fontEmSize,
 			.glyphCount = 1,
 			.glyphIndices = &glyph_index,
 			.glyphAdvances = &glyph_advance,

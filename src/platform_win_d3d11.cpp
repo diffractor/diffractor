@@ -493,16 +493,15 @@ private:
 		int x_offset;
 	};
 
-	df::hash_map<char32_t, char32_t> _chars_to_glyphs;
+	df::hash_map<char32_t, uint16_t> _chars_to_glyphs;
 	df::hash_map<char32_t, coords> _coords;
 	font_renderer_ptr _font;
 	pointi _next_location;
 
 	ui::color _clr;
 	std::vector<ui::text_highlight_t> _highlights;
-
-	char32_t char_to_glyph(char32_t c);
-	coords find_glyph(char32_t c);
+		
+	coords find_glyph(uint16_t c, const DWRITE_GLYPH_RUN* glyph_run);
 	void create_a8_texture(int xy);
 
 	std::atomic<int> _ref_count = 0;
@@ -540,7 +539,7 @@ public:
 		return _font->measure(text16, style, avail.cx, avail.cy);
 	}
 
-	int line_height() { return _line_height; }
+	int line_height() const { return _line_height; }
 
 
 	// ----- IUnknown -----
@@ -2382,26 +2381,7 @@ void d3d11_text_renderer::create_a8_texture(const int xy)
 	}
 }
 
-
-char32_t d3d11_text_renderer::char_to_glyph(const char32_t c)
-{
-	df::scope_rendering_func rf(__FUNCTION__);
-	char32_t result = 0;
-	const auto found = _chars_to_glyphs.find(c);
-
-	if (found != _chars_to_glyphs.cend())
-	{
-		result = found->second;
-	}
-	else
-	{
-		_chars_to_glyphs[c] = result = _font->char_to_glyph(c);
-	}
-
-	return result;
-}
-
-d3d11_text_renderer::coords d3d11_text_renderer::find_glyph(const char32_t c)
+d3d11_text_renderer::coords d3d11_text_renderer::find_glyph(const uint16_t c, const DWRITE_GLYPH_RUN* glyph_run)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	coords result = {0, 0, 0, 0, 0};
@@ -2416,7 +2396,9 @@ d3d11_text_renderer::coords d3d11_text_renderer::find_glyph(const char32_t c)
 		return result;
 	}
 
-	const auto found = _coords.find(c);
+	const auto index = glyph_run->fontFace->GetGlyphCount();
+	const auto key = (index << 16) | c;
+	const auto found = _coords.find(key);
 
 	if (found != _coords.cend())
 	{
@@ -2424,7 +2406,7 @@ d3d11_text_renderer::coords d3d11_text_renderer::find_glyph(const char32_t c)
 	}
 	else
 	{
-		const auto alpha_pixels = _font->render_glyph(static_cast<wchar_t>(c), _spacing);
+		const auto alpha_pixels = _font->render_glyph(c, _spacing, glyph_run);
 
 		if (!alpha_pixels.is_empty())
 		{
@@ -2470,12 +2452,12 @@ d3d11_text_renderer::coords d3d11_text_renderer::find_glyph(const char32_t c)
 				alpha_pixels.x
 			};
 
-			_coords[alpha_pixels.glyph] = result = glyph_bounds;
+			_coords[key] = result = glyph_bounds;
 			_next_location.x += cx;
 		}
 		else
 		{
-			_coords[c] = result = {};
+			_coords[key] = result = {};
 		}
 	}
 
@@ -2616,7 +2598,7 @@ HRESULT d3d11_text_renderer::DrawGlyphRun(void* clientDrawingContext, FLOAT base
 		{
 			const auto c = glyphRun->glyphIndices[i];
 			const auto ax = glyphRun->glyphAdvances[i];
-			const auto coord = find_glyph(c);
+			const auto coord = find_glyph(c, glyphRun);
 			auto sx = tx;
 			auto sy = ty - _base_line_height; // coord.x_offset;
 

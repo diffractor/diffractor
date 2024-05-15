@@ -1653,14 +1653,22 @@ av_scaler::~av_scaler()
 	}
 }
 
+
 bool av_scaler::scale_surface(const ui::const_surface_ptr& surface_in, ui::surface_ptr& surface_out,
                               sizei dimensions_out)
 {
 	const auto source_extent = surface_in->dimensions();
-	const auto fmt = surface_in->format() == ui::texture_format::ARGB ? AV_PIX_FMT_BGRA : AV_PIX_FMT_BGRA;
+	const auto fmt = surface_in->format();
 
-	_scaler = sws_getCachedContext(_scaler, source_extent.cx, source_extent.cy, fmt, dimensions_out.cx,
-	                               dimensions_out.cy, fmt, SWS_BICUBIC, nullptr, nullptr,
+	if (fmt != ui::texture_format::RGB &&
+		fmt != ui::texture_format::ARGB)
+	{
+		return false;
+	}
+
+	const auto scaler_fmt = AV_PIX_FMT_BGRA;
+	_scaler = sws_getCachedContext(_scaler, source_extent.cx, source_extent.cy, scaler_fmt, dimensions_out.cx,
+	                               dimensions_out.cy, scaler_fmt, SWS_BICUBIC, nullptr, nullptr,
 	                               nullptr);
 
 	if (_scaler)
@@ -1674,7 +1682,8 @@ bool av_scaler::scale_surface(const ui::const_surface_ptr& surface_in, ui::surfa
 		uint8_t* dst_data[4] = {surface_out->pixels(), nullptr, nullptr, nullptr};
 		const int dst_stride[4] = {surface_out->stride(), 0, 0, 0};
 
-		sws_scale(_scaler, src_data, src_stride, 0, source_extent.cy, dst_data, dst_stride);
+		sws_scale(_scaler, src_data, src_stride, 0, source_extent.cy, 
+			dst_data, dst_stride);
 	}
 
 	return is_valid(surface_out);

@@ -56,8 +56,7 @@ public:
 	uint32_t calc_base_line_height() const;
 	calc_text_extent_result calc_glyph_extent(std::u32string_view code_points);
 
-	render_char_result render_char(uint32_t c, int spacing);
-	render_char_result render_glyph(uint16_t glyph_index, int spacing);
+	render_char_result render_glyph(uint16_t glyph_index, int spacing, const DWRITE_GLYPH_RUN* glyph_run);
 	sizei measure(std::wstring_view text, ui::style::text_style style, int width, int height);
 	void draw(ui::draw_context*, ID2D1RenderTarget*, std::wstring_view text, recti bounds, ui::style::text_style style,
 	          ui::color color, ui::color bg, const std::vector<ui::text_highlight_t>& highlights);
@@ -66,7 +65,6 @@ public:
 	          ui::style::text_style style, ui::color color, ui::color bg,
 	          const std::vector<ui::text_highlight_t>& highlights);
 	void draw(ui::draw_context*, IDWriteTextRenderer*, IDWriteTextLayout*, recti bounds, ui::color color, ui::color bg);
-	uint16_t char_to_glyph(uint32_t c);
 };
 
 using font_renderer_ptr = std::shared_ptr<font_renderer>;
