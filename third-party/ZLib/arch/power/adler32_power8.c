@@ -36,14 +36,15 @@
  * https://www.ietf.org/rfc/rfc1950.txt
  */
 
-#ifdef POWER8_VSX
+#ifdef POWER8_VSX_ADLER32
 
 #include <altivec.h>
 #include "zbuild.h"
+#include "zutil.h"
 #include "adler32_p.h"
 
 /* Vector across sum unsigned int (saturate).  */
-static inline vector unsigned int vec_sumsu(vector unsigned int __a, vector unsigned int __b) {
+inline vector unsigned int vec_sumsu(vector unsigned int __a, vector unsigned int __b) {
     __b = vec_sld(__a, __a, 8);
     __b = vec_add(__b, __a);
     __a = vec_sld(__b, __b, 4);
@@ -52,7 +53,7 @@ static inline vector unsigned int vec_sumsu(vector unsigned int __a, vector unsi
     return __a;
 }
 
-Z_INTERNAL uint32_t adler32_power8(uint32_t adler, const uint8_t *buf, size_t len) {
+uint32_t adler32_power8(uint32_t adler, const unsigned char* buf, size_t len) {
     uint32_t s1 = adler & 0xffff;
     uint32_t s2 = (adler >> 16) & 0xffff;
 
@@ -146,8 +147,8 @@ Z_INTERNAL uint32_t adler32_power8(uint32_t adler, const uint8_t *buf, size_t le
     s1 = vs1[0] % BASE;
     s2 = vs2[0] % BASE;
 
-    /* Process tail (len < 16).  */
+    /* Process tail (len < 16).and return  */
     return adler32_len_16(s1, buf, len, s2);
 }
 
-#endif /* POWER8_VSX */
+#endif /* POWER8_VSX_ADLER32 */

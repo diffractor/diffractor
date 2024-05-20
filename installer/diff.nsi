@@ -4,7 +4,7 @@
 !define PRODUCT32_EXE "diffractor.exe"
 !define PRODUCT64_EXE "diffractor64.exe"
 !define PRODUCT_PUBLISHER "Diffractor"
-!define BUILD_NUM "1173"
+!define BUILD_NUM "1175"
 !define PRODUCT_VERSION "126.0"
 !define FILE_VERSION "1.26.0.${BUILD_NUM}"
 !define PRODUCT_WEB_SITE "http://www.Diffractor.com/"
@@ -253,6 +253,7 @@ Section "Diffractor"
 	File "..\exe\languages\de.po"
 	File "..\exe\languages\it.po"
 	File "..\exe\languages\es.po"
+	File "..\exe\languages\ja.po"
 
 	SetOutPath $INSTDIR\dictionaries  
 	File "..\exe\dictionaries\en_US.aff"

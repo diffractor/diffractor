@@ -120,7 +120,7 @@ uint32_t crypto::crc32c(const void* data, const size_t len)
 
 uint32_t crypto::crc32c(uint32_t crc, const void* data, size_t len)
 {
-	if (platform::sse2_supported)
+	if (platform::crc32_supported)
 	{
 		return calc_crc32c_sse2(crc, data, len);
 	}

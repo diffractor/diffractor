@@ -42,4 +42,4 @@ Diffractor has a built-in test runner. If the application is started from Visual
 - [parallel-hashmap](https://github.com/greg7mdp/parallel-hashmap) 1.3.12
 - [sqlite](https://www.sqlite.org/index.html) 3.45.3
 - [utf-cpp](https://github.com/nemtrif/utfcpp) 4.0.5
-- [zlib-ng](https://github.com/zlib-ng/zlib-ng) 2.1.6
+- [zlib-ng](https://github.com/zlib-ng/zlib-ng) 2.0.7

@@ -8103,9 +8103,14 @@ static void unregister_restart()
 	UnregisterApplicationRestart();
 }
 
+void log_open_files_to_crash_files_list();
+void flush_open_files_to_crash_files_list();
+
 static DWORD WINAPI recover_callback(PVOID pContext)
 {
-	df::log(__FUNCTION__, u8"*** recover_callback"sv);
+	df::log(__FUNCTION__, u8"*** recover callback ***"sv);
+	log_open_files_to_crash_files_list();
+	flush_open_files_to_crash_files_list();
 
 	BOOL bCanceled = FALSE;
 	ApplicationRecoveryInProgress(&bCanceled);

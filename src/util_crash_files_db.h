@@ -74,6 +74,17 @@ public:
 		}
 	}
 
+	void log_open_files()
+	{
+		if (!_open_files.empty())
+		{
+			for (const auto& path : _open_files)
+			{
+				df::log(__FUNCTION__, str::format(u8"Open file {}"sv, path.first.str()));
+			}
+		}
+	}
+
 	std::u8string open_files_list()
 	{
 		u8ostringstream result;

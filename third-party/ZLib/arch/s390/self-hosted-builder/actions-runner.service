@@ -7,7 +7,6 @@ StartLimitIntervalSec=0
 [Service]
 Type=simple
 Restart=always
-ExecStartPre=-/usr/bin/docker rm --force actions-runner
 ExecStart=/usr/bin/docker run \
               --env-file=/etc/actions-runner \
               --init \

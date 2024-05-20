@@ -6,10 +6,16 @@
 #ifndef ZCONF_H
 #define ZCONF_H
 
-#include "zlib_name_mangling.h"
-
 #if !defined(_WIN32) && defined(__WIN32__)
 #  define _WIN32
+#endif
+
+#ifdef __STDC_VERSION__
+#  if __STDC_VERSION__ >= 199901L
+#    ifndef STDC99
+#      define STDC99
+#    endif
+#  endif
 #endif
 
 /* Clang macro for detecting declspec support
@@ -35,9 +41,6 @@
  * created by gzip. (Files created by minigzip can still be extracted by
  * gzip.)
  */
-#ifndef MIN_WBITS
-#  define MIN_WBITS   8  /* 256 LZ77 window */
-#endif
 #ifndef MAX_WBITS
 #  define MAX_WBITS   15 /* 32K LZ77 window */
 #endif
@@ -102,9 +105,6 @@
 #  define Z_EXPORTVA
 #endif
 
-/* Conditional exports */
-#define ZNG_CONDEXPORT Z_INTERNAL
-
 /* For backwards compatibility */
 
 #ifndef ZEXTERN
@@ -115,9 +115,6 @@
 #endif
 #ifndef ZEXPORTVA
 #  define ZEXPORTVA Z_EXPORTVA
-#endif
-#ifndef FAR
-#  define FAR
 #endif
 
 /* Legacy zlib typedefs for backwards compatibility. Don't assume stdint.h is defined. */
@@ -201,8 +198,27 @@ typedef PTRDIFF_TYPE ptrdiff_t;
 #  endif
 #endif
 
-typedef size_t z_size_t;
+#if defined(_M_IX86) || defined(_M_X64)
 
-#include "asmconf.h"
+#define X86_AVX_CHUNKSET 1
+#define X86_AVX2 1
+#define X86_AVX2_ADLER32 1
+#define X86_FEATURES 1
+#define X86_SSE2 1
+#define X86_SSE2_CHUNKSET 1
+#define X86_SSE42_CMP_STR 1
+#define X86_SSE42_CRC_HASH 1
+#define X86_SSE42_CRC_INTRIN 1
+#define X86_SSSE3_ADLER32 1
+#define HAVE_BITSCANFORWARD64 1
+#define HAVE_BITSCANFORWARD 1
+
+#endif
+
+#if defined(_M_ARM64)
+
+#define ARM_FEATURES 1
+
+#endif
 
 #endif /* ZCONF_H */

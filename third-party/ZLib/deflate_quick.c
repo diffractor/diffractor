@@ -18,7 +18,6 @@
  */
 
 #include "zbuild.h"
-#include "zutil_p.h"
 #include "deflate.h"
 #include "deflate_p.h"
 #include "functable.h"
@@ -38,7 +37,7 @@ extern const ct_data static_dtree[D_CODES];
         zng_tr_emit_end_block(s, static_ltree, last); \
         s->block_open = 0; \
         s->block_start = (int)s->strstart; \
-        PREFIX(flush_pending)(s->strm); \
+        flush_pending(s->strm); \
         if (s->strm->avail_out == 0) \
             return (last) ? finish_started : need_more; \
     } \
@@ -64,14 +63,14 @@ Z_INTERNAL block_state deflate_quick(deflate_state *s, int flush) {
 
     for (;;) {
         if (UNLIKELY(s->pending + ((BIT_BUF_SIZE + 7) >> 3) >= s->pending_buf_size)) {
-            PREFIX(flush_pending)(s->strm);
+            flush_pending(s->strm);
             if (s->strm->avail_out == 0) {
                 return (last && s->strm->avail_in == 0 && s->bi_valid == 0 && s->block_open == 0) ? finish_started : need_more;
             }
         }
 
         if (UNLIKELY(s->lookahead < MIN_LOOKAHEAD)) {
-            PREFIX(fill_window)(s);
+            fill_window(s);
             if (UNLIKELY(s->lookahead < MIN_LOOKAHEAD && flush == Z_NO_FLUSH)) {
                 return need_more;
             }
@@ -85,30 +84,23 @@ Z_INTERNAL block_state deflate_quick(deflate_state *s, int flush) {
             }
         }
 
-        if (LIKELY(s->lookahead >= WANT_MIN_MATCH)) {
+        if (LIKELY(s->lookahead >= MIN_MATCH)) {
             hash_head = functable.quick_insert_string(s, s->strstart);
             dist = (int64_t)s->strstart - hash_head;
 
             if (dist <= MAX_DIST(s) && dist > 0) {
-                const uint8_t *str_start = s->window + s->strstart;
-                const uint8_t *match_start = s->window + hash_head;
+                match_len = functable.compare258(s->window + s->strstart, s->window + hash_head);
 
-                if (zng_memcmp_2(str_start, match_start) == 0) {
-                    match_len = functable.compare256(str_start+2, match_start+2) + 2;
+                if (match_len >= MIN_MATCH) {
+                    if (UNLIKELY(match_len > s->lookahead))
+                        match_len = s->lookahead;
 
-                    if (match_len >= WANT_MIN_MATCH) {
-                        if (UNLIKELY(match_len > s->lookahead))
-                            match_len = s->lookahead;
-                        if (UNLIKELY(match_len > STD_MAX_MATCH))
-                            match_len = STD_MAX_MATCH;
+                    check_match(s, s->strstart, hash_head, match_len);
 
-                        check_match(s, s->strstart, hash_head, match_len);
-
-                        zng_tr_emit_dist(s, static_ltree, static_dtree, match_len - STD_MIN_MATCH, (uint32_t)dist);
-                        s->lookahead -= match_len;
-                        s->strstart += match_len;
-                        continue;
-                    }
+                    zng_tr_emit_dist(s, static_ltree, static_dtree, match_len - MIN_MATCH, (uint32_t)dist);
+                    s->lookahead -= match_len;
+                    s->strstart += match_len;
+                    continue;
                 }
             }
         }
@@ -118,7 +110,7 @@ Z_INTERNAL block_state deflate_quick(deflate_state *s, int flush) {
         s->lookahead--;
     }
 
-    s->insert = s->strstart < (STD_MIN_MATCH - 1) ? s->strstart : (STD_MIN_MATCH - 1);
+    s->insert = s->strstart < MIN_MATCH-1 ? s->strstart : MIN_MATCH-1;
     if (UNLIKELY(last)) {
         QUICK_END_BLOCK(s, 1);
         return finish_done;

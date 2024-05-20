@@ -2585,7 +2585,7 @@ static void should_calc_hashes()
 	const auto crc_c = ~calc_crc32c_c(crypto::CRCINIT, crc_data.data(), crc_data.size());
 	assert_equal(0xc99465aa, crc_c, u8"crc32 c"sv);
 
-	if (platform::sse2_supported)
+	if (platform::crc32_supported)
 	{
 		const auto crc_sse2 = ~calc_crc32c_sse2(crypto::CRCINIT, crc_data.data(), crc_data.size());
 		assert_equal(0xc99465aa, crc_sse2, u8"crc32 sse"sv);

@@ -1,12 +1,13 @@
 /* minigzip.c
    part of the minizip-ng project
 
-   Copyright (C) Nathan Moinvaziri
+   Copyright (C) 2010-2021 Nathan Moinvaziri
      https://github.com/zlib-ng/minizip-ng
 
    This program is distributed under the terms of the same license as zlib.
    See the accompanying LICENSE file for the full text of the license.
 */
+
 
 #include "mz.h"
 #include "mz_os.h"
@@ -14,12 +15,12 @@
 #include "mz_strm_os.h"
 #include "mz_strm_zlib.h"
 
-#include <stdio.h> /* printf */
+#include <stdio.h>  /* printf */
 
 /***************************************************************************/
 
-#define MZ_GZIP_COMPRESS   (1)
-#define MZ_GZIP_DECOMPRESS (2)
+#define MZ_GZIP_COMPRESS    (1)
+#define MZ_GZIP_DECOMPRESS  (2)
 
 int32_t minigzip_banner(void);
 int32_t minigzip_help(void);
@@ -52,9 +53,10 @@ int32_t minigzip_copy(const char *path, const char *destination, int16_t operati
     char target_path[1024];
     int32_t err = 0;
 
+
     memset(target_path, 0, sizeof(target_path));
 
-    if (destination) {
+    if (destination != NULL) {
         if (mz_os_file_exists(destination) != MZ_OK)
             mz_dir_make(destination);
     }
@@ -64,7 +66,7 @@ int32_t minigzip_copy(const char *path, const char *destination, int16_t operati
         strncat(target_path, ".gz", sizeof(target_path) - strlen(target_path) - 1);
         printf("Compressing to %s\n", target_path);
     } else if (operation == MZ_GZIP_DECOMPRESS) {
-        if (destination)
+        if (destination != NULL)
             mz_path_combine(target_path, destination, sizeof(target_path));
 
         if (mz_path_get_filename(path, &filename) != MZ_OK)
@@ -75,14 +77,14 @@ int32_t minigzip_copy(const char *path, const char *destination, int16_t operati
         printf("Decompressing to %s\n", target_path);
     }
 
-    zlib_stream = mz_stream_zlib_create();
+    mz_stream_zlib_create(&zlib_stream);
     mz_stream_zlib_set_prop_int64(zlib_stream, MZ_STREAM_PROP_COMPRESS_WINDOW, 15 + 16);
 
-    source_stream = mz_stream_os_create();
+    mz_stream_os_create(&source_stream);
     err = mz_stream_os_open(source_stream, path, MZ_OPEN_MODE_READ);
 
     if (err == MZ_OK) {
-        target_stream = mz_stream_os_create();
+        mz_stream_os_create(&target_stream);
         err = mz_stream_os_open(target_stream, target_path, MZ_OPEN_MODE_CREATE | MZ_OPEN_MODE_WRITE);
 
         if (err == MZ_OK) {
@@ -131,6 +133,7 @@ int main(int argc, const char *argv[]) {
     uint8_t operation = MZ_GZIP_COMPRESS;
     const char *path = NULL;
     const char *destination = NULL;
+
 
     minigzip_banner();
     if (argc == 1) {

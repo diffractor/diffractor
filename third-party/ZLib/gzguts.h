@@ -1,7 +1,7 @@
 #ifndef GZGUTS_H_
 #define GZGUTS_H_
 /* gzguts.h -- zlib internal header definitions for gz* operations
- * Copyright (C) 2004-2019 Mark Adler
+ * Copyright (C) 2004, 2005, 2010, 2011, 2012, 2013, 2016 Mark Adler
  * For conditions of distribution and use, see copyright notice in zlib.h
  */
 
@@ -9,8 +9,9 @@
 #  ifndef _LARGEFILE_SOURCE
 #    define _LARGEFILE_SOURCE 1
 #  endif
-#  undef _FILE_OFFSET_BITS
-#  undef _TIME_BITS
+#  ifdef _FILE_OFFSET_BITS
+#    undef _FILE_OFFSET_BITS
+#  endif
 #endif
 
 #if defined(HAVE_VISIBILITY_INTERNAL)
@@ -83,7 +84,7 @@
 /* default i/o buffer size -- double this for output when reading (this and
    twice this must be able to fit in an unsigned type) */
 #ifndef GZBUFSIZE
-#  define GZBUFSIZE 131072
+#  define GZBUFSIZE 8192
 #endif
 
 /* gzip modes, also provide a little integrity check on the passed structure */

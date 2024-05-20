@@ -1,7 +1,7 @@
 /* mz_os.c -- System functions
    part of the minizip-ng project
 
-   Copyright (C) Nathan Moinvaziri
+   Copyright (C) 2010-2021 Nathan Moinvaziri
      https://github.com/zlib-ng/minizip-ng
    Copyright (C) 1998-2010 Gilles Vollant
      https://www.winimage.com/zLibDll/minizip.html
@@ -17,14 +17,13 @@
 #include "mz_strm_os.h"
 
 #include <ctype.h> /* tolower */
-#include <string.h>
 
 /***************************************************************************/
 
 int32_t mz_path_combine(char *path, const char *join, int32_t max_path) {
     int32_t path_len = 0;
 
-    if (!path || !join || !max_path)
+    if (path == NULL || join == NULL || max_path == 0)
         return MZ_PARAM_ERROR;
 
     path_len = (int32_t)strlen(path);
@@ -68,7 +67,7 @@ int32_t mz_path_remove_slash(char *path) {
 
 int32_t mz_path_has_slash(const char *path) {
     int32_t path_len = (int32_t)strlen(path);
-    if (path_len > 0 && path[path_len - 1] != '\\' && path[path_len - 1] != '/')
+    if (path[path_len - 1] != '\\' && path[path_len - 1] != '/')
         return MZ_EXIST_ERROR;
     return MZ_OK;
 }
@@ -131,6 +130,7 @@ int32_t mz_path_resolve(const char *path, char *output, int32_t max_output) {
     const char *check = output;
     char *target = output;
 
+
     if (max_output <= 0)
         return MZ_PARAM_ERROR;
 
@@ -171,11 +171,11 @@ int32_t mz_path_resolve(const char *path, char *output, int32_t max_output) {
                     if ((*check == 0) || (*check == '\\' || *check == '/')) {
                         source += (check - source);
 
-                        /* Search backwards for previous slash or the start of the output string */
+                        /* Search backwards for previous slash */
                         if (target != output) {
                             target -= 1;
                             do {
-                                if ((target == output) ||(*target == '\\') || (*target == '/'))
+                                if ((*target == '\\') || (*target == '/'))
                                     break;
 
                                 target -= 1;
@@ -213,7 +213,7 @@ int32_t mz_path_resolve(const char *path, char *output, int32_t max_output) {
 int32_t mz_path_remove_filename(char *path) {
     char *path_ptr = NULL;
 
-    if (!path)
+    if (path == NULL)
         return MZ_PARAM_ERROR;
 
     path_ptr = path + strlen(path) - 1;
@@ -236,7 +236,7 @@ int32_t mz_path_remove_filename(char *path) {
 int32_t mz_path_remove_extension(char *path) {
     char *path_ptr = NULL;
 
-    if (!path)
+    if (path == NULL)
         return MZ_PARAM_ERROR;
 
     path_ptr = path + strlen(path) - 1;
@@ -261,7 +261,7 @@ int32_t mz_path_remove_extension(char *path) {
 int32_t mz_path_get_filename(const char *path, const char **filename) {
     const char *match = NULL;
 
-    if (!path || !filename)
+    if (path == NULL || filename == NULL)
         return MZ_PARAM_ERROR;
 
     *filename = NULL;
@@ -271,7 +271,7 @@ int32_t mz_path_get_filename(const char *path, const char **filename) {
             *filename = match + 1;
     }
 
-    if (!*filename)
+    if (*filename == NULL)
         return MZ_EXIST_ERROR;
 
     return MZ_OK;
@@ -279,17 +279,21 @@ int32_t mz_path_get_filename(const char *path, const char **filename) {
 
 int32_t mz_dir_make(const char *path) {
     int32_t err = MZ_OK;
+    size_t len = 0;
     char *current_dir = NULL;
     char *match = NULL;
     char hold = 0;
 
-    if (!*path)
-        return MZ_OK;
 
-    current_dir = strdup(path);
-    if (!current_dir)
+    len = strlen(path);
+    if (len <= 0 || len > INT16_MAX)
+        return 0;
+
+    current_dir = (char *)MZ_ALLOC(len + 1);
+    if (current_dir == NULL)
         return MZ_MEM_ERROR;
 
+    strcpy(current_dir, path);
     mz_path_remove_slash(current_dir);
 
     err = mz_os_make_dir(current_dir);
@@ -312,7 +316,7 @@ int32_t mz_dir_make(const char *path) {
         }
     }
 
-    free(current_dir);
+    MZ_FREE(current_dir);
     return err;
 }
 
@@ -323,11 +327,10 @@ int32_t mz_file_get_crc(const char *path, uint32_t *result_crc) {
     int32_t err = MZ_OK;
     uint8_t buf[16384];
 
-    stream = mz_stream_os_create();
-    if (!stream)
-        return MZ_MEM_ERROR;
+    mz_stream_os_create(&stream);
 
     err = mz_stream_os_open(stream, path, MZ_OPEN_MODE_READ);
+
     if (err == MZ_OK) {
         do {
             read = mz_stream_os_read(stream, buf, sizeof(buf));
