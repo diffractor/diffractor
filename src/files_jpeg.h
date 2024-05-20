@@ -54,17 +54,17 @@ public:
 	                const metadata_parts& metadata, file_encode_params params);
 	df::blob result() const;
 
-	friend class jpeg_decoder;
+	friend class jpeg_decoder_x;
 };
 
-class jpeg_decoder : df::no_copy
+class jpeg_decoder_x : df::no_copy
 {
 public:
 	std::unique_ptr<jpeg_decoder_impl> _impl;
 	ui::orientation _orientation_out = ui::orientation::top_left;
 
-	jpeg_decoder();
-	~jpeg_decoder();
+	jpeg_decoder_x();
+	~jpeg_decoder_x();
 
 	bool can_render_yuv420() const;
 

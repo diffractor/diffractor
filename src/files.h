@@ -1028,7 +1028,7 @@ file_scan_result scan_photo(read_stream& s);
 class files : private df::no_copy
 {
 private:
-	jpeg_decoder _jpeg_decoder;
+	jpeg_decoder_x _jpeg_decoder;
 	jpeg_encoder _jpeg_encoder;
 
 	std::unique_ptr<av_scaler> _scaler{};

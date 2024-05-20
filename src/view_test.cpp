@@ -3045,7 +3045,7 @@ ui::const_image_ptr transform_jpeg(const ui::const_image_ptr& image, const simpl
 {
 	df::assert_true(is_jpeg(image));
 
-	jpeg_decoder decoder;
+	jpeg_decoder_x decoder;
 	jpeg_encoder encoder;
 	return load_image_file(decoder.transform(image->data(), encoder, transform));
 }

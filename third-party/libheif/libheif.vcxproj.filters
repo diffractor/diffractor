@@ -21,55 +21,112 @@
     <ClCompile Include="box.cc">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="box_fuzzer.cc">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="color_conversion_fuzzer.cc">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="encoder_fuzzer.cc">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="error.cc">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="file_fuzzer.cc">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="heif.cc">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="heif_avif.cc">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="heif_colorconversion.cc">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="heif_context.cc">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="heif_decoder_libde265.cc">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="heif_file.cc">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="heif_hevc.cc">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="heif_image.cc">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="heif_plugin.cc">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="heif_plugin_registry.cc">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="nclx.cc">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="heif_decoder_dav1d.cc">
+    <ClCompile Include="context.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="common_utils.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="avif.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="exif.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="file.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="heif_properties.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="heif_regions.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="hevc.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="init.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="jpeg.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="jpeg2000.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="mask_image.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="metadata_compression.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="pixelimage.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="plugin_registry.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="region.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="uncompressed_image.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="vvc.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="color-conversion\alpha.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="color-conversion\chroma_sampling.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="color-conversion\colorconversion.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="color-conversion\hdr_sdr.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="color-conversion\monochrome.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="color-conversion\rgb2rgb.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="color-conversion\rgb2yuv.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="color-conversion\rgb2yuv_sharp.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="color-conversion\yuv2rgb.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="plugins\decoder_dav1d.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="plugins\decoder_ffmpeg.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="plugins\decoder_jpeg.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="plugins\decoder_libde265.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="plugins\encoder_mask.cc">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -80,52 +137,19 @@
     <ClInclude Include="box.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="config.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="error.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="heif.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="heif_api_structs.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="heif_avif.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="heif_colorconversion.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="heif_context.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="heif_cxx.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="heif_decoder_libde265.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="heif_emscripten.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="heif_file.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="heif_hevc.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="heif_image.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="heif_limits.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="heif_plugin.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="heif_plugin_registry.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="logging.h">
@@ -134,7 +158,109 @@
     <ClInclude Include="nclx.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="heif_decoder_dav1d.h">
+    <ClInclude Include="context.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="common_utils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="api_structs.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="avif.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="exif.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="file.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="heif_properties.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="heif_regions.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="hevc.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="init.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="jpeg.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="jpeg2000.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="metadata_compression.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="mask_image.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="vvc.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="pixelimage.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="plugin_registry.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="region.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="security_limits.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="uncompressed_image.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="heif_version.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="color-conversion\alpha.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="color-conversion\chroma_sampling.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="color-conversion\colorconversion.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="color-conversion\hdr_sdr.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="color-conversion\monochrome.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="color-conversion\rgb2rgb.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="color-conversion\rgb2yuv.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="color-conversion\rgb2yuv_sharp.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="color-conversion\yuv2rgb.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="plugins\decoder_dav1d.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="plugins\decoder_ffmpeg.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="plugins\decoder_jpeg.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="plugins\decoder_libde265.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="plugins\encoder_mask.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

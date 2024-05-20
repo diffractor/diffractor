@@ -506,24 +506,24 @@ df::blob jpeg_encoder::result() const
 };
 
 
-jpeg_decoder::jpeg_decoder()
+jpeg_decoder_x::jpeg_decoder_x()
 {
 	create();
 }
 
-jpeg_decoder::~jpeg_decoder()
+jpeg_decoder_x::~jpeg_decoder_x()
 {
 	destroy();
 }
 
-bool jpeg_decoder::can_render_yuv420() const
+bool jpeg_decoder_x::can_render_yuv420() const
 {
 	return _impl->dinfo.jpeg_color_space == JCS_YCbCr;
 }
 
 static boolean cache_file_fill(struct jpeg_decompress_struct* dinfo)
 {
-	const auto* const pThis = static_cast<jpeg_decoder*>(dinfo->client_data);
+	const auto* const pThis = static_cast<jpeg_decoder_x*>(dinfo->client_data);
 	dinfo->src->bytes_in_buffer = 0;
 	dinfo->src->next_input_byte = pThis->_impl->_buffer;
 	return false;
@@ -534,7 +534,7 @@ static void cache_file_skip(struct jpeg_decompress_struct* dinfo, long num_bytes
 }
 
 
-void jpeg_decoder::create()
+void jpeg_decoder_x::create()
 {
 	_impl = std::make_unique<jpeg_decoder_impl>();
 
@@ -570,7 +570,7 @@ void jpeg_decoder::create()
 	}
 }
 
-bool jpeg_decoder::read_header(df::cspan cs)
+bool jpeg_decoder_x::read_header(df::cspan cs)
 {
 	_impl->mem_source.bytes_in_buffer = cs.size;
 	_impl->mem_source.next_input_byte = cs.data;
@@ -597,12 +597,12 @@ bool jpeg_decoder::read_header(df::cspan cs)
 	return success;
 }
 
-bool jpeg_decoder::read_header(const ui::const_image_ptr& image)
+bool jpeg_decoder_x::read_header(const ui::const_image_ptr& image)
 {
 	return read_header(image->data());
 }
 
-bool jpeg_decoder::start_decompress(const int scale_hint, const bool yuv)
+bool jpeg_decoder_x::start_decompress(const int scale_hint, const bool yuv)
 {
 	if (_impl->dinfo.jpeg_color_space == JCS_YCCK || _impl->dinfo.jpeg_color_space == JCS_CMYK)
 	{
@@ -628,7 +628,7 @@ bool jpeg_decoder::start_decompress(const int scale_hint, const bool yuv)
 	return 0 != jpeg_start_decompress(&_impl->dinfo);
 }
 
-void jpeg_decoder::read_nv12(uint8_t* pixels, const int stride, const int buffer_size)
+void jpeg_decoder_x::read_nv12(uint8_t* pixels, const int stride, const int buffer_size)
 {
 	const auto cx = _impl->dinfo.output_width;
 	const auto cy = _impl->dinfo.output_height;
@@ -692,7 +692,7 @@ void jpeg_decoder::read_nv12(uint8_t* pixels, const int stride, const int buffer
 	}
 }
 
-bool jpeg_decoder::read_rgb(uint8_t* p, int stride, int buffer_size)
+bool jpeg_decoder_x::read_rgb(uint8_t* p, int stride, int buffer_size)
 {
 	auto y = 0u;
 	const auto cy = _impl->dinfo.output_height;
@@ -747,7 +747,7 @@ bool jpeg_decoder::read_rgb(uint8_t* p, int stride, int buffer_size)
 	return y > 0;
 }
 
-void jpeg_decoder::close()
+void jpeg_decoder_x::close()
 {
 	try
 	{
@@ -775,17 +775,17 @@ void jpeg_decoder::close()
 	}
 }
 
-sizei jpeg_decoder::dimensions() const
+sizei jpeg_decoder_x::dimensions() const
 {
 	return {static_cast<int>(_impl->dinfo.image_width), static_cast<int>(_impl->dinfo.image_height)};
 }
 
-sizei jpeg_decoder::dimensions_out() const
+sizei jpeg_decoder_x::dimensions_out() const
 {
 	return {static_cast<int>(_impl->dinfo.output_width), static_cast<int>(_impl->dinfo.output_height)};
 }
 
-void jpeg_decoder::destroy()
+void jpeg_decoder_x::destroy()
 {
 	try
 	{
@@ -821,7 +821,7 @@ static JXFORM_CODE to_transform(simple_transform orientation_e)
 	return (orientation <= 1 || orientation > 8) ? JXFORM_NONE : transform[orientation];
 }
 
-df::blob jpeg_decoder::transform(const df::cspan src, jpeg_encoder& encoder, const simple_transform transform_in)
+df::blob jpeg_decoder_x::transform(const df::cspan src, jpeg_encoder& encoder, const simple_transform transform_in)
 {
 	df::blob result;
 

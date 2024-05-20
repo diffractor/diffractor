@@ -1,6 +1,6 @@
 /*
  * HEIF codec.
- * Copyright (c) 2017 struktur AG, Dirk Farin <farin@struktur.de>
+ * Copyright (c) 2017 Dirk Farin <dirk.farin@gmail.com>
  *
  * This file is part of libheif.
  *
@@ -23,14 +23,17 @@
 #include <cassert>
 
 // static
-const char heif::Error::kSuccess[] = "Success";
+const char Error::kSuccess[] = "Success";
 const char* cUnknownError = "Unknown error";
 
 
-heif::Error::Error() = default;
+Error Error::Ok(heif_error_Ok);
 
 
-heif::Error::Error(heif_error_code c,
+Error::Error() = default;
+
+
+Error::Error(heif_error_code c,
                    heif_suberror_code sc,
                    const std::string& msg)
     : error_code(c),
@@ -40,7 +43,7 @@ heif::Error::Error(heif_error_code c,
 }
 
 
-const char* heif::Error::get_error_string(heif_error_code err)
+const char* Error::get_error_string(heif_error_code err)
 {
   switch (err) {
     case heif_error_Ok:
@@ -65,13 +68,15 @@ const char* heif::Error::get_error_string(heif_error_code err)
       return "Error during encoding or writing output file";
     case heif_error_Color_profile_does_not_exist:
       return "Color profile does not exist";
+    case heif_error_Plugin_loading_error:
+      return "Error while loading plugin";
   }
 
   assert(false);
   return "Unknown error";
 }
 
-const char* heif::Error::get_error_string(heif_suberror_code err)
+const char* Error::get_error_string(heif_suberror_code err)
 {
   switch (err) {
     case heif_suberror_Unspecified:
@@ -151,6 +156,8 @@ const char* heif::Error::get_error_string(heif_suberror_code err)
       return "Unknown NCLX transfer characteristics";
     case heif_suberror_Unknown_NCLX_matrix_coefficients:
       return "Unknown NCLX matrix coefficients";
+    case heif_suberror_Invalid_region_data:
+      return "Invalid region item data";
 
 
       // --- Memory_allocation_error ---
@@ -174,6 +181,10 @@ const char* heif::Error::get_error_string(heif_suberror_code err)
       return "Unsupported parameter";
     case heif_suberror_Invalid_parameter_value:
       return "Invalid parameter value";
+    case heif_suberror_Invalid_property:
+      return "Invalid property";
+    case heif_suberror_Item_reference_cycle:
+      return "Image reference cycle";
 
       // --- Unsupported_feature ---
 
@@ -187,6 +198,8 @@ const char* heif::Error::get_error_string(heif_suberror_code err)
       return "Unsupported color conversion";
     case heif_suberror_Unsupported_item_construction_method:
       return "Unsupported item construction method";
+    case heif_suberror_Unsupported_header_compression_method:
+      return "Unsupported header compression method";
 
       // --- Encoder_plugin_error --
 
@@ -197,6 +210,23 @@ const char* heif::Error::get_error_string(heif_suberror_code err)
 
     case heif_suberror_Cannot_write_output_data:
       return "Cannot write output data";
+    case heif_suberror_Encoder_initialization:
+      return "Initialization problem";
+    case heif_suberror_Encoder_encoding:
+      return "Encoding problem";
+    case heif_suberror_Encoder_cleanup:
+      return "Cleanup problem";
+    case heif_suberror_Too_many_regions:
+      return "Too many regions (>255) in an 'rgan' item.";
+
+      // --- Plugin_loading_error ---
+
+    case heif_suberror_Plugin_loading_error:
+      return "Plugin file cannot be loaded";
+    case heif_suberror_Plugin_is_not_loaded:
+      return "Trying to remove a plugin that is not loaded";
+    case heif_suberror_Cannot_read_plugin_directory:
+      return "Error while scanning the directory for plugins";
   }
 
   assert(false);
@@ -204,7 +234,7 @@ const char* heif::Error::get_error_string(heif_suberror_code err)
 }
 
 
-heif_error heif::Error::error_struct(ErrorBuffer* error_buffer) const
+heif_error Error::error_struct(ErrorBuffer* error_buffer) const
 {
   if (error_buffer) {
     if (error_code == heif_error_Ok) {
