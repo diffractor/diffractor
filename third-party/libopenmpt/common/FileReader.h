@@ -30,6 +30,7 @@
 #include <string>
 #include <vector>
 
+#include <cstddef>
 #include <cstring>
 
 #include "FileReaderFwd.h"
@@ -97,7 +98,8 @@ namespace FileReaderExt
 	template<typename Tsize, mpt::String::ReadWriteMode mode, size_t destSize, typename TFileCursor>
 	bool ReadSizedString(TFileCursor &f, char (&destBuffer)[destSize], const typename TFileCursor::pos_type maxLength = std::numeric_limits<typename TFileCursor::pos_type>::max())
 	{
-		mpt::packed<typename Tsize::base_type, typename Tsize::endian_type> srcSize;	// Enforce usage of a packed type by ensuring that the passed type has the required typedefs
+		static_assert(mpt::is_binary_safe<Tsize>::value);
+		Tsize srcSize;
 		if(!mpt::IO::FileReader::Read(f, srcSize))
 		{
 			return false;
@@ -111,7 +113,8 @@ namespace FileReaderExt
 	template<typename Tsize, mpt::String::ReadWriteMode mode, typename TFileCursor>
 	bool ReadSizedString(TFileCursor &f, std::string &dest, const typename TFileCursor::pos_type maxLength = std::numeric_limits<typename TFileCursor::pos_type>::max())
 	{
-		mpt::packed<typename Tsize::base_type, typename Tsize::endian_type> srcSize;	// Enforce usage of a packed type by ensuring that the passed type has the required typedefs
+		static_assert(mpt::is_binary_safe<Tsize>::value);
+		Tsize srcSize;
 		if(!mpt::IO::FileReader::Read(f, srcSize))
 		{
 			return false;
@@ -125,7 +128,8 @@ namespace FileReaderExt
 	template<typename Tsize, mpt::String::ReadWriteMode mode, std::size_t len, typename TFileCursor>
 	bool ReadSizedString(TFileCursor &f, mpt::charbuf<len> &dest, const typename TFileCursor::pos_type maxLength = std::numeric_limits<typename TFileCursor::pos_type>::max())
 	{
-		mpt::packed<typename Tsize::base_type, typename Tsize::endian_type> srcSize;	// Enforce usage of a packed type by ensuring that the passed type has the required typedefs
+		static_assert(mpt::is_binary_safe<Tsize>::value);
+		Tsize srcSize;
 		if(!mpt::IO::FileReader::Read(f, srcSize))
 		{
 			return false;

@@ -11,12 +11,13 @@
 #pragma once
 
 #include "openmpt/all/BuildSettings.hpp"
-
-#include "../soundlib/ModSample.h"
-#include "../soundlib/SampleIO.h"
-
+#include "openmpt/base/Endian.hpp"
+#include "Snd_defs.h"
 
 OPENMPT_NAMESPACE_BEGIN
+
+struct ModSample;
+class SampleIO;
 
 // S3M File Header
 struct S3MFileHeader
@@ -50,7 +51,9 @@ struct S3MFileHeader
 		trkIT2_07         = 0x3207,
 		trkIT2_14         = 0x3214,
 		trkBeRoTrackerOld = 0x4100,  // Used from 2004 to 2012
+		trkGraoumfTracker = 0x5447,
 		trkCamoto         = 0xCA00,
+		trkPlayerPRO      = 0x2013  // PlayerPRO on Intel doesn't byte-swap the tracker ID bytes
 	};
 
 	// Flags

@@ -57,7 +57,7 @@ class thread_safe_prng
 private:
 	mpt::mutex m;
 public:
-	typedef typename Trng::result_type result_type;
+	using result_type = typename Trng::result_type;
 public:
 	template <typename Trd>
 	explicit thread_safe_prng(Trd & rd)
@@ -127,6 +127,10 @@ using default_prng = mpt::good_prng;
 
 mpt::random_device & global_random_device();
 mpt::thread_safe_prng<mpt::default_prng> & global_prng();
+
+#ifdef MPT_BUILD_FUZZER
+void reinit_global_random();
+#endif  // MPT_BUILD_FUZZER
 
 #if defined(MODPLUG_TRACKER) && !defined(MPT_BUILD_WINESUPPORT)
 void set_global_random_device(mpt::random_device *rd);

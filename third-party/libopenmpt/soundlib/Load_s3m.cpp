@@ -27,9 +27,10 @@
 OPENMPT_NAMESPACE_BEGIN
 
 
-void CSoundFile::S3MConvert(ModCommand &m, bool fromIT)
+void CSoundFile::S3MConvert(ModCommand &m, const uint8 command, const uint8 param, const bool fromIT)
 {
-	switch(m.command | 0x40)
+	m.param = param;
+	switch(command | 0x40)
 	{
 	case '@': m.command = (m.param ? CMD_DUMMY : CMD_NONE); break;
 	case 'A': m.command = CMD_SPEED; break;
@@ -73,10 +74,12 @@ void CSoundFile::S3MConvert(ModCommand &m, bool fromIT)
 
 #ifndef MODPLUG_NO_FILESAVE
 
-void CSoundFile::S3MSaveConvert(uint8 &command, uint8 &param, bool toIT, bool compatibilityExport) const
+void CSoundFile::S3MSaveConvert(const ModCommand &source, uint8 &command, uint8 &param, const bool toIT, const bool compatibilityExport) const
 {
+	command = 0;
+	param = source.param;
 	const bool extendedIT = !compatibilityExport && toIT;
-	switch(command)
+	switch(source.command)
 	{
 	case CMD_DUMMY:           command = (param ? '@' : 0); break;
 	case CMD_SPEED:           command = 'A'; break;
@@ -135,13 +138,11 @@ void CSoundFile::S3MSaveConvert(uint8 &command, uint8 &param, bool toIT, bool co
 		break;
 	case CMD_MODCMDEX:
 		{
-			ModCommand m;
-			m.command = CMD_MODCMDEX;
-			m.param = param;
-			m.ExtendedMODtoS3MEffect();
-			command = m.command;
-			param = m.param;
-			S3MSaveConvert(command, param, toIT, compatibilityExport);
+			ModCommand mConv;
+			mConv.command = CMD_MODCMDEX;
+			mConv.param = param;
+			mConv.ExtendedMODtoS3MEffect();
+			S3MSaveConvert(mConv, command, param, toIT, compatibilityExport);
 		}
 		return;
 	// Chars under 0x40 don't save properly, so map : to ] and # to [.
@@ -247,7 +248,7 @@ bool CSoundFile::ReadS3M(FileReader &file, ModLoadingFlags loadFlags)
 			madeWithTracker = U_("Akord");
 		break;
 	case S3MFileHeader::trkScreamTracker:
-		if(fileHeader.cwtv == S3MFileHeader::trkST3_20 && fileHeader.special == 0 && (fileHeader.ordNum & 0x0F) == 0 && fileHeader.ultraClicks == 0 && (fileHeader.flags & ~0x50) == 0)
+		if(fileHeader.cwtv == S3MFileHeader::trkST3_20 && fileHeader.special == 0 && (fileHeader.ordNum & 0x0F) == 0 && fileHeader.ultraClicks == 0 && (fileHeader.flags & ~0x50) == 0 && fileHeader.usePanningTable == S3MFileHeader::idPanning)
 		{
 			// MPT and OpenMPT before 1.17.03.02 - Simply keep default (filter) MIDI macros
 			if((fileHeader.masterVolume & 0x80) != 0)
@@ -265,7 +266,10 @@ bool CSoundFile::ReadS3M(FileReader &file, ModLoadingFlags loadFlags)
 			m_playBehaviour.set(kST3LimitPeriod);
 		} else if(fileHeader.cwtv == S3MFileHeader::trkST3_20 && fileHeader.special == 0 && fileHeader.ultraClicks == 0 && fileHeader.flags == 0 && fileHeader.usePanningTable == 0)
 		{
-			madeWithTracker = U_("Velvet Studio");
+			if(fileHeader.globalVol == 64 && fileHeader.masterVolume == 48)
+				madeWithTracker = U_("PlayerPRO");
+			else  // Always stereo
+				madeWithTracker = U_("Velvet Studio");
 		} else
 		{
 			// ST3.20 should only ever write ultra-click values 16, 24 and 32 (corresponding to 8, 12 and 16 in the GUI), ST3.01/3.03 should only write 0,
@@ -278,8 +282,11 @@ bool CSoundFile::ReadS3M(FileReader &file, ModLoadingFlags loadFlags)
 		}
 		break;
 	case S3MFileHeader::trkImagoOrpheus:
-		madeWithTracker = U_("Imago Orpheus");
-		formatTrackerStr = true;
+		formatTrackerStr = (fileHeader.cwtv != S3MFileHeader::trkPlayerPRO);
+		if(formatTrackerStr)
+			madeWithTracker = U_("Imago Orpheus");
+		else
+			madeWithTracker = U_("PlayerPRO");
 		nonCompatTracker = true;
 		break;
 	case S3MFileHeader::trkImpulseTracker:
@@ -321,16 +328,21 @@ bool CSoundFile::ReadS3M(FileReader &file, ModLoadingFlags loadFlags)
 				m_playBehaviour.set(kPeriodsAreHertz);
 			if(schismDateVersion >= SchismVersionFromDate<2016, 05, 13>::date)
 				m_playBehaviour.set(kITShortSampleRetrig);
+			m_playBehaviour.reset(kST3TonePortaWithAdlibNote);
 		}
 		nonCompatTracker = true;
 		break;
 	case S3MFileHeader::trkOpenMPT:
+		if(fileHeader.cwtv != S3MFileHeader::trkGraoumfTracker)
 		{
 			uint32 mptVersion = (fileHeader.cwtv & S3MFileHeader::versionMask) << 16;
 			if(mptVersion >= 0x01'29'00'00)
 				mptVersion |= fileHeader.reserved2;
 			m_dwLastSavedWithVersion = Version(mptVersion);
 			madeWithTracker = U_("OpenMPT ") + mpt::ufmt::val(m_dwLastSavedWithVersion);
+		} else
+		{
+			madeWithTracker = U_("Graoumf Tracker");
 		}
 		break; 
 	case S3MFileHeader::trkBeRoTracker:
@@ -364,6 +376,11 @@ bool CSoundFile::ReadS3M(FileReader &file, ModLoadingFlags loadFlags)
 		m_playBehaviour.reset(KST3PortaAfterArpeggio);
 		m_playBehaviour.reset(kST3OffsetWithoutInstrument);
 		m_playBehaviour.reset(kApplyUpperPeriodLimit);
+	}
+	if (fileHeader.cwtv <= S3MFileHeader::trkST3_01)
+	{
+		// This broken behaviour is not present in ST3.01
+		m_playBehaviour.reset(kST3TonePortaWithAdlibNote);
 	}
 
 	if((fileHeader.cwtv & S3MFileHeader::trackerMask) > S3MFileHeader::trkScreamTracker)
@@ -428,14 +445,17 @@ bool CSoundFile::ReadS3M(FileReader &file, ModLoadingFlags loadFlags)
 	else
 		m_nSamplePreAmp = std::max(fileHeader.masterVolume & 0x7F, 0x10);  // Bit 7 = Stereo (we always use stereo)
 
-	const bool isStereo = (fileHeader.masterVolume & 0x80) != 0 || m_dwLastSavedWithVersion;
-	if(!isStereo)
-		m_nSamplePreAmp = Util::muldivr_unsigned(m_nSamplePreAmp, 8, 11);
-
 	// Approximately as loud as in DOSBox and a real SoundBlaster 16
 	m_nVSTiVolume = 36;
 	if(isSchism && schismDateVersion < SchismVersionFromDate<2018, 11, 12>::date)
 		m_nVSTiVolume = 64;
+
+	const bool isStereo = (fileHeader.masterVolume & 0x80) != 0 || m_dwLastSavedWithVersion;
+	if(!isStereo)
+	{
+		m_nSamplePreAmp = Util::muldivr_unsigned(m_nSamplePreAmp, 8, 11);
+		m_nVSTiVolume = Util::muldivr_unsigned(m_nVSTiVolume, 8, 11);
+	}
 
 	// Channel setup
 	m_nChannels = 4;
@@ -480,8 +500,7 @@ bool CSoundFile::ReadS3M(FileReader &file, ModLoadingFlags loadFlags)
 	// Read extended channel panning
 	if(fileHeader.usePanningTable == S3MFileHeader::idPanning)
 	{
-		uint8 pan[32];
-		file.ReadArray(pan);
+		const auto pan = file.ReadArray<uint8, 32>();
 		for(CHANNELINDEX i = 0; i < 32; i++)
 		{
 			if((pan[i] & 0x20) != 0 && (!isST3 || !isAdlibChannel[i]))
@@ -493,7 +512,7 @@ bool CSoundFile::ReadS3M(FileReader &file, ModLoadingFlags loadFlags)
 
 	// Reading sample headers
 	m_nSamples = std::min(static_cast<SAMPLEINDEX>(fileHeader.smpNum), static_cast<SAMPLEINDEX>(MAX_SAMPLES - 1));
-	bool anySamples = false;
+	bool anySamples = false, anyADPCM = false;
 	uint16 gusAddresses = 0;
 	for(SAMPLEINDEX smp = 0; smp < m_nSamples; smp++)
 	{
@@ -512,19 +531,23 @@ bool CSoundFile::ReadS3M(FileReader &file, ModLoadingFlags loadFlags)
 			const uint32 sampleOffset = sampleHeader.GetSampleOffset();
 			if((loadFlags & loadSampleData) && sampleHeader.length != 0 && file.Seek(sampleOffset))
 			{
-				sampleHeader.GetSampleFormat((fileHeader.formatVersion == S3MFileHeader::oldVersion)).ReadSample(Samples[smp + 1], file);
+				SampleIO sampleIO = sampleHeader.GetSampleFormat((fileHeader.formatVersion == S3MFileHeader::oldVersion));
+				sampleIO.ReadSample(Samples[smp + 1], file);
 				anySamples = true;
+				if(sampleIO.GetEncoding() == SampleIO::ADPCM)
+					anyADPCM = true;
 			}
 			gusAddresses |= sampleHeader.gusAddress;
 		}
 	}
 
+	const bool useGUS = gusAddresses > 1;
 	if(isST3 && anySamples && !gusAddresses && fileHeader.cwtv != S3MFileHeader::trkST3_00)
 	{
 		// All Scream Tracker versions except for some probably early revisions of Scream Tracker 3.00 write GUS addresses. GUS support might not have existed at that point (1992).
 		// Hence if a file claims to be written with ST3 (but not ST3.00), but has no GUS addresses, we deduce that it must be written by some other software (e.g. some PSM -> S3M conversions)
 		isST3 = false;
-		MPT_UNUSED(isST3);		
+		MPT_UNUSED(isST3);
 		m_modFormat.madeWithTracker = U_("Unknown");
 	} else if(isST3)
 	{
@@ -532,7 +555,6 @@ bool CSoundFile::ReadS3M(FileReader &file, ModLoadingFlags loadFlags)
 		// Re-saving that file in ST3 with the SoundBlaster driver loaded will reset the GUS address for all samples to 0 (unused) or 1 (used).
 		// The first used sample will also have an address of 1 with the GUS driver.
 		// So this is a safe way of telling if the file was last saved with the GUS driver loaded or not if there's more than one sample.
-		const bool useGUS = gusAddresses > 1;
 		m_playBehaviour.set(kST3PortaSampleChange, useGUS);
 		m_playBehaviour.set(kST3SampleSwap, !useGUS);
 		m_playBehaviour.set(kITShortSampleRetrig, !useGUS);  // Only half the truth but close enough for now
@@ -541,6 +563,9 @@ bool CSoundFile::ReadS3M(FileReader &file, ModLoadingFlags loadFlags)
 		if(useGUS)
 			m_nSamplePreAmp = 48;
 	}
+
+	if(anyADPCM)
+		m_modFormat.madeWithTracker += U_(" (ADPCM packed)");
 
 	// Try to find out if Zxx commands are supposed to be panning commands (PixPlay).
 	// Actually I am only aware of one module that uses this panning style, namely "Crawling Despair" by $volkraq
@@ -576,7 +601,7 @@ bool CSoundFile::ReadS3M(FileReader &file, ModLoadingFlags loadFlags)
 
 		// Read pattern data
 		ROWINDEX row = 0;
-		PatternRow rowBase = Patterns[pat].GetRow(0);
+		auto rowBase = Patterns[pat].GetRow(0);
 
 		while(row < 64)
 		{
@@ -625,14 +650,22 @@ bool CSoundFile::ReadS3M(FileReader &file, ModLoadingFlags loadFlags)
 			if(info & s3mEffectPresent)
 			{
 				const auto [command, param] = file.ReadArray<uint8, 2>();
-				m.command = command;
-				m.param = param;
-				S3MConvert(m, false);
+				S3MConvert(m, command, param, false);
 
 				if(m.command == CMD_S3MCMDEX && (m.param & 0xF0) == 0xA0 && fileHeader.cwtv < S3MFileHeader::trkST3_20)
 				{
-					// Convert old SAx panning to S8x (should only be found in PANIC.S3M by Purple Motion)
-					m.param = 0x80 | ((m.param & 0x0F) ^ 8);
+					// Convert the old messy SoundBlaster stereo control command (or an approximation of it, anyway)
+					const uint8 ctype = fileHeader.channels[channel] & 0x7F;
+					if(useGUS || ctype >= 0x10)
+						m.command = CMD_DUMMY;
+					else if(m.param == 0xA0 || m.param == 0xA2)  // Normal panning
+						m.param = (ctype & 8) ? 0x8C : 0x83;
+					else if(m.param == 0xA1 || m.param == 0xA3)  // Swap left / right channel
+						m.param = (ctype & 8) ? 0x83 : 0x8C;
+					else if(m.param <= 0xA7)  // Center
+						m.param = 0x88;
+					else
+						m.command = CMD_DUMMY;
 				} else if(m.command == CMD_MIDI)
 				{
 					// PixPlay panning test
@@ -814,7 +847,8 @@ bool CSoundFile::SaveS3M(std::ostream &f) const
 
 	// Write patterns
 	enum class S3MChannelType : uint8 { kUnused = 0, kPCM = 1, kAdlib = 2 };
-	FlagSet<S3MChannelType> channelType[32] = { S3MChannelType::kUnused };
+	std::array<FlagSet<S3MChannelType>, 32> channelType;
+	channelType.fill(S3MChannelType::kUnused);
 	bool globalCmdOnMutedChn = false;
 	for(PATTERNINDEX pat = 0; pat < writePatterns; pat++)
 	{
@@ -849,7 +883,7 @@ bool CSoundFile::SaveS3M(std::ostream &f) const
 					continue;
 				}
 
-				const PatternRow rowBase = Patterns[pat].GetRow(row);
+				const auto rowBase = Patterns[pat].GetRow(row);
 
 				CHANNELINDEX writeChannels = std::min(CHANNELINDEX(32), GetNumChannels());
 				for(CHANNELINDEX chn = 0; chn < writeChannels; chn++)
@@ -858,10 +892,6 @@ bool CSoundFile::SaveS3M(std::ostream &f) const
 
 					uint8 info = static_cast<uint8>(chn);
 					uint8 note = m.note;
-					ModCommand::VOLCMD volcmd = m.volcmd;
-					uint8 vol = m.vol;
-					uint8 command = m.command;
-					uint8 param = m.param;
 
 					if(note != NOTE_NONE || m.instr != 0)
 					{
@@ -894,25 +924,24 @@ bool CSoundFile::SaveS3M(std::ostream &f) const
 						}
 					}
 
-					if(command == CMD_VOLUME)
-					{
-						command = CMD_NONE;
-						volcmd = VOLCMD_VOLUME;
-						vol = std::min(param, uint8(64));
-					}
-
-					if(volcmd == VOLCMD_VOLUME)
+					uint8 vol = std::min(m.vol, ModCommand::VOL(64));
+					if(m.volcmd == VOLCMD_VOLUME)
 					{
 						info |= s3mVolumePresent;
-					} else if(volcmd == VOLCMD_PANNING)
+					} else if(m.volcmd == VOLCMD_PANNING)
 					{
 						info |= s3mVolumePresent;
 						vol |= 0x80;
+					} else if(m.command == CMD_VOLUME)
+					{
+						info |= s3mVolumePresent;
+						vol = std::min(m.param, ModCommand::PARAM(64));
 					}
 
-					if(command != CMD_NONE)
+					uint8 command = 0, param = 0;
+					if(m.command != CMD_NONE && m.command != CMD_VOLUME)
 					{
-						S3MSaveConvert(command, param, false, true);
+						S3MSaveConvert(m, command, param, false, true);
 						if(command || param)
 						{
 							info |= s3mEffectPresent;

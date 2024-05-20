@@ -16,6 +16,7 @@
 #include "SoundFilePlayConfig.h"
 #include "MixerSettings.h"
 #include "../common/misc_util.h"
+#include "../common/mptFileType.h"
 #include "../common/mptRandom.h"
 #include "../common/version.h"
 #include <vector>
@@ -77,7 +78,7 @@ bool ReadInstrumentHeaderField(ModInstrument * input, uint32 fcode, uint16 fsize
 
 
 // Sample decompression routines in format-specific source files
-void AMSUnpack(const int8 * const source, size_t sourceSize, void * const dest, const size_t destSize, char packCharacter);
+void AMSUnpack(mpt::const_byte_span source, mpt::byte_span dest, int8 packCharacter);
 uintptr_t DMFUnpack(FileReader &file, uint8 *psample, uint32 maxlen);
 
 
@@ -243,13 +244,29 @@ class CModDoc;
 struct FileHistory
 {
 	// Date when the file was loaded in the the tracker or created.
-	tm loadDate = {};
+	mpt::Date::AnyGregorian loadDate = {};
 	// Time the file was open in the editor, in 1/18.2th seconds (frequency of a standard DOS timer, to keep compatibility with Impulse Tracker easy).
 	uint32 openTime = 0;
 	// Return the date as a (possibly truncated if not enough precision is available) ISO 8601 formatted date.
-	mpt::ustring AsISO8601() const;
+	mpt::ustring AsISO8601(mpt::Date::LogicalTimezone internalTimezone) const;
 	// Returns true if the date component is valid. Some formats only store edit time, not edit date.
-	bool HasValidDate() const { return loadDate.tm_mday != 0; }
+	bool HasValidDate() const
+	{
+		return loadDate != mpt::Date::AnyGregorian{};
+	}
+
+	bool operator==(const FileHistory &other) const noexcept
+	{
+		return std::tie(loadDate, openTime) == std::tie(other.loadDate, other.openTime);
+	}
+	bool operator!=(const FileHistory &other) const noexcept
+	{
+		return std::tie(loadDate, openTime) != std::tie(other.loadDate, other.openTime);
+	}
+	bool operator<(const FileHistory &other) const noexcept
+	{
+		return std::tie(loadDate, openTime) < std::tie(other.loadDate, other.openTime);
+	}
 };
 
 
@@ -282,6 +299,7 @@ struct ModFormatDetails
 	mpt::ustring originalFormatName; // "FastTracker 2" in the case of converted formats like MO3 or GDM
 	mpt::ustring originalType;       // "xm" in the case of converted formats like MO3 or GDM
 	mpt::Charset charset = mpt::Charset::UTF8;
+	mpt::Date::LogicalTimezone timezone = mpt::Date::LogicalTimezone::Unspecified;
 };
 
 
@@ -377,7 +395,7 @@ public:
 	static CTuning *GetDefaultTuning() {return nullptr;}
 	CTuningCollection& GetTuneSpecificTunings() {return *m_pTuningsTuneSpecific;}
 
-	mpt::ustring GetNoteName(const ModCommand::NOTE note, const INSTRUMENTINDEX inst) const;
+	mpt::ustring GetNoteName(const ModCommand::NOTE note, const INSTRUMENTINDEX inst, const NoteName *noteNames = nullptr) const;
 	mpt::ustring GetNoteName(const ModCommand::NOTE note) const;
 	static mpt::ustring GetNoteName(const ModCommand::NOTE note, const NoteName *noteNames);
 #ifdef MODPLUG_TRACKER
@@ -397,15 +415,6 @@ private:
 
 private:
 	CTuningCollection* m_pTuningsTuneSpecific = nullptr;
-
-#ifdef MODPLUG_TRACKER
-public:
-	CMIDIMapper& GetMIDIMapper() {return m_MIDIMapper;}
-	const CMIDIMapper& GetMIDIMapper() const {return m_MIDIMapper;}
-private:
-	CMIDIMapper m_MIDIMapper;
-
-#endif // MODPLUG_TRACKER
 
 private: //Misc private methods.
 	static void SetModSpecsPointer(const CModSpecifications* &pModSpecs, const MODTYPE type);
@@ -457,7 +466,7 @@ public:	// for Editing
 #endif // MODPLUG_TRACKER
 	Enum<MODTYPE> m_nType;
 private:
-	MODCONTAINERTYPE m_ContainerType = MOD_CONTAINERTYPE_NONE;
+	ModContainerType m_ContainerType = ModContainerType::None;
 public:
 	CHANNELINDEX m_nChannels = 0;
 	SAMPLEINDEX m_nSamples = 0;
@@ -509,8 +518,8 @@ public:
 	ModInstrument *Instruments[MAX_INSTRUMENTS];  // Instrument Headers
 	MIDIMacroConfig m_MidiCfg;                    // MIDI Macro config table
 #ifndef NO_PLUGINS
-	SNDMIXPLUGIN m_MixPlugins[MAX_MIXPLUGINS];  // Mix plugins
-	uint32 m_loadedPlugins = 0;                 // Not a PLUGINDEX because number of loaded plugins may exceed MAX_MIXPLUGINS during MIDI conversion
+	std::array<SNDMIXPLUGIN, MAX_MIXPLUGINS> m_MixPlugins;  // Mix plugins
+	uint32 m_loadedPlugins = 0;                             // Not a PLUGINDEX because number of loaded plugins may exceed MAX_MIXPLUGINS during MIDI conversion
 #endif
 	mpt::charbuf<MAX_SAMPLENAME> m_szNames[MAX_SAMPLES];  // Sample names
 
@@ -626,6 +635,14 @@ public:
 
 	std::unique_ptr<OPL> m_opl;
 
+#ifdef MODPLUG_TRACKER
+public:
+	CMIDIMapper& GetMIDIMapper() { return m_MIDIMapper; }
+	const CMIDIMapper& GetMIDIMapper() const { return m_MIDIMapper; }
+private:
+	CMIDIMapper m_MIDIMapper;
+#endif // MODPLUG_TRACKER
+
 public:
 #ifdef LIBOPENMPT_BUILD
 #ifndef NO_PLUGINS
@@ -682,13 +699,13 @@ public:
 
 	enum ModLoadingFlags
 	{
-		onlyVerifyHeader   = 0x00,
 		loadPatternData    = 0x01, // If unset, advise loaders to not process any pattern data (if possible)
 		loadSampleData     = 0x02, // If unset, advise loaders to not process any sample data (if possible)
-		loadPluginData     = 0x04, // If unset, plugin data is not loaded (and as a consequence, plugins are not instanciated).
-		loadPluginInstance = 0x08, // If unset, plugins are not instanciated.
+		loadPluginData     = 0x04, // If unset, plugin data is not loaded (and as a consequence, plugins are not instantiated).
+		loadPluginInstance = 0x08, // If unset, plugins are not instantiated.
 		skipContainer      = 0x10,
 		skipModules        = 0x20,
+		onlyVerifyHeader   = 0x40, // Do not combine with other flags!
 
 		// Shortcuts
 		loadCompleteModule = loadSampleData | loadPatternData | loadPluginData | loadPluginInstance,
@@ -735,7 +752,7 @@ public:
 	bool Destroy();
 	Enum<MODTYPE> GetType() const noexcept { return m_nType; }
 
-	MODCONTAINERTYPE GetContainerType() const noexcept { return m_ContainerType; }
+	ModContainerType GetContainerType() const noexcept { return m_ContainerType; }
 
 	// rough heuristic, could be improved
 	mpt::Charset GetCharsetFile() const // 8bit string encoding of strings in the on-disk file
@@ -749,6 +766,10 @@ public:
 		#else // MODPLUG_TRACKER
 			return GetCharsetFile();
 		#endif // MODPLUG_TRACKER
+	}
+	mpt::Date::LogicalTimezone GetTimezoneInternal() const
+	{
+		return m_modFormat.timezone;
 	}
 
 	ModMessageHeuristicOrder GetMessageHeuristic() const;
@@ -828,6 +849,7 @@ public:
 #endif // !MPT_WITH_ANCIENT
 	static ProbeResult ProbeFileHeaderUMX(MemoryFileReader file, const uint64* pfilesize);
 
+	static ProbeResult ProbeFileHeader667(MemoryFileReader file, const uint64 *pfilesize);
 	static ProbeResult ProbeFileHeader669(MemoryFileReader file, const uint64 *pfilesize);
 	static ProbeResult ProbeFileHeaderAM(MemoryFileReader file, const uint64 *pfilesize);
 	static ProbeResult ProbeFileHeaderAMF_Asylum(MemoryFileReader file, const uint64 *pfilesize);
@@ -840,10 +862,13 @@ public:
 	static ProbeResult ProbeFileHeaderDIGI(MemoryFileReader file, const uint64 *pfilesize);
 	static ProbeResult ProbeFileHeaderDMF(MemoryFileReader file, const uint64 *pfilesize);
 	static ProbeResult ProbeFileHeaderDSM(MemoryFileReader file, const uint64 *pfilesize);
+	static ProbeResult ProbeFileHeaderDSm(MemoryFileReader file, const uint64 *pfilesize);
 	static ProbeResult ProbeFileHeaderDSym(MemoryFileReader file, const uint64 *pfilesize);
 	static ProbeResult ProbeFileHeaderFAR(MemoryFileReader file, const uint64 *pfilesize);
 	static ProbeResult ProbeFileHeaderFMT(MemoryFileReader file, const uint64* pfilesize);
 	static ProbeResult ProbeFileHeaderGDM(MemoryFileReader file, const uint64 *pfilesize);
+	static ProbeResult ProbeFileHeaderGT2(MemoryFileReader file, const uint64 *pfilesize);
+	static ProbeResult ProbeFileHeaderGTK(MemoryFileReader file, const uint64 *pfilesize);
 	static ProbeResult ProbeFileHeaderICE(MemoryFileReader file, const uint64 *pfilesize);
 	static ProbeResult ProbeFileHeaderIMF(MemoryFileReader file, const uint64 *pfilesize);
 	static ProbeResult ProbeFileHeaderIT(MemoryFileReader file, const uint64 *pfilesize);
@@ -871,12 +896,14 @@ public:
 	static ProbeResult ProbeFileHeaderSymMOD(MemoryFileReader file, const uint64 *pfilesize);
 	static ProbeResult ProbeFileHeaderULT(MemoryFileReader file, const uint64 *pfilesize);
 	static ProbeResult ProbeFileHeaderXM(MemoryFileReader file, const uint64 *pfilesize);
+	static ProbeResult ProbeFileHeaderXMF(MemoryFileReader file, const uint64 *pfilesize);
 
 	static ProbeResult ProbeFileHeaderMID(MemoryFileReader file, const uint64 *pfilesize);
 	static ProbeResult ProbeFileHeaderUAX(MemoryFileReader file, const uint64 *pfilesize);
 	static ProbeResult ProbeFileHeaderWAV(MemoryFileReader file, const uint64 *pfilesize);
 
 	// Module Loaders
+	bool Read667(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
 	bool Read669(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
 	bool ReadAM(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
 	bool ReadAMF_Asylum(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
@@ -889,10 +916,13 @@ public:
 	bool ReadDIGI(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
 	bool ReadDMF(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
 	bool ReadDSM(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
+	bool ReadDSm(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
 	bool ReadDSym(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
 	bool ReadFAR(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
 	bool ReadFMT(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
 	bool ReadGDM(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
+	bool ReadGT2(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
+	bool ReadGTK(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
 	bool ReadICE(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
 	bool ReadIMF(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
 	bool ReadIT(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
@@ -920,6 +950,7 @@ public:
 	bool ReadSymMOD(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
 	bool ReadULT(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
 	bool ReadXM(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
+	bool ReadXMF(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
 
 	bool ReadMID(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
 	bool ReadUAX(FileReader &file, ModLoadingFlags loadFlags = loadCompleteModule);
@@ -927,8 +958,8 @@ public:
 
 	static std::vector<const char *> GetSupportedExtensions(bool otherFormats);
 	static bool IsExtensionSupported(std::string_view ext); // UTF8, casing of ext is ignored
-	static mpt::ustring ModContainerTypeToString(MODCONTAINERTYPE containertype);
-	static mpt::ustring ModContainerTypeToTracker(MODCONTAINERTYPE containertype);
+	static mpt::ustring ModContainerTypeToString(ModContainerType containertype);
+	static mpt::ustring ModContainerTypeToTracker(ModContainerType containertype);
 
 	// Repair non-standard stuff in modules saved with previous ModPlug versions
 	void UpgradeModule();
@@ -944,7 +975,7 @@ public:
 	void SaveExtendedInstrumentProperties(INSTRUMENTINDEX nInstruments, std::ostream &f) const;
 	void SaveExtendedSongProperties(std::ostream &f) const;
 #endif // MODPLUG_NO_FILESAVE
-	void LoadExtendedSongProperties(FileReader &file, bool ignoreChannelCount, bool* pInterpretMptMade = nullptr);
+	bool LoadExtendedSongProperties(FileReader &file, bool ignoreChannelCount, bool* pInterpretMptMade = nullptr);
 	void LoadMPTMProperties(FileReader &file, uint16 cwtv);
 
 	static mpt::ustring GetSchismTrackerVersion(uint16 cwtv, uint32 reserved);
@@ -959,12 +990,14 @@ public:
 
 	// MOD Convert function
 	MODTYPE GetBestSaveFormat() const;
-	static void ConvertModCommand(ModCommand &m);
-	static void S3MConvert(ModCommand &m, bool fromIT);
-	void S3MSaveConvert(uint8 &command, uint8 &param, bool toIT, bool compatibilityExport = false) const;
-	void ModSaveCommand(uint8 &command, uint8 &param, const bool toXM, const bool compatibilityExport = false) const;
-	static void ReadMODPatternEntry(FileReader &file, ModCommand &m);
-	static void ReadMODPatternEntry(const std::array<uint8, 4> data, ModCommand &m);
+	static void ConvertModCommand(ModCommand &m, const uint8 command, const uint8 param);
+	static void S3MConvert(ModCommand &m, const uint8 command, const uint8 param, const bool fromIT);
+	void S3MSaveConvert(const ModCommand &source, uint8 &command, uint8 &param, const bool toIT, const bool compatibilityExport = false) const;
+	void ModSaveCommand(const ModCommand &source, uint8 &command, uint8 &param, const bool toXM, const bool compatibilityExport = false) const;
+	// Reads 4 bytes formatted like SoundTracker/NoiseTracker/ProTracker pattern data, converts the period to a note, fills the instrument number and returns the effect command and parameter bytes.
+	static std::pair<uint8, uint8> ReadMODPatternEntry(FileReader &file, ModCommand &m);
+	// Converts 4 bytes formatted like SoundTracker/NoiseTracker/ProTracker pattern data by converting the period to a note and filling the instrument number, and returns the effect command and parameter bytes.
+	static std::pair<uint8, uint8> ReadMODPatternEntry(const std::array<uint8, 4> data, ModCommand &m);
 
 	void SetupMODPanning(bool bForceSetup = false); // Setup LRRL panning, max channel volume
 
@@ -998,6 +1031,7 @@ public:
 	bool IsRenderingToDisc() const { return m_bIsRendering; }
 
 	void PrecomputeSampleLoops(bool updateChannels = false);
+	void UpdateInstrumentFilter(const ModInstrument &ins, bool updateMode, bool updateCutoff, bool updateResonance);
 
 public:
 	// Mixer Config
@@ -1030,6 +1064,8 @@ public:
 	static TEMPO ConvertST2Tempo(uint8 tempo);
 
 	void ProcessRamping(ModChannel &chn) const;
+
+	void ProcessFinetune(PATTERNINDEX pattern, ROWINDEX row, CHANNELINDEX channel, bool isSmooth);
 
 protected:
 	// Global variable initializer for loader functions
@@ -1074,20 +1110,24 @@ protected:
 	};
 	// Channel Effects
 	void UpdateS3MEffectMemory(ModChannel &chn, ModCommand::PARAM param) const;
-	void PortamentoUp(CHANNELINDEX nChn, ModCommand::PARAM param, const bool doFinePortamentoAsRegular = false);
-	void PortamentoDown(CHANNELINDEX nChn, ModCommand::PARAM param, const bool doFinePortamentoAsRegular = false);
-	void MidiPortamento(CHANNELINDEX nChn, int param, bool doFineSlides);
+	void PortamentoUp(CHANNELINDEX nChn, ModCommand::PARAM param, const bool doFinePortamentoAsRegular);
+	void PortamentoUp(PlayState &playState, CHANNELINDEX nChn, ModCommand::PARAM param, const bool doFinePortamentoAsRegular) const;
+	void PortamentoDown(CHANNELINDEX nChn, ModCommand::PARAM param, const bool doFinePortamentoAsRegular);
+	void PortamentoDown(PlayState &playState, CHANNELINDEX nChn, ModCommand::PARAM param, const bool doFinePortamentoAsRegular) const;
+	void MidiPortamento(CHANNELINDEX nChn, int param, const bool doFineSlides);
 	void FinePortamentoUp(ModChannel &chn, ModCommand::PARAM param) const;
 	void FinePortamentoDown(ModChannel &chn, ModCommand::PARAM param) const;
 	void ExtraFinePortamentoUp(ModChannel &chn, ModCommand::PARAM param) const;
 	void ExtraFinePortamentoDown(ModChannel &chn, ModCommand::PARAM param) const;
-	void PortamentoMPT(ModChannel &chn, int);
-	void PortamentoFineMPT(ModChannel &chn, int);
-	void PortamentoExtraFineMPT(ModChannel &chn, int);
-	void SetFinetune(CHANNELINDEX channel, PlayState &playState, bool isSmooth) const;
+	void PortamentoMPT(ModChannel &chn, int param) const;
+	void PortamentoFineMPT(PlayState &playState, CHANNELINDEX nChn, int param) const;
+	void PortamentoExtraFineMPT(ModChannel &chn, int param) const;
+	void SetFinetune(PATTERNINDEX pattern, ROWINDEX row, CHANNELINDEX channel, PlayState &playState, bool isSmooth) const;
+	int16 CalculateFinetuneTarget(PATTERNINDEX pattern, ROWINDEX row, CHANNELINDEX channel) const;
 	void NoteSlide(ModChannel &chn, uint32 param, bool slideUp, bool retrig) const;
 	std::pair<uint16, bool> GetVolCmdTonePorta(const ModCommand &m, uint32 startTick) const;
-	void TonePortamento(ModChannel &chn, uint16 param) const;
+	void TonePortamento(CHANNELINDEX chn, uint16 param);
+	int32 TonePortamento(PlayState &playState, CHANNELINDEX nChn, uint16 param) const;
 	void Vibrato(ModChannel &chn, uint32 param) const;
 	void FineVibrato(ModChannel &chn, uint32 param) const;
 	void VolumeSlide(ModChannel &chn, ModCommand::PARAM param) const;
@@ -1105,7 +1145,7 @@ protected:
 	void DigiBoosterSampleReverse(ModChannel &chn, ModCommand::PARAM param) const;
 	void HandleDigiSamplePlayDirection(PlayState &state, CHANNELINDEX chn) const;
 	void NoteCut(CHANNELINDEX nChn, uint32 nTick, bool cutSample);
-	void PatternLoop(PlayState &state, ModChannel &chn, ModCommand::PARAM param) const;
+	void PatternLoop(PlayState &state, CHANNELINDEX nChn, ModCommand::PARAM param) const;
 	bool HandleNextRow(PlayState &state, const ModSequence &order, bool honorPatternLoop) const;
 	void ExtendedMODCommands(CHANNELINDEX nChn, ModCommand::PARAM param);
 	void ExtendedS3MCommands(CHANNELINDEX nChn, ModCommand::PARAM param);
@@ -1123,6 +1163,7 @@ protected:
 	void SendMIDINote(CHANNELINDEX chn, uint16 note, uint16 volume);
 
 	int SetupChannelFilter(ModChannel &chn, bool bReset, int envModifier = 256) const;
+	int HandleNoteChangeFilter(ModChannel &chn) const;
 
 	// Low-Level effect processing
 	void DoFreqSlide(ModChannel &chn, int32 &period, int32 amount, bool isTonePorta = false) const;
@@ -1132,7 +1173,7 @@ public:
 	// Convert frequency to IT cutoff (0...127)
 	uint8 FrequencyToCutOff(double frequency) const;
 	// Convert IT cutoff (0...127 + modifier) to frequency
-	uint32 CutOffToFrequency(uint32 nCutOff, int envModifier = 256) const; // [0-127] => [1-10KHz]
+	float CutOffToFrequency(uint32 nCutOff, int envModifier = 256) const;
 
 	// Returns true if periods are actually plain frequency values in Hz.
 	bool PeriodsAreFrequencies() const noexcept
@@ -1140,7 +1181,7 @@ public:
 		return m_playBehaviour[kPeriodsAreHertz] && !UseFinetuneAndTranspose();
 	}
 	
-	// Returns true if the current format uses transpose+finetune rather than frequency in Hz to specify middle-C.
+	// Returns true if the format uses transpose+finetune rather than frequency in Hz to specify middle-C.
 	static constexpr bool UseFinetuneAndTranspose(MODTYPE type) noexcept
 	{
 		return (type & (MOD_TYPE_AMF0 | MOD_TYPE_DIGI | MOD_TYPE_MED | MOD_TYPE_MOD | MOD_TYPE_MTM | MOD_TYPE_OKT | MOD_TYPE_SFX | MOD_TYPE_STP | MOD_TYPE_XM));
@@ -1148,6 +1189,16 @@ public:
 	bool UseFinetuneAndTranspose() const noexcept
 	{
 		return UseFinetuneAndTranspose(GetType());
+	}
+
+	// Returns true if the format uses combined commands for fine and regular portamento slides
+	static constexpr bool UseCombinedPortamentoCommands(MODTYPE type) noexcept
+	{
+		return !(type & (MOD_TYPE_MOD | MOD_TYPE_XM | MOD_TYPE_MT2 | MOD_TYPE_MED | MOD_TYPE_AMF0 | MOD_TYPE_DIGI | MOD_TYPE_STP | MOD_TYPE_DTM));
+	}
+	bool UseCombinedPortamentoCommands() const noexcept
+	{
+		return UseCombinedPortamentoCommands(GetType());
 	}
 
 	bool DestroySample(SAMPLEINDEX nSample);
@@ -1185,7 +1236,7 @@ protected:
 	bool ReadXISample(SAMPLEINDEX nSample, FileReader &file);
 	bool ReadITSSample(SAMPLEINDEX nSample, FileReader &file, bool rewind = true);
 	bool ReadITISample(SAMPLEINDEX nSample, FileReader &file);
-	bool ReadIFFSample(SAMPLEINDEX sample, FileReader &file);
+	bool ReadIFFSample(SAMPLEINDEX sample, FileReader &file, bool allowLittleEndian = true);
 	bool ReadBRRSample(SAMPLEINDEX sample, FileReader &file);
 	bool ReadFLACSample(SAMPLEINDEX sample, FileReader &file);
 	bool ReadOpusSample(SAMPLEINDEX sample, FileReader &file);
@@ -1201,6 +1252,7 @@ public:
 	bool SaveRAWSample(SAMPLEINDEX nSample, std::ostream &f) const;
 	bool SaveFLACSample(SAMPLEINDEX nSample, std::ostream &f) const;
 	bool SaveS3ISample(SAMPLEINDEX smp, std::ostream &f) const;
+	bool SaveIFFSample(SAMPLEINDEX smp, std::ostream &f) const;
 #endif
 
 	// Instrument file I/O
@@ -1235,14 +1287,14 @@ public:
 
 	uint32 MapMidiInstrument(uint8 program, uint16 bank, uint8 midiChannel, uint8 note, bool isXG, std::bitset<16> drumChns);
 	size_t ITInstrToMPT(FileReader &file, ModInstrument &ins, uint16 trkvers);
-	bool LoadMixPlugins(FileReader &file);
+	std::pair<bool, bool> LoadMixPlugins(FileReader &file);
 #ifndef NO_PLUGINS
 	static void ReadMixPluginChunk(FileReader &file, SNDMIXPLUGIN &plugin);
 	void ProcessMidiOut(CHANNELINDEX nChn);
 #endif // NO_PLUGINS
 
-	void ProcessGlobalVolume(long countChunk);
-	void ProcessStereoSeparation(long countChunk);
+	void ProcessGlobalVolume(samplecount_t countChunk);
+	void ProcessStereoSeparation(samplecount_t countChunk);
 
 private:
 	PLUGINDEX GetChannelPlugin(const PlayState &playState, CHANNELINDEX nChn, PluginMutePriority respectMutes) const;

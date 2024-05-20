@@ -23,6 +23,8 @@ OPENMPT_NAMESPACE_BEGIN
 // Translate sample properties between two given formats.
 void ModSample::Convert(MODTYPE fromType, MODTYPE toType)
 {
+	uFlags.reset(CHN_REVERSE);  // Not supported by any native formats yet
+
 	// Convert between frequency and transpose values if necessary.
 	if((!(toType & (MOD_TYPE_MOD | MOD_TYPE_XM))) && (fromType & (MOD_TYPE_MOD | MOD_TYPE_XM)))
 	{
@@ -31,12 +33,12 @@ void ModSample::Convert(MODTYPE fromType, MODTYPE toType)
 		nFineTune = 0;
 		// TransposeToFrequency assumes NTSC middle-C frequency like FT2, but we play MODs with PAL middle-C!
 		if(fromType == MOD_TYPE_MOD)
-			nC5Speed = Util::muldivr_unsigned(nC5Speed, 8272, 8363);
+			nC5Speed = Util::muldivr_unsigned(nC5Speed, 8287, 8363);
 	} else if((toType & (MOD_TYPE_MOD | MOD_TYPE_XM)) && (!(fromType & (MOD_TYPE_MOD | MOD_TYPE_XM))))
 	{
 		// FrequencyToTranspose assumes NTSC middle-C frequency like FT2, but we play MODs with PAL middle-C!
 		if(toType == MOD_TYPE_MOD)
-			nC5Speed = Util::muldivr_unsigned(nC5Speed, 8363, 8272);
+			nC5Speed = Util::muldivr_unsigned(nC5Speed, 8363, 8287);
 		FrequencyToTranspose();
 	}
 
@@ -134,7 +136,7 @@ void ModSample::Initialize(MODTYPE type)
 	nPan = 128;
 	nVolume = 256;
 	nGlobalVol = 64;
-	uFlags.reset(CHN_PANNING | CHN_SUSTAINLOOP | CHN_LOOP | CHN_PINGPONGLOOP | CHN_PINGPONGSUSTAIN | CHN_ADLIB | SMP_MODIFIED | SMP_KEEPONDISK);
+	uFlags.reset(CHN_PANNING | CHN_SUSTAINLOOP | CHN_LOOP | CHN_PINGPONGLOOP | CHN_PINGPONGSUSTAIN | CHN_REVERSE | CHN_ADLIB | SMP_MODIFIED | SMP_KEEPONDISK);
 	if(type == MOD_TYPE_XM)
 	{
 		uFlags.set(CHN_PANNING);
@@ -162,7 +164,7 @@ uint32 ModSample::GetSampleRate(const MODTYPE type) const
 		rate = nC5Speed;
 	// TransposeToFrequency assumes NTSC middle-C frequency like FT2, but we play MODs with PAL middle-C!
 	if(type == MOD_TYPE_MOD)
-		rate = Util::muldivr_unsigned(rate, 8272, 8363);
+		rate = Util::muldivr_unsigned(rate, 8287, 8363);
 	return (rate > 0) ? rate : 8363;
 }
 
@@ -525,7 +527,8 @@ bool ModSample::HasCustomCuePoints() const
 		return false;
 	for(SmpLength i = 0; i < std::size(cues); i++)
 	{
-		if(cues[i] != (i + 1) << 11)
+		const SmpLength defaultValue = (i + 1) << 11;
+		if(cues[i] != defaultValue && (cues[i] < nLength || defaultValue < nLength))
 			return true;
 	}
 	return false;

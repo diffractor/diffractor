@@ -50,13 +50,13 @@ private:
 	};
 
 	void EnsureCacheBuffer(std::size_t requiredbuffersize) const {
-		if (cache.size() >= cachesize + requiredbuffersize) {
+		if (cache.size() - cachesize >= requiredbuffersize) {
 			return;
 		}
 		if (cache.size() == 0) {
-			cache.resize(mpt::align_up<std::size_t>(cachesize + requiredbuffersize, BUFFER_SIZE));
+			cache.resize(mpt::saturate_align_up<std::size_t>(cachesize + requiredbuffersize, BUFFER_SIZE));
 		} else if (mpt::exponential_grow(cache.size()) < cachesize + requiredbuffersize) {
-			cache.resize(mpt::align_up<std::size_t>(cachesize + requiredbuffersize, BUFFER_SIZE));
+			cache.resize(mpt::saturate_align_up<std::size_t>(cachesize + requiredbuffersize, BUFFER_SIZE));
 		} else {
 			cache.resize(mpt::exponential_grow(cache.size()));
 		}
@@ -86,16 +86,15 @@ private:
 		if (target <= cachesize) {
 			return;
 		}
-		std::size_t alignedpos = mpt::align_up<std::size_t>(target, QUANTUM_SIZE);
-		std::size_t needcount = alignedpos - cachesize;
-		EnsureCacheBuffer(needcount);
-		std::size_t readcount = InternalReadUnseekable(mpt::span(&cache[cachesize], alignedpos - cachesize)).size();
-		cachesize += readcount;
-		if (!InternalEof()) {
-			// can read further
-			return;
+		std::size_t alignedpos = mpt::saturate_align_up<std::size_t>(target, QUANTUM_SIZE);
+		while (!InternalEof() && (cachesize < alignedpos)) {
+			EnsureCacheBuffer(BUFFER_SIZE);
+			std::size_t readcount = InternalReadUnseekable(mpt::span(&cache[cachesize], BUFFER_SIZE)).size();
+			cachesize += readcount;
 		}
-		streamFullyCached = true;
+		if (InternalEof()) {
+			streamFullyCached = true;
+		}
 	}
 
 private:
@@ -136,7 +135,7 @@ public:
 		return dst.subspan(0, cache_avail);
 	}
 
-	bool CanRead(pos_type pos, std::size_t length) const override {
+	bool CanRead(pos_type pos, pos_type length) const override {
 		CacheStreamUpTo(pos, length);
 		if ((pos == IFileData::pos_type(cachesize)) && (length == 0)) {
 			return true;
@@ -147,7 +146,7 @@ public:
 		return length <= IFileData::pos_type(cachesize) - pos;
 	}
 
-	std::size_t GetReadableLength(pos_type pos, std::size_t length) const override {
+	pos_type GetReadableLength(pos_type pos, pos_type length) const override {
 		CacheStreamUpTo(pos, length);
 		if (pos >= cachesize) {
 			return 0;

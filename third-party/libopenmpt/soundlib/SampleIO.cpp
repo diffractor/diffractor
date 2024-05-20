@@ -179,7 +179,7 @@ size_t SampleIO::ReadSample(ModSample &sample, FileReader &file) const
 		LimitMax(sourceSize, mpt::saturate_cast<uint32>(packedDataView.size()));
 		bytesRead += sourceSize;
 
-		AMSUnpack(reinterpret_cast<const int8 *>(packedDataView.data()), packedDataView.size(), sample.samplev(), sample.GetSampleSizeInBytes(), packCharacter);
+		AMSUnpack(packedDataView.span(), mpt::as_span(sample.sampleb(), sample.GetSampleSizeInBytes()), packCharacter);
 		if(sample.uFlags[CHN_16BIT] && !mpt::endian_is_little())
 		{
 			auto p = sample.sample16();
@@ -916,12 +916,12 @@ size_t SampleIO::WriteSample(std::ostream &f, const ModSample &sample, SmpLength
 		// Stereo signed interleaved
 		MPT_ASSERT(len == numSamples * 2);
 		const int8 *const pSample8 = sample.sample8();
-		mpt::IO::WriteRaw(f, reinterpret_cast<const std::byte*>(pSample8), len);
+		mpt::IO::Write(f, mpt::as_span(pSample8, len));
 	}
 
 	else if(GetBitDepth() == 16 && GetChannelFormat() == stereoInterleaved && GetEncoding() == signedPCM && GetEndianness() == littleEndian)
 	{
-		// Stereo signed interleaved
+		// Stereo signed interleaved, little-endian
 		MPT_ASSERT(len == numSamples * 4);
 		const int16 *const pSample16 = sample.sample16();
 		const int16 *p = pSample16;
@@ -935,7 +935,7 @@ size_t SampleIO::WriteSample(std::ostream &f, const ModSample &sample, SmpLength
 
 	else if(GetBitDepth() == 16 && GetChannelFormat() == stereoInterleaved && GetEncoding() == signedPCM && GetEndianness() == bigEndian)
 	{
-		// Stereo signed interleaved
+		// Stereo signed interleaved, big-endian
 		MPT_ASSERT(len == numSamples * 4);
 		const int16 *const pSample16 = sample.sample16();
 		const int16 *p = pSample16;
@@ -944,6 +944,24 @@ size_t SampleIO::WriteSample(std::ostream &f, const ModSample &sample, SmpLength
 			mpt::IO::Write(fb, mpt::as_be(p[0]));
 			mpt::IO::Write(fb, mpt::as_be(p[1]));
 			p += 2;
+		}
+	}
+
+	else if(GetBitDepth() == 16 && (GetChannelFormat() == stereoSplit || GetChannelFormat() == mono)
+		&& (GetEncoding() == signedPCM || GetEncoding() == unsignedPCM) && GetEndianness() == bigEndian)
+	{
+		// Stereo split / mono signed 16-bit, big-endian
+		const uint8 numChannels = GetNumChannels();
+		const uint16 offset = (GetEncoding() == unsignedPCM) ? 0x8000 : 0;
+		MPT_ASSERT(len == numSamples * numChannels * 2);
+		for(uint8 chn = 0; chn < numChannels; chn++)
+		{
+			const int16 *p = sample.sample16() + chn;
+			for(SmpLength j = 0; j < numSamples; j++)
+			{
+				mpt::IO::Write(fb, mpt::as_be(static_cast<int16>(static_cast<uint16>(*p) + offset)));
+				p += numChannels;
+			}
 		}
 	}
 

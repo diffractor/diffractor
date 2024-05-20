@@ -6,6 +6,7 @@
 
 
 #include "mpt/base/integer.hpp"
+#include "mpt/base/memory.hpp"
 #include "mpt/base/namespace.hpp"
 
 #include <cstddef>
@@ -37,7 +38,6 @@ struct FileOperations {
 
 template <typename Tfile>
 inline FileOperations<Tfile> FileOps(Tfile & f) {
-	;
 	return FileOperations<Tfile>{f};
 }
 

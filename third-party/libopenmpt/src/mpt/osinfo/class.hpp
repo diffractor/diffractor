@@ -31,7 +31,7 @@ enum class osclass {
 	Windows,
 	Linux,
 	Darwin,
-	BSD,
+	BSD_,
 	Haiku,
 	DOS,
 };
@@ -47,25 +47,61 @@ inline mpt::osinfo::osclass get_class_from_sysname(const std::string & sysname) 
 	} else if (sysname == "Darwin") {
 		result = mpt::osinfo::osclass::Darwin;
 	} else if (sysname == "FreeBSD" || sysname == "DragonFly" || sysname == "NetBSD" || sysname == "OpenBSD" || sysname == "MidnightBSD") {
-		result = mpt::osinfo::osclass::BSD;
+		result = mpt::osinfo::osclass::BSD_;
 	} else if (sysname == "Haiku") {
 		result = mpt::osinfo::osclass::Haiku;
-	} else if (sysname == "MS-DOS") {
+	} else if (sysname == "IBMPcDos" || sysname == "CompqDOS" || sysname == "MsoftDOS" || sysname == "AT&T DOS" || sysname == "ZenitDOS" || sysname == "HP DOS" || sysname == "GrBulDOS" || sysname == "PBellDOS" || sysname == "DEC DOS" || sysname == "OlivtDOS" || sysname == "TI DOS" || sysname == "Toshiba" || sysname == "NWin3Dev" || sysname == "MSWinDev" || sysname == "RxDOS" || sysname == "PTS-DOS" || sysname == "GenSoft" || sysname == "DR-DOS" || sysname == "NovelDOS" || sysname == "FreeDOS" || sysname == "MS-DOS") {
 		result = mpt::osinfo::osclass::DOS;
 	}
 	return result;
+}
+
+inline std::string get_sysname() {
+#if MPT_OS_WINDOWS
+	return "Windows";
+#else  // !MPT_OS_WINDOWS
+	utsname uname_result;
+	if (uname(&uname_result) != 0) {
+		return {};
+	}
+	return mpt::ReadAutoBuf(uname_result.sysname);
+#endif // MPT_OS_WINDOWS
 }
 
 inline mpt::osinfo::osclass get_class() {
 #if MPT_OS_WINDOWS
 	return mpt::osinfo::osclass::Windows;
 #else  // !MPT_OS_WINDOWS
-	utsname uname_result;
-	if (uname(&uname_result) != 0) {
-		return mpt::osinfo::osclass::Unknown;
-	}
-	return mpt::osinfo::get_class_from_sysname(mpt::ReadAutoBuf(uname_result.sysname));
+	return mpt::osinfo::get_class_from_sysname(mpt::osinfo::get_sysname());
 #endif // MPT_OS_WINDOWS
+}
+
+inline std::string get_class_name(mpt::osinfo::osclass c) {
+	std::string result;
+	switch (c) {
+		case mpt::osinfo::osclass::Unknown:
+			result = "unknown";
+			break;
+		case mpt::osinfo::osclass::Windows:
+			result = "Windows";
+			break;
+		case mpt::osinfo::osclass::Linux:
+			result = "Linux";
+			break;
+		case mpt::osinfo::osclass::Darwin:
+			result = "Darwin";
+			break;
+		case mpt::osinfo::osclass::BSD_:
+			result = "BSD";
+			break;
+		case mpt::osinfo::osclass::Haiku:
+			result = "Haiku";
+			break;
+		case mpt::osinfo::osclass::DOS:
+			result = "DOS";
+			break;
+	}
+	return result;
 }
 
 } // namespace osinfo

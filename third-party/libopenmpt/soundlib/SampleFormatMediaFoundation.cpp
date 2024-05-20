@@ -23,6 +23,9 @@
 #include "../soundlib/ModSampleCopy.h"
 #include "../common/ComponentManager.h"
 #if defined(MPT_WITH_MEDIAFOUNDATION)
+#include "mpt/io_file_adapter/fileadapter.hpp"
+#include "../common/FileReader.h"
+#include "../common/mptFileTemporary.h"
 #include <windows.h>
 #include <atlbase.h>
 #include <mfapi.h>
@@ -31,6 +34,7 @@
 #include <mferror.h>
 #include <Propvarutil.h>
 #endif // MPT_WITH_MEDIAFOUNDATION
+#include "mpt/string/utility.hpp"
 
 
 OPENMPT_NAMESPACE_BEGIN
@@ -304,7 +308,7 @@ bool CSoundFile::ReadMediaFoundationSample(SAMPLEINDEX sample, FileReader &file,
 	// When using MF to decode MP3 samples in MO3 files, we need the mp3 file extension
 	// for some of them or otherwise MF refuses to recognize them.
 	mpt::PathString tmpfileExtension = (mo3Decode ? P_("mp3") : P_("tmp"));
-	OnDiskFileWrapper diskfile(file, tmpfileExtension);
+	mpt::IO::FileAdapter<FileCursor> diskfile(file, mpt::TemporaryPathname{tmpfileExtension}.GetPathname());
 	if(!diskfile.IsValid())
 	{
 		return false;
@@ -322,7 +326,7 @@ bool CSoundFile::ReadMediaFoundationSample(SAMPLEINDEX sample, FileReader &file,
 	MPT_MF_CHECKED(MFCreateSourceResolver(&sourceResolver));
 	MF_OBJECT_TYPE objectType = MF_OBJECT_INVALID;
 	CComPtr<IUnknown> unknownMediaSource;
-	MPT_MF_CHECKED(sourceResolver->CreateObjectFromURL(diskfile.GetFilename().ToWide().c_str(), MF_RESOLUTION_MEDIASOURCE | MF_RESOLUTION_CONTENT_DOES_NOT_HAVE_TO_MATCH_EXTENSION_OR_MIME_TYPE | MF_RESOLUTION_READ, NULL, &objectType, &unknownMediaSource));
+	MPT_MF_CHECKED(sourceResolver->CreateObjectFromURL(mpt::ToWide(diskfile.GetFilename()).c_str(), MF_RESOLUTION_MEDIASOURCE | MF_RESOLUTION_CONTENT_DOES_NOT_HAVE_TO_MATCH_EXTENSION_OR_MIME_TYPE | MF_RESOLUTION_READ, NULL, &objectType, &unknownMediaSource));
 	if(objectType != MF_OBJECT_MEDIASOURCE)
 	{
 		return false;
@@ -392,21 +396,20 @@ bool CSoundFile::ReadMediaFoundationSample(SAMPLEINDEX sample, FileReader &file,
 
 	std::string sampleName = mpt::ToCharset(GetCharsetInternal(), GetSampleNameFromTags(tags));
 
-	if(rawData.size() / numChannels / (bitsPerSample / 8) > MAX_SAMPLE_LENGTH)
+	const size_t length = rawData.size() / numChannels / (bitsPerSample / 8);
+	if(length < 1 || length > MAX_SAMPLE_LENGTH)
 	{
 		return false;
 	}
 
-	SmpLength length = mpt::saturate_cast<SmpLength>(rawData.size() / numChannels / (bitsPerSample/8));
-
 	DestroySampleThreadsafe(sample);
 	if(!mo3Decode)
 	{
-		m_szNames[sample] = sampleName;
 		Samples[sample].Initialize();
 		Samples[sample].nC5Speed = samplesPerSecond;
+		m_szNames[sample] = sampleName;
 	}
-	Samples[sample].nLength = length;
+	Samples[sample].nLength = static_cast<SmpLength>(length);
 	Samples[sample].uFlags.set(CHN_16BIT, bitsPerSample >= 16);
 	Samples[sample].uFlags.set(CHN_STEREO, numChannels == 2);
 	Samples[sample].AllocateSample();
@@ -419,24 +422,24 @@ bool CSoundFile::ReadMediaFoundationSample(SAMPLEINDEX sample, FileReader &file,
 	{
 		if(numChannels == 2)
 		{
-			CopyStereoInterleavedSample<SC::ConversionChain<SC::Convert<int16, int32>, SC::DecodeInt24<0, littleEndian24> > >(Samples[sample], rawData.data(), rawData.size());
+			CopyStereoInterleavedSample<SC::ConversionChain<SC::Convert<int16, int32>, SC::DecodeInt24<0, littleEndian24>>>(Samples[sample], rawData.data(), rawData.size());
 		} else
 		{
-			CopyMonoSample<SC::ConversionChain<SC::Convert<int16, int32>, SC::DecodeInt24<0, littleEndian24> > >(Samples[sample], rawData.data(), rawData.size());
+			CopyMonoSample<SC::ConversionChain<SC::Convert<int16, int32>, SC::DecodeInt24<0, littleEndian24>>>(Samples[sample], rawData.data(), rawData.size());
 		}
 	} else if(bitsPerSample == 32)
 	{
 		if(numChannels == 2)
 		{
-			CopyStereoInterleavedSample<SC::ConversionChain<SC::Convert<int16, int32>, SC::DecodeInt32<0, littleEndian32> > >(Samples[sample], rawData.data(), rawData.size());
+			CopyStereoInterleavedSample<SC::ConversionChain<SC::Convert<int16, int32>, SC::DecodeInt32<0, littleEndian32>>>(Samples[sample], rawData.data(), rawData.size());
 		} else
 		{
-			CopyMonoSample<SC::ConversionChain<SC::Convert<int16, int32>, SC::DecodeInt32<0, littleEndian32> > >(Samples[sample], rawData.data(), rawData.size());
+			CopyMonoSample<SC::ConversionChain<SC::Convert<int16, int32>, SC::DecodeInt32<0, littleEndian32>>>(Samples[sample], rawData.data(), rawData.size());
 		}
 	} else
 	{
 		// just copy
-		std::copy(rawData.data(), rawData.data() + rawData.size(), mpt::byte_cast<char*>(Samples[sample].sampleb()));
+		std::copy(rawData.begin(), rawData.end(), mpt::byte_cast<char *>(Samples[sample].sampleb()));
 	}
 
 	#undef MPT_MF_CHECKED

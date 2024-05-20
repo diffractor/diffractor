@@ -42,7 +42,7 @@ static void ReadAMSPattern(CPattern &pattern, bool newVersion, FileReader &patte
 	};
 
 	// Effect translation table for extended (non-Protracker) effects
-	static constexpr ModCommand::COMMAND effTrans[] =
+	static constexpr EffectCommand effTrans[] =
 	{
 		CMD_S3MCMDEX,		// Forward / Backward
 		CMD_PORTAMENTOUP,	// Extra fine slide up
@@ -78,7 +78,7 @@ static void ReadAMSPattern(CPattern &pattern, bool newVersion, FileReader &patte
 	ModCommand dummy;
 	for(ROWINDEX row = 0; row < pattern.GetNumRows(); row++)
 	{
-		PatternRow baseRow = pattern.GetRow(row);
+		auto baseRow = pattern.GetRow(row);
 		while(patternChunk.CanRead(1))
 		{
 			const uint8 flags = patternChunk.ReadUint8();
@@ -128,8 +128,7 @@ static void ReadAMSPattern(CPattern &pattern, bool newVersion, FileReader &patte
 					if(effect < 0x10)
 					{
 						// PT commands
-						m.command = effect;
-						CSoundFile::ConvertModCommand(m);
+						CSoundFile::ConvertModCommand(m, effect, m.param);
 
 						// Post-fix some commands
 						switch(m.command)
@@ -155,6 +154,9 @@ static void ReadAMSPattern(CPattern &pattern, bool newVersion, FileReader &patte
 							{
 								m.ExtendedMODtoS3MEffect();
 							}
+							break;
+
+						default:
 							break;
 						}
 					} else if(effect < 0x10 + mpt::array_size<decltype(effTrans)>::size)
@@ -230,11 +232,10 @@ static void ReadAMSPattern(CPattern &pattern, bool newVersion, FileReader &patte
 
 					if(ModCommand::GetEffectWeight(origCmd.command) > ModCommand::GetEffectWeight(m.command))
 					{
-						if(m.volcmd == VOLCMD_NONE && ModCommand::ConvertVolEffect(m.command, m.param, true))
+						if(m.volcmd == VOLCMD_NONE)
 						{
 							// Volume column to the rescue!
-							m.volcmd = m.command;
-							m.vol = m.param;
+							m.SetVolumeCommand(ModCommand::ConvertToVolCommand(m.command, m.param, true));
 						}
 
 						m.command = origCmd.command;
@@ -1034,27 +1035,27 @@ bool CSoundFile::ReadAMS2(FileReader &file, ModLoadingFlags loadFlags)
 /////////////////////////////////////////////////////////////////////
 // AMS Sample unpacking
 
-void AMSUnpack(const int8 * const source, size_t sourceSize, void * const dest, const size_t destSize, char packCharacter)
+void AMSUnpack(mpt::const_byte_span source, mpt::byte_span dest, int8 packCharacter)
 {
-	std::vector<int8> tempBuf(destSize, 0);
-	size_t depackSize = destSize;
+	std::vector<int8> tempBuf(dest.size(), 0);
+	std::size_t depackSize = dest.size();
 
 	// Unpack Loop
 	{
-		const int8 *in = source;
+		const std::byte *in = source.data();
 		int8 *out = tempBuf.data();
 
-		size_t i = sourceSize, j = destSize;
+		size_t i = source.size(), j = dest.size();
 		while(i != 0 && j != 0)
 		{
-			int8 ch = *(in++);
+			int8 ch = mpt::byte_cast<int8>(*(in++));
 			if(--i != 0 && ch == packCharacter)
 			{
-				uint8 repCount = *(in++);
+				uint8 repCount = mpt::byte_cast<uint8>(*(in++));
 				repCount = static_cast<uint8>(std::min(static_cast<size_t>(repCount), j));
 				if(--i != 0 && repCount)
 				{
-					ch = *(in++);
+					ch = mpt::byte_cast<int8>(*(in++));
 					i--;
 					while(repCount-- != 0)
 					{
@@ -1081,7 +1082,7 @@ void AMSUnpack(const int8 * const source, size_t sourceSize, void * const dest, 
 		int8 *out = tempBuf.data();
 		uint16 bitcount = 0x80;
 		size_t k = 0;
-		uint8 *dst = static_cast<uint8 *>(dest);
+		uint8 *dst = mpt::byte_cast<uint8 *>(dest.data());
 		for(size_t i = 0; i < depackSize; i++)
 		{
 			uint8 al = *out++;
@@ -1092,7 +1093,7 @@ void AMSUnpack(const int8 * const source, size_t sourceSize, void * const dest, 
 				bl = ((bl | (bl << 8)) >> ((dh + 8 - count) & 7)) & 0xFF;
 				bitcount = ((bitcount | (bitcount << 8)) >> 1) & 0xFF;
 				dst[k++] |= bl;
-				if(k >= destSize)
+				if(k >= dest.size())
 				{
 					k = 0;
 					dh++;
@@ -1105,16 +1106,16 @@ void AMSUnpack(const int8 * const source, size_t sourceSize, void * const dest, 
 	// Delta Unpack
 	{
 		int8 old = 0;
-		int8 *out = static_cast<int8 *>(dest);
+		uint8 *out = mpt::byte_cast<uint8*>(dest.data());
 		for(size_t i = depackSize; i != 0; i--)
 		{
-			int pos = *reinterpret_cast<uint8 *>(out);
+			int pos = static_cast<uint8>(*out);
 			if(pos != 128 && (pos & 0x80) != 0)
 			{
 				pos = -(pos & 0x7F);
 			}
 			old -= static_cast<int8>(pos);
-			*(out++) = old;
+			*(out++) = static_cast<uint8>(old);
 		}
 	}
 }

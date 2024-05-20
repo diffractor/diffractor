@@ -30,16 +30,7 @@
     <ClCompile Include="common\mptRandom.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="common\mptString.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="common\mptStringBuffer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="common\mptStringFormat.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="common\mptStringParse.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="common\mptTime.cpp">
@@ -405,37 +396,13 @@
     <ClCompile Include="soundlib\XMTools.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\openmpt\sounddevice\SoundDevice.cpp">
+    <ClCompile Include="soundlib\Load_667.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\openmpt\sounddevice\SoundDeviceASIO.cpp">
+    <ClCompile Include="soundlib\Load_gt2.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\openmpt\sounddevice\SoundDeviceBase.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\openmpt\sounddevice\SoundDeviceDirectSound.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\openmpt\sounddevice\SoundDeviceManager.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\openmpt\sounddevice\SoundDevicePortAudio.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\openmpt\sounddevice\SoundDevicePulseaudio.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\openmpt\sounddevice\SoundDevicePulseSimple.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\openmpt\sounddevice\SoundDeviceRtAudio.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\openmpt\sounddevice\SoundDeviceUtilities.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\openmpt\sounddevice\SoundDeviceWaveout.cpp">
+    <ClCompile Include="soundlib\Load_xmf.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -1293,6 +1260,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\openmpt\sounddevice\SoundDeviceWaveout.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="soundlib\SampleCopy.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

@@ -11,9 +11,9 @@
 #include "stdafx.h"
 
 #ifndef NO_PLUGINS
-#include "../../Sndfile.h"
 #include "Flanger.h"
-#endif // !NO_PLUGINS
+#include "../../Sndfile.h"
+#endif  // !NO_PLUGINS
 
 OPENMPT_NAMESPACE_BEGIN
 
@@ -22,18 +22,19 @@ OPENMPT_NAMESPACE_BEGIN
 namespace DMO
 {
 
-IMixPlugin* Flanger::Create(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixStruct)
+// cppcheck-suppress duplInheritedMember
+IMixPlugin* Flanger::Create(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN &mixStruct)
 {
 	return new (std::nothrow) Flanger(factory, sndFile, mixStruct, false);
 }
 
-IMixPlugin* Flanger::CreateLegacy(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixStruct)
+IMixPlugin* Flanger::CreateLegacy(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN &mixStruct)
 {
 	return new(std::nothrow) Flanger(factory, sndFile, mixStruct, true);
 }
 
 
-Flanger::Flanger(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixStruct, const bool legacy)
+Flanger::Flanger(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN &mixStruct, const bool legacy)
 	: Chorus(factory, sndFile, mixStruct, !legacy)
 {
 	m_param[kFlangerWetDryMix] = 0.5f;
@@ -46,7 +47,6 @@ Flanger::Flanger(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixSt
 
 	// Already done in Chorus constructor
 	//m_mixBuffer.Initialize(2, 2);
-	//InsertIntoFactoryList();
 }
 
 

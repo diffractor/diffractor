@@ -12,6 +12,8 @@
 #include "mpt/test/test.hpp"
 #include "mpt/test/test_macros.hpp"
 
+#include <limits>
+
 
 
 namespace mpt {
@@ -108,21 +110,21 @@ MPT_TEST_GROUP_INLINE("mpt/base/bit")
 	MPT_TEST_EXPECT_EQUAL(mpt::bit_floor(uint32(0xfffffffeu)), 0x80000000u);
 	MPT_TEST_EXPECT_EQUAL(mpt::bit_floor(uint32(0xffffffffu)), 0x80000000u);
 
-	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(0u), 0u);
-	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(1u), 1u);
-	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(2u), 2u);
-	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(3u), 2u);
-	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(4u), 3u);
-	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(5u), 3u);
-	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(6u), 3u);
-	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(7u), 3u);
-	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(8u), 4u);
-	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(9u), 4u);
-	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(uint32(0x7fffffffu)), 31u);
-	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(uint32(0x80000000u)), 32u);
-	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(uint32(0x80000001u)), 32u);
-	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(uint32(0xfffffffeu)), 32u);
-	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(uint32(0xffffffffu)), 32u);
+	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(0u), 0);
+	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(1u), 1);
+	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(2u), 2);
+	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(3u), 2);
+	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(4u), 3);
+	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(5u), 3);
+	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(6u), 3);
+	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(7u), 3);
+	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(8u), 4);
+	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(9u), 4);
+	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(uint32(0x7fffffffu)), 31);
+	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(uint32(0x80000000u)), 32);
+	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(uint32(0x80000001u)), 32);
+	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(uint32(0xfffffffeu)), 32);
+	MPT_TEST_EXPECT_EQUAL(mpt::bit_width(uint32(0xffffffffu)), 32);
 
 	MPT_TEST_EXPECT_EQUAL(mpt::countl_one(uint8(0b00000000)), 0);
 	MPT_TEST_EXPECT_EQUAL(mpt::countl_one(uint8(0b00000001)), 0);
@@ -211,6 +213,16 @@ MPT_TEST_GROUP_INLINE("mpt/base/bit")
 	MPT_TEST_EXPECT_EQUAL(mpt::lower_bound_entropy_bits(0x00000002u), 1);
 	MPT_TEST_EXPECT_EQUAL(mpt::lower_bound_entropy_bits(0x00000001u), 1);
 	MPT_TEST_EXPECT_EQUAL(mpt::lower_bound_entropy_bits(0x00000000u), 0);
+
+	MPT_TEST_EXPECT_EQUAL(mpt::byteswap(uint8(0x12)), 0x12);
+	MPT_TEST_EXPECT_EQUAL(mpt::byteswap(uint16(0x1234)), 0x3412);
+	MPT_TEST_EXPECT_EQUAL(mpt::byteswap(uint32(0x12345678u)), 0x78563412u);
+	MPT_TEST_EXPECT_EQUAL(mpt::byteswap(uint64(0x123456789abcdef0ull)), 0xf0debc9a78563412ull);
+
+	MPT_TEST_EXPECT_EQUAL(mpt::byteswap(int8(std::numeric_limits<int8>::min())), std::numeric_limits<int8>::min());
+	MPT_TEST_EXPECT_EQUAL(mpt::byteswap(int16(std::numeric_limits<int16>::min())), int16(0x80));
+	MPT_TEST_EXPECT_EQUAL(mpt::byteswap(int32(std::numeric_limits<int32>::min())), int32(0x80));
+	MPT_TEST_EXPECT_EQUAL(mpt::byteswap(int64(std::numeric_limits<int64>::min())), int64(0x80));
 }
 
 } // namespace bit

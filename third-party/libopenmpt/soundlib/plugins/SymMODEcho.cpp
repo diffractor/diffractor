@@ -16,18 +16,17 @@
 
 OPENMPT_NAMESPACE_BEGIN
 
-IMixPlugin *SymMODEcho::Create(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixStruct)
+IMixPlugin *SymMODEcho::Create(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN &mixStruct)
 {
 	return new (std::nothrow) SymMODEcho(factory, sndFile, mixStruct);
 }
 
 
-SymMODEcho::SymMODEcho(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixStruct)
+SymMODEcho::SymMODEcho(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN &mixStruct)
 	: IMixPlugin(factory, sndFile, mixStruct)
 	, m_chunk(PluginChunk::Default())
 {
 	m_mixBuffer.Initialize(2, 2);
-	InsertIntoFactoryList();
 	RecalculateEchoParams();
 }
 
@@ -38,7 +37,7 @@ void SymMODEcho::Process(float* pOutL, float* pOutR, uint32 numFrames)
 	float *outL = m_mixBuffer.GetOutputBuffer(0), *outR = m_mixBuffer.GetOutputBuffer(1);
 
 	const uint32 delayTime = m_SndFile.m_PlayState.m_nSamplesPerTick * m_chunk.param[kEchoDelay];
-	// SymMODs don't have a variable tempo so the tick duration should never change... but if someone loads a module into an MPTM file we have to account for this.
+	// SymMODs don't have a variable tempo so the tick duration should never change... but if someone loads an instance into an MPTM file we have to account for this.
 	if(m_delayLine.size() < delayTime * 2)
 		m_delayLine.resize(delayTime * 2);
 
@@ -71,7 +70,7 @@ void SymMODEcho::Process(float* pOutL, float* pOutR, uint32 numFrames)
 			{
 				case DSPType::Off:
 					break;
-				case DSPType::Normal:  // Normal
+				case DSPType::Normal:
 					lOut = (lDelay + lDry) * m_feedback;
 					rOut = (rDelay + rDry) * m_feedback;
 					break;

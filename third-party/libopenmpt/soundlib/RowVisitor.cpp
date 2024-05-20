@@ -23,7 +23,7 @@ OPENMPT_NAMESPACE_BEGIN
 
 RowVisitor::LoopState::LoopState(const ChannelStates &chnState, const bool ignoreRow)
 {
-	// Rather than storing the exact loop count vector, we compute a FNV-1a 64-bit hash of it.
+	// Rather than storing the exact loop count vector, we compute an FNV-1a 64-bit hash of it.
 	// This means we can store the loop state in a small and fixed amount of memory.
 	// In theory there is the possibility of hash collisions for different loop states, but in practice,
 	// the relevant inputs for the hashing algorithm are extremely unlikely to produce collisions.
@@ -84,10 +84,15 @@ void RowVisitor::Initialize(bool reset)
 {
 	auto &order = Order();
 	const ORDERINDEX endOrder = order.GetLengthTailTrimmed();
+	bool reserveLoopStates = true;
 	m_visitedRows.resize(endOrder);
 	if(reset)
 	{
-		m_visitedLoopStates.clear();
+		reserveLoopStates = m_visitedLoopStates.empty();
+		for(auto &loopState : m_visitedLoopStates)
+		{
+			loopState.second.clear();
+		}
 		m_rowsSpentInLoops = 0;
 	}
 
@@ -104,7 +109,7 @@ void RowVisitor::Initialize(bool reset)
 		else
 			visitedRows.resize(numRows, false);
 
-		if(!order.IsValidPat(ord))
+		if(!reserveLoopStates || !order.IsValidPat(ord))
 			continue;
 
 		const ROWINDEX startRow = std::min(static_cast<ROWINDEX>(reset ? 0 : visitedRows.size()), numRows);
@@ -131,7 +136,7 @@ void RowVisitor::Initialize(bool reset)
 		{
 			const ROWINDEX row = i - 1;
 			uint32 maxLoopStates = 1;
-			auto m = pattern.GetRow(row);
+			auto m = pattern.GetpModCommand(row, 0);
 			// Break condition: If it's more than 16, it's probably wrong :) exact loop count depends on how loops overlap.
 			for(CHANNELINDEX chn = 0; chn < pattern.GetNumChannels() && maxLoopStates < 16; chn++, m++)
 			{
@@ -221,36 +226,45 @@ bool RowVisitor::GetFirstUnvisitedRow(ORDERINDEX &ord, ROWINDEX &row, bool onlyU
 {
 	const auto &order = Order();
 	const ORDERINDEX endOrder = order.GetLengthTailTrimmed();
-	for(ord = 0; ord < endOrder; ord++)
+	for(ORDERINDEX o = 0; o < endOrder; o++)
 	{
-		if(!order.IsValidPat(ord))
+		if(!order.IsValidPat(o))
 			continue;
 
-		if(ord >= m_visitedRows.size())
+		if(o >= m_visitedRows.size())
 		{
 			// Not yet initialized => unvisited
+			ord = o;
 			row = 0;
 			return true;
 		}
 
-		const auto &visitedRows = m_visitedRows[ord];
-		const auto firstUnplayedRow = std::find(visitedRows.begin(), visitedRows.end(), onlyUnplayedPatterns);
-		if(onlyUnplayedPatterns && firstUnplayedRow == visitedRows.end())
+		const auto &visitedRows = m_visitedRows[o];
+		ROWINDEX firstUnplayedRow = 0;
+		for(; firstUnplayedRow < visitedRows.size(); firstUnplayedRow++)
+		{
+			if(visitedRows[firstUnplayedRow] == onlyUnplayedPatterns)
+				break;
+		}
+		if(onlyUnplayedPatterns && firstUnplayedRow == visitedRows.size())
 		{
 			// No row of this pattern has been played yet.
+			ord = o;
 			row = 0;
 			return true;
 		} else if(!onlyUnplayedPatterns)
 		{
 			// Return the first unplayed row in this pattern
-			if(firstUnplayedRow != visitedRows.end())
+			if(firstUnplayedRow < visitedRows.size())
 			{
-				row = static_cast<ROWINDEX>(std::distance(visitedRows.begin(), firstUnplayedRow));
+				ord = o;
+				row = firstUnplayedRow;
 				return true;
 			}
-			if(visitedRows.size() < m_sndFile.Patterns[order[ord]].GetNumRows())
+			if(visitedRows.size() < m_sndFile.Patterns[order[o]].GetNumRows())
 			{
 				// History is not fully initialized
+				ord = o;
 				row = static_cast<ROWINDEX>(visitedRows.size());
 				return true;
 			}

@@ -54,10 +54,9 @@ protected:
 	int32 m_dryWritePos = 0;
 
 public:
-	static IMixPlugin* Create(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixStruct);
-	Chorus(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN *mixStruct, bool stereoBuffers = false);
+	static IMixPlugin* Create(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN &mixStruct);
+	Chorus(VSTPluginLib &factory, CSoundFile &sndFile, SNDMIXPLUGIN &mixStruct, bool stereoBuffers = false);
 
-	void Release() override { delete this; }
 	int32 GetUID() const override { return 0xEFE6629C; }
 	int32 GetVersion() const override { return 0; }
 	void Idle() override { }
@@ -106,7 +105,7 @@ protected:
 	int32 GetBufferIntOffset(int32 fpOffset) const;
 
 	virtual float WetDryMix() const { return m_param[kChorusWetDryMix]; }
-	virtual bool IsTriangle() const { return m_param[kChorusWaveShape] < 1; }
+	virtual bool IsSquare() const { return m_param[kChorusWaveShape] < 1; }
 	virtual float Depth() const { return m_param[kChorusDepth]; }
 	virtual float Feedback() const { return -99.0f + m_param[kChorusFeedback] * 198.0f; }
 	virtual float Delay() const { return m_param[kChorusDelay] * 20.0f; }

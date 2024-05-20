@@ -34,7 +34,7 @@ Diffractor has a built-in test runner. If the application is started from Visual
 - [libjpeg-turbo](https://github.com/libjpeg-turbo/libjpeg-turbo) 3.0.3
 - [liblzma](https://github.com/tukaani-project/xz) 5.4.6
 - [libmatroska](https://github.com/Matroska-Org/libmatroska) 1.7.1
-- [libopenmpt](https://lib.openmpt.org) 0.6.6
+- [libopenmpt](https://lib.openmpt.org) 0.7.7
 - [LibPng](http://www.libpng.org/pub/png/libpng.html) 1.6.43
 - [LibRaw](https://www.libraw.org) 0.21.2
 - [libwebp](https://github.com/webmproject/libwebp) 1.4.0
