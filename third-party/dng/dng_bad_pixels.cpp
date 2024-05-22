@@ -1112,9 +1112,11 @@ void dng_opcode_FixBadPixelsList::FixClusteredPixel (dng_pixel_buffer &buffer,
 	
 	char s [256];
 	
-	sprintf (s, "Unable to repair bad pixel, row %d, column %d",
-			 (int) badPoint.v,
-			 (int) badPoint.h);
+	snprintf (s,
+			  256,
+			  "Unable to repair bad pixel, row %d, column %d",
+			  (int) badPoint.v,
+			  (int) badPoint.h);
 	
 	ReportWarning (s);
 	
@@ -1711,6 +1713,10 @@ void dng_opcode_FixBadPixelsList::FixClusteredRect (dng_pixel_buffer &buffer,
 		ReportWarning ("Unable to repair bad rectangle");
 		
 		}
+
+	#else
+
+	(void) didFail;
 	
 	#endif
 	

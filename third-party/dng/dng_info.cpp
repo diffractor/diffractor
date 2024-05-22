@@ -15,6 +15,7 @@
 #include "dng_tag_codes.h"
 #include "dng_parse_utils.h"
 #include "dng_safe_arithmetic.h"
+#include "dng_sdk_limits.h"
 #include "dng_tag_types.h"
 #include "dng_tag_values.h"
 #include "dng_utils.h"
@@ -514,18 +515,19 @@ void dng_info::ParseIFD (dng_host &host,
 		
 		char message [256];
 	
-		sprintf (message,
-				 "%s has odd offset (%u)",
-				 LookupParentCode (parentCode),
-				 (unsigned) ifdOffset);
+		snprintf (message,
+				  256,
+				  "%s has odd offset (%u)",
+				  LookupParentCode (parentCode),
+				  (unsigned) ifdOffset);
 					 
 		ReportWarning (message);
 		
 		}
 		
-	#endif
-		
 	uint32 prev_tag_code = 0;
+		
+	#endif
 		
 	for (uint64 tag_index = 0; tag_index < ifdEntries; tag_index++)
 		{
@@ -547,9 +549,10 @@ void dng_info::ParseIFD (dng_host &host,
 			
 			char message [256];
 	
-			sprintf (message,
-					 "%s had zero/zero tag code/type entry",
-					 LookupParentCode (parentCode));
+			snprintf (message,
+					  256,
+					  "%s had zero/zero tag code/type entry",
+					  LookupParentCode (parentCode));
 					 
 			ReportWarning (message);
 			
@@ -571,9 +574,10 @@ void dng_info::ParseIFD (dng_host &host,
 				
 				char message [256];
 		
-				sprintf (message,
-						 "%s tags are not sorted in ascending numerical order",
-						 LookupParentCode (parentCode));
+				snprintf (message,
+						  256,
+						  "%s tags are not sorted in ascending numerical order",
+						  LookupParentCode (parentCode));
 						 
 				ReportWarning (message);
 				
@@ -581,10 +585,10 @@ void dng_info::ParseIFD (dng_host &host,
 				
 			}
 			
-		#endif
-			
 		prev_tag_code = tagCode;
 		
+		#endif
+			
 		uint32 tag_type_size = TagTypeSize (tagType);
 		
 		if (tag_type_size == 0)
@@ -596,11 +600,12 @@ void dng_info::ParseIFD (dng_host &host,
 			
 				char message [256];
 		
-				sprintf (message,
-						 "%s %s has unknown type (%u)",
-						 LookupParentCode (parentCode),
-						 LookupTagCode (parentCode, tagCode),
-						 (unsigned) tagType);
+				snprintf (message,
+						  256,
+						  "%s %s has unknown type (%u)",
+						  LookupParentCode (parentCode),
+						  LookupTagCode (parentCode, tagCode),
+						  (unsigned) tagType);
 						 
 				ReportWarning (message);
 							 
@@ -646,11 +651,12 @@ void dng_info::ParseIFD (dng_host &host,
 					
 					char message [256];
 		
-					sprintf (message,
-							 "%s %s has odd data offset (%u)",
-							 LookupParentCode (parentCode),
-							 LookupTagCode (parentCode, tagCode),
-							 (unsigned) tagOffset);
+					snprintf (message,
+							  256,
+							  "%s %s has odd data offset (%u)",
+							  LookupParentCode (parentCode),
+							  LookupTagCode (parentCode, tagCode),
+							  (unsigned) tagOffset);
 							 
 					ReportWarning (message);
 						 
@@ -699,11 +705,12 @@ void dng_info::ParseIFD (dng_host &host,
 			
 			char message [256];
 
-			sprintf (message,
-					 "%s %s has larger than 32-bit tag count (%llu)",
-					 LookupParentCode (parentCode),
-					 LookupTagCode (parentCode, tagCode),
-					 (unsigned long long) tagCount);
+			snprintf (message,
+					  256,
+					  "%s %s has larger than 32-bit tag count (%llu)",
+					  LookupParentCode (parentCode),
+					  LookupTagCode (parentCode, tagCode),
+					  (unsigned long long) tagCount);
 					 
 			ReportWarning (message);
 								 
@@ -745,10 +752,11 @@ void dng_info::ParseIFD (dng_host &host,
 
 			char message [256];
 
-			sprintf (message,
-					 "%s has an unexpected non-zero NextIFD (%llu)",
-					 LookupParentCode (parentCode),
-					 (unsigned long long) nextIFD);
+			snprintf (message,
+					  256,
+					  "%s has an unexpected non-zero NextIFD (%llu)",
+					  LookupParentCode (parentCode),
+					  (unsigned long long) nextIFD);
 					 
 			ReportWarning (message);
 					 
@@ -778,6 +786,15 @@ bool dng_info::ParseMakerNoteIFD (dng_host &host,
 								  uint64 maxOffset,
 								  uint32 parentCode)
 	{
+
+	// Avoid recursion issues where a MakerNote IFD points to itself.
+
+	if (fParseDepth > kMaxParseDepth)
+		{		
+		return false;
+		}
+
+	RecursionProtector depthProtect (fParseDepth);
 	
 	uint32 tagIndex;
 	uint32 tagCode;
@@ -826,6 +843,13 @@ bool dng_info::ParseMakerNoteIFD (dng_host &host,
 			{
 			continue;
 			}
+
+		// Ditto for some Apple MakerNotes.
+		
+		if (parentCode == tcAppleMakerNote && tagType == 0)
+			{
+			continue;
+			}
 		
 		if (TagTypeSize (tagType) == 0)
 			{
@@ -864,8 +888,22 @@ bool dng_info::ParseMakerNoteIFD (dng_host &host,
 			continue;
 			}
 		
-		uint32 tagSize = SafeUint32Mult (tagCount,
-										 TagTypeSize (tagType));
+		uint32 tagSize = 0;
+
+		try
+			{
+		
+			tagSize = SafeUint32Mult (tagCount,
+									  TagTypeSize (tagType));
+
+			}
+
+		catch (...)
+			{
+			// Detect overflow -- skip invalid tagCount or tagSize.
+			// Works around bug with some Leica M (Typ 240) MakerNotes.
+			continue;
+			}
 		
 		uint64 tagOffset = ifdOffset + 2 + tagIndex * 12 + 8;
 		
@@ -875,16 +913,27 @@ bool dng_info::ParseMakerNoteIFD (dng_host &host,
 			{
 			
 			tagOffset = ifdStream.Get_uint32 () + offsetDelta;
-			
-			if (tagOffset < minOffset ||
-				SafeUint64Add (tagOffset, tagSize) > maxOffset)
+
+			try
 				{
-				
-				// Tag data is outside the valid offset range,
-				// so ignore this tag.
-				
+			
+				if (tagOffset < minOffset ||
+					SafeUint64Add (tagOffset, tagSize) > maxOffset)
+					{
+
+					// Tag data is outside the valid offset range,
+					// so ignore this tag.
+
+					continue;
+
+					}
+
+				}
+
+			catch (...)
+				{
+				// Detect overflow and skip this tag.
 				continue;
-				
 				}
 				
 			localTag = ifdStream.DataInBuffer (tagSize, tagOffset);
@@ -1027,6 +1076,47 @@ void dng_info::ParseMakerNote (dng_host &host,
 	stream.Get (firstBytes, (uint32) Min_uint64 (sizeof (firstBytes),
 												 makerNoteCount));
 	
+	// Apple iOS MakerNote.
+	
+	if (memcmp (firstBytes, "Apple iOS", 9) == 0)
+		{
+		
+		stream.SetReadPosition (makerNoteOffset + 12);
+		
+		bool bigEndian = false;
+		
+		uint16 endianMark = stream.Get_uint16 ();
+		
+		if (endianMark == byteOrderMM)
+			{
+			bigEndian = true;
+			}
+			
+		else if (endianMark != byteOrderII)
+			{
+			return;
+			}
+
+		TempBigEndian temp_endian (stream, bigEndian);
+		
+		if (makerNoteCount > 14)
+			{
+		
+			ParseMakerNoteIFD (host,
+							   stream,
+							   makerNoteCount - 14,
+							   makerNoteOffset + 14,
+							   makerNoteOffset,
+							   minOffset,
+							   maxOffset,
+							   tcAppleMakerNote);
+							   
+			}
+			
+		return;
+					
+		}
+		
 	// Epson MakerNote with header.
 	
 	if (memcmp (firstBytes, "EPSON\000\001\000", 8) == 0)

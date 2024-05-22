@@ -1,5 +1,5 @@
 /*****************************************************************************/
-// Copyright 2006-2019 Adobe Systems Incorporated
+// Copyright 2006-2022 Adobe Systems Incorporated
 // All Rights Reserved.
 //
 // NOTICE:	Adobe permits you to use, modify, and distribute this file in
@@ -21,7 +21,11 @@
 #include <stddef.h>
 #endif
 
+#ifdef __cplusplus
 #include <cstdint>
+#else
+#include <stdint.h>
+#endif
 
 /*****************************************************************************/
 
@@ -29,7 +33,9 @@
 
 #include "dng_custom_integral_types.h"
 
-#elif qDNGUseStdInt || 1
+#else
+
+#ifdef __cplusplus
 
 typedef std::int8_t  int8;
 typedef std::int16_t int16;
@@ -43,29 +49,19 @@ typedef std::uint64_t uint64;
 
 #else
 
-typedef signed char		 int8;
-typedef signed short	 int16;
-#if __LP64__
-typedef signed int		 int32;
-#else
-typedef signed long		 int32;
-#endif
-typedef signed long long int64;
+typedef int8_t  int8;
+typedef int16_t int16;
+typedef int32_t int32;
+typedef int64_t int64;
 
-typedef unsigned char	   uint8;
-typedef unsigned short	   uint16;
-/*Some Mac OS X 10.5 SDK headers already define uint32.*/
-#ifndef _UINT32
-#if __LP64__
-typedef unsigned int	   uint32;
-#else
-typedef unsigned long	   uint32;
-#endif
-#define _UINT32
-#endif
-typedef unsigned long long uint64;
+typedef uint8_t  uint8;
+typedef uint16_t uint16;
+typedef uint32_t uint32;
+typedef uint64_t uint64;
 
-#endif
+#endif	// __cplusplus
+
+#endif	// qDNGUseCustomIntegralTypes
 
 typedef uintptr_t uintptr;
 

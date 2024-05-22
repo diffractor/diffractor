@@ -103,6 +103,10 @@ class dng_opcode_list: private dng_uncopyable
 		/// Remove all opcodes from the list.
 
 		void Clear ();
+	
+		/// Remove opcode from the list at a specific index.
+
+		void Remove (uint32 index);
 
 		/// Swap two opcode lists.
 		

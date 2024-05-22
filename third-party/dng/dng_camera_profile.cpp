@@ -1,5 +1,5 @@
 /*****************************************************************************/
-// Copyright 2006-2020 Adobe Systems Incorporated
+// Copyright 2006-2023 Adobe Systems Incorporated
 // All Rights Reserved.
 //
 // NOTICE:	Adobe permits you to use, modify, and distribute this file in
@@ -11,12 +11,14 @@
 #include "dng_1d_table.h"
 #include "dng_assertions.h"
 #include "dng_color_space.h"
+#include "dng_gain_map.h"
 #include "dng_host.h"
 #include "dng_exceptions.h"
 #include "dng_image_writer.h"
 #include "dng_info.h"
 #include "dng_parse_utils.h"
 #include "dng_safe_arithmetic.h"
+#include "dng_shared.h"
 #include "dng_tag_codes.h"
 #include "dng_tag_types.h"
 #include "dng_temperature.h"
@@ -28,6 +30,67 @@ const char * kProfileName_Embedded = "Embedded";
 
 const char * kAdobeCalibrationSignature = "com.adobe";
 
+/*****************************************************************************/
+
+const char * kProfileName_GroupPrefix = "Group: ";
+
+/*****************************************************************************/
+
+bool HasProfileGroupPrefix (const dng_string &name)
+	{
+	
+	return name.StartsWith (kProfileName_GroupPrefix, true) &&
+		   name.Length () > strlen (kProfileName_GroupPrefix);
+	
+	}
+
+/*****************************************************************************/
+
+dng_string StripProfileGroupPrefix (const dng_string &name)
+	{
+	
+	if (HasProfileGroupPrefix (name))
+		{
+		
+		dng_string result (name.Get () + strlen (kProfileName_GroupPrefix));
+		
+		return result;
+		
+		}
+	
+	return name;
+	
+	}
+
+/*****************************************************************************/
+/*****************************************************************************/
+/*****************************************************************************/
+
+void dng_camera_profile_id::AddDigest (dng_md5_printer &printer) const
+	{
+	
+	printer.Process ("DCPI", 4);
+
+	if (Name ().NotEmpty ())
+		{
+		
+		printer.Process (Name ().Get (),
+						 Name ().Length ());
+		
+		}
+
+	if (Fingerprint ().IsValid ())
+		{
+		
+		printer.Process (fFingerprint.data,
+						 uint32 (sizeof (fFingerprint.data)));
+		
+		}
+	
+	}
+
+/*****************************************************************************/
+/*****************************************************************************/
 /*****************************************************************************/
 
 dng_camera_profile::dng_camera_profile ()
@@ -58,6 +121,7 @@ dng_camera_profile::dng_camera_profile ()
 	,	fBaselineExposureOffset (0, 100)
 	,	fDefaultBlackRender (defaultBlackRender_Auto)
 	,	fToneCurve ()
+	,	fToneMethod (profileToneMethod_Unspecified)
 	,	fProfileCalibrationSignature ()
 	,	fUniqueCameraModelRestriction ()
 	,	fWasReadFromDNG (false)
@@ -595,6 +659,9 @@ dng_fingerprint dng_camera_profile::CalculateFingerprint (bool renderDataOnly) c
 			printer.Put (fName.Get	  (),
 						 fName.Length ());
 				
+			printer.Put (fGroupName.Get	   (),
+						 fGroupName.Length ());
+				
 			}
 
 		printer.Put (fProfileCalibrationSignature.Get	 (),
@@ -697,6 +764,66 @@ dng_fingerprint dng_camera_profile::CalculateFingerprint (bool renderDataOnly) c
 				
 			}
 			
+		if (fToneMethod != profileToneMethod_Unspecified)
+			{
+			
+			printer.Put_int32 (fToneMethod);
+			
+			}
+			
+		}
+
+	// ProfileGainTableMap.
+
+		{
+
+		auto pgtm = ShareProfileGainTableMap ();
+
+		if (pgtm)
+			{
+			
+			dng_fingerprint digest = pgtm->GetFingerprint ();
+
+			printer.Put (digest.data,
+						 uint32 (sizeof (digest.data)));
+			
+			}
+
+		}
+
+	// ProfileDynamicRange.
+		
+		{
+			
+		const auto &range = DynamicRangeInfo ();
+
+		if (range.IsHDR ())
+			{
+			
+			printer.Put ("hdr", 3);
+
+			if (range.fHintMaxOutputValue != 1.0f)
+				printer.Put (&range.fHintMaxOutputValue,
+							 uint32 (sizeof (range.fHintMaxOutputValue)));
+			
+			}
+			
+		}
+
+	// RGBTables.
+
+	if (HasMaskedRGBTables ())
+		{
+		
+		dng_md5_printer rgbTablesPrinter;
+		
+		MaskedRGBTables ().AddDigest (rgbTablesPrinter);
+		
+		auto rgbTableDigest = rgbTablesPrinter.Result ();
+		
+		printer.Put (rgbTableDigest.data,
+					 uint32 (sizeof (rgbTableDigest.data)));
+		
 		}
 
 	return printer.Result ();
@@ -1608,6 +1735,8 @@ void dng_camera_profile::Parse (dng_stream &stream,
 			
 		}
 
+	SetToneMethod (profileInfo.fToneMethod);
+		
 	SetHueSatMapEncoding (profileInfo.fHueSatMapEncoding);
 		
 	SetLookTableEncoding (profileInfo.fLookTableEncoding);
@@ -1615,6 +1744,14 @@ void dng_camera_profile::Parse (dng_stream &stream,
 	SetBaselineExposureOffset (profileInfo.fBaselineExposureOffset.As_real64 ());
 
 	SetDefaultBlackRender (profileInfo.fDefaultBlackRender);
+
+	SetProfileGainTableMap (profileInfo.fProfileGainTableMap);
+
+	SetGroupName (profileInfo.fProfileGroupName);
+
+	SetDynamicRangeInfo (profileInfo.fProfileDynamicRange);
+
+	SetMaskedRGBTables (profileInfo.fMaskedRGBTables);
 		
 	}
 		
@@ -1895,6 +2032,108 @@ void dng_camera_profile::Stub ()
 
 /*****************************************************************************/
 
+bool dng_camera_profile::HasProfileGainTableMap () const
+	{
+	
+	return fProfileGainTableMap != nullptr;
+	
+	}
+
+/*****************************************************************************/
+
+void dng_camera_profile::SetProfileGainTableMap
+			(const std::shared_ptr<const dng_gain_table_map> &gainTableMap)
+	{
+	
+	fProfileGainTableMap = gainTableMap;
+	
+	}
+
+/*****************************************************************************/
+
+const dng_camera_profile_dynamic_range & dng_camera_profile::DynamicRangeInfo () const
+	{
+	
+	if (fDynamicRangeInfo)
+		return *fDynamicRangeInfo;
+	
+	static const dng_camera_profile_dynamic_range sNoInfo;
+
+	return sNoInfo;
+	
+	}
+
+/*****************************************************************************/
+
+bool dng_camera_profile::IsSDR () const
+	{
+	
+	return !IsHDR ();
+	
+	}
+		
+/*****************************************************************************/
+
+bool dng_camera_profile::IsHDR () const
+	{
+	
+	return DynamicRangeInfo ().IsHDR ();
+	
+	}
+
+/*****************************************************************************/
+
+void dng_camera_profile::SetDynamicRangeInfo (const dng_camera_profile_dynamic_range &info)
+	{
+	
+	fDynamicRangeInfo.reset (new dng_camera_profile_dynamic_range (info));
+
+	ClearFingerprint ();
+	
+	}
+
+/*****************************************************************************/
+
+bool dng_camera_profile::HasMaskedRGBTables () const
+	{
+	
+	return fMaskedRGBTables != nullptr;
+	
+	}
+
+/*****************************************************************************/
+
+const dng_masked_rgb_tables & dng_camera_profile::MaskedRGBTables () const
+	{
+	
+	DNG_REQUIRE (HasMaskedRGBTables (), "Missing masked RGBTables");
+
+	return *fMaskedRGBTables;
+	
+	}
+
+/*****************************************************************************/
+
+void dng_camera_profile::SetMaskedRGBTables
+	(const std::shared_ptr<const dng_masked_rgb_tables> &maskedRGBTables)
+	{
+	
+	fMaskedRGBTables = maskedRGBTables;
+	
+	}
+
+/*****************************************************************************/
+
+void dng_camera_profile::SetMaskedRGBTables
+	(AutoPtr<dng_masked_rgb_tables> &maskedRGBTables)
+	{
+	
+	fMaskedRGBTables.reset (maskedRGBTables.Release ());
+	
+	}
+
+/*****************************************************************************/
+
 bool dng_camera_profile::Uses_1_6_Features () const
 	{
 
@@ -1925,7 +2164,7 @@ bool dng_camera_profile::Uses_1_6_Features () const
 bool dng_camera_profile::Requires_1_6_Reader () const
 	{
 	
-	// The only change in DNG 1.6 thats break compatibility with older readers
+	// The only change in DNG 1.6 that breaks compatibility with older readers
 	// is the ability to specify custom data for illuminants 1 and 2.
 	
 	if (CalibrationIlluminant1 () == lsOther &&
@@ -1944,6 +2183,31 @@ bool dng_camera_profile::Requires_1_6_Reader () const
 
 	}
 
+/*****************************************************************************/
+
+bool dng_camera_profile::Uses_1_7_Features () const
+	{
+
+	// Do we have a ProfileGainTableMap?
+
+	if (HasProfileGainTableMap ())
+		return true;
+
+	// Do we have RGBTables?
+
+	if (HasMaskedRGBTables ())
+		return true;
+
+	// Is this a HDR profile?
+
+	if (DynamicRangeInfo ().IsValid () &&
+		DynamicRangeInfo ().IsHDR ())
+		return true;
+
+	return false;
+	
+	}
+
 /******************************************************************************/
 
 dng_camera_profile_metadata::dng_camera_profile_metadata
@@ -1951,6 +2215,10 @@ dng_camera_profile_metadata::dng_camera_profile_metadata
 							  int32 index)
 
 	:	fProfileID (profile.ProfileID ())
+	
+	,	fGroupName (profile.GroupName ())
+	
+	,	fHDR (profile.DynamicRangeInfo ().IsHDR ())
 
 	,	fRenderDataFingerprint (profile.RenderDataFingerprint ())
 	
@@ -1984,6 +2252,8 @@ bool dng_camera_profile_metadata::operator==
 	{
 	
 	return fProfileID			  == metadata.fProfileID			 &&
+		   fGroupName			  == metadata.fGroupName			 &&
+		   fHDR					  == metadata.fHDR					 &&
 		   fRenderDataFingerprint == metadata.fRenderDataFingerprint &&
 		   fIsLegalToEmbed		  == metadata.fIsLegalToEmbed		 &&
 		   fWasReadFromDNG		  == metadata.fWasReadFromDNG		 &&

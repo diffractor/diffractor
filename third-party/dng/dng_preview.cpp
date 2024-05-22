@@ -1,5 +1,5 @@
 /*****************************************************************************/
-// Copyright 2007-2019 Adobe Systems Incorporated
+// Copyright 2007-2022 Adobe Systems Incorporated
 // All Rights Reserved.
 //
 // NOTICE:	Adobe permits you to use, modify, and distribute this file in
@@ -9,8 +9,10 @@
 #include "dng_preview.h"
 
 #include "dng_assertions.h"
+#include "dng_host.h"
 #include "dng_image.h"
 #include "dng_image_writer.h"
+#include "dng_jxl.h"
 #include "dng_memory.h"
 #include "dng_stream.h"
 #include "dng_tag_codes.h"
@@ -156,45 +158,11 @@ dng_preview_tag_set::~dng_preview_tag_set ()
 	{
 	
 	}
-
-/*****************************************************************************/
-
-dng_preview::dng_preview ()
-
-	:	fInfo ()
-	
-	{
-	
-	}
 		
 /*****************************************************************************/
 
-dng_preview::~dng_preview ()
-	{
-	
-	}
-		
-/*****************************************************************************/
-
-dng_image_preview::dng_image_preview ()
-
-	:	fImage ()
-	,	fIFD   ()
-	
-	{
-	
-	}
-
-/*****************************************************************************/
-
-dng_image_preview::~dng_image_preview ()
-	{
-	
-	}
-
-/*****************************************************************************/
-
-void dng_image_preview::SetIFDInfo (const dng_image &image)
+void dng_preview::SetIFDInfo (dng_host & /* host */,
+							  const dng_image &image)
 	{
 	
 	fIFD.fNewSubFileType = fInfo.fIsPrimary ? sfPreviewImage
@@ -210,9 +178,14 @@ void dng_image_preview::SetIFDInfo (const dng_image &image)
 																 
 	fIFD.fBitsPerSample [0] = TagTypeSize (image.PixelType ()) * 8;
 	
+	fIFD.fSampleFormat [0] = image.PixelType () == ttFloat
+							 ? sfFloatingPoint
+							 : sfUnsignedInteger;
+		
 	for (uint32 j = 1; j < fIFD.fSamplesPerPixel; j++)
 		{
 		fIFD.fBitsPerSample [j] = fIFD.fBitsPerSample [0];
+		fIFD.fSampleFormat  [j] = fIFD.fSampleFormat  [0];
 		}
 		
 	fIFD.SetSingleStrip ();
@@ -221,7 +194,8 @@ void dng_image_preview::SetIFDInfo (const dng_image &image)
 		
 /*****************************************************************************/
 
-dng_basic_tag_set * dng_image_preview::AddTagSet (dng_tiff_directory &directory) const
+dng_basic_tag_set * dng_preview::AddTagSet (dng_host & /* host */,
+											dng_tiff_directory &directory) const
 	{
 	
 	return new dng_preview_tag_set (directory, *this, fIFD);
@@ -230,29 +204,81 @@ dng_basic_tag_set * dng_image_preview::AddTagSet (dng_tiff_directory &directory)
 
 /*****************************************************************************/
 
-void dng_image_preview::WriteData (dng_host &host,
-								   dng_image_writer &writer,
-								   dng_basic_tag_set &basic,
-								   dng_stream &stream) const
+void dng_preview::WriteData (dng_host &host,
+							 dng_image_writer &writer,
+							 dng_basic_tag_set &basic,
+							 dng_stream &stream) const
 	{
 	
-	writer.WriteImage (host,
-					   fIFD,
-					   basic,
-					   stream,
-					   *fImage.Get ());
+	if (fCompressedImage.get ())
+		{
+		
+		fCompressedImage->WriteData (stream,
+									 basic);
+		
+		}
+		
+	else
+		{
+	
+		writer.WriteImage (host,
+						   fIFD,
+						   basic,
+						   stream,
+						   *fImage);
+						   
+		}
 					
 	}
 
 /*****************************************************************************/
 
-uint64 dng_image_preview::MaxImageDataByteCount () const
+uint64 dng_preview::MaxImageDataByteCount () const
 	{
 	
-	return fIFD.MaxImageDataByteCount ();
+	if (fCompressedImage.get ())
+		{
+		
+		return fCompressedImage->NonHeaderSize ();
+		
+		}
+		
+	else
+		{
+		
+		return fIFD.MaxImageDataByteCount ();
+		
+		}
 	
 	}
+		
+/*****************************************************************************/
 
+void dng_preview::Compress (dng_host &host,
+							dng_image_writer &writer)
+	{
+	
+	if (fIFD.fCompression == ccJXL ||
+		fIFD.fCompression == ccLossyJPEG ||
+		fIFD.fCompression == ccDeflate)
+		{
+		
+		AutoPtr<dng_compressed_image_tiles> compressedImage
+											(new dng_compressed_image_tiles);
+		
+		compressedImage->EncodeTiles (host,
+									  writer,
+									  *fImage,
+									  fIFD);
+							
+		fCompressedImage.reset (compressedImage.Release ());
+		
+		fImage.reset ();
+
+		}
+	
+	}
+		
 /*****************************************************************************/
 
 class dng_jpeg_preview_tag_set: public dng_preview_tag_set
@@ -280,8 +306,6 @@ class dng_jpeg_preview_tag_set: public dng_preview_tag_set
 								  const dng_jpeg_preview &preview,
 								  const dng_ifd &ifd);
 		
-		virtual ~dng_jpeg_preview_tag_set ();
-	
 	};
 
 /******************************************************************************/
@@ -330,36 +354,63 @@ dng_jpeg_preview_tag_set::dng_jpeg_preview_tag_set (dng_tiff_directory &director
 		}
 	
 	}
-	
+		
 /*****************************************************************************/
 
-dng_jpeg_preview_tag_set::~dng_jpeg_preview_tag_set ()
+void dng_jpeg_preview::SetIFDInfo (dng_host &host,
+								   const dng_image &image)
 	{
 	
-	}
+	dng_preview::SetIFDInfo (host, image);
 	
+	fIFD.fCompression = ccJPEG;		// Lossy version
+	
+	if (image.Planes () == 1)
+		{
+		fIFD.fPhotometricInterpretation = piBlackIsZero;
+		}
+		
+	else
+		{
+		SetYCbCr (1, 1);
+		}
+	
+	}
+		
 /*****************************************************************************/
 
-dng_jpeg_preview::dng_jpeg_preview ()
-
-	:	fCompressedData ()
-	
+void dng_jpeg_preview::SetCompressedData (AutoPtr<dng_memory_block> &compressedData)
 	{
 	
-	fIFD.fCompression = ccJPEG;
+	fImage.reset ();
+	
+	AutoPtr<dng_compressed_image_tiles> compressedTiles (new dng_compressed_image_tiles);
+	
+	compressedTiles->fData.resize (1);
+	
+	compressedTiles->fData [0].reset (compressedData.Release ());
+	
+	fCompressedImage.reset (compressedTiles.Release ());
 	
 	}
-
+		
 /*****************************************************************************/
 
-dng_jpeg_preview::~dng_jpeg_preview ()
+const dng_memory_block & dng_jpeg_preview::CompressedData () const
 	{
 	
+	DNG_REQUIRE (fCompressedImage.get () &&
+				 fCompressedImage->fData.size () == 1,
+				 "No compressed data");
+	
+	return *(fCompressedImage->fData [0]);
+	
 	}
-
+		
 /*****************************************************************************/
 
-dng_basic_tag_set * dng_jpeg_preview::AddTagSet (dng_tiff_directory &directory) const
+dng_basic_tag_set * dng_jpeg_preview::AddTagSet (dng_host & /* host */,
+												 dng_tiff_directory &directory) const
 	{
 	
 	return new dng_jpeg_preview_tag_set (directory, *this, fIFD);
@@ -374,40 +425,18 @@ void dng_jpeg_preview::WriteData (dng_host &host,
 								  dng_stream &stream) const
 	{
 	
-	if (fCompressedData.Get ())
-		{
+	// Force the data to be written using lossy JPEG.
 	
-		basic.SetTileOffset (0, stream.Position ());
-		
-		basic.SetTileByteCount (0, fCompressedData->LogicalSize ());
-		
-		stream.Put (fCompressedData->Buffer		 (),
-					fCompressedData->LogicalSize ());
-
-		if (fCompressedData->LogicalSize () & 1)
-			{
-			stream.Put_uint8 (0);
-			}
-			
-		}
-		
-	else
-		{
-		
-		// Force the data to be written using lossy JPEG.
-		
-		fIFD.fCompression = ccLossyJPEG;
-		
-		dng_image_preview::WriteData (host,
-									  writer,
-									  basic,
-									  stream);
-									  
-		// But we still want to use the normal jpeg compression code in the IFD.
-		
-		fIFD.fCompression = ccJPEG;
-		
-		}
+	fIFD.fCompression = ccLossyJPEG;
+	
+	dng_preview::WriteData (host,
+							writer,
+							basic,
+							stream);
+								  
+	// But we still want to use the normal jpeg compression code in the IFD.
+	
+	fIFD.fCompression = ccJPEG;
 			
 	}
 		
@@ -416,34 +445,39 @@ void dng_jpeg_preview::WriteData (dng_host &host,
 uint64 dng_jpeg_preview::MaxImageDataByteCount () const
 	{
 	
-	if (fCompressedData.Get ())
-		{
+	fIFD.fCompression = ccLossyJPEG;
 	
-		return RoundUp2 (fCompressedData->LogicalSize ());
-		
-		}
-		
-	else
-		{
-		
-		return dng_image_preview::MaxImageDataByteCount ();
-		
-		}
+	uint64 result = dng_preview::MaxImageDataByteCount ();
+	
+	fIFD.fCompression = ccJPEG;
+	
+	return result;
 	
 	}
+		
+/*****************************************************************************/
 
+void dng_jpeg_preview::Compress (dng_host &host,
+								 dng_image_writer &writer)
+	{
+	
+	fIFD.fCompression = ccLossyJPEG;
+	
+	dng_preview::Compress (host, writer);
+	
+	fIFD.fCompression = ccJPEG;
+	
+	}
+		
 /*****************************************************************************/
 
 void dng_jpeg_preview::SpoolAdobeThumbnail (dng_stream &stream) const
 	{
 	
-	DNG_ASSERT (fCompressedData.Get (),
-				"SpoolAdobeThumbnail: no data");
-	
 	DNG_ASSERT (fIFD.fPhotometricInterpretation == piYCbCr,
 				"SpoolAdobeThumbnail: Non-YCbCr");
-	
-	uint32 compressedSize = fCompressedData->LogicalSize ();
+				
+	uint32 compressedSize = CompressedData ().LogicalSize ();
 	
 	stream.Put_uint32 (DNG_CHAR4 ('8','B','I','M'));
 	stream.Put_uint16 (1036);
@@ -462,7 +496,7 @@ void dng_jpeg_preview::SpoolAdobeThumbnail (dng_stream &stream) const
 	stream.Put_uint16 (24);
 	stream.Put_uint16 (1);
 	
-	stream.Put (fCompressedData->Buffer (),
+	stream.Put (CompressedData ().Buffer (),
 				compressedSize);
 				
 	if (compressedSize & 1)
@@ -470,6 +504,33 @@ void dng_jpeg_preview::SpoolAdobeThumbnail (dng_stream &stream) const
 		stream.Put_uint8 (0);
 		}
 	
+	}
+		
+//*****************************************************************************/
+
+void dng_jxl_preview::SetIFDInfo (dng_host &host,
+								  const dng_image &image)
+	{
+	
+	dng_preview::SetIFDInfo (host, image);
+	
+	// Store a copy of the preview info so that the writer can get information
+	// about the color space.
+
+	fIFD.fPreviewInfo = this->fInfo;
+
+	fIFD.fCompression = ccJXL;
+	fIFD.fPredictor	  = cpNullPredictor;
+
+	AutoPtr<dng_jxl_encode_settings> settings (host.MakeJXLEncodeSettings (dng_host::use_case_RenderedPreview,
+																		   image));
+
+	fIFD.fJXLEncodeSettings.reset (settings.Release ());
+	
+	fIFD.fJXLDistance    = fIFD.fJXLEncodeSettings->Distance    ();
+	fIFD.fJXLEffort      = fIFD.fJXLEncodeSettings->Effort      ();
+	fIFD.fJXLDecodeSpeed = fIFD.fJXLEncodeSettings->DecodeSpeed ();
+
 	}
 		
 /*****************************************************************************/
@@ -514,11 +575,11 @@ dng_raw_preview_tag_set::dng_raw_preview_tag_set (dng_tiff_directory &directory,
 						 
 	,	fWhiteLevelTag (tcWhiteLevel,
 						fWhiteLevelData,
-						preview.fImage->Planes ())
+						preview.SamplesPerPixel ())
 
 	,	fBlackLevelTag (tcBlackLevel,
 						fBlackLevelData,
-						preview.fImage->Planes ())
+						preview.SamplesPerPixel ())
 						
 	{
 									 
@@ -532,7 +593,7 @@ dng_raw_preview_tag_set::dng_raw_preview_tag_set (dng_tiff_directory &directory,
 		
 		}
 		
-	if (preview.fImage->PixelType () == ttFloat)
+	if (preview.SampleFormat () == sfFloatingPoint)
 		{
 		
 		for (uint32 j = 0; j < kMaxColorPlanes; j++)
@@ -549,7 +610,7 @@ dng_raw_preview_tag_set::dng_raw_preview_tag_set (dng_tiff_directory &directory,
 		
 		bool nonZeroBlack = false;
 		
-		for (uint32 j = 0; j < preview.fImage->Planes (); j++)
+		for (uint32 j = 0; j < preview.SamplesPerPixel (); j++)
 			{
 			
 			fBlackLevelData [j].Set_real64 (preview.fBlackLevel [j], 1);
@@ -579,12 +640,6 @@ dng_raw_preview_tag_set::~dng_raw_preview_tag_set ()
 /*****************************************************************************/
 
 dng_raw_preview::dng_raw_preview ()
-
-	:	fImage				()
-	,	fOpcodeList2Data	()
-	,	fCompressionQuality (-1)
-	,	fIFD				()
-	
 	{
  
 	for (uint32 n = 0; n < kMaxColorPlanes; n++)
@@ -593,41 +648,38 @@ dng_raw_preview::dng_raw_preview ()
 		}
 	
 	}
-
+		
 /*****************************************************************************/
 
-dng_raw_preview::~dng_raw_preview ()
+void dng_raw_preview::SetIFDInfo (dng_host &host,
+								  const dng_image &image)
 	{
 	
-	}
-
-/*****************************************************************************/
-
-dng_basic_tag_set * dng_raw_preview::AddTagSet (dng_tiff_directory &directory) const
-	{
+	dng_preview::SetIFDInfo (host, image);
 	
 	fIFD.fNewSubFileType = sfPreviewImage;
 	
-	fIFD.fImageWidth  = fImage->Width  ();
-	fIFD.fImageLength = fImage->Height ();
-	
-	fIFD.fSamplesPerPixel = fImage->Planes ();
-	
 	fIFD.fPhotometricInterpretation = piLinearRaw;
 	
-	if (fImage->PixelType () == ttFloat)
+	if (image.PixelType () == ttFloat)
 		{
-		
-		fIFD.fCompression = ccDeflate;
-		
-		fIFD.fCompressionQuality = fCompressionQuality;
 
-		fIFD.fPredictor = cpFloatingPoint;
+		if (fPreferJXL && SupportsJXL (*fImage))
+			{
+			fIFD.fCompression = ccJXL;
+			fIFD.fPredictor	  = cpNullPredictor;
+			}
+	
+		else
+			{
+			fIFD.fCompression		 = ccDeflate;
+			fIFD.fCompressionQuality = fCompressionQuality;
+			fIFD.fPredictor			 = cpFloatingPoint;
+			}
 		
 		for (uint32 j = 0; j < fIFD.fSamplesPerPixel; j++)
 			{
 			fIFD.fBitsPerSample [j] = 16;
-			fIFD.fSampleFormat	[j] = sfFloatingPoint;
 			}
 			
 		fIFD.FindTileSize (512 * 1024);
@@ -637,145 +689,198 @@ dng_basic_tag_set * dng_raw_preview::AddTagSet (dng_tiff_directory &directory) c
 	else
 		{
 	
-		fIFD.fCompression = ccLossyJPEG;
-		
-		fIFD.fCompressionQuality = fCompressionQuality;
-																	 
-		fIFD.fBitsPerSample [0] = TagTypeSize (fImage->PixelType ()) * 8;
-		
-		for (uint32 j = 1; j < fIFD.fSamplesPerPixel; j++)
+		if (fPreferJXL && SupportsJXL (*fImage))
 			{
-			fIFD.fBitsPerSample [j] = fIFD.fBitsPerSample [0];
+			fIFD.fCompression = ccJXL;
+			fIFD.fPredictor	  = cpNullPredictor;
 			}
-			
+		
+		else
+			{
+			fIFD.fCompression		 = ccLossyJPEG;
+			fIFD.fCompressionQuality = fCompressionQuality;
+			}
+																	 
 		fIFD.FindTileSize (512 * 512 * fIFD.fSamplesPerPixel);
 		
 		}
+		
+	if (fIFD.fCompression == ccJXL)
+		{
+		
+		// Use default host for the raw preview compression settings so any customizations
+		// targeted for the actual main image are not used.
+		
+		dng_host defaultHost;
+		
+		// Use same compression quality as if encoding a non-full size proxy image.
+		
+		AutoPtr<dng_jxl_encode_settings> settings (defaultHost.MakeJXLEncodeSettings (dng_host::use_case_ProxyImage,
+																					  image));
+
+		if (fForNegativeCache)
+			{
+			settings->SetEffort (1);
+			}
+		
+		fIFD.fJXLEncodeSettings.reset (settings.Release ());
+		
+		fIFD.fJXLDistance    = fIFD.fJXLEncodeSettings->Distance    ();
+		fIFD.fJXLEffort      = fIFD.fJXLEncodeSettings->Effort      ();
+		fIFD.fJXLDecodeSpeed = fIFD.fJXLEncodeSettings->DecodeSpeed ();
+		
+		if (image.PixelType () == ttShort)
+			{
+		
+			AutoPtr<JxlColorEncoding> encoding (new JxlColorEncoding);
+
+			memset (encoding.Get (), 0, sizeof (JxlColorEncoding));
+			
+			// EncodeImageForCompression leaves the image far from linear gamma,
+			// so let's pretend it is sRGB gamma.
+
+			encoding->color_space	    = image.Planes () == 1 ? JXL_COLOR_SPACE_GRAY
+															   : JXL_COLOR_SPACE_RGB;
+			encoding->white_point	    = JXL_WHITE_POINT_D65;
+			encoding->primaries		    = JXL_PRIMARIES_2100;
+			encoding->transfer_function = JXL_TRANSFER_FUNCTION_SRGB;
+			
+			fIFD.fJXLColorEncoding.reset (encoding.Release ());
+			
+			}
+		
+		}
+
+	}
+		
+/*****************************************************************************/
+
+dng_basic_tag_set * dng_raw_preview::AddTagSet (dng_host & /* host */,
+												dng_tiff_directory &directory) const
+	{
 	
 	return new dng_raw_preview_tag_set (directory, *this, fIFD);
 	
 	}
-
+		
 /*****************************************************************************/
 
-void dng_raw_preview::WriteData (dng_host &host,
-								 dng_image_writer &writer,
-								 dng_basic_tag_set &basic,
-								 dng_stream &stream) const
+void dng_mask_preview::SetIFDInfo (dng_host &host,
+								   const dng_image &image)
 	{
 	
-	writer.WriteImage (host,
-					   fIFD,
-					   basic,
-					   stream,
-					   *fImage.Get ());
-					
+	dng_preview::SetIFDInfo (host, image);
+	
+	fIFD.fNewSubFileType = sfPreviewMask;
+	
+	fIFD.fPhotometricInterpretation = piTransparencyMask;
+	
+	fIFD.FindTileSize (512 * 512 * fIFD.fSamplesPerPixel);
+	
+	if (fPreferJXL && SupportsJXL (*fImage))
+		{
+		fIFD.fCompression = ccJXL;
+		fIFD.fPredictor	  = cpNullPredictor;
+		}
+	
+	else
+		{
+		
+		fIFD.fCompression = ccDeflate;
+		fIFD.fPredictor	  = cpHorizontalDifference;
+
+		fIFD.fCompressionQuality = fCompressionQuality;
+
+		}
+	
+	if (fIFD.fCompression == ccJXL)
+		{
+		
+		AutoPtr<dng_jxl_encode_settings> settings (host.MakeJXLEncodeSettings (dng_host::use_case_Transparency,
+																			   image));
+
+		if (fForNegativeCache)
+			{
+			settings->SetEffort (1);
+			}
+		
+		fIFD.fJXLEncodeSettings.reset (settings.Release ());
+		
+		fIFD.fJXLDistance    = fIFD.fJXLEncodeSettings->Distance    ();
+		fIFD.fJXLEffort      = fIFD.fJXLEncodeSettings->Effort      ();
+		fIFD.fJXLDecodeSpeed = fIFD.fJXLEncodeSettings->DecodeSpeed ();
+		
+		}
+
 	}
 		
 /*****************************************************************************/
 
-uint64 dng_raw_preview::MaxImageDataByteCount () const
+dng_basic_tag_set * dng_mask_preview::AddTagSet (dng_host & /* host */,
+												 dng_tiff_directory &directory) const
 	{
-	
-	return fIFD.MaxImageDataByteCount ();
-	
-	}
-
-/*****************************************************************************/
-
-dng_mask_preview::dng_mask_preview ()
-
-	:	fImage				()
-	,	fCompressionQuality (-1)
-	,	fIFD				()
-	
-	{
-	
-	}
-
-/*****************************************************************************/
-
-dng_mask_preview::~dng_mask_preview ()
-	{
-	
-	}
-
-/*****************************************************************************/
-
-dng_basic_tag_set * dng_mask_preview::AddTagSet (dng_tiff_directory &directory) const
-	{
-	
-	fIFD.fNewSubFileType = sfPreviewMask;
-	
-	fIFD.fImageWidth  = fImage->Width  ();
-	fIFD.fImageLength = fImage->Height ();
-	
-	fIFD.fSamplesPerPixel = 1;
-	
-	fIFD.fPhotometricInterpretation = piTransparencyMask;
-	
-	fIFD.fCompression = ccDeflate;
-	fIFD.fPredictor	  = cpHorizontalDifference;
-	
-	fIFD.fCompressionQuality = fCompressionQuality;
-	
-	fIFD.fBitsPerSample [0] = TagTypeSize (fImage->PixelType ()) * 8;
-	
-	fIFD.FindTileSize (512 * 512 * fIFD.fSamplesPerPixel);
 	
 	return new dng_basic_tag_set (directory, fIFD);
 	
 	}
-
+		
 /*****************************************************************************/
 
-void dng_mask_preview::WriteData (dng_host &host,
-								  dng_image_writer &writer,
-								  dng_basic_tag_set &basic,
-								  dng_stream &stream) const
+void dng_semantic_mask_preview::SetIFDInfo (dng_host &host,
+											const dng_image &image)
 	{
 	
-	writer.WriteImage (host,
-					   fIFD,
-					   basic,
-					   stream,
-					   *fImage.Get ());
-					
-	}
-
-/*****************************************************************************/
-
-uint64 dng_mask_preview::MaxImageDataByteCount () const
-	{
+	dng_preview::SetIFDInfo (host, image);
 	
-	return fIFD.MaxImageDataByteCount ();
-	
-	}
-
-/*****************************************************************************/
-
-dng_basic_tag_set * dng_semantic_mask_preview::AddTagSet (dng_tiff_directory &directory) const
-	{
-
-	DNG_REQUIRE (fImage, "Missing fImage in dng_semantic_mask_preview");
-	
-	fIFD.fNewSubFileType = fOriginalSize ? sfSemanticMask : sfPreviewSemanticMask;
-	
-	fIFD.fImageWidth  = fImage->Width  ();
-	fIFD.fImageLength = fImage->Height ();
-	
-	fIFD.fSamplesPerPixel = 1;
+	fIFD.fNewSubFileType = fOriginalSize ? sfSemanticMask
+										 : sfPreviewSemanticMask;
 	
 	fIFD.fPhotometricInterpretation = piPhotometricMask;
-	
-	fIFD.fCompression = ccDeflate;
-	fIFD.fPredictor	  = cpHorizontalDifference;
-	
-	fIFD.fCompressionQuality = fCompressionQuality;
-	
-	fIFD.fBitsPerSample [0] = TagTypeSize (fImage->PixelType ()) * 8;
-	
+
 	fIFD.FindTileSize (512 * 512 * fIFD.fSamplesPerPixel);
+
+	if (fPreferJXL && SupportsJXL (*fImage))
+		{
+		fIFD.fCompression = ccJXL;
+		fIFD.fPredictor	  = cpNullPredictor;
+		}
+	
+	else
+		{
+	
+		fIFD.fCompression = ccDeflate;
+		fIFD.fPredictor	  = cpHorizontalDifference;
+
+		fIFD.fCompressionQuality = fCompressionQuality;
+
+		}
+	
+	if (fIFD.fCompression == ccJXL)
+		{
+		
+		AutoPtr<dng_jxl_encode_settings> settings (host.MakeJXLEncodeSettings (dng_host::use_case_SemanticMask,
+																			   image));
+
+		if (fForNegativeCache)
+			{
+			settings->SetEffort (1);
+			}
+		
+		fIFD.fJXLEncodeSettings.reset (settings.Release ());
+		
+		fIFD.fJXLDistance    = fIFD.fJXLEncodeSettings->Distance    ();
+		fIFD.fJXLEffort      = fIFD.fJXLEncodeSettings->Effort      ();
+		fIFD.fJXLDecodeSpeed = fIFD.fJXLEncodeSettings->DecodeSpeed ();
+		
+		}
+	
+	}
+		
+/*****************************************************************************/
+
+dng_basic_tag_set * dng_semantic_mask_preview::AddTagSet (dng_host & /* host */,
+														  dng_tiff_directory &directory) const
+	{
 
 	// Need to write the name and instance ID to the directory, too. Otherwise
 	// we won't have corresponding labels when reading the image back in.
@@ -803,77 +908,64 @@ dng_basic_tag_set * dng_semantic_mask_preview::AddTagSet (dng_tiff_directory &di
 	return new dng_basic_tag_set (directory, fIFD);
 	
 	}
-
+		
 /*****************************************************************************/
 
-void dng_semantic_mask_preview::WriteData (dng_host &host,
-										   dng_image_writer &writer,
-										   dng_basic_tag_set &basic,
-										   dng_stream &stream) const
+void dng_depth_preview::SetIFDInfo (dng_host &host,
+									const dng_image &image)
 	{
 	
-	DNG_REQUIRE (fImage, "Missing fImage in dng_semantic_mask_preview");
+	dng_preview::SetIFDInfo (host, image);
 	
-	writer.WriteImage (host,
-					   fIFD,
-					   basic,
-					   stream,
-					   *fImage);
-					
+	fIFD.fNewSubFileType = fFullResolution ? sfDepthMap
+										   : sfPreviewDepthMap;
+
+	fIFD.fPhotometricInterpretation = piDepth;
+	
+	fIFD.FindTileSize (512 * 512 * fIFD.fSamplesPerPixel);
+	
+	if (fPreferJXL && SupportsJXL (*fImage))
+		{
+		fIFD.fCompression = ccJXL;
+		fIFD.fPredictor	  = cpNullPredictor;
+		}
+	
+	else
+		{
+		
+		fIFD.fCompression = ccDeflate;
+		fIFD.fPredictor	  = cpHorizontalDifference;
+
+		fIFD.fCompressionQuality = fCompressionQuality;
+
+		}
+	
+	if (fIFD.fCompression == ccJXL)
+		{
+		
+		AutoPtr<dng_jxl_encode_settings> settings (host.MakeJXLEncodeSettings (dng_host::use_case_Depth,
+																			   image));
+
+		if (fForNegativeCache)
+			{
+			settings->SetEffort (1);
+			}
+		
+		fIFD.fJXLEncodeSettings.reset (settings.Release ());
+		
+		fIFD.fJXLDistance    = fIFD.fJXLEncodeSettings->Distance    ();
+		fIFD.fJXLEffort      = fIFD.fJXLEncodeSettings->Effort      ();
+		fIFD.fJXLDecodeSpeed = fIFD.fJXLEncodeSettings->DecodeSpeed ();
+		
+		}
+	
 	}
 		
 /*****************************************************************************/
 
-uint64 dng_semantic_mask_preview::MaxImageDataByteCount () const
+dng_basic_tag_set * dng_depth_preview::AddTagSet (dng_host & /* host */,
+												  dng_tiff_directory &directory) const
 	{
-	
-	return fIFD.MaxImageDataByteCount ();
-	
-	}
-
-/*****************************************************************************/
-
-dng_depth_preview::dng_depth_preview ()
-
-	:	 fImage				 ()
-	,	 fCompressionQuality (-1)
-	,	 fFullResolution	 (false)
-	,	 fIFD				 ()
-
-	{
-	
-	}
-
-/*****************************************************************************/
-
-dng_depth_preview::~dng_depth_preview ()
-	{
-	
-	}
-
-/*****************************************************************************/
-
-dng_basic_tag_set * dng_depth_preview::AddTagSet (dng_tiff_directory &directory) const
-	{
-	
-	fIFD.fNewSubFileType = fFullResolution ? sfDepthMap
-										   : sfPreviewDepthMap;
-	
-	fIFD.fImageWidth  = fImage->Width  ();
-	fIFD.fImageLength = fImage->Height ();
-	
-	fIFD.fSamplesPerPixel = 1;
-	
-	fIFD.fPhotometricInterpretation = piDepth;
-	
-	fIFD.fCompression = ccDeflate;
-	fIFD.fPredictor	  = cpHorizontalDifference;
-	
-	fIFD.fCompressionQuality = fCompressionQuality;
-	
-	fIFD.fBitsPerSample [0] = TagTypeSize (fImage->PixelType ()) * 8;
-	
-	fIFD.FindTileSize (512 * 512 * fIFD.fSamplesPerPixel);
 	
 	return new dng_basic_tag_set (directory, fIFD);
 	
@@ -881,63 +973,16 @@ dng_basic_tag_set * dng_depth_preview::AddTagSet (dng_tiff_directory &directory)
 
 /*****************************************************************************/
 
-void dng_depth_preview::WriteData (dng_host &host,
-								   dng_image_writer &writer,
-								   dng_basic_tag_set &basic,
-								   dng_stream &stream) const
-	{
-	
-	writer.WriteImage (host,
-					   fIFD,
-					   basic,
-					   stream,
-					   *fImage.Get ());
-		
-	}
-
-/*****************************************************************************/
-
-uint64 dng_depth_preview::MaxImageDataByteCount () const
-	{
-	
-	return fIFD.MaxImageDataByteCount ();
-	
-	}
-
-/*****************************************************************************/
-
-dng_preview_list::dng_preview_list ()
-	
-	:	fCount (0)
-	
-	{
-	
-	}
-		
-/*****************************************************************************/
-
-dng_preview_list::~dng_preview_list ()
-	{
-	
-	}
-		
-/*****************************************************************************/
-
 void dng_preview_list::Append (AutoPtr<dng_preview> &preview)
 	{
 	
 	if (preview.Get ())
 		{
-	
-		DNG_ASSERT (fCount < kMaxDNGPreviews, "DNG preview list overflow");
 		
-		if (fCount < kMaxDNGPreviews)
-			{
-			
-			fPreview [fCount++] . Reset (preview.Release ());
-			
-			}
-			
+		std::shared_ptr<const dng_preview> entry (preview.Release ());
+		
+		fPreview.push_back (entry);
+		
 		}
 	
 	}

@@ -106,7 +106,10 @@ const char * LookupParentCode (uint32 parentCode)
 		{	tcJPEG,						"JPEG"							},
 		{	tcAdobePSD,					"Adobe PSD"						},
 		{	tcPNG,						"PNG"							},
-		{	tcHEIC,						"HEIC"							}
+		{	tcHEIC,						"HEIC"							},
+		{	tcJXL,						"JXL"							},
+		{	tcAVIF,						"AVIF"							},
+		{	tcAppleMakerNote,			"Apple MakerNote"				},
 		};
 
 	const char *name = LookupName (parentCode,
@@ -125,7 +128,7 @@ const char * LookupParentCode (uint32 parentCode)
 		parentCode <= tcLastSubIFD)
 		{
 		
-		sprintf (s, "SubIFD %u", (unsigned) (parentCode - tcFirstSubIFD + 1));
+		snprintf (s, 32, "SubIFD %u", (unsigned) (parentCode - tcFirstSubIFD + 1));
 		
 		}
 		
@@ -133,14 +136,14 @@ const char * LookupParentCode (uint32 parentCode)
 			 parentCode <= tcLastChainedIFD)
 		{
 		
-		sprintf (s, "Chained IFD %u", (unsigned) (parentCode - tcFirstChainedIFD + 1));
+		snprintf (s, 32, "Chained IFD %u", (unsigned) (parentCode - tcFirstChainedIFD + 1));
 		
 		}
 		
 	else
 		{
 		
-		sprintf (s, "ParentIFD %u", (unsigned) parentCode);
+		snprintf (s, 32, "ParentIFD %u", (unsigned) parentCode);
 		
 		}
 		
@@ -386,6 +389,7 @@ const char * LookupTagCode (uint32 parentCode,
 		{	tcProfileHueSatMapData3,			"ProfileHueSatMapData3"			},
 		{	tcProfileHueSatMapEncoding,			"ProfileHueSatMapEncoding"		},
 		{	tcProfileToneCurve,					"ProfileToneCurve"				},
+		{	tcProfileToneMethod,				"ProfileToneMethod"				},
 		{	tcProfileEmbedPolicy,				"ProfileEmbedPolicy"			},
 		{	tcProfileCopyright,					"ProfileCopyright"				},
 		{	tcForwardMatrix1,					"ForwardMatrix1"				},
@@ -401,6 +405,7 @@ const char * LookupTagCode (uint32 parentCode,
 		{	tcOriginalRawFileDigest,			"OriginalRawFileDigest"			},
 		{	tcSubTileBlockSize,					"SubTileBlockSize"				},
 		{	tcRowInterleaveFactor,				"RowInterleaveFactor"			},
+		{	tcColumnInterleaveFactor,			"ColumnInterleaveFactor"		},
 		{	tcProfileLookTableDims,				"ProfileLookTableDims"			},
 		{	tcProfileLookTableData,				"ProfileLookTableData"			},
 		{	tcProfileLookTableEncoding,			"ProfileLookTableEncoding"		},
@@ -429,12 +434,21 @@ const char * LookupTagCode (uint32 parentCode,
 		{	tcDepthMeasureType,					"DepthMeasureType"				},
 		{	tcEnhanceParams,					"EnhanceParams"					},
 		{	tcProfileGainTableMap,				"ProfileGainTableMap"			},
+		{	tcProfileGainTableMap2,				"ProfileGainTableMap2"			},
 		{	tcRGBTablesDraft,					"RGBTablesDraft"				},
 		{	tcRGBTables,						"RGBTables"						},
 		{	tcBigTableDigests,					"BigTableDigests"				},
 		{	tcBigTableOffsets,					"BigTableOffsets"				},
 		{	tcBigTableByteCounts,				"BigTableByteCounts"			},
 		{	tcMaskSubArea,						"MaskSubArea"					},
+		{	tcImageSequenceInfo,				"ImageSequenceInfo"				},
+		{	tcImageStats,						"ImageStats"					},
+		{	tcProfileDynamicRange,				"ProfileDynamiceRange"			},
+		{	tcProfileGroupName,					"ProfileGroupName"				},
+		{	tcJXLDistance,						"JXLDistance"					},
+		{	tcJXLEffort,						"JXLEffort"						},
+		{	tcJXLDecodeSpeed,					"JXLDecodeSpeed"				},
+		{	tcBigTableGroupIndex,				"BigTableGroupIndex"			},
 		{	tcKodakKDCPrivateIFD,				"KodakKDCPrivateIFD"			}
 		};
 
@@ -560,7 +574,7 @@ const char * LookupTagCode (uint32 parentCode,
 	
 	if (parentCode == tcCanonCRW)
 		{
-		sprintf (s, "CRW_%04X", (unsigned) tagCode);
+		snprintf (s, 32, "CRW_%04X", (unsigned) tagCode);
 		}
 		
 	else if (parentCode == tcMinoltaMRW)
@@ -576,23 +590,23 @@ const char * LookupTagCode (uint32 parentCode,
 		if (c3 < ' ') c3 = '_';
 		if (c4 < ' ') c4 = '_';
 
-		sprintf (s, "MRW%c%c%c%c", c1, c2, c3, c4);
+		snprintf (s, 32, "MRW%c%c%c%c", c1, c2, c3, c4);
 		
 		}
 		
 	else if (parentCode == tcFujiRawInfo1)
 		{
-		sprintf (s, "RAF1_%04X", (unsigned) tagCode);
+		snprintf (s, 32, "RAF1_%04X", (unsigned) tagCode);
 		}
 		
 	else if (parentCode == tcFujiRawInfo2)
 		{
-		sprintf (s, "RAF2_%04X", (unsigned) tagCode);
+		snprintf (s, 32, "RAF2_%04X", (unsigned) tagCode);
 		}
 		
 	else
 		{
-		sprintf (s, "Tag%u", (unsigned) tagCode);
+		snprintf (s, 32, "Tag%u", (unsigned) tagCode);
 		}
 	
 	return s;
@@ -638,7 +652,7 @@ const char * LookupTagType (uint32 tagType)
 		
 	static char s [32];
 	
-	sprintf (s, "Type%u", (unsigned) tagType);
+	snprintf (s, 32, "Type%u", (unsigned) tagType);
 	
 	return s;
 
@@ -659,7 +673,8 @@ const char * LookupNewSubFileType (uint32 key)
 		{	sfPreviewDepthMap	, "Preview Depth Map"	},
 		{	sfEnhancedImage		, "Enhanced Image"		},
 		{	sfAltPreviewImage	, "Alt Preview Image"	},
-		{	sfSemanticMask		, "Semantic Mask"		}
+		{	sfSemanticMask		, "Semantic Mask"		},
+		{	sfGainMap			, "Gain Map"			}
 		};
 
 	const char *name = LookupName (key,
@@ -674,7 +689,7 @@ const char * LookupNewSubFileType (uint32 key)
 		
 	static char s [32];
 	
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 	
 	return s;
 
@@ -694,7 +709,8 @@ const char * LookupCompression (uint32 key)
 		{	ccDeflate,			"Deflate"		},
 		{	ccPackBits,			"PackBits"		},
 		{	ccOldDeflate,		"OldDeflate"	},
-		{	ccLossyJPEG,		"Lossy JPEG"	}
+		{	ccLossyJPEG,		"Lossy JPEG"	},
+		{	ccJXL,				"JXL"			}
 		};
 
 	const char *name = LookupName (key,
@@ -709,7 +725,7 @@ const char * LookupCompression (uint32 key)
 		
 	static char s [32];
 	
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 	
 	return s;
 
@@ -743,7 +759,7 @@ const char * LookupPredictor (uint32 key)
 		
 	static char s [32];
 	
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 	
 	return s;
 
@@ -774,7 +790,7 @@ const char * LookupSampleFormat (uint32 key)
 		
 	static char s [32];
 	
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 	
 	return s;
 
@@ -793,6 +809,8 @@ const char * LookupPhotometricInterpretation (uint32 key)
 		{	piRGBPalette,			"RGBPalette"		},
 		{	piTransparencyMask,		"TransparencyMask"	},
 		{	piDepth,				"Depth"				},
+		{	piPhotometricMask,		"PhotometricMask"	},
+		{	piGainMap,				"GainMap"			},
 		{	piCMYK,					"CMYK"				},
 		{	piYCbCr,				"YCbCr"				},
 		{	piCIELab,				"CIELab"			},
@@ -813,7 +831,7 @@ const char * LookupPhotometricInterpretation (uint32 key)
 		
 	static char s [32];
 	
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 	
 	return s;
 
@@ -849,7 +867,7 @@ const char * LookupOrientation (uint32 key)
 		
 	static char s [32];
 	
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 	
 	return s;
 
@@ -881,7 +899,7 @@ const char * LookupResolutionUnit (uint32 key)
 		
 	static char s [32];
 	
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 	
 	return s;
 
@@ -915,7 +933,7 @@ const char * LookupCFAColor (uint32 key)
 		
 	static char s [32];
 	
-	sprintf (s, "Color%u", (unsigned) key);
+	snprintf (s, 32, "Color%u", (unsigned) key);
 	
 	return s;
 
@@ -951,7 +969,7 @@ const char * LookupSensingMethod (uint32 key)
 		
 	static char s [32];
 	
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 	
 	return s;
 
@@ -987,7 +1005,7 @@ const char * LookupExposureProgram (uint32 key)
 		
 	static char s [32];
 	
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 	
 	return s;
 
@@ -1022,7 +1040,7 @@ const char * LookupMeteringMode (uint32 key)
 		
 	static char s [32];
 	
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 	
 	return s;
 
@@ -1074,14 +1092,14 @@ const char * LookupLightSource (uint32 key)
 	if (key & 0x08000)
 		{
 		
-		sprintf (s, "%uK", (unsigned) (key & 0x7FFF));
+		snprintf (s, 32, "%uK", (unsigned) (key & 0x7FFF));
 		
 		}
 		
 	else
 		{
 		
-		sprintf (s, "%u", (unsigned) key);
+		snprintf (s, 32, "%u", (unsigned) key);
 		
 		}
 		
@@ -1112,7 +1130,7 @@ const char * LookupColorSpace (uint32 key)
 		
 	static char s [32];
 		
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 		
 	return s;
 
@@ -1140,7 +1158,7 @@ const char * LookupFileSource (uint32 key)
 		
 	static char s [32];
 		
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 		
 	return s;
 
@@ -1168,7 +1186,7 @@ const char * LookupSceneType (uint32 key)
 		
 	static char s [32];
 		
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 		
 	return s;
 
@@ -1197,7 +1215,7 @@ const char * LookupCustomRendered (uint32 key)
 		
 	static char s [32];
 		
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 		
 	return s;
 
@@ -1227,7 +1245,7 @@ const char * LookupExposureMode (uint32 key)
 		
 	static char s [32];
 		
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 		
 	return s;
 
@@ -1256,7 +1274,7 @@ const char * LookupWhiteBalance (uint32 key)
 		
 	static char s [32];
 		
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 		
 	return s;
 
@@ -1287,7 +1305,7 @@ const char * LookupSceneCaptureType (uint32 key)
 		
 	static char s [32];
 		
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 		
 	return s;
 
@@ -1319,7 +1337,7 @@ const char * LookupGainControl (uint32 key)
 		
 	static char s [32];
 		
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 		
 	return s;
 
@@ -1349,7 +1367,7 @@ const char * LookupContrast (uint32 key)
 		
 	static char s [32];
 		
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 		
 	return s;
 
@@ -1379,7 +1397,7 @@ const char * LookupSaturation (uint32 key)
 		
 	static char s [32];
 		
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 		
 	return s;
 
@@ -1409,7 +1427,7 @@ const char * LookupSharpness (uint32 key)
 		
 	static char s [32];
 		
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 		
 	return s;
 
@@ -1440,7 +1458,7 @@ const char * LookupSubjectDistanceRange (uint32 key)
 		
 	static char s [32];
 		
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 		
 	return s;
 
@@ -1474,7 +1492,7 @@ const char * LookupComponent (uint32 key)
 		
 	static char s [32];
 		
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 		
 	return s;
 
@@ -1510,7 +1528,7 @@ const char * LookupCFALayout (uint32 key)
 		
 	static char s [32];
 		
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 		
 	return s;
 
@@ -1539,7 +1557,7 @@ const char * LookupMakerNoteSafety (uint32 key)
 		
 	static char s [32];
 		
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 		
 	return s;
 
@@ -1552,8 +1570,9 @@ const char * LookupColorimetricReference (uint32 key)
 	
 	const dng_name_table kColorimetricReferenceNames [] =
 		{
-		{	crSceneReferred,	"Scene Referred"	},
-		{	crICCProfilePCS,	"ICC Profile PCS"	}
+		{	crSceneReferred,	 "Scene Referred"	   },
+		{	crICCProfilePCS,	 "ICC Profile PCS"	   },
+		{	crOutputReferredHDR, "Output Referred HDR" }
 		};
 
 	const char *name = LookupName (key,
@@ -1568,7 +1587,7 @@ const char * LookupColorimetricReference (uint32 key)
 		
 	static char s [32];
 		
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 		
 	return s;
 
@@ -1600,7 +1619,7 @@ const char * LookupPreviewColorSpace (uint32 key)
 		
 	static char s [32];
 		
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 		
 	return s;
 
@@ -1692,7 +1711,7 @@ const char * LookupJPEGMarker (uint32 key)
 		
 	static char s [32];
 		
-	sprintf (s, "0x%02X", (unsigned) key);
+	snprintf (s, 32, "0x%02X", (unsigned) key);
 		
 	return s;
 
@@ -1727,7 +1746,7 @@ const char * LookupSensitivityType (uint32 key)
 		
 	static char s [32];
 		
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 		
 	return s;
 
@@ -1757,7 +1776,7 @@ const char * LookupDepthFormat (uint32 key)
 		
 	static char s [32];
 		
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 		
 	return s;
 
@@ -1786,7 +1805,7 @@ const char * LookupDepthUnits (uint32 key)
 		
 	static char s [32];
 		
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 		
 	return s;
 
@@ -1816,7 +1835,7 @@ const char * LookupDepthMeasureType (uint32 key)
 		
 	static char s [32];
 		
-	sprintf (s, "%u", (unsigned) key);
+	snprintf (s, 32, "%u", (unsigned) key);
 		
 	return s;
 
@@ -2550,11 +2569,12 @@ bool CheckTagType (uint32 parentCode,
 				
 			char message [256];
 			
-			sprintf (message,
-					 "%s %s has unexpected type (%s)",
-					 LookupParentCode (parentCode),
-					 LookupTagCode (parentCode, tagCode),
-					 LookupTagType (tagType));
+			snprintf (message,
+					  256,
+					  "%s %s has unexpected type (%s)",
+					  LookupParentCode (parentCode),
+					  LookupTagCode (parentCode, tagCode),
+					  LookupTagType (tagType));
 					 
 			ReportWarning (message);
 						 
@@ -2597,11 +2617,12 @@ bool CheckTagCount (uint32 parentCode,
 				
 			char message [256];
 			
-			sprintf (message,
-					 "%s %s has unexpected count (%u)",
-					 LookupParentCode (parentCode),
-					 LookupTagCode (parentCode, tagCode),
-					 (unsigned) tagCount);
+			snprintf (message,
+					  256,
+					  "%s %s has unexpected count (%u)",
+					  LookupParentCode (parentCode),
+					  LookupTagCode (parentCode, tagCode),
+					  (unsigned) tagCount);
 					 
 			ReportWarning (message);
 						 
@@ -2638,11 +2659,12 @@ bool CheckColorImage (uint32 parentCode,
 				
 			char message [256];
 			
-			sprintf (message,
-					 "%s %s is not allowed with unknown color plane count "
-					 " (missing ColorMatrix1 tag?)",
-					 LookupParentCode (parentCode),
-					 LookupTagCode (parentCode, tagCode));
+			snprintf (message,
+					  256,
+					  "%s %s is not allowed with unknown color plane count "
+					  " (missing ColorMatrix1 tag?)",
+					  LookupParentCode (parentCode),
+					  LookupTagCode (parentCode, tagCode));
 					 
 			ReportWarning (message);
 						 
@@ -2668,10 +2690,11 @@ bool CheckColorImage (uint32 parentCode,
 				
 			char message [256];
 			
-			sprintf (message,
-					 "%s %s is not allowed with monochrome images",
-					 LookupParentCode (parentCode),
-					 LookupTagCode (parentCode, tagCode));
+			snprintf (message,
+					  256,
+					  "%s %s is not allowed with monochrome images",
+					  LookupParentCode (parentCode),
+					  LookupTagCode (parentCode, tagCode));
 					 
 			ReportWarning (message);
 						 
@@ -2703,10 +2726,11 @@ bool CheckMainIFD (uint32 parentCode,
 				
 			char message [256];
 			
-			sprintf (message,
-					 "%s %s is not allowed IFDs with NewSubFileType != 0",
-					 LookupParentCode (parentCode),
-					 LookupTagCode (parentCode, tagCode));
+			snprintf (message,
+					  256,
+					  "%s %s is not allowed IFDs with NewSubFileType != 0",
+					  LookupParentCode (parentCode),
+					  LookupTagCode (parentCode, tagCode));
 					 
 			ReportWarning (message);
 						 
@@ -2744,10 +2768,11 @@ bool CheckMainOrEnhancedIFD (uint32 parentCode,
 				
 			char message [256];
 			
-			sprintf (message,
-					 "%s %s is not allowed IFDs with NewSubFileType != 0",
-					 LookupParentCode (parentCode),
-					 LookupTagCode (parentCode, tagCode));
+			snprintf (message,
+					  256,
+					  "%s %s is not allowed IFDs with NewSubFileType != 0",
+					  LookupParentCode (parentCode),
+					  LookupTagCode (parentCode, tagCode));
 					 
 			ReportWarning (message);
 						 
@@ -2785,10 +2810,11 @@ bool CheckRawIFD (uint32 parentCode,
 				
 			char message [256];
 			
-			sprintf (message,
-					 "%s %s is not allowed in IFDs with a non-raw PhotometricInterpretation",
-					 LookupParentCode (parentCode),
-					 LookupTagCode (parentCode, tagCode));
+			snprintf (message,
+					  256,
+					  "%s %s is not allowed in IFDs with a non-raw PhotometricInterpretation",
+					  LookupParentCode (parentCode),
+					  LookupTagCode (parentCode, tagCode));
 					 
 			ReportWarning (message);
 						 
@@ -2825,10 +2851,11 @@ bool CheckCFA (uint32 parentCode,
 				
 			char message [256];
 			
-			sprintf (message,
-					 "%s %s is not allowed in IFDs with a non-CFA PhotometricInterpretation",
-					 LookupParentCode (parentCode),
-					 LookupTagCode (parentCode, tagCode));
+			snprintf (message,
+					  256,
+					  "%s %s is not allowed in IFDs with a non-CFA PhotometricInterpretation",
+					  LookupParentCode (parentCode),
+					  LookupTagCode (parentCode, tagCode));
 					 
 			ReportWarning (message);
 						 
@@ -2907,10 +2934,11 @@ void ParseStringTag (dng_stream &stream,
 					
 				char message [256];
 				
-				sprintf (message,
-						 "%s %s is not NULL terminated",
-						 LookupParentCode (parentCode),
-						 LookupTagCode (parentCode, tagCode));
+				snprintf (message,
+						  256,
+						  "%s %s is not NULL terminated",
+						  LookupParentCode (parentCode),
+						  LookupTagCode (parentCode, tagCode));
 						 
 				ReportWarning (message);
 							 
@@ -2997,10 +3025,11 @@ void ParseDualStringTag (dng_stream &stream,
 					
 				char message [256];
 				
-				sprintf (message,
-						 "%s %s is not NULL terminated",
-						 LookupParentCode (parentCode),
-						 LookupTagCode (parentCode, tagCode));
+				snprintf (message,
+						  256,
+						  "%s %s is not NULL terminated",
+						  LookupParentCode (parentCode),
+						  LookupTagCode (parentCode, tagCode));
 						 
 				ReportWarning (message);
 							 
@@ -3063,11 +3092,12 @@ void ParseEncodedStringTag (dng_stream &stream,
 				
 			char message [256];
 			
-			sprintf (message,
-					 "%s %s has unexpected count (%u)",
-					 LookupParentCode (parentCode),
-					 LookupTagCode (parentCode, tagCode),
-					 (unsigned) tagCount);
+			snprintf (message,
+					  256,
+					  "%s %s has unexpected count (%u)",
+					  LookupParentCode (parentCode),
+					  LookupTagCode (parentCode, tagCode),
+					  (unsigned) tagCount);
 					 
 			ReportWarning (message);
 						 
@@ -3095,8 +3125,12 @@ void ParseEncodedStringTag (dng_stream &stream,
 	
 		{
 		
+		#if qDNGValidate
+
 		bool hadLower = false;
-		
+
+		#endif
+
 		for (uint32 j = 0; j < 8; j++)
 			{
 			
@@ -3105,8 +3139,12 @@ void ParseEncodedStringTag (dng_stream &stream,
 				
 				label [j] = 'A' + (label [j] - 'a');
 				
+				#if qDNGValidate
+
 				hadLower = true;
-				
+
+				#endif
+
 				}
 				
 			}
@@ -3118,10 +3156,11 @@ void ParseEncodedStringTag (dng_stream &stream,
 
 			char message [256];
 			
-			sprintf (message,
-					 "%s %s text encoding label not all uppercase",
-					 LookupParentCode (parentCode),
-					 LookupTagCode (parentCode, tagCode));
+			snprintf (message,
+					  256,
+					  "%s %s text encoding label not all uppercase",
+					  LookupParentCode (parentCode),
+					  LookupTagCode (parentCode, tagCode));
 					 
 			ReportWarning (message);
 						 
@@ -3176,10 +3215,11 @@ void ParseEncodedStringTag (dng_stream &stream,
 				
 				char message [256];
 				
-				sprintf (message,
-						 "%s %s text appears to be UTF-8 rather than UTF-16",
-						 LookupParentCode (parentCode),
-						 LookupTagCode (parentCode, tagCode));
+				snprintf (message,
+						  256,
+						  "%s %s text appears to be UTF-8 rather than UTF-16",
+						  LookupParentCode (parentCode),
+						  LookupTagCode (parentCode, tagCode));
 						 
 				ReportWarning (message);
 
@@ -3249,10 +3289,11 @@ void ParseEncodedStringTag (dng_stream &stream,
 					
 					char message [256];
 					
-					sprintf (message,
-							 "%s %s has unknown encoding",
-							 LookupParentCode (parentCode),
-							 LookupTagCode (parentCode, tagCode));
+					snprintf (message,
+							  256,
+							  "%s %s has unknown encoding",
+							  LookupParentCode (parentCode),
+							  LookupTagCode (parentCode, tagCode));
 							 
 					ReportWarning (message);
 					
@@ -3265,10 +3306,11 @@ void ParseEncodedStringTag (dng_stream &stream,
 					
 				char message [256];
 				
-				sprintf (message,
-						 "%s %s has unexpected text encoding",
-						 LookupParentCode (parentCode),
-						 LookupTagCode (parentCode, tagCode));
+				snprintf (message,
+						  256,
+						  "%s %s has unexpected text encoding",
+						  LookupParentCode (parentCode),
+						  LookupTagCode (parentCode, tagCode));
 						 
 				ReportWarning (message);
 							 
@@ -3343,10 +3385,11 @@ void ParseEncodedStringTag (dng_stream &stream,
 			
 				char message [256];
 				
-				sprintf (message,
-						 "%s %s has non-ASCII characters",
-						 LookupParentCode (parentCode),
-						 LookupTagCode (parentCode, tagCode));
+				snprintf (message,
+						  256,
+						  "%s %s has non-ASCII characters",
+						  LookupParentCode (parentCode),
+						  LookupTagCode (parentCode, tagCode));
 						 
 				ReportWarning (message);
 							 
@@ -3447,7 +3490,7 @@ bool ParseDateTimeTag (dng_stream &stream,
 		
 	// Kludge: Some versions of PaintShop Pro write these fields
 	// with a length of 21 rather than 20.	Otherwise they are
-	// correctly formated.	So relax this test and allow these
+	// correctly formatted.	So relax this test and allow these
 	// these longer than standard tags to be parsed.
 		
 	(void) CheckTagCount (parentCode, tagCode, tagCount, 20);
@@ -3494,10 +3537,11 @@ bool ParseDateTimeTag (dng_stream &stream,
 			
 				char message [256];
 				
-				sprintf (message,
-						 "%s %s is not a valid date/time",
-						 LookupParentCode (parentCode),
-						 LookupTagCode (parentCode, tagCode));
+				snprintf (message,
+						  256,
+						  "%s %s is not a valid date/time",
+						  LookupParentCode (parentCode),
+						  LookupTagCode (parentCode, tagCode));
 						 
 				ReportWarning (message);
 							 

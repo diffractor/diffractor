@@ -486,7 +486,11 @@ dng_gain_table_map::dng_gain_table_map (dng_memory_allocator &allocator,
 										const dng_point_real64 &spacing,
 										const dng_point_real64 &origin,
 										uint32 numTablePoints,
-										const real32 weights [5])
+										const real32 weights [5],
+										uint32 dataType,
+										real32 gamma,
+										real32 gainMin,
+										real32 gainMax)
 
 	:	fPoints	 (points)
 	,	fSpacing (spacing)
@@ -500,8 +504,27 @@ dng_gain_table_map::dng_gain_table_map (dng_memory_allocator &allocator,
 									 points.v,
 									 numTablePoints))
 
+	,	fDataType (dataType)
+
+	,	fGamma (gamma)
+
+	,	fGainMin (gainMin)
+	,	fGainMax (gainMax)
+
 	{
 
+	DNG_REQUIRE (dataType <= 3, "Unsupported DataType");
+
+	DNG_REQUIRE (gamma >= kProfileGainTableMap_MinGamma &&
+				 gamma <= kProfileGainTableMap_MaxGamma,
+				 "Gamma out of range");
+		
+	DNG_REQUIRE (gainMin >= kProfileGainTableMap_MinGainValue,
+				 "GainMin out of range");
+		
+	DNG_REQUIRE (gainMax <= kProfileGainTableMap_MaxGainValue,
+				 "GainMax out of range");
+		
 	fSampleBytes = SafeUint32Mult (fNumSamples,
 								   (uint32) sizeof (real32));
 
@@ -552,22 +575,15 @@ uint32 dng_gain_table_map::RawTableNumBytes () const
 uint32 dng_gain_table_map::PutStreamSize () const
 	{
 
-	// 4
-	// 4
-	// 8
-	// 8
-	// 8
-	// 8
-	// 4
-	// 5*4
-
 	return ((2 * 4) +						 // MapPointsV, MapPointsH
 			(2 * 8) +						 // MapSpacingV, MapSpacingH
 			(2 * 8) +						 // MapOriginV, MapOriginH
 			(	 4) +						 // MapPoints
 			(5 * 4) +						 // MapInputWeights
-			fPoints.v * fPoints.h * fNumTablePoints * 4); // data
-	
+			(RequiresVersion2 () ? (4 * 4)
+								 : 0) +		 // DataType, Gamma, GainMin & Max
+			DataStorageBytes ());
+		
 	}
 
 /*****************************************************************************/
@@ -575,8 +591,12 @@ uint32 dng_gain_table_map::PutStreamSize () const
 void dng_gain_table_map::AddDigest (dng_md5_printer &printer) const
 	{
 
-	printer.Process ("ProfileGainTableMap", 19);
+	if (SupportsVersion1 ())
+		printer.Process ("ProfileGainTableMap", 19);
 
+	else
+		printer.Process ("ProfileGainTableMap2", 20);
+		
 	EnsureFingerprint ();
 
 	printer.Process (fFingerprint.data, dng_fingerprint::kDNGFingerprintSize);
@@ -591,13 +611,11 @@ void dng_gain_table_map::EnsureFingerprint () const
 	if (fFingerprint.IsNull ())
 		{
 
-		dng_md5_printer printer;
-
 		dng_md5_printer_stream stream;
 
 		PutStream (stream);
 
-		fFingerprint = printer.Result ();
+		fFingerprint = stream.Result ();
 
 		}
 
@@ -616,7 +634,8 @@ dng_fingerprint dng_gain_table_map::GetFingerprint () const
 
 /*****************************************************************************/
 
-void dng_gain_table_map::PutStream (dng_stream &stream) const
+void dng_gain_table_map::PutStream (dng_stream &stream,
+									bool forceVersion2) const
 	{
 	
 	stream.Put_uint32 (fPoints.v);
@@ -634,32 +653,168 @@ void dng_gain_table_map::PutStream (dng_stream &stream) const
 		{
 		stream.Put_real32 (fMapInputWeights [i]);
 		}
-	
-	for (int32 rowIndex = 0; rowIndex < fPoints.v; rowIndex++)
+
+	if (RequiresVersion2 () || forceVersion2)
+		{
+		stream.Put_uint32 (fDataType);
+		stream.Put_real32 (fGamma);
+		stream.Put_real32 (fGainMin);
+		stream.Put_real32 (fGainMax);
+		}
+
+	const uint32 storageBytes = DataStorageBytes ();
+
+	// If we have an original buffer, then just use that.
+
+	if (fOriginalBuffer.Get () &&
+		fOriginalBuffer->LogicalSize () == storageBytes)
 		{
 		
-		for (int32 colIndex = 0; colIndex < fPoints.h; colIndex++)
-			{
-			
-			for (uint32 p = 0; p < fNumTablePoints; p++)
-				{
-				
-				stream.Put_real32 (Entry (rowIndex,
-										  colIndex,
-										  p));
-										  
-				}
-				
-			}
-			
+		stream.Put (fOriginalBuffer->Buffer (),
+					storageBytes);
+		
 		}
+
+	else
+		{
+
+		const bool isFloat32 = IsFloat32 ();
+		const bool isFloat16 = IsFloat16 ();
+		const bool is8bit	 = IsUint8	 ();
+	
+		for (int32 rowIndex = 0; rowIndex < fPoints.v; rowIndex++)
+			{
+
+			for (int32 colIndex = 0; colIndex < fPoints.h; colIndex++)
+				{
+
+				// Write 32-bit float values directly.
+
+				if (isFloat32)
+					{
+
+					for (uint32 p = 0; p < fNumTablePoints; p++)
+						{
+
+						stream.Put_real32 (Entry (rowIndex,
+												  colIndex,
+												  p));
+
+						}
+
+					}
+
+				// Convert fp32 values to fp16.
+
+				else if (isFloat16)
+					{
+
+					for (uint32 p = 0; p < fNumTablePoints; p++)
+						{
+
+						real32 x = Entry (rowIndex, colIndex, p);
+
+						uint16 x16 = DNG_FloatToHalf (*(const uint32 *) &x);
+						
+						stream.Put_uint16 (x16);
+
+						}					
+
+					}
+
+				// Convert fp32 values to uint8.
+
+				else if (is8bit)
+					{
+
+					DNG_REQUIRE (fGainMax >= fGainMin,
+								 "Expected fGainMax >= fGainMin");
+
+					if (fGainMax == fGainMin)
+						{
+						
+						for (uint32 p = 0; p < fNumTablePoints; p++)
+							stream.Put_uint8 (0);
+						
+						}
+
+					else
+						{
+					
+						const real32 scale = 1.0f / (fGainMax - fGainMin);
+
+						const real32 offset = -fGainMin * scale;
+					
+						for (uint32 p = 0; p < fNumTablePoints; p++)
+							{
+
+							real32 x = Entry (rowIndex, colIndex, p);
+
+							// Map via GainMin and GainMax.
+
+							x = Pin_real32 (x * scale + offset);
+
+							stream.Put_uint8 ((uint8) Round_int32 (x * 255.0f));
+
+							}
+					
+						}
+
+					}
+
+				// Convert fp32 values to uint16.
+
+				else						 // 16-bit
+					{
+					
+					DNG_REQUIRE (fGainMax >= fGainMin,
+								 "Expected fGainMax >= fGainMin");
+
+					if (fGainMax == fGainMin)
+						{
+						
+						for (uint32 p = 0; p < fNumTablePoints; p++)
+							stream.Put_uint16 (0);
+						
+						}
+
+					else
+						{
+					
+						const real32 scale = 1.0f / (fGainMax - fGainMin);
+
+						const real32 offset = -fGainMin * scale;
+					
+						for (uint32 p = 0; p < fNumTablePoints; p++)
+							{
+
+							real32 x = Entry (rowIndex, colIndex, p);
+
+							// Map via GainMin and GainMax.
+
+							x = Pin_real32 (x * scale + offset);
+
+							stream.Put_uint16 ((uint16) Round_int32 (x * 65535.0f));
+
+							}
+					
+						}
+
+					} // fp32 vs u8 vs u16 cases
+
+				} // cols
+
+			} // rows
+
+		} // original vs no original buffer
 	
 	}
 
 /*****************************************************************************/
 
 dng_gain_table_map * dng_gain_table_map::GetStream (dng_host &host,
-													dng_stream &stream)
+													dng_stream &stream,
+													const bool useVersion2)
 	{
 	
 	dng_point mapPoints;
@@ -684,6 +839,42 @@ dng_gain_table_map * dng_gain_table_map::GetStream (dng_host &host,
 	for (uint32 i = 0; i < 5; i++)
 		{
 		weights [i] = stream.Get_real32 ();
+		}
+
+	uint32 dataType = 3;
+	real32 gamma    = 1.0f;
+	real32 gainMin  = 1.0f;
+	real32 gainMax  = 1.0f;
+
+	if (useVersion2)
+		{
+		
+		dataType = stream.Get_uint32 ();
+		gamma    = stream.Get_real32 ();
+		gainMin  = stream.Get_real32 ();
+		gainMax  = stream.Get_real32 ();
+
+		if (gamma < kProfileGainTableMap_MinGamma ||
+			gamma > kProfileGainTableMap_MaxGamma)
+			{
+			ThrowBadFormat ("Gamma out of range in ProfileGainTableMap2");
+			}
+		
+		if (dataType > 3)
+			{
+			ThrowBadFormat ("Unsupported DataType in ProfileGainTableMap2");
+			}
+		
+		if (gainMin < kProfileGainTableMap_MinGainValue)
+			{
+			ThrowBadFormat ("GainMin out of range in ProfileGainTableMap2");
+			}
+		
+		if (gainMax > kProfileGainTableMap_MaxGainValue)
+			{
+			ThrowBadFormat ("GainMax out of range in ProfileGainTableMap2");
+			}
+		
 		}
 	
 	#if qDNGValidate
@@ -714,7 +905,12 @@ dng_gain_table_map * dng_gain_table_map::GetStream (dng_host &host,
 				(float) weights [2],
 				(float) weights [3],
 				(float) weights [4]);
-				
+
+		printf ("  DataType: %u\n", dataType);
+		printf ("  Gamma: %.3f\n", gamma);
+		printf ("  GainMin: %.4f\n", gainMin);
+		printf ("  GainMax: %.4f\n", gainMax);
+			
 		}
 		
 	#endif
@@ -740,7 +936,7 @@ dng_gain_table_map * dng_gain_table_map::GetStream (dng_host &host,
 		ThrowBadFormat ();
 		}
 
-	// Check the weights.
+	// Read the weights.
 
 	AutoPtr<dng_gain_table_map> map
 		(new dng_gain_table_map (host.Allocator (),
@@ -748,8 +944,36 @@ dng_gain_table_map * dng_gain_table_map::GetStream (dng_host &host,
 								 mapSpacing,
 								 mapOrigin,
 								 numTablePoints,
-								 weights));
-												 
+								 weights,
+								 dataType,
+								 gamma,
+								 gainMin,
+								 gainMax));
+
+	const bool is8bit	 = map->IsUint8	  ();
+	const bool isFloat16 = map->IsFloat16 ();
+	const bool isFloat32 = map->IsFloat32 ();
+
+	// If the data type is not 32-bit float, then keep a copy of the original
+	// encoding around, for round-tripping purposes.
+
+	void *origPtr = nullptr;
+
+	if (!isFloat32)
+		{
+		
+		map->fOriginalBuffer.Reset (host.Allocate (map->DataStorageBytes ()));
+
+		origPtr = map->fOriginalBuffer->Buffer ();
+		
+		}
+	
+	uint8 *orig8ptr	  = (uint8	*) origPtr;
+	uint16 *orig16ptr = (uint16 *) origPtr;
+
+	constexpr real32 scale8	 = 1.0f /	255.0f;
+	constexpr real32 scale16 = 1.0f / 65535.0f;
+
 	#if qDNGValidate
 	
 	uint32 linesPrinted = 0;
@@ -765,35 +989,152 @@ dng_gain_table_map * dng_gain_table_map::GetStream (dng_host &host,
 			
 			for (uint32 p = 0; p < numTablePoints; p++)
 				{
-				
-				real32 x = stream.Get_real32 ();
-				
-				map->Entry (rowIndex, colIndex, p) = x;
-				
-				#if qDNGValidate
-				
-				if (gVerbose)
+
+				real32 x;
+
+				if (isFloat32)
 					{
-					
-					if (linesPrinted < gDumpLineLimit)
+				
+					x = stream.Get_real32 ();
+
+					#if qDNGValidate
+
+					if (gVerbose)
 						{
-						
-						printf ("\tMap [%3u] [%3u] [%u] = %.4f\n",
-								(unsigned) rowIndex,
-								(unsigned) colIndex,
-								(unsigned) p,
-								x);
-						
-						linesPrinted++;
-						
+
+						if (linesPrinted < gDumpLineLimit)
+							{
+
+							printf ("\tMap [%3u] [%3u] [%3u] = %.4f\n",
+									(unsigned) rowIndex,
+									(unsigned) colIndex,
+									(unsigned) p,
+									x);
+
+							linesPrinted++;
+
+							}
+
+						else
+							linesSkipped++;
+
 						}
-						
-					else
-						linesSkipped++;
-						
+
+					#endif
+
 					}
-					
-				#endif
+
+				else if (isFloat16)
+					{
+
+					uint16 x16 = stream.Get_uint16 ();
+
+					uint32 x32 = DNG_HalfToFloat (x16);
+
+					x = *(const real32 *) &x32;
+
+					#if qDNGValidate
+
+					if (gVerbose)
+						{
+
+						if (linesPrinted < gDumpLineLimit)
+							{
+
+							printf ("\tMap [%3u] [%3u] [%3u] = %.4f\n",
+									(unsigned) rowIndex,
+									(unsigned) colIndex,
+									(unsigned) p,
+									x);
+
+							linesPrinted++;
+
+							}
+
+						else
+							linesSkipped++;
+
+						}
+
+					#endif
+
+					}
+
+				else if (is8bit)
+					{
+
+					uint8 x8 = stream.Get_uint8 ();
+
+					x = gainMin + (x8 * scale8) * (gainMax - gainMin);
+
+					*orig8ptr++ = x8;
+
+					#if qDNGValidate
+
+					if (gVerbose)
+						{
+
+						if (linesPrinted < gDumpLineLimit)
+							{
+
+							printf ("\tMap [%3u] [%3u] [%3u] = %3d (%.4f)\n",
+									(unsigned) rowIndex,
+									(unsigned) colIndex,
+									(unsigned) p,
+									(int) x8,
+									x);
+
+							linesPrinted++;
+
+							}
+
+						else
+							linesSkipped++;
+
+						}
+
+					#endif
+
+					}
+
+				else
+					{
+
+					// uint16 path
+
+					uint16 x16 = stream.Get_uint16 ();
+
+					x = gainMin + (x16 * scale16) * (gainMax - gainMin);
+
+					*orig16ptr++ = x16;
+
+					#if qDNGValidate
+
+					if (gVerbose)
+						{
+
+						if (linesPrinted < gDumpLineLimit)
+							{
+
+							printf ("\tMap [%3u] [%3u] [%3u] = %5d (%.4f)\n",
+									(unsigned) rowIndex,
+									(unsigned) colIndex,
+									(unsigned) p,
+									(int) x16,
+									x);
+
+							linesPrinted++;
+
+							}
+
+						else
+							linesSkipped++;
+
+						}
+
+					#endif
+
+					}
 
 				// Check range and bad values.
 
@@ -808,11 +1149,15 @@ dng_gain_table_map * dng_gain_table_map::GetStream (dng_host &host,
 					ThrowBadFormat ("Invalid ProfileGainTableMap entry value");
 					}
 
-				}
+				// Store it in the fp32 table.
+
+				map->Entry (rowIndex, colIndex, p) = x;
+
+				} // for each point in the table
 				
-			}
+			} // for each column
 			
-		}
+		} // for each row
 												 
 	#if qDNGValidate
 	
@@ -829,6 +1174,66 @@ dng_gain_table_map * dng_gain_table_map::GetStream (dng_host &host,
 	
 	}
 
+/*****************************************************************************/
+
+bool dng_gain_table_map::SupportsVersion1 () const
+	{
+	
+	return (fGamma == 1.0f &&				 // NOP gamma
+			fDataType == 3);				 // 32-bit float
+	
+	}
+
+/*****************************************************************************/
+
+uint32 dng_gain_table_map::DataStorageBytes () const
+	{
+	
+	return SafeUint32Mult ((uint32) fPoints.v,
+						   (uint32) fPoints.h,
+						   fNumTablePoints,
+						   BytesPerEntry ());
+	
+	}
+
+/*****************************************************************************/
+
+void dng_gain_table_map::ClearOriginalBuffer ()
+	{
+	
+	fOriginalBuffer.Reset ();
+	
+	}
+
+/*****************************************************************************/
+
+bool dng_gain_table_map::HasOriginalBuffer () const
+	{
+	
+	return fOriginalBuffer.Get () != nullptr;
+	
+	}
+
+/*****************************************************************************/
+
+const dng_memory_block * dng_gain_table_map::OriginalBuffer () const
+	{
+	
+	return fOriginalBuffer.Get ();
+	
+	}
+
+/*****************************************************************************/
+
+void dng_gain_table_map::SetOriginalBuffer (AutoPtr<dng_memory_block> &block)
+	{
+	
+	fOriginalBuffer.Reset (block.Release ());
+	
+	}
+
+/*****************************************************************************/
+/*****************************************************************************/
 /*****************************************************************************/
 
 dng_opcode_GainMap::dng_opcode_GainMap (const dng_area_spec &areaSpec,

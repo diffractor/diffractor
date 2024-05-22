@@ -15,6 +15,7 @@
 /*****************************************************************************/
 
 #include "dng_assertions.h"
+#include "dng_auto_ptr.h"
 
 /*****************************************************************************/
 
@@ -40,8 +41,6 @@
 #include <memory>
 #include <new>
 #include <map>
-
-#include "dng_auto_ptr.h"
 
 #else
 
@@ -97,8 +96,8 @@ struct dng_pthread_mutex_impl
 	void Lock()				   { ::EnterCriticalSection(&lock); }
 	void Unlock()			   { ::LeaveCriticalSection(&lock); }
 private:
-	dng_pthread_mutex_impl &operator=(const dng_pthread_mutex_impl &) { }
-	dng_pthread_mutex_impl(const dng_pthread_mutex_impl &) { }
+	dng_pthread_mutex_impl &operator=(const dng_pthread_mutex_impl &);
+	dng_pthread_mutex_impl(const dng_pthread_mutex_impl &);
 };
 
 /*****************************************************************************/
@@ -128,8 +127,8 @@ struct dng_pthread_cond_impl
 
 // Non copyable
 private:
-	dng_pthread_cond_impl &operator=(const dng_pthread_cond_impl &) { }
-	dng_pthread_cond_impl(const dng_pthread_cond_impl &) { }
+	dng_pthread_cond_impl &operator=(const dng_pthread_cond_impl &);
+	dng_pthread_cond_impl(const dng_pthread_cond_impl &);
 
 };
 
@@ -155,8 +154,8 @@ namespace
 			mutex->Unlock();
 		}
 	private:
-		ScopedLock &operator=(const ScopedLock &) { }
-		ScopedLock(const ScopedLock &) { }
+		ScopedLock &operator=(const ScopedLock &);
+		ScopedLock(const ScopedLock &);
 	};
 
 	
@@ -377,6 +376,7 @@ int dng_pthread_create(dng_pthread_t *thread, const pthread_attr_t *attrs, void 
 			std::pair<DWORD, std::pair<HANDLE, void **> > newMapEntry(threadID,
 																	 std::pair<HANDLE, void **>((HANDLE)result, resultHolder.Get ()));
 			std::pair<ThreadMapType::iterator, bool> insertion = primaryHandleMap.insert(newMapEntry);
+			(void) insertion;
 
 			// If there is a handle open on the thread, its ID should not be reused so assert that an insertion was made.
 			DNG_ASSERT(insertion.second, "pthread emulation logic error");
@@ -464,10 +464,10 @@ int dng_pthread_join(dng_pthread_t thread, void **result)
 	if (primaryHandle == NULL)
 		return -1;
 
-	DWORD err;
 	if (::WaitForSingleObject(primaryHandle, INFINITE) != WAIT_OBJECT_0)
 	{
-		err = ::GetLastError();
+		DWORD err = ::GetLastError();
+		(void) err;
 		return -1;
 	}
 
@@ -936,9 +936,9 @@ struct dng_pthread_rwlock_impl
 		, tail_waiter (NULL)
 		, readers_active (0)
 		, writers_waiting (0)
+		, writer_active (false)
 		, read_wait ()
 		, write_wait ()
-		, writer_active (false)
 	{
 	}
 
@@ -960,9 +960,9 @@ struct dng_pthread_rwlock_impl
 	
 	// Non copyable
 private:
-	dng_pthread_rwlock_impl &operator=(const dng_pthread_rwlock_impl &) { }
-	dng_pthread_rwlock_impl(const dng_pthread_rwlock_impl &) { }
 
+	dng_pthread_rwlock_impl &operator=(const dng_pthread_rwlock_impl &);
+	dng_pthread_rwlock_impl (const dng_pthread_rwlock_impl &);
 	
 };
 
@@ -1019,7 +1019,7 @@ int dng_pthread_rwlock_destroy(dng_pthread_rwlock_t *rwlock)
 int dng_pthread_rwlock_rdlock(dng_pthread_rwlock_t *rwlock)
 {
 #if qDNGUseConditionVariable
-	// Note: Aquire cannot be called resursively from same thread, once aquired or deadlock will occur
+	// Note: Acquire cannot be called resursively from same thread, once acquired or deadlock will occur
 	
 	AcquireSRWLockShared(&(*rwlock)->rwlock);
 	(*rwlock)->fWriteLockExclusive = false;

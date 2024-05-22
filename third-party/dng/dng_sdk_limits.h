@@ -33,7 +33,7 @@ const uint32 kMaxSemanticMasks = 100;
 
 /// The maximum number of SubIFDs that will be parsed.
 
-const uint32 kMaxSubIFDs = kMaxDNGPreviews + kMaxSemanticMasks + 1;
+const uint32 kMaxSubIFDs = kMaxDNGPreviews + kMaxSemanticMasks + 5;
 
 /// The maximum number of chained IFDs that will be parsed.
 
@@ -95,6 +95,11 @@ const uint32 kMaxProfileGainTableMapPoints = 16777216;
 const real32 kProfileGainTableMap_MinGainValue = 0.000244140625f; // 1 / 4096
 const real32 kProfileGainTableMap_MaxGainValue = 4096.0f;
 
+/// Minimum and maximum gamma parameter value in a ProfileGainTableMap2.
+
+const real32 kProfileGainTableMap_MinGamma = 0.125f;
+const real32 kProfileGainTableMap_MaxGamma = 8.000f;
+
 const uint32 kMinSpectrumSamples = 2;
 
 /// The maximum number of spectral power samples for an illuminant.
@@ -102,6 +107,12 @@ const uint32 kMinSpectrumSamples = 2;
 /// so 1000 seems more than enough.
 
 const uint32 kMaxSpectrumSamples = 1000;
+
+/*****************************************************************************/
+
+/// Maximum recursion depth when parsing IFDs in dng_info.
+
+const uint32 kMaxParseDepth = 10;
 
 /*****************************************************************************/
 

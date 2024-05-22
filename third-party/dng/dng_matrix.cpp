@@ -1087,7 +1087,9 @@ static dng_matrix Invert2by2 (const dng_matrix &A)
 // Work around bug #1294195, which may be a hardware problem on a specific machine.
 // This pragma turns on "improved" floating-point consistency.
 #ifdef _MSC_VER
+#if !defined(__clang__)
 #pragma optimize ("p", on)
+#endif
 #endif
 
 static dng_matrix Invert3by3 (const dng_matrix &A)
@@ -1142,7 +1144,9 @@ static dng_matrix Invert3by3 (const dng_matrix &A)
 		
 // Reset floating-point optimization. See comment above.
 #ifdef _MSC_VER
+#if !defined(__clang__)
 #pragma optimize ("p", off)
+#endif
 #endif
 
 /******************************************************************************/

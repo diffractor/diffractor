@@ -78,7 +78,7 @@ void dng_spline_solver::Solve ()
 	int32 j;
 
 	// Slopes here are a weighted average of the slopes
-	// to each of the adjcent control points.
+	// to each of the adjacent control points.
 
 	for (j = start + 2; j < end; ++j)
 		{
@@ -172,11 +172,11 @@ real64 dng_spline_solver::Evaluate (real64 x) const
 	// Check for off each end of point list.
 
 	if (x <= X [0])
-		return fUseSlopeExtensionLo ? (Y [0] + EvaluateSlope (x) * (x - X [0]))
+		return fUseSlopeExtensionLo ? (Y [0] + EvaluateSlope (X [0]) * (x - X [0]))
 									:  Y [0];
 
 	if (x >= X [count-1])
-		return fUseSlopeExtensionHi ? (Y [count-1] + EvaluateSlope (x) * (x - X [count-1]))
+		return fUseSlopeExtensionHi ? (Y [count-1] + EvaluateSlope (X [count-1]) * (x - X [count-1]))
 									:  Y [count-1];
 
 	// Binary search for the index.

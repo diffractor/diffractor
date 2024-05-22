@@ -33,6 +33,7 @@
     <ClCompile Include="dng_area_task.cpp" />
     <ClCompile Include="dng_bad_pixels.cpp" />
     <ClCompile Include="dng_big_table.cpp" />
+    <ClCompile Include="dng_bmff.cpp" />
     <ClCompile Include="dng_bottlenecks.cpp" />
     <ClCompile Include="dng_camera_profile.cpp" />
     <ClCompile Include="dng_color_space.cpp" />
@@ -53,10 +54,13 @@
     <ClCompile Include="dng_info.cpp" />
     <ClCompile Include="dng_iptc.cpp" />
     <ClCompile Include="dng_jpeg_image.cpp" />
+    <ClCompile Include="dng_jpeg_memory_source.cpp" />
+    <ClCompile Include="dng_jxl.cpp" />
     <ClCompile Include="dng_lens_correction.cpp" />
     <ClCompile Include="dng_linearization_info.cpp" />
     <ClCompile Include="dng_local_string.cpp" />
     <ClCompile Include="dng_lossless_jpeg.cpp" />
+    <ClCompile Include="dng_lossless_jpeg_shared.cpp" />
     <ClCompile Include="dng_matrix.cpp" />
     <ClCompile Include="dng_memory.cpp" />
     <ClCompile Include="dng_memory_stream.cpp" />
@@ -106,12 +110,14 @@
     <ClInclude Include="dng_auto_ptr.h" />
     <ClInclude Include="dng_bad_pixels.h" />
     <ClInclude Include="dng_big_table.h" />
+    <ClInclude Include="dng_bmff.h" />
     <ClInclude Include="dng_bottlenecks.h" />
     <ClInclude Include="dng_camera_profile.h" />
     <ClInclude Include="dng_classes.h" />
     <ClInclude Include="dng_color_space.h" />
     <ClInclude Include="dng_color_spec.h" />
     <ClInclude Include="dng_date_time.h" />
+    <ClInclude Include="dng_deprecated_flags.h" />
     <ClInclude Include="dng_errors.h" />
     <ClInclude Include="dng_exceptions.h" />
     <ClInclude Include="dng_exif.h" />
@@ -129,7 +135,10 @@
     <ClInclude Include="dng_image_writer.h" />
     <ClInclude Include="dng_info.h" />
     <ClInclude Include="dng_iptc.h" />
+    <ClInclude Include="dng_jpeglib.h" />
     <ClInclude Include="dng_jpeg_image.h" />
+    <ClInclude Include="dng_jpeg_memory_source.h" />
+    <ClInclude Include="dng_jxl.h" />
     <ClInclude Include="dng_lens_correction.h" />
     <ClInclude Include="dng_linearization_info.h" />
     <ClInclude Include="dng_local_string.h" />
@@ -158,6 +167,7 @@
     <ClInclude Include="dng_resample.h" />
     <ClInclude Include="dng_safe_arithmetic.h" />
     <ClInclude Include="dng_sdk_limits.h" />
+    <ClInclude Include="dng_semantic_mask.h" />
     <ClInclude Include="dng_shared.h" />
     <ClInclude Include="dng_simd_type.h" />
     <ClInclude Include="dng_simple_image.h" />
@@ -203,7 +213,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>StaticLibrary</ConfigurationType>
-    <UseDebugLibraries>true</UseDebugLibraries>
+    <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
     <WholeProgramOptimization>false</WholeProgramOptimization>
@@ -314,7 +324,7 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)third-party\libjx;$(SolutionDir)third-party\libjx\lib\include;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include</AdditionalIncludeDirectories>
       <StringPooling>true</StringPooling>
       <ControlFlowGuard>Guard</ControlFlowGuard>
       <FunctionLevelLinking>true</FunctionLevelLinking>
@@ -354,7 +364,7 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)third-party\libjx;$(SolutionDir)third-party\libjx\lib\include;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include</AdditionalIncludeDirectories>
       <ControlFlowGuard>false</ControlFlowGuard>
       <StringPooling>true</StringPooling>
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
@@ -393,7 +403,7 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)third-party\libjx;$(SolutionDir)third-party\libjx\lib\include;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <CompileAsManaged>false</CompileAsManaged>
       <CompileAsWinRT>false</CompileAsWinRT>
@@ -416,6 +426,7 @@
       <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
       <SupportJustMyCode>false</SupportJustMyCode>
       <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
+      <FloatingPointExceptions>false</FloatingPointExceptions>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -469,7 +480,7 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)third-party\libjx;$(SolutionDir)third-party\libjx\lib\include;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include</AdditionalIncludeDirectories>
       <CompileAsManaged>false</CompileAsManaged>
       <CompileAsWinRT>false</CompileAsWinRT>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
@@ -491,6 +502,7 @@
       <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
+      <FloatingPointExceptions>false</FloatingPointExceptions>
     </ClCompile>
     <Link>
       <SubSystem>

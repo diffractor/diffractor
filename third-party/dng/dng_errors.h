@@ -19,11 +19,15 @@
 
 #include "dng_types.h"
 
+#include <atomic>
+
 /*****************************************************************************/
 
 /// Type for all errors used in DNG SDK. Generally held inside a dng_exception.
 
 typedef int32 dng_error_code;
+
+typedef std::atomic<dng_error_code> dng_atomic_error_code;
 
 enum
 	{
@@ -44,7 +48,9 @@ enum
 	dng_error_image_too_big_dng,				//!< Image is too big to save as DNG.
 	dng_error_image_too_big_tiff,				//!< Image is too big to save as TIFF.
 	dng_error_unsupported_dng,					//!< DNG version is unsupported.
-	dng_error_overflow							//!< Arithmetic overflow.
+	dng_error_overflow,							//!< Arithmetic overflow.
+	dng_error_jxl_encoder,						//!< JPEG XL encoder error.
+	dng_error_jxl_decoder,						//!< JPEG XL decoder error.
 	};
 	
 /*****************************************************************************/

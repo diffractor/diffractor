@@ -191,28 +191,36 @@ const void * dng_stream::Data () const
 		
 /*****************************************************************************/
 
-dng_memory_block * dng_stream::AsMemoryBlock (dng_memory_allocator &allocator)
+dng_memory_block * dng_stream::AsMemoryBlock (dng_memory_allocator &allocator,
+											  uint32 numLeadingZeroBytes)
 	{
 	
 	Flush ();
 	
 	uint64 len64 = Length ();
 	
-	if (len64 > 0xFFFFFFFF)
+	if (len64 + uint64 (numLeadingZeroBytes) > 0xFFFFFFFF)
 		{
 		ThrowProgramError ();
 		}
 	
 	uint32 len = (uint32) len64;
 	
-	AutoPtr<dng_memory_block> block (allocator.Allocate (len));
+	AutoPtr<dng_memory_block> block
+		(allocator.Allocate (len + numLeadingZeroBytes));
 	
 	if (len)
 		{
 	
 		SetReadPosition (0);
 		
-		Get (block->Buffer (), len);
+		Get (block->Buffer_uint8 () + numLeadingZeroBytes,
+			 len);
+
+		if (numLeadingZeroBytes > 0)
+			memset (block->Buffer (),
+					0,
+					size_t (numLeadingZeroBytes));
 		
 		}
 		
@@ -781,6 +789,15 @@ void dng_stream::Get_CString (char *data, uint32 maxLength)
 			break;
 			
 		}
+	
+	}
+
+/*****************************************************************************/
+	
+void dng_stream::Put_CString (const char *data)
+	{
+
+	Put (data, (uint32) strlen (data) + 1);
 	
 	}
 

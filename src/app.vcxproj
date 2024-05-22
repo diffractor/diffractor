@@ -815,7 +815,7 @@
       <PrecompiledHeaderOutputFile>$(IntDir)$(TargetName).pch</PrecompiledHeaderOutputFile>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
-      <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
       <BrowseInformation>
       </BrowseInformation>
       <WarningLevel>Level3</WarningLevel>
@@ -1557,6 +1557,9 @@
     <None Include="shaders\common.hlsli" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\third-party\brotli\brotli.vcxproj">
+      <Project>{ec86e62a-3f1f-41fd-8b5a-46d4174e2c1d}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\third-party\bzip2\bzip2.vcxproj">
       <Project>{f24b293b-e1e5-44db-bc4d-089a916343cf}</Project>
     </ProjectReference>
@@ -1571,6 +1574,9 @@
     </ProjectReference>
     <ProjectReference Include="..\third-party\ffmpeg\ffmpeg.vcxproj">
       <Project>{d712c975-039a-4381-990e-9e4b33435ec8}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\third-party\highway\highway.vcxproj">
+      <Project>{fb0d9e5c-6c47-4b88-ad51-27fc9dc63beb}</Project>
     </ProjectReference>
     <ProjectReference Include="..\third-party\hunspell\hunspell.vcxproj">
       <Project>{18527041-f416-114c-500f-5856431d553a}</Project>
@@ -1596,6 +1602,9 @@
     <ProjectReference Include="..\third-party\LibJpeg\LibJpeg.vcxproj">
       <Project>{2c15c400-4cb7-4eb7-9ec6-4c0716b26706}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\third-party\libjx\jxl.vcxproj">
+      <Project>{9a2f1226-f015-4a4d-988c-acc96576a556}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\third-party\liblzma\liblzma.vcxproj">
       <Project>{12728250-16ec-4dc6-94d7-e21dd88947f8}</Project>
     </ProjectReference>
@@ -1613,6 +1622,9 @@
     </ProjectReference>
     <ProjectReference Include="..\third-party\minizip\minizip.vcxproj">
       <Project>{48cdd9dc-e09f-4135-9c0c-4fe50c3c654b}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\third-party\skcms\skcms.vcxproj">
+      <Project>{0763177e-200c-4752-8756-34eb8a1e3b7b}</Project>
     </ProjectReference>
     <ProjectReference Include="..\third-party\sqlite\sqlite.vcxproj">
       <Project>{06d3b3e6-e65e-4606-a634-6ba51f96af70}</Project>

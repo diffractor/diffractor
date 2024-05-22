@@ -67,10 +67,14 @@ class dng_info: private dng_uncopyable
 
 		std::vector <std::vector <dng_ifd *> > fChainedSubIFD;
 
+		AutoPtr<dng_memory_block> fXMPBlock;
+		
 	protected:
 	
 		uint32 fMakerNoteNextIFD;
-		
+
+		uint32 fParseDepth = 0;
+
 	public:
 	
 		dng_info ();
@@ -172,6 +176,30 @@ class dng_info: private dng_uncopyable
 		virtual void ParseDNGPrivateData (dng_host &host,
 										  dng_stream &stream);
 
+	protected:
+
+		class RecursionProtector
+			{
+				
+			private:
+
+				uint32 &fDepth;
+
+			public:
+
+				RecursionProtector (uint32 &depth)
+					:	fDepth (depth)
+					{
+					fDepth++;
+					}
+
+				~RecursionProtector ()
+					{
+					fDepth--;
+					}
+				
+			};
+		
 	};
 	
 /*****************************************************************************/

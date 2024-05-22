@@ -338,7 +338,8 @@ void RefBaselineHueSatMap (const real32 *sPtrR,
 						   uint32 count,
 						   const dng_hue_sat_map &lut,
 						   const dng_1d_table *encodeTable,
-						   const dng_1d_table *decodeTable);
+						   const dng_1d_table *decodeTable,
+						   const bool supportOverrange);
 
 /*****************************************************************************/
 
@@ -347,7 +348,8 @@ void RefBaselineRGBtoGray (const real32 *sPtrR,
 						   const real32 *sPtrB,
 						   real32 *dPtrG,
 						   uint32 count,
-						   const dng_matrix &matrix);
+						   const dng_matrix &matrix,
+						   const bool supportOverrange);
 
 void RefBaselineRGBtoRGB (const real32 *sPtrR,
 						  const real32 *sPtrG,
@@ -356,7 +358,8 @@ void RefBaselineRGBtoRGB (const real32 *sPtrR,
 						  real32 *dPtrG,
 						  real32 *dPtrB,
 						  uint32 count,
-						  const dng_matrix &matrix);
+						  const dng_matrix &matrix,
+						  const bool supportOverrange);
 
 /*****************************************************************************/
 
@@ -528,7 +531,62 @@ void RefBaselineProfileGainTableMap (const real32 *rSrcPtr,
 									 const int32 left,
 									 const dng_rect &imageArea,
 									 const real32 exposureWeightGain,
-									 const dng_gain_table_map &gainTableMap);
+									 const dng_gain_table_map &gainTableMap,
+									 const bool supportOverrange);
+
+/*****************************************************************************/
+
+void RefRGBtoRGBTable3D (real32 *rPtr,
+						 real32 *gPtr,
+						 real32 *bPtr,
+						 const real32 *mPtr,
+						 uint32 rows,
+						 uint32 cols,
+						 int32 rowStep,
+						 int32 mRowStep,
+						 uint32 divisions,
+						 const uint16 *samples,
+						 real32 amount,
+						 uint32 gamut,
+						 const dng_matrix *encodeMatrix,
+						 const dng_matrix *decodeMatrix,
+						 const dng_1d_table *encodeGamma,
+						 const dng_1d_table *decodeGamma,
+						 const bool supportOverrange);
+
+/*****************************************************************************/
+
+void RefRGBtoRGBTable1D (real32 *rPtr,
+						 real32 *gPtr,
+						 real32 *bPtr,
+						 const real32 *mPtr,
+						 uint32 rows,
+						 uint32 cols,
+						 int32 rowStep,
+						 int32 mRowStep,
+						 const dng_1d_table &table0,
+						 const dng_1d_table &table1,
+						 const dng_1d_table &table2,
+						 uint32 gamut,
+						 const dng_matrix *encodeMatrix,
+						 const dng_matrix *decodeMatrix,
+						 const bool supportOverrange);
+
+/*****************************************************************************/
+
+void RefMaskedRGBTables32 (real32 *ptr0,
+						   real32 *ptr1,
+						   real32 *ptr2,
+						   const real32 *tablePtr0,
+						   const real32 *tablePtr1,
+						   const real32 *tablePtr2,
+						   const real32 *maskPtr,
+						   uint32 numTransforms,
+						   int32 pRowStep,
+						   int32 tRowStep,
+						   int32 tPlaneStep,
+						   uint32 rows,
+						   uint32 cols);
 
 /*****************************************************************************/
 

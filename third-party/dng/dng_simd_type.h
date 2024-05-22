@@ -133,9 +133,20 @@ extern SIMDType	gDNGMaxSIMD;
 
 #endif	// qDNGDebug
 
+#ifdef __INTEL_COMPILER
 #define SET_CPU_FEATURE(simd) _allow_cpu_features( (simd >= AVX512_SKX) ? CR_AVX512_SKX_FEATURE : (simd >= AVX2) ? CR_AVX2_FEATURE : ((simd >= AVX) ? CR_AVX_FEATURE : CR_SIMD_MIN_FEATURE) )
+#elif __INTEL_LLVM_COMPILER
+#define SET_CPU_FEATURE(simd) allow_cpu_features( (simd >= AVX512_SKX) ? CR_AVX512_SKX_FEATURE : (simd >= AVX2) ? CR_AVX2_FEATURE : ((simd >= AVX) ? CR_AVX_FEATURE : CR_SIMD_MIN_FEATURE) )
+#endif
 //#define SET_CPU_FEATURE_NOFMA(simd) _allow_cpu_features( ((simd >= AVX512_SKX) ? CR_AVX512_SKX_FEATURE : (simd >= AVX2) ? CR_AVX2_FEATURE : ((simd >= AVX) ? CR_AVX_FEATURE : CR_SIMD_MIN_FEATURE)) & ~_FEATURE_FMA )
+
+#ifdef __INTEL_COMPILER
 #define SET_CPU_FEATURE_NOFMA(simd) _allow_cpu_features( (simd >= AVX) ? CR_AVX_FEATURE : CR_SIMD_MIN_FEATURE)
+#elif __INTEL_LLVM_COMPILER
+#define SET_CPU_FEATURE_NOFMA(simd) allow_cpu_features( (simd >= AVX) ? CR_AVX_FEATURE : CR_SIMD_MIN_FEATURE)
+#endif
+
+
 #define INTEL_PRAGMA_NOVECTOR _Pragma("novector")
 #define INTEL_COMPILER_NEEDED_NOTE
 
@@ -147,7 +158,7 @@ extern SIMDType	gDNGMaxSIMD;
 #define MakeString( M, L )		M(L)
 #define _x_Line					MakeString( Stringize, __LINE__ )
 
-#if qDNGValidateTarget || qMacOS
+#if qDNGValidateTarget || qMacOS || defined(__clang__)
 // Do not warn about Intel compiler if building dng_validate or if we're on macOS.
 #define INTEL_COMPILER_NEEDED_NOTE
 #else

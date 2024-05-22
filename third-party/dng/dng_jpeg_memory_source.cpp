@@ -6,7 +6,7 @@
 
 namespace {
 
-void InitSource(j_decompress_ptr cinfo)
+void InitSource(j_decompress_ptr /* cinfo */)
 	{
 	// No initialization necessary.
 	}
@@ -57,13 +57,13 @@ void SkipInputData(j_decompress_ptr cinfo, long num_bytes)
 		}
 	}
 
-boolean ResyncToRestart(j_decompress_ptr cinfo, int desired)
+boolean ResyncToRestart(j_decompress_ptr /* cinfo */, int /* desired */)
 	{
 	// Can't resync.
 	return FALSE;
 	}
 
-void TermSource(j_decompress_ptr cinfo)
+void TermSource(j_decompress_ptr /* cinfo */)
 	{
 	// No termination necessary.
 	}

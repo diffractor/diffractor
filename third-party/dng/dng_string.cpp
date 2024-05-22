@@ -211,7 +211,9 @@ static void Assign_SystemEncoding (dng_string &dngString,
 	
 	TextEncoding aEncoding;
 	
-	::UpgradeScriptInfoToTextEncoding (smSystemScript,
+	::UpgradeScriptInfoToTextEncoding (smCurrentScript,
+									   //smSystemScript,
+									   //kTextScriptDontCare,
 									   kTextLanguageDontCare,
 									   kTextRegionDontCare,
 									   NULL,
@@ -229,7 +231,9 @@ static uint32 Extract_SystemEncoding (const dng_string &dngString,
 	
 	TextEncoding aEncoding;
 	
-	::UpgradeScriptInfoToTextEncoding (smSystemScript,
+	::UpgradeScriptInfoToTextEncoding (smCurrentScript,
+									   //smSystemScript,
+									   //kTextScriptDontCare,
 									   kTextLanguageDontCare,
 									   kTextRegionDontCare,
 									   NULL,

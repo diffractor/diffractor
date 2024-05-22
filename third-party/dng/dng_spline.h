@@ -75,7 +75,7 @@ inline real64 EvaluateSlopeSplineSegment (real64 x,
 class dng_spline_solver: public dng_1d_function
 	{
 	
-	protected:
+	public:
 	
 		dng_std_vector<real64> X;
 		dng_std_vector<real64> Y;

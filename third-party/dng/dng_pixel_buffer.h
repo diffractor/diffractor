@@ -950,6 +950,20 @@ DEFINE_CONST_PIXEL_SPECIALIZATION_FOR_TYPE (real64)
 
 /*****************************************************************************/
 
+template <typename T>
+inline constexpr T SignBit () = delete;
+
+template <> inline constexpr   uint8 SignBit () { return  (uint8)0x80;       }
+template <> inline constexpr    int8 SignBit () { return   (int8)0x80;       }
+template <> inline constexpr  uint16 SignBit () { return (uint16)0x8000;     }
+template <> inline constexpr   int16 SignBit () { return  (int16)0x8000;     }
+template <> inline constexpr  uint32 SignBit () { return (uint32)0x80000000; }
+template <> inline constexpr   int32 SignBit () { return  (int32)0x80000000; }
+template <> inline constexpr  uint64 SignBit () { return (uint64)0x8000000000000000ULL; }
+template <> inline constexpr   int64 SignBit () { return  (int64)0x8000000000000000ULL; }
+
+/*****************************************************************************/
+
 #endif
 	
 /*****************************************************************************/

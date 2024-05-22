@@ -1,5 +1,5 @@
 /*****************************************************************************/
-// Copyright 2006-2019 Adobe Systems Incorporated
+// Copyright 2006-2023 Adobe Systems Incorporated
 // All Rights Reserved.
 //
 // NOTICE:	Adobe permits you to use, modify, and distribute this file in
@@ -9,6 +9,7 @@
 #include "dng_render.h"
 
 #include "dng_1d_table.h"
+#include "dng_big_table.h"
 #include "dng_bottlenecks.h"
 #include "dng_camera_profile.h"
 #include "dng_color_space.h"
@@ -17,6 +18,8 @@
 #include "dng_host.h"
 #include "dng_image.h"
 #include "dng_negative.h"
+#include "dng_reference.h"
+#include "dng_render.h"
 #include "dng_resample.h"
 #include "dng_safe_arithmetic.h"
 #include "dng_utils.h"
@@ -46,13 +49,16 @@ real64 dng_function_zero_offset::Evaluate (real64 x) const
 
 dng_function_exposure_ramp::dng_function_exposure_ramp (real64 white,
 														real64 black,
-														real64 minBlack)
+														real64 minBlack,
+														bool supportOverrange)
 									
 	:	fSlope (1.0 / (white - black))
 	,	fBlack (black)
 	
 	,	fRadius (0.0)
 	,	fQScale (0.0)
+
+	,	fSupportOverrange (supportOverrange)
 	
 	{
 	
@@ -79,7 +85,16 @@ real64 dng_function_exposure_ramp::Evaluate (real64 x) const
 		return 0.0;
 		
 	if (x >= fBlack + fRadius)
-		return Min_real64 ((x - fBlack) * fSlope, 1.0);
+		{
+		
+		real64 y = (x - fBlack) * fSlope;
+
+		if (!fSupportOverrange)
+			y = Min_real64 (y, 1.0);
+
+		return y;
+		
+		}
 		
 	real64 y = x - (fBlack - fRadius);
 	
@@ -736,15 +751,17 @@ class dng_render_task: public dng_filter_task
 
 		real64 fBaselineExposure = 0.0;
 		
-		dng_1d_table fExposureRamp;
+		AutoPtr<dng_function_exposure_ramp> fExposureRamp;
 		
 		AutoPtr<dng_hue_sat_map> fLookTable;
 		
 		dng_1d_table fToneCurve;
+
+		AutoPtr<dng_line_real32> fToneCurveSlopeExtension;
 		
 		dng_matrix fRGBtoFinal;
 		
-		dng_1d_table fEncodeGamma;
+		AutoPtr<dng_1d_table> fEncodeGamma;
 
 		AutoPtr<dng_1d_table> fHueSatMapEncode;
 		AutoPtr<dng_1d_table> fHueSatMapDecode;
@@ -755,6 +772,16 @@ class dng_render_task: public dng_filter_task
 		AutoPtr<dng_memory_block> fTempBuffer [kMaxMPThreads];
   
 		AutoPtr<dng_memory_block> fMaskBuffer [kMaxMPThreads];
+
+		// RGBTables data.
+
+		dng_masked_rgb_table_render_data_sptr fRGBTablesData;
+
+		AutoPtr<dng_memory_block> fRGBTablesTempBuffer [kMaxMPThreads];
+  
+		uint32 fNumTableTransformPlanes = 0;
+
+		bool fSupportOverrange = false;
 		
 	public:
 	
@@ -797,29 +824,6 @@ dng_render_task::dng_render_task (const dng_image &srcImage,
 	,	fParams	   (params	 )
 	,	fSrcOffset (srcOffset)
 
-	,	fZeroOffsetRamp ()
-
-	,	fCameraWhite ()
-	,	fCameraToRGB ()
-	
-	,	fHueSatMap ()
-	
-	,	fExposureRamp ()
-	
-	,	fLookTable ()
-	
-	,	fToneCurve ()
-	
-	,	fRGBtoFinal ()
-	
-	,	fEncodeGamma ()
-
-	,	fHueSatMapEncode ()
-	,	fHueSatMapDecode ()
-
-	,	fLookTableEncode ()
-	,	fLookTableDecode ()
-	
 	{
 	
 	fSrcPixelType = ttFloat;
@@ -864,8 +868,12 @@ void dng_render_task::Start (uint32 threadCount,
 							
 	// Compute camera space to linear ProPhoto RGB parameters.
 	
-	dng_camera_profile_id profileID;	// Default profile ID.
+	const dng_camera_profile_id &profileID = fParams.CameraProfileID ();
 		
+	dng_camera_profile profile;
+
+	bool hasProfile = false;
+
 	if (!fNegative.IsMonochrome ())
 		{
 		
@@ -905,11 +913,13 @@ void dng_render_task::Start (uint32 threadCount,
 					   spec->CameraToPCS ();
 					   
 		// Find Hue/Sat table, if any.
+
+		hasProfile = fNegative.GetProfileByID (profileID, profile);
 		
-		dng_camera_profile profile;
-		
-		if (fNegative.GetProfileByID (profileID, profile))
+		if (hasProfile)
 			{
+
+			fSupportOverrange = profile.IsHDR ();
 			
 			fHueSatMap.Reset (profile.HueSatMapForWhite (spec->WhiteXY ()));
 			
@@ -945,6 +955,22 @@ void dng_render_task::Start (uint32 threadCount,
 			}
 		
 		}
+
+	else
+		{
+		
+		// Monochrome negatives.
+
+		hasProfile = fNegative.GetProfileByID (profileID, profile);
+		
+		if (hasProfile)
+			{
+
+			fSupportOverrange = profile.IsHDR ();
+			
+			}		
+		
+		}
 		
 	// Compute exposure/shadows ramp.
 
@@ -964,12 +990,12 @@ void dng_render_task::Start (uint32 threadCount,
 					   
 		black = Min_real64 (black, 0.99 * white);
 	
-		dng_function_exposure_ramp rampFunction (white,
-												 black,
-												 black);
+		fExposureRamp.Reset
+			(new dng_function_exposure_ramp (white,
+											 black,
+											 black,
+											 fSupportOverrange));
 												 
-		fExposureRamp.Initialize (*allocator, rampFunction);
-
 		}
 		
 	// Compute tone curve.
@@ -986,6 +1012,24 @@ void dng_render_task::Start (uint32 threadCount,
 									  fParams.ToneCurve ());
 		
 		fToneCurve.Initialize (*allocator, totalTone);
+
+		if (fSupportOverrange)
+			{
+
+			fToneCurveSlopeExtension.Reset (new dng_line_real32 (0.0f, 0.0f,
+																 1.0f, 1.0f));
+			
+			fToneCurveSlopeExtension->fX = 1.0f;
+
+			fToneCurveSlopeExtension->fY = real32 (totalTone.Evaluate (1.0));
+
+			const real64 dx = 0.001;
+
+			real64 dy = totalTone.Evaluate (1.0) - totalTone.Evaluate (1.0 - dx);
+			
+			fToneCurveSlopeExtension->fSlope = real32 (dy / dx);
+
+			}
 				
 		}
 		
@@ -993,12 +1037,20 @@ void dng_render_task::Start (uint32 threadCount,
 	
 		{
 		
-		const dng_color_space &finalSpace = fParams.FinalSpace ();
+		const dng_color_space &finalSpace = fParams.FinalSpace (&profile);
 		
 		fRGBtoFinal = finalSpace.MatrixFromPCS () *
 					  dng_space_ProPhoto::Get ().MatrixToPCS ();
-					  
-		fEncodeGamma.Initialize (*allocator, finalSpace.GammaFunction ());
+
+		if (!finalSpace.GammaFunction ().IsIdentity ())
+			{
+			
+			fEncodeGamma.Reset (new dng_1d_table);
+
+			fEncodeGamma->Initialize (*allocator,
+									  finalSpace.GammaFunction ());	
+			
+			}
 		
 		}
 
@@ -1045,8 +1097,408 @@ void dng_render_task::Start (uint32 threadCount,
 		
 		}
 
+	// Prepare RGBTables data, if needed.
+
+	if (hasProfile &&
+		profile.HasMaskedRGBTables () &&
+		!profile.MaskedRGBTables ().IsNOP ())
+		{
+
+		auto &data = fRGBTablesData;
+		
+		data.reset (new dng_masked_rgb_table_render_data);
+
+		data->Initialize (fNegative, profile);
+
+		if (data->IsNOP ())
+			data.reset ();
+
+		else
+			{
+
+			dng_host host (allocator,
+						   sniffer);
+
+			data->PrepareRGBtoRGBTableData (host);
+
+			// Add space for masked (non-background) table transform results.
+
+			uint32 numTableTransforms = uint32 (data->fMaskedTables.size ());
+
+			if (numTableTransforms > 0)
+				{
+
+				// With the Weighted Sum method, we need 4 x the # of
+				// transforms: 3 planes for the RGB table transform result, 1
+				// plane for the semantic mask.
+
+				// With the Sequential method, we need just 1 plane per
+				// transform to hold the semantic mask or the
+				// dynamically-computed background mask.
+
+				fNumTableTransformPlanes = data->fUseSequentialMethod
+					? SafeUint32Mult (1, numTableTransforms)
+					: SafeUint32Mult (4, numTableTransforms);
+
+				uint32 tableTransformBufferSize =
+					SafeUint32Mult (tileSize.h,
+									tileSize.v,
+									fNumTableTransformPlanes,
+									uint32 (sizeof (real32)));
+
+				for (uint32 threadIndex = 0;
+					 threadIndex < threadCount;
+					 threadIndex++)
+					{
+		
+					fRGBTablesTempBuffer [threadIndex] . Reset
+						(allocator->Allocate (tableTransformBufferSize));
+		
+					}
+  
+				}
+
+			}
+		
+		}
+
 	}
 							
+/*****************************************************************************/
+
+static void ProcessRGBTables (const dng_masked_rgb_table_render_data &data,
+							  dng_pixel_buffer &buffer,
+							  dng_pixel_buffer &tempBuffer,
+							  const bool needsOverrange)
+	{
+
+	const dng_rect dstArea = buffer.fArea;
+
+	// Special case: If there is only a background table, then just process
+	// that and be done.
+
+	if (data.fMaskedTables.empty ())
+		{
+		
+		DNG_REQUIRE (data.fBackgroundTableData.Get (),
+					 "missing fBackgroundTableData");
+
+		data.fBackgroundTableData->Process_32 (buffer,
+											   nullptr, // no mask
+											   0,	   // no mask
+											   dstArea,
+											   0,
+											   needsOverrange);
+
+		return;
+		
+		}
+
+	// There is at least 1 masked table. There may or may not be a background
+	// table.
+
+	// Deal with sequential method.
+
+	if (data.fUseSequentialMethod)
+		{
+
+		// Apply transforms sequentially using the incoming buffer in-place.
+
+		for (size_t i = 0; i < data.fMaskedTableData.size (); i++)
+			{
+		
+			auto &innerData = *data.fMaskedTableData [i];
+
+			innerData.Process_32 (buffer,
+								  &tempBuffer,	// mask buffer
+								  (int32) i,	// mask plane
+								  dstArea,
+								  0,		 // rgb start plane
+								  needsOverrange);
+
+			} // all tables
+
+		} // sequential method
+
+	else
+		{
+
+		// Else we are using the Weighted Sum Method.
+
+		// Walk thru all masked tables.
+
+		for (size_t i = 0; i < data.fMaskedTableData.size (); i++)
+			{
+		
+			auto &innerData = *data.fMaskedTableData [i];
+
+			// The plane layout is:
+
+			// plane 0: transform 0 red
+			// plane 1: transform 0 green
+			// plane 2: transform 0 blue
+			// plane 3: transform 0 semantic mask (alpha)
+			// 
+			// plane 4: transform 1 red
+			// plane 5: transform 1 green
+			// plane 6: transform 1 blue
+			// plane 7: transform 1 semantic mask (alpha)
+			//
+			// etc.
+		
+			const uint32 dstPlane = 4 * (uint32) i;
+
+			// Copy source RGB to temp buffer, then apply table.
+
+				{
+
+				tempBuffer.CopyArea (buffer,
+									 dstArea,
+									 0,		 // srcPlane
+									 dstPlane,
+									 3);	 // planes
+
+				innerData.Process_32 (tempBuffer,
+									  nullptr,		 // no mask
+									  0,			 // no mask
+									  dstArea,
+									  dstPlane,
+									  needsOverrange);
+
+				}
+
+			}
+
+		// If there is a background table, then do it in-place on the incoming
+		// buffer. This will overwrite the source values, which is ok because we
+		// no longer need them.
+
+		if (data.fBackgroundTableData.Get ())
+			{
+		
+			data.fBackgroundTableData->Process_32 (buffer,
+												   nullptr, // no mask
+												   0,		// no mask
+												   dstArea,
+												   0,
+												   needsOverrange);
+		
+			}
+
+		// Composite.
+
+		const uint32 numTableTransforms = uint32 (data.fMaskedTables.size ());
+
+		RefMaskedRGBTables32 (buffer.DirtyPixel_real32 (dstArea.t, dstArea.l, 0),
+							  buffer.DirtyPixel_real32 (dstArea.t, dstArea.l, 1),
+							  buffer.DirtyPixel_real32 (dstArea.t, dstArea.l, 2),
+							  tempBuffer.ConstPixel_real32 (dstArea.t, dstArea.l, 0),
+							  tempBuffer.ConstPixel_real32 (dstArea.t, dstArea.l, 1),
+							  tempBuffer.ConstPixel_real32 (dstArea.t, dstArea.l, 2),
+							  tempBuffer.ConstPixel_real32 (dstArea.t, dstArea.l, 3),
+							  numTableTransforms,
+							  buffer.RowStep (),
+							  tempBuffer.RowStep (),
+							  tempBuffer.PlaneStep (),
+							  dstArea.H (),
+							  dstArea.W ());
+
+		} // Weighted Sum Method
+						 
+	}
+
+/*****************************************************************************/
+
+static void DoBaseline1DFunction (const real32 *sPtr,
+								  real32 *dPtr,
+								  uint32 count,
+								  const dng_1d_function &function,
+								  const bool supportOverrange)
+	{
+
+	if (supportOverrange)
+		{
+
+		for (uint32 col = 0; col < count; col++)
+			{
+
+			real32 x = sPtr [col];
+
+			real32 y = real32 (function.Evaluate (real64 (x)));
+
+			dPtr [col] = y;
+
+			}
+
+		}
+
+	else
+		{
+		
+		for (uint32 col = 0; col < count; col++)
+			{
+
+			real32 x = Pin_real32 (0.0f, sPtr [col], 1.0f);
+
+			real32 y = real32 (function.Evaluate (real64 (x)));
+			
+			dPtr [col] = Pin_real32 (0.0f, y, 1.0f);
+
+			}
+		
+		}
+	
+	}
+
+/*****************************************************************************/
+
+DNG_ALWAYS_INLINE real32 ApplyCurveOverrange (const dng_1d_table &table,
+											  const dng_line_real32 &slopeExtensionFunc,
+											  real32 x)
+	{
+	
+	if (x <= 1.0f)
+		return table.Interpolate (Max_real32 (x, 0.0f));
+
+	return slopeExtensionFunc.Evaluate (x);
+	
+	}
+
+/*****************************************************************************/
+
+static void DoBaselineRGBToneOverrange (const real32 *sPtrR,
+										const real32 *sPtrG,
+										const real32 *sPtrB,
+										real32 *dPtrR,
+										real32 *dPtrG,
+										real32 *dPtrB,
+										uint32 count,
+										const dng_1d_table &table,
+										const dng_line_real32 &slopeExtensionFunc)
+	{
+
+	for (uint32 col = 0; col < count; col++)
+		{
+		
+		real32 r = sPtrR [col];
+		real32 g = sPtrG [col];
+		real32 b = sPtrB [col];
+
+		r = Max_real32 (r, 0.0f);
+		g = Max_real32 (g, 0.0f);
+		b = Max_real32 (b, 0.0f);
+
+		r = EncodeOverrange (r);
+		g = EncodeOverrange (g);
+		b = EncodeOverrange (b);
+		
+		real32 rr;
+		real32 gg;
+		real32 bb;
+		
+		#define RGBTone(r, g, b, rr, gg, bb)							\
+			{															\
+																		\
+			DNG_ASSERT (r >= g && g >= b && r > b, "Logic Error RGBTone"); \
+																		\
+			rr = ApplyCurveOverrange (table, slopeExtensionFunc, r);	\
+			bb = ApplyCurveOverrange (table, slopeExtensionFunc, b);	\
+																		\
+			gg = bb + ((rr - bb) * (g - b) / (r - b));					\
+																		\
+			}
+		
+		if (r >= g)
+			{
+			
+			if (g > b)
+				{
+				
+				// Case 1: r >= g > b
+				
+				RGBTone (r, g, b, rr, gg, bb);
+				
+				}
+					
+			else if (b > r)
+				{
+				
+				// Case 2: b > r >= g
+				
+				RGBTone (b, r, g, bb, rr, gg);
+								
+				}
+				
+			else if (b > g)
+				{
+				
+				// Case 3: r >= b > g
+				
+				RGBTone (r, b, g, rr, bb, gg);
+				
+				}
+				
+			else
+				{
+				
+				// Case 4: r >= g == b
+				
+				DNG_ASSERT (r >= g && g == b, "Logic Error 2");
+				
+				rr = table.Interpolate (r);
+				gg = table.Interpolate (g);
+				bb = gg;
+				
+				}
+				
+			}
+			
+		else
+			{
+			
+			if (r >= b)
+				{
+				
+				// Case 5: g > r >= b
+				
+				RGBTone (g, r, b, gg, rr, bb);
+				
+				}
+				
+			else if (b > g)
+				{
+				
+				// Case 6: b > g > r
+				
+				RGBTone (b, g, r, bb, gg, rr);
+				
+				}
+				
+			else
+				{
+				
+				// Case 7: g >= b > r
+				
+				RGBTone (g, b, r, gg, bb, rr);
+				
+				}
+			
+			}
+			
+		#undef RGBTone
+
+		rr = DecodeOverrange (rr);
+		gg = DecodeOverrange (gg);
+		bb = DecodeOverrange (bb);
+		
+		dPtrR [col] = rr;
+		dPtrG [col] = gg;
+		dPtrB [col] = bb;
+		
+		}
+	
+	}
+
 /*****************************************************************************/
 
 void dng_render_task::ProcessArea (uint32 threadIndex,
@@ -1084,6 +1536,198 @@ void dng_render_task::ProcessArea (uint32 threadIndex,
 		 
 		}
 
+	// Prepare RGBTables data.
+
+	dng_pixel_buffer tempRGBTablesBuffer;
+
+	if (fRGBTablesData && !fRGBTablesData->fMaskedTableData.empty ())
+		{
+
+		// Set up temporary pixel buffer to hold mask and transformed data.
+
+		auto &buffer = tempRGBTablesBuffer;
+			
+		buffer.fArea = srcArea;
+
+		buffer.fPlanes	  = fNumTableTransformPlanes;
+
+		buffer.fColStep	  = 1;
+		buffer.fPlaneStep = int32 (buffer.fArea.W ());
+		buffer.fRowStep	  = SafeInt32Mult (buffer.fPlaneStep,
+										   int32 (buffer.fPlanes));
+
+		buffer.fPixelType = ttFloat;
+		buffer.fPixelSize = TagTypeSize (buffer.fPixelType);
+	
+		buffer.fData	  = (void *) fRGBTablesTempBuffer [threadIndex]->Buffer ();
+
+		// Load all the masks.
+
+		auto &data = *fRGBTablesData;
+
+		if (data.fUseSequentialMethod)
+			{
+			
+			// Load all the masks into the temp buffer.
+			// 
+			// 1st mask goes into plane 0, 2nd mask goes into plane 1, etc.
+			// 
+			// If there is a background mask, the corresponding fMaskTables
+			// entry's mask image will be nullptr, and we will leave its
+			// corresponding plane in the temp buffer uninitialized for now
+			// (and just remember which index was the background index). Note
+			// that there can be at most one background mask.
+			// 
+			// Efficiency note: in the special case of no background table, it
+			// is not necessary to load all masks at once. It suffices to load
+			// just one at a time when processing the corresponding table.
+			// However, for ease of implementation, we preload all masks to
+			// faciliate computing the background mask, if any.
+
+			int32 backgroundIndex = -1;			 // start by assuming no bg mask
+
+			const int32 numTransforms = (int32) data.fMaskedTableData.size ();
+
+			for (int32 i = 0; i < numTransforms; i++)
+				{
+
+				const int32 dstMaskPlane = i;
+
+				dng_pixel_buffer tempMaskBuffer = buffer;
+
+				tempMaskBuffer.fData = tempMaskBuffer.DirtyPixel (dstArea.t,
+																  dstArea.l,
+																  dstMaskPlane);
+
+				tempMaskBuffer.fPlanes = 1;
+
+				// If there is a semantic mask for this table, load it into the
+				// 'ith' plane of the temp buffer.
+
+				auto &maskImagePtr = data.fMaskedTables [i].second.fMask;
+
+				if (maskImagePtr)
+					maskImagePtr->Get (tempMaskBuffer,
+									   dng_image::edge_repeat);
+
+				// Otherwise, it is a background table, so just remember which
+				// index it was. Note there can be at most 1 of these.
+
+				else
+					backgroundIndex = i;
+
+				}
+
+			// If we have a background mask, then we need to compute the
+			// background weight from the others masks that we already loaded.
+
+			if (backgroundIndex >= 0)
+				{
+
+				const int32 cols = (int32) dstArea.W ();
+
+				const int32 mPlaneStep = buffer.PlaneStep ();
+
+				for (int32 row = dstArea.t; row < dstArea.b; row++)
+					{
+
+					// Initialize mask pointer to first plane for this row.
+
+					const real32 *mPtr = buffer.ConstPixel_real32 (row,
+																   dstArea.l,
+																   0);
+
+					// We will write the result into the background mask plane.
+
+					real32 *dPtr = buffer.DirtyPixel_real32 (row,
+															 dstArea.l,
+															 backgroundIndex);
+
+					for (int32 j = 0; j < cols; j++)
+						{
+
+						real32 mSum = 0.0f;
+
+						// Accumulate mask weights for all masks except the
+						// background.
+
+						for (int32 t = 0; t < numTransforms; t++)
+							{
+
+							if (t != backgroundIndex)
+								{
+
+								real32 m = mPtr [j + (t * mPlaneStep)];
+
+								mSum += m;
+
+								}
+
+							} // # of transforms
+
+						// Compute the background weight.
+
+						real32 bgWeight = 1.0f - Min_real32 (1.0f, mSum);
+
+						dPtr [j] = bgWeight;
+
+						} // cols
+
+					} // rows
+
+				} // if there is a background mask
+
+			} // sequential method
+
+		else
+			{
+
+			// Weighted Sum Method.
+			
+			// Walk thru all masked tables.
+
+			for (size_t i = 0; i < data.fMaskedTableData.size (); i++)
+				{
+		
+				// Get semantic mask.
+
+				// The plane layout is:
+
+				// plane 0: transform 0 red
+				// plane 1: transform 0 green
+				// plane 2: transform 0 blue
+				// plane 3: transform 0 semantic mask (alpha)
+				// 
+				// plane 4: transform 1 red
+				// plane 5: transform 1 green
+				// plane 6: transform 1 blue
+				// plane 7: transform 1 semantic mask (alpha)
+				//
+				// etc.
+
+				const uint32 dstPlane = 4 * (uint32) i;
+
+				const uint32 dstMaskPlane = dstPlane + 3;
+
+				dng_pixel_buffer tempMaskBuffer = tempRGBTablesBuffer;
+
+				tempMaskBuffer.fData = tempMaskBuffer.DirtyPixel (dstArea.t,
+																  dstArea.l,
+																  dstMaskPlane);
+
+				tempMaskBuffer.fPlanes = 1;
+
+				data.fMaskedTables [i].second.fMask->Get (tempMaskBuffer,
+														  dng_image::edge_repeat);
+
+				} // all masked tables
+			
+			} // weighted sum method
+		
+		} // RGBTables
+
+	// Process each row of the image.
+	
 	for (int32 srcRow = srcArea.t; srcRow < srcArea.b; srcRow++)
 		{
   
@@ -1172,7 +1816,7 @@ void dng_render_task::ProcessArea (uint32 threadIndex,
 				
 				if (fHueSatMap.Get ())
 					{
-					
+
 					DoBaselineHueSatMap (tPtrR,
 										 tPtrG,
 										 tPtrB,
@@ -1182,7 +1826,8 @@ void dng_render_task::ProcessArea (uint32 threadIndex,
 										 srcCols,
 										 *fHueSatMap.Get (),
 										 fHueSatMapEncode.Get (),
-										 fHueSatMapDecode.Get ());
+										 fHueSatMapDecode.Get (),
+										 fSupportOverrange);
 					
 					}
 				
@@ -1190,7 +1835,7 @@ void dng_render_task::ProcessArea (uint32 threadIndex,
 				
 			}
 			
-		// Apply ProfileGainTableMap.
+		// Apply ProfileGainTableMap / ProfileGainTableMap2.
 		//
 		// This step should be normally be done after applying
 		// BaselineExposure. In this sample render pipeline, the
@@ -1200,7 +1845,36 @@ void dng_render_task::ProcessArea (uint32 threadIndex,
 		// the correct result by effectively scaling the MapInputWeights
 		// parameter by the baseline exposure.
 
-		if (fNegative.HasProfileGainTableMap ())
+		// Select which ProfileGainTableMap to use.
+
+		std::shared_ptr<const dng_gain_table_map> pgtm;
+
+		// If the profile has a ProfileGainTableMap, then just use that.
+
+		const dng_camera_profile_id &profileID = fParams.CameraProfileID ();
+		
+		dng_camera_profile profile;
+
+		if (fNegative.GetProfileByID (profileID, profile) &&
+			profile.HasProfileGainTableMap ())
+			{
+			
+			pgtm = profile.ShareProfileGainTableMap ();
+			
+			}
+
+		// Otherwise fall back to the PGTM attached to the negative itself,
+		// which corresponds to either ProfileGainTableMap2 in IFD 0 or
+		// ProfileGainTableMap in Raw IFD.
+
+		else if (fNegative.HasProfileGainTableMap ())
+			{
+			
+			pgtm = fNegative.ShareProfileGainTableMap ();
+			
+			}
+
+		if (pgtm)
 			{
 
 			const dng_rect activeArea = fNegative.Stage3Image ()->Bounds ();
@@ -1218,27 +1892,36 @@ void dng_render_task::ProcessArea (uint32 threadIndex,
 										   srcArea.l, // left of tile
 										   activeArea,
 										   exposureWeightGain,
-										   fNegative.ProfileGainTableMap ());
+										   *pgtm,
+										   fSupportOverrange);
 										   
 			}
 
 		// Apply exposure curve.
-		
-		DoBaseline1DTable (tPtrR,
-						   tPtrR,
-						   srcCols,
-						   fExposureRamp);
-								
-		DoBaseline1DTable (tPtrG,
-						   tPtrG,
-						   srcCols,
-						   fExposureRamp);
-								
-		DoBaseline1DTable (tPtrB,
-						   tPtrB,
-						   srcCols,
-						   fExposureRamp);
 
+		if (fExposureRamp.Get ())
+			{
+
+			DoBaseline1DFunction (tPtrR,
+								  tPtrR,
+								  srcCols,
+								  *fExposureRamp,
+								  fSupportOverrange);
+								
+			DoBaseline1DFunction (tPtrG,
+								  tPtrG,
+								  srcCols,
+								  *fExposureRamp,
+								  fSupportOverrange);
+
+			DoBaseline1DFunction (tPtrB,
+								  tPtrB,
+								  srcCols,
+								  *fExposureRamp,
+								  fSupportOverrange);
+
+			}
+		
 		// Apply look table, if any.
 		
 		if (fLookTable.Get ())
@@ -1253,21 +1936,65 @@ void dng_render_task::ProcessArea (uint32 threadIndex,
 								 srcCols,
 								 *fLookTable.Get (),
 								 fLookTableEncode.Get (),
-								 fLookTableDecode.Get ());
+								 fLookTableDecode.Get (),
+								 fSupportOverrange);
 			
 			}
 
 		// Apply baseline tone curve.
-		
-		DoBaselineRGBTone (tPtrR,
-						   tPtrG,
-						   tPtrB,
-						   tPtrR,
-						   tPtrG,
-						   tPtrB,
-						   srcCols,
-						   fToneCurve);
-						   
+
+		if (fToneCurveSlopeExtension.Get ())
+			DoBaselineRGBToneOverrange (tPtrR,
+										tPtrG,
+										tPtrB,
+										tPtrR,
+										tPtrG,
+										tPtrB,
+										srcCols,
+										fToneCurve,
+										*fToneCurveSlopeExtension);
+
+		else
+			DoBaselineRGBTone (tPtrR,
+							   tPtrG,
+							   tPtrB,
+							   tPtrR,
+							   tPtrG,
+							   tPtrB,
+							   srcCols,
+							   fToneCurve);
+
+		// Apply RGBTables, if any.
+
+		if (fRGBTablesData)
+			{
+
+			dng_rect dstRowArea (srcRow,
+								 srcArea.l,
+								 srcRow + 1,
+								 srcArea.r);
+
+			dng_pixel_buffer buffer;
+
+			buffer.fArea	  = dstRowArea;
+
+			buffer.fPlanes	  = 3;
+
+			buffer.fColStep	  = 1;
+			buffer.fPlaneStep = int32 (ptrdiff_t (tPtrG - tPtrR));
+
+			buffer.fPixelType = ttFloat;
+			buffer.fPixelSize = TagTypeSize (buffer.fPixelType);
+	
+			buffer.fData	  = (void *) tPtrR;
+			
+			ProcessRGBTables (*fRGBTablesData,
+							  buffer,
+							  tempRGBTablesBuffer,
+							  fSupportOverrange);
+			
+			}
+
 		// Convert to final color space.
 		
 		int32 dstRow = srcRow + (dstArea.t - srcArea.t);
@@ -1284,12 +2011,14 @@ void dng_render_task::ProcessArea (uint32 threadIndex,
 								 tPtrB,
 								 dPtrG,
 								 srcCols,
-								 fRGBtoFinal);
-			
-			DoBaseline1DTable (dPtrG,
-							   dPtrG,
-							   srcCols,
-							   fEncodeGamma);
+								 fRGBtoFinal,
+								 fSupportOverrange);
+
+			if (fEncodeGamma.Get ())
+				DoBaseline1DTable (dPtrG,
+								   dPtrG,
+								   srcCols,
+								   *fEncodeGamma);
 								
 			}
 		
@@ -1310,22 +2039,28 @@ void dng_render_task::ProcessArea (uint32 threadIndex,
 								dPtrG,
 								dPtrB,
 								srcCols,
-								fRGBtoFinal);
-								
-			DoBaseline1DTable (dPtrR,
-							   dPtrR,
-							   srcCols,
-							   fEncodeGamma);
-								
-			DoBaseline1DTable (dPtrG,
-							   dPtrG,
-							   srcCols,
-							   fEncodeGamma);
-								
-			DoBaseline1DTable (dPtrB,
-							   dPtrB,
-							   srcCols,
-							   fEncodeGamma);
+								fRGBtoFinal,
+								fSupportOverrange);
+
+			if (fEncodeGamma.Get ())
+				{
+			
+				DoBaseline1DTable (dPtrR,
+								   dPtrR,
+								   srcCols,
+								   *fEncodeGamma);
+
+				DoBaseline1DTable (dPtrG,
+								   dPtrG,
+								   srcCols,
+								   *fEncodeGamma);
+
+				DoBaseline1DTable (dPtrB,
+								   dPtrB,
+								   srcCols,
+								   *fEncodeGamma);
+
+				}
 							   
 			}
    
@@ -1355,8 +2090,8 @@ void dng_render_task::ProcessArea (uint32 threadIndex,
 				}
 
 			}
-		
-		}
+
+		} // each row
 	
 	}
 		
@@ -1384,9 +2119,16 @@ dng_render::dng_render (dng_host &host,
 	
 	{
 	
+	}
+
+/*****************************************************************************/
+
+dng_image * dng_render::Render ()
+	{
+	
 	// Switch to NOP default parameters for non-scene referred data.
 	
-	if (fNegative.ColorimetricReference () != crSceneReferred)
+	if (fNegative.IsOutputReferred ())
 		{
 		
 		fShadows = 0.0;
@@ -1399,9 +2141,10 @@ dng_render::dng_render (dng_host &host,
 	
 	dng_camera_profile profile;
 	
-	if (fNegative.GetProfileByID (dng_camera_profile_id (), profile))
+	if (fNegative.GetProfileByID (CameraProfileID (),
+								  profile))
 		{
-	
+
 		if (profile.ToneCurve ().IsValid ())
 			{
 			
@@ -1423,13 +2166,6 @@ dng_render::dng_render (dng_host &host,
 			}
 			
 		}
-	
-	}
-
-/*****************************************************************************/
-
-dng_image * dng_render::Render ()
-	{
 	
 	const dng_image *srcImage = fNegative.Stage3Image ();
  
@@ -1508,7 +2244,7 @@ dng_image * dng_render::Render ()
 		
 		}
 	
-	uint32 dstPlanes = FinalSpace ().IsMonochrome () ? 1 : 3;
+	uint32 dstPlanes = FinalSpace (nullptr).IsMonochrome () ? 1 : 3;
 	
 	AutoPtr<dng_image> dstImage (fHost.Make_dng_image (srcBounds.Size (),
 													   dstPlanes,
@@ -1525,6 +2261,48 @@ dng_image * dng_render::Render ()
 						   dstImage->Bounds ());
 						  
 	return dstImage.Release ();
+	
+	}
+
+/*****************************************************************************/
+
+const dng_color_space & dng_render::FinalSpace (const dng_camera_profile *profile) const
+	{
+	
+	const dng_color_space &finalSpace = (fFinalSpace != nullptr)
+									  ? *fFinalSpace
+									  : dng_space_sRGB::Get ();
+
+	// This SDK supports rendering overrange/HDR to linear floating-point
+	// output where 1.0 means UI White. Substitute a linear gamma version of
+	// the profile.
+	
+	if (profile && profile->IsHDR ())
+		{
+
+		const dng_color_space *ptr = &finalSpace;
+		
+		if (ptr->IsMonochrome ())
+			return dng_space_Gray_Linear::Get ();
+		
+		if (ptr == &dng_space_sRGB::Get ())
+			return dng_space_sRGB_Linear::Get ();
+		
+		if (ptr == &dng_space_AdobeRGB::Get ())
+			return dng_space_AdobeRGB_Linear::Get ();
+		
+		if (ptr == &dng_space_ProPhoto::Get ())
+			return dng_space_ProPhoto_Linear::Get ();
+		
+		if (ptr == &dng_space_DisplayP3::Get ())
+			return dng_space_LinearP3::Get ();
+		
+		if (ptr == &dng_space_Rec2020::Get ())
+			return dng_space_Rec2020_Linear::Get ();
+		
+		}
+
+	return finalSpace;
 	
 	}
 

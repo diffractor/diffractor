@@ -76,6 +76,26 @@
 
 /*****************************************************************************/
 
+#ifndef qIsFauxPlatformBuild
+#define qIsFauxPlatformBuild 0
+#endif
+
+#ifndef qIsFauxWebPlatformBuild
+#define qIsFauxWebPlatformBuild 0
+#endif
+
+#ifndef qIsFauxLinuxPlatformBuild
+#define qIsFauxLinuxPlatformBuild 0
+#endif
+
+/*****************************************************************************/
+
+#ifndef qMacOSNonFaux
+#define qMacOSNonFaux (qMacOS && !qIsFauxPlatformBuild)
+#endif
+
+/*****************************************************************************/
+
 #if qiPhoneSimulator
 #if !qiPhone
 #error "qiPhoneSimulator set and not qiPhone"
@@ -114,7 +134,7 @@
 /// \def qX86_64
 /// 1 if and only if this target platform is 64-bit x86 architecture
 
-#if defined(__x86_64__)
+#if defined(__x86_64__) || defined(_M_AMD64) || defined(_M_X64)
 #define qX86_64 1
 #endif
 
@@ -157,23 +177,6 @@
 #endif
 
 /*****************************************************************************/
-// Support Intel Thread Building Blocks (TBB)?
-// 
-// This flag needs to be configured via the project, because there are sources
-// outside the cr_sdk (such as the CTJPEG and ACE libs) that need to use the
-// same flag to determine whether to use TBB or not.
-// 
-// By default, configure to 0 (disabled).
-
-#ifndef qCRSupportTBB
-#define qCRSupportTBB 0
-#endif
-
-#if qCRSupportTBB
-#ifndef TBB_DEPRECATED
-#define TBB_DEPRECATED 0
-#endif
-#endif
 
 // This is not really a switch, but rather a shorthand for determining whether
 // or not we're building a particular translation unit (source file) using the
@@ -182,6 +185,8 @@
 #ifndef qDNGIntelCompiler
 #if defined(__INTEL_COMPILER)
 #define qDNGIntelCompiler (__INTEL_COMPILER >= 1700)
+#elif defined(__INTEL_LLVM_COMPILER)
+#define qDNGIntelCompiler __INTEL_LLVM_COMPILER
 #else
 #define qDNGIntelCompiler 0
 #endif
@@ -298,14 +303,24 @@
 /*****************************************************************************/
 
 #ifdef __cplusplus
-#if defined(__clang__)
-	#define DNG_RESTRICT __restrict__
-	#define DNG_ALWAYS_INLINE __attribute((__always_inline__)) inline
+#if defined(__clang__) && !defined(__INTEL_LLVM_COMPILER)
+#define DNG_RESTRICT __restrict
+#elif defined(qWinOS) && !defined(__INTEL_LLVM_COMPILER)
+#define DNG_RESTRICT __restrict
 #else
-	#define DNG_RESTRICT 
-	#define DNG_ALWAYS_INLINE inline
+#define DNG_RESTRICT
 #endif
-#endif	// __cplusplus
+#endif	/* __cplusplus */
+
+/*****************************************************************************/
+
+#ifdef __cplusplus
+#if defined(__clang__) && !defined(__INTEL_LLVM_COMPILER)
+#define DNG_ALWAYS_INLINE __attribute((__always_inline__)) inline
+#else
+#define DNG_ALWAYS_INLINE inline
+#endif
+#endif	/* __cplusplus */
 
 /*****************************************************************************/
 

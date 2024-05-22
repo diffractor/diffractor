@@ -219,7 +219,21 @@ void dng_exif::SetEmpty ()
 	*this = dng_exif ();
 	
 	}
-		
+
+/*****************************************************************************/
+
+void dng_exif::CopyDateFrom (const dng_exif &exif)
+	{
+	
+	fDateTimeOriginal			  = exif.fDateTimeOriginal;
+	fDateTimeOriginalStorageInfo  = exif.fDateTimeOriginalStorageInfo;
+	fDateTimeDigitized			  =	exif.fDateTimeDigitized;
+	fDateTimeDigitizedStorageInfo = exif.fDateTimeDigitizedStorageInfo;
+	fDateTime					  = exif.fDateTime;
+	fDateTimeStorageInfo		  = exif.fDateTimeStorageInfo;
+	
+	}
+
 /*****************************************************************************/
 
 void dng_exif::CopyGPSFrom (const dng_exif &exif)
@@ -360,140 +374,150 @@ real64 dng_exif::SnapExposureTime (real64 et)
 		
 	uint32 count = sizeof (kStandardSpeed	 ) /
 				   sizeof (kStandardSpeed [0]);
-					   
-	for (uint32 fudge = 0; fudge <= 1; fudge++)
+				   
+	for (uint32 pass = 1; pass <= 2; pass++)
 		{
-		
-		real64 testSpeed = et;
-		
-		if (fudge == 1)
+					   
+		for (uint32 fudge = 0; fudge <= 1; fudge++)
 			{
 			
-			// Often APEX values are rounded to a power of two,
-			// which results in non-standard shutter speeds.
+			real64 testSpeed = et;
 			
-			if (et >= 0.1)
+			if (fudge == 1)
 				{
 				
-				// No fudging slower than 1/10 second
+				// Often APEX values are rounded to a power of two,
+				// which results in non-standard shutter speeds.
 				
-				break;
+				if (et >= 0.1)
+					{
+					
+					// No fudging slower than 1/10 second
+					
+					break;
+					
+					}
+				
+				else if (et >= 0.01)
+					{
+					
+					// Between 1/10 and 1/100 the commonly misrounded
+					// speeds are 1/15, 1/30, 1/60, which are often encoded as
+					// 1/16, 1/32, 1/64.  Try fudging and see if we get
+					// near a standard speed.
+					
+					testSpeed *= 16.0 / 15.0;
+					
+					}
+					
+				else
+					{
+					
+					// Faster than 1/100, the commonly misrounded
+					// speeds are 1/125, 1/250, 1/500, etc., which
+					// are often encoded as 1/128, 1/256, 1/512.
+					
+					testSpeed *= 128.0 / 125.0;
+					
+					}
 				
 				}
-			
-			else if (et >= 0.01)
+				
+			for (uint32 index = 0; index < count; index++)
 				{
 				
-				// Between 1/10 and 1/100 the commonly misrounded
-				// speeds are 1/15, 1/30, 1/60, which are often encoded as
-				// 1/16, 1/32, 1/64.  Try fudging and see if we get
-				// near a standard speed.
+				if (testSpeed >= kStandardSpeed [index] * 0.98 &&
+					testSpeed <= kStandardSpeed [index] * 1.02)
+					{
+					
+					return kStandardSpeed [index];
+					
+					}
+					
+				}
 				
-				testSpeed *= 16.0 / 15.0;
+			}
+			
+		// We are not near any standard speeds.	 Round the non-standard value to something
+		// that looks reasonable.
+		
+		if (pass == 1)
+			{
+		
+			if (et >= 10.0)
+				{
+				
+				// Round to nearest second.
+				
+				et = floor (et + 0.5);
+				
+				}
+				
+			else if (et >= 0.5)
+				{
+				
+				// Round to nearest 1/10 second
+				
+				et = floor (et * 10.0 + 0.5) * 0.1;
+				
+				}
+				
+			else if (et >= 1.0 / 20.0)
+				{
+				
+				// Round to an exact inverse.
+				
+				et = 1.0 / floor (1.0 / et + 0.5);
+				
+				}
+				
+			else if (et >= 1.0 / 130.0)
+				{
+				
+				// Round inverse to multiple of 5
+				
+				et = 0.2 / floor (0.2 / et + 0.5);
+				
+				}
+				
+			else if (et >= 1.0 / 750.0)
+				{
+				
+				// Round inverse to multiple of 10
+				
+				et = 0.1 / floor (0.1 / et + 0.5);
+				
+				}
+				
+			else if (et >= 1.0 / 1300.0)
+				{
+				
+				// Round inverse to multiple of 50
+				
+				et = 0.02 / floor (0.02 / et + 0.5);
+				
+				}
+				
+			else if (et >= 1.0 / 15000.0)
+				{
+				
+				// Round inverse to multiple of 100
+				
+				et = 0.01 / floor (0.01 / et + 0.5);
 				
 				}
 				
 			else
 				{
 				
-				// Faster than 1/100, the commonly misrounded
-				// speeds are 1/125, 1/250, 1/500, etc., which
-				// are often encoded as 1/128, 1/256, 1/512.
+				// Round inverse to multiple of 1000
 				
-				testSpeed *= 128.0 / 125.0;
-				
-				}
-			
-			}
-			
-		for (uint32 index = 0; index < count; index++)
-			{
-			
-			if (testSpeed >= kStandardSpeed [index] * 0.98 &&
-				testSpeed <= kStandardSpeed [index] * 1.02)
-				{
-				
-				return kStandardSpeed [index];
+				et = 0.001 / floor (0.001 / et + 0.5);
 				
 				}
 				
 			}
 			
-		}
-		
-	// We are not near any standard speeds.	 Round the non-standard value to something
-	// that looks reasonable.
-	
-	if (et >= 10.0)
-		{
-		
-		// Round to nearest second.
-		
-		et = floor (et + 0.5);
-		
-		}
-		
-	else if (et >= 0.5)
-		{
-		
-		// Round to nearest 1/10 second
-		
-		et = floor (et * 10.0 + 0.5) * 0.1;
-		
-		}
-		
-	else if (et >= 1.0 / 20.0)
-		{
-		
-		// Round to an exact inverse.
-		
-		et = 1.0 / floor (1.0 / et + 0.5);
-		
-		}
-		
-	else if (et >= 1.0 / 130.0)
-		{
-		
-		// Round inverse to multiple of 5
-		
-		et = 0.2 / floor (0.2 / et + 0.5);
-		
-		}
-		
-	else if (et >= 1.0 / 750.0)
-		{
-		
-		// Round inverse to multiple of 10
-		
-		et = 0.1 / floor (0.1 / et + 0.5);
-		
-		}
-		
-	else if (et >= 1.0 / 1300.0)
-		{
-		
-		// Round inverse to multiple of 50
-		
-		et = 0.02 / floor (0.02 / et + 0.5);
-		
-		}
-		
-	else if (et >= 1.0 / 15000.0)
-		{
-		
-		// Round inverse to multiple of 100
-		
-		et = 0.01 / floor (0.01 / et + 0.5);
-		
-		}
-		
-	else
-		{
-		
-		// Round inverse to multiple of 1000
-		
-		et = 0.001 / floor (0.001 / et + 0.5);
-		
 		}
 		
 	return et;

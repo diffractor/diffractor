@@ -37,6 +37,18 @@ void dng_outputdebugstring (const char *s,
 
 /*****************************************************************************/
 
+#if defined(__EMSCRIPTEN__)
+
+/// Emscripten-only function to emit a message to the debugger console
+/// if a debug session is in progress.
+
+void dng_emscripten_log (int emLogType,
+						 const char *s);
+
+#endif
+
+/*****************************************************************************/
+
 /// Platform-specific function to display an assert.
 
 void dng_show_message (const char *s);

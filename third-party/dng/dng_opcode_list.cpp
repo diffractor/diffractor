@@ -63,6 +63,32 @@ void dng_opcode_list::Clear ()
 	fAlwaysApply = false;
 	
 	}
+
+/******************************************************************************/
+
+void dng_opcode_list::Remove (uint32 index)
+	{
+		
+	DNG_REQUIRE (size_t (index) < fList.size (),
+				 "Index out of range in dng_opcode_list::Remove");
+			
+	if (fList [index])
+		{
+		
+		delete fList [index];
+		
+		}
+		
+	fList.erase (fList.begin () + index);
+		
+	if (fList.empty ())
+		{
+			
+		fAlwaysApply = false;
+			
+		}
+	
+	}
 			
 /******************************************************************************/
 

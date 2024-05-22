@@ -40,7 +40,7 @@ enum
 	ttSLong8,
 	ttIFD8,
 	
-	// Note that this is not an offical TIFF tag type, and should
+	// Note that this is not an official TIFF tag type, and should
 	// not be used in TIFF/DNG files:
 	
 	ttHalfFloat

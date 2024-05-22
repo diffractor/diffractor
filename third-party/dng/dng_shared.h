@@ -1,5 +1,5 @@
 /*****************************************************************************/
-// Copyright 2006-2019 Adobe Systems Incorporated
+// Copyright 2006-2023 Adobe Systems Incorporated
 // All Rights Reserved.
 //
 // NOTICE:	Adobe permits you to use, modify, and distribute this file in
@@ -21,9 +21,63 @@
 #include "dng_stream.h"
 #include "dng_sdk_limits.h"
 #include "dng_types.h"
+#include "dng_utils.h"
 #include "dng_xy_coord.h"
 
+#include <map>
 #include <vector>
+
+/*****************************************************************************/
+
+class dng_camera_profile_dynamic_range
+	{
+
+	public:
+
+		uint16 fVersion = 1;
+
+		// 0 = Standard Dynamic Range.
+		// 1 = High Dynamic Range.
+
+		uint16 fDynamicRange = 0;
+
+		// Hint for intended maximum output pixel value (linear gamma).
+
+		real32 fHintMaxOutputValue = 0.0f;
+
+	public:
+
+		bool IsValid () const;
+		
+		bool IsSDR () const
+			{
+			return (fDynamicRange == 0);
+			}
+
+		bool IsHDR () const
+			{
+			return !IsSDR ();
+			}
+
+		void PutStream (dng_stream &stream) const;
+
+		#if qDNGValidate
+		void Dump () const;
+		#endif
+
+		bool operator== (const dng_camera_profile_dynamic_range &src) const
+			{
+			return (fVersion			== src.fVersion		 &&
+					fDynamicRange		== src.fDynamicRange &&
+					fHintMaxOutputValue == src.fHintMaxOutputValue);
+			}
+
+		bool operator!= (const dng_camera_profile_dynamic_range &src) const
+			{
+			return !(*this == src);
+			}
+
+	};
 
 /*****************************************************************************/
 
@@ -95,8 +149,18 @@ class dng_camera_profile_info
 		uint64 fToneCurveOffset;
 		uint32 fToneCurveCount;
 		
-		dng_string fUniqueCameraModel;
+		uint32 fToneMethod;
 		
+		dng_string fUniqueCameraModel;
+
+		std::shared_ptr<const dng_gain_table_map> fProfileGainTableMap;
+
+		dng_camera_profile_dynamic_range fProfileDynamicRange;
+		
+		dng_string fProfileGroupName;
+		
+		std::shared_ptr<const dng_masked_rgb_tables> fMaskedRGBTables;
+
 	public:
 	
 		dng_camera_profile_info ();
@@ -212,6 +276,11 @@ class dng_shared
 		dng_std_vector<dng_fingerprint> fBigTableDigests;
 		dng_std_vector<uint64>			fBigTableOffsets;
 		dng_std_vector<uint32>			fBigTableByteCounts;
+
+		std::map<dng_fingerprint,
+				 dng_fingerprint> fBigTableGroupIndex;
+
+		dng_image_sequence_info fImageSequenceInfo;
 		
 	public:
 	

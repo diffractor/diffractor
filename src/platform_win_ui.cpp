@@ -6924,6 +6924,7 @@ void control_host_impl::handle_composition_changed()
 
 LRESULT control_host_impl::on_dwm_composition_changed(uint32_t, WPARAM wParam, LPARAM lParam)
 {
+	df::log(__FUNCTION__, u8"WM_DWMCOMPOSITIONCHANGED"sv);
 	handle_composition_changed();
 	return 0;
 }

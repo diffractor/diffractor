@@ -49,6 +49,10 @@ class dng_1d_table: private dng_uncopyable
 		real32 *fTable;
 
 		const uint32 fTableCount;
+		
+	private:
+		
+		const real32 fTableCount32;
 	
 	public:
 
@@ -69,7 +73,7 @@ class dng_1d_table: private dng_uncopyable
 		/// Set up table, initialize entries using functiion.
 		/// This method can throw an exception, e.g. if there is not enough memory.
 		/// \param allocator Memory allocator from which table memory is allocated.
-		/// \param function Table is initialized with values of finction.Evalluate(0.0) to function.Evaluate(1.0).
+		/// \param function Table is initialized with values of function.Evaluate(0.0) to function.Evaluate(1.0).
 		/// \param subSample If true, only sample the function a limited number of times and interpolate.
 
 		void Initialize (dng_memory_allocator &allocator,
@@ -83,7 +87,7 @@ class dng_1d_table: private dng_uncopyable
 		real32 Interpolate (real32 x) const
 			{
 			
-			real32 y = x * (real32) fTableCount;
+			real32 y = x * fTableCount32;
 			
 			int32 index = (int32) y;
 
@@ -95,10 +99,30 @@ class dng_1d_table: private dng_uncopyable
 				}
 
 			// Enable vectorization by using DNG_ASSERT instead of DNG_REQUIRE
-			DNG_ASSERT(!(index < 0 || index >(int32) fTableCount), "dng_1d_table::Interpolate parameter out of range");
+			
+			DNG_ASSERT (!(index < 0 || index > (int32) fTableCount), "dng_1d_table::Interpolate parameter out of range");
 			
 			real32 z = (real32) index;
-						
+			
+			real32 fract = y - z;
+			
+			return fTable [index	] * (1.0f - fract) +
+				   fTable [index + 1] * (		fract);
+			
+			}
+			
+		/// Unsafe version of above for use in code that knows the input
+		/// is limited to 0.0f to 1.0f.
+			
+		DNG_ALWAYS_INLINE real32 UnsafeInterpolate (real32 x) const
+			{
+			
+			real32 y = x * fTableCount32;
+			
+			int32 index = (int32) y;
+			
+			real32 z = (real32) index;
+			
 			real32 fract = y - z;
 			
 			return fTable [index	] * (1.0f - fract) +
@@ -118,7 +142,7 @@ class dng_1d_table: private dng_uncopyable
 		void Expand16 (uint16 *table16) const;
 			
 	private:
-	
+			
 		void SubDivide (const dng_1d_function &function,
 						uint32 lower,
 						uint32 upper,

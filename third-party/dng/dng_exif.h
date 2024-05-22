@@ -250,6 +250,11 @@ class dng_exif
 		
 		void CopyGPSFrom (const dng_exif &exif);
 
+		/// Copy EXIF date-related fields.
+		/// \param exif Source object from which to copy date fields.
+		
+		void CopyDateFrom (const dng_exif &exif);
+
 		/// Utility to fix up common errors and rounding issues with EXIF exposure
 		/// times.
 

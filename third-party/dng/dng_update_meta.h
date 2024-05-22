@@ -15,6 +15,12 @@
 
 /*****************************************************************************/
 
+void CleanUpMetadataForUpdate (dng_host &host,
+							   dng_metadata &metadata,
+							   bool wantsIPTC);
+
+/*****************************************************************************/
+
 void DNGUpdateMetadata (dng_host &host,
 						dng_stream &stream,
 						const dng_negative &negative,

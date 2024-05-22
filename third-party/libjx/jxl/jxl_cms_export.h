@@ -1,0 +1,1 @@
+#define JXL_CMS_EXPORT

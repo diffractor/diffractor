@@ -1,5 +1,5 @@
 /*****************************************************************************/
-// Copyright 2015-2021 Adobe Systems Incorporated
+// Copyright 2015-2023 Adobe Systems Incorporated
 // All Rights Reserved.
 //
 // NOTICE:	Adobe permits you to use, modify, and distribute this file in
@@ -8,12 +8,16 @@
 
 #include "dng_big_table.h"
 
+#include "dng_1d_table.h"
+#include "dng_bottlenecks.h"
 #include "dng_abort_sniffer.h"
+#include "dng_color_space.h"
 #include "dng_globals.h"
 #include "dng_host.h"
 #include "dng_image.h"
 #include "dng_image_writer.h"
 #include "dng_info.h"
+#include "dng_jxl.h"
 #include "dng_memory_stream.h"
 #include "dng_mutex.h"
 #include "dng_negative.h"
@@ -24,6 +28,8 @@
 #endif
 
 #include "zlib.h"
+
+#include <unordered_map>
 
 /*****************************************************************************/
 
@@ -83,6 +89,15 @@ class dng_big_table_cache
 		virtual void ExtractTableData (dng_lock_std_mutex &lock,
 									   const dng_fingerprint &fingerprint,
 									   dng_big_table &table) = 0;
+
+		virtual void Clear ()
+			{
+
+			fRefCounts.clear ();
+
+			fRecentlyUsed.clear ();
+
+			}
 
 	public:
 
@@ -423,6 +438,15 @@ class dng_look_table_cache : public dng_big_table_cache
 			{
 			}
 
+		virtual void Clear ()
+			{
+
+			dng_big_table_cache::Clear ();
+
+			fTableData.clear ();
+
+			}
+
 		virtual void InsertTableData (dng_lock_std_mutex & /* lock */,
 									  const dng_big_table &table)
 			{
@@ -516,6 +540,15 @@ class dng_rgb_table_cache : public dng_big_table_cache
 			{
 			}
 
+		virtual void Clear ()
+			{
+
+			dng_big_table_cache::Clear ();
+
+			fTableData.clear ();
+
+			}
+
 		virtual void InsertTableData (dng_lock_std_mutex & /* lock */,
 									  const dng_big_table &table)
 			{
@@ -591,42 +624,43 @@ class dng_image_table_cache : public dng_big_table_cache
 
 	private:
 
-		typedef std::pair <dng_fingerprint,
-						   std::shared_ptr<const dng_image>> TableDataPair;
-
-		typedef std::map <dng_fingerprint,
-						  std::shared_ptr<const dng_image>,
-						  dng_fingerprint_less_than> TableDataMap;
-		
-		TableDataMap fTableData;
+		std::unordered_map <dng_fingerprint,
+							dng_image_table_data,
+							dng_fingerprint_hash> fTableData;
 
 	public:
 
-		dng_image_table_cache ()
-
-			:	fTableData ()
-
+		void Clear () override
 			{
+
+			dng_big_table_cache::Clear ();
+
+			fTableData.clear ();
+
 			}
 
-		virtual void InsertTableData (dng_lock_std_mutex & /* lock */,
-									  const dng_big_table &table)
+		void InsertTableData (dng_lock_std_mutex & /* lock */,
+							  const dng_big_table &table) override
 			{
 
 			const dng_image_table *imageTable = static_cast
 												<const dng_image_table *>
 												(&table);
 
-			fTableData.insert (TableDataPair (imageTable->Fingerprint (),
-											  imageTable->fImage));
+			dng_image_table_data data;
+
+			imageTable->GetData (data);
+			
+			fTableData.insert (std::make_pair (imageTable->Fingerprint (),
+											   data));
 
 			}
 
-		virtual void EraseTableData (dng_lock_std_mutex & /* lock */,
-									 const dng_fingerprint &fingerprint)
+		void EraseTableData (dng_lock_std_mutex & /* lock */,
+							 const dng_fingerprint &fingerprint) override
 			{
 
-			TableDataMap::iterator it = fTableData.find (fingerprint);
+			auto it = fTableData.find (fingerprint);
 
 			if (it != fTableData.end ())
 				{
@@ -645,12 +679,12 @@ class dng_image_table_cache : public dng_big_table_cache
 
 			}
 
-		virtual void ExtractTableData (dng_lock_std_mutex & /* lock */,
-									   const dng_fingerprint &fingerprint,
-									   dng_big_table &table)
+		void ExtractTableData (dng_lock_std_mutex & /* lock */,
+							   const dng_fingerprint &fingerprint,
+							   dng_big_table &table) override
 			{
 
-			TableDataMap::iterator it = fTableData.find (fingerprint);
+			auto it = fTableData.find (fingerprint);
 
 			if (it != fTableData.end ())
 				{
@@ -659,7 +693,7 @@ class dng_image_table_cache : public dng_big_table_cache
 											  <dng_image_table *>
 											  (&table);
 
-				imageTable->fImage = it->second;
+				imageTable->SetData (it->second);
 
 				}
 
@@ -679,6 +713,137 @@ static dng_image_table_cache gImageTableCache;
 
 /*****************************************************************************/
 
+class dng_packed_image_table_cache : public dng_big_table_cache
+	{
+
+	private:
+
+		struct entry_t
+			{
+				
+			public:
+
+				dng_image_table_data fImageData;
+
+				std::shared_ptr<const dng_memory_block> fBlock;
+
+				// Image properties.
+
+				dng_point fSize;
+
+				uint32 fPlanes = 0;
+
+				uint32 fPixelType = 0;
+
+			};
+
+		std::unordered_map <dng_fingerprint,
+							entry_t,
+							dng_fingerprint_hash> fEntries;
+
+	public:
+
+		void Clear () override
+			{
+
+			dng_big_table_cache::Clear ();
+
+			fEntries.clear ();
+
+			}
+
+		 void InsertTableData (dng_lock_std_mutex & /* lock */,
+							   const dng_big_table &table) override
+			{
+
+			// printf ("dng_packed_image_table_cache::InsertTableData\n");
+
+			const auto &src = static_cast <const dng_packed_image_table &> (table);
+
+			entry_t entry;
+
+			entry.fBlock	 = src.ShareBlock ();
+			entry.fSize		 = src.fSize;
+			entry.fPlanes	 = src.fPlanes;
+			entry.fPixelType = src.fPixelType;
+
+			if (src.IsValidUnpacked ())
+				src.Table ().GetData (entry.fImageData);
+
+			fEntries.insert (std::make_pair (src.Fingerprint (), entry));
+
+			}
+
+		 void EraseTableData (dng_lock_std_mutex & /* lock */,
+							  const dng_fingerprint &fingerprint) override
+			{
+
+			// printf ("dng_packed_image_table_cache::EraseTableData\n");
+
+			auto iter = fEntries.find (fingerprint);
+
+			if (iter != fEntries.end ())
+				{
+
+				fEntries.erase (iter);
+
+				}
+
+			else
+				{
+
+				DNG_REPORT ("dng_packed_image_table_cache::EraseTableData"
+							"fingerprint not in cache");
+
+				}
+
+			}
+
+		 void ExtractTableData (dng_lock_std_mutex & /* lock */,
+								const dng_fingerprint &fingerprint,
+								dng_big_table &table) override
+			{
+
+			// printf ("dng_packed_image_table_cache::ExtractTableData\n");
+
+			auto iter = fEntries.find (fingerprint);
+
+			if (iter != fEntries.end ())
+				{
+
+				auto &dst = static_cast <dng_packed_image_table &> (table);
+
+				dst.fTableDigest = fingerprint;
+				
+				dst.fBlock     = iter->second.fBlock;
+				dst.fSize      = iter->second.fSize;
+				dst.fPlanes    = iter->second.fPlanes;
+				dst.fPixelType = iter->second.fPixelType;
+
+				AutoPtr<dng_image_table> temp (dst.MakeTable ());
+
+				temp->SetData (iter->second.fImageData);
+				
+				dst.fTable.reset (temp.Release ());
+
+				}
+
+			else
+				{
+
+				DNG_REPORT ("dng_packed_image_table_cache::ExtractTableData"
+							"fingerprint not in cache");
+
+				}
+
+			}
+
+	};
+
+static dng_packed_image_table_cache gPackedImageTableCache;
+
+/*****************************************************************************/
+
 void dng_big_table_cache_flush ()
 	{
 
@@ -687,6 +852,23 @@ void dng_big_table_cache_flush ()
 	gRGBTableCache.FlushRecentlyUsed ();
 
 	gImageTableCache.FlushRecentlyUsed ();
+
+	gPackedImageTableCache.FlushRecentlyUsed ();
+
+	}
+
+/*****************************************************************************/
+
+void dng_big_table_cache_clear ()
+	{
+
+	gLookTableCache.Clear ();
+
+	gRGBTableCache.Clear ();
+
+	gImageTableCache.Clear ();
+
+	gPackedImageTableCache.Clear ();
 
 	}
 
@@ -924,8 +1106,6 @@ bool dng_big_table::DecodeFromBinary (dng_host &host,
 				return false;
 				}
 
-			GetStream (stream);
-			
 			}
 		
 		catch (dng_exception &except)
@@ -967,7 +1147,7 @@ void dng_big_table::ASCIItoBinary (dng_memory_allocator &allocator,
 	{
 	
 	// This binary to text encoding is very similar to the Z85
-	// encoding, but the exact charactor set has been adjusted to
+	// encoding, but the exact character set has been adjusted to
 	// encode more cleanly into XMP.
 
 	static uint8 kDecodeTable [96] =
@@ -1250,7 +1430,7 @@ dng_memory_block* dng_big_table::EncodeAsString (dng_memory_allocator &allocator
 		{
 
 		// This binary to text encoding is very similar to the Z85
-		// encoding, but the exact charactor set has been adjusted to
+		// encoding, but the exact character set has been adjusted to
 		// encode more cleanly into XMP.
 
 		static const char *kEncodeTable =
@@ -1357,13 +1537,32 @@ bool dng_big_table::ExtractFromCache (const dng_fingerprint &fingerprint)
 bool dng_big_table::ReadTableFromXMP (const dng_xmp &xmp,
 									  const char *ns,
 									  const dng_fingerprint &fingerprint,
+									  dng_big_table_storage *storage,
 									  dng_abort_sniffer *sniffer)
 	{
 	
+	// See if we can skip reading the table data, and just grab from cache.
+
+	if (ExtractFromCache (fingerprint))
+		{
+
+		return true;
+
+		}
+		
+	// Next see if we can get the table from the storage object.
+	
+	if (storage && storage->ReadTable (*this, fingerprint, xmp.Allocator ()))
+		{
+		
+		return true;
+		
+		}
+
+	// Not in cache nor storage, so we need to read from XMP.
+
 	dng_host host (&xmp.Allocator (), sniffer);
 
-	// Read in the table data.
-	
 	host.SniffForAbort ();
 		
 	dng_string tablePath;
@@ -1447,9 +1646,10 @@ bool dng_big_table::ReadFromXMP (const dng_xmp &xmp,
 		
 		}
 
-	// Read in the table data.
+	// Read in the table data. We already checked the storage object
+	// (above), so pass in nullptr for 4th argument.
 
-	if (ReadTableFromXMP (xmp, ns, fingerprint, sniffer))
+	if (ReadTableFromXMP (xmp, ns, fingerprint, nullptr, sniffer))
 		{
 		
 		return true;
@@ -1524,6 +1724,21 @@ void dng_big_table::WriteToXMP (dng_xmp &xmp,
 /*****************************************************************************/
 
 #endif  // qDNGUseXMP
+
+/*****************************************************************************/
+
+#if qDNGValidate
+
+void dng_big_table::WriteUncompressedStream (dng_stream &stream) const
+	{
+
+	stream.SetLittleEndian ();
+
+	PutStream (stream, false);
+
+	}
+
+#endif	// qDNGValidate
 
 /*****************************************************************************/
 
@@ -1662,6 +1877,31 @@ void dng_big_table_index::AddEntry (const dng_fingerprint &fingerprint,
 	}
 
 /*****************************************************************************/
+/*****************************************************************************/
+/*****************************************************************************/
+
+bool dng_big_table_group_index::GetEntry (const dng_fingerprint &groupDigest,
+										  dng_fingerprint &instanceDigest) const
+	{
+	
+	auto it = fMap.find (groupDigest);
+	
+	if (it != fMap.end ())
+		{
+
+		instanceDigest = it->second;
+		
+		return true;
+		
+		}
+	
+	return false;
+	
+	}
+
+/*****************************************************************************/
+/*****************************************************************************/
+/*****************************************************************************/
 
 dng_big_table_storage::dng_big_table_storage ()
 	{
@@ -1708,7 +1948,17 @@ void dng_big_table_storage::MissingTable (const dng_fingerprint & /* fingerprint
 	{
 	
 	}
+
+/*****************************************************************************/
+
+bool dng_big_table_storage::GroupToInstance (const dng_fingerprint & /* groupDigest */,
+											 dng_fingerprint & /* instanceDigest */) const
+	{
 	
+	return false;
+	
+	}
+
 /*****************************************************************************/
 
 dng_look_table::dng_look_table ()
@@ -2366,12 +2616,114 @@ void dng_rgb_table::PutStream (dng_stream &stream,
 	}
 
 /*****************************************************************************/
+/*****************************************************************************/
+/*****************************************************************************/
+
+dng_image_table_compression_info::~dng_image_table_compression_info ()
+	{
+	
+	}
+
+/*****************************************************************************/
+
+void dng_image_table_compression_info::Compress (dng_host &host,
+												 dng_stream &stream,
+												 const dng_image &image) const
+	{
+	
+	dng_image_writer writer;
+
+	writer.WriteTIFFWithProfile (host,
+								 stream,
+								 image,
+								 image.Planes () >= 3
+									 ? piRGB
+									 : piBlackIsZero,
+								 image.PixelType () == ttShort
+									 ? ccJPEG		// Lossless JPEG
+									 : ccDeflate);
+	
+	}
+
+/*****************************************************************************/
+/*****************************************************************************/
+/*****************************************************************************/
+
+dng_image_table_jxl_compression_info::dng_image_table_jxl_compression_info ()
+
+	:	fEncodeSettings (new dng_jxl_encode_settings)
+
+	{
+
+	}
+
+/*****************************************************************************/
+
+void dng_image_table_jxl_compression_info::Compress (dng_host &host,
+													 dng_stream &stream,
+													 const dng_image &image) const
+	{
+	
+	DNG_REQUIRE (fEncodeSettings.Get (),
+				 "Missing encode settings");
+
+	#if 1
+
+	// Use TIFF container but with JXL compression. This is better for larger
+	// images since we can encode tiles in parallel.
+
+	host.SetJXLEncodeSettings (*fEncodeSettings);
+
+	host.SetJXLColorSpaceInfo (fColorSpaceInfo);
+
+	dng_image_writer writer;
+
+	writer.WriteTIFFWithProfile (host,
+								 stream,
+								 image,
+								 image.Planes () >= 3
+									 ? piRGB
+									 : piBlackIsZero,
+								 ccJXL,
+								 nullptr,	 // metadata
+								 nullptr,	 // profile data
+								 0,			 // profile size,
+								 nullptr,	 // resolution
+								 nullptr,	 // thumbnail
+								 nullptr,	 // image resources
+								 kMetadataSubset_All,
+								 false,		 // has transparency
+								 true,		 // allow big tiff
+								 nullptr,	 // gain map,
+								 fPreferHalfFloat);
+	
+	#else
+
+	// Use JXL directly. 
+
+	dng_jxl_color_space_info colorSpaceInfo;
+
+	PreviewColorSpaceToJXLEncoding (previewColorSpace_MaxEnum,
+									image.Planes (),
+									colorSpaceInfo);
+
+	EncodeJXL_Tile (host,
+					stream,
+					image,
+					colorSpaceInfo,
+					*fEncodeSettings);
+
+	#endif
+	
+	}
+
+/*****************************************************************************/
+/*****************************************************************************/
+/*****************************************************************************/
 
 dng_image_table::dng_image_table ()
 
 	:	dng_big_table (&gImageTableCache)
-
-	,	fImage ()
 
 	{
 
@@ -2384,6 +2736,10 @@ dng_image_table::dng_image_table (const dng_image_table &table)
 	:	dng_big_table (table)
 
 	,	fImage (table.fImage)
+
+	,	fCompressedData (table.fCompressedData)
+
+	,	fCompressionType (table.fCompressionType)
 
 	{
 
@@ -2398,6 +2754,10 @@ dng_image_table & dng_image_table::operator= (const dng_image_table &table)
 
 	fImage = table.fImage;
 
+	fCompressedData = table.fCompressedData;
+
+	fCompressionType = table.fCompressionType;
+	
 	return *this;
 
 	}
@@ -2441,32 +2801,53 @@ void dng_image_table::SetInvalid ()
 
 /*****************************************************************************/
 
-void dng_image_table::SetImage (const dng_image *image)
+void dng_image_table::SetImage (const dng_image *image,
+								const dng_image_table_compression_info *compressionInfo,
+								dng_abort_sniffer *sniffer)
 	{
 	
 	fImage = std::shared_ptr<const dng_image> (image);
-	
+
+	fCompressedData.reset ();
+
+	if (compressionInfo && (compressionInfo->Type () > 0))
+		CompressImage (*compressionInfo,
+					   sniffer);
+
 	RecomputeFingerprint ();
 
 	}
 
 /*****************************************************************************/
 
-void dng_image_table::SetImage (const std::shared_ptr<const dng_image> &image)
+void dng_image_table::SetImage (const std::shared_ptr<const dng_image> &image,
+								const dng_image_table_compression_info *compressionInfo,
+								dng_abort_sniffer *sniffer)
 	{
+
+	if (fImage != image)
+		{
+
+		fImage = image;
+
+		fCompressedData.reset ();
 	
-	fImage = image;
-	
-	RecomputeFingerprint ();
+		if (compressionInfo && (compressionInfo->Type () > 0))
+			CompressImage (*compressionInfo,
+						   sniffer);
+
+		RecomputeFingerprint ();
+
+		}
 
 	}
 
 /*****************************************************************************/
 
-dng_host * dng_image_table::MakeHost () const
+dng_host * dng_image_table::MakeHost (dng_abort_sniffer *sniffer) const
 	{
 	
-	return new dng_host;
+	return new dng_host (nullptr, sniffer);
 	
 	}
 
@@ -2474,11 +2855,42 @@ dng_host * dng_image_table::MakeHost () const
 
 dng_fingerprint dng_image_table::ComputeFingerprint () const
 	{
-	
+
+	// If we're using lossy compression, then fingerprint the (compressed)
+	// stream itself, including the header.
+
+	if (fCompressedData)
+		{
+		
+		AutoPtr<dng_host> host (MakeHost (nullptr));
+		
+		dng_memory_stream tempStream (host->Allocator ());
+
+		PutStream (tempStream, true);
+
+		tempStream.Flush ();
+
+		tempStream.SetReadPosition (0);
+		
+		dng_md5_printer_stream stream;
+
+		stream.SetLittleEndian ();
+
+		tempStream.CopyToStream (stream,
+								 tempStream.Length ());
+		
+		auto digest = stream.Result ();
+
+		return digest;
+		
+		}
+
+	// Otherwise fingerprint the image itself (uncompressed case).
+
 	if (fImage.get ())
 		{
 		
-		AutoPtr<dng_host> host (MakeHost ());
+		AutoPtr<dng_host> host (MakeHost (nullptr));
 		
 		dng_md5_printer_stream stream;
 
@@ -2514,10 +2926,41 @@ dng_fingerprint dng_image_table::ComputeFingerprint () const
 
 /*****************************************************************************/
 
+static void CheckImageTableIFD (const dng_ifd &ifd)
+	{
+	
+	dng_rect bounds = ifd.Bounds ();
+
+	if (bounds.ShortSide () < 1 ||
+		bounds.LongSide	 () > kMaxImageSide)
+		{
+		ThrowBadFormat ();
+		}
+
+	uint32 planes = ifd.fSamplesPerPixel;
+
+	if (planes < 1 || planes > kMaxColorPlanes)
+		{
+		ThrowBadFormat ();
+		}
+
+	uint32 pixelType = ifd.PixelType ();
+
+	if (pixelType != ttByte	 &&
+		pixelType != ttShort &&
+		pixelType != ttFloat)
+		{
+		ThrowBadFormat ();
+		}
+
+	}
+
+/*****************************************************************************/
+
 bool dng_image_table::GetStream (dng_stream &stream)
 	{
 	
-	AutoPtr<dng_host> host (MakeHost ());
+	AutoPtr<dng_host> host (MakeHost (stream.Sniffer ()));
 	
 	if (stream.Get_uint32 () != btt_ImageTable)
 		{
@@ -2543,63 +2986,89 @@ bool dng_image_table::GetStream (dng_stream &stream)
 						  (uint32) (stream.Length () - stream.Position ()));
 						  
 	subStream.SetSniffer (stream.Sniffer ());
-	
-	dng_info info;
-	
-	info.Parse (*host, subStream);
-	
-	info.PostParse (*host);
 
-	if (info.fMagic != 42)
+	AutoPtr<dng_image> image;
+
+	dng_info jxlInfo;
+
+	if (ParseJXL (*host,
+				  subStream,
+				  jxlInfo,
+				  true,						 // bare codestream
+				  false))					 // container
 		{
-		ThrowBadFormat ();
-		}
+
+		// Read as JXL.
+
+		if (jxlInfo.IFDCount () < 1)
+			{
+			ThrowBadFormat ();
+			}
+
+		CheckImageTableIFD (*jxlInfo.fIFD [0]);
 		
-	if (info.IFDCount () < 1)
-		{
-		ThrowBadFormat ();
-		}
+		subStream.SetReadPosition (0);
+
+		dng_jxl_decoder decoder;
+
+		decoder.fNeedBoxMeta = false;
+
+		decoder.Decode (*host, subStream);
+
+		image.Reset (decoder.fMainImage.Release ());
+
+		fCompressionType = ccJXL;
 		
-	dng_ifd &ifd = *info.fIFD [0];
-	
-	dng_rect bounds = ifd.Bounds ();
-	
-	if (bounds.ShortSide () < 1 ||
-		bounds.LongSide	 () > kMaxImageSide)
-		{
-		ThrowBadFormat ();
-		}
-		
-	uint32 planes = ifd.fSamplesPerPixel;
-	
-	if (planes < 1 ||
-		planes > kMaxColorPlanes)
-		{
-		ThrowBadFormat ();
 		}
 
-	uint32 pixelType = ifd.PixelType ();
-	
-	if (pixelType != ttByte	 &&
-		pixelType != ttShort &&
-		pixelType != ttFloat)
+	else
 		{
-		ThrowBadFormat ();
-		}
-	
-	if (!ifd.CanRead ())
-		{
-		ThrowBadFormat ();
-		}
-	
-	AutoPtr<dng_image> image (host->Make_dng_image (bounds,
-													planes,
-													pixelType));
+
+		// Read as TIFF.
+
+		dng_info info;
+		
+		info.Parse (*host, subStream);
+
+		info.PostParse (*host);
+
+		if (info.fMagic != 42)
+			{
+			ThrowBadFormat ();
+			}
+
+		if (info.IFDCount () < 1)
+			{
+			ThrowBadFormat ();
+			}
+
+		const dng_ifd &ifd = *info.fIFD [0];
+
+		CheckImageTableIFD (ifd);
+
+		image.Reset (host->Make_dng_image (ifd.Bounds (),
+										   ifd.fSamplesPerPixel,
+										   ifd.PixelType ()));
 												   
-	ifd.ReadImage (*host,
-				   subStream,
-				   *image);
-				   
+		ifd.ReadImage (*host,
+					   subStream,
+					   *image);
+
+		fCompressionType = ifd.fCompression;
+		
+		} // JXL vs TIFF
+
+	// Grab a copy of the (lossy) compressed data.
+
+	if (fCompressionType == ccJXL)
+		{
+
+		subStream.SetReadPosition (0);
+
+		fCompressedData.reset (subStream.AsMemoryBlock (host->Allocator ()));
+
+		}
+		
 	if (imageTL != dng_point (0, 0))
 		{
 		
@@ -2620,10 +3089,25 @@ bool dng_image_table::GetStream (dng_stream &stream)
 /*****************************************************************************/
 
 void dng_image_table::PutStream (dng_stream &stream,
-								 bool /* forFingerprint */) const
+								 bool forFingerprint) const
 	{
+
+	dng_image_table_compression_info defaultInfo;
+
+	PutCompressedStream (stream,
+						 forFingerprint,
+						 defaultInfo);
+
+	}
 	
-	AutoPtr<dng_host> host (MakeHost ());
+/*****************************************************************************/
+
+void dng_image_table::PutCompressedStream (dng_stream &stream,
+										   bool /* forFingerprint */,
+										   const dng_image_table_compression_info &info) const
+	{
+
+	AutoPtr<dng_host> host (MakeHost (stream.Sniffer ()));
 	
 	stream.Put_uint32 (btt_ImageTable);
 
@@ -2647,24 +3131,507 @@ void dng_image_table::PutStream (dng_stream &stream,
 		
 		}
 	
-	dng_image_writer writer;
-	
-	dng_memory_stream tempStream (host->Allocator ());
-	
-	writer.WriteTIFFWithProfile (*host,
-								 tempStream,
-								 *tiffImage,
-								 fImage->Planes () >= 3
-									 ? piRGB
-									 : piBlackIsZero,
-								 fImage->PixelType () == ttShort
-									 ? ccJPEG		// Lossless JPEG
-									 : ccDeflate);
-								 
-	tempStream.SetReadPosition (0);
-								 
-	tempStream.CopyToStream (stream, tempStream.Length ());
+	// If we have compressed data, then just write that directly.
+
+	if (fCompressedData)
+		{
+
+		// printf ("--- writing compressed\n");
 		
+		stream.Put (fCompressedData->Buffer		 (),
+					fCompressedData->LogicalSize ());
+		
+		}
+
+	// Otherwise use the provided compression info.
+
+	else 
+		{
+
+		dng_memory_stream tempStream (host->Allocator ());
+
+		info.Compress (*host,
+					   tempStream,
+					   *tiffImage);
+
+		// Remember the compressed data.
+
+		if (info.Type () != 0)
+			{
+			
+			tempStream.SetReadPosition (0);
+
+			fCompressedData.reset (tempStream.AsMemoryBlock (host->Allocator ()));
+			
+			}
+
+		tempStream.SetReadPosition (0);
+
+		tempStream.CopyToStream (stream, tempStream.Length ());
+
+		}
+		
+	}
+
+/*****************************************************************************/
+
+void dng_image_table::CompressImage (const dng_image_table_compression_info &info,
+									 dng_abort_sniffer *sniffer)
+	{
+
+	fCompressionType = info.Type ();
+
+	if (!fImage			  ||
+		info.Type () == 0 ||
+		info.Type () == ccUncompressed)
+		{
+		return;
+		}
+
+	// Force the image go thru a write-read (encode-decode) cycle so that the
+	// image stored in this object reflects errors introduced by the lossy
+	// codec.
+
+	AutoPtr<dng_host> host (MakeHost (sniffer));
+
+	dng_memory_stream tempStream (host->Allocator ());
+
+	tempStream.SetSniffer (sniffer);
+
+	PutCompressedStream (tempStream,
+						 false,
+						 info);
+
+	// Cannot just reset tempStream read position to 0 and call GetStream on
+	// it directly because dng_image_table::GetStream implementation currently
+	// relies on the stream having the data in one contiguous chunk. So make a
+	// copy of the data and then feed the result to GetStream.
+
+	AutoPtr<dng_memory_block> block (tempStream.AsMemoryBlock (host->Allocator ()));
+
+	dng_stream readStream (block->Buffer (),
+						   block->LogicalSize ());
+
+	readStream.SetSniffer (sniffer);
+
+	GetStream (readStream);
+
+	fCompressionType = info.Type ();
+
+	}
+
+/*****************************************************************************/
+
+void dng_image_table::SetData (const dng_image_table_data &data)
+	{
+	
+	fImage           = data.fImage;
+
+	fCompressedData  = data.fCompressedData;
+
+	fCompressionType = data.fCompressionType;
+	
+	}
+
+/*****************************************************************************/
+
+void dng_image_table::GetData (dng_image_table_data &data) const
+	{
+	
+	data.fImage			  = fImage;
+
+	data.fCompressedData  = fCompressedData;
+
+	data.fCompressionType = fCompressionType;
+	
+	}
+
+/*****************************************************************************/
+/*****************************************************************************/
+/*****************************************************************************/
+
+dng_packed_image_table::dng_packed_image_table ()
+	
+	:	dng_big_table (&gPackedImageTableCache)
+		
+	{
+	
+	}
+		
+/*****************************************************************************/
+
+dng_packed_image_table::dng_packed_image_table (const dng_packed_image_table &table)
+
+	:	dng_big_table (table)
+		
+	,	fTableDigest  (table.fTableDigest)
+	,	fTable		  (table.CloneTable ())
+	,	fBlock		  (table.fBlock)
+
+	,	fSize		  (table.fSize)
+	,	fPlanes		  (table.fPlanes)
+	,	fPixelType	  (table.fPixelType)
+		
+	{
+	
+	}
+
+/*****************************************************************************/
+
+dng_packed_image_table & dng_packed_image_table::operator= (const dng_packed_image_table &table)
+	{
+
+	dng_big_table::operator= (table);
+
+	fTableDigest = table.fTableDigest;
+	fBlock		 = table.fBlock;
+
+	fTable.reset (table.CloneTable ());
+
+	fSize	   = table.fSize;
+	fPlanes	   = table.fPlanes;
+	fPixelType = table.fPixelType;
+			
+	return *this;
+
+	}
+
+/*****************************************************************************/
+
+const dng_image_table & dng_packed_image_table::Table () const
+	{
+	
+	DNG_REQUIRE (fTable, "Invalid table");
+	
+	return *fTable;
+	
+	}
+
+/*****************************************************************************/
+
+bool dng_packed_image_table::IsValid () const
+	{
+
+	return (fTableDigest.IsValid () && 
+			((fTable && fTable->IsValid ()) || (fBlock != nullptr)));
+
+	}
+
+/*****************************************************************************/
+
+uint32 dng_packed_image_table::PackedBytes () const
+	{
+			
+	return fBlock ? fBlock->LogicalSize () : 0;
+			
+	}
+
+/*****************************************************************************/
+
+dng_host * dng_packed_image_table::MakeHost (dng_abort_sniffer *sniffer) const
+	{
+	
+	return new dng_host (nullptr, sniffer);
+	
+	}
+
+/*****************************************************************************/
+
+dng_image_table * dng_packed_image_table::MakeTable () const
+	{
+	
+	return new dng_image_table;
+	
+	}
+
+/*****************************************************************************/
+
+dng_image_table * dng_packed_image_table::CloneTable () const
+	{
+	
+	return fTable ? (new dng_image_table (*fTable)) : nullptr;
+	
+	}
+
+/*****************************************************************************/
+
+void dng_packed_image_table::Clear ()
+	{
+			
+	fTableDigest.Clear ();
+
+	fTable.reset ();
+
+	fBlock.reset ();
+
+	fSize = dng_point ();
+
+	fPlanes = 0;
+
+	fPixelType = 0;
+			
+	}
+
+/*****************************************************************************/
+
+void dng_packed_image_table::ClearPackedData ()
+	{
+	
+	fBlock.reset ();
+	
+	}
+
+/*****************************************************************************/
+
+void dng_packed_image_table::SetImage (const dng_image *image,
+									   const dng_image_table_compression_info *compressionInfo,
+									   dng_abort_sniffer *sniffer)
+	{
+
+	if (!image)
+		{
+		Clear ();
+		return;
+		}
+
+	AutoPtr<dng_image_table> table (MakeTable ());
+
+	fSize	   = image->Size ();
+	fPlanes	   = image->Planes ();
+	fPixelType = image->PixelType ();
+
+	table->SetImage (image, compressionInfo, sniffer);
+
+	fTable.reset (table.Release ());
+
+	fTableDigest = fTable->Fingerprint ();
+
+	ClearPackedData ();
+
+	RecomputeFingerprint ();
+		
+	}
+
+/*****************************************************************************/
+
+void dng_packed_image_table::SetImage (const std::shared_ptr<const dng_image> &image,
+									   const dng_image_table_compression_info *compressionInfo,
+									   dng_abort_sniffer *sniffer)
+	{
+
+	if (!image)
+		{
+		Clear ();
+		return;
+		}
+
+	if (fTable && (fTable->ShareImage () == image))
+		return;
+
+	fSize	   = image->Size ();
+	fPlanes	   = image->Planes ();
+	fPixelType = image->PixelType ();
+		
+	AutoPtr<dng_image_table> table (MakeTable ());
+
+	table->SetImage (image, compressionInfo, sniffer);
+
+	fTable.reset (table.Release ());
+
+	fTableDigest = fTable->Fingerprint ();
+
+	ClearPackedData ();
+
+	RecomputeFingerprint ();
+		
+	}
+
+/*****************************************************************************/
+
+void dng_packed_image_table::Unpack (dng_abort_sniffer *sniffer)
+	{
+
+	DNG_REQUIRE (fBlock,
+				 "Cannot unpack invalid block");
+
+	AutoPtr<dng_host> host (MakeHost (sniffer));
+			
+	AutoPtr<dng_image_table> table (MakeTable ());
+
+	if (!table->DecodeFromBinary (*host,
+								  fBlock->Buffer_uint8 (),
+								  fBlock->LogicalSize ()))
+		{
+
+		ThrowBadFormat ("Could not Unpack block to cr_image_table");
+				
+		}
+
+	fTable.reset (table.Release ());
+
+	if (fTable->Fingerprint () != fTableDigest)
+		{
+				
+		DNG_REPORT ("fTableDigest does not match table fingerprint");
+				
+		}
+
+	#if 0
+	fSize	   = Image ().Size ();
+	fPlanes	   = Image ().Planes ();
+	fPixelType = Image ().Size ();
+	#endif
+
+	ClearPackedData ();
+			
+	}
+
+/*****************************************************************************/
+
+void dng_packed_image_table::Pack (dng_abort_sniffer *sniffer)
+	{
+
+	DNG_REQUIRE (IsValidUnpacked (),
+				 "Cannot pack invalid table");
+
+	AutoPtr<dng_host> host (MakeHost (sniffer));
+
+	uint32 compressedSize = 0;
+
+	fBlock.reset (fTable->EncodeAsBinary (host->Allocator (),
+										  compressedSize));
+
+	fTable.reset ();
+
+	}
+
+/*****************************************************************************/
+
+bool dng_packed_image_table::GetStream (dng_stream &stream)
+	{
+
+	if (stream.Get_uint32 () != btt_PackedImageTable)
+		return false;
+
+	if (stream.Get_uint32 () != kPackedImageTableVersion)
+		ThrowBadFormat ("Unknown packed image table version");
+
+	// Clear the table.
+
+	fTable.reset ();
+
+	// Read digest.
+
+	stream.Get (fTableDigest.data, 16);
+
+	// Read size.
+
+	fSize.h = int32 (stream.Get_uint32 ());
+	fSize.v = int32 (stream.Get_uint32 ());
+
+	if (fSize.h <= 0)
+		ThrowBadFormat ("Invalid size.h in packed image table");
+
+	if (fSize.v <= 0)
+		ThrowBadFormat ("Invalid size.v in packed image table");
+
+	// Read planes.
+
+	fPlanes = stream.Get_uint32 ();
+
+	if (fPlanes == 0 || fPlanes > kMaxColorPlanes)
+		ThrowBadFormat ("Invalid planes in packed image table");
+
+	// Read pixel type.
+
+	fPixelType = stream.Get_uint32 ();
+
+	if (fPixelType == 0)
+		ThrowBadFormat ("Invalid pixel type in packed image table");
+
+	// Read bytes of image table. Currently limit compressed image tables
+	// to 32-bit. 
+
+	const uint32 bytes = stream.Get_uint32 ();
+
+	AutoPtr<dng_host> host (MakeHost (stream.Sniffer ()));
+
+	AutoPtr<dng_memory_block> block (host->Allocate (bytes));
+
+	stream.Get (block->Buffer (), bytes);
+
+	fBlock.reset (block.Release ());
+
+	return true;
+
+	}
+
+/*****************************************************************************/
+
+void dng_packed_image_table::PutStream (dng_stream &stream,
+										bool /* forFingerprint */) const
+	{
+
+	DNG_REQUIRE (IsValid (),
+				 "Called PutStream on invalid packed image table");
+
+	// Write Big Table Type.
+
+	stream.Put_uint32 (btt_PackedImageTable);
+
+	// Write Version.
+
+	stream.Put_uint32 (kPackedImageTableVersion);
+
+	// Write digest.
+
+	stream.Put (fTableDigest.data, 16);
+
+	// Write properties.
+
+	stream.Put_uint32 (uint32 (fSize.h));
+	stream.Put_uint32 (uint32 (fSize.v));
+
+	stream.Put_uint32 (fPlanes);
+
+	stream.Put_uint32 (fPixelType);
+
+	// If the block is valid, just use that.
+
+	std::shared_ptr<const dng_memory_block> block;
+
+	if (fBlock)
+		block = fBlock;
+
+	// Otherwise, first encode the table into a temporary block.
+
+	else
+		{
+
+		DNG_REQUIRE (fTable, "missing fTable");
+
+		AutoPtr<dng_host> host (MakeHost (stream.Sniffer ()));
+
+		uint32 compressedSize = 0;
+
+		block.reset 
+			(fTable->EncodeAsBinary (host->Allocator (),
+									 compressedSize));
+
+		}
+
+	DNG_REQUIRE (block,
+				 "Missing block");
+
+	// Write byte length.
+
+	stream.Put_uint32 (block->LogicalSize ());
+
+	// Write data.
+
+	stream.Put (block->Buffer (),
+				block->LogicalSize ());
+
 	}
 		
 /*****************************************************************************/
@@ -3064,6 +4031,8 @@ void dng_masked_rgb_table::GetStream (dng_host &host,
 
 		const uint8 *src = fStoredData->Buffer_uint8 ();
 
+		constexpr uint16 scale8to16 = 257; // 65535 / 255
+		
 		for (uint32 rIndex = 0; rIndex < divs; rIndex++)
 			{
 
@@ -3073,9 +4042,9 @@ void dng_masked_rgb_table::GetStream (dng_host &host,
 				for (uint32 bIndex = 0; bIndex < divs; bIndex++)
 					{
 
-					dst [0] = ((uint16) src [0]) << 8;
-					dst [1] = ((uint16) src [1]) << 8;
-					dst [2] = ((uint16) src [2]) << 8;
+					dst [0] = uint16 (src [0]) * scale8to16;
+					dst [1] = uint16 (src [1]) * scale8to16;
+					dst [2] = uint16 (src [2]) * scale8to16;
 					dst [3] = 0;
 
 					src += 3;
@@ -3277,9 +4246,9 @@ void dng_masked_rgb_table::PutStream (dng_stream &stream) const
 					for (uint32 bIndex = 0; bIndex < divs; bIndex++)
 						{
 
-						stream.Put_uint8 ((uint8) (samples [0] >> 8));
-						stream.Put_uint8 ((uint8) (samples [1] >> 8));
-						stream.Put_uint8 ((uint8) (samples [2] >> 8));
+						stream.Put_uint8 (uint8 ((int32 (samples [0]) + 128) / 257));
+						stream.Put_uint8 (uint8 ((int32 (samples [1]) + 128) / 257));
+						stream.Put_uint8 (uint8 ((int32 (samples [2]) + 128) / 257));
 
 						samples += 4;
 
@@ -3370,6 +4339,206 @@ void dng_masked_rgb_table::AddDigest (dng_md5_printer &printer) const
 	
 	}
 
+/*****************************************************************************/
+/*****************************************************************************/
+/*****************************************************************************/
+
+void dng_masked_rgb_table_render_data::Initialize (const dng_negative &negative,
+												   const dng_camera_profile &profile)
+	{
+
+	if (!profile.HasMaskedRGBTables ())
+		return;
+
+	auto maskedTablesReference = profile.ShareMaskedRGBTables ();
+
+	const auto &tables = *maskedTablesReference;
+	
+	if (tables.IsNOP ())
+		return;
+
+	fUseSequentialMethod = tables.UseSequentialMethod ();
+
+	// Find correspondence between RGBTables and SemanticMasks tags. It is
+	// still possible that we have a NOP situation if every table uses a mask
+	// name that is not found in SemanticMasks.
+
+	// First, make a hashtable of semantic masks, with the name as a key.
+
+	std::unordered_map<dng_string,
+					   dng_semantic_mask,
+					   dng_string_hash> smMap;
+
+		{
+
+		const uint32 numMasks = negative.NumSemanticMasks ();
+
+		for (uint32 i = 0; i < numMasks; i++)
+			{
+
+			const auto &mask = negative.SemanticMask (i);
+
+			smMap.insert (std::make_pair (mask.fName, mask));
+
+			}
+
+		}
+
+	// Next, walk through all tables in the RGBTables tag and figure out which
+	// ones are relevant (have a matching SemanticMask label, or have no label
+	// which means a background table).
+
+	int32 debugIndex = 0;
+
+	#if !qDebugMaskedRGBTableRender
+	(void) debugIndex;
+	#endif
+
+	for (const auto &table : tables.Tables ())
+		{
+
+		DNG_REQUIRE (table, "bad table");
+
+		const auto &name = table->SemanticName ();
+		
+		if (name.IsEmpty ())
+			{
+
+			DNG_REQUIRE (fBackgroundTable == nullptr,
+						 "already have a background table");
+
+			fBackgroundTable = table;
+
+			if (fUseSequentialMethod)
+				{
+
+				dng_semantic_mask emptyMask;
+				
+				fMaskedTables.push_back
+					(std::make_pair (table, emptyMask));
+				
+				}
+
+			#if qDebugMaskedRGBTableRender
+			
+			printf ("table %d will be treated as background table\n",
+					debugIndex);
+
+			#endif
+				
+			}
+
+		else
+			{
+			
+			// Check if we have a corresponding semantic mask.
+
+			auto iter = smMap.find (name);
+			
+			if (iter != smMap.end ())
+				{
+				
+				// Found it. Add it to the list. 
+
+				fMaskedTables.push_back
+					(std::make_pair (table, iter->second));
+
+				#if qDebugMaskedRGBTableRender
+
+				printf ("table index %d -> semantic name '%s' found\n",
+						debugIndex,
+						name.Get ());
+
+				#endif
+				
+				}
+
+			#if qDebugMaskedRGBTableRender
+
+			else
+				{
+				
+				printf ("table index %d -> semantic name '%s' not found among "
+						"negative's list of semantic masks -- ignoring",
+						debugIndex,
+						name.Get ());
+							
+				}
+
+			#endif
+			
+			}
+
+		++debugIndex;
+		
+		}
+
+	// Find the background table index.
+
+	fBackgroundTableIndex = uint32 (fMaskedTables.size ());
+
+	if (fUseSequentialMethod)
+		{
+
+		for (size_t i = 0; i < fMaskedTables.size (); i++)
+			{
+
+			const auto &semanticMask = fMaskedTables [i].second;
+
+			const_dng_image_sptr baseMask = semanticMask.fMask;
+
+			// Empty base mask indicates a background table.
+
+			if (!baseMask)
+				{
+
+				fBackgroundTableIndex = (uint32) i;
+
+				break;
+
+				}
+
+			}
+
+		DNG_REQUIRE ((!fBackgroundTable) ==
+					 (fBackgroundTableIndex == fMaskedTables.size ()),
+					 "inconsistent background table info for sequential");
+
+		}
+
+	}
+
+/*****************************************************************************/
+
+void dng_masked_rgb_table_render_data::PrepareRGBtoRGBTableData (dng_host &host)
+	{
+	
+	fMaskedTableData.clear ();
+
+	fMaskedTableData.reserve (fMaskedTables.size ());
+	
+	for (const auto &x : fMaskedTables)
+		{
+
+		dng_rgb_to_rgb_table_data_sptr ptr
+			(host.Make_dng_rgb_to_rgb_table_data (x.first->Table ()));
+
+		fMaskedTableData.push_back (ptr);
+		
+		}
+	
+	if (fBackgroundTable)
+		{
+
+		fBackgroundTableData.Reset
+			(host.Make_dng_rgb_to_rgb_table_data (fBackgroundTable->Table ()));
+		
+		}
+	
+	}
+
+/*****************************************************************************/
+/*****************************************************************************/
 /*****************************************************************************/
 
 #if qDNGValidate
@@ -3788,6 +4957,382 @@ void dng_masked_rgb_tables::Dump () const
 
 #endif	// qDNGValidate
 
+/*****************************************************************************/
+/*****************************************************************************/
+/*****************************************************************************/
+
+class dng_rgb_to_rgb_1d_function : public dng_1d_function
+	{
+
+	private:
+
+		const dng_rgb_table &fTable;
+
+		uint32 fPlane;
+
+	public:
+
+		dng_rgb_to_rgb_1d_function (const dng_rgb_table &table,
+									uint32 plane)
+
+			:	fTable (table)
+			,	fPlane (plane)
+
+			{
+
+			DNG_ASSERT (fTable.Dimensions () == 1, "1D table expected");
+
+			}
+
+		virtual real64 Evaluate (real64 x) const
+			{
+
+			uint32 divisions = fTable.Divisions ();
+
+			real64 scaled = x * (real64) (divisions - 1);
+
+			int32 index = Pin_int32 (0,
+									 (int32) scaled,
+									 divisions - 2);
+
+			real64 fract = scaled - (real64) index;
+
+			const uint16 *table = fTable.Samples () + (index * 4) + fPlane;
+
+			real64 y = ((1.0 - fract) * (real64) table [0] +
+						(	   fract) * (real64) table [4]) * (1.0 / 65535.0);
+
+			return x + fTable.Amount () * (y - x);
+
+			}
+
+	};
+
+
+/*****************************************************************************/
+/*****************************************************************************/
+/*****************************************************************************/
+
+dng_rgb_to_rgb_table_data::dng_rgb_to_rgb_table_data (dng_host &host,
+													  const dng_rgb_table &table)
+
+	:	fTable (table)
+
+	,	fNeedMatrix (false)
+
+	,	fEncodeMatrix ()
+	,	fDecodeMatrix ()
+
+	,	fEncodeTable ()
+	,	fDecodeTable ()
+	
+	{
+	
+	// Find encode/decode matrix, if any.
+
+		{
+
+		const dng_color_space *space = NULL;
+
+		switch (table.Primaries ())
+			{
+
+			case dng_rgb_table::primaries_sRGB:
+				{
+				space = &dng_space_sRGB::Get ();
+				break;
+				}
+
+			case dng_rgb_table::primaries_Adobe:
+				{
+				space = &dng_space_AdobeRGB::Get ();
+				break;
+				}
+
+			case dng_rgb_table::primaries_ProPhoto:
+				{
+				break;
+				}
+
+			case dng_rgb_table::primaries_P3:
+				{
+				space = &dng_space_DisplayP3::Get ();
+				break;
+				}
+
+			case dng_rgb_table::primaries_Rec2020:
+				{
+				space = &dng_space_Rec2020::Get ();
+				break;
+				}
+
+			default:
+				{
+				DNG_REPORT ("Unknown RGB table primaries");
+				}
+
+			}
+
+		fNeedMatrix = (space != NULL);
+
+		if (fNeedMatrix)
+			{
+
+			fEncodeMatrix = space->MatrixFromPCS () *
+							dng_space_ProPhoto::Get ().MatrixToPCS ();
+
+			fDecodeMatrix = dng_space_ProPhoto::Get ().MatrixFromPCS () *
+							space->MatrixToPCS ();
+
+			}
+
+		}
+
+	// Find encode/decode gamma tables, if any.
+
+		{
+
+		const dng_1d_function *gamma = NULL;
+
+		switch (table.Gamma ())
+			{
+
+			case dng_rgb_table::gamma_Linear:
+				{
+				break;
+				}
+
+			case dng_rgb_table::gamma_sRGB:
+				{
+				gamma = &dng_function_GammaEncode_sRGB::Get ();
+				break;
+				}
+
+			case dng_rgb_table::gamma_1_8:
+				{
+				gamma = &dng_function_GammaEncode_1_8::Get ();
+				break;
+				}
+
+			case dng_rgb_table::gamma_2_2:
+				{
+				gamma = &dng_function_GammaEncode_2_2::Get ();
+				break;
+				}
+
+			case dng_rgb_table::gamma_Rec2020:
+				{
+				gamma = &dng_function_GammaEncode_Rec709::Get ();
+				break;
+				}
+
+			default:
+				{
+				DNG_REPORT ("Unknown RGB table gamma");
+				}
+
+			}
+
+		if (fTable.Dimensions () == 1)
+			{
+
+			for (uint32 plane = 0; plane < 3; plane++)
+				{
+
+				fTable1D [plane].Reset (new dng_1d_table);
+
+				dng_rgb_to_rgb_1d_function mapPlane (fTable,
+													 plane);
+
+				if (gamma == NULL)
+					{
+
+					fTable1D [plane]->Initialize (host.Allocator (),
+												  mapPlane,
+												  false);
+
+					}
+
+				else
+					{
+
+					dng_1d_inverse inverse (*gamma);
+
+					dng_1d_concatenate firstPart (*gamma,
+												  mapPlane);
+
+					dng_1d_concatenate combined (firstPart,
+												 inverse);
+
+					fTable1D [plane]->Initialize (host.Allocator (),
+												  combined,
+												  false);
+
+					}
+
+				}
+
+			}
+
+		else if (gamma != NULL)
+			{
+
+			fEncodeTable.Reset (new dng_1d_table);
+			fDecodeTable.Reset (new dng_1d_table);
+
+			fEncodeTable->Initialize (host.Allocator (),
+									  *gamma,
+									  false);
+
+			dng_1d_inverse inverse (*gamma);
+
+			fDecodeTable->Initialize (host.Allocator (),
+									  inverse,
+									  false);
+
+			}
+
+		}
+	
+	}
+
+/*****************************************************************************/
+
+dng_rgb_to_rgb_table_data::~dng_rgb_to_rgb_table_data ()
+	{
+
+	}
+
+/*****************************************************************************/
+
+void dng_rgb_to_rgb_table_data::Process_32 (dng_pixel_buffer &buffer,
+											dng_pixel_buffer *optMaskBuffer,
+											uint32 optMaskPlane,
+											const dng_rect &dstArea,
+											uint32 bufferStartPlane,
+											const bool needOverrange)
+	{
+
+	uint32 p0 = bufferStartPlane;
+	uint32 p1 = bufferStartPlane + 1;
+	uint32 p2 = bufferStartPlane + 2;
+		
+	const real32 *mPtr = nullptr;
+
+	int32 mRowStep = 0;
+
+	if (optMaskBuffer)
+		{
+		
+		mPtr = optMaskBuffer->ConstPixel_real32 (dstArea.t,
+												 dstArea.l,
+												 optMaskPlane);
+
+		mRowStep = optMaskBuffer->RowStep ();
+		
+		}
+
+	if (fTable.Dimensions () == 3)
+		{
+
+		DoRGBtoRGBTable3D (buffer.DirtyPixel_real32 (dstArea.t, dstArea.l, p0),
+						   buffer.DirtyPixel_real32 (dstArea.t, dstArea.l, p1),
+						   buffer.DirtyPixel_real32 (dstArea.t, dstArea.l, p2),
+						   mPtr,
+						   dstArea.H (),
+						   dstArea.W (),
+						   buffer.RowStep (),
+						   mRowStep,
+						   fTable.Divisions (),
+						   fTable.Samples (),
+						   (real32) fTable.Amount (),
+						   (uint32) fTable.Gamut (),
+						   fNeedMatrix ? &fEncodeMatrix : NULL,
+						   fNeedMatrix ? &fDecodeMatrix : NULL,
+						   fEncodeTable.Get (),
+						   fDecodeTable.Get (),
+						   needOverrange);
+
+		}
+
+	else
+		{
+
+		DoRGBtoRGBTable1D (buffer.DirtyPixel_real32 (dstArea.t, dstArea.l, p0),
+						   buffer.DirtyPixel_real32 (dstArea.t, dstArea.l, p1),
+						   buffer.DirtyPixel_real32 (dstArea.t, dstArea.l, p2),
+						   mPtr,
+						   dstArea.H (),
+						   dstArea.W (),
+						   buffer.RowStep (),
+						   mRowStep,
+						   *fTable1D [0],
+						   *fTable1D [1],
+						   *fTable1D [2],
+						   (uint32) fTable.Gamut (),
+						   fNeedMatrix ? &fEncodeMatrix : NULL,
+						   fNeedMatrix ? &fDecodeMatrix : NULL,
+						   needOverrange);
+
+		}
+
+	}
+
+/*****************************************************************************/
+
+void dng_rgb_to_rgb_table_data::AddDigest (dng_md5_printer &printer) const
+	{
+
+		{
+
+		const dng_fingerprint tableFingerPrint = fTable.Fingerprint ();
+
+		printer.Process (tableFingerPrint.data,
+						 dng_fingerprint::kDNGFingerprintSize);
+
+		}
+
+	if (fNeedMatrix)
+		{
+
+		for (uint32 i = 0; i < 3; i++)
+			{
+
+			printer.Process (fEncodeMatrix [i], 3 * sizeof (fEncodeMatrix [i] [0]));
+			printer.Process (fDecodeMatrix [i], 3 * sizeof (fEncodeMatrix [i] [0]));
+
+			}
+
+		}
+
+	if (fEncodeTable.Get () && fDecodeTable.Get ())
+		{
+
+		printer.Process (fEncodeTable->Table (),
+						 (2 + fEncodeTable->Count ()) * sizeof (fEncodeTable->Table () [0]));
+
+		printer.Process (fDecodeTable->Table (),
+						 (2 + fEncodeTable->Count ()) * sizeof (fEncodeTable->Table () [0]));
+
+		}
+
+	if (fTable.Dimensions () != 3)
+		{
+
+		for (uint32 i = 0; i < 3; i++)
+			{
+
+			printer.Process (fTable1D [i]->Table (),
+							 (2 + fTable1D [i]->Count ()) * sizeof (fTable1D [i]->Table () [0]));
+
+			}
+
+		}
+
+	}
+
+/*****************************************************************************/
+/*****************************************************************************/
 /*****************************************************************************/
 
 #if qDNGUseXMP

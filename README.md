@@ -20,12 +20,14 @@ Contributions welcome. Discussions about changes normally happen in [issues](htt
 Diffractor has a built-in test runner. If the application is started from Visual Studio there should be an extra toolbar button (top left) with a checkmark on it. Click this button for the test run menu. When running tests, you can use the escape key to return to the normal application mode.
 
 ## Dependancies (3rd party libraries)
- 
+
+- [brotli](https://github.com/google/brotli) 1.1.0 
 - [bzip2](https://sourceware.org/bzip2/) 1.0.8
-- [dng-sdk](https://helpx.adobe.com/camera-raw/digital-negative.html) 1.6
+- [dng-sdk](https://helpx.adobe.com/camera-raw/digital-negative.html) 1.7.1
 - [dav1d](https://code.videolan.org/videolan/dav1d) 1.4.1
 - [expat](https://libexpat.github.io/) 2.6.2
-- [ffmpeg](https://ffmpeg.org/) 5.0.1
+- [ffmpeg](https://ffmpeg.org/) main
+- [highway](https://github.com/google/highway) 1.1.0
 - [hunspell](https://github.com/hunspell/hunspell) 1.7.2
 - [libde265](https://github.com/strukturag/libde265) 1.0.15
 - [libebml](https://github.com/Matroska-Org/libebml) 1.4.5
@@ -38,8 +40,11 @@ Diffractor has a built-in test runner. If the application is started from Visual
 - [LibPng](http://www.libpng.org/pub/png/libpng.html) 1.6.43
 - [LibRaw](https://www.libraw.org) 0.21.2
 - [libwebp](https://github.com/webmproject/libwebp) 1.4.0
+- [libjxl](https://github.com/libjxl/libjxl) 0.10.2
 - [minizip-ng](https://github.com/zlib-ng/minizip-ng) 4.05
 - [parallel-hashmap](https://github.com/greg7mdp/parallel-hashmap) 1.3.12
+- [rapidjson](https://github.com/Tencent/rapidjson) main
+- [skcms](https://skia.googlesource.com/skcms) main
 - [sqlite](https://www.sqlite.org/index.html) 3.45.3
 - [utf-cpp](https://github.com/nemtrif/utfcpp) 4.0.5
 - [zlib-ng](https://github.com/zlib-ng/zlib-ng) 2.0.7

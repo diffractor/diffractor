@@ -37,7 +37,8 @@ class dng_xmp
 			ignoreXMP		= 1,		// Force XMP values to match non-XMP
 			preferXMP		= 2,		// Prefer XMP values if conflict
 			preferNonXMP	= 4,		// Prefer non-XMP values if conflict
-			removeXMP		= 8			// Remove XMP value after syncing
+			removeXMP		= 8,		// Remove XMP value after syncing
+			requireXMP		= 16		// Require XMP tag even if default
 			};	
 	
 		dng_memory_allocator &fAllocator;
@@ -389,7 +390,8 @@ class dng_xmp
 						  const char *path,
 						  uint32 &x,
 						  bool isDefault = false,
-						  uint32 options = 0);
+						  uint32 options = 0,
+						  uint32 defaultValue = 0);
 						  
 		void Sync_uint32_array (const char *ns,
 								const char *path,

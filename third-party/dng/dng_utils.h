@@ -1,5 +1,5 @@
 /*****************************************************************************/
-// Copyright 2006-2019 Adobe Systems Incorporated
+// Copyright 2006-2023 Adobe Systems Incorporated
 // All Rights Reserved.
 //
 // NOTICE:	Adobe permits you to use, modify, and distribute this file in
@@ -13,11 +13,13 @@
 
 #include <cmath>
 #include <limits>
+#include <utility>
 
 #include "dng_classes.h"
 #include "dng_flags.h"
 #include "dng_memory.h"
 #include "dng_safe_arithmetic.h"
+#include "dng_string.h"
 #include "dng_types.h"
 #include "dng_uncopyable.h"
 
@@ -439,35 +441,40 @@ inline uint64 Pin_uint64 (uint64 min, uint64 x, uint64 max)
 
 /*****************************************************************************/
 
-inline real32 Abs_real32 (real32 x)
+DNG_ALWAYS_INLINE
+real32 Abs_real32 (real32 x)
 	{
 	
 	return (x < 0.0f ? -x : x);
 	
 	}
 
-inline real32 Min_real32 (real32 x, real32 y)
+DNG_ALWAYS_INLINE
+real32 Min_real32 (real32 x, real32 y)
 	{
 	
 	return (x < y ? x : y);
 	
 	}
 
-inline real32 Max_real32 (real32 x, real32 y)
+DNG_ALWAYS_INLINE
+real32 Max_real32 (real32 x, real32 y)
 	{
 	
 	return (x > y ? x : y);
 	
 	}
 
-inline real32 Pin_real32 (real32 min, real32 x, real32 max)
+DNG_ALWAYS_INLINE
+real32 Pin_real32 (real32 min, real32 x, real32 max)
 	{
 	
 	return Max_real32 (min, Min_real32 (x, max));
 	
 	}
 	
-inline real32 Pin_real32 (real32 x)
+DNG_ALWAYS_INLINE
+real32 Pin_real32 (real32 x)
 	{
 
 	return Pin_real32 (0.0f, x, 1.0f);
@@ -500,7 +507,8 @@ real32 Pin_real32_Overrange (real32 min,
 	
 	}
 
-inline real32 Pin_Overrange (real32 x)
+DNG_ALWAYS_INLINE
+real32 Pin_Overrange (real32 x)
 	{
 	
 	// Normal in-range numbers, except for plus and minus zero.
@@ -523,7 +531,8 @@ inline real32 Pin_Overrange (real32 x)
 	
 	}
 
-inline real32 Lerp_real32 (real32 a, real32 b, real32 t)
+DNG_ALWAYS_INLINE
+real32 Lerp_real32 (real32 a, real32 b, real32 t)
 	{
 	
 	return a + t * (b - a);
@@ -816,6 +825,11 @@ inline bool IsAligned128 (const void *p)
 
 // Converts from RGB values (range 0.0 to 1.0) to HSV values (range 0.0 to
 // 6.0 for hue, and 0.0 to 1.0 for saturation and value).
+//
+// INPUT REQUIREMENTS:
+// All input RGB values are expected to be >= 0.
+// If any RGB value is < 0 the resulting behavior is undefined and in practice
+// can generate out of range S values (even NaN) and negative v values.
 
 inline void DNG_RGBtoHSV (real32 r,
 						  real32 g,
@@ -824,7 +838,7 @@ inline void DNG_RGBtoHSV (real32 r,
 						  real32 &s,
 						  real32 &v)
 	{
-	
+
 	v = Max_real32 (r, Max_real32 (g, b));
 
 	real32 gap = v - Min_real32 (r, Min_real32 (g, b));
@@ -863,7 +877,32 @@ inline void DNG_RGBtoHSV (real32 r,
 		h = 0.0f;
 		s = 0.0f;
 		}
-	
+
+	}
+
+/******************************************************************************/
+
+// Converts from RGB values (range 0.0 to 1.0) to HSV values (range 0.0 to
+// 6.0 for hue, and 0.0 to 1.0 for saturation and value).
+//
+// This function pins input RGB >= 0 before calling DNG_RGBtoHSV()
+
+inline void DNG_PinnedNonnegativeRGBtoHSV (real32 r,
+										   real32 g,
+										   real32 b,
+										   real32 &h,
+										   real32 &s,
+										   real32 &v)
+	{
+
+	// Pin RGB >= 0.
+
+	r = Max_real32 (r, 0.0f);
+	g = Max_real32 (g, 0.0f);
+	b = Max_real32 (b, 0.0f);
+
+	DNG_RGBtoHSV (r, g, b, h, s, v);
+
 	}
 
 /*****************************************************************************/
@@ -897,7 +936,15 @@ inline void DNG_HSVtoRGB (real32 h,
 		
 		#define q	(v * (1.0f - s * f))
 		#define t	(v * (1.0f - s * (1.0f - f)))
-		
+
+		// The integer 'i' is normally one of {0,1,2,3,4,5}.
+		// However, in rare cases it is possible that i = 6.
+		// Namely, if the input h is a negative number with very small
+		// magnitude (or if the fmod operation produces such an h value)
+		// then "h += 6.0f" can produce a value of EXACTLY 6.0f,
+		// in which case 'i' will be 6. This edge case is handled by
+		// treating the i=6 case the same as the i=0 case.
+
 		switch (i)
 			{
 			case 0: r = v; g = t; b = p; break;
@@ -906,6 +953,7 @@ inline void DNG_HSVtoRGB (real32 h,
 			case 3: r = p; g = q; b = v; break;
 			case 4: r = t; g = p; b = v; break;
 			case 5: r = v; g = p; b = q; break;
+			case 6: r = v; g = t; b = p; break; // see comment above
 			}
 			
 		#undef q
@@ -1472,6 +1520,211 @@ static inline real64 SmoothStep (real64 x)
 	{
 	
 	return x * x * (3.0 - 2.0 * x);
+	
+	}
+
+/*****************************************************************************/
+
+uint32 MinBackwardVersionForCompression (uint32 compression);
+
+/*****************************************************************************/
+
+class dng_line_real32
+	{
+		
+	public:
+
+		real32 fX;
+		real32 fY;
+		real32 fSlope;
+
+	public:
+
+		dng_line_real32 (real32 x0,
+						 real32 y0,
+						 real32 x1,
+						 real32 y1)
+
+			:	fX (x0)
+			,	fY (y0)
+
+			,	fSlope ((x0 == x1) ? 0.0f : ((y0 - y1) / (x0 - x1)))
+
+			{
+
+			}
+
+		DNG_ALWAYS_INLINE real32 Evaluate (real32 x) const
+			{
+
+			return fY + fSlope * (x - fX);
+
+			}
+
+	};
+
+/*****************************************************************************/
+
+// Implements ImageSequenceInfo tag introduced in DNG 1.7.
+
+class dng_image_sequence_info
+	{
+
+	public:
+
+		dng_string fSequenceID;
+
+		dng_string fSequenceType;
+
+		dng_string fFrameInfo;
+
+		uint32 fIndex = 0;
+
+		uint32 fCount = 0;
+
+		uint8 fIsFinal = 2;		 // unknown
+
+	public:
+
+		bool IsValid () const
+			{
+			return (fSequenceID  .Length () >= 8 &&
+					fSequenceType.Length () >= 1);
+			}
+
+		uint32 TagCount () const
+			{
+			
+			uint32 sum = SafeUint32Add (fSequenceID	 .Length (),
+										fSequenceType.Length ());
+			
+			sum = SafeUint32Add (fFrameInfo.Length (), sum);
+
+			sum = SafeUint32Add (sum,
+								 1 +		 // null-term for sequence ID
+								 1 +		 // null-term for sequence type
+								 1 +		 // null-term for frame info
+								 4 +		 // index
+								 4 +		 // count
+								 1);		 // final
+								 
+			return sum;
+			
+			}
+
+		tiff_tag * MakeTag (dng_memory_allocator &allocator) const;
+
+		bool operator== (const dng_image_sequence_info &src) const
+			{
+			return (fSequenceID	  == src.fSequenceID   &&
+					fSequenceType == src.fSequenceType &&
+					fFrameInfo	  == src.fFrameInfo	   &&
+					fIndex		  == src.fIndex		   &&
+					fCount		  == src.fCount		   &&
+					fIsFinal	  == src.fIsFinal);
+			}
+		
+	};
+
+/*****************************************************************************/
+
+// Implements ImageStats tag introduced in DNG 1.7.
+
+class dng_image_stats
+	{
+
+	public:
+
+		static constexpr uint32 kTag_WeightedAverage   = 1;
+		static constexpr uint32 kTag_WeightedSamples   = 2;
+		static constexpr uint32 kTag_Weights		   = 3;
+		static constexpr uint32 kTag_ColorAverage	   = 4;
+		static constexpr uint32 kTag_ColorSamples	   = 5;
+
+		static constexpr size_t kMaxSamples = 1024;
+
+	public:
+
+		struct weighted_sample
+			{
+				
+			real32 fFrac  = 0.0f;	
+			real32 fValue = 0.0f;
+				
+			bool operator== (const weighted_sample &src) const
+				{
+				return (fFrac  == src.fFrac &&
+						fValue == src.fValue);
+				}
+				
+			};
+
+		struct color_sample
+			{
+				
+			real32 fFrac = 0.0f;
+				
+			std::vector<real32> fValues;
+
+			bool operator== (const color_sample &src) const
+				{
+				return (fFrac	== src.fFrac &&
+						fValues == src.fValues);
+				}
+				
+			};
+
+	public:
+
+		// Empty vectors mean invalid/missing.
+
+		std::vector<real32> fWeightedAverage;
+
+		std::vector<weighted_sample> fWeightedSamples;
+
+		std::vector<real32> fWeights;
+
+		std::vector<real32> fColorAverage;
+		
+		std::vector<color_sample> fColorSamples;
+
+	public:
+
+		bool IsValidForPlaneCount (uint32 planeCount) const;
+
+		uint32 TagCount () const;
+
+		tiff_tag * MakeTag (dng_memory_allocator &allocator) const;
+
+		bool operator== (const dng_image_stats &src) const;
+
+		void Parse (dng_stream &stream);
+
+		#if qDNGValidate
+		void Dump () const;
+		#endif
+		
+	};
+
+/*****************************************************************************/
+
+DNG_ALWAYS_INLINE real32 EncodeOverrange (real32 x)
+	{
+
+	x = Max_real32 (x, 0.0f);
+
+	return x * (256.0f + x) / (256.0f * (1.0f + x));
+	
+	}
+
+/*****************************************************************************/
+
+DNG_ALWAYS_INLINE real32 DecodeOverrange (real32 x)
+	{
+
+	x = Max_real32 (x, 0.0f);
+	
+	return 16.0f * ((8.0f * x) - 8.0f + sqrtf (64.0f * x * x - 127.0f * x + 64.0f));
 	
 	}
 

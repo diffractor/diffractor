@@ -755,7 +755,7 @@ dng_memory_block * dng_iptc::Spool (dng_memory_allocator &allocator,
 	if (fUrgency >= 0)
 		{
 		
-		sprintf (s, "%1u", (unsigned) fUrgency);
+		snprintf (s, 64, "%1u", (unsigned) fUrgency);
 		
 		stream.Put_uint16 (0x1C02);
 		stream.Put_uint8  (kUrgencySet);

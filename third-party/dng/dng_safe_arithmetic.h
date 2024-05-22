@@ -33,6 +33,7 @@
 #include <limits>
 
 #include "dng_exceptions.h"
+#include "dng_flags.h"
 #include "dng_types.h"
 
 #ifndef __has_builtin
@@ -117,6 +118,7 @@ namespace dng_internal {
 // computation is not supported. Don't call this function directly.
 int64 SafeInt64MultSlow(int64 arg1, int64 arg2);
 
+#if !qWinOS
 #ifdef __clang__
 #ifdef __ANDROID__
 // While clang says it supports __builtin_smull_overflow, the Android NDK
@@ -126,6 +128,11 @@ int64 SafeInt64MultSlow(int64 arg1, int64 arg2);
 #define __USE_BUILTIN_SMULL_OVERFLOW __has_builtin(__builtin_smull_overflow)
 #endif // __ANDROID__
 #endif // __clang__
+#endif // !qWinOS
+
+#ifndef __USE_BUILTIN_SMULL_OVERFLOW
+#define __USE_BUILTIN_SMULL_OVERFLOW 0
+#endif
 
 // Internal function used as optimization for SafeInt64Mult() if Clang
 // __builtin_smull_overflow is supported. Don't call this function directly.
@@ -165,16 +172,16 @@ inline int64 SafeInt64MultByClang(int64 arg1, int64 arg2) {
 // is supported. Don't call this function directly.
 #ifdef DNG_HAS_INT128
 inline int64 SafeInt64MultByInt128(int64 arg1,
-										  int64 arg2) {
-  const __int128 kInt64Max =
-	  static_cast<__int128>(std::numeric_limits<int64>::max());
-  const __int128 kInt64Min =
-	  static_cast<__int128>(std::numeric_limits<int64>::min());
-  __int128 result = static_cast<__int128>(arg1) * static_cast<__int128>(arg2);
-  if (result > kInt64Max || result < kInt64Min) {
-	ThrowProgramError("Arithmetic overflow");
-  }
-  return static_cast<int64>(result);
+									  int64 arg2) {
+	const __int128 kInt64Max =
+		static_cast<__int128>(std::numeric_limits<int64>::max());
+	const __int128 kInt64Min =
+		static_cast<__int128>(std::numeric_limits<int64>::min());
+	__int128 result = static_cast<__int128>(arg1) * static_cast<__int128>(arg2);
+	if (result > kInt64Max || result < kInt64Min) {
+		ThrowProgramError("Arithmetic overflow");
+	}
+	return static_cast<int64>(result);
 }
 #endif
 
@@ -185,11 +192,11 @@ inline int64 SafeInt64MultByInt128(int64 arg1,
 // dng_error_unknown.
 inline int64 SafeInt64Mult(int64 arg1, int64 arg2) {
 #if __USE_BUILTIN_SMULL_OVERFLOW
-  return dng_internal::SafeInt64MultByClang(arg1, arg2);
+	return dng_internal::SafeInt64MultByClang(arg1, arg2);
 #elif defined(DNG_HAS_INT128)
-  return dng_internal::SafeInt64MultByInt128(arg1, arg2);
+	return dng_internal::SafeInt64MultByInt128(arg1, arg2);
 #else
-  return dng_internal::SafeInt64MultSlow(arg1, arg2);
+	return dng_internal::SafeInt64MultSlow(arg1, arg2);
 #endif
 }
 

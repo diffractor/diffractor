@@ -18,9 +18,10 @@
 
 dng_1d_table::dng_1d_table (uint32 count)
 
-	:	fBuffer		()
-	,	fTable		(NULL)
-	,	fTableCount (count)
+	:	fBuffer		  ()
+	,	fTable		  (NULL)
+	,	fTableCount   (count)
+	,	fTableCount32 ((real32) count)
 	
 	{
 

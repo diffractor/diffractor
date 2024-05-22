@@ -174,8 +174,35 @@ class dng_camera_profile_id
 			*this = dng_camera_profile_id ();
 			}
 
+		/// Adds this camera profile ID to a printer.
+
+		void AddDigest (dng_md5_printer &printer) const;
+
 	};
 	
+/*****************************************************************************/
+
+extern const char * kProfileName_GroupPrefix;
+
+bool HasProfileGroupPrefix (const dng_string &name);
+
+dng_string StripProfileGroupPrefix (const dng_string &name);
+
+/******************************************************************************/
+
+/// \brief Information for selecting a specific profile from a profile group.
+
+class dng_camera_profile_group_selector
+	{
+	
+	public:
+	
+		// Do we want the HDR version of the profile?
+	
+		bool fHDR = false;
+		
+	};
+
 /******************************************************************************/
 
 /// \brief Container for DNG camera color profile and calibration data.
@@ -188,6 +215,14 @@ class dng_camera_profile
 		// Name of this camera profile.
 		
 		dng_string fName;
+	
+		// Group name of this camera profile.
+		
+		dng_string fGroupName;
+
+		// Dynamic range info.
+
+		std::shared_ptr<const dng_camera_profile_dynamic_range> fDynamicRangeInfo;
 	
 		// Light sources for up to three calibrations. These use the EXIF
 		// encodings for illuminant and are used to distinguish which
@@ -284,6 +319,10 @@ class dng_camera_profile
 
 		dng_tone_curve fToneCurve;
 		
+		// The preferred method for applying the tone curve for this profile.
+		
+		uint32 fToneMethod;
+		
 		// If this string matches the fCameraCalibrationSignature of the
 		// negative, then use the calibration matrix values from the negative.
 
@@ -311,6 +350,14 @@ class dng_camera_profile
 		
 		bool fWasStubbed;
 
+		// ProfileGainTableMap2.
+
+		std::shared_ptr<const dng_gain_table_map> fProfileGainTableMap;
+
+		// RGBTables.
+
+		std::shared_ptr<const dng_masked_rgb_tables> fMaskedRGBTables;
+
 	public:
 	
 		dng_camera_profile ();
@@ -334,6 +381,23 @@ class dng_camera_profile
 		const dng_string & Name () const
 			{
 			return fName;
+			}
+		
+		/// Setter for camera profile group name.
+		/// \param name Group name to use for this camera profile.
+
+		void SetGroupName (const dng_string &s)
+			{
+			fGroupName = s;
+			ClearFingerprint ();
+			}
+
+		/// Getter for camera profile group name.
+		/// \retval Group name of profile.
+
+		const dng_string & GroupName () const
+			{
+			return fGroupName;
 			}
 		
 		/// Test if this name is embedded.
@@ -487,7 +551,7 @@ class dng_camera_profile
 		/// that direction in order to determine the clipping points for
 		/// highlight recovery logic based on the white point.	If cameras
 		/// were all three-color, the matrix could be stored as a forward matrix.
-		/// The inverse matrix is requried to support four-color cameras.
+		/// The inverse matrix is required to support four-color cameras.
 
 		void SetColorMatrix1 (const dng_matrix &m);
 
@@ -496,7 +560,7 @@ class dng_camera_profile
 		/// that direction in order to determine the clipping points for
 		/// highlight recovery logic based on the white point.	If cameras
 		/// were all three-color, the matrix could be stored as a forward matrix.
-		/// The inverse matrix is requried to support four-color cameras.
+		/// The inverse matrix is required to support four-color cameras.
 
 		void SetColorMatrix2 (const dng_matrix &m);
 										
@@ -505,7 +569,7 @@ class dng_camera_profile
 		/// that direction in order to determine the clipping points for
 		/// highlight recovery logic based on the white point.	If cameras
 		/// were all three-color, the matrix could be stored as a forward matrix.
-		/// The inverse matrix is requried to support four-color cameras.
+		/// The inverse matrix is required to support four-color cameras.
 
 		void SetColorMatrix3 (const dng_matrix &m);
 										
@@ -863,6 +927,23 @@ class dng_camera_profile
 			ClearFingerprint ();
 			}
 
+		// Accessors for tone method.
+
+		/// Sets the tone method of the profile (see ProfileToneMethod tag).
+
+		void SetToneMethod (uint32 toneMethod)
+			{
+			fToneMethod = toneMethod;
+			ClearFingerprint ();
+			}
+					  
+		/// Returns the tone method of the profile (see ProfileToneMethod tag).
+
+		uint32 ToneMethod () const
+			{
+			return fToneMethod;
+			}
+		
 		// Accessors for profile calibration signature.
 
 		/// Sets the profile calibration signature (see ProfileCalibrationSignature
@@ -979,6 +1060,56 @@ class dng_camera_profile
 			return fWasStubbed;
 			}
 
+		/// ProfileGainTableMap2 API.
+
+		bool HasProfileGainTableMap () const;
+
+		std::shared_ptr<const dng_gain_table_map> ShareProfileGainTableMap () const
+			{
+			return fProfileGainTableMap;
+			}
+
+		/// Gives profile shared ownership of gainTableMap.
+		
+		void SetProfileGainTableMap
+			(const std::shared_ptr<const dng_gain_table_map> &gainTableMap);
+
+		/// Dynamic Range API.
+		
+		const dng_camera_profile_dynamic_range & DynamicRangeInfo () const;
+
+		// Is this profile intended for Standard Dynamic Range render output?
+		
+		bool IsSDR () const;
+		
+		// Is this profile intended for High Dynamic Range render output?
+		
+		bool IsHDR () const;
+		
+		void SetDynamicRangeInfo (const dng_camera_profile_dynamic_range &info);
+
+		// RGBTables API.
+
+		bool HasMaskedRGBTables () const;
+
+		const dng_masked_rgb_tables & MaskedRGBTables () const;
+
+		std::shared_ptr<const dng_masked_rgb_tables> ShareMaskedRGBTables () const
+			{
+			return fMaskedRGBTables;
+			}
+
+		// Gives negative shared ownership of maskedRGBTables.
+		
+		void SetMaskedRGBTables
+			(const std::shared_ptr<const dng_masked_rgb_tables> &maskedRGBTables);
+
+		// Transfer ownership of maskedRGBTables to negative. After return,
+		// maskedRGBTables will be nullptr.
+		
+		void SetMaskedRGBTables
+			(AutoPtr<dng_masked_rgb_tables> &maskedRGBTables);
+
 		// DNG 1.6 compatibility API.
 
 		/// Does this profile use any features introduced in DNG 1.6?
@@ -987,16 +1118,22 @@ class dng_camera_profile
 
 		bool Uses_1_6_Features () const;
 		
+		/// Does this profile require a DNG 1.6 reader?
+		/// If true, then the DNGBackwardVersion tag must be set to
+		/// 1.6.0.0 or later.
+
 		/// Note that a profile that uses DNG 1.6 tags might still be
 		/// considered backwards compatible with older DNG readers in
 		/// some cases.
 
 		bool Requires_1_6_Reader () const;
 
-		/// Does this profile require a DNG 1.6 reader?
-		/// If true, then the DNGBackwardVersion tag must be set to
-		/// 1.6.0.0 or later.
+		/// Does this profile use any features introduced in DNG 1.7?
+		/// If true, then the DNGVersion tag should be set to at least
+		/// 1.7.0.0.
 
+		bool Uses_1_7_Features () const;
+		
 	private:
 	
 		static real64 IlluminantToTemperature (uint32 light,
@@ -1033,6 +1170,10 @@ class dng_camera_profile_metadata
 	public:
 	
 		dng_camera_profile_id fProfileID;
+		
+		dng_string fGroupName;
+		
+		bool fHDR;
 		
 		dng_fingerprint fRenderDataFingerprint;
 		

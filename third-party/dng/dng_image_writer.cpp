@@ -1,5 +1,5 @@
 /*****************************************************************************/
-// Copyright 2006-2019 Adobe Systems Incorporated
+// Copyright 2006-2022 Adobe Systems Incorporated
 // All Rights Reserved.
 //
 // NOTICE:	Adobe permits you to use, modify, and distribute this file in
@@ -23,6 +23,7 @@
 #include "dng_ifd.h"
 #include "dng_image.h"
 #include "dng_jpeg_image.h"
+#include "dng_jxl.h"
 #include "dng_lossless_jpeg.h"
 #include "dng_memory.h"
 #include "dng_memory_stream.h"
@@ -31,6 +32,7 @@
 #include "dng_preview.h"
 #include "dng_read_image.h"
 #include "dng_safe_arithmetic.h"
+#include "dng_shared.h"
 #include "dng_stream.h"
 #include "dng_string_list.h"
 #include "dng_tag_codes.h"
@@ -57,6 +59,12 @@
 
 //#define qTestSubTileBlockRows 2
 //#define qTestSubTileBlockCols 2
+
+/*****************************************************************************/
+
+// Defines for testing DNG 1.7 features.
+
+//#define qTestColumnInterleave 2
 
 /*****************************************************************************/
 
@@ -543,14 +551,15 @@ tag_exif_date_time::tag_exif_date_time (uint16 code,
 	if (dt.IsValid ())
 		{
 	
-		sprintf (fData,
-				 "%04d:%02d:%02d %02d:%02d:%02d",
-				 (int) dt.fYear,
-				 (int) dt.fMonth,
-				 (int) dt.fDay,
-				 (int) dt.fHour,
-				 (int) dt.fMinute,
-				 (int) dt.fSecond);
+		snprintf (fData,
+				  20,
+				  "%04d:%02d:%02d %02d:%02d:%02d",
+				  (int) dt.fYear,
+				  (int) dt.fMonth,
+				  (int) dt.fDay,
+				  (int) dt.fHour,
+				  (int) dt.fMinute,
+				  (int) dt.fSecond);
 				 
 		}
 	
@@ -575,7 +584,7 @@ tag_iptc::tag_iptc (const void *data,
 void tag_iptc::Put (dng_stream &stream) const
 	{
 	
-	// Note: For historical compatiblity reasons, the standard TIFF data 
+	// Note: For historical compatibility reasons, the standard TIFF data 
 	// type for IPTC data is ttLong, but without byte swapping.	 This really
 	// should be ttUndefined, but doing the right thing would break some
 	// existing readers.
@@ -840,10 +849,17 @@ dng_basic_tag_set::dng_basic_tag_set (dng_tiff_directory &directory,
 					   
 	,	fRowInterleaveFactor (tcRowInterleaveFactor,
 							  (uint16) info.fRowInterleaveFactor)
-							  
+
+	,	fColumnInterleaveFactor (tcColumnInterleaveFactor,
+								 (uint16) info.fColumnInterleaveFactor)
+
 	,	fSubTileBlockSize (tcSubTileBlockSize,
 						   fSubTileBlockSizeData,
 						   2)
+						   
+	,	fJXLDistance    (tcJXLDistance)
+	,	fJXLEffort      (tcJXLEffort)
+	,	fJXLDecodeSpeed (tcJXLDecodeSpeed)
 								 
 	{
 	
@@ -929,7 +945,14 @@ dng_basic_tag_set::dng_basic_tag_set (dng_tiff_directory &directory,
 		directory.Add (&fRowInterleaveFactor);
 		
 		}
+
+	if (info.fColumnInterleaveFactor != 1)
+		{
 		
+		directory.Add (&fColumnInterleaveFactor);
+		
+		}
+
 	if (info.fSubTileBlockRows != 1 ||
 		info.fSubTileBlockCols != 1)
 		{
@@ -940,7 +963,39 @@ dng_basic_tag_set::dng_basic_tag_set (dng_tiff_directory &directory,
 		directory.Add (&fSubTileBlockSize);
 		
 		}
-	
+		
+	if (info.fCompression == ccJXL)
+		{
+		
+		if (info.fJXLDistance >= 0.0f)
+			{
+			
+			fJXLDistance.Set (info.fJXLDistance);
+			
+			directory.Add (&fJXLDistance);
+			
+			}
+			
+		if (info.fJXLEffort >= 1)
+			{
+			
+			fJXLEffort.Set (info.fJXLEffort);
+			
+			directory.Add (&fJXLEffort);
+			
+			}
+		
+		if (info.fJXLDecodeSpeed >= 1)
+			{
+			
+			fJXLDecodeSpeed.Set (info.fJXLDecodeSpeed);
+			
+			directory.Add (&fJXLDecodeSpeed);
+			
+			}
+		
+		}
+
 	}
 
 /******************************************************************************/
@@ -1488,9 +1543,10 @@ exif_tag_set::exif_tag_set (dng_tiff_directory &directory,
 		for (uint32 j = 0; j < 16; j++)
 			{
 			
-			sprintf (fImageUniqueIDData + j * 2,
-					 "%02X",
-					 (unsigned) exif.fImageUniqueID.data [j]);
+			snprintf (fImageUniqueIDData + j * 2,
+					  33,
+					  "%02X",
+					  (unsigned) exif.fImageUniqueID.data [j]);
 					 
 			}
 		
@@ -2422,6 +2478,7 @@ class profile_tag_set
 		tag_matrix fReductionMatrix3;
 		
 		tag_string fProfileName;
+		tag_string fProfileGroupName;
 		
 		tag_string fProfileCalibrationSignature;
 		
@@ -2455,9 +2512,17 @@ class profile_tag_set
 		
 		tag_data_ptr fToneCurveTag;
 
+		tag_uint32 fToneMethodTag;
+
 		AutoPtr<dng_memory_block> fIlluminantBlock1;
 		AutoPtr<dng_memory_block> fIlluminantBlock2;
 		AutoPtr<dng_memory_block> fIlluminantBlock3;
+
+		AutoPtr<tag_owned_data_ptr> fProfileGainTableMapTag;
+
+		AutoPtr<tag_owned_data_ptr> fProfileDynamicRangeTag;
+
+		AutoPtr<tag_owned_data_ptr> fRGBTablesTag;
 
 	public:
 	
@@ -2528,6 +2593,10 @@ profile_tag_set::profile_tag_set (dng_host &host,
 					  profile.Name (),
 					  false)
 						   
+	,	fProfileGroupName (tcProfileGroupName,
+						   profile.GroupName (),
+						   false)
+						   
 	,	fProfileCalibrationSignature (tcProfileCalibrationSignature,
 									  profile.ProfileCalibrationSignature (),
 									  false)
@@ -2585,6 +2654,9 @@ profile_tag_set::profile_tag_set (dng_host &host,
 					   ttFloat,
 					   0,
 					   NULL)
+					   
+	,	fToneMethodTag (tcProfileToneMethod,
+						profile.ToneMethod ())
 
 	{
 
@@ -2736,6 +2808,13 @@ profile_tag_set::profile_tag_set (dng_host &host,
 			{
 			
 			directory.Add (&fProfileName);
+
+			}
+			
+		if (profile.GroupName ().NotEmpty ())
+			{
+			
+			directory.Add (&fProfileGroupName);
 
 			}
 			
@@ -2916,7 +2995,89 @@ profile_tag_set::profile_tag_set (dng_host &host,
 
 			}
 
-		}
+		if (profile.ToneMethod () != profileToneMethod_Unspecified)
+			{
+
+			directory.Add (&fToneMethodTag);
+
+			}
+
+		// ProfileGainTableMap2.
+
+		if (profile.HasProfileGainTableMap ())
+			{
+			
+			dng_memory_stream tempStream (host.Allocator (),
+										  host.Sniffer ());
+
+			auto pgtm = profile.ShareProfileGainTableMap ();
+
+			// Always write version 2.
+
+			pgtm->PutStream (tempStream, true);
+
+			const_dng_memory_block_sptr block
+				(tempStream.AsMemoryBlock (host.Allocator ()));
+			
+			fProfileGainTableMapTag.Reset
+				(new tag_owned_data_ptr (tcProfileGainTableMap2,
+										 ttUndefined,
+										 block->LogicalSize (),
+										 block));
+
+			directory.Add (fProfileGainTableMapTag.Get ());
+
+			}
+
+		// ProfileDynamicRange.
+
+		if (profile.DynamicRangeInfo ().IsValid () &&
+			(profile.DynamicRangeInfo () != dng_camera_profile_dynamic_range ()))
+			{
+			
+			dng_memory_stream tempStream (host.Allocator (),
+										  host.Sniffer ());
+
+			profile.DynamicRangeInfo ().PutStream (tempStream);
+
+			const_dng_memory_block_sptr block
+				(tempStream.AsMemoryBlock (host.Allocator ()));
+			
+			fProfileDynamicRangeTag.Reset
+				(new tag_owned_data_ptr (tcProfileDynamicRange,
+										 ttUndefined,
+										 block->LogicalSize (),
+										 block));
+
+			directory.Add (fProfileDynamicRangeTag.Get ());
+			
+			}
+
+		// RGBTables.
+		
+		if (profile.HasMaskedRGBTables () &&
+			!profile.MaskedRGBTables ().IsNOP ())
+			{
+
+			dng_memory_stream tempStream (host.Allocator (),
+										  host.Sniffer ());
+
+			profile.MaskedRGBTables ().PutStream (tempStream);
+
+			const_dng_memory_block_sptr block
+				(tempStream.AsMemoryBlock (host.Allocator ()));
+			
+			fRGBTablesTag.Reset
+				(new tag_owned_data_ptr (tcRGBTables,
+										 ttUndefined,
+										 block->LogicalSize (),
+										 block));
+
+			directory.Add (fRGBTablesTag.Get ());
+			
+			}
+
+		} // HasColorMatrix1
 	
 	}
 
@@ -3026,19 +3187,24 @@ class big_table_tag_set
 	
 		const dng_big_table_dictionary &fDictionary;
 	
+		const dng_big_table_group_index &fGroupIndex;
+	
 		tag_data_ptr fBigTableDigests;
 		tag_data_ptr fBigTableOffsets;
 		tag_data_ptr fBigTableByteCounts;
+		tag_data_ptr fBigTableGroupIndex;
 		
 		AutoPtr<dng_memory_block> fDigestsBuffer;
 		AutoPtr<dng_memory_block> fOffsetsBuffer;
 		AutoPtr<dng_memory_block> fByteCountsBuffer;
+		AutoPtr<dng_memory_block> fGroupBuffer;
 
 	public:
 	
 		big_table_tag_set (dng_host &host,
 						   dng_tiff_directory &directory,
-						   const dng_big_table_dictionary &dictionary);
+						   const dng_big_table_dictionary &dictionary,
+						   const dng_big_table_group_index &groupIndex);
 						   
 		void WriteData (dng_stream &stream);
 		
@@ -3050,9 +3216,12 @@ class big_table_tag_set
 
 big_table_tag_set::big_table_tag_set (dng_host &host,
 									  dng_tiff_directory &directory,
-									  const dng_big_table_dictionary &dictionary)
+									  const dng_big_table_dictionary &dictionary,
+									  const dng_big_table_group_index &groupIndex)
 									  
 	:	fDictionary (dictionary)
+
+	,	fGroupIndex (groupIndex)
 	
 	,	fBigTableDigests (tcBigTableDigests,
 						  ttByte,
@@ -3069,11 +3238,10 @@ big_table_tag_set::big_table_tag_set (dng_host &host,
 							 0,
 							 nullptr)
 							 
-	,	fDigestsBuffer ()
-	
-	,	fOffsetsBuffer ()
-	
-	,	fByteCountsBuffer ()
+	,	fBigTableGroupIndex (tcBigTableGroupIndex,
+							 ttByte,
+							 0,
+							 nullptr)
 							 
 	{
 	
@@ -3102,7 +3270,27 @@ big_table_tag_set::big_table_tag_set (dng_host &host,
 		fBigTableByteCounts.SetData	 (fByteCountsBuffer->Buffer_uint32 ());
 	
 		directory.Add (&fBigTableByteCounts);
-		
+
+		// Big table group index.
+
+		if (!groupIndex.IsEmpty ())
+			{
+
+			const uint32 groups = (uint32) groupIndex.Map ().size ();
+
+			constexpr uint32 bytesPerGroup = 2 * 16;
+
+			const uint32 totalBytes = groups * bytesPerGroup;
+			
+			fGroupBuffer.Reset (host.Allocate (totalBytes));
+
+			fBigTableGroupIndex.SetCount (totalBytes);
+			fBigTableGroupIndex.SetData	 (fGroupBuffer->Buffer_uint8 ());
+
+			directory.Add (&fBigTableGroupIndex);
+			
+			}
+
 		}
 	
 	}
@@ -3143,7 +3331,26 @@ void big_table_tag_set::WriteData (dng_stream &stream)
 			index++;
 			
 			}
+
+		// Group index.
+
+		if (!fGroupIndex.IsEmpty ())
+			{
+
+			uint8 *dPtr = fGroupBuffer->Buffer_uint8 ();
 			
+			for (const auto &group : fGroupIndex.Map ())			
+				{
+				
+				memcpy (dPtr	 , group.first .data, 16);
+				memcpy (dPtr + 16, group.second.data, 16);
+
+				dPtr += 32;
+				
+				}
+			
+			}
+
 		}
 	
 	}
@@ -4215,7 +4422,7 @@ static void jpeg_set_adobe_quality (struct jpeg_compress_struct *cinfo,
 
 /*****************************************************************************/
 
-#endif
+#endif	// qDNGUseLibJPEG
 
 /*****************************************************************************/
 
@@ -4224,8 +4431,10 @@ void dng_image_writer::WriteData (dng_host &host,
 								  dng_stream &stream,
 								  dng_pixel_buffer &buffer,
 								  AutoPtr<dng_memory_block> &compressedBuffer,
-								  bool /* usingMultipleThreads */)
+								  bool usingMultipleThreads)
 	{
+
+	(void) usingMultipleThreads;
 	
 	switch (ifd.fCompression)
 		{
@@ -4505,8 +4714,125 @@ void dng_image_writer::WriteData (dng_host &host,
 			
 			}
 			
-		#endif
+		#endif	// qDNGUseLibJPEG
+
+		case ccJXL:
+			{
+
+			dng_jxl_encode_settings settings;
+
+			if (ifd.fJXLEncodeSettings)
+				settings = *ifd.fJXLEncodeSettings;
+
+			else if (host.JXLEncodeSettings ())
+				settings = *host.JXLEncodeSettings ();
+
+			else
+				{
+				DNG_REPORT ("No JXLEncodeSettings, encoding tile using default settings");
+				}
+
+			#if 0
+			printf ("jxl encode tile: distance=%0.2f, effort=%d\n",
+					settings.Distance (),
+					settings.Effort ());
+			#endif
+
+			// Set concurrency. If we're already using multiple threads (outer
+			// loop processes a tile per thread), then tell the jxl encoder to
+			// use a single thread.
+
+			settings.SetSingleThread (usingMultipleThreads);
+
+			// Get color space info.
+
+			dng_jxl_color_space_info colorSpaceInfoLocal;
+
+			const dng_jxl_color_space_info *colorSpaceInfoPtr =
+				&colorSpaceInfoLocal;
+
+			// If host specified a custom value, then use that.
 			
+			if (host.JXLColorSpaceInfo ())
+				{
+				
+				colorSpaceInfoPtr = host.JXLColorSpaceInfo ();
+
+				}
+
+			// Else get it from the IFD.
+			
+			else if (ifd.fJXLColorEncoding)
+				{
+				
+				colorSpaceInfoLocal.fJxlColorEncoding.Reset
+					(new JxlColorEncoding (*ifd.fJXLColorEncoding));
+
+				}
+
+			else
+				{
+				
+				PreviewColorSpaceToJXLEncoding (ifd.fPreviewInfo.fColorSpace,
+												ifd.fSamplesPerPixel,
+												colorSpaceInfoLocal);
+				
+				}
+
+			#if 0
+			printf ("jxl: strips=%s, tiles=%s, ta=%u, td=%u\n",
+					ifd.fUsesStrips ? "yes" : "no",
+					ifd.fUsesTiles ? "yes" : "no",
+					ifd.TilesAcross (),
+					ifd.TilesDown ());
+			#endif
+
+			// If we're writing a single-tile preview, then write the JXL
+			// using the container format (i.e., with boxes) so that readers
+			// have the option of extracting a full standalone JXL file by
+			// simply copying the bytes.
+
+			if (ifd.TilesAcross () == 1 &&
+				ifd.TilesDown   () == 1 &&
+				(uint32 (ifd.fPreviewInfo.fColorSpace) <=
+				 uint32 (previewColorSpace_LastValid)))
+				{
+
+				#if 0
+				printf ("--- writing JXL container\n");
+				#endif
+
+				EncodeJXL_Container (host,
+									 stream,
+									 buffer,
+									 settings,
+									 *colorSpaceInfoPtr,
+									 nullptr,
+									 false,
+									 false,
+									 false,
+									 nullptr);
+
+				}
+
+			// Otherwise write a bare JXL codestream, which saves a few bytes
+			// per tile.
+
+			else
+				{
+
+				EncodeJXL_Tile (host,
+								stream,
+								buffer,
+								*colorSpaceInfoPtr,
+								settings);
+
+				}
+			
+			return;
+			
+			}
+
 		default:
 			{
 			
@@ -4590,7 +4916,7 @@ void dng_image_writer::EncodeJPEGPreview (dng_host &host,
 		
 		// Find some preview information based on the compression settings.
 		
-		preview.SetIFDInfo (image);
+		preview.SetIFDInfo (host, image);
 	
 		if (image.Planes () == 3)
 			{
@@ -4651,8 +4977,10 @@ void dng_image_writer::EncodeJPEGPreview (dng_host &host,
 		throw;
 		
 		}
+		
+	AutoPtr<dng_memory_block> compressedData (stream.AsMemoryBlock (host.Allocator ()));
 				   
-	preview.fCompressedData.Reset (stream.AsMemoryBlock (host.Allocator ()));
+	preview.SetCompressedData (compressedData);
 
 	#else
 	
@@ -4690,10 +5018,18 @@ void dng_image_writer::WriteTile (dng_host &host,
 							 image.PixelType (), 
 							 pcInterleaved, 
 							 uncompressedBuffer->Buffer ());
+							 
+	// Is this lossy compression?
+	
+	bool isLossyCompression = (ifd.fCompression == ccLossyJPEG) ||
+							  (ifd.fCompression == ccJXL &&
+									(!ifd.fJXLEncodeSettings ||
+									  ifd.fJXLEncodeSettings->Distance () != 0.0f));
 	
 	// Get the uncompressed data.
-	
-	image.Get (buffer, dng_image::edge_zero);
+
+	image.Get (buffer, isLossyCompression ? dng_image::edge_repeat
+										  : dng_image::edge_zero);
 	
 	// Deal with sub-tile blocks.
 	
@@ -4824,7 +5160,8 @@ dng_write_tiles_task::dng_write_tiles_task
 	 uint32 tilesDown,
 	 uint32 tilesAcross,
 	 uint32 compressedSize,
-	 uint32 uncompressedSize)
+	 uint32 uncompressedSize,
+	 bool needDigest)
 
 	:	dng_area_task ("dng_write_tiles_task")
 
@@ -4844,6 +5181,7 @@ dng_write_tiles_task::dng_write_tiles_task
 	,	fCondition		  ()
 	,	fTaskFailed		  (false)
 	,	fWriteTileIndex	  (0)
+	,	fNeedDigest		  (needDigest)
 
 	{
 
@@ -4912,6 +5250,25 @@ void dng_write_tiles_task::Process (uint32 /* threadIndex */,
 						 tileStream,
 						 sniffer);
 
+			// Compute tile digest if requested.
+
+			dng_fingerprint tileDigest;
+
+			if (fNeedDigest)
+				{
+				
+				tileStream.SetReadPosition (0);
+				
+				dng_md5_printer_stream md5stream;
+				
+				tileStream.CopyToStream (md5stream, tileByteCount);
+				
+				tileDigest = md5stream.Result ();
+				
+				tileStream.SetReadPosition (0);
+
+				}
+
 			// Wait until it is our turn to write tile.
 
 				{
@@ -4942,6 +5299,16 @@ void dng_write_tiles_task::Process (uint32 /* threadIndex */,
 					   tileByteCount,
 					   tileStream,
 					   sniffer);
+
+			// Also update the overall digest if requested.
+
+			if (fNeedDigest)
+				{
+				
+				fOverallPrinter.Process (tileDigest.data,
+										 uint32 (sizeof (tileDigest.data)));
+
+				}
 
 			// Let other threads know it is safe to write to stream.
 
@@ -5019,7 +5386,17 @@ void dng_write_tiles_task::ProcessTask
 					
 	dng_host host (&fHost.Allocator (),
 				   sniffer);
-								
+
+	if (fHost.JXLEncodeSettings ())
+		{
+		host.SetJXLEncodeSettings (*fHost.JXLEncodeSettings ());
+		}
+
+	if (fHost.JXLColorSpaceInfo ())
+		{
+		host.SetJXLColorSpaceInfo (fHost.ShareJXLColorSpaceInfo ());
+		}
+
 	fImageWriter.WriteTile (host,
 							fIFD,
 							tileStream,
@@ -5078,6 +5455,15 @@ void dng_write_tiles_task::WriteTask (uint32 tileIndex,
 
 /*****************************************************************************/
 
+const dng_fingerprint & dng_write_tiles_task::ResultDigest () const
+	{
+	
+	return fOverallPrinter.Result ();
+	
+	}
+
+/*****************************************************************************/
+
 void dng_image_writer::DoWriteTiles (dng_host &host,
 									 const dng_ifd &ifd,
 									 dng_basic_tag_set &basic,
@@ -5087,7 +5473,8 @@ void dng_image_writer::DoWriteTiles (dng_host &host,
 									 uint32 tilesDown,
 									 uint32 tilesAcross,
 									 uint32 compressedSize,
-									 const dng_safe_uint32 &uncompressedSize)
+									 const dng_safe_uint32 &uncompressedSize,
+									 dng_fingerprint *outDigest)
 	{
 	
 	uint32 threadCount = Min_uint32 (tilesDown * tilesAcross,
@@ -5103,10 +5490,23 @@ void dng_image_writer::DoWriteTiles (dng_host &host,
 							   tilesDown,
 							   tilesAcross,
 							   compressedSize,
-							   uncompressedSize.Get ());
+							   uncompressedSize.Get (),
+							   (outDigest != nullptr));
 								  
 	host.PerformAreaTask (task,
 						  dng_rect (0, 0, 16, 16 * threadCount));
+
+	if (outDigest)
+		{
+		
+		*outDigest = task.ResultDigest ();
+
+		#if qDNGValidate && 0
+		printf ("write digest: %s\n",
+				outDigest->ToUtf8HexString ().Get ());
+		#endif
+
+		}
 	
 	}
 
@@ -5117,33 +5517,71 @@ void dng_image_writer::WriteImage (dng_host &host,
 								   dng_basic_tag_set &basic,
 								   dng_stream &stream,
 								   const dng_image &image,
-								   uint32 fakeChannels)
+								   uint32 fakeChannels,
+								   dng_fingerprint *outDigest)
 	{
-	
-	// Deal with row interleaved images.
-	
-	if (ifd.fRowInterleaveFactor > 1 &&
-		ifd.fRowInterleaveFactor < ifd.fImageLength)
+
+	// Deal with images that have row and/or column interleaving.
+
+	if (ifd.fRowInterleaveFactor	> 1 ||
+		ifd.fColumnInterleaveFactor > 1)
 		{
+
+		// First, apply interleaving to a temporary image.
+
+		AutoPtr<dng_image> tempImage (host.Make_dng_image (image.Bounds (),
+														   image.Planes (),
+														   image.PixelType ()));
 		
+		Interleave2D (host,
+					  image,
+					  *tempImage,
+					  ifd.fRowInterleaveFactor,
+					  ifd.fColumnInterleaveFactor,
+					  true);
+	
+		// Then write the interleaved image.
+
 		dng_ifd tempIFD (ifd);
-		
-		tempIFD.fRowInterleaveFactor = 1;
-		
-		dng_row_interleaved_image tempImage (*((dng_image *) &image),
-											 ifd.fRowInterleaveFactor);
-		
+
+		tempIFD.fRowInterleaveFactor    = 1;
+		tempIFD.fColumnInterleaveFactor = 1;
+
 		WriteImage (host,
 					tempIFD,
 					basic,
 					stream,
-					tempImage,
-					fakeChannels);
-			  
+					*tempImage,
+					fakeChannels,
+					outDigest);
+
 		return;
 		
 		}
+
+	#if qDNGValidate
 	
+	char message [256];
+	
+	AutoPtr<dng_timer> timer;
+	
+	if (ifd.fCompression == ccJXL && ifd.fJXLEncodeSettings.get ())
+		{
+		
+		snprintf (message,
+				  sizeof (message),
+				  "JXL write %u by %u pixels, distance = %.2f, effort = %d",
+				  image.Width (),
+				  image.Height (),
+				  ifd.fJXLEncodeSettings->Distance (),
+				  ifd.fJXLEncodeSettings->Effort ());
+				  
+		timer.Reset (new dng_timer (message));
+		
+		}
+	
+	#endif
+
 	// Compute basic information.
 
 	dng_safe_uint32 bytesPerSample (TagTypeSize (image.PixelType ()));
@@ -5201,7 +5639,8 @@ void dng_image_writer::WriteImage (dng_host &host,
 					  tilesDown,
 					  tilesAcross,
 					  compressedSize,
-					  uncompressedSize.Get ());
+					  uncompressedSize.Get (),
+					  outDigest);
 
 		}
 		
@@ -5227,6 +5666,10 @@ void dng_image_writer::WriteImage (dng_host &host,
 			{
 			subTileBlockBuffer.Reset (host.Allocate (uncompressedSize.Get ()));
 			}
+
+		dng_md5_printer overallPrinter;
+
+		const bool needDigest = (outDigest != nullptr);
 				
 		// Write out each tile.
 		
@@ -5250,7 +5693,15 @@ void dng_image_writer::WriteImage (dng_host &host,
 				
 				uint32 subTileCount = (tileArea.H () + subTileLength - 1) /
 									  subTileLength;
-									  
+
+				// If we need a digest, then write the tile to a local stream so
+				// that we can compute a fingerprint on it before copying the
+				// data to the main stream.
+
+				dng_memory_stream tileStream (host.Allocator ());
+
+				auto &subStream = needDigest ? tileStream : stream;
+
 				for (uint32 subIndex = 0; subIndex < subTileCount; subIndex++)
 					{
 					
@@ -5267,7 +5718,7 @@ void dng_image_writer::WriteImage (dng_host &host,
 					
 					WriteTile (host,
 							   ifd,
-							   stream,
+							   subStream,
 							   image,
 							   subArea,
 							   fakeChannels,
@@ -5278,10 +5729,49 @@ void dng_image_writer::WriteImage (dng_host &host,
 							   useMultipleThreads);
 							   
 					}
+
+				uint64 tileByteCount;
+
+				if (needDigest)
+					{
+
+					// Get the tile byte count.
+
+					tileStream.Flush ();
+
+					tileByteCount = tileStream.Length ();
+
+					// Compute the tile digest.
+
+					tileStream.SetReadPosition (0);
 					
-				// Update tile count.
+					dng_md5_printer_stream md5stream;
 					
-				uint64 tileByteCount = stream.Position () - tileOffset;
+					tileStream.CopyToStream (md5stream, tileByteCount);
+					
+					dng_fingerprint tileDigest = md5stream.Result ();
+
+					// Update the overall digest.
+
+					overallPrinter.Process (tileDigest.data,
+											uint32 (sizeof (tileDigest.data)));
+
+					// Copy the tile data to the main stream.
+					
+					tileStream.SetReadPosition (0);
+					
+					tileStream.CopyToStream (stream, tileByteCount);
+
+					}
+
+				else
+					{
+					
+					// Update tile count.
+					
+					tileByteCount = stream.Position () - tileOffset;
+					
+					}
 					
 				basic.SetTileByteCount (tileIndex, tileByteCount);
 				
@@ -5294,11 +5784,25 @@ void dng_image_writer::WriteImage (dng_host &host,
 					stream.Put_uint8 (0);
 					}
 					
-				}
+				} // tiles across (cols)
+
+			} // tiles down (rows)
+
+		// Optionally store the image digest.
+
+		if (outDigest)
+			{
+
+			*outDigest = overallPrinter.Result ();
+
+			#if qDNGValidate && 0
+			printf ("single-thread write digest: %s\n",
+					outDigest->ToUtf8HexString ().Get ());
+			#endif
 
 			}
 			
-		}
+		} // concurrent vs single-thread
 		
 	}
 
@@ -5496,6 +6000,16 @@ void dng_image_writer::CleanUpMetadata (dng_host &host,
 			
 			}
 			
+		// Require that XMP be the only source for saved GPS data.
+		
+			{
+		
+			dng_exif blankExif;
+		
+			newEXIF.CopyGPSFrom (blankExif);
+			
+			}
+		
 		// Resync EXIF, remove EXIF tags from XMP.
 	
 		newXMP.SyncExif (newEXIF,
@@ -5565,7 +6079,13 @@ void dng_image_writer::CleanUpMetadata (dng_host &host,
 							"MetadataDate");
 				
 				#endif
-				
+
+				// Restore HDR metadata.
+
+				newXMP.DuplicateNameSpace (oldXMP, XMP_NS_HDR_META);
+				newXMP.DuplicateNameSpace (oldXMP, XMP_NS_HDRGM);
+				newXMP.DuplicateNameSpace (oldXMP, XMP_NS_APPLE_HDRGM);
+					
 				// Restore Camera Exif info.
 				
 				if (metadataSubset.Includes (dng_metadata_subset::kMask_Exif))
@@ -5586,7 +6106,16 @@ void dng_image_writer::CleanUpMetadata (dng_host &host,
 					newXMP.DuplicateNameSpace (oldXMP, XMP_NS_AUX);
 					
 					}
+
+				// Restore EXIF date-related fields.
+				
+				if (metadataSubset.Includes (dng_metadata_subset::kMask_ExifDate))
+					{
 					
+					newEXIF.CopyDateFrom (oldEXIF);
+					
+					}
+
 				// Restore location info.
 					
 				if (metadataSubset.Includes (dng_metadata_subset::kMask_Location))
@@ -5831,7 +6360,7 @@ void dng_image_writer::CleanUpMetadata (dng_host &host,
 				{
 				
 				// These options start with complete metadata and remove
-				// the metadata that we explictly do not want to include.
+				// the metadata that we explicitly do not want to include.
 				
 				// Remove Camera Raw info.
 				
@@ -6133,7 +6662,9 @@ void dng_image_writer::WriteTIFF (dng_host &host,
 								  const dng_memory_block *imageResources,
 								  dng_metadata_subset metadataSubset,
 								  bool hasTransparency,
-								  bool allowBigTIFF)
+								  bool allowBigTIFF,
+								  const dng_image *gainMapImage,
+								  const bool useHalfFloat)
 	{
 	
 	const void *profileData = NULL;
@@ -6163,8 +6694,121 @@ void dng_image_writer::WriteTIFF (dng_host &host,
 						  imageResources,
 						  metadataSubset,
 						  hasTransparency,
-						  allowBigTIFF);
+						  allowBigTIFF,
+						  gainMapImage,
+						  useHalfFloat);
 	
+	}
+
+/*****************************************************************************/
+
+static void SetupIFDfromCompressedImage (dng_ifd &info,
+										 const dng_lossy_compressed_image &compressedImage)
+	{
+	
+	info.fCompression = compressedImage.fCompressionCode;
+	
+	info.fTileWidth  = compressedImage.fTileSize.h;
+	info.fTileLength = compressedImage.fTileSize.v;
+	
+	info.fUsesStrips =  compressedImage.fUsesStrips;
+	info.fUsesTiles  = !compressedImage.fUsesStrips;
+	
+	for (uint32 j = 1; j < info.fSamplesPerPixel; j++)
+		{
+		info.fBitsPerSample [j] = compressedImage.fBitsPerSample;
+		}
+	
+	info.fRowInterleaveFactor    = compressedImage.fRowInterleaveFactor;
+	info.fColumnInterleaveFactor = compressedImage.fColumnInterleaveFactor;
+	
+	info.fJXLDistance    = compressedImage.JXLDistance    ();
+	info.fJXLEffort      = compressedImage.JXLEffort      ();
+	info.fJXLDecodeSpeed = compressedImage.JXLDecodeSpeed ();
+	
+	}
+
+/*****************************************************************************/
+
+static dng_ifd * MakeGainMapIFD (const dng_image &image,
+								 const dng_lossy_compressed_image *lossyCompressed,
+								 const uint32 compression)
+	{
+	
+	DNG_REQUIRE (image.Planes () == 1 ||
+				 image.Planes () == 3,
+				 "Invalid image plane count for MakeGainMapIFD");
+
+	AutoPtr<dng_ifd> result (new dng_ifd);
+
+	auto &ifd = *result;
+
+	ifd.fNewSubFileType = sfGainMap;
+	
+	ifd.fImageWidth	 = image.Bounds ().W ();
+	ifd.fImageLength = image.Bounds ().H ();
+	
+	ifd.fSamplesPerPixel = image.Planes ();
+	
+	ifd.fBitsPerSample [0] = TagTypeSize (image.PixelType ()) * 8;
+	
+	for (uint32 j = 1; j < ifd.fSamplesPerPixel; j++)
+		{
+		ifd.fBitsPerSample [j] = ifd.fBitsPerSample [0];
+		}
+		
+	ifd.fPhotometricInterpretation = piGainMap;
+	
+	ifd.fExtraSamplesCount = 0;
+	
+	if (lossyCompressed)
+		{
+		
+		SetupIFDfromCompressedImage (ifd,
+									 *lossyCompressed);
+		
+		}
+		
+	else
+		{
+
+		ifd.fCompression = compression;
+		
+		if (ifd.fCompression == ccUncompressed)
+			{
+			
+			ifd.SetSingleStrip ();
+			
+			}
+			
+		else
+			{
+
+			ifd.FindStripSize (128 * 1024);
+
+			// Deflate/ZIP.
+			
+			if (ifd.fCompression == ccDeflate)
+				{
+				
+				if (image.PixelType () == ttFloat)
+					{
+					ifd.fPredictor = cpFloatingPoint;
+					}
+					
+				else
+					{
+					ifd.fPredictor = cpHorizontalDifference;
+					}
+				
+				}
+			
+			}
+			
+		}
+
+	return result.Release ();
+
 	}
 
 /*****************************************************************************/
@@ -6182,7 +6826,9 @@ void dng_image_writer::WriteTIFFWithProfile (dng_host &host,
 											 const dng_memory_block *imageResources,
 											 dng_metadata_subset metadataSubset,
 											 bool hasTransparency,
-											 bool allowBigTIFF)
+											 bool allowBigTIFF,
+											 const dng_image *gainMapImage,
+											 const bool useHalfFloat)
 	{
 	
 	// Force writing all TIFF files in BigTIFF format.
@@ -6223,8 +6869,12 @@ void dng_image_writer::WriteTIFFWithProfile (dng_host &host,
 	ifd.fImageLength = image.Bounds ().H ();
 	
 	ifd.fSamplesPerPixel = image.Planes ();
-	
-	ifd.fBitsPerSample [0] = TagTypeSize (image.PixelType ()) * 8;
+
+	if ((image.PixelType () == ttFloat) && useHalfFloat)
+		ifd.fBitsPerSample [0] = 16;
+
+	else
+		ifd.fBitsPerSample [0] = TagTypeSize (image.PixelType ()) * 8;
 	
 	for (uint32 j = 1; j < ifd.fSamplesPerPixel; j++)
 		{
@@ -6244,10 +6894,23 @@ void dng_image_writer::WriteTIFFWithProfile (dng_host &host,
 		
 	else
 		{
+
+		if (ifd.fCompression == ccJXL)
+			{
+			
+			ifd.FindTileSize (2048 * 2048);
+			
+			}
+
+		else
+			{
 		
-		ifd.FindStripSize (128 * 1024);
+			ifd.FindStripSize (128 * 1024);
+
+			}
 		
-		if (ifd.fCompression != ccJPEG)
+		if (ifd.fCompression != ccJPEG &&
+			ifd.fCompression != ccJXL)
 			{
 			
 			if (image.PixelType () == ttFloat)
@@ -6310,11 +6973,41 @@ void dng_image_writer::WriteTIFFWithProfile (dng_host &host,
 			}
 			
 		}
-	
+
 	dng_tiff_directory mainIFD;
 	
 	dng_basic_tag_set basic (mainIFD, ifd);
+
+	// Gain map.
 	
+	dng_tiff_directory gainMapIFD;
+
+	AutoPtr<dng_basic_tag_set> gainMapTagSet;
+	
+	AutoPtr<dng_ifd> gainMapImageIFD;
+
+	const bool hasGainMap = (gainMapImage != nullptr);
+
+	if (hasGainMap)
+		{
+		
+		uint32 gainMapCompression = compression;
+		
+		if (gainMapImage->PixelType () == ttFloat &&
+			gainMapCompression != ccDeflate)
+			{
+			gainMapCompression = ccUncompressed;
+			}
+		
+		gainMapImageIFD.Reset (MakeGainMapIFD (*gainMapImage,
+											   nullptr,
+											   gainMapCompression));
+
+		gainMapTagSet.Reset (new dng_basic_tag_set (gainMapIFD,
+													*gainMapImageIFD));
+		
+		}
+
 	// Resolution.
 	
 	dng_resolution res;
@@ -6398,28 +7091,50 @@ void dng_image_writer::WriteTIFFWithProfile (dng_host &host,
 						  metadata.Get () ? metadata->MakerNoteData	  () : NULL,
 						  metadata.Get () ? metadata->MakerNoteLength () : 0,
 						  false);
-						  
+
+	// SubIFDs.
+
+	uint32 subFileCount = 0;
+
+	if (hasGainMap)
+		subFileCount++;
+
+	// Add a link to the subIFDs.
+
+	tag_big_uints tagSubFile (tcSubIFDs,
+							  subFileCount);
+							   
+	if (subFileCount)
+		mainIFD.Add (&tagSubFile);
+
 	// Find header size as 32-bit TIFF
 	
 	uint64 headerSize32 = 8 +
 						  mainIFD.Size () +
-						  exifSet.Size ();
+						  exifSet.Size () +
+						  (hasGainMap ? gainMapIFD.Size () : 0);
 						  
 	// Find header size as 64-bit TIFF
 	
 	mainIFD.SetBigTIFF (true);
 	exifSet.SetBigTIFF (true);
-	
+
+	if (hasGainMap)
+		gainMapIFD.SetBigTIFF (true);
+
 	uint64 headerSize64 = 16 +
 						  mainIFD.Size () +
-						  exifSet.Size ();
+						  exifSet.Size () +
+						  (hasGainMap ? gainMapIFD.Size () : 0);
 						  
-	// Find maxium size of non-header size.
+	// Find maximum size of non-header size.
 	
-	uint64 maxNonHeaderSize = ifd.MaxImageDataByteCount ();
+	uint64 maxNonHeaderSize =
+		(ifd.MaxImageDataByteCount () +
+		 (hasGainMap ? gainMapImageIFD->MaxImageDataByteCount () : 0));
 	
-	// Maxium target size of 32-bit TIFF files that allows
-	// some slop for future metadata edits.
+	// Maximum target size of 32-bit TIFF files that allows some slop for
+	// future metadata edits.
 	
 	const uint64 kMaxTargetNonBigTIFFSize = 0xFFFFFFFF - 16 * 1024 * 1024;
 	
@@ -6454,6 +7169,19 @@ void dng_image_writer::WriteTIFFWithProfile (dng_host &host,
 				basic,
 				stream,
 				image);
+
+	// Write the gain map image.
+
+	if (gainMapImage)
+		{
+		
+		WriteImage (host,
+					*gainMapImageIFD,
+					*gainMapTagSet,
+					stream,
+					*gainMapImage);
+		
+		}
 				
 	// If we are not allowed to write BigTIFF, and the file
 	// is over 4GB limit, throw an error.
@@ -6482,6 +7210,9 @@ void dng_image_writer::WriteTIFFWithProfile (dng_host &host,
 		
 	mainIFD.SetBigTIFF (isBigTIFF);
 	exifSet.SetBigTIFF (isBigTIFF);
+
+	if (hasGainMap)
+		gainMapIFD.SetBigTIFF (isBigTIFF);
 	
 	// Write header.
 	
@@ -6521,11 +7252,19 @@ void dng_image_writer::WriteTIFFWithProfile (dng_host &host,
 	
 	uint64 offsetExifData = offsetMainIFD + mainIFD.Size ();
 	
+	uint64 offsetGainMapIFD = offsetExifData + exifSet.Size ();
+	
 	exifSet.Locate (offsetExifData);
+
+	if (hasGainMap)
+		tagSubFile.Set (0, offsetGainMapIFD);
 	
 	mainIFD.Put (stream);
 	
 	exifSet.Put (stream);
+
+	if (hasGainMap)
+		gainMapIFD.Put (stream);
 	
 	if (headerSize > stream.Position ())
 		{
@@ -6546,7 +7285,9 @@ void dng_image_writer::WriteDNG (dng_host &host,
 								 const dng_preview_list *previewList,
 								 uint32 maxBackwardVersion,
 								 bool uncompressed,
-								 bool allowBigTIFF)
+								 bool allowBigTIFF,
+								 const dng_image *gainMapImage,
+								 const dng_lossy_compressed_image *gainMapLossyCompressed)
 	{
 	
 	WriteDNGWithMetadata (host,
@@ -6556,7 +7297,9 @@ void dng_image_writer::WriteDNG (dng_host &host,
 						  previewList,
 						  maxBackwardVersion,
 						  uncompressed,
-						  allowBigTIFF);
+						  allowBigTIFF,
+						  gainMapImage,
+						  gainMapLossyCompressed);
 	
 	}
 	
@@ -6613,11 +7356,12 @@ class dng_verify_size_estimate
 			
 			char message [2048];
 			
-			sprintf (message,
-					 "%s: actual size = %llu, estimated size = %llu",
-					 fMessage,
-					 (unsigned long long) actual,
-					 (unsigned long long) fEstimate);
+			snprintf (message,
+					  2048,
+					  "%s: actual size = %llu, estimated size = %llu",
+					  fMessage,
+					  (unsigned long long) actual,
+					  (unsigned long long) fEstimate);
 					 
 			DNG_ASSERT (actual <= fEstimate, message);
 			
@@ -6641,14 +7385,119 @@ class dng_verify_size_estimate
 
 /*****************************************************************************/
 
+static void SetEncodeSettingsForIFD (const dng_image &image,
+									 const bool uncompressed,
+									 const uint32 maxBackwardVersion,
+									 dng_ifd &info,
+									 const dng_lossy_compressed_image *compressedImage = nullptr)
+	{
+	
+	const bool isFloat = (image.PixelType () == ttFloat);
+	
+	// Set sample format for floating-point data.
+			
+	if (isFloat)
+		{
+
+		for (uint32 i = 0; i < info.fSamplesPerPixel; i++)
+			info.fSampleFormat [i] = sfFloatingPoint;
+
+		}
+			
+	// If we already have a lossy compressed version of image, use that.
+	
+	if (compressedImage)
+		{
+		
+		SetupIFDfromCompressedImage (info, *compressedImage);
+				
+		return;
+		
+		}
+
+	// Pick compression method.
+
+	if (uncompressed)
+		{
+		
+		info.fCompression = ccUncompressed;
+
+		}
+
+	else if (isFloat)
+		{
+		
+		info.fCompression = ccDeflate;
+		
+		}
+
+	else if (image.PixelType () == ttLong)
+			 
+		{
+
+		if (maxBackwardVersion >= dngVersion_1_4_0_0)
+			info.fCompression = ccDeflate;
+
+		else
+			info.fCompression = ccUncompressed;
+		
+		}
+
+	else
+		{
+
+		// Lossless JPEG.
+		
+		info.fCompression = ccJPEG;
+		
+		}
+
+	// Uncompressed.
+
+	if (info.fCompression == ccUncompressed)
+		{
+		
+		info.fPredictor = cpNullPredictor;
+			
+		info.SetSingleStrip ();
+		
+		}
+
+	// Deflate.
+		
+	else if (info.fCompression == ccDeflate)
+		{
+		
+		info.fPredictor = isFloat ? cpFloatingPoint
+								  : cpHorizontalDifference;
+				
+		info.FindTileSize (512 * 1024);
+
+		}
+
+	// Everything else, including lossy and lossless JPEG.
+		
+	else
+		{
+		
+		info.FindTileSize (128 * 1024);
+
+		}
+
+	}
+
+/*****************************************************************************/
+
 void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 											 dng_stream &stream,
 											 const dng_negative &negative,
 											 const dng_metadata &constMetadata,
 											 const dng_preview_list *previewList,
-											 uint32 maxBackwardVersion,
-											 bool uncompressed,
-											 bool allowBigTIFF)
+											 const uint32 maxBackwardVersion,
+											 const bool uncompressed,
+											 bool allowBigTIFF,
+											 const dng_image *gainMapImage,
+											 const dng_lossy_compressed_image *gainMapLossyCompressed)
 	{
 	
 	// Force writing all DNG files in 64-bit format.
@@ -6671,41 +7520,97 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 					 *metadata,
 					 kMetadataSubset_All,
 					 "image/dng");
-					 
-	// Figure out the compression to use.  Most of the time this is lossless
-	// JPEG.
+
+	// Was the original file lossy compressed with JPEG or some other method?
 	
-	uint32 compression = uncompressed ? ccUncompressed : ccJPEG;
+	const dng_lossy_compressed_image *rawLossyCompressedImage =
+		negative.RawLossyCompressedImage ();
 		
-	// Was the the original file lossy JPEG compressed?
+	// If not, then if there was a raw lossy compressed digest,
+	// we need to compute the image digest.
 	
-	const dng_jpeg_image *rawJPEGImage = negative.RawJPEGImage ();
-	
-	// If so, can we save it using the requested compression and DNG version?
-	
-	if (uncompressed || maxBackwardVersion < dngVersion_1_4_0_0)
+	if (!rawLossyCompressedImage && negative.RawLossyCompressedImageDigest ().IsValid ())
 		{
 		
-		if (rawJPEGImage || negative.RawJPEGImageDigest ().IsValid ())
+		negative.ClearRawLossyCompressedImageDigest ();
+			
+		negative.ClearRawImageDigest ();
+		
+		}
+		
+	// See if we need to discard the raw lossy compressed image.
+	
+	if (rawLossyCompressedImage)
+		{
+		
+		if (uncompressed ||
+			maxBackwardVersion < MinBackwardVersionForCompression
+								 (rawLossyCompressedImage->fCompressionCode) ||
+			(rawLossyCompressedImage->fColumnInterleaveFactor != 1 &&
+			 maxBackwardVersion < dngVersion_1_7_1_0))
 			{
 			
-			rawJPEGImage = NULL;
+			rawLossyCompressedImage = nullptr;
 			
-			negative.ClearRawJPEGImageDigest ();
+			negative.ClearRawLossyCompressedImageDigest ();
 			
 			negative.ClearRawImageDigest ();
-			
+
 			}
 		
 		}
 		
-	else if (rawJPEGImage)
+	// Is this a floating point image that we are saving?
+	
+	const bool isFloatingPoint =
+		((negative.RawImage ().PixelType () == ttFloat) ||
+		 (negative.RawImage ().PixelType () == ttHalfFloat));
+	
+	// Should we save a compressed 32-bit integer file?
+	
+	const bool isCompressed32BitInteger = (negative.RawImage ().PixelType () == ttLong) &&
+										  (maxBackwardVersion >= dngVersion_1_4_0_0) &&
+										  (!uncompressed);
+	
+	// Get a copy of the mosaic info.
+	
+	dng_mosaic_info mosaicInfo;
+	
+	if (negative.GetMosaicInfo ())
 		{
-		
-		compression = ccLossyJPEG;
-		
+		mosaicInfo = *(negative.GetMosaicInfo ());
 		}
 		
+	// Figure out the compression to use. Most of the time this is lossless
+	// JPEG.
+
+	uint32 compression = uncompressed ? ccUncompressed : ccJPEG;
+
+	if (!uncompressed)
+		{
+
+		// If we have some lossy compressed data, just use that.
+		
+		if (rawLossyCompressedImage)
+			compression = rawLossyCompressedImage->fCompressionCode;
+
+		// For floating point, we only support ZIP.
+	
+		else if (isFloatingPoint)
+			compression = ccDeflate;
+
+		// For 32-bit integer images, we only support ZIP and uncompressed.
+
+		else if (negative.RawImage ().PixelType () == ttLong)
+			compression = isCompressed32BitInteger ? ccDeflate : ccUncompressed;
+
+		// Fall back to Lossless JPEG.
+		
+		else
+			compression = ccJPEG;
+		
+		}
+
 	// Are we saving the original size tags?
 	
 	bool saveOriginalDefaultFinalSize	  = false;
@@ -6758,13 +7663,19 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 		
 		}
 		
-	// Is this a floating point image that we are saving?
-	
-	bool isFloatingPoint = (negative.RawImage ().PixelType () == ttFloat);
-	
 	// Does this image have a transparency mask?
 	
 	bool hasTransparencyMask = (negative.RawTransparencyMask () != NULL);
+	
+	const dng_lossy_compressed_image *rawLossyCompressedTransparencyMask =
+		negative.RawLossyCompressedTransparencyMask ();
+		
+	if (rawLossyCompressedTransparencyMask &&
+		(maxBackwardVersion <
+		 MinBackwardVersionForCompression (rawLossyCompressedTransparencyMask->fCompressionCode)))
+		{
+		rawLossyCompressedTransparencyMask = nullptr;
+		}
 	
 	// Does the image have depth mask?
 	
@@ -6775,12 +7686,6 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 	bool hasEnhancedImage = (&negative.RawImage () != negative.Stage3Image ()) &&
 							negative.EnhanceParams ().NotEmpty ();
 	
-	// Should we save a compressed 32-bit integer file?
-	
-	bool isCompressed32BitInteger = (negative.RawImage ().PixelType () == ttLong) &&
-									(maxBackwardVersion >= dngVersion_1_4_0_0) &&
-									(!uncompressed);
-
 	// Profile and other color related tags. Do this up front so that we can
 	// determine how the set of profiles influences the DNG version and
 	// backward version tags.
@@ -6794,8 +7699,7 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 	dng_camera_profile mainProfile;
 
 	bool hasProfileWith_1_6_Features = false;
-		
-	bool hasProfileThatRequires_1_6_Reader = false;
+	bool hasProfileWith_1_7_Features = false;
 		
 	// Create the main IFD.
 										 
@@ -6811,9 +7715,9 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 			hasProfileWith_1_6_Features = true;
 			}
 		
-		if (mainProfile.Requires_1_6_Reader ())
+		if (mainProfile.Uses_1_7_Features ())
 			{
-			hasProfileThatRequires_1_6_Reader = true;
+			hasProfileWith_1_7_Features = true;
 			}
 		
 		profileSet.Reset (new profile_tag_set (host,
@@ -6843,9 +7747,9 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 					hasProfileWith_1_6_Features = true;
 					}
 
-				if (profile.Requires_1_6_Reader ())
+				if (profile.Uses_1_7_Features ())
 					{
-					hasProfileThatRequires_1_6_Reader = true;
+					hasProfileWith_1_7_Features = true;
 					}
 
 				}
@@ -6853,56 +7757,192 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 			}
 										   
 		}
+
+	// Does the negative have a valid ImageSequenceInfo tag?
+
+	const bool hasImageSequenceInfo = metadata->ImageSequenceInfo ().IsValid ();
 		
+	// Does the negative has a valid ImageStats tag?
+
+	const bool hasImageStats =
+		((metadata->ImageStats ().TagCount () > 0) &&
+		 metadata->ImageStats ().IsValidForPlaneCount (negative.ColorChannels ()));
+
+	// Does the negative have a valid ProfileGainTableMap2 tag?
+	
+	const bool hasProfileGainTableMap2 =
+		(negative.HasProfileGainTableMap () &&
+		 negative.ProfileGainTableMap ().RequiresVersion2 ());
+
+	// Does the negative use the HDR output-referred colorimetric reference?
+
+	const bool hasHDRColorimetricRef =
+		(negative.ColorimetricReference () == crOutputReferredHDR);
+	
 	// Embedded big table tags.
 	
 	big_table_tag_set bigTableTagSet (host,
 									  mainIFD,
-									  metadata->BigTableDictionary ());
+									  metadata->BigTableDictionary (),
+									  metadata->BigTableGroupIndex ());
+
+	// Gain map.
+	
+	dng_tiff_directory gainMapIFD;
+
+	AutoPtr<dng_basic_tag_set> gainMapTagSet;
+	
+	AutoPtr<dng_ifd> gainMapImageIFD;
+
+	const bool hasGainMap = (gainMapImage != nullptr);
+
+	if (hasGainMap)
+		{
+
+		uint32 gainMapCompression = (gainMapImage->PixelType () == ttFloat)
+									? ccDeflate
+									: ccJPEG;
+											
+		gainMapImageIFD.Reset (MakeGainMapIFD (*gainMapImage,
+											   gainMapLossyCompressed,
+											   gainMapCompression));
+
+		gainMapTagSet.Reset (new dng_basic_tag_set (gainMapIFD,
+													*gainMapImageIFD));
+		
+		}
 		
 	// Figure out what main version to use.
 	
-	uint32 dngVersion = dngVersion_Current;
+	uint32 dngVersion 		  = dngVersion_1_4_0_0;
+	uint32 dngBackwardVersion = dngVersion_1_1_0_0;
 
-	// Check DNG 1.6 feature usage.
+	// Check DNG 1.7 feature usage.
+	
+	bool has_1_7_Features = false;
 
-	// TODO(erichan): update this for RGBTables
-
-	if (!HasDNGOpcode_1_6 (negative, false) && // don't include optional opcodes
-		!hasProfileWith_1_6_Features &&
-		!negative.HasSemanticMask () &&
-		!negative.HasProfileGainTableMap ())
+	if (compression == ccJXL)
 		{
-
-		// If the file doesn't use any DNG 1.6 features, then don't mark the
-		// file as being in DNG 1.6 format.
 		
-		dngVersion = dngVersion_1_5_0_0;
-
-		// Check DNG 1.5 feature usage.
+		has_1_7_Features = true;
 		
-		if (!hasDepthMap && !hasEnhancedImage)
+		}
+		
+	else if (hasTransparencyMask &&
+			 rawLossyCompressedTransparencyMask &&
+			 rawLossyCompressedTransparencyMask->fCompressionCode == ccJXL)
+		{
+		
+		has_1_7_Features = true;
+		
+		}
+		
+	else if (hasEnhancedImage &&
+			 negative.EnhancedLossyCompressedImage () &&
+			 negative.EnhancedLossyCompressedImage ()->fCompressionCode == ccJXL)
+		{
+		
+		has_1_7_Features = true;
+		
+		}
+	
+	else if (hasDepthMap &&
+			 negative.RawLossyCompressedDepthMap () &&
+			 negative.RawLossyCompressedDepthMap ()->fCompressionCode == ccJXL)
+		{
+		
+		has_1_7_Features = true;
+		
+		}
+		
+	else if (negative.HasSemanticMask ())
+		{
+		
+		for (uint32 j = 0; j < negative.NumSemanticMasks (); j++)
 			{
 
-			// Nothing in DNG 1.5 specification breaks backward compatiblity,
-			// so there is not really any reason to mark the file as being
-			// in DNG 1.5 format.  So unless we are actually using an optional
-			// DNG 1.5 feature, leave the main version tag at 1.4.
-
-			dngVersion = dngVersion_1_4_0_0;
-
+			const auto &rawMask = negative.RawSemanticMask (j);
+			
+			if (rawMask.fLossyCompressed.get () &&
+				rawMask.fLossyCompressed->fCompressionCode == ccJXL)
+				{
+				has_1_7_Features = true;
+				}
+				
+			}
+			
+		}
+		
+	if (previewList && !has_1_7_Features)
+		{
+		
+		for (uint32 j = 0; j < previewList->Count (); j++)
+			{
+			
+			dng_tiff_directory tempDirectory;
+			
+			AutoPtr<dng_basic_tag_set> tempBasic (previewList->Preview (j).AddTagSet (host,
+																					  tempDirectory));
+			
+			if (tempBasic.Get () && tempBasic->Compression () == ccJXL)
+				{
+				has_1_7_Features = true;
+				break;
+				}
+				
 			}
 
 		}
+	
+	// Check other DNG 1.7 feature usage.
 
-	// Figure out what backward version to use.
+	if (has_1_7_Features            ||
+		hasImageStats			    ||
+		hasImageSequenceInfo	    ||
+		hasHDRColorimetricRef       ||
+		hasProfileGainTableMap2     ||
+		hasProfileWith_1_7_Features ||
+		hasGainMap                  )
+		{
+		
+		dngVersion = Max_uint32 (dngVersion, dngVersion_1_7_0_0);
+		
+		}
+		
+	// Check DNG 1.6 feature usage.
+		
+	const bool hasRGBTables =
+		(negative.ProfileCount () > 0 &&
+		 negative.ProfileByIndex (0).HasMaskedRGBTables ());
 	
-	uint32 dngBackwardVersion = dngVersion_1_1_0_0;
-	
+	if (HasDNGOpcode_1_6 (negative, false) || // don't include optional opcodes
+		hasProfileWith_1_6_Features ||
+		negative.HasSemanticMask () ||
+		negative.HasProfileGainTableMap () ||
+		hasRGBTables)
+		{
+		
+		dngVersion = Max_uint32 (dngVersion, dngVersion_1_6_0_0);
+		
+		}
+
+	// Check DNG 1.5 feature usage.
+
+	if (hasDepthMap || hasEnhancedImage)
+		{
+		
+		dngVersion = Max_uint32 (dngVersion, dngVersion_1_5_0_0);
+		
+		}
+		
 	#if defined(qTestRowInterleave) || defined(qTestSubTileBlockRows) || defined(qTestSubTileBlockCols)
 	dngBackwardVersion = Max_uint32 (dngBackwardVersion, dngVersion_1_2_0_0);
 	#endif
 	
+	#if defined(qTestColumnInterleave)
+	dngBackwardVersion = Max_uint32 (dngBackwardVersion, dngVersion_1_7_1_0);
+	#endif
+
 	dngBackwardVersion = Max_uint32 (dngBackwardVersion,
 									 negative.OpcodeList1 ().MinVersion (false));
 
@@ -6918,33 +7958,42 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 		dngBackwardVersion = Max_uint32 (dngBackwardVersion, dngVersion_1_3_0_0);
 		}
 		
-	if (rawJPEGImage || isFloatingPoint || hasTransparencyMask || isCompressed32BitInteger)
+	if (isFloatingPoint || hasTransparencyMask || isCompressed32BitInteger)
 		{
 		dngBackwardVersion = Max_uint32 (dngBackwardVersion, dngVersion_1_4_0_0);
 		}
 
-	#if 1
-
-	// For now, allow profiles that technically require DNG 1.6 for rendering
-	// compatibility to be included in older DNG versions, too. Those older
-	// readers should be able to read the profiles but may not render the same
-	// way.
-
-	(void) hasProfileThatRequires_1_6_Reader;
-
-	#else
-
-	if (hasProfileThatRequires_1_6_Reader)
+	if (rawLossyCompressedImage)
 		{
-		dngBackwardVersion = Max_uint32 (dngBackwardVersion, dngVersion_1_6_0_0);
+		
+		dngBackwardVersion =
+			Max_uint32 (dngBackwardVersion,
+						MinBackwardVersionForCompression
+							(rawLossyCompressedImage->fCompressionCode));
+							
+		if (rawLossyCompressedImage->fColumnInterleaveFactor != 1)
+			{
+			dngBackwardVersion = Max_uint32 (dngBackwardVersion, dngVersion_1_7_1_0);
+			}
+
 		}
 
-	#endif
-									 
-	if (dngBackwardVersion > dngVersion)
+	if (rawLossyCompressedTransparencyMask)
 		{
-		ThrowProgramError ();
+		dngBackwardVersion =
+			Max_uint32 (dngBackwardVersion,
+						MinBackwardVersionForCompression
+							(rawLossyCompressedTransparencyMask->fCompressionCode));
 		}
+
+	// The dngVersion must be at least the dngBackwardVersion.
+	
+	dngVersion = Max_uint32 (dngVersion, dngBackwardVersion);
+	
+	// Our computed dngBackwardVersion should never be higher than the maxBackwardVersion.
+	
+	DNG_REQUIRE (dngBackwardVersion <= maxBackwardVersion,
+				 "dngBackwardVersion too high");
 		
 	// Find best thumbnail from preview list, if any.
 
@@ -6958,18 +8007,21 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 		for (uint32 j = 0; j < previewList->Count (); j++)
 			{
 			
-			const dng_image_preview *imagePreview = dynamic_cast<const dng_image_preview *>(&previewList->Preview (j));
+			const dng_preview &preview (previewList->Preview (j));
 			
-			if (imagePreview)
+			if ((preview.NewSubFileType () == sfPreviewImage) &&
+				(preview.PhotometricInterpretation () == piBlackIsZero ||
+				 preview.PhotometricInterpretation () == piRGB         ||
+				 preview.PhotometricInterpretation () == piYCbCr))
 				{
 				
-				uint32 thisArea = imagePreview->ImageWidth	() *
-								  imagePreview->ImageLength ();
+				uint32 thisArea = preview.ImageWidth  () *
+								  preview.ImageLength ();
 								  
 				if (!thumbnail || thisArea < thumbArea)
 					{
 					
-					thumbnail = &previewList->Preview (j);
+					thumbnail = &preview;
 					
 					thumbArea = thisArea;
 					
@@ -7023,48 +8075,13 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 	
 	if (thumbnail)
 		{
-		thmBasic.Reset (thumbnail->AddTagSet (mainIFD));
+		thmBasic.Reset (thumbnail->AddTagSet (host, mainIFD));
 		}
 						  
 	// Get the raw image we are writing.
-	
+
 	const dng_image &rawImage (negative.RawImage ());
 	
-	// For floating point, we only support ZIP compression.
-	
-	if (isFloatingPoint && !uncompressed)
-		{
-		
-		compression = ccDeflate;
-		
-		}
-	
-	// For 32-bit integer images, we only support ZIP and uncompressed.
-	
-	if (rawImage.PixelType () == ttLong)
-		{
-		
-		if (isCompressed32BitInteger)
-			{
-			compression = ccDeflate;
-			}
-			
-		else
-			{
-			compression = ccUncompressed;
-			}
-	
-		}
-	
-	// Get a copy of the mosaic info.
-	
-	dng_mosaic_info mosaicInfo;
-	
-	if (negative.GetMosaicInfo ())
-		{
-		mosaicInfo = *(negative.GetMosaicInfo ());
-		}
-		
 	// Create a dng_ifd record for the raw image.
 	
 	dng_ifd info;
@@ -7078,8 +8095,8 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 																	   : piLinearRaw;
 			
 	info.fCompression = compression;
-	
-	if (isFloatingPoint && compression == ccDeflate)
+
+	if (isFloatingPoint && (compression == ccDeflate))
 		{
 		
 		info.fPredictor = cpFloatingPoint;
@@ -7248,23 +8265,11 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 		
 	// Figure out tile sizes.
 	
-	if (rawJPEGImage)
+	if (rawLossyCompressedImage)
 		{
-		
-		DNG_ASSERT (rawPixelType == ttByte,
-					"Unexpected jpeg pixel type");
-		
-		DNG_ASSERT (info.fImageWidth  == (uint32) rawJPEGImage->fImageSize.h &&
-					info.fImageLength == (uint32) rawJPEGImage->fImageSize.v,
-					"Unexpected jpeg image size");
-					
-		info.fTileWidth	 = rawJPEGImage->fTileSize.h;
-		info.fTileLength = rawJPEGImage->fTileSize.v;
 
-		info.fUsesStrips = rawJPEGImage->fUsesStrips;
-		
-		info.fUsesTiles = !info.fUsesStrips;
-		
+		SetupIFDfromCompressedImage (info, *rawLossyCompressedImage);
+				
 		}
 	
 	else if (info.fCompression == ccJPEG)
@@ -7281,6 +8286,13 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 		
 		}
 		
+	else if (info.fCompression == ccJXL)
+		{
+		
+		ThrowProgramError ("No JXL compressed image");
+		
+		}
+
 	else if (info.fCompression == ccLossyJPEG)
 		{
 		
@@ -7298,9 +8310,13 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 		}
 		
 	#ifdef qTestRowInterleave
-	
 	info.fRowInterleaveFactor = qTestRowInterleave;
-	
+	fakeChannels = 1;
+	#endif
+			
+	#ifdef qTestColumnInterleave
+	info.fColumnInterleaveFactor = qTestColumnInterleave;
+	fakeChannels = 1;
 	#endif
 			
 	#if defined(qTestSubTileBlockRows) && defined(qTestSubTileBlockCols)
@@ -7317,6 +8333,9 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 	
 	dng_basic_tag_set rawBasic (rawIFD, info);
 	
+	// TODO(erichan): For lossy compressed images, perhaps call a virtual
+	// method to add special tags if needed.
+
 	// JPEG tables, if any.
 	
 	tag_data_ptr tagJPEGTables (tcJPEGTables,
@@ -7324,12 +8343,12 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 								0,
 								NULL);
 								
-	if (rawJPEGImage && rawJPEGImage->fJPEGTables.Get ())
+	if (rawLossyCompressedImage && rawLossyCompressedImage->JPEGTables ())
 		{
 		
-		tagJPEGTables.SetData (rawJPEGImage->fJPEGTables->Buffer ());
+		tagJPEGTables.SetData (rawLossyCompressedImage->JPEGTables ()->Buffer ());
 		
-		tagJPEGTables.SetCount (rawJPEGImage->fJPEGTables->LogicalSize ());
+		tagJPEGTables.SetCount (rawLossyCompressedImage->JPEGTables ()->LogicalSize ());
 		
 		rawIFD.Add (&tagJPEGTables);
 		
@@ -7568,19 +8587,31 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 	tag_uint16 tagColorimetricReference (tcColorimetricReference,
 										 (uint16) negative.ColorimetricReference ());
 										 
-	if (negative.ColorimetricReference () != crSceneReferred)
+	if (negative.IsOutputReferred ())
 		{
 		
 		mainIFD.Add (&tagColorimetricReference);
 		
 		}
 		
-	bool useNewDigest = (maxBackwardVersion >= dngVersion_1_4_0_0);
-		
-	if (compression == ccLossyJPEG)
+	const bool useNewDigest = (maxBackwardVersion >= dngVersion_1_4_0_0);
+
+	dng_fingerprint mainImageRawImageDigest;
+	
+	if (rawLossyCompressedImage)
 		{
 		
-		negative.FindRawJPEGImageDigest (host);
+		negative.FindRawLossyCompressedImageDigest (host);
+		
+		mainImageRawImageDigest = negative.RawLossyCompressedImageDigest ();
+		
+		}
+		
+	else if (rawLossyCompressedTransparencyMask)
+		{
+		
+		// For the edge case of a lossy compressed transparency mask, and a lossless
+		// raw image, the raw image digest will not safely round trip, so don't write it.
 		
 		}
 		
@@ -7590,22 +8621,27 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 		if (useNewDigest)
 			{
 			negative.FindNewRawImageDigest (host);
+			mainImageRawImageDigest = negative.NewRawImageDigest ();
 			}
+		
 		else
 			{
 			negative.FindRawImageDigest (host);
+			mainImageRawImageDigest = negative.RawImageDigest ();
 			}
 		
 		}
 	
 	tag_uint8_ptr tagRawImageDigest (useNewDigest ? tcNewRawImageDigest : tcRawImageDigest,
-									 compression == ccLossyJPEG ?
-									 negative.RawJPEGImageDigest ().data :
-									 (useNewDigest ? negative.NewRawImageDigest ().data
-												   : negative.RawImageDigest	().data),
+									 mainImageRawImageDigest.data,
 									 16);
-									  
-	mainIFD.Add (&tagRawImageDigest);
+									 
+	if (mainImageRawImageDigest.IsValid ())
+		{
+
+		mainIFD.Add (&tagRawImageDigest);
+		
+		}
 	
 	negative.FindRawDataUniqueID (host);
 
@@ -7794,9 +8830,18 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 
 	AutoPtr<dng_memory_block> profileGainTableMapBlock;
 
-	if (negative.HasProfileGainTableMap ())
-		{
+	uint16 tagCodeForPGTM = tcProfileGainTableMap;
+	
+	if (negative.HasProfileGainTableMap () &&
+
+		// If the main profile already has the PGTM attached, let the profile
+		// logic take care of writing the PGTM. Otherwise we would end up
+		// writing two identical PGTM tags into IFD 0.
 		
+		(negative.ShareProfileGainTableMap () !=
+		 mainProfile.ShareProfileGainTableMap ()))
+		{
+
 		dng_memory_stream tempStream (host.Allocator (),
 									  host.Sniffer ());
 
@@ -7807,10 +8852,13 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 		profileGainTableMapBlock.Reset
 			(tempStream.AsMemoryBlock (host.Allocator ()));
 
+		if (gainTableMap.RequiresVersion2 ())
+			tagCodeForPGTM = tcProfileGainTableMap2;
+
 		}
 		
 	tag_data_ptr tagProfileGainTableMapBlock
-		(tcProfileGainTableMap,
+		(tagCodeForPGTM,
 		 ttUndefined,
 		 profileGainTableMapBlock.Get () ? profileGainTableMapBlock->LogicalSize () : 0,
 		 profileGainTableMapBlock.Get () ? profileGainTableMapBlock->Buffer		 () : NULL);
@@ -7818,46 +8866,45 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 	if (profileGainTableMapBlock.Get ())
 		{
 
-		rawIFD.Add (&tagProfileGainTableMapBlock);
+		if (tagCodeForPGTM == tcProfileGainTableMap2)
+			mainIFD.Add (&tagProfileGainTableMapBlock);
+
+		else
+			rawIFD.Add (&tagProfileGainTableMapBlock);
 
 		}
 
-	// RGBTables.
-		
-	AutoPtr<dng_memory_block> rgbTablesBlock;
+	// ImageSequenceInfo.
 
-	if (negative.HasMaskedRGBTables ())
+	AutoPtr<tiff_tag> tagImageSequenceInfo;
+
+	if (metadata->ImageSequenceInfo ().IsValid ())
 		{
 		
-		const auto &tables = negative.MaskedRGBTables ();
+		tagImageSequenceInfo.Reset
+			(metadata->ImageSequenceInfo ().MakeTag (host.Allocator ()));
 
-		if (!tables.IsNOP ())
+		mainIFD.Add (tagImageSequenceInfo.Get ());
+		
+		}
+
+	// ImageStats.
+
+	AutoPtr<tiff_tag> tagImageStats;
+
+		{
+
+		const auto &stats = metadata->ImageStats ();
+
+		if (stats.IsValidForPlaneCount (negative.ColorChannels ()) &&
+			(stats.TagCount () > 0))
 			{
-
-			dng_memory_stream tempStream (host.Allocator (),
-										  host.Sniffer ());
-
-			tables.PutStream (tempStream);
-
-			rgbTablesBlock.Reset
-				(tempStream.AsMemoryBlock (host.Allocator ()));
-
-			}
-
-		}
 		
-	tag_data_ptr tagRGBTablesBlock
-		(tcRGBTables,
-		 ttUndefined,
-		 rgbTablesBlock.Get () ? rgbTablesBlock->LogicalSize () : 0,
-		 rgbTablesBlock.Get () ? rgbTablesBlock->Buffer		 () : NULL);
-								 
-	if (rgbTablesBlock.Get ())
-		{
+			tagImageStats.Reset (stats.MakeTag (host.Allocator ()));
 
-		// RGBTables is stored in IFD 0.
-
-		mainIFD.Add (&tagRGBTablesBlock);
+			rawIFD.Add (tagImageStats.Get ());
+		
+			}
 
 		}
 
@@ -7886,30 +8933,12 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 		maskInfo->fBitsPerSample [0] = negative.RawTransparencyMaskBitDepth ();
 		
 		maskInfo->fPhotometricInterpretation = piTransparencyMask;
-		
-		maskInfo->fCompression = uncompressed ? ccUncompressed	: ccDeflate;
-		maskInfo->fPredictor   = uncompressed ? cpNullPredictor : cpHorizontalDifference;
-		
-		if (negative.RawTransparencyMask ()->PixelType () == ttFloat)
-			{
-			
-			maskInfo->fSampleFormat [0] = sfFloatingPoint;
-			
-			if (maskInfo->fCompression == ccDeflate)
-				{
-				maskInfo->fPredictor = cpFloatingPoint;
-				}
-			
-			}
-				
-		if (maskInfo->fCompression == ccDeflate)
-			{
-			maskInfo->FindTileSize (512 * 1024);
-			}
-		else
-			{
-			maskInfo->SetSingleStrip ();
-			}
+
+		SetEncodeSettingsForIFD (*negative.RawTransparencyMask (),
+								 uncompressed,
+								 maxBackwardVersion,
+								 *maskInfo,
+								 rawLossyCompressedTransparencyMask);
 			
 		// Create mask tiff directory.
 			
@@ -7959,19 +8988,13 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 		depthInfo->fBitsPerSample [0] = negative.RawDepthMap ()->PixelSize () * 8;
 	
 		depthInfo->fPhotometricInterpretation = piDepth;
-	
-		depthInfo->fCompression = uncompressed ? ccUncompressed	 : ccDeflate;
-		depthInfo->fPredictor	= uncompressed ? cpNullPredictor : cpHorizontalDifference;
-	
-		if (depthInfo->fCompression == ccDeflate)
-			{
-			depthInfo->FindTileSize (512 * 1024);
-			}
-		else
-			{
-			depthInfo->SetSingleStrip ();
-			}
-	
+
+		SetEncodeSettingsForIFD (*negative.RawDepthMap (),
+								 uncompressed,
+								 maxBackwardVersion,
+								 *depthInfo,
+								 negative.RawLossyCompressedDepthMap ());
+
 		// Create mask tiff directory.
 	
 		depthIFD.Reset (new dng_tiff_directory);
@@ -8058,50 +9081,29 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 		enhancedInfo->fImageLength = negative.Stage3Image ()->Bounds ().H ();
 	
 		enhancedInfo->fSamplesPerPixel = negative.Stage3Image ()->Planes ();
+
+		const bool isEnhancedFloat =
+			(negative.Stage3Image ()->PixelType () == ttFloat);
 		
 		for (uint32 plane = 0; plane < enhancedInfo->fSamplesPerPixel; plane++)
 			{
-	
-			enhancedInfo->fBitsPerSample [plane] = negative.Stage3Image ()->PixelSize () * 8;
-			
-			if (negative.Stage3Image ()->PixelType () == ttFloat)
-				{
-				
-				enhancedInfo->fSampleFormat [plane] = sfFloatingPoint;
-				
-				}
+
+			if (isEnhancedFloat)
+				enhancedInfo->fBitsPerSample [plane] = 16;
+
+			else
+				enhancedInfo->fBitsPerSample [plane] =
+					negative.Stage3Image ()->PixelSize () * 8;
 
 			}
 		
 		enhancedInfo->fPhotometricInterpretation = piLinearRaw;
-		
-		if (uncompressed)
-			{
-			
-			enhancedInfo->fCompression = ccUncompressed;
-			
-			enhancedInfo->SetSingleStrip ();
-			
-			}
-	
-		else if (negative.Stage3Image ()->PixelType () == ttShort)
-			{
-			
-			enhancedInfo->fCompression = ccJPEG;
-	
-			enhancedInfo->FindTileSize (128 * 1024);
-			
-			}
-			
-		else
-			{
-			
-			enhancedInfo->fCompression = ccDeflate;
-			enhancedInfo->fPredictor   = cpFloatingPoint;
-			
-			enhancedInfo->FindTileSize (512 * 1024);
-			
-			}
+
+		SetEncodeSettingsForIFD (*negative.Stage3Image (),
+								 uncompressed,
+								 maxBackwardVersion,
+								 *enhancedInfo,
+								 negative.EnhancedLossyCompressedImage ());
 			
 		// Create enhanced tiff directory.
 	
@@ -8240,62 +9242,11 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 
 			smInfo.fPhotometricInterpretation = piPhotometricMask;
 
-			if (uncompressed)
-				{
-					
-				smInfo.fCompression = ccUncompressed;
-				smInfo.fPredictor	= cpNullPredictor;
-					
-				}
-
-			else
-				{
-					
-				// Compressed.
-					
-				if (rawMask.fMask->PixelType () == ttFloat)
-					{
-
-					// Float.
-
-					smInfo.fCompression = ccDeflate;
-					smInfo.fPredictor	= cpFloatingPoint;
-
-					smInfo.fSampleFormat [0] = sfFloatingPoint;
-					
-					}
-
-				else
-					{
-					
-					// Integer.
-
-					smInfo.fCompression = ccDeflate;
-					smInfo.fPredictor	= cpHorizontalDifference;
-
-					}
-
-				}
-
-			// Currently we don't write semantic masks using either of these
-			// options, but leaving this code here in case we change the
-			// options in future.
-	
-			if (smInfo.fCompression == ccJPEG ||
-				smInfo.fCompression == ccLossyJPEG)
-				{
-				smInfo.FindTileSize (128 * 1024);
-				}
-
-			else if (smInfo.fCompression == ccDeflate)
-				{
-				smInfo.FindTileSize (512 * 1024);
-				}
-
-			else
-				{
-				smInfo.SetSingleStrip ();
-				}
+			SetEncodeSettingsForIFD (*rawMask.fMask,
+									 uncompressed,
+									 maxBackwardVersion,
+									 smInfo,
+									 rawMask.fLossyCompressed.get ());
 
 			// Create mask tiff directory.
 	
@@ -8390,15 +9341,20 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 		subFileCount++;
 		}
 
+	if (hasGainMap)
+		{
+		subFileCount++;
+		}
+
 	subFileCount += semanticMaskCount;
 	
 	// Add previews.
 	
 	uint32 previewCount = previewList ? previewList->Count () : 0;
 	
-	AutoPtr<dng_tiff_directory> previewIFD [kMaxDNGPreviews];
+	std::vector<std::unique_ptr<dng_tiff_directory>> previewIFD (previewCount);
 	
-	AutoPtr<dng_basic_tag_set> previewBasic [kMaxDNGPreviews];
+	std::vector<std::unique_ptr<dng_basic_tag_set>> previewBasic (previewCount);
 	
 	for (uint32 j = 0; j < previewCount; j++)
 		{
@@ -8406,9 +9362,10 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 		if (thumbnail != &previewList->Preview (j))
 			{
 		
-			previewIFD [j] . Reset (new dng_tiff_directory);
+			previewIFD [j] . reset (new dng_tiff_directory);
 			
-			previewBasic [j] . Reset (previewList->Preview (j).AddTagSet (*previewIFD [j]));
+			previewBasic [j] . reset (previewList->Preview (j).AddTagSet (host,
+																		  *previewIFD [j]));
 				
 			subFileCount++;
 			
@@ -8428,8 +9385,8 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 		
 		}
 		
-	// Maxium target size of 32-bit DNG files that allows
-	// lots of slop for future metadata edits.
+	// Maximum target size of 32-bit DNG files that allows lots of slop for
+	// future metadata edits.
 	
 	const uint64 kMaxTarget32BitDNGSize = 0xFFFFFFFF - 256 * 1024 * 1024;
 	
@@ -8562,6 +9519,17 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 			
 			}
 
+		if (hasGainMap)
+			{
+
+			gainMapIFD.SetBigTIFF (isBigTIFF);
+			
+			tagSubFile.Set (subFileIndex++, currentOffset);
+			
+			currentOffset += gainMapIFD.Size ();
+			
+			}
+
 		for (uint32 j = 0; j < semanticMaskCount; j++)
 			{
 			
@@ -8649,6 +9617,13 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 				
 				}
 
+			if (hasGainMap)
+				{
+
+				gainMapIFD.Put (stream);
+				
+				}
+
 			for (uint32 j = 0; j < semanticMaskCount; j++)
 				{
 					
@@ -8673,7 +9648,7 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 				
 			break;		// All done.
 			
-			}
+			} // pass 3
 			
 		if (pass == 1)
 			{
@@ -8794,55 +9769,27 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 		
 		// Write the raw data.
 		
-		if (rawJPEGImage)
+		if (rawLossyCompressedImage)
 			{
+
+			const auto &img = *rawLossyCompressedImage;
 			
-			uint32 tileCount = info.TilesAcross () *
-							   info.TilesDown	();
-								
-			for (uint32 tileIndex = 0; tileIndex < tileCount; tileIndex++)
+			if (pass == 1)
 				{
 				
-				if (pass == 1)
-					{
-					
-					maxNonHeaderSize += RoundUp2 (rawJPEGImage->fJPEGData [tileIndex]->LogicalSize ());
-					
-					}
-					
-				else
-					{
+				maxNonHeaderSize += img.NonHeaderSize ();
 				
-					// Remember this offset.
-					
-					uint64 tileOffset = stream.Position ();
+				}
 				
-					rawBasic.SetTileOffset (tileIndex, tileOffset);
-					
-					// Write JPEG data.
-					
-					stream.Put (rawJPEGImage->fJPEGData [tileIndex]->Buffer		 (),
-								rawJPEGImage->fJPEGData [tileIndex]->LogicalSize ());
-									
-					// Update tile byte count.
-						
-					uint64 tileByteCount = stream.Position () - tileOffset;
-						
-					rawBasic.SetTileByteCount (tileIndex, tileByteCount);
-					
-					// Keep the tiles on even byte offsets.
-														 
-					if (tileByteCount & 1)
-						{
-						stream.Put_uint8 (0);
-						}
-						
-					}
+			else
+				{
+				
+				img.WriteData (stream, rawBasic);
 
 				}
 			
 			}
-			
+
 		else
 			{
 			
@@ -8863,14 +9810,15 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 				#if qDNGValidate
 				dng_timer timer ("Write raw image time");
 				#endif
-			
+
 				WriteImage (host,
 							info,
 							rawBasic,
 							stream,
 							rawImage,
-							fakeChannels);
-							
+							fakeChannels,
+							nullptr);
+
 				}
 						
 			}
@@ -8880,30 +9828,58 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 		if (hasTransparencyMask)
 			{
 			
-			uint64 estimatedSize = maskInfo->MaxImageDataByteCount ();
+			// Do we have a lossy compressed version?
 			
-			if (pass == 1)
+			if (rawLossyCompressedTransparencyMask)
 				{
+
+				const auto &img = *rawLossyCompressedTransparencyMask;
 				
-				maxNonHeaderSize += estimatedSize;
+				if (pass == 1)
+					{
+					
+					maxNonHeaderSize += img.NonHeaderSize ();
+					
+					}
+					
+				else
+					{
+					
+					img.WriteData (stream, *maskBasic);
+
+					}
 					
 				}
 				
 			else
 				{
 				
-				DNG_VERIFY_SIZE_ESTIMATE (stream, estimatedSize, "Transparency mask data");
+				uint64 estimatedSize = maskInfo->MaxImageDataByteCount ();
+				
+				if (pass == 1)
+					{
 					
-				#if qDNGValidate
-				dng_timer timer ("Write transparency mask time");
-				#endif
-			
-				WriteImage (host,
-							*maskInfo,
-							*maskBasic,
-							stream,
-							*negative.RawTransparencyMask ());
-							
+					maxNonHeaderSize += estimatedSize;
+						
+					}
+					
+				else
+					{
+					
+					DNG_VERIFY_SIZE_ESTIMATE (stream, estimatedSize, "Transparency mask data");
+						
+					#if qDNGValidate
+					dng_timer timer ("Write transparency mask time");
+					#endif
+				
+					WriteImage (host,
+								*maskInfo,
+								*maskBasic,
+								stream,
+								*negative.RawTransparencyMask ());
+								
+					}
+					
 				}
 						
 			}
@@ -8913,29 +9889,57 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 		if (hasDepthMap)
 			{
 			
-			uint64 estimatedSize = depthInfo->MaxImageDataByteCount ();
+			// Do we have a lossy compressed version?
 			
-			if (pass == 1)
+			if (negative.RawLossyCompressedDepthMap ())
 				{
+
+				const auto &img = *(negative.RawLossyCompressedDepthMap ());
 				
-				maxNonHeaderSize += estimatedSize;
+				if (pass == 1)
+					{
+					
+					maxNonHeaderSize += img.NonHeaderSize ();
+					
+					}
+					
+				else
+					{
+					
+					img.WriteData (stream, *depthBasic);
+					
+					}
 					
 				}
 				
 			else
 				{
 				
-				DNG_VERIFY_SIZE_ESTIMATE (stream, estimatedSize, "Depth map data");
+				uint64 estimatedSize = depthInfo->MaxImageDataByteCount ();
+				
+				if (pass == 1)
+					{
 					
-				#if qDNGValidate
-				dng_timer timer ("Write depth map time");
-				#endif
-			
-				WriteImage (host,
-							*depthInfo,
-							*depthBasic,
-							stream,
-							*negative.RawDepthMap ());
+					maxNonHeaderSize += estimatedSize;
+						
+					}
+					
+				else
+					{
+					
+					DNG_VERIFY_SIZE_ESTIMATE (stream, estimatedSize, "Depth map data");
+						
+					#if qDNGValidate
+					dng_timer timer ("Write depth map time");
+					#endif
+				
+					WriteImage (host,
+								*depthInfo,
+								*depthBasic,
+								stream,
+								*negative.RawDepthMap ());
+						
+					}
 					
 				}
 				
@@ -8946,30 +9950,121 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 		if (hasEnhancedImage)
 			{
 			
-			uint64 estimatedSize = enhancedInfo->MaxImageDataByteCount ();
+			// Do we have a lossy compressed version?
 			
-			if (pass == 1)
+			if (negative.EnhancedLossyCompressedImage ())
 				{
+
+				const auto &img = *(negative.EnhancedLossyCompressedImage ());
 				
-				maxNonHeaderSize += estimatedSize;
+				if (pass == 1)
+					{
+					
+					maxNonHeaderSize += img.NonHeaderSize ();
+					
+					}
+					
+				else
+					{
+					
+					img.WriteData (stream, *enhancedBasic);
+					
+					}
+					
+				}
+				
+			else
+				{
+
+				uint64 estimatedSize = enhancedInfo->MaxImageDataByteCount ();
+				
+				if (pass == 1)
+					{
+					
+					maxNonHeaderSize += estimatedSize;
+						
+					}
+					
+				else
+					{
+					
+					DNG_VERIFY_SIZE_ESTIMATE (stream, estimatedSize, "Enhanced image data");
+						
+					#if qDNGValidate
+					dng_timer timer ("Write enhanced image time");
+					#endif
+				
+					WriteImage (host,
+								*enhancedInfo,
+								*enhancedBasic,
+								stream,
+								*negative.Stage3Image ());
+						
+					}
+					
+				}
+				
+			}
+
+		// Write gain map.
+
+		if (hasGainMap)
+			{
+
+			// Do we have a lossy compressed version?
+			
+			if (gainMapLossyCompressed)
+				{
+
+				const auto &img = *gainMapLossyCompressed;
+				
+				if (pass == 1)
+					{
+					
+					maxNonHeaderSize += img.NonHeaderSize ();
+					
+					}
+					
+				else
+					{
+					
+					img.WriteData (stream, *gainMapTagSet);
+					
+					}
 					
 				}
 				
 			else
 				{
 				
-				DNG_VERIFY_SIZE_ESTIMATE (stream, estimatedSize, "Enhanced image data");
-					
-				#if qDNGValidate
-				dng_timer timer ("Write enhanced image time");
-				#endif
+				uint64 estimatedSize = gainMapImageIFD->MaxImageDataByteCount ();
 			
-				WriteImage (host,
-							*enhancedInfo,
-							*enhancedBasic,
-							stream,
-							*negative.Stage3Image ());
+				if (pass == 1)
+					{
 					
+					maxNonHeaderSize += estimatedSize;
+						
+					}
+					
+				else
+					{
+					
+					DNG_VERIFY_SIZE_ESTIMATE (stream,
+											  estimatedSize,
+											  "Gain map image data");
+						
+					#if qDNGValidate
+					dng_timer timer ("Write gain map image time");
+					#endif
+				
+					WriteImage (host,
+								*gainMapImageIFD,
+								*gainMapTagSet,
+								stream,
+								*gainMapImage);
+						
+					}
+
 				}
 				
 			}
@@ -8979,28 +10074,56 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 		for (uint32 j = 0; j < semanticMaskCount; j++)
 			{
 
-			uint64 estimatedSize = semanticMaskInfo [j]->MaxImageDataByteCount ();
+			const auto &semanticMask = negative.RawSemanticMask (j);
+
+			// Do we have a lossy compressed version?
 			
-			if (pass == 1)
+			if (semanticMask.fLossyCompressed.get ())
 				{
+
+				const auto &img = *(semanticMask.fLossyCompressed);
 				
-				maxNonHeaderSize += estimatedSize;
+				if (pass == 1)
+					{
+					
+					maxNonHeaderSize += img.NonHeaderSize ();
+					
+					}
+					
+				else
+					{
+					
+					img.WriteData (stream, *semanticMaskBasic [j]);
+					
+					}
 					
 				}
 				
 			else
 				{
 				
-				DNG_VERIFY_SIZE_ESTIMATE (stream, estimatedSize, "Semantic mask data");
+				uint64 estimatedSize = semanticMaskInfo [j]->MaxImageDataByteCount ();
+				
+				if (pass == 1)
+					{
 					
-				const auto &semanticMask = negative.RawSemanticMask (j);
-
-				WriteImage (host,
-							*semanticMaskInfo  [j],
-							*semanticMaskBasic [j],
-							stream,
-							*semanticMask.fMask);
-							
+					maxNonHeaderSize += estimatedSize;
+						
+					}
+					
+				else
+					{
+					
+					DNG_VERIFY_SIZE_ESTIMATE (stream, estimatedSize, "Semantic mask data");
+						
+					WriteImage (host,
+								*semanticMaskInfo  [j],
+								*semanticMaskBasic [j],
+								stream,
+								*semanticMask.fMask);
+								
+					}
+					
 				}
 				
 			}

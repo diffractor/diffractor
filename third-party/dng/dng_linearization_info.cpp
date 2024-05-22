@@ -1464,7 +1464,7 @@ void dng_linearization_info::Linearize (dng_host &host,
 	bool allowPreserveBlackLevels = negative.SupportsPreservedBlackLevels (host);
 
 	if (allowPreserveBlackLevels &&
-		negative.ColorimetricReference () == crSceneReferred &&
+		negative.IsSceneReferred () &&
 		dstImage.PixelType () == ttShort)
 		{
 		

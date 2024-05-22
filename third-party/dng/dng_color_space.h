@@ -70,6 +70,87 @@ class dng_function_GammaEncode_2_2: public dng_1d_function
 		static const dng_1d_function & Get ();
 	
 	};
+
+/*****************************************************************************/
+
+/// \brief Base class for two-part gamma encoding with a linear + power function.
+
+class dng_function_GammaEncode_TwoPart: public dng_1d_function
+	{
+
+	protected:
+
+		real64 fAlpha = 1.0;
+		real64 fBeta  = 0.0;
+		real64 fSlope = 4.5;
+		real64 fGamma = 1.0;
+	
+	public:
+	
+		real64 Evaluate (real64 x) const override
+			{
+
+			if (x <= fBeta)
+				return fSlope * x;
+
+			return fAlpha * pow (x, fGamma) - (fAlpha - 1.0);
+
+			}
+			
+		real64 EvaluateInverse (real64 y) const override
+			{
+
+			if (y <= fSlope * fBeta)
+				return y / fSlope;
+
+			else
+				return pow ((y + (fAlpha - 1.0)) / fAlpha, 1.0 / fGamma);
+
+			}
+	
+	protected:
+
+		dng_function_GammaEncode_TwoPart ()
+			{
+			}
+
+	};
+
+/*****************************************************************************/
+
+// CICP Transfer Curve Code Value 1, 6, 14, and 15.
+// 
+// Also used by Rec. 2020.
+// 
+// See Recommendation ITU-R BT.2020-2 (10/2015).
+//
+// https://en.wikipedia.org/wiki/Rec._2020
+
+class dng_function_GammaEncode_Rec709: public dng_function_GammaEncode_TwoPart
+	{
+
+	public:
+
+		dng_function_GammaEncode_Rec709 ()
+			{
+			fAlpha = 1.0992968268094429;
+			fBeta  = 0.0180539685108078;
+			fSlope = 4.5;
+			fGamma = 0.45;
+			}
+	
+		static const dng_1d_function & Get ()
+			{
+
+			static dng_function_GammaEncode_Rec709 static_function;
+
+			return static_function;
+
+			}
+	
+	};
+
+typedef dng_function_GammaEncode_Rec709 dng_function_GammaEncode_Rec2020;
 			
 /*****************************************************************************/
 
@@ -242,6 +323,50 @@ class dng_space_ColorMatch: public dng_color_space
 
 /*****************************************************************************/
 
+/// \brief Singleton class for Display P3 color space.
+
+class dng_space_DisplayP3: public dng_color_space
+	{
+	
+	protected:
+	
+		dng_space_DisplayP3 ();
+		
+	public:
+
+		virtual bool ICCProfile (uint32 &size,
+								 const uint8 *&data) const;
+								 
+		virtual const dng_1d_function & GammaFunction () const;
+	
+		static const dng_color_space & Get ();
+	
+	};
+
+/*****************************************************************************/
+
+/// \brief Singleton class for Rec. 2020 color space.
+
+class dng_space_Rec2020: public dng_color_space
+	{
+	
+	protected:
+	
+		dng_space_Rec2020 ();
+		
+	public:
+
+		virtual bool ICCProfile (uint32 &size,
+								 const uint8 *&data) const;
+								 
+		virtual const dng_1d_function & GammaFunction () const;
+	
+		static const dng_color_space & Get ();
+	
+	};
+
+/*****************************************************************************/
+
 /// \brief Singleton class for ProPhoto RGB color space.
 
 class dng_space_ProPhoto: public dng_color_space
@@ -320,6 +445,114 @@ class dng_space_GrayGamma22: public dng_color_space
 		
 		/// Static method for getting single global instance of this color space.
 
+		static const dng_color_space & Get ();
+	
+	};
+
+/*****************************************************************************/
+
+class dng_space_sRGB_Linear: public dng_color_space
+	{
+	
+	protected:
+	
+		dng_space_sRGB_Linear ();
+		
+	public:
+	
+		virtual bool ICCProfile (uint32 &size,
+								 const uint8 *&data) const;
+								 
+		static const dng_color_space & Get ();
+	
+	};
+
+/*****************************************************************************/
+
+class dng_space_AdobeRGB_Linear: public dng_color_space
+	{
+	
+	protected:
+	
+		dng_space_AdobeRGB_Linear ();
+		
+	public:
+	
+		virtual bool ICCProfile (uint32 &size,
+								 const uint8 *&data) const;
+								 
+		static const dng_color_space & Get ();
+	
+	};
+
+/*****************************************************************************/
+
+class dng_space_ProPhoto_Linear: public dng_color_space
+	{
+	
+	protected:
+	
+		dng_space_ProPhoto_Linear ();
+		
+	public:
+	
+		virtual bool ICCProfile (uint32 &size,
+								 const uint8 *&data) const;
+								 
+		static const dng_color_space & Get ();
+	
+	};
+
+/*****************************************************************************/
+
+class dng_space_Gray_Linear: public dng_color_space
+	{
+	
+	protected:
+	
+		dng_space_Gray_Linear ();
+		
+	public:
+	
+		virtual bool ICCProfile (uint32 &size,
+								 const uint8 *&data) const;
+								 
+		static const dng_color_space & Get ();
+	
+	};
+
+/*****************************************************************************/
+
+class dng_space_LinearP3: public dng_color_space
+	{
+	
+	protected:
+	
+		dng_space_LinearP3 ();
+		
+	public:
+
+		virtual bool ICCProfile (uint32 &size,
+								 const uint8 *&data) const;
+								 
+		static const dng_color_space & Get ();
+	
+	};
+
+/*****************************************************************************/
+
+class dng_space_Rec2020_Linear: public dng_color_space
+	{
+	
+	protected:
+	
+		dng_space_Rec2020_Linear ();
+		
+	public:
+
+		virtual bool ICCProfile (uint32 &size,
+								 const uint8 *&data) const;
+								 
 		static const dng_color_space & Get ();
 	
 	};

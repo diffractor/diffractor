@@ -66,6 +66,13 @@
 #define qSupportCanon_sRAW 1
 #endif
 
+// The qSupportSony_sRAW stuff not actually required for DNG support, but
+// only included to allow this code to be used on Sony sRAW files.
+
+#ifndef qSupportSony_sRAW
+#define qSupportSony_sRAW 1
+#endif
+
 // The qSupportHasselblad_3FR stuff not actually required for DNG support, but
 // only included to allow this code to be used on Hasselblad 3FR files.
 
@@ -1197,8 +1204,36 @@ void dng_lossless_decoder<simd>::DecoderStructInit ()
 					   (info.Ss == 1) &&
 					   ((info.imageWidth  & 1) == 0) &&
 					   ((info.imageHeight & 1) == 0);
+	
+	#endif
+	
+	#if qSupportSony_sRAW
+		
+	bool sony_sRAW = (info.numComponents == 3) &&
+					 (info.compInfo [0].hSampFactor == 2) &&
+					 (info.compInfo [1].hSampFactor == 1) &&
+					 (info.compInfo [2].hSampFactor == 1) &&
+					 (info.compInfo [0].vSampFactor == 2) &&
+					 (info.compInfo [1].vSampFactor == 1) &&
+					 (info.compInfo [2].vSampFactor == 1) &&
+					 (info.dataPrecision == 16) &&
+					 (info.Ss == 1) &&
+					 ((info.imageWidth  & 1) == 0) &&
+					 ((info.imageHeight & 1) == 0);
+	
+	bool sony_sRAW2 = (info.numComponents == 3) &&
+					 (info.compInfo [0].hSampFactor == 2) &&
+					 (info.compInfo [1].hSampFactor == 1) &&
+					 (info.compInfo [2].hSampFactor == 1) &&
+					 (info.compInfo [0].vSampFactor == 1) &&
+					 (info.compInfo [1].vSampFactor == 1) &&
+					 (info.compInfo [2].vSampFactor == 1) &&
+					 (info.dataPrecision == 16) &&
+					 (info.Ss == 1) &&
+					 ((info.imageWidth  & 1) == 0) &&
+					 ((info.imageHeight & 1) == 0);
 					   
-	if (!canon_sRAW && !canon_sRAW2)
+	if (!canon_sRAW && !canon_sRAW2 && !sony_sRAW && !sony_sRAW2)
 	
 	#endif
 	
@@ -1973,6 +2008,34 @@ template <SIMDType simd>
 void dng_lossless_decoder<simd>::DecodeImage ()
 	{
 	
+	#if qSupportSony_sRAW
+		
+	bool sony_sRAW = (info.numComponents == 3) &&
+					 (info.compInfo [0].hSampFactor == 2) &&
+					 (info.compInfo [1].hSampFactor == 1) &&
+					 (info.compInfo [2].hSampFactor == 1) &&
+					 (info.compInfo [0].vSampFactor == 2) &&
+					 (info.compInfo [1].vSampFactor == 1) &&
+					 (info.compInfo [2].vSampFactor == 1) &&
+					 (info.dataPrecision == 16) &&
+					 (info.Ss == 1) &&
+					 ((info.imageWidth  & 1) == 0) &&
+					 ((info.imageHeight & 1) == 0);
+		
+	bool sony_sRAW2 = (info.numComponents == 3) &&
+					 (info.compInfo [0].hSampFactor == 2) &&
+					 (info.compInfo [1].hSampFactor == 1) &&
+					 (info.compInfo [2].hSampFactor == 1) &&
+					 (info.compInfo [0].vSampFactor == 1) &&
+					 (info.compInfo [1].vSampFactor == 1) &&
+					 (info.compInfo [2].vSampFactor == 1) &&
+					 (info.dataPrecision == 16) &&
+					 (info.Ss == 1) &&
+					 ((info.imageWidth  & 1) == 0) &&
+					 ((info.imageHeight & 1) == 0);
+
+	#endif
+	
 	#define swap(type,a,b) {type c; c=(a); (a)=(b); (b)=c;}
 
 	int32 numCOL	  = info.imageWidth;
@@ -1999,9 +2062,9 @@ void dng_lossless_decoder<simd>::DecodeImage ()
 	MCU *prevRowBuf = mcuROW1;
 	MCU *curRowBuf	= mcuROW2;
 	
-	#if qSupportCanon_sRAW
+	#if qSupportCanon_sRAW && qSupportSony_sRAW
 		
-	// Canon sRAW support
+	// Canon sRAW support and Sony sRAW.
 	
 	if (info.compInfo [0].hSampFactor == 2 &&
 		info.compInfo [0].vSampFactor == 1)
@@ -2018,9 +2081,20 @@ void dng_lossless_decoder<simd>::DecodeImage ()
 			
 			if (row == 0)
 				{
-				p0 = 1 << 14;
+				
+				if (sony_sRAW2)
+					{
+					p0 = 1 << 15;
+					}
+				
+				else // Canon.
+					{
+					p0 = 1 << 14;
+					}
+				
 				p1 = 1 << 14;
 				p2 = 1 << 14;
+				
 				}
 				
 			else
@@ -2166,7 +2240,7 @@ void dng_lossless_decoder<simd>::DecodeImage ()
 		return;
 		
 		}
-		
+	
 	if (info.compInfo [0].hSampFactor == 2 &&
 		info.compInfo [0].vSampFactor == 2)
 		{
@@ -2174,221 +2248,457 @@ void dng_lossless_decoder<simd>::DecodeImage ()
 		for (int32 row = 0; row < numROW; row += 2)
 			{
 			
-			// Initialize predictors.
+			// Sony sRaw.
 			
-			int32 p0;
-			int32 p1;
-			int32 p2;
-			
-			if (row == 0)
+			if (sony_sRAW)
 				{
-				p0 = 1 << 14;
-				p1 = 1 << 14;
-				p2 = 1 << 14;
-				}
+			
+				// Initialize predictors.
+
+				int32 p00 = 0;
+				int32 p01 = 0;
+				int32 p10 = 0;
+				int32 p11 = 0;
 				
+				int32 p1 = 0;
+				int32 p2 = 0;
+				
+				if (row == 0)
+					{
+					
+					p00 = 1 << 15;
+					p1  = 1 << 14;
+					p2  = 1 << 14;
+					
+					}
+					
+				else
+					{
+					p00 = prevRowBuf [0] [0];
+					p1  = prevRowBuf [0] [1];
+					p2  = prevRowBuf [0] [2];
+					}
+
+				for (int32 col = 0; col < numCOL; col += 2)
+					{
+			
+					// Read first luminance component.
+					
+						{
+					
+						int32 d = 0;
+					
+						int32 s = HuffDecode (ht [0]);
+						
+						if (s)
+							{
+
+							if (s == 16)
+								{
+								d = -32768;
+								}
+							
+							else
+								{
+								d = get_bits (s);
+								HuffExtend (d, s);
+								}
+
+							}
+
+						p00 = d + ((col == 0) ? p00 : p01);
+
+						prevRowBuf [col] [0] = (ComponentType) p00;
+					
+						}
+					
+					// Read second luminance component.
+					
+						{
+					
+						int32 d = 0;
+					
+						int32 s = HuffDecode (ht [0]);
+						
+						if (s)
+							{
+
+							if (s == 16)
+								{
+								d = -32768;
+								}
+							
+							else
+								{
+								d = get_bits (s);
+								HuffExtend (d, s);
+								}
+
+							}
+
+						p01 = p00 + d;
+						
+						prevRowBuf [col + 1] [0] = (ComponentType) p01;
+					
+						}
+					
+					// Read third luminance component.
+					
+						{
+					
+						int32 d = 0;
+					
+						int32 s = HuffDecode (ht [0]);
+						
+						if (s)
+							{
+
+							if (s == 16)
+								{
+								d = -32768;
+								}
+							
+							else
+								{
+								d = get_bits (s);
+								HuffExtend (d, s);
+								}
+
+							}
+						
+						p10 = d + ((col == 0) ? p00 : p11);
+
+						curRowBuf [col] [0] = (ComponentType) p10;
+					
+						}
+					
+					// Read fourth luminance component.
+					
+						{
+					
+						int32 d = 0;
+					
+						int32 s = HuffDecode (ht [0]);
+						
+						if (s)
+							{
+
+							if (s == 16)
+								{
+								d = -32768;
+								}
+							
+							else
+								{
+								d = get_bits (s);
+								HuffExtend (d, s);
+								}
+
+							}
+							
+						p11 = p10 + d;
+						
+						curRowBuf [col + 1] [0] = (ComponentType) p11;
+					
+						}
+					
+					// Read first chroma component.
+					
+						{
+					
+						int32 d = 0;
+					
+						int32 s = HuffDecode (ht [1]);
+						
+						if (s)
+							{
+
+							if (s == 16)
+								{
+								d = -32768;
+								}
+							
+							else
+								{
+								d = get_bits (s);
+								HuffExtend (d, s);
+								}
+
+							}
+							
+						p1 += d;
+						
+						prevRowBuf [col	   ] [1] = (ComponentType) p1;
+						prevRowBuf [col + 1] [1] = (ComponentType) p1;
+
+						curRowBuf [col	  ] [1] = (ComponentType) p1;
+						curRowBuf [col + 1] [1] = (ComponentType) p1;
+					
+						}
+					
+					// Read second chroma component.
+					
+						{
+					
+						int32 d = 0;
+					
+						int32 s = HuffDecode (ht [2]);
+						
+						if (s)
+							{
+
+							if (s == 16)
+								{
+								d = -32768;
+								}
+							
+							else
+								{
+								d = get_bits (s);
+								HuffExtend (d, s);
+								}
+
+							}
+							
+						p2 += d;
+						
+						prevRowBuf [col	   ] [2] = (ComponentType) p2;
+						prevRowBuf [col + 1] [2] = (ComponentType) p2;
+					
+						curRowBuf [col	  ] [2] = (ComponentType) p2;
+						curRowBuf [col + 1] [2] = (ComponentType) p2;
+					
+						}
+									
+					}
+				
+				PmPutRow (prevRowBuf, compsInScan, numCOL, row);
+				PmPutRow (curRowBuf, compsInScan, numCOL, row);
+				
+				}
+			
+			// Canon sRaw.
+			
 			else
 				{
-				p0 = prevRowBuf [0] [0];
-				p1 = prevRowBuf [0] [1];
-				p2 = prevRowBuf [0] [2];
+				
+				// Initialize predictors.
+				
+				int32 p0;
+				int32 p1;
+				int32 p2;
+				
+				if (row == 0)
+					{
+					p0 = 1 << 14;
+					p1 = 1 << 14;
+					p2 = 1 << 14;
+					}
+					
+				else
+					{
+					p0 = prevRowBuf [0] [0];
+					p1 = prevRowBuf [0] [1];
+					p2 = prevRowBuf [0] [2];
+					}
+				
+				for (int32 col = 0; col < numCOL; col += 2)
+					{
+					
+					// Read first luminance component.
+					
+						{
+					
+						int32 d = 0;
+					
+						int32 s = HuffDecode (ht [0]);
+						
+						if (s)
+							{
+
+							if (s == 16)
+								{
+								d = -32768;
+								}
+							
+							else
+								{
+								d = get_bits (s);
+								HuffExtend (d, s);
+								}
+
+							}
+							
+						p0 += d;
+						
+						prevRowBuf [col] [0] = (ComponentType) p0;
+					
+						}
+					
+					// Read second luminance component.
+					
+						{
+					
+						int32 d = 0;
+					
+						int32 s = HuffDecode (ht [0]);
+						
+						if (s)
+							{
+
+							if (s == 16)
+								{
+								d = -32768;
+								}
+							
+							else
+								{
+								d = get_bits (s);
+								HuffExtend (d, s);
+								}
+
+							}
+							
+						p0 += d;
+						
+						prevRowBuf [col + 1] [0] = (ComponentType) p0;
+					
+						}
+					
+					// Read third luminance component.
+					
+						{
+					
+						int32 d = 0;
+					
+						int32 s = HuffDecode (ht [0]);
+						
+						if (s)
+							{
+
+							if (s == 16)
+								{
+								d = -32768;
+								}
+							
+							else
+								{
+								d = get_bits (s);
+								HuffExtend (d, s);
+								}
+
+							}
+							
+						p0 += d;
+						
+						curRowBuf [col] [0] = (ComponentType) p0;
+					
+						}
+					
+					// Read fourth luminance component.
+					
+						{
+					
+						int32 d = 0;
+					
+						int32 s = HuffDecode (ht [0]);
+						
+						if (s)
+							{
+
+							if (s == 16)
+								{
+								d = -32768;
+								}
+							
+							else
+								{
+								d = get_bits (s);
+								HuffExtend (d, s);
+								}
+
+							}
+							
+						p0 += d;
+						
+						curRowBuf [col + 1] [0] = (ComponentType) p0;
+					
+						}
+					
+					// Read first chroma component.
+					
+						{
+					
+						int32 d = 0;
+					
+						int32 s = HuffDecode (ht [1]);
+						
+						if (s)
+							{
+
+							if (s == 16)
+								{
+								d = -32768;
+								}
+							
+							else
+								{
+								d = get_bits (s);
+								HuffExtend (d, s);
+								}
+
+							}
+							
+						p1 += d;
+						
+						prevRowBuf [col	   ] [1] = (ComponentType) p1;
+						prevRowBuf [col + 1] [1] = (ComponentType) p1;
+
+						curRowBuf [col	  ] [1] = (ComponentType) p1;
+						curRowBuf [col + 1] [1] = (ComponentType) p1;
+					
+						}
+					
+					// Read second chroma component.
+					
+						{
+					
+						int32 d = 0;
+					
+						int32 s = HuffDecode (ht [2]);
+						
+						if (s)
+							{
+
+							if (s == 16)
+								{
+								d = -32768;
+								}
+							
+							else
+								{
+								d = get_bits (s);
+								HuffExtend (d, s);
+								}
+
+							}
+							
+						p2 += d;
+						
+						prevRowBuf [col	   ] [2] = (ComponentType) p2;
+						prevRowBuf [col + 1] [2] = (ComponentType) p2;
+					
+						curRowBuf [col	  ] [2] = (ComponentType) p2;
+						curRowBuf [col + 1] [2] = (ComponentType) p2;
+					
+						}
+									
+					}
+				
+				PmPutRow (prevRowBuf, compsInScan, numCOL, row);
+				PmPutRow (curRowBuf, compsInScan, numCOL, row);
+				
 				}
-			
-			for (int32 col = 0; col < numCOL; col += 2)
-				{
-				
-				// Read first luminance component.
-				
-					{
-				
-					int32 d = 0;
-				
-					int32 s = HuffDecode (ht [0]);
-					
-					if (s)
-						{
-
-						if (s == 16)
-							{
-							d = -32768;
-							}
-						
-						else
-							{
-							d = get_bits (s);
-							HuffExtend (d, s);
-							}
-
-						}
-						
-					p0 += d;
-					
-					prevRowBuf [col] [0] = (ComponentType) p0;
-				
-					}
-				
-				// Read second luminance component.
-				
-					{
-				
-					int32 d = 0;
-				
-					int32 s = HuffDecode (ht [0]);
-					
-					if (s)
-						{
-
-						if (s == 16)
-							{
-							d = -32768;
-							}
-						
-						else
-							{
-							d = get_bits (s);
-							HuffExtend (d, s);
-							}
-
-						}
-						
-					p0 += d;
-					
-					prevRowBuf [col + 1] [0] = (ComponentType) p0;
-				
-					}
-				
-				// Read third luminance component.
-				
-					{
-				
-					int32 d = 0;
-				
-					int32 s = HuffDecode (ht [0]);
-					
-					if (s)
-						{
-
-						if (s == 16)
-							{
-							d = -32768;
-							}
-						
-						else
-							{
-							d = get_bits (s);
-							HuffExtend (d, s);
-							}
-
-						}
-						
-					p0 += d;
-					
-					curRowBuf [col] [0] = (ComponentType) p0;
-				
-					}
-				
-				// Read fourth luminance component.
-				
-					{
-				
-					int32 d = 0;
-				
-					int32 s = HuffDecode (ht [0]);
-					
-					if (s)
-						{
-
-						if (s == 16)
-							{
-							d = -32768;
-							}
-						
-						else
-							{
-							d = get_bits (s);
-							HuffExtend (d, s);
-							}
-
-						}
-						
-					p0 += d;
-					
-					curRowBuf [col + 1] [0] = (ComponentType) p0;
-				
-					}
-				
-				// Read first chroma component.
-				
-					{
-				
-					int32 d = 0;
-				
-					int32 s = HuffDecode (ht [1]);
-					
-					if (s)
-						{
-
-						if (s == 16)
-							{
-							d = -32768;
-							}
-						
-						else
-							{
-							d = get_bits (s);
-							HuffExtend (d, s);
-							}
-
-						}
-						
-					p1 += d;
-					
-					prevRowBuf [col	   ] [1] = (ComponentType) p1;
-					prevRowBuf [col + 1] [1] = (ComponentType) p1;
-
-					curRowBuf [col	  ] [1] = (ComponentType) p1;
-					curRowBuf [col + 1] [1] = (ComponentType) p1;
-				
-					}
-				
-				// Read second chroma component.
-				
-					{
-				
-					int32 d = 0;
-				
-					int32 s = HuffDecode (ht [2]);
-					
-					if (s)
-						{
-
-						if (s == 16)
-							{
-							d = -32768;
-							}
-						
-						else
-							{
-							d = get_bits (s);
-							HuffExtend (d, s);
-							}
-
-						}
-						
-					p2 += d;
-					
-					prevRowBuf [col	   ] [2] = (ComponentType) p2;
-					prevRowBuf [col + 1] [2] = (ComponentType) p2;
-				
-					curRowBuf [col	  ] [2] = (ComponentType) p2;
-					curRowBuf [col + 1] [2] = (ComponentType) p2;
-				
-					}
-								
-				}
-			
-			PmPutRow (prevRowBuf, compsInScan, numCOL, row);
-			PmPutRow (curRowBuf, compsInScan, numCOL, row);
 
 			}
 			

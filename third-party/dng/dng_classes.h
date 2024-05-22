@@ -1,5 +1,5 @@
 /*****************************************************************************/
-// Copyright 2006-2019 Adobe Systems Incorporated
+// Copyright 2006-2023 Adobe Systems Incorporated
 // All Rights Reserved.
 //
 // NOTICE:	Adobe permits you to use, modify, and distribute this file in
@@ -17,11 +17,16 @@
 
 /*****************************************************************************/
 
+#include <memory>
+
+/*****************************************************************************/
+
 class dng_1d_function;
 class dng_1d_table;
 class dng_abort_sniffer;
 class dng_area_task;
 class dng_area_task_progress;
+class dng_av1_encode_settings;
 class dng_base_tile_iterator;
 class dng_basic_tag_set;
 class dng_big_table;
@@ -30,6 +35,8 @@ class dng_big_table_cache;
 class dng_big_table_dictionary;
 class dng_big_table_storage;
 class dng_camera_profile;
+class dng_camera_profile_dynamic_range;
+class dng_camera_profile_group_selector;
 class dng_camera_profile_id;
 class dng_camera_profile_info;
 class dng_camera_profile_metadata;
@@ -37,6 +44,7 @@ class dng_color_space;
 class dng_color_spec;
 class dng_date_time;
 class dng_date_time_info;
+class dng_date_time_storage_info;
 class dng_exif;
 class dng_fingerprint;
 class dng_gain_table_map;
@@ -45,16 +53,23 @@ class dng_hue_sat_map;
 class dng_ifd;
 class dng_image;
 class dng_image_preview;
+class dng_image_table;
+class dng_image_table_compression_info;
+class dng_image_table_jxl_compression_info;
 class dng_image_writer;
 class dng_info;
 class dng_iptc;
 class dng_jpeg_image;
 class dng_jpeg_preview;
+class dng_jxl_color_space_info;
+class dng_jxl_encode_settings;
 class dng_linearization_info;
 class dng_local_string;
 class dng_look_table;
 class dng_lossless_jpeg_handler;
+class dng_lossy_compressed_image;
 class dng_masked_rgb_table;
+class dng_masked_rgb_table_render_data;
 class dng_masked_rgb_tables;
 class dng_matrix;
 class dng_matrix_3by3;
@@ -90,6 +105,8 @@ class dng_render;
 class dng_resample_function;
 class dng_resolution;
 class dng_rgb_table;
+class dng_rgb_to_rgb_table_data;
+class dng_semantic_mask;
 class dng_set_minimum_priority;
 class dng_shared;
 class dng_spline_solver;
@@ -108,6 +125,21 @@ class dng_vector_3;
 class dng_xmp;
 class dng_xmp_sdk;
 class dng_xy_coord;
+
+class tiff_tag;
+
+class tag_string;
+class tag_uint32_ptr;
+
+/*****************************************************************************/
+
+typedef std::shared_ptr<dng_masked_rgb_table> dng_masked_rgb_table_sptr;
+typedef std::shared_ptr<dng_rgb_to_rgb_table_data> dng_rgb_to_rgb_table_data_sptr;
+typedef std::shared_ptr<dng_masked_rgb_table_render_data> dng_masked_rgb_table_render_data_sptr;
+
+typedef std::shared_ptr<const dng_image> const_dng_image_sptr;
+
+typedef std::shared_ptr<const dng_memory_block> const_dng_memory_block_sptr;
 
 /*****************************************************************************/
 

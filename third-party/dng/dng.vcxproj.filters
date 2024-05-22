@@ -222,6 +222,18 @@
     <ClCompile Include="dng_xy_coord.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="dng_bmff.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dng_jpeg_memory_source.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dng_jxl.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dng_lossless_jpeg_shared.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="dng_1d_function.h">
@@ -462,6 +474,24 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="dng_xy_coord.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="dng_bmff.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="dng_deprecated_flags.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="dng_jpeg_memory_source.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="dng_jpeglib.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="dng_jxl.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="dng_semantic_mask.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

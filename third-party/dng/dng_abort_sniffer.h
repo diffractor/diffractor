@@ -146,7 +146,7 @@ class dng_abort_sniffer
 
 		virtual void Sniff () = 0;
 		
-		/// Signals the start of a named task withn processing in the DNG SDK.
+		/// Signals the start of a named task with processing in the DNG SDK.
 		/// Tasks may be nested.
 		/// \param name of the task
 		/// \param fract Percentage of total processing this task is expected to
@@ -185,7 +185,7 @@ class dng_sniffer_task: private dng_uncopyable
 		/// Inform a sniffer of a subtask in DNG processing.
 		/// \param sniffer The sniffer associated with the host on which this
 		/// processing is occurring.
-		/// \param name The name of this subtask as a NUL terminated string.
+		/// \param name The name of this subtask as a NULL terminated string.
 		/// \param fract Percentage of total processing this task is expected
 		/// to take, from 0.0 to 1.0 . 
 

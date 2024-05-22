@@ -1,5 +1,5 @@
 /*****************************************************************************/
-// Copyright 2006-2019 Adobe Systems Incorporated
+// Copyright 2006-2023 Adobe Systems Incorporated
 // All Rights Reserved.
 //
 // NOTICE:	Adobe permits you to use, modify, and distribute this file in
@@ -14,7 +14,9 @@
 #include "dng_exceptions.h"
 #include "dng_exif.h"
 #include "dng_gain_map.h"
+#include "dng_globals.h"
 #include "dng_ifd.h"
+#include "dng_jxl.h"
 #include "dng_lens_correction.h"
 #include "dng_memory.h"
 #include "dng_misc_opcodes.h"
@@ -576,6 +578,17 @@ dng_opcode * dng_host::Make_dng_opcode (uint32 opcodeID,
 	return result;
 	
 	}
+
+/*****************************************************************************/
+
+dng_rgb_to_rgb_table_data *
+dng_host::Make_dng_rgb_to_rgb_table_data (const dng_rgb_table &table)
+	{
+	
+	return new dng_rgb_to_rgb_table_data (*this,
+										  table);
+	
+	}
 		
 /*****************************************************************************/
 
@@ -602,6 +615,183 @@ void dng_host::ResampleImage (const dng_image &srcImage,
 					 srcImage.Bounds (),
 					 dstImage.Bounds (),
 					 dng_resample_bicubic::Get ());
+	
+	}
+
+/*****************************************************************************/
+
+void dng_host::SetJXLEncodeSettings (const dng_jxl_encode_settings &settings)
+	{
+	
+	fJXLEncodeSettings.reset (new dng_jxl_encode_settings (settings));
+	
+	}
+
+/*****************************************************************************/
+
+dng_jxl_encode_settings *
+	dng_host::MakeJXLEncodeSettings (use_case_enum useCase,
+									 const dng_image &image,
+									 const dng_negative * /* negative */) const
+	{
+	
+	bool isFloat = (image.PixelType () == ttFloat);
+				
+	AutoPtr<dng_jxl_encode_settings> settings (new dng_jxl_encode_settings);
+
+	settings->SetEffort (7);
+	
+	switch (useCase)
+		{
+		
+		case use_case_LossyMosaic:
+			{
+			settings->SetDistance (0.2f);
+			break;
+			}
+
+		case use_case_LosslessMosaic:
+		case use_case_LosslessMainImage:
+		case use_case_LosslessEnhancedImage:
+		case use_case_LosslessGainMap:
+			{
+			settings->SetDistance (0.0f);
+			settings->SetUseOriginalColorEncoding (true);
+			break;
+			}
+			
+		case use_case_MainImage:
+		case use_case_EncodedMainImage:
+		case use_case_ProxyImage:
+			{
+			
+			// If we have special settings attached to the host, just use them.
+			
+			if (JXLEncodeSettings ())
+				{
+				
+				*settings = *JXLEncodeSettings ();
+				
+				}
+				
+			else
+				{
+				
+				bool useHigherQuality = (useCase != use_case_ProxyImage) ||
+										((uint64) image.Width  () *
+										 (uint64) image.Height () >= 5000000);
+										 
+				if (isFloat)
+					{
+					
+					settings->SetDistance (useHigherQuality ? 1.0f : 2.0f);
+					
+					}
+					
+				else if (useCase == use_case_MainImage)
+					{
+
+					// For non-encoded integer main images, we need to use very conservative
+					// compression settings.
+
+					settings->SetDistance (0.01f);
+				
+					}
+					
+				else
+					{
+					
+					settings->SetDistance (useHigherQuality ? 0.5f : 1.0f);
+					
+					}
+
+				}
+			
+			break;
+			
+			}
+			
+		case use_case_EnhancedImage:
+			{
+			settings->SetDistance (isFloat ? 0.5f : 0.01f);
+			break;
+			}
+
+		case use_case_MergeResults:
+			{
+			settings->SetDistance (isFloat ? 0.5f : 0.1f);
+			break;
+			}
+			
+		case use_case_Transparency:
+			{
+			
+			if (isFloat)
+				{
+				settings->SetDistance (1.0f);
+				break;
+				}
+				
+			// Fall through
+			
+			}
+			
+		case use_case_LosslessTransparency:
+			{
+			
+			// Fast lossless.
+
+			settings->SetDistance (0.0f);
+			settings->SetEffort (1);
+			settings->SetUseOriginalColorEncoding (true);
+			
+			break;
+			
+			}
+
+		case use_case_Depth:
+		case use_case_SemanticMask:
+			{
+			
+			if (isFloat)
+				{
+				settings->SetDistance (1.0f);
+				break;
+				}
+				
+			// Fall through
+			
+			}
+			
+		case use_case_LosslessDepth:
+		case use_case_LosslessSemanticMask:
+			{
+			
+			// Medium lossless.
+
+			settings->SetDistance (0.0f);
+			settings->SetEffort (3);
+			settings->SetUseOriginalColorEncoding (true);
+			
+			break;
+			
+			}
+			
+		case use_case_RenderedPreview:
+			{
+			settings->SetDistance (2.0f);
+			break;
+			}
+
+		case use_case_GainMap:
+			{
+			settings->SetDistance (1.0);
+			break;
+			}
+			
+		}
+		
+	return settings.Release ();
 	
 	}
 

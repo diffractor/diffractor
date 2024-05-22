@@ -47,6 +47,10 @@ enum
 	// Enhanced image (processed stage 3).
 	
 	sfEnhancedImage				= 16,
+
+	// Gain Map.
+
+	sfGainMap					= 32,
 		
 	// Preview image for non-primary settings.
 	
@@ -82,7 +86,9 @@ enum
 
 	piDepth						= 51177,
 
-	piPhotometricMask			= 52527			// Added in DNG 1.6
+	piPhotometricMask			= 52527,		// Added in DNG 1.6
+	
+	piGainMap					= 52553,		// Added in DNG 1.7
 	
 	};
 
@@ -162,7 +168,9 @@ enum
 	
 	// Used in DNG files in places that allow lossless JPEG.
 	
-	ccLossyJPEG					= 34892
+	ccLossyJPEG					= 34892,
+
+	ccJXL						= 52546,
 	
 	};
 
@@ -318,13 +326,17 @@ enum
 enum
 	{
 	
-	// Scene referred (default):
+	// Scene referred (default).
 	
 	crSceneReferred				= 0,
 	
 	// Output referred using the parameters of the ICC profile PCS.
 	
-	crICCProfilePCS				= 1
+	crICCProfilePCS				= 1,
+	
+	// Output referred with High Dynamic Range (HDR).
+	
+	crOutputReferredHDR			= 2
 	
 	};
 
@@ -399,6 +411,29 @@ enum
 	// look table.
 	
 	defaultBlackRender_None		= 1
+	
+	};
+
+/*****************************************************************************/
+
+// Values for the ProfileToneMethod tag.
+
+enum
+	{
+
+	// The algorithm for applying the tone curve is unspecified (default).
+	
+	profileToneMethod_Unspecified	= 0,
+	
+	// The algorithm for applying the tone curve is what Adobe uses for PV5
+	// and older.
+	
+	profileToneMethod_AdobePV5		= 1,
+	
+	// The algorithm for applying the tone curve is what Adobe uses for PV6
+	// and newer.
+	
+	profileToneMethod_AdobePV6		= 2
 	
 	};
 
@@ -529,10 +564,12 @@ enum
 	dngVersion_1_4_0_0			= 0x01040000,
 	dngVersion_1_5_0_0			= 0x01050000,
 	dngVersion_1_6_0_0			= 0x01060000,
+	dngVersion_1_7_0_0			= 0x01070000,
+	dngVersion_1_7_1_0			= 0x01070100,
 
-	dngVersion_Current			= dngVersion_1_6_0_0,
+	dngVersion_Current			= dngVersion_1_7_1_0,
 
-	dngVersion_SaveDefault		= dngVersion_1_6_0_0,
+	dngVersion_SaveDefault		= dngVersion_1_7_1_0
 	
 	};
 

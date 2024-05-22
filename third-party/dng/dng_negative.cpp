@@ -18,6 +18,7 @@
 #include "dng_color_space.h"
 #include "dng_color_spec.h"
 #include "dng_exceptions.h"
+#include "dng_file_stream.h"
 #include "dng_gain_map.h"
 #include "dng_globals.h"
 #include "dng_host.h"
@@ -25,12 +26,14 @@
 #include "dng_image_writer.h"
 #include "dng_info.h"
 #include "dng_jpeg_image.h"
+#include "dng_jxl.h"
 #include "dng_linearization_info.h"
 #include "dng_memory.h"
 #include "dng_memory_stream.h"
 #include "dng_misc_opcodes.h"
 #include "dng_mosaic_info.h"
 #include "dng_preview.h"
+#include "dng_read_image.h"
 #include "dng_resample.h"
 #include "dng_safe_arithmetic.h"
 #include "dng_sdk_limits.h"
@@ -293,6 +296,9 @@ dng_metadata::dng_metadata (const dng_metadata &rhs,
 	,	fSourceMIME					(rhs.fSourceMIME)
 	,	fBigTableDictionary			(rhs.fBigTableDictionary)
 	,	fBigTableIndex				(rhs.fBigTableIndex)
+	,	fBigTableGroupIndex			(rhs.fBigTableGroupIndex)
+	,	fImageSequenceInfo			(rhs.fImageSequenceInfo)
+	,	fImageStats					(rhs.fImageStats)
 
 	{
 
@@ -345,7 +351,8 @@ void dng_metadata::ResetExif (dng_exif * newExif)
 dng_memory_block * dng_metadata::BuildExifBlock (dng_memory_allocator &allocator,
 												 const dng_resolution *resolution,
 												 bool includeIPTC,
-												 const dng_jpeg_preview *thumbnail) const
+												 const dng_jpeg_preview *thumbnail,
+												 const uint32 numLeadingZeroBytes) const
 	{
 	
 	dng_memory_stream stream (allocator);
@@ -428,7 +435,7 @@ dng_memory_block * dng_metadata::BuildExifBlock (dng_memory_allocator &allocator
 			thumbIFD.Add (&thumbDataOffset);
 			thumbIFD.Add (&thumbDataLength);
 			
-			thumbDataLength.Set (thumbnail->fCompressedData->LogicalSize ());
+			thumbDataLength.Set (thumbnail->CompressedData ().LogicalSize ());
 			
 			uint32 thumbOffset = exifOffset + exifSet.Size ();
 			
@@ -446,7 +453,7 @@ dng_memory_block * dng_metadata::BuildExifBlock (dng_memory_allocator &allocator
 			// Write TIFF Header.
 			
 			stream.SetWritePosition (0);
-			
+
 			stream.Put_uint16 (stream.BigEndian () ? byteOrderMM : byteOrderII);
 			
 			stream.Put_uint16 (42);
@@ -464,8 +471,8 @@ dng_memory_block * dng_metadata::BuildExifBlock (dng_memory_allocator &allocator
 				
 				thumbIFD.Put (stream);
 				
-				stream.Put (thumbnail->fCompressedData->Buffer		(),
-							thumbnail->fCompressedData->LogicalSize ());
+				stream.Put (thumbnail->CompressedData ().Buffer		 (),
+							thumbnail->CompressedData ().LogicalSize ());
 				
 				}
 				
@@ -479,7 +486,8 @@ dng_memory_block * dng_metadata::BuildExifBlock (dng_memory_allocator &allocator
 		
 		}
 		
-	return stream.AsMemoryBlock (allocator);
+	return stream.AsMemoryBlock (allocator,
+								 numLeadingZeroBytes);
 		
 	}
 			
@@ -906,8 +914,6 @@ dng_negative::dng_negative (dng_host &host)
 	,	fRawImage						()
 	,	fRawImageBlackLevel				(0)
 	,	fRawFloatBitDepth				(0)
-	,	fRawJPEGImage					()
-	,	fRawJPEGImageDigest				()
 	,	fTransparencyMask				()
 	,	fRawTransparencyMask			()
 	,	fRawTransparencyMaskBitDepth	(0)
@@ -1377,7 +1383,8 @@ bool dng_negative::GetProfileByMetadata
 bool dng_negative::GetProfileByIDFromList (const dng_profile_metadata_list &list,
 										   const dng_camera_profile_id &id,
 										   dng_camera_profile &foundProfile,
-										   bool useDefaultIfNoMatch) const
+										   bool useDefaultIfNoMatch,
+										   const dng_camera_profile_group_selector *groupSelector) const
 	{
  
 	// How many profiles in list?
@@ -1389,7 +1396,49 @@ bool dng_negative::GetProfileByIDFromList (const dng_profile_metadata_list &list
 		return false;
 		}
 		
-	 // If we have both a profile name and fingerprint, try matching both.
+	// If this is a profile group ID, match group names and pick from that list.
+	
+	if (HasProfileGroupPrefix (id.Name ()))
+		{
+		
+		dng_string groupName = StripProfileGroupPrefix (id.Name ());
+		
+		dng_camera_profile_group_selector selector;
+		
+		if (groupSelector)
+			{
+			selector = *groupSelector;
+			}
+		
+		for (uint32 pass = 1; pass <= 2; pass++)
+			{
+		
+			for (uint32 index = 0; index < profileCount; index++)
+				{
+				
+				if (list [index] . fGroupName == groupName)
+					{
+					
+					if (pass == 1 && (selector.fHDR != list [index] . fHDR))
+						{
+						continue;
+						}
+					
+					if (GetProfileByMetadata (list [index],
+											  foundProfile))
+						{
+						return true;
+						}
+					
+					}
+					
+				}
+				
+			}
+		
+		}
+		
+	// If we have both a profile name and fingerprint, try matching both.
 	
 	if (id.Name ().NotEmpty () && id.Fingerprint ().IsValid ())
 		{
@@ -1625,7 +1674,8 @@ bool dng_negative::GetProfileToEmbedFromList (const dng_profile_metadata_list &l
 
 bool dng_negative::GetProfileByID (const dng_camera_profile_id &id,
 								   dng_camera_profile &foundProfile,
-								   bool useDefaultIfNoMatch) const
+								   bool useDefaultIfNoMatch,
+								   const dng_camera_profile_group_selector *groupSelector) const
 	{
  
 	// Monochrome negatives don't have profiles.
@@ -1646,7 +1696,8 @@ bool dng_negative::GetProfileByID (const dng_camera_profile_id &id,
 	return GetProfileByIDFromList (list,
 								   id,
 								   foundProfile,
-								   useDefaultIfNoMatch);
+								   useDefaultIfNoMatch,
+								   groupSelector);
 		
 	}
 
@@ -2089,7 +2140,7 @@ void dng_negative::FindNewRawImageDigest (dng_host &host) const
 				
 			}
 			
-		// If there is a transparancy mask, we need to include that in the
+		// If there is a transparency mask, we need to include that in the
 		// digest also.
 		
 		if (RawTransparencyMask () != NULL)
@@ -2140,35 +2191,36 @@ void dng_negative::ValidateRawImageDigest (dng_host &host)
 		dng_fingerprint &rawDigest = isNewDigest ? fNewRawImageDigest
 												 : fRawImageDigest;
 		
-		// For lossy compressed JPEG images, we need to compare the stored
-		// digest to the digest computed from the compressed data, since
-		// decompressing lossy JPEG data is itself a lossy process.
-		
-		if (RawJPEGImageDigest ().IsValid () || RawJPEGImage ())
+		if (RawLossyCompressedImageDigest ().IsValid () ||
+			RawLossyCompressedImage ())
 			{
+
+			FindRawLossyCompressedImageDigest (host);
 			
-			// Compute the raw JPEG image digest if we have not done so
-			// already.
-			
-			FindRawJPEGImageDigest (host);
-			
-			if (rawDigest != RawJPEGImageDigest ())
+			if (rawDigest != RawLossyCompressedImageDigest ())
 				{
 				
 				#if qDNGValidate
 				
-				ReportError ("RawImageDigest does not match raw jpeg image");
-				
-				#else
-				
-				SetIsDamaged (true);
+				ReportError ("NewRawImageDigest does not match Lossy Compressed image");
 				
 				#endif
+				
+				SetIsDamaged (true);
 				
 				}
 			
 			}
 			
+		else if (fTransparencyMaskWasLossyCompressed)
+			{
+			
+			// We currently don't have a defined way of computing digest
+			// that safely round trips in this case (lossless main image
+			// and lossy transparancy mask).
+			
+			}
+
 		// Else we can compare the stored digest to the image in memory.
 			
 		else
@@ -2314,21 +2366,21 @@ void dng_negative::FindRawDataUniqueID (dng_host &host) const
 		
 		dng_md5_printer_stream printer;
 		
-		// If we have a raw jpeg image, it is much faster to
-		// use its digest as part of the unique ID since
-		// the data size is much smaller.  We cannot use it
-		// if there a transparency mask, since that is not
-		// included in the RawJPEGImageDigest.
+		// If we have a raw lossy image, it is much faster to use its digest as
+		// part of the unique ID since the data size is much smaller. We
+		// cannot use it if there a transparency mask, since that is not
+		// included in the RawLossyCompressedImageDigest.
 		
-		if (RawJPEGImage () && !RawTransparencyMask ())
+		if (RawLossyCompressedImage () && !RawTransparencyMask ())
 			{
 			
-			FindRawJPEGImageDigest (host);
+			FindRawLossyCompressedImageDigest (host);
 			
-			printer.Put (fRawJPEGImageDigest.data, 16);
+			printer.Put (fRawLossyCompressedImageDigest.data,
+						 uint32 (sizeof (fRawLossyCompressedImageDigest.data)));
 			
 			}
-		
+
 		// Include the new raw image digest in the unique ID.
 		
 		else
@@ -3416,6 +3468,32 @@ void dng_negative::Parse (dng_host &host,
 		
 		}
 
+	// ProfileGainTableMap and ProfileGainTableMap2.
+
+		{
+
+		// ProfileGainTableMap2 usage is IFD 0 and supercedes
+		// ProfileGainTablMap (whose usage is Raw IFD).
+
+		const dng_ifd &ifd0 = *info.fIFD [0];
+
+		if (ifd0.fProfileGainTableMap)
+			{
+			
+			SetProfileGainTableMap (ifd0.fProfileGainTableMap);
+
+			// Also mirror to main camera profile.
+			
+			shared.fCameraProfile.fProfileGainTableMap =
+				ifd0.fProfileGainTableMap;
+
+			}
+
+		else
+			SetProfileGainTableMap (rawIFD.fProfileGainTableMap);
+
+		}
+
 	// Embedded camera profiles.
 	
 	if (shared.fCameraProfile.fColorPlanes > 1)
@@ -3511,25 +3589,6 @@ void dng_negative::Parse (dng_host &host,
 			
 			}
 			
-		}
-		
-	// ProfileGainTableMap.
-
-	SetProfileGainTableMap (rawIFD.fProfileGainTableMap);
-
-	// RGBTables.
-
-		{
-
-		const dng_ifd &ifd0 = *info.fIFD [0];
-
-		if (ifd0.fMaskedRGBTables)
-			{
-			
-			SetMaskedRGBTables (ifd0.fMaskedRGBTables);
-			
-			}
-		
 		}
 		
 	// Raw image data digest.
@@ -3812,6 +3871,16 @@ void dng_negative::Parse (dng_host &host,
 			}
 			
 		}
+
+	// Image Stats.
+
+	if (rawIFD.fImageStats.IsValidForPlaneCount (ColorChannels ()) &&
+		(rawIFD.fImageStats.TagCount () > 0))
+		{
+		
+		fMetadata.SetImageStats (rawIFD.fImageStats);
+		
+		}
 	
 	}
 
@@ -3911,7 +3980,8 @@ void dng_negative::PostParse (dng_host &host,
 
 				AutoPtr<dng_memory_block> block (host.Allocate (shared.fMakerNoteCount));
 				
-				stream.SetReadPosition (shared.fMakerNoteOffset);
+				stream.SetReadPosition (shared.fMakerNoteOffset + info.fTIFFBlockOriginalOffset -
+																  info.fTIFFBlockOffset);
 					
 				stream.Get (block->Buffer (), shared.fMakerNoteCount);
 									
@@ -3999,6 +4069,36 @@ void dng_negative::PostParse (dng_host &host,
 				Metadata ().SetBigTableIndex (bigTableIndex);
 				
 				}
+
+			// Big table group index.
+
+			if (!shared.fBigTableGroupIndex.empty ())
+				{
+
+				dng_big_table_group_index index;
+
+				for (const auto &group : shared.fBigTableGroupIndex)
+					{
+
+					if (group.first .IsValid () &&
+						group.second.IsValid ())
+						{
+					
+						index.AddEntry (group.first,
+										group.second);
+
+						}
+					
+					}
+
+				if (!index.IsEmpty ())
+					{
+					
+					Metadata ().SetBigTableGroupIndex (index);
+
+					}
+				
+				}
 			
 			}
 				
@@ -4011,7 +4111,7 @@ void dng_negative::PostParse (dng_host &host,
 			// then the data must be already be white balanced to the
 			// ICC profile PCS white point.
 			
-			if (ColorimetricReference () == crICCProfilePCS)
+			if (IsOutputReferred ())
 				{
 				
 				ClearCameraNeutral ();
@@ -4043,9 +4143,18 @@ void dng_negative::PostParse (dng_host &host,
 					
 				}
 				
+			} // color info
+
+		// Image sequence info.
+
+		if (shared.fImageSequenceInfo.IsValid ())
+			{
+			
+			fMetadata.SetImageSequenceInfo (shared.fImageSequenceInfo);
+			
 			}
 					
-		}
+		} // needs meta
 		
 	}
 							
@@ -4150,56 +4259,56 @@ uint16 dng_negative::RawImageBlackLevel () const
 
 /*****************************************************************************/
 
-const dng_jpeg_image * dng_negative::RawJPEGImage () const
+const dng_lossy_compressed_image * dng_negative::RawLossyCompressedImage () const
 	{
 
-	return fRawJPEGImage.Get ();
+	return fRawLossyCompressedImage.Get ();
 
 	}
 
 /*****************************************************************************/
 
-void dng_negative::SetRawJPEGImage (AutoPtr<dng_jpeg_image> &jpegImage)
+void dng_negative::SetRawLossyCompressedImage (AutoPtr<dng_lossy_compressed_image> &image)
 	{
 
-	fRawJPEGImage.Reset (jpegImage.Release ());
+	fRawLossyCompressedImage.Reset (image.Release ());
 
 	}
 
 /*****************************************************************************/
 
-void dng_negative::ClearRawJPEGImage ()
+void dng_negative::ClearRawLossyCompressedImage ()
 	{
 	
-	fRawJPEGImage.Reset ();
+	fRawLossyCompressedImage.Reset ();
 
 	}
 
 /*****************************************************************************/
 
-void dng_negative::FindRawJPEGImageDigest (dng_host &host) const
+void dng_negative::FindRawLossyCompressedImageDigest (dng_host &host) const
 	{
 	
-	if (fRawJPEGImageDigest.IsNull ())
+	if (fRawLossyCompressedImageDigest.IsNull ())
 		{
 		
-		if (fRawJPEGImage.Get ())
+		if (fRawLossyCompressedImage.Get ())
 			{
 			
 			#if qDNGValidate
 			
-			dng_timer timer ("FindRawJPEGImageDigest time");
+			dng_timer timer ("FindRawLossyCompressedImageDigest");
 			 
 			#endif
 			
-			fRawJPEGImageDigest = fRawJPEGImage->FindDigest (host);
+			fRawLossyCompressedImageDigest = fRawLossyCompressedImage->FindDigest (host);
 			
 			}
 			
 		else
 			{
 			
-			ThrowProgramError ("No raw JPEG image");
+			ThrowProgramError ("No raw lossy compressed image");
 			
 			}
 		
@@ -4290,37 +4399,30 @@ void dng_negative::ReadStage1Image (dng_host &host,
 											 rawIFD.fSamplesPerPixel,
 											 rawIFD.PixelType ()));
 					
-	// See if we should grab the compressed JPEG data.
+	// See if we should grab the lossy compressed data.
 	
-	AutoPtr<dng_jpeg_image> jpegImage;
+	AutoPtr<dng_lossy_compressed_image> lossyImage (KeepLossyCompressedImage (host,
+																			  rawIFD));
+																			  
+	// See if we need to compute the digest of the compressed JPEG or JPEG XL
+	// data while reading.
 	
-	if (host.SaveDNGVersion () >= dngVersion_1_4_0_0 &&
-		!host.PreferredSize () &&
-		!host.ForPreview () &&
-		rawIFD.fCompression == ccLossyJPEG)
-		{
-		
-		jpegImage.Reset (new dng_jpeg_image);
-		
-		}
-		
-	// See if we need to compute the digest of the compressed JPEG data
-	// while reading.
+	bool needLossyDigest = ((RawImageDigest	   ().IsValid () ||
+							 NewRawImageDigest ().IsValid ()) &&
+
+							((rawIFD.fCompression == ccLossyJPEG ||
+							  rawIFD.fCompression == ccJXL) &&
+							 (lossyImage.Get () == NULL)));
 	
-	bool needJPEGDigest = (RawImageDigest	 ().IsValid () ||
-						   NewRawImageDigest ().IsValid ()) &&
-						  rawIFD.fCompression == ccLossyJPEG &&
-						  jpegImage.Get () == NULL;
-	
-	dng_fingerprint jpegDigest;
+	dng_fingerprint lossyDigest;
 	
 	// Read the image.
 	
 	rawIFD.ReadImage (host,
 					  stream,
 					  *fStage1Image.Get (),
-					  jpegImage.Get (),
-					  needJPEGDigest ? &jpegDigest : NULL);
+					  lossyImage.Get (),
+					  needLossyDigest ? &lossyDigest : NULL);
 					  
 	// Remember the raw floating point bit depth, if reading from
 	// a floating point image.
@@ -4334,19 +4436,19 @@ void dng_negative::ReadStage1Image (dng_host &host,
 					  
 	// Remember the compressed JPEG data if we read it.
 	
-	if (jpegImage.Get ())
+	if (lossyImage.Get ())
 		{
-				
-		SetRawJPEGImage (jpegImage);
+
+		SetRawLossyCompressedImage (lossyImage);
 				
 		}
 		
 	// Remember the compressed JPEG digest if we computed it.
 	
-	if (jpegDigest.IsValid ())
+	if (lossyDigest.IsValid ())
 		{
-		
-		SetRawJPEGImageDigest (jpegDigest);
+
+		SetRawLossyCompressedImageDigest (lossyDigest);
 		
 		}
 					  
@@ -4366,6 +4468,11 @@ void dng_negative::ReadEnhancedImage (dng_host &host,
 									  dng_info &info)
 	{
 	
+	// Should we read the raw image also?
+	
+	bool needRawImage = host.SaveDNGVersion () != 0 &&
+					   !host.SaveLinearDNG (*this);
+		
 	// Allocate image we are reading.
 	
 	dng_ifd &enhancedIFD = *info.fIFD [info.fEnhancedIndex];
@@ -4373,13 +4480,24 @@ void dng_negative::ReadEnhancedImage (dng_host &host,
 	fStage3Image.Reset (host.Make_dng_image (enhancedIFD.Bounds (),
 											 enhancedIFD.fSamplesPerPixel,
 											 enhancedIFD.PixelType ()));
+											 
+	// Do we need to keep the lossy compressed data?
+	
+	if (needRawImage)
+		{
+		
+		fEnhancedLossyCompressedImage.Reset (KeepLossyCompressedImage (host,
+																	   enhancedIFD));
+															
+		}
 
 	// Read the image.
 	
 	enhancedIFD.ReadImage (host,
 						   stream,
-						   *fStage3Image.Get ());
-		
+						   *fStage3Image.Get (),
+						   fEnhancedLossyCompressedImage.Get ());
+						   
 	// Stage 3 black level.
 	
 	SetStage3BlackLevel ((uint16) Round_uint32 (enhancedIFD.fBlackLevel [0] [0] [0]));
@@ -4394,33 +4512,17 @@ void dng_negative::ReadEnhancedImage (dng_host &host,
 				
 		}
 	
-	// We are are reading the enhanced image, we should read the opcode lists
-	// also, since we at least need to know about lens opcodes.
- 
-	ReadOpcodeLists (host,
-					 stream,
-					 info);
-
-	// Should we read the raw image also?
-	
-	bool needRawImage = host.SaveDNGVersion () != 0 &&
-					   !host.SaveLinearDNG (*this);
-		
 	// Read in raw image data if required.
 	
 	if (needRawImage)
 		{
 		
-		dng_ifd &mainIFD = *info.fIFD [info.fMainIndex];
+		ReadStage1Image (host,
+						 stream,
+						 info);
+						 
+		fRawImage.Reset (fStage1Image.Release ());
 		
-		fRawImage.Reset (host.Make_dng_image (mainIFD.Bounds (),
-											  mainIFD.fSamplesPerPixel,
-											  mainIFD.PixelType ()));
-			
-		mainIFD.ReadImage (host,
-						   stream,
-						   *fRawImage.Get ());
-
 		}
 		
 	// Else we can discard the information specific to the raw IFD.
@@ -4428,6 +4530,13 @@ void dng_negative::ReadEnhancedImage (dng_host &host,
 	else
 		{
 	   
+		// We at least need to know about lens opcodes, so we read the
+		// opcodes and then discard them.
+	 
+		ReadOpcodeLists (host,
+						 stream,
+						 info);
+
 		ClearLinearizationInfo ();
 		
 		ClearMosaicInfo ();
@@ -4472,6 +4581,15 @@ void dng_negative::SetStage1Image (AutoPtr<dng_image> &image)
 	{
 	
 	fStage1Image.Reset (image.Release ());
+	
+	}
+
+/*****************************************************************************/
+
+void dng_negative::ClearStage1Image ()
+	{
+	
+	fStage1Image.Reset ();
 	
 	}
 
@@ -4580,7 +4698,7 @@ void dng_negative::BuildStage2Image (dng_host &host)
 		
 		// Transparency masks are only supported in DNG version 1.4 and
 		// later.  In this case, the flattening of the transparency mask happens
-		// on the the stage3 image.	 
+		// on the stage3 image.	 
 		
 		if (TransparencyMask () && host.SaveDNGVersion () < dngVersion_1_4_0_0)
 			{
@@ -4622,6 +4740,11 @@ void dng_negative::BuildStage2Image (dng_host &host)
 			
 		else if (fOpcodeList2.MinVersion (false) > host.SaveDNGVersion () ||
 				 fOpcodeList2.AlwaysApply ())
+			{
+			fRawImageStage = rawImageStagePostOpcode2;
+			}
+			
+		else if (NeedLossyCompressMosaicJXL (host))
 			{
 			fRawImageStage = rawImageStagePostOpcode2;
 			}
@@ -4713,13 +4836,13 @@ void dng_negative::BuildStage2Image (dng_host &host)
 		ClearRawImageDigest ();
 		
 		// If we don't grab the unprocessed stage 1 image, then
-		// the raw JPEG image is no longer valid.
+		// the raw lossy compressed image is no longer valid.
 		
-		ClearRawJPEGImage ();
+		ClearRawLossyCompressedImage ();
 		
-		// Nor is the digest of the raw JPEG data.
+		// Nor is the digest of the raw lossy compressed data.
 		
-		ClearRawJPEGImageDigest ();
+		ClearRawLossyCompressedImageDigest ();
 		
 		// We also don't know the raw floating point bit depth.
 		
@@ -4944,9 +5067,9 @@ void dng_negative::DoBuildStage3 (dng_host &host,
 
 	if (!info || !info->IsColorFilterArray ())
 		{
-		
+
 		fStage3Image.Reset (fStage2Image.Release ());
-		
+
 		}
 		
 	else
@@ -5148,62 +5271,223 @@ void dng_negative::BuildStage3Image (dng_host &host,
 		
 /******************************************************************************/
 
-// RESEARCH: Instead of using a constant slope, consider using a family
-// of slopes ranging from the original one (1/16) to a limit of 1/128,
-// depending on the histogram distribution.
-
-static const real64 kSceneProxyCurveSlope = 1.0 / 128.0;
-
-static inline real64 SceneProxyCurve (real64 x)
+class dng_base_proxy_curve
 	{
-	
-	// The following code evaluates the inverse of:
-	//
-	// f (x) = (s * x) + ((1 - s) * x^3)
-	//
-	// where s is the slope of the function at the origin (x==0).
-
-	static const real64 s = kSceneProxyCurveSlope;
-
-	static const real64 k0 = pow (2.0, 1.0 / 3.0);
-
-	static const real64 k1 = 108.0 * s * s * s * (1.0 - s) * (1.0 - s) * (1.0 - s);
-
-	real64 k2 = (27.0 * x) - (54.0 * s * x) + (27.0 * x * s * s);
-
-	real64 k3 = pow (k2 + sqrt (k1 + k2 * k2), 1.0 / 3.0);
-
-	real64 y = (k3 / (3.0 * k0 * (1.0 - s))) - (k0 * s / k3);
-
-	y = Pin_real64 (0.0, y, 1.0);
-	
-	DNG_ASSERT (Abs_real64 (x - (kSceneProxyCurveSlope * y +
-								(1.0 - kSceneProxyCurveSlope) * y * y * y)) < 0.0000001,
-				"SceneProxyCurve round trip error");
 		
-	return y;
+	public:
 
-	}
+		virtual ~dng_base_proxy_curve ()
+			{
+			}
+
+		virtual real64 EvaluateScene (real64 x) const = 0;
+		
+		virtual real64 EvaluateOutput (real64 x) const = 0;
+
+		virtual real64 SceneSlope () const = 0;
+		
+		virtual real64 OutputSlope () const = 0;
+		
+	};
 
 /*****************************************************************************/
 
-static const real64 kOutputProxyCurveSlope = 1.0 / 16.0;
-
-static inline real64 OutputProxyCurve (real64 x)
+class dng_jpeg_proxy_curve : public dng_base_proxy_curve
 	{
-	
-	DNG_ASSERT (kOutputProxyCurveSlope == 1.0 / 16.0,
-				"OutputProxyCurve unexpected slope");
-	
-	real64 y = (sqrt (960.0 * x + 1.0) - 1.0) / 30.0;
+
+	// RESEARCH: Instead of using a constant slope, consider using a family of
+	// slopes ranging from the original one (1/16) to a limit of 1/128,
+	// depending on the histogram distribution.
+
+	private:
+
+		static constexpr real64 kSceneProxyCurveSlope = 1.0 / 128.0;
 		
-	DNG_ASSERT (Abs_real64 (x - (kOutputProxyCurveSlope * y +
-								(1.0 - kOutputProxyCurveSlope) * y * y)) < 0.0000001,
-				"OutputProxyCurve round trip error");
+		static constexpr real64 kOutputProxyCurveSlope = 1.0 / 16.0;
 		
-	return y;
-	
-	}
+	public:
+
+		virtual real64 EvaluateScene (real64 x) const override
+			{
+		
+			// The following code evaluates the inverse of:
+			//
+			// f (x) = (s * x) + ((1 - s) * x^3)
+			//
+			// where s is the slope of the function at the origin (x==0).
+
+			static constexpr real64 s = kSceneProxyCurveSlope;
+
+			static const real64 k0 = pow (2.0, 1.0 / 3.0);
+
+			static constexpr real64 k1 = 108.0 * s * s * s * (1.0 - s) * (1.0 - s) * (1.0 - s);
+
+			real64 k2 = (27.0 * x) - (54.0 * s * x) + (27.0 * x * s * s);
+
+			real64 k3 = pow (k2 + sqrt (k1 + k2 * k2), 1.0 / 3.0);
+
+			real64 y = (k3 / (3.0 * k0 * (1.0 - s))) - (k0 * s / k3);
+
+			y = Pin_real64 (0.0, y, 1.0);
+
+			#if 0
+
+			DNG_ASSERT (Abs_real64 (x - (kSceneProxyCurveSlope * y +
+										(1.0 - kSceneProxyCurveSlope) * y * y * y)) < 0.0000001,
+						"SceneProxyCurve round trip error");
+
+			#endif
+
+			return y;
+		
+			}
+		
+		virtual real64 EvaluateOutput (real64 x) const override
+			{
+
+			// DNG_ASSERT (kOutputProxyCurveSlope == 1.0 / 16.0,
+			// 			"OutputProxyCurve unexpected slope");
+
+			real64 y = (sqrt (960.0 * x + 1.0) - 1.0) / 30.0;
+
+			#if 0
+
+			DNG_ASSERT (Abs_real64 (x - (kOutputProxyCurveSlope * y +
+										(1.0 - kOutputProxyCurveSlope) * y * y)) < 0.0000001,
+						"OutputProxyCurve round trip error");
+
+			#endif
+
+			return y;
+
+			}
+
+		virtual real64 SceneSlope () const override
+			{
+			return kSceneProxyCurveSlope;
+			}
+		
+		virtual real64 OutputSlope () const override
+			{
+			return kOutputProxyCurveSlope;
+			}
+		
+	};
+
+/*****************************************************************************/
+
+// This curve is intended for integer data, not floating-point data.
+
+class dng_jxl_proxy_curve : public dng_base_proxy_curve
+	{
+
+	#if 1
+
+	// Non-linear curve that is similar to what we use for JPEGs. Bigger
+	// files, but much better shadow response.
+
+	private:
+
+		static constexpr real64 kSceneProxyCurveSlope = 1.0 / 16.0;
+		
+		static constexpr real64 kOutputProxyCurveSlope = 1.0 / 16.0;
+		
+	public:
+
+		virtual real64 EvaluateScene (real64 x) const override
+			{
+		
+			// The following code evaluates the inverse of:
+			//
+			// f (x) = (s * x) + ((1 - s) * x^3)
+			//
+			// where s is the slope of the function at the origin (x==0).
+
+			static constexpr real64 s = kSceneProxyCurveSlope;
+
+			static const real64 k0 = pow (2.0, 1.0 / 3.0);
+
+			static constexpr real64 k1 = 108.0 * s * s * s * (1.0 - s) * (1.0 - s) * (1.0 - s);
+
+			real64 k2 = (27.0 * x) - (54.0 * s * x) + (27.0 * x * s * s);
+
+			real64 k3 = pow (k2 + sqrt (k1 + k2 * k2), 1.0 / 3.0);
+
+			real64 y = (k3 / (3.0 * k0 * (1.0 - s))) - (k0 * s / k3);
+
+			y = Pin_real64 (0.0, y, 1.0);
+
+			#if 0
+
+			DNG_ASSERT (Abs_real64 (x - (kSceneProxyCurveSlope * y +
+										(1.0 - kSceneProxyCurveSlope) * y * y * y)) < 0.0000001,
+						"SceneProxyCurve round trip error");
+
+			#endif
+
+			return y;
+		
+			}
+		
+		virtual real64 EvaluateOutput (real64 x) const override
+			{
+
+			// DNG_ASSERT (kOutputProxyCurveSlope == 1.0 / 16.0,
+			// 			"OutputProxyCurve unexpected slope");
+
+			real64 y = (sqrt (960.0 * x + 1.0) - 1.0) / 30.0;
+
+			#if 0
+
+			DNG_ASSERT (Abs_real64 (x - (kOutputProxyCurveSlope * y +
+										(1.0 - kOutputProxyCurveSlope) * y * y)) < 0.0000001,
+						"OutputProxyCurve round trip error");
+
+			#endif
+
+			return y;
+
+			}
+
+		virtual real64 SceneSlope () const override
+			{
+			return kSceneProxyCurveSlope;
+			}
+		
+		virtual real64 OutputSlope () const override
+			{
+			return kOutputProxyCurveSlope;
+			}
+		
+	#else
+
+	// No curve. This causes JPEG XL to overly compress in the shadows.
+
+	public:
+
+		virtual real64 EvaluateScene (real64 x) const override
+			{
+			return x;
+			}
+		
+		virtual real64 EvaluateOutput (real64 x) const override
+			{
+			return x;
+			}
+
+		virtual real64 SceneSlope () const override
+			{
+			return 1.0;
+			}
+		
+		virtual real64 OutputSlope () const override
+			{
+			return 1.0;
+			}
+
+	#endif	// new vs old method
+		
+	};
 
 /*****************************************************************************/
 
@@ -5220,6 +5504,8 @@ class dng_gamma_encode_proxy : public dng_1d_function
 		real64 fStage3BlackLevel;
 		
 		real64 fBlackLevel;
+
+		const dng_base_proxy_curve &fBaseCurve;
 		
 	public:
 		
@@ -5227,13 +5513,15 @@ class dng_gamma_encode_proxy : public dng_1d_function
 								real64 upper,
 								bool isSceneReferred,
 								real64 stage3BlackLevel,
-								real64 blackLevel)
+								real64 blackLevel,
+								const dng_base_proxy_curve &baseCurve)
 							   
 			:	fLower			  (lower)
 			,	fUpper			  (upper)
 			,	fIsSceneReferred  (isSceneReferred)
 			,	fStage3BlackLevel (stage3BlackLevel)
-			,	fBlackLevel		  (blackLevel / 255.0)
+			,	fBlackLevel		  (blackLevel)
+			,	fBaseCurve		  (baseCurve)
 			
 			{
 
@@ -5257,14 +5545,14 @@ class dng_gamma_encode_proxy : public dng_1d_function
 					if (x >= 0.0)
 						{
 						
-						y = SceneProxyCurve (x);
+						y = fBaseCurve.EvaluateScene (x);
 
 						}
 						
 					else
 						{
 						
-						y = -SceneProxyCurve (-x);
+						y = -fBaseCurve.EvaluateScene (-x);
 						
 						}
 						
@@ -5277,7 +5565,7 @@ class dng_gamma_encode_proxy : public dng_1d_function
 	
 					x = Pin_real64 (0.0, (x - fLower) / (fUpper - fLower), 1.0);
 	
-					y = SceneProxyCurve (x);
+					y = fBaseCurve.EvaluateScene (x);
 					
 					}
 
@@ -5288,7 +5576,7 @@ class dng_gamma_encode_proxy : public dng_1d_function
 	
 				x = Pin_real64 (0.0, (x - fLower) / (fUpper - fLower), 1.0);
 
-				y = OutputProxyCurve (x);
+				y = fBaseCurve.EvaluateOutput (x);
 				
 				}
 				
@@ -5321,7 +5609,9 @@ class dng_encode_proxy_task: public dng_area_task,
 							   const real64 *upper,
 							   bool isSceneReferred,
 							   real64 stage3BlackLevel,
-							   real64 *blackLevel);
+							   real64 *blackLevel,
+							   real64 whiteLevel,
+							   const dng_base_proxy_curve &baseCurve);
 							 
 		virtual dng_rect RepeatingTile1 () const
 			{
@@ -5348,7 +5638,9 @@ dng_encode_proxy_task::dng_encode_proxy_task (dng_host &host,
 											  const real64 *upper,
 											  bool isSceneReferred,
 											  real64 stage3BlackLevel,
-											  real64 *blackLevel)
+											  real64 *blackLevel,
+											  real64 whiteLevel,
+											  const dng_base_proxy_curve &baseCurve)
 
 	:	dng_area_task ("dng_encode_proxy_task")
 										
@@ -5361,12 +5653,15 @@ dng_encode_proxy_task::dng_encode_proxy_task (dng_host &host,
 		{
 		
 		fTable16 [plane] . Reset (host.Allocate (0x10000 * sizeof (uint16)));
-  
+
+		const real64 normBlackLevel = blackLevel [plane] / whiteLevel;
+		
 		dng_gamma_encode_proxy gamma (lower [plane],
 									  upper [plane],
 									  isSceneReferred,
 									  stage3BlackLevel,
-									  blackLevel [plane]);
+									  normBlackLevel,
+									  baseCurve);
 			
 		// Compute fast approximation of encoding table.
 									  
@@ -5380,7 +5675,7 @@ dng_encode_proxy_task::dng_encode_proxy_task (dng_host &host,
 		// the black point, and the above approximation can actually
 		// change results.	So use exact math near the black point.
 		// Still very fast, since we are only computing a small
-		// faction of the range exactly.
+		// fraction of the range exactly.
 		
 			{
 			
@@ -5416,51 +5711,97 @@ void dng_encode_proxy_task::Process (uint32 /* threadIndex */,
 									 const dng_rect &tile,
 									 dng_abort_sniffer * /* sniffer */)
 	{
-	
+
 	dng_const_tile_buffer srcBuffer (fSrcImage, tile);
 	dng_dirty_tile_buffer dstBuffer (fDstImage, tile);
 	
 	int32 sColStep = srcBuffer.fColStep;
 	int32 dColStep = dstBuffer.fColStep;
-	
-	const uint16 *noise = dng_dither::Get ().NoiseBuffer16 ();
-	
-	for (uint32 plane = 0; plane < fSrcImage.Planes (); plane++)
+
+	if (fDstImage.PixelSize () == 2)
 		{
 		
-		const uint16 *map = fTable16 [plane]->Buffer_uint16 ();
+		// 16-bit path.
 		
-		for (int32 row = tile.t; row < tile.b; row++)
+		for (uint32 plane = 0; plane < fSrcImage.Planes (); plane++)
 			{
-			
-			const uint16 *sPtr = srcBuffer.ConstPixel_uint16 (row, tile.l, plane);
-			
-			uint8 *dPtr = dstBuffer.DirtyPixel_uint8 (row, tile.l, plane);
-			
-			const uint16 *rPtr = &noise [(row & dng_dither::kRNGMask) * dng_dither::kRNGSize];
 
-			for (int32 col = tile.l; col < tile.r; col++)
+			const uint16 *map = fTable16 [plane]->Buffer_uint16 ();
+
+			for (int32 row = tile.t; row < tile.b; row++)
 				{
-				
-				uint32 x = *sPtr;
-				
-				uint32 r = rPtr [col & dng_dither::kRNGMask];
-				
-				x = map [x];
-				
-				x = (((x << 8) - x) + r) >> 16;
-				
-				*dPtr = (uint8) x;
-				
-				sPtr += sColStep;
-				dPtr += dColStep;
-				
+
+				const uint16 *sPtr = srcBuffer.ConstPixel_uint16 (row, tile.l, plane);
+
+				uint16 *dPtr = dstBuffer.DirtyPixel_uint16 (row, tile.l, plane);
+
+				for (int32 col = tile.l; col < tile.r; col++)
+					{
+
+					*dPtr = map [*sPtr];
+
+					sPtr += sColStep;
+					dPtr += dColStep;
+
+					}
+
 				}
-			
+
 			}
-			
+
 		}
+
+	else
+		{
 		
+		// 8-bit path.
+		
+		const uint16 *noise = dng_dither::Get ().NoiseBuffer16 ();
+
+		for (uint32 plane = 0; plane < fSrcImage.Planes (); plane++)
+			{
+
+			const uint16 *map = fTable16 [plane]->Buffer_uint16 ();
+
+			for (int32 row = tile.t; row < tile.b; row++)
+				{
+
+				const uint16 *sPtr = srcBuffer.ConstPixel_uint16 (row, tile.l, plane);
+
+				uint8 *dPtr = dstBuffer.DirtyPixel_uint8 (row, tile.l, plane);
+
+				const uint16 *rPtr = &noise [(row & dng_dither::kRNGMask) * dng_dither::kRNGSize];
+
+				for (int32 col = tile.l; col < tile.r; col++)
+					{
+
+					// BULLSHIT: "Noise_Planes_Issue"
+					// For each pixel we are applying the same noise to each plane.
+					// This does not seem ideal at it will shift all planes equally for each pixel.
+					// Is this really what we want? Maybe it helps to preseve hue slightly?
+					// Not sure if this was 100% intentional or not.
+
+					uint32 x = *sPtr;
+
+					uint32 r = rPtr [col & dng_dither::kRNGMask];
+
+					x = map [x];
+
+					x = (((x << 8) - x) + r) >> 16;
+
+					*dPtr = (uint8) x;
+
+					sPtr += sColStep;
+					dPtr += dColStep;
+
+					}
+
+				}
+
+			}
+
+		}
+
 	}
 								  
 /******************************************************************************/
@@ -5474,15 +5815,19 @@ bool dng_negative::SupportsPreservedBlackLevels (dng_host & /* host */)
 
 /******************************************************************************/
 
-dng_image * dng_negative::EncodeRawProxy (dng_host &host,
-										  const dng_image &srcImage,
-										  dng_opcode_list &opcodeList,
-										  real64 *blackLevel) const
+dng_image * EncodeImageForCompression (dng_host &host,
+									   const dng_image &srcImage,
+									   const dng_rect &activeArea,
+									   const bool isSceneReferred,
+									   const bool use16bit,
+									   const real64 srcBlackLevel,
+									   real64 *dstBlackLevel,
+									   dng_opcode_list &opcodeList)
 	{
 	
 	if (srcImage.PixelType () != ttShort)
 		{
-		return NULL;
+		return nullptr;
 		}
   
 	real64 lower [kMaxColorPlanes];
@@ -5492,8 +5837,8 @@ dng_image * dng_negative::EncodeRawProxy (dng_host &host,
 		
 		const real64 kClipFraction = 0.00001;
 	
-		uint64 pixels = (uint64) srcImage.Bounds ().H () *
-						(uint64) srcImage.Bounds ().W ();
+		uint64 pixels = (uint64) activeArea.H () *
+						(uint64) activeArea.W ();
 						
 		uint32 limit = Round_int32 ((real64) pixels * kClipFraction);
 		
@@ -5506,7 +5851,7 @@ dng_image * dng_negative::EncodeRawProxy (dng_host &host,
 			
 			HistogramArea (host,
 						   srcImage,
-						   srcImage.Bounds (),
+						   activeArea,
 						   hist,
 						   65535,
 						   plane);
@@ -5544,52 +5889,63 @@ dng_image * dng_negative::EncodeRawProxy (dng_host &host,
 			
 		}
 		
-	bool isSceneReferred = (ColorimetricReference () == crSceneReferred);
- 
-	real64 stage3BlackLevel = Stage3BlackLevelNormalized ();
+	AutoPtr<dng_base_proxy_curve> baseCurve;
+
+	if (use16bit)
+		baseCurve.Reset (new dng_jxl_proxy_curve);
+	else
+		baseCurve.Reset (new dng_jpeg_proxy_curve);
 	
 	for (uint32 n = 0; n < kMaxColorPlanes; n++)
 		{
-		blackLevel [n] = 0.0;
+		dstBlackLevel [n] = 0.0;
 		}
-		
-	if (isSceneReferred && stage3BlackLevel > 0.0)
+
+	const uint32 whiteLevel = use16bit ? 65535 : 255;
+
+	const real64 whiteLevel64 = real64 (whiteLevel);
+
+	if (isSceneReferred && (srcBlackLevel > 0.0))
 		{
 		
 		for (uint32 plane = 0; plane < srcImage.Planes (); plane++)
 			{
 			
-			if (lower [plane] < stage3BlackLevel)
+			if (lower [plane] < srcBlackLevel)
 				{
 
 				upper [plane] = Max_real64 (upper [plane],
-											stage3BlackLevel +
-											(stage3BlackLevel - lower [plane]) *
+											srcBlackLevel +
+											(srcBlackLevel - lower [plane]) *
 											(1.0 / kMaxStage3BlackLevelNormalized - 1.0));
 					
 				upper [plane] = Min_real64 (upper [plane], 1.0);
 				
-				real64 negRange = SceneProxyCurve ((stage3BlackLevel - lower [plane]) /
-												   (upper [plane] - stage3BlackLevel));
+				real64 negRange =
+					baseCurve->EvaluateScene ((srcBlackLevel - lower [plane]) /
+											  (upper [plane] - srcBlackLevel));
 				
 				real64 outBlack = negRange / (1.0 + negRange);
-				
-				blackLevel [plane] = Min_real64 (kMaxStage3BlackLevelNormalized * 255.0,
-												 ceil (outBlack * 255.0));
+
+				dstBlackLevel [plane] = Min_real64 (kMaxStage3BlackLevelNormalized * whiteLevel64,
+													ceil (outBlack * whiteLevel64));
 
 				}
 			
 			}
 
 		}
-	
+
 	// Apply the gamma encoding, using dither when downsampling to 8-bit.
 	
 	AutoPtr<dng_image> dstImage (host.Make_dng_image (srcImage.Bounds (),
 													  srcImage.Planes (),
-													  ttByte));
+													  use16bit ? ttShort : ttByte));
 
 		{
+
+		DNG_REQUIRE (baseCurve.Get (),
+					 "missing base curve");
 		
 		dng_encode_proxy_task task (host,
 									srcImage,
@@ -5597,8 +5953,10 @@ dng_image * dng_negative::EncodeRawProxy (dng_host &host,
 									lower,
 									upper,
 									isSceneReferred,
-									stage3BlackLevel,
-									blackLevel);
+									srcBlackLevel,
+									dstBlackLevel,
+									whiteLevel64,
+									*baseCurve);
 		
 		host.PerformAreaTask (task,
 							  srcImage.Bounds ());
@@ -5612,7 +5970,7 @@ dng_image * dng_negative::EncodeRawProxy (dng_host &host,
 		for (uint32 plane = 0; plane < srcImage.Planes (); plane++)
 			{
 			
-			dng_area_spec areaSpec (srcImage.Bounds (),
+			dng_area_spec areaSpec (dng_rect (activeArea.Size ()),
 									plane);
 			
 			real64 coefficient [4];
@@ -5621,21 +5979,21 @@ dng_image * dng_negative::EncodeRawProxy (dng_host &host,
 
 			if (isSceneReferred)
 				{
-				coefficient [1] = kSceneProxyCurveSlope;
+				coefficient [1] = baseCurve->SceneSlope ();
 				coefficient [2] = 0.0;
 				coefficient [3] = 1.0 - coefficient [1];
 				}
 			else
 				{
-				coefficient [1] = kOutputProxyCurveSlope;
+				coefficient [1] = baseCurve->OutputSlope ();
 				coefficient [2] = 1.0 - coefficient [1];
 				coefficient [3] = 0.0;
 				}
 	
-			if (lower [plane] < stage3BlackLevel)
+			if (lower [plane] < srcBlackLevel)
 				{
 				
-				real64 rescale = (upper [plane] - stage3BlackLevel) / (1.0 - stage3BlackLevel);
+				real64 rescale = (upper [plane] - srcBlackLevel) / (1.0 - srcBlackLevel);
 				
 				coefficient [0] *= rescale;
 				coefficient [1] *= rescale;
@@ -5647,14 +6005,14 @@ dng_image * dng_negative::EncodeRawProxy (dng_host &host,
 			else
 				{
 			
-				real64 rescale = (upper [plane] - lower [plane]) / (1.0 - stage3BlackLevel);
+				real64 rescale = (upper [plane] - lower [plane]) / (1.0 - srcBlackLevel);
 				
 				coefficient [0] *= rescale;
 				coefficient [1] *= rescale;
 				coefficient [2] *= rescale;
 				coefficient [3] *= rescale;
 				
-				coefficient [0] += (lower [plane] - stage3BlackLevel) / (1.0 - stage3BlackLevel);
+				coefficient [0] += (lower [plane] - srcBlackLevel) / (1.0 - srcBlackLevel);
 				
 				}
 			
@@ -5671,7 +6029,635 @@ dng_image * dng_negative::EncodeRawProxy (dng_host &host,
 	return dstImage.Release ();
 	
 	}
-									  
+
+/*****************************************************************************/
+
+bool dng_negative::NeedLossyCompressMosaicJXL (dng_host &host) const
+	{
+	
+	if (!host.LossyMosaicJXL ())
+		{
+		return false;
+		}
+		
+	if (host.SaveDNGVersion () < dngVersion_1_7_1_0)
+		{
+		return false;
+		}
+		
+	if (!GetMosaicInfo () ||
+		!GetMosaicInfo ()->IsColorFilterArray () ||
+		 GetMosaicInfo ()->fCFAPatternSize.h != 2 ||
+		 GetMosaicInfo ()->fCFAPatternSize.v != 2)
+		{
+		return false;
+		}
+		
+	if (RawLossyCompressedImage () &&
+		RawLossyCompressedImage ()->fCompressionCode == ccJXL &&
+		RawLossyCompressedImage ()->fJXLDistance != 0.0f)
+		{
+		return false;
+		}
+		
+	return true;
+	
+	}
+
+/*****************************************************************************/
+
+class dng_lossy_mosaic_task : public dng_area_task
+							, private dng_uncopyable
+	{
+	
+	public:
+	
+		const dng_image &fSrcImage;
+			  dng_image &fDstImage;
+			  
+		dng_point fOffset;
+			  
+	private:
+	
+		enum
+			{
+			kMaxThreads = 4
+			};
+		
+		AutoPtr<dng_memory_block> fBuffer [kMaxThreads];
+		
+	public:
+	
+		dng_lossy_mosaic_task (const dng_image &srcImage,
+							   dng_image &dstImage,
+							   const dng_point &offset)
+								  
+			:	dng_area_task ("dng_lossy_mosaic_task")
+								  
+			,	fSrcImage (srcImage)
+			,	fDstImage (dstImage)
+			,	fOffset   (offset)
+			
+			{
+			
+			fMaxThreads = kMaxThreads;
+			
+			fMaxTileSize = dng_point (512, 512);
+			
+			}
+	
+		dng_rect RepeatingTile1 () const override
+			{
+			return fDstImage.RepeatingTile ();
+			}
+			
+		void Start (uint32 threadCount,
+					const dng_rect &dstArea,
+					const dng_point &tileSize,
+					dng_memory_allocator *allocator,
+					dng_abort_sniffer *sniffer) override;
+
+		void Process (uint32 threadIndex,
+					  const dng_rect &tile,
+					  dng_abort_sniffer *sniffer) override;
+		
+	};
+
+/*****************************************************************************/
+
+void dng_lossy_mosaic_task::Start (uint32 threadCount,
+								   const dng_rect & /* dstArea */,
+								   const dng_point &tileSize,
+								   dng_memory_allocator *allocator,
+								   dng_abort_sniffer * /* sniffer */)
+	{
+	
+	uint32 bufferSize = tileSize.h *
+						tileSize.v *
+						fDstImage.PixelSize ();
+	
+	for (uint32 threadIndex = 0; threadIndex < threadCount; threadIndex++)
+		{
+		
+		fBuffer [threadIndex].Reset (allocator->Allocate (bufferSize));
+		
+		}
+	
+	}
+
+/*****************************************************************************/
+
+void dng_lossy_mosaic_task::Process (uint32 threadIndex,
+									 const dng_rect &tile,
+									 dng_abort_sniffer * /* sniffer */)
+	{
+	
+	dng_pixel_buffer dstBuffer;
+	
+	dstBuffer.fArea      = tile;
+	dstBuffer.fPlane     = 0;
+	dstBuffer.fPlanes    = 1;
+	dstBuffer.fPlaneStep = 1;
+	dstBuffer.fColStep   = 1;
+	dstBuffer.fRowStep   = tile.W ();
+	dstBuffer.fPixelType = fDstImage.PixelType ();
+	dstBuffer.fPixelSize = fDstImage.PixelSize ();
+	dstBuffer.fData      = fBuffer [threadIndex]->Buffer ();
+	dstBuffer.fDirty     = true;
+	
+	dng_pixel_buffer srcBuffer = dstBuffer;
+	
+	srcBuffer.fArea = srcBuffer.fArea - fOffset;
+	
+	fSrcImage.Get (srcBuffer,
+				   dng_image::edge_repeat,
+				   2,
+				   2);
+				   
+	fDstImage.Put (dstBuffer);
+		
+	}
+	
+/*****************************************************************************/
+
+void dng_negative::LossyCompressMosaicJXL (dng_host &host,
+										   dng_image_writer &writer)
+	{
+	
+	if (NeedLossyCompressMosaicJXL (host))
+		{
+		
+		if (RawImage ().PixelType () == ttShort &&
+			RawImage ().Planes    () == 1 &&
+			RawImage ().Height    () >= 2 &&
+			RawImage ().Width     () >= 2)
+			{
+			
+			// Figure out tile size and padding so tile seams don't cross
+			// color fields.
+			
+			dng_point oldSize = RawImage ().Size ();
+			
+			dng_point fieldSize;
+			
+			fieldSize.v = (oldSize.v + 1) / 2;
+			fieldSize.h = (oldSize.h + 1) / 2;
+			
+			dng_point tileSize;
+			
+				{
+				
+				dng_ifd tempIFD;
+				
+				tempIFD.fSamplesPerPixel = 1;
+				
+				tempIFD.fBitsPerSample [0] = 16;
+				
+				tempIFD.fImageLength = fieldSize.v;
+				tempIFD.fImageWidth  = fieldSize.h;
+				
+				tempIFD.FindTileSize (1024 * 1024);
+				
+				tileSize.v = tempIFD.fTileLength;
+				tileSize.h = tempIFD.fTileWidth;
+				
+				}
+				
+			fieldSize.v = ((fieldSize.v + tileSize.v - 1) / tileSize.v) * tileSize.v;
+			fieldSize.h = ((fieldSize.h + tileSize.h - 1) / tileSize.h) * tileSize.h;
+			
+			dng_point paddedSize;
+			
+			paddedSize.v = fieldSize.v * 2;
+			paddedSize.h = fieldSize.h * 2;
+			
+			dng_point padOffset;
+			
+			padOffset.v = (paddedSize.v - oldSize.v) / 2;
+			padOffset.h = (paddedSize.h - oldSize.h) / 2;
+			
+			dng_rect activeArea (padOffset.v,
+								 padOffset.h,
+								 padOffset.v + oldSize.v,
+								 padOffset.h + oldSize.h);
+				
+			if (paddedSize != oldSize)
+				{
+			
+				AutoPtr<dng_image> paddedImage (host.Make_dng_image (dng_rect (paddedSize),
+																	 1,
+																	 ttShort));
+																	 
+					{
+					
+					dng_lossy_mosaic_task task (RawImage (),
+												*paddedImage,
+												padOffset);
+												
+					host.PerformAreaTask (task, paddedImage->Bounds ());
+					
+					}
+					
+				// This padded image becomes the new raw image.
+				
+				fRawImage.Reset (paddedImage.Release ());
+				
+				// Adjust active area for padding.
+				
+				SetActiveArea (activeArea);
+										 
+				// We just re-created the linearization info, so copy back
+				// the raw black level so it gets written to output DNG.
+				
+				SetBlackLevel (fRawImageBlackLevel);
+										 
+				}
+				
+			// Range/curve encode image for better compression.
+			
+				{
+				
+				real64 dstBlackLevel [kMaxColorPlanes];
+				
+				fRawImage.Reset (EncodeImageForCompression (host,
+															RawImage (),
+															activeArea,
+															true,			// isSceneReferred
+															true,			// use16Bit
+															fRawImageBlackLevel * (1.0 / 65535.0),
+															dstBlackLevel,
+															fOpcodeList2));
+															
+				SetBlackLevel (Round_int32 (dstBlackLevel [0]));
+															
+				}
+			
+			// Apply interleaving to a temporary image.
+
+			AutoPtr<dng_image> tempImage (host.Make_dng_image (RawImage ().Bounds    (),
+															   RawImage ().Planes    (),
+															   RawImage ().PixelType ()));
+															   
+			Interleave2D (host,
+						  RawImage (),
+						  *tempImage,
+						  2,
+						  2,
+						  true);
+				
+			// Compress.
+			
+			AutoPtr<dng_jxl_image> lossyImage (new dng_jxl_image);
+			
+				{
+				
+				dng_ifd tempIFD;
+				
+				tempIFD.fNewSubFileType = sfMainImage;
+				
+				tempIFD.fPhotometricInterpretation = piLinearRaw;
+				
+				tempIFD.fCompression = ccJXL;
+				
+				tempIFD.fSamplesPerPixel = 1;
+				
+				tempIFD.fBitsPerSample [0] = 16;
+				
+				tempIFD.fImageLength = paddedSize.v;
+				tempIFD.fImageWidth  = paddedSize.h;
+				
+				tempIFD.fTileLength = tileSize.v;
+				tempIFD.fTileWidth  = tileSize.h;
+				
+				tempIFD.fUsesTiles = true;
+				
+				AutoPtr<dng_jxl_encode_settings> settings
+						(host.MakeJXLEncodeSettings (dng_host::use_case_LossyMosaic,
+													 *tempImage,
+													 this));
+				
+				tempIFD.fJXLEncodeSettings.reset (settings.Release ());
+				
+				AutoPtr<JxlColorEncoding> encoding (new JxlColorEncoding);
+
+				memset (encoding.Get (), 0, sizeof (JxlColorEncoding));
+				
+				// EncodeImageForCompression leaves the image far from linear gamma,
+				// so let's pretend it is sRGB gamma.
+
+				encoding->color_space	    = JXL_COLOR_SPACE_GRAY;
+				encoding->white_point	    = JXL_WHITE_POINT_D65; // unused
+				encoding->primaries		    = JXL_PRIMARIES_2100;  // unused
+				encoding->transfer_function = JXL_TRANSFER_FUNCTION_SRGB;
+				
+				tempIFD.fJXLColorEncoding.reset (encoding.Release ());
+
+				lossyImage->EncodeTiles (host,
+										 writer,
+										 *tempImage,
+										 tempIFD);
+				
+				}
+				
+			lossyImage->fRowInterleaveFactor    = 2;
+			lossyImage->fColumnInterleaveFactor = 2;
+				
+			fRawLossyCompressedImage.Reset (lossyImage.Release ());
+			
+			ClearRawLossyCompressedImageDigest ();
+			
+			ClearRawImageDigest ();
+			
+			}
+
+		}
+	
+	}
+
+/*****************************************************************************/
+
+void dng_negative::CompressTransparencyMaskJXL (dng_host &host,
+												dng_image_writer &writer,
+												bool nearLosslessOK)
+	{
+	
+	if (host.SaveDNGVersion () != 0 &&
+		host.SaveDNGVersion () < MinBackwardVersionForCompression (ccJXL))
+		{
+		return;
+		}
+		
+	if (!RawLossyCompressedTransparencyMask () &&
+		RawTransparencyMask () != nullptr &&
+		SupportsJXL (*RawTransparencyMask ()) &&
+		(RawTransparencyMask ()->PixelType () != ttFloat || RawTransparencyMaskBitDepth () == 16))
+		{
+		
+		AutoPtr<dng_jxl_image> lossyImage (new dng_jxl_image);
+		
+		lossyImage->Encode (host,
+							writer,
+							*RawTransparencyMask (),
+							nearLosslessOK ? dng_host::use_case_Transparency
+										   : dng_host::use_case_LosslessTransparency,
+							this);
+			
+		fRawLossyCompressedTransparencyMask.Reset (lossyImage.Release ());
+		
+		ClearRawImageDigest ();
+			
+		}
+		
+	}
+		
+/*****************************************************************************/
+
+void dng_negative::CompressDepthMapJXL (dng_host &host,
+										dng_image_writer &writer,
+										bool nearLosslessOK)
+	{
+	
+	if (host.SaveDNGVersion () != 0 &&
+		host.SaveDNGVersion () < MinBackwardVersionForCompression (ccJXL))
+		{
+		return;
+		}
+		
+	if (!RawLossyCompressedDepthMap () &&
+		RawDepthMap () != nullptr &&
+		SupportsJXL (*RawDepthMap ()) &&
+		RawDepthMap ()->PixelType () != ttFloat)
+		{
+		
+		AutoPtr<dng_jxl_image> lossyImage (new dng_jxl_image);
+		
+		lossyImage->Encode (host,
+							writer,
+							*RawDepthMap (),
+							nearLosslessOK ? dng_host::use_case_Depth
+										   : dng_host::use_case_LosslessDepth,
+							this);
+			
+		fRawLossyCompressedDepthMap.Reset (lossyImage.Release ());
+		
+		}
+		
+	}
+		
+/*****************************************************************************/
+
+void dng_negative::CompressSemanticMasksJXL (dng_host &host,
+											 dng_image_writer &writer,
+											 bool nearLosslessOK)
+	{
+	
+	if (host.SaveDNGVersion () != 0 &&
+		host.SaveDNGVersion () < MinBackwardVersionForCompression (ccJXL))
+		{
+		return;
+		}
+		
+	// JXL compress semantic masks, if not already compressed.
+	
+	const uint32 maskCount = NumSemanticMasks ();
+
+	for (uint32 i = 0; i < maskCount; i++)
+		{
+
+		auto &mask = fSemanticMasks [i];
+
+		if (!mask.fLossyCompressed.get () &&
+			SupportsJXL (*mask.fMask) &&
+			(mask.fMask->PixelType () != ttFloat || nearLosslessOK))
+			{
+			
+			AutoPtr<dng_jxl_image> lossyImage (new dng_jxl_image);
+
+			lossyImage->Encode (host,
+								writer,
+								*mask.fMask,
+								nearLosslessOK ? dng_host::use_case_SemanticMask
+											   : dng_host::use_case_LosslessSemanticMask,
+								this);
+
+			mask.fLossyCompressed.reset (lossyImage.Release ());
+			
+			}
+			
+		}
+
+	}
+
+/*****************************************************************************/
+
+void dng_negative::LosslessCompressJXL (dng_host &host,
+										dng_image_writer &writer,
+										bool nearLosslessOK)
+	{
+	
+	if (host.SaveDNGVersion () != 0 &&
+		host.SaveDNGVersion () < MinBackwardVersionForCompression (ccJXL))
+		{
+		return;
+		}
+		
+	// JXL compress main image, if not already compressed.
+		
+	if (!RawLossyCompressedImage ())
+		{
+	
+		if (GetMosaicInfo () &&
+			GetMosaicInfo ()->IsColorFilterArray ())
+			{
+			
+			if (host.SaveDNGVersion () >= dngVersion_1_7_1_0 &&
+				GetMosaicInfo ()->fCFAPatternSize.h >= 2 &&
+				GetMosaicInfo ()->fCFAPatternSize.h < (int32) RawImage ().Width () &&
+				GetMosaicInfo ()->fCFAPatternSize.v >= 2 &&
+				GetMosaicInfo ()->fCFAPatternSize.v < (int32) RawImage ().Height () &&
+				RawImage ().Planes () == 1 &&
+				RawImage ().PixelType () == ttShort)
+				{
+				
+				// First, apply interleaving to a temporary image.
+
+				AutoPtr<dng_image> tempImage (host.Make_dng_image (RawImage ().Bounds (),
+																   RawImage ().Planes (),
+																   RawImage ().PixelType ()));
+																   
+				Interleave2D (host,
+							  RawImage (),
+							  *tempImage,
+							  GetMosaicInfo ()->fCFAPatternSize.v,
+							  GetMosaicInfo ()->fCFAPatternSize.h,
+							  true);
+
+				// Compress.
+				
+				AutoPtr<dng_jxl_image> lossyImage (new dng_jxl_image);
+				
+				lossyImage->Encode (host,
+									writer,
+									*tempImage,
+									dng_host::use_case_LosslessMosaic,
+									this);
+				
+				lossyImage->fRowInterleaveFactor    = GetMosaicInfo ()->fCFAPatternSize.v;
+				lossyImage->fColumnInterleaveFactor = GetMosaicInfo ()->fCFAPatternSize.h;
+					
+				fRawLossyCompressedImage.Reset (lossyImage.Release ());
+				
+				ClearRawLossyCompressedImageDigest ();
+				
+				ClearRawImageDigest ();
+					
+				}
+				
+			}
+			
+		else
+			{
+			
+			if (SupportsJXL (RawImage ()) &&
+				(RawImage ().PixelType () != ttFloat || RawFloatBitDepth () == 16))
+				{
+				
+				AutoPtr<dng_jxl_image> lossyImage (new dng_jxl_image);
+				
+				lossyImage->Encode (host,
+									writer,
+									RawImage (),
+									nearLosslessOK ? dng_host::use_case_MainImage
+												   : dng_host::use_case_LosslessMainImage,
+									this);
+					
+				fRawLossyCompressedImage.Reset (lossyImage.Release ());
+				
+				ClearRawLossyCompressedImageDigest ();
+				
+				ClearRawImageDigest ();
+					
+				}
+				
+			}
+			
+		}
+	
+	// JXL compress enhanced image, if not already compressed.
+		
+	if (!EnhancedLossyCompressedImage () &&
+		EnhanceParams ().NotEmpty () &&
+		&RawImage () != Stage3Image () &&
+		SupportsJXL (*Stage3Image ()) &&
+		(Stage3Image ()->PixelType () == ttShort || nearLosslessOK))
+		{
+		
+		AutoPtr<dng_jxl_image> lossyImage (new dng_jxl_image);
+		
+		lossyImage->Encode (host,
+							writer,
+							*RawTransparencyMask (),
+							nearLosslessOK ? dng_host::use_case_EnhancedImage
+										   : dng_host::use_case_LosslessEnhancedImage,
+							this);
+			
+		fEnhancedLossyCompressedImage.Reset (lossyImage.Release ());
+		
+		}
+	
+	// JXL compress transparency mask, if not already compressed.
+		
+	CompressTransparencyMaskJXL (host,
+								 writer,
+								 nearLosslessOK);
+									
+	// JXL compress depth map, if not already compressed.
+		
+	CompressDepthMapJXL (host,
+						 writer,
+						 nearLosslessOK);
+		
+	// JXL compress semantic masks, if not already compressed.
+	
+	CompressSemanticMasksJXL (host,
+							  writer,
+							  nearLosslessOK);
+
+	}
+			
+/******************************************************************************/
+
+dng_image * dng_negative::EncodeRawProxy (dng_host &host,
+										  const dng_image &srcImage,
+										  dng_opcode_list &opcodeList,
+										  real64 *blackLevel) const
+	{
+	
+	bool use16bit = SupportsJXL (srcImage) &&
+					(!host.SaveDNGVersion () ||
+					  host.SaveDNGVersion () >= MinBackwardVersionForCompression (ccJXL));
+							
+	return EncodeImageForCompression (host,
+									  srcImage,
+									  srcImage.Bounds (),
+									  IsSceneReferred (),
+									  use16bit,
+									  Stage3BlackLevelNormalized (),
+									  blackLevel,
+									  opcodeList);
+
+	}
+
+/******************************************************************************/
+
+void dng_negative::AdjustGainMapForStage3 (dng_host & /* host */)
+	{
+	
+	// For dng_sdk, the stage3 image's color space is always the same as the
+	// raw image's color space, so any gain map does not need adjusting.
+	
+	}
+
 /******************************************************************************/
 
 void dng_negative::AdjustProfileForStage3 ()
@@ -5689,6 +6675,34 @@ void dng_negative::ConvertToProxy (dng_host &host,
 								   uint32 proxySize,
 								   uint64 proxyCount)
 	{
+	
+	if (!proxySize)
+		{
+		proxySize = kMaxImageSide;
+		}
+	
+	if (!proxyCount)
+		{
+		proxyCount = (uint64) proxySize *
+					 (uint64) proxySize;
+		}
+	
+	// Is this a (possibly) downsampled proxy?
+	
+	bool nonFullSizeProxy = (proxySize  < kMaxImageSide) ||
+							(proxyCount < (uint64) kMaxImageSide *
+										  (uint64) kMaxImageSide);
+
+	// Don't need to keep private data around in non-full size proxies.
+	
+	if (nonFullSizeProxy)
+		{
+	
+		ClearMakerNote ();
+		
+		ClearPrivateData ();
+		
+		}
 
 	// When converting Enhanced images to proxy, make sure to set the
 	// OriginalDefault... fields to reflect the Enhanced image size, not the
@@ -5713,32 +6727,21 @@ void dng_negative::ConvertToProxy (dng_host &host,
 		
 		}
 
-	if (!proxySize)
-		{
-		proxySize = kMaxImageSide;
-		}
-	
-	if (!proxyCount)
-		{
-		proxyCount = (uint64) proxySize * proxySize;
-		}
-	
-	// Don't need to keep private data around in non-full size proxies.
-	
-	if (proxySize  < kMaxImageSide ||
-		proxyCount < kMaxImageSide * kMaxImageSide)
-		{
-	
-		ClearMakerNote ();
-		
-		ClearPrivateData ();
-		
-		}
+	const bool useJXL = (ColorChannels () == 1 ||
+						 ColorChannels () == 3) &&
+						(!host.SaveDNGVersion () ||
+						  host.SaveDNGVersion () >= MinBackwardVersionForCompression (ccJXL));
 
-	// See if we already have an acceptable proxy image.
+	// See if we already have an acceptable proxy raw image.
 	
+	bool rawImageOK = false;
+	
+	real64 pixelAspect = PixelAspectRatio ();
+	
+	bool nonSquarePixels = pixelAspect < 0.99 ||
+						   pixelAspect > 1.01;
+		
 	if (fRawImage.Get () &&
-		fRawImage->PixelType () == ttByte &&
 		fRawImage->Bounds () == DefaultCropArea () &&
 		fRawImage->Bounds ().H () <= proxySize &&
 		fRawImage->Bounds ().W () <= proxySize &&
@@ -5746,329 +6749,502 @@ void dng_negative::ConvertToProxy (dng_host &host,
 		(uint64) fRawImage->Bounds ().W () <= proxyCount &&
 		fRawToFullScaleH == 1.0 &&
 		fRawToFullScaleV == 1.0 &&
-		(!GetMosaicInfo () || !GetMosaicInfo ()->IsColorFilterArray ()) &&
-		fRawJPEGImage.Get () &&
-		(!RawTransparencyMask () || RawTransparencyMask ()->PixelType () == ttByte))
+		!nonSquarePixels &&
+		fEnhanceParams.IsEmpty () &&
+		(!GetMosaicInfo () || !GetMosaicInfo ()->IsColorFilterArray ()))
 		{
 		
-		return;
-		
+		if (fRawImage->PixelType () == ttByte)
+			{
+			
+			rawImageOK = fRawLossyCompressedImage.Get () != nullptr;
+			
+			}
+			
+		else if (fRawImage->PixelType () == ttShort)
+			{
+			
+			rawImageOK = fRawLossyCompressedImage.Get () != nullptr;
+			
+			}
+			
+		else if (fRawImage->PixelType () == ttFloat)
+			{
+			
+			if (RawFloatBitDepth () == 16)
+				{
+				
+				if (useJXL)
+					{
+					rawImageOK = fRawLossyCompressedImage.Get () != nullptr;
+					}
+				
+				else
+					{
+					rawImageOK = true;
+					}
+				
+				}
+			
+			}
+			
 		}
 		
-	if (fRawImage.Get () &&
-		fRawImage->PixelType () == ttFloat &&
-		fRawImage->Bounds ().H () <= proxySize &&
-		fRawImage->Bounds ().W () <= proxySize &&
-		(uint64) fRawImage->Bounds ().H () *
-		(uint64) fRawImage->Bounds ().W () <= proxyCount &&
-		fRawToFullScaleH == 1.0 &&
-		fRawToFullScaleV == 1.0 &&
-		RawFloatBitDepth () == 16 &&
-		(!RawTransparencyMask () || RawTransparencyMask ()->PixelType () == ttByte))
-		{
-		
-		return;
-		
-		}
+	// Even if we already used lossy JPEG to encode the raw image, we should
+	// still recompress the data as JXL if allowed for the size savings.
 	
-	// Clear any grabbed raw image, since we are going to start
-	// building the proxy with the stage3 image.
+	if (rawImageOK &&
+		useJXL &&
+		fRawLossyCompressedImage.Get () &&
+		fRawLossyCompressedImage->fCompressionCode != ccJXL)
+		{
+		
+		rawImageOK = false;
+		
+		}
+		
+	// If the raw lossy compressed image is known to be lossless JXL, then
+	// we should not use it for a lossy proxy.
+	
+	if (RawLossyCompressedImage () &&
+		RawLossyCompressedImage ()->fCompressionCode == ccJXL &&
+		RawLossyCompressedImage ()->fJXLDistance == 0.0f)
+		{
+		
+		rawImageOK = false;
+		
+		}
+		
+	if (!rawImageOK)
+		{
+		
+		// Adjust for any color matrix difference between the
+		// raw image and the stage3 image.
+		
+		AdjustGainMapForStage3 (host);
 
-	fRawImage.Reset ();
-	
-	fRawDefaultScaleH.Clear ();
-	fRawDefaultScaleV.Clear ();
-	
-	fRawBestQualityScale.Clear ();
-	
-	fRawDefaultCropSizeH.Clear ();
-	fRawDefaultCropSizeV.Clear ();
-	
-	fRawDefaultCropOriginH.Clear ();
-	fRawDefaultCropOriginV.Clear ();
- 
-	fRawImageBlackLevel = 0;
-	
-	ClearRawJPEGImage ();
-	
-	SetRawFloatBitDepth (0);
-	
-	ClearLinearizationInfo ();
-	
-	ClearMosaicInfo ();
-	
-	fOpcodeList1.Clear ();
-	fOpcodeList2.Clear ();
-	fOpcodeList3.Clear ();
-	
-	// Adjust the profile to match the stage 3 image, if required.
-	
-	AdjustProfileForStage3 ();
-	
-	// Not saving the raw-most image, do the old raw digest is no
-	// longer valid.
+		AdjustProfileForStage3 ();
 		
-	ClearRawImageDigest ();
+		// Clear any grabbed raw image, since we are going to start
+		// building the proxy with the stage3 image.
+		
+		fRawImage.Reset ();
+		
+		fRawDefaultScaleH.Clear ();
+		fRawDefaultScaleV.Clear ();
+		
+		fRawBestQualityScale.Clear ();
+		
+		fRawDefaultCropSizeH.Clear ();
+		fRawDefaultCropSizeV.Clear ();
+		
+		fRawDefaultCropOriginH.Clear ();
+		fRawDefaultCropOriginV.Clear ();
+	 
+		fRawImageBlackLevel = 0;
+		
+		ClearRawLossyCompressedImage ();
+
+		SetRawFloatBitDepth (0);
+		
+		ClearLinearizationInfo ();
+		
+		ClearMosaicInfo ();
+		
+		fOpcodeList1.Clear ();
+		fOpcodeList2.Clear ();
+		fOpcodeList3.Clear ();
+		
+		ClearRawImageDigest ();
+		
+		ClearRawLossyCompressedImageDigest ();
+		
+		// Discard the enhanced information since discarded
+		// its source.
 	
-	ClearRawJPEGImageDigest ();
-	
+		fEnhanceParams.Clear ();
+		
+		fEnhancedLossyCompressedImage.Reset ();
+
+		}
+		
 	// Trim off extra pixels outside the default crop area.
 	
 	const dng_rect defaultCropArea = DefaultCropArea ();
 
 	const dng_rect originalStage3Bounds = Stage3Image ()->Bounds ();
 
-	if (Stage3Image ()->Bounds () != defaultCropArea)
+	if (!rawImageOK)
 		{
 
-		const dng_rect s3bounds = originalStage3Bounds;
-		
-		fStage3Image->Trim (defaultCropArea);
-		
-		if (fTransparencyMask.Get ())
-			{
-			fTransparencyMask->Trim (defaultCropArea);
-			}
-   
-		if (fDepthMap.Get ())
-			{
-			fDepthMap->Trim (defaultCropArea);
-			fRawDepthMap.Reset ();
-			}
-
-		// Adjust origin and spacing of profile gain table map.
-
-		if (HasProfileGainTableMap ())
+		if (originalStage3Bounds != defaultCropArea)
 			{
 
-			const auto &gainTableMap = ProfileGainTableMap ();
-
-			// Adjust origin.
+			const dng_rect s3bounds = originalStage3Bounds;
 			
-			const dng_point_real64 &oldOrigin = gainTableMap.Origin ();
-
-			dng_point_real64 originPix
-				(Lerp_real64 (s3bounds.t, s3bounds.b, oldOrigin.v),
-				 Lerp_real64 (s3bounds.l, s3bounds.r, oldOrigin.h));
+			fStage3Image->Trim (defaultCropArea);
 			
-			dng_point_real64 newOrigin
-				((originPix.v - defaultCropArea.t) / defaultCropArea.H (),
-				 (originPix.h - defaultCropArea.l) / defaultCropArea.W ());
+			if (fTransparencyMask.Get ())
+				{
+				fTransparencyMask->Trim (defaultCropArea);
+				fRawTransparencyMask.Reset ();
+				fRawLossyCompressedTransparencyMask.Reset ();
+				}
+	   
+			if (fDepthMap.Get ())
+				{
+				fDepthMap->Trim (defaultCropArea);
+				fRawDepthMap.Reset ();
+				fRawLossyCompressedDepthMap.Reset ();
+				}
 
-			// Adjust spacing.
-			
-			const dng_point_real64 &oldSpacing = gainTableMap.Spacing ();
-			
-			dng_point_real64 newSpacing = oldSpacing;
+			// Adjust origin and spacing of profile gain table map.
 
-			const dng_point &points = gainTableMap.Points ();
-
-			if (points.h > 1)
+			if (HasProfileGainTableMap ())
 				{
 
-				newSpacing.h *= ((real64) s3bounds.W () /
-								 (real64) defaultCropArea.W ());
+				const auto &gainTableMap = ProfileGainTableMap ();
+
+				// Adjust origin.
+				
+				const dng_point_real64 &oldOrigin = gainTableMap.Origin ();
+
+				dng_point_real64 originPix
+					(Lerp_real64 (s3bounds.t, s3bounds.b, oldOrigin.v),
+					 Lerp_real64 (s3bounds.l, s3bounds.r, oldOrigin.h));
+				
+				dng_point_real64 newOrigin
+					((originPix.v - defaultCropArea.t) / defaultCropArea.H (),
+					 (originPix.h - defaultCropArea.l) / defaultCropArea.W ());
+
+				// Adjust spacing.
+				
+				const dng_point_real64 &oldSpacing = gainTableMap.Spacing ();
+				
+				dng_point_real64 newSpacing = oldSpacing;
+
+				const dng_point &points = gainTableMap.Points ();
+
+				if (points.h > 1)
+					{
+
+					newSpacing.h *= ((real64) s3bounds.W () /
+									 (real64) defaultCropArea.W ());
+
+					}
+
+				if (points.v > 1)
+					{
+
+					newSpacing.v *= ((real64) s3bounds.H () /
+									 (real64) defaultCropArea.H ());
+
+					}
+
+				// Deal with original buffer.
+
+				// We want to convert the gain map to 8-bit to save sapce.
+
+				AutoPtr<dng_memory_block> originalBuffer;
+
+				real32 gainMin = gainTableMap.GainMin ();
+				real32 gainMax = gainTableMap.GainMax ();
+				
+				// If original buffer is present and already 8-bit, then no change
+				// is needed. Just make a copy to hand off to the new gain table
+				// map.
+
+				if (gainTableMap.IsUint8 () &&
+					gainTableMap.HasOriginalBuffer ())
+					{
+
+					originalBuffer.Reset
+						(gainTableMap.OriginalBuffer ()->Clone (host.Allocator ()));
+					
+					}
+
+				// Otherwise, we need to convert to 8-bit. Scan the fp32 values
+				// for the min & max gains.
+
+				else
+					{
+
+					const real32 *ptr = gainTableMap.Block ()->Buffer_real32 ();
+					
+					uint32 entries = (gainTableMap.DataStorageBytes () /
+									  gainTableMap.BytesPerEntry    ());
+
+					for (uint32 i = 0; i < entries; i++)
+						{
+						gainMin = Min_real32 (gainMin, ptr [i]);
+						gainMax = Max_real32 (gainMax, ptr [i]);
+						}
+					
+					}
+
+				// Make the new gain table map.
+
+				AutoPtr<dng_gain_table_map> newMap
+					(new dng_gain_table_map (host.Allocator (),
+											 gainTableMap.Points (),
+											 newSpacing,
+											 newOrigin,
+											 gainTableMap.NumTablePoints (),
+											 gainTableMap.MapInputWeights (),
+											 0,	 // store as uint8
+											 gainTableMap.Gamma (),
+											 gainMin,
+											 gainMax));
+											 
+				// Copy over fp32 points.
+
+				memcpy (newMap	   ->Block ()->Buffer_real32 (),
+						gainTableMap.Block ()->Buffer_real32 (),
+						(size_t) gainTableMap.SampleBytes ());
+
+				// Copy over original buffer, if any.
+
+				if (originalBuffer.Get ())
+					newMap->SetOriginalBuffer (originalBuffer);
+
+				// Replace the existing map.
+				
+				SetProfileGainTableMap (newMap);
 
 				}
 
-			if (points.v > 1)
-				{
-
-				newSpacing.v *= ((real64) s3bounds.H () /
-								 (real64) defaultCropArea.H ());
-
-				}
-
-			// Make the new gain table map.
-
-			AutoPtr<dng_gain_table_map> newMap
-				(new dng_gain_table_map (host.Allocator (),
-										 gainTableMap.Points (),
-										 newSpacing,
-										 newOrigin,
-										 gainTableMap.NumTablePoints (),
-										 gainTableMap.MapInputWeights ()));
-
-			// Copy over points.
-
-			memcpy (newMap	   ->Block ()->Buffer_real32 (),
-					gainTableMap.Block ()->Buffer_real32 (),
-					(size_t) gainTableMap.SampleBytes ());
-
-			// Replace the existing map.
+			fDefaultCropOriginH = dng_urational (0, 1);
+			fDefaultCropOriginV = dng_urational (0, 1);
 			
-			SetProfileGainTableMap (newMap);
-
 			}
-
-		fDefaultCropOriginH = dng_urational (0, 1);
-		fDefaultCropOriginV = dng_urational (0, 1);
+			
+		// Figure out the requested proxy pixel size.
 		
-		}
+		real64 aspectRatio = AspectRatio ();
 		
-	// Figure out the requested proxy pixel size.
-	
-	real64 aspectRatio = AspectRatio ();
-	
-	dng_point newSize (proxySize, proxySize);
-	
-	if (aspectRatio >= 1.0)
-		{
-		newSize.v = Max_int32 (1, Round_int32 (proxySize / aspectRatio));
-		}
-	else
-		{
-		newSize.h = Max_int32 (1, Round_int32 (proxySize * aspectRatio));
-		}
+		dng_point newSize (proxySize, proxySize);
 		
-	newSize.v = Min_int32 (newSize.v, DefaultFinalHeight ());
-	newSize.h = Min_int32 (newSize.h, DefaultFinalWidth	 ());
-	
-	if ((uint64) newSize.v *
-		(uint64) newSize.h > proxyCount)
-		{
-
 		if (aspectRatio >= 1.0)
 			{
-			
-			newSize.h = (uint32) sqrt (proxyCount * aspectRatio);
-			
-			newSize.v = Max_int32 (1, Round_int32 (newSize.h / aspectRatio));
-			
+			newSize.v = Max_int32 (1, Round_int32 (proxySize / aspectRatio));
 			}
-			
 		else
 			{
-			
-			newSize.v = (uint32) sqrt (proxyCount / aspectRatio);
-			
-			newSize.h = Max_int32 (1, Round_int32 (newSize.v * aspectRatio));
-												   
+			newSize.h = Max_int32 (1, Round_int32 (proxySize * aspectRatio));
 			}
-															   
-		}
-		
-	// If this is fewer pixels, downsample the stage 3 image to that size.
-	
-	dng_point oldSize = defaultCropArea.Size ();
-	
-	real64 pixelAspect = PixelAspectRatio ();
-	
-	if ((uint64) newSize.v * (uint64) newSize.h <
-		(uint64) oldSize.v * (uint64) oldSize.h ||
-		pixelAspect < 0.99 ||
-		pixelAspect > 1.01)
-		{
-		
-		const dng_image &srcImage (*Stage3Image ());
-		
-		AutoPtr<dng_image> dstImage (host.Make_dng_image (newSize,
-														  srcImage.Planes (),
-														  srcImage.PixelType ()));
-														  
-		host.ResampleImage (srcImage,
-							*dstImage);
-														 
-		fStage3Image.Reset (dstImage.Release ());
-		
-		fDefaultCropSizeH = dng_urational (newSize.h, 1);
-		fDefaultCropSizeV = dng_urational (newSize.v, 1);
-		
-		fDefaultScaleH = dng_urational (1, 1);
-		fDefaultScaleV = dng_urational (1, 1);
-		
-		fBestQualityScale = dng_urational (1, 1);
-		
-		fRawToFullScaleH = 1.0;
-		fRawToFullScaleV = 1.0;
-		
-		}
-		
-	// If there is still a raw to full scale factor, we need to
-	// remove it and adjust the crop coordinates.
-		
-	else if (fRawToFullScaleH != 1.0 ||
-			 fRawToFullScaleV != 1.0)
-		{
-		
-		fDefaultCropSizeH = dng_urational (oldSize.h, 1);
-		fDefaultCropSizeV = dng_urational (oldSize.v, 1);
-		
-		fDefaultScaleH = dng_urational (1, 1);
-		fDefaultScaleV = dng_urational (1, 1);
-		
-		fBestQualityScale = dng_urational (1, 1);
-		
-		fRawToFullScaleH = 1.0;
-		fRawToFullScaleV = 1.0;
-		
-		}
-		
-	// Convert 32-bit floating point images to 16-bit floating point to
-	// save space.
-	
-	if (Stage3Image ()->PixelType () == ttFloat)
-		{
-		
-		fRawImage.Reset (host.Make_dng_image (Stage3Image ()->Bounds (),
-											  Stage3Image ()->Planes (),
-											  ttFloat));
 			
-		fRawImageBlackLevel = 0;
+		newSize.v = Min_int32 (newSize.v, DefaultFinalHeight ());
+		newSize.h = Min_int32 (newSize.h, DefaultFinalWidth	 ());
 		
-		LimitFloatBitDepth (host,
-							*Stage3Image (),
-							*fRawImage,
-							16,
-							32768.0f);
-		
-		SetRawFloatBitDepth (16);
-		
-		SetWhiteLevel (32768);
-		
-		}
-		
-	else
-		{
-		
-		// Convert 16-bit deep images to 8-bit deep image for saving.
-  
-		real64 blackLevel [kMaxColorPlanes];
-		
-		fRawImage.Reset (EncodeRawProxy (host,
-										 *Stage3Image (),
-										 fOpcodeList2,
-										 blackLevel));
+		if ((uint64) newSize.v *
+			(uint64) newSize.h > proxyCount)
+			{
+
+			if (aspectRatio >= 1.0)
+				{
+				
+				newSize.h = (uint32) sqrt (proxyCount * aspectRatio);
+				
+				newSize.v = Max_int32 (1, Round_int32 (newSize.h / aspectRatio));
+				
+				}
+				
+			else
+				{
+				
+				newSize.v = (uint32) sqrt (proxyCount / aspectRatio);
+				
+				newSize.h = Max_int32 (1, Round_int32 (newSize.v * aspectRatio));
+													   
+				}
+																   
+			}
 			
-		fRawImageBlackLevel = 0;
-										 
-		if (fRawImage.Get ())
+		// If this is fewer pixels, downsample the stage 3 image to that size.
+		
+		dng_point oldSize = defaultCropArea.Size ();
+		
+		if ((uint64) newSize.v * (uint64) newSize.h <
+			(uint64) oldSize.v * (uint64) oldSize.h || nonSquarePixels)
 			{
 			
-			SetWhiteLevel (255);
-   
-			for (uint32 plane = 0; plane < fRawImage->Planes (); plane++)
-				{
-				SetBlackLevel (blackLevel [plane], plane);
-				}
+			const dng_image &srcImage (*Stage3Image ());
 			
-			// Compute JPEG compressed version.
-
-			if (fRawImage->PixelType () == ttByte &&
-				host.SaveDNGVersion () >= dngVersion_1_4_0_0)
-				{
+			AutoPtr<dng_image> dstImage (host.Make_dng_image (newSize,
+															  srcImage.Planes (),
+															  srcImage.PixelType ()));
+															  
+			host.ResampleImage (srcImage,
+								*dstImage);
+															 
+			fStage3Image.Reset (dstImage.Release ());
 			
-				AutoPtr<dng_jpeg_image> jpegImage (new dng_jpeg_image);
+			fDefaultCropSizeH = dng_urational (newSize.h, 1);
+			fDefaultCropSizeV = dng_urational (newSize.v, 1);
+			
+			fDefaultScaleH = dng_urational (1, 1);
+			fDefaultScaleV = dng_urational (1, 1);
+			
+			fBestQualityScale = dng_urational (1, 1);
+			
+			fRawToFullScaleH = 1.0;
+			fRawToFullScaleV = 1.0;
+			
+			}
+			
+		// If there is still a raw to full scale factor, we need to
+		// remove it and adjust the crop coordinates.
+			
+		else if (fRawToFullScaleH != 1.0 ||
+				 fRawToFullScaleV != 1.0)
+			{
+			
+			fDefaultCropSizeH = dng_urational (oldSize.h, 1);
+			fDefaultCropSizeV = dng_urational (oldSize.v, 1);
+			
+			fDefaultScaleH = dng_urational (1, 1);
+			fDefaultScaleV = dng_urational (1, 1);
+			
+			fBestQualityScale = dng_urational (1, 1);
+			
+			fRawToFullScaleH = 1.0;
+			fRawToFullScaleV = 1.0;
+			
+			}
+			
+		// Convert 32-bit floating point images to 16-bit floating point to
+		// save space.
+		
+		if (RawImage ().PixelType () == ttFloat &&
+			RawFloatBitDepth () != 16)
+			{
+			
+			fRawImage.Reset (host.Make_dng_image (Stage3Image ()->Bounds (),
+												  Stage3Image ()->Planes (),
+												  ttFloat));
 				
-				jpegImage->Encode (host,
-								   *this,
-								   writer,
-								   *fRawImage);
-								   
-				SetRawJPEGImage (jpegImage);
-								   
-				}
+			fRawImageBlackLevel = 0;
 			
+			LimitFloatBitDepth (host,
+								*Stage3Image (),
+								*fRawImage,
+								16,
+								32768.0f);
+			
+			SetRawFloatBitDepth (16);
+			
+			SetWhiteLevel (32768);
+			
+			}
+			
+		// Lossy compress raw image if required.
+		
+		if (!fRawLossyCompressedImage.Get ())
+			{
+			
+			if (useJXL)
+				{
+				
+				if (RawImage ().PixelType () == ttFloat)
+					{
+					
+					AutoPtr<dng_jxl_image> lossyImage (new dng_jxl_image);
+
+					lossyImage->Encode (host,
+										writer,
+										RawImage (),
+										nonFullSizeProxy ? dng_host::use_case_ProxyImage
+														 : dng_host::use_case_EncodedMainImage,
+										this);
+
+					fRawLossyCompressedImage.Reset (lossyImage.Release ());
+
+					}
+					
+				else
+					{
+					
+					real64 blackLevel [kMaxColorPlanes];
+
+					fRawImage.Reset (EncodeRawProxy (host,
+													 *Stage3Image (),
+													 fOpcodeList2,
+													 blackLevel));
+
+					fRawImageBlackLevel = 0;
+
+					if (fRawImage.Get ())
+						{
+
+						for (uint32 plane = 0; plane < fRawImage->Planes (); plane++)
+							{
+							SetBlackLevel (blackLevel [plane], plane);
+							}
+
+						}
+
+					AutoPtr<dng_jxl_image> lossyImage (new dng_jxl_image);
+
+					lossyImage->Encode (host,
+										writer,
+										RawImage (),
+										nonFullSizeProxy ? dng_host::use_case_ProxyImage
+														 : dng_host::use_case_EncodedMainImage,
+										this);
+
+					fRawLossyCompressedImage.Reset (lossyImage.Release ());
+
+					}
+				
+				}
+				
+			else
+				{
+				
+				if (RawImage ().PixelType () == ttShort)
+					{
+					
+					real64 blackLevel [kMaxColorPlanes];
+
+					fRawImage.Reset (EncodeRawProxy (host,
+													 *Stage3Image (),
+													 fOpcodeList2,
+													 blackLevel));
+
+					fRawImageBlackLevel = 0;
+
+					if (fRawImage.Get ())
+						{
+
+						SetWhiteLevel (255);
+
+						for (uint32 plane = 0; plane < fRawImage->Planes (); plane++)
+							{
+							SetBlackLevel (blackLevel [plane], plane);
+							}
+							
+						}
+						
+					}
+				
+				// Compute JPEG compressed version.
+
+				if (RawImage ().PixelType () == ttByte)
+					{
+
+					AutoPtr<dng_jpeg_image> jpegImage (new dng_jpeg_image);
+
+					jpegImage->Encode (host,
+									   *this,
+									   writer,
+									   RawImage ());
+									   
+					fRawLossyCompressedImage.Reset (jpegImage.Release ());
+
+					}
+
+				}
+
 			}
 			
 		}
@@ -6082,8 +7258,22 @@ void dng_negative::ConvertToProxy (dng_host &host,
 		
 		ResizeTransparencyToMatchStage3 (host, convertTo8Bit);
 		
-		fRawTransparencyMask.Reset (fTransparencyMask->Clone ());
-		
+		if (fRawTransparencyMask.Get ())
+			{
+			
+			if (fRawTransparencyMask->Bounds    () != TransparencyMask ()->Bounds () ||
+				fRawTransparencyMask->PixelType () != ttByte)
+				{
+				fRawTransparencyMask.Reset (fTransparencyMask->Clone ());
+				fRawLossyCompressedTransparencyMask.Reset ();
+				}
+			
+			}
+			
+		CompressTransparencyMaskJXL (host,
+									 writer,
+									 true);
+			
 		}
   
 	// Deal with depth map.
@@ -6100,20 +7290,21 @@ void dng_negative::ConvertToProxy (dng_host &host,
 				fRawDepthMap->Bounds ().H () > fDepthMap->Bounds ().H ())
 				{
 				fRawDepthMap.Reset ();
+				fRawLossyCompressedDepthMap.Reset ();
 				}
 			
 			}
-
+			
+		CompressDepthMapJXL (host,
+							 writer,
+							 true);
+					
 		}
 
-	// Clear the enhance params (don't include separate enhanced image data
-	// when writing/saving proxies).
-
-	fEnhanceParams.Clear ();
-		
 	// Deal with semantic masks.
 	
 	AdjustSemanticMasksForProxy (host,
+								 writer,
 								 originalStage3Bounds,
 								 defaultCropArea);
 
@@ -6207,6 +7398,19 @@ void dng_negative::SetTransparencyMask (AutoPtr<dng_image> &image,
 
 /*****************************************************************************/
 
+void dng_negative::ClearTransparencyMask ()
+	{
+	
+	fTransparencyMask.Reset ();
+	
+	fRawTransparencyMask.Reset ();
+	
+	fRawTransparencyMaskBitDepth = 0;
+	
+	}
+
+/*****************************************************************************/
+
 const dng_image * dng_negative::TransparencyMask () const
 	{
 	
@@ -6287,17 +7491,28 @@ void dng_negative::ReadTransparencyMask (dng_host &host,
 		fTransparencyMask.Reset (host.Make_dng_image (maskIFD.Bounds (),
 													  1,
 													  maskIFD.PixelType ()));
+													  
+		// Do we need to keep the lossy compressed data?
+		
+		fRawLossyCompressedTransparencyMask.Reset (KeepLossyCompressedImage (host,
+																			 maskIFD));
 						
 		// Read the image.
 		
 		maskIFD.ReadImage (host,
 						   stream,
-						   *fTransparencyMask.Get ());
+						   *fTransparencyMask.Get (),
+						   fRawLossyCompressedTransparencyMask.Get ());
 						   
 		// Remember the pixel depth.
 		
 		fRawTransparencyMaskBitDepth = maskIFD.fBitsPerSample [0];
-						   
+		
+		// Remember if transparency mask was lossy compressed.
+		
+		fTransparencyMaskWasLossyCompressed = (maskIFD.fCompression == ccLossyJPEG ||
+											   maskIFD.fCompression == ccJXL);
+											   
 		}
 
 	}
@@ -6404,12 +7619,18 @@ void dng_negative::ReadDepthMap (dng_host &host,
 		fDepthMap.Reset (host.Make_dng_image (depthIFD.Bounds (),
 											  1,
 											  depthIFD.PixelType ()));
+											  
+		// Keep lossy compressed depth image?
+		
+		fRawLossyCompressedDepthMap.Reset (KeepLossyCompressedImage (host,
+																	 depthIFD));
 			
 		// Read the image.
 		
 		depthIFD.ReadImage (host,
 							stream,
-							*fDepthMap.Get ());
+							*fDepthMap.Get (),
+							fRawLossyCompressedDepthMap.Get ());
 		
 		SetHasDepthMap (fDepthMap.Get () != NULL);
 			
@@ -6460,6 +7681,43 @@ void dng_negative::ResizeDepthToMatchStage3 (dng_host &host)
 			
 		}
 		
+	}
+
+/*****************************************************************************/
+
+void dng_negative::ResizeSemanticMasksToMatchStage3 (dng_host &host)
+	{
+	
+	if (!HasSemanticMask ())
+		return;
+
+	if (!fStage3Image.Get ())
+		return;
+
+	const dng_rect dstBounds = fStage3Image->Bounds ();
+
+	for (uint32 i = 0; i < NumSemanticMasks (); i++)
+		{
+
+		const_dng_image_sptr mask = SemanticMask (i).fMask;
+
+		if (mask && (mask->Bounds () != dstBounds))
+			{
+				
+			AutoPtr<dng_image> image
+				(host.Make_dng_image (dstBounds,
+									  mask->Planes (),
+									  mask->PixelType ()));
+				
+			host.ResampleImage (*mask,
+								*image);
+
+			fSemanticMasks.at (i).fMask.reset (image.Release ());
+
+			}
+				
+		}
+			
 	}
 
 /*****************************************************************************/
@@ -6576,6 +7834,8 @@ void dng_negative::ReadSemanticMasks (dng_host &host,
 		AutoPtr<dng_image> image (host.Make_dng_image (ifd.Bounds (),
 													   1,
 													   ifd.PixelType ()));
+													   
+		AutoPtr<dng_lossy_compressed_image> lossyCompressed (KeepLossyCompressedImage (host, ifd));
 
 		// Workaround for early files that use lossy JPEG with Compression tag
 		// value 7.
@@ -6621,16 +7881,21 @@ void dng_negative::ReadSemanticMasks (dng_host &host,
 				
 				}
 
+			// TODO(erichan): JXL support for semantic masks, too?
+
 			if (tryLossyJPEG)
 				{
 				
 				AutoPtr<dng_ifd> ifdClone (ifd.Clone ());
 
 				ifdClone->fCompression = ccLossyJPEG;
+				
+				lossyCompressed.Reset (KeepLossyCompressedImage (host, *ifdClone));
 
 				ifdClone->ReadImage (host,
 									 stream,
-									 *image);				
+									 *image,
+									 lossyCompressed.Get ());
 				
 				}
 			
@@ -6641,7 +7906,8 @@ void dng_negative::ReadSemanticMasks (dng_host &host,
 			
 			ifd.ReadImage (host,
 						   stream,
-						   *image);
+						   *image,
+						   lossyCompressed.Get ());
 			
 			}
 
@@ -6649,7 +7915,8 @@ void dng_negative::ReadSemanticMasks (dng_host &host,
 
 		ifd.ReadImage (host,
 					   stream,
-					   *image);
+					   *image,
+					   lossyCompressed.Get ());
 
 		#endif
 
@@ -6675,6 +7942,8 @@ void dng_negative::ReadSemanticMasks (dng_host &host,
 					sizeof (mask.fMaskSubArea));
 			
 			}
+			
+		mask.fLossyCompressed.reset (lossyCompressed.Release ());
 		
 		masks.push_back (mask);
 		
@@ -6725,47 +7994,8 @@ void dng_negative::SetProfileGainTableMap (AutoPtr<dng_gain_table_map> &gainTabl
 
 /*****************************************************************************/
 
-bool dng_negative::HasMaskedRGBTables () const
-	{
-	
-	return fMaskedRGBTables != nullptr;
-	
-	}
-
-/*****************************************************************************/
-
-const dng_masked_rgb_tables & dng_negative::MaskedRGBTables () const
-	{
-	
-	DNG_REQUIRE (HasMaskedRGBTables (), "Missing masked RGBTables");
-
-	return *fMaskedRGBTables;
-	
-	}
-
-/*****************************************************************************/
-
-void dng_negative::SetMaskedRGBTables
-	(const std::shared_ptr<const dng_masked_rgb_tables> &maskedRGBTables)
-	{
-	
-	fMaskedRGBTables = maskedRGBTables;
-	
-	}
-
-/*****************************************************************************/
-
-void dng_negative::SetMaskedRGBTables
-	(AutoPtr<dng_masked_rgb_tables> &maskedRGBTables)
-	{
-	
-	fMaskedRGBTables.reset (maskedRGBTables.Release ());
-	
-	}
-
-/*****************************************************************************/
-
 void dng_negative::AdjustSemanticMasksForProxy (dng_host &host,
+												dng_image_writer &writer,
 												const dng_rect &originalStage3Bounds,
 												const dng_rect &defaultCropArea)
 	{
@@ -6775,17 +8005,11 @@ void dng_negative::AdjustSemanticMasksForProxy (dng_host &host,
 		return;
 		}
 
-	// If the active area of the original (before conversion to proxy) matches
-	// the default crop area, then is not necessary to adjust the semantic
-	// masks for the proxy. (It may still be desirable to do so, to reduce
-	// size, but it is not required for correctness.)
+	DNG_REQUIRE (fStage3Image.Get (), "Missing stage3 image");
 
-	if (originalStage3Bounds == defaultCropArea)
-		{
-		return;
-		}
+	const dng_rect newStage3Bounds = fStage3Image->Bounds ();
 
-	// The original active area is different than the original default crop
+	// If original active area is different than the original default crop
 	// area, so this means during proxy conversion, the main image will be
 	// trimmed to the default crop area. This means we need to adjust the
 	// semantic masks, too. We need to resample and trim the masks so that
@@ -6793,9 +8017,7 @@ void dng_negative::AdjustSemanticMasksForProxy (dng_host &host,
 	// the fact that semantic masks may may be pre-cropped to exclude zero
 	// pixels (i.e., MaskSubArea support).
 
-	DNG_REQUIRE (fStage3Image.Get (), "missing stage 3 image");
-
-	const dng_rect newStage3Bounds = fStage3Image->Bounds ();
+	const bool trimmedToDefaultCrop = (originalStage3Bounds != defaultCropArea);
 
 	const uint32 maskCount = NumSemanticMasks ();
 
@@ -6805,109 +8027,148 @@ void dng_negative::AdjustSemanticMasksForProxy (dng_host &host,
 		auto &mask = fSemanticMasks [i];
 
 		DNG_REQUIRE (mask.fMask, "Missing mask");
-
-		const uint32 planes = 1;
-
-		const bool needResizeToFinalArea =
-			(newStage3Bounds.Size () != defaultCropArea.Size ());
-
-		// If we need to perform a second downsample step, then use the
-		// original mask pixel type as the intermediate pixel type.
 		
-		const uint32 fullResPixelType =
-			needResizeToFinalArea ? mask.fMask->PixelType ()
-								  : ttByte;
-
-		AutoPtr<dng_image> fullResMask
-			(host.Make_dng_image (originalStage3Bounds,
-								  planes,
-								  fullResPixelType));
-
-		if (mask.IsMaskSubAreaValid ())
+		const bool needDownsampleMask =
+			(mask.fMask->Bounds ().W () > newStage3Bounds.W () ||
+			 mask.fMask->Bounds ().H () > newStage3Bounds.H ()) ||
+			(mask.fMask->PixelType () != ttByte);
+			
+		if (needDownsampleMask || trimmedToDefaultCrop)
 			{
-
-			// MaskSubArea case.
-
-			// Make a zero-filled image that represents the uncropped mask
-			// area (corresponding logically to the active area, or
-			// originalStage3Bounds).
-
-			dng_point origin;
-
-			dng_rect srcArea;
-
-			mask.CalcMaskSubArea (origin, srcArea);
-
-			const uint32 srcPixelType = mask.fMask->PixelType ();
-
-			AutoPtr<dng_image> srcImage
-				(host.Make_dng_image (srcArea,
-									  planes,
-									  srcPixelType));
-
-			srcImage->SetZero (srcArea);
-
-			// Copy the mask into the zero-filled image.
-
-			AutoPtr<dng_image> subImage (mask.fMask->Clone ());
-
-			subImage->Offset (origin);
-
-			srcImage->CopyArea (*subImage,
-								subImage->Bounds (),
-								0,
-								0,
-								planes);
-
-			// Resample to active area.
-
-			host.ResampleImage (*srcImage,
-								*fullResMask);
-
-			}
-
-		else
-			{
-
-			// Without MaskSubArea case. Resample directly.
+			
+			AutoPtr<dng_image> image;
+			
+			// Can we just resample directly to proxy size?
+			
+			if (!mask.IsMaskSubAreaValid () & !trimmedToDefaultCrop)
+				{
 				
-			host.ResampleImage (*mask.fMask,
-								*fullResMask);
+				image.Reset (host.Make_dng_image (newStage3Bounds,
+												  1,
+												  ttByte));
+
+				host.ResampleImage (*mask.fMask,
+									*image);
+
+				}
+				
+			// Else we need to first create a full size trimmed mask.
+				
+			else
+				{
+				
+				// If we need to perform a second downsample step, then use the
+				// original mask pixel type as the intermediate pixel type.
+				
+				const bool needResizeToFinalArea =
+					(newStage3Bounds.Size () != defaultCropArea.Size ());
+				
+				const uint32 fullResPixelType =
+					needResizeToFinalArea ? mask.fMask->PixelType ()
+										  : ttByte;
+
+				AutoPtr<dng_image> fullResMask
+					(host.Make_dng_image (originalStage3Bounds,
+										  1,
+										  fullResPixelType));
+
+				if (mask.IsMaskSubAreaValid ())
+					{
+
+					// MaskSubArea case.
+
+					// Make a zero-filled image that represents the uncropped mask
+					// area (corresponding logically to the active area, or
+					// originalStage3Bounds).
+
+					dng_point origin;
+
+					dng_rect srcArea;
+
+					mask.CalcMaskSubArea (origin, srcArea);
+
+					const uint32 srcPixelType = mask.fMask->PixelType ();
+
+					AutoPtr<dng_image> srcImage
+						(host.Make_dng_image (srcArea,
+											  1,
+											  srcPixelType));
+
+					srcImage->SetZero (srcArea);
+
+					// Copy the mask into the zero-filled image.
+
+					AutoPtr<dng_image> subImage (mask.fMask->Clone ());
+
+					subImage->Offset (origin);
+
+					srcImage->CopyArea (*subImage,
+										subImage->Bounds (),
+										0,
+										0,
+										1);
+
+					// Resample to active area.
+
+					host.ResampleImage (*srcImage,
+										*fullResMask);
+
+					}
+
+				else
+					{
+
+					// Without MaskSubArea case. Resample directly.
+						
+					host.ResampleImage (*mask.fMask,
+										*fullResMask);
+
+					}
+
+				// Trim to default crop area.
+
+				fullResMask->Trim (defaultCropArea);
+
+				image.Reset (fullResMask.Release ());
+
+				// Resize to new area, if needed.
+
+				if (needResizeToFinalArea)
+					{
+
+					AutoPtr<dng_image> temp
+						(host.Make_dng_image (newStage3Bounds,
+											  1,
+											  ttByte));
+
+					host.ResampleImage (*image,
+										*temp);
+
+					image.Reset (temp.Release ());
+
+					}
+
+				}
+				
+			// Store.
+			
+			mask.fMask.reset (image.Release ());
+				
+			// Clear MaskSubArea.
+
+			memset (mask.fMaskSubArea, 0, sizeof (mask.fMaskSubArea));
+			
+			// Lossy compressed data is no longer valid.
+
+			mask.fLossyCompressed.reset ();
 
 			}
+			
+		}
 
-		// Trim to default crop area.
-
-		fullResMask->Trim (defaultCropArea);
-
-		AutoPtr<dng_image> image (fullResMask.Release ());
-
-		// Resize to new area, if needed.
-
-		if (needResizeToFinalArea)
-			{
-
-			AutoPtr<dng_image> temp
-				(host.Make_dng_image (newStage3Bounds,
-									  1,		 // only 1 plane
-									  ttByte));	 // force 8-bit
-
-			host.ResampleImage (*image,
-								*temp);
-
-			image.Reset (temp.Release ());
-
-			}
-
-		// Clear MaskSubArea.
-
-		memset (mask.fMaskSubArea, 0, sizeof (mask.fMaskSubArea));
-
-		// Store.
-
-		mask.fMask.reset (image.Release ());
-
-		} // for each mask
+	CompressSemanticMasksJXL (host,
+							  writer,
+							  true);
 
 	}
 

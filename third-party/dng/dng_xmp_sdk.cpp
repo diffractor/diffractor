@@ -20,6 +20,8 @@
 #include "dng_string_list.h"
 #include "dng_utils.h"
 
+#include <cstdio>
+
 /*****************************************************************************/
 
 #if qMacOS
@@ -84,6 +86,12 @@ const char *XMP_NS_GPANO	  = "http://ns.google.com/photos/1.0/panorama/";
 
 const char *XMP_NS_REGIONS	  = "http://www.metadataworkinggroup.com/schemas/regions/";
 
+const char *XMP_NS_HDRGM	  = "http://ns.adobe.com/hdr-gain-map/1.0/";
+const char *XMP_NS_HDR_META	  = "http://ns.adobe.com/hdr-metadata/1.0/";
+
+const char *XMP_NS_APPLE_HDRGM	   = "http://ns.apple.com/HDRGainMap/1.0/";
+const char *XMP_NS_APPLE_PIXELDATA = "http://ns.apple.com/pixeldatainfo/1.0/";
+
 /******************************************************************************/
 
 #define CATCH_XMP_ALT(routine, fatal, silent)\
@@ -102,7 +110,7 @@ const char *XMP_NS_REGIONS	  = "http://www.metadataworkinggroup.com/schemas/regi
 			if (!silent)\
 				{\
 				char errBuffer [256];\
-				sprintf (errBuffer, "Info: XMP " routine " threw '%s' exception", errMessage);\
+				snprintf (errBuffer, 256, "Info: XMP " routine " threw '%s' exception", errMessage);	\
 				DNG_REPORT (errBuffer);\
 				}\
 			}\
@@ -361,6 +369,54 @@ void dng_xmp_sdk::InitializeSDK (dng_xmp_namespace * extraNamespaces,
 				
 				SXMPMeta::RegisterNamespace (XMP_NS_REGIONS,
 											 "mwg-rs",
+											 &ss);
+				
+				}
+			
+			// Register HDR Gain Map namespace
+			
+				{
+				
+				TXMP_STRING_TYPE ss ("");
+				
+				SXMPMeta::RegisterNamespace (XMP_NS_HDRGM,
+											 "hdrgm",
+											 &ss);
+				
+				}
+			
+			// Register Apple HDR Gain Map namespace
+			
+				{
+				
+				TXMP_STRING_TYPE ss ("");
+				
+				SXMPMeta::RegisterNamespace (XMP_NS_APPLE_HDRGM,
+											 "HDRGainMap",
+											 &ss);
+				
+				}
+			
+			// Register Apple Pixel Data namespace
+			
+				{
+				
+				TXMP_STRING_TYPE ss ("");
+				
+				SXMPMeta::RegisterNamespace (XMP_NS_APPLE_PIXELDATA,
+											 "apdi",
+											 &ss);
+				
+				}
+			
+			// Register HDR Metadata namespace
+			
+				{
+				
+				TXMP_STRING_TYPE ss ("");
+				
+				SXMPMeta::RegisterNamespace (XMP_NS_HDR_META,
+											 "hdr_metadata",
 											 &ss);
 				
 				}

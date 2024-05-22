@@ -80,6 +80,44 @@ dng_file_stream::dng_file_stream (FILE *file,
 /*****************************************************************************/
 
 dng_file_stream::dng_file_stream (int fd,
+								  const char *mode,
+								  uint32 bufferSize)
+
+	:	dng_stream ((dng_abort_sniffer *) NULL,
+					bufferSize,
+					0)
+
+	,	fFile (NULL)
+
+	{
+
+	// Note: Use dup here as caller is responsible for separately managing fd.
+
+	fFile = fdopen (dup (fd), mode);
+
+	if (!fFile)
+		{
+
+		#if qDNGValidate
+
+		ReportError ("Unable to open file",
+					 filename);
+
+		ThrowSilentError ();
+
+		#else
+
+		ThrowOpenFile ();
+
+		#endif
+
+		}
+
+	}
+
+/*****************************************************************************/
+
+dng_file_stream::dng_file_stream (int fd,
 								  bool output,
 								  uint32 bufferSize)
 

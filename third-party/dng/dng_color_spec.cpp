@@ -254,6 +254,12 @@ dng_color_spec::dng_color_spec (const dng_negative &negative,
 			
 			fNumIlluminants = 3;
 			
+			dng_camera_profile::NormalizeForwardMatrix (fForwardMatrix2);
+			dng_camera_profile::NormalizeForwardMatrix (fForwardMatrix3);
+			
+			fColorMatrix2 = fAnalogBalance * fCameraCalibration2 * fColorMatrix2;
+			fColorMatrix3 = fAnalogBalance * fCameraCalibration3 * fColorMatrix3;
+			
 			}
 			
 		}

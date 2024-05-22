@@ -151,7 +151,7 @@ dng_string dng_time_zone::Encode_ISO_8601 () const
 			if (offset > 0)
 				{
 				
-				sprintf (s, "+%02d:%02d", offset / 60, offset % 60);
+				snprintf (s, 64, "+%02d:%02d", offset / 60, offset % 60);
 				
 				}
 				
@@ -160,7 +160,7 @@ dng_string dng_time_zone::Encode_ISO_8601 () const
 				
 				offset = -offset;
 				
-				sprintf (s, "-%02d:%02d", offset / 60, offset % 60);
+				snprintf (s, 64, "-%02d:%02d", offset / 60, offset % 60);
 				
 				}
 				
@@ -471,22 +471,24 @@ dng_string dng_date_time_info::Encode_ISO_8601 () const
 		
 		char s [256];
 	
-		sprintf (s,
-				 "%04u-%02u-%02u",
-				 (unsigned) fDateTime.fYear,
-				 (unsigned) fDateTime.fMonth,
-				 (unsigned) fDateTime.fDay);
+		snprintf (s,
+				  256,
+				  "%04u-%02u-%02u",
+				  (unsigned) fDateTime.fYear,
+				  (unsigned) fDateTime.fMonth,
+				  (unsigned) fDateTime.fDay);
 				 
 		result.Set (s);
 		
 		if (!fDateOnly)
 			{
 			
-			sprintf (s,
-					 "T%02u:%02u:%02u",
-					 (unsigned) fDateTime.fHour,
-					 (unsigned) fDateTime.fMinute,
-					 (unsigned) fDateTime.fSecond);
+			snprintf (s,
+					  256,
+					  "T%02u:%02u:%02u",
+					  (unsigned) fDateTime.fHour,
+					  (unsigned) fDateTime.fMinute,
+					  (unsigned) fDateTime.fSecond);
 					 
 			result.Append (s);
 			
@@ -597,11 +599,12 @@ dng_string dng_date_time_info::Encode_IPTC_Date () const
 		
 		char s [64];
 		
-		sprintf (s,
-				 "%04u%02u%02u",
-				 (unsigned) fDateTime.fYear,
-				 (unsigned) fDateTime.fMonth,
-				 (unsigned) fDateTime.fDay);
+		snprintf (s,
+				  64,
+				  "%04u%02u%02u",
+				  (unsigned) fDateTime.fYear,
+				  (unsigned) fDateTime.fMonth,
+				  (unsigned) fDateTime.fDay);
 				 
 		result.Set (s);
 				 
@@ -728,25 +731,27 @@ dng_string dng_date_time_info::Encode_IPTC_Time () const
 		if (fTimeZone.IsValid ())
 			{
 		
-			sprintf (s,
-					 "%02u%02u%02u%c%02u%02u",
-					 (unsigned) fDateTime.fHour,
-					 (unsigned) fDateTime.fMinute,
-					 (unsigned) fDateTime.fSecond,
-					 (int) (fTimeZone.OffsetMinutes () >= 0 ? '+' : '-'),
-					 (unsigned) (Abs_int32 (fTimeZone.OffsetMinutes ()) / 60),
-					 (unsigned) (Abs_int32 (fTimeZone.OffsetMinutes ()) % 60));
+			snprintf (s,
+					  64,
+					  "%02u%02u%02u%c%02u%02u",
+					  (unsigned) fDateTime.fHour,
+					  (unsigned) fDateTime.fMinute,
+					  (unsigned) fDateTime.fSecond,
+					  (int) (fTimeZone.OffsetMinutes () >= 0 ? '+' : '-'),
+					  (unsigned) (Abs_int32 (fTimeZone.OffsetMinutes ()) / 60),
+					  (unsigned) (Abs_int32 (fTimeZone.OffsetMinutes ()) % 60));
 					 
 			}
 			
 		else
 			{
 			
-			sprintf (s,
-					 "%02u%02u%02u",
-					 (unsigned) fDateTime.fHour,
-					 (unsigned) fDateTime.fMinute,
-					 (unsigned) fDateTime.fSecond);
+			snprintf (s,
+					  64,
+					  "%02u%02u%02u",
+					  (unsigned) fDateTime.fHour,
+					  (unsigned) fDateTime.fMinute,
+					  (unsigned) fDateTime.fSecond);
 					 
 			}
 				 
@@ -931,14 +936,15 @@ dng_time_zone LocalTimeZone (const dng_date_time &dt)
 		
 		#if qWinOS
 		
-		if (GetTimeZoneInformation			!= NULL &&
-			SystemTimeToTzSpecificLocalTime != NULL &&
-			SystemTimeToFileTime			!= NULL)
+		if (&GetTimeZoneInformation			 != NULL &&
+			&SystemTimeToTzSpecificLocalTime != NULL &&
+			&SystemTimeToFileTime			 != NULL)
 			{
 			
 			TIME_ZONE_INFORMATION tzInfo;
 			
-			DWORD x = GetTimeZoneInformation (&tzInfo);
+			DWORD tzId = GetTimeZoneInformation (&tzInfo);
+			(void) tzId;
 			
 			SYSTEMTIME localST;
 			

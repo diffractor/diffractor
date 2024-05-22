@@ -368,6 +368,17 @@ enum
 	tcBigTableDigests				= 52540,
 	tcBigTableOffsets				= 52541,
 	tcBigTableByteCounts			= 52542,
+	tcProfileGainTableMap2			= 52544,
+	tcColumnInterleaveFactor		= 52547,
+	tcImageSequenceInfo				= 52548,
+	tcProfileToneMethod				= 52549,
+	tcImageStats					= 52550,
+	tcProfileDynamicRange			= 52551,
+	tcProfileGroupName				= 52552,
+	tcJXLDistance					= 52553,
+	tcJXLEffort						= 52554,
+	tcJXLDecodeSpeed				= 52555,
+	tcBigTableGroupIndex			= 52556,
 	tcKodakKDCPrivateIFD			= 65024
 	};
 
@@ -387,7 +398,8 @@ enum
 	tcFirstMakerNoteIFD				= 0x30000,
 	tcLastMakerNoteIFD				= 0x3FFFF,
 	
-	tcCanonMakerNote				= tcFirstMakerNoteIFD,
+	tcAppleMakerNote				= tcFirstMakerNoteIFD,
+	tcCanonMakerNote,
 	tcCasioMakerNote,
 	tcEpsonMakerNote,
 	tcFujiMakerNote,
@@ -435,7 +447,9 @@ enum
 	tcAdobePSD,
 	tcPNG,
 	tcHEIC,
-	tcCanonCR3
+	tcCanonCR3,
+	tcJXL,
+	tcAVIF,
 	
 	};
 

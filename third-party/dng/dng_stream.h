@@ -35,6 +35,12 @@ const uint64 kDNGStreamInvalidOffset = (uint64) (int64) -1;
 
 /// Base stream abstraction. Has support for going between stream and pointer
 /// abstraction.
+///
+/// Note that it is the caller's responsibility to call the Flush method to
+/// ensure that data is fully written to the underlying storage. The class
+/// destructor does not automatically call Flush, because Flush may throw
+/// exceptions (e.g., write permissions, disk full) and it is up to the caller
+/// to handle these appropriately.
 
 class dng_stream: private dng_uncopyable
 	{
@@ -213,7 +219,8 @@ class dng_stream: private dng_uncopyable
 		/// This works for all streams, but requires copying the data to a new buffer.
 		/// \param allocator Allocator used to allocate memory.
 
-		dng_memory_block * AsMemoryBlock (dng_memory_allocator &allocator);
+		dng_memory_block * AsMemoryBlock (dng_memory_allocator &allocator,
+										  uint32 numLeadingZeroBytes = 0);
 
 		/// Seek to a new position in stream for reading.
 
@@ -498,6 +505,11 @@ class dng_stream: private dng_uncopyable
 
 		void Get_CString (char *data,
 						  uint32 maxLength);
+		
+		/// Puts an 8-bit character string from stream, including trailing NUL.
+		/// \param data Buffer pointing to null terminated string.
+
+		void Put_CString (const char *data);
 		
 		/// Get a 16-bit character string from stream and advance read position.
 		/// 16-bit characters are truncated to 8-bits.

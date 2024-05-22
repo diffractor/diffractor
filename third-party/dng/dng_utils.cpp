@@ -1,5 +1,5 @@
 /*****************************************************************************/
-// Copyright 2006-2019 Adobe Systems Incorporated
+// Copyright 2006-2023 Adobe Systems Incorporated
 // All Rights Reserved.
 //
 // NOTICE:	Adobe permits you to use, modify, and distribute this file in
@@ -15,10 +15,14 @@
 #include "dng_globals.h"
 #include "dng_host.h"
 #include "dng_image.h"
+#include "dng_image_writer.h"
+#include "dng_memory_stream.h"
 #include "dng_mutex.h"
 #include "dng_point.h"
 #include "dng_rect.h"
 #include "dng_simd_type.h"
+#include "dng_tag_codes.h"
+#include "dng_tag_values.h"
 #include "dng_tile_iterator.h"
 
 #if qMacOS
@@ -40,6 +44,10 @@
 #else
 #include <sys/time.h>
 #include <stdarg.h> // for va_start/va_end
+#endif
+
+#if defined(__EMSCRIPTEN__)
+#include "emscripten.h"
 #endif
 
 #include <atomic>
@@ -108,6 +116,24 @@ void dng_outputdebugstring (const char *s,
 
 /*****************************************************************************/
 
+#if defined(__EMSCRIPTEN__)
+
+void dng_emscripten_log (int emLogType,
+						 const char *s)
+	{
+	
+	#if qDNGDebug
+	emLogType |= EM_LOG_CONSOLE;
+	#endif
+
+	emscripten_log (emLogType,"%s", s);
+	
+	}
+
+#endif
+
+/*****************************************************************************/
+
 void dng_show_message (const char *s)
 	{
 	// only append a newline if there isn't already one
@@ -121,7 +147,7 @@ void dng_show_message (const char *s)
 	if (gPrintAsserts)
 		fprintf (stderr, "%s%s", s, nl);
 		
-	#elif qiPhone || qAndroid || qLinux
+	#elif qiPhone || qAndroid || qLinux || qWeb
 	
 	if (gPrintAsserts)
 		fprintf (stderr, "%s%s", s, nl);
@@ -306,7 +332,7 @@ real64 TickTimeInSeconds ()
 	
 	return mach_absolute_time() * freqMultiplier;
 		
-	#elif qAndroid || qLinux
+	#elif qAndroid || qLinux || qWeb
 
 	//this is a fast timer to nanos
 	struct timespec now;
@@ -678,6 +704,11 @@ dng_limit_float_depth_task<simd>::dng_limit_float_depth_task
 /*****************************************************************************/
 
 template <SIMDType simd>
+
+#ifdef __INTEL_LLVM_COMPILER
+__attribute__((SET_CPU_FEATURE(simd)))
+#endif // __INTEL_LLVM_COMPILER
+
 void dng_limit_float_depth_task<simd>::Process (uint32 /* threadIndex */,
 												const dng_rect &tile,
 												dng_abort_sniffer * /* sniffer */)
@@ -685,7 +716,11 @@ void dng_limit_float_depth_task<simd>::Process (uint32 /* threadIndex */,
 
 	INTEL_COMPILER_NEEDED_NOTE
 
-	SET_CPU_FEATURE (simd);
+
+#ifdef __INTEL_COMPILER
+		SET_CPU_FEATURE(simd);
+#endif // __INTEL_COMPILER
+
 
 	dng_const_tile_buffer srcBuffer (fSrcImage, tile);
 	dng_dirty_tile_buffer dstBuffer (fDstImage, tile);
@@ -930,5 +965,618 @@ void LimitFloatBitDepth (dng_host &host,
 		}
 
 	}
+
+/*****************************************************************************/
+
+uint32 MinBackwardVersionForCompression (uint32 compression)
+	{
+	
+	if (compression == ccLossyJPEG)
+		return dngVersion_1_4_0_0;
+
+	if (compression == ccJXL)
+		return dngVersion_1_7_0_0;
+
+	return dngVersion_1_1_0_0;
+	
+	}
+
+/*****************************************************************************/
+
+tiff_tag * dng_image_sequence_info::MakeTag (dng_memory_allocator &allocator) const
+	{
+
+	dng_memory_stream stream (allocator);
+
+	TempBigEndian tempEndian (stream);
+
+	// Write Sequence ID.
+
+	if (fSequenceID.NotEmpty ())
+		stream.Put (fSequenceID.Get (),
+					fSequenceID.Length ());
+
+	stream.PutZeros (1);
+
+	// Write Sequence Type.
+
+	if (fSequenceType.NotEmpty ())
+		stream.Put (fSequenceType.Get (),
+					fSequenceType.Length ());
+
+	stream.PutZeros (1);
+
+	// Write frame info.
+
+	if (fFrameInfo.NotEmpty ())
+		stream.Put (fFrameInfo.Get (),
+					fFrameInfo.Length ());
+
+	stream.PutZeros (1);
+
+	// Write index, count, and final.
+
+	stream.Put_uint32 (fIndex);
+	stream.Put_uint32 (fCount);
+	stream.Put_uint8 (fIsFinal);
+
+	stream.SetReadPosition (0);
+
+	const_dng_memory_block_sptr block (stream.AsMemoryBlock (allocator));
+
+	AutoPtr<tag_owned_data_ptr> tag
+		(new tag_owned_data_ptr (tcImageSequenceInfo,
+								 ttUndefined,
+								 block->LogicalSize (),
+								 block));
+
+	return tag.Release ();
+	
+	}
+
+/*****************************************************************************/
+/*****************************************************************************/
+/*****************************************************************************/
+
+bool dng_image_stats::IsValidForPlaneCount (uint32 planeCount) const
+	{
+	
+	DNG_REQUIRE (planeCount > 0, "Invalid plane count");
+
+	if (fWeightedAverage.size () >= 2)
+		return false;
+
+	if (fWeights.size () != 0 &&
+		fWeights.size () != size_t (planeCount))
+		return false;
+	
+	if (fColorAverage.size () != 0 &&
+		fColorAverage.size () != size_t (planeCount))
+		return false;
+
+	// Check weighted samples.
+		
+	if (!fWeightedSamples.empty ())
+		{
+
+		// Check too many samples.
+
+		if (fWeightedSamples.size () > kMaxSamples)
+			return false;
+		
+		// Check non-increasing order.
+
+		real32 fPrev = fWeightedSamples.front ().fFrac;
+
+		for (size_t i = 1; i < fWeightedSamples.size (); i++)
+			{
+
+			real32 fCurrent = fWeightedSamples [i].fFrac;
+			
+			if (fCurrent <= fPrev)
+				return false;
+
+			fPrev = fCurrent;
+
+			}
+		
+		}
+
+	// Check color samples.
+
+	if (!fColorSamples.empty ())
+		{
+
+		// Check too many samples.
+
+		if (fColorSamples.size () > kMaxSamples)
+			return false;
+		
+		// Check non-increasing order and invalid plane count.
+
+		real32 fPrev = fColorSamples.front ().fFrac;
+
+		for (size_t i = 1; i < fColorSamples.size (); i++)
+			{
+
+			const auto &sample = fColorSamples [i];
+			
+			if (sample.fFrac <= fPrev)
+				return false;
+
+			fPrev = sample.fFrac;
+
+			// Also check plane count.
+
+			if (sample.fValues.size () != size_t (planeCount))
+				return false;
+
+			}
+		
+		}
+
+	// Looks ok.
+
+	return true;
+	
+	}
+
+/*****************************************************************************/
+
+uint32 dng_image_stats::TagCount () const
+	{
+
+	uint32 count = 0;
+	
+	count += (!fWeightedAverage.empty () ? 1 : 0);
+	count += (!fWeightedSamples.empty () ? 1 : 0);
+	count += (!fWeights		   .empty () ? 1 : 0);
+	count += (!fColorAverage   .empty () ? 1 : 0);
+	count += (!fColorSamples   .empty () ? 1 : 0);
+
+	return count;
+	
+	}
+
+/*****************************************************************************/
+
+static void Put (dng_stream &stream,
+				 uint32 tagCode,
+				 const std::vector<real32> &values)
+	{
+
+	if (!values.empty ())
+		{
+
+		// Sanity check on values size.
+
+		DNG_REQUIRE (values.size () <= 16,
+					 "values vector too large");
+
+		// Child tag code.
+
+		stream.Put_uint32 (tagCode);
+
+		// Byte length of child tag data.
+		
+		stream.Put_uint32 (uint32 (4 * values.size ()));
+
+		// Child tag data.
+
+		for (const auto x : values)
+			stream.Put_real32 (x);
+		
+		}
+	
+	}
+
+/*****************************************************************************/
+
+static void Put (dng_stream &stream,
+				 uint32 tagCode,
+				 const std::vector<dng_image_stats::weighted_sample> &samples)
+	{
+
+	if (!samples.empty ())
+		{
+
+		// Sanity check on samples size.
+
+		DNG_REQUIRE (samples.size () <= dng_image_stats::kMaxSamples,
+					 "samples vector too large");
+
+		// Child tag code.
+
+		stream.Put_uint32 (tagCode);
+
+		// Byte length of child tag data.
+		
+		stream.Put_uint32 (uint32 (4 + 8 * samples.size ()));
+
+		// Child tag data.
+
+		// Write number of samples.
+
+		stream.Put_uint32 (uint32 (samples.size ()));
+
+		// Write data for each sample.
+
+		for (const auto &sample : samples)
+			{
+			stream.Put_real32 (sample.fFrac);
+			stream.Put_real32 (sample.fValue);
+			}
+		
+		}
+	
+	}
+
+/*****************************************************************************/
+
+static void Put (dng_stream &stream,
+				 uint32 tagCode,
+				 const std::vector<dng_image_stats::color_sample> &samples)
+	{
+
+	if (!samples.empty ())
+		{
+
+		// Sanity check on samples size.
+
+		DNG_REQUIRE (samples.size () <= dng_image_stats::kMaxSamples,
+					 "samples vector too large");
+
+		// Child tag code.
+
+		stream.Put_uint32 (tagCode);
+
+		// Byte length of child tag data.
+
+		uint32 bytes = 4;
+
+		for (const auto &sample : samples)
+			bytes += (4 + 4 * uint32 (sample.fValues.size ()));
+		
+		stream.Put_uint32 (bytes);
+
+		// Child tag data.
+
+		// Write number of samples.
+
+		stream.Put_uint32 (uint32 (samples.size ()));
+
+		// Write data for each sample.
+
+		for (const auto &sample : samples)
+			{
+			
+			stream.Put_real32 (sample.fFrac);
+			
+			for (const auto &x : sample.fValues)
+				stream.Put_real32 (x);
+			
+			}
+		
+		}
+	
+	}
+
+/*****************************************************************************/
+
+tiff_tag * dng_image_stats::MakeTag (dng_memory_allocator &allocator) const
+	{
+	
+	dng_memory_stream stream (allocator);
+
+	// Tag data is big-endian byte order.
+
+	TempBigEndian tempEndian (stream);
+
+	// Write the number of tags.
+
+	uint32 count = TagCount ();
+
+	stream.Put_uint32 (count);
+
+	// Write child tag table.
+
+	Put (stream, kTag_WeightedAverage , fWeightedAverage);
+	Put (stream, kTag_WeightedSamples , fWeightedSamples);
+	Put (stream, kTag_Weights		  , fWeights);
+	Put (stream, kTag_ColorAverage	  , fColorAverage);
+	Put (stream, kTag_ColorSamples	  , fColorSamples);
+	
+	// Make a tag from the data.
+
+	stream.SetReadPosition (0);
+
+	const_dng_memory_block_sptr block (stream.AsMemoryBlock (allocator));
+
+	AutoPtr<tag_owned_data_ptr> tag
+		(new tag_owned_data_ptr (tcImageStats,
+								 ttUndefined,
+								 block->LogicalSize (),
+								 block));
+
+	return tag.Release ();
+	
+	}
+
+/*****************************************************************************/
+
+bool dng_image_stats::operator== (const dng_image_stats &src) const
+	{
+	
+	return (fWeightedAverage   == src.fWeightedAverage &&
+			fWeightedSamples   == src.fWeightedSamples &&
+			fWeights		   == src.fWeights		   &&
+			fColorAverage	   == src.fColorAverage	   &&
+			fColorSamples	   == src.fColorSamples);
+	
+	}
+
+/*****************************************************************************/
+
+void dng_image_stats::Parse (dng_stream &stream)
+	{
+	
+	// Tag data is big-endian byte order.
+
+	TempBigEndian tempEndian (stream);
+
+	// Read the number of tags.
+
+	uint32 count = stream.Get_uint32 ();
+
+	// There are only 5 possible tags, and no tag may be repeated. Therefore,
+	// more than 5 tags is an error.
+
+	if (count > 5)
+		ThrowBadFormat ("too many tags in dng_image_stats");
+
+	// Read each child tag.
+
+	for (uint32 i = 0; i < count; i++)
+		{
+		
+		// Read child tag code.
+
+		uint32 childTagCode = stream.Get_uint32 ();
+
+		// Read byte length of child tag data.
+
+		uint32 length = stream.Get_uint32 ();
+
+		// Byte length must be positive.
+
+		if (length == 0)
+			ThrowBadFormat ("child tag byte length must be > 0");
+		
+		// Byte length must be multiple of 4.
+
+		if ((length & 3) != 0)
+			ThrowBadFormat ("child tag byte length expected to be multiple of 4");
+
+		// Check maximum value of byte length.
+
+		constexpr uint32 kMaxBytes = 4 + kMaxSamples * 4 * (kMaxColorPlanes + 1);
+
+		if (length > kMaxBytes)
+			ThrowBadFormat ("child tag byte length too large");
+
+		// Read all floats.
+
+		std::vector<real32> *data = nullptr;
+
+		switch (childTagCode)
+			{
+			
+			case kTag_WeightedAverage:
+				{
+				data = &fWeightedAverage;
+				break;
+				}
+				
+			case kTag_Weights:
+				{
+				data = &fWeights;
+				break;
+				}
+			
+			case kTag_ColorAverage:
+				{
+				data = &fColorAverage;
+				break;
+				}
+				
+			default:
+				break;
+			
+			}
+
+		if (data)
+			{
+
+			const uint32 numFloats = (length >> 2);
+
+			data->resize (numFloats);
+
+			for (uint32 c = 0; c < numFloats; c++)
+				(*data) [c] = stream.Get_real32 ();
+
+			}
+
+		else if (childTagCode == kTag_WeightedSamples)
+			{
+
+			const uint32 sampleCount = stream.Get_uint32 ();
+
+			// Check sample count requirements.
+
+			if (sampleCount == 0)
+				ThrowBadFormat ("too few samples for weighted samples");
+
+			if (sampleCount > kMaxSamples)
+				ThrowBadFormat ("too many samples for weighted samples");
+
+			// Check byte length.
+
+			if (4 + (8 * sampleCount) != length)
+				ThrowBadFormat ("mismatch byte length for weighted samples");
+
+			// Read the child tag data.
+
+			fWeightedSamples.resize (sampleCount);
+
+			for (auto &sample : fWeightedSamples)
+				{
+
+				sample.fFrac  = stream.Get_real32 ();
+				sample.fValue = stream.Get_real32 ();
+				
+				}
+			
+			}
+
+		else if (childTagCode == kTag_ColorSamples)
+			{
+			
+			const uint32 sampleCount = stream.Get_uint32 ();
+
+			// Check sample count requirements.
+
+			if (sampleCount == 0)
+				ThrowBadFormat ("too few samples for color samples");
+
+			if (sampleCount > kMaxSamples)
+				ThrowBadFormat ("too many samples for color samples");
+
+			// Infer plane count.
+
+			const uint32 planes = ((length - 4) / sampleCount / 4) - 1;
+
+			if (planes == 0)
+				ThrowBadFormat ("unexpected 0 plane count for color samples");
+
+			if (planes > kMaxColorPlanes)
+				ThrowBadFormat ("too large plane count for color samples");
+
+			if (4 + (sampleCount * 4 * (planes + 1)) != length)
+				ThrowBadFormat ("mismatched plane count for color samples");
+
+			// Read the child tag data.
+
+			fColorSamples.resize (sampleCount);
+
+			for (auto &sample : fColorSamples)
+				{
+
+				sample.fFrac = stream.Get_real32 ();
+
+				sample.fValues.resize (planes);
+
+				for (auto &value : sample.fValues)
+					value = stream.Get_real32 ();
+
+				}
+			
+			}
+
+		else
+			{
+			
+			ThrowBadFormat ("unsupported child tag code");
+			
+			}
+
+		}
+	
+	}
+
+/*****************************************************************************/
+
+#if qDNGValidate
+
+/*****************************************************************************/
+
+static void DumpTag (const char *name,
+					 const std::vector<real32> &values)
+	{
+
+	if (!values.empty ())
+		{
+	
+		printf ("  %s: %.4f",
+				name,
+				values.front ());
+
+		for (size_t i = 1; i < values.size (); i++)
+			printf (", %.4f", values [i]);
+
+		printf ("\n");
+
+		}
+	
+	}
+
+/*****************************************************************************/
+
+void dng_image_stats::Dump () const
+	{
+
+	printf ("ImageStats: %u child tag(s)\n", TagCount ());
+
+	DumpTag ("weights", fWeights);
+	
+	DumpTag ("weighted average", fWeightedAverage);
+	
+	DumpTag ("color average", fColorAverage);
+
+	if (!fWeightedSamples.empty ())
+		{
+
+		printf ("  weighted samples:\n");
+		
+		for (const auto &s : fWeightedSamples)
+			{
+			
+			printf ("    frac: %.6f, value: %.6lf\n",
+					s.fFrac,
+					s.fValue);
+			
+			}
+		
+		}
+	
+	if (!fColorSamples.empty ())
+		{
+
+		printf ("  color samples:\n");
+		
+		for (const auto &s : fColorSamples)
+			{
+			
+			printf ("    frac: %.6f, values: ",
+					s.fFrac);
+
+			if (s.fValues.empty ())
+				continue;
+
+			printf ("%.6f", s.fValues.front ());
+
+			for (size_t i = 1; i < s.fValues.size (); i++)
+				printf (", %.6f", s.fValues [i]);
+
+			printf ("\n");
+			
+			}
+		
+		}
+	
+	}
+
+/*****************************************************************************/
+
+#endif	// qDNGValidate
 
 /*****************************************************************************/

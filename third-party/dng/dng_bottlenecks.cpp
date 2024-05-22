@@ -66,6 +66,8 @@ dng_suite gDNGSuite =
 	DecodeLosslessJPEG<Scalar>,
 	EncodeLosslessJPEG<Scalar>,
 	RefBaselineProfileGainTableMap,
+	RefRGBtoRGBTable3D,
+	RefRGBtoRGBTable1D,
 	};
 
 /*****************************************************************************/

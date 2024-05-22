@@ -9,9 +9,13 @@
 #include "dng_area_task.h"
 
 #include "dng_abort_sniffer.h"
+#include "dng_assertions.h"
 #include "dng_auto_ptr.h"
 #include "dng_flags.h"
 #include "dng_globals.h"
+#include "dng_host.h"
+#include "dng_image.h"
+#include "dng_pixel_buffer.h"
 #include "dng_sdk_limits.h"
 #include "dng_tile_iterator.h"
 #include "dng_utils.h"
@@ -319,6 +323,358 @@ void dng_area_task::Perform (dng_area_task &task,
 			
 	task.Finish (1);
 	
+	}
+
+/*****************************************************************************/
+/*****************************************************************************/
+/*****************************************************************************/
+
+dng_range_parallel_task::dng_range_parallel_task (dng_host &host,
+												  int32 startIndex,
+												  int32 stopIndex,
+												  const char *name)
+
+	:	dng_area_task ((name != NULL) ? name : "dng_range_parallel_task")
+
+	,	fHost		(host)
+	,	fStartIndex (startIndex)
+	,	fStopIndex	(stopIndex)
+	,	fIndices	()
+
+	{
+
+	DNG_REQUIRE (stopIndex > startIndex,
+				 "Invalid start/stop index values");
+
+	fMinTaskArea = kDummySize * kDummySize;
+	fUnitCell	 = dng_point (kDummySize, kDummySize);
+	fMaxTileSize = dng_point (kDummySize, kDummySize);
+
+	}
+
+/*****************************************************************************/
+
+uint32 dng_range_parallel_task::RecommendedThreadCount () const
+	{
+
+	return fHost.PerformAreaTaskThreads ();
+
+	}
+
+/******************************************************************************/
+
+int32 dng_range_parallel_task::MinIndicesPerThread () const
+	{
+
+	return 1;
+
+	}
+
+/******************************************************************************/
+
+void dng_range_parallel_task::Run ()
+	{
+
+	uint32 threadCount = fHost.PerformAreaTaskThreads ();
+
+	threadCount = Min_uint32 (threadCount, 
+							  RecommendedThreadCount ());
+
+	const int32 items = fStopIndex - fStartIndex;
+
+	// Find minimum number of items (indices) for each task.
+
+	int32 minItemsPerTask = Max_int32 (1, MinIndicesPerThread ());
+
+	// Find the number of tasks. Has to be at least 1.
+	
+	int32 tasks = Max_int32 (items / minItemsPerTask, 1);
+
+	// Limit thread count to # of tasks.
+
+	threadCount = Min_uint32 (threadCount,
+							  (uint32) tasks);
+
+	// Find the number of items to process per task. In general this will not
+	// divide evenly, so compute this as a floating-point value. However, it
+	// will be at least 1.0.
+
+	real64 itemsPerThread64 = items / (real64) threadCount;
+
+	// Allocate a vector to hold index ranges.
+
+	fIndices.resize ((size_t) (threadCount + 1));
+
+	// Populate the index ranges for each task.
+
+	real64 idx64 = 0.0;
+
+	for (uint32 i = 0; i <= threadCount; i++)
+		{
+
+		int32 idx = fStartIndex + Round_int32 (idx64);
+		
+		fIndices [i] = idx;
+
+		idx64 += itemsPerThread64;
+		
+		}
+
+	fHost.PerformAreaTask (*this, 
+						   dng_rect (0, 
+									 0, 
+									 kDummySize, 
+									 kDummySize * threadCount));
+
+	}
+
+/******************************************************************************/
+
+void dng_range_parallel_task::Prepare (uint32 /* threadCount */,
+									   dng_memory_allocator * /* allocator */,
+									   dng_abort_sniffer * /* sniffer */)
+	{
+
+	}
+
+/******************************************************************************/
+
+void dng_range_parallel_task::Start (uint32 threadCount,
+									 const dng_rect & /* dstArea */,
+									 const dng_point & /* tileSize */,
+									 dng_memory_allocator *allocator,
+									 dng_abort_sniffer *sniffer)
+	{
+
+	Prepare (threadCount, 
+			 allocator, 
+			 sniffer);
+
+	}
+	
+/******************************************************************************/
+
+void dng_range_parallel_task::Process (uint32 /* threadIndex */,
+									   const dng_rect &tile,
+									   dng_abort_sniffer *sniffer)
+	{
+
+	// Note: important to use the tile area (not the given threadIndex in the
+	// above parameter) to retrieve the index range for this task.
+
+	int32 index0 = tile.l / kDummySize;
+	int32 index1 = index0 + 1;
+
+	// This should never happen, just being safe.
+
+	if (index0 < 0 || index1 >= (int32) fIndices.size ())
+		{
+		return;
+		}
+
+	int32 startIndex = fIndices [index0];
+	int32 stopIndex	 = fIndices [index1];
+
+	uint32 threadIndex = (uint32) index0;
+
+	// Do the actual work.
+
+	ProcessRange (threadIndex,
+				  startIndex,
+				  stopIndex,
+				  sniffer);
+
+	}
+
+/*****************************************************************************/
+
+class dng_range_parallel_func_task: public dng_range_parallel_task
+	{
+
+	private:
+
+		const uint32 fMinIndicesPerThread;
+
+		const uint32 fRecommendedThreadCount;
+
+		const dng_range_parallel_task::function_t &fFunc;
+
+	public:
+		
+		dng_range_parallel_func_task (dng_host &host,
+									  const info &params,								 
+									  const char *taskName,
+									  const dng_range_parallel_task::function_t &func)
+
+			:	dng_range_parallel_task (host,
+										 params.fBegin,
+										 params.fEnd,
+										 taskName)
+
+			,	fMinIndicesPerThread (Max_uint32 (params.fMinIndicesPerThread, 1))
+
+			,	fRecommendedThreadCount (params.fRecommendedThreadCount)
+
+			,	fFunc (func)
+
+			{
+
+			}
+		
+		virtual uint32 RecommendedThreadCount () const
+			{
+
+			if (fRecommendedThreadCount > 0)
+				{
+				return fRecommendedThreadCount;
+				}
+
+			return dng_range_parallel_task::RecommendedThreadCount ();
+
+			}
+
+		virtual int32 MinIndicesPerThread () const
+			{
+
+			return fMinIndicesPerThread;
+
+			}
+
+		virtual void ProcessRange (uint32 threadIndex,
+								   int32 startIndex,
+								   int32 stopIndex,
+								   dng_abort_sniffer *sniffer)
+			{
+
+			dng_range_parallel_task::range r;
+
+			r.fThreadIndex = threadIndex;
+			r.fBegin	   = startIndex;
+			r.fEnd		   = stopIndex;
+			r.fSniffer	   = sniffer;
+
+			fFunc (r);
+
+			}
+		
+	};
+
+/*****************************************************************************/
+
+void dng_range_parallel_task::Do (dng_host &host,
+								  const info &params,								 
+								  const char *taskName,
+								  const function_t &func)
+	{
+
+	dng_range_parallel_func_task task (host,
+									   params,
+									   taskName,
+									   func);
+
+	task.Run ();
+	
+	}
+
+/*****************************************************************************/
+/*****************************************************************************/
+/*****************************************************************************/
+
+dng_rect dng_get_buffer_task::RepeatingTile1 () const
+	{
+			
+	return fSrc.RepeatingTile ();
+			
+	}
+			
+/*****************************************************************************/
+
+void dng_get_buffer_task::Process (uint32 /* threadIndex */,
+								   const dng_rect &tile,
+								   dng_abort_sniffer * /* sniffer */)
+	{
+
+	dng_pixel_buffer temp = fDst;
+
+	temp.fData = (void *) fDst.DirtyPixel (tile.t, tile.l, temp.fPlane);
+
+	temp.fArea = tile;
+
+	fSrc.Get (temp,
+			  fEdgeOption);
+		
+	}
+
+/*****************************************************************************/
+/*****************************************************************************/
+/*****************************************************************************/
+
+dng_copy_buffer_task::dng_copy_buffer_task (const dng_pixel_buffer &src,
+											dng_pixel_buffer &dst)
+			
+	:	dng_area_task ("dng_copy_buffer_task")
+				
+	,	fSrc (src)
+	,	fDst (dst)
+				
+	{
+
+	DNG_REQUIRE (src.Planes () == dst.Planes (),
+				 "Mismatched planes");
+			
+	}
+
+/*****************************************************************************/
+
+dng_rect dng_copy_buffer_task::RepeatingTile1 () const
+	{
+
+	return dng_rect (128, 128);
+
+	}
+			
+/*****************************************************************************/
+
+void dng_copy_buffer_task::Process (uint32 /* threadIndex */,
+									const dng_rect &tile,
+									dng_abort_sniffer * /* sniffer */)
+	{
+
+	fDst.CopyArea (fSrc,
+				   tile,
+				   0,
+				   fDst.Planes ());
+		
+	}
+
+/*****************************************************************************/
+/*****************************************************************************/
+/*****************************************************************************/
+
+dng_rect dng_put_buffer_task::RepeatingTile1 () const
+	{
+			
+	return fDst.RepeatingTile ();
+			
+	}
+			
+/*****************************************************************************/
+
+void dng_put_buffer_task::Process (uint32 /* threadIndex */,
+								   const dng_rect &tile,
+								   dng_abort_sniffer * /* sniffer */)
+	{
+
+	dng_pixel_buffer temp = fSrc;
+
+	temp.fData = (void *) fSrc.ConstPixel (tile.t,
+										   tile.l,
+										   temp.fPlane);
+
+	temp.fArea = tile;
+
+	fDst.Put (temp);
+		
 	}
 
 /*****************************************************************************/

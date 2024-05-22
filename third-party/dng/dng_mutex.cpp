@@ -197,12 +197,13 @@ void dng_mutex::Lock ()
 		if (!lockOrderPreserved)
 			{
 				
-			char msg[1024];
+			char msg [1024];
 				
-			sprintf(msg,
-					 "Lock order violation: This mutex: %s v Innermost mutex: %s",
-					 this->MutexName (),
-					 innermostMutex->MutexName ());
+			snprintf (msg,
+					  1024,
+					  "Lock order violation: This mutex: %s v Innermost mutex: %s",
+					  this->MutexName (),
+					  innermostMutex->MutexName ());
 				
 			DNG_REPORT(msg); // asserts inside of mutex lock, any locks within that must be lower
 				

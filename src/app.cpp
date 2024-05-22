@@ -709,6 +709,13 @@ app_frame::~app_frame()
 	df::log(__FUNCTION__, u8"destruct"sv);
 }
 
+static bool is_app_installed()
+{
+	const auto running_folder = platform::running_app_path().folder();
+	const auto install_folder = known_path(platform::known_folder::app_data);
+	return running_folder == install_folder;
+}
+
 static gps_coordinate parse_coordinates(const std::u8string_view text, const gps_coordinate def_coords)
 {
 	const auto splits = str::split(text, true);
@@ -800,7 +807,7 @@ struct app_updates_and_location_params
 
 		s.invalidate_view(view_invalid::app_layout);
 
-		if (setting.install_updates && should_update)
+		if (setting.install_updates && should_update && is_app_installed())
 		{
 			app->stage_update();
 		}
@@ -3593,6 +3600,9 @@ bool app_frame::init(const std::u8string_view command_line_text)
 	//auto size_index_item_metadata = sizeof(prop::item_metadata);
 
 	log_func lf(__FUNCTION__);
+	df::log(__FUNCTION__, str::format(u8"is_app_installed {}"sv, is_app_installed()));
+
+
 	command_line.parse(command_line_text);
 	load_file_types();
 	metadata_xmp::initialise();

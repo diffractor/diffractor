@@ -180,12 +180,13 @@ dng_string dng_xmp::EncodeGPSVersion (uint32 version)
 			
 			char s [32];
 
-			sprintf (s,
-					 "%u.%u.%u.%u",
-					 (unsigned) b0,
-					 (unsigned) b1,
-					 (unsigned) b2, 
-					 (unsigned) b3);
+			snprintf (s,
+					  32,
+					  "%u.%u.%u.%u",
+					  (unsigned) b0,
+					  (unsigned) b1,
+					  (unsigned) b2, 
+					  (unsigned) b3);
 					 
 			result.Set (s);
 			
@@ -263,12 +264,13 @@ dng_string dng_xmp::EncodeGPSCoordinate (const dng_string &ref,
 				coord [2].d == 1)
 				{
 								
-				sprintf (s,
-						 "%u,%u,%u%c",
-						 (unsigned) coord [0].n,
-						 (unsigned) coord [1].n,
-						 (unsigned) coord [2].n,
-						 refChar);
+				snprintf (s,
+						  256,
+						  "%u,%u,%u%c",
+						  (unsigned) coord [0].n,
+						  (unsigned) coord [1].n,
+						  (unsigned) coord [2].n,
+						  refChar);
 			
 				}
 				
@@ -294,15 +296,16 @@ dng_string dng_xmp::EncodeGPSCoordinate (const dng_string &ref,
 				
 				char min [32];
 				
-				sprintf (min, "%.7f", m * (1.0 / 10000000.0));
+				snprintf (min, 32, "%.7f", m * (1.0 / 10000000.0));
 
 				TrimDecimal (min);
 				
-				sprintf (s,
-						 "%u,%s%c",
-						 (unsigned) d,
-						 min,
-						 refChar);
+				snprintf (s,
+						  256,
+						  "%u,%s%c",
+						  (unsigned) d,
+						  min,
+						  refChar);
 
 				}
 				
@@ -412,9 +415,10 @@ dng_string dng_xmp::EncodeGPSDateTime (const dng_string &dateStamp,
 		
 		char sec [32];
 		
-		sprintf (sec,
-				 "%09.6f",
-				 timeStamp [2].As_real64 ());
+		snprintf (sec,
+				  32,
+				  "%09.6f",
+				  timeStamp [2].As_real64 ());
 		
 		TrimDecimal (sec);
 		
@@ -438,25 +442,27 @@ dng_string dng_xmp::EncodeGPSDateTime (const dng_string &dateStamp,
 			day	  >= 1 && day	<=	 31)
 			{
 			
-			sprintf (s,
-					 "%04d-%02d-%02dT%02u:%02u:%sZ",
-					 year,
-					 month,
-					 day,
-					 (unsigned) Round_uint32 (timeStamp [0].As_real64 ()),
-					 (unsigned) Round_uint32 (timeStamp [1].As_real64 ()),
-					 sec);
+			snprintf (s,
+					  256,
+					  "%04d-%02d-%02dT%02u:%02u:%sZ",
+					  year,
+					  month,
+					  day,
+					  (unsigned) Round_uint32 (timeStamp [0].As_real64 ()),
+					  (unsigned) Round_uint32 (timeStamp [1].As_real64 ()),
+					  sec);
 					 
 			}
 			
 		else
 			{
 			
-			sprintf (s,
-					 "%02u:%02u:%sZ",
-					 (unsigned) Round_uint32 (timeStamp [0].As_real64 ()),
-					 (unsigned) Round_uint32 (timeStamp [1].As_real64 ()),
-					 sec);
+			snprintf (s,
+					  256,
+					  "%02u:%02u:%sZ",
+					  (unsigned) Round_uint32 (timeStamp [0].As_real64 ()),
+					  (unsigned) Round_uint32 (timeStamp [1].As_real64 ()),
+					  sec);
 					 
 			}
 		
@@ -509,11 +515,12 @@ void dng_xmp::DecodeGPSDateTime (const dng_string &s,
 				
 				char ss [64];
 				
-				sprintf (ss,
-						 "%04u:%02u:%02u",
-						 year,
-						 month,
-						 day);
+				snprintf (ss,
+						  64,
+						  "%04u:%02u:%02u",
+						  year,
+						  month,
+						  day);
 						 
 				dateStamp.Set (ss);
 				
@@ -830,7 +837,7 @@ bool dng_xmp::SyncString (const char *ns,
 	if (options & ignoreXMP)
 		{
 		
-		if (isDefault || (options & removeXMP))
+		if ((isDefault || (options & removeXMP)) && !(options & requireXMP))
 			{
 			
 			Remove (ns, path);
@@ -901,7 +908,7 @@ bool dng_xmp::SyncString (const char *ns,
 		
 		}
 		
-	else if (!isDefault)
+	else if (!isDefault || (options & requireXMP))
 		{
 		
 		SetString (ns, path, s);
@@ -1277,11 +1284,11 @@ void dng_xmp::Set_int32 (const char *ns,
 	
 	if (x > 0 && usePlus)
 		{
-		sprintf (s, "+%d", (int) x);
+		snprintf (s, 64, "+%d", (int) x);
 		}
 	else
 		{
-		sprintf (s, "%d", (int) x);
+		snprintf (s, 64, "%d", (int) x);
 		}
 
 	Set (ns, path, s);
@@ -1331,9 +1338,10 @@ void dng_xmp::Set_uint32 (const char *ns,
 
 	char s [64];
 	
-	sprintf (s,
-			 "%u",
-			 (unsigned) x);
+	snprintf (s,
+			  64,
+			  "%u",
+			  (unsigned) x);
 	
 	Set (ns, path, s);
 		
@@ -1345,7 +1353,8 @@ void dng_xmp::Sync_uint32 (const char *ns,
 						   const char *path,
 						   uint32 &x,
 						   bool isDefault,
-						   uint32 options)
+						   uint32 options,
+						   uint32 defaultValue)
 	{
 	
 	// Sync 1: Force XMP to match non-XMP.
@@ -1353,7 +1362,14 @@ void dng_xmp::Sync_uint32 (const char *ns,
 	if (options & ignoreXMP)
 		{
 		
-		if (isDefault || (options & removeXMP))
+		if (isDefault && (options & requireXMP))
+			{
+			
+			Set (ns, path, "");
+			
+			}
+		
+		else if (isDefault || (options & removeXMP))
 			{
 			
 			Remove (ns, path);
@@ -1399,9 +1415,16 @@ void dng_xmp::Sync_uint32 (const char *ns,
 	if ((options & preferXMP) || isDefault)
 		{
 		
-		if (Get_uint32 (ns, path, x))
+		if (Exists (ns, path))
 			{
-							
+			
+			if (!Get_uint32 (ns, path, x))
+				{
+				
+				x = defaultValue;
+				
+				}
+
 			if (options & removeXMP)
 				{
 				
@@ -1430,6 +1453,13 @@ void dng_xmp::Sync_uint32 (const char *ns,
 		Set_uint32 (ns, path, x);
 		
 		}
+		
+	else if (options & requireXMP)
+		{
+		
+		Set (ns, path, "");
+		
+		}
 	
 	}
 						 
@@ -1450,7 +1480,7 @@ void dng_xmp::Sync_uint32_array (const char *ns,
 		
 		char s [32];
 		
-		sprintf (s, "%u", (unsigned) data [j]);
+		snprintf (s, 32, "%u", (unsigned) data [j]);
 		
 		dng_string ss;
 		
@@ -1539,11 +1569,11 @@ void dng_xmp::Set_real64 (const char *ns,
 	
 	if (x > 0.0 && usePlus)
 		{
-		sprintf (s, "+%0.*f", (unsigned) places, (double) x);
+		snprintf (s, 64, "+%0.*f", (unsigned) places, (double) x);
 		}
 	else
 		{
-		sprintf (s, "%0.*f", (unsigned) places, (double) x);
+		snprintf (s, 64, "%0.*f", (unsigned) places, (double) x);
 		}
 	
 	if (trim)
@@ -1614,10 +1644,11 @@ void dng_xmp::Set_urational (const char *ns,
 
 	char s [64];
 	
-	sprintf (s,
-			 "%u/%u",
-			 (unsigned) r.n,
-			 (unsigned) r.d);
+	snprintf (s,
+			  64,
+			  "%u/%u",
+			  (unsigned) r.n,
+			  (unsigned) r.d);
 	
 	Set (ns, path, s);
 		
@@ -1638,7 +1669,14 @@ void dng_xmp::Sync_urational (const char *ns,
 	if (options & ignoreXMP)
 		{
 		
-		if (isDefault || (options & removeXMP))
+		if (isDefault && (options & requireXMP))
+			{
+			
+			Set (ns, path, "");
+			
+			}
+
+		else if (isDefault || (options & removeXMP))
 			{
 			
 			Remove (ns, path);
@@ -1684,8 +1722,15 @@ void dng_xmp::Sync_urational (const char *ns,
 	if ((options & preferXMP) || isDefault)
 		{
 		
-		if (Get_urational (ns, path, r))
+		if (Exists (ns, path))
 			{
+			
+			if (!Get_urational (ns, path, r))
+				{
+				
+				r.Clear ();
+				
+				}
 							
 			if (options & removeXMP)
 				{
@@ -1715,7 +1760,14 @@ void dng_xmp::Sync_urational (const char *ns,
 		Set_urational (ns, path, r);
 		
 		}
-	
+		
+	else if (options & requireXMP)
+		{
+		
+		Set (ns, path, "");
+		
+		}
+
 	}
 		
 /*****************************************************************************/
@@ -1767,10 +1819,11 @@ void dng_xmp::Set_srational (const char *ns,
 
 	char s [64];
 	
-	sprintf (s,
-			 "%d/%d",
-			 (int) r.n,
-			 (int) r.d);
+	snprintf (s,
+			  64,
+			  "%d/%d",
+			  (int) r.n,
+			  (int) r.d);
 	
 	Set (ns, path, s);
 		
@@ -1940,12 +1993,13 @@ void dng_xmp::SetVersion2to4 (const char *ns,
 	
 		// x.x.x.x
 	
-		sprintf (buf,
-				 "%u.%u.%u.%u",
-				 (unsigned) ((version >> 24) & 0xff),
-				 (unsigned) ((version >> 16) & 0xff),
-				 (unsigned) ((version >>  8) & 0xff),
-				 (unsigned) ((version	   ) & 0xff));
+		snprintf (buf,
+				  32,
+				  "%u.%u.%u.%u",
+				  (unsigned) ((version >> 24) & 0xff),
+				  (unsigned) ((version >> 16) & 0xff),
+				  (unsigned) ((version >>  8) & 0xff),
+				  (unsigned) ((version	   ) & 0xff));
 	
 		}
 
@@ -1954,11 +2008,12 @@ void dng_xmp::SetVersion2to4 (const char *ns,
 	
 		// x.x.x
 	
-		sprintf (buf,
-				 "%u.%u.%u",
-				 (unsigned) ((version >> 24) & 0xff),
-				 (unsigned) ((version >> 16) & 0xff),
-				 (unsigned) ((version >>  8) & 0xff));
+		snprintf (buf,
+				  32,
+				  "%u.%u.%u",
+				  (unsigned) ((version >> 24) & 0xff),
+				  (unsigned) ((version >> 16) & 0xff),
+				  (unsigned) ((version >>  8) & 0xff));
 	
 		}
 
@@ -1967,10 +2022,11 @@ void dng_xmp::SetVersion2to4 (const char *ns,
 	
 		// x.x
 	
-		sprintf (buf,
-				 "%u.%u",
-				 (unsigned) ((version >> 24) & 0xff),
-				 (unsigned) ((version >> 16) & 0xff));
+		snprintf (buf,
+				  32,
+				  "%u.%u",
+				  (unsigned) ((version >> 24) & 0xff),
+				  (unsigned) ((version >> 16) & 0xff));
 	
 		}
 		
@@ -2337,7 +2393,7 @@ void dng_xmp::SyncFlash (uint32 &flashState,
 			
 			char s [8];
 		
-			sprintf (s, "%u", (unsigned) ((flashState >> 1) & 3));
+			snprintf (s, 8, "%u", (unsigned) ((flashState >> 1) & 3));
 			
 			fSDK->SetStructField (XMP_NS_EXIF,
 								  "Flash",
@@ -2352,7 +2408,7 @@ void dng_xmp::SyncFlash (uint32 &flashState,
 		
 			char s [8];
 		
-			sprintf (s, "%u", (unsigned) ((flashState >> 3) & 3));
+			snprintf (s, 8, "%u", (unsigned) ((flashState >> 3) & 3));
 			
 			fSDK->SetStructField (XMP_NS_EXIF,
 								  "Flash",
@@ -2508,13 +2564,13 @@ void dng_xmp::GenerateDefaultLensName (dng_exif &exif)
 			real64 maxFS = exif.fLensInfo [3].As_real64 ();
 			
 			if (minFL == maxFL)
-				sprintf (s, "%.1f mm f/%.1f", minFL, minFS);
+				snprintf (s, 256, "%.1f mm f/%.1f", minFL, minFS);
 			
 			else if (minFS == maxFS)
-				sprintf (s, "%.1f-%.1f mm f/%.1f", minFL, maxFL, minFS);
+				snprintf (s, 256, "%.1f-%.1f mm f/%.1f", minFL, maxFL, minFS);
 			
 			else
-				sprintf (s, "%.1f-%.1f mm f/%.1f-%.1f", minFL, maxFL, minFS, maxFS);
+				snprintf (s, 256, "%.1f-%.1f mm f/%.1f-%.1f", minFL, maxFL, minFS, maxFS);
 			
 			}
 		
@@ -2522,10 +2578,10 @@ void dng_xmp::GenerateDefaultLensName (dng_exif &exif)
 			{
 			
 			if (minFL == maxFL)
-				sprintf (s, "%.1f mm", minFL);
+				snprintf (s, 256, "%.1f mm", minFL);
 			
 			else
-				sprintf (s, "%.1f-%.1f mm", minFL, maxFL);
+				snprintf (s, 256, "%.1f-%.1f mm", minFL, maxFL);
 			
 			}
 		
@@ -2685,12 +2741,13 @@ void dng_xmp::SyncExif (dng_exif &exif,
 				
 				char s [5];
 	
-				sprintf (s,
-						 "%1u%1u%1u%1u",
-						 b0,
-						 b1,
-						 b2,
-						 b3);
+				snprintf (s,
+						  5,
+						  "%1u%1u%1u%1u",
+						  b0,
+						  b1,
+						  b2,
+						  b3);
 				
 				xmpString.Set (s);
 				
@@ -3592,16 +3649,17 @@ void dng_xmp::SyncExif (dng_exif &exif,
 			
 			char ss [256];
 			
-			sprintf (ss,
-					 "%u/%u %u/%u %u/%u %u/%u",
-					 (unsigned) exif.fLensInfo [0].n,
-					 (unsigned) exif.fLensInfo [0].d,
-					 (unsigned) exif.fLensInfo [1].n,
-					 (unsigned) exif.fLensInfo [1].d,
-					 (unsigned) exif.fLensInfo [2].n,
-					 (unsigned) exif.fLensInfo [2].d,
-					 (unsigned) exif.fLensInfo [3].n,
-					 (unsigned) exif.fLensInfo [3].d);
+			snprintf (ss,
+					  256,
+					  "%u/%u %u/%u %u/%u %u/%u",
+					  (unsigned) exif.fLensInfo [0].n,
+					  (unsigned) exif.fLensInfo [0].d,
+					  (unsigned) exif.fLensInfo [1].n,
+					  (unsigned) exif.fLensInfo [1].d,
+					  (unsigned) exif.fLensInfo [2].n,
+					  (unsigned) exif.fLensInfo [2].d,
+					  (unsigned) exif.fLensInfo [3].n,
+					  (unsigned) exif.fLensInfo [3].d);
 					 
 			s.Set (ss);
 			
@@ -3773,16 +3831,17 @@ void dng_xmp::SyncExif (dng_exif &exif,
 			
 			char ss [256];
 			
-			sprintf (ss,
-					 "%d/%d %d/%d %d/%d %d/%d",
-					 (int) exif.fLensDistortInfo [0].n,
-					 (int) exif.fLensDistortInfo [0].d,
-					 (int) exif.fLensDistortInfo [1].n,
-					 (int) exif.fLensDistortInfo [1].d,
-					 (int) exif.fLensDistortInfo [2].n,
-					 (int) exif.fLensDistortInfo [2].d,
-					 (int) exif.fLensDistortInfo [3].n,
-					 (int) exif.fLensDistortInfo [3].d);
+			snprintf (ss,
+					  256,
+					  "%d/%d %d/%d %d/%d %d/%d",
+					  (int) exif.fLensDistortInfo [0].n,
+					  (int) exif.fLensDistortInfo [0].d,
+					  (int) exif.fLensDistortInfo [1].n,
+					  (int) exif.fLensDistortInfo [1].d,
+					  (int) exif.fLensDistortInfo [2].n,
+					  (int) exif.fLensDistortInfo [2].d,
+					  (int) exif.fLensDistortInfo [3].n,
+					  (int) exif.fLensDistortInfo [3].d);
 					 
 			s.Set (ss);
 			
@@ -3861,51 +3920,18 @@ void dng_xmp::SyncExif (dng_exif &exif,
 		
 		}
 		
-	// For the following GPS related fields, we offer an option to prefer XMP to
-	// the EXIF values. This is to allow the host app to modify the XMP for manual
-	// geo-tagging and overwrite the EXIF values during export. It also allows the user
-	// to correct the GPS values via changes in a sidecar XMP file, without modifying
-	// the original GPS data recorded in the raw file by the camera.
-		
-	bool preferGPSFromXMP = false;
-
-	uint32 gpsSyncOption = preferNonXMP;
-		
-	#if qDNGPreferGPSMetadataFromXMP
-	preferGPSFromXMP = true;
-	#endif
-
 	// Allow EXIF GPS to be updated via updates from XMP.
 
-	if (doingUpdateFromXMP || preferGPSFromXMP)
+	if (doingUpdateFromXMP)
 		{
-		
-		// Require that at least one basic GPS field exist in the
-		// XMP before overrriding the EXIF GPS fields.
-		
-		if (Exists (XMP_NS_EXIF, "GPSVersionID"		  ) ||
-			Exists (XMP_NS_EXIF, "GPSLatitude"		  ) ||
-			Exists (XMP_NS_EXIF, "GPSLongitude"		  ) ||
-			Exists (XMP_NS_EXIF, "GPSAltitude"		  ) ||
-			Exists (XMP_NS_EXIF, "GPSTimeStamp"		  ) ||
-			Exists (XMP_NS_EXIF, "GPSProcessingMethod"))
-			{
-			
-			// Clear out the GPS info from the EXIF so it will
-			// replaced by the GPS info from the XMP.
-			
-			dng_exif blankExif;
-			
-			exif.CopyGPSFrom (blankExif);
-			
-			if (preferGPSFromXMP) 
-				{
 					
-				gpsSyncOption = preferXMP;
-					
-				}
-			}
+		// Clear out the GPS info from the EXIF so it will
+		// replaced by the GPS info from the XMP.
 		
+		dng_exif blankExif;
+		
+		exif.CopyGPSFrom (blankExif);
+			
 		}
 			
 	// GPS Version ID:
@@ -3914,10 +3940,14 @@ void dng_xmp::SyncExif (dng_exif &exif,
 		
 		dng_string s = EncodeGPSVersion (exif.fGPSVersionID);
 		
+		uint32 require = (doingUpdateFromXMP &&
+						  originalExif->fGPSVersionID != 0)
+						 ? requireXMP : 0;
+		
 		if (SyncString (XMP_NS_EXIF,
 						"GPSVersionID",
 						s,
-						gpsSyncOption + removable))
+						preferXMP + removable + require))
 			{
 					
 			exif.fGPSVersionID = DecodeGPSVersion (s);
@@ -3933,10 +3963,15 @@ void dng_xmp::SyncExif (dng_exif &exif,
 		dng_string s = EncodeGPSCoordinate (exif.fGPSLatitudeRef,
 											exif.fGPSLatitude);
 											
+		uint32 require = (doingUpdateFromXMP &&
+						  EncodeGPSCoordinate (originalExif->fGPSLatitudeRef,
+											   originalExif->fGPSLatitude).NotEmpty ())
+						 ? requireXMP : 0;
+		
 		if (SyncString (XMP_NS_EXIF,
 						"GPSLatitude",
 						s,
-						gpsSyncOption + removable))
+						preferXMP + removable + require))
 			{
 			
 			DecodeGPSCoordinate (s,
@@ -3954,10 +3989,15 @@ void dng_xmp::SyncExif (dng_exif &exif,
 		dng_string s = EncodeGPSCoordinate (exif.fGPSLongitudeRef,
 											exif.fGPSLongitude);
 											
+		uint32 require = (doingUpdateFromXMP &&
+						  EncodeGPSCoordinate (originalExif->fGPSLongitudeRef,
+											   originalExif->fGPSLongitude).NotEmpty ())
+						 ? requireXMP : 0;
+		
 		if (SyncString (XMP_NS_EXIF,
 						"GPSLongitude",
 						s,
-						gpsSyncOption + removable))
+						preferXMP + removable + require))
 			{
 			
 			DecodeGPSCoordinate (s,
@@ -3968,18 +4008,22 @@ void dng_xmp::SyncExif (dng_exif &exif,
 					
 		}
 					
-	// Handle simple case of incorrectly written GPS altitude where someone didn't understand the GPSAltitudeRef and assumed the GPSAltitude RATIONAL is signed.
-	// Only handle this case as we do not want to misinterpret e.g. a fixed point representation of very high GPS altitudes.
+	// Handle simple case of incorrectly written GPS altitude where someone didn't understand
+	// the GPSAltitudeRef and assumed the GPSAltitude RATIONAL is signed.
+	// Only handle this case as we do not want to misinterpret e.g. a fixed point
+	// representation of very high GPS altitudes.
 	
 	uint32 &altitudeRef = exif.fGPSAltitudeRef;
 	dng_urational &altitude = exif.fGPSAltitude;
 
 	if (altitude.IsValid () &&
-		(altitudeRef == 0 || altitudeRef == 0xFFFFFFFF))  // If the file contains a "below sea level" altitudeRef, assume the writing software is working according to the spec.
+		(altitudeRef == 0 || altitudeRef == 0xFFFFFFFF))  // If the file contains a "below sea level" altitudeRef,
+														  // assume the writing software is working according to the spec.
 		{
 
 		if ((altitude.n & (1U << 31)) &&
-			altitude.d < 7) // As the denominator increases, large numerator values become possibly valid distances. Pick a limit on the conservative side (approx 33e6m) to prevent misinterpretation.
+			altitude.d < 7) // As the denominator increases, large numerator values become possibly valid distances.
+							// Pick a limit on the conservative side (approx 33e6m) to prevent misinterpretation.
 							// Noting that the normal case for this mistake has a denominator of 1
 			{
 
@@ -3992,19 +4036,36 @@ void dng_xmp::SyncExif (dng_exif &exif,
 
 	// GPS Altitude Reference:
 	
-	Sync_uint32 (XMP_NS_EXIF,
-				 "GPSAltitudeRef",
-				 altitudeRef,
-				 altitudeRef == 0xFFFFFFFF,
-				 gpsSyncOption + removable);
+		{
+	
+		uint32 require = (doingUpdateFromXMP &&
+						  originalExif->fGPSAltitudeRef != 0xFFFFFFFF)
+						 ? requireXMP : 0;
+		
+		Sync_uint32 (XMP_NS_EXIF,
+					 "GPSAltitudeRef",
+					 altitudeRef,
+					 altitudeRef == 0xFFFFFFFF,
+					 preferXMP + removable + require,
+					 0xFFFFFFFF);
+					 
+		}
 	
 	// GPS Altitude:
 	
-	Sync_urational (XMP_NS_EXIF,
-					"GPSAltitude",
-					altitude,
-					gpsSyncOption + removable);
+		{
 	
+		uint32 require = (doingUpdateFromXMP &&
+						  originalExif->fGPSAltitude.IsValid ())
+						 ? requireXMP : 0;
+		
+		Sync_urational (XMP_NS_EXIF,
+						"GPSAltitude",
+						altitude,
+						preferXMP + removable + require);
+						
+		}
+		
 	// GPS Date/Time:
 	
 		{
@@ -4012,10 +4073,15 @@ void dng_xmp::SyncExif (dng_exif &exif,
 		dng_string s = EncodeGPSDateTime (exif.fGPSDateStamp,
 										  exif.fGPSTimeStamp);
 										  
+		uint32 require = (doingUpdateFromXMP &&
+						  EncodeGPSDateTime (originalExif->fGPSDateStamp,
+											 originalExif->fGPSTimeStamp).NotEmpty ())
+						 ? requireXMP : 0;
+		
 		if (SyncString (XMP_NS_EXIF,
 						"GPSTimeStamp",
 						s,
-						preferNonXMP + removable))
+						preferXMP + removable + require))
 			{
 			
 			DecodeGPSDateTime (s,
@@ -4028,80 +4094,168 @@ void dng_xmp::SyncExif (dng_exif &exif,
 		
 	// GPS Satellites:
 	
-	SyncString (XMP_NS_EXIF,
-				"GPSSatellites",
-				exif.fGPSSatellites,
-				preferNonXMP + removable);
+		{
+	
+		uint32 require = (doingUpdateFromXMP &&
+						  originalExif->fGPSSatellites.NotEmpty ())
+						 ? requireXMP : 0;
+		
+		SyncString (XMP_NS_EXIF,
+					"GPSSatellites",
+					exif.fGPSSatellites,
+					preferXMP + removable + require);
+					
+		}
 	
 	// GPS Status:
+	
+		{
 
-	SyncString (XMP_NS_EXIF,
-				"GPSStatus",
-				exif.fGPSStatus,
-				preferNonXMP + removable);
+		uint32 require = (doingUpdateFromXMP &&
+						  originalExif->fGPSStatus.NotEmpty ())
+						 ? requireXMP : 0;
+		
+		SyncString (XMP_NS_EXIF,
+					"GPSStatus",
+					exif.fGPSStatus,
+					preferXMP + removable + require);
+					
+		}
 	
 	// GPS Measure Mode:
 	
-	SyncString (XMP_NS_EXIF,
-				"GPSMeasureMode",
-				exif.fGPSMeasureMode,
-				preferNonXMP + removable);
+		{
+
+		uint32 require = (doingUpdateFromXMP &&
+						  originalExif->fGPSMeasureMode.NotEmpty ())
+						 ? requireXMP : 0;
+		
+		SyncString (XMP_NS_EXIF,
+					"GPSMeasureMode",
+					exif.fGPSMeasureMode,
+					preferXMP + removable + require);
+					
+		}
 	
 	// GPS DOP:
 	
-	Sync_urational (XMP_NS_EXIF,
-					"GPSDOP",
-					exif.fGPSDOP,
-					preferNonXMP + removable);
+		{
+	
+		uint32 require = (doingUpdateFromXMP &&
+						  originalExif->fGPSDOP.IsValid ())
+						 ? requireXMP : 0;
+		
+		Sync_urational (XMP_NS_EXIF,
+						"GPSDOP",
+						exif.fGPSDOP,
+						preferXMP + removable + require);
+						
+		}
 		
 	// GPS Speed Reference:
 	
-	SyncString (XMP_NS_EXIF,
-				"GPSSpeedRef",
-				exif.fGPSSpeedRef,
-				preferNonXMP + removable);
+		{
+
+		uint32 require = (doingUpdateFromXMP &&
+						  originalExif->fGPSSpeedRef.NotEmpty ())
+						 ? requireXMP : 0;
+		
+		SyncString (XMP_NS_EXIF,
+					"GPSSpeedRef",
+					exif.fGPSSpeedRef,
+					preferXMP + removable + require);
+					
+		}
 	
 	// GPS Speed:
 		
-	Sync_urational (XMP_NS_EXIF,
-					"GPSSpeed",
-					exif.fGPSSpeed,
-					preferNonXMP + removable);
+		{
+	
+		uint32 require = (doingUpdateFromXMP &&
+						  originalExif->fGPSSpeed.IsValid ())
+						 ? requireXMP : 0;
+		
+		Sync_urational (XMP_NS_EXIF,
+						"GPSSpeed",
+						exif.fGPSSpeed,
+						preferXMP + removable + require);
+						
+		}
 		
 	// GPS Track Reference:
 	
-	SyncString (XMP_NS_EXIF,
-				"GPSTrackRef",
-				exif.fGPSTrackRef,
-				preferNonXMP + removable);
+		{
+
+		uint32 require = (doingUpdateFromXMP &&
+						  originalExif->fGPSTrackRef.NotEmpty ())
+						 ? requireXMP : 0;
+		
+		SyncString (XMP_NS_EXIF,
+					"GPSTrackRef",
+					exif.fGPSTrackRef,
+					preferXMP + removable + require);
+					
+		}
 	
 	// GPS Track:
 		
-	Sync_urational (XMP_NS_EXIF,
-					"GPSTrack",
-					exif.fGPSTrack,
-					preferNonXMP + removable);
+		{
+	
+		uint32 require = (doingUpdateFromXMP &&
+						  originalExif->fGPSTrack.IsValid ())
+						 ? requireXMP : 0;
+		
+		Sync_urational (XMP_NS_EXIF,
+						"GPSTrack",
+						exif.fGPSTrack,
+						preferXMP + removable + require);
+						
+		}
 		
 	// GPS Image Direction Reference:
 	
-	SyncString (XMP_NS_EXIF,
-				"GPSImgDirectionRef",
-				exif.fGPSImgDirectionRef,
-				preferNonXMP + removable);
+		{
+
+		uint32 require = (doingUpdateFromXMP &&
+						  originalExif->fGPSImgDirectionRef.NotEmpty ())
+						 ? requireXMP : 0;
+		
+		SyncString (XMP_NS_EXIF,
+					"GPSImgDirectionRef",
+					exif.fGPSImgDirectionRef,
+					preferXMP + removable + require);
+					
+		}
 	
 	// GPS Image Direction:
 		
-	Sync_urational (XMP_NS_EXIF,
-					"GPSImgDirection",
-					exif.fGPSImgDirection,
-					preferNonXMP + removable);
+		{
+	
+		uint32 require = (doingUpdateFromXMP &&
+						  originalExif->fGPSImgDirection.IsValid ())
+						 ? requireXMP : 0;
+		
+		Sync_urational (XMP_NS_EXIF,
+						"GPSImgDirection",
+						exif.fGPSImgDirection,
+						preferXMP + removable + require);
+						
+		}
 		
 	// GPS Map Datum:
 	
-	SyncString (XMP_NS_EXIF,
-				"GPSMapDatum",
-				exif.fGPSMapDatum,
-				preferNonXMP + removable);
+		{
+
+		uint32 require = (doingUpdateFromXMP &&
+						  originalExif->fGPSMapDatum.NotEmpty ())
+						 ? requireXMP : 0;
+		
+		SyncString (XMP_NS_EXIF,
+					"GPSMapDatum",
+					exif.fGPSMapDatum,
+					preferXMP + removable + require);
+					
+		}
 	
 	// GPS Destination Latitude:
 	
@@ -4110,10 +4264,15 @@ void dng_xmp::SyncExif (dng_exif &exif,
 		dng_string s = EncodeGPSCoordinate (exif.fGPSDestLatitudeRef,
 											exif.fGPSDestLatitude);
 											
+		uint32 require = (doingUpdateFromXMP &&
+						  EncodeGPSCoordinate (originalExif->fGPSDestLatitudeRef,
+											   originalExif->fGPSDestLatitude).NotEmpty ())
+						 ? requireXMP : 0;
+		
 		if (SyncString (XMP_NS_EXIF,
 						"GPSDestLatitude",
 						s,
-						preferNonXMP + removable))
+						preferXMP + removable + require))
 			{
 			
 			DecodeGPSCoordinate (s,
@@ -4131,10 +4290,15 @@ void dng_xmp::SyncExif (dng_exif &exif,
 		dng_string s = EncodeGPSCoordinate (exif.fGPSDestLongitudeRef,
 											exif.fGPSDestLongitude);
 											
+		uint32 require = (doingUpdateFromXMP &&
+						  EncodeGPSCoordinate (originalExif->fGPSDestLongitudeRef,
+											   originalExif->fGPSDestLongitude).NotEmpty ())
+						 ? requireXMP : 0;
+		
 		if (SyncString (XMP_NS_EXIF,
 						"GPSDestLongitude",
 						s,
-						preferNonXMP + removable))
+						preferXMP + removable + require))
 			{
 			
 			DecodeGPSCoordinate (s,
@@ -4147,60 +4311,125 @@ void dng_xmp::SyncExif (dng_exif &exif,
 
 	// GPS Destination Bearing Reference:
 	
-	SyncString (XMP_NS_EXIF,
-				"GPSDestBearingRef",
-				exif.fGPSDestBearingRef,
-				preferNonXMP + removable);
+		{
+	
+		uint32 require = (doingUpdateFromXMP &&
+						  originalExif->fGPSMapDatum.NotEmpty ())
+						 ? requireXMP : 0;
+		
+		SyncString (XMP_NS_EXIF,
+					"GPSDestBearingRef",
+					exif.fGPSDestBearingRef,
+					preferXMP + removable + require);
+					
+		}
 	
 	// GPS Destination Bearing:
 		
-	Sync_urational (XMP_NS_EXIF,
-					"GPSDestBearing",
-					exif.fGPSDestBearing,
-					preferNonXMP + removable);
+		{
+	
+		uint32 require = (doingUpdateFromXMP &&
+						  originalExif->fGPSDestBearing.IsValid ())
+						 ? requireXMP : 0;
+		
+		Sync_urational (XMP_NS_EXIF,
+						"GPSDestBearing",
+						exif.fGPSDestBearing,
+						preferXMP + removable + require);
+					
+		}
 		
 	// GPS Destination Distance Reference:
 	
-	SyncString (XMP_NS_EXIF,
-				"GPSDestDistanceRef",
-				exif.fGPSDestDistanceRef,
-				preferNonXMP + removable);
+		{
+	
+		uint32 require = (doingUpdateFromXMP &&
+						  originalExif->fGPSDestDistanceRef.NotEmpty ())
+						 ? requireXMP : 0;
+		
+		SyncString (XMP_NS_EXIF,
+					"GPSDestDistanceRef",
+					exif.fGPSDestDistanceRef,
+					preferXMP + removable + require);
+					
+		}
 	
 	// GPS Destination Distance:
 		
-	Sync_urational (XMP_NS_EXIF,
-					"GPSDestDistance",
-					exif.fGPSDestDistance,
-					preferNonXMP + removable);
+		{
+	
+		uint32 require = (doingUpdateFromXMP &&
+						  originalExif->fGPSDestDistance.IsValid ())
+						 ? requireXMP : 0;
+		
+		Sync_urational (XMP_NS_EXIF,
+						"GPSDestDistance",
+						exif.fGPSDestDistance,
+						preferXMP + removable + require);
+					
+		}
 		
 	// GPS Processing Method:
 	
-	SyncString (XMP_NS_EXIF,
-				"GPSProcessingMethod",
-				exif.fGPSProcessingMethod,
-				preferNonXMP + removable);
+		{
+	
+		uint32 require = (doingUpdateFromXMP &&
+						  originalExif->fGPSProcessingMethod.NotEmpty ())
+						 ? requireXMP : 0;
+		
+		SyncString (XMP_NS_EXIF,
+					"GPSProcessingMethod",
+					exif.fGPSProcessingMethod,
+					preferXMP + removable + require);
+					
+		}
 	
 	// GPS Area Information:
 	
-	SyncString (XMP_NS_EXIF,
-				"GPSAreaInformation",
-				exif.fGPSAreaInformation,
-				preferNonXMP + removable);
+		{
+	
+		uint32 require = (doingUpdateFromXMP &&
+						  originalExif->fGPSAreaInformation.NotEmpty ())
+						 ? requireXMP : 0;
+		
+		SyncString (XMP_NS_EXIF,
+					"GPSAreaInformation",
+					exif.fGPSAreaInformation,
+					preferXMP + removable + require);
+					
+		}
 	
 	// GPS Differential:
 	
-	Sync_uint32 (XMP_NS_EXIF,
-				 "GPSDifferential",
-				 exif.fGPSDifferential,
-				 exif.fGPSDifferential == 0xFFFFFFFF,
-				 preferNonXMP + removable);
+		{
+	
+		uint32 require = (doingUpdateFromXMP &&
+						  originalExif->fGPSDifferential != 0xFFFFFFFF)
+						 ? requireXMP : 0;
+		
+		Sync_uint32 (XMP_NS_EXIF,
+					 "GPSDifferential",
+					 exif.fGPSDifferential,
+					 exif.fGPSDifferential == 0xFFFFFFFF,
+					 preferXMP + removable + require,
+					 0xFFFFFFFF);
+					
+		}
 				 
 	// GPS Horizontal Positioning Error:
 	
-	Sync_urational (XMP_NS_EXIF,
-					"GPSHPositioningError",
-					exif.fGPSHPositioningError,
-					preferNonXMP + removable);
+		{
+	
+		uint32 require = (doingUpdateFromXMP &&
+						  originalExif->fGPSHPositioningError.IsValid ())
+						 ? requireXMP : 0;
+		
+		Sync_urational (XMP_NS_EXIF,
+						"GPSHPositioningError",
+						exif.fGPSHPositioningError,
+						preferXMP + removable + require);
+						
+		}
 					
 	// Sync date/times.
 		
@@ -4448,7 +4677,7 @@ void dng_xmp::UpdateExifDates (dng_exif &exif,
 	{
  
 	// Kludge: Early versions of the XMP library did not support date
-	// encodings without explict time zones, so software had to fill in
+	// encodings without explicit time zones, so software had to fill in
 	// fake time zones on the XMP side.	 The usual way was to fill in
 	// local time zone for the date/time at the import location.
 	// Attempt to detect these cases and ignore the fake time zones.
@@ -4774,7 +5003,7 @@ void dng_xmp::SetSampleInfo (uint32 samplesPerPixel,
 	
 	char s [32];
 	
-	sprintf (s, "%u", (unsigned) bitsPerSample);
+	snprintf (s, 32, "%u", (unsigned) bitsPerSample);
 	
 	dng_string ss;
 	

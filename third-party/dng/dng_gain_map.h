@@ -142,7 +142,8 @@ class dng_gain_map: private dng_uncopyable
 
 /// \brief Holds a discrete (i.e., sampled) 2D representation of a gain table
 /// map. This is effectively an image containing tables of scale factors.
-/// Corresponds to the ProfileGainTableMap tag introduced in DNG 1.6.
+/// Corresponds to the ProfileGainTableMap tag introduced in DNG 1.6 and the
+/// ProfileGainTableMap2 tag introduced in DNG 1.7.
 
 class dng_gain_table_map: private dng_uncopyable
 	{
@@ -170,6 +171,31 @@ class dng_gain_table_map: private dng_uncopyable
 
 		mutable dng_fingerprint fFingerprint;
 
+		// Fields to support ProfileGainTableMap2.
+
+		// Data type of gain values. Supported values:
+		//
+		// 0 = 8-bit unsigned integer
+		// 1 = 16-bit unsigned integer
+		// 2 = 16-bit floating-point
+		// 3 = 32-bit floating-point
+
+		uint32 fDataType = 3;
+
+		// Gamma value.
+
+		real32 fGamma = 1.0f;
+
+		// Minimum and maximum gain values when data type is integer.
+
+		real32 fGainMin = 1.0f;
+		real32 fGainMax = 1.0f;
+
+		// Buffer used to hold a copy of the original table data; used only in
+		// the case of integer data types.
+
+		AutoPtr<dng_memory_block> fOriginalBuffer;
+
 	public:
 	
 		/// Construct a gain map with the specified memory allocator, number
@@ -181,7 +207,11 @@ class dng_gain_table_map: private dng_uncopyable
 							const dng_point_real64 &spacing,
 							const dng_point_real64 &origin,
 							uint32 numTablePoints,
-							const real32 weights [5]);
+							const real32 weights [5],
+							uint32 dataType = 2,
+							real32 gamma = 1.0f,
+							real32 gainMin = 1.0f,
+							real32 gainMax = 1.0f);
 
 		/// The number of samples in the horizontal and vertical directions.
 
@@ -276,6 +306,8 @@ class dng_gain_table_map: private dng_uncopyable
 			return fColStep;
 			}
 
+		/// Memory block holding the fp32 version of the table.
+
 		dng_memory_block * Block ()
 			{
 			return fBuffer.Get ();
@@ -285,6 +317,8 @@ class dng_gain_table_map: private dng_uncopyable
 			{
 			return fBuffer.Get ();
 			}
+
+		/// Direct access to the fp32 version of the table.
 
 		void * RawTablePtr () const;
 
@@ -296,7 +330,8 @@ class dng_gain_table_map: private dng_uncopyable
 		
 		/// Write the gain table map to the specified stream.
 
-		void PutStream (dng_stream &stream) const;
+		void PutStream (dng_stream &stream,
+						bool forceVersion2 = false) const;
 
 		/// Add the gain table map to the given digest printer.
 
@@ -309,7 +344,77 @@ class dng_gain_table_map: private dng_uncopyable
 		/// Read a gain table map from the specified stream.
 
 		static dng_gain_table_map * GetStream (dng_host &host,
-											   dng_stream &stream);
+											   dng_stream &stream,
+											   bool useVersion2 = false);
+
+		/// APIs to support ProfileGainTableMap2.
+
+		uint32 DataType () const
+			{
+			return fDataType;
+			}
+
+		bool IsFloat16 () const
+			{
+			return fDataType == 2;
+			}
+
+		bool IsFloat32 () const
+			{
+			return fDataType >= 3;
+			}
+
+		bool IsUint8 () const
+			{
+			return fDataType == 0;
+			}
+
+		bool IsUint16 () const
+			{
+			return fDataType == 1;
+			}
+
+		real32 GainMin () const
+			{
+			return fGainMin;
+			}
+
+		real32 GainMax () const
+			{
+			return fGainMax;
+			}
+
+		real32 Gamma () const
+			{
+			return fGamma;
+			}
+		
+		bool SupportsVersion1 () const;
+		
+		bool RequiresVersion2 () const
+			{
+			return !SupportsVersion1 ();
+			}
+
+		uint32 BytesPerEntry () const
+			{
+			if (fDataType == 0) return 1;	 // u8
+			if (fDataType <= 2) return 2;	 // u16, fp16
+			return 4;						 // fp32
+			}
+
+		// Bytes required to store the table data itself (not including
+		// headers).
+
+		uint32 DataStorageBytes () const;
+
+		void ClearOriginalBuffer ();
+
+		bool HasOriginalBuffer () const;
+
+		const dng_memory_block * OriginalBuffer () const;
+
+		void SetOriginalBuffer (AutoPtr<dng_memory_block> &blockToRelease);
 
 	private:
 
@@ -346,6 +451,11 @@ class dng_opcode_GainMap: public dng_inplace_opcode,
 
 		dng_opcode_GainMap (dng_host &host,
 							dng_stream &stream);
+
+		/// Const accessors.
+
+		const dng_area_spec& AreaSpec() const { return fAreaSpec; }
+		const dng_gain_map& GainMap() const { return *fGainMap; }
 	
 		/// Write the opcode to the specified stream.
 

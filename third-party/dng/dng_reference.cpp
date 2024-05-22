@@ -1,5 +1,5 @@
 /*****************************************************************************/
-// Copyright 2006-2019 Adobe Systems Incorporated
+// Copyright 2006-2023 Adobe Systems Incorporated
 // All Rights Reserved.
 //
 // NOTICE:	Adobe permits you to use, modify, and distribute this file in
@@ -119,6 +119,11 @@ void RefSetArea8 (uint8 *dPtr,
 /*****************************************************************************/
 
 template <SIMDType simd, typename destType>
+
+#ifdef __INTEL_LLVM_COMPILER
+__attribute__((SET_CPU_FEATURE(simd)))
+#endif // __INTEL_LLVM_COMPILER
+
 void RefSetArea (destType *dPtr,
 				 destType value,
 				 uint32 rows,
@@ -130,7 +135,10 @@ void RefSetArea (destType *dPtr,
 	{
 
 	INTEL_COMPILER_NEEDED_NOTE
-	SET_CPU_FEATURE(simd);
+#ifdef __INTEL_COMPILER
+		SET_CPU_FEATURE(simd);
+#endif // __INTEL_COMPILER
+
 
 	if ((planeStep == 0) && (colStep == 1))
 		{
@@ -543,6 +551,11 @@ void RefCopyArea8_32 (const uint8 *sPtr,
 /*****************************************************************************/
 
 template <SIMDType simd>
+
+#ifdef __INTEL_LLVM_COMPILER
+__attribute__((SET_CPU_FEATURE(simd)))
+#endif // __INTEL_LLVM_COMPILER
+
 void RefCopyArea16_S16 (const uint16 *sPtr,
 						int16 *dPtr,
 						uint32 rows,
@@ -557,7 +570,11 @@ void RefCopyArea16_S16 (const uint16 *sPtr,
 	{
 
 	INTEL_COMPILER_NEEDED_NOTE
-	SET_CPU_FEATURE(simd);
+
+#ifdef __INTEL_COMPILER
+		SET_CPU_FEATURE(simd);
+#endif // __INTEL_COMPILER
+
 	
 	for (uint32 row = 0; row < rows; row++)
 		{
@@ -1497,7 +1514,8 @@ void RefBaselineHueSatMap (const real32 *sPtrR,
 						   uint32 count,
 						   const dng_hue_sat_map &lut,
 						   const dng_1d_table *encodeTable,
-						   const dng_1d_table *decodeTable)
+						   const dng_1d_table *decodeTable,
+						   const bool supportOverrange)
 	{
 	
 	uint32 hueDivisions;
@@ -1542,6 +1560,22 @@ void RefBaselineHueSatMap (const real32 *sPtrR,
 		real32 r = sPtrR [j];
 		real32 g = sPtrG [j];
 		real32 b = sPtrB [j];
+
+		if (supportOverrange)
+			{
+
+			r = Max_real32 (r, 0.0f);
+			g = Max_real32 (g, 0.0f);
+			b = Max_real32 (b, 0.0f);
+
+			if (valDivisions > 1)
+				{
+				r = EncodeOverrange (r);
+				g = EncodeOverrange (g);
+				b = EncodeOverrange (b);
+				}
+
+			}
 		
 		real32 h, s, v;
 
@@ -1707,6 +1741,15 @@ void RefBaselineHueSatMap (const real32 *sPtrR,
 		
 		DNG_HSVtoRGB (h, s, v, r, g, b);
 
+		if (supportOverrange && (valDivisions > 1))
+			{
+			
+			r = DecodeOverrange (r);
+			g = DecodeOverrange (g);
+			b = DecodeOverrange (b);
+
+			}
+
 		dPtrR [j] = r;
 		dPtrG [j] = g;
 		dPtrB [j] = b;
@@ -1722,7 +1765,8 @@ void RefBaselineRGBtoGray (const real32 *sPtrR,
 						   const real32 *sPtrB,
 						   real32 *dPtrG,
 						   uint32 count,
-						   const dng_matrix &matrix)
+						   const dng_matrix &matrix,
+						   const bool supportOverrange)
 	{
 	
 	real32 m00 = (real32) matrix [0] [0];
@@ -1737,8 +1781,9 @@ void RefBaselineRGBtoGray (const real32 *sPtrR,
 		real32 B = sPtrB [col];
 		
 		real32 g = m00 * R + m01 * G + m02 * B;
-		
-		g = Pin_real32 (0.0f, g, 1.0f);
+
+		if (!supportOverrange)
+			g = Pin_real32 (0.0f, g, 1.0f);
 		
 		dPtrG [col] = g;
 		
@@ -1755,7 +1800,8 @@ void RefBaselineRGBtoRGB (const real32 *sPtrR,
 						  real32 *dPtrG,
 						  real32 *dPtrB,
 						  uint32 count,
-						  const dng_matrix &matrix)
+						  const dng_matrix &matrix,
+						  const bool supportOverrange)
 	{
 	
 	real32 m00 = (real32) matrix [0] [0];
@@ -1780,10 +1826,13 @@ void RefBaselineRGBtoRGB (const real32 *sPtrR,
 		real32 r = m00 * R + m01 * G + m02 * B;
 		real32 g = m10 * R + m11 * G + m12 * B;
 		real32 b = m20 * R + m21 * G + m22 * B;
-		
-		r = Pin_real32 (0.0f, r, 1.0f);
-		g = Pin_real32 (0.0f, g, 1.0f);
-		b = Pin_real32 (0.0f, b, 1.0f);
+
+		if (!supportOverrange)
+			{
+			r = Pin_real32 (0.0f, r, 1.0f);
+			g = Pin_real32 (0.0f, g, 1.0f);
+			b = Pin_real32 (0.0f, b, 1.0f);
+			}
 		
 		dPtrR [col] = r;
 		dPtrG [col] = g;
@@ -3219,7 +3268,8 @@ void RefBaselineProfileGainTableMap (const real32 *rSrcPtr,
 									 const int32 left,
 									 const dng_rect &imageArea,
 									 const real32 exposureWeightGain,
-									 const dng_gain_table_map &gainTableMap)
+									 const dng_gain_table_map &gainTableMap,
+									 const bool supportOverrange)
 	{
 
 	const auto *mapInputWeights = gainTableMap.MapInputWeights ();
@@ -3243,23 +3293,16 @@ void RefBaselineProfileGainTableMap (const real32 *rSrcPtr,
 
 	// Size of the gain table map in normalized coordinates.
 
-	const real32 mapRelSizeH32 = (points.h == 1) ? 1.0f : (real32)(spacing.h * (points.h - 1));
-	const real32 mapRelSizeV32 = (points.v == 1) ? 1.0f : (real32)(spacing.v * (points.v - 1));
+	const real32 mapSpacingH32 = (real32) spacing.h;
+	const real32 mapSpacingV32 = (real32) spacing.v;
 
-	// Dimensions of gain table map, in samples (number of coordinates in each
-	// direction).
-	
-	const real32 mapPixelSizeH32 = (real32) points.h;
-	const real32 mapPixelSizeV32 = (real32) points.v;
+	// Minimum and maximum sample positions of the gain table map.
 
-	// Minimum and maximum sample positions of the gain table map. Note the
-	// half-pixel offset.
+	const real32 xLimitLo = 0.0f;
+	const real32 yLimitLo = 0.0f;
 
-	const real32 xLimitLo = 0.5f;
-	const real32 yLimitLo = 0.5f;
-
-	const real32 xLimitHi = points.h - 0.5f;
-	const real32 yLimitHi = points.v - 0.5f;
+	const real32 xLimitHi = points.h - 1.0f;
+	const real32 yLimitHi = points.v - 1.0f;
 
 	// Maximum 2D integer index into the gain table map.
 
@@ -3273,6 +3316,10 @@ void RefBaselineProfileGainTableMap (const real32 *rSrcPtr,
 	// Maximum integer table index.
 
 	const int32 tableLimit = tableSize - 1;
+
+	// Gamma parameter.
+	
+	const real32 gamma = gainTableMap.Gamma ();
 	
 	// Initialize sample position. Note the half-pixel offset.
 
@@ -3293,13 +3340,8 @@ void RefBaselineProfileGainTableMap (const real32 *rSrcPtr,
 
 		// Transform to map-relative coordinates.
 
-		real32 u_map = (u_image - mapOriginH32) / mapRelSizeH32;
-		real32 v_map = (v_image - mapOriginV32) / mapRelSizeV32;
-
-		// Transform to pixels of gain table map.
-		
-		real32 x_map = u_map * mapPixelSizeH32 - 0.5f;
-		real32 y_map = v_map * mapPixelSizeV32 - 0.5f;
+		real32 x_map = (u_image - mapOriginH32) / mapSpacingH32;
+		real32 y_map = (v_image - mapOriginV32) / mapSpacingV32;
 
 		// Clamp to valid sample positions.
 
@@ -3346,6 +3388,11 @@ void RefBaselineProfileGainTableMap (const real32 *rSrcPtr,
 
 		weight = Pin_real32 (0.0f, weight, 1.0f);
 
+		// Apply the gamma parameter.
+
+		if (gamma != 1.0f)
+			weight = powf (weight, gamma);
+
 		// Scale the weight by the table size and compute the table indices
 		// and fractional weight.
 
@@ -3389,15 +3436,14 @@ void RefBaselineProfileGainTableMap (const real32 *rSrcPtr,
 		g *= gain;
 		b *= gain;
 
-		// Clamp to [0,1]. This clamp step is NOT required in general. DNG
-		// readers are actually encouraged to preserve overrange values and
-		// use them in downstream tone mapping operations. However, this
-		// sample renderer does not support overrange values and therefore
-		// clamps the values here.
+		// Optionally clamp to [0,1].
 
-		r = Pin_real32 (0.0f, r, 1.0f);
-		g = Pin_real32 (0.0f, g, 1.0f);
-		b = Pin_real32 (0.0f, b, 1.0f);
+		if (!supportOverrange)
+			{
+			r = Pin_real32 (0.0f, r, 1.0f);
+			g = Pin_real32 (0.0f, g, 1.0f);
+			b = Pin_real32 (0.0f, b, 1.0f);
+			}
 
 		// Store the result.
 
@@ -3411,6 +3457,726 @@ void RefBaselineProfileGainTableMap (const real32 *rSrcPtr,
 			
 		} // for each pixel in this row
 		
+	}
+
+/*****************************************************************************/
+
+void RefRGBtoRGBTable3D (real32 *rPtr,
+						 real32 *gPtr,
+						 real32 *bPtr,
+						 const real32 *mPtr,
+						 uint32 rows,
+						 uint32 cols,
+						 int32 rowStep,
+						 int32 mRowStep,
+						 uint32 divisions,
+						 const uint16 *samples,
+						 real32 amount,
+						 uint32 gamut,
+						 const dng_matrix *encodeMatrix,
+						 const dng_matrix *decodeMatrix,
+						 const dng_1d_table *encodeGamma,
+						 const dng_1d_table *decodeGamma,
+						 const bool supportOverrange)
+	{
+
+	real32 em00, em01, em02;
+	real32 em10, em11, em12;
+	real32 em20, em21, em22;
+
+	real32 dm00, dm01, dm02;
+	real32 dm10, dm11, dm12;
+	real32 dm20, dm21, dm22;
+
+	const bool hasMask = (mPtr != NULL);
+
+	bool hasMatrix = ((encodeMatrix != NULL) &&
+					  (decodeMatrix != NULL));
+
+	bool hasGamut = (gamut != 0);
+
+	if (hasMatrix)
+		{
+
+		em00 = (real32) (*encodeMatrix) [0] [0];
+		em01 = (real32) (*encodeMatrix) [0] [1];
+		em02 = (real32) (*encodeMatrix) [0] [2];
+
+		em10 = (real32) (*encodeMatrix) [1] [0];
+		em11 = (real32) (*encodeMatrix) [1] [1];
+		em12 = (real32) (*encodeMatrix) [1] [2];
+
+		em20 = (real32) (*encodeMatrix) [2] [0];
+		em21 = (real32) (*encodeMatrix) [2] [1];
+		em22 = (real32) (*encodeMatrix) [2] [2];
+
+		dm00 = (real32) (*decodeMatrix) [0] [0];
+		dm01 = (real32) (*decodeMatrix) [0] [1];
+		dm02 = (real32) (*decodeMatrix) [0] [2];
+
+		dm10 = (real32) (*decodeMatrix) [1] [0];
+		dm11 = (real32) (*decodeMatrix) [1] [1];
+		dm12 = (real32) (*decodeMatrix) [1] [2];
+
+		dm20 = (real32) (*decodeMatrix) [2] [0];
+		dm21 = (real32) (*decodeMatrix) [2] [1];
+		dm22 = (real32) (*decodeMatrix) [2] [2];
+
+		}
+
+	else if (supportOverrange)
+		{
+
+		hasMatrix = true;
+		hasGamut  = true;
+
+		// Identity matrix.
+
+		em00 = 1.0f; em01 = 0.0f; em02 = 0.0f;
+		em10 = 0.0f; em11 = 1.0f; em12 = 0.0f;
+		em20 = 0.0f; em21 = 0.0f; em22 = 1.0f;
+		
+		dm00 = 1.0f; dm01 = 0.0f; dm02 = 0.0f;
+		dm10 = 0.0f; dm11 = 1.0f; dm12 = 0.0f;
+		dm20 = 0.0f; dm21 = 0.0f; dm22 = 1.0f;
+		
+		}
+
+	const bool hasGamma = (encodeGamma != NULL) &&
+						  (decodeGamma != NULL);
+
+	real32 scale = (real32) (divisions - 1);
+
+	int32 maxIndex = divisions - 2;
+
+	const int32 offset001 = 4;
+	const int32 offset010 = offset001 * divisions;
+	const int32 offset100 = offset010 * divisions;
+	
+	const int32 offset011 = offset010 + offset001;
+	const int32 offset101 = offset100 + offset001;
+	const int32 offset110 = offset100 + offset010;
+	const int32 offset111 = offset110 + offset001;
+
+	real32 gamutDeltaR = 0.0f;
+	real32 gamutDeltaG = 0.0f;
+	real32 gamutDeltaB = 0.0f;
+
+	const bool hasAmount = (amount != 1.0f);
+
+	for (uint32 row = 0; row < rows; row++)
+		{
+
+		for (uint32 col = 0; col < cols; col++)
+			{
+
+			real32 r = rPtr [col];
+			real32 g = gPtr [col];
+			real32 b = bPtr [col];
+
+			real32 m = hasMask ? mPtr [col] : 1.0f;
+
+			real32 rSrc = r;
+			real32 gSrc = g;
+			real32 bSrc = b;
+
+			if (hasMatrix)
+				{
+
+				real32 rr = r * em00 + g * em01 + b * em02;
+				real32 gg = r * em10 + g * em11 + b * em12;
+				real32 bb = r * em20 + g * em21 + b * em22;
+
+				if (supportOverrange)
+					{
+					
+					rr = EncodeOverrange (rr);
+					gg = EncodeOverrange (gg);
+					bb = EncodeOverrange (bb);
+					
+					}
+
+				r = Pin_real32 (rr);
+				g = Pin_real32 (gg);
+				b = Pin_real32 (bb);
+
+				if (hasGamut)
+					{
+
+					gamutDeltaR = rr - r;
+					gamutDeltaG = gg - g;
+					gamutDeltaB = bb - b;
+
+					}
+
+				}
+
+			if (hasGamma)
+				{
+
+				r = encodeGamma->Interpolate (r);
+				g = encodeGamma->Interpolate (g);
+				b = encodeGamma->Interpolate (b);
+
+				}
+
+			real32 rScaled = r * scale;
+			real32 gScaled = g * scale;
+			real32 bScaled = b * scale;
+
+			int32 rIndex = Min_int32 ((int32) rScaled, maxIndex);
+			int32 gIndex = Min_int32 ((int32) gScaled, maxIndex);
+			int32 bIndex = Min_int32 ((int32) bScaled, maxIndex);
+
+			real32 rFract = rScaled - (real32) rIndex;
+			real32 gFract = gScaled - (real32) gIndex;
+			real32 bFract = bScaled - (real32) bIndex;
+
+			int32 offset1;
+			int32 offset2;
+
+			real32 f1;
+			real32 f2;
+			real32 f3;
+
+			if (gFract >= rFract)
+				{
+				
+				if (bFract >= gFract)
+					{
+					
+					offset1 = offset001;
+					offset2 = offset011;
+
+					f1 = bFract;
+					f2 = gFract;
+					f3 = rFract;
+																
+					}
+					
+				else if (bFract >= rFract)
+					{
+					
+					offset1 = offset010;
+					offset2 = offset011;
+
+					f1 = gFract;
+					f2 = bFract;
+					f3 = rFract;
+						
+					}
+					
+				else
+					{
+					
+					offset1 = offset010;
+					offset2 = offset110;
+
+					f1 = gFract;
+					f2 = rFract;
+					f3 = bFract;
+					
+					}
+					
+				}
+				
+			else
+				{
+				
+				if (bFract >= rFract)
+					{
+					
+					offset1 = offset001;
+					offset2 = offset101;
+
+					f1 = bFract;
+					f2 = rFract;
+					f3 = gFract;
+																
+					}
+					
+				else if (bFract >= gFract)
+					{
+					
+					offset1 = offset100;
+					offset2 = offset101;
+
+					f1 = rFract;
+					f2 = bFract;
+					f3 = gFract;
+											
+					}
+					
+				else
+					{
+					
+					offset1 = offset100;
+					offset2 = offset110;
+
+					f1 = rFract;
+					f2 = gFract;
+					f3 = bFract;
+											
+					}
+					
+				}
+
+			real32 w0 = 1.0f - f1;
+			real32 w1 = f1	 - f2;
+			real32 w2 = f2	 - f3;
+
+			const uint16 *table = samples + rIndex * offset100 +
+											gIndex * offset010 +
+											bIndex * offset001;
+
+			real32 r0 = (w0 * ((real32) table [0			]) +
+						 w1 * ((real32) table [offset1		]) +
+						 w2 * ((real32) table [offset2		]) +
+						 f3 * ((real32) table [offset111	])) *
+						((real32) (1.0 / 65535.0));
+
+			real32 g0 = (w0 * ((real32) table [1			]) +
+						 w1 * ((real32) table [offset1	 + 1]) +
+						 w2 * ((real32) table [offset2	 + 1]) +
+						 f3 * ((real32) table [offset111 + 1])) *
+						((real32) (1.0 / 65535.0));
+
+			real32 b0 = (w0 * ((real32) table [2			]) +
+						 w1 * ((real32) table [offset1	 + 2]) +
+						 w2 * ((real32) table [offset2	 + 2]) +
+						 f3 * ((real32) table [offset111 + 2])) *
+						((real32) (1.0 / 65535.0));
+
+			if (hasAmount)
+				{
+
+				r = Pin_real32 (r + amount * (r0 - r));
+				g = Pin_real32 (g + amount * (g0 - g));
+				b = Pin_real32 (b + amount * (b0 - b));
+
+				}
+
+			else
+				{
+
+				r = r0;
+				g = g0;
+				b = b0;
+
+				}
+
+			if (hasGamma)
+				{
+
+				r = decodeGamma->Interpolate (r);
+				g = decodeGamma->Interpolate (g);
+				b = decodeGamma->Interpolate (b);
+
+				}
+
+			if (hasMatrix)
+				{
+
+				if (hasGamut)
+					{
+
+					r += gamutDeltaR;
+					g += gamutDeltaG;
+					b += gamutDeltaB;
+
+					}
+
+				if (supportOverrange)
+					{
+
+					r = DecodeOverrange (r);
+					g = DecodeOverrange (g);
+					b = DecodeOverrange (b);
+
+					}
+				
+				real32 rDst = r * dm00 + g * dm01 + b * dm02;
+				real32 gDst = r * dm10 + g * dm11 + b * dm12;
+				real32 bDst = r * dm20 + g * dm21 + b * dm22;
+
+				if (!supportOverrange)
+					{
+					
+					rDst = Pin_real32 (rDst);
+					gDst = Pin_real32 (gDst);
+					bDst = Pin_real32 (bDst);
+					
+					}
+
+				rPtr [col] = Lerp_real32 (rSrc, rDst, m);
+				gPtr [col] = Lerp_real32 (gSrc, gDst, m);
+				bPtr [col] = Lerp_real32 (bSrc, bDst, m);
+
+				}
+
+			else
+				{
+
+				rPtr [col] = Lerp_real32 (rSrc, r, m);
+				gPtr [col] = Lerp_real32 (gSrc, g, m);
+				bPtr [col] = Lerp_real32 (bSrc, b, m);
+
+				}
+
+			}
+
+		rPtr += rowStep;
+		gPtr += rowStep;
+		bPtr += rowStep;
+
+		if (hasMask)
+			mPtr += mRowStep;
+
+		}
+
+	}
+
+/*****************************************************************************/
+
+void RefRGBtoRGBTable1D (real32 *rPtr,
+						 real32 *gPtr,
+						 real32 *bPtr,
+						 const real32 *mPtr,
+						 uint32 rows,
+						 uint32 cols,
+						 int32 rowStep,
+						 int32 mRowStep,
+						 const dng_1d_table &table0,
+						 const dng_1d_table &table1,
+						 const dng_1d_table &table2,
+						 uint32 gamut,
+						 const dng_matrix *encodeMatrix,
+						 const dng_matrix *decodeMatrix,
+						 const bool supportOverrange)
+	{
+
+	real32 em00, em01, em02;
+	real32 em10, em11, em12;
+	real32 em20, em21, em22;
+
+	real32 dm00, dm01, dm02;
+	real32 dm10, dm11, dm12;
+	real32 dm20, dm21, dm22;
+
+	const bool hasMask = (mPtr != NULL);
+
+	bool hasMatrix = ((encodeMatrix != NULL) &&
+					  (decodeMatrix != NULL));
+
+	bool hasGamut = (gamut != 0);
+
+	if (hasMatrix)
+		{
+
+		em00 = (real32) (*encodeMatrix) [0] [0];
+		em01 = (real32) (*encodeMatrix) [0] [1];
+		em02 = (real32) (*encodeMatrix) [0] [2];
+
+		em10 = (real32) (*encodeMatrix) [1] [0];
+		em11 = (real32) (*encodeMatrix) [1] [1];
+		em12 = (real32) (*encodeMatrix) [1] [2];
+
+		em20 = (real32) (*encodeMatrix) [2] [0];
+		em21 = (real32) (*encodeMatrix) [2] [1];
+		em22 = (real32) (*encodeMatrix) [2] [2];
+
+		dm00 = (real32) (*decodeMatrix) [0] [0];
+		dm01 = (real32) (*decodeMatrix) [0] [1];
+		dm02 = (real32) (*decodeMatrix) [0] [2];
+
+		dm10 = (real32) (*decodeMatrix) [1] [0];
+		dm11 = (real32) (*decodeMatrix) [1] [1];
+		dm12 = (real32) (*decodeMatrix) [1] [2];
+
+		dm20 = (real32) (*decodeMatrix) [2] [0];
+		dm21 = (real32) (*decodeMatrix) [2] [1];
+		dm22 = (real32) (*decodeMatrix) [2] [2];
+
+		}
+
+	else if (supportOverrange)
+		{
+		
+		hasMatrix = true;
+		hasGamut  = true;
+
+		// Identity matrix.
+
+		em00 = 1.0f; em01 = 0.0f; em02 = 0.0f;
+		em10 = 0.0f; em11 = 1.0f; em12 = 0.0f;
+		em20 = 0.0f; em21 = 0.0f; em22 = 1.0f;
+		
+		dm00 = 1.0f; dm01 = 0.0f; dm02 = 0.0f;
+		dm10 = 0.0f; dm11 = 1.0f; dm12 = 0.0f;
+		dm20 = 0.0f; dm21 = 0.0f; dm22 = 1.0f;
+		
+		}
+
+	real32 gamutDeltaR = 0.0f;
+	real32 gamutDeltaG = 0.0f;
+	real32 gamutDeltaB = 0.0f;
+
+	for (uint32 row = 0; row < rows; row++)
+		{
+
+		for (uint32 col = 0; col < cols; col++)
+			{
+
+			real32 r = rPtr [col];
+			real32 g = gPtr [col];
+			real32 b = bPtr [col];
+
+			real32 m = hasMask ? mPtr [col] : 1.0f;
+
+			real32 rSrc = r;
+			real32 gSrc = g;
+			real32 bSrc = b;
+
+			if (hasMatrix)
+				{
+
+				real32 rr = r * em00 + g * em01 + b * em02;
+				real32 gg = r * em10 + g * em11 + b * em12;
+				real32 bb = r * em20 + g * em21 + b * em22;
+
+				if (supportOverrange)
+					{
+					
+					rr = EncodeOverrange (rr);
+					gg = EncodeOverrange (gg);
+					bb = EncodeOverrange (bb);
+					
+					}
+
+				r = Pin_real32 (rr);
+				g = Pin_real32 (gg);
+				b = Pin_real32 (bb);
+
+				if (hasGamut)
+					{
+
+					gamutDeltaR = rr - r;
+					gamutDeltaG = gg - g;
+					gamutDeltaB = bb - b;
+
+					}
+
+				}
+
+			r = table0.Interpolate (r);
+			g = table1.Interpolate (g);
+			b = table2.Interpolate (b);
+
+			if (hasMatrix)
+				{
+
+				if (hasGamut)
+					{
+
+					r += gamutDeltaR;
+					g += gamutDeltaG;
+					b += gamutDeltaB;
+
+					}
+
+				if (supportOverrange)
+					{
+
+					r = DecodeOverrange (r);
+					g = DecodeOverrange (g);
+					b = DecodeOverrange (b);
+
+					}
+				
+				real32 rDst = r * dm00 + g * dm01 + b * dm02;
+				real32 gDst = r * dm10 + g * dm11 + b * dm12;
+				real32 bDst = r * dm20 + g * dm21 + b * dm22;
+
+				if (!supportOverrange)
+					{
+					
+					rDst = Pin_real32 (rDst);
+					gDst = Pin_real32 (gDst);
+					bDst = Pin_real32 (bDst);
+					
+					}
+
+				rPtr [col] = Lerp_real32 (rSrc, rDst, m);
+				gPtr [col] = Lerp_real32 (gSrc, gDst, m);
+				bPtr [col] = Lerp_real32 (bSrc, bDst, m);
+
+				}
+
+			else
+				{
+				
+				rPtr [col] = Lerp_real32 (rSrc, r, m);
+				gPtr [col] = Lerp_real32 (gSrc, g, m);
+				bPtr [col] = Lerp_real32 (bSrc, b, m);
+
+				}
+
+			}
+
+		rPtr += rowStep;
+		gPtr += rowStep;
+		bPtr += rowStep;
+
+		if (hasMask)
+			mPtr += mRowStep;
+
+		}
+
+	}
+
+/*****************************************************************************/
+
+// Weighted Sum Method.
+
+void RefMaskedRGBTables32 (real32 *ptr0,
+						   real32 *ptr1,
+						   real32 *ptr2,
+						   const real32 *tablePtr0,
+						   const real32 *tablePtr1,
+						   const real32 *tablePtr2,
+						   const real32 *maskPtr,
+						   uint32 numTransforms,
+						   int32 pRowStep,
+						   int32 tRowStep,
+						   int32 tPlaneStep,
+						   uint32 rows,
+						   uint32 cols)
+	{
+
+	const int32 transformStep = 4 * tPlaneStep;
+	
+	for (uint32 row = 0; row < rows; row++)	
+		{
+		
+		for (uint32 j = 0; j < cols; j++)
+			{
+
+			const real32 *tp0 = tablePtr0;
+			const real32 *tp1 = tablePtr1;
+			const real32 *tp2 = tablePtr2;
+
+			const real32 *mPtr = maskPtr;
+
+			real32 rSum = 0.0f;
+			real32 gSum = 0.0f;
+			real32 bSum = 0.0f;
+
+			real32 mSum = 0.0f;
+
+			// Walk through all masked transforms and compute weighted sum.
+				
+			for (uint32 t = 0; t < numTransforms; t++)
+				{
+
+				real32 r = tp0 [j];
+				real32 g = tp1 [j];
+				real32 b = tp2 [j];
+
+				real32 m = mPtr [j];
+
+				// Weighted sum.
+
+				rSum += (r * m);
+				gSum += (g * m);
+				bSum += (b * m);
+
+				mSum += m;
+
+				// Next transform.
+
+				tp0	 += transformStep;
+				tp1	 += transformStep;
+				tp2	 += transformStep;
+				mPtr += transformStep;
+				
+				}
+
+			// Add weighted sum for background table.
+			//
+			// Note:
+			//
+			// If there is a background table, then ptr0, ptr1, and ptr2
+			// contain the result of transforming the source values by the
+			// background table.
+			//
+			// Otherwise (there is no background table), ptr0, ptr1, and ptr2
+			// contain the source values (i.e., identity transform). In other
+			// words, the "background" in this case represents the original
+			// image with no table applied.
+
+			real32 bgWeight = 1.0f - Min_real32 (1.0f, mSum);
+
+			real32 bg_r = ptr0 [j];
+			real32 bg_g = ptr1 [j];
+			real32 bg_b = ptr2 [j];
+
+			rSum += (bg_r * bgWeight);
+			gSum += (bg_g * bgWeight);
+			bSum += (bg_b * bgWeight);
+
+			mSum += bgWeight;
+
+			// Normalize.
+
+			real32 norm = 1.0f / mSum;
+
+			real32 r_dst = rSum * norm;
+			real32 g_dst = gSum * norm;
+			real32 b_dst = bSum * norm;
+
+			// Store.
+
+			#if 1
+
+			// Production path: store final composited color.
+
+			ptr0 [j] = r_dst;
+			ptr1 [j] = g_dst;
+			ptr2 [j] = b_dst;
+
+			#elif 1
+
+			// Debug path: store something else for vis.
+
+			ptr0 [j] = bgWeight;
+			ptr1 [j] = bgWeight;
+			ptr2 [j] = bgWeight;
+
+			#else
+
+			// Debug path: store something else for vis.
+
+			ptr0 [j] = mSum;
+			ptr1 [j] = mSum;
+			ptr2 [j] = mSum;
+
+			#endif
+
+			} // cols
+
+		// Next row.
+
+		ptr0 += pRowStep;
+		ptr1 += pRowStep;
+		ptr2 += pRowStep;
+
+		tablePtr0 += tRowStep;
+		tablePtr1 += tRowStep;
+		tablePtr2 += tRowStep;
+		maskPtr	  += tRowStep;
+		
+		} // rows
+	
 	}
 
 /*****************************************************************************/

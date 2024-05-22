@@ -381,17 +381,19 @@ typedef void (BaselineHueSatMapProc)
 			  uint32 count,
 			  const dng_hue_sat_map &lut,
 			  const dng_1d_table *encodeTable,
-			  const dng_1d_table *decodeTable);
+			  const dng_1d_table *decodeTable,
+			  const bool supportOverrange);
 			 
 /*****************************************************************************/
 
-typedef void (BaselineGrayToRGBProc)
+typedef void (BaselineRGBtoGrayProc)
 			 (const real32 *sPtrR,
 			  const real32 *sPtrG,
 			  const real32 *sPtrB,
 			  real32 *dPtrG,
 			  uint32 count,
-			  const dng_matrix &matrix);
+			  const dng_matrix &matrix,
+			  const bool supportOverrange);
 
 typedef void (BaselineRGBtoRGBProc)
 			 (const real32 *sPtrR,
@@ -401,7 +403,8 @@ typedef void (BaselineRGBtoRGBProc)
 			  real32 *dPtrG,
 			  real32 *dPtrB,
 			  uint32 count,
-			  const dng_matrix &matrix);
+			  const dng_matrix &matrix,
+			  const bool supportOverrange);
 
 /*****************************************************************************/
 
@@ -604,7 +607,46 @@ typedef void (BaselineProfileGainTableMapProc) (const real32 *rSrcPtr,
 												const int32 left,
 												const dng_rect &imageArea,
 												const real32 exposureWeightGain,
-												const dng_gain_table_map &gainTableMap);
+												const dng_gain_table_map &gainTableMap,
+												const bool supportOverrange);
+
+/*****************************************************************************/
+
+typedef void (RGBtoRGBTable3DProc) (real32 *rPtr,
+									real32 *gPtr,
+									real32 *bPtr,
+									const real32 *mPtr,
+									uint32 rows,
+									uint32 cols,
+									int32 rowStep,
+									int32 mRowStep,
+									uint32 divisions,
+									const uint16 *samples,
+									real32 amount,
+									uint32 gamut,
+									const dng_matrix *encodeMatrix,
+									const dng_matrix *decodeMatrix,
+									const dng_1d_table *encodeGamma,
+									const dng_1d_table *decodeGamma,
+									const bool supportOverrange);
+
+/*****************************************************************************/
+
+typedef void (RGBtoRGBTable1DProc) (real32 *rPtr,
+									real32 *gPtr,
+									real32 *bPtr,
+									const real32 *mPtr,
+									uint32 rows,
+									uint32 cols,
+									int32 rowStep,
+									int32 mRowStep,
+									const dng_1d_table &table0,
+									const dng_1d_table &table1,
+									const dng_1d_table &table2,
+									uint32 gamut,
+									const dng_matrix *encodeMatrix,
+									const dng_matrix *decodeMatrix,
+									const bool supportOverrange);
 
 /*****************************************************************************/
 
@@ -640,7 +682,7 @@ struct dng_suite
 	BaselineABCtoRGBProc	*BaselineABCtoRGB;
 	BaselineABCDtoRGBProc	*BaselineABCDtoRGB;
 	BaselineHueSatMapProc	*BaselineHueSatMap;
-	BaselineGrayToRGBProc	*BaselineRGBtoGray;
+	BaselineRGBtoGrayProc	*BaselineRGBtoGray;
 	BaselineRGBtoRGBProc	*BaselineRGBtoRGB;
 	Baseline1DTableProc		*Baseline1DTable;
 	BaselineRGBToneProc		*BaselineRGBTone;
@@ -660,6 +702,8 @@ struct dng_suite
 	DecodeLosslessJPEGProc	*DecodeLosslessJPEG;
 	EncodeLosslessJPEGProc	*EncodeLosslessJPEG;
 	BaselineProfileGainTableMapProc *BaselineProfileGainTableMap;
+	RGBtoRGBTable3DProc		*RGBtoRGBTable3D;
+	RGBtoRGBTable1DProc		*RGBtoRGBTable1D;
 	};
 
 /*****************************************************************************/
@@ -1386,7 +1430,8 @@ inline void DoBaselineHueSatMap (const real32 *sPtrR,
 								 uint32 count,
 								 const dng_hue_sat_map &lut,
 								 const dng_1d_table *encodeTable,
-								 const dng_1d_table *decodeTable)
+								 const dng_1d_table *decodeTable,
+								 const bool supportOverrange)
 	{
 	
 	(gDNGSuite.BaselineHueSatMap) (sPtrR,
@@ -1398,7 +1443,8 @@ inline void DoBaselineHueSatMap (const real32 *sPtrR,
 								   count,
 								   lut,
 								   encodeTable,
-								   decodeTable);
+								   decodeTable,
+								   supportOverrange);
 	
 	}
 
@@ -1409,7 +1455,8 @@ inline void DoBaselineRGBtoGray (const real32 *sPtrR,
 								 const real32 *sPtrB,
 								 real32 *dPtrG,
 								 uint32 count,
-								 const dng_matrix &matrix)
+								 const dng_matrix &matrix,
+								 const bool supportOverrange)
 	{
 	
 	(gDNGSuite.BaselineRGBtoGray) (sPtrR,
@@ -1417,7 +1464,8 @@ inline void DoBaselineRGBtoGray (const real32 *sPtrR,
 								   sPtrB,
 								   dPtrG,
 								   count,
-								   matrix);
+								   matrix,
+								   supportOverrange);
 	
 	}
 
@@ -1428,7 +1476,8 @@ inline void DoBaselineRGBtoRGB (const real32 *sPtrR,
 								real32 *dPtrG,
 								real32 *dPtrB,
 								uint32 count,
-								const dng_matrix &matrix)
+								const dng_matrix &matrix,
+								const bool supportOverrange)
 	{
 	
 	(gDNGSuite.BaselineRGBtoRGB) (sPtrR,
@@ -1438,7 +1487,8 @@ inline void DoBaselineRGBtoRGB (const real32 *sPtrR,
 								  dPtrG,
 								  dPtrB,
 								  count,
-								  matrix);
+								  matrix,
+								  supportOverrange);
 	
 	}
 
@@ -1836,7 +1886,8 @@ inline void DoBaselineProfileGainTableMap (const real32 *rSrcPtr,
 										   const int32 left,
 										   const dng_rect &imageArea,
 										   const real32 exposureWeightGain,
-										   const dng_gain_table_map &gainTableMap)
+										   const dng_gain_table_map &gainTableMap,
+										   const bool supportOverrange)
 	{
 	
 	(gDNGSuite.BaselineProfileGainTableMap) (rSrcPtr,
@@ -1850,7 +1901,86 @@ inline void DoBaselineProfileGainTableMap (const real32 *rSrcPtr,
 											 left,
 											 imageArea,
 											 exposureWeightGain,
-											 gainTableMap);
+											 gainTableMap,
+											 supportOverrange);
+
+	}
+
+/*****************************************************************************/
+
+inline void DoRGBtoRGBTable3D (real32 *rPtr,
+							   real32 *gPtr,
+							   real32 *bPtr,
+							   const real32 *mPtr,
+							   uint32 rows,
+							   uint32 cols,
+							   int32 rowStep,
+							   int32 mRowStep,
+							   uint32 divisions,
+							   const uint16 *samples,
+							   real32 amount,
+							   uint32 gamut,
+							   const dng_matrix *encodeMatrix,
+							   const dng_matrix *decodeMatrix,
+							   const dng_1d_table *encodeGamma,
+							   const dng_1d_table *decodeGamma,
+							   const bool supportOverrange)
+	{
+	
+	return (gDNGSuite.RGBtoRGBTable3D) (rPtr,
+										gPtr,
+										bPtr,
+										mPtr,
+										rows,
+										cols,
+										rowStep,
+										mRowStep,
+										divisions,
+										samples,
+										amount,
+										gamut,
+										encodeMatrix,
+										decodeMatrix,
+										encodeGamma,
+										decodeGamma,
+										supportOverrange);
+
+	}
+
+/*****************************************************************************/
+
+inline void DoRGBtoRGBTable1D (real32 *rPtr,
+							   real32 *gPtr,
+							   real32 *bPtr,
+							   const real32 *mPtr,
+							   uint32 rows,
+							   uint32 cols,
+							   int32 rowStep,
+							   int32 mRowStep,
+							   const dng_1d_table &table0,
+							   const dng_1d_table &table1,
+							   const dng_1d_table &table2,
+							   uint32 gamut,
+							   const dng_matrix *encodeMatrix,
+							   const dng_matrix *decodeMatrix,
+							   const bool supportOverrange)
+	{
+	
+	return (gDNGSuite.RGBtoRGBTable1D) (rPtr,
+										gPtr,
+										bPtr,
+										mPtr,
+										rows,
+										cols,
+										rowStep,
+										mRowStep,
+										table0,
+										table1,
+										table2,
+										gamut,
+										encodeMatrix,
+										decodeMatrix,
+										supportOverrange);
 
 	}
 
