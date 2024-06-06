@@ -350,6 +350,7 @@ namespace df
 		file_path combine_file(std::u8string_view part) const;
 		file_path combine_file(str::cached part) const;
 		file_path combine_file(std::wstring_view part) const;
+		file_path combine_file_ext(std::u8string_view part, std::u8string_view ext) const;
 
 		int compare(const folder_path other) const
 		{
@@ -603,6 +604,11 @@ namespace df
 	inline file_path folder_path::combine_file(const std::u8string_view part) const
 	{
 		return file_path(*this, part);
+	}
+
+	inline file_path folder_path::combine_file_ext(const std::u8string_view part, const std::u8string_view ext) const
+	{
+		return file_path(*this, part, ext);
 	}
 
 	inline file_path folder_path::combine_file(const str::cached part) const

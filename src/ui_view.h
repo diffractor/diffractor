@@ -496,9 +496,7 @@ public:
 public:
 	bool _active = false;
 	bool _tracking = false;
-	bool _scroll_child_controls = false;
-
-	static const int def_width = 20;
+	bool _scroll_child_controls = false;	
 
 	const recti scroll_bounds() const
 	{
@@ -512,7 +510,7 @@ public:
 		const auto xx = cx > 0 ? std::clamp(x, 0, cx) : 0;
 		const auto yy = cy > 0 ? std::clamp(y, 0, cy) : 0;
 
-		if (_offset.x != xx || _offset.y != yy && _scroll_extent.cy > 0)
+		if ((_offset.x != xx || _offset.y != yy) && _scroll_extent.cy > 0)
 		{
 			const auto delta = _offset.y - yy;
 			_offset.x = xx;

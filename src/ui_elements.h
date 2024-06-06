@@ -13,12 +13,6 @@
 #include "ui.h"
 #include "ui_view.h"
 
-const int minumum_media_control_width = 32 * 7; // same as buttons width
-const int minumum_title_width = 180;
-const int maximum_link_height = 160;
-const int maximum_text_height = 80;
-const int image_padding = 8;
-
 class view_state;
 struct view_hover_element;
 class ui_element_render;
@@ -131,6 +125,11 @@ struct view_element_padding
 	{
 		return {cx, cy};
 	}
+
+	constexpr sizei operator *(const double d) const noexcept
+	{
+		return { df::round(cx * d), df::round(cy * d) };
+	}
 };
 
 
@@ -171,7 +170,8 @@ public:
 
 		if (bg.a > 0.0f)
 		{
-			dc.draw_rounded_rect(bounds.offset(element_offset).inflate(padding.cx, padding.cy), bg);
+			const auto pad = padding * dc.scale_factor;
+			dc.draw_rounded_rect(bounds.offset(element_offset).inflate(pad.cx, pad.cy), bg, dc.baseline_snap);
 		}
 	}
 
@@ -338,7 +338,7 @@ public:
 
 				const auto current_width_limit = width_limit;
 
-				const auto element_padding = ev->porch();
+				const auto element_padding = ev->porch() * mc.scale_factor;
 				auto max_extent_width = current_width_limit - (element_padding.cx * 2) - (previous_no_break
 					? (x - left_x)
 					: 0);
@@ -434,14 +434,15 @@ public:
 			{
 				const auto is_centered = ev->is_centered();
 				const auto is_far = ev->is_right_justified();
+				const auto padding = ev->porch() * mc.scale_factor;
 
 				if (ev->is_style_bit_set(view_element_style::grow))
 				{
-					_extents[i].bounds.right = bounds.right - ev->porch().cx;
+					_extents[i].bounds.right = bounds.right - padding.cx;
 				}
 				else if (is_centered)
-				{
-					const auto cx_offset = (bounds.right - (_extents[i].bounds.right + ev->porch().cx)) / 2;
+				{					
+					const auto cx_offset = (bounds.right - (_extents[i].bounds.right + padding.cx)) / 2;
 					auto line_i = i;
 
 					while (line_i >= 0u && elements[line_i]->is_centered())
@@ -457,7 +458,7 @@ public:
 				}
 				else if (is_far)
 				{
-					const auto cx_offset = (bounds.right - (_extents[i].bounds.right + ev->porch().cx));
+					const auto cx_offset = (bounds.right - (_extents[i].bounds.right + padding.cx));
 					auto line_i = i;
 
 					while (line_i >= 0u && elements[line_i]->is_right_justified())
@@ -520,8 +521,7 @@ static calc_stack_elements_result calc_stack_elements(ui::measure_context& mc, c
 {
 	calc_stack_elements_result result;
 
-	constexpr auto min_shrink_height = 64;
-
+	const auto min_shrink_height = df::round(64 * mc.scale_factor);
 	const auto cx_avail = avail_bounds.width();
 	auto y = avail_bounds.top + padding.cy;
 	auto prime_oversize_y = 0;
@@ -531,7 +531,7 @@ static calc_stack_elements_result calc_stack_elements(ui::measure_context& mc, c
 
 	for (const auto& e : elements)
 	{
-		const auto element_padding = e->porch();
+		const auto element_padding = e->porch() * mc.scale_factor;
 		const auto cx_element_avail = cx_avail - (element_padding.cx * 2) - (padding.cx * 2);
 		const auto extent = e->measure(mc, cx_element_avail);
 
@@ -620,7 +620,7 @@ static calc_stack_elements_result calc_stack_elements(ui::measure_context& mc, c
 	{
 		const auto& element = elements[i];
 		const auto& element_bounds = result.layout_bounds[i];
-		const auto element_padding = element->porch();
+		const auto element_padding = element->porch() * mc.scale_factor;
 		const auto element_bottom = element_bounds.bottom + element_padding.cy - avail_bounds.top;
 
 		if (element_bottom > result.cy) result.cy = element_bottom;
@@ -643,7 +643,7 @@ static int stack_elements(ui::measure_context& mc, ui::control_layouts& position
 	{
 		const auto& element = elements[i];
 		const auto& element_bounds = layout.layout_bounds[i];
-		const auto element_padding = element->porch();
+		const auto element_padding = element->porch() * mc.scale_factor;
 		const auto element_bottom = element_bounds.bottom + element_padding.cy;
 
 		element->layout(mc, element_bounds, positions);
@@ -1115,9 +1115,10 @@ public:
 
 	void render(ui::draw_context& dc, const pointi element_offset) const override
 	{
+		const auto line_height = df::round(1.1 * dc.scale_factor);
 		auto logical_bounds = bounds.offset(element_offset);
-		logical_bounds.top = (logical_bounds.top + logical_bounds.bottom) / 2;
-		logical_bounds.bottom = logical_bounds.top + 1;
+		logical_bounds.top = (logical_bounds.top + logical_bounds.bottom - line_height) / 2;
+		logical_bounds.bottom = logical_bounds.top + line_height;
 		//logical_bounds = logical_bounds.inflate(-logical_bounds.width() / 11, 0);
 
 		const auto clr = ui::color(0x000000, dc.colors.alpha / 4.44f);

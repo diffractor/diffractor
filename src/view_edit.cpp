@@ -86,17 +86,19 @@ public:
 	void layout(ui::measure_context& mc, const recti bounds_in, ui::control_layouts& positions) override
 	{
 		bounds = bounds_in;
-		auto rSlider = bounds;
-		auto rEdit = bounds;
-		const auto split = bounds.right - 66;
 
-		rEdit.left = split + 4;
-		rSlider.right = split;
+		const auto num_extent = mc.measure_text(u8"00.00"sv, ui::style::font_size::dialog, ui::style::text_style::single_line, bounds.width());
+		auto slider_bounds = bounds;
+		auto edit_bounds = bounds;
+		const auto split = bounds.right - (num_extent.cx + (mc.component_snap * 2));
 
-		if (!str::is_empty(_label)) rSlider.left += mc.col_widths.c1;
+		edit_bounds.left = split + mc.baseline_snap;
+		slider_bounds.right = split - mc.baseline_snap;
 
-		positions.emplace_back(_slider, rSlider, is_visible());
-		positions.emplace_back(_edit, rEdit, is_visible());
+		if (!str::is_empty(_label)) slider_bounds.left += mc.col_widths.c1;
+
+		positions.emplace_back(_slider, slider_bounds, is_visible());
+		positions.emplace_back(_edit, edit_bounds, is_visible());
 	}
 
 	void render(ui::draw_context& dc, const pointi element_offset) const override
@@ -179,7 +181,7 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		return {width_limit, 40};
+		return {width_limit, default_control_height(mc)  };
 	}
 
 	void visit_controls(const std::function<void(const ui::control_base_ptr&)>& handler) override
@@ -443,7 +445,7 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		return {width_limit, 64};
+		return {width_limit, mc.text_line_height(ui::style::font_size::dialog) + mc.component_snap * 4 };
 	}
 
 	void layout(ui::measure_context& mc, const recti bounds_in, ui::control_layouts& positions) override
@@ -862,7 +864,7 @@ void edit_view::save_options() const
 		std::make_shared<ui::close_control>(dlg->_frame)
 	};
 
-	dlg->show_modal(controls, 400);
+	dlg->show_modal(controls, { 44 });
 }
 
 void edit_view::save_as()
@@ -1064,7 +1066,7 @@ void edit_view_controls::layout_controls(ui::measure_context& mc)
 
 		const auto layout_padding = mc.baseline_snap;
 		auto avail_bounds = recti(_extent);
-		avail_bounds.right -= view_scroller::def_width - layout_padding;
+		avail_bounds.right -= mc.scroll_width + layout_padding;
 
 		ui::control_layouts positions;
 		const auto height = stack_elements(mc, positions, avail_bounds, _controls, false,
@@ -1074,8 +1076,8 @@ void edit_view_controls::layout_controls(ui::measure_context& mc)
 		_layout_width = avail_bounds.width();
 		_label_width = mc.col_widths;
 
-		const recti scroll_bounds{_extent.cx - view_scroller::def_width, 0, _extent.cx, _extent.cy};
-		const recti client_bounds{0, 0, _extent.cx - view_scroller::def_width, _extent.cy};
+		const recti scroll_bounds{_extent.cx - mc.scroll_width, 0, _extent.cx, _extent.cy};
+		const recti client_bounds{0, 0, _extent.cx - mc.scroll_width, _extent.cy};
 		_scroller.layout({_layout_width, _layout_height}, client_bounds, scroll_bounds);
 
 		_dlg->apply_layout(positions, -_scroller.scroll_offset());
@@ -1200,11 +1202,11 @@ void edit_view_controls::create_controls()
 	_metadata_title = std::make_shared<ui::title_control>(icon_index::document, tt.metadata);
 	_title_edit = std::make_shared<ui::edit_control>(_dlg, tt.prop_name_title, _edit_state._item_title);
 	_description_label = std::make_shared<text_element>(tt.prop_name_description);
-	_description_edit = std::make_shared<ui::multi_line_edit_control>(_dlg, _edit_state._item_description, 130, true);
+	_description_edit = std::make_shared<ui::multi_line_edit_control>(_dlg, _edit_state._item_description, 8, true);
 	_comment_label = std::make_shared<text_element>(tt.prop_name_comment);
-	_comment_edit = std::make_shared<ui::multi_line_edit_control>(_dlg, _edit_state._item_comment, 110, true);
+	_comment_edit = std::make_shared<ui::multi_line_edit_control>(_dlg, _edit_state._item_comment, 6, true);
 	_staring_label = std::make_shared<text_element>(tt.staring);
-	_staring_edit = std::make_shared<ui::multi_line_edit_control>(_dlg, _edit_state._item_artist, 110, true);
+	_staring_edit = std::make_shared<ui::multi_line_edit_control>(_dlg, _edit_state._item_artist, 6, true);
 	_staring_help = std::make_shared<text_element>(tt.help_artist);
 	_tags_label = std::make_shared<text_element>(tt.tags_title);
 	_tags_edit = std::make_shared<ui::multi_line_edit_control>(_dlg, _edit_state._item_tags);
@@ -1444,7 +1446,7 @@ void edit_view::draw_handle(ui::draw_context& dc, const recti handle_bounds2, co
 	const auto handle_bg_clr = ui::color(ui::style::color::dialog_selected_background, alpha * dc.colors.bg_alpha);
 
 	dc.draw_rect(handle_bounds2, handle_clr);
-	dc.draw_border(handle_bounds2.inflate(-2), handle_bounds2, handle_bg_clr, handle_bg_clr);
+	dc.draw_border(handle_bounds2.inflate(df::round(-2 * dc.scale_factor)), handle_bounds2, handle_bg_clr, handle_bg_clr);
 }
 
 void edit_view::render(ui::draw_context& dc, view_controller_ptr controller)
@@ -1458,12 +1460,13 @@ void edit_view::render(ui::draw_context& dc, view_controller_ptr controller)
 
 		const quadd image_bounds(image_extent);
 
+		const auto pad30 = dc.component_snap * 2;
 		const auto selection_bounds = _edit_state.selection();
 		const auto selection_angle = -selection_bounds.angle();
 		const auto selection_rotated_bounds = image_bounds.transform(affined().rotate(selection_angle)).bounding_rect();
 		const auto view_bounds = rectd(0, 0, _extent.cx, _extent.cy);
-		const auto view_scale = std::min((view_bounds.Width - 30) / selection_rotated_bounds.Width,
-		                                 (view_bounds.Height - 30) / selection_rotated_bounds.Height);
+		const auto view_scale = std::min((view_bounds.Width - pad30) / selection_rotated_bounds.Width,
+		                                 (view_bounds.Height - pad30) / selection_rotated_bounds.Height);
 
 		_image_transform = affined().translate(-image_bounds.center_point()).rotate(selection_angle).scale(view_scale).
 		                             translate(view_bounds.center());
@@ -1511,20 +1514,24 @@ void edit_view::render(ui::draw_context& dc, view_controller_ptr controller)
 
 		_crop_bounds = crop_bounding;
 
-		_crop_handle_tl.set(crop_bounding.left() - 16, crop_bounding.top() - 16, crop_bounding.left() + 8,
-		                    crop_bounding.top() + 8);
-		_crop_handle_tr.set(crop_bounding.right() - 8, crop_bounding.top() - 16, crop_bounding.right() + 16,
-		                    crop_bounding.top() + 8);
-		_crop_handle_bl.set(crop_bounding.left() - 16, crop_bounding.bottom() - 8, crop_bounding.left() + 8,
-		                    crop_bounding.bottom() + 16);
-		_crop_handle_br.set(crop_bounding.right() - 8, crop_bounding.bottom() - 8, crop_bounding.right() + 16,
-		                    crop_bounding.bottom() + 16);
+		const auto pad1 = df::round(1 * dc.scale_factor);
+		const auto pad8 = dc.component_snap;
+		const auto pad16 = pad8 * 2;
 
-		const auto bounding = crop_bounding.round();
+		_crop_handle_tl.set(crop_bounding.left() - pad16, crop_bounding.top() - pad16, crop_bounding.left() + pad8,
+		                    crop_bounding.top() + pad8);
+		_crop_handle_tr.set(crop_bounding.right() - pad8, crop_bounding.top() - pad16, crop_bounding.right() + pad16,
+		                    crop_bounding.top() + pad8);
+		_crop_handle_bl.set(crop_bounding.left() - pad16, crop_bounding.bottom() - pad8, crop_bounding.left() + pad8,
+		                    crop_bounding.bottom() + pad16);
+		_crop_handle_br.set(crop_bounding.right() - pad8, crop_bounding.bottom() - pad8, crop_bounding.right() + pad16,
+		                    crop_bounding.bottom() + pad16);
+
+		const auto bounding = crop_bounding.round();		
 		auto c1 = ui::color(0, alpha / 2.0f);
 		dc.draw_border(bounding, border, c1, c1);
 		auto c2 = ui::color(ui::style::color::dialog_selected_background, alpha);
-		dc.draw_border(bounding, bounding.inflate(1), c2, c2);
+		dc.draw_border(bounding, bounding.inflate(pad1), c2, c2);
 
 		const auto grid_alpha = _edit_state.grid_alpha_animation.val();
 
@@ -1534,8 +1541,8 @@ void edit_view::render(ui::draw_context& dc, view_controller_ptr controller)
 
 			// draw grid
 			const auto center = bounding.center();
-			dc.draw_rect(recti(center.x - 1, bounding.top, center.x + 1, bounding.bottom), c);
-			dc.draw_rect(recti(bounding.left, center.y - 1, bounding.right, center.y + 1), c);
+			dc.draw_rect(recti(center.x - pad1, bounding.top, center.x + pad1, bounding.bottom), c);
+			dc.draw_rect(recti(bounding.left, center.y - pad1, bounding.right, center.y + pad1), c);
 
 			for (int div = 6; div >= 3; div /= 2)
 			{
@@ -1544,10 +1551,10 @@ void edit_view::render(ui::draw_context& dc, view_controller_ptr controller)
 				const auto t = center.y - bounding.height() / div;
 				const auto b = center.y + bounding.height() / div;
 
-				dc.draw_rect(recti(bounding.left, t - 1, bounding.right, t + 1), c);
-				dc.draw_rect(recti(bounding.left, b - 1, bounding.right, b + 1), c);
-				dc.draw_rect(recti(l - 1, bounding.top, l + 1, bounding.bottom), c);
-				dc.draw_rect(recti(r - 1, bounding.top, r + 1, bounding.bottom), c);
+				dc.draw_rect(recti(bounding.left, t - pad1, bounding.right, t + pad1), c);
+				dc.draw_rect(recti(bounding.left, b - pad1, bounding.right, b + pad1), c);
+				dc.draw_rect(recti(l - pad1, bounding.top, l + pad1, bounding.bottom), c);
+				dc.draw_rect(recti(r - pad1, bounding.top, r + pad1, bounding.bottom), c);
 			}
 		}
 
@@ -1556,18 +1563,18 @@ void edit_view::render(ui::draw_context& dc, view_controller_ptr controller)
 		draw_handle(dc, _crop_handle_bl.round(), alpha);
 		draw_handle(dc, _crop_handle_br.round(), alpha);
 
-		const sizei text_size(200, 20);
+		const auto text_dims = str::format(u8"{}x{}"sv, df::round(actual_size.Width), df::round(actual_size.Height));
+		const sizei text_size = dc.measure_text(text_dims, ui::style::font_size::dialog, ui::style::text_style::single_line_center, bounding.width()).inflate(dc.component_snap);
 		const auto text_x = (bounding.left + bounding.right - text_size.cx) / 2;
 		const recti draw_text_rect(text_x, bounding.top - text_size.cy, text_x + text_size.cx, bounding.top);
-
-		const auto text_dims = str::format(u8"{}x{}"sv, df::round(actual_size.Width), df::round(actual_size.Height));
+		
 		dc.draw_text(text_dims, draw_text_rect, ui::style::font_size::dialog, ui::style::text_style::single_line_center,
 		             ui::color(dc.colors.foreground, alpha), {});
 
 		if (setting.show_debug_info)
 		{
 			const auto text_degs = str::print(u8"%3.3f degrees"sv, selection_angle);
-			dc.draw_text(text_degs, crop_bounding.round().inflate(100), ui::style::font_size::title,
+			dc.draw_text(text_degs, crop_bounding.round().inflate(df::round(100 * dc.scale_factor)), ui::style::font_size::title,
 			             ui::style::text_style::single_line_center,
 			             ui::color(ui::style::color::warning_background, alpha), {});
 		}
@@ -1593,8 +1600,8 @@ void edit_view::render(ui::draw_context& dc, view_controller_ptr controller)
 		dc.draw_texture(_texture, bounds, alpha, sampler);
 
 		auto draw_text_rect = recti(_extent);
-		draw_text_rect.top = bounds.bottom + 8;
-		draw_text_rect.bottom = draw_text_rect.top + dc.text_line_height(ui::style::font_size::title) + 16;
+		draw_text_rect.top = bounds.bottom + dc.component_snap;
+		draw_text_rect.bottom = draw_text_rect.top + dc.text_line_height(ui::style::font_size::title) + (dc.component_snap * 2);
 
 		dc.draw_text(_path.name(), draw_text_rect, ui::style::font_size::title,
 		             ui::style::text_style::single_line_center, ui::color(dc.colors.foreground, alpha), {});

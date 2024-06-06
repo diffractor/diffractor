@@ -19,6 +19,10 @@
 
 #include "rapidjson/istreamwrapper.h"
 
+#define LIBARCHIVE_STATIC
+#include "libarchive/libarchive/archive.h"
+#include "libarchive/libarchive/archive_entry.h"
+
 #undef GetObject
 #undef min
 
@@ -87,6 +91,9 @@ static constexpr file_type_traits video_traits = file_type_traits::av | file_typ
 static constexpr file_type_traits audio_traits = file_type_traits::av | file_type_traits::visualize_audio |
 	file_type_traits::cache_metadata | file_type_traits::music_metadata;
 
+static constexpr file_type_traits commodore_traits = file_type_traits::commodore;
+static constexpr file_type_traits archive_traits = file_type_traits::archive;
+
 file_group file_group::other(u8"other"sv, u8"others"sv, 0x5E5E5E, icon_index::document, file_type_traits::other, {});
 file_group file_group::folder(u8"folder"sv, u8"folders"sv, 0x18A59C, icon_index::folder, file_type_traits::folder, {});
 file_group file_group::photo(u8"photo"sv, u8"photos"sv, 0x18A549, icon_index::photo, photo_traits, {u8"xmp"});
@@ -94,12 +101,24 @@ file_group file_group::video(u8"video"sv, u8"videos"sv, 0xA55018, icon_index::vi
                              {u8"srt"sv, u8"smi"sv, u8"vtt"sv, u8"mpl2"sv, u8"thm"sv, u8"xmp"});
 file_group file_group::audio(u8"audio"sv, {}, 0xA5184B, icon_index::audio, audio_traits, {});
 
+file_group file_group::archive(u8"archive"sv, u8"archives"sv, 0x5588DD, icon_index::archive, archive_traits, {});
+file_group file_group::commodore(u8"commodore"sv, {}, 0xFF8811, icon_index::retro, commodore_traits, {});
+
+
 file_type file_type::folder(file_group::folder, {}, {}, {});
 file_type file_type::other(file_group::other, {}, {}, {});;
 
 void load_file_types()
 {
-	s_config.groups = {file_group::folder, file_group::photo, file_group::video, file_group::audio, file_group::other};
+	s_config.groups = {
+		file_group::folder,
+		file_group::photo,
+		file_group::video,
+		file_group::audio,
+		file_group::archive,
+		file_group::commodore,
+		file_group::other};
+
 	s_config.types = {
 		{file_group::video, u8"264"sv, {}, {}},
 		{file_group::video, u8"265"sv, {}, {}},
@@ -494,6 +513,25 @@ void load_file_types()
 		{file_group::video, u8"yop"sv, {}, {}},
 		{file_group::video, u8"yuv"sv, u8"Raw YUV video format"sv, {}},
 		{file_group::video, u8"yuv10"sv, {}, {}},
+
+		{ file_group::archive, u8"zip"sv, {}, { file_type_traits::archive } },
+		{ file_group::archive, u8"rar"sv, {}, { file_type_traits::archive } },
+		{ file_group::archive, u8"7z"sv, {}, { file_type_traits::archive } },
+		{ file_group::archive, u8"gz"sv, {}, { file_type_traits::archive } },
+		{ file_group::archive, u8"tgz"sv, {}, { file_type_traits::archive } },
+		{ file_group::archive, u8"cpio"sv, {}, { file_type_traits::archive } },
+		{ file_group::archive, u8"iso"sv, {}, { file_type_traits::archive } },
+		{ file_group::archive, u8"cab"sv, {}, { file_type_traits::archive } },
+		{ file_group::archive, u8"pax"sv, {}, { file_type_traits::archive } },
+		{ file_group::archive, u8"lzip"sv, {}, { file_type_traits::archive } },
+		{ file_group::archive, u8"lza"sv, {}, { file_type_traits::archive } },
+		{ file_group::archive, u8"bzip2,bz2"sv, {}, { file_type_traits::archive } },
+		{ file_group::archive, u8"tar"sv, {}, { file_type_traits::archive } },
+		{ file_group::archive, u8"lha"sv, {}, { file_type_traits::archive } },
+		{ file_group::archive, u8"lza"sv, {}, { file_type_traits::archive } },
+		{ file_group::archive, u8"a,ar"sv, {}, { file_type_traits::archive } },
+
+		{ file_group::commodore, u8"d64"sv, {}, { file_type_traits::disk_image } },
 	};
 
 	int next_id = 0;
@@ -1835,6 +1873,46 @@ platform::file_op_result files::update(const df::file_path path_src, const df::f
 	}
 
 	return result;
+}
+
+std::vector<archive_item> files::list_archive(df::file_path zip_file_path)
+{
+	std::vector<archive_item> results;
+	struct archive_entry* entry;
+	int r;
+	const auto a = archive_read_new();
+	const auto ext = archive_write_disk_new();
+
+	archive_read_support_filter_all(a);
+	archive_read_support_format_all(a);
+
+	const auto w = platform::to_file_system_path(zip_file_path);
+
+	if ((r = archive_read_open_filename_w(a, w.c_str(), 10240)) == ARCHIVE_OK)
+	{
+		for (;;) {
+			r = archive_read_next_header(a, &entry);
+			if (r == ARCHIVE_OK)
+			{
+				archive_item result_info;
+				result_info.filename = str::utf8_cast(archive_entry_pathname_utf8(entry));
+				result_info.uncompressed_size = df::file_size(archive_entry_size(entry));
+				//result_info.compressed_size = df::file_size(archive_filter_bytes(a, -1));
+				result_info.created = df::date_t(archive_entry_ctime(entry));
+				results.emplace_back(result_info);
+			}
+			else
+			{
+				break;
+			}
+
+			//archive_read_data_skip(a);
+		}
+		archive_read_close(a);
+		archive_read_free(a);
+	}
+
+	return results;
 }
 
 

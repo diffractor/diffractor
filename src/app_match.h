@@ -234,7 +234,8 @@ public:
 
 		if (bg_color.a > 0.0f)
 		{
-			dc.draw_rounded_rect(logical_bounds.inflate(padding.cx, padding.cy), bg_color);
+			const auto pad = padding * dc.scale_factor;
+			dc.draw_rounded_rect(logical_bounds.inflate(pad.cx, pad.cy), bg_color, dc.baseline_snap);
 		}
 
 		const auto highlight_clr = ui::color(ui::style::color::dialog_selected_text, dc.colors.alpha);
@@ -304,7 +305,8 @@ public:
 
 		if (bg_color.a > 0.0f)
 		{
-			dc.draw_rounded_rect(logical_bounds.inflate(padding.cx, padding.cy), bg_color);
+			const auto pad = padding * dc.scale_factor;
+			dc.draw_rounded_rect(logical_bounds.inflate(pad.cx, pad.cy), bg_color, dc.baseline_snap);
 		}
 
 		const auto highlight_clr = ui::color(ui::style::color::dialog_selected_text, dc.colors.alpha);

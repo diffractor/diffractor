@@ -113,8 +113,8 @@ void spell_check::lazy_download(df::async_i& async)
 
 	if (known_dics.contains(language))
 	{
-		const auto aff_path = _dictionaries_folder.combine_file(language + u8".aff"s);
-		const auto dic_path = _dictionaries_folder.combine_file(language + u8".dic"s);
+		const auto aff_path = _dictionaries_folder.combine_file_ext(language, u8".aff"s);
+		const auto dic_path = _dictionaries_folder.combine_file_ext(language, u8".dic"s);
 
 		if (!aff_path.exists())
 		{

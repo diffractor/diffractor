@@ -1391,9 +1391,9 @@ df::string_counts str::guess_word(df::string_counts& counts, const std::u8string
 	return top_totals(totals, max_results);
 }
 
-static df::dense_hash_map<int, int> make_normalizations()
+static df::dense_hash_map<int, char32_t> make_normalizations()
 {
-	df::dense_hash_map<int, int> normalizations = {
+	df::dense_hash_map<int, char32_t> normalizations = {
 		{0x20, ' '}, // space 
 		{0x0c, ' '}, // form feed 
 		{0x0a, ' '}, // line feed 
@@ -2083,7 +2083,7 @@ static df::dense_hash_map<int, int> make_normalizations()
 		{0x068f, 'e'}, //	LATIN CAPITAL LETTER SCHWA
 		{0x0690, 'e'}, //	LATIN CAPITAL LETTER OPEN E
 		{0x0691, 'f'}, //	LATIN CAPITAL LETTER F WITH HOOK
-		{0x0692, 'ƒ'}, //	LATIN SMALL LETTER F WITH HOOK
+		// TODO {0x0692, 'ƒ'}, //	LATIN SMALL LETTER F WITH HOOK
 		{0x0693, 'g'}, //	LATIN CAPITAL LETTER G WITH HOOK
 		{0x0694, 'g'}, //	LATIN CAPITAL LETTER GAMMA
 		{0x0696, 'i'}, //	LATIN CAPITAL LETTER IOTA

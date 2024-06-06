@@ -1495,7 +1495,7 @@ file_load_result av_format_decoder::render_frame(const av_frame_ptr& frame_in) c
 	{
 		const auto s = std::make_shared<ui::surface>();
 		auto* const buffer = s->alloc(w, h, ui::texture_format::RGB, calc_orientation());
-		const auto pitch = s->stride();
+		const auto pitch = (int)s->stride();
 
 		uint8_t* data[4] = {buffer, nullptr, nullptr, nullptr};
 		const int linesize[4] = {pitch, 0, 0, 0};
@@ -1677,10 +1677,10 @@ bool av_scaler::scale_surface(const ui::const_surface_ptr& surface_in, ui::surfa
 		surface_out->alloc(dimensions_out.cx, dimensions_out.cy, surface_in->format(), surface_in->orientation());
 
 		const uint8_t* src_data[4] = {surface_in->pixels(), nullptr, nullptr, nullptr};
-		const int src_stride[4] = {surface_in->stride(), 0, 0, 0};
+		const int src_stride[4] = { (int)surface_in->stride(), 0, 0, 0};
 
 		uint8_t* dst_data[4] = {surface_out->pixels(), nullptr, nullptr, nullptr};
-		const int dst_stride[4] = {surface_out->stride(), 0, 0, 0};
+		const int dst_stride[4] = { (int)surface_out->stride(), 0, 0, 0};
 
 		sws_scale(_scaler, src_data, src_stride, 0, source_extent.cy, 
 			dst_data, dst_stride);
@@ -1717,8 +1717,8 @@ bool av_scaler::scale_surface(const av_frame_ptr& frame_in2, ui::surface_ptr& su
 	{
 		if (surface_out->alloc(src_extent, ui::texture_format::RGB, frame_in2->orientation, frame_in2->time))
 		{
-			uint8_t* data[4] = {surface_out->pixels(), nullptr, nullptr, nullptr};
-			const int linesize[4] = {surface_out->stride(), 0, 0, 0};
+			uint8_t* data[4] = { surface_out->pixels(), nullptr, nullptr, nullptr};
+			const int linesize[4] = { (int)surface_out->stride(), 0, 0, 0};
 
 			const auto ret = sws_scale(_scaler, frame->data, frame->linesize, 0, src_extent.cy, data, linesize);
 			success = ret > 0;
@@ -1751,7 +1751,7 @@ bool av_scaler::scale_frame(const AVFrame& frame, ui::surface_ptr& surface, cons
 		surface->alloc(dst_dims.cx, dst_dims.cy, ui::texture_format::RGB, orientation, time);
 
 		uint8_t* data[4] = {(surface->pixels()), nullptr, nullptr, nullptr};
-		const int linesize[4] = {surface->stride(), 0, 0, 0};
+		const int linesize[4] = { (int)surface->stride(), 0, 0, 0};
 
 		success = sws_scale(_scaler, frame.data, frame.linesize, 0, src_dims.cy, data, linesize) == dst_dims.cy;
 

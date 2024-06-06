@@ -67,6 +67,7 @@ enum class file_type_traits : uint32_t
 	av = 1 << 20,
 	bitmap = 1 << 21,
 	archive = 1 << 22,
+	commodore = 1 << 23,
 
 	other = 1 << 24,
 	folder = 1 << 25,
@@ -135,6 +136,8 @@ public:
 	static file_group photo;
 	static file_group video;
 	static file_group audio;
+	static file_group archive;
+	static file_group commodore;
 
 	std::u8string display_name(bool is_plural) const;
 
@@ -1094,4 +1097,6 @@ public:
 	{
 		return update(path, path, metadata_edits, photo_edits, params, create_original, xmp_name);
 	}
+
+	static std::vector<archive_item> list_archive(df::file_path zip_file_path);
 };

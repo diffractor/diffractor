@@ -22,12 +22,12 @@ jobs:
         platform: ['Win32', 'x64']
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
           submodules: recursive
           
     - name: Add MSBuild to PATH
-      uses: microsoft/setup-msbuild@v1.1
+      uses: microsoft/setup-msbuild@v2
 
     - name: Build ${{matrix.platform}}
       working-directory: ${{env.GITHUB_WORKSPACE}}

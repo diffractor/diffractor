@@ -44,6 +44,16 @@
 
 static constexpr auto nonclient_border_thickness = 5;
 static constexpr auto base_icon_cxy = 18;
+static constexpr auto ui_element_padding = 8;
+static constexpr auto ui_focus_padding = 2;
+static constexpr auto ui_corner_radius = 6;
+static constexpr auto ui_button_padding = 8;
+static constexpr auto ui_component_snap = 8;
+static constexpr auto ui_baseline_snap = 4;
+static constexpr auto ui_cx_resize_handle = 12;
+static constexpr auto ui_scroll_width = 20;
+
+
 int ui::ticks_since_last_user_action = 0;
 
 static constexpr std::u8string_view s_window_rect = u8"WindowRect"sv;
@@ -727,9 +737,10 @@ static void streach_box(HDC dc, HDC dcmem, const recti r, int cxy, int xy, bool 
 	SetStretchBltMode(dc, sbm);
 }
 
-HBITMAP create_round_rect(HDC hdc_ref, COLORREF fill_clr, COLORREF edge_clr, COLORREF bg_clr, const int radius)
+HBITMAP create_round_rect(HDC hdc_ref, COLORREF fill_clr, COLORREF edge_clr, COLORREF bg_clr, const int radius, const float border_width)
 {
-	const HBITMAP result = CreateCompatibleBitmap(hdc_ref, 32, 32);
+	const auto cxy = radius * 5;
+	const HBITMAP result = CreateCompatibleBitmap(hdc_ref, cxy, cxy);
 
 	if (result)
 	{
@@ -764,7 +775,7 @@ HBITMAP create_round_rect(HDC hdc_ref, COLORREF fill_clr, COLORREF edge_clr, COL
 
 				if (SUCCEEDED(hr))
 				{
-					const RECT rc = {0, 0, 32, 32};
+					const RECT rc = {0, 0, cxy, cxy };
 					hr = rt->BindDC(hdc_bm, &rc);
 				}
 
@@ -777,7 +788,7 @@ HBITMAP create_round_rect(HDC hdc_ref, COLORREF fill_clr, COLORREF edge_clr, COL
 					hr = rt->CreateSolidColorBrush(D2D1::ColorF(ui::bgr(fill_clr), 1.0), &fill_brush);
 
 					D2D1_ROUNDED_RECT r;
-					r.rect = D2D1::RectF(1.0f, 1.0f, 31.0f, 31.0f);
+					r.rect = D2D1::RectF(1.0f, 1.0f, cxy - 1.0f, cxy - 1.0f);
 					r.radiusX = static_cast<float>(radius);
 					r.radiusY = static_cast<float>(radius);
 
@@ -793,7 +804,7 @@ HBITMAP create_round_rect(HDC hdc_ref, COLORREF fill_clr, COLORREF edge_clr, COL
 
 						if (SUCCEEDED(hr))
 						{
-							rt->DrawRoundedRectangle(r, edge_brush.Get(), 2.6f);
+							rt->DrawRoundedRectangle(r, edge_brush.Get(), border_width);
 						}
 					}
 
@@ -1277,7 +1288,7 @@ static void draw_toolbar_button(const ui::command_ptr& command, const owner_cont
 
 static void draw_menu_item(const ui::command_ptr& command, LPDRAWITEMSTRUCT lpDrawItemStruct, owner_context_ptr ctx)
 {
-	const int padding = 2;
+	const int padding = df::round(2 * ctx->scale_factor);
 
 	const HDC dc = lpDrawItemStruct->hDC;
 	const win_rect item_bounds = lpDrawItemStruct->rcItem;
@@ -1288,8 +1299,11 @@ static void draw_menu_item(const ui::command_ptr& command, LPDRAWITEMSTRUCT lpDr
 		auto sep_bounds = item_bounds;
 		sep_bounds.bottom = sep_bounds.top = (sep_bounds.bottom + sep_bounds.top) / 2;
 
+		const auto cx = df::round(8 * ctx->scale_factor);
+		const auto cy = df::round(1 * ctx->scale_factor);
+
 		fill_solid_rect(dc, item_bounds, menu_background);
-		fill_solid_rect(dc, sep_bounds.inflate(-8, 1), ui::average(menu_background, ui::style::color::view_background));
+		fill_solid_rect(dc, sep_bounds.inflate(-cx, cy), ui::average(menu_background, ui::style::color::view_background));
 	}
 	else
 	{
@@ -3112,15 +3126,16 @@ void edit_impl::on_window_nc_calc_size(LPRECT pr) const
 
 	if (pr)
 	{
-		const int line_height = gdi_text_line_height(m_hWnd, GetFont(m_hWnd));
-		const bool is_multi_line = _styles.multi_line;
+		const auto line_height = gdi_text_line_height(m_hWnd, GetFont(m_hWnd));
+		const auto is_multi_line = _styles.multi_line;
+		const auto scale_factor = _ctx->scale_factor;
+		const auto padding = df::round((_styles.rounded_corners ? 8 : 4) * scale_factor);
+		const auto h = pr->bottom - pr->top;
+		const auto cx = padding;
+		const auto cy = is_multi_line ? padding : (h - line_height) / 2;
+		const auto icon_cxy = calc_icon_cxy(scale_factor) + df::round(ui_element_padding * scale_factor);
 
-		const int padding = _styles.rounded_corners ? 8 : 4;
-		const int h = pr->bottom - pr->top;
-		const int cx = padding;
-		const int cy = is_multi_line ? padding : (h - line_height) / 2;
-
-		pr->left += cx + (_icon == icon_index::none ? 0 : 22);
+		pr->left += cx + (_icon == icon_index::none ? 0 : icon_cxy);
 		pr->right -= cx;
 		pr->top += cy;
 		pr->bottom -= cy;
@@ -3138,6 +3153,7 @@ LRESULT edit_impl::on_window_nc_paint(const uint32_t uMsg, const WPARAM wParam, 
 		const auto edit_colors = calc_colors();
 		const auto edge_clr = has_focus ? ui::style::color::dialog_selected_background : _styles.bg_clr;
 		const auto bg_clr = _styles.bg_clr;
+		const auto scale_factor = _ctx->scale_factor;
 
 		win_rect r;
 		GetWindowRect(m_hWnd, r);
@@ -3148,7 +3164,7 @@ LRESULT edit_impl::on_window_nc_paint(const uint32_t uMsg, const WPARAM wParam, 
 		auto* const clip_rgn = CreateRectRgn(outside.left, outside.top, outside.right, outside.bottom);
 		auto* const exclude_rgn = CreateRectRgn(inside.left, inside.top, inside.right, inside.bottom);
 		CombineRgn(clip_rgn, clip_rgn, exclude_rgn, RGN_XOR);
-		SelectClipRgn(hdc, clip_rgn);
+		SelectClipRgn(hdc, clip_rgn);		
 
 		if (_styles.rounded_corners)
 		{
@@ -3157,12 +3173,15 @@ LRESULT edit_impl::on_window_nc_paint(const uint32_t uMsg, const WPARAM wParam, 
 			const auto fill_clr = edit_colors.background;
 			const auto round_rect_key = crypto::hash_gen().append(fill_clr).append(edge_clr).append(bg_clr).result();
 			const auto found_round_rect = _round_rec_skins.find(round_rect_key);
+			const auto corner_radius = df::round(ui_corner_radius * scale_factor);
+			const auto border_width = 2.6f * scale_factor;
+
 			HBITMAP round_rec_skin = nullptr;
 
 			if (found_round_rect == _round_rec_skins.end())
 			{
 				round_rec_skin = _round_rec_skins[round_rect_key] = create_round_rect(
-					hdc, fill_clr, edge_clr, bg_clr, 6 * _ctx->scale_factor);
+					hdc, fill_clr, edge_clr, bg_clr, corner_radius, border_width);
 			}
 			else
 			{
@@ -3174,14 +3193,14 @@ LRESULT edit_impl::on_window_nc_paint(const uint32_t uMsg, const WPARAM wParam, 
 			if (mem_dc)
 			{
 				auto* const old_bitmap = SelectObject(mem_dc, round_rec_skin);
-				streach_box(hdc, mem_dc, outside, 8, 32, true);
+				streach_box(hdc, mem_dc, outside, corner_radius * 2, corner_radius * 5, true);
 				SelectObject(mem_dc, old_bitmap);
 				DeleteDC(mem_dc);
 			}
 		}
 		else if (has_focus)
 		{
-			const int padding = 2;
+			const int padding = df::round(ui_focus_padding * scale_factor);
 
 			// Verticals
 			fill_rect(hdc, edge_clr, recti(outside.left, outside.top, inside.left + padding, outside.bottom));
@@ -3205,9 +3224,9 @@ LRESULT edit_impl::on_window_nc_paint(const uint32_t uMsg, const WPARAM wParam, 
 
 		if (_icon != icon_index::none)
 		{
-			const auto icon_cxy = calc_icon_cxy(_ctx->scale_factor);
+			const auto icon_cxy = calc_icon_cxy(scale_factor);
 			auto rr = outside;
-			rr.left = 8;
+			rr.left = ui_element_padding * scale_factor;
 			rr.right = rr.left + icon_cxy;
 			draw_icon(hdc, _ctx, _icon, rr, ui::style::color::edit_text);
 		}
@@ -3230,9 +3249,7 @@ public:
 	uintptr_t _id = 0;
 	std::wstring _details;
 	std::function<void()> _invoke;
-	owner_context_ptr _ctx;
-
-	static constexpr auto button_padding = 8;
+	owner_context_ptr _ctx;	
 
 	button_impl(owner_context_ptr ctx): _ctx(ctx)
 	{
@@ -3307,6 +3324,8 @@ public:
 		wchar_t text[512];
 		::GetWindowText(pCustomDraw->hdr.hwndFrom, text, 512);
 
+		const auto button_padding = df::round(ui_button_padding * _ctx->scale_factor);
+
 		win_rect button_bounds(pCustomDraw->rc);
 		auto client_bounds = button_bounds.inflate(-button_padding, -button_padding);
 
@@ -3324,8 +3343,9 @@ public:
 		auto* const dc = pCustomDraw->hdc;
 		auto clr_bg = ui::style::color::button_background;
 		auto clr_text = ui::style::color::dialog_text;
+		const auto icon_cxy = calc_icon_cxy(_ctx->scale_factor);
 
-		if (is_radio_button)
+		if (is_check_box || is_radio_button)
 		{
 			fill_solid_rect(dc, button_bounds,
 			                is_focused
@@ -3333,37 +3353,28 @@ public:
 				                : ui::style::color::dialog_background);
 
 			const auto is_checked = GetCheck() != 0;
-			const sizei size(16, 16);
-			const recti icon_bounds(pointi(button_bounds.left + button_padding,
-			                               ((button_bounds.top + button_bounds.bottom) / 2) - (size.cy / 2)), size);
+			const auto icon = is_check_box ? (is_checked ? icon_index::checkbox_on : icon_index::checkbox_off) :
+				(is_checked ? icon_index::radio_on : icon_index::radio_off);
 
-			if (is_checked)
-			{
-				fill_solid_rect(dc, win_rect(icon_bounds), ui::style::color::dialog_selected_background);
+			auto* const old_font = SelectObject(dc, _ctx->icons);
+			const wchar_t sz[2]{ static_cast<wchar_t>(icon), 0 };
+			SIZE icon_extent;
+
+			if (GetTextExtentPoint32(dc, sz, 1, &icon_extent))
+			{				
+				const recti icon_bounds(pointi(button_bounds.left + button_padding,
+					((button_bounds.top + button_bounds.bottom) / 2) - (icon_extent.cx / 2)), sizei(icon_extent.cx, icon_extent.cy));
+
+				if (is_checked)
+				{
+					fill_solid_rect(dc, win_rect(icon_bounds), ui::style::color::dialog_selected_background);
+				}
+
+				draw_icon(dc, _ctx, icon, icon_bounds, clr_text);
+				client_bounds.left += icon_cxy + button_padding;
 			}
 
-			draw_icon(dc, _ctx, is_checked ? icon_index::radio_on : icon_index::radio_off, icon_bounds, clr_text);
-			client_bounds.left += size.cx + button_padding;
-		}
-		else if (is_check_box)
-		{
-			fill_solid_rect(dc, button_bounds,
-			                is_focused
-				                ? ui::style::color::dialog_selected_background
-				                : ui::style::color::dialog_background);
-
-			const auto is_checked = GetCheck() != 0;
-			const sizei size(16, 16);
-			const recti icon_bounds(pointi(button_bounds.left + button_padding,
-			                               ((button_bounds.top + button_bounds.bottom) / 2) - (size.cy / 2)), size);
-
-			if (is_checked)
-			{
-				fill_solid_rect(dc, win_rect(icon_bounds), ui::style::color::dialog_selected_background);
-			}
-
-			draw_icon(dc, _ctx, is_checked ? icon_index::checkbox_on : icon_index::checkbox_off, icon_bounds, clr_text);
-			client_bounds.left += size.cx + button_padding;
+			SelectObject(dc, old_font);
 		}
 		else if (is_disabled)
 		{
@@ -3405,9 +3416,9 @@ public:
 			if (_icon != icon_index::none)
 			{
 				auto r = client_bounds;
-				r.right = r.left + 40;
+				r.right = r.left + icon_cxy + button_padding;
 				draw_icon(dc, _ctx, _icon, r, clr_text);
-				client_bounds.left += 40;
+				client_bounds.left += icon_cxy + button_padding;
 			}
 
 			if (is_radio_button || is_check_box)
@@ -3429,8 +3440,7 @@ public:
 			}
 		}
 		else
-		{
-			const auto icon_cxy = calc_icon_cxy(_ctx->scale_factor);
+		{			
 			auto title_bounds = client_bounds;
 			auto details_bounds = client_bounds;
 			const auto icon_width = _icon == icon_index::none ? 0 : (icon_cxy + button_padding);
@@ -3445,7 +3455,7 @@ public:
 			{
 				auto r = title_bounds;
 				r.right = r.left + icon_cxy;
-				r.top += 3;
+				r.top += button_padding / 2;
 				draw_icon(dc, _ctx, _icon, r, clr_text);
 				title_bounds = title_bounds.offset(icon_width, 0);
 			}
@@ -3466,14 +3476,15 @@ public:
 		const auto style = ::GetWindowLong(m_hWnd, GWL_STYLE);
 		const auto is_radio_button = (style & BS_TYPEMASK) == BS_AUTORADIOBUTTON;
 		const auto is_check_box = (style & BS_TYPEMASK) == BS_AUTOCHECKBOX;
-
+		const auto scale_factor = _ctx->scale_factor;
+		const auto button_padding = df::round(ui_button_padding * scale_factor);
 		auto cx_result = button_padding * 2;
 		auto cy_result = button_padding * 2;
 
-		const auto icon_cxy = calc_icon_cxy(_ctx->scale_factor);
+		const auto icon_cxy = calc_icon_cxy(scale_factor);
 		auto icon_width = 0;
-		if (_icon != icon_index::none) icon_width += icon_cxy + 8;
-		if (is_radio_button || is_check_box) icon_width += 16 + button_padding;
+		if (_icon != icon_index::none) icon_width += icon_cxy + button_padding;
+		if (is_radio_button || is_check_box) icon_width += icon_cxy + button_padding;
 
 		const auto dc = GetDC(m_hWnd);
 
@@ -3506,7 +3517,7 @@ public:
 			ReleaseDC(m_hWnd, dc);
 		}
 
-		return {cx_result, cy_result};
+		return { cx_result, cy_result };
 	}
 
 	sizei measure(int cx) const override
@@ -3625,8 +3636,7 @@ public:
 	std::function<void(df::date_t)> _changed;
 	df::date_t _val;
 	ui::color_style _colors;
-	const bool _include_time = false;
-	const int _cx_min = 160;
+	const bool _include_time = false;	
 	owner_context_ptr _ctx;
 
 	date_time_control_impl(owner_context_ptr ctx, const df::date_t val, std::function<void(df::date_t)> changed,
@@ -3784,9 +3794,11 @@ public:
 
 	LRESULT on_window_layout(uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam)
 	{
-		const auto cx_min = _include_time ? _cx_min * 2 : _cx_min;
+		const auto scale_factor = _ctx->scale_factor;
+		const auto cx_min = df::round(160 * scale_factor);		
+		const auto cx = _include_time ? cx_min * 2 : cx_min;
 
-		_extent = {std::min(cx_min, static_cast<int>(LOWORD(lParam))), HIWORD(lParam)};
+		_extent = {std::min(cx, static_cast<int>(LOWORD(lParam))), HIWORD(lParam)};
 
 		auto date_bounds = win_rect(_extent);
 		auto time_bounds = win_rect(_extent);
@@ -3815,7 +3827,11 @@ public:
 	{
 		win_rect r;
 		GetClientRect(_date_control, &r);
-		const int cx_result = _include_time ? cx : std::min(_cx_min, cx);
+
+		const auto scale_factor = _ctx->scale_factor;
+		const auto cx_min = df::round(160 * scale_factor);
+		const auto xx = _include_time ? cx_min * 2 : cx_min;
+		const int cx_result = _include_time ? cx : std::min(xx, cx);
 		return {cx_result, r.height()};
 	}
 
@@ -4153,8 +4169,14 @@ void frame_base::create_draw_context(const factories_ptr& f, const bool use_d3d,
 
 	if (_draw_ctx && _gdi_ctx)
 	{
-		_draw_ctx->scale_factor = _gdi_ctx->scale_factor;
-		_draw_ctx->icon_cxy = calc_icon_cxy(_gdi_ctx->scale_factor);
+		const auto scale_factor = _gdi_ctx->scale_factor;
+		_draw_ctx->scale_factor = scale_factor;
+		_draw_ctx->icon_cxy = calc_icon_cxy(scale_factor);
+		_draw_ctx->component_snap = df::round(ui_component_snap * scale_factor);
+		_draw_ctx->baseline_snap = df::round(ui_baseline_snap * scale_factor);
+		_draw_ctx->cx_resize_handle = df::round(ui_cx_resize_handle * scale_factor);
+		_draw_ctx->scroll_width = df::round(ui_scroll_width * scale_factor);
+		
 	}
 }
 
@@ -5037,8 +5059,14 @@ public:
 	{
 		if (_draw_ctx && _gdi_ctx)
 		{
-			_draw_ctx->scale_factor = _gdi_ctx->scale_factor;
-			_draw_ctx->icon_cxy = calc_icon_cxy(_gdi_ctx->scale_factor);
+
+			const auto scale_factor = _gdi_ctx->scale_factor;
+			_draw_ctx->scale_factor = scale_factor;
+			_draw_ctx->icon_cxy = calc_icon_cxy(scale_factor);
+			_draw_ctx->component_snap = df::round(ui_component_snap * scale_factor);
+			_draw_ctx->baseline_snap = df::round(ui_baseline_snap * scale_factor);
+			_draw_ctx->cx_resize_handle = df::round(ui_cx_resize_handle * scale_factor);
+			_draw_ctx->scroll_width = df::round(ui_scroll_width * scale_factor);
 		}
 
 		if (is_valid_device())
@@ -6115,12 +6143,13 @@ public:
 	{
 		if (lpMeasureItemStruct->CtlType == ODT_MENU)
 		{
+			const auto scale = scale_factor();
 			const auto found = _menu_commands.find(lpMeasureItemStruct->itemID);
 
 			if (found == _menu_commands.end())
 			{
 				lpMeasureItemStruct->itemWidth = 0;
-				lpMeasureItemStruct->itemHeight = 8;
+				lpMeasureItemStruct->itemHeight = df::round(8 * scale);
 			}
 			else
 			{
@@ -6140,9 +6169,10 @@ public:
 					DrawText(dc, keyboard_accelerator_w.data(), static_cast<int>(keyboard_accelerator_w.size()),
 					         &keyboard_accelerator_bounds, DT_SINGLELINE | DT_LEFT | DT_CALCRECT);
 					SelectObject(dc, old_font);
+					
 
-					lpMeasureItemStruct->itemWidth = text_bounds.width() + keyboard_accelerator_bounds.width() + 64;
-					lpMeasureItemStruct->itemHeight = std::max(text_bounds.height() + 8, 20);
+					lpMeasureItemStruct->itemWidth = text_bounds.width() + keyboard_accelerator_bounds.width() + df::round(64 * scale);
+					lpMeasureItemStruct->itemHeight = std::max(text_bounds.height() + df::round(8 * scale), df::round(20 * scale));
 
 					ReleaseDC(m_hWnd, dc);
 				}
@@ -6229,8 +6259,13 @@ public:
 
 		if (_draw_ctx && _gdi_ctx)
 		{
-			_draw_ctx->scale_factor = _gdi_ctx->scale_factor;
-			_draw_ctx->icon_cxy = calc_icon_cxy(_gdi_ctx->scale_factor);
+			const auto scale_factor = _gdi_ctx->scale_factor;
+			_draw_ctx->scale_factor = scale_factor;
+			_draw_ctx->icon_cxy = calc_icon_cxy(scale_factor);
+			_draw_ctx->component_snap = df::round(ui_component_snap * scale_factor);
+			_draw_ctx->baseline_snap = df::round(ui_baseline_snap * scale_factor);
+			_draw_ctx->cx_resize_handle = df::round(ui_cx_resize_handle * scale_factor);
+			_draw_ctx->scroll_width = df::round(ui_scroll_width * scale_factor);
 		}
 
 		if (_gdi_ctx)
@@ -6348,28 +6383,29 @@ public:
 	ui::bubble_window_ptr create_bubble() override;
 
 	HHOOK _hMenuHook = nullptr;
-	//static this_class* _current;
+	static this_class* _current;
 	//std::vector<HWND> _menuStack;
 	win_rect m_rcButton;
 
 
-	static LRESULT on_menu_nc_calc_size(HWND hwnd, uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam)
+	LRESULT on_menu_nc_calc_size(HWND hwnd, uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam)
 	{
 		auto calc_valid_rects = static_cast<BOOL>(wParam);
 		const auto pr = std::bit_cast<LPRECT>(lParam);
 
 		if (pr)
 		{
-			pr->left += menu_size_border.cx;
-			pr->right -= menu_size_border.cx;
-			pr->top += menu_size_border.cy;
-			pr->bottom -= menu_size_border.cy;
+			const auto padding = menu_size_border * _draw_ctx->scale_factor;
+			pr->left += padding.cx;
+			pr->right -= padding.cx;
+			pr->top += padding.cy;
+			pr->bottom -= padding.cy;
 		}
-
+		
 		return 0;
 	}
 
-	static LRESULT on_menu_nc_paint(HWND hwnd, uint32_t /*uMsg*/, WPARAM wParam, LPARAM /*lParam*/)
+	LRESULT on_menu_nc_paint(HWND hwnd, uint32_t /*uMsg*/, WPARAM wParam, LPARAM /*lParam*/)
 	{
 		auto dc = GetDCEx(hwnd, std::bit_cast<HRGN>(wParam), DCX_WINDOW | DCX_INTERSECTRGN | 0x10000);
 		if (!dc) dc = GetWindowDC(hwnd);
@@ -6386,14 +6422,16 @@ public:
 		return 1;
 	}
 
-	static void draw_menu(HDC dc, const win_rect& rcWin)
+	void draw_menu(HDC dc, const win_rect& rcWin)
 	{
+		const auto padding = menu_size_border * _draw_ctx->scale_factor;
+
 		fill_solid_rect(dc, rcWin, ui::lighten(ui::style::color::menu_background, 0.22f));
-		fill_solid_rect(dc, rcWin.inflate(-menu_size_border.cx, -menu_size_border.cy),
+		fill_solid_rect(dc, rcWin.inflate(-padding.cx, -padding.cy),
 		                ui::style::color::menu_background);
 	}
 
-	static LRESULT on_menu_print(HWND hwnd, uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam)
+	LRESULT on_menu_print(HWND hwnd, uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam)
 	{
 		const HDC dc = std::bit_cast<HDC>(wParam);
 		win_rect rcWin;
@@ -6441,11 +6479,11 @@ public:
 	static LRESULT CALLBACK MenuSuperProc(HWND hWnd, UINT uMsg, WPARAM wParam,
 	                                      LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData)
 	{
-		//auto pt = std::bit_cast<control_host_impl*>(dwRefData);
+		auto pt = reinterpret_cast<control_host_impl*>(dwRefData);
 
-		if (uMsg == WM_NCPAINT) return on_menu_nc_paint(hWnd, uMsg, wParam, lParam);
-		if (uMsg == WM_PRINT) return on_menu_print(hWnd, uMsg, wParam, lParam);
-		if (uMsg == WM_NCCALCSIZE) return on_menu_nc_calc_size(hWnd, uMsg, wParam, lParam);
+		if (uMsg == WM_NCPAINT) return pt->on_menu_nc_paint(hWnd, uMsg, wParam, lParam);
+		if (uMsg == WM_PRINT) return pt->on_menu_print(hWnd, uMsg, wParam, lParam);
+		if (uMsg == WM_NCCALCSIZE) return pt->on_menu_nc_calc_size(hWnd, uMsg, wParam, lParam);
 
 		return DefSubclassProc(hWnd, uMsg, wParam, lParam);
 	}
@@ -6455,7 +6493,7 @@ public:
 		const LRESULT lRet = 0;
 		wchar_t szClassName[7];
 
-		//auto current = _current;
+		auto current = _current;
 
 		if (nCode == HCBT_CREATEWND)
 		{
@@ -6467,7 +6505,7 @@ public:
 				//_current->_menuStack.emplace_back(hWndMenu);
 
 				// Subclass to a flat-looking menu
-				SetWindowSubclass(hWndMenu, MenuSuperProc, 0, static_cast<DWORD_PTR>(0));
+				SetWindowSubclass(hWndMenu, MenuSuperProc, 0, reinterpret_cast<DWORD_PTR>(_current));
 				SetWindowPos(hWndMenu, HWND_TOP, 0, 0, 0, 0,
 				             SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED |
 				             SWP_DRAWFRAME);
@@ -6489,21 +6527,21 @@ public:
 			//lRet = CallNextHookEx(current->_hMenuHook, nCode, wParam, lParam);
 		}
 		return lRet;
-	}
+	}	
 
 	int show_menu(HMENU hMenu, uint32_t menu_style, int x, int y, LPCRECT pr = nullptr)
 	{
 		df::scope_locked_inc sl2(df::command_active);
 
-		//const auto prev_current = _current;
-		//_current = this;
+		const auto prev_current = _current;
+		_current = this;
 		_hMenuHook = ::SetWindowsHookEx(WH_CBT, menu_create_hook_proc, get_resource_instance, GetCurrentThreadId());
 
 		const auto result = TrackPopupMenu(hMenu, menu_style, x, y, 0, m_hWnd, pr);
 
 		UnhookWindowsHookEx(_hMenuHook);
 		_hMenuHook = nullptr;
-		//_current = prev_current;
+		_current = prev_current;
 
 		return result;
 	}
@@ -6940,6 +6978,7 @@ LRESULT control_host_impl::on_window_nc_hit_test(const uint32_t uMsg, const WPAR
 		GetClientRect(m_hWnd, &rc);
 
 		const auto scale_factor = _draw_ctx ? _draw_ctx->scale_factor : 1.0;
+		const auto cx_resize_handle = _draw_ctx ? _draw_ctx->cx_resize_handle * scale_factor : 14;		
 		const auto border_thickness = df::round(nonclient_border_thickness * scale_factor);
 
 		enum { left = 1, top = 2, right = 4, bottom = 8 };
@@ -6958,7 +6997,7 @@ LRESULT control_host_impl::on_window_nc_hit_test(const uint32_t uMsg, const WPAR
 		if (hit & right) return HTRIGHT;
 		if (hit & bottom) return HTBOTTOM;
 
-		if (loc.x >= _extent.cx - ui::cx_resize_handle && loc.y >= _extent.cy - ui::cx_resize_handle)
+		if (loc.x >= _extent.cx - cx_resize_handle && loc.y >= _extent.cy - cx_resize_handle)
 		{
 			return HTBOTTOMRIGHT;
 		}
@@ -7361,8 +7400,9 @@ public:
 
 		if (has_defined_button_extent)
 		{
-			SetButtonSize(df::round(_styles.button_extent.cx * _ctx->scale_factor),
-			              df::round(_styles.button_extent.cy * _ctx->scale_factor));
+			const auto scale_factor = _ctx->scale_factor;
+			SetButtonSize(df::round(_styles.button_extent.cx * scale_factor),
+			              df::round(_styles.button_extent.cy * scale_factor));
 			AutoSize();
 		}
 		else
@@ -8156,7 +8196,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 	try
 	{
+		// Done in manifest
 		//SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE);
+
+		// Does not improve performance but worth testing later
+		//HANDLE heap = GetProcessHeap();
+		//ULONG heapCompatibility = HEAP_CREATE_SEGMENT_HEAP;
+		//HeapSetInformation(heap, HeapCompatibilityInformation, &heapCompatibility, sizeof(heapCompatibility));
 
 		init_color_styles();
 		unhandled_exception_filter exceptions;
@@ -8296,7 +8342,7 @@ df::blob load_resource(const int id, const LPCWSTR lpType)
 	return result;
 }
 
-//control_host_impl* control_host_impl::_current = nullptr;
+control_host_impl* control_host_impl::_current = nullptr;
 
 LRESULT control_host_impl::on_window_timer(uint32_t, WPARAM, LPARAM)
 {

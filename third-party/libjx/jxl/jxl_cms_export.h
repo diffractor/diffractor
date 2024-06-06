@@ -1,1 +1,2 @@
 #define JXL_CMS_EXPORT
+#define JXL_CMS_NO_EXPORT

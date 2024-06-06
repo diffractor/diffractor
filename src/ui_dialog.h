@@ -28,10 +28,6 @@ namespace ui
 		return (mc.text_line_height(style::font_size::dialog) * lines) + mc.component_snap;
 	}
 
-	const static int control_padding_vertical = 4;
-	const static int button_padding_vertical = 24;
-
-
 	class auto_complete_match : public view_element
 	{
 	public:
@@ -115,12 +111,13 @@ namespace ui
 		{
 			bounds = bounds_in;
 
+			const auto num_extent = mc.measure_text(u8"00.00"sv, style::font_size::dialog, style::text_style::single_line, bounds.width());
 			auto slider_bounds = bounds;
 			auto edit_bounds = bounds;
-			const auto split = bounds.right - 80;
+			const auto split = bounds.right - (num_extent.cx + (mc.component_snap * 2));
 
-			edit_bounds.left = split + 4;
-			slider_bounds.right = split - 4;
+			edit_bounds.left = split + mc.baseline_snap;
+			slider_bounds.right = split - mc.baseline_snap;
 
 			positions.emplace_back(_slider, slider_bounds, is_visible());
 			positions.emplace_back(_edit, edit_bounds, is_visible());
@@ -444,10 +441,10 @@ namespace ui
 	{
 		std::u8string& _text;
 		edit_ptr _edit;
-		int _edit_height;
+		const int _edit_height;
 
 	public:
-		multi_line_edit_control(const control_frame_ptr& h, std::u8string& v, int height = 80,
+		multi_line_edit_control(const control_frame_ptr& h, std::u8string& v, int height = 6,
 		                        bool wants_return = false) : _text(v), _edit_height(height)
 		{
 			edit_styles style;
@@ -483,14 +480,14 @@ namespace ui
 
 		sizei measure(measure_context& mc, const int cx) const override
 		{
-			return {cx, _edit_height};
+			return {cx, _edit_height * mc.text_line_height(ui::style::font_size::dialog) };
 		}
 
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
 		{
 			bounds = bounds_in;
 			auto rEdit = bounds;
-			rEdit.bottom = rEdit.top + _edit_height;
+			//rEdit.bottom = rEdit.top + _edit_height;
 			positions.emplace_back(_edit, rEdit, is_visible());
 		}
 	};
@@ -1721,7 +1718,7 @@ namespace ui
 			auto max_row_width = 0;
 
 
-			const int scroll_padding = can_scroll && _scroller.can_scroll() ? view_scroller::def_width : 0;
+			const int scroll_padding = can_scroll && _scroller.can_scroll() ? mc.scroll_width : 0;
 			const int cx_avail = cx - scroll_padding;
 
 			for (const auto& r : _rows)
@@ -1731,7 +1728,7 @@ namespace ui
 
 				for (auto i = 0u; i < r.cells.size(); ++i)
 				{
-					const auto padding = r.cells[i].element->porch();
+					const auto padding = r.cells[i].element->porch() * mc.scale_factor;
 					const auto extent = r.cells[i].element->measure(mc, cx_avail);
 					row_width += col_widths[i] = std::max(col_widths[i], extent.cx + (padding.cx * 2));
 				}
@@ -1777,7 +1774,7 @@ namespace ui
 				for (auto i = 0u; i < r.cells.size(); ++i)
 				{
 					const auto xx = col_widths[i];
-					const auto padding = r.cells[i].element->porch();
+					const auto padding = r.cells[i].element->porch() * mc.scale_factor;
 					const auto extent = r.cells[i].element->measure(mc, xx - (padding.cx * 2));
 					const auto cell_height = extent.cy + (padding.cy * 2);
 					if (row_height < cell_height) row_height = cell_height;
@@ -1793,7 +1790,7 @@ namespace ui
 				// vertical center
 				for (auto&& c : r.cells)
 				{
-					const auto padding = c.element->porch();
+					const auto padding = c.element->porch() * mc.scale_factor;
 					const auto yy = (row_height - c.extent.cy - (padding.cy * 2)) / 2;
 					c.offset.y += yy;
 				}
@@ -1807,7 +1804,7 @@ namespace ui
 			measure(mc, bounds_in.width());
 
 			const auto needs_scroll = _total_height > bounds_in.height();
-			const int scroll_cx = needs_scroll ? view_scroller::def_width : 0;
+			const int scroll_cx = needs_scroll ? mc.scroll_width : 0;
 
 			bounds = bounds_in;
 			bool alt_row = false;
@@ -1880,7 +1877,7 @@ namespace ui
 						{
 							auto alt_bounds = row_bounds;
 							if (show_scroll) alt_bounds.right = _scroller.scroll_bounds().left;
-							dc.draw_rounded_rect(alt_bounds, color(0x000000, dc.colors.alpha / 11.11f));
+							dc.draw_rounded_rect(alt_bounds, color(0x000000, dc.colors.alpha / 11.11f), dc.baseline_snap);
 						}
 
 						for (const auto& e : r.cells)
@@ -2018,7 +2015,7 @@ namespace ui
 			_extent = mc.measure_text(_text, style::font_size::dialog, style::text_style::multiline,
 			                          cx - (button_width + 8));
 			_extent.cx += 8;
-			return {cx, std::max(_extent.cy, default_control_height(mc) + button_padding_vertical)};
+			return {cx, std::max(_extent.cy, default_control_height(mc) + mc.component_snap * 2)};
 		}
 
 		void text(const std::u8string_view a)
@@ -2340,7 +2337,7 @@ namespace ui
 
 			for (const auto& d : dims)
 			{
-				total_width += d.cx + 1;
+				total_width += d.cx + mc.baseline_snap;
 			}
 
 			if (total_width > avail_width)
@@ -2356,7 +2353,7 @@ namespace ui
 
 			for (const auto& d : dims)
 			{
-				total_width += d.cx + 1;
+				total_width += d.cx + mc.baseline_snap;
 				max_height = std::max(max_height, d.cy);
 			}
 
@@ -2373,19 +2370,19 @@ namespace ui
 
 			for (const auto& d : _surface_extents)
 			{
-				total_width += d.cx + 1;
+				total_width += d.cx + mc.baseline_snap;
 			}
 
 			_surface_bounds.clear();
 			_surface_bounds.reserve(_surface_extents.size());
 
-			int x = bounds.right - total_width + mc.component_snap;
+			int x = bounds.right - (total_width + mc.component_snap);
 
 			for (const auto& d : _surface_extents)
 			{
 				const auto y = bounds.top + ((bounds.height() - d.cy) / 2);
 				_surface_bounds.emplace_back(x, y, x + d.cx, y + d.cy);
-				x += d.cx + 1;
+				x += d.cx + mc.baseline_snap;
 			}
 		}
 
@@ -2515,17 +2512,20 @@ namespace ui
 		sizei measure(measure_context& mc, const int cx) const override
 		{
 			_measurements.clear();
-			const auto layout = calc_stack_elements(mc, bounds, _controls, false, {
-				                                        padding.cx + margin.cx, padding.cy + margin.cy
-			                                        });
+			const auto pad = padding * mc.scale_factor;
+			const auto marg = margin * mc.scale_factor;
+			const auto scaled_padding = pad + marg;
+			const auto layout = calc_stack_elements(mc, bounds, _controls, false, scaled_padding);
 			return {cx, layout.cy};
 		}
 
 		void layout(measure_context& mc, const recti bounds, control_layouts& positions) override
 		{
 			view_element::layout(mc, bounds, positions);
-			const auto y = stack_elements(mc, positions, bounds, _controls, false,
-			                              {padding.cx + margin.cx, padding.cy + margin.cy});
+			const auto pad = padding * mc.scale_factor;
+			const auto marg = margin * mc.scale_factor;
+			const auto scaled_padding = pad + marg;
+			const auto y = stack_elements(mc, positions, bounds, _controls, false, scaled_padding);
 		}
 
 		void render(draw_context& dc, const pointi element_offset) const override
@@ -2542,7 +2542,8 @@ namespace ui
 			{
 				const auto border_clr = color(dc.colors.foreground, dc.colors.alpha);
 				const auto bb = bounds.offset(element_offset);
-				dc.draw_border(bb.inflate(2), bb, border_clr, border_clr);
+				const auto pad = df::round(2 * dc.scale_factor);
+				dc.draw_border(bb.inflate(pad), bb, border_clr, border_clr);
 			}
 		}
 
@@ -2574,17 +2575,14 @@ namespace ui
 		struct col_entry
 		{
 			view_element_ptr e;
-			int prefered_width = 0;
+			screen_units preferred_width = { 0 };
 			mutable int width = 0;
 			mutable int x = 0;
 			mutable sizei extent;
 		};
 
 		std::vector<col_entry> _controls;
-
-		const int padding = 9;
 		mutable int max_x = 0;
-
 		bool compact = false;
 
 
@@ -2597,11 +2595,11 @@ namespace ui
 		{
 			for (const auto& c : controls)
 			{
-				_controls.emplace_back(c, 0, 0, 0);
+				_controls.emplace_back(c, ui::screen_units { 0 }, 0, 0);
 			}
 		}
 
-		void add(const view_element_ptr& p, const int width = 0)
+		void add(const view_element_ptr& p, const ui::screen_units width = { 0 })
 		{
 			_controls.emplace_back(p, width, 0, 0);
 		}
@@ -2640,16 +2638,18 @@ namespace ui
 			int my = 0;
 			int mx = 0;
 
-			auto cx_split_avail = cx - (padding * (static_cast<int>(_controls.size()) - 1));
-			auto split_cols = 0;
+			auto cx_split_avail = cx - (mc.component_snap * (static_cast<int>(_controls.size()) - 1));
+			auto split_cols = 0;			
 
 			for (const auto& c : _controls)
 			{
+				const auto prefered_width = c.preferred_width * mc.scale_factor;
+
 				if (c.e->is_visible())
-				{
-					if (c.prefered_width)
+				{					
+					if (prefered_width)
 					{
-						cx_split_avail -= c.prefered_width;
+						cx_split_avail -= prefered_width;
 					}
 					else
 					{
@@ -2664,7 +2664,8 @@ namespace ui
 			{
 				if (c.e->is_visible() && !c.e->is_style_bit_set(view_element_style::shrink))
 				{
-					c.extent = c.e->measure(mc, c.prefered_width ? c.width : cx_split);
+					const auto prefered_width = c.preferred_width * mc.scale_factor;
+					c.extent = c.e->measure(mc, prefered_width ? c.width : cx_split);
 					mx = std::max(mx, c.extent.cx);
 					my = std::max(my, c.extent.cy);
 				}
@@ -2674,9 +2675,11 @@ namespace ui
 			{
 				if (c.e->is_visible())
 				{
-					if (c.prefered_width > 0)
+					const auto prefered_width = c.preferred_width * mc.scale_factor;
+
+					if (prefered_width > 0)
 					{
-						c.width = c.prefered_width ? c.prefered_width : cx_split;
+						c.width = prefered_width ? prefered_width : cx_split;
 					}
 					else if (compact)
 					{
@@ -2716,7 +2719,7 @@ namespace ui
 
 			for (const auto& c : _controls)
 			{
-				cx += c.width + padding;
+				cx += c.width + mc.component_snap;
 			}
 
 			auto x = bounds.left + ((bounds.left + bounds.right - cx) / 2);
@@ -2730,7 +2733,7 @@ namespace ui
 						const auto child_bounds = recti(x, y, x + c.width, y + bounds.height());
 						c.e->layout(mc, child_bounds, positions);
 						c.x = x;
-						x += c.width + padding;
+						x += c.width + mc.component_snap;
 					}
 				}
 			}
@@ -2857,9 +2860,7 @@ namespace ui
 		mutable sizei _child_extent;
 		view_element_ptr _child;
 		icon_index _icon = icon_index::none;
-		std::u8string _details;
-
-		const static int wide_name_width = 166;
+		std::u8string _details;		
 
 	public:
 		check_control(const control_frame_ptr& h, const std::u8string_view text, bool& val, const bool is_radio = false,
@@ -2910,12 +2911,12 @@ namespace ui
 		sizei measure(measure_context& mc, const int cx) const override
 		{
 			if (_is_wide_format)
-			{
-				_check_extent = _check->measure(wide_name_width);
+			{				
+				_check_extent = _check->measure(cx / 2);
 
 				if (_child)
 				{
-					_child_extent = _child->measure(mc, cx - wide_name_width);
+					_child_extent = _child->measure(mc, cx - (_check_extent.cx + mc.component_snap));
 				}
 				else
 				{
@@ -2928,10 +2929,11 @@ namespace ui
 
 			_check_extent = _check->measure(cx);
 			auto cy_result = _check_extent.cy;
+			const auto indent = mc.component_snap * 3;
 
 			if (_child)
-			{
-				_child_extent = _child->measure(mc, cx - 64);
+			{				
+				_child_extent = _child->measure(mc, cx - (indent + mc.component_snap));
 				cy_result += _child_extent.cy;
 			}
 			else
@@ -2939,7 +2941,7 @@ namespace ui
 				_child_extent = sizei(0, 0);
 			}
 
-			return {std::max(_check_extent.cx, _child_extent.cx + 64), cy_result};
+			return {std::max(_check_extent.cx, _child_extent.cx + indent), cy_result};
 		}
 
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
@@ -2952,7 +2954,7 @@ namespace ui
 				if (_child)
 				{
 					auto child_bounds = bounds;
-					child_bounds.left += wide_name_width;
+					child_bounds.left += (_check_extent.cx + mc.component_snap);
 					_child->layout(mc, child_bounds, positions);
 				}
 			}
@@ -2960,9 +2962,11 @@ namespace ui
 			{
 				if (_child)
 				{
-					auto child_bounds = bounds.inflate(-32, 0);
+					const auto indent = mc.component_snap * 3;
+					auto child_bounds = bounds;
+					child_bounds.left += indent;
 					child_bounds.top += _check_extent.cy;
-					child_bounds.bottom = child_bounds.top + _child_extent.cy;
+					//child_bounds.bottom = child_bounds.top + _child_extent.cy;
 					_child->layout(mc, child_bounds, positions);
 				}
 			}
@@ -3053,24 +3057,20 @@ namespace ui
 
 		sizei measure(measure_context& mc, const int cx) const override
 		{
-			const auto ok_extent = mc.measure_text(_ok_text, style::font_size::dialog, style::text_style::single_line,
-			                                       cx);
-			const auto cancel_extent = mc.measure_text(_cancel_text, style::font_size::dialog,
-			                                           style::text_style::single_line, cx);
-			const auto padding = mc.component_snap * 2;
+			const auto ok_extent = _ok->measure(cx);
+			const auto cancel_extent = _cancel->measure(cx);
 
-			_ok_width = std::max(100, ok_extent.cx + padding);
-			_cancel_width = std::max(100, cancel_extent.cx + padding);
+			_ok_width = std::max(cx / 5, ok_extent.cx + mc.component_snap);
+			_cancel_width = std::max(cx / 5, cancel_extent.cx + mc.component_snap);
 
-			return {cx, std::max(ok_extent.cy, cancel_extent.cy) + mc.component_snap + button_padding_vertical};
+			return {cx, std::max(ok_extent.cy, cancel_extent.cy) + mc.component_snap};
 		}
 
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
 		{
 			bounds = bounds_in;
-			const auto padding = 4;
 
-			const auto total_button_width = _ok_width + _cancel_width + (padding * 2);
+			const auto total_button_width = _ok_width + _cancel_width + mc.component_snap;
 			const auto button_rect = center_rect(sizei{total_button_width, bounds.height()}, bounds);
 
 			auto rok = button_rect;
@@ -3117,22 +3117,17 @@ namespace ui
 
 		sizei measure(measure_context& mc, const int cx) const override
 		{
-			const auto ok_extent = mc.measure_text(_ok_text, style::font_size::dialog, style::text_style::single_line,
-			                                       cx);
-			const auto cancel_extent = mc.measure_text(_cancel_text, style::font_size::dialog,
-			                                           style::text_style::single_line, cx);
-			const auto analyze_extent = mc.measure_text(_analyze_text, style::font_size::dialog,
-			                                            style::text_style::single_line, cx);
-			const auto padding = mc.component_snap * 2;
+			const auto ok_extent = _ok->measure(cx);
+			const auto cancel_extent = _cancel->measure(cx);
+			const auto analyze_extent = _analyze->measure(cx);
 
-			_ok_width = std::max(100, ok_extent.cx + padding);
-			_cancel_width = std::max(100, cancel_extent.cx + padding);
-			_analyze_width = std::max(100, analyze_extent.cx + padding);
+			_ok_width = std::max(cx / 5, ok_extent.cx + mc.component_snap);
+			_cancel_width = std::max(cx / 5, cancel_extent.cx + mc.component_snap);
+			_analyze_width = std::max(cx / 5, analyze_extent.cx + mc.component_snap);
 
 			return {
 				cx,
-				std::max(std::max(ok_extent.cy, analyze_extent.cy), cancel_extent.cy) + mc.component_snap +
-				button_padding_vertical
+				std::max(std::max(ok_extent.cy, analyze_extent.cy), cancel_extent.cy) + mc.component_snap
 			};
 		}
 
@@ -3140,7 +3135,7 @@ namespace ui
 		{
 			bounds = bounds_in;
 
-			const auto total_button_width = _ok_width + _cancel_width + _analyze_width + (3 * mc.component_snap);
+			const auto total_button_width = _ok_width + _cancel_width + _analyze_width + (2 * mc.component_snap);
 			const auto button_rect = center_rect(sizei{total_button_width, bounds.height()}, bounds);
 
 			auto ranalyze = button_rect;
@@ -3187,13 +3182,18 @@ namespace ui
 
 		sizei measure(measure_context& mc, const int cx) const override
 		{
-			return {cx, default_control_height(mc) + button_padding_vertical};
+			const auto button_extent = _button->measure(cx);
+			
+			return {cx, button_extent.cy + mc.component_snap };
 		}
 
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
 		{
 			bounds = bounds_in;
-			positions.emplace_back(_button, center_rect(sizei(100, bounds.height()), bounds), is_visible());
+			const auto button_extent = _button->measure(bounds_in.width());
+			const auto  width = std::max(bounds_in.width() / 5, button_extent.cx + mc.component_snap);
+
+			positions.emplace_back(_button, center_rect(sizei{ width , bounds_in.height() }, bounds), is_visible());
 		}
 	};
 
@@ -3363,8 +3363,8 @@ namespace ui
 				}
 
 				const auto y_max = y + mc.component_snap;
-				const recti scroll_bounds{_extent.cx - view_scroller::def_width, 0, _extent.cx, _extent.cy};
-				const recti client_bounds{0, 0, _extent.cx - view_scroller::def_width, _extent.cy};
+				const recti scroll_bounds{_extent.cx - mc.scroll_width, 0, _extent.cx, _extent.cy};
+				const recti client_bounds{0, 0, _extent.cx - mc.scroll_width, _extent.cy};
 				_scroller.layout({client_bounds.width(), y_max}, client_bounds, scroll_bounds);
 
 				if (_completes->resize_to_show_results)
@@ -3425,7 +3425,8 @@ namespace ui
 			if (setting.show_debug_info && _active_controller)
 			{
 				const auto c = color(1.0f, 0.0f, 0.0f, dc.colors.alpha);
-				dc.draw_border(_controller_bounds, _controller_bounds.inflate(2), c, c);
+				const auto pad = df::round(2 * dc.scale_factor);
+				dc.draw_border(_controller_bounds, _controller_bounds.inflate(pad), c, c);
 			}
 		}
 
@@ -3666,8 +3667,8 @@ public:
 	std::any _parent_focus = false;
 	int _layout_height = 0;
 	int _layout_width = 0;
-	int _max_height = 0;
-	int _max_width = 0;
+	ui::screen_units _max_height = { 0 };
+	ui::screen_units _max_width = { 0 };
 	ui::color _background = ui::style::color::dialog_background;
 	ui::color _clr = ui::style::color::dialog_text;
 	ui::coll_widths _label_width;
@@ -3732,10 +3733,10 @@ public:
 		}
 	}
 
-	void show_status(icon_index icon, const std::u8string_view text, int cx = 333, int cy = 600)
+	void show_status(icon_index icon, const std::u8string_view text, ui::screen_units cx = { 33 }, ui::screen_units cy = { 66 })
 	{
 		const auto scale_factor = _frame->scale_factor();
-		const auto extent = sizei{df::round(static_cast<double>(cx) * scale_factor), df::round(static_cast<double>(cy) * scale_factor)};
+		const auto extent = sizei{cx * scale_factor, cy * scale_factor };
 		_frame->position(center_rect(extent,_parent->window_bounds()));
 
 		const std::vector<view_element_ptr> controls = {std::make_shared<ui::busy_control>(_frame, icon, text)};
@@ -3745,7 +3746,7 @@ public:
 	}
 
 	void show_cancel_status(icon_index icon, const std::u8string_view text, const std::function<void()>& cb,
-	                        int cx = 333, int cy = 600)
+		ui::screen_units cx = { 33 }, ui::screen_units cy = { 66 })
 	{
 		_close_cb = [f = _frame, cb]()
 		{
@@ -3753,7 +3754,10 @@ public:
 			f->close(true);
 		};
 
-		_frame->position(center_rect(sizei{cx, cy}, _parent->window_bounds()));
+		const auto scale_factor = _frame->scale_factor();
+		const auto extent = sizei{ cx * scale_factor, cy * scale_factor };
+		_frame->position(center_rect(extent, _parent->window_bounds()));
+
 		const std::vector<view_element_ptr> controls = {
 			std::make_shared<ui::busy_control>(_frame, icon, text),
 			std::make_shared<ui::close_control>(_frame, _close_cb, tt.button_cancel)
@@ -3763,7 +3767,7 @@ public:
 		_frame->show(true);
 	}
 
-	void show_message(icon_index icon, const std::u8string_view title, const std::u8string_view text, int cx = 333)
+	void show_message(icon_index icon, const std::u8string_view title, const std::u8string_view text, ui::screen_units cx = { 33 })
 	{
 		const std::vector<view_element_ptr> controls = {
 			std::make_shared<ui::title_control2>(_frame, icon, title, text),
@@ -3773,10 +3777,12 @@ public:
 		show_modal(controls, cx);
 	}
 
-	ui::close_result show_modal(const std::vector<view_element_ptr>& controls, int width = 444, int height = 800)
+	ui::close_result show_modal(const std::vector<view_element_ptr>& controls, ui::screen_units cx = { 44 }, ui::screen_units cy = { 88 })
 	{
-		_frame->position(center_rect(sizei{width, height}, ui::desktop_bounds(true)));
-		show_controls(controls, width, height);
+		const auto scale_factor = _frame->scale_factor();
+		const auto extent = sizei{ cx * scale_factor, cy * scale_factor };
+		_frame->position(center_rect(extent, ui::desktop_bounds(true)));
+		show_controls(controls, cx, cy);
 		_frame->show(true);
 
 		const auto result = _frame->wait_for_close(0);
@@ -3791,7 +3797,7 @@ public:
 		return result;
 	}
 
-	void show_controls(const std::vector<view_element_ptr>& controls, int max_width, int max_height)
+	void show_controls(const std::vector<view_element_ptr>& controls, ui::screen_units max_width, ui::screen_units max_height)
 	{
 		_max_width = max_width;
 		_max_height = max_height;
@@ -3854,18 +3860,18 @@ public:
 		const auto scale_factor = _frame->scale_factor();
 
 		const auto work_area = ui::desktop_bounds(true);
-		const auto max_width = std::min(work_area.width(), df::round(_max_width * scale_factor));
-		const auto max_height = std::min(work_area.height(), df::round(_max_height * scale_factor));
+		const auto max_width = std::min(work_area.width(), _max_width * scale_factor);
+		const auto max_height = std::min(work_area.height(), _max_height * scale_factor);
 
 		const auto layout_padding = mc.baseline_snap;
 		auto avail_bounds = recti(0, 0, max_width, max_height);
-		avail_bounds.right -= view_scroller::def_width - layout_padding;
+		avail_bounds.right -= mc.scroll_width - layout_padding;
 
 		ui::control_layouts positions;
 		const auto height = stack_elements(mc, positions, avail_bounds, _controls, false,
 		                                   {layout_padding, layout_padding});
 		const auto show_scroller = height > max_height;
-		const auto padding_right = show_scroller ? view_scroller::def_width : 0;
+		const auto padding_right = show_scroller ? mc.scroll_width : 0;
 
 		_layout_height = height;
 		_layout_width = avail_bounds.width() + padding_right;

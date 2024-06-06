@@ -45,7 +45,7 @@ static std::atomic_int index_version;
 const wchar_t* s_app_name_l = L"Diffractor";
 const std::u8string_view s_app_name = u8"Diffractor"sv;
 const std::u8string_view s_app_version = u8"126.0"sv;
-const std::u8string_view g_app_build = u8"1175"sv;
+const std::u8string_view g_app_build = u8"1176"sv;
 const std::u8string_view stage_file_name = u8"diffractor-setup-update.exe"sv;
 static constexpr std::u8string_view installed_file_name = u8"diffractor-setup-installed.exe"sv;
 static constexpr std::u8string_view s_search = u8"search"sv;
@@ -240,8 +240,7 @@ void media_view::update_media_elements()
 			}
 			else if (file_type->has_trait(file_type_traits::archive))
 			{
-				// const auto _archive_items = files::list_archive(item->path());
-				// std::make_shared<file_list_control>(_archive_items, view_element_style::center);
+				media_element = std::make_shared<file_list_control>(display, view_element_style::center);
 			}
 			else
 			{
@@ -1367,6 +1366,7 @@ void app_frame::layout(ui::measure_context& mc)
 		const auto show_status_bar = !is_full_screen_media;
 		const auto show_sidebar = (setting.show_sidebar && !is_full_screen_media && !_state.is_editing());
 		const auto show_edit_controls = view_mode == view_type::edit;
+		const auto scale_factor = mc.scale_factor;
 
 		const auto client_bounds = recti(_extent).inflate(is_full_screen_media ? 0 : -1);
 
@@ -1377,13 +1377,13 @@ void app_frame::layout(ui::measure_context& mc)
 		const auto navigate3_extent = _navigate3->measure_toolbar(_extent.cx);
 		const auto media_edit_extent = _media_edit->measure_toolbar(_extent.cx);
 		const auto text_line_height = mc.text_line_height(ui::style::font_size::dialog);
-		const auto cy_address = text_line_height + 14;
-
+		const auto cy_address = text_line_height + mc.component_snap;
+				
 		const auto top_height = std::max(std::max(navigate1_extent.cy, navigate2_extent.cy),
-			std::max(navigate3_extent.cy, cy_address)) + df::round(4 * mc.scale_factor);
+		                                 std::max(navigate3_extent.cy, cy_address)) + df::round(4 * scale_factor);
 		const auto status_height = std::max(std::max(tools_extent.cy, sorting_extent.cy),
 			std::max(media_edit_extent.cy, text_line_height)) + df::round(
-				10 * mc.scale_factor);
+				10 * scale_factor);
 
 		const auto y_status_top = client_bounds.bottom - status_height;
 
@@ -1402,7 +1402,7 @@ void app_frame::layout(ui::measure_context& mc)
 		const auto toolbar_widths = navigate1_extent.cx + navigate2_extent.cx + navigate3_extent.cx;
 
 		const auto cx_address = std::clamp((client_bounds.width() - toolbar_widths) / 2,
-			df::round(300 * mc.scale_factor), df::round(1000 * mc.scale_factor));
+			df::round(300 * scale_factor), df::round(1000 * scale_factor));
 		const auto x_addres_center = (client_bounds.left + client_bounds.right) / 2;
 
 		const auto x_address_left = x_addres_center - (cx_address / 2);
@@ -1421,17 +1421,17 @@ void app_frame::layout(ui::measure_context& mc)
 		const auto x_tools = (show_sidebar ? sidebar_cx : 0) + (is_full_screen_media
 			? (x_tools_avail - tools_extent.cx) / 2
 			: mc.baseline_snap);
-		const auto x_sorting = client_bounds.right - (mc.baseline_snap + sorting_extent.cx + ui::cx_resize_handle);
+		const auto x_sorting = client_bounds.right - (mc.baseline_snap + sorting_extent.cx + mc.cx_resize_handle);
 		const auto x_media_edit = client_bounds.right - (mc.baseline_snap + media_edit_extent.cx +
-			ui::cx_resize_handle);
+			mc.cx_resize_handle);
 		const auto y_client = show_top_bar ? client_bounds.top + top_height : client_bounds.top;
 
-		const auto edit_cx = std::max(client_bounds.width() / 4, df::round(400 * mc.scale_factor));
+		const auto edit_cx = std::max(client_bounds.width() / 4, df::round(400 * scale_factor));
 
 		const recti tool_rect(x_tools, y_tools, x_tools + tools_extent.cx, y_tools + tools_extent.cy);
 		const recti sorting_rect(x_sorting, y_sorting, x_sorting + sorting_extent.cx, y_sorting + sorting_extent.cy);
 		const recti filter_rect(std::max(tool_rect.right + mc.baseline_snap, x_sorting - cy_address * 5),
-			y_status_top + 3, x_sorting - mc.baseline_snap, y_status_top + status_height - 3);
+			y_status_top + mc.baseline_snap, x_sorting - mc.baseline_snap, y_status_top + status_height - mc.baseline_snap);
 		const recti media_edit_rect(x_media_edit, y_media_edit, x_media_edit + media_edit_extent.cx,
 			y_media_edit + media_edit_extent.cy);
 		const recti edit_bounds(client_bounds.right - edit_cx, y_client, client_bounds.right, y_status_top);
@@ -1469,7 +1469,7 @@ void app_frame::layout(ui::measure_context& mc)
 			view_bounds.right -= edit_cx;
 		}
 
-		const auto title_bounds_padding = df::round(32 * mc.scale_factor);
+		const auto title_bounds_padding = df::round(32 * scale_factor);
 
 		_title_bounds = client_bounds;
 		_title_bounds.top = client_bounds.top;
@@ -2317,7 +2317,7 @@ void app_frame::on_window_paint(ui::draw_context& dc)
 
 	const auto border_outside = recti(_extent);
 	const auto clr = ui::style::color::view_background;
-	dc.draw_border(border_outside.inflate(-1), border_outside, clr, clr);
+	dc.draw_border(border_outside.inflate(df::round(-1 * dc.scale_factor)), border_outside, clr, clr);
 }
 
 void app_frame::activate(const bool is_active)
@@ -2686,7 +2686,7 @@ static std::u8string format_items_summary(const group_by grouping, const sort_by
 	return std::u8string(is_init_complete ? tt.empty : tt.loading);
 }
 
-icon_index volumes_icons[] = {
+icon_index volumes_icons[5] = {
 	icon_index::volume3, icon_index::volume2, icon_index::volume1, icon_index::volume0, icon_index::mute
 };
 

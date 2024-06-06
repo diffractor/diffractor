@@ -19,7 +19,7 @@ class edit_view;
 class media_view;
 
 constexpr std::array media_volumes = { 999, 777, 555, 333, 0 };
-icon_index volumes_icons[];
+extern icon_index volumes_icons[5];
 
 std::vector<std::pair<std::u8string_view, std::u8string>> calc_app_info(const index_state& index, bool include_state);
 
@@ -141,7 +141,8 @@ public:
 		if (setting.show_debug_info && _active_controller)
 		{
 			const auto c = ui::color(1.0f, 0.0f, 0.0f, 1.0f);
-			dc.draw_border(_controller_bounds, _controller_bounds.inflate(2), c, c);
+			const auto pad = df::round(2 * dc.scale_factor);
+			dc.draw_border(_controller_bounds, _controller_bounds.inflate(pad), c, c);
 		}
 
 		if (setting.show_shadow)

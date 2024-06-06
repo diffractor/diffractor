@@ -620,8 +620,8 @@ public:
 		{
 			if (pDispParams && pDispParams->cArgs == 2)
 			{
-				const auto& a1 = pDispParams->rgvarg[2];
-				const auto& a2 = pDispParams->rgvarg[1];
+				const auto& a1 = pDispParams->rgvarg[1];
+				const auto& a2 = pDispParams->rgvarg[0];
 
 				if (a2.vt == VT_R8 &&
 					a1.vt == VT_R8)

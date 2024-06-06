@@ -121,12 +121,14 @@ public:
 
 		ui::control_layouts positions;
 		auto avail_bounds = calc_media_bounds();
+		const auto scale_factor = mc.scale_factor;
 
 		if (!_state.is_full_screen || !_display->is_one())
 		{
-			avail_bounds = avail_bounds.inflate(-4);
+			avail_bounds = avail_bounds.inflate(df::round(-4 * scale_factor));
 		}
 
+		const int minumum_media_control_width = df::round(32 * 7 * scale_factor); 
 		const auto overlay_media_control = (_display->is_one() && _display->display_item_has_trait(
 			file_type_traits::hide_overlays)) || _display->comparing();
 		auto media_bounds_avail = avail_bounds;
@@ -149,8 +151,8 @@ public:
 			}
 		}
 
-		const auto arrow_cx = 55;
-		const auto arrow_cy = 99;
+		const auto arrow_cx = df::round(55 * scale_factor);
+		const auto arrow_cy = df::round(99 * scale_factor);
 		const auto left_top = (avail_bounds.top + avail_bounds.bottom - arrow_cy) / 2;
 		const auto right_top = (avail_bounds.top + avail_bounds.bottom - arrow_cy) / 2;
 

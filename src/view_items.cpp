@@ -490,26 +490,27 @@ sizei items_view::client_size() const
 
 void items_view::draw_splitter(ui::draw_context& dc, const recti bounds, const bool tracking) const
 {
+	const auto scale_factor = dc.scale_factor;
 	const bool active = _splitter_active != 0;
-	const auto handle_margin = (tracking || active) ? 1 : df::mul_div(bounds.width(), 2, 9);
+	const auto handle_margin = (tracking || active) ? df::round(1 * scale_factor) : df::mul_div(bounds.width(), 2, 9);
 	const auto left = bounds.left + handle_margin;
 	const auto right = bounds.right - handle_margin;
 
 	recti r;
 	r.left = left;
 	r.right = right;
-	r.top = bounds.top + 10;
-	r.bottom = bounds.bottom - 10;
+	r.top = bounds.top + dc.cx_resize_handle;
+	r.bottom = bounds.bottom - dc.cx_resize_handle;
 
-	if (bounds.height() > 20)
+	if (r.height() > 8)
 	{
-		dc.draw_rounded_rect(r, ui::color(0x000000, dc.colors.alpha * dc.colors.bg_alpha));
+		dc.draw_rounded_rect(r, ui::color(0x000000, dc.colors.alpha * dc.colors.bg_alpha), dc.baseline_snap);
 	}
 
 	if (active)
 	{
 		const auto clr = view_handle_color(false, _splitter_active, tracking, dc.frame_has_focus, false).aa(dc.colors.alpha);
-		dc.draw_rounded_rect(r.inflate(-1), clr);
+		dc.draw_rounded_rect(r.inflate(-1), clr, dc.baseline_snap);
 	}
 }
 
@@ -539,7 +540,7 @@ public:
 
 	void draw(ui::draw_context& rc) override
 	{
-		_view.draw_splitter(rc, _view.calc_spliter_bounds(), _tracking);
+		_view.draw_splitter(rc, _view.calc_spliter_bounds(rc.scroll_width), _tracking);
 	}
 
 	ui::style::cursor cursor() const override
@@ -584,11 +585,11 @@ public:
 	}
 };
 
-recti items_view::calc_spliter_bounds() const
+recti items_view::calc_spliter_bounds(const int scroll_width) const
 {
 	const auto media_can_scroll = _media_scroller.can_scroll();
 	const auto split_x = splitter_pos();
-	const auto control_padding = view_scroller::def_width / 2;
+	const auto control_padding = scroll_width / 2;
 
 	return {
 		split_x - control_padding, 0, split_x + control_padding,
@@ -600,7 +601,7 @@ view_controller_ptr items_view::controller_from_location(const view_host_ptr& ho
 {
 	view_controller_ptr controller;
 
-	const recti split_bounds = calc_spliter_bounds();
+	const recti split_bounds = calc_spliter_bounds(_scroll_width);
 
 	if (split_bounds.contains(loc))
 	{
@@ -847,7 +848,7 @@ void items_view::render(ui::draw_context& dc, const view_controller_ptr controll
 
 		if (_splitter_active == 0)
 		{
-			draw_splitter(dc, calc_spliter_bounds(), false);
+			draw_splitter(dc, calc_spliter_bounds(dc.scroll_width), false);
 		}
 
 		for (const auto& e : _item_elements)
@@ -962,12 +963,13 @@ bool items_view::is_visible(const df::item_element_ptr& i) const
 	return false;
 }
 
-void items_view::update_item_scroller_sections(const int text_line_height)
+void items_view::update_item_scroller_sections()
 {
 	std::vector<view_scroller_section> sections;
 
 	if (!_state.groups().empty())
 	{
+		const auto min_section_height = 8;
 		auto last_text = _state.groups().front()->scroll_text;
 		auto last_icon = _state.groups().front()->icon;
 		auto last_y = 0;
@@ -984,7 +986,7 @@ void items_view::update_item_scroller_sections(const int text_line_height)
 			{
 				const auto cy = _items_scroller.logical_to_scrollbar_pos(y - last_y);
 
-				if (cy > text_line_height)
+				if (cy > min_section_height)
 				{
 					sections.emplace_back(last_text, last_icon, y);
 				}
@@ -998,7 +1000,7 @@ void items_view::update_item_scroller_sections(const int text_line_height)
 		const auto yy = _state.groups().back()->bounds.bottom;
 		const auto cy = _items_scroller.logical_to_scrollbar_pos(yy - last_y);
 
-		if (cy > text_line_height)
+		if (cy > min_section_height)
 		{
 			sections.emplace_back(last_text, last_icon, yy);
 		}
@@ -1010,6 +1012,7 @@ void items_view::update_item_scroller_sections(const int text_line_height)
 void items_view::layout(ui::measure_context& mc, const sizei extent)
 {
 	_client_extent = extent;
+	_scroll_width = mc.scroll_width;
 
 	df::assert_true(ui::is_ui_thread());
 
@@ -1028,6 +1031,7 @@ void items_view::layout(ui::measure_context& mc, const sizei extent)
 	}
 	else
 	{
+		const int image_padding = df::round(8 * mc.scale_factor);
 		avail_media_bounds.left += image_padding;
 		avail_media_bounds.right -= image_padding / 2;
 		//avail_media_bounds.top += image_padding;
@@ -1038,11 +1042,10 @@ void items_view::layout(ui::measure_context& mc, const sizei extent)
 		const auto& anchor_item = (focus && focus->bounds.intersects(logical_items_bounds))
 			                          ? focus
 			                          : _layout_center_item;
-
 		
 		const auto media_height = stack_elements(mc, positions, avail_media_bounds, _media_elements, true);
 		const auto split_x = splitter_pos();
-		const auto control_padding = view_scroller::def_width / 2;
+		const auto control_padding = mc.scroll_width / 2;
 		const recti media_scroll_bounds{
 			split_x - control_padding, _client_extent.cy / 2, split_x + control_padding, _client_extent.cy
 		};
@@ -1053,7 +1056,6 @@ void items_view::layout(ui::measure_context& mc, const sizei extent)
 		                                               ui::style::text_style::single_line, _client_extent.cx / 5).cx;
 		const auto items_scroll_offset = _items_scroller.scroll_offset();
 		const auto anchor_item_y = anchor_item ? anchor_item->bounds.top - items_scroll_offset.y : 0;
-		const auto text_line_height = mc.text_line_height(ui::style::font_size::dialog);
 		auto item_layout_iteration_count = 1;
 
 		for (auto i = 0; i < item_layout_iteration_count; i++)
@@ -1079,7 +1081,7 @@ void items_view::layout(ui::measure_context& mc, const sizei extent)
 			}
 		}
 
-		update_item_scroller_sections(text_line_height);
+		update_item_scroller_sections();
 
 		if (anchor_item)
 		{

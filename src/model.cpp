@@ -1568,7 +1568,7 @@ public:
 			{
 				auto bg_bounds = logical_bounds;
 				bg_bounds.right = bg_bounds.left + text_width + sides_width + dups_width;
-				dc.draw_rounded_rect(bg_bounds, bg);
+				dc.draw_rounded_rect(bg_bounds, bg, dc.baseline_snap);
 			}
 
 			const ui::color text_clr(dc.colors.foreground, dc.colors.alpha);
@@ -2815,14 +2815,28 @@ void view_state::load_display_state()
 			{
 				_async.queue_async(async_queue::load, [new_display, display_item]()
 				{
-					df::scope_locked_inc l(df::loading_media);
-					auto data = blob_from_file(display_item->path(), df::one_meg);
+					df::scope_locked_inc l(df::loading_media);					
 
-					new_display->_async.queue_ui([new_display, data = std::move(data)]() mutable
+					if (display_item->file_type()->has_trait(file_type_traits::archive))
 					{
-						new_display->_selected_item_data = std::move(data);
-						new_display->_async.invalidate_view(view_invalid::media_elements | view_invalid::view_layout);
-					});
+						auto archive_items = files::list_archive(display_item->path());
+
+						new_display->_async.queue_ui([new_display, archive_items = std::move(archive_items)]() mutable
+							{
+								new_display->_archive_items = std::move(archive_items);
+								new_display->_async.invalidate_view(view_invalid::media_elements | view_invalid::view_layout);
+							});
+					}
+					else
+					{
+						auto data = blob_from_file(display_item->path(), df::one_meg);
+
+						new_display->_async.queue_ui([new_display, data = std::move(data)]() mutable
+							{
+								new_display->_selected_item_data = std::move(data);
+								new_display->_async.invalidate_view(view_invalid::media_elements | view_invalid::view_layout);
+							});
+					}
 				});
 			}
 
@@ -3238,7 +3252,7 @@ void texture_state::draw(ui::draw_context& rc, const pointi offset, int compare_
 		//if (_tex->has_alpha())
 		/*{
 			auto clr_bg = render::color(0, alpha);
-			rc.draw_rect(draw_bounds.offset(offset).inflate(1), clr_bg, clr_bg);
+			rc.draw_rect(draw_bounds.offset(offset).inflate(pad), clr_bg, clr_bg);
 		}*/
 
 		const auto dst_quad = setting.show_rotated

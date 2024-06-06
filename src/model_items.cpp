@@ -1184,8 +1184,9 @@ sizei df::item_group::measure(ui::measure_context& mc, const int width_limit) co
 {
 	_layout_bounds.resize(_items.size());
 
+	const auto scale_factor = mc.scale_factor;
 	// maeasure and save calculated layout information
-	const double base_line_height = calc_item_line_height() * mc.scale_factor;
+	const double base_line_height = calc_item_line_height() * scale_factor;
 	const auto base_adjust = base_line_height * 1.11;
 
 	const double cy = base_line_height + mc.baseline_snap;
@@ -1203,7 +1204,7 @@ sizei df::item_group::measure(ui::measure_context& mc, const int width_limit) co
 			for (auto i = 0; i < item_count; ++i)
 			{
 				const auto& item = _items[i];
-				const auto element_padding = item->porch();
+				const auto element_padding = item->porch() * scale_factor;
 				const auto has_title = item->has_title();
 				const auto line_count = 1 + (_show_folder ? 1 : 0) + (has_title ? 1 : 0);
 
@@ -1217,7 +1218,7 @@ sizei df::item_group::measure(ui::measure_context& mc, const int width_limit) co
 		else
 		{
 			const auto max_cols = 100;
-			const auto gap = 2.0 * mc.scale_factor;
+			const auto gap = 2.0 * scale_factor;
 			double dst_widths[max_cols];
 			double src_widths[max_cols];
 
@@ -1307,7 +1308,7 @@ sizei df::item_group::measure(ui::measure_context& mc, const int width_limit) co
 							count_adjust_cx_ratio += 1;
 						}
 						
-						const auto cx = std::max(20.0 * mc.scale_factor, dst_widths[nn] + adjust_cx);
+						const auto cx = std::max(20.0 * scale_factor, dst_widths[nn] + adjust_cx);
 						const auto& item = _items[line_start + nn];
 						const auto orientation = item->thumbnail_orientation();
 						auto dims = item->thumbnail_dims();
@@ -1481,32 +1482,33 @@ void df::item_group::update_row_layout(ui::measure_context& mc) const
 	_row_draw_info.modified.width = _row_draw_info.modified.extent;
 	_row_draw_info.created.width = _row_draw_info.created.extent;
 
+	const auto text_padding = df::round(item_draw_info::_text_padding * mc.scale_factor);
 	const auto width_avail = (bounds.width() - mc.baseline_snap * 5);
 	const auto half_width_avail = width_avail / 2;
 	const auto expendable_title_width = (_row_draw_info.title.width > half_width_avail)
 		                                    ? _row_draw_info.title.width - half_width_avail
 		                                    : 0;
 
-	if (width_avail < _row_draw_info.total()) _row_draw_info.title.width -= expendable_title_width;
-	if (width_avail < _row_draw_info.total()) _row_draw_info.info.width = _row_draw_info.disk.width = 0;
-	if (width_avail < _row_draw_info.total()) _row_draw_info.file_size.width = 0;
-	if (width_avail < _row_draw_info.total()) _row_draw_info.duration.width = 0;
-	if (width_avail < _row_draw_info.total()) _row_draw_info.track.width = 0;
-	if (width_avail < _row_draw_info.total()) _row_draw_info.audio_sample_rate.width = 0;
-	if (width_avail < _row_draw_info.total()) _row_draw_info.bitrate.width = 0;
-	if (width_avail < _row_draw_info.total()) _row_draw_info.dimensions.width = 0;
-	if (width_avail < _row_draw_info.total()) _row_draw_info.pixel_format.width = 0;
-	if (width_avail < _row_draw_info.total()) _row_draw_info.title.width = width_avail;
-	if (width_avail < _row_draw_info.total()) _row_draw_info.items.width = 0;
-	if (width_avail < _row_draw_info.total()) _row_draw_info.modified.width = 0;
-	if (width_avail < _row_draw_info.total()) _row_draw_info.created.width = 0;
-	if (width_avail < _row_draw_info.total()) _row_draw_info.sidecars.width = 0;
-	if (width_avail < _row_draw_info.total()) _row_draw_info.presence.width = 0;
-	if (width_avail < _row_draw_info.total()) _row_draw_info.flag.width = 0;
+	if (width_avail < _row_draw_info.total(text_padding)) _row_draw_info.title.width -= expendable_title_width;
+	if (width_avail < _row_draw_info.total(text_padding)) _row_draw_info.info.width = _row_draw_info.disk.width = 0;
+	if (width_avail < _row_draw_info.total(text_padding)) _row_draw_info.file_size.width = 0;
+	if (width_avail < _row_draw_info.total(text_padding)) _row_draw_info.duration.width = 0;
+	if (width_avail < _row_draw_info.total(text_padding)) _row_draw_info.track.width = 0;
+	if (width_avail < _row_draw_info.total(text_padding)) _row_draw_info.audio_sample_rate.width = 0;
+	if (width_avail < _row_draw_info.total(text_padding)) _row_draw_info.bitrate.width = 0;
+	if (width_avail < _row_draw_info.total(text_padding)) _row_draw_info.dimensions.width = 0;
+	if (width_avail < _row_draw_info.total(text_padding)) _row_draw_info.pixel_format.width = 0;
+	if (width_avail < _row_draw_info.total(text_padding)) _row_draw_info.title.width = width_avail;
+	if (width_avail < _row_draw_info.total(text_padding)) _row_draw_info.items.width = 0;
+	if (width_avail < _row_draw_info.total(text_padding)) _row_draw_info.modified.width = 0;
+	if (width_avail < _row_draw_info.total(text_padding)) _row_draw_info.created.width = 0;
+	if (width_avail < _row_draw_info.total(text_padding)) _row_draw_info.sidecars.width = 0;
+	if (width_avail < _row_draw_info.total(text_padding)) _row_draw_info.presence.width = 0;
+	if (width_avail < _row_draw_info.total(text_padding)) _row_draw_info.flag.width = 0;
 
-	if (_row_draw_info.total() < width_avail)
+	if (_row_draw_info.total(text_padding) < width_avail)
 	{
-		_row_draw_info.title.width += width_avail - _row_draw_info.total();
+		_row_draw_info.title.width += width_avail - _row_draw_info.total(text_padding);
 	}
 }
 
@@ -1727,22 +1729,23 @@ void df::item_element::render_bg(ui::draw_context& dc, const item_group& group, 
 	const auto device_bounds = bounds.offset(element_offset);
 	const auto is_focus = s.focus_item().get() == this;
 	const auto is_hover = is_style_bit_set(view_element_style::hover);
-	const auto extra_padding = is_focus || is_hover ? 4 : 0;
-	const auto bg_padding = sizei(padding.cx + extra_padding, padding.cy + extra_padding);
+	const auto extra_padding = df::round((is_focus || is_hover ? 4 : 0) * dc.scale_factor);
+	const auto pad = padding * dc.scale_factor;
+	const auto bg_padding = sizei(pad.cx + extra_padding, pad.cy + extra_padding);
 	const auto bg_bounds = device_bounds.inflate(bg_padding.cx, bg_padding.cy);
 
 	if (display == item_group_display::detail)
 	{
 		if (bg_color.a > 0.0f)
 		{
-			dc.draw_rounded_rect(bg_bounds, bg_color);
+			dc.draw_rounded_rect(bg_bounds, bg_color, dc.baseline_snap);
 		}
 	}
 	else
 	{
 		if (bg_color.a > 0.0f)
 		{
-			dc.draw_rounded_rect(bg_bounds, bg_color);
+			dc.draw_rounded_rect(bg_bounds, bg_color, dc.baseline_snap);
 		}
 	}
 }
@@ -1756,7 +1759,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 	const auto info = populate_info();
 	const auto has_related = s.search().has_related();
 
-	const auto text_padding = item_draw_info::text_padding;
+	const auto text_padding = df::round(item_draw_info::_text_padding * dc.scale_factor);
 	const auto device_bounds = bounds.offset(element_offset);
 
 	const auto* const ft = file_type();
@@ -1775,10 +1778,11 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 
 	const auto background_is_highlighted = is_focus || is_highlight || is_hover || is_selected || is_error;
 	const auto bg_color = calc_background_color(dc);
+	const auto pad = padding * dc.scale_factor;
 
 	if (alt_background)
 	{
-		dc.draw_rounded_rect(device_bounds.inflate(padding.cx, padding.cy), ui::color(0, 0.1f));
+		dc.draw_rounded_rect(device_bounds.inflate(pad.cx, pad.cy), ui::color(0, 0.1f), dc.baseline_snap);
 	}
 
 	if (display == item_group_display::detail)
@@ -1825,13 +1829,13 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 			auto text_style_far = ui::style::text_style::single_line_far;
 			auto text_style_center = ui::style::text_style::single_line_center;
 			auto text_x = text_rect.left;
-			auto text_y = padding.cy;
+			auto text_y = pad.cy;
 
 			if (widths.disk.width > 0)
 			{
 				if (info.disk != 0)
 				{
-					const auto bb = widths.disk.calc_bounds(text_rect, text_x, text_y);
+					const auto bb = widths.disk.calc_bounds(text_rect, text_x, text_y, text_padding);
 					widths.disk.draw(dc, str::to_string(info.disk), ui::color{}, bb, text_font, text_style_far,
 					                 text_color);
 				}
@@ -1842,7 +1846,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 			{
 				if (info.track != 0)
 				{
-					const auto bb = widths.track.calc_bounds(text_rect, text_x, text_y);
+					const auto bb = widths.track.calc_bounds(text_rect, text_x, text_y, text_padding);
 					widths.track.draw(dc, str::to_string(info.track), ui::color{}, bb, text_font, text_style_far,
 					                  text_color);
 				}
@@ -1885,7 +1889,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 			{
 				if (can_show_flag(info))
 				{
-					const auto bb = widths.flag.calc_bounds(text_rect, text_x, text_y);
+					const auto bb = widths.flag.calc_bounds(text_rect, text_x, text_y, text_padding);
 					draw_flag(dc, info, bb, dc.colors.alpha);
 				}
 				text_x += widths.flag.width + text_padding;
@@ -1894,7 +1898,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 
 			if (widths.presence.width > 0)
 			{
-				const auto bb = widths.presence.calc_bounds(text_rect, text_x, text_y);
+				const auto bb = widths.presence.calc_bounds(text_rect, text_x, text_y, text_padding);
 				widths.presence.draw(dc, str::format_count(info.duplicates, true), bg_dups, bb, text_font,
 				                     text_style_center, text_color);
 				text_x += widths.presence.width + text_padding;
@@ -1904,7 +1908,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 			{
 				if (info.sidecars > 0)
 				{
-					const auto bb = widths.sidecars.calc_bounds(text_rect, text_x, text_y);
+					const auto bb = widths.sidecars.calc_bounds(text_rect, text_x, text_y, text_padding);
 					widths.sidecars.draw(dc, str::format_count(info.sidecars), bg_sidecars, bb, text_font,
 					                     text_style_center, text_color);
 				}
@@ -1915,7 +1919,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 			{
 				if (info.items > 0)
 				{
-					const auto bb = widths.items.calc_bounds(text_rect, text_x, text_y);
+					const auto bb = widths.items.calc_bounds(text_rect, text_x, text_y, text_padding);
 					widths.items.draw(dc, str::format_count(info.items), info.items, bb, text_font, text_style_far,
 					                  text_color);
 				}
@@ -1926,7 +1930,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 			{
 				if (info.duration > 0)
 				{
-					const auto bb = widths.duration.calc_bounds(text_rect, text_x, text_y);
+					const auto bb = widths.duration.calc_bounds(text_rect, text_x, text_y, text_padding);
 					const auto text = prop::format_duration(info.duration);
 					widths.duration.draw(dc, text, info.duration, bb, text_font, text_style_far, text_color);
 				}
@@ -1937,7 +1941,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 			{
 				if (!info.size.is_empty())
 				{
-					const auto bb = widths.file_size.calc_bounds(text_rect, text_x, text_y);
+					const auto bb = widths.file_size.calc_bounds(text_rect, text_x, text_y, text_padding);
 					const auto text = prop::format_size(info.size);
 					widths.file_size.draw(dc, text, info.size.to_int64(), bb, text_font, text_style_far, text_color);
 				}
@@ -1948,7 +1952,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 			{
 				if (!prop::is_null(info.bitrate))
 				{
-					const auto bb = widths.bitrate.calc_bounds(text_rect, text_x, text_y);
+					const auto bb = widths.bitrate.calc_bounds(text_rect, text_x, text_y, text_padding);
 					widths.bitrate.draw(dc, info.bitrate, ui::color{}, bb, text_font, text_style_far, text_color);
 				}
 				text_x += widths.info.width + text_padding;
@@ -1958,7 +1962,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 			{
 				if (!prop::is_null(info.info))
 				{
-					const auto bb = widths.info.calc_bounds(text_rect, text_x, text_y);
+					const auto bb = widths.info.calc_bounds(text_rect, text_x, text_y, text_padding);
 					widths.info.draw(dc, info.info, ui::color{}, bb, text_font, text_style_far, text_color);
 				}
 				text_x += widths.info.width + text_padding;
@@ -1968,7 +1972,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 			{
 				if (!prop::is_null(info.dimensions))
 				{
-					const auto bb = widths.dimensions.calc_bounds(text_rect, text_x, text_y);
+					const auto bb = widths.dimensions.calc_bounds(text_rect, text_x, text_y, text_padding);
 					const auto text = prop::format_pixels(info.dimensions, file_type());
 					widths.dimensions.draw(dc, text, ui::color{}, bb, text_font, text_style_far, text_color);
 				}
@@ -1979,7 +1983,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 			{
 				if (!is_empty(info.pixel_format))
 				{
-					const auto bb = widths.pixel_format.calc_bounds(text_rect, text_x, text_y);
+					const auto bb = widths.pixel_format.calc_bounds(text_rect, text_x, text_y, text_padding);
 					widths.pixel_format.draw(dc, info.pixel_format, ui::color{}, bb, text_font, text_style, text_color);
 				}
 				text_x += widths.pixel_format.width + text_padding;
@@ -1989,7 +1993,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 			{
 				if (!prop::is_null(info.audio_sample_rate))
 				{
-					const auto bb = widths.audio_sample_rate.calc_bounds(text_rect, text_x, text_y);
+					const auto bb = widths.audio_sample_rate.calc_bounds(text_rect, text_x, text_y, text_padding);
 					const auto text = prop::format_audio_sample_rate(info.audio_sample_rate);
 					widths.audio_sample_rate.draw(dc, text, ui::color{}, bb, text_font, text_style_far, text_color);
 				}
@@ -2000,7 +2004,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 			{
 				if (!prop::is_null(info.created))
 				{
-					const auto bb = widths.created.calc_bounds(text_rect, text_x, text_y);
+					const auto bb = widths.created.calc_bounds(text_rect, text_x, text_y, text_padding);
 					const auto text = platform::format_date_time(info.created);
 					widths.created.draw(dc, text, ui::color{}, bb, text_font, text_style_far, text_color);
 				}
@@ -2011,7 +2015,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 			{
 				if (!prop::is_null(info.modified))
 				{
-					const auto bb = widths.modified.calc_bounds(text_rect, text_x, text_y);
+					const auto bb = widths.modified.calc_bounds(text_rect, text_x, text_y, text_padding);
 					const auto text = platform::format_date_time(info.modified);
 					widths.modified.draw(dc, text, ui::color{}, bb, text_font, text_style_far, text_color);
 				}
@@ -2041,8 +2045,8 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 		const auto show_selected = !(is_focus || is_hover) && (is_selected || is_highlight);
 		const auto text_style = ui::style::text_style::single_line_center;
 		const auto stars_line_height = std::max(text_line_height, dc.icon_cxy) + dc.component_snap;
-		const auto extra_padding = is_focus || is_hover ? 4 : 0;
-		const auto bg_padding = sizei(padding.cx + extra_padding, padding.cy + extra_padding);
+		const auto extra_padding = df::round((is_focus || is_hover ? 4 : 0) * dc.scale_factor);
+		const auto bg_padding = sizei(pad.cx + extra_padding, pad.cy + extra_padding);
 		const auto bg_bounds = device_bounds.inflate(bg_padding.cx, bg_padding.cy);
 		const auto text_alpha = thumb_is_valid && !show_text ? bg_color.a * dc.colors.alpha : dc.colors.alpha;
 		const auto text_color = ui::color(dc.colors.foreground, text_alpha);
@@ -2050,7 +2054,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 		const auto bg_disk = ui::color(ui::style::color::view_selected_background, text_alpha * 0.77f);
 		const auto bg_dups = ui::color(ui::style::color::duplicate_background, text_alpha * 0.77f);
 		const auto bg_sidecars = ui::color(ui::style::color::sidecar_background, text_alpha * 0.77f);
-
+		const auto thumb_padding = df::round(item_draw_info::_thumb_padding * dc.scale_factor);
 		auto title_style = ui::style::text_style::single_line_center;
 		auto title_line_height2 = dc.text_line_height(info.title_font);
 		auto title_line_height1 = is_empty(info.title) ? 0 : title_line_height2;
@@ -2072,7 +2076,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 		}
 
 		auto size_avail = device_bounds.extent();
-		size_avail.cy -= item_draw_info::thumb_padding * 2;
+		size_avail.cy -= thumb_padding * 2;
 
 		int text_height = 0;
 
@@ -2108,7 +2112,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 			text_rect.offset(group.bounds.right - text_rect.right, 0);
 		}
 
-		auto icon_rect = device_bounds.inflate(-item_draw_info::thumb_padding, -item_draw_info::thumb_padding);
+		auto icon_rect = device_bounds.inflate(-thumb_padding, -thumb_padding);
 
 		if (icon_rect.height() > text_height)
 		{
@@ -2134,10 +2138,10 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 			{
 				const auto texture_dimensions = tex->dimensions();
 				const auto orientation = _thumbnail_orientation;
-
+				const auto pad3 = df::round(3 * dc.scale_factor);
 				const auto flip = setting.show_rotated && flips_xy(orientation);
 				const auto rect_draw = rectd(device_bounds.left, device_bounds.top, device_bounds.width(),
-				                             device_bounds.height()).inflate(show_selected ? -3 : 0);
+				                             device_bounds.height()).inflate(show_selected ? -pad3 : 0);
 
 				const double ww = flip ? rect_draw.Height : rect_draw.Width;
 				const double hh = flip ? rect_draw.Width : rect_draw.Height;
@@ -2193,7 +2197,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 			text_bg_bounds.right = std::max(bg_bounds.right, text_rect.right);
 
 			//text_bg_bounds.top = text_rect.top;
-			dc.draw_rounded_rect(text_bg_bounds, ui::color(ui::style::color::view_background, text_alpha * 0.888f));
+			dc.draw_rounded_rect(text_bg_bounds, ui::color(ui::style::color::view_background, text_alpha * 0.888f), dc.baseline_snap);
 
 			recti title_rect(text_rect.left, y, text_rect.right, y + title_line_height1 + title_line_height2);
 

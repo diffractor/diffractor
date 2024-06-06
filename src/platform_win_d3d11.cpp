@@ -2844,7 +2844,7 @@ void d3d11_draw_context_impl::draw_rounded_rect(const recti bounds_in, const ui:
 	{
 		const auto ex = static_cast<float>(_client_extent.cx);
 		const auto ey = static_cast<float>(_client_extent.cy);
-
+		
 		const auto bounds = bounds_in.inflate(2);
 		const auto inside = bounds_in.inflate(std::max(-bounds_in.width(), -radius));
 

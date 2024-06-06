@@ -8,7 +8,6 @@
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
-#include <intsafe.h>
 
 class gps_coordinate;
 class view_elements;
@@ -104,8 +103,7 @@ struct keyboard_accelerator_t
 std::u8string format_keyboard_accelerator(const std::vector<keyboard_accelerator_t>& keyboard_accelerators);
 
 namespace ui
-{
-	static constexpr int cx_resize_handle = 12;
+{	
 	extern int ticks_since_last_user_action;
 
 	class app;
@@ -149,12 +147,21 @@ namespace ui
 	using image_ptr = std::shared_ptr<image>;
 	using const_image_ptr = std::shared_ptr<const image>;
 
-	static constexpr int default_label_width = 50;
 	static constexpr int default_ticks_per_second = 5;
+
+	struct screen_units
+	{
+		int n;
+
+		int operator*(const double scale) const noexcept
+		{
+			return df::round(n * scale * 10.0);
+		}
+	};
 
 	struct coll_widths
 	{
-		int c1 = default_label_width;
+		int c1 = 0;
 		int c2 = 0;
 		int c3 = 0;
 	};
@@ -1196,9 +1203,12 @@ namespace ui
 		virtual text_layout_ptr create_text_layout(style::font_size font) = 0;
 
 		double scale_factor = 1.0;
+
 		int icon_cxy = 18;
 		int component_snap = 8;
 		int baseline_snap = 4;
+		int cx_resize_handle = 12;
+		int scroll_width = 20;
 		coll_widths col_widths;
 	};
 
@@ -1214,7 +1224,7 @@ namespace ui
 
 		virtual void clear(color c) = 0;
 
-		virtual void draw_rounded_rect(recti bounds, color c, int radius = 4) = 0;
+		virtual void draw_rounded_rect(recti bounds, color c, int radius) = 0;
 		virtual void draw_rect(recti bounds, color c) = 0;
 		virtual void draw_text(std::u8string_view text, recti bounds, style::font_size font, style::text_style style,
 		                       color c, color bg) = 0;

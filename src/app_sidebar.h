@@ -22,9 +22,9 @@ struct plasma
 	bool _hover = false;
 	int _cosinus[256];
 
-	const static int fade_max = 40;
-	const static int _width = 64;
-	const static int _height = 64;
+	constexpr static int fade_max = 40;
+	constexpr static int _width = 96;
+	constexpr static int _height = 96;
 
 	plasma()
 	{
@@ -379,7 +379,7 @@ public:
 	view_state& _state;
 	icon_index icon = icon_index::none;
 	platform::drive_t _drive;
-	const int graph_height = 8;
+	const int _graph_height = 8;
 
 	explicit sidebar_drive_element(view_state& state, platform::drive_t& d) noexcept
 		: view_element(view_element_style::has_tooltip | view_element_style::can_invoke), _state(state), _drive(d)
@@ -416,6 +416,8 @@ public:
 		const auto logical_bounds = bounds.offset(element_offset);
 		render_background(dc, element_offset);
 
+		const auto pad1 = df::round(1 * dc.scale_factor);
+		const auto graph_height = df::round(_graph_height * dc.scale_factor);
 		const auto has_image = icon != icon_index::none;
 		const auto draw_clr = ui::color(dc.colors.foreground, dc.colors.alpha);
 
@@ -432,18 +434,15 @@ public:
 			dc.draw_text(icon_layout.tf, r, draw_clr, {});
 			x += dc.icon_cxy + dc.baseline_snap;
 		}
-
+		
 		auto text_bounds = logical_bounds;
-
 		text_bounds.left = x;
-		text_bounds.bottom -= graph_height;
+		text_bounds.bottom -= graph_height + dc.baseline_snap;
 
 		auto graph_bounds = logical_bounds;
-		//graph_bounds.left += 8;
-		//graph_bounds.right -= 8;
-		graph_bounds.top = text_bounds.bottom + 1;
+		graph_bounds.top = text_bounds.bottom + dc.baseline_snap;
 
-		auto used_bounds = graph_bounds.inflate(-1);
+		auto used_bounds = graph_bounds.inflate(-pad1);
 		used_bounds.right = used_bounds.left + static_cast<int>(df::mul_div(
 			static_cast<int64_t>(used_bounds.width()), static_cast<int64_t>(_drive.used.to_int64()),
 			static_cast<int64_t>(_drive.capacity.to_int64())));
@@ -472,7 +471,8 @@ public:
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
 		const auto cy = mc.text_line_height(ui::style::font_size::dialog);
-		return {width_limit, cy + graph_height};
+		const auto graph_height = df::round(_graph_height * mc.scale_factor);
+		return {width_limit, cy + graph_height + mc.baseline_snap };
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
@@ -1413,7 +1413,7 @@ private:
 	sizei _hover_offset;
 
 	int default_y_offset = 0;
-	int default_height = 110;
+	int map_view_height = 110;
 	mutable bool _tex_invalid = true;
 
 	std::vector<location_group> _locations;
@@ -1425,7 +1425,7 @@ public:
 		_surface_original(std::move(s))
 	{
 		const auto dims = _surface_original->dimensions();
-		_hover_offset.cy = default_y_offset = (default_height - dims.cy) / 2;
+		_hover_offset.cy = default_y_offset = (map_view_height - dims.cy) / 2;
 		_surface = _surface_original;
 	}
 
@@ -1551,7 +1551,14 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		return {width_limit, default_height};
+		auto cy = map_view_height;
+
+		if (width_limit > df::location_heat_map::map_width)
+		{
+			cy = df::mul_div(map_view_height, width_limit, df::location_heat_map::map_width);
+		}
+
+		return {width_limit, cy};
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
@@ -1657,8 +1664,6 @@ private:
 
 	mutable plasma logo_plasma;
 	mutable ui::texture_ptr _plasma_tex;
-
-	ui::const_surface_ptr _logo_surface;
 	mutable ui::texture_ptr _logo_tex;
 
 public:
@@ -1666,8 +1671,6 @@ public:
 		                                                   view_element_style::has_tooltip |
 		                                                   view_element_style::can_invoke), _state(state)
 	{
-		files ff;
-		_logo_surface = ff.image_to_surface(load_resource(platform::resource_item::logo15));
 	}
 
 	void text(const std::u8string_view t)
@@ -1700,8 +1703,15 @@ public:
 
 			if (t)
 			{
+				auto res = platform::resource_item::logo15;
+				if (logical_bounds.height() >= 40) res = platform::resource_item::logo30;
+				if (logical_bounds.height() >= 60) res = platform::resource_item::logo;
+
+				files ff;
+				const auto logo_surface = ff.image_to_surface(load_resource(res));
+
 				_logo_tex = t;
-				_logo_tex->update(_logo_surface);
+				_logo_tex->update(logo_surface);
 			}
 		}
 
@@ -1712,7 +1722,8 @@ public:
 		}
 
 		const auto plasma_border_clr = ui::color(0.25f, 0.25f, 0.25f, 1.0f);
-		dc.draw_border(logical_plasma_bounds, logical_plasma_bounds.inflate(1), plasma_border_clr, plasma_border_clr);
+		const auto pad = df::round(1 * dc.scale_factor);
+		dc.draw_border(logical_plasma_bounds, logical_plasma_bounds.inflate(pad), plasma_border_clr, plasma_border_clr);
 
 		auto text_bounds = logical_bounds;
 		text_bounds.left = logical_plasma_bounds.right + dc.component_snap;
@@ -1988,7 +1999,8 @@ public:
 		if (setting.show_debug_info && _active_controller)
 		{
 			const auto c = ui::color(1.0f, 0.0f, 0.0f, 1.0f);
-			dc.draw_border(_controller_bounds, _controller_bounds.inflate(2), c, c);
+			const auto pad = df::round(2 * dc.scale_factor);
+			dc.draw_border(_controller_bounds, _controller_bounds.inflate(pad), c, c);
 		}
 	}
 
@@ -2110,7 +2122,7 @@ public:
 	void layout(ui::measure_context& mc)
 	{
 		const auto x_padding = 4;
-		const auto scroll_padding = _scroller.can_scroll() ? view_scroller::def_width : x_padding;
+		const auto scroll_padding = _scroller.can_scroll() ? mc.scroll_width : x_padding;
 		const auto layout_padding = sizei{0, mc.baseline_snap};
 		auto avail_bounds = recti(_extent);
 		avail_bounds.left += x_padding; // -(mc.baseline_snap / 2);

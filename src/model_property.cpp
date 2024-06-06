@@ -1039,7 +1039,35 @@ std::u8string prop::replace_tokens(const std::u8string_view text, const item_met
 				}
 				else if (created.is_valid())
 				{
-					result << created.year();
+					std::ios_base::fmtflags f(result.flags());
+					result << std::setfill(u8'0') << std::setw(4) << created.year();
+					result.flags(f);
+				}
+				else
+				{
+					result << tt.unknown;
+				}
+			}
+			else if (token == u8"month"sv || token == u8"created.month"sv)
+			{
+				if (created.is_valid())
+				{
+					std::ios_base::fmtflags f(result.flags());
+					result << std::setfill(u8'0') << std::setw(2) << created.month();
+					result.flags(f);
+				}
+				else
+				{
+					result << tt.unknown;
+				}
+			}
+			else if (token == u8"day"sv || token == u8"created.day"sv)
+			{
+				if (created.is_valid())
+				{
+					std::ios_base::fmtflags f(result.flags());
+					result << std::setfill(u8'0') << std::setw(2) << created.day();
+					result.flags(f);
 				}
 				else
 				{

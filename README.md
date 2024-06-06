@@ -29,6 +29,7 @@ Diffractor has a built-in test runner. If the application is started from Visual
 - [ffmpeg](https://ffmpeg.org/) main
 - [highway](https://github.com/google/highway) 1.1.0
 - [hunspell](https://github.com/hunspell/hunspell) 1.7.2
+- [libarchive](https://github.com/libarchive/libarchive) 3.7.4
 - [libde265](https://github.com/strukturag/libde265) 1.0.15
 - [libebml](https://github.com/Matroska-Org/libebml) 1.4.5
 - [libexif](https://github.com/libexif/libexif) 0.6.24
@@ -45,6 +46,6 @@ Diffractor has a built-in test runner. If the application is started from Visual
 - [parallel-hashmap](https://github.com/greg7mdp/parallel-hashmap) 1.3.12
 - [rapidjson](https://github.com/Tencent/rapidjson) main
 - [skcms](https://skia.googlesource.com/skcms) main
-- [sqlite](https://www.sqlite.org/index.html) 3.45.3
+- [sqlite](https://www.sqlite.org/index.html) 3.46.0
 - [utf-cpp](https://github.com/nemtrif/utfcpp) 4.0.5
 - [zlib-ng](https://github.com/zlib-ng/zlib-ng) 2.0.7

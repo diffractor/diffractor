@@ -28,7 +28,7 @@
 # include "secrets.h"
 #else
 static const std::u8string google_maps_api_key = u8"";
-static const std::u8string microsoft_maps_api_key = u8"";
+static const std::u8string azure_maps_api_key = u8"";
 #endif
 
 static std::atomic_int analyse_version;
@@ -786,7 +786,7 @@ static void edit_metadata_invoke(view_state& s, const ui::control_frame_ptr& par
 
 		const auto description = std::make_shared<ui::check_control>(dlg->_frame, tt.prop_name_description,
 		                                                             setting.set_caption);
-		description->child(std::make_shared<ui::multi_line_edit_control>(dlg->_frame, setting.caption, 300, true));
+		description->child(std::make_shared<ui::multi_line_edit_control>(dlg->_frame, setting.caption, 10, true));
 		col0->add(description);
 
 		col4->add(std::make_shared<ui::title_control>(tt.media_metadata_title));
@@ -816,7 +816,7 @@ static void edit_metadata_invoke(view_state& s, const ui::control_frame_ptr& par
 		const auto copyright_notice = std::make_shared<ui::check_control>(dlg->_frame, tt.copyright_notice,
 		                                                                  setting.set_copyright_notice);
 		copyright_notice->child(
-			std::make_shared<ui::multi_line_edit_control>(dlg->_frame, setting.copyright_notice, 130, true));
+			std::make_shared<ui::multi_line_edit_control>(dlg->_frame, setting.copyright_notice, 8, true));
 		col1->add(copyright_notice);
 
 		const auto copyright_creator = std::make_shared<ui::check_control>(dlg->_frame, tt.copyright_creator,
@@ -848,7 +848,7 @@ static void edit_metadata_invoke(view_state& s, const ui::control_frame_ptr& par
 		controls.emplace_back(std::make_shared<divider_element>());
 		controls.emplace_back(std::make_shared<ui::ok_cancel_control>(dlg->_frame, tt.button_update));
 
-		if (ui::close_result::ok == dlg->show_modal(controls, 1111))
+		if (ui::close_result::ok == dlg->show_modal(controls, { 111 }))
 		{
 			record_feature_use(features::batch_edit);
 
@@ -922,7 +922,8 @@ public:
 
 		if (bg_color.a > 0.0f)
 		{
-			dc.draw_rounded_rect(logical_bounds.inflate(padding.cx, padding.cy), bg_color);
+			const auto pad = padding * dc.scale_factor;
+			dc.draw_rounded_rect(logical_bounds.inflate(pad.cx, pad.cy), bg_color, dc.baseline_snap);
 		}
 
 		const auto highlight_clr = ui::color(ui::style::color::dialog_selected_text, dc.colors.alpha);
@@ -1403,7 +1404,7 @@ bool ui::browse_for_location(view_state& vs, const control_frame_ptr& parent, gp
 		}
 	};
 
-	map->init_map(microsoft_maps_api_key);
+	map->init_map(azure_maps_api_key);
 
 	auto strategy = std::make_shared<location_auto_complete_strategy>(vs, dlg->_frame, sel_changed,
 	                                                                  vs.recent_locations.items());
@@ -1430,7 +1431,7 @@ bool ui::browse_for_location(view_state& vs, const control_frame_ptr& parent, gp
 
 	const auto cols = std::make_shared<col_control>();
 	cols->add(search_col);
-	cols->add(map_col, 600);
+	cols->add(map_col, { 66 });
 	cols->add(props_col);
 
 	const std::vector<view_element_ptr> controls = {
@@ -1441,7 +1442,7 @@ bool ui::browse_for_location(view_state& vs, const control_frame_ptr& parent, gp
 		set_margin(std::make_shared<ok_cancel_control>(dlg->_frame)),
 	};
 
-	if (close_result::ok == dlg->show_modal(controls, 1200))
+	if (close_result::ok == dlg->show_modal(controls, { 122 }))
 	{
 		position = {ls->latitude, ls->longitude};
 		return true;
@@ -1522,7 +1523,7 @@ static void locate_invoke(view_state& vs, const ui::control_frame_ptr& parent, c
 			}
 		};
 
-		map->init_map(microsoft_maps_api_key);
+		map->init_map(azure_maps_api_key);
 
 		auto strategy = std::make_shared<location_auto_complete_strategy>(
 			vs, dlg->_frame, sel_changed, vs.recent_locations.items());
@@ -1571,7 +1572,7 @@ static void locate_invoke(view_state& vs, const ui::control_frame_ptr& parent, c
 
 		const auto cols = std::make_shared<ui::col_control>();
 		cols->add(search_col);
-		cols->add(map_col, 600);
+		cols->add(map_col, { 66 });
 		cols->add(props_col);
 
 		const std::vector<view_element_ptr> controls = {
@@ -1585,7 +1586,7 @@ static void locate_invoke(view_state& vs, const ui::control_frame_ptr& parent, c
 			set_margin(std::make_shared<ui::ok_cancel_control>(dlg->_frame)),
 		};
 
-		if (ui::close_result::ok == dlg->show_modal(controls, 1200))
+		if (ui::close_result::ok == dlg->show_modal(controls, { 122 } ))
 		{
 			record_feature_use(features::locate);
 
@@ -1788,7 +1789,7 @@ static void tag_invoke(view_state& s, const ui::control_frame_ptr& parent, const
 
 		auto tags = setting.last_tags;
 		edit_col->add(set_margin(std::make_shared<text_element>(tt.tag_add_or_remove_label)));
-		edit_col->add(set_margin(edit = std::make_shared<ui::multi_line_edit_control>(dlg->_frame, tags, 200, false)));
+		edit_col->add(set_margin(edit = std::make_shared<ui::multi_line_edit_control>(dlg->_frame, tags, 10, false)));
 		edit_col->add(set_margin(std::make_shared<text_element>(tt.help_tag1)));
 		edit_col->add(set_margin(std::make_shared<text_element>(tt.help_tag2)));
 		edit_col->add(set_margin(std::make_shared<text_element>(tt.help_tag_add_remove)));
@@ -1861,7 +1862,7 @@ static void tag_invoke(view_state& s, const ui::control_frame_ptr& parent, const
 		controls.emplace_back(std::make_shared<divider_element>());
 		controls.emplace_back(std::make_shared<ui::ok_cancel_control>(dlg->_frame, tt.button_tag));
 
-		if (dlg->show_modal(controls, 700) == ui::close_result::ok)
+		if (dlg->show_modal(controls, { 77 }) == ui::close_result::ok)
 		{
 			record_feature_use(features::tag);
 
@@ -2220,7 +2221,7 @@ static void copy_move_invoke(view_state& s, const ui::control_frame_ptr& parent,
 			std::make_shared<ui::ok_cancel_control>(dlg->_frame)
 		};
 
-		if (ui::close_result::ok == dlg->show_modal(controls, 600))
+		if (ui::close_result::ok == dlg->show_modal(controls, { 66 }))
 		{
 			df::folder_path write_folder(text);
 
@@ -2361,7 +2362,8 @@ private:
 
 			if (bg_color.a > 0.0f)
 			{
-				dc.draw_rounded_rect(logical_bounds.inflate(padding.cx, padding.cy), bg_color);
+				const auto pad = padding * dc.scale_factor;
+				dc.draw_rounded_rect(logical_bounds.inflate(pad.cx, pad.cy), bg_color, dc.baseline_snap);
 			}
 
 			const auto highlight_clr = ui::color(ui::style::color::dialog_selected_text, dc.colors.alpha);
@@ -3136,7 +3138,7 @@ static void import_invoke(view_state& s, const ui::control_frame_ptr& parent, co
 	};
 
 
-	if (dlg->show_modal(controls, 1111) == ui::close_result::ok)
+	if (dlg->show_modal(controls, { 111 }) == ui::close_result::ok)
 	{
 		detach_file_handles detach(s);
 
@@ -3652,7 +3654,7 @@ static void sync_invoke(view_state& s, const ui::control_frame_ptr& parent)
 		std::make_shared<ui::ok_cancel_control_analyze>(dlg->_frame, tt.button_sync, run_analyze)
 	};
 
-	if (dlg->show_modal(controls, 1111) == ui::close_result::ok)
+	if (dlg->show_modal(controls, { 111 }) == ui::close_result::ok)
 	{
 		record_feature_use(features::sync);
 		detach_file_handles detach(s);
@@ -4018,7 +4020,7 @@ static void advanced_search_invoke(view_state& state, const ui::control_frame_pt
 
 	pause_media pause(state);
 
-	if (dlg->show_modal(controls, 666) == ui::close_result::ok)
+	if (dlg->show_modal(controls, { 66 }) == ui::close_result::ok)
 	{
 		df::search_t new_search;
 
@@ -4313,7 +4315,7 @@ static void show_keyboard_reference(view_state& s, const ui::control_frame_ptr& 
 	controls.emplace_back(std::make_shared<ui::close_control>(dlg->_frame));
 
 	pause_media pause(s);
-	dlg->show_modal(controls, 1500, 940);
+	dlg->show_modal(controls, { 155 }, { 99 } );
 	dlg->_frame->destroy();
 }
 
@@ -4404,7 +4406,7 @@ static void about_invoke(view_state& s, const ui::control_frame_ptr& parent, com
 	controls.emplace_back(std::make_shared<ui::close_control>(dlg->_frame));
 
 	pause_media pause(s);
-	dlg->show_modal(controls, 555);
+	dlg->show_modal(controls, { 55 });
 	dlg_parent->destroy();
 };
 
@@ -4476,7 +4478,7 @@ static void settings_invoke(view_state& s, const ui::control_frame_ptr& parent)
 	controls.emplace_back(std::make_shared<ui::close_control>(dlg->_frame));
 
 	pause_media pause(s);
-	dlg->show_modal(controls, 1000);
+	dlg->show_modal(controls, { 111 });
 	s.invalidate_view(view_invalid::options);
 }
 
@@ -4671,7 +4673,7 @@ static void index_settings_invoke(view_state& s, const ui::control_frame_ptr& pa
 	controls.emplace_back(std::make_shared<ui::close_control>(dlg->_frame));
 
 	pause_media pause(s);
-	dlg->show_modal(controls, 900);
+	dlg->show_modal(controls, { 99 } );
 	dlg->_frame->destroy();
 
 	more_folders_parts = str::split(more_folders_text, false, [](wchar_t c) { return c == '\n' || c == '\r'; });
@@ -4735,7 +4737,7 @@ static void customise_invoke(view_state& s, const ui::control_frame_ptr& parent)
 	controls.emplace_back(std::make_shared<ui::close_control>(dlg->_frame));
 
 	pause_media pause(s);
-	dlg->show_modal(controls, 1000);
+	dlg->show_modal(controls, { 111 });
 
 	s.invalidate_view(view_invalid::options);
 };

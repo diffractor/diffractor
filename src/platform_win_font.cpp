@@ -837,7 +837,7 @@ void font_renderer::draw(ui::draw_context* dc, ID2D1RenderTarget* rt, const std:
 			if (SUCCEEDED(hr))
 			{
 				const rectd bb{bounds.left + m.left, bounds.top + m.top, m.width, m.height};
-				dc->draw_rounded_rect(bb.round().inflate(2), bg);
+				dc->draw_rounded_rect(bb.round().inflate(2), bg, dc->baseline_snap);
 			}
 		}
 
@@ -878,7 +878,7 @@ void font_renderer::draw(ui::draw_context* dc, ID2D1RenderTarget* rt, IDWriteTex
 					static_cast<double>(bounds.left) + m.left, static_cast<double>(bounds.top) + m.top, m.width,
 					m.height
 				};
-				dc->draw_rounded_rect(bb.round().inflate(2), bg);
+				dc->draw_rounded_rect(bb.round().inflate(2), bg, dc->baseline_snap);
 			}
 		}
 
@@ -932,7 +932,7 @@ void font_renderer::draw(ui::draw_context* dc, IDWriteTextRenderer* tr, IDWriteT
 		if (SUCCEEDED(hr))
 		{
 			const rectd bb{bounds.left + m.left, bounds.top + m.top, m.width, m.height};
-			dc->draw_rounded_rect(bb.round().inflate(2), bg);
+			dc->draw_rounded_rect(bb.round().inflate(2), bg, dc->baseline_snap);
 		}
 	}
 

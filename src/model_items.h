@@ -1553,9 +1553,9 @@ namespace df
 
 	struct item_draw_info
 	{
-		static constexpr int max_width = 500;
-		static constexpr int text_padding = 4;
-		static constexpr int thumb_padding = 2;
+		static constexpr int _max_width = 500;
+		static constexpr int _text_padding = 4;
+		static constexpr int _thumb_padding = 2;
 
 		int extent = 0;
 		int width = 0;
@@ -1572,6 +1572,8 @@ namespace df
 
 		void update_extent(ui::draw_context& dc, const std::u8string_view text, const double val)
 		{
+			const auto max_width = df::round(_max_width * dc.scale_factor);
+
 			extent = std::max(extent, dc.measure_text(text, ui::style::font_size::dialog,
 			                                          ui::style::text_style::single_line, max_width).cx);
 			val_max = std::max(val_max, val);
@@ -1580,6 +1582,7 @@ namespace df
 
 		void update_extent(ui::draw_context& dc, const std::u8string_view text)
 		{
+			const auto max_width = df::round(_max_width * dc.scale_factor);
 			extent = std::max(extent, dc.measure_text(text, ui::style::font_size::dialog,
 			                                          ui::style::text_style::single_line, max_width).cx);
 		}
@@ -1594,8 +1597,8 @@ namespace df
 			return result;
 		}*/
 
-		recti calc_bounds(const recti row_bounds, const int text_x, const int text_y) const
-		{
+		recti calc_bounds(const recti row_bounds, const int text_x, const int text_y, const int text_padding) const
+		{			
 			auto bounds = row_bounds;
 			bounds.left = text_x + (text_padding / 2);
 			bounds.right = bounds.left + width;
@@ -1647,26 +1650,26 @@ namespace df
 		item_draw_info created;
 		item_draw_info modified;
 
-		int total() const
+		int total(const int text_padding) const
 		{
 			auto result = 0;
-			if (icon.width > 0) result += icon.width + item_draw_info::text_padding;
-			if (disk.width > 0) result += disk.width + item_draw_info::text_padding;
-			if (track.width > 0) result += track.width + item_draw_info::text_padding;
-			if (title.width > 0) result += title.width + item_draw_info::text_padding;
-			if (flag.width > 0) result += flag.width + item_draw_info::text_padding;
-			if (presence.width > 0) result += presence.width + item_draw_info::text_padding;
-			if (sidecars.width > 0) result += sidecars.width + item_draw_info::text_padding;
-			if (items.width > 0) result += items.width + item_draw_info::text_padding;
-			if (info.width > 0) result += info.width + item_draw_info::text_padding;
-			if (duration.width > 0) result += duration.width + item_draw_info::text_padding;
-			if (file_size.width > 0) result += file_size.width + item_draw_info::text_padding;
-			if (bitrate.width > 0) result += bitrate.width + item_draw_info::text_padding;
-			if (pixel_format.width > 0) result += pixel_format.width + item_draw_info::text_padding;
-			if (dimensions.width > 0) result += dimensions.width + item_draw_info::text_padding;
-			if (audio_sample_rate.width > 0) result += audio_sample_rate.width + item_draw_info::text_padding;
-			if (created.width > 0) result += created.width + item_draw_info::text_padding;
-			if (modified.width > 0) result += modified.width + item_draw_info::text_padding;
+			if (icon.width > 0) result += icon.width + text_padding;
+			if (disk.width > 0) result += disk.width + text_padding;
+			if (track.width > 0) result += track.width + text_padding;
+			if (title.width > 0) result += title.width + text_padding;
+			if (flag.width > 0) result += flag.width + text_padding;
+			if (presence.width > 0) result += presence.width + text_padding;
+			if (sidecars.width > 0) result += sidecars.width + text_padding;
+			if (items.width > 0) result += items.width + text_padding;
+			if (info.width > 0) result += info.width + text_padding;
+			if (duration.width > 0) result += duration.width + text_padding;
+			if (file_size.width > 0) result += file_size.width + text_padding;
+			if (bitrate.width > 0) result += bitrate.width + text_padding;
+			if (pixel_format.width > 0) result += pixel_format.width + text_padding;
+			if (dimensions.width > 0) result += dimensions.width + text_padding;
+			if (audio_sample_rate.width > 0) result += audio_sample_rate.width + text_padding;
+			if (created.width > 0) result += created.width + text_padding;
+			if (modified.width > 0) result += modified.width + text_padding;
 			return result;
 		}
 	};
@@ -1695,13 +1698,13 @@ namespace df
 		str::cached text3;
 
 
-		df::group_key() noexcept = default;
-		df::group_key(const group_key&) = default;
+		group_key() noexcept = default;
+		group_key(const group_key&) = default;
 		group_key& operator=(const group_key&) = default;
-		df::group_key(group_key&&) noexcept = default;
+		group_key(group_key&&) noexcept = default;
 		group_key& operator=(group_key&&) noexcept = default;
 
-		df::group_key(const group_key_type t) noexcept : type(t)
+		group_key(const group_key_type t) noexcept : type(t)
 		{
 		}
 

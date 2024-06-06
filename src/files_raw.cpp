@@ -776,19 +776,19 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 	add_metadata(kv, u8"Focal length"sv, str::format(u8"{:0.1} mm"sv, P2.focal_len));
 
 	if (P3.exifAmbientTemperature > -273.15f)
-		add_metadata(kv, u8"Ambient temperature (exif data)"sv, str::format(u8"{:6.2}° C"sv, P3.exifAmbientTemperature));
+		add_metadata(kv, u8"Ambient temperature (exif data)"sv, str::format(u8"{:6.2}\xB0 C"sv, P3.exifAmbientTemperature));
 	if (P3.CameraTemperature > -273.15f)
-		add_metadata(kv, u8"Camera temperature"sv, str::format(u8"{:6.2}° C"sv, P3.CameraTemperature));
+		add_metadata(kv, u8"Camera temperature"sv, str::format(u8"{:6.2}\xB0 C"sv, P3.CameraTemperature));
 	if (P3.SensorTemperature > -273.15f)
-		add_metadata(kv, u8"Sensor temperature"sv, str::format(u8"{:6.2}° C"sv, P3.SensorTemperature));
+		add_metadata(kv, u8"Sensor temperature"sv, str::format(u8"{:6.2}\xB0 C"sv, P3.SensorTemperature));
 	if (P3.SensorTemperature2 > -273.15f)
-		add_metadata(kv, u8"Sensor temperature2"sv, str::format(u8"{:6.2}° C"sv, P3.SensorTemperature2));
+		add_metadata(kv, u8"Sensor temperature2"sv, str::format(u8"{:6.2}\xB0 C"sv, P3.SensorTemperature2));
 	if (P3.LensTemperature > -273.15f)
-		add_metadata(kv, u8"Lens temperature"sv, str::format(u8"{:6.2}° C"sv, P3.LensTemperature));
+		add_metadata(kv, u8"Lens temperature"sv, str::format(u8"{:6.2}\xB0 C"sv, P3.LensTemperature));
 	if (P3.AmbientTemperature > -273.15f)
-		add_metadata(kv, u8"Ambient temperature"sv, str::format(u8"{:6.2}° C"sv, P3.AmbientTemperature));
+		add_metadata(kv, u8"Ambient temperature"sv, str::format(u8"{:6.2}\xB0 C"sv, P3.AmbientTemperature));
 	if (P3.BatteryTemperature > -273.15f)
-		add_metadata(kv, u8"Battery temperature"sv, str::format(u8"{:6.2}° C"sv, P3.BatteryTemperature));
+		add_metadata(kv, u8"Battery temperature"sv, str::format(u8"{:6.2}\xB0 C"sv, P3.BatteryTemperature));
 	if (P3.FlashGN > 1.0f)
 		add_metadata(kv, u8"Flash Guide Number"sv, str::format(u8"{:6.2}"sv, P3.FlashGN));
 	add_metadata(kv, u8"Flash exposure compensation"sv, str::format(u8"{:0.2} EV"sv, P3.FlashEC));

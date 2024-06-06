@@ -269,9 +269,9 @@ public:
 		return ui::style::cursor::left_right;
 	}
 
-	void draw(ui::draw_context& rc) override
+	void draw(ui::draw_context& dc) override
 	{
-		const auto handle_color = view_handle_color(false, true, _tracking, rc.frame_has_focus, true);
+		const auto handle_color = view_handle_color(false, true, _tracking, dc.frame_has_focus, true);
 		const auto hover_alpha = _alpha * 0.77f;
 		const auto hover_color = handle_color.aa(hover_alpha);
 
@@ -281,11 +281,11 @@ public:
 			auto split_bounds = _parent->bounds;
 			split_bounds.left = std::max(split_bounds.left, split_pos - 1);
 			split_bounds.right = std::min(split_bounds.right, split_pos + 1);
-			rc.draw_rect(split_bounds, ui::color(0, hover_alpha));
+			dc.draw_rect(split_bounds, ui::color(0, hover_alpha));
 		}
 		else
 		{
-			rc.draw_rounded_rect(_bounds, hover_color);
+			dc.draw_rounded_rect(_bounds, hover_color, dc.baseline_snap);
 		}
 	}
 
@@ -1156,6 +1156,7 @@ void view_scroller::draw_scroll(ui::draw_context& dc) const
 {
 	if (can_scroll())
 	{
+		const auto text_line_height = dc.text_line_height(ui::style::font_size::dialog);
 		const auto has_sections = !_sections.empty();
 		const auto sb = _scroll_bounds.inflate(0, -2);
 		const auto y = df::mul_div(_offset.y, sb.height(), _scroll_extent.cy);
@@ -1175,32 +1176,36 @@ void view_scroller::draw_scroll(ui::draw_context& dc) const
 			for (const auto& so : _sections)
 			{
 				const auto bottom = df::mul_div(so.y, _client_bounds.height(), _scroll_extent.cy);
+				const auto height = bottom - top;
 				const recti rr(left, sb.top + top, right, sb.top + bottom);
-				dc.draw_rounded_rect(rr, bg_clr);
+				dc.draw_rounded_rect(rr, bg_clr, dc.baseline_snap);
 				top = bottom + padding;
 
-				if (so.icon != icon_index::none)
+				if (height > text_line_height)
 				{
-					const auto text_color = ui::color(dc.colors.foreground, dc.colors.alpha * (_active ? 1.0f : 0.66f));
-					xdraw_icon(dc, so.icon, rr, text_color, {});
-				}
-				else if (!so.text.empty())
-				{
-					const auto text_color = ui::color(dc.colors.foreground, dc.colors.alpha * (_active ? 1.0f : 0.66f));
-					dc.draw_text(so.text, rr, ui::style::font_size::dialog, ui::style::text_style::single_line_center,
-					             text_color, {});
+					if (so.icon != icon_index::none)
+					{
+						const auto text_color = ui::color(dc.colors.foreground, dc.colors.alpha * (_active ? 1.0f : 0.66f));
+						xdraw_icon(dc, so.icon, rr, text_color, {});
+					}
+					else if (!so.text.empty())
+					{
+						const auto text_color = ui::color(dc.colors.foreground, dc.colors.alpha * (_active ? 1.0f : 0.66f));
+						dc.draw_text(so.text, rr, ui::style::font_size::dialog, ui::style::text_style::single_line_center,
+							text_color, {});
+					}
 				}
 			}
 		}
 		else
 		{
 			const recti rr(left, sb.top, right, sb.bottom);
-			dc.draw_rounded_rect(rr, bg_clr);
+			dc.draw_rounded_rect(rr, bg_clr, dc.baseline_snap);
 		}
 
 		const auto top = std::clamp(sb.top + y - y_padding, sb.top, sb.bottom);
 		const auto bottom = std::clamp(sb.top + y + cy + y_padding, sb.top, sb.bottom);
 		const recti r(left + 1, top, right - 1, bottom);
-		dc.draw_rounded_rect(r, clr);
+		dc.draw_rounded_rect(r, clr, dc.baseline_snap);
 	}
 }

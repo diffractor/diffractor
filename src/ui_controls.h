@@ -1489,7 +1489,7 @@ public:
 			}
 
 			const auto max_scrubber_width = r.width() - 2;
-			dc.draw_rounded_rect(r, scrub_bg_clr);
+			dc.draw_rounded_rect(r, scrub_bg_clr, dc.baseline_snap);
 
 			_display->_loading_alpha_animation.target(_display->_session ? 0.0f : 1.0f);
 
@@ -1502,7 +1502,7 @@ public:
 			r.top += 1;
 			r.bottom -= 1;
 
-			dc.draw_rounded_rect(r, view_handle_color(false, is_hover, is_tracking, dc.frame_has_focus, true).aa(dc.colors.alpha));
+			dc.draw_rounded_rect(r, view_handle_color(false, is_hover, is_tracking, dc.frame_has_focus, true).aa(dc.colors.alpha), dc.baseline_snap);
 
 			auto time_bounds = logical_bounds;
 			time_bounds.right = _display->_scrubber_bounds.left;
@@ -1624,7 +1624,8 @@ public:
 
 		if (bg_color.a > 0.0f)
 		{
-			dc.draw_rounded_rect(bounds.offset(element_offset).inflate(padding), bg_color);
+			const auto pad = padding * dc.scale_factor;
+			dc.draw_rounded_rect(bounds.offset(element_offset).inflate(pad), bg_color, dc.baseline_snap);
 		}
 
 		for (const auto& e : elements)
@@ -1931,7 +1932,8 @@ public:
 	{
 		const auto text_extent = mc.measure_text(u8"000%"sv, ui::style::font_size::dialog,
 		                                         ui::style::text_style::single_line, 100);
-		return {text_extent.cx + (padding.cx * 3) + mc.icon_cxy, text_extent.cy + (padding.cy * 2)};
+		const auto pad = padding * mc.scale_factor;
+		return {text_extent.cx + (pad.cx * 3) + mc.icon_cxy, text_extent.cy + (pad.cy * 2)};
 	}
 
 	void render_text(ui::draw_context& dc, const pointi element_offset) const
@@ -1940,15 +1942,16 @@ public:
 		{
 			const auto alpha = dc.colors.overlay_alpha;
 			const auto clr = ui::color(dc.colors.foreground, alpha);
+			const auto pad = padding * dc.scale_factor;
 
 			if (_scale_percent > 0)
 			{
 				const auto text = str::format(u8"{}%"sv, _scale_percent);
 				const auto logical_bounds = _zoom_text_bounds.offset(element_offset);
-				const auto inner_bounds = logical_bounds.inflate(-padding.cx, -padding.cy);
+				const auto inner_bounds = logical_bounds.inflate(-pad.cx, -pad.cy);
 				const recti icon_bounds(inner_bounds.left, inner_bounds.top, inner_bounds.left + dc.icon_cxy,
 				                        inner_bounds.bottom);
-				const recti text_bounds(inner_bounds.left + dc.icon_cxy + padding.cx, inner_bounds.top,
+				const recti text_bounds(inner_bounds.left + dc.icon_cxy + pad.cx, inner_bounds.top,
 				                        inner_bounds.right, inner_bounds.bottom);
 
 				dc.draw_rect(logical_bounds, ui::color(ui::style::color::group_background, alpha * 0.5f));
@@ -1965,13 +1968,13 @@ public:
 				const auto pos_text_extent = dc.measure_text(pos_text, ui::style::font_size::dialog,
 				                                             ui::style::text_style::single_line, 100);
 				const auto pos_text_bounds = recti{
-					bounds.right - pos_text_extent.cx - padding.cx - padding.cx, bounds.top, bounds.right,
-					bounds.top + pos_text_extent.cy + padding.cy + padding.cy
+					bounds.right - pos_text_extent.cx - pad.cx - pad.cx, bounds.top, bounds.right,
+					bounds.top + pos_text_extent.cy + pad.cy + pad.cy
 				};
 				const auto logical_bounds = pos_text_bounds.offset(element_offset);
 
 				dc.draw_rect(logical_bounds, ui::color(ui::style::color::group_background, alpha * 0.5f));
-				dc.draw_text(pos_text.c_str(), logical_bounds.inflate(-padding.cx, 0), ui::style::font_size::dialog,
+				dc.draw_text(pos_text.c_str(), logical_bounds.inflate(-pad.cx, 0), ui::style::font_size::dialog,
 				             ui::style::text_style::single_line_far, clr, {});
 			}
 		}
@@ -2276,7 +2279,7 @@ public:
 				selected_textures[i]->layout(mc, center_rect(layout_extent[i], tex_bounds), selected_items[i]);
 			}
 
-			_display->_compare_bounds = center_rect(sizei{view_scroller::def_width, df::mul_div(bounds.height(), 5, 7)},
+			_display->_compare_bounds = center_rect(sizei{mc.scroll_width, df::mul_div(bounds.height(), 5, 7)},
 			                                        bounds);
 
 			//if (_is_comparing)

@@ -59,7 +59,7 @@ public:
 			_cancel
 		};
 
-		_dlg->show_controls(controls, 400, 400);
+		_dlg->show_controls(controls, {44 }, {44} );
 	}
 
 	~command_status() override = default;
@@ -241,7 +241,7 @@ private:
 
 				controls.emplace_back(_cancel);
 
-				_dlg->show_controls(controls, 400, 400);
+				_dlg->show_controls(controls, { 44 }, { 44 });
 			}
 			else if (!_message.empty())
 			{
@@ -251,7 +251,7 @@ private:
 					_cancel
 				};
 
-				_dlg->show_controls(controls, 400, 400);
+				_dlg->show_controls(controls, { 44 }, { 44 });
 			}
 			else
 			{

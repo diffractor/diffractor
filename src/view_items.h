@@ -77,6 +77,7 @@ public:
 	sizei _client_extent;
 	display_state_ptr _display;
 	int _splitter_active = 0;
+	int _scroll_width = 20;
 
 	friend class splitter_controller;
 
@@ -184,7 +185,7 @@ public:
 		return recti(0, 0, splitter_pos() - 2, _client_extent.cy);
 	}
 
-	recti calc_spliter_bounds() const;
+	recti calc_spliter_bounds(const int scroll_width) const;
 	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc) override;
 
 	void broadcast_event(const view_element_event& event) const override;
@@ -194,7 +195,7 @@ public:
 	void invalidate_thumb(const df::item_element_ptr& i);
 	void make_visible(const df::item_element_ptr& i);
 	bool is_visible(const df::item_element_ptr& i) const;
-	void update_item_scroller_sections(int text_line_height);
+	void update_item_scroller_sections();
 	void items_changed(bool path_changed) override;
 	void display_changed() override;
 	void update_media_elements() override;

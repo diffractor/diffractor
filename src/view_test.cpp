@@ -443,8 +443,8 @@ void test_view::layout(ui::measure_context& mc, const sizei extent)
 {
 	_extent = extent;
 
-	const recti scroll_bounds{_extent.cx - view_scroller::def_width, 0, _extent.cx, _extent.cy};
-	const recti client_bounds{0, 0, _extent.cx - view_scroller::def_width, _extent.cy};
+	const recti scroll_bounds{_extent.cx - mc.scroll_width, 0, _extent.cx, _extent.cy};
+	const recti client_bounds{0, 0, _extent.cx - mc.scroll_width, _extent.cy};
 
 	auto y_max = 0;
 
@@ -807,6 +807,7 @@ static void should_replace_tokens()
 	const auto audio_md = ff_scan_file(ff, test_files_folder.combine_file(u8"Colorblind.mp3"sv));
 
 	assert_equal(u8"2012\\2012-09-14"sv, replace_tokens(u8"{year}\\{created}"s, image_md.to_props()));
+	assert_equal(u8"2012\\09\\14"sv, replace_tokens(u8"{year}\\{month}\\{day}"s, image_md.to_props()));
 	assert_equal(u8"Counting Crows\\This Desert Life"sv, replace_tokens(u8"{artist}\\{album}"s, audio_md.to_props()));
 }
 
@@ -1499,19 +1500,13 @@ static void should_convert_raw_to_jpeg()
 
 static void should_parse_facebook_json()
 {
-	const auto path_status = test_files_folder.combine_file(u8"facebook.state.json"sv);
-	const auto status = df::util::json::json_from_file(path_status);
+	const auto path_status = test_files_folder.combine_file(u8"place.json"sv);
+	const auto json = df::util::json::json_from_file(path_status);
 
-	assert_equal(u8"804051981"sv, status[u8"id"].GetString(), u8"Id"sv);
-
-	const auto path_albums = test_files_folder.combine_file(u8"facebook.albums.json"sv);
-	auto json = df::util::json::json_from_file(path_albums);
-	auto& albums = json[u8"data"];
-
-	assert_equal(19u, albums.Size(), u8"data"sv);
-	assert_equal(u8"10150677908351982"sv, albums[0][u8"id"].GetString(), u8"id"sv);
-	assert_equal(u8"Wall Photos"sv, albums[0][u8"name"].GetString(), u8"name"sv);
-	assert_equal(false, albums[0][u8"can_upload"].GetBool(), u8"can_upload"sv);
+	auto& result = json[u8"result"];
+	auto& address_components = result[u8"address_components"];
+	assert_equal(5u, address_components.Size(), u8"data"sv);
+	assert_equal(u8"WC1X"sv, address_components[0][u8"long_name"].GetString(), u8"long_name"sv);
 }
 
 static void should_rotate()
@@ -2219,7 +2214,7 @@ static void should_select_items()
 	s.update_item_groups();
 	s.update_selection();
 
-	assert_equal(expected_cached_item_count + 2_z, s.search_items().items().size(), u8"items loaded into state"sv);
+	assert_equal(expected_cached_item_count + 1_z, s.search_items().items().size(), u8"items loaded into state"sv);
 	assert_equal(1_z, s.search_items().folders().size(), u8"folders loaded into state"sv);
 
 	assert_equal(0_z, s.selected_count(), u8"invalid selection"sv);
@@ -3647,7 +3642,7 @@ void test_view::register_tests()
 	register_should_search(u8"with:Exposure @photo"sv, 14);
 	register_should_search(u8"with: Exposure @ photo"sv, 14);
 	register_should_search(u8"without:Exposure @photo"sv, 12);
-	register_should_search(u8"without:Exposure"sv, 22);
+	register_should_search(u8"without:Exposure"sv, 21);
 	register_should_search(u8"with:Exposure"sv, 15);
 	register_should_search(u8"with: Exposure"sv, 15);
 	register_should_search(u8"ExposureTime:1/20s"sv, 1);
@@ -3679,7 +3674,7 @@ void test_view::register_tests()
 	register_should_search(u8"48kHz"sv, 2);
 	register_should_search(u8"44.1kHz"sv, 4);
 	register_should_search(u8"tag:dog tag:london"sv, 1);
-	register_should_search(u8"dog or london"sv, 4);
+	register_should_search(u8"dog or london"sv, 3);
 	register_should_search(u8"Rock"sv, 3);
 	register_should_search(u8"canon @photo"sv, 10);
 	register_should_search(u8"nikon d100"sv, 1);
