@@ -25,7 +25,7 @@ namespace ui
 
 	const static int default_control_height(measure_context& mc, const int lines = 1)
 	{
-		return (mc.text_line_height(style::font_size::dialog) * lines) + mc.component_snap;
+		return (mc.text_line_height(style::font_face::dialog) * lines) + mc.padding2;
 	}
 
 	class auto_complete_match : public view_element
@@ -111,13 +111,13 @@ namespace ui
 		{
 			bounds = bounds_in;
 
-			const auto num_extent = mc.measure_text(u8"00.00"sv, style::font_size::dialog, style::text_style::single_line, bounds.width());
+			const auto num_extent = mc.measure_text(u8"00.00"sv, style::font_face::dialog, style::text_style::single_line, bounds.width());
 			auto slider_bounds = bounds;
 			auto edit_bounds = bounds;
-			const auto split = bounds.right - (num_extent.cx + (mc.component_snap * 2));
+			const auto split = bounds.right - (num_extent.cx + (mc.padding2 * 2));
 
-			edit_bounds.left = split + mc.baseline_snap;
-			slider_bounds.right = split - mc.baseline_snap;
+			edit_bounds.left = split + mc.padding1;
+			slider_bounds.right = split - mc.padding1;
 
 			positions.emplace_back(_slider, slider_bounds, is_visible());
 			positions.emplace_back(_edit, edit_bounds, is_visible());
@@ -217,9 +217,9 @@ namespace ui
 		{
 			if (!str::is_empty(_label))
 			{
-				const auto label_extent = mc.measure_text(_label, style::font_size::dialog,
+				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
 				                                          style::text_style::single_line, cx);
-				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.component_snap);
+				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
 			}
 
 			return {cx, default_control_height(mc)};
@@ -230,8 +230,8 @@ namespace ui
 			if (!str::is_empty(_label))
 			{
 				auto r = bounds.offset(element_offset);
-				r.right = r.left + dc.col_widths.c1 - dc.component_snap;
-				dc.draw_text(_label, r, style::font_size::dialog, style::text_style::single_line,
+				r.right = r.left + dc.col_widths.c1 - dc.padding2;
+				dc.draw_text(_label, r, style::font_face::dialog, style::text_style::single_line,
 				             color(dc.colors.foreground, dc.colors.alpha), {});
 			}
 		}
@@ -310,9 +310,9 @@ namespace ui
 		{
 			if (!str::is_empty(_label))
 			{
-				const auto label_extent = mc.measure_text(_label, style::font_size::dialog,
+				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
 				                                          style::text_style::single_line, cx);
-				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.component_snap);
+				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
 			}
 
 			return {cx, default_control_height(mc)};
@@ -323,8 +323,8 @@ namespace ui
 			if (!str::is_empty(_label))
 			{
 				auto r = bounds.offset(element_offset);
-				r.right = r.left + dc.col_widths.c1 - dc.component_snap;
-				dc.draw_text(_label, r, style::font_size::dialog, style::text_style::single_line,
+				r.right = r.left + dc.col_widths.c1 - dc.padding2;
+				dc.draw_text(_label, r, style::font_face::dialog, style::text_style::single_line,
 				             color(dc.colors.foreground, dc.colors.alpha), {});
 			}
 		}
@@ -337,8 +337,8 @@ namespace ui
 
 			auto tb_bounds = bounds;
 			const auto tb_extent = _tb->measure_toolbar(50);
-			const auto split = edit_bounds.right - tb_extent.cx - mc.component_snap;
-			tb_bounds.left = split + (mc.component_snap / 2);
+			const auto split = edit_bounds.right - tb_extent.cx - mc.padding2;
+			tb_bounds.left = split + (mc.padding2 / 2);
 			tb_bounds.top += (tb_bounds.height() - tb_extent.cy) / 2;
 			edit_bounds.right = split;
 
@@ -408,9 +408,9 @@ namespace ui
 		{
 			if (!str::is_empty(_label))
 			{
-				const auto label_extent = mc.measure_text(_label, style::font_size::dialog,
+				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
 				                                          style::text_style::single_line, cx);
-				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.component_snap);
+				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
 			}
 
 			return {cx, default_control_height(mc)};
@@ -421,8 +421,8 @@ namespace ui
 			if (!str::is_empty(_label))
 			{
 				auto r = bounds.offset(element_offset);
-				r.right = r.left + dc.col_widths.c1 - dc.component_snap;
-				dc.draw_text(_label, r, style::font_size::dialog, style::text_style::single_line,
+				r.right = r.left + dc.col_widths.c1 - dc.padding2;
+				dc.draw_text(_label, r, style::font_face::dialog, style::text_style::single_line,
 				             color(dc.colors.foreground, dc.colors.alpha), {});
 			}
 		}
@@ -480,7 +480,7 @@ namespace ui
 
 		sizei measure(measure_context& mc, const int cx) const override
 		{
-			return {cx, _edit_height * mc.text_line_height(ui::style::font_size::dialog) };
+			return {cx, _edit_height * mc.text_line_height(ui::style::font_face::dialog) };
 		}
 
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
@@ -588,9 +588,9 @@ namespace ui
 		{
 			if (!str::is_empty(_label))
 			{
-				const auto label_extent = mc.measure_text(_label, style::font_size::dialog,
+				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
 				                                          style::text_style::single_line, cx);
-				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.component_snap);
+				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
 			}
 
 			return {cx, default_control_height(mc)};
@@ -602,7 +602,7 @@ namespace ui
 			{
 				auto r = bounds.offset(element_offset);
 				r.right = r.left + dc.col_widths.c1 - 8;
-				dc.draw_text(_label, r, style::font_size::dialog, style::text_style::single_line,
+				dc.draw_text(_label, r, style::font_face::dialog, style::text_style::single_line,
 				             color(dc.colors.foreground, dc.colors.alpha), {});
 			}
 		}
@@ -667,9 +667,9 @@ namespace ui
 		{
 			if (!str::is_empty(_label))
 			{
-				const auto label_extent = mc.measure_text(_label, style::font_size::dialog,
+				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
 				                                          style::text_style::single_line, cx);
-				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.component_snap);
+				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
 			}
 
 			return {cx, default_control_height(mc)};
@@ -681,7 +681,7 @@ namespace ui
 			{
 				auto r = bounds.offset(element_offset);
 				r.right = r.left + dc.col_widths.c1 - 8;
-				dc.draw_text(_label, r, style::font_size::dialog, style::text_style::single_line,
+				dc.draw_text(_label, r, style::font_face::dialog, style::text_style::single_line,
 				             color(dc.colors.foreground, dc.colors.alpha), {});
 			}
 		}
@@ -744,9 +744,9 @@ namespace ui
 		{
 			if (!str::is_empty(_label))
 			{
-				const auto label_extent = mc.measure_text(_label, style::font_size::dialog,
+				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
 				                                          style::text_style::single_line, cx);
-				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.component_snap);
+				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
 			}
 
 			return {cx, default_control_height(mc)};
@@ -757,15 +757,15 @@ namespace ui
 			if (!str::is_empty(_label))
 			{
 				auto rLabel = bounds.offset(element_offset);
-				rLabel.right = rLabel.left + dc.col_widths.c1 - dc.component_snap;
+				rLabel.right = rLabel.left + dc.col_widths.c1 - dc.padding2;
 
 				auto rOf = bounds.offset(element_offset);
 				rOf.left = rOf.left + dc.col_widths.c1 + 68;
 				rOf.right = rOf.left + 24;
 
-				dc.draw_text(_label, rLabel, style::font_size::dialog, style::text_style::single_line,
+				dc.draw_text(_label, rLabel, style::font_face::dialog, style::text_style::single_line,
 				             color(dc.colors.foreground, dc.colors.alpha), {});
-				dc.draw_text(tt.num_of, rOf, style::font_size::dialog, style::text_style::single_line,
+				dc.draw_text(tt.num_of, rOf, style::font_face::dialog, style::text_style::single_line,
 				             color(dc.colors.foreground, dc.colors.alpha), {});
 			}
 		}
@@ -869,9 +869,9 @@ namespace ui
 			const recti r1(r.left, y, x, y + _control_height);
 			const recti r2(x + 4, y, r.right, y + _control_height);
 
-			dc.draw_text(tt.prop_name_title, r1, style::font_size::dialog, style::text_style::single_line_center,
+			dc.draw_text(tt.prop_name_title, r1, style::font_face::dialog, style::text_style::single_line_center,
 			             color(dc.colors.foreground, dc.colors.alpha), {});
-			dc.draw_text(tt.search_or_folder, r2, style::font_size::dialog, style::text_style::single_line_center,
+			dc.draw_text(tt.search_or_folder, r2, style::font_face::dialog, style::text_style::single_line_center,
 			             color(dc.colors.foreground, dc.colors.alpha), {});
 		}
 	};
@@ -920,7 +920,7 @@ namespace ui
 			if (_multiline)
 			{
 				const auto tb_extent = _tb->measure_toolbar(50);
-				return {cx, _edit_height + tb_extent.cy + mc.component_snap};
+				return {cx, _edit_height + tb_extent.cy + mc.padding2};
 			}
 
 			return {cx, _edit_height};
@@ -944,8 +944,8 @@ namespace ui
 			else
 			{
 				const auto tb_extent = _tb->measure_toolbar(50);
-				const auto split = edit_bounds.right - tb_extent.cx - mc.component_snap;
-				tb_bounds.left = split + (mc.component_snap / 2);
+				const auto split = edit_bounds.right - tb_extent.cx - mc.padding2;
+				tb_bounds.left = split + (mc.padding2 / 2);
 				tb_bounds.top += (tb_bounds.height() - tb_extent.cy) / 2;
 				edit_bounds.right = split;
 			}
@@ -1047,9 +1047,9 @@ namespace ui
 		{
 			if (!str::is_empty(_label))
 			{
-				const auto label_extent = mc.measure_text(_label, style::font_size::dialog,
+				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
 				                                          style::text_style::single_line, cx);
-				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.component_snap);
+				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
 			}
 
 			return {cx, default_control_height(mc)};
@@ -1060,8 +1060,8 @@ namespace ui
 			if (!str::is_empty(_label))
 			{
 				auto r = bounds.offset(element_offset);
-				r.right = r.left + dc.col_widths.c1 - dc.component_snap;
-				dc.draw_text(_label, r, style::font_size::dialog, style::text_style::single_line,
+				r.right = r.left + dc.col_widths.c1 - dc.padding2;
+				dc.draw_text(_label, r, style::font_face::dialog, style::text_style::single_line,
 				             color(dc.colors.foreground, dc.colors.alpha), {});
 			}
 		}
@@ -1075,8 +1075,8 @@ namespace ui
 
 			auto tb_bounds = bounds;
 			const auto tb_extent = _tb->measure_toolbar(50);
-			const auto split = edit_bounds.right - tb_extent.cx - mc.component_snap;
-			tb_bounds.left = split + (mc.component_snap / 2);
+			const auto split = edit_bounds.right - tb_extent.cx - mc.padding2;
+			tb_bounds.left = split + (mc.padding2 / 2);
 			tb_bounds.top += (tb_bounds.height() - tb_extent.cy) / 2;
 			edit_bounds.right = split;
 
@@ -1185,7 +1185,7 @@ namespace ui
 
 		void render(draw_context& dc, const pointi element_offset) const override
 		{
-			dc.draw_text(_gps_text, _gps_bounds.offset(element_offset), style::font_size::dialog,
+			dc.draw_text(_gps_text, _gps_bounds.offset(element_offset), style::font_face::dialog,
 			             style::text_style::single_line, color(dc.colors.foreground, dc.colors.alpha), {});
 		}
 
@@ -1193,7 +1193,7 @@ namespace ui
 		{
 			bounds = bounds_in;
 
-			const auto gps_extent = mc.measure_text(_gps_text, style::font_size::dialog, style::text_style::single_line,
+			const auto gps_extent = mc.measure_text(_gps_text, style::font_face::dialog, style::text_style::single_line,
 			                                        bounds_in.width());
 			const auto tb_extent = _tb->measure_toolbar(50);
 
@@ -1267,9 +1267,9 @@ namespace ui
 		{
 			if (!str::is_empty(_label))
 			{
-				const auto label_extent = mc.measure_text(_label, style::font_size::dialog,
+				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
 				                                          style::text_style::single_line, cx);
-				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.component_snap);
+				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
 			}
 
 			return {cx, default_control_height(mc)};
@@ -1280,18 +1280,18 @@ namespace ui
 			bounds = bounds_in;
 
 			const auto tb_extent = _tb->measure_toolbar(50);
-			const auto split = bounds.right - tb_extent.cx - mc.component_snap;
+			const auto split = bounds.right - tb_extent.cx - mc.padding2;
 
 			auto tb_bounds = bounds;
-			tb_bounds.left = split + (mc.component_snap / 2);
+			tb_bounds.left = split + (mc.padding2 / 2);
 			tb_bounds.top += (tb_bounds.height() - tb_extent.cy) / 2;
 
 			_label_bounds = bounds;
 			_label_bounds.right = bounds.left + mc.col_widths.c1;
 
 			_text_bounds = bounds;
-			if (!str::is_empty(_label)) _text_bounds.left += mc.col_widths.c1 + mc.component_snap;
-			_text_bounds.right = tb_bounds.left - mc.component_snap;
+			if (!str::is_empty(_label)) _text_bounds.left += mc.col_widths.c1 + mc.padding2;
+			_text_bounds.right = tb_bounds.left - mc.padding2;
 
 			positions.emplace_back(_tb, tb_bounds, is_visible());
 		}
@@ -1303,13 +1303,13 @@ namespace ui
 			if (!str::is_empty(_label))
 			{
 				const auto r = _label_bounds.offset(element_offset);
-				dc.draw_text(_label, r, style::font_size::dialog, style::text_style::single_line, text_clr, {});
+				dc.draw_text(_label, r, style::font_face::dialog, style::text_style::single_line, text_clr, {});
 			}
 
 			if (!str::is_empty(_text))
 			{
 				const auto r = _text_bounds.offset(element_offset);
-				dc.draw_text(_text, r, style::font_size::dialog, style::text_style::single_line, text_clr, {});
+				dc.draw_text(_text, r, style::font_face::dialog, style::text_style::single_line, text_clr, {});
 			}
 		}
 
@@ -1368,9 +1368,9 @@ namespace ui
 
 			if (!str::is_empty(_label))
 			{
-				const auto label_extent = mc.measure_text(_label, style::font_size::dialog,
+				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
 				                                          style::text_style::single_line, cx);
-				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.component_snap);
+				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
 				const auto control_extent = _control->measure(cx - mc.col_widths.c1);
 				return {mc.col_widths.c1 + control_extent.cx, default_control_height(mc)};
 			}
@@ -1393,8 +1393,8 @@ namespace ui
 			if (!str::is_empty(_label))
 			{
 				auto r = device_bounds;
-				r.right = r.left + dc.col_widths.c1 - dc.component_snap;
-				dc.draw_text(_label, r, style::font_size::dialog, style::text_style::single_line,
+				r.right = r.left + dc.col_widths.c1 - dc.padding2;
+				dc.draw_text(_label, r, style::font_face::dialog, style::text_style::single_line,
 				             color(dc.colors.foreground, dc.colors.alpha), {});
 			}
 		}
@@ -1458,7 +1458,7 @@ namespace ui
 
 		sizei measure(measure_context& mc, const int cx) const override
 		{
-			_text_height = mc.text_line_height(style::font_size::dialog);
+			_text_height = mc.text_line_height(style::font_face::dialog);
 
 			const auto s1 = scale_dimensions(_before->dimensions(), cx / 2);
 			const auto s2 = scale_dimensions(_after->dimensions(), cx / 2);
@@ -1488,12 +1488,12 @@ namespace ui
 			}
 
 			const auto center = device_bounds.center();
-			const auto font = style::font_size::dialog;
+			const auto font = style::font_face::dialog;
 			const auto text_color = color(dc.colors.foreground, dc.colors.alpha);
 
 			auto rImage = device_bounds;
-			rImage.top += _text_height + dc.component_snap;
-			rImage.bottom -= dc.component_snap;
+			rImage.top += _text_height + dc.padding2;
+			rImage.bottom -= dc.padding2;
 
 			auto r1 = rImage;
 			r1.right = center.x - 2;
@@ -1877,7 +1877,7 @@ namespace ui
 						{
 							auto alt_bounds = row_bounds;
 							if (show_scroll) alt_bounds.right = _scroller.scroll_bounds().left;
-							dc.draw_rounded_rect(alt_bounds, color(0x000000, dc.colors.alpha / 11.11f), dc.baseline_snap);
+							dc.draw_rounded_rect(alt_bounds, color(0x000000, dc.colors.alpha / 11.11f), dc.padding1);
 						}
 
 						for (const auto& e : r.cells)
@@ -2012,10 +2012,10 @@ namespace ui
 
 		sizei measure(measure_context& mc, const int cx) const override
 		{
-			_extent = mc.measure_text(_text, style::font_size::dialog, style::text_style::multiline,
+			_extent = mc.measure_text(_text, style::font_face::dialog, style::text_style::multiline,
 			                          cx - (button_width + 8));
 			_extent.cx += 8;
-			return {cx, std::max(_extent.cy, default_control_height(mc) + mc.component_snap * 2)};
+			return {cx, std::max(_extent.cy, default_control_height(mc) + mc.padding2 * 2)};
 		}
 
 		void text(const std::u8string_view a)
@@ -2030,7 +2030,7 @@ namespace ui
 			r.right -= button_width + 8;
 			r = center_rect(_extent, r);
 
-			dc.draw_text(_text, r, style::font_size::dialog, style::text_style::multiline,
+			dc.draw_text(_text, r, style::font_face::dialog, style::text_style::multiline,
 			             color(dc.colors.foreground, dc.colors.alpha), {});
 		}
 
@@ -2080,7 +2080,7 @@ namespace ui
 
 		void measure_text(measure_context& mc) const
 		{
-			_text_extent = mc.measure_text(_text, style::font_size::dialog, style::text_style::multiline,
+			_text_extent = mc.measure_text(_text, style::font_face::dialog, style::text_style::multiline,
 			                               bounds.width() - 32);
 			_text_extent.cx += 4;
 		}
@@ -2106,7 +2106,7 @@ namespace ui
 		void render(draw_context& dc, const pointi element_offset) const override
 		{
 			render_progress(dc, _rect_progress.offset(-element_offset), _pos);
-			dc.draw_text(_text, _rect_text.offset(-element_offset), style::font_size::dialog,
+			dc.draw_text(_text, _rect_text.offset(-element_offset), style::font_face::dialog,
 			             style::text_style::multiline_center, color(dc.colors.foreground, dc.colors.alpha), {});
 		}
 
@@ -2183,8 +2183,8 @@ namespace ui
 
 		sizei measure(measure_context& mc, const int cx) const override
 		{
-			const auto icon_width = _icon == icon_index::none ? 0 : mc.icon_cxy + mc.component_snap;
-			const auto text_extent = mc.measure_text(_text, style::font_size::title, style::text_style::multiline,
+			const auto icon_width = _icon == icon_index::none ? 0 : mc.icon_cxy + mc.padding2;
+			const auto text_extent = mc.measure_text(_text, style::font_face::title, style::text_style::multiline,
 			                                         cx - icon_width);
 
 			return {text_extent.cx + icon_width, text_extent.cy};
@@ -2200,10 +2200,10 @@ namespace ui
 				auto icon_bounds = r;
 				icon_bounds.right = icon_bounds.left + dc.icon_cxy;
 				xdraw_icon(dc, _icon, icon_bounds, clr, {});
-				r.left += dc.icon_cxy + dc.component_snap;
+				r.left += dc.icon_cxy + dc.padding2;
 			}
 
-			dc.draw_text(_text, r, style::font_size::title, style::text_style::single_line, clr, {});
+			dc.draw_text(_text, r, style::font_face::title, style::text_style::single_line, clr, {});
 		}
 	};
 
@@ -2299,9 +2299,9 @@ namespace ui
 		{
 			const auto icon_width = _icon == icon_index::none ? 0 : (mc.icon_cxy * 2);
 
-			_text_extent1 = mc.measure_text(_text1, style::font_size::title, style::text_style::multiline,
+			_text_extent1 = mc.measure_text(_text1, style::font_face::title, style::text_style::multiline,
 			                                cx - icon_width);
-			_text_extent2 = mc.measure_text(_text2, style::font_size::dialog, style::text_style::multiline,
+			_text_extent2 = mc.measure_text(_text2, style::font_face::dialog, style::text_style::multiline,
 			                                cx - icon_width);
 
 			for (int i = 0; i < 2; ++i)
@@ -2309,17 +2309,17 @@ namespace ui
 				const int text_height = _text_extent1.cy + _text_extent2.cy;
 				const auto image_extent = measure_images(mc, std::min(cx - icon_width, cx / 2),
 				                                         std::min(text_height, 100));
-				const auto max_text_width = cx - (image_extent.cx + mc.component_snap + icon_width);
+				const auto max_text_width = cx - (image_extent.cx + mc.padding2 + icon_width);
 
-				_text_extent1 = mc.measure_text(_text1, style::font_size::title, style::text_style::multiline,
+				_text_extent1 = mc.measure_text(_text1, style::font_face::title, style::text_style::multiline,
 				                                max_text_width);
-				_text_extent2 = mc.measure_text(_text2, style::font_size::dialog, style::text_style::multiline,
+				_text_extent2 = mc.measure_text(_text2, style::font_face::dialog, style::text_style::multiline,
 				                                max_text_width);
 
 				_image_extent = image_extent;
 			}
 
-			return {cx, std::max(_text_extent1.cy + _text_extent2.cy + mc.component_snap, _image_extent.cy)};
+			return {cx, std::max(_text_extent1.cy + _text_extent2.cy + mc.padding2, _image_extent.cy)};
 		}
 
 		sizei measure_images(measure_context& mc, const int avail_width, const int prefered_height) const
@@ -2337,7 +2337,7 @@ namespace ui
 
 			for (const auto& d : dims)
 			{
-				total_width += d.cx + mc.baseline_snap;
+				total_width += d.cx + mc.padding1;
 			}
 
 			if (total_width > avail_width)
@@ -2353,7 +2353,7 @@ namespace ui
 
 			for (const auto& d : dims)
 			{
-				total_width += d.cx + mc.baseline_snap;
+				total_width += d.cx + mc.padding1;
 				max_height = std::max(max_height, d.cy);
 			}
 
@@ -2370,19 +2370,19 @@ namespace ui
 
 			for (const auto& d : _surface_extents)
 			{
-				total_width += d.cx + mc.baseline_snap;
+				total_width += d.cx + mc.padding1;
 			}
 
 			_surface_bounds.clear();
 			_surface_bounds.reserve(_surface_extents.size());
 
-			int x = bounds.right - (total_width + mc.component_snap);
+			int x = bounds.right - (total_width + mc.padding2);
 
 			for (const auto& d : _surface_extents)
 			{
 				const auto y = bounds.top + ((bounds.height() - d.cy) / 2);
 				_surface_bounds.emplace_back(x, y, x + d.cx, y + d.cy);
-				x += d.cx + mc.baseline_snap;
+				x += d.cx + mc.padding1;
 			}
 		}
 
@@ -2420,7 +2420,7 @@ namespace ui
 			{
 				auto text_rect1 = r;
 				text_rect1.right = text_rect1.left + _text_extent1.cx;
-				dc.draw_text(_text1, text_rect1, style::font_size::title, style::text_style::multiline,
+				dc.draw_text(_text1, text_rect1, style::font_face::title, style::text_style::multiline,
 				             color(dc.colors.foreground, dc.colors.alpha), {});
 			}
 			else
@@ -2430,13 +2430,13 @@ namespace ui
 				text_rect1.right = text_rect1.left + _text_extent1.cx;
 
 				auto text_rect2 = r;
-				text_rect2.bottom -= dc.component_snap;
+				text_rect2.bottom -= dc.padding2;
 				text_rect2.top = text_rect2.bottom - _text_extent2.cy;
 				text_rect2.right = text_rect2.left + _text_extent2.cx;
 
-				dc.draw_text(_text1, text_rect1, style::font_size::title, style::text_style::multiline,
+				dc.draw_text(_text1, text_rect1, style::font_face::title, style::text_style::multiline,
 				             color(dc.colors.foreground, dc.colors.alpha), {});
-				dc.draw_text(_text2, text_rect2, style::font_size::dialog, style::text_style::multiline,
+				dc.draw_text(_text2, text_rect2, style::font_face::dialog, style::text_style::multiline,
 				             color(dc.colors.foreground, dc.colors.alpha), {});
 			}
 
@@ -2515,7 +2515,8 @@ namespace ui
 			const auto pad = padding * mc.scale_factor;
 			const auto marg = margin * mc.scale_factor;
 			const auto scaled_padding = pad + marg;
-			const auto layout = calc_stack_elements(mc, bounds, _controls, false, scaled_padding);
+			const recti layout_bounds = { 0, 0, cx, 10000 };
+			const auto layout = calc_stack_elements(mc, layout_bounds, _controls, false, scaled_padding);
 			return {cx, layout.cy};
 		}
 
@@ -2585,7 +2586,6 @@ namespace ui
 		mutable int max_x = 0;
 		bool compact = false;
 
-
 		col_control() : view_element(view_element_style::has_tooltip | view_element_style::can_invoke)
 		{
 		}
@@ -2638,7 +2638,7 @@ namespace ui
 			int my = 0;
 			int mx = 0;
 
-			auto cx_split_avail = cx - (mc.component_snap * (static_cast<int>(_controls.size()) - 1));
+			auto cx_split_avail = cx - (mc.padding2 * (static_cast<int>(_controls.size()) - 1));
 			auto split_cols = 0;			
 
 			for (const auto& c : _controls)
@@ -2719,7 +2719,7 @@ namespace ui
 
 			for (const auto& c : _controls)
 			{
-				cx += c.width + mc.component_snap;
+				cx += c.width + mc.padding2;
 			}
 
 			auto x = bounds.left + ((bounds.left + bounds.right - cx) / 2);
@@ -2733,7 +2733,7 @@ namespace ui
 						const auto child_bounds = recti(x, y, x + c.width, y + bounds.height());
 						c.e->layout(mc, child_bounds, positions);
 						c.x = x;
-						x += c.width + mc.component_snap;
+						x += c.width + mc.padding2;
 					}
 				}
 			}
@@ -2795,7 +2795,7 @@ namespace ui
 
 		sizei measure(measure_context& mc, const int cx) const override
 		{
-			_extent = mc.measure_text(_text, style::font_size::dialog, style::text_style::multiline, cx - 32);
+			_extent = mc.measure_text(_text, style::font_face::dialog, style::text_style::multiline, cx - 32);
 			return {cx, std::max(64, _extent.cy + 8)};
 		}
 
@@ -2840,7 +2840,7 @@ namespace ui
 				r.left += dc.icon_cxy + 8;
 			}
 
-			dc.draw_text(_text, r, style::font_size::dialog, style::text_style::multiline,
+			dc.draw_text(_text, r, style::font_face::dialog, style::text_style::multiline,
 			             color(dc.colors.foreground, dc.colors.alpha), {});
 		}
 	};
@@ -2916,7 +2916,7 @@ namespace ui
 
 				if (_child)
 				{
-					_child_extent = _child->measure(mc, cx - (_check_extent.cx + mc.component_snap));
+					_child_extent = _child->measure(mc, cx - (_check_extent.cx + mc.padding2));
 				}
 				else
 				{
@@ -2929,11 +2929,11 @@ namespace ui
 
 			_check_extent = _check->measure(cx);
 			auto cy_result = _check_extent.cy;
-			const auto indent = mc.component_snap * 3;
+			const auto indent = mc.padding2 * 3;
 
 			if (_child)
 			{				
-				_child_extent = _child->measure(mc, cx - (indent + mc.component_snap));
+				_child_extent = _child->measure(mc, cx - (indent + mc.padding2));
 				cy_result += _child_extent.cy;
 			}
 			else
@@ -2954,7 +2954,7 @@ namespace ui
 				if (_child)
 				{
 					auto child_bounds = bounds;
-					child_bounds.left += (_check_extent.cx + mc.component_snap);
+					child_bounds.left += (_check_extent.cx + mc.padding2);
 					_child->layout(mc, child_bounds, positions);
 				}
 			}
@@ -2962,7 +2962,7 @@ namespace ui
 			{
 				if (_child)
 				{
-					const auto indent = mc.component_snap * 3;
+					const auto indent = mc.padding2 * 3;
 					auto child_bounds = bounds;
 					child_bounds.left += indent;
 					child_bounds.top += _check_extent.cy;
@@ -3060,17 +3060,17 @@ namespace ui
 			const auto ok_extent = _ok->measure(cx);
 			const auto cancel_extent = _cancel->measure(cx);
 
-			_ok_width = std::max(cx / 5, ok_extent.cx + mc.component_snap);
-			_cancel_width = std::max(cx / 5, cancel_extent.cx + mc.component_snap);
+			_ok_width = std::max(cx / 5, ok_extent.cx + mc.padding2);
+			_cancel_width = std::max(cx / 5, cancel_extent.cx + mc.padding2);
 
-			return {cx, std::max(ok_extent.cy, cancel_extent.cy) + mc.component_snap};
+			return {cx, std::max(ok_extent.cy, cancel_extent.cy) + mc.padding2};
 		}
 
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
 		{
 			bounds = bounds_in;
 
-			const auto total_button_width = _ok_width + _cancel_width + mc.component_snap;
+			const auto total_button_width = _ok_width + _cancel_width + mc.padding2;
 			const auto button_rect = center_rect(sizei{total_button_width, bounds.height()}, bounds);
 
 			auto rok = button_rect;
@@ -3121,13 +3121,13 @@ namespace ui
 			const auto cancel_extent = _cancel->measure(cx);
 			const auto analyze_extent = _analyze->measure(cx);
 
-			_ok_width = std::max(cx / 5, ok_extent.cx + mc.component_snap);
-			_cancel_width = std::max(cx / 5, cancel_extent.cx + mc.component_snap);
-			_analyze_width = std::max(cx / 5, analyze_extent.cx + mc.component_snap);
+			_ok_width = std::max(cx / 5, ok_extent.cx + mc.padding2);
+			_cancel_width = std::max(cx / 5, cancel_extent.cx + mc.padding2);
+			_analyze_width = std::max(cx / 5, analyze_extent.cx + mc.padding2);
 
 			return {
 				cx,
-				std::max(std::max(ok_extent.cy, analyze_extent.cy), cancel_extent.cy) + mc.component_snap
+				std::max(std::max(ok_extent.cy, analyze_extent.cy), cancel_extent.cy) + mc.padding2
 			};
 		}
 
@@ -3135,7 +3135,7 @@ namespace ui
 		{
 			bounds = bounds_in;
 
-			const auto total_button_width = _ok_width + _cancel_width + _analyze_width + (2 * mc.component_snap);
+			const auto total_button_width = _ok_width + _cancel_width + _analyze_width + (2 * mc.padding2);
 			const auto button_rect = center_rect(sizei{total_button_width, bounds.height()}, bounds);
 
 			auto ranalyze = button_rect;
@@ -3184,14 +3184,14 @@ namespace ui
 		{
 			const auto button_extent = _button->measure(cx);
 			
-			return {cx, button_extent.cy + mc.component_snap };
+			return {cx, button_extent.cy + mc.padding2 };
 		}
 
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
 		{
 			bounds = bounds_in;
 			const auto button_extent = _button->measure(bounds_in.width());
-			const auto  width = std::max(bounds_in.width() / 5, button_extent.cx + mc.component_snap);
+			const auto  width = std::max(bounds_in.width() / 5, button_extent.cx + mc.padding2);
 
 			positions.emplace_back(_button, center_rect(sizei{ width , bounds_in.height() }, bounds), is_visible());
 		}
@@ -3350,19 +3350,19 @@ namespace ui
 			if (_frame)
 			{
 				control_layouts positions;
-				const auto text_height = mc.text_line_height(style::font_size::dialog);
-				auto y = mc.component_snap;
+				const auto text_height = mc.text_line_height(style::font_face::dialog);
+				auto y = mc.padding2;
 				auto n = 0;
 
 				for (const auto& i : _results)
 				{
-					const recti bounds(0 + mc.component_snap, y, _extent.cx - mc.component_snap,
-					                   y + text_height + mc.baseline_snap);
+					const recti bounds(0 + mc.padding2, y, _extent.cx - mc.padding2,
+					                   y + text_height + mc.padding1);
 					i->layout(mc, bounds, positions);
 					y = bounds.bottom;
 				}
 
-				const auto y_max = y + mc.component_snap;
+				const auto y_max = y + mc.padding2;
 				const recti scroll_bounds{_extent.cx - mc.scroll_width, 0, _extent.cx, _extent.cy};
 				const recti client_bounds{0, 0, _extent.cx - mc.scroll_width, _extent.cy};
 				_scroller.layout({client_bounds.width(), y_max}, client_bounds, scroll_bounds);
@@ -3378,7 +3378,7 @@ namespace ui
 				}
 				else
 				{
-					_height = (_completes->max_predictions * (text_height + mc.baseline_snap)) + (mc.component_snap *
+					_height = (_completes->max_predictions * (text_height + mc.padding1)) + (mc.padding2 *
 						2);
 				}
 
@@ -3403,7 +3403,7 @@ namespace ui
 
 				if (!str::is_empty(text))
 				{
-					dc.draw_text(text, r.inflate(-32), style::font_size::title, style::text_style::multiline_center,
+					dc.draw_text(text, r.inflate(-32), style::font_face::title, style::text_style::multiline_center,
 					             color(dc.colors.foreground, dc.colors.alpha), {});
 				}
 			}
@@ -3514,7 +3514,7 @@ namespace ui
 		{
 			edit_styles e_style;
 			e_style.horizontal_scroll = true;
-			e_style.font = style::font_size::title;
+			e_style.font = style::font_face::title;
 			e_style.capture_key_down = [this](int c, const key_state keys) { return key_down(c, keys); };
 			_edit = h->create_edit(e_style, v, [this](const std::u8string_view text) { edit_change(text); });
 
@@ -3592,9 +3592,9 @@ namespace ui
 
 		sizei measure(measure_context& mc, const int cx) const override
 		{
-			_edit_line_height = mc.text_line_height(style::font_size::title) + 16;
-			const auto line_height = mc.text_line_height(style::font_size::dialog);
-			return {cx, line_height * 16 + _edit_line_height + mc.component_snap};
+			_edit_line_height = mc.text_line_height(style::font_face::title) + 16;
+			const auto line_height = mc.text_line_height(style::font_face::dialog);
+			return {cx, line_height * 16 + _edit_line_height + mc.padding2};
 		}
 
 		void render(draw_context& dc, const pointi element_offset) const override
@@ -3611,9 +3611,9 @@ namespace ui
 			if (_completes->folder_select_button)
 			{
 				const auto tb_extent = _tb->measure_toolbar(50);
-				const auto split = edit_bounds.right - tb_extent.cx - mc.component_snap;
+				const auto split = edit_bounds.right - tb_extent.cx - mc.padding2;
 				auto tb_bounds = edit_bounds;
-				tb_bounds.left = split + (mc.component_snap / 2);
+				tb_bounds.left = split + (mc.padding2 / 2);
 				tb_bounds.top += (tb_bounds.height() - tb_extent.cy) / 2;
 				edit_bounds.right = split;
 
@@ -3623,7 +3623,7 @@ namespace ui
 			positions.emplace_back(_edit, edit_bounds, is_visible());
 
 			auto search_bounds = bounds;
-			search_bounds.top = search_bounds.top + _edit_line_height + mc.component_snap;
+			search_bounds.top = search_bounds.top + _edit_line_height + mc.padding2;
 			positions.emplace_back(_list->_frame, search_bounds, is_visible());
 		}
 
@@ -3863,7 +3863,7 @@ public:
 		const auto max_width = std::min(work_area.width(), _max_width * scale_factor);
 		const auto max_height = std::min(work_area.height(), _max_height * scale_factor);
 
-		const auto layout_padding = mc.baseline_snap;
+		const auto layout_padding = mc.padding1;
 		auto avail_bounds = recti(0, 0, max_width, max_height);
 		avail_bounds.right -= mc.scroll_width - layout_padding;
 

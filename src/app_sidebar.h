@@ -10,7 +10,6 @@
 #pragma once
 #include "ui_controls.h"
 
-
 struct plasma
 {
 	uint32_t _palette[256];
@@ -170,7 +169,7 @@ struct text_layout_state
 {
 	ui::text_layout_ptr tf;
 	std::u8string text;
-	ui::style::font_size font = ui::style::font_size::dialog;
+	ui::style::font_face font = ui::style::font_face::dialog;
 	ui::style::text_style style = ui::style::text_style::multiline;
 
 	void lazy_load(ui::measure_context& mc)
@@ -183,7 +182,7 @@ struct text_layout_state
 	}
 
 	void lazy_load(ui::measure_context& mc, const std::u8string& text_in, const ui::style::text_style style_in,
-	               const ui::style::font_size font_in = ui::style::font_size::dialog)
+	               const ui::style::font_face font_in = ui::style::font_face::dialog)
 	{
 		const auto need_create = tf == nullptr ||
 			text != text_in ||
@@ -258,9 +257,9 @@ public:
 
 			const std::wstring text(icon_repeat, static_cast<wchar_t>(icon));
 			icon_layout.lazy_load(dc, str::utf16_to_utf8(text), ui::style::text_style::single_line_center,
-			                      ui::style::font_size::icons);
+			                      ui::style::font_face::icons);
 			dc.draw_text(icon_layout.tf, r, draw_clr, {});
-			x += cx + dc.baseline_snap;
+			x += cx + dc.padding1;
 		}
 
 		auto text_bounds = logical_bounds;
@@ -286,13 +285,13 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		auto cy = mc.text_line_height(ui::style::font_size::dialog);
+		auto cy = mc.text_line_height(ui::style::font_face::dialog);
 		auto cx = width_limit;
 		const auto total_text = format_total_text(summary.total_items(), false);
 
 		if (icon != icon_index::none)
 		{
-			cx -= mc.icon_cxy + mc.baseline_snap;
+			cx -= mc.icon_cxy + mc.padding1;
 		}
 
 		if (!str::is_empty(total_text))
@@ -328,20 +327,20 @@ public:
 		else
 		{
 			result.elements.add(make_icon_element(tooltip_icon, icon_repeat, view_element_style::no_break));
-			result.elements.add(std::make_shared<text_element>(title_layout.text, ui::style::font_size::title,
+			result.elements.add(std::make_shared<text_element>(title_layout.text, ui::style::font_face::title,
 			                                                   ui::style::text_style::multiline,
 			                                                   view_element_style::line_break));
 		}
 
 		if (str::is_empty(tooltip_text))
 		{
-			result.elements.add(std::make_shared<text_element>(search.text(), ui::style::font_size::dialog,
+			result.elements.add(std::make_shared<text_element>(search.text(), ui::style::font_face::dialog,
 			                                                   ui::style::text_style::multiline,
 			                                                   view_element_style::line_break));
 		}
 		else
 		{
-			result.elements.add(std::make_shared<text_element>(tooltip_text, ui::style::font_size::dialog,
+			result.elements.add(std::make_shared<text_element>(tooltip_text, ui::style::font_face::dialog,
 			                                                   ui::style::text_style::multiline,
 			                                                   view_element_style::line_break));
 		}
@@ -430,17 +429,17 @@ public:
 			r.bottom -= graph_height;
 			const std::wstring text(1, static_cast<wchar_t>(icon));
 			icon_layout.lazy_load(dc, str::utf16_to_utf8(text), ui::style::text_style::single_line_center,
-			                      ui::style::font_size::icons);
+			                      ui::style::font_face::icons);
 			dc.draw_text(icon_layout.tf, r, draw_clr, {});
-			x += dc.icon_cxy + dc.baseline_snap;
+			x += dc.icon_cxy + dc.padding1;
 		}
 		
 		auto text_bounds = logical_bounds;
 		text_bounds.left = x;
-		text_bounds.bottom -= graph_height + dc.baseline_snap;
+		text_bounds.bottom -= graph_height + dc.padding1;
 
 		auto graph_bounds = logical_bounds;
-		graph_bounds.top = text_bounds.bottom + dc.baseline_snap;
+		graph_bounds.top = text_bounds.bottom + dc.padding1;
 
 		auto used_bounds = graph_bounds.inflate(-pad1);
 		used_bounds.right = used_bounds.left + static_cast<int>(df::mul_div(
@@ -470,9 +469,9 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		const auto cy = mc.text_line_height(ui::style::font_size::dialog);
+		const auto cy = mc.text_line_height(ui::style::font_face::dialog);
 		const auto graph_height = df::round(_graph_height * mc.scale_factor);
-		return {width_limit, cy + graph_height + mc.baseline_snap };
+		return {width_limit, cy + graph_height + mc.padding1 };
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
@@ -485,7 +484,7 @@ public:
 	void tooltip(view_hover_element& result, const pointi loc, const pointi element_offset) const override
 	{
 		result.elements.add(make_icon_element(icon, view_element_style::no_break));
-		result.elements.add(std::make_shared<text_element>(_drive.name, ui::style::font_size::title,
+		result.elements.add(std::make_shared<text_element>(_drive.name, ui::style::font_face::title,
 		                                                   ui::style::text_style::multiline,
 		                                                   view_element_style::line_break));
 
@@ -809,7 +808,7 @@ class sidebar_indexing_element final : public view_element,
                                        public std::enable_shared_from_this<sidebar_indexing_element>
 {
 private:
-	ui::style::font_size _font = ui::style::font_size::title;
+	ui::style::font_face _font = ui::style::font_face::title;
 	view_state& _s;
 
 public:
@@ -842,7 +841,7 @@ public:
 
 	void tooltip(view_hover_element& hover, const pointi loc, const pointi element_offset) const override
 	{
-		hover.elements.add(std::make_shared<text_element>(tt.indexing_message, ui::style::font_size::dialog,
+		hover.elements.add(std::make_shared<text_element>(tt.indexing_message, ui::style::font_face::dialog,
 		                                                  ui::style::text_style::multiline,
 		                                                  view_element_style::line_break));
 		hover.elements.add(std::make_shared<action_element>(tt.click_collection_options));
@@ -878,16 +877,16 @@ public:
 
 	struct pie_chart_entry
 	{
-		double amount = 0.0;
 		int id = 0;
-		double start_rad = 0.0;
-		double end_rad = 0.0;
+		int count = 0;
+		df::file_size size;
+		file_group_ref group = file_group::other;
 		bool focus = false;
-		ui::color32 clr = 0;
+		double end_rad = 0.0;
 	};
 
-	using file_type_entries_t = std::vector<pie_chart_entry>;
-	file_type_entries_t _file_type_entries;
+	static constexpr int chart_segment_count = 64;
+	std::array<pie_chart_entry, chart_segment_count> _file_type_entries;
 
 	sidebar_file_type_element(view_state& state) noexcept : view_element(
 		                                                        view_element_style::has_tooltip |
@@ -897,12 +896,64 @@ public:
 
 	void populate(const df::file_group_histogram& summary)
 	{
-		_file_type_entries.clear();
-		_file_type_entries.reserve(max_file_type_count);
+		struct group_count
+		{
+			int count_sr;
+			int count;
+			df::file_size size;
+			file_group_ref group;
+		};
 
-		auto total = 0.0;
+		std::vector<group_count> counts;
 
-		for (auto i = 1; i < max_file_type_count; ++i)
+		for (auto i = 0; i < file_group::max_count; ++i)
+		{
+			const auto c = summary.counts[i];
+			counts.emplace_back(df::round(std::cbrt(static_cast<double>(c.count))), c.count, c.size, file_group_from_index(i));
+		}
+
+		std::ranges::sort(counts, [](auto&& left, auto&& right) { return left.count_sr < right.count_sr; });
+
+		auto current_segment = 0;/*
+
+		for (auto && e : _file_type_entries)
+		{
+			e.group = file_group::other;
+			e.focus = false;
+			e.clr = 0;
+		}*/
+
+		for (auto i = 0; i < file_group::max_count; ++i)
+		{
+			const auto group = counts[i].group;
+			const auto count_sr = counts[i].count_sr;
+
+			if (count_sr != 0)
+			{
+				auto remaining_count_total = 0;
+				const auto remaining_segments = chart_segment_count - current_segment;
+				const auto is_last = i == file_group::max_count - 1;
+
+				for (auto j = i; j < file_group::max_count; ++j) 
+					remaining_count_total += counts[j].count_sr;
+
+				const auto segments = std::max(1, df::mul_div(remaining_segments, count_sr, remaining_count_total));
+
+				for (int k = 0; (k < segments || is_last) && current_segment < chart_segment_count; k++)
+				{					
+					auto&& e = _file_type_entries[current_segment];
+					e.group = group;
+					e.count = counts[i].count;
+					e.size = counts[i].size;
+					e.focus = false;
+					e.id = current_segment;
+
+					current_segment += 1;
+				}
+			}
+		}
+
+		/*for (auto i = 1; i < file_group::max_count; ++i)
 		{
 			const auto& c = summary.counts[i];
 
@@ -920,15 +971,13 @@ public:
 				total += count;
 			}
 		}
+		*/
 
 		double start = -M_PI;
 
 		for (auto&& e : _file_type_entries)
 		{
-			const auto tt = e.amount / total;
-
-			e.start_rad = start;
-			start = e.end_rad = start + (2.0 * M_PI * tt);
+			start = e.end_rad = start + (2.0 * M_PI * (1.0 / chart_segment_count));
 		}
 
 		const auto total_items = summary.total_items();
@@ -936,11 +985,11 @@ public:
 		_pie_invalid = true;
 	}
 
-	int file_type_id_from_angle(const double rads)
+	int file_type_id_from_angle(const double rads) const
 	{
 		for (const auto& e : _file_type_entries)
 		{
-			if (rads >= e.start_rad && rads <= e.end_rad)
+			if (rads <= e.end_rad)
 			{
 				return e.id;
 			}
@@ -979,11 +1028,11 @@ public:
 			const auto size = prop::format_size(total.size);
 			const auto text = str::format(tt.total_title, num, size, num_folder);
 
-			hover.elements.add(std::make_shared<text_element>(tt.collection_title, ui::style::font_size::title,
+			hover.elements.add(std::make_shared<text_element>(tt.collection_title, ui::style::font_face::title,
 			                                                  ui::style::text_style::multiline,
 			                                                  view_element_style::line_break |
 			                                                  view_element_style::center));
-			hover.elements.add(std::make_shared<text_element>(text, ui::style::font_size::dialog,
+			hover.elements.add(std::make_shared<text_element>(text, ui::style::font_face::dialog,
 			                                                  ui::style::text_style::multiline,
 			                                                  view_element_style::line_break |
 			                                                  view_element_style::center));
@@ -1021,21 +1070,19 @@ public:
 			{
 				if (e.focus)
 				{
-					const auto file_types = _state.item_index.file_types();
-					const auto& c = file_types.counts[e.id];
-					const auto ft = file_group_from_index(e.id);
+					const auto ft = e.group;
 					const auto icon = ft->icon;
-					const auto num = platform::format_number(str::to_string(c.count));
-					const auto size = prop::format_size(c.size);
+					const auto num = platform::format_number(str::to_string(e.count));
+					const auto size = prop::format_size(e.size);
 
 					hover.elements.add(make_icon_element(icon, view_element_style::no_break));
-					hover.elements.add(std::make_shared<text_element>(ft->display_name(c.count > 1),
-					                                                  ui::style::font_size::title,
+					hover.elements.add(std::make_shared<text_element>(ft->display_name(e.count > 1),
+					                                                  ui::style::font_face::title,
 					                                                  ui::style::text_style::multiline,
 					                                                  view_element_style::line_break));
 
-					const auto text = str::format(tt.collection_contains, num, ft->display_name(c.count > 1), size);
-					hover.elements.add(std::make_shared<text_element>(text, ui::style::font_size::dialog,
+					const auto text = str::format(tt.collection_contains, num, ft->display_name(e.count > 1), size);
+					hover.elements.add(std::make_shared<text_element>(text, ui::style::font_face::dialog,
 					                                                  ui::style::text_style::multiline,
 					                                                  view_element_style::line_break));
 				}
@@ -1108,8 +1155,7 @@ public:
 				{
 					if (e.focus)
 					{
-						const auto ft = file_group_from_index(e.id);
-						_state.open(event.host, df::search_t().add_media_type(ft), {});
+						_state.open(event.host, df::search_t().add_media_type(e.group), {});
 						break;
 					}
 				}
@@ -1120,26 +1166,18 @@ public:
 	mutable ui::texture_ptr _tex;
 
 	static void draw_draw_pie_chart(const ui::texture_ptr& t, const sizei dims,
-	                                const std::vector<pie_chart_entry>& entries, const ui::color32& bg_clr,
+									const std::array<pie_chart_entry, chart_segment_count> &entries, const ui::color32& bg_clr,
 	                                const ui::color32& center_clr)
 	{
-		ui::color32 colors[64];
+		ui::color32 colors[chart_segment_count];
 
-		for (int i = 0; i < 64; ++i)
+		for (int i = 0; i < chart_segment_count; ++i)
 		{
 			const auto rad = (i * M_PI / 32.0) - M_PI;
-			auto c = ui::bgr(bg_clr);
+			const auto& e = entries[i];
+			const auto rgb = e.group->color;
 
-			for (const auto& e : entries)
-			{
-				if (rad >= e.start_rad && rad <= e.end_rad)
-				{
-					c = e.focus ? ui::lighten(ui::bgr(e.clr), 0.11f) : ui::bgr(e.clr);
-					break;
-				}
-			}
-
-			colors[i] = c;
+			colors[i] = e.focus ? ui::lighten(ui::bgr(rgb), 0.11f) : ui::bgr(rgb);
 		}
 
 		const pointi center = {dims.cx / 2, dims.cy / 2};
@@ -1190,7 +1228,7 @@ public:
 		const auto center = logical_bounds.center();
 
 		dc.draw_texture(_tex, center_rect(_tex->dimensions(), center));
-		dc.draw_text(_text, logical_bounds, ui::style::font_size::dialog, ui::style::text_style::multiline_center, clr,
+		dc.draw_text(_text, logical_bounds, ui::style::font_face::dialog, ui::style::text_style::multiline_center, clr,
 		             {});
 	}
 
@@ -1332,13 +1370,13 @@ struct sidebar_history_element final : public view_element, public std::enable_s
 			const auto year = str::to_string(_current_year - y);
 
 			hover.elements.add(make_icon_element(icon_index::time, view_element_style::no_break));
-			hover.elements.add(std::make_shared<text_element>(month, ui::style::font_size::title,
+			hover.elements.add(std::make_shared<text_element>(month, ui::style::font_face::title,
 			                                                  ui::style::text_style::multiline,
 			                                                  view_element_style::no_break));
-			hover.elements.add(std::make_shared<text_element>(year, ui::style::font_size::title,
+			hover.elements.add(std::make_shared<text_element>(year, ui::style::font_face::title,
 			                                                  ui::style::text_style::multiline,
 			                                                  view_element_style::line_break));
-			hover.elements.add(std::make_shared<text_element>(tt.collection_contains2, ui::style::font_size::dialog,
+			hover.elements.add(std::make_shared<text_element>(tt.collection_contains2, ui::style::font_face::dialog,
 			                                                  ui::style::text_style::multiline,
 			                                                  view_element_style::line_break));
 
@@ -1631,11 +1669,11 @@ public:
 			const auto& location = _locations[_hover_location];
 
 			hover.elements.add(make_icon_element(icon_index::location, view_element_style::no_break));
-			hover.elements.add(std::make_shared<text_element>(location.name, ui::style::font_size::title,
+			hover.elements.add(std::make_shared<text_element>(location.name, ui::style::font_face::title,
 			                                                  ui::style::text_style::multiline,
 			                                                  view_element_style::line_break));
 			hover.elements.add(std::make_shared<text_element>(
-				format(tt.click_items_from_fmt, location.count, location.name), ui::style::font_size::dialog,
+				format(tt.click_items_from_fmt, location.count, location.name), ui::style::font_face::dialog,
 				ui::style::text_style::multiline, view_element_style::line_break));
 			hover.elements.add(std::make_shared<action_element>(tt.click_to_search));
 		}
@@ -1659,7 +1697,7 @@ class sidebar_logo_element final : public std::enable_shared_from_this<sidebar_l
 private:
 	view_state& _state;
 	std::u8string_view _text = s_app_name;
-	ui::style::font_size _font = ui::style::font_size::title;
+	ui::style::font_face _font = ui::style::font_face::title;
 	ui::style::text_style _text_style = ui::style::text_style::single_line;
 
 	mutable plasma logo_plasma;
@@ -1726,13 +1764,13 @@ public:
 		dc.draw_border(logical_plasma_bounds, logical_plasma_bounds.inflate(pad), plasma_border_clr, plasma_border_clr);
 
 		auto text_bounds = logical_bounds;
-		text_bounds.left = logical_plasma_bounds.right + dc.component_snap;
+		text_bounds.left = logical_plasma_bounds.right + dc.padding2;
 		dc.draw_text(_text, text_bounds, _font, _text_style, ui::color(dc.colors.foreground, dc.colors.alpha), {});
 	}
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		return {width_limit, mc.text_line_height(_font) + mc.component_snap};
+		return {width_limit, mc.text_line_height(_font) + mc.padding2};
 	}
 
 	void dispatch_event(const view_element_event& event) override
@@ -1945,11 +1983,11 @@ public:
 				? tt.command_all_tags
 				: tt.command_favorite_tags;
 
-			auto tags_element = std::make_shared<link_element>(tag_show_text, commands::view_favorite_tags, ui::style::font_size::dialog,
+			auto tags_element = std::make_shared<link_element>(tag_show_text, commands::view_favorite_tags, ui::style::font_face::dialog,
 				ui::style::text_style::multiline_center,
 				view_element_style::new_line | view_element_style::center);
 
-			auto customise_element = std::make_shared<link_element>(tt.command_customise, commands::options_sidebar, ui::style::font_size::dialog,
+			auto customise_element = std::make_shared<link_element>(tt.command_customise, commands::options_sidebar, ui::style::font_face::dialog,
 				ui::style::text_style::multiline_center,
 				view_element_style::new_line | view_element_style::center);
 
@@ -2123,7 +2161,7 @@ public:
 	{
 		const auto x_padding = 4;
 		const auto scroll_padding = _scroller.can_scroll() ? mc.scroll_width : x_padding;
-		const auto layout_padding = sizei{0, mc.baseline_snap};
+		const auto layout_padding = sizei{0, mc.padding1};
 		auto avail_bounds = recti(_extent);
 		avail_bounds.left += x_padding; // -(mc.baseline_snap / 2);
 		avail_bounds.right -= scroll_padding; // -(mc.baseline_snap / 2);
@@ -2133,12 +2171,12 @@ public:
 
 		const recti scroll_bounds{_extent.cx - scroll_padding, 0, _extent.cx, _extent.cy};
 		const recti client_bounds{0, 0, _extent.cx - scroll_padding, _extent.cy};
-		_scroller.layout({client_bounds.width(), y + mc.component_snap}, client_bounds, scroll_bounds);
+		_scroller.layout({client_bounds.width(), y + mc.padding2}, client_bounds, scroll_bounds);
 	}
 
 	int prefered_width(ui::measure_context& mc)
 	{
-		const auto extent = mc.measure_text(u8"Documents"sv, ui::style::font_size::dialog,
+		const auto extent = mc.measure_text(u8"Documents"sv, ui::style::font_face::dialog,
 		                                    ui::style::text_style::single_line, 200);
 		return df::mul_div(extent.cx, 5, 2);
 	}

@@ -139,6 +139,8 @@ public:
 	static file_group archive;
 	static file_group commodore;
 
+	static constexpr size_t max_count = 7;
+
 	std::u8string display_name(bool is_plural) const;
 
 	uint32_t bloom_bit() const
@@ -254,7 +256,7 @@ struct file_tool
 	}
 };
 
-const size_t max_file_type_count = 8;
+
 
 file_group_ref file_group_from_index(int from_id);
 file_group_ref parse_file_group(const std::u8string& text);
@@ -341,6 +343,7 @@ public:
 
 	mutable ui::const_image_ptr thumbnail_image;
 	ui::surface_ptr thumbnail_surface;
+	mutable ui::const_image_ptr cover_art;
 
 	metadata_parts metadata;
 
@@ -380,7 +383,7 @@ public:
 	int id3v2_version_major = 0;
 	mutable gps_coordinate gps;
 	uint32_t crc32c = 0;
-	bool success = false;
+	bool success = false;	
 
 	sizei dimensions() const
 	{
@@ -1099,4 +1102,11 @@ public:
 	}
 
 	static std::vector<archive_item> list_archive(df::file_path zip_file_path);
+
+	struct d64_item
+	{
+		std::u8string line;
+	};
+
+	static std::vector<d64_item> list_disk(const df::blob& selected_item_data);
 };

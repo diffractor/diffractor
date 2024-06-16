@@ -886,7 +886,7 @@ namespace ui
 			extern color32 duplicate_background;
 		};
 
-		enum class font_size
+		enum class font_face
 		{
 			code = 1,
 			dialog,
@@ -894,6 +894,7 @@ namespace ui
 			mega,
 			icons,
 			small_icons,
+			petscii
 		};
 
 		enum class text_style
@@ -1197,17 +1198,16 @@ namespace ui
 	class measure_context : public df::no_copy
 	{
 	public:
-		virtual sizei measure_text(std::u8string_view text, style::font_size font, style::text_style style, int cx,
-		                           int cy = 0) = 0;
-		virtual int text_line_height(style::font_size font) = 0;
-		virtual text_layout_ptr create_text_layout(style::font_size font) = 0;
+		virtual sizei measure_text(std::u8string_view text, style::font_face font, style::text_style style, int cx, int cy = 0) = 0;
+		virtual int text_line_height(style::font_face font) = 0;
+		virtual text_layout_ptr create_text_layout(style::font_face font) = 0;
 
 		double scale_factor = 1.0;
 
 		int icon_cxy = 18;
-		int component_snap = 8;
-		int baseline_snap = 4;
-		int cx_resize_handle = 12;
+		int padding2 = 8;
+		int padding1 = 4;
+		int handle_cxy = 12;
 		int scroll_width = 20;
 		coll_widths col_widths;
 	};
@@ -1226,10 +1226,10 @@ namespace ui
 
 		virtual void draw_rounded_rect(recti bounds, color c, int radius) = 0;
 		virtual void draw_rect(recti bounds, color c) = 0;
-		virtual void draw_text(std::u8string_view text, recti bounds, style::font_size font, style::text_style style,
+		virtual void draw_text(std::u8string_view text, recti bounds, style::font_face font, style::text_style style,
 		                       color c, color bg) = 0;
 		virtual void draw_text(std::u8string_view text, const std::vector<text_highlight_t>& highlights, recti bounds,
-		                       style::font_size font, style::text_style style, color clr, color bg) = 0;
+		                       style::font_face font, style::text_style style, color clr, color bg) = 0;
 		virtual void draw_text(const text_layout_ptr& tl, recti bounds, color clr, color bg) = 0;
 		virtual void draw_shadow(recti bounds, int width, float alpha, bool inverse = false) = 0;
 		virtual void draw_border(recti inside, recti outside, color c_inside, color c_outside) = 0;
@@ -1242,13 +1242,13 @@ namespace ui
 		virtual void draw_vertices(const vertices_ptr& v) = 0;
 		virtual void draw_edge_shadows(float alpha) = 0;
 
-		sizei measure_text(std::u8string_view text, style::font_size font, style::text_style style, int width,
+		sizei measure_text(std::u8string_view text, style::font_face font, style::text_style style, int width,
 		                   int height = 0) override = 0;
-		int text_line_height(style::font_size type) override = 0;
+		int text_line_height(style::font_face type) override = 0;
 
 		virtual texture_ptr create_texture() = 0;
 		virtual vertices_ptr create_vertices() = 0;
-		text_layout_ptr create_text_layout(style::font_size font) override = 0;
+		text_layout_ptr create_text_layout(style::font_face font) override = 0;
 
 		virtual recti clip_bounds() const = 0;
 		virtual void clip_bounds(recti) = 0;
@@ -1350,7 +1350,7 @@ namespace ui
 		bool rounded_corners = false;
 		bool select_all_on_focus = false;
 		color32 bg_clr = style::color::dialog_background;
-		style::font_size font = style::font_size::dialog;
+		style::font_face font = style::font_face::dialog;
 		std::function<bool(int c, key_state keys)> capture_key_down;
 		std::vector<std::u8string> auto_complete_list;
 	};

@@ -156,7 +156,7 @@ namespace df
 		date_t modified;
 
 		item_online_status online_status = item_online_status::disk;
-		ui::style::font_size title_font = ui::style::font_size::dialog;
+		ui::style::font_face title_font = ui::style::font_face::dialog;
 		item_presence presence = item_presence::unknown;
 	};
 
@@ -478,12 +478,12 @@ namespace df
 	class file_group_histogram
 	{
 	public:
-		std::array<count_and_size, max_file_type_count> counts{};
+		std::array<count_and_size, file_group::max_count> counts{};
 
 		count_and_size total_items() const
 		{
 			count_and_size result;
-			for (auto i = 1; i < max_file_type_count; i++)
+			for (auto i = 1; i < file_group::max_count; i++)
 			{
 				result.size += counts[i].size;
 				result.count += counts[i].count;
@@ -500,7 +500,7 @@ namespace df
 		{
 			auto largest = 0;
 
-			for (auto i = 0; i < max_file_type_count; i++)
+			for (auto i = 0; i < file_group::max_count; i++)
 			{
 				if (counts[i].count > counts[largest].count)
 				{
@@ -542,7 +542,7 @@ namespace df
 
 		void add(const file_group_histogram& other)
 		{
-			for (auto i = 1; i < max_file_type_count; i++)
+			for (auto i = 1; i < file_group::max_count; i++)
 			{
 				counts[i].size += other.counts[i].size;
 				counts[i].count += other.counts[i].count;
@@ -578,6 +578,7 @@ namespace df
 		duplicate_info _duplicates;
 
 		ui::const_image_ptr _thumbnail;
+		ui::const_image_ptr _cover_art;
 		mutable ui::texture_ptr _texture;
 
 		int _random = 0;
@@ -636,9 +637,19 @@ namespace df
 			return is_valid(_thumbnail);
 		}
 
+		bool has_cover_art() const
+		{
+			return is_valid(_cover_art);
+		}
+
 		const ui::const_image_ptr& thumbnail() const
 		{
 			return _thumbnail;
+		}
+
+		const ui::const_image_ptr& cover_art() const
+		{
+			return _cover_art;
 		}
 
 		bool is_selected() const
@@ -688,21 +699,24 @@ namespace df
 			return _thumbnail_orientation;
 		}
 
-		void thumbnail(ui::const_image_ptr i, const date_t timestamp = date_t::null)
+		void thumbnail(ui::const_image_ptr i, ui::const_image_ptr ca, const date_t timestamp = date_t::null)
 		{
 			_thumbnail = std::move(i);
+			_cover_art = std::move(ca);
 			_texture.reset();
 			_thumbnail_timestamp = timestamp;
 
-			if (_thumbnail && !_thumbnail->empty() && _ft != file_type::folder)
+			if (_ft != file_type::folder)
 			{
-				if (_ft != file_type::folder)
+				if (is_valid(_cover_art))
 				{
-					if (_thumbnail_dims.is_empty())
-					{
-						_thumbnail_dims = _thumbnail->dimensions();
-						_thumbnail_orientation = _thumbnail->orientation();
-					}
+					_thumbnail_dims = _cover_art->dimensions();
+					_thumbnail_orientation = _cover_art->orientation();
+				}
+				else if (is_valid(_thumbnail))
+				{
+					_thumbnail_dims = _thumbnail->dimensions();
+					_thumbnail_orientation = _thumbnail->orientation();
 				}
 			}
 		}
@@ -1083,6 +1097,8 @@ namespace df
 			const auto md = _metadata.load();;
 			return md ? md->label : std::u8string_view{};
 		}
+
+		
 	};
 
 	struct unique_items
@@ -1574,7 +1590,7 @@ namespace df
 		{
 			const auto max_width = df::round(_max_width * dc.scale_factor);
 
-			extent = std::max(extent, dc.measure_text(text, ui::style::font_size::dialog,
+			extent = std::max(extent, dc.measure_text(text, ui::style::font_face::dialog,
 			                                          ui::style::text_style::single_line, max_width).cx);
 			val_max = std::max(val_max, val);
 			val_min = std::min(val_min, val);
@@ -1583,7 +1599,7 @@ namespace df
 		void update_extent(ui::draw_context& dc, const std::u8string_view text)
 		{
 			const auto max_width = df::round(_max_width * dc.scale_factor);
-			extent = std::max(extent, dc.measure_text(text, ui::style::font_size::dialog,
+			extent = std::max(extent, dc.measure_text(text, ui::style::font_face::dialog,
 			                                          ui::style::text_style::single_line, max_width).cx);
 		}
 
@@ -1606,7 +1622,7 @@ namespace df
 		}
 
 		void draw(ui::draw_context& rc, const std::u8string_view text, const double val, const recti bounds,
-		          const ui::style::font_size text_font, const ui::style::text_style text_style,
+		          const ui::style::font_face text_font, const ui::style::text_style text_style,
 		          const ui::color color) const
 		{
 			ui::color rank_color;
@@ -1623,7 +1639,7 @@ namespace df
 		}
 
 		void draw(ui::draw_context& rc, const std::u8string_view text, const ui::color bg_color, const recti bounds,
-		          const ui::style::font_size text_font, const ui::style::text_style text_style,
+		          const ui::style::font_face text_font, const ui::style::text_style text_style,
 		          const ui::color color) const
 		{
 			rc.draw_text(text, bounds, text_font, text_style, color, bg_color);

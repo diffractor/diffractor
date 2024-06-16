@@ -19,6 +19,7 @@
 #define IDC_MOVE   113
 #define IDC_SELECT   114
 #define IDF_ICONS   115
+#define IDF_PETSCII   116
 #define IDI_DIFFRACTOR   117
 #define IDR_CREATE_SQL   118
 #define IDR_MAP   120

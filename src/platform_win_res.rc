@@ -125,6 +125,7 @@ IDB_MAP                 PNG                      "Res\\map.png"
 IDB_TITLE               PNG                    "Res\\title.png"
 
 IDF_ICONS               BINARY                 "Res\\segmdl2.ttf"
+IDF_PETSCII             BINARY                 "Res\\c64-pro-mono.ttf" 
 
 
 /////////////////////////////////////////////////////////////////////////////

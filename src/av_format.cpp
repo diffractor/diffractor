@@ -109,10 +109,10 @@ static df::blob unescape_xmp(const char* sz)
 		result += c;
 	}
 
-	return {result.data(), result.data() + result.size()};
+	return { result.data(), result.data() + result.size() };
 }
 
-double get_rotation(AVStream* st)
+double get_rotation(const AVStream* const st)
 {
 	const AVPacketSideData* side_data = av_packet_side_data_get(st->codecpar->coded_side_data,
 		st->codecpar->nb_coded_side_data,
@@ -122,8 +122,8 @@ double get_rotation(AVStream* st)
 
 	if (side_data)
 	{
-		const auto *display_matrix = reinterpret_cast<const int32_t*>(side_data->data);
-		
+		const auto* display_matrix = reinterpret_cast<const int32_t*>(side_data->data);
+
 		if (display_matrix)
 		{
 			theta = -av_display_rotation_get(std::bit_cast<int32_t*>(display_matrix));
@@ -176,7 +176,7 @@ static AVSampleFormat to_AVSampleFormat(const prop::audio_sample_t sample_fmt)
 	case prop::audio_sample_t::signed_planar_64bit: return AV_SAMPLE_FMT_S64P;
 	case prop::audio_sample_t::planar_float: return AV_SAMPLE_FMT_FLTP;
 	case prop::audio_sample_t::planar_double: return AV_SAMPLE_FMT_DBLP;
-	default: ;
+	default:;
 	}
 
 	return AV_SAMPLE_FMT_NONE;
@@ -214,39 +214,41 @@ static ui::orientation calc_orientation_impl(const int rr)
 	return ui::orientation::top_left;
 }
 
-static void populate_properties(AVStream* s, file_scan_result& result)
+static void populate_audio_properties(const AVStream* const s, file_scan_result& result)
 {
 	auto* codec = s->codecpar;
 
-	if (codec)
+	if (codec && codec->codec_type == AVMEDIA_TYPE_AUDIO)
 	{
-		if (codec->codec_type == AVMEDIA_TYPE_VIDEO)
+		auto* const found = avcodec_find_decoder(codec->codec_id);
+		if (found) result.audio_codec = str::cache(found->name);
+
+		result.audio_sample_rate = codec->sample_rate;
+		result.audio_channels = codec->ch_layout.nb_channels;
+		result.audio_sample_type = to_sample_type(static_cast<AVSampleFormat>(codec->format));
+	}
+}
+
+static void populate_video_properties(const AVStream* const s, file_scan_result& result)
+{
+	auto* codec = s->codecpar;
+
+	if (codec && codec->codec_type == AVMEDIA_TYPE_VIDEO)
+	{
+		auto* const found = avcodec_find_decoder(codec->codec_id);
+		if (found) result.video_codec = str::cache(found->name);
+
+		result.width = codec->width;
+		result.height = codec->height;
+
+		if (codec->format != AV_PIX_FMT_NONE)
 		{
-			auto* const found = avcodec_find_decoder(codec->codec_id);
-			if (found)result.video_codec = str::cache(found->name);
+			const auto* const desc = av_pix_fmt_desc_get(static_cast<AVPixelFormat>(codec->format));
 
-			result.width = codec->width;
-			result.height = codec->height;
-
-			if (codec->format != AV_PIX_FMT_NONE)
+			if (desc)
 			{
-				const auto* const desc = av_pix_fmt_desc_get(static_cast<AVPixelFormat>(codec->format));
-
-				if (desc)
-				{
-					result.pixel_format = str::cache(desc->name);
-				}
+				result.pixel_format = str::cache(desc->name);
 			}
-		}
-
-		if (codec->codec_type == AVMEDIA_TYPE_AUDIO)
-		{
-			auto* const found = avcodec_find_decoder(codec->codec_id);
-			if (found) result.audio_codec = str::cache(found->name);
-
-			result.audio_sample_rate = codec->sample_rate;
-			result.audio_channels = codec->ch_layout.nb_channels;
-			result.audio_sample_type = to_sample_type(static_cast<AVSampleFormat>(codec->format));
 		}
 
 		result.orientation = calc_orientation_impl(df::round(get_rotation(s)));
@@ -533,27 +535,26 @@ video_info_t av_format_decoder::video_information() const
 
 		if (ar.num == 0 || ar.den == 0 || ar.den == ar.num)
 		{
-			ar = {_video_stream_aspect_ratio.num, _video_stream_aspect_ratio.den};
+			ar = { _video_stream_aspect_ratio.num, _video_stream_aspect_ratio.den };
 		}
 
 		if (ar.num != 0 && ar.den != 0)
 		{
-			result.apsect_ratio = {ar.num, ar.den};
+			result.apsect_ratio = { ar.num, ar.den };
 		}
 
 		if (ar.num == 0 || ar.den == 0 || ar.den == ar.num)
 		{
-			result.display_dimensions = {_video_context->width, _video_context->height};
+			result.display_dimensions = { _video_context->width, _video_context->height };
 		}
 		else
 		{
 			const auto width = static_cast<int64_t>(_video_context->width);
-			const auto height = df::mul_div(width, ar.den * static_cast<int64_t>(_video_context->height),
-			                                ar.num * width);
-			result.display_dimensions = {static_cast<int>(width), static_cast<int>(height)};
+			const auto height = df::mul_div(width, ar.den * static_cast<int64_t>(_video_context->height),ar.num * width);
+			result.display_dimensions = { static_cast<int>(width), static_cast<int>(height) };
 		}
 
-		result.render_dimensions = {_video_context->width, _video_context->height};
+		result.render_dimensions = { _video_context->width, _video_context->height };
 		result.format = _video_context->pix_fmt;
 		result.is_yuv = is_yuv_format(_video_context->pix_fmt);
 	}
@@ -571,7 +572,7 @@ channel_layout_ptr av_get_def_channel_layout(const int num_channels)
 static channel_layout_ptr av_copy_to_ptr(const AVChannelLayout& src)
 {
 	auto dst = std::make_shared<AVChannelLayout>();
-	av_channel_layout_copy(dst.get(), &src);	
+	av_channel_layout_copy(dst.get(), &src);
 	return dst;
 }
 
@@ -725,29 +726,41 @@ void av_format_decoder::extract_metadata(file_scan_result& sr) const
 	if (fc)
 	{
 		populate_properties(fc, sr);
+		const AVStream* audio_stream = nullptr;
+		const AVStream* video_stream = nullptr;
 
 		for (int i = 0; i < static_cast<int>(fc->nb_streams); ++i)
 		{
 			auto* const stream = fc->streams[i];
 
-			if (stream && stream->codecpar)
+			if (stream)
 			{
-				/*AVDictionaryEntry* tag = nullptr;
+				const auto is_cover_art = (stream->disposition & AV_DISPOSITION_ATTACHED_PIC) != 0;
 
-				while (stream->metadata && (tag = av_dict_get(stream->metadata, {}, tag, AV_DICT_IGNORE_SUFFIX)))
+				if (is_cover_art)
 				{
-					if (is_key(tag->key, "title"sv)) md.store(prop::title, str::cache(tag->value));
-				}*/
+					const auto& packet = stream->attached_pic;
+					sr.cover_art = load_image_file({ packet.data, static_cast<size_t>(packet.size) });
+				}
 
-				const auto ct = stream->codecpar->codec_type;
-
-				if (ct == AVMEDIA_TYPE_VIDEO ||
-					ct == AVMEDIA_TYPE_AUDIO)
+				if (stream->codecpar)
 				{
-					populate_properties(stream, sr);
+					/*AVDictionaryEntry* tag = nullptr;
+
+					while (stream->metadata && (tag = av_dict_get(stream->metadata, {}, tag, AV_DICT_IGNORE_SUFFIX)))
+					{
+						if (is_key(tag->key, "title"sv)) md.store(prop::title, str::cache(tag->value));
+					}*/
+
+					const auto ct = stream->codecpar->codec_type;
+					if (ct == AVMEDIA_TYPE_VIDEO && (!is_cover_art || !video_stream)) video_stream = stream;
+					if (ct == AVMEDIA_TYPE_AUDIO && !audio_stream) audio_stream = stream;
 				}
 			}
 		}
+
+		if (audio_stream) populate_audio_properties(audio_stream, sr);
+		if (video_stream) populate_video_properties(video_stream, sr);
 
 		const auto bit_rate = fc->bit_rate;
 
@@ -929,6 +942,11 @@ bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path
 
 			s.rotation = df::round(get_rotation(stream));
 
+			if (stream->disposition & AV_DISPOSITION_ATTACHED_PIC)
+			{
+				const auto& packet = stream->attached_pic;
+				_cover_art = load_image_file({ packet.data, static_cast<size_t>(packet.size) });
+			}
 
 			if (codec)
 			{
@@ -958,15 +976,15 @@ bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path
 					s.audio_sample_type = to_sample_type(static_cast<AVSampleFormat>(codec->format));
 				}
 				s.metadata.emplace_back(u8"codec"_c,
-				                        std::u8string(str::utf8_cast(avcodec_get_name(codec->codec_id))));
+					std::u8string(str::utf8_cast(avcodec_get_name(codec->codec_id))));
 				//s.metadata.emplace_back( "profile"sv, av_get_profile_name(avcodec_find_decoder(stream->codecpar->codec_id), stream->codecpar->profile) });
 
 				if (codec->codec_tag)
 				{
 					char name[AV_FOURCC_MAX_STRING_SIZE];
 					s.metadata.emplace_back(u8"fourcc"_c,
-					                        std::u8string(
-						                        str::utf8_cast(av_fourcc_make_string(name, codec->codec_tag))));
+						std::u8string(
+							str::utf8_cast(av_fourcc_make_string(name, codec->codec_tag))));
 				}
 
 				switch (codec->codec_type)
@@ -1017,7 +1035,7 @@ static enum AVPixelFormat get_hw_format(AVCodecContext* ctx,
 
 
 
-void av_format_decoder::init_streams(int video_track, int audio_track, bool can_use_hw, bool video_only)
+void av_format_decoder::init_streams(int video_track, int audio_track, bool can_use_hw, bool video_only, bool can_use_threads)
 {
 	auto* const fc = _format_context;
 	//str::format2(fc->url, sizeof(fc->url), "{}"sv, path.str());
@@ -1047,23 +1065,36 @@ void av_format_decoder::init_streams(int video_track, int audio_track, bool can_
 
 			if (vc)
 			{
+				const auto is_cover_art = video_stream->disposition & AV_DISPOSITION_ATTACHED_PIC;
+				const auto codec_supports_threads = (video_codec->capabilities & (AV_CODEC_CAP_FRAME_THREADS |
+					AV_CODEC_CAP_SLICE_THREADS |
+					AV_CODEC_CAP_OTHER_THREADS));
+
 				avcodec_parameters_to_context(vc, video_stream->codecpar);
 
-				vc->workaround_bugs = FF_BUG_AUTODETECT;
-				vc->thread_count = 4;
+				if (codec_supports_threads && can_use_threads && !is_cover_art)
+				{
+					vc->thread_count = 4;
+				}
+				else
+				{
+					vc->thread_count = 1;
+				}
+
+				vc->workaround_bugs = FF_BUG_AUTODETECT;				
 				vc->thread_type = FF_THREAD_FRAME;
 
 				if (can_use_hw)
 				{
 					for (int i = 0;; i++) {
 
-						const auto *hw_config = avcodec_get_hw_config(video_codec, i);
+						const auto* hw_config = avcodec_get_hw_config(video_codec, i);
 
 						if (hw_config && hw_config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX)
 						{
 							vc->get_format = get_hw_format;
 
-							const auto ret = av_hwdevice_ctx_create(&_hw_device_ctx, 
+							const auto ret = av_hwdevice_ctx_create(&_hw_device_ctx,
 								hw_config->device_type,
 								nullptr, nullptr, 0);
 
@@ -1082,7 +1113,7 @@ void av_format_decoder::init_streams(int video_track, int audio_track, bool can_
 				}
 
 				_has_video = avcodec_open2(vc, video_codec, nullptr) == 0;
-				_video_base = {video_stream->time_base.num, video_stream->time_base.den};
+				_video_base = { video_stream->time_base.num, video_stream->time_base.den };
 				_video_start_time = video_stream->start_time;
 				_video_stream_index = video_stream_index;
 				_video_context = vc;
@@ -1098,7 +1129,7 @@ void av_format_decoder::init_streams(int video_track, int audio_track, bool can_
 	{
 		const AVCodec* aud_decoder = nullptr;
 		const auto aud_stream = av_find_best_stream(fc, AVMEDIA_TYPE_AUDIO, audio_track, video_stream_index,
-		                                            &aud_decoder, 0);
+			&aud_decoder, 0);
 
 		if (aud_stream >= 0)
 		{
@@ -1118,7 +1149,7 @@ void av_format_decoder::init_streams(int video_track, int audio_track, bool can_
 					//ac->request_channel_layout = AV_CH_LAYOUT_STEREO;
 
 					_has_audio = avcodec_open2(ac, aud_decoder, nullptr) == 0;
-					_audio_base = {audio_stream->time_base.num, audio_stream->time_base.den};
+					_audio_base = { audio_stream->time_base.num, audio_stream->time_base.den };
 					_audio_start_time = audio_stream->start_time;
 					_audio_stream_index = aud_stream;
 					_audio_context = ac;
@@ -1167,6 +1198,7 @@ av_media_info av_format_decoder::info() const
 	result.bitrate = _bitrate;
 	result.start = _start_time;
 	result.end = _end_time;
+	result.cover_art = _cover_art;
 	result.render_dimensions = vid_info.render_dimensions;
 	result.display_dimensions = vid_info.display_dimensions;
 	result.display_orientation = calc_orientation();
@@ -1298,7 +1330,7 @@ void av_format_decoder::update_orientation(AVFrame* frame)
 }
 
 bool av_format_decoder::decode_frame(ui::surface_ptr& dest_surface, AVCodecContext* ctx, const av_packet_ptr& packet,
-                                     double audio_time, const sizei max_dim)
+	double audio_time, const sizei max_dim)
 {
 	auto success = false;
 	const auto send_res = try_avcodec_send_packet(ctx, packet->pkt);
@@ -1336,7 +1368,7 @@ bool av_format_decoder::decode_frame(ui::surface_ptr& dest_surface, AVCodecConte
 
 
 bool av_format_decoder::extract_seek_frame(ui::surface_ptr& dest_surface, const sizei max_dim, double pos_numerator,
-                                           double pos_denominator)
+	double pos_denominator)
 {
 	auto success = false;
 
@@ -1414,7 +1446,7 @@ bool av_format_decoder::extract_seek_frame(ui::surface_ptr& dest_surface, const 
 }
 
 bool av_format_decoder::extract_thumbnail(ui::surface_ptr& dest_surface, const sizei max_dim, double pos_numerator,
-                                          double pos_denominator)
+	double pos_denominator)
 {
 	auto success = false;
 
@@ -1456,12 +1488,12 @@ bool av_format_decoder::extract_thumbnail(ui::surface_ptr& dest_surface, const s
 
 double av_format_decoder::to_video_seconds(int64_t vt) const
 {
-	return calc_duration(vt, {_video_base.num, _video_base.den}, _video_start_time);
+	return calc_duration(vt, { _video_base.num, _video_base.den }, _video_start_time);
 }
 
 double av_format_decoder::to_audio_seconds(int64_t vt) const
 {
-	return calc_duration(vt, {_audio_base.num, _audio_base.den}, _audio_start_time);
+	return calc_duration(vt, { _audio_base.num, _audio_base.den }, _audio_start_time);
 }
 
 
@@ -1485,11 +1517,11 @@ file_load_result av_format_decoder::render_frame(const av_frame_ptr& frame_in) c
 		}
 	}
 
-	const sizei src_extent = {frame->width, frame->height};
+	const sizei src_extent = { frame->width, frame->height };
 	const auto source_fmt = static_cast<AVPixelFormat>(frame->format);
 
 	auto* const scaler = sws_getContext(src_extent.cx, src_extent.cy, source_fmt, w, h, AV_PIX_FMT_BGRA, SWS_BICUBIC,
-	                                    nullptr, nullptr, nullptr);
+		nullptr, nullptr, nullptr);
 
 	if (scaler)
 	{
@@ -1497,8 +1529,8 @@ file_load_result av_format_decoder::render_frame(const av_frame_ptr& frame_in) c
 		auto* const buffer = s->alloc(w, h, ui::texture_format::RGB, calc_orientation());
 		const auto pitch = (int)s->stride();
 
-		uint8_t* data[4] = {buffer, nullptr, nullptr, nullptr};
-		const int linesize[4] = {pitch, 0, 0, 0};
+		uint8_t* data[4] = { buffer, nullptr, nullptr, nullptr };
+		const int linesize[4] = { pitch, 0, 0, 0 };
 
 		sws_scale(scaler, frame->data, frame->linesize, 0, src_extent.cy, data, linesize);
 
@@ -1541,7 +1573,7 @@ void audio_resampler::flush()
 
 		if (buffer)
 		{
-			uint8_t* output[AV_NUM_DATA_POINTERS]{buffer.get(), nullptr, nullptr, nullptr, nullptr, nullptr};
+			uint8_t* output[AV_NUM_DATA_POINTERS]{ buffer.get(), nullptr, nullptr, nullptr, nullptr, nullptr };
 			swr_convert(_aud_resampler, output, buffer_len / 4u, nullptr, 0);
 		}
 	}
@@ -1552,12 +1584,12 @@ void audio_resampler::resample(const av_frame_ptr& frame, audio_buffer& audio_bu
 {
 	audio_info_t source_format;
 	source_format.channel_layout = frame->frm.ch_layout.nb_channels == 0
-		                               ? _stream_info.channel_layout
-		                               : av_copy_to_ptr(frame->frm.ch_layout);
+		? _stream_info.channel_layout
+		: av_copy_to_ptr(frame->frm.ch_layout);
 
 	source_format.sample_fmt = frame->frm.format == 0
-		                           ? _stream_info.sample_fmt
-		                           : to_sample_type(static_cast<AVSampleFormat>(frame->frm.format));
+		? _stream_info.sample_fmt
+		: to_sample_type(static_cast<AVSampleFormat>(frame->frm.format));
 
 	source_format.sample_rate = frame->frm.sample_rate == 0 ? _stream_info.sample_rate : frame->frm.sample_rate;
 
@@ -1620,7 +1652,7 @@ void audio_resampler::resample(const av_frame_ptr& frame, audio_buffer& audio_bu
 		const auto out_num_channels = dest_format.channel_count();
 		const auto out_sample_size = dest_format.bytes_per_sample();
 
-		uint8_t* buffer[AV_NUM_DATA_POINTERS]{nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+		uint8_t* buffer[AV_NUM_DATA_POINTERS]{ nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
 		av_samples_alloc(buffer, nullptr, out_num_channels, expected_out_samples, dest_sample_fmt, 0);
 
 		if (buffer[0])
@@ -1628,15 +1660,15 @@ void audio_resampler::resample(const av_frame_ptr& frame, audio_buffer& audio_bu
 			if (is_valid)
 			{
 				const auto out_samples = swr_convert(_aud_resampler, buffer, expected_out_samples,
-				                                     const_cast<const uint8_t**>(frame->frm.data),
-				                                     frame->frm.nb_samples);
+					const_cast<const uint8_t**>(frame->frm.data),
+					frame->frm.nb_samples);
 				audio_buffer.append(buffer[0], out_samples * out_num_channels * out_sample_size, frame->time,
-				                    frame->gen);
+					frame->gen);
 			}
 			else
 			{
 				audio_buffer.append(buffer[0], expected_out_samples * out_num_channels * out_sample_size, frame->time,
-				                    frame->gen);
+					frame->gen);
 			}
 
 			av_freep(buffer);
@@ -1655,7 +1687,7 @@ av_scaler::~av_scaler()
 
 
 bool av_scaler::scale_surface(const ui::const_surface_ptr& surface_in, ui::surface_ptr& surface_out,
-                              sizei dimensions_out)
+	sizei dimensions_out)
 {
 	const auto source_extent = surface_in->dimensions();
 	const auto fmt = surface_in->format();
@@ -1668,21 +1700,21 @@ bool av_scaler::scale_surface(const ui::const_surface_ptr& surface_in, ui::surfa
 
 	const auto scaler_fmt = AV_PIX_FMT_BGRA;
 	_scaler = sws_getCachedContext(_scaler, source_extent.cx, source_extent.cy, scaler_fmt, dimensions_out.cx,
-	                               dimensions_out.cy, scaler_fmt, SWS_BICUBIC, nullptr, nullptr,
-	                               nullptr);
+		dimensions_out.cy, scaler_fmt, SWS_BICUBIC, nullptr, nullptr,
+		nullptr);
 
 	if (_scaler)
 	{
 		surface_out = std::make_shared<ui::surface>();
 		surface_out->alloc(dimensions_out.cx, dimensions_out.cy, surface_in->format(), surface_in->orientation());
 
-		const uint8_t* src_data[4] = {surface_in->pixels(), nullptr, nullptr, nullptr};
-		const int src_stride[4] = { (int)surface_in->stride(), 0, 0, 0};
+		const uint8_t* src_data[4] = { surface_in->pixels(), nullptr, nullptr, nullptr };
+		const int src_stride[4] = { (int)surface_in->stride(), 0, 0, 0 };
 
-		uint8_t* dst_data[4] = {surface_out->pixels(), nullptr, nullptr, nullptr};
-		const int dst_stride[4] = { (int)surface_out->stride(), 0, 0, 0};
+		uint8_t* dst_data[4] = { surface_out->pixels(), nullptr, nullptr, nullptr };
+		const int dst_stride[4] = { (int)surface_out->stride(), 0, 0, 0 };
 
-		sws_scale(_scaler, src_data, src_stride, 0, source_extent.cy, 
+		sws_scale(_scaler, src_data, src_stride, 0, source_extent.cy,
 			dst_data, dst_stride);
 	}
 
@@ -1705,20 +1737,20 @@ bool av_scaler::scale_surface(const av_frame_ptr& frame_in2, ui::surface_ptr& su
 		}
 	}
 
-	const sizei src_extent = {static_cast<int>(frame->width), static_cast<int>(frame->height)};
+	const sizei src_extent = { static_cast<int>(frame->width), static_cast<int>(frame->height) };
 	const auto source_fmt = static_cast<AVPixelFormat>(frame->format);
 	const auto render_fmt = AV_PIX_FMT_BGRA;
 
 	_scaler = sws_getCachedContext(_scaler, src_extent.cx, src_extent.cy, source_fmt,
-	                               src_extent.cx, src_extent.cy, render_fmt,
-	                               SWS_POINT, nullptr, nullptr, nullptr);
+		src_extent.cx, src_extent.cy, render_fmt,
+		SWS_POINT, nullptr, nullptr, nullptr);
 
 	if (_scaler)
 	{
 		if (surface_out->alloc(src_extent, ui::texture_format::RGB, frame_in2->orientation, frame_in2->time))
 		{
-			uint8_t* data[4] = { surface_out->pixels(), nullptr, nullptr, nullptr};
-			const int linesize[4] = { (int)surface_out->stride(), 0, 0, 0};
+			uint8_t* data[4] = { surface_out->pixels(), nullptr, nullptr, nullptr };
+			const int linesize[4] = { (int)surface_out->stride(), 0, 0, 0 };
 
 			const auto ret = sws_scale(_scaler, frame->data, frame->linesize, 0, src_extent.cy, data, linesize);
 			success = ret > 0;
@@ -1735,7 +1767,7 @@ bool av_scaler::scale_surface(const av_frame_ptr& frame_in2, ui::surface_ptr& su
 }
 
 bool av_scaler::scale_frame(const AVFrame& frame, ui::surface_ptr& surface, const sizei max_dim, double time,
-                            ui::orientation orientation)
+	ui::orientation orientation)
 {
 	bool success = false;
 	const auto fmt = static_cast<AVPixelFormat>(frame.format);
@@ -1743,15 +1775,15 @@ bool av_scaler::scale_frame(const AVFrame& frame, ui::surface_ptr& surface, cons
 	const auto dst_dims = ui::scale_dimensions(src_dims, max_dim);
 
 	_scaler = sws_getCachedContext(_scaler, src_dims.cx, src_dims.cy, fmt, dst_dims.cx, dst_dims.cy,
-	                               AV_PIX_FMT_BGRA, SWS_BICUBIC, nullptr, nullptr, nullptr);
+		AV_PIX_FMT_BGRA, SWS_BICUBIC, nullptr, nullptr, nullptr);
 
 	if (_scaler)
 	{
 		surface = std::make_shared<ui::surface>();
 		surface->alloc(dst_dims.cx, dst_dims.cy, ui::texture_format::RGB, orientation, time);
 
-		uint8_t* data[4] = {(surface->pixels()), nullptr, nullptr, nullptr};
-		const int linesize[4] = { (int)surface->stride(), 0, 0, 0};
+		uint8_t* data[4] = { (surface->pixels()), nullptr, nullptr, nullptr };
+		const int linesize[4] = { (int)surface->stride(), 0, 0, 0 };
 
 		success = sws_scale(_scaler, frame.data, frame.linesize, 0, src_dims.cy, data, linesize) == dst_dims.cy;
 
@@ -1838,7 +1870,7 @@ void av_format_decoder::receive_frames(av_packet_queue& packets, av_frame_queue&
 		{
 			c = _video_context;
 			pts_c = &_pts_vid;
-			base = {_video_base.num, _video_base.den};
+			base = { _video_base.num, _video_base.den };
 			start = _video_start_time;
 			stream_name = u8"video stream"sv;
 		}
@@ -1846,7 +1878,7 @@ void av_format_decoder::receive_frames(av_packet_queue& packets, av_frame_queue&
 		{
 			c = _audio_context;
 			pts_c = &_pts_aud;
-			base = {_audio_base.num, _audio_base.den};
+			base = { _audio_base.num, _audio_base.den };
 			start = _audio_start_time;
 			stream_name = u8"audio stream"sv;
 		}

@@ -23,8 +23,10 @@ InterfaceType* SafeAcquire(InterfaceType* newObject)
 }
 
 static const uint32_t icon_font_collection_id = 19;
-static const uint32_t icon_font_resource_id = IDF_ICONS;
+static const uint32_t icon_font_collection_id2 = 33;
 static const auto icon_font_name = L"Segoe MDL2 Assets";
+//static const auto petscii_font_name = L"Basic Engine ASCII 8x8";
+static const auto petscii_font_name = L"C64 Pro Mono";
 
 class resource_font_file_stream : public IDWriteFontFileStream
 {
@@ -275,15 +277,19 @@ public:
 		if (hasCurrentFile) *hasCurrentFile = false;
 		_current.Reset();
 
-		const auto is_pos0 = _index == 0;
+		auto result = S_FALSE;
 
-		if (is_pos0)
+		uint32_t font_id = 0;
+		if (_index == 1) font_id = IDF_ICONS;
+		if (_index == 0) font_id = IDF_PETSCII;
+
+		if (font_id != 0)
 		{
 			ComPtr<IDWriteFontFile> current;
 
 			const auto hr = _factory->CreateCustomFontFileReference(
-				&icon_font_resource_id,
-				static_cast<uint32_t>(sizeof(icon_font_resource_id)),
+				&font_id,
+				static_cast<uint32_t>(sizeof(font_id)),
 				&font_loader,
 				&current);
 
@@ -292,12 +298,13 @@ public:
 			if (SUCCEEDED(hr))
 			{
 				_current = current;
+				result = S_OK;
 			}
 		}
 
-		if (hasCurrentFile) *hasCurrentFile = is_pos0;
+		if (hasCurrentFile) *hasCurrentFile = result == S_OK;
 		_index += 1;
-		return is_pos0 ? S_OK : S_FALSE;
+		return result;
 	}
 
 	HRESULT STDMETHODCALLTYPE GetCurrentFontFile(OUT IDWriteFontFile** fontFile) override
@@ -367,6 +374,29 @@ static font_renderer_ptr create_font_renderer(IDWriteFactory* dwrite, IDWriteFon
 	ComPtr<IDWriteFont> font;
 	ComPtr<IDWriteFontFace> font_face;
 	ComPtr<IDWriteTextFormat> text_format;
+
+	int count = font_collection->GetFontFamilyCount();
+	for (int i = 0; i < count; i++)
+	{
+		ComPtr<IDWriteFontFamily> f;
+		if (SUCCEEDED(font_collection->GetFontFamily(i, &f)))
+		{
+			ComPtr<IDWriteLocalizedStrings> localized_names;
+			f->GetFamilyNames(&localized_names);
+			size_t string_count = localized_names->GetCount();
+			for (size_t j = 0; j < string_count; ++j) {
+
+				//UINT32 length = 0;
+				//hr = localized_names->GetLocaleNameLength(index, &length);
+
+				WCHAR font_name[200];
+				WCHAR local_name[200];
+				localized_names->GetLocaleName(index, local_name, 200);
+				localized_names->GetString(index, font_name, 200);
+				df::log(__FUNCTION__, str::format(u8"font {}:{}"sv, str::utf16_to_utf8(local_name), str::utf16_to_utf8(font_name)));
+			}
+		}
+	}
 
 	auto hr = font_collection->FindFamilyName(font_name, &index, &exists);
 
@@ -443,6 +473,39 @@ font_renderer_ptr factories::create_icon_font_face(const int font_height)
 	return result;
 }
 
+font_renderer_ptr factories::create_petscii_font_face(const int font_height)
+{
+	font_renderer_ptr result;
+	ComPtr<IDWriteFontCollection> custom_collection;
+
+	const auto hr = dwrite->CreateCustomFontCollection(
+		&font_collection_loader,
+		&icon_font_collection_id2,
+		static_cast<uint32_t>(sizeof(icon_font_collection_id2)),
+		&custom_collection);
+
+	if (SUCCEEDED(hr))
+	{
+		result = create_font_renderer(dwrite.Get(), custom_collection.Get(), petscii_font_name, font_height);
+	}
+	else
+	{
+		df::log(__FUNCTION__, str::format(u8"CreateCustomFontCollection failed {:x}"sv, hr));
+	}
+
+	if (!result)
+	{
+		result = create_font_face(petscii_font_name, font_height);
+	}
+
+	if (!result)
+	{
+		result = create_font_face(L"Consolas", font_height);
+	}
+
+	return result;
+}
+
 font_renderer_ptr factories::create_font_face(const wchar_t* font_name, const int font_height)
 {
 	return create_font_renderer(dwrite.Get(), font_collection.Get(), font_name, font_height);
@@ -466,11 +529,12 @@ void factories::unregister_fonts()
 	if (dwrite)
 	{
 		dwrite->UnregisterFontFileLoader(&font_loader);
+		dwrite->UnregisterFontFileLoader(&font_loader);
 		dwrite->UnregisterFontCollectionLoader(&font_collection_loader);
 	}
 }
 
-font_renderer_ptr factories::font_face(const ui::style::font_size type, const int base_font_size)
+font_renderer_ptr factories::font_face(const ui::style::font_face type, const int base_font_size)
 {
 	const auto key = static_cast<uint32_t>(type) | static_cast<uint32_t>(base_font_size << 16);
 	const auto found = font_renderers.find(key);
@@ -491,26 +555,27 @@ font_renderer_ptr factories::font_face(const ui::style::font_size type, const in
 	{
 		switch (type)
 		{
-		case ui::style::font_size::dialog:
+		case ui::style::font_face::dialog:
 			result = create_font_face(L"Calibri", base_font_size);
 			break;
-		case ui::style::font_size::code:
+		case ui::style::font_face::code:
 			result = create_font_face(L"Consolas", base_font_size * 4 / 5);
 			break;
-		case ui::style::font_size::icons:
+		case ui::style::font_face::icons:
 			result = create_icon_font_face(base_font_size);
-		//result = create_font_face(icon_font_name, 16);
 			break;
-		case ui::style::font_size::small_icons:
+		case ui::style::font_face::small_icons:
 			result = create_icon_font_face(base_font_size * 10 / 16);
-		//result = create_font_face(icon_font_name, 10);
 			break;
-		case ui::style::font_size::title:
+		case ui::style::font_face::title:
 			result = create_font_face(L"Calibri", base_font_size * 3 / 2);
 			break;
-		case ui::style::font_size::mega:
+		case ui::style::font_face::mega:
 			result = create_font_face(L"Calibri", base_font_size * 9 / 4);
 			break;
+		case ui::style::font_face::petscii:
+			result = create_petscii_font_face(base_font_size);
+			break;			
 		default:
 			break;
 		}
@@ -837,7 +902,7 @@ void font_renderer::draw(ui::draw_context* dc, ID2D1RenderTarget* rt, const std:
 			if (SUCCEEDED(hr))
 			{
 				const rectd bb{bounds.left + m.left, bounds.top + m.top, m.width, m.height};
-				dc->draw_rounded_rect(bb.round().inflate(2), bg, dc->baseline_snap);
+				dc->draw_rounded_rect(bb.round().inflate(2), bg, dc->padding1);
 			}
 		}
 
@@ -878,7 +943,7 @@ void font_renderer::draw(ui::draw_context* dc, ID2D1RenderTarget* rt, IDWriteTex
 					static_cast<double>(bounds.left) + m.left, static_cast<double>(bounds.top) + m.top, m.width,
 					m.height
 				};
-				dc->draw_rounded_rect(bb.round().inflate(2), bg, dc->baseline_snap);
+				dc->draw_rounded_rect(bb.round().inflate(2), bg, dc->padding1);
 			}
 		}
 
@@ -932,7 +997,7 @@ void font_renderer::draw(ui::draw_context* dc, IDWriteTextRenderer* tr, IDWriteT
 		if (SUCCEEDED(hr))
 		{
 			const rectd bb{bounds.left + m.left, bounds.top + m.top, m.width, m.height};
-			dc->draw_rounded_rect(bb.round().inflate(2), bg, dc->baseline_snap);
+			dc->draw_rounded_rect(bb.round().inflate(2), bg, dc->padding1);
 		}
 	}
 

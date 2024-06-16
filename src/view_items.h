@@ -167,7 +167,9 @@ public:
 
 	recti calc_items_bounds() const
 	{
-		return recti(std::min(_client_extent.cx - 64, splitter_pos() + 4), 0, _client_extent.cx, _client_extent.cy);
+		const auto padding = _scroll_width / 3;
+		const auto x_max = _client_extent.cx  - (_scroll_width * 3);
+		return recti(std::min(x_max, splitter_pos() + padding), 0, _client_extent.cx, _client_extent.cy);
 	}
 
 	recti calc_logical_items_bounds() const
@@ -178,11 +180,12 @@ public:
 
 	recti calc_media_bounds() const
 	{
+		const auto padding = _scroll_width / 3;
 		const auto display = _state.display_state();
+
 		if (display && (display->zoom() || display->comparing()))
-			return recti(
-				0, 0, _client_extent.cx, _client_extent.cy);
-		return recti(0, 0, splitter_pos() - 2, _client_extent.cy);
+			return recti(0, 0, _client_extent.cx, _client_extent.cy);
+		return recti(0, 0, splitter_pos() - padding, _client_extent.cy);
 	}
 
 	recti calc_spliter_bounds(const int scroll_width) const;

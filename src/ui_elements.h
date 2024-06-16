@@ -171,7 +171,7 @@ public:
 		if (bg.a > 0.0f)
 		{
 			const auto pad = padding * dc.scale_factor;
-			dc.draw_rounded_rect(bounds.offset(element_offset).inflate(pad.cx, pad.cy), bg, dc.baseline_snap);
+			dc.draw_rounded_rect(bounds.offset(element_offset).inflate(pad.cx, pad.cy), bg, dc.padding1);
 		}
 	}
 
@@ -827,7 +827,7 @@ class text_element_base : public view_element
 {
 protected:
 	std::u8string _text;
-	ui::style::font_size _font = ui::style::font_size::dialog;
+	ui::style::font_face _font = ui::style::font_face::dialog;
 	ui::style::text_style _text_style = ui::style::text_style::multiline;
 	ui::color32 _foreground_clr = 0;
 
@@ -902,7 +902,7 @@ public:
 class text_element final : public std::enable_shared_from_this<text_element>, public text_element_base
 {
 public:
-	text_element(std::u8string_view text, const ui::style::font_size font, const ui::style::text_style text_style,
+	text_element(std::u8string_view text, const ui::style::font_face font, const ui::style::text_style text_style,
 	             const view_element_style style_in) noexcept : text_element_base(text, style_in)
 	{
 		_font = font;
@@ -933,7 +933,7 @@ public:
 	explicit action_element(std::u8string_view t) : text_element_base(
 		t, view_element_style::center | view_element_style::new_line)
 	{
-		_font = ui::style::font_size::dialog;
+		_font = ui::style::font_face::dialog;
 		_text_style = ui::style::text_style::multiline;
 		_foreground_clr = ui::style::color::dialog_selected_background;
 	}
@@ -941,7 +941,7 @@ public:
 	explicit action_element(std::u8string&& t) : text_element_base(
 		t, view_element_style::center | view_element_style::new_line)
 	{
-		_font = ui::style::font_size::dialog;
+		_font = ui::style::font_face::dialog;
 		_text_style = ui::style::text_style::multiline;
 		_foreground_clr = ui::style::color::dialog_selected_background;
 	}
@@ -955,7 +955,7 @@ private:
 	std::function<void(view_hover_element&)> _tooltip;
 
 public:
-	link_element(std::u8string_view text, commands cmd, const ui::style::font_size font,
+	link_element(std::u8string_view text, commands cmd, const ui::style::font_face font,
 	             const ui::style::text_style text_style,
 	             const view_element_style style_in = view_element_style::none) noexcept : text_element_base(
 		text, style_in), _cmd(cmd)
@@ -965,7 +965,7 @@ public:
 		update_style();
 	}
 
-	link_element(std::u8string_view text, std::function<void()> func, const ui::style::font_size font,
+	link_element(std::u8string_view text, std::function<void()> func, const ui::style::font_face font,
 	             const ui::style::text_style text_style,
 	             const view_element_style style_in = view_element_style::none) noexcept :
 		text_element_base(text, style_in), _invoke(std::move(func))
@@ -976,7 +976,7 @@ public:
 	}
 
 	link_element(std::u8string_view text, std::function<void()> func, std::function<void(view_hover_element&)> tooltip,
-	             const ui::style::font_size font, const ui::style::text_style text_style,
+	             const ui::style::font_face font, const ui::style::text_style text_style,
 	             const view_element_style style_in = view_element_style::none) noexcept :
 		text_element_base(text, style_in), _invoke(std::move(func)), _tooltip(std::move(tooltip))
 	{
@@ -1020,21 +1020,21 @@ public:
 inline view_element_ptr make_icon_element(const icon_index i, const view_element_style style_in)
 {
 	const wchar_t text[2] = {static_cast<wchar_t>(i), 0};
-	return std::make_shared<text_element>(str::utf16_to_utf8(text), ui::style::font_size::icons,
+	return std::make_shared<text_element>(str::utf16_to_utf8(text), ui::style::font_face::icons,
 	                                      ui::style::text_style::single_line_center, style_in);
 }
 
 inline view_element_ptr make_icon_element(const icon_index i, const size_t repeat, const view_element_style style_in)
 {
 	const std::wstring text(repeat, static_cast<wchar_t>(i));
-	return std::make_shared<text_element>(str::utf16_to_utf8(text), ui::style::font_size::icons,
+	return std::make_shared<text_element>(str::utf16_to_utf8(text), ui::style::font_face::icons,
 	                                      ui::style::text_style::single_line_center, style_in);
 }
 
 inline view_element_ptr make_icon_link_element(const icon_index i, commands cmd, const view_element_style style_in)
 {
 	const wchar_t text[2] = {static_cast<wchar_t>(i), 0};
-	return std::make_shared<link_element>(str::utf16_to_utf8(text), cmd, ui::style::font_size::icons,
+	return std::make_shared<link_element>(str::utf16_to_utf8(text), cmd, ui::style::font_face::icons,
 	                                      ui::style::text_style::single_line_center, style_in);
 }
 
@@ -1043,7 +1043,7 @@ inline view_element_ptr make_icon_link_element(const icon_index i, const size_t 
                                                const std::function<void(view_hover_element&)>& tooltip)
 {
 	const std::wstring text(repeat, static_cast<wchar_t>(i));
-	return std::make_shared<link_element>(str::utf16_to_utf8(text), func, tooltip, ui::style::font_size::icons,
+	return std::make_shared<link_element>(str::utf16_to_utf8(text), func, tooltip, ui::style::font_face::icons,
 	                                      ui::style::text_style::single_line_center, view_element_style::none);
 }
 
@@ -1051,7 +1051,7 @@ inline void xdraw_icon(ui::draw_context& dc, const icon_index i, const recti bou
                        const ui::color bg)
 {
 	const wchar_t text[2] = {static_cast<wchar_t>(i), 0};
-	dc.draw_text(str::utf16_to_utf8(text), bounds, ui::style::font_size::icons,
+	dc.draw_text(str::utf16_to_utf8(text), bounds, ui::style::font_face::icons,
 	             ui::style::text_style::single_line_center, c, bg);
 }
 
@@ -1127,7 +1127,7 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		return {width_limit, mc.component_snap};
+		return {width_limit, mc.padding2};
 	}
 };
 
@@ -1140,7 +1140,7 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		return {width_limit, _height ? _height : mc.component_snap};
+		return {width_limit, _height ? _height : mc.padding2};
 	}
 
 	int _height;

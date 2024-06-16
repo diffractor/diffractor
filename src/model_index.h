@@ -24,6 +24,7 @@ struct item_db_write
 	std::optional<df::date_t> modified;
 	std::optional<double> media_position;
 	std::optional<ui::const_image_ptr> thumb;
+	std::optional<ui::const_image_ptr> cover_art;
 	std::optional<df::date_t> thumb_scanned;
 	std::optional<df::date_t> metadata_scanned;
 	std::optional<uint32_t> crc32c;
@@ -387,6 +388,8 @@ public:
 	void init_item_index();
 	void reset();
 
+	void invalidate_view(view_invalid invalid) const;
+
 	std::vector<std::pair<df::file_path, df::index_file_item>> duplicate_list(uint32_t group) const;
 
 	std::atomic_int scanning_items = 0;
@@ -407,7 +410,7 @@ public:
 	void save_media_position(df::file_path id, double media_position);
 	void save_crc(df::file_path id, uint32_t crc);
 	void save_location(df::file_path id, const location_t& loc);
-	void save_thumbnail(df::file_path id, const ui::const_image_ptr& thumbnail_image, df::date_t scan_timestamp);
+	void save_thumbnail(df::file_path id, const ui::const_image_ptr& thumbnail_image, const ui::const_image_ptr& cover_art, df::date_t scan_timestamp);
 
 	df::index_file_item find_item(df::file_path id) const;
 

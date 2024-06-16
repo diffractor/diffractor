@@ -74,6 +74,7 @@ public:
 	struct db_thumbnail
 	{
 		ui::const_image_ptr thumb;
+		ui::const_image_ptr cover_art;
 		df::date_t last_indexed;
 
 		db_thumbnail() noexcept = default;

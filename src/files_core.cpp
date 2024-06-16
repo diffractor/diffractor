@@ -531,7 +531,10 @@ void load_file_types()
 		{ file_group::archive, u8"lza"sv, {}, { file_type_traits::archive } },
 		{ file_group::archive, u8"a,ar"sv, {}, { file_type_traits::archive } },
 
-		{ file_group::commodore, u8"d64"sv, {}, { file_type_traits::disk_image } },
+		{ file_group::commodore, u8"d64"sv, {}, { file_type_traits::disk_image | file_type_traits::commodore } },
+		{ file_group::commodore, u8"d81"sv, {}, { file_type_traits::disk_image | file_type_traits::commodore } },
+		{ file_group::commodore, u8"t64"sv, {}, { file_type_traits::commodore } },
+		{ file_group::commodore, u8"crt"sv, {}, { file_type_traits::commodore } },
 	};
 
 	int next_id = 0;
@@ -1495,9 +1498,11 @@ file_scan_result files::scan_file(const df::file_path path, const bool load_thum
 
 				if (decoder.open(f, path))
 				{
+					result.cover_art = decoder.cover_art();
+
 					if (load_thumb)
 					{
-						decoder.init_streams(-1, -1, false, true);
+						decoder.init_streams(-1, -1, false, true, false);
 
 						int pos_numerator = 10;
 						int pos_denominator = 100;
@@ -1510,7 +1515,7 @@ file_scan_result files::scan_file(const df::file_path path, const bool load_thum
 						ui::surface_ptr thumbnail_surface;
 
 						if (decoder.extract_thumbnail(thumbnail_surface, max_thumb_size, pos_numerator,
-						                              pos_denominator))
+							pos_denominator))
 						{
 							result.thumbnail_surface = std::move(thumbnail_surface);
 						}
@@ -1914,7 +1919,6 @@ std::vector<archive_item> files::list_archive(df::file_path zip_file_path)
 
 	return results;
 }
-
 
 void file_scan_result::parse_metadata_ffmpeg_kv(prop::item_metadata& result) const
 {

@@ -746,7 +746,7 @@ public:
 	texture_d3d11_ptr _shadow;
 	texture_d3d11_ptr _inverse_shadow;
 
-	std::map<ui::style::font_size, d3d11_text_renderer> _font;
+	std::map<ui::style::font_face, d3d11_text_renderer> _font;
 
 	std::vector<vertex_2d> _vertex_buffer_staging;
 	std::vector<WORD> _index_buffer_staging;
@@ -773,8 +773,8 @@ public:
 	void draw_scene(const ComPtr<ID3D11DeviceContext>& context);
 
 
-	sizei measure_string(std::u8string_view text, sizei size_avail, ui::style::font_size, ui::style::text_style);
-	int line_height(ui::style::font_size);
+	sizei measure_string(std::u8string_view text, sizei size_avail, ui::style::font_face, ui::style::text_style);
+	int line_height(ui::style::font_face);
 
 	bool supports_p010() const
 	{
@@ -856,10 +856,10 @@ public:
 	void clear(ui::color c) override;
 	void draw_rounded_rect(recti bounds, ui::color c, int radius) override;
 	void draw_rect(recti bounds, ui::color c) override;
-	void draw_text(std::u8string_view text, recti bounds, ui::style::font_size font, ui::style::text_style style,
+	void draw_text(std::u8string_view text, recti bounds, ui::style::font_face font, ui::style::text_style style,
 	               ui::color c, ui::color bg) override;
 	void draw_text(std::u8string_view text, const std::vector<ui::text_highlight_t>& highlights, recti bounds,
-	               ui::style::font_size font, ui::style::text_style style, ui::color clr, ui::color bg) override;
+	               ui::style::font_face font, ui::style::text_style style, ui::color clr, ui::color bg) override;
 	void draw_text(const ui::text_layout_ptr& tl, recti bounds, ui::color clr, ui::color bg) override;
 	void draw_shadow(recti bounds, int width, float alpha, bool inverse) override;
 	void draw_border(recti inside, recti outside, ui::color c_inside, ui::color c_outside) override;
@@ -872,12 +872,12 @@ public:
 
 	ui::texture_ptr create_texture() override;
 	ui::vertices_ptr create_vertices() override;
-	font_renderer_ptr find_font(ui::style::font_size font);
-	ui::text_layout_ptr create_text_layout(ui::style::font_size font) override;
+	font_renderer_ptr find_font(ui::style::font_face font);
+	ui::text_layout_ptr create_text_layout(ui::style::font_face font) override;
 
-	sizei measure_text(std::u8string_view text, ui::style::font_size font, ui::style::text_style style, int width,
+	sizei measure_text(std::u8string_view text, ui::style::font_face font, ui::style::text_style style, int width,
 	                   int height) override;
-	int text_line_height(ui::style::font_size type) override;
+	int text_line_height(ui::style::font_face type) override;
 
 	recti clip_bounds() const override;
 	void clip_bounds(recti) override;
@@ -945,13 +945,13 @@ void d3d11_draw_context_impl::update_font_size(const int base_font_size)
 		_base_font_size = base_font_size;
 
 		const auto c = shared_from_this();
-		_font[ui::style::font_size::code].reset(c, _f, _f->font_face(ui::style::font_size::code, base_font_size));
-		_font[ui::style::font_size::dialog].reset(c, _f, _f->font_face(ui::style::font_size::dialog, base_font_size));
-		_font[ui::style::font_size::title].reset(c, _f, _f->font_face(ui::style::font_size::title, base_font_size));
-		_font[ui::style::font_size::mega].reset(c, _f, _f->font_face(ui::style::font_size::mega, base_font_size));
-		_font[ui::style::font_size::icons].reset(c, _f, _f->font_face(ui::style::font_size::icons, base_font_size));
-		_font[ui::style::font_size::small_icons].reset(
-			c, _f, _f->font_face(ui::style::font_size::small_icons, base_font_size));
+		_font[ui::style::font_face::code].reset(c, _f, _f->font_face(ui::style::font_face::code, base_font_size));
+		_font[ui::style::font_face::dialog].reset(c, _f, _f->font_face(ui::style::font_face::dialog, base_font_size));
+		_font[ui::style::font_face::title].reset(c, _f, _f->font_face(ui::style::font_face::title, base_font_size));
+		_font[ui::style::font_face::mega].reset(c, _f, _f->font_face(ui::style::font_face::mega, base_font_size));
+		_font[ui::style::font_face::icons].reset(c, _f, _f->font_face(ui::style::font_face::icons, base_font_size));
+		_font[ui::style::font_face::small_icons].reset(c, _f, _f->font_face(ui::style::font_face::small_icons, base_font_size));
+		_font[ui::style::font_face::petscii].reset(c, _f, _f->font_face(ui::style::font_face::petscii, base_font_size));
 	}
 }
 
@@ -2172,7 +2172,7 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 }
 
 
-sizei d3d11_draw_context_impl::measure_string(const std::u8string_view text, const sizei s, ui::style::font_size font,
+sizei d3d11_draw_context_impl::measure_string(const std::u8string_view text, const sizei s, ui::style::font_face font,
                                               ui::style::text_style style)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
@@ -2180,7 +2180,7 @@ sizei d3d11_draw_context_impl::measure_string(const std::u8string_view text, con
 	return _font[font].measure_text(text, s, style);
 }
 
-int d3d11_draw_context_impl::line_height(ui::style::font_size font)
+int d3d11_draw_context_impl::line_height(ui::style::font_face font)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	return _font[font].line_height();
@@ -2715,7 +2715,7 @@ void d3d11_draw_context_impl::draw_shadow(const recti dst, const int sxy, const 
 }
 
 void d3d11_draw_context_impl::draw_text(const std::u8string_view textA, const recti bounds,
-                                        const ui::style::font_size font, const ui::style::text_style style,
+                                        const ui::style::font_face font, const ui::style::text_style style,
                                         const ui::color clr, const ui::color bg)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
@@ -2729,7 +2729,7 @@ void d3d11_draw_context_impl::draw_text(const std::u8string_view textA, const re
 
 void d3d11_draw_context_impl::draw_text(const std::u8string_view text,
                                         const std::vector<ui::text_highlight_t>& highlights, const recti bounds,
-                                        ui::style::font_size font, ui::style::text_style style, const ui::color clr,
+                                        ui::style::font_face font, ui::style::text_style style, const ui::color clr,
                                         const ui::color bg)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
@@ -2989,13 +2989,13 @@ void d3d11_draw_context_impl::draw_vertices(const ui::vertices_ptr& v)
 	}
 }
 
-sizei d3d11_draw_context_impl::measure_text(const std::u8string_view text, const ui::style::font_size font,
+sizei d3d11_draw_context_impl::measure_text(const std::u8string_view text, const ui::style::font_face font,
                                             const ui::style::text_style style, const int width, const int height)
 {
 	return measure_string(text, {width, height}, font, style);
 }
 
-int d3d11_draw_context_impl::text_line_height(const ui::style::font_size font)
+int d3d11_draw_context_impl::text_line_height(const ui::style::font_face font)
 {
 	return line_height(font);
 }
@@ -3014,14 +3014,14 @@ ui::vertices_ptr d3d11_draw_context_impl::create_vertices()
 	return std::make_shared<d3d11_vertices>(shared_from_this());
 }
 
-font_renderer_ptr d3d11_draw_context_impl::find_font(const ui::style::font_size font)
+font_renderer_ptr d3d11_draw_context_impl::find_font(const ui::style::font_face font)
 {
 	const auto found = _font.find(font);
 	if (found != _font.end()) return found->second.font();
 	return _f->font_face(font, _base_font_size);
 }
 
-ui::text_layout_ptr d3d11_draw_context_impl::create_text_layout(const ui::style::font_size font)
+ui::text_layout_ptr d3d11_draw_context_impl::create_text_layout(const ui::style::font_face font)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	df::assert_true(ui::is_ui_thread());

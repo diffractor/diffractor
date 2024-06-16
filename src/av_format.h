@@ -229,6 +229,7 @@ class av_media_info
 public:
 	std::vector<av_stream_info> streams;
 	std::vector<std::pair<metadata_standard, metadata_kv_list>> metadata;
+	ui::image_ptr cover_art;
 
 	str::cached pixel_format;
 	str::cached video_codec;
@@ -247,6 +248,7 @@ public:
 	sizei display_dimensions;
 	sizei render_dimensions;
 	ui::orientation display_orientation = ui::orientation::top_left;
+	
 
 	/*bool is_empty() const
 	{
@@ -317,7 +319,7 @@ public:
 
 	bool open(df::file_path path);
 	bool open(const platform::file_ptr& file, df::file_path path);
-	void init_streams(int video_track, int audio_track, bool can_use_hw, bool video_only);
+	void init_streams(int video_track, int audio_track, bool can_use_hw, bool video_only, bool can_use_threads);
 
 	av_packet_ptr read_packet() const;
 	bool seek(double wanted, double current) const;
@@ -326,6 +328,7 @@ public:
 
 	int64_t bitrate() const;
 	const AVStream* Stream(uint32_t i) const;
+	const ui::image_ptr &cover_art() const { return _cover_art; }
 
 
 private:
@@ -346,6 +349,7 @@ private:
 	int64_t _bitrate = 0;
 
 	std::vector<av_stream_info> _streams;
+	ui::image_ptr _cover_art;
 
 	double _start_time = 0;
 	double _end_time = 0;
@@ -416,8 +420,8 @@ public:
 
 	av_media_info info() const;
 
-	double start_time() const { return _start_time; };
-	double end_time() const { return _end_time; };
+	double start_time() const { return _start_time; }
+	double end_time() const { return _end_time; }
 	double to_audio_seconds(int64_t vt) const;
 	double to_video_seconds(int64_t vt) const;
 };

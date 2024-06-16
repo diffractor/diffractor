@@ -1083,15 +1083,12 @@ public:
 					const auto ft = i->file_type();
 					result.can_zoom = ft->has_trait(file_type_traits::zoom);
 					result.has_single_media_selection = i->is_media();
-					result.has_single_folder_selection = ft == file_type::folder;
 					result.showing_image = ft->has_trait(file_type_traits::bitmap) || d->player_has_video();
 				}
 			}
 		}
-		else if (_selected.size() == 1)
-		{
-			result.has_single_folder_selection = _selected.folders().size() == 1;
-		}
+		
+		result.has_single_folder_selection = _selected.size() == 1 && _selected.folders().size() == 1;
 
 		return result;
 	}

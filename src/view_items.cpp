@@ -31,9 +31,9 @@ private:
 
 public:
 	item_select_controller(const view_host_ptr& host, items_view& parent, view_state& s, view_scroller& scroller,
-	                       const recti bounds, const pointi loc) : view_controller(host, bounds), _parent(parent),
-	                                                               _scroller(scroller), _state(s),
-	                                                               _start_logical_loc(loc)
+		const recti bounds, const pointi loc) : view_controller(host, bounds), _parent(parent),
+		_scroller(scroller), _state(s),
+		_start_logical_loc(loc)
 	{
 		if (_hover_item)
 		{
@@ -42,10 +42,10 @@ public:
 	}
 
 	item_select_controller(const view_host_ptr& host, items_view& parent, view_state& s, view_scroller& scroller,
-	                       df::item_element_ptr i, const pointi loc) : view_controller(host, {}), _parent(parent),
-	                                                                   _scroller(scroller), _state(s),
-	                                                                   _start_logical_loc(loc),
-	                                                                   _hover_item(std::move(i))
+		df::item_element_ptr i, const pointi loc) : view_controller(host, {}), _parent(parent),
+		_scroller(scroller), _state(s),
+		_start_logical_loc(loc),
+		_hover_item(std::move(i))
 	{
 		if (_hover_item)
 		{
@@ -131,7 +131,7 @@ public:
 	{
 		const auto previous_sel_bounds = calc_logical_selection_bounds();
 
-		const auto start_area = center_rect({8, 8}, _start_loc);
+		const auto start_area = center_rect({ 8, 8 }, _start_loc);
 		_selecting = _tracking && !_cancel && !start_area.contains(_last_loc);
 		_last_logical_loc = _scroller.device_to_logical(_last_loc);
 		const auto logical_selection_bounds = calc_logical_selection_bounds();
@@ -144,7 +144,7 @@ public:
 				for (const auto& i : group->items())
 				{
 					i->set_style_bit(view_element_style::highlight, i->bounds.intersects(logical_selection_bounds),
-					                 _host, i);
+						_host, i);
 				}
 			}
 		}
@@ -246,9 +246,9 @@ private:
 
 public:
 	item_drag_controller(const view_host_ptr& host, items_view& parent, view_state& s, view_scroller& scroller,
-	                     df::item_element_ptr i, const pointi loc) : view_controller(host, {}), _parent(parent),
-	                                                                 _scroller(scroller), _state(s),
-	                                                                 _start_logical_loc(loc), _hover_item(std::move(i))
+		df::item_element_ptr i, const pointi loc) : view_controller(host, {}), _parent(parent),
+		_scroller(scroller), _state(s),
+		_start_logical_loc(loc), _hover_item(std::move(i))
 	{
 		if (_hover_item)
 		{
@@ -352,7 +352,7 @@ public:
 			detach_file_handles detach(_state);
 			_drag_started = true;
 			_dropped = platform::perform_drag(_host->frame()->handle(), _state.selected_items().file_paths(),
-			                                  _state.selected_items().folder_paths()) != platform::drop_effect::none;
+				_state.selected_items().folder_paths()) != platform::drop_effect::none;
 			_tracking = false;
 			_state.invalidate_view(view_invalid::controller);
 		}
@@ -379,9 +379,9 @@ items_view::items_view(view_state& s, view_host_ptr host) :
 	_host(std::move(host))
 {
 	_items_scroller.popup_func = [this](view_hover_element& hover, const pointi loc)
-	{
-		items_scroll_popup(hover, loc);
-	};
+		{
+			items_scroll_popup(hover, loc);
+		};
 	_items_scroller.changed_func = [this]() { update_visible_items_list(); };
 	_media_scroller.changed_func = [this]() { _state.invalidate_view(view_invalid::view_redraw); };
 }
@@ -426,19 +426,19 @@ void items_view::items_changed(const bool path_changed)
 		if (_state.group_order() == group_by::date_created || _state.group_order() == group_by::date_modified)
 		{
 			const auto text = setting.sort_dates_descending
-				                  ? tt.command_sort_dates_ascending
-				                  : tt.command_sort_dates_descending;
+				? tt.command_sort_dates_ascending
+				: tt.command_sort_dates_descending;
 			const auto command = setting.sort_dates_descending
-				                     ? commands::sort_dates_ascending
-				                     : commands::sort_dates_descending;
+				? commands::sort_dates_ascending
+				: commands::sort_dates_descending;
 
 			elements.emplace_back(std::make_shared<divider_element>());
 
-			auto element = std::make_shared<link_element>(text, command, ui::style::font_size::dialog,
-			                                              ui::style::text_style::multiline_center,
-			                                              view_element_style::new_line | view_element_style::center);
-			element->padding = {8, 8};
-			element->margin = {8, 8};
+			auto element = std::make_shared<link_element>(text, command, ui::style::font_face::dialog,
+				ui::style::text_style::multiline_center,
+				view_element_style::new_line | view_element_style::center);
+			element->padding = { 8, 8 };
+			element->margin = { 8, 8 };
 			elements.emplace_back(element);
 		}
 	}
@@ -454,20 +454,20 @@ void items_view::items_changed(const bool path_changed)
 			elements.emplace_back(std::make_shared<padding_element>(32));
 		}
 
-		elements.emplace_back(std::make_shared<text_element>(tt.searching_text, ui::style::font_size::title,
-		                                                     ui::style::text_style::single_line_center,
-		                                                     view_element_style::new_line |
-		                                                     view_element_style::center));
+		elements.emplace_back(std::make_shared<text_element>(tt.searching_text, ui::style::font_face::title,
+			ui::style::text_style::single_line_center,
+			view_element_style::new_line |
+			view_element_style::center));
 	}
 	else if (_state.all_items_filtered_out())
 	{
 		elements.emplace_back(std::make_shared<padding_element>(32));
 		auto element = std::make_shared<link_element>(tt.all_items_filtered, [&s = _state]() { s.clear_filters(); },
-		                                              ui::style::font_size::dialog,
-		                                              ui::style::text_style::multiline_center,
-		                                              view_element_style::new_line | view_element_style::center);
-		element->padding = {8, 8};
-		element->margin = {8, 8};
+			ui::style::font_face::dialog,
+			ui::style::text_style::multiline_center,
+			view_element_style::new_line | view_element_style::center);
+		element->padding = { 8, 8 };
+		element->margin = { 8, 8 };
 		elements.emplace_back(element);
 	}
 
@@ -492,25 +492,26 @@ void items_view::draw_splitter(ui::draw_context& dc, const recti bounds, const b
 {
 	const auto scale_factor = dc.scale_factor;
 	const bool active = _splitter_active != 0;
-	const auto handle_margin = (tracking || active) ? df::round(1 * scale_factor) : df::mul_div(bounds.width(), 2, 9);
+	const auto scale1 = df::round(1 * scale_factor);
+	const auto handle_margin = (tracking || active) ? scale1 : df::mul_div(bounds.width(), 2, 9);
 	const auto left = bounds.left + handle_margin;
 	const auto right = bounds.right - handle_margin;
 
-	recti r;
-	r.left = left;
-	r.right = right;
-	r.top = bounds.top + dc.cx_resize_handle;
-	r.bottom = bounds.bottom - dc.cx_resize_handle;
+	recti draw_bounds;
+	draw_bounds.left = left;
+	draw_bounds.right = right;
+	draw_bounds.top = bounds.top + dc.handle_cxy;
+	draw_bounds.bottom = bounds.bottom - dc.handle_cxy;
 
-	if (r.height() > 8)
+	if (draw_bounds.height() > 8)
 	{
-		dc.draw_rounded_rect(r, ui::color(0x000000, dc.colors.alpha * dc.colors.bg_alpha), dc.baseline_snap);
+		dc.draw_rounded_rect(draw_bounds, ui::color(0x000000, dc.colors.alpha * dc.colors.bg_alpha), dc.padding1);
 	}
 
 	if (active)
 	{
 		const auto clr = view_handle_color(false, _splitter_active, tracking, dc.frame_has_focus, false).aa(dc.colors.alpha);
-		dc.draw_rounded_rect(r.inflate(-1), clr, dc.baseline_snap);
+		dc.draw_rounded_rect(draw_bounds.inflate(-scale1), clr, dc.padding1);
 	}
 }
 
@@ -523,7 +524,7 @@ public:
 	bool _tracking = false;
 
 	splitter_controller(const view_host_ptr& host, items_view& view,
-	                    const recti bounds) : view_controller(host, bounds), _view(view)
+		const recti bounds) : view_controller(host, bounds), _view(view)
 	{
 		_view._splitter_active++;
 	}
@@ -707,7 +708,7 @@ void items_view::mouse_wheel(const pointi loc, const int zDelta, const ui::key_s
 	if (keys.control)
 	{
 		setting.item_scale = std::clamp(setting.item_scale + (zDelta > 0 ? 1 : -1), 0,
-		                                settings_t::item_scale_count - 1);
+			settings_t::item_scale_count - 1);
 		_state.invalidate_view(view_invalid::view_layout);
 	}
 	else if (_media_scroller.can_scroll() && is_over_media(loc))
@@ -783,7 +784,7 @@ void items_view::update_visible_items_list()
 		{
 			_state._async.queue_database(
 				[&s = _state, db_thumbnail_pending = std::move(db_thumbnail_pending), visible_items = _visible_items](
-				database& db)
+					database& db)
 				{
 					db.load_thumbnails(s.item_index, db_thumbnail_pending);
 
@@ -886,12 +887,12 @@ void items_view::render(ui::draw_context& dc, const view_controller_ptr controll
 
 			if (ii.i->is_style_bit_set(view_element_style::hover))
 			{
-				hover = {ii.g, ii.i};
+				hover = { ii.g, ii.i };
 			}
 
 			if (ii.i == state_focus)
 			{
-				focus = {ii.g, ii.i};
+				focus = { ii.g, ii.i };
 			}
 		}
 
@@ -1018,7 +1019,7 @@ void items_view::layout(ui::measure_context& mc, const sizei extent)
 
 	ui::control_layouts positions;
 
-	const auto is_zoom = _display->zoom() | _display->comparing();
+	const auto is_zoom = _display->zoom() || _display->comparing();
 	auto avail_media_bounds = calc_media_bounds();
 
 	if (is_zoom)
@@ -1031,7 +1032,7 @@ void items_view::layout(ui::measure_context& mc, const sizei extent)
 	}
 	else
 	{
-		const int image_padding = df::round(8 * mc.scale_factor);
+		const auto image_padding = df::round(8 * mc.scale_factor);
 		avail_media_bounds.left += image_padding;
 		avail_media_bounds.right -= image_padding / 2;
 		//avail_media_bounds.top += image_padding;
@@ -1040,9 +1041,9 @@ void items_view::layout(ui::measure_context& mc, const sizei extent)
 		const auto logical_items_bounds = calc_logical_items_bounds();
 		const auto& focus = _state.focus_item();
 		const auto& anchor_item = (focus && focus->bounds.intersects(logical_items_bounds))
-			                          ? focus
-			                          : _layout_center_item;
-		
+			? focus
+			: _layout_center_item;
+
 		const auto media_height = stack_elements(mc, positions, avail_media_bounds, _media_elements, true);
 		const auto split_x = splitter_pos();
 		const auto control_padding = mc.scroll_width / 2;
@@ -1050,10 +1051,10 @@ void items_view::layout(ui::measure_context& mc, const sizei extent)
 			split_x - control_padding, _client_extent.cy / 2, split_x + control_padding, _client_extent.cy
 		};
 
-		_media_scroller.layout({avail_media_bounds.width(), media_height}, avail_media_bounds, media_scroll_bounds);
+		_media_scroller.layout({ avail_media_bounds.width(), media_height }, avail_media_bounds, media_scroll_bounds);
 
-		const auto scroll_text_width = mc.measure_text(u8"88888"sv, ui::style::font_size::dialog,
-		                                               ui::style::text_style::single_line, _client_extent.cx / 5).cx;
+		const auto scroll_text_width = mc.measure_text(u8"88888"sv, ui::style::font_face::dialog,
+			ui::style::text_style::single_line, _client_extent.cx / 5).cx;
 		const auto items_scroll_offset = _items_scroller.scroll_offset();
 		const auto anchor_item_y = anchor_item ? anchor_item->bounds.top - items_scroll_offset.y : 0;
 		auto item_layout_iteration_count = 1;
@@ -1061,16 +1062,16 @@ void items_view::layout(ui::measure_context& mc, const sizei extent)
 		for (auto i = 0; i < item_layout_iteration_count; i++)
 		{
 			const auto show_scroll_items = _items_scroller.can_scroll();
-			const auto scroll_padding = show_scroll_items ? scroll_text_width : mc.baseline_snap;
+			const auto scroll_padding = show_scroll_items ? scroll_text_width : mc.padding1;
 			auto avail_item_bounds = calc_items_bounds();
 			avail_item_bounds.right -= scroll_padding;
 			const auto items_height = stack_elements(mc, positions, avail_item_bounds, _item_elements, false,
-			                                         {0, mc.component_snap});
+				{ 0, mc.padding2 });
 
 			const auto item_scroll_bounds = recti{
 				_client_extent.cx - scroll_padding, 0, _client_extent.cx, _client_extent.cy
 			};
-			const sizei scroll_extent = {avail_item_bounds.width(), items_height};
+			const sizei scroll_extent = { avail_item_bounds.width(), items_height };
 
 			_items_scroller.layout(scroll_extent, avail_item_bounds, item_scroll_bounds);
 
@@ -1113,9 +1114,9 @@ class copy_clip_element final : public std::enable_shared_from_this<copy_clip_el
 
 public:
 	copy_clip_element(metadata_kv_list kv) noexcept : view_element(
-		                                                  view_element_style::right_justified |
-		                                                  view_element_style::has_tooltip |
-		                                                  view_element_style::can_invoke), _kv(std::move(kv))
+		view_element_style::right_justified |
+		view_element_style::has_tooltip |
+		view_element_style::can_invoke), _kv(std::move(kv))
 	{
 	}
 
@@ -1128,7 +1129,7 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		return {mc.icon_cxy, mc.icon_cxy};
+		return { mc.icon_cxy, mc.icon_cxy };
 	}
 
 	void dispatch_event(const view_element_event& event) override
@@ -1157,8 +1158,8 @@ public:
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
+		const pointi element_offset,
+		const std::vector<recti>& excluded_bounds) override
 	{
 		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 	}
@@ -1205,11 +1206,126 @@ static std::u8string_view format_metadata_standard(const metadata_standard ms)
 	case metadata_standard::raw: return tt.raw_metadata_title;
 	case metadata_standard::ffmpeg: return tt.media_metadata_title;
 	case metadata_standard::icc: return tt.icc_metadata_title;
-	default: ;
+	default:;
 	}
 
 	return {};
 }
+
+class cover_art_control final : public view_element, public std::enable_shared_from_this<cover_art_control>
+{
+public:
+
+	ui::const_surface_ptr _surface;
+	mutable ui::texture_ptr _tex;
+	mutable int _cx_surface = 0;
+
+	std::shared_ptr<ui::group_control> _controls = std::make_shared<ui::group_control>();
+
+	cover_art_control() : view_element(view_element_style::has_tooltip | view_element_style::can_invoke)
+	{
+	}
+
+	void add(const view_element_ptr& p)
+	{
+		_controls->add(p);
+	}
+
+	void add(const ui::surface_ptr& s)
+	{
+		_surface = s;
+	}
+
+	bool is_control_area(const pointi loc, const pointi element_offset) const override
+	{
+		return _controls->is_control_area(loc, element_offset);
+	}
+
+	void dispatch_event(const view_element_event& event) override
+	{
+		_controls->dispatch_event(event);
+	}
+
+	void hover(interaction_context& ic) override
+	{
+		_controls->hover(ic);
+	}
+
+	sizei measure(ui::measure_context& mc, const int cx) const override
+	{
+		auto avail = cx;
+		auto cy = 0;
+
+		_cx_surface = 0;
+
+		if (is_valid(_surface))
+		{
+			const auto surf_cx = _surface->width() + mc.padding2;
+			const auto show_surface = surf_cx < (cx / 2);
+
+			if (show_surface)
+			{
+				_cx_surface = surf_cx;
+				cy = _surface->height() + (mc.padding2 * 2);
+				avail -= surf_cx;
+			}
+		}
+
+		const auto controls_extent = _controls->measure(mc, avail);
+		cy = std::max(cy, controls_extent.cy);
+		return { cx, cy };
+	}
+
+	void layout(ui::measure_context& mc, const recti bounds, ui::control_layouts& positions) override
+	{
+		view_element::layout(mc, bounds, positions);
+
+		auto contol_bounds = bounds;
+		contol_bounds.left += _cx_surface;
+		_controls->layout(mc, contol_bounds, positions);
+	}
+
+	void render(ui::draw_context& dc, const pointi element_offset) const override
+	{
+		if (_cx_surface > 0 && is_valid(_surface))
+		{
+			if (!_tex)
+			{
+				const auto t = dc.create_texture();
+
+				if (t && t->update(_surface) != ui::texture_update_result::failed)
+				{
+					_tex = t;
+				}
+			}
+
+			if (_tex)
+			{
+				const auto extent = _tex->dimensions();
+				auto top_left = bounds.top_left();
+				top_left.x += dc.padding2 / 2;
+				top_left.y += dc.padding2;
+
+				const recti surface_bounds = { top_left, extent };
+				dc.draw_texture(_tex, surface_bounds.offset(element_offset));
+			}
+		}
+
+		_controls->render(dc, element_offset);
+	}
+
+	void visit_controls(const std::function<void(const ui::control_base_ptr&)>& handler) override
+	{
+		_controls->visit_controls(handler);
+	}
+
+	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
+		const pointi element_offset,
+		const std::vector<recti>& excluded_bounds) override
+	{
+		return _controls->controller_from_location(host, loc, element_offset, excluded_bounds);
+	}
+};
 
 void items_view::update_media_elements()
 {
@@ -1260,14 +1376,14 @@ void items_view::update_media_elements()
 				elements.emplace_back(std::make_shared<padding_element>(4));
 				elements.emplace_back(std::make_shared<file_list_control>(display, view_element_style::center));
 			}
-			else if (str::icmp(item->extension(), u8".d64"sv) == 0)
+			else if (file_type->has_trait(file_type_traits::commodore))
 			{
 				elements.emplace_back(media_control_style(media_control_element));
 
 				if (display && !display->_selected_item_data.empty())
 				{
 					elements.emplace_back(std::make_shared<padding_element>(4));
-					elements.emplace_back(std::make_shared<d64_control>(display, view_element_style::center));
+					elements.emplace_back(std::make_shared<comodore_disk_control>(display, view_element_style::center));
 				}
 			}
 			else
@@ -1282,13 +1398,13 @@ void items_view::update_media_elements()
 					{
 						elements.emplace_back(std::make_shared<divider_element>());
 						auto element = std::make_shared<text_element>(tt.truncated_at_one_mb,
-						                                              ui::style::font_size::title,
-						                                              ui::style::text_style::multiline_center,
-						                                              view_element_style::new_line |
-						                                              view_element_style::center |
-						                                              view_element_style::important);
-						element->padding = {8, 8};
-						element->margin = {8, 8};
+							ui::style::font_face::title,
+							ui::style::text_style::multiline_center,
+							view_element_style::new_line |
+							view_element_style::center |
+							view_element_style::important);
+						element->padding = { 8, 8 };
+						element->margin = { 8, 8 };
 						elements.emplace_back(element);
 					}
 					else
@@ -1298,26 +1414,39 @@ void items_view::update_media_elements()
 				}
 			}
 
-			//media_control_element->margin.cy = 4;
-
 			if (md)
 			{
-				if (!is_empty(md->comment))
-				{
-					elements.emplace_back(title_style(std::make_shared<group_title_control>(tt.prop_name_comment)));
-					elements.emplace_back(margin16(std::make_shared<text_element>(md->comment)));
-				}
+				const auto has_description = !is_empty(md->comment) || !is_empty(md->description) || !is_empty(md->synopsis);
 
-				if (!is_empty(md->description))
+				if (item->has_cover_art() && has_description)
 				{
-					elements.emplace_back(title_style(std::make_shared<group_title_control>(tt.prop_name_description)));
-					elements.emplace_back(margin16(std::make_shared<text_element>(md->description)));
-				}
+					auto description = std::make_shared<cover_art_control>();
 
-				if (!is_empty(md->synopsis))
-				{
-					elements.emplace_back(title_style(std::make_shared<group_title_control>(tt.prop_name_synopsis)));
-					elements.emplace_back(margin16(std::make_shared<text_element>(md->synopsis)));
+					if (item->has_cover_art())
+					{
+						files ff;
+						auto surface = ff.image_to_surface(item->cover_art());
+						description->add(surface);
+					}
+
+					if (!is_empty(md->comment))
+					{
+						description->add(title_style(std::make_shared<group_title_control>(tt.prop_name_comment)));
+						description->add(margin16(std::make_shared<text_element>(md->comment)));
+					}
+
+					if (!is_empty(md->description))
+					{
+						description->add(title_style(std::make_shared<group_title_control>(tt.prop_name_description)));
+						description->add(margin16(std::make_shared<text_element>(md->description)));
+					}
+
+					if (!is_empty(md->synopsis))
+					{
+						description->add(title_style(std::make_shared<group_title_control>(tt.prop_name_synopsis)));
+						description->add(margin16(std::make_shared<text_element>(md->synopsis)));
+					}
+					elements.emplace_back(description);
 				}
 			}
 
@@ -1350,7 +1479,7 @@ void items_view::update_media_elements()
 							break;
 						case av_stream_type::subtitle: type = tt.subtitle;
 							break;
-						default: ;
+						default:;
 						}
 
 						auto format = st.pixel_format;
@@ -1383,8 +1512,8 @@ void items_view::update_media_elements()
 							//std::make_shared<text_element>(st.language),								
 							std::make_shared<text_element>(format),
 							std::make_shared<text_element>(st.rotation == 0.0
-								                               ? std::u8string{}
-								                               : str::format(u8"rotation={}"sv, st.rotation))
+															   ? std::u8string{}
+															   : str::format(u8"rotation={}"sv, st.rotation))
 						};
 
 						table->add(row);
@@ -1401,8 +1530,8 @@ void items_view::update_media_elements()
 						{
 							elements.emplace_back(title_style(std::make_shared<group_title_control>(
 								format_metadata_standard(m.first), std::vector<view_element_ptr>{
-									std::make_shared<copy_clip_element>(m.second)
-								})));
+								std::make_shared<copy_clip_element>(m.second)
+							})));
 
 							auto table = std::make_shared<ui::table_element>(view_element_style::grow);
 
@@ -1421,7 +1550,7 @@ void items_view::update_media_elements()
 
 			auto verbose_element = std::make_shared<link_element>(
 				setting.verbose_metadata ? tt.hide_verbose_metadata : tt.show_verbose_metadata,
-				commands::verbose_metadata, ui::style::font_size::dialog, ui::style::text_style::multiline_center,
+				commands::verbose_metadata, ui::style::font_face::dialog, ui::style::text_style::multiline_center,
 				view_element_style::new_line | view_element_style::center);
 			elements.emplace_back(verbose_element);
 

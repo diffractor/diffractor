@@ -313,12 +313,12 @@ void test_view::test_element::render(ui::draw_context& dc, const pointi element_
 	auto x = logical_bounds.left;
 
 	const recti rectName(x + 8, logical_bounds.top, x + widths[0], logical_bounds.bottom);
-	dc.draw_text(_name, rectName, ui::style::font_size::dialog,
+	dc.draw_text(_name, rectName, ui::style::font_face::dialog,
 	             ui::style::text_style::single_line, text_color, {});
 
 	x += widths[0];
 	const recti rectSuccess(x + 8, logical_bounds.top, x + widths[1], logical_bounds.bottom);
-	dc.draw_text(state, rectSuccess, ui::style::font_size::dialog, ui::style::text_style::single_line,
+	dc.draw_text(state, rectSuccess, ui::style::font_face::dialog, ui::style::text_style::single_line,
 	             text_color, {});
 
 	x += widths[1];
@@ -331,7 +331,7 @@ void test_view::test_element::render(ui::draw_context& dc, const pointi element_
 		message = str::format(u8"{:8} milliseconds"sv, _time);
 	}
 
-	dc.draw_text(message, rectMessage, ui::style::font_size::dialog,
+	dc.draw_text(message, rectMessage, ui::style::font_face::dialog,
 	             ui::style::text_style::single_line, text_color, {});
 }
 
@@ -413,7 +413,7 @@ void test_view::render_headers(ui::draw_context& dc, int x) const
 
 		const recti r(x, y, x + cx, y + cy);
 		dc.draw_rect(r, ui::color(dc.colors.background, bg_alpha));
-		dc.draw_text(titles[i], r, ui::style::font_size::dialog,
+		dc.draw_text(titles[i], r, ui::style::font_face::dialog,
 		             ui::style::text_style::single_line_center, text_color, {});
 
 		x += cx;
@@ -2777,10 +2777,10 @@ static void should_not_reload_thumb_when_valid()
 	i_local->db_thumb_query_complete();
 	assert_equal(true, i_local->should_load_thumbnail(), u8"should load after db load"sv);
 
-	i_local->thumbnail(loaded.i);
+	i_local->thumbnail(loaded.i, nullptr);
 	assert_equal(true, i_local->should_load_thumbnail(), u8"should load without timestamp"sv);
 
-	i_local->thumbnail(loaded.i, date);
+	i_local->thumbnail(loaded.i, nullptr, date);
 	assert_equal(false, i_local->should_load_thumbnail(), u8"should load if thumb but not hash"sv);
 
 	i_local->update(load_path, make_index_file_info(date2));

@@ -14,6 +14,7 @@
 #include "files.h"
 #include "model_db.h"
 
+#include "model.h"
 #include "model_db_pack.h"
 #include "model_index.h"
 
@@ -350,12 +351,13 @@ void database::open()
 
 	// schema upgrades
 	sqlite3_exec(_db, "ALTER TABLE item_properties ADD COLUMN crc INTEGER;", nullptr, nullptr, nullptr);
+	sqlite3_exec(_db, "ALTER TABLE item_thumbnails ADD COLUMN cover_art BLOB NULL;", nullptr, nullptr, nullptr);
 
 	find_web_request = std::make_unique<db_statement>(_db, u8"select value from web_service_cache where key=?"s);
 	find_folder_thumbnail = std::make_unique<db_statement>(
-		_db, u8"select bitmap, last_scanned from item_thumbnails where folder=?"s);
+		_db, u8"select bitmap, cover_art, last_scanned from item_thumbnails where folder=?"s);
 	find_thumbnail = std::make_unique<db_statement>(
-		_db, u8"select bitmap, last_scanned from item_thumbnails where folder=? AND name=?"s);
+		_db, u8"select bitmap, cover_art, last_scanned from item_thumbnails where folder=? AND name=?"s);
 
 	_state.stats.database_size = platform::file_attributes(_db_path).size;
 	_state.stats.database_path = _db_path;
@@ -660,7 +662,8 @@ database::db_thumbnail database::load_thumbnail(const df::file_path id) const
 	while (find_thumbnail->read())
 	{
 		result.thumb = load_image_file(find_thumbnail->blob(0));
-		result.last_indexed = df::date_t(find_thumbnail->int64(1));
+		result.cover_art = load_image_file(find_thumbnail->blob(1));
+		result.last_indexed = df::date_t(find_thumbnail->int64(2));
 		break;
 	}
 
@@ -679,7 +682,8 @@ database::db_thumbnail database::load_folder_thumbnail(const str::cached folder)
 	while (find_folder_thumbnail->read())
 	{
 		result.thumb = load_image_file(find_folder_thumbnail->blob(0));
-		result.last_indexed = df::date_t(find_folder_thumbnail->int64(1));
+		result.cover_art = load_image_file(find_folder_thumbnail->blob(1));
+		result.last_indexed = df::date_t(find_folder_thumbnail->int64(2));
 		break;
 	}
 
@@ -767,6 +771,7 @@ bool database::is_db_thread() const
 void database::load_thumbnails(const index_state& index, const df::item_set& items)
 {
 	df::assert_true(is_db_thread());
+	bool cover_art_loaded = false;
 
 	for (const auto& i : items.folders())
 	{
@@ -781,11 +786,12 @@ void database::load_thumbnails(const index_state& index, const df::item_set& ite
 			for (auto idx = 0u; idx < folders.size() && !i->has_thumb(); idx++)
 			{
 				auto folder = folders[idx];
-				auto t = load_folder_thumbnail(folder.text());
+				auto loaded = load_folder_thumbnail(folder.text());
 
-				if (is_valid(t.thumb))
+				if (is_valid(loaded.thumb) || is_valid(loaded.cover_art))
 				{
-					i->thumbnail(std::move(t.thumb), t.last_indexed);
+					cover_art_loaded |= ui::is_valid(loaded.cover_art);
+					i->thumbnail(std::move(loaded.thumb), std::move(loaded.cover_art), loaded.last_indexed);
 					break;
 				}
 
@@ -809,10 +815,16 @@ void database::load_thumbnails(const index_state& index, const df::item_set& ite
 
 		if (i->db_thumbnail_pending())
 		{
-			auto thumbnail = load_thumbnail(i->path());
-			i->thumbnail(std::move(thumbnail.thumb), thumbnail.last_indexed);
+			auto loaded = load_thumbnail(i->path());
+			cover_art_loaded |= ui::is_valid(loaded.cover_art);
+			i->thumbnail(std::move(loaded.thumb), std::move(loaded.cover_art), loaded.last_indexed);
 			i->db_thumb_query_complete();
 		}
+	}
+
+	if (cover_art_loaded)
+	{
+		index.invalidate_view(view_invalid::group_layout);
 	}
 }
 
@@ -838,7 +850,7 @@ void database::perform_writes(std::deque<item_db_write> writes)
 	const db_statement update_media_position(
 		_db, u8"update item_properties set media_position = ? where folder=? and name=?"s);
 	const db_statement insert_thumbnails(
-		_db, u8"insert or replace into item_thumbnails (folder, name, bitmap, last_scanned) values (?, ?, ?, ?)"s);
+		_db, u8"insert or replace into item_thumbnails (folder, name, bitmap, cover_art, last_scanned) values (?, ?, ?, ?, ?)"s);
 
 	metadata_packer packer;
 
@@ -908,7 +920,8 @@ void database::perform_writes(std::deque<item_db_write> writes)
 			insert_thumbnails.bind(1, path.folder().text());
 			insert_thumbnails.bind(2, path.name());
 			insert_thumbnails.bind(3, write.thumb.value()->data());
-			insert_thumbnails.bind(4, write.thumb_scanned.has_value() ? write.thumb_scanned.value().to_int64() : 0);
+			insert_thumbnails.bind(4, (write.cover_art.has_value() && is_valid(write.cover_art.value())) ? write.cover_art.value()->data() : df::cspan {});
+			insert_thumbnails.bind(5, write.thumb_scanned.has_value() ? write.thumb_scanned.value().to_int64() : 0);
 			insert_thumbnails.exec();
 			insert_thumbnails.reset();
 

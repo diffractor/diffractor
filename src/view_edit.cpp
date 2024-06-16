@@ -75,7 +75,7 @@ public:
 	{
 		if (!str::is_empty(_label))
 		{
-			const auto label_extent = mc.measure_text(_label, ui::style::font_size::dialog,
+			const auto label_extent = mc.measure_text(_label, ui::style::font_face::dialog,
 			                                          ui::style::text_style::single_line, width_limit);
 			mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx);
 		}
@@ -87,13 +87,13 @@ public:
 	{
 		bounds = bounds_in;
 
-		const auto num_extent = mc.measure_text(u8"00.00"sv, ui::style::font_size::dialog, ui::style::text_style::single_line, bounds.width());
+		const auto num_extent = mc.measure_text(u8"00.00"sv, ui::style::font_face::dialog, ui::style::text_style::single_line, bounds.width());
 		auto slider_bounds = bounds;
 		auto edit_bounds = bounds;
-		const auto split = bounds.right - (num_extent.cx + (mc.component_snap * 2));
+		const auto split = bounds.right - (num_extent.cx + (mc.padding2 * 2));
 
-		edit_bounds.left = split + mc.baseline_snap;
-		slider_bounds.right = split - mc.baseline_snap;
+		edit_bounds.left = split + mc.padding1;
+		slider_bounds.right = split - mc.padding1;
 
 		if (!str::is_empty(_label)) slider_bounds.left += mc.col_widths.c1;
 
@@ -108,7 +108,7 @@ public:
 			const auto text_color = ui::color(dc.colors.foreground, dc.colors.alpha);
 			auto r = bounds.offset(element_offset);
 			r.right = r.left + dc.col_widths.c1;
-			dc.draw_text(_label, r, ui::style::font_size::dialog, ui::style::text_style::single_line, text_color, {});
+			dc.draw_text(_label, r, ui::style::font_face::dialog, ui::style::text_style::single_line, text_color, {});
 		}
 	}
 
@@ -310,7 +310,7 @@ public:
 			text[i] = static_cast<wchar_t>(i < rating ? icon_index::star_solid : icon_index::star);
 		}
 
-		dc.draw_text(str::utf16_to_utf8(text), logical_bounds, ui::style::font_size::icons,
+		dc.draw_text(str::utf16_to_utf8(text), logical_bounds, ui::style::font_face::icons,
 		             ui::style::text_style::single_line, clr, bg);
 	}
 
@@ -365,9 +365,9 @@ public:
 	{
 		if (!str::is_empty(_label))
 		{
-			const auto label_extent = mc.measure_text(_label, ui::style::font_size::dialog,
+			const auto label_extent = mc.measure_text(_label, ui::style::font_face::dialog,
 			                                          ui::style::text_style::single_line, width_limit);
-			mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.component_snap);
+			mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
 		}
 
 		return {width_limit, default_control_height(mc)};
@@ -392,8 +392,8 @@ public:
 		if (!str::is_empty(_label))
 		{
 			auto r = bounds.offset(element_offset);
-			r.right = r.left + dc.col_widths.c1 - dc.component_snap;
-			dc.draw_text(_label, r, ui::style::font_size::dialog, ui::style::text_style::single_line,
+			r.right = r.left + dc.col_widths.c1 - dc.padding2;
+			dc.draw_text(_label, r, ui::style::font_face::dialog, ui::style::text_style::single_line,
 			             {dc.colors.foreground, dc.colors.alpha}, {});
 		}
 	}
@@ -445,7 +445,7 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		return {width_limit, mc.text_line_height(ui::style::font_size::dialog) + mc.component_snap * 4 };
+		return {width_limit, mc.text_line_height(ui::style::font_face::dialog) + mc.padding2 * 4 };
 	}
 
 	void layout(ui::measure_context& mc, const recti bounds_in, ui::control_layouts& positions) override
@@ -460,9 +460,9 @@ public:
 		rab.left = rok.right = rok.left + width;
 		rab.right = rcan.left = rcan.right - width;
 
-		positions.emplace_back(_ok, rok.inflate(-mc.baseline_snap), is_visible());
-		positions.emplace_back(_abort, rab.inflate(-mc.baseline_snap), is_visible());
-		positions.emplace_back(_cancel, rcan.inflate(-mc.baseline_snap), is_visible());
+		positions.emplace_back(_ok, rok.inflate(-mc.padding1), is_visible());
+		positions.emplace_back(_abort, rab.inflate(-mc.padding1), is_visible());
+		positions.emplace_back(_cancel, rcan.inflate(-mc.padding1), is_visible());
 	}
 };
 
@@ -1064,7 +1064,7 @@ void edit_view_controls::layout_controls(ui::measure_context& mc)
 		_saturation_slider->is_visible(is_bitmap);
 		_color_toolbar->is_visible(is_bitmap);
 
-		const auto layout_padding = mc.baseline_snap;
+		const auto layout_padding = mc.padding1;
 		auto avail_bounds = recti(_extent);
 		avail_bounds.right -= mc.scroll_width + layout_padding;
 
@@ -1460,7 +1460,7 @@ void edit_view::render(ui::draw_context& dc, view_controller_ptr controller)
 
 		const quadd image_bounds(image_extent);
 
-		const auto pad30 = dc.component_snap * 2;
+		const auto pad30 = dc.padding2 * 2;
 		const auto selection_bounds = _edit_state.selection();
 		const auto selection_angle = -selection_bounds.angle();
 		const auto selection_rotated_bounds = image_bounds.transform(affined().rotate(selection_angle)).bounding_rect();
@@ -1515,7 +1515,7 @@ void edit_view::render(ui::draw_context& dc, view_controller_ptr controller)
 		_crop_bounds = crop_bounding;
 
 		const auto pad1 = df::round(1 * dc.scale_factor);
-		const auto pad8 = dc.component_snap;
+		const auto pad8 = dc.padding2;
 		const auto pad16 = pad8 * 2;
 
 		_crop_handle_tl.set(crop_bounding.left() - pad16, crop_bounding.top() - pad16, crop_bounding.left() + pad8,
@@ -1564,17 +1564,17 @@ void edit_view::render(ui::draw_context& dc, view_controller_ptr controller)
 		draw_handle(dc, _crop_handle_br.round(), alpha);
 
 		const auto text_dims = str::format(u8"{}x{}"sv, df::round(actual_size.Width), df::round(actual_size.Height));
-		const sizei text_size = dc.measure_text(text_dims, ui::style::font_size::dialog, ui::style::text_style::single_line_center, bounding.width()).inflate(dc.component_snap);
+		const sizei text_size = dc.measure_text(text_dims, ui::style::font_face::dialog, ui::style::text_style::single_line_center, bounding.width()).inflate(dc.padding2);
 		const auto text_x = (bounding.left + bounding.right - text_size.cx) / 2;
 		const recti draw_text_rect(text_x, bounding.top - text_size.cy, text_x + text_size.cx, bounding.top);
 		
-		dc.draw_text(text_dims, draw_text_rect, ui::style::font_size::dialog, ui::style::text_style::single_line_center,
+		dc.draw_text(text_dims, draw_text_rect, ui::style::font_face::dialog, ui::style::text_style::single_line_center,
 		             ui::color(dc.colors.foreground, alpha), {});
 
 		if (setting.show_debug_info)
 		{
 			const auto text_degs = str::print(u8"%3.3f degrees"sv, selection_angle);
-			dc.draw_text(text_degs, crop_bounding.round().inflate(df::round(100 * dc.scale_factor)), ui::style::font_size::title,
+			dc.draw_text(text_degs, crop_bounding.round().inflate(df::round(100 * dc.scale_factor)), ui::style::font_face::title,
 			             ui::style::text_style::single_line_center,
 			             ui::color(ui::style::color::warning_background, alpha), {});
 		}
@@ -1600,10 +1600,10 @@ void edit_view::render(ui::draw_context& dc, view_controller_ptr controller)
 		dc.draw_texture(_texture, bounds, alpha, sampler);
 
 		auto draw_text_rect = recti(_extent);
-		draw_text_rect.top = bounds.bottom + dc.component_snap;
-		draw_text_rect.bottom = draw_text_rect.top + dc.text_line_height(ui::style::font_size::title) + (dc.component_snap * 2);
+		draw_text_rect.top = bounds.bottom + dc.padding2;
+		draw_text_rect.bottom = draw_text_rect.top + dc.text_line_height(ui::style::font_face::title) + (dc.padding2 * 2);
 
-		dc.draw_text(_path.name(), draw_text_rect, ui::style::font_size::title,
+		dc.draw_text(_path.name(), draw_text_rect, ui::style::font_face::title,
 		             ui::style::text_style::single_line_center, ui::color(dc.colors.foreground, alpha), {});
 	}
 }

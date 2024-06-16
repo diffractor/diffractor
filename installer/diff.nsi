@@ -268,9 +268,13 @@ Section "Diffractor"
 	SetOverwrite on
 	File "..\exe\${PRODUCT32_EXE}"
 	File "..\exe\${PRODUCT64_EXE}"
-
-	CreateShortCut "$STARTMENU\Programs\Diffractor.lnk" "$INSTDIR\$PRODUCT_EXE" "" "$INSTDIR\$PRODUCT_EXE" 0
-	CreateShortCut "$DESKTOP\Diffractor.lnk" "$INSTDIR\$PRODUCT_EXE" "" "$INSTDIR\$PRODUCT_EXE" 0
+		
+    ${If} ${Silent}
+        ; Dont add desktop icon if in silent mode
+    ${Else}
+		CreateShortCut "$STARTMENU\Programs\Diffractor.lnk" "$INSTDIR\$PRODUCT_EXE" "" "$INSTDIR\$PRODUCT_EXE" 0
+		CreateShortCut "$DESKTOP\Diffractor.lnk" "$INSTDIR\$PRODUCT_EXE" "" "$INSTDIR\$PRODUCT_EXE" 0
+	${EndIf}
   
 	; Write the uninstall keys for Windows
 	WriteRegStr SHCTX "${PRODUCT_UNINST_KEY}" "DisplayName" "${PRODUCT_NAME}"

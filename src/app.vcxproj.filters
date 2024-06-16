@@ -201,6 +201,9 @@
     <ClCompile Include="platform_win_wic.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="files_commodore.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="app_commands.h">

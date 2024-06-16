@@ -135,7 +135,7 @@ public:
 
 		if (avail_bounds.width() > minumum_media_control_width && _controls_element)
 		{
-			const auto control_limit = avail_bounds.inflate(-mc.component_snap);
+			const auto control_limit = avail_bounds.inflate(-mc.padding2);
 			const auto center_limit = df::mul_div(control_limit.width(), 5, 11);
 			const auto limit = center_limit;
 			const auto elements_extent = _controls_element->measure(mc, limit);
@@ -147,7 +147,7 @@ public:
 
 			if (!overlay_media_control)
 			{
-				media_bounds_avail.bottom = control_bounds.top - mc.component_snap;
+				media_bounds_avail.bottom = control_bounds.top - mc.padding2;
 			}
 		}
 
@@ -163,8 +163,8 @@ public:
 
 		if (!overlay_media_control)
 		{
-			media_bounds_avail.left += arrow_cx + mc.component_snap;
-			media_bounds_avail.right -= arrow_cx + mc.component_snap;
+			media_bounds_avail.left += arrow_cx + mc.padding2;
+			media_bounds_avail.right -= arrow_cx + mc.padding2;
 		}
 
 		if (_media_element)

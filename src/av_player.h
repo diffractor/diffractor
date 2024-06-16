@@ -187,8 +187,7 @@ public:
 	}
 
 	bool open(const df::file_item_ptr& item, const bool auto_play, const int video_track, const int audio_track,
-	          const bool can_use_hw, const
-	          bool use_last_played_pos)
+	          const bool can_use_hw, const bool use_last_played_pos, const bool can_use_threads)
 	{
 		df::assert_true(_state == av_play_state::detached);
 
@@ -198,7 +197,7 @@ public:
 
 		if (result)
 		{
-			_decoder.init_streams(video_track, audio_track, can_use_hw, false);
+			_decoder.init_streams(video_track, audio_track, can_use_hw, false, can_use_threads);
 
 			const auto start_time = _decoder.start_time();
 			const auto end_time = _decoder.end_time();
@@ -560,8 +559,9 @@ public:
 	}
 
 	void open(const df::file_item_ptr& item, const bool auto_play, const int video_track, const int audio_track,
-	          const bool can_use_hw, const
-	          bool use_last_played_pos, const std::function<void(std::shared_ptr<av_session>)>& cb)
+	          const bool can_use_hw,
+	          const bool use_last_played_pos, 
+		      const std::function<void(std::shared_ptr<av_session>)>& cb)
 	{
 		queue([item, auto_play, video_track, audio_track, can_use_hw, use_last_played_pos, cb](
 			const std::shared_ptr<av_player>& p)
@@ -598,11 +598,11 @@ private:
 	}
 
 	std::shared_ptr<av_session> open_impl(const df::file_item_ptr& item, const bool auto_play, const int video_track,
-	                                      const int audio_track, const bool can_use_hw, const
-	                                      bool use_last_played_pos)
+	                                      const int audio_track, const bool can_use_hw,
+	                                      const bool use_last_played_pos)
 	{
 		const auto ses = std::make_shared<av_session>(_host);
-		const auto open_result = ses->open(item, auto_play, video_track, audio_track, can_use_hw, use_last_played_pos);
+		const auto open_result = ses->open(item, auto_play, video_track, audio_track, can_use_hw, use_last_played_pos, true);
 		auto result = open_result ? ses : nullptr;
 
 		if (_thread_session != result)

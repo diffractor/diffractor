@@ -923,14 +923,14 @@ public:
 		if (bg_color.a > 0.0f)
 		{
 			const auto pad = padding * dc.scale_factor;
-			dc.draw_rounded_rect(logical_bounds.inflate(pad.cx, pad.cy), bg_color, dc.baseline_snap);
+			dc.draw_rounded_rect(logical_bounds.inflate(pad.cx, pad.cy), bg_color, dc.padding1);
 		}
 
 		const auto highlight_clr = ui::color(ui::style::color::dialog_selected_text, dc.colors.alpha);
 		const auto clr = ui::color(dc.colors.foreground, dc.colors.alpha);
-		const auto city_extent = dc.measure_text(match.city.text, ui::style::font_size::dialog,
+		const auto city_extent = dc.measure_text(match.city.text, ui::style::font_face::dialog,
 		                                         ui::style::text_style::single_line, bounds.width());
-		const auto state_extent = dc.measure_text(match.state.text, ui::style::font_size::dialog,
+		const auto state_extent = dc.measure_text(match.state.text, ui::style::font_face::dialog,
 		                                          ui::style::text_style::single_line, bounds.width());
 		//const auto country_extent = dc.measure_text(_match.country.text, render::style::font_size::dialog, render::style::text_style::single_line, bounds.width());
 
@@ -938,19 +938,19 @@ public:
 		{
 			auto rr = logical_bounds;
 			dc.draw_text(match.city.text, make_highlights(match.city.highlights, highlight_clr), rr,
-			             ui::style::font_size::dialog, ui::style::text_style::single_line, clr, {});
-			rr.left += city_extent.cx + dc.component_snap;
+			             ui::style::font_face::dialog, ui::style::text_style::single_line, clr, {});
+			rr.left += city_extent.cx + dc.padding2;
 			dc.draw_text(match.state.text, make_highlights(match.state.highlights, highlight_clr), rr,
-			             ui::style::font_size::dialog, ui::style::text_style::single_line, clr, {});
-			rr.left += state_extent.cx + dc.component_snap;
+			             ui::style::font_face::dialog, ui::style::text_style::single_line, clr, {});
+			rr.left += state_extent.cx + dc.padding2;
 			dc.draw_text(match.country.text, make_highlights(match.country.highlights, highlight_clr), rr,
-			             ui::style::font_size::dialog, ui::style::text_style::single_line, clr, {});
-			rr.left += state_extent.cx + dc.component_snap;
+			             ui::style::font_face::dialog, ui::style::text_style::single_line, clr, {});
+			rr.left += state_extent.cx + dc.padding2;
 		}
 		else
 		{
 			dc.draw_text(_text, make_highlights(_highlights, highlight_clr), logical_bounds,
-			             ui::style::font_size::dialog, ui::style::text_style::single_line, clr, {});
+			             ui::style::font_face::dialog, ui::style::text_style::single_line, clr, {});
 		}
 	}
 
@@ -1799,7 +1799,7 @@ static void tag_invoke(view_state& s, const ui::control_frame_ptr& parent, const
 		if (!favorites.empty())
 		{
 			list_control->add(set_margin(std::make_shared<text_element>(
-				tt.tags_favorite_label, ui::style::font_size::title, ui::style::text_style::multiline,
+				tt.tags_favorite_label, ui::style::font_face::title, ui::style::text_style::multiline,
 				view_element_style::line_break)));
 			list_control->add(set_margin(std::make_shared<ui::recommended_words_control>(
 				dlg->_frame, favorites, [edit](const std::u8string_view tag)
@@ -1831,7 +1831,7 @@ static void tag_invoke(view_state& s, const ui::control_frame_ptr& parent, const
 		if (!common_tags.empty())
 		{
 			list_control->add(set_margin(std::make_shared<text_element>(
-				tt.tags_common_label, ui::style::font_size::title, ui::style::text_style::multiline,
+				tt.tags_common_label, ui::style::font_face::title, ui::style::text_style::multiline,
 				view_element_style::line_break)));
 			list_control->add(set_margin(std::make_shared<ui::recommended_words_control>(
 				dlg->_frame, common_tags, [edit](const std::u8string_view tag)
@@ -1843,7 +1843,7 @@ static void tag_invoke(view_state& s, const ui::control_frame_ptr& parent, const
 		if (!existing.empty())
 		{
 			list_control->add(set_margin(std::make_shared<text_element>(
-				tt.tags_remove_label, ui::style::font_size::title, ui::style::text_style::multiline,
+				tt.tags_remove_label, ui::style::font_face::title, ui::style::text_style::multiline,
 				view_element_style::line_break)));
 			list_control->add(set_margin(std::make_shared<ui::recommended_words_control>(
 				dlg->_frame, existing, [edit](const std::u8string_view tag)
@@ -2363,14 +2363,14 @@ private:
 			if (bg_color.a > 0.0f)
 			{
 				const auto pad = padding * dc.scale_factor;
-				dc.draw_rounded_rect(logical_bounds.inflate(pad.cx, pad.cy), bg_color, dc.baseline_snap);
+				dc.draw_rounded_rect(logical_bounds.inflate(pad.cx, pad.cy), bg_color, dc.padding1);
 			}
 
 			const auto highlight_clr = ui::color(ui::style::color::dialog_selected_text, dc.colors.alpha);
 			const auto clr = ui::color(dc.colors.foreground, dc.colors.alpha);
 			const auto highlights = make_highlights(_match, highlight_clr);
 
-			dc.draw_text(_handler.name, highlights, logical_bounds, ui::style::font_size::dialog,
+			dc.draw_text(_handler.name, highlights, logical_bounds, ui::style::font_face::dialog,
 			             ui::style::text_style::single_line, clr, {});
 		}
 
@@ -4374,7 +4374,7 @@ static void about_invoke(view_state& s, const ui::control_frame_ptr& parent, com
 
 	std::vector<view_element_ptr> controls;
 	controls.emplace_back(std::make_shared<surface_element>(title, title->width(), view_element_style::center));
-	controls.emplace_back(std::make_shared<text_element>(df::format_version(false), ui::style::font_size::dialog,
+	controls.emplace_back(std::make_shared<text_element>(df::format_version(false), ui::style::font_face::dialog,
 	                                                     ui::style::text_style::single_line_center,
 	                                                     view_element_style::center));
 	controls.emplace_back(std::make_shared<divider_element>());
@@ -4500,7 +4500,7 @@ class path_text_element final : public std::enable_shared_from_this<path_text_el
 private:
 	std::u8string _text;
 	df::file_path _path;
-	ui::style::font_size _font = ui::style::font_size::dialog;
+	ui::style::font_face _font = ui::style::font_face::dialog;
 	ui::style::text_style _text_style = ui::style::text_style::multiline;
 
 public:
@@ -4541,7 +4541,7 @@ public:
 	void tooltip(view_hover_element& result, const pointi loc, const pointi element_offset) const override
 	{
 		result.elements.add(make_icon_element(icon_index::data, view_element_style::no_break));
-		result.elements.add(std::make_shared<text_element>(_text, ui::style::font_size::title,
+		result.elements.add(std::make_shared<text_element>(_text, ui::style::font_face::title,
 		                                                   ui::style::text_style::multiline,
 		                                                   view_element_style::line_break));
 		result.active_bounds = result.window_bounds = bounds.offset(element_offset);

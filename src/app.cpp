@@ -137,10 +137,10 @@ std::vector<std::pair<std::u8string_view, std::u8string>> calc_app_info(const in
 
 void sidebar_logo_element::tooltip(view_hover_element& hover, const pointi loc, const pointi element_offset) const
 {
-	hover.elements.add(std::make_shared<text_element>(_text, ui::style::font_size::title,
+	hover.elements.add(std::make_shared<text_element>(_text, ui::style::font_face::title,
 		ui::style::text_style::single_line,
 		view_element_style::line_break));
-	hover.elements.add(std::make_shared<text_element>(df::format_version(false), ui::style::font_size::dialog,
+	hover.elements.add(std::make_shared<text_element>(df::format_version(false), ui::style::font_face::dialog,
 		ui::style::text_style::single_line,
 		view_element_style::line_break));
 	//hover.elements.add(std::make_shared<text_element>(tt.indexed_locations_makes_collection, render::style::font_size::dialog, render::style::text_style::multiline, view_element_style::line_break));
@@ -655,8 +655,8 @@ void view_frame::draw_status(ui::draw_context& dc)
 	if (!_status_title.empty() || !_status_text.empty())
 	{
 		const auto padding = 8;
-		const auto title_font = ui::style::font_size::title;
-		const auto text_font = ui::style::font_size::dialog;
+		const auto title_font = ui::style::font_face::title;
+		const auto text_font = ui::style::font_face::dialog;
 
 		const auto text_color = ui::color(dc.colors.foreground, dc.colors.alpha);
 		const auto bg_color = ui::color(ui::style::color::important_background, dc.colors.alpha);
@@ -1366,9 +1366,16 @@ void app_frame::layout(ui::measure_context& mc)
 		const auto show_status_bar = !is_full_screen_media;
 		const auto show_sidebar = (setting.show_sidebar && !is_full_screen_media && !_state.is_editing());
 		const auto show_edit_controls = view_mode == view_type::edit;
-		const auto scale_factor = mc.scale_factor;
 
-		const auto client_bounds = recti(_extent).inflate(is_full_screen_media ? 0 : -1);
+		const auto scale_factor = mc.scale_factor;
+		const auto scale1 = df::round(1 * scale_factor);
+		const auto scale16 = df::round(16 * scale_factor);
+		const auto scale32 = df::round(32 * scale_factor);
+		const auto scale64 = df::round(64 * scale_factor);
+		const auto scale150 = df::round(150 * scale_factor);
+		const auto scale300 = df::round(300 * scale_factor);
+		const auto scale400 = df::round(400 * scale_factor);
+		const auto scale1000 = df::round(1000 * scale_factor);
 
 		const auto tools_extent = _tools->measure_toolbar(_extent.cx);
 		const auto sorting_extent = _sorting->measure_toolbar(_extent.cx);
@@ -1376,17 +1383,17 @@ void app_frame::layout(ui::measure_context& mc)
 		const auto navigate2_extent = _navigate2->measure_toolbar(_extent.cx);
 		const auto navigate3_extent = _navigate3->measure_toolbar(_extent.cx);
 		const auto media_edit_extent = _media_edit->measure_toolbar(_extent.cx);
-		const auto text_line_height = mc.text_line_height(ui::style::font_size::dialog);
-		const auto cy_address = text_line_height + mc.component_snap;
-				
+		const auto text_line_height = mc.text_line_height(ui::style::font_face::dialog);
+		const auto cy_address = text_line_height + mc.padding2 + mc.padding2;
+		const auto cy_filter = text_line_height + mc.padding2;
+
 		const auto top_height = std::max(std::max(navigate1_extent.cy, navigate2_extent.cy),
-		                                 std::max(navigate3_extent.cy, cy_address)) + df::round(4 * scale_factor);
+		                                 std::max(navigate3_extent.cy, cy_address)) + mc.padding2;
 		const auto status_height = std::max(std::max(tools_extent.cy, sorting_extent.cy),
-			std::max(media_edit_extent.cy, text_line_height)) + df::round(
-				10 * scale_factor);
+		                                    std::max(media_edit_extent.cy, cy_filter)) + mc.padding1;
 
+		const auto client_bounds = recti(_extent).inflate(is_full_screen_media ? 0 : -scale1);
 		const auto y_status_top = client_bounds.bottom - status_height;
-
 		const auto y_address = client_bounds.top + (top_height - cy_address) / 2;
 		const auto y_nav1 = client_bounds.top + (top_height - navigate1_extent.cy) / 2;
 		const auto y_nav2 = client_bounds.top + (top_height - navigate2_extent.cy) / 2;
@@ -1394,53 +1401,42 @@ void app_frame::layout(ui::measure_context& mc)
 		const auto y_tools = y_status_top + (status_height - tools_extent.cy) / 2;
 		const auto y_sorting = y_status_top + (status_height - sorting_extent.cy) / 2;
 		const auto y_media_edit = y_status_top + (status_height - media_edit_extent.cy) / 2;
-
 		const auto cx_avail = client_bounds.width();
-		const auto sidebar_min = 64;
+		const auto sidebar_min = scale64;
 		const auto sidebar_avail = std::max(sidebar_min, cx_avail / 3);
 		const auto sidebar_cx = std::clamp(_sidebar->prefered_width(mc), sidebar_min, sidebar_avail);
-		const auto toolbar_widths = navigate1_extent.cx + navigate2_extent.cx + navigate3_extent.cx;
-
-		const auto cx_address = std::clamp((client_bounds.width() - toolbar_widths) / 2,
-			df::round(300 * scale_factor), df::round(1000 * scale_factor));
-		const auto x_addres_center = (client_bounds.left + client_bounds.right) / 2;
-
-		const auto x_address_left = x_addres_center - (cx_address / 2);
-		const auto x_address_right = x_addres_center + (cx_address / 2);
-
-		const auto x_nav1 = x_address_left - mc.baseline_snap - navigate1_extent.cx;
-		const auto x_nav2 = x_address_right + mc.baseline_snap;
-		const auto x_nav3 = client_bounds.right - mc.baseline_snap - navigate3_extent.cx;
+		const auto toolbar_widths = navigate1_extent.cx + navigate2_extent.cx + navigate3_extent.cx;				
+		const auto cx_address = std::clamp((client_bounds.width() - toolbar_widths) / 2, scale300, scale1000);
+		const auto x_address_center = (client_bounds.left + client_bounds.right) / 2;
+		const auto x_address_left = x_address_center - (cx_address / 2);
+		const auto x_address_right = x_address_center + (cx_address / 2);
+		const auto x_nav1 = x_address_left - mc.padding1 - navigate1_extent.cx;
+		const auto x_nav2 = x_address_right + mc.padding1;
+		const auto x_nav3 = client_bounds.right - mc.padding1 - navigate3_extent.cx;
+		const auto x_tools_avail = cx_avail - sidebar_cx;
+		const auto x_tools = (show_sidebar ? sidebar_cx : 0) + (is_full_screen_media ? (x_tools_avail - tools_extent.cx) / 2 : mc.padding1);
+		const auto x_sorting = client_bounds.right - (mc.padding1 + sorting_extent.cx + mc.handle_cxy);
+		const auto x_media_edit = client_bounds.right - (mc.padding1 + media_edit_extent.cx + mc.handle_cxy);
+		const auto y_client = show_top_bar ? client_bounds.top + top_height : client_bounds.top;
+		const auto cx_edit = std::max(client_bounds.width() / 4, scale400);
+		const auto r_tools = x_tools + tools_extent.cx;
+		const auto x_filter = std::max(r_tools + mc.padding1, x_sorting - scale150);
+		const auto y_filter = y_status_top + (status_height - cy_filter) / 2;
 
 		const recti address_bounds(x_address_left, y_address, x_address_right, y_address + cy_address);
 		const recti nav1_bounds(x_nav1, y_nav1, x_nav1 + navigate1_extent.cx, y_nav1 + navigate1_extent.cy);
 		const recti nav2_bounds(x_nav2, y_nav2, x_nav2 + navigate2_extent.cx, y_nav2 + navigate2_extent.cy);
 		const recti nav3_bounds(x_nav3, y_nav3, x_nav3 + navigate3_extent.cx, y_nav3 + navigate3_extent.cy);
-
-		const auto x_tools_avail = cx_avail - sidebar_cx;
-		const auto x_tools = (show_sidebar ? sidebar_cx : 0) + (is_full_screen_media
-			? (x_tools_avail - tools_extent.cx) / 2
-			: mc.baseline_snap);
-		const auto x_sorting = client_bounds.right - (mc.baseline_snap + sorting_extent.cx + mc.cx_resize_handle);
-		const auto x_media_edit = client_bounds.right - (mc.baseline_snap + media_edit_extent.cx +
-			mc.cx_resize_handle);
-		const auto y_client = show_top_bar ? client_bounds.top + top_height : client_bounds.top;
-
-		const auto edit_cx = std::max(client_bounds.width() / 4, df::round(400 * scale_factor));
-
-		const recti tool_rect(x_tools, y_tools, x_tools + tools_extent.cx, y_tools + tools_extent.cy);
-		const recti sorting_rect(x_sorting, y_sorting, x_sorting + sorting_extent.cx, y_sorting + sorting_extent.cy);
-		const recti filter_rect(std::max(tool_rect.right + mc.baseline_snap, x_sorting - cy_address * 5),
-			y_status_top + mc.baseline_snap, x_sorting - mc.baseline_snap, y_status_top + status_height - mc.baseline_snap);
-		const recti media_edit_rect(x_media_edit, y_media_edit, x_media_edit + media_edit_extent.cx,
-			y_media_edit + media_edit_extent.cy);
-		const recti edit_bounds(client_bounds.right - edit_cx, y_client, client_bounds.right, y_status_top);
-		const recti sidebar_bounds(client_bounds.left, client_bounds.top, client_bounds.left + sidebar_cx,
-			client_bounds.bottom);
+		const recti tool_rect(x_tools, y_tools, r_tools, y_tools + tools_extent.cy);
+		const recti sorting_rect(x_sorting, y_sorting, x_sorting + sorting_extent.cx, y_sorting + sorting_extent.cy);		
+		const recti filter_rect(x_filter, y_filter, x_sorting - mc.padding1, y_filter + cy_filter);
+		const recti media_edit_rect(x_media_edit, y_media_edit, x_media_edit + media_edit_extent.cx,y_media_edit + media_edit_extent.cy);
+		const recti edit_bounds(client_bounds.right - cx_edit, y_client, client_bounds.right, y_status_top);
+		const recti sidebar_bounds(client_bounds.left, client_bounds.top, client_bounds.left + sidebar_cx, client_bounds.bottom);
 
 		const auto show_sorting = view_mode == view_type::items && tool_rect.right < sorting_rect.left;
 		const auto show_tools = !is_editing && show_status_bar && tool_rect.right <= client_bounds.right;
-		const auto show_filter = !is_editing && show_status_bar && filter_rect.width() > 16 && view_mode != view_type::Test;
+		const auto show_filter = !is_editing && show_status_bar && filter_rect.width() > scale16 && view_mode != view_type::Test;
 		const auto show_address = show_top_bar && !is_editing && address_bounds.right < nav3_bounds.right;
 		const auto show_navigate1 = show_top_bar && !is_editing && nav1_bounds.left > client_bounds.left;
 		const auto show_navigate2 = show_top_bar && !is_editing && nav2_bounds.right < nav3_bounds.left;
@@ -1466,10 +1462,10 @@ void app_frame::layout(ui::measure_context& mc)
 
 		if (show_edit_controls)
 		{
-			view_bounds.right -= edit_cx;
+			view_bounds.right -= cx_edit;
 		}
 
-		const auto title_bounds_padding = df::round(32 * scale_factor);
+		const auto title_bounds_padding = scale32;
 
 		_title_bounds = client_bounds;
 		_title_bounds.top = client_bounds.top;
@@ -2299,7 +2295,7 @@ void app_frame::on_window_paint(ui::draw_context& dc)
 				_view_frame->frame_render_time * 1000.0, _frame_delay);
 		}
 
-		dc.draw_text(str::utf8_cast(text), _status_bounds, ui::style::font_size::dialog,
+		dc.draw_text(str::utf8_cast(text), _status_bounds, ui::style::font_face::dialog,
 			ui::style::text_style::single_line_center, ui::color(dc.colors.foreground, dc.colors.alpha), {});
 	}
 
@@ -2310,14 +2306,15 @@ void app_frame::on_window_paint(ui::draw_context& dc)
 		if (i)
 		{
 			const std::u8string title = format(u8"{}: {}"sv, tt.editing_title, i->name());
-			dc.draw_text(title, _title_bounds, ui::style::font_size::title, ui::style::text_style::single_line,
+			dc.draw_text(title, _title_bounds, ui::style::font_face::title, ui::style::text_style::single_line,
 				ui::color(dc.colors.foreground, dc.colors.alpha), {});
 		}
 	}
 
 	const auto border_outside = recti(_extent);
-	const auto clr = ui::style::color::view_background;
-	dc.draw_border(border_outside.inflate(df::round(-1 * dc.scale_factor)), border_outside, clr, clr);
+	const auto scale1 = df::round(1 * dc.scale_factor);
+	const auto clr = ui::style::color::view_background;	
+	dc.draw_border(border_outside.inflate(-scale1), border_outside, clr, clr);
 }
 
 void app_frame::activate(const bool is_active)
@@ -3336,14 +3333,14 @@ void app_frame::tooltip(view_hover_element& hover, const commands id)
 
 		if (!command->text.empty())
 		{
-			hover.elements.add(std::make_shared<text_element>(command->text, ui::style::font_size::dialog,
+			hover.elements.add(std::make_shared<text_element>(command->text, ui::style::font_face::dialog,
 				ui::style::text_style::multiline,
 				view_element_style::line_break));
 		}
 
 		if (!command->tooltip_text.empty())
 		{
-			hover.elements.add(std::make_shared<text_element>(command->tooltip_text, ui::style::font_size::dialog,
+			hover.elements.add(std::make_shared<text_element>(command->tooltip_text, ui::style::font_face::dialog,
 				ui::style::text_style::multiline,
 				view_element_style::line_break));
 		}
@@ -3382,12 +3379,12 @@ void app_frame::tooltip(view_hover_element& hover, const commands id)
 	{
 		hover.elements.clear();
 		hover.elements.add(make_icon_element(icon_index::group, view_element_style::no_break));
-		hover.elements.add(std::make_shared<text_element>(tt.group_sort_tooltip, ui::style::font_size::dialog,
+		hover.elements.add(std::make_shared<text_element>(tt.group_sort_tooltip, ui::style::font_face::dialog,
 			ui::style::text_style::multiline,
 			view_element_style::line_break));
 
 		hover.elements.add(std::make_shared<summary_control>(_state.summary_shown(), view_element_style::line_break));
-		hover.elements.add(std::make_shared<text_element>(tt.group_sort_click, ui::style::font_size::dialog,
+		hover.elements.add(std::make_shared<text_element>(tt.group_sort_click, ui::style::font_face::dialog,
 			ui::style::text_style::multiline,
 			view_element_style::new_line));
 	}
@@ -3424,7 +3421,7 @@ void app_frame::tooltip(view_hover_element& hover, const commands id)
 
 		if (!parent.is_empty())
 		{
-			hover.elements.add(std::make_shared<text_element>(parent.text(), ui::style::font_size::dialog,
+			hover.elements.add(std::make_shared<text_element>(parent.text(), ui::style::font_face::dialog,
 				ui::style::text_style::multiline,
 				view_element_style::new_line));
 		}
@@ -3437,14 +3434,14 @@ void app_frame::tooltip(view_hover_element& hover, const commands id)
 		{
 			const auto is_favorite = _state.search_is_favorite();
 			const auto text = str::format(is_favorite ? tt.favorite_remove_fmt : tt.favorite_add_fmt, search.text());
-			hover.elements.add(std::make_shared<text_element>(text, ui::style::font_size::dialog,
+			hover.elements.add(std::make_shared<text_element>(text, ui::style::font_face::dialog,
 				ui::style::text_style::multiline,
 				view_element_style::new_line));
 		}
 	}
 	else if (id == commands::info_new_version)
 	{
-		hover.elements.add(std::make_shared<text_element>(tt.update_available, ui::style::font_size::dialog,
+		hover.elements.add(std::make_shared<text_element>(tt.update_available, ui::style::font_face::dialog,
 			ui::style::text_style::multiline,
 			view_element_style::line_break));
 		hover.elements.add(

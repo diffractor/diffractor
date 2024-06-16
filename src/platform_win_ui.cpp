@@ -569,9 +569,18 @@ static HANDLE load_icon_font()
 	return AddFontMemResourceEx(font_data.data(), static_cast<uint32_t>(font_data.size()), nullptr, &nFonts);
 }
 
-static HFONT create_font(const ui::style::font_size type, const int base_font_size, const bool clear_type = false)
+static HANDLE load_petscii_font()
+{
+	auto font_data = load_resource(IDF_PETSCII, L"BINARY");
+	DWORD nFonts = 0;
+	return AddFontMemResourceEx(font_data.data(), static_cast<uint32_t>(font_data.size()), nullptr, &nFonts);
+}
+
+static HFONT create_font(const ui::style::font_face type, const int base_font_size, const bool clear_type = false)
 {
 	static auto* icon_font = load_icon_font();
+	static auto* petscii_font = load_petscii_font();
+
 	LOGFONT lf;
 	memset(&lf, 0, sizeof(lf));
 
@@ -582,28 +591,32 @@ static HFONT create_font(const ui::style::font_size type, const int base_font_si
 
 	switch (type)
 	{
-	case ui::style::font_size::dialog:
+	case ui::style::font_face::dialog:
 		lf.lfHeight = -base_font_size;
 		break;
-	case ui::style::font_size::code:
+	case ui::style::font_face::code:
 		lf.lfHeight = -df::mul_div(base_font_size, 4, 5);
 		wcscpy_s(lf.lfFaceName, LF_FACESIZE, L"Consolas");
 		break;
-	case ui::style::font_size::icons:
+	case ui::style::font_face::icons:
 		lf.lfHeight = -base_font_size;
 		wcscpy_s(lf.lfFaceName, LF_FACESIZE, L"Segoe MDL2 Assets");
 		break;
-	case ui::style::font_size::small_icons:
+	case ui::style::font_face::small_icons:
 		lf.lfHeight = - df::mul_div(base_font_size, 10, 16);
 		wcscpy_s(lf.lfFaceName, LF_FACESIZE, L"Segoe MDL2 Assets");
 		break;
-	case ui::style::font_size::title:
+	case ui::style::font_face::title:
 		lf.lfHeight = -df::mul_div(base_font_size, 3, 2);
 	//lf.lfWeight = FW_NORMAL;
 		break;
-	case ui::style::font_size::mega:
+	case ui::style::font_face::mega:
 		lf.lfHeight = -df::mul_div(base_font_size, 9, 4);
 	//lf.lfWeight = FW_BOLD;
+		break;
+	case ui::style::font_face::petscii:
+		lf.lfHeight = -base_font_size;
+		wcscpy_s(lf.lfFaceName, LF_FACESIZE, L"Basic Engine ASCII");
 		break;
 	default:
 		break;
@@ -837,6 +850,7 @@ public:
 	HFONT title = nullptr;
 	HFONT code = nullptr;
 	HFONT mega = nullptr;
+	HFONT petscii = nullptr;
 	double scale_factor = 1.0;
 
 	mutable df::hash_map<uint32_t, HBRUSH> cached_gdi_brushes;
@@ -864,6 +878,7 @@ public:
 		DeleteObject(title);
 		DeleteObject(code);
 		DeleteObject(mega);
+		DeleteObject(petscii);
 
 		small_icons = nullptr;
 		icons = nullptr;
@@ -871,6 +886,7 @@ public:
 		title = nullptr;
 		code = nullptr;
 		mega = nullptr;
+		petscii = nullptr;
 	}
 
 	~owner_context()
@@ -879,16 +895,17 @@ public:
 		delete_fonts();
 	}
 
-	HFONT font(const ui::style::font_size f) const
+	HFONT font(const ui::style::font_face f) const
 	{
 		switch (f)
 		{
-		case ui::style::font_size::code: return code;
-		case ui::style::font_size::dialog: return dialog;
-		case ui::style::font_size::title: return title;
-		case ui::style::font_size::mega: return mega;
-		case ui::style::font_size::icons: return icons;
-		case ui::style::font_size::small_icons: return small_icons;
+		case ui::style::font_face::code: return code;
+		case ui::style::font_face::dialog: return dialog;
+		case ui::style::font_face::title: return title;
+		case ui::style::font_face::mega: return mega;
+		case ui::style::font_face::icons: return icons;
+		case ui::style::font_face::small_icons: return small_icons;
+		case ui::style::font_face::petscii: return petscii;
 		default: ;
 		}
 
@@ -931,12 +948,13 @@ public:
 		delete_fonts();
 
 		const auto bds = calc_base_font_size();
-		code = create_font(ui::style::font_size::code, bds);
-		dialog = create_font(ui::style::font_size::dialog, bds);
-		title = create_font(ui::style::font_size::title, bds);
-		mega = create_font(ui::style::font_size::mega, bds);
-		icons = create_font(ui::style::font_size::icons, bds);
-		small_icons = create_font(ui::style::font_size::small_icons, bds);
+		code = create_font(ui::style::font_face::code, bds);
+		dialog = create_font(ui::style::font_face::dialog, bds);
+		title = create_font(ui::style::font_face::title, bds);
+		mega = create_font(ui::style::font_face::mega, bds);
+		icons = create_font(ui::style::font_face::icons, bds);
+		small_icons = create_font(ui::style::font_face::small_icons, bds);
+		petscii = create_font(ui::style::font_face::petscii, bds);
 	}
 };
 
@@ -1786,7 +1804,7 @@ public:
 		}
 	}
 
-	void draw_text(const std::u8string_view text, const recti bounds, const ui::style::font_size font,
+	void draw_text(const std::u8string_view text, const recti bounds, const ui::style::font_face font,
 	               const ui::style::text_style style, const ui::color c, const ui::color bg) override
 	{
 		df::scope_rendering_func rf(__FUNCTION__);
@@ -1803,7 +1821,7 @@ public:
 	}
 
 	void draw_text(const std::u8string_view text, const std::vector<ui::text_highlight_t>& highlights,
-	               const recti bounds, ui::style::font_size font, ui::style::text_style style, const ui::color clr,
+	               const recti bounds, ui::style::font_face font, ui::style::text_style style, const ui::color clr,
 	               const ui::color bg) override
 	{
 		df::scope_rendering_func rf(__FUNCTION__);
@@ -1954,7 +1972,7 @@ public:
 		draw_texture_impl(tt, dst, src, alpha, sampler, radius);
 	}
 
-	sizei measure_text(const std::u8string_view text, const ui::style::font_size font,
+	sizei measure_text(const std::u8string_view text, const ui::style::font_face font,
 	                   const ui::style::text_style style, const int width, const int height) override
 	{
 		df::scope_rendering_func rf(__FUNCTION__);
@@ -1968,7 +1986,7 @@ public:
 		return {};
 	}
 
-	int text_line_height(const ui::style::font_size font) override
+	int text_line_height(const ui::style::font_face font) override
 	{
 		df::scope_rendering_func rf(__FUNCTION__);
 		const auto fr = _f->font_face(font, _base_font_size);
@@ -1988,7 +2006,7 @@ public:
 		return std::make_shared<d2d_texture>(_f, _rt.Get());
 	}
 
-	ui::text_layout_ptr create_text_layout(const ui::style::font_size font) override
+	ui::text_layout_ptr create_text_layout(const ui::style::font_face font) override
 	{
 		df::scope_rendering_func rf(__FUNCTION__);
 		df::assert_true(ui::is_ui_thread());
@@ -4172,9 +4190,9 @@ void frame_base::create_draw_context(const factories_ptr& f, const bool use_d3d,
 		const auto scale_factor = _gdi_ctx->scale_factor;
 		_draw_ctx->scale_factor = scale_factor;
 		_draw_ctx->icon_cxy = calc_icon_cxy(scale_factor);
-		_draw_ctx->component_snap = df::round(ui_component_snap * scale_factor);
-		_draw_ctx->baseline_snap = df::round(ui_baseline_snap * scale_factor);
-		_draw_ctx->cx_resize_handle = df::round(ui_cx_resize_handle * scale_factor);
+		_draw_ctx->padding2 = df::round(ui_component_snap * scale_factor);
+		_draw_ctx->padding1 = df::round(ui_baseline_snap * scale_factor);
+		_draw_ctx->handle_cxy = df::round(ui_cx_resize_handle * scale_factor);
 		_draw_ctx->scroll_width = df::round(ui_scroll_width * scale_factor);
 		
 	}
@@ -5063,9 +5081,9 @@ public:
 			const auto scale_factor = _gdi_ctx->scale_factor;
 			_draw_ctx->scale_factor = scale_factor;
 			_draw_ctx->icon_cxy = calc_icon_cxy(scale_factor);
-			_draw_ctx->component_snap = df::round(ui_component_snap * scale_factor);
-			_draw_ctx->baseline_snap = df::round(ui_baseline_snap * scale_factor);
-			_draw_ctx->cx_resize_handle = df::round(ui_cx_resize_handle * scale_factor);
+			_draw_ctx->padding2 = df::round(ui_component_snap * scale_factor);
+			_draw_ctx->padding1 = df::round(ui_baseline_snap * scale_factor);
+			_draw_ctx->handle_cxy = df::round(ui_cx_resize_handle * scale_factor);
 			_draw_ctx->scroll_width = df::round(ui_scroll_width * scale_factor);
 		}
 
@@ -6262,9 +6280,9 @@ public:
 			const auto scale_factor = _gdi_ctx->scale_factor;
 			_draw_ctx->scale_factor = scale_factor;
 			_draw_ctx->icon_cxy = calc_icon_cxy(scale_factor);
-			_draw_ctx->component_snap = df::round(ui_component_snap * scale_factor);
-			_draw_ctx->baseline_snap = df::round(ui_baseline_snap * scale_factor);
-			_draw_ctx->cx_resize_handle = df::round(ui_cx_resize_handle * scale_factor);
+			_draw_ctx->padding2 = df::round(ui_component_snap * scale_factor);
+			_draw_ctx->padding1 = df::round(ui_baseline_snap * scale_factor);
+			_draw_ctx->handle_cxy = df::round(ui_cx_resize_handle * scale_factor);
 			_draw_ctx->scroll_width = df::round(ui_scroll_width * scale_factor);
 		}
 
@@ -6978,7 +6996,7 @@ LRESULT control_host_impl::on_window_nc_hit_test(const uint32_t uMsg, const WPAR
 		GetClientRect(m_hWnd, &rc);
 
 		const auto scale_factor = _draw_ctx ? _draw_ctx->scale_factor : 1.0;
-		const auto cx_resize_handle = _draw_ctx ? _draw_ctx->cx_resize_handle * scale_factor : 14;		
+		const auto cx_resize_handle = _draw_ctx ? _draw_ctx->handle_cxy * scale_factor : 14;		
 		const auto border_thickness = df::round(nonclient_border_thickness * scale_factor);
 
 		enum { left = 1, top = 2, right = 4, bottom = 8 };

@@ -219,22 +219,23 @@ void view_state::load_hover_thumb(const df::item_element_ptr& drawable_item, dou
 					auto timestamp = platform::now();
 					auto surface = std::make_shared<ui::surface>();
 
-					if (decoder.decoder1->
-					            extract_thumbnail(surface, video_preview_size, pos_numerator, pos_denominator))
+					if (decoder.decoder1->extract_thumbnail(surface, video_preview_size, pos_numerator, pos_denominator))
 					{
-						const auto image = save_png(surface, {});
+						const auto image = save_png(surface, {});						
 
 						if (is_valid(image))
 						{
-							queue_ui([this, item, image, timestamp]()
-							{
-								item->thumbnail(image, timestamp);
+							const auto cover_art = decoder.decoder1->cover_art();
+
+							queue_ui([this, item, image, cover_art, timestamp]()
+							{								
+								item->thumbnail(image, cover_art, timestamp);
 								invalidate_view(view_invalid::view_redraw);
 							});
 
-							queue_async(async_queue::scan_folder, [this, item, image, timestamp]()
+							queue_async(async_queue::scan_folder, [this, item, image, cover_art, timestamp]()
 							{
-								item_index.save_thumbnail(item->path(), image, timestamp);
+								item_index.save_thumbnail(item->path(), image, cover_art, timestamp);
 							});
 						}
 					}
@@ -352,7 +353,7 @@ bool media_preview_state::open1(const df::file_path file_path)
 
 		if (new_decoder->open(file_path))
 		{
-			new_decoder->init_streams(-1, -1, false, true);
+			new_decoder->init_streams(-1, -1, false, true, false);
 			decoder1 = new_decoder;
 		}
 		else
@@ -375,7 +376,7 @@ bool media_preview_state::open2(const df::file_path file_path)
 
 		if (new_decoder->open(file_path))
 		{
-			new_decoder->init_streams(-1, -1, false, true);
+			new_decoder->init_streams(-1, -1, false, true, false);
 			decoder2 = new_decoder;
 		}
 		else
@@ -1232,12 +1233,12 @@ public:
 		if (_prop_key != prop::null)
 		{
 			result.elements.add(make_icon_element(_prop_key->icon, view_element_style::no_break));
-			result.elements.add(std::make_shared<text_element>(_prop_key->text(), ui::style::font_size::dialog,
+			result.elements.add(std::make_shared<text_element>(_prop_key->text(), ui::style::font_face::dialog,
 			                                                   ui::style::text_style::multiline,
 			                                                   view_element_style::line_break));
 		}
 
-		result.elements.add(std::make_shared<text_element>(_search.text(), ui::style::font_size::dialog,
+		result.elements.add(std::make_shared<text_element>(_search.text(), ui::style::font_face::dialog,
 		                                                   ui::style::text_style::multiline,
 		                                                   view_element_style::line_break));
 		result.elements.add(std::make_shared<action_element>(tt.click_to_search_similar));
@@ -1517,7 +1518,7 @@ public:
 	                                                                 _item(std::move(i))
 	{
 		style |= style_in | view_element_style::has_tooltip | view_element_style::can_invoke;
-		_font = ui::style::font_size::title;
+		_font = ui::style::font_face::title;
 		_text_style = ui::style::text_style::single_line_center;
 	}
 
@@ -1547,10 +1548,10 @@ public:
 			const auto sides_count = _item->sidecars_count();
 			const auto sides_text = str::to_string(sides_count);
 			const auto text_extent = _tl->measure_text(logical_bounds.width() + 100);
-			const auto extent_sides = dc.measure_text(sides_text, ui::style::font_size::dialog,
+			const auto extent_sides = dc.measure_text(sides_text, ui::style::font_face::dialog,
 			                                          ui::style::text_style::single_line_center, logical_bounds.width(),
 			                                          logical_bounds.height());
-			const auto extent_dups = dc.measure_text(dups_text, ui::style::font_size::dialog,
+			const auto extent_dups = dc.measure_text(dups_text, ui::style::font_face::dialog,
 			                                         ui::style::text_style::single_line_center, 64, 32);
 
 			const auto min_width = std::min(100, text_extent.cx);
@@ -1559,16 +1560,16 @@ public:
 			const auto bg_alpha = dc.colors.alpha * dc.colors.bg_alpha;
 			const auto bg = calc_background_color(dc);
 
-			const auto sides_width = show_sidecars ? extent_sides.cx + dc.component_snap : 0;
-			const auto dups_width = show_dups ? extent_dups.cx + dc.component_snap : 0;
-			const auto text_width = std::min(text_extent.cx + dc.component_snap,
+			const auto sides_width = show_sidecars ? extent_sides.cx + dc.padding2 : 0;
+			const auto dups_width = show_dups ? extent_dups.cx + dc.padding2 : 0;
+			const auto text_width = std::min(text_extent.cx + dc.padding2,
 			                                 bounds.width() - sides_width - dups_width);
 
 			if (bg.a > 0.0f)
 			{
 				auto bg_bounds = logical_bounds;
 				bg_bounds.right = bg_bounds.left + text_width + sides_width + dups_width;
-				dc.draw_rounded_rect(bg_bounds, bg, dc.baseline_snap);
+				dc.draw_rounded_rect(bg_bounds, bg, dc.padding1);
 			}
 
 			const ui::color text_clr(dc.colors.foreground, dc.colors.alpha);
@@ -1581,20 +1582,20 @@ public:
 
 			if (show_sidecars)
 			{
-				const recti bounds_sid(x, logical_bounds.top, x + extent_sides.cx + dc.component_snap,
+				const recti bounds_sid(x, logical_bounds.top, x + extent_sides.cx + dc.padding2,
 				                       logical_bounds.bottom);
 				const auto bg = ui::color(ui::style::color::sidecar_background, bg_alpha);
-				dc.draw_text(sides_text, bounds_sid, ui::style::font_size::dialog,
+				dc.draw_text(sides_text, bounds_sid, ui::style::font_face::dialog,
 				             ui::style::text_style::single_line_center, text_clr, bg);
-				x += extent_sides.cx + dc.component_snap;
+				x += extent_sides.cx + dc.padding2;
 			}
 
 			if (show_dups)
 			{
-				const recti bounds_dup(x, logical_bounds.top, x + extent_dups.cx + dc.component_snap,
+				const recti bounds_dup(x, logical_bounds.top, x + extent_dups.cx + dc.padding2,
 				                       logical_bounds.bottom);
 				const auto bg = ui::color(ui::style::color::duplicate_background, bg_alpha);
-				dc.draw_text(dups_text, bounds_dup, ui::style::font_size::dialog,
+				dc.draw_text(dups_text, bounds_dup, ui::style::font_face::dialog,
 				             ui::style::text_style::single_line_center, text_clr, bg);
 			}
 		}
@@ -1608,12 +1609,12 @@ public:
 		{
 			hover.elements.add(make_icon_element(icon_index::compare, view_element_style::no_break));
 			hover.elements.add(std::make_shared<text_element>(tt.presence_tile,
-			                                                  ui::style::font_size::dialog,
+			                                                  ui::style::font_face::dialog,
 			                                                  ui::style::text_style::multiline,
 			                                                  view_element_style::line_break));
 
 			hover.elements.add(std::make_shared<text_element>(item_presence_text(_item->presence(), true),
-			                                                  ui::style::font_size::dialog,
+			                                                  ui::style::font_face::dialog,
 			                                                  ui::style::text_style::multiline,
 			                                                  view_element_style::line_break));
 
@@ -2071,7 +2072,7 @@ view_elements_ptr view_state::create_selection_controls()
 
 			if (!identical_text.empty())
 			{
-				const auto element = std::make_shared<text_element>(identical_text, ui::style::font_size::dialog,
+				const auto element = std::make_shared<text_element>(identical_text, ui::style::font_face::dialog,
 				                                                    ui::style::text_style::multiline,
 				                                                    view_element_style::line_break |
 				                                                    view_element_style::center);
@@ -2100,7 +2101,7 @@ view_elements_ptr view_state::create_selection_controls()
 					title = format_plural_text(tt.title_folder_count_fmt, folder_count);
 				}
 
-				elements->add(std::make_shared<text_element>(title, ui::style::font_size::title,
+				elements->add(std::make_shared<text_element>(title, ui::style::font_face::title,
 				                                             ui::style::text_style::multiline,
 				                                             view_element_style::line_break));
 			}
@@ -2119,7 +2120,7 @@ view_elements_ptr view_state::create_selection_controls()
 					title = format_plural_text(tt.title_item_count_fmt, item_count);
 				}
 
-				elements->add(std::make_shared<text_element>(title, ui::style::font_size::title,
+				elements->add(std::make_shared<text_element>(title, ui::style::font_face::title,
 				                                             ui::style::text_style::multiline,
 				                                             view_element_style::line_break));
 			}
@@ -3497,9 +3498,9 @@ texture_state::texture_state(async_strategy& async, const df::file_item_ptr& i) 
 
 	_display_alpha_animation.reset(0.0f, 1.0f);
 
-	if (_display_dimensions.is_empty() && i->has_thumb())
+	if (_display_dimensions.is_empty() && ui::is_valid(_loaded.i))
 	{
-		_display_dimensions = i->thumbnail()->dimensions();
+		_display_dimensions = _loaded.i->dimensions();
 	}
 }
 
@@ -3522,8 +3523,8 @@ void draw_texture_info(ui::draw_context& rc, const recti media_bounds, const ui:
 		                              r.width(), r.height(), to_string(sampler));
 
 		r.left += 8;
-		r.bottom = r.top + rc.text_line_height(ui::style::font_size::dialog) + 8;
-		rc.draw_text(text, r, ui::style::font_size::dialog, ui::style::text_style::single_line,
+		r.bottom = r.top + rc.text_line_height(ui::style::font_face::dialog) + 8;
+		rc.draw_text(text, r, ui::style::font_face::dialog, ui::style::text_style::single_line,
 		             ui::color(0xFFFFFF, alpha), {});
 	}
 }

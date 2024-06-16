@@ -235,7 +235,7 @@ public:
 		if (bg_color.a > 0.0f)
 		{
 			const auto pad = padding * dc.scale_factor;
-			dc.draw_rounded_rect(logical_bounds.inflate(pad.cx, pad.cy), bg_color, dc.baseline_snap);
+			dc.draw_rounded_rect(logical_bounds.inflate(pad.cx, pad.cy), bg_color, dc.padding1);
 		}
 
 		const auto highlight_clr = ui::color(ui::style::color::dialog_selected_text, dc.colors.alpha);
@@ -246,15 +246,15 @@ public:
 		if (!str::is_empty(lead))
 		{
 			const auto dots = u8" ... "sv;
-			const auto dots_extent = dc.measure_text(dots, ui::style::font_size::dialog,
+			const auto dots_extent = dc.measure_text(dots, ui::style::font_face::dialog,
 			                                         ui::style::text_style::single_line, bounds.width());
-			dc.draw_text(dots, {}, rr, ui::style::font_size::dialog, ui::style::text_style::single_line, clr, {});
-			rr.left += dots_extent.cx + dc.component_snap;
+			dc.draw_text(dots, {}, rr, ui::style::font_face::dialog, ui::style::text_style::single_line, clr, {});
+			rr.left += dots_extent.cx + dc.padding2;
 		}
 
 
 		const auto highlights = make_highlights(match, highlight_clr);
-		dc.draw_text(folder.text(), highlights, rr, ui::style::font_size::dialog, ui::style::text_style::single_line,
+		dc.draw_text(folder.text(), highlights, rr, ui::style::font_face::dialog, ui::style::text_style::single_line,
 		             clr, {});
 	}
 
@@ -306,7 +306,7 @@ public:
 		if (bg_color.a > 0.0f)
 		{
 			const auto pad = padding * dc.scale_factor;
-			dc.draw_rounded_rect(logical_bounds.inflate(pad.cx, pad.cy), bg_color, dc.baseline_snap);
+			dc.draw_rounded_rect(logical_bounds.inflate(pad.cx, pad.cy), bg_color, dc.padding1);
 		}
 
 		const auto highlight_clr = ui::color(ui::style::color::dialog_selected_text, dc.colors.alpha);
@@ -317,14 +317,14 @@ public:
 		if (!str::is_empty(lead))
 		{
 			const auto dots = u8" ... "sv;
-			const auto dots_extent = dc.measure_text(dots, ui::style::font_size::dialog,
+			const auto dots_extent = dc.measure_text(dots, ui::style::font_face::dialog,
 			                                         ui::style::text_style::single_line, bounds.width());
-			dc.draw_text(dots, {}, rr, ui::style::font_size::dialog, ui::style::text_style::single_line, clr, {});
-			rr.left += dots_extent.cx + dc.component_snap;
+			dc.draw_text(dots, {}, rr, ui::style::font_face::dialog, ui::style::text_style::single_line, clr, {});
+			rr.left += dots_extent.cx + dc.padding2;
 		}
 
 		const auto highlights = make_highlights(match, highlight_clr);
-		dc.draw_text(text, highlights, rr, ui::style::font_size::dialog, ui::style::text_style::single_line, clr, {});
+		dc.draw_text(text, highlights, rr, ui::style::font_face::dialog, ui::style::text_style::single_line, clr, {});
 	}
 
 	void dispatch_event(const view_element_event& event) override

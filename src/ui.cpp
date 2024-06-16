@@ -285,7 +285,7 @@ public:
 		}
 		else
 		{
-			dc.draw_rounded_rect(_bounds, hover_color, dc.baseline_snap);
+			dc.draw_rounded_rect(_bounds, hover_color, dc.padding1);
 		}
 	}
 
@@ -1028,7 +1028,7 @@ void rate_label_control::dispatch_event(const view_element_event& event)
 void rate_label_control::tooltip(view_hover_element& hover, const pointi loc, const pointi element_offset) const
 {
 	hover.elements.add(make_icon_element(icon_index::flag, view_element_style::no_break));
-	hover.elements.add(std::make_shared<text_element>(tt.command_view_rate_label, ui::style::font_size::dialog,
+	hover.elements.add(std::make_shared<text_element>(tt.command_view_rate_label, ui::style::font_face::dialog,
 	                                                  ui::style::text_style::multiline,
 	                                                  view_element_style::line_break));
 
@@ -1097,7 +1097,7 @@ void preview_control::tooltip(view_hover_element& hover, const pointi loc, const
 	if (_ts->is_preview()) text = tt.preview_showing;
 	if (_ts->is_preview_rendering()) text = tt.preview_rendering;
 
-	hover.elements.add(std::make_shared<text_element>(text, ui::style::font_size::dialog,
+	hover.elements.add(std::make_shared<text_element>(text, ui::style::font_face::dialog,
 	                                                  ui::style::text_style::multiline,
 	                                                  view_element_style::line_break));
 	hover.active_bounds = hover.window_bounds = bounds.offset(element_offset);
@@ -1108,7 +1108,7 @@ void items_dates_control::tooltip(view_hover_element& hover, const pointi loc, c
 	static std::atomic_int version;
 	const df::cancel_token token(version);
 
-	const auto font = ui::style::font_size::dialog;
+	const auto font = ui::style::font_face::dialog;
 	const auto md = _item->metadata();
 	const auto metadata_created_date = md ? md->created() : df::date_t::null;
 	const auto file_created_date = _item->file_created();
@@ -1120,7 +1120,7 @@ void items_dates_control::tooltip(view_hover_element& hover, const pointi loc, c
 	auto& e = hover.elements;
 
 	e.add(make_icon_element(search.first_type()->icon, view_element_style::no_break));
-	e.add(std::make_shared<text_element>(tt.dates_title, ui::style::font_size::title,
+	e.add(std::make_shared<text_element>(tt.dates_title, ui::style::font_face::title,
 	                                     ui::style::text_style::single_line, view_element_style::line_break));
 
 	const auto table = std::make_shared<ui::table_element>(view_element_style::center);
@@ -1156,7 +1156,7 @@ void view_scroller::draw_scroll(ui::draw_context& dc) const
 {
 	if (can_scroll())
 	{
-		const auto text_line_height = dc.text_line_height(ui::style::font_size::dialog);
+		const auto text_line_height = dc.text_line_height(ui::style::font_face::dialog);
 		const auto has_sections = !_sections.empty();
 		const auto sb = _scroll_bounds.inflate(0, -2);
 		const auto y = df::mul_div(_offset.y, sb.height(), _scroll_extent.cy);
@@ -1178,7 +1178,7 @@ void view_scroller::draw_scroll(ui::draw_context& dc) const
 				const auto bottom = df::mul_div(so.y, _client_bounds.height(), _scroll_extent.cy);
 				const auto height = bottom - top;
 				const recti rr(left, sb.top + top, right, sb.top + bottom);
-				dc.draw_rounded_rect(rr, bg_clr, dc.baseline_snap);
+				dc.draw_rounded_rect(rr, bg_clr, dc.padding1);
 				top = bottom + padding;
 
 				if (height > text_line_height)
@@ -1191,7 +1191,7 @@ void view_scroller::draw_scroll(ui::draw_context& dc) const
 					else if (!so.text.empty())
 					{
 						const auto text_color = ui::color(dc.colors.foreground, dc.colors.alpha * (_active ? 1.0f : 0.66f));
-						dc.draw_text(so.text, rr, ui::style::font_size::dialog, ui::style::text_style::single_line_center,
+						dc.draw_text(so.text, rr, ui::style::font_face::dialog, ui::style::text_style::single_line_center,
 							text_color, {});
 					}
 				}
@@ -1200,12 +1200,12 @@ void view_scroller::draw_scroll(ui::draw_context& dc) const
 		else
 		{
 			const recti rr(left, sb.top, right, sb.bottom);
-			dc.draw_rounded_rect(rr, bg_clr, dc.baseline_snap);
+			dc.draw_rounded_rect(rr, bg_clr, dc.padding1);
 		}
 
 		const auto top = std::clamp(sb.top + y - y_padding, sb.top, sb.bottom);
 		const auto bottom = std::clamp(sb.top + y + cy + y_padding, sb.top, sb.bottom);
 		const recti r(left + 1, top, right - 1, bottom);
-		dc.draw_rounded_rect(r, clr, dc.baseline_snap);
+		dc.draw_rounded_rect(r, clr, dc.padding1);
 	}
 }

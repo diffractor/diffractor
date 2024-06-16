@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS item_thumbnails (
 	folder TEXT NOT NULL,
 	name TEXT NOT NULL,
 	bitmap BLOB NULL,
+	cover_art BLOB NULL,
 	last_scanned INTEGER64,	
 	
 	CONSTRAINT pk_item_thumbnails PRIMARY KEY (folder, name) 

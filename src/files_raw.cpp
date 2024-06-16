@@ -12,10 +12,10 @@
 #include "pch.h"
 #include "files.h"
 
-#define LIBRAW_NODLL 
-#define LIBRAW_LIBRARY_BUILD
-#define LIBRAW_WIN32_UNICODEPATHS
-#define USE_DNGSDK
+#define LIBRAW_NODLL 1
+#define LIBRAW_LIBRARY_BUILD 1
+#define LIBRAW_WIN32_UNICODEPATHS 1
+#define USE_DNGSDK 1
 
 #include "dng/dng_host.h"
 #include <LibRaw/libraw.h>
@@ -1254,7 +1254,7 @@ file_scan_result files::scan_raw(const df::file_path path, const std::u8string_v
 
 					result.thumbnail_surface = image_to_surface(df::cspan{data, size}, max);
 				}
-				else if (LIBRAW_THUMBNAIL_BITMAP == t.tformat)
+				else if (LIBRAW_THUMBNAIL_BITMAP == t.tformat && t.tlength > 0)
 				{
 					result.thumbnail_surface = thumb_to_surface(t, ui::orientation::top_left);
 				}
@@ -1296,29 +1296,35 @@ file_load_result load_raw(const df::file_path path, const bool can_load_preview)
 		{
 			const auto& thumbnail = image_data.thumbnail;
 
-			if (LIBRAW_THUMBNAIL_JPEG == thumbnail.tformat)
+			if (thumbnail.tlength > 0)
 			{
-				auto i = load_image_file(df::cspan(std::bit_cast<const uint8_t*>(thumbnail.thumb), thumbnail.tlength));
-
-				if (i)
+				if (LIBRAW_THUMBNAIL_JPEG == thumbnail.tformat)
 				{
-					i->orientation(calc_orientation(i->dimensions(), i->orientation(), rp.processor->imgdata));
-					result.i = std::move(i);
+					auto i = load_image_file(df::cspan(std::bit_cast<const uint8_t*>(thumbnail.thumb), thumbnail.tlength));
+
+					if (i)
+					{
+						i->orientation(calc_orientation(i->dimensions(), i->orientation(), rp.processor->imgdata));
+						result.i = std::move(i);
+					}
+				}
+				else if (LIBRAW_THUMBNAIL_BITMAP == thumbnail.tformat)
+				{
+					auto s = thumb_to_surface(thumbnail, ui::orientation::top_left);
+
+					if (s)
+					{
+						s->orientation(calc_orientation(s->dimensions(), ui::orientation::top_left, rp.processor->imgdata));
+						result.s = std::move(s);
+					}
+				}
+
+				if (is_valid(result.i) || is_valid(result.s))
+				{
+					result.success = true;
+					result.is_preview = true;
 				}
 			}
-			else if (LIBRAW_THUMBNAIL_BITMAP == thumbnail.tformat)
-			{
-				auto s = thumb_to_surface(thumbnail, ui::orientation::top_left);
-
-				if (s)
-				{
-					s->orientation(calc_orientation(s->dimensions(), ui::orientation::top_left, rp.processor->imgdata));
-					result.s = std::move(s);
-				}
-			}
-
-			result.success = true;
-			result.is_preview = true;
 		}
 
 		if (!result.success)

@@ -562,6 +562,11 @@ void index_state::reset()
 	_items.clear();
 }
 
+void index_state::invalidate_view(view_invalid invalid) const
+{
+	_async.invalidate_view(invalid);
+}
+
 
 bool index_state::is_indexed(const df::folder_path folder) const
 {
@@ -1187,6 +1192,8 @@ void index_state::update_summary()
 			for (const auto& file : ifn.second->files)
 			{
 				if (df::is_closing) return;
+
+				histograms.record(_locations, file);
 				const auto md = file.metadata.load();
 
 				if (md)
@@ -1278,8 +1285,6 @@ void index_state::update_summary()
 					if (!prop::is_null(md->raw_file_name))
 						add_words(distinct_words, distinct_text, md->raw_file_name,
 						          prop::raw_file_name);
-
-					histograms.record(_locations, file);
 
 					if (!prop::is_null(md->label)) distinct_labels[md->label].record(file);
 
@@ -1566,8 +1571,30 @@ void index_state::scan_item(const df::index_folder_item_ptr& folder,
 					file_encode_params encode_params;
 					encode_params.jpeg_save_quality = thumbnail_quality;
 
+					ui::const_image_ptr cover_art;
 					ui::const_image_ptr thumbnail_image;
 					ui::const_surface_ptr thumbnail_surface;
+
+					if (is_valid(sr.cover_art))
+					{
+						cover_art = sr.cover_art;
+						const auto max_extent = setting.thumbnail_max_dimension;
+						const auto cover_art_extent = cover_art->dimensions();
+
+						if (max_extent.cx < cover_art_extent.cx || max_extent.cy < cover_art_extent.cy)
+						{
+							auto surf = ff.image_to_surface(cover_art, max_extent);
+							cover_art = ff.surface_to_image(surf, {}, encode_params,
+								ui::image_format::Unknown);
+						}
+
+						df::assert_true(cover_art->data().size() < df::two_fifty_six_k);
+
+						if (is_valid(cover_art))
+						{
+							write.cover_art = cover_art;
+						}
+					}
 
 					if (is_valid(sr.thumbnail_surface))
 					{
@@ -1670,10 +1697,12 @@ void index_state::scan_item(const df::index_folder_item_ptr& folder,
 
 					if (item)
 					{
-						if ((thumbnail_was_loaded || item_has_no_thumb) && is_valid(thumbnail_image))
+						if ((thumbnail_was_loaded || item_has_no_thumb) && (is_valid(thumbnail_image) || is_valid(cover_art)))
 						{
-							df::assert_true(thumbnail_image->data().size() < df::two_fifty_six_k);
-							item->thumbnail(thumbnail_image, thumbnail_was_loaded ? now : df::date_t::null);
+							df::assert_true(!is_valid(thumbnail_image) || thumbnail_image->data().size() < df::two_fifty_six_k);
+							df::assert_true(!is_valid(cover_art) || cover_art->data().size() < df::two_fifty_six_k);
+
+							item->thumbnail(thumbnail_image, cover_art, thumbnail_was_loaded ? now : df::date_t::null);
 							_async.invalidate_view(view_invalid::view_redraw);
 						}
 					}
@@ -1951,7 +1980,7 @@ void index_state::save_location(const df::file_path id, const location_t& loc)
 	});
 }
 
-void index_state::save_thumbnail(const df::file_path id, const ui::const_image_ptr& thumbnail_image, const df::date_t scan_timestamp)
+void index_state::save_thumbnail(const df::file_path id, const ui::const_image_ptr& thumbnail_image, const ui::const_image_ptr& cover_art,const df::date_t scan_timestamp)
 {
 	item_db_write write;
 	write.path = id;
@@ -1959,6 +1988,11 @@ void index_state::save_thumbnail(const df::file_path id, const ui::const_image_p
 	if (is_valid(thumbnail_image))
 	{
 		write.thumb = thumbnail_image;
+	}
+
+	if (is_valid(cover_art))
+	{
+		write.cover_art = cover_art;
 	}
 
 	write.thumb_scanned = scan_timestamp;

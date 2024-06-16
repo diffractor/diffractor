@@ -619,7 +619,7 @@ std::shared_ptr<group_title_control> df::build_group_title(view_state& s, const 
 	assert_true(ui::is_ui_thread());
 
 	auto result = std::make_shared<group_title_control>();
-	const auto font = ui::style::font_size::title;
+	const auto font = ui::style::font_face::title;
 
 	g->_scroll_tooltip_text.clear();
 
@@ -652,7 +652,7 @@ std::shared_ptr<group_title_control> df::build_group_title(view_state& s, const 
 			result->elements.emplace_back(link);
 		}
 
-		if constexpr (font == ui::style::font_size::title)
+		if constexpr (font == ui::style::font_face::title)
 		{
 			g->_scroll_tooltip_text.emplace_back(title);
 		}
@@ -1189,7 +1189,7 @@ sizei df::item_group::measure(ui::measure_context& mc, const int width_limit) co
 	const double base_line_height = calc_item_line_height() * scale_factor;
 	const auto base_adjust = base_line_height * 1.11;
 
-	const double cy = base_line_height + mc.baseline_snap;
+	const double cy = base_line_height + mc.padding1;
 	double y = 0;
 	double y_max = 0;
 
@@ -1199,7 +1199,7 @@ sizei df::item_group::measure(ui::measure_context& mc, const int width_limit) co
 
 		if (_display == item_group_display::detail)
 		{
-			const auto line_height = mc.text_line_height(ui::style::font_size::dialog);
+			const auto line_height = mc.text_line_height(ui::style::font_face::dialog);
 
 			for (auto i = 0; i < item_count; ++i)
 			{
@@ -1225,7 +1225,7 @@ sizei df::item_group::measure(ui::measure_context& mc, const int width_limit) co
 			auto total_adjust_cx_ratio = 0.0;
 			auto count_adjust_cx_ratio = 0;
 			auto prev_col_count = 0;
-			const auto default_cols = std::max(1.0, width_limit / (base_line_height + (mc.baseline_snap * 2.0)));
+			const auto default_cols = std::max(1.0, width_limit / (base_line_height + (mc.padding1 * 2.0)));
 			const double x_limit = width_limit;
 			auto n = 0;
 
@@ -1240,7 +1240,7 @@ sizei df::item_group::measure(ui::measure_context& mc, const int width_limit) co
 				while (n < item_count && col_count < max_cols)
 				{
 					const auto& item = _items[n];
-					double cx = (width_limit - (mc.baseline_snap * 3)) / default_cols;
+					double cx = (width_limit - (mc.padding1 * 3)) / default_cols;
 
 					src_widths[col_count] = cx;
 					dst_widths[col_count] = cx;
@@ -1278,15 +1278,18 @@ sizei df::item_group::measure(ui::measure_context& mc, const int width_limit) co
 				if (col_count > 0)
 				{					
 					const auto is_end_break = n == item_count;
-					const auto avail_cx = (width_limit - mc.baseline_snap);
+					const auto avail_cx = (width_limit - mc.padding1);
 					const double extra_cx = avail_cx - (gap * (col_count - 1)) - x;
 					auto cy_av = 0.0;
 					auto total_width = 0.0;
 					auto x_gap = gap;
 
 					for (int nn = 0; nn < col_count; nn++)
-					{						
+					{
+						const auto& item = _items[line_start + nn];						
 						auto adjust_cx = std::min(base_adjust, extra_cx * (src_widths[nn] / total_src_width));
+						// dont adjust cover art
+						if (item->has_cover_art()) adjust_cx = 0;
 
 						if (is_end_break)
 						{
@@ -1308,8 +1311,7 @@ sizei df::item_group::measure(ui::measure_context& mc, const int width_limit) co
 							count_adjust_cx_ratio += 1;
 						}
 						
-						const auto cx = std::max(20.0 * scale_factor, dst_widths[nn] + adjust_cx);
-						const auto& item = _items[line_start + nn];
+						const auto cx = std::max(20.0 * scale_factor, dst_widths[nn] + adjust_cx);						
 						const auto orientation = item->thumbnail_orientation();
 						auto dims = item->thumbnail_dims();
 
@@ -1348,7 +1350,7 @@ sizei df::item_group::measure(ui::measure_context& mc, const int width_limit) co
 					}
 
 					y += cy_line + gap;
-					y_max = std::max(y_max, y + mc.baseline_snap);
+					y_max = std::max(y_max, y + mc.padding1);
 				}
 
 				prev_col_count = col_count;
@@ -1483,7 +1485,7 @@ void df::item_group::update_row_layout(ui::measure_context& mc) const
 	_row_draw_info.created.width = _row_draw_info.created.extent;
 
 	const auto text_padding = df::round(item_draw_info::_text_padding * mc.scale_factor);
-	const auto width_avail = (bounds.width() - mc.baseline_snap * 5);
+	const auto width_avail = (bounds.width() - mc.padding1 * 5);
 	const auto half_width_avail = width_avail / 2;
 	const auto expendable_title_width = (_row_draw_info.title.width > half_width_avail)
 		                                    ? _row_draw_info.title.width - half_width_avail
@@ -1632,7 +1634,7 @@ void df::item_group::scroll_tooltip(const ui::const_image_ptr& thumbnail, view_e
 
 	for (const auto& t : _scroll_tooltip_text)
 	{
-		elements.add(std::make_shared<text_element>(t, ui::style::font_size::dialog, ui::style::text_style::multiline,
+		elements.add(std::make_shared<text_element>(t, ui::style::font_face::dialog, ui::style::text_style::multiline,
 		                                            view_element_style::center | view_element_style::new_line));
 	}
 }
@@ -1738,14 +1740,14 @@ void df::item_element::render_bg(ui::draw_context& dc, const item_group& group, 
 	{
 		if (bg_color.a > 0.0f)
 		{
-			dc.draw_rounded_rect(bg_bounds, bg_color, dc.baseline_snap);
+			dc.draw_rounded_rect(bg_bounds, bg_color, dc.padding1);
 		}
 	}
 	else
 	{
 		if (bg_color.a > 0.0f)
 		{
-			dc.draw_rounded_rect(bg_bounds, bg_color, dc.baseline_snap);
+			dc.draw_rounded_rect(bg_bounds, bg_color, dc.padding1);
 		}
 	}
 }
@@ -1772,7 +1774,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 	const auto is_error = this->is_error();
 	const auto show_folder = group._show_folder;
 
-	const auto text_font = ui::style::font_size::dialog;
+	const auto text_font = ui::style::font_face::dialog;
 	const auto text_line_height = dc.text_line_height(text_font);
 	const auto cxy_flag = std::max(dc.icon_cxy + text_padding, text_line_height + text_padding);
 
@@ -1782,7 +1784,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 
 	if (alt_background)
 	{
-		dc.draw_rounded_rect(device_bounds.inflate(pad.cx, pad.cy), ui::color(0, 0.1f), dc.baseline_snap);
+		dc.draw_rounded_rect(device_bounds.inflate(pad.cx, pad.cy), ui::color(0, 0.1f), dc.padding1);
 	}
 
 	if (display == item_group_display::detail)
@@ -2032,7 +2034,8 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 	else if (display == item_group_display::icons)
 	{
 		const auto thumbnail = _thumbnail;
-		const auto thumb_is_valid = is_valid(thumbnail);
+		const auto cover_art = _cover_art;
+		const auto thumb_is_valid = is_valid(thumbnail) || is_valid(cover_art);
 		const auto show_text = is_hover || !thumb_is_valid || is_folder || is_focus;
 		const auto expand_text = (is_hover || is_focus) && thumb_is_valid;
 		const auto show_stars = show_text && group_order != group_by::rating_label;
@@ -2044,7 +2047,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 			sort_by::date_modified);
 		const auto show_selected = !(is_focus || is_hover) && (is_selected || is_highlight);
 		const auto text_style = ui::style::text_style::single_line_center;
-		const auto stars_line_height = std::max(text_line_height, dc.icon_cxy) + dc.component_snap;
+		const auto stars_line_height = std::max(text_line_height, dc.icon_cxy) + dc.padding2;
 		const auto extra_padding = df::round((is_focus || is_hover ? 4 : 0) * dc.scale_factor);
 		const auto bg_padding = sizei(pad.cx + extra_padding, pad.cy + extra_padding);
 		const auto bg_bounds = device_bounds.inflate(bg_padding.cx, bg_padding.cy);
@@ -2126,7 +2129,9 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 				const auto t = dc.create_texture();
 				files ff;
 
-				if (t && t->update(ff.image_to_surface(thumbnail)) != ui::texture_update_result::failed)
+				const auto image = !is_valid(cover_art) || is_hover ? thumbnail : cover_art;
+
+				if (t && t->update(ff.image_to_surface(image)) != ui::texture_update_result::failed)
 				{
 					_texture = t;
 				}
@@ -2183,7 +2188,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 			}
 			else
 			{
-				dc.draw_text(str::to_lower(ext), icon_rect, ui::style::font_size::title,
+				dc.draw_text(str::to_lower(ext), icon_rect, ui::style::font_face::title,
 				             ui::style::text_style::single_line_center, text_color, {});
 			}
 		}
@@ -2197,7 +2202,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 			text_bg_bounds.right = std::max(bg_bounds.right, text_rect.right);
 
 			//text_bg_bounds.top = text_rect.top;
-			dc.draw_rounded_rect(text_bg_bounds, ui::color(ui::style::color::view_background, text_alpha * 0.888f), dc.baseline_snap);
+			dc.draw_rounded_rect(text_bg_bounds, ui::color(ui::style::color::view_background, text_alpha * 0.888f), dc.padding1);
 
 			recti title_rect(text_rect.left, y, text_rect.right, y + title_line_height1 + title_line_height2);
 
@@ -2288,10 +2293,10 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 			if (!has_related && info.presence != item_presence::unknown)
 			{
 				const auto text = str::format_count(info.duplicates, true);
-				const auto cx = std::max(cxy_flag, dc.measure_text(text, ui::style::font_size::dialog,
+				const auto cx = std::max(cxy_flag, dc.measure_text(text, ui::style::font_face::dialog,
 				                                                   ui::style::text_style::single_line_center, 100).cx);
 				const recti bb(x_flag, y_flag, x_flag + cx, y_flag + cxy_flag);
-				dc.draw_text(text, bb, ui::style::font_size::dialog, ui::style::text_style::single_line_center,
+				dc.draw_text(text, bb, ui::style::font_face::dialog, ui::style::text_style::single_line_center,
 				             text_color, bg_dups);
 				x_flag += cx;
 			}
@@ -2299,11 +2304,11 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 			if (info.sidecars > 0)
 			{
 				const auto text = str::format_count(info.sidecars);
-				const auto cx = std::max(cxy_flag, dc.measure_text(text, ui::style::font_size::dialog,
+				const auto cx = std::max(cxy_flag, dc.measure_text(text, ui::style::font_face::dialog,
 				                                                   ui::style::text_style::single_line_center, 100).cx);
 				const recti bb(x_flag, y_flag, x_flag + cx, y_flag + cxy_flag);
 
-				dc.draw_text(text, bb, ui::style::font_size::dialog, ui::style::text_style::single_line_center,
+				dc.draw_text(text, bb, ui::style::font_face::dialog, ui::style::text_style::single_line_center,
 				             text_color, bg_sidecars);
 				x_flag += cx;
 			}
@@ -2453,7 +2458,7 @@ df::item_display_info df::folder_item::populate_info() const
 
 	result.icon = _path.is_drive() ? icon_index::disk : icon_index::folder;
 	result.name = _name;
-	result.title_font = ui::style::font_size::title;
+	result.title_font = ui::style::font_face::title;
 
 	result.title = _info->volume;
 	result.items = _total_count;
@@ -2564,7 +2569,7 @@ void df::file_item::update(const file_path path, const index_file_item& info) no
 		_ft = files::file_type_from_name(_name);
 	}
 
-	if (md)
+	if (md && !ui::is_valid(_thumbnail) && !ui::is_valid(_cover_art))
 	{
 		_thumbnail_dims = md->dimensions();
 		_thumbnail_orientation = md->orientation;

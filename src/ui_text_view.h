@@ -24,7 +24,7 @@ class text_view_control : public view_element
 	mutable uint32_t _char_width = 0;
 	mutable uint32_t _line_count = 0;
 
-	ui::style::font_size _font = ui::style::font_size::code;
+	ui::style::font_face _font = ui::style::font_face::code;
 
 public:
 	text_view_control(df::blob data, const view_element_style style_in) noexcept : view_element(style_in),

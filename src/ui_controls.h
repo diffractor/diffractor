@@ -93,7 +93,7 @@ public:
 			text[i] = static_cast<wchar_t>(i < rating ? icon_index::star_solid : icon_index::star);
 		}
 
-		dc.draw_text(str::utf16_to_utf8(text), logical_bounds, ui::style::font_size::icons,
+		dc.draw_text(str::utf16_to_utf8(text), logical_bounds, ui::style::font_face::icons,
 		             ui::style::text_style::single_line_center, clr, bg);
 	}
 
@@ -241,7 +241,7 @@ private:
 	view_state& _state;
 	const df::file_item_ptr _item;
 	std::u8string _text;
-	ui::style::font_size _font = ui::style::font_size::dialog;
+	ui::style::font_face _font = ui::style::font_face::dialog;
 	ui::style::text_style _text_style = ui::style::text_style::multiline;
 
 public:
@@ -502,7 +502,7 @@ private:
 	view_state& _state;
 	const df::file_item_ptr _item;
 	const av_stream_info _stream;
-	ui::style::font_size _font = ui::style::font_size::dialog;
+	ui::style::font_face _font = ui::style::font_face::dialog;
 	ui::style::text_style _text_style = ui::style::text_style::multiline;
 	std::u8string _text;
 
@@ -589,10 +589,10 @@ class summary_control final : public std::enable_shared_from_this<summary_contro
 
 	std::vector<entry> _lines;
 
-	ui::style::font_size _font = ui::style::font_size::dialog;
+	ui::style::font_face _font = ui::style::font_face::dialog;
 
 public:
-	summary_control(df::file_group_histogram summary,
+	summary_control(const df::file_group_histogram& summary,
 	                const view_element_style style_in) noexcept : view_element(style_in), _summary(summary)
 	{
 		populate_lines();
@@ -600,7 +600,7 @@ public:
 
 	void populate_lines()
 	{
-		for (auto i = 0; i < max_file_type_count; ++i)
+		for (auto i = 0; i < file_group::max_count; ++i)
 		{
 			const auto& c = _summary.counts[i];
 
@@ -658,7 +658,7 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		_line_height = mc.text_line_height(ui::style::font_size::dialog) + 2;
+		_line_height = mc.text_line_height(ui::style::font_face::dialog) + 2;
 
 		_col_1_width = 0;
 		_col_2_width = 0;
@@ -666,15 +666,15 @@ public:
 
 		for (const auto& line : _lines)
 		{
-			auto extent = mc.measure_text(line.count, ui::style::font_size::dialog, ui::style::text_style::single_line,
+			auto extent = mc.measure_text(line.count, ui::style::font_face::dialog, ui::style::text_style::single_line,
 			                              100, _line_height);
 			_col_1_width = std::max(extent.cx + icon_width, _col_1_width);
 
-			extent = mc.measure_text(line.name, ui::style::font_size::dialog, ui::style::text_style::single_line, 100,
+			extent = mc.measure_text(line.name, ui::style::font_face::dialog, ui::style::text_style::single_line, 100,
 			                         _line_height);
 			_col_2_width = std::max(extent.cx + col_padding, _col_2_width);
 
-			extent = mc.measure_text(line.size, ui::style::font_size::dialog, ui::style::text_style::single_line, 100,
+			extent = mc.measure_text(line.size, ui::style::font_face::dialog, ui::style::text_style::single_line, 100,
 			                         _line_height);
 			_col_3_width = std::max(extent.cx + col_padding, _col_3_width);
 		}
@@ -704,7 +704,7 @@ class file_list_control final : public std::enable_shared_from_this<file_list_co
 	display_state_ptr _display;
 	std::vector<entry> _lines;
 
-	ui::style::font_size _font = ui::style::font_size::dialog;
+	ui::style::font_face _font = ui::style::font_face::dialog;
 
 public:
 	file_list_control(display_state_ptr display, const view_element_style style_in) noexcept : view_element(style_in),
@@ -789,7 +789,7 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		_line_height = mc.text_line_height(ui::style::font_size::dialog) + 2;
+		_line_height = mc.text_line_height(ui::style::font_face::dialog) + 2;
 
 		for (int& _col_width : _col_widths)
 		{
@@ -802,7 +802,7 @@ public:
 			{
 				if (line.extents[i].is_empty())
 				{
-					line.extents[i] = mc.measure_text(line.text[i], ui::style::font_size::dialog,
+					line.extents[i] = mc.measure_text(line.text[i], ui::style::font_face::dialog,
 					                                  ui::style::text_style::single_line, 1000, _line_height);
 				}
 
@@ -846,7 +846,7 @@ class hex_control final : public std::enable_shared_from_this<hex_control>, publ
 	mutable int _line_height = 0;
 	mutable int _line_width = 0;
 
-	ui::style::font_size _font = ui::style::font_size::code;
+	ui::style::font_face _font = ui::style::font_face::code;
 
 public:
 	hex_control(display_state_ptr display, const view_element_style style_in) noexcept : view_element(style_in),
@@ -1030,338 +1030,48 @@ public:
 	}
 };
 
-struct d64_entry
+
+class comodore_disk_control final : public std::enable_shared_from_this<comodore_disk_control>, public view_element
 {
-	bool available = false;
-	uint8_t next_track = 0;
-	uint8_t next_sector = 0;
-	std::u8string file_type;
-	uint8_t start_track = 0;
-	uint8_t start_sector = 0;
-	std::u8string pet_name;
-	uint32_t adress_start = 0;
-	uint32_t adress_end = 0;
-	uint16_t sector_size = 0;
-	uint8_t sectors = 0;
-};
-
-/*
-	Track   Sectors/track   # Sectors   Storage in Bytes
-		-----   -------------   ---------   ----------------
-		 1-17        21            357           7820
-		18-24        19            133           7170
-		25-30        18            108           6300
-		31-40(*)     17             85           6020
-								   ---
-								   683 (for a 35 track image)
-  Track #Sect #SectorsIn D64 Offset   Track #Sect #SectorsIn D64 Offset
-  ----- ----- ---------- ----------   ----- ----- ---------- ----------
-	1     21       0       $00000      21     19     414       $19E00
-	2     21      21       $01500      22     19     433       $1B100
-	3     21      42       $02A00      23     19     452       $1C400
-	4     21      63       $03F00      24     19     471       $1D700
-	5     21      84       $05400      25     18     490       $1EA00
-	6     21     105       $06900      26     18     508       $1FC00
-	7     21     126       $07E00      27     18     526       $20E00
-	8     21     147       $09300      28     18     544       $22000
-	9     21     168       $0A800      29     18     562       $23200
-   10     21     189       $0BD00      30     18     580       $24400
-   11     21     210       $0D200      31     17     598       $25600
-   12     21     231       $0E700      32     17     615       $26700
-   13     21     252       $0FC00      33     17     632       $27800
-   14     21     273       $11100      34     17     649       $28900
-   15     21     294       $12600      35     17     666       $29A00
-   16     21     315       $13B00      36(*)  17     683       $2AB00
-   17     21     336       $15000      37(*)  17     700       $2BC00
-   18     19     357       $16500      38(*)  17     717       $2CD00
-   19     19     376       $17800      39(*)  17     734       $2DE00
-   20     19     395       $18B00      40(*)  17     751       $2EF00
-*/
-
-struct d64_parser
-{
-	const uint64_t expected_disk_size = 174848u;
-
-	std::u8string FILE_TYPE[0x100];
-	std::u8string filename;
-	std::u8string diskname;
-	std::vector<d64_entry> entries;
-
-	const uint32_t STARTS[41] =
-	{
-		0,
-		0x00000, 0x01500, 0x02a00, 0x03f00, 0x05400, 0x06900, 0x07e00, 0x09300,
-		0x0a800, 0x0bd00, 0x0d200, 0x0e700, 0x0fc00, 0x11100, 0x12600, 0x13b00,
-		0x15000, 0x16500, 0x17800, 0x18b00, 0x19e00, 0x1b100, 0x1c400, 0x1d700,
-		0x1ea00, 0x1fc00, 0x20e00, 0x22000, 0x23200, 0x24400, 0x25600, 0x26700,
-		0x27800, 0x28900, 0x29a00, 0x2ab00, 0x2bc00, 0x2cd00, 0x2de00, 0x2ef00
-	};
-
-	void load(df::cspan data_blob)
-	{
-		if (data_blob.size >= expected_disk_size)
-		{
-			FILE_TYPE[0x80] = u8"DEL"sv;
-			FILE_TYPE[0x81] = u8"SEQ"sv;
-			FILE_TYPE[0x82] = u8"PRG"sv;
-			FILE_TYPE[0x83] = u8"USR"sv;
-			FILE_TYPE[0x84] = u8"REL"sv;
-
-			const auto* const data = data_blob.data;
-
-			//	init all available lines
-			const uint32_t base_dir = 0x16600;
-
-			for (int i = 0; i < 0x1200; i += 0x20)
-			{
-				d64_entry entry;
-				entry.next_track = data[base_dir + i];
-				entry.next_sector = data[base_dir + i + 1];
-				entry.file_type = FILE_TYPE[data[base_dir + i + 2]];
-				entry.start_track = data[base_dir + i + 3];
-				entry.start_sector = data[base_dir + i + 4];
-
-				for (int j = 5; j < 0x15; j++)
-				{
-					entry.pet_name += data[base_dir + i + j];
-				}
-
-				entry.sector_size = data[base_dir + i + 0x1e] + (data[base_dir + i + 0x1f] * 256);
-				entry.available = !entry.file_type.empty();
-
-				entry.sectors = 21;
-				if (entry.start_track > 17 && entry.start_track < 25)
-					entry.sectors = 19;
-				else if (entry.start_track > 24 && entry.start_track < 31)
-					entry.sectors = 18;
-				else if (entry.start_track > 30)
-					entry.sectors = 17;
-				entry.adress_start = STARTS[entry.start_track] + entry.start_sector * 256;
-				entry.adress_end = entry.adress_start + entry.sector_size * 256;
-
-				entries.push_back(entry);
-			}
-
-			for (uint8_t i = 0x90; i < 0xa0; i++)
-			{
-				diskname += data[STARTS[18] + i];
-			}
-		}
-	}
-
-	std::vector<std::vector<uint8_t>> dir_list()
-	{
-		//	23 chars?
-		/*std::vector<uint8_t> list{
-			0x1f, 0x08, 0x00,
-			0x00, 0x12, 0x22, 0x41, 0x53, 0x53, 0x20, 0x50, 0x52, 0x45, 0x53, 0x45, 0x4e, 0x54, 0x53, 0x3a, 0x20, 0x20, 0x20, 0x22, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x00,
-			0x3f, 0x08,
-			0xc2, 0x00, 0x20, 0x22, 0x49, 0x4e, 0x54, 0x45, 0x54, 0x4e, 0x41, 0x54, 0x2e, 0x20, 0x4b, 0x41, 0x52, 0x41, 0x54, 0x45, 0x22, 0x20, 0x50, 0x52, 0x47, 0x20, 0x20, 0x20, 0x20, 0x00,
-			0x5f, 0x08,
-			0x01, 0x00, 0x20, 0x20, 0x20, 0x22, 0x49, 0x2e, 0x4b, 0x41, 0x52, 0x41, 0x54, 0x45, 0x20, 0x2d, 0x48, 0x49, 0x2f, 0x52, 0x45, 0x4d, 0x22, 0x20, 0x50, 0x52, 0x47, 0x20, 0x20, 0x00,
-			0x7f, 0x08,
-			0x00, 0x00, 0x20, 0x20, 0x20, 0x22, 0xc0, 0xc0, 0xc0, 0xc0, 0xc0, 0xc0, 0xc0, 0xc0, 0xc0, 0xc0, 0xc0, 0xc0, 0xc0, 0xc0, 0xc0, 0xc0, 0x22, 0x20, 0x44, 0x45, 0x4c, 0x20, 0x20, 0x00,
-			0x9f, 0x08,
-			0x71, 0x00, 0x20, 0x22, 0x49, 0x4e, 0x54, 0x2e, 0x20, 0x4b, 0x41, 0x52, 0x41, 0x54, 0x45, 0x2b, 0x22, 0x20, 0x20, 0x20, 0x20, 0x20, 0x50, 0x52, 0x47, 0x20, 0x20, 0x20, 0x20, 0x00,
-			0xbf, 0x08,
-			0x2f, 0x00, 0x20, 0x20, 0x22, 0x30, 0x31, 0x2e, 0x22, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x50, 0x52, 0x47, 0x20, 0x20, 0x20, 0x00,
-			0xdf, 0x08,
-			0x2b, 0x00, 0x20, 0x20, 0x22, 0x30, 0x32, 0x2e, 0x22, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x50, 0x52, 0x47, 0x20, 0x20, 0x20, 0x00,
-			0xff, 0x08,
-			0x01, 0x00, 0x20, 0x20, 0x20, 0x22, 0x49, 0x4e, 0x54, 0x2e, 0x20, 0x4b, 0x41, 0x52, 0x41, 0x54, 0x45, 0x20, 0x4e, 0x4f, 0x54, 0x45, 0x22, 0x20, 0x50, 0x52, 0x47, 0x20, 0x20, 0x00,
-			0x1d,
-			//	265 BLOCKS FREE.
-			0x09, 0x09, 0x01, 0x42, 0x4c, 0x4f, 0x43, 0x4b, 0x53, 0x20, 0x46, 0x52, 0x45, 0x45, 0x2e, 0x20,
-			0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x00, 0x00, 0x00, 0x00
-		};*/
-
-		uint8_t lc = 0x1f;
-		uint8_t lh = 0x08;
-
-		std::vector<std::vector<uint8_t>> result;
-		std::vector<uint8_t> line
-		{
-			0x1f, 0x08, 0x00
-		};
-		line.push_back(0x00); //	HEADLINE 0
-		line.push_back(0x12); //	HEADLINE BOLD ?
-		line.push_back(0x22); //	"
-
-		for (char8_t& i : diskname)
-		{
-			line.emplace_back(i);
-		}
-		line.push_back(0x22); //	"
-		for (auto j = 0u; j < 24u - diskname.size() - 2u; j++)
-		{
-			line.push_back(0x20); //	FILLING SPACES
-		}
-
-		result.emplace_back(std::move(line));
-		line.clear();
-
-		for (auto& entrie : entries)
-		{
-			if (entrie.available)
-			{
-				if ((lc + 0x20) > 0xff)
-					lh++;
-				lc += 0x20;
-				line.push_back(lc); //	Line separation
-				line.push_back(lh); //	Line separation
-				line.push_back(static_cast<uint8_t>(entrie.sector_size)); //	SIZE
-				line.push_back(0x00);
-
-				std::u8string f = str::to_string(entrie.sector_size);
-
-				for (auto i = 0u; i < 4u - f.size(); i++)
-				{
-					line.push_back(0x20); //	SPACE
-				}
-				line.push_back(0x22); //	"
-				for (const char8_t j : entrie.pet_name)
-				{
-					line.push_back(j); //	NAME
-				}
-				line.push_back(0x22); //	"
-				line.push_back(0x20); //	SPACE
-				for (const char8_t j : entrie.file_type)
-				{
-					line.push_back(j); //	FILE_EXT
-				}
-				for (auto j = 0u; j < 26u - entrie.pet_name.size() - 5u - (4u - f.size()); j++)
-				{
-					line.push_back(0x20); //	FILLING SPACES
-				}
-
-				result.emplace_back(std::move(line));
-				line.clear();
-			}
-		}
-
-		line.push_back(0x1d);
-
-		return result;
-	}
-
-	/*std::vector<uint8_t> get_data(uint8_t row_id)
-	{
-		std::vector<uint8_t> ret(entries.at(row_id).sector_size * 0x100);
-		int c = 0;
-		uint32_t next_track = entries.at(row_id).start_track;
-		uint32_t next_sector = entries.at(row_id).start_sector;
-		while (c < entries.at(row_id).sector_size) {
-			uint32_t a_adr = STARTS[next_track] + next_sector * 256;
-			for (int i = 0; i < 254; i++) {
-				ret[c * 254 + i] = data[a_adr + i + 2];
-			}
-			next_track = data[a_adr];
-			next_sector = data[a_adr + 1];
-			c++;
-		}
-		return ret;
-	}*/
-
-	std::u8string format()
-	{
-		u8ostringstream result;
-		result << u8"\t\t"sv << diskname << u8"\n"sv;
-
-		for (auto& entrie : entries)
-		{
-			if (entrie.available)
-			{
-				result << entrie.file_type << u8"\t"sv;
-				result << std::hex << +entrie.start_track;
-				result << u8"/"sv;
-				result << std::hex << +entrie.start_sector << u8"\t"sv;
-				result << entrie.pet_name << u8"\t"sv << std::dec << entrie.sector_size;
-				result << u8"\t"sv << std::hex << entrie.adress_start << u8" -> "sv << std::hex << entrie.adress_end <<
-					u8"\n"sv;
-			}
-		}
-		return result.str();
-	}
-};
-
-class d64_control final : public std::enable_shared_from_this<d64_control>, public view_element
-{
-	const int padding = 4;
 	display_state_ptr _display;
-	d64_parser _parser;
-	std::vector<std::vector<uint8_t>> _dir;
 
-	mutable uint32_t _x_data = 0;
-	mutable uint32_t _x_text = 0;
-	mutable uint32_t _chars_per_line = 0;
-	mutable uint32_t _line_height = 0;
-	mutable uint32_t _line_count = 0;
-	mutable uint32_t _line_width = 0;
+	mutable int _line_height = 0;
+	mutable int _line_width = 0;
 
-	ui::style::font_size _font = ui::style::font_size::code;
+	ui::style::font_face _font = ui::style::font_face::petscii;
 
+	std::vector<files::d64_item> _lines;
+
+	uint32_t c64_blue = ui::rgb(33, 27, 174);
+	uint32_t c64_light_blue = ui::rgb(95, 83, 254);
 
 public:
-	d64_control(display_state_ptr display, const view_element_style style_in) noexcept : view_element(style_in),
+	comodore_disk_control(display_state_ptr display, const view_element_style style_in) noexcept : view_element(style_in),
 		_display(std::move(display))
 	{
-		_parser.load(_display->_selected_item_data);
-		_dir = _parser.dir_list();
-	}
-
-	struct char_entry
-	{
-		int c;
-		ui::color32 clr;
-	};
-
-	static std::array<char_entry, 256> make_char_map()
-	{
-		std::array<char_entry, 256> result;
-
-		for (auto i = 0; i < 256; i++)
-		{
-			auto c = i;
-			ui::color32 clr = ui::style::color::view_text;
-
-			if (std::isspace(c))
-			{
-				c = ' ';
-				clr = ui::style::color::sidecar_background;
-			}
-			else if (c < 32 || c >= 127)
-			{
-				c = '.';
-				clr = ui::style::color::view_selected_background;
-			}
-
-			result[i] = {c, clr};
-		}
-
-		return result;
+		_lines = files::list_disk(_display->_selected_item_data);
 	}
 
 	void render(ui::draw_context& dc, const pointi element_offset) const override
 	{
-		static const auto char_map = make_char_map();
-
-		if (_line_count > 0)
+		if (!_lines.empty())
 		{
-			std::u8string line(_chars_per_line, ' ');
-			const auto clr = ui::color(dc.colors.foreground, dc.colors.alpha);
 
+			const auto clr = ui::color(c64_light_blue, dc.colors.alpha);
+			const auto bg_clr = ui::color(c64_blue, dc.colors.alpha);
+			const auto borger_clr = ui::color(c64_light_blue, dc.colors.alpha);
 			const auto logical_bounds = bounds.offset(element_offset);
-			const auto left = (logical_bounds.left + logical_bounds.right - _line_width) / 2;
-			auto y = logical_bounds.top;
+			const auto left = std::max(logical_bounds.left + dc.padding2, (logical_bounds.left + logical_bounds.right - _line_width) / 2);
+			const auto right = std::min(logical_bounds.right - dc.padding2, left + _line_width + dc.padding2);
+			auto y = logical_bounds.top + dc.padding2 * 2;
+			const auto bg_bounds = recti(left - dc.padding2, y - dc.padding2, right, logical_bounds.bottom - dc.padding2);
 
-			for (const auto& data : _dir)
+			dc.draw_rect(bg_bounds, bg_clr);
+			dc.draw_border(bg_bounds, bg_bounds.inflate(dc.padding2), borger_clr, borger_clr);
+
+			for (const auto& line : _lines)
 			{
-				for (auto j = 0u; j < data.size(); ++j)
-				{
-					line[j] = char_map[data[j] & 0xff].c;
-				}
-
-				dc.draw_text(line, recti(left, y, logical_bounds.right, y + _line_height), _font,
+				dc.draw_text(line.line, recti(left, y, logical_bounds.right, y + _line_height), _font,
 				             ui::style::text_style::single_line, clr, {});
 				y += _line_height;
 			}
@@ -1370,21 +1080,17 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		_chars_per_line = 0;
+		_line_width = 0;
+		_line_height = 0;
 
-		for (const auto& d : _dir)
+		for (const auto& line : _lines)
 		{
-			_chars_per_line = std::max(_chars_per_line, static_cast<uint32_t>(d.size()));
+			const auto extent = mc.measure_text(line.line, _font, ui::style::text_style::single_line, width_limit);
+			_line_width = std::max(_line_width, extent.cx);
+			_line_height = std::max(_line_height, extent.cy + mc.padding1);
 		}
 
-		const auto line = std::u8string(_chars_per_line, u8'0');
-		const auto extent = mc.measure_text(line, _font, ui::style::text_style::single_line, 200);
-
-		_line_width = extent.cx;
-		_line_height = extent.cy + padding;
-		_line_count = static_cast<int>(_dir.size());
-
-		return {width_limit, static_cast<int>(_line_height * _line_count)};
+		return { width_limit, static_cast<int>(_line_height * _lines.size() + (mc.padding2 * 4)) };
 	}
 };
 
@@ -1471,38 +1177,35 @@ public:
 		render_background(dc, element_offset);
 
 		if (logical_bounds.width() > _display->_time_width * 3)
-		{
-			auto r = _display->_scrubber_bounds = logical_bounds.inflate(-_display->_time_width, 0);
+		{			
 			const auto is_tracking = is_style_bit_set(view_element_style::tracking);
 			const auto is_hover = is_style_bit_set(view_element_style::hover);
 			const auto scrub_bg_clr = ui::color(0, dc.colors.alpha / 3.33f);
+			const auto scale1 = df::round(1 * dc.scale_factor);
 
-			if (is_hover && is_tracking)
-			{
-				r.top += 3;
-				r.bottom -= 3;
-			}
-			else
-			{
-				r.top += 4;
-				r.bottom -= 4;
-			}
+			auto scrub_bounds = _display->_scrubber_bounds = logical_bounds.inflate(-_display->_time_width, 0);
 
-			const auto max_scrubber_width = r.width() - 2;
-			dc.draw_rounded_rect(r, scrub_bg_clr, dc.baseline_snap);
+			if (!is_hover && !is_tracking)
+			{
+				scrub_bounds.top += dc.padding1;
+				scrub_bounds.bottom -= dc.padding1;
+			}
+						
+			dc.draw_rounded_rect(scrub_bounds, scrub_bg_clr, dc.padding1);
 
 			_display->_loading_alpha_animation.target(_display->_session ? 0.0f : 1.0f);
 
-			const auto pos = df::round(
-				(_display->media_pos() - _display->media_start()) * max_scrubber_width / std::max(
-					1.0, _display->media_end() - _display->media_start()));
+			const auto max_scrubber_width = scrub_bounds.width() - (scale1 * 2);
+			const auto media_pos = _display->media_pos() - _display->media_start();
+			const auto media_len = std::max(1.0, _display->media_end() - _display->media_start());
+			const auto pos = df::round(media_pos * max_scrubber_width / media_len);
 
-			r.left += 1;
-			r.right = r.left + std::clamp(pos, 2, max_scrubber_width);
-			r.top += 1;
-			r.bottom -= 1;
+			scrub_bounds.left += scale1;
+			scrub_bounds.right = scrub_bounds.left + std::clamp(pos, scale1 * 2, max_scrubber_width);
+			scrub_bounds.top += scale1;
+			scrub_bounds.bottom -= scale1;
 
-			dc.draw_rounded_rect(r, view_handle_color(false, is_hover, is_tracking, dc.frame_has_focus, true).aa(dc.colors.alpha), dc.baseline_snap);
+			dc.draw_rounded_rect(scrub_bounds, view_handle_color(false, is_hover, is_tracking, dc.frame_has_focus, true).aa(dc.colors.alpha), dc.padding1);
 
 			auto time_bounds = logical_bounds;
 			time_bounds.right = _display->_scrubber_bounds.left;
@@ -1512,19 +1215,18 @@ public:
 
 			const auto clr = ui::color(dc.colors.foreground, dc.colors.alpha);
 
-			dc.draw_text(_display->_time, time_bounds, ui::style::font_size::dialog,
+			dc.draw_text(_display->_time, time_bounds, ui::style::font_face::dialog,
 			             ui::style::text_style::single_line_center, clr, {});
-			dc.draw_text(_display->_duration, duration_bounds, ui::style::font_size::dialog,
+			dc.draw_text(_display->_duration, duration_bounds, ui::style::font_face::dialog,
 			             ui::style::text_style::single_line_center, clr, {});
 		}
 	}
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		const auto extent = mc.measure_text(u8"00:00:00"sv, ui::style::font_size::dialog,
-		                                    ui::style::text_style::single_line, 200);
-		_display->_time_width = extent.cx + mc.component_snap;
-		return {width_limit, std::max(extent.cy, 20)};
+		const auto extent = mc.measure_text(u8"00:00:00"sv, ui::style::font_face::dialog, ui::style::text_style::single_line, 200);
+		_display->_time_width = extent.cx + mc.padding2;
+		return {width_limit, std::max(extent.cy, mc.scroll_width)};
 	}
 
 	void hover(interaction_context& ic) override
@@ -1533,8 +1235,9 @@ public:
 		const auto media_start = _display->media_start();
 		const auto media_end = _display->media_end();
 		const auto media_len = media_end - media_start;
-		const auto scrubber_pos = std::clamp(ic.loc.x, _display->_scrubber_bounds.left,
-		                                     _display->_scrubber_bounds.right) - _display->_scrubber_bounds.left;
+		const auto scrub_left = _display->_scrubber_bounds.left;
+		const auto scrub_right = _display->_scrubber_bounds.right;
+		const auto scrubber_pos = std::clamp(ic.loc.x, scrub_left, scrub_right) - scrub_left;
 
 		if (_display->_hover_scrubber_pos != scrubber_pos)
 		{
@@ -1570,7 +1273,7 @@ public:
 
 			hover.elements.add(std::make_shared<surface_element>(surface, 200, view_element_style::none));
 			hover.elements.add(std::make_shared<text_element>(str::format_seconds(df::round(surface->time())),
-			                                                  ui::style::font_size::dialog,
+			                                                  ui::style::font_face::dialog,
 			                                                  ui::style::text_style::single_line,
 			                                                  view_element_style::center |
 			                                                  view_element_style::new_line));
@@ -1612,7 +1315,7 @@ public:
 	group_title_control(const std::u8string_view title,
 	                    const std::vector<view_element_ptr>& other_controls = {}) noexcept
 	{
-		elements.emplace_back(std::make_shared<text_element>(title, ui::style::font_size::title,
+		elements.emplace_back(std::make_shared<text_element>(title, ui::style::font_face::title,
 		                                                     ui::style::text_style::multiline,
 		                                                     view_element_style::grow));
 		for (const auto& e : other_controls) elements.emplace_back(e);
@@ -1625,7 +1328,7 @@ public:
 		if (bg_color.a > 0.0f)
 		{
 			const auto pad = padding * dc.scale_factor;
-			dc.draw_rounded_rect(bounds.offset(element_offset).inflate(pad), bg_color, dc.baseline_snap);
+			dc.draw_rounded_rect(bounds.offset(element_offset).inflate(pad), bg_color, dc.padding1);
 		}
 
 		for (const auto& e : elements)
@@ -1645,7 +1348,7 @@ public:
 
 		for (const auto& e : elements)
 		{
-			if (cx != 0) cx += mc.baseline_snap; // padding
+			if (cx != 0) cx += mc.padding1;
 			e.extent = e.v->measure(mc, width_limit);
 			cx += e.extent.cx;
 			if (e.extent.cy > cy) cy = e.extent.cy;
@@ -1690,7 +1393,7 @@ public:
 			{
 				const recti bb{x, y, x + cx, bounds.bottom};
 				element.v->layout(mc, bb, positions);
-				x += cx + mc.baseline_snap;
+				x += cx + mc.padding1;
 				element.visible = true;
 			}
 			else
@@ -1879,7 +1582,7 @@ public:
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
 		const auto tex_extent = calc_tex_extent(width_limit, width_limit * 3);
-		const auto text_line_height = _fill ? 0 : mc.text_line_height(ui::style::font_size::dialog) + mc.component_snap;
+		const auto text_line_height = _fill ? 0 : mc.text_line_height(ui::style::font_face::dialog) + mc.padding2;
 		return {width_limit, tex_extent.cy + text_line_height};
 	}
 
@@ -1890,7 +1593,7 @@ public:
 			const auto st = _display->_selected_texture1;
 			const auto i = _display->_item1;
 
-			auto text_line_height = _fill ? 0 : mc.text_line_height(ui::style::font_size::dialog) + mc.component_snap;
+			auto text_line_height = _fill ? 0 : mc.text_line_height(ui::style::font_face::dialog) + mc.padding2;
 			auto layout_extent = calc_tex_extent(bounds.width(), bounds.height() - text_line_height);
 
 			if (text_line_height > 0 && (bounds.width() - layout_extent.cx) > 100)
@@ -1930,7 +1633,7 @@ public:
 
 	sizei measure_zoom(ui::measure_context& mc) const
 	{
-		const auto text_extent = mc.measure_text(u8"000%"sv, ui::style::font_size::dialog,
+		const auto text_extent = mc.measure_text(u8"000%"sv, ui::style::font_face::dialog,
 		                                         ui::style::text_style::single_line, 100);
 		const auto pad = padding * mc.scale_factor;
 		return {text_extent.cx + (pad.cx * 3) + mc.icon_cxy, text_extent.cy + (pad.cy * 2)};
@@ -1956,7 +1659,7 @@ public:
 
 				dc.draw_rect(logical_bounds, ui::color(ui::style::color::group_background, alpha * 0.5f));
 				xdraw_icon(dc, icon_index::zoom_in, icon_bounds, clr, {});
-				dc.draw_text(text.c_str(), text_bounds, ui::style::font_size::dialog,
+				dc.draw_text(text.c_str(), text_bounds, ui::style::font_face::dialog,
 				             ui::style::text_style::single_line, clr, {});
 			}
 
@@ -1965,7 +1668,7 @@ public:
 				const auto pos_text = str::format(
 					_display->_break_count == _display->_total_count ? u8"{}|{}"sv : u8"{}|{}|{}"sv, _display->_item_pos,
 					_display->_break_count, _display->_total_count);
-				const auto pos_text_extent = dc.measure_text(pos_text, ui::style::font_size::dialog,
+				const auto pos_text_extent = dc.measure_text(pos_text, ui::style::font_face::dialog,
 				                                             ui::style::text_style::single_line, 100);
 				const auto pos_text_bounds = recti{
 					bounds.right - pos_text_extent.cx - pad.cx - pad.cx, bounds.top, bounds.right,
@@ -1974,7 +1677,7 @@ public:
 				const auto logical_bounds = pos_text_bounds.offset(element_offset);
 
 				dc.draw_rect(logical_bounds, ui::color(ui::style::color::group_background, alpha * 0.5f));
-				dc.draw_text(pos_text.c_str(), logical_bounds.inflate(-pad.cx, 0), ui::style::font_size::dialog,
+				dc.draw_text(pos_text.c_str(), logical_bounds.inflate(-pad.cx, 0), ui::style::font_face::dialog,
 				             ui::style::text_style::single_line_far, clr, {});
 			}
 		}

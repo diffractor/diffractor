@@ -72,7 +72,7 @@ using font_renderer_ptr = std::shared_ptr<font_renderer>;
 class text_layout_impl : public ui::text_layout
 {
 public:
-	explicit text_layout_impl(const font_renderer_ptr& renderer, const ui::style::font_size font) : _renderer(renderer),
+	explicit text_layout_impl(const font_renderer_ptr& renderer, const ui::style::font_face font) : _renderer(renderer),
 		_font(font)
 	{
 	}
@@ -82,7 +82,7 @@ public:
 
 	font_renderer_ptr _renderer;
 	ComPtr<IDWriteTextLayout> _layout;
-	ui::style::font_size _font = ui::style::font_size::dialog;
+	ui::style::font_face _font = ui::style::font_face::dialog;
 };
 
 struct factories
@@ -102,7 +102,8 @@ struct factories
 
 	font_renderer_ptr create_font_face(const wchar_t* font_name, int font_height);
 	font_renderer_ptr create_icon_font_face(int font_height);
-	font_renderer_ptr font_face(ui::style::font_size font, int base_font_size);
+	font_renderer_ptr create_petscii_font_face(int font_height);
+	font_renderer_ptr font_face(ui::style::font_face font, int base_font_size);
 
 	void reset();
 	void reset_fonts();
