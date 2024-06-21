@@ -270,7 +270,7 @@ static df::index_file_item make_index_file_info(const df::date_t date)
 
 static std::atomic_int test_version = 0;
 static df::cancel_token test_token(test_version);
-constexpr int expected_cached_item_count = 34;
+constexpr int expected_cached_item_count = 36;
 
 static df::file_item_ptr load_item(index_state& index, const df::file_path path, bool load_thumb)
 {
@@ -2215,7 +2215,7 @@ static void should_select_items()
 	s.update_selection();
 
 	assert_equal(expected_cached_item_count + 1_z, s.search_items().items().size(), u8"items loaded into state"sv);
-	assert_equal(1_z, s.search_items().folders().size(), u8"folders loaded into state"sv);
+	assert_equal(2_z, s.search_items().folders().size(), u8"folders loaded into state"sv);
 
 	assert_equal(0_z, s.selected_count(), u8"invalid selection"sv);
 
@@ -3601,9 +3601,11 @@ void test_view::register_tests()
 	register_should_search(u8"Created:2010-05-25"sv, 0);
 	register_should_search(u8"2009-11-15"sv, 1);
 
-	register_should_search(u8"@video"sv, 4);
-	register_should_search(u8"@audio"sv, 4);
+	register_should_search(u8"@video"sv, 5);
+	register_should_search(u8"@audio"sv, 5);
 	register_should_search(u8"@photo"sv, 26);
+	register_should_search(u8"@commodore"sv, 1);
+	register_should_search(u8"@archive"sv, 1);
 
 	register_should_search(u8"@ photo"sv, 26);
 	register_should_search(u8"@   photo"sv, 26);
@@ -3625,11 +3627,11 @@ void test_view::register_tests()
 	register_should_search(u8"(< Megapixels:1.0 > Megapixels:0.5)"sv, 7);
 	register_should_search(u8"Megapixels:2"sv, 1);
 	register_should_search(u8"pixels:2"sv, 1);
-	register_should_search(u8"> pixels:1"sv, 8);
-	register_should_search(u8">pixels:1"sv, 8);
-	register_should_search(u8">pixels :1"sv, 8);
-	register_should_search(u8">pixels: 1"sv, 8);
-	register_should_search(u8"> pixels : 1"sv, 8);
+	register_should_search(u8"> pixels:1"sv, 9);
+	register_should_search(u8">pixels:1"sv, 9);
+	register_should_search(u8">pixels :1"sv, 9);
+	register_should_search(u8">pixels: 1"sv, 9);
+	register_should_search(u8"> pixels : 1"sv, 9);
 	register_should_search(u8"2mp"sv, 1);
 	register_should_search(u8"6000x4000"sv, 1);
 
@@ -3642,7 +3644,7 @@ void test_view::register_tests()
 	register_should_search(u8"with:Exposure @photo"sv, 14);
 	register_should_search(u8"with: Exposure @ photo"sv, 14);
 	register_should_search(u8"without:Exposure @photo"sv, 12);
-	register_should_search(u8"without:Exposure"sv, 21);
+	register_should_search(u8"without:Exposure"sv, 25);
 	register_should_search(u8"with:Exposure"sv, 15);
 	register_should_search(u8"with: Exposure"sv, 15);
 	register_should_search(u8"ExposureTime:1/20s"sv, 1);
@@ -3665,13 +3667,13 @@ void test_view::register_tests()
 	register_should_search(u8"size:0.3mb"sv, 4);
 	register_should_search(u8"size:14kb"sv, 1);
 	register_should_search(u8"size:5.1mb"sv, 1);
-	register_should_search(u8">size:1mb"sv, 8);
+	register_should_search(u8">size:1mb"sv, 9);
 
 	register_should_search(u8"key1"sv, 4);
 	register_should_search(u8"dog london"sv, 1);
 	register_should_search(u8"prague"sv, 5);
 	register_should_search(u8"ipad"sv, 1);
-	register_should_search(u8"48kHz"sv, 2);
+	register_should_search(u8"48kHz"sv, 4);
 	register_should_search(u8"44.1kHz"sv, 4);
 	register_should_search(u8"tag:dog tag:london"sv, 1);
 	register_should_search(u8"dog or london"sv, 3);

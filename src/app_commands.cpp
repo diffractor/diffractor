@@ -31,6 +31,9 @@ static const std::u8string google_maps_api_key = u8"";
 static const std::u8string azure_maps_api_key = u8"";
 #endif
 
+extern bool toggle_details_state;
+
+
 static std::atomic_int analyse_version;
 
 static const std::u8string_view docs_url = u8"https://www.diffractor.com/docs"sv;
@@ -1714,7 +1717,7 @@ static void convert_resize_invoke(view_state& s, const ui::control_frame_ptr& pa
 
 							try
 							{
-								if (mt->has_trait(file_type_traits::bitmap))
+								if (mt->has_trait(file_traits::bitmap))
 								{
 									file_encode_params encode_params;
 									encode_params.jpeg_save_quality = setting.convert.jpeg_quality;
@@ -2306,8 +2309,8 @@ static void toggle_details_invoke(view_state& s, const bool only_toggle_selected
 	}
 	else
 	{
-		setting.detail_file_items = !setting.detail_file_items;
-		const auto new_display = setting.detail_file_items
+		toggle_details_state = !toggle_details_state;
+		const auto new_display = toggle_details_state
 			                         ? df::item_group_display::detail
 			                         : df::item_group_display::icons;
 
@@ -4817,7 +4820,7 @@ static void email_invoke(view_state& s, const ui::control_frame_ptr& parent, con
 					{
 						const auto ft = files::file_type_from_name(path);
 
-						if (ft->has_trait(file_type_traits::bitmap))
+						if (ft->has_trait(file_traits::bitmap))
 						{
 							image_edits edits;
 							const auto ext = !is_jpeg && convert_to_jpeg ? u8".jpg"sv : path.extension();

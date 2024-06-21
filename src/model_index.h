@@ -235,7 +235,7 @@ __forceinline bool is_dup_match(const df::index_file_item* file, const df::index
 
 	const auto name_match = icmp(file->name, other_file->name) == 0;
 
-	if (name_match && file->ft->has_trait(file_type_traits::av))
+	if (name_match && file->ft->has_trait(file_traits::av))
 	{
 		if (file->size == other_file->size)
 		{
@@ -255,7 +255,7 @@ __forceinline bool is_dup_match(const df::index_file_item& file, const df::file_
 
 	const auto name_match = icmp(file.name, other_file->path().name()) == 0;
 
-	if (file.ft->has_trait(file_type_traits::av))
+	if (file.ft->has_trait(file_traits::av))
 	{
 		if (name_match && file.size == other_file->file_size())
 		{
@@ -280,7 +280,7 @@ __forceinline bool is_dup_match(const df::related_info& file, const df::index_fi
 
 	const auto name_match = icmp(file.path.name(), other_file.name) == 0;
 
-	if (file.ft->has_trait(file_type_traits::av))
+	if (file.ft->has_trait(file_traits::av))
 	{
 		if (name_match && file.size == other_file.size)
 		{

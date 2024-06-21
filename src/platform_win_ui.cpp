@@ -56,7 +56,7 @@ static constexpr auto ui_scroll_width = 20;
 
 int ui::ticks_since_last_user_action = 0;
 
-static constexpr std::u8string_view s_window_rect = u8"WindowRect"sv;
+static constexpr std::u8string_view s_window_rect = u8"window_rect"sv;
 static std::u8string restart_cmd_line;
 
 extern bool number_format_invalid;

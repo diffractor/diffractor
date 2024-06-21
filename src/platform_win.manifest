@@ -3,7 +3,7 @@
   <assemblyIdentity
       type="win32"
       name="diffractor.exe"
-      version="1.26.0.1176"
+      version="1.26.0.1177"
       processorArchitecture="*"
     />
   <asmv3:application>

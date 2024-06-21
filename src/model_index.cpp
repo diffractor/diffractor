@@ -648,7 +648,7 @@ void populate_file_info(df::index_file_item& file_node, const platform::file_inf
 
 		if (cache_items_loaded &&
 			md == nullptr &&
-			file_node.ft->has_trait(file_type_traits::file_name_metadata))
+			file_node.ft->has_trait(file_traits::file_name_metadata))
 		{
 			const auto ext_pos = df::find_ext(name);
 
@@ -1546,7 +1546,7 @@ void index_state::scan_item(const df::index_folder_item_ptr& folder,
 					const auto metadata = sr.to_props();
 					const auto thumbnail_was_loaded = is_valid(sr.thumbnail_surface) || is_valid(sr.thumbnail_image);
 
-					if (mt->has_trait(file_type_traits::video_metadata))
+					if (mt->has_trait(file_traits::video_metadata))
 					{
 						const auto name_props = scan_info_from_title(file_path.file_name_without_extension());
 

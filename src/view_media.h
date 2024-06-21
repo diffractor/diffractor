@@ -130,7 +130,7 @@ public:
 
 		const int minumum_media_control_width = df::round(32 * 7 * scale_factor); 
 		const auto overlay_media_control = (_display->is_one() && _display->display_item_has_trait(
-			file_type_traits::hide_overlays)) || _display->comparing();
+			file_traits::hide_overlays)) || _display->comparing();
 		auto media_bounds_avail = avail_bounds;
 
 		if (avail_bounds.width() > minumum_media_control_width && _controls_element)

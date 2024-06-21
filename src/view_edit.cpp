@@ -573,7 +573,7 @@ void edit_view::layout(ui::measure_context& mc, const sizei extent)
 
 bool edit_view::is_photo() const
 {
-	return !_loaded.is_empty() && _mt->has_trait(file_type_traits::bitmap);
+	return !_loaded.is_empty() && _mt->has_trait(file_traits::bitmap);
 }
 
 view_controller_ptr edit_view::controller_from_location(const view_host_ptr& host, const pointi loc)
@@ -793,7 +793,7 @@ bool edit_view::save(const df::file_path src_path, const df::file_path dst_path,
 
 	if (update_result.success())
 	{
-		if (_mt->has_trait(file_type_traits::photo_metadata))
+		if (_mt->has_trait(file_traits::photo_metadata))
 		{
 			if (me.has_changes())
 			{
@@ -805,11 +805,11 @@ bool edit_view::save(const df::file_path src_path, const df::file_path dst_path,
 				record_feature_use(features::edit_photo_bitmap);
 			}
 		}
-		else if (_mt->has_trait(file_type_traits::video_metadata))
+		else if (_mt->has_trait(file_traits::video_metadata))
 		{
 			record_feature_use(features::edit_video_metadata);
 		}
-		else if (_mt->has_trait(file_type_traits::music_metadata))
+		else if (_mt->has_trait(file_traits::music_metadata))
 		{
 			record_feature_use(features::edit_audio_metadata);
 		}
@@ -946,7 +946,7 @@ void edit_view::changed()
 	{
 		_edit_state.changed(_extent, _edit_controls->_straighten_slider->is_tracking());
 
-		if (_mt->has_trait(file_type_traits::bitmap))
+		if (_mt->has_trait(file_traits::bitmap))
 		{
 			if (_edit_state._edits.has_color_changes())
 			{
@@ -1018,10 +1018,10 @@ void edit_view_controls::layout_controls(ui::measure_context& mc)
 	{
 		const auto item = _state._edit_item;
 		const auto* const ft = item ? item->file_type() : file_type::other;
-		const auto is_bitmap = ft->has_trait(file_type_traits::bitmap);
-		const auto has_music_metadata = ft->has_trait(file_type_traits::music_metadata);
-		const auto has_video_metadata = ft->has_trait(file_type_traits::video_metadata);
-		const auto has_photo_metadata = ft->has_trait(file_type_traits::photo_metadata);
+		const auto is_bitmap = ft->has_trait(file_traits::bitmap);
+		const auto has_music_metadata = ft->has_trait(file_traits::music_metadata);
+		const auto has_video_metadata = ft->has_trait(file_traits::video_metadata);
+		const auto has_photo_metadata = ft->has_trait(file_traits::photo_metadata);
 
 		_title_edit->is_visible(has_photo_metadata || has_video_metadata || has_music_metadata);
 		_description_label->is_visible(has_photo_metadata || has_video_metadata);
@@ -1406,7 +1406,7 @@ void edit_view::display_changed()
 		_xmp_name = item->xmp();
 		_mt = item->file_type();
 
-		if (_mt->has_trait(file_type_traits::bitmap))
+		if (_mt->has_trait(file_traits::bitmap))
 		{
 			files loader;
 			prop::item_metadata ps;

@@ -141,8 +141,7 @@ public:
 	bool large_font = false;
 	bool verbose_metadata = false;
 	bool raw_preview = true;
-	bool detail_folder_items = true;
-	bool detail_file_items = false;
+	uint32_t detail_items = true;
 	bool show_shadow = true;
 	bool update_modified = true;
 	bool last_played_pos = true;

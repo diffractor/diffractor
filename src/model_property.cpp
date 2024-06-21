@@ -1102,13 +1102,13 @@ std::u8string prop::format_pixels(const sizei v, const file_type_ref ft)
 		return std::u8string(tt.resolution_none);
 	}
 
-	if (ft->has_trait(file_type_traits::av))
+	if (ft->has_trait(file_traits::av))
 	{
 		const auto video_res = format_video_resolution(v);
 		if (!video_res.empty()) return video_res;
 	}
 
-	if (ft->has_trait(file_type_traits::bitmap))
+	if (ft->has_trait(file_traits::bitmap))
 	{
 		if (v.cx <= 128 && v.cy <= 128)
 		{

@@ -1,0 +1,1 @@
+exe/test/** filter=lfs diff=lfs merge=lfs -text

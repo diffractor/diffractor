@@ -45,10 +45,12 @@ static std::atomic_int index_version;
 const wchar_t* s_app_name_l = L"Diffractor";
 const std::u8string_view s_app_name = u8"Diffractor"sv;
 const std::u8string_view s_app_version = u8"126.0"sv;
-const std::u8string_view g_app_build = u8"1176"sv;
+const std::u8string_view g_app_build = u8"1177"sv;
 const std::u8string_view stage_file_name = u8"diffractor-setup-update.exe"sv;
 static constexpr std::u8string_view installed_file_name = u8"diffractor-setup-installed.exe"sv;
 static constexpr std::u8string_view s_search = u8"search"sv;
+
+bool toggle_details_state = false;
 
 std::u8string df::format_version(const bool short_text)
 {
@@ -226,19 +228,19 @@ void media_view::update_media_elements()
 			const auto& item = display->_item1;
 			const auto* const file_type = item->file_type();
 
-			if (file_type->has_trait(file_type_traits::bitmap))
+			if (file_type->has_trait(file_traits::bitmap))
 			{
 				media_element = std::make_shared<photo_control>(_state, display, _host, false);
 			}
-			else if (file_type->has_trait(file_type_traits::visualize_audio))
+			else if (file_type->has_trait(file_traits::visualize_audio))
 			{
 				media_element = std::make_shared<audio_control>(_state, display, _host);
 			}
-			else if (file_type->has_trait(file_type_traits::av))
+			else if (file_type->has_trait(file_traits::av))
 			{
 				media_element = std::make_shared<video_control>(_state, display, _host);
 			}
-			else if (file_type->has_trait(file_type_traits::archive))
+			else if (file_type->has_trait(file_traits::archive))
 			{
 				media_element = std::make_shared<file_list_control>(display, view_element_style::center);
 			}
@@ -1243,13 +1245,13 @@ void app_frame::tick()
 	}
 }
 
-static constexpr std::u8string_view s_recent_folders = u8"RecentFolders"sv;
-static constexpr std::u8string_view s_recent_searches = u8"RecentSearches"sv;
-static constexpr std::u8string_view s_recent_apps = u8"RecentApps"sv;
-static constexpr std::u8string_view s_recent_tags = u8"RecentTags"sv;
-static constexpr std::u8string_view s_recent_locations = u8"RecentLocations"sv;
-static constexpr std::u8string_view s_group_order = u8"GroupOrder"sv;
-static constexpr std::u8string_view s_sort_order = u8"SortOrder"sv;
+static constexpr std::u8string_view s_recent_folders = u8"recent_folders"sv;
+static constexpr std::u8string_view s_recent_searches = u8"recent_searches"sv;
+static constexpr std::u8string_view s_recent_apps = u8"recent_apps"sv;
+static constexpr std::u8string_view s_recent_tags = u8"recent_tags"sv;
+static constexpr std::u8string_view s_recent_locations = u8"recent_locations"sv;
+static constexpr std::u8string_view s_group_order = u8"group_order"sv;
+static constexpr std::u8string_view s_sort_order = u8"sort_order"sv;
 
 void app_frame::load_options(const platform::setting_file_ptr& store)
 {
@@ -2873,7 +2875,7 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::filter_audio]->checked = _state.filter().has_group(file_group::audio);
 	_commands[commands::large_font]->checked = setting.large_font;
 	_commands[commands::view_fullscreen]->checked = _state.is_full_screen;
-	_commands[commands::option_toggle_details]->checked = setting.detail_file_items;
+	_commands[commands::option_toggle_details]->checked = toggle_details_state;
 	_commands[commands::view_favorite_tags]->checked = setting.sidebar.show_favorite_tags_only;
 
 	_commands[commands::group_album]->checked = _state.group_order() == group_by::album_show;

@@ -657,10 +657,10 @@ public:
 
 	bool can_zoom() const
 	{
-		return _is_one && _item1 && _item1->file_type()->has_trait(file_type_traits::zoom);
+		return _is_one && _item1 && _item1->file_type()->has_trait(file_traits::zoom);
 	}
 
-	bool display_item_has_trait(const file_type_traits t) const
+	bool display_item_has_trait(const file_traits t) const
 	{
 		return _is_one && _item1 && _item1->file_type()->has_trait(t);
 	}
@@ -1081,9 +1081,9 @@ public:
 				if (i)
 				{
 					const auto ft = i->file_type();
-					result.can_zoom = ft->has_trait(file_type_traits::zoom);
+					result.can_zoom = ft->has_trait(file_traits::zoom);
 					result.has_single_media_selection = i->is_media();
-					result.showing_image = ft->has_trait(file_type_traits::bitmap) || d->player_has_video();
+					result.showing_image = ft->has_trait(file_traits::bitmap) || d->player_has_video();
 				}
 			}
 		}
@@ -1141,7 +1141,7 @@ public:
 			return true;
 		}
 
-		if (!_selected.items()[0]->file_type()->has_trait(file_type_traits::hide_overlays))
+		if (!_selected.items()[0]->file_type()->has_trait(file_traits::hide_overlays))
 		{
 			return true;
 		}
@@ -1471,7 +1471,7 @@ public:
 
 	void changed(const sizei extent, bool straighten_tracking)
 	{
-		if (_state._edit_item && _state._edit_item->file_type()->has_trait(file_type_traits::bitmap))
+		if (_state._edit_item && _state._edit_item->file_type()->has_trait(file_traits::bitmap))
 		{
 			const auto selection = _edits.crop_bounds();
 			const auto current = selection.angle();

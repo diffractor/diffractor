@@ -404,7 +404,7 @@ public:
 			_item->media_position(time);
 		}
 
-		const auto is_playing_audio = _mt && (_mt->group->traits && file_type_traits::visualize_audio);
+		const auto is_playing_audio = _mt && (_mt->group->traits && file_traits::visualize_audio);
 
 		if (is_playing_audio)
 		{

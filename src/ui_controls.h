@@ -1610,7 +1610,7 @@ public:
 
 			bool can_zoom = false;
 
-			if (i && i->file_type()->has_trait(file_type_traits::zoom))
+			if (i && i->file_type()->has_trait(file_traits::zoom))
 			{
 				const auto dim_src = st->calc_display_dimensions();
 				can_zoom = bounds.width() < dim_src.cx || bounds.height() < dim_src.cy;

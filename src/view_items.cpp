@@ -115,7 +115,7 @@ public:
 		_last_loc = loc;
 		update_state();
 
-		if (!_tracking && _hover_item && _hover_item->file_type()->has_trait(file_type_traits::preview_video))
+		if (!_tracking && _hover_item && _hover_item->file_type()->has_trait(file_traits::preview_video))
 		{
 			const auto logical_loc = _scroller.device_to_logical(loc);
 			const auto item_bounds = _hover_item->bounds;
@@ -303,7 +303,7 @@ public:
 			start_drag();
 			//_parent->invalidate();
 		}
-		else if (!_tracking && _hover_item && _hover_item->file_type()->has_trait(file_type_traits::preview_video))
+		else if (!_tracking && _hover_item && _hover_item->file_type()->has_trait(file_traits::preview_video))
 		{
 			const auto logical_loc = _scroller.device_to_logical(loc);
 			const auto item_bounds = _hover_item->bounds;
@@ -1346,7 +1346,7 @@ void items_view::update_media_elements()
 			const auto* const file_type = item->file_type();
 			const auto md = item->metadata();
 
-			if (file_type->has_trait(file_type_traits::bitmap))
+			if (file_type->has_trait(file_traits::bitmap))
 			{
 				_media_element = std::make_shared<photo_control>(_state, display, _host, false);
 
@@ -1354,7 +1354,7 @@ void items_view::update_media_elements()
 				elements.emplace_back(std::make_shared<padding_element>(4));
 				elements.emplace_back(media_control_style(media_control_element));
 			}
-			else if (file_type->has_trait(file_type_traits::visualize_audio))
+			else if (file_type->has_trait(file_traits::visualize_audio))
 			{
 				_media_element = std::make_shared<audio_control>(_state, display, _host);
 
@@ -1362,7 +1362,7 @@ void items_view::update_media_elements()
 				elements.emplace_back(std::make_shared<padding_element>(4));
 				elements.emplace_back(media_control_style(media_control_element));
 			}
-			else if (file_type->has_trait(file_type_traits::av))
+			else if (file_type->has_trait(file_traits::av))
 			{
 				_media_element = std::make_shared<video_control>(_state, display, _host);
 
@@ -1370,13 +1370,13 @@ void items_view::update_media_elements()
 				elements.emplace_back(std::make_shared<padding_element>(4));
 				elements.emplace_back(media_control_style(media_control_element));
 			}
-			else if (file_type->has_trait(file_type_traits::archive))
+			else if (file_type->has_trait(file_traits::archive))
 			{
 				elements.emplace_back(media_control_style(media_control_element));
 				elements.emplace_back(std::make_shared<padding_element>(4));
 				elements.emplace_back(std::make_shared<file_list_control>(display, view_element_style::center));
 			}
-			else if (file_type->has_trait(file_type_traits::commodore))
+			else if (file_type->has_trait(file_traits::commodore))
 			{
 				elements.emplace_back(media_control_style(media_control_element));
 

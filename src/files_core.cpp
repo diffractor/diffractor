@@ -82,27 +82,27 @@ file_group_ref parse_file_group(const std::u8string& text)
 	return nullptr;
 }
 
-static constexpr file_type_traits photo_traits = file_type_traits::bitmap | file_type_traits::cache_metadata |
-	file_type_traits::zoom | file_type_traits::hide_overlays |
-	file_type_traits::thumbnail | file_type_traits::photo_metadata;
-static constexpr file_type_traits video_traits = file_type_traits::av | file_type_traits::preview_video |
-	file_type_traits::cache_metadata | file_type_traits::hide_overlays | file_type_traits::thumbnail |
-	file_type_traits::thumbnail | file_type_traits::video_metadata;
-static constexpr file_type_traits audio_traits = file_type_traits::av | file_type_traits::visualize_audio |
-	file_type_traits::cache_metadata | file_type_traits::music_metadata;
+static constexpr file_traits photo_traits = file_traits::bitmap | file_traits::cache_metadata |
+	file_traits::zoom | file_traits::hide_overlays |
+	file_traits::thumbnail | file_traits::photo_metadata;
+static constexpr file_traits video_traits = file_traits::av | file_traits::preview_video |
+	file_traits::cache_metadata | file_traits::hide_overlays | 
+	file_traits::thumbnail | file_traits::video_metadata;
+static constexpr file_traits audio_traits = file_traits::av | file_traits::visualize_audio |
+	file_traits::cache_metadata | file_traits::music_metadata;
 
-static constexpr file_type_traits commodore_traits = file_type_traits::commodore;
-static constexpr file_type_traits archive_traits = file_type_traits::archive;
+static constexpr file_traits commodore_traits = file_traits::commodore | file_traits::no_metadata_grouping;
+static constexpr file_traits archive_traits = file_traits::archive | file_traits::no_metadata_grouping;
 
-file_group file_group::other(u8"other"sv, u8"others"sv, 0x5E5E5E, icon_index::document, file_type_traits::other, {});
-file_group file_group::folder(u8"folder"sv, u8"folders"sv, 0x18A59C, icon_index::folder, file_type_traits::folder, {});
-file_group file_group::photo(u8"photo"sv, u8"photos"sv, 0x18A549, icon_index::photo, photo_traits, {u8"xmp"});
-file_group file_group::video(u8"video"sv, u8"videos"sv, 0xA55018, icon_index::video, video_traits,
+file_group file_group::other(u8"other"sv, u8"others"sv, 0x5E5E5E, icon_index::document, file_traits::no_metadata_grouping, group_key_type::other, {});
+file_group file_group::folder(u8"folder"sv, u8"folders"sv, 0x18A59C, icon_index::folder, file_traits::no_metadata_grouping, group_key_type::folder, {});
+file_group file_group::photo(u8"photo"sv, u8"photos"sv, 0x18A549, icon_index::photo, photo_traits, group_key_type::photo, {u8"xmp"});
+file_group file_group::video(u8"video"sv, u8"videos"sv, 0xA55018, icon_index::video, video_traits, group_key_type::video,
                              {u8"srt"sv, u8"smi"sv, u8"vtt"sv, u8"mpl2"sv, u8"thm"sv, u8"xmp"});
-file_group file_group::audio(u8"audio"sv, {}, 0xA5184B, icon_index::audio, audio_traits, {});
+file_group file_group::audio(u8"audio"sv, {}, 0xA5184B, icon_index::audio, audio_traits, group_key_type::audio, {});
 
-file_group file_group::archive(u8"archive"sv, u8"archives"sv, 0x5588DD, icon_index::archive, archive_traits, {});
-file_group file_group::commodore(u8"commodore"sv, {}, 0xFF8811, icon_index::retro, commodore_traits, {});
+file_group file_group::archive(u8"archive"sv, u8"archives"sv, 0x5588DD, icon_index::archive, archive_traits, group_key_type::archive, {});
+file_group file_group::commodore(u8"commodore"sv, {}, 0xFF8811, icon_index::retro, commodore_traits, group_key_type::retro, {});
 
 
 file_type file_type::folder(file_group::folder, {}, {}, {});
@@ -123,7 +123,7 @@ void load_file_types()
 		{file_group::video, u8"264"sv, {}, {}},
 		{file_group::video, u8"265"sv, {}, {}},
 		{file_group::video, u8"302"sv, {}, {}},
-		{file_group::video, u8"3fr"sv, u8"Hasselblad Raw"sv, file_type_traits::raw | file_type_traits::edit},
+		{file_group::video, u8"3fr"sv, u8"Hasselblad Raw"sv, file_traits::raw | file_traits::edit},
 		{file_group::audio, u8"669"sv, {}, {}},
 		{file_group::video, u8"722"sv, {}, {}},
 		{file_group::video, u8"A64"sv, {}, {}},
@@ -138,7 +138,7 @@ void load_file_types()
 		{file_group::video, u8"adx"sv, {}, {}},
 		{file_group::video, u8"aea"sv, {}, {}},
 		{file_group::audio, u8"afc"sv, {}, {}},
-		{file_group::audio, u8"aif, aifc, aiff"sv, u8"Audio Interchange File Format"sv, file_type_traits::embedded_xmp},
+		{file_group::audio, u8"aif, aifc, aiff"sv, u8"Audio Interchange File Format"sv, file_traits::embedded_xmp},
 		{file_group::audio, u8"au,snd"sv, u8"Sun Microsystems and NeXT audio"sv, {}},
 		{file_group::video, u8"aix"sv, {}, {}},
 		{file_group::audio, u8"amf"sv, {}, {}},
@@ -150,17 +150,17 @@ void load_file_types()
 		{file_group::video, u8"aptx"sv, {}, {}},
 		{file_group::video, u8"aptxhd"sv, {}, {}},
 		{file_group::video, u8"aqt"sv, {}, {}},
-		{file_group::photo, u8"arw,sr2,srf"sv, u8"Sony Raw"sv, file_type_traits::raw | file_type_traits::edit},
-		{file_group::photo, u8"bay"sv, u8"Casio Raw"sv, file_type_traits::raw | file_type_traits::edit},
-		{file_group::photo, u8"bmq"sv, u8"NuCore Raw"sv, file_type_traits::raw | file_type_traits::edit},
-		{file_group::photo, u8"cap"sv, u8"Phase One Raw"sv, file_type_traits::raw | file_type_traits::edit},
-		{file_group::photo, u8"cine"sv, u8"Phantom Raw"sv, file_type_traits::raw | file_type_traits::edit},
-		{file_group::video, u8"asf"sv, u8"Windows Media"sv, file_type_traits::embedded_xmp | file_type_traits::edit},
+		{file_group::photo, u8"arw,sr2,srf"sv, u8"Sony Raw"sv, file_traits::raw | file_traits::edit},
+		{file_group::photo, u8"bay"sv, u8"Casio Raw"sv, file_traits::raw | file_traits::edit},
+		{file_group::photo, u8"bmq"sv, u8"NuCore Raw"sv, file_traits::raw | file_traits::edit},
+		{file_group::photo, u8"cap"sv, u8"Phase One Raw"sv, file_traits::raw | file_traits::edit},
+		{file_group::photo, u8"cine"sv, u8"Phantom Raw"sv, file_traits::raw | file_traits::edit},
+		{file_group::video, u8"asf"sv, u8"Windows Media"sv, file_traits::embedded_xmp | file_traits::edit},
 		{file_group::video, u8"ass"sv, {}, {}},
 		{file_group::video, u8"ast"sv, u8"Audio Stream"sv, {}},
 		{
 			file_group::video, u8"avi"sv, u8"Audio Visual Interleave"sv,
-			file_type_traits::embedded_xmp | file_type_traits::edit
+			file_traits::embedded_xmp | file_traits::edit
 		},
 		{file_group::video, u8"avr"sv, {}, {}},
 		{file_group::video, u8"avs"sv, {}, {}},
@@ -181,8 +181,8 @@ void load_file_types()
 		{file_group::video, u8"chk"sv, {}, {}},
 		{file_group::video, u8"cif"sv, {}, {}},
 		{file_group::video, u8"cpk"sv, {}, {}},
-		{file_group::photo, u8"crw,cr2,cr3"sv, u8"Canon raw"sv, file_type_traits::raw | file_type_traits::edit},
-		{file_group::photo, u8"cs1,sti,ia"sv, u8"Sinar raw"sv, file_type_traits::raw | file_type_traits::edit},
+		{file_group::photo, u8"crw,cr2,cr3"sv, u8"Canon raw"sv, file_traits::raw | file_traits::edit},
+		{file_group::photo, u8"cs1,sti,ia"sv, u8"Sinar raw"sv, file_traits::raw | file_traits::edit},
 		{file_group::video, u8"cdxl"sv, u8"Commodore CDXL video"sv, {}},
 		{file_group::video, u8"daud"sv, {}, {}},
 		{file_group::video, u8"dav"sv, {}, {}},
@@ -195,7 +195,7 @@ void load_file_types()
 		{file_group::audio, u8"dmf"sv, {}, {}},
 		{
 			file_group::photo, u8"dng"sv, u8"Adobe Digital Negative"sv,
-			file_type_traits::raw | file_type_traits::edit | file_type_traits::embedded_xmp | file_type_traits::edit
+			file_traits::raw | file_traits::edit | file_traits::embedded_xmp | file_traits::edit
 		},
 		{file_group::video, u8"dnxhd"sv, {}, {}},
 		{file_group::video, u8"dnxhr"sv, {}, {}},
@@ -211,17 +211,17 @@ void load_file_types()
 		{file_group::video, u8"dv"sv, {}, {}},
 		{file_group::video, u8"dvd"sv, {}, {}},
 		{file_group::video, u8"eac3"sv, {}, {}},
-		{file_group::photo, u8"erf"sv, u8"Epson Raw"sv, file_type_traits::raw | file_type_traits::edit},
-		{file_group::photo, u8"mfw"sv, u8"Mamiya raw"sv, file_type_traits::raw | file_type_traits::edit},
-		{file_group::photo, u8"raw"sv, u8"Panasonic raw"sv, file_type_traits::raw | file_type_traits::edit},
+		{file_group::photo, u8"erf"sv, u8"Epson Raw"sv, file_traits::raw | file_traits::edit},
+		{file_group::photo, u8"mfw"sv, u8"Mamiya raw"sv, file_traits::raw | file_traits::edit},
+		{file_group::photo, u8"raw"sv, u8"Panasonic raw"sv, file_traits::raw | file_traits::edit},
 		{file_group::photo, u8"exr"sv, {}, {}},
 		{file_group::video, u8"fap"sv, {}, {}},
 		{file_group::audio, u8"far"sv, {}, {}},
-		{file_group::photo, u8"fff"sv, u8"Imacon raw"sv, file_type_traits::raw | file_type_traits::edit},
+		{file_group::photo, u8"fff"sv, u8"Imacon raw"sv, file_traits::raw | file_traits::edit},
 		{file_group::video, u8"fits"sv, {}, {}},
 		{file_group::audio, u8"flac"sv, u8"ree Lossless Audio"sv, {}},
 		{file_group::video, u8"flm"sv, {}, {}},
-		{file_group::video, u8"flv"sv, u8"Flash video"sv, file_type_traits::embedded_xmp | file_type_traits::edit},
+		{file_group::video, u8"flv"sv, u8"Flash video"sv, file_traits::embedded_xmp | file_traits::edit},
 		{file_group::video, u8"fsb"sv, {}, {}},
 		{file_group::video, u8"fwse"sv, {}, {}},
 		{file_group::video, u8"g722"sv, {}, {}},
@@ -231,7 +231,7 @@ void load_file_types()
 		{file_group::video, u8"genh"sv, {}, {}},
 		{
 			file_group::photo, u8"gif,giff"sv, u8"CompuServe's Graphics Interchange Format"sv,
-			file_type_traits::embedded_xmp | file_type_traits::edit
+			file_traits::embedded_xmp | file_traits::edit
 		},
 		{file_group::video, u8"gsm"sv, u8"GSM Full Rate"sv, {}},
 		{file_group::video, u8"gxf"sv, {}, {}},
@@ -249,7 +249,7 @@ void load_file_types()
 		{file_group::video, u8"idx"sv, {}, {}},
 		{file_group::photo, u8"iff"sv, u8"ILBM"sv, {}},
 		{file_group::video, u8"ifv"sv, {}, {}},
-		{file_group::photo, u8"iiq"sv, u8"Phase One raw"sv, file_type_traits::raw | file_type_traits::edit},
+		{file_group::photo, u8"iiq"sv, u8"Phase One raw"sv, file_traits::raw | file_traits::edit},
 		{file_group::audio, u8"imf"sv, {}, {}},
 		{file_group::video, u8"ircam"sv, {}, {}},
 		{file_group::video, u8"ism"sv, {}, {}},
@@ -266,9 +266,9 @@ void load_file_types()
 		{file_group::photo, u8"jp2"sv, u8"JPEG2000"sv, {}},
 		{
 			file_group::photo, u8"jpeg,jpg,jpe,jfif"sv, u8"Joint Photographic Experts Group"sv,
-			file_type_traits::embedded_xmp | file_type_traits::edit
+			file_traits::embedded_xmp | file_traits::edit
 		},
-		{file_group::photo, u8"jpx"sv, u8"Jpeg 2000"sv, file_type_traits::embedded_xmp | file_type_traits::edit},
+		{file_group::photo, u8"jpx"sv, u8"Jpeg 2000"sv, file_traits::embedded_xmp | file_traits::edit},
 		{file_group::video, u8"jss"sv, {}, {}},
 		{file_group::photo, u8"koa"sv, {}, {}},
 		{file_group::video, u8"kux"sv, {}, {}},
@@ -286,10 +286,10 @@ void load_file_types()
 		{file_group::video, u8"m2t"sv, {}, {}},
 		{file_group::video, u8"m2ts"sv, u8"MPEG-2 TS video"sv, {}},
 		{file_group::video, u8"mac"sv, {}, {}},
-		{file_group::photo, u8"mdc,mrw"sv, u8"Minolta  raw"sv, file_type_traits::raw | file_type_traits::edit},
+		{file_group::photo, u8"mdc,mrw"sv, u8"Minolta  raw"sv, file_traits::raw | file_traits::edit},
 		{file_group::audio, u8"mdl"sv, {}, {}},
 		{file_group::audio, u8"med"sv, {}, {}},
-		{file_group::photo, u8"mef"sv, u8"Mamiya raw"sv, file_type_traits::raw | file_type_traits::edit},
+		{file_group::photo, u8"mef"sv, u8"Mamiya raw"sv, file_traits::raw | file_traits::edit},
 		{file_group::video, u8"mj2"sv, {}, {}},
 		{file_group::video, u8"mjpeg"sv, {}, {}},
 		{file_group::video, u8"mjpg"sv, {}, {}},
@@ -304,47 +304,45 @@ void load_file_types()
 		{file_group::photo, u8"mng"sv, u8"Multiple Network Graphics animation"sv, {}},
 		{file_group::audio, u8"mo3"sv, {}, {}},
 		{file_group::audio, u8"mod"sv, {}, {}},
-		{file_group::photo, u8"mos"sv, u8"Leaf raw"sv, file_type_traits::raw | file_type_traits::edit},
+		{file_group::photo, u8"mos"sv, u8"Leaf raw"sv, file_traits::raw | file_traits::edit},
 		{
 			file_group::audio, u8"mp3"sv, u8"MPEG Layer 3"sv,
-			file_type_traits::embedded_xmp | file_type_traits::edit | file_type_traits::thumbnail
+			file_traits::embedded_xmp | file_traits::edit | file_traits::thumbnail
 		},
 		{
 			file_group::video, u8"mov"sv, {},
-			file_type_traits::embedded_xmp | file_type_traits::edit | file_type_traits::mp4
+			file_traits::embedded_xmp | file_traits::edit
 		},
 		{
 			file_group::video, u8"mp4,mp4a,mp4v,m4v,m4b,f4v,3g2,3gp2,3gp,3gpp,crm"sv, u8"MPEG-4"sv,
-			file_type_traits::embedded_xmp | file_type_traits::edit | file_type_traits::mp4
+			file_traits::embedded_xmp | file_traits::edit
 		},
 		{
 			file_group::video, u8"crm"sv, u8"Canon Cinema RAW Light"sv,
-			file_type_traits::embedded_xmp | file_type_traits::edit | file_type_traits::mp4
+			file_traits::embedded_xmp | file_traits::edit
 		},
 		{
 			file_group::audio, u8"m4a,mp4a,m4r"sv, u8"MPEG-4 Audio"sv,
-			file_type_traits::embedded_xmp | file_type_traits::edit | file_type_traits::mp4 |
-			file_type_traits::thumbnail
+			file_traits::embedded_xmp | file_traits::edit | file_traits::thumbnail
 		},
 		{
 			file_group::audio, u8"m4p"sv, u8"MPEG-4 (DRM)"sv,
-			file_type_traits::embedded_xmp | file_type_traits::edit | file_type_traits::mp4 |
-			file_type_traits::thumbnail
+			file_traits::embedded_xmp | file_traits::edit | file_traits::thumbnail
 		},
 		{file_group::audio, u8"mpc"sv, u8"Musepack"sv, {}},
 		{file_group::video, u8"mpd"sv, {}, {}},
 		{
 			file_group::video, u8"mpeg,mpg,mpe,m1v,m2v,mp2,mpv,m2p,m2t,mpe,vob,ms-pvr,dvr-ms"sv, u8"MPEG"sv,
-			file_type_traits::embedded_xmp | file_type_traits::edit
+			file_traits::embedded_xmp | file_traits::edit
 		},
-		{file_group::audio, u8"mpa,m2a"sv, u8"MPEG"sv, file_type_traits::embedded_xmp | file_type_traits::edit},
+		{file_group::audio, u8"mpa,m2a"sv, u8"MPEG"sv, file_traits::embedded_xmp | file_traits::edit},
 		{
 			file_group::photo, u8"heif, heifs, heic, heics, avci, avcs, avif, avifs"sv,
-			u8"High Efficiency Image File Format"sv, file_type_traits::embedded_xmp
+			u8"High Efficiency Image File Format"sv, file_traits::embedded_xmp
 		},
 		{file_group::video, u8"avc1"sv, u8"Advanced Video Coding"sv, {}},
 		{file_group::audio, u8"mptm"sv, {}, {}},
-		{file_group::photo, u8"mrw"sv, {}, file_type_traits::raw | file_type_traits::edit},
+		{file_group::photo, u8"mrw"sv, {}, file_traits::raw | file_traits::edit},
 		{file_group::video, u8"msbc"sv, {}, {}},
 		{file_group::video, u8"msf"sv, {}, {}},
 		{file_group::audio, u8"mt2"sv, {}, {}},
@@ -355,7 +353,7 @@ void load_file_types()
 		{file_group::video, u8"mvi"sv, {}, {}},
 		{file_group::video, u8"mxf"sv, u8"SMPTE Material Exchange Format"sv, {}},
 		{file_group::video, u8"mxg"sv, {}, {}},
-		{file_group::photo, u8"nef,nrw"sv, u8"Nikon  raw"sv, file_type_traits::raw | file_type_traits::edit},
+		{file_group::photo, u8"nef,nrw"sv, u8"Nikon  raw"sv, file_traits::raw | file_traits::edit},
 		{file_group::video, u8"nist"sv, {}, {}},
 		{file_group::photo, u8"nrw"sv, {}, {}},
 		{file_group::video, u8"nsp"sv, {}, {}},
@@ -371,14 +369,14 @@ void load_file_types()
 		{file_group::video, u8"oma"sv, {}, {}},
 		{file_group::video, u8"omg"sv, {}, {}},
 		{file_group::audio, u8"opus"sv, {}, {}},
-		{file_group::photo, u8"orf"sv, u8"Olympus raw"sv, file_type_traits::raw | file_type_traits::edit},
+		{file_group::photo, u8"orf"sv, u8"Olympus raw"sv, file_traits::raw | file_traits::edit},
 		{file_group::video, u8"paf"sv, {}, {}},
 		{file_group::video, u8"pam"sv, {}, {}},
 		{file_group::photo, u8"pbm"sv, u8"Portable bitmap"sv, {}},
 		{file_group::photo, u8"pcd"sv, {}, {}},
 		{file_group::photo, u8"pct"sv, u8"Apple Macintosh PICT image"sv, {}},
 		{file_group::photo, u8"pcx"sv, u8"ZSoft's PC Paint image"sv, {}},
-		{file_group::photo, u8"pef,ptx"sv, u8"Pentax raw"sv, file_type_traits::raw | file_type_traits::edit},
+		{file_group::photo, u8"pef,ptx"sv, u8"Pentax raw"sv, file_traits::raw | file_traits::edit},
 		{file_group::photo, u8"pfm"sv, {}, {}},
 		{file_group::photo, u8"pgm"sv, u8"Portable graymap"sv, {}},
 		{file_group::video, u8"pgmyuv"sv, {}, {}},
@@ -388,27 +386,27 @@ void load_file_types()
 		{file_group::audio, u8"plm"sv, {}, {}},
 		{
 			file_group::photo, u8"png"sv, u8"Portable Network Graphic"sv,
-			file_type_traits::embedded_xmp | file_type_traits::edit
+			file_traits::embedded_xmp | file_traits::edit
 		},
 		{file_group::audio, u8"ppm"sv, u8"Portable Pixmap"sv, {}},
 		{
 			file_group::photo, u8"psd"sv, u8"Adobe Photoshop Drawing"sv,
-			file_type_traits::embedded_xmp | file_type_traits::edit
+			file_traits::embedded_xmp | file_traits::edit
 		},
 		{file_group::audio, u8"psm"sv, {}, {}},
 		{file_group::video, u8"psp"sv, u8"Paint Shop Pro image"sv, {}},
 		{file_group::audio, u8"pt36"sv, {}, {}},
 		{file_group::audio, u8"ptm"sv, {}, {}},
 		{file_group::video, u8"pvf"sv, {}, {}},
-		{file_group::photo, u8"pxn"sv, u8"Logitech raw"sv, file_type_traits::raw | file_type_traits::edit},
+		{file_group::photo, u8"pxn"sv, u8"Logitech raw"sv, file_traits::raw | file_traits::edit},
 		{file_group::video, u8"qcif"sv, {}, {}},
-		{file_group::photo, u8"qtk"sv, u8"Apple Quicktake raw"sv, file_type_traits::raw | file_type_traits::edit},
+		{file_group::photo, u8"qtk"sv, u8"Apple Quicktake raw"sv, file_traits::raw | file_traits::edit},
 		{file_group::audio, u8"ra, rm"sv, u8"RealAudio"sv, {}},
-		{file_group::photo, u8"raf"sv, u8"Fuji raw"sv, file_type_traits::raw | file_type_traits::edit},
+		{file_group::photo, u8"raf"sv, u8"Fuji raw"sv, file_traits::raw | file_traits::edit},
 		{file_group::photo, u8"ras"sv, {}, {}},
 		{file_group::video, u8"rco"sv, {}, {}},
 		{file_group::video, u8"rcv"sv, {}, {}},
-		{file_group::photo, u8"rdc"sv, u8"Digital Foto Maker raw"sv, file_type_traits::raw | file_type_traits::edit},
+		{file_group::photo, u8"rdc"sv, u8"Digital Foto Maker raw"sv, file_traits::raw | file_traits::edit},
 		{file_group::video, u8"rmd,r3d"sv, u8"RED"sv, {}},
 		{file_group::video, u8"rgb"sv, u8"Silicon Graphics Image"sv, {}},
 		{file_group::video, u8"rm"sv, u8"RealAudio (RA, RM)"sv, {}},
@@ -416,10 +414,10 @@ void load_file_types()
 		{file_group::video, u8"rsd"sv, {}, {}},
 		{file_group::video, u8"rso"sv, {}, {}},
 		{file_group::video, u8"rt"sv, {}, {}},
-		{file_group::photo, u8"rw"sv, {}, file_type_traits::raw | file_type_traits::edit},
-		{file_group::photo, u8"rw2"sv, u8"Panasonic raw"sv, file_type_traits::raw | file_type_traits::edit},
-		{file_group::photo, u8"rwl"sv, u8"Leica raw"sv, file_type_traits::raw | file_type_traits::edit},
-		{file_group::photo, u8"rwz"sv, u8"Rawzor raw"sv, file_type_traits::raw | file_type_traits::edit},
+		{file_group::photo, u8"rw"sv, {}, file_traits::raw | file_traits::edit},
+		{file_group::photo, u8"rw2"sv, u8"Panasonic raw"sv, file_traits::raw | file_traits::edit},
+		{file_group::photo, u8"rwl"sv, u8"Leica raw"sv, file_traits::raw | file_traits::edit},
+		{file_group::photo, u8"rwz"sv, u8"Rawzor raw"sv, file_traits::raw | file_traits::edit},
 		{file_group::audio, u8"s3m"sv, {}, {}},
 		{file_group::video, u8"sami"sv, {}, {}},
 		{file_group::video, u8"sbc"sv, {}, {}},
@@ -439,7 +437,7 @@ void load_file_types()
 		{file_group::video, u8"spdif"sv, {}, {}},
 		{file_group::video, u8"sph"sv, {}, {}},
 		{file_group::audio, u8"spx"sv, u8"Speex low bitrate audio"sv, {}},
-		{file_group::photo, u8"srw"sv, u8"Samsung raw"sv, file_type_traits::raw | file_type_traits::edit},
+		{file_group::photo, u8"srw"sv, u8"Samsung raw"sv, file_traits::raw | file_traits::edit},
 		{file_group::video, u8"ss2"sv, {}, {}},
 		{file_group::video, u8"ssa"sv, {}, {}},
 		{file_group::audio, u8"st26"sv, {}, {}},
@@ -451,14 +449,14 @@ void load_file_types()
 		{file_group::video, u8"sub"sv, {}, {}},
 		{file_group::video, u8"sup"sv, {}, {}},
 		{file_group::video, u8"svag"sv, {}, {}},
-		{file_group::video, u8"swf"sv, u8"Macromedia Flash"sv, file_type_traits::embedded_xmp},
+		{file_group::video, u8"swf"sv, u8"Macromedia Flash"sv, file_traits::embedded_xmp},
 		{file_group::video, u8"tak"sv, u8"Tom's Lossless Audio Kompressor"sv, {}},
 		{file_group::photo, u8"tga,targa"sv, u8"Truevision TGA (Targa) image"sv, {}},
 		{file_group::video, u8"tco"sv, {}, {}},
 		{file_group::video, u8"thd"sv, {}, {}},
 		{
 			file_group::photo, u8"tiff, tif"sv, u8"Tagged Image File Format"sv,
-			file_type_traits::embedded_xmp | file_type_traits::edit
+			file_traits::embedded_xmp | file_traits::edit
 		},
 		{file_group::photo, u8"cin"sv, u8"Kodak Cineon Image"sv, {}},
 		{file_group::photo, u8"dpx"sv, u8"Digital Picture Exchange"sv, {}},
@@ -482,25 +480,25 @@ void load_file_types()
 		{file_group::video, u8"vql"sv, {}, {}},
 		{file_group::video, u8"w64"sv, {}, {}},
 		{file_group::photo, u8"wap"sv, {}, {}},
-		{file_group::audio, u8"wav"sv, u8"Microsoft Wave"sv, file_type_traits::embedded_xmp | file_type_traits::edit},
+		{file_group::audio, u8"wav"sv, u8"Microsoft Wave"sv, file_traits::embedded_xmp | file_traits::edit},
 		{file_group::photo, u8"wbm"sv, {}, {}},
-		{file_group::photo, u8"wbmp"sv, {}, file_type_traits::embedded_xmp | file_type_traits::edit},
+		{file_group::photo, u8"wbmp"sv, {}, file_traits::embedded_xmp | file_traits::edit},
 		{file_group::video, u8"web"sv, {}, {}},
 		{file_group::video, u8"webm"sv, {}, {}},
-		{file_group::photo, u8"webp"sv, {}, file_type_traits::embedded_xmp | file_type_traits::edit},
+		{file_group::photo, u8"webp"sv, {}, file_traits::embedded_xmp | file_traits::edit},
 		{
 			file_group::audio, u8"wma"sv, u8"Windows Media Audio 9"sv,
-			file_type_traits::embedded_xmp | file_type_traits::edit
+			file_traits::embedded_xmp | file_traits::edit
 		},
 		{
 			file_group::video, u8"wmv,wm"sv, u8"Windows Media video"sv,
-			file_type_traits::embedded_xmp | file_type_traits::edit
+			file_traits::embedded_xmp | file_traits::edit
 		},
 		{file_group::audio, u8"wow"sv, {}, {}},
 		{file_group::video, u8"wsd"sv, {}, {}},
 		{file_group::video, u8"wtv"sv, {}, {}},
 		{file_group::audio, u8"wv"sv, u8"WavPack"sv, {}},
-		{file_group::photo, u8"x3f"sv, u8"Sigma raw"sv, file_type_traits::raw | file_type_traits::edit},
+		{file_group::photo, u8"x3f"sv, u8"Sigma raw"sv, file_traits::raw | file_traits::edit},
 		{file_group::photo, u8"xbm"sv, u8"X Window System Bitmap"sv, {}},
 		{file_group::video, u8"xl"sv, {}, {}},
 		{file_group::audio, u8"xm"sv, {}, {}},
@@ -514,27 +512,27 @@ void load_file_types()
 		{file_group::video, u8"yuv"sv, u8"Raw YUV video format"sv, {}},
 		{file_group::video, u8"yuv10"sv, {}, {}},
 
-		{ file_group::archive, u8"zip"sv, {}, { file_type_traits::archive } },
-		{ file_group::archive, u8"rar"sv, {}, { file_type_traits::archive } },
-		{ file_group::archive, u8"7z"sv, {}, { file_type_traits::archive } },
-		{ file_group::archive, u8"gz"sv, {}, { file_type_traits::archive } },
-		{ file_group::archive, u8"tgz"sv, {}, { file_type_traits::archive } },
-		{ file_group::archive, u8"cpio"sv, {}, { file_type_traits::archive } },
-		{ file_group::archive, u8"iso"sv, {}, { file_type_traits::archive } },
-		{ file_group::archive, u8"cab"sv, {}, { file_type_traits::archive } },
-		{ file_group::archive, u8"pax"sv, {}, { file_type_traits::archive } },
-		{ file_group::archive, u8"lzip"sv, {}, { file_type_traits::archive } },
-		{ file_group::archive, u8"lza"sv, {}, { file_type_traits::archive } },
-		{ file_group::archive, u8"bzip2,bz2"sv, {}, { file_type_traits::archive } },
-		{ file_group::archive, u8"tar"sv, {}, { file_type_traits::archive } },
-		{ file_group::archive, u8"lha"sv, {}, { file_type_traits::archive } },
-		{ file_group::archive, u8"lza"sv, {}, { file_type_traits::archive } },
-		{ file_group::archive, u8"a,ar"sv, {}, { file_type_traits::archive } },
+		{ file_group::archive, u8"zip"sv, {}, { file_traits::archive } },
+		{ file_group::archive, u8"rar"sv, {}, { file_traits::archive } },
+		{ file_group::archive, u8"7z"sv, {}, { file_traits::archive } },
+		{ file_group::archive, u8"gz"sv, {}, { file_traits::archive } },
+		{ file_group::archive, u8"tgz"sv, {}, { file_traits::archive } },
+		{ file_group::archive, u8"cpio"sv, {}, { file_traits::archive } },
+		{ file_group::archive, u8"iso"sv, {}, { file_traits::archive } },
+		{ file_group::archive, u8"cab"sv, {}, { file_traits::archive } },
+		{ file_group::archive, u8"pax"sv, {}, { file_traits::archive } },
+		{ file_group::archive, u8"lzip"sv, {}, { file_traits::archive } },
+		{ file_group::archive, u8"lza"sv, {}, { file_traits::archive } },
+		{ file_group::archive, u8"bzip2,bz2"sv, {}, { file_traits::archive } },
+		{ file_group::archive, u8"tar"sv, {}, { file_traits::archive } },
+		{ file_group::archive, u8"lha"sv, {}, { file_traits::archive } },
+		{ file_group::archive, u8"lza"sv, {}, { file_traits::archive } },
+		{ file_group::archive, u8"a,ar"sv, {}, { file_traits::archive } },
 
-		{ file_group::commodore, u8"d64"sv, {}, { file_type_traits::disk_image | file_type_traits::commodore } },
-		{ file_group::commodore, u8"d81"sv, {}, { file_type_traits::disk_image | file_type_traits::commodore } },
-		{ file_group::commodore, u8"t64"sv, {}, { file_type_traits::commodore } },
-		{ file_group::commodore, u8"crt"sv, {}, { file_type_traits::commodore } },
+		{ file_group::commodore, u8"d64"sv, {}, { file_traits::disk_image | file_traits::commodore } },
+		{ file_group::commodore, u8"d81"sv, {}, { file_traits::disk_image | file_traits::commodore } },
+		{ file_group::commodore, u8"t64"sv, {}, { file_traits::commodore } },
+		{ file_group::commodore, u8"crt"sv, {}, { file_traits::commodore } },
 	};
 
 	int next_id = 0;
@@ -824,13 +822,13 @@ bool files::can_save_extension(const std::u8string_view ext)
 bool files::is_raw(const df::file_path path)
 {
 	const auto* const mt = file_type_from_name(path);
-	return (mt->traits & file_type_traits::raw) != file_type_traits::none;
+	return (mt->traits & file_traits::raw) != file_traits::none;
 }
 
 bool files::is_raw(const std::u8string_view name)
 {
 	const auto* const mt = file_type_from_name(name);
-	return (mt->traits & file_type_traits::raw) != file_type_traits::none;
+	return (mt->traits & file_traits::raw) != file_traits::none;
 }
 
 bool files::is_jpeg(const df::file_path path)
@@ -1428,8 +1426,8 @@ file_scan_result files::scan_file(const df::file_path path, const bool load_thum
 		if (f)
 		{
 			const auto file_len = f->size();
-			const bool is_bitmap = ft->has_trait(file_type_traits::bitmap);
-			const auto is_raw = ft->has_trait(file_type_traits::raw);
+			const bool is_bitmap = ft->has_trait(file_traits::bitmap);
+			const auto is_raw = ft->has_trait(file_traits::raw);
 			const auto is_small_file = file_len < df::two_fifty_six_k;
 			const auto load_from_mem = load_thumb && !is_raw && is_bitmap;
 
@@ -1487,7 +1485,7 @@ file_scan_result files::scan_file(const df::file_path path, const bool load_thum
 					}
 				}
 			}
-			else if (ft->has_trait(file_type_traits::av))
+			else if (ft->has_trait(file_traits::av))
 			{
 				/*if (ft->traits && file_type_traits::embedded_xmp)
 				{
@@ -1507,7 +1505,7 @@ file_scan_result files::scan_file(const df::file_path path, const bool load_thum
 						int pos_numerator = 10;
 						int pos_denominator = 100;
 
-						if (!ft->has_trait(file_type_traits::thumbnail))
+						if (!ft->has_trait(file_traits::thumbnail))
 						{
 							pos_numerator = 0;
 						}
@@ -1602,9 +1600,9 @@ file_load_result files::load(const df::file_path path, bool can_load_preview)
 	file_load_result result;
 	const auto* const mt = file_type_from_name(path);
 
-	if (mt->has_trait(file_type_traits::bitmap))
+	if (mt->has_trait(file_traits::bitmap))
 	{
-		if (mt->has_trait(file_type_traits::raw))
+		if (mt->has_trait(file_traits::raw))
 		{
 			result = load_raw(path, can_load_preview);
 		}
@@ -1653,7 +1651,7 @@ file_load_result files::load(const df::file_path path, bool can_load_preview)
 			}
 		}
 	}
-	else if (mt->has_trait(file_type_traits::av))
+	else if (mt->has_trait(file_traits::av))
 	{
 		// Not supported
 	}
@@ -1766,7 +1764,7 @@ platform::file_op_result files::update(const df::file_path path_src, const df::f
 
 		file_scan_result scan_result;
 
-		if (mt->has_trait(file_type_traits::bitmap))
+		if (mt->has_trait(file_traits::bitmap))
 		{
 			file_read_stream stream;
 

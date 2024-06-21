@@ -617,7 +617,7 @@ namespace df
 
 		std::u8string_view extension() const
 		{
-			if (_ft->has_trait(file_type_traits::folder)) return {};
+			if (is_folder()) return {};
 			const std::u8string_view sv = _name;
 			const auto ext = find_ext(sv);
 			return sv.substr(ext);
@@ -626,6 +626,11 @@ namespace df
 		bool is_media() const
 		{
 			return _ft->is_media();
+		}
+
+		bool is_folder() const
+		{
+			return _ft == file_type::folder;
 		}
 
 		virtual item_display_info populate_info() const = 0;
@@ -995,7 +1000,7 @@ namespace df
 
 		bool should_load_thumbnail() const override
 		{
-			if (!_ft->has_trait(file_type_traits::bitmap) && !_ft->has_trait(file_type_traits::av))
+			if (!_ft->has_trait(file_traits::bitmap) && !_ft->has_trait(file_traits::av))
 				return false;
 
 			if (_is_loading_thumbnail || _failed_loading_thumbnail || _shell_thumbnail_pending || _db_thumbnail_pending)
@@ -1688,14 +1693,6 @@ namespace df
 			if (modified.width > 0) result += modified.width + text_padding;
 			return result;
 		}
-	};
-
-	enum class group_key_type
-	{
-		folder = 0,
-		grouped_value = 10,
-		grouped_no_value = 20,
-		other = 30,
 	};
 
 	struct group_key

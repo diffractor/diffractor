@@ -16,15 +16,12 @@
 #include "ui_controllers.h"
 #include "ui_controls.h"
 
-static constexpr auto today_order = 100;
-
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
-
 
 static_assert(std::is_trivially_copyable_v<df::group_key>);
 static_assert(std::is_trivially_copyable_v<df::file_group_histogram>);
@@ -38,10 +35,11 @@ static_assert(std::is_trivially_copyable_v<df::file_group_histogram>);
 static df::group_key media_type_index(const df::item_element_ptr& i)
 {
 	df::group_key result;
-	const auto* const ft = i->file_type();
-	if (ft->has_trait(file_type_traits::folder)) return {df::group_key_type::folder};
-	result.order1 = ft->group->id;
-	result.type = (ft->group == file_group::other) ? df::group_key_type::other : df::group_key_type::grouped_value;
+	const auto ft = i->file_type();
+	const auto group_key = ft->group->key;
+
+	result.order1 = ft->group->id;	
+	result.type = group_key;
 	result.text1 = str::cache(ft->display_name(true));
 	result.group = ft->group;
 	return result;
@@ -50,7 +48,7 @@ static df::group_key media_type_index(const df::item_element_ptr& i)
 static df::group_key shuffle_index_key(const df::item_element_ptr& i)
 {
 	df::group_key result;
-	result.type = df::group_key_type::grouped_value;
+	result.type = group_key_type::grouped_value;
 	return result;
 }
 
@@ -61,7 +59,7 @@ static df::group_key extension_key(const df::item_element_ptr& i)
 
 	if (!ext.empty())
 	{
-		result.type = df::group_key_type::grouped_value;
+		result.type = group_key_type::grouped_value;
 		if (ext.front() == L'.') ext = ext.substr(1);
 		result.text1 = str::cache(ext);
 	}
@@ -72,7 +70,7 @@ static df::group_key extension_key(const df::item_element_ptr& i)
 static df::group_key folder_key(const df::file_item_ptr& i)
 {
 	df::group_key result;
-	result.type = df::group_key_type::grouped_value;
+	result.type = group_key_type::grouped_value;
 	result.text1 = i->folder().text();
 	return result;
 }
@@ -80,7 +78,7 @@ static df::group_key folder_key(const df::file_item_ptr& i)
 static df::group_key folder_key(const df::folder_item_ptr& i)
 {
 	df::group_key result;
-	result.type = df::group_key_type::grouped_value;
+	result.type = group_key_type::grouped_value;
 	result.text1 = i->path().parent().text();
 	return result;
 }
@@ -89,13 +87,13 @@ static df::group_key location_key(const df::item_element_ptr& i)
 {
 	df::group_key result;
 	const auto* const ft = i->file_type();
-	if (ft->has_trait(file_type_traits::folder)) return {df::group_key_type::folder};
+	if (ft->has_trait(file_traits::no_metadata_grouping)) return {ft->group->key };
 
 	const auto md = i->metadata();
 
 	if (md && !is_empty(md->location_country))
 	{
-		result.type = df::group_key_type::grouped_value;
+		result.type = group_key_type::grouped_value;
 		result.text1 = normalize_county_name(md->location_country);
 		result.text2 = md->location_state;
 		result.text3 = md->location_place;
@@ -108,13 +106,13 @@ static df::group_key camera_key(const df::item_element_ptr& i)
 {
 	df::group_key result;
 	const auto* const ft = i->file_type();
-	if (ft->has_trait(file_type_traits::folder)) return {df::group_key_type::folder};
+	if (ft->has_trait(file_traits::no_metadata_grouping)) return { ft->group->key };
 
 	const auto md = i->metadata();
 
 	if (md && !is_empty(md->camera_manufacturer))
 	{
-		result.type = df::group_key_type::grouped_value;
+		result.type = group_key_type::grouped_value;
 		result.text1 = md->camera_manufacturer;
 		result.text2 = md->camera_model;
 	}
@@ -126,7 +124,7 @@ static df::group_key album_show_key(const df::item_element_ptr& i)
 {
 	df::group_key result;
 	const auto* const ft = i->file_type();
-	if (ft->has_trait(file_type_traits::folder)) return {df::group_key_type::folder};
+	if (ft->has_trait(file_traits::no_metadata_grouping)) return { ft->group->key };
 
 	const auto md = i->metadata();
 
@@ -134,7 +132,7 @@ static df::group_key album_show_key(const df::item_element_ptr& i)
 	{
 		if (!is_empty(md->show))
 		{
-			result.type = df::group_key_type::grouped_value;
+			result.type = group_key_type::grouped_value;
 			result.text1 = md->show;
 			result.text1_prop_type = prop::show;
 
@@ -145,7 +143,7 @@ static df::group_key album_show_key(const df::item_element_ptr& i)
 		}
 		else if (!is_empty(md->album_artist) || !is_empty(md->artist) || !is_empty(md->album))
 		{
-			result.type = df::group_key_type::grouped_value;
+			result.type = group_key_type::grouped_value;
 
 			if (!is_empty(md->album_artist))
 			{
@@ -172,9 +170,9 @@ static df::group_key size_key(const df::item_element_ptr& i)
 {
 	df::group_key result;
 	const auto size_bucket = prop::size_bucket(i->file_size().to_int64());
-	if (size_bucket == 0) return {df::group_key_type::grouped_no_value};
+	if (size_bucket == 0) return {group_key_type::grouped_no_value};
 	result.order1 = df::isqrt(size_bucket);
-	result.type = df::group_key_type::grouped_value;
+	result.type = group_key_type::grouped_value;
 	return result;
 }
 
@@ -185,7 +183,7 @@ static df::group_key rating_key(const df::item_element_ptr& i)
 {
 	df::group_key result;
 	const auto* const ft = i->file_type();
-	if (ft->has_trait(file_type_traits::folder)) return {df::group_key_type::folder};
+	if (ft->has_trait(file_traits::no_metadata_grouping)) return { ft->group->key };
 
 	const auto md = i->metadata();
 
@@ -193,7 +191,7 @@ static df::group_key rating_key(const df::item_element_ptr& i)
 	{
 		if (md->rating != 0)
 		{
-			result.type = df::group_key_type::grouped_value;
+			result.type = group_key_type::grouped_value;
 
 			if (md->rating == -1)
 			{
@@ -208,7 +206,7 @@ static df::group_key rating_key(const df::item_element_ptr& i)
 		if (!is_empty(md->label))
 		{
 			result.text1 = md->label;
-			result.type = df::group_key_type::grouped_value;
+			result.type = group_key_type::grouped_value;
 		}
 	}
 
@@ -219,8 +217,8 @@ static df::group_key date_key(const prop::key_ref prop, const df::date_t when, c
 {
 	df::group_key result;
 	const auto* const ft = i->file_type();
-	if (ft->has_trait(file_type_traits::folder)) return {df::group_key_type::folder};
-	result.type = df::group_key_type::grouped_value;
+	if (i->is_folder()) return {group_key_type::folder};
+	result.type = group_key_type::grouped_value;
 
 	if (when.is_valid())
 	{
@@ -250,7 +248,7 @@ static df::group_key resolution_key(const df::item_element_ptr& i)
 {
 	df::group_key result;
 	const auto* const ft = i->file_type();
-	if (ft->has_trait(file_type_traits::folder)) return {df::group_key_type::folder};
+	if (ft->has_trait(file_traits::no_metadata_grouping)) return { ft->group->key };
 
 	const auto md = i->metadata();
 
@@ -259,13 +257,13 @@ static df::group_key resolution_key(const df::item_element_ptr& i)
 		const auto extent = sizei{md->width, md->height};
 		const auto display_name = ft->group->display_name(true);
 
-		if (ft->has_trait(file_type_traits::av))
+		if (ft->has_trait(file_traits::av))
 		{
 			const auto video_res = prop::format_video_resolution(extent);
 
 			if (!video_res.empty())
 			{
-				result.type = df::group_key_type::grouped_value;
+				result.type = group_key_type::grouped_value;
 				result.order1 = ft->group->id;
 				result.order2 = 1 + df::isqrt(extent.cx * extent.cy);
 				result.text1 = str::cache(display_name);
@@ -273,7 +271,7 @@ static df::group_key resolution_key(const df::item_element_ptr& i)
 				return result;
 			}
 
-			result.type = df::group_key_type::grouped_value;
+			result.type = group_key_type::grouped_value;
 			result.order1 = ft->group->id;
 			result.order2 = 1 + df::isqrt(extent.cx * extent.cy);
 			result.text1 = str::cache(display_name);
@@ -283,7 +281,7 @@ static df::group_key resolution_key(const df::item_element_ptr& i)
 		{
 			if (extent.cx <= 128 && extent.cy <= 128)
 			{
-				result.type = df::group_key_type::grouped_value;
+				result.type = group_key_type::grouped_value;
 				result.order1 = 1;
 				result.order2 = 0;
 				result.text1 = str::cache(display_name);
@@ -295,7 +293,7 @@ static df::group_key resolution_key(const df::item_element_ptr& i)
 
 				if (mp < 0.9)
 				{
-					result.type = df::group_key_type::grouped_value;
+					result.type = group_key_type::grouped_value;
 					result.order1 = 1;
 					result.order2 = 1;
 					result.text1 = str::cache(display_name);
@@ -304,7 +302,7 @@ static df::group_key resolution_key(const df::item_element_ptr& i)
 				else
 				{
 					const auto n = prop::exp_round(mp);
-					result.type = df::group_key_type::grouped_value;
+					result.type = group_key_type::grouped_value;
 					result.order1 = 1;
 					result.order2 = 1 + df::isqrt(n);
 					result.text1 = str::cache(display_name);
@@ -575,7 +573,7 @@ static df::group_key presence_key(const item_presence& pr)
 {
 	df::group_key result;
 	result.order1 = static_cast<int>(pr);
-	result.type = df::group_key_type::grouped_value;
+	result.type = group_key_type::grouped_value;
 
 	switch (pr)
 	{
@@ -891,6 +889,26 @@ std::shared_ptr<group_title_control> df::build_group_title(view_state& s, const 
 	{
 		add_title_link(file_group::folder.display_name(true), {});
 	}
+	else if (key.type == group_key_type::archive)
+	{
+		add_title_link(file_group::archive.display_name(true), {});
+	}
+	else if (key.type == group_key_type::retro)
+	{
+		add_title_link(file_group::commodore.display_name(true), {});
+	}
+	else if (key.type == group_key_type::audio)
+	{
+		add_title_link(file_group::audio.display_name(true), {});
+	}
+	else if (key.type == group_key_type::video)
+	{
+		add_title_link(file_group::audio.display_name(true), {});
+	}
+	else if (key.type == group_key_type::photo)
+	{
+		add_title_link(file_group::photo.display_name(true), {});
+	}
 	else
 	{
 		add_title_link(tt.group_title_items, {});
@@ -900,8 +918,10 @@ std::shared_ptr<group_title_control> df::build_group_title(view_state& s, const 
 
 	if (key.type == group_key_type::folder)
 	{
-		result->elements.emplace_back(make_icon_link_element(icon_index::recursive, commands::browse_recursive,
+		result->elements.emplace_back(make_icon_link_element(icon_index::new_folder, commands::tool_new_folder,
 		                                                     view_element_style::right_justified));
+		result->elements.emplace_back(make_icon_link_element(icon_index::recursive, commands::browse_recursive,
+			view_element_style::right_justified));
 	}
 
 
@@ -1009,6 +1029,14 @@ void df::item_group::update_scroll_info(const group_by order)
 	else if (_key.type == group_key_type::folder)
 	{
 		icon = icon_index::folder;
+	}
+	else if (_key.type == group_key_type::archive)
+	{
+		icon = icon_index::archive;
+	}
+	else if (_key.type == group_key_type::retro)
+	{
+		icon = icon_index::retro;
 	}
 }
 
@@ -1143,13 +1171,11 @@ void view_state::update_item_groups()
 		}
 		else
 		{
-			const auto is_detail_display = i.first.type == df::group_key_type::folder
-				                               ? setting.detail_folder_items
-				                               : setting.detail_file_items;
-			b = std::make_shared<df::item_group>(*this, std::move(i.second),
-			                                     is_detail_display
-				                                     ? df::item_group_display::detail
-				                                     : df::item_group_display::icons, i.first);
+			const auto key = i.first.type;
+			const auto is_detail_display = setting.detail_items & static_cast<uint32_t>(key);
+			const auto item_group_display = is_detail_display ? df::item_group_display::detail : df::item_group_display::icons;
+
+			b = std::make_shared<df::item_group>(*this, std::move(i.second), item_group_display, i.first);
 			b->padding(0);
 			b->margin(8, 0);
 		}
@@ -1452,17 +1478,19 @@ void df::item_group::display(const item_group_display d)
 	}
 }
 
-
 void df::item_group::toggle_display()
 {
 	display(_display == item_group_display::icons ? item_group_display::detail : item_group_display::icons);
 
-	if (_key.type == group_key_type::folder)
+	if (_display == item_group_display::detail)
 	{
-		setting.detail_folder_items = _display == item_group_display::detail;
+		setting.detail_items = setting.detail_items | static_cast<uint64_t>(_key.type);
+	}
+	else
+	{
+		setting.detail_items &= ~static_cast<uint64_t>(_key.type);
 	}
 }
-
 
 void df::item_group::update_row_layout(ui::measure_context& mc) const
 {
@@ -1767,7 +1795,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 	const auto* const ft = file_type();
 	const auto is_highlight = is_style_bit_set(view_element_style::highlight);
 	const auto is_hover = is_style_bit_set(view_element_style::hover);
-	const auto is_folder = ft->has_trait(file_type_traits::folder);
+	const auto is_folder = ft == file_type::folder;
 	const auto is_focus = s.focus_item().get() == this;
 	const auto is_selected = this->is_selected();
 
@@ -2402,7 +2430,7 @@ df::process_result df::item_set::can_process(process_items_type file_types, bool
 	{
 		const auto* const ft = i->file_type();
 
-		if (file_types == process_items_type::photos_only && !ft->has_trait(file_type_traits::bitmap))
+		if (file_types == process_items_type::photos_only && !ft->has_trait(file_traits::bitmap))
 		{
 			result.record_error(i, process_result_code::not_photo, mark_errors, view);
 		}
@@ -2421,12 +2449,12 @@ df::process_result df::item_set::can_process(process_items_type file_types, bool
 
 		if (file_types == process_items_type::can_save_metadata)
 		{
-			if (ft->traits && file_type_traits::embedded_xmp && i->is_read_only())
+			if (ft->traits && file_traits::embedded_xmp && i->is_read_only())
 			{
 				result.record_error(i, process_result_code::cannot_embed_xmp, mark_errors, view);
 			}
 
-			if (!(ft->traits && file_type_traits::edit))
+			if (!(ft->traits && file_traits::edit))
 			{
 				result.record_error(i, process_result_code::cannot_edit, mark_errors, view);
 			}

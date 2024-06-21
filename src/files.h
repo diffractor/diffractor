@@ -15,6 +15,18 @@
 #include "model_location.h"
 #include "model_propery.h"
 
+enum class group_key_type : uint32_t
+{
+	folder = 1 << 0,
+	photo = 1 << 1,
+	video = 1 << 2,
+	audio = 1 << 3,
+	grouped_value = 1 << 4,
+	grouped_no_value = 1 << 5,
+	archive = 1 << 6,
+	retro = 1 << 7,
+	other = 1 << 8,
+};
 
 template <class tStringObj>
 class TXMPMeta;
@@ -43,13 +55,12 @@ using file_type_by_extension = df::hash_map<std::u8string_view, file_type_ref, d
 using file_tool_by_extension = df::hash_map<std::u8string_view, file_tool*, df::ihash, df::ieq>;
 using file_tool_by_name = df::hash_map<std::u8string_view, file_tool*, df::ihash, df::ieq>;
 
-enum class file_type_traits : uint32_t
+enum class file_traits : uint32_t
 {
 	none = 0,
 	raw = 1 << 0,
 	embedded_xmp = 1 << 1,
-	mp4 = 1 << 2,
-	web = 1 << 3,
+	no_metadata_grouping = 1 << 3,
 	disk_image = 1 << 4,
 	text = 1 << 5,
 	visualize_audio = 1 << 6,
@@ -68,23 +79,20 @@ enum class file_type_traits : uint32_t
 	bitmap = 1 << 21,
 	archive = 1 << 22,
 	commodore = 1 << 23,
-
-	other = 1 << 24,
-	folder = 1 << 25,
 };
 
 
-constexpr file_type_traits operator|(file_type_traits a, file_type_traits b)
+constexpr file_traits operator|(file_traits a, file_traits b)
 {
-	return static_cast<file_type_traits>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
+	return static_cast<file_traits>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
 }
 
-constexpr file_type_traits operator&(file_type_traits a, file_type_traits b)
+constexpr file_traits operator&(file_traits a, file_traits b)
 {
-	return static_cast<file_type_traits>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
+	return static_cast<file_traits>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
 }
 
-constexpr bool operator&&(file_type_traits a, file_type_traits b)
+constexpr bool operator&&(file_traits a, file_traits b)
 {
 	return (static_cast<uint32_t>(a) & static_cast<uint32_t>(b)) != 0;
 }
@@ -110,22 +118,25 @@ public:
 		const std::u8string_view plural_name,
 		const ui::color32 color,
 		const icon_index icon,
-		const file_type_traits traits,
+		const file_traits traits,
+		const group_key_type key,
 		std::vector<std::u8string_view> sidecars)
 		: name(name),
 		  plural_name(plural_name),
 		  color(color),
 		  icon(icon),
 		  traits(traits),
+		  key(key),
 		  sidecars(std::move(sidecars))
 	{
 	}
 
 	std::u8string_view name;
 	std::u8string_view plural_name;
+	group_key_type key;
 	ui::color32 color;
 	icon_index icon = icon_index::document;
-	file_type_traits traits = file_type_traits::none;
+	file_traits traits = file_traits::none;
 	std::vector<std::u8string_view> sidecars;
 	std::vector<file_tool*> tools;
 
@@ -148,7 +159,7 @@ public:
 		return 1 << (id % 8);
 	}
 
-	bool has_trait(const file_type_traits t) const
+	bool has_trait(const file_traits t) const
 	{
 		return traits && t;
 	}
@@ -175,7 +186,7 @@ public:
 	file_group_ref group = nullptr;
 	std::u8string_view extension;
 	std::u8string_view text;
-	file_type_traits traits = file_type_traits::none;
+	file_traits traits = file_traits::none;
 	icon_index icon = icon_index::document;
 	std::vector<std::u8string_view> sidecars;
 	std::vector<file_tool*> tools;
@@ -184,7 +195,7 @@ public:
 	static file_type other;
 
 	file_type(const file_group_ref group, const std::u8string_view extension, const std::u8string_view text,
-	          const file_type_traits traits)
+	          const file_traits traits)
 		: group(group),
 		  extension(extension),
 		  text(text),
@@ -192,29 +203,29 @@ public:
 	{
 	}
 
-	bool has_trait(const file_type_traits t) const
+	bool has_trait(const file_traits t) const
 	{
 		return (traits && t) || group->has_trait(t);
 	}
 
 	bool is_media() const
 	{
-		return has_trait(file_type_traits::bitmap) || has_trait(file_type_traits::av);
+		return has_trait(file_traits::bitmap) || has_trait(file_traits::av);
 	}
 
 	bool can_cache() const
 	{
-		return has_trait(file_type_traits::cache_metadata);
+		return has_trait(file_traits::cache_metadata);
 	}
 
 	bool is_playable() const
 	{
-		return has_trait(file_type_traits::av);
+		return has_trait(file_traits::av);
 	}
 
 	bool can_edit() const
 	{
-		return has_trait(file_type_traits::edit);
+		return has_trait(file_traits::edit);
 	}
 
 	std::u8string display_name(const bool is_plural) const { return group->display_name(is_plural); }

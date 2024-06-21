@@ -207,7 +207,7 @@ void view_state::load_hover_thumb(const df::item_element_ptr& drawable_item, dou
 	const auto item = std::dynamic_pointer_cast<df::file_item>(drawable_item);
 
 	if (item &&
-		(item->file_type()->group->traits && file_type_traits::preview_video) &&
+		(item->file_type()->group->traits && file_traits::preview_video) &&
 		item->online_status() == df::item_online_status::disk &&
 		df::file_handles_detached == 0)
 	{
@@ -499,7 +499,7 @@ void view_state::play(const view_host_base_ptr& view)
 			{
 				_common_display_state._is_playing = true;
 
-				if (i->file_type()->has_trait(file_type_traits::av) && d->_session)
+				if (i->file_type()->has_trait(file_traits::av) && d->_session)
 				{
 					setting.auto_play = true;
 					_player->play(d->_session);
@@ -1291,7 +1291,7 @@ static std::vector<view_element_ptr> format_dims(uint16_t width, uint16_t height
 		if (is_rank) element->foreground_color(calc_rank_color());
 		results.emplace_back(element);
 
-		if (ft->has_trait(file_type_traits::av))
+		if (ft->has_trait(file_traits::av))
 		{
 			const auto video_res = prop::format_video_resolution(dims);
 
@@ -1704,7 +1704,7 @@ static std::vector<view_element_ptr> create_comp_controls(view_state& s, const s
 	controls.emplace_back(std::make_shared<pin_control>(s, i, true, view_element_style::none));
 	controls.emplace_back(std::make_shared<rate_label_control>(s, i, true, view_element_style::none));
 
-	if (i->file_type()->has_trait(file_type_traits::edit))
+	if (i->file_type()->has_trait(file_traits::edit))
 	{
 		controls.emplace_back(std::make_shared<rating_control>(s, i, true, view_element_style::none));
 	}
@@ -1760,7 +1760,7 @@ view_elements_ptr view_state::create_selection_controls()
 
 				//elements.emplace_back(std::make_shared<divider_element2>());
 
-				if (ft->has_trait(file_type_traits::av))
+				if (ft->has_trait(file_traits::av))
 				{
 					elements.emplace_back(std::make_shared<scrubber_element>(_player, d));
 				}
@@ -1795,7 +1795,7 @@ view_elements_ptr view_state::create_selection_controls()
 				title->elements.emplace_back(
 					std::make_shared<rate_label_control>(s, item, true, view_element_style::right_justified));
 
-				if (item->file_type()->has_trait(file_type_traits::edit))
+				if (item->file_type()->has_trait(file_traits::edit))
 				{
 					title->elements.emplace_back(
 						std::make_shared<rating_control>(s, item, true, view_element_style::right_justified));
@@ -2776,8 +2776,8 @@ void view_state::load_display_state()
 		if (new_display->is_one())
 		{
 			const auto display_file_type = display_item->file_type();
-			const auto is_bitmap = display_file_type->has_trait(file_type_traits::bitmap);
-			const auto is_av = display_file_type->has_trait(file_type_traits::av);
+			const auto is_bitmap = display_file_type->has_trait(file_traits::bitmap);
+			const auto is_av = display_file_type->has_trait(file_traits::av);
 			const auto is_playable = display_item && display_file_type->is_playable();
 
 			if (is_playable)
@@ -2818,7 +2818,7 @@ void view_state::load_display_state()
 				{
 					df::scope_locked_inc l(df::loading_media);					
 
-					if (display_item->file_type()->has_trait(file_type_traits::archive))
+					if (display_item->file_type()->group == file_group::archive)
 					{
 						auto archive_items = files::list_archive(display_item->path());
 
@@ -2938,7 +2938,7 @@ void view_state::tick(const view_host_base_ptr& view, const double time_now)
 		{
 			const auto slide_show_ticks = setting.slideshow_delay * ui::default_ticks_per_second;
 			const auto display_item = d->_item1;
-			const auto is_photo = display_item && display_item->file_type()->has_trait(file_type_traits::bitmap);
+			const auto is_photo = display_item && display_item->file_type()->has_trait(file_traits::bitmap);
 
 			if (is_photo)
 			{
@@ -3379,12 +3379,12 @@ void display_state_t::populate(view_state& state)
 		const auto file_type1 = _item1->file_type();
 		const auto file_type2 = _item2->file_type();
 
-		_can_compare = file_type1->has_trait(file_type_traits::bitmap) && file_type2->has_trait(
-			file_type_traits::bitmap);
+		_can_compare = file_type1->has_trait(file_traits::bitmap) && file_type2->has_trait(
+			file_traits::bitmap);
 
 		_is_compare_video =
-			file_type1->has_trait(file_type_traits::av) &&
-			file_type2->has_trait(file_type_traits::av) &&
+			file_type1->has_trait(file_traits::av) &&
+			file_type2->has_trait(file_traits::av) &&
 			_item1->online_status() == df::item_online_status::disk &&
 			_item2->online_status() == df::item_online_status::disk;
 	}
@@ -3492,8 +3492,8 @@ texture_state::texture_state(async_strategy& async, const df::file_item_ptr& i) 
 		_display_orientation = md->orientation;
 	}
 
-	_is_photo = mt->has_trait(file_type_traits::bitmap);
-	_is_raw = mt->has_trait(file_type_traits::raw);
+	_is_photo = mt->has_trait(file_traits::bitmap);
+	_is_raw = mt->has_trait(file_traits::raw);
 	_tex_invalid = true;
 
 	_display_alpha_animation.reset(0.0f, 1.0f);

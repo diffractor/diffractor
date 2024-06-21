@@ -702,8 +702,8 @@ xmp_update_result metadata_xmp::update(const df::file_path update_path, const df
 	{
 		const auto* const src_ft = files::file_type_from_name(src_path);
 		const auto* const dst_ft = files::file_type_from_name(update_path);
-		const auto is_embedded_src = src_ft->traits && file_type_traits::embedded_xmp;
-		const auto is_embedded_dst = dst_ft->traits && file_type_traits::embedded_xmp;
+		const auto is_embedded_src = src_ft->traits && file_traits::embedded_xmp;
+		const auto is_embedded_dst = dst_ft->traits && file_traits::embedded_xmp;
 
 		SXMPMeta xmp;
 
