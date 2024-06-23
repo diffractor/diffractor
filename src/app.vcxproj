@@ -334,7 +334,8 @@
       </Message>
     </CustomBuildStep>
     <ClCompile>
-      <AdditionalOptions>/bigobj</AdditionalOptions>
+      <AdditionalOptions>
+      </AdditionalOptions>
       <Optimization>Disabled</Optimization>
       <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)\third-party\webp\src;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\openssl\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_DEBUG;WIN32;_WINDOWS;STRICT;_WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -362,7 +363,6 @@
       <EnablePREfast>false</EnablePREfast>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <CompileAsManaged>false</CompileAsManaged>
-      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
       <ExceptionHandling>Sync</ExceptionHandling>
       <EnableEnhancedInstructionSet>StreamingSIMDExtensions2</EnableEnhancedInstructionSet>
       <FloatingPointExceptions>false</FloatingPointExceptions>
@@ -378,6 +378,7 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <WholeProgramOptimization>false</WholeProgramOptimization>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -430,7 +431,8 @@
       </Message>
     </CustomBuildStep>
     <ClCompile>
-      <AdditionalOptions>/bigobj</AdditionalOptions>
+      <AdditionalOptions>
+      </AdditionalOptions>
       <Optimization>Disabled</Optimization>
       <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\openssl\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_DEBUG;WIN32;_WINDOWS;STRICT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -458,7 +460,6 @@
       <EnablePREfast>false</EnablePREfast>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <CompileAsManaged>false</CompileAsManaged>
-      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <CompileAsWinRT>false</CompileAsWinRT>
@@ -474,6 +475,7 @@
       <FloatingPointExceptions>false</FloatingPointExceptions>
       <SDLCheck>true</SDLCheck>
       <SupportJustMyCode>false</SupportJustMyCode>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -522,7 +524,8 @@
       </Message>
     </CustomBuildStep>
     <ClCompile>
-      <AdditionalOptions>/bigobj</AdditionalOptions>
+      <AdditionalOptions>
+      </AdditionalOptions>
       <Optimization>Disabled</Optimization>
       <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\openssl\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_DEBUG;WIN32;_WINDOWS;STRICT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -612,7 +615,8 @@
       </Message>
     </CustomBuildStep>
     <ClCompile>
-      <AdditionalOptions>/Zm200  /Qvec-report:1 /bigobj %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>
+      </AdditionalOptions>
       <Optimization>MaxSpeed</Optimization>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <IntrinsicFunctions>true</IntrinsicFunctions>
@@ -645,7 +649,6 @@
       <CompileAsManaged>false</CompileAsManaged>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <OmitFramePointers>true</OmitFramePointers>
-      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
       <FloatingPointExceptions>false</FloatingPointExceptions>
       <ExceptionHandling>Sync</ExceptionHandling>
       <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
@@ -659,6 +662,7 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <MinimalRebuild>false</MinimalRebuild>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -705,7 +709,8 @@
       </Message>
     </CustomBuildStep>
     <ClCompile>
-      <AdditionalOptions>/Zm200  /Qvec-report:1 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>
+      </AdditionalOptions>
       <Optimization>Full</Optimization>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <IntrinsicFunctions>true</IntrinsicFunctions>
@@ -794,7 +799,8 @@
       </Message>
     </CustomBuildStep>
     <ClCompile>
-      <AdditionalOptions>/Zm200  /bigobj %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>
+      </AdditionalOptions>
       <Optimization>MaxSpeed</Optimization>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <IntrinsicFunctions>true</IntrinsicFunctions>
@@ -815,7 +821,7 @@
       <PrecompiledHeaderOutputFile>$(IntDir)$(TargetName).pch</PrecompiledHeaderOutputFile>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
-      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
       <BrowseInformation>
       </BrowseInformation>
       <WarningLevel>Level3</WarningLevel>
@@ -837,8 +843,8 @@
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <MinimalRebuild>false</MinimalRebuild>
       <OpenMPSupport>false</OpenMPSupport>
-      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
       <SupportJustMyCode>false</SupportJustMyCode>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -884,7 +890,8 @@
       </Message>
     </CustomBuildStep>
     <ClCompile>
-      <AdditionalOptions>/Zm200  /bigobj %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>
+      </AdditionalOptions>
       <Optimization>MaxSpeed</Optimization>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <IntrinsicFunctions>true</IntrinsicFunctions>
@@ -974,7 +981,8 @@
       </Message>
     </CustomBuildStep>
     <ClCompile>
-      <AdditionalOptions>/Zm200  %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>
+      </AdditionalOptions>
       <Optimization>Full</Optimization>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <IntrinsicFunctions>true</IntrinsicFunctions>
@@ -1052,7 +1060,8 @@
       </Message>
     </CustomBuildStep>
     <ClCompile>
-      <AdditionalOptions>/Zm200  %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>
+      </AdditionalOptions>
       <Optimization>Full</Optimization>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <IntrinsicFunctions>true</IntrinsicFunctions>

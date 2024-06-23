@@ -2239,9 +2239,9 @@ bool view_state::escape(const view_host_base_ptr& view)
 			return true;
 		}
 
-		if (d->_zoom)
+		if (d->zoom())
 		{
-			d->zoom(false);
+			d->toggle_zoom();
 			return true;
 		}
 	}
@@ -3339,11 +3339,13 @@ void display_state_t::populate(view_state& state)
 	_is_one = item_count == 1 && no_folders;
 	_is_two = item_count == 2 && no_folders;
 	_is_multi = item_count >= 3 && no_folders;
+	_can_zoom = false;
 
 	if (_is_one)
 	{
 		_item1 = selected_items.items()[0];
 		_selected_texture1 = get_tex(existing_textures, _item1, _async);
+		_can_zoom = _item1->file_type()->has_trait(file_traits::zoom);
 
 		const auto b = state.item_group(_item1);
 
@@ -3400,6 +3402,12 @@ void display_state_t::populate(view_state& state)
 			_surfaces.emplace_back(ff.image_to_surface(image, ui::scale_dimensions(image->dimensions(), max_dims)));
 			if (_surfaces.size() >= max_surfaces) break;
 		}
+	}
+
+	if (!_can_zoom)
+	{
+		// If we can zoom then reset zoom setting.
+		_common._zoom = false;
 	}
 }
 

@@ -454,6 +454,7 @@ public:
 struct common_display_state_t
 {
 	bool _is_playing = false;
+	bool _zoom = false;
 };
 
 using texture_state_ptr = std::shared_ptr<texture_state>;
@@ -463,8 +464,7 @@ class display_state_t final : public std::enable_shared_from_this<display_state_
 public:
 	async_strategy& _async;
 	common_display_state_t& _common;
-
-	bool _zoom = false;
+		
 	bool _comparing = false;
 
 	size_t _item_pos = 0;
@@ -518,6 +518,7 @@ public:
 	bool _is_one = false;
 	bool _is_two = false;
 	bool _is_multi = false;
+	bool _can_zoom = false;
 
 	std::vector<ui::const_image_ptr> _images;
 	std::vector<ui::const_surface_ptr> _surfaces;
@@ -602,17 +603,27 @@ public:
 
 	bool zoom() const
 	{
-		return _zoom;
+		return _can_zoom && _common._zoom;
 	}
 
 	void zoom(const bool zoom)
 	{
-		if (_zoom != zoom)
+		if (_common._zoom != zoom)
 		{
 			stop_slideshow();
-			_zoom = zoom;
+			_common._zoom = zoom;
 			_async.invalidate_view(view_invalid::view_layout | view_invalid::tooltip | view_invalid::controller);
 		}
+	}
+
+	bool can_zoom() const
+	{
+		return _can_zoom;
+	}
+
+	void toggle_zoom()
+	{
+		zoom(!_common._zoom);
 	}
 
 	bool player_has_audio() const
@@ -653,12 +664,7 @@ public:
 			_next_photo_tick = 0;
 			_async.invalidate_view(view_invalid::view_redraw);
 		}
-	}
-
-	bool can_zoom() const
-	{
-		return _is_one && _item1 && _item1->file_type()->has_trait(file_traits::zoom);
-	}
+	}	
 
 	bool display_item_has_trait(const file_traits t) const
 	{

@@ -1458,7 +1458,7 @@ public:
 	view_host_ptr _host;
 
 	bool _zoom_active = false;
-	bool _can_zoom = false;
+	bool _can_pan = false;
 	mutable int _scale_percent = 0;
 	recti _zoom_text_bounds;
 	recti _view_bounds;
@@ -1473,21 +1473,6 @@ public:
 		view_element(view_element_style::can_invoke | view_element_style::shrink), _state(state),
 		_display(std::move(display)), _host(std::move(host)), _fill(fill)
 	{
-	}
-
-	bool zoom() const
-	{
-		return _display->zoom();
-	}
-
-	void zoom(bool zoom)
-	{
-		_display->zoom(zoom);
-	}
-
-	bool can_zoom() const
-	{
-		return _can_zoom;
 	}
 
 	const pointi image_offset() const
@@ -1536,7 +1521,7 @@ public:
 			_display->media_offset = element_offset;
 			_display->update_for_present(dc.time_now);
 
-			if (zoom())
+			if (_can_pan && _display->zoom())
 			{
 				const auto pan_offset = calc_pan_offset(st);
 				st->draw(dc, element_offset + pan_offset, 0, true);
@@ -1608,15 +1593,15 @@ public:
 
 			st->layout(mc, recti(x, y, x + layout_extent.cx, y + layout_extent.cy), i);
 
-			bool can_zoom = false;
+			bool can_pan = false;
 
 			if (i && i->file_type()->has_trait(file_traits::zoom))
 			{
 				const auto dim_src = st->calc_display_dimensions();
-				can_zoom = bounds.width() < dim_src.cx || bounds.height() < dim_src.cy;
+				can_pan = bounds.width() < dim_src.cx || bounds.height() < dim_src.cy;
 			}
 
-			_can_zoom = can_zoom;
+			_can_pan = can_pan;
 			_zoom_text_bounds = {bounds.top_left(), measure_zoom(mc)};
 		}
 	}

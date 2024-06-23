@@ -1695,6 +1695,26 @@ static void should_store_thumbnails()
 	assert_equal(i->thumbnail(), thumb.thumb, u8"local loaded thumb"sv);
 }
 
+static void should_store_cover_art()
+{
+	const auto index_path = _temps.next_path();
+	const auto file_path = test_files_folder.combine_file(u8"indy.mp4"sv);
+
+	null_async_strategy as;
+	location_cache locations;
+	index_state index(as, locations);
+
+	database db(index);
+	db.open(index_path.folder(), index_path.file_name_without_extension());
+
+	// test local item
+	auto i = load_item(index, file_path, true);
+	db.perform_writes();
+
+	auto thumb = db.load_thumbnail(i->path());
+	assert_equal(i->cover_art(), thumb.cover_art, u8"local loaded cover art"sv);
+}
+
 
 static void should_store_item_properties()
 {
@@ -3318,6 +3338,40 @@ static void should_compare_versions()
 	assert_equal(u8"457.1"sv, (test_version2 + 1).to_string(), u8"+ op version"sv);
 }
 
+static void should_scan_d64()
+{
+	const auto file_name = u8"Ace of Aces (Europe).D64"sv;
+	const auto load_path = test_files_folder.combine(u8"retro"sv).combine_file(file_name);
+	const auto loaded = df::blob_from_file(load_path);
+	const auto contents = files::list_disk(loaded);
+
+	assert_equal(4_z, contents.size(), u8"d64"sv, file_name);
+	assert_equal(u8"147 \"      \" PRG"sv, contents[0].line, u8"d64"sv, file_name);
+}
+
+static void should_scan_archive()
+{
+	const auto file_name = u8"benchmarks.zip"sv;
+	const auto load_path = test_files_folder.combine_file(file_name);
+	const auto contents = files::list_archive(load_path);
+
+	assert_equal(2_z, contents.size(), u8"d64"sv, file_name);
+	assert_equal(u8"PXL_20240404_074316577.jpg"sv, contents[0].filename, u8"d64"sv, file_name);
+}
+
+static void should_scan_mod()
+{
+	const auto file_name = u8"giana.mod"sv;
+	const auto load_path = test_files_folder.combine(u8"retro"sv).combine_file(file_name);
+
+	files ff;
+	const auto actual = ff_scan_file(ff, load_path);
+	const auto props = actual.to_props();
+
+	assert_equal(u8"giana!"_c, props->title, u8"title"sv, file_name);
+	assert_equal(u8"Generic ProTracker or compatible"_c, props->encoder, u8"encoder"sv, file_name);
+	assert_equal(48000, props->audio_sample_rate, u8"encoder"sv, file_name);
+}
 
 void test_view::run_test(const test_ptr& test)
 {
@@ -3396,14 +3450,25 @@ void test_view::register_tests()
 	register_test(u8"Should scan mp3 metadata"s, should_scan_mp3);
 	register_test(u8"Should scan mp4 metadata"s, should_scan_mp4);
 	register_test(u8"Should scan raw metadata"s, should_scan_raw);
+	register_test(u8"Should scan raw metadata"s, should_scan_mod);
 	register_test(u8"Should parse Xmp"s, should_parse_xmp);
 	register_test(u8"Should merge Xmp sidecar"s, should_merge_xmp_sidecar);
 	register_test(u8"Should replace tokens"s, should_replace_tokens);
 
 	//
+	// Commodore
+	//
+	register_test(u8"Should scan d64"s, should_scan_d64);
+
+	//
+	// Archive
+	//
+	register_test(u8"Should scan archive"s, should_scan_archive);
+
+	//
 	// Modify media
 	//
-	const std::u8string_view common_files[] = {
+	constexpr std::u8string_view common_files[] = {
 		u8"Byzantium.avi"sv,
 		u8"cherrys.psd"sv,
 		u8"Colorblind.mp3"sv,
@@ -3433,7 +3498,6 @@ void test_view::register_tests()
 	// 
 	// Bitmap Edit
 	//
-
 	register_test(u8"Should preserve orientation"s, should_preserve_orientation);
 	register_test(u8"Should resize"s, should_resize);
 	register_test(u8"Should rotate"s, should_rotate);
@@ -3453,12 +3517,12 @@ void test_view::register_tests()
 	register_test(u8"Should update formatted description"s, should_update_formatted_text);
 	register_test(u8"Should toggle rating"s, should_toggle_rating);
 
-
 	//
 	// Index
 	//
 	register_test(u8"Should index"s, should_index);
 	register_test(u8"Should store thumbnails"s, should_store_thumbnails);
+	register_test(u8"Should store cover art"s, should_store_cover_art);
 	register_test(u8"Should store item properties"s, should_store_item_properties);
 	register_test(u8"Should store pack properties"s, should_pack_item_properties);
 	register_test(u8"Should store webservice results"s, should_store_webservice_results);
@@ -3471,7 +3535,6 @@ void test_view::register_tests()
 	register_test(u8"Should reload thumb after scan"s, should_reload_thumb_after_scan);
 	register_test(u8"Should copy preserve properties"s, should_copy_preserve_properties);
 	register_test(u8"Should detect rotation"s, should_detect_rotation);
-
 
 	//
 	// Search

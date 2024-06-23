@@ -46,7 +46,7 @@ static void zoom_invoke(view_state& s, const ui::control_frame_ptr& parent)
 
 	if (display && display->can_zoom())
 	{
-		display->zoom(!display->zoom());
+		display->toggle_zoom();
 	}
 };
 

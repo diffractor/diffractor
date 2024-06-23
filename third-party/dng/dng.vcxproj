@@ -343,7 +343,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <WholeProgramOptimization>false</WholeProgramOptimization>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
-      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
       <SupportJustMyCode>false</SupportJustMyCode>
       <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
       <FloatingPointExceptions>false</FloatingPointExceptions>
@@ -382,7 +382,7 @@
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
-      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
       <CompileAsManaged>false</CompileAsManaged>
       <CompileAsWinRT>false</CompileAsWinRT>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
@@ -427,7 +427,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <OmitFramePointers>false</OmitFramePointers>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
-      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
       <SupportJustMyCode>false</SupportJustMyCode>
       <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
       <FloatingPointExceptions>false</FloatingPointExceptions>
@@ -506,7 +506,7 @@
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <ControlFlowGuard>false</ControlFlowGuard>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
-      <ProgramDataBaseFileName>$(IntDir)%(RelativeDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
       <FloatingPointExceptions>false</FloatingPointExceptions>

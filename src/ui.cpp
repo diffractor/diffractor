@@ -396,7 +396,7 @@ public:
 		_parent_element(std::move(media_parent)),
 		_state(state),
 		_view_bounds(view_bounds),
-		_start_zoom_state(_parent_element->zoom())
+		_start_zoom_state(_parent_element->_display->zoom())
 	{
 		_zoom_bounds = calc_zoom_bounds();
 		_parent_element->show_zoom_box(true);
@@ -476,7 +476,7 @@ public:
 	void on_mouse_left_button_down(const pointi loc, const ui::key_state keys) override
 	{
 		_tracking = true;
-		_parent_element->zoom(_tracking);
+		_parent_element->_display->zoom(_tracking);
 		scroll_to(loc);
 	}
 
@@ -491,12 +491,12 @@ public:
 	void on_mouse_left_button_up(const pointi loc, const ui::key_state keys) override
 	{
 		_tracking = false;
-		_parent_element->zoom(_start_zoom_state);
+		_parent_element->_display->zoom(_start_zoom_state);
 	}
 
 	void escape() override
 	{
-		_parent_element->zoom(_start_zoom_state);
+		_parent_element->_display->zoom(_start_zoom_state);
 		_tracking = false;
 	}
 
@@ -516,7 +516,7 @@ public:
 
 	void popup_from_location(view_hover_element& hover) override
 	{
-		if (!_parent_element->zoom())
+		if (!_parent_element->_display->zoom())
 		{
 			hover.elements.add(make_icon_element(icon_index::zoom_in, view_element_style::no_break));
 			hover.elements.add(std::make_shared<text_element>(tt.zoom_tooltip));
@@ -625,9 +625,9 @@ view_controller_ptr photo_control::controller_from_location(const view_host_ptr&
 
 	if (bounds.contains(logical_loc) || _zoom_text_bounds.contains(logical_loc))
 	{
-		if (_can_zoom)
+		if (_can_pan)
 		{
-			if (zoom())
+			if (_display->zoom())
 			{
 				auto pan_bounds = bounds;
 				//pan_bounds.exclude(loc, zoom_bounds);

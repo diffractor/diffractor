@@ -42,8 +42,8 @@
 #pragma comment(lib, "Shcore")
 #pragma comment(lib, "Windowscodecs")
 
-static constexpr auto nonclient_border_thickness = 5;
-static constexpr auto base_icon_cxy = 18;
+static constexpr auto ui_nonclient_border_thickness = 5;
+static constexpr auto ui_base_icon_cxy = 18;
 static constexpr auto ui_element_padding = 8;
 static constexpr auto ui_focus_padding = 2;
 static constexpr auto ui_corner_radius = 6;
@@ -67,7 +67,7 @@ class win32_app;
 
 int calc_icon_cxy(const double scale_factor)
 {
-	return df::round(base_icon_cxy * scale_factor);
+	return df::round(ui_base_icon_cxy * scale_factor);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////
@@ -4762,7 +4762,7 @@ public:
 			GetWindowRect(GetParent(m_hWnd), &rc);
 
 			const auto scale_factor = _draw_ctx ? _draw_ctx->scale_factor : 1.0;
-			const auto border_thickness = df::round(nonclient_border_thickness * scale_factor);
+			const auto border_thickness = df::round(ui_nonclient_border_thickness * scale_factor);
 
 			if (rc.right >= loc.x && (rc.right - border_thickness) <= loc.x)
 			{
@@ -6997,7 +6997,7 @@ LRESULT control_host_impl::on_window_nc_hit_test(const uint32_t uMsg, const WPAR
 
 		const auto scale_factor = _draw_ctx ? _draw_ctx->scale_factor : 1.0;
 		const auto cx_resize_handle = _draw_ctx ? _draw_ctx->handle_cxy * scale_factor : 14;		
-		const auto border_thickness = df::round(nonclient_border_thickness * scale_factor);
+		const auto border_thickness = df::round(ui_nonclient_border_thickness * scale_factor);
 
 		enum { left = 1, top = 2, right = 4, bottom = 8 };
 		int hit = 0;
