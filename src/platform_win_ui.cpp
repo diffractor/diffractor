@@ -1391,7 +1391,7 @@ static recti get_client_rect(HWND h)
 
 recti desktop_bounds_impl(HWND hwnd, const bool work_area)
 {
-	auto* const monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY);
+	auto* const monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
 
 	if (monitor)
 	{
@@ -4506,7 +4506,7 @@ public:
 			_elements.layout(*_draw_ctx, center_rect(element_extent, sizei{cx, cy}), positions);
 
 			InvalidateRect(m_hWnd, nullptr, FALSE);
-			SetWindowPos(m_hWnd, nullptr, x, y, cx, cy, SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOOWNERZORDER);
+			SetWindowPos(m_hWnd, nullptr, _bounds.left, _bounds.top, cx, cy, SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOOWNERZORDER);
 
 			//update(bounds);
 			set_alpha(255);

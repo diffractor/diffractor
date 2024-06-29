@@ -142,7 +142,7 @@ platform::web_response platform::send_request(const web_request& req)
 	if (session_handle)
 	{
 		const auto hostW = str::utf8_to_utf16(req.host);
-		const auto port = req.secure ? INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT;
+		const auto port = req.port == 0 ? (req.secure ? INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT) : req.port;
 		const auto conn = ::InternetConnect(session_handle, hostW.c_str(), port, nullptr, nullptr,
 		                                    INTERNET_SERVICE_HTTP, 0, 0);
 

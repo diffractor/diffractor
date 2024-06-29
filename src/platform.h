@@ -706,6 +706,7 @@ namespace platform
 		df::file_path download_file_path;
 
 		bool secure = true;
+		int port = 0;
 	};
 
 	struct web_response

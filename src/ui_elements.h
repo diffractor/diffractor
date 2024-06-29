@@ -953,12 +953,13 @@ private:
 	commands _cmd = commands::none;
 	std::function<void()> _invoke;
 	std::function<void(view_hover_element&)> _tooltip;
+	bool _full_background = false;
 
 public:
 	link_element(std::u8string_view text, commands cmd, const ui::style::font_face font,
 	             const ui::style::text_style text_style,
-	             const view_element_style style_in = view_element_style::none) noexcept : text_element_base(
-		text, style_in), _cmd(cmd)
+	             const view_element_style style_in = view_element_style::none, bool full_background = false) noexcept : text_element_base(
+		text, style_in), _cmd(cmd), _full_background(full_background)
 	{
 		_font = font;
 		_text_style = text_style;
@@ -1007,6 +1008,35 @@ public:
 		set_style_bit(view_element_style::can_invoke, _cmd != commands::none || _invoke);
 
 		_foreground_clr = ui::average(ui::style::color::dialog_text, ui::style::color::dialog_selected_background);
+	}
+
+	void render(ui::draw_context& dc, const pointi element_offset) const override
+	{
+		if (_full_background)
+		{
+			const auto logical_bounds = bounds.offset(element_offset);
+			const auto bg = calc_background_color(dc);
+
+			dc.draw_rounded_rect(logical_bounds, bg, dc.padding1);
+
+			if (!_tl)
+			{
+				_tl = dc.create_text_layout(_font);
+				_tl->update(_text, _text_style);
+			}
+
+			if (_tl)
+			{
+				const auto clr = _foreground_clr
+					? ui::color(_foreground_clr, dc.colors.alpha)
+					: ui::color(dc.colors.foreground, dc.colors.alpha);
+				dc.draw_text(_tl, logical_bounds, clr, {});
+			}
+		}
+		else
+		{
+			text_element_base::render(dc, element_offset);
+		}
 	}
 
 	void update_check(const view_element_event& event);

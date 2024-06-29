@@ -9,6 +9,13 @@
 
 #pragma once
 
+inline view_element_ptr make_icon_link_element2(const icon_index i, commands cmd, const view_element_style style_in)
+{
+	const wchar_t text[2] = { static_cast<wchar_t>(i), 0 };
+	auto element = std::make_shared<link_element>(str::utf16_to_utf8(text), cmd, ui::style::font_face::icons,
+	                                              ui::style::text_style::single_line_center, style_in, true);
+	return element;
+}
 
 class media_view final : public view_base
 {
@@ -32,9 +39,9 @@ public:
 	media_view(view_state& state, view_host_ptr host) :
 		_state(state),
 		_host(std::move(host)),
-		_left_arrow_element(make_icon_link_element(icon_index::back_image, commands::browse_previous_item,
+		_left_arrow_element(make_icon_link_element2(icon_index::back_image, commands::browse_previous_item,
 		                                           view_element_style::none)),
-		_right_arrow_element(make_icon_link_element(icon_index::next_image, commands::browse_next_item,
+		_right_arrow_element(make_icon_link_element2(icon_index::next_image, commands::browse_next_item,
 		                                            view_element_style::none))
 	{
 	}
@@ -151,8 +158,8 @@ public:
 			}
 		}
 
-		const auto arrow_cx = df::round(55 * scale_factor);
-		const auto arrow_cy = df::round(99 * scale_factor);
+		const auto arrow_cx = avail_bounds.width() / 17;
+		const auto arrow_cy = avail_bounds.height() / 7;
 		const auto left_top = (avail_bounds.top + avail_bounds.bottom - arrow_cy) / 2;
 		const auto right_top = (avail_bounds.top + avail_bounds.bottom - arrow_cy) / 2;
 
