@@ -118,7 +118,7 @@ protected:
 	bool _has_image = false;
 	bool _is_move = false;
 	file_load_result _loaded;
-	bool _has_prefered_drop = false;
+	bool _has_preferred_drop = false;
 
 public:
 	items_data_object() = default;
@@ -387,16 +387,14 @@ STDMETHODIMP CEnumFORMATETCImpl::Clone(IEnumFORMATETC FAR* FAR* ppCloneEnumForma
 
 std::u8string platform::utf16_to_utf8(const std::wstring_view text)
 {
-	char result[100];
-	memset(result, 0, sizeof(result));
+	char result[100] = {};
 	WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<uint32_t>(text.size()), result, 100, nullptr, nullptr);
 	return str::utf8_cast2(result);
 }
 
 std::wstring platform::utf8_to_utf16(const std::u8string_view text)
 {
-	wchar_t result[100];
-	memset(result, 0, sizeof(result));
+	wchar_t result[100] = {};
 	MultiByteToWideChar(CP_UTF8, 0, std::bit_cast<const char*>(text.data()), static_cast<uint32_t>(text.size()), result,
 	                    100);
 	return result;
@@ -567,7 +565,7 @@ void items_data_object::cache(const std::vector<df::file_path>& files, const std
 void items_data_object::set_for_move(bool is_move)
 {
 	_is_move = is_move;
-	_has_prefered_drop = true;
+	_has_preferred_drop = true;
 }
 
 static HGLOBAL create_shell_id_list(const std::vector<df::file_path>& files,
@@ -680,7 +678,7 @@ STDMETHODIMP items_data_object::GetData(FORMATETC* pformatetcIn, STGMEDIUM* pmed
 			}
 		}
 
-		if (_has_prefered_drop && pformatetcIn->cfFormat == clipboard_formats::PREFERREDDROPEFFECT)
+		if (_has_preferred_drop && pformatetcIn->cfFormat == clipboard_formats::PREFERREDDROPEFFECT)
 		{
 			auto* const h = GlobalAlloc(GMEM_ZEROINIT | GMEM_MOVEABLE | GMEM_DDESHARE, sizeof(DWORD));
 
@@ -813,7 +811,7 @@ STDMETHODIMP items_data_object::EnumFormatEtc(DWORD dwDirection, IEnumFORMATETC*
 		vfmtetc.emplace_back(clipboard_formats::Bitmap);
 	}
 
-	if (_has_prefered_drop && _is_move)
+	if (_has_preferred_drop && _is_move)
 	{
 		vfmtetc.emplace_back(clipboard_formats::PDE);
 	}
@@ -896,7 +894,7 @@ bool data_object_client::has_bitmap() const
 	return has_data(&clipboard_formats::Bitmap);
 }
 
-DWORD data_object_client::prefered_drop_effect() const
+DWORD data_object_client::preferred_drop_effect() const
 {
 	STGMEDIUM stgMedium;
 	DWORD result = DROPEFFECT_COPY;
@@ -1146,7 +1144,7 @@ platform::file_op_result data_object_client::drop_files(const df::folder_path ta
 
 	if (effect == platform::drop_effect::none)
 	{
-		is_move = prefered_drop_effect() == DROPEFFECT_MOVE;
+		is_move = preferred_drop_effect() == DROPEFFECT_MOVE;
 	}
 
 	STGMEDIUM stgMedium;
@@ -1260,7 +1258,7 @@ data_object_client::description data_object_client::files_description() const
 		ReleaseStgMedium(&stgMedium);
 	}
 
-	result.prefered_drop_effect = to_drop_effect(prefered_drop_effect());
+	result.preferred_drop_effect = to_drop_effect(preferred_drop_effect());
 	return result;
 }
 
@@ -1343,8 +1341,7 @@ std::u8string platform::OS()
 {
 #pragma warning(push)
 #pragma warning(disable:4996)
-	OSVERSIONINFO osvi;
-	ZeroMemory(&osvi, sizeof(OSVERSIONINFO));
+	OSVERSIONINFO osvi = {};
 	osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
 	GetVersionEx(&osvi);
 #pragma warning(pop)
@@ -1643,10 +1640,8 @@ void platform::show_text_in_notepad(const std::u8string_view s)
 {
 	TCHAR szCmdline[] = TEXT("Notepad.exe");
 
-	PROCESS_INFORMATION piProcInfo;
-	STARTUPINFO siStartInfo;
-	ZeroMemory(&piProcInfo, sizeof(PROCESS_INFORMATION));
-	ZeroMemory(&siStartInfo, sizeof(STARTUPINFO));
+	PROCESS_INFORMATION piProcInfo = {};
+	STARTUPINFO siStartInfo = {};
 	siStartInfo.cb = sizeof(STARTUPINFO);
 	siStartInfo.hStdError = nullptr;
 	siStartInfo.hStdOutput = nullptr;
@@ -1710,8 +1705,7 @@ void platform::show_in_file_browser(const df::folder_path path)
 
 int platform::display_frequency()
 {
-	DEVMODE dm;
-	memset(&dm, 0, sizeof(DEVMODE));
+	DEVMODE dm = {};
 	dm.dmSize = sizeof(DEVMODE);
 	dm.dmDriverExtra = 0;
 
@@ -1798,8 +1792,7 @@ bool platform::browse_for_folder(df::folder_path& path)
 
 bool platform::prompt_for_save_path(df::file_path& path)
 {
-	OPENFILENAME ofn;
-	memset(&ofn, 0, sizeof(ofn));
+	OPENFILENAME ofn = {};
 
 	wchar_t w[MAX_PATH];
 	w[0] = 0;
@@ -3490,8 +3483,7 @@ platform::file_op_result platform::delete_items(const std::vector<df::file_path>
 {
 	const auto paths = all_file_system_paths(files, folders);
 
-	SHFILEOPSTRUCT shfo;
-	memset(&shfo, 0, sizeof(shfo));
+	SHFILEOPSTRUCT shfo = {};
 	shfo.hwnd = app_wnd();
 	shfo.pFrom = paths.c_str();
 	shfo.wFunc = FO_DELETE;
@@ -3843,14 +3835,12 @@ bool platform::mapi_send(const std::u8string_view to, const std::u8string_view s
 			auto subject_w = str::utf8_to_utf16(subject);
 			auto text_w = str::utf8_to_utf16(text);
 
-			MapiRecipDescW recipients;
-			memset(&recipients, 0, sizeof(recipients));
+			MapiRecipDescW recipients = {};
 			recipients.ulRecipClass = MAPI_TO;
 			recipients.lpszAddress = const_cast<LPWSTR>(to_w.c_str());
 			recipients.lpszName = recipients.lpszAddress;
 
-			MapiMessageW message_w;
-			memset(&message_w, 0, sizeof(message_w));
+			MapiMessageW message_w = {};
 
 			std::vector<MapiFileDescW> files;
 			std::vector<std::pair<std::wstring, std::wstring>> attachments_w;
@@ -3862,8 +3852,7 @@ bool platform::mapi_send(const std::u8string_view to, const std::u8string_view s
 
 			for (const auto& a : attachments_w)
 			{
-				MapiFileDescW fd;
-				memset(&fd, 0, sizeof(MapiFileDesc));
+				MapiFileDescW fd = {};
 
 				fd.nPosition = 0xFFFFFFFF;
 				fd.lpszPathName = const_cast<wchar_t*>(a.second.c_str());
@@ -3901,14 +3890,12 @@ bool platform::mapi_send(const std::u8string_view to, const std::u8string_view s
 			auto subject_s = std::u8string(subject);
 			auto text_s = std::u8string(text);
 
-			MapiRecipDesc recipients;
-			memset(&recipients, 0, sizeof(recipients));
+			MapiRecipDesc recipients = {};
 			recipients.ulRecipClass = MAPI_TO;
 			recipients.lpszAddress = const_cast<LPSTR>(std::bit_cast<const char*>(to_s.c_str()));
 			recipients.lpszName = recipients.lpszAddress;
 
-			MapiMessage message_a;
-			memset(&message_a, 0, sizeof(message_a));
+			MapiMessage message_a = {};
 
 			std::vector<MapiFileDesc> files;
 			std::vector<std::pair<std::u8string, std::u8string>> attachments_a;
@@ -3920,8 +3907,7 @@ bool platform::mapi_send(const std::u8string_view to, const std::u8string_view s
 
 			for (const auto& a : attachments_a)
 			{
-				MapiFileDesc fd;
-				memset(&fd, 0, sizeof(MapiFileDesc));
+				MapiFileDesc fd = {};
 
 				fd.nPosition = 0xFFFFFFFF;
 				fd.lpszPathName = const_cast<char*>(std::bit_cast<const char*>(a.second.c_str()));
@@ -4161,8 +4147,7 @@ df::day_t platform::to_date(const uint64_t ts)
 {
 	// perf https://stackoverflow.com/questions/15957805/extract-year-month-day-etc-from-stdchronotime-point-in-c
 	const auto ft = ts_to_ft(ts);
-	SYSTEMTIME st;
-	ZeroMemory(&st, sizeof(st));
+	SYSTEMTIME st = {};
 	FileTimeToSystemTime(&ft, &st);
 	return {st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond};
 }

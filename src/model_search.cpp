@@ -1705,7 +1705,7 @@ bool df::search_t::is_match(const prop::key& key, const date_t date) const
 	{
 		if (term.is_date())
 		{
-			static const search_term_modifier mod;
+			static constexpr search_term_modifier mod;
 			const auto now_days = platform::now().to_days();
 
 			date_term_count += 1;

@@ -1697,7 +1697,7 @@ static std::vector<view_element_ptr> create_comp_controls(view_state& s, const d
 }
 
 void append_bullet(std::vector<view_element_ptr>& result, icon_index icon,
-                   const std::vector<std::shared_ptr<view_element>>& children)
+                   const std::vector<view_element_ptr>& children)
 {
 	if (!children.empty())
 	{
@@ -1732,7 +1732,6 @@ view_elements_ptr view_state::create_selection_controls()
 			const auto item = d->_item1;
 			const auto is_media = item->is_media();
 			const auto ft = item->file_type();
-			const auto name = item->name();
 			const auto search_result = item->search();
 
 			if (is_media)
@@ -3302,7 +3301,6 @@ ui::texture_ptr texture_state::zoom_texture(ui::draw_context& rc, const sizei ex
 {
 	if (!_zoom_texture || _zoom_timestamp != _photo_timestamp)
 	{
-		const auto& i = loaded();
 		const auto t = rc.create_texture();
 
 		if (t && t->update(_loaded.to_surface(sizei(200, 200))) != ui::texture_update_result::failed)

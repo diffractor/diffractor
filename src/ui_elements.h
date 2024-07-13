@@ -13,18 +13,6 @@
 #include "ui.h"
 #include "ui_view.h"
 
-class view_state;
-struct view_hover_element;
-class ui_element_render;
-class ui_element_state;
-class view_elements;
-class view_element;
-class view_host_base;
-
-using view_element_ptr = std::shared_ptr<view_element>;
-using view_host_base_ptr = std::shared_ptr<view_host_base>;
-using view_elements_ptr = std::shared_ptr<view_elements>;
-
 enum class view_element_style : uint32_t
 {
 	none = 0,
@@ -277,9 +265,6 @@ public:
 		set_style_bit(view_element_style::visible, visible);
 	}
 };
-
-using view_element_ptr = std::shared_ptr<view_element>;
-using const_view_element_ptr = std::shared_ptr<const view_element>;
 
 class view_flow_layout
 {
@@ -785,14 +770,14 @@ public:
 
 struct view_hover_element
 {
-	const static int default_prefered_size = 300;
+	static constexpr int default_preferred_size = 300;
 
-	std::shared_ptr<view_elements> elements;
+	view_elements_ptr elements;
 	recti window_bounds;
 	recti active_bounds;
 	uint32_t active_delay = 0;
 	int x_focus = -1;
-	int prefered_size = default_prefered_size;
+	int preferred_size = default_preferred_size;
 	bool horizontal = false;
 	commands id = commands::none;
 
@@ -809,7 +794,7 @@ struct view_hover_element
 		window_bounds.clear();
 		active_bounds.clear();
 		x_focus = -1;
-		prefered_size = default_prefered_size;
+		preferred_size = default_preferred_size;
 		horizontal = false;
 		id = commands::none;
 	}

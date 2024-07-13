@@ -120,7 +120,6 @@ namespace df
 	file_path close_log();
 	std::u8string format_version(bool short_text);
 
-	int isqrt(int x);
 	double now();
 	int64_t now_ms();
 
@@ -695,7 +694,7 @@ namespace df
 	struct count_and_size
 	{
 		uint32_t count = 0;
-		file_size size;
+		file_size size;		
 
 		count_and_size operator+(const count_and_size other) const
 		{

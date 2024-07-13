@@ -103,8 +103,7 @@ bool df::zip_file::add(const file_path path, const std::u8string_view name_in)
 		const auto name = std::u8string(name_in);
 		//const auto wpath = platform::to_file_system_path(path)
 
-		zip_fileinfo zi;
-		memset(&zi, 0, sizeof(zi));
+		zip_fileinfo zi = {};
 		zi.tmz_date.tm_year = ft.year;
 		zi.tmz_date.tm_mon = ft.month;
 		zi.tmz_date.tm_mday = ft.day;

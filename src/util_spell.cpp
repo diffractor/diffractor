@@ -199,6 +199,6 @@ void spell_check::add_word(const std::u8string_view word)
 		_hunspell->add(str::utf8_cast2(word));
 
 		u8ostream f(platform::to_file_system_path(_custom_dic_path), std::ios::out | std::ios::app);
-		f << word << std::endl;
+		f << word << '\n';
 	}
 }

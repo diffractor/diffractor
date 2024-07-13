@@ -43,9 +43,9 @@ static const std::u8string azure_maps_api_key = u8"";
 extern bool toggle_details_state;
 
 
-static const std::u8string_view docs_url = u8"https://www.diffractor.com/docs"sv;
-static const std::u8string_view support_url = u8"https://diffractor.com/help"sv;
-static const std::u8string_view donate_url = u8"https://www.paypal.com/donate/?hosted_button_id=HX5NRS9JGKLRL"sv;
+static constexpr std::u8string_view docs_url = u8"https://www.diffractor.com/docs"sv;
+static constexpr std::u8string_view support_url = u8"https://diffractor.com/help"sv;
+static constexpr std::u8string_view donate_url = u8"https://www.paypal.com/donate/?hosted_button_id=HX5NRS9JGKLRL"sv;
 
 static void zoom_invoke(view_state& s, const ui::control_frame_ptr& parent)
 {
@@ -4337,7 +4337,7 @@ void send_info(view_state& s)
 
 	for (const auto& i : calc_app_info(s.item_index, true))
 	{
-		message << i.first << u8" "sv << i.second << std::endl;
+		message << i.first << u8" "sv << i.second << '\n';
 	}
 
 	platform::web_request req;

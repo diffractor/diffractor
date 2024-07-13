@@ -279,7 +279,7 @@ public:
 					{
 						const auto dest_path = _state.save_path();
 						const auto desc = data.files_description();
-						const auto is_copy = !keys.shift && (keys.control || desc.prefered_drop_effect ==
+						const auto is_copy = !keys.shift && (keys.control || desc.preferred_drop_effect ==
 							platform::drop_effect::copy);
 
 						update_status(is_copy ? tt.menu_copy : tt.menu_move,
@@ -320,7 +320,7 @@ public:
 					{
 						const auto save_path = _state.save_path();
 						const auto desc = data.files_description();
-						const auto is_copy = !keys.shift && (keys.control || desc.prefered_drop_effect ==
+						const auto is_copy = !keys.shift && (keys.control || desc.preferred_drop_effect ==
 							platform::drop_effect::copy);
 						const auto drop_action = is_copy ? platform::drop_effect::copy : platform::drop_effect::move;
 

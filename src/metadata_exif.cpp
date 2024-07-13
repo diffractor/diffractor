@@ -239,7 +239,7 @@ public:
 	{
 	}
 
-	bool is_overflow(uint32_t i, size_t size) const
+	bool is_overflow(size_t i, size_t size) const
 	{
 		return (i < 0) || (i + size) > _size;
 	}
@@ -503,12 +503,12 @@ private:
 	std::function<void(exif_dir_entry&)> _handler;
 
 	uint32_t _dir_offsets_size = 0;
-	uint32_t _dir_offsets[32];
+	uint32_t _dir_offsets[32] = {};
 
 	uint32_t _thumbnail_offset = 0;
 	uint32_t _thumbnail_length = 0;
 
-	str::cached _make;
+	str::cached _make = {};
 
 public:
 	exif_parser(exif_data_buffer& d, std::function<void(exif_dir_entry&)> h) : _data(d), _handler(std::move(h))
@@ -996,14 +996,12 @@ private:
 	};
 
 public:
-	canon_lenses()
-	{
-	}
+	canon_lenses() = default;
 
 	str::cached Lookup(int id)
 	{
 		const auto found = _choices.find(id);
-		str::cached result;
+		str::cached result = {};
 
 		if (found != _choices.end())
 		{
@@ -1111,7 +1109,7 @@ public:
 				auto max_aperture = entry.get_int16(26);
 				auto min_aperture = entry.get_int16(27);
 
-				str::cached lens_text;
+				str::cached lens_text = {};
 
 				if (lens > 0)
 				{

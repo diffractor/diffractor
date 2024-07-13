@@ -69,7 +69,7 @@ public:
 			for (const auto& path : _open_files)
 			{
 				df::log(__FUNCTION__, str::format(u8"Add file type to crash list {}"sv, path.first.extension()));
-				file << path.first.str() << std::endl;
+				file << path.first.str() << '\n';
 			}
 		}
 	}
@@ -91,7 +91,7 @@ public:
 
 		for (const auto& path : _open_files)
 		{
-			result << path.first.str() << u8" ["sv << path.second << u8"] "sv << std::endl;
+			result << path.first.str() << u8" ["sv << path.second << u8"] "sv << '\n';
 		}
 
 		return result.str();

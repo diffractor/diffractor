@@ -146,11 +146,11 @@ namespace prop
 		    uint32_t f, uint32_t bit);
 
 		uint16_t id = 0;
-		icon_index icon;
-		str::cached short_name;
-		str::cached name;
+		icon_index icon = {};
+		str::cached short_name = {};
+		str::cached name = {};
 		std::u8string_view& text_key;
-		data_type data_type;
+		data_type data_type = {};
 		uint32_t flags = 0;
 		uint32_t bloom_bit = 0;
 
@@ -355,14 +355,15 @@ namespace prop
 		str::cached label;
 		str::cached doc_id;
 
-		float exposure_time = 0.0f;
-		float f_number = 0.0f;
-		float focal_length = 0.0f;
 		gps_coordinate coordinate;
 
 		df::date_t created_digitized;
 		df::date_t created_exif;
 		df::date_t created_utc;
+
+		float exposure_time = 0.0f;
+		float f_number = 0.0f;
+		float focal_length = 0.0f;
 
 		uint16_t duration = 0;
 		uint16_t focal_length_35mm_equivalent = 0;

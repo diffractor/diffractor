@@ -321,7 +321,7 @@ public:
 			hover.elements->add(make_icon_element(icon_index::compare, view_element_style::no_break));
 			hover.elements->add(std::make_shared<text_element>(tt.compare));
 			hover.elements->add(std::make_shared<text_element>(tt.compare_tooltip));
-			hover.prefered_size = df::mul_div(hover.prefered_size, 5, 8);
+			hover.preferred_size = df::mul_div(hover.preferred_size, 5, 8);
 			hover.window_bounds = hover.active_bounds = _bounds;
 		}
 	}
@@ -522,7 +522,7 @@ public:
 			hover.elements->add(make_icon_element(icon_index::zoom_in, view_element_style::no_break));
 			hover.elements->add(std::make_shared<text_element>(tt.zoom_tooltip));
 			hover.elements->add(std::make_shared<action_element>(tt.zoom_kb));
-			hover.prefered_size = df::mul_div(hover.prefered_size, 5, 8);
+			hover.preferred_size = df::mul_div(hover.preferred_size, 5, 8);
 			hover.window_bounds = hover.active_bounds = _zoom_bounds;
 		}
 	}

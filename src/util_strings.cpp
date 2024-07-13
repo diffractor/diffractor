@@ -417,8 +417,7 @@ struct string_index_t
 {
 	using K = std::u8string_view;
 	using V = str::chached_string_storage_t*;
-	using storage_t = phmap::parallel_flat_hash_map<
-		K, V, string_index_hash, string_index_eq, std::allocator<std::pair<const K, V>>, 4, platform::mutex>;
+	using storage_t = phmap::parallel_flat_hash_map<K, V, string_index_hash, string_index_eq, std::allocator<std::pair<const K, V>>, 4, platform::mutex>;
 	storage_t _storage;
 	platform::memory_pool _pool;
 
@@ -438,12 +437,9 @@ struct string_index_t
 	str::cached find_or_insert(const std::u8string_view sv)
 	{
 		if (sv.empty()) return {};
-		//const auto hash = crypto::fnv1a(sv.data(), sv.size());
-		//const auto hash = crypto::crc32(sv.data(), sv.size());
-
 		str::chached_string_storage_t* result = nullptr;
 
-		const auto exists = [&result](const std::pair<const string_index_t::K, string_index_t::V>& kv) { result = kv.second; };
+		const auto exists = [&result](const std::pair<const K, V>& kv) { result = kv.second; };
 		const auto emplace = [this, sv, &result](const storage_t::constructor& ctor)
 		{
 			result = make_entry(sv);

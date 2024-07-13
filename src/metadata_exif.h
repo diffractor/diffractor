@@ -72,7 +72,7 @@ public:
 	};
 
 private:
-	const static int invalid_coordinate = 180;
+	static constexpr int invalid_coordinate = 180;
 
 	NorthSouth _south;
 	EastWest _west;

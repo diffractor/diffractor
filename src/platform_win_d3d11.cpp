@@ -1106,8 +1106,7 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, ComPtr<IDXGISwapCha
 
 		if (SUCCEEDED(hr))
 		{
-			D3D11_BLEND_DESC desc;
-			ZeroMemory(&desc, sizeof(desc));
+			D3D11_BLEND_DESC desc = {};
 			desc.AlphaToCoverageEnable = FALSE;
 			desc.IndependentBlendEnable = FALSE;
 			desc.RenderTarget[0].BlendEnable = TRUE;
@@ -1133,8 +1132,7 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, ComPtr<IDXGISwapCha
 
 		if (SUCCEEDED(hr))
 		{
-			D3D11_RASTERIZER_DESC desc;
-			ZeroMemory(&desc, sizeof(desc));
+			D3D11_RASTERIZER_DESC desc = {};
 			desc.CullMode = D3D11_CULL_NONE;
 			desc.FillMode = D3D11_FILL_SOLID;
 
@@ -1148,8 +1146,7 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, ComPtr<IDXGISwapCha
 
 		if (SUCCEEDED(hr))
 		{
-			D3D11_SAMPLER_DESC sampler_desc;
-			ZeroMemory(&sampler_desc, sizeof(sampler_desc));
+			D3D11_SAMPLER_DESC sampler_desc = {};
 			sampler_desc.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
 			sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
 			sampler_desc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
@@ -1253,15 +1250,13 @@ void d3d11_draw_context_impl::build_index_and_vertex_buffers()
 	if (!_vertex_buffer_staging.empty())
 	{
 		ComPtr<ID3D11Buffer> buffer;
-		D3D11_BUFFER_DESC bd;
-		ZeroMemory(&bd, sizeof(bd));
+		D3D11_BUFFER_DESC bd = {};
 		bd.ByteWidth = static_cast<uint32_t>(sizeof(vertex_2d) * _vertex_buffer_staging.size());
 		bd.Usage = D3D11_USAGE_DEFAULT;
 		bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 		bd.CPUAccessFlags = 0;
 
-		D3D11_SUBRESOURCE_DATA source_data;
-		memset(&source_data, 0, sizeof(source_data));
+		D3D11_SUBRESOURCE_DATA source_data = {};
 		source_data.pSysMem = _vertex_buffer_staging.data();
 
 		const auto hr = _f->d3d_device->CreateBuffer(&bd, &source_data, &buffer);
@@ -1281,15 +1276,13 @@ void d3d11_draw_context_impl::build_index_and_vertex_buffers()
 	if (!_index_buffer_staging.empty())
 	{
 		ComPtr<ID3D11Buffer> buffer;
-		D3D11_BUFFER_DESC bd;
-		ZeroMemory(&bd, sizeof(bd));
+		D3D11_BUFFER_DESC bd = {};
 		bd.ByteWidth = static_cast<uint32_t>(sizeof(WORD) * _index_buffer_staging.size());
 		bd.Usage = D3D11_USAGE_DEFAULT;
 		bd.BindFlags = D3D11_BIND_INDEX_BUFFER;
 		bd.CPUAccessFlags = 0;
 
-		D3D11_SUBRESOURCE_DATA source_data;
-		memset(&source_data, 0, sizeof(source_data));
+		D3D11_SUBRESOURCE_DATA source_data = {};
 		source_data.pSysMem = _index_buffer_staging.data();
 
 		const auto hr = _f->d3d_device->CreateBuffer(&bd, &source_data, &buffer);
@@ -1367,8 +1360,7 @@ struct context_state
 				ComPtr<ID3D11ShaderResourceView> texture_view_y;
 				ComPtr<ID3D11ShaderResourceView> texture_view_uv;
 
-				D3D11_SHADER_RESOURCE_VIEW_DESC srv;
-				ZeroMemory(&srv, sizeof(D3D11_SHADER_RESOURCE_VIEW_DESC));
+				D3D11_SHADER_RESOURCE_VIEW_DESC srv = {};
 				srv.Format = DXGI_FORMAT_R8_UNORM;
 				srv.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
 				srv.Texture2D.MipLevels = 1;
@@ -1392,8 +1384,7 @@ struct context_state
 				ComPtr<ID3D11ShaderResourceView> texture_view_y;
 				ComPtr<ID3D11ShaderResourceView> texture_view_uv;
 
-				D3D11_SHADER_RESOURCE_VIEW_DESC srv;
-				ZeroMemory(&srv, sizeof(D3D11_SHADER_RESOURCE_VIEW_DESC));
+				D3D11_SHADER_RESOURCE_VIEW_DESC srv = {};
 				srv.Format = DXGI_FORMAT_R16_UNORM;
 				srv.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
 				srv.Texture2D.MipLevels = 1;
@@ -1866,15 +1857,13 @@ void d3d11_vertices::update(recti rects[], ui::color colors[], const int num_bar
 	if (!_vertex_buffer)
 	{
 		ComPtr<ID3D11Buffer> buffer;
-		D3D11_BUFFER_DESC bd;
-		ZeroMemory(&bd, sizeof(bd));
+		D3D11_BUFFER_DESC bd = {};
 		bd.ByteWidth = sizeof(vertex_2d) * vertex_count;
 		bd.Usage = D3D11_USAGE_DEFAULT;
 		bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 		bd.CPUAccessFlags = 0;
 
-		D3D11_SUBRESOURCE_DATA source_data;
-		memset(&source_data, 0, sizeof(source_data));
+		D3D11_SUBRESOURCE_DATA source_data = {};
 		source_data.pSysMem = vertices;
 
 		auto hr = _canvas->_f->d3d_device->CreateBuffer(&bd, &source_data, &buffer);
@@ -1901,15 +1890,13 @@ void d3d11_vertices::update(recti rects[], ui::color colors[], const int num_bar
 	if (!_index_buffer)
 	{
 		ComPtr<ID3D11Buffer> buffer;
-		D3D11_BUFFER_DESC bd;
-		ZeroMemory(&bd, sizeof(bd));
+		D3D11_BUFFER_DESC bd = {};
 		bd.ByteWidth = sizeof(WORD) * index_count;
 		bd.Usage = D3D11_USAGE_DEFAULT;
 		bd.BindFlags = D3D11_BIND_INDEX_BUFFER;
 		bd.CPUAccessFlags = 0;
 
-		D3D11_SUBRESOURCE_DATA source_data;
-		memset(&source_data, 0, sizeof(source_data));
+		D3D11_SUBRESOURCE_DATA source_data = {};
 		source_data.pSysMem = indexes;
 
 		auto hr = _canvas->_f->d3d_device->CreateBuffer(&bd, &source_data, &buffer);
@@ -2031,8 +2018,7 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 		video_texture->GetDevice(&video_device);
 		video_device->GetImmediateContext(&video_context);
 
-		D3D11_TEXTURE2D_DESC tex_desc_src;
-		memset(&tex_desc_src, 0, sizeof(tex_desc_src));
+		D3D11_TEXTURE2D_DESC tex_desc_src = {};
 		video_texture->GetDesc(&tex_desc_src);
 
 		sizei texture_extent = {static_cast<int>(tex_desc_src.Width), static_cast<int>(tex_desc_src.Height)};
@@ -2111,8 +2097,7 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 							if (!_texture || _dimensions != _shared_texture_dimensions || _format !=
 								_shared_texture_format)
 							{
-								D3D11_TEXTURE2D_DESC tex_desc_src;
-								memset(&tex_desc_src, 0, sizeof(tex_desc_src));
+								D3D11_TEXTURE2D_DESC tex_desc_src = {};
 								video_shared_texture->GetDesc(&tex_desc_src);
 
 								D3D11_TEXTURE2D_DESC texDesc2 = tex_desc_src;
@@ -2267,8 +2252,7 @@ ui::texture_update_result d3d11_texture::update(const sizei dims, const ui::text
 		}
 	}
 
-	D3D11_TEXTURE2D_DESC desc;
-	memset(&desc, 0, sizeof(desc));
+	D3D11_TEXTURE2D_DESC desc = {};
 	desc.Width = cx;
 	desc.Height = cy;
 	desc.MipLevels = 1;
@@ -2281,8 +2265,7 @@ ui::texture_update_result d3d11_texture::update(const sizei dims, const ui::text
 	desc.CPUAccessFlags = 0;
 	desc.MiscFlags = 0;
 
-	D3D11_SUBRESOURCE_DATA source_data;
-	memset(&source_data, 0, sizeof(source_data));
+	D3D11_SUBRESOURCE_DATA source_data = {};
 	source_data.pSysMem = pixels;
 	source_data.SysMemPitch = static_cast<UINT>(stride);
 	source_data.SysMemSlicePitch = static_cast<UINT>(buffer_size);
@@ -2529,7 +2512,7 @@ void d3d11_text_renderer::draw_text(const std::u8string_view text, const std::ve
 
 		if (i_highlights != highlights.end() && i == i_highlights->offset)
 		{
-			_highlights.emplace_back(w.size() - 1u, i_highlights->length, i_highlights->clr);
+			_highlights.emplace_back(static_cast<uint32_t>(w.size() - 1u), i_highlights->length, i_highlights->clr);
 			++i_highlights;
 		}
 	}

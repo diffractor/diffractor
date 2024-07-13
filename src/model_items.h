@@ -122,12 +122,12 @@ namespace df
 
 	struct item_display_info
 	{
-		std::u8string info;
+		std::u8string info = {};
 
-		str::cached name;
-		str::cached title;
-		str::cached folder;
-		str::cached label;
+		str::cached name = {};
+		str::cached title = {};
+		str::cached folder = {};
+		str::cached label = {};
 
 		icon_index icon = icon_index::document;
 
@@ -139,16 +139,16 @@ namespace df
 		int duration = 0;
 		int items = 0;
 
-		str::cached bitrate;
-		str::cached pixel_format;
-		sizei dimensions;
+		str::cached bitrate = {};
+		str::cached pixel_format = {};
+		sizei dimensions = {};
 		uint16_t audio_channels = 0;
 		uint16_t audio_sample_rate = 0;
 		uint16_t audio_sample_type = 0;
 
-		file_size size;
-		date_t created;
-		date_t modified;
+		file_size size = {};
+		date_t created = {};
+		date_t modified = {};
 
 		item_online_status online_status = item_online_status::disk;
 		ui::style::font_face title_font = ui::style::font_face::dialog;
@@ -249,9 +249,10 @@ namespace df
 		date_t file_created;
 		date_t file_modified;
 		mutable date_t metadata_scanned;
-		mutable prop::item_metadata_aptr metadata;
-		mutable bloom_bits bloom;
+		mutable prop::item_metadata_aptr metadata;		
 		mutable duplicate_info duplicates;
+
+		mutable bloom_bits bloom;
 		mutable uint32_t crc32c = 0;
 
 		index_file_item() = default;
@@ -265,8 +266,8 @@ namespace df
 			  file_modified(other.file_modified),
 			  metadata_scanned(other.metadata_scanned),
 			  metadata(other.metadata.load()),
-			  bloom(other.bloom),
 			  duplicates(other.duplicates),
+			  bloom(other.bloom),
 			  crc32c(other.crc32c)
 		{
 		}
@@ -280,8 +281,8 @@ namespace df
 			  file_modified(std::move(other.file_modified)),
 			  metadata_scanned(std::move(other.metadata_scanned)),
 			  metadata(other.metadata.load()),
-			  bloom(std::move(other.bloom)),
 			  duplicates(std::move(other.duplicates)),
+			  bloom(std::move(other.bloom)),
 			  crc32c(other.crc32c)
 		{
 			other.metadata.store(nullptr);
@@ -405,10 +406,10 @@ namespace df
 		bool is_read_only = false;
 		bool is_excluded = false;
 
-		str::cached volume;
-		str::cached name;
-		date_t created;
-		date_t modified;
+		str::cached volume = {};
+		str::cached name = {};
+		date_t created = {};
+		date_t modified = {};
 
 		bloom_bits bloom_filter;
 
@@ -444,8 +445,8 @@ namespace df
 
 	struct location_heat_map
 	{
-		static const uint32_t map_width = 256;
-		static const uint32_t map_height = 128;
+		static constexpr uint32_t map_width = 256;
+		static constexpr uint32_t map_height = 128;
 
 		std::array<uint32_t, map_width * map_height> coordinates{};
 
@@ -558,8 +559,8 @@ namespace df
 	class item_element final : public std::enable_shared_from_this<item_element>, public view_element
 	{
 	protected:
-		file_path _path;
-		str::cached _name;
+		file_path _path = {};
+		str::cached _name = {};
 		file_type_ref _ft = file_type::other;
 		prop::item_metadata_aptr _metadata;		
 		index_folder_item_ptr _info;
@@ -567,15 +568,23 @@ namespace df
 		ui::const_image_ptr _cover_art;
 		mutable ui::texture_ptr _texture;
 
-		file_size _size;
-		date_t _thumbnail_timestamp;
-		date_t _modified;
-		date_t _created;
-		date_t _media_created;
+		file_size _size = {};
+		date_t _thumbnail_timestamp = {};
+		date_t _modified = {};
+		date_t _created = {};
+		date_t _media_created = {};
+
+		sizei _thumbnail_dims = {};
+		duplicate_info _duplicates = {};
+		search_result _search = {};
 
 		uint32_t _crc32c = 0;
 		uint32_t _total_count = 0;
 		int _random = 0;
+
+		item_presence _presence = item_presence::unknown;
+		ui::orientation _thumbnail_orientation = ui::orientation::top_left;
+		item_online_status _online_status = item_online_status::offline;
 
 		bool _is_loading_thumbnail = false;
 		bool _failed_loading_thumbnail = false;
@@ -583,14 +592,6 @@ namespace df
 		bool _is_read_only = true;
 		bool _is_folder = false;
 		bool _db_thumbnail_pending = true;
-
-		item_presence _presence = item_presence::unknown;
-		ui::orientation _thumbnail_orientation = ui::orientation::top_left;
-		item_online_status _online_status = item_online_status::offline;
-
-		sizei _thumbnail_dims;
-		duplicate_info _duplicates;
-		search_result _search;		
 
 	public:
 		bool alt_background = false;
@@ -1580,9 +1581,9 @@ namespace df
 		int32_t order2 = 0;
 		int32_t order3 = 0;
 
-		str::cached text1;
-		str::cached text2;
-		str::cached text3;
+		str::cached text1 = {};
+		str::cached text2 = {};
+		str::cached text3 = {};
 
 
 		group_key() noexcept = default;
@@ -1687,7 +1688,7 @@ namespace df
 		void render(ui::draw_context& dc, pointi element_offset) const override;
 		sizei measure(ui::measure_context& mc, int width_limit) const override;
 		void layout(ui::measure_context& mc, recti bounds_in, ui::control_layouts& positions) override;
-		void scroll_tooltip(const ui::const_image_ptr& thumbnail, const std::shared_ptr<view_elements>& elements) const;
+		void scroll_tooltip(const ui::const_image_ptr& thumbnail, const view_elements_ptr& elements) const;
 		void tooltip(view_hover_element& hover, pointi loc, pointi element_offset) const override;
 		view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
 		                                             const std::vector<recti>& excluded_bounds) override;

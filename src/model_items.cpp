@@ -172,13 +172,13 @@ static df::group_key size_key(const df::item_element_ptr& i)
 	df::group_key result;
 	const auto size_bucket = prop::size_bucket(i->file_size().to_int64());
 	if (size_bucket == 0) return { group_key_type::grouped_no_value };
-	result.order1 = df::isqrt(size_bucket);
+	result.order1 = df::round(std::sqrt(size_bucket));
 	result.type = group_key_type::grouped_value;
 	return result;
 }
 
-static const auto rating_base_num = 6;
-static const auto rating_reject_num = 7;
+static constexpr auto rating_base_num = 6;
+static constexpr auto rating_reject_num = 7;
 
 static df::group_key rating_key(const df::item_element_ptr& i)
 {
@@ -266,7 +266,7 @@ static df::group_key resolution_key(const df::item_element_ptr& i)
 			{
 				result.type = group_key_type::grouped_value;
 				result.order1 = ft->group->id;
-				result.order2 = 1 + df::isqrt(extent.cx * extent.cy);
+				result.order2 = 1 + df::round(std::sqrt(extent.cx * extent.cy));
 				result.text1 = str::cache(display_name);
 				result.text2 = str::cache(video_res);
 				return result;
@@ -274,7 +274,7 @@ static df::group_key resolution_key(const df::item_element_ptr& i)
 
 			result.type = group_key_type::grouped_value;
 			result.order1 = ft->group->id;
-			result.order2 = 1 + df::isqrt(extent.cx * extent.cy);
+			result.order2 = 1 + df::round(std::sqrt(extent.cx * extent.cy));
 			result.text1 = str::cache(display_name);
 			result.text2 = str::cache(str::format(u8"{}x{}"sv, extent.cx, extent.cy));
 		}
@@ -305,7 +305,7 @@ static df::group_key resolution_key(const df::item_element_ptr& i)
 					const auto n = prop::exp_round(mp);
 					result.type = group_key_type::grouped_value;
 					result.order1 = 1;
-					result.order2 = 1 + df::isqrt(n);
+					result.order2 = 1 + df::round(std::sqrt(n));
 					result.text1 = str::cache(display_name);
 					result.text2 = str::cache(str::format(u8"{} megapixels"sv, n));
 				}
@@ -776,7 +776,7 @@ std::shared_ptr<group_title_control> df::build_group_title(view_state& s, const 
 					const auto search = search_t(current_search).with(prop::rating, rating);
 					const auto command = [&s, view, search]() { s.open(view, search, {}); };
 
-					auto tooltip = [search, rating](view_hover_element& popup)
+					auto tooltip = [rating](view_hover_element& popup)
 						{
 							popup.elements->add(
 								make_icon_element(icon_index::star_solid, rating, view_element_style::line_break));
@@ -1346,7 +1346,7 @@ sizei df::item_group::measure(ui::measure_context& mc, const int width_limit) co
 								std::swap(dims.cx, dims.cy);
 							}
 
-							cy_av += mul_div(cx, dims.cy, dims.cx);
+							cy_av += mul_div(df::round(cx), dims.cy, dims.cx);
 						}
 						else
 						{
@@ -1397,7 +1397,6 @@ static void draw_flag(ui::draw_context& dc, const df::item_display_info& info, c
 	const auto rating = info.rating;
 
 	auto icon = icon_index::flag;
-	const ui::color32 flag_clr = 0;
 	ui::color32 label_clr = 0;
 
 	if (rating == -1)
@@ -1420,30 +1419,13 @@ static void draw_flag(ui::draw_context& dc, const df::item_display_info& info, c
 		label_clr = color_rate_rejected;
 	}
 
-	const bool has_clr = label_clr || flag_clr;
+	const bool has_clr = label_clr != 0;
 	const auto alpha = has_clr ? a : a / 4.0f;
 	ui::color bg;
 
 	if (has_clr)
 	{
-		/*if (label_clr && flag_clr)
-		{
-			auto logical_bounds1 = logical_bounds;
-			auto logical_bounds2 = logical_bounds;
-			logical_bounds1.right = logical_bounds2.left = (logical_bounds.left + logical_bounds.right) / 2;
-
-			dc.draw_rounded_rect(logical_bounds1, ui::color(flag_clr, dc.colors.alpha));
-			dc.draw_rounded_rect(logical_bounds2, ui::color(label_clr, dc.colors.alpha));
-		}
-		else*/
-		if (flag_clr)
-		{
-			bg = ui::color(flag_clr, a);
-		}
-		else
-		{
-			bg = ui::color(label_clr, a);
-		}
+		bg = ui::color(label_clr, a);
 	}
 
 	xdraw_icon(dc, icon, logical_bounds, ui::color(dc.colors.foreground, alpha), bg);
@@ -1590,7 +1572,7 @@ void df::item_group::update_detail_row_layout(ui::draw_context& dc, const item_e
 
 	if (!info.size.is_empty())
 	{
-		_row_draw_info.file_size.update_extent(dc, prop::format_size(info.size), info.size.to_int64());
+		_row_draw_info.file_size.update_extent(dc, prop::format_size(info.size), static_cast<double>(info.size.to_int64()));
 	}
 
 	if (!is_empty(info.bitrate))
@@ -1630,7 +1612,7 @@ void df::item_group::render(ui::draw_context& dc, const pointi element_offset) c
 {
 }
 
-void df::item_group::scroll_tooltip(const ui::const_image_ptr& thumbnail, const std::shared_ptr<view_elements>& elements) const
+void df::item_group::scroll_tooltip(const ui::const_image_ptr& thumbnail, const view_elements_ptr& elements) const
 {
 	const auto max_thumb_dim = 80;
 	files ff;
@@ -1971,7 +1953,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 				{
 					const auto bb = widths.file_size.calc_bounds(text_rect, text_x, text_y, text_padding);
 					const auto text = prop::format_size(info.size);
-					widths.file_size.draw(dc, text, info.size.to_int64(), bb, text_font, text_style_far, text_color);
+					widths.file_size.draw(dc, text, static_cast<double>(info.size.to_int64()), bb, text_font, text_style_far, text_color);
 				}
 				text_x += widths.file_size.width + text_padding;
 			}

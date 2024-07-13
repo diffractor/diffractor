@@ -27,7 +27,7 @@ namespace ui
 
 	std::vector<recti> layout_images(recti draw_bounds, const std::vector<sizei>& dims);
 
-	const static int default_control_height(measure_context& mc, const int lines = 1)
+	static int default_control_height(measure_context& mc, const int lines = 1)
 	{
 		return (mc.text_line_height(style::font_face::dialog) * lines) + mc.padding2;
 	}
@@ -1540,7 +1540,7 @@ namespace ui
 		mutable int _total_height = 0;
 
 	public:
-		static const int max_cols = 8;
+		static constexpr int max_cols = 8;
 		bool no_shrink_col[max_cols] = {false, false, false, false, false, false};
 		bool can_scroll = false;
 		bool frame_when_empty = false;
@@ -2326,7 +2326,7 @@ namespace ui
 			return {cx, std::max(_text_extent1.cy + _text_extent2.cy + mc.padding2, _image_extent.cy)};
 		}
 
-		sizei measure_images(measure_context& mc, const int avail_width, const int prefered_height) const
+		sizei measure_images(measure_context& mc, const int avail_width, const int preferred_height) const
 		{
 			auto dims = surface_dims();
 
@@ -2334,7 +2334,7 @@ namespace ui
 
 			for (auto&& d : dims)
 			{
-				d = scale_dimensions(d, sizei{cx_slot, prefered_height}, true);
+				d = scale_dimensions(d, sizei{cx_slot, preferred_height}, true);
 			}
 
 			auto total_width = 0;
@@ -2348,7 +2348,7 @@ namespace ui
 			{
 				for (auto&& d : dims)
 				{
-					d = scale_dimensions(d, sizei{df::mul_div(d.cx, avail_width, total_width), prefered_height}, true);
+					d = scale_dimensions(d, sizei{df::mul_div(d.cx, avail_width, total_width), preferred_height}, true);
 				}
 			}
 
@@ -2647,13 +2647,13 @@ namespace ui
 
 			for (const auto& c : _controls)
 			{
-				const auto prefered_width = c.preferred_width * mc.scale_factor;
+				const auto preferred_width = c.preferred_width * mc.scale_factor;
 
 				if (c.e->is_visible())
 				{					
-					if (prefered_width)
+					if (preferred_width)
 					{
-						cx_split_avail -= prefered_width;
+						cx_split_avail -= preferred_width;
 					}
 					else
 					{
@@ -2668,8 +2668,8 @@ namespace ui
 			{
 				if (c.e->is_visible() && !c.e->is_style_bit_set(view_element_style::shrink))
 				{
-					const auto prefered_width = c.preferred_width * mc.scale_factor;
-					c.extent = c.e->measure(mc, prefered_width ? c.width : cx_split);
+					const auto preferred_width = c.preferred_width * mc.scale_factor;
+					c.extent = c.e->measure(mc, preferred_width ? c.width : cx_split);
 					mx = std::max(mx, c.extent.cx);
 					my = std::max(my, c.extent.cy);
 				}
@@ -2679,11 +2679,11 @@ namespace ui
 			{
 				if (c.e->is_visible())
 				{
-					const auto prefered_width = c.preferred_width * mc.scale_factor;
+					const auto preferred_width = c.preferred_width * mc.scale_factor;
 
-					if (prefered_width > 0)
+					if (preferred_width > 0)
 					{
-						c.width = prefered_width ? prefered_width : cx_split;
+						c.width = preferred_width ? preferred_width : cx_split;
 					}
 					else if (compact)
 					{

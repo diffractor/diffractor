@@ -177,7 +177,7 @@ public:
 class av_visualizer
 {
 private:
-	const static int num_bars = 64;
+	static constexpr int num_bars = 64;
 	const double time_offset = 0.01;
 
 	static fast_fft fft;
@@ -406,9 +406,9 @@ public:
 				// Cosign palete based colors
 				constexpr auto pi4 = M_PI / 0.25;
 				const auto ic = (0.25 + (i * 0.003) + (yy * 0.04) / scaleY) * pi4;
-				const auto rr = (cos(ic) + 1.0) / 2.0;
-				const auto gg = (cos(ic - (0.125 * pi4)) + 1.0) / 2.0;
-				const auto bb = (cos(ic - (0.25 * pi4)) + 1.0) / 2.0;
+				const auto rr = static_cast<float>((cos(ic) + 1.0) / 2.0);
+				const auto gg = static_cast<float>((cos(ic - (0.125 * pi4)) + 1.0) / 2.0);
+				const auto bb = static_cast<float>((cos(ic - (0.25 * pi4)) + 1.0) / 2.0);
 				colors[i] = ui::color(rr, gg, bb, static_cast<float>(a));
 
 				recti col(df::round(x - inflate), df::round(y - (yl * hh / scaleY)), df::round(x + inflate),

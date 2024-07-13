@@ -407,7 +407,6 @@ void items_view::items_changed(const bool path_changed)
 	}
 
 	std::vector<view_element_ptr> elements;
-	elements.clear();
 	elements.reserve(_state.groups().size() * 3);
 
 	for (const auto& g : _state.groups())
@@ -1143,7 +1142,7 @@ public:
 				s << m.first.sv();
 				s << u8": "sv;
 				s << m.second;
-				s << std::endl;
+				s << '\n';
 			}
 
 			platform::set_clipboard(s.str());
@@ -1206,7 +1205,6 @@ static std::u8string_view format_metadata_standard(const metadata_standard ms)
 	case metadata_standard::raw: return tt.raw_metadata_title;
 	case metadata_standard::ffmpeg: return tt.media_metadata_title;
 	case metadata_standard::icc: return tt.icc_metadata_title;
-	default:;
 	}
 
 	return {};
@@ -1479,7 +1477,6 @@ void items_view::update_media_elements()
 							break;
 						case av_stream_type::subtitle: type = tt.subtitle;
 							break;
-						default:;
 						}
 
 						auto format = st.pixel_format;
@@ -1665,7 +1662,7 @@ void items_view::items_scroll_popup(view_hover_element& hover, const pointi loc)
 						hover.active_bounds = recti(left, loc.y - 1, right, loc.y + 1);
 						hover.active_delay = 50;
 						hover.horizontal = true;
-						hover.prefered_size = 200;
+						hover.preferred_size = 200;
 					}
 				}
 			}

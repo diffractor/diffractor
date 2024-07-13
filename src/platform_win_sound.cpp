@@ -33,10 +33,10 @@ const IID IID_IAudioClock = __uuidof(IAudioClock);
 
 #include "av_sound.h"
 
-static const GUID SDL_KSDATAFORMAT_SUBTYPE_PCM = {
+static constexpr GUID SDL_KSDATAFORMAT_SUBTYPE_PCM = {
 	0x00000001, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}
 };
-static const GUID SDL_KSDATAFORMAT_SUBTYPE_IEEE_FLOAT = {
+static constexpr GUID SDL_KSDATAFORMAT_SUBTYPE_IEEE_FLOAT = {
 	0x00000003, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}
 };
 

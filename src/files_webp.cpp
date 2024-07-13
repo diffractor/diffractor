@@ -239,7 +239,7 @@ ui::image_ptr save_webp(const ui::const_surface_ptr& surface_in, const metadata_
 			{
 				config.thread_level = 1;
 				config.lossless = false;
-				config.quality = params.webp_quality;
+				config.quality = static_cast<float>(params.webp_quality);
 				config.method = 6;
 				config.preprocessing = 4;
 				// https://groups.google.com/a/webmproject.org/forum/#!topic/webp-discuss/7dV1qXrdQ2Y

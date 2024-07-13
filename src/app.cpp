@@ -1061,7 +1061,7 @@ void app_frame::update_tooltip()
 
 	if (!_hover.is_empty())
 	{
-		_bubble->show(_hover.elements, _hover.window_bounds, _hover.x_focus, _hover.prefered_size, _hover.horizontal);
+		_bubble->show(_hover.elements, _hover.window_bounds, _hover.x_focus, _hover.preferred_size, _hover.horizontal);
 	}
 	else
 	{
@@ -1404,7 +1404,7 @@ void app_frame::layout(ui::measure_context& mc)
 		const auto cx_avail = client_bounds.width();
 		const auto sidebar_min = scale64;
 		const auto sidebar_avail = std::max(sidebar_min, cx_avail / 3);
-		const auto sidebar_cx = std::clamp(_sidebar->prefered_width(mc), sidebar_min, sidebar_avail);
+		const auto sidebar_cx = std::clamp(_sidebar->preferred_width(mc), sidebar_min, sidebar_avail);
 		const auto toolbar_widths = navigate1_extent.cx + navigate2_extent.cx + navigate3_extent.cx;				
 		const auto cx_address = std::clamp((client_bounds.width() - toolbar_widths) / 2, scale300, scale1000);
 		const auto x_address_center = (client_bounds.left + client_bounds.right) / 2;
@@ -3918,7 +3918,7 @@ void app_frame::crash(const df::file_path dump_file_path)
 
 			for (const auto& i : calc_app_info(_state.item_index, true))
 			{
-				message << i.first << u8" "sv << i.second << std::endl;
+				message << i.first << u8" "sv << i.second << '\n';
 			}
 
 			platform::web_request req;

@@ -22,8 +22,8 @@ InterfaceType* SafeAcquire(InterfaceType* newObject)
 	return newObject;
 }
 
-static const uint32_t icon_font_collection_id = 19;
-static const uint32_t icon_font_collection_id2 = 33;
+static constexpr uint32_t icon_font_collection_id = 19;
+static constexpr uint32_t icon_font_collection_id2 = 33;
 static const auto icon_font_name = L"Segoe MDL2 Assets";
 //static const auto petscii_font_name = L"Basic Engine ASCII 8x8";
 static const auto petscii_font_name = L"C64 Pro Mono";

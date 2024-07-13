@@ -65,7 +65,7 @@ public:
 
 	void compile(const std::u8string_view sql)
 	{
-		const int ret = sqlite3_prepare(_db, std::bit_cast<const char*>(sql.data()), sql.size(), &_handle, nullptr);
+		const int ret = sqlite3_prepare(_db, std::bit_cast<const char*>(sql.data()), static_cast<int>(sql.size()), &_handle, nullptr);
 
 		if (ret != SQLITE_OK)
 			db_trace_error(_db, u8"sqlite3_prepare"sv);
@@ -75,7 +75,7 @@ public:
 	{
 		if (_handle != nullptr)
 		{
-			const int ret = sqlite3_bind_text(_handle, i, std::bit_cast<const char*>(v.data()), v.size(),
+			const int ret = sqlite3_bind_text(_handle, i, std::bit_cast<const char*>(v.data()), static_cast<int>(v.size()),
 			                                  SQLITE_STATIC);
 
 			if (ret != SQLITE_OK)
@@ -142,7 +142,7 @@ public:
 	{
 		if (_handle != nullptr && !cs.empty())
 		{
-			const int ret = sqlite3_bind_blob(_handle, i, cs.data, cs.size, SQLITE_STATIC);
+			const int ret = sqlite3_bind_blob(_handle, i, cs.data, static_cast<int>(cs.size), SQLITE_STATIC);
 
 			if (ret != SQLITE_OK)
 				db_trace_error(_db, str::format(u8"sqlite3_bind_blob {}"sv, i));

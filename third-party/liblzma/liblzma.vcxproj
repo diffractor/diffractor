@@ -181,7 +181,7 @@
     <ClCompile>
       <PreprocessorDefinitions>WIN32;HAVE_CONFIG_H;LZMA_API_STATIC;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
-      <WarningLevel>Level3</WarningLevel>
+      <WarningLevel>Level1</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <Optimization>Disabled</Optimization>
       <AdditionalIncludeDirectories>./;src/liblzma/common;src/common;src/liblzma/api;src/liblzma/check;src/liblzma/delta;src/liblzma/lz;src/liblzma/lzma;src/liblzma/rangecoder;src/liblzma/simple</AdditionalIncludeDirectories>
@@ -223,7 +223,7 @@
     <ClCompile>
       <PreprocessorDefinitions>WIN32;HAVE_CONFIG_H;LZMA_API_STATIC;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
-      <WarningLevel>Level3</WarningLevel>
+      <WarningLevel>Level1</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <Optimization>Disabled</Optimization>
       <AdditionalIncludeDirectories>./;src/liblzma/common;src/common;src/liblzma/api;src/liblzma/check;src/liblzma/delta;src/liblzma/lz;src/liblzma/lzma;src/liblzma/rangecoder;src/liblzma/simple</AdditionalIncludeDirectories>
@@ -305,7 +305,7 @@
     <ClCompile>
       <PreprocessorDefinitions>WIN32;HAVE_CONFIG_H;LZMA_API_STATIC;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <WarningLevel>Level3</WarningLevel>
+      <WarningLevel>Level1</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <AdditionalIncludeDirectories>./;src/liblzma/common;src/common;src/liblzma/api;src/liblzma/check;src/liblzma/delta;src/liblzma/lz;src/liblzma/lzma;src/liblzma/rangecoder;src/liblzma/simple</AdditionalIncludeDirectories>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
@@ -347,7 +347,7 @@
     <ClCompile>
       <PreprocessorDefinitions>WIN32;HAVE_CONFIG_H;LZMA_API_STATIC;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <WarningLevel>Level3</WarningLevel>
+      <WarningLevel>Level1</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <AdditionalIncludeDirectories>./;src/liblzma/common;src/common;src/liblzma/api;src/liblzma/check;src/liblzma/delta;src/liblzma/lz;src/liblzma/lzma;src/liblzma/rangecoder;src/liblzma/simple</AdditionalIncludeDirectories>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>

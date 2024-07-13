@@ -636,8 +636,8 @@ std::u8string prop::format_gps(const double d)
 
 std::u8string prop::format_gps(const double lat, const double lon)
 {
-	if (lat != static_cast<double>(gps_coordinate::invalid_coordinate) &&
-		lon != static_cast<double>(gps_coordinate::invalid_coordinate))
+	if (!df::equiv(lat, static_cast<double>(gps_coordinate::invalid_coordinate)) &&
+		!df::equiv(lon, static_cast<double>(gps_coordinate::invalid_coordinate)))
 	{
 		return str::format(u8"{.5},{.5}"sv, lat, lon);
 	}
@@ -662,10 +662,10 @@ std::u8string prop::format_streams(const int v)
 	return str::format(u8"{}"sv, v);
 }
 
-const static uint64_t KB = 1024;
-const static uint64_t MB = KB * 1024;
-const static uint64_t GB = MB * 1024;
-const static uint64_t TB = GB * 1024;
+static constexpr int64_t KB = 1024;
+static constexpr int64_t MB = KB * 1024;
+static constexpr int64_t GB = MB * 1024;
+static constexpr int64_t TB = GB * 1024;
 
 
 std::u8string prop::format_bit_rate(const int64_t br)
@@ -747,39 +747,38 @@ std::u8string prop::format_size(const df::file_size& s)
 
 struct magnitude
 {
-	uint64_t n;
-	uint64_t d;
+	int64_t n;
+	int64_t d;
 	char c;
 	std::u8string label;
 
-	const bool operator<(const uint64_t other) const
+	bool operator<(const int64_t other) const
 	{
 		return n < other;
 	}
 };
 
 std::vector<magnitude> magnitudes{
-	{0llu, 0llu, 0, u8""},
-	{1llu, 1llu, 'B', u8"<1K"},
-	{10llu, 1llu, 'B', u8"<1K"},
-	{100llu, 1llu, 'B', u8"<1K"},
-	{1000llu, 1000llu, 'K', u8"1K"},
-	{10000llu, 1000llu, 'K', u8"10K"},
-	{100000llu, 1000llu, 'K', u8"100K"},
-	{1000000llu, 1000000llu, 'M', u8"1M"},
-	{10000000llu, 1000000llu, 'M', u8"10M"},
-	{100000000llu, 1000000llu, 'M', u8"100M"},
-	{1000000000llu, 1000000000llu, 'G', u8"1G"},
-	{10000000000llu, 1000000000llu, 'G', u8"10G"},
-	{100000000000llu, 1000000000llu, 'G', u8"100G"},
-	{1000000000000llu, 1000000000000llu, 'T', u8"1T"},
-	{10000000000000llu, 1000000000000llu, 'T', u8"10T"},
-	{100000000000000llu, 1000000000000llu, 'T', u8"100T"},
-	{1000000000000000llu, 1000000000000000llu, 'P', u8"1P"},
-	{10000000000000000llu, 1000000000000000llu, 'P', u8"10P"},
-	{100000000000000000llu, 1000000000000000llu, 'P', u8"100P"},
-	{1000000000000000000llu, 1000000000000000000llu, 'E', u8"1E"},
-	{10000000000000000000llu, 1000000000000000000llu, 'E', u8"10E"},
+	{0ll, 0ll, 0, u8""},
+	{1ll, 1ll, 'B', u8"<1K"},
+	{10ll, 1ll, 'B', u8"<1K"},
+	{100ll, 1ll, 'B', u8"<1K"},
+	{1000ll, 1000ll, 'K', u8"1K"},
+	{10000ll, 1000ll, 'K', u8"10K"},
+	{100000ll, 1000ll, 'K', u8"100K"},
+	{1000000ll, 1000000ll, 'M', u8"1M"},
+	{10000000ll, 1000000ll, 'M', u8"10M"},
+	{100000000ll, 1000000ll, 'M', u8"100M"},
+	{1000000000ll, 1000000000ll, 'G', u8"1G"},
+	{10000000000ll, 1000000000ll, 'G', u8"10G"},
+	{100000000000ll, 1000000000ll, 'G', u8"100G"},
+	{1000000000000ll, 1000000000000ll, 'T', u8"1T"},
+	{10000000000000ll, 1000000000000ll, 'T', u8"10T"},
+	{100000000000000ll, 1000000000000ll, 'T', u8"100T"},
+	{1000000000000000ll, 1000000000000000ll, 'P', u8"1P"},
+	{10000000000000000ll, 1000000000000000ll, 'P', u8"10P"},
+	{100000000000000000ll, 1000000000000000ll, 'P', u8"100P"},
+	{1000000000000000000ll, 1000000000000000000ll, 'E', u8"1E"},
 };
 
 static uint64_t u64_diff(uint64_t a, uint64_t b)
@@ -787,7 +786,7 @@ static uint64_t u64_diff(uint64_t a, uint64_t b)
 	return (a > b) ? a - b : b - a;
 }
 
-magnitude find_magnitude(const uint64_t n)
+magnitude find_magnitude(const int64_t n)
 {
 	const auto ihi = std::lower_bound(magnitudes.begin(), magnitudes.end(), n);
 
@@ -867,8 +866,6 @@ std::u8string prop::format_audio_sample_type(const audio_sample_t v)
 	case audio_sample_t::signed_planar_64bit: return u8"64bit"s;
 	case audio_sample_t::planar_float: return u8"float"s;
 	case audio_sample_t::planar_double: return u8"double"s;
-	default:
-		break;
 	}
 	return {};
 }
@@ -894,8 +891,6 @@ std::u8string prop::format_audio_channels(const int v)
 	default:
 		return str::format(u8"{} channels"sv, v);
 	}
-
-	return {};
 }
 
 std::u8string prop::format_f_num(const double d)

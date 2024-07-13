@@ -50,7 +50,7 @@ namespace df
 	{
 		search_result_type type = search_result_type::no_match;
 		prop::key_ref key = prop::null;
-		str::cached text;
+		str::cached text = {};
 
 		bool is_match() const
 		{
@@ -554,13 +554,13 @@ namespace df
 
 	struct related_info
 	{
-		file_path path;
-		gps_coordinate gps;
-		date_t metadata_created;
-		date_t file_created;
-		str::cached name;
+		file_path path = {};
+		gps_coordinate gps = {};
+		date_t metadata_created = {};
+		date_t file_created = {};
+		str::cached name = {};
 		uint32_t crc32c = 0;
-		file_size size;
+		file_size size = {};
 		file_type_ref ft = nullptr;
 		uint32_t group = 0;
 

@@ -177,7 +177,7 @@ public:
 	{
 		const auto dx = x - other.x;
 		const auto dy = y - other.y;
-		return df::isqrt((dx * dx) + (dy * dy));
+		return df::round(std::sqrt((dx * dx) + (dy * dy)));
 	}
 };
 

@@ -22,10 +22,10 @@ using item_writes_t = platform::queue<item_db_write>;
 
 struct item_import
 {
-	str::cached name;
-	df::date_t modified;
-	df::file_size size;
-	df::date_t imported;
+	str::cached name = {};
+	df::date_t modified = {};
+	df::file_size size = {};
+	df::date_t imported = {};
 
 	int compare(const item_import& other) const
 	{

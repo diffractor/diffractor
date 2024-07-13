@@ -26,9 +26,9 @@ constexpr uint32_t to_code2(const std::u8string_view s)
 
 struct country_loc
 {
-	uint32_t code;
-	str::cached name;
-	gps_coordinate centroid;
+	uint32_t code = {};
+	str::cached name = {};
+	gps_coordinate centroid = {};
 };
 
 str::cached normalize_county_abbreviation(str::cached country);
@@ -38,7 +38,7 @@ class country_t
 {
 private:
 	char8_t _code[3]{};
-	str::cached _name;
+	str::cached _name = {};
 	std::vector<str::cached> _alt_names;
 	df::hash_map<uint32_t, str::cached> _states;
 	gps_coordinate _centroid;
@@ -156,7 +156,7 @@ private:
 
 	struct ngram_t
 	{
-		const static int depth = 4;
+		static constexpr int depth = 4;
 		uint8_t text[depth];
 
 		ngram_t() noexcept = default;

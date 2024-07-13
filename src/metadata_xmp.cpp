@@ -111,7 +111,7 @@ std::u8string microsoft_photo_prefix;
 
 static str::cached xmp_load_array(const SXMPMeta& xmp, const char* schema_ns, const char* array_name)
 {
-	str::cached result;
+	str::cached result = {};
 	const auto count = xmp.CountArrayItems(schema_ns, array_name);
 
 	if (count > 0)
@@ -329,7 +329,7 @@ static void parse_xmp(const SXMPMeta& xmp, prop::item_metadata& md)
 
 		if (xmp_decode_rational(str::utf8_cast(utf8), r))
 		{
-			md.f_number = r.to_real();
+			md.f_number = static_cast<float>(r.to_real());
 		}
 	}
 
@@ -339,7 +339,7 @@ static void parse_xmp(const SXMPMeta& xmp, prop::item_metadata& md)
 
 		if (xmp_decode_rational(str::utf8_cast(utf8), r))
 		{
-			md.focal_length = r.to_real();
+			md.focal_length = static_cast<float>(r.to_real());
 		}
 	}
 
@@ -349,7 +349,7 @@ static void parse_xmp(const SXMPMeta& xmp, prop::item_metadata& md)
 
 		if (xmp_decode_rational(str::utf8_cast(utf8), r))
 		{
-			md.exposure_time = r.to_real();
+			md.exposure_time = static_cast<float>(r.to_real());
 		}
 	}
 
@@ -611,11 +611,11 @@ void metadata_xmp::parse(prop::item_metadata& pd, df::cspan xmp)
 
 			if (memcmp(data, xmp_signature.data(), xmp_sig_len) == 0)
 			{
-				meta.ParseFromBuffer(std::bit_cast<const char*>(data + xmp_sig_len), size - xmp_sig_len);
+				meta.ParseFromBuffer(std::bit_cast<const char*>(data + xmp_sig_len), static_cast<uint32_t>(size - xmp_sig_len));
 			}
 			else
 			{
-				meta.ParseFromBuffer(std::bit_cast<const char*>(data), size);
+				meta.ParseFromBuffer(std::bit_cast<const char*>(data), static_cast<uint32_t>(size));
 			}
 
 			parse_xmp(meta, pd);
@@ -641,7 +641,7 @@ void metadata_xmp::parse(prop::item_metadata& pd, const df::file_path path)
 
 		if (!f.empty())
 		{
-			xmp.ParseFromBuffer(std::bit_cast<const char*>(f.data()), f.size());
+			xmp.ParseFromBuffer(std::bit_cast<const char*>(f.data()), static_cast<uint32_t>(f.size()));
 			parse_xmp(xmp, pd);
 		}
 	}
@@ -728,7 +728,7 @@ xmp_update_result metadata_xmp::update(const df::file_path update_path, const df
 
 				if (!f.empty())
 				{
-					xmp.ParseFromBuffer(std::bit_cast<const char*>(f.data()), f.size());
+					xmp.ParseFromBuffer(std::bit_cast<const char*>(f.data()), static_cast<uint32_t>(f.size()));
 				}
 			}
 		}
@@ -782,7 +782,7 @@ void metadata_xmp::update(std::u8string& buffer, const metadata_edits& edits)
 	try
 	{
 		SXMPMeta meta;
-		meta.ParseFromBuffer(std::bit_cast<const char*>(buffer.data()), buffer.size());
+		meta.ParseFromBuffer(std::bit_cast<const char*>(buffer.data()), static_cast<uint32_t>(buffer.size()));
 		edits.apply(meta);
 
 		std::string temp;
@@ -814,7 +814,7 @@ metadata_kv_list metadata_xmp::to_info(df::cspan xmp)
 			size = size - xmp_sig_len;
 		}
 
-		meta.ParseFromBuffer(data, size);
+		meta.ParseFromBuffer(data, static_cast<uint32_t>(size));
 
 		std::string schema_ns, prop_path, prop_val;
 		SXMPIterator itr(meta);

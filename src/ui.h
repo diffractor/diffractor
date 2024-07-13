@@ -96,9 +96,9 @@ struct keyboard_accelerator_t
 	int key = 0;
 	int key_state = 0;
 
-	const static auto shift = 0x04;
-	const static auto control = 0x08;
-	const static auto alt = 0x10;
+	static constexpr auto shift = 0x04;
+	static constexpr auto control = 0x08;
+	static constexpr auto alt = 0x10;
 };
 
 std::u8string format_keyboard_accelerator(const std::vector<keyboard_accelerator_t>& keyboard_accelerators);
@@ -448,8 +448,8 @@ namespace ui
 			clear();
 		}
 
-		const static int max_value = 0x100;
-		const static int alloc_size = sizeof(int) * max_value;
+		static constexpr int max_value = 0x100;
+		static constexpr int alloc_size = sizeof(int) * max_value;
 
 		histogram& operator=(const histogram& other) noexcept
 		{
@@ -507,11 +507,10 @@ namespace ui
 		sizei _dimensions;
 		size_t _stride = 0;
 		size_t _size = 0;
-
+		double _time = 0.0;
 		std::unique_ptr<uint8_t, df::free_delete> _pixels;
 		texture_format _format = texture_format::None;
-		orientation _orientation = orientation::top_left;
-		double _time = 0.0;
+		orientation _orientation = orientation::top_left;		
 
 	public:
 		surface() noexcept = default;
@@ -1217,9 +1216,8 @@ namespace ui
 	{
 	public:
 		double time_now = 0.0;
-		bool frame_has_focus = false;
-
 		color_style colors;
+		bool frame_has_focus = false;
 
 		virtual ~draw_context() = default;
 
@@ -1350,8 +1348,8 @@ namespace ui
 		bool file_system_auto_complete = false;
 		bool rounded_corners = false;
 		bool select_all_on_focus = false;
-		color32 bg_clr = style::color::dialog_background;
 		style::font_face font = style::font_face::dialog;
+		color32 bg_clr = style::color::dialog_background;		
 		std::function<bool(int c, key_state keys)> capture_key_down;
 		std::vector<std::u8string> auto_complete_list;
 	};
@@ -1377,8 +1375,7 @@ namespace ui
 			: text(t), checked(ch), opaque(std::move(opaque)), invoke(std::move(invoke))
 		{
 		}
-
-		icon_index icon = icon_index::none;
+				
 		std::u8string text;
 		std::u8string toolbar_text;
 		std::u8string tooltip_text;
@@ -1392,13 +1389,13 @@ namespace ui
 		bool text_can_change = false;
 		bool icon_can_change = false;
 
+		command_group group = command_group::none;
+		icon_index icon = icon_index::none;
 		color32 clr = 0;
-		std::any opaque;
 
+		std::any opaque;
 		std::function<void()> invoke;
 		std::function<std::vector<command_ptr>()> menu;
-
-		command_group group = command_group::none;
 	};
 
 
@@ -1604,7 +1601,7 @@ namespace ui
 	{
 	public:
 		virtual ~bubble_frame() = default;
-		virtual void show(const view_elements_ptr& elements, recti bounds, int x_center, int prefered_size,
+		virtual void show(const view_elements_ptr& elements, recti bounds, int x_center, int preferred_size,
 		                  bool horizontal) = 0;
 		virtual void hide() = 0;
 		virtual bool is_visible() const = 0;

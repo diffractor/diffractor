@@ -9,12 +9,16 @@
 
 #pragma once
 
-struct view_hover_element;
-enum class render_valid;
+class ui_element_render;
+class ui_element_state;
 class view_controller;
-class view_host;
 class view_element;
+class view_elements;
+class view_host;
 class view_host_base;
+class view_state;
+enum class render_valid;
+struct view_hover_element;
 
 using view_host_ptr = std::shared_ptr<view_host>;
 using view_controller_ptr = std::shared_ptr<view_controller>;

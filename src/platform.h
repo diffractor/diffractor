@@ -96,15 +96,15 @@ namespace platform
 
 	struct file_info
 	{
-		df::folder_path folder;
-		str::cached name;
-		file_attributes_t attributes;
+		df::folder_path folder = {};
+		str::cached name = {};
+		file_attributes_t attributes = {};
 	};
 
 	struct folder_info
 	{
-		str::cached name;
-		file_attributes_t attributes;
+		str::cached name = {};
+		file_attributes_t attributes = {};
 	};
 
 	struct folder_contents
@@ -329,8 +329,7 @@ namespace platform
 	struct open_with_entry
 	{
 		std::u8string name;
-		std::function<bool(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders)>
-		invoke;
+		std::function<bool(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders)> invoke;
 		int weight = 0;
 	};
 
@@ -365,11 +364,11 @@ namespace platform
 	{
 	public:
 		struct description
-		{
+		{			
+			std::u8string first_name;			
+			drop_effect preferred_drop_effect = drop_effect::none;
 			int count = 0;
-			std::u8string first_name;
 			bool has_readonly = false;
-			drop_effect prefered_drop_effect = drop_effect::none;
 		};
 
 		virtual bool has_drop_files() const = 0;
@@ -689,8 +688,6 @@ namespace platform
 
 	struct web_request
 	{
-		web_request_verb verb = web_request_verb::GET;
-
 		std::u8string host;
 		std::u8string command;
 		std::u8string path;
@@ -705,6 +702,7 @@ namespace platform
 
 		df::file_path download_file_path;
 
+		web_request_verb verb = web_request_verb::GET;
 		bool secure = true;
 		int port = 0;
 	};
@@ -712,9 +710,9 @@ namespace platform
 	struct web_response
 	{
 		std::u8string headers;
-		std::u8string body;
-		int status_code = 0;
+		std::u8string body;		
 		std::u8string content_type;
+		int status_code = 0;
 	};
 
 	web_response send_request(const web_request& req);

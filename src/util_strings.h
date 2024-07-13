@@ -758,9 +758,9 @@ namespace str
 	}
 
 	struct find_result
-	{
-		bool found = false;
+	{		
 		std::vector<part_t> parts;
+		bool found = false;
 	};
 
 	std::u8string_view::size_type ifind(std::u8string_view text, std::u8string_view sub_string);

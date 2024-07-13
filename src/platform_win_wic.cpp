@@ -91,8 +91,7 @@ HGLOBAL image_to_handle(const file_load_result& loaded)
 
 static CLSID wic_encoder_clsid(const std::u8string_view format)
 {
-	CLSID result;
-	memset(&result, 0, sizeof(result));
+	CLSID result = {};
 
 	static const df::hash_map<std::u8string_view, CLSID, df::ihash, df::ieq> extensions
 	{

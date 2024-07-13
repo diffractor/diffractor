@@ -95,7 +95,7 @@ struct state_strategy
 class recent_state : public df::no_copy
 {
 public:
-	const static int max_size = 64;
+	static constexpr int max_size = 64;
 	std::vector<std::u8string> _items;
 
 public:
@@ -372,9 +372,9 @@ public:
 	bool _is_photo = false;
 	bool _is_raw = false;
 	bool _photo_loaded = false;
-
-	sizei _display_dimensions;
+		
 	ui::orientation _display_orientation = ui::orientation::top_left;
+	sizei _display_dimensions;
 
 	texture_state(async_strategy& async, const df::item_element_ptr& i);
 
@@ -483,17 +483,14 @@ public:
 
 	df::item_element_ptr _item1;
 	df::item_element_ptr _item2;
-
-	int _next_photo_tick = 0;
-
+	
 	mutable recti _scrubber_bounds;
+
 	int _hover_scrubber_pos = -1;
 	mutable int _time_width = 0;
+	int _next_photo_tick = 0;
 
 	ui::pixel_difference_result _pixel_difference = ui::pixel_difference_result::unknown;
-
-	mutable bool _preview_changed = false;
-
 	int _last_scrubber_pos = -1;
 	int _last_duration = -1;
 	int _last_seconds = -1;
@@ -519,6 +516,7 @@ public:
 	bool _is_two = false;
 	bool _is_multi = false;
 	bool _can_zoom = false;
+	mutable bool _preview_changed = false;
 
 	std::vector<ui::const_image_ptr> _images;
 	std::vector<ui::const_surface_ptr> _surfaces;

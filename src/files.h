@@ -253,11 +253,11 @@ public:
 
 struct file_tool
 {
-	str::cached exe;
-	str::cached invoke_text;
-	str::cached text;
-	str::cached extensions;
-	df::file_path exe_path;
+	str::cached exe = {};
+	str::cached invoke_text = {};
+	str::cached text = {};
+	str::cached extensions = {};
+	df::file_path exe_path = {};
 
 	bool invoke(df::file_path path);
 
@@ -349,7 +349,7 @@ public:
 	uint32_t width = 0;
 	uint32_t height = 0;
 
-	str::cached pixel_format;
+	str::cached pixel_format = {};
 	ui::orientation orientation = ui::orientation::top_left;
 
 	mutable ui::const_image_ptr thumbnail_image;
@@ -374,23 +374,23 @@ public:
 	float f_number = 0;
 	float focal_length = 0;
 
-	str::cached comment;
-	str::cached artist;
-	str::cached camera_model;
-	str::cached camera_manufacturer;
-	str::cached video_codec;
-	str::cached copyright_notice;
-	str::cached title;
+	str::cached comment = {};
+	str::cached artist = {};
+	str::cached camera_model = {};
+	str::cached camera_manufacturer = {};
+	str::cached video_codec = {};
+	str::cached copyright_notice = {};
+	str::cached title = {};
 	mutable std::vector<str::cached> keywords;
 
 	uint32_t nb_streams = 0;
 	double duration = 0.0;
 
-	str::cached audio_codec;
+	str::cached audio_codec = {};
 	int audio_sample_rate = 0;
 	int audio_channels = 0;
 	prop::audio_sample_t audio_sample_type = prop::audio_sample_t::none;
-	str::cached bitrate;
+	str::cached bitrate = {};
 	int id3v2_version_major = 0;
 	mutable gps_coordinate gps;
 	uint32_t crc32c = 0;

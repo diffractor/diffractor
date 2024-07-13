@@ -38,9 +38,9 @@ struct item_db_write
 
 struct db_item_t
 {
-	str::cached path;
-	df::date_t metadata_scanned;
-	prop::item_metadata_ptr metadata;
+	str::cached path = {};
+	df::date_t metadata_scanned = {};
+	prop::item_metadata_ptr metadata = {};
 	uint32_t crc32c = 0;
 
 	db_item_t() noexcept = default;
@@ -293,9 +293,9 @@ __forceinline bool is_dup_match(const df::related_info& file, const df::index_fi
 
 struct location_group
 {
-	str::cached name;
+	str::cached name = {};
 	uint32_t count = 0;
-	pointi loc;
+	pointi loc = {};
 
 	bool operator==(const location_group& other) const
 	{

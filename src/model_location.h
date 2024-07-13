@@ -14,7 +14,7 @@
 class gps_coordinate
 {
 public:
-	const static int invalid_coordinate = 180;
+	static constexpr int invalid_coordinate = 180;
 
 	double _latitude = invalid_coordinate;
 	double _longitude = invalid_coordinate;
@@ -182,10 +182,10 @@ split_location_result split_location(std::u8string_view text);
 struct location_t
 {
 	uint32_t id = 0;
-	str::cached place;
-	str::cached state;
-	str::cached country;
-	gps_coordinate position;
+	str::cached place = {};
+	str::cached state = {};
+	str::cached country = {};
+	gps_coordinate position = {};
 
 	location_t() noexcept = default;
 

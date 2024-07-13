@@ -44,8 +44,8 @@ enum class png_chunk : uint32_t
 	eXIf = 'eXIf',
 };
 
-static const auto png_xmp_header = "XML:com.adobe.xmp\0\0\0\0\0"sv;
-static const int png_xmp_header_len = 22;
+static constexpr auto png_xmp_header = "XML:com.adobe.xmp\0\0\0\0\0"sv;
+static constexpr int png_xmp_header_len = 22;
 
 class buffer_stream
 {

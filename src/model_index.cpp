@@ -46,7 +46,7 @@ static_assert(sizeof(df::file_path) == sizeof(void*) * 2);
 
 struct dup_key
 {
-	str::cached name;
+	str::cached name = {};
 	uint64_t created = 0;
 
 	int compare(const dup_key& other) const
@@ -63,34 +63,6 @@ struct dup_key
 		return crypto::hash_gen(name).append(created).result();
 	}
 };
-
-static dup_key calc_dup_key(const df::index_file_item& i, const df::file_path id)
-{
-	const auto md = i.metadata.load();
-
-	if (md)
-	{
-		const auto cd = md->created();
-		const auto normalised_created = cd.is_valid() ? cd : i.file_created.system_to_local();
-		return {id.name(), normalised_created.to_int64()};
-	}
-
-	return {id.name(), i.file_created.system_to_local().to_int64()};
-}
-
-static dup_key calc_dup_key(const df::item_element_ptr& i)
-{
-	const auto md = i->metadata();
-
-	if (md)
-	{
-		const auto cd = md->created();
-		const auto normalised_created = cd.is_valid() ? cd : i->file_created().system_to_local();
-		return {i->name(), normalised_created.to_int64()};
-	}
-
-	return {i->name(), i->file_created().system_to_local().to_int64()};
-}
 
 struct dup_index_hash
 {
@@ -1679,7 +1651,6 @@ void index_state::scan_item(const df::index_folder_item_ptr& folder,
 					}
 
 					const auto item_has_no_thumb = item && !item->has_thumb();
-					const auto scan_has_thumbnail = is_valid(thumbnail_surface) || is_valid(thumbnail_image);
 					const auto existing_metadata = found_file->metadata.load();
 
 					if (existing_metadata && metadata)
@@ -2305,17 +2276,17 @@ media_name_props scan_info_from_title(const std::u8string_view name8)
 			std::smatch match;
 			auto i = found_episode_num;
 
-			if ((std::regex_search(*i, match, episode_rx) && match.size() == 3))
+			if (std::regex_search(*i, match, episode_rx) && match.size() == 3)
 			{
 				result.season = std::stoi(match[1]);
 				result.episode = std::stoi(match[2]);
 			}
-			else if ((std::regex_search(*i, match, episode_of_rx) && match.size() == 3))
+			else if (std::regex_search(*i, match, episode_of_rx) && match.size() == 3)
 			{
 				result.episode = std::stoi(match[1]);
 				result.episode_of = std::stoi(match[2]);
 			}
-			else if ((std::regex_search(*i, match, episode_x_rx) && match.size() == 3))
+			else if (std::regex_search(*i, match, episode_x_rx) && match.size() == 3)
 			{
 				result.season = std::stoi(match[1]);
 				result.episode = std::stoi(match[2]);
@@ -2710,69 +2681,6 @@ void index_state::queue_scan_folders(df::unique_folders paths)
 	});
 }
 
-static void count_distinct_values(unique_key_vals& vals, const prop::item_metadata_ptr& md)
-{
-	if (!prop::is_null(md->album)) ++vals[{prop::album.name, md->album}];
-	if (!prop::is_null(md->album_artist)) ++vals[{prop::album_artist.name, md->album_artist}];
-	if (!prop::is_null(md->artist)) ++vals[{prop::artist.name, md->artist}];
-	if (!prop::is_null(md->audio_codec)) ++vals[{prop::audio_codec.name, md->audio_codec}];
-	if (!prop::is_null(md->bitrate)) ++vals[{prop::bitrate.name, md->bitrate}];
-	if (!prop::is_null(md->camera_manufacturer)) ++vals[{prop::camera_manufacturer.name, md->camera_manufacturer}];
-	if (!prop::is_null(md->camera_model)) ++vals[{prop::camera_model.name, md->camera_model}];
-	if (!prop::is_null(md->comment)) ++vals[{prop::comment.name, md->comment}];
-	if (!prop::is_null(md->composer)) ++vals[{prop::composer.name, md->composer}];
-	if (!prop::is_null(md->copyright_creator)) ++vals[{prop::copyright_creator.name, md->copyright_creator}];
-	if (!prop::is_null(md->copyright_credit)) ++vals[{prop::copyright_credit.name, md->copyright_credit}];
-	if (!prop::is_null(md->copyright_notice)) ++vals[{prop::copyright_notice.name, md->copyright_notice}];
-	if (!prop::is_null(md->copyright_source)) ++vals[{prop::copyright_source.name, md->copyright_source}];
-	if (!prop::is_null(md->copyright_url)) ++vals[{prop::copyright_url.name, md->copyright_url}];
-	if (!prop::is_null(md->description)) ++vals[{prop::description.name, md->description}];
-	if (!prop::is_null(md->encoder)) ++vals[{prop::encoder.name, md->encoder}];
-	if (!prop::is_null(md->file_name)) ++vals[{prop::file_name.name, md->file_name}];
-	if (!prop::is_null(md->genre)) ++vals[{prop::genre.name, md->genre}];
-	if (!prop::is_null(md->lens)) ++vals[{prop::lens.name, md->lens}];
-	if (!prop::is_null(md->location_place)) ++vals[{prop::location_place.name, md->location_place}];
-	if (!prop::is_null(md->location_country)) ++vals[{prop::location_country.name, md->location_country}];
-	if (!prop::is_null(md->location_state)) ++vals[{prop::location_state.name, md->location_state}];
-	if (!prop::is_null(md->performer)) ++vals[{prop::performer.name, md->performer}];
-	if (!prop::is_null(md->pixel_format)) ++vals[{prop::pixel_format.name, md->pixel_format}];
-	if (!prop::is_null(md->publisher)) ++vals[{prop::publisher.name, md->publisher}];
-	if (!prop::is_null(md->show)) ++vals[{prop::show.name, md->show}];
-	if (!prop::is_null(md->synopsis)) ++vals[{prop::synopsis.name, md->synopsis}];
-	if (!prop::is_null(md->title)) ++vals[{prop::title.name, md->title}];
-	if (!prop::is_null(md->video_codec)) ++vals[{prop::video_codec.name, md->video_codec}];
-	if (!prop::is_null(md->game)) ++vals[{prop::game.name, md->game}];
-	if (!prop::is_null(md->label)) ++vals[{prop::label.name, md->label}];
-	if (!prop::is_null(md->system)) ++vals[{prop::system.name, md->system}];
-	if (!prop::is_null(md->raw_file_name)) ++vals[{prop::raw_file_name.name, md->raw_file_name}];
-	if (!prop::is_null(md->tags)) ++vals[{prop::tag.name, md->tags}];
-
-	/*if (!prop::is_null(md->exposure_time)) ++vals[{prop::exposure_time.name, md->exposure_time}];
-	if (!prop::is_null(md->f_number)) ++vals[{prop::f_number.name, md->f_number}];
-	if (!prop::is_null(md->focal_length)) ++vals[{prop::focal_length.name, md->focal_length}];
-	if (!prop::is_null(md->created_digitized)) ++vals[{prop::created_digitized.name, md->created_digitized}];
-	if (!prop::is_null(md->created_exif)) ++vals[{prop::created_exif.name, md->created_exif}];
-	if (!prop::is_null(md->created_utc)) ++vals[{prop::created_utc.name, md->created_utc}];
-	if (!prop::is_null(md->duration)) ++vals[{prop::duration.name, md->duration}];
-	if (!prop::is_null(md->focal_length_35mm_equivalent)) ++vals[{prop::focal_length_35mm_equivalent.name, md->focal_length_35mm_equivalent}];
-	if (!prop::is_null(md->iso_speed)) ++vals[{prop::iso_speed.name, md->iso_speed}];
-	if (!prop::is_null(md->rating)) ++vals[{prop::rating.name, md->rating}];
-	if (!prop::is_null(md->audio_channels)) ++vals[{prop::audio_channels.name, md->audio_channels}];
-	if (!prop::is_null(md->audio_sample_rate)) ++vals[{prop::audio_sample_rate.name, md->audio_sample_rate}];
-	if (!prop::is_null(md->audio_sample_type)) ++vals[{prop::audio_sample_type.name, md->audio_sample_type}];
-	if (!prop::is_null(md->year)) ++vals[{prop::year.name, md->year}];
-	if (!prop::is_null(md->season)) ++vals[{prop::season.name, md->season}];
-	if (!prop::is_null(md->disk)) ++vals[{prop::disk_num.name, md->disk}];
-	if (!prop::is_null(md->episode)) ++vals[{prop::episode.name, md->episode}];
-	if (!prop::is_null(md->track)) ++vals[{prop::track_num.name, md->track}];*/
-
-	//if (!prop::is_null(md->orientation)) ++vals[{prop::orientation.name, md->orientation}];
-	//if (!prop::is_null(md->coordinate)) ++vals[{prop::coordinate.name, md->coordinate}];
-	//if (!prop::is_null(md->height)) ++vals[{prop::height.name, md->height}];
-	//if (!prop::is_null(md->width)) ++vals[{prop::width.name, md->width}];
-}
-
-
 void index_state::merge_folder(const df::folder_path folder_path, const db_items_t& items)
 {
 	const auto found_in_index = _items.find(folder_path);
@@ -2955,7 +2863,6 @@ std::vector<index_state::auto_complete_folder> index_state::auto_complete_folder
 				if (!found.found && name_pos != 0)
 				{
 					found = ifind2(folder.text(), query, 0);
-					name_pos = 0;
 				}
 
 				if (found.found)

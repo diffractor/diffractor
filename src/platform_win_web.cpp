@@ -183,7 +183,7 @@ platform::web_response platform::send_request(const web_request& req)
 					{
 						written = 0;
 						const auto w = std::min(256_z, content_data.size() - n);
-						InternetWriteFile(request_handle, content_data.data() + n, w, &written);
+						InternetWriteFile(request_handle, content_data.data() + n, static_cast<DWORD>(w), &written);
 						n += written;
 
 						if (written == 0)

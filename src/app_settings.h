@@ -63,8 +63,8 @@ public:
 
 public:
 	// Constants
-	const static int item_splitter_max = 10000;
-	const static int item_scale_count = 8;
+	static constexpr int item_splitter_max = 10000;
+	static constexpr int item_scale_count = 8;
 	static int item_scale_snaps[item_scale_count];
 
 	sizei thumbnail_max_dimension;
@@ -78,7 +78,6 @@ public:
 	int jpeg_save_quality = 0;
 	int webp_quality = 0;
 	bool webp_lossless = false;
-
 	uint64_t features_used_since_last_report = 0;
 	uint32_t instantiations = 0;
 

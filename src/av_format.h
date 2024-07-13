@@ -231,51 +231,25 @@ public:
 	std::vector<std::pair<metadata_standard, metadata_kv_list>> metadata;
 	ui::image_ptr cover_art;
 
-	str::cached pixel_format;
-	str::cached video_codec;
-	str::cached audio_codec;
+	str::cached pixel_format = {};
+	str::cached video_codec = {};
+	str::cached audio_codec = {};
 	int audio_sample_rate = 0;
 	int audio_channels = 0;
-	prop::audio_sample_t audio_sample_type = prop::audio_sample_t::none;
-
+	
 	int64_t bitrate = 0;
-	bool has_audio = false;
-	bool has_video = false;
-	bool has_multiple_audio_streams = false;
 	double start = 0;
 	double end = 0;
 
 	sizei display_dimensions;
 	sizei render_dimensions;
+
 	ui::orientation display_orientation = ui::orientation::top_left;
-	
+	prop::audio_sample_t audio_sample_type = prop::audio_sample_t::none;
 
-	/*bool is_empty() const
-	{
-		return streams.empty();
-	}
-
-	void clear()
-	{
-		bitrate = 0;
-		has_audio = false;
-		has_video = false;
-		start = 0;
-		end = 0;
-		display_dimensions.cx = 0;
-		display_dimensions.cy = 0;
-		render_dimensions.cx = 0;
-		render_dimensions.cy = 0;
-		pixel_format.clear();
-		video_codec.clear();
-		audio_codec.clear();
-		audio_sample_rate = 0;
-		audio_channels = 0;
-		audio_sample_type = prop::audio_sample_t::none;
-
-		streams.clear();
-		metadata.clear();
-	}*/
+	bool has_audio = false;
+	bool has_video = false;
+	bool has_multiple_audio_streams = false;
 };
 
 struct av_pts_correction

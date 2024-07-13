@@ -23,7 +23,7 @@ static ui::surface_ptr image_to_surface(heif_image_handle* handle, heif_image* i
 	const auto height = heif_image_get_primary_height(img);
 	const auto has_alpha = heif_image_handle_has_alpha_channel(handle);
 
-	int heif_stride = 0_z;
+	int heif_stride = 0;
 	const auto* heif_image_data = heif_image_get_plane_readonly(img, heif_channel_interleaved, &heif_stride);
 
 	auto result = std::make_shared<ui::surface>();
@@ -71,7 +71,7 @@ static int read(void* data, const size_t size, void* userdata)
 static int seek(int64_t position, void* userdata)
 {
 	const auto s = static_cast<heif_read_stream*>(userdata);
-	if (position > s->stream->size()) return heif_error_Usage_error;
+	if (position > static_cast<int64_t>(s->stream->size())) return heif_error_Usage_error;
 	s->pos = position;
 	return heif_error_Ok;
 }
@@ -79,7 +79,7 @@ static int seek(int64_t position, void* userdata)
 static heif_reader_grow_status wait_for_file_size(int64_t target_size, void* userdata)
 {
 	const auto s = static_cast<heif_read_stream*>(userdata);
-	if (target_size > s->stream->size()) return heif_reader_grow_status_size_beyond_eof;
+	if (target_size > static_cast<int64_t>(s->stream->size())) return heif_reader_grow_status_size_beyond_eof;
 	return heif_reader_grow_status_size_reached;
 }
 

@@ -126,7 +126,7 @@ public:
 			                       (t.second.type_ >> 8) & 0xFF, t.second.type_ & 0xFF);
 
 			constexpr auto max_text_len = 16_z;
-			auto hex = str::to_hex(t.second.data_.data(), std::min(t.second.data_.size(), max_text_len));
+			auto hex = str::to_hex(t.second.data_.data(), static_cast<int32_t>(std::min(t.second.data_.size(), max_text_len)));
 			if (t.second.data_.size() > max_text_len) hex += u8"..."sv;
 			result.emplace_back(str::cache(name), hex);
 		}
@@ -162,7 +162,7 @@ public:
 			index_ = size_ - 1;
 	}
 
-	uint32_t seek(const size_t index)
+	size_t seek(const size_t index)
 	{
 		const size_t current = index_;
 		index_ = index;

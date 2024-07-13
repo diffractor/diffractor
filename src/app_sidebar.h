@@ -1062,7 +1062,7 @@ public:
 			hover.elements->add(std::make_shared<divider_element>());
 			hover.elements->add(std::make_shared<action_element>(tt.click_collection_options));
 
-			hover.prefered_size = view_hover_element::default_prefered_size + 64;
+			hover.preferred_size = view_hover_element::default_preferred_size + 64;
 		}
 		else
 		{
@@ -1091,7 +1091,7 @@ public:
 			if (!hover.elements->is_empty())
 			{
 				hover.elements->add(std::make_shared<action_element>(tt.click_to_open));
-				hover.prefered_size = df::mul_div(view_hover_element::default_prefered_size, 2, 3);
+				hover.preferred_size = df::mul_div(view_hover_element::default_preferred_size, 2, 3);
 			}
 		}
 
@@ -1110,7 +1110,7 @@ public:
 			const auto center = logical_bounds.center();
 			const auto dx = ic.loc.x - center.x;
 			const auto dy = ic.loc.y - center.y;
-			const auto dd = df::isqrt(dy * dy + dx * dx);
+			const auto dd = std::sqrt(dy * dy + dx * dx);
 			const auto center_hover = dd < logical_bounds.width() / 4;
 
 			if (center_hover)
@@ -1256,10 +1256,10 @@ public:
 
 struct sidebar_history_element final : public view_element, public std::enable_shared_from_this<sidebar_history_element>
 {
-	static const int col_count = 12;
-	static const int row_count = 10;
-	static const int invalid_hover_month = -1;
-	static const int base_row_height = 10;
+	static constexpr int col_count = 12;
+	static constexpr int row_count = 10;
+	static constexpr int invalid_hover_month = -1;
+	static constexpr int base_row_height = 10;
 
 	view_state& _state;
 	std::array<double, col_count * row_count> dates{};
@@ -2174,7 +2174,7 @@ public:
 		_scroller.layout({client_bounds.width(), y + mc.padding2}, client_bounds, scroll_bounds);
 	}
 
-	int prefered_width(ui::measure_context& mc)
+	int preferred_width(ui::measure_context& mc)
 	{
 		const auto extent = mc.measure_text(u8"Documents"sv, ui::style::font_face::dialog,
 		                                    ui::style::text_style::single_line, 200);

@@ -43,7 +43,7 @@ namespace crypto
 		void update(df::cspan cs);
 		void final(uint8_t* digest);
 
-		static const uint32_t DIGEST_SIZE = (256 / 8);
+		static constexpr uint32_t DIGEST_SIZE = (256 / 8);
 
 	private:
 		const static uint32_t sha256_k[];

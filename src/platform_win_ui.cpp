@@ -581,8 +581,7 @@ static HFONT create_font(const ui::style::font_face type, const int base_font_si
 	static auto* icon_font = load_icon_font();
 	static auto* petscii_font = load_petscii_font();
 
-	LOGFONT lf;
-	memset(&lf, 0, sizeof(lf));
+	LOGFONT lf = {};
 
 	lf.lfWeight = FW_NORMAL;
 	wcscpy_s(lf.lfFaceName, LF_FACESIZE, L"Calibri");
@@ -646,8 +645,7 @@ int gdi_text_line_height(HDC hdc, HFONT font)
 	if (!hdc) return 0;
 
 	auto* const old_font = SelectObject(hdc, font);
-	TEXTMETRIC tm;
-	ZeroMemory(&tm, sizeof(tm));
+	TEXTMETRIC tm = {};
 	GetTextMetrics(hdc, &tm);
 	SelectObject(hdc, old_font);
 
@@ -989,8 +987,7 @@ void draw_icon(HDC hdc, const owner_context_ptr& ctx, const icon_index icon, con
 				const auto cx = extent.cx;
 				const auto cy = extent.cy;
 
-				BITMAPINFO bmi;
-				memset(&bmi.bmiHeader, 0, sizeof(BITMAPINFOHEADER));
+				BITMAPINFO bmi = {};
 				bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
 				bmi.bmiHeader.biWidth = cx;
 				bmi.bmiHeader.biHeight = -static_cast<int>(cy);
@@ -3192,7 +3189,7 @@ LRESULT edit_impl::on_window_nc_paint(const uint32_t uMsg, const WPARAM wParam, 
 			const auto round_rect_key = crypto::hash_gen().append(fill_clr).append(edge_clr).append(bg_clr).result();
 			const auto found_round_rect = _round_rec_skins.find(round_rect_key);
 			const auto corner_radius = df::round(ui_corner_radius * scale_factor);
-			const auto border_width = 2.6f * scale_factor;
+			const auto border_width = static_cast<float>(2.6 * scale_factor);
 
 			HBITMAP round_rec_skin = nullptr;
 
@@ -3206,7 +3203,7 @@ LRESULT edit_impl::on_window_nc_paint(const uint32_t uMsg, const WPARAM wParam, 
 				round_rec_skin = found_round_rect->second;
 			}
 
-			const HDC mem_dc = CreateCompatibleDC(hdc);
+			const auto mem_dc = CreateCompatibleDC(hdc);
 
 			if (mem_dc)
 			{
@@ -3244,7 +3241,7 @@ LRESULT edit_impl::on_window_nc_paint(const uint32_t uMsg, const WPARAM wParam, 
 		{
 			const auto icon_cxy = calc_icon_cxy(scale_factor);
 			auto rr = outside;
-			rr.left = ui_element_padding * scale_factor;
+			rr.left = df::round(ui_element_padding * scale_factor);
 			rr.right = rr.left + icon_cxy;
 			draw_icon(hdc, _ctx, _icon, rr, ui::style::color::edit_text);
 		}
@@ -4445,13 +4442,13 @@ public:
 	const int horz_padding = shadow_padding + 10;
 	const float radius = 8.0;
 
-	void show(const view_elements_ptr& elements, const recti button_rect, const int x_focus, const int prefered_size,
+	void show(const view_elements_ptr& elements, const recti button_rect, const int x_focus, const int preferred_size,
 	          const bool horizontal) override
 	{
 		if (_draw_ctx)
 		{
 			const auto scale_factor = _gdi_ctx->scale_factor;
-			const auto element_extent = elements->measure(*_draw_ctx, df::round(prefered_size * scale_factor));
+			const auto element_extent = elements->measure(*_draw_ctx, df::round(preferred_size * scale_factor));
 			const auto cx = std::max(80, element_extent.cx) + (horz_padding * 2);
 			const auto cy = std::max(36, element_extent.cy) + (vert_padding * 2);
 
@@ -4939,8 +4936,7 @@ public:
 
 	LRESULT on_window_gesture(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam)
 	{
-		GESTUREINFO gi;
-		ZeroMemory(&gi, sizeof(GESTUREINFO));
+		GESTUREINFO gi = {};
 		gi.cbSize = sizeof(GESTUREINFO);
 
 		if (GetGestureInfo((HGESTUREINFO)lParam, &gi))
@@ -8745,8 +8741,7 @@ void win32_app::set_font_base_size(const int i)
 ui::control_frame_ptr win32_app::create_app_frame(const platform::setting_file_ptr& store,
                                                   const ui::frame_host_weak_ptr& host)
 {
-	WINDOWPLACEMENT wp;
-	memset(&wp, 0, sizeof(WINDOWPLACEMENT));
+	WINDOWPLACEMENT wp = {};
 	wp.length = sizeof(WINDOWPLACEMENT);
 	wp.showCmd = SW_SHOW;
 

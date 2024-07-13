@@ -27,8 +27,7 @@ std::u8string crypto::hmac_sha1(const std::u8string_view key, const std::u8strin
 {
 	sha1 sha1;
 
-	uint8_t hash[SHA1_BLOCK_SIZE];
-	memset(hash, 0, SHA1_BLOCK_SIZE);
+	uint8_t hash[SHA1_BLOCK_SIZE] = {};
 
 	if (key.size() > SHA1_BLOCK_SIZE)
 	{

@@ -65,10 +65,10 @@ it under the terms of the one of two licenses as you choose:
 /* define OS types for DNG here */
 #endif
 #define qDNGXMPDocOps 0
-#define qDNGUseLibJPEG 1
-#define qDNGXMPFiles 0
+#define qDNGUseLibJPEG qDNGValidateTarget
+#define qDNGXMPFiles 1
 #define qDNGExperimental 1
-#define qDNGThreadSafe 1
+#define qDNGThreadSafe (qMacOS || qWinOS)
 #include "dng_stream.h"
 #endif /* DNGSDK */
 

@@ -102,7 +102,7 @@ void df::log(const std::u8string_view context, const std::u8string_view message)
 			<< u8" "sv
 			<< std::setfill(u8' ')
 			<< std::left << std::setw(33) << context
-			<< message << std::endl;
+			<< message << '\n';
 	}
 }
 
@@ -142,42 +142,6 @@ df::file_path df::close_log()
 	}
 
 	return log_path;
-}
-
-// Integer square root by Halleck's method, with Legalize's speedup 
-int df::isqrt(int x)
-{
-	if (x < 1) return 0;
-
-	/* Load the binary constant 01 00 00 ... 00, where the number
-	* of zero bits to the right of the single one bit
-	* is even, and the one bit is as far left as is consistant
-	* with that condition.)
-	*/
-	long squaredbit = static_cast<uint32_t>(~0L) >> 1 & ~(static_cast<uint32_t>(~0L) >> 2);
-	/* This portable load replaces the loop that used to be
-	* here, and was donated by  legalize@xmission.com
-	*/
-
-	/* Form bits of the answer. */
-	long remainder = x;
-	long root = 0;
-	while (squaredbit > 0)
-	{
-		if (remainder >= (squaredbit | root))
-		{
-			remainder -= (squaredbit | root);
-			root >>= 1;
-			root |= squaredbit;
-		}
-		else
-		{
-			root >>= 1;
-		}
-		squaredbit >>= 2;
-	}
-
-	return root;
 }
 
 std::u8string df::file_size::str() const

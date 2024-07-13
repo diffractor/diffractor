@@ -1324,7 +1324,7 @@ void av_format_decoder::update_orientation(AVFrame* frame)
 				theta = -av_display_rotation_get(std::bit_cast<int32_t*>(display_matrix));
 			}
 
-			_rotation -= 360 * floor(theta / 360 + 0.9 / 360);
+			_rotation -= df::round(360.0 * floor(theta / 360.0 + 0.9 / 360.0));
 		}
 	}
 }
@@ -1337,8 +1337,7 @@ bool av_format_decoder::decode_frame(ui::surface_ptr& dest_surface, AVCodecConte
 
 	if (send_res == 0)
 	{
-		AVFrame frame;
-		memset(&frame, 0, sizeof(frame));
+		AVFrame frame = {};
 
 		const auto rec_res = avcodec_receive_frame(ctx, &frame);
 

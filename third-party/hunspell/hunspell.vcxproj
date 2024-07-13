@@ -153,7 +153,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <Optimization>Disabled</Optimization>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <WarningLevel>Level3</WarningLevel>
+      <WarningLevel>Level1</WarningLevel>
       <MinimalRebuild>false</MinimalRebuild>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS; W32;HUNSPELL_STATIC;_DEBUG;_LIB;%(PreprocessorDefinitions);_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1</PreprocessorDefinitions>
@@ -207,7 +207,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <Optimization>Disabled</Optimization>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <WarningLevel>Level3</WarningLevel>
+      <WarningLevel>Level1</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS; W32;HUNSPELL_STATIC;_DEBUG;_LIB;%(PreprocessorDefinitions);_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1</PreprocessorDefinitions>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
@@ -308,7 +308,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <Optimization>MaxSpeed</Optimization>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <WarningLevel>Level3</WarningLevel>
+      <WarningLevel>Level1</WarningLevel>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS; W32;HUNSPELL_STATIC;NDEBUG;_LIB;%(PreprocessorDefinitions);_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1</PreprocessorDefinitions>
       <EnableEnhancedInstructionSet>StreamingSIMDExtensions2</EnableEnhancedInstructionSet>
       <FloatingPointModel>Fast</FloatingPointModel>
@@ -361,7 +361,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <Optimization>MaxSpeed</Optimization>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <WarningLevel>Level3</WarningLevel>
+      <WarningLevel>Level1</WarningLevel>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS; W32;HUNSPELL_STATIC;NDEBUG;_LIB;%(PreprocessorDefinitions);_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>
       </AdditionalIncludeDirectories>

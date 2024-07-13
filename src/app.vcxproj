@@ -337,7 +337,7 @@
       <AdditionalOptions>/bigobj</AdditionalOptions>
       <Optimization>Disabled</Optimization>
       <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)\third-party\webp\src;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\openssl\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_DEBUG;WIN32;_WINDOWS;STRICT;_WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;WIN32;_WINDOWS;_WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <MinimalRebuild>false</MinimalRebuild>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
@@ -433,7 +433,7 @@
       <AdditionalOptions>/bigobj</AdditionalOptions>
       <Optimization>Disabled</Optimization>
       <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\openssl\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_DEBUG;WIN32;_WINDOWS;STRICT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;WIN32;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <MinimalRebuild>false</MinimalRebuild>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
@@ -525,7 +525,7 @@
       <AdditionalOptions>/bigobj</AdditionalOptions>
       <Optimization>Disabled</Optimization>
       <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\openssl\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_DEBUG;WIN32;_WINDOWS;STRICT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;WIN32;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <MinimalRebuild>false</MinimalRebuild>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
@@ -620,7 +620,7 @@
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)\third-party\webp\src;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\openssl\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_WINDOWS;STRICT;WIN32;NDEBUG;_WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINDOWS;STRICT;NDEBUG;_WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <BufferSecurityCheck>true</BufferSecurityCheck>
@@ -803,7 +803,7 @@
       <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\openssl\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_WINDOWS;STRICT;WIN32;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINDOWS;WIN32;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <BufferSecurityCheck>true</BufferSecurityCheck>
@@ -893,7 +893,7 @@
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\openssl\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_WINDOWS;STRICT;WIN32;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINDOWS;WIN32;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <BufferSecurityCheck>true</BufferSecurityCheck>
@@ -1158,6 +1158,7 @@
       <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <AdditionalOptions>/bigobj</AdditionalOptions>
+      <WarningLevel>Level3</WarningLevel>
     </ClCompile>
     <Manifest>
       <InputResourceManifests>IDR_MANIFEST</InputResourceManifests>
@@ -1177,6 +1178,7 @@
       <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <AdditionalOptions>/bigobj</AdditionalOptions>
+      <WarningLevel>Level3</WarningLevel>
     </ClCompile>
     <Manifest>
       <InputResourceManifests>IDR_MANIFEST</InputResourceManifests>

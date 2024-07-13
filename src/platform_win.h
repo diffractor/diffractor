@@ -109,7 +109,7 @@ public:
 	bool has_bitmap() const override;
 	platform::file_op_result drop_files(df::folder_path target, platform::drop_effect effect) override;
 	platform::file_op_result save_bitmap(df::folder_path save_path, std::u8string_view name, bool as_png) override;
-	DWORD prefered_drop_effect() const;
+	DWORD preferred_drop_effect() const;
 	description files_description() const override;
 	df::file_path first_path() const override;
 };

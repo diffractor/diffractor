@@ -685,9 +685,9 @@ public:
 
 class file_list_control final : public std::enable_shared_from_this<file_list_control>, public view_element
 {
-	static const int icon_width = 24;
-	static const int col_padding = 8;
-	static const int col_count = 4;
+	static constexpr int icon_width = 24;
+	static constexpr int col_padding = 8;
+	static constexpr int col_count = 4;
 
 	mutable int _line_height = 0;
 	mutable int _col_widths[col_count] = {};
