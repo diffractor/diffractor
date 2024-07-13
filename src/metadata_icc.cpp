@@ -147,7 +147,7 @@ public:
 	{
 	}
 
-	virtual ~icc_stream()
+	~icc_stream()
 	{
 		buffer_ = nullptr;
 		size_ = 0;
@@ -162,7 +162,7 @@ public:
 			index_ = size_ - 1;
 	}
 
-	const uint32_t seek(const size_t index)
+	uint32_t seek(const size_t index)
 	{
 		const size_t current = index_;
 		index_ = index;
@@ -171,7 +171,7 @@ public:
 		return current;
 	}
 
-	const uint8_t uint8()
+	uint8_t uint8()
 	{
 		if (index_ >= size_)
 			return 0; // EOF
@@ -180,18 +180,18 @@ public:
 		return ret;
 	}
 
-	const int8_t int8() { return static_cast<int8_t>(uint8()); }
+	int8_t int8() { return static_cast<int8_t>(uint8()); }
 
 	// ICC profile uses big endian only.
-	const uint16_t uint16() { return (uint8() << 8) | (uint8()); }
-	const int16_t int16() { return (int8() << 8) | (uint8()); }
-	const uint32_t uint32() { return (uint16() << 16) | (uint16()); }
-	const int32_t int32() { return (int16() << 16) | (uint16()); }
-	const uint64_t uint64() { return (static_cast<uint64_t>(uint32()) << 32) | (uint32()); }
+	uint16_t uint16() { return (uint8() << 8) | (uint8()); }
+	int16_t int16() { return (int8() << 8) | (uint8()); }
+	uint32_t uint32() { return (uint16() << 16) | (uint16()); }
+	int32_t int32() { return (int16() << 16) | (uint16()); }
+	uint64_t uint64() { return (static_cast<uint64_t>(uint32()) << 32) | (uint32()); }
 
-	const double s15Fixed16() { return static_cast<double>(int32()) / 0x10000; }
-	const double u16Fixed16() { return static_cast<double>(uint32()) / 0x10000; }
-	const double u8Fixed8() { return static_cast<double>(uint16()) / 0x100; }
+	double s15Fixed16() { return static_cast<double>(int32()) / 0x10000; }
+	double u16Fixed16() { return static_cast<double>(uint32()) / 0x10000; }
+	double u8Fixed8() { return static_cast<double>(uint16()) / 0x100; }
 
 	std::vector<uint8_t> array(const size_t s)
 	{
@@ -200,7 +200,7 @@ public:
 		return ret;
 	}
 
-	const icc_profile::DateTime dateTime()
+	icc_profile::DateTime dateTime()
 	{
 		icc_profile::DateTime dt;
 		dt.year_ = uint16();
@@ -212,7 +212,7 @@ public:
 		return dt;
 	}
 
-	const icc_profile::XYZ xyz()
+	icc_profile::XYZ xyz()
 	{
 		icc_profile::XYZ xyz;
 		xyz.x_ = s15Fixed16();

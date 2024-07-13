@@ -112,7 +112,7 @@ static void open_in_file_browser_invoke(view_state& s, const ui::control_frame_p
 
 		if (f)
 		{
-			const auto file = std::dynamic_pointer_cast<df::file_item>(f);
+			const auto file = std::dynamic_pointer_cast<df::item_element>(f);
 
 			if (file)
 			{
@@ -262,9 +262,9 @@ public:
 
 		_pos = _start;
 
-		const auto folders = items.folders();
+		const auto items_copy = items.items();
 
-		for (const auto& i : folders)
+		for (const auto& i : items_copy)
 		{
 			if (results->is_canceled())
 				break;
@@ -274,22 +274,6 @@ public:
 			if (result.failed())
 			{
 				break;
-			}
-		}
-
-		if (!result.failed() || folders.empty())
-		{
-			for (const auto& i : items.items())
-			{
-				if (results->is_canceled())
-					break;
-
-				result = rename(i, results, index);
-
-				if (result.failed())
-				{
-					break;
-				}
 			}
 		}
 
@@ -385,9 +369,9 @@ static void rename_invoke(view_state& s, const ui::control_frame_ptr& parent, co
 		}
 		else if (items.size() == 1)
 		{
-			const auto file_system_items = items.files_and_folders();
+			const auto &file_system_items = items.items();
 			const auto i = file_system_items[0];
-			auto name = std::u8string(i->base_name());
+			auto name = i->base_name();
 
 			std::vector<view_element_ptr> controls{
 				set_margin(std::make_shared<ui::title_control2>(dlg->_frame, icon, title,
@@ -467,11 +451,10 @@ static void edit_paste_invoke(view_state& s, const ui::control_frame_ptr& parent
 
 static void collection_add_invoke(view_state& s, const ui::control_frame_ptr& parent, const view_host_base_ptr& view)
 {
-	const auto ff = s.command_folder();
+	const auto paths = s.selected_items().folder_paths();
 
-	if (ff)
+	for(const auto & new_folder_path : paths)
 	{
-		const auto new_folder_path = ff->path();
 		const auto existing_folders = setting.index.collection_folders();
 
 		for (const auto f : existing_folders)
@@ -3030,14 +3013,14 @@ static void import_invoke(view_state& s, const ui::control_frame_ptr& parent, co
 						result.folders.emplace(src.path);
 					}
 
-					for (const auto& i : src.items.items())
+					for (const auto path : src.items.file_paths())
 					{
-						result.files.emplace(i->path());
+						result.files.emplace(path);
 					}
 
-					for (const auto& f : src.items.folders())
+					for (const auto path : src.items.folder_paths())
 					{
-						result.folders.emplace(f->path());
+						result.folders.emplace(path);
 					}
 				}
 			}
@@ -4550,8 +4533,8 @@ public:
 
 	void tooltip(view_hover_element& result, const pointi loc, const pointi element_offset) const override
 	{
-		result.elements.add(make_icon_element(icon_index::data, view_element_style::no_break));
-		result.elements.add(std::make_shared<text_element>(_text, ui::style::font_face::title,
+		result.elements->add(make_icon_element(icon_index::data, view_element_style::no_break));
+		result.elements->add(std::make_shared<text_element>(_text, ui::style::font_face::title,
 		                                                   ui::style::text_style::multiline,
 		                                                   view_element_style::line_break));
 		result.active_bounds = result.window_bounds = bounds.offset(element_offset);
@@ -5645,7 +5628,7 @@ void app_frame::initialise_commands()
 }
 
 void view_state::modify_items(const df::results_ptr& results, icon_index icon, const std::u8string_view title,
-                              const df::file_items& items_to_modify, const metadata_edits& edits,
+                              const df::item_elements& items_to_modify, const metadata_edits& edits,
                               const view_host_base_ptr& view)
 {
 	const auto can_process = can_process_selection_and_mark_errors(view, df::process_items_type::can_save_metadata);

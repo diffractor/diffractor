@@ -773,51 +773,46 @@ void database::load_thumbnails(const index_state& index, const df::item_set& ite
 	df::assert_true(is_db_thread());
 	bool cover_art_loaded = false;
 
-	for (const auto& i : items.folders())
-	{
-		if (df::is_closing)
-			break;
-
-		if (i->db_thumbnail_pending())
-		{
-			std::vector<df::folder_path> folders;
-			folders.emplace_back(i->path());
-
-			for (auto idx = 0u; idx < folders.size() && !i->has_thumb(); idx++)
-			{
-				auto folder = folders[idx];
-				auto loaded = load_folder_thumbnail(folder.text());
-
-				if (is_valid(loaded.thumb) || is_valid(loaded.cover_art))
-				{
-					cover_art_loaded |= ui::is_valid(loaded.cover_art);
-					i->thumbnail(std::move(loaded.thumb), std::move(loaded.cover_art), loaded.last_indexed);
-					break;
-				}
-
-				if (folders.size() < 100)
-				{
-					for (const auto& f : platform::select_folders(df::item_selector(folder), setting.show_hidden))
-					{
-						folders.emplace_back(folder.combine(f.name));
-					}
-				}
-			}
-
-			i->db_thumb_query_complete();
-		}
-	}
-
 	for (const auto& i : items.items())
 	{
 		if (df::is_closing)
 			break;
-
+		
 		if (i->db_thumbnail_pending())
 		{
-			auto loaded = load_thumbnail(i->path());
-			cover_art_loaded |= ui::is_valid(loaded.cover_art);
-			i->thumbnail(std::move(loaded.thumb), std::move(loaded.cover_art), loaded.last_indexed);
+			if (i->is_folder())
+			{
+				std::vector<df::folder_path> folders;
+				folders.emplace_back(i->folder());
+
+				for (auto idx = 0u; idx < folders.size() && !i->has_thumb(); idx++)
+				{
+					auto folder = folders[idx];
+					auto loaded = load_folder_thumbnail(folder.text());
+
+					if (is_valid(loaded.thumb) || is_valid(loaded.cover_art))
+					{
+						cover_art_loaded |= ui::is_valid(loaded.cover_art);
+						i->thumbnail(std::move(loaded.thumb), std::move(loaded.cover_art), loaded.last_indexed);
+						break;
+					}
+
+					if (folders.size() < 100)
+					{
+						for (const auto& f : platform::select_folders(df::item_selector(folder), setting.show_hidden))
+						{
+							folders.emplace_back(folder.combine(f.name));
+						}
+					}
+				}
+			}
+			else
+			{
+				auto loaded = load_thumbnail(i->path());
+				cover_art_loaded |= ui::is_valid(loaded.cover_art);
+				i->thumbnail(std::move(loaded.thumb), std::move(loaded.cover_art), loaded.last_indexed);				
+			}
+
 			i->db_thumb_query_complete();
 		}
 	}

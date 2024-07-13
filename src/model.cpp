@@ -56,7 +56,7 @@ int view_state::displayed_rating() const
 	return 0;
 }
 
-void view_state::toggle_rating(const df::results_ptr& results, const df::file_items& items, const int r,
+void view_state::toggle_rating(const df::results_ptr& results, const df::item_elements& items, const int r,
                                const view_host_base_ptr& view)
 {
 	bool add_rating = false;
@@ -90,7 +90,7 @@ void view_state::toggle_rating(const df::results_ptr& results, const df::file_it
 
 
 void view_state::modify_items(const ui::control_frame_ptr& frame, const icon_index icon, const std::u8string_view title,
-                              const df::file_items& items_to_modify, const metadata_edits& edits,
+                              const df::item_elements& items_to_modify, const metadata_edits& edits,
                               const view_host_base_ptr& view)
 {
 	auto dlg = make_dlg(frame);
@@ -201,11 +201,9 @@ void display_state_t::calc_pixel_difference()
 }
 
 
-void view_state::load_hover_thumb(const df::item_element_ptr& drawable_item, double pos_numerator,
+void view_state::load_hover_thumb(const df::item_element_ptr& item, double pos_numerator,
                                   double pos_denominator)
 {
-	const auto item = std::dynamic_pointer_cast<df::file_item>(drawable_item);
-
 	if (item &&
 		(item->file_type()->group->traits && file_traits::preview_video) &&
 		item->online_status() == df::item_online_status::disk &&
@@ -674,25 +672,9 @@ void view_state::append_items(const view_host_base_ptr& view, df::item_set items
 				select_list.emplace_back(i);
 			}
 		}
-
-		for (const auto& i : items.folders())
-		{
-			if (i->is_selected())
-			{
-				select_list.emplace_back(i);
-			}
-		}
 	}
 	else
 	{
-		for (const auto& i : items.folders())
-		{
-			if (selection.contains(df::file_path(i->path())))
-			{
-				select_list.emplace_back(i);
-			}
-		}
-
 		for (const auto& i : items.items())
 		{
 			if (selection.contains(i->path()))
@@ -1156,10 +1138,10 @@ view_state::~view_state()
 
 bool view_state::enter(const view_host_base_ptr& view)
 {
-	if (_selected.folders().size() == 1 &&
-		_selected.items().empty())
+	if (_selected.size() == 1 &&
+		_selected.has_folders())
 	{
-		const auto folder = _selected.folders().front();
+		const auto folder = _selected.items().front();
 		folder->open(*this, view);
 		return true;
 	}
@@ -1169,7 +1151,7 @@ bool view_state::enter(const view_host_base_ptr& view)
 		select_next(view, true, false, false);
 	}
 
-	if (_selected.folders().empty() &&
+	if (!_selected.has_folders() &&
 		!_selected.items().empty())
 	{
 		auto all_media = true;
@@ -1232,16 +1214,16 @@ public:
 	{
 		if (_prop_key != prop::null)
 		{
-			result.elements.add(make_icon_element(_prop_key->icon, view_element_style::no_break));
-			result.elements.add(std::make_shared<text_element>(_prop_key->text(), ui::style::font_face::dialog,
+			result.elements->add(make_icon_element(_prop_key->icon, view_element_style::no_break));
+			result.elements->add(std::make_shared<text_element>(_prop_key->text(), ui::style::font_face::dialog,
 			                                                   ui::style::text_style::multiline,
 			                                                   view_element_style::line_break));
 		}
 
-		result.elements.add(std::make_shared<text_element>(_search.text(), ui::style::font_face::dialog,
+		result.elements->add(std::make_shared<text_element>(_search.text(), ui::style::font_face::dialog,
 		                                                   ui::style::text_style::multiline,
 		                                                   view_element_style::line_break));
-		result.elements.add(std::make_shared<action_element>(tt.click_to_search_similar));
+		result.elements->add(std::make_shared<action_element>(tt.click_to_search_similar));
 
 		result.active_bounds = result.window_bounds = bounds.offset(element_offset);
 	}
@@ -1510,10 +1492,10 @@ class title_link_element final : public std::enable_shared_from_this<title_link_
 {
 private:
 	view_state& _state;
-	const df::file_item_ptr _item;
+	const df::item_element_ptr _item;
 
 public:
-	title_link_element(view_state& s, df::file_item_ptr i, std::u8string_view text,
+	title_link_element(view_state& s, df::item_element_ptr i, std::u8string_view text,
 	                   const view_element_style style_in) noexcept : text_element_base(text), _state(s),
 	                                                                 _item(std::move(i))
 	{
@@ -1607,13 +1589,13 @@ public:
 
 		if (i)
 		{
-			hover.elements.add(make_icon_element(icon_index::compare, view_element_style::no_break));
-			hover.elements.add(std::make_shared<text_element>(tt.presence_tile,
+			hover.elements->add(make_icon_element(icon_index::compare, view_element_style::no_break));
+			hover.elements->add(std::make_shared<text_element>(tt.presence_tile,
 			                                                  ui::style::font_face::dialog,
 			                                                  ui::style::text_style::multiline,
 			                                                  view_element_style::line_break));
 
-			hover.elements.add(std::make_shared<text_element>(item_presence_text(_item->presence(), true),
+			hover.elements->add(std::make_shared<text_element>(item_presence_text(_item->presence(), true),
 			                                                  ui::style::font_face::dialog,
 			                                                  ui::style::text_style::multiline,
 			                                                  view_element_style::line_break));
@@ -1677,7 +1659,7 @@ public:
 				}
 
 
-				hover.elements.add(table);
+				hover.elements->add(table);
 			}
 		}
 
@@ -1685,7 +1667,7 @@ public:
 			ui::style::text_style::multiline,
 			view_element_style::line_break));*/
 
-		hover.elements.add(std::make_shared<action_element>(tt.show_related));
+		hover.elements->add(std::make_shared<action_element>(tt.show_related));
 		//hover.elements.add(std::make_shared<keyboard_accelerator_element>(tt.related_keys));
 		hover.active_bounds = hover.window_bounds = bounds.offset(element_offset);
 	}
@@ -1698,7 +1680,7 @@ public:
 	}
 };
 
-static std::vector<view_element_ptr> create_comp_controls(view_state& s, const std::shared_ptr<df::file_item>& i)
+static std::vector<view_element_ptr> create_comp_controls(view_state& s, const df::item_element_ptr& i)
 {
 	std::vector<view_element_ptr> controls;
 	controls.emplace_back(std::make_shared<pin_control>(s, i, true, view_element_style::none));
@@ -2084,8 +2066,26 @@ view_elements_ptr view_state::create_selection_controls()
 		}
 		else if (!_selected.is_empty())
 		{
-			const auto folder_count = selected.folders().size();
-			const auto item_count = selected.items().size();
+			int folder_count = 0;
+			int item_count = 0;
+
+			df::item_element_ptr first_folder;
+			df::item_element_ptr first_item;
+
+			for (const auto& i : selected.items())
+			{
+				if (i->is_folder())
+				{
+					folder_count += 1;
+					if (!first_folder) first_folder = i;
+				}
+				else
+				{
+					item_count += 1;
+					if (!first_item) first_item = i;
+				}
+			}
+
 			const auto elements = std::make_shared<view_elements>();
 
 			if (folder_count > 0)
@@ -2094,7 +2094,7 @@ view_elements_ptr view_state::create_selection_controls()
 
 				if (folder_count == 1)
 				{
-					title = format(tt.title_folder, selected.folders().front()->name());
+					title = format(tt.title_folder, first_folder->name());
 				}
 				else
 				{
@@ -2112,8 +2112,7 @@ view_elements_ptr view_state::create_selection_controls()
 
 				if (item_count == 1)
 				{
-					const auto i = selected.items().front();
-					title = format(u8"{}:{}"sv, i->file_type()->group->name, i->name());
+					title = format(u8"{}:{}"sv, first_item->file_type()->group->name, first_item->name());
 				}
 				else
 				{
@@ -2127,8 +2126,6 @@ view_elements_ptr view_state::create_selection_controls()
 
 			if ((folder_count + item_count) > 0)
 			{
-				const auto is_recursive = selected.are_all_folders_indexed();
-				const auto only_folder = selected.only_folders();
 				const auto summary = selected.summary();
 				elements->add(std::make_shared<summary_control>(summary, view_element_style::new_line));
 			}
@@ -2372,12 +2369,15 @@ df::search_parent view_state::parent_search() const
 
 		if (result.parent.is_empty())
 		{
-			for (const auto& f : _selected.folders())
+			for (const auto& f : _selected.items())
 			{
-				result.parent = df::search_t().add_selector(f->path());
-				result.name = f->name();
-				result.selection.folders = {f->path()};
-				break;
+				if (f->is_folder())
+				{
+					result.parent = df::search_t().add_selector(f->folder());
+					result.name = f->name();
+					result.selection.folders = { f->folder() };
+					break;
+				}
 			}
 		}
 	}
@@ -2736,7 +2736,7 @@ void view_state::toggle_selected_item_tags(const view_host_base_ptr& view, const
 
 using existing_textures_t = df::hash_map<df::file_path, std::shared_ptr<texture_state>, df::ihash, df::ieq>;
 
-static texture_state_ptr get_tex(existing_textures_t existing_textures, const df::file_item_ptr& item,
+static texture_state_ptr get_tex(existing_textures_t existing_textures, const df::item_element_ptr& item,
                                  async_strategy& as)
 {
 	const auto found = existing_textures.find(item->path());
@@ -3013,7 +3013,7 @@ void view_state::tick(const view_host_base_ptr& view, const double time_now)
 }
 
 
-void texture_state::load_image(const df::file_item_ptr& i)
+void texture_state::load_image(const df::item_element_ptr& i)
 {
 	if (i)
 	{
@@ -3067,7 +3067,7 @@ void texture_state::free_graphics_resources()
 	_tex_invalid = true;
 }
 
-void texture_state::refresh(const df::file_item_ptr& i)
+void texture_state::refresh(const df::item_element_ptr& i)
 {
 	if (_is_photo)
 	{
@@ -3291,7 +3291,7 @@ void texture_state::draw(ui::draw_context& rc, const pointi offset, int compare_
 	}
 }
 
-void texture_state::layout(ui::measure_context& mc, const recti bounds, const df::file_item_ptr& i)
+void texture_state::layout(ui::measure_context& mc, const recti bounds, const df::item_element_ptr& i)
 {
 	_display_bounds = bounds;
 	refresh(i);
@@ -3334,7 +3334,7 @@ void display_state_t::populate(view_state& state)
 
 	const auto& selected_items = state.selected_items();
 	const auto item_count = selected_items.items().size();
-	const auto no_folders = selected_items.folders().empty();
+	const auto no_folders = !selected_items.has_folders();
 
 	_is_one = item_count == 1 && no_folders;
 	_is_two = item_count == 2 && no_folders;
@@ -3485,7 +3485,7 @@ render_valid display_state_t::update_for_present(const double time_now) const
 //	_display_alpha_animation.reset(0.0f, 1.0f);
 //}
 
-texture_state::texture_state(async_strategy& async, const df::file_item_ptr& i) : _async(async)
+texture_state::texture_state(async_strategy& async, const df::item_element_ptr& i) : _async(async)
 {
 	_loaded.clear();
 	_loaded.i = i->thumbnail();
@@ -3637,9 +3637,12 @@ df::folder_counts view_state::known_folders() const
 		results[path] = 255 - std::min(static_cast<int>(path.size()), 255); // short file names more likely
 	}
 
-	for (const auto& path : _search_items.folders())
+	for (const auto& i : _search_items.items())
 	{
-		results[path->path()] += 1 << 8;
+		if (i->is_folder())
+		{
+			results[i->folder()] += 1 << 8;
+		}
 	}
 
 	recent_folders.count(results, 2 << 8);
@@ -3770,3 +3773,4 @@ void view_state::open_next_path(const view_host_base_ptr& view, bool forward)
 
 	stop_slideshow();
 }
+

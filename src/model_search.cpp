@@ -1035,7 +1035,7 @@ void df::search_t::parse_part(const search_part& part)
 	}
 }
 
-void df::related_info::load(const file_item_ptr& i)
+void df::related_info::load(const item_element_ptr& i)
 {
 	const auto md = i->metadata();
 

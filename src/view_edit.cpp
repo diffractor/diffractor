@@ -728,7 +728,7 @@ void edit_view::save_and_close()
 	}
 }
 
-static prop::item_metadata_ptr safe_metadata(const df::file_item_ptr& i)
+static prop::item_metadata_ptr safe_metadata(const df::item_element_ptr& i)
 {
 	if (i)
 	{
@@ -1392,7 +1392,7 @@ void edit_view_state::reset(const prop::item_metadata_ptr& md, const sizei dimen
 void edit_view::display_changed()
 {
 	const auto display = _state.display_state();
-	const auto item = display ? display->_item1 : df::file_item_ptr{};
+	const auto item = display ? display->_item1 : df::item_element_ptr{};
 
 	_state._edit_item = item;
 	_loaded.clear();

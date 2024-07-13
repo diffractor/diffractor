@@ -4355,7 +4355,7 @@ protected:
 	int _alpha = 0;
 	int _alpha_target = 0;
 	recti _bounds;
-	view_elements _elements;
+	view_elements_ptr _elements;
 	bool _horizontal = false;
 	pointi _focus_loc;
 
@@ -4445,13 +4445,13 @@ public:
 	const int horz_padding = shadow_padding + 10;
 	const float radius = 8.0;
 
-	void show(const view_elements& elements, const recti button_rect, const int x_focus, const int prefered_size,
+	void show(const view_elements_ptr& elements, const recti button_rect, const int x_focus, const int prefered_size,
 	          const bool horizontal) override
 	{
 		if (_draw_ctx)
 		{
 			const auto scale_factor = _gdi_ctx->scale_factor;
-			const auto element_extent = elements.measure(*_draw_ctx, df::round(prefered_size * scale_factor));
+			const auto element_extent = elements->measure(*_draw_ctx, df::round(prefered_size * scale_factor));
 			const auto cx = std::max(80, element_extent.cx) + (horz_padding * 2);
 			const auto cy = std::max(36, element_extent.cy) + (vert_padding * 2);
 
@@ -4503,7 +4503,7 @@ public:
 			_elements = elements;
 
 			ui::control_layouts positions;
-			_elements.layout(*_draw_ctx, center_rect(element_extent, sizei{cx, cy}), positions);
+			_elements->layout(*_draw_ctx, center_rect(element_extent, sizei{cx, cy}), positions);
 
 			InvalidateRect(m_hWnd, nullptr, FALSE);
 			SetWindowPos(m_hWnd, nullptr, _bounds.left, _bounds.top, cx, cy, SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOOWNERZORDER);
@@ -4521,7 +4521,7 @@ public:
 		_draw_ctx->colors = {
 			ui::style::color::bubble_background, ui::style::color::view_text, ui::style::color::view_selected_background
 		};
-		_elements.render(*ctx, {});
+		_elements->render(*ctx, {});
 	}
 
 	void on_resize(const sizei extent, const bool is_minimized) override

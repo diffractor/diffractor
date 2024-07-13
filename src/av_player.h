@@ -87,7 +87,7 @@ private:
 	int _volume = 1000;
 	bool _mute = false;
 
-	df::file_item_ptr _item;
+	df::item_element_ptr _item;
 
 	mutable double _last_frame_time = -1;
 	mutable double _last_texture_time = -1;
@@ -186,7 +186,7 @@ public:
 		}
 	}
 
-	bool open(const df::file_item_ptr& item, const bool auto_play, const int video_track, const int audio_track,
+	bool open(const df::item_element_ptr& item, const bool auto_play, const int video_track, const int audio_track,
 	          const bool can_use_hw, const bool use_last_played_pos, const bool can_use_threads)
 	{
 		df::assert_true(_state == av_play_state::detached);
@@ -558,7 +558,7 @@ public:
 		queue([ses, pos, scrubbing](const std::shared_ptr<av_player>& p) { p->seek_impl(ses, pos, scrubbing); });
 	}
 
-	void open(const df::file_item_ptr& item, const bool auto_play, const int video_track, const int audio_track,
+	void open(const df::item_element_ptr& item, const bool auto_play, const int video_track, const int audio_track,
 	          const bool can_use_hw,
 	          const bool use_last_played_pos, 
 		      const std::function<void(std::shared_ptr<av_session>)>& cb)
@@ -597,7 +597,7 @@ private:
 		_audio_event.set();
 	}
 
-	std::shared_ptr<av_session> open_impl(const df::file_item_ptr& item, const bool auto_play, const int video_track,
+	std::shared_ptr<av_session> open_impl(const df::item_element_ptr& item, const bool auto_play, const int video_track,
 	                                      const int audio_track, const bool can_use_hw,
 	                                      const bool use_last_played_pos)
 	{

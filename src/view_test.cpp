@@ -27,14 +27,7 @@
 #include "util_crash_files_db.h"
 #include "util_simd.h"
 
-static constexpr int padding_y = 32;
-static constexpr int padding_x = 32;
-static constexpr int padding_bar = 4;
-static constexpr int name_width = 300;
-static constexpr int success_width = 80;
-static constexpr int title_height = 32;
-static constexpr int row_height = 32;
-static constexpr int widths[] = {name_width, success_width, 0};
+static int col_widths[] = { 0, 0, 0 };
 
 const static auto long_text =
 	u8"The Commodore 64, also known as the C64, C-64, C= 64, or occasionally CBM 64 or VIC-64, is an 8-bit home computer introduced in January 1982 by Commodore International. "
@@ -272,9 +265,9 @@ static std::atomic_int test_version = 0;
 static df::cancel_token test_token(test_version);
 constexpr int expected_cached_item_count = 36;
 
-static df::file_item_ptr load_item(index_state& index, const df::file_path path, bool load_thumb)
+static df::item_element_ptr load_item(index_state& index, const df::file_path path, bool load_thumb)
 {
-	auto i = std::make_shared<df::file_item>(path, index.find_item(path));
+	auto i = std::make_shared<df::item_element>(path, index.find_item(path));
 	index.scan_item(i, load_thumb, false);
 	return i;
 }
@@ -310,19 +303,19 @@ void test_view::test_element::render(ui::draw_context& dc, const pointi element_
 	const auto logical_bounds = bounds.offset(element_offset);
 	dc.draw_rect(logical_bounds, bg);
 
-	auto x = logical_bounds.left;
+	auto x = logical_bounds.left + dc.padding2;
 
-	const recti rectName(x + 8, logical_bounds.top, x + widths[0], logical_bounds.bottom);
+	const recti rectName(x, logical_bounds.top, x + col_widths[0], logical_bounds.bottom);
 	dc.draw_text(_name, rectName, ui::style::font_face::dialog,
 	             ui::style::text_style::single_line, text_color, {});
 
-	x += widths[0];
-	const recti rectSuccess(x + 8, logical_bounds.top, x + widths[1], logical_bounds.bottom);
+	x += col_widths[0] + +dc.padding2;
+	const recti rectSuccess(x, logical_bounds.top, x + col_widths[1], logical_bounds.bottom);
 	dc.draw_text(state, rectSuccess, ui::style::font_face::dialog, ui::style::text_style::single_line,
 	             text_color, {});
 
-	x += widths[1];
-	const recti rectMessage(x + 8, logical_bounds.top, logical_bounds.right, logical_bounds.bottom);
+	x += col_widths[1] + dc.padding2;
+	const recti rectMessage(x, logical_bounds.top, logical_bounds.right, logical_bounds.bottom);
 
 	auto message = _message;
 
@@ -337,7 +330,8 @@ void test_view::test_element::render(ui::draw_context& dc, const pointi element_
 
 sizei test_view::test_element::measure(ui::measure_context& mc, const int width_limit) const
 {
-	return {width_limit, row_height};
+	const auto row_height = mc.text_line_height(ui::style::font_face::dialog) + mc.padding2;
+	return {width_limit, row_height };
 }
 
 void test_view::test_element::dispatch_event(const view_element_event& event)
@@ -393,18 +387,18 @@ void test_view::clear()
 
 void test_view::render_headers(ui::draw_context& dc, int x) const
 {
-	static constexpr std::u8string_view titles[] = {u8"Name"sv, u8"Success"sv, u8"Message"};
+	static constexpr std::u8string_view titles[] = {u8"Name"sv, u8"Status"sv, u8"Message"};
 
-	constexpr int cy = title_height;
-	constexpr int y = 0;
+	const auto cy = dc.text_line_height(ui::style::font_face::dialog) + (dc.padding2 * 2);	
 	const auto bg_alpha = dc.colors.alpha * dc.colors.bg_alpha;
 	const auto text_color = ui::color(dc.colors.foreground, dc.colors.alpha);
 
+	constexpr int y = 0;
 	dc.draw_rect(recti(0, y, _extent.cx, y + cy), ui::color(0, bg_alpha));
 
-	for (auto i = 0u; i < std::size(widths); ++i)
+	for (auto i = 0u; i < std::size(titles); ++i)
 	{
-		auto cx = widths[i];
+		auto cx = col_widths[i];
 
 		if (cx == 0)
 		{
@@ -447,19 +441,26 @@ void test_view::layout(ui::measure_context& mc, const sizei extent)
 	const recti client_bounds{0, 0, _extent.cx - mc.scroll_width, _extent.cy};
 
 	auto y_max = 0;
+	std::u8string longest_name;
 
 	if (!_tests.empty())
 	{
-		auto y = (padding_y * 2);
+		const auto row_height = mc.text_line_height(ui::style::font_face::dialog) + mc.padding2;
+		auto y = row_height + (mc.padding2 * 2);
 
 		for (const auto& i : _tests)
 		{
 			i->bounds.set(client_bounds.left, y, client_bounds.right, y + row_height);
-			y += row_height + padding_bar;
+			y += row_height + mc.padding1;
+
+			if (i->_name.size() > longest_name.size()) longest_name = i->_name;
 		}
 
-		y_max = y + padding_y;
+		y_max = y + mc.padding2;
 	}
+
+	col_widths[0] = mc.measure_text(longest_name, ui::style::font_face::dialog, ui::style::text_style::single_line, extent.cx).cx;
+	col_widths[1] = mc.measure_text(u8"Unknown"sv, ui::style::font_face::dialog, ui::style::text_style::single_line, extent.cx).cx;
 
 	_scroller.layout({client_bounds.width(), y_max}, client_bounds, scroll_bounds);
 	_host->frame()->invalidate();
@@ -473,7 +474,7 @@ test_view::test_ptr test_view::test_from_location(const int y) const
 
 	for (const auto& i : _tests)
 	{
-		const auto yy = i->bounds.top + (row_height / 2);
+		const auto yy = (i->bounds.top + i->bounds.bottom) / 2;
 		const auto d = abs(yy - y - offset.y);
 
 		if (d < distance)
@@ -2177,7 +2178,7 @@ static void should_match_related(test_view::shared_test_context& stc)
 	stc.lazy_load_index();
 
 	const df::file_path path(test_files_folder, u8"Test.jpg"sv);
-	const auto i = std::make_shared<df::file_item>(path, stc.index.find_item(path));
+	const auto i = std::make_shared<df::item_element>(path, stc.index.find_item(path));
 	stc.index.scan_item(i, true, false);
 
 	df::related_info r;
@@ -2234,8 +2235,9 @@ static void should_select_items()
 	s.update_item_groups();
 	s.update_selection();
 
-	assert_equal(expected_cached_item_count + 1_z, s.search_items().items().size(), u8"items loaded into state"sv);
-	assert_equal(2_z, s.search_items().folders().size(), u8"folders loaded into state"sv);
+	assert_equal(expected_cached_item_count + 1_z, s.search_items().file_paths(false).size(), u8"items loaded into state"sv);
+	assert_equal(expected_cached_item_count + 2_z, s.search_items().file_paths().size(), u8"items loaded into state with xmp"sv);
+	assert_equal(2_z, s.search_items().folder_paths().size(), u8"folders loaded into state"sv);
 
 	assert_equal(0_z, s.selected_count(), u8"invalid selection"sv);
 
@@ -2791,7 +2793,7 @@ static void should_not_reload_thumb_when_valid()
 	files ff;
 	const auto loaded = ff.load(load_path, false);
 
-	const auto i_local = std::make_shared<df::file_item>(load_path, make_index_file_info(date));
+	const auto i_local = std::make_shared<df::item_element>(load_path, make_index_file_info(date));
 	assert_equal(false, i_local->should_load_thumbnail(), u8"should not load by default"sv);
 
 	i_local->db_thumb_query_complete();
@@ -3083,12 +3085,12 @@ static void should_detect_duplicates(test_view::shared_test_context& stc)
 	const auto path5 = df::file_path(test_files_folder, u8"Small.jpg"sv);
 	const auto path_sony = df::file_path(test_files_folder, u8"Sony.jpg"sv);
 
-	const auto test_item1 = std::make_shared<df::file_item>(path1, index.find_item(path1));
-	const auto test_item2 = std::make_shared<df::file_item>(path2, index.find_item(path2));
-	const auto test_item3 = std::make_shared<df::file_item>(path3, index.find_item(path3));
-	const auto test_item4 = std::make_shared<df::file_item>(path4, index.find_item(path4));
-	const auto test_item5 = std::make_shared<df::file_item>(path5, index.find_item(path5));
-	const auto sony_item = std::make_shared<df::file_item>(path_sony, index.find_item(path_sony));
+	const auto test_item1 = std::make_shared<df::item_element>(path1, index.find_item(path1));
+	const auto test_item2 = std::make_shared<df::item_element>(path2, index.find_item(path2));
+	const auto test_item3 = std::make_shared<df::item_element>(path3, index.find_item(path3));
+	const auto test_item4 = std::make_shared<df::item_element>(path4, index.find_item(path4));
+	const auto test_item5 = std::make_shared<df::item_element>(path5, index.find_item(path5));
+	const auto sony_item = std::make_shared<df::item_element>(path_sony, index.find_item(path_sony));
 
 	df::item_set items({test_item1, test_item2, test_item3, test_item4, test_item5, sony_item});
 	db.load_thumbnails(index, items);
@@ -3127,7 +3129,7 @@ static void should_detect_rotation(test_view::shared_test_context& stc)
 	index.index_folders(test_token);
 
 	const auto path_test = df::file_path(test_files_folder, u8"exif-rotated.jpg"sv);
-	const auto test_item = std::make_shared<df::file_item>(path_test, index.find_item(path_test));
+	const auto test_item = std::make_shared<df::item_element>(path_test, index.find_item(path_test));
 
 	assert_equal(ui::orientation::top_left, test_item->thumbnail_orientation());
 

@@ -788,7 +788,7 @@ void items_view::update_visible_items_list()
 				{
 					db.load_thumbnails(s.item_index, db_thumbnail_pending);
 
-					df::file_items load;
+					df::item_elements load;
 
 					for (const auto& i : visible_items)
 					{
@@ -803,7 +803,7 @@ void items_view::update_visible_items_list()
 		}
 		else
 		{
-			df::file_items load;
+			df::item_elements load;
 
 			for (const auto& i : _visible_items)
 			{
@@ -1152,8 +1152,8 @@ public:
 
 	void tooltip(view_hover_element& hover, const pointi loc, const pointi element_offset) const override
 	{
-		hover.elements.add(make_icon_element(icon_index::edit_copy, view_element_style::no_break));
-		hover.elements.add(std::make_shared<text_element>(tt.copy_to_clipboard));
+		hover.elements->add(make_icon_element(icon_index::edit_copy, view_element_style::no_break));
+		hover.elements->add(std::make_shared<text_element>(tt.copy_to_clipboard));
 		hover.active_bounds = hover.window_bounds = bounds.offset(element_offset);
 	}
 
@@ -1643,7 +1643,7 @@ void items_view::items_scroll_popup(view_hover_element& hover, const pointi loc)
 
 	if (i)
 	{
-		view_elements elements;
+		auto elements = std::make_shared<view_elements>();
 
 		for (const auto& group : _state.groups())
 		{
@@ -1653,7 +1653,7 @@ void items_view::items_scroll_popup(view_hover_element& hover, const pointi loc)
 				{
 					group->scroll_tooltip(i->thumbnail(), elements);
 
-					if (!elements.is_empty())
+					if (!elements->is_empty())
 					{
 						const auto scroll_bounds = _items_scroller.scroll_bounds();
 						const auto top = loc.y;

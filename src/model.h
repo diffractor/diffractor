@@ -376,14 +376,14 @@ public:
 	sizei _display_dimensions;
 	ui::orientation _display_orientation = ui::orientation::top_left;
 
-	texture_state(async_strategy& async, const df::file_item_ptr& i);
+	texture_state(async_strategy& async, const df::item_element_ptr& i);
 
-	void load_image(const df::file_item_ptr& i);
+	void load_image(const df::item_element_ptr& i);
 	void load_raw();
 
-	void refresh(const df::file_item_ptr& i);
+	void refresh(const df::item_element_ptr& i);
 	void draw(ui::draw_context& rc, pointi offset, int compare_pos, bool first_texture);
-	void layout(ui::measure_context& mc, recti bounds, const df::file_item_ptr& i);
+	void layout(ui::measure_context& mc, recti bounds, const df::item_element_ptr& i);
 	sizei calc_display_dimensions() const;
 	void clear();
 	bool is_empty() const;
@@ -481,8 +481,8 @@ public:
 	texture_state_ptr _selected_texture1;
 	texture_state_ptr _selected_texture2;
 
-	df::file_item_ptr _item1;
-	df::file_item_ptr _item2;
+	df::item_element_ptr _item1;
+	df::item_element_ptr _item2;
 
 	int _next_photo_tick = 0;
 
@@ -777,14 +777,9 @@ public:
 		return wildcard_icmp(text, _text);
 	}
 
-	bool match(const df::file_item_ptr& i) const
+	bool match(const df::item_element_ptr& i) const
 	{
 		return match_text(i->name()) && match_group(i->file_type()->group);
-	}
-
-	bool match(const df::folder_item_ptr& f) const
-	{
-		return match_text(f->name()) && match_group(f->file_type()->group);
 	}
 
 	void toggle(const file_group_ref g)
@@ -866,7 +861,7 @@ private:
 	const view_state& operator=(const view_state& other) = delete;
 
 public:
-	df::file_item_ptr _edit_item;
+	df::item_element_ptr _edit_item;
 	df::item_element_ptr _pin_item;
 	display_state_ptr _display;
 
@@ -947,7 +942,7 @@ public:
 		_events.track_menu(parent, recti, commands);
 	}
 
-	df::file_item_ptr command_item() const
+	df::item_element_ptr command_item() const
 	{
 		const auto d = _display;
 
@@ -956,19 +951,7 @@ public:
 			return d->_item1;
 		}
 
-		return std::dynamic_pointer_cast<df::file_item>(_focus);
-	}
-
-	df::folder_item_ptr command_folder() const
-	{
-		const auto folders = _selected.folders();
-
-		if (folders.size() == 1)
-		{			
-			return folders.front();
-		}
-
-		return nullptr;
+		return _focus;
 	}
 
 	uint32_t count_total(file_group_ref fg) const;
@@ -1094,7 +1077,7 @@ public:
 			}
 		}
 		
-		result.has_single_folder_selection = _selected.size() == 1 && _selected.folders().size() == 1;
+		result.has_single_folder_selection = _selected.size() == 1 && _selected.has_folders();
 
 		return result;
 	}
@@ -1132,7 +1115,7 @@ public:
 
 	bool should_show_overlays() const
 	{
-		if (!_selected.folders().empty())
+		if (_selected.has_folders())
 		{
 			return true;
 		}
@@ -1319,15 +1302,15 @@ public:
 	void stop();
 	void tick(const view_host_base_ptr& view, double time_now);
 	void view_mode(view_type m);
-	void toggle_rating(const df::results_ptr& results, const df::file_items& items, int r,
+	void toggle_rating(const df::results_ptr& results, const df::item_elements& items, int r,
 	                   const view_host_base_ptr& view);
 	int displayed_rating() const;
 
 	void modify_items(const df::results_ptr& dlg, icon_index icon, std::u8string_view title,
-	                  const df::file_items& items_to_modify, const metadata_edits& edits,
+	                  const df::item_elements& items_to_modify, const metadata_edits& edits,
 	                  const view_host_base_ptr& view);
 	void modify_items(const ui::control_frame_ptr& frame, icon_index icon, std::u8string_view title,
-	                  const df::file_items& items_to_modify, const metadata_edits& edits,
+	                  const df::item_elements& items_to_modify, const metadata_edits& edits,
 	                  const view_host_base_ptr& view);
 
 	static quadd orientate(recti bounds, recti clip, const ui::orientation orientation)
@@ -1385,7 +1368,7 @@ class detach_file_handles
 {
 	view_state& _state;
 
-	df::file_item_ptr _i;
+	df::item_element_ptr _i;
 	df::item_set _selected;
 	bool _is_playable = false;
 	bool _is_playing = false;

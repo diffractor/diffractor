@@ -139,10 +139,10 @@ std::vector<std::pair<std::u8string_view, std::u8string>> calc_app_info(const in
 
 void sidebar_logo_element::tooltip(view_hover_element& hover, const pointi loc, const pointi element_offset) const
 {
-	hover.elements.add(std::make_shared<text_element>(_text, ui::style::font_face::title,
+	hover.elements->add(std::make_shared<text_element>(_text, ui::style::font_face::title,
 		ui::style::text_style::single_line,
 		view_element_style::line_break));
-	hover.elements.add(std::make_shared<text_element>(df::format_version(false), ui::style::font_face::dialog,
+	hover.elements->add(std::make_shared<text_element>(df::format_version(false), ui::style::font_face::dialog,
 		ui::style::text_style::single_line,
 		view_element_style::line_break));
 	//hover.elements.add(std::make_shared<text_element>(tt.indexed_locations_makes_collection, render::style::font_size::dialog, render::style::text_style::multiline, view_element_style::line_break));
@@ -156,10 +156,10 @@ void sidebar_logo_element::tooltip(view_hover_element& hover, const pointi loc, 
 			table->add(i.first, i.second);
 		}
 
-		hover.elements.add(table);
+		hover.elements->add(table);
 	}
 
-	hover.elements.add(std::make_shared<action_element>(tt.help_more_info));
+	hover.elements->add(std::make_shared<action_element>(tt.help_more_info));
 	hover.active_bounds = hover.window_bounds = bounds.offset(element_offset);
 }
 
@@ -1025,9 +1025,7 @@ static void start_worker(platform::task_queue& q, const std::u8string_view name)
 
 void app_frame::update_tooltip()
 {
-	static view_hover_element hover;
-
-	hover.clear();
+	_hover.clear();
 
 	if (df::command_active == 0)
 	{
@@ -1042,28 +1040,28 @@ void app_frame::update_tooltip()
 
 		if (c)
 		{
-			c->popup_from_location(hover);
+			c->popup_from_location(_hover);
 
-			if (hover.id != commands::none)
+			if (_hover.id != commands::none)
 			{
-				tooltip(hover, hover.id);
+				tooltip(_hover, _hover.id);
 			}
 
 			const auto window_bounds = frame->frame()->window_bounds();
-			hover.window_bounds = hover.window_bounds.offset(window_bounds.top_left());
-			frame->_tooltip_bounds = hover.active_bounds;
+			_hover.window_bounds = _hover.window_bounds.offset(window_bounds.top_left());
+			frame->_tooltip_bounds = _hover.active_bounds;
 		}
 		else if (setting.show_help_tooltips && _hover_command)
 		{
-			tooltip(hover, std::any_cast<const commands>(_hover_command->opaque));
-			hover.window_bounds = _hover_command_bounds;
-			hover.active_bounds = _hover_command_bounds;
+			tooltip(_hover, std::any_cast<const commands>(_hover_command->opaque));
+			_hover.window_bounds = _hover_command_bounds;
+			_hover.active_bounds = _hover_command_bounds;
 		}
 	}
 
-	if (!hover.is_empty())
+	if (!_hover.is_empty())
 	{
-		_bubble->show(hover.elements, hover.window_bounds, hover.x_focus, hover.prefered_size, hover.horizontal);
+		_bubble->show(_hover.elements, _hover.window_bounds, _hover.x_focus, _hover.prefered_size, _hover.horizontal);
 	}
 	else
 	{
@@ -3330,19 +3328,19 @@ void app_frame::tooltip(view_hover_element& hover, const commands id)
 	{
 		if (command->icon != icon_index::none)
 		{
-			hover.elements.add(make_icon_element(command->icon, view_element_style::no_break));
+			hover.elements->add(make_icon_element(command->icon, view_element_style::no_break));
 		}
 
 		if (!command->text.empty())
 		{
-			hover.elements.add(std::make_shared<text_element>(command->text, ui::style::font_face::dialog,
+			hover.elements->add(std::make_shared<text_element>(command->text, ui::style::font_face::dialog,
 				ui::style::text_style::multiline,
 				view_element_style::line_break));
 		}
 
 		if (!command->tooltip_text.empty())
 		{
-			hover.elements.add(std::make_shared<text_element>(command->tooltip_text, ui::style::font_face::dialog,
+			hover.elements->add(std::make_shared<text_element>(command->tooltip_text, ui::style::font_face::dialog,
 				ui::style::text_style::multiline,
 				view_element_style::line_break));
 		}
@@ -3366,27 +3364,27 @@ void app_frame::tooltip(view_hover_element& hover, const commands id)
 
 				if (is_valid(surface))
 				{
-					hover.elements.add(
+					hover.elements->add(
 						std::make_shared<surface_element>(surface, 200,
 							view_element_style::center | view_element_style::new_line));
 				}
 			}
 
-			hover.elements.add(std::make_shared<text_element>(i->name()));
+			hover.elements->add(std::make_shared<text_element>(i->name()));
 		}
 
 		keyboard_accelerator = forward ? tt.keyboard_right : tt.keyboard_left;
 	}
 	else if (id == commands::menu_group_toolbar)
 	{
-		hover.elements.clear();
-		hover.elements.add(make_icon_element(icon_index::group, view_element_style::no_break));
-		hover.elements.add(std::make_shared<text_element>(tt.group_sort_tooltip, ui::style::font_face::dialog,
+		hover.elements->clear();
+		hover.elements->add(make_icon_element(icon_index::group, view_element_style::no_break));
+		hover.elements->add(std::make_shared<text_element>(tt.group_sort_tooltip, ui::style::font_face::dialog,
 			ui::style::text_style::multiline,
 			view_element_style::line_break));
 
-		hover.elements.add(std::make_shared<summary_control>(_state.summary_shown(), view_element_style::line_break));
-		hover.elements.add(std::make_shared<text_element>(tt.group_sort_click, ui::style::font_face::dialog,
+		hover.elements->add(std::make_shared<summary_control>(_state.summary_shown(), view_element_style::line_break));
+		hover.elements->add(std::make_shared<text_element>(tt.group_sort_click, ui::style::font_face::dialog,
 			ui::style::text_style::multiline,
 			view_element_style::new_line));
 	}
@@ -3396,25 +3394,25 @@ void app_frame::tooltip(view_hover_element& hover, const commands id)
 
 		if (i)
 		{
-			hover.elements.add(std::make_shared<text_element>(i->containing().text()));
+			hover.elements->add(std::make_shared<text_element>(i->containing().text()));
 		}
 	}
 	else if (id == commands::browse_next_folder || id == commands::browse_previous_folder)
 	{
-		hover.elements.add(std::make_shared<text_element>(_state.next_path(id == commands::browse_next_folder)));
+		hover.elements->add(std::make_shared<text_element>(_state.next_path(id == commands::browse_next_folder)));
 	}
 	else if (id == commands::browse_back)
 	{
 		if (_state.history.can_browse_back())
 		{
-			hover.elements.add(std::make_shared<text_element>(_state.history.back_entry().search.text()));
+			hover.elements->add(std::make_shared<text_element>(_state.history.back_entry().search.text()));
 		}
 	}
 	else if (id == commands::browse_forward)
 	{
 		if (_state.history.can_browse_forward())
 		{
-			hover.elements.add(std::make_shared<text_element>(_state.history.forward_entry().search.text()));
+			hover.elements->add(std::make_shared<text_element>(_state.history.forward_entry().search.text()));
 		}
 	}
 	else if (id == commands::browse_parent)
@@ -3423,7 +3421,7 @@ void app_frame::tooltip(view_hover_element& hover, const commands id)
 
 		if (!parent.is_empty())
 		{
-			hover.elements.add(std::make_shared<text_element>(parent.text(), ui::style::font_face::dialog,
+			hover.elements->add(std::make_shared<text_element>(parent.text(), ui::style::font_face::dialog,
 				ui::style::text_style::multiline,
 				view_element_style::new_line));
 		}
@@ -3436,19 +3434,19 @@ void app_frame::tooltip(view_hover_element& hover, const commands id)
 		{
 			const auto is_favorite = _state.search_is_favorite();
 			const auto text = str::format(is_favorite ? tt.favorite_remove_fmt : tt.favorite_add_fmt, search.text());
-			hover.elements.add(std::make_shared<text_element>(text, ui::style::font_face::dialog,
+			hover.elements->add(std::make_shared<text_element>(text, ui::style::font_face::dialog,
 				ui::style::text_style::multiline,
 				view_element_style::new_line));
 		}
 	}
 	else if (id == commands::info_new_version)
 	{
-		hover.elements.add(std::make_shared<text_element>(tt.update_available, ui::style::font_face::dialog,
+		hover.elements->add(std::make_shared<text_element>(tt.update_available, ui::style::font_face::dialog,
 			ui::style::text_style::multiline,
 			view_element_style::line_break));
-		hover.elements.add(
+		hover.elements->add(
 			std::make_shared<text_element>(str::format(tt.update_avail_version_fmt, setting.available_version)));
-		hover.elements.add(std::make_shared<text_element>(str::format(tt.update_current_version_fmt, s_app_version)));
+		hover.elements->add(std::make_shared<text_element>(str::format(tt.update_current_version_fmt, s_app_version)));
 	}
 	else if (id == commands::option_show_rotated)
 	{
@@ -3460,12 +3458,12 @@ void app_frame::tooltip(view_hover_element& hover, const commands id)
 
 			if (md)
 			{
-				hover.elements.add(std::make_shared<text_element>(
+				hover.elements->add(std::make_shared<text_element>(
 					str::format(tt.item_oriented_tooltip_fmt, orientation_to_string(md->orientation))));
 			}
 		}
 
-		hover.elements.add(std::make_shared<action_element>(tt.item_show_oriented));
+		hover.elements->add(std::make_shared<action_element>(tt.item_show_oriented));
 	}
 
 	if (keyboard_accelerator.empty())
@@ -3482,7 +3480,7 @@ void app_frame::tooltip(view_hover_element& hover, const commands id)
 	if (!keyboard_accelerator.empty())
 	{
 		keyboard_accelerator = str::format(u8"{} {}"sv, tt.keyboard_accelerator_press, keyboard_accelerator);
-		hover.elements.add(std::make_shared<action_element>(keyboard_accelerator));
+		hover.elements->add(std::make_shared<action_element>(keyboard_accelerator));
 	}
 }
 
@@ -3991,14 +3989,6 @@ void app_frame::free_graphics_resources(const bool items_only, const bool offscr
 	const auto expanded_logical_bounds = logical_bounds.inflate(0, logical_bounds.height());
 
 	for (const auto& i : _state.search_items().items())
-	{
-		if (!offscreen_only || !i->bounds.intersects(expanded_logical_bounds))
-		{
-			i->clear_cached_surface();
-		}
-	}
-
-	for (const auto& i : _state.search_items().folders())
 	{
 		if (!offscreen_only || !i->bounds.intersects(expanded_logical_bounds))
 		{

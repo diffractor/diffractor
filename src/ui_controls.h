@@ -46,10 +46,10 @@ class rating_control final : public std::enable_shared_from_this<rating_control>
 	int _hover_rating = 0;
 	int last_hover_rating = 0;
 	const bool show_accelerator = false;
-	const df::file_item_ptr _item;
+	const df::item_element_ptr _item;
 
 public:
-	rating_control(view_state& s, df::file_item_ptr i, const bool show_accelerator,
+	rating_control(view_state& s, df::item_element_ptr i, const bool show_accelerator,
 	               const view_element_style style_in) noexcept : _state(s), show_accelerator(show_accelerator),
 	                                                             _item(std::move(i))
 	{
@@ -99,22 +99,22 @@ public:
 
 	void tooltip(view_hover_element& hover, const pointi loc, const pointi element_offset) const override
 	{
-		hover.elements.add(make_icon_element(icon_index::star, view_element_style::no_break));
+		hover.elements->add(make_icon_element(icon_index::star, view_element_style::no_break));
 
 		const auto current_rating = displayed_rating();
 
 		if (current_rating == last_hover_rating && current_rating != 0)
 		{
-			hover.elements.add(std::make_shared<text_element>(str::format(tt.rating_remove_fmt, current_rating)));
+			hover.elements->add(std::make_shared<text_element>(str::format(tt.rating_remove_fmt, current_rating)));
 		}
 		else
 		{
-			hover.elements.
+			hover.elements->
 			      add(std::make_shared<text_element>(format_plural_text(tt.rating_set_fmt, last_hover_rating)));
 
 			if (current_rating != 0)
 			{
-				hover.elements.add(std::make_shared<text_element>(str::format(tt.rating_remove_fmt, current_rating)));
+				hover.elements->add(std::make_shared<text_element>(str::format(tt.rating_remove_fmt, current_rating)));
 			}
 		}
 
@@ -127,7 +127,7 @@ public:
 
 		if (show_accelerator)
 		{
-			hover.elements.add(std::make_shared<action_element>(tt.rating_keys));
+			hover.elements->add(std::make_shared<action_element>(tt.rating_keys));
 		}
 	}
 
@@ -171,12 +171,12 @@ public:
 class rate_label_control final : public std::enable_shared_from_this<rate_label_control>, public view_element
 {
 	view_state& _state;
-	const df::file_item_ptr _item;
+	const df::item_element_ptr _item;
 	const bool show_accelerator = false;
 	mutable recti _view_bounds;
 
 public:
-	rate_label_control(view_state& s, df::file_item_ptr i, const bool show_accelerator,
+	rate_label_control(view_state& s, df::item_element_ptr i, const bool show_accelerator,
 	                   const view_element_style style_in) noexcept : view_element(
 		                                                                 style_in | view_element_style::has_tooltip |
 		                                                                 view_element_style::can_invoke), _state(s),
@@ -239,13 +239,13 @@ class items_dates_control final : public std::enable_shared_from_this<items_date
 {
 private:
 	view_state& _state;
-	const df::file_item_ptr _item;
+	const df::item_element_ptr _item;
 	std::u8string _text;
 	ui::style::font_face _font = ui::style::font_face::dialog;
 	ui::style::text_style _text_style = ui::style::text_style::multiline;
 
 public:
-	items_dates_control(view_state& s, df::file_item_ptr i) noexcept : view_element(
+	items_dates_control(view_state& s, df::item_element_ptr i) noexcept : view_element(
 		                                                                   view_element_style::has_tooltip |
 		                                                                   view_element_style::can_invoke), _state(s),
 	                                                                   _item(std::move(i))
@@ -325,11 +325,11 @@ public:
 class pin_control final : public std::enable_shared_from_this<pin_control>, public view_element
 {
 	view_state& _state;
-	const df::file_item_ptr _item;
+	const df::item_element_ptr _item;
 	const bool show_accelerator = false;
 
 public:
-	pin_control(view_state& s, df::file_item_ptr i, const bool show_accelerator,
+	pin_control(view_state& s, df::item_element_ptr i, const bool show_accelerator,
 	            const view_element_style style_in) noexcept : _state(s), _item(std::move(i)),
 	                                                          show_accelerator(show_accelerator)
 	{
@@ -402,11 +402,11 @@ class unselect_element final : public std::enable_shared_from_this<unselect_elem
 {
 private:
 	view_state& _state;
-	const df::file_item_ptr _item;
+	const df::item_element_ptr _item;
 	const icon_index _icon = icon_index::close;
 
 public:
-	unselect_element(view_state& s, df::file_item_ptr i,
+	unselect_element(view_state& s, df::item_element_ptr i,
 	                 const view_element_style style_in) noexcept : _state(s), _item(std::move(i))
 	{
 		style |= style_in | view_element_style::has_tooltip | view_element_style::can_invoke;
@@ -440,8 +440,8 @@ public:
 
 	void tooltip(view_hover_element& hover, const pointi loc, const pointi element_offset) const override
 	{
-		hover.elements.add(make_icon_element(_icon, view_element_style::no_break));
-		hover.elements.add(std::make_shared<text_element>(format(tt.unselect_fmt, _item->name())));
+		hover.elements->add(make_icon_element(_icon, view_element_style::no_break));
+		hover.elements->add(std::make_shared<text_element>(format(tt.unselect_fmt, _item->name())));
 		hover.active_bounds = hover.window_bounds = bounds.offset(element_offset);
 	}
 };
@@ -450,11 +450,11 @@ class delete_element final : public std::enable_shared_from_this<delete_element>
 {
 private:
 	view_state& _state;
-	const df::file_item_ptr _item;
+	const df::item_element_ptr _item;
 	const icon_index _icon = icon_index::del;
 
 public:
-	delete_element(view_state& s, df::file_item_ptr i,
+	delete_element(view_state& s, df::item_element_ptr i,
 	               const view_element_style style_in) noexcept : _state(s), _item(std::move(i))
 	{
 		style |= style_in | view_element_style::has_tooltip | view_element_style::can_invoke;
@@ -490,8 +490,8 @@ public:
 
 	void tooltip(view_hover_element& hover, const pointi loc, const pointi element_offset) const override
 	{
-		hover.elements.add(make_icon_element(_icon, view_element_style::no_break));
-		hover.elements.add(std::make_shared<text_element>(format(tt.delete_fmt, _item->name())));
+		hover.elements->add(make_icon_element(_icon, view_element_style::no_break));
+		hover.elements->add(std::make_shared<text_element>(format(tt.delete_fmt, _item->name())));
 		hover.active_bounds = hover.window_bounds = bounds.offset(element_offset);
 	}
 };
@@ -500,14 +500,14 @@ class stream_element final : public std::enable_shared_from_this<stream_element>
 {
 private:
 	view_state& _state;
-	const df::file_item_ptr _item;
+	const df::item_element_ptr _item;
 	const av_stream_info _stream;
 	ui::style::font_face _font = ui::style::font_face::dialog;
 	ui::style::text_style _text_style = ui::style::text_style::multiline;
 	std::u8string _text;
 
 public:
-	stream_element(view_state& state, df::file_item_ptr i, av_stream_info stream) noexcept : _state(state),
+	stream_element(view_state& state, df::item_element_ptr i, av_stream_info stream) noexcept : _state(state),
 		_item(std::move(i)), _stream(std::move(stream))
 	{
 		if (stream.type == av_stream_type::audio)
@@ -556,8 +556,8 @@ public:
 
 	void tooltip(view_hover_element& hover, const pointi loc, const pointi element_offset) const override
 	{
-		hover.elements.add(make_icon_element(icon_index::audio, view_element_style::no_break));
-		hover.elements.add(std::make_shared<text_element>(str::format(tt.stream_select_fmt, _text)));
+		hover.elements->add(make_icon_element(icon_index::audio, view_element_style::no_break));
+		hover.elements->add(std::make_shared<text_element>(str::format(tt.stream_select_fmt, _text)));
 		hover.active_bounds = hover.window_bounds = bounds.offset(element_offset);
 	}
 
@@ -1271,8 +1271,8 @@ public:
 		{
 			const auto x = std::clamp(loc.x, _display->_scrubber_bounds.left, _display->_scrubber_bounds.right);
 
-			hover.elements.add(std::make_shared<surface_element>(surface, 200, view_element_style::none));
-			hover.elements.add(std::make_shared<text_element>(str::format_seconds(df::round(surface->time())),
+			hover.elements->add(std::make_shared<surface_element>(surface, 200, view_element_style::none));
+			hover.elements->add(std::make_shared<text_element>(str::format_seconds(df::round(surface->time())),
 			                                                  ui::style::font_face::dialog,
 			                                                  ui::style::text_style::single_line,
 			                                                  view_element_style::center |
@@ -1949,7 +1949,7 @@ public:
 			const std::array<texture_state_ptr, 2> selected_textures{
 				_display->_selected_texture1, _display->_selected_texture2
 			};
-			const std::array<df::file_item_ptr, 2> selected_items{_display->_item1, _display->_item2};
+			const std::array<df::item_element_ptr, 2> selected_items{_display->_item1, _display->_item2};
 
 			for (auto i = 0u; i < tex_count; i++)
 			{

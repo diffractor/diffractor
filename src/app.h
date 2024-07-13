@@ -491,6 +491,8 @@ public:
 	lerp_animate _search_color_lerp;
 	std::atomic_int _pin_search;
 
+	view_hover_element _hover;
+
 	app_frame(ui::plat_app_ptr pa);
 	~app_frame() override;
 

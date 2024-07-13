@@ -19,6 +19,7 @@ class files;
 class image_edits;
 
 using av_frame_ptr = std::shared_ptr<av_frame>;
+using view_elements_ptr = std::shared_ptr<view_elements>;
 
 static constexpr int normal_font_size = 16;
 static constexpr int large_font_size = 21;
@@ -1603,7 +1604,7 @@ namespace ui
 	{
 	public:
 		virtual ~bubble_frame() = default;
-		virtual void show(const view_elements& elements, recti bounds, int x_center, int prefered_size,
+		virtual void show(const view_elements_ptr& elements, recti bounds, int x_center, int prefered_size,
 		                  bool horizontal) = 0;
 		virtual void hide() = 0;
 		virtual bool is_visible() const = 0;

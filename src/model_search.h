@@ -587,7 +587,7 @@ namespace df
 			return !(lhs == rhs);
 		}
 
-		void load(const file_item_ptr& i);
+		void load(const item_element_ptr& i);
 	};
 
 	class search_t

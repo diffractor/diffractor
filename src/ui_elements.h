@@ -151,10 +151,10 @@ public:
 	{
 	}
 
-	view_element(const view_element&) noexcept = default;
-	view_element& operator=(const view_element&) noexcept = default;
-	view_element(view_element&&) noexcept = default;
-	view_element& operator=(view_element&&) noexcept = default;
+	view_element(const view_element&) noexcept = delete;
+	view_element& operator=(const view_element&) noexcept = delete;
+	view_element(view_element&&) noexcept = delete;
+	view_element& operator=(view_element&&) noexcept = delete;
 	virtual ~view_element() noexcept = default;
 
 	ui::color calc_background_color(ui::draw_context& dc) const
@@ -787,7 +787,7 @@ struct view_hover_element
 {
 	const static int default_prefered_size = 300;
 
-	view_elements elements;
+	std::shared_ptr<view_elements> elements;
 	recti window_bounds;
 	recti active_bounds;
 	uint32_t active_delay = 0;
@@ -798,19 +798,14 @@ struct view_hover_element
 
 	view_hover_element() = default;
 
-	view_hover_element(view_elements elements_in, recti bounds, int x_focus = -1) : elements(std::move(elements_in)),
-		window_bounds(bounds), x_focus(x_focus)
-	{
-	}
-
 	bool is_empty() const
 	{
-		return elements.is_empty();
+		return elements == nullptr || elements->is_empty();
 	}
 
 	void clear()
 	{
-		elements.clear();
+		elements = std::make_shared<view_elements>();
 		window_bounds.clear();
 		active_bounds.clear();
 		x_focus = -1;

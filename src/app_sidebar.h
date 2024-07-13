@@ -322,33 +322,33 @@ public:
 	{
 		if (title_layout.is_empty())
 		{
-			result.elements.add(make_icon_element(tooltip_icon, icon_repeat, view_element_style::line_break));
+			result.elements->add(make_icon_element(tooltip_icon, icon_repeat, view_element_style::line_break));
 		}
 		else
 		{
-			result.elements.add(make_icon_element(tooltip_icon, icon_repeat, view_element_style::no_break));
-			result.elements.add(std::make_shared<text_element>(title_layout.text, ui::style::font_face::title,
+			result.elements->add(make_icon_element(tooltip_icon, icon_repeat, view_element_style::no_break));
+			result.elements->add(std::make_shared<text_element>(title_layout.text, ui::style::font_face::title,
 			                                                   ui::style::text_style::multiline,
 			                                                   view_element_style::line_break));
 		}
 
 		if (str::is_empty(tooltip_text))
 		{
-			result.elements.add(std::make_shared<text_element>(search.text(), ui::style::font_face::dialog,
+			result.elements->add(std::make_shared<text_element>(search.text(), ui::style::font_face::dialog,
 			                                                   ui::style::text_style::multiline,
 			                                                   view_element_style::line_break));
 		}
 		else
 		{
-			result.elements.add(std::make_shared<text_element>(tooltip_text, ui::style::font_face::dialog,
+			result.elements->add(std::make_shared<text_element>(tooltip_text, ui::style::font_face::dialog,
 			                                                   ui::style::text_style::multiline,
 			                                                   view_element_style::line_break));
 		}
 
 		const auto has_folder = search.has_selector();
 
-		result.elements.add(std::make_shared<summary_control>(summary, view_element_style::line_break));
-		result.elements.add(std::make_shared<action_element>(has_folder ? tt.click_to_open : tt.click_to_search));
+		result.elements->add(std::make_shared<summary_control>(summary, view_element_style::line_break));
+		result.elements->add(std::make_shared<action_element>(has_folder ? tt.click_to_open : tt.click_to_search));
 		result.active_bounds = result.window_bounds = bounds.offset(element_offset);
 		result.horizontal = true;
 	}
@@ -483,8 +483,8 @@ public:
 
 	void tooltip(view_hover_element& result, const pointi loc, const pointi element_offset) const override
 	{
-		result.elements.add(make_icon_element(icon, view_element_style::no_break));
-		result.elements.add(std::make_shared<text_element>(_drive.name, ui::style::font_face::title,
+		result.elements->add(make_icon_element(icon, view_element_style::no_break));
+		result.elements->add(std::make_shared<text_element>(_drive.name, ui::style::font_face::title,
 		                                                   ui::style::text_style::multiline,
 		                                                   view_element_style::line_break));
 
@@ -501,8 +501,8 @@ public:
 		table->add(tt.disk_used, _drive.used.str());
 		table->add(tt.disk_system, _drive.file_system);
 
-		result.elements.add(table);
-		result.elements.add(std::make_shared<action_element>(tt.click_to_open));
+		result.elements->add(table);
+		result.elements->add(std::make_shared<action_element>(tt.click_to_open));
 
 		result.active_bounds = result.window_bounds = bounds.offset(element_offset);
 		result.horizontal = true;
@@ -841,10 +841,10 @@ public:
 
 	void tooltip(view_hover_element& hover, const pointi loc, const pointi element_offset) const override
 	{
-		hover.elements.add(std::make_shared<text_element>(tt.indexing_message, ui::style::font_face::dialog,
+		hover.elements->add(std::make_shared<text_element>(tt.indexing_message, ui::style::font_face::dialog,
 		                                                  ui::style::text_style::multiline,
 		                                                  view_element_style::line_break));
-		hover.elements.add(std::make_shared<action_element>(tt.click_collection_options));
+		hover.elements->add(std::make_shared<action_element>(tt.click_collection_options));
 
 		hover.active_bounds = hover.window_bounds = bounds.offset(element_offset);
 		hover.horizontal = true;
@@ -1028,20 +1028,20 @@ public:
 			const auto size = prop::format_size(total.size);
 			const auto text = str::format(tt.total_title, num, size, num_folder);
 
-			hover.elements.add(std::make_shared<text_element>(tt.collection_title, ui::style::font_face::title,
+			hover.elements->add(std::make_shared<text_element>(tt.collection_title, ui::style::font_face::title,
 			                                                  ui::style::text_style::multiline,
 			                                                  view_element_style::line_break |
 			                                                  view_element_style::center));
-			hover.elements.add(std::make_shared<text_element>(text, ui::style::font_face::dialog,
+			hover.elements->add(std::make_shared<text_element>(text, ui::style::font_face::dialog,
 			                                                  ui::style::text_style::multiline,
 			                                                  view_element_style::line_break |
 			                                                  view_element_style::center));
 
-			hover.elements.add(std::make_shared<divider_element>());
-			hover.elements.add(
+			hover.elements->add(std::make_shared<divider_element>());
+			hover.elements->add(
 				std::make_shared<summary_control>(
 					file_types, view_element_style::line_break | view_element_style::center));
-			hover.elements.add(std::make_shared<divider_element>());
+			hover.elements->add(std::make_shared<divider_element>());
 
 			const auto table = std::make_shared<ui::table_element>(view_element_style::center);
 			table->no_shrink_col[1] = true;
@@ -1058,9 +1058,9 @@ public:
 				table->add(folder_text, count_text, size_text);
 			}
 
-			hover.elements.add(table);
-			hover.elements.add(std::make_shared<divider_element>());
-			hover.elements.add(std::make_shared<action_element>(tt.click_collection_options));
+			hover.elements->add(table);
+			hover.elements->add(std::make_shared<divider_element>());
+			hover.elements->add(std::make_shared<action_element>(tt.click_collection_options));
 
 			hover.prefered_size = view_hover_element::default_prefered_size + 64;
 		}
@@ -1075,22 +1075,22 @@ public:
 					const auto num = platform::format_number(str::to_string(e.count));
 					const auto size = prop::format_size(e.size);
 
-					hover.elements.add(make_icon_element(icon, view_element_style::no_break));
-					hover.elements.add(std::make_shared<text_element>(ft->display_name(e.count > 1),
+					hover.elements->add(make_icon_element(icon, view_element_style::no_break));
+					hover.elements->add(std::make_shared<text_element>(ft->display_name(e.count > 1),
 					                                                  ui::style::font_face::title,
 					                                                  ui::style::text_style::multiline,
 					                                                  view_element_style::line_break));
 
 					const auto text = str::format(tt.collection_contains, num, ft->display_name(e.count > 1), size);
-					hover.elements.add(std::make_shared<text_element>(text, ui::style::font_face::dialog,
+					hover.elements->add(std::make_shared<text_element>(text, ui::style::font_face::dialog,
 					                                                  ui::style::text_style::multiline,
 					                                                  view_element_style::line_break));
 				}
 			}
 
-			if (!hover.elements.is_empty())
+			if (!hover.elements->is_empty())
 			{
-				hover.elements.add(std::make_shared<action_element>(tt.click_to_open));
+				hover.elements->add(std::make_shared<action_element>(tt.click_to_open));
 				hover.prefered_size = df::mul_div(view_hover_element::default_prefered_size, 2, 3);
 			}
 		}
@@ -1369,14 +1369,14 @@ struct sidebar_history_element final : public view_element, public std::enable_s
 			const auto month = str::month(m + 1, true);
 			const auto year = str::to_string(_current_year - y);
 
-			hover.elements.add(make_icon_element(icon_index::time, view_element_style::no_break));
-			hover.elements.add(std::make_shared<text_element>(month, ui::style::font_face::title,
+			hover.elements->add(make_icon_element(icon_index::time, view_element_style::no_break));
+			hover.elements->add(std::make_shared<text_element>(month, ui::style::font_face::title,
 			                                                  ui::style::text_style::multiline,
 			                                                  view_element_style::no_break));
-			hover.elements.add(std::make_shared<text_element>(year, ui::style::font_face::title,
+			hover.elements->add(std::make_shared<text_element>(year, ui::style::font_face::title,
 			                                                  ui::style::text_style::multiline,
 			                                                  view_element_style::line_break));
-			hover.elements.add(std::make_shared<text_element>(tt.collection_contains2, ui::style::font_face::dialog,
+			hover.elements->add(std::make_shared<text_element>(tt.collection_contains2, ui::style::font_face::dialog,
 			                                                  ui::style::text_style::multiline,
 			                                                  view_element_style::line_break));
 
@@ -1389,9 +1389,9 @@ struct sidebar_history_element final : public view_element, public std::enable_s
 				ui::style::text_style::single_line_far);
 			table->add(num1, std::make_shared<text_element>(str::format(tt.items_created_fmt, month, year)));
 			table->add(num2, std::make_shared<text_element>(str::format(tt.items_modified_fmt, month, year)));
-			hover.elements.add(table);
+			hover.elements->add(table);
 
-			hover.elements.add(std::make_shared<action_element>(tt.click_to_open_created_modified));
+			hover.elements->add(std::make_shared<action_element>(tt.click_to_open_created_modified));
 		}
 
 		hover.active_bounds = hover.window_bounds = bounds.offset(element_offset);
@@ -1668,14 +1668,14 @@ public:
 		{
 			const auto& location = _locations[_hover_location];
 
-			hover.elements.add(make_icon_element(icon_index::location, view_element_style::no_break));
-			hover.elements.add(std::make_shared<text_element>(location.name, ui::style::font_face::title,
+			hover.elements->add(make_icon_element(icon_index::location, view_element_style::no_break));
+			hover.elements->add(std::make_shared<text_element>(location.name, ui::style::font_face::title,
 			                                                  ui::style::text_style::multiline,
 			                                                  view_element_style::line_break));
-			hover.elements.add(std::make_shared<text_element>(
+			hover.elements->add(std::make_shared<text_element>(
 				format(tt.click_items_from_fmt, location.count, location.name), ui::style::font_face::dialog,
 				ui::style::text_style::multiline, view_element_style::line_break));
-			hover.elements.add(std::make_shared<action_element>(tt.click_to_search));
+			hover.elements->add(std::make_shared<action_element>(tt.click_to_search));
 		}
 
 		hover.active_bounds = hover.window_bounds = bounds.offset(element_offset);

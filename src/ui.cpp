@@ -318,9 +318,9 @@ public:
 	{
 		if (!_tracking)
 		{
-			hover.elements.add(make_icon_element(icon_index::compare, view_element_style::no_break));
-			hover.elements.add(std::make_shared<text_element>(tt.compare));
-			hover.elements.add(std::make_shared<text_element>(tt.compare_tooltip));
+			hover.elements->add(make_icon_element(icon_index::compare, view_element_style::no_break));
+			hover.elements->add(std::make_shared<text_element>(tt.compare));
+			hover.elements->add(std::make_shared<text_element>(tt.compare_tooltip));
 			hover.prefered_size = df::mul_div(hover.prefered_size, 5, 8);
 			hover.window_bounds = hover.active_bounds = _bounds;
 		}
@@ -519,9 +519,9 @@ public:
 	{
 		if (!_parent_element->_display->zoom())
 		{
-			hover.elements.add(make_icon_element(icon_index::zoom_in, view_element_style::no_break));
-			hover.elements.add(std::make_shared<text_element>(tt.zoom_tooltip));
-			hover.elements.add(std::make_shared<action_element>(tt.zoom_kb));
+			hover.elements->add(make_icon_element(icon_index::zoom_in, view_element_style::no_break));
+			hover.elements->add(std::make_shared<text_element>(tt.zoom_tooltip));
+			hover.elements->add(std::make_shared<action_element>(tt.zoom_kb));
 			hover.prefered_size = df::mul_div(hover.prefered_size, 5, 8);
 			hover.window_bounds = hover.active_bounds = _zoom_bounds;
 		}
@@ -957,7 +957,7 @@ static metadata_edits make_edit(const std::u8string_view label)
 }
 
 static std::function<void()> make_invoke(view_state& s, const ui::control_frame_ptr& parent,
-                                         const view_host_base_ptr& view, const df::file_item_ptr& item,
+                                         const view_host_base_ptr& view, const df::item_element_ptr& item,
                                          const metadata_edits& edits)
 {
 	return [&s, parent, view, edits, item]
@@ -965,7 +965,7 @@ static std::function<void()> make_invoke(view_state& s, const ui::control_frame_
 		const auto icon = icon_index::star;
 		const auto title = tt.title_updating;
 
-		const df::file_items items_to_modify = {{item}};
+		const df::item_elements items_to_modify = {{item}};
 		s.modify_items(parent, icon, title, items_to_modify, edits, view);
 	};
 }
@@ -984,7 +984,7 @@ static ui::command_ptr def_command(const commands id, const icon_index icon, con
 }
 
 
-bool has_label(const df::file_item_ptr& item, const std::u8string_view label_text)
+bool has_label(const df::item_element_ptr& item, const std::u8string_view label_text)
 {
 	return str::icmp(item->label(), label_text) == 0;
 }
@@ -1028,8 +1028,8 @@ void rate_label_control::dispatch_event(const view_element_event& event)
 
 void rate_label_control::tooltip(view_hover_element& hover, const pointi loc, const pointi element_offset) const
 {
-	hover.elements.add(make_icon_element(icon_index::flag, view_element_style::no_break));
-	hover.elements.add(std::make_shared<text_element>(tt.command_view_rate_label, ui::style::font_face::dialog,
+	hover.elements->add(make_icon_element(icon_index::flag, view_element_style::no_break));
+	hover.elements->add(std::make_shared<text_element>(tt.command_view_rate_label, ui::style::font_face::dialog,
 	                                                  ui::style::text_style::multiline,
 	                                                  view_element_style::line_break));
 
@@ -1037,7 +1037,7 @@ void rate_label_control::tooltip(view_hover_element& hover, const pointi loc, co
 	table->add(str::format(u8"{}:"sv, tt.prop_name_label), _item->label());
 	table->add(str::format(u8"{}:"sv, tt.prop_name_rating), prop::format_rating(_item->rating()));
 
-	hover.elements.add(table);
+	hover.elements->add(table);
 
 	hover.active_bounds = hover.window_bounds = bounds.offset(element_offset);
 }
@@ -1092,13 +1092,13 @@ void preview_control::dispatch_event(const view_element_event& event)
 
 void preview_control::tooltip(view_hover_element& hover, const pointi loc, const pointi element_offset) const
 {
-	hover.elements.add(make_icon_element(icon_index::preview, view_element_style::no_break));
+	hover.elements->add(make_icon_element(icon_index::preview, view_element_style::no_break));
 
 	auto text = tt.preview_rendered;
 	if (_ts->is_preview()) text = tt.preview_showing;
 	if (_ts->is_preview_rendering()) text = tt.preview_rendering;
 
-	hover.elements.add(std::make_shared<text_element>(text, ui::style::font_face::dialog,
+	hover.elements->add(std::make_shared<text_element>(text, ui::style::font_face::dialog,
 	                                                  ui::style::text_style::multiline,
 	                                                  view_element_style::line_break));
 	hover.active_bounds = hover.window_bounds = bounds.offset(element_offset);
@@ -1118,10 +1118,10 @@ void items_dates_control::tooltip(view_hover_element& hover, const pointi loc, c
 	const auto st = created_date.date();
 	const auto search = df::search_t().day(st.day, st.month, st.year);
 	const auto matches = _state.item_index.count_matches(search, token);
-	auto& e = hover.elements;
+	const auto e = hover.elements;
 
-	e.add(make_icon_element(search.first_type()->icon, view_element_style::no_break));
-	e.add(std::make_shared<text_element>(tt.dates_title, ui::style::font_face::title,
+	e->add(make_icon_element(search.first_type()->icon, view_element_style::no_break));
+	e->add(std::make_shared<text_element>(tt.dates_title, ui::style::font_face::title,
 	                                     ui::style::text_style::single_line, view_element_style::line_break));
 
 	const auto table = std::make_shared<ui::table_element>(view_element_style::center);
@@ -1144,11 +1144,11 @@ void items_dates_control::tooltip(view_hover_element& hover, const pointi loc, c
 		           platform::format_time(file_modified_date));
 	}
 
-	e.add(table);
-	e.add(std::make_shared<text_element>(
+	e->add(table);
+	e->add(std::make_shared<text_element>(
 		str::format(tt.items_created_on_fmt, matches.total_items().count, prop::format_date(created_date)), font,
 		ui::style::text_style::multiline, view_element_style::new_line));
-	e.add(std::make_shared<action_element>(tt.click_to_open));
+	e->add(std::make_shared<action_element>(tt.click_to_open));
 
 	hover.active_bounds = hover.window_bounds = bounds.offset(element_offset);
 }

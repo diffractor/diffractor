@@ -79,9 +79,7 @@ namespace df
 	struct index_file_item;
 	class file_group_histogram;
 	struct index_folder_item;
-	class file_item;
 	class item_element;
-	class folder_item;
 	class item_group;
 	class item_set;
 
@@ -94,17 +92,14 @@ namespace df
 	using weak_item_group_ptr = std::weak_ptr<item_group>;
 
 	using item_groups = std::vector<item_group_ptr>;
-	using file_items = std::vector<file_item_ptr>;
-	using folder_items = std::vector<folder_item_ptr>;
 	using item_elements = std::vector<item_element_ptr>;
 
 	struct item_less;
 	struct item_eq;
 	struct item_hash;
 
-	using unique_folder_items = hash_map<folder_path, folder_item_ptr, ihash, ieq>;
-	using unique_file_items = hash_map<file_path, file_item_ptr, ihash, ieq>;
-	using file_items_by_folder = hash_map<folder_path, file_items, ihash, ieq>;
+	using unique_item_elements = hash_map<file_path, item_element_ptr, ihash, ieq>;
+	using file_items_by_folder = hash_map<folder_path, item_elements, ihash, ieq>;
 
 	using index_folder_item_ptr = std::shared_ptr<index_folder_item>;
 	using index_folder_info_const_ptr = std::shared_ptr<const index_folder_item>;
@@ -560,42 +555,69 @@ namespace df
 		}
 	};
 
-	class item_element : public view_element
+	class item_element final : public std::enable_shared_from_this<item_element>, public view_element
 	{
 	protected:
+		file_path _path;
 		str::cached _name;
 		file_type_ref _ft = file_type::other;
-		prop::item_metadata_aptr _metadata;
-
-		bool _is_read_only = true;
-		search_result _search;
+		prop::item_metadata_aptr _metadata;		
+		index_folder_item_ptr _info;
+		ui::const_image_ptr _thumbnail;
+		ui::const_image_ptr _cover_art;
+		mutable ui::texture_ptr _texture;
 
 		file_size _size;
 		date_t _thumbnail_timestamp;
 		date_t _modified;
 		date_t _created;
 		date_t _media_created;
-		duplicate_info _duplicates;
 
-		ui::const_image_ptr _thumbnail;
-		ui::const_image_ptr _cover_art;
-		mutable ui::texture_ptr _texture;
-
+		uint32_t _crc32c = 0;
+		uint32_t _total_count = 0;
 		int _random = 0;
-		item_presence _presence = item_presence::unknown;
 
+		bool _is_loading_thumbnail = false;
+		bool _failed_loading_thumbnail = false;
+		bool _shell_thumbnail_pending = false;
+		bool _is_read_only = true;
+		bool _is_folder = false;
 		bool _db_thumbnail_pending = true;
-		sizei _thumbnail_dims;
-		ui::orientation _thumbnail_orientation = ui::orientation::top_left;
 
+		item_presence _presence = item_presence::unknown;
+		ui::orientation _thumbnail_orientation = ui::orientation::top_left;
+		item_online_status _online_status = item_online_status::offline;
+
+		sizei _thumbnail_dims;
+		duplicate_info _duplicates;
+		search_result _search;		
 
 	public:
 		bool alt_background = false;
 		bool row_layout_valid = true;
 
-		item_element() noexcept : view_element(view_element_style::can_invoke), _random(rand())
+		item_element(const file_path id, const index_file_item& info) noexcept : view_element(view_element_style::can_invoke), _random(rand())
 		{
+			update(id, info);
 		}
+
+		item_element(const folder_path path, index_folder_item_ptr info) noexcept : _path(path), _info(std::move(info))
+		{
+			_is_read_only = _info->is_read_only;
+			_name = path.name();
+			_ft = file_type::folder;
+			_modified = _info->modified;
+			_created = _info->created;
+			_is_folder = true;
+		}
+
+		void update(file_path path, const index_file_item& info) noexcept;
+
+
+		item_element(const item_element& other) = delete;
+		item_element(item_element&& other) = delete;
+		item_element& operator=(const item_element& other) = delete;
+		item_element& operator=(item_element&& other) = delete;
 
 		void duplicates(const duplicate_info d)
 		{
@@ -628,14 +650,52 @@ namespace df
 			return _ft->is_media();
 		}
 
-		bool is_folder() const
+		bool is_link() const
 		{
-			return _ft == file_type::folder;
+			return ends(_name, u8".lnk"sv);
 		}
 
-		virtual item_display_info populate_info() const = 0;
-		virtual bool should_load_thumbnail() const = 0;
-		virtual void add_if_thumbnail_load_needed(file_items& items) = 0;
+		bool has_title() const
+		{
+			const auto m = _metadata.load();
+			return m && !is_empty(m->title);
+		}
+
+		str::cached title() const
+		{
+			const auto m = _metadata.load();
+			return !m || is_empty(m->title) ? _name : m->title;
+		}
+
+		int rating() const
+		{
+			const auto md = _metadata.load();;
+			return md ? md->rating : 0;
+		}
+
+		std::u8string_view label() const
+		{
+			const auto md = _metadata.load();;
+			return md ? md->label : std::u8string_view{};
+		}
+
+		bool has_gps() const
+		{
+			const auto md = _metadata.load();;
+			return md && md->has_gps();
+		}
+
+		uint32_t crc32c() const
+		{
+			return _crc32c;
+		}
+
+		void crc32c(const uint32_t crc)
+		{
+			_crc32c = crc;
+		}
+
+		item_display_info populate_info() const;
 
 		bool has_thumb() const
 		{
@@ -694,6 +754,18 @@ namespace df
 			_search = r;
 		}
 
+		index_folder_info_const_ptr info() const
+		{
+			return _info;
+		}
+
+		void info(index_folder_item_ptr info)
+		{
+			assert_true(is_folder());
+			_info = std::move(info);
+			_is_read_only = _info->is_read_only;
+		}
+
 		sizei thumbnail_dims() const
 		{
 			return _thumbnail_dims;
@@ -731,6 +803,7 @@ namespace df
 			_texture.reset();
 		}
 
+		void calc_folder_summary(cancel_token token);
 
 		void render_bg(ui::draw_context& dc, const item_group& group, pointi element_offset) const;
 		void render(ui::draw_context& dc, const item_group& group, pointi element_offset) const;
@@ -740,17 +813,38 @@ namespace df
 		view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
 		                                             const std::vector<recti>& excluded_bounds) override;
 
-		virtual platform::file_op_result rename(index_state& index, std::u8string_view name) = 0;
-		virtual std::u8string base_name() const = 0;
-		virtual void add_to(item_set& results) = 0;
-		virtual void add_to(paths& paths) = 0;
-		virtual void add_to(unique_paths& paths) = 0;
-		virtual void open(view_state& s, const view_host_base_ptr& view) const = 0;
-		virtual search_t containing() const = 0;
+		platform::file_op_result rename(index_state& index, std::u8string_view name);
+		
+		std::u8string base_name() const
+		{
+			if (is_folder()) return std::u8string(_name);
+			return std::u8string(path().file_name_without_extension());
+		}
+
+		void add_to(item_set& results);
+		void add_to(paths& paths);
+		void add_to(unique_paths& paths);
+		void open(view_state& s, const view_host_base_ptr& view) const;
+
+		search_t containing() const
+		{
+			if (is_folder()) return search_t().add_selector(_path.folder().parent());
+			return search_t().add_selector(_path.folder());
+		}
 
 		bool is_read_only() const
 		{
 			return _is_read_only;
+		}
+
+		bool is_folder() const
+		{
+			return _is_folder;
+		}
+
+		bool is_indexed() const
+		{
+			return _info && _info->is_indexed;
 		}
 
 		prop::item_metadata_const_ptr metadata() const
@@ -763,22 +857,22 @@ namespace df
 			return _metadata.load();
 		}
 
-		const file_size& file_size() const
+		file_size file_size() const
 		{
 			return _size;
 		}
 
-		const date_t file_created() const
+		date_t file_created() const
 		{
 			return _created;
 		}
 
-		const date_t file_modified() const
+		date_t file_modified() const
 		{
 			return _modified;
 		}
 
-		const date_t media_created() const
+		date_t media_created() const
 		{
 			return _media_created;
 		}
@@ -802,164 +896,65 @@ namespace df
 			return d;
 		}
 
-		int random() const
+		str::cached sidecars() const
 		{
-			return _random;
+			const auto md = _metadata.load();
+			return md ? md->sidecars : str::cached{};
 		}
 
-		void random(int i)
+		str::cached xmp() const
 		{
-			_random = i;
+			const auto md = _metadata.load();
+			return md ? md->xmp : str::cached{};
 		}
 
-		void presence(item_presence presence)
+		size_t sidecars_count() const
 		{
-			_presence = presence;
+			return split_count(sidecars(), true);
 		}
 
-		item_presence presence() const
+		double media_position() const
 		{
-			return _presence;
+			const auto md = _metadata.load();
+			return md ? md->media_position : 0;
 		}
 
-		virtual bool has_title() const
+		void media_position(const double d)
 		{
+			const auto md = _metadata.load();;
+
+			if (md)
+			{
+				md->media_position = d;
+			}
+		}
+
+		bool should_load_thumbnail() const
+		{
+			if (is_folder())
+				return false;
+
+			if (!_ft->has_trait(file_traits::bitmap) && !_ft->has_trait(file_traits::av))
+				return false;
+
+			if (_is_loading_thumbnail || _failed_loading_thumbnail || _shell_thumbnail_pending || _db_thumbnail_pending)
+				return false;
+
+			if (is_empty(_thumbnail))
+				return true;
+
+			if (_thumbnail_timestamp < _modified)
+				return true;
+
 			return false;
 		}
 
-		void db_thumb_query_complete()
+		void add_if_thumbnail_load_needed(item_elements& items)
 		{
-			_db_thumbnail_pending = false;
-		}
-
-		bool db_thumbnail_pending() const
-		{
-			return _db_thumbnail_pending;
-		}
-	};
-
-	class folder_item final : public std::enable_shared_from_this<folder_item>, public item_element
-	{
-		folder_path _path;
-		uint32_t _total_count = 0;
-		index_folder_item_ptr _info;
-
-	public:
-		folder_item(const folder_path path, index_folder_item_ptr info) noexcept : _path(path), _info(std::move(info))
-		{
-			_is_read_only = _info->is_read_only;
-			_name = path.name();
-			_ft = file_type::folder;
-			_modified = _info->modified;
-			_created = _info->created;
-		}
-
-		folder_path path() const { return _path; }
-
-		void calc_folder_summary(cancel_token token);
-
-		platform::file_op_result rename(index_state& index, std::u8string_view name) override;
-		void open(view_state& s, const view_host_base_ptr& view) const override;
-		void add_to(item_set& results) override;
-		void add_to(paths& results) override;
-		void add_to(unique_paths& paths) override;
-		item_display_info populate_info() const override;
-
-		search_t containing() const override { return search_t().add_selector(_path.parent()); }
-
-		int compare(const folder_item& other) const
-		{
-			return _path.compare(other._path);
-		}
-
-		std::u8string base_name() const override
-		{
-			return std::u8string(_name);
-		}
-
-		bool is_indexed() const
-		{
-			return _info->is_indexed;
-		}
-
-		index_folder_info_const_ptr info() const
-		{
-			return _info;
-		}
-
-		void info(index_folder_item_ptr info)
-		{
-			_info = std::move(info);
-			_is_read_only = _info->is_read_only;
-		}
-
-		bool should_load_thumbnail() const override
-		{
-			return false;
-		}
-
-		void add_if_thumbnail_load_needed(file_items& items) override
-		{
-		}
-	};
-
-	class file_item final : public std::enable_shared_from_this<file_item>, public item_element
-	{
-	private:
-		file_path _path;
-		item_online_status _online_status = item_online_status::offline;
-		uint32_t _crc32c = 0;
-
-		bool _is_loading_thumbnail = false;
-		bool _failed_loading_thumbnail = false;
-		bool _shell_thumbnail_pending = false;
-
-	public:
-		file_item(const file_path id, const index_file_item& info) noexcept
-		{
-			update(id, info);
-		}
-
-		file_item(const file_item& other) = delete;
-		file_item(file_item&& other) = delete;
-		file_item& operator=(const file_item& other) = delete;
-		file_item& operator=(file_item&& other) = delete;
-
-		void open(view_state& s, const view_host_base_ptr& view) const override;
-		platform::file_op_result rename(index_state& index, std::u8string_view name) override;
-
-		std::u8string base_name() const override { return std::u8string(path().file_name_without_extension()); }
-
-		file_path path() const
-		{
-			return _path;
-		}
-
-		folder_path folder() const
-		{
-			return _path.folder();
-		}
-
-		str::cached title() const
-		{
-			const auto m = _metadata.load();
-			return !m || is_empty(m->title) ? _name : m->title;
-		}
-
-		bool has_title() const override
-		{
-			const auto m = _metadata.load();
-			return m && !is_empty(m->title);
-		}
-
-		bool is_link() const
-		{
-			return ends(_name, u8".lnk"sv);
-		}
-
-		item_online_status online_status() const
-		{
-			return _online_status;
+			if (should_load_thumbnail())
+			{
+				items.emplace_back(shared_from_this());
+			}
 		}
 
 		bool is_loading_thumbnail() const
@@ -982,142 +977,64 @@ namespace df
 			_failed_loading_thumbnail = v;
 		}
 
-		double media_position() const
+		item_online_status online_status() const
 		{
-			const auto md = _metadata.load();
-			return md ? md->media_position : 0;
+			return _online_status;
 		}
 
-		void media_position(const double d)
+		int random() const
 		{
-			const auto md = _metadata.load();;
-
-			if (md)
-			{
-				md->media_position = d;
-			}
+			return _random;
 		}
 
-		bool should_load_thumbnail() const override
+		void random(int i)
 		{
-			if (!_ft->has_trait(file_traits::bitmap) && !_ft->has_trait(file_traits::av))
-				return false;
-
-			if (_is_loading_thumbnail || _failed_loading_thumbnail || _shell_thumbnail_pending || _db_thumbnail_pending)
-				return false;
-
-			if (is_empty(_thumbnail))
-				return true;
-
-			if (_thumbnail_timestamp < _modified)
-				return true;
-
-			return false;
+			_random = i;
 		}
 
-		void add_if_thumbnail_load_needed(file_items& items) override
+		void presence(item_presence presence)
 		{
-			if (should_load_thumbnail())
-			{
-				items.emplace_back(shared_from_this());
-			}
+			_presence = presence;
 		}
 
-		/*int compare(const file_item_ptr& other) const
+		item_presence presence() const
 		{
-			return compare(other->_folder, other->_name);
+			return _presence;
 		}
 
-		int compare(const file_item& other) const
+		file_path path() const
 		{
-			return compare(other._folder, other._name);
+			return _path;
 		}
 
-		int compare(const folder_path folder, const std::u8string_view name) const
+		folder_path folder() const
 		{
-			const auto folder_comp = _folder.compare(folder);
-			return folder_comp == 0 ? natural_compare(_name, name) : folder_comp;
-		}*/
-
-		str::cached sidecars() const
-		{
-			const auto md = _metadata.load();
-			return md ? md->sidecars : str::cached{};
+			return _path.folder();
 		}
 
-		str::cached xmp() const
+		void db_thumb_query_complete()
 		{
-			const auto md = _metadata.load();
-			return md ? md->xmp : str::cached{};
+			_db_thumbnail_pending = false;
 		}
 
-		size_t sidecars_count() const
+		bool db_thumbnail_pending() const
 		{
-			return split_count(sidecars(), true);
+			return _db_thumbnail_pending;
 		}
-
-		void update(file_path path, const index_file_item& info) noexcept;
-		void add_to(item_set& results) override;
-		void add_to(paths& results) override;
-		void add_to(unique_paths& paths) override;
-
-		item_display_info populate_info() const override;
-
-		void shell_thumbnail_pending(bool cond)
-		{
-			_shell_thumbnail_pending = cond;
-		}
-
-		bool shell_thumbnail_pending() const
-		{
-			return _shell_thumbnail_pending;
-		}
-
-		search_t containing() const override { return search_t().add_selector(_path.folder()); }
-
-		uint32_t crc32c() const
-		{
-			return _crc32c;
-		}
-
-		void crc32c(const uint32_t crc)
-		{
-			_crc32c = crc;
-		}
-
-		bool has_gps() const
-		{
-			const auto md = _metadata.load();;
-			return md && md->has_gps();
-		}
-
-		int rating() const
-		{
-			const auto md = _metadata.load();;
-			return md ? md->rating : 0;
-		}
-
-		std::u8string_view label() const
-		{
-			const auto md = _metadata.load();;
-			return md ? md->label : std::u8string_view{};
-		}
-
-		
 	};
 
 	struct unique_items
 	{
-		unique_folder_items _folders;
-		unique_file_items _items;
+		unique_item_elements _items;
 
-		folder_item_ptr find(const folder_path path) const
+		item_element_ptr find(const folder_path path_in) const
 		{
-			const auto found = _folders.find(path);
-			return found != _folders.end() ? found->second : nullptr;
+			file_path search_path(path_in);
+			const auto found = _items.find(search_path);
+			return found != _items.end() ? found->second : nullptr;
 		}
 
-		file_item_ptr find(const file_path id) const
+		item_element_ptr find(const file_path id) const
 		{
 			const auto found = _items.find(id);
 			return found != _items.end() ? found->second : nullptr;
@@ -1236,13 +1153,12 @@ namespace df
 	class item_set
 	{
 	public:
-		folder_items _folders;
-		file_items _items;
+		item_elements _items;
 
 	public:
 		item_set() noexcept = default;
 
-		item_set(file_items items): _items(std::move(items))
+		item_set(item_elements items): _items(std::move(items))
 		{
 		}
 
@@ -1253,31 +1169,27 @@ namespace df
 
 		void clear()
 		{
-			_folders.clear();
 			_items.clear();
 		}
 
 		bool is_empty() const
 		{
-			return _folders.empty() && _items.empty();
+			return _items.empty();
 		}
-
-		bool has_folders() const { return !_folders.empty(); }
 
 		bool empty() const
 		{
-			return _folders.empty() && _items.empty();
+			return _items.empty();
 		}
 
 		size_t size() const
 		{
-			return _folders.size() + _items.size();
+			return _items.size();
 		}
 
 		friend bool operator==(const item_set& lhs, const item_set& rhs)
 		{
-			return lhs._folders == rhs._folders
-				&& lhs._items == rhs._items;
+			return lhs._items == rhs._items;
 		}
 
 		friend bool operator!=(const item_set& lhs, const item_set& rhs)
@@ -1291,43 +1203,27 @@ namespace df
 			{
 				i->random(rand());
 			}
-
-			for (const auto& i : _folders)
-			{
-				i->random(rand());
-			}
 		}
 
 		void for_all(const std::function<void(const item_element_ptr&)>& f) const
 		{
-			for (const auto& i : _folders) f(i);
 			for (const auto& i : _items) f(i);
 		}
 
 		bool has_errors() const
 		{
-			for (const auto& i : _folders) if (i->is_error()) return true;
 			for (const auto& i : _items) if (i->is_error()) return true;
 			return false;
 		}
 
 		void clear_errors(const view_host_base_ptr& view) const
 		{
-			for (const auto& i : _folders) i->is_error(false, view, i);
 			for (const auto& i : _items) i->is_error(false, view, i);
 		}
 
 		void append(const item_set& other)
 		{
-			_folders.insert(_folders.end(), other._folders.begin(), other._folders.end());
 			_items.insert(_items.end(), other._items.begin(), other._items.end());
-		}
-
-
-		bool are_all_folders_indexed() const
-		{
-			for (const auto& i : _folders) if (!i->is_indexed()) return false;
-			return true;
 		}
 
 		bool single_file_extension() const
@@ -1348,18 +1244,12 @@ namespace df
 			return true;
 		}
 
-		void add(const folder_item_ptr& i) { _folders.emplace_back(i); }
-		void add(const file_item_ptr& i) { _items.emplace_back(i); }
+		void add(const item_element_ptr& i) { _items.emplace_back(i); }
 
 		file_group_histogram summary() const;
 		item_set_info info() const;
 
-		const folder_items& folders() const
-		{
-			return _folders;
-		}
-
-		const file_items& items() const
+		const item_elements& items() const
 		{
 			return _items;
 		}
@@ -1367,8 +1257,17 @@ namespace df
 		paths ids() const
 		{
 			paths result;
-			for (const auto& i : _items) result.files.emplace_back(i->path());
-			for (const auto& i : _folders) result.folders.emplace_back(i->path());
+			for (const auto& i : _items)
+			{
+				if (i->is_folder())
+				{
+					result.folders.emplace_back(i->folder());
+				}
+				else
+				{
+					result.files.emplace_back(i->path());
+				}
+			}
 			return result;
 		}
 
@@ -1376,37 +1275,17 @@ namespace df
 		{
 			file_group_histogram type_histogram;
 			for (const auto& i : _items) type_histogram.record(i->file_type(), i->file_size());
-			for (const auto& i : _folders) type_histogram.record(i->file_type(), i->file_size());
 			return type_histogram.max_type_icon();
 		}
 
-		bool only_folders() const
-		{
-			return _items.empty() && !_folders.empty();
-		}
-
-		file_item_ptr first_file_item() const
+		bool has_folders() const
 		{
 			for (const auto& i : _items)
 			{
-				return i;
+				if (i->is_folder())
+					return true;
 			}
-
-			return nullptr;
-		}
-
-		item_elements files_and_folders() const
-		{
-			item_elements result;
-			for (const auto& f : _folders)
-			{
-				result.emplace_back(f);
-			}
-			for (const auto& i : _items)
-			{
-				result.emplace_back(i);
-			}
-			return result;
+			return false;
 		}
 
 		file_type_ref group_file_type() const
@@ -1441,22 +1320,14 @@ namespace df
 		item_set selected() const
 		{
 			item_set result;
-			for (const auto& i : _folders) if (i->is_selected()) result._folders.emplace_back(i);
 			for (const auto& i : _items) if (i->is_selected()) result._items.emplace_back(i);
 			return result;
 		}
 
 		str::cached first_name() const
 		{
-			for (const auto& i : _folders) return i->name();
 			for (const auto& i : _items) return i->name();
 			return {};
-		}
-
-		folder_item_ptr folder_from_location(const pointi loc) const
-		{
-			for (const auto& i : _folders) if (i->bounds.contains(loc)) return i;
-			return nullptr;
 		}
 
 		item_element_ptr closest_drawable(const pointi loc, const item_element_ptr& ignore) const
@@ -1486,7 +1357,6 @@ namespace df
 
 		item_element_ptr find(const std::u8string_view s) const
 		{
-			for (const auto& i : _folders) if (icmp(i->name(), s) == 0) return i;
 			for (const auto& i : _items) if (icmp(i->name(), s) == 0 || icmp(i->path().name(), s) == 0) return i;
 			return nullptr;
 		}
@@ -1499,18 +1369,18 @@ namespace df
 
 		item_element_ptr find(const folder_path id) const
 		{
-			for (const auto& i : _folders) if (i->path() == id) return i;
+			file_path search_path(id);
+			for (const auto& i : _items) if (i->path() == search_path) return i;
 			return nullptr;
 		}
 
 		item_element_ptr find(const item_element_ptr& f) const
 		{
-			for (const auto& i : _folders) if (i == f) return i;
 			for (const auto& i : _items) if (i == f) return i;
 			return nullptr;
 		}
 
-		file_item_ptr find_file(const item_element_ptr& f) const
+		item_element_ptr find_file(const item_element_ptr& f) const
 		{
 			for (const auto& i : _items) if (i == f) return i;
 			return nullptr;
@@ -1525,23 +1395,24 @@ namespace df
 
 		bool contains(const item_element_ptr& ii) const
 		{
-			for (const auto& i : _folders) if (i == ii) return true;
 			for (const auto& i : _items) if (i == ii) return true;
 			return false;
 		}
 
 		void append_unique(unique_items& results) const
 		{
-			for (const auto& i : _folders) results._folders.insert_or_assign(i->path(), i);
 			for (const auto& i : _items) results._items.insert_or_assign(i->path(), i);
 		}
 
 		std::vector<folder_path> folder_paths() const
 		{
 			std::vector<folder_path> result;
-			for (const auto& i : _folders)
+			for (const auto& i : _items)
 			{
-				result.emplace_back(i->path());
+				if (i->is_folder())
+				{
+					result.emplace_back(i->folder());
+				}
 			}
 			return result;
 		}
@@ -1552,18 +1423,21 @@ namespace df
 
 			for (const auto& i : _items)
 			{
-				auto&& path = i->path();
-				auto&& folder = i->folder();
-
-				result.emplace(path);
-
-				if (include_sidecars)
+				if (!i->is_folder())
 				{
-					const auto sidecar_parts = split(i->sidecars(), true);
+					auto&& path = i->path();
+					auto&& folder = i->folder();
 
-					for (const auto& s : sidecar_parts)
+					result.emplace(path);
+
+					if (include_sidecars)
 					{
-						result.emplace(folder.combine_file(s));
+						const auto sidecar_parts = split(i->sidecars(), true);
+
+						for (const auto& s : sidecar_parts)
+						{
+							result.emplace(folder.combine_file(s));
+						}
 					}
 				}
 			}
@@ -1813,7 +1687,7 @@ namespace df
 		void render(ui::draw_context& dc, pointi element_offset) const override;
 		sizei measure(ui::measure_context& mc, int width_limit) const override;
 		void layout(ui::measure_context& mc, recti bounds_in, ui::control_layouts& positions) override;
-		void scroll_tooltip(const ui::const_image_ptr& thumbnail, view_elements& elements) const;
+		void scroll_tooltip(const ui::const_image_ptr& thumbnail, const std::shared_ptr<view_elements>& elements) const;
 		void tooltip(view_hover_element& hover, pointi loc, pointi element_offset) const override;
 		view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
 		                                             const std::vector<recti>& excluded_bounds) override;

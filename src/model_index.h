@@ -246,7 +246,7 @@ __forceinline bool is_dup_match(const df::index_file_item* file, const df::index
 	return name_match && file->created() == other_file->created();
 }
 
-__forceinline bool is_dup_match(const df::index_file_item& file, const df::file_item_ptr& other_file)
+__forceinline bool is_dup_match(const df::index_file_item& file, const df::item_element_ptr& other_file)
 {
 	if (file.crc32c != 0 && file.crc32c == other_file->crc32c())
 	{
@@ -455,9 +455,9 @@ public:
 	validate_folder_result validate_folder(df::folder_path folder_path,
 	                                          bool refresh_from_file_system, df::date_t timestamp);
 	void scan_item(const df::index_folder_item_ptr& folder, df::file_path file_path, bool load_thumbnails,
-	               bool scan_if_offline, const df::file_item_ptr& i, file_type_ref ft);
-	void scan_item(const df::file_item_ptr& i, bool load_thumb, bool scan_if_offline);
-	bool needs_scan(const df::file_item_ptr&) const;
+	               bool scan_if_offline, const df::item_element_ptr& i, file_type_ref ft);
+	void scan_item(const df::item_element_ptr& i, bool load_thumb, bool scan_if_offline);
+	bool needs_scan(const df::item_element_ptr&) const;
 	bool is_indexed(df::folder_path folder) const;
 
 	void index_folders(df::cancel_token token);

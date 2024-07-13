@@ -78,7 +78,7 @@ static dup_key calc_dup_key(const df::index_file_item& i, const df::file_path id
 	return {id.name(), i.file_created.system_to_local().to_int64()};
 }
 
-static dup_key calc_dup_key(const df::file_item_ptr& i)
+static dup_key calc_dup_key(const df::item_element_ptr& i)
 {
 	const auto md = i->metadata();
 
@@ -150,7 +150,7 @@ struct query_items_result
 		}
 		else
 		{
-			found = std::make_shared<df::file_item>(id, file);
+			found = std::make_shared<df::item_element>(id, file);
 		}
 
 		found->search(match);
@@ -161,7 +161,7 @@ struct query_items_result
 	{
 		const auto path = folder_path;
 		const auto found = existing.find(path);
-		const auto ii = found ? found : std::make_shared<df::folder_item>(folder_path, folder);
+		const auto ii = found ? found : std::make_shared<df::item_element>(folder_path, folder);
 		results.add(ii);
 	}
 };
@@ -1340,7 +1340,7 @@ void index_state::update_summary()
 }
 
 static bool needs_scan_impl(const df::index_folder_item_ptr& f, const df::index_file_item& file, const bool load_thumb,
-                            const bool scan_if_offline, const df::file_item_ptr& item)
+                            const bool scan_if_offline, const df::item_element_ptr& item)
 {
 	const auto is_offline = file.flags && df::index_item_flags::is_offline;
 
@@ -1495,9 +1495,9 @@ std::vector<folder_scan_item> index_state::scan_items(const df::index_roots& roo
 
 struct scope_locked_loading_thumbnail
 {
-	df::file_item_ptr _i;
+	df::item_element_ptr _i;
 
-	scope_locked_loading_thumbnail(df::file_item_ptr i) : _i(std::move(i))
+	scope_locked_loading_thumbnail(df::item_element_ptr i) : _i(std::move(i))
 	{
 		_i->is_loading_thumbnail(true);
 	}
@@ -1512,7 +1512,7 @@ void index_state::scan_item(const df::index_folder_item_ptr& folder,
                             const df::file_path file_path,
                             const bool load_thumb,
                             const bool scan_if_offline,
-                            const df::file_item_ptr& item,
+                            const df::item_element_ptr& item,
                             const file_type_ref ft)
 {
 	const auto now = platform::now();
@@ -1756,13 +1756,13 @@ void index_state::scan_item(const df::index_folder_item_ptr& folder,
 	}
 }
 
-void index_state::scan_item(const df::file_item_ptr& i, const bool load_thumb, const bool scan_if_offline)
+void index_state::scan_item(const df::item_element_ptr& i, const bool load_thumb, const bool scan_if_offline)
 {
 	const auto node = validate_folder(i->folder(), true, platform::now());
 	scan_item(node.folder, i->path(), load_thumb, scan_if_offline, i, i->file_type());
 }
 
-bool index_state::needs_scan(const df::file_item_ptr& item) const
+bool index_state::needs_scan(const df::item_element_ptr& item) const
 {
 	const auto id = item->path();
 	const auto found_folder = _items.find(id.folder());
@@ -2347,8 +2347,8 @@ media_name_props scan_info_from_title(const std::u8string_view name8)
 	return result;
 }
 
-static void items_possible_hashes_contains(df::hash_map<df::file_item_ptr, item_presence>& item_presence,
-                                           const std::vector<std::pair<unsigned, df::file_item_ptr>>& possible,
+static void items_possible_hashes_contains(df::hash_map<df::item_element_ptr, item_presence>& item_presence,
+                                           const std::vector<std::pair<unsigned, df::item_element_ptr>>& possible,
                                            const df::index_file_item& indexed_file, const uint32_t hash)
 {
 	auto lb = std::lower_bound(possible.begin(), possible.end(), hash, [](auto&& l, auto&& r) { return l.first < r; });
@@ -2421,8 +2421,8 @@ void index_state::update_presence(const df::item_set& items)
 			}
 		}
 
-		std::vector<std::pair<uint32_t, df::file_item_ptr>> items_possible_hashes;
-		df::hash_map<df::file_item_ptr, item_presence> item_presence;
+		std::vector<std::pair<uint32_t, df::item_element_ptr>> items_possible_hashes;
+		df::hash_map<df::item_element_ptr, item_presence> item_presence;
 
 		for (const auto& i : items.items())
 		{
@@ -2527,7 +2527,10 @@ void index_state::scan_items(const df::item_set& items_to_scan,
 
 		for (const auto& i : items_to_scan.items())
 		{
-			items_by_folder[i->folder()].emplace_back(i);
+			if (!i->is_folder())
+			{
+				items_by_folder[i->folder()].emplace_back(i);
+			}
 		}
 
 		const auto now = platform::now();
@@ -2549,12 +2552,16 @@ void index_state::scan_items(const df::item_set& items_to_scan,
 			}
 		}
 
-		for (const auto& folder : items_to_scan.folders())
+		for (const auto& i : items_to_scan.items())
 		{
 			if (token.is_cancelled()) break;
-			const auto node = validate_folder(folder->path(), refresh_from_file_system, now);
-			folder->info(node.folder);
-			folder->calc_folder_summary(token);
+
+			if (i->is_folder())
+			{
+				const auto node = validate_folder(i->folder(), refresh_from_file_system, now);
+				i->info(node.folder);
+				i->calc_folder_summary(token);
+			}
 		}
 	}
 
