@@ -903,7 +903,7 @@ std::shared_ptr<group_title_control> df::build_group_title(view_state& s, const 
 	}
 	else if (key.type == group_key_type::video)
 	{
-		add_title_link(file_group::audio.display_name(true), {});
+		add_title_link(file_group::video.display_name(true), {});
 	}
 	else if (key.type == group_key_type::photo)
 	{

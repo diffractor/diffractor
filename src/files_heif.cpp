@@ -107,7 +107,7 @@ static metadata_parts extract_metadata(heif_image_handle* handle)
 				{
 					int offset = 0;
 
-					if (raw_metatdata[0] == 0 && raw_metatdata.size() > 0)
+					if (raw_metatdata.size() > 4 && raw_metatdata[0] == 0)
 					{
 						raw_metatdata.erase(raw_metatdata.begin(), raw_metatdata.begin() + 4);
 					}

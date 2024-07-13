@@ -16,10 +16,14 @@
 #include "files.h"
 #include "app_text.h"
 
+
+
 namespace ui
 {
 	bool browse_for_location(view_state& vs, const control_frame_ptr& parent, gps_coordinate& position);
 	bool browse_for_term(view_state& vs, const control_frame_ptr& parent, std::u8string& result);
+
+	extern std::atomic_int cancel_gen;
 
 	std::vector<recti> layout_images(recti draw_bounds, const std::vector<sizei>& dims);
 
@@ -3106,7 +3110,7 @@ namespace ui
 		{
 			_analyze = h->create_button(_analyze_text, std::move(invoke), true);
 			_ok = h->create_button(_ok_text, [h]() { h->close(false); });
-			_cancel = h->create_button(_cancel_text, [h]() { h->close(true); });
+			_cancel = h->create_button(_cancel_text, [h]() { cancel_gen++, h->close(true); });
 		}
 
 		void visit_controls(const std::function<void(const control_base_ptr&)>& handler) override

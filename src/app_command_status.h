@@ -17,6 +17,7 @@ class command_status final : public std::enable_shared_from_this<command_status>
 {
 private:
 	async_strategy& _async;
+	int _cancel_ver_inital_val;
 
 	dialog_ptr _dlg;
 	icon_index _icon;
@@ -49,8 +50,9 @@ public:
 		_icon(icon),
 		_title(title),
 		_progress(std::make_shared<ui::progress_control>(dlg->_frame, title)),
-		_cancel(std::make_shared<ui::close_control>(dlg->_frame, true, tt.button_cancel)),
-		_total(static_cast<int>(total))
+		_cancel(std::make_shared<ui::close_control>(dlg->_frame, [h = dlg->_frame]() { ++ui::cancel_gen; h->close(true); }, tt.button_cancel)),
+		_total(static_cast<int>(total)),
+		_cancel_ver_inital_val(ui::cancel_gen.load())
 	{
 		const std::vector<view_element_ptr> controls{
 			set_margin(std::make_shared<ui::title_control2>(dlg->_frame, icon, title, std::u8string{})),
@@ -107,7 +109,7 @@ public:
 
 	bool is_canceled() const override
 	{
-		return _dlg->is_canceled();
+		return _dlg->is_canceled() || ui::cancel_gen.load() != _cancel_ver_inital_val;
 	}
 
 	bool has_failures() const override

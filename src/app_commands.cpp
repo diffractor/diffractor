@@ -23,6 +23,15 @@
 #include "app_text.h"
 #include "app_command_status.h"
 #include "app.h"
+#include "crypto.h"
+#include "util_base64.h"
+
+static std::u8string decode_secret(const std::u8string_view input, std::u8string_view password)
+{
+	const auto data = base64_decode(input);
+	auto decoded = crypto::decrypt(data, password);
+	return std::u8string(decoded.begin(), decoded.end());
+}
 
 #if __has_include("secrets.h") 
 # include "secrets.h"
@@ -33,8 +42,6 @@ static const std::u8string azure_maps_api_key = u8"";
 
 extern bool toggle_details_state;
 
-
-static std::atomic_int analyse_version;
 
 static const std::u8string_view docs_url = u8"https://www.diffractor.com/docs"sv;
 static const std::u8string_view support_url = u8"https://diffractor.com/help"sv;
@@ -3048,10 +3055,10 @@ static void import_invoke(view_state& s, const ui::control_frame_ptr& parent, co
 	{
 		platform::thread_event event_analyze(true, false);
 		const auto import_root = calc_import_root();
-		auto token = df::cancel_token(analyse_version);
+		auto token = df::cancel_token(ui::cancel_gen);
 
 		auto status_dlg = make_dlg(dlg->_frame);
-		status_dlg->show_cancel_status(icon, tt.analyzing, [] { ++analyse_version; });
+		status_dlg->show_cancel_status(icon, tt.analyzing, [] { ++ui::cancel_gen; });
 
 		const auto options = make_import_options();
 
@@ -3154,7 +3161,7 @@ static void import_invoke(view_state& s, const ui::control_frame_ptr& parent, co
 
 		dlg->show_status(icon, tt.processing);
 
-		auto token = df::cancel_token(analyse_version);
+		auto token = df::cancel_token(ui::cancel_gen);
 		const auto results = std::make_shared<command_status>(s._async, dlg, icon, title, 0);
 
 		s._async.queue_database([&s, results, view, import_root, options, token](database& db)
@@ -3558,10 +3565,10 @@ static void sync_invoke(view_state& s, const ui::control_frame_ptr& parent)
 	{
 		platform::thread_event event_analyze(true, false);
 		const auto sync_source = calc_sync_source();
-		auto token = df::cancel_token(analyse_version);
+		auto token = df::cancel_token(ui::cancel_gen);
 
 		const auto status_dlg = make_dlg(dlg->_frame);
-		status_dlg->show_cancel_status(icon, tt.analyzing, [] { ++analyse_version; });
+		status_dlg->show_cancel_status(icon, tt.analyzing, [] { ++ui::cancel_gen; });
 
 		s.queue_async(async_queue::work, [&s, &event_analyze, sync_source, analysis_table, token]()
 		{
@@ -3667,7 +3674,7 @@ static void sync_invoke(view_state& s, const ui::control_frame_ptr& parent)
 
 		dlg->show_status(icon, tt.processing);
 
-		auto token = df::cancel_token(analyse_version);
+		auto token = df::cancel_token(ui::cancel_gen);
 		const auto results = std::make_shared<command_status>(s._async, dlg, icon, title, 0);
 
 		s.queue_async(async_queue::work, [&s, results, sync_source, token]()

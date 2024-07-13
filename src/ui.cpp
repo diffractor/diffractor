@@ -23,6 +23,7 @@
 
 std::unordered_map<void*, std::function<bool()>> ui::animations;
 
+std::atomic_int ui::cancel_gen;
 
 enum class justify
 {
