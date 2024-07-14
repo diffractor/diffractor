@@ -1835,6 +1835,7 @@ static void build_index(index_state& index, database& db)
 {
 	df::index_roots paths;
 	paths.folders.emplace(test_files_folder);
+	paths.excludes.emplace(test_files_folder.combine(u8"excluded1"sv));
 
 	index.index_roots(paths);
 	index.index_folders(test_token);
@@ -1849,10 +1850,11 @@ struct test_view::shared_test_context
 {
 	null_async_strategy as;
 	location_cache locations;
-	index_state index;
+	index_state test_index;
+	index_state empty_index;
 	bool loaded = false;
 
-	shared_test_context() : index(as, locations)
+	shared_test_context() : test_index(as, locations), empty_index(as, locations)
 	{
 	}
 
@@ -1860,26 +1862,48 @@ struct test_view::shared_test_context
 	{
 		if (!loaded)
 		{
-			auto cache_path = _temps.next_path();
-			database db(index);
-			db.open(cache_path.folder(), cache_path.file_name_without_extension());
-			build_index(index, db);
+			// Builds 2 indexes.
+			// One with the index empty and the other with
+			// an collection covering the test folder.
+			// Both have pre-scanned the index.
+			auto cache_path1 = _temps.next_path();
+			//auto cache_path2 = _temps.next_path();
+
+			database db1(test_index);
+			//database db2(empty_index);
+
+			db1.open(cache_path1.folder(), cache_path1.file_name_without_extension());
+			//db2.open(cache_path2.folder(), cache_path1.file_name_without_extension());
+
+			build_index(test_index, db1); // only build the test index
 
 			df::unique_items existing;
 			df::item_selector selector(test_files_folder, true);
-			df::item_set items;
+			df::item_set items1;
+			//df::item_set items2;
 
-			auto cb = [&items](const df::item_set& append_items, const bool completed)
+			auto cb1 = [&items1](const df::item_set& append_items, const bool completed)
 			{
-				items.append(append_items);
+				items1.append(append_items);
 			};
 
-			index.query_items(df::search_t().add_selector(selector), existing, cb, test_token);
-			db.load_thumbnails(index, items);
-			index.scan_items(items, false, false, false, false, test_token);
-			db.perform_writes();
+			/*auto cb2 = [&items2](const df::item_set& append_items, const bool completed)
+				{
+					items2.append(append_items);
+				};*/
 
-			assert_equal(expected_cached_item_count, index.stats.media_item_count, u8"cached item count"sv);
+			test_index.query_items(df::search_t().add_selector(selector), existing, cb1, test_token);
+			//empty_index.query_items(df::search_t().add_selector(selector), existing, cb2, test_token);
+
+			db1.load_thumbnails(test_index, items1);
+			test_index.scan_items(items1, false, false, false, false, test_token);
+			db1.perform_writes();
+
+			//empty_index.scan_items(items2, false, false, false, false, test_token);
+			//db2.perform_writes();
+
+			assert_equal(expected_cached_item_count, test_index.stats.media_item_count, u8"cached item count"sv);
+			assert_equal(0, empty_index.stats.media_item_count, u8"cached item count"sv);
 			loaded = true;
 		}
 	}
@@ -1890,16 +1914,16 @@ static void should_index(test_view::shared_test_context& stc)
 {
 	stc.lazy_load_index();
 
-	assert_equal(expected_cached_item_count, stc.index.stats.media_item_count, u8"cached item count"sv);
+	assert_equal(expected_cached_item_count, stc.test_index.stats.media_item_count, u8"cached item count"sv);
 
 	const auto expected_md = expected_test_jpg();
 	expected_md->file_name = u8"Test.jpg"_c;
 	// Embedded values
-	assert_metadata(*expected_md, *metadata_from_cache(stc.index, test_files_folder.combine_file(u8"Test.jpg"sv)),
+	assert_metadata(*expected_md, *metadata_from_cache(stc.test_index, test_files_folder.combine_file(u8"Test.jpg"sv)),
 	                u8"Test.jpg"sv);
 
 	// Sidecar values
-	const auto actual = metadata_from_cache(stc.index, test_files_folder.combine_file(u8"Gherkin.CR2"sv));
+	const auto actual = metadata_from_cache(stc.test_index, test_files_folder.combine_file(u8"Gherkin.CR2"sv));
 	assert_equal(u8"Canon"sv, actual->camera_manufacturer, u8"camera_manufacturer"sv);
 	assert_equal(u8"United Kingdom"sv, actual->location_country, u8"location_country"sv);
 	assert_equal(u8"\xA9 Mark Ridgwell"sv, actual->copyright_notice, u8"copyright_notice"sv);
@@ -1954,7 +1978,7 @@ public:
 		const auto search = df::search_t::parse(query);
 		const df::search_matcher matcher(search, now_days);
 
-		assert_equal(true, matcher.match_all_terms(_f).is_match(), query);
+		assert_equal(true, matcher.match_all_terms({}, _f).is_match(), query);
 		return *this;
 	}
 
@@ -1963,7 +1987,7 @@ public:
 		const auto search = df::search_t::parse(query);
 		const df::search_matcher matcher(search, now_days);
 
-		assert_equal(false, matcher.match_all_terms(_f).is_match(), query);
+		assert_equal(false, matcher.match_all_terms({}, _f).is_match(), query);
 		return *this;
 	}
 };
@@ -2053,7 +2077,7 @@ static void should_not_match_folder_without()
 	const auto now_days = df::date_t(2000, 1, 1).to_days();
 	const auto search = df::search_t::parse(u8"without:tag"sv);
 	const df::search_matcher matcher(search, now_days);
-	assert_equal(false, matcher.match_folder(u8"test"_c).is_match(), u8"folder name test"sv);
+	assert_equal(false, matcher.match_folder(test_files_folder.text(), u8"test"_c).is_match(), u8"folder name test"sv);
 }
 
 static void should_match_date(const std::u8string_view query, const df::date_t d)
@@ -2070,8 +2094,8 @@ static void should_match_date(const std::u8string_view query, const df::date_t d
 	const auto search = df::search_t::parse(query);
 	df::search_matcher matcher(search, df::date_t(2000, 1, 1).to_days());
 
-	assert_equal(true, matcher.match_all_terms(props_with_val).is_match(), query);
-	assert_equal(false, matcher.match_all_terms(props_without_val).is_match(), query);
+	assert_equal(true, matcher.match_all_terms(test_files_folder.text(), props_with_val).is_match(), query);
+	assert_equal(false, matcher.match_all_terms(test_files_folder.text(), props_without_val).is_match(), query);
 }
 
 
@@ -2178,13 +2202,13 @@ static void should_match_related(test_view::shared_test_context& stc)
 	stc.lazy_load_index();
 
 	const df::file_path path(test_files_folder, u8"Test.jpg"sv);
-	const auto i = std::make_shared<df::item_element>(path, stc.index.find_item(path));
-	stc.index.scan_item(i, true, false);
+	const auto i = std::make_shared<df::item_element>(path, stc.test_index.find_item(path));
+	stc.test_index.scan_item(i, true, false);
 
 	df::related_info r;
 	r.load(i);
 
-	assert_equal(1, count_search_results(stc.index, df::search_t().related(r)), u8"Related"sv);
+	assert_equal(1, count_search_results(stc.test_index, df::search_t().related(r)), u8"Related"sv);
 }
 
 static df::item_element_ptr find_item_n(view_state& s, const int n)
@@ -2237,7 +2261,7 @@ static void should_select_items()
 
 	assert_equal(expected_cached_item_count + 1_z, s.search_items().file_paths(false).size(), u8"items loaded into state"sv);
 	assert_equal(expected_cached_item_count + 2_z, s.search_items().file_paths().size(), u8"items loaded into state with xmp"sv);
-	assert_equal(2_z, s.search_items().folder_paths().size(), u8"folders loaded into state"sv);
+	assert_equal(4_z, s.search_items().folder_paths().size(), u8"folders loaded into state"sv);
 
 	assert_equal(0_z, s.selected_count(), u8"invalid selection"sv);
 
@@ -2498,6 +2522,14 @@ static void should_parse_search_input()
 	s.open(view, u8"**"sv);
 
 	assert_equal(base_folder + u8"\\**"s, s.search().text(), u8"Parse **"sv);
+
+	s.open(view, test_files_folder.text());
+	s.open(view, u8"aaa"sv);
+
+	assert_equal(u8"aaa"s, s.search().text(), u8"Parse aaa"sv);
+
+	s.open(view, u8"\"aaa\""sv);
+	assert_equal(u8"\"aaa\""s, s.search().text(), u8"Parse \"aaa\""sv);
 }
 
 static void should_parent()
@@ -3650,104 +3682,131 @@ void test_view::register_tests()
 	});
 	register_test(u8"Should match date"s, [] { should_match_date(u8"age:4"sv, df::date_t(1999, 12, 30)); });
 
-	auto register_should_search = [this](const std::u8string_view query, int expected)
+	auto register_should_search = [this](const std::u8string_view query, int expected_index, int expected_recurse, int expected_folder)
 	{
-		register_test(str::format(u8"Should search {}"s, query), [query, expected](shared_test_context& stc)
+		register_test(str::format(u8"Should search {}"s, query), [query, expected_index, expected_recurse, expected_folder](shared_test_context& stc)
 		{
 			stc.lazy_load_index();
-			assert_equal(expected, count_search_results(stc.index, query), query);
+			assert_equal(expected_index, count_search_results(stc.test_index, query), query);
+
+			const auto query_recurse_test_folder = str::format(u8"\"{}\\**\" {} -excluded"sv, test_files_folder, query);
+			assert_equal(expected_recurse, count_search_results(stc.empty_index, query_recurse_test_folder), str::format(u8"recurse {}"sv, query));
+
+			const auto query_test_folder = str::format(u8"\"{}\" {}"sv, test_files_folder, query);
+			assert_equal(expected_folder, count_search_results(stc.empty_index, query_test_folder), str::format(u8"folder {}"sv, query));
 		});
 	};
 
-	register_should_search(u8"2012-09-14"sv, 5);
-	register_should_search(u8"Created:2012-09-14"sv, 5);
-	register_should_search(u8"2010-05-25"sv, 0);
-	register_should_search(u8"2010-5-25"sv, 0);
-	register_should_search(u8"Created:2010-05-25"sv, 0);
-	register_should_search(u8"2009-11-15"sv, 1);
+	register_should_search(u8"2012-09-14"sv, 5, 5, 5);
+	register_should_search(u8"Created:2012-09-14"sv, 5, 5, 5);
+	register_should_search(u8"2010-05-25"sv, 0, 0, 0);
+	register_should_search(u8"2010-5-25"sv, 0, 0, 0);
+	register_should_search(u8"Created:2010-05-25"sv, 0, 0, 0);
+	register_should_search(u8"2009-11-15"sv, 1, 1, 1);
 
-	register_should_search(u8"@video"sv, 5);
-	register_should_search(u8"@audio"sv, 5);
-	register_should_search(u8"@photo"sv, 26);
-	register_should_search(u8"@commodore"sv, 1);
-	register_should_search(u8"@archive"sv, 1);
+	register_should_search(u8"@video"sv, 5, 5, 5);
+	register_should_search(u8"@audio"sv, 5, 5, 4);
+	register_should_search(u8"@photo"sv, 26, 26, 25);
+	register_should_search(u8"@commodore"sv, 1, 1, 0);
+	register_should_search(u8"@archive"sv, 1, 1, 1);
 
-	register_should_search(u8"@ photo"sv, 26);
-	register_should_search(u8"@   photo"sv, 26);
+	register_should_search(u8"@ photo"sv, 26, 26, 25);
+	register_should_search(u8"@   photo"sv, 26, 26, 25);
 
-	register_should_search(u8"key1"sv, 4);
-	register_should_search(u8"Tag:key1"sv, 4);
-	register_should_search(u8"Tag :key1"sv, 4);
-	register_should_search(u8"Tag: key1"sv, 4);
-	register_should_search(u8"#key1"sv, 4);
-	register_should_search(u8"# key1"sv, 4);
-	register_should_search(u8"Tag:dog Tag:london"sv, 1);
-	register_should_search(u8"not_exist"sv, 0);
-	register_should_search(u8"Tag:not_exist"sv, 0);
-	register_should_search(u8"#ke*"sv, 4);
-	register_should_search(u8"ke*"sv, 5);
+	register_should_search(u8"key1"sv, 4, 4, 4);
+	register_should_search(u8"Tag:key1"sv, 4, 4, 4);
+	register_should_search(u8"Tag :key1"sv, 4, 4, 4);
+	register_should_search(u8"Tag: key1"sv, 4, 4, 4);
+	register_should_search(u8"#key1"sv, 4, 4, 4);
+	register_should_search(u8"# key1"sv, 4, 4, 4);
+	register_should_search(u8"Tag:dog Tag:london"sv, 1, 1, 1);
+	register_should_search(u8"not_exist"sv, 0, 0, 0);
+	register_should_search(u8"Tag:not_exist"sv, 0, 0, 0);
+	register_should_search(u8"#ke*"sv, 4, 4, 4);
+	register_should_search(u8"ke*"sv, 5, 5, 5);
 
-	register_should_search(u8"Megapixels:1.6 dog"sv, 1);
-	register_should_search(u8"Megapixels:1.6"sv, 2);
-	register_should_search(u8"(< Megapixels:1.0 > Megapixels:0.5)"sv, 7);
-	register_should_search(u8"Megapixels:2"sv, 1);
-	register_should_search(u8"pixels:2"sv, 1);
-	register_should_search(u8"> pixels:1"sv, 9);
-	register_should_search(u8">pixels:1"sv, 9);
-	register_should_search(u8">pixels :1"sv, 9);
-	register_should_search(u8">pixels: 1"sv, 9);
-	register_should_search(u8"> pixels : 1"sv, 9);
-	register_should_search(u8"2mp"sv, 1);
-	register_should_search(u8"6000x4000"sv, 1);
+	register_should_search(u8"Megapixels:1.6 dog"sv, 1, 1, 1);
+	register_should_search(u8"Megapixels:1.6"sv, 2, 2, 2);
+	register_should_search(u8"(< Megapixels:1.0 > Megapixels:0.5)"sv, 7, 7, 7);
+	register_should_search(u8"Megapixels:2"sv, 1, 1, 1);
+	register_should_search(u8"pixels:2"sv, 1, 1, 1);
+	register_should_search(u8"> pixels:1"sv, 9, 9, 8);
+	register_should_search(u8">pixels:1"sv, 9, 9, 8);
+	register_should_search(u8">pixels :1"sv, 9, 9, 8);
+	register_should_search(u8">pixels: 1"sv, 9, 9, 8);
+	register_should_search(u8"> pixels : 1"sv, 9, 9, 8);
+	register_should_search(u8"2mp"sv, 1, 1, 1);
+	register_should_search(u8"6000x4000"sv, 1, 1, 1);
 
-	register_should_search(u8"Aperture:f/5"sv, 1);
-	register_should_search(u8"f/3.5"sv, 6);
-	register_should_search(u8"f/1.8"sv, 0);
-	register_should_search(u8"f/4.0"sv, 0);
-	register_should_search(u8"f/6.3"sv, 5);
+	register_should_search(u8"Aperture:f/5"sv, 1, 1, 1);
+	register_should_search(u8"f/3.5"sv, 6, 6, 6);
+	register_should_search(u8"f/1.8"sv, 0, 0, 0);
+	register_should_search(u8"f/4.0"sv, 0, 0, 0);
+	register_should_search(u8"f/6.3"sv, 5, 5, 5);
 
-	register_should_search(u8"with:Exposure @photo"sv, 14);
-	register_should_search(u8"with: Exposure @ photo"sv, 14);
-	register_should_search(u8"without:Exposure @photo"sv, 12);
-	register_should_search(u8"without:Exposure"sv, 25);
-	register_should_search(u8"with:Exposure"sv, 15);
-	register_should_search(u8"with: Exposure"sv, 15);
-	register_should_search(u8"ExposureTime:1/20s"sv, 1);
-	register_should_search(u8"ExposureTime: 1/20s"sv, 1);
-	register_should_search(u8"1/20s"sv, 1);
-	register_should_search(u8"1/100s"sv, 5);
-	register_should_search(u8"1/1000s"sv, 0);
+	register_should_search(u8"with:Exposure @photo"sv, 14, 14, 13);
+	register_should_search(u8"with: Exposure @ photo"sv, 14, 14, 13);
+	register_should_search(u8"without:Exposure @photo"sv, 12, 12, 12);
+	register_should_search(u8"without:Exposure"sv, 25, 25, 23);
+	register_should_search(u8"with:Exposure"sv, 15, 15, 14);
+	register_should_search(u8"with: Exposure"sv, 15, 15, 14);
+	register_should_search(u8"ExposureTime:1/20s"sv, 1, 1, 1);
+	register_should_search(u8"ExposureTime: 1/20s"sv, 1, 1, 1);
+	register_should_search(u8"1/20s"sv, 1, 1, 1);
+	register_should_search(u8"1/100s"sv, 5, 5, 5);
+	register_should_search(u8"1/1000s"sv, 0, 0, 0);
 
-	register_should_search(u8"iso400 @photo"sv, 2);
-	register_should_search(u8"iso:400 @photo"sv, 2);
-	register_should_search(u8"iso: 400 @photo"sv, 2);
-	register_should_search(u8"iso : 400 @photo"sv, 2);
-	register_should_search(u8">= iso:400 @photo"sv, 3);
+	register_should_search(u8"iso400 @photo"sv, 2, 2, 2);
+	register_should_search(u8"iso:400 @photo"sv, 2, 2, 2);
+	register_should_search(u8"iso: 400 @photo"sv, 2, 2, 2);
+	register_should_search(u8"iso : 400 @photo"sv, 2, 2, 2);
+	register_should_search(u8">= iso:400 @photo"sv, 3, 3, 3);
 
-	register_should_search(u8"1:26"sv, 1);
-	register_should_search(u8"0:10"sv, 5);
-	register_should_search(u8"7:77"sv, 0);
-	register_should_search(u8"10:00"sv, 0);
+	register_should_search(u8"1:26"sv, 1, 1, 1);
+	register_should_search(u8"0:10"sv, 5, 5, 5);
+	register_should_search(u8"7:77"sv, 0, 0, 0);
+	register_should_search(u8"10:00"sv, 0, 0, 0);
 
-	register_should_search(u8"size:0.3mb"sv, 4);
-	register_should_search(u8"size:14kb"sv, 1);
-	register_should_search(u8"size:5.1mb"sv, 1);
-	register_should_search(u8">size:1mb"sv, 9);
+	register_should_search(u8"size:0.3mb"sv, 4, 4, 4);
+	register_should_search(u8"size:14kb"sv, 1, 1, 1);
+	register_should_search(u8"size:5.1mb"sv, 1, 1, 1);
+	register_should_search(u8">size:1mb"sv, 9, 9, 8);
 
-	register_should_search(u8"key1"sv, 4);
-	register_should_search(u8"dog london"sv, 1);
-	register_should_search(u8"prague"sv, 5);
-	register_should_search(u8"ipad"sv, 1);
-	register_should_search(u8"48kHz"sv, 4);
-	register_should_search(u8"44.1kHz"sv, 4);
-	register_should_search(u8"tag:dog tag:london"sv, 1);
-	register_should_search(u8"dog or london"sv, 3);
-	register_should_search(u8"Rock"sv, 3);
-	register_should_search(u8"canon @photo"sv, 10);
-	register_should_search(u8"nikon d100"sv, 1);
+	register_should_search(u8"key1"sv, 4, 4, 4);
+	register_should_search(u8"dog london"sv, 1, 1, 1);
+	register_should_search(u8"prague"sv, 5, 5, 5);
+	register_should_search(u8"ipad"sv, 1, 1, 1);
+	register_should_search(u8"48kHz"sv, 4, 4, 3);
+	register_should_search(u8"44.1kHz"sv, 4, 4, 4);
+	register_should_search(u8"tag:dog tag:london"sv, 1, 1, 1);
+	register_should_search(u8"dog or london"sv, 3, 3, 3);
+	register_should_search(u8"Rock"sv, 3, 3, 3);
+	register_should_search(u8"canon @photo"sv, 10, 10, 9);
+	register_should_search(u8"nikon d100"sv, 1, 1, 1);
 
-	register_should_search(u8"ext:cr2"sv, 2);
-	register_should_search(u8"ext:.cr2"sv, 2);
+	register_should_search(u8"ext:cr2"sv, 2, 2, 1);
+	register_should_search(u8"ext:.cr2"sv, 2, 2, 1);
+
+	register_should_search(u8"sony"sv, 1, 1, 1);
+	register_should_search(u8"\"sony\""sv, 1, 1, 1);
+	register_should_search(u8"sony*"sv, 1, 1, 1);
+	register_should_search(u8"*sony*"sv, 1, 1, 1);
+
+	register_should_search(u8"screws"sv, 1, 1, 0);
+	register_should_search(u8"\"screws\""sv, 1, 1, 0);
+	register_should_search(u8"screws*"sv, 1, 1, 0);
+	register_should_search(u8"*screws*"sv, 1, 1, 0);
+
+	register_should_search(u8"london"sv, 3, 3, 3);
+	register_should_search(u8"\"london\""sv, 3, 3, 3);
+	register_should_search(u8"london*"sv, 3, 3, 3);
+	register_should_search(u8"*london*"sv, 3, 3, 3);
+
+	register_should_search(u8"d64"sv, 1, 1, 0);
+	register_should_search(u8"ace -retro"sv, 1, 1, 1);		
+	register_should_search(u8"jpg"sv, 15, 15, 15);
+	register_should_search(u8"-jpg"sv, 29, 27, 26);
+	register_should_search(u8"-ext:jpg"sv, 29, 27, 26);
 
 
 	// Dont run slow tests in debug

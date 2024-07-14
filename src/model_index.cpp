@@ -212,7 +212,8 @@ static void iterate_items(const df::search_t& search,
 									{
 										folders.emplace_back(folder_path);
 									}
-									else if (!matcher.has_terms || matcher.match_folder(folder_path.name()).is_match())
+
+									if ((!recursive && !matcher.has_terms) || matcher.match_folder(folder_path.text(), folder_path.name()).is_match())
 									{
 										results.match_folder(folder_path, folder_entry);
 									}
@@ -292,7 +293,7 @@ static void iterate_items(const df::search_t& search,
 					}
 				}
 
-				const auto match = matcher.match_folder(folder_node.first.name());
+				const auto match = matcher.match_folder(folder_node.first.text(), folder_node.first.name());
 
 				if (match.is_match())
 				{

@@ -1060,7 +1060,8 @@ namespace df
 		{
 			return lhs._selectors == rhs._selectors
 				&& lhs._terms == rhs._terms
-				&& lhs._related == rhs._related;
+				&& lhs._related == rhs._related
+				&& lhs._raw == rhs._raw;
 		}
 
 		friend bool operator!=(const search_t& lhs, const search_t& rhs)
@@ -1100,10 +1101,10 @@ namespace df
 		const bool can_match_folder = false;
 
 		bool potential_match(const bloom_bits& bloom_bits) const;
-		search_result match_term(const index_file_item& file, const search_term& term) const;
-		search_result match_all_terms(const index_file_item& file) const;
+		search_result match_term(str::cached folder_name, const index_file_item& file, const search_term& term) const;
+		search_result match_all_terms(str::cached folder_name, const index_file_item& file) const;
 
 		search_result match_item(file_path path, const index_file_item& file) const;
-		search_result match_folder(str::cached name) const;
+		search_result match_folder(str::cached folder_name, str::cached name) const;
 	};
 }
