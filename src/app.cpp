@@ -1498,44 +1498,25 @@ void app_frame::layout(ui::measure_context& mc)
 }
 
 
-df::index_roots index_folders()
+void parse_more_folders(df::index_roots &result, const std::u8string_view &more_folders)
 {
-	df::index_roots result;
-	const auto local_folders = platform::local_folders();
-
-	if (setting.index.pictures && !local_folders.pictures.is_empty()) result.folders.emplace(local_folders.pictures);
-	if (setting.index.video && !local_folders.video.is_empty()) result.folders.emplace(local_folders.video);
-	if (setting.index.music && !local_folders.music.is_empty()) result.folders.emplace(local_folders.music);
-	if (setting.index.drop_box && !local_folders.dropbox_photos.is_empty())
-		result.folders.emplace(
-			local_folders.dropbox_photos);
-	if (setting.index.onedrive_pictures && !local_folders.onedrive_pictures.is_empty())
-		result.folders.emplace(
-			local_folders.onedrive_pictures);
-	if (setting.index.onedrive_video && !local_folders.onedrive_video.is_empty())
-		result.folders.emplace(
-			local_folders.onedrive_video);
-	if (setting.index.onedrive_music && !local_folders.onedrive_music.is_empty())
-		result.folders.emplace(
-			local_folders.onedrive_music);
-
 	df::hash_set<std::u8string, df::ihash, df::ieq> drive_label_includes;
-	df::hash_set<std::u8string, df::ihash, df::ieq> drive_label_excludes;
+	df::hash_set<std::u8string, df::ihash, df::ieq> drive_label_excludes;	
 
-	for (auto f : setting.index.collection_folders())
+	for (auto f : split_collection_folders(more_folders))
 	{
 		if (!str::is_empty(f))
 		{
-			const auto path = df::folder_path(f);
-
 			if (str::is_exclude(f))
 			{
-				f = f.substr(1);
+				while (f.size() > 0_z && (str::is_white_space(f.front()) || f.front() == '-')) f = f.substr(1);
+
+				const auto path = df::folder_path(f);
 
 				if (path.exists() ||
 					platform::is_server(f))
 				{
-					result.excludes.emplace(df::folder_path(path));
+					result.excludes.emplace(path);
 				}
 				else
 				{
@@ -1544,10 +1525,12 @@ df::index_roots index_folders()
 			}
 			else
 			{
+				const auto path = df::folder_path(f);
+
 				if (path.exists() ||
 					platform::is_server(f))
 				{
-					result.folders.emplace(df::folder_path(path));
+					result.folders.emplace(path);
 				}
 				else
 				{
@@ -1589,6 +1572,22 @@ df::index_roots index_folders()
 	{
 		result.folders.erase(exclude);
 	}
+}
+
+df::index_roots index_folders()
+{
+	df::index_roots result;
+	const auto local_folders = platform::local_folders();
+
+	if (setting.collection.pictures && !local_folders.pictures.is_empty()) result.folders.emplace(local_folders.pictures);
+	if (setting.collection.video && !local_folders.video.is_empty()) result.folders.emplace(local_folders.video);
+	if (setting.collection.music && !local_folders.music.is_empty()) result.folders.emplace(local_folders.music);
+	if (setting.collection.drop_box && !local_folders.dropbox_photos.is_empty()) result.folders.emplace(local_folders.dropbox_photos); 
+	if (setting.collection.onedrive_pictures && !local_folders.onedrive_pictures.is_empty()) result.folders.emplace(local_folders.onedrive_pictures);
+	if (setting.collection.onedrive_video && !local_folders.onedrive_video.is_empty()) result.folders.emplace(local_folders.onedrive_video);
+	if (setting.collection.onedrive_music && !local_folders.onedrive_music.is_empty()) result.folders.emplace(local_folders.onedrive_music);
+
+	parse_more_folders(result, setting.collection.more_folders);
 
 	return result;
 }
@@ -1653,7 +1652,7 @@ void app_frame::complete_pending_events()
 				_tools->options_changed();
 				_sorting->options_changed();
 
-				_state.update_search_is_favorite();
+				_state.update_search_is_favorite_or_collection_root();
 
 				if (_search_predictions_frame && _search_predictions_frame->_frame)
 				{
@@ -1740,6 +1739,7 @@ void app_frame::complete_pending_events()
 			if (pop_invalid_flag(_invalids, view_invalid::address))
 			{
 				update_address();
+				_state.update_search_is_favorite_or_collection_root();
 			}
 
 			if (pop_invalid_flag(_invalids, view_invalid::app_layout))
@@ -1768,6 +1768,8 @@ void app_frame::complete_pending_events()
 						_state.item_index.scan_uncached(token);
 						invalidate_view(view_invalid::sidebar | view_invalid::item_scan | view_invalid::refresh_items);
 					});
+
+				_state.update_search_is_favorite_or_collection_root();
 			}
 
 			if (pop_invalid_flag(_invalids, view_invalid::focus_item_visible))
@@ -2537,6 +2539,7 @@ void app_frame::create_toolbars()
 	const std::vector<ui::command_ptr> tbButtonsNav2 =
 	{
 		find_command(commands::favorite),
+		find_command(commands::collection_add),
 		find_command(commands::browse_parent),
 		find_command(commands::browse_previous_folder),
 		find_command(commands::browse_next_folder),
@@ -2769,7 +2772,7 @@ void app_frame::update_button_state(const bool resize)
 	const auto show_new_version = is_showing_media_or_items_view && (setting.force_available_version || new_version_avail);
 	const auto command_item = _state.command_item();
 	const auto is_displaying_item = is_showing_media_or_items_view && command_item;
-	const auto one_folder_selected = !is_editing && is_showing_media_or_items_view && selection_status.has_single_folder_selection;
+	const auto search_has_selector = _state.search().has_selector();
 
 	_commands[commands::info_new_version]->visible = !is_editing && show_new_version;
 	_commands[commands::view_maximize]->visible = !is_maximized;
@@ -2811,8 +2814,8 @@ void app_frame::update_button_state(const bool resize)
 
 	_commands[commands::browse_open_googlemap]->enable = _state.has_gps();
 	_commands[commands::browse_open_containingfolder]->enable = is_displaying_item;
-	_commands[commands::browse_open_in_file_browser]->enable = has_selection;
-	_commands[commands::tool_new_folder]->enable = _state.search().has_selector();
+	_commands[commands::browse_open_in_file_browser]->enable = has_selection;	
+	_commands[commands::tool_new_folder]->enable = search_has_selector;
 	_commands[commands::print]->enable = has_selection;
 	_commands[commands::tool_remove_metadata]->enable = has_selection;
 	_commands[commands::tool_rename]->enable = has_selection;
@@ -2826,9 +2829,9 @@ void app_frame::update_button_state(const bool resize)
 	//_commands[ID_SHARE_FACEBOOK]->enable = _state.can_process_selection(df::process_items_type::photos_only);
 	//_commands[ID_SHARE_FLICKR]->enable = _state.can_process_selection(df::process_items_type::photos_only);
 	//_commands[ID_SHARE_TWITTER]->enable = _state.can_process_selection(df::process_items_type::photos_only);
-	_commands[commands::edit_paste]->enable = is_showing_media_or_items_view && _state.search().has_selector();
+	_commands[commands::edit_paste]->enable = is_showing_media_or_items_view && search_has_selector;
 	_commands[commands::select_nothing]->enable = has_selection;
-	_commands[commands::browse_recursive]->enable = _state.search().has_selector();
+	_commands[commands::browse_recursive]->enable = search_has_selector;
 	_commands[commands::tool_rotate_anticlockwise]->enable = has_selection;
 	_commands[commands::tool_rotate_clockwise]->enable = has_selection;
 	_commands[commands::tool_desktop_background]->enable = selection_status.showing_image;
@@ -2839,7 +2842,7 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::edit_item_save_and_next]->enable = is_editing;
 	_commands[commands::edit_item_save_as]->enable = is_editing;
 	_commands[commands::edit_item_options]->enable = is_editing;
-	_commands[commands::collection_add]->enable = one_folder_selected;
+	_commands[commands::collection_add]->enable = search_has_selector;
 
 	_commands[commands::playback_auto_play]->checked = setting.auto_play;
 	_commands[commands::playback_last_played_pos]->checked = setting.last_played_pos;
@@ -2911,6 +2914,7 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::playback_volume_toggle]->icon = sound_icon();
 	_commands[commands::repeat_toggle]->icon = repeat_toggle_icon();
 	_commands[commands::favorite]->icon = _state.search_is_favorite() ? icon_index::star_solid : icon_index::star;
+	_commands[commands::collection_add]->icon = _state.search_is_collection_root() ? icon_index::set_solid : icon_index::set;
 
 
 	const auto summary_text = format_items_summary(_state.group_order(), _state.sort_order(), _state.summary_shown(),
@@ -2967,7 +2971,7 @@ void app_frame::update_address() const
 	if (!_search_has_focus)
 	{
 		_search_edit->window_text(text);
-		_search_edit->set_icon(icon);
+		_search_edit->set_icon(icon);		
 	}
 }
 
@@ -3437,6 +3441,27 @@ void app_frame::tooltip(view_hover_element& hover, const commands id)
 			hover.elements->add(std::make_shared<text_element>(text, ui::style::font_face::dialog,
 				ui::style::text_style::multiline,
 				view_element_style::new_line));
+
+			hover.elements->add(std::make_shared<text_element>(tt.favorite_info, ui::style::font_face::dialog,
+				ui::style::text_style::multiline,
+				view_element_style::new_line));
+		}
+	}
+	else if (id == commands::collection_add)
+	{
+		const auto search = _state.search();
+
+		if (!search.is_empty())
+		{
+			const auto is_collection_root = _state.search_is_collection_root();
+			const auto text = str::format(is_collection_root ? tt.collection_remove_fmt : tt.collection_add_fmt, search.text());
+			hover.elements->add(std::make_shared<text_element>(text, ui::style::font_face::dialog,
+				ui::style::text_style::multiline,
+				view_element_style::new_line));
+
+			hover.elements->add(std::make_shared<text_element>(tt.collection_info, ui::style::font_face::dialog,
+				ui::style::text_style::multiline,
+				view_element_style::new_line));
 		}
 	}
 	else if (id == commands::info_new_version)
@@ -3799,8 +3824,7 @@ std::vector<ui::command_ptr> app_frame::menu(const pointi loc)
 			result.emplace_back(find_command(commands::edit_paste));
 			result.emplace_back(nullptr);
 			result.emplace_back(find_command(commands::option_toggle_details));
-			result.emplace_back(find_command(commands::browse_recursive));
-			result.emplace_back(find_command(commands::collection_add));
+			result.emplace_back(find_command(commands::browse_recursive));		
 			result.emplace_back(nullptr);
 			result.emplace_back(find_command(commands::refresh));
 			result.emplace_back(find_command(commands::tool_new_folder));

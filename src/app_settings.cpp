@@ -269,13 +269,13 @@ settings_t::settings_t()
 	sidebar.show_ratings = true;
 	sidebar.show_labels = true;
 
-	index.pictures = true;
-	index.video = true;
-	index.music = false;
-	index.drop_box = false;
-	index.onedrive_pictures = false;
-	index.onedrive_video = false;
-	index.onedrive_music = false;
+	collection.pictures = true;
+	collection.video = true;
+	collection.music = false;
+	collection.drop_box = false;
+	collection.onedrive_pictures = false;
+	collection.onedrive_video = false;
+	collection.onedrive_music = false;
 
 	search.title[0] = u8"Last 7 days"sv;
 	search.path[0] = u8"age: 7"sv;
@@ -652,14 +652,14 @@ void settings_t::read(const platform::setting_file_ptr& store_in)
 	store.read(s_email, s_limit, email.limit);
 	store.read(s_email, s_max, email.max_side);
 
-	store.read(s_index, s_pictures, index.pictures);
-	store.read(s_index, s_video, index.video);
-	store.read(s_index, s_music, index.music);
-	store.read(s_index, s_drop_box, index.drop_box);
-	store.read(s_index, s_onedrive_pictures, index.onedrive_pictures);
-	store.read(s_index, s_onedrive_video, index.onedrive_video);
-	store.read(s_index, s_onedrive_music, index.onedrive_music);
-	store.read(s_index, s_more, index.more_folders);
+	store.read(s_index, s_pictures, collection.pictures);
+	store.read(s_index, s_video, collection.video);
+	store.read(s_index, s_music, collection.music);
+	store.read(s_index, s_drop_box, collection.drop_box);
+	store.read(s_index, s_onedrive_pictures, collection.onedrive_pictures);
+	store.read(s_index, s_onedrive_video, collection.onedrive_video);
+	store.read(s_index, s_onedrive_music, collection.onedrive_music);
+	store.read(s_index, s_more, collection.more_folders);
 
 	store.read(s_favorite_search, s_title, search.title, search.count);
 	store.read(s_favorite_search, s_path, search.path, search.count);
@@ -795,14 +795,14 @@ void settings_t::write(const platform::setting_file_ptr& store_in) const
 	store.write(s_email, s_limit, email.limit);
 	store.write(s_email, s_max, email.max_side);
 
-	store.write(s_index, s_pictures, index.pictures);
-	store.write(s_index, s_video, index.video);
-	store.write(s_index, s_music, index.music);
-	store.write(s_index, s_drop_box, index.drop_box);
-	store.write(s_index, s_onedrive_pictures, index.onedrive_pictures);
-	store.write(s_index, s_onedrive_video, index.onedrive_video);
-	store.write(s_index, s_onedrive_music, index.onedrive_music);
-	store.write(s_index, s_more, index.more_folders);
+	store.write(s_index, s_pictures, collection.pictures);
+	store.write(s_index, s_video, collection.video);
+	store.write(s_index, s_music, collection.music);
+	store.write(s_index, s_drop_box, collection.drop_box);
+	store.write(s_index, s_onedrive_pictures, collection.onedrive_pictures);
+	store.write(s_index, s_onedrive_video, collection.onedrive_video);
+	store.write(s_index, s_onedrive_music, collection.onedrive_music);
+	store.write(s_index, s_more, collection.more_folders);
 
 	store.write(s_favorite_search, s_title, search.title, search.count);
 	store.write(s_favorite_search, s_path, search.path, search.count);
@@ -819,11 +819,7 @@ void settings_t::write(const platform::setting_file_ptr& store_in) const
 	store.write(s_sidebar, s_favorite_tags, sidebar.show_favorite_tags_only);
 }
 
-std::vector<std::u8string> settings_t::index_t::collection_folders() const
+std::vector<std::u8string_view> split_collection_folders(const std::u8string_view text)
 {
-	std::vector<std::u8string> result;
-	const auto more = str::split(more_folders, true, [](wchar_t c) { return c == '\n' || c == '\r'; });
-	result.reserve(more.size() + 1);
-	for (auto m : more) result.emplace_back(m);
-	return result;
+	return str::split(text, true, [](wchar_t c) { return c == '\n' || c == '\r'; });
 }

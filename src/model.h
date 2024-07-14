@@ -849,6 +849,7 @@ private:
 	common_display_state_t _common_display_state;
 
 	bool _search_is_favorite = false;
+	bool _search_is_collection_root = false;
 
 	group_by _group_order = group_by::file_type;
 	sort_by _sort_order = sort_by::def;
@@ -884,6 +885,11 @@ public:
 	bool search_is_favorite() const
 	{
 		return _search_is_favorite;
+	}
+
+	bool search_is_collection_root() const
+	{
+		return _search_is_collection_root;
 	}
 
 	bool has_error_items() const
@@ -962,7 +968,7 @@ public:
 	}
 
 	void reset();
-	void update_search_is_favorite();
+	void update_search_is_favorite_or_collection_root();
 	void update_pixel_difference();
 
 

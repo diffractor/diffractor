@@ -38,6 +38,8 @@ const static auto long_text =
 static const auto test_files_folder = known_path(platform::known_folder::test_files_folder);
 static constexpr sizei thumbnail_max_dimension = {256, 256};
 
+void toggle_collection_entry(settings_t::index_t& collection_settings, const df::folder_path folder, const bool is_remove);
+
 class null_item_results_ui final : public df::status_i
 {
 public:
@@ -1930,6 +1932,45 @@ static void should_index(test_view::shared_test_context& stc)
 	assert_equal(u8"\"Mark Ridgwell\""sv, actual->copyright_creator, u8"copyright_creator"sv);
 }
 
+static void should_toggle_collection_entry(test_view::shared_test_context& stc)
+{
+	const auto local_folders = platform::local_folders();
+
+	settings_t::index_t settings;
+	toggle_collection_entry(settings, local_folders.pictures, false);
+	assert_equal(true, settings.pictures, u8"pictures add"sv);
+
+	toggle_collection_entry(settings, local_folders.pictures, true);
+	toggle_collection_entry(settings, test_files_folder, false);
+	assert_equal(false, settings.pictures, u8"pictures remove"sv);
+	assert_equal(test_files_folder.text(), settings.more_folders);
+
+	toggle_collection_entry(settings, local_folders.video, false);
+	toggle_collection_entry(settings, test_files_folder, true);
+	assert_equal(true, settings.video, u8"pictures remove"sv);
+	assert_equal({}, settings.more_folders);
+}
+
+static void should_parse_roots(test_view::shared_test_context& stc)
+{
+	df::index_roots roots1;
+	parse_more_folders(roots1, test_files_folder.text());
+
+	assert_equal(0_z, roots1.files.size(), u8"parsed files"sv);
+	assert_equal(0_z, roots1.excludes.size(), u8"parsed excludes"sv);
+	assert_equal(1_z, roots1.folders.size(), u8"parsed folder"sv);
+	assert_equal(test_files_folder.text(), roots1.folders.begin()->text(), u8"parsed folder"sv);
+
+	df::index_roots roots2;
+	const auto exclude_files_folder = test_files_folder.combine(u8"excluded1"sv);
+	parse_more_folders(roots2, str::format(u8" - {}\n{}"sv, exclude_files_folder.text(), test_files_folder.text()));
+
+	assert_equal(0_z, roots2.files.size(), u8"parsed files"sv);
+	assert_equal(1_z, roots2.excludes.size(), u8"parsed excludes"sv);
+	assert_equal(1_z, roots2.folders.size(), u8"parsed folder"sv);
+	assert_equal(test_files_folder.text(), roots2.folders.begin()->text(), u8"parsed folder"sv);
+	assert_equal(exclude_files_folder.text(), roots2.excludes.begin()->text(), u8"parsed exclude"sv);
+}
 
 class prop_test
 {
@@ -3569,6 +3610,9 @@ void test_view::register_tests()
 	register_test(u8"Should reload thumb after scan"s, should_reload_thumb_after_scan);
 	register_test(u8"Should copy preserve properties"s, should_copy_preserve_properties);
 	register_test(u8"Should detect rotation"s, should_detect_rotation);
+	register_test(u8"Should parse roots"s, should_parse_roots);
+	register_test(u8"Should toggle collection entry"s, should_toggle_collection_entry);
+	
 
 	//
 	// Search

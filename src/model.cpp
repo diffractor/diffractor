@@ -2208,9 +2208,23 @@ static bool calc_search_is_favorite(const df::search_t& search)
 	return false;
 }
 
-void view_state::update_search_is_favorite()
+static bool calc_search_is_collection_root(const df::index_roots& roots, const df::search_t& search)
+{
+	for (const auto& sel : search.selectors())
+	{
+		if (roots.folders.contains(sel.folder()))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void view_state::update_search_is_favorite_or_collection_root()
 {
 	_search_is_favorite = calc_search_is_favorite(_search);
+	_search_is_collection_root = calc_search_is_collection_root(item_index.index_roots(), _search);
 }
 
 void view_state::update_pixel_difference()
@@ -2632,7 +2646,7 @@ bool view_state::open(const view_host_base_ptr& view, const df::search_t& new_se
 	{
 		stop_slideshow();
 		_search = new_search;
-		update_search_is_favorite();
+		update_search_is_favorite_or_collection_root();
 		history.history_add(new_search, _selected.ids());
 	}
 

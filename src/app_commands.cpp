@@ -449,30 +449,6 @@ static void edit_paste_invoke(view_state& s, const ui::control_frame_ptr& parent
 	}
 }
 
-static void collection_add_invoke(view_state& s, const ui::control_frame_ptr& parent, const view_host_base_ptr& view)
-{
-	const auto paths = s.selected_items().folder_paths();
-
-	for(const auto & new_folder_path : paths)
-	{
-		const auto existing_folders = setting.index.collection_folders();
-
-		for (const auto f : existing_folders)
-		{
-			const auto existing_folder_path = df::folder_path(f);			
-
-			if (existing_folder_path == new_folder_path)
-			{
-				return;// existing
-			}
-		}
-
-		setting.index.more_folders += u8"\r\n"sv;
-		setting.index.more_folders += new_folder_path.text();
-		s.invalidate_view(view_invalid::options | view_invalid::index);
-	}
-}
-
 static void show_flatten_invoke(view_state& s, const ui::control_frame_ptr& parent, const view_host_base_ptr& view)
 {
 	const auto current_search = s.search();
@@ -3850,7 +3826,7 @@ static void favorite_invoke(view_state& state, const ui::control_frame_ptr& pare
 	if (updated)
 	{
 		state.invalidate_view(view_invalid::sidebar | view_invalid::command_state);
-		state.update_search_is_favorite();
+		state.update_search_is_favorite_or_collection_root();
 	}
 	else
 	{
@@ -4590,7 +4566,7 @@ static void index_maintenance(const ui::control_frame_ptr& parent, view_state& s
 };
 
 
-static void index_settings_invoke(view_state& s, const ui::control_frame_ptr& parent)
+static void index_settings_invoke(view_state& s, const ui::control_frame_ptr& parent, settings_t::index_t collection_settings)
 {
 	const auto dlg = make_dlg(parent);
 
@@ -4604,34 +4580,33 @@ static void index_settings_invoke(view_state& s, const ui::control_frame_ptr& pa
 
 	auto index_text = format_index_text(s);
 
-	local_index->add(std::make_shared<text_element>(tt.collection_options_manage));
+	local_index->add(std::make_shared<text_element>(tt.collection_info));
 	local_index->add(std::make_shared<link_element>(tt.collection_options_more_information,
 	                                                []() { platform::open(docs_url); }));
 
-	const auto local_folders = platform::local_folders();
+	const auto local_folders = platform::local_folders();	
 
-	local_index->add(std::make_shared<ui::title_control>(tt.collection_options_local_folders_title));
-	local_index->add(
-		std::make_shared<ui::check_control>(dlg_parent, local_folders.pictures.text(), setting.index.pictures));
-	local_index->add(std::make_shared<ui::check_control>(dlg_parent, local_folders.video.text(), setting.index.video));
-	local_index->add(std::make_shared<ui::check_control>(dlg_parent, local_folders.music.text(), setting.index.music));
+	local_index->add(std::make_shared<ui::title_control>(tt.collection_options_local_folders_title));	
+	local_index->add(std::make_shared<ui::check_control>(dlg_parent, local_folders.pictures.text(), collection_settings.pictures));
+	local_index->add(std::make_shared<ui::check_control>(dlg_parent, local_folders.video.text(), collection_settings.video));
+	local_index->add(std::make_shared<ui::check_control>(dlg_parent, local_folders.music.text(), collection_settings.music));
 
 	if (local_folders.onedrive_pictures.exists())
 		local_index->add(
 			std::make_shared<ui::check_control>(dlg_parent, local_folders.onedrive_pictures.text(),
-			                                    setting.index.onedrive_pictures));
+			                                    collection_settings.onedrive_pictures));
 	if (local_folders.onedrive_video.exists())
 		local_index->add(
 			std::make_shared<ui::check_control>(dlg_parent, local_folders.onedrive_video.text(),
-			                                    setting.index.onedrive_video));
+			                                    collection_settings.onedrive_video));
 	if (local_folders.onedrive_music.exists())
 		local_index->add(
 			std::make_shared<ui::check_control>(dlg_parent, local_folders.onedrive_music.text(),
-			                                    setting.index.onedrive_music));
+			                                    collection_settings.onedrive_music));
 	if (local_folders.dropbox_photos.exists())
 		local_index->add(
 			std::make_shared<ui::check_control>(dlg_parent, local_folders.dropbox_photos.text(),
-			                                    setting.index.drop_box));
+			                                    collection_settings.drop_box));
 
 	local_index->add(std::make_shared<ui::title_control>(tt.index_maintenance_title));
 	local_index->add(std::make_shared<text_element>(tt.indexing_message));
@@ -4644,7 +4619,7 @@ static void index_settings_invoke(view_state& s, const ui::control_frame_ptr& pa
 	custom_index->add(std::make_shared<ui::title_control>(tt.collection_options_custom_folders_title));
 	custom_index->add(std::make_shared<text_element>(tt.collection_options_more_folders));
 
-	auto more_folders_parts = str::split(setting.index.more_folders, true,
+	auto more_folders_parts = str::split(collection_settings.more_folders, true,
 	                                     [](wchar_t c) { return c == '\n' || c == '\r'; });
 	auto more_folders_text = str::combine(more_folders_parts, u8"\r\n"sv, false);
 
@@ -4658,23 +4633,84 @@ static void index_settings_invoke(view_state& s, const ui::control_frame_ptr& pa
 	cols->add(set_margin(local_index));
 	cols->add(set_margin(custom_index));
 
-	controls.emplace_back(set_margin(std::make_shared<ui::title_control2>(
-			dlg->_frame, icon_index::settings, tt.command_collection_options, tt.collection_options_info))),
-		controls.emplace_back(std::make_shared<divider_element>());
+	controls.emplace_back(set_margin(std::make_shared<ui::title_control2>(dlg->_frame, icon_index::settings, tt.command_collection_options, tt.collection_options_info)));
+	controls.emplace_back(std::make_shared<divider_element>());
 	controls.emplace_back(cols);
 	controls.emplace_back(std::make_shared<divider_element>());
-	controls.emplace_back(std::make_shared<ui::close_control>(dlg->_frame));
+	controls.emplace_back(std::make_shared<ui::ok_cancel_control>(dlg->_frame));
 
 	pause_media pause(s);
-	dlg->show_modal(controls, { 99 } );
+
+	if (ui::close_result::ok == dlg->show_modal(controls, { 99 }))
+	{
+		// apply changes
+		more_folders_parts = str::split(more_folders_text, false, [](wchar_t c) { return c == '\n' || c == '\r'; });
+		collection_settings.more_folders = str::combine(more_folders_parts, u8"\n"sv, true);
+		setting.collection = collection_settings;		
+	}
+
 	dlg->_frame->destroy();
-
-	more_folders_parts = str::split(more_folders_text, false, [](wchar_t c) { return c == '\n' || c == '\r'; });
-	setting.index.more_folders = str::combine(more_folders_parts, u8"\n"sv, true);
-
-	//buttons.clear()
 	s.invalidate_view(view_invalid::index | view_invalid::options);
-};
+}
+
+void toggle_collection_entry(settings_t::index_t& collection_settings, const df::folder_path folder, const bool is_remove)
+{
+	const auto local_folders = platform::local_folders();
+
+	if (is_remove)
+	{
+		if (local_folders.pictures == folder) collection_settings.pictures = false;
+		else if (local_folders.music == folder) collection_settings.music = false;
+		else if (local_folders.video == folder) collection_settings.video = false;
+		else if (local_folders.onedrive_pictures == folder) collection_settings.onedrive_pictures = false;
+		else if (local_folders.onedrive_video == folder) collection_settings.onedrive_video = false;
+		else if (local_folders.onedrive_music == folder) collection_settings.onedrive_music = false;
+		else if (local_folders.dropbox_photos == folder) collection_settings.drop_box = false;
+
+		std::u8string more_folders;
+
+		for (const auto existing_folder_path : split_collection_folders(collection_settings.more_folders))
+		{
+			if (folder != df::folder_path(existing_folder_path))
+			{
+				if (!more_folders.empty()) more_folders += u8"\r\n"sv;
+				more_folders += existing_folder_path;
+			}
+		}
+
+		collection_settings.more_folders = more_folders;
+	}
+	else
+	{
+		// add
+		if (local_folders.pictures == folder) collection_settings.pictures = true;
+		else if (local_folders.music == folder) collection_settings.music = true;
+		else if (local_folders.video == folder) collection_settings.video = true;
+		else if (local_folders.onedrive_pictures == folder) collection_settings.onedrive_pictures = true;
+		else if (local_folders.onedrive_video == folder) collection_settings.onedrive_video = true;
+		else if (local_folders.onedrive_music == folder) collection_settings.onedrive_music = true;
+		else if (local_folders.dropbox_photos == folder) collection_settings.drop_box = true;
+		else
+		{
+			if (!collection_settings.more_folders.empty()) collection_settings.more_folders += u8"\r\n"sv;
+			collection_settings.more_folders += folder.text();
+		}
+	}
+}
+
+static void collection_add_invoke(view_state& s, const ui::control_frame_ptr& parent, const view_host_base_ptr& view)
+{
+	const auto roots = s.item_index.index_roots();
+	
+	auto collection_settings = setting.collection;
+
+	for (const auto& sel : s.search().selectors())
+	{
+		toggle_collection_entry(collection_settings, sel.folder(), roots.folders.contains(sel.folder()));
+	}
+
+	index_settings_invoke(s, parent, collection_settings);
+}
 
 static void customise_invoke(view_state& s, const ui::control_frame_ptr& parent)
 {
@@ -4921,6 +4957,7 @@ void app_frame::initialise_commands()
 	_commands[commands::repeat_toggle]->icon_can_change = true;
 	_commands[commands::playback_volume_toggle]->icon_can_change = true;
 	_commands[commands::favorite]->icon_can_change = true;
+	_commands[commands::collection_add]->icon_can_change = true;
 
 	_commands[commands::option_highlight_large_items]->clr = ui::style::color::rank_background;
 	_commands[commands::rate_rejected]->clr = color_rate_rejected;
@@ -5024,7 +5061,7 @@ void app_frame::initialise_commands()
 	});
 	add_command_invoke(commands::tool_import, [this] { import_invoke(_state, _app_frame, _view_frame); });
 	add_command_invoke(commands::sync, [this] { sync_invoke(_state, _app_frame); });
-	add_command_invoke(commands::options_collection, [this] { index_settings_invoke(_state, _app_frame); });
+	add_command_invoke(commands::options_collection, [this] { index_settings_invoke(_state, _app_frame, setting.collection); });
 	add_command_invoke(commands::keyboard, [this] { show_keyboard_reference(_state, _app_frame, _commands); });
 	add_command_invoke(commands::tool_locate, [this] { locate_invoke(_state, _app_frame, _view_frame); });
 	add_command_invoke(commands::view_maximize, [this] { _pa->sys_command(ui::sys_command_type::MAXIMIZE); });
@@ -5224,6 +5261,8 @@ void app_frame::initialise_commands()
 			find_command(commands::tool_scan),
 			find_command(commands::refresh),
 			find_command(commands::tool_new_folder),
+			find_command(commands::favorite),
+			find_command(commands::collection_add),
 			nullptr,
 			find_command(commands::edit_cut),
 			find_command(commands::edit_copy),

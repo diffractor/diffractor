@@ -230,9 +230,7 @@ public:
 		bool onedrive_music = false;
 
 		std::u8string more_folders;
-
-		std::vector<std::u8string> collection_folders() const;
-	} index;
+	} collection;
 
 	struct search_t
 	{
@@ -252,3 +250,5 @@ static void record_feature_use(const uint64_t f)
 {
 	setting.features_used_since_last_report |= f;
 }
+
+std::vector<std::u8string_view> split_collection_folders(const std::u8string_view text);

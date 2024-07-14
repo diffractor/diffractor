@@ -167,4 +167,6 @@ enum class icon_index
 	unknown = 0xF142,
 	today = 0xE8D1,
 	yesterday = 0xE8F5,
+	set = 0xF5ED,
+	set_solid = 0xF5EE,
 };

@@ -227,11 +227,8 @@ void app_text_t::load_lang(const df::file_path lang_file)
 		collection_options_dropbox,
 		collection_options_google_drive,
 		collection_options_help,
-		collection_options_inet_help,
-		collection_options_inet_title,
 		collection_options_info,
 		collection_options_local_folders_title,
-		collection_options_manage,
 		collection_options_more_folders,
 		collection_options_more_information,
 		collection_options_music,
@@ -495,6 +492,10 @@ void app_text_t::load_lang(const df::file_path lang_file)
 		favorite_failed_to_add,
 		favorite_remove_fmt,
 		favorite_title,
+		favorite_info,
+		collection_add_fmt,
+		collection_remove_fmt,
+		collection_info,
 		folder,
 		folder_music,
 		folder_noun,
@@ -1353,3 +1354,4 @@ std::vector<std::u8string> app_text_t::add_translate_text(const std::vector<str:
 
 
 app_text_t tt;
+

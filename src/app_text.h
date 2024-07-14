@@ -697,7 +697,7 @@ struct app_text_t
 		u8"After long periods of use, the index can benefit from one of the maintenance steps below. The index stores a copy of metadata from your media files. It can be rebuilt from the original files."sv;
 	text_t index_maintenance_reset_recommended = u8"The index is reporting errors. Resetting the index is recommended."sv;	
 	text_t collection_options_more_folders = u8"More folders. Separate each folder with a new line."sv;
-	text_t collection_options_local_folders_title = u8"Local folders"sv;
+	text_t collection_options_local_folders_title = u8"Collection folders"sv;
 	text_t collection_options_pictures = u8"Pictures"sv;
 	text_t collection_options_videos = u8"Videos"sv;
 	text_t collection_options_music = u8"Music"sv;
@@ -707,15 +707,12 @@ struct app_text_t
 	text_t collection_options_dropbox = u8"Local DropBox Folder"sv;
 	text_t collection_options_onedrive = u8"Local OneDrive Folder"sv;
 	text_t collection_options_google_drive = u8"Local GoogleDrive Folder"sv;
-	text_t collection_options_custom_folders_title = u8"Other folders"sv;
+	text_t collection_options_custom_folders_title = u8"More Collection folders"sv;
 	text_t collection_options_custom_folders_help =
 		u8"Prefix the folder name with minus '-' to exclude it from searches."sv;
 	
 	text_t collection_options_custom_locations_help =
 		u8"Folders can be drives, folders, network shares or device labels. Labels are useful for removable or network devices where mapped drive letters can change."sv;
-	text_t collection_options_inet_title = u8"Internet files"sv;
-	text_t collection_options_inet_help =
-		u8"Diffractor can also index files from your Google Photos account. Add your accounts below. This is an experimental feature."sv;
 	text_t customise_tags_title = u8"Favorite Tags"sv;
 	text_t customise_tags_help = u8"Add a list of your favorite tags here to save time when tagging."sv;
 	text_t customise_searches_title = u8"Favorite Searches"sv;
@@ -1072,7 +1069,6 @@ struct app_text_t
 	text_t iptc_metadata_title = u8"IPTC"sv;
 	text_t none = u8"None"sv;
 	text_t collection_options_info = u8"Define the folders that make your collection."sv;
-	text_t collection_options_manage = u8"Diffractor is designed to manage a collection of photos and videos on a PC."sv;
 	text_t collection_options_more_information = u8"More information about collection management."sv;
 	text_t show_raw_now = u8"Show this RAW photo"sv;
 	text_t show_raw = u8"Always show RAW photos (slower)"sv;
@@ -1085,7 +1081,11 @@ struct app_text_t
 	text_t command_advanced_search = u8"Advanced Search"sv;
 	text_t favorite_add_fmt = u8"Add '{}' to favorites."sv;
 	text_t favorite_remove_fmt = u8"Remove '{}' from favorite folders or searches."sv;
+	text_t collection_add_fmt = u8"Add '{}' to the collection."sv;
+	text_t collection_remove_fmt = u8"Remove '{}' from the collection."sv;
+	text_t collection_info = u8"The collection is a group of folders that you specify to be indexed. Indexing allows fast searching and duplicate detection. Diffractor will also highlight when items are not in the collection."sv;
 	text_t favorite_title = u8"Favorite title"sv;
+	text_t favorite_info = u8"Favorites are listed in the sidebar for quick access."sv;
 	text_t favorite_failed_to_add = u8"Failed to add. Maximum number of favorites reached."sv;
 
 	text_t search_collection = u8"Search in the collection"sv;
@@ -1141,7 +1141,7 @@ struct app_text_t
 	text_t command_favorite_tags = u8"Show only favorite tags"sv;
 	text_t option_favorite_tags = u8"Show only favorite tags in the sidebar"sv;
 
-	text_t collection_add = u8"Add folder to collection"sv;
+	text_t collection_add = u8"Collection"sv;
 
 	plural_text rotate_info_fmt = {
 		u8"Rotate {first-name}."sv, u8"Rotate {count} selected items. Originals will be overwritten."
