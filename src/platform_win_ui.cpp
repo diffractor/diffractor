@@ -2778,6 +2778,12 @@ public:
 			spell.lazy_load();
 		}
 
+		if (!_styles.cue.empty())
+		{
+			const auto w = str::utf8_to_utf16(_styles.cue);
+			SendMessage(m_hWnd, EM_SETCUEBANNER, 0, reinterpret_cast<LPARAM>(w.c_str()));
+		}
+
 		return result;
 	}
 

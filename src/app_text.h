@@ -780,6 +780,7 @@ struct app_text_t
 	text_t items_modified_fmt = u8"Items modified {} {}"sv;
 	text_t click_to_open_created_modified = u8"Click to open created items.\nControl-click to open modified items."sv;
 	text_t click_items_from_fmt = u8"{} items from {} in the collection."sv;
+	text_t filter = u8"filter"sv;
 
 	text_t genre_a_capella = u8"A capella"sv;
 	text_t genre_abstract = u8"Abstract"sv;

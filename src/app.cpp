@@ -1415,7 +1415,8 @@ void app_frame::layout(ui::measure_context& mc)
 		const auto x_nav3 = client_bounds.right - mc.padding1 - navigate3_extent.cx;
 		const auto x_tools_avail = cx_avail - sidebar_cx;
 		const auto x_tools = (show_sidebar ? sidebar_cx : 0) + (is_full_screen_media ? (x_tools_avail - tools_extent.cx) / 2 : mc.padding1);
-		const auto x_sorting = client_bounds.right - (mc.padding1 + sorting_extent.cx + mc.handle_cxy);
+		_sorting_width = std::max(_sorting_width, sorting_extent.cx); // we want sorting width not to just grow not shrink.
+		const auto x_sorting = client_bounds.right - (mc.padding1 + _sorting_width + mc.handle_cxy);
 		const auto x_media_edit = client_bounds.right - (mc.padding1 + media_edit_extent.cx + mc.handle_cxy);
 		const auto y_client = show_top_bar ? client_bounds.top + top_height : client_bounds.top;
 		const auto cx_edit = std::max(client_bounds.width() / 4, scale400);
@@ -1428,7 +1429,7 @@ void app_frame::layout(ui::measure_context& mc)
 		const recti nav2_bounds(x_nav2, y_nav2, x_nav2 + navigate2_extent.cx, y_nav2 + navigate2_extent.cy);
 		const recti nav3_bounds(x_nav3, y_nav3, x_nav3 + navigate3_extent.cx, y_nav3 + navigate3_extent.cy);
 		const recti tool_rect(x_tools, y_tools, r_tools, y_tools + tools_extent.cy);
-		const recti sorting_rect(x_sorting, y_sorting, x_sorting + sorting_extent.cx, y_sorting + sorting_extent.cy);		
+		const recti sorting_rect(x_sorting, y_sorting, x_sorting + _sorting_width, y_sorting + sorting_extent.cy);
 		const recti filter_rect(x_filter, y_filter, x_sorting - mc.padding1, y_filter + cy_filter);
 		const recti media_edit_rect(x_media_edit, y_media_edit, x_media_edit + media_edit_extent.cx,y_media_edit + media_edit_extent.cy);
 		const recti edit_bounds(client_bounds.right - cx_edit, y_client, client_bounds.right, y_status_top);
@@ -3660,17 +3661,25 @@ bool app_frame::init(const std::u8string_view command_line_text)
 
 	create_toolbars();
 
-	ui::edit_styles edit_styles;
-	edit_styles.rounded_corners = true;
-	edit_styles.horizontal_scroll = true;
-	edit_styles.bg_clr = ui::style::color::toolbar_background;
-	edit_styles.select_all_on_focus = true;
+	ui::edit_styles search_edit_styles;
+	search_edit_styles.rounded_corners = true;
+	search_edit_styles.horizontal_scroll = true;
+	search_edit_styles.bg_clr = ui::style::color::toolbar_background;
+	search_edit_styles.select_all_on_focus = true;
 
-	_search_edit = _app_frame->create_edit(edit_styles, {}, [this](const std::u8string& text)
+	ui::edit_styles filter_edit_styles;
+	filter_edit_styles.rounded_corners = true;
+	filter_edit_styles.horizontal_scroll = true;
+	filter_edit_styles.bg_clr = ui::style::color::toolbar_background;
+	filter_edit_styles.select_all_on_focus = true;
+	filter_edit_styles.cue = tt.filter;
+	filter_edit_styles.align_center = true;
+
+	_search_edit = _app_frame->create_edit(search_edit_styles, {}, [this](const std::u8string& text)
 		{
 			search_edit_change(text);
 		});
-	_filter_edit = _app_frame->create_edit(edit_styles, {}, [this](const std::u8string& text)
+	_filter_edit = _app_frame->create_edit(filter_edit_styles, {}, [this](const std::u8string& text)
 		{
 			filter_edit_change(text);
 		});

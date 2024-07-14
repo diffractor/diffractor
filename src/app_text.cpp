@@ -216,6 +216,7 @@ void app_text_t::load_lang(const df::file_path lang_file)
 		items_modified_fmt,
 		click_to_open_created_modified,
 		click_items_from_fmt,
+		filter,
 		close,
 		collection_options,
 		collection_options_custom_folders_help,

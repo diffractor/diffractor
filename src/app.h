@@ -479,6 +479,7 @@ public:
 	recti _view_bounds;
 	recti _status_bounds;
 	recti _title_bounds;
+	int _sorting_width = 0;
 	std::u8string saved_current_search;
 	bool _is_active = false;
 

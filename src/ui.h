@@ -1352,6 +1352,7 @@ namespace ui
 		color32 bg_clr = style::color::dialog_background;		
 		std::function<bool(int c, key_state keys)> capture_key_down;
 		std::vector<std::u8string> auto_complete_list;
+		std::u8string cue;
 	};
 
 	struct toolbar_styles
