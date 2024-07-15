@@ -26,6 +26,7 @@
 #include "ui_controls.h"
 #include "util_crash_files_db.h"
 #include "util_simd.h"
+#include "app_util.h"
 
 static int col_widths[] = { 0, 0, 0 };
 
@@ -38,7 +39,7 @@ const static auto long_text =
 static const auto test_files_folder = known_path(platform::known_folder::test_files_folder);
 static constexpr sizei thumbnail_max_dimension = {256, 256};
 
-void toggle_collection_entry(settings_t::index_t& collection_settings, const df::folder_path folder, const bool is_remove);
+
 
 class null_item_results_ui final : public df::status_i
 {
@@ -1838,6 +1839,7 @@ static void build_index(index_state& index, database& db)
 	df::index_roots paths;
 	paths.folders.emplace(test_files_folder);
 	paths.excludes.emplace(test_files_folder.combine(u8"excluded1"sv));
+	paths.exclude_wildcards.emplace(u8"exclud*2"_c);
 
 	index.index_roots(paths);
 	index.index_folders(test_token);
@@ -1970,6 +1972,20 @@ static void should_parse_roots(test_view::shared_test_context& stc)
 	assert_equal(1_z, roots2.folders.size(), u8"parsed folder"sv);
 	assert_equal(test_files_folder.text(), roots2.folders.begin()->text(), u8"parsed folder"sv);
 	assert_equal(exclude_files_folder.text(), roots2.excludes.begin()->text(), u8"parsed exclude"sv);
+
+	df::index_roots roots3;
+	parse_more_folders(roots3, str::format(u8"- secret\n{}\n -exclude*"sv, test_files_folder.text()));
+
+	assert_equal(0_z, roots3.files.size(), u8"parsed files"sv);
+	assert_equal(0_z, roots3.excludes.size(), u8"parsed excludes"sv);
+	assert_equal(1_z, roots3.folders.size(), u8"parsed folder"sv);
+	assert_equal(2_z, roots3.exclude_wildcards.size(), u8"parsed exclude wildcards"sv);
+
+	std::vector<str::cached> exclude_wildcards(roots3.exclude_wildcards.begin(), roots3.exclude_wildcards.end());
+
+	assert_equal(test_files_folder.text(), roots3.folders.begin()->text(), u8"parsed folder"sv);
+	assert_equal(u8"exclude*", exclude_wildcards[0], u8"parsed exclude"sv);
+	assert_equal(u8"secret", exclude_wildcards[1], u8"parsed exclude"sv);
 }
 
 class prop_test
@@ -3448,6 +3464,37 @@ static void should_scan_mod()
 	assert_equal(48000, props->audio_sample_rate, u8"encoder"sv, file_name);
 }
 
+static void should_format_plural_text()
+{
+	// TODO
+}
+
+static void should_format_rename()
+{
+	// TODO
+}
+
+static void should_check_overwrite()
+{
+	// TODO
+}
+
+static void should_replace_file()
+{
+	// TODO
+}
+
+static void should_analyze_imports()
+{
+	// TODO
+}
+
+static void should_analyze_sync()
+{
+	// TODO
+}
+
+
 void test_view::run_test(const test_ptr& test)
 {
 	shared_test_context stc;
@@ -3515,6 +3562,10 @@ void test_view::register_tests()
 	register_test(u8"Should format text"s, should_format_text);
 	register_test(u8"Should find text"s, should_find_text);
 	register_test(u8"Should find Location"s, should_find_location);
+	register_test(u8"Should format plural text"s, should_format_plural_text);
+	register_test(u8"Should format rename"s, should_format_rename);
+	register_test(u8"Should check overwrite"s, should_check_overwrite);
+	register_test(u8"Should replace file"s, should_replace_file);
 
 	//
 	// Scan Metadata
@@ -3612,7 +3663,8 @@ void test_view::register_tests()
 	register_test(u8"Should detect rotation"s, should_detect_rotation);
 	register_test(u8"Should parse roots"s, should_parse_roots);
 	register_test(u8"Should toggle collection entry"s, should_toggle_collection_entry);
-	
+	register_test(u8"Should analyze imports"s, should_analyze_imports);
+	register_test(u8"Should analyze sync"s, should_analyze_sync);
 
 	//
 	// Search
@@ -3849,8 +3901,8 @@ void test_view::register_tests()
 	register_should_search(u8"d64"sv, 1, 1, 0);
 	register_should_search(u8"ace -retro"sv, 1, 1, 1);		
 	register_should_search(u8"jpg"sv, 15, 15, 15);
-	register_should_search(u8"-jpg"sv, 29, 27, 26);
-	register_should_search(u8"-ext:jpg"sv, 29, 27, 26);
+	register_should_search(u8"-jpg"sv, 28, 27, 26);
+	register_should_search(u8"-ext:jpg"sv, 28, 27, 26);
 
 
 	// Dont run slow tests in debug

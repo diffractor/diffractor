@@ -45,7 +45,7 @@ static std::atomic_int index_version;
 const wchar_t* s_app_name_l = L"Diffractor";
 const std::u8string_view s_app_name = u8"Diffractor"sv;
 const std::u8string_view s_app_version = u8"126.0"sv;
-const std::u8string_view g_app_build = u8"1178"sv;
+const std::u8string_view g_app_build = u8"1179"sv;
 const std::u8string_view stage_file_name = u8"diffractor-setup-update.exe"sv;
 static constexpr std::u8string_view installed_file_name = u8"diffractor-setup-installed.exe"sv;
 static constexpr std::u8string_view s_search = u8"search"sv;
@@ -1502,40 +1502,42 @@ void app_frame::layout(ui::measure_context& mc)
 void parse_more_folders(df::index_roots &result, const std::u8string_view &more_folders)
 {
 	df::hash_set<std::u8string, df::ihash, df::ieq> drive_label_includes;
-	df::hash_set<std::u8string, df::ihash, df::ieq> drive_label_excludes;	
 
-	for (auto f : split_collection_folders(more_folders))
+	for (auto line : split_collection_folders(more_folders))
 	{
-		if (!str::is_empty(f))
+		if (!str::is_empty(line))
 		{
-			if (str::is_exclude(f))
+			if (str::is_exclude(line))
 			{
-				while (f.size() > 0_z && (str::is_white_space(f.front()) || f.front() == '-')) f = f.substr(1);
+				while (line.size() > 0_z && (str::is_white_space(line.front()) || line.front() == '-')) line = line.substr(1);
 
-				const auto path = df::folder_path(f);
-
-				if (path.exists() ||
-					platform::is_server(f))
+				if (df::is_path(str::trim(line)))
 				{
-					result.excludes.emplace(path);
+					const auto path = df::folder_path(line);
+
+					if (path.exists() ||
+						platform::is_server(line))
+					{
+						result.excludes.emplace(path);
+					}
 				}
 				else
 				{
-					drive_label_excludes.emplace(f);
+					result.exclude_wildcards.emplace(str::cache(line));
 				}
 			}
 			else
 			{
-				const auto path = df::folder_path(f);
+				const auto path = df::folder_path(line);
 
 				if (path.exists() ||
-					platform::is_server(f))
+					platform::is_server(line))
 				{
 					result.folders.emplace(path);
 				}
 				else
 				{
-					drive_label_includes.emplace(f);
+					drive_label_includes.emplace(line);
 				}
 			}
 		}
@@ -1551,21 +1553,6 @@ void parse_more_folders(df::index_roots &result, const std::u8string_view &more_
 		if (drive_label_includes.contains(d.name))
 		{
 			result.folders.emplace(path);
-		}
-
-		if (drive_label_excludes.contains(d.name))
-		{
-			result.excludes.emplace(path);
-		}
-
-		if (drive_label_includes.contains(vol))
-		{
-			result.folders.emplace(path);
-		}
-
-		if (drive_label_excludes.contains(vol))
-		{
-			result.excludes.emplace(path);
 		}
 	}
 

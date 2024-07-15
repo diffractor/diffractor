@@ -146,6 +146,7 @@ namespace df
 		unique_folders folders;
 		unique_paths files;
 		unique_folders excludes;
+		unique_strings exclude_wildcards;
 
 		index_roots() noexcept = default;
 		index_roots(const index_roots&) = default;
@@ -153,4 +154,6 @@ namespace df
 		index_roots(index_roots&&) noexcept = default;
 		index_roots& operator=(index_roots&&) noexcept = default;
 	};
+
+	bool is_excluded(const index_roots &roots, const df::folder_path path);
 };

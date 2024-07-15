@@ -709,7 +709,7 @@ struct app_text_t
 	text_t collection_options_google_drive = u8"Local GoogleDrive Folder"sv;
 	text_t collection_options_custom_folders_title = u8"More Collection folders"sv;
 	text_t collection_options_custom_folders_help =
-		u8"Prefix the folder name with minus '-' to exclude it from searches."sv;
+		u8"Prefix the folder name with minus '-' to exclude it from the collection. You exclude folders by the full path -c:\\collection\\secret, with a folder name -secret, or with a wildcard -secret*."sv;
 	
 	text_t collection_options_custom_locations_help =
 		u8"Folders can be drives, folders, network shares or device labels. Labels are useful for removable or network devices where mapped drive letters can change."sv;

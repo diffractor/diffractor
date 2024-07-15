@@ -216,7 +216,7 @@ public:
 	struct rename_t
 	{
 		std::u8string name_template;
-		std::u8string start_index;
+		std::u8string start_seq;
 	} rename;
 
 	struct index_t

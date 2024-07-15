@@ -1480,8 +1480,7 @@ platform::file_op_result platform::move_file(const df::folder_path existing, con
 	                                   MOVEFILE_COPY_ALLOWED));
 }
 
-platform::file_op_result platform::replace_file(const df::file_path destination, const df::file_path existing,
-                                                const bool create_originals)
+platform::file_op_result platform::replace_file(const df::file_path destination, const df::file_path existing, const bool create_originals)
 {
 	df::file_path backup;
 

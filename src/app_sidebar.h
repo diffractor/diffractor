@@ -9,6 +9,7 @@
 
 #pragma once
 #include "ui_controls.h"
+#include "app_util.h"
 
 struct plasma
 {
@@ -393,21 +394,6 @@ public:
 		}
 
 		icon = drive_icon(_drive.type);
-	}
-
-	static icon_index drive_icon(platform::drive_type d)
-	{
-		switch (d)
-		{
-		case platform::drive_type::removable: return icon_index::usb;
-		case platform::drive_type::fixed: return icon_index::hard_drive;
-		case platform::drive_type::remote: return icon_index::network;
-		case platform::drive_type::cdrom: return icon_index::disk;
-		case platform::drive_type::device: return icon_index::disk;
-		default: ;
-		}
-
-		return icon_index::hard_drive;
 	}
 
 	void render(ui::draw_context& dc, const pointi element_offset) const override

@@ -1195,6 +1195,7 @@
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">pch.h</PrecompiledHeaderFile>
     </ClCompile>
+    <ClCompile Include="app_util.cpp" />
     <ClCompile Include="av_stubs.cpp">
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|x64'">pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">pch.h</PrecompiledHeaderFile>
@@ -1535,6 +1536,7 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
+    <None Include="app_util.h" />
     <None Include="Res\bg.png" />
     <None Include="res\blue_circle_16.png" />
     <None Include="res\blue_circle_50.png" />

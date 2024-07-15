@@ -204,6 +204,9 @@
     <ClCompile Include="files_commodore.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="app_util.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="app_commands.h">
@@ -508,5 +511,6 @@
     <None Include="shaders\common.hlsli">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="app_util.h" />
   </ItemGroup>
 </Project>

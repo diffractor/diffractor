@@ -9,6 +9,7 @@
 
 #pragma once
 #include "ui_elements.h"
+#include "ui_dialog.h"
 
 
 struct folder_scan_item;

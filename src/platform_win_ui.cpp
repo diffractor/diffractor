@@ -6367,7 +6367,7 @@ public:
 		{
 			PostMessage(m_hWnd, WM_SIZE, 0, MAKELONG(_extent.cx, _extent.cy));
 		}*/
-		if (_draw_ctx && !_extent.is_empty() && IsWindow(m_hWnd))
+		if (_draw_ctx && IsWindow(m_hWnd))
 		{
 			/*MSG m;
 

@@ -1421,7 +1421,7 @@ std::vector<folder_scan_item> index_state::scan_items(const df::index_roots& roo
 		const auto folder_path = folders_to_scan.back();
 		folders_to_scan.pop_back();
 
-		if (!roots.excludes.contains(folder_path))
+		if (!is_excluded(roots, folder_path))
 		{
 			const auto node = validate_folder(folder_path, true, now);
 
@@ -2025,7 +2025,7 @@ void index_state::index_folders(df::cancel_token token)
 		auto folder_path = folders.back();
 		folders.pop_back();
 
-		if (!roots.excludes.contains(folder_path))
+		if (!is_excluded(roots, folder_path))
 		{
 			const auto node = validate_folder(folder_path, true, now);
 			node.folder->is_indexed = true;
@@ -2043,7 +2043,7 @@ void index_state::index_folders(df::cancel_token token)
 			for (const auto& sub_folder : node.folder->folders)
 			{
 				const auto sub_folder_path = folder_path.combine(sub_folder->name);
-				const auto is_excluded = roots.excludes.contains(sub_folder_path);
+				const auto is_excluded = df::is_excluded(roots, sub_folder_path);
 
 				if (!unique_folder_paths.contains(sub_folder_path) &&
 					folders.size() < max_folders_to_index &&

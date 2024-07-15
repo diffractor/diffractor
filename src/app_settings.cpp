@@ -291,7 +291,7 @@ settings_t::settings_t()
 	search.path[5] = known_path(platform::known_folder::video).text();
 
 	rename.name_template = u8"Item ###"sv;
-	rename.start_index = u8"1"sv;
+	rename.start_seq = u8"1"sv;
 
 	set_copyright_credit = false;
 	set_copyright_source = false;
@@ -613,7 +613,7 @@ void settings_t::read(const platform::setting_file_ptr& store_in)
 	store.read({}, s_first_time, first_run_ever);
 
 	store.read(s_rename, s_template, rename.name_template);
-	store.read(s_rename, s_start, rename.start_index);
+	store.read(s_rename, s_start, rename.start_seq);
 
 	store.read(s_import, s_source_path, import.source_path);
 	store.read(s_import, s_source_filter, import.source_filter);
@@ -756,7 +756,7 @@ void settings_t::write(const platform::setting_file_ptr& store_in) const
 	store.write({}, s_instantiations, instantiations);
 
 	store.write(s_rename, s_template, rename.name_template);
-	store.write(s_rename, s_start, rename.start_index);
+	store.write(s_rename, s_start, rename.start_seq);
 
 	store.write(s_import, s_source_path, import.source_path);
 	store.write(s_import, s_source_filter, import.source_filter);
