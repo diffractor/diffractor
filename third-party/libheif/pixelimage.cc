@@ -25,6 +25,7 @@
 #include <cassert>
 #include <cstring>
 #include <utility>
+#include <limits>
 
 
 heif_chroma chroma_from_subsampling(int h, int v)
@@ -417,7 +418,7 @@ void HeifPixelImage::fill_new_plane(heif_channel dst_channel, uint16_t value, in
 
   int num_interleaved = num_interleaved_pixels_per_plane(m_chroma);
 
-  if (bpp == 8) {
+  if (bpp <= 8) {
     uint8_t* dst;
     int dst_stride = 0;
     dst = get_plane(dst_channel, &dst_stride);
@@ -713,9 +714,9 @@ Error HeifPixelImage::fill_RGB_16bit(uint16_t r, uint16_t g, uint16_t b, uint16_
                    "Can currently only fill images with 8 bits per pixel");
     }
 
-    int h = plane.m_height;
+    size_t h = plane.m_height;
 
-    int stride = plane.stride;
+    size_t stride = plane.stride;
     uint8_t* data = plane.mem;
 
     uint16_t val16;
@@ -741,14 +742,42 @@ Error HeifPixelImage::fill_RGB_16bit(uint16_t r, uint16_t g, uint16_t b, uint16_
 
     auto val8 = static_cast<uint8_t>(val16 >> 8U);
 
-    memset(data, val8, stride * h);
+
+    // memset() even when h * stride > sizeof(size_t)
+
+    if (std::numeric_limits<size_t>::max() / stride > h) {
+      // can fill in one step
+      memset(data, val8, stride * h);
+    }
+    else {
+      // fill line by line
+      auto* p = data;
+
+      for (size_t y=0;y<h;y++) {
+        memset(p, val8, stride);
+        p += stride;
+      }
+    }
   }
 
   return Error::Ok;
 }
 
 
-Error HeifPixelImage::overlay(std::shared_ptr<HeifPixelImage>& overlay, int dx, int dy)
+uint32_t negate_negative_int32(int32_t x)
+{
+  assert(x <= 0);
+
+  if (x == INT32_MIN) {
+    return static_cast<uint32_t>(INT32_MAX) + 1;
+  }
+  else {
+    return static_cast<uint32_t>(-x);
+  }
+}
+
+
+Error HeifPixelImage::overlay(std::shared_ptr<HeifPixelImage>& overlay, int32_t dx, int32_t dy)
 {
   std::set<enum heif_channel> channels = overlay->get_channel_set();
 
@@ -773,70 +802,88 @@ Error HeifPixelImage::overlay(std::shared_ptr<HeifPixelImage>& overlay, int dx, 
     in_p = overlay->get_plane(channel, &in_stride);
     out_p = get_plane(channel, &out_stride);
 
-    int in_w = overlay->get_width(channel);
-    int in_h = overlay->get_height(channel);
-    assert(in_w >= 0);
-    assert(in_h >= 0);
+    uint32_t in_w = overlay->get_width(channel);
+    uint32_t in_h = overlay->get_height(channel);
 
-    int out_w = get_width(channel);
-    int out_h = get_height(channel);
-    assert(out_w >= 0);
-    assert(out_h >= 0);
+    uint32_t out_w = get_width(channel);
+    uint32_t out_h = get_height(channel);
 
-    // overlay image extends past the right border -> cut width for copy
-    if (dx + in_w > out_w) {
-      in_w = out_w - dx;
+    // top-left points where to start copying in source and destination
+    uint32_t in_x0;
+    uint32_t in_y0;
+    uint32_t out_x0;
+    uint32_t out_y0;
+
+    if (dx > 0 && static_cast<uint32_t>(dx) >= out_w) {
+      // the overlay image is completely outside the right border -> skip overlaying
+      return Error::Ok;
+    }
+    else if (dx < 0 && in_w <= negate_negative_int32(dx)) {
+      // the overlay image is completely outside the left border -> skip overlaying
+      return Error::Ok;
     }
 
-    // overlay image extends past the bottom border -> cut height for copy
-    if (dy + in_h > out_h) {
-      in_h = out_h - dy;
-    }
-
-    // overlay image completely outside right or bottom border -> do not copy
-    if (in_w < 0 || in_h < 0) {
-      return Error(heif_error_Invalid_input,
-                   heif_suberror_Overlay_image_outside_of_canvas,
-                   "Overlay image outside of right or bottom canvas border");
-    }
-
-
-    // calculate top-left point where to start copying in source and destination
-    int in_x0 = 0;
-    int in_y0 = 0;
-    int out_x0 = dx;
-    int out_y0 = dy;
-
-    // overlay image started outside of left border
-    // -> move start into the image and start at left output column
     if (dx < 0) {
-      in_x0 = -dx;
+      // overlay image started partially outside of left border
+
+      in_x0 = negate_negative_int32(dx);
       out_x0 = 0;
+      in_w = in_w - in_x0; // in_x0 < in_w because in_w > -dx = in_x0
+    }
+    else {
+      in_x0 = 0;
+      out_x0 = static_cast<uint32_t>(dx);
     }
 
-    // overlay image started outside of top border
-    // -> move start into the image and start at top output row
+    // we know that dx >= 0 && dx < out_w
+
+    if (static_cast<uint32_t>(dx) > UINT32_MAX - in_w ||
+        dx + in_w > out_w) {
+      // overlay image extends partially outside of right border
+
+      in_w = out_w - static_cast<uint32_t>(dx); // we know that dx < out_w from first condition
+    }
+
+
+    if (dy > 0 && static_cast<uint32_t>(dy) >= out_h) {
+      // the overlay image is completely outside the bottom border -> skip overlaying
+      return Error::Ok;
+    }
+    else if (dy < 0 && in_h <= negate_negative_int32(dy)) {
+      // the overlay image is completely outside the top border -> skip overlaying
+      return Error::Ok;
+    }
+
     if (dy < 0) {
-      in_y0 = -dy;
+      // overlay image started partially outside of top border
+
+      in_y0 = negate_negative_int32(dy);
       out_y0 = 0;
+      in_h = in_h - in_y0; // in_y0 < in_h because in_h > -dy = in_y0
+    }
+    else {
+      in_y0 = 0;
+      out_y0 = static_cast<uint32_t>(dy);
     }
 
-    // if overlay image is completely outside at left border, do not copy anything.
-    if (in_w <= in_x0 ||
-        in_h <= in_y0) {
-      return Error(heif_error_Invalid_input,
-                   heif_suberror_Overlay_image_outside_of_canvas,
-                   "Overlay image outside of left or top canvas border");
+    // we know that dy >= 0 && dy < out_h
+
+    if (static_cast<uint32_t>(dy) > UINT32_MAX - in_h ||
+        dy + in_h > out_h) {
+      // overlay image extends partially outside of bottom border
+
+      in_h = out_h - static_cast<uint32_t>(dy); // we know that dy < out_h from first condition
     }
 
-    for (int y = in_y0; y < in_h; y++) {
+
+    for (uint32_t y = in_y0; y < in_h; y++) {
       if (!has_alpha) {
         memcpy(out_p + out_x0 + (out_y0 + y - in_y0) * out_stride,
                in_p + in_x0 + y * in_stride,
                in_w - in_x0);
       }
       else {
-        for (int x = in_x0; x < in_w; x++) {
+        for (uint32_t x = in_x0; x < in_w; x++) {
           uint8_t* outptr = &out_p[out_x0 + (out_y0 + y - in_y0) * out_stride + x];
           uint8_t in_val = in_p[in_x0 + y * in_stride + x];
           uint8_t alpha_val = alpha_p[in_x0 + y * in_stride + x];

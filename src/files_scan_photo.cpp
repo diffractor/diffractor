@@ -250,6 +250,7 @@ static void scan_webp(file_scan_result& result, read_stream& s)
 
 	result.width = parts.width;
 	result.height = parts.height;
+	result.pixel_format = parts.pixel_format;
 	result.metadata = parts.metadata;
 	result.success = true;
 }

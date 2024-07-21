@@ -266,7 +266,7 @@ static df::index_file_item make_index_file_info(const df::date_t date)
 
 static std::atomic_int test_version = 0;
 static df::cancel_token test_token(test_version);
-constexpr int expected_cached_item_count = 36;
+constexpr int expected_cached_item_count = 37;
 
 static df::item_element_ptr load_item(index_state& index, const df::file_path path, bool load_thumb)
 {
@@ -3464,6 +3464,34 @@ static void should_scan_mod()
 	assert_equal(48000, props->audio_sample_rate, u8"encoder"sv, file_name);
 }
 
+static void should_scan_heic()
+{
+	const auto file_name = u8"melnik.heic"sv;
+	const auto load_path = test_files_folder.combine_file(file_name);
+
+	files ff;
+	const auto actual = ff_scan_file(ff, load_path);
+	const auto props = actual.to_props();
+
+	assert_equal(4000, props->width, u8"width"sv, file_name);
+	assert_equal(2252, props->height, u8"height"sv, file_name);
+	assert_equal(u8"yuv420"sv, props->pixel_format, u8"pixel_format"sv, file_name);
+}
+
+static void should_scan_webp()
+{
+	const auto file_name = u8"lake.webp"sv;
+	const auto load_path = test_files_folder.combine_file(file_name);
+
+	files ff;
+	const auto actual = ff_scan_file(ff, load_path);
+	const auto props = actual.to_props();
+
+	assert_equal(550, props->width, u8"width"sv, file_name);
+	assert_equal(368, props->height, u8"height"sv, file_name);
+	assert_equal(u8"yuv420"sv, props->pixel_format, u8"pixel_format"sv, file_name);
+}
+
 static void should_format_plural_text()
 {
 	// TODO
@@ -3577,6 +3605,8 @@ void test_view::register_tests()
 	register_test(u8"Should scan mp4 metadata"s, should_scan_mp4);
 	register_test(u8"Should scan raw metadata"s, should_scan_raw);
 	register_test(u8"Should scan raw metadata"s, should_scan_mod);
+	register_test(u8"Should scan webp metadata"s, should_scan_webp);
+	register_test(u8"Should scan heif metadata"s, should_scan_heic);
 	register_test(u8"Should parse Xmp"s, should_parse_xmp);
 	register_test(u8"Should merge Xmp sidecar"s, should_merge_xmp_sidecar);
 	register_test(u8"Should replace tokens"s, should_replace_tokens);
@@ -3802,12 +3832,12 @@ void test_view::register_tests()
 
 	register_should_search(u8"@video"sv, 5, 5, 5);
 	register_should_search(u8"@audio"sv, 5, 5, 4);
-	register_should_search(u8"@photo"sv, 26, 26, 25);
+	register_should_search(u8"@photo"sv, 27, 27, 26);
 	register_should_search(u8"@commodore"sv, 1, 1, 0);
 	register_should_search(u8"@archive"sv, 1, 1, 1);
 
-	register_should_search(u8"@ photo"sv, 26, 26, 25);
-	register_should_search(u8"@   photo"sv, 26, 26, 25);
+	register_should_search(u8"@ photo"sv, 27, 27, 26);
+	register_should_search(u8"@   photo"sv, 27, 27, 26);
 
 	register_should_search(u8"key1"sv, 4, 4, 4);
 	register_should_search(u8"Tag:key1"sv, 4, 4, 4);
@@ -3826,11 +3856,11 @@ void test_view::register_tests()
 	register_should_search(u8"(< Megapixels:1.0 > Megapixels:0.5)"sv, 7, 7, 7);
 	register_should_search(u8"Megapixels:2"sv, 1, 1, 1);
 	register_should_search(u8"pixels:2"sv, 1, 1, 1);
-	register_should_search(u8"> pixels:1"sv, 9, 9, 8);
-	register_should_search(u8">pixels:1"sv, 9, 9, 8);
-	register_should_search(u8">pixels :1"sv, 9, 9, 8);
-	register_should_search(u8">pixels: 1"sv, 9, 9, 8);
-	register_should_search(u8"> pixels : 1"sv, 9, 9, 8);
+	register_should_search(u8"> pixels:1"sv, 10, 10, 9);
+	register_should_search(u8">pixels:1"sv, 10, 10, 9);
+	register_should_search(u8">pixels :1"sv, 10, 10, 9);
+	register_should_search(u8">pixels: 1"sv, 10, 10, 9);
+	register_should_search(u8"> pixels : 1"sv, 10, 10, 9);
 	register_should_search(u8"2mp"sv, 1, 1, 1);
 	register_should_search(u8"6000x4000"sv, 1, 1, 1);
 
@@ -3840,12 +3870,12 @@ void test_view::register_tests()
 	register_should_search(u8"f/4.0"sv, 0, 0, 0);
 	register_should_search(u8"f/6.3"sv, 5, 5, 5);
 
-	register_should_search(u8"with:Exposure @photo"sv, 14, 14, 13);
-	register_should_search(u8"with: Exposure @ photo"sv, 14, 14, 13);
+	register_should_search(u8"with:Exposure @photo"sv, 15, 15, 14);
+	register_should_search(u8"with: Exposure @ photo"sv, 15, 15, 14);
 	register_should_search(u8"without:Exposure @photo"sv, 12, 12, 12);
 	register_should_search(u8"without:Exposure"sv, 25, 25, 23);
-	register_should_search(u8"with:Exposure"sv, 15, 15, 14);
-	register_should_search(u8"with: Exposure"sv, 15, 15, 14);
+	register_should_search(u8"with:Exposure"sv, 16, 16, 15);
+	register_should_search(u8"with: Exposure"sv, 16, 16, 15);
 	register_should_search(u8"ExposureTime:1/20s"sv, 1, 1, 1);
 	register_should_search(u8"ExposureTime: 1/20s"sv, 1, 1, 1);
 	register_should_search(u8"1/20s"sv, 1, 1, 1);
@@ -3866,7 +3896,7 @@ void test_view::register_tests()
 	register_should_search(u8"size:0.3mb"sv, 4, 4, 4);
 	register_should_search(u8"size:14kb"sv, 1, 1, 1);
 	register_should_search(u8"size:5.1mb"sv, 1, 1, 1);
-	register_should_search(u8">size:1mb"sv, 9, 9, 8);
+	register_should_search(u8">size:1mb"sv, 10, 10, 9);
 
 	register_should_search(u8"key1"sv, 4, 4, 4);
 	register_should_search(u8"dog london"sv, 1, 1, 1);
@@ -3901,8 +3931,8 @@ void test_view::register_tests()
 	register_should_search(u8"d64"sv, 1, 1, 0);
 	register_should_search(u8"ace -retro"sv, 1, 1, 1);		
 	register_should_search(u8"jpg"sv, 15, 15, 15);
-	register_should_search(u8"-jpg"sv, 28, 27, 26);
-	register_should_search(u8"-ext:jpg"sv, 28, 27, 26);
+	register_should_search(u8"-jpg"sv, 29, 28, 27);
+	register_should_search(u8"-ext:jpg"sv, 29, 28, 27);
 
 
 	// Dont run slow tests in debug
@@ -3914,6 +3944,8 @@ void test_view::register_tests()
 	register_test(u8"Should not crash on GIF"s, [] { should_not_crash(u8"tuesday.gif"sv); });
 	register_test(u8"Should not crash on TIFF"s, [] { should_not_crash(u8"small.tif"sv); });
 	register_test(u8"Should not crash on PNG"s, [] { should_not_crash(u8"cube.png"sv); });
+	register_test(u8"Should not crash on WEBP"s, [] { should_not_crash(u8"lake.webp"sv); });
+	// register_test(u8"Should not crash on HEIC"s, [] { should_not_crash(u8"melnik.heic"sv); }); // very slow
 	//register_test(u8"Should not crash on PSD"sv, [] { should_not_crash(u8"cherrys.psd"sv); });
 
 #endif

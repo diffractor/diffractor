@@ -467,6 +467,7 @@ struct webp_parts
 {
 	int width = 0;
 	int height = 0;
+	str::cached pixel_format;
 
 	metadata_parts metadata;
 	std::vector<ui::surface_ptr> frames;

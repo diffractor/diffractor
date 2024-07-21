@@ -20,12 +20,13 @@
 
 #include "libheif/heif.h"
 #include "libheif/heif_plugin.h"
-#include "libheif/common_utils.h"
+#include "common_utils.h"
 #include <algorithm>
 #include <cstring>
 #include <cassert>
 #include <vector>
 #include <string>
+#include <thread>
 #include <memory>
 #include "encoder_aom.h"
 
@@ -237,11 +238,17 @@ static void aom_init_parameters()
   p->version = 2;
   p->name = kParam_threads;
   p->type = heif_encoder_parameter_type_integer;
-  p->integer.default_value = 4;
   p->has_default = true;
   p->integer.have_minimum_maximum = true;
   p->integer.minimum = 1;
-  p->integer.maximum = 16;
+  p->integer.maximum = 64;
+  int threads = static_cast<int>(std::thread::hardware_concurrency());
+  if (threads == 0) {
+    // Could not autodetect, use previous default value.
+    threads = 4;
+  }
+  threads = std::min(threads, p->integer.maximum);
+  p->integer.default_value = threads;
   p->integer.valid_values = NULL;
   p->integer.num_valid_values = 0;
   d[i++] = p++;
@@ -660,6 +667,7 @@ struct heif_error aom_get_parameter_string(void* encoder_raw, const char* name,
         assert(false);
         return heif_error_invalid_parameter_value;
     }
+    return heif_error_ok;
   }
   else if (strcmp(name, kParam_tune) == 0) {
     switch (encoder->tune) {
@@ -673,6 +681,7 @@ struct heif_error aom_get_parameter_string(void* encoder_raw, const char* name,
         assert(false);
         return heif_error_invalid_parameter_value;
     }
+    return heif_error_ok;
   }
 
   return heif_error_unsupported_parameter;

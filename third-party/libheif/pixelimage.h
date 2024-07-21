@@ -22,7 +22,7 @@
 #ifndef LIBHEIF_IMAGE_H
 #define LIBHEIF_IMAGE_H
 
-#include "heif.h"
+//#include "heif.h"
 #include "error.h"
 #include "nclx.h"
 
@@ -109,7 +109,7 @@ public:
 
   Error fill_RGB_16bit(uint16_t r, uint16_t g, uint16_t b, uint16_t a);
 
-  Error overlay(std::shared_ptr<HeifPixelImage>& overlay, int dx, int dy);
+  Error overlay(std::shared_ptr<HeifPixelImage>& overlay, int32_t dx, int32_t dy);
 
   Error scale_nearest_neighbor(std::shared_ptr<HeifPixelImage>& output, int width, int height) const;
 

@@ -22,7 +22,8 @@
 #define LIBHEIF_BOX_H
 
 #include <cstdint>
-#include "libheif/common_utils.h"
+#include "common_utils.h"
+#include "libheif/heif.h"
 #include "libheif/heif_properties.h"
 #include <cinttypes>
 #include <cstddef>
@@ -36,7 +37,6 @@
 #include <utility>
 
 #include "error.h"
-#include "heif.h"
 #include "logging.h"
 #include "bitstream.h"
 
@@ -92,6 +92,10 @@ public:
 
   bool is_valid() const;
 
+  double to_double() const {
+    return numerator / (double)denominator;
+  }
+
   int32_t numerator = 0;
   int32_t denominator = 1;
 };
@@ -126,6 +130,12 @@ public:
   std::string get_type_string() const;
 
   void set_short_type(uint32_t type) { m_type = type; }
+
+
+  // should only be called if get_short_type == fourcc("uuid")
+  std::vector<uint8_t> get_uuid_type() const;
+
+  void set_uuid_type(const std::vector<uint8_t>&);
 
 
   Error parse_header(BitstreamRange& range);
@@ -194,6 +204,11 @@ public:
     return (int) m_children.size() - 1;
   }
 
+  virtual bool operator==(const Box& other) const;
+
+  static bool equal(const std::shared_ptr<Box>& box1, const std::shared_ptr<Box>& box2);
+
+
 protected:
   virtual Error parse(BitstreamRange& range);
 
@@ -246,11 +261,37 @@ protected:
 
   Error write_header(StreamWriter&, size_t total_size, bool data64bit = false) const override;
 
+  Error unsupported_version_error(const char* box) const;
 
 private:
   uint8_t m_version = 0;
   uint32_t m_flags = 0;
 };
+
+
+class Box_other : public Box
+{
+public:
+  Box_other(uint32_t short_type)
+  {
+    set_short_type(short_type);
+  }
+
+  const std::vector<uint8_t>& get_raw_data() const { return m_data; }
+
+  void set_raw_data(const std::vector<uint8_t>& data) { m_data = data; }
+
+  Error write(StreamWriter& writer) const override;
+
+  std::string dump(Indent&) const override;
+
+protected:
+  Error parse(BitstreamRange& range) override;
+
+  std::vector<uint8_t> m_data;
+};
+
+
 
 
 class Box_ftyp : public Box
@@ -459,6 +500,8 @@ public:
 
   void set_item_name(const std::string& name) { m_item_name = name; }
 
+  const std::string& get_item_name() const { return m_item_name; }
+
   const std::string& get_content_type() const { return m_content_type; }
 
   const std::string& get_content_encoding() const { return m_content_encoding; }
@@ -472,6 +515,8 @@ public:
   Error write(StreamWriter& writer) const override;
 
   const std::string& get_item_uri_type() const { return m_item_uri_type; }
+
+  void set_item_uri_type(const std::string& uritype) { m_item_uri_type = uritype; }
 
 protected:
   Error parse(BitstreamRange& range) override;
@@ -536,6 +581,8 @@ public:
     set_short_type(fourcc("ipco"));
   }
 
+  int find_or_append_child_box(const std::shared_ptr<Box>& box);
+
   Error get_properties_for_item_ID(heif_item_id itemID,
                                    const std::shared_ptr<class Box_ipma>&,
                                    std::vector<std::shared_ptr<Box>>& out_properties) const;
@@ -576,6 +623,8 @@ public:
   std::string dump(Indent&) const override;
 
   Error write(StreamWriter& writer) const override;
+
+  bool operator==(const Box& other) const override;
 
 protected:
   Error parse(BitstreamRange& range) override;
@@ -719,6 +768,9 @@ public:
   int top_rounded(int image_height) const;   // first row
   int bottom_rounded(int image_height) const; // last row included in the cropped image
 
+  double left(int image_width) const;
+  double top(int image_height) const;
+
   int get_width_rounded() const;
 
   int get_height_rounded() const;
@@ -816,17 +868,57 @@ public:
 
 protected:
   Error parse(BitstreamRange& range) override;
+};
 
-  struct EntityGroup
-  {
-    FullBox header;
-    uint32_t group_id;
 
-    std::vector<heif_item_id> entity_ids;
+class Box_EntityToGroup : public FullBox
+{
+public:
+  std::string dump(Indent&) const override;
+
+protected:
+  uint32_t group_id;
+  std::vector<heif_item_id> entity_ids;
+
+  Error parse(BitstreamRange& range) override;
+};
+
+
+class Box_ster : public Box_EntityToGroup
+{
+public:
+  std::string dump(Indent&) const override;
+
+  heif_item_id get_left_image() const { return entity_ids[0]; }
+  heif_item_id get_right_image() const { return entity_ids[1]; }
+
+protected:
+
+  Error parse(BitstreamRange& range) override;
+};
+
+
+class Box_pymd : public Box_EntityToGroup
+{
+public:
+  std::string dump(Indent&) const override;
+
+protected:
+  uint16_t tile_size_x;
+  uint16_t tile_size_y;
+
+  struct LayerInfo {
+    uint16_t layer_binning;
+    uint16_t tiles_in_layer_row_minus1;
+    uint16_t tiles_in_layer_column_minus1;
   };
 
-  std::vector<EntityGroup> m_entity_groups;
+  std::vector<LayerInfo> m_layer_infos;
+
+  Error parse(BitstreamRange& range) override;
 };
+
+
 
 
 class Box_dinf : public Box
@@ -964,6 +1056,152 @@ public:
 protected:
   Error parse(BitstreamRange& range) override;
 };
+
+
+class Box_cmin : public FullBox
+{
+public:
+  Box_cmin()
+  {
+    set_short_type(fourcc("cmin"));
+  }
+
+  struct AbsoluteIntrinsicMatrix;
+
+  struct RelativeIntrinsicMatrix
+  {
+    double focal_length_x = 0;
+    double principal_point_x = 0;
+    double principal_point_y = 0;
+
+    bool is_anisotropic = false;
+    double focal_length_y = 0;
+    double skew = 0;
+
+    void compute_focal_length(int image_width, int image_height,
+                              double& out_focal_length_x, double& out_focal_length_y) const;
+
+    void compute_principal_point(int image_width, int image_height,
+                                 double& out_principal_point_x, double& out_principal_point_y) const;
+
+    struct AbsoluteIntrinsicMatrix to_absolute(int image_width, int image_height) const;
+  };
+
+  struct AbsoluteIntrinsicMatrix
+  {
+    double focal_length_x;
+    double focal_length_y;
+    double principal_point_x;
+    double principal_point_y;
+    double skew = 0;
+
+    void apply_clap(const Box_clap* clap, int image_width, int image_height) {
+      principal_point_x -= clap->left(image_width);
+      principal_point_y -= clap->top(image_height);
+    }
+
+    void apply_imir(const Box_imir* imir, int image_width, int image_height) {
+      switch (imir->get_mirror_direction()) {
+        case heif_transform_mirror_direction_horizontal:
+          focal_length_x *= -1;
+          skew *= -1;
+          principal_point_x = image_width - 1 - principal_point_x;
+          break;
+        case heif_transform_mirror_direction_vertical:
+          focal_length_y *= -1;
+          principal_point_y = image_height - 1 - principal_point_y;
+          break;
+        case heif_transform_mirror_direction_invalid:
+          break;
+      }
+    }
+  };
+
+  std::string dump(Indent&) const override;
+
+  RelativeIntrinsicMatrix get_intrinsic_matrix() const { return m_matrix; }
+
+  void set_intrinsic_matrix(RelativeIntrinsicMatrix matrix);
+
+protected:
+  Error parse(BitstreamRange& range) override;
+
+  Error write(StreamWriter& writer) const override;
+
+private:
+  RelativeIntrinsicMatrix m_matrix;
+
+  uint32_t m_denominatorShift = 0;
+  uint32_t m_skewDenominatorShift = 0;
+};
+
+
+class Box_cmex : public FullBox
+{
+public:
+  Box_cmex()
+  {
+    set_short_type(fourcc("cmex"));
+  }
+
+  struct ExtrinsicMatrix
+  {
+    // in micrometers (um)
+    int32_t pos_x = 0;
+    int32_t pos_y = 0;
+    int32_t pos_z = 0;
+
+    bool rotation_as_quaternions = true;
+    bool orientation_is_32bit = false;
+
+    double quaternion_x = 0;
+    double quaternion_y = 0;
+    double quaternion_z = 0;
+    double quaternion_w = 1.0;
+
+    // rotation angle in degrees
+    double rotation_yaw = 0;   //  [-180 ; 180)
+    double rotation_pitch = 0; //  [-90 ; 90]
+    double rotation_roll = 0;  //  [-180 ; 180)
+
+    uint32_t world_coordinate_system_id = 0;
+
+    // Returns rotation matrix in row-major order.
+    std::array<double,9> calculate_rotation_matrix() const;
+  };
+
+  std::string dump(Indent&) const override;
+
+  ExtrinsicMatrix get_extrinsic_matrix() const { return m_matrix; }
+
+  Error set_extrinsic_matrix(ExtrinsicMatrix matrix);
+
+protected:
+  Error parse(BitstreamRange& range) override;
+
+  Error write(StreamWriter& writer) const override;
+
+private:
+  ExtrinsicMatrix m_matrix;
+
+  bool m_has_pos_x = false;
+  bool m_has_pos_y = false;
+  bool m_has_pos_z = false;
+  bool m_has_orientation = false;
+  bool m_has_world_coordinate_system_id = false;
+
+  enum Flags
+  {
+    pos_x_present = 0x01,
+    pos_y_present = 0x02,
+    pos_z_present = 0x04,
+    orientation_present = 0x08,
+    rot_large_field_size = 0x10,
+    id_present = 0x20
+  };
+};
+
+
 
 
 /**

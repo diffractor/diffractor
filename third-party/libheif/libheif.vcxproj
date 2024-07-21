@@ -27,9 +27,23 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="avif.cc" />
+    <ClCompile Include="api\libheif\heif.cc" />
+    <ClCompile Include="api\libheif\heif_experimental.cc" />
+    <ClCompile Include="api\libheif\heif_items.cc" />
+    <ClCompile Include="api\libheif\heif_plugin.cc" />
+    <ClCompile Include="api\libheif\heif_properties.cc" />
+    <ClCompile Include="api\libheif\heif_regions.cc" />
     <ClCompile Include="bitstream.cc" />
     <ClCompile Include="box.cc" />
+    <ClCompile Include="codecs\avc.cc" />
+    <ClCompile Include="codecs\avif.cc" />
+    <ClCompile Include="codecs\hevc.cc" />
+    <ClCompile Include="codecs\jpeg.cc" />
+    <ClCompile Include="codecs\jpeg2000.cc" />
+    <ClCompile Include="codecs\mask_image.cc" />
+    <ClCompile Include="codecs\uncompressed_box.cc" />
+    <ClCompile Include="codecs\uncompressed_image.cc" />
+    <ClCompile Include="codecs\vvc.cc" />
     <ClCompile Include="color-conversion\alpha.cc" />
     <ClCompile Include="color-conversion\chroma_sampling.cc" />
     <ClCompile Include="color-conversion\colorconversion.cc" />
@@ -40,20 +54,14 @@
     <ClCompile Include="color-conversion\rgb2yuv_sharp.cc" />
     <ClCompile Include="color-conversion\yuv2rgb.cc" />
     <ClCompile Include="common_utils.cc" />
+    <ClCompile Include="compression_brotli.cc" />
+    <ClCompile Include="compression_zlib.cc" />
     <ClCompile Include="context.cc" />
     <ClCompile Include="error.cc" />
     <ClCompile Include="exif.cc" />
     <ClCompile Include="file.cc" />
-    <ClCompile Include="heif.cc" />
-    <ClCompile Include="heif_plugin.cc" />
-    <ClCompile Include="heif_properties.cc" />
-    <ClCompile Include="heif_regions.cc" />
-    <ClCompile Include="hevc.cc" />
     <ClCompile Include="init.cc" />
-    <ClCompile Include="jpeg.cc" />
-    <ClCompile Include="jpeg2000.cc" />
-    <ClCompile Include="mask_image.cc" />
-    <ClCompile Include="metadata_compression.cc" />
+    <ClCompile Include="logging.cc" />
     <ClCompile Include="nclx.cc" />
     <ClCompile Include="pixelimage.cc" />
     <ClCompile Include="plugins\decoder_dav1d.cc" />
@@ -63,14 +71,30 @@
     <ClCompile Include="plugins\encoder_mask.cc" />
     <ClCompile Include="plugin_registry.cc" />
     <ClCompile Include="region.cc" />
-    <ClCompile Include="uncompressed_image.cc" />
-    <ClCompile Include="vvc.cc" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="api_structs.h" />
-    <ClInclude Include="avif.h" />
+    <ClInclude Include="api\libheif\api_structs.h" />
+    <ClInclude Include="api\libheif\heif.h" />
+    <ClInclude Include="api\libheif\heif_cxx.h" />
+    <ClInclude Include="api\libheif\heif_emscripten.h" />
+    <ClInclude Include="api\libheif\heif_experimental.h" />
+    <ClInclude Include="api\libheif\heif_items.h" />
+    <ClInclude Include="api\libheif\heif_plugin.h" />
+    <ClInclude Include="api\libheif\heif_properties.h" />
+    <ClInclude Include="api\libheif\heif_regions.h" />
+    <ClInclude Include="api\libheif\heif_version.h" />
     <ClInclude Include="bitstream.h" />
     <ClInclude Include="box.h" />
+    <ClInclude Include="codecs\avc.h" />
+    <ClInclude Include="codecs\avif.h" />
+    <ClInclude Include="codecs\hevc.h" />
+    <ClInclude Include="codecs\jpeg.h" />
+    <ClInclude Include="codecs\jpeg2000.h" />
+    <ClInclude Include="codecs\mask_image.h" />
+    <ClInclude Include="codecs\uncompressed.h" />
+    <ClInclude Include="codecs\uncompressed_box.h" />
+    <ClInclude Include="codecs\uncompressed_image.h" />
+    <ClInclude Include="codecs\vvc.h" />
     <ClInclude Include="color-conversion\alpha.h" />
     <ClInclude Include="color-conversion\chroma_sampling.h" />
     <ClInclude Include="color-conversion\colorconversion.h" />
@@ -81,24 +105,13 @@
     <ClInclude Include="color-conversion\rgb2yuv_sharp.h" />
     <ClInclude Include="color-conversion\yuv2rgb.h" />
     <ClInclude Include="common_utils.h" />
+    <ClInclude Include="compression.h" />
     <ClInclude Include="context.h" />
     <ClInclude Include="error.h" />
     <ClInclude Include="exif.h" />
     <ClInclude Include="file.h" />
-    <ClInclude Include="heif.h" />
-    <ClInclude Include="heif_cxx.h" />
-    <ClInclude Include="heif_emscripten.h" />
-    <ClInclude Include="heif_plugin.h" />
-    <ClInclude Include="heif_properties.h" />
-    <ClInclude Include="heif_regions.h" />
-    <ClInclude Include="heif_version.h" />
-    <ClInclude Include="hevc.h" />
     <ClInclude Include="init.h" />
-    <ClInclude Include="jpeg.h" />
-    <ClInclude Include="jpeg2000.h" />
     <ClInclude Include="logging.h" />
-    <ClInclude Include="mask_image.h" />
-    <ClInclude Include="metadata_compression.h" />
     <ClInclude Include="nclx.h" />
     <ClInclude Include="pixelimage.h" />
     <ClInclude Include="plugins\decoder_dav1d.h" />
@@ -109,8 +122,6 @@
     <ClInclude Include="plugin_registry.h" />
     <ClInclude Include="region.h" />
     <ClInclude Include="security_limits.h" />
-    <ClInclude Include="uncompressed_image.h" />
-    <ClInclude Include="vvc.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
@@ -224,13 +235,13 @@
     <ClCompile>
       <WarningLevel>Level1</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>HAVE_JPEG_DECODER;HAVE_FFMPEG_DECODER;HAVE_DAV1D;HAVE_LIBDE265;LIBHEIF_STATIC_BUILD;LIBDE265_STATIC_BUILD;WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS;LIBDE265_STATIC_BUILD;HAVE_CONFIG_H</PreprocessorDefinitions>
+      <PreprocessorDefinitions>HAVE_JPEG_DECODER;HAVE_FFMPEG_DECODER;HAVE_DAV1D;HAVE_LIBDE265;LIBHEIF_STATIC_BUILD;LIBDE265_STATIC_BUILD;_DEBUG;_LIB;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS;LIBDE265_STATIC_BUILD;HAVE_CONFIG_H</PreprocessorDefinitions>
       <ConformanceMode>false</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <FloatingPointModel>Fast</FloatingPointModel>
-      <AdditionalIncludeDirectories>$(SolutionDir)third-party\ffmpeg;$(SolutionDir)third-party\libjpeg;$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\libde265;$(SolutionDir)\third-party\dav1d\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)\api;$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\ffmpeg;$(SolutionDir)third-party\libjpeg;$(SolutionDir)third-party\libde265</AdditionalIncludeDirectories>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <OpenMPSupport>false</OpenMPSupport>
       <LanguageStandard>stdcpp20</LanguageStandard>
@@ -266,7 +277,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>HAVE_JPEG_DECODER;HAVE_FFMPEG_DECODER;HAVE_DAV1D;HAVE_LIBDE265;LIBHEIF_STATIC_BUILD;LIBDE265_STATIC_BUILD;WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS;LIBDE265_STATIC_BUILD;HAVE_CONFIG_H</PreprocessorDefinitions>
+      <PreprocessorDefinitions>HAVE_JPEG_DECODER;HAVE_FFMPEG_DECODER;HAVE_DAV1D;HAVE_LIBDE265;LIBHEIF_STATIC_BUILD;LIBDE265_STATIC_BUILD;NDEBUG;_LIB;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS;LIBDE265_STATIC_BUILD;HAVE_CONFIG_H</PreprocessorDefinitions>
       <ConformanceMode>false</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
@@ -276,7 +287,7 @@
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <OmitFramePointers>true</OmitFramePointers>
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
-      <AdditionalIncludeDirectories>$(SolutionDir)third-party\ffmpeg;$(SolutionDir)third-party\libjpeg;$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\libde265;$(SolutionDir)\third-party\dav1d\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)\api;$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\ffmpeg;$(SolutionDir)third-party\libjpeg;$(SolutionDir)third-party\libde265</AdditionalIncludeDirectories>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <OpenMPSupport>false</OpenMPSupport>
       <LanguageStandard>stdcpp20</LanguageStandard>
@@ -313,7 +324,7 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <FloatingPointModel>Fast</FloatingPointModel>
-      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\ffmpeg;$(SolutionDir)third-party\libjpeg;$(SolutionDir)third-party\libde265</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)\api;$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\ffmpeg;$(SolutionDir)third-party\libjpeg;$(SolutionDir)third-party\libde265</AdditionalIncludeDirectories>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <OpenMPSupport>false</OpenMPSupport>
       <LanguageStandard>stdcpp20</LanguageStandard>
@@ -350,13 +361,13 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>LIBHEIF_STATIC_BUILD; LIBDE265_STATIC_BUILD;_DEBUG;_LIB;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS;LIBDE265_STATIC_BUILD;HAVE_CONFIG_H</PreprocessorDefinitions>
+      <PreprocessorDefinitions>HAVE_JPEG_DECODER;HAVE_FFMPEG_DECODER;HAVE_DAV1D;HAVE_LIBDE265;LIBHEIF_STATIC_BUILD;LIBDE265_STATIC_BUILD;_DEBUG;_LIB;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS;LIBDE265_STATIC_BUILD;HAVE_CONFIG_H</PreprocessorDefinitions>
       <ConformanceMode>false</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <FloatingPointModel>Fast</FloatingPointModel>
-      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\libde265;$(SolutionDir)\third-party\dav1d\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)\api;$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\ffmpeg;$(SolutionDir)third-party\libjpeg;$(SolutionDir)third-party\libde265</AdditionalIncludeDirectories>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <OpenMPSupport>false</OpenMPSupport>
       <LanguageStandard>stdcpp20</LanguageStandard>
@@ -389,7 +400,7 @@
       <FavorSizeOrSpeed>Size</FavorSizeOrSpeed>
       <OmitFramePointers>true</OmitFramePointers>
       <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
-      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\ffmpeg;$(SolutionDir)third-party\libjpeg;$(SolutionDir)third-party\libde265</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)\api;$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\ffmpeg;$(SolutionDir)third-party\libjpeg;$(SolutionDir)third-party\libde265</AdditionalIncludeDirectories>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <OpenMPSupport>false</OpenMPSupport>
       <LanguageStandard>stdcpp20</LanguageStandard>
@@ -423,7 +434,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>LIBHEIF_STATIC_BUILD; LIBDE265_STATIC_BUILD;NDEBUG;_LIB;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS;LIBDE265_STATIC_BUILD;HAVE_CONFIG_H</PreprocessorDefinitions>
+      <PreprocessorDefinitions>HAVE_JPEG_DECODER;HAVE_FFMPEG_DECODER;HAVE_DAV1D;HAVE_LIBDE265;LIBHEIF_STATIC_BUILD;LIBDE265_STATIC_BUILD;NDEBUG;_LIB;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS;LIBDE265_STATIC_BUILD;HAVE_CONFIG_H</PreprocessorDefinitions>
       <ConformanceMode>false</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
@@ -433,7 +444,7 @@
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <OmitFramePointers>true</OmitFramePointers>
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
-      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\libde265;$(SolutionDir)\third-party\dav1d\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)\api;$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\ffmpeg;$(SolutionDir)third-party\libjpeg;$(SolutionDir)third-party\libde265</AdditionalIncludeDirectories>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <OpenMPSupport>false</OpenMPSupport>
       <LanguageStandard>stdcpp20</LanguageStandard>

@@ -33,7 +33,8 @@ ui::surface_ptr load_webp(df::cspan data)
 			wp_data.bytes = data.data;
 			wp_data.size = data.size;
 
-			const auto* const mux = WebPMuxCreate(&wp_data, 0);
+			auto* mux = WebPMuxCreate(&wp_data, 0);
+			df::releaser<WebPMux> mux_releaser(mux, [](auto* i) { WebPMuxDelete(i); });
 
 			if (mux)
 			{
@@ -78,17 +79,25 @@ webp_parts scan_webp(df::cspan data, bool decode_surface)
 		wp_data.size = data.size;
 
 		auto* const mux = WebPMuxCreate(&wp_data, 0);
+		df::releaser<WebPMux> mux_releaser(mux, [](auto* i) { WebPMuxDelete(i); });
 
 		if (mux)
 		{
 			uint32_t flags = 0;
-
 			WebPMuxGetFeatures(mux, &flags);
 
 			const bool animation = flags & ANIMATION_FLAG;
 			const bool icc = flags & ICCP_FLAG;
 			const bool exif = flags & EXIF_FLAG;
 			const bool xmp = flags & XMP_FLAG;
+			const bool has_alpha = flags & ALPHA_FLAG;
+
+			if (has_alpha) {
+				result.pixel_format = u8"rgba"_c; // Likely RGBA
+			}
+			else {
+				result.pixel_format = u8"yuv420"_c; // Likely YUV420
+			}
 
 			if (decode_surface)
 			{
@@ -190,8 +199,6 @@ webp_parts scan_webp(df::cspan data, bool decode_surface)
 					result.metadata.xmp.assign(chunk.bytes, chunk.bytes + chunk.size);
 				}
 			}
-
-			WebPMuxDelete(mux);
 		}
 	}
 
@@ -203,7 +210,8 @@ ui::image_ptr save_webp(const ui::const_surface_ptr& surface_in, const metadata_
 {
 	ui::image_ptr result;
 
-	WebPMux* mux = WebPMuxNew();
+	auto* mux = WebPMuxNew();
+	df::releaser<WebPMux> mux_releaser(mux, [](auto* i) { WebPMuxDelete(i); });
 
 	if (mux)
 	{
@@ -301,7 +309,6 @@ ui::image_ptr save_webp(const ui::const_surface_ptr& surface_in, const metadata_
 
 					if (err == WEBP_MUX_OK)
 					{
-						WebPMuxDelete(mux);
 						result = std::make_shared<ui::image>(df::cspan(output_data.bytes, output_data.size), dimensions,
 						                                     ui::image_format::WEBP, surface_in->orientation());
 						WebPDataClear(&output_data);

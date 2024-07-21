@@ -229,6 +229,23 @@ enum heif_suberror_code
   // Invalid specification of region item
   heif_suberror_Invalid_region_data = 136,
 
+  // Image has no ispe property
+  heif_suberror_No_ispe_property = 137,
+
+  heif_suberror_Camera_intrinsic_matrix_undefined = 138,
+
+  heif_suberror_Camera_extrinsic_matrix_undefined = 139,
+
+  // Invalid JPEG 2000 codestream - usually a missing marker
+  heif_suberror_Invalid_J2K_codestream = 140,
+
+  heif_suberror_No_vvcC_box = 141,
+
+  // icbr is only needed in some situations, this error is for those cases
+  heif_suberror_No_icbr_box = 142,
+
+  // Decompressing generic compression or header compression data failed (e.g. bitstream corruption)
+  heif_suberror_Decompression_invalid_data = 150,
 
   // --- Memory_allocation_error ---
 
@@ -237,6 +254,9 @@ enum heif_suberror_code
   // security limits further.
   heif_suberror_Security_limit_exceeded = 1000,
 
+  // There was an error from the underlying compression / decompression library.
+  // One possibility is lack of resources (e.g. memory).
+  heif_suberror_Compression_initialisation_error = 1001,
 
   // --- Usage_error ---
 
@@ -285,6 +305,8 @@ enum heif_suberror_code
 
   heif_suberror_Unsupported_header_compression_method = 3005,
 
+  // Generically compressed data used an unsupported compression method
+  heif_suberror_Unsupported_generic_compression_method = 3006,
 
   // --- Encoder_plugin_error ---
 
@@ -304,9 +326,10 @@ enum heif_suberror_code
 
   // --- Plugin loading error ---
 
-  heif_suberror_Plugin_loading_error = 6000,        // a specific plugin file cannot be loaded
-  heif_suberror_Plugin_is_not_loaded = 6001,        // trying to remove a plugin that is not loaded
-  heif_suberror_Cannot_read_plugin_directory = 6002 // error while scanning the directory for plugins
+  heif_suberror_Plugin_loading_error = 6000,         // a specific plugin file cannot be loaded
+  heif_suberror_Plugin_is_not_loaded = 6001,         // trying to remove a plugin that is not loaded
+  heif_suberror_Cannot_read_plugin_directory = 6002, // error while scanning the directory for plugins
+  heif_suberror_No_matching_decoder_installed = 6003 // no decoder found for that compression format
 };
 
 
@@ -408,7 +431,14 @@ enum heif_compression_format
    *
    * See ISO/IEC 23008-12:2022 Section 6.10.2
    */
-  heif_compression_mask = 9
+  heif_compression_mask = 9,
+  /**
+   * High Throughput JPEG 2000 (HT-J2K) compression.
+   *
+   * The encapsulation of HT-J2K is specified in ISO/IEC 15444-16:2021.
+   * The core encoding is defined in ISO/IEC 15444-15, or ITU-T T.814.
+  */
+  heif_compression_HTJ2K = 10
 };
 
 enum heif_chroma
@@ -563,6 +593,18 @@ enum heif_filetype_result
 // input data should be at least 12 bytes
 LIBHEIF_API
 enum heif_filetype_result heif_check_filetype(const uint8_t* data, int len);
+
+/**
+ * Check the filetype box content for a supported file type.
+ *
+ * <p>The data is assumed to start from the start of the `ftyp` box.
+ *
+ * <p>This function checks the compatible brands.
+ * 
+ * @returns heif_error_ok if a supported brand is found, or other error if not.
+ */
+LIBHEIF_API
+struct heif_error heif_has_compatible_filetype(const uint8_t* data, int len);
 
 LIBHEIF_API
 int heif_check_jpeg_filetype(const uint8_t* data, int len);
@@ -1368,6 +1410,44 @@ struct heif_error heif_image_get_nclx_color_profile(const struct heif_image* ima
                                                     struct heif_color_profile_nclx** out_data);
 
 
+// ------------------------- intrinsic and extrinsic matrices -------------------------
+
+struct heif_camera_intrinsic_matrix
+{
+  double focal_length_x;
+  double focal_length_y;
+  double principal_point_x;
+  double principal_point_y;
+  double skew;
+};
+
+
+LIBHEIF_API
+int heif_image_handle_has_camera_intrinsic_matrix(const struct heif_image_handle* handle);
+
+LIBHEIF_API
+struct heif_error heif_image_handle_get_camera_intrinsic_matrix(const struct heif_image_handle* handle,
+                                                                struct heif_camera_intrinsic_matrix* out_matrix);
+
+
+struct heif_camera_extrinsic_matrix;
+
+LIBHEIF_API
+int heif_image_handle_has_camera_extrinsic_matrix(const struct heif_image_handle* handle);
+
+LIBHEIF_API
+struct heif_error heif_image_handle_get_camera_extrinsic_matrix(const struct heif_image_handle* handle,
+                                                                struct heif_camera_extrinsic_matrix** out_matrix);
+
+LIBHEIF_API
+void heif_camera_extrinsic_matrix_release(struct heif_camera_extrinsic_matrix*);
+
+LIBHEIF_API
+struct heif_error heif_camera_extrinsic_matrix_get_rotation_matrix(const struct heif_camera_extrinsic_matrix*,
+                                                                   double* out_matrix_row_major);
+
+
+
 // ========================= heif_image =========================
 
 // An heif_image contains a decoded pixel image in various colorspaces, chroma formats,
@@ -1711,6 +1791,10 @@ struct heif_error heif_context_write(struct heif_context*,
                                      struct heif_writer* writer,
                                      void* userdata);
 
+// Add a compatible brand that is now added automatically by libheif when encoding images (e.g. some application brands like 'geo1').
+LIBHEIF_API
+void heif_context_add_compatible_brand(struct heif_context* ctx,
+                                       heif_brand2 compatible_brand);
 
 // ----- encoder -----
 
@@ -2016,6 +2100,11 @@ struct heif_encoding_options
   // version 6 options
 
   struct heif_color_conversion_options color_conversion_options;
+
+  // version 7 options
+
+  // Set this to true to use compressed form of uncC where possible
+  uint8_t prefer_uncC_short_form;
 };
 
 LIBHEIF_API
@@ -2036,6 +2125,27 @@ struct heif_error heif_context_encode_image(struct heif_context*,
                                             struct heif_encoder* encoder,
                                             const struct heif_encoding_options* options,
                                             struct heif_image_handle** out_image_handle);
+
+/**
+ * @brief Encodes an array of images into a grid.
+ * 
+ * @param ctx The file context
+ * @param tiles User allocated array of images that will form the grid.
+ * @param rows The number of rows in the grid.
+ * @param columns The number of columns in the grid.
+ * @param encoder Defines the encoder to use. See heif_context_get_encoder_for_format()
+ * @param input_options Optional, may be nullptr.
+ * @param out_image_handle Returns a handle to the grid. The caller is responsible for freeing it.
+ * @return Returns an error if ctx, tiles, or encoder is nullptr. If rows or columns is 0. 
+ */
+LIBHEIF_API
+struct heif_error heif_context_encode_grid(struct heif_context* ctx,
+                                           struct heif_image** tiles,
+                                           uint16_t rows,
+                                           uint16_t columns,
+                                           struct heif_encoder* encoder,
+                                           const struct heif_encoding_options* input_options,
+                                           struct heif_image_handle** out_image_handle);
 
 LIBHEIF_API
 struct heif_error heif_context_set_primary_image(struct heif_context*,
@@ -2059,9 +2169,12 @@ struct heif_error heif_context_encode_thumbnail(struct heif_context*,
 
 enum heif_metadata_compression
 {
-  heif_metadata_compression_off,
-  heif_metadata_compression_auto,
-  heif_metadata_compression_deflate
+  heif_metadata_compression_off = 0,
+  heif_metadata_compression_auto = 1,
+  heif_metadata_compression_unknown = 2, // only used when reading unknown method from input file
+  heif_metadata_compression_deflate = 3,
+  heif_metadata_compression_zlib = 4,    // do not use for header data
+  heif_metadata_compression_brotli = 5
 };
 
 // Assign 'thumbnail_image' as the thumbnail image of 'master_image'.
@@ -2099,22 +2212,64 @@ struct heif_error heif_context_add_generic_metadata(struct heif_context* ctx,
                                                     const void* data, int size,
                                                     const char* item_type, const char* content_type);
 
+// Add generic metadata with item_type "uri ". Items with this type do not have a content_type, but
+// an item_uri_type and they have no content_encoding (they are always stored uncompressed).
+LIBHEIF_API
+struct heif_error heif_context_add_generic_uri_metadata(struct heif_context* ctx,
+                                                    const struct heif_image_handle* image_handle,
+                                                    const void* data, int size,
+                                                    const char* item_uri_type,
+                                                    heif_item_id* out_item_id);
+
 // --- heif_image allocation
 
-// Create a new image of the specified resolution and colorspace.
-// Note: no memory for the actual image data is reserved yet. You have to use
-// heif_image_add_plane() to add the image planes required by your colorspace/chroma.
+/**
+ * Create a new image of the specified resolution and colorspace.
+ *
+ * <p>This does not allocate memory for the image data. Use {@link heif_image_add_plane} to
+ * add the corresponding planes to match the specified {@code colorspace} and {@code chroma}.
+ *
+ * @param width the width of the image in pixels
+ * @param height the height of the image in pixels
+ * @param colorspace the colorspace of the image
+ * @param chroma the chroma of the image
+ * @param out_image pointer to pointer of the resulting image
+ * @return whether the creation succeeded or there was an error
+*/
 LIBHEIF_API
 struct heif_error heif_image_create(int width, int height,
                                     enum heif_colorspace colorspace,
                                     enum heif_chroma chroma,
                                     struct heif_image** out_image);
 
-// The indicated bit_depth corresponds to the bit depth per channel.
-// I.e. for interleaved formats like RRGGBB, the bit_depth would be, e.g., 10 bit instead
-// of 30 bits or 3*16=48 bits.
-// For backward compatibility, one can also specify 24bits for RGB and 32bits for RGBA,
-// instead of the preferred 8 bits.
+/**
+ * Add an image plane to the image.
+ *
+ * <p>The image plane needs to match the colorspace and chroma of the image. Note
+ * that this does not need to be a single "planar" format - interleaved pixel channels
+ * can also be used if the chroma is interleaved.
+ *
+ * <p>The indicated bit_depth corresponds to the bit depth per channel. For example,
+ * with an interleaved format like RRGGBB where each color is represented by 10 bits,
+ * the {@code bit_depth} would be {@code 10} rather than {@code 30}.
+ *
+ * <p>For backward compatibility, one can also specify 24bits for RGB and 32bits for RGBA,
+ * instead of the preferred 8 bits. However, this use is deprecated.
+ *
+ * @param image the parent image to add the channel plane to
+ * @param channel the channel of the plane to add
+ * @param width the width of the plane
+ * @param height the height of the plane
+ * @param bit_depth the bit depth per color channel
+ * @return whether the addition succeeded or there was an error
+ *
+ * @note The width and height are usually the same as the parent image, but can be
+ * less for subsampling.
+ *
+ * @note The specified width can differ from the row stride of the resulting image plane.
+ * Always use the result of {@link heif_image_get_plane} or {@link heif_image_get_plane_readonly}
+ * to determine row stride.
+ */
 LIBHEIF_API
 struct heif_error heif_image_add_plane(struct heif_image* image,
                                        enum heif_channel channel,

@@ -96,6 +96,27 @@ namespace df
 		return std::unique_ptr<T, free_delete>(static_cast<T*>(_aligned_malloc(alloc_size + 16, 16)));
 	}
 
+	template <typename T>
+	class releaser {
+	public:
+		releaser(T* ptr, std::function<void(T*)> destroy_func)
+			: ptr_(ptr), destroy_func_(std::move(destroy_func)) {}  // Move the function for efficiency
+
+		~releaser() { destroy_func_(ptr_); }
+
+		T *get() const { return ptr_; }
+
+		// Disable copying and moving (same as before)
+		releaser(const releaser&) = delete;
+		releaser& operator=(const releaser&) = delete;
+		releaser(releaser&&) = delete;
+		releaser& operator=(releaser&&) = delete;
+
+	private:
+		T* ptr_;
+		std::function<void(T*)> destroy_func_;
+	};
+
 	extern std::atomic_bool is_closing;
 	extern std::atomic_int file_handles_detached;
 	extern std::atomic_int jobs_running;

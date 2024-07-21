@@ -19,14 +19,12 @@
  */
 
 
-#ifndef LIBHEIF_UNCOMPRESSED_IMAGE_H
-#define LIBHEIF_UNCOMPRESSED_IMAGE_H
+#ifndef LIBHEIF_UNCOMPRESSED_BOX_H
+#define LIBHEIF_UNCOMPRESSED_BOX_H
 
 #include "box.h"
 #include "bitstream.h"
-#include "pixelimage.h"
-#include "file.h"
-#include "context.h"
+#include "uncompressed.h"
 
 #include <cstdint>
 #include <string>
@@ -34,6 +32,9 @@
 #include <memory>
 
 
+/**
+ * Component definition (cmpd) box.
+ */
 class Box_cmpd : public Box
 {
 public:
@@ -58,7 +59,7 @@ public:
 
   const std::vector<Component>& get_components() const { return m_components; }
 
-  void add_component(Component component)
+  void add_component(const Component& component)
   {
     m_components.push_back(component);
   }
@@ -69,18 +70,19 @@ protected:
   std::vector<Component> m_components;
 };
 
+/**
+ * Uncompressed Frame Configuration Box
+*/
 class Box_uncC : public FullBox
 {
 public:
-  Box_uncC()
-  {
-    m_profile = 0;
+  Box_uncC() {
     set_short_type(fourcc("uncC"));
   }
 
-  std::string dump(Indent&) const override;
+  void derive_box_version() override {};
 
-  bool get_headers(std::vector<uint8_t>* dest) const;
+  std::string dump(Indent&) const override;
 
   Error write(StreamWriter& writer) const override;
 
@@ -200,42 +202,87 @@ public:
 protected:
   Error parse(BitstreamRange& range) override;
 
-  uint32_t m_profile;
+  uint32_t m_profile = 0; // not compliant to any profile
 
   std::vector<Component> m_components;
-  uint8_t m_sampling_type;
-  uint8_t m_interleave_type;
-  uint8_t m_block_size;
-  bool m_components_little_endian;
-  bool m_block_pad_lsb;
-  bool m_block_little_endian;
-  bool m_block_reversed;
-  bool m_pad_unknown;
-  uint32_t m_pixel_size;
-  uint32_t m_row_align_size;
-  uint32_t m_tile_align_size;
-  uint32_t m_num_tile_cols;
-  uint32_t m_num_tile_rows;
+  uint8_t m_sampling_type = sampling_mode_no_subsampling; // no subsampling
+  uint8_t m_interleave_type = interleave_mode_pixel; // component interleaving
+  uint8_t m_block_size = 0;
+  bool m_components_little_endian = false;
+  bool m_block_pad_lsb = false;
+  bool m_block_little_endian = false;
+  bool m_block_reversed = false;
+  bool m_pad_unknown = false;
+  uint32_t m_pixel_size = 0;
+  uint32_t m_row_align_size = 0;
+  uint32_t m_tile_align_size = 0;
+  uint32_t m_num_tile_cols = 1;
+  uint32_t m_num_tile_rows = 1;
 };
 
-
-class UncompressedImageCodec
+/**
+ * Generic compression box (cmpC).
+ *
+ * This is from ISO/IEC 23001-17 Amd 2.
+ */
+class Box_cmpC : public FullBox
 {
 public:
-  static int get_luma_bits_per_pixel_from_configuration_unci(const HeifFile& heif_file, heif_item_id imageID);
+  Box_cmpC()
+  {
+    set_short_type(fourcc("cmpC"));
+  }
 
-  static Error decode_uncompressed_image(const std::shared_ptr<const HeifFile>& heif_file,
-                                         heif_item_id ID,
-                                         std::shared_ptr<HeifPixelImage>& img,
-                                         uint32_t maximum_image_width_limit,
-                                         uint32_t maximum_image_height_limit,
-                                         const std::vector<uint8_t>& uncompressed_data);
+  std::string dump(Indent&) const override;
 
-  static Error encode_uncompressed_image(const std::shared_ptr<HeifFile>& heif_file,
-                                         const std::shared_ptr<HeifPixelImage>& src_image,
-                                         void* encoder_struct,
-                                         const struct heif_encoding_options& options,
-                                         std::shared_ptr<HeifContext::Image>& out_image);
+  uint32_t get_compression_type() const { return compression_type; }
+  bool get_must_decompress_individual_entities() const { return must_decompress_individual_entities; }
+  uint8_t get_compressed_range_type() const { return compressed_range_type; }
+
+  Error write(StreamWriter& writer) const override;
+
+protected:
+  Error parse(BitstreamRange& range) override;
+
+  uint32_t compression_type;
+  bool must_decompress_individual_entities;
+  uint8_t compressed_range_type;
 };
 
-#endif //LIBHEIF_UNCOMPRESSED_IMAGE_H
+/**
+ * Item compressed byte range info (icbr).
+ *
+ * This is from ISO/IEC 23001-17 Amd 2.
+ */
+class Box_icbr : public FullBox
+{
+public:
+  Box_icbr()
+  {
+    set_short_type(fourcc("icbr"));
+  }
+
+  struct ByteRange
+  {
+    uint64_t range_offset;
+    uint64_t range_size;
+  };
+
+  const std::vector<ByteRange>& get_ranges() const { return m_ranges; }
+
+  void add_component(const ByteRange& range)
+  {
+    m_ranges.push_back(range);
+  }
+
+  std::string dump(Indent&) const override;
+
+  Error write(StreamWriter& writer) const override;
+
+protected:
+  Error parse(BitstreamRange& range) override;
+
+  std::vector<ByteRange> m_ranges;
+};
+
+#endif //LIBHEIF_UNCOMPRESSED_BOX_H
