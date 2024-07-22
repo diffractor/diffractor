@@ -1812,6 +1812,8 @@ public:
 
 	sidebar_host(view_state& s) : _state(s)
 	{
+		df::assert_true(ui::is_ui_thread());
+
 		_title = std::make_shared<sidebar_logo_element>(_state);
 
 		_indexing_elements = std::make_shared<sidebar_indexing_element>(
@@ -1870,6 +1872,8 @@ public:
 	void update_content(std::vector<search_item_ptr> items, std::vector<drive_item_ptr> drives,
 	                    std::vector<view_element_ptr> item_elements)
 	{
+		df::assert_true(ui::is_ui_thread());
+
 		_items = std::move(items);
 		_drives = std::move(drives);
 
@@ -1999,6 +2003,8 @@ public:
 
 	void on_window_paint(ui::draw_context& dc) override
 	{
+		df::assert_true(ui::is_ui_thread());
+
 		const auto offset = _scroller.scroll_offset();
 		const auto logical_clip_bounds = dc.clip_bounds().offset(offset);
 
@@ -2095,6 +2101,8 @@ public:
 
 	view_controller_ptr controller_from_location(const pointi loc) override
 	{
+		df::assert_true(ui::is_ui_thread());
+
 		if (_scroller.can_scroll() && _scroller.scroll_bounds().contains(loc))
 		{
 			return std::make_shared<scroll_controller>(shared_from_this(), _scroller, _scroller.scroll_bounds());
@@ -2145,6 +2153,8 @@ public:
 
 	void layout(ui::measure_context& mc)
 	{
+		df::assert_true(ui::is_ui_thread());
+
 		const auto x_padding = 4;
 		const auto scroll_padding = _scroller.can_scroll() ? mc.scroll_width : x_padding;
 		const auto layout_padding = sizei{0, mc.padding1};
@@ -2261,6 +2271,8 @@ public:
 
 	void dpi_changed() override
 	{
+		df::assert_true(ui::is_ui_thread());
+
 		const view_element_event ev{view_element_event_type::dpi_changed, shared_from_this()};
 
 		for (const auto& e : _elements)

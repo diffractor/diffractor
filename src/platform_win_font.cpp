@@ -225,10 +225,10 @@ public:
 	resource_font_file_enumerator() = default;
 
 	explicit resource_font_file_enumerator(IDWriteFactory* factory,
-	                                       const void* collectionKey,
-	                                       UINT32 collectionKeySize) : _factory(factory),
-	                                                                   _collection_key(collectionKey),
-	                                                                   _collection_key_size(collectionKeySize)
+		const void* collectionKey,
+		UINT32 collectionKeySize) : _factory(factory),
+		_collection_key(collectionKey),
+		_collection_key_size(collectionKeySize)
 	{
 	}
 
@@ -366,7 +366,7 @@ static resource_font_collection_loader font_collection_loader;
 
 
 static font_renderer_ptr create_font_renderer(IDWriteFactory* dwrite, IDWriteFontCollection* font_collection,
-                                              const wchar_t* font_name, int font_height)
+	const wchar_t* font_name, int font_height)
 {
 	uint32_t index = {};
 	BOOL exists = {};
@@ -374,29 +374,6 @@ static font_renderer_ptr create_font_renderer(IDWriteFactory* dwrite, IDWriteFon
 	ComPtr<IDWriteFont> font;
 	ComPtr<IDWriteFontFace> font_face;
 	ComPtr<IDWriteTextFormat> text_format;
-
-	int count = font_collection->GetFontFamilyCount();
-	for (int i = 0; i < count; i++)
-	{
-		ComPtr<IDWriteFontFamily> f;
-		if (SUCCEEDED(font_collection->GetFontFamily(i, &f)))
-		{
-			ComPtr<IDWriteLocalizedStrings> localized_names;
-			f->GetFamilyNames(&localized_names);
-			size_t string_count = localized_names->GetCount();
-			for (size_t j = 0; j < string_count; ++j) {
-
-				//UINT32 length = 0;
-				//hr = localized_names->GetLocaleNameLength(index, &length);
-
-				WCHAR font_name[200];
-				WCHAR local_name[200];
-				localized_names->GetLocaleName(index, local_name, 200);
-				localized_names->GetString(index, font_name, 200);
-				df::log(__FUNCTION__, str::format(u8"font {}:{}"sv, str::utf16_to_utf8(local_name), str::utf16_to_utf8(font_name)));
-			}
-		}
-	}
 
 	auto hr = font_collection->FindFamilyName(font_name, &index, &exists);
 
@@ -408,7 +385,7 @@ static font_renderer_ptr create_font_renderer(IDWriteFactory* dwrite, IDWriteFon
 	if (SUCCEEDED(hr))
 	{
 		hr = family->GetFirstMatchingFont(DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-		                                  DWRITE_FONT_STYLE_NORMAL, &font);
+			DWRITE_FONT_STYLE_NORMAL, &font);
 	}
 	if (SUCCEEDED(hr))
 	{
@@ -575,7 +552,7 @@ font_renderer_ptr factories::font_face(const ui::style::font_face type, const in
 			break;
 		case ui::style::font_face::petscii:
 			result = create_petscii_font_face(base_font_size);
-			break;			
+			break;
 		default:
 			break;
 		}
@@ -602,7 +579,7 @@ font_renderer_ptr factories::font_face(const ui::style::font_face type, const in
 }
 
 font_renderer::font_renderer(const ComPtr<IDWriteFactory>& factory, const ComPtr<IDWriteFontFace>& face,
-                             ComPtr<IDWriteTextFormat> text_format, const int font_size) : _factory(factory),
+	ComPtr<IDWriteTextFormat> text_format, const int font_size) : _factory(factory),
 	_face(face), _text_format(std::move(text_format)), _font_size(font_size)
 {
 	_face->GetMetrics(&_metrics);
@@ -668,7 +645,7 @@ render_char_result font_renderer::render_glyph(const uint16_t glyph_index, const
 	render_char_result result{};
 
 	const auto line_height = df::mul_div(_metrics.ascent + _metrics.descent + _metrics.lineGap, _font_size,
-	                                     _metrics.designUnitsPerEm);
+		_metrics.designUnitsPerEm);
 	const auto base_line_height = df::mul_div(_metrics.ascent, _font_size, _metrics.designUnitsPerEm);
 
 	DWRITE_GLYPH_METRICS glyph_metrics{};
@@ -748,7 +725,7 @@ render_char_result font_renderer::render_glyph(const uint16_t glyph_index, const
 
 								for (auto x = 0; x < char_width; ++x)
 								{
-									dest[x] = (*(src) + *(src + 1) + *(src + 2)) / 3;
+									dest[x] = (*(src)+*(src + 1) + *(src + 2)) / 3;
 									src += 3;
 								}
 							}
@@ -784,7 +761,7 @@ sizei font_renderer::measure(const std::wstring_view text, ui::style::text_style
 
 		if (SUCCEEDED(hr))
 		{
-			return {df::round_up(metrics.width), df::round_up(metrics.height)};
+			return { df::round_up(metrics.width), df::round_up(metrics.height) };
 		}
 	}
 
@@ -814,14 +791,14 @@ static void configure_layout(const ComPtr<IDWriteTextLayout>& layout, const ui::
 		text_alignment = DWRITE_TEXT_ALIGNMENT_CENTER;
 		word_wrapping = DWRITE_WORD_WRAPPING_WRAP;
 		break;
-	default: ;
+	default:;
 	}
 
 	layout->SetWordWrapping(word_wrapping);
 	layout->SetTextAlignment(text_alignment);
 	layout->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
 
-	const DWRITE_TRIMMING trimmingOpt = {DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0};
+	const DWRITE_TRIMMING trimmingOpt = { DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0 };
 	layout->SetTrimming(&trimmingOpt, nullptr);
 }
 
@@ -831,7 +808,7 @@ void text_layout_impl::update(const std::u8string_view text, ui::style::text_sty
 
 	ComPtr<IDWriteTextLayout> layout;
 	const auto hr = _renderer->_factory->CreateTextLayout(textw.data(), static_cast<int>(textw.size()),
-	                                                      _renderer->_text_format.Get(), 0, 0, &layout);
+		_renderer->_text_format.Get(), 0, 0, &layout);
 
 	if (SUCCEEDED(hr))
 	{
@@ -858,7 +835,7 @@ sizei text_layout_impl::measure_text(const int cx, const int cy)
 
 		if (SUCCEEDED(hr))
 		{
-			return {df::round_up(metrics.width), df::round_up(metrics.height)};
+			return { df::round_up(metrics.width), df::round_up(metrics.height) };
 		}
 	}
 
@@ -866,12 +843,12 @@ sizei text_layout_impl::measure_text(const int cx, const int cy)
 }
 
 void font_renderer::draw(ui::draw_context* dc, ID2D1RenderTarget* rt, const std::wstring_view text, const recti bounds,
-                         ui::style::text_style style, const ui::color color, const ui::color bg,
-                         const std::vector<ui::text_highlight_t>& highlights)
+	ui::style::text_style style, const ui::color color, const ui::color bg,
+	const std::vector<ui::text_highlight_t>& highlights)
 {
 	ComPtr<IDWriteTextLayout> layout;
 	auto hr = _factory->CreateTextLayout(text.data(), static_cast<int>(text.size()), _text_format.Get(), 0.0f, 0.0f,
-	                                     &layout);
+		&layout);
 	//auto hr = _factory->CreateGdiCompatibleTextLayout(text.data(), static_cast<int>(text.size()), _text_format.Get(), 0.0f, 0.0f, 1.0f, nullptr, TRUE, &layout);
 
 	if (SUCCEEDED(hr))
@@ -890,7 +867,7 @@ void font_renderer::draw(ui::draw_context* dc, ID2D1RenderTarget* rt, const std:
 
 			if (SUCCEEDED(hr))
 			{
-				layout->SetDrawingEffect(brush.Get(), {h.offset, h.length});
+				layout->SetDrawingEffect(brush.Get(), { h.offset, h.length });
 			}
 		}
 
@@ -901,7 +878,7 @@ void font_renderer::draw(ui::draw_context* dc, ID2D1RenderTarget* rt, const std:
 
 			if (SUCCEEDED(hr))
 			{
-				const rectd bb{bounds.left + m.left, bounds.top + m.top, m.width, m.height};
+				const rectd bb{ bounds.left + m.left, bounds.top + m.top, m.width, m.height };
 				dc->draw_rounded_rect(bb.round().inflate(2), bg, dc->padding1);
 			}
 		}
@@ -916,7 +893,7 @@ void font_renderer::draw(ui::draw_context* dc, ID2D1RenderTarget* rt, const std:
 		if (SUCCEEDED(hr))
 		{
 			rt->DrawTextLayout(
-				{static_cast<float>(bounds.left), static_cast<float>(bounds.top)},
+				{ static_cast<float>(bounds.left), static_cast<float>(bounds.top) },
 				layout.Get(),
 				brush.Get()
 			);
@@ -925,7 +902,7 @@ void font_renderer::draw(ui::draw_context* dc, ID2D1RenderTarget* rt, const std:
 }
 
 void font_renderer::draw(ui::draw_context* dc, ID2D1RenderTarget* rt, IDWriteTextLayout* layout, const recti bounds,
-                         const ui::color color, const ui::color bg)
+	const ui::color color, const ui::color bg)
 {
 	if (rt && layout)
 	{
@@ -957,7 +934,7 @@ void font_renderer::draw(ui::draw_context* dc, ID2D1RenderTarget* rt, IDWriteTex
 		if (SUCCEEDED(hr))
 		{
 			rt->DrawTextLayout(
-				{static_cast<float>(bounds.left), static_cast<float>(bounds.top)},
+				{ static_cast<float>(bounds.left), static_cast<float>(bounds.top) },
 				layout,
 				brush.Get()
 			);
@@ -967,13 +944,13 @@ void font_renderer::draw(ui::draw_context* dc, ID2D1RenderTarget* rt, IDWriteTex
 
 
 void font_renderer::draw(ui::draw_context* dc, IDWriteTextRenderer* tr, const std::wstring_view text,
-                         const recti bounds, ui::style::text_style style, const ui::color color, const ui::color bg,
-                         const std::vector<ui::text_highlight_t>& highlights)
+	const recti bounds, ui::style::text_style style, const ui::color color, const ui::color bg,
+	const std::vector<ui::text_highlight_t>& highlights)
 {
 	ComPtr<IDWriteTextLayout> layout;
 	const auto hr = _factory->CreateTextLayout(text.data(), static_cast<int>(text.size()), _text_format.Get(), 0.0f,
-	                                           0.0f,
-	                                           &layout);
+		0.0f,
+		&layout);
 	//auto hr = _factory->CreateGdiCompatibleTextLayout(text.data(), static_cast<int>(text.size()), _text_format.Get(), 0.0f, 0.0f, 1.0f, nullptr, TRUE,  &layout);
 
 	if (SUCCEEDED(hr))
@@ -984,7 +961,7 @@ void font_renderer::draw(ui::draw_context* dc, IDWriteTextRenderer* tr, const st
 }
 
 void font_renderer::draw(ui::draw_context* dc, IDWriteTextRenderer* tr, IDWriteTextLayout* layout, const recti bounds,
-                         const ui::color color, const ui::color bg)
+	const ui::color color, const ui::color bg)
 {
 	layout->SetMaxWidth(static_cast<float>(bounds.width()));
 	layout->SetMaxHeight(static_cast<float>(bounds.height()));
@@ -996,12 +973,12 @@ void font_renderer::draw(ui::draw_context* dc, IDWriteTextRenderer* tr, IDWriteT
 
 		if (SUCCEEDED(hr))
 		{
-			const rectd bb{bounds.left + m.left, bounds.top + m.top, m.width, m.height};
+			const rectd bb{ bounds.left + m.left, bounds.top + m.top, m.width, m.height };
 			dc->draw_rounded_rect(bb.round().inflate(2), bg, dc->padding1);
 		}
 	}
 
 	layout->Draw(nullptr, tr,
-	             static_cast<float>(bounds.left),
-	             static_cast<float>(bounds.top));
+		static_cast<float>(bounds.left),
+		static_cast<float>(bounds.top));
 }

@@ -359,7 +359,9 @@
     <ClCompile Include="src\tables.c" />
     <ClCompile Include="src\thread_task.c" />
     <ClCompile Include="src\tmpl16.c" />
+    <ClCompile Include="src\tmpl16b.c" />
     <ClCompile Include="src\tmpl8.c" />
+    <ClCompile Include="src\tmpl8b.c" />
     <ClCompile Include="src\warpmv.c" />
     <ClCompile Include="src\wedge.c" />
     <ClCompile Include="src\win32\thread.c" />

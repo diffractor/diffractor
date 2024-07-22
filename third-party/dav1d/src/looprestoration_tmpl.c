@@ -40,7 +40,7 @@
 // TODO Reuse p when no padding is needed (add and remove lpf pixels in p)
 // TODO Chroma only requires 2 rows of padding.
 static NOINLINE void
-paddingx(pixel *dst, const pixel *p, const ptrdiff_t stride,
+padding(pixel *dst, const pixel *p, const ptrdiff_t stride,
         const pixel (*left)[4], const pixel *lpf, int unit_w,
         const int stripe_h, const enum LrEdgeFlags edges)
 {
@@ -142,7 +142,7 @@ static void wiener_c(pixel *p, const ptrdiff_t stride,
     pixel tmp[70 /*(64 + 3 + 3)*/ * REST_UNIT_STRIDE];
     pixel *tmp_ptr = tmp;
 
-    paddingx(tmp, p, stride, left, lpf, w, h, edges);
+    padding(tmp, p, stride, left, lpf, w, h, edges);
 
     // Values stored between horizontal and vertical filtering don't
     // fit in a uint8_t.
@@ -460,7 +460,7 @@ static void sgr_5x5_c(pixel *p, const ptrdiff_t stride,
     // maximum restoration width of 384 (256 * 1.5)
     coef dst[64 * 384];
 
-    paddingx(tmp, p, stride, left, lpf, w, h, edges);
+    padding(tmp, p, stride, left, lpf, w, h, edges);
     selfguided_filter(dst, tmp, REST_UNIT_STRIDE, w, h, 25,
                       params->sgr.s0 HIGHBD_TAIL_SUFFIX);
 
@@ -483,7 +483,7 @@ static void sgr_3x3_c(pixel *p, const ptrdiff_t stride,
     pixel tmp[70 /*(64 + 3 + 3)*/ * REST_UNIT_STRIDE];
     coef dst[64 * 384];
 
-    paddingx(tmp, p, stride, left, lpf, w, h, edges);
+    padding(tmp, p, stride, left, lpf, w, h, edges);
     selfguided_filter(dst, tmp, REST_UNIT_STRIDE, w, h, 9,
                       params->sgr.s1 HIGHBD_TAIL_SUFFIX);
 
@@ -507,7 +507,7 @@ static void sgr_mix_c(pixel *p, const ptrdiff_t stride,
     coef dst0[64 * 384];
     coef dst1[64 * 384];
 
-    paddingx(tmp, p, stride, left, lpf, w, h, edges);
+    padding(tmp, p, stride, left, lpf, w, h, edges);
     selfguided_filter(dst0, tmp, REST_UNIT_STRIDE, w, h, 25,
                       params->sgr.s0 HIGHBD_TAIL_SUFFIX);
     selfguided_filter(dst1, tmp, REST_UNIT_STRIDE, w, h,  9,

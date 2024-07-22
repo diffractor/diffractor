@@ -23,6 +23,7 @@ static constexpr std::u8string_view s_max = u8"max"sv;
 static constexpr std::u8string_view s_start = u8"start"sv;
 static constexpr std::u8string_view s_album = u8"album"sv;
 static constexpr std::u8string_view s_maximize = u8"maximize"sv;
+static constexpr std::u8string_view s_favorite_tags_old = u8"FavoriteTags"sv;
 static constexpr std::u8string_view s_favorite_tags = u8"favorite_tags"sv;
 static constexpr std::u8string_view s_out_folder = u8"out_folder"sv;
 static constexpr std::u8string_view s_resize_size = u8"resize_size"sv;
@@ -578,6 +579,7 @@ void settings_t::read(const platform::setting_file_ptr& store_in)
 	store.read({}, s_available_version, available_version);
 	store.read({}, s_available_test_version, available_test_version);
 	store.read({}, s_tags, last_tags);
+	store.read({}, s_favorite_tags_old, favorite_tags);
 	store.read({}, s_favorite_tags, favorite_tags);
 
 	store.read({}, s_copyright, copyright_notice);

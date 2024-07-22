@@ -296,13 +296,19 @@
     <ClCompile Include="src\win32\thread.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\x86\cpu.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="src\tmpl8.c">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\tmpl16.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\x86\cpu.c">
+    <ClCompile Include="src\tmpl8b.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\tmpl16b.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

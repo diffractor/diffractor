@@ -114,7 +114,7 @@ bytefn(dav1d_prepare_intra_edges)(const int x, const int have_left,
         break;
     }
 
-    const pixel *dst_top = NULL;
+    const pixel* dst_top = NULL;
     if (have_top &&
         (av1_intra_prediction_edges[mode].needs_top ||
          av1_intra_prediction_edges[mode].needs_topleft ||

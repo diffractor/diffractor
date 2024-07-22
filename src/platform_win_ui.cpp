@@ -8209,6 +8209,7 @@ static void setup_restart()
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int nCmdShow)
 {
 	get_resource_instance = hInstance;
+	ui_thread_id = GetCurrentThreadId();
 
 	const int result = 0;
 	const auto app_impl = std::make_shared<win32_app>();
@@ -8257,8 +8258,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		}
 
 		df::start_time = platform::now();
-		platform::set_thread_description(u8"main"sv);
-		ui_thread_id = platform::current_thread_id();
+		platform::set_thread_description(u8"main"sv);		
 
 		auto hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
 

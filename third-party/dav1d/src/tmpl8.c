@@ -9,7 +9,6 @@
 #include "itx_tmpl.c"
 #include "lf_apply_tmpl.c"
 #include "loopfilter_tmpl.c"
-#include "looprestoration_tmpl.c"
 #include "lr_apply_tmpl.c"
 #undef decl_fn
 #include "mc_tmpl.c"

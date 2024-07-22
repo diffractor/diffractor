@@ -24,7 +24,7 @@ Diffractor has a built-in test runner. If the application is started from Visual
 - [brotli](https://github.com/google/brotli) 1.1.0 
 - [bzip2](https://sourceware.org/bzip2/) 1.0.8
 - [dng-sdk](https://helpx.adobe.com/camera-raw/digital-negative.html) 1.7.1
-- [dav1d](https://code.videolan.org/videolan/dav1d) 1.4.1
+- [dav1d](https://code.videolan.org/videolan/dav1d) 1.4.3
 - [expat](https://libexpat.github.io/) 2.6.2
 - [ffmpeg](https://ffmpeg.org/) main
 - [highway](https://github.com/google/highway) 1.1.0
@@ -41,7 +41,7 @@ Diffractor has a built-in test runner. If the application is started from Visual
 - [LibPng](http://www.libpng.org/pub/png/libpng.html) 1.6.43
 - [LibRaw](https://www.libraw.org) 0.21.2
 - [libwebp](https://github.com/webmproject/libwebp) 1.4.0
-- [libjxl](https://github.com/libjxl/libjxl) 0.10.2
+- [libjxl](https://github.com/libjxl/libjxl) 0.10.3
 - [minizip-ng](https://github.com/zlib-ng/minizip-ng) 4.05
 - [parallel-hashmap](https://github.com/greg7mdp/parallel-hashmap) 1.3.12
 - [rapidjson](https://github.com/Tencent/rapidjson) main
