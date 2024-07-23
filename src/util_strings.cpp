@@ -427,7 +427,7 @@ struct string_index_t
 		const auto allocation = sizeof(str::chached_string_storage_t) + (len + 1) * sizeof(char8_t);
 		auto* const copy = static_cast<str::chached_string_storage_t*>(_pool.alloc(allocation));
 
-		copy->len = len;
+		copy->len = static_cast<uint32_t>(len);
 		memcpy_s(copy->sz, allocation, sv.data(), len * sizeof(char8_t));
 		copy->sz[len] = 0;
 
@@ -436,7 +436,7 @@ struct string_index_t
 
 	str::cached find_or_insert(const std::u8string_view sv)
 	{
-		if (sv.empty()) return {};
+		if (sv.empty() || sv.size() > platform::memory_pool::block_size) return {};
 		str::chached_string_storage_t* result = nullptr;
 
 		const auto exists = [&result](const std::pair<const K, V>& kv) { result = kv.second; };
@@ -1076,7 +1076,7 @@ std::u8string str::to_string(const sizei v)
 	return format(u8"{}x{}"sv, v.cx, v.cy);
 }
 
-std::u8string str::format_count(const int total, const bool show_zero)
+std::u8string str::format_count(const uint64_t total, const bool show_zero)
 {
 	std::u8string result;
 
@@ -1084,11 +1084,11 @@ std::u8string str::format_count(const int total, const bool show_zero)
 	{
 		if (total > 900000)
 		{
-			result = format(u8"{}m"sv, df::round(total, 1000000));
+			result = format(u8"{}m"sv, df::round64(total, 1000000ull));
 		}
 		else if (total >= 900)
 		{
-			result = format(u8"{}k"sv, df::round(total, 1000));
+			result = format(u8"{}k"sv, df::round64(total, 1000ull));
 		}
 		else
 		{

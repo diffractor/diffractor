@@ -1425,6 +1425,7 @@ namespace ui
 		virtual bool is_occluded() const = 0;
 		virtual void set_cursor(style::cursor cursor) = 0;
 		virtual void reset_graphics() = 0;
+		virtual pointi cursor_location() = 0;
 	};
 
 	enum class other_mouse_button

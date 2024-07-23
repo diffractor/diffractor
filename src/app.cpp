@@ -45,7 +45,7 @@ static std::atomic_int index_version;
 const wchar_t* s_app_name_l = L"Diffractor";
 const std::u8string_view s_app_name = u8"Diffractor"sv;
 const std::u8string_view s_app_version = u8"126.0"sv;
-const std::u8string_view g_app_build = u8"1180"sv;
+const std::u8string_view g_app_build = u8"1181"sv;
 const std::u8string_view stage_file_name = u8"diffractor-setup-update.exe"sv;
 static constexpr std::u8string_view installed_file_name = u8"diffractor-setup-installed.exe"sv;
 static constexpr std::u8string_view s_search = u8"search"sv;
@@ -589,8 +589,8 @@ std::u8string command_line_t::format_restart_cmd_line() const
 	return result;
 }
 
-std::u8string format_plural_text(const plural_text& fmt, const std::u8string_view first_name, const int count,
-	const df::file_size size, const int of_total)
+std::u8string format_plural_text(const plural_text& fmt, const std::u8string_view first_name, const int64_t count,
+	const df::file_size size, const int64_t of_total)
 {
 	const std::u8string_view template_text = count == 1 ? fmt.one : fmt.plural;
 
@@ -607,7 +607,7 @@ std::u8string format_plural_text(const plural_text& fmt, const std::u8string_vie
 	return str::replace_tokens(template_text, substitute);
 }
 
-std::u8string format_plural_text(const plural_text& fmt, const int count, const int of_total)
+std::u8string format_plural_text(const plural_text& fmt, const int64_t count, const int64_t of_total)
 {
 	return format_plural_text(fmt, {}, count, {}, of_total);
 }
@@ -2527,7 +2527,7 @@ void app_frame::create_toolbars()
 	const std::vector<ui::command_ptr> tbButtonsNav2 =
 	{
 		find_command(commands::favorite),
-		find_command(commands::collection_add),
+		find_command(commands::options_collection),
 		find_command(commands::browse_parent),
 		find_command(commands::browse_previous_folder),
 		find_command(commands::browse_next_folder),
@@ -2830,7 +2830,6 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::edit_item_save_and_next]->enable = is_editing;
 	_commands[commands::edit_item_save_as]->enable = is_editing;
 	_commands[commands::edit_item_options]->enable = is_editing;
-	_commands[commands::collection_add]->enable = search_has_selector;
 
 	_commands[commands::playback_auto_play]->checked = setting.auto_play;
 	_commands[commands::playback_last_played_pos]->checked = setting.last_played_pos;
@@ -2902,7 +2901,7 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::playback_volume_toggle]->icon = sound_icon();
 	_commands[commands::repeat_toggle]->icon = repeat_toggle_icon();
 	_commands[commands::favorite]->icon = _state.search_is_favorite() ? icon_index::star_solid : icon_index::star;
-	_commands[commands::collection_add]->icon = _state.search_is_collection_root() ? icon_index::set_solid : icon_index::set;
+	_commands[commands::options_collection]->icon = _state.search_is_in_collection() ? icon_index::set_solid : icon_index::set;
 
 
 	const auto summary_text = format_items_summary(_state.group_order(), _state.sort_order(), _state.summary_shown(),
@@ -3025,7 +3024,7 @@ void app_frame::update_command_text()
 	def_command(commands::option_highlight_large_items, command_group::options, icon_index::none, tt.command_highlight_large_items);
 	def_command(commands::tool_import, command_group::tools, icon_index::import, tt.command_import);
 	def_command(commands::sync, command_group::tools, icon_index::sync, tt.command_sync);
-	def_command(commands::options_collection, command_group::options, icon_index::none, tt.command_collection_options);
+	def_command(commands::options_collection, command_group::options, icon_index::set, tt.command_collection_options);
 	def_command(commands::keyboard, command_group::help, icon_index::keyboard, tt.command_keyboard);
 	def_command(commands::tool_locate, command_group::tools, icon_index::location, tt.command_locate);
 	def_command(commands::view_maximize, command_group::help, icon_index::maximize, tt.command_maximize);
@@ -3164,9 +3163,6 @@ void app_frame::update_command_text()
 	def_command(commands::sort_size, command_group::sort_by, icon_index::none, tt.command_sort_size);
 	def_command(commands::sort_def, command_group::sort_by, icon_index::none, tt.command_sort_def);
 	def_command(commands::sort_date_modified, command_group::sort_by, icon_index::none, tt.command_sort_date_modified);
-
-	def_command(commands::collection_add, command_group::options, icon_index::none, tt.collection_add);
-	
 
 	_commands[commands::browse_previous_item]->keyboard_accelerator_text = tt.keyboard_left;
 	_commands[commands::browse_next_item]->keyboard_accelerator_text = tt.keyboard_right;
@@ -3435,14 +3431,14 @@ void app_frame::tooltip(view_hover_element& hover, const commands id)
 				view_element_style::new_line));
 		}
 	}
-	else if (id == commands::collection_add)
+	else if (id == commands::options_collection)
 	{
 		const auto search = _state.search();
 
 		if (!search.is_empty())
 		{
-			const auto is_collection_root = _state.search_is_collection_root();
-			const auto text = str::format(is_collection_root ? tt.collection_remove_fmt : tt.collection_add_fmt, search.text());
+			const auto is_collection_root = _state.search_is_in_collection();
+			const auto text = is_collection_root ? tt.collection_in : tt.collection_not_in;
 			hover.elements->add(std::make_shared<text_element>(text, ui::style::font_face::dialog,
 				ui::style::text_style::multiline,
 				view_element_style::new_line));

@@ -83,7 +83,7 @@ namespace df
 		virtual void complete(std::u8string_view message = {}) = 0;
 		virtual void show_errors() = 0;
 
-		virtual void message(std::u8string_view message, int pos, int total) = 0;
+		virtual void message(std::u8string_view message, int64_t pos, int64_t total) = 0;
 
 		virtual void show_message(std::u8string_view message) = 0;
 		virtual bool is_canceled() const = 0;

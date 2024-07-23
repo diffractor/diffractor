@@ -403,7 +403,7 @@ namespace df
 		const index_item_infos files;
 		index_folder_infos folders;
 
-		bool is_indexed = false;
+		bool is_in_collection = false;
 		bool is_read_only = false;
 		bool is_excluded = false;
 
@@ -844,9 +844,9 @@ namespace df
 			return _is_folder;
 		}
 
-		bool is_indexed() const
+		bool is_in_collection() const
 		{
-			return _info && _info->is_indexed;
+			return _info && _info->is_in_collection;
 		}
 
 		prop::item_metadata_const_ptr metadata() const

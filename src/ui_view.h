@@ -238,7 +238,6 @@ public:
 	bool _tracking = false;
 	bool _controller_invalid = false;
 	recti _controller_bounds;
-	pointi _last_loc;
 	recti _tooltip_bounds;
 
 	ui::style::cursor _cursor = ui::style::cursor::normal;
@@ -263,8 +262,6 @@ public:
 
 	void update_controller(const pointi loc)
 	{
-		_last_loc = loc;
-
 		if (!_tooltip_bounds.is_empty() && !_tooltip_bounds.contains(loc))
 		{
 			_tooltip_bounds.clear();
@@ -319,7 +316,9 @@ public:
 			c->on_mouse_left_button_up(loc, keys);
 		}
 
-		update_controller(loc);
+		// on_mouse_left_button_up sometimes shows a dialog
+		// it is best to fetch the current cursor location
+		update_controller(frame()->cursor_location());
 	}
 
 	void on_mouse_left_button_double_click(const pointi loc, const ui::key_state keys) override

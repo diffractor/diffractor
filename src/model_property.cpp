@@ -18,12 +18,12 @@ using property_map = df::hash_map<std::u8string_view, prop::key_ref, df::ihash, 
 static property_map all_props;
 
 
-int prop::exp_round(const double d)
+int64_t prop::exp_round(const double d)
 {
-	const auto n = df::round(d);
-	if (n >= 950ull) return df::round64(n, 1000ull) * 1000ull;
-	if (n >= 95ull) return df::round64(n, 100ull) * 100ull;
-	if (n >= 5ull) return df::round64(n, 10ull) * 10ull;
+	const auto n = df::round64(d);
+	if (d >= 950ull) return df::round64(n, 1000) * 1000;
+	if (d >= 95ull) return df::round64(n, 100) * 100;
+	if (d >= 5ull) return df::round64(n, 10) * 10;
 	return n;
 }
 

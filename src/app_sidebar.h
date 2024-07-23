@@ -864,7 +864,7 @@ public:
 	struct pie_chart_entry
 	{
 		int id = 0;
-		int count = 0;
+		uint64_t count = 0;
 		df::file_size size;
 		file_group_ref group = file_group::other;
 		bool focus = false;
@@ -884,8 +884,8 @@ public:
 	{
 		struct group_count
 		{
-			int count_sr;
-			int count;
+			int64_t count_sr;
+			int64_t count;
 			df::file_size size;
 			file_group_ref group;
 		};
@@ -916,14 +916,14 @@ public:
 
 			if (count_sr != 0)
 			{
-				auto remaining_count_total = 0;
-				const auto remaining_segments = chart_segment_count - current_segment;
+				auto remaining_count_total = 0ll;
+				const auto remaining_segments = static_cast<uint64_t>(chart_segment_count - current_segment);
 				const auto is_last = i == file_group::max_count - 1;
 
 				for (auto j = i; j < file_group::max_count; ++j) 
 					remaining_count_total += counts[j].count_sr;
 
-				const auto segments = std::max(1, df::mul_div(remaining_segments, count_sr, remaining_count_total));
+				const auto segments = std::max(1ll, df::mul_div(remaining_segments, count_sr, remaining_count_total));
 
 				for (int k = 0; (k < segments || is_last) && current_segment < chart_segment_count; k++)
 				{					

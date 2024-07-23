@@ -169,7 +169,7 @@ namespace df
 
 	constexpr uint32_t byte_clamp(const uint32_t n)
 	{
-		return (n > 255) ? 255u : n;
+		return (n > 255u) ? 255u : n;
 	}
 
 	constexpr int round_up(const int i, const int d)
@@ -183,7 +183,7 @@ namespace df
 		return static_cast<int>(d < 0.0f ? floor(d) : ceil(d));
 	}
 
-	inline int round(const double d)
+	inline int32_t round(const double d)
 	{
 		if (!isnormal(d)) return 0;
 
@@ -191,9 +191,22 @@ namespace df
 
 		if ((d - f) >= 0.5)
 		{
-			return static_cast<int>(d >= 0.0 ? ceil(d) : f);
+			return static_cast<int32_t>(d >= 0.0 ? ceil(d) : f);
 		}
-		return static_cast<int>(d < 0.0 ? ceil(d) : f);
+		return static_cast<int32_t>(d < 0.0 ? ceil(d) : f);
+	}
+
+	inline int64_t round64(const double d)
+	{
+		if (!isnormal(d)) return 0;
+
+		const auto f = floor(d);
+
+		if ((d - f) >= 0.5)
+		{
+			return static_cast<int64_t>(d >= 0.0 ? ceil(d) : f);
+		}
+		return static_cast<int64_t>(d < 0.0 ? ceil(d) : f);
 	}
 
 	inline int round(const float d)
@@ -219,6 +232,11 @@ namespace df
 		return (i + (d / 2)) / d;
 	}
 
+	constexpr int64_t round64(const int64_t i, const int64_t d)
+	{
+		return (i + (d / 2)) / d;
+	}
+
 	constexpr bool in_range(const uint8_t* section, const size_t section_size, const uint8_t* limit,
 		const size_t limit_size)
 	{
@@ -236,7 +254,7 @@ namespace df
 		return den64 ? ((n64 * num64) + (den64 / 2)) / den64 : -1;
 	}
 
-	constexpr int mul_div(const int n, const int num, const int den)
+	constexpr int mul_div(const int32_t n, const int32_t num, const int32_t den)
 	{
 		if (in_range(INT16_MIN, INT16_MAX, n) &&
 			in_range(INT16_MIN, INT16_MAX, num))
@@ -279,6 +297,7 @@ namespace df
 
 	struct no_copy
 	{
+		virtual ~no_copy() = default;
 		no_copy(const no_copy&) = delete;
 		no_copy& operator=(const no_copy&) = delete;
 		no_copy() = default;
@@ -714,7 +733,7 @@ namespace df
 
 	struct count_and_size
 	{
-		uint32_t count = 0;
+		uint64_t count = 0;
 		file_size size;		
 
 		count_and_size operator+(const count_and_size other) const

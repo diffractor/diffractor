@@ -31,7 +31,6 @@ enum class commands
 	browse_previous_item_extend,
 	browse_recursive,
 	browse_search,
-	collection_add,
 	edit_copy,
 	edit_cut,
 	edit_item_color_reset,

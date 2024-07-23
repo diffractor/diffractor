@@ -2141,7 +2141,7 @@ view_elements_ptr view_state::create_selection_controls()
 	return result;
 }
 
-uint32_t view_state::count_total(const file_group_ref fg) const
+uint64_t view_state::count_total(const file_group_ref fg) const
 {
 	if (fg->id < static_cast<int>(_summary_total.counts.size()))
 	{
@@ -2151,7 +2151,7 @@ uint32_t view_state::count_total(const file_group_ref fg) const
 	return 0;
 }
 
-uint32_t view_state::count_shown(const file_group_ref fg) const
+uint64_t view_state::count_shown(const file_group_ref fg) const
 {
 	if (fg->id < static_cast<int>(_summary_shown.counts.size()))
 	{
@@ -2161,7 +2161,7 @@ uint32_t view_state::count_shown(const file_group_ref fg) const
 	return 0;
 }
 
-uint32_t view_state::display_item_count() const
+uint64_t view_state::display_item_count() const
 {
 	uint32_t result = 0;
 
@@ -2208,23 +2208,26 @@ static bool calc_search_is_favorite(const df::search_t& search)
 	return false;
 }
 
-static bool calc_search_is_collection_root(const df::index_roots& roots, const df::search_t& search)
+static bool calc_search_search_is_in_collection(const index_state& index, const df::search_t& search)
 {
-	for (const auto& sel : search.selectors())
+	const auto item_selectors = search.selectors();
+
+	if (item_selectors.empty())
+		return true;
+
+	for (const auto& sel : item_selectors)
 	{
-		if (roots.folders.contains(sel.folder()))
-		{
-			return true;
-		}
+		if (!index.is_in_collection(sel.folder()))
+			return false;
 	}
 
-	return false;
+	return true;
 }
 
 void view_state::update_search_is_favorite_or_collection_root()
 {
 	_search_is_favorite = calc_search_is_favorite(_search);
-	_search_is_collection_root = calc_search_is_collection_root(item_index.index_roots(), _search);
+	_search_is_in_collection = calc_search_search_is_in_collection(item_index, _search);
 }
 
 void view_state::update_pixel_difference()

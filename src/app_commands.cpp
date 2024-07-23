@@ -3885,7 +3885,7 @@ static void index_settings_invoke(view_state& s, const ui::control_frame_ptr& pa
 	cols->add(set_margin(local_index));
 	cols->add(set_margin(custom_index));
 
-	controls.emplace_back(set_margin(std::make_shared<ui::title_control2>(dlg->_frame, icon_index::settings, tt.command_collection_options, tt.collection_options_info)));
+	controls.emplace_back(set_margin(std::make_shared<ui::title_control2>(dlg->_frame, icon_index::set, tt.command_collection_options, tt.collection_options_info)));
 	controls.emplace_back(std::make_shared<divider_element>());
 	controls.emplace_back(cols);
 	controls.emplace_back(std::make_shared<divider_element>());
@@ -3903,20 +3903,6 @@ static void index_settings_invoke(view_state& s, const ui::control_frame_ptr& pa
 
 	dlg->_frame->destroy();
 	s.invalidate_view(view_invalid::index | view_invalid::options);
-}
-
-static void collection_add_invoke(view_state& s, const ui::control_frame_ptr& parent, const view_host_base_ptr& view)
-{
-	const auto roots = s.item_index.index_roots();
-
-	auto collection_settings = setting.collection;
-
-	for (const auto& sel : s.search().selectors())
-	{
-		toggle_collection_entry(collection_settings, sel.folder(), roots.folders.contains(sel.folder()));
-	}
-
-	index_settings_invoke(s, parent, collection_settings);
 }
 
 static void customise_invoke(view_state& s, const ui::control_frame_ptr& parent)
@@ -4164,7 +4150,7 @@ void app_frame::initialise_commands()
 	_commands[commands::repeat_toggle]->icon_can_change = true;
 	_commands[commands::playback_volume_toggle]->icon_can_change = true;
 	_commands[commands::favorite]->icon_can_change = true;
-	_commands[commands::collection_add]->icon_can_change = true;
+	_commands[commands::options_collection]->icon_can_change = true;
 
 	_commands[commands::option_highlight_large_items]->clr = ui::style::color::rank_background;
 	_commands[commands::rate_rejected]->clr = color_rate_rejected;
@@ -4251,8 +4237,7 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::tool_prile_properties,
 		[this] { file_properties_invoke(_state, _app_frame, _view_frame); });
 	add_command_invoke(commands::browse_search, [this] { _search_edit->focus(); });
-	add_command_invoke(commands::browse_recursive, [this] { show_flatten_invoke(_state, _app_frame, _view_frame); });
-	add_command_invoke(commands::collection_add, [this] { collection_add_invoke(_state, _app_frame, _view_frame); });
+	add_command_invoke(commands::browse_recursive, [this] { show_flatten_invoke(_state, _app_frame, _view_frame); });	
 	add_command_invoke(commands::view_fullscreen, [this] { toggle_full_screen(); });
 	add_command_invoke(commands::option_highlight_large_items, [this]
 		{
@@ -4469,7 +4454,6 @@ void app_frame::initialise_commands()
 				find_command(commands::refresh),
 				find_command(commands::tool_new_folder),
 				find_command(commands::favorite),
-				find_command(commands::collection_add),
 				nullptr,
 				find_command(commands::edit_cut),
 				find_command(commands::edit_copy),

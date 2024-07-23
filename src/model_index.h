@@ -458,7 +458,7 @@ public:
 	               bool scan_if_offline, const df::item_element_ptr& i, file_type_ref ft);
 	void scan_item(const df::item_element_ptr& i, bool load_thumb, bool scan_if_offline);
 	bool needs_scan(const df::item_element_ptr&) const;
-	bool is_indexed(df::folder_path folder) const;
+	bool is_in_collection(df::folder_path folder) const;
 
 	void index_folders(df::cancel_token token);
 	void index_roots(df::index_roots roots);
@@ -503,7 +503,7 @@ public:
 
 		for (const auto& folder : folders)
 		{
-			if (folder.second->is_indexed)
+			if (folder.second->is_in_collection)
 			{
 				for (const auto& file : folder.second->files)
 				{
@@ -581,7 +581,7 @@ public:
 	struct folder_total
 	{
 		df::folder_path folder;
-		uint32_t count = 0;
+		uint64_t count = 0;
 		df::file_size size;
 	};
 

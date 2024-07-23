@@ -82,7 +82,7 @@ public:
 	void invalidate_controller()
 	{
 		_controller_invalid = true;
-		update_controller(_last_loc);
+		update_controller(_frame->cursor_location());
 	}
 
 	int fps() const
@@ -155,7 +155,6 @@ public:
 
 	void on_mouse_wheel(const pointi loc, const int delta, const ui::key_state keys, bool& was_handled) override
 	{
-		_last_loc = loc;
 		const int z_delta = delta / 2;
 		_view->mouse_wheel(loc, z_delta, keys);
 		update_controller(loc);

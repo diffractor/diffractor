@@ -19,9 +19,8 @@ struct plural_text
 	std::u8string_view plural;
 };
 
-std::u8string format_plural_text(const plural_text& fmt, int count, int of_total = 0);
-std::u8string format_plural_text(const plural_text& fmt, std::u8string_view first_name, int count, df::file_size size,
-                                 int of_total = 0);
+std::u8string format_plural_text(const plural_text& fmt, int64_t count, int64_t of_total = 0);
+std::u8string format_plural_text(const plural_text& fmt, std::u8string_view first_name, int64_t count, df::file_size size, int64_t of_total = 0);
 std::u8string format_plural_text(const plural_text& fmt, const df::item_set& items);
 std::u8string format_plural_text(const plural_text& fmt, const std::vector<std::u8string>& result);
 
@@ -1082,8 +1081,8 @@ struct app_text_t
 	text_t command_advanced_search = u8"Advanced Search"sv;
 	text_t favorite_add_fmt = u8"Add '{}' to favorites."sv;
 	text_t favorite_remove_fmt = u8"Remove '{}' from favorite folders or searches."sv;
-	text_t collection_add_fmt = u8"Add '{}' to the collection."sv;
-	text_t collection_remove_fmt = u8"Remove '{}' from the collection."sv;
+	text_t collection_in = u8"Shown item are from the collection."sv;
+	text_t collection_not_in = u8"Shown item are NOT from the collection."sv;
 	text_t collection_info = u8"The collection is a group of folders that you specify to be indexed. Indexing allows fast searching and duplicate detection. Diffractor will also highlight when items are not in the collection."sv;
 	text_t favorite_title = u8"Favorite title"sv;
 	text_t favorite_info = u8"Favorites are listed in the sidebar for quick access."sv;

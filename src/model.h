@@ -849,7 +849,7 @@ private:
 	common_display_state_t _common_display_state;
 
 	bool _search_is_favorite = false;
-	bool _search_is_collection_root = false;
+	bool _search_is_in_collection = false;
 
 	group_by _group_order = group_by::file_type;
 	sort_by _sort_order = sort_by::def;
@@ -887,9 +887,9 @@ public:
 		return _search_is_favorite;
 	}
 
-	bool search_is_collection_root() const
+	bool search_is_in_collection() const
 	{
-		return _search_is_collection_root;
+		return _search_is_in_collection;
 	}
 
 	bool has_error_items() const
@@ -958,9 +958,9 @@ public:
 		return _focus;
 	}
 
-	uint32_t count_total(file_group_ref fg) const;
-	uint32_t count_shown(file_group_ref fg) const;
-	uint32_t display_item_count() const;
+	uint64_t count_total(file_group_ref fg) const;
+	uint64_t count_shown(file_group_ref fg) const;
+	uint64_t display_item_count() const;
 
 	const df::item_set& display_items() const
 	{

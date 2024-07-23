@@ -29,12 +29,12 @@ private:
 
 	bool _closed = false;
 	bool _completed = false;
-	int _pos = 0;
-	int _total = 0;
+	int64_t _pos = 0;
+	int64_t _total = 0;
 
-	int _processed_count = 0;
-	int _failed_count = 0;
-	int _ignore_count = 0;
+	int64_t _processed_count = 0;
+	int64_t _failed_count = 0;
+	int64_t _ignore_count = 0;
 
 	std::u8string _processed_first_name;
 	std::u8string _failed_first_name;
@@ -67,7 +67,7 @@ public:
 
 	~command_status() override = default;
 
-	void total(int t)
+	void total(size_t t)
 	{
 		_total = t;
 	}
@@ -97,7 +97,7 @@ public:
 		});
 	}
 
-	void message(const std::u8string_view message, int pos, int total) override
+	void message(const std::u8string_view message, int64_t pos, int64_t total) override
 	{
 		_async.queue_ui([t = shared_from_this(), m = std::u8string(message), pos, total]()
 		{

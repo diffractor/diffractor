@@ -2061,7 +2061,7 @@ namespace ui
 		recti _rect_progress;
 		recti _rect_text;
 		mutable sizei _text_extent;
-		int _pos = 0;
+		int64_t _pos = 0;
 		control_frame_ptr _parent;
 
 	public:
@@ -2114,7 +2114,7 @@ namespace ui
 			             style::text_style::multiline_center, color(dc.colors.foreground, dc.colors.alpha), {});
 		}
 
-		void render_progress(draw_context& dc, const recti progress_rect, int pos) const
+		void render_progress(draw_context& dc, const recti progress_rect, int64_t pos) const
 		{
 			if (!progress_rect.is_empty())
 			{
@@ -2125,7 +2125,7 @@ namespace ui
 					dc.draw_rect(progress_rect, cc);
 
 					auto r = progress_rect.inflate(-2);
-					r.right = r.left + df::mul_div(std::min(pos, 1000), r.width(), 1000);
+					r.right = r.left + static_cast<int>(df::mul_div(std::min(pos, 1000ll), static_cast<int64_t>(r.width()), 1000ll));
 					dc.draw_rect(r, color(0xFFFFFF, dc.colors.alpha * 0.22f));
 				}
 				else
@@ -2142,12 +2142,12 @@ namespace ui
 			layout();
 		}
 
-		void message(const std::u8string_view m, int nn = 0, int dd = 0)
+		void message(const std::u8string_view m, int64_t nn = 0, int64_t dd = 0)
 		{
 			df::assert_true(is_ui_thread());
 
 			const auto text_changed = _text != m;
-			const auto pos = dd > 0 ? df::mul_div(1000, nn, dd) : 0;
+			const auto pos = dd > 0ll ? df::mul_div(1000ll, nn, dd) : 0ll;
 
 			if (_pos != pos || text_changed)
 			{

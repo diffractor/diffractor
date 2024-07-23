@@ -85,18 +85,10 @@ public:
 
 	void on_mouse_left_button_up(const pointi loc, const ui::key_state keys) override
 	{
+		const auto can_invoke = _tracking && _hover && _can_click;
+
 		_last_loc = loc;
 		_hover = _bounds.contains(loc);
-
-		if (_tracking && _hover && _can_click)
-		{
-			const view_element_event e1{view_element_event_type::click, _host};
-			const view_element_event e2{view_element_event_type::invoke, _host};
-
-			_element->dispatch_event(e1);
-			_element->dispatch_event(e2);
-		}
-
 		_tracking = false;
 		interaction_context ic{loc, _element_offset, _tracking};
 		update_highlight();
@@ -105,6 +97,15 @@ public:
 		if (ic.invalidate_view)
 		{
 			_host->frame()->invalidate(_bounds);
+		}
+
+		if (can_invoke)
+		{
+			const view_element_event e1{ view_element_event_type::click, _host };
+			const view_element_event e2{ view_element_event_type::invoke, _host };
+
+			_element->dispatch_event(e1);
+			_element->dispatch_event(e2);
 		}
 	}
 

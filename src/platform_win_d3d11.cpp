@@ -136,7 +136,7 @@ bool factories::init(bool use_gpu)
 #endif
 
 
-		const D3D_FEATURE_LEVEL feature_levels_11_1[] =
+		constexpr D3D_FEATURE_LEVEL feature_levels_11_1[] =
 		{
 			D3D_FEATURE_LEVEL_11_1,
 			D3D_FEATURE_LEVEL_11_0,
@@ -147,7 +147,7 @@ bool factories::init(bool use_gpu)
 			D3D_FEATURE_LEVEL_9_1,
 		};
 
-		const D3D_FEATURE_LEVEL feature_levels_11[] =
+		constexpr D3D_FEATURE_LEVEL feature_levels_11[] =
 		{
 			D3D_FEATURE_LEVEL_11_0,
 			D3D_FEATURE_LEVEL_10_1,
@@ -455,8 +455,8 @@ struct vertex_2d
 	}
 };
 
-const uint32_t vertex_stride = static_cast<uint32_t>(sizeof(vertex_2d));
-const uint32_t icon_texture_size = 512;
+constexpr uint32_t vertex_stride = static_cast<uint32_t>(sizeof(vertex_2d));
+constexpr uint32_t icon_texture_size = 512;
 
 static_assert(std::is_trivial_v<vertex_2d>);
 
@@ -475,7 +475,7 @@ static_assert(std::is_trivial_v<vertex_2d>);
 class d3d11_draw_context_impl;
 
 
-class d3d11_text_renderer : df::no_copy, public IDWriteTextRenderer
+class d3d11_text_renderer final : df::no_copy, public IDWriteTextRenderer
 {
 private:
 	factories_ptr _f;
@@ -616,8 +616,7 @@ public:
 	}
 };
 
-
-class d3d11_texture : public ui::texture
+class d3d11_texture final : public ui::texture
 {
 public:
 	factories_ptr _f;
@@ -634,7 +633,7 @@ public:
 	}
 
 public:
-	d3d11_texture(const factories_ptr& f) : _f(f)
+	explicit d3d11_texture(const factories_ptr& f) : _f(f)
 	{
 	}
 
@@ -698,7 +697,7 @@ public:
 	ComPtr<ID3D11Buffer> _vertex_buffer;
 	ComPtr<ID3D11Buffer> _index_buffer;
 
-	d3d11_vertices(std::shared_ptr<d3d11_draw_context_impl> c) : _canvas(std::move(c))
+	explicit d3d11_vertices(std::shared_ptr<d3d11_draw_context_impl> c) : _canvas(std::move(c))
 	{
 	}
 
@@ -755,9 +754,7 @@ public:
 	std::vector<scene_atom> _scene_atoms;
 
 public:
-	d3d11_draw_context_impl()
-	{
-	}
+	d3d11_draw_context_impl() = default;
 
 	~d3d11_draw_context_impl() override
 	{
@@ -888,7 +885,7 @@ private:
 	friend class render_font_d3d11;
 };
 
-static DXGI_FORMAT to_format(const ui::texture_format format)
+static constexpr DXGI_FORMAT to_format(const ui::texture_format format)
 {
 	switch (format)
 	{
@@ -1300,7 +1297,7 @@ void d3d11_draw_context_impl::build_index_and_vertex_buffers()
 	}
 }
 
-struct context_state
+struct context_state final
 {
 	ID3D11PixelShader* shader = nullptr;
 	ID3D11Texture2D* texture = nullptr;
@@ -2033,8 +2030,7 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 			return ui::texture_update_result::failed;
 		}
 
-		if (!_shared_texture || _shared_texture_dimensions != texture_extent || _shared_texture_format !=
-			video_tex_format)
+		if (!_shared_texture || _shared_texture_dimensions != texture_extent || _shared_texture_format != video_tex_format)
 		{
 			ComPtr<ID3D11Texture2D> shared_texture;
 
@@ -2200,7 +2196,7 @@ static HRESULT try_create_tex(ID3D11Device* pDevice, const D3D11_TEXTURE2D_DESC&
 }
 
 static HRESULT try_update_tex(ID3D11DeviceContext* context, ID3D11Texture2D* texture, const sizei texture_dimensions,
-                              const ui::texture_format fmt, const uint8_t* pixels, int stride, int buffer_size)
+                              const ui::texture_format fmt, const uint8_t* pixels, size_t stride, size_t buffer_size)
 {
 	const auto is_yuv = fmt == ui::texture_format::NV12 || fmt == ui::texture_format::P010;
 
@@ -2214,7 +2210,7 @@ static HRESULT try_update_tex(ID3D11DeviceContext* context, ID3D11Texture2D* tex
 
 	__try
 	{
-		context->UpdateSubresource(texture, 0, &box, pixels, stride, buffer_size);
+		context->UpdateSubresource(texture, 0, &box, pixels, static_cast<UINT>(stride), static_cast<UINT>(buffer_size));
 		return S_OK;
 	}
 	__except (is_yuv ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH)
@@ -2340,7 +2336,7 @@ void d3d11_text_renderer::create_a8_texture(const int xy)
 	{
 		ComPtr<ID3D11Texture2D> t;
 
-		D3D11_TEXTURE2D_DESC desc;
+		D3D11_TEXTURE2D_DESC desc = {};
 		desc.Width = xy;
 		desc.Height = xy;
 		desc.MipLevels = desc.ArraySize = 1;
@@ -2417,7 +2413,7 @@ d3d11_text_renderer::coords d3d11_text_renderer::find_glyph(const uint16_t c, co
 			const auto x = static_cast<uint32_t>(_next_location.x);
 			const auto y = static_cast<uint32_t>(_next_location.y);
 
-			D3D11_BOX box;
+			D3D11_BOX box = {};
 			box.left = x;
 			box.top = y;
 			box.front = 0;
@@ -2863,7 +2859,7 @@ void d3d11_draw_context_impl::draw_rounded_rect(const recti bounds_in, const ui:
 			vertex_2d(ol, ob, -1.0f, 1.0f, c_outside),
 		};
 
-		const WORD indexes[] = {
+		constexpr WORD indexes[] = {
 
 			0, 1, 2,
 			2, 3, 0,
@@ -2921,7 +2917,7 @@ void d3d11_draw_context_impl::draw_rect(const recti bounds, const ui::color c)
 			vertex_2d(r[3], clr2),
 		};
 
-		const WORD indexes[] = {
+		constexpr WORD indexes[] = {
 
 			0, 1, 2,
 			1, 3, 2,

@@ -17,6 +17,7 @@
 #include <Shellapi.h>
 #include <Shobjidl.h>
 #include <DbgHelp.h>
+#include <iostream>
 #include <winsock2.h>
 #include <wtsapi32.h>
 #include <shlguid.h>
@@ -2387,6 +2388,16 @@ public:
 		auto h = t->m_hWnd;
 		df::assert_true(IsWindow(h));
 		return h;
+	}
+
+	pointi cursor_location() override
+	{
+		POINT loc = {};
+		if (GetCursorPos(&loc))
+		{
+			ScreenToClient(hwnd(), &loc);
+		}
+		return { loc.x, loc.y };
 	}
 
 	std::any handle() const override

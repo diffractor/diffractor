@@ -867,7 +867,7 @@ namespace str
 	std::u8string to_string(double v, int num_digits);
 	std::u8string to_string(sizei v);
 
-	std::u8string format_count(int total, bool show_zero = false);
+	std::u8string format_count(uint64_t total, bool show_zero = false);
 
 	bool is_utf8(const char8_t* sz, int len);
 	bool is_utf16(const uint8_t* sz, int len);

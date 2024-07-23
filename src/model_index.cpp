@@ -33,7 +33,7 @@ static_assert(std::is_move_constructible_v<df::index_file_item>);
 
 static_assert(sizeof(bloom_bits) == 4);
 static_assert(sizeof(df::file_path) == sizeof(void*) * 2);
-//static_assert(sizeof(df::index_file_info) == 48);
+static_assert(sizeof(key_val) == sizeof(void*) * 2);
 //static_assert(sizeof(df::index_folder_info) == 88);
 //static_assert(sizeof(prop::item_metadata) == 250);
 
@@ -270,7 +270,7 @@ static void iterate_items(const df::search_t& search,
 		{
 			if (token.is_cancelled()) break;
 
-			if (folder_node.second->is_indexed)
+			if (folder_node.second->is_in_collection)
 			{
 				if (has_related ||
 					matcher.can_match_folder ||
@@ -350,7 +350,7 @@ void index_state::query_items(const df::search_t& search, const df::unique_items
 		{
 			const auto folder = _items.find(id.folder());
 
-			if (!(folder && folder->is_indexed))
+			if (!(folder && folder->is_in_collection))
 			{
 				found_related->search({ df::search_result_type::similar });
 				results.results.add(found_related);
@@ -541,7 +541,7 @@ void index_state::invalidate_view(view_invalid invalid) const
 }
 
 
-bool index_state::is_indexed(const df::folder_path folder) const
+bool index_state::is_in_collection(const df::folder_path folder) const
 {
 	const auto parent = folder.parent();
 
@@ -559,14 +559,14 @@ bool index_state::is_indexed(const df::folder_path folder) const
 
 	if (found_folder)
 	{
-		return found_folder->is_indexed;
+		return found_folder->is_in_collection;
 	}
 
 	const auto found_parent = _items.find(parent);
 
 	if (found_parent)
 	{
-		return found_parent->is_indexed;
+		return found_parent->is_in_collection;
 	}
 
 	return false;
@@ -911,7 +911,7 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 				folder_node->name = existing_folder->name;
 				folder_node->is_read_only = existing_folder->is_read_only;
 				folder_node->is_excluded = existing_folder->is_excluded;
-				folder_node->is_indexed = existing_folder->is_indexed;
+				folder_node->is_in_collection = existing_folder->is_in_collection;
 				folder_node->volume = existing_folder->volume;
 				folder_node->bloom_filter = existing_folder->bloom_filter;
 				folder_node->created = existing_folder->created;
@@ -947,7 +947,7 @@ std::vector<std::pair<df::file_path, df::index_file_item>> index_state::duplicat
 
 	for (const auto& ifn : folders)
 	{
-		if (ifn.second->is_indexed)
+		if (ifn.second->is_in_collection)
 		{
 			for (const auto& file : ifn.second->files)
 			{
@@ -983,7 +983,7 @@ void index_state::update_predictions()
 
 	for (const auto& ifn : folders)
 	{
-		if (ifn.second->is_indexed)
+		if (ifn.second->is_in_collection)
 		{
 			for (const auto& file : ifn.second->files)
 			{
@@ -1085,7 +1085,7 @@ void index_state::update_predictions()
 
 	for (const auto& ifn : folders)
 	{
-		if (ifn.second->is_indexed)
+		if (ifn.second->is_in_collection)
 		{
 			for (const auto& file : ifn.second->files)
 			{
@@ -1110,7 +1110,7 @@ void index_state::update_predictions()
 
 	for (const auto& ifn : folders)
 	{
-		if (ifn.second->is_indexed)
+		if (ifn.second->is_in_collection)
 		{
 			for (const auto& file : ifn.second->files)
 			{
@@ -1158,7 +1158,7 @@ void index_state::update_summary()
 
 	for (const auto& ifn : folders)
 	{
-		const auto is_indexed = ifn.second->is_indexed;
+		const auto is_indexed = ifn.second->is_in_collection;
 
 		if (is_indexed)
 		{
@@ -1361,7 +1361,7 @@ void index_state::scan_uncached(df::cancel_token token)
 
 		for (const auto& folder : folders)
 		{
-			if (folder.second->is_indexed)
+			if (folder.second->is_in_collection)
 			{
 				for (const auto& file : folder.second->files)
 				{
@@ -1440,7 +1440,7 @@ std::vector<folder_scan_item> index_state::scan_items(const df::index_roots& roo
 				}
 			}
 
-			update_index_summary = update_index_summary || (node.folder->is_indexed && node.was_updated);
+			update_index_summary = update_index_summary || (node.folder->is_in_collection && node.was_updated);
 		}
 	}
 
@@ -1693,14 +1693,14 @@ void index_state::scan_item(const df::index_folder_item_ptr& folder,
 								const auto loc = locations.find_closest(coord.latitude(), coord.longitude());
 								save_location(file_path, loc);
 
-								if (folder->is_indexed)
+								if (folder->is_in_collection)
 								{
 									_async.invalidate_view(view_invalid::index_summary);
 								}
 							});
 					}
 
-					if (folder->is_indexed)
+					if (folder->is_in_collection)
 					{
 						_async.invalidate_view(view_invalid::index_summary);
 					}
@@ -1842,7 +1842,7 @@ inline bool index_state::is_collection_search(const df::search_t& search) const
 {
 	for (const auto& sel : search.selectors())
 	{
-		if (!is_indexed(sel.folder()))
+		if (!is_in_collection(sel.folder()))
 		{
 			return false;
 		}
@@ -2011,7 +2011,7 @@ void index_state::index_folders(df::cancel_token token)
 
 	for (const auto& f : _items.all_folders())
 	{
-		f.second->is_indexed = false;
+		f.second->is_in_collection = false;
 		f.second->is_excluded = false;
 	}
 
@@ -2028,7 +2028,7 @@ void index_state::index_folders(df::cancel_token token)
 		if (!is_excluded(roots, folder_path))
 		{
 			const auto node = validate_folder(folder_path, true, now);
-			node.folder->is_indexed = true;
+			node.folder->is_in_collection = true;
 
 			for (const auto& file : node.folder->files)
 			{
@@ -2386,7 +2386,7 @@ void index_state::update_presence(const df::item_set& items)
 					}
 				}
 
-				if (folder->is_indexed)
+				if (folder->is_in_collection)
 				{
 					indexed_folders[ff.first] = folder;
 				}
@@ -2443,7 +2443,7 @@ void index_state::update_presence(const df::item_set& items)
 
 			for (const auto& ifn : folders)
 			{
-				if (ifn.second->is_indexed)
+				if (ifn.second->is_in_collection)
 				{
 					for (const auto& file : ifn.second->files)
 					{
@@ -2558,10 +2558,10 @@ void index_state::scan_folder(const df::folder_path folder_path, const bool mark
 {
 	df::scope_locked_inc l(scanning_items);
 	const auto node = validate_folder(folder_path, true, timestamp);
-	node.folder->is_indexed = mark_is_indexed;
+	node.folder->is_in_collection = mark_is_indexed;
 	scan_folder(folder_path, node.folder);
 
-	if (node.folder->is_indexed && node.was_updated)
+	if (node.folder->is_in_collection && node.was_updated)
 	{
 		_async.invalidate_view(view_invalid::index_summary);
 	}
@@ -2663,7 +2663,7 @@ void index_state::queue_scan_folder(const df::folder_path path)
 	_async.queue_async(async_queue::scan_folder, [this, path]()
 	{
 		const auto now = platform::now();
-		scan_folder(path, is_indexed(path), now);
+		scan_folder(path, is_in_collection(path), now);
 	});
 }
 
@@ -2675,7 +2675,7 @@ void index_state::queue_scan_folders(df::unique_folders paths)
 
 		for (const auto& path : paths)
 		{
-			scan_folder(path, is_indexed(path), now);
+			scan_folder(path, is_in_collection(path), now);
 		}
 
 		_async.invalidate_view(view_invalid::view_layout);
@@ -2790,7 +2790,7 @@ std::vector<index_state::folder_total> index_state::includes_with_totals() const
 	for (const auto& f : includes)
 	{
 		df::file_size size;
-		uint32_t count = 0;
+		uint64_t count = 0;
 		const auto existing_folder = _items.find(f);
 
 		if (existing_folder)

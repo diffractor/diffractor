@@ -648,8 +648,9 @@ namespace platform
 		mutex cs;
 		uint8_t* next_free = nullptr;
 		uint8_t* block_limit = nullptr;
-		const size_t block_size = 1024 * 1024;
-		const size_t alignment = 4;
+
+		constexpr static size_t block_size = 1024_z * 1024_z;
+		constexpr static size_t alignment = 4;
 
 		void* alloc(size_t size);
 	};
