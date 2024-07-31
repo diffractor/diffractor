@@ -3591,7 +3591,7 @@ void app_frame::initialise_commands()
 	_commands[commands::menu_tag_with]->toolbar_text = _commands[commands::menu_tag_with]->text;
 	_commands[commands::menu_tools_toolbar]->toolbar_text = _commands[commands::menu_tools_toolbar]->text;
 	_commands[commands::menu_playback]->toolbar_text = _commands[commands::menu_playback]->text;
-	_commands[commands::view_exit]->toolbar_text = _commands[commands::view_exit]->text;
+	_commands[commands::view_close]->toolbar_text = _commands[commands::view_close]->text;
 	_commands[commands::sync_analyze]->toolbar_text = _commands[commands::sync_analyze]->text;
 	_commands[commands::sync_run]->toolbar_text = _commands[commands::sync_run]->text;
 	_commands[commands::rename_run]->toolbar_text = _commands[commands::rename_run]->text;
@@ -3673,7 +3673,7 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::favorite, [this] { favorite_invoke(_state, _app_frame); });
 	add_command_invoke(commands::advanced_search, [this] { advanced_search_invoke(_state, _app_frame, _view_frame); });
 
-	add_command_invoke(commands::view_exit, [this] { _view->exit(); });
+	add_command_invoke(commands::view_close, [this] { _view->exit(); });
 	add_command_invoke(commands::edit_item_save, [this] { _view_edit->save_and_close(); });
 	add_command_invoke(commands::edit_item_save_and_prev, [this] { _view_edit->save_and_next(false); });
 	add_command_invoke(commands::edit_item_save_and_next, [this] { _view_edit->save_and_next(true); });
@@ -3957,7 +3957,6 @@ void app_frame::initialise_commands()
 				for (const auto& h : handlers)
 				{
 					auto command = std::make_shared<ui::command>();
-
 					command->text = str::format(tt.open_with_fmt, h.name);
 					command->invoke = [h, selected_items, f = _app_frame]
 						{
@@ -3984,7 +3983,6 @@ void app_frame::initialise_commands()
 						if (t->exists())
 						{
 							auto command = std::make_shared<ui::command>();
-
 							command->text = format(tt.open_with_fmt, t->text);
 							command->invoke = [t, first_item, f = _app_frame]
 								{
@@ -4032,7 +4030,6 @@ void app_frame::initialise_commands()
 			{
 				auto tag = str::cache(t);
 				auto command = std::make_shared<ui::command>();
-
 				command->text = tag;
 				command->enable = is_enabled;
 				command->invoke = [this, tag]
@@ -4070,7 +4067,6 @@ void app_frame::initialise_commands()
 
 					auto command = std::make_shared<ui::command>();
 					command->text = language_name(lang_code);
-					command->enable = true;
 					command->checked = setting.language == lang_code;
 					command->invoke = [this, lang_path, lang_code]
 						{
@@ -4280,7 +4276,6 @@ void app_frame::initialise_commands()
 				{
 					auto command = std::make_shared<ui::command>();
 					command->text = d.name;
-					command->enable = true;
 					command->checked = play_id == d.id;
 					command->invoke = [this, d]
 						{
@@ -4307,7 +4302,6 @@ void app_frame::initialise_commands()
 
 						auto command = std::make_shared<ui::command>();
 						command->text = text;
-						command->enable = true;
 						command->checked = st.is_playing;
 						command->invoke = [this, st]
 							{

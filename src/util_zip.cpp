@@ -21,6 +21,9 @@
 
 df::blob df::zlib_compress(cspan data_in)
 {
+	if (data_in.size > std::numeric_limits<uint32_t>::max()) // overflow 
+		return {};
+
 	blob result;
 
 	constexpr auto BUFSIZE = 128_z * 1024_z;
@@ -30,7 +33,7 @@ df::blob df::zlib_compress(cspan data_in)
 	strm.zalloc = nullptr;
 	strm.zfree = nullptr;
 	strm.next_in = data_in.data;
-	strm.avail_in = data_in.size;
+	strm.avail_in = static_cast<uint32_t>(data_in.size);
 	strm.next_out = temp_buffer.get();
 	strm.avail_out = BUFSIZE;
 

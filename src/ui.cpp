@@ -971,8 +971,7 @@ static std::function<void()> make_invoke(view_state& s, const ui::control_frame_
 }
 
 
-static ui::command_ptr def_command(const commands id, const icon_index icon, const std::u8string_view text,
-	const ui::color32 clr, std::function<void()> invoke, const bool is_checked)
+static ui::command_ptr def_menu_command(const icon_index icon, const std::u8string_view text, const ui::color32 clr, std::function<void()> invoke, const bool is_checked)
 {
 	auto c = std::make_shared<ui::command>();
 	c->icon = icon;
@@ -998,28 +997,23 @@ void rate_label_control::dispatch_event(const view_element_event& event)
 		const auto view = event.host;
 
 		const std::vector<ui::command_ptr> result = {
-			def_command(commands::rate_none, icon_index::none, tt.command_rate_0, 0,
-						make_invoke(_state, parent, view, _item, make_edit(0)), false),
-			def_command(commands::rate_rejected, icon_index::none, tt.command_rate_rejected, color_rate_rejected,
-						make_invoke(_state, parent, view, _item, make_edit(-1)), _item->rating() == -1),
+			def_menu_command(icon_index::none, tt.command_rate_0, 0, make_invoke(_state, parent, view, _item, make_edit(0)),
+			                 false),
+			def_menu_command(icon_index::none, tt.command_rate_rejected, color_rate_rejected, make_invoke(_state, parent, view, _item, make_edit(-1)),
+			                 _item->rating() == -1),
 			nullptr,
-			def_command(commands::label_approved, icon_index::none, tt.command_label_approved, color_label_approved,
-						make_invoke(_state, parent, view, _item, make_edit(label_approved_text)),
-						has_label(_item, label_approved_text)),
-			def_command(commands::label_to_do, icon_index::none, tt.command_label_to_do, color_label_to_do,
-						make_invoke(_state, parent, view, _item, make_edit(label_to_do_text)),
-						has_label(_item, label_to_do_text)),
-			def_command(commands::label_select, icon_index::none, tt.command_label_select, color_label_select,
-						make_invoke(_state, parent, view, _item, make_edit(label_select_text)),
-						has_label(_item, label_select_text)),
-			def_command(commands::label_review, icon_index::none, tt.command_label_review, color_label_review,
-						make_invoke(_state, parent, view, _item, make_edit(label_review_text)),
-						has_label(_item, label_review_text)),
-			def_command(commands::label_second, icon_index::none, tt.command_label_second, color_label_second,
-						make_invoke(_state, parent, view, _item, make_edit(label_second_text)),
-						has_label(_item, label_second_text)),
-			def_command(commands::label_none, icon_index::none, tt.command_label_none, 0,
-						make_invoke(_state, parent, view, _item, make_edit(std::u8string_view{})), false),
+			def_menu_command(icon_index::none, tt.command_label_approved, color_label_approved, make_invoke(_state, parent, view, _item, make_edit(label_approved_text)),
+			                 has_label(_item, label_approved_text)),
+			def_menu_command(icon_index::none, tt.command_label_to_do, color_label_to_do, make_invoke(_state, parent, view, _item, make_edit(label_to_do_text)),
+			                 has_label(_item, label_to_do_text)),
+			def_menu_command(icon_index::none, tt.command_label_select, color_label_select, make_invoke(_state, parent, view, _item, make_edit(label_select_text)),
+			                 has_label(_item, label_select_text)),
+			def_menu_command(icon_index::none, tt.command_label_review, color_label_review, make_invoke(_state, parent, view, _item, make_edit(label_review_text)),
+			                 has_label(_item, label_review_text)),
+			def_menu_command(icon_index::none, tt.command_label_second, color_label_second, make_invoke(_state, parent, view, _item, make_edit(label_second_text)),
+			                 has_label(_item, label_second_text)),
+			def_menu_command(icon_index::none, tt.command_label_none, 0, make_invoke(_state, parent, view, _item, make_edit(std::u8string_view{})),
+			                 false),
 		};
 
 		event.host->track_menu(_view_bounds, result);
@@ -1079,11 +1073,9 @@ void preview_control::dispatch_event(const view_element_event& event)
 			};
 
 		const std::vector<ui::command_ptr> result = {
-			def_command(commands::show_raw_always, icon_index::none, tt.show_raw, 0, show_raw_always,
-						!setting.raw_preview),
-			def_command(commands::show_raw_preview, icon_index::none, tt.preview_show_preview, 0,
-						show_raw_preview_always, setting.raw_preview),
-			def_command(commands::show_raw_this_only, icon_index::none, tt.show_raw_now, 0, show_raw_this_only, false),
+			def_menu_command(icon_index::none, tt.show_raw, 0, show_raw_always, !setting.raw_preview),
+			def_menu_command(icon_index::none, tt.preview_show_preview, 0, show_raw_preview_always, setting.raw_preview),
+			def_menu_command(icon_index::none, tt.show_raw_now, 0, show_raw_this_only, false),
 		};
 
 		event.host->track_menu(_view_bounds, result);

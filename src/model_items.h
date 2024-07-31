@@ -579,9 +579,9 @@ namespace df
 		duplicate_info _duplicates = {};
 		search_result _search = {};
 
-		uint32_t _crc32c = 0;
-		uint32_t _total_count = 0;
 		int _random = 0;
+		uint32_t _crc32c = 0;
+		uint64_t _total_count = 0;
 
 		item_presence _presence = item_presence::unknown;
 		ui::orientation _thumbnail_orientation = ui::orientation::top_left;
@@ -742,7 +742,7 @@ namespace df
 
 		void invert_selection(const view_host_base_ptr& view, const view_element_ptr& e)
 		{
-			style ^= view_element_style::selected;
+			set_style_bit(view_element_style::selected, !is_selected(), view, e);
 			is_error(is_selected() && is_error(), view, e);
 		}
 

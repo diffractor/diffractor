@@ -395,8 +395,7 @@ std::u8string platform::utf16_to_utf8(const std::wstring_view text)
 std::wstring platform::utf8_to_utf16(const std::u8string_view text)
 {
 	wchar_t result[100] = {};
-	MultiByteToWideChar(CP_UTF8, 0, std::bit_cast<const char*>(text.data()), static_cast<uint32_t>(text.size()), result,
-		100);
+	MultiByteToWideChar(CP_UTF8, 0, std::bit_cast<const char*>(text.data()), static_cast<uint32_t>(text.size()), result, 100);
 	return result;
 }
 

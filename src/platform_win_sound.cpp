@@ -132,7 +132,6 @@ private:
 	void enum_devices()
 	{
 		_devices.clear();
-		//DirectSoundEnumerate(DSEnumProc, &_devices);
 	}
 };
 
@@ -148,21 +147,13 @@ private:
 	_Guarded_by_(_rw) ComPtr<IAudioRenderClient> _render;
 	_Guarded_by_(_rw) ComPtr<ISimpleAudioVolume> _sav;
 	_Guarded_by_(_rw) ComPtr<IAudioClock> _clock;
-
-	//ComPtr<IAudioRenderClient> _render;
-	//ComPtr<IMMDeviceEnumerator> _enumerator;
-
 	_Guarded_by_(_rw) WAVEFORMATEX* _pwfx = nullptr;
 	bool _device_lost = false;
 	bool _playing = false;
 	double _vol = -1;
 
 public:
-	wasapi_sound()
-	{
-		//platform::exclusive_lock lock(_rw);
-		//data_event.create(false, false);
-	}
+	wasapi_sound() = default;
 
 	virtual ~wasapi_sound()
 	{
@@ -274,15 +265,6 @@ public:
 
 		platform::exclusive_lock lock(_rw);
 		bool success = false;
-		//LPCGUID p_device_id = nullptr;
-		//GUID device_guid;
-
-		//if (!device_id.empty())
-		//{
-		//	str::hex_to_data(device_id, std::bit_cast<uint8_t*>(&device_guid), sizeof(GUID));
-		//	p_device_id = &device_guid;
-		//}
-
 		ComPtr<IMMDeviceEnumerator> enumerator;
 
 		auto hr = CoCreateInstance(
@@ -312,6 +294,17 @@ public:
 			if (SUCCEEDED(hr))
 			{
 				success = activate_device(device);
+								
+				if (!success)
+				{
+					// Try with a different device
+					hr = enumerator->GetDefaultAudioEndpoint(eRender, eMultimedia, &device);
+
+					if (SUCCEEDED(hr))
+					{
+						success = activate_device(device);
+					}
+				}
 			}
 		}
 
@@ -532,11 +525,9 @@ std::vector<sound_device> list_audio_playback_devices()
 					df::log(u8"list_audio_playback_devices"sv, u8"No sound endpoints found."sv);
 				}
 
-				// Each loop prints the name of an endpoint device.
 				for (ULONG i = 0; i < count; i++)
 				{
 					ComPtr<IMMDevice> pEndpoint;
-					// Get pointer to endpoint number i.
 					hr = pCollection->Item(i, &pEndpoint);
 
 					if (SUCCEEDED(hr))

@@ -723,14 +723,6 @@ public:
 		{
 			auto e = wait_for(events, 100, false);
 
-			//switch (e)
-			//{
-			//default:
-			//case 0: // Exit
-			//case 1: // kick
-			//	break;
-			//}
-
 			if (audio_device_id() != device_id)
 			{
 				device_id = audio_device_id();

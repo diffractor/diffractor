@@ -1329,7 +1329,7 @@ public:
 		if (is_valid(_surface))
 		{
 			const auto surf_cx = _surface->width() + mc.padding2;
-			const auto show_surface = surf_cx < (cx / 2);
+			const auto show_surface = static_cast<int>(surf_cx) < (cx / 2);
 
 			if (show_surface)
 			{

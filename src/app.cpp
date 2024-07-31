@@ -48,8 +48,8 @@ static std::atomic_int index_version;
 
 const wchar_t* s_app_name_l = L"Diffractor";
 const std::u8string_view s_app_name = u8"Diffractor"sv;
-const std::u8string_view s_app_version = u8"126.0"sv;
-const std::u8string_view g_app_build = u8"1182"sv;
+const std::u8string_view s_app_version = u8"126.1"sv;
+const std::u8string_view g_app_build = u8"1183"sv;
 const std::u8string_view stage_file_name = u8"diffractor-setup-update.exe"sv;
 static constexpr std::u8string_view installed_file_name = u8"diffractor-setup-installed.exe"sv;
 static constexpr std::u8string_view s_search = u8"search"sv;
@@ -2697,7 +2697,7 @@ void app_frame::create_toolbars()
 		find_command(commands::edit_item_options),
 		find_command(commands::edit_item_save_as),
 		find_command(commands::edit_item_save),
-		find_command(commands::view_exit),
+		find_command(commands::view_close),
 	};
 
 	const std::vector<ui::command_ptr> test_commands =
@@ -2706,27 +2706,27 @@ void app_frame::create_toolbars()
 		find_command(commands::test_boom),
 		find_command(commands::test_new_version),
 		find_command(commands::test_run_all),
-		find_command(commands::view_exit),
+		find_command(commands::view_close),
 	};
 
 	const std::vector<ui::command_ptr> sync_commands =
 	{
 		find_command(commands::sync_analyze),
 		find_command(commands::sync_run),
-		find_command(commands::view_exit),
+		find_command(commands::view_close),
 	};
 
 	const std::vector<ui::command_ptr> rename_commands =
 	{
 		find_command(commands::rename_run),
-		find_command(commands::view_exit),
+		find_command(commands::view_close),
 	};
 
 	const std::vector<ui::command_ptr> import_commands =
 	{
 		find_command(commands::import_analyze),
 		find_command(commands::import_run),
-		find_command(commands::view_exit),
+		find_command(commands::view_close),
 	};
 
 	ui::toolbar_styles tb_styles;
@@ -2905,92 +2905,186 @@ void app_frame::update_button_state(const bool resize)
 	const auto is_playing = selection_status.is_playing;
 	const auto can_zoom = selection_status.can_zoom;
 	const auto is_maximized = _app_frame->is_maximized();
-	const auto is_editing = df::command_active == 0 && view_mode == view_type::edit;
-	const auto is_showing_media_or_items_view = df::command_active == 0 && (view_mode == view_type::items || view_mode == view_type::media);
-	const auto has_selection = is_showing_media_or_items_view && _state.has_selection();
-	const auto is_single_media_selection = is_showing_media_or_items_view && selection_status.has_single_media_selection;
-	const auto new_version_avail = is_showing_media_or_items_view && !setting.install_updates &&
+	const auto is_edit_view = df::command_active == 0 && view_mode == view_type::edit;
+	const auto is_items_view = df::command_active == 0 && view_mode == view_type::items;
+	const auto is_media_or_items_view = df::command_active == 0 && (view_mode == view_type::items || view_mode == view_type::media);
+	const auto has_selection = is_media_or_items_view && _state.has_selection();
+	const auto is_single_media_selection = is_media_or_items_view && selection_status.has_single_media_selection;
+	const auto new_version_avail = is_media_or_items_view && !setting.install_updates &&
 		df::version(s_app_version) < df::version(setting.available_version) && static_cast<int>(now_days) >= setting.min_show_update_day;
-	const auto show_new_version = is_showing_media_or_items_view && (setting.force_available_version || new_version_avail);
+	const auto show_new_version = is_media_or_items_view && (setting.force_available_version || new_version_avail);
 	const auto command_item = _state.command_item();
-	const auto is_displaying_item = is_showing_media_or_items_view && command_item;
+	const auto is_displaying_item = is_media_or_items_view && command_item;
 	const auto search_has_selector = _state.search().has_selector();
 
-	_commands[commands::info_new_version]->visible = !is_editing && show_new_version;
+	_commands[commands::info_new_version]->visible = !is_edit_view && show_new_version;
 	_commands[commands::view_maximize]->visible = !is_maximized;
 	_commands[commands::view_restore]->visible = is_maximized;
-	_commands[commands::view_show_sidebar]->visible = !is_editing;
+	_commands[commands::view_show_sidebar]->visible = !is_edit_view;
 	_commands[commands::tool_test]->visible = can_run_tests;
-	_commands[commands::browse_forward]->visible = !is_editing;
+	_commands[commands::browse_forward]->visible = !is_edit_view;
 
-	_commands[commands::play]->enable = _state.has_display_items();
-	_commands[commands::tool_edit]->enable = _state.can_edit_media();
+	_commands[commands::advanced_search]->enable = is_media_or_items_view;
+	_commands[commands::browse_back]->enable = is_media_or_items_view && _state.history.can_browse_back();
+	_commands[commands::browse_forward]->enable = is_media_or_items_view && _state.history.can_browse_forward();
+	_commands[commands::browse_next_folder]->enable = is_items_view;
+	_commands[commands::browse_next_group]->enable = is_items_view;
+	_commands[commands::browse_next_item]->enable = is_items_view;
+	_commands[commands::browse_next_item_extend]->enable = is_items_view;
+	_commands[commands::browse_open_containingfolder]->enable = is_items_view && is_displaying_item;
+	_commands[commands::browse_open_googlemap]->enable = _state.has_gps();
+	_commands[commands::browse_open_in_file_browser]->enable = is_items_view && has_selection;
+	_commands[commands::browse_parent]->enable = _state.has_parent_search() && is_items_view;
+	_commands[commands::browse_previous_folder]->enable = is_items_view;
+	_commands[commands::browse_previous_group]->enable = is_items_view;
+	_commands[commands::browse_previous_item]->enable = is_items_view;
+	_commands[commands::browse_previous_item_extend]->enable = is_items_view;
+	_commands[commands::browse_recursive]->enable = is_items_view && search_has_selector;
+	_commands[commands::browse_search]->enable = is_items_view;
+	_commands[commands::edit_copy]->enable = has_selection;
+	_commands[commands::edit_cut]->enable = has_selection;
+	_commands[commands::edit_item_color_reset]->enable = is_edit_view;
+	_commands[commands::edit_item_options]->enable = is_edit_view;
+	_commands[commands::edit_item_save]->enable = is_edit_view;
+	_commands[commands::edit_item_save_and_next]->enable = is_edit_view;
+	_commands[commands::edit_item_save_and_prev]->enable = is_edit_view;
+	_commands[commands::edit_item_save_as]->enable = is_edit_view;
+	_commands[commands::edit_paste]->enable = is_media_or_items_view && search_has_selector;
+	_commands[commands::english]->enable = true;
+	_commands[commands::exit]->enable = true;
+	_commands[commands::favorite]->enable = is_media_or_items_view;
+	_commands[commands::filter_audio]->enable = is_items_view;
+	_commands[commands::filter_photos]->enable = is_items_view;
+	_commands[commands::filter_videos]->enable = is_items_view;
+	_commands[commands::group_album]->enable = is_items_view;
+	_commands[commands::group_camera]->enable = is_items_view;
+	_commands[commands::group_created]->enable = is_items_view;
+	_commands[commands::group_extension]->enable = is_items_view;
+	_commands[commands::group_file_type]->enable = is_items_view;
+	_commands[commands::group_folder]->enable = is_items_view;
+	_commands[commands::group_location]->enable = is_items_view;
+	_commands[commands::group_modified]->enable = is_items_view;
+	_commands[commands::group_pixels]->enable = is_items_view;
+	_commands[commands::group_presence]->enable = is_items_view;
+	_commands[commands::group_rating]->enable = is_items_view;
+	_commands[commands::group_shuffle]->enable = is_items_view;
+	_commands[commands::group_size]->enable = is_items_view;
+	_commands[commands::group_toggle]->enable = is_items_view;
+	_commands[commands::import_analyze]->enable = view_mode == view_type::import;
+	_commands[commands::import_run]->enable = view_mode == view_type::import;
+	_commands[commands::info_new_version]->enable = is_items_view;
+	_commands[commands::keyboard]->enable = is_items_view;
+	_commands[commands::label_approved]->enable = has_selection;
+	_commands[commands::label_none]->enable = has_selection;
+	_commands[commands::label_review]->enable = has_selection;
+	_commands[commands::label_second]->enable = has_selection;
+	_commands[commands::label_select]->enable = has_selection;
+	_commands[commands::label_to_do]->enable = has_selection;
+	_commands[commands::large_font]->enable = true;
+	_commands[commands::menu_display_options]->enable = true;
+	_commands[commands::menu_group]->enable = true;
+	_commands[commands::menu_group_toolbar]->enable = true;
+	_commands[commands::menu_language]->enable = true;
+	_commands[commands::menu_main]->enable = true;
+	_commands[commands::menu_navigate]->enable = true;
 	_commands[commands::menu_open]->enable = has_selection;
-	_commands[commands::menu_tools_toolbar]->enable = has_selection;
+	_commands[commands::menu_playback]->enable = true;
+	_commands[commands::menu_rate_or_label]->enable = true;
+	_commands[commands::menu_select]->enable = true;
 	_commands[commands::menu_tag_with]->enable = has_selection;
-	_commands[commands::tool_save_current_video_frame]->enable = is_single_media_selection;
-	_commands[commands::tool_tag]->enable = has_selection;
-	_commands[commands::tool_locate]->enable = has_selection;
-	_commands[commands::tool_adjust_date]->enable = has_selection;
-	_commands[commands::tool_edit_metadata]->enable = has_selection;
-	_commands[commands::browse_back]->enable = _state.history.can_browse_back();
-	_commands[commands::browse_forward]->enable = _state.history.can_browse_forward();
-	_commands[commands::browse_parent]->enable = _state.has_parent_search() || view_mode != view_type::items;
-	_commands[commands::tool_burn]->enable = has_selection && has_burner;
-	_commands[commands::view_zoom]->enable = can_zoom;
-	_commands[commands::tool_open_with]->enable = has_selection;
-	_commands[commands::tool_email]->enable = has_selection;
+	_commands[commands::menu_tools]->enable = true;
+	_commands[commands::menu_tools_toolbar]->enable = has_selection;
+	_commands[commands::option_highlight_large_items]->enable = is_media_or_items_view;
+	_commands[commands::option_scale_up]->enable = is_media_or_items_view;
+	_commands[commands::option_show_rotated]->enable = is_media_or_items_view;
+	_commands[commands::option_show_thumbnails]->enable = is_media_or_items_view;
+	_commands[commands::option_toggle_details]->enable = is_media_or_items_view;
+	_commands[commands::option_toggle_item_size]->enable = is_media_or_items_view;
+	_commands[commands::options_collection]->enable = is_media_or_items_view;
+	_commands[commands::options_general]->enable = is_media_or_items_view;
+	_commands[commands::options_sidebar]->enable = is_media_or_items_view;
 	_commands[commands::pin_item]->enable = has_selection;
-	_commands[commands::rate_none]->enable = has_selection;
+	_commands[commands::play]->enable = is_media_or_items_view && _state.has_display_items();
+	_commands[commands::playback_auto_play]->enable = is_media_or_items_view;
+	_commands[commands::playback_last_played_pos]->enable = is_media_or_items_view;
+	_commands[commands::playback_menu]->enable = is_media_or_items_view;
+	_commands[commands::playback_repeat_all]->enable = is_media_or_items_view;
+	_commands[commands::playback_repeat_none]->enable = is_media_or_items_view;
+	_commands[commands::playback_repeat_one]->enable = is_media_or_items_view;
+	_commands[commands::playback_volume_toggle]->enable = is_media_or_items_view;
+	_commands[commands::playback_volume0]->enable = is_media_or_items_view;
+	_commands[commands::playback_volume100]->enable = is_media_or_items_view;
+	_commands[commands::playback_volume25]->enable = is_media_or_items_view;
+	_commands[commands::playback_volume50]->enable = is_media_or_items_view;
+	_commands[commands::playback_volume75]->enable = is_media_or_items_view;
+	_commands[commands::print]->enable = has_selection;
 	_commands[commands::rate_1]->enable = has_selection;
 	_commands[commands::rate_2]->enable = has_selection;
 	_commands[commands::rate_3]->enable = has_selection;
 	_commands[commands::rate_4]->enable = has_selection;
 	_commands[commands::rate_5]->enable = has_selection;
+	_commands[commands::rate_none]->enable = has_selection;
 	_commands[commands::rate_rejected]->enable = has_selection;
-	_commands[commands::label_approved]->enable = has_selection;
-	_commands[commands::label_to_do]->enable = has_selection;
-	_commands[commands::label_select]->enable = has_selection;
-	_commands[commands::label_review]->enable = has_selection;
-	_commands[commands::label_second]->enable = has_selection;
-
-	_commands[commands::browse_open_googlemap]->enable = _state.has_gps();
-	_commands[commands::browse_open_containingfolder]->enable = is_displaying_item;
-	_commands[commands::browse_open_in_file_browser]->enable = has_selection;
-	_commands[commands::tool_new_folder]->enable = search_has_selector;
-	_commands[commands::print]->enable = has_selection;
-	_commands[commands::tool_remove_metadata]->enable = has_selection;
-	_commands[commands::tool_rename]->enable = has_selection;
-	_commands[commands::tool_file_properties]->enable = has_selection;
-	_commands[commands::tool_delete]->enable = has_selection;
-	_commands[commands::edit_copy]->enable = has_selection;
-	_commands[commands::edit_cut]->enable = has_selection;
-	_commands[commands::tool_move_to_folder]->enable = has_selection;
-	_commands[commands::tool_copy_to_folder]->enable = has_selection;
-	_commands[commands::tool_convert]->enable = _state.can_process_selection(_view_frame, df::process_items_type::photos_only);
-	//_commands[ID_SHARE_FACEBOOK]->enable = _state.can_process_selection(df::process_items_type::photos_only);
-	//_commands[ID_SHARE_FLICKR]->enable = _state.can_process_selection(df::process_items_type::photos_only);
-	//_commands[ID_SHARE_TWITTER]->enable = _state.can_process_selection(df::process_items_type::photos_only);
-	_commands[commands::edit_paste]->enable = is_showing_media_or_items_view && search_has_selector;
-	_commands[commands::select_nothing]->enable = has_selection;
-	_commands[commands::browse_recursive]->enable = search_has_selector;
-	_commands[commands::tool_rotate_anticlockwise]->enable = has_selection;
-	_commands[commands::tool_rotate_clockwise]->enable = has_selection;
-	_commands[commands::tool_desktop_background]->enable = selection_status.showing_image;
-	_commands[commands::search_related]->enable = is_displaying_item;
-	_commands[commands::view_exit]->enable = !is_showing_media_or_items_view;
-	_commands[commands::edit_item_save]->enable = is_editing;
-	_commands[commands::edit_item_save_and_prev]->enable = is_editing;
-	_commands[commands::edit_item_save_and_next]->enable = is_editing;
-	_commands[commands::edit_item_save_as]->enable = is_editing;
-	_commands[commands::edit_item_options]->enable = is_editing;
-
-	_commands[commands::test_run_all]->enable = view_mode == view_type::test;
+	_commands[commands::refresh]->enable = true;
+	_commands[commands::rename_run]->enable = view_mode == view_type::rename;
+	_commands[commands::repeat_toggle]->enable = is_media_or_items_view;
+	_commands[commands::search_related]->enable = is_media_or_items_view && is_displaying_item;
+	_commands[commands::select_all]->enable = is_items_view;
+	_commands[commands::select_invert]->enable = is_items_view;
+	_commands[commands::select_nothing]->enable = is_items_view && has_selection;
+	//_commands[commands::show_raw_always]->enable = is_media_or_items_view;
+	_commands[commands::show_raw_preview]->enable = is_media_or_items_view;
+	//_commands[commands::show_raw_this_only]->enable = is_media_or_items_view;
+	_commands[commands::sort_date_modified]->enable = is_media_or_items_view;
+	_commands[commands::sort_dates_ascending]->enable = is_media_or_items_view;
+	_commands[commands::sort_dates_descending]->enable = is_media_or_items_view;
+	_commands[commands::sort_def]->enable = is_media_or_items_view;
+	_commands[commands::sort_name]->enable = is_media_or_items_view;
+	_commands[commands::sort_size]->enable = is_media_or_items_view;
 	_commands[commands::sync_analyze]->enable = view_mode == view_type::sync;
 	_commands[commands::sync_run]->enable = view_mode == view_type::sync;
-	_commands[commands::rename_run]->enable = view_mode == view_type::rename;
-	_commands[commands::import_analyze]->enable = view_mode == view_type::import;
-	_commands[commands::import_run]->enable = view_mode == view_type::import;
+	_commands[commands::test_boom]->enable = view_mode == view_type::test;
+	_commands[commands::test_crash]->enable = view_mode == view_type::test;
+	_commands[commands::test_new_version]->enable = view_mode == view_type::test;
+	_commands[commands::test_run_all]->enable = view_mode == view_type::test;
+	_commands[commands::tool_adjust_date]->enable = has_selection;
+	_commands[commands::tool_burn]->enable = has_selection && has_burner;
+	_commands[commands::tool_convert]->enable = is_items_view && _state.can_process_selection(_view_frame, df::process_items_type::photos_only);
+	_commands[commands::tool_copy_to_folder]->enable = has_selection;
+	_commands[commands::tool_delete]->enable = has_selection;
+	_commands[commands::tool_desktop_background]->enable = is_media_or_items_view && selection_status.showing_image;
+	_commands[commands::tool_edit]->enable = is_media_or_items_view && _state.can_edit_media();
+	_commands[commands::tool_edit_metadata]->enable = has_selection;
+	_commands[commands::tool_eject]->enable = is_items_view;
+	_commands[commands::tool_email]->enable = has_selection;
+	_commands[commands::tool_file_properties]->enable = has_selection;
+	_commands[commands::tool_import]->enable = is_media_or_items_view;
+	_commands[commands::tool_locate]->enable = has_selection;
+	_commands[commands::tool_move_to_folder]->enable = has_selection;
+	_commands[commands::tool_new_folder]->enable = is_items_view && search_has_selector;
+	_commands[commands::tool_open_with]->enable = has_selection;
+	_commands[commands::tool_remove_metadata]->enable = has_selection;
+	_commands[commands::tool_rename]->enable = has_selection;
+	_commands[commands::tool_rotate_anticlockwise]->enable = has_selection;
+	_commands[commands::tool_rotate_clockwise]->enable = has_selection;
+	_commands[commands::tool_rotate_reset]->enable = is_edit_view;
+	_commands[commands::tool_save_current_video_frame]->enable = is_single_media_selection;
+	_commands[commands::tool_scan]->enable = is_media_or_items_view;
+	_commands[commands::tool_sync]->enable = is_media_or_items_view;
+	_commands[commands::tool_tag]->enable = has_selection;
+	_commands[commands::tool_test]->enable = is_media_or_items_view;
+	_commands[commands::verbose_metadata]->enable = is_items_view;
+	_commands[commands::view_close]->enable = !is_media_or_items_view;
+	_commands[commands::view_favorite_tags]->enable = is_media_or_items_view;
+	_commands[commands::view_fullscreen]->enable = is_media_or_items_view;
+	_commands[commands::view_help]->enable = true;
+	_commands[commands::view_items]->enable = !is_items_view;
+	_commands[commands::view_maximize]->enable = true;
+	_commands[commands::view_minimize]->enable = true;
+	_commands[commands::view_restore]->enable = true;
+	_commands[commands::view_show_sidebar]->enable = is_media_or_items_view;
+	_commands[commands::view_zoom]->enable = is_media_or_items_view && can_zoom;
+
 
 	_commands[commands::playback_auto_play]->checked = setting.auto_play;
 	_commands[commands::playback_last_played_pos]->checked = setting.last_played_pos;
@@ -2998,13 +3092,6 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::playback_repeat_all]->checked = setting.repeat == repeat_mode::repeat_all;
 	_commands[commands::playback_repeat_none]->checked = setting.repeat == repeat_mode::repeat_none;
 	_commands[commands::play]->checked = is_playing;
-
-	/*_commands[commands::rate_rejected]->checked = is_labeled(sv_rejected);
-	_commands[commands::label_approved]->checked = has_selection_and_is_media_or_items_view;
-	_commands[commands::label_to_do]->checked = has_selection_and_is_media_or_items_view;
-	_commands[commands::label_select]->checked = has_selection_and_is_media_or_items_view;
-	_commands[commands::label_review]->checked = has_selection_and_is_media_or_items_view;
-	_commands[commands::label_second]->checked = has_selection_and_is_media_or_items_view;*/
 
 	_commands[commands::pin_item]->checked = _state.has_pin();
 	_commands[commands::option_highlight_large_items]->checked = setting.highlight_large_items;
@@ -3165,7 +3252,7 @@ void app_frame::update_command_text()
 		tt.command_browse_previous_item_extend);
 	def_command(commands::tool_burn, command_group::tools, icon_index::disk, tt.command_burn);
 	def_command(commands::tool_save_current_video_frame, command_group::tools, icon_index::none, tt.command_capture);
-	def_command(commands::view_exit, command_group::none, icon_index::close, tt.command_close);
+	def_command(commands::view_close, command_group::none, icon_index::close, tt.command_close);
 	def_command(commands::edit_item_color_reset, command_group::none, icon_index::undo, tt.command_color_reset,
 		tt.tooltip_color_reset);
 	def_command(commands::tool_convert, command_group::tools, icon_index::convert, tt.command_convert_or_resize);
@@ -3426,7 +3513,7 @@ void app_frame::update_command_text()
 	_commands[commands::edit_item_save_and_prev]->kba.emplace_back(keys::LEFT, alt);
 	_commands[commands::edit_item_save_and_next]->kba.emplace_back(keys::RIGHT, alt);
 	_commands[commands::edit_item_save]->kba.emplace_back(keys::RETURN, alt);
-	_commands[commands::view_exit]->kba.emplace_back(keys::ESCAPE);
+	_commands[commands::view_close]->kba.emplace_back(keys::ESCAPE);
 
 	for (const auto& c : _commands)
 	{
@@ -3957,10 +4044,8 @@ std::vector<ui::command_ptr> app_frame::menu(const pointi loc)
 			result.emplace_back(find_command(commands::edit_cut));
 			result.emplace_back(find_command(commands::edit_copy));
 			result.emplace_back(find_command(commands::edit_paste));
-			break;
-		case menu_type::view:
-		case menu_type::items:
-		default:
+			break;		
+		case menu_type::items:		
 			result.emplace_back(find_command(commands::menu_navigate));
 			result.emplace_back(find_command(commands::menu_open));
 			result.emplace_back(find_command(commands::menu_tools));
@@ -3983,6 +4068,10 @@ std::vector<ui::command_ptr> app_frame::menu(const pointi loc)
 			result.emplace_back(nullptr);
 			result.emplace_back(find_command(commands::refresh));
 			result.emplace_back(find_command(commands::tool_new_folder));
+			break;
+		case menu_type::view:
+		default:
+			result.emplace_back(find_command(commands::view_close));
 			break;
 		}
 	}

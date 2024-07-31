@@ -2163,7 +2163,7 @@ uint64_t view_state::count_shown(const file_group_ref fg) const
 
 uint64_t view_state::display_item_count() const
 {
-	uint32_t result = 0;
+	uint64_t result = 0;
 
 	for (const auto& b : _item_groups)
 	{
