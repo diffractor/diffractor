@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -747,7 +747,7 @@ void metadata_iptc::parse(prop::item_metadata& pd, df::cspan cs)
 			if (cs.size >= (i + block_len) && block_len > 0 && dataset == 2)
 			{
 				const auto* const sz = std::bit_cast<const char8_t*>(cs.data + i + header_len);
-				const auto sv = std::u8string_view{sz, block_len};
+				const auto sv = std::u8string_view{ sz, block_len };
 
 				switch (record)
 				{
@@ -857,7 +857,7 @@ metadata_kv_list metadata_iptc::to_info(df::cspan cs)
 			if (cs.size >= (i + block_len) && block_len > 0)
 			{
 				const auto* const sz = std::bit_cast<const char8_t*>(cs.data + i + header_len);
-				result.emplace_back(tag_name(record, tag), str::strip({sz, block_len}));
+				result.emplace_back(tag_name(record, tag), str::strip({ sz, block_len }));
 			}
 
 			i += block_len + header_len;

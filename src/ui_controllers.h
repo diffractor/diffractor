@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -30,8 +30,8 @@ public:
 	}
 
 	clickable_controller(const view_host_ptr& host, view_element_ptr e, const pointi element_offset,
-	                     const recti bounds) : view_controller(host, bounds), _element(std::move(e)),
-	                                           _element_offset(element_offset), _can_click(_element->can_invoke())
+		const recti bounds) : view_controller(host, bounds), _element(std::move(e)),
+		_element_offset(element_offset), _can_click(_element->can_invoke())
 	{
 		update_highlight();
 	}
@@ -45,7 +45,7 @@ public:
 
 		if (_element)
 		{
-			interaction_context ic{{-1, -1}, _element_offset, _tracking};
+			interaction_context ic{ {-1, -1}, _element_offset, _tracking };
 			_element->hover(ic);
 		}
 
@@ -59,7 +59,7 @@ public:
 		_last_loc = loc;
 		_hover = _bounds.contains(loc);
 		_tracking = true;
-		interaction_context ic{loc, _element_offset, _tracking};
+		interaction_context ic{ loc, _element_offset, _tracking };
 		update_highlight();
 		_element->hover(ic);
 
@@ -73,7 +73,7 @@ public:
 	{
 		_last_loc = loc;
 		_hover = _bounds.contains(loc);
-		interaction_context ic{loc, _element_offset, _tracking};
+		interaction_context ic{ loc, _element_offset, _tracking };
 		update_highlight();
 		_element->hover(ic);
 
@@ -90,7 +90,7 @@ public:
 		_last_loc = loc;
 		_hover = _bounds.contains(loc);
 		_tracking = false;
-		interaction_context ic{loc, _element_offset, _tracking};
+		interaction_context ic{ loc, _element_offset, _tracking };
 		update_highlight();
 		_element->hover(ic);
 
@@ -113,7 +113,7 @@ public:
 	{
 		if (_can_click)
 		{
-			const view_element_event e{view_element_event_type::double_click, _host};
+			const view_element_event e{ view_element_event_type::double_click, _host };
 			_element->dispatch_event(e);
 		}
 	}
@@ -147,8 +147,8 @@ public:
 
 template <class T>
 static view_controller_ptr default_controller_from_location(T& this_element, const view_host_ptr& host,
-                                                            const pointi loc, const pointi element_offset,
-                                                            const std::vector<recti>& excluded_bounds)
+	const pointi loc, const pointi element_offset,
+	const std::vector<recti>& excluded_bounds)
 {
 	if ((this_element.can_invoke() || this_element.has_tooltip()) && this_element.bounds.contains(loc - element_offset))
 	{
@@ -255,7 +255,7 @@ public:
 	bool _bottom = false;
 
 	handle_move_controller(const view_host_ptr& host, TParent& parent, const rectd start, bool l, bool t, bool r,
-	                       bool b) : view_controller(host, _handle_bounds.round()), _parent(parent)
+		bool b) : view_controller(host, _handle_bounds.round()), _parent(parent)
 	{
 		_handle_bounds = start;
 		_left = l;

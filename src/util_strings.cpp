@@ -1,5 +1,5 @@
 ﻿// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -79,7 +79,7 @@ bool str::is_utf8(const char8_t* sz, const int len)
 	const auto* p = std::bit_cast<const uint8_t*>(sz);
 	const auto* const limit = p + len;
 
-	while (p < limit && kERROR != current)
+	while (p < limit&& kERROR != current)
 	{
 		current = state_table[(byte_class_table[*p++] * kNumOfStates) + current];
 	}
@@ -87,11 +87,11 @@ bool str::is_utf8(const char8_t* sz, const int len)
 	return current == kSTART;
 }
 
-static constexpr uint8_t BOM_UTF8[] = {0xef, 0xbb, 0xbf}; // UTF-8
-static constexpr uint8_t BOM_UTF16_LE[] = {0xff, 0xfe}; // UTF-16, little-endian
-static constexpr uint8_t BOM_UTF16_BE[] = {0xfe, 0xff}; // UTF-16, big-endian
-static constexpr uint8_t BOM_UTF32_LE[] = {0xff, 0xfe, 0x00, 0x00}; // UTF-32, little-endian
-static constexpr uint8_t BOM_UTF32_BE[] = {0x00, 0x00, 0xfe, 0xff}; // UTF-32, big-endian
+static constexpr uint8_t BOM_UTF8[] = { 0xef, 0xbb, 0xbf }; // UTF-8
+static constexpr uint8_t BOM_UTF16_LE[] = { 0xff, 0xfe }; // UTF-16, little-endian
+static constexpr uint8_t BOM_UTF16_BE[] = { 0xfe, 0xff }; // UTF-16, big-endian
+static constexpr uint8_t BOM_UTF32_LE[] = { 0xff, 0xfe, 0x00, 0x00 }; // UTF-32, little-endian
+static constexpr uint8_t BOM_UTF32_BE[] = { 0x00, 0x00, 0xfe, 0xff }; // UTF-32, big-endian
 
 bool str::is_utf16(const uint8_t* sz, const int len)
 {
@@ -141,7 +141,7 @@ static bool is_utf7(const char8_t* p, const int len)
 
 
 str::format_arg::format_arg(const df::file_path value) : type(FILE_PATH), text_value(value.folder().text()),
-                                                         text_value2(value.name())
+text_value2(value.name())
 {
 }
 
@@ -163,7 +163,7 @@ static int dec_places(const std::u8string_view fmt)
 
 template <typename inserter>
 static void copy_sv(inserter&& result, const std::u8string_view sv, const uint32_t result_width = 0,
-                    const bool is_zero_padded = false)
+	const bool is_zero_padded = false)
 {
 	if (result_width > sv.size())
 	{
@@ -189,16 +189,16 @@ static void format_render_arg(inserter&& result, const str::format_arg& arg, con
 		case str::format_arg::FILE_SIZE:
 		case str::format_arg::DATE:
 			copy_sv(result, str::to_hex(std::bit_cast<const uint8_t*>(&arg.u.uint64_value), sizeof(arg.u.uint64_value),
-			                            true, true), result_width, is_zero_padded);
+				true, true), result_width, is_zero_padded);
 			break;
 		case str::format_arg::INT32:
 		case str::format_arg::UINT32:
 			copy_sv(result, str::to_hex(std::bit_cast<const uint8_t*>(&arg.u.uint32_value), sizeof(arg.u.uint32_value),
-			                            true, true), result_width, is_zero_padded);
+				true, true), result_width, is_zero_padded);
 			break;
 		case str::format_arg::UINT16:
 			copy_sv(result, str::to_hex(std::bit_cast<const uint8_t*>(&arg.u.uint16_value), sizeof(arg.u.uint16_value),
-			                            true, true), result_width, is_zero_padded);
+				true, true), result_width, is_zero_padded);
 			break;
 		default:
 			df::assert_true(false);
@@ -237,19 +237,19 @@ static void format_render_arg(inserter&& result, const str::format_arg& arg, con
 			copy_sv(result, arg.text_value2);
 			break;
 		case str::format_arg::FILE_SIZE:
-			{
-				const df::file_size s(arg.u.int64_value);
-				copy_sv(result, prop::format_size(s), result_width, is_zero_padded);
-			}
-			break;
+		{
+			const df::file_size s(arg.u.int64_value);
+			copy_sv(result, prop::format_size(s), result_width, is_zero_padded);
+		}
+		break;
 		case str::format_arg::DATE:
-			{
-				const df::date_t d(arg.u.int64_value);
-				copy_sv(result, platform::format_date(d));
-				*result++ = ' ';
-				copy_sv(result, platform::format_time(d));
-			}
-			break;
+		{
+			const df::date_t d(arg.u.int64_value);
+			copy_sv(result, platform::format_date(d));
+			*result++ = ' ';
+			copy_sv(result, platform::format_time(d));
+		}
+		break;
 		default:
 			df::assert_true(false);
 			break;
@@ -441,14 +441,14 @@ struct string_index_t
 
 		const auto exists = [&result](const std::pair<const K, V>& kv) { result = kv.second; };
 		const auto emplace = [this, sv, &result](const storage_t::constructor& ctor)
-		{
-			result = make_entry(sv);
-			ctor(std::u8string_view(result->sz, result->len), result);
-		};
+			{
+				result = make_entry(sv);
+				ctor(std::u8string_view(result->sz, result->len), result);
+			};
 
 		_storage.lazy_emplace_l(sv, exists, emplace);
 
-		return {result};
+		return { result };
 	}
 };
 
@@ -634,7 +634,7 @@ std::u8string_view::size_type str::ifind(const std::u8string_view text, const st
 }
 
 str::find_result str::ifind2(const std::u8string_view text, const std::u8string_view sub_string,
-                             const size_t parts_offset)
+	const size_t parts_offset)
 {
 	find_result result;
 	std::vector<part_t> parts;
@@ -711,7 +711,7 @@ bool str::is_quote(const wchar_t c)
 }
 
 void str::split2(const std::u8string_view text, const bool detect_quotes,
-                 const std::function<void(std::u8string_view)>& inserter, const std::function<bool(wchar_t)>& pred)
+	const std::function<void(std::u8string_view)>& inserter, const std::function<bool(wchar_t)>& pred)
 {
 	if (!text.empty())
 	{
@@ -814,7 +814,7 @@ df::string_map str::extract_url_params(const std::u8string_view url)
 }
 
 std::u8string str::replace(const std::u8string_view s, const std::u8string_view find,
-                           const std::u8string_view replacement)
+	const std::u8string_view replacement)
 {
 	auto result = std::u8string(s);
 	size_t pos = 0;
@@ -1101,7 +1101,7 @@ std::u8string str::format_count(const uint64_t total, const bool show_zero)
 
 std::u8string str::format_seconds(const int val)
 {
-	char sz[64] = {0};
+	char sz[64] = { 0 };
 
 	const auto secs = (val % 60);
 	const auto mins = ((val / 60) % 60);
@@ -1127,7 +1127,7 @@ int32_t str::to_int(const std::u8string_view sv)
 {
 	int result = 0;
 	auto from_result = std::from_chars(std::bit_cast<const char*>(sv.data()),
-	                                   std::bit_cast<const char*>(sv.data() + sv.size()), result);
+		std::bit_cast<const char*>(sv.data() + sv.size()), result);
 	// todo
 	return result;
 }
@@ -1295,7 +1295,7 @@ static bool is_range_separator(const wchar_t c)
 static bool is_num(const std::u8string_view text)
 {
 	return !text.empty() && std::find_if(text.begin(),
-	                                     text.end(), [](int c) { return !std::isdigit(c); }) == text.end();
+		text.end(), [](int c) { return !std::isdigit(c); }) == text.end();
 }
 
 static bool is_num_with_prefix(const std::u8string_view text, const std::u8string_view prefix)
@@ -2603,7 +2603,7 @@ bool str::wildcard_icmp(const std::u8string_view text_in, const std::u8string_vi
 
 	// The location in the tame string, from which we started after last wildcard
 	auto text = text_in.begin();
-	auto wildcard = wildcard_in.begin();	
+	auto wildcard = wildcard_in.begin();
 	const auto wildcard_end = wildcard_in.end();
 	const auto text_end = text_in.end();
 	auto post_last_wildcard = wildcard_end; // The location after the last '*', if we’ve encountered one

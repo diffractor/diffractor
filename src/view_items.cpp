@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -1514,21 +1514,21 @@ void items_view::update_media_elements()
 
 					if (!is_empty(md->description))
 					{
-						description->add(title_style(create_text_title(tt.prop_name_description, md->description)));						
+						description->add(title_style(create_text_title(tt.prop_name_description, md->description)));
 						description->add(margin16(std::make_shared<text_element>(md->description)));
 					}
 
 					if (!is_empty(md->synopsis))
 					{
-						description->add(title_style(create_text_title(tt.prop_name_synopsis, md->synopsis)));						
+						description->add(title_style(create_text_title(tt.prop_name_synopsis, md->synopsis)));
 						description->add(margin16(std::make_shared<text_element>(md->synopsis)));
 					}
 					elements.emplace_back(description);
 				}
-				else 
+				else
 				{
 					if (!is_empty(md->comment))
-					{						
+					{
 						elements.emplace_back(title_style(create_text_title(tt.prop_name_comment, md->comment)));
 						elements.emplace_back(margin16(std::make_shared<text_element>(md->comment)));
 					}
@@ -1541,7 +1541,7 @@ void items_view::update_media_elements()
 
 					if (!is_empty(md->synopsis))
 					{
-						elements.emplace_back(title_style(create_text_title(tt.prop_name_synopsis, md->synopsis)));						
+						elements.emplace_back(title_style(create_text_title(tt.prop_name_synopsis, md->synopsis)));
 						elements.emplace_back(margin16(std::make_shared<text_element>(md->synopsis)));
 					}
 				}

@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -112,20 +112,20 @@ protected:
 				s.queue_ui([this] { _state = test_state::Running; });
 				_f(stc);
 				s.queue_ui([this, t]
-				{
-					_message.clear();
-					_state = test_state::Success;
-					_time = df::round((df::now() - t) * 1000);
-				});
+					{
+						_message.clear();
+						_state = test_state::Success;
+						_time = df::round((df::now() - t) * 1000);
+					});
 			}
 			catch (const test_assert_exception& e)
 			{
 				s.queue_ui([this, e, t]
-				{
-					_state = test_state::Failed;
-					_message = e.message;
-					_time = df::round((df::now() - t) * 1000);
-				});
+					{
+						_state = test_state::Failed;
+						_message = e.message;
+						_time = df::round((df::now() - t) * 1000);
+					});
 			}
 		}
 	};

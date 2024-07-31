@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -115,7 +115,7 @@ enum class commands
 	rate_none,
 	rate_rejected,
 	refresh,
-	repeat_toggle,	
+	repeat_toggle,
 	search_related,
 	select_all,
 	select_invert,
@@ -128,7 +128,7 @@ enum class commands
 	sort_dates_descending,
 	sort_def,
 	sort_name,
-	sort_size,	
+	sort_size,
 	test_crash,
 	test_boom,
 	test_new_version,

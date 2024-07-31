@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -332,7 +332,7 @@ void sync_view::update_rows(const sync_analysis_result& analysis_result)
 		for (const auto& i : a.second)
 		{
 			auto row = std::make_shared<row_element>(*this);
-			
+
 			switch (i.second.action)
 			{
 			case sync_action::none:
@@ -386,9 +386,9 @@ void sync_view::update_rows(const sync_analysis_result& analysis_result)
 	}
 
 	_rows = std::move(rows);
-	_status = str::format(u8"{} {}   {} {}   {} {}   {} {}   {} {}"sv, 
+	_status = str::format(u8"{} {}   {} {}   {} {}   {} {}   {} {}"sv,
 		copy_local, tt.sync_copy_local_action,
-		copy_remote, tt.sync_copy_remote_action, 
+		copy_remote, tt.sync_copy_remote_action,
 		delete_local, tt.sync_delete_local_action,
 		delete_remote, tt.sync_delete_remote_action,
 		ignore, tt.ignore);

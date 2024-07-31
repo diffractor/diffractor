@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -112,7 +112,7 @@ bool df::zip_file::add(const file_path path, const std::u8string_view name_in)
 		zi.tmz_date.tm_sec = ft.second;
 
 		auto err = zipOpenNewFileInZip(std::any_cast<zipFile>(_handle), str::utf8_cast2(name).c_str(), &zi, nullptr, 0,
-		                               nullptr, 0, nullptr,Z_DEFLATED, Z_BEST_COMPRESSION);
+			nullptr, 0, nullptr, Z_DEFLATED, Z_BEST_COMPRESSION);
 
 		if (err != ZIP_OK)
 		{
@@ -127,7 +127,7 @@ bool df::zip_file::add(const file_path path, const std::u8string_view name_in)
 
 			// Write
 			err = zipWriteInFileInZip(std::any_cast<zipFile>(_handle), f.buffer(),
-			                          static_cast<uint32_t>(f.buffer_data_size()));
+				static_cast<uint32_t>(f.buffer_data_size()));
 
 			if (err != ZIP_OK)
 			{
@@ -202,14 +202,13 @@ size_t df::zip_file::extract(const file_path zip_file_path, const folder_path de
 								}
 
 								f->set_created(platform::dos_date_to_ts(static_cast<uint16_t>(file.dosDate >> 16),
-								                                        static_cast<uint16_t>(file.dosDate)));
+									static_cast<uint16_t>(file.dosDate)));
 							}
 						}
 					}
 				}
 				unzCloseCurrentFile(hz);
-			}
-			while (UNZ_OK == unzGoToNextFile(hz));
+			} while (UNZ_OK == unzGoToNextFile(hz));
 		}
 
 		unzClose(hz);
@@ -254,11 +253,10 @@ std::vector<archive_item> df::zip_file::list(const file_path zip_file_path)
 					result_info.uncompressed_size = file.uncompressed_size;
 					result_info.compressed_size = file.compressed_size;
 					result_info.created = platform::dos_date_to_ts(static_cast<uint16_t>(file.dosDate >> 16),
-					                                               static_cast<uint16_t>(file.dosDate));
+						static_cast<uint16_t>(file.dosDate));
 					results.emplace_back(result_info);
 				}
-			}
-			while (UNZ_OK == unzGoToNextFile(hz));
+			} while (UNZ_OK == unzGoToNextFile(hz));
 		}
 
 		unzClose(hz);

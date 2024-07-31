@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -30,11 +30,11 @@ struct app_text_t
 {
 	using text_t = std::u8string_view;
 	lang_def translations;
-	
+
 	void load_lang(df::file_path lang_file);
 	std::u8string translate_text(const std::u8string& text, std::u8string_view scope = {}) const;
 	std::vector<std::u8string> add_translate_text(const std::vector<str::cached>& text,
-	                                              std::u8string_view scope = {}) const;
+		std::u8string_view scope = {}) const;
 
 	text_t nav_folders_title = u8"Folders"sv;
 	text_t nav_drives_title = u8"Drives"sv;
@@ -540,7 +540,7 @@ struct app_text_t
 	text_t copyright_creator = u8"Creator"sv;
 	text_t copyright_source = u8"Source"sv;
 	text_t copyright_credit = u8"Credit"sv;
-	text_t copyright_url = u8"URL"sv;	
+	text_t copyright_url = u8"URL"sv;
 	text_t location_overwrite_gps = u8"Overwrite GPS coordinates when setting a location."sv;
 	text_t location_not_selected = u8"No location selected."sv;
 	text_t location_not_loaded = u8"Location could not be loaded from database or internet."sv;
@@ -701,7 +701,7 @@ struct app_text_t
 	text_t options_show_help_tooltips = u8"Show tooltips with help on buttons and links."sv;
 	text_t index_maintenance_help =
 		u8"After long periods of use, the index can benefit from one of the maintenance steps below. The index stores a copy of metadata from your media files. It can be rebuilt from the original files."sv;
-	text_t index_maintenance_reset_recommended = u8"The index is reporting errors. Resetting the index is recommended."sv;	
+	text_t index_maintenance_reset_recommended = u8"The index is reporting errors. Resetting the index is recommended."sv;
 	text_t collection_options_more_folders = u8"More folders. Separate each folder with a new line."sv;
 	text_t collection_options_local_folders_title = u8"Collection folders"sv;
 	text_t collection_options_pictures = u8"Pictures"sv;
@@ -716,7 +716,7 @@ struct app_text_t
 	text_t collection_options_custom_folders_title = u8"More Collection folders"sv;
 	text_t collection_options_custom_folders_help =
 		u8"Prefix the folder name with minus '-' to exclude it from the collection. You exclude folders by the full path -c:\\collection\\secret, with a folder name -secret, or with a wildcard -secret*."sv;
-	
+
 	text_t collection_options_custom_locations_help =
 		u8"Folders can be drives, folders, network shares or device labels. Labels are useful for removable or network devices where mapped drive letters can change."sv;
 	text_t customise_tags_title = u8"Favorite Tags"sv;
@@ -1173,23 +1173,23 @@ struct app_text_t
 	plural_text rotate_info_fmt = {
 		u8"Rotate {first-name}."sv, u8"Rotate {count} selected items. Originals will be overwritten."
 	};
-	plural_text title_folder_count_fmt = {u8"1 folder"sv, u8"{count} folders"};
-	plural_text title_item_count_fmt = {u8"{count} item"sv, u8"{count} items"};
-	plural_text rating_set_fmt = {u8"Click to rate as 1 star"sv, u8"Click to rate as {count} stars"};
+	plural_text title_folder_count_fmt = { u8"1 folder"sv, u8"{count} folders" };
+	plural_text title_item_count_fmt = { u8"{count} item"sv, u8"{count} items" };
+	plural_text rating_set_fmt = { u8"Click to rate as 1 star"sv, u8"Click to rate as {count} stars" };
 	plural_text cannot_process_fmt = {
 		u8"Cannot process {first-name}."sv, u8"Cannot process {first-name} and {other} other items."
 	};
 	plural_text rename_fmt = {
 		u8"{first-name} will be renamed."sv, u8"{count} items will be renamed."
 	};
-	plural_text dup_count_fmt = {u8"1 duplicate item"sv, u8"{count} duplicate items"};
-	plural_text sidecar_count_fmt = {u8"1 sidecar item"sv, u8"{count} sidecar items"};
+	plural_text dup_count_fmt = { u8"1 duplicate item"sv, u8"{count} duplicate items" };
+	plural_text sidecar_count_fmt = { u8"1 sidecar item"sv, u8"{count} sidecar items" };
 	plural_text processed_x_of_x_fmt = {
 		u8"{count} of 1 item was processed."sv, u8"{count} of {total} items were processed."
 	};
-	plural_text processed_fmt = {u8"1 item was processed."sv, u8"{count} items were processed."};
-	plural_text failed_items_fmt = {u8"{first-name} failed."sv, u8"{count} items failed."};
-	plural_text ignored_fmt = {u8"{first-name} was ignored."sv, u8"{count} items were ignored."};
+	plural_text processed_fmt = { u8"1 item was processed."sv, u8"{count} items were processed." };
+	plural_text failed_items_fmt = { u8"{first-name} failed."sv, u8"{count} items failed." };
+	plural_text ignored_fmt = { u8"{first-name} was ignored."sv, u8"{count} items were ignored." };
 	plural_text ignored_exist_already_fmt = {
 		u8"{first-name} was ignored because it exist already in the destination location."sv,
 		u8"{count} items were ignored because they exist already in the destination location."
@@ -1201,9 +1201,9 @@ struct app_text_t
 	plural_text delete_info_fmt = {
 		u8"{first-name} will be moved to the recycle bin."sv, u8"{count} items ({size}) will be moved to the recycle bin."
 	};
-	plural_text copy_fmt = {u8"{first-name} will be copied."sv, u8"{count} items ({size}) will be copied."};
-	plural_text move_fmt = {u8"{first-name} will be moved."sv, u8"{count} items ({size}) will be moved."};
-	plural_text be_updated_fmt = {u8"{first-name} will be updated."sv, u8"{count} items will be updated."};
+	plural_text copy_fmt = { u8"{first-name} will be copied."sv, u8"{count} items ({size}) will be copied." };
+	plural_text move_fmt = { u8"{first-name} will be moved."sv, u8"{count} items ({size}) will be moved." };
+	plural_text be_updated_fmt = { u8"{first-name} will be updated."sv, u8"{count} items will be updated." };
 	plural_text edit_metadata_fmt = {
 		u8"Add or overwrite specific metadata in {first-name}."sv,
 		u8"Add or overwrite specific metadata in {count} items."
@@ -1218,7 +1218,7 @@ struct app_text_t
 	plural_text adjust_date_info_fmt = {
 		u8"{first-name} will have the date adjusted."sv, u8"{count} items will have the date adjusted."
 	};
-	plural_text shared_fmt = {u8"{first-name} will be shared."sv, u8"{count} items will be shared."};
+	plural_text shared_fmt = { u8"{first-name} will be shared."sv, u8"{count} items will be shared." };
 	plural_text import_copy_fmt = {
 		u8"{first-name} will be copied or moved."sv, u8"{count} items ({size}) will be copied or moved."
 	};

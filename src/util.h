@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -104,7 +104,7 @@ namespace df
 
 		~releaser() { destroy_func_(ptr_); }
 
-		T *get() const { return ptr_; }
+		T* get() const { return ptr_; }
 
 		// Disable copying and moving (same as before)
 		releaser(const releaser&) = delete;
@@ -734,7 +734,7 @@ namespace df
 	struct count_and_size
 	{
 		uint64_t count = 0;
-		file_size size;		
+		file_size size;
 
 		count_and_size operator+(const count_and_size other) const
 		{

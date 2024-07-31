@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -228,12 +228,12 @@ settings_t::settings_t()
 
 	write_folder = known_path(platform::known_folder::pictures).text();
 
-	import.source_path = known_path(platform::known_folder::onedrive_camera_roll).text();
-	import.destination_path = known_path(platform::known_folder::pictures).text();
-	import.dest_folder_structure = defaut_custom_folder_structure;
-	import.is_move = false;
-	import.set_created_date = true;
-	import.rename_different_attributes = true;
+import.source_path = known_path(platform::known_folder::onedrive_camera_roll).text();
+import.destination_path = known_path(platform::known_folder::pictures).text();
+import.dest_folder_structure = defaut_custom_folder_structure;
+import.is_move = false;
+import.set_created_date = true;
+import.rename_different_attributes = true;
 
 	sync.local_path = known_path(platform::known_folder::pictures).text();
 	sync.remote_path = known_path(platform::known_folder::onedrive_pictures).combine(u8"backup"sv).text();

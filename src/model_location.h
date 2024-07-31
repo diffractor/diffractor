@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -104,7 +104,7 @@ public:
 		uint32_t n[3];
 		decimal_to_dms(coord, n);
 		return str::print(u8"%lu,%lu,%lu%c"sv, n[0], n[1], n[2],
-		                  is_ns ? (coord < 0 ? 'S' : 'N') : (coord < 0 ? 'W' : 'E'));
+			is_ns ? (coord < 0 ? 'S' : 'N') : (coord < 0 ? 'W' : 'E'));
 	}
 
 	static void decimal_to_dms(const double coord, uint32_t u[3])
@@ -195,7 +195,7 @@ struct location_t
 	location_t(location_t&& other) noexcept = default;
 
 	location_t(const uint32_t id_in, const str::cached city_in, const str::cached state_in,
-	           const str::cached country_in, const gps_coordinate position_in, const double pop) noexcept
+		const str::cached country_in, const gps_coordinate position_in, const double pop) noexcept
 		: id(id_in), place(city_in), state(state_in), country(country_in), position(position_in)
 	{
 	}

@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -111,7 +111,7 @@ public:
 
 					const auto y = logical_bounds.top + (i * _line_height);
 					dc.draw_text(line, recti(left, y, logical_bounds.right, y + _line_height), _font,
-					             ui::style::text_style::single_line, clr, {});
+						ui::style::text_style::single_line, clr, {});
 				}
 			}
 		}
@@ -139,6 +139,6 @@ public:
 
 		_line_count = _bytes_per_line > 0 ? df::round_up(_data.size(), _bytes_per_line) : 0;
 
-		return {width_limit, static_cast<int>(_line_height * _line_count)};
+		return { width_limit, static_cast<int>(_line_height * _line_count) };
 	}
 };

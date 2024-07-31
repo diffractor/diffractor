@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -68,7 +68,7 @@ ui::pixel_difference_result ui::surface::pixel_difference(const const_surface_pt
 	{
 		const auto this_line = std::bit_cast<uint32_t*>(pixels_line(y));
 		const auto other_line = std::bit_cast<uint32_t*>(other->pixels_line(y));
-		
+
 		for (auto x = 0; x < _dimensions.cx; x++)
 		{
 			if (this_line[x] != other_line[x])

@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -54,7 +54,7 @@ public:
 	country_t& operator=(country_t&&) noexcept = default;
 
 	country_t(const std::u8string_view code, const str::cached name,
-	          std::vector<str::cached> alt_names) noexcept : _name(name), _alt_names(std::move(alt_names))
+		std::vector<str::cached> alt_names) noexcept : _name(name), _alt_names(std::move(alt_names))
 	{
 		_code[0] = code[0];
 		_code[1] = code[1];
@@ -68,7 +68,7 @@ public:
 
 	std::u8string_view code() const
 	{
-		return {_code, 2};
+		return { _code, 2 };
 	}
 
 	uint32_t code2() const
@@ -259,7 +259,7 @@ public:
 	location_t find_by_id(uint32_t id) const;
 
 	location_matches auto_complete(std::u8string_view query, uint32_t max_results,
-	                               gps_coordinate default_location) const;
+		gps_coordinate default_location) const;
 
 	const country_t& find_country(const uint32_t code) const
 	{

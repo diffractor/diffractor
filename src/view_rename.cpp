@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -75,7 +75,7 @@ void rename_view::refresh()
 	for (const auto& rename : _renames)
 	{
 		auto row = std::make_shared<row_element>(*this);
-		row->_text[1] = rename.original_name;		
+		row->_text[1] = rename.original_name;
 		row->_text[2] = rename.new_name;
 		row->_text_color[2] = platform::is_valid_file_name(rename.new_name) ? rename_text_color : error_text_color;
 		row->_order = count++;

@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -229,15 +229,15 @@ namespace platform
 	};
 
 	file_op_result delete_items(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders,
-	                            bool allow_undo);
+		bool allow_undo);
 	file_op_result move_or_copy(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders,
-	                            df::folder_path target, bool is_move);
+		df::folder_path target, bool is_move);
 
 	file_op_result delete_file(df::file_path path);
 	file_attributes_t file_attributes(df::file_path path);
 	file_attributes_t file_attributes(df::folder_path path);
 	file_op_result copy_file(df::file_path existing, df::file_path destination, bool fail_if_exists,
-	                         bool can_create_folder);
+		bool can_create_folder);
 	file_op_result move_file(df::file_path existing, df::file_path destination, bool fail_if_exists);
 	file_op_result move_file(df::folder_path existing, df::folder_path destination);
 	file_op_result replace_file(df::file_path destination, df::file_path existing, bool create_originals = false);
@@ -265,7 +265,7 @@ namespace platform
 		std::vector<std::u8string> tags;
 		std::optional<int> rating;
 	};
-		
+
 	df::blob from_file(df::file_path path);
 	bool save_to_file(df::file_path path, df::cspan data);
 
@@ -291,8 +291,8 @@ namespace platform
 	};
 
 	get_cached_file_properties_response get_cached_file_properties(df::file_path path,
-	                                                               prop::item_metadata& properties_out,
-	                                                               ui::const_image_ptr& thumbnail_out);
+		prop::item_metadata& properties_out,
+		ui::const_image_ptr& thumbnail_out);
 	get_cached_file_properties_response get_shell_thumbnail(df::file_path path, ui::const_image_ptr& thumbnail_out);
 
 	std::u8string user_name();
@@ -310,7 +310,7 @@ namespace platform
 
 	void download_and_verify(bool test_version, const std::function<void(df::file_path)>& complete);
 	file_op_result install(df::file_path installer_path, df::folder_path destination_folder, bool silent,
-	                       bool run_app_after_install);
+		bool run_app_after_install);
 
 
 	// dates
@@ -365,8 +365,8 @@ namespace platform
 	{
 	public:
 		struct description
-		{			
-			std::u8string first_name;			
+		{
+			std::u8string first_name;
 			drop_effect preferred_drop_effect = drop_effect::none;
 			int count = 0;
 			bool has_readonly = false;
@@ -382,7 +382,7 @@ namespace platform
 	};
 
 	drop_effect perform_drag(std::any frame_handle, const std::vector<df::file_path>& files,
-	                         const std::vector<df::folder_path>& folders);
+		const std::vector<df::folder_path>& folders);
 
 
 	using clipboard_data_ptr = std::shared_ptr<clipboard_data>;
@@ -391,7 +391,7 @@ namespace platform
 	bool clipboard_has_files_or_image();
 
 	void set_clipboard(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders,
-	                   const file_load_result& loaded, bool is_move);
+		const file_load_result& loaded, bool is_move);
 	void set_clipboard(std::u8string_view text);
 
 	class setting_file
@@ -425,16 +425,16 @@ namespace platform
 		~mutex();
 
 		_Acquires_exclusive_lock_(this)
-		void ex_lock() const;
+			void ex_lock() const;
 
 		_Releases_exclusive_lock_(this)
-		void ex_unlock() const;
+			void ex_unlock() const;
 
 		_Acquires_shared_lock_(this)
-		void sh_lock() const;
+			void sh_lock() const;
 
 		_Releases_shared_lock_(this)
-		void sh_unlock() const;
+			void sh_unlock() const;
 
 		void unlock() const
 		{
@@ -636,10 +636,10 @@ namespace platform
 
 	extern uint32_t wait_for_timeout;
 	uint32_t wait_for(const std::vector<std::reference_wrapper<thread_event>>& events, uint32_t timeout_ms,
-	                  bool wait_all);
+		bool wait_all);
 	using attachments_t = std::vector<std::pair<std::u8string, df::file_path>>;
 	bool mapi_send(std::u8string_view to, std::u8string_view subject, std::u8string_view text,
-	               const attachments_t& attachments);
+		const attachments_t& attachments);
 	uint32_t tick_count();
 	uint32_t current_thread_id();
 	extern thread_event event_exit;
@@ -712,7 +712,7 @@ namespace platform
 	struct web_response
 	{
 		std::u8string headers;
-		std::u8string body;		
+		std::u8string body;
 		std::u8string content_type;
 		int status_code = 0;
 	};

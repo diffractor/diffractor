@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -131,10 +131,10 @@ ui::image_ptr save_png(const ui::const_surface_ptr& surface_in, const metadata_p
 			const auto stride = surface_in->stride();
 
 			png_set_IHDR(png.get(), info_ptr, dims.cx, dims.cy, 8,
-			             is_rgb ? PNG_COLOR_TYPE_RGB : PNG_COLOR_TYPE_RGBA,
-			             PNG_INTERLACE_NONE,
-			             PNG_COMPRESSION_TYPE_DEFAULT,
-			             PNG_FILTER_TYPE_DEFAULT);
+				is_rgb ? PNG_COLOR_TYPE_RGB : PNG_COLOR_TYPE_RGBA,
+				PNG_INTERLACE_NONE,
+				PNG_COMPRESSION_TYPE_DEFAULT,
+				PNG_FILTER_TYPE_DEFAULT);
 
 			if (!metadata.icc.empty())
 			{
@@ -157,7 +157,7 @@ ui::image_ptr save_png(const ui::const_surface_ptr& surface_in, const metadata_p
 				const df::cspan exif_data = metadata.exif;
 				const auto exif_skip = is_exif_signature(exif_data) ? 6u : 0u;
 				png_set_eXIf_1(png.get(), info_ptr, exif_data.size - exif_skip,
-				               const_cast<png_bytep>(exif_data.data) + exif_skip);
+					const_cast<png_bytep>(exif_data.data) + exif_skip);
 			}
 			else if (surface_in->orientation() != ui::orientation::top_left)
 			{
@@ -182,12 +182,12 @@ ui::image_ptr save_png(const ui::const_surface_ptr& surface_in, const metadata_p
 
 
 			png_write_png(png.get(), info_ptr,
-			              PNG_TRANSFORM_BGR | (is_rgb ? PNG_TRANSFORM_STRIP_FILLER_AFTER : PNG_TRANSFORM_IDENTITY),
-			              nullptr);
+				PNG_TRANSFORM_BGR | (is_rgb ? PNG_TRANSFORM_STRIP_FILLER_AFTER : PNG_TRANSFORM_IDENTITY),
+				nullptr);
 			png_write_end(png.get(), info_ptr);
 
 			return std::make_shared<ui::image>(std::move(result), dims, ui::image_format::PNG,
-			                                   surface_in->orientation());
+				surface_in->orientation());
 		}
 	}
 
@@ -306,7 +306,7 @@ ui::surface_ptr load_png(df::cspan data)
 		if (num_exif > 16)
 		{
 			prop::item_metadata md;
-			metadata_exif::parse(md, {exif_data, num_exif});
+			metadata_exif::parse(md, { exif_data, num_exif });
 			result->orientation(md.orientation);
 		}
 	}

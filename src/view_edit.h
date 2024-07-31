@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -116,7 +116,7 @@ public:
 
 	recti calc_media_bounds() const
 	{
-		return {0, 0, _extent.cx, _extent.cy};
+		return { 0, 0, _extent.cx, _extent.cy };
 	}
 
 	view_controls_host_ptr controls(const ui::control_frame_ptr& owner);
@@ -133,7 +133,7 @@ public:
 	void exit() override;
 	void save_and_close();
 	bool save(df::file_path src_path, df::file_path dst_path, std::u8string_view xmp_name,
-	          const ui::control_frame_ptr& owner) const;
+		const ui::control_frame_ptr& owner) const;
 	bool has_changes() const;
 	void preview(ui::const_surface_ptr surface);
 	void render(ui::draw_context& dc, view_controller_ptr controller) override;

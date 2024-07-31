@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -187,7 +187,7 @@ public:
 	}
 
 	bool open(const df::item_element_ptr& item, const bool auto_play, const int video_track, const int audio_track,
-	          const bool can_use_hw, const bool use_last_played_pos, const bool can_use_threads)
+		const bool can_use_hw, const bool use_last_played_pos, const bool can_use_threads)
 	{
 		df::assert_true(_state == av_play_state::detached);
 
@@ -467,7 +467,7 @@ public:
 	}
 
 	void update_visualizer(const ui::vertices_ptr& verts, const recti rect, const pointi offset, const float alpha,
-	                       const double time_now)
+		const double time_now)
 	{
 		const auto time = pos(time_now);
 		_last_frame_time = time;
@@ -559,9 +559,9 @@ public:
 	}
 
 	void open(const df::item_element_ptr& item, const bool auto_play, const int video_track, const int audio_track,
-	          const bool can_use_hw,
-	          const bool use_last_played_pos, 
-		      const std::function<void(std::shared_ptr<av_session>)>& cb)
+		const bool can_use_hw,
+		const bool use_last_played_pos,
+		const std::function<void(std::shared_ptr<av_session>)>& cb)
 	{
 		queue([item, auto_play, video_track, audio_track, can_use_hw, use_last_played_pos, cb](
 			const std::shared_ptr<av_player>& p)
@@ -598,8 +598,8 @@ private:
 	}
 
 	std::shared_ptr<av_session> open_impl(const df::item_element_ptr& item, const bool auto_play, const int video_track,
-	                                      const int audio_track, const bool can_use_hw,
-	                                      const bool use_last_played_pos)
+		const int audio_track, const bool can_use_hw,
+		const bool use_last_played_pos)
 	{
 		const auto ses = std::make_shared<av_session>(_host);
 		const auto open_result = ses->open(item, auto_play, video_track, audio_track, can_use_hw, use_last_played_pos, true);
@@ -676,7 +676,7 @@ public:
 
 	void decode_video() const
 	{
-		const std::vector<std::reference_wrapper<platform::thread_event>> events = {platform::event_exit, _video_event};
+		const std::vector<std::reference_wrapper<platform::thread_event>> events = { platform::event_exit, _video_event };
 		std::shared_ptr<av_session> session;
 
 		while (!df::is_closing)
@@ -709,7 +709,7 @@ public:
 
 		vis_buffer.init(vis_format);
 
-		const std::vector<std::reference_wrapper<platform::thread_event>> events = {platform::event_exit, _audio_event};
+		const std::vector<std::reference_wrapper<platform::thread_event>> events = { platform::event_exit, _audio_event };
 
 		auto has_audio = false;
 		auto base_time = 0.0;
@@ -878,7 +878,7 @@ public:
 	void reading()
 	{
 		const auto player = shared_from_this();
-		const std::vector<std::reference_wrapper<platform::thread_event>> events = {platform::event_exit, _read_event};
+		const std::vector<std::reference_wrapper<platform::thread_event>> events = { platform::event_exit, _read_event };
 
 		while (!df::is_closing)
 		{
@@ -934,9 +934,9 @@ public:
 	void capture(const std::shared_ptr<av_session>& ses, const std::function<void(file_load_result)>& cb)
 	{
 		queue([ses, cb](const std::shared_ptr<av_player>& p)
-		{
-			cb(ses->capture_first_frame());
-		});
+			{
+				cb(ses->capture_first_frame());
+			});
 	}
 
 private:

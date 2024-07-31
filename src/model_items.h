@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -250,7 +250,7 @@ namespace df
 		date_t file_created;
 		date_t file_modified;
 		mutable date_t metadata_scanned;
-		mutable prop::item_metadata_aptr metadata;		
+		mutable prop::item_metadata_aptr metadata;
 		mutable duplicate_info duplicates;
 
 		mutable bloom_bits bloom;
@@ -260,31 +260,31 @@ namespace df
 
 		index_file_item(const index_file_item& other)
 			: flags(other.flags),
-			  ft(other.ft),
-			  name(other.name),
-			  size(other.size),
-			  file_created(other.file_created),
-			  file_modified(other.file_modified),
-			  metadata_scanned(other.metadata_scanned),
-			  metadata(other.metadata.load()),
-			  duplicates(other.duplicates),
-			  bloom(other.bloom),
-			  crc32c(other.crc32c)
+			ft(other.ft),
+			name(other.name),
+			size(other.size),
+			file_created(other.file_created),
+			file_modified(other.file_modified),
+			metadata_scanned(other.metadata_scanned),
+			metadata(other.metadata.load()),
+			duplicates(other.duplicates),
+			bloom(other.bloom),
+			crc32c(other.crc32c)
 		{
 		}
 
 		index_file_item(index_file_item&& other) noexcept
 			: flags(other.flags),
-			  ft(other.ft),
-			  name(std::move(other.name)),
-			  size(std::move(other.size)),
-			  file_created(std::move(other.file_created)),
-			  file_modified(std::move(other.file_modified)),
-			  metadata_scanned(std::move(other.metadata_scanned)),
-			  metadata(other.metadata.load()),
-			  duplicates(std::move(other.duplicates)),
-			  bloom(std::move(other.bloom)),
-			  crc32c(other.crc32c)
+			ft(other.ft),
+			name(std::move(other.name)),
+			size(std::move(other.size)),
+			file_created(std::move(other.file_created)),
+			file_modified(std::move(other.file_modified)),
+			metadata_scanned(std::move(other.metadata_scanned)),
+			metadata(other.metadata.load()),
+			duplicates(std::move(other.duplicates)),
+			bloom(std::move(other.bloom)),
+			crc32c(other.crc32c)
 		{
 			other.metadata.store(nullptr);
 		}
@@ -449,7 +449,7 @@ namespace df
 		static constexpr uint32_t map_width = 256;
 		static constexpr uint32_t map_height = 128;
 
-		std::array<uint32_t, map_width * map_height> coordinates{};
+		std::array<uint32_t, map_width* map_height> coordinates{};
 
 		static pointi calc_map_loc(const gps_coordinate coord)
 		{
@@ -457,7 +457,7 @@ namespace df
 			const auto y = round((coord.latitude() / 90.0 * (map_height / 2.0)) + (map_height / 2.0));
 			const auto xx = std::clamp(x, 0, static_cast<int>(map_width) - 1);
 			const auto yy = (static_cast<int>(map_height) - 1) - std::clamp(y, 0, static_cast<int>(map_height) - 1);
-			return {xx, yy};
+			return { xx, yy };
 		}
 	};
 
@@ -511,10 +511,10 @@ namespace df
 		icon_index max_type_icon()
 		{
 			const auto ft = std::distance(counts.begin(),
-			                              std::ranges::max_element(counts, [](auto&& left, auto&& right)
-			                              {
-				                              return left.count < right.count;
-			                              }));
+				std::ranges::max_element(counts, [](auto&& left, auto&& right)
+					{
+						return left.count < right.count;
+					}));
 			return file_group_from_index(static_cast<int>(ft))->icon;
 		}
 
@@ -563,7 +563,7 @@ namespace df
 		file_path _path = {};
 		str::cached _name = {};
 		file_type_ref _ft = file_type::other;
-		prop::item_metadata_aptr _metadata;		
+		prop::item_metadata_aptr _metadata;
 		index_folder_item_ptr _info;
 		ui::const_image_ptr _thumbnail;
 		ui::const_image_ptr _cover_art;
@@ -813,10 +813,10 @@ namespace df
 		sizei measure(ui::measure_context& mc, int width_limit) const override;
 		void layout(ui::measure_context& mc, recti bounds_in, ui::control_layouts& positions) override;
 		view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
-		                                             const std::vector<recti>& excluded_bounds) override;
+			const std::vector<recti>& excluded_bounds) override;
 
 		platform::file_op_result rename(index_state& index, std::u8string_view name);
-		
+
 		std::u8string base_name() const
 		{
 			if (is_folder()) return std::u8string(_name);
@@ -1118,7 +1118,7 @@ namespace df
 		}
 
 		void record_error(const item_element_ptr& i, process_result_code result_code, bool mark_errors,
-		                  const view_host_base_ptr& view)
+			const view_host_base_ptr& view)
 		{
 			if (code == process_result_code::ok || code == result_code)
 			{
@@ -1160,7 +1160,7 @@ namespace df
 	public:
 		item_set() noexcept = default;
 
-		item_set(item_elements items): _items(std::move(items))
+		item_set(item_elements items) : _items(std::move(items))
 		{
 		}
 
@@ -1313,11 +1313,11 @@ namespace df
 		}
 
 		std::vector<ui::const_image_ptr> thumbs(size_t max = max_thumbnails_to_display,
-		                                        const item_element_ptr& skip_this = nullptr) const;
+			const item_element_ptr& skip_this = nullptr) const;
 		size_t thumb_count() const;
 
 		process_result can_process(process_items_type file_types, bool mark_errors,
-		                           const view_host_base_ptr& view) const;
+			const view_host_base_ptr& view) const;
 
 		item_set selected() const
 		{
@@ -1338,21 +1338,21 @@ namespace df
 			double distance = 0;
 
 			for_all([&result, &distance, &ignore, &loc](auto&& i)
-			{
-				if (i != ignore)
 				{
-					const auto center = i->bounds.center();
-					const auto dx = static_cast<double>(loc.x) - static_cast<double>(center.x);
-					const auto dy = static_cast<double>(loc.y) - static_cast<double>(center.y);
-					const auto d = (dx * dx) + (dy * dy);
-
-					if (!result || distance > d)
+					if (i != ignore)
 					{
-						result = i;
-						distance = d;
+						const auto center = i->bounds.center();
+						const auto dx = static_cast<double>(loc.x) - static_cast<double>(center.x);
+						const auto dy = static_cast<double>(loc.y) - static_cast<double>(center.y);
+						const auto d = (dx * dx) + (dy * dy);
+
+						if (!result || distance > d)
+						{
+							result = i;
+							distance = d;
+						}
 					}
-				}
-			});
+				});
 
 			return result;
 		}
@@ -1444,7 +1444,7 @@ namespace df
 				}
 			}
 
-			return {result.begin(), result.end()};
+			return { result.begin(), result.end() };
 		}
 	};
 
@@ -1472,7 +1472,7 @@ namespace df
 			const auto max_width = df::round(_max_width * dc.scale_factor);
 
 			extent = std::max(extent, dc.measure_text(text, ui::style::font_face::dialog,
-			                                          ui::style::text_style::single_line, max_width).cx);
+				ui::style::text_style::single_line, max_width).cx);
 			val_max = std::max(val_max, val);
 			val_min = std::min(val_min, val);
 		}
@@ -1481,7 +1481,7 @@ namespace df
 		{
 			const auto max_width = df::round(_max_width * dc.scale_factor);
 			extent = std::max(extent, dc.measure_text(text, ui::style::font_face::dialog,
-			                                          ui::style::text_style::single_line, max_width).cx);
+				ui::style::text_style::single_line, max_width).cx);
 		}
 
 		/*recti calc_bg_bounds(const recti row_bounds, const int line_height, const int text_x, const int text_y) const
@@ -1495,7 +1495,7 @@ namespace df
 		}*/
 
 		recti calc_bounds(const recti row_bounds, const int text_x, const int text_y, const int text_padding) const
-		{			
+		{
 			auto bounds = row_bounds;
 			bounds.left = text_x + (text_padding / 2);
 			bounds.right = bounds.left + width;
@@ -1503,8 +1503,8 @@ namespace df
 		}
 
 		void draw(ui::draw_context& rc, const std::u8string_view text, const double val, const recti bounds,
-		          const ui::style::font_face text_font, const ui::style::text_style text_style,
-		          const ui::color color) const
+			const ui::style::font_face text_font, const ui::style::text_style text_style,
+			const ui::color color) const
 		{
 			ui::color rank_color;
 
@@ -1520,8 +1520,8 @@ namespace df
 		}
 
 		void draw(ui::draw_context& rc, const std::u8string_view text, const ui::color bg_color, const recti bounds,
-		          const ui::style::font_face text_font, const ui::style::text_style text_style,
-		          const ui::color color) const
+			const ui::style::font_face text_font, const ui::style::text_style text_style,
+			const ui::color color) const
 		{
 			rc.draw_text(text, bounds, text_font, text_style, color, bg_color);
 		}
@@ -1692,7 +1692,7 @@ namespace df
 		void scroll_tooltip(const ui::const_image_ptr& thumbnail, const view_elements_ptr& elements) const;
 		void tooltip(view_hover_element& hover, pointi loc, pointi element_offset) const override;
 		view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
-		                                             const std::vector<recti>& excluded_bounds) override;
+			const std::vector<recti>& excluded_bounds) override;
 
 		item_element_ptr drawable_from_layout_location(pointi loc) const;
 		void update_scroll_info(group_by gb);
@@ -1706,5 +1706,5 @@ namespace df
 
 
 	std::shared_ptr<group_title_control> build_group_title(view_state& s, const view_host_base_ptr& view,
-	                                                       const item_group_ptr& g);
+		const item_group_ptr& g);
 };

@@ -1,5 +1,5 @@
 ﻿// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -57,10 +57,10 @@ static file_type_config s_config;
 bool file_tool::invoke(const df::file_path path)
 {
 	auto substitute = [&](u8ostringstream& result, const std::u8string_view token)
-	{
-		if (token == u8"item-path"sv) result << str::quote_if_white_space(path.str());
-		else if (token == u8"exe-path"sv) result << str::quote_if_white_space(exe_path.str());
-	};
+		{
+			if (token == u8"item-path"sv) result << str::quote_if_white_space(path.str());
+			else if (token == u8"exe-path"sv) result << str::quote_if_white_space(exe_path.str());
+		};
 
 	return platform::run(replace_tokens(invoke_text, substitute));
 }
@@ -83,22 +83,22 @@ file_group_ref parse_file_group(const std::u8string& text)
 }
 
 static constexpr file_traits photo_traits = file_traits::bitmap | file_traits::cache_metadata |
-	file_traits::zoom | file_traits::hide_overlays |
-	file_traits::thumbnail | file_traits::photo_metadata;
+file_traits::zoom | file_traits::hide_overlays |
+file_traits::thumbnail | file_traits::photo_metadata;
 static constexpr file_traits video_traits = file_traits::av | file_traits::preview_video |
-	file_traits::cache_metadata | file_traits::hide_overlays | 
-	file_traits::thumbnail | file_traits::video_metadata;
+file_traits::cache_metadata | file_traits::hide_overlays |
+file_traits::thumbnail | file_traits::video_metadata;
 static constexpr file_traits audio_traits = file_traits::av | file_traits::visualize_audio |
-	file_traits::cache_metadata | file_traits::music_metadata;
+file_traits::cache_metadata | file_traits::music_metadata;
 
 static constexpr file_traits commodore_traits = file_traits::commodore | file_traits::no_metadata_grouping;
 static constexpr file_traits archive_traits = file_traits::archive | file_traits::no_metadata_grouping;
 
 file_group file_group::other(u8"other"sv, u8"others"sv, 0x5E5E5E, icon_index::document, file_traits::no_metadata_grouping, group_key_type::other, {});
 file_group file_group::folder(u8"folder"sv, u8"folders"sv, 0x18A59C, icon_index::folder, file_traits::no_metadata_grouping, group_key_type::folder, {});
-file_group file_group::photo(u8"photo"sv, u8"photos"sv, 0x18A549, icon_index::photo, photo_traits, group_key_type::photo, {u8"xmp"});
+file_group file_group::photo(u8"photo"sv, u8"photos"sv, 0x18A549, icon_index::photo, photo_traits, group_key_type::photo, { u8"xmp" });
 file_group file_group::video(u8"video"sv, u8"videos"sv, 0xA55018, icon_index::video, video_traits, group_key_type::video,
-                             {u8"srt"sv, u8"smi"sv, u8"vtt"sv, u8"mpl2"sv, u8"thm"sv, u8"xmp"});
+	{ u8"srt"sv, u8"smi"sv, u8"vtt"sv, u8"mpl2"sv, u8"thm"sv, u8"xmp" });
 file_group file_group::audio(u8"audio"sv, {}, 0xA5184B, icon_index::audio, audio_traits, group_key_type::audio, {});
 
 file_group file_group::archive(u8"archive"sv, u8"archives"sv, 0x5588DD, icon_index::archive, archive_traits, group_key_type::archive, {});
@@ -117,7 +117,7 @@ void load_file_types()
 		file_group::audio,
 		file_group::archive,
 		file_group::commodore,
-		file_group::other};
+		file_group::other };
 
 	s_config.types = {
 		{file_group::video, u8"264"sv, {}, {}},
@@ -559,9 +559,9 @@ void load_file_types()
 		if (!ft.extension.empty())
 		{
 			str::split2(ft.extension, true, [pft = &ft](const std::u8string_view ext)
-			{
-				s_config.types_by_name.insert_or_assign(str::cache(ext), pft);
-			});
+				{
+					s_config.types_by_name.insert_or_assign(str::cache(ext), pft);
+				});
 		}
 	}
 
@@ -620,13 +620,13 @@ void load_tools()
 												a.value.GetString());
 										if (str::icmp(a.name.GetString(), u8"invoke"sv) == 0)
 											tool->invoke_text =
-												str::cache(a.value.GetString());
+											str::cache(a.value.GetString());
 										if (str::icmp(a.name.GetString(), u8"text"sv) == 0)
 											tool->text = str::cache(
 												a.value.GetString());
 										if (str::icmp(a.name.GetString(), u8"extensions"sv) == 0)
 											tool->extensions =
-												str::cache(a.value.GetString());
+											str::cache(a.value.GetString());
 									}
 
 									for (const auto& ext : split(tool->extensions, true))
@@ -677,14 +677,14 @@ void load_tools()
 		if (!ft.extension.empty())
 		{
 			str::split2(ft.extension, true, [&ft, &tools_by_ext](const std::u8string_view ext)
-			{
-				const auto found = tools_by_ext.find(ext);
-
-				if (found != tools_by_ext.end())
 				{
-					ft.tools.emplace_back(found->second);
-				}
-			});
+					const auto found = tools_by_ext.find(ext);
+
+					if (found != tools_by_ext.end())
+					{
+						ft.tools.emplace_back(found->second);
+					}
+				});
 		}
 	}
 }
@@ -850,7 +850,7 @@ static bool is_heif(const df::cspan image_buffer_in)
 		return false;
 	}
 
-	const std::array<uint8_t, 4> ftyp_header = {'f', 't', 'y', 'p'};
+	const std::array<uint8_t, 4> ftyp_header = { 'f', 't', 'y', 'p' };
 	const std::array<std::array<uint8_t, 4>, 10> brand = {
 		{
 			{'h', 'e', 'i', 'c'},
@@ -870,9 +870,9 @@ static bool is_heif(const df::cspan image_buffer_in)
 		return false;
 
 	return std::any_of(std::begin(brand), std::end(brand), [image_buffer_in](const auto& b)
-	{
-		return std::equal(std::begin(b), std::end(b), image_buffer_in.data + 8);
-	});
+		{
+			return std::equal(std::begin(b), std::end(b), image_buffer_in.data + 8);
+		});
 }
 
 inline bool is_avif(const df::cspan image_buffer_in)
@@ -925,7 +925,7 @@ detected_format files::detect_format(const df::cspan image_buffer_in)
 		case 0x5089: return detected_format::PNG;
 		case 0x4949: return detected_format::TIFF;
 		case 0x4d4d: return detected_format::TIFF;
-		//case 0x4947: return file_format2::GIF;
+			//case 0x4947: return file_format2::GIF;
 		case 0x4952: return detected_format::WEBP;
 		}
 	}
@@ -948,7 +948,7 @@ files::~files()
 }
 
 ui::const_image_ptr files::surface_to_image(const ui::const_surface_ptr& surface_in, const metadata_parts& metadata,
-                                            const file_encode_params& params, const ui::image_format format)
+	const file_encode_params& params, const ui::image_format format)
 {
 	ui::const_image_ptr result;
 
@@ -971,7 +971,7 @@ ui::const_image_ptr files::surface_to_image(const ui::const_surface_ptr& surface
 		{
 			result = std::make_shared<ui::image>(
 				_jpeg_encoder.encode(dimensions.cx, dimensions.cy, surface_in->pixels(), surface_in->stride(),
-				                     orientation, metadata, params), dimensions, ui::image_format::JPEG, orientation);
+					orientation, metadata, params), dimensions, ui::image_format::JPEG, orientation);
 		}
 	}
 
@@ -1052,7 +1052,7 @@ ui::pixel_difference_result files::pixel_difference(const ui::const_image_ptr& e
 
 
 ui::surface_ptr files::image_to_surface(const ui::const_image_ptr& image, const sizei target_extent,
-                                        const bool can_use_yuv)
+	const bool can_use_yuv)
 {
 	ui::surface_ptr surface_result;
 
@@ -1085,7 +1085,7 @@ ui::surface_ptr files::image_to_surface(const ui::const_image_ptr& image, const 
 							temp_surface = std::make_shared<ui::surface>();
 							temp_surface->alloc(dimensions, ui::texture_format::RGB, image->orientation());
 							success = _jpeg_decoder.read_rgb(temp_surface->pixels(), temp_surface->stride(),
-							                                 temp_surface->size());
+								temp_surface->size());
 							_jpeg_decoder.close();
 						}
 					}
@@ -1174,7 +1174,7 @@ ui::surface_ptr files::image_to_surface(df::cspan image_buffer_in, const sizei t
 							const auto dimensions = _jpeg_decoder.dimensions_out();
 							temp_surface->alloc(dimensions, ui::texture_format::RGB, _jpeg_decoder._orientation_out);
 							success = _jpeg_decoder.read_rgb(temp_surface->pixels(), temp_surface->stride(),
-							                                 temp_surface->size());
+								temp_surface->size());
 							_jpeg_decoder.close();
 						}
 					}
@@ -1415,7 +1415,7 @@ std::u8string normalize_string_trailing_null(std::u8string operand)
 }
 
 file_scan_result files::scan_file(const df::file_path path, const bool load_thumb, const file_type_ref ft,
-                                  const std::u8string_view xmp_sidecar, const sizei max_thumb_size)
+	const std::u8string_view xmp_sidecar, const sizei max_thumb_size)
 {
 	file_scan_result result;
 
@@ -1577,7 +1577,7 @@ ui::image_ptr load_image_file(df::cspan file)
 			case detected_format::WEBP:
 				format = ui::image_format::WEBP;
 				break;
-			default: ;
+			default:;
 			}
 
 			result = std::make_shared<ui::image>(file, info.dimensions(), format, info.orientation);
@@ -1644,7 +1644,7 @@ file_load_result files::load(const df::file_path path, bool can_load_preview)
 							result.success = is_valid(result.s);
 							break;
 
-						default: ;
+						default:;
 						}
 					}
 				}
@@ -1720,7 +1720,7 @@ ui::image_format extension_to_format(const std::u8string_view ext)
 }
 
 ui::image_ptr save_surface(const ui::image_format& format, const ui::const_surface_ptr& surface,
-                           const metadata_parts& metadata, const file_encode_params& params)
+	const metadata_parts& metadata, const file_encode_params& params)
 {
 	if (format == ui::image_format::JPEG)
 	{
@@ -1740,11 +1740,11 @@ ui::image_ptr save_surface(const ui::image_format& format, const ui::const_surfa
 
 
 platform::file_op_result files::update(const df::file_path path_src, const df::file_path path_dst,
-                                       const metadata_edits& metadata_edits, const image_edits& photo_edits,
-                                       const file_encode_params& params, const bool create_original,
-                                       const std::u8string_view xmp_name)
+	const metadata_edits& metadata_edits, const image_edits& photo_edits,
+	const file_encode_params& params, const bool create_original,
+	const std::u8string_view xmp_name)
 {
-	platform::file_op_result result = {platform::file_op_result_code::OK};
+	platform::file_op_result result = { platform::file_op_result_code::OK };
 
 	bool temp_file_created = false;
 	const auto path_temp = platform::temp_file(path_dst.extension(), path_dst.folder());
@@ -1789,8 +1789,8 @@ platform::file_op_result files::update(const df::file_path path_src, const df::f
 					jpeg_save_quality >= 75)
 				{
 					const auto saved = _jpeg_decoder.transform(loaded.i->data(), _jpeg_encoder,
-					                                           angle_to_transform(
-						                                           df::round(photo_edits.rotation_angle())));
+						angle_to_transform(
+							df::round(photo_edits.rotation_angle())));
 
 					if (saved.empty() || !blob_save_to_file(saved, path_temp))
 					{
@@ -1808,7 +1808,7 @@ platform::file_op_result files::update(const df::file_path path_src, const df::f
 					else
 					{
 						const auto saved = save_surface(extension_to_format(path_temp.extension()), temp_surface,
-						                                scan_result.save_metadata(), params);
+							scan_result.save_metadata(), params);
 
 						if (is_empty(saved) || !blob_save_to_file(saved->data(), path_temp))
 						{
@@ -1850,8 +1850,8 @@ platform::file_op_result files::update(const df::file_path path_src, const df::f
 			if (!xmp_result.xmp_path.is_empty())
 			{
 				const auto path_dst_xmp = xmp_name.empty()
-					                          ? path_dst.extension(u8".xmp"sv)
-					                          : path_dst.folder().combine_file(xmp_result.xmp_path.name());
+					? path_dst.extension(u8".xmp"sv)
+					: path_dst.folder().combine_file(xmp_result.xmp_path.name());
 				const auto path_temp_xmp = xmp_result.xmp_path;
 				result = platform::replace_file(path_dst_xmp, path_temp_xmp, create_original);
 			}
@@ -1982,7 +1982,7 @@ void file_scan_result::parse_metadata_ffmpeg_kv(prop::item_metadata& result) con
 		}
 		else if (is_key(kv.first, u8"encoder"sv) || is_key(kv.first, u8"encoded_by"sv))
 			result.encoder =
-				str::strip_and_cache(kv.second);
+			str::strip_and_cache(kv.second);
 		else if (is_key(kv.first, u8"genre"sv)) result.genre = str::strip_and_cache(kv.second);
 		else if (is_key(kv.first, u8"publisher"sv)) result.publisher = str::strip_and_cache(kv.second);
 		else if (is_key(kv.first, u8"synopsis"sv)) result.synopsis = str::strip_and_cache(kv.second);
@@ -2007,7 +2007,7 @@ void file_scan_result::parse_metadata_ffmpeg_kv(prop::item_metadata& result) con
 		else if (is_key(kv.first, u8"game"sv)) result.game = str::strip_and_cache(kv.second);
 		else if (is_key(kv.first, u8"song"sv) && prop::is_null(result.title))
 			result.title =
-				str::strip_and_cache(kv.second);
+			str::strip_and_cache(kv.second);
 		else if (is_key(kv.first, u8"compatible_brands"sv) || is_key(kv.first, u8"minor_version"sv))
 		{
 			// compatible_brands: 3gp4, avc1isom, isomavc1, isomiso2avc1mp41, isomiso2mp41, isommp42, M4A mp42isom, mp41isom, mp42mp41isomavc1, qt
@@ -2020,9 +2020,9 @@ void file_scan_result::parse_metadata_ffmpeg_kv(prop::item_metadata& result) con
 		else if (is_key(kv.first, u8"keywords"sv))
 		{
 			str::split2(kv.second, true, [this](const std::u8string_view text)
-			{
-				keywords.emplace_back(str::cache(text));
-			});
+				{
+					keywords.emplace_back(str::cache(text));
+				});
 		}
 		else if (is_key(kv.first, u8"location-eng"sv) || is_key(kv.first, u8"location"sv) || is_key(
 			kv.first, u8"com.apple.quicktime.location.ISO6709"sv))

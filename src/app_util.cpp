@@ -60,7 +60,7 @@ void view_state::modify_items(const df::results_ptr& results, icon_index icon, c
 
 
 static platform::file_op_result move_or_copy(const df::file_path source_path, const df::file_path dest_path,
-                                             const bool is_move, const bool fail_if_exists)
+	const bool is_move, const bool fail_if_exists)
 {
 	return is_move
 		? platform::move_file(source_path, dest_path, fail_if_exists)
@@ -96,7 +96,7 @@ std::vector<rename_item> calc_item_renames(const df::item_set& items, const std:
 		name = prop::replace_tokens(name, md, i->name(), i->calc_media_created());
 
 		rename_item rename;
-		rename.item = i;		
+		rename.item = i;
 		rename.original_name = original_name;
 		rename.new_name = name;
 		seq += 1;
@@ -145,8 +145,8 @@ std::u8string format_sequence(const std::u8string_view original_name, const std:
 }
 
 import_analysis_result import_analysis(const std::vector<folder_scan_item>& src_items,
-                                       const import_options& options, const item_import_set& previous_imported,
-                                       df::cancel_token token)
+	const import_options& options, const item_import_set& previous_imported,
+	df::cancel_token token)
 {
 	import_analysis_result result;
 	const auto now = platform::now();
@@ -722,7 +722,7 @@ bool df::is_excluded(const df::index_roots& roots, const df::folder_path path)
 	auto name = path.name();
 
 	for (auto exclude : roots.exclude_wildcards)
-	{		
+	{
 		if (str::wildcard_icmp(name, exclude))
 			return true;
 	}

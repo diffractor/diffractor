@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -427,8 +427,8 @@ void import_view::update_rows(const import_analysis_result& analysis_result)
 		{
 			auto row = std::make_shared<row_element>(*this);
 			row->_text[1] = i.source.pack();
-			row->_text[2] = i.destination.pack();			
-			
+			row->_text[2] = i.destination.pack();
+
 			switch (i.action)
 			{
 			case import_action::import:

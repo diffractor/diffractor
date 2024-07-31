@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -47,7 +47,7 @@ namespace df
 
 		date_t(const int y, const int m, const int d, const int hh = 0, const int mm = 0, const int ss = 0) noexcept
 		{
-			const day_t dd{y, m, d, hh, mm, ss};
+			const day_t dd{ y, m, d, hh, mm, ss };
 			date(dd);
 		}
 

@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -85,7 +85,7 @@ enum class view_invalid
 	refresh_items |
 	address |
 	font_size,
-	
+
 };
 
 constexpr view_invalid operator|(const view_invalid a, const view_invalid b)
@@ -124,21 +124,21 @@ struct interaction_context
 };
 
 constexpr ui::color view_handle_color(const bool selected, const bool hover, const bool tracking,
-                                        const bool view_has_focus, const bool text_over,
-										ui::color bg_clr = ui::style::color::group_background)
+	const bool view_has_focus, const bool text_over,
+	ui::color bg_clr = ui::style::color::group_background)
 {
 	if (tracking)
 	{
 		const auto clr = selected ? ui::color(ui::style::color::view_selected_background) : bg_clr.average(ui::style::color::view_text);
-		
+
 		return clr.scale(hover ? 1.22f : 1.0f).aa(0.9f);
 	}
 
 	if (selected)
 	{
 		const auto clr = view_has_focus
-			                 ? ui::color(ui::style::color::view_selected_background).scale(hover ? 1.22f : 1.0f)
-			                 : bg_clr.average(ui::style::color::view_selected_background).scale(hover ? 1.33f : 1.0f);
+			? ui::color(ui::style::color::view_selected_background).scale(hover ? 1.22f : 1.0f)
+			: bg_clr.average(ui::style::color::view_selected_background).scale(hover ? 1.33f : 1.0f);
 		return clr.aa(0.9f);
 	}
 
@@ -357,7 +357,7 @@ public:
 
 	void on_mouse_leave(const pointi loc) override
 	{
-		update_controller({-1, -1});
+		update_controller({ -1, -1 });
 		_hover = false;
 	}
 
@@ -478,7 +478,7 @@ public:
 
 	virtual void exit()
 	{
-		
+
 	}
 
 	virtual std::u8string_view title()
@@ -513,7 +513,7 @@ public:
 public:
 	bool _active = false;
 	bool _tracking = false;
-	bool _scroll_child_controls = false;	
+	bool _scroll_child_controls = false;
 
 	const recti scroll_bounds() const
 	{
@@ -591,22 +591,22 @@ public:
 
 	pointi scroll_pos() const
 	{
-		return {0, _scroll_extent.cy};
+		return { 0, _scroll_extent.cy };
 	}
 
 	pointi device_to_logical(const pointi loc) const
 	{
-		return {loc.x, loc.y + _offset.y};
+		return { loc.x, loc.y + _offset.y };
 	}
 
 	pointi logical_to_device(const pointi loc) const
 	{
-		return {loc.x, loc.y - _offset.y};
+		return { loc.x, loc.y - _offset.y };
 	}
 
 	recti logical_to_device(const recti bounds) const
 	{
-		return {{bounds.left, bounds.top - _offset.y}, bounds.extent()};
+		return { {bounds.left, bounds.top - _offset.y}, bounds.extent() };
 	}
 
 	void offset(const view_host_ptr& host, int x, int y)

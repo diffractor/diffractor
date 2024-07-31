@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -84,8 +84,8 @@ namespace df
 			}
 
 			return type == search_result_type::no_match
-				       ? search_result_type::no_match
-				       : search_result_type::match_multiple;
+				? search_result_type::no_match
+				: search_result_type::match_multiple;
 		}
 	};
 
@@ -317,7 +317,7 @@ namespace df
 		uint64_t int64_val = 0;
 		double float_val = 0.0;
 		gps_coordinate coord_val;
-		xy16 xy_val = {0, 0};
+		xy16 xy_val = { 0, 0 };
 		file_group_ref fg_val = nullptr;
 		date_parts date_val;
 
@@ -328,12 +328,12 @@ namespace df
 		search_term& operator=(search_term&&) noexcept = default;
 
 		explicit search_term(const search_term_type tt,
-		                     const search_term_modifier mods) noexcept : type(tt), modifiers(mods)
+			const search_term_modifier mods) noexcept : type(tt), modifiers(mods)
 		{
 		}
 
 		explicit search_term(const search_term_type tt, const std::u8string_view v,
-		                     const search_term_modifier mods) noexcept :
+			const search_term_modifier mods) noexcept :
 			type(tt),
 			modifiers(mods),
 			text(v),
@@ -342,18 +342,18 @@ namespace df
 		}
 
 		explicit search_term(const search_term_type tt, const date_parts v,
-		                     const search_term_modifier mods) noexcept : type(tt), modifiers(mods), date_val(v)
+			const search_term_modifier mods) noexcept : type(tt), modifiers(mods), date_val(v)
 		{
 		}
 
 		explicit search_term(const search_term_type tt, const gps_coordinate coord, const double v,
-		                     const search_term_modifier mods) noexcept : type(tt), modifiers(mods), float_val(v),
-		                                                                 coord_val(coord)
+			const search_term_modifier mods) noexcept : type(tt), modifiers(mods), float_val(v),
+			coord_val(coord)
 		{
 		}
 
 		explicit search_term(const prop::key_ref k, const std::u8string_view v,
-		                     const search_term_modifier mods) noexcept :
+			const search_term_modifier mods) noexcept :
 			type(search_term_type::value),
 			modifiers(mods),
 			key(k),
@@ -954,9 +954,9 @@ namespace df
 		bool has_term_value_type(const prop::key_ref tt) const
 		{
 			return std::ranges::find_if(_terms, [tt](const search_term& t)
-			{
-				return t.is_property_value() && t.key == tt;
-			}) != _terms.end();
+				{
+					return t.is_property_value() && t.key == tt;
+				}) != _terms.end();
 		}
 
 		void clear_term_type(const search_term_type& tt)

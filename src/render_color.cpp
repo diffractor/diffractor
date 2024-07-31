@@ -1,5 +1,5 @@
 ﻿// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -126,8 +126,8 @@ private:
 
 
 void ui::color_adjust::color_params(const double vibrance, const double saturation,
-                                    const double darks, const double midtones, const double lights,
-                                    const double contrast, const double brightness)
+	const double darks, const double midtones, const double lights,
+	const double contrast, const double brightness)
 {
 	_saturation = static_cast<float>(saturation + 1.0);
 	_vibrance = static_cast<float>(vibrance);
@@ -185,7 +185,7 @@ ui::color32 ui::color_adjust::adjust_color(double y, double u, double v, double 
 }
 
 void ui::color_adjust::apply(const const_surface_ptr& src, uint8_t* dst, const size_t dst_stride,
-                             df::cancel_token token) const
+	df::cancel_token token) const
 {
 	const auto dims = src->dimensions();
 
@@ -195,7 +195,7 @@ void ui::color_adjust::apply(const const_surface_ptr& src, uint8_t* dst, const s
 	{
 	__m128i src128 = _mm_loadu_si128(s);
 	// _mm_mul_ps
-	_mm_cvtps_epi32 
+	_mm_cvtps_epi32
 	}*/
 
 	for (auto yy = 0; yy < dims.cy; ++yy)
@@ -215,7 +215,7 @@ void ui::color_adjust::apply(const const_surface_ptr& src, uint8_t* dst, const s
 			const auto y = 0.299 * r + 0.587 * g + 0.114 * b;
 			const auto u = -0.147 * r - 0.289 * g + 0.436 * b;
 			const auto v = 0.615 * r - 0.515 * g - 0.100 * b;
-			
+
 			*d++ = adjust_color(y, u, v, a);
 		}
 

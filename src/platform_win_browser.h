@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -23,7 +23,7 @@ class web_window_impl :
 public:
 	web_window_impl(const std::u8string_view start_url, ui::web_events* events) : _events(events), _start_url(start_url)
 	{
-		_bounds = {-300, -300, 300, 300};
+		_bounds = { -300, -300, 300, 300 };
 	}
 
 	~web_window_impl() override
@@ -47,14 +47,14 @@ public:
 	{
 		HRESULT hr;
 		hr = OleCreate(CLSID_WebBrowser,
-		               IID_IOleObject, OLERENDER_DRAW, nullptr, this, this,
-		               &_ole_object);
+			IID_IOleObject, OLERENDER_DRAW, nullptr, this, this,
+			&_ole_object);
 
 		if (FAILED(hr))
 		{
 			MessageBox(nullptr, L"Cannot create oleObject CLSID_WebBrowser",
-			           L"Error",
-			           MB_ICONERROR);
+				L"Error",
+				MB_ICONERROR);
 			return FALSE;
 		}
 
@@ -64,12 +64,12 @@ public:
 		RECT posRect;
 		SetRect(&posRect, -300, -300, 300, 300);
 		hr = _ole_object->DoVerb(OLEIVERB_INPLACEACTIVATE,
-		                         nullptr, this, -1, _wnd_parent, &posRect);
+			nullptr, this, -1, _wnd_parent, &posRect);
 		if (FAILED(hr))
 		{
 			MessageBox(nullptr, L"oleObject->DoVerb() failed",
-			           L"Error",
-			           MB_ICONERROR);
+				L"Error",
+				MB_ICONERROR);
 			return FALSE;
 		}
 
@@ -78,8 +78,8 @@ public:
 		if (FAILED(hr))
 		{
 			MessageBox(nullptr, L"oleObject->QueryInterface(&webBrowser2) failed",
-			           L"Error",
-			           MB_ICONERROR);
+				L"Error",
+				MB_ICONERROR);
 			return FALSE;
 		}
 
@@ -168,7 +168,7 @@ public:
 	// ----- IUnknown -----
 
 	HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
-	                                         void** ppvObject) override
+		void** ppvObject) override
 	{
 		if (riid == __uuidof(IUnknown))
 		{
@@ -484,7 +484,7 @@ public:
 	}
 
 	HRESULT __stdcall
-	ShowContextMenu(DWORD dwID, POINT* ppt, IUnknown* pcmdtReserved, IDispatch* pdispReserved) override
+		ShowContextMenu(DWORD dwID, POINT* ppt, IUnknown* pcmdtReserved, IDispatch* pdispReserved) override
 	{
 		return S_OK;
 	}
@@ -496,7 +496,7 @@ public:
 	}
 
 	HRESULT __stdcall ShowUI(DWORD dwID, IOleInPlaceActiveObject* pActiveObject, IOleCommandTarget* pCommandTarget,
-	                         IOleInPlaceFrame* pFrame, IOleInPlaceUIWindow* pDoc) override
+		IOleInPlaceFrame* pFrame, IOleInPlaceUIWindow* pDoc) override
 	{
 		return S_OK;
 	}
@@ -577,7 +577,7 @@ public:
 	static constexpr int id_select_place = 2;
 
 	HRESULT STDMETHODCALLTYPE GetIDsOfNames(const IID& riid, LPOLESTR* rgszNames, UINT cNames, LCID lcid,
-	                                        DISPID* rgDispId) override
+		DISPID* rgDispId) override
 	{
 		for (auto i = 0u; i < cNames; i++)
 		{
@@ -595,8 +595,8 @@ public:
 	}
 
 	HRESULT STDMETHODCALLTYPE Invoke(DISPID dispIdMember, const IID& riid, LCID lcid, WORD wFlags,
-	                                 DISPPARAMS* pDispParams, VARIANT* pVarResult, EXCEPINFO* pExcepInfo,
-	                                 UINT* puArgErr) override
+		DISPPARAMS* pDispParams, VARIANT* pVarResult, EXCEPINFO* pExcepInfo,
+		UINT* puArgErr) override
 	{
 		if (dispIdMember == DISPID_BEFORENAVIGATE2)
 		{
@@ -706,12 +706,12 @@ public:
 	{
 		RECT rc;
 		GetClientRect(GetControlWindow(), &rc);
-		return {rc.left, rc.top, rc.right, rc.bottom};
+		return { rc.left, rc.top, rc.right, rc.bottom };
 	}
 
 	void window_bounds(const recti bounds, bool visible) override
 	{
-		_bounds = {bounds.left, bounds.top, bounds.right, bounds.bottom};
+		_bounds = { bounds.left, bounds.top, bounds.right, bounds.bottom };
 
 		{
 			const RECT hiMetricRect = PixelToHiMetric(_bounds);

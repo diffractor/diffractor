@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -76,7 +76,7 @@ public:
 		if (_handle != nullptr)
 		{
 			const int ret = sqlite3_bind_text(_handle, i, std::bit_cast<const char*>(v.data()), static_cast<int>(v.size()),
-			                                  SQLITE_STATIC);
+				SQLITE_STATIC);
 
 			if (ret != SQLITE_OK)
 				db_trace_error(_db, str::format(u8"sqlite3_bind_text {} {}"sv, i, v));
@@ -221,14 +221,14 @@ public:
 		{
 			const auto* const pData = static_cast<const uint8_t*>(sqlite3_column_blob(_handle, i));
 			const auto len = sqlite3_column_bytes(_handle, i);
-			return {pData, pData + len};
+			return { pData, pData + len };
 		}
 		return {};
 	}
 
 	df::cspan data(const int i) const
 	{
-		df::cspan r = {nullptr, 0};
+		df::cspan r = { nullptr, 0 };
 		if (_handle != nullptr)
 		{
 			r.data = static_cast<const uint8_t*>(sqlite3_column_blob(_handle, i));
@@ -333,14 +333,14 @@ void database::open()
 		if (SQLITE_CORRUPT == create_result)
 		{
 			const auto message = str::format(u8"Database is corrupt: {}\n\nPath: {}"sv,
-			                                 str::utf8_cast(sqlite3_errmsg(_db)), _db_path);
+				str::utf8_cast(sqlite3_errmsg(_db)), _db_path);
 			df::log(__FUNCTION__, message);
 			throw app_exception(message);
 		}
 		if (SQLITE_OK != create_result)
 		{
 			const auto message = str::format(u8"Failed to create database: {}\n\nPath: {}"sv,
-			                                 str::utf8_cast(sqlite3_errmsg(_db)), _db_path);
+				str::utf8_cast(sqlite3_errmsg(_db)), _db_path);
 			df::log(__FUNCTION__, message);
 			throw app_exception(message);
 		}
@@ -425,12 +425,12 @@ inline void metadata_packer::pack(const prop::item_metadata_ptr& md)
 
 	if (!prop::is_null(md->width) || !prop::is_null(md->height))
 		write(prop::dimensions.id,
-		      df::xy32::make(md->width, md->height));
+			df::xy32::make(md->width, md->height));
 	if (!prop::is_null(md->iso_speed)) write(prop::iso_speed.id, md->iso_speed);
 	if (!prop::is_null(md->focal_length)) write(prop::focal_length.id, md->focal_length);
 	if (!prop::is_null(md->focal_length_35mm_equivalent))
 		write(prop::focal_length_35mm_equivalent.id,
-		      md->focal_length_35mm_equivalent);
+			md->focal_length_35mm_equivalent);
 	if (!prop::is_null(md->rating)) write(prop::rating.id, md->rating);
 	if (!prop::is_null(md->audio_sample_rate)) write(prop::audio_sample_rate.id, md->audio_sample_rate);
 	if (!prop::is_null(md->audio_sample_type)) write(prop::audio_sample_type.id, md->audio_sample_type);
@@ -513,13 +513,13 @@ void metadata_unpacker::unpack(const prop::item_metadata_ptr& md)
 		else if (t == prop::bitrate) read_val(md->bitrate);
 		else if (t == prop::orientation)
 		{
-			uint8_t val {};
+			uint8_t val{};
 			read_val(val);
 			md->orientation = static_cast<ui::orientation>(val);
 		}
 		else if (t == prop::dimensions)
 		{
-			df::xy32 xy {};
+			df::xy32 xy{};
 			read_val(xy);
 			md->width = xy.x;
 			md->height = xy.y;
@@ -537,8 +537,8 @@ void metadata_unpacker::unpack(const prop::item_metadata_ptr& md)
 		else if (t == prop::created_utc) read_val(md->created_utc);
 		else if (t == prop::created_exif) read_val(md->created_exif);
 		else if (t == prop::created_digitized) read_val(md->created_digitized);
-			//else if (t == prop::modified) item.info.file_modified = df::date_t::from_time_stamp(p->n);
-			//else if (t == prop::file_size) item.info.size = df::file_size(p->d);
+		//else if (t == prop::modified) item.info.file_modified = df::date_t::from_time_stamp(p->n);
+		//else if (t == prop::file_size) item.info.size = df::file_size(p->d);
 		else if (t == prop::exposure_time) read_val(md->exposure_time);
 		else if (t == prop::f_number) read_val(md->f_number);
 		else if (t == prop::focal_length) read_val(md->focal_length);
@@ -594,9 +594,9 @@ void database::load_index_values()
 			if (!cached_items.empty())
 			{
 				std::ranges::sort(cached_items, [](const db_item_t& left, const db_item_t& right)
-				{
-					return icmp(left.path, right.path) < 0;
-				});
+					{
+						return icmp(left.path, right.path) < 0;
+					});
 				_state.merge_folder(last_group_name, cached_items);
 			}
 
@@ -640,9 +640,9 @@ void database::load_index_values()
 	if (!cached_items.empty())
 	{
 		std::ranges::sort(cached_items, [](const db_item_t& left, const db_item_t& right)
-		{
-			return icmp(left.path, right.path) < 0;
-		});
+			{
+				return icmp(left.path, right.path) < 0;
+			});
 		_state.merge_folder(last_group_name, cached_items);
 		cached_items.clear();
 	}
@@ -777,7 +777,7 @@ void database::load_thumbnails(const index_state& index, const df::item_set& ite
 	{
 		if (df::is_closing)
 			break;
-		
+
 		if (i->db_thumbnail_pending())
 		{
 			if (i->is_folder())
@@ -810,7 +810,7 @@ void database::load_thumbnails(const index_state& index, const df::item_set& ite
 			{
 				auto loaded = load_thumbnail(i->path());
 				cover_art_loaded |= ui::is_valid(loaded.cover_art);
-				i->thumbnail(std::move(loaded.thumb), std::move(loaded.cover_art), loaded.last_indexed);				
+				i->thumbnail(std::move(loaded.thumb), std::move(loaded.cover_art), loaded.last_indexed);
 			}
 
 			i->db_thumb_query_complete();
@@ -867,7 +867,7 @@ void database::perform_writes(std::deque<item_db_write> writes)
 			insert_properties.bind(1, path.folder().text());
 			insert_properties.bind(2, path.name());
 			insert_properties.bind(3, packer.cdata());
-			insert_properties.bind(4, df::cspan{nullptr, 0});
+			insert_properties.bind(4, df::cspan{ nullptr, 0 });
 			insert_properties.bind(5, static_cast<int>(write.crc32c.value_or(0)));
 			insert_properties.bind(6, static_cast<int>(write.media_position.value_or(md->media_position)));
 			insert_properties.bind(7, write.metadata_scanned.value_or(df::date_t()).to_int64());
@@ -915,7 +915,7 @@ void database::perform_writes(std::deque<item_db_write> writes)
 			insert_thumbnails.bind(1, path.folder().text());
 			insert_thumbnails.bind(2, path.name());
 			insert_thumbnails.bind(3, write.thumb.value()->data());
-			insert_thumbnails.bind(4, (write.cover_art.has_value() && is_valid(write.cover_art.value())) ? write.cover_art.value()->data() : df::cspan {});
+			insert_thumbnails.bind(4, (write.cover_art.has_value() && is_valid(write.cover_art.value())) ? write.cover_art.value()->data() : df::cspan{});
 			insert_thumbnails.bind(5, write.thumb_scanned.has_value() ? write.thumb_scanned.value().to_int64() : 0);
 			insert_thumbnails.exec();
 			insert_thumbnails.reset();

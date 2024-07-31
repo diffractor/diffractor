@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -43,7 +43,7 @@ static constexpr GUID SDL_KSDATAFORMAT_SUBTYPE_IEEE_FLOAT = {
 #define DEFINE_PROPERTYKEY2(name, l, w1, w2, b1, b2, b3, b4, b5, b6, b7, b8, pid) EXTERN_C const PROPERTYKEY DECLSPEC_SELECTANY name = { { l, w1, w2, { b1, b2,  b3,  b4,  b5,  b6,  b7,  b8 } }, pid }
 
 DEFINE_PROPERTYKEY2(PKEY_AudioEngine_DeviceFormat, 0xf19f064d, 0x82c, 0x4e27, 0xbc, 0x73, 0x68, 0x82, 0xa1, 0xbb, 0x8e,
-                    0x4c, 0);
+	0x4c, 0);
 
 static prop::audio_sample_t calc_sample_fmt(const WAVEFORMATEX* waveformat)
 {
@@ -117,9 +117,9 @@ public:
 
 private:
 	static BOOL CALLBACK DSEnumProc(LPGUID lpGUID,
-	                                LPCTSTR lpszDesc,
-	                                LPCTSTR lpszDrvName,
-	                                LPVOID lpContext)
+		LPCTSTR lpszDesc,
+		LPCTSTR lpszDrvName,
+		LPVOID lpContext)
 	{
 		auto* const map = std::bit_cast<device_map*>(lpContext);
 		const auto id = lpGUID == nullptr ? GUID_NULL : *lpGUID;
@@ -558,7 +558,7 @@ std::vector<sound_device> list_audio_playback_devices()
 								hr = pProps->GetValue(PKEY_Device_FriendlyName, &varName.v);
 
 								if (SUCCEEDED(hr))
-								{									
+								{
 									d.name = str::is_empty(varName.v.pwszVal) ? str::format(u8"Audio device {}"sv, static_cast<int>(i)) : str::utf16_to_utf8(varName.v.pwszVal);
 								}
 							}

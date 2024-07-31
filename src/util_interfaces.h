@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -19,7 +19,7 @@ enum class view_type
 	edit,
 	test,
 	rename,
-	import,
+import,
 	sync
 };
 
@@ -74,7 +74,7 @@ namespace df
 	struct index_file_item;
 
 	using item_element_ptr = std::shared_ptr<item_element>;
-		
+
 	struct status_i
 	{
 		virtual ~status_i() = default;

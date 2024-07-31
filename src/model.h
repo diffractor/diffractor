@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -38,7 +38,7 @@ using display_state_ptr = std::shared_ptr<display_state_t>;
 
 ui::texture_sampler calc_sampler(sizei draw_extent, sizei texture_extent, const ui::orientation& orientation);
 void draw_texture_info(ui::draw_context& rc, recti media_bounds, const ui::texture_ptr& tex,
-                       ui::orientation orientation, ui::texture_sampler sampler, float alpha);
+	ui::orientation orientation, ui::texture_sampler sampler, float alpha);
 df::unique_paths make_unique_paths(df::paths selection);
 
 struct media_preview_state
@@ -80,7 +80,7 @@ struct state_strategy
 	virtual void search_complete(const df::search_t& path, bool path_changed) = 0;
 	virtual void invoke(commands id) = 0;
 	virtual void track_menu(const ui::frame_ptr& parent, recti bounds,
-	                        const std::vector<ui::command_ptr>& commands) = 0;
+		const std::vector<ui::command_ptr>& commands) = 0;
 	virtual void make_visible(const df::item_element_ptr& i) = 0;
 	virtual void command_hover(const ui::command_ptr& c, recti window_bounds) = 0;
 	virtual bool is_command_checked(commands cmd) = 0;
@@ -202,7 +202,7 @@ public:
 	}
 
 	void read(const std::u8string_view section, const std::u8string_view key,
-	          const platform::setting_file_ptr& properties)
+		const platform::setting_file_ptr& properties)
 	{
 		std::u8string str;
 		properties->read(section, key, str);
@@ -210,7 +210,7 @@ public:
 	}
 
 	void write(const std::u8string_view section, const std::u8string_view key,
-	           const platform::setting_file_ptr& properties)
+		const platform::setting_file_ptr& properties)
 	{
 		properties->write(section, key, combine(_items));
 	}
@@ -372,7 +372,7 @@ public:
 	bool _is_photo = false;
 	bool _is_raw = false;
 	bool _photo_loaded = false;
-		
+
 	ui::orientation _display_orientation = ui::orientation::top_left;
 	sizei _display_dimensions;
 
@@ -464,7 +464,7 @@ class display_state_t final : public std::enable_shared_from_this<display_state_
 public:
 	async_strategy& _async;
 	common_display_state_t& _common;
-		
+
 	bool _comparing = false;
 
 	size_t _item_pos = 0;
@@ -483,7 +483,7 @@ public:
 
 	df::item_element_ptr _item1;
 	df::item_element_ptr _item2;
-	
+
 	mutable recti _scrubber_bounds;
 
 	int _hover_scrubber_pos = -1;
@@ -662,7 +662,7 @@ public:
 			_next_photo_tick = 0;
 			_async.invalidate_view(view_invalid::view_redraw);
 		}
-	}	
+	}
 
 	bool display_item_has_trait(const file_traits t) const
 	{
@@ -1075,7 +1075,7 @@ public:
 				}
 			}
 		}
-		
+
 		result.has_single_folder_selection = _selected.size() == 1 && _selected.has_folders();
 
 		return result;
@@ -1098,7 +1098,7 @@ public:
 		if (_view_mode != view_type::items && _view_mode != view_type::media)
 			return false;
 
-		const auto d = _display;		
+		const auto d = _display;
 		return d && !d->is_playing();
 	}
 
@@ -1190,14 +1190,14 @@ public:
 			{
 				const auto coordinate = md->coordinate;
 				platform::open(str::print(u8"https://www.google.com/maps/place/%f,%f"sv, coordinate.latitude(),
-				                          coordinate.longitude()));
+					coordinate.longitude()));
 				return;
 			}
 		}
 	}
 
 	void toggle_selected_item_tags(const view_host_base_ptr& view, const df::results_ptr& results,
-	                               std::u8string_view tag);
+		std::u8string_view tag);
 
 	const df::file_group_histogram& summary_shown() const
 	{
@@ -1234,10 +1234,10 @@ public:
 	df::unique_items existing_items() const;
 
 	void append_items(const view_host_base_ptr& view, df::item_set items, const df::unique_paths& selection,
-	                  bool is_first, bool is_complete);
+		bool is_first, bool is_complete);
 
 	df::process_result can_process_selection_and_mark_errors(const view_host_base_ptr& view,
-	                                                         df::process_items_type file_types) const;
+		df::process_items_type file_types) const;
 	bool can_process_selection(const view_host_base_ptr& view, df::process_items_type file_types) const;
 
 	size_t selected_count() const
@@ -1253,7 +1253,7 @@ public:
 	bool select(const view_host_base_ptr& view, std::u8string_view file_name, bool toggle);
 	void select(const view_host_base_ptr& view, const df::item_elements& items, bool toggle);
 	void select(const view_host_base_ptr& view, const df::item_element_ptr& i, bool toggle, bool extend,
-	            bool continue_slideshow);
+		bool continue_slideshow);
 	void select(const view_host_base_ptr& view, recti selection_bounds, bool toggle);
 	void unselect(const view_host_base_ptr& view, const df::item_element_ptr& i);
 
@@ -1265,7 +1265,7 @@ public:
 			{
 				if (i == ii)
 				{
-					return {g, i};
+					return { g, i };
 				}
 			}
 		}
@@ -1286,7 +1286,7 @@ public:
 			{
 				if (i->is_selected())
 				{
-					return {g, i};
+					return { g, i };
 				}
 			}
 		}
@@ -1305,15 +1305,15 @@ public:
 	void tick(const view_host_base_ptr& view, double time_now);
 	void view_mode(view_type m);
 	void toggle_rating(const df::results_ptr& results, const df::item_elements& items, int r,
-	                   const view_host_base_ptr& view);
+		const view_host_base_ptr& view);
 	int displayed_rating() const;
 
 	void modify_items(const df::results_ptr& dlg, icon_index icon, std::u8string_view title,
-	                  const df::item_elements& items_to_modify, const metadata_edits& edits,
-	                  const view_host_base_ptr& view);
+		const df::item_elements& items_to_modify, const metadata_edits& edits,
+		const view_host_base_ptr& view);
 	void modify_items(const ui::control_frame_ptr& frame, icon_index icon, std::u8string_view title,
-	                  const df::item_elements& items_to_modify, const metadata_edits& edits,
-	                  const view_host_base_ptr& view);
+		const df::item_elements& items_to_modify, const metadata_edits& edits,
+		const view_host_base_ptr& view);
 
 	static quadd orientate(recti bounds, recti clip, const ui::orientation orientation)
 	{
@@ -1410,8 +1410,8 @@ public:
 	int _item_year = 0;
 	int _item_rating = 0;
 
-	df::xy8 _item_track_number = {0, 0};
-	df::xy8 _item_disk_number = {0, 0};
+	df::xy8 _item_track_number = { 0, 0 };
+	df::xy8 _item_disk_number = { 0, 0 };
 
 	double _straighten = 0.0;
 	double _vibrance = 0.0;

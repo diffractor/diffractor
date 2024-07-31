@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -3709,7 +3709,7 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::tool_file_properties,
 		[this] { file_properties_invoke(_state, _app_frame, _view_frame); });
 	add_command_invoke(commands::browse_search, [this] { _search_edit->focus(); });
-	add_command_invoke(commands::browse_recursive, [this] { show_flatten_invoke(_state, _app_frame, _view_frame); });	
+	add_command_invoke(commands::browse_recursive, [this] { show_flatten_invoke(_state, _app_frame, _view_frame); });
 	add_command_invoke(commands::view_fullscreen, [this] { toggle_full_screen(); });
 	add_command_invoke(commands::option_highlight_large_items, [this]
 		{
@@ -3793,7 +3793,7 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::tool_rotate_clockwise, [this]
 		{
 			rotate_invoke(_state, _app_frame, _view_frame, simple_transform::rot_90);
-		});	
+		});
 	add_command_invoke(commands::option_scale_up, [this]
 		{
 			setting_invoke(_state, setting.scale_up, !setting.scale_up);
@@ -3886,7 +3886,7 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::sort_size, [this] { _state.group_order({}, sort_by::size); });
 	add_command_invoke(commands::sort_date_modified, [this] { _state.group_order({}, sort_by::date_modified); });
 
-	add_command_invoke(commands::tool_test, [this] { _state.view_mode(view_type::test); });	
+	add_command_invoke(commands::tool_test, [this] { _state.view_mode(view_type::test); });
 	add_command_invoke(commands::tool_import, [this] { _state.view_mode(view_type::import); });
 	add_command_invoke(commands::tool_sync, [this] { _state.view_mode(view_type::sync); });
 

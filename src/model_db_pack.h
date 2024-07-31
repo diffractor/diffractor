@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -169,7 +169,7 @@ public:
 	void read_val(str::cached& v)
 	{
 		const auto ser_len = read_len();
-		v = str::cache(std::u8string_view{std::bit_cast<const char8_t*>(_data.data + _pos), ser_len});
+		v = str::cache(std::u8string_view{ std::bit_cast<const char8_t*>(_data.data + _pos), ser_len });
 		_pos += ser_len;
 	}
 

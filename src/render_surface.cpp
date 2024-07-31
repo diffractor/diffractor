@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -95,7 +95,7 @@ ui::surface_ptr ui::surface::transform(const simple_transform t) const
 }
 
 void ui::surface::fill_pie(const pointi center, const int radius, const color32 color[64], const color32 color_center,
-                           const color32 color_bg)
+	const color32 color_bg)
 {
 	const auto outer_radius_limit1 = ((radius - 1) * (radius - 1));
 	const auto outer_radius_limit2 = (radius * radius);
@@ -191,7 +191,7 @@ static simple_transform to_simple_transform(const image_edits& pe)
 }
 
 static __forceinline ui::color32 blend_colors(const ui::color32 start, const ui::color32 end, const double position,
-                                              const bool has_alpha)
+	const bool has_alpha)
 {
 	const auto pos = df::round(position * 0xff);
 
@@ -263,9 +263,9 @@ ui::const_surface_ptr ui::surface::transform(const image_edits& photo_edits) con
 		{
 			const auto has_alpha = _format == texture_format::ARGB;
 
-			const auto dst_to_src_points0 = inc_aff.transform({0.0, 0.0});
-			const auto dst_to_src_points1 = inc_aff.transform({1.0, 0.0});
-			const auto dst_to_src_points2 = inc_aff.transform({0.0, 1.0});
+			const auto dst_to_src_points0 = inc_aff.transform({ 0.0, 0.0 });
+			const auto dst_to_src_points1 = inc_aff.transform({ 1.0, 0.0 });
+			const auto dst_to_src_points2 = inc_aff.transform({ 0.0, 1.0 });
 
 			const auto x_dx = dst_to_src_points1.X - dst_to_src_points0.X;
 			const auto x_dy = dst_to_src_points1.Y - dst_to_src_points0.Y;
@@ -322,8 +322,8 @@ ui::const_surface_ptr ui::surface::transform(const image_edits& photo_edits) con
 	{
 		color_adjust adjust;
 		adjust.color_params(photo_edits.vibrance(), photo_edits.saturation(), photo_edits.darks(),
-		                    photo_edits.midtones(),
-		                    photo_edits.lights(), photo_edits.contrast(), photo_edits.brightness());
+			photo_edits.midtones(),
+			photo_edits.lights(), photo_edits.contrast(), photo_edits.brightness());
 
 		auto canvas = std::make_shared<surface>();
 
@@ -381,7 +381,7 @@ recti ui::scale_dimensions(const sizei dims, const recti limit, const bool dont_
 	const auto x = (limit.width() - scaled.cx) / 2;
 	const auto y = (limit.height() - scaled.cy) / 2;
 
-	return {limit.left + x, limit.top + y, limit.left + x + scaled.cx, limit.top + y + scaled.cy};
+	return { limit.left + x, limit.top + y, limit.left + x + scaled.cx, limit.top + y + scaled.cy };
 }
 
 recti ui::scale_dimensions_up(const sizei dims, const recti limit) noexcept
@@ -397,7 +397,7 @@ recti ui::scale_dimensions_up(const sizei dims, const recti limit) noexcept
 	const int x = (limit.width() - scaled.cx) / 2;
 	const int y = (limit.height() - scaled.cy) / 2;
 
-	return {limit.left + x, limit.top + y, limit.left + x + scaled.cx, limit.top + y + scaled.cy};
+	return { limit.left + x, limit.top + y, limit.left + x + scaled.cx, limit.top + y + scaled.cy };
 }
 
 int ui::calc_scale_down_factor(const sizei dims_in, const sizei size_out) noexcept

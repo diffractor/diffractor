@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -104,7 +104,7 @@ struct keyboard_accelerator_t
 std::u8string format_keyboard_accelerator(const std::vector<keyboard_accelerator_t>& keyboard_accelerators);
 
 namespace ui
-{	
+{
 	extern int ticks_since_last_user_action;
 
 	class app;
@@ -421,7 +421,7 @@ namespace ui
 		auto x = extent.cx & ~1;
 		auto y = extent.cy & ~1;
 
-		return {x, y};
+		return { x, y };
 	}
 
 	inline double calc_mega_pixels(const double x, const double y) noexcept
@@ -500,7 +500,7 @@ namespace ui
 		equal,
 		not_equal
 	};
-	
+
 	class surface final : public std::enable_shared_from_this<surface>
 	{
 	private:
@@ -510,12 +510,12 @@ namespace ui
 		double _time = 0.0;
 		std::unique_ptr<uint8_t, df::free_delete> _pixels;
 		texture_format _format = texture_format::None;
-		orientation _orientation = orientation::top_left;		
+		orientation _orientation = orientation::top_left;
 
 	public:
 		surface() noexcept = default;
 		~surface() noexcept = default;
-		
+
 		surface(const surface&) noexcept = delete;
 		surface& operator=(const surface&) noexcept = delete;
 		surface(surface&&) noexcept = default;
@@ -610,7 +610,7 @@ namespace ui
 		}
 
 		uint8_t* alloc(const sizei s, const texture_format fmt, const ui::orientation ori = orientation::top_left,
-		               const double time = 0.0)
+			const double time = 0.0)
 		{
 			return alloc(s.cx, s.cy, fmt, ori, time);
 		}
@@ -621,7 +621,7 @@ namespace ui
 		}
 
 		uint8_t* alloc(const int cx, const int cy, const texture_format fmt,
-		               const ui::orientation ori = orientation::top_left, const double time = 0.0)
+			const ui::orientation ori = orientation::top_left, const double time = 0.0)
 		{
 			if (cx < 1 || cy < 1)
 			{
@@ -947,12 +947,12 @@ namespace ui
 
 		color inverse() const
 		{
-			return {1.0f - r, 1.0f - g, 1.0f - b, a};
+			return { 1.0f - r, 1.0f - g, 1.0f - b, a };
 		}
 
 		color a_min(const float aa) const
 		{
-			return {r, g, b, std::min(a, aa)};
+			return { r, g, b, std::min(a, aa) };
 		}
 
 		color32 rgb() const
@@ -967,7 +967,7 @@ namespace ui
 
 		color operator-(const color other) const
 		{
-			return {r - other.r, g - other.g, b - other.b, a - other.a};
+			return { r - other.r, g - other.g, b - other.b, a - other.a };
 		}
 
 		float abs_sum() const
@@ -1062,7 +1062,7 @@ namespace ui
 		color aa(const float a) const
 		{
 			df::assert_true(a < 1.1f);
-			return {r, g, b, a};
+			return { r, g, b, a };
 		}
 	};
 
@@ -1117,7 +1117,7 @@ namespace ui
 
 	public:
 		void color_params(double vibrance, double saturation, double darks, double midtones, double lights,
-		                  double contrast, double brightness);
+			double contrast, double brightness);
 		void apply(const const_surface_ptr& src, uint8_t* dst, const size_t dst_stride, df::cancel_token token) const;
 
 	private:
@@ -1164,7 +1164,7 @@ namespace ui
 		virtual texture_update_result update(const av_frame_ptr& frame) = 0;
 		virtual texture_update_result update(const const_surface_ptr& surface) = 0;
 		virtual texture_update_result update(sizei dims, texture_format format, orientation orientation,
-		                                     const uint8_t* pixels, size_t stride, size_t buffer_size) = 0;
+			const uint8_t* pixels, size_t stride, size_t buffer_size) = 0;
 
 		virtual bool is_valid() const = 0;
 	};
@@ -1226,23 +1226,23 @@ namespace ui
 		virtual void draw_rounded_rect(recti bounds, color c, int radius) = 0;
 		virtual void draw_rect(recti bounds, color c) = 0;
 		virtual void draw_text(std::u8string_view text, recti bounds, style::font_face font, style::text_style style,
-		                       color c, color bg) = 0;
+			color c, color bg) = 0;
 		virtual void draw_text(std::u8string_view text, const std::vector<text_highlight_t>& highlights, recti bounds,
-		                       style::font_face font, style::text_style style, color clr, color bg) = 0;
+			style::font_face font, style::text_style style, color clr, color bg) = 0;
 		virtual void draw_text(const text_layout_ptr& tl, recti bounds, color clr, color bg) = 0;
 		virtual void draw_shadow(recti bounds, int width, float alpha, bool inverse = false) = 0;
 		virtual void draw_border(recti inside, recti outside, color c_inside, color c_outside) = 0;
 		virtual void draw_texture(const texture_ptr& t, recti dst, float alpha = 1.0f,
-		                          texture_sampler sampler = texture_sampler::point) = 0;
+			texture_sampler sampler = texture_sampler::point) = 0;
 		virtual void draw_texture(const texture_ptr& t, recti dst, recti src, float alpha = 1.0f,
-		                          texture_sampler sampler = texture_sampler::point, float radius = 0.0) = 0;
+			texture_sampler sampler = texture_sampler::point, float radius = 0.0) = 0;
 		virtual void draw_texture(const texture_ptr& t, const quadd& dst, recti src, float alpha,
-		                          texture_sampler sampler) = 0;
+			texture_sampler sampler) = 0;
 		virtual void draw_vertices(const vertices_ptr& v) = 0;
 		virtual void draw_edge_shadows(float alpha) = 0;
 
 		sizei measure_text(std::u8string_view text, style::font_face font, style::text_style style, int width,
-		                   int height = 0) override = 0;
+			int height = 0) override = 0;
 		int text_line_height(style::font_face type) override = 0;
 
 		virtual texture_ptr create_texture() = 0;
@@ -1349,7 +1349,7 @@ namespace ui
 		bool rounded_corners = false;
 		bool select_all_on_focus = false;
 		style::font_face font = style::font_face::dialog;
-		color32 bg_clr = style::color::dialog_background;		
+		color32 bg_clr = style::color::dialog_background;
 		std::function<bool(int c, key_state keys)> capture_key_down;
 		std::vector<std::u8string> auto_complete_list;
 		std::u8string cue;
@@ -1359,7 +1359,7 @@ namespace ui
 	{
 		bool xTBSTYLE_WRAPABLE = false;
 		bool xTBSTYLE_LIST = false;
-		sizei button_extent = {0, 0};
+		sizei button_extent = { 0, 0 };
 	};
 
 	class command
@@ -1376,7 +1376,7 @@ namespace ui
 			: text(t), checked(ch), opaque(std::move(opaque)), invoke(std::move(invoke))
 		{
 		}
-				
+
 		std::u8string text;
 		std::u8string toolbar_text;
 		std::u8string tooltip_text;
@@ -1513,7 +1513,7 @@ namespace ui
 		}
 
 		virtual platform::drop_effect drag_over(const platform::clipboard_data& data, const key_state keys,
-		                                        const pointi loc)
+			const pointi loc)
 		{
 			return platform::drop_effect::none;
 		}
@@ -1574,17 +1574,17 @@ namespace ui
 	{
 	public:
 		virtual edit_ptr create_edit(const edit_styles& styles, std::u8string_view text,
-		                             std::function<void(const std::u8string&)> changed) = 0;
+			std::function<void(const std::u8string&)> changed) = 0;
 		virtual trackbar_ptr create_slider(int min, int max, std::function<void(int, bool)> changed) = 0;
 		virtual toolbar_ptr create_toolbar(const toolbar_styles& styles, const std::vector<command_ptr>& buttons) = 0;
 		virtual button_ptr create_button(std::u8string_view text, std::function<void()> invoke,
-		                                 bool default_button = false) = 0;
+			bool default_button = false) = 0;
 		virtual button_ptr create_button(icon_index icon, std::u8string_view title, std::u8string_view details,
-		                                 std::function<void()> invoke, bool default_button = false) = 0;
+			std::function<void()> invoke, bool default_button = false) = 0;
 		virtual button_ptr create_check_button(bool val, std::u8string_view text, bool is_radio,
-		                                       std::function<void(bool)> changed) = 0;
+			std::function<void(bool)> changed) = 0;
 		virtual date_time_control_ptr create_date_time_control(df::date_t text, std::function<void(df::date_t)> changed,
-		                                                       bool include_time) = 0;
+			bool include_time) = 0;
 		virtual web_window_ptr create_web_window(std::u8string_view start_url, web_events* events) = 0;
 		virtual control_frame_ptr create_dlg(frame_host_weak_ptr host, bool is_popup) = 0;
 		virtual frame_ptr create_frame(frame_host_weak_ptr host, const frame_style& ft) = 0;
@@ -1604,7 +1604,7 @@ namespace ui
 	public:
 		virtual ~bubble_frame() = default;
 		virtual void show(const view_elements_ptr& elements, recti bounds, int x_center, int preferred_size,
-		                  bool horizontal) = 0;
+			bool horizontal) = 0;
 		virtual void hide() = 0;
 		virtual bool is_visible() const = 0;
 	};
@@ -1635,7 +1635,7 @@ namespace ui
 		virtual void folder_changed() = 0;
 		virtual bool key_down(char32_t c, key_state keys) = 0;
 		virtual void track_menu(const frame_ptr& parent, recti button_bounds,
-		                        const std::vector<command_ptr>& buttons) = 0;
+			const std::vector<command_ptr>& buttons) = 0;
 		virtual std::u8string restart_cmd_line() = 0;
 		virtual void save_recovery_state() = 0;
 	};
@@ -1650,7 +1650,7 @@ namespace ui
 		virtual void frame_delay(int animate_delay) = 0;
 		virtual void queue_idle() = 0;
 		virtual control_frame_ptr create_app_frame(const platform::setting_file_ptr& store,
-		                                           const frame_host_weak_ptr& host) = 0;
+			const frame_host_weak_ptr& host) = 0;
 		virtual void monitor_folders(const std::vector<df::folder_path>& vector) = 0;
 		virtual void enable_screen_saver(bool cond) = 0;
 		virtual void set_font_base_size(int i) = 0;

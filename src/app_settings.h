@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -145,7 +145,7 @@ public:
 	bool update_modified = true;
 	bool last_played_pos = true;
 	bool show_help_tooltips = true;
-	
+
 	struct sidebar_t
 	{
 		bool show_total_items = false;

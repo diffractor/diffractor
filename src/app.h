@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -184,7 +184,7 @@ public:
 	}
 
 	void on_mouse_other_button_up(const ui::other_mouse_button& button, const pointi loc,
-	                              const ui::key_state keys) override
+		const ui::key_state keys) override
 	{
 		switch (button)
 		{
@@ -265,7 +265,7 @@ public:
 	void draw_status(ui::draw_context& dc);
 
 	platform::drop_effect
-	drag_over(const platform::clipboard_data& data, const ui::key_state keys, const pointi loc) override
+		drag_over(const platform::clipboard_data& data, const ui::key_state keys, const pointi loc) override
 	{
 		auto result = platform::drop_effect::none;
 
@@ -285,7 +285,7 @@ public:
 							platform::drop_effect::copy);
 
 						update_status(is_copy ? tt.menu_copy : tt.menu_move,
-						              format(u8"{}\n{}\n{}"sv, desc.first_name, tt.copy_to_join, dest_path.text()));
+							format(u8"{}\n{}\n{}"sv, desc.first_name, tt.copy_to_join, dest_path.text()));
 
 						result = is_copy ? platform::drop_effect::copy : platform::drop_effect::move;
 					}
@@ -332,7 +332,7 @@ public:
 						if (drop_result.success())
 						{
 							_state.open(shared_from_this(), _state.search(),
-							            make_unique_paths(drop_result.created_files));
+								make_unique_paths(drop_result.created_files));
 							result = drop_action;
 						}
 					}
@@ -344,7 +344,7 @@ public:
 						{
 							result = platform::drop_effect::copy;
 							_state.open(shared_from_this(), _state.search(),
-							            make_unique_paths(save_result.created_files));
+								make_unique_paths(save_result.created_files));
 						}
 					}
 				}
@@ -467,7 +467,7 @@ public:
 	bool _nav_has_focus = false;
 	bool _view_controls_have_focus = false;
 
-	view_controls_host_ptr _view_controls;	
+	view_controls_host_ptr _view_controls;
 	std::shared_ptr<sidebar_host> _sidebar;
 	std::shared_ptr<view_frame> _view_frame;
 
@@ -566,7 +566,7 @@ public:
 	void toggle_volume();
 	icon_index sound_icon() const;
 	void def_command(commands id, command_group group, icon_index icon, std::u8string_view text,
-	                 std::u8string_view tooltip = {});
+		std::u8string_view tooltip = {});
 	void update_command_text();
 	void initialise_commands();
 	command_info_ptr find_or_create_command_info(commands id);
@@ -612,7 +612,7 @@ public:
 	}
 
 	void on_mouse_other_button_up(const ui::other_mouse_button& button, const pointi loc,
-	                              const ui::key_state keys) override
+		const ui::key_state keys) override
 	{
 	}
 

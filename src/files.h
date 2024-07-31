@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -122,12 +122,12 @@ public:
 		const group_key_type key,
 		std::vector<std::u8string_view> sidecars)
 		: name(name),
-		  plural_name(plural_name),
-		  color(color),
-		  icon(icon),
-		  traits(traits),
-		  key(key),
-		  sidecars(std::move(sidecars))
+		plural_name(plural_name),
+		color(color),
+		icon(icon),
+		traits(traits),
+		key(key),
+		sidecars(std::move(sidecars))
 	{
 	}
 
@@ -195,11 +195,11 @@ public:
 	static file_type other;
 
 	file_type(const file_group_ref group, const std::u8string_view extension, const std::u8string_view text,
-	          const file_traits traits)
+		const file_traits traits)
 		: group(group),
-		  extension(extension),
-		  text(text),
-		  traits(traits)
+		extension(extension),
+		text(text),
+		traits(traits)
 	{
 	}
 
@@ -242,7 +242,7 @@ public:
 		std::unordered_set<file_tool*> result;
 		result.insert(tools.begin(), tools.end());
 		result.insert(group->tools.begin(), group->tools.end());
-		return {result.begin(), result.end()};
+		return { result.begin(), result.end() };
 	}
 
 	operator file_type_ref() const
@@ -394,11 +394,11 @@ public:
 	int id3v2_version_major = 0;
 	mutable gps_coordinate gps;
 	uint32_t crc32c = 0;
-	bool success = false;	
+	bool success = false;
 
 	sizei dimensions() const
 	{
-		return {static_cast<int>(width), static_cast<int>(height)};
+		return { static_cast<int>(width), static_cast<int>(height) };
 	}
 
 	metadata_parts save_metadata() const;
@@ -416,7 +416,7 @@ struct file_load_result
 
 	file_load_result() noexcept = default;
 	file_load_result(const file_load_result&) = default;
-	file_load_result& operator=(const file_load_result&) = default;	
+	file_load_result& operator=(const file_load_result&) = default;
 	file_load_result(file_load_result&&) noexcept = default;
 	file_load_result& operator=(file_load_result&&) noexcept = default;
 
@@ -499,11 +499,11 @@ ui::surface_ptr load_heif(read_stream& s);
 
 ui::image_ptr save_png(const ui::const_surface_ptr& surface_in, const metadata_parts& metadata);
 ui::image_ptr save_webp(const ui::const_surface_ptr& surface_in, const metadata_parts& metadata,
-                        const file_encode_params& params);
+	const file_encode_params& params);
 ui::image_ptr save_jpeg(const ui::const_surface_ptr& surface_in, const metadata_parts& metadata,
-                        const file_encode_params& encoder_params);
+	const file_encode_params& encoder_params);
 ui::image_ptr save_surface(const ui::image_format& format, const ui::const_surface_ptr& surface,
-                           const metadata_parts& metadata, const file_encode_params& params);
+	const metadata_parts& metadata, const file_encode_params& params);
 ui::image_format extension_to_format(std::u8string_view ext);
 
 struct pack128
@@ -515,7 +515,7 @@ struct pack128
 
 	operator df::cspan() const
 	{
-		return {std::bit_cast<const uint8_t*>(this), 16};
+		return { std::bit_cast<const uint8_t*>(this), 16 };
 	}
 };
 
@@ -716,47 +716,47 @@ class image_edits
 
 public:
 	image_edits() : _scale(0, 0),
-	                _brightness(photo_edits_default::Brightness),
-	                _contrast(photo_edits_default::Contrast),
-	                _darks(photo_edits_default::Darks),
-	                _vibrance(photo_edits_default::Vibrance),
-	                _lights(photo_edits_default::Lights),
-	                _midtones(photo_edits_default::Midtones),
-	                _saturation(photo_edits_default::Saturation)
+		_brightness(photo_edits_default::Brightness),
+		_contrast(photo_edits_default::Contrast),
+		_darks(photo_edits_default::Darks),
+		_vibrance(photo_edits_default::Vibrance),
+		_lights(photo_edits_default::Lights),
+		_midtones(photo_edits_default::Midtones),
+		_saturation(photo_edits_default::Saturation)
 	{
 	}
 
 	image_edits(int s) : _scale(s, s),
-	                     _brightness(photo_edits_default::Brightness),
-	                     _contrast(photo_edits_default::Contrast),
-	                     _darks(photo_edits_default::Darks),
-	                     _vibrance(photo_edits_default::Vibrance),
-	                     _lights(photo_edits_default::Lights),
-	                     _midtones(photo_edits_default::Midtones),
-	                     _saturation(photo_edits_default::Saturation)
+		_brightness(photo_edits_default::Brightness),
+		_contrast(photo_edits_default::Contrast),
+		_darks(photo_edits_default::Darks),
+		_vibrance(photo_edits_default::Vibrance),
+		_lights(photo_edits_default::Lights),
+		_midtones(photo_edits_default::Midtones),
+		_saturation(photo_edits_default::Saturation)
 	{
 	}
 
 	image_edits(const sizei s) : _scale(s),
-	                             _brightness(photo_edits_default::Brightness),
-	                             _contrast(photo_edits_default::Contrast),
-	                             _darks(photo_edits_default::Darks),
-	                             _vibrance(photo_edits_default::Vibrance),
-	                             _lights(photo_edits_default::Lights),
-	                             _midtones(photo_edits_default::Midtones),
-	                             _saturation(photo_edits_default::Saturation)
+		_brightness(photo_edits_default::Brightness),
+		_contrast(photo_edits_default::Contrast),
+		_darks(photo_edits_default::Darks),
+		_vibrance(photo_edits_default::Vibrance),
+		_lights(photo_edits_default::Lights),
+		_midtones(photo_edits_default::Midtones),
+		_saturation(photo_edits_default::Saturation)
 	{
 	}
 
 	image_edits(const image_edits& other) : _crop(other._crop),
-	                                        _scale(other._scale),
-	                                        _brightness(other._brightness),
-	                                        _contrast(other._contrast),
-	                                        _darks(other._darks),
-	                                        _vibrance(other._vibrance),
-	                                        _lights(other._lights),
-	                                        _midtones(other._midtones),
-	                                        _saturation(other._saturation)
+		_scale(other._scale),
+		_brightness(other._brightness),
+		_contrast(other._contrast),
+		_darks(other._darks),
+		_vibrance(other._vibrance),
+		_lights(other._lights),
+		_midtones(other._midtones),
+		_saturation(other._saturation)
 	{
 	}
 
@@ -1060,7 +1060,7 @@ public:
 	~files();
 
 	ui::const_image_ptr surface_to_image(const ui::const_surface_ptr& surface_in, const metadata_parts& metadata,
-	                                     const file_encode_params& params, ui::image_format format);
+		const file_encode_params& params, ui::image_format format);
 	ui::surface_ptr image_to_surface(const ui::const_image_ptr& image, sizei scale_hint = {}, bool can_use_yuv = false);
 	ui::surface_ptr image_to_surface(df::cspan data, sizei scale_hint = {}, bool can_use_yuv = false);
 	ui::surface_ptr scale_if_needed(ui::surface_ptr surface_in, sizei target_extent);
@@ -1068,7 +1068,7 @@ public:
 	ui::pixel_difference_result pixel_difference(const ui::const_image_ptr& expected, const ui::const_image_ptr& actual);
 
 	bool save(df::file_path path, const file_load_result& loaded);
-	
+
 
 	static std::u8string_view to_string(ui::image_format f)
 	{
@@ -1078,7 +1078,7 @@ public:
 		case ui::image_format::PNG: return u8"PNG"sv;
 		case ui::image_format::WEBP: return u8"WEBP"sv;
 		case ui::image_format::Unknown: break;
-		default: ;
+		default:;
 		}
 
 		return u8"Unknown"sv;
@@ -1097,18 +1097,18 @@ public:
 	static bool is_jpeg(uint32_t header);
 
 	file_scan_result scan_file(df::file_path path, bool load_thumb, file_type_ref ft,
-	                           std::u8string_view xmp_sidecar = {}, sizei max_thumb_size = {});
+		std::u8string_view xmp_sidecar = {}, sizei max_thumb_size = {});
 
 	file_load_result load(df::file_path path, bool can_load_preview);
 
 	platform::file_op_result update(df::file_path path_src, df::file_path path_dst,
-	                                const metadata_edits& metadata_edits, const image_edits& photo_edits,
-	                                const file_encode_params& params, bool create_original,
-	                                std::u8string_view xmp_name);
+		const metadata_edits& metadata_edits, const image_edits& photo_edits,
+		const file_encode_params& params, bool create_original,
+		std::u8string_view xmp_name);
 
 	platform::file_op_result update(const df::file_path path, const metadata_edits& metadata_edits,
-	                                const image_edits& photo_edits, const file_encode_params& params,
-	                                const bool create_original, const std::u8string_view xmp_name)
+		const image_edits& photo_edits, const file_encode_params& params,
+		const bool create_original, const std::u8string_view xmp_name)
 	{
 		return update(path, path, metadata_edits, photo_edits, params, create_original, xmp_name);
 	}

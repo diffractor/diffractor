@@ -1,5 +1,5 @@
 ﻿// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -30,13 +30,13 @@
 
 
 const static auto long_text =
-	u8"The Commodore 64, also known as the C64, C-64, C= 64, or occasionally CBM 64 or VIC-64, is an 8-bit home computer introduced in January 1982 by Commodore International. "
-	u8"It is listed in the Guinness World Records as the highest-selling single computer model of all time, with independent estimates placing the number sold between 10 and 17 million units. "
-	u8"Volume production started in early 1982, with machines being released on to the market in August at a price of US $595(roughly equivalent to $1, 500 in 2015)."
-	u8"Preceded by the Commodore VIC - 20 and Commodore PET, the C64 takes its name from its 64 kilobytes(65, 536 bytes) of RAM, and has technologically superior sound and graphical specifications when compared to some earlier systems such as the Apple II and Atari 800, with multi - color sprites and a more advanced sound processor.";
+u8"The Commodore 64, also known as the C64, C-64, C= 64, or occasionally CBM 64 or VIC-64, is an 8-bit home computer introduced in January 1982 by Commodore International. "
+u8"It is listed in the Guinness World Records as the highest-selling single computer model of all time, with independent estimates placing the number sold between 10 and 17 million units. "
+u8"Volume production started in early 1982, with machines being released on to the market in August at a price of US $595(roughly equivalent to $1, 500 in 2015)."
+u8"Preceded by the Commodore VIC - 20 and Commodore PET, the C64 takes its name from its 64 kilobytes(65, 536 bytes) of RAM, and has technologically superior sound and graphical specifications when compared to some earlier systems such as the Apple II and Atari 800, with multi - color sprites and a more advanced sound processor.";
 
 static const auto test_files_folder = known_path(platform::known_folder::test_files_folder);
-static constexpr sizei thumbnail_max_dimension = {256, 256};
+static constexpr sizei thumbnail_max_dimension = { 256, 256 };
 
 
 
@@ -150,7 +150,7 @@ public:
 	}
 
 	void track_menu(const ui::frame_ptr& parent, const recti bounds,
-	                const std::vector<ui::command_ptr>& commands) override
+		const std::vector<ui::command_ptr>& commands) override
 	{
 	}
 
@@ -273,7 +273,7 @@ static df::item_element_ptr load_item(index_state& index, const df::file_path pa
 	return i;
 }
 
-test_view::test_view(view_state& state, view_host_ptr host) : list_view(state,std::move(host))
+test_view::test_view(view_state& state, view_host_ptr host) : list_view(state, std::move(host))
 {
 	col_count = 3;
 	col_titles[0] = tt.status;
@@ -295,7 +295,7 @@ void test_view::activate(const sizei extent)
 		register_tests();
 	}
 
-	refresh();	
+	refresh();
 }
 
 
@@ -368,10 +368,10 @@ void test_view::sort()
 	df::assert_true(ui::is_ui_thread());
 
 	std::ranges::sort(_tests, [](auto&& l, auto&& r) -> bool
-	{
-		if (l->has_failed() != r->has_failed()) return l->has_failed();
-		return str::icmp(l->_name, r->_name) < 0;
-	});
+		{
+			if (l->has_failed() != r->has_failed()) return l->has_failed();
+			return str::icmp(l->_name, r->_name) < 0;
+		});
 
 	_host->frame()->layout();
 }
@@ -389,7 +389,7 @@ static file_scan_result ff_scan_file(files& ff, const df::file_path path, const 
 }
 
 static file_scan_result ff_scan_and_load_thumb(files& ff, const df::file_path path,
-                                               const std::u8string_view xmp_sidecar = {})
+	const std::u8string_view xmp_sidecar = {})
 {
 	const auto* const ft = files::file_type_from_name(path);
 	return ff.scan_file(path, true, ft, xmp_sidecar, thumbnail_max_dimension);
@@ -405,7 +405,7 @@ struct metadata_type
 
 
 static void assert_equal(const std::u8string_view expected, const std::u8string_view actual,
-                         const std::u8string_view name = {}, const std::u8string_view message = {})
+	const std::u8string_view name = {}, const std::u8string_view message = {})
 {
 	if (str::icmp(actual, expected) != 0)
 	{
@@ -414,17 +414,17 @@ static void assert_equal(const std::u8string_view expected, const std::u8string_
 }
 
 static void assert_not_equal(const std::u8string_view expected, const std::u8string_view actual,
-                             const std::u8string_view name = {}, const std::u8string_view message = {})
+	const std::u8string_view name = {}, const std::u8string_view message = {})
 {
 	if (str::icmp(actual, expected) == 0)
 	{
 		throw test_assert_exception(str::format(u8"{} - {}: expected '{}' not to equal '{}'"sv, message, name, expected,
-		                                        actual));
+			actual));
 	}
 }
 
 static void assert_equal_strict(const std::u8string_view expected, const std::u8string_view actual,
-                                const std::u8string_view name = {}, const std::u8string_view message = {})
+	const std::u8string_view name = {}, const std::u8string_view message = {})
 {
 	if (actual != expected)
 	{
@@ -433,19 +433,19 @@ static void assert_equal_strict(const std::u8string_view expected, const std::u8
 }
 
 static void assert_equal(const std::wstring_view expected, const std::wstring_view actual,
-                         const std::u8string_view name = {}, const std::u8string_view message = {})
+	const std::u8string_view name = {}, const std::u8string_view message = {})
 {
 	assert_equal(str::utf16_to_utf8(expected), str::utf16_to_utf8(actual), name, message);
 }
 
 static void assert_equal(int expected, int actual, const std::u8string_view name = {},
-                         const std::u8string_view message = {})
+	const std::u8string_view message = {})
 {
 	assert_equal(str::to_string(expected), str::to_string(actual), name, message);
 }
 
 static void assert_equal(uint32_t expected, uint32_t actual, const std::u8string_view name = {},
-                         const std::u8string_view message = {})
+	const std::u8string_view message = {})
 {
 	assert_equal(str::to_string(expected), str::to_string(actual), name, message);
 }
@@ -457,7 +457,7 @@ static void assert_equal(uint64_t expected, uint64_t actual, const std::u8string
 }
 
 static void assert_equal(const ui::const_image_ptr& expected, const ui::const_image_ptr& actual,
-                         const std::u8string_view name = {}, const std::u8string_view message = {})
+	const std::u8string_view name = {}, const std::u8string_view message = {})
 {
 	assert_equal(static_cast<int>(expected->width()), static_cast<int>(actual->width()), name, message);
 
@@ -467,53 +467,53 @@ static void assert_equal(const ui::const_image_ptr& expected, const ui::const_im
 }
 
 static void assert_equal(bool expected, bool actual, const std::u8string_view name = {},
-                         const std::u8string_view message = {})
+	const std::u8string_view message = {})
 {
 	assert_equal(str::to_string(expected), str::to_string(actual), name, message);
 }
 
 static void assert_equal(ui::orientation expected, ui::orientation actual, const std::u8string_view name = {},
-                         const std::u8string_view message = {})
+	const std::u8string_view message = {})
 {
 	assert_equal(orientation_to_string(expected), orientation_to_string(actual), name, message);
 }
 
 static void assert_equal(df::search_term_modifier_bool expected, df::search_term_modifier_bool actual,
-                         const std::u8string_view name = {}, const std::u8string_view message = {})
+	const std::u8string_view name = {}, const std::u8string_view message = {})
 {
 	assert_equal(static_cast<int>(expected), static_cast<int>(actual), name, message);
 }
 
 static void assert_equal(double expected, double actual, const std::u8string_view name = {},
-                         const std::u8string_view message = {})
+	const std::u8string_view message = {})
 {
 	assert_equal(str::to_string(expected, 5), str::to_string(actual, 5), name, message);
 }
 
 static void assert_equal(df::date_t expected, df::date_t actual, const std::u8string_view name = {},
-                         const std::u8string_view message = {})
+	const std::u8string_view message = {})
 {
 	assert_equal(platform::format_date_time(expected), platform::format_date_time(actual), name, message);
 }
 
 static void assert_equal(gps_coordinate expected, gps_coordinate actual, const std::u8string_view name = {},
-                         const std::u8string_view message = {})
+	const std::u8string_view message = {})
 {
 	assert_equal(gps_coordinate::decimal_to_dms_str(expected.latitude(), true),
-	             gps_coordinate::decimal_to_dms_str(actual.latitude(), true), name, message);
+		gps_coordinate::decimal_to_dms_str(actual.latitude(), true), name, message);
 	assert_equal(gps_coordinate::decimal_to_dms_str(expected.longitude(), false),
-	             gps_coordinate::decimal_to_dms_str(actual.longitude(), false), name, message);
+		gps_coordinate::decimal_to_dms_str(actual.longitude(), false), name, message);
 }
 
 static void assert_equal(df::xy8 expected, df::xy8 actual, const std::u8string_view name = {},
-                         const std::u8string_view message = {})
+	const std::u8string_view message = {})
 {
 	assert_equal(expected.str(), actual.str(), name, message);
 }
 
 
 void assert_metadata(const prop::item_metadata& expected, const prop::item_metadata& actual,
-                     const std::u8string_view message = {})
+	const std::u8string_view message = {})
 {
 	assert_equal(expected.album, actual.album, u8"album"sv, message);
 	assert_equal(expected.album_artist, actual.album_artist, u8"album_artist"sv, message);
@@ -544,12 +544,12 @@ void assert_metadata(const prop::item_metadata& expected, const prop::item_metad
 	assert_equal(expected.encoder, actual.encoder, u8"encoder"sv, message);
 	assert_equal(expected.episode, actual.episode, u8"episode"sv, message);
 	assert_equal(prop::format_exposure(expected.exposure_time), prop::format_exposure(actual.exposure_time),
-	             u8"exposure_time"sv, message);
+		u8"exposure_time"sv, message);
 	assert_equal(prop::format_f_num(expected.f_number), prop::format_f_num(actual.f_number), u8"f_number"sv, message);
 	assert_equal(expected.file_name, actual.file_name, u8"file_name"sv, message);
 	assert_equal(expected.focal_length, actual.focal_length, u8"focal_length"sv, message);
 	assert_equal(expected.focal_length_35mm_equivalent, actual.focal_length_35mm_equivalent,
-	             u8"focal_length_35mm_equivalent"sv, message);
+		u8"focal_length_35mm_equivalent"sv, message);
 	assert_equal(expected.genre, actual.genre, u8"genre"sv, message);
 	assert_equal(expected.iso_speed, actual.iso_speed, u8"iso_speed"sv, message);
 	assert_equal(expected.lens, actual.lens, u8"lens"sv, message);
@@ -664,7 +664,7 @@ static void should_replace_tokens()
 
 	assert_equal(u8"2012\\2012-09-14"sv, replace_tokens(u8"{year}\\{created}"s, md1, {}, md1->created()));
 	assert_equal(u8"2012\\Test.jpg"sv, replace_tokens(u8"{year}\\{name}"s, md1, u8"Test.jpg"sv, md1->created()));
-	assert_equal(u8"2012\\09\\14"sv, replace_tokens(u8"{year}\\{month}\\{day}"s, md1, {}, md1->created()));	
+	assert_equal(u8"2012\\09\\14"sv, replace_tokens(u8"{year}\\{month}\\{day}"s, md1, {}, md1->created()));
 	assert_equal(u8"Counting Crows\\This Desert Life"sv, replace_tokens(u8"{artist}\\{album}"s, md2, {}, md2->created()));
 }
 
@@ -737,7 +737,7 @@ static void should_parse_xmp()
 	assert_equal(u8"Frank Aalestrup www.fdaa.dk"sv, actual.copyright_notice);
 	assert_equal(u8"\"Frank Aalestrup.\nwww.fdaa.dk\""sv, actual.copyright_creator);
 	assert_equal(u8"EF100mm f/2.8L Macro IS USM"sv, actual.lens);
-	assert_equal({56.19283, 9.88415}, actual.coordinate);
+	assert_equal({ 56.19283, 9.88415 }, actual.coordinate);
 	assert_equal(u8"Canon"sv, actual.camera_manufacturer);
 	assert_equal(u8"Canon EOS 50D"sv, actual.camera_model);
 	assert_equal(u8"IMG_0604.CR2"sv, actual.raw_file_name);
@@ -906,10 +906,10 @@ static void should_scan_mp4()
 	expected2.audio_sample_type = 35;
 	expected2.audio_channels = 2;
 	expected2.disk.x = 1;
-	expected2.track = {7, 0};
+	expected2.track = { 7, 0 };
 	expected2.width = 0;
 	expected2.height = 0;
-	expected2.disk = {0, 0};
+	expected2.disk = { 0, 0 };
 	expected2.year = 2007;
 	expected2.encoder = u8"Lavf54.63.100"_c;
 
@@ -953,7 +953,7 @@ static void should_scan_mov()
 	expected2.created_utc = df::date_t(2011, 3, 13, 15, 13, 49);
 	expected2.created_digitized = df::date_t(2011, 3, 13, 15, 13, 49);
 	expected2.audio_codec = u8"aac"_c;
-	expected2.coordinate = {51.51420, -0.09850};
+	expected2.coordinate = { 51.51420, -0.09850 };
 	expected2.width = 640;
 	expected2.height = 480;
 	expected2.duration = 10;
@@ -1250,7 +1250,7 @@ static void should_update_gps_in_exif()
 	assert_equal(u8"Big Apple"sv, actual_iptc->location_place, u8"IPTC"sv);
 	assert_equal(u8"New York"sv, actual_iptc->location_state, u8"IPTC"sv);
 	assert_equal(u8"USA"sv, actual_iptc->location_country, u8"IPTC"sv);
-	assert_equal({40.71417, -74.00611}, actual_exif->coordinate, u8"EXIF"sv);
+	assert_equal({ 40.71417, -74.00611 }, actual_exif->coordinate, u8"EXIF"sv);
 
 	assert_equal(u8"Big Apple"sv, actual_xmp->location_place, u8"XMP"sv);
 	assert_equal(u8"New York"sv, actual_xmp->location_state, u8"XMP"sv);
@@ -1614,7 +1614,7 @@ static void should_store_item_properties()
 	assert_metadata(*md, *item_md, u8"index"sv);
 	assert_equal(crc32c_expected, item.crc32c, u8"index crc32"sv);
 	assert_equal(static_cast<int>(media_pos), static_cast<int>(item_md->media_position),
-	             u8"index media position"sv);
+		u8"index media position"sv);
 	assert_equal(md->orientation, item_md->orientation, u8"index orientation"sv);
 
 	const auto reloaded_crc = platform::file_crc32(file_path);
@@ -1674,9 +1674,9 @@ static int count_search_results(index_state& index, df::search_t search)
 	int result = 0;
 
 	auto cb = [&result](const df::item_set& append_items, const bool completed)
-	{
-		result += static_cast<int>(append_items.size());
-	};
+		{
+			result += static_cast<int>(append_items.size());
+		};
 
 	index.query_items(search, existing, cb, test_token);
 	return result;
@@ -1740,9 +1740,9 @@ struct test_view::shared_test_context
 			//df::item_set items2;
 
 			auto cb1 = [&items1](const df::item_set& append_items, const bool completed)
-			{
-				items1.append(append_items);
-			};
+				{
+					items1.append(append_items);
+				};
 
 			/*auto cb2 = [&items2](const df::item_set& append_items, const bool completed)
 				{
@@ -1777,7 +1777,7 @@ static void should_index(test_view::shared_test_context& stc)
 	expected_md->file_name = u8"Test.jpg"_c;
 	// Embedded values
 	assert_metadata(*expected_md, *metadata_from_cache(stc.test_index, test_files_folder.combine_file(u8"Test.jpg"sv)),
-	                u8"Test.jpg"sv);
+		u8"Test.jpg"sv);
 
 	// Sidecar values
 	const auto actual = metadata_from_cache(stc.test_index, test_files_folder.combine_file(u8"Gherkin.CR2"sv));
@@ -1906,25 +1906,25 @@ public:
 static void should_match_terms()
 {
 	prop_test().tag(u8"aaa"sv)
-	           .is_match(u8"#aaa"sv)
-	           .is_not_match(u8"#bbb"sv)
-	           .is_match(u8"-#bbb"sv)
-	           .is_match(u8"!#bbb"sv)
-	           .is_not_match(u8"-#aaa"sv)
-	           .is_not_match(u8"!#aaa"sv)
-	           .is_match(u8"#aaa or #bbb"sv)
-	           .is_not_match(u8"#aaa and #bbb"sv)
-	           .is_not_match(u8"#aaa #bbb"sv);
+		.is_match(u8"#aaa"sv)
+		.is_not_match(u8"#bbb"sv)
+		.is_match(u8"-#bbb"sv)
+		.is_match(u8"!#bbb"sv)
+		.is_not_match(u8"-#aaa"sv)
+		.is_not_match(u8"!#aaa"sv)
+		.is_match(u8"#aaa or #bbb"sv)
+		.is_not_match(u8"#aaa and #bbb"sv)
+		.is_not_match(u8"#aaa #bbb"sv);
 
 	prop_test().tag(u8"bbb"sv)
-	           .is_not_match(u8"#aaa"sv)
-	           .is_match(u8"#bbb"sv)
-	           .is_match(u8"#aaa or #bbb"sv);
+		.is_not_match(u8"#aaa"sv)
+		.is_match(u8"#bbb"sv)
+		.is_match(u8"#aaa or #bbb"sv);
 
 	prop_test().tag(u8"'aa bb'"sv)
-	           .is_not_match(u8"#aaa"sv)
-	           .is_not_match(u8"#bb"sv)
-	           .is_match(u8"#'aa bb'"sv);
+		.is_not_match(u8"#aaa"sv)
+		.is_not_match(u8"#bb"sv)
+		.is_match(u8"#'aa bb'"sv);
 
 	prop_test()
 		.tag(u8"aaa bbb"sv)
@@ -1936,50 +1936,50 @@ static void should_match_terms()
 		.is_not_match(u8"#aaa !#bbb"sv);
 
 	prop_test().rate(4)
-	           .is_match(u8"rate:4"sv)
-	           .is_match(u8"4"sv)
-	           .is_match(u8">= 4"sv)
-	           .is_not_match(u8"> 4"sv)
-	           .is_match(u8">3"sv)
-	           .is_match(u8"3 | 4"sv)
-	           .is_match(u8"3 or 4"sv)
-	           .is_not_match(u8"3 and 4"sv);
+		.is_match(u8"rate:4"sv)
+		.is_match(u8"4"sv)
+		.is_match(u8">= 4"sv)
+		.is_not_match(u8"> 4"sv)
+		.is_match(u8">3"sv)
+		.is_match(u8"3 | 4"sv)
+		.is_match(u8"3 or 4"sv)
+		.is_not_match(u8"3 and 4"sv);
 
 	prop_test().desc(u8"one two three"sv)
-	           .is_match(u8"two"sv)
-	           .is_match(u8"one two"sv)
-	           .is_match(u8"two three"sv)
-	           .is_match(u8"'two three'"sv)
-	           .is_not_match(u8"'one three'"sv);
+		.is_match(u8"two"sv)
+		.is_match(u8"one two"sv)
+		.is_match(u8"two three"sv)
+		.is_match(u8"'two three'"sv)
+		.is_not_match(u8"'one three'"sv);
 
 	prop_test().date(1999, 12, 27)
-	           .is_match(u8"age:5"sv)
-	           .is_match(u8"age:10"sv)
-	           .is_not_match(u8"age:1"sv)
-	           .is_not_match(u8"age:2"sv);
+		.is_match(u8"age:5"sv)
+		.is_match(u8"age:10"sv)
+		.is_not_match(u8"age:1"sv)
+		.is_not_match(u8"age:2"sv);
 
 	prop_test().date(2000, 1, 1)
-	           .is_match(u8"age:1"sv)
-	           .is_match(u8"age:5"sv)
-	           .is_not_match(u8"-age:5"sv)
-	           .is_not_match(u8"!age:5"sv);
+		.is_match(u8"age:1"sv)
+		.is_match(u8"age:5"sv)
+		.is_not_match(u8"-age:5"sv)
+		.is_not_match(u8"!age:5"sv);
 
 	prop_test().tag(u8"aaa"sv).date(2000, 1, 1)
-	           .is_match(u8"#aaa age:1"sv)
-	           .is_match(u8"#aaa created:2000-jan"sv)
-	           .is_not_match(u8"created:2000-feb"sv)
-	           .is_not_match(u8"#bbb created:2000-jan"sv);
+		.is_match(u8"#aaa age:1"sv)
+		.is_match(u8"#aaa created:2000-jan"sv)
+		.is_not_match(u8"created:2000-feb"sv)
+		.is_not_match(u8"#bbb created:2000-jan"sv);
 
 	// Metadata and file date. Should use meta
 	prop_test().file_created_date(2000, 1, 1).date(1999, 5, 25)
-	           .is_not_match(u8"created:9"sv)
-	           .is_not_match(u8"created:2000-jan"sv)
-	           .is_match(u8"created:1999-may"sv);
+		.is_not_match(u8"created:9"sv)
+		.is_not_match(u8"created:2000-jan"sv)
+		.is_match(u8"created:1999-may"sv);
 
 	// file date but not metadata
 	prop_test().file_created_date(2000, 1, 1)
-	           .is_match(u8"age:10"sv)
-	           .is_match(u8"created:2000-jan"sv);
+		.is_match(u8"age:10"sv)
+		.is_match(u8"created:2000-jan"sv);
 }
 
 static void should_not_match_folder_without()
@@ -2010,7 +2010,7 @@ static void should_match_date(const std::u8string_view query, const df::date_t d
 
 
 void assert_parse(const std::u8string_view selector, const std::u8string_view display, const std::u8string_view folder,
-                  bool is_recursive, const std::u8string_view wildcard)
+	bool is_recursive, const std::u8string_view wildcard)
 {
 	const df::item_selector sel(selector);
 
@@ -2021,7 +2021,7 @@ void assert_parse(const std::u8string_view selector, const std::u8string_view di
 }
 
 void assert_parse(const std::u8string_view selector, const std::u8string_view folder, bool is_recursive,
-                  const std::u8string_view wildcard)
+	const std::u8string_view wildcard)
 {
 	assert_parse(selector, selector, folder, is_recursive, wildcard);
 }
@@ -2075,35 +2075,35 @@ static void should_select_files()
 
 	const auto not_recursive = df::item_selector(test_files_folder, false);
 	assert_equal(false, contains(platform::select_files(not_recursive, true), u8"Screws.CR2"sv),
-	             u8"no files from sub folder"sv);
+		u8"no files from sub folder"sv);
 	assert_equal(true, contains(platform::select_files(not_recursive, true), u8"Cube.png"sv), u8"files from sub folders"sv);
 	assert_equal(true, contains(platform::select_files(not_recursive, true), u8"Test.jpg"sv), u8"files from sub folders"sv);
 	assert_equal(true, contains(platform::select_folders(not_recursive, true), u8"raw"sv), u8"include folders"sv);
 
 	const auto recursive_png = df::item_selector(test_files_folder, true, u8"*.png"sv);
 	assert_equal(false, contains(platform::select_files(recursive_png, true), u8"Screws.CR2"sv),
-	             u8"no files from sub folder"sv);
+		u8"no files from sub folder"sv);
 	assert_equal(true, contains(platform::select_files(recursive_png, true), u8"Cube.png"sv), u8"files from sub folders"sv);
 	assert_equal(false, contains(platform::select_files(recursive_png, true), u8"Test.jpg"sv),
-	             u8"files from sub folders"sv);
+		u8"files from sub folders"sv);
 	assert_equal(false, contains(platform::select_folders(recursive_png, true), u8"raw"sv), u8"include folders"sv);
 
 	const auto not_recursive_cr2 = df::item_selector(test_files_folder, false, u8"*.cr2"sv);
 	assert_equal(false, contains(platform::select_files(not_recursive_cr2, true), u8"Screws.CR2"sv),
-	             u8"no files from sub folder"sv);
+		u8"no files from sub folder"sv);
 	assert_equal(false, contains(platform::select_files(not_recursive_cr2, true), u8"Cube.png"sv),
-	             u8"files from sub folders"sv);
+		u8"files from sub folders"sv);
 	assert_equal(false, contains(platform::select_files(not_recursive_cr2, true), u8"Test.jpg"sv),
-	             u8"files from sub folders"sv);
+		u8"files from sub folders"sv);
 	assert_equal(true, contains(platform::select_folders(not_recursive_cr2, true), u8"raw"sv), u8"include folders"sv);
 
 	const auto recursive_cr2 = df::item_selector(test_files_folder, true, u8"*.cr2"sv);
 	assert_equal(true, contains(platform::select_files(recursive_cr2, true), u8"Screws.CR2"sv),
-	             u8"no files from sub folder"sv);
+		u8"no files from sub folder"sv);
 	assert_equal(false, contains(platform::select_files(recursive_cr2, true), u8"Cube.png"sv),
-	             u8"files from sub folders"sv);
+		u8"files from sub folders"sv);
 	assert_equal(false, contains(platform::select_files(recursive_cr2, true), u8"Test.jpg"sv),
-	             u8"files from sub folders"sv);
+		u8"files from sub folders"sv);
 	assert_equal(false, contains(platform::select_folders(recursive_cr2, true), u8"raw"sv), u8"include folders"sv);
 }
 
@@ -2259,7 +2259,7 @@ static void should_toggle_rating()
 }
 
 static void assert_can_process(const view_state& s, bool photos_only, bool can_save_pixels, bool can_save_metadata,
-                               bool local_file, bool local_file_or_folder, const std::u8string_view message)
+	bool local_file, bool local_file_or_folder, const std::u8string_view message)
 {
 	const view_host_base_ptr view;
 	assert_equal(photos_only, s.can_process_selection(view, df::process_items_type::photos_only), message);
@@ -2267,7 +2267,7 @@ static void assert_can_process(const view_state& s, bool photos_only, bool can_s
 	assert_equal(can_save_metadata, s.can_process_selection(view, df::process_items_type::can_save_metadata), message);
 	assert_equal(local_file, s.can_process_selection(view, df::process_items_type::local_file), message);
 	assert_equal(local_file_or_folder, s.can_process_selection(view, df::process_items_type::local_file_or_folder),
-	             message);
+		message);
 }
 
 static void should_enable_based_on_selection()
@@ -2385,7 +2385,7 @@ static void should_parse_search()
 }
 
 static void assert_date_shift(df::search_t d, const std::u8string_view expected_prev,
-                              const std::u8string_view expected_next)
+	const std::u8string_view expected_next)
 {
 	d.next_date(false);
 	assert_equal(expected_prev, d.text(), u8"prev date"sv);
@@ -2403,12 +2403,12 @@ static void should_next_date_search()
 	assert_date_shift(df::search_t().month(1).year(2010), u8"2009-dec"sv, u8"2010-jan"sv);
 
 	assert_date_shift(df::search_t().day(1, 1, 2020, df::date_parts_prop::modified), u8"modified:2019-dec-31"sv,
-	                  u8"modified:2020-jan-1"sv);
+		u8"modified:2020-jan-1"sv);
 	assert_date_shift(df::search_t().day(1, 1, 0, df::date_parts_prop::modified), u8"modified:dec-31"sv,
-	                  u8"modified:jan-1"sv);
+		u8"modified:jan-1"sv);
 	assert_date_shift(df::search_t().year(2010, df::date_parts_prop::created), u8"created:2009"sv, u8"created:2010"sv);
 	assert_date_shift(df::search_t().month(1, df::date_parts_prop::created).year(2010, df::date_parts_prop::created),
-	                  u8"created:2009-dec"sv, u8"created:2010-jan"sv);
+		u8"created:2009-dec"sv, u8"created:2010-jan"sv);
 }
 
 
@@ -2459,7 +2459,7 @@ static void should_parent()
 	s.view_mode(view_type::items);
 
 	df::index_roots roots;
-	roots.folders = {test_files_folder};
+	roots.folders = { test_files_folder };
 	s.item_index.index_roots(roots);
 	s.item_index.index_folders(test_token);
 
@@ -2512,7 +2512,7 @@ static void should_escape()
 	view_state s(ss, as, index, make_test_player());
 
 	df::index_roots roots;
-	roots.folders = {test_files_folder};
+	roots.folders = { test_files_folder };
 	s.item_index.index_roots(roots);
 	s.item_index.index_folders(test_token);
 
@@ -2588,10 +2588,10 @@ static void should_convert_utf8()
 		assert_equal(platform::utf8_to_utf16(src), str::utf8_to_utf16(src), u8"to utf16"sv);
 		assert_equal(src, str::utf16_to_utf8(platform::utf8_to_utf16(src)), u8"to utf8"sv);
 		assert_equal(src, str::utf16_to_utf8(str::utf8_to_utf16(src)), u8"internal conversions"sv);
-		
+
 	}
 
-	constexpr wchar_t icon_text[2] = {static_cast<wchar_t>(icon_index::fit), 0};
+	constexpr wchar_t icon_text[2] = { static_cast<wchar_t>(icon_index::fit), 0 };
 	const auto icon_text_converted = str::utf8_to_utf16(str::utf16_to_utf8(icon_text));
 	assert_equal(icon_text, icon_text_converted, u8"icon to utf8"sv);
 }
@@ -2648,7 +2648,7 @@ static void should_split()
 
 	assert_equal(u8"https://www.example.com"sv, df::url_extract(input1), u8"extract url"sv);
 	assert_equal(u8"http://anotherexample.org/article"sv, df::url_extract(input2), u8"extract url"sv);
-	assert_equal(u8""sv, df::url_extract(input3), u8"extract url"sv);	
+	assert_equal(u8""sv, df::url_extract(input3), u8"extract url"sv);
 	assert_equal(u8""sv, df::url_extract(input3), u8"extract url"sv);
 	assert_equal(u8"http://bighugelabs.com/flickr/onblack.php?id=1397504988"sv, df::url_extract(input4), u8"extract url"sv);
 }
@@ -2719,15 +2719,15 @@ static void should_find_location()
 	assert_equal(u8"King of Prussia"sv, locations.find_by_id(5196220).place, u8"City"sv);
 
 	assert_equal(u8"London, England, United Kingdom"sv,
-	             locations.auto_complete(u8"london"sv, 8, default_location)[0].location.str(), u8"City"sv);
+		locations.auto_complete(u8"london"sv, 8, default_location)[0].location.str(), u8"City"sv);
 	assert_equal(u8"Londonderry Station, Nova Scotia, Canada"sv,
-	             locations.auto_complete(u8"london canada"sv, 8, default_location)[0].location.str(), u8"City"sv);
+		locations.auto_complete(u8"london canada"sv, 8, default_location)[0].location.str(), u8"City"sv);
 	assert_equal(u8"Armidale, New South Wales, Australia"sv,
-	             locations.auto_complete(u8"armid aust"sv, 8, default_location)[0].location.str(), u8"City"sv);
+		locations.auto_complete(u8"armid aust"sv, 8, default_location)[0].location.str(), u8"City"sv);
 	assert_equal(u8"Birmingham, England, United Kingdom"sv,
-	             locations.auto_complete(u8"birm gb"sv, 8, default_location)[0].location.str(), u8"City"sv);
+		locations.auto_complete(u8"birm gb"sv, 8, default_location)[0].location.str(), u8"City"sv);
 	assert_equal(u8"King of Prussia, Pennsylvania, United States"sv,
-	             locations.auto_complete(u8"king pru usa"sv, 8, default_location)[0].location.str(), u8"City"sv);
+		locations.auto_complete(u8"king pru usa"sv, 8, default_location)[0].location.str(), u8"City"sv);
 }
 
 static void should_detect_original_path()
@@ -2799,7 +2799,7 @@ static void should_reload_thumb_after_scan()
 	assert_equal(false, sony_item->should_load_thumbnail(), u8"should_load_thumbnail for sony.jpg"sv);
 
 	df::item_set items;
-	items._items = {test_item, sony_item};
+	items._items = { test_item, sony_item };
 
 
 	index.scan_items(items, false, false, false, false, test_token);
@@ -2811,17 +2811,17 @@ static void should_reload_thumb_after_scan()
 	db.load_thumbnails(index, items);
 
 	assert_equal(true, test_item->should_load_thumbnail(),
-	             u8"should_load_thumbnail for test.jpg after db load_thumbnails"sv);
+		u8"should_load_thumbnail for test.jpg after db load_thumbnails"sv);
 	assert_equal(true, sony_item->should_load_thumbnail(),
-	             u8"should_load_thumbnail for sony.jpg after db load_thumbnails"sv);
+		u8"should_load_thumbnail for sony.jpg after db load_thumbnails"sv);
 
 	index.scan_items(items, true, false, false, false, test_token);
 	db.perform_writes();
 
 	assert_equal(false, test_item->should_load_thumbnail(),
-	             u8"should_load_thumbnail for test.jpg after index load_thumbnails"sv);
+		u8"should_load_thumbnail for test.jpg after index load_thumbnails"sv);
 	assert_equal(false, sony_item->should_load_thumbnail(),
-	             u8"should_load_thumbnail for sony.jpg after index load_thumbnails"sv);
+		u8"should_load_thumbnail for sony.jpg after index load_thumbnails"sv);
 }
 
 static void should_rename()
@@ -2882,7 +2882,7 @@ static void should_not_overwrite_during_rename()
 	auto test_item = load_item(index, save_path_1, false);
 
 	assert_equal(false, test_item->rename(index, save_path_2.file_name_without_extension()).success(),
-	             u8"should not rename"sv);
+		u8"should not rename"sv);
 	assert_equal(save_path_1.name(), test_item->name(), u8"not renamed"sv);
 	assert_equal(true, test_item->path().exists(), u8"exists"sv);
 }
@@ -3046,7 +3046,7 @@ static void should_detect_duplicates(test_view::shared_test_context& stc)
 	const auto test_item5 = std::make_shared<df::item_element>(path5, index.find_item(path5));
 	const auto sony_item = std::make_shared<df::item_element>(path_sony, index.find_item(path_sony));
 
-	df::item_set items({test_item1, test_item2, test_item3, test_item4, test_item5, sony_item});
+	df::item_set items({ test_item1, test_item2, test_item3, test_item4, test_item5, sony_item });
 	db.load_thumbnails(index, items);
 
 	index.scan_item(test_item1, true, false);
@@ -3088,7 +3088,7 @@ static void should_detect_rotation(test_view::shared_test_context& stc)
 	assert_equal(ui::orientation::top_left, test_item->thumbnail_orientation());
 
 	df::item_set items;
-	items._items = {test_item};
+	items._items = { test_item };
 
 	index.scan_items(items, false, false, false, false, test_token);
 	db.perform_writes();
@@ -3409,10 +3409,10 @@ void test_view::run_test(const test_ptr& test)
 	_host->frame()->invalidate();
 
 	_state.queue_ui([this]()
-	{
-		sort();
-		_temps.delete_temps();
-	});
+		{
+			sort();
+			_temps.delete_temps();
+		});
 }
 
 static std::atomic_int tests_running = 0;
@@ -3454,13 +3454,13 @@ void test_view::register_tests()
 	register_test(u8"Should match wildcard"s, should_match_wildcard);
 	register_test(u8"Should handle international characters"s, should_handle_international_characters);
 	register_test(u8"Should reset dx11"s, [this]
-	{
-		_state.queue_ui([this]
 		{
-			_state._events.free_graphics_resources(false, false);
-			_host->frame()->reset_graphics();
+			_state.queue_ui([this]
+				{
+					_state._events.free_graphics_resources(false, false);
+					_host->frame()->reset_graphics();
+				});
 		});
-	});
 	//register_test(u8"Should measure text consistently"sv, should_measure_text_consistently);
 	register_test(u8"Should record crashes"s, should_record_crashes);
 	register_test(u8"Should compare versions"s, should_compare_versions);
@@ -3598,14 +3598,14 @@ void test_view::register_tests()
 	const auto app_data_folder = known_path(platform::known_folder::app_data);
 
 	auto register_assert_format = [this](const df::search_t& query)
-	{
-		register_test(str::format(u8"Should format {}"sv, query.text()), [query](shared_test_context& stc)
 		{
-			const auto text = query.format_terms();
-			const auto parsed = df::search_t::parse(text).format_terms();
-			assert_equal(text, parsed, u8"assert_parse"sv);
-		});
-	};
+			register_test(str::format(u8"Should format {}"sv, query.text()), [query](shared_test_context& stc)
+				{
+					const auto text = query.format_terms();
+					const auto parsed = df::search_t::parse(text).format_terms();
+					assert_equal(text, parsed, u8"assert_parse"sv);
+				});
+		};
 
 	register_assert_format(df::search_t().with(prop::duration));
 	register_assert_format(df::search_t().add_selector(app_data_folder));
@@ -3633,15 +3633,15 @@ void test_view::register_tests()
 	register_assert_format(df::search_t().with_extension(u8"jpg"sv));
 
 	auto register_assert_parse = [this](const std::u8string& query, const std::u8string& expected = {})
-	{
-		register_test(str::format(u8"Should parse {}"sv, query), [query, expected](shared_test_context& stc)
 		{
-			const auto formatted = df::search_t::parse(query).format_terms();
-			assert_equal(str::is_empty(expected) ? query : expected, formatted, u8"parse query"sv);
-			const auto parsed = df::search_t::parse(query).format_terms();
-			assert_equal(formatted, parsed, u8"parse formatted"sv);
-		});
-	};
+			register_test(str::format(u8"Should parse {}"sv, query), [query, expected](shared_test_context& stc)
+				{
+					const auto formatted = df::search_t::parse(query).format_terms();
+					assert_equal(str::is_empty(expected) ? query : expected, formatted, u8"parse query"sv);
+					const auto parsed = df::search_t::parse(query).format_terms();
+					assert_equal(formatted, parsed, u8"parse formatted"sv);
+				});
+		};
 
 	register_assert_parse(u8"2014 2015"s);
 	register_assert_parse(u8"2014 @photo"s);
@@ -3687,29 +3687,29 @@ void test_view::register_tests()
 	register_test(u8"Should match date"s, [] { should_match_date(u8"2012"sv, df::date_t(2012, 1, 14)); });
 	register_test(u8"Should match date"s, [] { should_match_date(u8"2012|2013"sv, df::date_t(2012, 1, 14)); });
 	register_test(u8"Should match date"s, []
-	{
-		should_match_date(u8"(April or June) (2013 or 2015)"s, df::date_t(2013, 4, 22));
-	});
+		{
+			should_match_date(u8"(April or June) (2013 or 2015)"s, df::date_t(2013, 4, 22));
+		});
 	register_test(u8"Should match date"s, []
-	{
-		should_match_date(u8"(April or June) (2013 or 2015)"s, df::date_t(2015, 6, 7));
-	});
+		{
+			should_match_date(u8"(April or June) (2013 or 2015)"s, df::date_t(2015, 6, 7));
+		});
 	register_test(u8"Should match date"s, [] { should_match_date(u8"age:4"sv, df::date_t(1999, 12, 30)); });
 
 	auto register_should_search = [this](const std::u8string_view query, int expected_index, int expected_recurse, int expected_folder)
-	{
-		register_test(str::format(u8"Should search {}"s, query), [query, expected_index, expected_recurse, expected_folder](shared_test_context& stc)
 		{
-			stc.lazy_load_index();
-			assert_equal(expected_index, count_search_results(stc.test_index, query), query);
+			register_test(str::format(u8"Should search {}"s, query), [query, expected_index, expected_recurse, expected_folder](shared_test_context& stc)
+				{
+					stc.lazy_load_index();
+					assert_equal(expected_index, count_search_results(stc.test_index, query), query);
 
-			const auto query_recurse_test_folder = str::format(u8"\"{}\\**\" {} -excluded"sv, test_files_folder, query);
-			assert_equal(expected_recurse, count_search_results(stc.empty_index, query_recurse_test_folder), str::format(u8"recurse {}"sv, query));
+					const auto query_recurse_test_folder = str::format(u8"\"{}\\**\" {} -excluded"sv, test_files_folder, query);
+					assert_equal(expected_recurse, count_search_results(stc.empty_index, query_recurse_test_folder), str::format(u8"recurse {}"sv, query));
 
-			const auto query_test_folder = str::format(u8"\"{}\" {}"sv, test_files_folder, query);
-			assert_equal(expected_folder, count_search_results(stc.empty_index, query_test_folder), str::format(u8"folder {}"sv, query));
-		});
-	};
+					const auto query_test_folder = str::format(u8"\"{}\" {}"sv, test_files_folder, query);
+					assert_equal(expected_folder, count_search_results(stc.empty_index, query_test_folder), str::format(u8"folder {}"sv, query));
+				});
+		};
 
 	register_should_search(u8"2012-09-14"sv, 5, 5, 5);
 	register_should_search(u8"Created:2012-09-14"sv, 5, 5, 5);
@@ -3719,7 +3719,7 @@ void test_view::register_tests()
 	register_should_search(u8"2009-11-15"sv, 1, 1, 1);
 
 	register_should_search(u8"@video"sv, 5, 5, 5);
-	register_should_search(u8"@audio"sv, 5, 5, 4);	
+	register_should_search(u8"@audio"sv, 5, 5, 4);
 	register_should_search(u8"@commodore"sv, 1, 1, 0);
 	register_should_search(u8"@archive"sv, 1, 1, 1);
 
@@ -3817,7 +3817,7 @@ void test_view::register_tests()
 	register_should_search(u8"*london*"sv, 3, 3, 3);
 
 	register_should_search(u8"d64"sv, 1, 1, 0);
-	register_should_search(u8"ace -retro"sv, 1, 1, 1);		
+	register_should_search(u8"ace -retro"sv, 1, 1, 1);
 	register_should_search(u8"jpg"sv, 15, 15, 15);
 	register_should_search(u8"-jpg"sv, 30, 29, 28);
 	register_should_search(u8"-ext:jpg"sv, 30, 29, 28);

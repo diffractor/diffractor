@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -19,17 +19,17 @@ public:
 
 	void update(const std::u8string_view input)
 	{
-		update({(const uint8_t*)input.data(), input.size()});
+		update({ (const uint8_t*)input.data(), input.size() });
 	}
 
 	void update(const std::vector<uint8_t>& input)
 	{
-		update({input.data(), input.size()});
+		update({ input.data(), input.size() });
 	}
 
 	void update(const char8_t* sz)
 	{
-		update({(const uint8_t*)sz, str::len(sz)});
+		update({ (const uint8_t*)sz, str::len(sz) });
 	}
 
 	void finalize();

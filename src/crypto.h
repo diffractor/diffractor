@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -29,17 +29,17 @@ namespace crypto
 
 	inline std::vector<uint8_t> encrypt(const std::vector<uint8_t>& s, const std::u8string_view password)
 	{
-		return encrypt({s.data(), s.size()}, password);
+		return encrypt({ s.data(), s.size() }, password);
 	}
 
 	inline std::vector<uint8_t> encrypt(const std::u8string_view s, const std::u8string_view password)
 	{
-		return encrypt({std::bit_cast<const uint8_t*>(s.data()), s.size()}, password);
+		return encrypt({ std::bit_cast<const uint8_t*>(s.data()), s.size() }, password);
 	}
 
 	inline std::vector<uint8_t> decrypt(const std::vector<uint8_t>& data, const std::u8string_view password)
 	{
-		return decrypt({(data.data()), data.size()}, password);
+		return decrypt({ (data.data()), data.size() }, password);
 	}
 
 	class hash_gen

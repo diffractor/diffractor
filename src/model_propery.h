@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -143,7 +143,7 @@ namespace prop
 
 	public:
 		key(uint16_t id, std::u8string_view sn, std::u8string_view n, std::u8string_view& tx, icon_index i, data_type t,
-		    uint32_t f, uint32_t bit);
+			uint32_t f, uint32_t bit);
 
 		uint16_t id = 0;
 		icon_index icon = {};
@@ -317,7 +317,7 @@ namespace prop
 		item_metadata(const item_metadata& other) = default;
 		item_metadata(item_metadata&& other) = default;
 
-		sizei dimensions() const { return {width, height}; }
+		sizei dimensions() const { return { width, height }; }
 
 		str::cached album;
 		str::cached album_artist;
@@ -377,9 +377,9 @@ namespace prop
 		uint16_t year = 0;
 		uint8_t season = 0;
 		ui::orientation orientation = ui::orientation::top_left;
-		df::xy8 disk = {0, 0};
-		df::xy8 episode = {0, 0};
-		df::xy8 track = {0, 0};
+		df::xy8 disk = { 0, 0 };
+		df::xy8 episode = { 0, 0 };
+		df::xy8 track = { 0, 0 };
 
 		double media_position = 0.0;
 

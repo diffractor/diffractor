@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -115,12 +115,12 @@ public:
 };
 
 draw_context_device_ptr d3d11_create_context(const factories_ptr& f, const ComPtr<IDXGISwapChain>& swap_chain,
-                                             int base_font_size);
+	int base_font_size);
 df::blob load_resource(int id, LPCWSTR lpType);
 
 HGLOBAL image_to_handle(const file_load_result& image);
 platform::file_op_result save_bitmap_info(df::folder_path save_path, std::u8string_view name, bool as_png,
-                                          HBITMAP image_buffer_in);
+	HBITMAP image_buffer_in);
 void draw_surface(HDC hdc, sizei dimensions, ui::texture_format format, int stride, const uint8_t* pixels);
 
 

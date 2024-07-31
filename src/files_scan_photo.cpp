@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -351,19 +351,19 @@ static void scan_exif(file_scan_result& result, df::cspan data)
 
 						if (possible_thumbnail > data.data &&
 							possible_thumbnail + posible_thumbnail_len <= data.data + data.size &&
-							(detected = files::detect_format({possible_thumbnail, posible_thumbnail_len})) !=
+							(detected = files::detect_format({ possible_thumbnail, posible_thumbnail_len })) !=
 							detected_format::Unknown)
 						{
 							if (is_image_format(detected))
 							{
-								result.thumbnail_image = load_image_file({possible_thumbnail, posible_thumbnail_len});
+								result.thumbnail_image = load_image_file({ possible_thumbnail, posible_thumbnail_len });
 							}
 							else
 							{
 								files ff;
 								result.thumbnail_surface = ff.image_to_surface({
 									possible_thumbnail, posible_thumbnail_len
-								});
+									});
 							}
 						}
 					}
@@ -381,11 +381,11 @@ static double load_gps_val(read_stream& s, const uint32_t pos, const unsigned sh
 {
 	const auto offset = get_uint32(s.peek32(pos + 8), order);
 	const auto degrees = metadata_exif::urational32_t(get_uint32(s.peek32(offset + 0), order),
-	                                                  get_uint32(s.peek32(offset + 4), order));
+		get_uint32(s.peek32(offset + 4), order));
 	const auto minutes = metadata_exif::urational32_t(get_uint32(s.peek32(offset + 8), order),
-	                                                  get_uint32(s.peek32(offset + 12), order));
+		get_uint32(s.peek32(offset + 12), order));
 	const auto seconds = metadata_exif::urational32_t(get_uint32(s.peek32(offset + 16), order),
-	                                                  get_uint32(s.peek32(offset + 20), order));
+		get_uint32(s.peek32(offset + 20), order));
 	return gps_coordinate::dms_to_decimal(degrees.to_real(), minutes.to_real(), seconds.to_real());
 }
 
@@ -440,86 +440,86 @@ static file_scan_result scan_tiff(read_stream& s)
 					result.height = get_uint16(dir_data + 8u, order);
 					break;
 				case TAG_XMP:
-					{
-						const uint64_t xmp_offset = get_uint32(dir_data + 8u, order);
+				{
+					const uint64_t xmp_offset = get_uint32(dir_data + 8u, order);
 
-						if (xmp_offset + components <= size) // overflow
-						{
-							result.metadata.xmp = s.read(xmp_offset, components);
-						}
+					if (xmp_offset + components <= size) // overflow
+					{
+						result.metadata.xmp = s.read(xmp_offset, components);
 					}
-					break;
+				}
+				break;
 				case EXIF_TAG_GPS_INFO_IFD_POINTER:
+				{
+					const auto offset_gps = get_uint32(dir_data + 8u, order);
+
+					if (offset_gps && offset_gps < limit)
 					{
-						const auto offset_gps = get_uint32(dir_data + 8u, order);
+						exif_gps_coordinate_builder coordinate;
+						const auto gps_entry_count = get_uint16(s.peek16(offset_gps), order);
 
-						if (offset_gps && offset_gps < limit)
+						for (auto j = 0u; j < gps_entry_count; ++j)
 						{
-							exif_gps_coordinate_builder coordinate;
-							const auto gps_entry_count = get_uint16(s.peek16(offset_gps), order);
+							const auto gps_entry_pos = offset_gps + 2 + (12 * j);
 
-							for (auto j = 0u; j < gps_entry_count; ++j)
+							if (gps_entry_pos < limit)
 							{
-								const auto gps_entry_pos = offset_gps + 2 + (12 * j);
+								const auto gps_tag = static_cast<exif_tag>(get_uint16(
+									s.peek16(gps_entry_pos), order));
 
-								if (gps_entry_pos < limit)
+								switch (gps_tag)
 								{
-									const auto gps_tag = static_cast<exif_tag>(get_uint16(
-										s.peek16(gps_entry_pos), order));
+								case EXIF_TAG_GPS_LATITUDE:
+								{
+									coordinate.latitude(load_gps_val(s, gps_entry_pos, order));
+								}
+								break;
+								case EXIF_TAG_GPS_LATITUDE_REF:
+								{
+									const auto text = load_text(s, gps_entry_pos, order);
 
-									switch (gps_tag)
+									// 'N' or 'S'
+									if (first_char_is(text, 'S'))
 									{
-									case EXIF_TAG_GPS_LATITUDE:
-										{
-											coordinate.latitude(load_gps_val(s, gps_entry_pos, order));
-										}
-										break;
-									case EXIF_TAG_GPS_LATITUDE_REF:
-										{
-											const auto text = load_text(s, gps_entry_pos, order);
-
-											// 'N' or 'S'
-											if (first_char_is(text, 'S'))
-											{
-												coordinate.latitude_north_south(
-													exif_gps_coordinate_builder::NorthSouth::South);
-											}
-											else
-											{
-												coordinate.latitude_north_south(
-													exif_gps_coordinate_builder::NorthSouth::North);
-											}
-										}
-										break;
-									case EXIF_TAG_GPS_LONGITUDE:
-										{
-											coordinate.longitude(load_gps_val(s, gps_entry_pos, order));
-										}
-										break;
-									case EXIF_TAG_GPS_LONGITUDE_REF:
-										{
-											const auto text = load_text(s, gps_entry_pos, order);
-											// 'E' or 'W'
-											if (first_char_is(text, 'W'))
-											{
-												coordinate.longitude_east_west(
-													exif_gps_coordinate_builder::EastWest::West);
-											}
-											else
-											{
-												coordinate.longitude_east_west(
-													exif_gps_coordinate_builder::EastWest::East);
-											}
-										}
-										break;
+										coordinate.latitude_north_south(
+											exif_gps_coordinate_builder::NorthSouth::South);
+									}
+									else
+									{
+										coordinate.latitude_north_south(
+											exif_gps_coordinate_builder::NorthSouth::North);
 									}
 								}
+								break;
+								case EXIF_TAG_GPS_LONGITUDE:
+								{
+									coordinate.longitude(load_gps_val(s, gps_entry_pos, order));
+								}
+								break;
+								case EXIF_TAG_GPS_LONGITUDE_REF:
+								{
+									const auto text = load_text(s, gps_entry_pos, order);
+									// 'E' or 'W'
+									if (first_char_is(text, 'W'))
+									{
+										coordinate.longitude_east_west(
+											exif_gps_coordinate_builder::EastWest::West);
+									}
+									else
+									{
+										coordinate.longitude_east_west(
+											exif_gps_coordinate_builder::EastWest::East);
+									}
+								}
+								break;
+								}
 							}
-
-							result.gps = coordinate.build();
 						}
+
+						result.gps = coordinate.build();
 					}
-					break;
+				}
+				break;
 				}
 
 				const auto entry_ifd1 = offset_ifd0 + 2 + 12 * entry_count;

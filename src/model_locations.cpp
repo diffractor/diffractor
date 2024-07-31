@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -611,7 +611,7 @@ location_t location_cache::build_location(const csv_entry* entries) const
 
 	const gps_coordinate position(entries[Cols::latitude].to_double(), entries[Cols::longitude].to_double());
 	return location_t(entries[Cols::id].to_int(), entries[Cols::name].cached_string(), state, country.name(), position,
-	                  population);
+		population);
 }
 
 void location_cache::load_index()
@@ -693,14 +693,14 @@ struct location_match_possible
 };
 
 static bool find_match(const str::cached text, const std::u8string_view query, str::cached& text_result,
-                       str::part_t& highlight_result)
+	str::part_t& highlight_result)
 {
 	const auto found = ifind(text, query);
 
 	if (found != std::u8string_view::npos)
 	{
 		text_result = text;
-		highlight_result = {found, query.length()};
+		highlight_result = { found, query.length() };
 		return true;
 	}
 
@@ -708,14 +708,14 @@ static bool find_match(const str::cached text, const std::u8string_view query, s
 }
 
 static bool find_match(const std::u8string_view text, const std::u8string_view query, str::cached& text_result,
-                       str::part_t& highlight_result)
+	str::part_t& highlight_result)
 {
 	const auto found = str::ifind(text, query);
 
 	if (found != std::u8string_view::npos)
 	{
 		text_result = str::cache(text);
-		highlight_result = {found, query.length()};
+		highlight_result = { found, query.length() };
 		return true;
 	}
 
@@ -723,7 +723,7 @@ static bool find_match(const std::u8string_view text, const std::u8string_view q
 }
 
 static bool find_match(const csv_entry* entry, int entry_count, const std::u8string_view query,
-                       str::cached& text_result, str::part_t& highlight_result)
+	str::cached& text_result, str::part_t& highlight_result)
 {
 	for (auto i = 0; i < entry_count; i++)
 	{
@@ -737,7 +737,7 @@ static bool find_match(const csv_entry* entry, int entry_count, const std::u8str
 }
 
 static bool find_match(const country_t& country, const std::u8string_view query, str::cached& text_result,
-                       str::part_t& highlight_result)
+	str::part_t& highlight_result)
 {
 	if (find_match(country.name(), query, text_result, highlight_result))
 	{
@@ -759,7 +759,7 @@ static bool find_match(const country_t& country, const std::u8string_view query,
 }
 
 location_matches location_cache::auto_complete(const std::u8string_view query, const uint32_t max_results,
-                                               const gps_coordinate default_location) const
+	const gps_coordinate default_location) const
 {
 	platform::shared_lock lock(_rw);
 
@@ -781,7 +781,7 @@ location_matches location_cache::auto_complete(const std::u8string_view query, c
 		const auto short_query = query_parts.size() == 1 && query_parts[0].size() < 3;
 		const auto ngram = ngram_t(query_parts[0]);
 		auto found_ngram = std::lower_bound(_locations_by_ngram.begin(), _locations_by_ngram.end(),
-		                                    location_ngram_and_offset{ngram, 0});
+			location_ngram_and_offset{ ngram, 0 });
 
 		while (found_ngram != _locations_by_ngram.end() && found_ngram->ngram.is_possible_match(ngram))
 		{
@@ -940,7 +940,7 @@ location_t location_cache::find_by_id(const uint32_t id) const
 	platform::shared_lock lock(_rw);
 	location_t result;
 	const auto found = std::lower_bound(_locations_by_id.begin(), _locations_by_id.end(),
-	                                    location_id_and_offset{id, 0});
+		location_id_and_offset{ id, 0 });
 
 	if (found != _locations_by_id.end() && found->id == id)
 	{
@@ -960,12 +960,12 @@ location_t location_cache::find_by_id(const uint32_t id) const
 country_loc location_cache::find_country(const double x, const double y) const
 {
 	platform::shared_lock lock(_rw);
-	const kd_coordinates_t xy = {static_cast<float>(x), static_cast<float>(y)};
+	const kd_coordinates_t xy = { static_cast<float>(x), static_cast<float>(y) };
 	const auto closest = _tree.find_closest(_coords, xy);
 	const auto found = _countries.find(closest.country);
 	return found != _countries.end()
-		       ? country_loc{found->second.code2(), found->second.name(), found->second.centroid()}
-		       : country_loc{};
+		? country_loc{ found->second.code2(), found->second.name(), found->second.centroid() }
+	: country_loc{};
 }
 
 location_t location_cache::find_closest(const double x, const double y) const
@@ -979,7 +979,7 @@ location_t location_cache::find_closest(const double x, const double y) const
 	{
 		skip_bom(file);
 
-		const kd_coordinates_t xy = {static_cast<float>(x), static_cast<float>(y)};
+		const kd_coordinates_t xy = { static_cast<float>(x), static_cast<float>(y) };
 		const auto closest = _tree.find_closest(_coords, xy);
 		result = build_location(file, closest.offset);
 	}

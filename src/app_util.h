@@ -70,7 +70,7 @@ struct import_source
 
 enum class import_action
 {
-	import,
+import,
 	already_exists,
 	already_imported
 };

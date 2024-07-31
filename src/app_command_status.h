@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -45,7 +45,7 @@ private:
 
 public:
 	command_status(async_strategy& as, const dialog_ptr& dlg, const icon_index& icon, const std::u8string_view title,
-	               const size_t total) :
+		const size_t total) :
 		_async(as),
 		_dlg(dlg),
 		_icon(icon),
@@ -62,7 +62,7 @@ public:
 			_cancel
 		};
 
-		_dlg->show_controls(controls, {44 }, {44} );
+		_dlg->show_controls(controls, { 44 }, { 44 });
 	}
 
 	~command_status() override = default;
@@ -89,23 +89,23 @@ public:
 	void message(const std::u8string_view message)
 	{
 		_async.queue_ui([t = shared_from_this(), m = std::u8string(message)]()
-		{
-			if (!t->_closed)
 			{
-				t->_progress->message(m, t->_pos, t->_total);
-			}
-		});
+				if (!t->_closed)
+				{
+					t->_progress->message(m, t->_pos, t->_total);
+				}
+			});
 	}
 
 	void message(const std::u8string_view message, int64_t pos, int64_t total) override
 	{
 		_async.queue_ui([t = shared_from_this(), m = std::u8string(message), pos, total]()
-		{
-			if (!t->_closed)
 			{
-				t->_progress->message(m, pos, total);
-			}
-		});
+				if (!t->_closed)
+				{
+					t->_progress->message(m, pos, total);
+				}
+			});
 	}
 
 	bool is_canceled() const override
@@ -131,32 +131,32 @@ public:
 	void end_item(const std::u8string_view name, const item_status status) override
 	{
 		_async.queue_ui([t = shared_from_this(), n = std::u8string(name), status]()
-		{
-			if (status == item_status::success)
 			{
-				if (t->_processed_first_name.empty()) t->_processed_first_name = n;
-				++t->_processed_count;
-			}
-			else if (status == item_status::fail)
-			{
-				if (t->_failed_first_name.empty()) t->_failed_first_name = n;
-				++t->_failed_count;
-			}
-			else if (status == item_status::ignore)
-			{
-				if (t->_ignore_first_name.empty()) t->_failed_first_name = n;
-				++t->_ignore_count;
-			}
-		});
+				if (status == item_status::success)
+				{
+					if (t->_processed_first_name.empty()) t->_processed_first_name = n;
+					++t->_processed_count;
+				}
+				else if (status == item_status::fail)
+				{
+					if (t->_failed_first_name.empty()) t->_failed_first_name = n;
+					++t->_failed_count;
+				}
+				else if (status == item_status::ignore)
+				{
+					if (t->_ignore_first_name.empty()) t->_failed_first_name = n;
+					++t->_ignore_count;
+				}
+			});
 	}
 
 	void show_errors() override
 	{
 		_async.queue_ui([t = shared_from_this()]()
-		{
-			t->_completed = true;
-			t->show_results_or_close();
-		});
+			{
+				t->_completed = true;
+				t->show_results_or_close();
+			});
 	}
 
 	void wait_for_complete() const override
@@ -170,21 +170,21 @@ public:
 	void abort(const std::u8string_view error_message) override
 	{
 		_async.queue_ui([t = shared_from_this(), em = std::u8string(error_message)]()
-		{
-			t->_completed = true;
-			t->_error_message = em;
-			t->show_results_or_close();
-		});
+			{
+				t->_completed = true;
+				t->_error_message = em;
+				t->show_results_or_close();
+			});
 	}
 
 	void complete(const std::u8string_view message = {}) override
 	{
 		_async.queue_ui([t = shared_from_this(), m = std::u8string(message)]()
-		{
-			t->_completed = true;
-			t->_message = m;
-			t->show_results_or_close();
-		});
+			{
+				t->_completed = true;
+				t->_message = m;
+				t->show_results_or_close();
+			});
 	}
 
 private:
@@ -198,9 +198,9 @@ private:
 		}
 
 		result += _total
-			          ? format_plural_text(tt.processed_x_of_x_fmt, _processed_first_name, _processed_count,
-			                               df::file_size{}, _total)
-			          : format_plural_text(tt.processed_fmt, _processed_first_name, _processed_count, {}, _total);
+			? format_plural_text(tt.processed_x_of_x_fmt, _processed_first_name, _processed_count,
+				df::file_size{}, _total)
+			: format_plural_text(tt.processed_fmt, _processed_first_name, _processed_count, {}, _total);
 
 		if (_failed_count > 0)
 		{
@@ -274,7 +274,7 @@ static item_status to_status(const platform::file_op_result_code code)
 	case platform::file_op_result_code::OK: return item_status::success;
 	case platform::file_op_result_code::CANCELLED: return item_status::cancel;
 	case platform::file_op_result_code::FAILED: return item_status::fail;
-	default: ;
+	default:;
 	}
 
 	return item_status::success;

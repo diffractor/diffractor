@@ -1,5 +1,5 @@
 ﻿// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -68,7 +68,7 @@ std::u8string_view tt_prep(std::u8string_view result)
 }
 
 static void store_po_entry(lang_def& result, std::u8string& msgid, std::u8string& msgid_plural, std::u8string& msgstr,
-                           std::u8string& msgstr1)
+	std::u8string& msgstr1)
 {
 	if (!msgid.empty() && !msgstr.empty())
 	{
@@ -1333,7 +1333,7 @@ void app_text_t::load_lang(const df::file_path lang_file)
 			needed_texts.insert(one);
 			needed_texts.insert(plural);
 
-			const auto found_one = translations.find(one);		
+			const auto found_one = translations.find(one);
 
 			if (found_one != translations.end())
 			{
@@ -1386,7 +1386,7 @@ std::u8string app_text_t::translate_text(const std::u8string& text, const std::u
 }
 
 std::vector<std::u8string> app_text_t::add_translate_text(const std::vector<str::cached>& text,
-                                                          const std::u8string_view scope) const
+	const std::u8string_view scope) const
 {
 	df::hash_set<std::u8string, df::ihash, df::ieq> result;
 	result.reserve(text.size() * 2);
@@ -1397,7 +1397,7 @@ std::vector<std::u8string> app_text_t::add_translate_text(const std::vector<str:
 		result.emplace(translate_text(t.str(), scope));
 	}
 
-	return {result.begin(), result.end()};
+	return { result.begin(), result.end() };
 }
 
 

@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -39,8 +39,8 @@ namespace df
 		bool open_read(const file_path path, const bool sequential_scan = false)
 		{
 			_h = open_file(path, sequential_scan
-				                     ? platform::file_open_mode::sequential_scan
-				                     : platform::file_open_mode::read);
+				? platform::file_open_mode::sequential_scan
+				: platform::file_open_mode::read);
 			return _h != nullptr;
 		}
 
@@ -129,7 +129,7 @@ namespace df
 				const auto read = _h->read(std::bit_cast<uint8_t*>(dst), size);
 				if (read == 0) return {};
 				dst[read] = 0;
-				return str::cache({dst, std::min(static_cast<size_t>(read), str::len(dst))});
+				return str::cache({ dst, std::min(static_cast<size_t>(read), str::len(dst)) });
 			}
 
 			return {};
@@ -160,8 +160,8 @@ namespace df
 				{
 					const auto blockSize = std::min(remaining, buffer_size);
 
-					if (!seek_from_begin(pos) || !read(buffer.get(), blockSize) || 
-						!seek_from_begin(pos + delta) || 
+					if (!seek_from_begin(pos) || !read(buffer.get(), blockSize) ||
+						!seek_from_begin(pos + delta) ||
 						!write(buffer.get(), blockSize))
 					{
 						assert_true(false);

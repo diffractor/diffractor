@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -50,7 +50,7 @@ public:
 
 
 	explicit font_renderer(const ComPtr<IDWriteFactory>& factory, const ComPtr<IDWriteFontFace>& face,
-	                       ComPtr<IDWriteTextFormat> text_format, int font_size);
+		ComPtr<IDWriteTextFormat> text_format, int font_size);
 
 	uint32_t calc_line_height() const;
 	uint32_t calc_base_line_height() const;
@@ -59,11 +59,11 @@ public:
 	render_char_result render_glyph(uint16_t glyph_index, int spacing, const DWRITE_GLYPH_RUN* glyph_run);
 	sizei measure(std::wstring_view text, ui::style::text_style style, int width, int height);
 	void draw(ui::draw_context*, ID2D1RenderTarget*, std::wstring_view text, recti bounds, ui::style::text_style style,
-	          ui::color color, ui::color bg, const std::vector<ui::text_highlight_t>& highlights);
+		ui::color color, ui::color bg, const std::vector<ui::text_highlight_t>& highlights);
 	void draw(ui::draw_context*, ID2D1RenderTarget*, IDWriteTextLayout*, recti bounds, ui::color color, ui::color bg);
 	void draw(ui::draw_context*, IDWriteTextRenderer*, std::wstring_view text, recti bounds,
-	          ui::style::text_style style, ui::color color, ui::color bg,
-	          const std::vector<ui::text_highlight_t>& highlights);
+		ui::style::text_style style, ui::color color, ui::color bg,
+		const std::vector<ui::text_highlight_t>& highlights);
 	void draw(ui::draw_context*, IDWriteTextRenderer*, IDWriteTextLayout*, recti bounds, ui::color color, ui::color bg);
 };
 

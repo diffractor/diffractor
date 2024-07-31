@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -550,7 +550,7 @@ video_info_t av_format_decoder::video_information() const
 		else
 		{
 			const auto width = static_cast<int64_t>(_video_context->width);
-			const auto height = df::mul_div(width, ar.den * static_cast<int64_t>(_video_context->height),ar.num * width);
+			const auto height = df::mul_div(width, ar.den * static_cast<int64_t>(_video_context->height), ar.num * width);
 			result.display_dimensions = { static_cast<int>(width), static_cast<int>(height) };
 		}
 
@@ -1081,7 +1081,7 @@ void av_format_decoder::init_streams(int video_track, int audio_track, bool can_
 					vc->thread_count = 1;
 				}
 
-				vc->workaround_bugs = FF_BUG_AUTODETECT;				
+				vc->workaround_bugs = FF_BUG_AUTODETECT;
 				vc->thread_type = FF_THREAD_FRAME;
 
 				if (can_use_hw)

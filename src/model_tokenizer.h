@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -118,7 +118,7 @@ public:
 			if (st == parse_state::text)
 			{
 				if (c == ':' && (is_num(current_text) || current_text.size() == 1))
-				// This typically means a time 12:00 or folder c:\test
+					// This typically means a time 12:00 or folder c:\test
 				{
 					current_text += c;
 				}

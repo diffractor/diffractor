@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -23,7 +23,7 @@
 
 #include <utility>
 
-static constexpr uint32_t bytes_per_format[] = {0, 1, 1, 2, 4, 8, 1, 1, 2, 4, 8, 4, 8};
+static constexpr uint32_t bytes_per_format[] = { 0, 1, 1, 2, 4, 8, 1, 1, 2, 4, 8, 4, 8 };
 
 
 //// Tags/Constants from http://www.exiv2.org/tags.html
@@ -223,7 +223,7 @@ enum class tag_type
 
 static bool is_junk(const uint8_t* p, uint32_t s)
 {
-	static constexpr uint8_t junk_marker[] = {0x12, 0xf8, 0x0f, 0x3b,};
+	static constexpr uint8_t junk_marker[] = { 0x12, 0xf8, 0x0f, 0x3b, };
 	return s >= 4 && memcmp(p, junk_marker, 4) == 0;
 }
 
@@ -282,7 +282,7 @@ public:
 
 					if (_is_intel)
 					{
-						return str::strip_and_cache({std::bit_cast<const wchar_t*>(p), char_length});
+						return str::strip_and_cache({ std::bit_cast<const wchar_t*>(p), char_length });
 					}
 
 					const auto buffer = df::unique_alloc<uint8_t>(length + 2);
@@ -297,7 +297,7 @@ public:
 						pos += 2;
 					}
 
-					return str::strip_and_cache({std::bit_cast<const wchar_t*>(dst), char_length});
+					return str::strip_and_cache({ std::bit_cast<const wchar_t*>(dst), char_length });
 				}
 			}
 			else if (len > 5 && memcmp(p, u8"ASCII", 5) == 0)
@@ -306,8 +306,8 @@ public:
 				{
 					p = p + 8;
 					return is_junk(p, len)
-						       ? str::cached{}
-						       : str::strip_and_cache({std::bit_cast<const char8_t*>(p), len - 8});
+						? str::cached{}
+					: str::strip_and_cache({ std::bit_cast<const char8_t*>(p), len - 8 });
 				}
 			}
 			else if (is_junk(p, len))
@@ -316,11 +316,11 @@ public:
 			}
 			else if (str::is_utf16(p, len))
 			{
-				return str::strip_and_cache({std::bit_cast<const wchar_t*>(p), len / 2});
+				return str::strip_and_cache({ std::bit_cast<const wchar_t*>(p), len / 2 });
 			}
 			else if (str::is_utf8(std::bit_cast<const char8_t*>(p), len))
 			{
-				return str::strip_and_cache({std::bit_cast<const char8_t*>(p), len});
+				return str::strip_and_cache({ std::bit_cast<const char8_t*>(p), len });
 			}
 			else
 			{
@@ -486,7 +486,7 @@ struct exif_dir_entry
 	{
 		const auto len = size();
 		const auto* const sz = std::bit_cast<const char8_t*>(_data.data(data_offset(), len));
-		return sz ? std::u8string_view{sz, len} : std::u8string_view{};
+		return sz ? std::u8string_view{ sz, len } : std::u8string_view{};
 	}
 
 	bool is_intel() const
@@ -1013,9 +1013,9 @@ public:
 };
 
 exif_gps_coordinate_builder::exif_gps_coordinate_builder() : _south(NorthSouth::North),
-                                                             _west(EastWest::East),
-                                                             _latitude(invalid_coordinate),
-                                                             _longitude(invalid_coordinate)
+_west(EastWest::East),
+_latitude(invalid_coordinate),
+_longitude(invalid_coordinate)
 {
 }
 
@@ -1139,15 +1139,15 @@ public:
 			break;
 
 		case MNOTE_CANON_TAG_LENS:
-			{
-				const auto text = entry.text();
+		{
+			const auto text = entry.text();
 
-				if (!str::is_empty(text))
-				{
-					_metadata.lens = str::strip_and_cache(text);
-				}
+			if (!str::is_empty(text))
+			{
+				_metadata.lens = str::strip_and_cache(text);
 			}
-			break;
+		}
+		break;
 		}
 	}
 
@@ -1187,7 +1187,7 @@ public:
 			_metadata.f_number = entry.get_urational().to_real();
 			break;
 
-		//case Exif::EXIF_TAG_SHUTTER_SPEED_VALUE: 
+			//case Exif::EXIF_TAG_SHUTTER_SPEED_VALUE: 
 		case EXIF_TAG_EXPOSURE_TIME:
 			_metadata.exposure_time = entry.get_srational().to_real();
 			break;
@@ -1247,30 +1247,30 @@ public:
 
 		case EXIF_TAG_DATE_TIME:
 		case EXIF_TAG_DATE_TIME_ORIGINAL:
-			{
-				df::date_t ft;
+		{
+			df::date_t ft;
 
-				if (!_created_date_set &&
-					ft.parse_exif_date(entry.text()) &&
-					ft.is_valid())
-				{
-					_metadata.created_exif = ft;
-					_created_date_set = true;
-				}
+			if (!_created_date_set &&
+				ft.parse_exif_date(entry.text()) &&
+				ft.is_valid())
+			{
+				_metadata.created_exif = ft;
+				_created_date_set = true;
+			}
+		}
+		break;
+		case EXIF_TAG_DATE_TIME_DIGITIZED:
+		{
+			df::date_t ft;
+
+			if (ft.parse_exif_date(entry.text()) &&
+				ft.is_valid())
+			{
+				_metadata.created_digitized = ft;
+				_created_date_set = true;
 			}
 			break;
-		case EXIF_TAG_DATE_TIME_DIGITIZED:
-			{
-				df::date_t ft;
-
-				if (ft.parse_exif_date(entry.text()) &&
-					ft.is_valid())
-				{
-					_metadata.created_digitized = ft;
-					_created_date_set = true;
-				}
-				break;
-			}
+		}
 		}
 	}
 
@@ -1279,16 +1279,16 @@ public:
 		switch (entry._tag)
 		{
 		case EXIF_TAG_GPS_LATITUDE:
-			{
-				const auto degrees = entry.get_urational(0);
-				const auto minutes = entry.get_urational(1);
-				const auto seconds = entry.get_urational(2);
-				const auto latitude = gps_coordinate::dms_to_decimal(degrees.to_real(), minutes.to_real(),
-				                                                     seconds.to_real());
+		{
+			const auto degrees = entry.get_urational(0);
+			const auto minutes = entry.get_urational(1);
+			const auto seconds = entry.get_urational(2);
+			const auto latitude = gps_coordinate::dms_to_decimal(degrees.to_real(), minutes.to_real(),
+				seconds.to_real());
 
-				_gps_coordinate.latitude(latitude);
-			}
-			break;
+			_gps_coordinate.latitude(latitude);
+		}
+		break;
 
 		case EXIF_TAG_GPS_LATITUDE_REF:
 			// 'N' or 'S'
@@ -1303,16 +1303,16 @@ public:
 			break;
 
 		case EXIF_TAG_GPS_LONGITUDE:
-			{
-				const auto degrees = entry.get_urational(0);
-				const auto minutes = entry.get_urational(1);
-				const auto seconds = entry.get_urational(2);
-				const auto longitude = gps_coordinate::
-					dms_to_decimal(degrees.to_real(), minutes.to_real(), seconds.to_real());
+		{
+			const auto degrees = entry.get_urational(0);
+			const auto minutes = entry.get_urational(1);
+			const auto seconds = entry.get_urational(2);
+			const auto longitude = gps_coordinate::
+				dms_to_decimal(degrees.to_real(), minutes.to_real(), seconds.to_real());
 
-				_gps_coordinate.longitude(longitude);
-			}
-			break;
+			_gps_coordinate.longitude(longitude);
+		}
+		break;
 
 		case EXIF_TAG_GPS_LONGITUDE_REF:
 			// 'E' or 'W'
@@ -1362,25 +1362,25 @@ void metadata_exif::fix_exif_dimensions(df::span data, const sizei dimensions)
 		df::assert_true(!is_exif_signature(data));
 
 		const auto h = [dimensions, data](exif_dir_entry& e)
-		{
-			if (e._tag_type == tag_type::exif)
 			{
-				switch (e._tag)
+				if (e._tag_type == tag_type::exif)
 				{
-				case EXIF_TAG_PIXEL_X_DIMENSION:
-					set_uint16(e, data, dimensions.cx);
-					break;
+					switch (e._tag)
+					{
+					case EXIF_TAG_PIXEL_X_DIMENSION:
+						set_uint16(e, data, dimensions.cx);
+						break;
 
-				case EXIF_TAG_PIXEL_Y_DIMENSION:
-					set_uint16(e, data, dimensions.cy);
-					break;
+					case EXIF_TAG_PIXEL_Y_DIMENSION:
+						set_uint16(e, data, dimensions.cy);
+						break;
 
-				case EXIF_TAG_ORIENTATION:
-					set_uint16(e, data, static_cast<int>(ui::orientation::top_left));
-					break;
+					case EXIF_TAG_ORIENTATION:
+						set_uint16(e, data, static_cast<int>(ui::orientation::top_left));
+						break;
+					}
 				}
-			}
-		};
+			};
 
 		exif_enumerate(h, data);
 	}
@@ -1393,21 +1393,21 @@ void metadata_exif::fix_exif_rating(df::span data, int rating)
 		df::assert_true(!is_exif_signature(data));
 
 		const auto h = [rating, data](exif_dir_entry& e)
-		{
-			if (e._tag_type == tag_type::exif)
 			{
-				switch (e._tag)
+				if (e._tag_type == tag_type::exif)
 				{
-				case EXIF_TAG_IMAGE_RATING:
-					set_uint16(e, data, rating);
-					break;
+					switch (e._tag)
+					{
+					case EXIF_TAG_IMAGE_RATING:
+						set_uint16(e, data, rating);
+						break;
 
-				case EXIF_TAG_IMAGE_RATING_PERCENT:
-					set_uint16(e, data, rating * 20);
-					break;
+					case EXIF_TAG_IMAGE_RATING_PERCENT:
+						set_uint16(e, data, rating * 20);
+						break;
+					}
 				}
-			}
-		};
+			};
 
 		exif_enumerate(h, data);
 	}
@@ -1431,11 +1431,11 @@ static long get_int(ExifData* ed, ExifEntry* ee)
 		value = exif_get_slong(ee->data, o);
 		break;
 	default:
-		{
-			const auto message = "Invalid Exif byte order"sv;
-			df::log(__FUNCTION__, message);
-			throw app_exception(std::string(message));
-		}
+	{
+		const auto message = "Invalid Exif byte order"sv;
+		df::log(__FUNCTION__, message);
+		throw app_exception(std::string(message));
+	}
 	}
 	return value;
 }
@@ -1508,7 +1508,7 @@ metadata_kv_list metadata_exif::to_info(df::cspan data)
 					if (!is_junk(std::bit_cast<const uint8_t*>(text), 4))
 					{
 						result.emplace_back(str::cache(exif_tag_get_name_in_ifd(e->tag, exif_entry_get_ifd(e))),
-						                    std::u8string(str::utf8_cast(text)));
+							std::u8string(str::utf8_cast(text)));
 					}
 				}
 			}
@@ -1590,7 +1590,7 @@ void add_tag(ExifData* exif, ExifTag tag, const float val)
 		if (entry)
 		{
 			update_tag(exif, EXIF_IFD_0, EXIF_TAG_ORIENTATION, 1);
-			
+
 			const auto len = val.size() + 1;
 			const auto ifd = EXIF_IFD_EXIF;
 			const auto buf = static_cast<uint8_t*>(exif_mem_alloc(mem, len));

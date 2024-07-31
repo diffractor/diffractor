@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -96,11 +96,11 @@ const uint8_t sboxinv[256] = {
 
 aes256::aes256(const byte_array& key)
 	: m_key(key.size() > KEY_SIZE ? KEY_SIZE : key.size(), 0)
-	  , m_salt(KEY_SIZE - m_key.size(), 0)
-	  , m_rkey(KEY_SIZE, 0)
-	  , m_buffer_pos(0)
-	  , m_remainingLength(0)
-	  , m_decryptInitialized(false)
+	, m_salt(KEY_SIZE - m_key.size(), 0)
+	, m_rkey(KEY_SIZE, 0)
+	, m_buffer_pos(0)
+	, m_remainingLength(0)
+	, m_decryptInitialized(false)
 {
 	for (auto i = 0u; i < m_key.size(); ++i)
 	{

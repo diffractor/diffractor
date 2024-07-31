@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -122,7 +122,7 @@ public:
 
 
 static bool decode_rle_pane(ui::surface_ptr& surface, msb_stream& stream, const int channel_shift,
-                            const int channel_scale)
+	const int channel_scale)
 {
 	const int cx = surface->width();
 	const int cy = surface->height();
@@ -186,7 +186,7 @@ static bool decode_rle_pane(ui::surface_ptr& surface, msb_stream& stream, const 
 }
 
 static bool decode_uncompressed_plane(ui::surface_ptr& surface, msb_stream& stream, const int channel_shift,
-                                      const int channel_scale)
+	const int channel_scale)
 {
 	const int cx = surface->width();
 	const int cy = surface->height();

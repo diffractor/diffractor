@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -61,7 +61,7 @@ namespace crypto
 	inline std::u8string to_sha1(const std::u8string_view input)
 	{
 		sha1 checksum;
-		checksum.update({std::bit_cast<const uint8_t*>(input.data()), input.size()});
+		checksum.update({ std::bit_cast<const uint8_t*>(input.data()), input.size() });
 
 		uint8_t digest[sha1::DIGEST_SIZE];
 		checksum.final(digest);
@@ -72,7 +72,7 @@ namespace crypto
 	inline std::u8string to_sha256(const std::u8string_view input)
 	{
 		sha256 checksum;
-		checksum.update({std::bit_cast<const uint8_t*>(input.data()), input.size()});
+		checksum.update({ std::bit_cast<const uint8_t*>(input.data()), input.size() });
 
 		uint8_t digest[sha256::DIGEST_SIZE];
 		checksum.final(digest);

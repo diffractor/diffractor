@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -123,7 +123,7 @@ public:
 		{
 			const auto min_size = std::min(96, _client_extent.cx / 2);
 			const auto s = df::mul_div(std::clamp(x, min_size, _client_extent.cx - min_size),
-			                           settings_t::item_splitter_max, _client_extent.cx);
+				settings_t::item_splitter_max, _client_extent.cx);
 
 			if (s != setting.item_splitter_pos)
 			{
@@ -169,7 +169,7 @@ public:
 	recti calc_items_bounds() const
 	{
 		const auto padding = _scroll_width / 3;
-		const auto x_max = _client_extent.cx  - (_scroll_width * 3);
+		const auto x_max = _client_extent.cx - (_scroll_width * 3);
 		return recti(std::min(x_max, splitter_pos() + padding), 0, _client_extent.cx, _client_extent.cy);
 	}
 

@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -49,7 +49,7 @@ private:
 	* Note: only produces half as many data points as the input had.
 	* This is roughly a consequence of the Nyquist sampling theorm thingy.
 	* (FIXME - make this comment better, and helpful.)
-	* 
+	*
 	* The two divisions by 4 are also a consequence of this: the contributions
 	* returned for each frequency are split into two parts, one at i in the
 	* table, and the other at FFT_BUFFER_SIZE - i, except for i = 0 and
@@ -264,9 +264,9 @@ private:
 			//}
 
 			const auto found = std::lower_bound(_q.begin(), _q.end(), frame, [](auto&& l, auto&& r)
-			{
-				return l._time < r._time;
-			});
+				{
+					return l._time < r._time;
+				});
 
 			_q.emplace(found, frame); // .emplace_back(frame);
 
@@ -412,7 +412,7 @@ public:
 				colors[i] = ui::color(rr, gg, bb, static_cast<float>(a));
 
 				recti col(df::round(x - inflate), df::round(y - (yl * hh / scaleY)), df::round(x + inflate),
-				          df::round(y + (yr * hh / scaleY)));
+					df::round(y + (yr * hh / scaleY)));
 				rects[i] = col.offset(offset);
 			}
 		}

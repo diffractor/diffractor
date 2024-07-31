@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -63,7 +63,7 @@ protected:
 
 		void render(ui::draw_context& dc, pointi element_offset) const override
 		{
-			const auto bg_alpha = dc.colors.alpha * dc.colors.bg_alpha;			
+			const auto bg_alpha = dc.colors.alpha * dc.colors.bg_alpha;
 			const auto dir_color = ui::color(ui::style::color::dialog_selected_background, dc.colors.alpha);
 			const auto logical_bounds = bounds.offset(element_offset);
 
@@ -176,7 +176,7 @@ public:
 		}
 
 		auto x_max = 0;
-		auto shrink_col_total = 0;		
+		auto shrink_col_total = 0;
 
 		for (int i = 0; i < col_count; i++)
 		{
@@ -211,7 +211,7 @@ public:
 	}
 
 	void deactivate() override
-	{		
+	{
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc) override;
@@ -237,9 +237,9 @@ public:
 		return result;
 	}
 
-	
 
-	void render_headers(ui::draw_context& dc) 
+
+	void render_headers(ui::draw_context& dc)
 	{
 		const auto cy = dc.text_line_height(ui::style::font_face::dialog) + (dc.padding2 * 2);
 		const auto bg_alpha = dc.colors.alpha * 0.77f;
@@ -323,7 +323,7 @@ public:
 		_state.invalidate_view(view_invalid::controller);
 	}
 
-	
+
 };
 
 class view_controls_host : public view_host, public std::enable_shared_from_this<view_controls_host>

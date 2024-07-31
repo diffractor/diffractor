@@ -231,11 +231,11 @@ static std::vector<files::d64_item> dir_list(const d64_media& disk)
 
 			std::u8string file_type;
 
-			if (entry.file_type ==0x80) file_type = u8"DEL"sv;
-			if (entry.file_type ==0x81) file_type = u8"SEQ"sv;
-			if (entry.file_type ==0x82) file_type = u8"PRG"sv;
-			if (entry.file_type ==0x83) file_type = u8"USR"sv;
-			if (entry.file_type ==0x84) file_type = u8"REL"sv;
+			if (entry.file_type == 0x80) file_type = u8"DEL"sv;
+			if (entry.file_type == 0x81) file_type = u8"SEQ"sv;
+			if (entry.file_type == 0x82) file_type = u8"PRG"sv;
+			if (entry.file_type == 0x83) file_type = u8"USR"sv;
+			if (entry.file_type == 0x84) file_type = u8"REL"sv;
 			if (entry.file_type == 0x99) file_type = u8"CRT"sv;
 
 			for (const auto c : file_type)
@@ -266,23 +266,23 @@ static std::vector<files::d64_item> dir_list(const d64_media& disk)
 	return result;
 }
 
-static d64_media parse_disk(const uint8_t * const data, const size_t data_len)
+static d64_media parse_disk(const uint8_t* const data, const size_t data_len)
 {
 	const auto is_d64 = data_len == 0x002ab00;
 	const auto is_d81 = data_len == 0x00c8000;
 
 	const int SECTOR_SIZE = 256;
 	const int DIR_TRACK = is_d64 ? 18 : 40;
-	const int DIR_SECTOR = is_d64 ? 1 : 3; 
+	const int DIR_SECTOR = is_d64 ? 1 : 3;
 	const int DIR_ENTRY_SIZE = 32;
 	const int SECTORS_PER_TRACK = is_d64 ? 21 : 40;
 
 	d64_media disk;
-		
+
 	int next_track = DIR_TRACK;
 	int next_sector = DIR_SECTOR;
 
-	while (next_track != 0) 
+	while (next_track != 0)
 	{
 		const auto dir_sector_offset = ((next_track - 1) * SECTORS_PER_TRACK + next_sector) * SECTOR_SIZE;
 
@@ -294,7 +294,7 @@ static d64_media parse_disk(const uint8_t * const data, const size_t data_len)
 			const auto dir_entry = dir_sector_offset + i;
 			uint8_t file_type = data[dir_entry + 2];
 
-			if (file_type != 0) 
+			if (file_type != 0)
 			{
 				media_entry entry;
 				entry.file_type = file_type;
@@ -360,7 +360,7 @@ d64_media parse_t64(const uint8_t* const data, const size_t data_len)
 	const auto header = reinterpret_cast<const t64_header*>(data);
 
 	for (uint16_t i = 0; i < header->used_entries; ++i)
-	{		
+	{
 		const auto dir_offset = sizeof(t64_header) + i * sizeof(t64_file_entry);
 
 		if (dir_offset + sizeof(t64_file_entry) > data_len)

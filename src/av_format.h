@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -108,7 +108,7 @@ public:
 	bool scale_surface(const ui::const_surface_ptr& surface_in, ui::surface_ptr& surface_out, sizei dimensions_out);
 	bool scale_surface(const av_frame_ptr& frame, ui::surface_ptr& surface_out);
 	bool scale_frame(const AVFrame& frame, ui::surface_ptr& surface, sizei max_dim, double time,
-	                 ui::orientation orientation);
+		ui::orientation orientation);
 };
 
 
@@ -236,7 +236,7 @@ public:
 	str::cached audio_codec = {};
 	int audio_sample_rate = 0;
 	int audio_channels = 0;
-	
+
 	int64_t bitrate = 0;
 	double start = 0;
 	double end = 0;
@@ -302,7 +302,7 @@ public:
 
 	int64_t bitrate() const;
 	const AVStream* Stream(uint32_t i) const;
-	const ui::image_ptr &cover_art() const { return _cover_art; }
+	const ui::image_ptr& cover_art() const { return _cover_art; }
 
 
 private:
@@ -340,7 +340,7 @@ private:
 	ui::orientation calc_orientation() const;
 
 	bool decode_frame(ui::surface_ptr& dest_surface, AVCodecContext* ctx, const av_packet_ptr& packet,
-	                  double audio_time, sizei max_dim);
+		double audio_time, sizei max_dim);
 
 	friend class av_player;
 	friend class av_session;
@@ -383,9 +383,9 @@ public:
 	audio_info_t audio_info() const;
 
 	bool extract_seek_frame(ui::surface_ptr& dest_surface, sizei max_dim, double pos_numerator = 10,
-	                        double pos_denominator = 100);
+		double pos_denominator = 100);
 	bool extract_thumbnail(ui::surface_ptr& dest_surface, sizei max_dim, double pos_numerator = 10,
-	                       double pos_denominator = 100);
+		double pos_denominator = 100);
 	file_load_result render_frame(const av_frame_ptr& frame_in) const;
 	void receive_frames(av_packet_queue& packets, av_frame_queue& frames);
 

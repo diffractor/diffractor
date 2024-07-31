@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -111,7 +111,7 @@ struct view_element_padding
 
 	operator sizei() const
 	{
-		return {cx, cy};
+		return { cx, cy };
 	}
 
 	constexpr sizei operator *(const double d) const noexcept
@@ -125,8 +125,8 @@ class view_element
 {
 public:
 	recti bounds;
-	view_element_padding padding{3, 3};
-	view_element_padding margin{0, 0};
+	view_element_padding padding{ 3, 3 };
+	view_element_padding margin{ 0, 0 };
 	view_element_style style = view_element_style::visible;
 
 	ui::color _bg_color;
@@ -165,7 +165,7 @@ public:
 
 	sizei porch() const
 	{
-		return {padding.cx + margin.cx, padding.cy + margin.cy};
+		return { padding.cx + margin.cx, padding.cy + margin.cy };
 	}
 
 	virtual bool is_control_area(const pointi loc, const pointi element_offset) const
@@ -204,7 +204,7 @@ public:
 	}
 
 	virtual view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
-	                                                     const std::vector<recti>& excluded_bounds);
+		const std::vector<recti>& excluded_bounds);
 
 	bool is_style_bit_set(const view_element_style mask) const
 	{
@@ -333,7 +333,7 @@ public:
 				el.line_end = false;
 
 				const auto x_right = x + extent.cx + (element_padding.cx * 2);
-				const auto should_break = items_on_line > 0 && !previous_no_break && 
+				const auto should_break = items_on_line > 0 && !previous_no_break &&
 					(previous_line_break || (x_right - left_x) > current_width_limit || ev->is_row_title() || ev->is_new_line_style());
 
 				if (should_break)
@@ -387,7 +387,7 @@ public:
 			max_y = std::max(max_y, y + cy);
 		}
 
-		return {max_x, max_y};
+		return { max_x, max_y };
 	}
 
 	sizei measure(const std::vector<view_element_ptr>& elements, ui::measure_context& mc, int width_limit) const
@@ -426,7 +426,7 @@ public:
 					_extents[i].bounds.right = bounds.right - padding.cx;
 				}
 				else if (is_centered)
-				{					
+				{
 					const auto cx_offset = (bounds.right - (_extents[i].bounds.right + padding.cx)) / 2;
 					auto line_i = i;
 
@@ -501,8 +501,8 @@ struct calc_stack_elements_result
 };
 
 static calc_stack_elements_result calc_stack_elements(ui::measure_context& mc, const recti avail_bounds,
-                                                      const std::vector<view_element_ptr>& elements,
-                                                      const bool vertical_center = false, const sizei padding = {0, 0})
+	const std::vector<view_element_ptr>& elements,
+	const bool vertical_center = false, const sizei padding = { 0, 0 })
 {
 	calc_stack_elements_result result;
 
@@ -615,8 +615,8 @@ static calc_stack_elements_result calc_stack_elements(ui::measure_context& mc, c
 }
 
 static int stack_elements(ui::measure_context& mc, ui::control_layouts& positions, const recti avail_bounds,
-                          const std::vector<view_element_ptr>& elements, const bool vertical_center = false,
-                          const sizei padding = {0, 0})
+	const std::vector<view_element_ptr>& elements, const bool vertical_center = false,
+	const sizei padding = { 0, 0 })
 {
 	df::assert_true(elements.size() == std::unordered_set<view_element_ptr>(elements.begin(), elements.end()).size());
 	// items need to be unique
@@ -765,7 +765,7 @@ public:
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override;
+		const std::vector<recti>& excluded_bounds) override;
 };
 
 struct view_hover_element
@@ -815,7 +815,7 @@ protected:
 
 public:
 	text_element_base(std::u8string_view text,
-	                  const view_element_style s = view_element_style::none) noexcept : view_element(s), _text(text)
+		const view_element_style s = view_element_style::none) noexcept : view_element(s), _text(text)
 	{
 	}
 
@@ -848,8 +848,8 @@ public:
 		if (_tl)
 		{
 			const auto clr = _foreground_clr
-				                 ? ui::color(_foreground_clr, dc.colors.alpha)
-				                 : ui::color(dc.colors.foreground, dc.colors.alpha);
+				? ui::color(_foreground_clr, dc.colors.alpha)
+				: ui::color(dc.colors.foreground, dc.colors.alpha);
 			dc.draw_text(_tl, logical_bounds, clr, bg);
 		}
 	}
@@ -883,7 +883,7 @@ class text_element final : public std::enable_shared_from_this<text_element>, pu
 {
 public:
 	text_element(std::u8string_view text, const ui::style::font_face font, const ui::style::text_style text_style,
-	             const view_element_style style_in) noexcept : text_element_base(text, style_in)
+		const view_element_style style_in) noexcept : text_element_base(text, style_in)
 	{
 		_font = font;
 		_text_style = text_style;
@@ -942,9 +942,9 @@ private:
 
 public:
 	link_element(std::u8string_view text, commands cmd, const ui::style::font_face font,
-	             const ui::style::text_style text_style,
-	             const view_element_style style_in = view_element_style::none, bool full_background = false) noexcept : text_element_base(
-		text, style_in), _cmd(cmd), _full_background(full_background)
+		const ui::style::text_style text_style,
+		const view_element_style style_in = view_element_style::none, bool full_background = false) noexcept : text_element_base(
+			text, style_in), _cmd(cmd), _full_background(full_background)
 	{
 		_font = font;
 		_text_style = text_style;
@@ -952,8 +952,8 @@ public:
 	}
 
 	link_element(std::u8string_view text, std::function<void()> func, const ui::style::font_face font,
-	             const ui::style::text_style text_style,
-	             const view_element_style style_in = view_element_style::none) noexcept :
+		const ui::style::text_style text_style,
+		const view_element_style style_in = view_element_style::none) noexcept :
 		text_element_base(text, style_in), _invoke(std::move(func))
 	{
 		_font = font;
@@ -962,8 +962,8 @@ public:
 	}
 
 	link_element(std::u8string_view text, std::function<void()> func, std::function<void(view_hover_element&)> tooltip,
-	             const ui::style::font_face font, const ui::style::text_style text_style,
-	             const view_element_style style_in = view_element_style::none) noexcept :
+		const ui::style::font_face font, const ui::style::text_style text_style,
+		const view_element_style style_in = view_element_style::none) noexcept :
 		text_element_base(text, style_in), _invoke(std::move(func)), _tooltip(std::move(tooltip))
 	{
 		_font = font;
@@ -1029,45 +1029,45 @@ public:
 	void tooltip(view_hover_element& hover, pointi loc, pointi element_offset) const override;
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override;
+		const std::vector<recti>& excluded_bounds) override;
 };
 
 inline view_element_ptr make_icon_element(const icon_index i, const view_element_style style_in)
 {
-	const wchar_t text[2] = {static_cast<wchar_t>(i), 0};
+	const wchar_t text[2] = { static_cast<wchar_t>(i), 0 };
 	return std::make_shared<text_element>(str::utf16_to_utf8(text), ui::style::font_face::icons,
-	                                      ui::style::text_style::single_line_center, style_in);
+		ui::style::text_style::single_line_center, style_in);
 }
 
 inline view_element_ptr make_icon_element(const icon_index i, const size_t repeat, const view_element_style style_in)
 {
 	const std::wstring text(repeat, static_cast<wchar_t>(i));
 	return std::make_shared<text_element>(str::utf16_to_utf8(text), ui::style::font_face::icons,
-	                                      ui::style::text_style::single_line_center, style_in);
+		ui::style::text_style::single_line_center, style_in);
 }
 
 inline view_element_ptr make_icon_link_element(const icon_index i, commands cmd, const view_element_style style_in)
 {
-	const wchar_t text[2] = {static_cast<wchar_t>(i), 0};
+	const wchar_t text[2] = { static_cast<wchar_t>(i), 0 };
 	return std::make_shared<link_element>(str::utf16_to_utf8(text), cmd, ui::style::font_face::icons,
-	                                      ui::style::text_style::single_line_center, style_in);
+		ui::style::text_style::single_line_center, style_in);
 }
 
 inline view_element_ptr make_icon_link_element(const icon_index i, const size_t repeat,
-                                               const std::function<void()>& func,
-                                               const std::function<void(view_hover_element&)>& tooltip)
+	const std::function<void()>& func,
+	const std::function<void(view_hover_element&)>& tooltip)
 {
 	const std::wstring text(repeat, static_cast<wchar_t>(i));
 	return std::make_shared<link_element>(str::utf16_to_utf8(text), func, tooltip, ui::style::font_face::icons,
-	                                      ui::style::text_style::single_line_center, view_element_style::none);
+		ui::style::text_style::single_line_center, view_element_style::none);
 }
 
 inline void xdraw_icon(ui::draw_context& dc, const icon_index i, const recti bounds, const ui::color c,
-                       const ui::color bg)
+	const ui::color bg)
 {
-	const wchar_t text[2] = {static_cast<wchar_t>(i), 0};
+	const wchar_t text[2] = { static_cast<wchar_t>(i), 0 };
 	dc.draw_text(str::utf16_to_utf8(text), bounds, ui::style::font_face::icons,
-	             ui::style::text_style::single_line_center, c, bg);
+		ui::style::text_style::single_line_center, c, bg);
 }
 
 class surface_element : public view_element
@@ -1108,7 +1108,7 @@ public:
 	{
 		if (!is_valid(_surface)) return {};
 		return ui::scale_dimensions(_surface->dimensions(),
-		                            _max_size == 0 ? width_limit : std::min(_max_size, width_limit), true);
+			_max_size == 0 ? width_limit : std::min(_max_size, width_limit), true);
 	}
 
 	void dispatch_event(const view_element_event& event) override
@@ -1142,7 +1142,7 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		return {width_limit, mc.padding2};
+		return { width_limit, mc.padding2 };
 	}
 };
 
@@ -1155,7 +1155,7 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		return {width_limit, _height ? _height : mc.padding2};
+		return { width_limit, _height ? _height : mc.padding2 };
 	}
 
 	int _height;

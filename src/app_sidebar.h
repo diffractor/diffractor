@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -183,7 +183,7 @@ struct text_layout_state
 	}
 
 	void lazy_load(ui::measure_context& mc, const std::u8string& text_in, const ui::style::text_style style_in,
-	               const ui::style::font_face font_in = ui::style::font_face::dialog)
+		const ui::style::font_face font_in = ui::style::font_face::dialog)
 	{
 		const auto need_create = tf == nullptr ||
 			text != text_in ||
@@ -241,8 +241,8 @@ public:
 		render_background(dc, element_offset);
 
 		const auto draw_clr = clr
-			                      ? ui::color(ui::average(clr, dc.colors.foreground), dc.colors.alpha)
-			                      : ui::color(dc.colors.foreground, dc.colors.alpha);
+			? ui::color(ui::average(clr, dc.colors.foreground), dc.colors.alpha)
+			: ui::color(dc.colors.foreground, dc.colors.alpha);
 		const auto has_text = !title_layout.is_empty();
 		const auto has_image = icon != icon_index::none;
 
@@ -258,7 +258,7 @@ public:
 
 			const std::wstring text(icon_repeat, static_cast<wchar_t>(icon));
 			icon_layout.lazy_load(dc, str::utf16_to_utf8(text), ui::style::text_style::single_line_center,
-			                      ui::style::font_face::icons);
+				ui::style::font_face::icons);
 			dc.draw_text(icon_layout.tf, r, draw_clr, {});
 			x += cx + dc.padding1;
 		}
@@ -309,12 +309,12 @@ public:
 			cy = std::max(cy, text_extent.cy);
 		}
 
-		return {width_limit, cy};
+		return { width_limit, cy };
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
+		const pointi element_offset,
+		const std::vector<recti>& excluded_bounds) override
 	{
 		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 	}
@@ -329,21 +329,21 @@ public:
 		{
 			result.elements->add(make_icon_element(tooltip_icon, icon_repeat, view_element_style::no_break));
 			result.elements->add(std::make_shared<text_element>(title_layout.text, ui::style::font_face::title,
-			                                                   ui::style::text_style::multiline,
-			                                                   view_element_style::line_break));
+				ui::style::text_style::multiline,
+				view_element_style::line_break));
 		}
 
 		if (str::is_empty(tooltip_text))
 		{
 			result.elements->add(std::make_shared<text_element>(search.text(), ui::style::font_face::dialog,
-			                                                   ui::style::text_style::multiline,
-			                                                   view_element_style::line_break));
+				ui::style::text_style::multiline,
+				view_element_style::line_break));
 		}
 		else
 		{
 			result.elements->add(std::make_shared<text_element>(tooltip_text, ui::style::font_face::dialog,
-			                                                   ui::style::text_style::multiline,
-			                                                   view_element_style::line_break));
+				ui::style::text_style::multiline,
+				view_element_style::line_break));
 		}
 
 		const auto has_folder = search.has_selector();
@@ -415,11 +415,11 @@ public:
 			r.bottom -= graph_height;
 			const std::wstring text(1, static_cast<wchar_t>(icon));
 			icon_layout.lazy_load(dc, str::utf16_to_utf8(text), ui::style::text_style::single_line_center,
-			                      ui::style::font_face::icons);
+				ui::style::font_face::icons);
 			dc.draw_text(icon_layout.tf, r, draw_clr, {});
 			x += dc.icon_cxy + dc.padding1;
 		}
-		
+
 		auto text_bounds = logical_bounds;
 		text_bounds.left = x;
 		text_bounds.bottom -= graph_height + dc.padding1;
@@ -434,12 +434,12 @@ public:
 
 		dc.draw_rect(graph_bounds, ui::color(ui::style::color::sidebar_background, draw_clr.a).scale(1.22f));
 		dc.draw_rect(used_bounds,
-		             ui::color(
-			             ui::average(ui::style::color::sidebar_background, ui::style::color::important_background),
-			             draw_clr.a));
+			ui::color(
+				ui::average(ui::style::color::sidebar_background, ui::style::color::important_background),
+				draw_clr.a));
 
 		const auto total_text = str::format(u8"{}|{}"sv, prop::format_size(_drive.used),
-		                                    prop::format_size(_drive.capacity));
+			prop::format_size(_drive.capacity));
 
 		if (!str::is_empty(total_text))
 		{
@@ -457,12 +457,12 @@ public:
 	{
 		const auto cy = mc.text_line_height(ui::style::font_face::dialog);
 		const auto graph_height = df::round(_graph_height * mc.scale_factor);
-		return {width_limit, cy + graph_height + mc.padding1 };
+		return { width_limit, cy + graph_height + mc.padding1 };
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
+		const pointi element_offset,
+		const std::vector<recti>& excluded_bounds) override
 	{
 		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 	}
@@ -471,8 +471,8 @@ public:
 	{
 		result.elements->add(make_icon_element(icon, view_element_style::no_break));
 		result.elements->add(std::make_shared<text_element>(_drive.name, ui::style::font_face::title,
-		                                                   ui::style::text_style::multiline,
-		                                                   view_element_style::line_break));
+			ui::style::text_style::multiline,
+			view_element_style::line_break));
 
 
 		const auto table = std::make_shared<ui::table_element>(view_element_style::center);
@@ -539,16 +539,16 @@ public:
 			i->title_layout.text = folder.name();
 			i->search = df::search_t().add_selector(df::item_selector(folder));
 			i->calc_sum = [folder](view_state& s, df::cancel_token token)
-			{
-				return s.item_index.calc_folder_summary(folder, token);
-			};
+				{
+					return s.item_index.calc_folder_summary(folder, token);
+				};
 			results.emplace_back(i);
 		}
 
 		std::ranges::sort(results, [](auto&& l, auto&& r)
-		{
-			return str::icmp(l->title_layout.text, r->title_layout.text) < 0;
-		});
+			{
+				return str::icmp(l->title_layout.text, r->title_layout.text) < 0;
+			});
 
 		return results;
 	}
@@ -585,15 +585,15 @@ public:
 				item->title_layout.text = tt.translate_text(title);
 				item->search = search;
 				item->calc_sum = [search](view_state& s, df::cancel_token token)
-				{
-					return s.item_index.count_matches(search, token);
-				};
+					{
+						return s.item_index.count_matches(search, token);
+					};
 				results.emplace_back(item);
 			}
 		}
 
 		results.emplace_back(create_item(s, existing, u8"@duplicates"s, icon_index::compare, tt.duplicates,
-		                                 tt.duplicates_tooltip, 0));
+			tt.duplicates_tooltip, 0));
 
 		return results;
 	}
@@ -646,9 +646,9 @@ public:
 		}
 
 		str::split2(setting.favorite_tags, true, [&tags](std::u8string_view part)
-		{
-			tags.emplace_back(part, df::file_group_histogram{});
-		});
+			{
+				tags.emplace_back(part, df::file_group_histogram{});
+			});
 
 		compact_summary(tags);
 
@@ -675,7 +675,7 @@ public:
 	}
 
 	search_item_ptr create_rating_item(view_state& s, const search_items_by_key_t& existing, const std::u8string& key,
-	                                   const int rating) const
+		const int rating) const
 	{
 		auto i = create_or_find_item(s, existing, key);
 		i->tooltip_icon = i->icon = icon_index::star_solid;
@@ -687,8 +687,8 @@ public:
 	}
 
 	search_item_ptr create_item(view_state& s, const search_items_by_key_t& existing, const std::u8string& key,
-	                            icon_index icon, app_text_t::text_t name, app_text_t::text_t tooltip,
-	                            const ui::color32 clr = 0) const
+		icon_index icon, app_text_t::text_t name, app_text_t::text_t tooltip,
+		const ui::color32 clr = 0) const
 	{
 		auto i = create_or_find_item(s, existing, key);
 		i->tooltip_icon = i->icon = icon;
@@ -697,9 +697,9 @@ public:
 		i->tooltip_text = tooltip;
 		i->search = df::search_t::parse(key);
 		i->calc_sum = [search = i->search](view_state& s, df::cancel_token token)
-		{
-			return s.item_index.count_matches(search, token);
-		};
+			{
+				return s.item_index.count_matches(search, token);
+			};
 		return i;
 	}
 
@@ -713,7 +713,7 @@ public:
 		results.emplace_back(create_rating_item(s, existing, u8"rating:1"s, 1));
 
 		results.emplace_back(create_item(s, existing, u8"rating:-1"s, icon_index::cancel, tt.command_rate_rejected, {},
-		                                 color_rate_rejected));
+			color_rate_rejected));
 		return results;
 	}
 
@@ -754,9 +754,9 @@ public:
 				i->tooltip_text = {};
 				i->search = search;
 				i->calc_sum = [label](view_state& s, df::cancel_token token)
-				{
-					return s.item_index.label_summary(label);
-				};
+					{
+						return s.item_index.label_summary(label);
+					};
 				i->summary = lab.second;
 				results.emplace_back(i);
 			}
@@ -767,7 +767,7 @@ public:
 
 
 	search_item_ptr create_or_find_item(view_state& s, const search_items_by_key_t& existing,
-	                                    const std::u8string& key) const
+		const std::u8string& key) const
 	{
 		const auto found = existing.find(key);
 
@@ -791,7 +791,7 @@ static int calc_indexing_perc(const index_statistic& stats)
 }
 
 class sidebar_indexing_element final : public view_element,
-                                       public std::enable_shared_from_this<sidebar_indexing_element>
+	public std::enable_shared_from_this<sidebar_indexing_element>
 {
 private:
 	ui::style::font_face _font = ui::style::font_face::title;
@@ -822,14 +822,14 @@ public:
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
 		const auto extent = mc.measure_text(format_text(), _font, ui::style::text_style::multiline_center, width_limit);
-		return {width_limit, extent.cy};
+		return { width_limit, extent.cy };
 	}
 
 	void tooltip(view_hover_element& hover, const pointi loc, const pointi element_offset) const override
 	{
 		hover.elements->add(std::make_shared<text_element>(tt.indexing_message, ui::style::font_face::dialog,
-		                                                  ui::style::text_style::multiline,
-		                                                  view_element_style::line_break));
+			ui::style::text_style::multiline,
+			view_element_style::line_break));
 		hover.elements->add(std::make_shared<action_element>(tt.click_collection_options));
 
 		hover.active_bounds = hover.window_bounds = bounds.offset(element_offset);
@@ -845,15 +845,15 @@ public:
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
+		const pointi element_offset,
+		const std::vector<recti>& excluded_bounds) override
 	{
 		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 	}
 };
 
 class sidebar_file_type_element final : public view_element,
-                                        public std::enable_shared_from_this<sidebar_file_type_element>
+	public std::enable_shared_from_this<sidebar_file_type_element>
 {
 public:
 	bool _center_hover = false;
@@ -875,8 +875,8 @@ public:
 	std::array<pie_chart_entry, chart_segment_count> _file_type_entries;
 
 	sidebar_file_type_element(view_state& state) noexcept : view_element(
-		                                                        view_element_style::has_tooltip |
-		                                                        view_element_style::can_invoke), _state(state)
+		view_element_style::has_tooltip |
+		view_element_style::can_invoke), _state(state)
 	{
 	}
 
@@ -920,13 +920,13 @@ public:
 				const auto remaining_segments = static_cast<uint64_t>(chart_segment_count - current_segment);
 				const auto is_last = i == file_group::max_count - 1;
 
-				for (auto j = i; j < file_group::max_count; ++j) 
+				for (auto j = i; j < file_group::max_count; ++j)
 					remaining_count_total += counts[j].count_sr;
 
 				const auto segments = std::max(1ll, df::mul_div(remaining_segments, count_sr, remaining_count_total));
 
 				for (int k = 0; (k < segments || is_last) && current_segment < chart_segment_count; k++)
-				{					
+				{
 					auto&& e = _file_type_entries[current_segment];
 					e.group = group;
 					e.count = counts[i].count;
@@ -1015,13 +1015,13 @@ public:
 			const auto text = str::format(tt.total_title, num, size, num_folder);
 
 			hover.elements->add(std::make_shared<text_element>(tt.collection_title, ui::style::font_face::title,
-			                                                  ui::style::text_style::multiline,
-			                                                  view_element_style::line_break |
-			                                                  view_element_style::center));
+				ui::style::text_style::multiline,
+				view_element_style::line_break |
+				view_element_style::center));
 			hover.elements->add(std::make_shared<text_element>(text, ui::style::font_face::dialog,
-			                                                  ui::style::text_style::multiline,
-			                                                  view_element_style::line_break |
-			                                                  view_element_style::center));
+				ui::style::text_style::multiline,
+				view_element_style::line_break |
+				view_element_style::center));
 
 			hover.elements->add(std::make_shared<divider_element>());
 			hover.elements->add(
@@ -1038,9 +1038,9 @@ public:
 				const auto folder_text = std::make_shared<text_element>(f.folder.text());
 				folder_text->foreground_color(ui::emphasize(ui::style::color::view_text));
 				const auto count_text = std::make_shared<text_element>(str::format_count(f.count),
-				                                                       ui::style::text_style::single_line_far);
+					ui::style::text_style::single_line_far);
 				const auto size_text = std::make_shared<text_element>(prop::format_size(f.size),
-				                                                      ui::style::text_style::single_line_far);
+					ui::style::text_style::single_line_far);
 				table->add(folder_text, count_text, size_text);
 			}
 
@@ -1063,14 +1063,14 @@ public:
 
 					hover.elements->add(make_icon_element(icon, view_element_style::no_break));
 					hover.elements->add(std::make_shared<text_element>(ft->display_name(e.count > 1),
-					                                                  ui::style::font_face::title,
-					                                                  ui::style::text_style::multiline,
-					                                                  view_element_style::line_break));
+						ui::style::font_face::title,
+						ui::style::text_style::multiline,
+						view_element_style::line_break));
 
 					const auto text = str::format(tt.collection_contains, num, ft->display_name(e.count > 1), size);
 					hover.elements->add(std::make_shared<text_element>(text, ui::style::font_face::dialog,
-					                                                  ui::style::text_style::multiline,
-					                                                  view_element_style::line_break));
+						ui::style::text_style::multiline,
+						view_element_style::line_break));
 				}
 			}
 
@@ -1152,8 +1152,8 @@ public:
 	mutable ui::texture_ptr _tex;
 
 	static void draw_draw_pie_chart(const ui::texture_ptr& t, const sizei dims,
-									const std::array<pie_chart_entry, chart_segment_count> &entries, const ui::color32& bg_clr,
-	                                const ui::color32& center_clr)
+		const std::array<pie_chart_entry, chart_segment_count>& entries, const ui::color32& bg_clr,
+		const ui::color32& center_clr)
 	{
 		ui::color32 colors[chart_segment_count];
 
@@ -1166,7 +1166,7 @@ public:
 			colors[i] = e.focus ? ui::lighten(ui::bgr(rgb), 0.11f) : ui::bgr(rgb);
 		}
 
-		const pointi center = {dims.cx / 2, dims.cy / 2};
+		const pointi center = { dims.cx / 2, dims.cy / 2 };
 		const int radius = std::min(dims.cx / 2, dims.cy / 2) - 1;
 
 		const auto s = std::make_shared<ui::surface>();
@@ -1215,17 +1215,17 @@ public:
 
 		dc.draw_texture(_tex, center_rect(_tex->dimensions(), center));
 		dc.draw_text(_text, logical_bounds, ui::style::font_face::dialog, ui::style::text_style::multiline_center, clr,
-		             {});
+			{});
 	}
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		return {width_limit, width_limit};
+		return { width_limit, width_limit };
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
+		const pointi element_offset,
+		const std::vector<recti>& excluded_bounds) override
 	{
 		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 	}
@@ -1248,8 +1248,8 @@ struct sidebar_history_element final : public view_element, public std::enable_s
 	static constexpr int base_row_height = 10;
 
 	view_state& _state;
-	std::array<double, col_count * row_count> dates{};
-	std::array<df::date_counts, col_count * row_count> _counts;
+	std::array<double, col_count* row_count> dates{};
+	std::array<df::date_counts, col_count* row_count> _counts;
 
 	double _min_val = 0.0;
 	double _max_val = 0.0;
@@ -1259,8 +1259,8 @@ struct sidebar_history_element final : public view_element, public std::enable_s
 	mutable int row_height = base_row_height;
 
 	sidebar_history_element(view_state& state) noexcept : view_element(
-		                                                      view_element_style::has_tooltip |
-		                                                      view_element_style::can_invoke), _state(state)
+		view_element_style::has_tooltip |
+		view_element_style::can_invoke), _state(state)
 	{
 		populate({}); // Set some defaults
 	}
@@ -1305,10 +1305,10 @@ struct sidebar_history_element final : public view_element, public std::enable_s
 
 					const auto val = dates[y * 12 + m];
 					const auto scale = std::max(df::round((val - _min_val) * 255.0 / (_max_val - _min_val)), 5);
-					const recti cell = {xx1, yy1, xx2, yy2};
+					const recti cell = { xx1, yy1, xx2, yy2 };
 					dc.draw_rect(cell.inflate(-1),
-					             ui::color(ui::lerp(ui::style::color::sidebar_background, dc.colors.foreground, scale),
-					                       dc.colors.alpha));
+						ui::color(ui::lerp(ui::style::color::sidebar_background, dc.colors.foreground, scale),
+							dc.colors.alpha));
 				}
 			}
 		}
@@ -1321,7 +1321,7 @@ struct sidebar_history_element final : public view_element, public std::enable_s
 			const auto yy2 = logical_bounds.top + ((y + 1) * row_height);
 			const auto xx1 = logical_bounds.left + df::mul_div(m, logical_bounds.width(), col_count);
 			const auto xx2 = logical_bounds.left + df::mul_div(m + 1, logical_bounds.width(), col_count);
-			const recti cell = {xx1, yy1, xx2, yy2};
+			const recti cell = { xx1, yy1, xx2, yy2 };
 
 			dc.draw_rect(cell, ui::color(ui::style::color::important_background, dc.colors.alpha));
 		}
@@ -1330,12 +1330,12 @@ struct sidebar_history_element final : public view_element, public std::enable_s
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
 		row_height = df::round(mc.scale_factor * base_row_height);
-		return {width_limit, row_count * row_height + 1};
+		return { width_limit, row_count * row_height + 1 };
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
+		const pointi element_offset,
+		const std::vector<recti>& excluded_bounds) override
 	{
 		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 	}
@@ -1357,14 +1357,14 @@ struct sidebar_history_element final : public view_element, public std::enable_s
 
 			hover.elements->add(make_icon_element(icon_index::time, view_element_style::no_break));
 			hover.elements->add(std::make_shared<text_element>(month, ui::style::font_face::title,
-			                                                  ui::style::text_style::multiline,
-			                                                  view_element_style::no_break));
+				ui::style::text_style::multiline,
+				view_element_style::no_break));
 			hover.elements->add(std::make_shared<text_element>(year, ui::style::font_face::title,
-			                                                  ui::style::text_style::multiline,
-			                                                  view_element_style::line_break));
+				ui::style::text_style::multiline,
+				view_element_style::line_break));
 			hover.elements->add(std::make_shared<text_element>(tt.collection_contains2, ui::style::font_face::dialog,
-			                                                  ui::style::text_style::multiline,
-			                                                  view_element_style::line_break));
+				ui::style::text_style::multiline,
+				view_element_style::line_break));
 
 			const auto table = std::make_shared<ui::table_element>(view_element_style::center);
 			const auto num1 = std::make_shared<text_element>(
@@ -1393,7 +1393,7 @@ struct sidebar_history_element final : public view_element, public std::enable_s
 		if (hovering)
 		{
 			const auto month = std::clamp((ic.loc.x - logical_bounds.left) * col_count / logical_bounds.width(), 0,
-			                              col_count - 1);
+				col_count - 1);
 			const auto year = std::clamp((ic.loc.y - logical_bounds.top) / row_height, 0, row_count - 1);
 
 			if (year > 0 || month < _current_month)
@@ -1482,7 +1482,7 @@ public:
 			{
 				auto surface = std::make_shared<ui::surface>();
 				const auto pixels = surface->alloc(
-					{df::location_heat_map::map_width, df::location_heat_map::map_height}, ui::texture_format::ARGB);
+					{ df::location_heat_map::map_width, df::location_heat_map::map_height }, ui::texture_format::ARGB);
 				const auto cc = ui::bgr(ui::style::color::important_background) | 0xFF000000;
 
 				memset(pixels, 0, surface->stride() * df::location_heat_map::map_height);
@@ -1567,7 +1567,7 @@ public:
 			if (_hover_location >= 0 && _hover_location < static_cast<int>(_locations.size()))
 			{
 				const auto hover_bounds = center_rect(
-					{8, 8}, bounds.top_left() + element_offset - pointi(xx, yy) + _locations[_hover_location].loc);
+					{ 8, 8 }, bounds.top_left() + element_offset - pointi(xx, yy) + _locations[_hover_location].loc);
 				dc.draw_rect(hover_bounds, ui::color(ui::style::color::important_background));
 			}
 		}
@@ -1582,12 +1582,12 @@ public:
 			cy = df::mul_div(map_view_height, width_limit, df::location_heat_map::map_width);
 		}
 
-		return {width_limit, cy};
+		return { width_limit, cy };
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
+		const pointi element_offset,
+		const std::vector<recti>& excluded_bounds) override
 	{
 		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 	}
@@ -1598,7 +1598,7 @@ public:
 		{
 			const auto logical_bounds = bounds.offset(ic.element_offset);
 			const auto hovering = logical_bounds.contains(ic.loc);
-			sizei new_hover_offset = {0, default_y_offset};
+			sizei new_hover_offset = { 0, default_y_offset };
 			int hover_location = -1;
 
 			if (hovering)
@@ -1656,8 +1656,8 @@ public:
 
 			hover.elements->add(make_icon_element(icon_index::location, view_element_style::no_break));
 			hover.elements->add(std::make_shared<text_element>(location.name, ui::style::font_face::title,
-			                                                  ui::style::text_style::multiline,
-			                                                  view_element_style::line_break));
+				ui::style::text_style::multiline,
+				view_element_style::line_break));
 			hover.elements->add(std::make_shared<text_element>(
 				format(tt.click_items_from_fmt, location.count, location.name), ui::style::font_face::dialog,
 				ui::style::text_style::multiline, view_element_style::line_break));
@@ -1692,8 +1692,8 @@ private:
 
 public:
 	sidebar_logo_element(view_state& state) noexcept : view_element(
-		                                                   view_element_style::has_tooltip |
-		                                                   view_element_style::can_invoke), _state(state)
+		view_element_style::has_tooltip |
+		view_element_style::can_invoke), _state(state)
 	{
 	}
 
@@ -1742,7 +1742,7 @@ public:
 		if (_logo_tex)
 		{
 			dc.draw_texture(_logo_tex, center_rect(_logo_tex->dimensions(), logical_plasma_bounds),
-			                _logo_tex->dimensions(), dc.colors.alpha);
+				_logo_tex->dimensions(), dc.colors.alpha);
 		}
 
 		const auto plasma_border_clr = ui::color(0.25f, 0.25f, 0.25f, 1.0f);
@@ -1756,7 +1756,7 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		return {width_limit, mc.text_line_height(_font) + mc.padding2};
+		return { width_limit, mc.text_line_height(_font) + mc.padding2 };
 	}
 
 	void dispatch_event(const view_element_event& event) override
@@ -1770,8 +1770,8 @@ public:
 	void tooltip(view_hover_element& hover, pointi loc, pointi element_offset) const override;
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
+		const pointi element_offset,
+		const std::vector<recti>& excluded_bounds) override
 	{
 		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 	}
@@ -1870,7 +1870,7 @@ public:
 	}
 
 	void update_content(std::vector<search_item_ptr> items, std::vector<drive_item_ptr> drives,
-	                    std::vector<view_element_ptr> item_elements)
+		std::vector<view_element_ptr> item_elements)
 	{
 		df::assert_true(ui::is_ui_thread());
 
@@ -1907,89 +1907,89 @@ public:
 		}
 
 		_state.queue_async(async_queue::sidebar, [t = shared_from_this(), &s = _state, existing]()
-		{
-			const search_item_factory f;
-			std::vector<search_item_ptr> items;
-			std::vector<drive_item_ptr> drives;
-			std::vector<view_element_ptr> item_elements;
-			std::unordered_set<search_item_ptr> added_elements;
-
-			auto add_elements = [&items, &item_elements, &added_elements](
-				const std::vector<search_item_ptr>& items_to_add)
 			{
-				if (!items_to_add.empty() && !item_elements.empty())
-					item_elements.emplace_back(
-						std::make_shared<divider_element>());
+				const search_item_factory f;
+				std::vector<search_item_ptr> items;
+				std::vector<drive_item_ptr> drives;
+				std::vector<view_element_ptr> item_elements;
+				std::unordered_set<search_item_ptr> added_elements;
 
-				for (const auto i : items_to_add)
-				{
-					if (!added_elements.contains(i))
+				auto add_elements = [&items, &item_elements, &added_elements](
+					const std::vector<search_item_ptr>& items_to_add)
 					{
-						added_elements.insert(i);
-						items.push_back(i);
-						item_elements.push_back(i);
-					}
-				}
-			};
+						if (!items_to_add.empty() && !item_elements.empty())
+							item_elements.emplace_back(
+								std::make_shared<divider_element>());
 
-			if (setting.sidebar.show_indexed_folders)
-			{
-				add_elements(f.create_folder_items(s, existing));
-			}
+						for (const auto i : items_to_add)
+						{
+							if (!added_elements.contains(i))
+							{
+								added_elements.insert(i);
+								items.push_back(i);
+								item_elements.push_back(i);
+							}
+						}
+					};
 
-			if (setting.sidebar.show_favorite_searches)
-			{
-				add_elements(f.create_search_items(s, existing));
-			}
-
-			if (setting.sidebar.show_drives)
-			{
-				drives = f.create_drive_items(s, existing);
-				if (!drives.empty() && !item_elements.empty())
-					item_elements.emplace_back(
-						std::make_shared<divider_element>());
-				item_elements.insert(item_elements.end(), drives.begin(), drives.end());
-			}
-
-			if (setting.sidebar.show_ratings)
-			{
-				add_elements(f.create_ratings(s, existing));
-			}
-
-			if (setting.sidebar.show_labels)
-			{
-				add_elements(f.create_labels(s, existing));
-			}
-
-			if (setting.sidebar.show_tags)
-			{
-				add_elements(f.create_tags(s, existing));
-			}
-					
-
-			item_elements.emplace_back(std::make_shared<divider_element>());
-
-			const auto tag_show_text = setting.sidebar.show_favorite_tags_only
-				? tt.command_all_tags
-				: tt.command_favorite_tags;
-
-			auto tags_element = std::make_shared<link_element>(tag_show_text, commands::view_favorite_tags, ui::style::font_face::dialog,
-				ui::style::text_style::multiline_center,
-				view_element_style::new_line | view_element_style::center);
-
-			auto customise_element = std::make_shared<link_element>(tt.command_customise, commands::options_sidebar, ui::style::font_face::dialog,
-				ui::style::text_style::multiline_center,
-				view_element_style::new_line | view_element_style::center);
-
-			item_elements.emplace_back(tags_element);
-			item_elements.emplace_back(customise_element);
-
-			s.queue_ui(
-				[t, items = std::move(items), drives = std::move(drives), item_elements = std::move(item_elements)]
+				if (setting.sidebar.show_indexed_folders)
 				{
-					t->update_content(std::move(items), std::move(drives), std::move(item_elements));
-				});
-		});
+					add_elements(f.create_folder_items(s, existing));
+				}
+
+				if (setting.sidebar.show_favorite_searches)
+				{
+					add_elements(f.create_search_items(s, existing));
+				}
+
+				if (setting.sidebar.show_drives)
+				{
+					drives = f.create_drive_items(s, existing);
+					if (!drives.empty() && !item_elements.empty())
+						item_elements.emplace_back(
+							std::make_shared<divider_element>());
+					item_elements.insert(item_elements.end(), drives.begin(), drives.end());
+				}
+
+				if (setting.sidebar.show_ratings)
+				{
+					add_elements(f.create_ratings(s, existing));
+				}
+
+				if (setting.sidebar.show_labels)
+				{
+					add_elements(f.create_labels(s, existing));
+				}
+
+				if (setting.sidebar.show_tags)
+				{
+					add_elements(f.create_tags(s, existing));
+				}
+
+
+				item_elements.emplace_back(std::make_shared<divider_element>());
+
+				const auto tag_show_text = setting.sidebar.show_favorite_tags_only
+					? tt.command_all_tags
+					: tt.command_favorite_tags;
+
+				auto tags_element = std::make_shared<link_element>(tag_show_text, commands::view_favorite_tags, ui::style::font_face::dialog,
+					ui::style::text_style::multiline_center,
+					view_element_style::new_line | view_element_style::center);
+
+				auto customise_element = std::make_shared<link_element>(tt.command_customise, commands::options_sidebar, ui::style::font_face::dialog,
+					ui::style::text_style::multiline_center,
+					view_element_style::new_line | view_element_style::center);
+
+				item_elements.emplace_back(tags_element);
+				item_elements.emplace_back(customise_element);
+
+				s.queue_ui(
+					[t, items = std::move(items), drives = std::move(drives), item_elements = std::move(item_elements)]
+					{
+						t->update_content(std::move(items), std::move(drives), std::move(item_elements));
+					});
+			});
 	}
 
 	void on_window_layout(ui::measure_context& mc, const sizei extent, const bool is_minimized) override
@@ -2068,35 +2068,35 @@ public:
 		df::cancel_token token(version);
 
 		_state.queue_async(async_queue::sidebar, [this, &s = _state, item_elements = _items, token]()
-		{
-			df::scope_locked_inc slc(df::jobs_running);
-
-			int update_count = 0;
-
-			for (const auto& i : item_elements)
 			{
-				if (i->calc_sum)
+				df::scope_locked_inc slc(df::jobs_running);
+
+				int update_count = 0;
+
+				for (const auto& i : item_elements)
 				{
-					const auto sum = i->calc_sum(s, token);
-
-					if (!token.is_cancelled())
+					if (i->calc_sum)
 					{
-						update_count += 1;
+						const auto sum = i->calc_sum(s, token);
 
-						//if (i->summary != sum)
+						if (!token.is_cancelled())
 						{
-							s.queue_ui([this, i, sum]()
+							update_count += 1;
+
+							//if (i->summary != sum)
 							{
-								i->summary = sum;
-								_frame->invalidate();
-							});
+								s.queue_ui([this, i, sum]()
+									{
+										i->summary = sum;
+										_frame->invalidate();
+									});
+							}
 						}
 					}
 				}
-			}
 
-			df::trace(str::format(u8"Sidebar update {} predictions"sv, update_count));
-		});
+				df::trace(str::format(u8"Sidebar update {} predictions"sv, update_count));
+			});
 	}
 
 	view_controller_ptr controller_from_location(const pointi loc) override
@@ -2157,7 +2157,7 @@ public:
 
 		const auto x_padding = 4;
 		const auto scroll_padding = _scroller.can_scroll() ? mc.scroll_width : x_padding;
-		const auto layout_padding = sizei{0, mc.padding1};
+		const auto layout_padding = sizei{ 0, mc.padding1 };
 		auto avail_bounds = recti(_extent);
 		avail_bounds.left += x_padding; // -(mc.baseline_snap / 2);
 		avail_bounds.right -= scroll_padding; // -(mc.baseline_snap / 2);
@@ -2165,15 +2165,15 @@ public:
 		ui::control_layouts positions;
 		const auto y = stack_elements(mc, positions, avail_bounds, _elements, false, layout_padding);
 
-		const recti scroll_bounds{_extent.cx - scroll_padding, 0, _extent.cx, _extent.cy};
-		const recti client_bounds{0, 0, _extent.cx - scroll_padding, _extent.cy};
-		_scroller.layout({client_bounds.width(), y + mc.padding2}, client_bounds, scroll_bounds);
+		const recti scroll_bounds{ _extent.cx - scroll_padding, 0, _extent.cx, _extent.cy };
+		const recti client_bounds{ 0, 0, _extent.cx - scroll_padding, _extent.cy };
+		_scroller.layout({ client_bounds.width(), y + mc.padding2 }, client_bounds, scroll_bounds);
 	}
 
 	int preferred_width(ui::measure_context& mc)
 	{
 		const auto extent = mc.measure_text(u8"Documents"sv, ui::style::font_face::dialog,
-		                                    ui::style::text_style::single_line, 200);
+			ui::style::text_style::single_line, 200);
 		return df::mul_div(extent.cx, 5, 2);
 	}
 
@@ -2273,7 +2273,7 @@ public:
 	{
 		df::assert_true(ui::is_ui_thread());
 
-		const view_element_event ev{view_element_event_type::dpi_changed, shared_from_this()};
+		const view_element_event ev{ view_element_event_type::dpi_changed, shared_from_this() };
 
 		for (const auto& e : _elements)
 		{

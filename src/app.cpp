@@ -1,5 +1,5 @@
 ﻿// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -696,7 +696,7 @@ app_frame::app_frame(ui::plat_app_ptr pa) :
 	_db(_state.item_index),
 	_pa(std::move(pa))
 {
-	
+
 	_sidebar = std::make_shared<sidebar_host>(_state);
 	_view_frame = std::make_shared<view_frame>(_state);
 	_view_test = std::make_shared<test_view>(_state, _view_frame);
@@ -1376,7 +1376,7 @@ void app_frame::layout(ui::measure_context& mc)
 		const auto view_mode = _state.view_mode();
 		const auto is_items_or_media_view = _state.is_items_or_media_view();
 		const auto is_command_view = !is_items_or_media_view;
-		const auto is_full_screen_media = _state.is_full_screen && view_mode == view_type::media;		
+		const auto is_full_screen_media = _state.is_full_screen && view_mode == view_type::media;
 		const auto can_show_top_bar = is_command_view || !is_full_screen_media;
 		const auto can_show_status_bar = !is_full_screen_media;
 		const auto can_show_tools = is_items_or_media_view && can_show_status_bar;
@@ -1430,7 +1430,7 @@ void app_frame::layout(ui::measure_context& mc)
 		const auto y_nav2 = client_bounds.top + (top_height - navigate2_extent.cy) / 2;
 		const auto y_nav3 = client_bounds.top + (top_height - navigate3_extent.cy) / 2;
 		const auto y_tools = y_status_top + (status_height - tools_extent.cy) / 2;
-		const auto y_sorting = y_status_top + (status_height - sorting_extent.cy) / 2;		
+		const auto y_sorting = y_status_top + (status_height - sorting_extent.cy) / 2;
 		const auto cx_avail = client_bounds.width();
 		const auto sidebar_min = scale64;
 		const auto sidebar_avail = std::max(sidebar_min, cx_avail / 3);
@@ -1446,7 +1446,7 @@ void app_frame::layout(ui::measure_context& mc)
 		const auto x_tools_avail = cx_avail - sidebar_cx;
 		const auto x_tools = (can_show_sidebar ? sidebar_cx : 0) + (is_full_screen_media ? (x_tools_avail - tools_extent.cx) / 2 : mc.padding1);
 		_sorting_width = std::max(_sorting_width, sorting_extent.cx); // we want sorting width not to just grow not shrink.
-		const auto x_sorting = client_bounds.right - (mc.padding1 + _sorting_width + mc.handle_cxy);		
+		const auto x_sorting = client_bounds.right - (mc.padding1 + _sorting_width + mc.handle_cxy);
 		const auto y_client = can_show_top_bar ? client_bounds.top + top_height : client_bounds.top;
 		const auto cx_view_controls = std::max(client_bounds.width() / 4, scale400);
 		const auto r_tools = x_tools + (can_show_tools ? tools_extent.cx : 0);
@@ -1459,7 +1459,7 @@ void app_frame::layout(ui::measure_context& mc)
 		const recti nav3_bounds(x_nav3, y_nav3, x_nav3 + navigate3_extent.cx, y_nav3 + navigate3_extent.cy);
 		const recti tool_rect(x_tools, y_tools, r_tools, y_tools + tools_extent.cy);
 		const recti sorting_bounds(x_sorting, y_sorting, x_sorting + _sorting_width, y_sorting + sorting_extent.cy);
-		const recti filter_rect(x_filter, y_filter, x_sorting - mc.padding1, y_filter + cy_filter);		
+		const recti filter_rect(x_filter, y_filter, x_sorting - mc.padding1, y_filter + cy_filter);
 		const recti view_controls_bounds(client_bounds.right - cx_view_controls, y_client, client_bounds.right, y_status_top);
 		const recti sidebar_bounds(client_bounds.left, client_bounds.top, client_bounds.left + sidebar_cx, client_bounds.bottom);
 
@@ -2361,7 +2361,7 @@ void app_frame::on_window_paint(ui::draw_context& dc)
 	{
 		const auto bounds = _status_bounds.inflate(-dc.padding2, 0);
 		dc.draw_text(status, bounds, ui::style::font_face::dialog,
-		             ui::style::text_style::single_line, ui::color(dc.colors.foreground, dc.colors.alpha), {});
+			ui::style::text_style::single_line, ui::color(dc.colors.foreground, dc.colors.alpha), {});
 	}
 	else if (setting.show_debug_info)
 	{
@@ -2419,7 +2419,7 @@ void app_frame::on_window_paint(ui::draw_context& dc)
 		const std::u8string_view title = _view->title();
 
 		dc.draw_text(title, title_bounds, ui::style::font_face::title, ui::style::text_style::single_line,
-				ui::color(dc.colors.foreground, dc.colors.alpha), {});
+			ui::color(dc.colors.foreground, dc.colors.alpha), {});
 	}
 
 	const auto border_outside = recti(_extent);

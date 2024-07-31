@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -226,7 +226,7 @@ static void parse_xmp(const SXMPMeta& xmp, prop::item_metadata& md)
 	{
 		md.title = str::strip_and_cache(utf8);
 	}
-	
+
 	if (xmp.GetLocalizedText(kXMP_NS_EXIF, "UserComment", "", "x-default", nullptr, &utf8, &flags))
 	{
 		md.comment = str::strip_and_cache(utf8);
@@ -241,7 +241,7 @@ static void parse_xmp(const SXMPMeta& xmp, prop::item_metadata& md)
 	{
 		md.description = str::strip_and_cache(utf8);
 	}
-	
+
 	if (xmp.GetProperty(kXMP_NS_XMP, "Rating", &utf8, &flags))
 	{
 		md.rating = str::to_int(str::utf8_cast(utf8));
@@ -394,9 +394,9 @@ void metadata_edits::apply(SXMPMeta& meta) const
 		//std::u8string v;
 		XMP_OptionBits flags = 0;
 		meta.SetProperty(kXMP_NS_EXIF, "GPSLatitude",
-		                 str::utf8_cast2(gps_coordinate::decimal_to_dms_str(position.latitude(), true)));
+			str::utf8_cast2(gps_coordinate::decimal_to_dms_str(position.latitude(), true)));
 		meta.SetProperty(kXMP_NS_EXIF, "GPSLongitude",
-		                 str::utf8_cast2(gps_coordinate::decimal_to_dms_str(position.longitude(), false)));
+			str::utf8_cast2(gps_coordinate::decimal_to_dms_str(position.longitude(), false)));
 
 		// meta.SetProperty_Float(kXMP_NS_EXIF, "GPSLatitude"sv, position.Latitude());
 		// meta.SetProperty_Float(kXMP_NS_EXIF, "GPSLongitude"sv, position.Longitude());
@@ -556,7 +556,7 @@ void metadata_edits::apply(SXMPMeta& meta) const
 	if (orientation.has_value())
 	{
 		meta.SetProperty(kXMP_NS_TIFF, "Orientation",
-		                 str::utf8_cast2(str::to_string(static_cast<int>(orientation.value()))), kXMP_DeleteExisting);
+			str::utf8_cast2(str::to_string(static_cast<int>(orientation.value()))), kXMP_DeleteExisting);
 	}
 
 	if (!remove_tags.is_empty() || !add_tags.is_empty())
@@ -664,7 +664,7 @@ file_scan_result scan_xmp(const df::file_path path)
 		SXMPFiles f;
 
 		if (f.OpenFile(str::utf8_to_a(path.str()), kXMP_UnknownFile,
-		               kXMPFiles_OpenForRead | kXMPFiles_OpenOnlyXMP | kXMPFiles_OpenUseSmartHandler))
+			kXMPFiles_OpenForRead | kXMPFiles_OpenOnlyXMP | kXMPFiles_OpenUseSmartHandler))
 		{
 			SXMPMeta meta;
 			std::string packet;
@@ -694,7 +694,7 @@ df::file_path probe_xmp_path(const df::file_path src_path, const std::u8string_v
 }
 
 xmp_update_result metadata_xmp::update(const df::file_path update_path, const df::file_path src_path,
-                                       const metadata_edits& edits, const std::u8string_view xmp_name)
+	const metadata_edits& edits, const std::u8string_view xmp_name)
 {
 	xmp_update_result result;
 
@@ -712,7 +712,7 @@ xmp_update_result metadata_xmp::update(const df::file_path update_path, const df
 			SXMPFiles f;
 			const auto w = platform::to_file_system_path(src_path);
 			if (f.OpenFile(str::utf8_cast2(str::utf16_to_utf8(w)), kXMP_UnknownFile,
-			               kXMPFiles_OpenForUpdate | kXMPFiles_OpenUseSmartHandler))
+				kXMPFiles_OpenForUpdate | kXMPFiles_OpenUseSmartHandler))
 			{
 				f.GetXMP(&xmp);
 				f.CloseFile();
@@ -741,7 +741,7 @@ xmp_update_result metadata_xmp::update(const df::file_path update_path, const df
 			const auto w = platform::to_file_system_path(update_path);
 
 			if (xmp_dst_file.OpenFile(str::utf8_cast2(str::utf16_to_utf8(w)), kXMP_UnknownFile,
-			                          kXMPFiles_OpenForUpdate | kXMPFiles_OpenUseSmartHandler))
+				kXMPFiles_OpenForUpdate | kXMPFiles_OpenUseSmartHandler))
 			{
 				if (xmp_dst_file.CanPutXMP(xmp))
 				{

@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -55,14 +55,14 @@ static void download_dic(df::async_i& async, const df::file_path path)
 	req.download_file_path = temp_path;
 
 	async.queue_async(async_queue::web, [req, path, temp_path]()
-	{
-		const auto response = send_request(req);
-
-		if (response.status_code == 200)
 		{
-			platform::move_file(temp_path, path, true);
-		}
-	});
+			const auto response = send_request(req);
+
+			if (response.status_code == 200)
+			{
+				platform::move_file(temp_path, path, true);
+			}
+		});
 }
 
 void spell_check::lazy_download(df::async_i& async)
@@ -149,7 +149,7 @@ void spell_check::lazy_load()
 		if (aff_path.exists())
 		{
 			_hunspell = std::make_unique<Hunspell>(str::utf8_to_a(aff_path.str()).c_str(),
-			                                       str::utf8_to_a(dic_path.str()).c_str());
+				str::utf8_to_a(dic_path.str()).c_str());
 
 			u8istream f(str::utf8_to_utf16(custom_path.str()));
 
@@ -183,9 +183,9 @@ std::vector<std::u8string> spell_check::suggest(const std::u8string_view word) c
 
 	std::vector<std::u8string> result;
 	std::transform(suggestions.begin(),
-	               suggestions.end(),
-	               std::back_inserter(result),
-	               [](const std::string& s) { return str::utf8_cast2(s); });
+		suggestions.end(),
+		std::back_inserter(result),
+		[](const std::string& s) { return str::utf8_cast2(s); });
 
 	return result;
 }

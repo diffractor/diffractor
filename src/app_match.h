@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -22,7 +22,7 @@ static std::u8string_view strip_quotes(const std::u8string_view str)
 
 
 inline bool find_auto_complete(const std::vector<std::u8string_view>& queries, const std::u8string_view text,
-                               const bool is_path, ui::match_highlights& match)
+	const bool is_path, ui::match_highlights& match)
 {
 	//const std::u8string_view value = text;
 	std::vector<str::part_t> found_subs;
@@ -216,8 +216,8 @@ public:
 	}
 
 	folder_match(ui::complete_strategy_t& parent, const df::folder_path f, std::u8string l, ui::match_highlights m = {},
-	             int w = 1) : auto_complete_match(view_element_style::can_invoke), _parent(parent), folder(f),
-	                          match(std::move(m)), lead(std::move(l))
+		int w = 1) : auto_complete_match(view_element_style::can_invoke), _parent(parent), folder(f),
+		match(std::move(m)), lead(std::move(l))
 	{
 		weight = w;
 	}
@@ -247,7 +247,7 @@ public:
 		{
 			const auto dots = u8" ... "sv;
 			const auto dots_extent = dc.measure_text(dots, ui::style::font_face::dialog,
-			                                         ui::style::text_style::single_line, bounds.width());
+				ui::style::text_style::single_line, bounds.width());
 			dc.draw_text(dots, {}, rr, ui::style::font_face::dialog, ui::style::text_style::single_line, clr, {});
 			rr.left += dots_extent.cx + dc.padding2;
 		}
@@ -255,7 +255,7 @@ public:
 
 		const auto highlights = make_highlights(match, highlight_clr);
 		dc.draw_text(folder.text(), highlights, rr, ui::style::font_face::dialog, ui::style::text_style::single_line,
-		             clr, {});
+			clr, {});
 	}
 
 	void dispatch_event(const view_element_event& event) override
@@ -271,8 +271,8 @@ public:
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
+		const pointi element_offset,
+		const std::vector<recti>& excluded_bounds) override
 	{
 		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 	}
@@ -287,8 +287,8 @@ public:
 	ui::match_highlights match;
 
 	text_match(ui::complete_strategy_t& parent, std::u8string t, std::u8string l, ui::match_highlights m = {},
-	           int w = 1) : auto_complete_match(view_element_style::can_invoke), _parent(parent), lead(std::move(l)),
-	                        text(std::move(t)), match(std::move(m))
+		int w = 1) : auto_complete_match(view_element_style::can_invoke), _parent(parent), lead(std::move(l)),
+		text(std::move(t)), match(std::move(m))
 	{
 		weight = w;
 	}
@@ -318,7 +318,7 @@ public:
 		{
 			const auto dots = u8" ... "sv;
 			const auto dots_extent = dc.measure_text(dots, ui::style::font_face::dialog,
-			                                         ui::style::text_style::single_line, bounds.width());
+				ui::style::text_style::single_line, bounds.width());
 			dc.draw_text(dots, {}, rr, ui::style::font_face::dialog, ui::style::text_style::single_line, clr, {});
 			rr.left += dots_extent.cx + dc.padding2;
 		}
@@ -340,8 +340,8 @@ public:
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
+		const pointi element_offset,
+		const std::vector<recti>& excluded_bounds) override
 	{
 		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 	}

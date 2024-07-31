@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -49,7 +49,7 @@ enum class icon_index
 	folder = 0xF12B,
 	fullscreen = 0xE740,
 	fullscreen_exit = 0xE73F,
-	import = 0xEA53,
+import = 0xEA53,
 	items = 0xF0E2,
 	details = 0xE8FD,
 	link = 0xE71B,

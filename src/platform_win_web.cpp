@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -144,7 +144,7 @@ platform::web_response platform::send_request(const web_request& req)
 		const auto hostW = str::utf8_to_utf16(req.host);
 		const auto port = req.port == 0 ? (req.secure ? INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT) : req.port;
 		const auto conn = ::InternetConnect(session_handle, hostW.c_str(), port, nullptr, nullptr,
-		                                    INTERNET_SERVICE_HTTP, 0, 0);
+			INTERNET_SERVICE_HTTP, 0, 0);
 
 		if (conn)
 		{

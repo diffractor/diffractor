@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -25,7 +25,7 @@ class crash_files_db
 
 		while (std::getline(file, line))
 		{
-			result.emplace(df::file_path{line});
+			result.emplace(df::file_path{ line });
 		}
 
 		return result;
@@ -106,9 +106,9 @@ struct record_open_path
 	std::u8string_view _context;
 
 	record_open_path(crash_files_db& files_that_crash_diffractor, const df::file_path path,
-	                 const std::u8string_view context) : _path(path),
-	                                                     files_that_crash_diffractor_(files_that_crash_diffractor),
-	                                                     _context(context)
+		const std::u8string_view context) : _path(path),
+		files_that_crash_diffractor_(files_that_crash_diffractor),
+		_context(context)
 	{
 		files_that_crash_diffractor_.add_open(path, _context);
 	}

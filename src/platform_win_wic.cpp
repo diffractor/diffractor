@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -121,7 +121,7 @@ static CLSID wic_encoder_clsid(const std::u8string_view format)
 }
 
 platform::file_op_result save_bitmap_info(const df::folder_path save_path, const std::u8string_view name,
-                                          const bool as_png, const HBITMAP image_buffer_in)
+	const bool as_png, const HBITMAP image_buffer_in)
 {
 	platform::file_op_result result;
 
@@ -182,7 +182,7 @@ platform::file_op_result save_bitmap_info(const df::folder_path save_path, const
 				hr = piEncoder->Initialize(piFileStream.Get(), WICBitmapEncoderNoCache);
 			}
 
-			WICPixelFormatGUID pixelFormat = {0};
+			WICPixelFormatGUID pixelFormat = { 0 };
 			UINT width, height = 0;
 			ComPtr<IWICBitmapFrameEncode> piFrameEncode;
 
@@ -304,12 +304,12 @@ ui::const_surface_ptr platform::create_segoe_md2_icon(const wchar_t ch)
 			ComPtr<ID2D1SolidColorBrush> brush;
 
 			hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, __uuidof(IWICImagingFactory),
-			                      std::bit_cast<void**>(wic.GetAddressOf()));
+				std::bit_cast<void**>(wic.GetAddressOf()));
 
 			if (SUCCEEDED(hr))
 			{
 				hr = wic->CreateBitmap(cxy, cxy,
-				                       GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnDemand, &wic_bitmap);
+					GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnDemand, &wic_bitmap);
 			}
 
 			if (SUCCEEDED(hr))
@@ -357,7 +357,7 @@ ui::const_surface_ptr platform::create_segoe_md2_icon(const wchar_t ch)
 
 			if (SUCCEEDED(hr))
 			{
-				const wchar_t icon_text[2] = {ch, 0};
+				const wchar_t icon_text[2] = { ch, 0 };
 
 				rt->BeginDraw();
 
@@ -397,7 +397,7 @@ ui::const_surface_ptr platform::create_segoe_md2_icon(const wchar_t ch)
 					hr = pConverter->CopyPixels(&rc,
 						static_cast<uint32_t>(surface_result->stride()),
 						static_cast<uint32_t>(surface_result->size()),
-					    surface_result->pixels());
+						surface_result->pixels());
 				}
 			}
 
@@ -537,9 +537,9 @@ ui::surface_ptr platform::image_to_surface(const df::cspan image_buffer_in, cons
 					rc.Height = uiHeight;
 
 					hr = pSource->CopyPixels(&rc,
-					                         static_cast<uint32_t>(surface_result->stride()),
-					                         static_cast<uint32_t>(surface_result->size()),
-					                         surface_result->pixels());
+						static_cast<uint32_t>(surface_result->stride()),
+						static_cast<uint32_t>(surface_result->size()),
+						surface_result->pixels());
 				}
 				else
 				{

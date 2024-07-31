@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -154,12 +154,12 @@ struct count_items_result
 
 template <typename T>
 static void iterate_items(const df::search_t& search,
-                          T& results,
-                          index_state& state,
-                          df::cancel_token token,
-                          index_items& index,
-                          bool refresh_from_file_system,
-                          bool show_sidecars)
+	T& results,
+	index_state& state,
+	df::cancel_token token,
+	index_items& index,
+	bool refresh_from_file_system,
+	bool show_sidecars)
 {
 	df::search_matcher matcher(search);
 
@@ -180,7 +180,7 @@ static void iterate_items(const df::search_t& search,
 			const auto wildcard = selector.wildcard();
 
 			files ff;
-			std::vector<df::folder_path> folders = {selector.folder()};
+			std::vector<df::folder_path> folders = { selector.folder() };
 			df::unique_folders folders_scanned;
 
 			while (!folders.empty())
@@ -228,7 +228,7 @@ static void iterate_items(const df::search_t& search,
 								if (token.is_cancelled())
 									break;
 
-								state.scan_item(found_node.folder, {current_folder, f.name}, false, false, nullptr, f.ft);
+								state.scan_item(found_node.folder, { current_folder, f.name }, false, false, nullptr, f.ft);
 							}
 						}
 
@@ -305,7 +305,7 @@ static void iterate_items(const df::search_t& search,
 }
 
 void index_state::query_items(const df::search_t& search, const df::unique_items& existing,
-                              const std::function<void(df::item_set, bool)>& found_callback, df::cancel_token token)
+	const std::function<void(df::item_set, bool)>& found_callback, df::cancel_token token)
 {
 	df::scope_locked_inc l(searching);
 
@@ -338,14 +338,14 @@ void index_state::query_items(const df::search_t& search, const df::unique_items
 		}
 	}
 
-	query_items_result results{existing, {}};
+	query_items_result results{ existing, {} };
 	iterate_items(search, results, *this, token, _items, true, search.has_related());
 
 	if (search.has_related())
 	{
 		const auto id = search.related().path;
 		const auto found_related = existing.find(id);
-		
+
 		if (found_related)
 		{
 			const auto folder = _items.find(id.folder());
@@ -589,7 +589,7 @@ static df::index_item_infos::const_iterator find_file(const df::index_item_infos
 }
 
 static df::index_folder_item_ptr find_or_create_folder(index_items& items, const df::folder_path path,
-                                                       const platform::folder_info& fd)
+	const platform::folder_info& fd)
 {
 	df::assert_true(!is_empty(fd.name));
 
@@ -646,7 +646,7 @@ void populate_file_info(df::index_file_item& file_node, const platform::file_inf
 }
 
 index_state::validate_folder_result index_state::validate_folder(const df::folder_path folder_path,
-                                                                 const bool refresh_from_file_system, const df::date_t timestamp)
+	const bool refresh_from_file_system, const df::date_t timestamp)
 {
 	auto existing_folder = _items.find(folder_path);
 
@@ -712,7 +712,7 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 				{
 					// copy: in both
 					auto index_folder_item = find_or_create_folder(_items, folder_path.combine(folder_first->name),
-					                                               *folder_first);
+						*folder_first);
 					updated_folders.emplace_back(index_folder_item);
 					if ((*old_first) != index_folder_item) changes_detected = true;
 					++folder_first;
@@ -904,7 +904,7 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 			df::assert_true(std::ranges::is_sorted(updated_folders, less_ptr_name));
 
 			auto folder_node = std::make_shared<df::index_folder_item>(std::move(updated_files),
-			                                                           std::move(updated_folders));
+				std::move(updated_folders));
 
 			if (existing_folder)
 			{
@@ -1116,7 +1116,7 @@ void index_state::update_predictions()
 			{
 				if (df::is_closing) return;
 				const auto count = static_cast<uint32_t>(group_counts[file.duplicates.group]);
-				file.update_duplicates(ifn.second, {file.duplicates.group, count});
+				file.update_duplicates(ifn.second, { file.duplicates.group, count });
 			}
 		}
 	}
@@ -1131,7 +1131,7 @@ void index_state::update_predictions()
 
 
 static void add_words(df::dense_string_counts& distinct_words, strings_by_prop& distinct_text, const str::cached text,
-                      const prop::key_ref key)
+	const prop::key_ref key)
 {
 	count_ranges(distinct_words, text);
 	distinct_text[key].emplace(text);
@@ -1172,92 +1172,92 @@ void index_state::update_summary()
 				if (md)
 				{
 					split2(md->tags, true,
-					       [&distinct_words, &distinct_tags, &distinct_tag_texts, &file](const std::u8string_view part)
-					       {
-						       const auto cached_tag = str::cache(part);
-						       distinct_tag_texts.emplace(cached_tag);
-						       distinct_words[str::cache(str::format(u8"#{}"sv, part))] += 1;
-						       distinct_tags[cached_tag].record(file);
-					       });
+						[&distinct_words, &distinct_tags, &distinct_tag_texts, &file](const std::u8string_view part)
+						{
+							const auto cached_tag = str::cache(part);
+							distinct_tag_texts.emplace(cached_tag);
+							distinct_words[str::cache(str::format(u8"#{}"sv, part))] += 1;
+							distinct_tags[cached_tag].record(file);
+						});
 
 					if (!prop::is_null(md->album)) add_words(distinct_words, distinct_text, md->album, prop::album);
 					if (!prop::is_null(md->album_artist))
 						add_words(distinct_words, distinct_text, md->album_artist,
-						          prop::album_artist);
+							prop::album_artist);
 					if (!prop::is_null(md->artist)) add_words(distinct_words, distinct_text, md->artist, prop::artist);
 					if (!prop::is_null(md->audio_codec))
 						add_words(distinct_words, distinct_text, md->audio_codec,
-						          prop::audio_codec);
+							prop::audio_codec);
 					if (!prop::is_null(md->bitrate))
 						add_words(distinct_words, distinct_text, md->bitrate,
-						          prop::bitrate);
+							prop::bitrate);
 					if (!prop::is_null(md->camera_manufacturer))
 						add_words(
 							distinct_words, distinct_text, md->camera_manufacturer, prop::camera_manufacturer);
 					if (!prop::is_null(md->camera_model))
 						add_words(distinct_words, distinct_text, md->camera_model,
-						          prop::camera_model);
+							prop::camera_model);
 					if (!prop::is_null(md->comment))
 						add_words(distinct_words, distinct_text, md->comment,
-						          prop::comment);
+							prop::comment);
 					if (!prop::is_null(md->composer))
 						add_words(distinct_words, distinct_text, md->composer,
-						          prop::composer);
+							prop::composer);
 					if (!prop::is_null(md->copyright_creator))
 						add_words(
 							distinct_words, distinct_text, md->copyright_creator, prop::copyright_creator);
 					if (!prop::is_null(md->copyright_credit))
 						add_words(distinct_words, distinct_text,
-						          md->copyright_credit, prop::copyright_credit);
+							md->copyright_credit, prop::copyright_credit);
 					if (!prop::is_null(md->copyright_notice))
 						add_words(distinct_words, distinct_text,
-						          md->copyright_notice, prop::copyright_notice);
+							md->copyright_notice, prop::copyright_notice);
 					if (!prop::is_null(md->copyright_source))
 						add_words(distinct_words, distinct_text,
-						          md->copyright_source, prop::copyright_source);
+							md->copyright_source, prop::copyright_source);
 					if (!prop::is_null(md->copyright_url))
 						add_words(distinct_words, distinct_text, md->copyright_url,
-						          prop::copyright_url);
+							prop::copyright_url);
 					if (!prop::is_null(md->description))
 						add_words(distinct_words, distinct_text, md->description,
-						          prop::description);
+							prop::description);
 					if (!prop::is_null(md->encoder))
 						add_words(distinct_words, distinct_text, md->encoder,
-						          prop::encoder);
+							prop::encoder);
 					if (!prop::is_null(md->file_name))
 						add_words(distinct_words, distinct_text, md->file_name,
-						          prop::file_name);
+							prop::file_name);
 					if (!prop::is_null(md->genre)) add_words(distinct_words, distinct_text, md->genre, prop::genre);
 					if (!prop::is_null(md->lens)) add_words(distinct_words, distinct_text, md->lens, prop::lens);
 					if (!prop::is_null(md->location_place))
 						add_words(distinct_words, distinct_text, md->location_place,
-						          prop::location_place);
+							prop::location_place);
 					if (!prop::is_null(md->location_country))
 						add_words(distinct_words, distinct_text,
-						          md->location_country, prop::location_country);
+							md->location_country, prop::location_country);
 					if (!prop::is_null(md->location_state))
 						add_words(distinct_words, distinct_text, md->location_state,
-						          prop::location_state);
+							prop::location_state);
 					if (!prop::is_null(md->performer))
 						add_words(distinct_words, distinct_text, md->performer,
-						          prop::performer);
+							prop::performer);
 					if (!prop::is_null(md->pixel_format))
 						add_words(distinct_words, distinct_text, md->pixel_format,
-						          prop::pixel_format);
+							prop::pixel_format);
 					if (!prop::is_null(md->publisher))
 						add_words(distinct_words, distinct_text, md->publisher,
-						          prop::publisher);
+							prop::publisher);
 					if (!prop::is_null(md->show)) add_words(distinct_words, distinct_text, md->show, prop::show);
 					if (!prop::is_null(md->synopsis))
 						add_words(distinct_words, distinct_text, md->synopsis,
-						          prop::synopsis);
+							prop::synopsis);
 					if (!prop::is_null(md->title)) add_words(distinct_words, distinct_text, md->title, prop::title);
 					if (!prop::is_null(md->video_codec))
 						add_words(distinct_words, distinct_text, md->video_codec,
-						          prop::video_codec);
+							prop::video_codec);
 					if (!prop::is_null(md->raw_file_name))
 						add_words(distinct_words, distinct_text, md->raw_file_name,
-						          prop::raw_file_name);
+							prop::raw_file_name);
 
 					if (!prop::is_null(md->label)) distinct_labels[md->label].record(file);
 
@@ -1313,7 +1313,7 @@ void index_state::update_summary()
 }
 
 static bool needs_scan_impl(const df::index_folder_item_ptr& f, const df::index_file_item& file, const bool load_thumb,
-                            const bool scan_if_offline, const df::item_element_ptr& item)
+	const bool scan_if_offline, const df::item_element_ptr& item)
 {
 	const auto is_offline = file.flags && df::index_item_flags::is_offline;
 
@@ -1405,12 +1405,12 @@ void index_state::scan_uncached(df::cancel_token token)
 }
 
 std::vector<folder_scan_item> index_state::scan_items(const df::index_roots& roots, const bool recursive,
-                                                      const bool scan_if_offline, df::cancel_token token)
+	const bool scan_if_offline, df::cancel_token token)
 {
 	const auto now = platform::now();
 
 	std::vector<folder_scan_item> results;
-	std::vector<df::folder_path> folders_to_scan = {roots.folders.begin(), roots.folders.end()};
+	std::vector<df::folder_path> folders_to_scan = { roots.folders.begin(), roots.folders.end() };
 
 	auto update_index_summary = false;
 
@@ -1457,7 +1457,7 @@ std::vector<folder_scan_item> index_state::scan_items(const df::index_roots& roo
 			results.emplace_back(file_path.folder(), *found_file);
 		}
 	}
-	
+
 	if (update_index_summary)
 	{
 		_async.invalidate_view(view_invalid::index_summary);
@@ -1482,11 +1482,11 @@ struct scope_locked_loading_thumbnail
 };
 
 void index_state::scan_item(const df::index_folder_item_ptr& folder,
-                            const df::file_path file_path,
-                            const bool load_thumb,
-                            const bool scan_if_offline,
-                            const df::item_element_ptr& item,
-                            const file_type_ref ft)
+	const df::file_path file_path,
+	const bool load_thumb,
+	const bool scan_if_offline,
+	const df::item_element_ptr& item,
+	const file_type_ref ft)
 {
 	const auto now = platform::now();
 	const auto found_file = find_file(folder->files, file_path.name());
@@ -1532,7 +1532,7 @@ void index_state::scan_item(const df::index_folder_item_ptr& folder,
 						if (metadata->year == 0 && name_props.year != 0) metadata->year = name_props.year;
 						if (metadata->episode == df::xy8::make(0, 0) && name_props.episode != 0)
 							metadata->episode =
-								df::xy8::make(name_props.episode, name_props.episode_of);
+							df::xy8::make(name_props.episode, name_props.episode_of);
 						if (metadata->season == 0 && name_props.season != 0) metadata->season = name_props.season;
 					}
 
@@ -1610,7 +1610,7 @@ void index_state::scan_item(const df::index_folder_item_ptr& folder,
 							{
 								auto surf = ff.image_to_surface(thumbnail_image, max_extent);
 								thumbnail_image = ff.surface_to_image(surf, {}, encode_params,
-								                                      ui::image_format::Unknown);
+									ui::image_format::Unknown);
 								thumbnail_surface = surf;
 							}
 
@@ -1686,7 +1686,7 @@ void index_state::scan_item(const df::index_folder_item_ptr& folder,
 						prop::is_null(metadata->location_state) &&
 						prop::is_null(metadata->location_place))
 					{
-						
+
 						_async.queue_location(
 							[this, folder, file_path, coord = metadata->coordinate](location_cache& locations)
 							{
@@ -1852,7 +1852,7 @@ inline bool index_state::is_collection_search(const df::search_t& search) const
 }
 
 void index_state::calc_folder_summary(const df::index_folder_info_const_ptr& folder, df::file_group_histogram& result,
-                                      df::cancel_token token) const
+	df::cancel_token token) const
 {
 	for (const auto& sub_folder : folder->folders)
 	{
@@ -1897,21 +1897,21 @@ void index_state::save_media_position(const df::file_path id, const double media
 void index_state::save_crc(const df::file_path id, const uint32_t crc)
 {
 	_async.queue_async(async_queue::work, [this, id, crc]()
-	{
-		const auto f = _items.find(id.folder());
-
-		if (f)
 		{
-			const auto found_file = find_file(f->files, id.name());
+			const auto f = _items.find(id.folder());
 
-			if (found_file != f->files.end())
+			if (f)
 			{
-				found_file->crc32c = crc;
-				found_file->calc_bloom_bits();
-				f->update_bloom_bits(*found_file);
+				const auto found_file = find_file(f->files, id.name());
+
+				if (found_file != f->files.end())
+				{
+					found_file->crc32c = crc;
+					found_file->calc_bloom_bits();
+					f->update_bloom_bits(*found_file);
+				}
 			}
-		}
-	});
+		});
 
 	item_db_write write;
 	write.path = id;
@@ -1922,37 +1922,37 @@ void index_state::save_crc(const df::file_path id, const uint32_t crc)
 void index_state::save_location(const df::file_path id, const location_t& loc)
 {
 	_async.queue_async(async_queue::work, [this, id, loc]()
-	{
-		const auto found_folder = _items.find(id.folder());
-
-		if (found_folder)
 		{
-			const auto found_file = find_file(found_folder->files, id.name());
+			const auto found_folder = _items.find(id.folder());
 
-			if (found_file != found_folder->files.end())
+			if (found_folder)
 			{
-				auto md = found_file->safe_ps();
+				const auto found_file = find_file(found_folder->files, id.name());
 
-				if (!md->coordinate.is_valid())
+				if (found_file != found_folder->files.end())
 				{
-					md->coordinate = loc.position;
+					auto md = found_file->safe_ps();
+
+					if (!md->coordinate.is_valid())
+					{
+						md->coordinate = loc.position;
+					}
+
+					md->location_place = loc.place;
+					md->location_state = loc.state;
+					md->location_country = loc.country;
+
+					item_db_write write;
+					write.path = id;
+					write.md = md;
+					write.metadata_scanned = found_file->metadata_scanned;
+					_db_writes.enqueue(std::move(write));
 				}
-
-				md->location_place = loc.place;
-				md->location_state = loc.state;
-				md->location_country = loc.country;
-
-				item_db_write write;
-				write.path = id;
-				write.md = md;
-				write.metadata_scanned = found_file->metadata_scanned;
-				_db_writes.enqueue(std::move(write));
 			}
-		}
-	});
+		});
 }
 
-void index_state::save_thumbnail(const df::file_path id, const ui::const_image_ptr& thumbnail_image, const ui::const_image_ptr& cover_art,const df::date_t scan_timestamp)
+void index_state::save_thumbnail(const df::file_path id, const ui::const_image_ptr& thumbnail_image, const ui::const_image_ptr& cover_art, const df::date_t scan_timestamp)
 {
 	item_db_write write;
 	write.path = id;
@@ -2071,9 +2071,9 @@ void index_state::index_folders(df::cancel_token token)
 		stats.index_item_count = stats.media_item_count = count;
 
 		_async.queue_database([cached_items = all_indexed_items()](database& db)
-		{
-			db.clean(cached_items);
-		});
+			{
+				db.clean(cached_items);
+			});
 	}
 
 	{
@@ -2107,17 +2107,17 @@ void index_state::index_folders(df::cancel_token token)
 static void scan_trim(std::u8string& s)
 {
 	const auto pred = [](int ch)
-	{
-		return !std::iswspace(ch) && ch != '-';
-	};
+		{
+			return !std::iswspace(ch) && ch != '-';
+		};
 
 	s.erase(s.begin(), std::ranges::find_if(s, pred));
 	s.erase(std::find_if(s.rbegin(), s.rend(), pred).base(), s.end());
 }
 
 std::u8string build_result_string(const std::vector<std::string>& tokens,
-                                  const std::vector<std::string>::const_iterator& begin,
-                                  const std::vector<std::string>::const_iterator& end)
+	const std::vector<std::string>::const_iterator& begin,
+	const std::vector<std::string>::const_iterator& end)
 {
 	std::string result;
 	bool brackets = false;
@@ -2195,16 +2195,16 @@ media_name_props scan_info_from_title(const std::u8string_view name8)
 		"-"sv,
 	};
 
-	static const auto split_rx = std::regex{R"([\s]+|\-|\.|\(|\[|\]|\))"s, std::regex_constants::icase};
+	static const auto split_rx = std::regex{ R"([\s]+|\-|\.|\(|\[|\]|\))"s, std::regex_constants::icase };
 
 	const auto name = std::string_view(std::bit_cast<const char*>(name8.data()), name8.size());
 
 	auto tokens = std::vector<std::string>(
-		std::regex_token_iterator<std::string_view::const_iterator>{name.begin(), name.end(), split_rx, {-1, 0}},
+		std::regex_token_iterator<std::string_view::const_iterator>{name.begin(), name.end(), split_rx, { -1, 0 }},
 		std::regex_token_iterator<std::string_view::const_iterator>{}
 	);
 
-	static const auto space_rx = std::regex{R"([\s]+|\.)"s, std::regex_constants::icase};
+	static const auto space_rx = std::regex{ R"([\s]+|\.)"s, std::regex_constants::icase };
 
 	std::erase_if(tokens, [](auto&& i) { return i.empty() || std::regex_match(i, space_rx); });
 
@@ -2214,10 +2214,10 @@ media_name_props scan_info_from_title(const std::u8string_view name8)
 	static std::regex year_rx("(19|20)[0-9][0-9]"s, std::regex_constants::icase);
 
 	auto found_episode_num = std::ranges::find_if(tokens, [](auto&& i)
-	{
-		return std::regex_match(i, episode_rx) || std::regex_match(i, episode_of_rx) || std::regex_match(
-			i, episode_x_rx);
-	});
+		{
+			return std::regex_match(i, episode_rx) || std::regex_match(i, episode_of_rx) || std::regex_match(
+				i, episode_x_rx);
+		});
 
 	auto end_show = found_episode_num;
 
@@ -2251,9 +2251,9 @@ media_name_props scan_info_from_title(const std::u8string_view name8)
 	}
 
 	auto end_title = std::ranges::find_if(tokens, [](auto&& i)
-	{
-		return stop_words.contains(i);
-	});
+		{
+			return stop_words.contains(i);
+		});
 
 	/*for (auto t : tokens)
 	{
@@ -2320,8 +2320,8 @@ media_name_props scan_info_from_title(const std::u8string_view name8)
 }
 
 static void items_possible_hashes_contains(df::hash_map<df::item_element_ptr, item_presence>& item_presence,
-                                           const std::vector<std::pair<unsigned, df::item_element_ptr>>& possible,
-                                           const df::index_file_item& indexed_file, const uint32_t hash)
+	const std::vector<std::pair<unsigned, df::item_element_ptr>>& possible,
+	const df::index_file_item& indexed_file, const uint32_t hash)
 {
 	auto lb = std::lower_bound(possible.begin(), possible.end(), hash, [](auto&& l, auto&& r) { return l.first < r; });
 
@@ -2436,9 +2436,9 @@ void index_state::update_presence(const df::item_set& items)
 		if (!items_possible_hashes.empty())
 		{
 			std::ranges::sort(items_possible_hashes, [](auto&& left, auto&& right)
-			{
-				return left.first < right.first;
-			});
+				{
+					return left.first < right.first;
+				});
 			const auto folders = _items.all_folders();
 
 			for (const auto& ifn : folders)
@@ -2457,7 +2457,7 @@ void index_state::update_presence(const df::item_set& items)
 						if (created_date.is_valid())
 						{
 							items_possible_hashes_contains(item_presence, items_possible_hashes, file,
-							                               x64to32(created_date.to_int64()));
+								x64to32(created_date.to_int64()));
 						}
 
 						items_possible_hashes_contains(item_presence, items_possible_hashes, file, crypto::fnv1a_i(file.name));
@@ -2473,7 +2473,7 @@ void index_state::update_presence(const df::item_set& items)
 			if (pres == item_presence::unknown)
 			{
 				i.first->presence(item_presence::not_in);
-				i.first->duplicates({0, 0});
+				i.first->duplicates({ 0, 0 });
 			}
 			else
 			{
@@ -2486,11 +2486,11 @@ void index_state::update_presence(const df::item_set& items)
 }
 
 void index_state::scan_items(const df::item_set& items_to_scan,
-                             const bool load_thumbs,
-                             const bool refresh_from_file_system,
-                             const bool only_if_needed,
-                             const bool scan_if_offline,
-                             df::cancel_token token)
+	const bool load_thumbs,
+	const bool refresh_from_file_system,
+	const bool only_if_needed,
+	const bool scan_if_offline,
+	df::cancel_token token)
 {
 	{
 		df::measure_ms ms(stats.scan_items_ms);
@@ -2538,14 +2538,14 @@ void index_state::scan_items(const df::item_set& items_to_scan,
 	}
 
 	df::trace(str::format(u8"Index scan {} items (thumbs={} refresh-fs={}) in {} ms"sv, items_to_scan.size(), load_thumbs,
-	                      refresh_from_file_system, stats.scan_items_ms));
+		refresh_from_file_system, stats.scan_items_ms));
 }
 
 void index_state::scan_folder(const df::folder_path folder_path, const df::index_folder_item_ptr& folder)
 {
 	for (const auto& f : folder->files)
 	{
-		scan_item(folder, {folder_path, f.name}, false, false, nullptr, f.ft);
+		scan_item(folder, { folder_path, f.name }, false, false, nullptr, f.ft);
 	}
 
 	for (const auto& f : folder->folders)
@@ -2573,21 +2573,21 @@ void index_state::queue_scan_listed_items(df::item_set listed_items)
 	df::cancel_token token(version);
 
 	_async.queue_async(async_queue::scan_folder, [this, listed_items = std::move(listed_items), token]()
-	{
-		scan_items(listed_items, false, false, false, false, token);
-	});
+		{
+			scan_items(listed_items, false, false, false, false, token);
+		});
 }
 
 void index_state::queue_scan_modified_items(df::item_set items_to_scan)
 {
 	_async.queue_async(async_queue::scan_modified_items, [this, items_to_scan = std::move(items_to_scan)]()
-	{
-		const auto start_ms = df::now_ms();
-		scan_items(items_to_scan, true, true, false, false, {});
-		_async.invalidate_view(view_invalid::index_summary | view_invalid::media_elements);
-		df::trace(str::format(u8"Index scan modified {} items in {} ms"sv, items_to_scan.size(),
-		                      df::now_ms() - start_ms));
-	});
+		{
+			const auto start_ms = df::now_ms();
+			scan_items(items_to_scan, true, true, false, false, {});
+			_async.invalidate_view(view_invalid::index_summary | view_invalid::media_elements);
+			df::trace(str::format(u8"Index scan modified {} items in {} ms"sv, items_to_scan.size(),
+				df::now_ms() - start_ms));
+		});
 }
 
 void index_state::queue_scan_displayed_items(df::item_set visible)
@@ -2596,15 +2596,15 @@ void index_state::queue_scan_displayed_items(df::item_set visible)
 	df::cancel_token token(version);
 
 	_async.queue_async(async_queue::scan_displayed_items, [this, visible = std::move(visible), token]()
-	{
-		df::scope_locked_inc thumbnailing(thumbnailing_items);
-
-		if (!visible.empty())
 		{
-			scan_items(visible, true, false, true, false, token);
-			_async.invalidate_view(view_invalid::view_layout | view_invalid::group_layout);
-		}
-	});
+			df::scope_locked_inc thumbnailing(thumbnailing_items);
+
+			if (!visible.empty())
+			{
+				scan_items(visible, true, false, true, false, token);
+				_async.invalidate_view(view_invalid::view_layout | view_invalid::group_layout);
+			}
+		});
 }
 
 void index_state::queue_update_presence(df::item_set items)
@@ -2612,32 +2612,32 @@ void index_state::queue_update_presence(df::item_set items)
 	if (!items.empty())
 	{
 		_async.queue_async(async_queue::index_presence_single, [this, items = std::move(items)]()
-		{
-			const auto start_ms = df::now_ms();
-			update_presence(items);
-			_async.invalidate_view(view_invalid::view_layout | view_invalid::group_layout);
-			df::trace(str::format(u8"Index update presence in {} ms"sv, df::now_ms() - start_ms));
-		});
+			{
+				const auto start_ms = df::now_ms();
+				update_presence(items);
+				_async.invalidate_view(view_invalid::view_layout | view_invalid::group_layout);
+				df::trace(str::format(u8"Index update presence in {} ms"sv, df::now_ms() - start_ms));
+			});
 	}
 }
 
 void index_state::queue_update_predictions()
 {
 	_async.queue_async(async_queue::index_predictions_single, [this]()
-	{
-		update_predictions();
-		_async.invalidate_view(view_invalid::sidebar);
-	});
+		{
+			update_predictions();
+			_async.invalidate_view(view_invalid::sidebar);
+		});
 }
 
 void index_state::queue_update_summary()
 {
 	_async.queue_async(async_queue::index_summary_single, [this]()
-	{
-		update_summary();
-		_async.invalidate_view(view_invalid::sidebar);
-		std::this_thread::sleep_for(333ms);
-	});
+		{
+			update_summary();
+			_async.invalidate_view(view_invalid::sidebar);
+			std::this_thread::sleep_for(333ms);
+		});
 }
 
 std::vector<str::cached> index_state::distinct_genres() const
@@ -2645,8 +2645,8 @@ std::vector<str::cached> index_state::distinct_genres() const
 	platform::shared_lock lock(_summary_rw);
 	const auto found = _summary._distinct_text.find(prop::genre);
 	return found != _summary._distinct_text.end()
-		       ? std::vector<str::cached>{found->second.begin(), found->second.end()}
-		       : std::vector<str::cached>{};
+		? std::vector<str::cached>{found->second.begin(), found->second.end()}
+	: std::vector<str::cached>{};
 }
 
 std::vector<std::u8string> index_state::auto_complete_text(const prop::key_ref key)
@@ -2654,32 +2654,32 @@ std::vector<std::u8string> index_state::auto_complete_text(const prop::key_ref k
 	platform::shared_lock lock(_summary_rw);
 	const auto found = _summary._distinct_text.find(key);
 	return found != _summary._distinct_text.end()
-		       ? std::vector<std::u8string>{found->second.begin(), found->second.end()}
-		       : std::vector<std::u8string>{};
+		? std::vector<std::u8string>{found->second.begin(), found->second.end()}
+	: std::vector<std::u8string>{};
 }
 
 void index_state::queue_scan_folder(const df::folder_path path)
 {
 	_async.queue_async(async_queue::scan_folder, [this, path]()
-	{
-		const auto now = platform::now();
-		scan_folder(path, is_in_collection(path), now);
-	});
+		{
+			const auto now = platform::now();
+			scan_folder(path, is_in_collection(path), now);
+		});
 }
 
 void index_state::queue_scan_folders(df::unique_folders paths)
 {
 	_async.queue_async(async_queue::scan_folder, [this, paths = std::move(paths)]()
-	{
-		const auto now = platform::now();
-
-		for (const auto& path : paths)
 		{
-			scan_folder(path, is_in_collection(path), now);
-		}
+			const auto now = platform::now();
 
-		_async.invalidate_view(view_invalid::view_layout);
-	});
+			for (const auto& path : paths)
+			{
+				scan_folder(path, is_in_collection(path), now);
+			}
+
+			_async.invalidate_view(view_invalid::view_layout);
+		});
 }
 
 void index_state::merge_folder(const df::folder_path folder_path, const db_items_t& items)
@@ -2850,8 +2850,8 @@ std::vector<index_state::auto_complete_folder> index_state::auto_complete_folder
 	std::vector<auto_complete_folder> result;
 
 	for (const auto& folders : {
-		     _summary._distinct_prime_folders, _summary._distinct_folders, _summary._distinct_other_folders
-	     })
+			 _summary._distinct_prime_folders, _summary._distinct_folders, _summary._distinct_other_folders
+		})
 	{
 		if (query.size() > 2)
 		{

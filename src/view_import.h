@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2022  Zac Walker
+// Copyright(C) 2024  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -13,7 +13,7 @@
 #include "view_list.h"
 
 class import_view final :
-    public list_view,
+	public list_view,
 	public std::enable_shared_from_this<import_view>
 {
 	bool _select_other_folder = false;
@@ -34,7 +34,7 @@ public:
 	void analyze();
 	void refresh() override;
 	void reload() override;
-	
+
 	std::u8string_view status() override
 	{
 		return _status;
