@@ -49,7 +49,7 @@ namespace crypto
 		const static uint32_t sha256_k[];
 		static constexpr uint32_t SHA224_256_BLOCK_SIZE = (512 / 8);
 
-		void transform(const uint8_t* message, uint32_t block_nb);
+		void transform(const uint8_t* message, size_t block_nb);
 		void reset();
 
 		size_t m_tot_len = 0;

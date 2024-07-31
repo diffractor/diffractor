@@ -89,6 +89,7 @@ public:
 
 	void activate(sizei extent) override;
 	void deactivate() override;
+	void refresh() override;
 
 	void render(ui::draw_context& dc, view_controller_ptr controller) override;
 

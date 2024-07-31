@@ -530,12 +530,23 @@ public:
 	}
 };
 
-edit_view::edit_view(view_state& s, view_host_ptr host, edit_view_state& evs, std::shared_ptr<edit_view_controls> evc) :
+edit_view::edit_view(view_state& s, view_host_ptr host, edit_view_state& evs) :
 	_state(s),
 	_host(std::move(host)),
-	_edit_state(evs),
-	_edit_controls(std::move(evc))
+	_edit_state(evs)
 {
+}
+
+view_controls_host_ptr edit_view::controls(const ui::control_frame_ptr& owner)
+{
+	if (!_edit_controls)
+	{
+		_edit_controls = std::make_shared<edit_view_controls>(_state, _edit_state);
+		_edit_controls->_view = shared_from_this();
+		_edit_controls->_frame = _edit_controls->_dlg = owner->create_dlg(_edit_controls, false);
+	}
+
+	return _edit_controls;
 }
 
 ui::const_surface_ptr edit_view::preview_surface() const
@@ -556,14 +567,22 @@ void edit_view::activate(const sizei extent)
 
 	_state.stop();
 	changed();
-	_host->frame()->invalidate();
-	_host->frame()->layout();
+	
+	_state.invalidate_view(view_invalid::view_layout | view_invalid::controller | view_invalid::app_layout);
 }
 
 void edit_view::deactivate()
 {
 	_preview_surface.reset();
+	_texture.reset();
 	_loaded.clear();
+}
+
+void edit_view::refresh()
+{
+	_preview_surface.reset();
+	_invalid = true;
+	_host->frame()->invalidate();
 }
 
 void edit_view::layout(ui::measure_context& mc, const sizei extent)
@@ -975,16 +994,12 @@ void edit_view::changed()
 			}
 			else
 			{
-				_preview_surface.reset();
-				_invalid = true;
-				_host->frame()->invalidate();
+				refresh();
 			}
 		}
 		else
 		{
-			_preview_surface.reset();
-			_invalid = true;
-			_host->frame()->invalidate();
+			refresh();
 		}
 	}
 }
@@ -1004,13 +1019,7 @@ static std::u8string fix_crlf(const std::u8string_view s)
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
-void edit_view_controls::scroll_controls()
-{
-	if (_frame)
-	{
-		_frame->layout();
-	}
-}
+
 
 void edit_view_controls::layout_controls(ui::measure_context& mc)
 {
@@ -1064,41 +1073,17 @@ void edit_view_controls::layout_controls(ui::measure_context& mc)
 		_saturation_slider->is_visible(is_bitmap);
 		_color_toolbar->is_visible(is_bitmap);
 
-		const auto layout_padding = mc.padding1;
-		auto avail_bounds = recti(_extent);
-		avail_bounds.right -= mc.scroll_width + layout_padding;
-
-		ui::control_layouts positions;
-		const auto height = stack_elements(mc, positions, avail_bounds, _controls, false,
-		                                   {layout_padding, layout_padding});
-
-		_layout_height = height;
-		_layout_width = avail_bounds.width();
-		_label_width = mc.col_widths;
-
-		const recti scroll_bounds{_extent.cx - mc.scroll_width, 0, _extent.cx, _extent.cy};
-		const recti client_bounds{0, 0, _extent.cx - mc.scroll_width, _extent.cy};
-		_scroller.layout({_layout_width, _layout_height}, client_bounds, scroll_bounds);
-
-		_dlg->apply_layout(positions, -_scroller.scroll_offset());
-		_dlg->invalidate();
+		view_controls_host::layout_controls(mc);
 	}
 }
 
-void edit_view_controls::init(const ui::control_frame_ptr& owner)
-{
-	_frame = _dlg = owner->create_dlg(shared_from_this(), false);
-}
 
 void edit_view_controls::options_changed()
 {
+	view_controls_host::options_changed();
+
 	if (!_controls.empty())
 	{
-		for (const auto& c : _controls)
-		{
-			c->visit_controls([](const ui::control_base_ptr& cc) { cc->options_changed(); });
-		}
-
 		_straighten_title->text(tt.straighten);
 		_color_title->text(tt.color);
 		_vibrance_slider->label(tt.vibrance);
@@ -1130,31 +1115,6 @@ void edit_view_controls::options_changed()
 		_raiting_control->label(tt.prop_name_rating);
 		_created_control->label(tt.prop_name_created);
 	}
-}
-
-void edit_view_controls::focus_changed(const bool has_focus, const ui::control_base_ptr& child)
-{
-	if (child && child->has_focus())
-	{
-		auto point_offset = _scroller.scroll_offset();
-		const auto rc = child->window_bounds().offset(point_offset - _dlg->window_bounds().top_left());
-
-		if (rc.top < point_offset.y)
-		{
-			point_offset.y = rc.top;
-		}
-		else if (rc.bottom > (point_offset.y + _extent.cy))
-		{
-			point_offset.y = rc.bottom - _extent.cy;
-		}
-
-		_scroller.scroll_offset(shared_from_this(), 0, point_offset.y);
-	}
-}
-
-void edit_view_controls::command_hover(const ui::command_ptr& c, const recti window_bounds)
-{
-	_state.command_hover(c, window_bounds);
 }
 
 void edit_view_controls::create_controls()
@@ -1282,38 +1242,6 @@ void edit_view_controls::create_controls()
 	_host->focus_first();
 	_host->on_message(WM_HSCROLL, [this](WPARAM wParam, LPARAM lParam) { _view->changed(); return false; });*/
 }
-
-void edit_view_controls::on_window_layout(ui::measure_context& mc, const sizei extent, const bool is_minimized)
-{
-	_extent = extent;
-	layout_controls(mc);
-}
-
-void edit_view_controls::on_window_paint(ui::draw_context& dc)
-{
-	dc.col_widths = _label_width;
-
-	const auto offset = _scroller.scroll_offset();
-
-	for (const auto& c : _controls)
-	{
-		if (c->is_visible())
-		{
-			c->render(dc, -offset);
-		}
-	}
-
-	if (_active_controller)
-	{
-		_active_controller->draw(dc);
-	}
-
-	if (!_scroller._active)
-	{
-		_scroller.draw_scroll(dc);
-	}
-}
-
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

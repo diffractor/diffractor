@@ -28,7 +28,6 @@
 #include "util_simd.h"
 #include "app_util.h"
 
-static int col_widths[] = { 0, 0, 0 };
 
 const static auto long_text =
 	u8"The Commodore 64, also known as the C64, C-64, C= 64, or occasionally CBM 64 or VIC-64, is an 8-bit home computer introduced in January 1982 by Commodore International. "
@@ -202,7 +201,6 @@ public:
 	}
 };
 
-
 class temp_files
 {
 	df::folder_path _folder;
@@ -275,85 +273,12 @@ static df::item_element_ptr load_item(index_state& index, const df::file_path pa
 	return i;
 }
 
-
-void test_view::test_element::render(ui::draw_context& dc, const pointi element_offset) const
+test_view::test_view(view_state& state, view_host_ptr host) : list_view(state,std::move(host))
 {
-	const auto bg_alpha = dc.colors.alpha * dc.colors.bg_alpha;
-	const auto text_color = ui::color(dc.colors.foreground, dc.colors.alpha);
-	auto state = u8"Unknown"sv;
-	ui::color bg;
-
-	switch (_state)
-	{
-	case test_state::Success:
-		bg = ui::color(ui::style::color::info_background, bg_alpha);
-		state = u8"Success"sv;
-		break;
-	case test_state::Failed:
-		bg = ui::color(ui::style::color::warning_background, bg_alpha);
-		state = u8"Failed"sv;
-		break;
-	case test_state::Running:
-		bg = ui::color(ui::style::color::important_background, bg_alpha);
-		state = u8"Running"sv;
-		break;
-	case test_state::Unknown:
-		bg = ui::color(ui::style::color::view_background, bg_alpha / 2.0f);
-		state = u8"Unknown"sv;
-		break;
-	}
-
-	const auto logical_bounds = bounds.offset(element_offset);
-	dc.draw_rect(logical_bounds, bg);
-
-	auto x = logical_bounds.left + dc.padding2;
-
-	const recti rectName(x, logical_bounds.top, x + col_widths[0], logical_bounds.bottom);
-	dc.draw_text(_name, rectName, ui::style::font_face::dialog,
-	             ui::style::text_style::single_line, text_color, {});
-
-	x += col_widths[0] + +dc.padding2;
-	const recti rectSuccess(x, logical_bounds.top, x + col_widths[1], logical_bounds.bottom);
-	dc.draw_text(state, rectSuccess, ui::style::font_face::dialog, ui::style::text_style::single_line,
-	             text_color, {});
-
-	x += col_widths[1] + dc.padding2;
-	const recti rectMessage(x, logical_bounds.top, logical_bounds.right, logical_bounds.bottom);
-
-	auto message = _message;
-
-	if (message.empty() && _time > 0)
-	{
-		message = str::format(u8"{:8} milliseconds"sv, _time);
-	}
-
-	dc.draw_text(message, rectMessage, ui::style::font_face::dialog,
-	             ui::style::text_style::single_line, text_color, {});
-}
-
-sizei test_view::test_element::measure(ui::measure_context& mc, const int width_limit) const
-{
-	const auto row_height = mc.text_line_height(ui::style::font_face::dialog) + mc.padding2;
-	return {width_limit, row_height };
-}
-
-void test_view::test_element::dispatch_event(const view_element_event& event)
-{
-	if (event.type == view_element_event_type::invoke)
-	{
-		_view.run_test(shared_from_this());
-	}
-}
-
-view_controller_ptr test_view::test_element::controller_from_location(const view_host_ptr& host, const pointi loc,
-                                                                      const pointi element_offset,
-                                                                      const std::vector<recti>& excluded_bounds)
-{
-	return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
-}
-
-test_view::test_view(view_state& state, view_host_ptr host) : _state(state), _host(std::move(host))
-{
+	col_count = 3;
+	col_titles[0] = tt.status;
+	col_titles[1] = tt.test;
+	col_titles[2] = tt.message;
 }
 
 test_view::~test_view()
@@ -363,20 +288,24 @@ test_view::~test_view()
 
 void test_view::activate(const sizei extent)
 {
-	_extent = extent;
+	list_view::activate(extent);
 
 	if (_tests.empty())
 	{
 		register_tests();
 	}
 
-	refresh();
+	refresh();	
 }
 
 
 void test_view::refresh()
 {
 	_host->frame()->layout();
+}
+
+void test_view::reload()
+{
 	run_tests();
 }
 
@@ -384,88 +313,6 @@ void test_view::clear()
 {
 	_scroller.reset();
 	sort();
-	_host->frame()->invalidate();
-}
-
-
-void test_view::render_headers(ui::draw_context& dc, int x) const
-{
-	static constexpr std::u8string_view titles[] = {u8"Name"sv, u8"Status"sv, u8"Message"};
-
-	const auto cy = dc.text_line_height(ui::style::font_face::dialog) + (dc.padding2 * 2);	
-	const auto bg_alpha = dc.colors.alpha * dc.colors.bg_alpha;
-	const auto text_color = ui::color(dc.colors.foreground, dc.colors.alpha);
-
-	constexpr int y = 0;
-	dc.draw_rect(recti(0, y, _extent.cx, y + cy), ui::color(0, bg_alpha));
-
-	for (auto i = 0u; i < std::size(titles); ++i)
-	{
-		auto cx = col_widths[i];
-
-		if (cx == 0)
-		{
-			cx = _extent.cx - x;
-		}
-
-		const recti r(x, y, x + cx, y + cy);
-		dc.draw_rect(r, ui::color(dc.colors.background, bg_alpha));
-		dc.draw_text(titles[i], r, ui::style::font_face::dialog,
-		             ui::style::text_style::single_line_center, text_color, {});
-
-		x += cx;
-	}
-}
-
-void test_view::render(ui::draw_context& rc, view_controller_ptr controller)
-{
-	constexpr auto left = 8;
-	const auto offset = -_scroller.scroll_offset();
-
-	for (const auto& i : _tests)
-	{
-		i->render(rc, offset);
-	}
-
-	render_headers(rc, left);
-
-	if (!_scroller._active)
-	{
-		_scroller.draw_scroll(rc);
-	}
-}
-
-
-void test_view::layout(ui::measure_context& mc, const sizei extent)
-{
-	_extent = extent;
-
-	const recti scroll_bounds{_extent.cx - mc.scroll_width, 0, _extent.cx, _extent.cy};
-	const recti client_bounds{0, 0, _extent.cx - mc.scroll_width, _extent.cy};
-
-	auto y_max = 0;
-	std::u8string longest_name;
-
-	if (!_tests.empty())
-	{
-		const auto row_height = mc.text_line_height(ui::style::font_face::dialog) + mc.padding2;
-		auto y = row_height + (mc.padding2 * 2);
-
-		for (const auto& i : _tests)
-		{
-			i->bounds.set(client_bounds.left, y, client_bounds.right, y + row_height);
-			y += row_height + mc.padding1;
-
-			if (i->_name.size() > longest_name.size()) longest_name = i->_name;
-		}
-
-		y_max = y + mc.padding2;
-	}
-
-	col_widths[0] = mc.measure_text(longest_name, ui::style::font_face::dialog, ui::style::text_style::single_line, extent.cx).cx;
-	col_widths[1] = mc.measure_text(u8"Unknown"sv, ui::style::font_face::dialog, ui::style::text_style::single_line, extent.cx).cx;
-
-	_scroller.layout({client_bounds.width(), y_max}, client_bounds, scroll_bounds);
 	_host->frame()->invalidate();
 }
 
@@ -492,6 +339,14 @@ test_view::test_ptr test_view::test_from_location(const int y) const
 
 view_controller_ptr test_view::controller_from_location(const view_host_ptr& host, const pointi loc)
 {
+	for (int i = 0; i < col_count; ++i)
+	{
+		if (_col_header_bounds[i].contains(loc))
+		{
+			return std::make_shared<header_controller>(host, *this, _col_header_bounds[i], i);
+		}
+	}
+
 	if (_scroller.scroll_bounds().contains(loc))
 	{
 		return std::make_shared<scroll_controller>(host, _scroller, _scroller.scroll_bounds());
@@ -508,12 +363,6 @@ view_controller_ptr test_view::controller_from_location(const view_host_ptr& hos
 	return nullptr;
 }
 
-void test_view::mouse_wheel(const pointi loc, const int zDelta, const ui::key_state keys)
-{
-	_scroller.offset(_host, 0, -zDelta);
-	_state.invalidate_view(view_invalid::controller);
-}
-
 void test_view::sort()
 {
 	df::assert_true(ui::is_ui_thread());
@@ -527,6 +376,12 @@ void test_view::sort()
 	_host->frame()->layout();
 }
 
+///////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
 static file_scan_result ff_scan_file(files& ff, const df::file_path path, const std::u8string_view xmp_sidecar = {})
 {
 	const auto* const ft = files::file_type_from_name(path);
@@ -539,12 +394,6 @@ static file_scan_result ff_scan_and_load_thumb(files& ff, const df::file_path pa
 	const auto* const ft = files::file_type_from_name(path);
 	return ff.scan_file(path, true, ft, xmp_sidecar, thumbnail_max_dimension);
 }
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////
 
 struct metadata_type
 {
@@ -810,9 +659,13 @@ static void should_replace_tokens()
 	const auto image_md = ff_scan_file(ff, test_files_folder.combine_file(u8"Test.jpg"sv));
 	const auto audio_md = ff_scan_file(ff, test_files_folder.combine_file(u8"Colorblind.mp3"sv));
 
-	assert_equal(u8"2012\\2012-09-14"sv, replace_tokens(u8"{year}\\{created}"s, image_md.to_props()));
-	assert_equal(u8"2012\\09\\14"sv, replace_tokens(u8"{year}\\{month}\\{day}"s, image_md.to_props()));
-	assert_equal(u8"Counting Crows\\This Desert Life"sv, replace_tokens(u8"{artist}\\{album}"s, audio_md.to_props()));
+	auto md1 = image_md.to_props();
+	auto md2 = audio_md.to_props();
+
+	assert_equal(u8"2012\\2012-09-14"sv, replace_tokens(u8"{year}\\{created}"s, md1, {}, md1->created()));
+	assert_equal(u8"2012\\Test.jpg"sv, replace_tokens(u8"{year}\\{name}"s, md1, u8"Test.jpg"sv, md1->created()));
+	assert_equal(u8"2012\\09\\14"sv, replace_tokens(u8"{year}\\{month}\\{day}"s, md1, {}, md1->created()));	
+	assert_equal(u8"Counting Crows\\This Desert Life"sv, replace_tokens(u8"{artist}\\{album}"s, md2, {}, md2->created()));
 }
 
 static void should_scan_jpeg()
@@ -2786,6 +2639,18 @@ static void should_split()
 	{
 		str::split_count(src, true);
 	}
+}static void should_extract_url()
+{
+	const auto input1 = u8"Visit my website at https://www.example.com for more info."sv;
+	const auto input2 = u8"Check out this article: http://anotherexample.org/article"sv;
+	const auto input3 = u8"No URLs here."sv;
+	const auto input4 = u8"Quite nice  <a href=\"http://bighugelabs.com/flickr/onblack.php?id=1397504988\"> On Black</a>"sv;
+
+	assert_equal(u8"https://www.example.com"sv, df::url_extract(input1), u8"extract url"sv);
+	assert_equal(u8"http://anotherexample.org/article"sv, df::url_extract(input2), u8"extract url"sv);
+	assert_equal(u8""sv, df::url_extract(input3), u8"extract url"sv);	
+	assert_equal(u8""sv, df::url_extract(input3), u8"extract url"sv);
+	assert_equal(u8"http://bighugelabs.com/flickr/onblack.php?id=1397504988"sv, df::url_extract(input4), u8"extract url"sv);
 }
 
 static void should_match_wildcard()
@@ -3550,22 +3415,29 @@ void test_view::run_test(const test_ptr& test)
 	});
 }
 
+static std::atomic_int tests_running = 0;
+
 void test_view::run_tests()
 {
-	const auto tests = _tests;
-
-	_state.queue_async(async_queue::work, [this, tests]()
+	if (tests_running == 0)
 	{
-		shared_test_context stc;
+		++tests_running;
+		const auto tests = _tests;
 
-		for (const auto& test : tests)
-		{
-			test->perform(_state, stc);
-			_state.queue_ui([this]() { sort(); });
-		}
-	});
+		_state.queue_async(async_queue::work, [this, tests]()
+			{
+				shared_test_context stc;
 
-	_temps.delete_temps();
+				for (const auto& test : tests)
+				{
+					test->perform(_state, stc);
+					_state.queue_ui([this, test]() { test->update_row(); sort(); });
+				}
+
+				_temps.delete_temps();
+				--tests_running;
+			});
+	}
 }
 
 void test_view::register_tests()
@@ -3577,6 +3449,7 @@ void test_view::register_tests()
 	register_test(u8"Should calc Hashes"s, should_calc_hashes);
 	register_test(u8"Should convert Utf8"s, should_convert_utf8);
 	register_test(u8"Should split"s, should_split);
+	register_test(u8"Should extract url"s, should_extract_url);
 	register_test(u8"Should detect wildcard"s, should_detect_wildcard);
 	register_test(u8"Should match wildcard"s, should_match_wildcard);
 	register_test(u8"Should handle international characters"s, should_handle_international_characters);

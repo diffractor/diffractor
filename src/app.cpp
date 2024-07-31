@@ -24,6 +24,9 @@
 #include "view_items.h"
 #include "view_edit.h"
 #include "view_media.h"
+#include "view_import.h"
+#include "view_rename.h"
+#include "view_sync.h"
 
 #include "app_sidebar.h"
 #include "app_commands.h"
@@ -36,6 +39,7 @@
 #include "util_spell.h"
 #include "app_match.h"
 
+
 platform::thread_event media_preview_event(false, false);
 static platform::mutex media_preview_mutex;
 static _Guarded_by_(media_preview_mutex) std::function<void(media_preview_state&)> next_media_preview;
@@ -45,7 +49,7 @@ static std::atomic_int index_version;
 const wchar_t* s_app_name_l = L"Diffractor";
 const std::u8string_view s_app_name = u8"Diffractor"sv;
 const std::u8string_view s_app_version = u8"126.0"sv;
-const std::u8string_view g_app_build = u8"1181"sv;
+const std::u8string_view g_app_build = u8"1182"sv;
 const std::u8string_view stage_file_name = u8"diffractor-setup-update.exe"sv;
 static constexpr std::u8string_view installed_file_name = u8"diffractor-setup-installed.exe"sv;
 static constexpr std::u8string_view s_search = u8"search"sv;
@@ -197,14 +201,14 @@ void app_frame::stage_update()
 		if (setting.is_tester || (setting.install_updates && setting.first_run_today))
 		{
 			auto download_complete = [this](const df::file_path download_path)
-			{
-				const auto stage_path = known_path(platform::known_folder::app_data).combine_file(stage_file_name);
-
-				if (download_path.exists())
 				{
-					platform::move_file(download_path, stage_path, false);
-				}
-			};
+					const auto stage_path = known_path(platform::known_folder::app_data).combine_file(stage_file_name);
+
+					if (download_path.exists())
+					{
+						platform::move_file(download_path, stage_path, false);
+					}
+				};
 
 			queue_async(async_queue::web, [download_complete]()
 				{
@@ -490,7 +494,7 @@ public:
 
 				if (found.size() < max_predictions)
 				{
-					for (const auto &k : _known)
+					for (const auto& k : _known)
 					{
 						const auto trimmed = str::trim(query);
 
@@ -595,14 +599,14 @@ std::u8string format_plural_text(const plural_text& fmt, const std::u8string_vie
 	const std::u8string_view template_text = count == 1 ? fmt.one : fmt.plural;
 
 	auto substitute = [&](u8ostringstream& result, const std::u8string_view token)
-	{
-		if (token == u8"first-name"sv) result << first_name;
-		else if (token == u8"count"sv) result << platform::format_number(str::to_string(count));
-		else if (token == u8"other"sv) result << platform::format_number(str::to_string(count - 1));
-		else if (token == u8"total"sv) result << platform::format_number(str::to_string(of_total));
-		else if (token == u8"size"sv) result << prop::format_size(size);
-		else if (token.empty()) result << platform::format_number(str::to_string(count));
-	};
+		{
+			if (token == u8"first-name"sv) result << first_name;
+			else if (token == u8"count"sv) result << platform::format_number(str::to_string(count));
+			else if (token == u8"other"sv) result << platform::format_number(str::to_string(count - 1));
+			else if (token == u8"total"sv) result << platform::format_number(str::to_string(of_total));
+			else if (token == u8"size"sv) result << prop::format_size(size);
+			else if (token.empty()) result << platform::format_number(str::to_string(count));
+		};
 
 	return str::replace_tokens(template_text, substitute);
 }
@@ -692,14 +696,16 @@ app_frame::app_frame(ui::plat_app_ptr pa) :
 	_db(_state.item_index),
 	_pa(std::move(pa))
 {
-	_edit_view_controls = std::make_shared<edit_view_controls>(_state, _edit_view_state);
+	
 	_sidebar = std::make_shared<sidebar_host>(_state);
 	_view_frame = std::make_shared<view_frame>(_state);
 	_view_test = std::make_shared<test_view>(_state, _view_frame);
+	_view_sync = std::make_shared<sync_view>(_state, _view_frame);
+	_view_import = std::make_shared<import_view>(_state, _view_frame);
+	_view_rename = std::make_shared<rename_view>(_state, _view_frame);
 	_view_items = std::make_shared<items_view>(_state, _view_frame);
-	_view_edit = std::make_shared<edit_view>(_state, _view_frame, _edit_view_state, _edit_view_controls);
+	_view_edit = std::make_shared<edit_view>(_state, _view_frame, _edit_view_state);
 	_view_media = std::make_shared<media_view>(_state, _view_frame);
-	_edit_view_controls->_view = _view_edit;
 }
 
 app_frame::~app_frame()
@@ -1179,19 +1185,19 @@ void app_frame::update_overlay()
 			_view_media->overlay_alpha_target = show_overlays ? 1.0f : 0.0f;
 
 			ui::animations[this] = [v = _view_media, fv = _view_frame]
-			{
-				const auto dd = v->overlay_alpha_target - v->overlay_alpha;
-				bool invalidate = false;
-
-				if (fabs(dd) > 0.001f)
 				{
-					v->overlay_alpha += dd * 0.2345f;
-					fv->invalidate_view(view_invalid::view_redraw);
-					invalidate = true;
-				}
+					const auto dd = v->overlay_alpha_target - v->overlay_alpha;
+					bool invalidate = false;
 
-				return invalidate;
-			};
+					if (fabs(dd) > 0.001f)
+					{
+						v->overlay_alpha += dd * 0.2345f;
+						fv->invalidate_view(view_invalid::view_redraw);
+						invalidate = true;
+					}
+
+					return invalidate;
+				};
 
 			if (!show_overlays)
 			{
@@ -1353,6 +1359,14 @@ void app_frame::search_complete(const df::search_t& search, const bool path_chan
 	}
 }
 
+static recti calc_command_bounds(const ui::measure_context& mc, const sizei media_edit_commands_extent, const int y_status_top, const int status_height, const int client_bounds_right)
+{
+	const auto y_media_edit = y_status_top + (status_height - media_edit_commands_extent.cy) / 2;
+	const auto x_media_edit = client_bounds_right - (mc.padding1 + media_edit_commands_extent.cx + mc.handle_cxy);
+
+	return recti(x_media_edit, y_media_edit, x_media_edit + media_edit_commands_extent.cx, y_media_edit + media_edit_commands_extent.cy);
+}
+
 void app_frame::layout(ui::measure_context& mc)
 {
 	if (!df::is_closing && _app_frame && _tools && !_extent.is_empty())
@@ -1360,12 +1374,18 @@ void app_frame::layout(ui::measure_context& mc)
 		update_button_state(true);
 
 		const auto view_mode = _state.view_mode();
-		const auto is_full_screen_media = _state.is_full_screen && view_mode == view_type::media;
-		const auto is_editing = _state.is_editing();
-		const auto show_top_bar = is_editing || !is_full_screen_media;
-		const auto show_status_bar = !is_full_screen_media;
-		const auto show_sidebar = (setting.show_sidebar && !is_full_screen_media && !_state.is_editing());
-		const auto show_edit_controls = view_mode == view_type::edit;
+		const auto is_items_or_media_view = _state.is_items_or_media_view();
+		const auto is_command_view = !is_items_or_media_view;
+		const auto is_full_screen_media = _state.is_full_screen && view_mode == view_type::media;		
+		const auto can_show_top_bar = is_command_view || !is_full_screen_media;
+		const auto can_show_status_bar = !is_full_screen_media;
+		const auto can_show_tools = is_items_or_media_view && can_show_status_bar;
+		const auto can_show_filter = is_items_or_media_view && can_show_status_bar && view_mode != view_type::test;
+		const auto can_show_sidebar = setting.show_sidebar && !is_full_screen_media && is_items_or_media_view;
+		const auto can_show_view_controls = view_mode == view_type::edit ||
+			view_mode == view_type::rename ||
+			view_mode == view_type::sync ||
+			view_mode == view_type::import;
 
 		const auto scale_factor = mc.scale_factor;
 		const auto scale1 = df::round(1 * scale_factor);
@@ -1382,15 +1402,26 @@ void app_frame::layout(ui::measure_context& mc)
 		const auto navigate1_extent = _navigate1->measure_toolbar(_extent.cx);
 		const auto navigate2_extent = _navigate2->measure_toolbar(_extent.cx);
 		const auto navigate3_extent = _navigate3->measure_toolbar(_extent.cx);
-		const auto media_edit_extent = _media_edit->measure_toolbar(_extent.cx);
+		const auto media_edit_commands_extent = _media_edit_commands->measure_toolbar(_extent.cx);
+		const auto rename_commands_extent = _rename_commands->measure_toolbar(_extent.cx);
+		const auto import_commands_extent = _import_commands->measure_toolbar(_extent.cx);
+		const auto sync_commands_extent = _sync_commands->measure_toolbar(_extent.cx);
+		const auto test_commands_extent = _test_commands->measure_toolbar(_extent.cx);
+
 		const auto text_line_height = mc.text_line_height(ui::style::font_face::dialog);
 		const auto cy_address = text_line_height + mc.padding2 + mc.padding2;
 		const auto cy_filter = text_line_height + mc.padding2;
 
-		const auto top_height = std::max(std::max(navigate1_extent.cy, navigate2_extent.cy),
-		                                 std::max(navigate3_extent.cy, cy_address)) + mc.padding2;
-		const auto status_height = std::max(std::max(tools_extent.cy, sorting_extent.cy),
-		                                    std::max(media_edit_extent.cy, cy_filter)) + mc.padding1;
+		const auto top_height = std::max(
+			std::max(navigate1_extent.cy, navigate2_extent.cy),
+			std::max(navigate3_extent.cy, cy_address)) + mc.padding2;
+		const auto status_height = std::max(
+			std::max(
+				std::max(tools_extent.cy, sorting_extent.cy),
+				std::max(media_edit_commands_extent.cy, cy_filter)),
+			std::max(
+				std::max(rename_commands_extent.cy, import_commands_extent.cy),
+				std::max(sync_commands_extent.cy, test_commands_extent.cy))) + mc.padding1;
 
 		const auto client_bounds = recti(_extent).inflate(is_full_screen_media ? 0 : -scale1);
 		const auto y_status_top = client_bounds.bottom - status_height;
@@ -1399,13 +1430,12 @@ void app_frame::layout(ui::measure_context& mc)
 		const auto y_nav2 = client_bounds.top + (top_height - navigate2_extent.cy) / 2;
 		const auto y_nav3 = client_bounds.top + (top_height - navigate3_extent.cy) / 2;
 		const auto y_tools = y_status_top + (status_height - tools_extent.cy) / 2;
-		const auto y_sorting = y_status_top + (status_height - sorting_extent.cy) / 2;
-		const auto y_media_edit = y_status_top + (status_height - media_edit_extent.cy) / 2;
+		const auto y_sorting = y_status_top + (status_height - sorting_extent.cy) / 2;		
 		const auto cx_avail = client_bounds.width();
 		const auto sidebar_min = scale64;
 		const auto sidebar_avail = std::max(sidebar_min, cx_avail / 3);
 		const auto sidebar_cx = std::clamp(_sidebar->preferred_width(mc), sidebar_min, sidebar_avail);
-		const auto toolbar_widths = navigate1_extent.cx + navigate2_extent.cx + navigate3_extent.cx;				
+		const auto toolbar_widths = navigate1_extent.cx + navigate2_extent.cx + navigate3_extent.cx;
 		const auto cx_address = std::clamp((client_bounds.width() - toolbar_widths) / 2, scale300, scale1000);
 		const auto x_address_center = (client_bounds.left + client_bounds.right) / 2;
 		const auto x_address_left = x_address_center - (cx_address / 2);
@@ -1414,13 +1444,12 @@ void app_frame::layout(ui::measure_context& mc)
 		const auto x_nav2 = x_address_right + mc.padding1;
 		const auto x_nav3 = client_bounds.right - mc.padding1 - navigate3_extent.cx;
 		const auto x_tools_avail = cx_avail - sidebar_cx;
-		const auto x_tools = (show_sidebar ? sidebar_cx : 0) + (is_full_screen_media ? (x_tools_avail - tools_extent.cx) / 2 : mc.padding1);
+		const auto x_tools = (can_show_sidebar ? sidebar_cx : 0) + (is_full_screen_media ? (x_tools_avail - tools_extent.cx) / 2 : mc.padding1);
 		_sorting_width = std::max(_sorting_width, sorting_extent.cx); // we want sorting width not to just grow not shrink.
-		const auto x_sorting = client_bounds.right - (mc.padding1 + _sorting_width + mc.handle_cxy);
-		const auto x_media_edit = client_bounds.right - (mc.padding1 + media_edit_extent.cx + mc.handle_cxy);
-		const auto y_client = show_top_bar ? client_bounds.top + top_height : client_bounds.top;
-		const auto cx_edit = std::max(client_bounds.width() / 4, scale400);
-		const auto r_tools = x_tools + tools_extent.cx;
+		const auto x_sorting = client_bounds.right - (mc.padding1 + _sorting_width + mc.handle_cxy);		
+		const auto y_client = can_show_top_bar ? client_bounds.top + top_height : client_bounds.top;
+		const auto cx_view_controls = std::max(client_bounds.width() / 4, scale400);
+		const auto r_tools = x_tools + (can_show_tools ? tools_extent.cx : 0);
 		const auto x_filter = std::max(r_tools + mc.padding1, x_sorting - scale150);
 		const auto y_filter = y_status_top + (status_height - cy_filter) / 2;
 
@@ -1429,63 +1458,78 @@ void app_frame::layout(ui::measure_context& mc)
 		const recti nav2_bounds(x_nav2, y_nav2, x_nav2 + navigate2_extent.cx, y_nav2 + navigate2_extent.cy);
 		const recti nav3_bounds(x_nav3, y_nav3, x_nav3 + navigate3_extent.cx, y_nav3 + navigate3_extent.cy);
 		const recti tool_rect(x_tools, y_tools, r_tools, y_tools + tools_extent.cy);
-		const recti sorting_rect(x_sorting, y_sorting, x_sorting + _sorting_width, y_sorting + sorting_extent.cy);
-		const recti filter_rect(x_filter, y_filter, x_sorting - mc.padding1, y_filter + cy_filter);
-		const recti media_edit_rect(x_media_edit, y_media_edit, x_media_edit + media_edit_extent.cx,y_media_edit + media_edit_extent.cy);
-		const recti edit_bounds(client_bounds.right - cx_edit, y_client, client_bounds.right, y_status_top);
+		const recti sorting_bounds(x_sorting, y_sorting, x_sorting + _sorting_width, y_sorting + sorting_extent.cy);
+		const recti filter_rect(x_filter, y_filter, x_sorting - mc.padding1, y_filter + cy_filter);		
+		const recti view_controls_bounds(client_bounds.right - cx_view_controls, y_client, client_bounds.right, y_status_top);
 		const recti sidebar_bounds(client_bounds.left, client_bounds.top, client_bounds.left + sidebar_cx, client_bounds.bottom);
 
-		const auto show_sorting = view_mode == view_type::items && tool_rect.right < sorting_rect.left;
-		const auto show_tools = !is_editing && show_status_bar && tool_rect.right <= client_bounds.right;
-		const auto show_filter = !is_editing && show_status_bar && filter_rect.width() > scale16 && view_mode != view_type::Test;
-		const auto show_address = show_top_bar && !is_editing && address_bounds.right < nav3_bounds.right;
-		const auto show_navigate1 = show_top_bar && !is_editing && nav1_bounds.left > client_bounds.left;
-		const auto show_navigate2 = show_top_bar && !is_editing && nav2_bounds.right < nav3_bounds.left;
-		const auto show_navigate3 = show_top_bar;
-		const auto show_media_edit = is_editing;
+		const recti media_edit_bounds = calc_command_bounds(mc, media_edit_commands_extent, y_status_top, status_height, client_bounds.right);
+		const recti rename_commands_bounds = calc_command_bounds(mc, rename_commands_extent, y_status_top, status_height, client_bounds.right);
+		const recti import_commands_bounds = calc_command_bounds(mc, import_commands_extent, y_status_top, status_height, client_bounds.right);
+		const recti sync_commands_bounds = calc_command_bounds(mc, sync_commands_extent, y_status_top, status_height, client_bounds.right);
+		const recti test_commands_bounds = calc_command_bounds(mc, test_commands_extent, y_status_top, status_height, client_bounds.right);
+
+		const auto show_sorting = view_mode == view_type::items && tool_rect.right < sorting_bounds.left;
+		const auto show_tools = can_show_tools && tool_rect.right <= client_bounds.right;
+		const auto show_filter = can_show_filter && filter_rect.width() > scale16;
+		const auto show_address = can_show_top_bar && is_items_or_media_view && address_bounds.right < nav3_bounds.right;
+		const auto show_navigate1 = can_show_top_bar && is_items_or_media_view && nav1_bounds.left > client_bounds.left;
+		const auto show_navigate2 = can_show_top_bar && is_items_or_media_view && nav2_bounds.right < nav3_bounds.left;
+		const auto show_navigate3 = can_show_top_bar;
+		const auto show_media_edit_commands = view_mode == view_type::edit;
+		const auto show_rename_commands = view_mode == view_type::rename;
+		const auto show_import_commands = view_mode == view_type::import;
+		const auto show_sync_commands = view_mode == view_type::sync;
+		const auto show_test_commands = view_mode == view_type::test;
 
 		auto view_bounds = client_bounds;
 
-		if (show_top_bar)
+		if (can_show_top_bar)
 		{
 			view_bounds.top += top_height;
 		}
 
-		if (show_sidebar)
+		if (can_show_sidebar)
 		{
 			view_bounds.left += sidebar_cx;
 		}
 
-		if (show_status_bar)
+		if (can_show_status_bar)
 		{
 			view_bounds.bottom = y_status_top;
 		}
 
-		if (show_edit_controls)
+		if (can_show_view_controls)
 		{
-			view_bounds.right -= cx_edit;
+			view_bounds.right -= cx_view_controls;
 		}
-
-		const auto title_bounds_padding = scale32;
 
 		_title_bounds = client_bounds;
 		_title_bounds.top = client_bounds.top;
 		_title_bounds.bottom = client_bounds.top + top_height;
-		_title_bounds.left = (show_sidebar ? sidebar_bounds.right : client_bounds.left) + title_bounds_padding;
-		_title_bounds.right = nav3_bounds.left - title_bounds_padding;
+		_title_bounds.left = (can_show_sidebar ? sidebar_bounds.right : client_bounds.left) + scale16;
+		_title_bounds.right = nav3_bounds.left - scale16;
 
 		ui::control_layouts positions;
 		positions.emplace_back(_navigate1, nav1_bounds, show_navigate1);
 		positions.emplace_back(_search_edit, address_bounds, show_address);
 		positions.emplace_back(_navigate2, nav2_bounds, show_navigate2);
 		positions.emplace_back(_navigate3, nav3_bounds, show_navigate3);
-		positions.emplace_back(_sidebar->_frame, sidebar_bounds, show_sidebar);
+		positions.emplace_back(_sidebar->_frame, sidebar_bounds, can_show_sidebar);
 		positions.emplace_back(_view_frame->_frame, view_bounds, _view->_show_render_window);
 		positions.emplace_back(_tools, tool_rect, show_tools);
 		positions.emplace_back(_filter_edit, filter_rect, show_filter);
-		positions.emplace_back(_sorting, sorting_rect, show_sorting);
-		positions.emplace_back(_media_edit, media_edit_rect, show_media_edit);
-		positions.emplace_back(_edit_view_controls->_dlg, edit_bounds, show_edit_controls);
+		positions.emplace_back(_sorting, sorting_bounds, show_sorting);
+		positions.emplace_back(_media_edit_commands, media_edit_bounds, show_media_edit_commands);
+		positions.emplace_back(_rename_commands, rename_commands_bounds, show_rename_commands);
+		positions.emplace_back(_import_commands, import_commands_bounds, show_import_commands);
+		positions.emplace_back(_sync_commands, sync_commands_bounds, show_sync_commands);
+		positions.emplace_back(_test_commands, test_commands_bounds, show_test_commands);
+
+		if (_view_controls && _view_controls->_dlg)
+		{
+			positions.emplace_back(_view_controls->_dlg, view_controls_bounds, can_show_view_controls);
+		}
 
 		if (_search_predictions_frame && _search_predictions_frame->_frame->is_visible())
 		{
@@ -1494,12 +1538,12 @@ void app_frame::layout(ui::measure_context& mc)
 
 		_view_bounds = view_bounds;
 		_app_frame->apply_layout(positions, { 0, 0 });
-		_status_bounds.set(tool_rect.right, view_bounds.bottom, sorting_rect.left, client_bounds.bottom);
+		_status_bounds.set(tool_rect.right, view_bounds.bottom, sorting_bounds.left, client_bounds.bottom);
 	}
 }
 
 
-void parse_more_folders(df::index_roots &result, const std::u8string_view &more_folders)
+void parse_more_folders(df::index_roots& result, std::u8string_view more_folders)
 {
 	df::hash_set<std::u8string, df::ihash, df::ieq> drive_label_includes;
 
@@ -1570,7 +1614,7 @@ df::index_roots index_folders()
 	if (setting.collection.pictures && !local_folders.pictures.is_empty()) result.folders.emplace(local_folders.pictures);
 	if (setting.collection.video && !local_folders.video.is_empty()) result.folders.emplace(local_folders.video);
 	if (setting.collection.music && !local_folders.music.is_empty()) result.folders.emplace(local_folders.music);
-	if (setting.collection.drop_box && !local_folders.dropbox_photos.is_empty()) result.folders.emplace(local_folders.dropbox_photos); 
+	if (setting.collection.drop_box && !local_folders.dropbox_photos.is_empty()) result.folders.emplace(local_folders.dropbox_photos);
 	if (setting.collection.onedrive_pictures && !local_folders.onedrive_pictures.is_empty()) result.folders.emplace(local_folders.onedrive_pictures);
 	if (setting.collection.onedrive_video && !local_folders.onedrive_video.is_empty()) result.folders.emplace(local_folders.onedrive_video);
 	if (setting.collection.onedrive_music && !local_folders.onedrive_music.is_empty()) result.folders.emplace(local_folders.onedrive_music);
@@ -1611,6 +1655,11 @@ void app_frame::complete_pending_events()
 				update_font_size();
 			}
 
+			if (pop_invalid_flag(_invalids, view_invalid::status))
+			{
+				_app_frame->invalidate(_status_bounds);
+			}
+
 			if (pop_invalid_flag(_invalids, view_invalid::filters))
 			{
 				if (_filter_edit->window_text() != _state.filter().text())
@@ -1630,11 +1679,11 @@ void app_frame::complete_pending_events()
 				save_options();
 
 				_view_frame->_frame->options_changed();
-				_edit_view_controls->options_changed();
+				_view_edit->options_changed();
 				_navigate1->options_changed();
 				_navigate2->options_changed();
 				_navigate3->options_changed();
-				_media_edit->options_changed();
+				_media_edit_commands->options_changed();
 				_search_edit->options_changed();
 				_filter_edit->options_changed();
 				_tools->options_changed();
@@ -1650,9 +1699,9 @@ void app_frame::complete_pending_events()
 
 			if (pop_invalid_flag(_invalids, view_invalid::refresh_items))
 			{
-				if (df::file_handles_detached == 0 && df::command_active == 0 && !_state.is_editing())
+				if (df::file_handles_detached == 0 && df::command_active == 0)
 				{
-					_state.open(_view_frame, _state.search(), {});
+					_view->refresh();
 				}
 				else
 				{
@@ -1851,7 +1900,7 @@ bool app_frame::key_down(const char32_t key, const ui::key_state keys)
 			}
 		}
 
-		if (!_edit_controls_have_focus && !_state.is_editing())
+		if (!_view_controls_have_focus && _state.is_items_or_media_view())
 		{
 			if (key == keys::APPS)
 			{
@@ -2090,6 +2139,9 @@ void app_frame::element_broadcast(const view_element_event& event)
 	_view_items->broadcast_event(event);
 	_view_edit->broadcast_event(event);
 	_view_media->broadcast_event(event);
+	_view_rename->broadcast_event(event);
+	_view_sync->broadcast_event(event);
+	_view_import->broadcast_event(event);
 }
 
 void app_frame::focus_changed(const bool has_focus, const ui::control_base_ptr& child)
@@ -2099,10 +2151,10 @@ void app_frame::focus_changed(const bool has_focus, const ui::control_base_ptr& 
 
 	_filter_has_focus = _filter_edit->has_focus();
 	_view_has_focus = _view_frame->_frame->has_focus();
-	_toolbar_has_focus = _navigate1->has_focus() || _navigate2->has_focus() || _navigate3->has_focus() || _media_edit->
+	_toolbar_has_focus = _navigate1->has_focus() || _navigate2->has_focus() || _navigate3->has_focus() || _media_edit_commands->
 		has_focus() || _tools->has_focus() || _sorting->has_focus();
 	_nav_has_focus = _sidebar->_frame->has_focus();
-	_edit_controls_have_focus = _edit_view_controls->_dlg->has_focus();
+	_view_controls_have_focus = _view_controls && _view_controls->_dlg->has_focus();
 
 	invalidate_view(view_invalid::view_redraw | view_invalid::command_state);
 }
@@ -2143,6 +2195,8 @@ void app_frame::play_state_changed(const bool play)
 
 void app_frame::reload()
 {
+	_view->reload();
+
 	invalidate_view(view_invalid::view_layout |
 		view_invalid::group_layout |
 		view_invalid::index |
@@ -2157,10 +2211,12 @@ void app_frame::view_changed(view_type m)
 {
 	df::assert_true(ui::is_ui_thread());
 	auto v = _view;
+	view_controls_host_ptr vc;
 
 	if (m == view_type::edit)
 	{
 		v = _view_edit;
+		vc = _view_edit->controls(_app_frame);
 	}
 	else if (m == view_type::items)
 	{
@@ -2170,9 +2226,40 @@ void app_frame::view_changed(view_type m)
 	{
 		v = _view_media;
 	}
-	else if (m == view_type::Test)
+	else if (m == view_type::test)
 	{
 		v = _view_test;
+	}
+	else if (m == view_type::rename)
+	{
+		v = _view_rename;
+		vc = _view_rename->controls(_app_frame);
+	}
+	else if (m == view_type::import)
+	{
+		v = _view_import;
+		vc = _view_import->controls(_app_frame);
+	}
+	else if (m == view_type::sync)
+	{
+		v = _view_sync;
+		vc = _view_sync->controls(_app_frame);
+	}
+
+	if (vc != _view_controls)
+	{
+		if (_view_controls)
+		{
+			_view_controls->_dlg->show(false);
+		}
+
+		//auto f = _view_controls->_frame;
+		_view_controls = vc;
+
+		if (_view_controls)
+		{
+			_view_controls->_dlg->show(true);
+		}
 	}
 
 	if (v != _view)
@@ -2268,7 +2355,15 @@ void app_frame::on_window_layout(ui::measure_context& mc, const sizei extent, co
 
 void app_frame::on_window_paint(ui::draw_context& dc)
 {
-	if (setting.show_debug_info)
+	const std::u8string_view status = _view->status();
+
+	if (!status.empty())
+	{
+		const auto bounds = _status_bounds.inflate(-dc.padding2, 0);
+		dc.draw_text(status, bounds, ui::style::font_face::dialog,
+		             ui::style::text_style::single_line, ui::color(dc.colors.foreground, dc.colors.alpha), {});
+	}
+	else if (setting.show_debug_info)
 	{
 		const auto display = _state.display_state();
 		char text[200];
@@ -2289,21 +2384,47 @@ void app_frame::on_window_paint(ui::draw_context& dc)
 			ui::style::text_style::single_line_center, ui::color(dc.colors.foreground, dc.colors.alpha), {});
 	}
 
-	if (_state.view_mode() == view_type::edit)
+	if (!_state.is_items_or_media_view())
 	{
-		const auto i = _state._edit_item;
-
-		if (i)
+		if (!_logo_tex)
 		{
-			const std::u8string title = format(u8"{}: {}"sv, tt.editing_title, i->name());
-			dc.draw_text(title, _title_bounds, ui::style::font_face::title, ui::style::text_style::single_line,
-				ui::color(dc.colors.foreground, dc.colors.alpha), {});
+			const auto t = dc.create_texture();
+
+			if (t)
+			{
+				auto res = platform::resource_item::logo15;
+				if (_title_bounds.height() >= 40) res = platform::resource_item::logo30;
+				if (_title_bounds.height() >= 60) res = platform::resource_item::logo;
+
+				files ff;
+				const auto logo_surface = ff.image_to_surface(load_resource(res));
+
+				_logo_tex = t;
+				_logo_tex->update(logo_surface);
+			}
 		}
+
+		auto logo_bounds = _title_bounds;
+		auto title_bounds = _title_bounds;
+
+		if (_logo_tex)
+		{
+			logo_bounds.right = logo_bounds.left + _title_bounds.height();
+			title_bounds.left = logo_bounds.right;
+
+			dc.draw_texture(_logo_tex, center_rect(_logo_tex->dimensions(), logo_bounds),
+				_logo_tex->dimensions(), dc.colors.alpha);
+		}
+
+		const std::u8string_view title = _view->title();
+
+		dc.draw_text(title, title_bounds, ui::style::font_face::title, ui::style::text_style::single_line,
+				ui::color(dc.colors.foreground, dc.colors.alpha), {});
 	}
 
 	const auto border_outside = recti(_extent);
 	const auto scale1 = df::round(1 * dc.scale_factor);
-	const auto clr = ui::style::color::view_background;	
+	const auto clr = ui::style::color::view_background;
 	dc.draw_border(border_outside.inflate(-scale1), border_outside, clr, clr);
 }
 
@@ -2519,7 +2640,7 @@ void app_frame::create_toolbars()
 	{
 		find_command(commands::view_show_sidebar),
 		find_command(commands::info_new_version),
-		find_command(commands::menu_test),
+		find_command(commands::tool_test),
 		find_command(commands::browse_back),
 		find_command(commands::browse_forward),
 	};
@@ -2569,14 +2690,43 @@ void app_frame::create_toolbars()
 		find_command(commands::menu_group_toolbar),
 	};
 
-	const std::vector<ui::command_ptr> media_edit_buttons =
+	const std::vector<ui::command_ptr> media_edit_commands =
 	{
 		find_command(commands::edit_item_save_and_prev),
 		find_command(commands::edit_item_save_and_next),
 		find_command(commands::edit_item_options),
 		find_command(commands::edit_item_save_as),
 		find_command(commands::edit_item_save),
-		find_command(commands::edit_item_exit),
+		find_command(commands::view_exit),
+	};
+
+	const std::vector<ui::command_ptr> test_commands =
+	{
+		find_command(commands::test_crash),
+		find_command(commands::test_boom),
+		find_command(commands::test_new_version),
+		find_command(commands::test_run_all),
+		find_command(commands::view_exit),
+	};
+
+	const std::vector<ui::command_ptr> sync_commands =
+	{
+		find_command(commands::sync_analyze),
+		find_command(commands::sync_run),
+		find_command(commands::view_exit),
+	};
+
+	const std::vector<ui::command_ptr> rename_commands =
+	{
+		find_command(commands::rename_run),
+		find_command(commands::view_exit),
+	};
+
+	const std::vector<ui::command_ptr> import_commands =
+	{
+		find_command(commands::import_analyze),
+		find_command(commands::import_run),
+		find_command(commands::view_exit),
 	};
 
 	ui::toolbar_styles tb_styles;
@@ -2592,7 +2742,11 @@ void app_frame::create_toolbars()
 
 	_tools = _app_frame->create_toolbar(tb_styles, tool_buttons);
 	_sorting = _app_frame->create_toolbar(tb_styles, sorting_buttons);
-	_media_edit = _app_frame->create_toolbar(tb_styles, media_edit_buttons);
+	_media_edit_commands = _app_frame->create_toolbar(tb_styles, media_edit_commands);
+	_rename_commands = _app_frame->create_toolbar(tb_styles, rename_commands);
+	_import_commands = _app_frame->create_toolbar(tb_styles, import_commands);
+	_sync_commands = _app_frame->create_toolbar(tb_styles, sync_commands);
+	_test_commands = _app_frame->create_toolbar(tb_styles, test_commands);
 }
 
 static std::u8string format_items_summary(const group_by grouping, const sort_by order,
@@ -2742,21 +2896,21 @@ bool app_frame::update_toolbar_text(const commands cc, const std::u8string& text
 
 void app_frame::update_button_state(const bool resize)
 {
-	static const auto has_tests = known_path(platform::known_folder::test_files_folder).exists();
+	static const auto can_run_tests = known_path(platform::known_folder::test_files_folder).exists();
 	static const auto now_days = platform::now().to_days();
 	static const auto has_burner = platform::has_burner();
 
+	const auto view_mode = _state.view_mode();
 	const auto selection_status = _state.selection_status();
 	const auto is_playing = selection_status.is_playing;
 	const auto can_zoom = selection_status.can_zoom;
 	const auto is_maximized = _app_frame->is_maximized();
-	const auto is_editing = df::command_active == 0 && _state.is_editing();
-	const auto is_showing_media_or_items_view = df::command_active == 0 && _state.is_showing_media_or_items();
+	const auto is_editing = df::command_active == 0 && view_mode == view_type::edit;
+	const auto is_showing_media_or_items_view = df::command_active == 0 && (view_mode == view_type::items || view_mode == view_type::media);
 	const auto has_selection = is_showing_media_or_items_view && _state.has_selection();
 	const auto is_single_media_selection = is_showing_media_or_items_view && selection_status.has_single_media_selection;
 	const auto new_version_avail = is_showing_media_or_items_view && !setting.install_updates &&
-		df::version(s_app_version) < df::version(setting.available_version) && static_cast<int>(now_days) >= setting.
-		min_show_update_day;
+		df::version(s_app_version) < df::version(setting.available_version) && static_cast<int>(now_days) >= setting.min_show_update_day;
 	const auto show_new_version = is_showing_media_or_items_view && (setting.force_available_version || new_version_avail);
 	const auto command_item = _state.command_item();
 	const auto is_displaying_item = is_showing_media_or_items_view && command_item;
@@ -2766,7 +2920,7 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::view_maximize]->visible = !is_maximized;
 	_commands[commands::view_restore]->visible = is_maximized;
 	_commands[commands::view_show_sidebar]->visible = !is_editing;
-	_commands[commands::menu_test]->visible = !is_editing && has_tests;
+	_commands[commands::tool_test]->visible = can_run_tests;
 	_commands[commands::browse_forward]->visible = !is_editing;
 
 	_commands[commands::play]->enable = _state.has_display_items();
@@ -2781,7 +2935,7 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::tool_edit_metadata]->enable = has_selection;
 	_commands[commands::browse_back]->enable = _state.history.can_browse_back();
 	_commands[commands::browse_forward]->enable = _state.history.can_browse_forward();
-	_commands[commands::browse_parent]->enable = _state.has_parent_search() || _state.view_mode() != view_type::items;
+	_commands[commands::browse_parent]->enable = _state.has_parent_search() || view_mode != view_type::items;
 	_commands[commands::tool_burn]->enable = has_selection && has_burner;
 	_commands[commands::view_zoom]->enable = can_zoom;
 	_commands[commands::tool_open_with]->enable = has_selection;
@@ -2802,12 +2956,12 @@ void app_frame::update_button_state(const bool resize)
 
 	_commands[commands::browse_open_googlemap]->enable = _state.has_gps();
 	_commands[commands::browse_open_containingfolder]->enable = is_displaying_item;
-	_commands[commands::browse_open_in_file_browser]->enable = has_selection;	
+	_commands[commands::browse_open_in_file_browser]->enable = has_selection;
 	_commands[commands::tool_new_folder]->enable = search_has_selector;
 	_commands[commands::print]->enable = has_selection;
 	_commands[commands::tool_remove_metadata]->enable = has_selection;
 	_commands[commands::tool_rename]->enable = has_selection;
-	_commands[commands::tool_prile_properties]->enable = has_selection;
+	_commands[commands::tool_file_properties]->enable = has_selection;
 	_commands[commands::tool_delete]->enable = has_selection;
 	_commands[commands::edit_copy]->enable = has_selection;
 	_commands[commands::edit_cut]->enable = has_selection;
@@ -2824,12 +2978,19 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::tool_rotate_clockwise]->enable = has_selection;
 	_commands[commands::tool_desktop_background]->enable = selection_status.showing_image;
 	_commands[commands::search_related]->enable = is_displaying_item;
-	_commands[commands::edit_item_exit]->enable = is_editing;
+	_commands[commands::view_exit]->enable = !is_showing_media_or_items_view;
 	_commands[commands::edit_item_save]->enable = is_editing;
 	_commands[commands::edit_item_save_and_prev]->enable = is_editing;
 	_commands[commands::edit_item_save_and_next]->enable = is_editing;
 	_commands[commands::edit_item_save_as]->enable = is_editing;
 	_commands[commands::edit_item_options]->enable = is_editing;
+
+	_commands[commands::test_run_all]->enable = view_mode == view_type::test;
+	_commands[commands::sync_analyze]->enable = view_mode == view_type::sync;
+	_commands[commands::sync_run]->enable = view_mode == view_type::sync;
+	_commands[commands::rename_run]->enable = view_mode == view_type::rename;
+	_commands[commands::import_analyze]->enable = view_mode == view_type::import;
+	_commands[commands::import_run]->enable = view_mode == view_type::import;
 
 	_commands[commands::playback_auto_play]->checked = setting.auto_play;
 	_commands[commands::playback_last_played_pos]->checked = setting.last_played_pos;
@@ -2854,9 +3015,9 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::option_show_rotated]->checked = setting.show_rotated;
 	_commands[commands::verbose_metadata]->checked = setting.verbose_metadata;
 	_commands[commands::show_raw_preview]->checked = setting.raw_preview;
-	_commands[commands::run_tests]->checked = _state.view_mode() == view_type::Test;
-	_commands[commands::view_items]->checked = _state.view_mode() == view_type::items;
-	_commands[commands::option_show_thumbnails]->checked = _state.view_mode() == view_type::items;
+	_commands[commands::test_run_all]->checked = view_mode == view_type::test;
+	_commands[commands::view_items]->checked = view_mode == view_type::items;
+	_commands[commands::option_show_thumbnails]->checked = view_mode == view_type::items;
 	_commands[commands::browse_recursive]->checked = _state.search().has_recursive_selector();
 	_commands[commands::filter_photos]->checked = _state.filter().has_group(file_group::photo);
 	_commands[commands::filter_videos]->checked = _state.filter().has_group(file_group::video);
@@ -2885,8 +3046,8 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::sort_date_modified]->checked = _state.sort_order() == sort_by::date_modified;
 	_commands[commands::english]->checked = setting.language == u8"en"sv;
 
-	
-	
+
+
 
 	_commands[commands::playback_volume100]->checked = setting.media_volume == media_volumes[0];
 	_commands[commands::playback_volume75]->checked = setting.media_volume == media_volumes[1];
@@ -2920,7 +3081,12 @@ void app_frame::update_button_state(const bool resize)
 	_navigate1->update_button_state(resize, false);
 	_navigate2->update_button_state(resize, false);
 	_navigate3->update_button_state(resize, false);
-	_media_edit->update_button_state(resize, false);
+
+	_media_edit_commands->update_button_state(resize, false);
+	_import_commands->update_button_state(resize, false);
+	_rename_commands->update_button_state(resize, false);
+	_sync_commands->update_button_state(resize, false);
+	_test_commands->update_button_state(resize, false);
 
 	const view_element_event e{ view_element_event_type::update_command_state, _view_frame };
 	_view->broadcast_event(e);
@@ -2934,7 +3100,7 @@ void app_frame::update_address() const
 
 	switch (_state.view_mode())
 	{
-	case view_type::Test:
+	case view_type::test:
 		text = u8"Testing"sv;
 		icon = icon_index::check;
 		break;
@@ -2958,7 +3124,7 @@ void app_frame::update_address() const
 	if (!_search_has_focus)
 	{
 		_search_edit->window_text(text);
-		_search_edit->set_icon(icon);		
+		_search_edit->set_icon(icon);
 	}
 }
 
@@ -2999,14 +3165,14 @@ void app_frame::update_command_text()
 		tt.command_browse_previous_item_extend);
 	def_command(commands::tool_burn, command_group::tools, icon_index::disk, tt.command_burn);
 	def_command(commands::tool_save_current_video_frame, command_group::tools, icon_index::none, tt.command_capture);
-	def_command(commands::edit_item_exit, command_group::none, icon_index::close, tt.command_close);
+	def_command(commands::view_exit, command_group::none, icon_index::close, tt.command_close);
 	def_command(commands::edit_item_color_reset, command_group::none, icon_index::undo, tt.command_color_reset,
 		tt.tooltip_color_reset);
 	def_command(commands::tool_convert, command_group::tools, icon_index::convert, tt.command_convert_or_resize);
 	def_command(commands::tool_copy_to_folder, command_group::file_management, icon_index::copy_to_folder,
 		tt.command_copy);
-	def_command(commands::test_crash, command_group::none, icon_index::none, tt.command_crash);
-	def_command(commands::test_boom, command_group::none, icon_index::none, tt.command_boom);
+	def_command(commands::test_crash, command_group::none, icon_index::download, tt.command_crash);
+	def_command(commands::test_boom, command_group::none, icon_index::error, tt.command_boom);
 	def_command(commands::tool_delete, command_group::file_management, icon_index::cancel, tt.command_delete);
 	def_command(commands::tool_desktop_background, command_group::tools, icon_index::wallpaper,
 		tt.command_desktop_background);
@@ -3017,13 +3183,13 @@ void app_frame::update_command_text()
 	def_command(commands::edit_cut, command_group::file_management, icon_index::edit_cut, tt.command_edit_cut);
 	def_command(commands::edit_paste, command_group::file_management, icon_index::edit_paste, tt.command_edit_paste);
 	def_command(commands::tool_eject, command_group::file_management, icon_index::eject, tt.command_eject);
-	def_command(commands::tool_prile_properties, command_group::file_management, icon_index::none,tt.command_file_properties);
+	def_command(commands::tool_file_properties, command_group::file_management, icon_index::none, tt.command_file_properties);
 	def_command(commands::browse_search, command_group::navigation, icon_index::search, tt.command_file_search);
 	def_command(commands::browse_recursive, command_group::navigation, icon_index::recursive, tt.command_flatten);
 	def_command(commands::view_fullscreen, command_group::media_playback, icon_index::fullscreen, tt.command_fullscreen, tt.tooltip_fullscreen);
 	def_command(commands::option_highlight_large_items, command_group::options, icon_index::none, tt.command_highlight_large_items);
 	def_command(commands::tool_import, command_group::tools, icon_index::import, tt.command_import);
-	def_command(commands::sync, command_group::tools, icon_index::sync, tt.command_sync);
+	def_command(commands::tool_sync, command_group::tools, icon_index::sync, tt.command_sync);
 	def_command(commands::options_collection, command_group::options, icon_index::set, tt.command_collection_options);
 	def_command(commands::keyboard, command_group::help, icon_index::keyboard, tt.command_keyboard);
 	def_command(commands::tool_locate, command_group::tools, icon_index::location, tt.command_locate);
@@ -3083,7 +3249,7 @@ void app_frame::update_command_text()
 		tt.command_rotate_clockwise);
 	def_command(commands::tool_rotate_reset, command_group::none, icon_index::undo, tt.command_rotate_reset,
 		tt.tooltip_rotate_reset);
-	def_command(commands::run_tests, command_group::none, icon_index::none, tt.command_run_tests);
+	def_command(commands::test_run_all, command_group::none, icon_index::play, tt.command_run_tests);
 	def_command(commands::edit_item_save, command_group::edit_item, icon_index::save, tt.command_save);
 	def_command(commands::edit_item_save_and_prev, command_group::edit_item, icon_index::back_image,
 		tt.command_save_and_back, tt.command_save_and_back_tooltip);
@@ -3099,24 +3265,18 @@ void app_frame::update_command_text()
 	def_command(commands::select_invert, command_group::selection, icon_index::none, tt.command_select_invert);
 	def_command(commands::select_nothing, command_group::selection, icon_index::none, tt.command_select_nothing);
 	def_command(commands::tool_email, command_group::tools, icon_index::mail, tt.command_share_email);
-	def_command(commands::option_show_thumbnails, command_group::options, icon_index::items,
-		tt.command_show_thumbnails);
+	def_command(commands::option_show_thumbnails, command_group::options, icon_index::items, tt.command_show_thumbnails);
 	def_command(commands::option_show_rotated, command_group::options, icon_index::orientation, tt.item_oriented);
-	def_command(commands::verbose_metadata, command_group::options, icon_index::verbose_metadata,
-		tt.show_verbose_metadata);
+	def_command(commands::verbose_metadata, command_group::options, icon_index::verbose_metadata, tt.show_verbose_metadata);
 	def_command(commands::show_raw_preview, command_group::options, icon_index::preview, tt.preview_show_preview);
 	def_command(commands::tool_tag, command_group::tools, icon_index::tag, tt.prop_name_tag);
 	def_command(commands::menu_tag_with, command_group::none, icon_index::tag, tt.prop_name_tag, tt.tooltip_tag_with);
-	def_command(commands::menu_language, command_group::none, icon_index::language, tt.command_language,
-		tt.tooltip_language);
+	def_command(commands::menu_language, command_group::none, icon_index::language, tt.command_language, tt.tooltip_language);
 	def_command(commands::english, command_group::none, icon_index::none, u8"English"sv, u8"English language"sv);
-	def_command(commands::test_new_version, command_group::none, icon_index::none, tt.command_test_new_version);
-	def_command(commands::option_toggle_details, command_group::options, icon_index::details, tt.command_toggle_details,
-		tt.tooltip_toggle_details_all);
-	def_command(commands::option_toggle_item_size, command_group::options, icon_index::zoom_in,
-		tt.command_toggle_item_size);
-	def_command(commands::menu_tools_toolbar, command_group::none, icon_index::tools, tt.command_tools,
-		tt.tooltip_tools);
+	def_command(commands::test_new_version, command_group::none, icon_index::lightbulb, tt.command_test_new_version);
+	def_command(commands::option_toggle_details, command_group::options, icon_index::details, tt.command_toggle_details, tt.tooltip_toggle_details_all);
+	def_command(commands::option_toggle_item_size, command_group::options, icon_index::zoom_in, tt.command_toggle_item_size);
+	def_command(commands::menu_tools_toolbar, command_group::none, icon_index::tools, tt.command_tools, tt.tooltip_tools);
 	def_command(commands::menu_tools, command_group::none, icon_index::tools, tt.command_tools, tt.tooltip_tools);
 	def_command(commands::view_help, command_group::help, icon_index::question, tt.command_view_help);
 	def_command(commands::view_items, command_group::options, icon_index::items, tt.command_view_items);
@@ -3130,14 +3290,13 @@ void app_frame::update_command_text()
 	def_command(commands::filter_videos, command_group::selection, icon_index::video, tt.command_filter_videos);
 	def_command(commands::filter_audio, command_group::selection, icon_index::audio, tt.command_filter_audio);
 	def_command(commands::menu_group, command_group::none, icon_index::group, tt.command_menu_group_sort);
-	def_command(commands::menu_test, command_group::none, icon_index::check, tt.command_view_tests, tt.tooltip_view_tests);
+	def_command(commands::tool_test, command_group::none, icon_index::check, tt.command_view_tests, tt.tooltip_view_tests);
 	def_command(commands::playback_volume100, command_group::media_playback, icon_index::volume3, tt.command_volume100);
 	def_command(commands::playback_volume75, command_group::media_playback, icon_index::volume2, tt.command_volume75);
 	def_command(commands::playback_volume50, command_group::media_playback, icon_index::volume1, tt.command_volume50);
 	def_command(commands::playback_volume25, command_group::media_playback, icon_index::volume0, tt.command_volume25);
 	def_command(commands::playback_volume0, command_group::media_playback, icon_index::mute, tt.command_volume0);
-	def_command(commands::playback_volume_toggle, command_group::media_playback, icon_index::volume3,
-		tt.command_toggle_volume);
+	def_command(commands::playback_volume_toggle, command_group::media_playback, icon_index::volume3, tt.command_toggle_volume);
 	def_command(commands::view_zoom, command_group::media_playback, icon_index::zoom_in, tt.command_zoom);
 
 	def_command(commands::favorite, command_group::navigation, icon_index::star, tt.command_favorite);
@@ -3163,13 +3322,18 @@ void app_frame::update_command_text()
 	def_command(commands::sort_size, command_group::sort_by, icon_index::none, tt.command_sort_size);
 	def_command(commands::sort_def, command_group::sort_by, icon_index::none, tt.command_sort_def);
 	def_command(commands::sort_date_modified, command_group::sort_by, icon_index::none, tt.command_sort_date_modified);
+	def_command(commands::sync_analyze, command_group::none, icon_index::refresh, tt.analyze);
+	def_command(commands::sync_run, command_group::none, icon_index::play, tt.command_sync);
+	def_command(commands::rename_run, command_group::none, icon_index::play, tt.command_rename_files);
+	def_command(commands::import_analyze, command_group::none, icon_index::refresh, tt.analyze);
+	def_command(commands::import_run, command_group::none, icon_index::play, tt.command_import);
 
 	_commands[commands::browse_previous_item]->keyboard_accelerator_text = tt.keyboard_left;
 	_commands[commands::browse_next_item]->keyboard_accelerator_text = tt.keyboard_right;
 
-	const auto control = keyboard_accelerator_t::control;
-	const auto shift = keyboard_accelerator_t::shift;
-	const auto alt = keyboard_accelerator_t::alt;
+	constexpr auto control = keyboard_accelerator_t::control;
+	constexpr auto shift = keyboard_accelerator_t::shift;
+	constexpr auto alt = keyboard_accelerator_t::alt;
 
 	_commands[commands::rate_none]->kba.emplace_back('0');
 	_commands[commands::rate_1]->kba.emplace_back('1');
@@ -3182,7 +3346,6 @@ void app_frame::update_command_text()
 	_commands[commands::label_second]->kba.emplace_back('7');
 	_commands[commands::label_approved]->kba.emplace_back('8');
 	_commands[commands::label_review]->kba.emplace_back('9');
-
 
 	_commands[commands::pin_item]->kba.emplace_back('A');
 	_commands[commands::select_all]->kba.emplace_back('A', control);
@@ -3233,7 +3396,7 @@ void app_frame::update_command_text()
 	_commands[commands::tool_convert]->kba.emplace_back(keys::F8);
 	_commands[commands::tool_import]->kba.emplace_back(keys::F9);
 	_commands[commands::browse_recursive]->kba.emplace_back(keys::F9, control);
-	_commands[commands::sync]->kba.emplace_back(keys::F9, shift | control);
+	_commands[commands::tool_sync]->kba.emplace_back(keys::F9, shift | control);
 	_commands[commands::tool_email]->kba.emplace_back(keys::F10);
 	_commands[commands::option_scale_up]->kba.emplace_back(keys::F11, shift | control);
 	_commands[commands::view_fullscreen]->kba.emplace_back(keys::F11);
@@ -3248,7 +3411,7 @@ void app_frame::update_command_text()
 	_commands[commands::tool_rotate_clockwise]->kba.emplace_back(keys::OEM_6);
 	_commands[commands::option_toggle_item_size]->kba.emplace_back(keys::OEM_PLUS, control);
 	_commands[commands::large_font]->kba.emplace_back(keys::OEM_PLUS, shift | control);
-	_commands[commands::tool_prile_properties]->kba.emplace_back(keys::RETURN, shift | control);
+	_commands[commands::tool_file_properties]->kba.emplace_back(keys::RETURN, shift | control);
 	_commands[commands::browse_open_in_file_browser]->kba.emplace_back(keys::RETURN, shift);
 	_commands[commands::tool_open_with]->kba.emplace_back(keys::RETURN, control);
 	_commands[commands::view_zoom]->kba.emplace_back(keys::SPACE, control);
@@ -3263,7 +3426,7 @@ void app_frame::update_command_text()
 	_commands[commands::edit_item_save_and_prev]->kba.emplace_back(keys::LEFT, alt);
 	_commands[commands::edit_item_save_and_next]->kba.emplace_back(keys::RIGHT, alt);
 	_commands[commands::edit_item_save]->kba.emplace_back(keys::RETURN, alt);
-	_commands[commands::edit_item_exit]->kba.emplace_back(keys::ESCAPE);
+	_commands[commands::view_exit]->kba.emplace_back(keys::ESCAPE);
 
 	for (const auto& c : _commands)
 	{
@@ -3520,46 +3683,46 @@ void app_frame::start_workers()
 	_threads.start([] { start_media_preview(); });
 
 	auto scan_uncached_func = [this]
-	{
-		if (!df::is_closing && _state.item_index.is_init_complete())
 		{
-			auto token = df::cancel_token(index_version);
+			if (!df::is_closing && _state.item_index.is_init_complete())
+			{
+				auto token = df::cancel_token(index_version);
 
-			index_task_queue.enqueue([this, token]
-				{
-					_state.item_index.scan_uncached(token);
+				index_task_queue.enqueue([this, token]
+					{
+						_state.item_index.scan_uncached(token);
 
-					invalidate_view(view_invalid::sidebar |
-						view_invalid::command_state |
-						view_invalid::item_scan |
-						view_invalid::refresh_items |
-						view_invalid::index_summary);
-				});
+						invalidate_view(view_invalid::sidebar |
+							view_invalid::command_state |
+							view_invalid::item_scan |
+							view_invalid::refresh_items |
+							view_invalid::index_summary);
+					});
 
-			_threads.start([&q = crc_task_queue] { start_worker(q, u8"crc"sv); });
-			_threads.start([&q = scan_folder_task_queue] { start_worker(q, u8"scan_folder"sv); });
-			_threads.start([&q = scan_modified_items_task_queue] { start_worker(q, u8"scan_modified_items"sv); });
-			_threads.start([&q = scan_displayed_items_task_queue] { start_worker(q, u8"scan_displayed_items"sv); });
-			_threads.start([&q = predictions_task_queue] { start_worker(q, u8"predictions"sv); });
-			_threads.start([&q = summary_task_queue] { start_worker(q, u8"summary"sv); });
-			_threads.start([&q = presence_task_queue] { start_worker(q, u8"presence"sv); });
-		}
+				_threads.start([&q = crc_task_queue] { start_worker(q, u8"crc"sv); });
+				_threads.start([&q = scan_folder_task_queue] { start_worker(q, u8"scan_folder"sv); });
+				_threads.start([&q = scan_modified_items_task_queue] { start_worker(q, u8"scan_modified_items"sv); });
+				_threads.start([&q = scan_displayed_items_task_queue] { start_worker(q, u8"scan_displayed_items"sv); });
+				_threads.start([&q = predictions_task_queue] { start_worker(q, u8"predictions"sv); });
+				_threads.start([&q = summary_task_queue] { start_worker(q, u8"summary"sv); });
+				_threads.start([&q = presence_task_queue] { start_worker(q, u8"presence"sv); });
+			}
 
-		invalidate_view(view_invalid::sidebar |
-			view_invalid::item_scan |
-			view_invalid::presence |
-			view_invalid::refresh_items |
-			view_invalid::command_state |
-			view_invalid::index_summary);
-	};
+			invalidate_view(view_invalid::sidebar |
+				view_invalid::item_scan |
+				view_invalid::presence |
+				view_invalid::refresh_items |
+				view_invalid::command_state |
+				view_invalid::index_summary);
+		};
 
 	auto index_loaded_func = [this, scan_uncached_func]
-	{
-		if (!df::is_closing)
 		{
-			scan_uncached_func();
-		}
-	};
+			if (!df::is_closing)
+			{
+				scan_uncached_func();
+			}
+		};
 
 	_threads.start([&db = _db, &q = database_task_queue, &async, app, index_loaded_func]
 		{
@@ -3638,7 +3801,6 @@ bool app_frame::init(const std::u8string_view command_line_text)
 		return false;
 	}
 
-	_edit_view_controls->init(_app_frame);
 	_view_frame->init(_app_frame);
 	_sidebar->init(_app_frame);
 
@@ -3683,7 +3845,7 @@ bool app_frame::init(const std::u8string_view command_line_text)
 
 	if (command_line.run_tests)
 	{
-		queue_ui([this] { invoke(commands::run_tests); });
+		queue_ui([this] { invoke(commands::test_run_all); });
 	}
 
 	if (!setting.sound_device.empty())
@@ -3738,9 +3900,10 @@ void app_frame::on_window_destroy()
 {
 	log_func lf(__FUNCTION__);
 
+	_logo_tex.reset();
 	_bubble.reset();
 	_search_predictions_frame.reset();
-	_edit_view_controls.reset();
+	_view_controls.reset();
 	_sidebar.reset();
 	_view_frame.reset();
 	_item_index.reset();
@@ -3805,7 +3968,7 @@ std::vector<ui::command_ptr> app_frame::menu(const pointi loc)
 			result.emplace_back(find_command(commands::menu_select));
 			result.emplace_back(find_command(commands::menu_group));
 			result.emplace_back(find_command(commands::menu_display_options));
-			result.emplace_back(find_command(commands::playback_menu));			
+			result.emplace_back(find_command(commands::playback_menu));
 			result.emplace_back(nullptr);
 			result.emplace_back(find_command(commands::tool_delete));
 			result.emplace_back(find_command(commands::tool_rename));
@@ -3816,7 +3979,7 @@ std::vector<ui::command_ptr> app_frame::menu(const pointi loc)
 			result.emplace_back(find_command(commands::edit_paste));
 			result.emplace_back(nullptr);
 			result.emplace_back(find_command(commands::option_toggle_details));
-			result.emplace_back(find_command(commands::browse_recursive));		
+			result.emplace_back(find_command(commands::browse_recursive));
 			result.emplace_back(nullptr);
 			result.emplace_back(find_command(commands::refresh));
 			result.emplace_back(find_command(commands::tool_new_folder));
@@ -4011,4 +4174,7 @@ void app_frame::free_graphics_resources(const bool items_only, const bool offscr
 			i->clear_cached_surface();
 		}
 	}
+
+	_logo_tex.reset();
 }
+

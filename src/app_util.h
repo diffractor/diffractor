@@ -1,7 +1,16 @@
 #pragma once
 
+
+static constexpr std::u8string_view doc_template_url = u8"https://www.diffractor.com/docs/template"sv;
+
+struct item_import;
+struct item_import_hash;
+struct item_import_eq;
+
 class command_status;
+
 using item_results_ptr = std::shared_ptr<command_status>;
+using item_import_set = df::hash_set<item_import, item_import_hash, item_import_eq>;
 
 class result_scope
 {
@@ -36,7 +45,7 @@ struct rename_item
 };
 
 std::vector<rename_item> calc_item_renames(const df::item_set& items, const std::u8string_view template_name, const int start);
-std::u8string format_new_name(const std::u8string_view original_name, const std::u8string_view template_name, const int seq);
+std::u8string format_sequence(const std::u8string_view original_name, const std::u8string_view template_name, const int seq);
 
 struct import_options
 {
@@ -138,8 +147,6 @@ sync_analysis_result sync_analysis(const df::index_roots& local_roots, const df:
 	const df::cancel_token& token);
 
 void sync_copy(const std::shared_ptr<command_status>& status, const sync_analysis_result& analysis_result, const df::cancel_token& token);
-uint32_t count_sync(const sync_analysis_items& analysis, const sync_action sync_action);
-uint32_t count_sync_actions(const sync_analysis_result& analysis);
 
 void toggle_collection_entry(settings_t::index_t& collection_settings, const df::folder_path folder, const bool is_remove);
 

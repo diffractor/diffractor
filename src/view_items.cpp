@@ -374,6 +374,11 @@ void items_view::deactivate()
 {
 }
 
+void items_view::refresh()
+{
+	_state.open(_host, _state.search(), {});
+}
+
 items_view::items_view(view_state& s, view_host_ptr host) :
 	_state(s),
 	_host(std::move(host))
@@ -1110,12 +1115,20 @@ void items_view::broadcast_event(const view_element_event& event) const
 class copy_clip_element final : public std::enable_shared_from_this<copy_clip_element>, public view_element
 {
 	metadata_kv_list _kv;
+	str::cached _text;
 
 public:
 	copy_clip_element(metadata_kv_list kv) noexcept : view_element(
 		view_element_style::right_justified |
 		view_element_style::has_tooltip |
 		view_element_style::can_invoke), _kv(std::move(kv))
+	{
+	}
+
+	copy_clip_element(str::cached text) noexcept : view_element(
+		view_element_style::right_justified |
+		view_element_style::has_tooltip |
+		view_element_style::can_invoke), _text(text)
 	{
 	}
 
@@ -1135,17 +1148,24 @@ public:
 	{
 		if (event.type == view_element_event_type::invoke)
 		{
-			u8ostringstream s;
-
-			for (const auto& m : _kv)
+			if (!_text.is_empty())
 			{
-				s << m.first.sv();
-				s << u8": "sv;
-				s << m.second;
-				s << '\n';
+				platform::set_clipboard(_text);
 			}
+			else if (!_kv.empty())
+			{
+				u8ostringstream s;
 
-			platform::set_clipboard(s.str());
+				for (const auto& m : _kv)
+				{
+					s << m.first.sv();
+					s << u8": "sv;
+					s << m.second;
+					s << '\n';
+				}
+
+				platform::set_clipboard(s.str());
+			}
 		}
 	}
 
@@ -1153,6 +1173,56 @@ public:
 	{
 		hover.elements->add(make_icon_element(icon_index::edit_copy, view_element_style::no_break));
 		hover.elements->add(std::make_shared<text_element>(tt.copy_to_clipboard));
+		hover.active_bounds = hover.window_bounds = bounds.offset(element_offset);
+	}
+
+	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
+		const pointi element_offset,
+		const std::vector<recti>& excluded_bounds) override
+	{
+		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
+	}
+};
+
+class url_element final : public std::enable_shared_from_this<url_element>, public view_element
+{
+	std::u8string _url;
+
+public:
+	url_element(std::u8string url) noexcept : view_element(
+		view_element_style::right_justified |
+		view_element_style::has_tooltip |
+		view_element_style::can_invoke), _url(std::move(url))
+	{
+	}
+
+	void render(ui::draw_context& dc, const pointi element_offset) const override
+	{
+		const auto logical_bounds = bounds.offset(element_offset);
+		const auto bg = calc_background_color(dc);
+		xdraw_icon(dc, icon_index::link, logical_bounds, ui::color(dc.colors.foreground, dc.colors.alpha), bg);
+	}
+
+	sizei measure(ui::measure_context& mc, const int width_limit) const override
+	{
+		return { mc.icon_cxy, mc.icon_cxy };
+	}
+
+	void dispatch_event(const view_element_event& event) override
+	{
+		if (event.type == view_element_event_type::invoke)
+		{
+			if (!_url.empty())
+			{
+				platform::open(_url);
+			}
+		}
+	}
+
+	void tooltip(view_hover_element& hover, const pointi loc, const pointi element_offset) const override
+	{
+		hover.elements->add(make_icon_element(icon_index::link, view_element_style::no_break));
+		hover.elements->add(std::make_shared<text_element>(str::format(tt.open_link_fmt, _url)));
 		hover.active_bounds = hover.window_bounds = bounds.offset(element_offset);
 	}
 
@@ -1325,6 +1395,15 @@ public:
 	}
 };
 
+static std::shared_ptr<group_title_control> create_text_title(std::u8string_view name, str::cached text)
+{
+	auto url = df::url_extract(text);
+	std::vector<std::shared_ptr<view_element>> buttons;
+	if (!url.empty()) buttons.emplace_back(std::make_shared<url_element>(url));
+	buttons.emplace_back(std::make_shared<copy_clip_element>(text));
+	return std::make_shared<group_title_control>(name, buttons);
+}
+
 void items_view::update_media_elements()
 {
 	df::assert_true(ui::is_ui_thread());
@@ -1429,22 +1508,42 @@ void items_view::update_media_elements()
 
 					if (!is_empty(md->comment))
 					{
-						description->add(title_style(std::make_shared<group_title_control>(tt.prop_name_comment)));
+						description->add(title_style(create_text_title(tt.prop_name_comment, md->comment)));
 						description->add(margin16(std::make_shared<text_element>(md->comment)));
 					}
 
 					if (!is_empty(md->description))
 					{
-						description->add(title_style(std::make_shared<group_title_control>(tt.prop_name_description)));
+						description->add(title_style(create_text_title(tt.prop_name_description, md->description)));						
 						description->add(margin16(std::make_shared<text_element>(md->description)));
 					}
 
 					if (!is_empty(md->synopsis))
 					{
-						description->add(title_style(std::make_shared<group_title_control>(tt.prop_name_synopsis)));
+						description->add(title_style(create_text_title(tt.prop_name_synopsis, md->synopsis)));						
 						description->add(margin16(std::make_shared<text_element>(md->synopsis)));
 					}
 					elements.emplace_back(description);
+				}
+				else 
+				{
+					if (!is_empty(md->comment))
+					{						
+						elements.emplace_back(title_style(create_text_title(tt.prop_name_comment, md->comment)));
+						elements.emplace_back(margin16(std::make_shared<text_element>(md->comment)));
+					}
+
+					if (!is_empty(md->description))
+					{
+						elements.emplace_back(title_style(create_text_title(tt.prop_name_description, md->description)));
+						elements.emplace_back(margin16(std::make_shared<text_element>(md->description)));
+					}
+
+					if (!is_empty(md->synopsis))
+					{
+						elements.emplace_back(title_style(create_text_title(tt.prop_name_synopsis, md->synopsis)));						
+						elements.emplace_back(margin16(std::make_shared<text_element>(md->synopsis)));
+					}
 				}
 			}
 

@@ -13,11 +13,14 @@ class LoadJob;
 
 enum class view_type
 {
-	None,
+	none,
 	items,
 	media,
 	edit,
-	Test,
+	test,
+	rename,
+	import,
+	sync
 };
 
 enum class repeat_mode

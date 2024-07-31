@@ -83,6 +83,7 @@ namespace platform
 
 	std::u8string format_number(const std::u8string& num_text);
 	std::u8string number_dec_sep();
+	bool is_valid_file_name(const std::u8string_view name);
 
 	struct file_attributes_t
 	{
@@ -391,7 +392,7 @@ namespace platform
 
 	void set_clipboard(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders,
 	                   const file_load_result& loaded, bool is_move);
-	void set_clipboard(const std::u8string& text);
+	void set_clipboard(std::u8string_view text);
 
 	class setting_file
 	{

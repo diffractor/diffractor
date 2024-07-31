@@ -17,6 +17,9 @@ class test_view;
 class items_view;
 class edit_view;
 class media_view;
+class rename_view;
+class sync_view;
+class import_view;
 
 constexpr std::array media_volumes = { 999, 777, 555, 333, 0 };
 extern icon_index volumes_icons[5];
@@ -440,7 +443,13 @@ public:
 	ui::toolbar_ptr _navigate1;
 	ui::toolbar_ptr _navigate2;
 	ui::toolbar_ptr _navigate3;
-	ui::toolbar_ptr _media_edit;
+
+	ui::toolbar_ptr _media_edit_commands;
+	ui::toolbar_ptr _rename_commands;
+	ui::toolbar_ptr _import_commands;
+	ui::toolbar_ptr _sync_commands;
+	ui::toolbar_ptr _test_commands;
+
 	ui::edit_ptr _search_edit;
 	ui::edit_ptr _filter_edit;
 	ui::toolbar_ptr _tools;
@@ -456,13 +465,17 @@ public:
 	bool _view_has_focus = false;
 	bool _toolbar_has_focus = false;
 	bool _nav_has_focus = false;
-	bool _edit_controls_have_focus = false;
+	bool _view_controls_have_focus = false;
 
-	std::shared_ptr<edit_view_controls> _edit_view_controls;
+	view_controls_host_ptr _view_controls;	
 	std::shared_ptr<sidebar_host> _sidebar;
 	std::shared_ptr<view_frame> _view_frame;
 
 	std::shared_ptr<test_view> _view_test;
+	std::shared_ptr<rename_view> _view_rename;
+	std::shared_ptr<import_view> _view_import;
+	std::shared_ptr<sync_view> _view_sync;
+
 	std::shared_ptr<items_view> _view_items;
 	std::shared_ptr<edit_view> _view_edit;
 	std::shared_ptr<media_view> _view_media;
@@ -492,6 +505,8 @@ public:
 	std::atomic_int _pin_search;
 
 	view_hover_element _hover;
+
+	ui::texture_ptr _logo_tex;
 
 	app_frame(ui::plat_app_ptr pa);
 	~app_frame() override;

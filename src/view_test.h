@@ -9,10 +9,7 @@
 
 #pragma once
 
-#include <utility>
-
-#include "ui_view.h"
-#include "ui_controllers.h"
+#include "view_list.h"
 
 class test_assert_exception : public std::exception
 {
@@ -25,19 +22,13 @@ public:
 };
 
 
-class test_view final : public view_base
+class test_view final : public list_view
 {
 public:
 	struct shared_test_context;
 
 protected:
 	using this_type = test_view;
-
-	view_state& _state;
-	view_host_ptr _host;
-
-	sizei _extent;
-	view_scroller _scroller;
 
 	friend class scroll_controller;
 	friend class clickable_controller;
@@ -50,23 +41,66 @@ protected:
 		Unknown
 	};
 
-	struct test_element final : public std::enable_shared_from_this<test_element>, public view_element
+	struct test_item final : public std::enable_shared_from_this<test_item>, public view_element
 	{
 		std::u8string _name;
 		std::u8string _message;
+		std::u8string _time_text;
 		test_state _state = test_state::Unknown;
 		int _time = 0;
 		std::function<void(shared_test_context& stc)> _f;
 		test_view& _view;
+		row_element_ptr _row;
 
-		test_element(test_view& view, std::u8string name, std::function<void(shared_test_context& stc)> f) noexcept
-			: view_element(view_element_style::can_invoke), _name(std::move(name)), _f(std::move(f)), _view(view)
+		test_item(test_view& view, std::u8string name, row_element_ptr row, std::function<void(shared_test_context& stc)> f) noexcept
+			: view_element(view_element_style::can_invoke), _name(std::move(name)), _f(std::move(f)), _view(view), _row(std::move(row))
 		{
+			update_row();
 		}
 
 		bool has_failed() const
 		{
 			return _state == test_state::Failed;
+		}
+
+		void update_row()
+		{
+			_row->_text[1] = _name;
+
+			switch (_state)
+			{
+			case test_state::Success:
+				_row->_text_color[0] = ui::lighten(ui::style::color::info_background, 0.55f);
+				_row->_text[0] = u8"Success"sv;
+				_row->_order = 100;
+				break;
+			case test_state::Failed:
+				_row->_text_color[0] = ui::lighten(ui::style::color::warning_background, 0.55f);
+				_row->_text[0] = u8"Failed"sv;
+				_row->_order = 1;
+				break;
+			case test_state::Running:
+				_row->_text_color[0] = ui::lighten(ui::style::color::important_background, 0.55f);
+				_row->_text[0] = u8"Running"sv;
+				_row->_order = 2;
+				break;
+			case test_state::Unknown:
+				_row->_text_color[0] = ui::darken(ui::style::color::view_text, 0.22f);
+				_row->_text_color[1] = ui::darken(ui::style::color::view_text, 0.22f);
+				_row->_text[0] = u8"Unknown"sv;
+				_row->_order = 200;
+				break;
+			}
+
+			if (_message.empty() && _time > 0)
+			{
+				_time_text = str::format(u8"{:8} milliseconds"sv, _time);
+				_row->_text[2] = _time_text;
+			}
+			else
+			{
+				_row->_text[2] = _message;
+			}
 		}
 
 		void perform(view_state& s, shared_test_context& stc)
@@ -94,39 +128,38 @@ protected:
 				});
 			}
 		}
-
-		void render(ui::draw_context& dc, pointi element_offset) const override;
-		sizei measure(ui::measure_context& mc, int width_limit) const override;
-		void dispatch_event(const view_element_event& event) override;
-		view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
-		                                             const std::vector<recti>& excluded_bounds) override;
 	};
 
-	using test_ptr = std::shared_ptr<test_element>;
+	using test_ptr = std::shared_ptr<test_item>;
 	std::vector<test_ptr> _tests;
+	std::u8string _title;
 
 public:
 	test_view(view_state& state, view_host_ptr host);
 	~test_view() override;
 
 	void activate(sizei extent) override;
-	void refresh();
+	void refresh() override;
+	void reload() override;
 	void run_tests();
 	void run_test(const test_ptr& t);
 	void register_tests();
 
 	void register_test(std::u8string name, std::function<void(shared_test_context& stc)> f)
 	{
-		_tests.emplace_back(std::make_shared<test_element>(*this, std::move(name), std::move(f)));
+		auto row = std::make_shared<row_element>(*this);
+		auto test = std::make_shared<test_item>(*this, std::move(name), row, std::move(f));
+		_rows.emplace_back(row);
+		_tests.emplace_back(test);
 	}
 
 	void register_test(std::u8string name, std::function<void(void)> f)
 	{
-		_tests.emplace_back(
-			std::make_shared<test_element>(*this, std::move(name), [f = std::move(f)](shared_test_context&) { f(); }));
+		auto row = std::make_shared<row_element>(*this);
+		auto test = std::make_shared<test_item>(*this, std::move(name), row, [f = std::move(f)](shared_test_context&) { f(); });
+		_rows.emplace_back(row);
+		_tests.emplace_back(test);
 	}
-
-	void layout(ui::measure_context& mc, sizei extent) override;
 
 	void deactivate() override
 	{
@@ -139,7 +172,14 @@ public:
 
 	test_ptr test_from_location(int y) const;
 
-	void render_headers(ui::draw_context& dc, int x) const;
-	void render(ui::draw_context& rc, view_controller_ptr controller) override;
-	void mouse_wheel(pointi loc, int zDelta, ui::key_state keys) override;
+	void exit() override
+	{
+		_state.view_mode(view_type::items);
+	}
+
+	std::u8string_view title() override
+	{
+		_title = str::format(u8"{}: Test"sv, s_app_name);
+		return _title;
+	}
 };

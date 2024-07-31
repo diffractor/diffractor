@@ -2798,7 +2798,8 @@ void view_state::load_display_state()
 
 			if (is_playable)
 			{
-				const auto auto_play = setting.auto_play && !is_editing() && df::file_handles_detached == 0;
+				const auto play_view = is_items_or_media_view();
+				const auto auto_play = setting.auto_play && play_view && df::file_handles_detached == 0;
 
 				_player->open(display_item, auto_play, -1, -1, av_can_use_hw(), setting.last_played_pos,
 				              [new_display](std::shared_ptr<av_session> ses)

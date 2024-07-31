@@ -90,10 +90,15 @@ std::vector<rename_item> calc_item_renames(const df::item_set& items, const std:
 
 	for (const auto& i : items.items())
 	{
+		auto md = i->metadata();
+		auto original_name = i->base_name();
+		auto name = format_sequence(original_name, template_name, seq);
+		name = prop::replace_tokens(name, md, i->name(), i->calc_media_created());
+
 		rename_item rename;
-		rename.item = i;
-		rename.original_name = i->base_name();
-		rename.new_name = format_new_name(rename.original_name, template_name, seq);
+		rename.item = i;		
+		rename.original_name = original_name;
+		rename.new_name = name;
 		seq += 1;
 		results.emplace_back(rename);
 	}
@@ -101,7 +106,7 @@ std::vector<rename_item> calc_item_renames(const df::item_set& items, const std:
 	return results;
 }
 
-std::u8string format_new_name(const std::u8string_view original_name, const std::u8string_view template_name, const int seq)
+std::u8string format_sequence(const std::u8string_view original_name, const std::u8string_view template_name, const int seq)
 
 {
 	static auto numbers = u8"0123456789"sv;
@@ -159,7 +164,8 @@ import_analysis_result import_analysis(const std::vector<folder_scan_item>& src_
 		{
 			created = md->created();
 		}
-		const auto import_folder_out = replace_tokens(options.dest_structure, md);
+
+		const auto import_folder_out = replace_tokens(options.dest_structure, md, i.item.name, i.item.created());
 		const auto path_in = i.folder.combine_file(i.item.name);
 		const auto path_out = options.dest_folder.combine(import_folder_out).combine_file(path_in.name());
 		const auto import_rec = item_import{ i.item.name, i.item.file_modified, i.item.size, now };
@@ -618,39 +624,6 @@ void sync_copy(const std::shared_ptr<command_status>& status, const sync_analysi
 			}
 		}
 	}
-}
-
-uint32_t count_sync(const sync_analysis_items& analysis, const sync_action sync_action)
-{
-	uint32_t result = 0;
-
-	for (const auto& f : analysis)
-	{
-		if (f.second.action == sync_action)
-		{
-			++result;
-		}
-	}
-
-	return result;
-}
-
-uint32_t count_sync_actions(const sync_analysis_result& analysis)
-{
-	uint32_t result = 0;
-
-	for (const auto& i : analysis)
-	{
-		for (const auto& f : i.second)
-		{
-			if (f.second.action != sync_action::none)
-			{
-				++result;
-			}
-		}
-	}
-
-	return result;
 }
 
 void toggle_collection_entry(settings_t::index_t& collection_settings, const df::folder_path folder, const bool is_remove)

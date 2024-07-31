@@ -43,58 +43,58 @@ enum class command_group
 
 namespace keys
 {
-	extern int APPS;
-	extern int BACK;
-	extern int BROWSER_BACK;
-	extern int BROWSER_FAVORITES;
-	extern int BROWSER_FORWARD;
-	extern int BROWSER_HOME;
-	extern int BROWSER_REFRESH;
-	extern int BROWSER_SEARCH;
-	extern int BROWSER_STOP;
-	extern int DEL;
-	extern int DOWN;
-	extern int ESCAPE;
-	extern int F1;
-	extern int F10;
-	extern int F11;
-	extern int F2;
-	extern int F3;
-	extern int F4;
-	extern int F5;
-	extern int F6;
-	extern int F7;
-	extern int F8;
-	extern int F9;
-	extern int INSERT;
-	extern int LEFT;
-	extern int MEDIA_NEXT_TRACK;
-	extern int MEDIA_PLAY_PAUSE;
-	extern int MEDIA_PREV_TRACK;
-	extern int MEDIA_STOP;
-	extern int NEXT;
-	extern int OEM_4;
-	extern int OEM_6;
-	extern int OEM_PLUS;
-	extern int PRIOR;
-	extern int RETURN;
-	extern int RIGHT;
-	extern int SPACE;
-	extern int TAB;
-	extern int UP;
-	extern int VOLUME_DOWN;
-	extern int VOLUME_MUTE;
-	extern int VOLUME_UP;
-	extern int HOME;
-	extern int END;
+	extern char32_t APPS;
+	extern char32_t BACK;
+	extern char32_t BROWSER_BACK;
+	extern char32_t BROWSER_FAVORITES;
+	extern char32_t BROWSER_FORWARD;
+	extern char32_t BROWSER_HOME;
+	extern char32_t BROWSER_REFRESH;
+	extern char32_t BROWSER_SEARCH;
+	extern char32_t BROWSER_STOP;
+	extern char32_t DEL;
+	extern char32_t DOWN;
+	extern char32_t ESCAPE;
+	extern char32_t F1;
+	extern char32_t F10;
+	extern char32_t F11;
+	extern char32_t F2;
+	extern char32_t F3;
+	extern char32_t F4;
+	extern char32_t F5;
+	extern char32_t F6;
+	extern char32_t F7;
+	extern char32_t F8;
+	extern char32_t F9;
+	extern char32_t INSERT;
+	extern char32_t LEFT;
+	extern char32_t MEDIA_NEXT_TRACK;
+	extern char32_t MEDIA_PLAY_PAUSE;
+	extern char32_t MEDIA_PREV_TRACK;
+	extern char32_t MEDIA_STOP;
+	extern char32_t NEXT;
+	extern char32_t OEM_4;
+	extern char32_t OEM_6;
+	extern char32_t OEM_PLUS;
+	extern char32_t PRIOR;
+	extern char32_t RETURN;
+	extern char32_t RIGHT;
+	extern char32_t SPACE;
+	extern char32_t TAB;
+	extern char32_t UP;
+	extern char32_t VOLUME_DOWN;
+	extern char32_t VOLUME_MUTE;
+	extern char32_t VOLUME_UP;
+	extern char32_t HOME;
+	extern char32_t END;
 
 	std::u8string_view format(int key);
 };
 
 struct keyboard_accelerator_t
 {
-	int key = 0;
-	int key_state = 0;
+	char32_t key = 0;
+	uint32_t key_state = 0;
 
 	static constexpr auto shift = 0x04;
 	static constexpr auto control = 0x08;
@@ -950,9 +950,9 @@ namespace ui
 			return {1.0f - r, 1.0f - g, 1.0f - b, a};
 		}
 
-		color a_min(const float a) const
+		color a_min(const float aa) const
 		{
-			return {r, g, b, std::min(a, a)};
+			return {r, g, b, std::min(a, aa)};
 		}
 
 		color32 rgb() const

@@ -182,6 +182,7 @@ void app_text_t::load_lang(const df::file_path lang_file)
 		before,
 		brightness,
 		burn_title,
+		analyze,
 		button_analyze,
 		button_background,
 		button_cancel,
@@ -231,7 +232,8 @@ void app_text_t::load_lang(const df::file_path lang_file)
 		collection_options_info,
 		collection_options_local_folders_title,
 		collection_options_more_folders,
-		collection_options_more_information,
+		more_collection_options_information,
+		more_template_information,
 		collection_options_music,
 		collection_options_onedrive,
 		collection_options_pictures,
@@ -329,6 +331,7 @@ void app_text_t::load_lang(const df::file_path lang_file)
 		command_refresh,
 		command_related,
 		command_rename,
+		command_rename_files,
 		command_repeat_toggle,
 		command_restore,
 		command_revert,
@@ -377,6 +380,7 @@ void app_text_t::load_lang(const df::file_path lang_file)
 		compare,
 		compare_tooltip,
 		contrast,
+		open_link_fmt,
 		copy_to_clipboard,
 		copy_to_join,
 		copyright_creator,
@@ -1074,7 +1078,14 @@ void app_text_t::load_lang(const df::file_path lang_file)
 		raw_metadata_title,
 		remove_metadata_title,
 		rename_label,
-		rename_template_help,
+		rename_help_template_1,
+		rename_help_template_2,
+		rename_help_template_3,
+		for_example,
+		rename_help_template_example_2,
+		rename_help_template_example_3,
+		rename_help_template_example_4,
+		rename_info,
 		rename_template_label,
 		rename_template_start_label,
 		repeat_help,
@@ -1142,13 +1153,15 @@ void app_text_t::load_lang(const df::file_path lang_file)
 		subtitle,
 		support,
 		sync_collection,
-		sync_copy_local_col,
-		sync_copy_remote_col,
-		sync_delete_local_col,
-		sync_delete_remote_col,
+		sync_copy_local_action,
+		sync_copy_remote_action,
+		sync_delete_local_action,
+		sync_delete_remote_action,
 		sync_details,
 		sync_delete_local,
 		sync_delete_remote,
+		sync_info_1,
+		sync_info_2,
 		sync_local,
 		sync_local_remote,
 		sync_other_folder,
@@ -1238,6 +1251,21 @@ void app_text_t::load_lang(const df::file_path lang_file)
 		command_favorite_tags,
 		option_favorite_tags,
 		collection_add,
+		source,
+		destination,
+		action,
+		old_name,
+		new_name,
+		local,
+		remote,
+		status,
+		message,
+		import,
+		exists,
+		previously_imported,
+		ignore,
+		test,
+		view_empty_message,
 	};
 
 	const std::vector<std::reference_wrapper<plural_text>> plurals
@@ -1278,9 +1306,12 @@ void app_text_t::load_lang(const df::file_path lang_file)
 	{
 		translations = load_po(lang_file);
 
+		df::hash_set<std::u8string> needed_texts;
+
 		for (auto&& e : texts)
 		{
-			const auto found = translations.find(std::u8string(e));
+			std::u8string text(e);
+			const auto found = translations.find(text);
 
 			if (found != translations.end())
 			{
@@ -1289,13 +1320,20 @@ void app_text_t::load_lang(const df::file_path lang_file)
 			}
 			else
 			{
-				df::log(__FUNCTION__, str::format(u8"Missing language text {} - {}"sv, lang_file, e.get()));
+				df::log(__FUNCTION__, str::format(u8"{} missing: msgid \"{}\""sv, lang_file.name(), e.get()));
 			}
+
+			needed_texts.insert(text);
 		}
 
 		for (const auto& p : plurals)
 		{
-			const auto found_one = translations.find(std::u8string(p.get().one));
+			std::u8string one(p.get().one);
+			std::u8string plural(p.get().plural);
+			needed_texts.insert(one);
+			needed_texts.insert(plural);
+
+			const auto found_one = translations.find(one);		
 
 			if (found_one != translations.end())
 			{
@@ -1304,10 +1342,10 @@ void app_text_t::load_lang(const df::file_path lang_file)
 			}
 			else
 			{
-				df::log(__FUNCTION__, str::format(u8"Missing language text {} - {}"sv, lang_file, p.get().one));
+				df::log(__FUNCTION__, str::format(u8"{} missing: msgid \"{}\""sv, lang_file.name(), p.get().one));
 			}
 
-			const auto found_plural = translations.find(std::u8string(p.get().plural));
+			const auto found_plural = translations.find(plural);
 
 			if (found_plural != translations.end())
 			{
@@ -1316,7 +1354,16 @@ void app_text_t::load_lang(const df::file_path lang_file)
 			}
 			else
 			{
-				df::log(__FUNCTION__, str::format(u8"Missing language text {} - {}"sv, lang_file, p.get().plural));
+				df::log(__FUNCTION__, str::format(u8"{} missing: msgid \"{}\""sv, lang_file.name(), p.get().plural));
+			}
+		}
+
+		// Log any extra strings in the po file
+		for (const auto& t : translations)
+		{
+			if (!needed_texts.contains(t.first))
+			{
+				df::log(__FUNCTION__, str::format(u8"{} extra: msgid \"{}\""sv, lang_file.name(), t.first));
 			}
 		}
 	}

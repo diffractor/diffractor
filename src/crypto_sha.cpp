@@ -263,13 +263,13 @@ const uint32_t sha256::sha256_k[64] = //UL = uint32
 	0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
 };
 
-void sha256::transform(const uint8_t* message, uint32_t block_nb)
+void sha256::transform(const uint8_t* message, size_t block_nb)
 {
 	uint32_t w[64];
 	uint32_t wv[8];
 
 	int j;
-	for (int i = 0; i < static_cast<int>(block_nb); i++)
+	for (auto i = 0_z; i < block_nb; i++)
 	{
 		const uint8_t* sub_block = message + (i << 6);
 		for (j = 0; j < 16; j++)

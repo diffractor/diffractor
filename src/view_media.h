@@ -66,6 +66,11 @@ public:
 	{
 	}
 
+	void refresh() override
+	{
+		_state.open(_host, _state.search(), {});
+	}
+
 	menu_type context_menu(const pointi loc) override
 	{
 		return menu_type::media;

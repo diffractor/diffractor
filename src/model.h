@@ -853,7 +853,7 @@ private:
 
 	group_by _group_order = group_by::file_type;
 	sort_by _sort_order = sort_by::def;
-	view_type _view_mode = view_type::None;
+	view_type _view_mode = view_type::none;
 
 
 	view_state(const view_state& other) = delete;
@@ -1023,19 +1023,14 @@ public:
 		return _view_mode;
 	}
 
+	bool is_items_or_media_view() const
+	{
+		return _view_mode == view_type::items || _view_mode == view_type::media;
+	}
+
 	bool has_status() const
 	{
 		return has_selection();
-	}
-
-	bool is_editing() const
-	{
-		return _view_mode == view_type::edit;
-	}
-
-	bool is_showing_media_or_items() const
-	{
-		return _view_mode == view_type::items || _view_mode == view_type::media;
 	}
 
 	bool has_display_items() const
@@ -1100,8 +1095,11 @@ public:
 
 	bool can_play() const
 	{
-		const auto d = _display;
-		return d && !d->is_playing() && !is_editing();
+		if (_view_mode != view_type::items && _view_mode != view_type::media)
+			return false;
+
+		const auto d = _display;		
+		return d && !d->is_playing();
 	}
 
 	bool can_edit_media() const

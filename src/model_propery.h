@@ -473,7 +473,7 @@ namespace prop
 	std::u8string format_pixels(sizei v, file_type_ref ft);
 	std::u8string format_video_resolution(sizei v);
 
-	std::u8string replace_tokens(std::u8string_view text, const item_metadata_const_ptr& md);
+	std::u8string replace_tokens(std::u8string_view name_template, const item_metadata_const_ptr& md, std::u8string_view name, df::date_t created);
 
 	inline double to_apex_val(const double d)
 	{

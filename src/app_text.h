@@ -30,8 +30,7 @@ struct app_text_t
 {
 	using text_t = std::u8string_view;
 	lang_def translations;
-
-
+	
 	void load_lang(df::file_path lang_file);
 	std::u8string translate_text(const std::u8string& text, std::u8string_view scope = {}) const;
 	std::vector<std::u8string> add_translate_text(const std::vector<str::cached>& text,
@@ -79,6 +78,7 @@ struct app_text_t
 	text_t command_browse_forward = u8"Forward"sv;
 	text_t command_new_folder = u8"New Folder"sv;
 	text_t command_rename = u8"Rename"sv;
+	text_t command_rename_files = u8"Rename files"sv;
 	text_t command_locate = u8"Add location"sv;
 	text_t command_print = u8"Print"sv;
 	text_t command_nav_bar = u8"Show sidebar"sv;
@@ -138,7 +138,7 @@ struct app_text_t
 	text_t command_minimize = u8"Minimize"sv;
 	text_t command_maximize = u8"Maximize"sv;
 	text_t command_restore = u8"Restore"sv;
-	text_t command_close = u8"Cancel"sv;
+	text_t command_close = u8"Close"sv;
 	text_t command_import = u8"Import"sv;
 	text_t command_browse_previous_group = u8"Previous item group"sv;
 	text_t command_browse_next_group = u8"Next item group"sv;
@@ -187,7 +187,7 @@ struct app_text_t
 	text_t command_label_second = u8"Second"sv;
 	text_t command_label_none = u8"No Label"sv;
 	text_t command_view_tests = u8"Tests"sv;
-	text_t tooltip_view_tests = u8"Tests and updates"sv;
+	text_t tooltip_view_tests = u8"Run tests"sv;
 	text_t command_group_shuffle = u8"Show items in random order"sv;
 	text_t command_toggle_group_by = u8"Toggle item grouping"sv;
 	text_t command_group_file_type = u8"Group by File type"sv;
@@ -511,8 +511,15 @@ struct app_text_t
 	text_t folder_noun_plural = u8"folders"sv;
 	text_t item_noun = u8"item"sv;
 	text_t item_noun_plural = u8"items"sv;
-	text_t rename_template_help =
-		u8"Specify a template to use for renaming files.\n - Use #'s to specify position of the numeric sequence.\n - Use ? to insert original filename character in pattern.\n - Example 'My photo ###'"sv;
+	text_t rename_help_template_1 = u8"When specifying a template:"sv;
+	text_t rename_help_template_2 = u8"Use '#' to specify position of the numeric sequence"sv;
+	text_t rename_help_template_3 = u8"Use metadata templates '{property-name}' to include file properties in the name."sv;
+	text_t for_example = u8"For example:"sv;
+	text_t rename_help_template_example_2 = u8"photo-###"sv;
+	text_t rename_help_template_example_3 = u8"{year}-{month}-###"sv;
+	text_t rename_help_template_example_4 = u8"travel-{country}-###"sv;
+
+	text_t rename_info = u8"Rename multiple files based on an incrementing sequence or file metadata template."sv;
 	text_t rename_template_label = u8"Template:"sv;
 	text_t rename_template_start_label = u8"Start at:"sv;
 	text_t rename_label = u8"New name:"sv;
@@ -561,7 +568,7 @@ struct app_text_t
 	text_t open_with_app_tool = u8"Open with app or tool"sv;
 	text_t open_with_tool = u8"tool"sv;
 	text_t open_with_app = u8"app"sv;
-	text_t import_info = u8"Move or copy selected items into a year/day folder structure."sv;
+	text_t import_info = u8"Copy (or move) files into a structured folder hierarchy. The folder structure can be based on file metadata templates such year/date or album/artist. This is useful if you want to organize files in a structured hierarchy."sv;
 	text_t import_dest_folder = u8"Destination root folder. Structured folders will be created under this folder."sv;
 	text_t import_ignore_previous = u8"Ignore previously imported items."sv;
 	text_t import_overwrite_if_newer = u8"Overwrite if source items are newer."sv;
@@ -1060,6 +1067,7 @@ struct app_text_t
 	text_t items_not_identical = u8"Files are different."sv;
 	text_t pixels_identical_files_not_identical = u8"Pixels are identical but files are different."sv;
 	text_t copy_to_clipboard = u8"Copy to clipboard"sv;
+	text_t open_link_fmt = u8"Open link {}"sv;
 	text_t xmp_metadata_title = u8"XMP"sv;
 	text_t icc_metadata_title = u8"ICC"sv;
 	text_t metadata_title = u8"Metadata"sv;
@@ -1069,7 +1077,8 @@ struct app_text_t
 	text_t iptc_metadata_title = u8"IPTC"sv;
 	text_t none = u8"None"sv;
 	text_t collection_options_info = u8"Define the folders that make your collection."sv;
-	text_t collection_options_more_information = u8"More information about collection management."sv;
+	text_t more_collection_options_information = u8"More information about collection management."sv;
+	text_t more_template_information = u8"More information about metadata templates."sv;
 	text_t show_raw_now = u8"Show this RAW photo"sv;
 	text_t show_raw = u8"Always show RAW photos (slower)"sv;
 	text_t preview_show_preview = u8"Show RAW preview if available (faster)"sv;
@@ -1114,11 +1123,13 @@ struct app_text_t
 	text_t sync_delete_local = u8"Delete local files that do not exist remotely"sv;
 	text_t sync_delete_remote = u8"Delete remote files that do not exist locally"sv;
 	text_t sync_local = u8"Source of synchronization (Local)"sv;
+	text_t sync_info_1 = u8"Synchronize local files to a remote location. This is useful to synchronize your local file collection to a backup location."sv;
+	text_t sync_info_2 = u8"c:\\file-collection to \\\\nas\\\\backup-files"sv;
 	text_t sync_remote = u8"Destination of synchronization (Remote)"sv;
-	text_t sync_copy_remote_col = u8"Copy\nremote"sv;
-	text_t sync_copy_local_col = u8"Copy\nlocal"sv;
-	text_t sync_delete_remote_col = u8"Delete\nremote"sv;
-	text_t sync_delete_local_col = u8"Delete\nlocal"sv;
+	text_t sync_copy_remote_action = u8"copy remote"sv;
+	text_t sync_copy_local_action = u8"copy local"sv;
+	text_t sync_delete_remote_action = u8"delete remote"sv;
+	text_t sync_delete_local_action = u8"delete local"sv;
 	text_t button_sync = u8"&Synchronize"sv;
 
 	text_t import_from = u8"Source of import:"sv;
@@ -1126,6 +1137,7 @@ struct app_text_t
 	text_t import_other_folder = u8"Other folder"sv;
 	text_t import_detecting = u8"Detecting folders..."sv;
 	text_t button_analyze = u8"&Analyze"sv;
+	text_t analyze = u8"Analyze"sv;
 	text_t select_location = u8"Select a location"sv;
 	text_t import_overwrite = u8"Overwrite"sv;
 	text_t import_ignore = u8"Ignore"sv;
@@ -1142,6 +1154,21 @@ struct app_text_t
 	text_t option_favorite_tags = u8"Show only favorite tags in the sidebar"sv;
 
 	text_t collection_add = u8"Collection"sv;
+	text_t source = u8"Source"sv;
+	text_t destination = u8"Destination"sv;
+	text_t action = u8"Action"sv;
+	text_t old_name = u8"Old name"sv;
+	text_t new_name = u8"New name"sv;
+	text_t local = u8"Local"sv;
+	text_t remote = u8"Remote"sv;
+	text_t status = u8"Status"sv;
+	text_t message = u8"Message"sv;
+	text_t import = u8"import"sv;
+	text_t exists = u8"exists"sv;
+	text_t previously_imported = u8"previously imported"sv;
+	text_t ignore = u8"ignore"sv;
+	text_t test = u8"test"sv;
+	text_t view_empty_message = u8"Click analyze to show items"sv;
 
 	plural_text rotate_info_fmt = {
 		u8"Rotate {first-name}."sv, u8"Rotate {count} selected items. Originals will be overwritten."
@@ -1153,7 +1180,7 @@ struct app_text_t
 		u8"Cannot process {first-name}."sv, u8"Cannot process {first-name} and {other} other items."
 	};
 	plural_text rename_fmt = {
-		u8"{first-name} will be renamed."sv, u8"{count} items will be renamed in an incrementing sequence."
+		u8"{first-name} will be renamed."sv, u8"{count} items will be renamed."
 	};
 	plural_text dup_count_fmt = {u8"1 duplicate item"sv, u8"{count} duplicate items"};
 	plural_text sidecar_count_fmt = {u8"1 sidecar item"sv, u8"{count} sidecar items"};

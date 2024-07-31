@@ -73,6 +73,7 @@ enum class view_invalid
 	selection_list = 1 << 23,
 	font_size = 1 << 24,
 	image_compare = 1 << 25,
+	status = 1 << 26,
 
 	options = view_layout |
 	group_layout |
@@ -84,6 +85,7 @@ enum class view_invalid
 	refresh_items |
 	address |
 	font_size,
+	
 };
 
 constexpr view_invalid operator|(const view_invalid a, const view_invalid b)
@@ -390,16 +392,13 @@ public:
 	bool _view_has_focus = false;
 	bool _show_render_window = true;
 
-	view_base()
-	{
-	}
-
-	virtual ~view_base()
-	{
-	}
+	view_base() = default;
+	~view_base() override = default;
 
 	virtual void activate(sizei extent) = 0;
 	virtual void deactivate() = 0;
+	virtual void refresh() = 0;
+	virtual void reload() {};
 
 	virtual void update_media_elements()
 	{
@@ -475,6 +474,21 @@ public:
 
 	virtual void broadcast_event(const view_element_event& event) const
 	{
+	}
+
+	virtual void exit()
+	{
+		
+	}
+
+	virtual std::u8string_view title()
+	{
+		return {};
+	}
+
+	virtual std::u8string_view status()
+	{
+		return {};
 	}
 };
 

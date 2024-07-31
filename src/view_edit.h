@@ -13,6 +13,7 @@
 #include "ui_view.h"
 #include "ui_controllers.h"
 #include "ui_dialog.h"
+#include "view_list.h"
 
 class log_slider_control;
 class edit_view;
@@ -21,20 +22,11 @@ class task_toolbar_control;
 class rating_bar_control;
 
 
-class edit_view_controls final : public view_host, public std::enable_shared_from_this<edit_view_controls>
+class edit_view_controls final : public view_controls_host
 {
 public:
-	view_state& _state;
 	edit_view_state& _edit_state;
 	std::shared_ptr<edit_view> _view;
-	view_scroller _scroller;
-	ui::control_frame_ptr _dlg;
-	ui::frame_ptr _frame;
-	std::vector<view_element_ptr> _controls;
-	ui::color _clr = ui::style::color::dialog_text;
-	long _layout_height = 0;
-	long _layout_width = 0;
-	ui::coll_widths _label_width;
 
 	std::shared_ptr<ui::edit_control> _title_edit;
 	std::shared_ptr<text_element> _description_label;
@@ -77,116 +69,18 @@ public:
 	std::shared_ptr<log_slider_control> _saturation_slider;
 	std::shared_ptr<task_toolbar_control> _color_toolbar;
 
-	edit_view_controls(view_state& s, edit_view_state& es) : _state(s), _edit_state(es)
+	edit_view_controls(view_state& s, edit_view_state& es) : view_controls_host(s), _edit_state(es)
 	{
 		_scroller._scroll_child_controls = true;
 	}
 
-	void scroll_controls() override;
-	void layout_controls(ui::measure_context& mc);
+	void layout_controls(ui::measure_context& mc) override;
 	void create_controls();
 
-	void populate()
-	{
-		const view_element_event e{view_element_event_type::populate, shared_from_this()};
-
-		for (const auto& c : _controls)
-		{
-			c->dispatch_event(e);
-		}
-	}
-
-	void on_window_layout(ui::measure_context& mc, sizei extent, bool is_minimized) override;
-	void on_window_paint(ui::draw_context& dc) override;
-
-	void tick() override
-	{
-	}
-
-	void init(const ui::control_frame_ptr& frame);
-
-	void activate(bool is_active) override
-	{
-	}
-
-	bool key_down(const int c, const ui::key_state keys) override
-	{
-		return false;
-	}
-
-	const ui::frame_ptr frame() override
-	{
-		return _frame;
-	}
-
-	const ui::control_frame_ptr owner() override
-	{
-		return _dlg;
-	}
-
-	void invoke(const commands cmd) override
-	{
-		_state.invoke(cmd);
-	}
-
-	bool is_command_checked(const commands cmd) override
-	{
-		return _state.is_command_checked(cmd);
-	}
-
-	void controller_changed() override
-	{
-		_state.invalidate_view(view_invalid::tooltip);
-	}
-
-	void invalidate_element(const view_element_ptr& e) override
-	{
-		if (_frame)
-		{
-			_frame->invalidate();
-		}
-	}
-
-	view_controller_ptr controller_from_location(const pointi loc) override
-	{
-		if (_scroller.can_scroll() && _scroller.scroll_bounds().contains(loc))
-		{
-			return std::make_shared<scroll_controller>(shared_from_this(), _scroller, _scroller.scroll_bounds());
-		}
-
-		const auto offset = -_scroller.scroll_offset();
-
-		for (const auto& e : _controls)
-		{
-			auto controller = e->controller_from_location(shared_from_this(), loc, offset, {});
-			if (controller) return controller;
-		}
-
-		return nullptr;
-	}
-
-	void on_mouse_wheel(const pointi loc, const int delta, const ui::key_state keys, bool& was_handled) override
-	{
-		_scroller.offset(shared_from_this(), 0, -(delta / 2));
-		update_controller(loc);
-	}
-
-	void options_changed();
-	void focus_changed(bool has_focus, const ui::control_base_ptr& child) override;
-	void command_hover(const ui::command_ptr& c, recti window_bounds) override;
-
-	void track_menu(const recti bounds, const std::vector<ui::command_ptr>& commands) override
-	{
-		_state.track_menu(_dlg, bounds, commands);
-	}
-
-	void invalidate_view(const view_invalid invalid) override
-	{
-		_state.invalidate_view(invalid);
-	}
+	void options_changed() override;
 };
 
-class edit_view final : public view_base
+class edit_view final : public view_base, public std::enable_shared_from_this<edit_view>
 {
 	using this_type = edit_view;
 
@@ -205,6 +99,7 @@ class edit_view final : public view_base
 	rectd _crop_handle_bl;
 	rectd _crop_handle_br;
 
+	std::u8string _title;
 	df::file_path _path;
 	std::u8string_view _xmp_name;
 	file_type_ref _mt = nullptr;
@@ -217,22 +112,25 @@ class edit_view final : public view_base
 	friend class handle_move_controller<this_type>;
 
 public:
-	edit_view(view_state& s, view_host_ptr host, edit_view_state& evs, std::shared_ptr<edit_view_controls> evc);
+	edit_view(view_state& s, view_host_ptr host, edit_view_state& evs);
 
 	recti calc_media_bounds() const
 	{
 		return {0, 0, _extent.cx, _extent.cy};
 	}
 
+	view_controls_host_ptr controls(const ui::control_frame_ptr& owner);
 	ui::const_surface_ptr preview_surface() const;
 
 	void activate(sizei extent) override;
 	void deactivate() override;
+	void refresh() override;
+
 	void layout(ui::measure_context& mc, sizei extent) override;
 	bool is_photo() const;
 	void changed();
 	void cancel() const;
-	void exit();
+	void exit() override;
 	void save_and_close();
 	bool save(df::file_path src_path, df::file_path dst_path, std::u8string_view xmp_name,
 	          const ui::control_frame_ptr& owner) const;
@@ -291,5 +189,29 @@ public:
 		const auto crop = _edit_state.selection();
 		const auto draw_crop = crop.crop(rectd(0, 0, dims.cx, dims.cy));
 		return draw_crop.transform(_image_transform).bounding_rect();
+	}
+
+	std::u8string_view title() override
+	{
+		const auto i = _state._edit_item;
+
+		if (i)
+		{
+			_title = str::format(u8"{}: {} {}"sv, s_app_name, tt.editing_title, i->name());
+		}
+		else
+		{
+			_title = s_app_name;
+		}
+
+		return _title;
+	}
+
+	void options_changed()
+	{
+		if (_edit_controls)
+		{
+			_edit_controls->options_changed();
+		}
 	}
 };

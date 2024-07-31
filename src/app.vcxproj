@@ -1378,6 +1378,7 @@
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">pch.h</PrecompiledHeaderFile>
     </ClCompile>
+    <ClCompile Include="view_import.cpp" />
     <ClCompile Include="view_items.cpp">
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|x64'">pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">pch.h</PrecompiledHeaderFile>
@@ -1482,6 +1483,8 @@
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">pch.h</PrecompiledHeaderFile>
     </ClCompile>
+    <ClCompile Include="view_rename.cpp" />
+    <ClCompile Include="view_sync.cpp" />
     <ClCompile Include="view_test.cpp">
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|x64'">pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">pch.h</PrecompiledHeaderFile>
@@ -1692,6 +1695,7 @@
     <ClInclude Include="model_items.h" />
     <ClInclude Include="model_db.h" />
     <ClInclude Include="model_index.h" />
+    <ClInclude Include="view_import.h" />
     <ClInclude Include="view_items.h" />
     <ClInclude Include="files_jpeg.h" />
     <ClInclude Include="util_kdtree.h" />
@@ -1699,6 +1703,7 @@
     <ClInclude Include="app.h" />
     <ClInclude Include="crypto_md5.h" />
     <ClInclude Include="av_format.h" />
+    <ClInclude Include="view_list.h" />
     <ClInclude Include="view_media.h" />
     <ClInclude Include="util_file.h" />
     <ClInclude Include="model_tags.h" />
@@ -1714,6 +1719,8 @@
     <ClInclude Include="model.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="util_strings.h" />
+    <ClInclude Include="view_rename.h" />
+    <ClInclude Include="view_sync.h" />
     <ClInclude Include="view_test.h" />
     <ClInclude Include="ui_controllers.h" />
     <ClInclude Include="util_top.h" />

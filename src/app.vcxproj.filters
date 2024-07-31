@@ -207,6 +207,15 @@
     <ClCompile Include="app_util.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="view_rename.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="view_import.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="view_sync.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="app_commands.h">
@@ -420,6 +429,18 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="platform_win_visual.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="view_list.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="view_rename.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="view_import.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="view_sync.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

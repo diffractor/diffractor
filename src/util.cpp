@@ -164,6 +164,18 @@ df::version::version(const std::u8string_view version)
 	}
 }
 
+std::u8string df::url_extract(const std::u8string_view text)
+{
+	static const std::regex url_regex(R"((https?:\/\/[^\s\"\']+))");
+	std::match_results<std::u8string_view::const_iterator> match;
+
+	if (std::regex_search(text.begin(), text.end(), match, url_regex)) {
+		return match[1].str();
+	}
+
+	return {};
+}
+
 std::u8string df::date_t::to_xmp_date() const
 {
 	const auto st = date();

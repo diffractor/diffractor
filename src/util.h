@@ -952,6 +952,8 @@ namespace df
 		return _byteswap_ushort(*std::bit_cast<const uint16_t*>(addr));
 	}
 
+	std::u8string url_extract(std::u8string_view text);
+
 	inline std::u8string url_encode(const std::u8string_view url)
 	{
 		std::u8string result;

@@ -73,7 +73,7 @@ inline double calc_thumb_scale(const sizei dimensions, const sizei limit, const 
 
 std::u8string format_invalid_name_message(std::u8string_view name);
 std::u8string_view item_presence_text(item_presence v, bool long_text);
-void parse_more_folders(df::index_roots& result, const std::u8string_view& more_folders);
+void parse_more_folders(df::index_roots& result, std::u8string_view more_folders);
 
 namespace df
 {

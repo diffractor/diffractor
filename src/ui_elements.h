@@ -896,6 +896,11 @@ public:
 		_text_style = text_style;
 	}
 
+	text_element(std::u8string_view text, const ui::style::font_face font) noexcept : text_element_base(text)
+	{
+		_font = font;
+	}
+
 	text_element(std::u8string_view text, const view_element_style style_in) noexcept : text_element_base(
 		text, style_in)
 	{

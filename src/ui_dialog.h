@@ -108,7 +108,7 @@ namespace ui
 
 		sizei measure(measure_context& mc, const int cx) const override
 		{
-			return {cx, default_control_height(mc)};
+			return { cx, default_control_height(mc) };
 		}
 
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
@@ -166,12 +166,14 @@ namespace ui
 		edit_ptr _edit;
 
 	public:
-		edit_control(const control_frame_ptr& h, const std::u8string_view label,
-		             std::u8string& v) : _val(v), _label(label)
+		edit_control(const control_frame_ptr& h,
+			const std::u8string_view label,
+			std::u8string& v,
+			std::function<void(std::u8string_view)> changed = {}) : _val(v), _label(label)
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
-			_edit = h->create_edit(style, v, [this](const std::u8string_view text) { _val = text; });
+			_edit = h->create_edit(style, v, [this, changed](const std::u8string_view text) { _val = text; if (changed) changed(text); });
 		}
 
 		edit_control(const control_frame_ptr& h, std::u8string& v) : _val(v)
@@ -182,7 +184,7 @@ namespace ui
 		}
 
 		edit_control(const control_frame_ptr& h, std::u8string& v,
-		             const std::vector<std::u8string>& auto_completes) : _val(v)
+			const std::vector<std::u8string>& auto_completes) : _val(v)
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
@@ -191,7 +193,7 @@ namespace ui
 		}
 
 		edit_control(const control_frame_ptr& h, const std::u8string_view label, std::u8string& v,
-		             const std::vector<std::u8string>& auto_completes) : _val(v), _label(label)
+			const std::vector<std::u8string>& auto_completes) : _val(v), _label(label)
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
@@ -222,11 +224,11 @@ namespace ui
 			if (!str::is_empty(_label))
 			{
 				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
-				                                          style::text_style::single_line, cx);
+					style::text_style::single_line, cx);
 				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
 			}
 
-			return {cx, default_control_height(mc)};
+			return { cx, default_control_height(mc) };
 		}
 
 		void render(draw_context& dc, const pointi element_offset) const override
@@ -236,7 +238,7 @@ namespace ui
 				auto r = bounds.offset(element_offset);
 				r.right = r.left + dc.col_widths.c1 - dc.padding2;
 				dc.draw_text(_label, r, style::font_face::dialog, style::text_style::single_line,
-				             color(dc.colors.foreground, dc.colors.alpha), {});
+					color(dc.colors.foreground, dc.colors.alpha), {});
 			}
 		}
 
@@ -261,17 +263,18 @@ namespace ui
 		edit_ptr _edit;
 		toolbar_ptr _tb;
 
-		const std::vector<std::u8string>& _auto_completes;
-		const control_frame_ptr& _parent;
+		std::vector<std::u8string> _auto_completes;
+		control_frame_ptr _parent;
 
 	public:
-		edit_picker_control(const control_frame_ptr& h, std::u8string& v,
-		                    const std::vector<std::u8string>& auto_completes) : _val(v),
-			_auto_completes(auto_completes), _parent(h)
+		edit_picker_control(control_frame_ptr parent, std::u8string& v,
+			std::vector<std::u8string> auto_completes,
+			std::function<void(std::u8string_view)> changed = {}) : _val(v),
+			_auto_completes(std::move(auto_completes)), _parent(std::move(parent))
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
-			_edit = h->create_edit(style, v, [this](const std::u8string_view text) { _val = text; });
+			_edit = _parent->create_edit(style, v, [this, changed](const std::u8string_view text) { _val = text; if (changed) changed(text); });
 
 			const auto c = std::make_shared<command>();
 			c->icon = icon_index::add;
@@ -279,16 +282,16 @@ namespace ui
 
 			toolbar_styles styles;
 			styles.xTBSTYLE_LIST = true;
-			_tb = h->create_toolbar(styles, {c});
+			_tb = _parent->create_toolbar(styles, { c });
 		}
 
-		edit_picker_control(const control_frame_ptr& h, const std::u8string_view label, std::u8string& v,
-		                    const std::vector<std::u8string>& auto_completes) : _val(v), _label(label),
-			_auto_completes(auto_completes), _parent(h)
+		edit_picker_control(control_frame_ptr parent, const std::u8string_view label, std::u8string& v,
+			std::vector<std::u8string> auto_completes) : _val(v), _label(label),
+			_auto_completes(std::move(auto_completes)), _parent(std::move(parent))
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
-			_edit = h->create_edit(style, v, [this](const std::u8string_view text) { _val = text; });
+			_edit = _parent->create_edit(style, v, [this](const std::u8string_view text) { _val = text; });
 		}
 
 		void label(const std::u8string_view label)
@@ -315,11 +318,11 @@ namespace ui
 			if (!str::is_empty(_label))
 			{
 				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
-				                                          style::text_style::single_line, cx);
+					style::text_style::single_line, cx);
 				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
 			}
 
-			return {cx, default_control_height(mc)};
+			return { cx, default_control_height(mc) };
 		}
 
 		void render(draw_context& dc, const pointi element_offset) const override
@@ -329,7 +332,7 @@ namespace ui
 				auto r = bounds.offset(element_offset);
 				r.right = r.left + dc.col_widths.c1 - dc.padding2;
 				dc.draw_text(_label, r, style::font_face::dialog, style::text_style::single_line,
-				             color(dc.colors.foreground, dc.colors.alpha), {});
+					color(dc.colors.foreground, dc.colors.alpha), {});
 			}
 		}
 
@@ -359,9 +362,9 @@ namespace ui
 				auto c = std::make_shared<command>();
 				c->text = s;
 				c->invoke = [e = _edit, s]()
-				{
-					e->window_text(s);
-				};
+					{
+						e->window_text(s);
+					};
 
 				commands.emplace_back(c);
 			}
@@ -379,7 +382,7 @@ namespace ui
 
 	public:
 		password_control(const control_frame_ptr& h, const std::u8string_view label,
-		                 std::u8string& v) : _val(v), _label(label)
+			std::u8string& v) : _val(v), _label(label)
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
@@ -413,11 +416,11 @@ namespace ui
 			if (!str::is_empty(_label))
 			{
 				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
-				                                          style::text_style::single_line, cx);
+					style::text_style::single_line, cx);
 				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
 			}
 
-			return {cx, default_control_height(mc)};
+			return { cx, default_control_height(mc) };
 		}
 
 		void render(draw_context& dc, const pointi element_offset) const override
@@ -427,7 +430,7 @@ namespace ui
 				auto r = bounds.offset(element_offset);
 				r.right = r.left + dc.col_widths.c1 - dc.padding2;
 				dc.draw_text(_label, r, style::font_face::dialog, style::text_style::single_line,
-				             color(dc.colors.foreground, dc.colors.alpha), {});
+					color(dc.colors.foreground, dc.colors.alpha), {});
 			}
 		}
 
@@ -441,7 +444,7 @@ namespace ui
 	};
 
 	class multi_line_edit_control final : public view_element,
-	                                      public std::enable_shared_from_this<multi_line_edit_control>
+		public std::enable_shared_from_this<multi_line_edit_control>
 	{
 		std::u8string& _text;
 		edit_ptr _edit;
@@ -449,7 +452,7 @@ namespace ui
 
 	public:
 		multi_line_edit_control(const control_frame_ptr& h, std::u8string& v, int height = 6,
-		                        bool wants_return = false) : _text(v), _edit_height(height)
+			bool wants_return = false) : _text(v), _edit_height(height)
 		{
 			edit_styles style;
 			style.vertical_scroll = true;
@@ -484,7 +487,7 @@ namespace ui
 
 		sizei measure(measure_context& mc, const int cx) const override
 		{
-			return {cx, _edit_height * mc.text_line_height(ui::style::font_face::dialog) };
+			return { cx, _edit_height * mc.text_line_height(ui::style::font_face::dialog) };
 		}
 
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
@@ -497,14 +500,14 @@ namespace ui
 	};
 
 	class recommended_words_control final : public view_element,
-	                                        public std::enable_shared_from_this<recommended_words_control>
+		public std::enable_shared_from_this<recommended_words_control>
 	{
 		toolbar_ptr _tb;
 		const std::function<void(std::u8string_view)> _f;
 
 	public:
 		recommended_words_control(const control_frame_ptr& h, const std::vector<std::u8string_view>& words,
-		                          const std::function<void(std::u8string_view)>& f)
+			const std::function<void(std::u8string_view)>& f)
 		{
 			toolbar_styles styles;
 			styles.xTBSTYLE_WRAPABLE = true;
@@ -538,7 +541,7 @@ namespace ui
 				cy += toolbar_extent.cy;
 			}
 
-			return {cx, cy};
+			return { cx, cy };
 		}
 
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
@@ -565,9 +568,9 @@ namespace ui
 			style.horizontal_scroll = true;
 			style.number = true;
 			_edit = h->create_edit(style, str::to_string(v), [this](const std::u8string_view text)
-			{
-				_val = str::to_int(text);
-			});
+				{
+					_val = str::to_int(text);
+				});
 		}
 
 		void label(const std::u8string_view label)
@@ -593,11 +596,11 @@ namespace ui
 			if (!str::is_empty(_label))
 			{
 				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
-				                                          style::text_style::single_line, cx);
+					style::text_style::single_line, cx);
 				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
 			}
 
-			return {cx, default_control_height(mc)};
+			return { cx, default_control_height(mc) };
 		}
 
 		void render(draw_context& dc, const pointi element_offset) const override
@@ -607,7 +610,7 @@ namespace ui
 				auto r = bounds.offset(element_offset);
 				r.right = r.left + dc.col_widths.c1 - 8;
 				dc.draw_text(_label, r, style::font_face::dialog, style::text_style::single_line,
-				             color(dc.colors.foreground, dc.colors.alpha), {});
+					color(dc.colors.foreground, dc.colors.alpha), {});
 			}
 		}
 
@@ -633,9 +636,9 @@ namespace ui
 			style.horizontal_scroll = true;
 			style.number = true;
 			_edit = h->create_edit(style, str::to_string(v, 5), [this](const std::u8string_view text)
-			{
-				_val = str::to_double(text);
-			});
+				{
+					_val = str::to_double(text);
+				});
 		}
 
 		float_control(const control_frame_ptr& h, double& v) : _val(v)
@@ -644,9 +647,9 @@ namespace ui
 			style.horizontal_scroll = true;
 			style.number = true;
 			_edit = h->create_edit(style, str::to_string(v, 5), [this](const std::u8string_view text)
-			{
-				_val = str::to_double(text);
-			});
+				{
+					_val = str::to_double(text);
+				});
 		}
 
 		void label(const std::u8string_view label)
@@ -672,11 +675,11 @@ namespace ui
 			if (!str::is_empty(_label))
 			{
 				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
-				                                          style::text_style::single_line, cx);
+					style::text_style::single_line, cx);
 				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
 			}
 
-			return {cx, default_control_height(mc)};
+			return { cx, default_control_height(mc) };
 		}
 
 		void render(draw_context& dc, const pointi element_offset) const override
@@ -686,7 +689,7 @@ namespace ui
 				auto r = bounds.offset(element_offset);
 				r.right = r.left + dc.col_widths.c1 - 8;
 				dc.draw_text(_label, r, style::font_face::dialog, style::text_style::single_line,
-				             color(dc.colors.foreground, dc.colors.alpha), {});
+					color(dc.colors.foreground, dc.colors.alpha), {});
 			}
 		}
 
@@ -708,19 +711,19 @@ namespace ui
 
 	public:
 		num_pair_control(const control_frame_ptr& h, const std::u8string_view label,
-		                 df::xy8& v) : _val(v), _label(label)
+			df::xy8& v) : _val(v), _label(label)
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
 			style.number = true;
 			_edit1 = h->create_edit(style, str::to_string(_val.x), [this](const std::u8string_view text)
-			{
-				_val.x = str::to_int(text);
-			});
+				{
+					_val.x = str::to_int(text);
+				});
 			_edit2 = h->create_edit(style, str::to_string(_val.y), [this](const std::u8string_view text)
-			{
-				_val.y = str::to_int(text);
-			});
+				{
+					_val.y = str::to_int(text);
+				});
 		}
 
 		void label(const std::u8string_view label)
@@ -749,11 +752,11 @@ namespace ui
 			if (!str::is_empty(_label))
 			{
 				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
-				                                          style::text_style::single_line, cx);
+					style::text_style::single_line, cx);
 				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
 			}
 
-			return {cx, default_control_height(mc)};
+			return { cx, default_control_height(mc) };
 		}
 
 		void render(draw_context& dc, const pointi element_offset) const override
@@ -768,9 +771,9 @@ namespace ui
 				rOf.right = rOf.left + 24;
 
 				dc.draw_text(_label, rLabel, style::font_face::dialog, style::text_style::single_line,
-				             color(dc.colors.foreground, dc.colors.alpha), {});
+					color(dc.colors.foreground, dc.colors.alpha), {});
 				dc.draw_text(tt.num_of, rOf, style::font_face::dialog, style::text_style::single_line,
-				             color(dc.colors.foreground, dc.colors.alpha), {});
+					color(dc.colors.foreground, dc.colors.alpha), {});
 			}
 		}
 
@@ -809,13 +812,13 @@ namespace ui
 			for (auto i = 0; i < row_count; i++)
 			{
 				_edit1[i] = h->create_edit(style, _val1[i], [this, i](const std::u8string_view text)
-				{
-					_val1[i] = text;
-				});
+					{
+						_val1[i] = text;
+					});
 				_edit2[i] = h->create_edit(style, _val2[i], [this, i](const std::u8string_view text)
-				{
-					_val2[i] = text;
-				});
+					{
+						_val2[i] = text;
+					});
 			}
 		}
 
@@ -843,7 +846,7 @@ namespace ui
 		sizei measure(measure_context& mc, const int cx) const override
 		{
 			_control_height = default_control_height(mc);
-			return {cx, (_control_height + 4) * (_row_count + 1)};
+			return { cx, (_control_height + 4) * (_row_count + 1) };
 		}
 
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
@@ -874,9 +877,9 @@ namespace ui
 			const recti r2(x + 4, y, r.right, y + _control_height);
 
 			dc.draw_text(tt.prop_name_title, r1, style::font_face::dialog, style::text_style::single_line_center,
-			             color(dc.colors.foreground, dc.colors.alpha), {});
+				color(dc.colors.foreground, dc.colors.alpha), {});
 			dc.draw_text(tt.search_or_folder, r2, style::font_face::dialog, style::text_style::single_line_center,
-			             color(dc.colors.foreground, dc.colors.alpha), {});
+				color(dc.colors.foreground, dc.colors.alpha), {});
 		}
 	};
 
@@ -902,13 +905,13 @@ namespace ui
 
 			const auto c = std::make_shared<command>();
 			c->icon = icon_index::folder;
-			c->text = _multiline ? tt.add_folder : std::u8string_view {};
+			c->text = _multiline ? tt.add_folder : std::u8string_view{};
 			if (_multiline) c->toolbar_text = c->text;
 			c->invoke = [this]() { browse_for_folder(); };
 
 			toolbar_styles styles;
 			styles.xTBSTYLE_LIST = true;
-			_tb = h->create_toolbar(styles, {c});
+			_tb = h->create_toolbar(styles, { c });
 		}
 
 		void visit_controls(const std::function<void(const control_base_ptr&)>& handler) override
@@ -924,10 +927,10 @@ namespace ui
 			if (_multiline)
 			{
 				const auto tb_extent = _tb->measure_toolbar(50);
-				return {cx, _edit_height + tb_extent.cy + mc.padding2};
+				return { cx, _edit_height + tb_extent.cy + mc.padding2 };
 			}
 
-			return {cx, _edit_height};
+			return { cx, _edit_height };
 		}
 
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
@@ -965,7 +968,7 @@ namespace ui
 			if (_multiline)
 			{
 				const auto lines = str::split(existing_last_path, true,
-				                              [](wchar_t c) { return c == '\n' || c == '\r'; });
+					[](wchar_t c) { return c == '\n' || c == '\r'; });
 
 				if (!lines.empty())
 				{
@@ -1014,7 +1017,7 @@ namespace ui
 
 	public:
 		term_picker_control(view_state& state, const control_frame_ptr& h, const std::u8string_view label,
-		                    std::u8string& v) : _parent(h), _state(state), _val(v), _label(label)
+			std::u8string& v) : _parent(h), _state(state), _val(v), _label(label)
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
@@ -1026,7 +1029,7 @@ namespace ui
 
 			toolbar_styles styles;
 			styles.xTBSTYLE_LIST = true;
-			_tb = h->create_toolbar(styles, {c});
+			_tb = h->create_toolbar(styles, { c });
 		}
 
 		void label(const std::u8string_view label)
@@ -1052,11 +1055,11 @@ namespace ui
 			if (!str::is_empty(_label))
 			{
 				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
-				                                          style::text_style::single_line, cx);
+					style::text_style::single_line, cx);
 				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
 			}
 
-			return {cx, default_control_height(mc)};
+			return { cx, default_control_height(mc) };
 		}
 
 		void render(draw_context& dc, const pointi element_offset) const override
@@ -1066,7 +1069,7 @@ namespace ui
 				auto r = bounds.offset(element_offset);
 				r.right = r.left + dc.col_widths.c1 - dc.padding2;
 				dc.draw_text(_label, r, style::font_face::dialog, style::text_style::single_line,
-				             color(dc.colors.foreground, dc.colors.alpha), {});
+					color(dc.colors.foreground, dc.colors.alpha), {});
 			}
 		}
 
@@ -1110,7 +1113,7 @@ namespace ui
 	};
 
 	class location_picker_control final : public view_element,
-	                                      public std::enable_shared_from_this<location_picker_control>
+		public std::enable_shared_from_this<location_picker_control>
 	{
 		view_state& _state;
 		const control_frame_ptr _parent;
@@ -1127,7 +1130,7 @@ namespace ui
 
 	public:
 		location_picker_control(view_state& state, const control_frame_ptr& h,
-		                        location_and_distance_t& v) : _state(state), _parent(h), _val(v)
+			location_and_distance_t& v) : _state(state), _parent(h), _val(v)
 		{
 			_tb_command = std::make_shared<command>();
 			_tb_command->icon = icon_index::location;
@@ -1138,15 +1141,15 @@ namespace ui
 
 			toolbar_styles styles;
 			styles.xTBSTYLE_LIST = true;
-			_tb = h->create_toolbar(styles, {_tb_command});
+			_tb = h->create_toolbar(styles, { _tb_command });
 
 			edit_styles style;
 			style.horizontal_scroll = true;
 			style.number = true;
 			_edit = h->create_edit(style, str::to_string(_val.km, 2), [this](const std::u8string_view text)
-			{
-				_val.km = str::to_double(text);
-			});
+				{
+					_val.km = str::to_double(text);
+				});
 
 			update_text();
 		}
@@ -1162,7 +1165,7 @@ namespace ui
 			if (_val.position.is_valid())
 			{
 				_tb_command->toolbar_text = str::format(u8"GPS {} {}"sv, _val.position.latitude(),
-				                                        _val.position.longitude());
+					_val.position.longitude());
 			}
 			else
 			{
@@ -1184,13 +1187,13 @@ namespace ui
 
 		sizei measure(measure_context& mc, const int cx) const override
 		{
-			return {cx, default_control_height(mc)};
+			return { cx, default_control_height(mc) };
 		}
 
 		void render(draw_context& dc, const pointi element_offset) const override
 		{
 			dc.draw_text(_gps_text, _gps_bounds.offset(element_offset), style::font_face::dialog,
-			             style::text_style::single_line, color(dc.colors.foreground, dc.colors.alpha), {});
+				style::text_style::single_line, color(dc.colors.foreground, dc.colors.alpha), {});
 		}
 
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
@@ -1198,7 +1201,7 @@ namespace ui
 			bounds = bounds_in;
 
 			const auto gps_extent = mc.measure_text(_gps_text, style::font_face::dialog, style::text_style::single_line,
-			                                        bounds_in.width());
+				bounds_in.width());
 			const auto tb_extent = _tb->measure_toolbar(50);
 
 			const auto edit_width = 60;
@@ -1250,7 +1253,7 @@ namespace ui
 
 	public:
 		select_control(const control_frame_ptr& h, const std::u8string_view label, std::u8string& text,
-		               std::function<std::vector<command_ptr>(const std::shared_ptr<select_control>&)> commands) :
+			std::function<std::vector<command_ptr>(const std::shared_ptr<select_control>&)> commands) :
 			_text(text), _label(label), _parent(h), _commands(std::move(commands))
 		{
 			const auto c = std::make_shared<command>();
@@ -1259,7 +1262,7 @@ namespace ui
 
 			toolbar_styles styles;
 			styles.xTBSTYLE_LIST = true;
-			_tb = h->create_toolbar(styles, {c});
+			_tb = h->create_toolbar(styles, { c });
 		}
 
 		void visit_controls(const std::function<void(const control_base_ptr&)>& handler) override
@@ -1272,11 +1275,11 @@ namespace ui
 			if (!str::is_empty(_label))
 			{
 				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
-				                                          style::text_style::single_line, cx);
+					style::text_style::single_line, cx);
 				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
 			}
 
-			return {cx, default_control_height(mc)};
+			return { cx, default_control_height(mc) };
 		}
 
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
@@ -1339,7 +1342,7 @@ namespace ui
 
 	public:
 		date_control(const control_frame_ptr& h, const std::u8string_view label, df::date_t& val,
-		             const bool include_time = true) : _val(val), _label(label)
+			const bool include_time = true) : _val(val), _label(label)
 		{
 			_control = h->
 				create_date_time_control(val, [this](const df::date_t val) { on_changed(val); }, include_time);
@@ -1373,12 +1376,12 @@ namespace ui
 			if (!str::is_empty(_label))
 			{
 				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
-				                                          style::text_style::single_line, cx);
+					style::text_style::single_line, cx);
 				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
 				const auto control_extent = _control->measure(cx - mc.col_widths.c1);
-				return {mc.col_widths.c1 + control_extent.cx, default_control_height(mc)};
+				return { mc.col_widths.c1 + control_extent.cx, default_control_height(mc) };
 			}
-			return {_control->measure(cx).cx, default_control_height(mc)};
+			return { _control->measure(cx).cx, default_control_height(mc) };
 		}
 
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
@@ -1399,7 +1402,7 @@ namespace ui
 				auto r = device_bounds;
 				r.right = r.left + dc.col_widths.c1 - dc.padding2;
 				dc.draw_text(_label, r, style::font_face::dialog, style::text_style::single_line,
-				             color(dc.colors.foreground, dc.colors.alpha), {});
+					color(dc.colors.foreground, dc.colors.alpha), {});
 			}
 		}
 	};
@@ -1466,7 +1469,7 @@ namespace ui
 
 			const auto s1 = scale_dimensions(_before->dimensions(), cx / 2);
 			const auto s2 = scale_dimensions(_after->dimensions(), cx / 2);
-			return {cx, std::max(s1.cy, s2.cy) + _text_height};
+			return { cx, std::max(s1.cy, s2.cy) + _text_height };
 		}
 
 		void render(draw_context& dc, const pointi element_offset) const override
@@ -1541,7 +1544,7 @@ namespace ui
 
 	public:
 		static constexpr int max_cols = 8;
-		bool no_shrink_col[max_cols] = {false, false, false, false, false, false};
+		bool no_shrink_col[max_cols] = { false, false, false, false, false, false };
 		bool can_scroll = false;
 		bool frame_when_empty = false;
 
@@ -1612,7 +1615,7 @@ namespace ui
 		}
 
 		void add(const std::u8string_view label, const color32 clr, const std::u8string_view text1,
-		         const std::u8string_view text2)
+			const std::u8string_view text2)
 		{
 			row r;
 			auto label_element = std::make_shared<text_element>(label);
@@ -1624,7 +1627,7 @@ namespace ui
 		}
 
 		void add(const std::u8string_view c1, const std::u8string_view c2, const std::u8string_view c3,
-		         const std::u8string_view c4)
+			const std::u8string_view c4)
 		{
 			row r;
 			r.cells.emplace_back(std::make_shared<text_element>(c1));
@@ -1662,7 +1665,7 @@ namespace ui
 		}
 
 		void add(view_element_ptr e0, view_element_ptr e1, view_element_ptr e2, view_element_ptr e3,
-		         view_element_ptr e4)
+			view_element_ptr e4)
 		{
 			row r;
 			r.cells.emplace_back(e0);
@@ -1684,7 +1687,7 @@ namespace ui
 		}
 
 		void add(const std::u8string_view label, view_element_ptr e1, view_element_ptr e2, view_element_ptr e3,
-		         view_element_ptr e4)
+			view_element_ptr e4)
 		{
 			row r;
 			r.cells.emplace_back(std::make_shared<text_element>(label));
@@ -1782,8 +1785,8 @@ namespace ui
 					const auto extent = r.cells[i].element->measure(mc, xx - (padding.cx * 2));
 					const auto cell_height = extent.cy + (padding.cy * 2);
 					if (row_height < cell_height) row_height = cell_height;
-					r.cells[i].extent = {xx - (padding.cx * 2), extent.cy};
-					r.cells[i].offset = {x + padding.cx, _total_height + padding.cy};
+					r.cells[i].extent = { xx - (padding.cx * 2), extent.cy };
+					r.cells[i].offset = { x + padding.cx, _total_height + padding.cy };
 					x += xx;
 				}
 
@@ -1800,7 +1803,7 @@ namespace ui
 				}
 			}
 
-			return {max_row_width + scroll_padding, _total_height};
+			return { max_row_width + scroll_padding, _total_height };
 		}
 
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
@@ -1817,7 +1820,7 @@ namespace ui
 			{
 				for (const auto& c : r.cells)
 				{
-					c.element->layout(mc, {bounds_in.top_left() + c.offset, c.extent}, positions);
+					c.element->layout(mc, { bounds_in.top_left() + c.offset, c.extent }, positions);
 				}
 
 				r.alt = alt_row;
@@ -1829,9 +1832,9 @@ namespace ui
 				const recti scroll_bounds{
 					bounds_in.right - scroll_cx, bounds_in.top, bounds_in.right, bounds_in.bottom
 				};
-				const recti client_bounds{bounds_in.left, bounds_in.top, bounds_in.right - scroll_cx, bounds_in.bottom};
+				const recti client_bounds{ bounds_in.left, bounds_in.top, bounds_in.right - scroll_cx, bounds_in.bottom };
 
-				_scroller.layout({client_bounds.width(), _total_height}, client_bounds, scroll_bounds);
+				_scroller.layout({ client_bounds.width(), _total_height }, client_bounds, scroll_bounds);
 			}
 			else
 			{
@@ -1948,8 +1951,8 @@ namespace ui
 		}
 
 		view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-		                                             const pointi element_offset,
-		                                             const std::vector<recti>& excluded_bounds) override
+			const pointi element_offset,
+			const std::vector<recti>& excluded_bounds) override
 		{
 			view_controller_ptr result;
 
@@ -2004,7 +2007,7 @@ namespace ui
 
 	public:
 		settings_control(const control_frame_ptr& h, const std::u8string_view text,
-		                 std::function<void(void)> f) : _text(text), _parent(h)
+			std::function<void(void)> f) : _text(text), _parent(h)
 		{
 			_button = h->create_button(tt.button_change, std::move(f));
 		}
@@ -2017,9 +2020,9 @@ namespace ui
 		sizei measure(measure_context& mc, const int cx) const override
 		{
 			_extent = mc.measure_text(_text, style::font_face::dialog, style::text_style::multiline,
-			                          cx - (button_width + 8));
+				cx - (button_width + 8));
 			_extent.cx += 8;
-			return {cx, std::max(_extent.cy, default_control_height(mc) + mc.padding2 * 2)};
+			return { cx, std::max(_extent.cy, default_control_height(mc) + mc.padding2 * 2) };
 		}
 
 		void text(const std::u8string_view a)
@@ -2035,7 +2038,7 @@ namespace ui
 			r = center_rect(_extent, r);
 
 			dc.draw_text(_text, r, style::font_face::dialog, style::text_style::multiline,
-			             color(dc.colors.foreground, dc.colors.alpha), {});
+				color(dc.colors.foreground, dc.colors.alpha), {});
 		}
 
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
@@ -2073,7 +2076,7 @@ namespace ui
 		{
 			measure_text(mc);
 			const auto prog_height = 16;
-			return {cx, std::max(100, _text_extent.cy + prog_height)};
+			return { cx, std::max(100, _text_extent.cy + prog_height) };
 		}
 
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
@@ -2085,7 +2088,7 @@ namespace ui
 		void measure_text(measure_context& mc) const
 		{
 			_text_extent = mc.measure_text(_text, style::font_face::dialog, style::text_style::multiline,
-			                               bounds.width() - 32);
+				bounds.width() - 32);
 			_text_extent.cx += 4;
 		}
 
@@ -2111,7 +2114,7 @@ namespace ui
 		{
 			render_progress(dc, _rect_progress.offset(-element_offset), _pos);
 			dc.draw_text(_text, _rect_text.offset(-element_offset), style::font_face::dialog,
-			             style::text_style::multiline_center, color(dc.colors.foreground, dc.colors.alpha), {});
+				style::text_style::multiline_center, color(dc.colors.foreground, dc.colors.alpha), {});
 		}
 
 		void render_progress(draw_context& dc, const recti progress_rect, int64_t pos) const
@@ -2121,7 +2124,7 @@ namespace ui
 				const auto cc = color(dc.colors.background, dc.colors.alpha).scale(1.22f);
 
 				if (pos > 0)
-				{					
+				{
 					dc.draw_rect(progress_rect, cc);
 
 					auto r = progress_rect.inflate(-2);
@@ -2189,9 +2192,9 @@ namespace ui
 		{
 			const auto icon_width = _icon == icon_index::none ? 0 : mc.icon_cxy + mc.padding2;
 			const auto text_extent = mc.measure_text(_text, style::font_face::title, style::text_style::multiline,
-			                                         cx - icon_width);
+				cx - icon_width);
 
-			return {text_extent.cx + icon_width, text_extent.cy};
+			return { text_extent.cx + icon_width, text_extent.cy };
 		}
 
 		void render(draw_context& dc, const pointi element_offset) const override
@@ -2230,30 +2233,30 @@ namespace ui
 
 	public:
 		title_control2(control_frame_ptr h, const std::u8string_view text,
-		               const std::u8string_view text2) : _text1(text), _text2(text2), _parent(std::move(h))
+			const std::u8string_view text2) : _text1(text), _text2(text2), _parent(std::move(h))
 		{
 		}
 
 		title_control2(control_frame_ptr h, const icon_index& icon, const std::u8string_view text,
-		               const std::u8string_view text2) : _text1(text), _text2(text2), _icon(icon), _parent(std::move(h))
+			const std::u8string_view text2) : _text1(text), _text2(text2), _icon(icon), _parent(std::move(h))
 		{
 		}
 
 		title_control2(control_frame_ptr h, const std::u8string_view text, const std::u8string_view text2,
-		               const std::vector<const_image_ptr>& images) : _text1(text), _text2(text2), _parent(std::move(h))
+			const std::vector<const_image_ptr>& images) : _text1(text), _text2(text2), _parent(std::move(h))
 		{
 			init(images);
 		}
 
 		title_control2(control_frame_ptr h, const icon_index& icon, const std::u8string_view text,
-		               const std::u8string_view text2, const std::vector<const_image_ptr>& images) : _text1(text),
+			const std::u8string_view text2, const std::vector<const_image_ptr>& images) : _text1(text),
 			_text2(text2), _icon(icon), _parent(std::move(h))
 		{
 			init(images);
 		}
 
 		title_control2(control_frame_ptr h, const icon_index& icon, const std::u8string_view text,
-		               const std::u8string_view text2, const std::vector<const_surface_ptr>& surfaces) : _text1(text),
+			const std::u8string_view text2, const std::vector<const_surface_ptr>& surfaces) : _text1(text),
 			_text2(text2), _icon(icon), _parent(std::move(h))
 		{
 			init(surfaces);
@@ -2304,26 +2307,26 @@ namespace ui
 			const auto icon_width = _icon == icon_index::none ? 0 : (mc.icon_cxy * 2);
 
 			_text_extent1 = mc.measure_text(_text1, style::font_face::title, style::text_style::multiline,
-			                                cx - icon_width);
+				cx - icon_width);
 			_text_extent2 = mc.measure_text(_text2, style::font_face::dialog, style::text_style::multiline,
-			                                cx - icon_width);
+				cx - icon_width);
 
 			for (int i = 0; i < 2; ++i)
 			{
 				const int text_height = _text_extent1.cy + _text_extent2.cy;
 				const auto image_extent = measure_images(mc, std::min(cx - icon_width, cx / 2),
-				                                         std::min(text_height, 100));
+					std::min(text_height, 100));
 				const auto max_text_width = cx - (image_extent.cx + mc.padding2 + icon_width);
 
 				_text_extent1 = mc.measure_text(_text1, style::font_face::title, style::text_style::multiline,
-				                                max_text_width);
+					max_text_width);
 				_text_extent2 = mc.measure_text(_text2, style::font_face::dialog, style::text_style::multiline,
-				                                max_text_width);
+					max_text_width);
 
 				_image_extent = image_extent;
 			}
 
-			return {cx, std::max(_text_extent1.cy + _text_extent2.cy + mc.padding2, _image_extent.cy)};
+			return { cx, std::max(_text_extent1.cy + _text_extent2.cy + mc.padding2, _image_extent.cy) };
 		}
 
 		sizei measure_images(measure_context& mc, const int avail_width, const int preferred_height) const
@@ -2334,7 +2337,7 @@ namespace ui
 
 			for (auto&& d : dims)
 			{
-				d = scale_dimensions(d, sizei{cx_slot, preferred_height}, true);
+				d = scale_dimensions(d, sizei{ cx_slot, preferred_height }, true);
 			}
 
 			auto total_width = 0;
@@ -2348,7 +2351,7 @@ namespace ui
 			{
 				for (auto&& d : dims)
 				{
-					d = scale_dimensions(d, sizei{df::mul_div(d.cx, avail_width, total_width), preferred_height}, true);
+					d = scale_dimensions(d, sizei{ df::mul_div(d.cx, avail_width, total_width), preferred_height }, true);
 				}
 			}
 
@@ -2363,7 +2366,7 @@ namespace ui
 
 			_surface_extents = dims;
 
-			return {total_width, max_height};
+			return { total_width, max_height };
 		}
 
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
@@ -2425,7 +2428,7 @@ namespace ui
 				auto text_rect1 = r;
 				text_rect1.right = text_rect1.left + _text_extent1.cx;
 				dc.draw_text(_text1, text_rect1, style::font_face::title, style::text_style::multiline,
-				             color(dc.colors.foreground, dc.colors.alpha), {});
+					color(dc.colors.foreground, dc.colors.alpha), {});
 			}
 			else
 			{
@@ -2439,9 +2442,9 @@ namespace ui
 				text_rect2.right = text_rect2.left + _text_extent2.cx;
 
 				dc.draw_text(_text1, text_rect1, style::font_face::title, style::text_style::multiline,
-				             color(dc.colors.foreground, dc.colors.alpha), {});
+					color(dc.colors.foreground, dc.colors.alpha), {});
 				dc.draw_text(_text2, text_rect2, style::font_face::dialog, style::text_style::multiline,
-				             color(dc.colors.foreground, dc.colors.alpha), {});
+					color(dc.colors.foreground, dc.colors.alpha), {});
 			}
 
 			if (_textures.empty())
@@ -2521,7 +2524,7 @@ namespace ui
 			const auto scaled_padding = pad + marg;
 			const recti layout_bounds = { 0, 0, cx, 10000 };
 			const auto layout = calc_stack_elements(mc, layout_bounds, _controls, false, scaled_padding);
-			return {cx, layout.cy};
+			return { cx, layout.cy };
 		}
 
 		void layout(measure_context& mc, const recti bounds, control_layouts& positions) override
@@ -2561,8 +2564,8 @@ namespace ui
 		}
 
 		view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-		                                             const pointi element_offset,
-		                                             const std::vector<recti>& excluded_bounds) override
+			const pointi element_offset,
+			const std::vector<recti>& excluded_bounds) override
 		{
 			for (const auto& c : _controls)
 			{
@@ -2599,7 +2602,7 @@ namespace ui
 		{
 			for (const auto& c : controls)
 			{
-				_controls.emplace_back(c, ui::screen_units { 0 }, 0, 0);
+				_controls.emplace_back(c, ui::screen_units{ 0 }, 0, 0);
 			}
 		}
 
@@ -2643,14 +2646,14 @@ namespace ui
 			int mx = 0;
 
 			auto cx_split_avail = cx - (mc.padding2 * (static_cast<int>(_controls.size()) - 1));
-			auto split_cols = 0;			
+			auto split_cols = 0;
 
 			for (const auto& c : _controls)
 			{
 				const auto preferred_width = c.preferred_width * mc.scale_factor;
 
 				if (c.e->is_visible())
-				{					
+				{
 					if (preferred_width)
 					{
 						cx_split_avail -= preferred_width;
@@ -2709,7 +2712,7 @@ namespace ui
 				y = calc_extents(mc, cx);
 			}
 
-			return {cx, y};
+			return { cx, y };
 		}
 
 		void layout(measure_context& mc, const recti bounds, control_layouts& positions) override
@@ -2763,8 +2766,8 @@ namespace ui
 		}
 
 		view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-		                                             const pointi element_offset,
-		                                             const std::vector<recti>& excluded_bounds) override
+			const pointi element_offset,
+			const std::vector<recti>& excluded_bounds) override
 		{
 			for (const auto& c : _controls)
 			{
@@ -2800,7 +2803,7 @@ namespace ui
 		sizei measure(measure_context& mc, const int cx) const override
 		{
 			_extent = mc.measure_text(_text, style::font_face::dialog, style::text_style::multiline, cx - 32);
-			return {cx, std::max(64, _extent.cy + 8)};
+			return { cx, std::max(64, _extent.cy + 8) };
 		}
 
 		void text(const std::u8string_view a)
@@ -2823,7 +2826,7 @@ namespace ui
 			draw_bounds.left = draw_bounds.left + xx - cx;
 			draw_bounds.right = draw_bounds.left + xx + cx;
 			dc.draw_rect(draw_bounds.intersection(inner),
-			             color(style::color::dialog_selected_background, dc.colors.alpha));
+				color(style::color::dialog_selected_background, dc.colors.alpha));
 		}
 
 		void render(draw_context& dc, const pointi element_offset) const override
@@ -2845,7 +2848,7 @@ namespace ui
 			}
 
 			dc.draw_text(_text, r, style::font_face::dialog, style::text_style::multiline,
-			             color(dc.colors.foreground, dc.colors.alpha), {});
+				color(dc.colors.foreground, dc.colors.alpha), {});
 		}
 	};
 
@@ -2864,30 +2867,30 @@ namespace ui
 		mutable sizei _child_extent;
 		view_element_ptr _child;
 		icon_index _icon = icon_index::none;
-		std::u8string _details;		
+		std::u8string _details;
 
 	public:
 		check_control(const control_frame_ptr& h, const std::u8string_view text, bool& val, const bool is_radio = false,
-		              bool is_wide_format = false,
-		              std::function<void(bool checked)> f = {}) : _val(val), _is_wide_format(is_wide_format)
+			bool is_wide_format = false,
+			std::function<void(bool checked)> f = {}) : _val(val), _is_wide_format(is_wide_format)
 		{
 			_check = h->create_check_button(_val, text, is_radio, [this, f = std::move(f)](bool checked)
-			{
-				on_check(checked);
-				if (f) f(checked);
-			});
+				{
+					on_check(checked);
+					if (f) f(checked);
+				});
 		}
 
 		check_control(const control_frame_ptr& h, const icon_index icon, const std::u8string_view text, bool& val,
-		              const bool is_radio = false, bool is_wide_format = false,
-		              std::function<void(bool checked)> f = nullptr) : _val(val), _is_wide_format(is_wide_format),
-		                                                               _icon(icon)
+			const bool is_radio = false, bool is_wide_format = false,
+			std::function<void(bool checked)> f = nullptr) : _val(val), _is_wide_format(is_wide_format),
+			_icon(icon)
 		{
 			_check = h->create_check_button(_val, text, is_radio, [this, f = std::move(f)](bool checked)
-			{
-				on_check(checked);
-				if (f) f(checked);
-			});
+				{
+					on_check(checked);
+					if (f) f(checked);
+				});
 		}
 
 		void details(const std::u8string_view details)
@@ -2915,7 +2918,7 @@ namespace ui
 		sizei measure(measure_context& mc, const int cx) const override
 		{
 			if (_is_wide_format)
-			{				
+			{
 				_check_extent = _check->measure(cx / 2);
 
 				if (_child)
@@ -2927,7 +2930,7 @@ namespace ui
 					_child_extent = sizei(0, 0);
 				}
 
-				return {cx, std::max(_child_extent.cy, _check_extent.cy)};
+				return { cx, std::max(_child_extent.cy, _check_extent.cy) };
 			}
 
 
@@ -2936,7 +2939,7 @@ namespace ui
 			const auto indent = mc.padding2 * 3;
 
 			if (_child)
-			{				
+			{
 				_child_extent = _child->measure(mc, cx - (indent + mc.padding2));
 				cy_result += _child_extent.cy;
 			}
@@ -2945,7 +2948,7 @@ namespace ui
 				_child_extent = sizei(0, 0);
 			}
 
-			return {std::max(_check_extent.cx, _child_extent.cx + indent), cy_result};
+			return { std::max(_check_extent.cx, _child_extent.cx + indent), cy_result };
 		}
 
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
@@ -3004,7 +3007,7 @@ namespace ui
 
 	public:
 		button_control(const control_frame_ptr& h, const icon_index icon, const std::u8string_view title,
-		               const std::u8string_view details, std::function<void(void)> f) : _icon(icon), _details(details)
+			const std::u8string_view details, std::function<void(void)> f) : _icon(icon), _details(details)
 		{
 			_button = h->create_button(icon, title, details, std::move(f));
 		}
@@ -3067,7 +3070,7 @@ namespace ui
 			_ok_width = std::max(cx / 5, ok_extent.cx + mc.padding2);
 			_cancel_width = std::max(cx / 5, cancel_extent.cx + mc.padding2);
 
-			return {cx, std::max(ok_extent.cy, cancel_extent.cy) + mc.padding2};
+			return { cx, std::max(ok_extent.cy, cancel_extent.cy) + mc.padding2 };
 		}
 
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
@@ -3075,7 +3078,7 @@ namespace ui
 			bounds = bounds_in;
 
 			const auto total_button_width = _ok_width + _cancel_width + mc.padding2;
-			const auto button_rect = center_rect(sizei{total_button_width, bounds.height()}, bounds);
+			const auto button_rect = center_rect(sizei{ total_button_width, bounds.height() }, bounds);
 
 			auto rok = button_rect;
 			auto rcan = button_rect;
@@ -3089,7 +3092,7 @@ namespace ui
 	};
 
 	class ok_cancel_control_analyze final : public view_element,
-	                                        public std::enable_shared_from_this<ok_cancel_control_analyze>
+		public std::enable_shared_from_this<ok_cancel_control_analyze>
 	{
 		button_ptr _ok;
 		button_ptr _cancel;
@@ -3105,8 +3108,8 @@ namespace ui
 
 	public:
 		ok_cancel_control_analyze(const control_frame_ptr& h, const std::u8string_view text,
-		                          std::function<void()> invoke) : _ok_text(text), _cancel_text(tt.button_cancel),
-		                                                          _analyze_text(tt.button_analyze)
+			std::function<void()> invoke) : _ok_text(text), _cancel_text(tt.button_cancel),
+			_analyze_text(tt.button_analyze)
 		{
 			_analyze = h->create_button(_analyze_text, std::move(invoke), true);
 			_ok = h->create_button(_ok_text, [h]() { h->close(false); });
@@ -3140,7 +3143,7 @@ namespace ui
 			bounds = bounds_in;
 
 			const auto total_button_width = _ok_width + _cancel_width + _analyze_width + (2 * mc.padding2);
-			const auto button_rect = center_rect(sizei{total_button_width, bounds.height()}, bounds);
+			const auto button_rect = center_rect(sizei{ total_button_width, bounds.height() }, bounds);
 
 			auto ranalyze = button_rect;
 			auto rok = button_rect;
@@ -3163,13 +3166,13 @@ namespace ui
 
 	public:
 		close_control(const control_frame_ptr& h, const bool is_cancel = false,
-		              const std::u8string_view text = tt.button_close)
+			const std::u8string_view text = tt.button_close)
 		{
 			_button = h->create_button(text, [h, is_cancel]() { h->close(is_cancel); }, true);
 		}
 
 		close_control(const control_frame_ptr& h, std::function<void()> invoke,
-		              const std::u8string_view text = tt.button_close)
+			const std::u8string_view text = tt.button_close)
 		{
 			_button = h->create_button(text, std::move(invoke), true);
 		}
@@ -3187,8 +3190,8 @@ namespace ui
 		sizei measure(measure_context& mc, const int cx) const override
 		{
 			const auto button_extent = _button->measure(cx);
-			
-			return {cx, button_extent.cy + mc.padding2 };
+
+			return { cx, button_extent.cy + mc.padding2 };
 		}
 
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
@@ -3237,9 +3240,9 @@ namespace ui
 			if (_completes)
 			{
 				_completes->search(text, [t = shared_from_this()](const auto_complete_results& results)
-				{
-					t->show_results(results);
-				});
+					{
+						t->show_results(results);
+					});
 			}
 		}
 
@@ -3248,7 +3251,7 @@ namespace ui
 			df::assert_true(is_ui_thread());
 
 			_results = results;
-			_scroller._offset = {0, 0};
+			_scroller._offset = { 0, 0 };
 
 			if (_completes->auto_select_first && !_results.empty())
 			{
@@ -3361,15 +3364,15 @@ namespace ui
 				for (const auto& i : _results)
 				{
 					const recti bounds(0 + mc.padding2, y, _extent.cx - mc.padding2,
-					                   y + text_height + mc.padding1);
+						y + text_height + mc.padding1);
 					i->layout(mc, bounds, positions);
 					y = bounds.bottom;
 				}
 
 				const auto y_max = y + mc.padding2;
-				const recti scroll_bounds{_extent.cx - mc.scroll_width, 0, _extent.cx, _extent.cy};
-				const recti client_bounds{0, 0, _extent.cx - mc.scroll_width, _extent.cy};
-				_scroller.layout({client_bounds.width(), y_max}, client_bounds, scroll_bounds);
+				const recti scroll_bounds{ _extent.cx - mc.scroll_width, 0, _extent.cx, _extent.cy };
+				const recti client_bounds{ 0, 0, _extent.cx - mc.scroll_width, _extent.cy };
+				_scroller.layout({ client_bounds.width(), y_max }, client_bounds, scroll_bounds);
 
 				if (_completes->resize_to_show_results)
 				{
@@ -3408,7 +3411,7 @@ namespace ui
 				if (!str::is_empty(text))
 				{
 					dc.draw_text(text, r.inflate(-32), style::font_face::title, style::text_style::multiline_center,
-					             color(dc.colors.foreground, dc.colors.alpha), {});
+						color(dc.colors.foreground, dc.colors.alpha), {});
 				}
 			}
 			else
@@ -3514,7 +3517,7 @@ namespace ui
 
 	public:
 		search_control(const control_frame_ptr& h, std::u8string& v,
-		               const complete_strategy_ptr& s) : _val(v), _completes(s)
+			const complete_strategy_ptr& s) : _val(v), _completes(s)
 		{
 			edit_styles e_style;
 			e_style.horizontal_scroll = true;
@@ -3528,7 +3531,7 @@ namespace ui
 				const auto c = std::make_shared<command>();
 				c->icon = icon_index::folder;
 				c->invoke = [this]() { browse_for_folder(); };
-				_tb = h->create_toolbar(styles, {c});
+				_tb = h->create_toolbar(styles, { c });
 			}
 
 			frame_style f_style;
@@ -3549,9 +3552,9 @@ namespace ui
 			if (event.type == view_element_event_type::initialise)
 			{
 				_completes->initialise([list = _list](const auto_complete_results& results)
-				{
-					list->show_results(results);
-				});
+					{
+						list->show_results(results);
+					});
 			}
 		}
 
@@ -3598,7 +3601,7 @@ namespace ui
 		{
 			_edit_line_height = mc.text_line_height(style::font_face::title) + 16;
 			const auto line_height = mc.text_line_height(style::font_face::dialog);
-			return {cx, line_height * 16 + _edit_line_height + mc.padding2};
+			return { cx, line_height * 16 + _edit_line_height + mc.padding2 };
 		}
 
 		void render(draw_context& dc, const pointi element_offset) const override
@@ -3740,10 +3743,10 @@ public:
 	void show_status(icon_index icon, const std::u8string_view text, ui::screen_units cx = { 33 }, ui::screen_units cy = { 66 })
 	{
 		const auto scale_factor = _frame->scale_factor();
-		const auto extent = sizei{cx * scale_factor, cy * scale_factor };
-		_frame->position(center_rect(extent,_parent->window_bounds()));
+		const auto extent = sizei{ cx * scale_factor, cy * scale_factor };
+		_frame->position(center_rect(extent, _parent->window_bounds()));
 
-		const std::vector<view_element_ptr> controls = {std::make_shared<ui::busy_control>(_frame, icon, text)};
+		const std::vector<view_element_ptr> controls = { std::make_shared<ui::busy_control>(_frame, icon, text) };
 		show_controls(controls, cx, cy);
 		layout();
 		_frame->show(true);
@@ -3753,10 +3756,10 @@ public:
 		ui::screen_units cx = { 33 }, ui::screen_units cy = { 66 })
 	{
 		_close_cb = [f = _frame, cb]()
-		{
-			if (cb) { cb(); }
-			f->close(true);
-		};
+			{
+				if (cb) { cb(); }
+				f->close(true);
+			};
 
 		const auto scale_factor = _frame->scale_factor();
 		const auto extent = sizei{ cx * scale_factor, cy * scale_factor };
@@ -3831,7 +3834,7 @@ public:
 
 		for (const auto& c : _controls)
 		{
-			view_element_event e{view_element_event_type::initialise, shared_from_this()};
+			view_element_event e{ view_element_event_type::initialise, shared_from_this() };
 			c->dispatch_event(e);
 		}
 	}
@@ -3873,16 +3876,16 @@ public:
 
 		ui::control_layouts positions;
 		const auto height = stack_elements(mc, positions, avail_bounds, _controls, false,
-		                                   {layout_padding, layout_padding});
+			{ layout_padding, layout_padding });
 		const auto show_scroller = height > max_height;
 		const auto padding_right = show_scroller ? mc.scroll_width : 0;
 
 		_layout_height = height;
 		_layout_width = avail_bounds.width() + padding_right;
 
-		const recti scroll_bounds{_layout_width - padding_right, 0, _layout_width, _layout_height};
-		const recti client_bounds{0, 0, _layout_width - padding_right, _layout_height};
-		_scroller.layout({_layout_width, _layout_height}, client_bounds, scroll_bounds);
+		const recti scroll_bounds{ _layout_width - padding_right, 0, _layout_width, _layout_height };
+		const recti client_bounds{ 0, 0, _layout_width - padding_right, _layout_height };
+		_scroller.layout({ _layout_width, _layout_height }, client_bounds, scroll_bounds);
 		_label_width = mc.col_widths;
 
 		_frame->apply_layout(positions, _scroller.scroll_offset());
@@ -3893,9 +3896,9 @@ public:
 			const auto existing_bounds = _frame->window_bounds();
 			const auto work_area = ui::desktop_bounds(true);
 			const auto bounds = _center
-				                    ? center_rect(sizei{_layout_width, _layout_height}, work_area)
-				                    : recti(existing_bounds.left, existing_bounds.top,
-				                            existing_bounds.left + _layout_width, existing_bounds.top + _layout_height);
+				? center_rect(sizei{ _layout_width, _layout_height }, work_area)
+				: recti(existing_bounds.left, existing_bounds.top,
+					existing_bounds.left + _layout_width, existing_bounds.top + _layout_height);
 			_frame->position(bounds);
 			_center = false;
 			_resize = false;
@@ -3947,7 +3950,7 @@ public:
 	{
 		for (const auto& c : _controls)
 		{
-			view_element_event e{view_element_event_type::tick, shared_from_this()};
+			view_element_event e{ view_element_event_type::tick, shared_from_this() };
 			c->dispatch_event(e);
 		}
 	}
@@ -3956,7 +3959,7 @@ public:
 	{
 		for (const auto& c : _controls)
 		{
-			view_element_event e{view_element_event_type::populate, shared_from_this()};
+			view_element_event e{ view_element_event_type::populate, shared_from_this() };
 			c->dispatch_event(e);
 		}
 	}
@@ -4015,7 +4018,7 @@ public:
 	{
 		for (const auto& e : _controls)
 		{
-			if (e->is_control_area(loc, {0, 0}))
+			if (e->is_control_area(loc, { 0, 0 }))
 			{
 				return true;
 			}
@@ -4032,7 +4035,7 @@ public:
 	{
 		for (const auto& c : _controls)
 		{
-			view_element_event e{view_element_event_type::dpi_changed, shared_from_this()};
+			view_element_event e{ view_element_event_type::dpi_changed, shared_from_this() };
 			c->dispatch_event(e);
 		}
 
@@ -4066,7 +4069,7 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int cx) const override
 	{
-		return {cx, cx};
+		return { cx, cx };
 	}
 
 	void visit_controls(const std::function<void(const ui::control_base_ptr&)>& handler) override
@@ -4147,7 +4150,7 @@ public:
 	{
 		const auto bounds = ui::desktop_bounds(true);
 		const auto cy = df::mul_div(cx, bounds.height(), bounds.width());
-		return {cx, cy};
+		return { cx, cy };
 	}
 
 	void render(ui::draw_context& dc, const pointi element_offset) const override

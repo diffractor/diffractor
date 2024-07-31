@@ -506,7 +506,6 @@ void factories::unregister_fonts()
 	if (dwrite)
 	{
 		dwrite->UnregisterFontFileLoader(&font_loader);
-		dwrite->UnregisterFontFileLoader(&font_loader);
 		dwrite->UnregisterFontCollectionLoader(&font_collection_loader);
 	}
 }
