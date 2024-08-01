@@ -26,7 +26,8 @@ msgid "For example, if you have 2 photos taken one hour apart, after the update 
 msgstr ""
 
 msgid "This is useful if your camera date was set wrongly and you need to fix photo and video dates."
-msgstr "Items in diesem Datumsbereich werden modifiziert, um bei einem neuen Datum und einer neuen Zeit zu beginnen. Die zeitliche Lücke zwischen Items bleibt erhalten.\n"
+msgstr ""
+"Items in diesem Datumsbereich werden modifiziert, um bei einem neuen Datum und einer neuen Zeit zu beginnen. Die zeitliche Lücke zwischen Items bleibt erhalten.\n"
 "Zum Beispiel, wenn Sie zwei Fotos im Abstand von einer Stunde aufgenommen haben, liegen diese nach der Aktualisierung immer noch eine Stunde auseinander.\n"
 "Dies ist nützlich, wenn Ihr Kameradatum falsch eingestellt wurde und Sie Datums- und Zeitangaben von Foto und Video korrigieren müssen."
 
@@ -165,7 +166,8 @@ msgstr "Items erstellt {} {}"
 msgid "Items modified {} {}"
 msgstr "Items modifiziert {} {}"
 
-msgid "Click to open created items.\n"
+msgid ""
+"Click to open created items.\n"
 "Control-click to open modified items."
 msgstr ""
 
@@ -291,12 +293,6 @@ msgstr "Auf Disk brennen"
 
 msgid "Save current video frame"
 msgstr "Aktuelles Video-Frame speichern"
-
-msgid "Close"
-msgstr ""
-
-msgid "Collection options"
-msgstr ""
 
 msgid "Reset color changes"
 msgstr "Farbänderungen zurücksetzen"
@@ -766,9 +762,6 @@ msgstr "Zielordner:"
 msgid "Destination name:"
 msgstr "Zielname:"
 
-msgid "Destination folder:"
-msgstr ""
-
 msgid "Detecting {} folders"
 msgstr "Erkennung von {} Ordnern"
 
@@ -1015,9 +1008,6 @@ msgstr "Ordner"
 msgid "music"
 msgstr "Music"
 
-msgid "folder"
-msgstr ""
-
 msgid "folders"
 msgstr "Ordner"
 
@@ -1032,9 +1022,6 @@ msgstr "Ordner"
 
 msgid "videos"
 msgstr "Videos"
-
-msgid "folders"
-msgstr ""
 
 msgid "A capella"
 msgstr "A capella"
@@ -2002,9 +1989,6 @@ msgstr "]"
 msgid "+"
 msgstr "+"
 
-msgid "Open"
-msgstr ""
-
 msgid "Options"
 msgstr "Optionen"
 
@@ -2016,12 +2000,6 @@ msgstr "Media-Playback"
 
 msgid "page-up"
 msgstr "Bild auf"
-
-msgid "Rate or Label"
-msgstr ""
-
-msgid "Keyboard reference"
-msgstr ""
 
 msgid "right"
 msgstr "Rechts"
@@ -2040,9 +2018,6 @@ msgstr "Stoppt oder startet eine Slideshow oder die Wiedergabe einer Video-/Audi
 
 msgid "tab"
 msgstr "Tab"
-
-msgid "Tools"
-msgstr ""
 
 msgid "up"
 msgstr "Aufwärts"
@@ -2107,20 +2082,8 @@ msgstr "Medien"
 msgid "Add '{}'"
 msgstr "Hinzufügen von '{}'"
 
-msgid "Copy"
-msgstr ""
-
-msgid "Cut"
-msgstr ""
-
-msgid "Delete"
-msgstr ""
-
 msgid "Move"
 msgstr "Verschieben"
-
-msgid "Paste"
-msgstr ""
 
 msgid "Select All"
 msgstr "Alles auswählen"
@@ -2221,20 +2184,8 @@ msgstr "Ordner"
 msgid "History"
 msgstr "Historie"
 
-msgid "Search"
-msgstr ""
-
-msgid "Favorite Tags"
-msgstr ""
-
 msgid "After long periods of use, the index may need some maintenance."
 msgstr "Nach einem längeren Zeitraum der Nutzung benötigt der Index möglicherweise etwas Wartung."
-
-msgid "New Folder"
-msgstr ""
-
-msgid "New Folder"
-msgstr ""
 
 msgid "No items are selected"
 msgstr "Es sind keine Items selektiert"
@@ -2287,9 +2238,6 @@ msgstr "In Dateibrowser öffnen"
 msgid "Open Properties"
 msgstr "Eigenschaften öffnen"
 
-msgid "Open"
-msgstr ""
-
 msgid "app"
 msgstr "App"
 
@@ -2301,9 +2249,6 @@ msgstr "Selektierte Items konnten nicht geöffnet werden."
 
 msgid "Open with {}"
 msgstr "Öffnen mit {}"
-
-msgid "Open"
-msgstr ""
 
 msgid "tool"
 msgstr "Tool"
@@ -2428,9 +2373,6 @@ msgstr "Icon"
 msgid "Pixels are identical but files are different."
 msgstr "Pixel sind identisch, aber Dateien sind unterschiedlich."
 
-msgid "No resolution"
-msgstr ""
-
 msgid "small"
 msgstr "Klein"
 
@@ -2487,9 +2429,6 @@ msgstr "RAW-Preview zeigen, falls verfügbar (schneller)"
 
 msgid "Showing a RAW photo preview."
 msgstr "Eine RAW-Foto-Preview wird gezeigt."
-
-msgid "Print"
-msgstr ""
 
 msgid "Processing..."
 msgstr "Verarbeitung ..."
@@ -2602,9 +2541,6 @@ msgstr "ID"
 msgid "ISO"
 msgstr "ISO"
 
-msgid "Label"
-msgstr ""
-
 msgid "Latitude"
 msgstr "Breitengrad"
 
@@ -2670,9 +2606,6 @@ msgstr "Streams"
 
 msgid "Synopsis"
 msgstr "Synopsis"
-
-msgid "System"
-msgstr ""
 
 msgid "Tag"
 msgstr "Taggen"
@@ -2782,7 +2715,8 @@ msgstr "Wiederholte Wiedergabe eines einzelnen Media-Items"
 msgid "Reset"
 msgstr "Zurücksetzen"
 
-msgid "Clean database and reindex.\n"
+msgid ""
+"Clean database and reindex.\n"
 "All data is regenerated."
 msgstr ""
 
@@ -2794,9 +2728,6 @@ msgstr "Maximale Fotoabmessung (in Pixel):"
 
 msgid "retro"
 msgstr "Retro"
-
-msgid "Retro"
-msgstr ""
 
 msgid "Saturation"
 msgstr "Sättigung"
@@ -2821,9 +2752,6 @@ msgstr "All diese Terms"
 
 msgid "Any of these terms"
 msgstr "Einer dieser Terms"
-
-msgid "Audio"
-msgstr ""
 
 msgid "Christmas"
 msgstr "Weihnachten"
@@ -2867,9 +2795,6 @@ msgstr "Suche in Unterordnern"
 msgid "Top rated"
 msgstr "Top bewertet"
 
-msgid "Videos"
-msgstr ""
-
 msgid "Searching..."
 msgstr "Suche ..."
 
@@ -2897,9 +2822,6 @@ msgstr "Drücken Sie R, um doppelte oder verwandte Items in der Kollektion einzu
 msgid "Show verbose metadata"
 msgstr "Ausführliche Metadaten einblenden"
 
-msgid "Size"
-msgstr ""
-
 msgid "Album-Show"
 msgstr "Album-Show"
 
@@ -2912,29 +2834,14 @@ msgstr "Extension"
 msgid "Type"
 msgstr "Typ"
 
-msgid "Location"
-msgstr ""
-
 msgid "Name"
 msgstr "Name"
-
-msgid "Folder"
-msgstr ""
 
 msgid "Resolution"
 msgstr "Auflösung"
 
-msgid "Presence"
-msgstr ""
-
 msgid "Rating-Label"
 msgstr "Rating-Label"
-
-msgid "Show items in random order"
-msgstr ""
-
-msgid "Size"
-msgstr ""
 
 msgid "used"
 msgstr "Verwendet"
@@ -3023,9 +2930,6 @@ msgstr "Selektierte Items taggen"
 msgid "Common Tags"
 msgstr "Gemeinsame Tags"
 
-msgid "Favorite Tags"
-msgstr ""
-
 msgid "Removable Tags"
 msgstr "Entfernbare Tags"
 
@@ -3110,9 +3014,6 @@ msgstr "Gekürzt auf 1 MB"
 msgid "Type to search"
 msgstr "Zur Suche eintippen"
 
-msgid "Unknown"
-msgstr ""
-
 msgid "Unselect {}"
 msgstr "Abwählen von {}"
 
@@ -3152,9 +3053,6 @@ msgstr "Mich in einer Woche wieder erinnern"
 msgid "Please wait while the update is downloaded..."
 msgstr "Bitte warten Sie, während das Update heruntergeladen wird ..."
 
-msgid "New version available"
-msgstr ""
-
 msgid "Version"
 msgstr "Version"
 
@@ -3163,9 +3061,6 @@ msgstr "Lebendigkeit"
 
 msgid "video"
 msgstr "Video"
-
-msgid "videos"
-msgstr ""
 
 msgid "WEBP - Best for the web"
 msgstr "WEBP - Am besten für das Web"
@@ -3209,9 +3104,6 @@ msgstr "Automatische Wiedergabe selektierter Medien"
 msgid "Resume playing media from last position"
 msgstr "Wiedergabe von Medien ab letzter Position fortsetzen"
 
-msgid "Toggle repeat play"
-msgstr "Wiederholte Wiedergabe umschalten"
-
 msgid "Repeat play one item"
 msgstr "Wiederholte Wiedergabe eines Items"
 
@@ -3236,7 +3128,8 @@ msgstr "Videofilter"
 msgid "Audio filter"
 msgstr "Audiofilter"
 
-msgid "All items filtered out.\n"
+msgid ""
+"All items filtered out.\n"
 "Click to clear filter."
 msgstr ""
 
@@ -3255,13 +3148,7 @@ msgstr "Nur favorisierte Tags in der Seitenleiste zeigen"
 msgid "Collection"
 msgstr ""
 
-msgid "Source"
-msgstr ""
-
 msgid "Destination"
-msgstr ""
-
-msgid "Action"
 msgstr ""
 
 msgid "Old name"
@@ -3434,4 +3321,3 @@ msgid "{first-name} will have existing GPS position metadata overwritten."
 msgid_plural "{first-name} and {other} other items will have existing GPS position metadata overwritten."
 msgstr[0] "Bei {first-name} werden vorhandene GPS-Positionsmetadaten überschrieben."
 msgstr[1] "Bei {first-name} und {other} anderen Items werden vorhandene GPS-Positionsmetadaten überschrieben."
-

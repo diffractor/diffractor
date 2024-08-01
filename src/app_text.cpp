@@ -138,33 +138,31 @@ void app_text_t::load_lang(std::u8string_view lang_file, const std::vector<po_en
 	// default
 	clear();
 
-	for (auto& entry : entries)
+	df::hash_map<std::u8string_view, std::u8string_view> text_map;
+
+	for (const auto& entry : entries)
 	{
 		if (!entry.id.empty() && !entry.str.empty())
 		{
-			auto found = _text_mapping.find(entry.id);
-
-			if (found != _text_mapping.end())
-			{
-				found->second.get().trans = entry.str;
-			}
+			text_map[entry.id] = entry.str;
 		}
 
 		if (!entry.id_plural.empty() && !entry.str_plural.empty())
 		{
-			auto found = _text_mapping.find(entry.id_plural);
-
-			if (found != _text_mapping.end())
-			{
-				found->second.get().trans = entry.str_plural;
-			}
+			text_map[entry.id_plural] = entry.str_plural;
 		}
 	}
 
-	// log missing translations
-	for (const auto &t : _all_texts)
+
+	for (const auto& t : _all_texts)
 	{
-		if (t.get().trans.empty())
+		auto found = text_map.find(t.get().text);
+
+		if (found != text_map.end())
+		{
+			t.get().trans = found->second;
+		}
+		else 
 		{
 			df::log(__FUNCTION__, str::format(u8"{} missing: msgid \"{}\""sv, lang_file, t.get().text));
 		}
@@ -172,12 +170,24 @@ void app_text_t::load_lang(std::u8string_view lang_file, const std::vector<po_en
 
 	for (const auto& p : _all_plurals)
 	{
-		if (p.get().one.trans.empty())
+		auto found = text_map.find(p.get().one.text);
+
+		if (found != text_map.end())
+		{
+			p.get().one.trans = found->second;
+		}
+		else
 		{
 			df::log(__FUNCTION__, str::format(u8"{} missing: msgid \"{}\""sv, lang_file, p.get().one.text));
 		}
 
-		if (p.get().plural.trans.empty())
+		found = text_map.find(p.get().plural.text);
+
+		if (found != text_map.end())
+		{
+			p.get().plural.trans = found->second;
+		}
+		else
 		{
 			df::log(__FUNCTION__, str::format(u8"{} missing: msgid_plural \"{}\""sv, lang_file, p.get().plural.text));
 		}
@@ -187,14 +197,20 @@ void app_text_t::load_lang(std::u8string_view lang_file, const std::vector<po_en
 std::vector<po_entry> app_text_t::gen_po() const
 {
 	std::vector<po_entry> result;
+	df::hash_set<std::u8string_view> written;
 
 	for (const auto &t : _all_texts)
 	{
-		result.emplace_back(
-			std::u8string{ t.get().text }, 
-			std::u8string{ t.get().trans }, 
-			std::u8string {}, 
-			std::u8string {});
+		if (!written.contains(t.get().text))
+		{
+			result.emplace_back(
+				std::u8string{ t.get().text },
+				std::u8string{ t.get().trans },
+				std::u8string{},
+				std::u8string{});
+
+			written.insert(t.get().text);
+		}
 	}
 
 	for (const auto& p : _all_plurals)

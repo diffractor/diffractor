@@ -163,7 +163,8 @@ msgstr ""
 msgid "Items modified {} {}"
 msgstr ""
 
-msgid "Click to open created items.\n"
+msgid ""
+"Click to open created items.\n"
 "Control-click to open modified items."
 msgstr ""
 
@@ -288,12 +289,6 @@ msgid "Burn to disk"
 msgstr ""
 
 msgid "Save current video frame"
-msgstr ""
-
-msgid "Close"
-msgstr ""
-
-msgid "Collection options"
 msgstr ""
 
 msgid "Reset color changes"
@@ -764,9 +759,6 @@ msgstr ""
 msgid "Destination name:"
 msgstr ""
 
-msgid "Destination folder:"
-msgstr ""
-
 msgid "Detecting {} folders"
 msgstr ""
 
@@ -1013,9 +1005,6 @@ msgstr "Složka"
 msgid "music"
 msgstr "muzika"
 
-msgid "folder"
-msgstr ""
-
 msgid "folders"
 msgstr "Složky"
 
@@ -1030,9 +1019,6 @@ msgstr "Složka"
 
 msgid "videos"
 msgstr "Videa"
-
-msgid "folders"
-msgstr ""
 
 msgid "A capella"
 msgstr ""
@@ -2000,9 +1986,6 @@ msgstr ""
 msgid "+"
 msgstr ""
 
-msgid "Open"
-msgstr ""
-
 msgid "Options"
 msgstr "Možnosti"
 
@@ -2013,12 +1996,6 @@ msgid "Media playback"
 msgstr ""
 
 msgid "page-up"
-msgstr ""
-
-msgid "Rate or Label"
-msgstr ""
-
-msgid "Keyboard reference"
 msgstr ""
 
 msgid "right"
@@ -2038,9 +2015,6 @@ msgstr ""
 
 msgid "tab"
 msgstr "Tabulátor"
-
-msgid "Tools"
-msgstr ""
 
 msgid "up"
 msgstr "Nahoru"
@@ -2105,19 +2079,7 @@ msgstr ""
 msgid "Add '{}'"
 msgstr ""
 
-msgid "Copy"
-msgstr ""
-
-msgid "Cut"
-msgstr ""
-
-msgid "Delete"
-msgstr ""
-
 msgid "Move"
-msgstr ""
-
-msgid "Paste"
 msgstr ""
 
 msgid "Select All"
@@ -2219,19 +2181,7 @@ msgstr "Složky"
 msgid "History"
 msgstr "Historie"
 
-msgid "Search"
-msgstr ""
-
-msgid "Favorite Tags"
-msgstr ""
-
 msgid "After long periods of use, the index may need some maintenance."
-msgstr ""
-
-msgid "New Folder"
-msgstr ""
-
-msgid "New Folder"
 msgstr ""
 
 msgid "No items are selected"
@@ -2285,9 +2235,6 @@ msgstr ""
 msgid "Open Properties"
 msgstr ""
 
-msgid "Open"
-msgstr ""
-
 msgid "app"
 msgstr ""
 
@@ -2298,9 +2245,6 @@ msgid "Failed to open selected items."
 msgstr ""
 
 msgid "Open with {}"
-msgstr ""
-
-msgid "Open"
 msgstr ""
 
 msgid "tool"
@@ -2426,9 +2370,6 @@ msgstr "Ikona"
 msgid "Pixels are identical but files are different."
 msgstr ""
 
-msgid "No resolution"
-msgstr ""
-
 msgid "small"
 msgstr "Malá"
 
@@ -2484,9 +2425,6 @@ msgid "Show RAW preview if available (faster)"
 msgstr ""
 
 msgid "Showing a RAW photo preview."
-msgstr ""
-
-msgid "Print"
 msgstr ""
 
 msgid "Processing..."
@@ -2600,9 +2538,6 @@ msgstr ""
 msgid "ISO"
 msgstr ""
 
-msgid "Label"
-msgstr ""
-
 msgid "Latitude"
 msgstr ""
 
@@ -2667,9 +2602,6 @@ msgid "Streams"
 msgstr ""
 
 msgid "Synopsis"
-msgstr ""
-
-msgid "System"
 msgstr ""
 
 msgid "Tag"
@@ -2780,7 +2712,8 @@ msgstr ""
 msgid "Reset"
 msgstr "Obnovit"
 
-msgid "Clean database and reindex.\n"
+msgid ""
+"Clean database and reindex.\n"
 "All data is regenerated."
 msgstr ""
 
@@ -2792,9 +2725,6 @@ msgstr ""
 
 msgid "retro"
 msgstr "Retro"
-
-msgid "Retro"
-msgstr ""
 
 msgid "Saturation"
 msgstr "Saturace"
@@ -2818,9 +2748,6 @@ msgid "All these terms"
 msgstr ""
 
 msgid "Any of these terms"
-msgstr ""
-
-msgid "Audio"
 msgstr ""
 
 msgid "Christmas"
@@ -2865,9 +2792,6 @@ msgstr ""
 msgid "Top rated"
 msgstr ""
 
-msgid "Videos"
-msgstr ""
-
 msgid "Searching..."
 msgstr "Hledání..."
 
@@ -2895,9 +2819,6 @@ msgstr ""
 msgid "Show verbose metadata"
 msgstr ""
 
-msgid "Size"
-msgstr ""
-
 msgid "Album-Show"
 msgstr ""
 
@@ -2910,28 +2831,13 @@ msgstr ""
 msgid "Type"
 msgstr "Typ"
 
-msgid "Location"
-msgstr ""
-
 msgid "Name"
 msgstr "Název"
-
-msgid "Folder"
-msgstr ""
 
 msgid "Resolution"
 msgstr ""
 
-msgid "Presence"
-msgstr ""
-
 msgid "Rating-Label"
-msgstr ""
-
-msgid "Show items in random order"
-msgstr ""
-
-msgid "Size"
 msgstr ""
 
 msgid "used"
@@ -3021,9 +2927,6 @@ msgstr ""
 msgid "Common Tags"
 msgstr ""
 
-msgid "Favorite Tags"
-msgstr ""
-
 msgid "Removable Tags"
 msgstr ""
 
@@ -3108,9 +3011,6 @@ msgstr ""
 msgid "Type to search"
 msgstr ""
 
-msgid "Unknown"
-msgstr ""
-
 msgid "Unselect {}"
 msgstr ""
 
@@ -3150,9 +3050,6 @@ msgstr ""
 msgid "Please wait while the update is downloaded..."
 msgstr ""
 
-msgid "New version available"
-msgstr ""
-
 msgid "Version"
 msgstr ""
 
@@ -3160,9 +3057,6 @@ msgid "Vibrance"
 msgstr ""
 
 msgid "video"
-msgstr ""
-
-msgid "videos"
 msgstr ""
 
 msgid "WEBP - Best for the web"
@@ -3207,9 +3101,6 @@ msgstr ""
 msgid "Resume playing media from last position"
 msgstr ""
 
-msgid "Toggle repeat play"
-msgstr ""
-
 msgid "Repeat play one item"
 msgstr ""
 
@@ -3234,7 +3125,8 @@ msgstr ""
 msgid "Audio filter"
 msgstr ""
 
-msgid "All items filtered out.\n"
+msgid ""
+"All items filtered out.\n"
 "Click to clear filter."
 msgstr ""
 
@@ -3253,13 +3145,7 @@ msgstr ""
 msgid "Collection"
 msgstr ""
 
-msgid "Source"
-msgstr ""
-
 msgid "Destination"
-msgstr ""
-
-msgid "Action"
 msgstr ""
 
 msgid "Old name"
@@ -3459,4 +3345,3 @@ msgid_plural "{first-name} and {other} other items will have existing GPS positi
 msgstr[0] ""
 msgstr[1] ""
 msgstr[2] ""
-

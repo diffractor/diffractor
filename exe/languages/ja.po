@@ -163,7 +163,8 @@ msgstr "作成された項目 {} {}"
 msgid "Items modified {} {}"
 msgstr "変更された項目 {} {}"
 
-msgid "Click to open created items.\n"
+msgid ""
+"Click to open created items.\n"
 "Control-click to open modified items."
 msgstr ""
 
@@ -289,12 +290,6 @@ msgstr "ディスクに書き込み"
 
 msgid "Save current video frame"
 msgstr "現在のビデオフレームを保存"
-
-msgid "Close"
-msgstr ""
-
-msgid "Collection options"
-msgstr ""
 
 msgid "Reset color changes"
 msgstr "色の変更をリセット"
@@ -764,9 +759,6 @@ msgstr "コピー先フォルダー :"
 msgid "Destination name:"
 msgstr "コピー先の名前 :"
 
-msgid "Destination folder:"
-msgstr ""
-
 msgid "Detecting {} folders"
 msgstr "{} フォルダーの検出"
 
@@ -1013,9 +1005,6 @@ msgstr "フォルダー"
 msgid "music"
 msgstr "ミュージック"
 
-msgid "folder"
-msgstr ""
-
 msgid "folders"
 msgstr "フォルダー"
 
@@ -1030,9 +1019,6 @@ msgstr "フォルダー"
 
 msgid "videos"
 msgstr "ビデオ"
-
-msgid "folders"
-msgstr ""
 
 msgid "A capella"
 msgstr "アカペラ"
@@ -2000,9 +1986,6 @@ msgstr "]"
 msgid "+"
 msgstr "+"
 
-msgid "Open"
-msgstr ""
-
 msgid "Options"
 msgstr "オプション"
 
@@ -2014,12 +1997,6 @@ msgstr "メディアの再生"
 
 msgid "page-up"
 msgstr "page-up"
-
-msgid "Rate or Label"
-msgstr ""
-
-msgid "Keyboard reference"
-msgstr ""
 
 msgid "right"
 msgstr "右矢印"
@@ -2038,9 +2015,6 @@ msgstr "スライドショーまたはビデオ/オーディオファイルの�
 
 msgid "tab"
 msgstr "tab"
-
-msgid "Tools"
-msgstr ""
 
 msgid "up"
 msgstr "上矢印"
@@ -2105,20 +2079,8 @@ msgstr "メディア"
 msgid "Add '{}'"
 msgstr "'{}' の追加"
 
-msgid "Copy"
-msgstr ""
-
-msgid "Cut"
-msgstr ""
-
-msgid "Delete"
-msgstr ""
-
 msgid "Move"
 msgstr "移動"
-
-msgid "Paste"
-msgstr ""
 
 msgid "Select All"
 msgstr "すべて選択"
@@ -2219,20 +2181,8 @@ msgstr "フォルダー"
 msgid "History"
 msgstr "履歴"
 
-msgid "Search"
-msgstr ""
-
-msgid "Favorite Tags"
-msgstr ""
-
 msgid "After long periods of use, the index may need some maintenance."
 msgstr "長期間使用した後は、インデックスのメンテナンスが必要になる場合があります。"
-
-msgid "New Folder"
-msgstr ""
-
-msgid "New Folder"
-msgstr ""
 
 msgid "No items are selected"
 msgstr "項目が選択されていません"
@@ -2285,9 +2235,6 @@ msgstr "ファイルブラウザで開く"
 msgid "Open Properties"
 msgstr "プロパティを開く"
 
-msgid "Open"
-msgstr ""
-
 msgid "app"
 msgstr "app"
 
@@ -2299,9 +2246,6 @@ msgstr "選択した項目を開けませんでした。"
 
 msgid "Open with {}"
 msgstr "{} で開く"
-
-msgid "Open"
-msgstr ""
 
 msgid "tool"
 msgstr "ツール"
@@ -2426,9 +2370,6 @@ msgstr "アイコン"
 msgid "Pixels are identical but files are different."
 msgstr "ピクセルは同じですが、ファイルは異なります。"
 
-msgid "No resolution"
-msgstr ""
-
 msgid "small"
 msgstr "小さい"
 
@@ -2485,9 +2426,6 @@ msgstr "利用可能な場合は RAW プレビューを表示する (高速)"
 
 msgid "Showing a RAW photo preview."
 msgstr "RAW写真のプレビューを表示する。"
-
-msgid "Print"
-msgstr ""
 
 msgid "Processing..."
 msgstr "処理中..."
@@ -2600,9 +2538,6 @@ msgstr "Id"
 msgid "ISO"
 msgstr "ISO"
 
-msgid "Label"
-msgstr ""
-
 msgid "Latitude"
 msgstr "緯度"
 
@@ -2668,9 +2603,6 @@ msgstr "ストリーム"
 
 msgid "Synopsis"
 msgstr "概要"
-
-msgid "System"
-msgstr ""
 
 msgid "Tag"
 msgstr "タグ"
@@ -2780,7 +2712,8 @@ msgstr "単一のメディアを繰り返し再生する"
 msgid "Reset"
 msgstr "リセット"
 
-msgid "Clean database and reindex.\n"
+msgid ""
+"Clean database and reindex.\n"
 "All data is regenerated."
 msgstr ""
 
@@ -2792,9 +2725,6 @@ msgstr "写真の最大サイズ (ピクセル単位) :"
 
 msgid "retro"
 msgstr "レトロ"
-
-msgid "Retro"
-msgstr ""
 
 msgid "Saturation"
 msgstr "彩度"
@@ -2819,9 +2749,6 @@ msgstr "これらすべての用語"
 
 msgid "Any of these terms"
 msgstr "これらの用語のいずれか"
-
-msgid "Audio"
-msgstr ""
 
 msgid "Christmas"
 msgstr "クリスマス"
@@ -2865,9 +2792,6 @@ msgstr "サブフォルダー内を検索"
 msgid "Top rated"
 msgstr "最高評価"
 
-msgid "Videos"
-msgstr ""
-
 msgid "Searching..."
 msgstr "検索中..."
 
@@ -2895,9 +2819,6 @@ msgstr "r を押して、コレクション内の重複アイテムまたは関�
 msgid "Show verbose metadata"
 msgstr "詳細なメタデータを表示"
 
-msgid "Size"
-msgstr ""
-
 msgid "Album-Show"
 msgstr "アルバム-表示"
 
@@ -2910,29 +2831,14 @@ msgstr "拡張子"
 msgid "Type"
 msgstr "種類"
 
-msgid "Location"
-msgstr ""
-
 msgid "Name"
 msgstr "名前"
-
-msgid "Folder"
-msgstr ""
 
 msgid "Resolution"
 msgstr ""
 
-msgid "Presence"
-msgstr ""
-
 msgid "Rating-Label"
 msgstr "評価-ラベル"
-
-msgid "Show items in random order"
-msgstr ""
-
-msgid "Size"
-msgstr ""
 
 msgid "used"
 msgstr "使用中"
@@ -3021,9 +2927,6 @@ msgstr "選択した項目にタグを付ける"
 msgid "Common Tags"
 msgstr "共通のタグ"
 
-msgid "Favorite Tags"
-msgstr ""
-
 msgid "Removable Tags"
 msgstr "取り外し可能なタグ"
 
@@ -3108,9 +3011,6 @@ msgstr "1MBで切り捨て"
 msgid "Type to search"
 msgstr "検索する種類"
 
-msgid "Unknown"
-msgstr ""
-
 msgid "Unselect {}"
 msgstr "{} の選択を解除"
 
@@ -3150,9 +3050,6 @@ msgstr "1 週間後にもう一度通知する"
 msgid "Please wait while the update is downloaded..."
 msgstr "アップデートがダウンロードされるまでお待ちください..."
 
-msgid "New version available"
-msgstr ""
-
 msgid "Version"
 msgstr "バージョン"
 
@@ -3161,9 +3058,6 @@ msgstr "活気"
 
 msgid "video"
 msgstr "ビデオ"
-
-msgid "videos"
-msgstr ""
 
 msgid "WEBP - Best for the web"
 msgstr "WEBP - ウェブに最適"
@@ -3207,9 +3101,6 @@ msgstr "選択したメディアを自動再生する"
 msgid "Resume playing media from last position"
 msgstr "メディアの再生を最後の位置から再開する"
 
-msgid "Toggle repeat play"
-msgstr "リピート再生の切り替え"
-
 msgid "Repeat play one item"
 msgstr "1 項目を繰り返し再生"
 
@@ -3234,7 +3125,8 @@ msgstr "ビデオ フィルター"
 msgid "Audio filter"
 msgstr "オーディオ フィルター"
 
-msgid "All items filtered out.\n"
+msgid ""
+"All items filtered out.\n"
 "Click to clear filter."
 msgstr ""
 
@@ -3253,13 +3145,7 @@ msgstr "サイドバーにお気に入りのタグのみを表示する"
 msgid "Collection"
 msgstr ""
 
-msgid "Source"
-msgstr ""
-
 msgid "Destination"
-msgstr ""
-
-msgid "Action"
 msgstr ""
 
 msgid "Old name"
@@ -3405,4 +3291,3 @@ msgstr[0] "{first-name} はすでに存在します。置き換えますか？"
 msgid "{first-name} will have existing GPS position metadata overwritten."
 msgid_plural "{first-name} and {other} other items will have existing GPS position metadata overwritten."
 msgstr[0] "{first-name} には既存の GPS 位置メタデータが上書きされます。"
-
