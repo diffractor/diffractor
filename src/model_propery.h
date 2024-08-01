@@ -142,14 +142,14 @@ namespace prop
 		key& operator=(key&& other) = delete;
 
 	public:
-		key(uint16_t id, std::u8string_view sn, std::u8string_view n, std::u8string_view& tx, icon_index i, data_type t,
+		key(uint16_t id, std::u8string_view sn, std::u8string_view n, text_t& tx, icon_index i, data_type t,
 			uint32_t f, uint32_t bit);
 
 		uint16_t id = 0;
 		icon_index icon = {};
 		str::cached short_name = {};
 		str::cached name = {};
-		std::u8string_view& text_key;
+		text_t& text_key;
 		data_type data_type = {};
 		uint32_t flags = 0;
 		uint32_t bloom_bit = 0;

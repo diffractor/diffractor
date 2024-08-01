@@ -64,7 +64,7 @@ df::file_path df::previous_log_path = known_path(platform::known_folder::running
 	u8"diffractor.previous.log"sv);
 
 static platform::mutex log_mutex;
-_Guarded_by_(log_mutex) static std::basic_ofstream<char8_t, std::char_traits<char8_t>> log_file;
+_Guarded_by_(log_mutex) static u8ostream log_file;
 
 
 void df::log(const std::u8string_view context, const std::u8string_view message)

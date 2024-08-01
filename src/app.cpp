@@ -49,7 +49,7 @@ static std::atomic_int index_version;
 const wchar_t* s_app_name_l = L"Diffractor";
 const std::u8string_view s_app_name = u8"Diffractor"sv;
 const std::u8string_view s_app_version = u8"126.1"sv;
-const std::u8string_view g_app_build = u8"1183"sv;
+const std::u8string_view g_app_build = u8"1184"sv;
 const std::u8string_view stage_file_name = u8"diffractor-setup-update.exe"sv;
 static constexpr std::u8string_view installed_file_name = u8"diffractor-setup-installed.exe"sv;
 static constexpr std::u8string_view s_search = u8"search"sv;
@@ -2702,8 +2702,10 @@ void app_frame::create_toolbars()
 
 	const std::vector<ui::command_ptr> test_commands =
 	{
+		find_command(commands::test_gen_po),
+		find_command(commands::test_send_crash_report),
 		find_command(commands::test_crash),
-		find_command(commands::test_boom),
+		find_command(commands::test_reset_graphics),
 		find_command(commands::test_new_version),
 		find_command(commands::test_run_all),
 		find_command(commands::view_close),
@@ -3043,8 +3045,10 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::sort_size]->enable = is_media_or_items_view;
 	_commands[commands::sync_analyze]->enable = view_mode == view_type::sync;
 	_commands[commands::sync_run]->enable = view_mode == view_type::sync;
-	_commands[commands::test_boom]->enable = view_mode == view_type::test;
 	_commands[commands::test_crash]->enable = view_mode == view_type::test;
+	_commands[commands::test_send_crash_report]->enable = view_mode == view_type::test;
+	_commands[commands::test_gen_po]->enable = view_mode == view_type::test;
+	_commands[commands::test_reset_graphics]->enable = view_mode == view_type::test;
 	_commands[commands::test_new_version]->enable = view_mode == view_type::test;
 	_commands[commands::test_run_all]->enable = view_mode == view_type::test;
 	_commands[commands::tool_adjust_date]->enable = has_selection;
@@ -3102,7 +3106,7 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::option_show_rotated]->checked = setting.show_rotated;
 	_commands[commands::verbose_metadata]->checked = setting.verbose_metadata;
 	_commands[commands::show_raw_preview]->checked = setting.raw_preview;
-	_commands[commands::test_run_all]->checked = view_mode == view_type::test;
+	_commands[commands::test_run_all]->checked = is_running_tests();
 	_commands[commands::view_items]->checked = view_mode == view_type::items;
 	_commands[commands::option_show_thumbnails]->checked = view_mode == view_type::items;
 	_commands[commands::browse_recursive]->checked = _state.search().has_recursive_selector();
@@ -3226,46 +3230,31 @@ recti app_frame::calc_search_popup_bounds() const
 void app_frame::update_command_text()
 {
 	def_command(commands::tool_adjust_date, command_group::tools, icon_index::time, tt.command_adjust_date);
-	def_command(commands::tool_edit_metadata, command_group::tools, icon_index::edit_metadata,
-		tt.command_edit_metadata);
+	def_command(commands::tool_edit_metadata, command_group::tools, icon_index::edit_metadata, tt.command_edit_metadata);
 	def_command(commands::exit, command_group::help, icon_index::close, tt.command_app_exit);
 	def_command(commands::playback_auto_play, command_group::media_playback, icon_index::play, tt.command_autoplay);
-	def_command(commands::playback_last_played_pos, command_group::media_playback, icon_index::none,
-		tt.command_last_played_pos);
+	def_command(commands::playback_last_played_pos, command_group::media_playback, icon_index::none, tt.command_last_played_pos);
 	def_command(commands::browse_back, command_group::navigation, icon_index::back, tt.command_browse_back);
 	def_command(commands::browse_forward, command_group::navigation, icon_index::next, tt.command_browse_forward);
-	def_command(commands::browse_next_folder, command_group::navigation, icon_index::next_folder,
-		tt.command_browse_next_folder);
+	def_command(commands::browse_next_folder, command_group::navigation, icon_index::next_folder, tt.command_browse_next_folder);
 	def_command(commands::browse_next_group, command_group::selection, icon_index::none, tt.command_browse_next_group);
-	def_command(commands::browse_next_item, command_group::selection, icon_index::next_image,
-		tt.command_browse_next_item);
-	def_command(commands::browse_next_item_extend, command_group::selection, icon_index::next_image,
-		tt.command_browse_next_item_extend);
+	def_command(commands::browse_next_item, command_group::selection, icon_index::next_image, tt.command_browse_next_item);
+	def_command(commands::browse_next_item_extend, command_group::selection, icon_index::next_image, tt.command_browse_next_item_extend);
 	def_command(commands::browse_parent, command_group::navigation, icon_index::parent, tt.command_browse_parent);
-	def_command(commands::browse_previous_folder, command_group::navigation, icon_index::back_folder,
-		tt.command_browse_previous_folder);
-	def_command(commands::browse_previous_group, command_group::selection, icon_index::none,
-		tt.command_browse_previous_group);
-	def_command(commands::browse_previous_item, command_group::selection, icon_index::back_image,
-		tt.command_browse_previous_item);
-	def_command(commands::browse_previous_item_extend, command_group::selection, icon_index::back_image,
-		tt.command_browse_previous_item_extend);
+	def_command(commands::browse_previous_folder, command_group::navigation, icon_index::back_folder, tt.command_browse_previous_folder);
+	def_command(commands::browse_previous_group, command_group::selection, icon_index::none, tt.command_browse_previous_group);
+	def_command(commands::browse_previous_item, command_group::selection, icon_index::back_image, tt.command_browse_previous_item);
+	def_command(commands::browse_previous_item_extend, command_group::selection, icon_index::back_image, tt.command_browse_previous_item_extend);
 	def_command(commands::tool_burn, command_group::tools, icon_index::disk, tt.command_burn);
 	def_command(commands::tool_save_current_video_frame, command_group::tools, icon_index::none, tt.command_capture);
 	def_command(commands::view_close, command_group::none, icon_index::close, tt.command_close);
-	def_command(commands::edit_item_color_reset, command_group::none, icon_index::undo, tt.command_color_reset,
-		tt.tooltip_color_reset);
+	def_command(commands::edit_item_color_reset, command_group::none, icon_index::undo, tt.command_color_reset, tt.tooltip_color_reset);
 	def_command(commands::tool_convert, command_group::tools, icon_index::convert, tt.command_convert_or_resize);
-	def_command(commands::tool_copy_to_folder, command_group::file_management, icon_index::copy_to_folder,
-		tt.command_copy);
-	def_command(commands::test_crash, command_group::none, icon_index::download, tt.command_crash);
-	def_command(commands::test_boom, command_group::none, icon_index::error, tt.command_boom);
+	def_command(commands::tool_copy_to_folder, command_group::file_management, icon_index::copy_to_folder, tt.command_copy);
 	def_command(commands::tool_delete, command_group::file_management, icon_index::cancel, tt.command_delete);
-	def_command(commands::tool_desktop_background, command_group::tools, icon_index::wallpaper,
-		tt.command_desktop_background);
+	def_command(commands::tool_desktop_background, command_group::tools, icon_index::wallpaper, tt.command_desktop_background);
 	def_command(commands::menu_display_options, command_group::none, icon_index::none, tt.command_display_options);
-	def_command(commands::tool_edit, command_group::tools, icon_index::edit, tt.command_edit,
-		str::format(u8"{}\n{}"sv, tt.tooltip_edit1, tt.tooltip_edit2));
+	def_command(commands::tool_edit, command_group::tools, icon_index::edit, tt.command_edit, str::format(u8"{}\n{}"sv, tt.tooltip_edit1, tt.tooltip_edit2));
 	def_command(commands::edit_copy, command_group::file_management, icon_index::edit_copy, tt.command_edit_copy);
 	def_command(commands::edit_cut, command_group::file_management, icon_index::edit_cut, tt.command_edit_cut);
 	def_command(commands::edit_paste, command_group::file_management, icon_index::edit_paste, tt.command_edit_paste);
@@ -3282,20 +3271,15 @@ void app_frame::update_command_text()
 	def_command(commands::tool_locate, command_group::tools, icon_index::location, tt.command_locate);
 	def_command(commands::view_maximize, command_group::help, icon_index::maximize, tt.command_maximize);
 	def_command(commands::view_minimize, command_group::help, icon_index::minimize, tt.command_minimize);
-	def_command(commands::tool_move_to_folder, command_group::file_management, icon_index::move_to_folder,
-		tt.command_move);
-	def_command(commands::view_show_sidebar, command_group::options, icon_index::navigation, tt.command_nav_bar,
-		tt.tooltip_nav_bar);
+	def_command(commands::tool_move_to_folder, command_group::file_management, icon_index::move_to_folder, tt.command_move);
+	def_command(commands::view_show_sidebar, command_group::options, icon_index::navigation, tt.command_nav_bar, tt.tooltip_nav_bar);
 	def_command(commands::menu_navigate, command_group::none, icon_index::none, tt.command_navigate);
-	def_command(commands::tool_new_folder, command_group::file_management, icon_index::new_folder,
-		tt.command_new_folder);
+	def_command(commands::tool_new_folder, command_group::file_management, icon_index::new_folder, tt.command_new_folder);
 	def_command(commands::info_new_version, command_group::none, icon_index::lightbulb, tt.command_new_version);
 	def_command(commands::menu_open, command_group::none, icon_index::open_one, tt.command_open, tt.tooltip_open);
-	def_command(commands::browse_open_containingfolder, command_group::navigation, icon_index::none,
-		tt.command_show_in_folder);
+	def_command(commands::browse_open_containingfolder, command_group::navigation, icon_index::none, tt.command_show_in_folder);
 	def_command(commands::browse_open_googlemap, command_group::open, icon_index::location, tt.command_open_google_map);
-	def_command(commands::browse_open_in_file_browser, command_group::open, icon_index::none,
-		tt.command_show_in_file_browser);
+	def_command(commands::browse_open_in_file_browser, command_group::open, icon_index::none, tt.command_show_in_file_browser);
 	def_command(commands::tool_open_with, command_group::open, icon_index::open_one, tt.command_open_with);
 	def_command(commands::options_general, command_group::options, icon_index::settings, tt.command_options);
 	def_command(commands::pin_item, command_group::selection, icon_index::pin, tt.command_pin, tt.tooltip_pin);
@@ -3317,35 +3301,22 @@ void app_frame::update_command_text()
 	def_command(commands::refresh, command_group::navigation, icon_index::refresh, tt.command_refresh);
 	def_command(commands::search_related, command_group::tools, icon_index::compare, tt.command_related);
 	def_command(commands::tool_rename, command_group::file_management, icon_index::rename, tt.command_rename);
-	def_command(commands::playback_repeat_none, command_group::options, icon_index::repeat_none, tt.command_repeat_none,
-		tt.repeat_off_help);
-	def_command(commands::playback_repeat_one, command_group::options, icon_index::repeat_one, tt.command_repeat_one,
-		tt.repeat_one_help);
-	def_command(commands::playback_repeat_all, command_group::options, icon_index::repeat_all, tt.command_repeat_all,
-		tt.repeat_help);
-	def_command(commands::playback_menu, command_group::media_playback, icon_index::media_options,
-		tt.command_playback_menu);
-	def_command(commands::menu_playback, command_group::media_playback, icon_index::media_options,
-		tt.command_playback_toolbar, tt.command_playback_menu);
-	def_command(commands::repeat_toggle, command_group::media_playback, icon_index::repeat_all,
-		tt.command_repeat_toggle);
+	def_command(commands::playback_repeat_none, command_group::options, icon_index::repeat_none, tt.command_repeat_none, tt.repeat_off_help);
+	def_command(commands::playback_repeat_one, command_group::options, icon_index::repeat_one, tt.command_repeat_one, tt.repeat_one_help);
+	def_command(commands::playback_repeat_all, command_group::options, icon_index::repeat_all, tt.command_repeat_all, tt.repeat_help);
+	def_command(commands::playback_menu, command_group::media_playback, icon_index::media_options, tt.command_playback_menu);
+	def_command(commands::menu_playback, command_group::media_playback, icon_index::media_options, tt.command_playback_toolbar, tt.command_playback_menu);
+	def_command(commands::repeat_toggle, command_group::media_playback, icon_index::repeat_all, tt.command_repeat_toggle);
 	def_command(commands::view_restore, command_group::help, icon_index::restore, tt.command_restore);
-	def_command(commands::tool_rotate_anticlockwise, command_group::tools, icon_index::rotate_anticlockwise,
-		tt.command_rotate_anticlockwise);
-	def_command(commands::tool_rotate_clockwise, command_group::tools, icon_index::rotate_clockwise,
-		tt.command_rotate_clockwise);
-	def_command(commands::tool_rotate_reset, command_group::none, icon_index::undo, tt.command_rotate_reset,
-		tt.tooltip_rotate_reset);
-	def_command(commands::test_run_all, command_group::none, icon_index::play, tt.command_run_tests);
+	def_command(commands::tool_rotate_anticlockwise, command_group::tools, icon_index::rotate_anticlockwise, tt.command_rotate_anticlockwise);
+	def_command(commands::tool_rotate_clockwise, command_group::tools, icon_index::rotate_clockwise, tt.command_rotate_clockwise);
+	def_command(commands::tool_rotate_reset, command_group::none, icon_index::undo, tt.command_rotate_reset, tt.tooltip_rotate_reset);
 	def_command(commands::edit_item_save, command_group::edit_item, icon_index::save, tt.command_save);
-	def_command(commands::edit_item_save_and_prev, command_group::edit_item, icon_index::back_image,
-		tt.command_save_and_back, tt.command_save_and_back_tooltip);
-	def_command(commands::edit_item_save_and_next, command_group::edit_item, icon_index::next_image,
-		tt.command_save_and_next, tt.command_save_and_next_tooltip);
+	def_command(commands::edit_item_save_and_prev, command_group::edit_item, icon_index::back_image, tt.command_save_and_back, tt.command_save_and_back_tooltip);
+	def_command(commands::edit_item_save_and_next, command_group::edit_item, icon_index::next_image, tt.command_save_and_next, tt.command_save_and_next_tooltip);
 	def_command(commands::edit_item_save_as, command_group::edit_item, icon_index::save_copy, tt.command_save_as);
 	def_command(commands::edit_item_options, command_group::edit_item, icon_index::settings, tt.command_save_options);
-	def_command(commands::option_scale_up, command_group::options, icon_index::fit, tt.command_scale_up,
-		tt.tooltip_scale_up);
+	def_command(commands::option_scale_up, command_group::options, icon_index::fit, tt.command_scale_up, tt.tooltip_scale_up);
 	def_command(commands::tool_scan, command_group::tools, icon_index::scan, tt.command_scan);
 	def_command(commands::options_sidebar, command_group::options, icon_index::none, tt.command_customise);
 	def_command(commands::select_all, command_group::selection, icon_index::none, tt.command_select_all);
@@ -3359,8 +3330,7 @@ void app_frame::update_command_text()
 	def_command(commands::tool_tag, command_group::tools, icon_index::tag, tt.prop_name_tag);
 	def_command(commands::menu_tag_with, command_group::none, icon_index::tag, tt.prop_name_tag, tt.tooltip_tag_with);
 	def_command(commands::menu_language, command_group::none, icon_index::language, tt.command_language, tt.tooltip_language);
-	def_command(commands::english, command_group::none, icon_index::none, u8"English"sv, u8"English language"sv);
-	def_command(commands::test_new_version, command_group::none, icon_index::lightbulb, tt.command_test_new_version);
+	def_command(commands::english, command_group::none, icon_index::none, u8"English"sv, u8"English language"sv);	
 	def_command(commands::option_toggle_details, command_group::options, icon_index::details, tt.command_toggle_details, tt.tooltip_toggle_details_all);
 	def_command(commands::option_toggle_item_size, command_group::options, icon_index::zoom_in, tt.command_toggle_item_size);
 	def_command(commands::menu_tools_toolbar, command_group::none, icon_index::tools, tt.command_tools, tt.tooltip_tools);
@@ -3376,8 +3346,7 @@ void app_frame::update_command_text()
 	def_command(commands::filter_photos, command_group::selection, icon_index::photo, tt.command_filter_photos);
 	def_command(commands::filter_videos, command_group::selection, icon_index::video, tt.command_filter_videos);
 	def_command(commands::filter_audio, command_group::selection, icon_index::audio, tt.command_filter_audio);
-	def_command(commands::menu_group, command_group::none, icon_index::group, tt.command_menu_group_sort);
-	def_command(commands::tool_test, command_group::none, icon_index::check, tt.command_view_tests, tt.tooltip_view_tests);
+	def_command(commands::menu_group, command_group::none, icon_index::group, tt.command_menu_group_sort);	
 	def_command(commands::playback_volume100, command_group::media_playback, icon_index::volume3, tt.command_volume100);
 	def_command(commands::playback_volume75, command_group::media_playback, icon_index::volume2, tt.command_volume75);
 	def_command(commands::playback_volume50, command_group::media_playback, icon_index::volume1, tt.command_volume50);
@@ -3385,10 +3354,8 @@ void app_frame::update_command_text()
 	def_command(commands::playback_volume0, command_group::media_playback, icon_index::mute, tt.command_volume0);
 	def_command(commands::playback_volume_toggle, command_group::media_playback, icon_index::volume3, tt.command_toggle_volume);
 	def_command(commands::view_zoom, command_group::media_playback, icon_index::zoom_in, tt.command_zoom);
-
 	def_command(commands::favorite, command_group::navigation, icon_index::star, tt.command_favorite);
 	def_command(commands::advanced_search, command_group::navigation, icon_index::search, tt.command_advanced_search);
-
 	def_command(commands::group_album, command_group::group_by, icon_index::none, tt.command_group_album);
 	def_command(commands::group_presence, command_group::group_by, icon_index::none, tt.command_group_presence);
 	def_command(commands::group_camera, command_group::group_by, icon_index::none, tt.command_group_camera);
@@ -3414,6 +3381,14 @@ void app_frame::update_command_text()
 	def_command(commands::rename_run, command_group::none, icon_index::play, tt.command_rename_files);
 	def_command(commands::import_analyze, command_group::none, icon_index::refresh, tt.analyze);
 	def_command(commands::import_run, command_group::none, icon_index::play, tt.command_import);
+
+	def_command(commands::test_gen_po, command_group::none, icon_index::language, u8"Generate language files"sv);
+	def_command(commands::test_reset_graphics, command_group::none, icon_index::screen, u8"Reset graphics"sv);
+	def_command(commands::test_send_crash_report, command_group::none, icon_index::download, u8"Send crash report"sv);
+	def_command(commands::test_crash, command_group::none, icon_index::error, u8"Crash!"sv);
+	def_command(commands::tool_test, command_group::none, icon_index::check, u8"Tests"sv, u8"Show test view"sv);
+	def_command(commands::test_new_version, command_group::none, icon_index::lightbulb, u8"Test new version"sv);
+	def_command(commands::test_run_all, command_group::none, icon_index::play, u8"Run tests"sv);
 
 	_commands[commands::browse_previous_item]->keyboard_accelerator_text = tt.keyboard_left;
 	_commands[commands::browse_next_item]->keyboard_accelerator_text = tt.keyboard_right;
@@ -3871,8 +3846,10 @@ bool app_frame::init(const std::u8string_view command_line_text)
 	if (setting.language != u8"en"sv)
 	{
 		const auto lang_folder = known_path(platform::known_folder::running_app_folder).combine(u8"languages"sv);
-		const auto lang_path = lang_folder.combine_file(setting.language + u8".po"s);
-		tt.load_lang(lang_path);
+		const auto lang_path = lang_folder.combine_file_ext(setting.language, u8".po"sv);
+
+		auto po_entries = load_po(lang_path);
+		tt.load_lang(lang_path.name(), po_entries);
 	}
 
 	update_font_size();
@@ -4044,8 +4021,8 @@ std::vector<ui::command_ptr> app_frame::menu(const pointi loc)
 			result.emplace_back(find_command(commands::edit_cut));
 			result.emplace_back(find_command(commands::edit_copy));
 			result.emplace_back(find_command(commands::edit_paste));
-			break;		
-		case menu_type::items:		
+			break;
+		case menu_type::items:
 			result.emplace_back(find_command(commands::menu_navigate));
 			result.emplace_back(find_command(commands::menu_open));
 			result.emplace_back(find_command(commands::menu_tools));

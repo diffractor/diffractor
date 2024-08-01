@@ -11,13 +11,45 @@
 
 std::u8string language_name(std::u8string_view code);
 
-using lang_def = df::hash_map<std::u8string, std::u8string>;
+
+
+using text_mapping = df::hash_map<std::u8string_view, std::reference_wrapper<text_t>>;
 
 struct plural_text
 {
-	std::u8string_view one;
-	std::u8string_view plural;
+	plural_text(std::u8string_view o, std::u8string_view p) : one(o), plural(p)
+	{
+	}
+
+	text_t one;
+	text_t plural;
 };
+
+struct po_entry
+{
+	std::u8string id;
+	std::u8string str;
+	std::u8string id_plural;
+	std::u8string str_plural;
+
+	bool is_empty() const
+	{
+		return id.empty() &&
+			str_plural.empty() &&
+			str.empty() &&
+			id_plural.empty();
+	}
+
+	void clear()
+	{
+		id.clear();
+		str_plural.clear();
+		str.clear();
+		id_plural.clear();
+	}
+};
+
+std::vector<po_entry> load_po(const df::file_path lang_file);
 
 std::u8string format_plural_text(const plural_text& fmt, int64_t count, int64_t of_total = 0);
 std::u8string format_plural_text(const plural_text& fmt, std::u8string_view first_name, int64_t count, df::file_size size, int64_t of_total = 0);
@@ -28,13 +60,25 @@ std::u8string_view tt_prep(std::u8string_view);
 
 struct app_text_t
 {
-	using text_t = std::u8string_view;
-	lang_def translations;
+	text_mapping _text_mapping;
+	std::vector<std::reference_wrapper<plural_text>> _all_plurals;
+	std::vector<std::reference_wrapper<text_t>> _all_texts;
 
-	void load_lang(df::file_path lang_file);
+	app_text_t();
+
+	app_text_t(const app_text_t& other1) = delete;
+	app_text_t(app_text_t&& other1) noexcept = delete;
+	app_text_t& operator=(const app_text_t& other1) = delete;
+	app_text_t& operator=(app_text_t&& other1) noexcept = delete;
+
+	void load_lang(std::u8string_view lang_file, const std::vector<po_entry> &entries);
+	std::vector<po_entry> gen_po() const;
+
+	void clear();
+	void calc_text_mapping();
+
 	std::u8string translate_text(const std::u8string& text, std::u8string_view scope = {}) const;
-	std::vector<std::u8string> add_translate_text(const std::vector<str::cached>& text,
-		std::u8string_view scope = {}) const;
+	std::vector<std::u8string> add_translate_text(const std::vector<str::cached>& text, std::u8string_view scope = {}) const;	
 
 	text_t nav_folders_title = u8"Folders"sv;
 	text_t nav_drives_title = u8"Drives"sv;
@@ -85,7 +129,6 @@ struct app_text_t
 	text_t tooltip_nav_bar = u8"Contains common folders, searches and favorites"sv;
 	text_t command_delete = u8"Delete"sv;
 	text_t command_revert = u8"Revert to original"sv;
-	text_t tooltip_revert = u8"Only possible after a non-loss-less photo edit."sv;
 	text_t command_select_invert = u8"Invert selection"sv;
 	text_t command_copy = u8"Copy to folder"sv;
 	text_t command_move = u8"Move to folder"sv;
@@ -185,9 +228,7 @@ struct app_text_t
 	text_t command_label_select = u8"Select"sv;
 	text_t command_label_review = u8"Review"sv;
 	text_t command_label_second = u8"Second"sv;
-	text_t command_label_none = u8"No Label"sv;
-	text_t command_view_tests = u8"Tests"sv;
-	text_t tooltip_view_tests = u8"Run tests"sv;
+	text_t command_label_none = u8"No Label"sv;	
 	text_t command_group_shuffle = u8"Show items in random order"sv;
 	text_t command_toggle_group_by = u8"Toggle item grouping"sv;
 	text_t command_group_file_type = u8"Group by File type"sv;
@@ -208,10 +249,6 @@ struct app_text_t
 	text_t command_sort_size = u8"Sort by Size"sv;
 	text_t command_sort_def = u8"Sort by Default"sv;
 	text_t command_sort_date_modified = u8"Sort by Date modified"sv;
-	text_t command_run_tests = u8"Run tests"sv;
-	text_t command_crash = u8"Test crash report"sv;
-	text_t command_boom = u8"Crash!"sv;
-	text_t command_test_new_version = u8"Test new version"sv;
 	text_t command_highlight_large_items = u8"Highlight large items in yellow"sv;
 	text_t command_open_google_map = u8"Open in google maps"sv;
 	text_t tooltip_flag_for_delete = u8"Items can be flagged for later delete."sv;
@@ -556,8 +593,9 @@ struct app_text_t
 	text_t tags_common_label = u8"Common Tags"sv;
 	text_t tags_remove_label = u8"Removable Tags"sv;
 	text_t button_tag = u8"&Tag"sv;
-	text_t adjust_date_help =
-		u8"Items in this date range will be modified to start at a new date and time. The time gap between items will be preserved.\nFor example, if you have 2 photos taken one hour apart, after the update they will still be one hour apart.\nThis is useful if your camera date was set wrongly and you need to fix photo and video dates."sv;
+	text_t adjust_date_help1 = u8"Items in this date range will be modified to start at a new date and time. The time gap between items will be preserved."sv;
+	text_t adjust_date_help2 = u8"For example, if you have 2 photos taken one hour apart, after the update they will still be one hour apart."sv;
+	text_t adjust_date_help3 = u8"This is useful if your camera date was set wrongly and you need to fix photo and video dates."sv;
 	text_t selected_date_range_label = u8"Selected items are in the date range:"sv;
 	text_t starting_fmt = u8"Starting {}"sv;
 	text_t ending_fmt = u8"Ending {}"sv;
@@ -1233,7 +1271,7 @@ struct app_text_t
 	plural_text gps_overwrite_count_fmt = {
 		u8"{first-name} will have existing GPS position metadata overwritten."sv,
 		u8"{first-name} and {other} other items will have existing GPS position metadata overwritten."
-	};
+	};	
 };
 
 extern app_text_t tt;

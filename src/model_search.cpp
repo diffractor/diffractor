@@ -232,7 +232,7 @@ std::u8string df::format_term(const search_term& term)
 	if (term.type == search_term_type::has_type)
 	{
 		const auto scope = term.modifiers.positive ? tt.query_with : tt.query_without;
-		result << scope;
+		result << scope.sv();
 		result << ':';
 		result << ' ';
 		result << term.key->name.sv();
@@ -277,12 +277,12 @@ std::u8string df::format_term(const search_term& term)
 		{
 			if (term.date_val.target == date_parts_prop::created)
 			{
-				result << tt.query_created;
+				result << tt.query_created.sv();
 				result << u8":"sv;
 			}
 			else if (term.date_val.target == date_parts_prop::modified)
 			{
-				result << tt.query_modified;
+				result << tt.query_modified.sv();
 				result << u8":"sv;
 			}
 
@@ -290,7 +290,7 @@ std::u8string df::format_term(const search_term& term)
 			{
 				if (term.date_val.target == date_parts_prop::any)
 				{
-					result << tt.query_age;
+					result << tt.query_age.sv();
 					result << u8":"sv;
 				}
 

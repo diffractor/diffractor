@@ -682,6 +682,11 @@ namespace str
 			u.int32_value = 0;
 		}
 
+		format_arg(const text_t value) : type(TEXT), text_value(value.sv())
+		{
+			u.int32_value = 0;
+		}
+
 		format_arg(const char8_t* value) : type(TEXT), text_value(value)
 		{
 			u.int32_value = 0;

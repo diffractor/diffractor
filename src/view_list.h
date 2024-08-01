@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include "model.h"
 #include "ui_view.h"
 #include "ui_controllers.h"
 #include "ui_elements.h"
@@ -16,8 +17,6 @@
 class list_view;
 class view_controls_host;
 using view_controls_host_ptr = std::shared_ptr<view_controls_host>;
-
-
 
 class list_view : public view_base
 {
@@ -47,6 +46,8 @@ protected:
 	friend class scroll_controller;
 	friend class clickable_controller;
 	friend class header_controller;
+
+public:
 
 	struct row_element final : std::enable_shared_from_this<row_element>, view_element
 	{
@@ -105,7 +106,7 @@ protected:
 	using row_element_ptr = std::shared_ptr<row_element>;
 	std::vector<row_element_ptr> _rows;
 
-public:
+
 	list_view(view_state& state, view_host_ptr host) : _state(state), _host(std::move(host))
 	{
 	}

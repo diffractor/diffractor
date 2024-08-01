@@ -34,21 +34,16 @@ std::u8string language_name(const std::u8string_view code)
 	return found == code_to_name.end() ? std::u8string(code) : std::u8string(found->second);
 }
 
-std::u8string un_quote_and_un_escape(const std::u8string& text)
+static std::u8string un_escape(const std::u8string_view text)
 {
-	auto result = std::u8string(text);
-	const auto n = result.find_first_not_of(u8" \t\r\n"sv);
-	const std::u8string quoted(result, n);
+	const auto start = text.find(u8'"');
+	const auto end = text.rfind(u8'"');
 
-	if (quoted.size() > 1 && quoted[0] == '"' && quoted[quoted.size() - 1] == '"')
-	{
-		result = std::u8string(quoted.begin() + 1, quoted.end() - 1);
-	}
-	else
-	{
-		result = quoted;
-	}
+	if (start == std::u8string_view::npos) return {};
+	if (end == std::u8string_view::npos) return {};
+	if (start >= end) return {};
 
+	auto result = std::u8string(text.substr(start + 1, end - start - 1));
 	result = str::replace(result, u8"\\n"sv, u8"\n"sv);
 	result = str::replace(result, u8"\\\""sv, u8"\""sv);
 	result = str::replace(result, u8"\\\\"sv, u8"\\"sv);
@@ -67,50 +62,22 @@ std::u8string_view tt_prep(std::u8string_view result)
 	return result;
 }
 
-static void store_po_entry(lang_def& result, std::u8string& msgid, std::u8string& msgid_plural, std::u8string& msgstr,
-	std::u8string& msgstr1)
+std::vector<po_entry> load_po(const df::file_path lang_file)
 {
-	if (!msgid.empty() && !msgstr.empty())
-	{
-		result[msgid] = msgstr;
-		msgid.clear();
-		msgstr.clear();
-	}
+	std::vector<po_entry> result;
+	u8istream fs(platform::to_file_system_path(lang_file));
 
-	if (!msgid_plural.empty() && !msgstr1.empty())
+	enum class parse_po_state
 	{
-		result[msgid_plural] = msgstr1;
-		msgstr1.clear();
-		msgid_plural.clear();
-	}
-}
-
-static lang_def load_po(const df::file_path lang_file)
-{
-	lang_def result;
-	std::basic_ifstream<char8_t, std::char_traits<char8_t>> fs(platform::to_file_system_path(lang_file));
-	//fs.imbue(std::locale("en_US.UTF-8"sv));
-
-	struct po_mapping
-	{
-		std::u8string_view key;
-		std::u8string& text;
+		none,
+		id,
+		str1,
+		str,
+		id_plural,
 	};
 
-	std::u8string msgid;
-	std::u8string msgstr1;
-	std::u8string msgstr;
-	std::u8string msgid_plural;
-	int mapping_i = -1;
-
-	po_mapping mapping[]
-	{
-		{u8"msgstr[1]"sv, msgstr1},
-		{u8"msgstr[0]"sv, msgstr},
-		{u8"msgid_plural"sv, msgid_plural},
-		{u8"msgstr"sv, msgstr},
-		{u8"msgid"sv, msgid},
-	};
+	parse_po_state parse_state = parse_po_state::none;
+	po_entry entry;
 
 	while (fs)
 	{
@@ -123,34 +90,28 @@ static lang_def load_po(const df::file_path lang_file)
 			line.erase(pos + 1, std::u8string::npos);
 		}
 
-		if (line.empty() || line[0] == '#' || line.empty())
-		{
-			store_po_entry(result, msgid, msgid_plural, msgstr, msgstr1);
-		}
-		else
+		if (!line.empty() && line[0] != '#')
 		{
 			try
 			{
-				bool key_line = false;
+				if (str::starts(line, u8"msgstr[1]"sv)) parse_state = parse_po_state::str1;
+				else if (str::starts(line, u8"msgstr[0]"sv)) parse_state = parse_po_state::str;
+				else if (str::starts(line, u8"msgid_plural"sv)) parse_state = parse_po_state::id_plural;
+				else if (str::starts(line, u8"msgstr"sv)) parse_state = parse_po_state::str;
+				else if (str::starts(line, u8"msgid"sv)) parse_state = parse_po_state::id;
 
-				for (int i = 0; i < 5; ++i)
+				if (parse_state == parse_po_state::id && !entry.is_empty())
 				{
-					const auto& m = mapping[i];
-
-					if (str::starts(line, m.key))
-					{
-						line.erase(0, m.key.size() + 1);
-						mapping[i].text = un_quote_and_un_escape(line);
-						mapping_i = i;
-						key_line = true;
-						break;
-					}
+					result.emplace_back(std::move(entry));
+					entry.clear();
 				}
 
-				if (!key_line && mapping_i != -1)
-				{
-					mapping[mapping_i].text += un_quote_and_un_escape(line);
-				}
+				auto value = un_escape(line);
+
+				if (parse_state == parse_po_state::str1) entry.str_plural += value;
+				else if (parse_state == parse_po_state::str) entry.str += value;
+				else if (parse_state == parse_po_state::id_plural) entry.id_plural += value;
+				else if (parse_state == parse_po_state::id) entry.id += value;
 			}
 			catch (std::invalid_argument&)
 			{
@@ -158,18 +119,113 @@ static lang_def load_po(const df::file_path lang_file)
 		}
 	}
 
-	store_po_entry(result, msgid, msgid_plural, msgstr, msgstr1);
+	if (!entry.is_empty())
+	{
+		result.emplace_back(std::move(entry));
+	}
 
 	return result;
 }
 
-void app_text_t::load_lang(const df::file_path lang_file)
+
+app_text_t::app_text_t()
 {
-	const std::vector<std::reference_wrapper<text_t>> texts
+	calc_text_mapping();
+}
+
+void app_text_t::load_lang(std::u8string_view lang_file, const std::vector<po_entry>& entries)
+{
+	// default
+	clear();
+
+	for (auto& entry : entries)
+	{
+		if (!entry.id.empty() && !entry.str.empty())
+		{
+			auto found = _text_mapping.find(entry.id);
+
+			if (found != _text_mapping.end())
+			{
+				found->second.get().trans = entry.str;
+			}
+		}
+
+		if (!entry.id_plural.empty() && !entry.str_plural.empty())
+		{
+			auto found = _text_mapping.find(entry.id_plural);
+
+			if (found != _text_mapping.end())
+			{
+				found->second.get().trans = entry.str_plural;
+			}
+		}
+	}
+
+	// log missing translations
+	for (const auto &t : _all_texts)
+	{
+		if (t.get().trans.empty())
+		{
+			df::log(__FUNCTION__, str::format(u8"{} missing: msgid \"{}\""sv, lang_file, t.get().text));
+		}
+	}
+
+	for (const auto& p : _all_plurals)
+	{
+		if (p.get().one.trans.empty())
+		{
+			df::log(__FUNCTION__, str::format(u8"{} missing: msgid \"{}\""sv, lang_file, p.get().one.text));
+		}
+
+		if (p.get().plural.trans.empty())
+		{
+			df::log(__FUNCTION__, str::format(u8"{} missing: msgid_plural \"{}\""sv, lang_file, p.get().plural.text));
+		}
+	}
+}
+
+std::vector<po_entry> app_text_t::gen_po() const
+{
+	std::vector<po_entry> result;
+
+	for (const auto &t : _all_texts)
+	{
+		result.emplace_back(
+			std::u8string{ t.get().text }, 
+			std::u8string{ t.get().trans }, 
+			std::u8string {}, 
+			std::u8string {});
+	}
+
+	for (const auto& p : _all_plurals)
+	{
+		result.emplace_back(
+			std::u8string{ p.get().one.text },
+			std::u8string{ p.get().one.trans },
+			std::u8string{ p.get().plural.text },
+			std::u8string{ p.get().plural.trans });
+	}
+
+	return result;
+}
+
+void app_text_t::clear()
+{
+	for (auto&& m : _text_mapping)
+	{
+		m.second.get().clear();
+	}
+}
+
+void app_text_t::calc_text_mapping()
+{
+	_all_texts = std::vector<std::reference_wrapper<text_t>>
 	{
 		about_info,
 		add_folder,
-		adjust_date_help,
+		adjust_date_help1,
+		adjust_date_help2,
+		adjust_date_help3,
 		after,
 		album_artist,
 		analyzing,
@@ -263,8 +319,6 @@ void app_text_t::load_lang(const df::file_path lang_file)
 		command_convert_or_resize,
 		command_copy,
 		command_copyright,
-		command_crash,
-		command_boom,
 		command_customise,
 		command_delete,
 		command_desktop_background,
@@ -338,7 +392,6 @@ void app_text_t::load_lang(const df::file_path lang_file)
 		command_rotate_anticlockwise,
 		command_rotate_clockwise,
 		command_rotate_reset,
-		command_run_tests,
 		command_save,
 		command_save_and_back,
 		command_save_and_back_tooltip,
@@ -362,7 +415,6 @@ void app_text_t::load_lang(const df::file_path lang_file)
 		command_sort_name,
 		command_sort_size,
 		command_sync,
-		command_test_new_version,
 		command_toggle_details,
 		command_toggle_group_by,
 		command_toggle_item_size,
@@ -374,7 +426,6 @@ void app_text_t::load_lang(const df::file_path lang_file)
 		command_view_rate_label,
 		command_view_select,
 		command_view_sort,
-		command_view_tests,
 		command_toggle_volume,
 		command_zoom,
 		compare,
@@ -1191,7 +1242,6 @@ void app_text_t::load_lang(const df::file_path lang_file)
 		tooltip_open,
 		tooltip_pin,
 		tooltip_play,
-		tooltip_revert,
 		tooltip_rotate_reset,
 		tooltip_scale_up,
 		tooltip_tag_with,
@@ -1199,7 +1249,6 @@ void app_text_t::load_lang(const df::file_path lang_file)
 		tooltip_toggle_details_all,
 		tooltip_tools,
 		tooltip_view_menu,
-		tooltip_view_tests,
 		total_title,
 		truncated_at_one_mb,
 		type_to_search,
@@ -1268,7 +1317,7 @@ void app_text_t::load_lang(const df::file_path lang_file)
 		view_empty_message,
 	};
 
-	const std::vector<std::reference_wrapper<plural_text>> plurals
+	_all_plurals = std::vector<std::reference_wrapper<plural_text>>
 	{
 		rotate_info_fmt,
 		title_folder_count_fmt,
@@ -1299,90 +1348,36 @@ void app_text_t::load_lang(const df::file_path lang_file)
 		gps_overwrite_count_fmt,
 	};
 
-	// default
-	*this = app_text_t();
+	text_mapping mapping;
 
-	if (!lang_file.is_empty())
+	for (auto&& e : _all_texts)
 	{
-		translations = load_po(lang_file);
-
-		df::hash_set<std::u8string> needed_texts;
-
-		for (auto&& e : texts)
-		{
-			std::u8string text(e);
-			const auto found = translations.find(text);
-
-			if (found != translations.end())
-			{
-				const auto found_value = found->second;
-				e.get() = str::cache(found_value);
-			}
-			else
-			{
-				df::log(__FUNCTION__, str::format(u8"{} missing: msgid \"{}\""sv, lang_file.name(), e.get()));
-			}
-
-			needed_texts.insert(text);
-		}
-
-		for (const auto& p : plurals)
-		{
-			std::u8string one(p.get().one);
-			std::u8string plural(p.get().plural);
-			needed_texts.insert(one);
-			needed_texts.insert(plural);
-
-			const auto found_one = translations.find(one);
-
-			if (found_one != translations.end())
-			{
-				const auto found_val = found_one->second;
-				p.get().one = str::cache(found_val);
-			}
-			else
-			{
-				df::log(__FUNCTION__, str::format(u8"{} missing: msgid \"{}\""sv, lang_file.name(), p.get().one));
-			}
-
-			const auto found_plural = translations.find(plural);
-
-			if (found_plural != translations.end())
-			{
-				auto found_val = found_plural->second;
-				p.get().plural = str::cache(found_val);
-			}
-			else
-			{
-				df::log(__FUNCTION__, str::format(u8"{} missing: msgid \"{}\""sv, lang_file.name(), p.get().plural));
-			}
-		}
-
-		// Log any extra strings in the po file
-		for (const auto& t : translations)
-		{
-			if (!needed_texts.contains(t.first))
-			{
-				df::log(__FUNCTION__, str::format(u8"{} extra: msgid \"{}\""sv, lang_file.name(), t.first));
-			}
-		}
+		mapping.insert(std::make_pair<std::u8string_view, std::reference_wrapper<text_t>>(std::u8string_view{ e.get().text }, e.get()));
 	}
+
+	for (auto&& p : _all_plurals)
+	{
+		mapping.insert(std::make_pair<std::u8string_view, std::reference_wrapper<text_t>>(std::u8string_view{ p.get().one.text }, p.get().one));
+		mapping.insert(std::make_pair<std::u8string_view, std::reference_wrapper<text_t>>(std::u8string_view{ p.get().plural.text }, p.get().plural));
+	}
+
+	_text_mapping = std::move(mapping);
 }
 
 std::u8string app_text_t::translate_text(const std::u8string& text, const std::u8string_view scope) const
 {
 	if (!scope.empty())
 	{
-		const auto found = translations.find(str::format(u8"{}//{}"sv, text, scope));
+		const auto found = _text_mapping.find(str::format(u8"{}//{}"sv, text, scope));
 
-		if (found != translations.end())
+		if (found != _text_mapping.end())
 		{
-			return std::u8string(tt_prep(found->second));
+			return std::u8string(tt_prep(found->second.get().sv()));
 		}
 	}
 
-	const auto found = translations.find(text);
-	return found != translations.end() ? std::u8string(tt_prep(found->second)) : std::u8string(tt_prep(text));
+	const auto found = _text_mapping.find(text);
+	return found != _text_mapping.end() ? std::u8string(tt_prep(found->second.get().sv())) : std::u8string(tt_prep(text));
 }
 
 std::vector<std::u8string> app_text_t::add_translate_text(const std::vector<str::cached>& text,

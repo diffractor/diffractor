@@ -905,7 +905,7 @@ namespace ui
 
 			const auto c = std::make_shared<command>();
 			c->icon = icon_index::folder;
-			c->text = _multiline ? tt.add_folder : std::u8string_view{};
+			c->text = _multiline ? tt.add_folder.sv() : std::u8string_view{};
 			if (_multiline) c->toolbar_text = c->text;
 			c->invoke = [this]() { browse_for_folder(); };
 

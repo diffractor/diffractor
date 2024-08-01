@@ -687,7 +687,7 @@ public:
 	}
 
 	search_item_ptr create_item(view_state& s, const search_items_by_key_t& existing, const std::u8string& key,
-		icon_index icon, app_text_t::text_t name, app_text_t::text_t tooltip,
+		icon_index icon, text_t name, text_t tooltip,
 		const ui::color32 clr = 0) const
 	{
 		auto i = create_or_find_item(s, existing, key);

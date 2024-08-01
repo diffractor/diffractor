@@ -305,7 +305,7 @@ static void edit_paste_invoke(view_state& s, const ui::control_frame_ptr& parent
 	if (result.failed())
 	{
 		dlg->show_message(icon_index::error, tt.command_edit_paste,
-			str::is_empty(result.error_message) ? tt.error_unknown : result.error_message);
+			str::is_empty(result.error_message) ? tt.error_unknown.sv() : result.error_message);
 	}
 	else
 	{
@@ -1745,7 +1745,9 @@ static void adjust_date_invoke(view_state& s, const ui::control_frame_ptr& paren
 															format_plural_text(tt.adjust_date_info_fmt, items),
 															items.thumbs())),
 			std::make_shared<divider_element>(),
-			set_margin(std::make_shared<text_element>(tt.adjust_date_help)),
+			set_margin(std::make_shared<text_element>(tt.adjust_date_help1)),
+			set_margin(std::make_shared<text_element>(tt.adjust_date_help2)),
+			set_margin(std::make_shared<text_element>(tt.adjust_date_help3)),
 			std::make_shared<divider_element>(),
 			set_margin(std::make_shared<text_element>(tt.selected_date_range_label)),
 			set_margin(std::make_shared<bullet_element>(icon_index::bullet, str::format(tt.starting_fmt, start_date))),
@@ -3597,8 +3599,10 @@ void app_frame::initialise_commands()
 	_commands[commands::rename_run]->toolbar_text = _commands[commands::rename_run]->text;
 	_commands[commands::import_analyze]->toolbar_text = _commands[commands::import_analyze]->text;
 	_commands[commands::import_run]->toolbar_text = _commands[commands::import_run]->text;
+	_commands[commands::test_send_crash_report]->toolbar_text = _commands[commands::test_send_crash_report]->text;
+	_commands[commands::test_gen_po]->toolbar_text = _commands[commands::test_gen_po]->text;
+	_commands[commands::test_reset_graphics]->toolbar_text = _commands[commands::test_reset_graphics]->text;
 	_commands[commands::test_crash]->toolbar_text = _commands[commands::test_crash]->text;
-	_commands[commands::test_boom]->toolbar_text = _commands[commands::test_boom]->text;
 	_commands[commands::test_new_version]->toolbar_text = _commands[commands::test_new_version]->text;
 	_commands[commands::test_run_all]->toolbar_text = _commands[commands::test_run_all]->text;
 	_commands[commands::edit_item_save]->toolbar_text = _commands[commands::edit_item_save]->text;
@@ -3684,17 +3688,19 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::tool_convert, [this] { convert_resize_invoke(_state, _app_frame, _view_frame); });
 	add_command_invoke(commands::tool_copy_to_folder,
 		[this] { copy_move_invoke(_state, _app_frame, _view_frame, false); });
-	add_command_invoke(commands::test_crash, [this]
+	add_command_invoke(commands::test_send_crash_report, [this]
 		{
 			crash(known_path(platform::known_folder::test_files_folder).combine_file(u8"Test.jpg"sv));
 			_app_frame->show(true);
 		});
-	add_command_invoke(commands::test_boom, [this]
+	add_command_invoke(commands::test_crash, [this]
 		{
 			int* i = nullptr;
 			*i = 19; // Crash**			
 		});
-	add_command_invoke(commands::test_run_all, [this] { _view_test->run_tests(); });
+	add_command_invoke(commands::test_gen_po, [this] { _view_test->gen_po(); });
+	add_command_invoke(commands::test_reset_graphics, [this] { _view_test->reset_graphics(); });
+	add_command_invoke(commands::test_run_all, [this] { _view_test->run_all(); });
 	add_command_invoke(commands::tool_delete, [this] { delete_items(_state.selected_items()); });
 	add_command_invoke(commands::tool_desktop_background, [this] { desktop_background_invoke(_state, _app_frame); });
 	add_command_invoke(commands::tool_edit, [this] { edit_invoke(_state); });
@@ -3901,7 +3907,7 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::english, [this]
 		{
 			setting.language = u8"en"sv;
-			tt.load_lang({});
+			tt.clear();
 			invalidate_view(view_invalid::options);
 		});
 
@@ -4071,7 +4077,9 @@ void app_frame::initialise_commands()
 					command->invoke = [this, lang_path, lang_code]
 						{
 							setting.language = lang_code;
-							tt.load_lang(lang_path);
+
+							auto po_entries = load_po(lang_path);
+							tt.load_lang(lang_path.name(), po_entries);
 							invalidate_view(view_invalid::options);
 						};
 

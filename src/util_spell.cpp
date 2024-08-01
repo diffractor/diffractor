@@ -136,8 +136,8 @@ void spell_check::lazy_load()
 	if (!_hunspell)
 	{
 		const auto language = platform::user_language();
-		auto aff_path = _dictionaries_folder.combine_file(language + u8".aff"s);
-		auto dic_path = _dictionaries_folder.combine_file(language + u8".dic"s);
+		auto aff_path = _dictionaries_folder.combine_file_ext(language, u8".aff"sv);
+		auto dic_path = _dictionaries_folder.combine_file_ext(language, u8".dic"sv);
 		const auto custom_path = _dictionaries_folder.combine_file(u8"custom.dic"sv);
 
 		if (!aff_path.exists())

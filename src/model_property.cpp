@@ -63,7 +63,7 @@ df::xy8 df::xy8::parse(const std::u8string_view r)
 	return { 0, 0 };
 }
 
-prop::key::key(const uint16_t id, std::u8string_view sn, const std::u8string_view n, std::u8string_view& tx,
+prop::key::key(const uint16_t id, std::u8string_view sn, const std::u8string_view n, text_t& tx,
 	const icon_index i, const prop::data_type t, const uint32_t f, const uint32_t bit) : id(id), icon(i),
 	name(str::cache(n)), text_key(tx), data_type(t), flags(f), bloom_bit(bit)
 {
@@ -73,10 +73,10 @@ prop::key::key(const uint16_t id, std::u8string_view sn, const std::u8string_vie
 
 std::u8string prop::key::text() const
 {
-	return tt.translate_text(std::u8string(text_key), u8"propertry"sv);
+	return tt.translate_text(std::u8string(text_key.sv()), u8"propertry"sv);
 }
 
-static std::u8string_view prop_name_crc32c = u8"crc32c"sv;
+static text_t prop_name_crc32c = u8"crc32c"sv;
 
 prop::key prop::album('al', u8""sv, u8"album"sv, tt.prop_name_album, icon_index::star, data_type::string,
 	style::groupable | style::sortable | style::auto_complete, bloom_bits::album);
@@ -1018,7 +1018,7 @@ std::u8string prop::replace_tokens(const std::u8string_view name_template, const
 				}
 				else
 				{
-					result << tt.unknown;
+					result << tt.unknown.sv();
 				}
 			}
 			else if (token == u8"year"sv || token == u8"created.year"sv)
@@ -1035,7 +1035,7 @@ std::u8string prop::replace_tokens(const std::u8string_view name_template, const
 				}
 				else
 				{
-					result << tt.unknown;
+					result << tt.unknown.sv();
 				}
 			}
 			else if (token == u8"month"sv || token == u8"created.month"sv)
@@ -1048,7 +1048,29 @@ std::u8string prop::replace_tokens(const std::u8string_view name_template, const
 				}
 				else
 				{
-					result << tt.unknown;
+					result << tt.unknown.sv();
+				}
+			}
+			else if (token == u8"month.text"sv)
+			{
+				if (created.is_valid())
+				{
+					result << str::month(created.month(), true);
+				}
+				else
+				{
+					result << tt.unknown.sv();
+				}
+			}
+			else if (token == u8"month.short"sv)
+			{
+				if (created.is_valid())
+				{
+					result << str::short_month(created.month(), true);
+				}
+				else
+				{
+					result << tt.unknown.sv();
 				}
 			}
 			else if (token == u8"day"sv || token == u8"created.day"sv)
@@ -1061,7 +1083,7 @@ std::u8string prop::replace_tokens(const std::u8string_view name_template, const
 				}
 				else
 				{
-					result << tt.unknown;
+					result << tt.unknown.sv();
 				}
 			}
 			else if (md)
@@ -1078,7 +1100,7 @@ std::u8string prop::replace_tokens(const std::u8string_view name_template, const
 			}
 			else
 			{
-				result << tt.unknown;
+				result << tt.unknown.sv();
 			}
 		};
 

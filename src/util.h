@@ -57,6 +57,33 @@ public:
 	}
 };
 
+struct text_t
+{
+	text_t() = default;
+
+	text_t(std::u8string_view t) : text(t)
+	{
+	}
+
+	operator std::u8string_view() const
+	{
+		return sv();
+	}
+
+	std::u8string_view sv() const
+	{
+		return trans.empty() ? text : trans;
+	}
+
+	void clear()
+	{
+		trans.clear();
+	}
+
+	std::u8string_view text;
+	std::u8string trans;
+};
+
 namespace df
 {
 	constexpr uint32_t sixty_four_k = 1024 * 64;
