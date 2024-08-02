@@ -68,7 +68,7 @@ msgid "Burn"
 msgstr "Brennen"
 
 msgid "Analyze"
-msgstr ""
+msgstr "Analysieren"
 
 msgid "&Analyze"
 msgstr "&Analysieren"
@@ -140,10 +140,10 @@ msgid "Changes"
 msgstr "Änderungen"
 
 msgid "Click for collection options"
-msgstr "Klicken Sie für Kollektionsoptionen"
+msgstr "Klicken Sie für Kollektion-Optionen"
 
 msgid "Click map to select a location."
-msgstr "Klicken Sie auf die Karte, um einen Standort auszuwählen."
+msgstr "Klicken Sie auf die Map, um einen Standort auszuwählen."
 
 msgid "Click to search for similar items in the collection."
 msgstr "Klicken Sie hier, um nach ähnlichen Items in der Kollektion zu suchen."
@@ -170,6 +170,8 @@ msgid ""
 "Click to open created items.\n"
 "Control-click to open modified items."
 msgstr ""
+"Klicken Sie hier, um erstellte Items zu öffnen.\n"
+"Control-Click, um modifizierte Items zu öffnen.      "
 
 msgid "{} items from {} in the collection."
 msgstr "{} Items aus {} in der Kollektion."
@@ -181,13 +183,13 @@ msgid "Close"
 msgstr "Schließen"
 
 msgid "Collection options"
-msgstr "Kollektionsoptionen"
+msgstr "Kollektion-Optionen"
 
 msgid "Prefix the folder name with minus '-' to exclude it from the collection. You exclude folders by the full path -c:\\collection\\secret, with a folder name -secret, or with a wildcard -secret*."
 msgstr ""
 
 msgid "More Collection folders"
-msgstr ""
+msgstr "Mehr Kollektion-Ordner"
 
 msgid "Folders can be drives, folders, network shares or device labels. Labels are useful for removable or network devices where mapped drive letters can change."
 msgstr "Ordner können Laufwerke, Ordner, Netzwerkfreigaben oder Geräte-Labels sein. Labels sind nützlich für Wechseldatenträger oder Netzwerkgeräte, bei denen sich zugeordnete Laufwerksbuchstaben ändern können."
@@ -208,22 +210,22 @@ msgid "Local GoogleDrive Folder"
 msgstr "Lokaler GoogleDrive-Ordner"
 
 msgid "You can choose what is indexed in collection options (press Ctrl-F6)."
-msgstr "Sie können in den Kollektionsoptionen wählen, was indiziert werden soll (Strg-F6 drücken)."
+msgstr "Sie können in den Kollektion-Optionen wählen, was indiziert werden soll (Strg-F6 drücken)."
 
 msgid "Define the folders that make your collection."
 msgstr "Definieren Sie die Ordner, die Ihre Kollektion bilden."
 
 msgid "Collection folders"
-msgstr ""
+msgstr "Kollektion-Ordner"
 
 msgid "More folders. Separate each folder with a new line."
 msgstr "Mehr Ordner. Separieren Sie jeden Ordner durch eine neue Zeile."
 
 msgid "More information about collection management."
-msgstr "Weitere Informationen zum Kollektionsmanagement."
+msgstr "Weitere Informationen zum Kollektion-Management."
 
 msgid "More information about metadata templates."
-msgstr ""
+msgstr "Weitere Informationen zu Metadaten-Templates."
 
 msgid "Music"
 msgstr "Music"
@@ -991,13 +993,13 @@ msgid "Favorite title"
 msgstr "Favorisierter Titel"
 
 msgid "Favorites are listed in the sidebar for quick access."
-msgstr ""
+msgstr "Favoriten werden in der Seitenleiste für einen Schnellzugriff gelistet."
 
 msgid "Shown item are from the collection."
-msgstr ""
+msgstr "Gezeigte Items sind aus der Kollektion."
 
 msgid "Shown item are NOT from the collection."
-msgstr ""
+msgstr "Gezeigte Items sind NICHT aus der Kollektion."
 
 msgid "The collection is a group of folders that you specify to be indexed. Indexing allows fast searching and duplicate detection. Diffractor will also highlight when items are not in the collection."
 msgstr ""
@@ -2218,7 +2220,7 @@ msgid "Nothing found."
 msgstr "Nichts gefunden."
 
 msgid "Diffractor only searches in folders that are indexed. Use collection options to add more folders. (ctrl-F6)"
-msgstr "Diffractor sucht nur in Ordnern, die indiziert sind. Verwenden Sie die Kollektionsoptionen, um mehr Ordner hinzuzufügen. (Strg-F6)"
+msgstr "Diffractor sucht nur in Ordnern, die indiziert sind. Verwenden Sie die Kollektion-Optionen, um mehr Ordner hinzuzufügen. (Strg-F6)"
 
 msgid "of"
 msgstr "von"
@@ -2674,25 +2676,25 @@ msgid "New name:"
 msgstr "Neuer Name:"
 
 msgid "When specifying a template:"
-msgstr ""
+msgstr "Bei Angabe eines Template:"
 
 msgid "Use '#' to specify position of the numeric sequence"
-msgstr ""
+msgstr "Verwenden Sie '#', um die Position der numerische Folge zu spezifizieren"
 
 msgid "Use metadata templates '{property-name}' to include file properties in the name."
-msgstr ""
+msgstr "Verwenden Sie Metadaten-Templates '{property-name}', um Dateieigenschaften in den Name einzubeziehen."
 
 msgid "For example:"
-msgstr ""
+msgstr "Zum Beispiel:"
 
 msgid "photo-###"
-msgstr ""
+msgstr "photo-###"
 
 msgid "{year}-{month}-###"
-msgstr ""
+msgstr "{year}-{month}-###"
 
 msgid "travel-{country}-###"
-msgstr ""
+msgstr "travel-{country}-###"
 
 msgid "Rename multiple files based on an incrementing sequence or file metadata template."
 msgstr ""
@@ -2778,7 +2780,7 @@ msgid "None of these terms"
 msgstr "Keiner dieser Terms"
 
 msgid "Find files not in collection"
-msgstr "Nicht in Kollektion befindliche Dateien finden  "
+msgstr "Nicht in Kollektion befindliche Dateien finden"
 
 msgid "Search criteria or folder"
 msgstr "Suchkriterien oder Ordner"
@@ -2874,16 +2876,16 @@ msgid "Synchronize whole collection"
 msgstr "Ganze Kollektion synchronisieren"
 
 msgid "copy local"
-msgstr ""
+msgstr "Lokal kopieren"
 
 msgid "copy remote"
-msgstr ""
+msgstr "Remote kopieren"
 
 msgid "delete local"
-msgstr ""
+msgstr "Lokal löschen"
 
 msgid "delete remote"
-msgstr ""
+msgstr "Remote löschen"
 
 msgid "Synchronize your collection with a remote location."
 msgstr "Synchronisieren Sie Ihre Kollektion mit einem Remote-Standort."
@@ -2898,7 +2900,7 @@ msgid "Synchronize local files to a remote location. This is useful to synchroni
 msgstr ""
 
 msgid "c:\\file-collection to \\\\nas\\\\backup-files"
-msgstr ""
+msgstr "c:\\file-collection to \\\\nas\\\\backup-files"
 
 msgid "Source of synchronization (Local)"
 msgstr "Quelle der Synchronisation (Lokal)"
@@ -3132,6 +3134,8 @@ msgid ""
 "All items filtered out.\n"
 "Click to clear filter."
 msgstr ""
+"Alle Items herausgefiltert.\n"
+"Klicken Sie hier, um Filter zu löschen."
 
 msgid "The collection contains {} items created on {}."
 msgstr "Die Kollektion enthält {} Items erstellt am {}."
@@ -3146,37 +3150,37 @@ msgid "Show only favorite tags in the sidebar"
 msgstr "Nur favorisierte Tags in der Seitenleiste zeigen"
 
 msgid "Collection"
-msgstr ""
+msgstr "Kollektion"
 
 msgid "Destination"
-msgstr ""
+msgstr "Ziel"
 
 msgid "Old name"
-msgstr ""
+msgstr "Alter Name"
 
 msgid "New name"
-msgstr ""
+msgstr "Neuer Name"
 
 msgid "Local"
-msgstr ""
+msgstr "Lokal"
 
 msgid "Remote"
-msgstr ""
+msgstr "Remote"
 
 msgid "Status"
-msgstr ""
+msgstr "Status"
 
 msgid "Message"
-msgstr ""
+msgstr "Nachricht"
 
 msgid "import"
 msgstr ""
 
 msgid "exists"
-msgstr ""
+msgstr "ist vorhanden"
 
 msgid "previously imported"
-msgstr ""
+msgstr "zuvor importiert"
 
 msgid "ignore"
 msgstr ""
@@ -3185,7 +3189,7 @@ msgid "test"
 msgstr ""
 
 msgid "Click analyze to show items"
-msgstr ""
+msgstr "Klicken Sie auf Analysieren, um Items zu zeigen"
 
 msgid "Rotate {first-name}."
 msgid_plural "Rotate {count} selected items. Originals will be overwritten."
