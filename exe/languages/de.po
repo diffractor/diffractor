@@ -168,10 +168,10 @@ msgstr "Items modifiziert {} {}"
 
 msgid ""
 "Click to open created items.\n"
-"Control-click to open modified items."
+"Ctrl+click to open modified items."
 msgstr ""
 "Klicken Sie hier, um erstellte Items zu öffnen.\n"
-"Control-Click, um modifizierte Items zu öffnen.      "
+"Ctrl+click, um modifizierte Items zu öffnen.      "
 
 msgid "{} items from {} in the collection."
 msgstr "{} Items aus {} in der Kollektion."
@@ -209,7 +209,7 @@ msgstr "Lokaler DropBox-Ordner"
 msgid "Local GoogleDrive Folder"
 msgstr "Lokaler GoogleDrive-Ordner"
 
-msgid "You can choose what is indexed in collection options (press Ctrl-F6)."
+msgid "You can choose what is indexed in collection options (press Ctrl+F6)."
 msgstr "Sie können in den Kollektion-Optionen wählen, was indiziert werden soll (Strg-F6 drücken)."
 
 msgid "Define the folders that make your collection."
@@ -995,10 +995,10 @@ msgstr "Favorisierter Titel"
 msgid "Favorites are listed in the sidebar for quick access."
 msgstr "Favoriten werden in der Seitenleiste für einen Schnellzugriff gelistet."
 
-msgid "Shown item are from the collection."
+msgid "Shown items are from the collection."
 msgstr "Gezeigte Items sind aus der Kollektion."
 
-msgid "Shown item are NOT from the collection."
+msgid "Shown items are NOT from the collection."
 msgstr "Gezeigte Items sind NICHT aus der Kollektion."
 
 msgid "The collection is a group of folders that you specify to be indexed. Indexing allows fast searching and duplicate detection. Diffractor will also highlight when items are not in the collection."
@@ -2219,7 +2219,7 @@ msgstr "Diffractor kann nur JPG-, WEBP- und PNG-Bilddateien speichern oder aktua
 msgid "Nothing found."
 msgstr "Nichts gefunden."
 
-msgid "Diffractor only searches in folders that are indexed. Use collection options to add more folders. (ctrl-F6)"
+msgid "Diffractor only searches in folders that are indexed. Use collection options to add more folders. (Ctrl+F6)"
 msgstr "Diffractor sucht nur in Ordnern, die indiziert sind. Verwenden Sie die Kollektion-Optionen, um mehr Ordner hinzuzufügen. (Strg-F6)"
 
 msgid "of"
@@ -3073,7 +3073,7 @@ msgstr "XMP"
 msgid "ICC"
 msgstr "ICC"
 
-msgid "press ctrl-Space"
+msgid "press ctrl+space"
 msgstr "Drücken Sie Strg-Leertaste"
 
 msgid "Hold down left mouse button to zoom into shown photo 100%."

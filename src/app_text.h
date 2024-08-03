@@ -443,14 +443,14 @@ struct app_text_t
 	text_t detecting_folders = u8"Detecting {} folders"sv;
 	text_t indexing_message =
 		u8"Diffractor indexes your photos and videos to enable searching and duplicate detection."sv;
-	text_t collection_options_help = u8"You can choose what is indexed in collection options (press Ctrl-F6)."sv;
+	text_t collection_options_help = u8"You can choose what is indexed in collection options (press Ctrl+F6)."sv;
 	text_t index_later = u8"Index later"sv;
 	text_t collection_options = u8"Collection options"sv;
 	text_t empty = u8"Empty"sv;
 	text_t loading = u8"Loading..."sv;
 	text_t nothing_found1 = u8"Nothing found."sv;
 	text_t nothing_found2 =
-		u8"Diffractor only searches in folders that are indexed. Use collection options to add more folders. (ctrl-F6)"sv;
+		u8"Diffractor only searches in folders that are indexed. Use collection options to add more folders. (Ctrl+F6)"sv;
 	text_t button_save = u8"&Save"sv;
 	text_t button_dont_save = u8"&Don't Save"sv;
 	text_t save_changes = u8"Save Changes"sv;
@@ -508,7 +508,7 @@ struct app_text_t
 	text_t compare = u8"Compare"sv;
 	text_t compare_tooltip = u8"Hold down left mouse button to compare items."sv;
 	text_t zoom_tooltip = u8"Hold down left mouse button to zoom into shown photo 100%."sv;
-	text_t zoom_kb = u8"press ctrl-Space"sv;
+	text_t zoom_kb = u8"press ctrl+space"sv;
 	text_t query_or = u8"or"sv;
 	text_t query_and = u8"and"sv;
 	text_t query_with = u8"with"sv;
@@ -822,7 +822,7 @@ struct app_text_t
 	text_t collection_contains2 = u8"The collection contains:"sv;
 	text_t items_created_fmt = u8"Items created {} {}"sv;
 	text_t items_modified_fmt = u8"Items modified {} {}"sv;
-	text_t click_to_open_created_modified = u8"Click to open created items.\nControl-click to open modified items."sv;
+	text_t click_to_open_created_modified = u8"Click to open created items.\nCtrl+click to open modified items."sv;
 	text_t click_items_from_fmt = u8"{} items from {} in the collection."sv;
 	text_t filter = u8"filter"sv;
 
@@ -1128,8 +1128,8 @@ struct app_text_t
 	text_t command_advanced_search = u8"Advanced Search"sv;
 	text_t favorite_add_fmt = u8"Add '{}' to favorites."sv;
 	text_t favorite_remove_fmt = u8"Remove '{}' from favorite folders or searches."sv;
-	text_t collection_in = u8"Shown item are from the collection."sv;
-	text_t collection_not_in = u8"Shown item are NOT from the collection."sv;
+	text_t collection_in = u8"Shown items are from the collection."sv;
+	text_t collection_not_in = u8"Shown items are NOT from the collection."sv;
 	text_t collection_info = u8"The collection is a group of folders that you specify to be indexed. Indexing allows fast searching and duplicate detection. Diffractor will also highlight when items are not in the collection."sv;
 	text_t favorite_title = u8"Favorite title"sv;
 	text_t favorite_info = u8"Favorites are listed in the sidebar for quick access."sv;

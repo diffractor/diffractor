@@ -165,7 +165,7 @@ msgstr "elementos modificados {} {}"
 
 msgid ""
 "Click to open created items.\n"
-"Control-click to open modified items."
+"Ctrl+click to open modified items."
 msgstr ""
 
 msgid "{} items from {} in the collection."
@@ -204,8 +204,8 @@ msgstr "Carpeta DropBox local"
 msgid "Local GoogleDrive Folder"
 msgstr "carpeta local de GoogleDrive"
 
-msgid "You can choose what is indexed in collection options (press Ctrl-F6)."
-msgstr "Puede elegir lo que está indexado en las opciones de colección (presione Ctrl-F6)."
+msgid "You can choose what is indexed in collection options (press Ctrl+F6)."
+msgstr "Puede elegir lo que está indexado en las opciones de colección (presione Ctrl+F6)."
 
 msgid "Define the folders that make your collection."
 msgstr "Define las carpetas que componen tu colección."
@@ -990,10 +990,10 @@ msgstr "Título favorito"
 msgid "Favorites are listed in the sidebar for quick access."
 msgstr ""
 
-msgid "Shown item are from the collection."
+msgid "Shown items are from the collection."
 msgstr ""
 
-msgid "Shown item are NOT from the collection."
+msgid "Shown items are NOT from the collection."
 msgstr ""
 
 msgid "The collection is a group of folders that you specify to be indexed. Indexing allows fast searching and duplicate detection. Diffractor will also highlight when items are not in the collection."
@@ -2214,7 +2214,7 @@ msgstr ""
 msgid "Nothing found."
 msgstr "No se encontró nada."
 
-msgid "Diffractor only searches in folders that are indexed. Use collection options to add more folders. (ctrl-F6)"
+msgid "Diffractor only searches in folders that are indexed. Use collection options to add more folders. (Ctrl+F6)"
 msgstr ""
 
 msgid "of"
@@ -3068,8 +3068,8 @@ msgstr "XMP"
 msgid "ICC"
 msgstr "ICC"
 
-msgid "press ctrl-Space"
-msgstr "presione ctrl-espacio"
+msgid "press ctrl+space"
+msgstr "presione ctrl+espacio"
 
 msgid "Hold down left mouse button to zoom into shown photo 100%."
 msgstr "Mantenga presionado el botón izquierdo del mouse para ampliar la foto al 100%."
