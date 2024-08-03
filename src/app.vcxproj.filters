@@ -535,6 +535,8 @@
     <None Include="shaders\common.hlsli">
       <Filter>Shaders</Filter>
     </None>
-    <None Include="app_util.h" />
+    <None Include="app_util.h">
+      <Filter>Header Files</Filter>
+    </None>
   </ItemGroup>
 </Project>

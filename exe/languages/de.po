@@ -20,22 +20,19 @@ msgid "Add folder"
 msgstr "Ordner hinzufügen"
 
 msgid "Items in this date range will be modified to start at a new date and time. The time gap between items will be preserved."
-msgstr ""
+msgstr "Items in diesem Datumsbereich werden modifiziert, um bei einem neuen Datum und einer neuen Zeit zu beginnen. Die Zeitlücke zwischen Items bleibt erhalten."
 
 msgid "For example, if you have 2 photos taken one hour apart, after the update they will still be one hour apart."
-msgstr ""
+msgstr "Zum Beispiel, wenn Sie zwei Fotos im Abstand von einer Stunde aufgenommen haben, liegen diese nach der Aktualisierung immer noch eine Stunde auseinander."
 
 msgid "This is useful if your camera date was set wrongly and you need to fix photo and video dates."
-msgstr ""
-"Items in diesem Datumsbereich werden modifiziert, um bei einem neuen Datum und einer neuen Zeit zu beginnen. Die zeitliche Lücke zwischen Items bleibt erhalten.\n"
-"Zum Beispiel, wenn Sie zwei Fotos im Abstand von einer Stunde aufgenommen haben, liegen diese nach der Aktualisierung immer noch eine Stunde auseinander.\n"
-"Dies ist nützlich, wenn Ihr Kameradatum falsch eingestellt wurde und Sie Datums- und Zeitangaben von Foto und Video korrigieren müssen."
+msgstr "Dies ist nützlich, wenn Ihr Kameradatum falsch eingestellt wurde und Sie Datums- und Zeitangaben von Foto und Video korrigieren müssen."
 
 msgid "After"
 msgstr "Nachher"
 
 msgid "Album Artist"
-msgstr "Album-Künstler"
+msgstr "Album-Artist"
 
 msgid "Analyzing..."
 msgstr "Analyse ..."
@@ -171,7 +168,7 @@ msgid ""
 "Ctrl+click to open modified items."
 msgstr ""
 "Klicken Sie hier, um erstellte Items zu öffnen.\n"
-"Ctrl+click, um modifizierte Items zu öffnen.      "
+"Strg+Klick, um modifizierte Items zu öffnen."
 
 msgid "{} items from {} in the collection."
 msgstr "{} Items aus {} in der Kollektion."
@@ -210,7 +207,7 @@ msgid "Local GoogleDrive Folder"
 msgstr "Lokaler GoogleDrive-Ordner"
 
 msgid "You can choose what is indexed in collection options (press Ctrl+F6)."
-msgstr "Sie können in den Kollektion-Optionen wählen, was indiziert werden soll (Strg-F6 drücken)."
+msgstr "Sie können in den Kollektion-Optionen wählen, was indiziert werden soll (Strg+F6 drücken)."
 
 msgid "Define the folders that make your collection."
 msgstr "Definieren Sie die Ordner, die Ihre Kollektion bilden."
@@ -252,7 +249,7 @@ msgid "Advanced Search"
 msgstr "Erweiterte Suche"
 
 msgid "Update artist and album"
-msgstr "Künstler und Album aktualisieren"
+msgstr "Artist und Album aktualisieren"
 
 msgid "Exit"
 msgstr "Beenden"
@@ -507,7 +504,7 @@ msgid "Rename"
 msgstr "Umbenennen"
 
 msgid "Rename files"
-msgstr ""
+msgstr "Dateien umbenennen"
 
 msgid "Toggle repeat play"
 msgstr "Wiederholte Wiedergabe umschalten"
@@ -816,7 +813,7 @@ msgid "Failed to send email using MAPI."
 msgstr "E-Mail konnte unter Verwendung von MAPI nicht gesendet werden."
 
 msgid "Limit photos to a maximum dimension (in pixels). Only supported for JPEG and PNG files."
-msgstr "Fotos auf eine maximale Abmessung (in Pixel) begrenzen. Wird nur für JPEG- und PNG-Dateien unterstützt."
+msgstr "Fotos auf eine maximale Dimension (in Pixel) begrenzen. Wird nur für JPEG- und PNG-Dateien unterstützt."
 
 msgid "Processing {}"
 msgstr "Verarbeitung {}"
@@ -1002,7 +999,7 @@ msgid "Shown items are NOT from the collection."
 msgstr "Gezeigte Items sind NICHT aus der Kollektion."
 
 msgid "The collection is a group of folders that you specify to be indexed. Indexing allows fast searching and duplicate detection. Diffractor will also highlight when items are not in the collection."
-msgstr ""
+msgstr "               xxx                                                   Diffractor hebt auch hervor, wenn Items nicht in der Kollektion sind."
 
 msgid "folder"
 msgstr "Ordner"
@@ -1734,7 +1731,7 @@ msgid "{} has modifications"
 msgstr "{} hat Modifikationen"
 
 msgid "Separate each artist with a comma ',' or slash '/'"
-msgstr "Separieren Sie jeden Künstler mit einem Komma ',' oder Schrägstrich '/'"
+msgstr "Separieren Sie jeden Artist mit einem Komma ',' oder Schrägstrich '/'"
 
 msgid "Help or more information"
 msgstr "Hilfe oder weitere Informationen"
@@ -1776,7 +1773,7 @@ msgid "Overwrite if source items are newer."
 msgstr "Überschreiben, wenn Quell-Items neuer sind."
 
 msgid "Copy (or move) files into a structured folder hierarchy. The folder structure can be based on file metadata templates such year/date or album/artist. This is useful if you want to organize files in a structured hierarchy."
-msgstr ""
+msgstr "Kopieren (oder Verschieben) Sie Dateien in eine strukturierte Ordnerhierarchie. Die Ordnerstruktur kann auf Dateimetadaten-Templates wie Jahr/Datum oder Album/Artist basieren. Dies ist nützlich, wenn Sie Dateien in einer strukturierten Hierarchie organisieren möchten."
 
 msgid "Other folder"
 msgstr "Anderer Ordner"
@@ -1839,7 +1836,7 @@ msgid "Show items rotated"
 msgstr "Items rotiert zeigen"
 
 msgid "This item is shown oriented based on camera information. [{}]"
-msgstr "Dieses Item wird auf der Grundlage von Kamerainformationen orientiert gezeigt. [{}]"
+msgstr "Dieses Item wird orientiert gezeigt, basierend auf den Kamerainformationen. [{}]"
 
 msgid "Click to toggle if all items are shown rotated."
 msgstr "Klicken Sie hier, um umzuschalten, wenn alle Items rotiert gezeigt werden."
@@ -2043,7 +2040,7 @@ msgid "Lights"
 msgstr "Lichtquellen"
 
 msgid "Limit output to a maximum dimension (in pixels)."
-msgstr "Ausgabe auf eine maximale Abmessung (in Pixel) begrenzen."
+msgstr "Ausgabe auf eine maximale Dimension (in Pixel) begrenzen."
 
 msgid "Lossless compression"
 msgstr "Verlustfreie Kompression"
@@ -2220,7 +2217,7 @@ msgid "Nothing found."
 msgstr "Nichts gefunden."
 
 msgid "Diffractor only searches in folders that are indexed. Use collection options to add more folders. (Ctrl+F6)"
-msgstr "Diffractor sucht nur in Ordnern, die indiziert sind. Verwenden Sie die Kollektion-Optionen, um mehr Ordner hinzuzufügen. (Strg-F6)"
+msgstr "Diffractor sucht nur in Ordnern, die indiziert sind. Verwenden Sie die Kollektion-Optionen, um mehr Ordner hinzuzufügen. (Strg+F6)"
 
 msgid "of"
 msgstr "von"
@@ -2304,7 +2301,7 @@ msgid "Show hidden files"
 msgstr "Versteckte Dateien zeigen"
 
 msgid "Show photos rotated based on recorded camera orientation"
-msgstr "Fotos rotiert auf der Grundlage der aufgezeichneten Kameraausrichtung zeigen"
+msgstr "Fotos rotiert zeigen, basierend auf der aufgenommenen Kameraausrichtung"
 
 msgid "Updates"
 msgstr "Updates"
@@ -2379,7 +2376,7 @@ msgid "small"
 msgstr "Klein"
 
 msgid "Pixels"
-msgstr ""
+msgstr "Pixel"
 
 msgid "PNG - Best for non photos"
 msgstr "PNG - Am besten für Nicht-Fotos"
@@ -2442,10 +2439,10 @@ msgid "Album"
 msgstr "Album"
 
 msgid "Album artist"
-msgstr "Album-Künstler"
+msgstr "Album-Artist"
 
 msgid "Artist"
-msgstr "Künstler"
+msgstr "Artist"
 
 msgid "Audio codec"
 msgstr "Audiocodec"
@@ -2679,7 +2676,7 @@ msgid "When specifying a template:"
 msgstr "Bei Angabe eines Template:"
 
 msgid "Use '#' to specify position of the numeric sequence"
-msgstr "Verwenden Sie '#', um die Position der numerische Folge zu spezifizieren"
+msgstr "Verwenden Sie '#', um die Position der numerischen Sequenz zu spezifizieren"
 
 msgid "Use metadata templates '{property-name}' to include file properties in the name."
 msgstr "Verwenden Sie Metadaten-Templates '{property-name}', um Dateieigenschaften in den Name einzubeziehen."
@@ -2697,7 +2694,7 @@ msgid "travel-{country}-###"
 msgstr "travel-{country}-###"
 
 msgid "Rename multiple files based on an incrementing sequence or file metadata template."
-msgstr ""
+msgstr "Benennen Sie mehrere Dateien um, basierend auf einer inkrementierenden Sequenz oder einem Dateimetadaten-Template."
 
 msgid "Template:"
 msgstr "Template:"
@@ -2715,18 +2712,20 @@ msgid "Repeat play single media item"
 msgstr "Wiederholte Wiedergabe eines einzelnen Media-Items"
 
 msgid "Reset"
-msgstr "Zurücksetzen"
+msgstr "Reset"
 
 msgid ""
 "Clean database and reindex.\n"
 "All data is regenerated."
 msgstr ""
+"Datenbank bereinigen und neu indizieren.\n"
+"Alle Daten werden regeneriert."
 
 msgid "Resetting..."
 msgstr "Zurücksetzen ..."
 
 msgid "Maximum photo dimension (in pixels):"
-msgstr "Maximale Fotoabmessung (in Pixel):"
+msgstr "Maximale Foto-Dimension (in Pixel):"
 
 msgid "retro"
 msgstr "Retro"
@@ -2897,7 +2896,7 @@ msgid "Delete remote files that do not exist locally"
 msgstr "Remote-Dateien löschen, die örtlich (lokal) nicht vorhanden sind"
 
 msgid "Synchronize local files to a remote location. This is useful to synchronize your local file collection to a backup location."
-msgstr ""
+msgstr "                                                        Dies ist nützlich, um Ihre lokale Dateikollektion                             mit einem Backup-Speicherort zu synchronisieren."
 
 msgid "c:\\file-collection to \\\\nas\\\\backup-files"
 msgstr "c:\\file-collection to \\\\nas\\\\backup-files"
@@ -3074,7 +3073,7 @@ msgid "ICC"
 msgstr "ICC"
 
 msgid "press ctrl+space"
-msgstr "Drücken Sie Strg-Leertaste"
+msgstr "Drücken Sie Strg+Leertaste"
 
 msgid "Hold down left mouse button to zoom into shown photo 100%."
 msgstr "Halten Sie die linke Maustaste gedrückt, um das gezeigte Foto auf 100 % zu zoomen."
@@ -3174,7 +3173,7 @@ msgid "Message"
 msgstr "Nachricht"
 
 msgid "import"
-msgstr ""
+msgstr "Importieren"
 
 msgid "exists"
 msgstr "ist vorhanden"
@@ -3183,10 +3182,10 @@ msgid "previously imported"
 msgstr "zuvor importiert"
 
 msgid "ignore"
-msgstr ""
+msgstr "Ignorieren"
 
 msgid "test"
-msgstr ""
+msgstr "Testen"
 
 msgid "Click analyze to show items"
 msgstr "Klicken Sie auf Analysieren, um Items zu zeigen"

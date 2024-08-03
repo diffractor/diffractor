@@ -165,6 +165,7 @@ void app_text_t::load_lang(std::u8string_view lang_file, const std::vector<po_en
 		else 
 		{
 			df::log(__FUNCTION__, str::format(u8"{} missing: msgid \"{}\""sv, lang_file, t.get().text));
+			t.get().trans.clear();
 		}
 	}
 
@@ -179,6 +180,7 @@ void app_text_t::load_lang(std::u8string_view lang_file, const std::vector<po_en
 		else
 		{
 			df::log(__FUNCTION__, str::format(u8"{} missing: msgid \"{}\""sv, lang_file, p.get().one.text));
+			p.get().one.trans.clear();
 		}
 
 		found = text_map.find(p.get().plural.text);
@@ -190,6 +192,7 @@ void app_text_t::load_lang(std::u8string_view lang_file, const std::vector<po_en
 		else
 		{
 			df::log(__FUNCTION__, str::format(u8"{} missing: msgid_plural \"{}\""sv, lang_file, p.get().plural.text));
+			p.get().plural.trans.clear();
 		}
 	}
 }
