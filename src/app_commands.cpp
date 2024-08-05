@@ -2909,15 +2909,15 @@ std::u8string format_keyboard_accelerator(const std::vector<keyboard_accelerator
 
 		if (ac.key_state & alt)
 		{
-			result += str::format(u8"{}-"sv, tt.keyboard_alt);
+			result += str::format(u8"{}+"sv, tt.keyboard_alt);
 		}
 		if (ac.key_state & control)
 		{
-			result += str::format(u8"{}-"sv, tt.keyboard_control);
+			result += str::format(u8"{}+"sv, tt.keyboard_control);
 		}
 		if (ac.key_state & shift)
 		{
-			result += str::format(u8"{}-"sv, tt.keyboard_shift);
+			result += str::format(u8"{}+"sv, tt.keyboard_shift);
 		}
 
 		if (ac.key == keys::RETURN)
@@ -2927,6 +2927,10 @@ std::u8string format_keyboard_accelerator(const std::vector<keyboard_accelerator
 		else if (ac.key == keys::BACK)
 		{
 			result += tt.keyboard_backspace;
+		}
+		else if (ac.key == keys::OEM_PLUS)
+		{
+			result += str::format(u8"'{}'"sv, tt.keyboard_oem_plus);
 		}
 		else if (is_not_virt_key(ac.key))
 		{

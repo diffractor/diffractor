@@ -2894,7 +2894,7 @@ msgstr ""
 msgid "Synchronize local files to a remote location. This is useful to synchronize your local file collection to a backup location."
 msgstr ""
 
-msgid "c:\\file-collection to \\\\nas\\\\backup-files"
+msgid "c:\\file-collection with \\\\nas\\\\backup-files"
 msgstr ""
 
 msgid "Source of synchronization (Local)"
@@ -3071,7 +3071,7 @@ msgstr ""
 msgid "press ctrl+space"
 msgstr ""
 
-msgid "Hold down left mouse button to zoom into shown photo 100%."
+msgid "Hold down left mouse button to show photo 100% size."
 msgstr ""
 
 msgid "Scope"

@@ -174,7 +174,7 @@ msgid "{} items from {} in the collection."
 msgstr "{} Items aus {} in der Kollektion."
 
 msgid "filter"
-msgstr ""
+msgstr "Filtern"
 
 msgid "Close"
 msgstr "Schließen"
@@ -2887,7 +2887,7 @@ msgid "delete remote"
 msgstr "Remote löschen"
 
 msgid "Synchronize your collection with a remote location."
-msgstr "Synchronisieren Sie Ihre Kollektion mit einem Remote-Standort."
+msgstr "Synchronisieren Sie Ihre Kollektion mit einem Remote-Speicherort."
 
 msgid "Delete local files that do not exist remotely"
 msgstr "Lokale Dateien löschen, die rechnerfern (remote) nicht vorhanden sind"
@@ -2896,10 +2896,10 @@ msgid "Delete remote files that do not exist locally"
 msgstr "Remote-Dateien löschen, die örtlich (lokal) nicht vorhanden sind"
 
 msgid "Synchronize local files to a remote location. This is useful to synchronize your local file collection to a backup location."
-msgstr "                                                        Dies ist nützlich, um Ihre lokale Dateikollektion                             mit einem Backup-Speicherort zu synchronisieren."
+msgstr "Synchronisieren Sie lokale Dateien mit einem Remote-Speicherort. Dies ist nützlich, um Ihre lokale Dateikollektion mit einem Backup-Speicherort zu synchronisieren.          "
 
-msgid "c:\\file-collection to \\\\nas\\\\backup-files"
-msgstr "c:\\file-collection to \\\\nas\\\\backup-files"
+msgid "c:\\file-collection with \\\\nas\\\\backup-files"
+msgstr "c:\\file-collection mit \\\\nas\\\\backup-files"
 
 msgid "Source of synchronization (Local)"
 msgstr "Quelle der Synchronisation (Lokal)"
@@ -3075,11 +3075,11 @@ msgstr "ICC"
 msgid "press ctrl+space"
 msgstr "Drücken Sie Strg+Leertaste"
 
-msgid "Hold down left mouse button to zoom into shown photo 100%."
+msgid "Hold down left mouse button to show photo 100% size."
 msgstr "Halten Sie die linke Maustaste gedrückt, um das gezeigte Foto auf 100 % zu zoomen."
 
 msgid "Scope"
-msgstr "Geltungsbereich"
+msgstr "    Scope      "
 
 msgid "Value"
 msgstr "Wert"
@@ -3252,8 +3252,8 @@ msgstr[1] "{count} Items wurden ignoriert."
 
 msgid "{first-name} was ignored because it exist already in the destination location."
 msgid_plural "{count} items were ignored because they exist already in the destination location."
-msgstr[0] "{first-name} wurde ignoriert, weil es bereits in dem Zielort vorhanden ist."
-msgstr[1] "{count} Items wurden ignoriert, weil diese bereits in dem Zielort vorhanden sind."
+msgstr[0] "{first-name} wurde ignoriert, weil es bereits in dem Zielspeicherort vorhanden ist."
+msgstr[1] "{count} Items wurden ignoriert, weil diese bereits in dem Zielspeicherort vorhanden sind."
 
 msgid "{first-name} was ignored because it was previously imported."
 msgid_plural "{count} items were ignored because they were previously imported."

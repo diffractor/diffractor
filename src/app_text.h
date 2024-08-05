@@ -507,7 +507,7 @@ struct app_text_t
 	text_t text_false = u8"false"sv;
 	text_t compare = u8"Compare"sv;
 	text_t compare_tooltip = u8"Hold down left mouse button to compare items."sv;
-	text_t zoom_tooltip = u8"Hold down left mouse button to zoom into shown photo 100%."sv;
+	text_t zoom_tooltip = u8"Hold down left mouse button to show photo 100% size."sv;
 	text_t zoom_kb = u8"press ctrl+space"sv;
 	text_t query_or = u8"or"sv;
 	text_t query_and = u8"and"sv;
@@ -1162,7 +1162,7 @@ struct app_text_t
 	text_t sync_delete_remote = u8"Delete remote files that do not exist locally"sv;
 	text_t sync_local = u8"Source of synchronization (Local)"sv;
 	text_t sync_info_1 = u8"Synchronize local files to a remote location. This is useful to synchronize your local file collection to a backup location."sv;
-	text_t sync_info_2 = u8"c:\\file-collection to \\\\nas\\\\backup-files"sv;
+	text_t sync_info_2 = u8"c:\\file-collection with \\\\nas\\\\backup-files"sv;
 	text_t sync_remote = u8"Destination of synchronization (Remote)"sv;
 	text_t sync_copy_remote_action = u8"copy remote"sv;
 	text_t sync_copy_local_action = u8"copy local"sv;
