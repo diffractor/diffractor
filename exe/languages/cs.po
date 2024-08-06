@@ -996,7 +996,7 @@ msgstr ""
 msgid "Shown items are NOT from the collection."
 msgstr ""
 
-msgid "The collection is a group of folders that you specify to be indexed. Indexing allows fast searching and duplicate detection. Diffractor will also highlight when items are not in the collection."
+msgid "The collection is a set of indexed folders. Indexing allows fast searching and duplicate detection. Diffractor will also highlight when items are not in the collection."
 msgstr ""
 
 msgid "folder"

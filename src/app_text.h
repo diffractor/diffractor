@@ -1130,7 +1130,7 @@ struct app_text_t
 	text_t favorite_remove_fmt = u8"Remove '{}' from favorite folders or searches."sv;
 	text_t collection_in = u8"Shown items are from the collection."sv;
 	text_t collection_not_in = u8"Shown items are NOT from the collection."sv;
-	text_t collection_info = u8"The collection is a group of folders that you specify to be indexed. Indexing allows fast searching and duplicate detection. Diffractor will also highlight when items are not in the collection."sv;
+	text_t collection_info = u8"The collection is a set of indexed folders. Indexing allows fast searching and duplicate detection. Diffractor will also highlight when items are not in the collection."sv;
 	text_t favorite_title = u8"Favorite title"sv;
 	text_t favorite_info = u8"Favorites are listed in the sidebar for quick access."sv;
 	text_t favorite_failed_to_add = u8"Failed to add. Maximum number of favorites reached."sv;

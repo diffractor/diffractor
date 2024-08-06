@@ -183,7 +183,7 @@ msgid "Collection options"
 msgstr "Kollektion-Optionen"
 
 msgid "Prefix the folder name with minus '-' to exclude it from the collection. You exclude folders by the full path -c:\\collection\\secret, with a folder name -secret, or with a wildcard -secret*."
-msgstr ""
+msgstr "Stellen Sie dem Ordnername ein Minuszeichen '-' voran, um diesen aus der Kollektion auszuschließen. Sie schließen Ordner über den vollständigen Pfad -c:\\collection\\secret, mit einem Ordnername -secret oder mit einer Wildcard -secret* aus."
 
 msgid "More Collection folders"
 msgstr "Mehr Kollektion-Ordner"
@@ -570,7 +570,7 @@ msgid "Open containing folder"
 msgstr "Enthaltenden Ordner öffnen"
 
 msgid "Hide/Show thumbnails"
-msgstr "Thumbnails aus-/einblenden"
+msgstr "Thumbnails ausblenden/anzeigen"
 
 msgid "Sort by Date modified"
 msgstr "Sortieren nach Änderungsdatum"
@@ -642,7 +642,7 @@ msgid "Contrast"
 msgstr "Kontrast"
 
 msgid "Open link {}"
-msgstr ""
+msgstr "Link öffnen {}"
 
 msgid "Copy to clipboard"
 msgstr "In Zwischenablage kopieren"
@@ -998,8 +998,8 @@ msgstr "Gezeigte Items sind aus der Kollektion."
 msgid "Shown items are NOT from the collection."
 msgstr "Gezeigte Items sind NICHT aus der Kollektion."
 
-msgid "The collection is a group of folders that you specify to be indexed. Indexing allows fast searching and duplicate detection. Diffractor will also highlight when items are not in the collection."
-msgstr "               xxx                                                   Diffractor hebt auch hervor, wenn Items nicht in der Kollektion sind."
+msgid "The collection is a set of indexed folders. Indexing allows fast searching and duplicate detection. Diffractor will also highlight when items are not in the collection."
+msgstr "Die Kollektion ist eine Gruppe von Ordnern, die Sie für die Indizierung spezifizieren. Die Indexierung ermöglicht eine schnelle Suche und Duplikaterkennung. Diffractor hebt auch hervor, wenn Items nicht in der Kollektion sind.          "
 
 msgid "folder"
 msgstr "Ordner"
@@ -1806,7 +1806,7 @@ msgid "Currently the index database is {} in size and contains metadata from {} 
 msgstr "Derzeit ist die Indexdatenbank {} in der Größe und enthält Metadaten aus {} Items."
 
 msgid "Indexing"
-msgstr "Indizierung"
+msgstr "Indexierung"
 
 msgid "Diffractor indexes your photos and videos to enable searching and duplicate detection."
 msgstr "Diffractor indiziert Ihre Fotos und Videos, um die Suche und Duplikaterkennung zu ermöglichen."
@@ -2418,7 +2418,7 @@ msgid "Presence"
 msgstr "Präsenz"
 
 msgid "Showing fully rendered RAW photo."
-msgstr "Vollständig gerendertes RAW-Foto wird gezeigt."
+msgstr "Anzeigen eines vollständig gerenderten RAW-Fotos."
 
 msgid "Rendering RAW photo..."
 msgstr "Rendering des RAW-Fotos ..."
@@ -2427,7 +2427,7 @@ msgid "Show RAW preview if available (faster)"
 msgstr "RAW-Preview zeigen, falls verfügbar (schneller)"
 
 msgid "Showing a RAW photo preview."
-msgstr "Eine RAW-Foto-Preview wird gezeigt."
+msgstr "Anzeigen einer RAW-Foto-Preview."
 
 msgid "Processing..."
 msgstr "Verarbeitung ..."
@@ -2821,7 +2821,7 @@ msgid "press R to view duplicate or related items in the collection"
 msgstr "Drücken Sie R, um doppelte oder verwandte Items in der Kollektion einzusehen"
 
 msgid "Show verbose metadata"
-msgstr "Ausführliche Metadaten einblenden"
+msgstr "Ausführliche Metadaten anzeigen"
 
 msgid "Album-Show"
 msgstr "Album-Show"
@@ -2896,10 +2896,10 @@ msgid "Delete remote files that do not exist locally"
 msgstr "Remote-Dateien löschen, die örtlich (lokal) nicht vorhanden sind"
 
 msgid "Synchronize local files to a remote location. This is useful to synchronize your local file collection to a backup location."
-msgstr "Synchronisieren Sie lokale Dateien mit einem Remote-Speicherort. Dies ist nützlich, um Ihre lokale Dateikollektion mit einem Backup-Speicherort zu synchronisieren.          "
+msgstr "Synchronisieren Sie lokale Dateien mit einem Remote-Speicherort. Dies ist nützlich, um Ihre lokale Dateikollektion mit einem Backup-Speicherort zu synchronisieren."
 
 msgid "c:\\file-collection with \\\\nas\\\\backup-files"
-msgstr "c:\\file-collection mit \\\\nas\\\\backup-files"
+msgstr "c:\\file-collection with \\\\nas\\\\backup-files"
 
 msgid "Source of synchronization (Local)"
 msgstr "Quelle der Synchronisation (Lokal)"
@@ -3076,10 +3076,10 @@ msgid "press ctrl+space"
 msgstr "Drücken Sie Strg+Leertaste"
 
 msgid "Hold down left mouse button to show photo 100% size."
-msgstr "Halten Sie die linke Maustaste gedrückt, um das gezeigte Foto auf 100 % zu zoomen."
+msgstr "Halten Sie die linke Maustaste gedrückt, um das Foto 100 % in der Größe zu zeigen."
 
 msgid "Scope"
-msgstr "    Scope      "
+msgstr "Suchbereich"
 
 msgid "Value"
 msgstr "Wert"
