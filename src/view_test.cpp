@@ -83,9 +83,6 @@ void test_item::perform(view_state& s, shared_test_context& stc)
 test_view::test_view(view_state& state, view_host_ptr host) : list_view(state, std::move(host))
 {
 	col_count = 3;
-	col_titles[0] = tt.status;
-	col_titles[1] = tt.test;
-	col_titles[2] = tt.message;
 }
 
 test_view::~test_view()

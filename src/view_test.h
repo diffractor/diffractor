@@ -137,4 +137,15 @@ public:
 		_title = str::format(u8"{}: Test"sv, s_app_name);
 		return _title;
 	}
+
+	virtual std::array<text_t, max_col_count> col_titles() 
+	{
+		return std::array<text_t, max_col_count> 
+		{
+			tt.status,
+			tt.test,
+			tt.message,
+			{}
+		};
+	};
 };

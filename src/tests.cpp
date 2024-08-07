@@ -3302,6 +3302,20 @@ static void should_analyze_sync()
 	// TODO
 }
 
+static void should_load_po()
+{
+	const auto app_folder = known_path(platform::known_folder::running_app_folder);
+	const auto lang_folder = app_folder.combine(u8"languages"sv);
+	const auto lang_path = lang_folder.combine_file(u8"de.po"sv);
+
+	auto po_entries = load_po(lang_path);
+
+	app_text_t t;
+	t.load_lang(lang_path.name(), po_entries);
+
+	assert_equal(u8"Datenbank bereinigen und neu indizieren.\nAlle Daten werden regeneriert."sv, t.reset_database, u8"reset_database"sv);
+}
+
 void run_test(view_state& state, const test_ptr& test)
 {
 	shared_test_context stc;
@@ -3346,6 +3360,8 @@ void run_tests(view_state& state, std::vector<test_ptr> tests)
 	}
 }
 
+
+
 void register_tests(view_state& state, test_registry &tests)
 {
 	//
@@ -3380,6 +3396,7 @@ void register_tests(view_state& state, test_registry &tests)
 	tests.add(u8"Should format rename"s, should_format_rename);
 	tests.add(u8"Should check overwrite"s, should_check_overwrite);
 	tests.add(u8"Should replace file"s, should_replace_file);
+	tests.add(u8"Should load po"s, should_load_po);
 
 	//
 	// Scan Metadata

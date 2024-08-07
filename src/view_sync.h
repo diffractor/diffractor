@@ -25,11 +25,20 @@ public:
 	sync_view(view_state& state, view_host_ptr host) : list_view(state, std::move(host))
 	{
 		col_count = 3;
-		col_titles[0] = tt.action;
-		col_titles[1] = tt.local;
-		col_titles[2] = tt.remote;
-		_empty_message = tt.view_empty_message;
 	}
+
+	std::array<text_t, max_col_count> col_titles() override 
+	{
+		return std::array<text_t, max_col_count> 
+		{
+			tt.action,
+			tt.local,
+			tt.remote,
+			{}
+		};
+	};
+
+	text_t empty_message() override { return tt.view_empty_message; }
 
 	void run();
 	void analyze();

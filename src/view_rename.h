@@ -25,9 +25,18 @@ public:
 	rename_view(view_state& state, view_host_ptr host) : list_view(state, std::move(host))
 	{
 		col_count = 3;
-		col_titles[1] = tt.old_name;
-		col_titles[2] = tt.new_name;
 	}
+
+	std::array<text_t, max_col_count> col_titles() override
+	{
+		return std::array<text_t, max_col_count>
+		{
+			text_t {},
+			tt.old_name,
+			tt.new_name,
+			text_t {}
+		};
+	};
 
 	void exit() override
 	{

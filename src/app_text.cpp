@@ -100,7 +100,7 @@ std::vector<po_entry> load_po(const df::file_path lang_file)
 				else if (str::starts(line, u8"msgstr"sv)) parse_state = parse_po_state::str;
 				else if (str::starts(line, u8"msgid"sv)) parse_state = parse_po_state::id;
 
-				if (parse_state == parse_po_state::id && !entry.is_empty())
+				if (parse_state == parse_po_state::id && !entry.is_empty() && line[0] != u8'\"')
 				{
 					result.emplace_back(std::move(entry));
 					entry.clear();

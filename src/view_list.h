@@ -28,15 +28,13 @@ protected:
 	sizei _extent;
 	view_scroller _scroller;
 
-	std::u8string _empty_message;
-
 	bool _rows_clickable = false;
 
 	static constexpr int max_col_count = 4;
 	int col_count = 4;
 	int coll_offset = 0;
 	int col_widths[max_col_count] = { 0, 0, 0, 0 };
-	std::u8string col_titles[max_col_count];
+
 
 	recti _col_header_bounds[max_col_count];
 	bool _header_active = false;
@@ -140,6 +138,7 @@ public:
 	{
 		_extent = extent;
 
+		const auto titles = col_titles();
 		const recti scroll_bounds{ _extent.cx - mc.scroll_width, 0, _extent.cx, _extent.cy };
 		const recti client_bounds{ 0, 0, _extent.cx, _extent.cy };
 
@@ -150,7 +149,7 @@ public:
 
 		for (int i = 0; i < col_count; i++)
 		{
-			longest_text[i] = col_titles[i];
+			longest_text[i] = titles[i].sv();
 		}
 
 		if (!_rows.empty())
@@ -242,6 +241,7 @@ public:
 
 	void render_headers(ui::draw_context& dc)
 	{
+		const auto titles = col_titles();
 		const auto cy = dc.text_line_height(ui::style::font_face::dialog) + (dc.padding2 * 2);
 		const auto bg_alpha = dc.colors.alpha * 0.77f;
 		const auto text_color = ui::color(dc.colors.foreground, dc.colors.alpha);
@@ -284,7 +284,7 @@ public:
 				dc.draw_rect(col_header_bounds, bg);
 			}
 
-			dc.draw_text(col_titles[i], col_header_text_bounds, ui::style::font_face::dialog,
+			dc.draw_text(titles[i], col_header_text_bounds, ui::style::font_face::dialog,
 				ui::style::text_style::single_line, text_color, {});
 
 			_col_header_bounds[i] = col_header_bounds;
@@ -310,11 +310,16 @@ public:
 				_scroller.draw_scroll(rc);
 			}
 		}
-		else if (!_empty_message.empty())
+		else
 		{
-			const auto text_color = ui::color(rc.colors.foreground, rc.colors.alpha);
-			rc.draw_text(_empty_message, recti(_extent), ui::style::font_face::dialog,
-				ui::style::text_style::single_line_center, text_color, {});
+			const auto message = empty_message();
+
+			if (!message.sv().empty())
+			{
+				const auto text_color = ui::color(rc.colors.foreground, rc.colors.alpha);
+				rc.draw_text(message.sv(), recti(_extent), ui::style::font_face::dialog,
+					ui::style::text_style::single_line_center, text_color, {});
+			}
 		}
 	}
 
@@ -324,7 +329,16 @@ public:
 		_state.invalidate_view(view_invalid::controller);
 	}
 
-
+	virtual text_t empty_message() { return {}; }
+	virtual std::array<text_t, max_col_count> col_titles()
+	{
+		return std::array<text_t, max_col_count> {
+			text_t{},
+			text_t{},
+			text_t{},
+			text_t{}
+		};
+	};
 };
 
 class view_controls_host : public view_host, public std::enable_shared_from_this<view_controls_host>
@@ -354,6 +368,8 @@ public:
 			_frame->layout();
 		}
 	}
+
+
 
 	virtual void layout_controls(ui::measure_context& mc)
 	{

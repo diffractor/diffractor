@@ -24,11 +24,20 @@ public:
 	import_view(view_state& state, view_host_ptr host) : list_view(state, std::move(host))
 	{
 		col_count = 3;
-		col_titles[0] = tt.action;
-		col_titles[1] = tt.source;
-		col_titles[2] = tt.destination;
-		_empty_message = tt.view_empty_message;
 	}
+
+	std::array<text_t, max_col_count> col_titles() override
+	{
+		return std::array<text_t, max_col_count>
+		{
+			tt.action,
+			tt.source,
+			tt.destination,
+			{}
+		};
+	};
+
+	text_t empty_message() override { return tt.view_empty_message; }
 
 	void run();
 	void analyze();
