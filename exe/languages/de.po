@@ -740,7 +740,7 @@ msgstr "Familie Essen Freunde Landschaft Natur Nacht Porträt Selfie ToDo Reisen
 msgid "results"
 msgstr "Resultate"
 
-msgid "Defragment and compact database."
+msgid "Defragment database."
 msgstr "Datenbank defragmentieren und verdichten."
 
 msgid "Defragmenting..."
@@ -801,7 +801,7 @@ msgid "To avoid losing data, eject an external hard drive or USB drive before re
 msgstr "Um den Verlust von Daten zu vermeiden, werfen Sie ein externes Festplattenlaufwerk oder USB-Laufwerk aus, bevor Sie dieses entfernen."
 
 msgid "Eject {}"
-msgstr "Auswerfen {}"
+msgstr "Auswerfen von {}"
 
 msgid "Connecting to MAPI..."
 msgstr "Verbinden mit MAPI ..."
@@ -1793,7 +1793,7 @@ msgstr "Erstellungsdatum der Datei auf Erstellungsdatum der Metadaten setzen."
 msgid "Index later"
 msgstr "Später indexieren"
 
-msgid "After long periods of use, the index can benefit from one of the maintenance steps below. The index stores a copy of metadata from your media files. It can be rebuilt from the original files."
+msgid "Defragmenting or cleaning can improve performance. The index stores a copy of metadata from your media files. It can be rebuilt from the original files."
 msgstr "Nach einem längeren Zeitraum der Nutzung kann der Index von einem der unten aufgeführten Wartungsschritte profitieren. Der Index speichert eine Kopie der Metadaten aus Ihren Mediendateien. Er kann aus den Originaldateien wiederaufgebaut werden."
 
 msgid "The index is reporting errors. Resetting the index is recommended."

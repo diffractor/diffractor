@@ -738,7 +738,7 @@ msgstr ""
 msgid "results"
 msgstr "結果"
 
-msgid "Defragment and compact database."
+msgid "Defragment database."
 msgstr "データベースのデフラグとコンパクト化。"
 
 msgid "Defragmenting..."
@@ -1791,7 +1791,7 @@ msgstr "ファイルの作成日をメタデータの作成日に設定する。
 msgid "Index later"
 msgstr "インデックス後"
 
-msgid "After long periods of use, the index can benefit from one of the maintenance steps below. The index stores a copy of metadata from your media files. It can be rebuilt from the original files."
+msgid "Defragmenting or cleaning can improve performance. The index stores a copy of metadata from your media files. It can be rebuilt from the original files."
 msgstr ""
 
 msgid "The index is reporting errors. Resetting the index is recommended."

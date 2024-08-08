@@ -647,7 +647,7 @@ struct app_text_t
 	text_t learn_more_diffractor_com = u8"Learn more at Diffractor.com"sv;
 	text_t ok_all_done = u8"OK - all done."sv;
 	text_t optimize = u8"Optimize"sv;
-	text_t defragment_and_compact = u8"Defragment and compact database."sv;
+	text_t defragment_and_compact = u8"Defragment database."sv;
 	text_t reset_database = u8"Clean database and reindex.\nAll data is regenerated."sv;
 	text_t reset = u8"Reset"sv;
 	text_t need_some_maintenance = u8"After long periods of use, the index may need some maintenance."sv;
@@ -738,7 +738,7 @@ struct app_text_t
 	text_t options_last_played_pos = u8"Resume playing media from the last position played."sv;
 	text_t options_show_help_tooltips = u8"Show tooltips with help on buttons and links."sv;
 	text_t index_maintenance_help =
-		u8"After long periods of use, the index can benefit from one of the maintenance steps below. The index stores a copy of metadata from your media files. It can be rebuilt from the original files."sv;
+		u8"Defragmenting or cleaning can improve performance. The index stores a copy of metadata from your media files. It can be rebuilt from the original files."sv;
 	text_t index_maintenance_reset_recommended = u8"The index is reporting errors. Resetting the index is recommended."sv;
 	text_t collection_options_more_folders = u8"More folders. Separate each folder with a new line."sv;
 	text_t collection_options_local_folders_title = u8"Collection folders"sv;

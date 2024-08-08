@@ -738,7 +738,7 @@ msgstr ""
 msgid "results"
 msgstr "resultados"
 
-msgid "Defragment and compact database."
+msgid "Defragment database."
 msgstr "Desfragmentar y compactar la base de datos.."
 
 msgid "Defragmenting..."
@@ -1791,7 +1791,7 @@ msgstr "Establezca la fecha de creación del archivo en la fecha de creación de
 msgid "Index later"
 msgstr "Indexar más tarde"
 
-msgid "After long periods of use, the index can benefit from one of the maintenance steps below. The index stores a copy of metadata from your media files. It can be rebuilt from the original files."
+msgid "Defragmenting or cleaning can improve performance. The index stores a copy of metadata from your media files. It can be rebuilt from the original files."
 msgstr ""
 
 msgid "The index is reporting errors. Resetting the index is recommended."
