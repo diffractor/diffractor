@@ -207,7 +207,7 @@ msgid "Local GoogleDrive Folder"
 msgstr "Lokaler GoogleDrive-Ordner"
 
 msgid "You can choose what is indexed in collection options (press Ctrl+F6)."
-msgstr "Sie können in den Kollektion-Optionen wählen, was indiziert werden soll (Strg+F6 drücken)."
+msgstr "Sie können in den Kollektion-Optionen wählen, was indexiert werden soll (Strg+F6 drücken)."
 
 msgid "Define the folders that make your collection."
 msgstr "Definieren Sie die Ordner, die Ihre Kollektion bilden."
@@ -312,7 +312,7 @@ msgid "Delete"
 msgstr "Löschen"
 
 msgid "Desktop background"
-msgstr "Desktophintergrund"
+msgstr "Desktop-Hintergrund"
 
 msgid "Display options"
 msgstr "Anzeigeoptionen"
@@ -702,7 +702,7 @@ msgid "Show history chart"
 msgstr "Historiendiagramm zeigen"
 
 msgid "Show indexed folders"
-msgstr "Indizierte Ordner zeigen"
+msgstr "Indexierte Ordner zeigen"
 
 msgid "Show favorite searches"
 msgstr "Favorisierte Suchen zeigen"
@@ -753,7 +753,7 @@ msgid "Delete {}"
 msgstr "Löschen von {}"
 
 msgid "Set the desktop background to the current image."
-msgstr "Den Desktophintergrund auf das aktuelle Bild setzen."
+msgstr "Setzen des Desktop-Hintergrundes auf das aktuelle Bild."
 
 msgid "Destination folder:"
 msgstr "Zielordner:"
@@ -999,7 +999,7 @@ msgid "Shown items are NOT from the collection."
 msgstr "Gezeigte Items sind NICHT aus der Kollektion."
 
 msgid "The collection is a set of indexed folders. Indexing allows fast searching and duplicate detection. Diffractor will also highlight when items are not in the collection."
-msgstr "Die Kollektion ist eine Gruppe von Ordnern, die Sie für die Indizierung spezifizieren. Die Indexierung ermöglicht eine schnelle Suche und Duplikaterkennung. Diffractor hebt auch hervor, wenn Items nicht in der Kollektion sind.          "
+msgstr "Die Kollektion ist ein Set von indexierten Ordnern. Die Indexierung ermöglicht eine schnelle Suche und Duplikaterkennung. Diffractor hebt auch hervor, wenn Items nicht in der Kollektion sind."
 
 msgid "folder"
 msgstr "Ordner"
@@ -1791,7 +1791,7 @@ msgid "Set file date created to metadata date created."
 msgstr "Erstellungsdatum der Datei auf Erstellungsdatum der Metadaten setzen."
 
 msgid "Index later"
-msgstr "Später indizieren"
+msgstr "Später indexieren"
 
 msgid "After long periods of use, the index can benefit from one of the maintenance steps below. The index stores a copy of metadata from your media files. It can be rebuilt from the original files."
 msgstr "Nach einem längeren Zeitraum der Nutzung kann der Index von einem der unten aufgeführten Wartungsschritte profitieren. Der Index speichert eine Kopie der Metadaten aus Ihren Mediendateien. Er kann aus den Originaldateien wiederaufgebaut werden."
@@ -1809,7 +1809,7 @@ msgid "Indexing"
 msgstr "Indexierung"
 
 msgid "Diffractor indexes your photos and videos to enable searching and duplicate detection."
-msgstr "Diffractor indiziert Ihre Fotos und Videos, um die Suche und Duplikaterkennung zu ermöglichen."
+msgstr "Diffractor indexiert Ihre Fotos und Videos, um die Suche und Duplikaterkennung zu ermöglichen."
 
 msgid "Super-fast searching, viewing and comparing of photos or videos."
 msgstr "Superschnelle Suche, Betrachtung und Vergleich von Fotos oder Videos."
@@ -2217,7 +2217,7 @@ msgid "Nothing found."
 msgstr "Nichts gefunden."
 
 msgid "Diffractor only searches in folders that are indexed. Use collection options to add more folders. (Ctrl+F6)"
-msgstr "Diffractor sucht nur in Ordnern, die indiziert sind. Verwenden Sie die Kollektion-Optionen, um mehr Ordner hinzuzufügen. (Strg+F6)"
+msgstr "Diffractor sucht nur in Ordnern, die indexiert sind. Verwenden Sie die Kollektion-Optionen, um mehr Ordner hinzuzufügen. (Strg+F6)"
 
 msgid "of"
 msgstr "von"
@@ -2718,7 +2718,7 @@ msgid ""
 "Clean database and reindex.\n"
 "All data is regenerated."
 msgstr ""
-"Datenbank bereinigen und neu indizieren.\n"
+"Datenbank bereinigen und neu indexieren.\n"
 "Alle Daten werden regeneriert."
 
 msgid "Resetting..."
@@ -3079,7 +3079,7 @@ msgid "Hold down left mouse button to show photo 100% size."
 msgstr "Halten Sie die linke Maustaste gedrückt, um das Foto 100 % in der Größe zu zeigen."
 
 msgid "Scope"
-msgstr "Suchbereich"
+msgstr "Scope"
 
 msgid "Value"
 msgstr "Wert"
