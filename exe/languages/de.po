@@ -741,7 +741,7 @@ msgid "results"
 msgstr "Resultate"
 
 msgid "Defragment database."
-msgstr "Datenbank defragmentieren und verdichten."
+msgstr "Datenbank defragmentieren."
 
 msgid "Defragmenting..."
 msgstr "Defragmentierung ..."
@@ -1794,7 +1794,7 @@ msgid "Index later"
 msgstr "Später indexieren"
 
 msgid "Defragmenting or cleaning can improve performance. The index stores a copy of metadata from your media files. It can be rebuilt from the original files."
-msgstr "Nach einem längeren Zeitraum der Nutzung kann der Index von einem der unten aufgeführten Wartungsschritte profitieren. Der Index speichert eine Kopie der Metadaten aus Ihren Mediendateien. Er kann aus den Originaldateien wiederaufgebaut werden."
+msgstr "Eine Defragmentierung oder Bereinigung kann die Performance verbessern. Der Index speichert eine Kopie der Metadaten aus Ihren Mediendateien. Er kann aus den Originaldateien wiederaufgebaut werden."
 
 msgid "The index is reporting errors. Resetting the index is recommended."
 msgstr "Der Index meldet Fehler. Es wird empfohlen, den Index zurückzusetzen."
@@ -3058,7 +3058,7 @@ msgid "Version"
 msgstr "Version"
 
 msgid "Vibrance"
-msgstr "Lebendigkeit"
+msgstr "Lebendigkeit / Dynamik"
 
 msgid "video"
 msgstr "Video"
