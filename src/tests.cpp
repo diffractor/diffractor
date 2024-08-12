@@ -3313,7 +3313,7 @@ static void should_load_po()
 	app_text_t t;
 	t.load_lang(lang_path.name(), po_entries);
 
-	assert_equal(u8"Datenbank bereinigen und neu indizieren.\nAlle Daten werden regeneriert."sv, t.reset_database, u8"reset_database"sv);
+	assert_equal(u8"Datenbank bereinigen und neu indexieren.\nAlle Daten werden regeneriert."sv, t.reset_database, u8"reset_database"sv);
 }
 
 void run_test(view_state& state, const test_ptr& test)

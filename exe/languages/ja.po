@@ -1794,7 +1794,7 @@ msgstr "インデックス後"
 msgid "Defragmenting or cleaning can improve performance. The index stores a copy of metadata from your media files. It can be rebuilt from the original files."
 msgstr ""
 
-msgid "The index is reporting errors. Resetting the index is recommended."
+msgid "The index is reporting errors. Restarting Diffractor is recommended."
 msgstr "インデックスがエラーを報告しています。 インデックスをリセットすることをお勧めします。"
 
 msgid "Maintenance"
@@ -2709,15 +2709,12 @@ msgstr "リピート再生や自動再生はしない"
 msgid "Repeat play single media item"
 msgstr "単一のメディアを繰り返し再生する"
 
-msgid "Reset"
-msgstr "リセット"
-
 msgid ""
 "Clean database and reindex.\n"
 "All data is regenerated."
 msgstr ""
 
-msgid "Resetting..."
+msgid "Cleaning..."
 msgstr "リセット中..."
 
 msgid "Maximum photo dimension (in pixels):"

@@ -1794,7 +1794,7 @@ msgstr "Indexar más tarde"
 msgid "Defragmenting or cleaning can improve performance. The index stores a copy of metadata from your media files. It can be rebuilt from the original files."
 msgstr ""
 
-msgid "The index is reporting errors. Resetting the index is recommended."
+msgid "The index is reporting errors. Restarting Diffractor is recommended."
 msgstr "El índice está reportando errores. Se recomienda restablecer el índice.."
 
 msgid "Maintenance"
@@ -2709,15 +2709,12 @@ msgstr "No repetir ni reproducir automáticamente"
 msgid "Repeat play single media item"
 msgstr "Reproducción repetida de un solo elemento multimedia"
 
-msgid "Reset"
-msgstr "Resetear"
-
 msgid ""
 "Clean database and reindex.\n"
 "All data is regenerated."
 msgstr ""
 
-msgid "Resetting..."
+msgid "Cleaning..."
 msgstr "Restaurando..."
 
 msgid "Maximum photo dimension (in pixels):"

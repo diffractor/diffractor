@@ -1161,7 +1161,6 @@ void app_text_t::calc_text_mapping()
 		repeat_help,
 		repeat_off_help,
 		repeat_one_help,
-		reset,
 		reset_database,
 		resetting,
 		resized_max_label,

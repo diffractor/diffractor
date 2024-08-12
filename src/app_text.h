@@ -649,7 +649,6 @@ struct app_text_t
 	text_t optimize = u8"Optimize"sv;
 	text_t defragment_and_compact = u8"Defragment database."sv;
 	text_t reset_database = u8"Clean database and reindex.\nAll data is regenerated."sv;
-	text_t reset = u8"Reset"sv;
 	text_t need_some_maintenance = u8"After long periods of use, the index may need some maintenance."sv;
 	text_t keyboard_basics_title = u8"Basics"sv;
 	text_t keyboard_navigation_title = u8"Navigation"sv;
@@ -711,7 +710,7 @@ struct app_text_t
 	text_t about_info =
 		u8"Diffractor provides simple tools to make you more productive when sorting, comparing and organizing photos or videos."sv;
 	text_t defragmenting = u8"Defragmenting..."sv;
-	text_t resetting = u8"Resetting..."sv;
+	text_t resetting = u8"Cleaning..."sv;
 	text_t options_app_options = u8"Application options"sv;
 	text_t options_save_options = u8"When saving"sv;
 	text_t options_updates = u8"Updates"sv;
@@ -739,7 +738,7 @@ struct app_text_t
 	text_t options_show_help_tooltips = u8"Show tooltips with help on buttons and links."sv;
 	text_t index_maintenance_help =
 		u8"Defragmenting or cleaning can improve performance. The index stores a copy of metadata from your media files. It can be rebuilt from the original files."sv;
-	text_t index_maintenance_reset_recommended = u8"The index is reporting errors. Resetting the index is recommended."sv;
+	text_t index_maintenance_reset_recommended = u8"The index is reporting errors. Restarting Diffractor is recommended."sv;
 	text_t collection_options_more_folders = u8"More folders. Separate each folder with a new line."sv;
 	text_t collection_options_local_folders_title = u8"Collection folders"sv;
 	text_t collection_options_pictures = u8"Pictures"sv;

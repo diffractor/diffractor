@@ -1796,7 +1796,7 @@ msgstr "Später indexieren"
 msgid "Defragmenting or cleaning can improve performance. The index stores a copy of metadata from your media files. It can be rebuilt from the original files."
 msgstr "Eine Defragmentierung oder Bereinigung kann die Performance verbessern. Der Index speichert eine Kopie der Metadaten aus Ihren Mediendateien. Er kann aus den Originaldateien wiederaufgebaut werden."
 
-msgid "The index is reporting errors. Resetting the index is recommended."
+msgid "The index is reporting errors. Restarting Diffractor is recommended."
 msgstr "Der Index meldet Fehler. Es wird empfohlen, den Index zurückzusetzen."
 
 msgid "Maintenance"
@@ -2711,9 +2711,6 @@ msgstr "Nicht wiederholen oder automatisch wiedergeben"
 msgid "Repeat play single media item"
 msgstr "Wiederholte Wiedergabe eines einzelnen Media-Items"
 
-msgid "Reset"
-msgstr "Reset"
-
 msgid ""
 "Clean database and reindex.\n"
 "All data is regenerated."
@@ -2721,7 +2718,7 @@ msgstr ""
 "Datenbank bereinigen und neu indexieren.\n"
 "Alle Daten werden regeneriert."
 
-msgid "Resetting..."
+msgid "Cleaning..."
 msgstr "Zurücksetzen ..."
 
 msgid "Maximum photo dimension (in pixels):"
