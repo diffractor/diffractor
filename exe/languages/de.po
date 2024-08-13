@@ -1797,7 +1797,7 @@ msgid "Defragmenting or cleaning can improve performance. The index stores a cop
 msgstr "Eine Defragmentierung oder Bereinigung kann die Performance verbessern. Der Index speichert eine Kopie der Metadaten aus Ihren Mediendateien. Er kann aus den Originaldateien wiederaufgebaut werden."
 
 msgid "The index is reporting errors. Restarting Diffractor is recommended."
-msgstr "Der Index meldet Fehler. Es wird empfohlen, den Index zurückzusetzen."
+msgstr "Der Index meldet Fehler. Es wird empfohlen, Diffractor neu zu starten."
 
 msgid "Maintenance"
 msgstr "Wartung"
@@ -2719,7 +2719,7 @@ msgstr ""
 "Alle Daten werden regeneriert."
 
 msgid "Cleaning..."
-msgstr "Zurücksetzen ..."
+msgstr "Bereinigung ..."
 
 msgid "Maximum photo dimension (in pixels):"
 msgstr "Maximale Foto-Dimension (in Pixel):"
