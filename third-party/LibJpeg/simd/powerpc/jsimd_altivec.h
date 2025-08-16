@@ -1,7 +1,7 @@
 /*
  * AltiVec optimizations for libjpeg-turbo
  *
- * Copyright (C) 2014-2015, D. R. Commander.  All Rights Reserved.
+ * Copyright (C) 2014-2015, 2024, D. R. Commander.  All Rights Reserved.
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -21,11 +21,11 @@
  */
 
 #define JPEG_INTERNALS
-#include "../../jinclude.h"
-#include "../../jpeglib.h"
-#include "../../jsimd.h"
-#include "../../jdct.h"
-#include "../../jsimddct.h"
+#include "../../src/jinclude.h"
+#include "../../src/jpeglib.h"
+#include "../../src/jsimd.h"
+#include "../../src/jdct.h"
+#include "../../src/jsimddct.h"
 #include "../jsimd.h"
 #include <altivec.h>
 
@@ -81,7 +81,7 @@
 
 /* Macros to abstract big/little endian bit twiddling */
 
-#if __BIG_ENDIAN__
+#ifdef __BIG_ENDIAN__
 
 #define VEC_LD(a, b)     vec_ld(a, b)
 #define VEC_ST(a, b, c)  vec_st(a, b, c)
@@ -95,4 +95,13 @@
 #define VEC_UNPACKHU(a)  vec_mergeh(a, pb_zero)
 #define VEC_UNPACKLU(a)  vec_mergel(a, pb_zero)
 
+#endif
+
+
+#if defined(__clang__)
+#pragma clang diagnostic ignored "-Wc99-extensions"
+#pragma clang diagnostic ignored "-Wshadow"
+#elif defined(__GNUC__)
+#pragma GCC diagnostic ignored "-Wpedantic"
+#pragma GCC diagnostic ignored "-Wshadow"
 #endif
