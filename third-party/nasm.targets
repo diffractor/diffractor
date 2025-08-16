@@ -61,6 +61,19 @@
     <ItemGroup Condition="'@(SelectedFiles)' != ''">
       <NASM Remove="@(NASM)" Condition="'%(Identity)' != '@(SelectedFiles)'" />
     </ItemGroup>
+    <ItemGroup Condition="'@(NASM)' != ''">
+      <!-- Collect object file paths -->
+      <_NasmObjectFiles Include="@(NASM->'%(ObjectFileName)')" />
+
+      <!-- Collect their directories -->
+      <_NasmObjectFolder Include="@(_NasmObjectFiles)">
+        <Dir>$([System.IO.Path]::GetDirectoryName('%(Identity)'))</Dir>
+      </_NasmObjectFolder>
+    </ItemGroup>
+
+    <!-- <Message Text="Creating NASM output file: %(_NasmObjectFiles.Identity)" Importance="High" />
+    <Message Text="Creating NASM output directory: %(_NasmObjectFolder.Dir)" Importance="High" /> -->
+    <MakeDir Condition="'@(NASM)' != ''" Directories="%(_NasmObjectFolder.Dir)" />
     <Message
       Condition="'@(NASM)' != '' and '%(NASM.ExcludedFromBuild)' != 'true'"
       Importance="High"
@@ -74,6 +87,8 @@
       GenerateDebugInformation="%(NASM.GenerateDebugInformation)"
       IncludePaths="%(NASM.IncludePaths)"
       PreIncludeFiles="%(NASM.PreIncludeFiles)"
+      PreprocessorDefinitions="%(NASM.PreprocessorDefinitions)"
+      UndefinePreprocessorDefinitions="%(NASM.UndefinePreprocessorDefinitions)"      
       TreatWarningsAsErrors="%(NASM.TreatWarningsAsErrors)"
       CommandLineTemplate="%(NASM.CommandLineTemplate)"
       AdditionalOptions="%(NASM.AdditionalOptions)"

@@ -17,5 +17,5 @@
 exit 1</CommandLineTemplate>
       <ExecutionDescription>%(Identity)</ExecutionDescription>
     </NASM>
-  </ItemDefinitionGroup>
+  </ItemDefinitionGroup>  
 </Project>

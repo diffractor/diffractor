@@ -5013,11 +5013,15 @@ extern "C" {
 	void ff_v210_planar_unpack_avx512icl() {};
 	void ff_flac_decorrelate_indep8_16_ssse3() {};
 	void ff_flac_decorrelate_indep8_32_ssse3() {};
+	void ff_hevc_put_qpel_hv8_8_avx512icl() {};
+	void ff_hevc_put_qpel_h64_8_avx512icl() {};
+	void ff_hevc_put_qpel_h4_8_avx512icl() {};
+	void ff_hevc_put_qpel_h16_8_avx512icl() {};
+	void ff_hevc_put_qpel_h8_8_avx512icl() {};
+	void ff_hevc_put_qpel_h32_8_avx512icl() {};
 
 #endif
 #ifdef _M_X64
-
-	void ff_v210_planar_unpack_avx512icl() {};
 
 	void ff_aacdec_init_mips()
 	{

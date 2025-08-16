@@ -2636,7 +2636,7 @@ void index_state::queue_update_summary()
 		{
 			update_summary();
 			_async.invalidate_view(view_invalid::sidebar);
-			std::this_thread::sleep_for(333ms);
+			std::this_thread::sleep_for(std::chrono::milliseconds(333));
 		});
 }
 
