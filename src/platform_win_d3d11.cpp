@@ -566,14 +566,13 @@ public:
 
 	ULONG STDMETHODCALLTYPE AddRef() override
 	{
-		++_ref_count;
-		return _ref_count;
+		return InterlockedIncrement(reinterpret_cast<LONG*>(&_ref_count));
 	}
 
 	ULONG STDMETHODCALLTYPE Release() override
 	{
-		--_ref_count;
-		return _ref_count;
+		const auto ref = InterlockedDecrement(reinterpret_cast<LONG*>(&_ref_count));
+		return ref;
 	}
 
 	HRESULT STDMETHODCALLTYPE IsPixelSnappingDisabled(void* clientDrawingContext, BOOL* isDisabled) override
@@ -1030,8 +1029,15 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, ComPtr<IDXGISwapCha
 				_f->d3d_device->QueryInterface(__uuidof(ID3D10Multithread), std::bit_cast<void**>(multithread.
 					GetAddressOf()))))
 			{
-				multithread->SetMultithreadProtected(TRUE);
+				if (!multithread->SetMultithreadProtected(TRUE))
+				{
+					df::log(__FUNCTION__, "Warning: Failed to enable multithread protection"sv);
+				}
 				multithread = nullptr;
+			}
+			else
+			{
+				df::log(__FUNCTION__, "Warning: ID3D10Multithread interface not available"sv);
 			}
 		}
 
@@ -1246,9 +1252,16 @@ void d3d11_draw_context_impl::build_index_and_vertex_buffers()
 	df::scope_rendering_func rf(__FUNCTION__);
 	if (!_vertex_buffer_staging.empty())
 	{
+		const auto buffer_size = sizeof(vertex_2d) * _vertex_buffer_staging.size();
+		if (buffer_size > UINT_MAX)
+		{
+			df::log(__FUNCTION__, "Vertex buffer size exceeds maximum allowed size"sv);
+			return;
+		}
+
 		ComPtr<ID3D11Buffer> buffer;
 		D3D11_BUFFER_DESC bd = {};
-		bd.ByteWidth = static_cast<uint32_t>(sizeof(vertex_2d) * _vertex_buffer_staging.size());
+		bd.ByteWidth = static_cast<uint32_t>(buffer_size);
 		bd.Usage = D3D11_USAGE_DEFAULT;
 		bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 		bd.CPUAccessFlags = 0;
@@ -1264,6 +1277,7 @@ void d3d11_draw_context_impl::build_index_and_vertex_buffers()
 		}
 		else
 		{
+			df::log(__FUNCTION__, str::format(u8"CreateBuffer for vertices failed: {:x}"sv, hr));
 			buffer = nullptr;
 		}
 
@@ -1272,9 +1286,16 @@ void d3d11_draw_context_impl::build_index_and_vertex_buffers()
 
 	if (!_index_buffer_staging.empty())
 	{
+		const auto buffer_size = sizeof(WORD) * _index_buffer_staging.size();
+		if (buffer_size > UINT_MAX)
+		{
+			df::log(__FUNCTION__, "Index buffer size exceeds maximum allowed size"sv);
+			return;
+		}
+
 		ComPtr<ID3D11Buffer> buffer;
 		D3D11_BUFFER_DESC bd = {};
-		bd.ByteWidth = static_cast<uint32_t>(sizeof(WORD) * _index_buffer_staging.size());
+		bd.ByteWidth = static_cast<uint32_t>(buffer_size);
 		bd.Usage = D3D11_USAGE_DEFAULT;
 		bd.BindFlags = D3D11_BIND_INDEX_BUFFER;
 		bd.CPUAccessFlags = 0;
@@ -1290,6 +1311,7 @@ void d3d11_draw_context_impl::build_index_and_vertex_buffers()
 		}
 		else
 		{
+			df::log(__FUNCTION__, str::format(u8"CreateBuffer for indices failed: {:x}"sv, hr));
 			buffer = nullptr;
 		}
 
@@ -2026,6 +2048,7 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 
 		if (video_texture_index >= tex_desc_src.ArraySize)
 		{
+			df::log(__FUNCTION__, str::format(u8"Video texture index {} exceeds array size {}"sv, video_texture_index, tex_desc_src.ArraySize));
 			device_hwctx->unlock(device_hwctx->lock_ctx);
 			return ui::texture_update_result::failed;
 		}
@@ -2189,7 +2212,14 @@ static HRESULT try_create_tex(ID3D11Device* pDevice, const D3D11_TEXTURE2D_DESC&
 	}
 	__except (is_yuv ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH)
 	{
+		// Ensure we don't return a partially initialized texture on exception
+		if (t && *t)
+		{
+			(*t)->Release();
+			*t = nullptr;
+		}
 		setting.use_yuv = false;
+		df::log(__FUNCTION__, "Exception caught in CreateTexture2D, YUV disabled"sv);
 	}
 
 	return E_FAIL;
@@ -2400,9 +2430,16 @@ d3d11_text_renderer::coords d3d11_text_renderer::find_glyph(const uint16_t c, co
 
 			if ((_next_location.y + _line_height) > static_cast<int>(_xy_tex)) // Out of room
 			{
+				const auto new_size = std::min(_xy_tex * 2u, 4096u); // Cap at 4096 to prevent excessive memory usage
+				if (new_size <= _xy_tex)
+				{
+					df::log(__FUNCTION__, "Font texture atlas reached maximum size, glyph rendering may fail"sv);
+					return result; // Return empty coordinates if we can't grow further
+				}
+				
 				_coords.clear();
 				_texture = nullptr;
-				create_a8_texture(_xy_tex * 2);
+				create_a8_texture(new_size);
 			}
 
 			if (!_texture)

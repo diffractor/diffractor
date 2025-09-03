@@ -22,7 +22,6 @@
 #define IDF_PETSCII   116
 #define IDI_DIFFRACTOR   117
 #define IDR_CREATE_SQL   118
-#define IDR_MAP   120
 #define IDR_SHADER_FONT   121
 #define IDR_SHADER_RGB   122
 #define IDR_SHADER_RGB_BICUBIC   123

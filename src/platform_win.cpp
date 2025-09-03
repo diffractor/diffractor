@@ -136,14 +136,14 @@ public:
 		if (IsEqualGUID(iid, IID_IDataObject))
 		{
 			*ppvObject = static_cast<IDataObject*>(this);
-			_refs += 1;
+			AddRef();
 			return S_OK;
 		}
 
 		if (IsEqualGUID(iid, IID_IUnknown))
 		{
 			*ppvObject = static_cast<IUnknown*>(this);
-			_refs += 1;
+			AddRef();
 			return S_OK;
 		}
 
@@ -152,12 +152,12 @@ public:
 
 	STDMETHOD_(ULONG, AddRef)() noexcept override
 	{
-		return ++_refs;
+		return _refs.fetch_add(1) + 1;
 	}
 
 	STDMETHOD_(ULONG, Release)() noexcept override
 	{
-		const auto n = --_refs;
+		const auto n = _refs.fetch_sub(1) - 1;
 		if (n <= 0)
 		{
 			df::trace("items_data::release - delete"sv);
@@ -193,14 +193,14 @@ public:
 		if (IsEqualGUID(iid, IID_IDropSource))
 		{
 			*ppvObject = static_cast<IDropSource*>(this);
-			_refs += 1;
+			AddRef();
 			return S_OK;
 		}
 
 		if (IsEqualGUID(iid, IID_IUnknown))
 		{
 			*ppvObject = static_cast<IUnknown*>(this);
-			_refs += 1;
+			AddRef();
 			return S_OK;
 		}
 
@@ -209,12 +209,12 @@ public:
 
 	STDMETHOD_(ULONG, AddRef)() noexcept override
 	{
-		return ++_refs;
+		return _refs.fetch_add(1) + 1;
 	}
 
 	STDMETHOD_(ULONG, Release)() noexcept override
 	{
-		const auto n = --_refs;
+		const auto n = _refs.fetch_sub(1) - 1;
 		if (n <= 0)
 		{
 			df::trace("items_drop_source::release - delete"sv);
@@ -287,14 +287,14 @@ public:
 		if (IsEqualGUID(iid, IID_IEnumFORMATETC))
 		{
 			*ppvObject = static_cast<IEnumFORMATETC*>(this);
-			_refs += 1;
+			AddRef();
 			return S_OK;
 		}
 
 		if (IsEqualGUID(iid, IID_IUnknown))
 		{
 			*ppvObject = static_cast<IUnknown*>(this);
-			_refs += 1;
+			AddRef();
 			return S_OK;
 		}
 
@@ -303,12 +303,12 @@ public:
 
 	STDMETHOD_(ULONG, AddRef)() noexcept override
 	{
-		return ++_refs;
+		return _refs.fetch_add(1) + 1;
 	}
 
 	STDMETHOD_(ULONG, Release)() noexcept override
 	{
-		const auto n = --_refs;
+		const auto n = _refs.fetch_sub(1) - 1;
 		if (n <= 0)
 		{
 			df::trace("CEnumFORMATETCImpl::release - delete"sv);
@@ -656,6 +656,11 @@ STDMETHODIMP items_data_object::GetData(FORMATETC* pformatetcIn, STGMEDIUM* pmed
 {
 	df::trace(__FUNCTION__);
 
+	if (!pformatetcIn || !pmedium)
+	{
+		return E_INVALIDARG;
+	}
+
 	try
 	{
 		const auto has_paths = !_files.empty() || !_folders.empty();
@@ -684,14 +689,21 @@ STDMETHODIMP items_data_object::GetData(FORMATETC* pformatetcIn, STGMEDIUM* pmed
 			if (h)
 			{
 				auto* const p = static_cast<DWORD*>(GlobalLock(h));
-				*p = _is_move ? DROPEFFECT_MOVE : DROPEFFECT_COPY;
-				GlobalUnlock(h);
+				if (p)
+				{
+					*p = _is_move ? DROPEFFECT_MOVE : DROPEFFECT_COPY;
+					GlobalUnlock(h);
 
-				pmedium->tymed = TYMED_HGLOBAL;
-				pmedium->hGlobal = h;
-				pmedium->pUnkForRelease = nullptr;
+					pmedium->tymed = TYMED_HGLOBAL;
+					pmedium->hGlobal = h;
+					pmedium->pUnkForRelease = nullptr;
 
-				return S_OK;
+					return S_OK;
+				}
+				else
+				{
+					GlobalFree(h);
+				}
 			}
 			else
 			{
@@ -711,11 +723,20 @@ STDMETHODIMP items_data_object::GetData(FORMATETC* pformatetcIn, STGMEDIUM* pmed
 		{
 			const auto paths = all_file_system_paths(_files, _folders);
 
-			// must e double null terminated
+			// must be double null terminated
 			df::assert_true(paths[paths.size() - 1] == 0);
 			df::assert_true(paths[paths.size() - 2] == 0);
 
 			const auto len = paths.size();
+			
+			// Check for potential integer overflow
+			if (len > SIZE_MAX / sizeof(wchar_t) || 
+				len * sizeof(wchar_t) > SIZE_MAX - sizeof(DROPFILES))
+			{
+				df::log(__FUNCTION__, "Path data too large, potential overflow");
+				return E_OUTOFMEMORY;
+			}
+			
 			const auto text_alloc_len = len * sizeof(wchar_t);
 			const auto allocLen = sizeof(DROPFILES) + text_alloc_len;
 
@@ -1274,7 +1295,7 @@ platform::file_op_result data_object_client::save_bitmap(const df::folder_path s
 	{
 		result = save_bitmap_info(save_path, name, as_png, stgMedium.hBitmap);
 
-		GlobalUnlock(stgMedium.hBitmap);
+		// Don't unlock bitmap handle - ReleaseStgMedium will handle cleanup
 		ReleaseStgMedium(&stgMedium);
 	}
 
@@ -1286,6 +1307,11 @@ void* platform::memory_pool::alloc(size_t size)
 {
 	static std::bad_alloc OOM;
 	exclusive_lock lock(cs);
+
+	if (alignment == 0)
+	{
+		throw OOM; // Invalid alignment
+	}
 
 	const auto align_size = size = ((size + (alignment - 1)) / alignment) * alignment; // Align size
 
@@ -2736,13 +2762,6 @@ df::blob platform::load_resource(const resource_item i)
 	return {};
 }
 
-std::u8string platform::resource_url(const resource_item map_html)
-{
-	const auto app_path = running_app_path();
-	return str::format(u8"res://{}/{}"sv, app_path, IDR_MAP);
-}
-
-
 static std::wstring read_cert_name(const std::wstring& path)
 {
 	std::wstring result;
@@ -3407,29 +3426,45 @@ void platform::set_clipboard(std::u8string_view text)
 
 		const auto w = str::utf8_to_utf16(text);
 		const auto text_size = w.size();
+		
+		// Check for potential overflow
+		if (text_size > SIZE_MAX / sizeof(wchar_t) - 1)
+		{
+			df::log(__FUNCTION__, "Text too large for clipboard");
+			CloseClipboard();
+			return;
+		}
+		
 		auto* const hglbCopy = GlobalAlloc(GMEM_MOVEABLE, (text_size + 1) * sizeof(wchar_t));
 
 		if (hglbCopy)
 		{
 			auto* const text_copy = static_cast<wchar_t*>(GlobalLock(hglbCopy));
 
-			memcpy(text_copy, w.data(), text_size * sizeof(wchar_t));
-
-			for (auto i = 0u; i < text_size; ++i)
+			if (text_copy)
 			{
-				const auto c = text_copy[i];
+				memcpy(text_copy, w.data(), text_size * sizeof(wchar_t));
 
-				// poor man's escape
-				if (c < 32 && c != 10 && c != 13)
+				for (auto i = 0u; i < text_size; ++i)
 				{
-					text_copy[i] = '.';
+					const auto c = text_copy[i];
+
+					// poor man's escape
+					if (c < 32 && c != 10 && c != 13)
+					{
+						text_copy[i] = '.';
+					}
 				}
+
+				text_copy[text_size] = static_cast<wchar_t>(0); // null character 
+				GlobalUnlock(hglbCopy);
+				
+				SetClipboardData(CF_UNICODETEXT, hglbCopy);
 			}
-
-			text_copy[text_size] = static_cast<wchar_t>(0); // null character 
-			GlobalUnlock(hglbCopy);
-
-			SetClipboardData(CF_UNICODETEXT, hglbCopy);
+			else
+			{
+				GlobalFree(hglbCopy);
+			}
 		}
 
 		CloseClipboard();

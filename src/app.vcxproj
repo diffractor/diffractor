@@ -1289,6 +1289,7 @@
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">pch.h</PrecompiledHeaderFile>
     </ClCompile>
     <ClCompile Include="tests.cpp" />
+    <ClInclude Include="ui_map.h" />
     <ClCompile Include="util_base64.cpp">
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|x64'">pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">pch.h</PrecompiledHeaderFile>
@@ -1555,14 +1556,10 @@
     <None Include="Res\app.ico" />
     <None Include="Res\inverse_shadow.png" />
     <None Include="res\manifest.bin" />
-    <None Include="res\maps.html" />
-    <None Include="Res\map_pin.png" />
-    <None Include="res\markerclusterer.js" />
     <None Include="Res\move.cur" />
     <None Include="Res\select.cur" />
     <None Include="Res\shadow.png" />
     <None Include="Res\tb_large.bmp" />
-    <None Include="Res\blank.html" />
     <None Include="Res\tb_small.bmp" />
     <None Include="Res\title.png" />
     <None Include="Res\world_map.jpg" />
@@ -1712,7 +1709,6 @@
     <ClInclude Include="util_path.h" />
     <ClInclude Include="platform.h" />
     <ClInclude Include="model_propery.h" />
-    <ClInclude Include="platform_win_browser.h" />
     <ClInclude Include="platform_win_res.h" />
     <ClInclude Include="crypto_sha.h" />
     <ClInclude Include="av_sound.h" />

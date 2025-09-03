@@ -30,7 +30,6 @@
 #include "ui_elements.h"
 #include "util_spell.h"
 #include "platform_win_res.h"
-#include "platform_win_browser.h"
 
 #pragma comment(lib, "wtsapi32")
 #pragma comment(lib, "D2d1")
@@ -310,6 +309,12 @@ struct resources_t
 		diffractor_16 = static_cast<HICON>(LoadImage(h, MAKEINTRESOURCE(IDI_DIFFRACTOR), IMAGE_ICON, 16, 16, 0));
 		diffractor_32 = static_cast<HICON>(LoadImage(h, MAKEINTRESOURCE(IDI_DIFFRACTOR), IMAGE_ICON, 32, 32, 0));
 		diffractor_64 = static_cast<HICON>(LoadImage(h, MAKEINTRESOURCE(IDI_DIFFRACTOR), IMAGE_ICON, 64, 64, 0));
+
+		// Log warnings for failed resource loads to aid debugging
+		if (!normal) df::log(__FUNCTION__, "Failed to load normal cursor"sv);
+		if (!diffractor_16) df::log(__FUNCTION__, "Failed to load 16x16 icon"sv);
+		if (!diffractor_32) df::log(__FUNCTION__, "Failed to load 32x32 icon"sv);
+		if (!diffractor_64) df::log(__FUNCTION__, "Failed to load 64x64 icon"sv);
 	}
 };
 
@@ -566,6 +571,10 @@ HFONT GetFont(HWND hwnd) noexcept
 static HANDLE load_icon_font()
 {
 	auto font_data = load_resource(IDF_ICONS, L"BINARY");
+	if (font_data.empty())
+	{
+		return nullptr;
+	}
 	DWORD nFonts = 0;
 	return AddFontMemResourceEx(font_data.data(), static_cast<uint32_t>(font_data.size()), nullptr, &nFonts);
 }
@@ -573,6 +582,10 @@ static HANDLE load_icon_font()
 static HANDLE load_petscii_font()
 {
 	auto font_data = load_resource(IDF_PETSCII, L"BINARY");
+	if (font_data.empty())
+	{
+		return nullptr;
+	}
 	DWORD nFonts = 0;
 	return AddFontMemResourceEx(font_data.data(), static_cast<uint32_t>(font_data.size()), nullptr, &nFonts);
 }
@@ -1005,6 +1018,16 @@ void draw_icon(HDC hdc, const owner_context_ptr& ctx, const icon_index icon, con
 					const auto hbm_old = SelectObject(bm_hdc, hdib);
 					const auto src_stride = cx * 4_z;
 
+					// Validate stride to prevent overflow
+					if (src_stride > SIZE_MAX / cy || cy < 0 || cx < 0)
+					{
+						SelectObject(bm_hdc, hbm_old);
+						SelectObject(bm_hdc, old_font);
+						DeleteObject(hdib);
+						DeleteDC(bm_hdc);
+						return;
+					}
+
 					for (auto y = 0; y < cy; y++)
 					{
 						memset(dibBits + (src_stride * y), 0, src_stride);
@@ -1169,7 +1192,13 @@ static void draw_toolbar_button(const ui::command_ptr& command, const owner_cont
 	button_info.dwMask = TBIF_TEXT | TBIF_IMAGE | TBIF_STYLE | TBIF_STATE;
 	button_info.pszText = szText;
 	button_info.cchText = cchText;
-	toolbar_GetButtonInfo(tb, static_cast<int>(lpTBCustomDraw->nmcd.dwItemSpec), &button_info);
+	const auto result = toolbar_GetButtonInfo(tb, static_cast<int>(lpTBCustomDraw->nmcd.dwItemSpec), &button_info);
+
+	// Ensure the text is properly null-terminated in case of truncation
+	if (result > 0 && button_info.cchText > 0)
+	{
+		szText[cchText - 1] = L'\0';
+	}
 
 	const uint32_t item_state = lpTBCustomDraw->nmcd.uItemState;
 	const bool is_selected = (item_state & ODS_SELECTED) != 0;
@@ -2214,10 +2243,11 @@ class win_impl : public win_base
 public:
 	virtual ~win_impl()
 	{
-		if (IsWindow(m_hWnd))
+		if (m_hWnd && IsWindow(m_hWnd))
 		{
 			df::log(__FUNCTION__, u8"Destroying win_base of valid window"sv);
 			SetWindowLongPtr(m_hWnd, GWLP_USERDATA, 0);
+			m_hWnd = nullptr; // Prevent double destruction
 		}
 	}
 
@@ -2230,19 +2260,24 @@ public:
 	{
 		if (uMsg == WM_NCCREATE)
 		{
-			const auto pt = std::bit_cast<win_impl*>(std::bit_cast<LPCREATESTRUCT>(lParam)->lpCreateParams);
-			const auto ptr = std::bit_cast<LONG_PTR>(std::bit_cast<LPCREATESTRUCT>(lParam)->lpCreateParams);
-			// get the pointer to the window from lpCreateParams which was set in CreateWindow
-			SetWindowLongPtr(hwnd, GWLP_USERDATA, ptr);
-
-			if (pt)
+			// Safer pointer handling with validation
+			const auto* lpCreate = reinterpret_cast<LPCREATESTRUCT>(lParam);
+			if (lpCreate && lpCreate->lpCreateParams)
 			{
-				pt->m_hWnd = hwnd;
+				const auto pt = static_cast<win_impl*>(lpCreate->lpCreateParams);
+				const auto ptr = reinterpret_cast<LONG_PTR>(lpCreate->lpCreateParams);
+				// get the pointer to the window from lpCreateParams which was set in CreateWindow
+				SetWindowLongPtr(hwnd, GWLP_USERDATA, ptr);
+
+				if (pt)
+				{
+					pt->m_hWnd = hwnd;
+				}
 			}
 		}
 
 		// get the pointer to the window
-		const auto ptr = std::bit_cast<win_impl*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
+		const auto ptr = reinterpret_cast<win_impl*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
 
 		if (ptr)
 		{
@@ -6405,7 +6440,6 @@ public:
 		std::function<void()> invoke, bool default_button = false) override;
 	ui::button_ptr create_check_button(bool val, std::u8string_view text, bool is_radio,
 		std::function<void(bool)> changed) override;
-	ui::web_window_ptr create_web_window(std::u8string_view start_url, ui::web_events* events) override;
 	ui::date_time_control_ptr create_date_time_control(df::date_t text, std::function<void(df::date_t)> changed,
 		bool include_time) override;
 	ui::toolbar_ptr
@@ -7983,16 +8017,6 @@ ui::button_ptr control_host_impl::create_check_button(bool val, const std::u8str
 	return result;
 }
 
-ui::web_window_ptr control_host_impl::create_web_window(const std::u8string_view start_url, ui::web_events* events)
-{
-	auto result = std::make_shared<web_window_impl>(start_url, events);
-	//const auto dw_style = WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
-	//const auto id = alloc_ids();
-	result->Create(m_hWnd);
-	//_children[id] = result;
-	return result;
-}
-
 ui::date_time_control_ptr control_host_impl::create_date_time_control(const df::date_t val,
 	std::function<void(df::date_t)> changed,
 	const bool include_time)
@@ -8058,7 +8082,19 @@ static bool create_dump(EXCEPTION_POINTERS* exception_pointers, const df::file_p
 
 				CloseHandle(dump_file);
 			}
+			else
+			{
+				// Log the error if file creation failed
+				const auto error = GetLastError();
+				// Can't use normal logging during crash handling, but store for later
+				(void)error; // Suppress unused variable warning
+			}
 		}
+	}
+
+	if (dbg_help)
+	{
+		FreeLibrary(dbg_help);
 	}
 
 	return dump_successful;

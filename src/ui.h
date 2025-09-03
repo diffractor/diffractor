@@ -1585,7 +1585,6 @@ namespace ui
 			std::function<void(bool)> changed) = 0;
 		virtual date_time_control_ptr create_date_time_control(df::date_t text, std::function<void(df::date_t)> changed,
 			bool include_time) = 0;
-		virtual web_window_ptr create_web_window(std::u8string_view start_url, web_events* events) = 0;
 		virtual control_frame_ptr create_dlg(frame_host_weak_ptr host, bool is_popup) = 0;
 		virtual frame_ptr create_frame(frame_host_weak_ptr host, const frame_style& ft) = 0;
 		virtual bubble_window_ptr create_bubble() = 0;

@@ -47,6 +47,11 @@ DEFINE_PROPERTYKEY2(PKEY_AudioEngine_DeviceFormat, 0xf19f064d, 0x82c, 0x4e27, 0x
 
 static prop::audio_sample_t calc_sample_fmt(const WAVEFORMATEX* waveformat)
 {
+	if (!waveformat)
+	{
+		return prop::audio_sample_t::none;
+	}
+	
 	if ((waveformat->wFormatTag == WAVE_FORMAT_IEEE_FLOAT) && (waveformat->wBitsPerSample == 32))
 	{
 		return prop::audio_sample_t::signed_float;
@@ -61,6 +66,12 @@ static prop::audio_sample_t calc_sample_fmt(const WAVEFORMATEX* waveformat)
 	}
 	if (waveformat->wFormatTag == WAVE_FORMAT_EXTENSIBLE)
 	{
+		if (waveformat->cbSize < sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX))
+		{
+			// Invalid extensible format
+			return prop::audio_sample_t::none;
+		}
+		
 		const auto* ext = std::bit_cast<const WAVEFORMATEXTENSIBLE*>(waveformat);
 
 		if ((memcmp(&ext->SubFormat, &SDL_KSDATAFORMAT_SUBTYPE_IEEE_FLOAT, sizeof(GUID)) == 0) && (waveformat->
@@ -193,31 +204,36 @@ public:
 
 	bool activate_device(const ComPtr<IMMDevice>& device)
 	{
+		if (!device)
+		{
+			return false;
+		}
+		
 		bool success = false;
 
 		ComPtr<IAudioClient> audio;
 		ComPtr<IAudioRenderClient> render;
 		ComPtr<ISimpleAudioVolume> sav;
 		ComPtr<IAudioClock> clock;
+		WAVEFORMATEX* pwfx_temp = nullptr;
 
 		auto hr = device->Activate(
 			IID_IAudioClient, CLSCTX_ALL,
 			nullptr, &audio);
 
-
 		if (SUCCEEDED(hr))
 		{
 			//hr = get_stream_format(_device, _audio, &_pwfx);
-			hr = audio->GetMixFormat(&_pwfx);
+			hr = audio->GetMixFormat(&pwfx_temp);
 
-			if (SUCCEEDED(hr))
+			if (SUCCEEDED(hr) && pwfx_temp)
 			{
 				hr = audio->Initialize(
 					AUDCLNT_SHAREMODE_SHARED,
 					0, //AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUDCLNT_STREAMFLAGS_NOPERSIST,
 					REFTIMES_PER_SEC,
 					0, //REFTIMES_PER_SEC,
-					_pwfx,
+					pwfx_temp,
 					nullptr);
 
 				// KSDATAFORMAT_SUBTYPE_IEEE_FLOAT
@@ -248,11 +264,24 @@ public:
 
 			if (success)
 			{
+				// Clean up existing format before assigning new one
+				if (_pwfx)
+				{
+					CoTaskMemFree(_pwfx);
+				}
+				
 				_device = device;
 				_audio = audio;
 				_render = render;
 				_sav = sav;
 				_clock = clock;
+				_pwfx = pwfx_temp;
+				pwfx_temp = nullptr; // Ownership transferred
+			}
+			else if (pwfx_temp)
+			{
+				// Clean up on failure
+				CoTaskMemFree(pwfx_temp);
 			}
 		}
 
@@ -338,7 +367,12 @@ public:
 			if (SUCCEEDED(_clock->GetFrequency(&device_frequency)) &&
 				SUCCEEDED(_clock->GetPosition(&position, nullptr)))
 			{
-				return device_frequency > 0 ? (static_cast<double>(position) / static_cast<double>(device_frequency)) : 0.0;
+				if (device_frequency == 0)
+				{
+					df::log(u8"wasapi_sound::time"sv, u8"Device frequency is zero, returning 0.0"sv);
+					return 0.0;
+				}
+				return static_cast<double>(position) / static_cast<double>(device_frequency);
 			}
 		}
 
@@ -406,13 +440,23 @@ public:
 	{
 		platform::shared_lock lock(_rw);
 
-		if (_render)
+		if (!_render || !buffer.data)
 		{
-			const auto bytes_per_sample = buffer.bytes_per_sample();
-			const auto channel_count = buffer.format.channel_count();
-			const auto available_in_buffer = buffer.used_bytes() / (bytes_per_sample * channel_count);
+			return; // Early exit for invalid state
+		}
 
-			if (available_in_buffer > 0)
+		const auto bytes_per_sample = buffer.bytes_per_sample();
+		const auto channel_count = buffer.format.channel_count();
+		
+		if (bytes_per_sample == 0 || channel_count == 0)
+		{
+			df::log(u8"wasapi_sound::write"sv, u8"Invalid audio format parameters"sv);
+			return;
+		}
+		
+		const auto available_in_buffer = buffer.used_bytes() / (bytes_per_sample * channel_count);
+
+		if (available_in_buffer > 0)
 			{
 				uint32_t bufferFrameCount = 0;
 				uint32_t numFramesPadding = 0;
@@ -434,8 +478,15 @@ public:
 						{
 							const auto copy_bytes = copy_samples * bytes_per_sample * channel_count;
 
-							memcpy(pData, buffer.data, copy_bytes);
-							buffer.remove(copy_bytes);
+							if (copy_bytes <= buffer.used_bytes())
+							{
+								memcpy(pData, buffer.data, copy_bytes);
+								buffer.remove(copy_bytes);
+							}
+							else
+							{
+								df::log(u8"wasapi_sound::write"sv, u8"Copy bytes exceeds buffer size"sv);
+							}
 
 							const uint32_t flags = 0;
 							hr = _render->ReleaseBuffer(copy_samples, flags);
@@ -447,12 +498,13 @@ public:
 				{
 					update_status(hr);
 				}
-			}
-		}
+		}		
 	}
 
 	void volume(double vol) override
 	{
+		platform::shared_lock lock(_rw);
+		
 		if (_sav && !df::equiv(_vol, vol))
 		{
 			const auto hr = _sav->SetMasterVolume(static_cast<float>(vol), nullptr);
@@ -467,6 +519,7 @@ public:
 
 	std::u8string id() override
 	{
+		platform::shared_lock lock(_rw);
 		std::u8string result;
 
 		if (_device)
@@ -474,9 +527,15 @@ public:
 			LPWSTR pwszID = nullptr;
 			const auto hr = _device->GetId(&pwszID);
 
-			if (SUCCEEDED(hr))
+			if (SUCCEEDED(hr) && pwszID)
 			{
 				result = str::utf16_to_utf8(pwszID);
+				CoTaskMemFree(pwszID);
+				pwszID = nullptr;
+			}
+			else if (pwszID)
+			{
+				// Ensure memory is freed even on failure
 				CoTaskMemFree(pwszID);
 				pwszID = nullptr;
 			}
@@ -524,6 +583,11 @@ std::vector<sound_device> list_audio_playback_devices()
 				{
 					df::log(u8"list_audio_playback_devices"sv, u8"No sound endpoints found."sv);
 				}
+				else if (count > 1000) // Sanity check to prevent excessive memory allocation
+				{
+					df::log(u8"list_audio_playback_devices"sv, u8"Unusually high device count, limiting to 1000"sv);
+					count = 1000;
+				}
 
 				for (ULONG i = 0; i < count; i++)
 				{
@@ -535,7 +599,7 @@ std::vector<sound_device> list_audio_playback_devices()
 						LPWSTR pwszID = nullptr;
 						hr = pEndpoint->GetId(&pwszID);
 
-						if (SUCCEEDED(hr))
+						if (SUCCEEDED(hr) && pwszID)
 						{
 							sound_device d;
 							d.id = str::utf16_to_utf8(pwszID);
@@ -552,12 +616,26 @@ std::vector<sound_device> list_audio_playback_devices()
 								{
 									d.name = str::is_empty(varName.v.pwszVal) ? str::format(u8"Audio device {}"sv, static_cast<int>(i)) : str::utf16_to_utf8(varName.v.pwszVal);
 								}
+								else
+								{
+									d.name = str::format(u8"Audio device {}"sv, static_cast<int>(i));
+								}
+							}
+							else
+							{
+								d.name = str::format(u8"Audio device {}"sv, static_cast<int>(i));
 							}
 
 							CoTaskMemFree(pwszID);
 							pwszID = nullptr;
 
 							result.emplace_back(d);
+						}
+						else if (pwszID)
+						{
+							// Ensure memory is freed even on failure
+							CoTaskMemFree(pwszID);
+							pwszID = nullptr;
 						}
 					}
 				}

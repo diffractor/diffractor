@@ -19,8 +19,20 @@
 
 static void flip_buffer_vertically(uint32_t* buffer, const unsigned width, const unsigned height)
 {
+	if (!buffer || width == 0 || height <= 1)
+	{
+		return; // Nothing to flip or invalid parameters
+	}
+	
 	const auto rows = height / 2;
 	const auto stride = width * sizeof(uint32_t);
+	
+	// Check for potential overflow
+	if (width > SIZE_MAX / sizeof(uint32_t))
+	{
+		return; // Avoid overflow in stride calculation
+	}
+	
 	const auto temp_row = df::unique_alloc<uint32_t*>(stride);
 
 	if (temp_row)
@@ -38,6 +50,14 @@ HGLOBAL image_to_handle(const file_load_result& loaded)
 {
 	const auto dimensions = loaded.dimensions();
 
+	// Validate dimensions to prevent integer overflow
+	if (dimensions.cx <= 0 || dimensions.cy <= 0 || 
+		dimensions.cx > 65536 || dimensions.cy > 65536)
+	{
+		df::log(__FUNCTION__, "Invalid image dimensions"sv);
+		throw std::invalid_argument("Invalid image dimensions");
+	}
+
 	BITMAPINFOHEADER bi;
 	bi.biSize = sizeof(BITMAPINFOHEADER);
 	bi.biWidth = dimensions.cx;
@@ -45,7 +65,16 @@ HGLOBAL image_to_handle(const file_load_result& loaded)
 	bi.biPlanes = 1;
 	bi.biBitCount = 32;
 	bi.biCompression = BI_RGB;
-	bi.biSizeImage = dimensions.cy * dimensions.cx * 4;
+	
+	// Check for potential overflow in image size calculation
+	const size_t pixel_count = static_cast<size_t>(dimensions.cx) * dimensions.cy;
+	if (pixel_count > SIZE_MAX / 4)
+	{
+		df::log(__FUNCTION__, "Image too large, potential overflow"sv);
+		throw std::invalid_argument("Image too large");
+	}
+	
+	bi.biSizeImage = static_cast<DWORD>(pixel_count * 4);
 
 	const auto alloc_size = sizeof(bi) + bi.biSizeImage;
 	auto* const h = GlobalAlloc(GMEM_MOVEABLE | GMEM_DDESHARE, alloc_size);
@@ -76,12 +105,32 @@ HGLOBAL image_to_handle(const file_load_result& loaded)
 		const auto* const pixels_in = s->pixels();
 		auto* const pixels_out = buffer_out + sizeof(bi);
 
-		for (auto y = 0; y < dimensions.cy; ++y)
+		// Validate buffer bounds
+		if (pixels_in == nullptr || pixels_out == nullptr)
 		{
-			memcpy(pixels_out + (stride_out * y), pixels_in + (stride_in * y), copy_len);
+			df::log(__FUNCTION__, "Invalid pixel buffer pointers"sv);
+			GlobalUnlock(h);
+			GlobalFree(h);
+			throw std::invalid_argument("Invalid pixel buffers");
 		}
 
-		flip_buffer_vertically(std::bit_cast<uint32_t*>(pixels_out), dimensions.cx, dimensions.cy);
+		for (auto y = 0; y < dimensions.cy; ++y)
+		{
+			const auto src_offset = stride_in * y;
+			const auto dest_offset = stride_out * y;
+			
+			// Bounds checking for buffer operations
+			if (src_offset + copy_len > s->size() || 
+				dest_offset + copy_len > bi.biSizeImage)
+			{
+				df::log(__FUNCTION__, "Buffer bounds exceeded"sv);
+				break;
+			}
+			
+			memcpy(pixels_out + dest_offset, pixels_in + src_offset, copy_len);
+		}
+
+		flip_buffer_vertically(reinterpret_cast<uint32_t*>(pixels_out), dimensions.cx, dimensions.cy);
 	}
 
 	GlobalUnlock(h);
@@ -154,12 +203,23 @@ platform::file_op_result save_bitmap_info(const df::folder_path save_path, const
 		const auto encoder_format = wic_encoder_clsid(ext);
 		const int max_file_name = 100;
 
+		// Validate path creation to prevent infinite loops
+		if (name.empty())
+		{
+			result.error_message = u8"Invalid filename";
+			return result;
+		}
+
 		while (path.exists() && i < max_file_name)
 		{
 			path = df::file_path(folder, str::format(u8"{}{}"sv, name, i++), ext);
 		}
 
-		if (i < max_file_name)
+		if (i >= max_file_name)
+		{
+			result.error_message = u8"Unable to create unique filename after 100 attempts";
+			return result;
+		}
 		{
 			ComPtr<IWICStream> piFileStream;
 			hr = wic->CreateStream(&piFileStream);
@@ -304,7 +364,7 @@ ui::const_surface_ptr platform::create_segoe_md2_icon(const wchar_t ch)
 			ComPtr<ID2D1SolidColorBrush> brush;
 
 			hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, __uuidof(IWICImagingFactory),
-				std::bit_cast<void**>(wic.GetAddressOf()));
+				reinterpret_cast<void**>(wic.GetAddressOf()));
 
 			if (SUCCEEDED(hr))
 			{
@@ -323,7 +383,7 @@ ui::const_surface_ptr platform::create_segoe_md2_icon(const wchar_t ch)
 				hr = DWriteCreateFactory(
 					DWRITE_FACTORY_TYPE_SHARED,
 					__uuidof(m_pDWriteFactory),
-					std::bit_cast<IUnknown**>(m_pDWriteFactory.GetAddressOf())
+					reinterpret_cast<IUnknown**>(m_pDWriteFactory.GetAddressOf())
 				);
 			}
 			if (SUCCEEDED(hr))
@@ -413,6 +473,16 @@ ui::const_surface_ptr platform::create_segoe_md2_icon(const wchar_t ch)
 
 ui::surface_ptr platform::image_to_surface(const df::cspan image_buffer_in, const sizei target_extent)
 {
+	if (!image_buffer_in.data || image_buffer_in.size == 0)
+	{
+		return nullptr; // Invalid input
+	}
+	
+	if (image_buffer_in.size > UINT32_MAX)
+	{
+		return nullptr; // Size too large for WIC API
+	}
+	
 	ui::surface_ptr surface_result;
 	ComPtr<IWICImagingFactory> wic;
 
@@ -435,7 +505,7 @@ ui::surface_ptr platform::image_to_surface(const df::cspan image_buffer_in, cons
 	{
 		hr = stream->InitializeFromMemory(
 			const_cast<BYTE*>(image_buffer_in.data),
-			static_cast<uint32_t>(image_buffer_in.size)
+			static_cast<uint32_t>(std::min(image_buffer_in.size, static_cast<size_t>(UINT32_MAX)))
 		);
 	}
 
@@ -479,6 +549,13 @@ ui::surface_ptr platform::image_to_surface(const df::cspan image_buffer_in, cons
 			pSource->AddRef();
 
 			hr = pSource->GetSize(&uiWidth, &uiHeight);
+			
+			// Validate image dimensions
+			if (SUCCEEDED(hr) && (uiWidth == 0 || uiHeight == 0 || 
+				uiWidth > 65536 || uiHeight > 65536))
+			{
+				hr = E_INVALIDARG;
+			}
 		}
 
 		if (SUCCEEDED(hr))
@@ -536,10 +613,19 @@ ui::surface_ptr platform::image_to_surface(const df::cspan image_buffer_in, cons
 					rc.Width = uiWidth;
 					rc.Height = uiHeight;
 
-					hr = pSource->CopyPixels(&rc,
-						static_cast<uint32_t>(surface_result->stride()),
-						static_cast<uint32_t>(surface_result->size()),
-						surface_result->pixels());
+					// Validate buffer size before copy
+					const auto required_size = static_cast<size_t>(uiWidth) * uiHeight * 4;
+					if (surface_result->size() < required_size)
+					{
+						hr = E_OUTOFMEMORY;
+					}
+					else
+					{
+						hr = pSource->CopyPixels(&rc,
+							static_cast<uint32_t>(surface_result->stride()),
+							static_cast<uint32_t>(surface_result->size()),
+							surface_result->pixels());
+					}
 				}
 				else
 				{

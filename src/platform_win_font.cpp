@@ -120,7 +120,8 @@ HRESULT STDMETHODCALLTYPE resource_font_file_stream::ReadFileFragment(
 {
 	// The loader is responsible for doing a bounds check.
 	if (fileOffset <= _resource_size &&
-		fragmentSize <= _resource_size - fileOffset)
+		fragmentSize <= _resource_size &&
+		fileOffset <= _resource_size - fragmentSize) // Prevent overflow
 	{
 		*fragmentStart = static_cast<const BYTE*>(_resource_ptr) + fileOffset;
 		*fragmentContext = nullptr;
@@ -150,18 +151,22 @@ HRESULT STDMETHODCALLTYPE resource_font_file_stream::GetLastWriteTime(OUT UINT64
 
 std::u8string format_guid(REFGUID id)
 {
-	wchar_t sz[100];
-	StringFromGUID2(id, sz, 100);
+	wchar_t sz[50]; // GUID string is typically 38 characters + null terminator
+	const int result = StringFromGUID2(id, sz, _countof(sz));
+	if (result == 0)
+	{
+		return u8"<invalid-guid>";
+	}
 	return str::utf16_to_utf8(sz);
 }
 
 class resource_font_file_loader : public IDWriteFontFileLoader
 {
 public:
-	resource_font_file_loader() = default;
+	resource_font_file_loader() : refCount_(0) {}
 	virtual ~resource_font_file_loader() = default;
 
-	std::atomic<int> _ref_count = 0;
+	ULONG refCount_;
 
 	HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppvObject) override
 	{
@@ -180,12 +185,15 @@ public:
 
 	ULONG STDMETHODCALLTYPE AddRef() override
 	{
-		return ++_ref_count;
+		return InterlockedIncrement(&refCount_);
 	}
 
 	ULONG STDMETHODCALLTYPE Release() override
 	{
-		return --_ref_count;
+		const ULONG newCount = InterlockedDecrement(&refCount_);
+		if (newCount == 0)
+			delete this;
+		return newCount;
 	}
 
 	HRESULT STDMETHODCALLTYPE CreateStreamFromKey(
@@ -207,6 +215,8 @@ public:
 
 		if (!stream->is_initialized())
 		{
+			// Log which resource failed to load for debugging
+			df::log(__FUNCTION__, str::format(u8"Failed to load font resource ID {}"sv, resource_id));
 			delete stream;
 			return E_FAIL;
 		}
@@ -222,19 +232,20 @@ static resource_font_file_loader font_loader;
 class resource_font_file_enumerator : public IDWriteFontFileEnumerator
 {
 public:
-	resource_font_file_enumerator() = default;
+	resource_font_file_enumerator() : refCount_(0), _index(0), _factory(nullptr), _collection_key(nullptr), _collection_key_size(0) {}
 
 	explicit resource_font_file_enumerator(IDWriteFactory* factory,
 		const void* collectionKey,
-		UINT32 collectionKeySize) : _factory(factory),
+		UINT32 collectionKeySize) : refCount_(0), _factory(factory),
 		_collection_key(collectionKey),
-		_collection_key_size(collectionKeySize)
+		_collection_key_size(collectionKeySize),
+		_index(0)
 	{
 	}
 
 	virtual ~resource_font_file_enumerator() = default;
 
-	std::atomic<int> _ref_count = 0;
+	ULONG refCount_;
 	int _index = 0;
 	IDWriteFactory* _factory = nullptr;
 	const void* _collection_key = nullptr;
@@ -258,15 +269,15 @@ public:
 
 	ULONG STDMETHODCALLTYPE AddRef() override
 	{
-		return ++_ref_count;
+		return InterlockedIncrement(&refCount_);
 	}
 
 	ULONG STDMETHODCALLTYPE Release() override
 	{
-		const auto result = --_ref_count;
-		if (result == 0)
+		const ULONG newCount = InterlockedDecrement(&refCount_);
+		if (newCount == 0)
 			delete this;
-		return result;
+		return newCount;
 	}
 
 	ComPtr<IDWriteFontFile> _current;
@@ -317,11 +328,10 @@ public:
 class resource_font_collection_loader : public IDWriteFontCollectionLoader
 {
 public:
-	resource_font_collection_loader() = default;
+	resource_font_collection_loader() : refCount_(0) {}
 	virtual ~resource_font_collection_loader() = default;
 
-	std::atomic<int> _ref_count = 0;
-
+	ULONG refCount_;
 
 	HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppvObject) override
 	{
@@ -340,12 +350,14 @@ public:
 
 	ULONG STDMETHODCALLTYPE AddRef() override
 	{
-		return ++_ref_count;
+		return InterlockedIncrement(&refCount_);
 	}
 
 	ULONG STDMETHODCALLTYPE Release() override
 	{
-		return --_ref_count;
+		const ULONG newCount = InterlockedDecrement(&refCount_);
+		// Do not delete this
+		return newCount;
 	}
 
 	// IDWriteFontCollectionLoader methods
@@ -356,7 +368,12 @@ public:
 		OUT IDWriteFontFileEnumerator** fontFileEnumerator
 	) override
 	{
-		auto* const enumerator = new resource_font_file_enumerator(factory, collectionKey, collectionKeySize);
+		auto* const enumerator = new(std::nothrow) resource_font_file_enumerator(factory, collectionKey, collectionKeySize);
+		if (enumerator == nullptr)
+		{
+			*fontFileEnumerator = nullptr;
+			return E_OUTOFMEMORY;
+		}
 		*fontFileEnumerator = SafeAcquire(enumerator);
 		return S_OK;
 	}
@@ -586,21 +603,35 @@ font_renderer::font_renderer(const ComPtr<IDWriteFactory>& factory, const ComPtr
 
 uint32_t font_renderer::calc_line_height() const
 {
+	if (_metrics.designUnitsPerEm == 0)
+	{
+		return _font_size; // Fallback to font size if metrics are invalid
+	}
 	return df::mul_div(_metrics.ascent + _metrics.descent + _metrics.lineGap, _font_size, _metrics.designUnitsPerEm);
 }
 
 uint32_t font_renderer::calc_base_line_height() const
 {
+	if (_metrics.designUnitsPerEm == 0)
+	{
+		return _font_size; // Fallback to font size if metrics are invalid
+	}
 	return df::mul_div(_metrics.ascent + _metrics.lineGap, _font_size, _metrics.designUnitsPerEm);
 }
 
 calc_text_extent_result font_renderer::calc_glyph_extent(const std::u32string_view code_points)
 {
 	calc_text_extent_result result;
+	
+	if (code_points.empty() || code_points.size() > INT_MAX)
+	{
+		return result; // Return empty result for invalid input
+	}
+	
 	std::vector<uint16_t> glyph_indices(code_points.size());
 
 	if (SUCCEEDED(
-		_face->GetGlyphIndices(std::bit_cast<const uint32_t*>(code_points.data()), static_cast<int>(code_points.size()),
+		_face->GetGlyphIndices(reinterpret_cast<const uint32_t*>(code_points.data()), static_cast<int>(code_points.size()),
 			glyph_indices.data())))
 	{
 		std::vector<DWRITE_GLYPH_METRICS> glyph_metrics(glyph_indices.size());
@@ -657,16 +688,15 @@ render_char_result font_renderer::render_glyph(const uint16_t glyph_index, const
 		glyphOffset.advanceOffset = 0.0f;
 		glyphOffset.ascenderOffset = 0.0f;
 
-		const auto run = DWRITE_GLYPH_RUN{
-			.fontFace = glyph_run->fontFace,
-			.fontEmSize = glyph_run->fontEmSize,
-			.glyphCount = 1,
-			.glyphIndices = &glyph_index,
-			.glyphAdvances = &glyph_advance,
-			.glyphOffsets = &glyphOffset,
-			.isSideways = FALSE,
-			.bidiLevel = 0,
-		};
+		DWRITE_GLYPH_RUN run{};
+		run.fontFace = glyph_run->fontFace;
+		run.fontEmSize = glyph_run->fontEmSize;
+		run.glyphCount = 1;
+		run.glyphIndices = &glyph_index;
+		run.glyphAdvances = &glyph_advance;
+		run.glyphOffsets = &glyphOffset;
+		run.isSideways = FALSE;
+		run.bidiLevel = 0;
 
 		ComPtr<IDWriteGlyphRunAnalysis> analysis;
 		if (SUCCEEDED(_factory->CreateGlyphRunAnalysis(
@@ -724,7 +754,12 @@ render_char_result font_renderer::render_glyph(const uint16_t glyph_index, const
 
 								for (auto x = 0; x < char_width; ++x)
 								{
-									dest[x] = (*(src)+*(src + 1) + *(src + 2)) / 3;
+									// Bounds check to prevent buffer overrun
+									if ((dest + x) < (result.pixels.data() + result.pixels.size()) &&
+										(src + 2) < (buffer.get() + buffer_len))
+									{
+										dest[x] = (*(src) + *(src + 1) + *(src + 2)) / 3;
+									}
 									src += 3;
 								}
 							}
@@ -740,6 +775,11 @@ render_char_result font_renderer::render_glyph(const uint16_t glyph_index, const
 
 sizei font_renderer::measure(const std::wstring_view text, ui::style::text_style style, int width, int height)
 {
+	if (text.empty() || text.size() > INT_MAX)
+	{
+		return {}; // Return empty result for invalid input
+	}
+	
 	if (height == 0) height = 1000;
 
 	ComPtr<IDWriteTextLayout> layout;
@@ -946,6 +986,11 @@ void font_renderer::draw(ui::draw_context* dc, IDWriteTextRenderer* tr, const st
 	const recti bounds, ui::style::text_style style, const ui::color color, const ui::color bg,
 	const std::vector<ui::text_highlight_t>& highlights)
 {
+	if (text.empty() || text.size() > INT_MAX)
+	{
+		return; // Nothing to draw for invalid input
+	}
+	
 	ComPtr<IDWriteTextLayout> layout;
 	const auto hr = _factory->CreateTextLayout(text.data(), static_cast<int>(text.size()), _text_format.Get(), 0.0f,
 		0.0f,

@@ -343,12 +343,10 @@ namespace platform
 		logo30,
 		title,
 		sql,
-		map_html,
 		map_png
 	};
 
 	df::blob load_resource(resource_item i);
-	std::u8string resource_url(resource_item map_html);
 	df::file_path running_app_path();
 	bool is_server(std::u8string_view path);
 	size_t calc_optimal_read_size(df::file_path path);

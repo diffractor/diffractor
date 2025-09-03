@@ -18,6 +18,7 @@
 #include "ui_controls.h"
 #include "ui_dialog.h"
 #include "ui_controllers.h"
+#include "ui_map.h"
 #include "view_edit.h"
 #include "app_match.h"
 #include "app_text.h"
@@ -46,6 +47,8 @@ static const std::u8string azure_maps_api_key = u8"";
 #endif
 
 extern bool toggle_details_state;
+
+std::map<map_tile_id, map_control::cache_entry> map_control::_tile_cache;
 
 
 static constexpr std::u8string_view docs_url = u8"https://www.diffractor.com/docs"sv;
@@ -1189,7 +1192,8 @@ bool ui::browse_for_location(view_state& vs, const control_frame_ptr& parent, gp
 				});
 		};
 
-	auto map = std::make_shared<map_control>(dlg->_frame, coord_changed);
+	auto map = std::make_shared<map_control>(vs._async, coord_changed);
+	map->init(dlg->_frame);
 
 	auto sel_changed = [&vs, map, populate_place](const std::shared_ptr<location_auto_complete>& sel)
 		{
@@ -1208,7 +1212,6 @@ bool ui::browse_for_location(view_state& vs, const control_frame_ptr& parent, gp
 			}
 		};
 
-	map->init_map(azure_maps_api_key);
 
 	auto strategy = std::make_shared<location_auto_complete_strategy>(vs, dlg->_frame, sel_changed,
 		vs.recent_locations.items());
@@ -1308,7 +1311,8 @@ static void locate_invoke(view_state& vs, const ui::control_frame_ptr& parent, c
 					});
 			};
 
-		auto map = std::make_shared<map_control>(dlg->_frame, coord_changed);
+		auto map = std::make_shared<map_control>(vs._async, coord_changed);
+		map->init(dlg->_frame);
 
 		auto sel_changed = [&vs, map, populate_place](const std::shared_ptr<location_auto_complete>& sel)
 			{
@@ -1327,7 +1331,6 @@ static void locate_invoke(view_state& vs, const ui::control_frame_ptr& parent, c
 				}
 			};
 
-		map->init_map(azure_maps_api_key);
 
 		auto strategy = std::make_shared<location_auto_complete_strategy>(
 			vs, dlg->_frame, sel_changed, vs.recent_locations.items());

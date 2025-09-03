@@ -22,6 +22,9 @@
 *.user
 *.vloptions
 /intermediate
+/dist
+/msix
+/.wix
 /exe/*.cso
 /exe/dictionaries/en_GB.aff
 /exe/dictionaries/en_GB.dic

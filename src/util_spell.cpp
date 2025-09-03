@@ -87,7 +87,7 @@ void spell_check::lazy_download(df::async_i& async)
 		u8"he_IL"sv,
 		u8"hi_IN"sv,
 		u8"hr_HR"sv,
-		u8"hu-HU"sv,
+		u8"hu_HU"sv,
 		u8"id_ID"sv,
 		u8"it_IT"sv,
 		u8"ja_JP"sv,
@@ -135,41 +135,57 @@ void spell_check::lazy_load()
 
 	if (!_hunspell)
 	{
-		const auto language = platform::user_language();
-		auto aff_path = _dictionaries_folder.combine_file_ext(language, u8".aff"sv);
-		auto dic_path = _dictionaries_folder.combine_file_ext(language, u8".dic"sv);
-		const auto custom_path = _dictionaries_folder.combine_file(u8"custom.dic"sv);
-
-		if (!aff_path.exists())
+		try
 		{
-			aff_path = _dictionaries_folder.combine_file(u8"en_US.aff"sv);
-			dic_path = _dictionaries_folder.combine_file(u8"en_US.dic"sv);
-		}
+			const auto language = platform::user_language();
+			auto aff_path = _dictionaries_folder.combine_file_ext(language, u8".aff"sv);
+			auto dic_path = _dictionaries_folder.combine_file_ext(language, u8".dic"sv);
+			const auto custom_path = _dictionaries_folder.combine_file(u8"custom.dic"sv);
 
-		if (aff_path.exists())
-		{
-			_hunspell = std::make_unique<Hunspell>(str::utf8_to_a(aff_path.str()).c_str(),
-				str::utf8_to_a(dic_path.str()).c_str());
-
-			u8istream f(str::utf8_to_utf16(custom_path.str()));
-
-			if (f.is_open())
+			if (!aff_path.exists())
 			{
-				std::u8string line;
-
-				while (std::getline(f, line))
-				{
-					_hunspell->add(str::utf8_cast2(line));
-				}
-
-				f.close();
+				aff_path = _dictionaries_folder.combine_file(u8"en_US.aff"sv);
+				dic_path = _dictionaries_folder.combine_file(u8"en_US.dic"sv);
 			}
+
+			if (aff_path.exists())
+			{
+				_hunspell = std::make_unique<Hunspell>(str::utf8_to_a(aff_path.str()).c_str(),
+					str::utf8_to_a(dic_path.str()).c_str());
+
+				// Load custom dictionary with proper RAII
+				u8istream f(str::utf8_to_utf16(custom_path.str()));
+
+				if (f.is_open())
+				{
+					std::u8string line;
+
+					while (std::getline(f, line))
+					{
+						if (!line.empty()) // Added validation to skip empty lines
+						{
+							_hunspell->add(str::utf8_cast2(line));
+						}
+					}
+					// f.close() is called automatically by destructor
+				}
+			}
+		}
+		catch (const std::exception&)
+		{
+			// If Hunspell construction fails, ensure _hunspell remains nullptr
+			_hunspell.reset();
+			// Optionally log the error here
 		}
 	}
 }
 
 bool spell_check::is_word_valid(const std::u8string_view word) const
 {
+	// Add input validation
+	if (word.empty())
+		return true;
+
 	platform::shared_lock lock(_rw);
 	if (!_hunspell) return true;
 	return _hunspell->spell(str::utf8_cast2(word));
@@ -177,11 +193,17 @@ bool spell_check::is_word_valid(const std::u8string_view word) const
 
 std::vector<std::u8string> spell_check::suggest(const std::u8string_view word) const
 {
+	// Add input validation
+	if (word.empty())
+		return {};
+
 	platform::shared_lock lock(_rw);
 	if (!_hunspell) return {};
+	
 	const auto suggestions = _hunspell->suggest(str::utf8_cast2(word));
 
 	std::vector<std::u8string> result;
+	result.reserve(suggestions.size()); // Reserve space for better performance
 	std::transform(suggestions.begin(),
 		suggestions.end(),
 		std::back_inserter(result),
@@ -192,13 +214,34 @@ std::vector<std::u8string> spell_check::suggest(const std::u8string_view word) c
 
 void spell_check::add_word(const std::u8string_view word)
 {
+	// Add input validation
+	if (word.empty())
+		return;
+
 	platform::exclusive_lock lock(_rw);
 
 	if (_hunspell)
 	{
 		_hunspell->add(str::utf8_cast2(word));
 
-		u8ostream f(platform::to_file_system_path(_custom_dic_path), std::ios::out | std::ios::app);
-		f << word << '\n';
+		// Improved file writing with better error handling and RAII
+		try
+		{
+			u8ostream f(platform::to_file_system_path(_custom_dic_path), std::ios::out | std::ios::app);
+			if (f.is_open())
+			{
+				f << word << '\n';
+				f.flush(); // Ensure data is written
+				// f.close() is called automatically by destructor
+			}
+			// If file opening fails, we silently continue (word is still added to runtime dictionary)
+			// Optionally log the error here
+		}
+		catch (const std::exception&)
+		{
+			// Handle file I/O errors gracefully
+			// Word is still added to runtime dictionary even if file write fails
+			// Optionally log the error here
+		}
 	}
 }

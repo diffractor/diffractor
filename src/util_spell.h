@@ -24,6 +24,10 @@ public:
 	spell_check();
 	~spell_check();
 
+	// Delete copy constructor and assignment operator for safety
+	spell_check(const spell_check&) = delete;
+	spell_check& operator=(const spell_check&) = delete;
+
 	void lazy_download(df::async_i& async);
 	void lazy_load();
 	bool is_word_valid(std::u8string_view word) const;
