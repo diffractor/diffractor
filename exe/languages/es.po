@@ -6,33 +6,33 @@ msgstr ""
 "PO-Revision-Date: \n"
 "Last-Translator: \n"
 "Language-Team: \n"
-"Language: it\n"
+"Language: es\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
-"X-Generator: Poedit 3.4.4\n"
+"X-Generator: Poedit 3.4.4"
 
 msgid "Diffractor provides simple tools to make you more productive when sorting, comparing and organizing photos or videos."
-msgstr ""
+msgstr "Diffractor proporciona herramientas simples para hacerte más productivo al ordenar, comparar y organizar fotos o videos."
 
 msgid "Add folder"
 msgstr "Agregar carpeta"
 
 msgid "Items in this date range will be modified to start at a new date and time. The time gap between items will be preserved."
-msgstr ""
+msgstr "Los elementos en este rango de fechas se modificarán para comenzar en una nueva fecha y hora. Se conservará el intervalo de tiempo entre los elementos."
 
 msgid "For example, if you have 2 photos taken one hour apart, after the update they will still be one hour apart."
-msgstr ""
+msgstr "Por ejemplo, si tienes 2 fotos tomadas con una hora de diferencia, después de la actualización todavía estarán separadas por una hora."
 
 msgid "This is useful if your camera date was set wrongly and you need to fix photo and video dates."
-msgstr ""
+msgstr "Esto es útil si la fecha de tu cámara estaba mal configurada y necesitas corregir las fechas de fotos y videos."
 
 msgid "After"
 msgstr "Después"
 
 msgid "Album Artist"
-msgstr "Artista del Album"
+msgstr "Artista del Álbum"
 
 msgid "Analyzing..."
 msgstr "Analizando..."
@@ -44,7 +44,7 @@ msgid "archives"
 msgstr "archivos"
 
 msgid "Ask the Diffractor team a question."
-msgstr "Hágale una pregunta al equipo de Difractor."
+msgstr "Hágale una pregunta al equipo de Diffractor."
 
 msgid "audio"
 msgstr "audio"
@@ -56,28 +56,28 @@ msgid "Diffractor has been authorized"
 msgstr "Diffractor ha sido autorizado"
 
 msgid "Before"
-msgstr "Antes de"
+msgstr "Antes"
 
 msgid "Brightness"
-msgstr "Luminosidad"
+msgstr "Brillo"
 
 msgid "Burn"
-msgstr "Quemar"
+msgstr "Grabar"
 
 msgid "Analyze"
-msgstr ""
+msgstr "Analizar"
 
 msgid "&Analyze"
 msgstr "&Analizar"
 
 msgid "&Background"
-msgstr "&Sfondo"
+msgstr "&Fondo"
 
 msgid "&Cancel"
 msgstr "&Cancelar"
 
 msgid "Change..."
-msgstr "Cambia..."
+msgstr "Cambiar..."
 
 msgid "&Close"
 msgstr "&Cerrar"
@@ -86,73 +86,73 @@ msgid "&Convert"
 msgstr "&Convertir"
 
 msgid "&Delete"
-msgstr "&Borrar"
+msgstr "&Eliminar"
 
 msgid "&Don't Save"
-msgstr "No guardar"
+msgstr "&No guardar"
 
 msgid "&Import"
 msgstr "&Importar"
 
 msgid "&OK"
-msgstr "&OK"
+msgstr "&Aceptar"
 
 msgid "&Rotate"
 msgstr "&Rotar"
 
 msgid "&Save"
-msgstr "Guardar"
+msgstr "&Guardar"
 
 msgid "As &JPEG"
 msgstr "Como &JPEG"
 
 msgid "&Send"
-msgstr "Enviar"
+msgstr "&Enviar"
 
 msgid "&Synchronize"
 msgstr "&Sincronizar"
 
 msgid "&Tag"
-msgstr "&Tag"
+msgstr "&Etiquetar"
 
 msgid "&Update"
-msgstr "&Actualización"
+msgstr "&Actualizar"
 
 msgid "Donate"
-msgstr ""
+msgstr "Donar"
 
 msgid "Diffractor can be used for free. If you find it useful, please help the project by donating."
-msgstr ""
+msgstr "Diffractor se puede usar de forma gratuita. Si lo encuentras útil, por favor ayuda al proyecto donando."
 
 msgid "Donate online."
-msgstr ""
+msgstr "Donar en línea."
 
 msgid "Cancel was pressed after "
-msgstr "CANC ha sido presionado despues de "
+msgstr "Se presionó Cancelar después de "
 
 msgid "Cannot updated metadata of this file type."
-msgstr "Imposible actualizar los metadatos de este tipo de archivo."
+msgstr "No se pueden actualizar los metadatos de este tipo de archivo."
 
 msgid "Changes"
 msgstr "Cambios"
 
 msgid "Click for collection options"
-msgstr "Haga clic para las opciones de recogida"
+msgstr "Haga clic para las opciones de colección"
 
 msgid "Click map to select a location."
 msgstr "Haga clic en el mapa para seleccionar una ubicación."
 
 msgid "Click to search for similar items in the collection."
-msgstr "Haga clic para buscar artículos similares en la colección."
+msgstr "Haga clic para buscar elementos similares en la colección."
 
 msgid "Click to search in the collection"
-msgstr "Click para buscar en la colección"
+msgstr "Haga clic para buscar en la colección"
 
 msgid "Click to open"
 msgstr "Haga clic para abrir"
 
 msgid "The collection contains {} {} ({})."
-msgstr "la colección contiene {} {} ({})."
+msgstr "La colección contiene {} {} ({})."
 
 msgid "The collection contains:"
 msgstr "La colección contiene:"
@@ -161,18 +161,20 @@ msgid "Items created {} {}"
 msgstr "Elementos creados {} {}"
 
 msgid "Items modified {} {}"
-msgstr "elementos modificados {} {}"
+msgstr "Elementos modificados {} {}"
 
 msgid ""
 "Click to open created items.\n"
 "Ctrl+click to open modified items."
 msgstr ""
+"Haga clic para abrir los elementos creados.\n"
+"Ctrl+clic para abrir los elementos modificados."
 
 msgid "{} items from {} in the collection."
-msgstr "{} artículos de {} en la colección."
+msgstr "{} elementos de {} en la colección."
 
 msgid "filter"
-msgstr ""
+msgstr "filtro"
 
 msgid "Close"
 msgstr "Cerrar"
@@ -181,19 +183,19 @@ msgid "Collection options"
 msgstr "Opciones de colección"
 
 msgid "Prefix the folder name with minus '-' to exclude it from the collection. You exclude folders by the full path -c:\\collection\\secret, with a folder name -secret, or with a wildcard -secret*."
-msgstr ""
+msgstr "Anteponga al nombre de la carpeta un signo menos '-' para excluirla de la colección. Puede excluir carpetas por la ruta completa -c:\\colección\\secreto, con un nombre de carpeta -secreto, o con un comodín -secreto*."
 
 msgid "More Collection folders"
-msgstr ""
+msgstr "Más carpetas de colección"
 
 msgid "Folders can be drives, folders, network shares or device labels. Labels are useful for removable or network devices where mapped drive letters can change."
-msgstr ""
+msgstr "Las carpetas pueden ser unidades, carpetas, recursos compartidos de red o etiquetas de dispositivo. Las etiquetas son útiles para dispositivos extraíbles o de red donde las letras de unidad asignadas pueden cambiar."
 
 msgid "Desktop"
 msgstr "Escritorio"
 
 msgid "Documents"
-msgstr "Documento"
+msgstr "Documentos"
 
 msgid "Downloads"
 msgstr "Descargas"
@@ -202,7 +204,7 @@ msgid "Local DropBox Folder"
 msgstr "Carpeta DropBox local"
 
 msgid "Local GoogleDrive Folder"
-msgstr "carpeta local de GoogleDrive"
+msgstr "Carpeta GoogleDrive local"
 
 msgid "You can choose what is indexed in collection options (press Ctrl+F6)."
 msgstr "Puede elegir lo que está indexado en las opciones de colección (presione Ctrl+F6)."
@@ -211,7 +213,7 @@ msgid "Define the folders that make your collection."
 msgstr "Define las carpetas que componen tu colección."
 
 msgid "Collection folders"
-msgstr ""
+msgstr "Carpetas de colección"
 
 msgid "More folders. Separate each folder with a new line."
 msgstr "Más carpetas. Separe cada carpeta con una nueva línea."
@@ -220,7 +222,7 @@ msgid "More information about collection management."
 msgstr "Más información sobre la gestión de colecciones."
 
 msgid "More information about metadata templates."
-msgstr ""
+msgstr "Más información sobre las plantillas de metadatos."
 
 msgid "Music"
 msgstr "Música"
@@ -229,10 +231,10 @@ msgid "Local OneDrive Folder"
 msgstr "Carpeta OneDrive local"
 
 msgid "Pictures"
-msgstr "Imagenes"
+msgstr "Imágenes"
 
 msgid "Videos"
-msgstr "Video"
+msgstr "Videos"
 
 msgid "Your collection"
 msgstr "Tu colección"
@@ -247,16 +249,16 @@ msgid "Advanced Search"
 msgstr "Búsqueda avanzada"
 
 msgid "Update artist and album"
-msgstr "Actualizar el artista y el álbum."
+msgstr "Actualizar artista y álbum"
 
 msgid "Exit"
 msgstr "Salir"
 
 msgid "Back"
-msgstr "Volver"
+msgstr "Atrás"
 
 msgid "Forward"
-msgstr "Avanzar"
+msgstr "Adelante"
 
 msgid "Next folder or search"
 msgstr "Siguiente carpeta o búsqueda"
@@ -265,25 +267,25 @@ msgid "Next item group"
 msgstr "Siguiente grupo de elementos"
 
 msgid "Select next item"
-msgstr "Seleccione el elemento siguiente"
+msgstr "Seleccionar siguiente elemento"
 
 msgid "Extend selection to next item"
-msgstr "Ampliar la selección al siguiente elemento"
+msgstr "Extender selección al siguiente elemento"
 
 msgid "Parent"
-msgstr "Padre"
+msgstr "Carpeta padre"
 
 msgid "Previous folder or search"
 msgstr "Carpeta anterior o búsqueda"
 
 msgid "Previous item group"
-msgstr "Elemento del grupo anterior"
+msgstr "Grupo de elementos anterior"
 
 msgid "Select previous item"
-msgstr "Seleccione el elemento anterior"
+msgstr "Seleccionar elemento anterior"
 
 msgid "Extend selection to previous item"
-msgstr "Ampliar la selección al elemento anterior"
+msgstr "Extender selección al elemento anterior"
 
 msgid "Burn to disk"
 msgstr "Grabar en disco"
@@ -304,10 +306,10 @@ msgid "Update copyright"
 msgstr "Actualización de derechos de autor"
 
 msgid "Customise sidebar"
-msgstr ""
+msgstr "Personalizar barra lateral"
 
 msgid "Delete"
-msgstr "Cancelar"
+msgstr "Eliminar"
 
 msgid "Desktop background"
 msgstr "Fondo de escritorio"
@@ -319,7 +321,7 @@ msgid "Download"
 msgstr "Descargar"
 
 msgid "Edit"
-msgstr "Modificar"
+msgstr "Editar"
 
 msgid "Copy"
 msgstr "Copiar"
@@ -328,7 +330,7 @@ msgid "Cut"
 msgstr "Cortar"
 
 msgid "Edit metadata"
-msgstr "Editar los metadatos"
+msgstr "Editar metadatos"
 
 msgid "Paste"
 msgstr "Pegar"
@@ -340,7 +342,7 @@ msgid "Favorite"
 msgstr "Favorito"
 
 msgid "Open properties"
-msgstr "Abrir las propiedades del archivo."
+msgstr "Abrir propiedades"
 
 msgid "Search"
 msgstr "Buscar"
@@ -352,7 +354,7 @@ msgid "Fullscreen"
 msgstr "Pantalla completa"
 
 msgid "Group by Album/Show"
-msgstr "Agrupar por álbum/Mostrar"
+msgstr "Agrupar por Álbum/Programa"
 
 msgid "Group by Camera"
 msgstr "Agrupar por cámara"
@@ -370,16 +372,16 @@ msgid "Group by Location"
 msgstr "Agrupar por ubicación"
 
 msgid "Group by Date Modified"
-msgstr "Agrupar por cambio de fecha"
+msgstr "Agrupar por fecha de modificación"
 
 msgid "Group by Resolution"
-msgstr ""
+msgstr "Agrupar por resolución"
 
 msgid "Group by Collection presence"
-msgstr ""
+msgstr "Agrupar por presencia en colección"
 
 msgid "Group by Rating/Label"
-msgstr "Agrupar por Grado/Etiqueta"
+msgstr "Agrupar por Valoración/Etiqueta"
 
 msgid "Show items in random order"
 msgstr "Mostrar elementos en orden aleatorio"
@@ -391,22 +393,22 @@ msgid "Group by Folder"
 msgstr "Agrupar por carpeta"
 
 msgid "Highlight large items in yellow"
-msgstr "Resalta los artículos grandes en amarillo"
+msgstr "Resaltar elementos grandes en amarillo"
 
 msgid "Import"
 msgstr "Importar"
 
 msgid "Keyboard reference"
-msgstr "Atajos de teclado"
+msgstr "Referencia de teclado"
 
 msgid "Approved"
-msgstr "Aprobar"
+msgstr "Aprobado"
 
 msgid "No Label"
 msgstr "Sin etiqueta"
 
 msgid "Review"
-msgstr "Para ser revisado"
+msgstr "Revisar"
 
 msgid "Second"
 msgstr "Segundo"
@@ -415,13 +417,13 @@ msgid "Select"
 msgstr "Seleccionar"
 
 msgid "To Do"
-msgstr "Que hacer"
+msgstr "Por hacer"
 
 msgid "Language"
-msgstr "Lengua"
+msgstr "Idioma"
 
 msgid "Add location"
-msgstr "Agrega la ubicación"
+msgstr "Agregar ubicación"
 
 msgid "Maximize"
 msgstr "Maximizar"
@@ -433,13 +435,13 @@ msgid "Minimize"
 msgstr "Minimizar"
 
 msgid "Move to folder"
-msgstr "Mover a la carpeta"
+msgstr "Mover a carpeta"
 
 msgid "Show sidebar"
 msgstr "Mostrar barra lateral"
 
 msgid "Navigate"
-msgstr "navegar hacia arriba"
+msgstr "Navegar"
 
 msgid "New Folder"
 msgstr "Nueva carpeta"
@@ -502,7 +504,7 @@ msgid "Rename"
 msgstr "Renombrar"
 
 msgid "Rename files"
-msgstr ""
+msgstr "Renombrar archivos"
 
 msgid "Toggle repeat play"
 msgstr "Alternar reproducción repetida"
@@ -511,7 +513,7 @@ msgid "Restore"
 msgstr "Restaurar"
 
 msgid "Revert to original"
-msgstr "Volver al original"
+msgstr "Revertir al original"
 
 msgid "Rotate anticlockwise"
 msgstr "Rotar en sentido antihorario"
@@ -529,22 +531,22 @@ msgid "Save and open previous"
 msgstr "Guardar y abrir anterior"
 
 msgid "Save the current item and open the previous item."
-msgstr "Guarda el elemento actual y abre el elemento anterior."
+msgstr "Guardar el elemento actual y abrir el elemento anterior."
 
 msgid "Save and open next"
-msgstr "Guardar y abrir el siguiente"
+msgstr "Guardar y abrir siguiente"
 
 msgid "Save the current item and open the next item."
-msgstr "Guarda el elemento actual y abre el elemento siguiente."
+msgstr "Guardar el elemento actual y abrir el elemento siguiente."
 
 msgid "Save as"
-msgstr "Guardar cómo"
+msgstr "Guardar como"
 
 msgid "Change save options"
-msgstr "Cambia tus opciones de guardado"
+msgstr "Cambiar opciones de guardado"
 
 msgid "Scale up items"
-msgstr "Acercar los elementos"
+msgstr "Ampliar elementos"
 
 msgid "Scan"
 msgstr "Escanear"
@@ -553,52 +555,52 @@ msgid "Select all"
 msgstr "Seleccionar todo"
 
 msgid "Invert selection"
-msgstr "Invertir la selección"
+msgstr "Invertir selección"
 
 msgid "Select none"
-msgstr "Deselecccionar"
+msgstr "Deseleccionar todo"
 
 msgid "Email"
-msgstr "Email"
+msgstr "Correo electrónico"
 
 msgid "Show in file browser"
 msgstr "Mostrar en el explorador de archivos"
 
 msgid "Open containing folder"
-msgstr "Abra la carpeta donde reside el archivo."
+msgstr "Abrir carpeta contenedora"
 
 msgid "Hide/Show thumbnails"
 msgstr "Ocultar/Mostrar miniaturas"
 
 msgid "Sort by Date modified"
-msgstr "Ordenar por Fecha de modificación"
+msgstr "Ordenar por fecha de modificación"
 
 msgid "Sort dates ascending"
-msgstr "Ordenar las fechas en orden ascendente"
+msgstr "Ordenar fechas ascendente"
 
 msgid "Sort dates descending"
-msgstr "Ordenar las fechas en orden descendente"
+msgstr "Ordenar fechas descendente"
 
 msgid "Sort by Default"
-msgstr "Orden predeterminado"
+msgstr "Ordenar por defecto"
 
 msgid "Sort by Name"
 msgstr "Ordenar por nombre"
 
 msgid "Sort by Size"
-msgstr "Ordenado por tamaño"
+msgstr "Ordenar por tamaño"
 
 msgid "Synchronize"
 msgstr "Sincronizar"
 
 msgid "Toggle thumbnails or details"
-msgstr "Cambiar entre miniaturas o detalles"
+msgstr "Alternar miniaturas o detalles"
 
 msgid "Toggle item grouping"
 msgstr "Alternar agrupación de elementos"
 
 msgid "Toggle thumbnail size"
-msgstr "Cambiar el tamaño de las miniaturas"
+msgstr "Alternar tamaño de miniaturas"
 
 msgid "Tools"
 msgstr "Herramientas"
@@ -610,37 +612,37 @@ msgid "Show items"
 msgstr "Mostrar elementos"
 
 msgid "Large font"
-msgstr "Tipografía grande"
+msgstr "Fuente grande"
 
 msgid "Menu"
-msgstr "Menu"
+msgstr "Menú"
 
 msgid "Rate or Label"
 msgstr "Valorar o etiquetar"
 
 msgid "Select Items"
-msgstr "Seleccionar elemento"
+msgstr "Seleccionar elementos"
 
 msgid "Sort"
 msgstr "Ordenar"
 
 msgid "Toggle volume"
-msgstr "Sube el volumene"
+msgstr "Alternar volumen"
 
 msgid "Zoom 100%"
 msgstr "Zoom 100%"
 
 msgid "Compare"
-msgstr "Confronta"
+msgstr "Comparar"
 
 msgid "Hold down left mouse button to compare items."
-msgstr "Mantenga presionado el botón izquierdo del mouse para comparar artículos."
+msgstr "Mantenga presionado el botón izquierdo del ratón para comparar elementos."
 
 msgid "Contrast"
 msgstr "Contraste"
 
 msgid "Open link {}"
-msgstr ""
+msgstr "Abrir enlace {}"
 
 msgid "Copy to clipboard"
 msgstr "Copiar al portapapeles"
@@ -670,55 +672,55 @@ msgid "Count"
 msgstr "Cuenta"
 
 msgid "Favorite Searches"
-msgstr "Búsquedas favoritos"
+msgstr "Búsquedas favoritas"
 
 msgid "Sidebar"
 msgstr "Barra lateral"
 
 msgid "Define what items are shown in the sidebar."
-msgstr ""
+msgstr "Define qué elementos se muestran en la barra lateral."
 
 msgid "Add a list of your favorite tags here to save time when tagging."
-msgstr "Agregue una lista de sus etiquetas favoritas aquí para ahorrar tiempo al crear etiquetas."
+msgstr "Agregue una lista de sus etiquetas favoritas aquí para ahorrar tiempo al etiquetar."
 
 msgid "Favorite Tags"
 msgstr "Etiquetas favoritas"
 
 msgid "Display"
-msgstr "ver"
+msgstr "Mostrar"
 
 msgid "Show labels"
 msgstr "Mostrar etiquetas"
 
 msgid "Show ratings"
-msgstr "Mostrar calificaciones"
+msgstr "Mostrar valoraciones"
 
 msgid "Show drives"
 msgstr "Mostrar unidades"
 
 msgid "Show history chart"
-msgstr "Mostrar el gráfico de la historia"
+msgstr "Mostrar gráfico de historial"
 
 msgid "Show indexed folders"
 msgstr "Mostrar carpetas indexadas"
 
 msgid "Show favorite searches"
-msgstr "Muestra tus búsquedas favoritas"
+msgstr "Mostrar búsquedas favoritas"
 
 msgid "Show tags"
-msgstr "Mostrar etiqueta"
+msgstr "Mostrar etiquetas"
 
 msgid "Show total items pie chart"
-msgstr "Muestra el gráfico circular del total de artículos."
+msgstr "Mostrar gráfico circular del total de elementos"
 
 msgid "Show world map"
-msgstr "Mostrar el mapa del mundo"
+msgstr "Mostrar mapa mundial"
 
 msgid "Darks"
-msgstr "Oscuros"
+msgstr "Sombras"
 
 msgid "data"
-msgstr "fecha"
+msgstr "datos"
 
 msgid "File created:"
 msgstr "Archivo creado:"
@@ -730,25 +732,25 @@ msgid "Metadata created:"
 msgstr "Metadatos creados:"
 
 msgid "Dates"
-msgstr "Fecha"
+msgstr "Fechas"
 
 msgid "family food friends landscape nature night portrait selfie todo travel urban viewed"
-msgstr ""
+msgstr "familia comida amigos paisaje naturaleza noche retrato selfie pendiente viaje urbano visto"
 
 msgid "results"
 msgstr "resultados"
 
 msgid "Defragment database."
-msgstr "Desfragmentar y compactar la base de datos.."
+msgstr "Desfragmentar base de datos."
 
 msgid "Defragmenting..."
-msgstr "Desfragmentación..."
+msgstr "Desfragmentando..."
 
 msgid "Failed to Delete Selected File."
-msgstr "Fallo al borrar el archivo seleccionado."
+msgstr "Error al eliminar el archivo seleccionado."
 
 msgid "Delete {}"
-msgstr "Borrar {}"
+msgstr "Eliminar {}"
 
 msgid "Set the desktop background to the current image."
 msgstr "Establecer la imagen actual como fondo de escritorio."
@@ -757,16 +759,16 @@ msgid "Destination folder:"
 msgstr "Carpeta de destino:"
 
 msgid "Destination name:"
-msgstr "Nombre del destino:"
+msgstr "Nombre de destino:"
 
 msgid "Detecting {} folders"
-msgstr "Detectar carpetas {}"
+msgstr "Detectando {} carpetas"
 
 msgid "Capacity"
 msgstr "Capacidad"
 
 msgid "Free"
-msgstr "Liberar"
+msgstr "Libre"
 
 msgid "Label"
 msgstr "Etiqueta"
@@ -784,25 +786,22 @@ msgid "Duplicates"
 msgstr "Duplicados"
 
 msgid "Duplicate or similar items in the collection."
-msgstr "Duplicados o artículos similares en la colección."
+msgstr "Elementos duplicados o similares en la colección."
 
 msgid "Editing"
-msgstr "Editar"
+msgstr "Editando"
 
 msgid "Close without ejecting"
-msgstr "Cerrar sin expulsión"
+msgstr "Cerrar sin expulsar"
 
 msgid "Failed to eject {}."
-msgstr "Imposible expulsar {}."
+msgstr "Error al expulsar {}."
 
 msgid "To avoid losing data, eject an external hard drive or USB drive before removing it."
-msgstr ""
+msgstr "Para evitar perder datos, expulse un disco duro externo o unidad USB antes de extraerlo."
 
 msgid "Eject {}"
 msgstr "Expulsar {}"
-
-msgid "Connecting to MAPI..."
-msgstr "Conectando a MAPI..."
 
 msgid "Convert all photos to JPEG"
 msgstr "Convierte todas las fotos a JPEG"
@@ -811,7 +810,7 @@ msgid "Failed to send email using MAPI."
 msgstr "No se pudo enviar el correo electrónico a través de MAPI."
 
 msgid "Limit photos to a maximum dimension (in pixels). Only supported for JPEG and PNG files."
-msgstr ""
+msgstr "Limitar fotos a una dimensión máxima (en píxeles). Solo se admite para archivos JPEG y PNG."
 
 msgid "Processing {}"
 msgstr "Procesando {}"
@@ -820,7 +819,7 @@ msgid "Sending email using MAPI..."
 msgstr "Envío de correo electrónico mediante MAPI..."
 
 msgid "Email sizes can be reduced using the following options. Smaller emails are faster to send."
-msgstr ""
+msgstr "Los tamaños de los correos electrónicos se pueden reducir utilizando las siguientes opciones. Los correos electrónicos más pequeños se envían más rápido."
 
 msgid "Zip files in the email"
 msgstr "Archivo zip en el correo electrónico"
@@ -858,7 +857,7 @@ msgstr "El destino es un CD-ROM grabable, posiblemente sin formato."
 msgid "The destination is a read-only CD-ROM, possibly unformatted."
 msgstr "El destino es un CD-ROM de solo lectura, posiblemente sin formato."
 
-msgid "The destination is a read-only DVD, possibly unformatted."
+msgid "The destination is a read-only DVD, posiblemente unformatted."
 msgstr "El destino es un DVD de solo lectura, posiblemente sin formato."
 
 msgid "The source and destination have the same parent folder."
@@ -868,7 +867,7 @@ msgid "The destination is a subtree of the source."
 msgstr "El destino es un subárbol del origen.."
 
 msgid "Rename operation was specified but the destination path is a different directory. Use the move operation instead."
-msgstr ""
+msgstr "Se especificó una operación de cambio de nombre, pero la ruta de destino es un directorio diferente. Usa la operación de mover en su lugar."
 
 msgid "Destination is a root directory and cannot be renamed."
 msgstr "El destino es un directorio raíz y no se puede cambiar el nombre."
@@ -877,7 +876,7 @@ msgid "The destination path is an existing folder."
 msgstr "La ruta de destino es una carpeta existente."
 
 msgid "The file involved in the operation is too large for the destination media or file system."
-msgstr ""
+msgstr "El archivo involucrado en la operación es demasiado grande para el medio de destino o el sistema de archivos."
 
 msgid "The name of the file exceeds MAX_PATH."
 msgstr "El nombre del archivo excede MAX_PATH."
@@ -889,7 +888,7 @@ msgid "Index database failed."
 msgstr "La base de datos del índice falló."
 
 msgid "Could be a problem with the internet connection? Try again later if that seems likely."
-msgstr ""
+msgstr "¿Podría ser un problema con la conexión a internet? Inténtalo de nuevo más tarde si eso parece probable."
 
 msgid "The path in the source or destination or both was invalid."
 msgstr "La ruta al origen, al destino o a ambos no es válida."
@@ -901,13 +900,13 @@ msgid "File names cannot contain the following characters:"
 msgstr "Los nombres de archivo no pueden contener los siguientes caracteres:"
 
 msgid "The operation involved multiple destination paths, which can fail in the case of a move operation."
-msgstr ""
+msgstr "La operación involucró múltiples rutas de destino, lo que puede fallar en el caso de una operación de mover."
 
 msgid "Multiple file paths were specified in the source buffer, but only one destination file path."
-msgstr ""
+msgstr "Se especificaron múltiples rutas de archivo en el búfer de origen, pero solo una ruta de archivo de destino."
 
 msgid "Failed to send EMail using MAPI. Your Email client may not be configured in a compatible way with Diffractor."
-msgstr ""
+msgstr "Fallo al enviar el correo electrónico usando MAPI. Tu cliente de correo electrónico puede no estar configurado de una manera compatible con Diffractor."
 
 msgid "MAX_PATH was exceeded during the operation."
 msgstr "Se excedió MAX_PATH durante la operación."
@@ -919,7 +918,7 @@ msgid "An unspecified error occurred on the destination."
 msgstr "Se produjo un error no especificado en el objetivo."
 
 msgid "The operation was canceled by the user, or silently canceled if the appropriate flags were supplied to SHFileOperation."
-msgstr ""
+msgstr "La operación fue cancelada por el usuario, o cancelada silenciosamente si se proporcionaron las banderas apropiadas a SHFileOperation."
 
 msgid "The source or destination path exceeded or would exceed MAX_PATH."
 msgstr "La ruta de origen o de destino ha superado o superaría MAX_PATH."
@@ -939,13 +938,13 @@ msgstr "Imposible guardar la imagen."
 msgid "Scanner reported an error"
 msgstr "El escaner ha reportado un error"
 
-msgid "The source is a writable CD-ROM, possibly unformatted."
+msgid "The source is a writable CD-ROM, posiblemente unformatted."
 msgstr "La fuente es un CD-ROM grabable, posiblemente sin formato."
 
-msgid "The source is a read-only CD-ROM, possibly unformatted."
+msgid "The source is a read-only CD-ROM, posiblemente unformatted."
 msgstr "La fuente es un CD-ROM de solo lectura, posiblemente sin formato."
 
-msgid "The source is a read-only DVD, possibly unformatted."
+msgid "The source is a read-only DVD, posiblemente unformatted."
 msgstr "La fuente es un CD-ROM de solo lectura, posiblemente sin formato."
 
 msgid "The source is a root directory, which cannot be moved or renamed."
@@ -988,16 +987,16 @@ msgid "Favorite title"
 msgstr "Título favorito"
 
 msgid "Favorites are listed in the sidebar for quick access."
-msgstr ""
+msgstr "Los favoritos se enumeran en la barra lateral para un acceso rápido."
 
 msgid "Shown items are from the collection."
-msgstr ""
+msgstr "Los elementos mostrados son de la colección."
 
 msgid "Shown items are NOT from the collection."
-msgstr ""
+msgstr "Los elementos mostrados NO son de la colección."
 
 msgid "The collection is a set of indexed folders. Indexing allows fast searching and duplicate detection. Diffractor will also highlight when items are not in the collection."
-msgstr ""
+msgstr "La colección es un conjunto de carpetas indexadas. La indexación permite una búsqueda rápida y detección de duplicados. Diffractor también destacará cuando los elementos no estén en la colección."
 
 msgid "folder"
 msgstr "carpeta"
@@ -1144,13 +1143,13 @@ msgid "Club"
 msgstr "Club"
 
 msgid "Comedy"
-msgstr "Commedia"
+msgstr "Comedia"
 
 msgid "Conceptual"
 msgstr "Conceptual"
 
 msgid "Concert"
-msgstr "Consierto"
+msgstr "Concierto"
 
 msgid "Concert Films"
 msgstr "Peliculas de concierto"
@@ -1183,7 +1182,7 @@ msgid "Documentary"
 msgstr "Documental"
 
 msgid "Drama"
-msgstr "Dramma"
+msgstr "Dramática"
 
 msgid "Dream"
 msgstr "Sueño"
@@ -1705,7 +1704,7 @@ msgid "No location"
 msgstr "Sin localización"
 
 msgid "No resolution"
-msgstr ""
+msgstr "Sin resolución"
 
 msgid "No rating"
 msgstr "Sin valoración"
@@ -1737,8 +1736,8 @@ msgstr "Ayuda o más información"
 msgid "Send anonymous log information to Diffractor HQ."
 msgstr "Enviar información de registro anónima a Diffractor HQ"
 
-msgid "Tags can be removed by prefixing with a minus: -removeme"
-msgstr "Las etiquetas se pueden eliminar anteponiendo un signo menos: -eliminar"
+msgid "Tags can be removed by prefixing with a minus: -remove"
+msgstr "Las etiquetas se pueden eliminar anteponiendo un signo menos: -remove"
 
 msgid "Separate each tag with a space: Australia holiday camping."
 msgstr "Separe cada etiqueta con un espacio, por ejemplo: vacaciones Camping Australia."
@@ -1750,7 +1749,7 @@ msgid "Hide verbose metadata"
 msgstr "Ocultar metadatos en detalle"
 
 msgid "Destination root folder. Structured folders will be created under this folder."
-msgstr ""
+msgstr "Carpeta raíz de destino. Se crearán carpetas estructuradas debajo de esta carpeta."
 
 msgid "Detecting folders..."
 msgstr "Detectar carpetas..."
@@ -1771,7 +1770,7 @@ msgid "Overwrite if source items are newer."
 msgstr "Sobrescribe si los elementos de origen son más nuevos."
 
 msgid "Copy (or move) files into a structured folder hierarchy. The folder structure can be based on file metadata templates such year/date or album/artist. This is useful if you want to organize files in a structured hierarchy."
-msgstr ""
+msgstr "Copiar (o mover) archivos en una jerarquía de carpetas estructurada. La estructura de carpetas puede basarse en plantillas de metadatos de archivos como año/fecha o álbum/artista. Esto es útil si deseas organizar archivos en una jerarquía estructurada."
 
 msgid "Other folder"
 msgstr "Otra carpeta"
@@ -1792,22 +1791,22 @@ msgid "Index later"
 msgstr "Indexar más tarde"
 
 msgid "Defragmenting or cleaning can improve performance. The index stores a copy of metadata from your media files. It can be rebuilt from the original files."
-msgstr ""
+msgstr "Desfragmentar o limpiar puede mejorar el rendimiento. El índice almacena una copia de los metadatos de tus archivos multimedia. Se puede reconstruir a partir de los archivos originales."
 
 msgid "The index is reporting errors. Restarting Diffractor is recommended."
-msgstr "El índice está reportando errores. Se recomienda restablecer el índice.."
+msgstr "El índice está reportando errores. Se recomienda reiniciar Diffractor."
 
 msgid "Maintenance"
 msgstr "Mantenimiento"
 
 msgid "Currently the index database is {} in size and contains metadata from {} items."
-msgstr ""
+msgstr "Actualmente la base de datos del índice tiene {} de tamaño y contiene metadatos de {} elementos."
 
 msgid "Indexing"
 msgstr "Indexando"
 
 msgid "Diffractor indexes your photos and videos to enable searching and duplicate detection."
-msgstr ""
+msgstr "Diffractor indexa tus fotos y videos para permitir la búsqueda y detección de duplicados."
 
 msgid "Super-fast searching, viewing and comparing of photos or videos."
 msgstr "Búsqueda, visualización y comparación superrápidas de fotos o vídeos."
@@ -2071,7 +2070,7 @@ msgid "Maximize image"
 msgstr "Maximizar la imagen"
 
 msgid "OK - maybe later."
-msgstr "OK - quizas mas tarde."
+msgstr "OK - quizás más tarde."
 
 msgid "Media"
 msgstr "Media"
@@ -2526,7 +2525,7 @@ msgstr "Valor F"
 msgid "Focal length"
 msgstr "Distancia focal"
 
-msgid "Game//propertry"
+msgid "Game//property"
 msgstr "Juego // propiedad"
 
 msgid "Genre"
@@ -2985,7 +2984,7 @@ msgid "Scale up small photos and videos. Large media is automatically scaled dow
 msgstr ""
 
 msgid "Tag or un-tag selected items"
-msgstr "Etiquetar o desetiquetar elementos seleccionados"
+msgstr "Etiquetar o tarzertiquetar elementos seleccionados"
 
 msgid "Toggle between thumbnails or details for selected item group"
 msgstr "Cambiar entre miniaturas y detalles del grupo de elementos seleccionado"
@@ -3069,7 +3068,7 @@ msgid "press ctrl+space"
 msgstr "presione ctrl+espacio"
 
 msgid "Hold down left mouse button to show photo 100% size."
-msgstr "Mantenga presionado el botón izquierdo del mouse para ampliar la foto al 100%."
+msgstr "Mantenga presionado el botón izquierdo del ratón para ampliar la foto al 100%."
 
 msgid "Scope"
 msgstr "Alcance"
@@ -3204,7 +3203,7 @@ msgstr[1] "Clica para valorar con {count} estrellas"
 msgid "Cannot process {first-name}."
 msgid_plural "Cannot process {first-name} and {other} other items."
 msgstr[0] "Imposible procesar {first-name}."
-msgstr[1] "Imposible procesar {first-name} ey {other} otros elementos."
+msgstr[1] "Imposible procesar {first-name} y {other} otros elementos."
 
 msgid "{first-name} will be renamed."
 msgid_plural "{count} items will be renamed."
@@ -3309,9 +3308,10 @@ msgstr[1] "{count} elementos serán enviados usando su cliente de correo electr�
 msgid "{first-name} already exists. Do you want to replace it?"
 msgid_plural "{first-name} and {other} other items already exist. Do you want to replace them?"
 msgstr[0] "{first-name} ya existe. ¿Quieres reemplazarlo?"
-msgstr[1] "{first-name} y {other} ya existen. ¿Quieres reemplazarlos?"
+msgstr[1] "{first-name} y {other} ya existen. ¿Quieres reemplazarlo?"
 
 msgid "{first-name} will have existing GPS position metadata overwritten."
 msgid_plural "{first-name} and {other} other items will have existing GPS position metadata overwritten."
 msgstr[0] "Se sobrescribirán los metadatos existentes relacionados con la posición GPS de {first-name}."
 msgstr[1] "Se sobrescribirán los metadatos existentes sobre la posición GPS de {first-name} y otros elementos de {other}."
+

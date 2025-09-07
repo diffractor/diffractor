@@ -587,7 +587,7 @@ struct app_text_t
 	text_t button_convert = u8"&Convert"sv;
 	text_t dest_name_label = u8"Destination name:"sv;
 	text_t tag_add_remove = u8"Add or remove Tags"sv;
-	text_t help_tag_add_remove = u8"Tags can be removed by prefixing with a minus: -removeme"sv;
+	text_t help_tag_add_remove = u8"Tags can be removed by prefixing with a minus: -remove"sv;
 	text_t tag_add_or_remove_label = u8"Tags to add or remove:"sv;
 	text_t tags_favorite_label = u8"Favorite Tags"sv;
 	text_t tags_common_label = u8"Common Tags"sv;

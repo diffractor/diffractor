@@ -11,7 +11,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
-"X-Generator: Poedit 3.4.4\n"
+"X-Generator: Poedit 3.4.4"
 
 msgid "Diffractor provides simple tools to make you more productive when sorting, comparing and organizing photos or videos."
 msgstr "Diffractor bietet einfache Tools, um Sie beim Sortieren, Vergleichen und Organisieren von Fotos oder Videos produktiver zu machen."
@@ -1739,8 +1739,8 @@ msgstr "Hilfe oder weitere Informationen"
 msgid "Send anonymous log information to Diffractor HQ."
 msgstr "Anonyme Log-Informationen an das Diffractor-HQ senden."
 
-msgid "Tags can be removed by prefixing with a minus: -removeme"
-msgstr "Tags können durch Voranstellen eines Minuszeichens entfernt werden: -removeme"
+msgid "Tags can be removed by prefixing with a minus: -remove"
+msgstr "Tags können durch Voranstellen eines Minuszeichens entfernt werden: -remove"
 
 msgid "Separate each tag with a space: Australia holiday camping."
 msgstr "Separieren Sie jedes Tag durch ein Leerzeichen: Australien Holidays Camping."
@@ -2896,7 +2896,7 @@ msgid "Synchronize local files to a remote location. This is useful to synchroni
 msgstr "Synchronisieren Sie lokale Dateien mit einem Remote-Speicherort. Dies ist nützlich, um Ihre lokale Dateikollektion mit einem Backup-Speicherort zu synchronisieren."
 
 msgid "c:\\file-collection with \\\\nas\\\\backup-files"
-msgstr "c:\\file-collection with \\\\nas\\\\backup-files"
+msgstr ""
 
 msgid "Source of synchronization (Local)"
 msgstr "Quelle der Synchronisation (Lokal)"
@@ -3321,3 +3321,4 @@ msgid "{first-name} will have existing GPS position metadata overwritten."
 msgid_plural "{first-name} and {other} other items will have existing GPS position metadata overwritten."
 msgstr[0] "Bei {first-name} werden vorhandene GPS-Positionsmetadaten überschrieben."
 msgstr[1] "Bei {first-name} und {other} anderen Items werden vorhandene GPS-Positionsmetadaten überschrieben."
+
