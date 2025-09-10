@@ -32,3 +32,4 @@
 /src/secrets.h
 /diffractor.zip
 *.lastcodeanalysissucceeded
+/.vscode

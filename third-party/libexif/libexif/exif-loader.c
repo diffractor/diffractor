@@ -16,6 +16,8 @@
  * License along with this library; if not, write to the
  * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA  02110-1301  USA.
+ *
+ * SPDX-License-Identifier: LGPL-2.0-or-later
  */
 
 #include <config.h>
@@ -29,29 +31,6 @@
 #include <string.h>
 #include <stdio.h>
 
-#if SIZE_MAX == UINT_MAX
-typedef int ssize_t;        /* common 32 bit case */
-#define SSIZE_MIN  INT_MIN
-#define SSIZE_MAX  INT_MAX
-#elif SIZE_MAX == ULONG_MAX
-typedef long ssize_t;       /* linux 64 bits */
-#define SSIZE_MIN  LONG_MIN
-#define SSIZE_MAX  LONG_MAX
-#elif SIZE_MAX == ULLONG_MAX
-typedef long long ssize_t;  /* windows 64 bits */
-#define SSIZE_MIN  LLONG_MIN
-#define SSIZE_MAX  LLONG_MAX
-#elif SIZE_MAX == USHRT_MAX
-typedef short ssize_t;      /* is this even possible? */
-#define SSIZE_MIN  SHRT_MIN
-#define SSIZE_MAX  SHRT_MAX
-#elif SIZE_MAX == UINTMAX_MAX
-typedef uintmax_t ssize_t;  /* last resort, chux suggestion */
-#define SSIZE_MIN  INTMAX_MIN
-#define SSIZE_MAX  INTMAX_MAX
-#else
-#error platform has exotic SIZE_MAX
-#endif
 #undef JPEG_MARKER_DCT
 #define JPEG_MARKER_DCT  0xc0
 #undef JPEG_MARKER_DHT
@@ -70,6 +49,8 @@ typedef uintmax_t ssize_t;  /* last resort, chux suggestion */
 #define JPEG_MARKER_APP4 0xe4
 #undef JPEG_MARKER_APP5
 #define JPEG_MARKER_APP5 0xe5
+#undef JPEG_MARKER_APP10
+#define JPEG_MARKER_APP10 0xea
 #undef JPEG_MARKER_APP11
 #define JPEG_MARKER_APP11 0xeb
 #undef JPEG_MARKER_APP13
@@ -325,7 +306,7 @@ begin:
 		default:
 			switch (eld->b[i]) {
 			case JPEG_MARKER_APP1:
-			  if (!memcmp (eld->b + i + 3, ExifHeader, MIN((ssize_t)(sizeof(ExifHeader)), MAX(0, ((ssize_t)(sizeof(eld->b))) - ((ssize_t)i) - 3)))) {
+			  if (!memcmp (eld->b + i + 3, ExifHeader, MIN((ptrdiff_t)(sizeof(ExifHeader)), MAX(0, ((ptrdiff_t)(sizeof(eld->b))) - ((ptrdiff_t)i) - 3)))) {
 					eld->data_format = EL_DATA_FORMAT_EXIF;
 				} else {
 					eld->data_format = EL_DATA_FORMAT_JPEG; /* Probably JFIF - keep searching for APP1 EXIF*/
@@ -340,6 +321,7 @@ begin:
 			case JPEG_MARKER_APP2:
 			case JPEG_MARKER_APP4:
 			case JPEG_MARKER_APP5:
+			case JPEG_MARKER_APP10:
 			case JPEG_MARKER_APP11:
 			case JPEG_MARKER_APP13:
 			case JPEG_MARKER_APP14:

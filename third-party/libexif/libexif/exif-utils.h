@@ -18,6 +18,8 @@
  * License along with this library; if not, write to the
  * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA  02110-1301  USA.
+ *
+ * SPDX-License-Identifier: LGPL-2.0-or-later
  */
 
 #ifndef LIBEXIF_EXIF_UTILS_H
@@ -29,7 +31,7 @@ extern "C" {
 
 #include <libexif/exif-byte-order.h>
 #include <libexif/exif-format.h>
-#include <stdint.h>
+#include <libexif/_stdint.h>
 
 
 /* If these definitions don't work for you, please let us fix the 
