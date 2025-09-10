@@ -4,9 +4,7 @@
 #include "model_db.h"
 #include "app_command_status.h"
 #include "app_util.h"
-
 #include "model_index.h"
-
 
 void view_state::modify_items(const df::results_ptr& results, icon_index icon, const std::u8string_view title,
 	const df::item_elements& items_to_modify, const metadata_edits& edits,
@@ -721,7 +719,7 @@ bool df::is_excluded(const df::index_roots& roots, const df::folder_path path)
 
 	auto name = path.name();
 
-	for (auto exclude : roots.exclude_wildcards)
+	for (const auto &exclude : roots.exclude_wildcards)
 	{
 		if (str::wildcard_icmp(name, exclude))
 			return true;

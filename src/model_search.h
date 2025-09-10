@@ -8,7 +8,7 @@
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
-#include "model_propery.h"
+#include "model_property.h"
 #include "model_location.h"
 #include "files.h"
 

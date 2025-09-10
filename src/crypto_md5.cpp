@@ -122,7 +122,7 @@ void md5::finalize()
 	Encode(digest, state, 16);
 
 	// Zeroize sensitive information
-	memset(buffer, 0, sizeof(*buffer));
+	memset(buffer, 0, sizeof(buffer));
 
 	_finalized = true;
 }
@@ -214,7 +214,7 @@ static void II(uint32_t& a, uint32_t b, uint32_t c, uint32_t d, uint32_t x, uint
 }
 
 // MD5 basic transformation. Transforms state based on block.
-void md5::Transform(const uint8_t block[64])
+void md5::Transform(const uint8_t* block)
 {
 	uint32_t a = state[0], b = state[1], c = state[2], d = state[3], x[16];
 	Decode(x, { block, 64 });

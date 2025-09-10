@@ -96,11 +96,11 @@ const uint8_t sboxinv[256] = {
 
 aes256::aes256(const byte_array& key)
 	: m_key(key.size() > KEY_SIZE ? KEY_SIZE : key.size(), 0)
-	, m_salt(KEY_SIZE - m_key.size(), 0)
-	, m_rkey(KEY_SIZE, 0)
-	, m_buffer_pos(0)
-	, m_remainingLength(0)
-	, m_decryptInitialized(false)
+	  , m_salt(KEY_SIZE - m_key.size(), 0)
+	  , m_rkey(KEY_SIZE, 0)
+	  , m_buffer{}, m_buffer_pos(0)
+	  , m_remainingLength(0)
+	  , m_decryptInitialized(false)
 {
 	for (auto i = 0u; i < m_key.size(); ++i)
 	{
@@ -109,8 +109,7 @@ aes256::aes256(const byte_array& key)
 }
 
 aes256::~aes256()
-{
-}
+= default;
 
 size_t aes256::encrypt(const byte_array& key, const byte_array& plain, byte_array& encrypted)
 {
@@ -319,7 +318,7 @@ void aes256::check_and_decrypt_buffer(byte_array& plain)
 {
 	if (!m_decryptInitialized && m_buffer_pos == m_salt.size() + 1)
 	{
-		uint8_t j;
+		size_t j;
 
 		// Get salt
 		for (j = 0; j < m_salt.size(); ++j)
@@ -444,7 +443,7 @@ void aes256::expand_dec_key(uint8_t* rc)
 
 void aes256::sub_bytes(uint8_t* buffer)
 {
-	uint8_t i = KEY_SIZE / 2;
+	uint8_t i = BLOCK_SIZE;
 
 	while (i--)
 		buffer[i] = sbox[buffer[i]];
@@ -452,7 +451,7 @@ void aes256::sub_bytes(uint8_t* buffer)
 
 void aes256::sub_bytes_inv(uint8_t* buffer)
 {
-	uint8_t i = KEY_SIZE / 2;
+	uint8_t i = BLOCK_SIZE;
 
 	while (i--)
 		buffer[i] = sboxinv[buffer[i]];
@@ -470,7 +469,7 @@ void aes256::copy_key()
 
 void aes256::add_round_key(uint8_t* buffer, const uint8_t round)
 {
-	uint8_t i = KEY_SIZE / 2;
+	uint8_t i = BLOCK_SIZE;
 
 	while (i--)
 		buffer[i] ^= m_rkey[(round & 1) ? i + 16 : i];

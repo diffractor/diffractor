@@ -16,8 +16,8 @@ enum icc_types
 {
 	TYPE_XYZ = 0x58595A20,
 	// 'XYZ '
-	TYPE_PARA = 0,
-	// 'para'
+	TYPE_PARA = 0x70617261,
+	// 'para' - Fixed: was incorrectly set to 0
 	TYPE_RGB = 1,
 	// 'RGB '
 	TAG_WTPT = 0x77747074,
@@ -159,7 +159,7 @@ public:
 	{
 		index_ += bytes;
 		if (index_ > size_)
-			index_ = size_ - 1;
+			index_ = size_; // Fixed: was size_ - 1, should be size_
 	}
 
 	size_t seek(const size_t index)
@@ -167,7 +167,7 @@ public:
 		const size_t current = index_;
 		index_ = index;
 		if (index_ > size_)
-			index_ = size_ - 1;
+			index_ = size_; // Fixed: was size_ - 1, should be size_
 		return current;
 	}
 
@@ -183,11 +183,35 @@ public:
 	int8_t int8() { return static_cast<int8_t>(uint8()); }
 
 	// ICC profile uses big endian only.
-	uint16_t uint16() { return (uint8() << 8) | (uint8()); }
-	int16_t int16() { return (int8() << 8) | (uint8()); }
-	uint32_t uint32() { return (uint16() << 16) | (uint16()); }
-	int32_t int32() { return (int16() << 16) | (uint16()); }
-	uint64_t uint64() { return (static_cast<uint64_t>(uint32()) << 32) | (uint32()); }
+	uint16_t uint16() 
+	{ 
+		if (index_ + 1 >= size_) return 0; // Bounds check
+		return (uint8() << 8) | (uint8()); 
+	}
+	
+	int16_t int16() 
+	{ 
+		if (index_ + 1 >= size_) return 0; // Bounds check
+		return (int8() << 8) | (uint8()); 
+	}
+	
+	uint32_t uint32() 
+	{ 
+		if (index_ + 3 >= size_) return 0; // Bounds check
+		return (uint16() << 16) | (uint16()); 
+	}
+	
+	int32_t int32() 
+	{ 
+		if (index_ + 3 >= size_) return 0; // Bounds check
+		return (int16() << 16) | (uint16()); 
+	}
+	
+	uint64_t uint64() 
+	{ 
+		if (index_ + 7 >= size_) return 0; // Bounds check
+		return (static_cast<uint64_t>(uint32()) << 32) | (uint32()); 
+	}
 
 	double s15Fixed16() { return static_cast<double>(int32()) / 0x10000; }
 	double u16Fixed16() { return static_cast<double>(uint32()) / 0x10000; }
@@ -195,8 +219,15 @@ public:
 
 	std::vector<uint8_t> array(const size_t s)
 	{
+		// Add bounds checking for array reads
+		if (s == 0 || index_ + s > size_) 
+		{
+			return {};
+		}
+		
 		std::vector<uint8_t> ret(s);
 		std::copy(buffer_ + index_, buffer_ + index_ + s, ret.begin());
+		index_ += s; // Update index after reading
 		return ret;
 	}
 
@@ -225,7 +256,21 @@ public:
 bool load_from_mem(icc_profile& p, df::cspan data)
 {
 	icc_stream stream(data);
+	
+	// Validate minimum header size
+	if (data.size < 128)
+	{
+		return false;
+	}
+	
 	p.profileSize_ = stream.uint32();
+	
+	// Validate profile size matches data size
+	if (p.profileSize_ > data.size || p.profileSize_ < 128)
+	{
+		return false;
+	}
+	
 	p.cmmType_ = stream.uint32();
 	p.profileVersion_ = stream.uint32();
 	p.profileClass_ = stream.uint32();
@@ -252,13 +297,47 @@ bool load_from_mem(icc_profile& p, df::cspan data)
 		return false;
 
 	const uint32_t tagCount = stream.uint32();
+	
+	// Reasonable limit on tag count to prevent memory issues
+	if (tagCount > 1000)
+	{
+		return false;
+	}
+	
 	for (uint32_t u = 0; u < tagCount; u++)
 	{
+		if (stream.index_ + 12 > data.size) // Need 12 bytes for tag entry
+		{
+			break;
+		}
+		
 		uint32_t sig = stream.uint32();
 		const uint32_t offs = stream.uint32();
 		const uint32_t size = stream.uint32();
+		
+		// Validate tag offset and size
+		if (offs >= data.size || size == 0 || size > data.size - offs)
+		{
+			continue; // Skip invalid tag
+		}
+		
+		// Reasonable size limit for individual tags
+		if (size > 1024 * 1024) // 1MB limit
+		{
+			continue; // Skip overly large tags
+		}
+		
 		const size_t current = stream.seek(offs);
-		p.tags_[sig] = icc_profile::Tag(stream.uint32(), stream.array(size));
+		if (stream.index_ + 4 > data.size) // Need 4 bytes for tag type
+		{
+			stream.seek(current);
+			continue;
+		}
+		
+		uint32_t tag_type = stream.uint32();
+		uint32_t remaining_size = size >= 4 ? size - 4 : 0;
+		
+		p.tags_[sig] = icc_profile::Tag(tag_type, stream.array(remaining_size));
 		stream.seek(current);
 	}
 

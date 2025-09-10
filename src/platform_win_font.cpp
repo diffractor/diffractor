@@ -191,8 +191,7 @@ public:
 	ULONG STDMETHODCALLTYPE Release() override
 	{
 		const ULONG newCount = InterlockedDecrement(&refCount_);
-		if (newCount == 0)
-			delete this;
+		// do not delete
 		return newCount;
 	}
 

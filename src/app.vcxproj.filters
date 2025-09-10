@@ -383,7 +383,7 @@
     <ClInclude Include="platform.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="model_propery.h">
+    <ClInclude Include="model_property.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="platform_win_res.h">

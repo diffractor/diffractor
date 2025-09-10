@@ -9,7 +9,7 @@
 
 #pragma once
 
-#include "model_propery.h"
+#include "model_property.h"
 #include "model_items.h"
 #include "model_locations.h"
 #include "av_format.h"
@@ -227,7 +227,7 @@ public:
 
 	static constexpr int max_history_size = 32;
 	std::vector<history_entry> _history;
-	ssize_t _pos = -1;
+	ptrdiff_t _pos = -1;
 
 	history_state() = default;
 

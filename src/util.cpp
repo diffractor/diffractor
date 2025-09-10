@@ -10,7 +10,7 @@
 #include "pch.h"
 #include "util.h"
 #include "util_simd.h"
-#include "model_propery.h"
+#include "model_property.h"
 
 #include "rapidjson/istreamwrapper.h"
 

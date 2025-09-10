@@ -14,7 +14,7 @@
 
 #include "files.h"
 #include "metadata_exif.h"
-#include "model_propery.h"
+#include "model_property.h"
 
 extern "C" {
 #define JPEG_INTERNAL_OPTIONS

@@ -17,30 +17,12 @@ if %errorlevel% neq 0 exit /b %errorlevel%
 "%MSBUILDDIR%\msbuild" df.sln /p:Configuration=Release /p:Platform=x64
 if %errorlevel% neq 0 exit /b %errorlevel%
 
-TIMEOUT 1
-
-"%TOOLSDIR%\signtool" sign /fd SHA1 /t http://timestamp.sectigo.com /a /d Diffractor /n Zachariah exe\diffractor.exe
-if %errorlevel% neq 0 exit /b %errorlevel%
-TIMEOUT 1
-
-"%TOOLSDIR%\signtool" sign /fd SHA256 /tr http://timestamp.sectigo.com/?td=sha256 /td sha256 /as /d Diffractor /n Zachariah exe\diffractor.exe
-if %errorlevel% neq 0 exit /b %errorlevel%
-TIMEOUT 1
-
-"%TOOLSDIR%\signtool" sign /fd SHA1 /t http://timestamp.sectigo.com /a /d Diffractor /n Zachariah exe\diffractor64.exe
-if %errorlevel% neq 0 exit /b %errorlevel%
-TIMEOUT 1
-
-"%TOOLSDIR%\signtool" sign /fd SHA256 /tr http://timestamp.sectigo.com/?td=sha256 /td sha256 /as /d Diffractor /n Zachariah exe\diffractor64.exe
+"%TOOLSDIR%\signtool" sign /fd SHA256 /tr http://timestamp.sectigo.com/?td=sha256 /td sha256 /as /d Diffractor /n Zachariah exe\diffractor.exe exe\diffractor64.exe
 if %errorlevel% neq 0 exit /b %errorlevel%
 TIMEOUT 1
 
 "C:\Program Files (x86)\NSIS\makensis.exe" /INPUTCHARSET UTF8 installer\diff.nsi
 if %errorlevel% neq 0 exit /b %errorlevel%
-
-"%TOOLSDIR%\signtool" sign /fd SHA1 /t http://timestamp.sectigo.com /a /d Diffractor /n Zachariah diffractor-setup.exe
-if %errorlevel% neq 0 exit /b %errorlevel%
-TIMEOUT 1
 
 "%TOOLSDIR%\signtool" sign /fd SHA256 /tr http://timestamp.sectigo.com?td=sha256 /td sha256 /as /d Diffractor /n Zachariah diffractor-setup.exe
 if %errorlevel% neq 0 exit /b %errorlevel%

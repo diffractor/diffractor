@@ -29,6 +29,9 @@ df::blob df::zlib_compress(cspan data_in)
 	constexpr auto BUFSIZE = 128_z * 1024_z;
 	const auto temp_buffer = unique_alloc<uint8_t>(BUFSIZE);
 
+	if (!temp_buffer)
+		return {}; // Handle allocation failure
+
 	z_stream strm;
 	strm.zalloc = nullptr;
 	strm.zfree = nullptr;
@@ -37,7 +40,8 @@ df::blob df::zlib_compress(cspan data_in)
 	strm.next_out = temp_buffer.get();
 	strm.avail_out = BUFSIZE;
 
-	deflateInit(&strm, Z_BEST_COMPRESSION);
+	if (deflateInit(&strm, Z_BEST_COMPRESSION) != Z_OK)
+		return {}; // Handle initialization failure
 
 	while (strm.avail_in != 0)
 	{
@@ -45,7 +49,13 @@ df::blob df::zlib_compress(cspan data_in)
 		assert_true(res == Z_OK);
 		if (strm.avail_out == 0)
 		{
-			result.insert(result.end(), temp_buffer.get(), temp_buffer.get() + BUFSIZE);
+			try {
+				result.insert(result.end(), temp_buffer.get(), temp_buffer.get() + BUFSIZE);
+			}
+			catch (const std::bad_alloc&) {
+				deflateEnd(&strm);
+				return {}; // Handle memory allocation failure
+			}
 			strm.next_out = temp_buffer.get();
 			strm.avail_out = BUFSIZE;
 		}
@@ -56,7 +66,13 @@ df::blob df::zlib_compress(cspan data_in)
 	{
 		if (strm.avail_out == 0)
 		{
-			result.insert(result.end(), temp_buffer.get(), temp_buffer.get() + BUFSIZE);
+			try {
+				result.insert(result.end(), temp_buffer.get(), temp_buffer.get() + BUFSIZE);
+			}
+			catch (const std::bad_alloc&) {
+				deflateEnd(&strm);
+				return {}; // Handle memory allocation failure
+			}
 			strm.next_out = temp_buffer.get();
 			strm.avail_out = BUFSIZE;
 		}
@@ -64,7 +80,15 @@ df::blob df::zlib_compress(cspan data_in)
 	}
 
 	assert_true(deflate_res == Z_STREAM_END);
-	result.insert(result.end(), temp_buffer.get(), temp_buffer.get() + BUFSIZE - strm.avail_out);
+	
+	try {
+		result.insert(result.end(), temp_buffer.get(), temp_buffer.get() + BUFSIZE - strm.avail_out);
+	}
+	catch (const std::bad_alloc&) {
+		deflateEnd(&strm);
+		return {}; // Handle memory allocation failure
+	}
+	
 	deflateEnd(&strm);
 
 	return result;

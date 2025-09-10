@@ -1268,6 +1268,14 @@ static std::vector<view_element_ptr> format_dims(uint16_t width, uint16_t height
 
 	if (width > 0 && height > 0)
 	{
+		// Check for potential overflow in area calculation
+		const uint64_t area = static_cast<uint64_t>(width) * static_cast<uint64_t>(height);
+		if (area > static_cast<uint64_t>(std::numeric_limits<int>::max()))
+		{
+			// Dimensions too large, skip processing
+			return results;
+		}
+		
 		const auto dims = sizei{ width, height };
 		auto element = std::make_shared<text_element>(prop::format_dimensions(dims));
 		if (is_rank) element->foreground_color(calc_rank_color());

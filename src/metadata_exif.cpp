@@ -249,7 +249,7 @@ public:
 		return _data;
 	}
 
-	size_t dize() const
+	size_t size() const
 	{
 		return _size;
 	}
@@ -374,7 +374,7 @@ public:
 
 	metadata_exif::urational32_t get_urational(uint32_t i) const
 	{
-		return metadata_exif::urational32_t(get_int32(i), get_int32(i + 4));
+		return metadata_exif::urational32_t(get_uint32(i), get_uint32(i + 4));
 	}
 };
 
@@ -695,6 +695,7 @@ static void exif_enumerate(const std::function<void(exif_dir_entry&)>& h, df::cs
 {
 	if (data > 16)
 	{
+		// We should be past the header
 		df::assert_true(!is_exif_signature(data));
 
 		const auto ended = *std::bit_cast<const uint16_t*>(data.data);
@@ -855,7 +856,7 @@ private:
 		{150, u8"Sigma 30mm f/1.4 DC HSM"}, // 2
 		{150, u8"Sigma 24mm f/1.8 DG Macro EX"}, // 3
 		{151, u8"Canon EF 200mm f/2.8L"},
-		{152, u8"Canon EF 300mm f/4L IS"}, // 0
+		{152, u8"Canon EF 300mm f/4L"}, // 0
 		{152, u8"Sigma 12-24mm f/4.5-5.6 EX DG ASPHERICAL HSM"}, // 1
 		{152, u8"Sigma 14mm f/2.8 EX Aspherical HSM"}, // 2
 		{152, u8"Sigma 10-20mm f/4-5.6"}, // 3
@@ -1359,8 +1360,6 @@ void metadata_exif::fix_exif_dimensions(df::span data, const sizei dimensions)
 {
 	if (data > 16)
 	{
-		df::assert_true(!is_exif_signature(data));
-
 		const auto h = [dimensions, data](exif_dir_entry& e)
 			{
 				if (e._tag_type == tag_type::exif)
@@ -1390,8 +1389,6 @@ void metadata_exif::fix_exif_rating(df::span data, int rating)
 {
 	if (data > 16)
 	{
-		df::assert_true(!is_exif_signature(data));
-
 		const auto h = [rating, data](exif_dir_entry& e)
 			{
 				if (e._tag_type == tag_type::exif)

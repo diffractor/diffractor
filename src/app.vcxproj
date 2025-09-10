@@ -1708,7 +1708,7 @@
     <ClInclude Include="app_settings.h" />
     <ClInclude Include="util_path.h" />
     <ClInclude Include="platform.h" />
-    <ClInclude Include="model_propery.h" />
+    <ClInclude Include="model_property.h" />
     <ClInclude Include="platform_win_res.h" />
     <ClInclude Include="crypto_sha.h" />
     <ClInclude Include="av_sound.h" />

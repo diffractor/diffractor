@@ -646,8 +646,8 @@ namespace ui
 		{
 			alloc(r.extent(), s.format(), s.orientation(), s.time());
 
-			const ssize_t stride_out = _stride;
-			const ssize_t stride_in = s._stride;
+			const ptrdiff_t stride_out = _stride;
+			const ptrdiff_t stride_in = s._stride;
 			const auto* const p = s._pixels.get() + (r.left * 4_z) + (r.top * stride_in);
 
 			for (int y = 0; y < _dimensions.cy; ++y)
@@ -658,9 +658,9 @@ namespace ui
 
 		void draw(const surface& s, const pointi location, const recti src)
 		{
-			const ssize_t stride_this = _stride;
-			const ssize_t stride_src = s._stride;
-			const ssize_t copy_bytes_len = src.width() * calc_bytes_per_pixel(_format);
+			const ptrdiff_t stride_this = _stride;
+			const ptrdiff_t stride_src = s._stride;
+			const ptrdiff_t copy_bytes_len = src.width() * calc_bytes_per_pixel(_format);
 
 			for (int y = 0; y < src.height(); ++y)
 			{

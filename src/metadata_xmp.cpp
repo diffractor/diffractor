@@ -9,7 +9,7 @@
 
 #include "pch.h"
 
-#include "model_propery.h"
+#include "model_property.h"
 #include "model_location.h"
 #include "metadata_xmp.h"
 #include "files.h"
@@ -44,7 +44,7 @@ static df::date_t xmp_parse_date(const std::u8string_view str)
 
 static double xmp_decode_gps_coordinate(const std::u8string_view str)
 {
-	auto len = str.size();
+	const auto len = str.size();
 	const auto* const sz = std::bit_cast<const char*>(str.data());
 
 	if (len < 4) return 0;
@@ -66,9 +66,10 @@ static double xmp_decode_gps_coordinate(const std::u8string_view str)
 	const auto last = sz[len - 1];
 	const auto neg = last == 'S' || last == 'W' || last == 's' || last == 'w';
 
-	len -= 1;
+	// Use original length for parsing (don't modify len before using it)
+	const auto parse_len = len - 1;
 
-	if (3 == _snscanf_s(sz, len, "%d,%d,%d", &degrees, &mins, &seconds))
+	if (3 == _snscanf_s(sz, parse_len, "%d,%d,%d", &degrees, &mins, &seconds))
 	{
 		const auto coordinate = gps_coordinate::dms_to_decimal(degrees, mins, seconds);
 		return neg ? -coordinate : coordinate;
@@ -77,7 +78,7 @@ static double xmp_decode_gps_coordinate(const std::u8string_view str)
 	float degrees2 = 0;
 	float mins2 = 0;
 
-	if (2 == _snscanf_s(sz, len, "%f,%f", &degrees2, &mins2))
+	if (2 == _snscanf_s(sz, parse_len, "%f,%f", &degrees2, &mins2))
 	{
 		const auto coordinate = gps_coordinate::dms_to_decimal(degrees2, mins2, 0.0);
 		return neg ? -coordinate : coordinate;
@@ -100,6 +101,12 @@ static bool xmp_decode_rational(const std::u8string_view text, metadata_exif::ur
 	{
 		if (items != 1) return false;
 		locDenom = 1; // The XMP was just an integer, assume a denominator of 1.
+	}
+
+	// Protect against division by zero
+	if (locDenom == 0)
+	{
+		return false;
 	}
 
 	result.numerator = locNum;
@@ -446,7 +453,7 @@ void metadata_edits::apply(SXMPMeta& meta) const
 
 	if (copyright_url.has_value())
 	{
-		meta.SetProperty(kXMP_NS_XMP_Rights, "WebStatement", str::utf8_cast2(copyright_credit.value()));
+		meta.SetProperty(kXMP_NS_XMP_Rights, "WebStatement", str::utf8_cast2(copyright_url.value()));
 	}
 
 	if (copyright_source.has_value())

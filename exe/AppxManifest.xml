@@ -20,7 +20,7 @@
   <Identity
     Name="Diffractor.Diffractor"
     Publisher="CN=PUBLISHER_ID_PLACEHOLDER"
-    Version="1.26.1.1185"
+    Version="1.26.2.1187"
     ProcessorArchitecture="x64" />
 
   <!--

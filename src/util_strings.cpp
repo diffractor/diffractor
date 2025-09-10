@@ -16,7 +16,7 @@
 
 #include "app_text.h"
 #include "util_text.h"
-#include "model_propery.h"
+#include "model_property.h"
 
 static_assert(std::is_trivially_copyable_v<str::part_t>);
 static_assert(std::is_trivially_copyable_v<str::cached>);

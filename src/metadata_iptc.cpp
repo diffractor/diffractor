@@ -10,7 +10,7 @@
 #include "pch.h"
 #include "metadata_iptc.h"
 #include "model_tags.h"
-#include "model_propery.h"
+#include "model_property.h"
 
 enum iptc_record
 {
@@ -709,19 +709,32 @@ void metadata_iptc::parse(prop::item_metadata& pd, df::cspan cs)
 		tag_set artists;
 
 		// Find the beginning of the IPTC portion of the binary data.
-		while ((cs.data[i] != 0x1c || cs.data[i + 1] != 0x02) && i < cs.size)
+		while (i + 1 < cs.size && (cs.data[i] != 0x1c || cs.data[i + 1] != 0x02))
 		{
 			i += 1;
 		}
 
-		while ((i < cs.size) && (i >= 0))
+		while (i < cs.size)
 		{
-			if (cs.data[i] != 0x1c)
+			if (i >= cs.size || cs.data[i] != 0x1c)
 			{
 				break;
 			}
+			
+			// Check bounds before accessing cs.data[i + 3]
+			if (i + 4 >= cs.size)
+			{
+				break;
+			}
+			
 			if (cs.data[i + 3] & static_cast<uint8_t>(0x80))
 			{
+				// Extended length - need at least 8 bytes total
+				if (i + 7 >= cs.size)
+				{
+					break;
+				}
+				
 				block_len = (static_cast<long>(cs.data[i + 4]) << 24) |
 					(static_cast<long>(cs.data[i + 5]) << 16) |
 					(static_cast<long>(cs.data[i + 6]) << 8) |
@@ -736,7 +749,8 @@ void metadata_iptc::parse(prop::item_metadata& pd, df::cspan cs)
 				header_len = 5;
 			}
 
-			if (block_len < 0)
+			// Check for maximum reasonable block length to prevent memory issues
+			if (block_len > 256000) // Maximum size from IPTC spec
 			{
 				break;
 			}
@@ -744,7 +758,7 @@ void metadata_iptc::parse(prop::item_metadata& pd, df::cspan cs)
 			const auto dataset = cs.data[i + 1];
 			const auto record = static_cast<iptc_tag>(cs.data[i + 2]);
 
-			if (cs.size >= (i + block_len) && block_len > 0 && dataset == 2)
+			if (cs.size >= (i + header_len + block_len) && block_len > 0 && dataset == 2)
 			{
 				const auto* const sz = std::bit_cast<const char8_t*>(cs.data + i + header_len);
 				const auto sv = std::u8string_view{ sz, block_len };
@@ -776,6 +790,12 @@ void metadata_iptc::parse(prop::item_metadata& pd, df::cspan cs)
 				}
 			}
 
+			// Check for potential overflow before incrementing
+			if (i > cs.size - block_len - header_len)
+			{
+				break;
+			}
+			
 			i += block_len + header_len;
 		}
 
@@ -819,19 +839,32 @@ metadata_kv_list metadata_iptc::to_info(df::cspan cs)
 		uint32_t i = 0;
 
 		// Find the beginning of the IPTC portion of the binary data.
-		while ((cs.data[i] != 0x1c || cs.data[i + 1] != 0x02) && i < cs.size)
+		while (i + 1 < cs.size && (cs.data[i] != 0x1c || cs.data[i + 1] != 0x02))
 		{
 			i += 1;
 		}
 
-		while ((i < cs.size) && (i >= 0))
+		while (i < cs.size)
 		{
-			if (cs.data[i] != 0x1c)
+			if (i >= cs.size || cs.data[i] != 0x1c)
 			{
 				break;
 			}
+			
+			// Check bounds before accessing cs.data[i + 3]
+			if (i + 4 >= cs.size)
+			{
+				break;
+			}
+			
 			if (cs.data[i + 3] & static_cast<uint8_t>(0x80))
 			{
+				// Extended length - need at least 8 bytes total
+				if (i + 7 >= cs.size)
+				{
+					break;
+				}
+				
 				block_len = (static_cast<long>(cs.data[i + 4]) << 24) |
 					(static_cast<long>(cs.data[i + 5]) << 16) |
 					(static_cast<long>(cs.data[i + 6]) << 8) |
@@ -846,7 +879,8 @@ metadata_kv_list metadata_iptc::to_info(df::cspan cs)
 				header_len = 5;
 			}
 
-			if (block_len < 0)
+			// Check for maximum reasonable block length to prevent memory issues  
+			if (block_len > 256000) // Maximum size from IPTC spec
 			{
 				break;
 			}
@@ -854,12 +888,18 @@ metadata_kv_list metadata_iptc::to_info(df::cspan cs)
 			const auto record = static_cast<iptc_record>(cs.data[i + 1]);
 			const auto tag = static_cast<iptc_tag>(cs.data[i + 2]);
 
-			if (cs.size >= (i + block_len) && block_len > 0)
+			if (cs.size >= (i + header_len + block_len) && block_len > 0)
 			{
 				const auto* const sz = std::bit_cast<const char8_t*>(cs.data + i + header_len);
 				result.emplace_back(tag_name(record, tag), str::strip({ sz, block_len }));
 			}
 
+			// Check for potential overflow before incrementing
+			if (i > cs.size - block_len - header_len)
+			{
+				break;
+			}
+			
 			i += block_len + header_len;
 		}
 	}

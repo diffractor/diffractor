@@ -10,7 +10,7 @@
 #include "pch.h"
 #include "model_locations.h"
 #include "model_location.h"
-#include "model_propery.h"
+#include "model_property.h"
 
 country_t country_t::null;
 

@@ -12,7 +12,7 @@
 #include "model_index.h"
 #include "model_db.h"
 #include "model_locations.h"
-#include "model_propery.h"
+#include "model_property.h"
 #include "model.h"
 #include "metadata_xmp.h"
 #include "util_crash_files_db.h"

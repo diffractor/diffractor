@@ -98,7 +98,7 @@ void sha1::reset()
 	buffer.clear();
 }
 
-void sha1::transform(uint32_t block[DIGEST_INTS])
+void sha1::transform(uint32_t block[BLOCK_INTS])
 {
 	// Copy digest[] to working vars 
 	auto a = digest[0];
@@ -202,7 +202,7 @@ void sha1::transform(uint32_t block[DIGEST_INTS])
 }
 
 
-void sha1::buffer_to_block(const std::vector<uint8_t>& buffer, uint32_t block[BLOCK_BYTES])
+void sha1::buffer_to_block(const std::vector<uint8_t>& buffer, uint32_t block[BLOCK_INTS])
 {
 	// Convert the std::u8string (byte buffer) to a uint32 array (MSB) 
 	for (uint32_t i = 0; i < BLOCK_INTS; i++)

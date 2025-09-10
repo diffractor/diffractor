@@ -13,7 +13,7 @@
 
 #include "model_tags.h"
 #include "model_location.h"
-#include "model_propery.h"
+#include "model_property.h"
 
 enum class group_key_type : uint32_t
 {

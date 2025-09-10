@@ -18,13 +18,13 @@
 #include "model_db_pack.h"
 #include "model_index.h"
 
-static int db_fails = 0;
+static std::atomic<int> db_fails = 0;
 using cached_statements = df::hash_map<std::u8string, struct sqlite3_stmt*>;
 
 inline void db_trace_error(sqlite3* db, const std::u8string_view sql)
 {
 	df::log(__FUNCTION__, str::format(u8"Database error: {} [{}]"sv, str::utf8_cast(sqlite3_errmsg(db)), sql));
-	db_fails += 1;
+	db_fails.fetch_add(1);
 }
 
 inline int db_exec(sqlite3* db, const std::u8string& sql)
@@ -98,6 +98,13 @@ public:
 	{
 		if (_handle != nullptr)
 		{
+			// Check for overflow before casting
+			if (n > static_cast<uint32_t>(INT_MAX))
+			{
+				db_trace_error(_db, str::format(u8"sqlite3_bind_int overflow: {}"sv, n));
+				return;
+			}
+			
 			const int ret = sqlite3_bind_int(_handle, i, static_cast<int>(n));
 
 			if (ret != SQLITE_OK)
@@ -131,7 +138,14 @@ public:
 	{
 		if (_handle != nullptr)
 		{
-			const int ret = sqlite3_bind_int64(_handle, i, n);
+			// Check for overflow before casting
+			if (n > static_cast<uint64_t>(LLONG_MAX))
+			{
+				db_trace_error(_db, str::format(u8"sqlite3_bind_int64 overflow: {}"sv, n));
+				return;
+			}
+			
+			const int ret = sqlite3_bind_int64(_handle, i, static_cast<sqlite3_int64>(n));
 
 			if (ret != SQLITE_OK)
 				db_trace_error(_db, str::format(u8"sqlite3_bind_int64 {} {}"sv, i, n));
@@ -206,11 +220,15 @@ public:
 		return 0;
 	}
 
-	std::u8string_view text(const int i) const
+	std::u8string text(const int i) const
 	{
 		if (_handle != nullptr)
 		{
-			return std::bit_cast<const char8_t*>(sqlite3_column_text(_handle, i));
+			const auto* text_ptr = sqlite3_column_text(_handle, i);
+			if (text_ptr != nullptr)
+			{
+				return std::u8string(std::bit_cast<const char8_t*>(text_ptr));
+			}
 		}
 		return {};
 	}
@@ -258,11 +276,36 @@ public:
 		}
 	}
 
-	~transaction()
+	~transaction() noexcept
 	{
 		if (_acquired)
 		{
-			db_exec(_db, u8"COMMIT"s);
+			try
+			{
+				db_exec(_db, u8"COMMIT"s);
+			}
+			catch (...)
+			{
+				// Log error but don't throw from destructor
+				db_trace_error(_db, u8"COMMIT failed in destructor"sv);
+			}
+		}
+	}
+	
+	// Add rollback method for explicit error handling
+	void rollback() noexcept
+	{
+		if (_acquired)
+		{
+			try
+			{
+				db_exec(_db, u8"ROLLBACK"s);
+				_acquired = false;
+			}
+			catch (...)
+			{
+				db_trace_error(_db, u8"ROLLBACK failed"sv);
+			}
 		}
 	}
 };
@@ -317,11 +360,22 @@ void database::open()
 
 	const auto rc = sqlite3_open(std::bit_cast<const char*>(_db_path.str().c_str()), &_db);
 
-	if (rc)
+	if (rc != SQLITE_OK)
 	{
-		df::log(__FUNCTION__, str::format(u8"Failed to open database: {}"sv, str::utf8_cast(sqlite3_errmsg(_db))));
-		sqlite3_close(_db);
+		// Get error message before closing
+		std::u8string error_msg;
+		if (_db != nullptr)
+		{
+			error_msg = str::utf8_cast(sqlite3_errmsg(_db));
+			sqlite3_close(_db);
+		}
+		else
+		{
+			error_msg = u8"Failed to allocate database connection"s;
+		}
+		
 		_db = nullptr;
+		df::log(__FUNCTION__, str::format(u8"Failed to open database: {}"sv, error_msg));
 	}
 	else
 	{
@@ -347,21 +401,21 @@ void database::open()
 
 		load_index_values();
 		df::log(__FUNCTION__, str::format(u8"Loaded index in {} ms"sv, _state.stats.index_load_ms));
+		
+		// schema upgrades
+		sqlite3_exec(_db, "ALTER TABLE item_properties ADD COLUMN crc INTEGER;", nullptr, nullptr, nullptr);
+		sqlite3_exec(_db, "ALTER TABLE item_thumbnails ADD COLUMN cover_art BLOB NULL;", nullptr, nullptr, nullptr);
+
+		find_web_request = std::make_unique<db_statement>(_db, u8"select value from web_service_cache where key=?"s);
+		find_folder_thumbnail = std::make_unique<db_statement>(
+			_db, u8"select bitmap, cover_art, last_scanned from item_thumbnails where folder=?"s);
+		find_thumbnail = std::make_unique<db_statement>(
+			_db, u8"select bitmap, cover_art, last_scanned from item_thumbnails where folder=? AND name=?"s);
+
+		_state.stats.database_size = platform::file_attributes(_db_path).size;
+		_state.stats.database_path = _db_path;
+		df::log(__FUNCTION__, str::format(u8"Index open {}"sv, _state.stats.database_size));
 	}
-
-	// schema upgrades
-	sqlite3_exec(_db, "ALTER TABLE item_properties ADD COLUMN crc INTEGER;", nullptr, nullptr, nullptr);
-	sqlite3_exec(_db, "ALTER TABLE item_thumbnails ADD COLUMN cover_art BLOB NULL;", nullptr, nullptr, nullptr);
-
-	find_web_request = std::make_unique<db_statement>(_db, u8"select value from web_service_cache where key=?"s);
-	find_folder_thumbnail = std::make_unique<db_statement>(
-		_db, u8"select bitmap, cover_art, last_scanned from item_thumbnails where folder=?"s);
-	find_thumbnail = std::make_unique<db_statement>(
-		_db, u8"select bitmap, cover_art, last_scanned from item_thumbnails where folder=? AND name=?"s);
-
-	_state.stats.database_size = platform::file_attributes(_db_path).size;
-	_state.stats.database_path = _db_path;
-	df::log(__FUNCTION__, str::format(u8"Index open {}"sv, _state.stats.database_size));
 }
 
 bool database::is_open() const
@@ -703,7 +757,7 @@ std::u8string database::web_service_cache(const std::u8string_view key) const
 		result = find_web_request->text(0);
 	}
 
-	find_folder_thumbnail->reset();
+	find_web_request->reset();
 
 	return result;
 }
@@ -720,7 +774,6 @@ void database::web_service_cache(const std::u8string_view key, const std::u8stri
 	insert_web_request.bind(2, value);
 	insert_web_request.bind(3, today);
 	insert_web_request.exec();
-	insert_web_request.reset();
 }
 
 item_import_set database::load_item_imports()
@@ -896,9 +949,9 @@ void database::perform_writes(std::deque<item_db_write> writes)
 		{
 			update_crc.bind(1, static_cast<int>(write.crc32c.value()));
 			update_crc.bind(2, path.folder().text());
-			update_crc.bind(3, path.name());
-			update_crc.exec();
-			update_crc.reset();
+		 update_crc.bind(3, path.name());
+		 update_crc.exec();
+		 update_crc.reset();
 		}
 
 		if (write.media_position.has_value())
@@ -907,7 +960,7 @@ void database::perform_writes(std::deque<item_db_write> writes)
 			update_media_position.bind(2, path.folder().text());
 			update_media_position.bind(3, path.name());
 			update_media_position.exec();
-			update_media_position.reset();
+		 update_media_position.reset();
 		}
 
 		if (write.thumb.has_value() && is_valid(write.thumb.value()))
@@ -929,7 +982,7 @@ void database::perform_writes(std::deque<item_db_write> writes)
 
 bool database::has_errors() const
 {
-	return db_fails > 0 && _state.indexing == 0;
+	return db_fails.load() > 0 && _state.indexing == 0;
 }
 
 void database::maintenance(bool is_reset)
@@ -944,7 +997,7 @@ void database::maintenance(bool is_reset)
 
 		if (delete_result.success())
 		{
-			db_fails = 0;
+			db_fails.store(0);
 			_state.save_all_cached_items();
 		}
 

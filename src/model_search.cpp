@@ -9,7 +9,6 @@
 
 #include "pch.h"
 #include "model_search.h"
-
 #include "model_index.h"
 #include "model_items.h"
 #include "model_tokenizer.h"

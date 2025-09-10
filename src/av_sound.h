@@ -8,7 +8,7 @@
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
-#include "model_propery.h"
+#include "model_property.h"
 
 struct AVChannelLayout;
 using channel_layout_ptr = std::shared_ptr<AVChannelLayout>;
