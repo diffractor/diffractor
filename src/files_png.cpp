@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
@@ -13,7 +12,7 @@
 
 #include <png.h>
 
-static void png_error_handler(png_structp png_ptr, png_const_charp msg)
+static void png_error_handler(png_structp png_ptr, const png_const_charp msg)
 {
 	df::log(__FUNCTION__, msg);
 	throw app_exception(msg);
@@ -54,18 +53,18 @@ class buffer_stream
 	const size_t _size = 0;
 
 public:
-	buffer_stream(df::cspan data) : _data(data.data), _size(data.size)
+	buffer_stream(const df::cspan data) : _data(data.data), _size(data.size)
 	{
 	}
 
-	void read(uint8_t* dest, size_t len)
+	void read(uint8_t* dest, const size_t len)
 	{
-		if ((_pos + len) > _size) throw app_exception(u8"invalid read"s);
+		if (_pos + len > _size) throw app_exception(u8"invalid read"s);
 		memcpy_s(dest, len, _data + _pos, len);
 		_pos += len;
 	}
 
-	void skip(size_t len)
+	void skip(const size_t len)
 	{
 		if (_pos > _size - len) throw app_exception(u8"invalid skip"s);
 		_pos += len;
@@ -82,19 +81,19 @@ public:
 	{
 	}
 
-	void read(uint8_t* dest, size_t len)
+	void read(uint8_t* dest, const size_t len)
 	{
 		_stream.read(_pos, dest, len);
 		_pos += len;
 	}
 
-	void skip(size_t len)
+	void skip(const size_t len)
 	{
 		_pos += len;
 	}
 };
 
-static void png_write_callback(png_structp png_ptr, png_bytep data, png_size_t length)
+static void png_write_callback(const png_structp png_ptr, const png_bytep data, const png_size_t length)
 {
 	auto* p = static_cast<df::blob*>(png_get_io_ptr(png_ptr));
 	p->insert(p->end(), data, data + length);
@@ -131,10 +130,10 @@ ui::image_ptr save_png(const ui::const_surface_ptr& surface_in, const metadata_p
 			const auto stride = surface_in->stride();
 
 			png_set_IHDR(png.get(), info_ptr, dims.cx, dims.cy, 8,
-				is_rgb ? PNG_COLOR_TYPE_RGB : PNG_COLOR_TYPE_RGBA,
-				PNG_INTERLACE_NONE,
-				PNG_COMPRESSION_TYPE_DEFAULT,
-				PNG_FILTER_TYPE_DEFAULT);
+			             is_rgb ? PNG_COLOR_TYPE_RGB : PNG_COLOR_TYPE_RGBA,
+			             PNG_INTERLACE_NONE,
+			             PNG_COMPRESSION_TYPE_DEFAULT,
+			             PNG_FILTER_TYPE_DEFAULT);
 
 			if (!metadata.icc.empty())
 			{
@@ -157,7 +156,7 @@ ui::image_ptr save_png(const ui::const_surface_ptr& surface_in, const metadata_p
 				const df::cspan exif_data = metadata.exif;
 				const auto exif_skip = is_exif_signature(exif_data) ? 6u : 0u;
 				png_set_eXIf_1(png.get(), info_ptr, exif_data.size - exif_skip,
-					const_cast<png_bytep>(exif_data.data) + exif_skip);
+				               const_cast<png_bytep>(exif_data.data) + exif_skip);
 			}
 			else if (surface_in->orientation() != ui::orientation::top_left)
 			{
@@ -182,12 +181,12 @@ ui::image_ptr save_png(const ui::const_surface_ptr& surface_in, const metadata_p
 
 
 			png_write_png(png.get(), info_ptr,
-				PNG_TRANSFORM_BGR | (is_rgb ? PNG_TRANSFORM_STRIP_FILLER_AFTER : PNG_TRANSFORM_IDENTITY),
-				nullptr);
+			              PNG_TRANSFORM_BGR | (is_rgb ? PNG_TRANSFORM_STRIP_FILLER_AFTER : PNG_TRANSFORM_IDENTITY),
+			              nullptr);
 			png_write_end(png.get(), info_ptr);
 
 			return std::make_shared<ui::image>(std::move(result), dims, ui::image_format::PNG,
-				surface_in->orientation());
+			                                   surface_in->orientation());
 		}
 	}
 
@@ -195,19 +194,19 @@ ui::image_ptr save_png(const ui::const_surface_ptr& surface_in, const metadata_p
 }
 
 
-static void png_read_callback(png_structp png_ptr, png_bytep result, png_size_t result_size)
+static void png_read_callback(const png_structp png_ptr, const png_bytep result, const png_size_t result_size)
 {
 	auto* stream = static_cast<buffer_stream*>(png_get_io_ptr(png_ptr));
 	stream->read(result, result_size);
 }
 
-static void png_read_callback2(png_structp png_ptr, png_bytep result, png_size_t result_size)
+static void png_read_callback2(const png_structp png_ptr, const png_bytep result, const png_size_t result_size)
 {
 	auto* stream = static_cast<buffer_stream2*>(png_get_io_ptr(png_ptr));
 	stream->read(result, result_size);
 }
 
-ui::surface_ptr load_png(df::cspan data)
+ui::surface_ptr load_png(const df::cspan data)
 {
 	if (data.size < 8 || png_sig_cmp(data.data, 0, 8))
 	{
@@ -306,7 +305,7 @@ ui::surface_ptr load_png(df::cspan data)
 		if (num_exif > 16)
 		{
 			prop::item_metadata md;
-			metadata_exif::parse(md, { exif_data, num_exif });
+			metadata_exif::parse(md, {exif_data, num_exif});
 			result->orientation(md.orientation);
 		}
 	}
@@ -314,7 +313,7 @@ ui::surface_ptr load_png(df::cspan data)
 	return result;
 };
 
-static df::blob load_profile(png_textp txt)
+static df::blob load_profile(const png_textp txt)
 {
 	df::blob result;
 	png_size_t length = 0;
@@ -343,7 +342,7 @@ file_scan_result scan_png(read_stream& rs)
 {
 	file_scan_result result;
 
-	const auto sig_len = 8u;
+	constexpr auto sig_len = 8u;
 	uint8_t sig[sig_len];
 	rs.read(0, sig, sig_len);
 

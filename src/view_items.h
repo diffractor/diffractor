@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -83,7 +82,6 @@ public:
 
 	std::vector<item_and_group> _visible_items;
 
-public:
 	items_view(view_state& s, view_host_ptr host);
 	~items_view() override = default;
 
@@ -117,13 +115,13 @@ public:
 		return df::mul_div(setting.item_splitter_pos, _client_extent.cx, settings_t::item_splitter_max);
 	}
 
-	void splitter_pos(int x, bool tracking)
+	void splitter_pos(const int x, bool tracking) const
 	{
 		if (_state.view_mode() == view_type::items)
 		{
 			const auto min_size = std::min(96, _client_extent.cx / 2);
 			const auto s = df::mul_div(std::clamp(x, min_size, _client_extent.cx - min_size),
-				settings_t::item_splitter_max, _client_extent.cx);
+			                           settings_t::item_splitter_max, _client_extent.cx);
 
 			if (s != setting.item_splitter_pos)
 			{
@@ -169,7 +167,7 @@ public:
 	recti calc_items_bounds() const
 	{
 		const auto padding = _scroll_width / 3;
-		const auto x_max = _client_extent.cx - (_scroll_width * 3);
+		const auto x_max = _client_extent.cx - _scroll_width * 3;
 		return recti(std::min(x_max, splitter_pos() + padding), 0, _client_extent.cx, _client_extent.cy);
 	}
 
@@ -189,14 +187,14 @@ public:
 		return recti(0, 0, splitter_pos() - padding, _client_extent.cy);
 	}
 
-	recti calc_spliter_bounds(const int scroll_width) const;
+	recti calc_spliter_bounds(int scroll_width) const;
 	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc) override;
 
 	void broadcast_event(const view_element_event& event) const override;
 
 	sizei client_size() const;
 
-	void invalidate_thumb(const df::item_element_ptr& i);
+	void invalidate_thumb(const df::item_element_ptr& i) const;
 	void make_visible(const df::item_element_ptr& i);
 	bool is_visible(const df::item_element_ptr& i) const;
 	void update_item_scroller_sections();

@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
@@ -77,7 +76,8 @@ static bounds_set hsplit_bounds(const recti limit, const int x1, const int x2, c
 	return result;
 }
 
-static bounds_set split_bounds(const recti limit, const sizei dims1, const sizei dims2, justify jj = justify::none)
+static bounds_set split_bounds(const recti limit, const sizei dims1, const sizei dims2,
+                               const justify jj = justify::none)
 {
 	const auto vlimit = vsplit_bounds(limit, dims1.cy, dims2.cy);
 	const auto hlimit = hsplit_bounds(limit, dims1.cx, dims2.cx);
@@ -110,7 +110,7 @@ static bounds_set split_bounds(const recti limit, const sizei dims1, const sizei
 			boundsv2 = boundsv2.offset(limit.left - boundsv2.left, 0);
 		}
 
-		return { boundsv1, boundsv2, {} };
+		return {boundsv1, boundsv2, {}};
 	}
 	const auto gap = boundsh2.left - boundsh1.right;
 
@@ -121,11 +121,11 @@ static bounds_set split_bounds(const recti limit, const sizei dims1, const sizei
 		boundsh2 = boundsh2.offset(adjust - gap, 0);
 	}
 
-	return { boundsh1, boundsh2, {} };
+	return {boundsh1, boundsh2, {}};
 }
 
 static bounds_set split_bounds(const recti limit, const sizei dims1, const sizei dims2, const sizei dims3,
-	justify jj = justify::none)
+                               justify jj = justify::none)
 {
 	const auto vlimit = vsplit_bounds(limit, dims1.cy, dims2.cy, dims3.cy);
 	const auto hlimit = hsplit_bounds(limit, dims1.cx, dims2.cx, dims3.cx);
@@ -156,22 +156,22 @@ static bounds_set split_bounds(const recti limit, const sizei dims1, const sizei
 			boundsv3 = boundsv3.offset(limit.left - boundsv3.left, 0);
 		}
 
-		return { boundsv1, boundsv2, boundsv3 };
+		return {boundsv1, boundsv2, boundsv3};
 	}
 	boundsh1 = boundsh1.offset(boundsh2.left - boundsh1.right, 0);
 	boundsh3 = boundsh3.offset(boundsh2.right - boundsh3.left, 0);
 
-	return { boundsh1, boundsh2, boundsh3 };
+	return {boundsh1, boundsh2, boundsh3};
 }
 
 sizei stack_dimensions(const sizei d1, const sizei d2)
 {
-	return { std::max(d1.cx, d2.cx), d1.cy + d2.cy };
+	return {std::max(d1.cx, d2.cx), d1.cy + d2.cy};
 }
 
 sizei stack_dimensions(const sizei d1, const sizei d2, const sizei d3)
 {
-	return { (std::max(d1.cx, std::max(d2.cx, d3.cx))), d1.cy + d2.cy + d3.cy };
+	return {(std::max(d1.cx, std::max(d2.cx, d3.cx))), d1.cy + d2.cy + d3.cy};
 }
 
 
@@ -200,7 +200,7 @@ std::vector<recti> ui::layout_images(const recti draw_bounds, const std::vector<
 	else if (dim_count == 4)
 	{
 		const auto split = split_bounds(draw_bounds, stack_dimensions(dims[0], dims[1]),
-			stack_dimensions(dims[2], dims[3]));
+		                                stack_dimensions(dims[2], dims[3]));
 		const auto spli11 = split_bounds(split.first, dims[0], dims[1], justify::right);
 		const auto split2 = split_bounds(split.second, dims[2], dims[3], justify::left);
 
@@ -212,7 +212,7 @@ std::vector<recti> ui::layout_images(const recti draw_bounds, const std::vector<
 	else if (dim_count == 5)
 	{
 		const auto split = split_bounds(draw_bounds, stack_dimensions(dims[0], dims[1]),
-			stack_dimensions(dims[2], dims[3], dims[4]));
+		                                stack_dimensions(dims[2], dims[3], dims[4]));
 		const auto spli11 = split_bounds(split.first, dims[0], dims[1], justify::right);
 		const auto split2 = split_bounds(split.second, dims[2], dims[3], dims[4], justify::left);
 
@@ -225,7 +225,7 @@ std::vector<recti> ui::layout_images(const recti draw_bounds, const std::vector<
 	else if (dim_count >= 6)
 	{
 		const auto split = split_bounds(draw_bounds, stack_dimensions(dims[0], dims[1], dims[2]),
-			stack_dimensions(dims[3], dims[4], dims[5]));
+		                                stack_dimensions(dims[3], dims[4], dims[5]));
 		const auto spli11 = split_bounds(split.first, dims[0], dims[1], dims[2], justify::right);
 		const auto split2 = split_bounds(split.second, dims[3], dims[4], dims[5], justify::left);
 
@@ -255,7 +255,7 @@ public:
 	bool _tracking = false;
 
 	compare_controller(const view_host_ptr& host, std::shared_ptr<side_by_side_control> mc,
-		const recti bounds) : view_controller(host, bounds), _parent(std::move(mc))
+	                   const recti bounds) : view_controller(host, bounds), _parent(std::move(mc))
 	{
 	}
 
@@ -329,14 +329,13 @@ public:
 
 class preview_controller final : public view_controller
 {
-private:
 	std::shared_ptr<side_by_side_control> _parent;
 	bool _tracking = false;
 	bool _hover = false;
 
 public:
 	preview_controller(const view_host_ptr& host, std::shared_ptr<side_by_side_control> mc,
-		const recti bounds) : view_controller(host, bounds), _parent(std::move(mc))
+	                   const recti bounds) : view_controller(host, bounds), _parent(std::move(mc))
 	{
 	}
 
@@ -368,7 +367,7 @@ public:
 		if (_hover)
 		{
 			_parent->_display->load_compare_preview(std::clamp(loc.x - _bounds.left, 0, _bounds.width()),
-				_bounds.width());
+			                                        _bounds.width());
 		}
 	}
 
@@ -392,7 +391,7 @@ public:
 	bool _start_zoom_state = false;
 
 	zoom_controller(const view_host_ptr& host, std::shared_ptr<photo_control> media_parent, view_state& state,
-		const recti view_bounds) :
+	                const recti view_bounds) :
 		view_controller(host, media_parent->_zoom_text_bounds),
 		_parent_element(std::move(media_parent)),
 		_state(state),
@@ -416,7 +415,7 @@ public:
 		const auto source_orientation = _parent_element->_display->_selected_texture1->display_orientation();
 		const auto source_dims = _parent_element->_display->_selected_texture1->display_dimensions();
 		const auto result_dims = ui::scale_dimensions(flips_xy(source_orientation) ? source_dims.flip() : source_dims,
-			zoom_dims);
+		                                              zoom_dims);
 		return center_rect(result_dims, _parent_element->_zoom_text_bounds).clamp(_view_bounds);
 	}
 
@@ -444,23 +443,23 @@ public:
 				const auto media_bounds = texture_state->display_bounds().offset(pan_offset);
 
 				const auto l = df::mul_div(client_bounds.left - media_bounds.left, zoom_bounds.width(),
-					media_bounds.width()) + zoom_bounds.left;
+				                           media_bounds.width()) + zoom_bounds.left;
 				const auto t = df::mul_div(client_bounds.top - media_bounds.top, zoom_bounds.height(),
-					media_bounds.height()) + zoom_bounds.top;
+				                           media_bounds.height()) + zoom_bounds.top;
 				const auto r = df::mul_div(client_bounds.right - media_bounds.left, zoom_bounds.width(),
-					media_bounds.width()) + zoom_bounds.left;
+				                           media_bounds.width()) + zoom_bounds.left;
 				const auto b = df::mul_div(client_bounds.bottom - media_bounds.top, zoom_bounds.height(),
-					media_bounds.height()) + zoom_bounds.top;
+				                           media_bounds.height()) + zoom_bounds.top;
 
 				const auto shown_bounds = recti(l, t, r, b).crop(zoom_bounds);
 				const auto zoom_texture = texture_state->zoom_texture(dc, sizei(200, 200));
 				const auto sampler = calc_sampler(zoom_bounds.extent(), zoom_texture->dimensions(),
-					zoom_texture->_orientation);
+				                                  zoom_texture->_orientation);
 
 				const auto dst_quad = setting.show_rotated
-					? quadd(zoom_bounds).transform(
-						to_simple_transform(zoom_texture->_orientation))
-					: quadd(zoom_bounds);
+					                      ? quadd(zoom_bounds).transform(
+						                      to_simple_transform(zoom_texture->_orientation))
+					                      : quadd(zoom_bounds);
 
 				dc.draw_rect(control_bounds, ui::color(ui::style::color::group_background, alpha));
 				dc.draw_texture(zoom_texture, dst_quad, zoom_texture->dimensions(), alpha, sampler);
@@ -510,7 +509,7 @@ public:
 			const auto x = df::mul_div(center.x - loc.x, dimensions.cx, _zoom_bounds.width());
 			const auto y = df::mul_div(center.y - loc.y, dimensions.cy, _zoom_bounds.height());
 
-			_parent_element->scroll_image_to({ x, y });
+			_parent_element->scroll_image_to({x, y});
 			_last_loc = loc;
 		}
 	}
@@ -537,7 +536,7 @@ public:
 	bool _tracking = false;
 
 	pan_controller(const view_host_ptr& host, std::shared_ptr<photo_control> parent, view_state& s,
-		const recti bounds) : view_controller(host, bounds), _parent(std::move(parent)), _state(s)
+	               const recti bounds) : view_controller(host, bounds), _parent(std::move(parent)), _state(s)
 	{
 		_parent->show_zoom_box(true);
 	}
@@ -599,8 +598,8 @@ public:
 };
 
 view_controller_ptr view_elements::controller_from_location(const view_host_ptr& host, const pointi loc,
-	const pointi element_offset,
-	const std::vector<recti>& excluded_bounds)
+                                                            const pointi element_offset,
+                                                            const std::vector<recti>& excluded_bounds)
 {
 	view_controller_ptr result;
 
@@ -618,8 +617,8 @@ view_controller_ptr view_elements::controller_from_location(const view_host_ptr&
 
 
 view_controller_ptr photo_control::controller_from_location(const view_host_ptr& host, const pointi loc,
-	const pointi element_offset,
-	const std::vector<recti>& excluded_bounds)
+                                                            const pointi element_offset,
+                                                            const std::vector<recti>& excluded_bounds)
 {
 	view_controller_ptr controller;
 	const auto logical_loc = loc + element_offset;
@@ -648,8 +647,8 @@ view_controller_ptr photo_control::controller_from_location(const view_host_ptr&
 }
 
 view_controller_ptr view_element::controller_from_location(const view_host_ptr& host, const pointi loc,
-	const pointi element_offset,
-	const std::vector<recti>& excluded_bounds)
+                                                           const pointi element_offset,
+                                                           const std::vector<recti>& excluded_bounds)
 {
 	return nullptr;
 }
@@ -722,7 +721,7 @@ void view_element::set_style_bit(const view_element_style mask, const bool state
 
 
 void view_element::set_style_bit(const view_element_style mask, const bool state, const view_host_base_ptr& view,
-	const view_element_ptr& e)
+                                 const view_element_ptr& e)
 {
 	auto new_style = style;
 
@@ -763,19 +762,19 @@ void view_element::set_style_bit(const view_element_style mask, const bool state
 				}
 
 				ui::animations[this] = [view, e]
+				{
+					const auto dd = e->_bg_target - e->_bg_color;
+					bool invalidate = false;
+
+					if (dd.abs_sum() > ui::color::color_epsilon)
 					{
-						const auto dd = e->_bg_target - e->_bg_color;
-						bool invalidate = false;
+						e->_bg_color += dd * 0.2345f;
+						view->invalidate_element(e);
+						invalidate = true;
+					}
 
-						if (dd.abs_sum() > ui::color::color_epsilon)
-						{
-							e->_bg_color += dd * 0.2345f;
-							view->invalidate_element(e);
-							invalidate = true;
-						}
-
-						return invalidate;
-					};
+					return invalidate;
+				};
 
 				view->invalidate_view(view_invalid::animations);
 			}
@@ -788,22 +787,22 @@ void view_element::set_style_bit(const view_element_style mask, const bool state
 }
 
 view_controller_ptr video_control::controller_from_location(const view_host_ptr& host, const pointi loc,
-	const pointi element_offset,
-	const std::vector<recti>& excluded_bounds)
+                                                            const pointi element_offset,
+                                                            const std::vector<recti>& excluded_bounds)
 {
 	return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 }
 
 view_controller_ptr audio_control::controller_from_location(const view_host_ptr& host, const pointi loc,
-	const pointi element_offset,
-	const std::vector<recti>& excluded_bounds)
+                                                            const pointi element_offset,
+                                                            const std::vector<recti>& excluded_bounds)
 {
 	return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 }
 
 view_controller_ptr side_by_side_control::controller_from_location(const view_host_ptr& host, const pointi loc,
-	const pointi element_offset,
-	const std::vector<recti>& excluded_bounds)
+                                                                   const pointi element_offset,
+                                                                   const std::vector<recti>& excluded_bounds)
 {
 	const auto logical_loc = loc + element_offset;
 
@@ -882,8 +881,8 @@ void link_element::tooltip(view_hover_element& hover, const pointi loc, const po
 }
 
 view_controller_ptr link_element::controller_from_location(const view_host_ptr& host, const pointi loc,
-	const pointi element_offset,
-	const std::vector<recti>& excluded_bounds)
+                                                           const pointi element_offset,
+                                                           const std::vector<recti>& excluded_bounds)
 {
 	return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 }
@@ -957,21 +956,22 @@ static metadata_edits make_edit(const std::u8string_view label)
 }
 
 static std::function<void()> make_invoke(view_state& s, const ui::control_frame_ptr& parent,
-	const view_host_base_ptr& view, const df::item_element_ptr& item,
-	const metadata_edits& edits)
+                                         const view_host_base_ptr& view, const df::item_element_ptr& item,
+                                         const metadata_edits& edits)
 {
 	return [&s, parent, view, edits, item]
-		{
-			const auto icon = icon_index::star;
-			const auto title = tt.title_updating;
+	{
+		constexpr auto icon = icon_index::star;
+		const auto title = tt.title_updating;
 
-			const df::item_elements items_to_modify = { {item} };
-			s.modify_items(parent, icon, title, items_to_modify, edits, view);
-		};
+		const df::item_elements items_to_modify = {{item}};
+		s.modify_items(parent, icon, title, items_to_modify, edits, view);
+	};
 }
 
 
-static ui::command_ptr def_menu_command(const icon_index icon, const std::u8string_view text, const ui::color32 clr, std::function<void()> invoke, const bool is_checked)
+static ui::command_ptr def_menu_command(const icon_index icon, const std::u8string_view text, const ui::color32 clr,
+                                        std::function<void()> invoke, const bool is_checked)
 {
 	auto c = std::make_shared<ui::command>();
 	c->icon = icon;
@@ -992,27 +992,35 @@ void rate_label_control::dispatch_event(const view_element_event& event)
 {
 	if (event.type == view_element_event_type::invoke)
 	{
-		const df::item_set items = { {_item} };
+		const df::item_set items = {{_item}};
 		const auto parent = event.host->owner();
 		const auto view = event.host;
 
 		const std::vector<ui::command_ptr> result = {
-			def_menu_command(icon_index::none, tt.command_rate_0, 0, make_invoke(_state, parent, view, _item, make_edit(0)),
+			def_menu_command(icon_index::none, tt.command_rate_0, 0,
+			                 make_invoke(_state, parent, view, _item, make_edit(0)),
 			                 false),
-			def_menu_command(icon_index::none, tt.command_rate_rejected, color_rate_rejected, make_invoke(_state, parent, view, _item, make_edit(-1)),
+			def_menu_command(icon_index::none, tt.command_rate_rejected, color_rate_rejected,
+			                 make_invoke(_state, parent, view, _item, make_edit(-1)),
 			                 _item->rating() == -1),
 			nullptr,
-			def_menu_command(icon_index::none, tt.command_label_approved, color_label_approved, make_invoke(_state, parent, view, _item, make_edit(label_approved_text)),
+			def_menu_command(icon_index::none, tt.command_label_approved, color_label_approved,
+			                 make_invoke(_state, parent, view, _item, make_edit(label_approved_text)),
 			                 has_label(_item, label_approved_text)),
-			def_menu_command(icon_index::none, tt.command_label_to_do, color_label_to_do, make_invoke(_state, parent, view, _item, make_edit(label_to_do_text)),
+			def_menu_command(icon_index::none, tt.command_label_to_do, color_label_to_do,
+			                 make_invoke(_state, parent, view, _item, make_edit(label_to_do_text)),
 			                 has_label(_item, label_to_do_text)),
-			def_menu_command(icon_index::none, tt.command_label_select, color_label_select, make_invoke(_state, parent, view, _item, make_edit(label_select_text)),
+			def_menu_command(icon_index::none, tt.command_label_select, color_label_select,
+			                 make_invoke(_state, parent, view, _item, make_edit(label_select_text)),
 			                 has_label(_item, label_select_text)),
-			def_menu_command(icon_index::none, tt.command_label_review, color_label_review, make_invoke(_state, parent, view, _item, make_edit(label_review_text)),
+			def_menu_command(icon_index::none, tt.command_label_review, color_label_review,
+			                 make_invoke(_state, parent, view, _item, make_edit(label_review_text)),
 			                 has_label(_item, label_review_text)),
-			def_menu_command(icon_index::none, tt.command_label_second, color_label_second, make_invoke(_state, parent, view, _item, make_edit(label_second_text)),
+			def_menu_command(icon_index::none, tt.command_label_second, color_label_second,
+			                 make_invoke(_state, parent, view, _item, make_edit(label_second_text)),
 			                 has_label(_item, label_second_text)),
-			def_menu_command(icon_index::none, tt.command_label_none, 0, make_invoke(_state, parent, view, _item, make_edit(std::u8string_view{})),
+			def_menu_command(icon_index::none, tt.command_label_none, 0,
+			                 make_invoke(_state, parent, view, _item, make_edit(std::u8string_view{})),
 			                 false),
 		};
 
@@ -1024,8 +1032,8 @@ void rate_label_control::tooltip(view_hover_element& hover, const pointi loc, co
 {
 	hover.elements->add(make_icon_element(icon_index::flag, view_element_style::no_break));
 	hover.elements->add(std::make_shared<text_element>(tt.command_view_rate_label, ui::style::font_face::dialog,
-		ui::style::text_style::multiline,
-		view_element_style::line_break));
+	                                                   ui::style::text_style::multiline,
+	                                                   view_element_style::line_break));
 
 	const auto table = std::make_shared<ui::table_element>();
 	table->add(str::format(u8"{}:"sv, tt.prop_name_label), _item->label());
@@ -1057,24 +1065,25 @@ void preview_control::dispatch_event(const view_element_event& event)
 		const auto parent = event.host->owner();
 
 		auto show_raw_always = [ts = _ts]
-			{
-				setting.raw_preview = false;
-				ts->load_raw();
-			};
+		{
+			setting.raw_preview = false;
+			ts->load_raw();
+		};
 
 		auto show_raw_preview_always = []
-			{
-				setting.raw_preview = true;
-			};
+		{
+			setting.raw_preview = true;
+		};
 
 		auto show_raw_this_only = [ts = _ts]
-			{
-				ts->load_raw();
-			};
+		{
+			ts->load_raw();
+		};
 
 		const std::vector<ui::command_ptr> result = {
 			def_menu_command(icon_index::none, tt.show_raw, 0, show_raw_always, !setting.raw_preview),
-			def_menu_command(icon_index::none, tt.preview_show_preview, 0, show_raw_preview_always, setting.raw_preview),
+			def_menu_command(icon_index::none, tt.preview_show_preview, 0, show_raw_preview_always,
+			                 setting.raw_preview),
 			def_menu_command(icon_index::none, tt.show_raw_now, 0, show_raw_this_only, false),
 		};
 
@@ -1091,8 +1100,8 @@ void preview_control::tooltip(view_hover_element& hover, const pointi loc, const
 	if (_ts->is_preview_rendering()) text = tt.preview_rendering;
 
 	hover.elements->add(std::make_shared<text_element>(text, ui::style::font_face::dialog,
-		ui::style::text_style::multiline,
-		view_element_style::line_break));
+	                                                   ui::style::text_style::multiline,
+	                                                   view_element_style::line_break));
 	hover.active_bounds = hover.window_bounds = bounds.offset(element_offset);
 }
 
@@ -1101,7 +1110,7 @@ void items_dates_control::tooltip(view_hover_element& hover, const pointi loc, c
 	static std::atomic_int version;
 	const df::cancel_token token(version);
 
-	const auto font = ui::style::font_face::dialog;
+	constexpr auto font = ui::style::font_face::dialog;
 	const auto md = _item->metadata();
 	const auto metadata_created_date = md ? md->created() : df::date_t::null;
 	const auto file_created_date = _item->file_created();
@@ -1114,26 +1123,26 @@ void items_dates_control::tooltip(view_hover_element& hover, const pointi loc, c
 
 	e->add(make_icon_element(search.first_type()->icon, view_element_style::no_break));
 	e->add(std::make_shared<text_element>(tt.dates_title, ui::style::font_face::title,
-		ui::style::text_style::single_line, view_element_style::line_break));
+	                                      ui::style::text_style::single_line, view_element_style::line_break));
 
 	const auto table = std::make_shared<ui::table_element>(view_element_style::center);
 
 	if (metadata_created_date.is_valid())
 	{
 		table->add(tt.dates_metadata_created, platform::format_date(metadata_created_date),
-			platform::format_time(metadata_created_date));
+		           platform::format_time(metadata_created_date));
 	}
 
 	if (file_created_date.is_valid())
 	{
 		table->add(tt.dates_file_created, platform::format_date(file_created_date),
-			platform::format_time(file_created_date));
+		           platform::format_time(file_created_date));
 	}
 
 	if (file_modified_date.is_valid())
 	{
 		table->add(tt.dates_file_modified, platform::format_date(file_modified_date),
-			platform::format_time(file_modified_date));
+		           platform::format_time(file_modified_date));
 	}
 
 	e->add(table);
@@ -1156,14 +1165,14 @@ void view_scroller::draw_scroll(ui::draw_context& dc) const
 		const auto cy = df::mul_div(sb.height(), _client_bounds.height(), _scroll_extent.cy);
 		const auto clr = view_handle_color(false, _active, _tracking, dc.frame_has_focus, false, dc.colors.background);
 		const auto bg_clr = ui::color(0x000000, dc.colors.alpha * dc.colors.bg_alpha);
-		const auto y_padding = (cy >= 20) ? 1 : 10;
-		const auto handle_margin = (has_sections || _active) ? 1 : df::mul_div(sb.width(), 2, 9);
+		const auto y_padding = cy >= 20 ? 1 : 10;
+		const auto handle_margin = has_sections || _active ? 1 : df::mul_div(sb.width(), 2, 9);
 		const auto left = sb.left + handle_margin;
 		const auto right = sb.right - handle_margin;
 
 		if (has_sections)
 		{
-			const auto padding = 2;
+			constexpr auto padding = 2;
 			auto top = 0;
 
 			for (const auto& so : _sections)
@@ -1178,14 +1187,17 @@ void view_scroller::draw_scroll(ui::draw_context& dc) const
 				{
 					if (so.icon != icon_index::none)
 					{
-						const auto text_color = ui::color(dc.colors.foreground, dc.colors.alpha * (_active ? 1.0f : 0.66f));
+						const auto text_color = ui::color(dc.colors.foreground,
+						                                  dc.colors.alpha * (_active ? 1.0f : 0.66f));
 						xdraw_icon(dc, so.icon, rr, text_color, {});
 					}
 					else if (!so.text.empty())
 					{
-						const auto text_color = ui::color(dc.colors.foreground, dc.colors.alpha * (_active ? 1.0f : 0.66f));
-						dc.draw_text(so.text, rr, ui::style::font_face::dialog, ui::style::text_style::single_line_center,
-							text_color, {});
+						const auto text_color = ui::color(dc.colors.foreground,
+						                                  dc.colors.alpha * (_active ? 1.0f : 0.66f));
+						dc.draw_text(so.text, rr, ui::style::font_face::dialog,
+						             ui::style::text_style::single_line_center,
+						             text_color, {});
 					}
 				}
 			}

@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
+// Copyright(C) 2025  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -12,12 +11,11 @@
 std::u8string language_name(std::u8string_view code);
 
 
-
 using text_mapping = df::hash_map<std::u8string_view, std::reference_wrapper<text_t>>;
 
 struct plural_text
 {
-	plural_text(std::u8string_view o, std::u8string_view p) : one(o), plural(p)
+	plural_text(const std::u8string_view o, const std::u8string_view p) : one(o), plural(p)
 	{
 	}
 
@@ -49,10 +47,11 @@ struct po_entry
 	}
 };
 
-std::vector<po_entry> load_po(const df::file_path lang_file);
+std::vector<po_entry> load_po(df::file_path lang_file);
 
 std::u8string format_plural_text(const plural_text& fmt, int64_t count, int64_t of_total = 0);
-std::u8string format_plural_text(const plural_text& fmt, std::u8string_view first_name, int64_t count, df::file_size size, int64_t of_total = 0);
+std::u8string format_plural_text(const plural_text& fmt, std::u8string_view first_name, int64_t count,
+                                 df::file_size size, int64_t of_total = 0);
 std::u8string format_plural_text(const plural_text& fmt, const df::item_set& items);
 std::u8string format_plural_text(const plural_text& fmt, const std::vector<std::u8string>& result);
 
@@ -71,14 +70,15 @@ struct app_text_t
 	app_text_t& operator=(const app_text_t& other1) = delete;
 	app_text_t& operator=(app_text_t&& other1) noexcept = delete;
 
-	void load_lang(std::u8string_view lang_file, const std::vector<po_entry> &entries);
+	void load_lang(std::u8string_view lang_file, const std::vector<po_entry>& entries);
 	std::vector<po_entry> gen_po() const;
 
-	void clear();
+	void clear() const;
 	void calc_text_mapping();
 
 	std::u8string translate_text(const std::u8string& text, std::u8string_view scope = {}) const;
-	std::vector<std::u8string> add_translate_text(const std::vector<str::cached>& text, std::u8string_view scope = {}) const;	
+	std::vector<std::u8string> add_translate_text(const std::vector<str::cached>& text,
+	                                              std::u8string_view scope = {}) const;
 
 	text_t nav_folders_title = u8"Folders"sv;
 	text_t nav_drives_title = u8"Drives"sv;
@@ -228,7 +228,7 @@ struct app_text_t
 	text_t command_label_select = u8"Select"sv;
 	text_t command_label_review = u8"Review"sv;
 	text_t command_label_second = u8"Second"sv;
-	text_t command_label_none = u8"No Label"sv;	
+	text_t command_label_none = u8"No Label"sv;
 	text_t command_group_shuffle = u8"Show items in random order"sv;
 	text_t command_toggle_group_by = u8"Toggle item grouping"sv;
 	text_t command_group_file_type = u8"Group by File type"sv;
@@ -550,7 +550,8 @@ struct app_text_t
 	text_t item_noun_plural = u8"items"sv;
 	text_t rename_help_template_1 = u8"When specifying a template:"sv;
 	text_t rename_help_template_2 = u8"Use '#' to specify position of the numeric sequence"sv;
-	text_t rename_help_template_3 = u8"Use metadata templates '{property-name}' to include file properties in the name."sv;
+	text_t rename_help_template_3 =
+		u8"Use metadata templates '{property-name}' to include file properties in the name."sv;
 	text_t for_example = u8"For example:"sv;
 	text_t rename_help_template_example_2 = u8"photo-###"sv;
 	text_t rename_help_template_example_3 = u8"{year}-{month}-###"sv;
@@ -593,9 +594,12 @@ struct app_text_t
 	text_t tags_common_label = u8"Common Tags"sv;
 	text_t tags_remove_label = u8"Removable Tags"sv;
 	text_t button_tag = u8"&Tag"sv;
-	text_t adjust_date_help1 = u8"Items in this date range will be modified to start at a new date and time. The time gap between items will be preserved."sv;
-	text_t adjust_date_help2 = u8"For example, if you have 2 photos taken one hour apart, after the update they will still be one hour apart."sv;
-	text_t adjust_date_help3 = u8"This is useful if your camera date was set wrongly and you need to fix photo and video dates."sv;
+	text_t adjust_date_help1 =
+		u8"Items in this date range will be modified to start at a new date and time. The time gap between items will be preserved."sv;
+	text_t adjust_date_help2 =
+		u8"For example, if you have 2 photos taken one hour apart, after the update they will still be one hour apart."sv;
+	text_t adjust_date_help3 =
+		u8"This is useful if your camera date was set wrongly and you need to fix photo and video dates."sv;
 	text_t selected_date_range_label = u8"Selected items are in the date range:"sv;
 	text_t starting_fmt = u8"Starting {}"sv;
 	text_t ending_fmt = u8"Ending {}"sv;
@@ -606,7 +610,8 @@ struct app_text_t
 	text_t open_with_app_tool = u8"Open with app or tool"sv;
 	text_t open_with_tool = u8"tool"sv;
 	text_t open_with_app = u8"app"sv;
-	text_t import_info = u8"Copy (or move) files into a structured folder hierarchy. The folder structure can be based on file metadata templates such year/date or album/artist. This is useful if you want to organize files in a structured hierarchy."sv;
+	text_t import_info =
+		u8"Copy (or move) files into a structured folder hierarchy. The folder structure can be based on file metadata templates such year/date or album/artist. This is useful if you want to organize files in a structured hierarchy."sv;
 	text_t import_dest_folder = u8"Destination root folder. Structured folders will be created under this folder."sv;
 	text_t import_ignore_previous = u8"Ignore previously imported items."sv;
 	text_t import_overwrite_if_newer = u8"Overwrite if source items are newer."sv;
@@ -633,10 +638,12 @@ struct app_text_t
 	text_t update_please_wait = u8"Please wait while the update is downloaded..."sv;
 	text_t update_failed = u8"Update failed."sv;
 	text_t donate = u8"Donate"sv;
-	text_t donate_help = u8"Diffractor can be used for free. If you find it useful, please help the project by donating."sv;
+	text_t donate_help =
+		u8"Diffractor can be used for free. If you find it useful, please help the project by donating."sv;
 	text_t donate_link = u8"Donate online."sv;
 	text_t maybe_later = u8"OK - maybe later."sv;
-	text_t error_internet = u8"Could be a problem with the internet connection? Try again later if that seems likely."sv;
+	text_t error_internet =
+		u8"Could be a problem with the internet connection? Try again later if that seems likely."sv;
 	text_t failed_connect_internet = u8"Failed to connect to the internet"sv;
 	text_t documentation = u8"Documentation"sv;
 	text_t keyboard = u8"Keyboard"sv;
@@ -728,7 +735,8 @@ struct app_text_t
 	text_t options_beta_tester = u8"Help test Diffractor. Automatically install test and preview versions."sv;
 	text_t options_use_gpu = u8"Use hardware acceleration to draw the Diffractor user interface (requires restart)"sv;
 	text_t options_use_gpu_video = u8"Use hardware acceleration to decode video (when available)"sv;
-	text_t options_use_yuv_tex = u8"Use NV12 and P010 format textures (Automatically turned off if problems detected)"sv;
+	text_t options_use_yuv_tex =
+		u8"Use NV12 and P010 format textures (Automatically turned off if problems detected)"sv;
 	text_t options_send_crash_reports =
 		u8"Help make Diffractor better. If Diffractor crashes send anonymous diagnostics to Diffractor HQ. No personal data is sent - just crash diagnostics."sv;
 	text_t options_show_debug_info = u8"Show application debugging information (for the programmers)."sv;
@@ -738,7 +746,8 @@ struct app_text_t
 	text_t options_show_help_tooltips = u8"Show tooltips with help on buttons and links."sv;
 	text_t index_maintenance_help =
 		u8"Defragmenting or cleaning can improve performance. The index stores a copy of metadata from your media files. It can be rebuilt from the original files."sv;
-	text_t index_maintenance_reset_recommended = u8"The index is reporting errors. Restarting Diffractor is recommended."sv;
+	text_t index_maintenance_reset_recommended =
+		u8"The index is reporting errors. Restarting Diffractor is recommended."sv;
 	text_t collection_options_more_folders = u8"More folders. Separate each folder with a new line."sv;
 	text_t collection_options_local_folders_title = u8"Collection folders"sv;
 	text_t collection_options_pictures = u8"Pictures"sv;
@@ -1129,7 +1138,8 @@ struct app_text_t
 	text_t favorite_remove_fmt = u8"Remove '{}' from favorite folders or searches."sv;
 	text_t collection_in = u8"Shown items are from the collection."sv;
 	text_t collection_not_in = u8"Shown items are NOT from the collection."sv;
-	text_t collection_info = u8"The collection is a set of indexed folders. Indexing allows fast searching and duplicate detection. Diffractor will also highlight when items are not in the collection."sv;
+	text_t collection_info =
+		u8"The collection is a set of indexed folders. Indexing allows fast searching and duplicate detection. Diffractor will also highlight when items are not in the collection."sv;
 	text_t favorite_title = u8"Favorite title"sv;
 	text_t favorite_info = u8"Favorites are listed in the sidebar for quick access."sv;
 	text_t favorite_failed_to_add = u8"Failed to add. Maximum number of favorites reached."sv;
@@ -1160,7 +1170,8 @@ struct app_text_t
 	text_t sync_delete_local = u8"Delete local files that do not exist remotely"sv;
 	text_t sync_delete_remote = u8"Delete remote files that do not exist locally"sv;
 	text_t sync_local = u8"Source of synchronization (Local)"sv;
-	text_t sync_info_1 = u8"Synchronize local files to a remote location. This is useful to synchronize your local file collection to a backup location."sv;
+	text_t sync_info_1 =
+		u8"Synchronize local files to a remote location. This is useful to synchronize your local file collection to a backup location."sv;
 	text_t sync_info_2 = u8"c:\\file-collection with \\\\nas\\\\backup-files"sv;
 	text_t sync_remote = u8"Destination of synchronization (Remote)"sv;
 	text_t sync_copy_remote_action = u8"copy remote"sv;
@@ -1210,23 +1221,23 @@ struct app_text_t
 	plural_text rotate_info_fmt = {
 		u8"Rotate {first-name}."sv, u8"Rotate {count} selected items. Originals will be overwritten."
 	};
-	plural_text title_folder_count_fmt = { u8"1 folder"sv, u8"{count} folders" };
-	plural_text title_item_count_fmt = { u8"{count} item"sv, u8"{count} items" };
-	plural_text rating_set_fmt = { u8"Click to rate as 1 star"sv, u8"Click to rate as {count} stars" };
+	plural_text title_folder_count_fmt = {u8"1 folder"sv, u8"{count} folders"};
+	plural_text title_item_count_fmt = {u8"{count} item"sv, u8"{count} items"};
+	plural_text rating_set_fmt = {u8"Click to rate as 1 star"sv, u8"Click to rate as {count} stars"};
 	plural_text cannot_process_fmt = {
 		u8"Cannot process {first-name}."sv, u8"Cannot process {first-name} and {other} other items."
 	};
 	plural_text rename_fmt = {
 		u8"{first-name} will be renamed."sv, u8"{count} items will be renamed."
 	};
-	plural_text dup_count_fmt = { u8"1 duplicate item"sv, u8"{count} duplicate items" };
-	plural_text sidecar_count_fmt = { u8"1 sidecar item"sv, u8"{count} sidecar items" };
+	plural_text dup_count_fmt = {u8"1 duplicate item"sv, u8"{count} duplicate items"};
+	plural_text sidecar_count_fmt = {u8"1 sidecar item"sv, u8"{count} sidecar items"};
 	plural_text processed_x_of_x_fmt = {
 		u8"{count} of 1 item was processed."sv, u8"{count} of {total} items were processed."
 	};
-	plural_text processed_fmt = { u8"1 item was processed."sv, u8"{count} items were processed." };
-	plural_text failed_items_fmt = { u8"{first-name} failed."sv, u8"{count} items failed." };
-	plural_text ignored_fmt = { u8"{first-name} was ignored."sv, u8"{count} items were ignored." };
+	plural_text processed_fmt = {u8"1 item was processed."sv, u8"{count} items were processed."};
+	plural_text failed_items_fmt = {u8"{first-name} failed."sv, u8"{count} items failed."};
+	plural_text ignored_fmt = {u8"{first-name} was ignored."sv, u8"{count} items were ignored."};
 	plural_text ignored_exist_already_fmt = {
 		u8"{first-name} was ignored because it exist already in the destination location."sv,
 		u8"{count} items were ignored because they exist already in the destination location."
@@ -1236,11 +1247,12 @@ struct app_text_t
 		u8"{count} items were ignored because they were previously imported."
 	};
 	plural_text delete_info_fmt = {
-		u8"{first-name} will be moved to the recycle bin."sv, u8"{count} items ({size}) will be moved to the recycle bin."
+		u8"{first-name} will be moved to the recycle bin."sv,
+		u8"{count} items ({size}) will be moved to the recycle bin."
 	};
-	plural_text copy_fmt = { u8"{first-name} will be copied."sv, u8"{count} items ({size}) will be copied." };
-	plural_text move_fmt = { u8"{first-name} will be moved."sv, u8"{count} items ({size}) will be moved." };
-	plural_text be_updated_fmt = { u8"{first-name} will be updated."sv, u8"{count} items will be updated." };
+	plural_text copy_fmt = {u8"{first-name} will be copied."sv, u8"{count} items ({size}) will be copied."};
+	plural_text move_fmt = {u8"{first-name} will be moved."sv, u8"{count} items ({size}) will be moved."};
+	plural_text be_updated_fmt = {u8"{first-name} will be updated."sv, u8"{count} items will be updated."};
 	plural_text edit_metadata_fmt = {
 		u8"Add or overwrite specific metadata in {first-name}."sv,
 		u8"Add or overwrite specific metadata in {count} items."
@@ -1255,7 +1267,7 @@ struct app_text_t
 	plural_text adjust_date_info_fmt = {
 		u8"{first-name} will have the date adjusted."sv, u8"{count} items will have the date adjusted."
 	};
-	plural_text shared_fmt = { u8"{first-name} will be shared."sv, u8"{count} items will be shared." };
+	plural_text shared_fmt = {u8"{first-name} will be shared."sv, u8"{count} items will be shared."};
 	plural_text import_copy_fmt = {
 		u8"{first-name} will be copied or moved."sv, u8"{count} items ({size}) will be copied or moved."
 	};
@@ -1270,7 +1282,7 @@ struct app_text_t
 	plural_text gps_overwrite_count_fmt = {
 		u8"{first-name} will have existing GPS position metadata overwritten."sv,
 		u8"{first-name} and {other} other items will have existing GPS position metadata overwritten."
-	};	
+	};
 };
 
 extern app_text_t tt;

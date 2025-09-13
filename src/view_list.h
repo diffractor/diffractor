@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -33,7 +32,7 @@ protected:
 	static constexpr int max_col_count = 4;
 	int col_count = 4;
 	int coll_offset = 0;
-	int col_widths[max_col_count] = { 0, 0, 0, 0 };
+	int col_widths[max_col_count] = {0, 0, 0, 0};
 
 
 	recti _col_header_bounds[max_col_count];
@@ -46,13 +45,12 @@ protected:
 	friend class header_controller;
 
 public:
-
 	struct row_element final : std::enable_shared_from_this<row_element>, view_element
 	{
 		list_view& _view;
 		std::u8string _text[max_col_count];
 		ui::color _bg_row;
-		ui::color32 _text_color[max_col_count] = { 0, 0, 0, 0 };
+		ui::color32 _text_color[max_col_count] = {0, 0, 0, 0};
 		int _order = 0;
 
 		row_element(list_view& view) noexcept
@@ -60,7 +58,7 @@ public:
 		{
 		}
 
-		void render(ui::draw_context& dc, pointi element_offset) const override
+		void render(ui::draw_context& dc, const pointi element_offset) const override
 		{
 			const auto bg_alpha = dc.colors.alpha * dc.colors.bg_alpha;
 			const auto dir_color = ui::color(ui::style::color::dialog_selected_background, dc.colors.alpha);
@@ -75,10 +73,12 @@ public:
 
 				for (int i = 0; i < _view.col_count; i++)
 				{
-					const auto text_color = ui::color(_text_color[i] != 0 ? _text_color[i] : dc.colors.foreground, dc.colors.alpha);
+					const auto text_color = ui::color(_text_color[i] != 0 ? _text_color[i] : dc.colors.foreground,
+					                                  dc.colors.alpha);
 					const std::u8string_view text = _text[i];
 					const recti bounds(x, logical_bounds.top, x + _view.col_widths[i], logical_bounds.bottom);
-					dc.draw_text(text, bounds, ui::style::font_face::dialog, ui::style::text_style::single_line, text_color, {});
+					dc.draw_text(text, bounds, ui::style::font_face::dialog, ui::style::text_style::single_line,
+					             text_color, {});
 					x += _view.col_widths[i] + dc.padding2;
 				}
 			}
@@ -87,15 +87,16 @@ public:
 		sizei measure(ui::measure_context& mc, int width_limit) const override
 		{
 			const auto row_height = mc.text_line_height(ui::style::font_face::dialog) + mc.padding2;
-			return { width_limit, row_height };
+			return {width_limit, row_height};
 		}
 
 		void dispatch_event(const view_element_event& event) override
 		{
 		}
 
-		view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
-			const std::vector<recti>& excluded_bounds) override
+		view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
+		                                             const pointi element_offset,
+		                                             const std::vector<recti>& excluded_bounds) override
 		{
 			return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 		}
@@ -114,7 +115,7 @@ public:
 		_rows.clear();
 	}
 
-	void activate(sizei extent) override
+	void activate(const sizei extent) override
 	{
 		_extent = extent;
 		_state.stop();
@@ -124,7 +125,10 @@ public:
 	{
 		if (col_num == 1 || col_num == 2)
 		{
-			std::ranges::sort(_rows, [col_num](const auto& left, const auto& right) { return str::icmp(left->_text[col_num], right->_text[col_num]) < 0; });
+			std::ranges::sort(_rows, [col_num](const auto& left, const auto& right)
+			{
+				return str::icmp(left->_text[col_num], right->_text[col_num]) < 0;
+			});
 		}
 		else
 		{
@@ -134,13 +138,13 @@ public:
 		_state.invalidate_view(view_invalid::controller | view_invalid::view_layout);
 	}
 
-	void layout(ui::measure_context& mc, sizei extent) override
+	void layout(ui::measure_context& mc, const sizei extent) override
 	{
 		_extent = extent;
 
 		const auto titles = col_titles();
-		const recti scroll_bounds{ _extent.cx - mc.scroll_width, 0, _extent.cx, _extent.cy };
-		const recti client_bounds{ 0, 0, _extent.cx, _extent.cy };
+		const recti scroll_bounds{_extent.cx - mc.scroll_width, 0, _extent.cx, _extent.cy};
+		const recti client_bounds{0, 0, _extent.cx, _extent.cy};
 
 		auto y_max = 0;
 		std::u8string_view longest_text[max_col_count];
@@ -155,7 +159,7 @@ public:
 		if (!_rows.empty())
 		{
 			const auto row_height = mc.text_line_height(ui::style::font_face::dialog) + mc.padding2;
-			auto y = row_height + (mc.padding2 * 2);
+			auto y = row_height + mc.padding2 * 2;
 
 			for (const auto& r : _rows)
 			{
@@ -180,7 +184,8 @@ public:
 
 		for (int i = 0; i < col_count; i++)
 		{
-			col_widths[i] = mc.measure_text(longest_text[i], ui::style::font_face::dialog, ui::style::text_style::single_line, extent.cx).cx + mc.padding2;
+			col_widths[i] = mc.measure_text(longest_text[i], ui::style::font_face::dialog,
+			                                ui::style::text_style::single_line, extent.cx).cx + mc.padding2;
 			x_max += col_widths[i] + mc.padding2;
 			if (i > 0) shrink_col_total += col_widths[i];
 		}
@@ -188,8 +193,8 @@ public:
 		// Shrink if too large
 		if (x_max > extent.cx)
 		{
-			auto cx_avail = extent.cx - ((col_count + 1) * mc.padding2);
-			auto extra = x_max - cx_avail;
+			const auto cx_avail = extent.cx - (col_count + 1) * mc.padding2;
+			const auto extra = x_max - cx_avail;
 
 			for (int i = 1; i < col_count; i++)
 			{
@@ -206,7 +211,7 @@ public:
 
 		coll_offset = std::max(0, extent.cx - x_max) / 2;
 
-		_scroller.layout({ client_bounds.width(), y_max }, client_bounds, scroll_bounds);
+		_scroller.layout({client_bounds.width(), y_max}, client_bounds, scroll_bounds);
 		_host->frame()->invalidate();
 	}
 
@@ -216,7 +221,7 @@ public:
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc) override;
 
-	view_element_ptr element_from_location(int y) const
+	view_element_ptr element_from_location(const int y) const
 	{
 		view_element_ptr result;
 		const auto offset = _scroller.scroll_offset();
@@ -238,18 +243,17 @@ public:
 	}
 
 
-
 	void render_headers(ui::draw_context& dc)
 	{
 		const auto titles = col_titles();
-		const auto cy = dc.text_line_height(ui::style::font_face::dialog) + (dc.padding2 * 2);
+		const auto cy = dc.text_line_height(ui::style::font_face::dialog) + dc.padding2 * 2;
 		const auto bg_alpha = dc.colors.alpha * 0.77f;
 		const auto text_color = ui::color(dc.colors.foreground, dc.colors.alpha);
 
 		constexpr int y = 0;
 		auto x = coll_offset;
 
-		ui::color header_bg(ui::darken(dc.colors.background, 0.33f), bg_alpha);
+		const ui::color header_bg(ui::darken(dc.colors.background, 0.33f), bg_alpha);
 
 		if (!_header_active)
 		{
@@ -274,18 +278,20 @@ public:
 
 		for (int i = 0; i < col_count; ++i)
 		{
-			auto cx = col_widths[i];
+			const auto cx = col_widths[i];
 			const recti col_header_bounds(x - dc.padding2, y, x + cx, y + cy);
 			const recti col_header_text_bounds(x, y, x + cx, y + cy);
 
 			if (_header_active)
 			{
-				ui::color bg(ui::darken(_header_active_num == i ? ui::style::color::dialog_selected_background : dc.colors.background, 0.33f), bg_alpha);
+				const ui::color bg(ui::darken(_header_active_num == i
+					                              ? ui::style::color::dialog_selected_background
+					                              : dc.colors.background, 0.33f), bg_alpha);
 				dc.draw_rect(col_header_bounds, bg);
 			}
 
 			dc.draw_text(titles[i], col_header_text_bounds, ui::style::font_face::dialog,
-				ui::style::text_style::single_line, text_color, {});
+			             ui::style::text_style::single_line, text_color, {});
 
 			_col_header_bounds[i] = col_header_bounds;
 			x += cx + dc.padding2;
@@ -318,21 +324,22 @@ public:
 			{
 				const auto text_color = ui::color(rc.colors.foreground, rc.colors.alpha);
 				rc.draw_text(message.sv(), recti(_extent), ui::style::font_face::dialog,
-					ui::style::text_style::single_line_center, text_color, {});
+				             ui::style::text_style::single_line_center, text_color, {});
 			}
 		}
 	}
 
-	void mouse_wheel(pointi loc, int zDelta, ui::key_state keys) override
+	void mouse_wheel(pointi loc, const int zDelta, ui::key_state keys) override
 	{
 		_scroller.offset(_host, 0, -zDelta);
 		_state.invalidate_view(view_invalid::controller);
 	}
 
 	virtual text_t empty_message() { return {}; }
+
 	virtual std::array<text_t, max_col_count> col_titles()
 	{
-		return std::array<text_t, max_col_count> {
+		return std::array<text_t, max_col_count>{
 			text_t{},
 			text_t{},
 			text_t{},
@@ -370,7 +377,6 @@ public:
 	}
 
 
-
 	virtual void layout_controls(ui::measure_context& mc)
 	{
 		if (!_controls.empty())
@@ -381,15 +387,15 @@ public:
 
 			ui::control_layouts positions;
 			const auto height = stack_elements(mc, positions, avail_bounds, _controls, false,
-				{ layout_padding, layout_padding });
+			                                   {layout_padding, layout_padding});
 
 			_layout_height = height;
 			_layout_width = avail_bounds.width();
 			_label_width = mc.col_widths;
 
-			const recti scroll_bounds{ _extent.cx - mc.scroll_width, 0, _extent.cx, _extent.cy };
-			const recti client_bounds{ 0, 0, _extent.cx - mc.scroll_width, _extent.cy };
-			_scroller.layout({ _layout_width, _layout_height }, client_bounds, scroll_bounds);
+			const recti scroll_bounds{_extent.cx - mc.scroll_width, 0, _extent.cx, _extent.cy};
+			const recti client_bounds{0, 0, _extent.cx - mc.scroll_width, _extent.cy};
+			_scroller.layout({_layout_width, _layout_height}, client_bounds, scroll_bounds);
 
 			_dlg->apply_layout(positions, -_scroller.scroll_offset());
 			_dlg->invalidate();
@@ -398,7 +404,7 @@ public:
 
 	void populate()
 	{
-		const view_element_event e{ view_element_event_type::populate, shared_from_this() };
+		const view_element_event e{view_element_event_type::populate, shared_from_this()};
 
 		for (const auto& c : _controls)
 		{
@@ -406,7 +412,7 @@ public:
 		}
 	}
 
-	void on_window_layout(ui::measure_context& mc, sizei extent, bool is_minimized) override
+	void on_window_layout(ui::measure_context& mc, const sizei extent, bool is_minimized) override
 	{
 		_extent = extent;
 		layout_controls(mc);
@@ -529,7 +535,7 @@ public:
 			{
 				point_offset.y = rc.top;
 			}
-			else if (rc.bottom > (point_offset.y + _extent.cy))
+			else if (rc.bottom > point_offset.y + _extent.cy)
 			{
 				point_offset.y = rc.bottom - _extent.cy;
 			}
@@ -538,7 +544,7 @@ public:
 		}
 	}
 
-	void command_hover(const ui::command_ptr& c, recti window_bounds) override
+	void command_hover(const ui::command_ptr& c, const recti window_bounds) override
 	{
 		_state.command_hover(c, window_bounds);
 	}
@@ -624,7 +630,7 @@ public:
 	}
 };
 
-inline view_controller_ptr list_view::controller_from_location(const view_host_ptr& host, pointi loc)
+inline view_controller_ptr list_view::controller_from_location(const view_host_ptr& host, const pointi loc)
 {
 	for (int i = 0; i < col_count; ++i)
 	{

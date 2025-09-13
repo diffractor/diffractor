@@ -1,15 +1,14 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
 
-class md5 : df::no_copy
+class md5 final : df::no_copy
 {
 public:
 	md5(); // simple initializer
@@ -19,17 +18,17 @@ public:
 
 	void update(const std::u8string_view input)
 	{
-		update({ (const uint8_t*)input.data(), input.size() });
+		update({(const uint8_t*)input.data(), input.size()});
 	}
 
 	void update(const std::vector<uint8_t>& input)
 	{
-		update({ input.data(), input.size() });
+		update({input.data(), input.size()});
 	}
 
 	void update(const char8_t* sz)
 	{
-		update({ (const uint8_t*)sz, str::len(sz) });
+		update({(const uint8_t*)sz, str::len(sz)});
 	}
 
 	void finalize();
@@ -55,6 +54,6 @@ private:
 	void Transform(const uint8_t* buffer); // does the real update work. Note 
 	// that length is implied to be 64.
 
-	static void Encode(uint8_t* dest, uint32_t* src, size_t length);
+	static void Encode(uint8_t* dest, const uint32_t* src, size_t length);
 	static void Decode(uint32_t* dest, df::cspan src);
 };

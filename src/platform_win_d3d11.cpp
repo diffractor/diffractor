@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
@@ -41,7 +40,7 @@ static bool should_animate()
 	return !GetSystemMetrics(SM_REMOTESESSION);
 }
 
-static constexpr std::u8string_view to_string(D3D_FEATURE_LEVEL fl)
+static constexpr std::u8string_view to_string(const D3D_FEATURE_LEVEL fl)
 {
 	switch (fl)
 	{
@@ -68,10 +67,10 @@ void factories::reset_fonts()
 	font_renderers.clear();
 }
 
-bool factories::init(bool use_gpu)
+bool factories::init(const bool use_gpu)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
-	D2D1_FACTORY_OPTIONS d2d_options = { D2D1_DEBUG_LEVEL_NONE };
+	D2D1_FACTORY_OPTIONS d2d_options = {D2D1_DEBUG_LEVEL_NONE};
 
 #ifdef _DEBUG
 	d2d_options.debugLevel = D2D1_DEBUG_LEVEL_INFORMATION;
@@ -87,7 +86,7 @@ bool factories::init(bool use_gpu)
 	if (SUCCEEDED(hr))
 	{
 		hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(dwrite),
-			std::bit_cast<IUnknown**>(dwrite.GetAddressOf()));
+		                         std::bit_cast<IUnknown**>(dwrite.GetAddressOf()));
 
 		if (FAILED(hr))
 		{
@@ -113,7 +112,7 @@ bool factories::init(bool use_gpu)
 	if (SUCCEEDED(hr))
 	{
 		hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, __uuidof(IWICImagingFactory),
-			std::bit_cast<void**>(wic.GetAddressOf()));
+		                      std::bit_cast<void**>(wic.GetAddressOf()));
 
 		if (FAILED(hr))
 		{
@@ -184,15 +183,15 @@ bool factories::init(bool use_gpu)
 			//}
 
 			hr = D3D11CreateDevice(intel_adapter.Get(), driver_type, nullptr, create_device_flags, feature_levels_11_1,
-				static_cast<uint32_t>(std::size(feature_levels_11_1)), D3D11_SDK_VERSION, &device,
-				&feature_level, &context);
+			                       std::size(feature_levels_11_1), D3D11_SDK_VERSION, &device,
+			                       &feature_level, &context);
 
 			if (hr == E_INVALIDARG)
 			{
 				df::log(__FUNCTION__, "D3D11CreateDevice failed with 11_1 - trying 11"sv);
 				hr = D3D11CreateDevice(intel_adapter.Get(), driver_type, nullptr, create_device_flags,
-					feature_levels_11, static_cast<uint32_t>(std::size(feature_levels_11)),
-					D3D11_SDK_VERSION, &device, &feature_level, &context);
+				                       feature_levels_11, std::size(feature_levels_11),
+				                       D3D11_SDK_VERSION, &device, &feature_level, &context);
 			}
 		}
 
@@ -203,8 +202,8 @@ bool factories::init(bool use_gpu)
 			driver_type = D3D_DRIVER_TYPE_WARP;
 
 			hr = D3D11CreateDevice(nullptr, driver_type, nullptr, create_device_flags, feature_levels_11,
-				static_cast<uint32_t>(std::size(feature_levels_11)),
-				D3D11_SDK_VERSION, &device, &feature_level, &context);
+			                       std::size(feature_levels_11),
+			                       D3D11_SDK_VERSION, &device, &feature_level, &context);
 
 			// dont animate for software rendering
 			setting.can_animate = false;
@@ -244,7 +243,7 @@ bool factories::init(bool use_gpu)
 			{
 				const auto description = str::utf16_to_utf8(adapter_desc.Description);
 				const auto gpu_id = str::format(u8"{:x}|{:x}|{:x}|{:x}"sv, adapter_desc.VendorId, adapter_desc.DeviceId,
-					adapter_desc.SubSysId, adapter_desc.Revision);
+				                                adapter_desc.SubSysId, adapter_desc.Revision);
 
 				df::gpu_desc = description;
 				df::gpu_id = gpu_id;
@@ -252,11 +251,11 @@ bool factories::init(bool use_gpu)
 				df::log(__FUNCTION__, u8"     "s + description);
 				df::log(__FUNCTION__, u8"     "s + gpu_id);
 				df::log(__FUNCTION__,
-					u8"     DedicatedVideoMemory "s + df::file_size(adapter_desc.DedicatedVideoMemory).str());
+				        u8"     DedicatedVideoMemory "s + df::file_size(adapter_desc.DedicatedVideoMemory).str());
 				df::log(__FUNCTION__,
-					u8"     DedicatedSystemMemory "s + df::file_size(adapter_desc.DedicatedSystemMemory).str());
+				        u8"     DedicatedSystemMemory "s + df::file_size(adapter_desc.DedicatedSystemMemory).str());
 				df::log(__FUNCTION__,
-					u8"     SharedSystemMemory "s + df::file_size(adapter_desc.SharedSystemMemory).str());
+				        u8"     SharedSystemMemory "s + df::file_size(adapter_desc.SharedSystemMemory).str());
 			}
 		}
 
@@ -390,7 +389,7 @@ struct vertex_2d
 		tex_size.y = 0.0f;
 	}
 
-	vertex_2d(float x, float y, float u, float v, const ui::color c, const sizei tex_dims)
+	vertex_2d(const float x, const float y, const float u, const float v, const ui::color c, const sizei tex_dims)
 	{
 		pos.x = x;
 		pos.y = y;
@@ -406,7 +405,7 @@ struct vertex_2d
 		tex_size.y = static_cast<float>(tex_dims.cy);
 	}
 
-	void set(float x, float y, float u, float v, const ui::color c)
+	void set(const float x, const float y, const float u, const float v, const ui::color c)
 	{
 		pos.x = x;
 		pos.y = y;
@@ -438,7 +437,7 @@ struct vertex_2d
 		tex_size.y = 0.0f;
 	}
 
-	void set(const pointd xy, const pointd uv, float a)
+	void set(const pointd xy, const pointd uv, const float a)
 	{
 		pos.x = static_cast<float>(xy.X);
 		pos.y = static_cast<float>(xy.Y);
@@ -455,7 +454,7 @@ struct vertex_2d
 	}
 };
 
-constexpr uint32_t vertex_stride = static_cast<uint32_t>(sizeof(vertex_2d));
+constexpr uint32_t vertex_stride = sizeof(vertex_2d);
 constexpr uint32_t icon_texture_size = 512;
 
 static_assert(std::is_trivial_v<vertex_2d>);
@@ -477,7 +476,6 @@ class d3d11_draw_context_impl;
 
 class d3d11_text_renderer final : df::no_copy, public IDWriteTextRenderer
 {
-private:
 	factories_ptr _f;
 	std::shared_ptr<d3d11_draw_context_impl> _canvas;
 	ComPtr<ID3D11Texture2D> _texture;
@@ -508,7 +506,7 @@ private:
 
 public:
 	d3d11_text_renderer() = default;
-	~d3d11_text_renderer() = default;
+	~d3d11_text_renderer() override = default;
 
 	void reset(const std::shared_ptr<d3d11_draw_context_impl>& c, const factories_ptr& f, font_renderer_ptr fr);
 	void reset();
@@ -521,15 +519,15 @@ public:
 	void draw_text(std::u8string_view text, recti bounds, ui::style::text_style style, ui::color c, ui::color bg);
 
 	void draw_text(std::u8string_view text, const std::vector<ui::text_highlight_t>& highlights, recti bounds,
-		ui::style::text_style style, ui::color clr, ui::color bg);
+	               ui::style::text_style style, ui::color clr, ui::color bg);
 
 	void draw_text(const std::shared_ptr<text_layout_impl>& text, const recti bounds, const ui::color clr,
-		const ui::color bg)
+	               const ui::color bg)
 	{
 		df::scope_rendering_func rf(__FUNCTION__);
 		_clr = clr;
 		text->_renderer->draw(std::bit_cast<ui::draw_context*>(_canvas.get()), this, text->_layout.Get(), bounds, clr,
-			bg);
+		                      bg);
 	}
 
 	sizei measure_text(const std::u8string_view text, const sizei avail, const ui::style::text_style style) const
@@ -545,15 +543,15 @@ public:
 	// ----- IUnknown -----
 
 	HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
-		void** ppvObject) override
+	                                         void** ppvObject) override
 	{
 		if (riid == __uuidof(IDWriteTextRenderer))
 		{
-			(*ppvObject) = static_cast<IDWriteTextRenderer*>(this);
+			*ppvObject = static_cast<IDWriteTextRenderer*>(this);
 		}
 		else if (riid == __uuidof(IDWritePixelSnapping))
 		{
-			(*ppvObject) = static_cast<IDWritePixelSnapping*>(this);
+			*ppvObject = static_cast<IDWritePixelSnapping*>(this);
 		}
 		else
 		{
@@ -590,26 +588,26 @@ public:
 	HRESULT STDMETHODCALLTYPE GetPixelsPerDip(void* clientDrawingContext, FLOAT* pixelsPerDip) override;
 
 	HRESULT STDMETHODCALLTYPE DrawGlyphRun(void* clientDrawingContext, FLOAT baselineOriginX, FLOAT baselineOriginY,
-		DWRITE_MEASURING_MODE measuringMode, const DWRITE_GLYPH_RUN* glyphRun,
-		const DWRITE_GLYPH_RUN_DESCRIPTION* glyphRunDescription,
-		IUnknown* clientDrawingEffect) override;
+	                                       DWRITE_MEASURING_MODE measuringMode, const DWRITE_GLYPH_RUN* glyphRun,
+	                                       const DWRITE_GLYPH_RUN_DESCRIPTION* glyphRunDescription,
+	                                       IUnknown* clientDrawingEffect) override;
 
 	HRESULT STDMETHODCALLTYPE DrawUnderline(void* clientDrawingContext, FLOAT baselineOriginX, FLOAT baselineOriginY,
-		const DWRITE_UNDERLINE* underline, IUnknown* clientDrawingEffect) override
+	                                        const DWRITE_UNDERLINE* underline, IUnknown* clientDrawingEffect) override
 	{
 		return S_OK;
 	}
 
 	HRESULT STDMETHODCALLTYPE DrawStrikethrough(void* clientDrawingContext, FLOAT baselineOriginX,
-		FLOAT baselineOriginY, const DWRITE_STRIKETHROUGH* strikethrough,
-		IUnknown* clientDrawingEffect) override
+	                                            FLOAT baselineOriginY, const DWRITE_STRIKETHROUGH* strikethrough,
+	                                            IUnknown* clientDrawingEffect) override
 	{
 		return S_OK;
 	}
 
 	HRESULT STDMETHODCALLTYPE DrawInlineObject(void* clientDrawingContext, FLOAT originX, FLOAT originY,
-		IDWriteInlineObject* inlineObject, BOOL isSideways, BOOL isRightToLeft,
-		IUnknown* clientDrawingEffect) override
+	                                           IDWriteInlineObject* inlineObject, BOOL isSideways, BOOL isRightToLeft,
+	                                           IUnknown* clientDrawingEffect) override
 	{
 		return S_OK;
 	}
@@ -631,7 +629,6 @@ public:
 		_scaler.reset();
 	}
 
-public:
 	explicit d3d11_texture(const factories_ptr& f) : _f(f)
 	{
 	}
@@ -652,13 +649,13 @@ public:
 		UINT support = 0;
 
 		return SUCCEEDED(_f->d3d_device->CheckFormatSupport(DXGI_FORMAT_NV12, &support))
-			&& (support & D3D11_FORMAT_SUPPORT_TEXTURE2D);
+			&& support & D3D11_FORMAT_SUPPORT_TEXTURE2D;
 	}
 
 	ui::texture_update_result update(const av_frame_ptr& frame) override;
 	ui::texture_update_result update(const ui::const_surface_ptr& surface) override;
 	ui::texture_update_result update(sizei dims, ui::texture_format format, ui::orientation orientation,
-		const uint8_t* pixels, size_t stride, size_t buffer_size) override;
+	                                 const uint8_t* pixels, size_t stride, size_t buffer_size) override;
 
 	friend class av_video_frames;
 };
@@ -705,7 +702,7 @@ public:
 
 
 class d3d11_draw_context_impl final : public draw_context_device,
-	public std::enable_shared_from_this<d3d11_draw_context_impl>
+                                      public std::enable_shared_from_this<d3d11_draw_context_impl>
 {
 public:
 	recti _clip_bounds;
@@ -752,7 +749,6 @@ public:
 
 	std::vector<scene_atom> _scene_atoms;
 
-public:
 	d3d11_draw_context_impl() = default;
 
 	~d3d11_draw_context_impl() override
@@ -760,13 +756,13 @@ public:
 		destroy();
 	}
 
-	void create(const factories_ptr& f, ComPtr<IDXGISwapChain> swap_chain, int base_font_size, bool use_gpu);
+	void create(const factories_ptr& f, const ComPtr<IDXGISwapChain>& swap_chain, int base_font_size, bool use_gpu);
 
 	void resize(sizei extent) override;
 	void update_font_size(int base_font_size) override;
 
 	void build_index_and_vertex_buffers();
-	void draw_scene(const ComPtr<ID3D11DeviceContext>& context);
+	void draw_scene(const ComPtr<ID3D11DeviceContext>& context) const;
 
 
 	sizei measure_string(std::u8string_view text, sizei size_avail, ui::style::font_face, ui::style::text_style);
@@ -795,12 +791,12 @@ public:
 	ID3D11PixelShader* calc_shader(bool is_bicubic, ui::texture_format tex_fmt) const;
 
 	void add_scene_atom(const ComPtr<ID3D11Texture2D>& vv, const ComPtr<ID3D11PixelShader>& ss,
-		ui::texture_format tex_fmt, ui::texture_sampler sampler, const vertex_2d* vertices,
-		size_t vertex_count, const WORD* indexes, size_t index_count);
+	                    ui::texture_format tex_fmt, ui::texture_sampler sampler, const vertex_2d* vertices,
+	                    size_t vertex_count, const WORD* indexes, size_t index_count);
 	void draw_texture(const texture_d3d11_ptr& t, const quadd& dst, recti src, ui::color c,
-		ui::texture_sampler sampler);
+	                  ui::texture_sampler sampler);
 	void draw_texture(const texture_d3d11_ptr& t, recti dst, recti src, ui::color c, ui::texture_sampler sampler,
-		float radius);
+	                  float radius);
 
 	void destroy() override;
 	void begin_draw(sizei client_extent, int base_font_size) override;
@@ -844,7 +840,7 @@ public:
 				};
 
 				add_scene_atom(nullptr, _pixel_shader_solid, ui::texture_format::None, ui::texture_sampler::point,
-					vertices, std::size(vertices), indexes, std::size(indexes));
+				               vertices, std::size(vertices), indexes, std::size(indexes));
 			}
 		}
 	}
@@ -853,17 +849,17 @@ public:
 	void draw_rounded_rect(recti bounds, ui::color c, int radius) override;
 	void draw_rect(recti bounds, ui::color c) override;
 	void draw_text(std::u8string_view text, recti bounds, ui::style::font_face font, ui::style::text_style style,
-		ui::color c, ui::color bg) override;
+	               ui::color c, ui::color bg) override;
 	void draw_text(std::u8string_view text, const std::vector<ui::text_highlight_t>& highlights, recti bounds,
-		ui::style::font_face font, ui::style::text_style style, ui::color clr, ui::color bg) override;
+	               ui::style::font_face font, ui::style::text_style style, ui::color clr, ui::color bg) override;
 	void draw_text(const ui::text_layout_ptr& tl, recti bounds, ui::color clr, ui::color bg) override;
 	void draw_shadow(recti bounds, int width, float alpha, bool inverse) override;
 	void draw_border(recti inside, recti outside, ui::color c_inside, ui::color c_outside) override;
 	void draw_texture(const ui::texture_ptr& t, recti dst, float alpha, ui::texture_sampler sampler) override;
 	void draw_texture(const ui::texture_ptr& t, recti dst, recti src, float alpha, ui::texture_sampler sampler,
-		float radius) override;
+	                  float radius) override;
 	void draw_texture(const ui::texture_ptr& t, const quadd& dst, recti src, float alpha,
-		ui::texture_sampler sampler) override;
+	                  ui::texture_sampler sampler) override;
 	void draw_vertices(const ui::vertices_ptr& v) override;
 
 	ui::texture_ptr create_texture() override;
@@ -872,7 +868,7 @@ public:
 	ui::text_layout_ptr create_text_layout(ui::style::font_face font) override;
 
 	sizei measure_text(std::u8string_view text, ui::style::font_face font, ui::style::text_style style, int width,
-		int height) override;
+	                   int height) override;
 	int text_line_height(ui::style::font_face type) override;
 
 	recti clip_bounds() const override;
@@ -946,7 +942,8 @@ void d3d11_draw_context_impl::update_font_size(const int base_font_size)
 		_font[ui::style::font_face::title].reset(c, _f, _f->font_face(ui::style::font_face::title, base_font_size));
 		_font[ui::style::font_face::mega].reset(c, _f, _f->font_face(ui::style::font_face::mega, base_font_size));
 		_font[ui::style::font_face::icons].reset(c, _f, _f->font_face(ui::style::font_face::icons, base_font_size));
-		_font[ui::style::font_face::small_icons].reset(c, _f, _f->font_face(ui::style::font_face::small_icons, base_font_size));
+		_font[ui::style::font_face::small_icons].reset(
+			c, _f, _f->font_face(ui::style::font_face::small_icons, base_font_size));
 		_font[ui::style::font_face::petscii].reset(c, _f, _f->font_face(ui::style::font_face::petscii, base_font_size));
 	}
 }
@@ -982,7 +979,7 @@ void d3d11_draw_context_impl::update_font_size(const int base_font_size)
 //}
 
 
-static texture_d3d11_ptr create_texture_from_resource(const factories_ptr& f, int id, LPCWSTR type)
+static texture_d3d11_ptr create_texture_from_resource(const factories_ptr& f, const int id, const LPCWSTR type)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	df::assert_true(ui::is_ui_thread());
@@ -993,8 +990,8 @@ static texture_d3d11_ptr create_texture_from_resource(const factories_ptr& f, in
 }
 
 
-void d3d11_draw_context_impl::create(const factories_ptr& f, ComPtr<IDXGISwapChain> swap_chain,
-	const int base_font_size, const bool use_gpu)
+void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGISwapChain>& swap_chain,
+                                     const int base_font_size, const bool use_gpu)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	df::assert_true(ui::is_ui_thread());
@@ -1011,10 +1008,10 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, ComPtr<IDXGISwapCha
 		uint32_t support = 0;
 
 		_supports_p010 = SUCCEEDED(_f->d3d_device->CheckFormatSupport(to_format(ui::texture_format::P010), &support))
-			&& (support & D3D11_FORMAT_SUPPORT_TEXTURE2D);
+			&& support & D3D11_FORMAT_SUPPORT_TEXTURE2D;
 
 		_supports_nv12 = SUCCEEDED(_f->d3d_device->CheckFormatSupport(to_format(ui::texture_format::NV12), &support))
-			&& (support & D3D11_FORMAT_SUPPORT_TEXTURE2D);
+			&& support & D3D11_FORMAT_SUPPORT_TEXTURE2D;
 
 		df::log(__FUNCTION__, _supports_p010 ? "     p010 supported"sv : "     p010 not-supported"sv);
 		df::log(__FUNCTION__, _supports_nv12 ? "     nv12 supported"sv : "     nv12 not-supported"sv);
@@ -1059,9 +1056,9 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, ComPtr<IDXGISwapCha
 					{"EXTENT", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 40, D3D11_INPUT_PER_VERTEX_DATA, 0},
 				};
 
-				const uint32_t num_elements = ARRAYSIZE(layout);
+				constexpr uint32_t num_elements = ARRAYSIZE(layout);
 				hr = _f->d3d_device->CreateInputLayout(layout, num_elements, shader.data(), shader.size(),
-					&_vertex_layout);
+				                                       &_vertex_layout);
 			}
 		}
 
@@ -1327,7 +1324,7 @@ struct context_state final
 	ID3D11Buffer* vertex_buffer = nullptr;
 	ID3D11Buffer* index_buffer = nullptr;
 
-	df::hash_map<struct ID3D11Texture2D*, ComPtr<struct ID3D11ShaderResourceView>> texture_views;
+	df::hash_map<ID3D11Texture2D*, ComPtr<ID3D11ShaderResourceView>> texture_views;
 
 	ID3D11DeviceContext* context;
 	ID3D11Device* device;
@@ -1352,15 +1349,15 @@ struct context_state final
 		if (ss != sampler)
 		{
 			sampler = ss;
-			ID3D11SamplerState* samplers[] = { ss };
+			ID3D11SamplerState* samplers[] = {ss};
 			context->PSSetSamplers(0, 1, samplers);
 		}
 
 		if (vb != vertex_buffer)
 		{
 			vertex_buffer = vb;
-			UINT offsets[] = { 0 };
-			ID3D11Buffer* buffers[] = { vertex_buffer };
+			UINT offsets[] = {0};
+			ID3D11Buffer* buffers[] = {vertex_buffer};
 			context->IASetVertexBuffers(0, 1, buffers, &vertex_stride, offsets);
 		}
 
@@ -1393,7 +1390,7 @@ struct context_state final
 
 					if (SUCCEEDED(hr))
 					{
-						ID3D11ShaderResourceView* views[] = { texture_view_y.Get(), texture_view_uv.Get() };
+						ID3D11ShaderResourceView* views[] = {texture_view_y.Get(), texture_view_uv.Get()};
 						context->PSSetShaderResources(0, 2, views);
 					}
 				}
@@ -1417,7 +1414,7 @@ struct context_state final
 
 					if (SUCCEEDED(hr))
 					{
-						ID3D11ShaderResourceView* views[] = { texture_view_y.Get(), texture_view_uv.Get() };
+						ID3D11ShaderResourceView* views[] = {texture_view_y.Get(), texture_view_uv.Get()};
 						context->PSSetShaderResources(0, 2, views);
 					}
 				}
@@ -1440,7 +1437,7 @@ struct context_state final
 					view = found->second;
 				}
 
-				ID3D11ShaderResourceView* views[] = { view.Get() };
+				ID3D11ShaderResourceView* views[] = {view.Get()};
 				context->PSSetShaderResources(0, 1, views);
 			}
 		}
@@ -1449,7 +1446,7 @@ struct context_state final
 	}
 };
 
-void d3d11_draw_context_impl::draw_scene(const ComPtr<ID3D11DeviceContext>& context)
+void d3d11_draw_context_impl::draw_scene(const ComPtr<ID3D11DeviceContext>& context) const
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	ComPtr<ID3D11RenderTargetView> rtv;
@@ -1468,7 +1465,7 @@ void d3d11_draw_context_impl::draw_scene(const ComPtr<ID3D11DeviceContext>& cont
 
 	if (SUCCEEDED(hr))
 	{
-		ID3D11RenderTargetView* views[] = { rtv.Get() };
+		ID3D11RenderTargetView* views[] = {rtv.Get()};
 		context->OMSetRenderTargets(1, views, nullptr);
 
 		const D3D11_VIEWPORT viewport = {
@@ -1498,7 +1495,7 @@ void d3d11_draw_context_impl::draw_scene(const ComPtr<ID3D11DeviceContext>& cont
 			context->OMSetBlendState(_blend_state.Get(), nullptr, 0xFFFFFF);
 		}
 
-		const DirectX::XMVECTORF32 bg_color = { {0.222f, 0.222f, 0.222f, 1.0f} };
+		constexpr DirectX::XMVECTORF32 bg_color = {{0.222f, 0.222f, 0.222f, 1.0f}};
 		context->ClearRenderTargetView(rtv.Get(), bg_color);
 
 		context_state state(_f->d3d_device.Get(), context.Get());
@@ -1547,9 +1544,9 @@ void d3d11_draw_context_impl::render()
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void d3d11_draw_context_impl::add_scene_atom(const ComPtr<ID3D11Texture2D>& texture,
-	const ComPtr<ID3D11PixelShader>& shader, ui::texture_format tex_fmt,
-	ui::texture_sampler sampler, const vertex_2d* vertices,
-	size_t vertex_count, const WORD* indexes, size_t index_count)
+                                             const ComPtr<ID3D11PixelShader>& shader, const ui::texture_format tex_fmt,
+                                             const ui::texture_sampler sampler, const vertex_2d* vertices,
+                                             const size_t vertex_count, const WORD* indexes, const size_t index_count)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	auto combine_with_last_atom = false;
@@ -1604,13 +1601,13 @@ ID3D11PixelShader* d3d11_draw_context_impl::calc_shader(const bool is_bicubic, c
 	ID3D11PixelShader* shader = is_bicubic ? _pixel_shader_rgb_bicubic.Get() : _pixel_shader_rgb.Get();
 	if (tex_fmt == ui::texture_format::NV12 || tex_fmt == ui::texture_format::P010)
 		shader = is_bicubic
-		? _pixel_shader_yuv_bicubic.Get()
-		: _pixel_shader_yuv.Get();
+			         ? _pixel_shader_yuv_bicubic.Get()
+			         : _pixel_shader_yuv.Get();
 	return shader;
 }
 
 void d3d11_draw_context_impl::draw_texture(const texture_d3d11_ptr& t, const recti dst, const recti src,
-	const ui::color c, ui::texture_sampler sampler, float radius)
+                                           const ui::color c, const ui::texture_sampler sampler, float radius)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	df::assert_true(ui::is_ui_thread());
@@ -1650,13 +1647,13 @@ void d3d11_draw_context_impl::draw_texture(const texture_d3d11_ptr& t, const rec
 			const auto tex_fmt = t->_format;
 			const auto shader = calc_shader(sampler == ui::texture_sampler::bicubic, tex_fmt);
 			add_scene_atom(t->_texture, shader, tex_fmt, sampler, vertices, std::size(vertices), indexes,
-				std::size(indexes));
+			               std::size(indexes));
 		}
 	}
 }
 
 void d3d11_draw_context_impl::draw_texture(const texture_d3d11_ptr& t, const quadd& dst, const recti src,
-	const ui::color c, ui::texture_sampler sampler)
+                                           const ui::color c, const ui::texture_sampler sampler)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	df::assert_true(ui::is_ui_thread());
@@ -1690,24 +1687,25 @@ void d3d11_draw_context_impl::draw_texture(const texture_d3d11_ptr& t, const qua
 			const auto tex_fmt = t->_format;
 			const auto shader = calc_shader(sampler == ui::texture_sampler::bicubic, tex_fmt);
 			add_scene_atom(t->_texture, shader, tex_fmt, sampler, vertices, std::size(vertices), indexes,
-				std::size(indexes));
+			               std::size(indexes));
 		}
 	}
 }
 
 
-static recti Cr(int x, int y, int cx, int cy)
+static recti Cr(int x, int y, const int cx, const int cy)
 {
-	return { x, y, x + cx, y + cy };
+	return {x, y, x + cx, y + cy};
 }
 
-static rectd make_rectd(double x1, double y1, double x2, double y2)
+static rectd make_rectd(double x1, double y1, const double x2, const double y2)
 {
-	return { x1, y1, x2 - x1, y2 - y1 };
+	return {x1, y1, x2 - x1, y2 - y1};
 }
 
 
-static void add_rect(vertex_2d*& vv, WORD*& ii, const rectd dst, const rectd src, float a, int vert_offset)
+static void add_rect(vertex_2d*& vv, WORD*& ii, const rectd& dst, const rectd& src, const float a,
+                     const int vert_offset)
 {
 	vv->set(dst.top_left(), src.top_left(), a);
 	vv++;
@@ -1728,7 +1726,7 @@ static void add_rect(vertex_2d*& vv, WORD*& ii, const rectd dst, const rectd src
 }
 
 static void build_shadow_vertices(vertex_2d* vertices, WORD* indexes, const texture_d3d11_ptr& texture, const recti dst,
-	const sizei client_extent, int sxy, float a)
+                                  const sizei client_extent, const int sxy, const float a)
 {
 	const auto tex_dims = texture->dimensions();
 	const sized norm(tex_dims.cx * 2, tex_dims.cy * 2);
@@ -1751,14 +1749,14 @@ static void build_shadow_vertices(vertex_2d* vertices, WORD* indexes, const text
 
 	// corners
 	add_rect(v, i, make_rectd(tl.X - xx, tl.Y - yy, tl.X, tl.Y), rectd(0, 0, tex_dims.cx, tex_dims.cy).scale(norm), a,
-		static_cast<uint32_t>(v - vertices));
+	         static_cast<uint32_t>(v - vertices));
 	add_rect(v, i, make_rectd(bl.X - xx, bl.Y, bl.X, bl.Y + yy),
-		rectd(0, tex_dims.cy, tex_dims.cx, tex_dims.cy).scale(norm), a, static_cast<uint32_t>(v - vertices));
+	         rectd(0, tex_dims.cy, tex_dims.cx, tex_dims.cy).scale(norm), a, static_cast<uint32_t>(v - vertices));
 	add_rect(v, i, make_rectd(tr.X, tr.Y - yy, tr.X + xx, tr.Y),
-		rectd(tex_dims.cx, 0, tex_dims.cx, tex_dims.cy).scale(norm), a, static_cast<uint32_t>(v - vertices));
+	         rectd(tex_dims.cx, 0, tex_dims.cx, tex_dims.cy).scale(norm), a, static_cast<uint32_t>(v - vertices));
 	add_rect(v, i, make_rectd(br.X, br.Y, br.X + xx, br.Y + yy),
-		rectd(tex_dims.cx, tex_dims.cy, tex_dims.cx, tex_dims.cy).scale(norm), a,
-		static_cast<uint32_t>(v - vertices));
+	         rectd(tex_dims.cx, tex_dims.cy, tex_dims.cx, tex_dims.cy).scale(norm), a,
+	         static_cast<uint32_t>(v - vertices));
 
 	auto rt = r;
 	rt.Y = r.top() - yy;
@@ -1779,12 +1777,12 @@ static void build_shadow_vertices(vertex_2d* vertices, WORD* indexes, const text
 	// horizontals
 	add_rect(v, i, rt, rectd(tex_dims.cx - 1, 0, 2, tex_dims.cy).scale(norm), a, static_cast<uint32_t>(v - vertices));
 	add_rect(v, i, rb, rectd(tex_dims.cx - 1, tex_dims.cy, 2, tex_dims.cy).scale(norm), a,
-		static_cast<uint32_t>(v - vertices));
+	         static_cast<uint32_t>(v - vertices));
 
 	// verticals
 	add_rect(v, i, rl, rectd(0, tex_dims.cy - 1, tex_dims.cx, 2).scale(norm), a, static_cast<uint32_t>(v - vertices));
 	add_rect(v, i, rr, rectd(tex_dims.cx, tex_dims.cy - 1, tex_dims.cx, 2).scale(norm), a,
-		static_cast<uint32_t>(v - vertices));
+	         static_cast<uint32_t>(v - vertices));
 }
 
 void d3d11_vertices::update(recti rects[], ui::color colors[], const int num_bars)
@@ -1792,14 +1790,14 @@ void d3d11_vertices::update(recti rects[], ui::color colors[], const int num_bar
 	df::scope_rendering_func rf(__FUNCTION__);
 	df::assert_true(ui::is_ui_thread());
 
-	const auto expected_num_bars = 64;
-	const auto shadow_vertex_count = 4 * 8;
-	const auto shadow_index_count = 6 * 8;
-	const auto rect_verex_count = 5;
-	const auto rect_index_count = 12;
+	constexpr auto expected_num_bars = 64;
+	constexpr auto shadow_vertex_count = 4 * 8;
+	constexpr auto shadow_index_count = 6 * 8;
+	constexpr auto rect_verex_count = 5;
+	constexpr auto rect_index_count = 12;
 
-	const auto visualizer_vertex_count = (shadow_vertex_count + rect_verex_count) * expected_num_bars;
-	const auto visualizer_index_count = (shadow_index_count + rect_index_count) * expected_num_bars;
+	constexpr auto visualizer_vertex_count = (shadow_vertex_count + rect_verex_count) * expected_num_bars;
+	constexpr auto visualizer_index_count = (shadow_index_count + rect_index_count) * expected_num_bars;
 
 	if (num_bars != expected_num_bars)
 		return;
@@ -1815,7 +1813,7 @@ void d3d11_vertices::update(recti rects[], ui::color colors[], const int num_bar
 		auto a = r.height() > 1 ? colors[i].a / 2.0f : 0.0f;
 
 		build_shadow_vertices(vertices + vertex_count, indexes + index_count, _canvas->_shadow, r,
-			_canvas->_client_extent, 8, a);
+		                      _canvas->_client_extent, 8, a);
 
 		for (int i = 0; i < shadow_index_count; i++)
 		{
@@ -2019,7 +2017,7 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 	{
 		// https://stackoverflow.com/questions/56863430/how-to-copy-texture-from-context-to-another-context-inside-gpu
 		// https://github.com/videolan/vlc/blob/fd72480dfdb3eb30cddb7a06cef60d6b5c29828d/doc/libvlc/d3d11_player.cpp
-		const sizei src_extent = { (info.width), (info.height) };
+		const sizei src_extent = {(info.width), (info.height)};
 		bool shared_texture_valid = false;
 		auto* frames_ctx = info.ctx;
 		auto device_hwctx = std::bit_cast<AVD3D11VADeviceContext*>(frames_ctx->device_ctx->hwctx);
@@ -2040,20 +2038,22 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 		D3D11_TEXTURE2D_DESC tex_desc_src = {};
 		video_texture->GetDesc(&tex_desc_src);
 
-		sizei texture_extent = { static_cast<int>(tex_desc_src.Width), static_cast<int>(tex_desc_src.Height) };
+		sizei texture_extent = {static_cast<int>(tex_desc_src.Width), static_cast<int>(tex_desc_src.Height)};
 
 		auto video_tex_format = tex_desc_src.Format == DXGI_FORMAT_P010
-			? ui::texture_format::P010
-			: ui::texture_format::NV12;
+			                        ? ui::texture_format::P010
+			                        : ui::texture_format::NV12;
 
 		if (video_texture_index >= tex_desc_src.ArraySize)
 		{
-			df::log(__FUNCTION__, str::format(u8"Video texture index {} exceeds array size {}"sv, video_texture_index, tex_desc_src.ArraySize));
+			df::log(__FUNCTION__, str::format(u8"Video texture index {} exceeds array size {}"sv, video_texture_index,
+			                                  tex_desc_src.ArraySize));
 			device_hwctx->unlock(device_hwctx->lock_ctx);
 			return ui::texture_update_result::failed;
 		}
 
-		if (!_shared_texture || _shared_texture_dimensions != texture_extent || _shared_texture_format != video_tex_format)
+		if (!_shared_texture || _shared_texture_dimensions != texture_extent || _shared_texture_format !=
+			video_tex_format)
 		{
 			ComPtr<ID3D11Texture2D> shared_texture;
 
@@ -2068,7 +2068,7 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 			if (SUCCEEDED(hr))
 			{
 				video_context->CopySubresourceRegion(shared_texture.Get(), 0, 0, 0, 0, video_texture.Get(),
-					static_cast<uint32_t>(video_texture_index), nullptr);
+				                                     static_cast<uint32_t>(video_texture_index), nullptr);
 
 				_shared_texture = shared_texture;
 				_shared_texture_dimensions = texture_extent;
@@ -2080,7 +2080,7 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 		else if (_shared_texture)
 		{
 			video_context->CopySubresourceRegion(_shared_texture.Get(), 0, 0, 0, 0, video_texture.Get(),
-				static_cast<uint32_t>(video_texture_index), nullptr);
+			                                     static_cast<uint32_t>(video_texture_index), nullptr);
 			shared_texture_valid = true;
 		}
 
@@ -2092,7 +2092,7 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 
 			ComPtr<IDXGIResource1> shared_resource;
 			auto hr = _shared_texture->QueryInterface(__uuidof(IDXGIResource1),
-				std::bit_cast<LPVOID*>(shared_resource.GetAddressOf()));
+			                                          std::bit_cast<LPVOID*>(shared_resource.GetAddressOf()));
 
 			if (SUCCEEDED(hr))
 			{
@@ -2103,13 +2103,13 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 				{
 					ComPtr<ID3D11Device1> device1;
 					hr = device->QueryInterface(__uuidof(ID3D11Device1),
-						std::bit_cast<LPVOID*>(device1.GetAddressOf()));
+					                            std::bit_cast<LPVOID*>(device1.GetAddressOf()));
 
 					if (SUCCEEDED(hr))
 					{
 						ComPtr<ID3D11Texture2D> video_shared_texture;
 						hr = device1->OpenSharedResource1(shared_handle, __uuidof(ID3D11Texture2D),
-							std::bit_cast<void**>(video_shared_texture.GetAddressOf()));
+						                                  std::bit_cast<void**>(video_shared_texture.GetAddressOf()));
 
 						if (SUCCEEDED(hr))
 						{
@@ -2176,15 +2176,16 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 }
 
 
-sizei d3d11_draw_context_impl::measure_string(const std::u8string_view text, const sizei s, ui::style::font_face font,
-	ui::style::text_style style)
+sizei d3d11_draw_context_impl::measure_string(const std::u8string_view text, const sizei s,
+                                              const ui::style::font_face font,
+                                              const ui::style::text_style style)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	df::assert_true(ui::is_ui_thread());
 	return _font[font].measure_text(text, s, style);
 }
 
-int d3d11_draw_context_impl::line_height(ui::style::font_face font)
+int d3d11_draw_context_impl::line_height(const ui::style::font_face font)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	return _font[font].line_height();
@@ -2201,8 +2202,9 @@ static void log_update_texture_crash(const ui::texture_format fmt)
 	df::log(__FUNCTION__, str::format(u8"UpdateSubresource {} ****** crashed ******"sv, to_string(fmt)));
 }
 
-static HRESULT try_create_tex(ID3D11Device* pDevice, const D3D11_TEXTURE2D_DESC& desc, D3D11_SUBRESOURCE_DATA* p_source,
-	ID3D11Texture2D** t)
+static HRESULT try_create_tex(ID3D11Device* pDevice, const D3D11_TEXTURE2D_DESC& desc,
+                              const D3D11_SUBRESOURCE_DATA* p_source,
+                              ID3D11Texture2D** t)
 {
 	const auto is_yuv = desc.Format == DXGI_FORMAT_NV12 || desc.Format == DXGI_FORMAT_P010;
 
@@ -2226,7 +2228,8 @@ static HRESULT try_create_tex(ID3D11Device* pDevice, const D3D11_TEXTURE2D_DESC&
 }
 
 static HRESULT try_update_tex(ID3D11DeviceContext* context, ID3D11Texture2D* texture, const sizei texture_dimensions,
-	const ui::texture_format fmt, const uint8_t* pixels, size_t stride, size_t buffer_size)
+                              const ui::texture_format fmt, const uint8_t* pixels, const size_t stride,
+                              const size_t buffer_size)
 {
 	const auto is_yuv = fmt == ui::texture_format::NV12 || fmt == ui::texture_format::P010;
 
@@ -2253,8 +2256,8 @@ static HRESULT try_update_tex(ID3D11DeviceContext* context, ID3D11Texture2D* tex
 }
 
 ui::texture_update_result d3d11_texture::update(const sizei dims, const ui::texture_format fmt,
-	const ui::orientation orientation, const uint8_t* pixels,
-	size_t stride, size_t buffer_size)
+                                                const ui::orientation orientation, const uint8_t* pixels,
+                                                const size_t stride, const size_t buffer_size)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	auto result = ui::texture_update_result::failed;
@@ -2268,7 +2271,7 @@ ui::texture_update_result d3d11_texture::update(const sizei dims, const ui::text
 
 	if (is_yuv)
 	{
-		const auto has_valid_dims = (cx == (cx & ~1)) && (cy == (cy & ~1)) && cx >= 2 && cy >= 2;
+		const auto has_valid_dims = cx == (cx & ~1) && cy == (cy & ~1) && cx >= 2 && cy >= 2;
 
 		df::assert_true(has_valid_dims);
 
@@ -2311,7 +2314,7 @@ ui::texture_update_result d3d11_texture::update(const sizei dims, const ui::text
 		if (SUCCEEDED(hr))
 		{
 			_texture = t;
-			_dimensions = { cx, cy };
+			_dimensions = {cx, cy};
 			_format = fmt;
 			result = SUCCEEDED(hr) ? ui::texture_update_result::tex_created : ui::texture_update_result::failed;
 		}
@@ -2320,12 +2323,12 @@ ui::texture_update_result d3d11_texture::update(const sizei dims, const ui::text
 			if (hr == E_FAIL)
 			{
 				df::log(__FUNCTION__, str::format(u8"CreateTexture2D {} ({} x {}) ****** crashed ******"sv,
-					to_string(fmt), cx, cy, hr));
+				                                  to_string(fmt), cx, cy, hr));
 			}
 			else
 			{
 				df::log(__FUNCTION__,
-					str::format(u8"CreateTexture2D {} ({} x {}) failed: {:x}"sv, to_string(fmt), cx, cy, hr));
+				        str::format(u8"CreateTexture2D {} ({} x {}) failed: {:x}"sv, to_string(fmt), cx, cy, hr));
 			}
 		}
 	}
@@ -2393,7 +2396,7 @@ void d3d11_text_renderer::create_a8_texture(const int xy)
 d3d11_text_renderer::coords d3d11_text_renderer::find_glyph(const uint16_t c, const DWRITE_GLYPH_RUN* glyph_run)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
-	coords result = { 0, 0, 0, 0, 0 };
+	coords result = {0, 0, 0, 0, 0};
 
 	if (!_texture)
 	{
@@ -2406,7 +2409,7 @@ d3d11_text_renderer::coords d3d11_text_renderer::find_glyph(const uint16_t c, co
 	}
 
 	const auto index = glyph_run->fontFace->GetGlyphCount();
-	const auto key = (index << 16) | c;
+	const auto key = index << 16 | c;
 	const auto found = _coords.find(key);
 
 	if (found != _coords.cend())
@@ -2422,13 +2425,13 @@ d3d11_text_renderer::coords d3d11_text_renderer::find_glyph(const uint16_t c, co
 			const auto cx = alpha_pixels.cx;
 			const auto cy = alpha_pixels.cy;
 
-			if ((_next_location.x + cx) > static_cast<int>(_xy_tex))
+			if (_next_location.x + cx > static_cast<int>(_xy_tex))
 			{
 				_next_location.x = 0;
 				_next_location.y += _line_height;
 			}
 
-			if ((_next_location.y + _line_height) > static_cast<int>(_xy_tex)) // Out of room
+			if (_next_location.y + _line_height > static_cast<int>(_xy_tex)) // Out of room
 			{
 				const auto new_size = std::min(_xy_tex * 2u, 4096u); // Cap at 4096 to prevent excessive memory usage
 				if (new_size <= _xy_tex)
@@ -2436,7 +2439,7 @@ d3d11_text_renderer::coords d3d11_text_renderer::find_glyph(const uint16_t c, co
 					df::log(__FUNCTION__, "Font texture atlas reached maximum size, glyph rendering may fail"sv);
 					return result; // Return empty coordinates if we can't grow further
 				}
-				
+
 				_coords.clear();
 				_texture = nullptr;
 				create_a8_texture(new_size);
@@ -2481,7 +2484,7 @@ d3d11_text_renderer::coords d3d11_text_renderer::find_glyph(const uint16_t c, co
 }
 
 void d3d11_text_renderer::reset(const std::shared_ptr<d3d11_draw_context_impl>& c, const factories_ptr& f,
-	font_renderer_ptr fr)
+                                font_renderer_ptr fr)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	reset();
@@ -2509,7 +2512,7 @@ void d3d11_text_renderer::reset()
 }
 
 void d3d11_text_renderer::draw_text(const std::u8string_view text, const recti bounds,
-	const ui::style::text_style style, const ui::color c, const ui::color bg)
+                                    const ui::style::text_style style, const ui::color c, const ui::color bg)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	_clr = c;
@@ -2517,13 +2520,13 @@ void d3d11_text_renderer::draw_text(const std::u8string_view text, const recti b
 	if (_font)
 	{
 		_font->draw(std::bit_cast<ui::draw_context*>(_canvas.get()), this, str::utf8_to_utf16(text), bounds, style, c,
-			bg, {});
+		            bg, {});
 	}
 }
 
 void d3d11_text_renderer::draw_text(const std::u8string_view text, const std::vector<ui::text_highlight_t>& highlights,
-	const recti bounds, const ui::style::text_style style, const ui::color clr,
-	const ui::color bg)
+                                    const recti bounds, const ui::style::text_style style, const ui::color clr,
+                                    const ui::color bg)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	_clr = clr;
@@ -2575,39 +2578,40 @@ HRESULT d3d11_text_renderer::GetPixelsPerDip(void* clientDrawingContext, FLOAT* 
 	return S_OK;
 }
 
-HRESULT d3d11_text_renderer::DrawGlyphRun(void* clientDrawingContext, FLOAT baselineOriginX, FLOAT baselineOriginY,
-	DWRITE_MEASURING_MODE measuringMode, const DWRITE_GLYPH_RUN* glyphRun,
-	const DWRITE_GLYPH_RUN_DESCRIPTION* glyphRunDescription,
-	IUnknown* clientDrawingEffect)
+HRESULT d3d11_text_renderer::DrawGlyphRun(void* clientDrawingContext, const FLOAT baselineOriginX,
+                                          const FLOAT baselineOriginY,
+                                          DWRITE_MEASURING_MODE measuringMode, const DWRITE_GLYPH_RUN* glyphRun,
+                                          const DWRITE_GLYPH_RUN_DESCRIPTION* glyphRunDescription,
+                                          IUnknown* clientDrawingEffect)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	df::assert_true(ui::is_ui_thread());
 
 	if (glyphRun)
 	{
-		auto client_extent = _canvas->client_extent();
+		const auto client_extent = _canvas->client_extent();
 		auto char_pos = glyphRunDescription ? glyphRunDescription->textPosition : 0;
 		auto i_highlights = _highlights.begin();
 		//auto transparent = clr.aa(0.0f);
 
-		pointd screen_scale(client_extent.cx, client_extent.cy);
-		pointd tex_scale(_xy_tex, _xy_tex);
+		const pointd screen_scale(client_extent.cx, client_extent.cy);
+		const pointd tex_scale(_xy_tex, _xy_tex);
 
 		vertex_2d vertices[max_vert_count];
 		WORD indexes[max_index_count];
 
-		const auto vert_limit = max_vert_count - 4;
-		const auto index_limit = max_index_count - 6;
+		constexpr auto vert_limit = max_vert_count - 4;
+		constexpr auto index_limit = max_index_count - 6;
 
 		auto vertex_count = 0;
 		auto index_count = 0;
-		auto ty = floor(baselineOriginY + 0.5f);
-		auto limit_char = -1;
+		const auto ty = floor(baselineOriginY + 0.5f);
+		const auto limit_char = -1;
 		auto tx = 0.0f; // -_spacing;
 		const auto is_left_to_right = (glyphRun->bidiLevel & 0x01) == 0;
 		//const int cx = xend - xbegin;
 
-		auto len = glyphRun->glyphCount;
+		const auto len = glyphRun->glyphCount;
 		auto t = _texture;
 
 		for (auto i = 0u; i < len; ++i)
@@ -2633,13 +2637,13 @@ HRESULT d3d11_text_renderer::DrawGlyphRun(void* clientDrawingContext, FLOAT base
 				sx = baselineOriginX - sx - ax - _spacing;
 			}
 
-			auto tx1 = coord.tx1;
-			auto ty1 = coord.ty1;
-			auto tx2 = coord.tx2;
-			auto ty2 = coord.ty2;
+			const auto tx1 = coord.tx1;
+			const auto ty1 = coord.ty1;
+			const auto tx2 = coord.tx2;
+			const auto ty2 = coord.ty2;
 
-			auto w = tx2 - tx1;
-			auto h = ty2 - ty1;
+			const auto w = tx2 - tx1;
+			const auto h = ty2 - ty1;
 
 			if (c != L' ')
 			{
@@ -2666,9 +2670,9 @@ HRESULT d3d11_text_renderer::DrawGlyphRun(void* clientDrawingContext, FLOAT base
 					}
 				}
 
-				auto left_color = clr;
-				auto right_color = (i == limit_char) ? ui::color{} : clr;
-				auto pos = vertex_count;
+				const auto left_color = clr;
+				const auto right_color = i == limit_char ? ui::color{} : clr;
+				const auto pos = vertex_count;
 
 				vertices[vertex_count++].set(bl / screen_scale, pointd(tx1, ty2) / tex_scale, left_color);
 				vertices[vertex_count++].set(tl / screen_scale, pointd(tx1, ty1) / tex_scale, left_color);
@@ -2687,8 +2691,8 @@ HRESULT d3d11_text_renderer::DrawGlyphRun(void* clientDrawingContext, FLOAT base
 					if (_texture)
 					{
 						_canvas->add_scene_atom(_texture, _canvas->_pixel_shader_font, ui::texture_format::RGB,
-							ui::texture_sampler::point, vertices, vertex_count, indexes,
-							index_count);
+						                        ui::texture_sampler::point, vertices, vertex_count, indexes,
+						                        index_count);
 					}
 
 					vertex_count = 0;
@@ -2726,13 +2730,13 @@ void d3d11_draw_context_impl::draw_shadow(const recti dst, const int sxy, const 
 	{
 		build_shadow_vertices(vertices, indexes, texture, dst, _client_extent, sxy, alpha);
 		add_scene_atom(texture->_texture, _pixel_shader_rgb, ui::texture_format::RGB, ui::texture_sampler::point,
-			vertices, std::size(vertices), indexes, std::size(indexes));
+		               vertices, std::size(vertices), indexes, std::size(indexes));
 	}
 }
 
 void d3d11_draw_context_impl::draw_text(const std::u8string_view textA, const recti bounds,
-	const ui::style::font_face font, const ui::style::text_style style,
-	const ui::color clr, const ui::color bg)
+                                        const ui::style::font_face font, const ui::style::text_style style,
+                                        const ui::color clr, const ui::color bg)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	df::assert_true(ui::is_ui_thread());
@@ -2744,9 +2748,10 @@ void d3d11_draw_context_impl::draw_text(const std::u8string_view textA, const re
 }
 
 void d3d11_draw_context_impl::draw_text(const std::u8string_view text,
-	const std::vector<ui::text_highlight_t>& highlights, const recti bounds,
-	ui::style::font_face font, ui::style::text_style style, const ui::color clr,
-	const ui::color bg)
+                                        const std::vector<ui::text_highlight_t>& highlights, const recti bounds,
+                                        const ui::style::font_face font, const ui::style::text_style style,
+                                        const ui::color clr,
+                                        const ui::color bg)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	df::assert_true(ui::is_ui_thread());
@@ -2758,7 +2763,7 @@ void d3d11_draw_context_impl::draw_text(const std::u8string_view text,
 }
 
 void d3d11_draw_context_impl::draw_text(const ui::text_layout_ptr& tl, const recti bounds, const ui::color clr,
-	const ui::color bg)
+                                        const ui::color bg)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	df::assert_true(ui::is_ui_thread());
@@ -2781,7 +2786,7 @@ void d3d11_draw_context_impl::draw_edge_shadows(const float alpha)
 
 
 void d3d11_draw_context_impl::draw_border(const recti inside, const recti outside, const ui::color c_inside,
-	const ui::color c_outside)
+                                          const ui::color c_outside)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	df::assert_true(ui::is_ui_thread());
@@ -2825,7 +2830,7 @@ void d3d11_draw_context_impl::draw_border(const recti inside, const recti outsid
 		};
 
 		add_scene_atom(nullptr, _pixel_shader_solid, ui::texture_format::None, ui::texture_sampler::point, vertices,
-			std::size(vertices), indexes, std::size(indexes));
+		               std::size(vertices), indexes, std::size(indexes));
 	}
 }
 
@@ -2927,7 +2932,7 @@ void d3d11_draw_context_impl::draw_rounded_rect(const recti bounds_in, const ui:
 		};
 
 		add_scene_atom(nullptr, _pixel_shader_circle, ui::texture_format::None, ui::texture_sampler::point, vertices,
-			std::size(vertices), indexes, std::size(indexes));
+		               std::size(vertices), indexes, std::size(indexes));
 	}
 }
 
@@ -2963,25 +2968,25 @@ void d3d11_draw_context_impl::draw_rect(const recti bounds, const ui::color c)
 		};
 
 		add_scene_atom(nullptr, _pixel_shader_solid, ui::texture_format::None, ui::texture_sampler::point, vertices,
-			std::size(vertices), indexes, std::size(indexes));
+		               std::size(vertices), indexes, std::size(indexes));
 	}
 }
 
 void d3d11_draw_context_impl::draw_texture(const ui::texture_ptr& t, const recti dst, const float alpha,
-	const ui::texture_sampler sampler)
+                                           const ui::texture_sampler sampler)
 {
 	draw_texture(t, dst, recti(pointi(0, 0), t->dimensions()), alpha, sampler);
 }
 
 void d3d11_draw_context_impl::draw_texture(const ui::texture_ptr& t, const quadd& dst, const recti src,
-	const float alpha, const ui::texture_sampler sampler)
+                                           const float alpha, const ui::texture_sampler sampler)
 {
 	const auto tt = std::dynamic_pointer_cast<d3d11_texture>(t);
 	draw_texture(tt, dst, src, ui::color::from_a(alpha), sampler);
 }
 
 void d3d11_draw_context_impl::draw_texture(const ui::texture_ptr& t, const recti dst, const recti src,
-	const float alpha, const ui::texture_sampler sampler, const float radius)
+                                           const float alpha, const ui::texture_sampler sampler, const float radius)
 {
 	const auto tt = std::dynamic_pointer_cast<d3d11_texture>(t);
 	draw_texture(tt, dst, src, ui::color::from_a(alpha), sampler, radius);
@@ -3006,9 +3011,9 @@ void d3d11_draw_context_impl::draw_vertices(const ui::vertices_ptr& v)
 }
 
 sizei d3d11_draw_context_impl::measure_text(const std::u8string_view text, const ui::style::font_face font,
-	const ui::style::text_style style, const int width, const int height)
+                                            const ui::style::text_style style, const int width, const int height)
 {
-	return measure_string(text, { width, height }, font, style);
+	return measure_string(text, {width, height}, font, style);
 }
 
 int d3d11_draw_context_impl::text_line_height(const ui::style::font_face font)
@@ -3050,7 +3055,7 @@ ui::text_layout_ptr d3d11_draw_context_impl::create_text_layout(const ui::style:
 
 
 draw_context_device_ptr d3d11_create_context(const factories_ptr& f, const ComPtr<IDXGISwapChain>& swap_chain,
-	const int base_font_size)
+                                             const int base_font_size)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	auto result = std::make_shared<d3d11_draw_context_impl>();

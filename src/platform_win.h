@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -52,9 +51,9 @@ struct factories;
 struct file_load_result;
 using factories_ptr = std::shared_ptr<factories>;
 
-const int max_vert_count = 4 * 512;
-const int max_index_count = 6 * 512;
-const int max_text_len = 2000;
+constexpr int max_vert_count = 4 * 512;
+constexpr int max_index_count = 6 * 512;
+constexpr int max_text_len = 2000;
 
 HWND app_wnd();
 extern HINSTANCE get_resource_instance;
@@ -115,12 +114,12 @@ public:
 };
 
 draw_context_device_ptr d3d11_create_context(const factories_ptr& f, const ComPtr<IDXGISwapChain>& swap_chain,
-	int base_font_size);
+                                             int base_font_size);
 df::blob load_resource(int id, LPCWSTR lpType);
 
 HGLOBAL image_to_handle(const file_load_result& image);
 platform::file_op_result save_bitmap_info(df::folder_path save_path, std::u8string_view name, bool as_png,
-	HBITMAP image_buffer_in);
+                                          HBITMAP image_buffer_in);
 void draw_surface(HDC hdc, sizei dimensions, ui::texture_format format, int stride, const uint8_t* pixels);
 
 

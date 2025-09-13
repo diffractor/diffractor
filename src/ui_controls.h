@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -50,8 +49,8 @@ class rating_control final : public std::enable_shared_from_this<rating_control>
 
 public:
 	rating_control(view_state& s, df::item_element_ptr i, const bool show_accelerator,
-		const view_element_style style_in) noexcept : _state(s), show_accelerator(show_accelerator),
-		_item(std::move(i))
+	               const view_element_style style_in) noexcept : _state(s), show_accelerator(show_accelerator),
+	                                                             _item(std::move(i))
 	{
 		style |= style_in | view_element_style::has_tooltip | view_element_style::can_invoke;
 
@@ -94,7 +93,7 @@ public:
 		}
 
 		dc.draw_text(str::utf16_to_utf8(text), logical_bounds, ui::style::font_face::icons,
-			ui::style::text_style::single_line_center, clr, bg);
+		             ui::style::text_style::single_line_center, clr, bg);
 	}
 
 	void tooltip(view_hover_element& hover, const pointi loc, const pointi element_offset) const override
@@ -110,7 +109,7 @@ public:
 		else
 		{
 			hover.elements->
-				add(std::make_shared<text_element>(format_plural_text(tt.rating_set_fmt, last_hover_rating)));
+			      add(std::make_shared<text_element>(format_plural_text(tt.rating_set_fmt, last_hover_rating)));
 
 			if (current_rating != 0)
 			{
@@ -134,7 +133,7 @@ public:
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
 		_icon_cxy = mc.icon_cxy;
-		return { mc.icon_cxy * 5, mc.icon_cxy };
+		return {mc.icon_cxy * 5, mc.icon_cxy};
 	}
 
 	void hover(interaction_context& ic) override
@@ -155,12 +154,12 @@ public:
 	static int to_rating(const recti rating_bounds, const pointi loc)
 	{
 		// fix - divide by zero!
-		return ((loc.x - rating_bounds.left) / std::max(1, rating_bounds.width() / 5)) + 1;
+		return (loc.x - rating_bounds.left) / std::max(1, rating_bounds.width() / 5) + 1;
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-		const pointi element_offset,
-		const std::vector<recti>& excluded_bounds) override
+	                                             const pointi element_offset,
+	                                             const std::vector<recti>& excluded_bounds) override
 	{
 		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 	}
@@ -177,17 +176,17 @@ class rate_label_control final : public std::enable_shared_from_this<rate_label_
 
 public:
 	rate_label_control(view_state& s, df::item_element_ptr i, const bool show_accelerator,
-		const view_element_style style_in) noexcept : view_element(
-			style_in | view_element_style::has_tooltip |
-			view_element_style::can_invoke), _state(s),
-		_item(std::move(i)),
-		show_accelerator(show_accelerator)
+	                   const view_element_style style_in) noexcept : view_element(
+		                                                                 style_in | view_element_style::has_tooltip |
+		                                                                 view_element_style::can_invoke), _state(s),
+	                                                                 _item(std::move(i)),
+	                                                                 show_accelerator(show_accelerator)
 	{
 	}
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		return { mc.icon_cxy, mc.icon_cxy };
+		return {mc.icon_cxy, mc.icon_cxy};
 	}
 
 	void render(ui::draw_context& dc, pointi element_offset) const override;
@@ -195,8 +194,8 @@ public:
 	void tooltip(view_hover_element& hover, pointi loc, pointi element_offset) const override;
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-		const pointi element_offset,
-		const std::vector<recti>& excluded_bounds) override
+	                                             const pointi element_offset,
+	                                             const std::vector<recti>& excluded_bounds) override
 	{
 		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 	}
@@ -211,15 +210,15 @@ class preview_control final : public std::enable_shared_from_this<preview_contro
 
 public:
 	preview_control(view_state& s, texture_state_ptr ts, const bool show_accelerator,
-		const view_element_style style_in) noexcept : _state(s), _ts(std::move(ts)),
-		show_accelerator(show_accelerator)
+	                const view_element_style style_in) noexcept : _state(s), _ts(std::move(ts)),
+	                                                              show_accelerator(show_accelerator)
 	{
 		style |= style_in | view_element_style::has_tooltip | view_element_style::can_invoke;
 	}
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		return { mc.icon_cxy, mc.icon_cxy };
+		return {mc.icon_cxy, mc.icon_cxy};
 	}
 
 	void render(ui::draw_context& dc, pointi element_offset) const override;
@@ -227,8 +226,8 @@ public:
 	void tooltip(view_hover_element& hover, pointi loc, pointi element_offset) const override;
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-		const pointi element_offset,
-		const std::vector<recti>& excluded_bounds) override
+	                                             const pointi element_offset,
+	                                             const std::vector<recti>& excluded_bounds) override
 	{
 		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 	}
@@ -237,7 +236,6 @@ public:
 
 class items_dates_control final : public std::enable_shared_from_this<items_dates_control>, public view_element
 {
-private:
 	view_state& _state;
 	const df::item_element_ptr _item;
 	std::u8string _text;
@@ -246,9 +244,10 @@ private:
 
 public:
 	items_dates_control(view_state& s, df::item_element_ptr i) noexcept : view_element(
-		view_element_style::has_tooltip |
-		view_element_style::can_invoke), _state(s),
-		_item(std::move(i))
+		                                                                      view_element_style::has_tooltip |
+		                                                                      view_element_style::can_invoke),
+	                                                                      _state(s),
+	                                                                      _item(std::move(i))
 	{
 		const auto& search = s.search();
 
@@ -315,8 +314,8 @@ public:
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-		const pointi element_offset,
-		const std::vector<recti>& excluded_bounds) override
+	                                             const pointi element_offset,
+	                                             const std::vector<recti>& excluded_bounds) override
 	{
 		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 	}
@@ -330,8 +329,8 @@ class pin_control final : public std::enable_shared_from_this<pin_control>, publ
 
 public:
 	pin_control(view_state& s, df::item_element_ptr i, const bool show_accelerator,
-		const view_element_style style_in) noexcept : _state(s), _item(std::move(i)),
-		show_accelerator(show_accelerator)
+	            const view_element_style style_in) noexcept : _state(s), _item(std::move(i)),
+	                                                          show_accelerator(show_accelerator)
 	{
 		style |= style_in | view_element_style::has_tooltip | view_element_style::can_invoke;
 	}
@@ -359,7 +358,7 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		return { mc.icon_cxy, mc.icon_cxy };
+		return {mc.icon_cxy, mc.icon_cxy};
 	}
 
 	void dispatch_event(const view_element_event& event) override
@@ -391,8 +390,8 @@ public:
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-		const pointi element_offset,
-		const std::vector<recti>& excluded_bounds) override
+	                                             const pointi element_offset,
+	                                             const std::vector<recti>& excluded_bounds) override
 	{
 		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 	}
@@ -400,14 +399,13 @@ public:
 
 class unselect_element final : public std::enable_shared_from_this<unselect_element>, public view_element
 {
-private:
 	view_state& _state;
 	const df::item_element_ptr _item;
 	const icon_index _icon = icon_index::close;
 
 public:
 	unselect_element(view_state& s, df::item_element_ptr i,
-		const view_element_style style_in) noexcept : _state(s), _item(std::move(i))
+	                 const view_element_style style_in) noexcept : _state(s), _item(std::move(i))
 	{
 		style |= style_in | view_element_style::has_tooltip | view_element_style::can_invoke;
 	}
@@ -420,12 +418,12 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		return { mc.icon_cxy, mc.icon_cxy };
+		return {mc.icon_cxy, mc.icon_cxy};
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-		const pointi element_offset,
-		const std::vector<recti>& excluded_bounds) override
+	                                             const pointi element_offset,
+	                                             const std::vector<recti>& excluded_bounds) override
 	{
 		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 	}
@@ -448,14 +446,13 @@ public:
 
 class delete_element final : public std::enable_shared_from_this<delete_element>, public view_element
 {
-private:
 	view_state& _state;
 	const df::item_element_ptr _item;
 	const icon_index _icon = icon_index::del;
 
 public:
 	delete_element(view_state& s, df::item_element_ptr i,
-		const view_element_style style_in) noexcept : _state(s), _item(std::move(i))
+	               const view_element_style style_in) noexcept : _state(s), _item(std::move(i))
 	{
 		style |= style_in | view_element_style::has_tooltip | view_element_style::can_invoke;
 	}
@@ -468,12 +465,12 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		return { mc.icon_cxy, mc.icon_cxy };
+		return {mc.icon_cxy, mc.icon_cxy};
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-		const pointi element_offset,
-		const std::vector<recti>& excluded_bounds) override
+	                                             const pointi element_offset,
+	                                             const std::vector<recti>& excluded_bounds) override
 	{
 		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 	}
@@ -498,7 +495,6 @@ public:
 
 class stream_element final : public std::enable_shared_from_this<stream_element>, public view_element
 {
-private:
 	view_state& _state;
 	const df::item_element_ptr _item;
 	const av_stream_info _stream;
@@ -562,8 +558,8 @@ public:
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-		const pointi element_offset,
-		const std::vector<recti>& excluded_bounds) override
+	                                             const pointi element_offset,
+	                                             const std::vector<recti>& excluded_bounds) override
 	{
 		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 	}
@@ -593,7 +589,7 @@ class summary_control final : public std::enable_shared_from_this<summary_contro
 
 public:
 	summary_control(const df::file_group_histogram& summary,
-		const view_element_style style_in) noexcept : view_element(style_in), _summary(summary)
+	                const view_element_style style_in) noexcept : view_element(style_in), _summary(summary)
 	{
 		populate_lines();
 	}
@@ -634,8 +630,8 @@ public:
 		const auto cy = logical_bounds.height() - static_cast<int>(_line_height * _lines.size());
 		auto y = logical_bounds.top + cy;
 
-		const auto text_style = ui::style::text_style::single_line;
-		const auto num_style = ui::style::text_style::single_line_far;
+		constexpr auto text_style = ui::style::text_style::single_line;
+		constexpr auto num_style = ui::style::text_style::single_line_far;
 		const auto clr = ui::color(dc.colors.foreground, dc.colors.alpha);
 
 		for (const auto& line : _lines)
@@ -645,13 +641,13 @@ public:
 			auto x = logical_bounds.left;
 			xdraw_icon(dc, line.icon, recti(x, y, x + icon_width, y + _line_height), clr, {});
 			dc.draw_text(line.count, recti(x + icon_width, y, x + _col_1_width, y + _line_height), _font, num_style,
-				clr, {});
+			             clr, {});
 			x += _col_1_width + col_padding;
 			dc.draw_text(line.name, recti(x, y, x + _col_2_width - col_padding, y + _line_height), _font, text_style,
-				clr_text.emphasize(), {});
+			             clr_text.emphasize(), {});
 			x += _col_2_width + col_padding;
 			dc.draw_text(line.size, recti(x, y, x + _col_3_width - col_padding, y + _line_height), _font, num_style,
-				clr, {});
+			             clr, {});
 			y += _line_height;
 		}
 	}
@@ -667,19 +663,19 @@ public:
 		for (const auto& line : _lines)
 		{
 			auto extent = mc.measure_text(line.count, ui::style::font_face::dialog, ui::style::text_style::single_line,
-				100, _line_height);
+			                              100, _line_height);
 			_col_1_width = std::max(extent.cx + icon_width, _col_1_width);
 
 			extent = mc.measure_text(line.name, ui::style::font_face::dialog, ui::style::text_style::single_line, 100,
-				_line_height);
+			                         _line_height);
 			_col_2_width = std::max(extent.cx + col_padding, _col_2_width);
 
 			extent = mc.measure_text(line.size, ui::style::font_face::dialog, ui::style::text_style::single_line, 100,
-				_line_height);
+			                         _line_height);
 			_col_3_width = std::max(extent.cx + col_padding, _col_3_width);
 		}
 
-		return { _col_1_width + _col_2_width + _col_3_width, static_cast<int>(_line_height * _lines.size()) };
+		return {_col_1_width + _col_2_width + _col_3_width, static_cast<int>(_line_height * _lines.size())};
 	}
 };
 
@@ -727,12 +723,12 @@ public:
 			const auto created = prop::format_date(i.created);
 			const auto compressed_size = is_empty ? std::u8string{} : prop::format_size(i.compressed_size);
 			const auto uncompressed_size = i.uncompressed_size.is_empty()
-				? std::u8string{}
-			: prop::format_size(i.uncompressed_size);
+				                               ? std::u8string{}
+				                               : prop::format_size(i.uncompressed_size);
 
 			_lines.emplace_back(ft->icon, color,
-				std::array<std::u8string, col_count>{text, created, uncompressed_size, compressed_size},
-				std::array<sizei, col_count>{});
+			                    std::array<std::u8string, col_count>{text, created, uncompressed_size, compressed_size},
+			                    std::array<sizei, col_count>{});
 		}
 
 		_text_style[0] = ui::style::text_style::single_line;
@@ -803,7 +799,7 @@ public:
 				if (line.extents[i].is_empty())
 				{
 					line.extents[i] = mc.measure_text(line.text[i], ui::style::font_face::dialog,
-						ui::style::text_style::single_line, 1000, _line_height);
+					                                  ui::style::text_style::single_line, 1000, _line_height);
 				}
 
 				const auto width = line.extents[i].cx + col_padding;
@@ -822,14 +818,14 @@ public:
 		{
 			const auto diff = total_col_width - width_limit;
 
-			if ((_col_widths[0] - diff) > (width_limit / col_count))
+			if (_col_widths[0] - diff > width_limit / col_count)
 			{
 				_col_widths[0] -= diff;
 				total_col_width -= diff;
 			}
 		}
 
-		return { std::min(width_limit, total_col_width), static_cast<int>(_line_height * _lines.size()) };
+		return {std::min(width_limit, total_col_width), static_cast<int>(_line_height * _lines.size())};
 	}
 };
 
@@ -892,7 +888,7 @@ public:
 			//else if (std::isalnum(c)) {}
 			//else { c = "."sv; };
 
-			result[i] = { c, clr };
+			result[i] = {c, clr};
 		}
 
 		return result;
@@ -913,7 +909,7 @@ public:
 			const auto logical_bounds = bounds.offset(element_offset);
 			const auto clip_bounds = dc.clip_bounds().intersection(logical_bounds);
 			const auto first_line = (clip_bounds.top - logical_bounds.top) / _line_height;
-			const auto last_line = first_line + ((clip_bounds.height() + _line_height) / _line_height);
+			const auto last_line = first_line + (clip_bounds.height() + _line_height) / _line_height;
 			auto x_ascii = 0u;
 			//const auto clr = ui::color(dc.colors.foreground, dc.colors.alpha);
 
@@ -931,7 +927,7 @@ public:
 					line.assign(line.size(), ' ');
 
 					const auto limit = std::min(_bytes_per_line,
-						static_cast<int>(_display->_selected_item_data.size()) - start_address);
+					                            static_cast<int>(_display->_selected_item_data.size()) - start_address);
 					const auto* const data = _display->_selected_item_data.data() + start_address;
 
 					auto x = 0u;
@@ -939,14 +935,14 @@ public:
 
 					highlights.emplace_back(x, 8, ui::color(dc.colors.foreground, dc.colors.alpha * 0.77f));
 
-					line[x++] = hex_chars[(address >> 28) & 0xF];
-					line[x++] = hex_chars[(address >> 24) & 0xF];
-					line[x++] = hex_chars[(address >> 20) & 0xF];
-					line[x++] = hex_chars[(address >> 16) & 0xF];
-					line[x++] = hex_chars[(address >> 12) & 0xF];
-					line[x++] = hex_chars[(address >> 8) & 0xF];
-					line[x++] = hex_chars[(address >> 4) & 0xF];
-					line[x++] = hex_chars[(address >> 0) & 0xF];
+					line[x++] = hex_chars[address >> 28 & 0xF];
+					line[x++] = hex_chars[address >> 24 & 0xF];
+					line[x++] = hex_chars[address >> 20 & 0xF];
+					line[x++] = hex_chars[address >> 16 & 0xF];
+					line[x++] = hex_chars[address >> 12 & 0xF];
+					line[x++] = hex_chars[address >> 8 & 0xF];
+					line[x++] = hex_chars[address >> 4 & 0xF];
+					line[x++] = hex_chars[address >> 0 & 0xF];
 
 					x += 2;
 
@@ -963,7 +959,7 @@ public:
 						line[x] = hex_chars[(byte & 0xF0) >> 4];
 						++x;
 						line[x] = hex_chars[(byte & 0x0F) >> 0];
-						x += ((j % 8) == 7) ? 3 : 2;
+						x += j % 8 == 7 ? 3 : 2;
 					}
 
 					// always start ascii part on same column
@@ -981,26 +977,28 @@ public:
 						}
 
 						line[x] = ce.c;
-						x += ((j % 8) == 7) ? 2 : 1;
+						x += j % 8 == 7 ? 2 : 1;
 					}
 
-					const auto y = logical_bounds.top + (i * _line_height);
+					const auto y = logical_bounds.top + i * _line_height;
 					dc.draw_text(line, highlights, recti(left, y, logical_bounds.right, y + _line_height), _font,
-						ui::style::text_style::single_line, clr, {});
+					             ui::style::text_style::single_line, clr, {});
 					highlights.clear();
 				}
 			}
 		}
 	}
 
-	static uint32_t calc_chars_per_line(int bytes_per_line)
+	static uint32_t calc_chars_per_line(const int bytes_per_line)
 	{
-		return (static_cast<int>(sizeof(uint32_t)) * 2) + 4 + (bytes_per_line * 4) + ((bytes_per_line / 8) * 2);
+		return static_cast<int>(sizeof(uint32_t)) * 2 + 4 + bytes_per_line * 4 + bytes_per_line / 8 * 2;
 	}
 
 	int calc_line_count() const
 	{
-		return _bytes_per_line > 0 ? df::round_up(static_cast<int>(_display->_selected_item_data.size()), _bytes_per_line) : 0;
+		return _bytes_per_line > 0
+			       ? df::round_up(static_cast<int>(_display->_selected_item_data.size()), _bytes_per_line)
+			       : 0;
 	}
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
@@ -1026,7 +1024,7 @@ public:
 		}
 
 		const auto line_count = calc_line_count();
-		return { width_limit, _line_height * line_count };
+		return {width_limit, _line_height * line_count};
 	}
 };
 
@@ -1046,7 +1044,8 @@ class comodore_disk_control final : public std::enable_shared_from_this<comodore
 	uint32_t c64_light_blue = ui::rgb(95, 83, 254);
 
 public:
-	comodore_disk_control(display_state_ptr display, const view_element_style style_in) noexcept : view_element(style_in),
+	comodore_disk_control(display_state_ptr display, const view_element_style style_in) noexcept :
+		view_element(style_in),
 		_display(std::move(display))
 	{
 		_lines = files::list_disk(_display->_selected_item_data);
@@ -1056,15 +1055,16 @@ public:
 	{
 		if (!_lines.empty())
 		{
-
 			const auto clr = ui::color(c64_light_blue, dc.colors.alpha);
 			const auto bg_clr = ui::color(c64_blue, dc.colors.alpha);
 			const auto borger_clr = ui::color(c64_light_blue, dc.colors.alpha);
 			const auto logical_bounds = bounds.offset(element_offset);
-			const auto left = std::max(logical_bounds.left + dc.padding2, (logical_bounds.left + logical_bounds.right - _line_width) / 2);
+			const auto left = std::max(logical_bounds.left + dc.padding2,
+			                           (logical_bounds.left + logical_bounds.right - _line_width) / 2);
 			const auto right = std::min(logical_bounds.right - dc.padding2, left + _line_width + dc.padding2);
 			auto y = logical_bounds.top + dc.padding2 * 2;
-			const auto bg_bounds = recti(left - dc.padding2, y - dc.padding2, right, logical_bounds.bottom - dc.padding2);
+			const auto bg_bounds = recti(left - dc.padding2, y - dc.padding2, right,
+			                             logical_bounds.bottom - dc.padding2);
 
 			dc.draw_rect(bg_bounds, bg_clr);
 			dc.draw_border(bg_bounds, bg_bounds.inflate(dc.padding2), borger_clr, borger_clr);
@@ -1072,7 +1072,7 @@ public:
 			for (const auto& line : _lines)
 			{
 				dc.draw_text(line.line, recti(left, y, logical_bounds.right, y + _line_height), _font,
-					ui::style::text_style::single_line, clr, {});
+				             ui::style::text_style::single_line, clr, {});
 				y += _line_height;
 			}
 		}
@@ -1090,7 +1090,7 @@ public:
 			_line_height = std::max(_line_height, extent.cy + mc.padding1);
 		}
 
-		return { width_limit, static_cast<int>(_line_height * _lines.size() + (mc.padding2 * 4)) };
+		return {width_limit, static_cast<int>(_line_height * _lines.size() + mc.padding2 * 4)};
 	}
 };
 
@@ -1133,7 +1133,7 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		return { 32, 32 };
+		return {32, 32};
 	}
 
 	void dispatch_event(const view_element_event& event) override
@@ -1146,8 +1146,8 @@ public:
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-		const pointi element_offset,
-		const std::vector<recti>& excluded_bounds) override
+	                                             const pointi element_offset,
+	                                             const std::vector<recti>& excluded_bounds) override
 	{
 		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 	}
@@ -1195,7 +1195,7 @@ public:
 
 			_display->_loading_alpha_animation.target(_display->_session ? 0.0f : 1.0f);
 
-			const auto max_scrubber_width = scrub_bounds.width() - (scale1 * 2);
+			const auto max_scrubber_width = scrub_bounds.width() - scale1 * 2;
 			const auto media_pos = _display->media_pos() - _display->media_start();
 			const auto media_len = std::max(1.0, _display->media_end() - _display->media_start());
 			const auto pos = df::round(media_pos * max_scrubber_width / media_len);
@@ -1205,7 +1205,9 @@ public:
 			scrub_bounds.top += scale1;
 			scrub_bounds.bottom -= scale1;
 
-			dc.draw_rounded_rect(scrub_bounds, view_handle_color(false, is_hover, is_tracking, dc.frame_has_focus, true).aa(dc.colors.alpha), dc.padding1);
+			dc.draw_rounded_rect(scrub_bounds,
+			                     view_handle_color(false, is_hover, is_tracking, dc.frame_has_focus, true).aa(
+				                     dc.colors.alpha), dc.padding1);
 
 			auto time_bounds = logical_bounds;
 			time_bounds.right = _display->_scrubber_bounds.left;
@@ -1216,17 +1218,18 @@ public:
 			const auto clr = ui::color(dc.colors.foreground, dc.colors.alpha);
 
 			dc.draw_text(_display->_time, time_bounds, ui::style::font_face::dialog,
-				ui::style::text_style::single_line_center, clr, {});
+			             ui::style::text_style::single_line_center, clr, {});
 			dc.draw_text(_display->_duration, duration_bounds, ui::style::font_face::dialog,
-				ui::style::text_style::single_line_center, clr, {});
+			             ui::style::text_style::single_line_center, clr, {});
 		}
 	}
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		const auto extent = mc.measure_text(u8"00:00:00"sv, ui::style::font_face::dialog, ui::style::text_style::single_line, 200);
+		const auto extent = mc.measure_text(u8"00:00:00"sv, ui::style::font_face::dialog,
+		                                    ui::style::text_style::single_line, 200);
 		_display->_time_width = extent.cx + mc.padding2;
-		return { width_limit, std::max(extent.cy, mc.scroll_width) };
+		return {width_limit, std::max(extent.cy, mc.scroll_width)};
 	}
 
 	void hover(interaction_context& ic) override
@@ -1249,7 +1252,7 @@ public:
 
 		if (is_tracking || ic.tracking || is_tracking != ic.tracking)
 		{
-			const auto time_pos = media_start + floor((scrubber_pos * media_len) / std::max(1, scrubber_width));
+			const auto time_pos = media_start + floor(scrubber_pos * media_len / std::max(1, scrubber_width));
 			set_style_bit(view_element_style::tracking, ic.tracking);
 
 			if (_display->_session)
@@ -1273,10 +1276,10 @@ public:
 
 			hover.elements->add(std::make_shared<surface_element>(surface, 200, view_element_style::none));
 			hover.elements->add(std::make_shared<text_element>(str::format_seconds(df::round(surface->time())),
-				ui::style::font_face::dialog,
-				ui::style::text_style::single_line,
-				view_element_style::center |
-				view_element_style::new_line));
+			                                                   ui::style::font_face::dialog,
+			                                                   ui::style::text_style::single_line,
+			                                                   view_element_style::center |
+			                                                   view_element_style::new_line));
 
 			hover.window_bounds = _display->_scrubber_bounds;
 			hover.active_bounds = recti(x, _display->_scrubber_bounds.top, x + 1, _display->_scrubber_bounds.bottom);
@@ -1285,14 +1288,14 @@ public:
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-		const pointi element_offset,
-		const std::vector<recti>& excluded_bounds) override
+	                                             const pointi element_offset,
+	                                             const std::vector<recti>& excluded_bounds) override
 	{
 		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 	}
 };
 
-class group_title_control : public view_element
+class group_title_control final : public view_element
 {
 public:
 	struct title_element
@@ -1313,11 +1316,11 @@ public:
 	group_title_control() noexcept = default;
 
 	group_title_control(const std::u8string_view title,
-		const std::vector<view_element_ptr>& other_controls = {}) noexcept
+	                    const std::vector<view_element_ptr>& other_controls = {}) noexcept
 	{
 		elements.emplace_back(std::make_shared<text_element>(title, ui::style::font_face::title,
-			ui::style::text_style::multiline,
-			view_element_style::grow));
+		                                                     ui::style::text_style::multiline,
+		                                                     view_element_style::grow));
 		for (const auto& e : other_controls) elements.emplace_back(e);
 	}
 
@@ -1367,13 +1370,13 @@ public:
 
 			if (e.v->is_style_bit_set(view_element_style::grow))
 			{
-				const auto xx = std::max(element.extent.cx + (overflow / grow_count), 64);
+				const auto xx = std::max(element.extent.cx + overflow / grow_count, 64);
 				e.extent.cx = xx;
 				e.extent.cy = e.v->measure(mc, xx).cy;
 			}
 		}
 
-		return { width_limit, cy };
+		return {width_limit, cy};
 	}
 
 	void layout(ui::measure_context& mc, const recti bounds_in, ui::control_layouts& positions) override
@@ -1389,9 +1392,9 @@ public:
 		for (const auto& element : elements)
 		{
 			const auto cx = element.extent.cx;
-			if ((x + cx) <= bounds.right)
+			if (x + cx <= bounds.right)
 			{
-				const recti bb{ x, y, x + cx, bounds.bottom };
+				const recti bb{x, y, x + cx, bounds.bottom};
 				element.v->layout(mc, bb, positions);
 				x += cx + mc.padding1;
 				element.visible = true;
@@ -1426,8 +1429,8 @@ public:
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-		const pointi element_offset,
-		const std::vector<recti>& excluded_bounds) override
+	                                             const pointi element_offset,
+	                                             const std::vector<recti>& excluded_bounds) override
 	{
 		view_controller_ptr result;
 		for (const auto& e : elements)
@@ -1464,12 +1467,12 @@ public:
 	recti _view_bounds;
 	bool _fill = false;
 
-	void show_zoom_box(bool zoom)
+	void show_zoom_box(const bool zoom)
 	{
 		_zoom_active = zoom;
 	}
 
-	photo_control(view_state& state, display_state_ptr display, view_host_ptr host, bool fill) noexcept :
+	photo_control(view_state& state, display_state_ptr display, view_host_ptr host, const bool fill) noexcept :
 		view_element(view_element_style::can_invoke | view_element_style::shrink), _state(state),
 		_display(std::move(display)), _host(std::move(host)), _fill(fill)
 	{
@@ -1480,7 +1483,7 @@ public:
 		return _display->_image_offset;
 	}
 
-	void scroll_image_to(pointi loc)
+	void scroll_image_to(const pointi loc) const
 	{
 		if (_display->_selected_texture1)
 		{
@@ -1535,7 +1538,7 @@ public:
 		}
 	}
 
-	sizei calc_tex_extent(int width_limit, int height_limit) const
+	sizei calc_tex_extent(const int width_limit, const int height_limit) const
 	{
 		if (_display->_selected_texture1)
 		{
@@ -1568,7 +1571,7 @@ public:
 	{
 		const auto tex_extent = calc_tex_extent(width_limit, width_limit * 3);
 		const auto text_line_height = _fill ? 0 : mc.text_line_height(ui::style::font_face::dialog) + mc.padding2;
-		return { width_limit, tex_extent.cy + text_line_height };
+		return {width_limit, tex_extent.cy + text_line_height};
 	}
 
 	void layout(ui::measure_context& mc)
@@ -1581,15 +1584,15 @@ public:
 			auto text_line_height = _fill ? 0 : mc.text_line_height(ui::style::font_face::dialog) + mc.padding2;
 			auto layout_extent = calc_tex_extent(bounds.width(), bounds.height() - text_line_height);
 
-			if (text_line_height > 0 && (bounds.width() - layout_extent.cx) > 100)
+			if (text_line_height > 0 && bounds.width() - layout_extent.cx > 100)
 			{
 				layout_extent = calc_tex_extent(bounds.width(), bounds.height());
 				text_line_height = 0;
 			}
 
 			const auto center = bounds.center();
-			const auto x = center.x - (layout_extent.cx / 2);
-			const auto y = (center.y + (text_line_height / 2)) - (layout_extent.cy / 2);
+			const auto x = center.x - layout_extent.cx / 2;
+			const auto y = center.y + text_line_height / 2 - layout_extent.cy / 2;
 
 			st->layout(mc, recti(x, y, x + layout_extent.cx, y + layout_extent.cy), i);
 
@@ -1602,7 +1605,7 @@ public:
 			}
 
 			_can_pan = can_pan;
-			_zoom_text_bounds = { bounds.top_left(), measure_zoom(mc) };
+			_zoom_text_bounds = {bounds.top_left(), measure_zoom(mc)};
 		}
 	}
 
@@ -1619,9 +1622,9 @@ public:
 	sizei measure_zoom(ui::measure_context& mc) const
 	{
 		const auto text_extent = mc.measure_text(u8"000%"sv, ui::style::font_face::dialog,
-			ui::style::text_style::single_line, 100);
+		                                         ui::style::text_style::single_line, 100);
 		const auto pad = padding * mc.scale_factor;
-		return { text_extent.cx + (pad.cx * 3) + mc.icon_cxy, text_extent.cy + (pad.cy * 2) };
+		return {text_extent.cx + pad.cx * 3 + mc.icon_cxy, text_extent.cy + pad.cy * 2};
 	}
 
 	void render_text(ui::draw_context& dc, const pointi element_offset) const
@@ -1638,23 +1641,24 @@ public:
 				const auto logical_bounds = _zoom_text_bounds.offset(element_offset);
 				const auto inner_bounds = logical_bounds.inflate(-pad.cx, -pad.cy);
 				const recti icon_bounds(inner_bounds.left, inner_bounds.top, inner_bounds.left + dc.icon_cxy,
-					inner_bounds.bottom);
+				                        inner_bounds.bottom);
 				const recti text_bounds(inner_bounds.left + dc.icon_cxy + pad.cx, inner_bounds.top,
-					inner_bounds.right, inner_bounds.bottom);
+				                        inner_bounds.right, inner_bounds.bottom);
 
 				dc.draw_rect(logical_bounds, ui::color(ui::style::color::group_background, alpha * 0.5f));
 				xdraw_icon(dc, icon_index::zoom_in, icon_bounds, clr, {});
 				dc.draw_text(text.c_str(), text_bounds, ui::style::font_face::dialog,
-					ui::style::text_style::single_line, clr, {});
+				             ui::style::text_style::single_line, clr, {});
 			}
 
 			if (_display->_item_pos > 0)
 			{
 				const auto pos_text = str::format(
-					_display->_break_count == _display->_total_count ? u8"{}|{}"sv : u8"{}|{}|{}"sv, _display->_item_pos,
+					_display->_break_count == _display->_total_count ? u8"{}|{}"sv : u8"{}|{}|{}"sv,
+					_display->_item_pos,
 					_display->_break_count, _display->_total_count);
 				const auto pos_text_extent = dc.measure_text(pos_text, ui::style::font_face::dialog,
-					ui::style::text_style::single_line, 100);
+				                                             ui::style::text_style::single_line, 100);
 				const auto pos_text_bounds = recti{
 					bounds.right - pos_text_extent.cx - pad.cx - pad.cx, bounds.top, bounds.right,
 					bounds.top + pos_text_extent.cy + pad.cy + pad.cy
@@ -1663,13 +1667,13 @@ public:
 
 				dc.draw_rect(logical_bounds, ui::color(ui::style::color::group_background, alpha * 0.5f));
 				dc.draw_text(pos_text.c_str(), logical_bounds.inflate(-pad.cx, 0), ui::style::font_face::dialog,
-					ui::style::text_style::single_line_far, clr, {});
+				             ui::style::text_style::single_line_far, clr, {});
 			}
 		}
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
-		const std::vector<recti>& excluded_bounds) override;
+	                                             const std::vector<recti>& excluded_bounds) override;
 
 	friend class zoom_controller;
 	friend class pan_controller;
@@ -1713,7 +1717,7 @@ public:
 		}
 	}
 
-	sizei calc_tex_extent(int width_limit, int height_limit) const
+	sizei calc_tex_extent(const int width_limit, const int height_limit) const
 	{
 		sizei result;
 
@@ -1736,7 +1740,7 @@ public:
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
 		const auto tex_extent = calc_tex_extent(width_limit, width_limit * 3);
-		return { width_limit, tex_extent.cy };
+		return {width_limit, tex_extent.cy};
 	}
 
 	void layout(ui::measure_context& mc, const recti bounds_in, ui::control_layouts&) override
@@ -1762,7 +1766,7 @@ public:
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
-		const std::vector<recti>& excluded_bounds) override;
+	                                             const std::vector<recti>& excluded_bounds) override;
 
 	friend class zoom_controller;
 	friend class pan_controller;
@@ -1784,7 +1788,7 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		return { width_limit, std::max(width_limit, 500) };
+		return {width_limit, std::max(width_limit, 500)};
 	}
 
 	void render(ui::draw_context& dc, const pointi element_offset) const override
@@ -1852,7 +1856,7 @@ public:
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
-		const std::vector<recti>& excluded_bounds) override;
+	                                             const std::vector<recti>& excluded_bounds) override;
 
 	friend class zoom_controller;
 	friend class pan_controller;
@@ -1864,9 +1868,9 @@ public:
 	display_state_ptr _display;
 
 	side_by_side_control(display_state_ptr display) noexcept : view_element(
-		view_element_style::can_invoke |
-		view_element_style::shrink),
-		_display(std::move(display))
+		                                                           view_element_style::can_invoke |
+		                                                           view_element_style::shrink),
+	                                                           _display(std::move(display))
 	{
 	}
 
@@ -1897,13 +1901,13 @@ public:
 		}
 	}
 
-	std::vector<sizei> calc_normal_extents(int width_limit, int height_limit) const
+	std::vector<sizei> calc_normal_extents(const int width_limit, const int height_limit) const
 	{
 		std::vector<sizei> result;
 		if (_display->is_two())
 		{
-			const auto ww = _display->_comparing ? width_limit : ((width_limit - 10) / 2);
-			const auto selected_textures = { _display->_selected_texture1, _display->_selected_texture2 };
+			const auto ww = _display->_comparing ? width_limit : (width_limit - 10) / 2;
+			const auto selected_textures = {_display->_selected_texture1, _display->_selected_texture2};
 
 			for (const auto& st : selected_textures)
 			{
@@ -1932,24 +1936,24 @@ public:
 				if (cy < extent.cy) cy = extent.cy;
 			}
 
-			return { width_limit, cy };
+			return {width_limit, cy};
 		}
 
 		return {};
 	}
 
-	void layout(ui::measure_context& mc)
+	void layout(ui::measure_context& mc) const
 	{
 		if (_display->is_two())
 		{
-			const auto tex_count = 2;
+			constexpr auto tex_count = 2;
 			const auto layout_extent = calc_normal_extents(bounds.width(), bounds.height());
 			df::assert_true(layout_extent.size() == tex_count);
 
 			const std::array<texture_state_ptr, 2> selected_textures{
 				_display->_selected_texture1, _display->_selected_texture2
 			};
-			const std::array<df::item_element_ptr, 2> selected_items{ _display->_item1, _display->_item2 };
+			const std::array<df::item_element_ptr, 2> selected_items{_display->_item1, _display->_item2};
 
 			for (auto i = 0u; i < tex_count; i++)
 			{
@@ -1967,8 +1971,8 @@ public:
 				selected_textures[i]->layout(mc, center_rect(layout_extent[i], tex_bounds), selected_items[i]);
 			}
 
-			_display->_compare_bounds = center_rect(sizei{ mc.scroll_width, df::mul_div(bounds.height(), 5, 7) },
-				bounds);
+			_display->_compare_bounds = center_rect(sizei{mc.scroll_width, df::mul_div(bounds.height(), 5, 7)},
+			                                        bounds);
 
 			//if (_is_comparing)
 			{
@@ -1991,9 +1995,9 @@ public:
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
-		const std::vector<recti>& excluded_bounds) override;
+	                                             const std::vector<recti>& excluded_bounds) override;
 
-	void compare(const int x, bool tracking)
+	void compare(const int x, const bool tracking) const
 	{
 		const auto compare = tracking;
 
@@ -2016,9 +2020,9 @@ public:
 		if (!_display || !_display->_comparing) return 0;
 		if (_display->_compare_limits.is_empty())
 			return (_display->_compare_limits.left + _display->_compare_limits.
-				right) / 2;
+			                                                   right) / 2;
 		return std::clamp(_display->_compare_hover_loc, _display->_compare_limits.left + 4,
-			_display->_compare_limits.right - 4);
+		                  _display->_compare_limits.right - 4);
 	}
 
 	friend class compare_controller;
@@ -2041,10 +2045,10 @@ public:
 
 		if (image_count > 0)
 		{
-			return { cx, std::max(180, cx_control) };
+			return {cx, std::max(180, cx_control)};
 		}
 
-		return { cx, 0 };
+		return {cx, 0};
 	}
 
 	std::vector<sizei> surface_dims() const
@@ -2090,7 +2094,6 @@ public:
 
 class split_element final : public view_element, public std::enable_shared_from_this<split_element>
 {
-private:
 	const ui::const_surface_ptr _surface;
 	const view_element_ptr _child;
 	mutable ui::texture_ptr _tex;
@@ -2139,8 +2142,8 @@ public:
 		const auto surface_cy_extra = (bounds_in.height() - _surface_extent.cy) / 2;
 		const auto child_cy_extra = (bounds_in.height() - _child_extent.cy) / 2;
 
-		_surface_bounds = recti({ bounds_in.left, bounds_in.top + surface_cy_extra }, _surface_extent);
-		_child_bounds = recti({ bounds_in.left + _surface_extent.cx, bounds_in.top + child_cy_extra }, _child_extent);
+		_surface_bounds = recti({bounds_in.left, bounds_in.top + surface_cy_extra}, _surface_extent);
+		_child_bounds = recti({bounds_in.left + _surface_extent.cx, bounds_in.top + child_cy_extra}, _child_extent);
 		_child->layout(mc, _child_bounds, positions);
 	}
 
@@ -2165,8 +2168,8 @@ public:
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-		const pointi element_offset,
-		const std::vector<recti>& excluded_bounds) override
+	                                             const pointi element_offset,
+	                                             const std::vector<recti>& excluded_bounds) override
 	{
 		return _child->controller_from_location(host, loc, element_offset, excluded_bounds);
 	}
@@ -2175,14 +2178,13 @@ public:
 	{
 		_surface_extent = ui::scale_dimensions(_surface->dimensions(), width_limit / 2, true);
 		_child_extent = _child->measure(mc, width_limit - _surface_extent.cx);
-		return { _child_extent.cx + _surface_extent.cx, std::max(_surface_extent.cy, _child_extent.cy) };
+		return {_child_extent.cx + _surface_extent.cx, std::max(_surface_extent.cy, _child_extent.cy)};
 	}
 };
 
 
 class bullet_element final : public view_element, public std::enable_shared_from_this<bullet_element>
 {
-private:
 	const int _icon_padding = 16;
 	const icon_index _icon;
 	const view_element_ptr _child;
@@ -2191,13 +2193,13 @@ private:
 
 public:
 	bullet_element(const icon_index i, view_element_ptr child,
-		const view_element_style style_in = view_element_style::none) noexcept : view_element(style_in),
+	               const view_element_style style_in = view_element_style::none) noexcept : view_element(style_in),
 		_icon(i), _child(std::move(child))
 	{
 	}
 
 	bullet_element(const icon_index i, const std::u8string_view text) : _icon(i),
-		_child(std::make_shared<text_element>(text))
+	                                                                    _child(std::make_shared<text_element>(text))
 	{
 	}
 
@@ -2222,8 +2224,8 @@ public:
 
 		const auto child_cy_extra = (bounds_in.height() - _child_extent.cy) / 2;
 
-		_child_bounds = recti({ bounds_in.left + mc.icon_cxy + _icon_padding, bounds_in.top + child_cy_extra },
-			_child_extent);
+		_child_bounds = recti({bounds_in.left + mc.icon_cxy + _icon_padding, bounds_in.top + child_cy_extra},
+		                      _child_extent);
 		_child->layout(mc, _child_bounds, positions);
 	}
 
@@ -2243,8 +2245,8 @@ public:
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-		const pointi element_offset,
-		const std::vector<recti>& excluded_bounds) override
+	                                             const pointi element_offset,
+	                                             const std::vector<recti>& excluded_bounds) override
 	{
 		return _child->controller_from_location(host, loc, element_offset, excluded_bounds);
 	}
@@ -2253,6 +2255,6 @@ public:
 	{
 		const auto w = mc.icon_cxy + _icon_padding;
 		_child_extent = _child->measure(mc, width_limit - w);
-		return { _child_extent.cx + w, std::max(mc.icon_cxy, _child_extent.cy) };
+		return {_child_extent.cx + w, std::max(mc.icon_cxy, _child_extent.cy)};
 	}
 };

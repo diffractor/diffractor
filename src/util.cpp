@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
@@ -50,11 +49,11 @@ std::atomic_int df::loading_media = 0;
 std::atomic_int df::command_active = 0;
 std::atomic_int df::dragging_items = 0;
 std::atomic_int df::handling_crash = 0;
-const char* df::rendering_func = "";
+auto df::rendering_func = "";
 
-std::u8string df::gpu_desc = u8"unknown"s;
-std::u8string df::gpu_id = u8"unknown"s;
-std::u8string df::d3d_info = u8"unknown"s;
+auto df::gpu_desc = u8"unknown"s;
+auto df::gpu_id = u8"unknown"s;
+auto df::d3d_info = u8"unknown"s;
 
 df::date_t df::start_time;
 std::atomic_int df::cancel_token::empty;
@@ -151,7 +150,7 @@ std::u8string df::file_size::str() const
 
 df::version::version(const std::u8string_view version)
 {
-	const auto parts = str::split(version, true, [](wchar_t c) { return c == '.'; });
+	const auto parts = str::split(version, true, [](const wchar_t c) { return c == '.'; });
 
 	if (!parts.empty())
 	{
@@ -169,7 +168,8 @@ std::u8string df::url_extract(const std::u8string_view text)
 	static const std::regex url_regex(R"((https?:\/\/[^\s\"\']+))");
 	std::match_results<std::u8string_view::const_iterator> match;
 
-	if (std::regex_search(text.begin(), text.end(), match, url_regex)) {
+	if (std::regex_search(text.begin(), text.end(), match, url_regex))
+	{
 		return match[1].str();
 	}
 
@@ -202,8 +202,8 @@ df::date_t df::date_t::from(const std::u8string_view r)
 static bool parse_iso_8601_like(const std::u8string_view r, df::day_t& result)
 {
 	int yyyy = 0, mm = 0, dd = 0, hh = 0, ss = 0, min = 0;
-	const int mmm_len = 4;
-	char mmm[mmm_len] = { 0 };
+	constexpr int mmm_len = 4;
+	char mmm[mmm_len] = {0};
 	double sec = 0.0;
 	bool success = false;
 
@@ -214,83 +214,83 @@ static bool parse_iso_8601_like(const std::u8string_view r, df::day_t& result)
 		//          TUE MAY 08 10:00:1: 2007
 		// Fujifilm Mon Mar 3 09:44:56 2008
 
-		char day[4] = { 0 };
-		char month[4] = { 0 };
+		char day[4] = {0};
+		char month[4] = {0};
 
 		const auto* const source_data = std::bit_cast<const char*>(r.data());
 		const auto source_len = r.size();
 
 		if (7 == _snscanf_s(source_data, source_len, "%3s %3s %d %d:%d:%d %d", day, 4, month, 4, &dd, &hh, &mm, &ss,
-			&yyyy) ||
+		                    &yyyy) ||
 			7 == _snscanf_s(source_data, source_len, "%3s %3s %d %d:%d:%d: %d", day, 4, month, 4, &dd, &hh, &min, &ss,
-				&yyyy))
+			                &yyyy))
 		{
 			mm = str::month(std::bit_cast<const char8_t*>(static_cast<char*>(month)));
 			sec = ss;
 		}
 		else if (_snscanf_s(source_data, source_len, "%4d-%2d-%2d %2d:%2d:%lg",
-			&yyyy,
-			&mm,
-			&dd,
-			&hh,
-			&min,
-			&sec) == 6)
+		                    &yyyy,
+		                    &mm,
+		                    &dd,
+		                    &hh,
+		                    &min,
+		                    &sec) == 6)
 		{
 			success = true;
 		}
 		else if (_snscanf_s(source_data, source_len, "%4d:%2d:%2d %2d:%2d:%lg",
-			&yyyy,
-			&mm,
-			&dd,
-			&hh,
-			&min,
-			&sec) == 6)
+		                    &yyyy,
+		                    &mm,
+		                    &dd,
+		                    &hh,
+		                    &min,
+		                    &sec) == 6)
 		{
 			success = true;
 		}
 		else if (_snscanf_s(source_data, source_len, "%4d-%2d-%2dT%2d:%2d:%lg",
-			&yyyy,
-			&mm,
-			&dd,
-			&hh,
-			&min,
-			&sec) == 6)
+		                    &yyyy,
+		                    &mm,
+		                    &dd,
+		                    &hh,
+		                    &min,
+		                    &sec) == 6)
 		{
 			success = true;
 		}
 		else if (_snscanf_s(source_data, source_len, "%4d%2d%2dT%2d%2d%lg",
-			&yyyy,
-			&mm,
-			&dd,
-			&hh,
-			&min,
-			&sec) == 6)
+		                    &yyyy,
+		                    &mm,
+		                    &dd,
+		                    &hh,
+		                    &min,
+		                    &sec) == 6)
 		{
 			success = true;
 		}
 		else if (_snscanf_s(source_data, source_len, "%4d%2d%2d%2d%2d%lg",
-			&yyyy,
-			&mm,
-			&dd,
-			&hh,
-			&min,
-			&sec) == 6)
+		                    &yyyy,
+		                    &mm,
+		                    &dd,
+		                    &hh,
+		                    &min,
+		                    &sec) == 6)
 		{
 			success = true;
 		}
 		else if (_snscanf_s(source_data, source_len, "%4d-%2d-%2d", // "2006-01-14"
-			&yyyy,
-			&mm,
-			&dd) == 3)
+		                    &yyyy,
+		                    &mm,
+		                    &dd) == 3)
 		{
 			hh = 0, ss = 0, min = 0;
 			success = true;
 		}
 		else if (_snscanf_s(source_data, source_len, "%4d-%3s-%2d", // "2006-jan-14"
-			&yyyy,
-			mmm,
-			mmm_len,
-			&dd) == 3)
+		                    &yyyy,
+		                    mmm,
+		                    mmm_len,
+		                    &dd) == 3)
 		{
 			mm = str::month(std::bit_cast<const char8_t*>(static_cast<const char*>(mmm)));
 			hh = 0, ss = 0, min = 0;
@@ -311,7 +311,7 @@ static bool parse_iso_8601_like(const std::u8string_view r, df::day_t& result)
 	return success;
 }
 
-static int find_val_above(const int n[3], int v)
+static int find_val_above(const int n[3], const int v)
 {
 	if (n[0] > v) return 0;
 	if (n[1] > v) return 1;
@@ -321,12 +321,15 @@ static int find_val_above(const int n[3], int v)
 
 static bool try_parse_date(const std::u8string_view text, df::day_t& result)
 {
-	const auto parts = str::split(text, true, [](wchar_t c) { return c == '-' || c == '/' || c == '\\' || c == '.'; });
+	const auto parts = str::split(text, true, [](const wchar_t c)
+	{
+		return c == '-' || c == '/' || c == '\\' || c == '.';
+	});
 
 	if (parts.size() == 3)
 	{
-		const int nums[3] = { str::to_int(parts[0]), str::to_int(parts[1]), str::to_int(parts[2]) };
-		const int month_texts[3] = { str::month(parts[0]), str::month(parts[1]), str::month(parts[2]) };
+		const int nums[3] = {str::to_int(parts[0]), str::to_int(parts[1]), str::to_int(parts[2])};
+		const int month_texts[3] = {str::month(parts[0]), str::month(parts[1]), str::month(parts[2])};
 
 		const int found_year = find_val_above(nums, 31);
 		const int found_month_text = find_val_above(month_texts, 0);
@@ -354,7 +357,7 @@ static bool try_parse_date(const std::u8string_view text, df::day_t& result)
 
 bool df::date_t::parse(const std::u8string_view text)
 {
-	day_t d = { 0 };
+	day_t d = {0};
 
 	if (parse_iso_8601_like(text, d) ||
 		try_parse_date(text, d))
@@ -369,7 +372,7 @@ bool df::date_t::parse(const std::u8string_view text)
 bool df::date_t::parse_exif_date(const std::u8string_view r)
 {
 	// "2006:01:14 15:51:31"
-	day_t d = { 0 };
+	day_t d = {0};
 	return parse_iso_8601_like(r, d) && date(d);
 }
 
@@ -381,7 +384,7 @@ bool df::date_t::parse_xml_date(const std::u8string_view r)
 	// "2007-11-09T08:00:00Z"
 	// "2006-01-14T15:51:31"
 	// "2006-01-14"
-	day_t d = { 0 };
+	day_t d = {0};
 	return parse_iso_8601_like(r, d) && date(d);
 }
 
@@ -402,7 +405,7 @@ df::file_path df::probe_data_file(const std::u8string_view file_name)
 	return app_data_folder.combine_file(file_name);
 }
 
-df::blob df::blob_from_file(const file_path path, size_t max_load)
+df::blob df::blob_from_file(const file_path path, const size_t max_load)
 {
 	file f;
 

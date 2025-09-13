@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
@@ -29,7 +28,7 @@ enum gif_block_type
 	kXMP_block_Header = 0x47
 };
 
-static const char* strnstr(const char* haystack, const char* needle, size_t len)
+static const char* strnstr(const char* haystack, const char* needle, const size_t len)
 {
 	size_t needle_len;
 
@@ -38,8 +37,8 @@ static const char* strnstr(const char* haystack, const char* needle, size_t len)
 
 	for (auto i = 0; i <= static_cast<int>(len) - static_cast<int>(needle_len); i++)
 	{
-		if ((haystack[0] == needle[0]) &&
-			(0 == strncmp(haystack, needle, needle_len)))
+		if (haystack[0] == needle[0] &&
+			0 == strncmp(haystack, needle, needle_len))
 			return haystack;
 
 		haystack++;
@@ -50,7 +49,7 @@ static const char* strnstr(const char* haystack, const char* needle, size_t len)
 static file_scan_result scan_gif(read_stream& s)
 {
 	file_scan_result result;
-	const auto header_len = 11;
+	constexpr auto header_len = 11;
 	uint8_t header[header_len];
 	s.read(0, header, header_len);
 
@@ -89,7 +88,7 @@ static file_scan_result scan_gif(read_stream& s)
 
 		if (block_type == kXMP_block_ImageDesc)
 		{
-			const auto image_desc_len = 9;
+			constexpr auto image_desc_len = 9;
 			uint8_t image_desc[image_desc_len];
 			s.read(offset, image_desc, image_desc_len);
 
@@ -140,7 +139,7 @@ static file_scan_result scan_gif(read_stream& s)
 			if (sub_extension_lbl == 0xFF &&
 				sub_block_size == APP_ID_LEN)
 			{
-				const auto app_header_len = APP_ID_LEN;
+				constexpr auto app_header_len = APP_ID_LEN;
 				uint8_t app_header[app_header_len];
 				s.read(offset, app_header, app_header_len);
 
@@ -221,23 +220,23 @@ static file_scan_result scan_gif(read_stream& s)
 }
 
 
-uint16_t get_uint16(uint16_t n, uint16_t order)
+uint16_t get_uint16(const uint16_t n, const uint16_t order)
 {
 	return order == 0x4949 ? n : df::byteswap16(n);
 }
 
-uint16_t get_uint16(const uint8_t* p, uint16_t order)
+uint16_t get_uint16(const uint8_t* p, const uint16_t order)
 {
 	const auto n = *std::bit_cast<const uint16_t*>(p);
 	return order == 0x4949 ? n : df::byteswap16(n);
 }
 
-uint32_t get_uint32(const uint32_t n, uint16_t order)
+uint32_t get_uint32(const uint32_t n, const uint16_t order)
 {
 	return order == 0x4949 ? n : df::byteswap32(n);
 }
 
-uint32_t get_uint32(const uint8_t* p, uint16_t order)
+uint32_t get_uint32(const uint8_t* p, const uint16_t order)
 {
 	const auto n = *std::bit_cast<const uint32_t*>(p);
 	return order == 0x4949 ? n : df::byteswap32(n);
@@ -270,7 +269,7 @@ enum exif_tag
 	EXIF_TAG_GPS_LONGITUDE = 0x0004,
 };
 
-static void scan_exif(file_scan_result& result, df::cspan data)
+static void scan_exif(file_scan_result& result, const df::cspan data)
 {
 	if (data.size > 16)
 	{
@@ -290,7 +289,7 @@ static void scan_exif(file_scan_result& result, df::cspan data)
 
 				for (auto i = 0u; i < entry_count; ++i)
 				{
-					const auto pos = offset_ifd0 + 2u + (12u * i);
+					const auto pos = offset_ifd0 + 2u + 12u * i;
 
 					if (pos < limit)
 					{
@@ -321,7 +320,7 @@ static void scan_exif(file_scan_result& result, df::cspan data)
 
 						for (auto i = 0u; i < ifd1_entry_count; ++i)
 						{
-							const auto pos = offset_ifd1 + (12u * i);
+							const auto pos = offset_ifd1 + 12u * i;
 
 							if (pos < limit)
 							{
@@ -351,19 +350,19 @@ static void scan_exif(file_scan_result& result, df::cspan data)
 
 						if (possible_thumbnail > data.data &&
 							possible_thumbnail + posible_thumbnail_len <= data.data + data.size &&
-							(detected = files::detect_format({ possible_thumbnail, posible_thumbnail_len })) !=
+							(detected = files::detect_format({possible_thumbnail, posible_thumbnail_len})) !=
 							detected_format::Unknown)
 						{
 							if (is_image_format(detected))
 							{
-								result.thumbnail_image = load_image_file({ possible_thumbnail, posible_thumbnail_len });
+								result.thumbnail_image = load_image_file({possible_thumbnail, posible_thumbnail_len});
 							}
 							else
 							{
 								files ff;
 								result.thumbnail_surface = ff.image_to_surface({
 									possible_thumbnail, posible_thumbnail_len
-									});
+								});
 							}
 						}
 					}
@@ -381,11 +380,11 @@ static double load_gps_val(read_stream& s, const uint32_t pos, const unsigned sh
 {
 	const auto offset = get_uint32(s.peek32(pos + 8), order);
 	const auto degrees = metadata_exif::urational32_t(get_uint32(s.peek32(offset + 0), order),
-		get_uint32(s.peek32(offset + 4), order));
+	                                                  get_uint32(s.peek32(offset + 4), order));
 	const auto minutes = metadata_exif::urational32_t(get_uint32(s.peek32(offset + 8), order),
-		get_uint32(s.peek32(offset + 12), order));
+	                                                  get_uint32(s.peek32(offset + 12), order));
 	const auto seconds = metadata_exif::urational32_t(get_uint32(s.peek32(offset + 16), order),
-		get_uint32(s.peek32(offset + 20), order));
+	                                                  get_uint32(s.peek32(offset + 20), order));
 	return gps_coordinate::dms_to_decimal(degrees.to_real(), minutes.to_real(), seconds.to_real());
 }
 
@@ -421,7 +420,7 @@ static file_scan_result scan_tiff(read_stream& s)
 
 			for (auto i = 0u; i < entry_count; ++i)
 			{
-				const auto pos = (12u * i);
+				const auto pos = 12u * i;
 				uint8_t dir_data[12];
 				s.read(offset_ifd0 + 2u + pos, dir_data, 12u);
 
@@ -440,86 +439,86 @@ static file_scan_result scan_tiff(read_stream& s)
 					result.height = get_uint16(dir_data + 8u, order);
 					break;
 				case TAG_XMP:
-				{
-					const uint64_t xmp_offset = get_uint32(dir_data + 8u, order);
-
-					if (xmp_offset + components <= size) // overflow
 					{
-						result.metadata.xmp = s.read(xmp_offset, components);
-					}
-				}
-				break;
-				case EXIF_TAG_GPS_INFO_IFD_POINTER:
-				{
-					const auto offset_gps = get_uint32(dir_data + 8u, order);
+						const uint64_t xmp_offset = get_uint32(dir_data + 8u, order);
 
-					if (offset_gps && offset_gps < limit)
-					{
-						exif_gps_coordinate_builder coordinate;
-						const auto gps_entry_count = get_uint16(s.peek16(offset_gps), order);
-
-						for (auto j = 0u; j < gps_entry_count; ++j)
+						if (xmp_offset + components <= size) // overflow
 						{
-							const auto gps_entry_pos = offset_gps + 2 + (12 * j);
+							result.metadata.xmp = s.read(xmp_offset, components);
+						}
+					}
+					break;
+				case EXIF_TAG_GPS_INFO_IFD_POINTER:
+					{
+						const auto offset_gps = get_uint32(dir_data + 8u, order);
 
-							if (gps_entry_pos < limit)
+						if (offset_gps && offset_gps < limit)
+						{
+							exif_gps_coordinate_builder coordinate;
+							const auto gps_entry_count = get_uint16(s.peek16(offset_gps), order);
+
+							for (auto j = 0u; j < gps_entry_count; ++j)
 							{
-								const auto gps_tag = static_cast<exif_tag>(get_uint16(
-									s.peek16(gps_entry_pos), order));
+								const auto gps_entry_pos = offset_gps + 2 + 12 * j;
 
-								switch (gps_tag)
+								if (gps_entry_pos < limit)
 								{
-								case EXIF_TAG_GPS_LATITUDE:
-								{
-									coordinate.latitude(load_gps_val(s, gps_entry_pos, order));
-								}
-								break;
-								case EXIF_TAG_GPS_LATITUDE_REF:
-								{
-									const auto text = load_text(s, gps_entry_pos, order);
+									const auto gps_tag = static_cast<exif_tag>(get_uint16(
+										s.peek16(gps_entry_pos), order));
 
-									// 'N' or 'S'
-									if (first_char_is(text, 'S'))
+									switch (gps_tag)
 									{
-										coordinate.latitude_north_south(
-											exif_gps_coordinate_builder::NorthSouth::South);
+									case EXIF_TAG_GPS_LATITUDE:
+										{
+											coordinate.latitude(load_gps_val(s, gps_entry_pos, order));
+										}
+										break;
+									case EXIF_TAG_GPS_LATITUDE_REF:
+										{
+											const auto text = load_text(s, gps_entry_pos, order);
+
+											// 'N' or 'S'
+											if (first_char_is(text, 'S'))
+											{
+												coordinate.latitude_north_south(
+													exif_gps_coordinate_builder::NorthSouth::South);
+											}
+											else
+											{
+												coordinate.latitude_north_south(
+													exif_gps_coordinate_builder::NorthSouth::North);
+											}
+										}
+										break;
+									case EXIF_TAG_GPS_LONGITUDE:
+										{
+											coordinate.longitude(load_gps_val(s, gps_entry_pos, order));
+										}
+										break;
+									case EXIF_TAG_GPS_LONGITUDE_REF:
+										{
+											const auto text = load_text(s, gps_entry_pos, order);
+											// 'E' or 'W'
+											if (first_char_is(text, 'W'))
+											{
+												coordinate.longitude_east_west(
+													exif_gps_coordinate_builder::EastWest::West);
+											}
+											else
+											{
+												coordinate.longitude_east_west(
+													exif_gps_coordinate_builder::EastWest::East);
+											}
+										}
+										break;
 									}
-									else
-									{
-										coordinate.latitude_north_south(
-											exif_gps_coordinate_builder::NorthSouth::North);
-									}
-								}
-								break;
-								case EXIF_TAG_GPS_LONGITUDE:
-								{
-									coordinate.longitude(load_gps_val(s, gps_entry_pos, order));
-								}
-								break;
-								case EXIF_TAG_GPS_LONGITUDE_REF:
-								{
-									const auto text = load_text(s, gps_entry_pos, order);
-									// 'E' or 'W'
-									if (first_char_is(text, 'W'))
-									{
-										coordinate.longitude_east_west(
-											exif_gps_coordinate_builder::EastWest::West);
-									}
-									else
-									{
-										coordinate.longitude_east_west(
-											exif_gps_coordinate_builder::EastWest::East);
-									}
-								}
-								break;
 								}
 							}
-						}
 
-						result.gps = coordinate.build();
+							result.gps = coordinate.build();
+						}
 					}
-				}
-				break;
+					break;
 				}
 			}
 
@@ -537,7 +536,7 @@ static file_scan_result scan_tiff(read_stream& s)
 
 					for (auto i = 0u; i < ifd1_entry_count; ++i)
 					{
-						const auto pos = offset_ifd1 + 2 + (12 * i);
+						const auto pos = offset_ifd1 + 2 + 12 * i;
 
 						if (pos < limit)
 						{
@@ -565,7 +564,7 @@ static file_scan_result scan_tiff(read_stream& s)
 
 					if (possible_offset != 0 && posible_thumbnail_len != 0)
 					{
-						auto thumb = s.read(possible_offset, posible_thumbnail_len);
+						const auto thumb = s.read(possible_offset, posible_thumbnail_len);
 						auto detected = detected_format::Unknown;
 
 						if (thumb.size() > 16 &&

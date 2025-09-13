@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
@@ -698,7 +697,7 @@ static const iptc_tag_info iptc_tag_table[] = {
 	{static_cast<iptc_record>(0), static_cast<iptc_tag>(0), {}, {}, {}}
 };
 
-void metadata_iptc::parse(prop::item_metadata& pd, df::cspan cs)
+void metadata_iptc::parse(prop::item_metadata& pd, const df::cspan cs)
 {
 	if (!cs.empty())
 	{
@@ -720,13 +719,13 @@ void metadata_iptc::parse(prop::item_metadata& pd, df::cspan cs)
 			{
 				break;
 			}
-			
+
 			// Check bounds before accessing cs.data[i + 3]
 			if (i + 4 >= cs.size)
 			{
 				break;
 			}
-			
+
 			if (cs.data[i + 3] & static_cast<uint8_t>(0x80))
 			{
 				// Extended length - need at least 8 bytes total
@@ -734,11 +733,11 @@ void metadata_iptc::parse(prop::item_metadata& pd, df::cspan cs)
 				{
 					break;
 				}
-				
-				block_len = (static_cast<long>(cs.data[i + 4]) << 24) |
-					(static_cast<long>(cs.data[i + 5]) << 16) |
-					(static_cast<long>(cs.data[i + 6]) << 8) |
-					(static_cast<long>(cs.data[i + 7]));
+
+				block_len = static_cast<long>(cs.data[i + 4]) << 24 |
+					static_cast<long>(cs.data[i + 5]) << 16 |
+					static_cast<long>(cs.data[i + 6]) << 8 |
+					static_cast<long>(cs.data[i + 7]);
 
 				header_len = 8;
 			}
@@ -758,10 +757,10 @@ void metadata_iptc::parse(prop::item_metadata& pd, df::cspan cs)
 			const auto dataset = cs.data[i + 1];
 			const auto record = static_cast<iptc_tag>(cs.data[i + 2]);
 
-			if (cs.size >= (i + header_len + block_len) && block_len > 0 && dataset == 2)
+			if (cs.size >= i + header_len + block_len && block_len > 0 && dataset == 2)
 			{
 				const auto* const sz = std::bit_cast<const char8_t*>(cs.data + i + header_len);
-				const auto sv = std::u8string_view{ sz, block_len };
+				const auto sv = std::u8string_view{sz, block_len};
 
 				switch (record)
 				{
@@ -795,7 +794,7 @@ void metadata_iptc::parse(prop::item_metadata& pd, df::cspan cs)
 			{
 				break;
 			}
-			
+
 			i += block_len + header_len;
 		}
 
@@ -828,7 +827,7 @@ static str::cached tag_name(const iptc_record r, const iptc_tag t)
 	return u8"?"_c;
 }
 
-metadata_kv_list metadata_iptc::to_info(df::cspan cs)
+metadata_kv_list metadata_iptc::to_info(const df::cspan cs)
 {
 	metadata_kv_list result;
 
@@ -850,13 +849,13 @@ metadata_kv_list metadata_iptc::to_info(df::cspan cs)
 			{
 				break;
 			}
-			
+
 			// Check bounds before accessing cs.data[i + 3]
 			if (i + 4 >= cs.size)
 			{
 				break;
 			}
-			
+
 			if (cs.data[i + 3] & static_cast<uint8_t>(0x80))
 			{
 				// Extended length - need at least 8 bytes total
@@ -864,11 +863,11 @@ metadata_kv_list metadata_iptc::to_info(df::cspan cs)
 				{
 					break;
 				}
-				
-				block_len = (static_cast<long>(cs.data[i + 4]) << 24) |
-					(static_cast<long>(cs.data[i + 5]) << 16) |
-					(static_cast<long>(cs.data[i + 6]) << 8) |
-					(static_cast<long>(cs.data[i + 7]));
+
+				block_len = static_cast<long>(cs.data[i + 4]) << 24 |
+					static_cast<long>(cs.data[i + 5]) << 16 |
+					static_cast<long>(cs.data[i + 6]) << 8 |
+					static_cast<long>(cs.data[i + 7]);
 
 				header_len = 8;
 			}
@@ -888,10 +887,10 @@ metadata_kv_list metadata_iptc::to_info(df::cspan cs)
 			const auto record = static_cast<iptc_record>(cs.data[i + 1]);
 			const auto tag = static_cast<iptc_tag>(cs.data[i + 2]);
 
-			if (cs.size >= (i + header_len + block_len) && block_len > 0)
+			if (cs.size >= i + header_len + block_len && block_len > 0)
 			{
 				const auto* const sz = std::bit_cast<const char8_t*>(cs.data + i + header_len);
-				result.emplace_back(tag_name(record, tag), str::strip({ sz, block_len }));
+				result.emplace_back(tag_name(record, tag), str::strip({sz, block_len}));
 			}
 
 			// Check for potential overflow before incrementing
@@ -899,7 +898,7 @@ metadata_kv_list metadata_iptc::to_info(df::cspan cs)
 			{
 				break;
 			}
-			
+
 			i += block_len + header_len;
 		}
 	}

@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -18,7 +17,6 @@ struct kd_coordinates_t
 
 class kd_tree
 {
-private:
 	static float dist(const float x1, const float y1, const float x2, const float y2)
 	{
 		const auto dx = x1 - x2;
@@ -36,10 +34,10 @@ private:
 		return x * x;
 	}
 
-	class node_t : public df::no_copy
+	class node_t final : public df::no_copy
 	{
 	public:
-		struct traversal_state : public no_copy
+		struct traversal_state final : no_copy
 		{
 			kd_coordinates_t p, dir;
 			kd_coordinates_t closest;
@@ -162,7 +160,7 @@ private:
 				{
 					const auto myd2 = dist(data[_offset + i], ti.p);
 
-					if ((myd2 < ti.closest_d2))
+					if (myd2 < ti.closest_d2)
 					{
 						ti.closest_d2 = myd2;
 						ti.closest_d = sqrt(ti.closest_d2);
@@ -176,7 +174,7 @@ private:
 			if (dist(x, y, ti.p.x, ti.p.y) >= fast_sqr(r + ti.closest_d))
 				return;
 
-			const auto myd = split_axis == 0 ? (x - ti.p.x) : (y - ti.p.y);
+			const auto myd = split_axis == 0 ? x - ti.p.x : y - ti.p.y;
 
 			if (myd >= 0.0f)
 			{

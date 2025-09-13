@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
@@ -28,7 +27,7 @@ static const auto icon_font_name = L"Segoe MDL2 Assets";
 //static const auto petscii_font_name = L"Basic Engine ASCII 8x8";
 static const auto petscii_font_name = L"C64 Pro Mono";
 
-class resource_font_file_stream : public IDWriteFontFileStream
+class resource_font_file_stream final : public IDWriteFontFileStream
 {
 public:
 	explicit resource_font_file_stream(uint32_t resourceID);
@@ -88,7 +87,7 @@ private:
 	DWORD _resource_size;
 };
 
-resource_font_file_stream::resource_font_file_stream(uint32_t resourceID) :
+resource_font_file_stream::resource_font_file_stream(const uint32_t resourceID) :
 	refCount_(0),
 	_resource_ptr(nullptr),
 	_resource_size(0)
@@ -113,8 +112,8 @@ resource_font_file_stream::resource_font_file_stream(uint32_t resourceID) :
 // IDWriteFontFileStream methods
 HRESULT STDMETHODCALLTYPE resource_font_file_stream::ReadFileFragment(
 	const void** fragmentStart, // [fragmentSize] in bytes
-	UINT64 fileOffset,
-	UINT64 fragmentSize,
+	const UINT64 fileOffset,
+	const UINT64 fragmentSize,
 	OUT void** fragmentContext
 )
 {
@@ -160,10 +159,13 @@ std::u8string format_guid(REFGUID id)
 	return str::utf16_to_utf8(sz);
 }
 
-class resource_font_file_loader : public IDWriteFontFileLoader
+class resource_font_file_loader final : public IDWriteFontFileLoader
 {
 public:
-	resource_font_file_loader() : refCount_(0) {}
+	resource_font_file_loader() : refCount_(0)
+	{
+	}
+
 	virtual ~resource_font_file_loader() = default;
 
 	ULONG refCount_;
@@ -174,7 +176,7 @@ public:
 			riid == __uuidof(IDWriteFontFileLoader))
 		{
 			AddRef();
-			(*ppvObject) = static_cast<IDWriteFontFileLoader*>(this);
+			*ppvObject = static_cast<IDWriteFontFileLoader*>(this);
 			return S_OK;
 		}
 
@@ -197,7 +199,7 @@ public:
 
 	HRESULT STDMETHODCALLTYPE CreateStreamFromKey(
 		const void* fontFileReferenceKey, // [fontFileReferenceKeySize] in bytes
-		UINT32 fontFileReferenceKeySize,
+		const UINT32 fontFileReferenceKeySize,
 		OUT IDWriteFontFileStream** fontFileStream
 	) override
 	{
@@ -228,17 +230,20 @@ public:
 
 static resource_font_file_loader font_loader;
 
-class resource_font_file_enumerator : public IDWriteFontFileEnumerator
+class resource_font_file_enumerator final : public IDWriteFontFileEnumerator
 {
 public:
-	resource_font_file_enumerator() : refCount_(0), _index(0), _factory(nullptr), _collection_key(nullptr), _collection_key_size(0) {}
+	resource_font_file_enumerator() : refCount_(0), _index(0), _factory(nullptr), _collection_key(nullptr),
+	                                  _collection_key_size(0)
+	{
+	}
 
 	explicit resource_font_file_enumerator(IDWriteFactory* factory,
-		const void* collectionKey,
-		UINT32 collectionKeySize) : refCount_(0), _factory(factory),
-		_collection_key(collectionKey),
-		_collection_key_size(collectionKeySize),
-		_index(0)
+	                                       const void* collectionKey,
+	                                       const UINT32 collectionKeySize) : refCount_(0), _index(0),
+	                                                                         _factory(factory),
+	                                                                         _collection_key(collectionKey),
+	                                                                         _collection_key_size(collectionKeySize)
 	{
 	}
 
@@ -256,7 +261,7 @@ public:
 			riid == __uuidof(IDWriteFontFileEnumerator))
 		{
 			AddRef();
-			(*ppvObject) = static_cast<IDWriteFontFileEnumerator*>(this);
+			*ppvObject = static_cast<IDWriteFontFileEnumerator*>(this);
 			return S_OK;
 		}
 
@@ -299,7 +304,7 @@ public:
 
 			const auto hr = _factory->CreateCustomFontFileReference(
 				&font_id,
-				static_cast<uint32_t>(sizeof(font_id)),
+				sizeof(font_id),
 				&font_loader,
 				&current);
 
@@ -324,10 +329,13 @@ public:
 	}
 };
 
-class resource_font_collection_loader : public IDWriteFontCollectionLoader
+class resource_font_collection_loader final : public IDWriteFontCollectionLoader
 {
 public:
-	resource_font_collection_loader() : refCount_(0) {}
+	resource_font_collection_loader() : refCount_(0)
+	{
+	}
+
 	virtual ~resource_font_collection_loader() = default;
 
 	ULONG refCount_;
@@ -338,7 +346,7 @@ public:
 			riid == __uuidof(IDWriteFontCollectionLoader))
 		{
 			AddRef();
-			(*ppvObject) = static_cast<IDWriteFontCollectionLoader*>(this);
+			*ppvObject = static_cast<IDWriteFontCollectionLoader*>(this);
 			return S_OK;
 		}
 
@@ -363,11 +371,12 @@ public:
 	HRESULT STDMETHODCALLTYPE CreateEnumeratorFromKey(
 		IDWriteFactory* factory,
 		const void* collectionKey, // [collectionKeySize] in bytes
-		UINT32 collectionKeySize,
+		const UINT32 collectionKeySize,
 		OUT IDWriteFontFileEnumerator** fontFileEnumerator
 	) override
 	{
-		auto* const enumerator = new(std::nothrow) resource_font_file_enumerator(factory, collectionKey, collectionKeySize);
+		auto* const enumerator = new(std::nothrow) resource_font_file_enumerator(
+			factory, collectionKey, collectionKeySize);
 		if (enumerator == nullptr)
 		{
 			*fontFileEnumerator = nullptr;
@@ -382,7 +391,7 @@ static resource_font_collection_loader font_collection_loader;
 
 
 static font_renderer_ptr create_font_renderer(IDWriteFactory* dwrite, IDWriteFontCollection* font_collection,
-	const wchar_t* font_name, int font_height)
+                                              const wchar_t* font_name, int font_height)
 {
 	uint32_t index = {};
 	BOOL exists = {};
@@ -401,7 +410,7 @@ static font_renderer_ptr create_font_renderer(IDWriteFactory* dwrite, IDWriteFon
 	if (SUCCEEDED(hr))
 	{
 		hr = family->GetFirstMatchingFont(DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-			DWRITE_FONT_STYLE_NORMAL, &font);
+		                                  DWRITE_FONT_STYLE_NORMAL, &font);
 	}
 	if (SUCCEEDED(hr))
 	{
@@ -441,7 +450,7 @@ font_renderer_ptr factories::create_icon_font_face(const int font_height)
 	const auto hr = dwrite->CreateCustomFontCollection(
 		&font_collection_loader,
 		&icon_font_collection_id,
-		static_cast<uint32_t>(sizeof(icon_font_collection_id)),
+		sizeof(icon_font_collection_id),
 		&custom_collection);
 
 	if (SUCCEEDED(hr))
@@ -474,7 +483,7 @@ font_renderer_ptr factories::create_petscii_font_face(const int font_height)
 	const auto hr = dwrite->CreateCustomFontCollection(
 		&font_collection_loader,
 		&icon_font_collection_id2,
-		static_cast<uint32_t>(sizeof(icon_font_collection_id2)),
+		sizeof(icon_font_collection_id2),
 		&custom_collection);
 
 	if (SUCCEEDED(hr))
@@ -499,12 +508,12 @@ font_renderer_ptr factories::create_petscii_font_face(const int font_height)
 	return result;
 }
 
-font_renderer_ptr factories::create_font_face(const wchar_t* font_name, const int font_height)
+font_renderer_ptr factories::create_font_face(const wchar_t* font_name, const int font_height) const
 {
 	return create_font_renderer(dwrite.Get(), font_collection.Get(), font_name, font_height);
 }
 
-void factories::register_fonts()
+void factories::register_fonts() const
 {
 	if (dwrite)
 	{
@@ -517,7 +526,7 @@ void factories::register_fonts()
 	}
 }
 
-void factories::unregister_fonts()
+void factories::unregister_fonts() const
 {
 	if (dwrite)
 	{
@@ -594,7 +603,7 @@ font_renderer_ptr factories::font_face(const ui::style::font_face type, const in
 }
 
 font_renderer::font_renderer(const ComPtr<IDWriteFactory>& factory, const ComPtr<IDWriteFontFace>& face,
-	ComPtr<IDWriteTextFormat> text_format, const int font_size) : _factory(factory),
+                             ComPtr<IDWriteTextFormat> text_format, const int font_size) : _factory(factory),
 	_face(face), _text_format(std::move(text_format)), _font_size(font_size)
 {
 	_face->GetMetrics(&_metrics);
@@ -618,19 +627,20 @@ uint32_t font_renderer::calc_base_line_height() const
 	return df::mul_div(_metrics.ascent + _metrics.lineGap, _font_size, _metrics.designUnitsPerEm);
 }
 
-calc_text_extent_result font_renderer::calc_glyph_extent(const std::u32string_view code_points)
+calc_text_extent_result font_renderer::calc_glyph_extent(const std::u32string_view code_points) const
 {
 	calc_text_extent_result result;
-	
+
 	if (code_points.empty() || code_points.size() > INT_MAX)
 	{
 		return result; // Return empty result for invalid input
 	}
-	
+
 	std::vector<uint16_t> glyph_indices(code_points.size());
 
 	if (SUCCEEDED(
-		_face->GetGlyphIndices(reinterpret_cast<const uint32_t*>(code_points.data()), static_cast<int>(code_points.size()),
+		_face->GetGlyphIndices(reinterpret_cast<const uint32_t*>(code_points.data()), static_cast<int>(code_points.size(
+			)),
 			glyph_indices.data())))
 	{
 		std::vector<DWRITE_GLYPH_METRICS> glyph_metrics(glyph_indices.size());
@@ -669,19 +679,20 @@ calc_text_extent_result font_renderer::calc_glyph_extent(const std::u32string_vi
 
 // https://stackoverflow.com/questions/5995293/get-single-glyph-metrics-net
 
-render_char_result font_renderer::render_glyph(const uint16_t glyph_index, const int spacing, const DWRITE_GLYPH_RUN* glyph_run)
+render_char_result font_renderer::render_glyph(const uint16_t glyph_index, const int spacing,
+                                               const DWRITE_GLYPH_RUN* glyph_run) const
 {
 	render_char_result result{};
 
 	const auto line_height = df::mul_div(_metrics.ascent + _metrics.descent + _metrics.lineGap, _font_size,
-		_metrics.designUnitsPerEm);
+	                                     _metrics.designUnitsPerEm);
 	const auto base_line_height = df::mul_div(_metrics.ascent, _font_size, _metrics.designUnitsPerEm);
 
 	DWRITE_GLYPH_METRICS glyph_metrics{};
 
 	if (SUCCEEDED(_face->GetDesignGlyphMetrics(&glyph_index, 1, &glyph_metrics)))
 	{
-		float glyph_advance = 0;
+		const float glyph_advance = 0;
 
 		DWRITE_GLYPH_OFFSET glyphOffset{};
 		glyphOffset.advanceOffset = 0.0f;
@@ -748,16 +759,16 @@ render_char_result font_renderer::render_glyph(const uint16_t glyph_index, const
 
 							for (auto y = 0; y < line_height; ++y)
 							{
-								const auto dest = result.pixels.data() + (y * char_width);
+								const auto dest = result.pixels.data() + y * char_width;
 								auto src = buffer.get() + char_width * 3 * y;
 
 								for (auto x = 0; x < char_width; ++x)
 								{
 									// Bounds check to prevent buffer overrun
-									if ((dest + x) < (result.pixels.data() + result.pixels.size()) &&
-										(src + 2) < (buffer.get() + buffer_len))
+									if (dest + x < result.pixels.data() + result.pixels.size() &&
+										src + 2 < buffer.get() + buffer_len)
 									{
-										dest[x] = (*(src) + *(src + 1) + *(src + 2)) / 3;
+										dest[x] = (*src + *(src + 1) + *(src + 2)) / 3;
 									}
 									src += 3;
 								}
@@ -772,13 +783,14 @@ render_char_result font_renderer::render_glyph(const uint16_t glyph_index, const
 	return result;
 }
 
-sizei font_renderer::measure(const std::wstring_view text, ui::style::text_style style, int width, int height)
+sizei font_renderer::measure(const std::wstring_view text, const ui::style::text_style style, const int width,
+                             int height) const
 {
 	if (text.empty() || text.size() > INT_MAX)
 	{
 		return {}; // Return empty result for invalid input
 	}
-	
+
 	if (height == 0) height = 1000;
 
 	ComPtr<IDWriteTextLayout> layout;
@@ -799,7 +811,7 @@ sizei font_renderer::measure(const std::wstring_view text, ui::style::text_style
 
 		if (SUCCEEDED(hr))
 		{
-			return { df::round_up(metrics.width), df::round_up(metrics.height) };
+			return {df::round_up(metrics.width), df::round_up(metrics.height)};
 		}
 	}
 
@@ -829,24 +841,24 @@ static void configure_layout(const ComPtr<IDWriteTextLayout>& layout, const ui::
 		text_alignment = DWRITE_TEXT_ALIGNMENT_CENTER;
 		word_wrapping = DWRITE_WORD_WRAPPING_WRAP;
 		break;
-	default:;
+	default: ;
 	}
 
 	layout->SetWordWrapping(word_wrapping);
 	layout->SetTextAlignment(text_alignment);
 	layout->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
 
-	const DWRITE_TRIMMING trimmingOpt = { DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0 };
+	constexpr DWRITE_TRIMMING trimmingOpt = {DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0};
 	layout->SetTrimming(&trimmingOpt, nullptr);
 }
 
-void text_layout_impl::update(const std::u8string_view text, ui::style::text_style text_style)
+void text_layout_impl::update(const std::u8string_view text, const ui::style::text_style text_style)
 {
 	const auto textw = str::utf8_to_utf16(text);
 
 	ComPtr<IDWriteTextLayout> layout;
 	const auto hr = _renderer->_factory->CreateTextLayout(textw.data(), static_cast<int>(textw.size()),
-		_renderer->_text_format.Get(), 0, 0, &layout);
+	                                                      _renderer->_text_format.Get(), 0, 0, &layout);
 
 	if (SUCCEEDED(hr))
 	{
@@ -873,7 +885,7 @@ sizei text_layout_impl::measure_text(const int cx, const int cy)
 
 		if (SUCCEEDED(hr))
 		{
-			return { df::round_up(metrics.width), df::round_up(metrics.height) };
+			return {df::round_up(metrics.width), df::round_up(metrics.height)};
 		}
 	}
 
@@ -881,12 +893,12 @@ sizei text_layout_impl::measure_text(const int cx, const int cy)
 }
 
 void font_renderer::draw(ui::draw_context* dc, ID2D1RenderTarget* rt, const std::wstring_view text, const recti bounds,
-	ui::style::text_style style, const ui::color color, const ui::color bg,
-	const std::vector<ui::text_highlight_t>& highlights)
+                         const ui::style::text_style style, const ui::color color, const ui::color bg,
+                         const std::vector<ui::text_highlight_t>& highlights) const
 {
 	ComPtr<IDWriteTextLayout> layout;
 	auto hr = _factory->CreateTextLayout(text.data(), static_cast<int>(text.size()), _text_format.Get(), 0.0f, 0.0f,
-		&layout);
+	                                     &layout);
 	//auto hr = _factory->CreateGdiCompatibleTextLayout(text.data(), static_cast<int>(text.size()), _text_format.Get(), 0.0f, 0.0f, 1.0f, nullptr, TRUE, &layout);
 
 	if (SUCCEEDED(hr))
@@ -905,7 +917,7 @@ void font_renderer::draw(ui::draw_context* dc, ID2D1RenderTarget* rt, const std:
 
 			if (SUCCEEDED(hr))
 			{
-				layout->SetDrawingEffect(brush.Get(), { h.offset, h.length });
+				layout->SetDrawingEffect(brush.Get(), {h.offset, h.length});
 			}
 		}
 
@@ -916,7 +928,7 @@ void font_renderer::draw(ui::draw_context* dc, ID2D1RenderTarget* rt, const std:
 
 			if (SUCCEEDED(hr))
 			{
-				const rectd bb{ bounds.left + m.left, bounds.top + m.top, m.width, m.height };
+				const rectd bb{bounds.left + m.left, bounds.top + m.top, m.width, m.height};
 				dc->draw_rounded_rect(bb.round().inflate(2), bg, dc->padding1);
 			}
 		}
@@ -931,7 +943,7 @@ void font_renderer::draw(ui::draw_context* dc, ID2D1RenderTarget* rt, const std:
 		if (SUCCEEDED(hr))
 		{
 			rt->DrawTextLayout(
-				{ static_cast<float>(bounds.left), static_cast<float>(bounds.top) },
+				{static_cast<float>(bounds.left), static_cast<float>(bounds.top)},
 				layout.Get(),
 				brush.Get()
 			);
@@ -940,7 +952,7 @@ void font_renderer::draw(ui::draw_context* dc, ID2D1RenderTarget* rt, const std:
 }
 
 void font_renderer::draw(ui::draw_context* dc, ID2D1RenderTarget* rt, IDWriteTextLayout* layout, const recti bounds,
-	const ui::color color, const ui::color bg)
+                         const ui::color color, const ui::color bg)
 {
 	if (rt && layout)
 	{
@@ -972,7 +984,7 @@ void font_renderer::draw(ui::draw_context* dc, ID2D1RenderTarget* rt, IDWriteTex
 		if (SUCCEEDED(hr))
 		{
 			rt->DrawTextLayout(
-				{ static_cast<float>(bounds.left), static_cast<float>(bounds.top) },
+				{static_cast<float>(bounds.left), static_cast<float>(bounds.top)},
 				layout,
 				brush.Get()
 			);
@@ -982,18 +994,19 @@ void font_renderer::draw(ui::draw_context* dc, ID2D1RenderTarget* rt, IDWriteTex
 
 
 void font_renderer::draw(ui::draw_context* dc, IDWriteTextRenderer* tr, const std::wstring_view text,
-	const recti bounds, ui::style::text_style style, const ui::color color, const ui::color bg,
-	const std::vector<ui::text_highlight_t>& highlights)
+                         const recti bounds, const ui::style::text_style style, const ui::color color,
+                         const ui::color bg,
+                         const std::vector<ui::text_highlight_t>& highlights)
 {
 	if (text.empty() || text.size() > INT_MAX)
 	{
 		return; // Nothing to draw for invalid input
 	}
-	
+
 	ComPtr<IDWriteTextLayout> layout;
 	const auto hr = _factory->CreateTextLayout(text.data(), static_cast<int>(text.size()), _text_format.Get(), 0.0f,
-		0.0f,
-		&layout);
+	                                           0.0f,
+	                                           &layout);
 	//auto hr = _factory->CreateGdiCompatibleTextLayout(text.data(), static_cast<int>(text.size()), _text_format.Get(), 0.0f, 0.0f, 1.0f, nullptr, TRUE,  &layout);
 
 	if (SUCCEEDED(hr))
@@ -1004,7 +1017,7 @@ void font_renderer::draw(ui::draw_context* dc, IDWriteTextRenderer* tr, const st
 }
 
 void font_renderer::draw(ui::draw_context* dc, IDWriteTextRenderer* tr, IDWriteTextLayout* layout, const recti bounds,
-	const ui::color color, const ui::color bg)
+                         const ui::color color, const ui::color bg)
 {
 	layout->SetMaxWidth(static_cast<float>(bounds.width()));
 	layout->SetMaxHeight(static_cast<float>(bounds.height()));
@@ -1016,12 +1029,12 @@ void font_renderer::draw(ui::draw_context* dc, IDWriteTextRenderer* tr, IDWriteT
 
 		if (SUCCEEDED(hr))
 		{
-			const rectd bb{ bounds.left + m.left, bounds.top + m.top, m.width, m.height };
+			const rectd bb{bounds.left + m.left, bounds.top + m.top, m.width, m.height};
 			dc->draw_rounded_rect(bb.round().inflate(2), bg, dc->padding1);
 		}
 	}
 
 	layout->Draw(nullptr, tr,
-		static_cast<float>(bounds.left),
-		static_cast<float>(bounds.top));
+	             static_cast<float>(bounds.left),
+	             static_cast<float>(bounds.top));
 }

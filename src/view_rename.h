@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -31,10 +30,10 @@ public:
 	{
 		return std::array<text_t, max_col_count>
 		{
-			text_t {},
+			text_t{},
 			tt.old_name,
 			tt.new_name,
-			text_t {}
+			text_t{}
 		};
 	};
 
@@ -43,7 +42,7 @@ public:
 		_state.view_mode(view_type::items);
 	}
 
-	void run();
+	void run() const;
 	void refresh() override;
 
 	std::u8string_view status() override
@@ -70,4 +69,3 @@ public:
 
 	view_controls_host_ptr controls(const ui::control_frame_ptr& owner);
 };
-

@@ -1,10 +1,9 @@
 ﻿// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
@@ -56,7 +55,7 @@ static constexpr auto ui_scroll_width = 20;
 
 int ui::ticks_since_last_user_action = 0;
 
-static constexpr std::u8string_view s_window_rect = u8"window_rect"sv;
+static constexpr auto s_window_rect = u8"window_rect"sv;
 static std::u8string restart_cmd_line;
 
 extern bool number_format_invalid;
@@ -75,18 +74,18 @@ int calc_icon_cxy(const double scale_factor)
 /////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////
 
-int (WINAPI* ptrGetSystemMetricsForDpi)(int, UINT) = nullptr;
-BOOL(WINAPI* ptrEnableNonClientDpiScaling)(HWND) = nullptr;
-UINT(WINAPI* pfnGetDpiForSystem)() = nullptr;
-UINT(WINAPI* pfnGetDpiForWindow)(HWND) = nullptr;
-BOOL(WINAPI* ptrAreDpiAwarenessContextsEqual)(DPI_AWARENESS_CONTEXT, DPI_AWARENESS_CONTEXT) = nullptr;
-DPI_AWARENESS_CONTEXT(WINAPI* ptrGetWindowDpiAwarenessContext)(HWND) = nullptr;
+int (WINAPI*ptrGetSystemMetricsForDpi)(int, UINT) = nullptr;
+BOOL (WINAPI*ptrEnableNonClientDpiScaling)(HWND) = nullptr;
+UINT (WINAPI*pfnGetDpiForSystem)() = nullptr;
+UINT (WINAPI*pfnGetDpiForWindow)(HWND) = nullptr;
+BOOL (WINAPI*ptrAreDpiAwarenessContextsEqual)(DPI_AWARENESS_CONTEXT, DPI_AWARENESS_CONTEXT) = nullptr;
+DPI_AWARENESS_CONTEXT (WINAPI*ptrGetWindowDpiAwarenessContext)(HWND) = nullptr;
 
 // Convenient loading function, see WinMain
 //  - simplified version of https://github.com/tringi/emphasize/blob/master/Windows/Windows_Symbol.hpp
 
 template <typename P>
-bool Symbol(HMODULE h, P& pointer, const char* name)
+bool Symbol(const HMODULE h, P& pointer, const char* name)
 {
 	if (P p = reinterpret_cast<P>(GetProcAddress(h, name)))
 	{
@@ -97,7 +96,7 @@ bool Symbol(HMODULE h, P& pointer, const char* name)
 }
 
 template <typename P>
-bool Symbol(HMODULE h, P& pointer, USHORT index)
+bool Symbol(HMODULE h, P& pointer, const USHORT index)
 {
 	return Symbol(h, pointer, MAKEINTRESOURCEA(index));
 }
@@ -120,7 +119,7 @@ void ui_wait_for_signal(platform::thread_event& te, uint32_t timeout_ms, const s
 #define GET_Y_LPARAM(lp)                        ((int)(short)HIWORD(lp))
 #endif
 
-struct win_rect : public RECT
+struct win_rect : RECT
 {
 	win_rect() noexcept
 	{
@@ -152,7 +151,7 @@ struct win_rect : public RECT
 		bottom = (top = point.y) + size.cy;
 	}
 
-	win_rect(int l, int t, int r, int b) noexcept
+	win_rect(const int l, const int t, const int r, const int b) noexcept
 	{
 		left = l;
 		top = t;
@@ -162,7 +161,7 @@ struct win_rect : public RECT
 
 	operator recti() const noexcept
 	{
-		return { left, top, right, bottom };
+		return {left, top, right, bottom};
 	}
 
 	operator LPRECT() noexcept
@@ -190,19 +189,19 @@ struct win_rect : public RECT
 		return bottom - top;
 	}
 
-	win_rect inflate(int xy) const noexcept
+	win_rect inflate(const int xy) const noexcept
 	{
-		return { left - xy, top - xy, right + xy, bottom + xy };
+		return {left - xy, top - xy, right + xy, bottom + xy};
 	}
 
-	win_rect inflate(int x, int y) const noexcept
+	win_rect inflate(const int x, const int y) const noexcept
 	{
-		return { left - x, top - y, right + x, bottom + y };
+		return {left - x, top - y, right + x, bottom + y};
 	}
 
-	win_rect offset(int x, int y) const noexcept
+	win_rect offset(const int x, const int y) const noexcept
 	{
-		return { left + x, top + y, right + x, bottom + y };
+		return {left + x, top + y, right + x, bottom + y};
 	}
 
 	bool intersects(const win_rect& other) const noexcept
@@ -226,7 +225,7 @@ struct win_rect : public RECT
 	}
 };
 
-static ui::key_state to_key_state(WPARAM wParam)
+static ui::key_state to_key_state(const WPARAM wParam)
 {
 	ui::key_state result;
 	result.control = (wParam & MK_CONTROL) != 0;
@@ -254,7 +253,7 @@ void ui::focus(const std::any& w)
 }
 
 
-static std::wstring window_text_w(HWND h)
+static std::wstring window_text_w(const HWND h)
 {
 	const auto len = ::GetWindowTextLength(h);
 	if (len == 0) return {};
@@ -264,12 +263,12 @@ static std::wstring window_text_w(HWND h)
 	return result;
 }
 
-static std::u8string window_text(HWND h)
+static std::u8string window_text(const HWND h)
 {
 	return str::utf16_to_utf8(window_text_w(h));
 }
 
-static void fill_rect(HDC hdc, DWORD clr, const win_rect& bounds)
+static void fill_rect(const HDC hdc, const DWORD clr, const win_rect& bounds)
 {
 	if (!bounds.is_empty())
 	{
@@ -296,7 +295,7 @@ struct resources_t
 	HICON diffractor_32 = nullptr;
 	HICON diffractor_64 = nullptr;
 
-	void init(HINSTANCE h)
+	void init(const HINSTANCE h)
 	{
 		link = LoadCursor(h, MAKEINTRESOURCE(IDC_HANDLINK));
 		normal = LoadCursor(nullptr, IDC_ARROW);
@@ -499,13 +498,13 @@ static bool is_edit_class(const wchar_t* class_name)
 		_wcsicmp(class_name, L"Edit") == 0;
 }
 
-static bool is_edit(HWND hWnd)
+static bool is_edit(const HWND hWnd)
 {
 	wchar_t class_name[100];
 	return IsWindow(hWnd) && ::GetClassName(hWnd, class_name, 100) && is_edit_class(class_name);
 }
 
-static bool is_button_class(HWND hWnd)
+static bool is_button_class(const HWND hWnd)
 {
 	if (hWnd == nullptr)
 		return false;
@@ -513,10 +512,10 @@ static bool is_button_class(HWND hWnd)
 	wchar_t szClassName[100];
 
 	return ::GetClassName(hWnd, szClassName, 100) &&
-		(_wcsicmp(szClassName, L"BUTTON") == 0);
+		_wcsicmp(szClassName, L"BUTTON") == 0;
 }
 
-static bool is_toolbar(HWND hWnd)
+static bool is_toolbar(const HWND hWnd)
 {
 	if (hWnd == nullptr)
 		return false;
@@ -524,12 +523,12 @@ static bool is_toolbar(HWND hWnd)
 	wchar_t szClassName[100];
 
 	return ::GetClassName(hWnd, szClassName, 100) &&
-		(_wcsicmp(szClassName, TOOLBARCLASSNAME) == 0);
+		_wcsicmp(szClassName, TOOLBARCLASSNAME) == 0;
 }
 
-static void track_mouse_leave(HWND hWnd)
+static void track_mouse_leave(const HWND hWnd)
 {
-	TRACKMOUSEEVENT tme = { 0 };
+	TRACKMOUSEEVENT tme = {0};
 	tme.cbSize = sizeof(tme);
 	tme.dwFlags = TME_LEAVE;
 	tme.hwndTrack = hWnd;
@@ -537,26 +536,26 @@ static void track_mouse_leave(HWND hWnd)
 	TrackMouseEvent(&tme);
 }
 
-static bool wants_return(HWND hWnd)
+static bool wants_return(const HWND hWnd)
 {
 	if (is_edit(hWnd))
 	{
-		return (GetWindowLongPtr(hWnd, GWL_STYLE) & ES_WANTRETURN) && !(GetKeyState(VK_CONTROL) & 0x8000);
+		return GetWindowLongPtr(hWnd, GWL_STYLE) & ES_WANTRETURN && !(GetKeyState(VK_CONTROL) & 0x8000);
 	}
 
 	return false;
 }
 
 void SetFont(
-	HWND hwnd,
+	const HWND hwnd,
 	_In_ HFONT hFont,
-	_In_ BOOL bRedraw = TRUE) noexcept
+	_In_ const BOOL bRedraw = TRUE) noexcept
 {
 	df::assert_true(IsWindow(hwnd));
 	::SendMessage(hwnd, WM_SETFONT, (WPARAM)hFont, MAKELPARAM(bRedraw, 0));
 }
 
-HFONT GetFont(HWND hwnd) noexcept
+HFONT GetFont(const HWND hwnd) noexcept
 {
 	df::assert_true(IsWindow(hwnd));
 	return (HFONT)::SendMessage(hwnd, WM_GETFONT, 0, 0);
@@ -639,9 +638,9 @@ static HFONT create_font(const ui::style::font_face type, const int base_font_si
 }
 
 
-static HWND window_from_location(HWND parent, pointi loc)
+static HWND window_from_location(const HWND parent, const pointi loc)
 {
-	POINT client_loc = { loc.x, loc.y };
+	POINT client_loc = {loc.x, loc.y};
 	ScreenToClient(parent, &client_loc);
 	auto* w = ChildWindowFromPointEx(parent, client_loc, CWP_SKIPINVISIBLE);
 
@@ -654,7 +653,7 @@ static HWND window_from_location(HWND parent, pointi loc)
 	return w;
 }
 
-int gdi_text_line_height(HDC hdc, HFONT font)
+int gdi_text_line_height(const HDC hdc, const HFONT font)
 {
 	if (!hdc) return 0;
 
@@ -666,7 +665,7 @@ int gdi_text_line_height(HDC hdc, HFONT font)
 	return tm.tmHeight;
 }
 
-static int gdi_text_line_height(HWND hwnd, HFONT font)
+static int gdi_text_line_height(const HWND hwnd, const HFONT font)
 {
 	int result = 0;
 	auto* const dc = GetDC(hwnd);
@@ -694,7 +693,7 @@ static int gdi_text_line_height(HWND hwnd, HFONT font)
 //	return i->second;
 //}
 
-static DWORD text_style_to_draw_format(ui::style::text_style style)
+static DWORD text_style_to_draw_format(const ui::style::text_style style)
 {
 	switch (style)
 	{
@@ -712,7 +711,7 @@ static DWORD text_style_to_draw_format(ui::style::text_style style)
 	}
 }
 
-static void draw_gradient(HDC dc, const recti r, DWORD c1, DWORD c2)
+static void draw_gradient(const HDC dc, const recti r, const DWORD c1, const DWORD c2)
 {
 	TRIVERTEX vert[2];
 	GRADIENT_RECT gRect;
@@ -735,12 +734,13 @@ static void draw_gradient(HDC dc, const recti r, DWORD c1, DWORD c2)
 	GradientFill(dc, vert, 2, &gRect, 1, GRADIENT_FILL_RECT_V);
 }
 
-static void streach_box(HDC dc, HDC dcmem, const recti r, int cxy, int xy, bool fillCenter)
+static void streach_box(const HDC dc, const HDC dcmem, const recti r, const int cxy, const int xy,
+                        const bool fillCenter)
 {
 	const int sbm = SetStretchBltMode(dc, HALFTONE);
 
 	const auto cxy2 = cxy * 2;
-	const auto w = xy - (cxy * 2);
+	const auto w = xy - cxy * 2;
 	const auto l = xy - cxy;
 
 	StretchBlt(dc, r.left + cxy, r.top, r.width() - cxy2, cxy, dcmem, cxy, 0, w, cxy, SRCCOPY);
@@ -762,7 +762,9 @@ static void streach_box(HDC dc, HDC dcmem, const recti r, int cxy, int xy, bool 
 	SetStretchBltMode(dc, sbm);
 }
 
-HBITMAP create_round_rect(HDC hdc_ref, COLORREF fill_clr, COLORREF edge_clr, COLORREF bg_clr, const int radius, const float border_width)
+HBITMAP create_round_rect(const HDC hdc_ref, const COLORREF fill_clr, const COLORREF edge_clr, const COLORREF bg_clr,
+                          const int radius,
+                          const float border_width)
 {
 	const auto cxy = radius * 5;
 	const HBITMAP result = CreateCompatibleBitmap(hdc_ref, cxy, cxy);
@@ -800,7 +802,7 @@ HBITMAP create_round_rect(HDC hdc_ref, COLORREF fill_clr, COLORREF edge_clr, COL
 
 				if (SUCCEEDED(hr))
 				{
-					const RECT rc = { 0, 0, cxy, cxy };
+					const RECT rc = {0, 0, cxy, cxy};
 					hr = rt->BindDC(hdc_bm, &rc);
 				}
 
@@ -872,7 +874,7 @@ public:
 		update_fonts();
 	}
 
-	void delete_brushes()
+	void delete_brushes() const
 	{
 		for (const auto b : cached_gdi_brushes)
 		{
@@ -918,7 +920,7 @@ public:
 		case ui::style::font_face::icons: return icons;
 		case ui::style::font_face::small_icons: return small_icons;
 		case ui::style::font_face::petscii: return petscii;
-		default:;
+		default: ;
 		}
 
 		return dialog;
@@ -950,7 +952,7 @@ public:
 		return i->second;
 	}
 
-	int calc_base_font_size()
+	int calc_base_font_size() const
 	{
 		return df::round(scale_factor * global_base_font_size);
 	}
@@ -972,9 +974,10 @@ public:
 
 using owner_context_ptr = std::shared_ptr<owner_context>;
 
-void draw_icon(HDC hdc, const owner_context_ptr& ctx, const icon_index icon, const recti bounds, const COLORREF clr)
+void draw_icon(const HDC hdc, const owner_context_ptr& ctx, const icon_index icon, const recti bounds,
+               const COLORREF clr)
 {
-	const wchar_t sz[2]{ static_cast<wchar_t>(icon), 0 };
+	const wchar_t sz[2]{static_cast<wchar_t>(icon), 0};
 
 	const auto smaller_icon = icon == icon_index::minimize || icon == icon_index::maximize || icon ==
 		icon_index::restore || icon == icon_index::close;
@@ -1011,7 +1014,7 @@ void draw_icon(HDC hdc, const owner_context_ptr& ctx, const icon_index icon, con
 
 				uint8_t* dibBits = nullptr;
 				const auto hdib = CreateDIBSection(bm_hdc, &bmi, DIB_RGB_COLORS, std::bit_cast<void**>(&dibBits),
-					nullptr, 0);
+				                                   nullptr, 0);
 
 				if (hdib && dibBits)
 				{
@@ -1030,14 +1033,14 @@ void draw_icon(HDC hdc, const owner_context_ptr& ctx, const icon_index icon, con
 
 					for (auto y = 0; y < cy; y++)
 					{
-						memset(dibBits + (src_stride * y), 0, src_stride);
+						memset(dibBits + src_stride * y, 0, src_stride);
 					}
 
 					SetTextColor(bm_hdc, 0xffffff);
 					SetBkMode(bm_hdc, TRANSPARENT);
 					//SetTextAlign(bm_hdc, TA_TOP);
 
-					const RECT bounds{ 0, 0, cx, cy };
+					const RECT bounds{0, 0, cx, cy};
 
 					if (ExtTextOut(bm_hdc, 0, 0, 0, &bounds, sz, 1, nullptr))
 					{
@@ -1047,7 +1050,7 @@ void draw_icon(HDC hdc, const owner_context_ptr& ctx, const icon_index icon, con
 
 						for (auto yy = 0; yy < cy; yy++)
 						{
-							const auto line = std::bit_cast<uint32_t*>(dibBits + (src_stride * yy));
+							const auto line = std::bit_cast<uint32_t*>(dibBits + src_stride * yy);
 
 							for (auto xx = 0; xx < cx / 2; xx++)
 							{
@@ -1061,12 +1064,12 @@ void draw_icon(HDC hdc, const owner_context_ptr& ctx, const icon_index icon, con
 								const auto g = ui::get_g(cc);
 								const auto b = ui::get_b(cc);
 								const auto a = (r + g + b) / 3;
-								line[xx] = ui::rgba((rr * a) / 255, (gg * a) / 255, (bb * a) / 255, (a * a) / 255);
+								line[xx] = ui::rgba(rr * a / 255, gg * a / 255, bb * a / 255, a * a / 255);
 							}
 						}
 					}
 
-					const BLENDFUNCTION bf = { AC_SRC_OVER, 0, 0xFF, AC_SRC_ALPHA };
+					constexpr BLENDFUNCTION bf = {AC_SRC_OVER, 0, 0xFF, AC_SRC_ALPHA};
 					AlphaBlend(hdc, x, y, cx, cy, bm_hdc, 0, 0, cx, cy, bf);
 
 					//BitBlt(hdc, x, y, cx, cy, bm_hdc, 0, 0, SRCCOPY);
@@ -1088,7 +1091,7 @@ void draw_icon(HDC hdc, const owner_context_ptr& ctx, const icon_index icon, con
 	SelectObject(hdc, old_font);
 }
 
-static void fill_solid_rect(HDC hdc, LPCRECT lpRect, COLORREF clr)
+static void fill_solid_rect(const HDC hdc, const LPCRECT lpRect, const COLORREF clr)
 {
 	const auto clr_old = SetBkColor(hdc, clr);
 
@@ -1099,14 +1102,15 @@ static void fill_solid_rect(HDC hdc, LPCRECT lpRect, COLORREF clr)
 	}
 }
 
-static void fill_solid_rect(HDC hdc, int x, int y, int cx, int cy, COLORREF clr)
+static void fill_solid_rect(const HDC hdc, const int x, const int y, const int cx, const int cy, const COLORREF clr)
 {
-	const RECT r = { x, y, x + cx, y + cy };
+	const RECT r = {x, y, x + cx, y + cy};
 	fill_solid_rect(hdc, &r, clr);
 }
 
-static void frame_rect(HDC hdc, int x, int y, int cx, int cy, COLORREF clrTopLeft, COLORREF clrBottomRight = 0,
-	int width = 1)
+static void frame_rect(const HDC hdc, const int x, const int y, const int cx, const int cy, const COLORREF clrTopLeft,
+                       COLORREF clrBottomRight = 0,
+                       const int width = 1)
 {
 	if (clrBottomRight == 0) clrBottomRight = clrTopLeft;
 
@@ -1117,37 +1121,38 @@ static void frame_rect(HDC hdc, int x, int y, int cx, int cy, COLORREF clrTopLef
 }
 
 
-static void frame_rect(HDC hdc, LPCRECT lpRect, COLORREF clrTopLeft, COLORREF clrBottomRight = 0, int width = 1)
+static void frame_rect(const HDC hdc, const LPCRECT lpRect, const COLORREF clrTopLeft,
+                       const COLORREF clrBottomRight = 0, int width = 1)
 {
 	frame_rect(hdc, lpRect->left, lpRect->top, lpRect->right - lpRect->left,
-		lpRect->bottom - lpRect->top, clrTopLeft, clrBottomRight);
+	           lpRect->bottom - lpRect->top, clrTopLeft, clrBottomRight);
 }
 
-static int toolbar_GetButtonInfo(HWND hwnd, int nID, LPTBBUTTONINFO lptbbi)
+static int toolbar_GetButtonInfo(const HWND hwnd, const int nID, LPTBBUTTONINFO lptbbi)
 {
 	df::assert_true(IsWindow(hwnd));
 	return static_cast<int>(::SendMessage(hwnd, TB_GETBUTTONINFO, nID, (LPARAM)lptbbi));
 }
 
-static int toolbar_GetButtonCount(HWND hwnd)
+static int toolbar_GetButtonCount(const HWND hwnd)
 {
 	df::assert_true(IsWindow(hwnd));
 	return static_cast<int>(::SendMessage(hwnd, TB_BUTTONCOUNT, 0, 0L));
 }
 
-BOOL toolbar_GetItemRect(HWND hwnd, int nIndex, LPRECT lpRect)
+BOOL toolbar_GetItemRect(const HWND hwnd, const int nIndex, LPRECT lpRect)
 {
 	df::assert_true(IsWindow(hwnd));
 	return static_cast<BOOL>(::SendMessage(hwnd, TB_GETITEMRECT, nIndex, (LPARAM)lpRect));
 }
 
-uint32_t toolbar_CommandToIndex(HWND hwnd, uint32_t nID)
+uint32_t toolbar_CommandToIndex(const HWND hwnd, const uint32_t nID)
 {
 	df::assert_true(IsWindow(hwnd));
 	return static_cast<uint32_t>(::SendMessage(hwnd, TB_COMMANDTOINDEX, nID, 0L));
 }
 
-static void erase_toolbar_seperators(HWND tb, HDC dc, COLORREF bg_clr)
+static void erase_toolbar_seperators(const HWND tb, const HDC dc, const COLORREF bg_clr)
 {
 	const int count = toolbar_GetButtonCount(tb);
 
@@ -1177,17 +1182,17 @@ static void erase_toolbar_seperators(HWND tb, HDC dc, COLORREF bg_clr)
 }
 
 static void draw_toolbar_button(const ui::command_ptr& command, const owner_context_ptr& ctx,
-	LPNMTBCUSTOMDRAW lpTBCustomDraw, const COLORREF bg_clr, const COLORREF text_clr,
-	const COLORREF selected_clr)
+                                const LPNMTBCUSTOMDRAW lpTBCustomDraw, const COLORREF bg_clr, const COLORREF text_clr,
+                                const COLORREF selected_clr)
 {
 	const win_rect button_rect = lpTBCustomDraw->nmcd.rc;
 	auto* const tb = lpTBCustomDraw->nmcd.hdr.hwndFrom;
 	auto* const hdc = lpTBCustomDraw->nmcd.hdc;
 
-	const int cchText = 200;
-	wchar_t szText[cchText] = { 0 };
+	constexpr int cchText = 200;
+	wchar_t szText[cchText] = {0};
 
-	TBBUTTONINFO button_info = { 0 };
+	TBBUTTONINFO button_info = {0};
 	button_info.cbSize = sizeof(TBBUTTONINFO);
 	button_info.dwMask = TBIF_TEXT | TBIF_IMAGE | TBIF_STYLE | TBIF_STATE;
 	button_info.pszText = szText;
@@ -1271,8 +1276,8 @@ static void draw_toolbar_button(const ui::command_ptr& command, const owner_cont
 				draw_clr = text_clr;
 			}
 
-			SIZE text_extent{ 0, 0 };
-			SIZE icon_extent{ 0, 0 };
+			SIZE text_extent{0, 0};
+			SIZE icon_extent{0, 0};
 
 			const auto avail_width = bounds.width();
 			const auto has_text = !str::is_empty(button_info.pszText);
@@ -1297,7 +1302,7 @@ static void draw_toolbar_button(const ui::command_ptr& command, const owner_cont
 
 			if (has_image)
 			{
-				const auto x_padding = 3;
+				constexpr auto x_padding = 3;
 				auto icon_bounds = bounds;
 
 				if (has_text)
@@ -1318,7 +1323,7 @@ static void draw_toolbar_button(const ui::command_ptr& command, const owner_cont
 				const auto y = (bounds.top + bounds.bottom - text_extent.cy) / 2;
 				const auto xx = has_image ? x : (bounds.left + bounds.right - text_extent.cx) / 2;
 				ExtTextOut(mem_dc, xx, y, ETO_CLIPPED, bounds, button_info.pszText, static_cast<uint32_t>(text_len),
-					nullptr);
+				           nullptr);
 			}
 
 			BitBlt(hdc, button_rect.left, button_rect.top, pos_width, pos_height, mem_dc, 0, 0, SRCCOPY);
@@ -1331,7 +1336,8 @@ static void draw_toolbar_button(const ui::command_ptr& command, const owner_cont
 	}
 }
 
-static void draw_menu_item(const ui::command_ptr& command, LPDRAWITEMSTRUCT lpDrawItemStruct, owner_context_ptr ctx)
+static void draw_menu_item(const ui::command_ptr& command, const LPDRAWITEMSTRUCT lpDrawItemStruct,
+                           const owner_context_ptr& ctx)
 {
 	const int padding = df::round(2 * ctx->scale_factor);
 
@@ -1348,7 +1354,8 @@ static void draw_menu_item(const ui::command_ptr& command, LPDRAWITEMSTRUCT lpDr
 		const auto cy = df::round(1 * ctx->scale_factor);
 
 		fill_solid_rect(dc, item_bounds, menu_background);
-		fill_solid_rect(dc, sep_bounds.inflate(-cx, cy), ui::average(menu_background, ui::style::color::view_background));
+		fill_solid_rect(dc, sep_bounds.inflate(-cx, cy),
+		                ui::average(menu_background, ui::style::color::view_background));
 	}
 	else
 	{
@@ -1357,12 +1364,12 @@ static void draw_menu_item(const ui::command_ptr& command, LPDRAWITEMSTRUCT lpDr
 		const auto is_checked = lpDrawItemStruct->itemState & ODS_CHECKED;
 		//const auto menu_background = GetSysColor(COLOR_MENU); //render::style::color::menu_background;		
 		const auto menu_color = command->clr;
-		const auto icon = (is_checked && command->icon == icon_index::none) ? icon_index::check : command->icon;
+		const auto icon = is_checked && command->icon == icon_index::none ? icon_index::check : command->icon;
 		const auto icon_cxy = calc_icon_cxy(ctx->scale_factor);
 		const auto button_width = icon_cxy + padding * 2;
 		const auto menu_text_base = menu_color
-			? ui::average(menu_color, ui::style::color::menu_text)
-			: ui::style::color::menu_text;
+			                            ? ui::average(menu_color, ui::style::color::menu_text)
+			                            : ui::style::color::menu_text;
 		const auto text_clr = is_disabled ? ui::average(menu_background, menu_text_base) : menu_text_base;
 		auto bg_clr = menu_background;
 
@@ -1376,7 +1383,7 @@ static void draw_menu_item(const ui::command_ptr& command, LPDRAWITEMSTRUCT lpDr
 		if (icon != icon_index::none)
 		{
 			const recti icon_bounds(item_bounds.left, item_bounds.top, item_bounds.left + button_width,
-				item_bounds.bottom);
+			                        item_bounds.bottom);
 
 			if (is_checked)
 			{
@@ -1409,14 +1416,14 @@ static void draw_menu_item(const ui::command_ptr& command, LPDRAWITEMSTRUCT lpDr
 }
 
 
-static recti get_client_rect(HWND h)
+static recti get_client_rect(const HWND h)
 {
 	win_rect r;
 	GetClientRect(h, r);
 	return r;
 }
 
-recti desktop_bounds_impl(HWND hwnd, const bool work_area)
+recti desktop_bounds_impl(const HWND hwnd, const bool work_area)
 {
 	auto* const monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
 
@@ -1549,24 +1556,24 @@ static ComPtr<ID2D1Bitmap> load_bitmap_resource(const factories_ptr& f, ID2D1Ren
 
 
 static void draw_bitmap(ID2D1RenderTarget* rt, ID2D1Bitmap* b, const float dx, const float dy, const float dcx,
-	const float dcy, const float sx, const float sy, const float scx, const float scy,
-	const float alpha)
+                        const float dcy, const float sx, const float sy, const float scx, const float scy,
+                        const float alpha)
 {
-	const D2D1_RECT_F dst = { dx, dy, dx + dcx, dy + dcy };
-	const D2D1_RECT_F src = { sx, sy, sx + scx, sy + scy };
+	const D2D1_RECT_F dst = {dx, dy, dx + dcx, dy + dcy};
+	const D2D1_RECT_F src = {sx, sy, sx + scx, sy + scy};
 
 	rt->DrawBitmap(b, dst, alpha, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, src);
 }
 
 static void streach_background(ID2D1RenderTarget* rt, ID2D1Bitmap* b, const recti r, const int dst_width_in,
-	const float alpha)
+                               const float alpha)
 {
 	const D2D1_SIZE_F extent = b->GetSize();
 	const auto dst_width = static_cast<float>(dst_width_in);
 	const auto double_dst_width = dst_width * 2.0f;
 
 	const auto src_width = extent.width * 3.0f / 7.0f;
-	const auto w = extent.width - (src_width * 2.0f);
+	const auto w = extent.width - src_width * 2.0f;
 	const auto l = extent.height - src_width;
 	const auto br = extent.width - src_width;
 
@@ -1580,17 +1587,17 @@ static void streach_background(ID2D1RenderTarget* rt, ID2D1Bitmap* b, const rect
 	draw_bitmap(rt, b, left + dst_width, top, width - double_dst_width, dst_width, src_width, 0, w, src_width, alpha);
 	draw_bitmap(rt, b, left, top + dst_width, dst_width, height - double_dst_width, 0, src_width, src_width, w, alpha);
 	draw_bitmap(rt, b, right - dst_width, top + dst_width, dst_width, height - double_dst_width, l, src_width,
-		src_width, w, alpha);
+	            src_width, w, alpha);
 	draw_bitmap(rt, b, left + dst_width, bottom - dst_width, width - double_dst_width, dst_width, src_width, l, w,
-		src_width, alpha);
+	            src_width, alpha);
 	draw_bitmap(rt, b, left, top, dst_width, dst_width, 0, 0, src_width, src_width, alpha);
 	draw_bitmap(rt, b, right - dst_width, top, dst_width, dst_width, br, 0, src_width, src_width, alpha);
 	draw_bitmap(rt, b, left, bottom - dst_width, dst_width, dst_width, 0, br, src_width, src_width, alpha);
 	draw_bitmap(rt, b, right - dst_width, bottom - dst_width, dst_width, dst_width, br, br, src_width, src_width,
-		alpha);
+	            alpha);
 }
 
-class d2d_texture : public ui::texture
+class d2d_texture final : public ui::texture
 {
 public:
 	ComPtr<ID2D1RenderTarget> _rt;
@@ -1615,8 +1622,8 @@ public:
 	}
 
 	ui::texture_update_result update(const sizei dimensions, const ui::texture_format format,
-		const ui::orientation orientation, const uint8_t* pixels, size_t stride,
-		size_t buffer_size) override
+	                                 const ui::orientation orientation, const uint8_t* pixels, const size_t stride,
+	                                 const size_t buffer_size) override
 	{
 		auto result = ui::texture_update_result::failed;
 
@@ -1646,17 +1653,17 @@ public:
 				break;
 			case ui::texture_format::P010:
 				break;
-			default:;
+			default: ;
 			}
 
 			ComPtr<IWICBitmapSource> wic_source;
 			ComPtr<IWICBitmap> wic_bitmap;
 
 			auto hr = _f->wic->CreateBitmapFromMemory(dimensions.cx, dimensions.cy,
-				pixel_format,
-				static_cast<uint32_t>(stride),
-				static_cast<uint32_t>(buffer_size),
-				const_cast<uint8_t*>(pixels), &wic_bitmap);
+			                                          pixel_format,
+			                                          static_cast<uint32_t>(stride),
+			                                          static_cast<uint32_t>(buffer_size),
+			                                          const_cast<uint8_t*>(pixels), &wic_bitmap);
 
 			if (SUCCEEDED(hr))
 			{
@@ -1738,7 +1745,7 @@ public:
 
 static D2D1_RECT_F make_rectf(const int left, const int top, const int right, const int bottom)
 {
-	return { static_cast<float>(left), static_cast<float>(top), static_cast<float>(right), static_cast<float>(bottom) };
+	return {static_cast<float>(left), static_cast<float>(top), static_cast<float>(right), static_cast<float>(bottom)};
 }
 
 static D2D1_RECT_F make_rectf(const recti bounds)
@@ -1757,7 +1764,7 @@ public:
 	std::vector<recti> _rects;
 	std::vector<ui::color> _colors;
 
-	void update(recti rects[], ui::color colors[], int num_bars) override
+	void update(recti rects[], ui::color colors[], const int num_bars) override
 	{
 		_rects.assign(rects, rects + num_bars);
 		_colors.assign(colors, colors + num_bars);
@@ -1832,7 +1839,7 @@ public:
 	}
 
 	void draw_text(const std::u8string_view text, const recti bounds, const ui::style::font_face font,
-		const ui::style::text_style style, const ui::color c, const ui::color bg) override
+	               const ui::style::text_style style, const ui::color c, const ui::color bg) override
 	{
 		df::scope_rendering_func rf(__FUNCTION__);
 
@@ -1848,8 +1855,9 @@ public:
 	}
 
 	void draw_text(const std::u8string_view text, const std::vector<ui::text_highlight_t>& highlights,
-		const recti bounds, ui::style::font_face font, ui::style::text_style style, const ui::color clr,
-		const ui::color bg) override
+	               const recti bounds, const ui::style::font_face font, const ui::style::text_style style,
+	               const ui::color clr,
+	               const ui::color bg) override
 	{
 		df::scope_rendering_func rf(__FUNCTION__);
 
@@ -1909,12 +1917,12 @@ public:
 		if (_shadow && _inverse_shadow)
 		{
 			streach_background(_rt.Get(), inverse ? _inverse_shadow.Get() : _shadow.Get(), bounds.inflate(32), 32,
-				alpha);
+			                   alpha);
 		}
 	}
 
 	void draw_border(const recti inside, const recti outside, const ui::color c_inside,
-		const ui::color c_outside) override
+	                 const ui::color c_outside) override
 	{
 		df::scope_rendering_func rf(__FUNCTION__);
 
@@ -1943,14 +1951,14 @@ public:
 	}
 
 	void draw_texture(const ui::texture_ptr& t, const recti dst, const float alpha,
-		const ui::texture_sampler sampler) override
+	                  const ui::texture_sampler sampler) override
 	{
 		df::scope_rendering_func rf(__FUNCTION__);
 		draw_texture(t, dst, recti(pointi(0, 0), t->dimensions()), alpha, sampler);
 	}
 
 	void draw_texture_impl(const texture_gdi_ptr& t, const recti dst, const recti src, const float alpha,
-		ui::texture_sampler sampler, float radius)
+	                       const ui::texture_sampler sampler, float radius) const
 	{
 		df::scope_rendering_func rf(__FUNCTION__);
 
@@ -1959,15 +1967,15 @@ public:
 			const auto dd = make_rectf(dst);
 			const auto ss = make_rectf(src);
 			const D2D1_BITMAP_INTERPOLATION_MODE mode = sampler == ui::texture_sampler::point
-				? D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR
-				: D2D1_BITMAP_INTERPOLATION_MODE_LINEAR;
+				                                            ? D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR
+				                                            : D2D1_BITMAP_INTERPOLATION_MODE_LINEAR;
 
 			_rt->DrawBitmap(t->_bm.Get(), &dd, alpha, mode, &ss);
 		}
 	}
 
 	void draw_texture_impl(const texture_gdi_ptr& t, const quadd& qdst, const recti src, const float alpha,
-		ui::texture_sampler sampler)
+	                       const ui::texture_sampler sampler) const
 	{
 		df::scope_rendering_func rf(__FUNCTION__);
 
@@ -1978,29 +1986,29 @@ public:
 			const auto dd = make_rectf(dst.round());
 			const auto ss = make_rectf(src);
 			const D2D1_BITMAP_INTERPOLATION_MODE mode = sampler == ui::texture_sampler::point
-				? D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR
-				: D2D1_BITMAP_INTERPOLATION_MODE_LINEAR;
+				                                            ? D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR
+				                                            : D2D1_BITMAP_INTERPOLATION_MODE_LINEAR;
 
 			_rt->DrawBitmap(t->_bm.Get(), &dd, alpha, mode, &ss);
 		}
 	}
 
 	void draw_texture(const ui::texture_ptr& t, const quadd& dst, const recti src, const float alpha,
-		const ui::texture_sampler sampler) override
+	                  const ui::texture_sampler sampler) override
 	{
 		const auto tt = std::dynamic_pointer_cast<d2d_texture>(t);
 		draw_texture_impl(tt, dst, src, alpha, sampler);
 	}
 
 	void draw_texture(const ui::texture_ptr& t, const recti dst, const recti src, const float alpha,
-		const ui::texture_sampler sampler, const float radius) override
+	                  const ui::texture_sampler sampler, const float radius) override
 	{
 		const auto tt = std::dynamic_pointer_cast<d2d_texture>(t);
 		draw_texture_impl(tt, dst, src, alpha, sampler, radius);
 	}
 
 	sizei measure_text(const std::u8string_view text, const ui::style::font_face font,
-		const ui::style::text_style style, const int width, const int height) override
+	                   const ui::style::text_style style, const int width, const int height) override
 	{
 		df::scope_rendering_func rf(__FUNCTION__);
 		const auto fr = _f->font_face(font, _base_font_size);
@@ -2154,15 +2162,13 @@ public:
 	static ui::color32 hsv_to_rgb(const double h, const double s, const double v)
 	{
 		// From medit
-		double f, p, q, t, hh;
-		int i;
 		// shift the hue to the range [0, 360] before performing calculations
-		hh = ((360 + (static_cast<int>(h) % 360)) % 360) / 60.;
-		i = static_cast<int>(std::floor(hh)); /* largest int <= h     */
-		f = hh - i; /* fractional part of h */
-		p = v * (1.0 - s);
-		q = v * (1.0 - (s * f));
-		t = v * (1.0 - (s * (1.0 - f)));
+		double hh = (360 + static_cast<int>(h) % 360) % 360 / 60.;
+		int i = static_cast<int>(std::floor(hh)); /* largest int <= h     */
+		double f = hh - i; /* fractional part of h */
+		double p = v * (1.0 - s);
+		double q = v * (1.0 - s * f);
+		double t = v * (1.0 - s * (1.0 - f));
 
 		double r, g, b;
 
@@ -2205,7 +2211,7 @@ public:
 		_inverse_shadow.Reset();
 	}
 
-	void update_font_size(int base_font_size) override
+	void update_font_size(const int base_font_size) override
 	{
 		df::scope_rendering_func rf(__FUNCTION__);
 		_base_font_size = base_font_size;
@@ -2219,15 +2225,15 @@ public:
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-class lock_window_update : public df::no_copy
+class lock_window_update final : public df::no_copy
 {
 public:
-	lock_window_update(HWND wnd)
+	lock_window_update(const HWND wnd)
 	{
 		LockWindowUpdate(wnd);
 	}
 
-	~lock_window_update()
+	~lock_window_update() override
 	{
 		LockWindowUpdate(nullptr);
 	}
@@ -2251,12 +2257,13 @@ public:
 		}
 	}
 
-	virtual LRESULT on_window_message(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+	virtual LRESULT on_window_message(const HWND hWnd, const UINT uMsg, const WPARAM wParam, const LPARAM lParam)
 	{
 		return DefWindowProc(hWnd, uMsg, wParam, lParam);
 	}
 
-	static LRESULT CALLBACK stProcessWindowMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+	static LRESULT CALLBACK stProcessWindowMessage(const HWND hwnd, const UINT uMsg, const WPARAM wParam,
+	                                               const LPARAM lParam)
 	{
 		if (uMsg == WM_NCCREATE)
 		{
@@ -2286,8 +2293,8 @@ public:
 		return DefWindowProc(hwnd, uMsg, wParam, lParam);
 	}
 
-	bool register_class(UINT style, HICON hIcon, HCURSOR hCursor, HBRUSH hbrBackground,
-		LPCWSTR lpszMenuName, LPCWSTR lpszClassName, HICON hIconSm)
+	static bool register_class(const UINT style, const HICON hIcon, const HCURSOR hCursor, const HBRUSH hbrBackground,
+	                           const LPCWSTR lpszMenuName, const LPCWSTR lpszClassName, const HICON hIconSm)
 	{
 		WNDCLASSEX wcx;
 		wcx.cbSize = sizeof(WNDCLASSEX); // size of structure
@@ -2335,7 +2342,7 @@ public:
 		return hwnd();
 	}
 
-	void enable(bool enable) override { EnableWindow(hwnd(), enable); }
+	void enable(const bool enable) override { EnableWindow(hwnd(), enable); }
 	std::u8string window_text() const override { return ::window_text(hwnd()); }
 
 	void window_text(const std::u8string_view text) override
@@ -2348,7 +2355,7 @@ public:
 	{
 		win_rect r;
 		GetClientRect(hwnd(), &r);
-		return { r.width(), r.height() };
+		return {r.width(), r.height()};
 	}
 
 	void focus() override
@@ -2382,18 +2389,18 @@ public:
 		SetFont(hwnd(), t->_ctx->dialog);
 	}
 
-	void show(bool show) override { ShowWindow(hwnd(), show ? SW_SHOW : SW_HIDE); };
+	void show(const bool show) override { ShowWindow(hwnd(), show ? SW_SHOW : SW_HIDE); };
 
 	void window_bounds(const recti bounds, const bool visible) override
 	{
 		SetWindowPos(hwnd(), nullptr, bounds.left, bounds.top, bounds.width(), bounds.height(),
-			SWP_NOACTIVATE | (visible ? SWP_SHOWWINDOW : SWP_HIDEWINDOW));
+		             SWP_NOACTIVATE | (visible ? SWP_SHOWWINDOW : SWP_HIDEWINDOW));
 	}
 };
 
 
 static void scroll_impl(const HWND hwnd, const int dx, const int dy, const recti bounds,
-	const bool scroll_child_controls)
+                        const bool scroll_child_controls)
 {
 	auto flags = SW_INVALIDATE | SW_ERASE;
 	if (scroll_child_controls) flags |= SW_SCROLLCHILDREN;
@@ -2432,7 +2439,7 @@ public:
 		{
 			ScreenToClient(hwnd(), &loc);
 		}
-		return { loc.x, loc.y };
+		return {loc.x, loc.y};
 	}
 
 	std::any handle() const override
@@ -2440,7 +2447,7 @@ public:
 		return hwnd();
 	}
 
-	void enable(bool enable) override
+	void enable(const bool enable) override
 	{
 		EnableWindow(hwnd(), enable);
 	}
@@ -2483,13 +2490,13 @@ public:
 		return r;
 	}
 
-	void window_bounds(const recti bounds, bool visible) override
+	void window_bounds(const recti bounds, const bool visible) override
 	{
 		SetWindowPos(hwnd(), nullptr, bounds.left, bounds.top, bounds.width(), bounds.height(),
-			SWP_NOACTIVATE | (visible ? SWP_SHOWWINDOW : SWP_HIDEWINDOW));
+		             SWP_NOACTIVATE | (visible ? SWP_SHOWWINDOW : SWP_HIDEWINDOW));
 	}
 
-	void show(bool show) override
+	void show(const bool show) override
 	{
 		ShowWindow(hwnd(), show ? SW_SHOWNOACTIVATE : SW_HIDE);
 	}
@@ -2558,7 +2565,7 @@ public:
 	}
 
 	virtual LRESULT on_notify(const ui::frame_host_weak_ptr& host, const ui::color_style& colors, const int id,
-		const LPNMHDR pnmh)
+	                          const LPNMHDR pnmh)
 	{
 		return 0;
 	}
@@ -2579,7 +2586,7 @@ public:
 	bool is_radio = false;
 };
 
-class edit_string_enum : public IEnumString
+class edit_string_enum final : public IEnumString
 {
 public:
 	std::vector<std::wstring> _data;
@@ -2626,7 +2633,7 @@ public:
 		return 1;
 	}
 
-	HRESULT STDMETHODCALLTYPE Next(ULONG celt, LPOLESTR* rgelt, ULONG* pceltFetched) override
+	HRESULT STDMETHODCALLTYPE Next(const ULONG celt, LPOLESTR* rgelt, ULONG* pceltFetched) override
 	{
 		if (rgelt == nullptr) return E_INVALIDARG;
 		ULONG done = 0;
@@ -2678,7 +2685,6 @@ class edit_impl final :
 	public control_base2,
 	public std::enable_shared_from_this<edit_impl>
 {
-private:
 	using base_class = control_base_impl<edit_impl, edit, win_base>;
 
 	struct unknown_word
@@ -2695,7 +2701,7 @@ private:
 
 			const int line_height = gdi_text_line_height(edit.m_hWnd, GetFont(edit.m_hWnd));
 			const auto iY = loc_start.y + line_height;
-			return { loc_start.x, loc_start.y, loc_end.x, iY };
+			return {loc_start.x, loc_start.y, loc_end.x, iY};
 		}
 	};
 
@@ -2711,14 +2717,14 @@ private:
 protected:
 	void add_unknown_word(std::u8string_view word_a, int word_start, int word_end);
 	void update_spelling(const std::wstring& text);
-	void highlight_spelling();
+	void highlight_spelling() const;
 
 public:
 	std::function<void(const std::u8string&)> changed;
 	edit_string_enum string_enum;
 	owner_context_ptr _ctx;
 
-	explicit edit_impl(ui::edit_styles styles, control_host_impl* parent, owner_context_ptr ctx)
+	explicit edit_impl(ui::edit_styles styles, control_host_impl* parent, const owner_context_ptr& ctx)
 		: _styles(std::move(styles)), _parent(parent), _ctx(ctx)
 	{
 	}
@@ -2774,8 +2780,9 @@ public:
 		SetFont(m_hWnd, _ctx->dialog);
 	}
 
-	static LRESULT CALLBACK SuperProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass,
-		DWORD_PTR dwRefData)
+	static LRESULT CALLBACK SuperProc(const HWND hWnd, const UINT uMsg, const WPARAM wParam, const LPARAM lParam,
+	                                  UINT_PTR uIdSubclass,
+	                                  const DWORD_PTR dwRefData)
 	{
 		const auto pt = std::bit_cast<edit_impl*>(dwRefData);
 
@@ -2793,7 +2800,7 @@ public:
 		return DefSubclassProc(hWnd, uMsg, wParam, lParam);
 	}
 
-	HWND Create(HWND hWndParent, const std::u8string_view text, const uintptr_t id)
+	HWND Create(const HWND hWndParent, const std::u8string_view text, const uintptr_t id)
 	{
 		auto style = WS_CHILD | WS_TABSTOP;
 		if (_styles.align_center) style |= ES_CENTER;
@@ -2833,11 +2840,11 @@ public:
 		return result;
 	}
 
-	POINT pos_from_char(uint32_t nChar) const
+	POINT pos_from_char(const uint32_t nChar) const
 	{
 		df::assert_true(IsWindow(m_hWnd));
 		const DWORD dwRet = static_cast<DWORD>(::SendMessage(m_hWnd, EM_POSFROMCHAR, nChar, 0));
-		const POINT point = { GET_X_LPARAM(dwRet), GET_Y_LPARAM(dwRet) };
+		const POINT point = {GET_X_LPARAM(dwRet), GET_Y_LPARAM(dwRet)};
 		return point;
 	}
 
@@ -2855,13 +2862,13 @@ public:
 	LRESULT on_window_create(uint32_t uMsg, WPARAM wParam, LPARAM lParam);
 	LRESULT on_window_context_menu(uint32_t uMsg, WPARAM wParam, LPARAM lParam);
 
-	LRESULT on_mouse_wheel(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam)
+	LRESULT on_mouse_wheel(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam) const
 	{
 		SendMessage(GetParent(m_hWnd), uMsg, wParam, lParam);
 		return 1;
 	}
 
-	LRESULT on_window_get_dlg_code(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam)
+	LRESULT on_window_get_dlg_code(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam) const
 	{
 		auto lres = DefSubclassProc(m_hWnd, uMsg, wParam, lParam);
 		const auto m = std::bit_cast<MSG*>(lParam);
@@ -2884,17 +2891,17 @@ public:
 					break;
 
 				case VK_RETURN:
-				{
-					if (_styles.want_return)
 					{
-						lres |= DLGC_WANTMESSAGE;
+						if (_styles.want_return)
+						{
+							lres |= DLGC_WANTMESSAGE;
+						}
+						else
+						{
+							lres &= ~DLGC_WANTMESSAGE;
+						}
 					}
-					else
-					{
-						lres &= ~DLGC_WANTMESSAGE;
-					}
-				}
-				break;
+					break;
 				}
 			}
 		}
@@ -2902,7 +2909,7 @@ public:
 		return lres;
 	}
 
-	LRESULT on_window_key_down(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam)
+	LRESULT on_window_key_down(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam) const
 	{
 		if (_styles.capture_key_down)
 		{
@@ -2925,7 +2932,7 @@ public:
 		return 0;
 	}
 
-	LRESULT on_window_nc_calc_size(uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam)
+	LRESULT on_window_nc_calc_size(uint32_t /*uMsg*/, WPARAM wParam, const LPARAM lParam) const
 	{
 		on_window_nc_calc_size((LPRECT)lParam);
 		return 0;
@@ -3010,7 +3017,7 @@ public:
 		full_invalidate();
 	}
 
-	void full_invalidate()
+	void full_invalidate() const
 	{
 		RedrawWindow(m_hWnd, nullptr, nullptr, RDW_FRAME | RDW_INVALIDATE);
 	}
@@ -3025,7 +3032,7 @@ public:
 		}
 	}
 
-	void enable(bool enable) override
+	void enable(const bool enable) override
 	{
 		EnableWindow(m_hWnd, enable);
 		full_invalidate();
@@ -3038,10 +3045,10 @@ public:
 		const auto efg = ui::style::color::edit_text;
 		const auto bg = is_window_enabled ? ebg : ui::average(ebg, ui::style::color::dialog_background);
 		const auto fg = is_window_enabled ? efg : ui::average(efg, bg);
-		return { bg, fg };
+		return {bg, fg};
 	}
 
-	LRESULT on_window_ime_notify(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam)
+	LRESULT on_window_ime_notify(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam) const
 	{
 		const LRESULT l = DefSubclassProc(m_hWnd, uMsg, wParam, lParam);
 
@@ -3062,7 +3069,7 @@ public:
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-static bool is_word_break(wchar_t c)
+static bool is_word_break(const wchar_t c)
 {
 	auto result = false;
 
@@ -3076,12 +3083,12 @@ static bool is_word_break(wchar_t c)
 
 static std::wstring trim(const std::wstring& s)
 {
-	const auto wsfront = std::ranges::find_if_not(s, [](int c) { return std::iswspace(c); });
-	const auto wsback = std::find_if_not(s.rbegin(), s.rend(), [](int c) { return std::iswspace(c); }).base();
-	return (wsback <= wsfront ? std::wstring() : std::wstring(wsfront, wsback));
+	const auto wsfront = std::ranges::find_if_not(s, [](const int c) { return std::iswspace(c); });
+	const auto wsback = std::find_if_not(s.rbegin(), s.rend(), [](const int c) { return std::iswspace(c); }).base();
+	return wsback <= wsfront ? std::wstring() : std::wstring(wsfront, wsback);
 }
 
-void edit_impl::add_unknown_word(const std::u8string_view word, int word_start, int word_end)
+void edit_impl::add_unknown_word(const std::u8string_view word, const int word_start, const int word_end)
 {
 	if (_styles.spelling)
 	{
@@ -3152,7 +3159,7 @@ void edit_impl::update_spelling(const std::wstring& text)
 	}
 }
 
-void edit_impl::highlight_spelling()
+void edit_impl::highlight_spelling() const
 {
 	if (_styles.spelling && !_unknown_words.empty())
 	{
@@ -3187,7 +3194,7 @@ void edit_impl::highlight_spelling()
 }
 
 
-void edit_impl::on_window_nc_calc_size(LPRECT pr) const
+void edit_impl::on_window_nc_calc_size(const LPRECT pr) const
 {
 	df::assert_true(pr);
 
@@ -3275,9 +3282,9 @@ LRESULT edit_impl::on_window_nc_paint(const uint32_t uMsg, const WPARAM wParam, 
 
 			// Horizontals
 			fill_rect(hdc, edge_clr,
-				recti(outside.left + padding, outside.top, outside.right - padding, outside.top + padding));
+			          recti(outside.left + padding, outside.top, outside.right - padding, outside.top + padding));
 			fill_rect(hdc, edge_clr, recti(outside.left + padding, outside.bottom - padding, outside.right - padding,
-				outside.bottom));
+			                               outside.bottom));
 
 			fill_rect(hdc, edit_colors.background, outside.inflate(-padding));
 		}
@@ -3318,13 +3325,13 @@ public:
 	std::function<void()> _invoke;
 	owner_context_ptr _ctx;
 
-	button_impl(owner_context_ptr ctx) : _ctx(ctx)
+	button_impl(const owner_context_ptr& ctx) : _ctx(ctx)
 	{
 	}
 
-	HWND Create(HWND hWndParent, LPCTSTR szWindowName = nullptr,
-		DWORD dwStyle = 0, DWORD dwExStyle = 0,
-		uintptr_t id = 0U, LPVOID lpCreateParam = nullptr)
+	HWND Create(const HWND hWndParent, const LPCTSTR szWindowName = nullptr,
+	            const DWORD dwStyle = 0, const DWORD dwExStyle = 0,
+	            const uintptr_t id = 0U, const LPVOID lpCreateParam = nullptr)
 	{
 		_id = id;
 		m_hWnd = CreateWindowEx(
@@ -3380,13 +3387,13 @@ public:
 		return static_cast<int>(::SendMessage(m_hWnd, BM_GETCHECK, 0, 0L));
 	}
 
-	void SetCheck(int nCheck)
+	void SetCheck(const int nCheck) const
 	{
 		df::assert_true(IsWindow(m_hWnd));
 		::SendMessage(m_hWnd, BM_SETCHECK, nCheck, 0L);
 	}
 
-	void draw(LPNMCUSTOMDRAW pCustomDraw) const
+	void draw(const LPNMCUSTOMDRAW pCustomDraw) const
 	{
 		wchar_t text[512];
 		::GetWindowText(pCustomDraw->hdr.hwndFrom, text, 512);
@@ -3403,7 +3410,7 @@ public:
 		const auto is_checked = (button_state & CDIS_CHECKED) != 0;
 		const auto is_focused = (button_state & CDIS_FOCUS) != 0;
 		const auto is_disabled = (button_state & CDIS_DISABLED) != 0;
-		const auto is_default = ((button_style & BS_TYPEMASK) == BS_DEFPUSHBUTTON) != 0;
+		const auto is_default = (button_style & BS_TYPEMASK) == BS_DEFPUSHBUTTON != 0;
 		const auto is_radio_button = (button_style & BS_TYPEMASK) == BS_AUTORADIOBUTTON;
 		const auto is_check_box = (button_style & BS_TYPEMASK) == BS_AUTOCHECKBOX;
 
@@ -3415,22 +3422,26 @@ public:
 		if (is_check_box || is_radio_button)
 		{
 			fill_solid_rect(dc, button_bounds,
-				is_focused
-				? ui::style::color::dialog_selected_background
-				: ui::style::color::dialog_background);
+			                is_focused
+				                ? ui::style::color::dialog_selected_background
+				                : ui::style::color::dialog_background);
 
 			const auto is_checked = GetCheck() != 0;
-			const auto icon = is_check_box ? (is_checked ? icon_index::checkbox_on : icon_index::checkbox_off) :
-				(is_checked ? icon_index::radio_on : icon_index::radio_off);
+			const auto icon = is_check_box
+				                  ? (is_checked ? icon_index::checkbox_on : icon_index::checkbox_off)
+				                  : is_checked
+				                  ? icon_index::radio_on
+				                  : icon_index::radio_off;
 
 			auto* const old_font = SelectObject(dc, _ctx->icons);
-			const wchar_t sz[2]{ static_cast<wchar_t>(icon), 0 };
+			const wchar_t sz[2]{static_cast<wchar_t>(icon), 0};
 			SIZE icon_extent;
 
 			if (GetTextExtentPoint32(dc, sz, 1, &icon_extent))
 			{
 				const recti icon_bounds(pointi(button_bounds.left + button_padding,
-					((button_bounds.top + button_bounds.bottom) / 2) - (icon_extent.cx / 2)), sizei(icon_extent.cx, icon_extent.cy));
+				                               (button_bounds.top + button_bounds.bottom) / 2 - icon_extent.cx / 2),
+				                        sizei(icon_extent.cx, icon_extent.cy));
 
 				if (is_checked)
 				{
@@ -3490,7 +3501,7 @@ public:
 
 			if (is_radio_button || is_check_box)
 			{
-				const auto style = DT_WORDBREAK;
+				constexpr auto style = DT_WORDBREAK;
 				auto r = client_bounds;
 				DrawText(dc, text, -1, r, style | DT_CALCRECT);
 				const auto yy = (client_bounds.height() - r.height()) / 2;
@@ -3498,7 +3509,7 @@ public:
 			}
 			else
 			{
-				const auto style = DT_WORDBREAK | DT_CENTER;
+				constexpr auto style = DT_WORDBREAK | DT_CENTER;
 				auto r = client_bounds;
 				DrawText(dc, text, -1, r, style | DT_CALCRECT);
 				const auto yy = (client_bounds.height() - r.height()) / 2;
@@ -3510,7 +3521,7 @@ public:
 		{
 			auto title_bounds = client_bounds;
 			auto details_bounds = client_bounds;
-			const auto icon_width = _icon == icon_index::none ? 0 : (icon_cxy + button_padding);
+			const auto icon_width = _icon == icon_index::none ? 0 : icon_cxy + button_padding;
 
 			SelectObject(dc, _ctx->title);
 			DrawText(dc, text, -1, title_bounds, DT_CALCRECT);
@@ -3584,16 +3595,16 @@ public:
 			ReleaseDC(m_hWnd, dc);
 		}
 
-		return { cx_result, cy_result };
+		return {cx_result, cy_result};
 	}
 
-	sizei measure(int cx) const override
+	sizei measure(const int cx) const override
 	{
 		return measure_button(cx);
 	}
 
 	LRESULT on_notify(const ui::frame_host_weak_ptr& host, const ui::color_style& colors, const int id,
-		const LPNMHDR pnmh) override
+	                  const LPNMHDR pnmh) override
 	{
 		if (pnmh->code == NM_CUSTOMDRAW)
 		{
@@ -3619,14 +3630,14 @@ class trackbar_impl final :
 	public std::enable_shared_from_this<trackbar_impl>
 {
 public:
-	trackbar_impl(std::function<void(int, bool)> changed, owner_context_ptr ctx) : _changed(std::move(changed)),
+	trackbar_impl(std::function<void(int, bool)> changed, const owner_context_ptr& ctx) : _changed(std::move(changed)),
 		_ctx(ctx)
 	{
 	}
 
-	HWND Create(HWND hWndParent, win_rect rect = {}, LPCTSTR szWindowName = nullptr,
-		DWORD dwStyle = 0, DWORD dwExStyle = 0,
-		uintptr_t id = 0U)
+	HWND Create(const HWND hWndParent, win_rect rect = {}, const LPCTSTR szWindowName = nullptr,
+	            const DWORD dwStyle = 0, const DWORD dwExStyle = 0,
+	            const uintptr_t id = 0U)
 	{
 		m_hWnd = CreateWindowEx(
 			dwExStyle, TRACKBAR_CLASS, // predefined class 
@@ -3646,7 +3657,7 @@ public:
 		DestroyWindow(m_hWnd);
 	}
 
-	void set_range(int nMin, int nMax, BOOL bRedraw = TRUE)
+	void set_range(const int nMin, const int nMax, const BOOL bRedraw = TRUE) const
 	{
 		df::assert_true(IsWindow(m_hWnd));
 		::SendMessage(m_hWnd, TBM_SETRANGE, bRedraw, MAKELPARAM(nMin, nMax));
@@ -3657,7 +3668,7 @@ public:
 		return static_cast<int>(::SendMessage(m_hWnd, TBM_GETPOS, 0, 0L));
 	}
 
-	void SetPos(int val) override
+	void SetPos(const int val) override
 	{
 		::SendMessage(m_hWnd, TBM_SETPOS, TRUE, val);
 	}
@@ -3707,7 +3718,7 @@ public:
 	owner_context_ptr _ctx;
 
 	date_time_control_impl(owner_context_ptr ctx, const df::date_t val, std::function<void(df::date_t)> changed,
-		const ui::color_style& colors, const bool include_time) : _changed(std::move(changed)),
+	                       const ui::color_style& colors, const bool include_time) : _changed(std::move(changed)),
 		_val(val), _colors(colors), _include_time(include_time), _ctx(std::move(ctx))
 	{
 	}
@@ -3742,7 +3753,7 @@ public:
 		return DefWindowProc(hWnd, uMsg, wParam, lParam);
 	}
 
-	LRESULT on_changed(const UINT_PTR idCtrl, const LPNMHDR pnmh)
+	LRESULT on_changed(const UINT_PTR idCtrl, const LPNMHDR pnmh) const
 	{
 		SYSTEMTIME std, stt;
 		DateTime_GetSystemtime(_date_control, &std);
@@ -3768,7 +3779,7 @@ public:
 		return 0;
 	}
 
-	LRESULT on_focus(const UINT_PTR idCtrl, const LPNMHDR pnmh)
+	LRESULT on_focus(const UINT_PTR idCtrl, const LPNMHDR pnmh) const
 	{
 		NMHDR nmh;
 		nmh.code = pnmh->code; // Message type defined by control.
@@ -3787,14 +3798,14 @@ public:
 		FileTimeToSystemTime(&ft, &st);
 
 		_date_control = CreateWindowEx(0,
-			DATETIMEPICK_CLASS,
-			nullptr,
-			WS_CHILD | WS_VISIBLE | WS_TABSTOP | DTS_SHORTDATEFORMAT,
-			0, 0, 0, 0,
-			m_hWnd,
-			std::bit_cast<HMENU>(date_id),
-			get_resource_instance,
-			nullptr);
+		                               DATETIMEPICK_CLASS,
+		                               nullptr,
+		                               WS_CHILD | WS_VISIBLE | WS_TABSTOP | DTS_SHORTDATEFORMAT,
+		                               0, 0, 0, 0,
+		                               m_hWnd,
+		                               std::bit_cast<HMENU>(date_id),
+		                               get_resource_instance,
+		                               nullptr);
 
 		//CreateWindow(DATETIMEPICK_CLASS, m_hWnd, nullptr, nullptr, WS_CHILD | WS_VISIBLE | WS_TABSTOP | DTS_SHORTDATEFORMAT, 0, date_id);
 
@@ -3804,14 +3815,14 @@ public:
 		if (_include_time)
 		{
 			_time_control = CreateWindowEx(0,
-				DATETIMEPICK_CLASS,
-				nullptr,
-				WS_CHILD | WS_VISIBLE | WS_TABSTOP | DTS_TIMEFORMAT,
-				0, 0, 0, 0,
-				m_hWnd,
-				std::bit_cast<HMENU>(time_id),
-				get_resource_instance,
-				nullptr);
+			                               DATETIMEPICK_CLASS,
+			                               nullptr,
+			                               WS_CHILD | WS_VISIBLE | WS_TABSTOP | DTS_TIMEFORMAT,
+			                               0, 0, 0, 0,
+			                               m_hWnd,
+			                               std::bit_cast<HMENU>(time_id),
+			                               get_resource_instance,
+			                               nullptr);
 
 			//CreateWindow(DATETIMEPICK_CLASS, m_hWnd, nullptr, nullptr, WS_CHILD | WS_VISIBLE | WS_TABSTOP | DTS_TIMEFORMAT, 0, time_id);
 			SetFont(_time_control, font);
@@ -3821,7 +3832,7 @@ public:
 		return 0;
 	}
 
-	LRESULT on_window_paint(uint32_t /*uMsg*/, WPARAM wParam, LPARAM /*lParam*/)
+	LRESULT on_window_paint(uint32_t /*uMsg*/, WPARAM wParam, LPARAM /*lParam*/) const
 	{
 		PAINTSTRUCT ps;
 		auto hdc = BeginPaint(m_hWnd, &ps);
@@ -3830,7 +3841,7 @@ public:
 		return 0;
 	}
 
-	LRESULT on_window_print_client(uint32_t /*uMsg*/, WPARAM wParam, LPARAM /*lParam*/)
+	static LRESULT on_window_print_client(uint32_t /*uMsg*/, WPARAM wParam, LPARAM /*lParam*/)
 	{
 		//RECT r;
 		//GetClientRect(&r);
@@ -3838,7 +3849,7 @@ public:
 		return 0;
 	}
 
-	LRESULT on_window_erase_background(uint32_t /*uMsg*/, WPARAM wParam, LPARAM /*lParam*/) const
+	LRESULT on_window_erase_background(uint32_t /*uMsg*/, const WPARAM wParam, LPARAM /*lParam*/) const
 	{
 		const auto dc = std::bit_cast<HDC>(wParam);
 		win_rect r;
@@ -3847,7 +3858,7 @@ public:
 		return 1;
 	}
 
-	LRESULT on_window_enable(uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam)
+	LRESULT on_window_enable(uint32_t /*uMsg*/, const WPARAM wParam, LPARAM lParam) const
 	{
 		if (_include_time)
 		{
@@ -3859,25 +3870,25 @@ public:
 		return 0;
 	}
 
-	LRESULT on_window_layout(uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam)
+	LRESULT on_window_layout(uint32_t /*uMsg*/, WPARAM wParam, const LPARAM lParam)
 	{
 		const auto scale_factor = _ctx->scale_factor;
 		const auto cx_min = df::round(160 * scale_factor);
 		const auto cx = _include_time ? cx_min * 2 : cx_min;
 
-		_extent = { std::min(cx, static_cast<int>(LOWORD(lParam))), HIWORD(lParam) };
+		_extent = {std::min(cx, static_cast<int>(LOWORD(lParam))), HIWORD(lParam)};
 
 		auto date_bounds = win_rect(_extent);
 		auto time_bounds = win_rect(_extent);
 
 		if (_include_time)
 		{
-			const auto x = (_extent.cx) / 2;
+			const auto x = _extent.cx / 2;
 			date_bounds.right = x - 4;
 			time_bounds.left = x + 4;
 
 			MoveWindow(_time_control, time_bounds.left, time_bounds.top, time_bounds.width(), time_bounds.height(),
-				TRUE);
+			           TRUE);
 		}
 
 		MoveWindow(_date_control, date_bounds.left, date_bounds.top, date_bounds.width(), date_bounds.height(), TRUE);
@@ -3899,7 +3910,7 @@ public:
 		const auto cx_min = df::round(160 * scale_factor);
 		const auto xx = _include_time ? cx_min * 2 : cx_min;
 		const int cx_result = _include_time ? cx : std::min(xx, cx);
-		return { cx_result, r.height() };
+		return {cx_result, r.height()};
 	}
 
 	void focus() override
@@ -3921,7 +3932,7 @@ public:
 	}
 
 	LRESULT on_notify(const ui::frame_host_weak_ptr& host, const ui::color_style& colors, const int id,
-		const LPNMHDR pnmh) override
+	                  const LPNMHDR pnmh) override
 	{
 		if (pnmh->code == NM_SETFOCUS)
 		{
@@ -3939,11 +3950,11 @@ public:
 
 	void Create(const HWND parent, const uintptr_t id)
 	{
-		const auto dw_style = WS_CHILD;
+		constexpr auto dw_style = WS_CHILD;
 		const auto* const class_name = L"DIFF_DATE_CTRL";
 
 		if (register_class(CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS, nullptr, nullptr, _ctx->gdi_brush(_colors.background),
-			nullptr, class_name, nullptr))
+		                   nullptr, class_name, nullptr))
 		{
 			m_hWnd = CreateWindowEx(
 				WS_EX_CONTROLPARENT,
@@ -3962,7 +3973,7 @@ public:
 
 
 ComPtr<ID2D1PathGeometry> GenTriangleGeometry(ID2D1Factory* f, const D2D1_POINT_2F pt1, const D2D1_POINT_2F pt2,
-	const D2D1_POINT_2F pt3)
+                                              const D2D1_POINT_2F pt3)
 {
 	ComPtr<ID2D1GeometrySink> sink;
 	ComPtr<ID2D1PathGeometry> pg;
@@ -3989,8 +4000,8 @@ ComPtr<ID2D1PathGeometry> GenTriangleGeometry(ID2D1Factory* f, const D2D1_POINT_
 
 
 static void draw_bubble_background(const factories_ptr& f, ID2D1RenderTarget* dc, const recti bounds,
-	const pointi focus_location, const float padding, const float shadow_xy,
-	const float radius)
+                                   const pointi focus_location, const float padding, const float shadow_xy,
+                                   const float radius)
 {
 	dc->Clear();
 
@@ -3998,7 +4009,7 @@ static void draw_bubble_background(const factories_ptr& f, ID2D1RenderTarget* dc
 
 	if (shadow)
 	{
-		streach_background(dc, shadow.Get(), { 0, 0, bounds.width(), bounds.height() }, 32, 1.0f);
+		streach_background(dc, shadow.Get(), {0, 0, bounds.width(), bounds.height()}, 32, 1.0f);
 	}
 
 	const auto l = padding;
@@ -4012,7 +4023,7 @@ static void draw_bubble_background(const factories_ptr& f, ID2D1RenderTarget* dc
 	ComPtr<ID2D1GeometrySink> s;
 
 	D2D1_ROUNDED_RECT rr;
-	rr.rect = { l, t, r, b };
+	rr.rect = {l, t, r, b};
 	rr.radiusX = radius;
 	rr.radiusY = radius;
 
@@ -4023,22 +4034,22 @@ static void draw_bubble_background(const factories_ptr& f, ID2D1RenderTarget* dc
 		if (focus_location.y <= bounds.top)
 		{
 			const float center = std::clamp(static_cast<float>(focus_location.x - bounds.left), l + 24.0f, r - 24.0f);
-			tg = GenTriangleGeometry(f->d2d.Get(), { center - padding, t }, { center, t - padding }, { center + padding, t });
+			tg = GenTriangleGeometry(f->d2d.Get(), {center - padding, t}, {center, t - padding}, {center + padding, t});
 		}
 		else if (focus_location.x >= bounds.right)
 		{
 			const float center = std::clamp(static_cast<float>(focus_location.y - bounds.top), t + 24.0f, b - 24.0f);
-			tg = GenTriangleGeometry(f->d2d.Get(), { r, center - padding }, { r + padding, center }, { r, center + padding });
+			tg = GenTriangleGeometry(f->d2d.Get(), {r, center - padding}, {r + padding, center}, {r, center + padding});
 		}
 		else if (focus_location.y >= bounds.bottom)
 		{
 			const float center = std::clamp(static_cast<float>(focus_location.x - bounds.left), l + 24.0f, r - 24.0f);
-			tg = GenTriangleGeometry(f->d2d.Get(), { center + padding, b }, { center, b + padding }, { center - padding, b });
+			tg = GenTriangleGeometry(f->d2d.Get(), {center + padding, b}, {center, b + padding}, {center - padding, b});
 		}
 		else //if (focus_location.x <= bounds.left)
 		{
 			const float center = std::clamp(static_cast<float>(focus_location.y - bounds.top), t + 24.0f, b - 24.0f);
-			tg = GenTriangleGeometry(f->d2d.Get(), { l, center + padding }, { l - padding, center }, { l, center - padding });
+			tg = GenTriangleGeometry(f->d2d.Get(), {l, center + padding}, {l - padding, center}, {l, center - padding});
 		}
 
 		if (SUCCEEDED(hr))
@@ -4079,7 +4090,7 @@ static void draw_bubble_background(const factories_ptr& f, ID2D1RenderTarget* dc
 class frame_base : public win_impl
 {
 public:
-	frame_base(owner_context_ptr ctx) : _gdi_ctx(ctx)
+	frame_base(const owner_context_ptr& ctx) : _gdi_ctx(ctx)
 	{
 	}
 
@@ -4088,10 +4099,10 @@ public:
 
 	LRESULT on_window_message(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) override;
 
-	void reset_device();
+	static void reset_device();
 	void handle_render();
 	void handle_resize(sizei extent, bool is_minimised);
-	void present();
+	void present() const;
 
 	virtual LRESULT handle_message(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) = 0;
 	virtual void on_render(const draw_context_device_ptr& ctx) = 0;
@@ -4126,7 +4137,7 @@ public:
 		}
 	}
 
-	ID2D1RenderTarget* get_render_target()
+	ID2D1RenderTarget* get_render_target() const
 	{
 		if (_device_context) return _device_context.Get();
 		return _render_target.Get();
@@ -4207,9 +4218,9 @@ void frame_base::create_draw_context(const factories_ptr& f, const bool use_d3d,
 
 			ComPtr<ID2D1HwndRenderTarget> rt;
 			const auto pixel_format = D2D1::PixelFormat(DXGI_FORMAT_UNKNOWN,
-				use_transparency
-				? D2D1_ALPHA_MODE_PREMULTIPLIED
-				: D2D1_ALPHA_MODE_UNKNOWN);
+			                                            use_transparency
+				                                            ? D2D1_ALPHA_MODE_PREMULTIPLIED
+				                                            : D2D1_ALPHA_MODE_UNKNOWN);
 
 			hr = _f->d2d->CreateHwndRenderTarget(
 				D2D1::RenderTargetProperties(D2D1_RENDER_TARGET_TYPE_DEFAULT, pixel_format, 96.0f, 96.0f),
@@ -4243,7 +4254,6 @@ void frame_base::create_draw_context(const factories_ptr& f, const bool use_d3d,
 		_draw_ctx->padding1 = df::round(ui_baseline_snap * scale_factor);
 		_draw_ctx->handle_cxy = df::round(ui_cx_resize_handle * scale_factor);
 		_draw_ctx->scroll_width = df::round(ui_scroll_width * scale_factor);
-
 	}
 }
 
@@ -4273,7 +4283,7 @@ void frame_base::handle_resize(const sizei extent, const bool is_minimised)
 					_device_context->SetTarget(nullptr);
 				}
 
-				const UINT flags = 0;
+				constexpr UINT flags = 0;
 				_swap_chain->ResizeBuffers(swap_buffer_count, extent.cx, extent.cy, back_buffer_format, flags);
 
 				if (_device_context)
@@ -4287,7 +4297,7 @@ void frame_base::handle_resize(const sizei extent, const bool is_minimised)
 					ComPtr<ID2D1Bitmap1> bitmap;
 
 					auto hr = _swap_chain->GetBuffer(0, __uuidof(surface),
-						std::bit_cast<void**>(surface.GetAddressOf()));
+					                                 std::bit_cast<void**>(surface.GetAddressOf()));
 
 					if (SUCCEEDED(hr))
 					{
@@ -4305,7 +4315,7 @@ void frame_base::handle_resize(const sizei extent, const bool is_minimised)
 			}
 			else if (_render_target)
 			{
-				_render_target->Resize(D2D1_SIZE_U{ static_cast<uint32_t>(extent.cx), static_cast<uint32_t>(extent.cy) });
+				_render_target->Resize(D2D1_SIZE_U{static_cast<uint32_t>(extent.cx), static_cast<uint32_t>(extent.cy)});
 			}
 
 			if (_draw_ctx)
@@ -4318,7 +4328,7 @@ void frame_base::handle_resize(const sizei extent, const bool is_minimised)
 	on_resize(extent, is_minimised);
 };
 
-void frame_base::present()
+void frame_base::present() const
 {
 	if (_swap_chain)
 	{
@@ -4365,7 +4375,7 @@ void frame_base::handle_render()
 	present();
 }
 
-LRESULT frame_base::on_window_message(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+LRESULT frame_base::on_window_message(const HWND hwnd, const UINT uMsg, const WPARAM wParam, const LPARAM lParam)
 {
 	switch (uMsg)
 	{
@@ -4373,22 +4383,22 @@ LRESULT frame_base::on_window_message(HWND hwnd, UINT uMsg, WPARAM wParam, LPARA
 		m_hWnd = hwnd;
 		break;
 	case WM_SIZE:
-		handle_resize({ LOWORD(lParam), HIWORD(lParam) }, wParam == SIZE_MINIMIZED);
+		handle_resize({LOWORD(lParam), HIWORD(lParam)}, wParam == SIZE_MINIMIZED);
 		return DefWindowProc(hwnd, uMsg, wParam, lParam);
 	case WM_PAINT:
-	{
-		handle_render();
-		ValidateRect(m_hWnd, nullptr);
-		return 0;
-	}
-	break;
+		{
+			handle_render();
+			ValidateRect(m_hWnd, nullptr);
+			return 0;
+		}
+		break;
 	case WM_DISPLAYCHANGE:
-	{
-		InvalidateRect(hwnd, nullptr, FALSE);
-		return 0;
-	}
+		{
+			InvalidateRect(hwnd, nullptr, FALSE);
+			return 0;
+		}
 
-	break;
+		break;
 	default:
 		return handle_message(hwnd, uMsg, wParam, lParam);
 	}
@@ -4397,7 +4407,7 @@ LRESULT frame_base::on_window_message(HWND hwnd, UINT uMsg, WPARAM wParam, LPARA
 }
 
 
-class bubble_impl : public frame_base, public ui::bubble_frame
+class bubble_impl final : public frame_base, public ui::bubble_frame
 {
 protected:
 	UINT_PTR _timer_id = 0;
@@ -4422,22 +4432,22 @@ public:
 		}
 	}
 
-	bool create(HWND parent, const factories_ptr& f)
+	bool create(const HWND parent, const factories_ptr& f)
 	{
 		const auto* const class_name = L"DIFF_BUBBLE";
 
 		if (register_class(CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS, nullptr, nullptr,
-			_gdi_ctx->gdi_brush(ui::style::color::bubble_background),
-			nullptr, class_name, nullptr))
+		                   _gdi_ctx->gdi_brush(ui::style::color::bubble_background),
+		                   nullptr, class_name, nullptr))
 		{
-			const auto style_ex = WS_EX_LAYERED; // WS_EX_NOREDIRECTIONBITMAP;
+			constexpr auto style_ex = WS_EX_LAYERED; // WS_EX_NOREDIRECTIONBITMAP;
 			m_hWnd = CreateWindowEx(style_ex, class_name, nullptr, WS_POPUP, 0, 0, 0, 0, parent, nullptr,
-				get_resource_instance, this);
+			                        get_resource_instance, this);
 			df::assert_true(m_hWnd != nullptr);
 
 			if (m_hWnd)
 			{
-				const MARGINS margins = { -1 };
+				constexpr MARGINS margins = {-1};
 				DwmExtendFrameIntoClientArea(m_hWnd, &margins);
 				create_draw_context(f, false, true);
 				SetFont(m_hWnd, _gdi_ctx->dialog);
@@ -4448,7 +4458,7 @@ public:
 		return false;
 	}
 
-	LRESULT handle_message(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) override
+	LRESULT handle_message(const HWND hwnd, const UINT uMsg, const WPARAM wParam, const LPARAM lParam) override
 	{
 		if (uMsg == WM_DESTROY) return on_window_destroy(uMsg, wParam, lParam);
 		if (uMsg == WM_MOUSEACTIVATE) return MA_NOACTIVATE;
@@ -4467,8 +4477,8 @@ public:
 		{
 			_alpha = (_alpha * 5 + _alpha_target * 2) / 7;
 
-			const DWORD flags = LWA_ALPHA;
-			const DWORD col = RGB(255, 255, 255);
+			constexpr DWORD flags = LWA_ALPHA;
+			constexpr DWORD col = RGB(255, 255, 255);
 			SetLayeredWindowAttributes(m_hWnd, col, _alpha, flags);
 		}
 		else if (_timer_id)
@@ -4495,18 +4505,18 @@ public:
 	const float radius = 8.0;
 
 	void show(const view_elements_ptr& elements, const recti button_rect, const int x_focus, const int preferred_size,
-		const bool horizontal) override
+	          const bool horizontal) override
 	{
 		if (_draw_ctx)
 		{
 			const auto scale_factor = _gdi_ctx->scale_factor;
 			const auto element_extent = elements->measure(*_draw_ctx, df::round(preferred_size * scale_factor));
-			const auto cx = std::max(80, element_extent.cx) + (horz_padding * 2);
-			const auto cy = std::max(36, element_extent.cy) + (vert_padding * 2);
+			const auto cx = std::max(80, element_extent.cx) + horz_padding * 2;
+			const auto cy = std::max(36, element_extent.cy) + vert_padding * 2;
 
 			const auto xx_focus = (x_focus == -1
-				? ((button_rect.left + button_rect.right) / 2)
-				: (button_rect.left + x_focus)) - (cx / 2);
+				                       ? (button_rect.left + button_rect.right) / 2
+				                       : button_rect.left + x_focus) - cx / 2;
 			const auto yy_focus = (button_rect.top + button_rect.bottom - cy) / 2;
 
 			auto x = horizontal ? button_rect.left - cx : xx_focus;
@@ -4552,10 +4562,11 @@ public:
 			_elements = elements;
 
 			ui::control_layouts positions;
-			_elements->layout(*_draw_ctx, center_rect(element_extent, sizei{ cx, cy }), positions);
+			_elements->layout(*_draw_ctx, center_rect(element_extent, sizei{cx, cy}), positions);
 
 			InvalidateRect(m_hWnd, nullptr, FALSE);
-			SetWindowPos(m_hWnd, nullptr, _bounds.left, _bounds.top, cx, cy, SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOOWNERZORDER);
+			SetWindowPos(m_hWnd, nullptr, _bounds.left, _bounds.top, cx, cy,
+			             SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOOWNERZORDER);
 
 			//update(bounds);
 			set_alpha(255);
@@ -4566,7 +4577,7 @@ public:
 	{
 		const auto rt = get_render_target();
 		draw_bubble_background(_f, rt, _bounds, _focus_loc, static_cast<float>(shadow_padding),
-			static_cast<float>(shadow_xy), radius);
+		                       static_cast<float>(shadow_xy), radius);
 		_draw_ctx->colors = {
 			ui::style::color::bubble_background, ui::style::color::view_text, ui::style::color::view_selected_background
 		};
@@ -4584,7 +4595,7 @@ public:
 		return 0;
 	}
 
-	void set_alpha(int a)
+	void set_alpha(const int a)
 	{
 		if (_alpha_target != a)
 		{
@@ -4604,7 +4615,6 @@ class frame_impl final :
 	public std::enable_shared_from_this<frame_impl>,
 	public IDropTarget
 {
-private:
 	pointi _pan_start_loc;
 	ui::frame_weak_ptr _parent_frame;
 	ui::frame_host_weak_ptr _host;
@@ -4615,10 +4625,10 @@ private:
 	ui::frame_style _style;
 	UINT_PTR _timer_id = 0;
 
-
 public:
-	frame_impl(owner_context_ptr ctx, ui::frame_weak_ptr parent_frame, ui::frame_host_weak_ptr parent_host,
-		const ui::frame_host_weak_ptr& host, const ui::frame_style& style) :
+	frame_impl(const owner_context_ptr& ctx, ui::frame_weak_ptr parent_frame,
+	           const ui::frame_host_weak_ptr& parent_host,
+	           const ui::frame_host_weak_ptr& host, const ui::frame_style& style) :
 		frame_base(ctx), _parent_frame(std::move(parent_frame)), _host(host), _parent_host(parent_host), _style(style)
 	{
 	}
@@ -4628,7 +4638,7 @@ public:
 		DestroyWindow(m_hWnd);
 	}
 
-	LRESULT handle_message(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) override
+	LRESULT handle_message(const HWND hwnd, const UINT uMsg, const WPARAM wParam, const LPARAM lParam) override
 	{
 		//if (uMsg == WM_SIZE) return on_window_layout(uMsg, wParam, lParam);
 		if (uMsg == WM_DESTROY) return on_window_destroy(uMsg, wParam, lParam);
@@ -4689,7 +4699,7 @@ public:
 		}
 	}
 
-	bool create(HWND parent, const ui::frame_style& style, const factories_ptr& f)
+	bool create(const HWND parent, const ui::frame_style& style, const factories_ptr& f)
 	{
 		const auto* const class_name = L"DIFF_FRAME";
 		auto dw_style = style.child ? WS_CHILD : WS_POPUP;
@@ -4699,11 +4709,11 @@ public:
 		//if (!style.hardware_accelerated) dw_ex_style |= WS_EX_COMPOSITED;
 
 		if (register_class(CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS, nullptr, nullptr,
-			_gdi_ctx->gdi_brush(ui::style::color::view_background),
-			nullptr, class_name, nullptr))
+		                   _gdi_ctx->gdi_brush(ui::style::color::view_background),
+		                   nullptr, class_name, nullptr))
 		{
 			m_hWnd = CreateWindowEx(dw_ex_style, class_name, nullptr, dw_style, 0, 0, 0, 0, parent, nullptr,
-				get_resource_instance, this);
+			                        get_resource_instance, this);
 			df::assert_true(m_hWnd != nullptr);
 
 			if (m_hWnd)
@@ -4802,23 +4812,23 @@ public:
 		return 0;
 	}
 
-	LRESULT on_window_nc_hit_test(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam)
+	LRESULT on_window_nc_hit_test(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam) const
 	{
 		if (_style.child)
 		{
-			const pointi loc = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+			const pointi loc = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
 			win_rect rc;
 			GetWindowRect(GetParent(m_hWnd), &rc);
 
 			const auto scale_factor = _draw_ctx ? _draw_ctx->scale_factor : 1.0;
 			const auto border_thickness = df::round(ui_nonclient_border_thickness * scale_factor);
 
-			if (rc.right >= loc.x && (rc.right - border_thickness) <= loc.x)
+			if (rc.right >= loc.x && rc.right - border_thickness <= loc.x)
 			{
 				return HTTRANSPARENT;
 			}
 
-			if (rc.left <= loc.x && (rc.left + border_thickness) >= loc.x)
+			if (rc.left <= loc.x && rc.left + border_thickness >= loc.x)
 			{
 				return HTTRANSPARENT;
 			}
@@ -4827,14 +4837,14 @@ public:
 		return DefWindowProc(m_hWnd, uMsg, wParam, lParam);
 	}
 
-	LRESULT on_window_set_cursor(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam)
+	LRESULT on_window_set_cursor(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam) const
 	{
 		//update_cursor();
 		SetCursor(_cursor);
 		return 1;
 	}
 
-	LRESULT on_window_erase_background(const uint32_t /*uMsg*/, const WPARAM wParam, const LPARAM /*lParam*/)
+	static LRESULT on_window_erase_background(const uint32_t /*uMsg*/, const WPARAM wParam, const LPARAM /*lParam*/)
 	{
 		return 1;
 	}
@@ -4857,7 +4867,7 @@ public:
 		}
 	}
 
-	LRESULT on_window_timer(const uint32_t /*uMsg*/, const WPARAM /*wParam*/, const LPARAM /*lParam*/)
+	LRESULT on_window_timer(const uint32_t /*uMsg*/, const WPARAM /*wParam*/, const LPARAM /*lParam*/) const
 	{
 		const auto h = _host.lock();
 		if (h) h->tick();
@@ -4900,7 +4910,7 @@ public:
 		return 0;
 	}
 
-	LRESULT on_mouse_left_button_up(uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam)
+	LRESULT on_mouse_left_button_up(uint32_t /*uMsg*/, const WPARAM wParam, const LPARAM lParam)
 	{
 		const pointi loc(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
 
@@ -4916,7 +4926,7 @@ public:
 		return 0;
 	}
 
-	LRESULT on_mouse_left_button_double_click(uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam)
+	LRESULT on_mouse_left_button_double_click(uint32_t /*uMsg*/, const WPARAM wParam, const LPARAM lParam) const
 	{
 		const pointi loc(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
 		const auto h = _host.lock();
@@ -4924,7 +4934,7 @@ public:
 		return 0;
 	}
 
-	LRESULT on_window_mouse_activate(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam)
+	LRESULT on_window_mouse_activate(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam) const
 	{
 		if (_style.no_focus)
 		{
@@ -4934,7 +4944,7 @@ public:
 		return DefWindowProc(m_hWnd, uMsg, wParam, lParam);
 	}
 
-	LRESULT on_mouse_leave(uint32_t /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam)
+	LRESULT on_mouse_leave(uint32_t /*uMsg*/, WPARAM /*wParam*/, const LPARAM lParam)
 	{
 		const pointi loc(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
 		_hover = false;
@@ -4944,14 +4954,14 @@ public:
 		return 0;
 	}
 
-	LRESULT on_mouse_wheel(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam)
+	LRESULT on_mouse_wheel(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam) const
 	{
-		POINT loc = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+		POINT loc = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
 		ScreenToClient(m_hWnd, &loc);
 
 		bool was_handled = false;
 		const auto h = _host.lock();
-		if (h) h->on_mouse_wheel({ loc.x, loc.y }, static_cast<short>(HIWORD(wParam)), to_key_state(wParam), was_handled);
+		if (h) h->on_mouse_wheel({loc.x, loc.y}, static_cast<short>(HIWORD(wParam)), to_key_state(wParam), was_handled);
 		if (!was_handled && IsWindow(GetParent(m_hWnd)))
 			SendMessage(GetParent(m_hWnd), uMsg, wParam, lParam);
 		return 0;
@@ -4977,10 +4987,10 @@ public:
 		return 1;
 	}
 
-	LRESULT on_window_gesture_notify(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam)
+	LRESULT on_window_gesture_notify(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam) const
 	{
-		const auto wanted_gestures = GC_PAN_WITH_SINGLE_FINGER_VERTICALLY | GC_PAN_WITH_SINGLE_FINGER_HORIZONTALLY;
-		GESTURECONFIG gc = { GID_PAN, wanted_gestures, 0 };
+		constexpr auto wanted_gestures = GC_PAN_WITH_SINGLE_FINGER_VERTICALLY | GC_PAN_WITH_SINGLE_FINGER_HORIZONTALLY;
+		GESTURECONFIG gc = {GID_PAN, wanted_gestures, 0};
 		SetGestureConfig(m_hWnd, 0, 1, &gc, sizeof(GESTURECONFIG));
 
 		return DefWindowProc(m_hWnd, WM_GESTURENOTIFY, wParam, lParam);
@@ -4996,35 +5006,35 @@ public:
 			switch (gi.dwID)
 			{
 			case GID_BEGIN:
-				_pan_start_loc = { gi.ptsLocation.x, gi.ptsLocation.y };
+				_pan_start_loc = {gi.ptsLocation.x, gi.ptsLocation.y};
 				break;
 			case GID_END:
 				break;
 			case GID_PAN:
-			{
-				const pointi current_loc = { gi.ptsLocation.x, gi.ptsLocation.y };
+				{
+					const pointi current_loc = {gi.ptsLocation.x, gi.ptsLocation.y};
 
 
-				if (gi.dwFlags & GF_BEGIN)
-				{
-					_pan_start_loc = current_loc;
-					const auto h = _host.lock();
-					if (h) h->pan_start(_pan_start_loc);
-				}
-				else if (gi.dwFlags & GF_END)
-				{
-					const auto h = _host.lock();
-					if (h) h->pan_end(_pan_start_loc, current_loc);
-				}
-				else
-				{
-					const auto h = _host.lock();
-					if (h) h->pan(_pan_start_loc, current_loc);
-				}
+					if (gi.dwFlags & GF_BEGIN)
+					{
+						_pan_start_loc = current_loc;
+						const auto h = _host.lock();
+						if (h) h->pan_start(_pan_start_loc);
+					}
+					else if (gi.dwFlags & GF_END)
+					{
+						const auto h = _host.lock();
+						if (h) h->pan_end(_pan_start_loc, current_loc);
+					}
+					else
+					{
+						const auto h = _host.lock();
+						if (h) h->pan(_pan_start_loc, current_loc);
+					}
 
-				//CloseGestureInfoHandle(gestureHandle);
-				return 0;
-			}
+					//CloseGestureInfoHandle(gestureHandle);
+					return 0;
+				}
 			default:
 				break;
 			}
@@ -5053,7 +5063,7 @@ public:
 		return 0;
 	}
 
-	LRESULT on_window_key_down(uint32_t /*uMsg*/, WPARAM wParam, LPARAM /*lParam*/)
+	LRESULT on_window_key_down(uint32_t /*uMsg*/, const WPARAM wParam, LPARAM /*lParam*/) const
 	{
 		const auto h = _host.lock();
 		if (h) return h->key_down(static_cast<int>(wParam), ui::current_key_state());
@@ -5061,7 +5071,7 @@ public:
 	}
 
 	// dry?
-	void set_cursor(ui::style::cursor cursor) override
+	void set_cursor(const ui::style::cursor cursor) override
 	{
 		switch (cursor)
 		{
@@ -5083,11 +5093,11 @@ public:
 			break;
 		case ui::style::cursor::hand_down: set_cursor(resources.hand_down);
 			break;
-		default:;
+		default: ;
 		}
 	}
 
-	void set_cursor(HICON cursor)
+	void set_cursor(const HICON cursor)
 	{
 		_cursor = cursor;
 		SetCursor(cursor);
@@ -5121,11 +5131,10 @@ public:
 		}
 	}
 
-	void dpi_changed()
+	void dpi_changed() const
 	{
 		if (_draw_ctx && _gdi_ctx)
 		{
-
 			const auto scale_factor = _gdi_ctx->scale_factor;
 			_draw_ctx->scale_factor = scale_factor;
 			_draw_ctx->icon_cxy = calc_icon_cxy(scale_factor);
@@ -5147,9 +5156,9 @@ public:
 
 	pointi to_client(const POINTL& pt) const
 	{
-		POINT point = { pt.x, pt.y };
+		POINT point = {pt.x, pt.y};
 		ScreenToClient(m_hWnd, &point);
-		return { point.x, point.y };
+		return {point.x, point.y};
 	}
 
 	STDMETHOD(QueryInterface)(_In_ REFIID iid, _Deref_out_ void** ppvObject) noexcept override
@@ -5175,7 +5184,7 @@ public:
 		return 1;
 	}
 
-	void set_drop_effect(const platform::drop_effect e, DWORD* pdwEffect)
+	static void set_drop_effect(const platform::drop_effect e, DWORD* pdwEffect)
 	{
 		if (pdwEffect)
 		{
@@ -5197,7 +5206,7 @@ public:
 		}
 	}
 
-	STDMETHODIMP DragEnter(IDataObject* pDataObj, DWORD grfKeyState, POINTL pt, DWORD* pdwEffect) override
+	STDMETHODIMP DragEnter(IDataObject* pDataObj, const DWORD grfKeyState, const POINTL pt, DWORD* pdwEffect) override
 	{
 		_drag_data = pDataObj;
 		const auto h = _host.lock();
@@ -5220,7 +5229,7 @@ public:
 		return S_OK;
 	}
 
-	STDMETHODIMP DragOver(DWORD grfKeyState, POINTL pt, DWORD* pdwEffect) override
+	STDMETHODIMP DragOver(const DWORD grfKeyState, const POINTL pt, DWORD* pdwEffect) override
 	{
 		const auto h = _host.lock();
 
@@ -5234,7 +5243,7 @@ public:
 		return S_OK;
 	}
 
-	STDMETHODIMP Drop(IDataObject* pDataObj, DWORD grfKeyState, POINTL pt, DWORD* pdwEffect) override
+	STDMETHODIMP Drop(IDataObject* pDataObj, const DWORD grfKeyState, const POINTL pt, DWORD* pdwEffect) override
 	{
 		const auto h = _host.lock();
 
@@ -5262,7 +5271,7 @@ public:
 	HMENU m_hMenu;
 
 
-	win32_menu(HMENU hMenu = nullptr) : m_hMenu(hMenu)
+	win32_menu(const HMENU hMenu = nullptr) : m_hMenu(hMenu)
 	{
 	}
 
@@ -5276,23 +5285,23 @@ public:
 	{
 		df::assert_true(m_hMenu == nullptr);
 		m_hMenu = ::CreatePopupMenu();
-		return (m_hMenu != nullptr) ? TRUE : FALSE;
+		return m_hMenu != nullptr ? TRUE : FALSE;
 	}
 
-	BOOL AppendMenu(uint32_t nFlags, UINT_PTR nIDNewItem = 0, LPCTSTR lpszNewItem = nullptr) const
+	BOOL AppendMenu(const uint32_t nFlags, const UINT_PTR nIDNewItem = 0, const LPCTSTR lpszNewItem = nullptr) const
 	{
 		df::assert_true(IsMenu(m_hMenu));
 		return ::AppendMenu(m_hMenu, nFlags, nIDNewItem, lpszNewItem);
 	}
 
-	BOOL AppendMenu(uint32_t nFlags, HMENU hSubMenu, LPCTSTR lpszNewItem) const
+	BOOL AppendMenu(const uint32_t nFlags, HMENU hSubMenu, const LPCTSTR lpszNewItem) const
 	{
 		df::assert_true(IsMenu(m_hMenu));
 		df::assert_true(IsMenu(hSubMenu));
 		return ::AppendMenu(m_hMenu, nFlags | MF_POPUP, (UINT_PTR)hSubMenu, lpszNewItem);
 	}
 
-	BOOL InsertMenuItem(uint32_t uItem, BOOL bByPosition, LPMENUITEMINFO lpmii) const
+	BOOL InsertMenuItem(const uint32_t uItem, const BOOL bByPosition, const LPMENUITEMINFO lpmii) const
 	{
 		df::assert_true(IsMenu(m_hMenu));
 		return ::InsertMenuItem(m_hMenu, uItem, bByPosition, lpmii);
@@ -5317,9 +5326,9 @@ public:
 	}
 };
 
-static const sizei menu_size_border = { 3, 3 };
+static constexpr sizei menu_size_border = {3, 3};
 
-class win32_app : public ui::platform_app
+class win32_app final : public ui::platform_app
 {
 public:
 	ui::app_ptr _app;
@@ -5343,7 +5352,7 @@ public:
 	}
 
 	void update_event_handles();
-	void tick();
+	void tick() const;
 
 	static bool is_pre_translate_message(const int message)
 	{
@@ -5352,7 +5361,7 @@ public:
 			message != WM_ERASEBKGND;
 	}
 
-	static bool is_edit_char(HWND hwnd, const char32_t c, const ui::key_state keys)
+	static bool is_edit_char(const HWND hwnd, const char32_t c, const ui::key_state keys)
 	{
 		if (keys.control)
 		{
@@ -5400,10 +5409,10 @@ public:
 	bool pre_translate_message(MSG& m);
 	void monitor_folders(const std::vector<df::folder_path>& folders_paths) override;
 	void destroy();
-	void idle();
+	void idle() const;
 	int ui_message_loop();
 	uint32_t ui_wait_for_signal(const std::vector<std::reference_wrapper<platform::thread_event>>& events,
-		bool wait_all, uint32_t timeout_ms, const std::function<bool(LPMSG m)>& cb);
+	                            bool wait_all, uint32_t timeout_ms, const std::function<bool(LPMSG m)>& cb);
 	void sys_command(ui::sys_command_type cmd) override;
 	void full_screen(bool full) override;
 
@@ -5428,7 +5437,7 @@ public:
 	}
 
 	ui::control_frame_ptr
-		create_app_frame(const platform::setting_file_ptr& store, const ui::frame_host_weak_ptr& host) override;
+	create_app_frame(const platform::setting_file_ptr& store, const ui::frame_host_weak_ptr& host) override;
 
 	void enable_screen_saver(bool enable) override;
 };
@@ -5484,8 +5493,9 @@ public:
 	recti _hover_command_bounds;
 	uint32_t cmd_show = SW_SHOW;
 
-	control_host_impl(owner_context_ptr ctx, const ui::frame_host_weak_ptr& host, ui::weak_app_ptr app, win32_app* pa,
-		const bool is_app_frame, const ui::color_style colors) :
+	control_host_impl(const owner_context_ptr& ctx, const ui::frame_host_weak_ptr& host, ui::weak_app_ptr app,
+	                  win32_app* pa,
+	                  const bool is_app_frame, const ui::color_style& colors) :
 		frame_base(ctx),
 		_pa(pa),
 		_app(std::move(app)),
@@ -5510,16 +5520,16 @@ public:
 	}
 
 	HWND Create(
-		_In_opt_ HWND hWndParent,
-		_In_ win_rect rect,
-		_In_ DWORD dwStyle,
-		_In_ DWORD dwExStyle)
+		_In_opt_ const HWND hWndParent,
+		_In_ const win_rect rect,
+		_In_ const DWORD dwStyle,
+		_In_ const DWORD dwExStyle)
 	{
 		const auto* const class_name = _is_app_frame ? L"DIFF_MAIN" : L"DIFF_DLG";
 		auto* const icon = _is_app_frame ? resources.diffractor_32 : nullptr;
 
 		if (register_class(CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS, icon, nullptr, _gdi_ctx->gdi_brush(_colors.background),
-			nullptr, class_name, nullptr))
+		                   nullptr, class_name, nullptr))
 		{
 			auto x = rect.left;
 			auto y = rect.top;
@@ -5565,7 +5575,7 @@ public:
 	void position(const recti bounds) override
 	{
 		SetWindowPos(m_hWnd, nullptr, bounds.left, bounds.top, bounds.width(), bounds.height(),
-			SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+		             SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
 	}
 
 	void clear()
@@ -5575,7 +5585,7 @@ public:
 		_modal_result = ui::close_result::ok;
 	}
 
-	int alloc_ids(int count = 1) const
+	int alloc_ids(const int count = 1) const
 	{
 		const auto result = _next_id;
 		_next_id += count;
@@ -5607,7 +5617,7 @@ public:
 	const int WM_NCUAHDRAWCAPTION = 0xAE;
 	const int WM_NCUAHDRAWFRAME = 0xAF;
 
-	LRESULT handle_message(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) override
+	LRESULT handle_message(const HWND hWnd, const UINT uMsg, const WPARAM wParam, const LPARAM lParam) override
 	{
 		if (uMsg == WM_CREATE) return on_window_create(uMsg, wParam, lParam);
 		if (uMsg == WM_DESTROY) return on_window_destroy(uMsg, wParam, lParam);
@@ -5730,9 +5740,9 @@ public:
 	//	return 0;
 	//}
 
-	LRESULT on_window_nc_hit_test(uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam);
+	LRESULT on_window_nc_hit_test(uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam) const;
 
-	LRESULT on_get_def_id(uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam)
+	LRESULT on_get_def_id(uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam) const
 	{
 		return MAKELONG(_def_id, DC_HASDEFID);
 	}
@@ -5774,7 +5784,7 @@ public:
 		}
 	}
 
-	LRESULT on_window_print_client(uint32_t /*uMsg*/, WPARAM wParam, LPARAM /*lParam*/)
+	static LRESULT on_window_print_client(uint32_t /*uMsg*/, WPARAM wParam, LPARAM /*lParam*/)
 	{
 		/*draw_context_gdi dc((HDC)wParam);
 		dc.frame_has_focus = _has_focus;
@@ -5795,7 +5805,7 @@ public:
 		return 1;
 	}
 
-	ui::color_style calc_colors(HWND child) const
+	ui::color_style calc_colors(const HWND child) const
 	{
 		const auto found = _children.find(GetDlgCtrlID(child));
 
@@ -5805,12 +5815,12 @@ public:
 			if (child_color.background != 0) return child_color;
 		}
 
-		wchar_t class_name[100] = { 0 };
+		wchar_t class_name[100] = {0};
 		::GetClassName(child, class_name, 100);
 
 		if (is_edit_class(class_name))
 		{
-			return { ui::style::color::edit_background, ui::style::color::edit_text };
+			return {ui::style::color::edit_background, ui::style::color::edit_text};
 		}
 
 		return _colors;
@@ -5831,7 +5841,7 @@ public:
 		return std::bit_cast<LRESULT>(_gdi_ctx->gdi_brush(colors.background));
 	}
 
-	LRESULT on_mouse_move(uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam)
+	LRESULT on_mouse_move(uint32_t /*uMsg*/, WPARAM wParam, const LPARAM lParam)
 	{
 		const pointi loc(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
 
@@ -5846,7 +5856,7 @@ public:
 		return 0;
 	}
 
-	LRESULT on_mouse_left_button_down(uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam)
+	LRESULT on_mouse_left_button_down(uint32_t /*uMsg*/, const WPARAM wParam, const LPARAM lParam)
 	{
 		const pointi loc(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
 
@@ -5861,7 +5871,7 @@ public:
 		return 0;
 	}
 
-	LRESULT on_mouse_left_button_up(uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam)
+	LRESULT on_mouse_left_button_up(uint32_t /*uMsg*/, const WPARAM wParam, const LPARAM lParam)
 	{
 		const pointi loc(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
 
@@ -5877,7 +5887,7 @@ public:
 		return 0;
 	}
 
-	LRESULT on_mouse_left_button_double_click(uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam)
+	LRESULT on_mouse_left_button_double_click(uint32_t /*uMsg*/, const WPARAM wParam, const LPARAM lParam) const
 	{
 		const pointi loc(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
 		const auto h = _host.lock();
@@ -5885,7 +5895,7 @@ public:
 		return 0;
 	}
 
-	LRESULT on_mouse_leave(uint32_t /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam)
+	LRESULT on_mouse_leave(uint32_t /*uMsg*/, WPARAM /*wParam*/, const LPARAM lParam)
 	{
 		const pointi loc(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
 		_hover = false;
@@ -5895,14 +5905,14 @@ public:
 		return 0;
 	}
 
-	LRESULT on_mouse_wheel(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam)
+	LRESULT on_mouse_wheel(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam) const
 	{
-		POINT loc = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+		POINT loc = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
 		ScreenToClient(m_hWnd, &loc);
 
 		bool was_handled = false;
 		const auto h = _host.lock();
-		if (h) h->on_mouse_wheel({ loc.x, loc.y }, static_cast<short>(HIWORD(wParam)), to_key_state(wParam), was_handled);
+		if (h) h->on_mouse_wheel({loc.x, loc.y}, static_cast<short>(HIWORD(wParam)), to_key_state(wParam), was_handled);
 		if (!was_handled && IsWindow(GetParent(m_hWnd)))
 			SendMessage(GetParent(m_hWnd), uMsg, wParam, lParam);
 		return 0;
@@ -5928,7 +5938,7 @@ public:
 		return 1;
 	}
 
-	static BOOL CALLBACK focus_first_callback(HWND h, LPARAM p)
+	static BOOL CALLBACK focus_first_callback(const HWND h, const LPARAM p)
 	{
 		const auto first_focused = std::bit_cast<bool*>(p);
 
@@ -5955,7 +5965,7 @@ public:
 		return true;
 	}
 
-	static BOOL CALLBACK focus_any_callback(HWND h, LPARAM p)
+	static BOOL CALLBACK focus_any_callback(const HWND h, LPARAM p)
 	{
 		if (IsWindowEnabled(h)) // && ::IsWindowVisible(h))
 		{
@@ -5983,7 +5993,7 @@ public:
 		}
 	}
 
-	void set_cursor(ui::style::cursor cursor) override
+	void set_cursor(const ui::style::cursor cursor) override
 	{
 		switch (cursor)
 		{
@@ -6005,11 +6015,11 @@ public:
 			break;
 		case ui::style::cursor::hand_down: set_cursor(resources.hand_down);
 			break;
-		default:;
+		default: ;
 		}
 	}
 
-	void set_cursor(HICON cursor)
+	void set_cursor(const HICON cursor)
 	{
 		_cursor = cursor;
 		SetCursor(cursor);
@@ -6018,11 +6028,11 @@ public:
 	ui::close_result wait_for_close(const uint32_t timeout_ms) override
 	{
 		_close.reset();
-		ui_wait_for_signal(_close, timeout_ms, [this](LPMSG m) { return pre_translate_message(m); });
+		ui_wait_for_signal(_close, timeout_ms, [this](const LPMSG m) { return pre_translate_message(m); });
 		return _modal_result;
 	}
 
-	void close(bool is_cancel) override
+	void close(const bool is_cancel) override
 	{
 		if (_is_app_frame)
 		{
@@ -6040,7 +6050,7 @@ public:
 		return _modal_result == ui::close_result::cancel;
 	}
 
-	bool pre_translate_message(LPMSG m)
+	bool pre_translate_message(const LPMSG m) const
 	{
 		BOOL bHandled = 0;
 		if (!m_hWnd) return false;
@@ -6099,7 +6109,7 @@ public:
 					df::assert_true(IsWindow(h));
 					const auto flags = SWP_NOACTIVATE | (c.visible ? SWP_SHOWWINDOW : SWP_HIDEWINDOW);
 					hdwp = DeferWindowPos(hdwp, h, last_h, bounds.left, bounds.top, bounds.width(), bounds.height(),
-						flags);
+					                      flags);
 					last_h = h;
 
 					df::assert_true(hdwp != nullptr);
@@ -6128,9 +6138,9 @@ public:
 		}
 	}
 
-	LRESULT on_window_context_menu(uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam)
+	LRESULT on_window_context_menu(uint32_t /*uMsg*/, WPARAM wParam, const LPARAM lParam)
 	{
-		const pointi loc = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+		const pointi loc = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
 		const auto h = _host.lock();
 
 		if (h)
@@ -6148,10 +6158,10 @@ public:
 
 	LRESULT on_window_min_max_info(uint32_t /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/) const;
 
-	LRESULT on_window_activate(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam)
+	LRESULT on_window_activate(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam) const
 	{
 		const LPARAM r = DefWindowProc(m_hWnd, uMsg, wParam, lParam);
-		const auto is_active = (wParam == WA_ACTIVE || wParam == WA_CLICKACTIVE);
+		const auto is_active = wParam == WA_ACTIVE || wParam == WA_CLICKACTIVE;
 		const auto h = _host.lock();
 		if (h) h->activate(is_active);
 		return r;
@@ -6159,12 +6169,12 @@ public:
 
 	LRESULT on_window_timer(uint32_t /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/);
 
-	LRESULT on_system_device_change(uint32_t /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/);
+	LRESULT on_system_device_change(uint32_t /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/) const;
 	LRESULT on_window_erase_background(uint32_t /*uMsg*/, WPARAM wParam, LPARAM /*lParam*/);
 	LRESULT on_window_command(uint32_t uMsg, WPARAM wParam, LPARAM lParam);
 	LRESULT on_window_hscroll(uint32_t uMsg, WPARAM wParam, LPARAM lParam);
 
-	LRESULT on_window_menu_popup(uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam) const
+	static LRESULT on_window_menu_popup(uint32_t /*uMsg*/, const WPARAM wParam, LPARAM lParam)
 	{
 		const auto hMenu = std::bit_cast<HMENU>(wParam);
 
@@ -6176,27 +6186,27 @@ public:
 		return 0;
 	}
 
-	LRESULT on_window_draw_item(uint32_t /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam) const
+	LRESULT on_window_draw_item(uint32_t /*uMsg*/, WPARAM /*wParam*/, const LPARAM lParam) const
 	{
 		draw_item(std::bit_cast<LPDRAWITEMSTRUCT>(lParam));
 		return TRUE;
 	}
 
-	LRESULT on_window_measure_item(uint32_t /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam) const
+	LRESULT on_window_measure_item(uint32_t /*uMsg*/, WPARAM /*wParam*/, const LPARAM lParam) const
 	{
 		measure_item(std::bit_cast<LPMEASUREITEMSTRUCT>(lParam));
 		return 1;
 	}
 
 	LRESULT on_dwm_composition_changed(uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam);
-	LRESULT on_window_nc_activate(uint32_t, WPARAM, LPARAM);
+	LRESULT on_window_nc_activate(uint32_t, WPARAM, LPARAM) const;
 	LRESULT on_window_nc_calc_size(uint32_t, WPARAM wParam, LPARAM lParam);
-	LRESULT on_window_nc_paint(uint32_t, WPARAM wParam, LPARAM lParam);
+	LRESULT on_window_nc_paint(uint32_t, WPARAM wParam, LPARAM lParam) const;
 
 	void update_region();
 	void handle_composition_changed();
 
-	void draw_item(LPDRAWITEMSTRUCT lpDrawItemStruct) const
+	void draw_item(const LPDRAWITEMSTRUCT lpDrawItemStruct) const
 	{
 		if (lpDrawItemStruct->CtlType == ODT_MENU)
 		{
@@ -6205,7 +6215,7 @@ public:
 		}
 	}
 
-	void measure_item(LPMEASUREITEMSTRUCT lpMeasureItemStruct) const
+	void measure_item(const LPMEASUREITEMSTRUCT lpMeasureItemStruct) const
 	{
 		if (lpMeasureItemStruct->CtlType == ODT_MENU)
 		{
@@ -6231,14 +6241,16 @@ public:
 					win_rect text_bounds;
 					win_rect keyboard_accelerator_bounds;
 					DrawText(dc, text_w.data(), static_cast<int>(text_w.size()), &text_bounds,
-						DT_SINGLELINE | DT_LEFT | DT_CALCRECT);
+					         DT_SINGLELINE | DT_LEFT | DT_CALCRECT);
 					DrawText(dc, keyboard_accelerator_w.data(), static_cast<int>(keyboard_accelerator_w.size()),
-						&keyboard_accelerator_bounds, DT_SINGLELINE | DT_LEFT | DT_CALCRECT);
+					         &keyboard_accelerator_bounds, DT_SINGLELINE | DT_LEFT | DT_CALCRECT);
 					SelectObject(dc, old_font);
 
 
-					lpMeasureItemStruct->itemWidth = text_bounds.width() + keyboard_accelerator_bounds.width() + df::round(64 * scale);
-					lpMeasureItemStruct->itemHeight = std::max(text_bounds.height() + df::round(8 * scale), df::round(20 * scale));
+					lpMeasureItemStruct->itemWidth = text_bounds.width() + keyboard_accelerator_bounds.width() +
+						df::round(64 * scale);
+					lpMeasureItemStruct->itemHeight = std::max(text_bounds.height() + df::round(8 * scale),
+					                                           df::round(20 * scale));
 
 					ReleaseDC(m_hWnd, dc);
 				}
@@ -6305,7 +6317,7 @@ public:
 		}
 	}
 
-	LRESULT on_session_change(uint32_t /*uMsg*/, WPARAM wParam, LPARAM /*lParam*/)
+	LRESULT on_session_change(uint32_t /*uMsg*/, const WPARAM wParam, LPARAM /*lParam*/) const
 	{
 		const auto app = _app.lock();
 
@@ -6316,7 +6328,7 @@ public:
 		return 0;
 	}
 
-	void update_font_sizes()
+	void update_font_sizes() const
 	{
 		if (_draw_ctx)
 		{
@@ -6355,7 +6367,7 @@ public:
 		}
 	}
 
-	LRESULT on_window_dpi_changed(uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam)
+	LRESULT on_window_dpi_changed(uint32_t /*uMsg*/, const WPARAM wParam, const LPARAM lParam)
 	{
 		_gdi_ctx->update_scale_factor(HIWORD(wParam) / static_cast<double>(USER_DEFAULT_SCREEN_DPI));
 		update_font_sizes();
@@ -6382,18 +6394,18 @@ public:
 		if (new_bounds)
 		{
 			SetWindowPos(m_hWnd,
-				nullptr,
-				new_bounds->left,
-				new_bounds->top,
-				new_bounds->right - new_bounds->left,
-				new_bounds->bottom - new_bounds->top,
-				SWP_NOZORDER | SWP_NOACTIVATE);
+			             nullptr,
+			             new_bounds->left,
+			             new_bounds->top,
+			             new_bounds->right - new_bounds->left,
+			             new_bounds->bottom - new_bounds->top,
+			             SWP_NOZORDER | SWP_NOACTIVATE);
 		}
 
 		return 0;
 	}
 
-	LRESULT on_system_settings_change(uint32_t /*uMsg*/, WPARAM wParam, LPARAM /*lParam*/)
+	LRESULT on_system_settings_change(uint32_t /*uMsg*/, WPARAM wParam, LPARAM /*lParam*/) const
 	{
 		const auto app = _app.lock();
 
@@ -6432,18 +6444,18 @@ public:
 	}
 
 	ui::edit_ptr create_edit(const ui::edit_styles& styles, std::u8string_view text,
-		std::function<void(const std::u8string&)> changed) override;
+	                         std::function<void(const std::u8string&)> changed) override;
 	ui::trackbar_ptr create_slider(int min, int max, std::function<void(int, bool)> changed) override;
 	ui::button_ptr create_button(std::u8string_view text, std::function<void()> invoke,
-		bool default_button = false) override;
+	                             bool default_button = false) override;
 	ui::button_ptr create_button(icon_index icon, std::u8string_view title, std::u8string_view details,
-		std::function<void()> invoke, bool default_button = false) override;
+	                             std::function<void()> invoke, bool default_button = false) override;
 	ui::button_ptr create_check_button(bool val, std::u8string_view text, bool is_radio,
-		std::function<void(bool)> changed) override;
+	                                   std::function<void(bool)> changed) override;
 	ui::date_time_control_ptr create_date_time_control(df::date_t text, std::function<void(df::date_t)> changed,
-		bool include_time) override;
+	                                                   bool include_time) override;
 	ui::toolbar_ptr
-		create_toolbar(const ui::toolbar_styles& styles, const std::vector<ui::command_ptr>& buttons) override;
+	create_toolbar(const ui::toolbar_styles& styles, const std::vector<ui::command_ptr>& buttons) override;
 	ui::control_frame_ptr create_dlg(ui::frame_host_weak_ptr host, bool is_popup) override;
 	ui::bubble_window_ptr create_bubble() override;
 
@@ -6453,7 +6465,7 @@ public:
 	win_rect m_rcButton;
 
 
-	LRESULT on_menu_nc_calc_size(HWND hwnd, uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam)
+	LRESULT on_menu_nc_calc_size(HWND hwnd, uint32_t /*uMsg*/, const WPARAM wParam, const LPARAM lParam) const
 	{
 		auto calc_valid_rects = static_cast<BOOL>(wParam);
 		const auto pr = std::bit_cast<LPRECT>(lParam);
@@ -6470,7 +6482,7 @@ public:
 		return 0;
 	}
 
-	LRESULT on_menu_nc_paint(HWND hwnd, uint32_t /*uMsg*/, WPARAM wParam, LPARAM /*lParam*/)
+	LRESULT on_menu_nc_paint(const HWND hwnd, uint32_t /*uMsg*/, const WPARAM wParam, LPARAM /*lParam*/)
 	{
 		auto dc = GetDCEx(hwnd, std::bit_cast<HRGN>(wParam), DCX_WINDOW | DCX_INTERSECTRGN | 0x10000);
 		if (!dc) dc = GetWindowDC(hwnd);
@@ -6487,16 +6499,16 @@ public:
 		return 1;
 	}
 
-	void draw_menu(HDC dc, const win_rect& rcWin)
+	void draw_menu(const HDC dc, const win_rect& rcWin) const
 	{
 		const auto padding = menu_size_border * _draw_ctx->scale_factor;
 
 		fill_solid_rect(dc, rcWin, ui::lighten(ui::style::color::menu_background, 0.22f));
 		fill_solid_rect(dc, rcWin.inflate(-padding.cx, -padding.cy),
-			ui::style::color::menu_background);
+		                ui::style::color::menu_background);
 	}
 
-	LRESULT on_menu_print(HWND hwnd, uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam)
+	LRESULT on_menu_print(const HWND hwnd, uint32_t /*uMsg*/, const WPARAM wParam, const LPARAM lParam)
 	{
 		const HDC dc = std::bit_cast<HDC>(wParam);
 		win_rect rcWin;
@@ -6541,10 +6553,10 @@ public:
 		return 0;
 	}
 
-	static LRESULT CALLBACK MenuSuperProc(HWND hWnd, UINT uMsg, WPARAM wParam,
-		LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData)
+	static LRESULT CALLBACK MenuSuperProc(const HWND hWnd, const UINT uMsg, const WPARAM wParam,
+	                                      const LPARAM lParam, UINT_PTR uIdSubclass, const DWORD_PTR dwRefData)
 	{
-		auto pt = reinterpret_cast<control_host_impl*>(dwRefData);
+		const auto pt = reinterpret_cast<control_host_impl*>(dwRefData);
 
 		if (uMsg == WM_NCPAINT) return pt->on_menu_nc_paint(hWnd, uMsg, wParam, lParam);
 		if (uMsg == WM_PRINT) return pt->on_menu_print(hWnd, uMsg, wParam, lParam);
@@ -6553,9 +6565,9 @@ public:
 		return DefSubclassProc(hWnd, uMsg, wParam, lParam);
 	}
 
-	static LRESULT CALLBACK menu_create_hook_proc(int nCode, WPARAM wParam, LPARAM lParam)
+	static LRESULT CALLBACK menu_create_hook_proc(const int nCode, const WPARAM wParam, LPARAM lParam)
 	{
-		const LRESULT lRet = 0;
+		constexpr LRESULT lRet = 0;
 		wchar_t szClassName[7];
 
 		auto current = _current;
@@ -6572,8 +6584,8 @@ public:
 				// Subclass to a flat-looking menu
 				SetWindowSubclass(hWndMenu, MenuSuperProc, 0, reinterpret_cast<DWORD_PTR>(_current));
 				SetWindowPos(hWndMenu, HWND_TOP, 0, 0, 0, 0,
-					SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED |
-					SWP_DRAWFRAME);
+				             SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED |
+				             SWP_DRAWFRAME);
 				//current->m_rcButton = {};
 			}
 		}
@@ -6594,7 +6606,7 @@ public:
 		return lRet;
 	}
 
-	int show_menu(HMENU hMenu, uint32_t menu_style, int x, int y, LPCRECT pr = nullptr)
+	int show_menu(const HMENU hMenu, const uint32_t menu_style, const int x, const int y, const LPCRECT pr = nullptr)
 	{
 		df::scope_locked_inc sl2(df::command_active);
 
@@ -6755,13 +6767,13 @@ public:
 		wp.length = sizeof(wp);
 		if (GetWindowPlacement(m_hWnd, &wp))
 		{
-			store->write({}, s_window_rect, { (const uint8_t*)(&wp), wp.length });
+			store->write({}, s_window_rect, {(const uint8_t*)&wp, wp.length});
 		}
 	}
 };
 
 
-LRESULT control_host_impl::on_system_device_change(uint32_t /*uMsg*/, WPARAM wParam, LPARAM /*lParam*/)
+LRESULT control_host_impl::on_system_device_change(uint32_t /*uMsg*/, const WPARAM wParam, LPARAM /*lParam*/) const
 {
 	if (wParam == DBT_DEVNODES_CHANGED)
 	{
@@ -6784,7 +6796,7 @@ LRESULT control_host_impl::on_window_erase_background(uint32_t /*uMsg*/, WPARAM 
 
 LRESULT edit_impl::on_window_context_menu(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam)
 {
-	const POINT loc{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+	const POINT loc{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
 	POINT client_loc(loc);
 	ScreenToClient(m_hWnd, &client_loc);
 
@@ -6794,7 +6806,7 @@ LRESULT edit_impl::on_window_context_menu(const uint32_t uMsg, const WPARAM wPar
 
 	for (const auto& unk : _unknown_words)
 	{
-		if (unk.calc_bounds(*this).contains({ client_loc.x, client_loc.y }))
+		if (unk.calc_bounds(*this).contains({client_loc.x, client_loc.y}))
 		{
 			selected_word = unk;
 			found_error = true;
@@ -6802,8 +6814,8 @@ LRESULT edit_impl::on_window_context_menu(const uint32_t uMsg, const WPARAM wPar
 		}
 	}
 
-	const int ID_SPELLCHECK_ADD = 1000;
-	const int ID_SPELLCHECK_OPT0 = 2000;
+	constexpr int ID_SPELLCHECK_ADD = 1000;
+	constexpr int ID_SPELLCHECK_OPT0 = 2000;
 
 	if (found_error)
 	{
@@ -6832,7 +6844,7 @@ LRESULT edit_impl::on_window_context_menu(const uint32_t uMsg, const WPARAM wPar
 			}
 
 			popup.AppendMenu(MF_ENABLED, ID_SPELLCHECK_ADD,
-				str::utf8_to_utf16(str::format(tt.menu_add_fmt, selected_word.word)).c_str());
+			                 str::utf8_to_utf16(str::format(tt.menu_add_fmt, selected_word.word)).c_str());
 			popup.AppendMenu(MF_SEPARATOR);
 
 			// Now the editing commands (cut, copy, paste, undo, etc)
@@ -6931,7 +6943,7 @@ LRESULT control_host_impl::on_window_hscroll(const uint32_t uMsg, const WPARAM w
 	return 0;
 }
 
-LRESULT control_host_impl::on_window_min_max_info(uint32_t /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam) const
+LRESULT control_host_impl::on_window_min_max_info(uint32_t /*uMsg*/, WPARAM /*wParam*/, const LPARAM lParam) const
 {
 	const LPMINMAXINFO lpMMI = std::bit_cast<LPMINMAXINFO>(lParam);
 
@@ -6963,7 +6975,7 @@ void control_host_impl::update_region()
 
 	if (IsZoomed(m_hWnd))
 	{
-		WINDOWINFO wi = { sizeof(wi), 0 };
+		WINDOWINFO wi = {sizeof(wi), 0};
 		GetWindowInfo(m_hWnd, &wi);
 
 		// For maximized windows, a region is needed to cut off the non-client
@@ -7013,10 +7025,10 @@ void control_host_impl::handle_composition_changed()
 	{
 		// The window needs a frame to show a shadow, so give it the smallest
 		// amount of frame possible 
-		const MARGINS empty_margins = { 0, 0, _is_full_screen ? 0 : 1, 0 };
+		const MARGINS empty_margins = {0, 0, _is_full_screen ? 0 : 1, 0};
 		//MARGINS empty_margins = { -1 };
 		DwmExtendFrameIntoClientArea(m_hWnd, &empty_margins);
-		const auto at = DWMNCRP_ENABLED;
+		constexpr auto at = DWMNCRP_ENABLED;
 		DwmSetWindowAttribute(m_hWnd, DWMWA_NCRENDERING_POLICY, &at, sizeof(DWORD));
 	}
 
@@ -7032,11 +7044,11 @@ LRESULT control_host_impl::on_dwm_composition_changed(uint32_t, WPARAM wParam, L
 	return 0;
 }
 
-LRESULT control_host_impl::on_window_nc_hit_test(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam)
+LRESULT control_host_impl::on_window_nc_hit_test(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam) const
 {
 	if (_is_app_frame)
 	{
-		POINT loc = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+		POINT loc = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
 		ScreenToClient(m_hWnd, &loc);
 
 		RECT rc;
@@ -7102,10 +7114,10 @@ LRESULT control_host_impl::on_window_nc_hit_test(const uint32_t uMsg, const WPAR
 
 		if (h)
 		{
-			POINT point{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+			POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
 			ScreenToClient(m_hWnd, &point);
 
-			if (!h->is_control_area({ point.x, point.y }))
+			if (!h->is_control_area({point.x, point.y}))
 			{
 				ht = HTCAPTION;
 			}
@@ -7115,16 +7127,16 @@ LRESULT control_host_impl::on_window_nc_hit_test(const uint32_t uMsg, const WPAR
 	return ht;
 }
 
-LRESULT control_host_impl::on_window_nc_activate(uint32_t, WPARAM wParam, LPARAM)
+LRESULT control_host_impl::on_window_nc_activate(uint32_t, const WPARAM wParam, LPARAM) const
 {
 	// DefWindowProc won't repaint the window border if lParam (normally a HRGN) is -1.
 	// This is recommended in: https://blogs.msdn.microsoft.com/wpfsdk/2008/09/08/custom-window-chrome-in-wpf/ 
 	return DefWindowProcW(m_hWnd, WM_NCACTIVATE, wParam, -1);
 }
 
-static bool has_autohide_appbar(UINT edge, RECT mon)
+static bool has_autohide_appbar(const UINT edge, const RECT mon)
 {
-	APPBARDATA ad = { sizeof(APPBARDATA), nullptr, 0, edge, mon, 0 };
+	APPBARDATA ad = {sizeof(APPBARDATA), nullptr, 0, edge, mon, 0};
 	return SHAppBarMessage(ABM_GETAUTOHIDEBAREX, &ad);
 }
 
@@ -7153,7 +7165,7 @@ using funcGetDpiForMonitor = HRESULT(WINAPI*)(HMONITOR hmonitor, MONITOR_DPI_TYP
 // The thickness of an auto-hide taskbar in pixels.
 constexpr int kAutoHideTaskbarThicknessPx = 2;
 
-const float kDefaultDPI = 96.f;
+constexpr float kDefaultDPI = 96.f;
 
 static bool IsProcessPerMonitorDpiAware()
 {
@@ -7187,7 +7199,7 @@ static bool IsProcessPerMonitorDpiAware()
 	return per_monitor_dpi_aware == PerMonitorDpiAware::PER_MONITOR_DPI_AWARE;
 }
 
-float GetScalingFactorFromDPI(int dpi)
+float GetScalingFactorFromDPI(const int dpi)
 {
 	return static_cast<float>(dpi) / kDefaultDPI;
 }
@@ -7217,7 +7229,7 @@ int GetDefaultSystemDPI()
 }
 
 // Gets the DPI for a particular monitor.
-int GetPerMonitorDPI(HMONITOR monitor)
+int GetPerMonitorDPI(const HMONITOR monitor)
 {
 	if (IsProcessPerMonitorDpiAware())
 	{
@@ -7244,9 +7256,9 @@ int GetPerMonitorDPI(HMONITOR monitor)
 }
 
 
-bool MonitorHasAutohideTaskbarForEdge(UINT edge, HMONITOR monitor)
+bool MonitorHasAutohideTaskbarForEdge(const UINT edge, const HMONITOR monitor)
 {
-	APPBARDATA taskbar_data_for_getautohidebar = { sizeof(APPBARDATA), nullptr, 0, edge };
+	APPBARDATA taskbar_data_for_getautohidebar = {sizeof(APPBARDATA), nullptr, 0, edge};
 	taskbar_data_for_getautohidebar.hWnd = GetForegroundWindow();
 
 	// MSDN documents an ABM_GETAUTOHIDEBAREX, which supposedly takes a monitor
@@ -7266,7 +7278,7 @@ bool MonitorHasAutohideTaskbarForEdge(UINT edge, HMONITOR monitor)
 		SHAppBarMessage(ABM_GETAUTOHIDEBAR, &taskbar_data_for_getautohidebar));
 	if (!IsWindow(taskbar))
 	{
-		APPBARDATA taskbar_data = { sizeof(APPBARDATA), nullptr, 0, 0 };
+		APPBARDATA taskbar_data = {sizeof(APPBARDATA), nullptr, 0, 0};
 		const auto taskbar_state = SHAppBarMessage(ABM_GETSTATE, &taskbar_data);
 		if (!(taskbar_state & ABS_AUTOHIDE))
 			return false;
@@ -7306,7 +7318,7 @@ bool MonitorHasAutohideTaskbarForEdge(UINT edge, HMONITOR monitor)
 		// secondary monitor, the MonitorFromWindow call above fails to return the
 		// correct monitor the taskbar is on. We fallback to MonitorFromPoint for
 		// the cursor position in that case, which seems to work well.
-		POINT cursor_pos = { 0 };
+		POINT cursor_pos = {0};
 		GetCursorPos(&cursor_pos);
 		if (MonitorFromPoint(cursor_pos, MONITOR_DEFAULTTONEAREST) == monitor)
 			return true;
@@ -7314,7 +7326,7 @@ bool MonitorHasAutohideTaskbarForEdge(UINT edge, HMONITOR monitor)
 	return false;
 }
 
-LRESULT control_host_impl::on_window_nc_calc_size(uint32_t, WPARAM wParam, LPARAM lParam)
+LRESULT control_host_impl::on_window_nc_calc_size(uint32_t, const WPARAM wParam, const LPARAM lParam)
 {
 	// Some of this code came from the chromium code base
 
@@ -7337,8 +7349,8 @@ LRESULT control_host_impl::on_window_nc_calc_size(uint32_t, WPARAM wParam, LPARA
 
 	RECT* client_rect =
 		mode
-		? &(reinterpret_cast<NCCALCSIZE_PARAMS*>(l_param)->rgrc[0])
-		: reinterpret_cast<RECT*>(l_param);
+			? &reinterpret_cast<NCCALCSIZE_PARAMS*>(l_param)->rgrc[0]
+			: reinterpret_cast<RECT*>(l_param);
 
 	HMONITOR monitor = MonitorFromWindow(hwnd(), MONITOR_DEFAULTTONULL);
 
@@ -7419,7 +7431,7 @@ LRESULT control_host_impl::on_window_nc_calc_size(uint32_t, WPARAM wParam, LPARA
 	return 0;
 }
 
-LRESULT control_host_impl::on_window_nc_paint(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam)
+LRESULT control_host_impl::on_window_nc_paint(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam) const
 {
 	if (!_composition_enabled)
 		return 0;
@@ -7453,7 +7465,7 @@ public:
 	control_host_impl* _parent;
 	owner_context_ptr _ctx;
 
-	HIMAGELIST create_image_list()
+	HIMAGELIST create_image_list() const
 	{
 		const auto icon_cxy = calc_icon_cxy(_ctx->scale_factor);
 		return ImageList_Create(icon_cxy, icon_cxy, ILC_COLOR, 0, 0);
@@ -7467,7 +7479,7 @@ public:
 		{
 			const auto scale_factor = _ctx->scale_factor;
 			SetButtonSize(df::round(_styles.button_extent.cx * scale_factor),
-				df::round(_styles.button_extent.cy * scale_factor));
+			              df::round(_styles.button_extent.cy * scale_factor));
 			AutoSize();
 		}
 		else
@@ -7476,8 +7488,8 @@ public:
 		}
 	}
 
-	void create(HWND parent, const ui::toolbar_styles& styles, const std::vector<ui::command_ptr>& buttons,
-		uintptr_t toolbar_id)
+	void create(const HWND parent, const ui::toolbar_styles& styles, const std::vector<ui::command_ptr>& buttons,
+	            const uintptr_t toolbar_id)
 	{
 		_styles = styles;
 
@@ -7499,14 +7511,14 @@ public:
 				const auto button_style = BTNS_BUTTON | (has_defined_button_extent ? 0 : BTNS_AUTOSIZE) | (
 					b->menu ? BTNS_DROPDOWN : 0);
 
-				TBBUTTON bb = { image, static_cast<int>(id), TBSTATE_ENABLED, static_cast<uint8_t>(button_style), 0, 0 };
+				TBBUTTON bb = {image, static_cast<int>(id), TBSTATE_ENABLED, static_cast<uint8_t>(button_style), 0, 0};
 				toolbar_buttons.emplace_back(bb);
 				_commands[id] = b;
 				id += 1;
 			}
 			else
 			{
-				TBBUTTON bb = { 0, 0, 0, BTNS_SEP, 0, 0 };
+				TBBUTTON bb = {0, 0, 0, BTNS_SEP, 0, 0};
 				toolbar_buttons.emplace_back(bb);
 			}
 		}
@@ -7538,7 +7550,7 @@ public:
 			{
 				auto w = str::utf8_to_utf16(b->toolbar_text);
 
-				TBBUTTONINFO tbbi = { 0 };
+				TBBUTTONINFO tbbi = {0};
 				tbbi.cbSize = sizeof(TBBUTTONINFO);
 				tbbi.dwMask = TBIF_TEXT;
 				tbbi.pszText = const_cast<LPWSTR>(w.c_str());
@@ -7549,37 +7561,37 @@ public:
 		update_button_size();
 	}
 
-	void AutoSize()
+	void AutoSize() const
 	{
 		df::assert_true(IsWindow(m_hWnd));
 		::SendMessage(m_hWnd, TB_AUTOSIZE, 0, 0L);
 	}
 
-	BOOL SetButtonSize(int cx, int cy)
+	BOOL SetButtonSize(const int cx, const int cy) const
 	{
 		df::assert_true(IsWindow(m_hWnd));
 		return static_cast<BOOL>(::SendMessage(m_hWnd, TB_SETBUTTONSIZE, 0, MAKELPARAM(cx, cy)));
 	}
 
-	BOOL SetButtonInfo(int nID, LPTBBUTTONINFO lptbbi)
+	BOOL SetButtonInfo(const int nID, LPTBBUTTONINFO lptbbi) const
 	{
 		df::assert_true(IsWindow(m_hWnd));
 		return static_cast<BOOL>(::SendMessage(m_hWnd, TB_SETBUTTONINFO, nID, (LPARAM)lptbbi));
 	}
 
-	void SetButtonStructSize(int nSize = sizeof(TBBUTTON))
+	void SetButtonStructSize(const int nSize = sizeof(TBBUTTON)) const
 	{
 		df::assert_true(IsWindow(m_hWnd));
 		::SendMessage(m_hWnd, TB_BUTTONSTRUCTSIZE, nSize, 0L);
 	}
 
-	HIMAGELIST SetImageList(HIMAGELIST hImageList, int nIndex = 0)
+	HIMAGELIST SetImageList(HIMAGELIST hImageList, const int nIndex = 0) const
 	{
 		df::assert_true(IsWindow(m_hWnd));
 		return std::bit_cast<HIMAGELIST>(::SendMessage(m_hWnd, TB_SETIMAGELIST, nIndex, (LPARAM)hImageList));
 	}
 
-	BOOL AddButtons(int nNumButtons, LPTBBUTTON lpButtons)
+	BOOL AddButtons(const int nNumButtons, LPTBBUTTON lpButtons) const
 	{
 		df::assert_true(IsWindow(m_hWnd));
 		return static_cast<BOOL>(::SendMessage(m_hWnd, TB_ADDBUTTONS, nNumButtons, (LPARAM)lpButtons));
@@ -7591,7 +7603,7 @@ public:
 		DestroyWindow(m_hWnd);
 	}
 
-	sizei measure_toolbar()
+	sizei measure_toolbar() const
 	{
 		sizei result(0, 0);
 		const int count = static_cast<int>(::SendMessage(m_hWnd, TB_BUTTONCOUNT, 0, 0L));
@@ -7609,16 +7621,16 @@ public:
 		return result;
 	}
 
-	sizei measure_toolbar(int cx) override
+	sizei measure_toolbar(const int cx) override
 	{
-		SIZE result{ cx, 0 };
+		SIZE result{cx, 0};
 
 		if (_styles.xTBSTYLE_WRAPABLE)
 		{
 			SetWindowPos(m_hWnd, nullptr, 0, 0, cx, 500, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
 			AutoSize();
 			const auto extent = measure_toolbar();
-			result = { extent.cx, extent.cy };
+			result = {extent.cx, extent.cy};
 		}
 		else
 		{
@@ -7635,7 +7647,7 @@ public:
 			extent = measure_toolbar();
 		}*/
 
-		return { result.cx, result.cy };
+		return {result.cx, result.cy};
 	}
 
 	int GetButtonCount() const
@@ -7644,13 +7656,13 @@ public:
 		return static_cast<int>(::SendMessage(m_hWnd, TB_BUTTONCOUNT, 0, 0L));
 	}
 
-	BOOL GetButton(int nIndex, LPTBBUTTON lpButton) const
+	BOOL GetButton(const int nIndex, LPTBBUTTON lpButton) const
 	{
 		df::assert_true(IsWindow(m_hWnd));
 		return static_cast<BOOL>(::SendMessage(m_hWnd, TB_GETBUTTON, nIndex, (LPARAM)lpButton));
 	}
 
-	int GetButtonInfo(int nID, LPTBBUTTONINFO lptbbi) const
+	int GetButtonInfo(const int nID, LPTBBUTTONINFO lptbbi) const
 	{
 		df::assert_true(IsWindow(m_hWnd));
 		return static_cast<int>(::SendMessage(m_hWnd, TB_GETBUTTONINFO, nID, (LPARAM)lptbbi));
@@ -7687,7 +7699,7 @@ public:
 			{
 				const auto& c = found->second;
 
-				TBBUTTONINFO tbbi = { 0 };
+				TBBUTTONINFO tbbi = {0};
 				tbbi.cbSize = sizeof(TBBUTTONINFO);
 				tbbi.dwMask = TBIF_STATE | TBIF_STYLE;
 				GetButtonInfo(id, &tbbi);
@@ -7763,7 +7775,7 @@ public:
 	}
 
 	LRESULT on_notify(const ui::frame_host_weak_ptr& host, const ui::color_style& colors, const int id,
-		const LPNMHDR pnmh) override
+	                  const LPNMHDR pnmh) override
 	{
 		if (pnmh->code == NM_CUSTOMDRAW)
 		{
@@ -7787,7 +7799,7 @@ public:
 				if (found != _commands.end())
 				{
 					draw_toolbar_button(found->second, _ctx, tb_cd, colors.background, colors.foreground,
-						colors.selected);
+					                    colors.selected);
 				}
 
 				return CDRF_SKIPDEFAULT;
@@ -7865,7 +7877,7 @@ bool edit_impl::init_auto_complete_list()
 		return false;
 	}
 
-	const DWORD opts = ACO_UPDOWNKEYDROPSLIST | ACO_AUTOSUGGEST | ACO_AUTOAPPEND;
+	constexpr DWORD opts = ACO_UPDOWNKEYDROPSLIST | ACO_AUTOSUGGEST | ACO_AUTOAPPEND;
 	hr = ac2->SetOptions(opts);
 
 	if (FAILED(hr))
@@ -7878,7 +7890,7 @@ bool edit_impl::init_auto_complete_list()
 }
 
 ui::edit_ptr control_host_impl::create_edit(const ui::edit_styles& styles, const std::u8string_view text,
-	std::function<void(const std::u8string&)> changed)
+                                            std::function<void(const std::u8string&)> changed)
 {
 	const auto id = alloc_ids();
 	auto result = std::make_shared<edit_impl>(styles, this, _gdi_ctx);
@@ -7900,7 +7912,7 @@ ui::edit_ptr control_host_impl::create_edit(const ui::edit_styles& styles, const
 	return result;
 }
 
-ui::trackbar_ptr control_host_impl::create_slider(int min, int max, std::function<void(int, bool)> changed)
+ui::trackbar_ptr control_host_impl::create_slider(const int min, const int max, std::function<void(int, bool)> changed)
 {
 	const auto slider_id = alloc_ids();
 	auto result = std::make_shared<trackbar_impl>(std::move(changed), _gdi_ctx);
@@ -7914,7 +7926,7 @@ ui::trackbar_ptr control_host_impl::create_slider(int min, int max, std::functio
 }
 
 ui::toolbar_ptr control_host_impl::create_toolbar(const ui::toolbar_styles& styles,
-	const std::vector<ui::command_ptr>& buttons)
+                                                  const std::vector<ui::command_ptr>& buttons)
 {
 	const auto toolbar_id = alloc_ids(static_cast<int>(buttons.size()) + 1);
 	auto result = std::make_shared<toolbar_impl>(this, _gdi_ctx);
@@ -7943,7 +7955,7 @@ ui::control_frame_ptr control_host_impl::create_dlg(ui::frame_host_weak_ptr host
 	auto ctx = is_popup ? std::make_shared<owner_context>(_gdi_ctx->scale_factor) : _gdi_ctx;
 	auto result = std::make_shared<control_host_impl>(ctx, host, _app, _pa, false, colors);
 	const auto dw_style = WS_CLIPCHILDREN | WS_CLIPSIBLINGS | (is_popup ? WS_POPUP : WS_CHILD);
-	const auto dw_ex_style = WS_EX_CONTROLPARENT; // | WS_EX_COMPOSITED;
+	constexpr auto dw_ex_style = WS_EX_CONTROLPARENT; // | WS_EX_COMPOSITED;
 
 	if (result->Create(m_hWnd, {}, dw_style, dw_ex_style) == nullptr)
 	{
@@ -7957,14 +7969,14 @@ ui::control_frame_ptr control_host_impl::create_dlg(ui::frame_host_weak_ptr host
 
 
 ui::button_ptr control_host_impl::create_button(const std::u8string_view text, std::function<void()> invoke,
-	const bool default_button)
+                                                const bool default_button)
 {
 	return create_button(icon_index::none, text, {}, std::move(invoke), default_button);
 }
 
-ui::button_ptr control_host_impl::create_button(icon_index icon, const std::u8string_view title,
-	const std::u8string_view details, std::function<void()> invoke,
-	const bool default_button)
+ui::button_ptr control_host_impl::create_button(const icon_index icon, const std::u8string_view title,
+                                                const std::u8string_view details, std::function<void()> invoke,
+                                                const bool default_button)
 {
 	auto style = WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON | BS_TEXT | BS_NOTIFY;
 	if (default_button) style |= BS_DEFPUSHBUTTON;
@@ -7990,8 +8002,9 @@ ui::button_ptr control_host_impl::create_button(icon_index icon, const std::u8st
 	return result;
 }
 
-ui::button_ptr control_host_impl::create_check_button(bool val, const std::u8string_view text, const bool is_radio,
-	std::function<void(bool)> changed)
+ui::button_ptr control_host_impl::create_check_button(const bool val, const std::u8string_view text,
+                                                      const bool is_radio,
+                                                      std::function<void(bool)> changed)
 {
 	auto* const font = _gdi_ctx->dialog;
 	const auto style = WS_CHILD | WS_TABSTOP | BS_NOTIFY | (is_radio ? BS_AUTORADIOBUTTON : BS_AUTOCHECKBOX);
@@ -8008,18 +8021,18 @@ ui::button_ptr control_host_impl::create_check_button(bool val, const std::u8str
 
 	if (changed)
 	{
-		result->_invoke = [result, changed = std::move(changed)]()
-			{
-				changed((result->GetCheck() & BST_CHECKED) != 0);
-			};
+		result->_invoke = [result, changed = std::move(changed)]
+		{
+			changed((result->GetCheck() & BST_CHECKED) != 0);
+		};
 	}
 
 	return result;
 }
 
 ui::date_time_control_ptr control_host_impl::create_date_time_control(const df::date_t val,
-	std::function<void(df::date_t)> changed,
-	const bool include_time)
+                                                                      std::function<void(df::date_t)> changed,
+                                                                      const bool include_time)
 {
 	auto result = std::make_shared<date_time_control_impl>(_gdi_ctx, val, std::move(changed), _colors, include_time);
 	const auto id = alloc_ids();
@@ -8044,7 +8057,7 @@ static bool create_dump(EXCEPTION_POINTERS* exception_pointers, const df::file_p
 		IN PMINIDUMP_EXCEPTION_INFORMATION ExceptionParam, OPTIONAL
 		IN PMINIDUMP_USER_STREAM_INFORMATION UserStreamParam, OPTIONAL
 		IN PMINIDUMP_CALLBACK_INFORMATION CallbackParam OPTIONAL
-		);
+	);
 
 	auto* const dbg_help = LoadLibrary(L"DBGHELP.DLL");
 	auto dump_successful = false;
@@ -8057,8 +8070,8 @@ static bool create_dump(EXCEPTION_POINTERS* exception_pointers, const df::file_p
 		{
 			const auto w = platform::to_file_system_path(dump_file_path);
 			auto* const dump_file = CreateFile(w.c_str(), GENERIC_READ | GENERIC_WRITE,
-				FILE_SHARE_WRITE | FILE_SHARE_READ,
-				nullptr, CREATE_ALWAYS, 0, nullptr);
+			                                   FILE_SHARE_WRITE | FILE_SHARE_READ,
+			                                   nullptr, CREATE_ALWAYS, 0, nullptr);
 
 			if (dump_file != INVALID_HANDLE_VALUE)
 			{
@@ -8077,8 +8090,8 @@ static bool create_dump(EXCEPTION_POINTERS* exception_pointers, const df::file_p
 					MiniDumpNormal; // Normal stack trace info
 
 				dump_successful = write_dump(GetCurrentProcess(), GetCurrentProcessId(), dump_file,
-					static_cast<MINIDUMP_TYPE>(dump_flags), &exception_information, nullptr,
-					nullptr);
+				                             static_cast<MINIDUMP_TYPE>(dump_flags), &exception_information, nullptr,
+				                             nullptr);
 
 				CloseHandle(dump_file);
 			}
@@ -8128,16 +8141,16 @@ void ui_wait_for_signal(platform::thread_event& te, const uint32_t timeout_ms, c
 
 	if (app)
 	{
-		app->ui_wait_for_signal({ te }, false, timeout_ms, cb);
+		app->ui_wait_for_signal({te}, false, timeout_ms, cb);
 	}
 }
 
 uint32_t platform::wait_for_timeout = WAIT_TIMEOUT - WAIT_OBJECT_0;
 
 uint32_t platform::wait_for(const std::vector<std::reference_wrapper<thread_event>>& events, const uint32_t timeout_ms,
-	const bool wait_all)
+                            const bool wait_all)
 {
-	const auto max_events = 64;
+	constexpr auto max_events = 64;
 	df::assert_true(events.size() < max_events);
 
 	auto result = 0;
@@ -8156,7 +8169,7 @@ uint32_t platform::wait_for(const std::vector<std::reference_wrapper<thread_even
 		HANDLE handles[max_events];
 		for (auto i = 0u; i < events.size(); ++i) handles[i] = std::any_cast<HANDLE>(events[i].get()._h);
 		result = WaitForMultipleObjects(static_cast<uint32_t>(events.size()), handles, wait_all,
-			timeout_ms ? timeout_ms : INFINITE) - WAIT_OBJECT_0;
+		                                timeout_ms ? timeout_ms : INFINITE) - WAIT_OBJECT_0;
 	}
 
 	return result;
@@ -8237,7 +8250,7 @@ static DWORD WINAPI recover_callback(PVOID pContext)
 
 	df::close_log();
 
-	ApplicationRecoveryFinished((bCanceled) ? FALSE : TRUE);
+	ApplicationRecoveryFinished(bCanceled ? FALSE : TRUE);
 	return 0;
 }
 
@@ -8253,12 +8266,12 @@ static void setup_restart()
 //STDAPI SetProcessDpiAwareness(
 //	_In_ PROCESS_DPI_AWARENESS value);
 
-int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpCmdLine, int nCmdShow)
+int WINAPI wWinMain(const HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, const LPWSTR lpCmdLine, int nCmdShow)
 {
 	get_resource_instance = hInstance;
 	ui_thread_id = GetCurrentThreadId();
 
-	const int result = 0;
+	constexpr int result = 0;
 	const auto app_impl = std::make_shared<win32_app>();
 	ui::app_ptr app;
 
@@ -8338,7 +8351,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			return 0;
 		}
 
-		const INITCOMMONCONTROLSEX iccx = { sizeof(INITCOMMONCONTROLSEX), ICC_BAR_CLASSES };
+		constexpr INITCOMMONCONTROLSEX iccx = {sizeof(INITCOMMONCONTROLSEX), ICC_BAR_CLASSES};
 
 		if (!InitCommonControlsEx(&iccx))
 		{
@@ -8419,7 +8432,7 @@ LRESULT control_host_impl::on_window_timer(uint32_t, WPARAM, LPARAM)
 	{
 		POINT pos;
 		GetCursorPos(&pos);
-		if (!_hover_command_bounds.contains({ pos.x, pos.y }))
+		if (!_hover_command_bounds.contains({pos.x, pos.y}))
 		{
 			const auto h = _host.lock();
 			if (h) h->command_hover(nullptr, {});
@@ -8475,11 +8488,11 @@ void win32_app::update_event_handles()
 	for (auto& h : _folder_changes)
 	{
 		app_thread_events.emplace_back(h);
-		app_event_actions.emplace_back([this, h]()
-			{
-				_app->folder_changed();
-				FindNextChangeNotification(h);
-			});
+		app_event_actions.emplace_back([this, h]
+		{
+			_app->folder_changed();
+			FindNextChangeNotification(h);
+		});
 	}
 
 	app_thread_events.emplace_back(std::any_cast<HANDLE>(_idle_event._h));
@@ -8488,7 +8501,7 @@ void win32_app::update_event_handles()
 	df::assert_true(app_thread_events.size() == app_event_actions.size());
 }
 
-void win32_app::tick()
+void win32_app::tick() const
 {
 	if (WAIT_OBJECT_0 == WaitForSingleObject(_timer_handle, 0))
 	{
@@ -8583,7 +8596,8 @@ void win32_app::monitor_folders(const std::vector<df::folder_path>& folders_path
 
 	for (const auto& path : folders_paths)
 	{
-		const auto filter = FILE_NOTIFY_CHANGE_ATTRIBUTES | FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_FILE_NAME
+		constexpr auto filter = FILE_NOTIFY_CHANGE_ATTRIBUTES | FILE_NOTIFY_CHANGE_LAST_WRITE |
+			FILE_NOTIFY_CHANGE_FILE_NAME
 			| FILE_NOTIFY_CHANGE_DIR_NAME;
 		const auto h = ::FindFirstChangeNotification(platform::to_file_system_path(path).c_str(), FALSE, filter);
 
@@ -8608,7 +8622,7 @@ void win32_app::destroy()
 	CloseHandle(_timer_handle);
 }
 
-void win32_app::idle()
+void win32_app::idle() const
 {
 	_idle_event.reset();
 	_app->idle();
@@ -8652,7 +8666,7 @@ int win32_app::ui_message_loop()
 	while (true)
 	{
 		const auto n = MsgWaitForMultipleObjectsEx(static_cast<uint32_t>(app_thread_events.size()),
-			app_thread_events.data(), INFINITE, QS_ALLINPUT, MWMO_ALERTABLE);
+		                                           app_thread_events.data(), INFINITE, QS_ALLINPUT, MWMO_ALERTABLE);
 
 		if (n == WAIT_IO_COMPLETION)
 		{
@@ -8690,8 +8704,8 @@ int win32_app::ui_message_loop()
 }
 
 uint32_t win32_app::ui_wait_for_signal(const std::vector<std::reference_wrapper<platform::thread_event>>& events,
-	const bool wait_all, const uint32_t timeout_ms,
-	const std::function<bool(LPMSG m)>& cb)
+                                       const bool wait_all, const uint32_t timeout_ms,
+                                       const std::function<bool(LPMSG m)>& cb)
 {
 	auto result = 0u;
 	auto signal_set = false;
@@ -8714,7 +8728,7 @@ uint32_t win32_app::ui_wait_for_signal(const std::vector<std::reference_wrapper<
 	while (!df::is_closing && !signal_set)
 	{
 		const auto n = MsgWaitForMultipleObjects(static_cast<uint32_t>(thread_events.size()), thread_events.data(),
-			wait_all, timeout_ms ? timeout_ms : INFINITE, QS_ALLINPUT);
+		                                         wait_all, timeout_ms ? timeout_ms : INFINITE, QS_ALLINPUT);
 
 		if (n > event_actions.size())
 		{
@@ -8754,7 +8768,7 @@ void win32_app::sys_command(const ui::sys_command_type cmd)
 	case ui::sys_command_type::RESTORE:
 		::PostMessage(_frame->m_hWnd, WM_SYSCOMMAND, SC_RESTORE, 0);
 		break;
-	default:;
+	default: ;
 	}
 }
 
@@ -8769,7 +8783,7 @@ void win32_app::frame_delay(const int delay)
 	if (delay != _frame_delay && nullptr != _timer_handle)
 	{
 		_frame_delay = delay;
-		const LARGE_INTEGER liDueTime = { 0 };
+		constexpr LARGE_INTEGER liDueTime = {0};
 		if (!SetWaitableTimer(_timer_handle, &liDueTime, _frame_delay, nullptr /*timer_cb*/, nullptr /*this*/, FALSE))
 		{
 			df::log(__FUNCTION__, platform::last_os_error());
@@ -8792,7 +8806,7 @@ void win32_app::set_font_base_size(const int i)
 }
 
 ui::control_frame_ptr win32_app::create_app_frame(const platform::setting_file_ptr& store,
-	const ui::frame_host_weak_ptr& host)
+                                                  const ui::frame_host_weak_ptr& host)
 {
 	WINDOWPLACEMENT wp = {};
 	wp.length = sizeof(WINDOWPLACEMENT);
@@ -8832,9 +8846,9 @@ ui::control_frame_ptr win32_app::create_app_frame(const platform::setting_file_p
 	const auto default_scale_fac = GetScalingFactorFromDPI(GetPerMonitorDPI(monitor));
 	auto ctx = std::make_shared<owner_context>(default_scale_fac);
 	auto result = std::make_shared<control_host_impl>(ctx, host, _app, this, true, colors);
-	const auto window_style = WS_CAPTION | WS_OVERLAPPED | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_SYSMENU |
+	constexpr auto window_style = WS_CAPTION | WS_OVERLAPPED | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_SYSMENU |
 		WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
-	const auto window_ex_style = WS_EX_WINDOWEDGE | WS_EX_APPWINDOW; // | WS_EX_LAYERED | WS_EX_COMPOSITED;
+	constexpr auto window_ex_style = WS_EX_WINDOWEDGE | WS_EX_APPWINDOW; // | WS_EX_LAYERED | WS_EX_COMPOSITED;
 
 	if (!IsRectEmpty(&wp.rcNormalPosition))
 	{

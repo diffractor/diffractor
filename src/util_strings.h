@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -64,7 +63,7 @@ namespace str
 	}
 
 	__forceinline constexpr uint32_t pop_utf8_char(std::u8string_view::const_iterator& in_ptr,
-		const std::u8string_view::const_iterator& end)
+	                                               const std::u8string_view::const_iterator& end)
 	{
 		const auto c1 = *in_ptr++;
 
@@ -72,7 +71,7 @@ namespace str
 		{
 			return c1;
 		}
-		if ((c1 >> 5) == 0x6) // 2 octets
+		if (c1 >> 5 == 0x6) // 2 octets
 		{
 			if (std::distance(in_ptr, end) < 1)
 			{
@@ -81,10 +80,10 @@ namespace str
 			}
 
 			uint32_t c = (c1 & 0x1F) << 6;
-			c |= ((*in_ptr++ & 0x3F) << 0);
+			c |= (*in_ptr++ & 0x3F) << 0;
 			return c;
 		}
-		if ((c1 >> 4) == 0xe)  // 3 octets
+		if (c1 >> 4 == 0xe) // 3 octets
 		{
 			if (std::distance(in_ptr, end) < 2)
 			{
@@ -92,12 +91,12 @@ namespace str
 				return 0;
 			}
 
-			uint32_t c = ((c1 & 0x0F) << 12);
-			c |= ((*in_ptr++ & 0x3F) << 6);
-			c |= ((*in_ptr++ & 0x3F) << 0);
+			uint32_t c = (c1 & 0x0F) << 12;
+			c |= (*in_ptr++ & 0x3F) << 6;
+			c |= (*in_ptr++ & 0x3F) << 0;
 			return c;
 		}
-		if ((c1 >> 3) == 0x1e)  // 4 octets
+		if (c1 >> 3 == 0x1e) // 4 octets
 		{
 			if (std::distance(in_ptr, end) < 3)
 			{
@@ -105,10 +104,10 @@ namespace str
 				return 0;
 			}
 
-			uint32_t c = ((c1 & 0x0F) << 18);
-			c |= ((*in_ptr++ & 0x3F) << 12);
-			c |= ((*in_ptr++ & 0x3F) << 6);
-			c |= ((*in_ptr++ & 0x3F) << 0);
+			uint32_t c = (c1 & 0x0F) << 18;
+			c |= (*in_ptr++ & 0x3F) << 12;
+			c |= (*in_ptr++ & 0x3F) << 6;
+			c |= (*in_ptr++ & 0x3F) << 0;
 			return c;
 		}
 
@@ -116,7 +115,7 @@ namespace str
 	}
 
 	__forceinline constexpr uint32_t peek_utf8_char(std::u8string_view::const_iterator in_ptr,
-		const std::u8string_view::const_iterator& end)
+	                                                const std::u8string_view::const_iterator& end)
 	{
 		return pop_utf8_char(in_ptr, end);
 	}
@@ -174,7 +173,7 @@ namespace str
 			const auto len = s ? s->len : 0;
 			df::assert_true(sub_pos <= len);
 			if (s == nullptr || s->len == 0 || sub_pos >= len) return {};
-			return { s->sz + sub_pos, s->len - sub_pos };
+			return {s->sz + sub_pos, s->len - sub_pos};
 		}
 
 		constexpr std::u8string_view substr(const size_t sub_pos, const size_t sub_len) const
@@ -183,8 +182,8 @@ namespace str
 			const auto s = storage;
 			const auto len = s ? s->len : 0;
 			df::assert_true(sub_pos <= len && sub_len <= len - sub_pos);
-			if (s == nullptr || s->len == 0 || sub_pos >= len || (sub_pos + sub_len) > len) return {};
-			return { s->sz + sub_pos, sub_len };
+			if (s == nullptr || s->len == 0 || sub_pos >= len || sub_pos + sub_len > len) return {};
+			return {s->sz + sub_pos, sub_len};
 		}
 
 		char8_t operator[](const uint32_t i) const noexcept
@@ -258,25 +257,25 @@ namespace str
 	{
 		if (ch < 0x80)
 		{
-			*(inserter++) = static_cast<uint8_t>(ch);
+			*inserter++ = static_cast<uint8_t>(ch);
 		}
 		else if (ch < 0x800)
 		{
-			*(inserter++) = static_cast<uint8_t>(0xC0 | (ch >> 6));
-			*(inserter++) = static_cast<uint8_t>(0x80 | ((ch >> 0) & 0x3F));
+			*inserter++ = static_cast<uint8_t>(0xC0 | ch >> 6);
+			*inserter++ = static_cast<uint8_t>(0x80 | ch >> 0 & 0x3F);
 		}
 		else if (ch < 0x10000)
 		{
-			*(inserter++) = static_cast<uint8_t>(0xE0 | (ch >> 12));
-			*(inserter++) = static_cast<uint8_t>(0x80 | ((ch >> 6) & 0x3F));
-			*(inserter++) = static_cast<uint8_t>(0x80 | ((ch >> 0) & 0x3F));
+			*inserter++ = static_cast<uint8_t>(0xE0 | ch >> 12);
+			*inserter++ = static_cast<uint8_t>(0x80 | ch >> 6 & 0x3F);
+			*inserter++ = static_cast<uint8_t>(0x80 | ch >> 0 & 0x3F);
 		}
 		else
 		{
-			*(inserter++) = static_cast<uint8_t>((ch >> 18) | 0xf0);
-			*(inserter++) = static_cast<uint8_t>(((ch >> 12) & 0x3f) | 0x80);
-			*(inserter++) = static_cast<uint8_t>(((ch >> 6) & 0x3f) | 0x80);
-			*(inserter++) = static_cast<uint8_t>((ch & 0x3f) | 0x80);
+			*inserter++ = static_cast<uint8_t>(ch >> 18 | 0xf0);
+			*inserter++ = static_cast<uint8_t>(ch >> 12 & 0x3f | 0x80);
+			*inserter++ = static_cast<uint8_t>(ch >> 6 & 0x3f | 0x80);
+			*inserter++ = static_cast<uint8_t>(ch & 0x3f | 0x80);
 		}
 	}
 
@@ -289,12 +288,12 @@ namespace str
 
 	inline bool is_lead_surrogate(const uint32_t cp)
 	{
-		return (cp >= LEAD_SURROGATE_MIN && cp <= LEAD_SURROGATE_MAX);
+		return cp >= LEAD_SURROGATE_MIN && cp <= LEAD_SURROGATE_MAX;
 	}
 
 	inline bool is_trail_surrogate(const uint32_t cp)
 	{
-		return (cp >= TRAIL_SURROGATE_MIN && cp <= TRAIL_SURROGATE_MAX);
+		return cp >= TRAIL_SURROGATE_MIN && cp <= TRAIL_SURROGATE_MAX;
 	}
 
 	inline uint16_t mask16(const uint32_t oc)
@@ -334,7 +333,6 @@ namespace str
 				{
 					throw std::invalid_argument("Invalid input string"s);
 				}
-
 			}
 			// Lone trail surrogate
 			else if (is_trail_surrogate(cp))
@@ -383,34 +381,34 @@ namespace str
 
 	inline std::string_view utf8_cast(const std::u8string_view val)
 	{
-		return { std::bit_cast<const char*>(val.data()), val.size() };
+		return {std::bit_cast<const char*>(val.data()), val.size()};
 	}
 
 	inline std::string utf8_cast2(const std::u8string_view val)
 	{
-		return { val.begin(), val.end() };
+		return {val.begin(), val.end()};
 	}
 
 	inline std::u8string_view utf8_cast(const std::string_view val)
 	{
-		return { std::bit_cast<const char8_t*>(val.data()), val.size() };
+		return {std::bit_cast<const char8_t*>(val.data()), val.size()};
 	}
 
 	inline std::u8string utf8_cast2(const std::string_view val)
 	{
-		return { val.begin(), val.end() };
+		return {val.begin(), val.end()};
 	}
 
 	constexpr int to_lower(const int c)
 	{
-		if (c < 128) return ((c >= L'A') && (c <= L'Z')) ? c - L'A' + L'a' : c;
+		if (c < 128) return c >= L'A' && c <= L'Z' ? c - L'A' + L'a' : c;
 		if (c > USHRT_MAX) return c;
 		return towlower(c);
 	}
 
 	constexpr int to_upper(const int c)
 	{
-		if (c < 128) return ((c >= L'a') && (c <= L'z')) ? c - L'a' + L'A' : c;
+		if (c < 128) return c >= L'a' && c <= L'z' ? c - L'a' + L'A' : c;
 		if (c > USHRT_MAX) return c;
 		return towupper(c);
 	}
@@ -682,7 +680,7 @@ namespace str
 			u.int32_value = 0;
 		}
 
-		format_arg(const text_t &value) : type(TEXT), text_value(value.sv())
+		format_arg(const text_t& value) : type(TEXT), text_value(value.sv())
 		{
 			u.int32_value = 0;
 		}
@@ -713,12 +711,12 @@ namespace str
 	template <typename... Args>
 	std::u8string format(const std::u8string_view fmt, const Args&... args)
 	{
-		const format_arg arg_array[] = { args... };
+		const format_arg arg_array[] = {args...};
 		return format_impl(fmt, arg_array, sizeof...(Args));
 	}
 
 	std::u8string print(const char8_t* szFormat, ...);
-	std::u8string print(const std::u8string_view format, ...);
+	std::u8string print(std::u8string_view format, ...);
 
 	constexpr bool is_cr_or_lf(const wchar_t c)
 	{
@@ -789,7 +787,7 @@ namespace str
 
 
 	inline void join(std::u8string& result, const std::u8string_view s, const std::u8string_view sep = u8" "sv,
-		const bool quote = true)
+	                 const bool quote = true)
 	{
 		//trim(s);
 
@@ -835,7 +833,7 @@ namespace str
 	}
 
 	inline std::u8string combine2(const std::u8string_view s1, const std::u8string_view s2,
-		const std::u8string_view sep = u8" "sv)
+	                              const std::u8string_view sep = u8" "sv)
 	{
 		std::u8string result;
 		result.reserve(s1.size() + s2.size() + sep.size());
@@ -846,10 +844,10 @@ namespace str
 	}
 
 	void split2(std::u8string_view text, bool detect_quotes, const std::function<void(std::u8string_view)>& inserter,
-		const std::function<bool(wchar_t)>& pred = is_separator);
+	            const std::function<bool(wchar_t)>& pred = is_separator);
 
 	inline std::vector<std::u8string_view> split(const std::u8string_view text, const bool detect_quotes,
-		const std::function<bool(wchar_t)>& pred = is_separator)
+	                                             const std::function<bool(wchar_t)>& pred = is_separator)
 	{
 		std::vector<std::u8string_view> results;
 		split2(text, detect_quotes, [&results](const std::u8string_view part) { results.emplace_back(part); }, pred);
@@ -886,7 +884,7 @@ namespace str
 	double to_double(std::u8string_view r);
 
 	inline std::u8string to_hex(const uint8_t* data, const int data_length, const bool significance_order = true,
-		const bool remove_leading_zeros_in = false)
+	                            const bool remove_leading_zeros_in = false)
 	{
 		static constexpr char8_t hex_chars[16] = {
 			'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'
@@ -898,7 +896,7 @@ namespace str
 
 		for (int i = 0; i < data_length; ++i)
 		{
-			const auto byte = data[significance_order ? (data_length - (i + 1)) : i];
+			const auto byte = data[significance_order ? data_length - (i + 1) : i];
 			const auto c1 = (byte & 0xF0) >> 4;
 			const auto c2 = (byte & 0x0F) >> 0;
 
@@ -937,7 +935,7 @@ namespace str
 
 		for (auto i = 0u; i < limit; i++)
 		{
-			*(dst++) = (hex_char_to_num(src[i * 2_z]) << 4) + hex_char_to_num(src[(i * 2_z) + 1_z]);
+			*dst++ = (hex_char_to_num(src[i * 2_z]) << 4) + hex_char_to_num(src[i * 2_z + 1_z]);
 		}
 	}
 
@@ -953,14 +951,14 @@ namespace str
 			else if (input >= 'a' && input <= 'f') n = input - 'a' + 10;
 			else break;
 
-			result = (result << 4) | n;
+			result = result << 4 | n;
 		}
 
 		return result;
 	}
 
 	inline std::u8string replace_tokens(const std::u8string_view text,
-		const std::function<void(u8ostringstream&, std::u8string_view)>& substitute)
+	                                    const std::function<void(u8ostringstream&, std::u8string_view)>& substitute)
 	{
 		u8ostringstream result;
 		std::u8string_view::size_type offset = 0;
@@ -1011,5 +1009,5 @@ namespace str
 
 inline str::cached operator"" _c(const char8_t* str, const std::size_t len)
 {
-	return str::cache({ str, len });
+	return str::cache({str, len});
 }

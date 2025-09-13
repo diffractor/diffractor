@@ -1,10 +1,9 @@
 ﻿// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
@@ -82,7 +81,7 @@ void __cdecl debug_printf(const char8_t* fmt, ...)
 
 	va_start(ap, fmt);
 	_vsnprintf_s(buffer, sizeof(buffer), std::bit_cast<const char*>(fmt), ap);
-	OutputDebugStringA((buffer));
+	OutputDebugStringA(buffer);
 	va_end(ap);
 }
 
@@ -105,7 +104,7 @@ std::u8string win32_to_string(const IID& iid)
 	return result;
 }
 
-class items_data_object final : public IDataObject, private df::no_copy
+class items_data_object final : public IDataObject, df::no_copy
 {
 protected:
 	// Information remembered for dataobject
@@ -122,7 +121,7 @@ protected:
 
 public:
 	items_data_object() = default;
-	~items_data_object() = default;
+	~items_data_object() override = default;
 
 	void cache(df::file_path path);
 	void cache(const file_load_result& loaded);
@@ -179,7 +178,7 @@ public:
 	STDMETHOD(EnumDAdvise)(IEnumSTATDATA** ppenumAdvise) override;
 };
 
-class items_drop_source : public IDropSource, private df::no_copy
+class items_drop_source final : public IDropSource, df::no_copy
 {
 	std::atomic_int _refs = 0;
 
@@ -224,7 +223,7 @@ public:
 	}
 
 
-	STDMETHODIMP QueryContinueDrag(BOOL bEscapePressed, DWORD dwKeyState) override
+	STDMETHODIMP QueryContinueDrag(const BOOL bEscapePressed, const DWORD dwKeyState) override
 	{
 		if (bEscapePressed || (dwKeyState & MK_RBUTTON) != 0)
 		{
@@ -254,19 +253,18 @@ using FORMATETCLIST = std::vector<FORMATETC>;
 uint32_t clipboard_formats::PREFERREDDROPEFFECT = RegisterClipboardFormat(CFSTR_PREFERREDDROPEFFECT);
 uint32_t clipboard_formats::SHELLIDLIST = RegisterClipboardFormat(CFSTR_SHELLIDLIST);
 
-FORMATETC clipboard_formats::Bitmap = { CF_BITMAP, nullptr, DVASPECT_CONTENT, -1, TYMED_GDI };
+FORMATETC clipboard_formats::Bitmap = {CF_BITMAP, nullptr, DVASPECT_CONTENT, -1, TYMED_GDI};
 FORMATETC clipboard_formats::PDE = {
 	static_cast<CLIPFORMAT>(PREFERREDDROPEFFECT), nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL
 };
-FORMATETC clipboard_formats::Drop = { CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
+FORMATETC clipboard_formats::Drop = {CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
 FORMATETC clipboard_formats::DropShellItems = {
 	static_cast<CLIPFORMAT>(SHELLIDLIST), nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL
 };
 
 
-class CEnumFORMATETCImpl final : public IEnumFORMATETC, private df::no_copy
+class CEnumFORMATETCImpl final : public IEnumFORMATETC, df::no_copy
 {
-private:
 	FORMATETCLIST _formats;
 	size_t _cur = 0;
 	std::atomic_int _refs = 1;
@@ -276,7 +274,7 @@ public:
 	{
 	}
 
-	~CEnumFORMATETCImpl()
+	~CEnumFORMATETCImpl() override
 	{
 	}
 
@@ -330,7 +328,7 @@ public:
 };
 
 
-STDMETHODIMP CEnumFORMATETCImpl::Next(ULONG celt, LPFORMATETC lpFormatEtc, ULONG* pceltFetched)
+STDMETHODIMP CEnumFORMATETCImpl::Next(const ULONG celt, LPFORMATETC lpFormatEtc, ULONG* pceltFetched)
 {
 	df::trace(__FUNCTION__);
 	if (pceltFetched != nullptr)
@@ -352,13 +350,13 @@ STDMETHODIMP CEnumFORMATETCImpl::Next(ULONG celt, LPFORMATETC lpFormatEtc, ULONG
 	if (pceltFetched != nullptr)
 		*pceltFetched = celt - cReturn;
 
-	return (cReturn == 0) ? S_OK : S_FALSE;
+	return cReturn == 0 ? S_OK : S_FALSE;
 }
 
-STDMETHODIMP CEnumFORMATETCImpl::Skip(ULONG celt)
+STDMETHODIMP CEnumFORMATETCImpl::Skip(const ULONG celt)
 {
 	df::trace(__FUNCTION__);
-	if ((_cur + static_cast<int>(celt)) >= _formats.size())
+	if (_cur + static_cast<int>(celt) >= _formats.size())
 		return S_FALSE;
 
 	_cur += celt;
@@ -395,7 +393,8 @@ std::u8string platform::utf16_to_utf8(const std::wstring_view text)
 std::wstring platform::utf8_to_utf16(const std::u8string_view text)
 {
 	wchar_t result[100] = {};
-	MultiByteToWideChar(CP_UTF8, 0, std::bit_cast<const char*>(text.data()), static_cast<uint32_t>(text.size()), result, 100);
+	MultiByteToWideChar(CP_UTF8, 0, std::bit_cast<const char*>(text.data()), static_cast<uint32_t>(text.size()), result,
+	                    100);
 	return result;
 }
 
@@ -403,7 +402,7 @@ std::string platform::utf8_to_a(const std::u8string_view utf8)
 {
 	std::string result;
 	const auto length = MultiByteToWideChar(CP_UTF8, 0, std::bit_cast<LPCSTR>(utf8.data()),
-		static_cast<uint32_t>(utf8.size()), nullptr, 0);
+	                                        static_cast<uint32_t>(utf8.size()), nullptr, 0);
 
 	if (length > 0)
 	{
@@ -420,13 +419,13 @@ std::string platform::utf8_to_a(const std::u8string_view utf8)
 	return result;
 }
 
-static bool is_folder(DWORD attributes)
+static bool is_folder(const DWORD attributes)
 {
-	return (attributes != INVALID_FILE_ATTRIBUTES &&
-		(attributes & FILE_ATTRIBUTE_DIRECTORY));
+	return attributes != INVALID_FILE_ATTRIBUTES &&
+		attributes & FILE_ATTRIBUTE_DIRECTORY;
 }
 
-static bool is_offline_attribute(DWORD attributes)
+static bool is_offline_attribute(const DWORD attributes)
 {
 	// Onedrive and GVFS use file attributes to denote files or directories that
 	// may not be locally present and are only available "online". These files are applied one of
@@ -436,12 +435,12 @@ static bool is_offline_attribute(DWORD attributes)
 	//
 	// https://stackoverflow.com/questions/49301958/how-to-detect-onedrive-online-only-files
 	//
-	const auto offline_mask = FILE_ATTRIBUTE_OFFLINE |
+	constexpr auto offline_mask = FILE_ATTRIBUTE_OFFLINE |
 		FILE_ATTRIBUTE_RECALL_ON_OPEN |
 		FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS |
 		FILE_ATTRIBUTE_VIRTUAL;
 
-	return (attributes != INVALID_FILE_ATTRIBUTES) && (attributes & offline_mask) != 0;
+	return attributes != INVALID_FILE_ATTRIBUTES && (attributes & offline_mask) != 0;
 }
 
 static bool is_dots(const wchar_t* name)
@@ -456,7 +455,7 @@ static bool is_dots(const wchar_t* name)
 	return !str::is_empty(name);
 }
 
-static bool can_show_file(const wchar_t* name, DWORD attributes, bool show_hidden)
+static bool can_show_file(const wchar_t* name, const DWORD attributes, const bool show_hidden)
 {
 	if (str::is_empty(name)) return false;
 	if (attributes == INVALID_FILE_ATTRIBUTES) return false;
@@ -465,7 +464,7 @@ static bool can_show_file(const wchar_t* name, DWORD attributes, bool show_hidde
 	return !is_folder(attributes) && !is_dots(name);
 }
 
-static bool can_show_folder(const wchar_t* name, DWORD attributes, bool show_hidden)
+static bool can_show_folder(const wchar_t* name, const DWORD attributes, const bool show_hidden)
 {
 	if (str::is_empty(name)) return false;
 	if (attributes == INVALID_FILE_ATTRIBUTES) return false;
@@ -474,7 +473,7 @@ static bool can_show_folder(const wchar_t* name, DWORD attributes, bool show_hid
 	return is_folder(attributes) && !is_dots(name);
 }
 
-static bool can_show_file_or_folder(const wchar_t* name, DWORD attributes, bool show_hidden)
+static bool can_show_file_or_folder(const wchar_t* name, const DWORD attributes, const bool show_hidden)
 {
 	if (is_folder(attributes))
 	{
@@ -507,7 +506,7 @@ static std::wstring parse_special_path(const std::u8string_view sv)
 	std::wstring result;
 
 	PIDLIST_ABSOLUTE pidl = nullptr;
-	const SFGAOF stSFGAOFIn = 0;
+	constexpr SFGAOF stSFGAOFIn = 0;
 	SFGAOF stSFGAOFOut = 0;
 
 	const auto guid = str::utf8_to_utf16(sv);
@@ -561,14 +560,14 @@ void items_data_object::cache(const std::vector<df::file_path>& files, const std
 	_folders = folders;
 }
 
-void items_data_object::set_for_move(bool is_move)
+void items_data_object::set_for_move(const bool is_move)
 {
 	_is_move = is_move;
 	_has_preferred_drop = true;
 }
 
 static HGLOBAL create_shell_id_list(const std::vector<df::file_path>& files,
-	const std::vector<df::folder_path>& folders)
+                                    const std::vector<df::folder_path>& folders)
 {
 	std::vector<PUIDLIST_RELATIVE> paths;
 	size_t total_pidl_len = 0;
@@ -588,9 +587,9 @@ static HGLOBAL create_shell_id_list(const std::vector<df::file_path>& files,
 		total_pidl_len += ILGetSize(i);
 	}
 
-	const auto cida_len = sizeof(CIDA) + ((paths.size() + 1) * sizeof(uint32_t));
+	const auto cida_len = sizeof(CIDA) + (paths.size() + 1) * sizeof(uint32_t);
 	auto* const hGlobal = GlobalAlloc(GPTR | GMEM_SHARE,
-		static_cast<DWORD>(cida_len + total_pidl_len + sizeof(uint32_t) + 1));
+	                                  static_cast<DWORD>(cida_len + total_pidl_len + sizeof(uint32_t) + 1));
 
 	if (!hGlobal)
 		return nullptr;
@@ -630,10 +629,10 @@ static HGLOBAL create_shell_id_list(const std::vector<df::file_path>& files,
 }
 
 static std::wstring all_file_system_paths(const std::vector<df::file_path>& files,
-	const std::vector<df::folder_path>& folders)
+                                          const std::vector<df::folder_path>& folders)
 {
 	std::wstring result;
-	const wchar_t delim = 0;
+	constexpr wchar_t delim = 0;
 
 	for (const auto& path : folders)
 	{
@@ -700,10 +699,7 @@ STDMETHODIMP items_data_object::GetData(FORMATETC* pformatetcIn, STGMEDIUM* pmed
 
 					return S_OK;
 				}
-				else
-				{
-					GlobalFree(h);
-				}
+				GlobalFree(h);
 			}
 			else
 			{
@@ -728,15 +724,15 @@ STDMETHODIMP items_data_object::GetData(FORMATETC* pformatetcIn, STGMEDIUM* pmed
 			df::assert_true(paths[paths.size() - 2] == 0);
 
 			const auto len = paths.size();
-			
+
 			// Check for potential integer overflow
-			if (len > SIZE_MAX / sizeof(wchar_t) || 
+			if (len > SIZE_MAX / sizeof(wchar_t) ||
 				len * sizeof(wchar_t) > SIZE_MAX - sizeof(DROPFILES))
 			{
 				df::log(__FUNCTION__, "Path data too large, potential overflow");
 				return E_OUTOFMEMORY;
 			}
-			
+
 			const auto text_alloc_len = len * sizeof(wchar_t);
 			const auto allocLen = sizeof(DROPFILES) + text_alloc_len;
 
@@ -815,7 +811,7 @@ STDMETHODIMP items_data_object::SetData(FORMATETC* pformatetc, STGMEDIUM* pmediu
 	return E_NOTIMPL;
 }
 
-STDMETHODIMP items_data_object::EnumFormatEtc(DWORD dwDirection, IEnumFORMATETC** ppenumFormatEtc)
+STDMETHODIMP items_data_object::EnumFormatEtc(const DWORD dwDirection, IEnumFORMATETC** ppenumFormatEtc)
 {
 	df::trace(__FUNCTION__);
 	const auto has_paths = !_files.empty() || !_folders.empty();
@@ -862,7 +858,7 @@ STDMETHODIMP items_data_object::EnumFormatEtc(DWORD dwDirection, IEnumFORMATETC*
 #endif //_DEBUG
 
 
-	* ppenumFormatEtc = nullptr;
+	*ppenumFormatEtc = nullptr;
 	switch (dwDirection)
 	{
 	case DATADIR_GET:
@@ -940,7 +936,7 @@ static std::u8string format_os_error(const DWORD error)
 {
 	wchar_t sz[1000];
 	FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr, error, g_lLangId, sz, 1000,
-		nullptr);
+	               nullptr);
 	auto result = str::utf16_to_utf8(sz);
 	return result.empty() ? std::u8string(tt.error_unknown) : result;
 }
@@ -958,7 +954,7 @@ static std::u8string last_os_error_impl()
 	return result;
 }
 
-static std::u8string shell_error_string(int e)
+static std::u8string shell_error_string(const int e)
 {
 	switch (e)
 	{
@@ -992,7 +988,7 @@ static std::u8string shell_error_string(int e)
 	}
 }
 
-platform::file_op_result to_file_op_result(int res, const BOOL fAnyOperationsAborted = 0)
+platform::file_op_result to_file_op_result(const int res, const BOOL fAnyOperationsAborted = 0)
 {
 	static constexpr int FO_CANCELLED = 0x04c7;
 
@@ -1000,7 +996,7 @@ platform::file_op_result to_file_op_result(int res, const BOOL fAnyOperationsAbo
 	result.code = res == 0 ? platform::file_op_result_code::OK : platform::file_op_result_code::FAILED;
 	if (res == FO_CANCELLED || (res != 0 && fAnyOperationsAborted != 0))
 		result.code =
-		platform::file_op_result_code::CANCELLED;
+			platform::file_op_result_code::CANCELLED;
 	if (res != 0) result.error_message = shell_error_string(res);
 	return result;
 }
@@ -1008,7 +1004,7 @@ platform::file_op_result to_file_op_result(int res, const BOOL fAnyOperationsAbo
 using name_mapping_t = std::unordered_map<df::file_path, df::file_path, df::ihash, df::ieq>;
 
 static df::paths dest_file_list(const df::folder_path target, const wchar_t* const file_list,
-	const name_mapping_t& name_mapping)
+                                const name_mapping_t& name_mapping)
 {
 	df::paths result;
 
@@ -1036,7 +1032,7 @@ static df::paths dest_file_list(const df::folder_path target, const wchar_t* con
 }
 
 static df::paths dest_file_list(const df::folder_path target, const char8_t* const file_list,
-	const name_mapping_t& name_mapping)
+                                const name_mapping_t& name_mapping)
 {
 	df::paths result;
 
@@ -1108,8 +1104,8 @@ static platform::file_op_result perform_hdrop2(HANDLE h, const df::folder_path t
 				for (auto i = 0u; i < s->uNumberOfMappings; i++)
 				{
 					const auto& nm = s->lpSHNameMapping[i];
-					name_mapping[df::file_path(std::wstring_view{ nm.pszOldPath, static_cast<size_t>(nm.cchOldPath) })] =
-						df::file_path(std::wstring_view{ nm.pszNewPath, static_cast<size_t>(nm.cchNewPath) });
+					name_mapping[df::file_path(std::wstring_view{nm.pszOldPath, static_cast<size_t>(nm.cchOldPath)})] =
+						df::file_path(std::wstring_view{nm.pszNewPath, static_cast<size_t>(nm.cchNewPath)});
 				}
 			}
 
@@ -1141,8 +1137,8 @@ static platform::file_op_result perform_hdrop2(HANDLE h, const df::folder_path t
 				for (auto i = 0u; i < s->uNumberOfMappings; i++)
 				{
 					const auto& nm = s->lpSHNameMapping[i];
-					name_mapping[df::file_path(std::wstring_view{ nm.pszOldPath, static_cast<size_t>(nm.cchOldPath) })] =
-						df::file_path(std::wstring_view{ nm.pszNewPath, static_cast<size_t>(nm.cchNewPath) });
+					name_mapping[df::file_path(std::wstring_view{nm.pszOldPath, static_cast<size_t>(nm.cchOldPath)})] =
+						df::file_path(std::wstring_view{nm.pszNewPath, static_cast<size_t>(nm.cchNewPath)});
 				}
 			}
 
@@ -1158,7 +1154,7 @@ static platform::file_op_result perform_hdrop2(HANDLE h, const df::folder_path t
 }
 
 platform::file_op_result data_object_client::drop_files(const df::folder_path target,
-	const platform::drop_effect effect)
+                                                        const platform::drop_effect effect)
 {
 	bool is_move = effect == platform::drop_effect::move;
 
@@ -1211,7 +1207,7 @@ df::file_path data_object_client::first_path() const
 }
 
 
-static platform::drop_effect to_drop_effect(DWORD dwEffect)
+static platform::drop_effect to_drop_effect(const DWORD dwEffect)
 {
 	if (dwEffect == DROPEFFECT_COPY)
 	{
@@ -1284,7 +1280,7 @@ data_object_client::description data_object_client::files_description() const
 
 
 platform::file_op_result data_object_client::save_bitmap(const df::folder_path save_path, const std::u8string_view name,
-	const bool as_png)
+                                                         const bool as_png)
 {
 	platform::file_op_result result;
 	STGMEDIUM stgMedium;
@@ -1313,7 +1309,7 @@ void* platform::memory_pool::alloc(size_t size)
 		throw OOM; // Invalid alignment
 	}
 
-	const auto align_size = size = ((size + (alignment - 1)) / alignment) * alignment; // Align size
+	const auto align_size = size = (size + (alignment - 1)) / alignment * alignment; // Align size
 
 	if (align_size > block_size) throw OOM;
 
@@ -1355,11 +1351,11 @@ df::file_path platform::resolve_link(const df::file_path path)
 	return result;
 }
 
-bool platform::sse2_supported = ::IsProcessorFeaturePresent(PF_XMMI64_INSTRUCTIONS_AVAILABLE) != 0;
-bool platform::crc32_supported = ::IsProcessorFeaturePresent(PF_SSE4_2_INSTRUCTIONS_AVAILABLE) != 0;
-bool platform::avx2_supported = ::IsProcessorFeaturePresent(PF_AVX2_INSTRUCTIONS_AVAILABLE) != 0;
-bool platform::avx512_supported = ::IsProcessorFeaturePresent(PF_AVX512F_INSTRUCTIONS_AVAILABLE) != 0;
-bool platform::neon_supported = ::IsProcessorFeaturePresent(PF_ARM_NEON_INSTRUCTIONS_AVAILABLE) != 0;
+bool platform::sse2_supported = IsProcessorFeaturePresent(PF_XMMI64_INSTRUCTIONS_AVAILABLE) != 0;
+bool platform::crc32_supported = IsProcessorFeaturePresent(PF_SSE4_2_INSTRUCTIONS_AVAILABLE) != 0;
+bool platform::avx2_supported = IsProcessorFeaturePresent(PF_AVX2_INSTRUCTIONS_AVAILABLE) != 0;
+bool platform::avx512_supported = IsProcessorFeaturePresent(PF_AVX512F_INSTRUCTIONS_AVAILABLE) != 0;
+bool platform::neon_supported = IsProcessorFeaturePresent(PF_ARM_NEON_INSTRUCTIONS_AVAILABLE) != 0;
 
 
 std::u8string platform::OS()
@@ -1425,7 +1421,7 @@ void platform::set_thread_description(const std::u8string_view name)
 
 std::u8string platform::user_name()
 {
-	const int size = 200;
+	constexpr int size = 200;
 	wchar_t w[size];
 	DWORD len = size;
 	GetUserName(w, &len);
@@ -1438,7 +1434,7 @@ std::u8string platform::last_os_error()
 	return last_os_error_impl();
 }
 
-static platform::file_op_result last_op_result(BOOL res)
+static platform::file_op_result last_op_result(const BOOL res)
 {
 	platform::file_op_result result;
 
@@ -1470,7 +1466,7 @@ platform::file_op_result platform::delete_file(const df::file_path path)
 //}
 
 platform::file_op_result platform::copy_file(const df::file_path existing, const df::file_path destination,
-	const bool fail_if_exists, const bool can_create_folder)
+                                             const bool fail_if_exists, const bool can_create_folder)
 {
 	if (can_create_folder && !destination.folder().exists())
 	{
@@ -1488,12 +1484,12 @@ platform::file_op_result platform::copy_file(const df::file_path existing, const
 }
 
 platform::file_op_result platform::move_file(const df::file_path existing, const df::file_path destination,
-	bool fail_if_exists)
+                                             const bool fail_if_exists)
 {
 	const auto existingW = to_file_system_path(existing);
 	const auto destinationW = to_file_system_path(destination);
 	return last_op_result(::MoveFileEx(existingW.c_str(), destinationW.c_str(),
-		MOVEFILE_COPY_ALLOWED | (fail_if_exists ? 0 : MOVEFILE_REPLACE_EXISTING)));
+	                                   MOVEFILE_COPY_ALLOWED | (fail_if_exists ? 0 : MOVEFILE_REPLACE_EXISTING)));
 }
 
 platform::file_op_result platform::move_file(const df::folder_path existing, const df::folder_path destination)
@@ -1501,11 +1497,12 @@ platform::file_op_result platform::move_file(const df::folder_path existing, con
 	const auto existingW = to_file_system_path(existing);
 	const auto destinationW = to_file_system_path(destination);
 	return last_op_result(::MoveFileEx(existingW.c_str(),
-		destinationW.c_str(),
-		MOVEFILE_COPY_ALLOWED));
+	                                   destinationW.c_str(),
+	                                   MOVEFILE_COPY_ALLOWED));
 }
 
-platform::file_op_result platform::replace_file(const df::file_path destination, const df::file_path existing, const bool create_originals)
+platform::file_op_result platform::replace_file(const df::file_path destination, const df::file_path existing,
+                                                const bool create_originals)
 {
 	df::file_path backup;
 
@@ -1544,16 +1541,16 @@ bool platform::exists(const df::folder_path path)
 {
 	const auto attrib = ::file_attributes(path);
 
-	return (attrib != INVALID_FILE_ATTRIBUTES &&
-		(attrib & FILE_ATTRIBUTE_DIRECTORY));
+	return attrib != INVALID_FILE_ATTRIBUTES &&
+		attrib & FILE_ATTRIBUTE_DIRECTORY;
 }
 
 bool platform::exists(const df::file_path path)
 {
 	const auto attrib = ::file_attributes(path);
 
-	return (attrib != INVALID_FILE_ATTRIBUTES &&
-		(attrib & FILE_ATTRIBUTE_DIRECTORY) == 0);
+	return attrib != INVALID_FILE_ATTRIBUTES &&
+		(attrib & FILE_ATTRIBUTE_DIRECTORY) == 0;
 }
 
 platform::file_op_result platform::create_folder(const df::folder_path path)
@@ -1612,12 +1609,12 @@ bool platform::open(const std::u8string_view path)
 static bool run_command_line(const std::wstring& command_line)
 {
 	PROCESS_INFORMATION pi;
-	STARTUPINFO si = { 0 };
+	STARTUPINFO si = {0};
 	si.cb = sizeof(si);
 	si.wShowWindow = SW_SHOWNORMAL;
 
 	if (CreateProcess(nullptr, const_cast<LPWSTR>(command_line.c_str()), nullptr, nullptr, FALSE,
-		CREATE_DEFAULT_ERROR_MODE, nullptr, nullptr, &si, &pi))
+	                  CREATE_DEFAULT_ERROR_MODE, nullptr, nullptr, &si, &pi))
 	{
 		CloseHandle(pi.hProcess);
 		CloseHandle(pi.hThread);
@@ -1645,7 +1642,7 @@ struct pidandhwnd
 	HWND hwnd;
 };
 
-static BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam)
+static BOOL CALLBACK EnumWindowsProc(const HWND hwnd, const LPARAM lParam)
 {
 	auto* ppnh = (pidandhwnd*)lParam;
 	DWORD dwProcessId;
@@ -1672,15 +1669,15 @@ void platform::show_text_in_notepad(const std::u8string_view s)
 	siStartInfo.hStdInput = nullptr;
 
 	const auto started = CreateProcess(nullptr,
-		szCmdline, // command line 
-		nullptr, // process security attributes 
-		nullptr, // primary thread security attributes 
-		TRUE, // handles are inherited 
-		0, // creation flags 
-		nullptr, // use parent's environment 
-		nullptr, // use parent's current directory 
-		&siStartInfo, // STARTUPINFO pointer 
-		&piProcInfo); // receives PROCESS_INFORMATION 
+	                                   szCmdline, // command line 
+	                                   nullptr, // process security attributes 
+	                                   nullptr, // primary thread security attributes 
+	                                   TRUE, // handles are inherited 
+	                                   0, // creation flags 
+	                                   nullptr, // use parent's environment 
+	                                   nullptr, // use parent's current directory 
+	                                   &siStartInfo, // STARTUPINFO pointer 
+	                                   &piProcInfo); // receives PROCESS_INFORMATION 
 
 	if (started)
 	{
@@ -1696,7 +1693,7 @@ void platform::show_text_in_notepad(const std::u8string_view s)
 
 		if (pnh.hwnd != nullptr)
 		{
-			const int ControlId = 15; // Edit control in Notepad
+			constexpr int ControlId = 15; // Edit control in Notepad
 			auto* hEditWnd = GetDlgItem(pnh.hwnd, ControlId);
 
 			if (!hEditWnd)
@@ -1874,7 +1871,7 @@ platform::scan_result platform::scan(const df::folder_path save_path)
 	// Create the device manager
 	ComPtr<IWiaDevMgr2> pWiaDevMgr2;
 	auto hr = CoCreateInstance(CLSID_WiaDevMgr2, nullptr, CLSCTX_LOCAL_SERVER,
-		IID_PPV_ARGS(pWiaDevMgr2.GetAddressOf()));
+	                           IID_PPV_ARGS(pWiaDevMgr2.GetAddressOf()));
 
 	if (SUCCEEDED(hr))
 	{
@@ -2013,11 +2010,11 @@ platform::get_cached_file_properties_response platform::get_cached_file_properti
 
 	ComPtr<IShellItem2> item;
 	HRESULT hr = SHCreateItemFromParsingName(to_file_system_path(path).c_str(), nullptr /*bindContext*/,
-		IID_PPV_ARGS(&item));
+	                                         IID_PPV_ARGS(&item));
 
 	if (SUCCEEDED(hr))
 	{
-		const GETPROPERTYSTOREFLAGS flags = GPS_DEFAULT;
+		constexpr GETPROPERTYSTOREFLAGS flags = GPS_DEFAULT;
 		ComPtr<IPropertyStore> propStore;
 		hr = item->GetPropertyStore(flags, IID_PPV_ARGS(&propStore));
 
@@ -2030,7 +2027,7 @@ platform::get_cached_file_properties_response platform::get_cached_file_properti
 			{
 				for (DWORD i = 0; i < propCount; i++)
 				{
-					PROPERTYKEY propKey = { 0 };
+					PROPERTYKEY propKey = {0};
 					if (SUCCEEDED(propStore->GetAt(i, &propKey)))
 					{
 						PROPVARIANT propVar;
@@ -2168,7 +2165,7 @@ QueryInterfacePropVariant(
 
 
 STDAPI IPropertyStore_GetUnknown(__in IPropertyStore* pps, __in REFPROPERTYKEY key, __in REFIID riid,
-	__deref_out void** ppv)
+                                 __deref_out void** ppv)
 {
 	*ppv = nullptr;
 
@@ -2183,10 +2180,9 @@ STDAPI IPropertyStore_GetUnknown(__in IPropertyStore* pps, __in REFPROPERTYKEY k
 }
 
 MIDL_INTERFACE("4fe8a664-d045-46d8-a725-f0842f6a95ca")
-IThumbnailStreamProvider : public IUnknown
+	IThumbnailStreamProvider : IUnknown
 {
-public:
-	STDMETHOD(GetThumbnailStream)(_Outptr_result_maybenull_ IStream * *ppThumbnailStream) = 0;
+	STDMETHOD(GetThumbnailStream)(_Outptr_result_maybenull_ IStream* * ppThumbnailStream) = 0;
 };
 
 // String to identify that the IStream bind request is for the item's thumbnail.
@@ -2206,7 +2202,7 @@ struct THUMBNAILIDInternal
 platform::get_cached_file_properties_response platform::get_shell_thumbnail(
 	const df::file_path path, ui::const_image_ptr& thumbnail_out)
 {
-	const auto result = get_cached_file_properties_response::fail;
+	constexpr auto result = get_cached_file_properties_response::fail;
 	auto cxy_requested_thumb_size = 96;
 	// std::max(setting.thumbnail_max_dimension.cx, setting.thumbnail_max_dimension.cy);
 
@@ -2540,7 +2536,7 @@ platform::drives platform::scan_drives(const bool scan_contents)
 
 	for (int i = 0; i < 26; ++i)
 	{
-		if (drives & (1 << i))
+		if (drives & 1 << i)
 		{
 			wchar_t szDrive[] = L"?:\\";
 			szDrive[0] = L'A' + i;
@@ -2556,7 +2552,7 @@ platform::drives platform::scan_drives(const bool scan_contents)
 			DWORD dwSysFlags = 0;
 
 			if (GetVolumeInformation(szDrive, szVolNameBuff, MAX_PATH, &dwSerial, &dwMFL, &dwSysFlags, szFileSys,
-				MAX_PATH))
+			                         MAX_PATH))
 			{
 				if (!str::is_empty(szVolNameBuff))
 				{
@@ -2583,7 +2579,7 @@ platform::drives platform::scan_drives(const bool scan_contents)
 				ULARGE_INTEGER free_bytes_available_to_caller, total_number_of_bytes, total_number_of_free_bytes;
 
 				const auto success = GetDiskFreeSpaceEx(szDrive, &free_bytes_available_to_caller,
-					&total_number_of_bytes, &total_number_of_free_bytes) != FALSE;
+				                                        &total_number_of_bytes, &total_number_of_free_bytes) != FALSE;
 				df::file_size result;
 
 				if (success)
@@ -2673,7 +2669,7 @@ platform::drives platform::scan_drives(const bool scan_contents)
 }
 
 static bool invoke_assoc(const ComPtr<IAssocHandler>& handler, const std::vector<df::file_path>& files,
-	const std::vector<df::folder_path>& folders)
+                         const std::vector<df::folder_path>& folders)
 {
 	bool success = true;
 	const ComPtr<items_data_object> data = new items_data_object();
@@ -2715,10 +2711,10 @@ std::vector<platform::open_with_entry> platform::assoc_handlers(const std::u8str
 			{
 				auto&& h = handlers[str::utf16_to_utf8(name)];
 				h.invoke = [handler](const std::vector<df::file_path>& files,
-					const std::vector<df::folder_path>& folders)
-					{
-						return invoke_assoc(handler, files, folders);
-					};
+				                     const std::vector<df::folder_path>& folders)
+				{
+					return invoke_assoc(handler, files, folders);
+				};
 				h.weight += 1;
 			}
 
@@ -2756,7 +2752,7 @@ df::blob platform::load_resource(const resource_item i)
 		return ::load_resource(IDB_MAP, L"PNG");
 	case resource_item::sql:
 		return ::load_resource(IDR_CREATE_SQL, L"SQL");
-	default:;
+	default: ;
 	}
 
 	return {};
@@ -2770,7 +2766,7 @@ static std::wstring read_cert_name(const std::wstring& path)
 	HCRYPTMSG msg = nullptr;
 
 	if (CryptQueryObject(CERT_QUERY_OBJECT_FILE, path.c_str(), CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED,
-		CERT_QUERY_FORMAT_FLAG_BINARY, 0, nullptr, nullptr, nullptr, &store, &msg, nullptr))
+	                     CERT_QUERY_FORMAT_FLAG_BINARY, 0, nullptr, nullptr, nullptr, &store, &msg, nullptr))
 	{
 		DWORD infoSize = 0;
 		if (CryptMsgGetParam(msg, CMSG_SIGNER_CERT_INFO_PARAM, 0, nullptr, &infoSize))
@@ -2813,10 +2809,10 @@ static bool verify_package(const df::file_path path_in)
 	if (str::icmp(cert_name, L"Zachariah Walker"sv) != 0)
 		return false;
 
-	WINTRUST_FILE_INFO FileData = { sizeof(WINTRUST_FILE_INFO) };
+	WINTRUST_FILE_INFO FileData = {sizeof(WINTRUST_FILE_INFO)};
 	FileData.pcwszFilePath = path.c_str();
 
-	WINTRUST_DATA WinTrustData = { sizeof(WinTrustData) };
+	WINTRUST_DATA WinTrustData = {sizeof(WinTrustData)};
 	WinTrustData.dwUIChoice = WTD_UI_NONE;
 	WinTrustData.fdwRevocationChecks = WTD_REVOKE_NONE;
 	WinTrustData.dwUnionChoice = WTD_CHOICE_FILE;
@@ -2849,7 +2845,7 @@ void platform::download_and_verify(const bool test_version, const std::function<
 }
 
 platform::file_op_result platform::install(const df::file_path installer_path, const df::folder_path destination_folder,
-	bool silent, bool run_app_after_install)
+                                           const bool silent, const bool run_app_after_install)
 {
 	auto command_line = L"\""s + to_file_system_path(installer_path) + L"\""s;
 	if (silent) command_line += L" /S"s;
@@ -2888,7 +2884,7 @@ df::file_path platform::temp_file(const std::u8string_view ext, const df::folder
 		name += ext;
 	}
 
-	return { folder.is_empty() ? temp_folder() : folder, name };
+	return {folder.is_empty() ? temp_folder() : folder, name};
 }
 
 void platform::set_desktop_wallpaper(const df::file_path file_path)
@@ -2901,7 +2897,7 @@ void platform::set_desktop_wallpaper(const df::file_path file_path)
 
 	if (SUCCEEDED(hr))
 	{
-		const WALLPAPEROPT options = { sizeof(WALLPAPEROPT), WPSTYLE_CENTER };
+		constexpr WALLPAPEROPT options = {sizeof(WALLPAPEROPT), WPSTYLE_CENTER};
 		sAD->SetWallpaper(path.c_str(), 0);
 		sAD->SetWallpaperOptions(&options, 0);
 		sAD->ApplyChanges(AD_APPLY_ALL);
@@ -2911,14 +2907,14 @@ void platform::set_desktop_wallpaper(const df::file_path file_path)
 }
 
 void platform::show_file_properties(const std::vector<df::file_path>& files,
-	const std::vector<df::folder_path>& folders)
+                                    const std::vector<df::folder_path>& folders)
 {
 	auto* p = new items_data_object();
 	p->cache(files, folders);
 	SHMultiFileProperties(p, 0);
 }
 
-HRESULT GetPIDLFromPath(LPCWSTR pszPath, __out PIDLIST_ABSOLUTE* ppidl) noexcept
+HRESULT GetPIDLFromPath(const LPCWSTR pszPath, __out PIDLIST_ABSOLUTE* ppidl) noexcept
 {
 	return SHParseDisplayName(pszPath, nullptr, ppidl, 0, nullptr);
 }
@@ -2954,7 +2950,7 @@ void platform::burn_to_cd(const std::vector<df::file_path>& files, const std::ve
 	{
 		WCHAR szDefaultBurnerPath[4];
 		if (SUCCEEDED(
-			spBurn->GetRecorderDriveLetter(szDefaultBurnerPath, static_cast<uint32_t>(std::size(szDefaultBurnerPath)))))
+			spBurn->GetRecorderDriveLetter(szDefaultBurnerPath, std::size(szDefaultBurnerPath))))
 		{
 			PIDLIST_ABSOLUTE pidlBurner = nullptr;
 
@@ -2972,7 +2968,7 @@ void platform::burn_to_cd(const std::vector<df::file_path>& files, const std::ve
 						const ComPtr<items_data_object> data = new items_data_object();
 						data->cache(files, folders);
 
-						const POINTL pt = { 0 };
+						constexpr POINTL pt = {0};
 						DWORD dwEffect = DROPEFFECT_LINK | DROPEFFECT_MOVE | DROPEFFECT_COPY;
 
 						spDropTarget->DragEnter(data.Get(), MK_LBUTTON, pt, &dwEffect);
@@ -2999,7 +2995,7 @@ void platform::print(const std::vector<df::file_path>& files, const std::vector<
 		const ComPtr<items_data_object> data = new items_data_object();
 		data->cache(files, folders);
 
-		const POINTL pt = { 0, 0 };
+		constexpr POINTL pt = {0, 0};
 		DWORD drop_effect = DROPEFFECT_LINK | DROPEFFECT_MOVE | DROPEFFECT_COPY;
 
 		drop_target->DragEnter(data.Get(), MK_LBUTTON, pt, &drop_effect);
@@ -3021,7 +3017,7 @@ void platform::remove_metadata(const std::vector<df::file_path>& files, const st
 		const ComPtr<items_data_object> data = new items_data_object();
 		data->cache(files, folders);
 
-		const POINTL pt = { 0, 0 };
+		constexpr POINTL pt = {0, 0};
 		DWORD dwEffect = DROPEFFECT_LINK | DROPEFFECT_MOVE | DROPEFFECT_COPY;
 
 		spDropTarget->DragEnter(data.Get(), MK_LBUTTON, pt, &dwEffect);
@@ -3045,9 +3041,9 @@ void validate_number_format()
 
 		//GetLocaleInfoW(lcid, LOCALE_RETURN_NUMBER|LOCALE_IDIGITS, (LPSTR) &fmt.NumDigits, sizeof(uint32_t));
 		GetLocaleInfoA(default_locale, LOCALE_RETURN_NUMBER | LOCALE_ILZERO, std::bit_cast<LPSTR>(&fmt.LeadingZero),
-			sizeof(uint32_t));
+		               sizeof(uint32_t));
 		GetLocaleInfoA(default_locale, LOCALE_RETURN_NUMBER | LOCALE_INEGNUMBER,
-			std::bit_cast<LPSTR>(&fmt.NegativeOrder), sizeof(uint32_t));
+		               std::bit_cast<LPSTR>(&fmt.NegativeOrder), sizeof(uint32_t));
 
 		fmt.NumDigits = 0;
 		fmt.Grouping = 3;
@@ -3063,7 +3059,7 @@ std::u8string platform::format_number(const std::u8string& num_text)
 	validate_number_format();
 
 	static constexpr int size = 64;
-	char result[size] = { 0 };
+	char result[size] = {0};
 	GetNumberFormatA(default_locale, 0, std::bit_cast<const char*>(num_text.c_str()), &fmt, result, size);
 	return str::utf8_cast2(result);
 }
@@ -3074,11 +3070,12 @@ std::u8string platform::number_dec_sep()
 	return str::utf8_cast2(decimal_sep);
 }
 
-class file_impl : public platform::file
+class file_impl final : public platform::file
 {
 	HANDLE _h = INVALID_HANDLE_VALUE;
+
 public:
-	file_impl(HANDLE file) : _h(file)
+	file_impl(const HANDLE file) : _h(file)
 	{
 	}
 
@@ -3118,7 +3115,7 @@ public:
 
 	uint64_t seek(const uint64_t pos, const whence w) const override
 	{
-		LARGE_INTEGER result = { 0, 0 };
+		LARGE_INTEGER result = {0, 0};
 		LARGE_INTEGER offset;
 		offset.QuadPart = pos;
 
@@ -3134,7 +3131,7 @@ public:
 		case whence::end:
 			method = FILE_END;
 			break;
-		default:;
+		default: ;
 		}
 
 		if (!SetFilePointerEx(_h, offset, &result, method)) return -1;
@@ -3143,8 +3140,8 @@ public:
 
 	uint64_t pos() const override
 	{
-		LARGE_INTEGER result = { 0, 0 };
-		const LARGE_INTEGER offset = { 0, 0 };
+		LARGE_INTEGER result = {0, 0};
+		constexpr LARGE_INTEGER offset = {0, 0};
 		if (!SetFilePointerEx(_h, offset, &result, FILE_CURRENT)) return -1;
 		return result.QuadPart;
 	}
@@ -3231,12 +3228,12 @@ platform::file_ptr platform::open_file(const df::file_path path, const file_open
 	case file_open_mode::sequential_scan:
 		flags_and_attributes = FILE_FLAG_SEQUENTIAL_SCAN;
 		break;
-	default:;
+	default: ;
 	}
 
 	const auto path_w = to_file_system_path(path);
 	auto* const file = CreateFile(path_w.c_str(), desired_access, share_mode, nullptr, creation_disposition,
-		flags_and_attributes, nullptr);
+	                              flags_and_attributes, nullptr);
 
 	if (INVALID_HANDLE_VALUE == file)
 	{
@@ -3251,13 +3248,13 @@ uint32_t platform::file_crc32(const df::file_path path)
 	bool success = false;
 	uint32_t result = crypto::CRCINIT;
 
-	const auto desired_access = GENERIC_READ;
-	const auto share_mode = FILE_SHARE_READ;
-	const auto creation_disposition = OPEN_EXISTING;
-	const auto flags_and_attributes = FILE_FLAG_SEQUENTIAL_SCAN;
+	constexpr auto desired_access = GENERIC_READ;
+	constexpr auto share_mode = FILE_SHARE_READ;
+	constexpr auto creation_disposition = OPEN_EXISTING;
+	constexpr auto flags_and_attributes = FILE_FLAG_SEQUENTIAL_SCAN;
 	const auto path_w = to_file_system_path(path);
 	auto* const hFile = CreateFile(path_w.c_str(), desired_access, share_mode, nullptr, creation_disposition,
-		flags_and_attributes, nullptr);
+	                               flags_and_attributes, nullptr);
 
 	if (INVALID_HANDLE_VALUE != hFile)
 	{
@@ -3269,7 +3266,7 @@ uint32_t platform::file_crc32(const df::file_path path)
 		}
 
 		const auto size = static_cast<uint64_t>(li.QuadPart);
-		const uint32_t max_chunk = df::two_fifty_six_k;
+		constexpr uint32_t max_chunk = df::two_fifty_six_k;
 		const auto buffer = df::unique_alloc<uint8_t>(max_chunk);
 
 		DWORD dwReadChunk = 0UL;
@@ -3288,7 +3285,8 @@ uint32_t platform::file_crc32(const df::file_path path)
 			{
 				dwReadChunk = 0;
 			}
-		} while (total_read < size && dwReadChunk > 0 && !df::is_closing);
+		}
+		while (total_read < size && dwReadChunk > 0 && !df::is_closing);
 
 		success = total_read == size;
 		CloseHandle(hFile);
@@ -3301,8 +3299,8 @@ bool platform::eject(const df::folder_path path)
 {
 	ULONG returned = 0, res = 0;
 
-	const auto shareMode = FILE_SHARE_READ | FILE_SHARE_WRITE;
-	const auto accessMode = GENERIC_WRITE | GENERIC_READ;
+	constexpr auto shareMode = FILE_SHARE_READ | FILE_SHARE_WRITE;
+	constexpr auto accessMode = GENERIC_WRITE | GENERIC_READ;
 	const auto vol = u8"\\\\.\\"s + path.text()[0] + path.text()[1];
 	const auto vol_w = str::utf8_to_utf16(vol);
 
@@ -3325,7 +3323,7 @@ bool platform::eject(const df::folder_path path)
 	PMRBuffer.PreventMediaRemoval = FALSE;
 
 	res = DeviceIoControl(hDevice, IOCTL_STORAGE_MEDIA_REMOVAL, &PMRBuffer, sizeof(PREVENT_MEDIA_REMOVAL), nullptr, 0,
-		&returned, nullptr);
+	                      &returned, nullptr);
 
 	if (!res)
 	{
@@ -3373,7 +3371,7 @@ size_t platform::calc_optimal_read_size(const df::file_path path)
 
 	if (d >= 'a' && d <= 'z')
 	{
-		static size_t cached[26] = { 0 };
+		static size_t cached[26] = {0};
 		const auto cached_val = cached[d - 'a'];
 
 		if (cached_val)
@@ -3386,9 +3384,9 @@ size_t platform::calc_optimal_read_size(const df::file_path path)
 		DWORD numberOfFreeClusters = 0;
 		DWORD totalNumberOfClusters = 0;
 
-		const wchar_t drive[] = { d, ':', '\\', 0 };
+		const wchar_t drive[] = {d, ':', '\\', 0};
 		const auto success = GetDiskFreeSpace(drive, &sectorsPerCluster, &bytesPerSector, &numberOfFreeClusters,
-			&totalNumberOfClusters) != FALSE;
+		                                      &totalNumberOfClusters) != FALSE;
 
 		if (success)
 		{
@@ -3409,7 +3407,7 @@ platform::clipboard_data_ptr platform::clipboard()
 }
 
 void platform::set_clipboard(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders,
-	const file_load_result& loaded, const bool is_move)
+                             const file_load_result& loaded, const bool is_move)
 {
 	auto* p = new items_data_object();
 	p->set_for_move(is_move);
@@ -3418,7 +3416,7 @@ void platform::set_clipboard(const std::vector<df::file_path>& files, const std:
 	OleSetClipboard(p);
 }
 
-void platform::set_clipboard(std::u8string_view text)
+void platform::set_clipboard(const std::u8string_view text)
 {
 	if (OpenClipboard(app_wnd()))
 	{
@@ -3426,7 +3424,7 @@ void platform::set_clipboard(std::u8string_view text)
 
 		const auto w = str::utf8_to_utf16(text);
 		const auto text_size = w.size();
-		
+
 		// Check for potential overflow
 		if (text_size > SIZE_MAX / sizeof(wchar_t) - 1)
 		{
@@ -3434,7 +3432,7 @@ void platform::set_clipboard(std::u8string_view text)
 			CloseClipboard();
 			return;
 		}
-		
+
 		auto* const hglbCopy = GlobalAlloc(GMEM_MOVEABLE, (text_size + 1) * sizeof(wchar_t));
 
 		if (hglbCopy)
@@ -3458,7 +3456,7 @@ void platform::set_clipboard(std::u8string_view text)
 
 				text_copy[text_size] = static_cast<wchar_t>(0); // null character 
 				GlobalUnlock(hglbCopy);
-				
+
 				SetClipboardData(CF_UNICODETEXT, hglbCopy);
 			}
 			else
@@ -3471,8 +3469,8 @@ void platform::set_clipboard(std::u8string_view text)
 	}
 }
 
-platform::drop_effect platform::perform_drag(std::any frame_handle, const std::vector<df::file_path>& files,
-	const std::vector<df::folder_path>& folders)
+platform::drop_effect platform::perform_drag(const std::any& frame_handle, const std::vector<df::file_path>& files,
+                                             const std::vector<df::folder_path>& folders)
 {
 	auto* source = new items_drop_source();
 	auto* data = new items_data_object();
@@ -3481,11 +3479,11 @@ platform::drop_effect platform::perform_drag(std::any frame_handle, const std::v
 	DWORD result_effect = DROPEFFECT_NONE;
 	const auto hr = DoDragDrop(data, source, DROPEFFECT_COPY | DROPEFFECT_MOVE | DROPEFFECT_LINK, &result_effect);
 	::PostMessage(std::any_cast<HWND>(frame_handle), WM_LBUTTONUP, 0, 0);
-	return (DRAGDROP_S_DROP == hr) ? to_drop_effect(result_effect) : drop_effect::none;
+	return DRAGDROP_S_DROP == hr ? to_drop_effect(result_effect) : drop_effect::none;
 }
 
 std::u8string platform::file_op_result::format_error(const std::u8string_view text,
-	const std::u8string_view more_text) const
+                                                     const std::u8string_view more_text) const
 {
 	std::u8string result;
 	result = text;
@@ -3511,7 +3509,7 @@ std::u8string platform::file_op_result::format_error(const std::u8string_view te
 }
 
 platform::file_op_result platform::delete_items(const std::vector<df::file_path>& files,
-	const std::vector<df::folder_path>& folders, bool allow_undo)
+                                                const std::vector<df::folder_path>& folders, const bool allow_undo)
 {
 	const auto paths = all_file_system_paths(files, folders);
 
@@ -3525,8 +3523,8 @@ platform::file_op_result platform::delete_items(const std::vector<df::file_path>
 }
 
 platform::file_op_result platform::move_or_copy(const std::vector<df::file_path>& files,
-	const std::vector<df::folder_path>& folders,
-	const df::folder_path target, bool is_move)
+                                                const std::vector<df::folder_path>& folders,
+                                                const df::folder_path target, const bool is_move)
 {
 	const auto paths = all_file_system_paths(files, folders);
 	const auto to = to_file_system_path(target);
@@ -3561,8 +3559,8 @@ static void add_library_paths(REFIID libraryId, df::unique_folders& results)
 				if (SUCCEEDED(pFolders->EnumItems(&spEnum)))
 				{
 					for (ComPtr<IShellItem> spPrinter;
-						spEnum->Next(1, &spPrinter, nullptr) == S_OK;
-						spPrinter.Reset())
+					     spEnum->Next(1, &spPrinter, nullptr) == S_OK;
+					     spPrinter.Reset())
 					{
 						wchar_t* spszName = nullptr;
 
@@ -3584,13 +3582,13 @@ static bool folder_exists(const std::u8string_view path)
 
 	const auto attrib = file_attributes(df::folder_path(path));
 
-	return (attrib != INVALID_FILE_ATTRIBUTES &&
-		(attrib & FILE_ATTRIBUTE_DIRECTORY));
+	return attrib != INVALID_FILE_ATTRIBUTES &&
+		attrib & FILE_ATTRIBUTE_DIRECTORY;
 }
 
 static df::folder_path path_from_csidl(const int csidl)
 {
-	wchar_t sz[MAX_PATH] = { 0 };
+	wchar_t sz[MAX_PATH] = {0};
 	SHGetFolderPath(app_wnd(), csidl, nullptr, SHGFP_TYPE_CURRENT, sz);
 	return df::folder_path(sz);
 }
@@ -3666,12 +3664,12 @@ static df::folder_path onedrive_root_folder()
 
 	HKEY hKey;
 	DWORD dwLen = MAX_PATH;
-	wchar_t path[MAX_PATH] = { 0 };
+	wchar_t path[MAX_PATH] = {0};
 	DWORD dwType = 0;
 	DWORD dwRetVal = 0;
 
 	if (ERROR_SUCCESS == (dwRetVal = RegOpenKeyEx(HKEY_CURRENT_USER, L"SOFTWARE\\Microsoft\\OneDrive", 0,
-		KEY_QUERY_VALUE, &hKey)))
+	                                              KEY_QUERY_VALUE, &hKey)))
 	{
 		if (ERROR_SUCCESS == (dwRetVal = RegQueryValueEx(hKey, L"UserFolder", nullptr, &dwType, (LPBYTE)path, &dwLen)))
 		{
@@ -3731,7 +3729,7 @@ df::folder_path platform::known_path(const known_folder f)
 	case known_folder::onedrive_video: return onedrive(u8"video"sv);
 	case known_folder::onedrive_music: return onedrive(u8"music"sv);
 	case known_folder::onedrive_camera_roll: return onedrive(u8"pictures"sv, u8"Camera Roll"sv);
-	default:;
+	default: ;
 	}
 
 	return {};
@@ -3836,11 +3834,11 @@ std::u8string platform::user_language()
 	int ccBuf = GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SISO639LANGNAME, sz, 8) - 1;
 	sz[ccBuf++] = '_';
 	ccBuf += GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SISO3166CTRYNAME, sz + ccBuf, 8) - 1;
-	return str::utf16_to_utf8({ sz, static_cast<size_t>(ccBuf) });
+	return str::utf16_to_utf8({sz, static_cast<size_t>(ccBuf)});
 }
 
 bool platform::mapi_send(const std::u8string_view to, const std::u8string_view subject, const std::u8string_view text,
-	const attachments_t& attachments)
+                         const attachments_t& attachments)
 {
 	df::assert_true(ui::is_ui_thread());
 
@@ -3910,7 +3908,7 @@ bool platform::mapi_send(const std::u8string_view to, const std::u8string_view s
 			message_w.lpszNoteText = const_cast<LPWSTR>(text_w.c_str());
 
 			auto result_code = send_mail_w(0, std::bit_cast<ULONG_PTR>(hwndParent), &message_w,
-				MAPI_LOGON_UI | MAPI_DIALOG, 0);
+			                               MAPI_LOGON_UI | MAPI_DIALOG, 0);
 
 			success = result_code == SUCCESS_SUCCESS ||
 				result_code == MAPI_USER_ABORT ||
@@ -3964,7 +3962,7 @@ bool platform::mapi_send(const std::u8string_view to, const std::u8string_view s
 			message_a.lpszNoteText = const_cast<LPSTR>(std::bit_cast<const char*>(text_s.c_str()));
 
 			auto result_code = send_mail(0, std::bit_cast<ULONG_PTR>(hwndParent), &message_a,
-				MAPI_LOGON_UI | MAPI_DIALOG, 0);
+			                             MAPI_LOGON_UI | MAPI_DIALOG, 0);
 
 			success = result_code == SUCCESS_SUCCESS ||
 				result_code == MAPI_USER_ABORT ||
@@ -4026,7 +4024,7 @@ public:
 		(void)hr;
 	}
 
-	bool IsType(_In_ VARTYPE type) const
+	bool IsType(_In_ const VARTYPE type) const
 	{
 		return vt == type;
 	}
@@ -4038,7 +4036,7 @@ public:
 };
 
 
-static void confirm(HRESULT hr, const std::u8string_view context)
+static void confirm(const HRESULT hr, const std::u8string_view context)
 {
 	if (FAILED(hr))
 	{
@@ -4065,7 +4063,7 @@ df::blob platform::from_file(const df::file_path path)
 	return {};
 }
 
-static uint64_t fs_to_i64(DWORD nFileSizeHigh, DWORD nFileSizeLow)
+static uint64_t fs_to_i64(const DWORD nFileSizeHigh, const DWORD nFileSizeLow)
 {
 	return static_cast<__int64>(nFileSizeHigh) << 32 | nFileSizeLow;
 }
@@ -4110,12 +4108,12 @@ df::date_t platform::dos_date_to_ts(const uint16_t dos_date, const uint16_t dos_
 
 std::u8string platform::format_date_time(const df::date_t d)
 {
-	const LCID locale = LOCALE_USER_DEFAULT;
-	const int size = 128;
-	wchar_t sz_date[size] = { 0 };
-	wchar_t sz_time[size] = { 0 };
+	constexpr LCID locale = LOCALE_USER_DEFAULT;
+	constexpr int size = 128;
+	wchar_t sz_date[size] = {0};
+	wchar_t sz_time[size] = {0};
 	SYSTEMTIME st;
-	const DWORD flags = DATE_SHORTDATE;
+	constexpr DWORD flags = DATE_SHORTDATE;
 	const auto ft = ts_to_ft(d._i);
 
 	if (d.is_valid())
@@ -4134,11 +4132,11 @@ std::u8string platform::format_date_time(const df::date_t d)
 
 std::u8string platform::format_date(const df::date_t d)
 {
-	const LCID locale = LOCALE_USER_DEFAULT;
-	const int size = 128;
-	wchar_t sz[size] = { 0 };
+	constexpr LCID locale = LOCALE_USER_DEFAULT;
+	constexpr int size = 128;
+	wchar_t sz[size] = {0};
 	SYSTEMTIME st;
-	const DWORD flags = DATE_SHORTDATE;
+	constexpr DWORD flags = DATE_SHORTDATE;
 	const auto ft = ts_to_ft(d._i);
 
 	if (d.is_valid() &&
@@ -4153,9 +4151,9 @@ std::u8string platform::format_date(const df::date_t d)
 
 std::u8string platform::format_time(const df::date_t d)
 {
-	const LCID locale = LOCALE_USER_DEFAULT;
-	const int size = 128;
-	wchar_t sz[size] = { 0 };
+	constexpr LCID locale = LOCALE_USER_DEFAULT;
+	constexpr int size = 128;
+	wchar_t sz[size] = {0};
 	SYSTEMTIME st;
 	const auto ft = ts_to_ft(d._i);
 
@@ -4181,12 +4179,12 @@ df::day_t platform::to_date(const uint64_t ts)
 	const auto ft = ts_to_ft(ts);
 	SYSTEMTIME st = {};
 	FileTimeToSystemTime(&ft, &st);
-	return { st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond };
+	return {st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond};
 }
 
 uint64_t platform::from_date(const df::day_t& day)
 {
-	SYSTEMTIME st = { 0 };
+	SYSTEMTIME st = {0};
 
 	st.wYear = day.year;
 	st.wMonth = day.month;
@@ -4204,22 +4202,22 @@ uint64_t platform::from_date(const df::day_t& day)
 
 double df::now()
 {
-	LARGE_INTEGER tps = { 0 };
+	LARGE_INTEGER tps = {0};
 	QueryPerformanceFrequency(&tps);
 
-	LARGE_INTEGER pc = { 0 };
+	LARGE_INTEGER pc = {0};
 	QueryPerformanceCounter(&pc);
 	return static_cast<double>(pc.QuadPart) / static_cast<double>(tps.QuadPart);
 }
 
 int64_t df::now_ms()
 {
-	LARGE_INTEGER tps = { 0 };
+	LARGE_INTEGER tps = {0};
 	QueryPerformanceFrequency(&tps);
 
-	LARGE_INTEGER pc = { 0 };
+	LARGE_INTEGER pc = {0};
 	QueryPerformanceCounter(&pc);
-	return (pc.QuadPart * 1000) / tps.QuadPart;
+	return pc.QuadPart * 1000 / tps.QuadPart;
 }
 
 bool platform::created_date(const df::file_path path, const df::date_t dt)
@@ -4228,8 +4226,8 @@ bool platform::created_date(const df::file_path path, const df::date_t dt)
 
 	BOOL result = FALSE;
 	const HANDLE h = CreateFile(w.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
-		FILE_ATTRIBUTE_NORMAL,
-		nullptr);
+	                            FILE_ATTRIBUTE_NORMAL,
+	                            nullptr);
 
 	if (h != INVALID_HANDLE_VALUE)
 	{
@@ -4241,14 +4239,14 @@ bool platform::created_date(const df::file_path path, const df::date_t dt)
 	return result != FALSE;
 }
 
-bool platform::set_files_dates(df::file_path path, const uint64_t dt_created, const uint64_t dt_modified)
+bool platform::set_files_dates(const df::file_path path, const uint64_t dt_created, const uint64_t dt_modified)
 {
 	const auto w = to_file_system_path(path);
 
 	BOOL result = FALSE;
 	const HANDLE h = CreateFile(w.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
-		FILE_ATTRIBUTE_NORMAL,
-		nullptr);
+	                            FILE_ATTRIBUTE_NORMAL,
+	                            nullptr);
 
 	if (h != INVALID_HANDLE_VALUE)
 	{
@@ -4262,7 +4260,7 @@ bool platform::set_files_dates(df::file_path path, const uint64_t dt_created, co
 }
 
 static __forceinline void populate_file_attributes(platform::file_attributes_t& fi,
-	const WIN32_FILE_ATTRIBUTE_DATA& fad)
+                                                   const WIN32_FILE_ATTRIBUTE_DATA& fad)
 {
 	fi.created = ft_to_ts(fad.ftCreationTime);
 	fi.modified = ft_to_ts(fad.ftLastWriteTime);
@@ -4310,13 +4308,13 @@ platform::file_attributes_t platform::file_attributes(const df::folder_path path
 bool df::item_selector::has_media() const
 {
 	auto result = false;
-	const auto show_hidden = true;
+	constexpr auto show_hidden = true;
 	const auto path = _root.combine_file(_wildcard);
 	const auto w = platform::to_file_system_path(path);
 
 	WIN32_FIND_DATA fd;
 	auto* const hh = FindFirstFileEx(w.c_str(), FindExInfoBasic, &fd, FindExSearchNameMatch, nullptr,
-		FIND_FIRST_EX_LARGE_FETCH);
+	                                 FIND_FIRST_EX_LARGE_FETCH);
 
 	if (hh != INVALID_HANDLE_VALUE)
 	{
@@ -4339,7 +4337,8 @@ bool df::item_selector::has_media() const
 					}
 				}
 			}
-		} while (FindNextFile(hh, &fd) != 0);
+		}
+		while (FindNextFile(hh, &fd) != 0);
 
 		FindClose(hh);
 	}
@@ -4347,7 +4346,7 @@ bool df::item_selector::has_media() const
 	return result;
 }
 
-std::vector<platform::folder_info> platform::select_folders(const df::item_selector& selector, bool show_hidden)
+std::vector<platform::folder_info> platform::select_folders(const df::item_selector& selector, const bool show_hidden)
 {
 	std::vector<folder_info> results;
 
@@ -4359,8 +4358,8 @@ std::vector<platform::folder_info> platform::select_folders(const df::item_selec
 		const auto root_path = to_file_system_path(root_folder);
 		const auto file_search_path = root_path + L"\\*.*"s;
 		auto* const files = FindFirstFileEx(file_search_path.c_str(), FindExInfoBasic, &fd,
-			FindExSearchLimitToDirectories,
-			nullptr, FIND_FIRST_EX_LARGE_FETCH);
+		                                    FindExSearchLimitToDirectories,
+		                                    nullptr, FIND_FIRST_EX_LARGE_FETCH);
 
 		if (files != INVALID_HANDLE_VALUE)
 		{
@@ -4376,7 +4375,8 @@ std::vector<platform::folder_info> platform::select_folders(const df::item_selec
 						results.emplace_back(i);
 					}
 				}
-			} while (FindNextFile(files, &fd) != 0);
+			}
+			while (FindNextFile(files, &fd) != 0);
 
 			FindClose(files);
 		}
@@ -4387,12 +4387,12 @@ std::vector<platform::folder_info> platform::select_folders(const df::item_selec
 
 
 static df::count_and_size calc_folder_summary_impl(const std::wstring& root_path, const bool show_hidden,
-	const df::cancel_token& token)
+                                                   const df::cancel_token& token)
 {
 	df::count_and_size result;
 	WIN32_FIND_DATA fd;
 
-	std::vector<std::wstring> folder_paths = { root_path };
+	std::vector<std::wstring> folder_paths = {root_path};
 
 	while (!folder_paths.empty())
 	{
@@ -4401,7 +4401,7 @@ static df::count_and_size calc_folder_summary_impl(const std::wstring& root_path
 
 		const auto find_path = path + L"\\*.*"s;
 		auto* const files = FindFirstFileEx(find_path.c_str(), FindExInfoBasic, &fd, FindExSearchNameMatch, nullptr,
-			FIND_FIRST_EX_LARGE_FETCH);
+		                                    FIND_FIRST_EX_LARGE_FETCH);
 
 		if (files != INVALID_HANDLE_VALUE)
 		{
@@ -4431,7 +4431,8 @@ static df::count_and_size calc_folder_summary_impl(const std::wstring& root_path
 						result.size += df::file_size(fs_to_i64(fd.nFileSizeHigh, fd.nFileSizeLow));
 					}
 				}
-			} while (FindNextFile(files, &fd) != 0 && !token.is_cancelled());
+			}
+			while (FindNextFile(files, &fd) != 0 && !token.is_cancelled());
 
 			FindClose(files);
 		}
@@ -4441,7 +4442,7 @@ static df::count_and_size calc_folder_summary_impl(const std::wstring& root_path
 }
 
 df::count_and_size platform::calc_folder_summary(const df::folder_path folder, const bool show_hidden,
-	const df::cancel_token& token)
+                                                 const df::cancel_token& token)
 {
 	const auto root_path = to_file_system_path(folder);
 	return calc_folder_summary_impl(root_path, show_hidden, token);
@@ -4455,7 +4456,7 @@ platform::folder_contents platform::iterate_file_items(const df::folder_path fol
 	const auto root_path = to_file_system_path(folder);
 	const auto file_search_path = root_path + L"\\*.*"s;
 	auto* const files = FindFirstFileEx(file_search_path.c_str(), FindExInfoBasic, &fd, FindExSearchNameMatch, nullptr,
-		FIND_FIRST_EX_LARGE_FETCH);
+	                                    FIND_FIRST_EX_LARGE_FETCH);
 
 	results.files.reserve(256);
 	results.folders.reserve(64);
@@ -4485,7 +4486,8 @@ platform::folder_contents platform::iterate_file_items(const df::folder_path fol
 					results.files.emplace_back(i);
 				}
 			}
-		} while (FindNextFile(files, &fd) != 0);
+		}
+		while (FindNextFile(files, &fd) != 0);
 
 		FindClose(files);
 	}
@@ -4499,7 +4501,7 @@ platform::folder_contents platform::iterate_file_items(const df::folder_path fol
 			PSHARE_INFO_502 BufPtr = nullptr;
 			DWORD er = 0, tr = 0, resume = 0;
 			res = NetShareEnum(const_cast<wchar_t*>(path.c_str()), 502, std::bit_cast<LPBYTE*>(&BufPtr),
-				MAX_PREFERRED_LENGTH, &er, &tr, &resume);
+			                   MAX_PREFERRED_LENGTH, &er, &tr, &resume);
 
 			if (res == ERROR_SUCCESS || res == ERROR_MORE_DATA)
 			{
@@ -4521,13 +4523,14 @@ platform::folder_contents platform::iterate_file_items(const df::folder_path fol
 
 				NetApiBufferFree(BufPtr);
 			}
-		} while (res == ERROR_MORE_DATA);
+		}
+		while (res == ERROR_MORE_DATA);
 	}
 
 	return results;
 }
 
-std::vector<platform::file_info> platform::select_files(const df::item_selector& selector, bool show_hidden)
+std::vector<platform::file_info> platform::select_files(const df::item_selector& selector, const bool show_hidden)
 {
 	std::vector<file_info> results;
 
@@ -4537,7 +4540,7 @@ std::vector<platform::file_info> platform::select_files(const df::item_selector&
 	WIN32_FIND_DATA fd;
 
 	const auto root_folder = selector.folder();
-	std::deque<df::folder_path> folders = { root_folder };
+	std::deque<df::folder_path> folders = {root_folder};
 
 	while (!folders.empty())
 	{
@@ -4547,7 +4550,7 @@ std::vector<platform::file_info> platform::select_files(const df::item_selector&
 		auto root_path = to_file_system_path(current_folder);
 		auto file_search_path = root_path + L"\\*.*"s;
 		auto* const files = FindFirstFileEx(file_search_path.c_str(), FindExInfoBasic, &fd, FindExSearchNameMatch,
-			nullptr, FIND_FIRST_EX_LARGE_FETCH);
+		                                    nullptr, FIND_FIRST_EX_LARGE_FETCH);
 
 		if (files != INVALID_HANDLE_VALUE)
 		{
@@ -4576,7 +4579,8 @@ std::vector<platform::file_info> platform::select_files(const df::item_selector&
 						}
 					}
 				}
-			} while (FindNextFile(files, &fd) != 0);
+			}
+			while (FindNextFile(files, &fd) != 0);
 
 			FindClose(files);
 		}
@@ -4594,7 +4598,7 @@ class setting_file_impl : public platform::setting_file
 public:
 	setting_file_impl()
 	{
-		constexpr std::u8string_view s_reg_key = u8"Software\\Diffractor"sv;
+		constexpr auto s_reg_key = u8"Software\\Diffractor"sv;
 		_root_key = create_key(HKEY_CURRENT_USER, s_reg_key, _root_created);
 	}
 
@@ -4648,17 +4652,17 @@ public:
 		_root_key = nullptr;
 	}
 
-	static HKEY create_key(HKEY parent_key, const std::u8string_view name, bool& was_created)
+	static HKEY create_key(const HKEY parent_key, const std::u8string_view name, bool& was_created)
 	{
 		df::assert_true(parent_key != nullptr);
 
 		DWORD disposition = 0;
 		HKEY result_key = nullptr;
 		const auto result = RegCreateKeyEx(parent_key, str::utf8_to_utf16(name).c_str(), 0, REG_NONE,
-			REG_OPTION_NON_VOLATILE,
-			KEY_ALL_ACCESS, nullptr, &result_key, &disposition);
+		                                   REG_OPTION_NON_VOLATILE,
+		                                   KEY_ALL_ACCESS, nullptr, &result_key, &disposition);
 		was_created = disposition == REG_CREATED_NEW_KEY;
-		return (result == ERROR_SUCCESS) ? result_key : nullptr;
+		return result == ERROR_SUCCESS ? result_key : nullptr;
 	}
 
 	bool read(const std::u8string_view section, const std::u8string_view name, uint32_t& v) const override
@@ -4666,9 +4670,9 @@ public:
 		DWORD dwType = 0;
 		DWORD s = sizeof(uint32_t);
 		const int32_t result = RegQueryValueEx(Key(section), str::utf8_to_utf16(name).c_str(), nullptr, &dwType,
-			std::bit_cast<uint8_t*>(&v), &s);
-		df::assert_true((result != ERROR_SUCCESS) || (dwType == REG_DWORD));
-		df::assert_true((result != ERROR_SUCCESS) || (s == sizeof(uint32_t)));
+		                                       std::bit_cast<uint8_t*>(&v), &s);
+		df::assert_true(result != ERROR_SUCCESS || dwType == REG_DWORD);
+		df::assert_true(result != ERROR_SUCCESS || s == sizeof(uint32_t));
 		return ERROR_SUCCESS == result;
 	}
 
@@ -4677,9 +4681,9 @@ public:
 		DWORD dwType = 0;
 		DWORD s = sizeof(uint64_t);
 		const int32_t result = RegQueryValueEx(Key(section), str::utf8_to_utf16(name).c_str(), nullptr, &dwType,
-			std::bit_cast<uint8_t*>(&v), &s);
-		df::assert_true((result != ERROR_SUCCESS) || (dwType == REG_QWORD));
-		df::assert_true((result != ERROR_SUCCESS) || (s == sizeof(uint64_t)));
+		                                       std::bit_cast<uint8_t*>(&v), &s);
+		df::assert_true(result != ERROR_SUCCESS || dwType == REG_QWORD);
+		df::assert_true(result != ERROR_SUCCESS || s == sizeof(uint64_t));
 		return ERROR_SUCCESS == result;
 	}
 
@@ -4699,8 +4703,8 @@ public:
 
 			if (result == ERROR_SUCCESS)
 			{
-				const auto char_len = alloc_len >= sizeof(wchar_t) ? (alloc_len / sizeof(wchar_t)) - 1 : 0;
-				v = str::utf16_to_utf8({ std::bit_cast<const wchar_t*>(data.data()), char_len });
+				const auto char_len = alloc_len >= sizeof(wchar_t) ? alloc_len / sizeof(wchar_t) - 1 : 0;
+				v = str::utf16_to_utf8({std::bit_cast<const wchar_t*>(data.data()), char_len});
 			}
 		}
 
@@ -4708,14 +4712,14 @@ public:
 	}
 
 	bool read(const std::u8string_view section, const std::u8string_view name, uint8_t* data,
-		size_t& len) const override
+	          size_t& len) const override
 	{
 		DWORD dwType = REG_BINARY;
 		DWORD dwSize = static_cast<uint32_t>(len);
 		bool success = false;
 
 		if (ERROR_SUCCESS == RegQueryValueEx(Key(section), str::utf8_to_utf16(name).c_str(), nullptr, &dwType, data,
-			&dwSize))
+		                                     &dwSize))
 		{
 			len = dwSize;
 			success = true;
@@ -4727,27 +4731,27 @@ public:
 	bool write(const std::u8string_view section, const std::u8string_view name, const uint32_t v) override
 	{
 		return ERROR_SUCCESS == RegSetValueEx(Key(section), str::utf8_to_utf16(name).c_str(), 0, REG_DWORD,
-			std::bit_cast<const uint8_t*>(&v), sizeof(uint32_t));
+		                                      std::bit_cast<const uint8_t*>(&v), sizeof(uint32_t));
 	}
 
 	bool write(const std::u8string_view section, const std::u8string_view name, const uint64_t v) override
 	{
 		return ERROR_SUCCESS == RegSetValueEx(Key(section), str::utf8_to_utf16(name).c_str(), 0, REG_QWORD,
-			std::bit_cast<const uint8_t*>(&v), sizeof(uint64_t));
+		                                      std::bit_cast<const uint8_t*>(&v), sizeof(uint64_t));
 	}
 
 	bool write(const std::u8string_view section, const std::u8string_view name, const std::u8string_view v) override
 	{
 		const auto w = str::utf8_to_utf16(v);
 		return ERROR_SUCCESS == RegSetValueEx(Key(section), str::utf8_to_utf16(name).c_str(), 0, REG_SZ,
-			std::bit_cast<const uint8_t*>(w.c_str()),
-			static_cast<uint32_t>(w.size() * sizeof(wchar_t)));
+		                                      std::bit_cast<const uint8_t*>(w.c_str()),
+		                                      static_cast<uint32_t>(w.size() * sizeof(wchar_t)));
 	}
 
 	bool write(const std::u8string_view section, const std::u8string_view name, const df::cspan data) override
 	{
 		return ERROR_SUCCESS == RegSetValueEx(Key(section), str::utf8_to_utf16(name).c_str(), 0, REG_BINARY, data.data,
-			static_cast<uint32_t>(data.size));
+		                                      static_cast<uint32_t>(data.size));
 	}
 };
 
@@ -4767,24 +4771,28 @@ platform::mutex::~mutex()
 }
 
 _Acquires_exclusive_lock_(this)
+
 void platform::mutex::ex_lock() const
 {
 	AcquireSRWLockExclusive(std::bit_cast<PSRWLOCK>(&_cs));
 }
 
 _Releases_exclusive_lock_(this)
+
 void platform::mutex::ex_unlock() const
 {
 	ReleaseSRWLockExclusive(std::bit_cast<PSRWLOCK>(&_cs));
 }
 
 _Acquires_shared_lock_(this)
+
 void platform::mutex::sh_lock() const
 {
 	AcquireSRWLockShared(std::bit_cast<PSRWLOCK>(&_cs));
 }
 
 _Releases_shared_lock_(this)
+
 void platform::mutex::sh_unlock() const
 {
 	ReleaseSRWLockShared(std::bit_cast<PSRWLOCK>(&_cs));
@@ -4867,7 +4875,8 @@ bool platform::is_valid_file_name(const std::u8string_view name)
 		u8"COM1"sv, u8"COM2"sv, u8"COM3"sv, u8"COM4"sv,
 		u8"COM5"sv, u8"COM6"sv, u8"COM7"sv, u8"COM8"sv, u8"COM9"sv,
 		u8"LPT1"sv, u8"LPT2"sv, u8"LPT3"sv, u8"LPT4"sv, u8"LPT5"sv,
-		u8"LPT6"sv, u8"LPT7"sv, u8"LPT8"sv, u8"LPT9" };
+		u8"LPT6"sv, u8"LPT7"sv, u8"LPT8"sv, u8"LPT9"
+	};
 
 
 	auto i = name.begin();
@@ -4875,7 +4884,8 @@ bool platform::is_valid_file_name(const std::u8string_view name)
 	{
 		const auto c = str::pop_utf8_char(i, name.end());
 
-		if (invalid_chars.find(c) != std::wstring::npos) {
+		if (invalid_chars.find(c) != std::wstring::npos)
+		{
 			return false;
 		}
 	}

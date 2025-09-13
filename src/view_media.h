@@ -1,19 +1,18 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
 
 inline view_element_ptr make_icon_link_element2(const icon_index i, commands cmd, const view_element_style style_in)
 {
-	const wchar_t text[2] = { static_cast<wchar_t>(i), 0 };
+	const wchar_t text[2] = {static_cast<wchar_t>(i), 0};
 	auto element = std::make_shared<link_element>(str::utf16_to_utf8(text), cmd, ui::style::font_face::icons,
-		ui::style::text_style::single_line_center, style_in, true);
+	                                              ui::style::text_style::single_line_center, style_in, true);
 	return element;
 }
 
@@ -40,9 +39,9 @@ public:
 		_state(state),
 		_host(std::move(host)),
 		_left_arrow_element(make_icon_link_element2(icon_index::back_image, commands::browse_previous_item,
-			view_element_style::none)),
+		                                            view_element_style::none)),
 		_right_arrow_element(make_icon_link_element2(icon_index::next_image, commands::browse_next_item,
-			view_element_style::none))
+		                                             view_element_style::none))
 	{
 	}
 
@@ -53,7 +52,7 @@ public:
 
 	recti calc_media_bounds() const
 	{
-		return { 0, 0, _client_extent.cx, _client_extent.cy };
+		return {0, 0, _client_extent.cx, _client_extent.cy};
 	}
 
 	void activate(const sizei extent) override
@@ -89,7 +88,7 @@ public:
 
 		if (_media_element)
 		{
-			_media_element->render(dc, { 0, 0 });
+			_media_element->render(dc, {0, 0});
 		}
 
 		if (!_display->zoom() && !_display->comparing())
@@ -98,11 +97,11 @@ public:
 
 			if (_controls_element)
 			{
-				_controls_element->render(dc, { 0, 0 });
+				_controls_element->render(dc, {0, 0});
 			}
 
-			_left_arrow_element->render(dc, { 0, 0 });
-			_right_arrow_element->render(dc, { 0, 0 });
+			_left_arrow_element->render(dc, {0, 0});
+			_right_arrow_element->render(dc, {0, 0});
 
 			dc.colors.alpha = original_colors.alpha;
 
@@ -152,8 +151,8 @@ public:
 			const auto limit = center_limit;
 			const auto elements_extent = _controls_element->measure(mc, limit);
 			const auto control_avail_bounds = recti(control_limit.left, control_limit.bottom - elements_extent.cy,
-				control_limit.right, control_limit.bottom);
-			const auto control_bounds = center_rect(sizei{ center_limit, elements_extent.cy }, control_avail_bounds);
+			                                        control_limit.right, control_limit.bottom);
+			const auto control_bounds = center_rect(sizei{center_limit, elements_extent.cy}, control_avail_bounds);
 
 			_controls_element->layout(mc, control_bounds, positions);
 
@@ -171,7 +170,7 @@ public:
 		_left_arrow_element->layout(
 			mc, recti(avail_bounds.left, left_top, avail_bounds.left + arrow_cx, left_top + arrow_cy), positions);
 		_right_arrow_element->layout(mc, recti(avail_bounds.right - arrow_cx, right_top, avail_bounds.right,
-			right_top + arrow_cy), positions);
+		                                       right_top + arrow_cy), positions);
 
 		if (!overlay_media_control)
 		{
@@ -207,7 +206,7 @@ public:
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc) override
 	{
-		const pointi media_offset{};
+		constexpr pointi media_offset{};
 		view_controller_ptr controller;
 
 		if (_display->zoom() || _display->comparing())

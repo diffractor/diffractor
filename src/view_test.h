@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -27,7 +26,7 @@ void register_tests(view_state& state, test_registry& tests);
 bool is_running_tests();
 void run_tests(view_state& state, std::vector<test_ptr> tests);
 
-class test_assert_exception : public std::exception
+class test_assert_exception final : public std::exception
 {
 public:
 	std::u8string message;
@@ -45,7 +44,7 @@ enum class test_state
 	unknown
 };
 
-struct test_item final : public std::enable_shared_from_this<test_item>, public view_element
+struct test_item final : std::enable_shared_from_this<test_item>, view_element
 {
 	std::u8string _name;
 	std::u8string _message;
@@ -56,8 +55,10 @@ struct test_item final : public std::enable_shared_from_this<test_item>, public 
 	test_view& _view;
 	list_view::row_element_ptr _row;
 
-	test_item(test_view& view, std::u8string name, list_view::row_element_ptr row, std::function<void(shared_test_context& stc)> f) noexcept
-		: view_element(view_element_style::can_invoke), _name(std::move(name)), _f(std::move(f)), _view(view), _row(std::move(row))
+	test_item(test_view& view, std::u8string name, list_view::row_element_ptr row,
+	          std::function<void(shared_test_context& stc)> f) noexcept
+		: view_element(view_element_style::can_invoke), _name(std::move(name)), _f(std::move(f)), _view(view),
+		  _row(std::move(row))
 	{
 		update_row();
 	}
@@ -69,10 +70,8 @@ struct test_item final : public std::enable_shared_from_this<test_item>, public 
 
 	void update_row();
 
-	void perform(view_state& s, shared_test_context& stc);
+	void perform(const view_state& s, shared_test_context& stc);
 };
-
-
 
 
 class test_view final : public list_view, public test_registry
@@ -82,7 +81,6 @@ protected:
 
 	friend class scroll_controller;
 	friend class clickable_controller;
-
 
 
 	std::vector<test_ptr> _tests;
@@ -96,10 +94,10 @@ public:
 	void activate(sizei extent) override;
 	void refresh() override;
 	void reload() override;
-	void gen_po();
-	void reset_graphics();
+	static void gen_po();
+	void reset_graphics() const;
 	void run_test(const test_ptr& t);
-	void run_all() { run_tests(_state, _tests); };
+	void run_all() const { run_tests(_state, _tests); };
 
 	void add(std::u8string name, std::function<void(shared_test_context& stc)> f) override
 	{
@@ -112,7 +110,10 @@ public:
 	void add(std::u8string name, std::function<void(void)> f) override
 	{
 		auto row = std::make_shared<row_element>(*this);
-		auto test = std::make_shared<test_item>(*this, std::move(name), row, [f = std::move(f)](shared_test_context&) { f(); });
+		auto test = std::make_shared<test_item>(*this, std::move(name), row, [f = std::move(f)](shared_test_context&)
+		{
+			f();
+		});
 		_rows.emplace_back(row);
 		_tests.emplace_back(test);
 	}
@@ -138,9 +139,9 @@ public:
 		return _title;
 	}
 
-	virtual std::array<text_t, max_col_count> col_titles() 
+	std::array<text_t, max_col_count> col_titles() override
 	{
-		return std::array<text_t, max_col_count> 
+		return std::array<text_t, max_col_count>
 		{
 			tt.status,
 			tt.test,

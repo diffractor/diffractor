@@ -1,13 +1,10 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
-//
-// Based on code by Danilo Treffiletti from aes256
 
 #include "pch.h"
 #include "crypto_aes256.h"
@@ -20,9 +17,9 @@ using namespace crypto;
 #define KEY_SIZE   32
 #define NUM_ROUNDS 14
 
-static uint8_t rj_xtime(uint8_t x)
+static uint8_t rj_xtime(const uint8_t x)
 {
-	return (x & 0x80) ? ((x << 1) ^ 0x1b) : (x << 1);
+	return x & 0x80 ? x << 1 ^ 0x1b : x << 1;
 }
 
 const uint8_t sbox[256] = {
@@ -122,7 +119,7 @@ size_t aes256::encrypt(const byte_array& key, const byte_array& plain, byte_arra
 	return encrypted.size();
 }
 
-size_t aes256::encrypt(const byte_array& key, df::cspan plain, byte_array& encrypted)
+size_t aes256::encrypt(const byte_array& key, const df::cspan plain, byte_array& encrypted)
 {
 	aes256 aes(key);
 
@@ -144,7 +141,7 @@ size_t aes256::decrypt(const byte_array& key, const byte_array& encrypted, byte_
 	return plain.size();
 }
 
-size_t aes256::decrypt(const byte_array& key, df::cspan encrypted, byte_array& plain)
+size_t aes256::decrypt(const byte_array& key, const df::cspan encrypted, byte_array& plain)
 {
 	aes256 aes(key);
 
@@ -162,12 +159,12 @@ size_t aes256::encrypt_start(const size_t plain_length, byte_array& encrypted)
 	// Generate salt
 	auto it = m_salt.begin(), itEnd = m_salt.end();
 	while (it != itEnd)
-		*(it++) = (rand() & 0xFF);
+		*it++ = rand() & 0xFF;
 
 	// Calculate padding
 	size_t padding = 0;
 	if (m_remainingLength % BLOCK_SIZE != 0)
-		padding = (BLOCK_SIZE - (m_remainingLength % BLOCK_SIZE));
+		padding = BLOCK_SIZE - m_remainingLength % BLOCK_SIZE;
 	m_remainingLength += padding;
 
 	// Add salt
@@ -191,14 +188,14 @@ size_t aes256::encrypt_continue(const byte_array& plain, byte_array& encrypted)
 
 	while (it != itEnd)
 	{
-		m_buffer[m_buffer_pos++] = *(it++);
+		m_buffer[m_buffer_pos++] = *it++;
 		check_and_encrypt_buffer(encrypted);
 	}
 
 	return encrypted.size();
 }
 
-size_t aes256::encrypt_continue(df::cspan plain, byte_array& encrypted)
+size_t aes256::encrypt_continue(const df::cspan plain, byte_array& encrypted)
 {
 	size_t i = 0;
 
@@ -293,14 +290,14 @@ size_t aes256::decrypt_continue(const byte_array& encrypted, byte_array& plain)
 
 	while (it != itEnd)
 	{
-		m_buffer[m_buffer_pos++] = *(it++);
+		m_buffer[m_buffer_pos++] = *it++;
 		check_and_decrypt_buffer(plain);
 	}
 
 	return plain.size();
 }
 
-size_t aes256::decrypt_continue(df::cspan encrypted, byte_array& plain)
+size_t aes256::decrypt_continue(const df::cspan encrypted, byte_array& plain)
 {
 	size_t i = 0;
 
@@ -325,7 +322,7 @@ void aes256::check_and_decrypt_buffer(byte_array& plain)
 			m_salt[j] = m_buffer[j];
 
 		// Get padding
-		const size_t padding = (m_buffer[j] & 0xFF);
+		const size_t padding = m_buffer[j] & 0xFF;
 		m_remainingLength -= padding + 1;
 
 		// Start decrypting
@@ -348,7 +345,7 @@ void aes256::check_and_decrypt_buffer(byte_array& plain)
 	}
 }
 
-size_t aes256::decrypt_end(byte_array& plain)
+size_t aes256::decrypt_end(const byte_array& plain)
 {
 	return plain.size();
 }
@@ -367,7 +364,7 @@ void aes256::decrypt(uint8_t* buffer)
 
 	for (i = NUM_ROUNDS, rcon = 0x80; --i;)
 	{
-		if ((i & 1))
+		if (i & 1)
 			expand_dec_key(&rcon);
 		add_round_key(buffer, i);
 		mix_columns_inv(buffer);
@@ -381,7 +378,7 @@ void aes256::expand_enc_key(uint8_t* rc)
 {
 	uint8_t i;
 
-	m_rkey[0] = m_rkey[0] ^ sbox[m_rkey[29]] ^ (*rc);
+	m_rkey[0] = m_rkey[0] ^ sbox[m_rkey[29]] ^ *rc;
 	m_rkey[1] = m_rkey[1] ^ sbox[m_rkey[30]];
 	m_rkey[2] = m_rkey[2] ^ sbox[m_rkey[31]];
 	m_rkey[3] = m_rkey[3] ^ sbox[m_rkey[28]];
@@ -435,7 +432,7 @@ void aes256::expand_dec_key(uint8_t* rc)
 	}
 
 	*rc = FD(*rc);
-	m_rkey[0] = m_rkey[0] ^ sbox[m_rkey[29]] ^ (*rc);
+	m_rkey[0] = m_rkey[0] ^ sbox[m_rkey[29]] ^ *rc;
 	m_rkey[1] = m_rkey[1] ^ sbox[m_rkey[30]];
 	m_rkey[2] = m_rkey[2] ^ sbox[m_rkey[31]];
 	m_rkey[3] = m_rkey[3] ^ sbox[m_rkey[28]];
@@ -467,12 +464,12 @@ void aes256::copy_key()
 		m_rkey[i + m_key.size()] = m_salt[i];
 }
 
-void aes256::add_round_key(uint8_t* buffer, const uint8_t round)
+void aes256::add_round_key(uint8_t* buffer, const uint8_t round) const
 {
 	uint8_t i = BLOCK_SIZE;
 
 	while (i--)
-		buffer[i] ^= m_rkey[(round & 1) ? i + 16 : i];
+		buffer[i] ^= m_rkey[round & 1 ? i + 16 : i];
 }
 
 void aes256::shift_rows(uint8_t* buffer)

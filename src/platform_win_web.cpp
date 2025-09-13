@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
@@ -33,7 +32,7 @@ constexpr auto REQ_STATE_RESPONSE_READY = 6;
 constexpr auto REQ_STATE_RESPONSE_WRITE_DATA = 7;
 constexpr auto REQ_STATE_COMPLETE = 8;
 
-static int get_status_code(HINTERNET h)
+static int get_status_code(const HINTERNET h)
 {
 	DWORD result = 0;
 	DWORD result_size = sizeof(result);
@@ -44,7 +43,7 @@ static int get_status_code(HINTERNET h)
 	return static_cast<int>(result);
 }
 
-static std::u8string get_content_type(HINTERNET request_handle)
+static std::u8string get_content_type(const HINTERNET request_handle)
 {
 	std::u8string result;
 	DWORD result_size = 0;
@@ -52,12 +51,12 @@ static std::u8string get_content_type(HINTERNET request_handle)
 
 	// First call to get the required buffer size
 	HttpQueryInfoA(request_handle, HTTP_QUERY_CONTENT_TYPE, nullptr, &result_size, &header_index);
-	
+
 	if (result_size > 0)
 	{
 		result.resize(result_size);
 		header_index = 0; // Reset header index
-		
+
 		if (HttpQueryInfoA(request_handle, HTTP_QUERY_CONTENT_TYPE, result.data(), &result_size, &header_index))
 		{
 			// result_size now contains the actual string length (excluding null terminator)
@@ -108,12 +107,13 @@ static std::u8string format_path(const platform::web_request& req)
 // RAII wrapper for WinInet handles
 class inet_handle
 {
-private:
 	HINTERNET m_handle;
 
 public:
-	explicit inet_handle(HINTERNET handle = nullptr) : m_handle(handle) {}
-	
+	explicit inet_handle(const HINTERNET handle = nullptr) : m_handle(handle)
+	{
+	}
+
 	~inet_handle()
 	{
 		if (m_handle)
@@ -149,8 +149,8 @@ public:
 	operator HINTERNET() const { return m_handle; }
 	HINTERNET get() const { return m_handle; }
 	bool is_valid() const { return m_handle != nullptr; }
-	
-	void reset(HINTERNET handle = nullptr)
+
+	void reset(const HINTERNET handle = nullptr)
 	{
 		if (m_handle)
 		{
@@ -189,7 +189,8 @@ platform::web_response platform::send_request(const web_request& req)
 			if (str::ends(req.file_path.extension(), u8"zip"sv)) content_type = u8"application/x-zip-compressed"sv;
 
 			content << u8"--"sv << boundary << u8"\r\n"sv;
-			content << u8"Content-Disposition: form-data; name=\""sv << req.file_form_data_name << u8"\"; filename=\""sv <<
+			content << u8"Content-Disposition: form-data; name=\""sv << req.file_form_data_name << u8"\"; filename=\""sv
+				<<
 				req.file_name << u8"\"\r\n"sv;
 			content << u8"Content-Type: "sv << content_type << u8"\r\n"sv;
 			content << u8"\r\n"sv;
@@ -220,9 +221,11 @@ platform::web_response platform::send_request(const web_request& req)
 	}
 
 	const auto hostW = str::utf8_to_utf16(req.host);
-	const auto port = req.port == 0 ? (req.secure ? INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT) : req.port;
+	const auto port = req.port == 0
+		                  ? (req.secure ? INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT)
+		                  : req.port;
 	inet_handle conn(::InternetConnect(session_handle, hostW.c_str(), port, nullptr, nullptr,
-		INTERNET_SERVICE_HTTP, 0, 0));
+	                                   INTERNET_SERVICE_HTTP, 0, 0));
 
 	if (!conn.is_valid())
 	{
@@ -234,7 +237,7 @@ platform::web_response platform::send_request(const web_request& req)
 	auto flags = INTERNET_FLAG_KEEP_CONNECTION | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_NO_AUTH |
 		INTERNET_FLAG_RELOAD;
 	if (req.secure) flags |= INTERNET_FLAG_SECURE;
-	
+
 	inet_handle request_handle(HttpOpenRequest(conn, wverb, wpath.c_str(), nullptr, nullptr, nullptr, flags, 0));
 
 	if (!request_handle.is_valid())
@@ -266,23 +269,24 @@ platform::web_response platform::send_request(const web_request& req)
 	{
 		constexpr size_t chunk_size = 8192; // Increased chunk size for better performance
 		size_t total_written = 0;
-		
+
 		while (total_written < content_data.size())
 		{
 			const auto remaining = content_data.size() - total_written;
 			const auto to_write = std::min(chunk_size, remaining);
 			DWORD written = 0;
-			
-			if (!InternetWriteFile(request_handle, content_data.data() + total_written, static_cast<DWORD>(to_write), &written))
+
+			if (!InternetWriteFile(request_handle, content_data.data() + total_written, static_cast<DWORD>(to_write),
+			                       &written))
 			{
 				return result; // Return empty response on write failure
 			}
-			
+
 			if (written == 0)
 			{
 				return result; // No progress made, abort
 			}
-			
+
 			total_written += written;
 		}
 	}
@@ -303,7 +307,7 @@ platform::web_response platform::send_request(const web_request& req)
 		{
 			uint8_t buffer[8192]; // Increased buffer size
 			DWORD read = 0;
-			
+
 			while (InternetReadFile(request_handle, buffer, sizeof(buffer), &read) && read > 0)
 			{
 				if (download_file->write(buffer, read) != read)
@@ -318,7 +322,7 @@ platform::web_response platform::send_request(const web_request& req)
 	{
 		uint8_t buffer[8192]; // Increased buffer size
 		DWORD read = 0;
-		
+
 		while (InternetReadFile(request_handle, buffer, sizeof(buffer), &read) && read > 0)
 		{
 			result.body.append(buffer, buffer + read);

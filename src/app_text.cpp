@@ -1,10 +1,9 @@
 ﻿// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
+// Copyright(C) 2025  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
@@ -76,7 +75,7 @@ std::vector<po_entry> load_po(const df::file_path lang_file)
 		id_plural,
 	};
 
-	parse_po_state parse_state = parse_po_state::none;
+	auto parse_state = parse_po_state::none;
 	po_entry entry;
 
 	while (fs)
@@ -133,7 +132,7 @@ app_text_t::app_text_t()
 	calc_text_mapping();
 }
 
-void app_text_t::load_lang(std::u8string_view lang_file, const std::vector<po_entry>& entries)
+void app_text_t::load_lang(const std::u8string_view lang_file, const std::vector<po_entry>& entries)
 {
 	// default
 	clear();
@@ -162,7 +161,7 @@ void app_text_t::load_lang(std::u8string_view lang_file, const std::vector<po_en
 		{
 			t.get().trans = found->second;
 		}
-		else 
+		else
 		{
 			df::log(__FUNCTION__, str::format(u8"{} missing: msgid \"{}\""sv, lang_file, t.get().text));
 			t.get().trans.clear();
@@ -202,13 +201,13 @@ std::vector<po_entry> app_text_t::gen_po() const
 	std::vector<po_entry> result;
 	df::hash_set<std::u8string_view> written;
 
-	for (const auto &t : _all_texts)
+	for (const auto& t : _all_texts)
 	{
 		if (!written.contains(t.get().text))
 		{
 			result.emplace_back(
-				std::u8string{ t.get().text },
-				std::u8string{ t.get().trans },
+				std::u8string{t.get().text},
+				std::u8string{t.get().trans},
 				std::u8string{},
 				std::u8string{});
 
@@ -219,16 +218,16 @@ std::vector<po_entry> app_text_t::gen_po() const
 	for (const auto& p : _all_plurals)
 	{
 		result.emplace_back(
-			std::u8string{ p.get().one.text },
-			std::u8string{ p.get().one.trans },
-			std::u8string{ p.get().plural.text },
-			std::u8string{ p.get().plural.trans });
+			std::u8string{p.get().one.text},
+			std::u8string{p.get().one.trans},
+			std::u8string{p.get().plural.text},
+			std::u8string{p.get().plural.trans});
 	}
 
 	return result;
 }
 
-void app_text_t::clear()
+void app_text_t::clear() const
 {
 	for (auto&& m : _text_mapping)
 	{
@@ -1370,13 +1369,19 @@ void app_text_t::calc_text_mapping()
 
 	for (auto&& e : _all_texts)
 	{
-		mapping.insert(std::make_pair<std::u8string_view, std::reference_wrapper<text_t>>(std::u8string_view{ e.get().text }, e.get()));
+		mapping.insert(
+			std::make_pair<std::u8string_view, std::reference_wrapper<text_t>>(
+				std::u8string_view{e.get().text}, e.get()));
 	}
 
 	for (auto&& p : _all_plurals)
 	{
-		mapping.insert(std::make_pair<std::u8string_view, std::reference_wrapper<text_t>>(std::u8string_view{ p.get().one.text }, p.get().one));
-		mapping.insert(std::make_pair<std::u8string_view, std::reference_wrapper<text_t>>(std::u8string_view{ p.get().plural.text }, p.get().plural));
+		mapping.insert(
+			std::make_pair<std::u8string_view, std::reference_wrapper<text_t>>(
+				std::u8string_view{p.get().one.text}, p.get().one));
+		mapping.insert(
+			std::make_pair<std::u8string_view, std::reference_wrapper<text_t>>(
+				std::u8string_view{p.get().plural.text}, p.get().plural));
 	}
 
 	_text_mapping = std::move(mapping);
@@ -1395,11 +1400,13 @@ std::u8string app_text_t::translate_text(const std::u8string& text, const std::u
 	}
 
 	const auto found = _text_mapping.find(text);
-	return found != _text_mapping.end() ? std::u8string(tt_prep(found->second.get().sv())) : std::u8string(tt_prep(text));
+	return found != _text_mapping.end()
+		       ? std::u8string(tt_prep(found->second.get().sv()))
+		       : std::u8string(tt_prep(text));
 }
 
 std::vector<std::u8string> app_text_t::add_translate_text(const std::vector<str::cached>& text,
-	const std::u8string_view scope) const
+                                                          const std::u8string_view scope) const
 {
 	df::hash_set<std::u8string, df::ihash, df::ieq> result;
 	result.reserve(text.size() * 2);
@@ -1410,9 +1417,8 @@ std::vector<std::u8string> app_text_t::add_translate_text(const std::vector<str:
 		result.emplace(translate_text(t.str(), scope));
 	}
 
-	return { result.begin(), result.end() };
+	return {result.begin(), result.end()};
 }
 
 
 app_text_t tt;
-

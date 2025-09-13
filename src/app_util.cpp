@@ -1,3 +1,11 @@
+// This file is part of the Diffractor photo and video organizer
+// Copyright(C) 2025  Zac Walker
+// 
+// This program is free software; you can redistribute it and / or modify it
+// under the terms of the LGPL License either version 2.1 or later.
+// License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
+// This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
+
 #include "pch.h"
 #include "util_strings.h"
 #include "model.h"
@@ -7,8 +15,8 @@
 #include "model_index.h"
 
 void view_state::modify_items(const df::results_ptr& results, icon_index icon, const std::u8string_view title,
-	const df::item_elements& items_to_modify, const metadata_edits& edits,
-	const view_host_base_ptr& view)
+                              const df::item_elements& items_to_modify, const metadata_edits& edits,
+                              const view_host_base_ptr& view)
 {
 	const auto can_process = can_process_selection_and_mark_errors(view, df::process_items_type::can_save_metadata);
 
@@ -16,33 +24,33 @@ void view_state::modify_items(const df::results_ptr& results, icon_index icon, c
 	{
 		detach_file_handles detach(*this);
 
-		queue_async(async_queue::work, [this, items_to_modify, edits, results]()
+		queue_async(async_queue::work, [this, items_to_modify, edits, results]
+		{
+			result_scope rr(results);
+			std::u8string message;
+			files ff;
+
+			file_encode_params encode_params;
+			encode_params.jpeg_save_quality = setting.jpeg_save_quality;
+
+			for (const auto& i : items_to_modify)
 			{
-				result_scope rr(results);
-				std::u8string message;
-				files ff;
+				results->start_item(i->name());
+				const auto update_result = ff.update(i->path(), edits, {}, encode_params, false, i->xmp());
+				results->end_item(i->name(), to_status(update_result.code));
 
-				file_encode_params encode_params;
-				encode_params.jpeg_save_quality = setting.jpeg_save_quality;
-
-				for (const auto& i : items_to_modify)
+				if (!update_result.success())
 				{
-					results->start_item(i->name());
-					const auto update_result = ff.update(i->path(), edits, {}, encode_params, false, i->xmp());
-					results->end_item(i->name(), to_status(update_result.code));
-
-					if (!update_result.success())
-					{
-						message = update_result.format_error();
-						break;
-					}
-
-					if (results->is_canceled())
-						break;
+					message = update_result.format_error();
+					break;
 				}
 
-				rr.complete(message);
-			});
+				if (results->is_canceled())
+					break;
+			}
+
+			rr.complete(message);
+		});
 
 		results->wait_for_complete();
 
@@ -56,17 +64,16 @@ void view_state::modify_items(const df::results_ptr& results, icon_index icon, c
 }
 
 
-
 static platform::file_op_result move_or_copy(const df::file_path source_path, const df::file_path dest_path,
-	const bool is_move, const bool fail_if_exists)
+                                             const bool is_move, const bool fail_if_exists)
 {
 	return is_move
-		? platform::move_file(source_path, dest_path, fail_if_exists)
-		: platform::copy_file(source_path, dest_path, fail_if_exists, false);
+		       ? platform::move_file(source_path, dest_path, fail_if_exists)
+		       : platform::copy_file(source_path, dest_path, fail_if_exists, false);
 }
 
 static bool ignore_existing(const df::file_path path_in, const df::file_path path_out, const bool already_exists,
-	const bool overwrite_if_newer)
+                            const bool overwrite_if_newer)
 {
 	auto result = already_exists;
 
@@ -81,7 +88,8 @@ static bool ignore_existing(const df::file_path path_in, const df::file_path pat
 	return result;
 }
 
-std::vector<rename_item> calc_item_renames(const df::item_set& items, const std::u8string_view template_name, const int start)
+std::vector<rename_item> calc_item_renames(const df::item_set& items, const std::u8string_view template_name,
+                                           const int start)
 {
 	std::vector<rename_item> results;
 	auto seq = start;
@@ -104,7 +112,8 @@ std::vector<rename_item> calc_item_renames(const df::item_set& items, const std:
 	return results;
 }
 
-std::u8string format_sequence(const std::u8string_view original_name, const std::u8string_view template_name, const int seq)
+std::u8string format_sequence(const std::u8string_view original_name, const std::u8string_view template_name,
+                              const int seq)
 
 {
 	static auto numbers = u8"0123456789"sv;
@@ -128,7 +137,7 @@ std::u8string format_sequence(const std::u8string_view original_name, const std:
 				i_div /= 10;
 				break;
 			case L'?':
-				result.push_back((org_len > i) ? reverse_name[i] : ' ');
+				result.push_back(org_len > i ? reverse_name[i] : ' ');
 				break;
 			default:
 				result.push_back(c);
@@ -143,8 +152,8 @@ std::u8string format_sequence(const std::u8string_view original_name, const std:
 }
 
 import_analysis_result import_analysis(const std::vector<folder_scan_item>& src_items,
-	const import_options& options, const item_import_set& previous_imported,
-	df::cancel_token token)
+                                       const import_options& options, const item_import_set& previous_imported,
+                                       const df::cancel_token token)
 {
 	import_analysis_result result;
 	const auto now = platform::now();
@@ -166,23 +175,23 @@ import_analysis_result import_analysis(const std::vector<folder_scan_item>& src_
 		const auto import_folder_out = replace_tokens(options.dest_structure, md, i.item.name, i.item.created());
 		const auto path_in = i.folder.combine_file(i.item.name);
 		const auto path_out = options.dest_folder.combine(import_folder_out).combine_file(path_in.name());
-		const auto import_rec = item_import{ i.item.name, i.item.file_modified, i.item.size, now };
+		const auto import_rec = item_import{i.item.name, i.item.file_modified, i.item.size, now};
 		const bool already_exists = path_out.exists();
 
 		if (previous_imported.contains(import_rec))
 		{
 			result[path_out.folder()].emplace_back(path_in, path_out, import_action::already_imported, created,
-				import_rec, already_exists, import_folder_out);
+			                                       import_rec, already_exists, import_folder_out);
 		}
 		else if (ignore_existing(path_in, path_out, already_exists, options.overwrite_if_newer))
 		{
 			result[path_out.folder()].emplace_back(path_in, path_out, import_action::already_exists, created,
-				import_rec, already_exists, import_folder_out);
+			                                       import_rec, already_exists, import_folder_out);
 		}
 		else
 		{
 			result[path_out.folder()].emplace_back(path_in, path_out, import_action::import, created, import_rec,
-				already_exists, import_folder_out);
+			                                       already_exists, import_folder_out);
 
 			if (md)
 			{
@@ -196,11 +205,11 @@ import_analysis_result import_analysis(const std::vector<folder_scan_item>& src_
 					const bool sidecar_already_exists = sidecar_path_out.exists();
 
 					if (!ignore_existing(sidecar_path_in, sidecar_path_out, sidecar_already_exists,
-						options.overwrite_if_newer))
+					                     options.overwrite_if_newer))
 					{
 						result[sidecar_path_out.folder()].emplace_back(sidecar_path_in, sidecar_path_out,
-							import_action::import, created, import_rec,
-							sidecar_already_exists, import_folder_out);
+						                                               import_action::import, created, import_rec,
+						                                               sidecar_already_exists, import_folder_out);
 					}
 				}
 			}
@@ -211,7 +220,7 @@ import_analysis_result import_analysis(const std::vector<folder_scan_item>& src_
 }
 
 import_result import_copy(index_state& index, item_results_ptr results, const import_analysis_result& src_items,
-	const import_options& options, df::cancel_token token)
+                          const import_options& options, df::cancel_token token)
 {
 	import_result result;
 	result_scope rr(results);
@@ -225,8 +234,8 @@ import_result import_copy(index_state& index, item_results_ptr results, const im
 		const auto folder_out = ff_dest.first;
 		const bool folder_out_exists = folder_out.exists();
 		const auto create_folder_result = folder_out_exists
-			? platform::file_op_result{ platform::file_op_result_code::OK, {}, {} }
-		: platform::create_folder(folder_out);
+			                                  ? platform::file_op_result{platform::file_op_result_code::OK, {}, {}}
+			                                  : platform::create_folder(folder_out);
 
 		if (create_folder_result.failed())
 		{
@@ -274,15 +283,17 @@ import_result import_copy(index_state& index, item_results_ptr results, const im
 
 	if (!existing.empty())
 	{
-		result_text += format_plural_text(tt.ignored_exist_already_fmt, existing.front().item.name, static_cast<int>(existing.size()), {},
-			static_cast<int>(src_items.size()));
+		result_text += format_plural_text(tt.ignored_exist_already_fmt, existing.front().item.name,
+		                                  static_cast<int>(existing.size()), {},
+		                                  static_cast<int>(src_items.size()));
 	}
 
 	if (!previous.empty())
 	{
 		if (!result_text.empty()) result_text += u8"\n\n"sv;
-		result_text += format_plural_text(tt.ignored_previous_fmt, previous.front().item.name, static_cast<int>(previous.size()), {},
-			static_cast<int>(src_items.size()));
+		result_text += format_plural_text(tt.ignored_previous_fmt, previous.front().item.name,
+		                                  static_cast<int>(previous.size()), {},
+		                                  static_cast<int>(src_items.size()));
 	}
 
 	rr.complete(result_text);
@@ -350,14 +361,15 @@ size_t count_ignores(const std::vector<import_analysis_item>& items)
 }
 
 
-std::vector<import_source> calc_import_sources(view_state& s)
+std::vector<import_source> calc_import_sources(const view_state& s)
 {
 	std::vector<import_source> result;
 
 	if (s.has_selection())
 	{
 		import_source source;
-		source.text = str::format(tt.selected_items_fmt, format_plural_text(tt.title_item_count_fmt, s.selected_items()));
+		source.text = str::format(tt.selected_items_fmt,
+		                          format_plural_text(tt.title_item_count_fmt, s.selected_items()));
 		source.items = s.selected_items();
 		result.emplace_back(source);
 	}
@@ -370,7 +382,7 @@ std::vector<import_source> calc_import_sources(view_state& s)
 	}
 
 	auto drives = platform::scan_drives(true);
-	const int drive_max = 5;
+	constexpr int drive_max = 5;
 
 	if (drives.size() > drive_max)
 	{
@@ -390,8 +402,6 @@ std::vector<import_source> calc_import_sources(view_state& s)
 }
 
 
-
-
 std::u8string relative_combine(const std::u8string& relative, const str::cached name)
 {
 	auto result = relative;
@@ -406,9 +416,9 @@ std::u8string relative_combine(const std::u8string& relative, const str::cached 
 }
 
 sync_analysis_result sync_analysis(const df::index_roots& local_roots, const df::folder_path remote_path,
-	const bool sync_local_remote, const bool sync_remote_local,
-	const bool sync_delete_local, const bool sync_delete_remote,
-	const df::cancel_token& token)
+                                   const bool sync_local_remote, const bool sync_remote_local,
+                                   const bool sync_delete_local, const bool sync_delete_remote,
+                                   const df::cancel_token& token)
 {
 	sync_analysis_result result;
 	std::map<std::u8string, df::folder_path, df::iless> local_roots_by_relative;
@@ -445,7 +455,7 @@ sync_analysis_result sync_analysis(const df::index_roots& local_roots, const df:
 			{
 				auto relative = relative_combine(folder.relative, sub_folder.name);
 				auto sub_folder_path = folder.path.combine(sub_folder.name);
-				sync_analysis_folder unknown = { sub_folder_path, folder.root, relative };
+				sync_analysis_folder unknown = {sub_folder_path, folder.root, relative};
 				local_folders_to_scan.emplace_back(unknown);
 				local_roots_by_relative[relative] = folder.root;
 			}
@@ -582,7 +592,7 @@ sync_analysis_result sync_analysis(const df::index_roots& local_roots, const df:
 }
 
 void sync_copy(const std::shared_ptr<command_status>& status, const sync_analysis_result& analysis_result,
-	const df::cancel_token& token)
+               const df::cancel_token& token)
 {
 	for (const auto& i : analysis_result)
 	{
@@ -624,7 +634,8 @@ void sync_copy(const std::shared_ptr<command_status>& status, const sync_analysi
 	}
 }
 
-void toggle_collection_entry(settings_t::index_t& collection_settings, const df::folder_path folder, const bool is_remove)
+void toggle_collection_entry(settings_t::index_t& collection_settings, const df::folder_path folder,
+                             const bool is_remove)
 {
 	const auto local_folders = platform::local_folders();
 
@@ -670,7 +681,7 @@ void toggle_collection_entry(settings_t::index_t& collection_settings, const df:
 }
 
 std::vector<std::u8string> check_overwrite(const df::folder_path write_folder, const df::item_set& items,
-	const std::u8string_view new_extension)
+                                           const std::u8string_view new_extension)
 {
 	std::vector<std::u8string> result;
 
@@ -707,19 +718,19 @@ icon_index drive_icon(const platform::drive_type d)
 	case platform::drive_type::remote: return icon_index::network;
 	case platform::drive_type::cdrom: return icon_index::disk;
 	case platform::drive_type::device: return icon_index::disk;
-	default:;
+	default: ;
 	}
 
 	return icon_index::hard_drive;
 }
 
-bool df::is_excluded(const df::index_roots& roots, const df::folder_path path)
+bool df::is_excluded(const index_roots& roots, const folder_path path)
 {
 	if (roots.excludes.contains(path)) return true;
 
-	auto name = path.name();
+	const auto name = path.name();
 
-	for (const auto &exclude : roots.exclude_wildcards)
+	for (const auto& exclude : roots.exclude_wildcards)
 	{
 		if (str::wildcard_icmp(name, exclude))
 			return true;
@@ -727,4 +738,3 @@ bool df::is_excluded(const df::index_roots& roots, const df::folder_path path)
 
 	return false;
 }
-

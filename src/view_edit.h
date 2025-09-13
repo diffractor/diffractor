@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -116,7 +115,7 @@ public:
 
 	recti calc_media_bounds() const
 	{
-		return { 0, 0, _extent.cx, _extent.cy };
+		return {0, 0, _extent.cx, _extent.cy};
 	}
 
 	view_controls_host_ptr controls(const ui::control_frame_ptr& owner);
@@ -133,16 +132,16 @@ public:
 	void exit() override;
 	void save_and_close();
 	bool save(df::file_path src_path, df::file_path dst_path, std::u8string_view xmp_name,
-		const ui::control_frame_ptr& owner) const;
+	          const ui::control_frame_ptr& owner) const;
 	bool has_changes() const;
 	void preview(ui::const_surface_ptr surface);
 	void render(ui::draw_context& dc, view_controller_ptr controller) override;
 	bool can_exit() override;
 	void display_changed() override;
-	void draw_handle(ui::draw_context& dc, recti handle_bounds2, float alpha);
+	static void draw_handle(ui::draw_context& dc, recti handle_bounds2, float alpha);
 	pointi clamp_offset(sizei render_extent, pointi offset) const;
 
-	bool check_path(df::file_path& path, const ui::control_frame_ptr& owner);
+	bool check_path(df::file_path& path, const ui::control_frame_ptr& owner) const;
 	void save_and_next(bool forward);
 	void save_options() const;
 	void save_as();
@@ -154,7 +153,7 @@ public:
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc) override;
 
-	void device_selection2(const rectd sel_bounds_in, const int active_point)
+	void device_selection2(const rectd& sel_bounds_in, const int active_point)
 	{
 		const auto dims = _loaded.dimensions();
 		auto sel = quadd(sel_bounds_in).transform(_image_transform.invert());
@@ -162,7 +161,7 @@ public:
 		selection(sel);
 	}
 
-	void device_selection(const rectd sel_bounds_in, bool crop, bool limit)
+	void device_selection(const rectd& sel_bounds_in, const bool crop, const bool limit)
 	{
 		const auto dims = _loaded.dimensions();
 		const auto limit_bounds = rectd(0, 0, dims.cx, dims.cy);
@@ -177,7 +176,7 @@ public:
 		return _edit_state.selection();
 	}
 
-	void selection(const quadd& s)
+	void selection(const quadd& s) const
 	{
 		_edit_state.selection(s);
 		_state.invalidate_view(view_invalid::view_redraw);
@@ -207,7 +206,7 @@ public:
 		return _title;
 	}
 
-	void options_changed()
+	void options_changed() const
 	{
 		if (_edit_controls)
 		{

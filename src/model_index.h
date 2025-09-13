@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -136,7 +135,6 @@ using index_folders_t = std::vector<std::pair<df::folder_path, df::index_folder_
 
 class index_items
 {
-private:
 	mutable platform::mutex _rw;
 	_Guarded_by_(_rw) items_by_folder_t _index;
 
@@ -165,10 +163,10 @@ public:
 				const auto parent_node = found_in_index->second;
 				const auto folder_name = i->name;
 				const auto lb = std::lower_bound(parent_node->folders.begin(), parent_node->folders.end(), folder_name,
-					[](const df::index_folder_item_ptr& l, const std::u8string_view r)
-					{
-						return icmp(l->name, r) < 0;
-					});
+				                                 [](const df::index_folder_item_ptr& l, const std::u8string_view r)
+				                                 {
+					                                 return icmp(l->name, r) < 0;
+				                                 });
 
 				if (lb != parent_node->folders.end() && icmp((*lb)->name, folder_name) == 0)
 				{
@@ -362,9 +360,8 @@ struct folder_scan_item
 	df::index_file_item item;
 };
 
-class index_state : public df::no_copy
+class index_state final : public df::no_copy
 {
-private:
 	async_strategy& _async;
 
 	platform::mutex _summary_rw;
@@ -378,8 +375,8 @@ private:
 	const location_cache& _locations;
 	bool _fully_loaded = false;
 
-	void calc_folder_summary(const df::index_folder_info_const_ptr& folder, df::file_group_histogram& result,
-		df::cancel_token token) const;
+	static void calc_folder_summary(const df::index_folder_info_const_ptr& folder, df::file_group_histogram& result,
+	                                df::cancel_token token);
 	bool is_collection_search(const df::search_t& search) const;
 
 public:
@@ -410,7 +407,8 @@ public:
 	void save_media_position(df::file_path id, double media_position);
 	void save_crc(df::file_path id, uint32_t crc);
 	void save_location(df::file_path id, const location_t& loc);
-	void save_thumbnail(df::file_path id, const ui::const_image_ptr& thumbnail_image, const ui::const_image_ptr& cover_art, df::date_t scan_timestamp);
+	void save_thumbnail(df::file_path id, const ui::const_image_ptr& thumbnail_image,
+	                    const ui::const_image_ptr& cover_art, df::date_t scan_timestamp);
 
 	df::index_file_item find_item(df::file_path id) const;
 
@@ -444,7 +442,7 @@ public:
 	void update_presence(const df::item_set& items);
 
 	void query_items(const df::search_t& search, const df::unique_items& existing,
-		const std::function<void(df::item_set, bool)>& found_callback, df::cancel_token token);
+	                 const std::function<void(df::item_set, bool)>& found_callback, df::cancel_token token);
 
 	struct validate_folder_result
 	{
@@ -453,9 +451,9 @@ public:
 	};
 
 	validate_folder_result validate_folder(df::folder_path folder_path,
-		bool refresh_from_file_system, df::date_t timestamp);
+	                                       bool refresh_from_file_system, df::date_t timestamp);
 	void scan_item(const df::index_folder_item_ptr& folder, df::file_path file_path, bool load_thumbnails,
-		bool scan_if_offline, const df::item_element_ptr& i, file_type_ref ft);
+	               bool scan_if_offline, const df::item_element_ptr& i, file_type_ref ft);
 	void scan_item(const df::item_element_ptr& i, bool load_thumb, bool scan_if_offline);
 	bool needs_scan(const df::item_element_ptr&) const;
 	bool is_in_collection(df::folder_path folder) const;
@@ -464,10 +462,10 @@ public:
 	void index_roots(df::index_roots roots);
 	void scan_uncached(df::cancel_token token);
 	std::vector<folder_scan_item> scan_items(const df::index_roots& roots, bool recursive, bool scan_if_offline,
-		df::cancel_token token);
+	                                         df::cancel_token token);
 	void scan_items(const df::item_set& items, bool load_thumbs, bool refresh_from_file_system, bool only_if_needed,
-		bool
-		scan_if_offline, df::cancel_token token);
+	                bool
+	                scan_if_offline, df::cancel_token token);
 	void scan_folder(df::folder_path folder_path, const df::index_folder_item_ptr& folder);
 	void scan_folder(df::folder_path folder_path, bool mark_is_indexed, df::date_t timestamp);
 
@@ -511,7 +509,7 @@ public:
 					if (file.ft->can_cache() && md)
 					{
 						item_db_write write;
-						write.path = { folder.first, file.name };
+						write.path = {folder.first, file.name};
 						write.md = md;
 						write.metadata_scanned = file.metadata_scanned;
 						_db_writes.enqueue(std::move(write));
@@ -557,13 +555,13 @@ public:
 	distinct_results distinct_tags() const
 	{
 		platform::shared_lock lock(_summary_rw);
-		return { _summary._distinct_tags.begin(), _summary._distinct_tags.end() };
+		return {_summary._distinct_tags.begin(), _summary._distinct_tags.end()};
 	}
 
 	distinct_results distinct_labels() const
 	{
 		platform::shared_lock lock(_summary_rw);
-		return { _summary._distinct_labels.begin(), _summary._distinct_labels.end() };
+		return {_summary._distinct_labels.begin(), _summary._distinct_labels.end()};
 	}
 
 	prop_num_summary distinct_ratings() const

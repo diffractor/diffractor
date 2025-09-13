@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -84,8 +83,8 @@ namespace df
 			}
 
 			return type == search_result_type::no_match
-				? search_result_type::no_match
-				: search_result_type::match_multiple;
+				       ? search_result_type::no_match
+				       : search_result_type::match_multiple;
 		}
 	};
 
@@ -125,11 +124,11 @@ namespace df
 		search_term_modifier(const search_term_modifier&) noexcept = default;
 		search_term_modifier(search_term_modifier&&) noexcept = default;
 
-		search_term_modifier(bool pos) noexcept : positive(pos)
+		search_term_modifier(const bool pos) noexcept : positive(pos)
 		{
 		}
 
-		search_term_modifier(bool pos, bool fuz) noexcept : positive(pos)
+		search_term_modifier(const bool pos, bool fuz) noexcept : positive(pos)
 		{
 		}
 
@@ -240,7 +239,7 @@ namespace df
 		date_parts(date_parts&&) noexcept = default;
 		date_parts& operator=(date_parts&&) noexcept = default;
 
-		date_parts(const day_t& dd, date_parts_prop isc = date_parts_prop::any) noexcept : year(dd.year),
+		date_parts(const day_t& dd, const date_parts_prop isc = date_parts_prop::any) noexcept : year(dd.year),
 			month(dd.month), day(dd.day), target(isc)
 		{
 		}
@@ -317,7 +316,7 @@ namespace df
 		uint64_t int64_val = 0;
 		double float_val = 0.0;
 		gps_coordinate coord_val;
-		xy16 xy_val = { 0, 0 };
+		xy16 xy_val = {0, 0};
 		file_group_ref fg_val = nullptr;
 		date_parts date_val;
 
@@ -328,12 +327,12 @@ namespace df
 		search_term& operator=(search_term&&) noexcept = default;
 
 		explicit search_term(const search_term_type tt,
-			const search_term_modifier mods) noexcept : type(tt), modifiers(mods)
+		                     const search_term_modifier& mods) noexcept : type(tt), modifiers(mods)
 		{
 		}
 
 		explicit search_term(const search_term_type tt, const std::u8string_view v,
-			const search_term_modifier mods) noexcept :
+		                     const search_term_modifier& mods) noexcept :
 			type(tt),
 			modifiers(mods),
 			text(v),
@@ -341,19 +340,19 @@ namespace df
 		{
 		}
 
-		explicit search_term(const search_term_type tt, const date_parts v,
-			const search_term_modifier mods) noexcept : type(tt), modifiers(mods), date_val(v)
+		explicit search_term(const search_term_type tt, const date_parts& v,
+		                     const search_term_modifier& mods) noexcept : type(tt), modifiers(mods), date_val(v)
 		{
 		}
 
 		explicit search_term(const search_term_type tt, const gps_coordinate coord, const double v,
-			const search_term_modifier mods) noexcept : type(tt), modifiers(mods), float_val(v),
-			coord_val(coord)
+		                     const search_term_modifier& mods) noexcept : type(tt), modifiers(mods), float_val(v),
+		                                                                  coord_val(coord)
 		{
 		}
 
 		explicit search_term(const prop::key_ref k, const std::u8string_view v,
-			const search_term_modifier mods) noexcept :
+		                     const search_term_modifier& mods) noexcept :
 			type(search_term_type::value),
 			modifiers(mods),
 			key(k),
@@ -362,32 +361,32 @@ namespace df
 		{
 		}
 
-		explicit search_term(const prop::key_ref k, const int v, const search_term_modifier mods) noexcept :
+		explicit search_term(const prop::key_ref k, const int v, const search_term_modifier& mods) noexcept :
 			type(search_term_type::value), modifiers(mods), key(k), int_val(v)
 		{
 		}
 
-		explicit search_term(const prop::key_ref k, const uint32_t v, const search_term_modifier mods) noexcept :
+		explicit search_term(const prop::key_ref k, const uint32_t v, const search_term_modifier& mods) noexcept :
 			type(search_term_type::value), modifiers(mods), key(k), int_val(v)
 		{
 		}
 
-		explicit search_term(const prop::key_ref k, const uint64_t v, const search_term_modifier mods) noexcept :
+		explicit search_term(const prop::key_ref k, const uint64_t v, const search_term_modifier& mods) noexcept :
 			type(search_term_type::value), modifiers(mods), key(k), int64_val(v)
 		{
 		}
 
-		explicit search_term(const prop::key_ref k, const double v, const search_term_modifier mods) noexcept :
+		explicit search_term(const prop::key_ref k, const double v, const search_term_modifier& mods) noexcept :
 			type(search_term_type::value), modifiers(mods), key(k), float_val(v)
 		{
 		}
 
-		explicit search_term(const prop::key_ref k, const xy16 v, const search_term_modifier mods) noexcept :
+		explicit search_term(const prop::key_ref k, const xy16 v, const search_term_modifier& mods) noexcept :
 			type(search_term_type::value), modifiers(mods), key(k), xy_val(v)
 		{
 		}
 
-		explicit search_term(const std::u8string_view v, const search_term_modifier mods) noexcept :
+		explicit search_term(const std::u8string_view v, const search_term_modifier& mods) noexcept :
 			type(search_term_type::text),
 			modifiers(mods),
 			text(v),
@@ -395,12 +394,12 @@ namespace df
 		{
 		}
 
-		explicit search_term(const prop::key_ref t, const search_term_modifier mods) noexcept :
+		explicit search_term(const prop::key_ref t, const search_term_modifier& mods) noexcept :
 			type(search_term_type::has_type), modifiers(mods), key(t)
 		{
 		}
 
-		explicit search_term(const file_group_ref ft, const search_term_modifier mods) noexcept :
+		explicit search_term(const file_group_ref ft, const search_term_modifier& mods) noexcept :
 			type(search_term_type::media_type), modifiers(mods), fg_val(ft)
 		{
 		}
@@ -592,7 +591,6 @@ namespace df
 
 	class search_t
 	{
-	private:
 		std::vector<item_selector> _selectors;
 		std::vector<search_term> _terms;
 		related_info _related;
@@ -882,7 +880,7 @@ namespace df
 			return *this;
 		}
 
-		search_t& month(int m, const date_parts_prop target = date_parts_prop::any)
+		search_t& month(const int m, const date_parts_prop target = date_parts_prop::any)
 		{
 			date_parts d;
 			d.target = target;
@@ -954,9 +952,9 @@ namespace df
 		bool has_term_value_type(const prop::key_ref tt) const
 		{
 			return std::ranges::find_if(_terms, [tt](const search_term& t)
-				{
-					return t.is_property_value() && t.key == tt;
-				}) != _terms.end();
+			{
+				return t.is_property_value() && t.key == tt;
+			}) != _terms.end();
 		}
 
 		void clear_term_type(const search_term_type& tt)
@@ -1016,7 +1014,7 @@ namespace df
 
 		bloom_bits calc_bloom_bits() const;
 
-		void parse_part(const struct search_part& part);
+		void parse_part(const search_part& part);
 
 		search_t parse_from_input(std::u8string_view text) const;
 		static search_t parse_path(std::u8string_view text);

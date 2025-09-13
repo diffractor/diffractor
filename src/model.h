@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -38,7 +37,7 @@ using display_state_ptr = std::shared_ptr<display_state_t>;
 
 ui::texture_sampler calc_sampler(sizei draw_extent, sizei texture_extent, const ui::orientation& orientation);
 void draw_texture_info(ui::draw_context& rc, recti media_bounds, const ui::texture_ptr& tex,
-	ui::orientation orientation, ui::texture_sampler sampler, float alpha);
+                       ui::orientation orientation, ui::texture_sampler sampler, float alpha);
 df::unique_paths make_unique_paths(df::paths selection);
 
 struct media_preview_state
@@ -80,7 +79,7 @@ struct state_strategy
 	virtual void search_complete(const df::search_t& path, bool path_changed) = 0;
 	virtual void invoke(commands id) = 0;
 	virtual void track_menu(const ui::frame_ptr& parent, recti bounds,
-		const std::vector<ui::command_ptr>& commands) = 0;
+	                        const std::vector<ui::command_ptr>& commands) = 0;
 	virtual void make_visible(const df::item_element_ptr& i) = 0;
 	virtual void command_hover(const ui::command_ptr& c, recti window_bounds) = 0;
 	virtual bool is_command_checked(commands cmd) = 0;
@@ -92,13 +91,12 @@ struct state_strategy
 	virtual void invalidate_view(view_invalid invalid) = 0;
 };
 
-class recent_state : public df::no_copy
+class recent_state final : public df::no_copy
 {
 public:
 	static constexpr int max_size = 64;
 	std::vector<std::u8string> _items;
 
-public:
 	recent_state() = default;
 
 	const std::vector<std::u8string>& items() const
@@ -106,7 +104,7 @@ public:
 		return _items;
 	}
 
-	void count_strings(df::string_counts& results, const int weight, const std::u8string_view prefix = {})
+	void count_strings(df::string_counts& results, const int weight, const std::u8string_view prefix = {}) const
 	{
 		for (const auto& i : _items)
 		{
@@ -181,17 +179,17 @@ public:
 		add_list(_items, v);
 	}
 
-	std::u8string combine(const std::vector<std::u8string>& strings) const
+	static std::u8string combine(const std::vector<std::u8string>& strings)
 	{
 		return str::combine(strings);
 	}
 
-	std::u8string combine(const std::vector<df::folder_path>& strings) const
+	static std::u8string combine(const std::vector<df::folder_path>& strings)
 	{
 		return combine_paths(strings);
 	}
 
-	int compare(const std::u8string_view l, const std::u8string_view r) const
+	static int compare(const std::u8string_view l, const std::u8string_view r)
 	{
 		return str::icmp(l, r);
 	}
@@ -202,7 +200,7 @@ public:
 	}
 
 	void read(const std::u8string_view section, const std::u8string_view key,
-		const platform::setting_file_ptr& properties)
+	          const platform::setting_file_ptr& properties)
 	{
 		std::u8string str;
 		properties->read(section, key, str);
@@ -210,7 +208,7 @@ public:
 	}
 
 	void write(const std::u8string_view section, const std::u8string_view key,
-		const platform::setting_file_ptr& properties)
+	           const platform::setting_file_ptr& properties) const
 	{
 		properties->write(section, key, combine(_items));
 	}
@@ -532,7 +530,7 @@ public:
 	{
 	}
 
-	void populate(view_state& state);
+	void populate(const view_state& state);
 
 	bool is_compare_video_preview(const pointi loc) const
 	{
@@ -685,7 +683,7 @@ public:
 			const auto end = info.end;
 			const auto len = end - start;
 			const auto media_pos = _session ? _session->last_frame_time() : 0.0;
-			const auto pos = static_cast<int>(((media_pos - start) * _scrubber_bounds.width()) / std::max(1.0, len));
+			const auto pos = static_cast<int>((media_pos - start) * _scrubber_bounds.width() / std::max(1.0, len));
 			const auto endi = df::round(end);
 
 			if (endi != _last_duration)
@@ -751,7 +749,6 @@ struct group_and_item
 
 class filter_t
 {
-private:
 	std::unordered_set<file_group_ref> _groups;
 	std::u8string _text;
 
@@ -817,7 +814,7 @@ public:
 		return _text;
 	}
 
-	bool is_empty()
+	bool is_empty() const
 	{
 		return _text.empty() && _groups.empty();
 	}
@@ -920,9 +917,9 @@ public:
 	}
 
 	bool enter(const view_host_base_ptr& view);
-	void toggle_full_screen() { _events.toggle_full_screen(); }
-	void make_visible(const df::item_element_ptr& i) { _events.make_visible(i); }
-	void invalidate_view(const view_invalid invalid) { _async.invalidate_view(invalid); }
+	void toggle_full_screen() const { _events.toggle_full_screen(); }
+	void make_visible(const df::item_element_ptr& i) const { _events.make_visible(i); }
+	void invalidate_view(const view_invalid invalid) const { _async.invalidate_view(invalid); }
 
 	bool has_pin() const
 	{
@@ -931,17 +928,17 @@ public:
 
 	view_elements_ptr create_selection_controls();
 
-	void command_hover(const ui::command_ptr& c, const recti window_bounds)
+	void command_hover(const ui::command_ptr& c, const recti window_bounds) const
 	{
 		_events.command_hover(c, window_bounds);
 	}
 
-	bool is_command_checked(const commands cmd)
+	bool is_command_checked(const commands cmd) const
 	{
 		return _events.is_command_checked(cmd);
 	}
 
-	void track_menu(const ui::frame_ptr& parent, const recti recti, const std::vector<ui::command_ptr>& commands)
+	void track_menu(const ui::frame_ptr& parent, const recti recti, const std::vector<ui::command_ptr>& commands) const
 	{
 		_events.track_menu(parent, recti, commands);
 	}
@@ -969,7 +966,7 @@ public:
 
 	void reset();
 	void update_search_is_favorite_or_collection_root();
-	void update_pixel_difference();
+	void update_pixel_difference() const;
 
 
 	bool is_full_screen = false;
@@ -1137,7 +1134,7 @@ public:
 			return true;
 		}
 
-		return ui::ticks_since_last_user_action < (ui::default_ticks_per_second * 5) || df::command_active;
+		return ui::ticks_since_last_user_action < ui::default_ticks_per_second * 5 || df::command_active;
 	}
 
 	const df::search_t& search() const
@@ -1190,14 +1187,14 @@ public:
 			{
 				const auto coordinate = md->coordinate;
 				platform::open(str::print(u8"https://www.google.com/maps/place/%f,%f"sv, coordinate.latitude(),
-					coordinate.longitude()));
+				                          coordinate.longitude()));
 				return;
 			}
 		}
 	}
 
 	void toggle_selected_item_tags(const view_host_base_ptr& view, const df::results_ptr& results,
-		std::u8string_view tag);
+	                               std::u8string_view tag);
 
 	const df::file_group_histogram& summary_shown() const
 	{
@@ -1211,7 +1208,7 @@ public:
 
 	void browse_back(const view_host_base_ptr& view);
 	void browse_forward(const view_host_base_ptr& view);
-	void close();
+	void close() const;
 
 
 	df::search_parent parent_search() const;
@@ -1227,17 +1224,17 @@ public:
 	void open(const view_host_base_ptr& view, const df::item_element_ptr& i);
 	void load_display_state();
 
-	void change_tracks(int video_track, int audio_track);
-	void change_audio_device(const std::u8string& id);
+	void change_tracks(int video_track, int audio_track) const;
+	void change_audio_device(const std::u8string& id) const;
 	void play(const view_host_base_ptr& view);
 
 	df::unique_items existing_items() const;
 
 	void append_items(const view_host_base_ptr& view, df::item_set items, const df::unique_paths& selection,
-		bool is_first, bool is_complete);
+	                  bool is_first, bool is_complete);
 
 	df::process_result can_process_selection_and_mark_errors(const view_host_base_ptr& view,
-		df::process_items_type file_types) const;
+	                                                         df::process_items_type file_types) const;
 	bool can_process_selection(const view_host_base_ptr& view, df::process_items_type file_types) const;
 
 	size_t selected_count() const
@@ -1253,7 +1250,7 @@ public:
 	bool select(const view_host_base_ptr& view, std::u8string_view file_name, bool toggle);
 	void select(const view_host_base_ptr& view, const df::item_elements& items, bool toggle);
 	void select(const view_host_base_ptr& view, const df::item_element_ptr& i, bool toggle, bool extend,
-		bool continue_slideshow);
+	            bool continue_slideshow);
 	void select(const view_host_base_ptr& view, recti selection_bounds, bool toggle);
 	void unselect(const view_host_base_ptr& view, const df::item_element_ptr& i);
 
@@ -1265,7 +1262,7 @@ public:
 			{
 				if (i == ii)
 				{
-					return { g, i };
+					return {g, i};
 				}
 			}
 		}
@@ -1286,7 +1283,7 @@ public:
 			{
 				if (i->is_selected())
 				{
-					return { g, i };
+					return {g, i};
 				}
 			}
 		}
@@ -1305,15 +1302,15 @@ public:
 	void tick(const view_host_base_ptr& view, double time_now);
 	void view_mode(view_type m);
 	void toggle_rating(const df::results_ptr& results, const df::item_elements& items, int r,
-		const view_host_base_ptr& view);
+	                   const view_host_base_ptr& view);
 	int displayed_rating() const;
 
 	void modify_items(const df::results_ptr& dlg, icon_index icon, std::u8string_view title,
-		const df::item_elements& items_to_modify, const metadata_edits& edits,
-		const view_host_base_ptr& view);
+	                  const df::item_elements& items_to_modify, const metadata_edits& edits,
+	                  const view_host_base_ptr& view);
 	void modify_items(const ui::control_frame_ptr& frame, icon_index icon, std::u8string_view title,
-		const df::item_elements& items_to_modify, const metadata_edits& edits,
-		const view_host_base_ptr& view);
+	                  const df::item_elements& items_to_modify, const metadata_edits& edits,
+	                  const view_host_base_ptr& view);
 
 	static quadd orientate(recti bounds, recti clip, const ui::orientation orientation)
 	{
@@ -1346,12 +1343,12 @@ public:
 		return quadd(clip).transform(t);
 	}
 
-	void invoke(commands id) const
+	void invoke(const commands id) const
 	{
 		_events.invoke(id);
 	}
 
-	void stop_slideshow()
+	void stop_slideshow() const
 	{
 		const auto d = _display;
 
@@ -1406,12 +1403,12 @@ public:
 	df::date_t _item_created;
 
 	int _item_season = 0;
-	df::xy8 _item_episode = { 0, 0 };
+	df::xy8 _item_episode = {0, 0};
 	int _item_year = 0;
 	int _item_rating = 0;
 
-	df::xy8 _item_track_number = { 0, 0 };
-	df::xy8 _item_disk_number = { 0, 0 };
+	df::xy8 _item_track_number = {0, 0};
+	df::xy8 _item_disk_number = {0, 0};
 
 	double _straighten = 0.0;
 	double _vibrance = 0.0;
@@ -1452,7 +1449,7 @@ public:
 	void reset(const prop::item_metadata_ptr& md, sizei dimensions);
 	metadata_edits build_metadata_edits(const prop::item_metadata_ptr& md) const;
 
-	static double calc_straighten(double a)
+	static double calc_straighten(const double a)
 	{
 		auto s = fmod(a, 90);
 		if (s > 45) s -= 90;
@@ -1460,7 +1457,7 @@ public:
 		return s;
 	}
 
-	void changed(const sizei extent, bool straighten_tracking)
+	void changed(const sizei extent, const bool straighten_tracking)
 	{
 		if (_state._edit_item && _state._edit_item->file_type()->has_trait(file_traits::bitmap))
 		{

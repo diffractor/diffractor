@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
@@ -19,7 +18,7 @@
 #include "model_index.h"
 
 static std::atomic<int> db_fails = 0;
-using cached_statements = df::hash_map<std::u8string, struct sqlite3_stmt*>;
+using cached_statements = df::hash_map<std::u8string, sqlite3_stmt*>;
 
 inline void db_trace_error(sqlite3* db, const std::u8string_view sql)
 {
@@ -41,7 +40,6 @@ inline int db_exec(sqlite3* db, const std::u8string& sql)
 
 class db_statement
 {
-private:
 	sqlite3* _db;
 	sqlite3_stmt* _handle;
 
@@ -65,7 +63,8 @@ public:
 
 	void compile(const std::u8string_view sql)
 	{
-		const int ret = sqlite3_prepare(_db, std::bit_cast<const char*>(sql.data()), static_cast<int>(sql.size()), &_handle, nullptr);
+		const int ret = sqlite3_prepare(_db, std::bit_cast<const char*>(sql.data()), static_cast<int>(sql.size()),
+		                                &_handle, nullptr);
 
 		if (ret != SQLITE_OK)
 			db_trace_error(_db, u8"sqlite3_prepare"sv);
@@ -75,8 +74,9 @@ public:
 	{
 		if (_handle != nullptr)
 		{
-			const int ret = sqlite3_bind_text(_handle, i, std::bit_cast<const char*>(v.data()), static_cast<int>(v.size()),
-				SQLITE_STATIC);
+			const int ret = sqlite3_bind_text(_handle, i, std::bit_cast<const char*>(v.data()),
+			                                  static_cast<int>(v.size()),
+			                                  SQLITE_STATIC);
 
 			if (ret != SQLITE_OK)
 				db_trace_error(_db, str::format(u8"sqlite3_bind_text {} {}"sv, i, v));
@@ -104,7 +104,7 @@ public:
 				db_trace_error(_db, str::format(u8"sqlite3_bind_int overflow: {}"sv, n));
 				return;
 			}
-			
+
 			const int ret = sqlite3_bind_int(_handle, i, static_cast<int>(n));
 
 			if (ret != SQLITE_OK)
@@ -144,7 +144,7 @@ public:
 				db_trace_error(_db, str::format(u8"sqlite3_bind_int64 overflow: {}"sv, n));
 				return;
 			}
-			
+
 			const int ret = sqlite3_bind_int64(_handle, i, static_cast<sqlite3_int64>(n));
 
 			if (ret != SQLITE_OK)
@@ -239,14 +239,14 @@ public:
 		{
 			const auto* const pData = static_cast<const uint8_t*>(sqlite3_column_blob(_handle, i));
 			const auto len = sqlite3_column_bytes(_handle, i);
-			return { pData, pData + len };
+			return {pData, pData + len};
 		}
 		return {};
 	}
 
 	df::cspan data(const int i) const
 	{
-		df::cspan r = { nullptr, 0 };
+		df::cspan r = {nullptr, 0};
 		if (_handle != nullptr)
 		{
 			r.data = static_cast<const uint8_t*>(sqlite3_column_blob(_handle, i));
@@ -291,7 +291,7 @@ public:
 			}
 		}
 	}
-	
+
 	// Add rollback method for explicit error handling
 	void rollback() noexcept
 	{
@@ -373,7 +373,7 @@ void database::open()
 		{
 			error_msg = u8"Failed to allocate database connection"s;
 		}
-		
+
 		_db = nullptr;
 		df::log(__FUNCTION__, str::format(u8"Failed to open database: {}"sv, error_msg));
 	}
@@ -387,21 +387,21 @@ void database::open()
 		if (SQLITE_CORRUPT == create_result)
 		{
 			const auto message = str::format(u8"Database is corrupt: {}\n\nPath: {}"sv,
-				str::utf8_cast(sqlite3_errmsg(_db)), _db_path);
+			                                 str::utf8_cast(sqlite3_errmsg(_db)), _db_path);
 			df::log(__FUNCTION__, message);
 			throw app_exception(message);
 		}
 		if (SQLITE_OK != create_result)
 		{
 			const auto message = str::format(u8"Failed to create database: {}\n\nPath: {}"sv,
-				str::utf8_cast(sqlite3_errmsg(_db)), _db_path);
+			                                 str::utf8_cast(sqlite3_errmsg(_db)), _db_path);
 			df::log(__FUNCTION__, message);
 			throw app_exception(message);
 		}
 
 		load_index_values();
 		df::log(__FUNCTION__, str::format(u8"Loaded index in {} ms"sv, _state.stats.index_load_ms));
-		
+
 		// schema upgrades
 		sqlite3_exec(_db, "ALTER TABLE item_properties ADD COLUMN crc INTEGER;", nullptr, nullptr, nullptr);
 		sqlite3_exec(_db, "ALTER TABLE item_thumbnails ADD COLUMN cover_art BLOB NULL;", nullptr, nullptr, nullptr);
@@ -479,12 +479,12 @@ inline void metadata_packer::pack(const prop::item_metadata_ptr& md)
 
 	if (!prop::is_null(md->width) || !prop::is_null(md->height))
 		write(prop::dimensions.id,
-			df::xy32::make(md->width, md->height));
+		      df::xy32::make(md->width, md->height));
 	if (!prop::is_null(md->iso_speed)) write(prop::iso_speed.id, md->iso_speed);
 	if (!prop::is_null(md->focal_length)) write(prop::focal_length.id, md->focal_length);
 	if (!prop::is_null(md->focal_length_35mm_equivalent))
 		write(prop::focal_length_35mm_equivalent.id,
-			md->focal_length_35mm_equivalent);
+		      md->focal_length_35mm_equivalent);
 	if (!prop::is_null(md->rating)) write(prop::rating.id, md->rating);
 	if (!prop::is_null(md->audio_sample_rate)) write(prop::audio_sample_rate.id, md->audio_sample_rate);
 	if (!prop::is_null(md->audio_sample_type)) write(prop::audio_sample_type.id, md->audio_sample_type);
@@ -591,8 +591,8 @@ void metadata_unpacker::unpack(const prop::item_metadata_ptr& md)
 		else if (t == prop::created_utc) read_val(md->created_utc);
 		else if (t == prop::created_exif) read_val(md->created_exif);
 		else if (t == prop::created_digitized) read_val(md->created_digitized);
-		//else if (t == prop::modified) item.info.file_modified = df::date_t::from_time_stamp(p->n);
-		//else if (t == prop::file_size) item.info.size = df::file_size(p->d);
+			//else if (t == prop::modified) item.info.file_modified = df::date_t::from_time_stamp(p->n);
+			//else if (t == prop::file_size) item.info.size = df::file_size(p->d);
 		else if (t == prop::exposure_time) read_val(md->exposure_time);
 		else if (t == prop::f_number) read_val(md->f_number);
 		else if (t == prop::focal_length) read_val(md->focal_length);
@@ -620,7 +620,7 @@ void metadata_unpacker::unpack(const prop::item_metadata_ptr& md)
 	}
 }
 
-void database::load_index_values()
+void database::load_index_values() const
 {
 	df::assert_true(is_db_thread());
 
@@ -648,9 +648,9 @@ void database::load_index_values()
 			if (!cached_items.empty())
 			{
 				std::ranges::sort(cached_items, [](const db_item_t& left, const db_item_t& right)
-					{
-						return icmp(left.path, right.path) < 0;
-					});
+				{
+					return icmp(left.path, right.path) < 0;
+				});
 				_state.merge_folder(last_group_name, cached_items);
 			}
 
@@ -694,9 +694,9 @@ void database::load_index_values()
 	if (!cached_items.empty())
 	{
 		std::ranges::sort(cached_items, [](const db_item_t& left, const db_item_t& right)
-			{
-				return icmp(left.path, right.path) < 0;
-			});
+		{
+			return icmp(left.path, right.path) < 0;
+		});
 		_state.merge_folder(last_group_name, cached_items);
 		cached_items.clear();
 	}
@@ -776,7 +776,7 @@ void database::web_service_cache(const std::u8string_view key, const std::u8stri
 	insert_web_request.exec();
 }
 
-item_import_set database::load_item_imports()
+item_import_set database::load_item_imports() const
 {
 	df::assert_true(is_db_thread());
 
@@ -797,7 +797,7 @@ item_import_set database::load_item_imports()
 	return results;
 }
 
-void database::writes_item_imports(const item_import_set& writes)
+void database::writes_item_imports(const item_import_set& writes) const
 {
 	df::assert_true(is_db_thread());
 
@@ -821,7 +821,7 @@ bool database::is_db_thread() const
 	return _db_thread_id == platform::current_thread_id();
 }
 
-void database::load_thumbnails(const index_state& index, const df::item_set& items)
+void database::load_thumbnails(const index_state& index, const df::item_set& items) const
 {
 	df::assert_true(is_db_thread());
 	bool cover_art_loaded = false;
@@ -883,7 +883,7 @@ void database::perform_writes()
 	perform_writes(_state.db_writes().dequeue_all());
 }
 
-void database::perform_writes(std::deque<item_db_write> writes)
+void database::perform_writes(std::deque<item_db_write> writes) const
 {
 	const auto today = platform::now().to_days();
 
@@ -892,13 +892,15 @@ void database::perform_writes(std::deque<item_db_write> writes)
 		_db,
 		u8"insert or replace into item_properties (folder, name, properties, hash, crc, media_position, last_scanned, last_indexed) values (?, ?, ?, ?, ?, ?, ?, ?)"s);
 	const db_statement update_metadata_scanned(
-		_db, u8"insert or replace into item_properties (folder, name, last_scanned, last_indexed) values (?, ?, ?, ?)"s);
+		_db,
+		u8"insert or replace into item_properties (folder, name, last_scanned, last_indexed) values (?, ?, ?, ?)"s);
 	const db_statement update_hash(_db, u8"update item_properties set hash = ? where folder=? and name=?"s);
 	const db_statement update_crc(_db, u8"update item_properties set crc = ? where folder=? and name=?"s);
 	const db_statement update_media_position(
 		_db, u8"update item_properties set media_position = ? where folder=? and name=?"s);
 	const db_statement insert_thumbnails(
-		_db, u8"insert or replace into item_thumbnails (folder, name, bitmap, cover_art, last_scanned) values (?, ?, ?, ?, ?)"s);
+		_db,
+		u8"insert or replace into item_thumbnails (folder, name, bitmap, cover_art, last_scanned) values (?, ?, ?, ?, ?)"s);
 
 	metadata_packer packer;
 
@@ -920,7 +922,7 @@ void database::perform_writes(std::deque<item_db_write> writes)
 			insert_properties.bind(1, path.folder().text());
 			insert_properties.bind(2, path.name());
 			insert_properties.bind(3, packer.cdata());
-			insert_properties.bind(4, df::cspan{ nullptr, 0 });
+			insert_properties.bind(4, df::cspan{nullptr, 0});
 			insert_properties.bind(5, static_cast<int>(write.crc32c.value_or(0)));
 			insert_properties.bind(6, static_cast<int>(write.media_position.value_or(md->media_position)));
 			insert_properties.bind(7, write.metadata_scanned.value_or(df::date_t()).to_int64());
@@ -949,9 +951,9 @@ void database::perform_writes(std::deque<item_db_write> writes)
 		{
 			update_crc.bind(1, static_cast<int>(write.crc32c.value()));
 			update_crc.bind(2, path.folder().text());
-		 update_crc.bind(3, path.name());
-		 update_crc.exec();
-		 update_crc.reset();
+			update_crc.bind(3, path.name());
+			update_crc.exec();
+			update_crc.reset();
 		}
 
 		if (write.media_position.has_value())
@@ -960,7 +962,7 @@ void database::perform_writes(std::deque<item_db_write> writes)
 			update_media_position.bind(2, path.folder().text());
 			update_media_position.bind(3, path.name());
 			update_media_position.exec();
-		 update_media_position.reset();
+			update_media_position.reset();
 		}
 
 		if (write.thumb.has_value() && is_valid(write.thumb.value()))
@@ -968,7 +970,9 @@ void database::perform_writes(std::deque<item_db_write> writes)
 			insert_thumbnails.bind(1, path.folder().text());
 			insert_thumbnails.bind(2, path.name());
 			insert_thumbnails.bind(3, write.thumb.value()->data());
-			insert_thumbnails.bind(4, (write.cover_art.has_value() && is_valid(write.cover_art.value())) ? write.cover_art.value()->data() : df::cspan{});
+			insert_thumbnails.bind(4, write.cover_art.has_value() && is_valid(write.cover_art.value())
+				                          ? write.cover_art.value()->data()
+				                          : df::cspan{});
 			insert_thumbnails.bind(5, write.thumb_scanned.has_value() ? write.thumb_scanned.value().to_int64() : 0);
 			insert_thumbnails.exec();
 			insert_thumbnails.reset();
@@ -985,7 +989,7 @@ bool database::has_errors() const
 	return db_fails.load() > 0 && _state.indexing == 0;
 }
 
-void database::maintenance(bool is_reset)
+void database::maintenance(const bool is_reset)
 {
 	df::assert_true(is_db_thread());
 

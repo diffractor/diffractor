@@ -1,16 +1,15 @@
 ﻿// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
 
 
-class spline_interpolator : public df::no_copy
+class spline_interpolator final : public df::no_copy
 {
 	using point_t = std::pair<double, double>;
 
@@ -126,20 +125,20 @@ private:
 
 
 void ui::color_adjust::color_params(const double vibrance, const double saturation,
-	const double darks, const double midtones, const double lights,
-	const double contrast, const double brightness)
+                                    const double darks, const double midtones, const double lights,
+                                    const double contrast, const double brightness)
 {
 	_saturation = static_cast<float>(saturation + 1.0);
 	_vibrance = static_cast<float>(vibrance);
 
-	const auto cc = (contrast / (contrast < 0.0 ? 2 : 1.5)) + 1.0;
+	const auto cc = contrast / (contrast < 0.0 ? 2 : 1.5) + 1.0;
 	const auto bb = brightness / 3.0;
 
-	const double t = 0.0;
-	const double d = (((0.2 + darks * 0.1) - 0.5) * cc) + 0.5 + bb;
-	const double m = (((0.5 + midtones * 0.1) - 0.5) * cc) + 0.5 + bb;
-	const double l = (((0.8 + lights * 0.1) - 0.5) * cc) + 0.5 + bb;
-	const double b = 1.0;
+	constexpr double t = 0.0;
+	const double d = (0.2 + darks * 0.1 - 0.5) * cc + 0.5 + bb;
+	const double m = (0.5 + midtones * 0.1 - 0.5) * cc + 0.5 + bb;
+	const double l = (0.8 + lights * 0.1 - 0.5) * cc + 0.5 + bb;
+	constexpr double b = 1.0;
 
 	spline_interpolator interpolator;
 	interpolator.add(0.0, std::clamp(t, 0.0, 1.0));
@@ -154,7 +153,7 @@ void ui::color_adjust::color_params(const double vibrance, const double saturati
 	}
 }
 
-ui::color32 ui::color_adjust::adjust_color(double y, double u, double v, double a) const
+ui::color32 ui::color_adjust::adjust_color(double y, double u, double v, const double a) const
 {
 	y = _curve[std::clamp(static_cast<int>(y * curve_len), 0, curve_len - 1)];
 
@@ -163,7 +162,7 @@ ui::color32 ui::color_adjust::adjust_color(double y, double u, double v, double 
 		const auto xx = -0.105 - u;
 		const auto yy = 0.227 - v;
 		const auto d = sqrt(xx * xx + yy * yy);
-		const auto sat = _saturation * (1.0 + (_vibrance * d * 4.0));
+		const auto sat = _saturation * (1.0 + _vibrance * d * 4.0);
 
 		u *= sat;
 		v *= sat;
@@ -185,7 +184,7 @@ ui::color32 ui::color_adjust::adjust_color(double y, double u, double v, double 
 }
 
 void ui::color_adjust::apply(const const_surface_ptr& src, uint8_t* dst, const size_t dst_stride,
-	df::cancel_token token) const
+                             const df::cancel_token token) const
 {
 	const auto dims = src->dimensions();
 

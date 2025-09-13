@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -13,7 +12,6 @@ namespace df
 {
 	class item_selector
 	{
-	private:
 		folder_path _root;
 		std::u8string _wildcard = u8"*.*"s;
 		bool _recursive = false;
@@ -27,7 +25,8 @@ namespace df
 			assert_true(is_valid());
 		}
 
-		item_selector(const folder_path f, const bool recursive = false, const std::u8string_view wildcard = u8"*.*"sv) :
+		item_selector(const folder_path f, const bool recursive = false,
+		              const std::u8string_view wildcard = u8"*.*"sv) :
 			_root(f), _wildcard(wildcard), _recursive(recursive)
 		{
 			assert_true(is_valid());
@@ -148,7 +147,7 @@ namespace df
 
 		item_selector parent() const
 		{
-			return (_recursive || has_wildcard()) ? _root : _root.parent();
+			return _recursive || has_wildcard() ? _root : _root.parent();
 		}
 
 		folder_path folder() const

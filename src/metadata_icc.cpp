@@ -1,10 +1,9 @@
 ﻿// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
@@ -88,9 +87,9 @@ public:
 
 	std::map<uint32_t, Tag> tags_;
 
-	std::u8string dump4(const uint32_t u)
+	static std::u8string dump4(const uint32_t u)
 	{
-		return str::print(u8"%c%c%c%c"sv, (u >> 24) & 0xFF, (u >> 16) & 0xFF, (u >> 8) & 0xFF, u & 0xFF);
+		return str::print(u8"%c%c%c%c"sv, u >> 24 & 0xFF, u >> 16 & 0xFF, u >> 8 & 0xFF, u & 0xFF);
 	}
 
 	metadata_kv_list dump()
@@ -100,13 +99,13 @@ public:
 		result.emplace_back(u8"Size"_c, str::print(u8"%x"sv, profileSize_));
 		result.emplace_back(u8"CMM Type"_c, dump4(cmmType_));
 		result.emplace_back(u8"Version"_c,
-			str::print(u8"%x (version %d)"sv, profileVersion_, (profileVersion_ >> 24) & 0xFF));
+		                    str::print(u8"%x (version %d)"sv, profileVersion_, profileVersion_ >> 24 & 0xFF));
 		result.emplace_back(u8"Class"_c, dump4(profileClass_));
 		result.emplace_back(u8"Color Space Data"_c, dump4(colorSpace_));
 		result.emplace_back(u8"Connection Space"_c, dump4(connectionSpace_));
 		result.emplace_back(u8"Date Time"_c,
-			str::print(u8"%d-%d-%d,%d:%d,%d"sv, dtime_.year_, dtime_.month_, dtime_.day_, dtime_.hour_,
-				dtime_.min_, dtime_.sec_));
+		                    str::print(u8"%d-%d-%d,%d:%d,%d"sv, dtime_.year_, dtime_.month_, dtime_.day_, dtime_.hour_,
+		                               dtime_.min_, dtime_.sec_));
 		result.emplace_back(u8"File Signature"_c, dump4(acsp_));
 		result.emplace_back(u8"Primary Platform"_c, dump4(platform_));
 		result.emplace_back(u8"CMM Flags"_c, str::print(u8"%x"sv, flags_));
@@ -115,18 +114,20 @@ public:
 		result.emplace_back(u8"Device Attributes"_c, str::print(u8"%I64x"sv, deviceAttrib_));
 		result.emplace_back(u8"Rendering Intent"_c, str::print(u8"%d"sv, intent_));
 		result.emplace_back(u8"Connection Space Illuminant"_c,
-			str::print(u8"(%f,%f,%f)"sv, connectionIllum_.x_, connectionIllum_.y_, connectionIllum_.z_));
+		                    str::print(u8"(%f,%f,%f)"sv, connectionIllum_.x_, connectionIllum_.y_,
+		                               connectionIllum_.z_));
 		result.emplace_back(u8"Creator"_c, dump4(creator_));
 
 		for (const auto& t : tags_)
 		{
-			auto name = str::print(u8"%c%c%c%c:%c%c%c%c"sv, (t.first >> 24) & 0xFF, (t.first >> 16) & 0xFF,
-				(t.first >> 8) & 0xFF,
-				t.first & 0xFF, (t.second.type_ >> 24) & 0xFF, (t.second.type_ >> 16) & 0xFF,
-				(t.second.type_ >> 8) & 0xFF, t.second.type_ & 0xFF);
+			auto name = str::print(u8"%c%c%c%c:%c%c%c%c"sv, t.first >> 24 & 0xFF, t.first >> 16 & 0xFF,
+			                       t.first >> 8 & 0xFF,
+			                       t.first & 0xFF, t.second.type_ >> 24 & 0xFF, t.second.type_ >> 16 & 0xFF,
+			                       t.second.type_ >> 8 & 0xFF, t.second.type_ & 0xFF);
 
 			constexpr auto max_text_len = 16_z;
-			auto hex = str::to_hex(t.second.data_.data(), static_cast<int32_t>(std::min(t.second.data_.size(), max_text_len)));
+			auto hex = str::to_hex(t.second.data_.data(),
+			                       static_cast<int32_t>(std::min(t.second.data_.size(), max_text_len)));
 			if (t.second.data_.size() > max_text_len) hex += u8"..."sv;
 			result.emplace_back(str::cache(name), hex);
 		}
@@ -183,34 +184,34 @@ public:
 	int8_t int8() { return static_cast<int8_t>(uint8()); }
 
 	// ICC profile uses big endian only.
-	uint16_t uint16() 
-	{ 
+	uint16_t uint16()
+	{
 		if (index_ + 1 >= size_) return 0; // Bounds check
-		return (uint8() << 8) | (uint8()); 
+		return uint8() << 8 | uint8();
 	}
-	
-	int16_t int16() 
-	{ 
+
+	int16_t int16()
+	{
 		if (index_ + 1 >= size_) return 0; // Bounds check
-		return (int8() << 8) | (uint8()); 
+		return int8() << 8 | uint8();
 	}
-	
-	uint32_t uint32() 
-	{ 
+
+	uint32_t uint32()
+	{
 		if (index_ + 3 >= size_) return 0; // Bounds check
-		return (uint16() << 16) | (uint16()); 
+		return uint16() << 16 | uint16();
 	}
-	
-	int32_t int32() 
-	{ 
+
+	int32_t int32()
+	{
 		if (index_ + 3 >= size_) return 0; // Bounds check
-		return (int16() << 16) | (uint16()); 
+		return int16() << 16 | uint16();
 	}
-	
-	uint64_t uint64() 
-	{ 
+
+	uint64_t uint64()
+	{
 		if (index_ + 7 >= size_) return 0; // Bounds check
-		return (static_cast<uint64_t>(uint32()) << 32) | (uint32()); 
+		return static_cast<uint64_t>(uint32()) << 32 | uint32();
 	}
 
 	double s15Fixed16() { return static_cast<double>(int32()) / 0x10000; }
@@ -220,11 +221,11 @@ public:
 	std::vector<uint8_t> array(const size_t s)
 	{
 		// Add bounds checking for array reads
-		if (s == 0 || index_ + s > size_) 
+		if (s == 0 || index_ + s > size_)
 		{
 			return {};
 		}
-		
+
 		std::vector<uint8_t> ret(s);
 		std::copy(buffer_ + index_, buffer_ + index_ + s, ret.begin());
 		index_ += s; // Update index after reading
@@ -253,24 +254,24 @@ public:
 	}
 };
 
-bool load_from_mem(icc_profile& p, df::cspan data)
+bool load_from_mem(icc_profile& p, const df::cspan data)
 {
 	icc_stream stream(data);
-	
+
 	// Validate minimum header size
 	if (data.size < 128)
 	{
 		return false;
 	}
-	
+
 	p.profileSize_ = stream.uint32();
-	
+
 	// Validate profile size matches data size
 	if (p.profileSize_ > data.size || p.profileSize_ < 128)
 	{
 		return false;
 	}
-	
+
 	p.cmmType_ = stream.uint32();
 	p.profileVersion_ = stream.uint32();
 	p.profileClass_ = stream.uint32();
@@ -297,46 +298,46 @@ bool load_from_mem(icc_profile& p, df::cspan data)
 		return false;
 
 	const uint32_t tagCount = stream.uint32();
-	
+
 	// Reasonable limit on tag count to prevent memory issues
 	if (tagCount > 1000)
 	{
 		return false;
 	}
-	
+
 	for (uint32_t u = 0; u < tagCount; u++)
 	{
 		if (stream.index_ + 12 > data.size) // Need 12 bytes for tag entry
 		{
 			break;
 		}
-		
+
 		uint32_t sig = stream.uint32();
 		const uint32_t offs = stream.uint32();
 		const uint32_t size = stream.uint32();
-		
+
 		// Validate tag offset and size
 		if (offs >= data.size || size == 0 || size > data.size - offs)
 		{
 			continue; // Skip invalid tag
 		}
-		
+
 		// Reasonable size limit for individual tags
 		if (size > 1024 * 1024) // 1MB limit
 		{
 			continue; // Skip overly large tags
 		}
-		
+
 		const size_t current = stream.seek(offs);
 		if (stream.index_ + 4 > data.size) // Need 4 bytes for tag type
 		{
 			stream.seek(current);
 			continue;
 		}
-		
-		uint32_t tag_type = stream.uint32();
-		uint32_t remaining_size = size >= 4 ? size - 4 : 0;
-		
+
+		const uint32_t tag_type = stream.uint32();
+		const uint32_t remaining_size = size >= 4 ? size - 4 : 0;
+
 		p.tags_[sig] = icc_profile::Tag(tag_type, stream.array(remaining_size));
 		stream.seek(current);
 	}
@@ -344,7 +345,7 @@ bool load_from_mem(icc_profile& p, df::cspan data)
 	return true;
 }
 
-metadata_kv_list metadata_icc::to_info(df::cspan data)
+metadata_kv_list metadata_icc::to_info(const df::cspan data)
 {
 	icc_profile p;
 

@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -15,7 +14,6 @@ class metadata_packer
 public:
 	std::vector<uint8_t> _data;
 
-public:
 	void reset_to_header()
 	{
 		_data.clear();
@@ -42,7 +40,7 @@ public:
 	void write_prop_id(const uint16_t id)
 	{
 		_data.push_back(id & 0xff);
-		_data.push_back((id >> 8) & 0xff);
+		_data.push_back(id >> 8 & 0xff);
 	}
 
 	void write_len(const size_t val_len)
@@ -55,15 +53,15 @@ public:
 		{
 			_data.push_back(0xff);
 			_data.push_back(val_len & 0xff);
-			_data.push_back((val_len >> 8) & 0xff);
+			_data.push_back(val_len >> 8 & 0xff);
 		}
 		else
 		{
 			_data.push_back(0xfe);
 			_data.push_back(val_len & 0xff);
-			_data.push_back((val_len >> 8) & 0xff);
-			_data.push_back((val_len >> 16) & 0xff);
-			_data.push_back((val_len >> 24) & 0xff);
+			_data.push_back(val_len >> 8 & 0xff);
+			_data.push_back(val_len >> 16 & 0xff);
+			_data.push_back(val_len >> 24 & 0xff);
 		}
 	}
 
@@ -117,7 +115,7 @@ public:
 
 	size_t remaining() const
 	{
-		return (_pos >= _data.size) ? 0 : _data.size - _pos;
+		return _pos >= _data.size ? 0 : _data.size - _pos;
 	}
 
 	prop::key_ref read_type()
@@ -169,7 +167,7 @@ public:
 	void read_val(str::cached& v)
 	{
 		const auto ser_len = read_len();
-		v = str::cache(std::u8string_view{ std::bit_cast<const char8_t*>(_data.data + _pos), ser_len });
+		v = str::cache(std::u8string_view{std::bit_cast<const char8_t*>(_data.data + _pos), ser_len});
 		_pos += ser_len;
 	}
 

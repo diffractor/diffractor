@@ -1,16 +1,10 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
-//
-// based on code from:
-//
-// Mordechai T. Abzug 
-// RSA Data Security, Inc., MD5 message - digest algorithm
 
 #include "pch.h"
 #include "crypto_md5.h"
@@ -25,7 +19,7 @@ md5::md5()
 md5::md5(const std::u8string_view s)
 {
 	initialise(); // must be called be all constructors
-	update({ s.data(), s.size() });
+	update({s.data(), s.size()});
 	finalize();
 }
 
@@ -46,7 +40,7 @@ void md5::initialise()
 // operation, processing another message block, and updating the
 // context.
 
-void md5::update(df::cspan data)
+void md5::update(const df::cspan data)
 {
 	if (_finalized)
 	{
@@ -59,10 +53,10 @@ void md5::update(df::cspan data)
 	size_t buffer_index = count[0] >> 3 & 0x3F;
 
 	// Update number of bits
-	if ((count[0] += (static_cast<uint32_t>(size) << 3)) < (static_cast<uint32_t>(size) << 3))
+	if ((count[0] += static_cast<uint32_t>(size) << 3) < static_cast<uint32_t>(size) << 3)
 		count[1]++;
 
-	count[1] += (static_cast<uint32_t>(size) >> 29);
+	count[1] += static_cast<uint32_t>(size) >> 29;
 
 	const size_t buffer_space = 64 - buffer_index; // how much space is left in buffer
 	size_t input_index = 0;
@@ -112,11 +106,11 @@ void md5::finalize()
 
 	// Pad out to 56 mod 64.
 	const auto index = count[0] >> 3 & 0x3f;
-	const uint32_t padLen = (index < 56) ? (56 - index) : (120 - index);
-	update({ PADDING, padLen });
+	const uint32_t padLen = index < 56 ? 56 - index : 120 - index;
+	update({PADDING, padLen});
 
 	// Append length (before padding)
-	update({ bits, 8 });
+	update({bits, 8});
 
 	// Store state in digest
 	Encode(digest, state, 16);
@@ -160,28 +154,28 @@ std::u8string md5::hex_digest() const
 #define S44 21
 
 // RotateLeftrotates x left n bits.
-static uint32_t RotateLeft(uint32_t x, uint32_t n)
+static uint32_t RotateLeft(const uint32_t x, const uint32_t n)
 {
-	return (x << n) | (x >> (32 - n));
+	return x << n | x >> (32 - n);
 }
 
 // F, G, H and I are basic MD5 functions.
-static uint32_t F(uint32_t x, uint32_t y, uint32_t z)
+static uint32_t F(const uint32_t x, const uint32_t y, const uint32_t z)
 {
-	return (x & y) | (~x & z);
+	return x & y | ~x & z;
 }
 
-static uint32_t G(uint32_t x, uint32_t y, uint32_t z)
+static uint32_t G(const uint32_t x, const uint32_t y, const uint32_t z)
 {
-	return (x & z) | (y & ~z);
+	return x & z | y & ~z;
 }
 
-static uint32_t H(uint32_t x, uint32_t y, uint32_t z)
+static uint32_t H(const uint32_t x, const uint32_t y, const uint32_t z)
 {
 	return x ^ y ^ z;
 }
 
-static uint32_t I(uint32_t x, uint32_t y, uint32_t z)
+static uint32_t I(const uint32_t x, const uint32_t y, const uint32_t z)
 {
 	return y ^ (x | ~z);
 }
@@ -189,25 +183,29 @@ static uint32_t I(uint32_t x, uint32_t y, uint32_t z)
 // FF, GG, HH, and II transformations for rounds 1, 2, 3, and 4.
 // Rotation is separate from addition to prevent recomputation.
 
-static void FF(uint32_t& a, uint32_t b, uint32_t c, uint32_t d, uint32_t x, uint32_t s, uint32_t ac)
+static void FF(uint32_t& a, const uint32_t b, const uint32_t c, const uint32_t d, const uint32_t x, const uint32_t s,
+               const uint32_t ac)
 {
 	a += F(b, c, d) + x + ac;
 	a = RotateLeft(a, s) + b;
 }
 
-static void GG(uint32_t& a, uint32_t b, uint32_t c, uint32_t d, uint32_t x, uint32_t s, uint32_t ac)
+static void GG(uint32_t& a, const uint32_t b, const uint32_t c, const uint32_t d, const uint32_t x, const uint32_t s,
+               const uint32_t ac)
 {
 	a += G(b, c, d) + x + ac;
 	a = RotateLeft(a, s) + b;
 }
 
-static void HH(uint32_t& a, uint32_t b, uint32_t c, uint32_t d, uint32_t x, uint32_t s, uint32_t ac)
+static void HH(uint32_t& a, const uint32_t b, const uint32_t c, const uint32_t d, const uint32_t x, const uint32_t s,
+               const uint32_t ac)
 {
 	a += H(b, c, d) + x + ac;
 	a = RotateLeft(a, s) + b;
 }
 
-static void II(uint32_t& a, uint32_t b, uint32_t c, uint32_t d, uint32_t x, uint32_t s, uint32_t ac)
+static void II(uint32_t& a, const uint32_t b, const uint32_t c, const uint32_t d, const uint32_t x, const uint32_t s,
+               const uint32_t ac)
 {
 	a += I(b, c, d) + x + ac;
 	a = RotateLeft(a, s) + b;
@@ -217,7 +215,7 @@ static void II(uint32_t& a, uint32_t b, uint32_t c, uint32_t d, uint32_t x, uint
 void md5::Transform(const uint8_t* block)
 {
 	uint32_t a = state[0], b = state[1], c = state[2], d = state[3], x[16];
-	Decode(x, { block, 64 });
+	Decode(x, {block, 64});
 	df::assert_true(!_finalized); // not just a user error, since the method is private
 
 	/* Round 1 */
@@ -303,30 +301,30 @@ void md5::Transform(const uint8_t* block)
 
 // Encodes input (uint32_t) into output (uint8_t). Assumes len is
 // a multiple of 4.
-void md5::Encode(uint8_t* output, uint32_t* input, size_t len)
+void md5::Encode(uint8_t* output, const uint32_t* input, const size_t len)
 {
 	uint32_t i, j;
 
 	for (i = 0, j = 0; j < len; i++, j += 4)
 	{
 		output[j] = static_cast<uint8_t>(input[i] & 0xff);
-		output[j + 1] = static_cast<uint8_t>((input[i] >> 8) & 0xff);
-		output[j + 2] = static_cast<uint8_t>((input[i] >> 16) & 0xff);
-		output[j + 3] = static_cast<uint8_t>((input[i] >> 24) & 0xff);
+		output[j + 1] = static_cast<uint8_t>(input[i] >> 8 & 0xff);
+		output[j + 2] = static_cast<uint8_t>(input[i] >> 16 & 0xff);
+		output[j + 3] = static_cast<uint8_t>(input[i] >> 24 & 0xff);
 	}
 }
 
 // Decodes input (uint8_t) into output (uint32_t). Assumes len is
 // a multiple of 4.
-void md5::Decode(uint32_t* output, df::cspan input)
+void md5::Decode(uint32_t* output, const df::cspan input)
 {
 	uint32_t i, j;
 
 	for (i = 0, j = 0; j < input.size; i++, j += 4)
 	{
 		output[i] = static_cast<uint32_t>(input.data[j]) |
-			(static_cast<uint32_t>(input.data[j + 1]) << 8) |
-			(static_cast<uint32_t>(input.data[j + 2]) << 16) |
-			(static_cast<uint32_t>(input.data[j + 3]) << 24);
+			static_cast<uint32_t>(input.data[j + 1]) << 8 |
+			static_cast<uint32_t>(input.data[j + 2]) << 16 |
+			static_cast<uint32_t>(input.data[j + 3]) << 24;
 	}
 }

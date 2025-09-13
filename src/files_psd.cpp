@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
@@ -61,14 +60,14 @@ public:
 		return _len - _pos;
 	}
 
-	void read(uint8_t* data, uint64_t size)
+	void read(uint8_t* data, const uint64_t size)
 	{
 		if (remaining() < size) throw app_exception(__FUNCTION__);
 		_s.read(_pos, data, size);
 		_pos += size;
 	}
 
-	df::blob read_blob(uint64_t size)
+	df::blob read_blob(const uint64_t size)
 	{
 		if (remaining() < size) throw app_exception(__FUNCTION__);
 		auto result = _s.read(_pos, size);
@@ -76,13 +75,13 @@ public:
 		return result;
 	}
 
-	void skip(uint64_t size)
+	void skip(const uint64_t size)
 	{
 		if (remaining() < size) throw app_exception(__FUNCTION__);
 		_pos += size;
 	}
 
-	void pos(uint64_t p)
+	void pos(const uint64_t p)
 	{
 		_pos = p;
 	}
@@ -119,7 +118,7 @@ public:
 };
 
 
-static bool decode_rle_pane(ui::surface_ptr& surface, msb_stream& stream, const int channel_shift)
+static bool decode_rle_pane(const ui::surface_ptr& surface, msb_stream& stream, const int channel_shift)
 {
 	const int cx = surface->width();
 	const int cy = surface->height();
@@ -131,10 +130,10 @@ static bool decode_rle_pane(ui::surface_ptr& surface, msb_stream& stream, const 
 	bool bReading = false;
 	int count = 0;
 	int x = 0, y = 0;
-	
+
 	if (cy == 0 || cx == 0) return false;
-	
-	auto* line = std::bit_cast<uint32_t*>(pixels + (y * stride));
+
+	auto* line = std::bit_cast<uint32_t*>(pixels + y * stride);
 
 	while (number_pixels > 0 && y < cy)
 	{
@@ -152,7 +151,7 @@ static bool decode_rle_pane(ui::surface_ptr& surface, msb_stream& stream, const 
 			if (count < 0)
 			{
 				pixel = stream.read_u8();
-				count = (-count + 1);
+				count = -count + 1;
 				bReading = false;
 			}
 			else
@@ -182,7 +181,7 @@ static bool decode_rle_pane(ui::surface_ptr& surface, msb_stream& stream, const 
 			x = 0;
 			if (y < cy)
 			{
-				line = std::bit_cast<uint32_t*>(pixels + (y * stride));
+				line = std::bit_cast<uint32_t*>(pixels + y * stride);
 			}
 		}
 	}
@@ -191,7 +190,7 @@ static bool decode_rle_pane(ui::surface_ptr& surface, msb_stream& stream, const 
 	return number_pixels == 0;
 }
 
-static bool decode_uncompressed_plane(ui::surface_ptr& surface, msb_stream& stream, const int channel_shift)
+static bool decode_uncompressed_plane(const ui::surface_ptr& surface, msb_stream& stream, const int channel_shift)
 {
 	const int cx = surface->width();
 	const int cy = surface->height();
@@ -205,7 +204,7 @@ static bool decode_uncompressed_plane(ui::surface_ptr& surface, msb_stream& stre
 	{
 		stream.read(line_data, cx);
 
-		auto* const dst_line = std::bit_cast<uint32_t*>(pixels + (y * stride));
+		auto* const dst_line = std::bit_cast<uint32_t*>(pixels + y * stride);
 
 		for (int x = 0; x < cx; x++)
 		{
@@ -221,11 +220,11 @@ using Quantum = int;
 using IndexPacket = int;
 using PixelPacket = uint32_t;
 
-const int MaxTextExtent = 300;
-const int MaxRGB = 255;
+constexpr int MaxTextExtent = 300;
+constexpr int MaxRGB = 255;
 
 
-static void lab_to_rgb(int L, int a, int b, int& R, int& G, int& B)
+static void lab_to_rgb(const int L, const int a, const int b, int& R, int& G, int& B)
 {
 	// Convert between RGB and CIE-Lab color spaces
 	// Uses ITU-R recommendation BT.709 with D65 as reference white.
@@ -253,9 +252,9 @@ static void lab_to_rgb(int L, int a, int b, int& R, int& G, int& B)
 	else
 		Z = (fZ - 16.0 / 116.0) / 7.787;
 
-	X *= (0.950456 * 255);
+	X *= 0.950456 * 255;
 	Y *= 255;
-	Z *= (1.088754 * 255);
+	Z *= 1.088754 * 255;
 
 	const int RR = static_cast<int>(3.240479 * X - 1.537150 * Y - 0.498535 * Z + 0.5);
 	const int GG = static_cast<int>(-0.969256 * X + 1.875992 * Y + 0.041556 * Z + 0.5);
@@ -266,7 +265,7 @@ static void lab_to_rgb(int L, int a, int b, int& R, int& G, int& B)
 	B = BB < 0 ? 0 : BB > 255 ? 255 : BB;
 }
 
-static bool lab_to_rgb(ui::surface_ptr& imageIn)
+static bool lab_to_rgb(const ui::surface_ptr& imageIn)
 {
 	int bb, gg, rr;
 
@@ -276,7 +275,7 @@ static bool lab_to_rgb(ui::surface_ptr& imageIn)
 
 	for (auto y = 0u; y < cy; y++)
 	{
-		auto* const line = pixels + (y * cx);
+		auto* const line = pixels + y * cx;
 
 		for (auto x = 0u; x < cx; x++)
 		{
@@ -287,7 +286,7 @@ static bool lab_to_rgb(ui::surface_ptr& imageIn)
 			const int l = ui::get_b(c);
 
 			lab_to_rgb(l, a, b, rr, gg, bb);
-			const int aa = 255;
+			constexpr int aa = 255;
 			line[x] = ui::rgba(bb, gg, rr, aa);
 		}
 	}
@@ -295,7 +294,7 @@ static bool lab_to_rgb(ui::surface_ptr& imageIn)
 	return true;
 }
 
-static bool cmy_to_rgb(ui::surface_ptr& imageIn)
+static bool cmy_to_rgb(const ui::surface_ptr& imageIn)
 {
 	const auto cy = imageIn->height();
 	const auto cx = imageIn->width();
@@ -303,7 +302,7 @@ static bool cmy_to_rgb(ui::surface_ptr& imageIn)
 
 	for (auto y = 0u; y < cy; y++)
 	{
-		auto* const line = pixels + (y * cx);
+		auto* const line = pixels + y * cx;
 
 		for (auto x = 0u; x < cx; x++)
 		{
@@ -425,7 +424,7 @@ file_scan_result scan_psd(read_stream& s)
 
 				if (len & 0x01) len += 1; // round up to 2 
 
-				if ((stream.pos() + len) >= after_resource_pos)
+				if (stream.pos() + len >= after_resource_pos)
 					break;
 
 				if (type == 0x0404) // IPTC
@@ -469,7 +468,7 @@ ui::surface_ptr load_psd(read_stream& s)
 	const auto signature = stream.read_u32();
 	const auto version = stream.read_u16();
 
-	if ((signature != 0x38425053) || (version != 1))
+	if (signature != 0x38425053 || version != 1)
 	{
 		return {};
 	}
@@ -494,11 +493,11 @@ ui::surface_ptr load_psd(read_stream& s)
 		break;
 	case RGBMode:
 	case LabMode:
-		has_alpha = (channels >= 4);
+		has_alpha = channels >= 4;
 		break;
 
 	case CMYKMode:
-		has_alpha = (channels >= 5);
+		has_alpha = channels >= 5;
 		break;
 
 	case GrayscaleMode:
@@ -537,7 +536,7 @@ ui::surface_ptr load_psd(read_stream& s)
 			for (unsigned i = 0; i < static_cast<unsigned>(std::min(num_colors, 256u)); i++)
 			{
 				palette[i] = ui::rgb(
-					data[i + (2 * num_colors)],
+					data[i + 2 * num_colors],
 					data[i + num_colors],
 					data[i]);
 			}
@@ -550,7 +549,7 @@ ui::surface_ptr load_psd(read_stream& s)
 	stream.pos(after_resource_pos);
 
 	// Layer and mask block.		
-	const auto number_layers = 0;
+	constexpr auto number_layers = 0;
 	colormap_len = stream.read_u32();
 
 	if (colormap_len == 8)
@@ -574,7 +573,7 @@ ui::surface_ptr load_psd(read_stream& s)
 		// Initialize pixels to zero
 		for (auto y = 0; y < cy; y++)
 		{
-			auto* const line = std::bit_cast<uint32_t*>(pixels + (y * stride));
+			auto* const line = std::bit_cast<uint32_t*>(pixels + y * stride);
 
 			for (auto x = 0; x < cx; x++)
 			{
@@ -638,7 +637,7 @@ ui::surface_ptr load_psd(read_stream& s)
 
 		for (auto y = 0; y < cy; y++)
 		{
-			auto* const line = std::bit_cast<uint32_t*>(pixels + (y * stride));
+			auto* const line = std::bit_cast<uint32_t*>(pixels + y * stride);
 
 			for (auto x = 0; x < cx; x++)
 			{
@@ -654,7 +653,7 @@ ui::surface_ptr load_psd(read_stream& s)
 
 		for (auto y = 0; y < cy; y++)
 		{
-			auto* const line = std::bit_cast<uint32_t*>(pixels + (y * stride));
+			auto* const line = std::bit_cast<uint32_t*>(pixels + y * stride);
 
 			for (auto x = 0; x < cx; x++)
 			{

@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -98,12 +97,12 @@ struct view_element_padding
 	int16_t cx = 0;
 	int16_t cy = 0;
 
-	void operator()(int16_t xy)
+	void operator()(const int16_t xy)
 	{
 		cx = cy = xy;
 	}
 
-	void operator()(int16_t x, int16_t y)
+	void operator()(const int16_t x, const int16_t y)
 	{
 		cx = x;
 		cy = y;
@@ -111,12 +110,12 @@ struct view_element_padding
 
 	operator sizei() const
 	{
-		return { cx, cy };
+		return {cx, cy};
 	}
 
 	constexpr sizei operator *(const double d) const noexcept
 	{
-		return { df::round(cx * d), df::round(cy * d) };
+		return {df::round(cx * d), df::round(cy * d)};
 	}
 };
 
@@ -125,8 +124,8 @@ class view_element
 {
 public:
 	recti bounds;
-	view_element_padding padding{ 3, 3 };
-	view_element_padding margin{ 0, 0 };
+	view_element_padding padding{3, 3};
+	view_element_padding margin{0, 0};
 	view_element_style style = view_element_style::visible;
 
 	ui::color _bg_color;
@@ -134,7 +133,7 @@ public:
 
 	view_element() noexcept = default;
 
-	constexpr explicit view_element(view_element_style style_in) noexcept : style(
+	constexpr explicit view_element(const view_element_style style_in) noexcept : style(
 		style_in | view_element_style::visible)
 	{
 	}
@@ -145,7 +144,7 @@ public:
 	view_element& operator=(view_element&&) noexcept = delete;
 	virtual ~view_element() noexcept = default;
 
-	ui::color calc_background_color(ui::draw_context& dc) const
+	ui::color calc_background_color(const ui::draw_context& dc) const
 	{
 		auto c = _bg_color;
 		c.a = _bg_color.a * dc.colors.alpha;
@@ -165,7 +164,7 @@ public:
 
 	sizei porch() const
 	{
-		return { padding.cx + margin.cx, padding.cy + margin.cy };
+		return {padding.cx + margin.cx, padding.cy + margin.cy};
 	}
 
 	virtual bool is_control_area(const pointi loc, const pointi element_offset) const
@@ -204,7 +203,7 @@ public:
 	}
 
 	virtual view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
-		const std::vector<recti>& excluded_bounds);
+	                                                     const std::vector<recti>& excluded_bounds);
 
 	bool is_style_bit_set(const view_element_style mask) const
 	{
@@ -260,7 +259,7 @@ public:
 		return is_style_bit_set(view_element_style::visible);
 	}
 
-	void is_visible(bool visible)
+	void is_visible(const bool visible)
 	{
 		set_style_bit(view_element_style::visible, visible);
 	}
@@ -282,7 +281,8 @@ class view_flow_layout
 public:
 	view_flow_layout() = default;
 
-	sizei calc_layout(const std::vector<view_element_ptr>& elements, ui::measure_context& mc, const int width_limit) const
+	sizei calc_layout(const std::vector<view_element_ptr>& elements, ui::measure_context& mc,
+	                  const int width_limit) const
 	{
 		_extents.resize(elements.size());
 
@@ -291,7 +291,7 @@ public:
 		auto cy = 0;
 		auto max_x = 0;
 		auto max_y = 0;
-		const auto left_x = 0;
+		constexpr auto left_x = 0;
 
 		if (!elements.empty())
 		{
@@ -324,17 +324,18 @@ public:
 				const auto current_width_limit = width_limit;
 
 				const auto element_padding = ev->porch() * mc.scale_factor;
-				auto max_extent_width = current_width_limit - (element_padding.cx * 2) - (previous_no_break
-					? (x - left_x)
+				auto max_extent_width = current_width_limit - element_padding.cx * 2 - (previous_no_break
+					? x - left_x
 					: 0);
 				auto extent = ev->measure(mc, max_extent_width);
 				el.extent = extent;
 				el.line_start = false;
 				el.line_end = false;
 
-				const auto x_right = x + extent.cx + (element_padding.cx * 2);
+				const auto x_right = x + extent.cx + element_padding.cx * 2;
 				const auto should_break = items_on_line > 0 && !previous_no_break &&
-					(previous_line_break || (x_right - left_x) > current_width_limit || ev->is_row_title() || ev->is_new_line_style());
+				(previous_line_break || x_right - left_x > current_width_limit || ev->is_row_title() || ev->
+					is_new_line_style());
 
 				if (should_break)
 				{
@@ -354,7 +355,7 @@ public:
 						previous_item->line_end = true;
 					}
 
-					max_extent_width = current_width_limit - (element_padding.cx * 2) - (x - left_x);
+					max_extent_width = current_width_limit - element_padding.cx * 2 - (x - left_x);
 					extent = ev->measure(mc, max_extent_width);
 					el.extent = extent;
 				}
@@ -369,7 +370,7 @@ public:
 				el.offset.cx = x + element_padding.cx;
 				el.offset.cy = y + element_padding.cy;
 
-				x += extent.cx + (element_padding.cx * 2);
+				x += extent.cx + element_padding.cx * 2;
 				max_x = std::max(max_x, x);
 				max_y = std::max(max_y, y);
 
@@ -387,15 +388,15 @@ public:
 			max_y = std::max(max_y, y + cy);
 		}
 
-		return { max_x, max_y };
+		return {max_x, max_y};
 	}
 
-	sizei measure(const std::vector<view_element_ptr>& elements, ui::measure_context& mc, int width_limit) const
+	sizei measure(const std::vector<view_element_ptr>& elements, ui::measure_context& mc, const int width_limit) const
 	{
 		return calc_layout(elements, mc, width_limit);
 	}
 
-	recti layout(std::vector<view_element_ptr>& elements, ui::measure_context& mc, const recti bounds)
+	recti layout(const std::vector<view_element_ptr>& elements, ui::measure_context& mc, const recti bounds) const
 	{
 		const auto child_count = elements.size();
 		auto line_max_center = 0;
@@ -443,7 +444,7 @@ public:
 				}
 				else if (is_far)
 				{
-					const auto cx_offset = (bounds.right - (_extents[i].bounds.right + padding.cx));
+					const auto cx_offset = bounds.right - (_extents[i].bounds.right + padding.cx);
 					auto line_i = i;
 
 					while (line_i >= 0u && elements[line_i]->is_right_justified())
@@ -465,8 +466,8 @@ public:
 				{
 					auto&& ev = elements[line_i];
 
-					const auto cy_offset = line_max_center - ((_extents[line_i].bounds.top + _extents[line_i].bounds.
-						bottom)) / 2;
+					const auto cy_offset = line_max_center - (_extents[line_i].bounds.top + _extents[line_i].bounds.
+						bottom) / 2;
 
 					_extents[line_i].bounds.top += cy_offset;
 					_extents[line_i].bounds.bottom += cy_offset;
@@ -501,8 +502,8 @@ struct calc_stack_elements_result
 };
 
 static calc_stack_elements_result calc_stack_elements(ui::measure_context& mc, const recti avail_bounds,
-	const std::vector<view_element_ptr>& elements,
-	const bool vertical_center = false, const sizei padding = { 0, 0 })
+                                                      const std::vector<view_element_ptr>& elements,
+                                                      const bool vertical_center = false, const sizei padding = {0, 0})
 {
 	calc_stack_elements_result result;
 
@@ -517,7 +518,7 @@ static calc_stack_elements_result calc_stack_elements(ui::measure_context& mc, c
 	for (const auto& e : elements)
 	{
 		const auto element_padding = e->porch() * mc.scale_factor;
-		const auto cx_element_avail = cx_avail - (element_padding.cx * 2) - (padding.cx * 2);
+		const auto cx_element_avail = cx_avail - element_padding.cx * 2 - padding.cx * 2;
 		const auto extent = e->measure(mc, cx_element_avail);
 
 		recti element_bounds;
@@ -537,7 +538,7 @@ static calc_stack_elements_result calc_stack_elements(ui::measure_context& mc, c
 
 		if (e->is_visible())
 		{
-			y += extent.cy + (element_padding.cy * 2);
+			y += extent.cy + element_padding.cy * 2;
 		}
 
 		if (e->is_style_bit_set(view_element_style::shrink))
@@ -555,7 +556,7 @@ static calc_stack_elements_result calc_stack_elements(ui::measure_context& mc, c
 
 		if (e->is_style_bit_set(view_element_style::center))
 		{
-			const auto cx_extra = ((cx_avail - (element_padding.cx + padding.cx) * 2) - element_bounds.width()) / 2;
+			const auto cx_extra = (cx_avail - (element_padding.cx + padding.cx) * 2 - element_bounds.width()) / 2;
 			element_bounds = element_bounds.offset(cx_extra, 0);
 		}
 
@@ -615,8 +616,8 @@ static calc_stack_elements_result calc_stack_elements(ui::measure_context& mc, c
 }
 
 static int stack_elements(ui::measure_context& mc, ui::control_layouts& positions, const recti avail_bounds,
-	const std::vector<view_element_ptr>& elements, const bool vertical_center = false,
-	const sizei padding = { 0, 0 })
+                          const std::vector<view_element_ptr>& elements, const bool vertical_center = false,
+                          const sizei padding = {0, 0})
 {
 	df::assert_true(elements.size() == std::unordered_set<view_element_ptr>(elements.begin(), elements.end()).size());
 	// items need to be unique
@@ -640,14 +641,13 @@ static int stack_elements(ui::measure_context& mc, ui::control_layouts& position
 
 class view_elements final : public view_element, public std::enable_shared_from_this<view_elements>
 {
-private:
 	std::vector<view_element_ptr> _children;
 	view_flow_layout _flow;
 
 public:
 	view_elements() noexcept = default;
 
-	explicit view_elements(view_element_style style_in) noexcept : view_element(style_in)
+	explicit view_elements(const view_element_style style_in) noexcept : view_element(style_in)
 	{
 	}
 
@@ -765,7 +765,7 @@ public:
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
-		const std::vector<recti>& excluded_bounds) override;
+	                                             const std::vector<recti>& excluded_bounds) override;
 };
 
 struct view_hover_element
@@ -814,8 +814,8 @@ protected:
 	mutable ui::text_layout_ptr _tl;
 
 public:
-	text_element_base(std::u8string_view text,
-		const view_element_style s = view_element_style::none) noexcept : view_element(s), _text(text)
+	text_element_base(const std::u8string_view text,
+	                  const view_element_style s = view_element_style::none) noexcept : view_element(s), _text(text)
 	{
 	}
 
@@ -848,8 +848,8 @@ public:
 		if (_tl)
 		{
 			const auto clr = _foreground_clr
-				? ui::color(_foreground_clr, dc.colors.alpha)
-				: ui::color(dc.colors.foreground, dc.colors.alpha);
+				                 ? ui::color(_foreground_clr, dc.colors.alpha)
+				                 : ui::color(dc.colors.foreground, dc.colors.alpha);
 			dc.draw_text(_tl, logical_bounds, clr, bg);
 		}
 	}
@@ -882,8 +882,8 @@ public:
 class text_element final : public std::enable_shared_from_this<text_element>, public text_element_base
 {
 public:
-	text_element(std::u8string_view text, const ui::style::font_face font, const ui::style::text_style text_style,
-		const view_element_style style_in) noexcept : text_element_base(text, style_in)
+	text_element(const std::u8string_view text, const ui::style::font_face font, const ui::style::text_style text_style,
+	             const view_element_style style_in) noexcept : text_element_base(text, style_in)
 	{
 		_font = font;
 		_text_style = text_style;
@@ -891,22 +891,23 @@ public:
 		update_background_color();
 	}
 
-	text_element(std::u8string_view text, const ui::style::text_style text_style) noexcept : text_element_base(text)
+	text_element(const std::u8string_view text, const ui::style::text_style text_style) noexcept : text_element_base(
+		text)
 	{
 		_text_style = text_style;
 	}
 
-	text_element(std::u8string_view text, const ui::style::font_face font) noexcept : text_element_base(text)
+	text_element(const std::u8string_view text, const ui::style::font_face font) noexcept : text_element_base(text)
 	{
 		_font = font;
 	}
 
-	text_element(std::u8string_view text, const view_element_style style_in) noexcept : text_element_base(
+	text_element(const std::u8string_view text, const view_element_style style_in) noexcept : text_element_base(
 		text, style_in)
 	{
 	}
 
-	text_element(std::u8string_view text) noexcept : text_element_base(text)
+	text_element(const std::u8string_view text) noexcept : text_element_base(text)
 	{
 	}
 };
@@ -915,7 +916,7 @@ public:
 class action_element final : public std::enable_shared_from_this<action_element>, public text_element_base
 {
 public:
-	explicit action_element(std::u8string_view t) : text_element_base(
+	explicit action_element(const std::u8string_view t) : text_element_base(
 		t, view_element_style::center | view_element_style::new_line)
 	{
 		_font = ui::style::font_face::dialog;
@@ -934,26 +935,27 @@ public:
 
 class link_element final : public std::enable_shared_from_this<link_element>, public text_element_base
 {
-private:
 	commands _cmd = commands::none;
 	std::function<void()> _invoke;
 	std::function<void(view_hover_element&)> _tooltip;
 	bool _full_background = false;
 
 public:
-	link_element(std::u8string_view text, commands cmd, const ui::style::font_face font,
-		const ui::style::text_style text_style,
-		const view_element_style style_in = view_element_style::none, bool full_background = false) noexcept : text_element_base(
-			text, style_in), _cmd(cmd), _full_background(full_background)
+	link_element(const std::u8string_view text, const commands cmd, const ui::style::font_face font,
+	             const ui::style::text_style text_style,
+	             const view_element_style style_in = view_element_style::none,
+	             const bool full_background = false) noexcept : text_element_base(
+		                                                            text, style_in), _cmd(cmd),
+	                                                            _full_background(full_background)
 	{
 		_font = font;
 		_text_style = text_style;
 		update_style();
 	}
 
-	link_element(std::u8string_view text, std::function<void()> func, const ui::style::font_face font,
-		const ui::style::text_style text_style,
-		const view_element_style style_in = view_element_style::none) noexcept :
+	link_element(const std::u8string_view text, std::function<void()> func, const ui::style::font_face font,
+	             const ui::style::text_style text_style,
+	             const view_element_style style_in = view_element_style::none) noexcept :
 		text_element_base(text, style_in), _invoke(std::move(func))
 	{
 		_font = font;
@@ -961,9 +963,10 @@ public:
 		update_style();
 	}
 
-	link_element(std::u8string_view text, std::function<void()> func, std::function<void(view_hover_element&)> tooltip,
-		const ui::style::font_face font, const ui::style::text_style text_style,
-		const view_element_style style_in = view_element_style::none) noexcept :
+	link_element(const std::u8string_view text, std::function<void()> func,
+	             std::function<void(view_hover_element&)> tooltip,
+	             const ui::style::font_face font, const ui::style::text_style text_style,
+	             const view_element_style style_in = view_element_style::none) noexcept :
 		text_element_base(text, style_in), _invoke(std::move(func)), _tooltip(std::move(tooltip))
 	{
 		_font = font;
@@ -971,18 +974,18 @@ public:
 		update_style();
 	}
 
-	link_element(std::u8string_view text, commands cmd) noexcept : text_element_base(text), _cmd(cmd)
+	link_element(const std::u8string_view text, const commands cmd) noexcept : text_element_base(text), _cmd(cmd)
 	{
 		update_style();
 	}
 
-	link_element(std::u8string_view text, std::function<void()> func) noexcept : text_element_base(text),
+	link_element(const std::u8string_view text, std::function<void()> func) noexcept : text_element_base(text),
 		_invoke(std::move(func))
 	{
 		update_style();
 	}
 
-	link_element(std::u8string_view text) noexcept : text_element_base(text)
+	link_element(const std::u8string_view text) noexcept : text_element_base(text)
 	{
 		update_style();
 	}
@@ -1013,8 +1016,8 @@ public:
 			if (_tl)
 			{
 				const auto clr = _foreground_clr
-					? ui::color(_foreground_clr, dc.colors.alpha)
-					: ui::color(dc.colors.foreground, dc.colors.alpha);
+					                 ? ui::color(_foreground_clr, dc.colors.alpha)
+					                 : ui::color(dc.colors.foreground, dc.colors.alpha);
 				dc.draw_text(_tl, logical_bounds, clr, {});
 			}
 		}
@@ -1029,56 +1032,55 @@ public:
 	void tooltip(view_hover_element& hover, pointi loc, pointi element_offset) const override;
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
-		const std::vector<recti>& excluded_bounds) override;
+	                                             const std::vector<recti>& excluded_bounds) override;
 };
 
 inline view_element_ptr make_icon_element(const icon_index i, const view_element_style style_in)
 {
-	const wchar_t text[2] = { static_cast<wchar_t>(i), 0 };
+	const wchar_t text[2] = {static_cast<wchar_t>(i), 0};
 	return std::make_shared<text_element>(str::utf16_to_utf8(text), ui::style::font_face::icons,
-		ui::style::text_style::single_line_center, style_in);
+	                                      ui::style::text_style::single_line_center, style_in);
 }
 
 inline view_element_ptr make_icon_element(const icon_index i, const size_t repeat, const view_element_style style_in)
 {
 	const std::wstring text(repeat, static_cast<wchar_t>(i));
 	return std::make_shared<text_element>(str::utf16_to_utf8(text), ui::style::font_face::icons,
-		ui::style::text_style::single_line_center, style_in);
+	                                      ui::style::text_style::single_line_center, style_in);
 }
 
 inline view_element_ptr make_icon_link_element(const icon_index i, commands cmd, const view_element_style style_in)
 {
-	const wchar_t text[2] = { static_cast<wchar_t>(i), 0 };
+	const wchar_t text[2] = {static_cast<wchar_t>(i), 0};
 	return std::make_shared<link_element>(str::utf16_to_utf8(text), cmd, ui::style::font_face::icons,
-		ui::style::text_style::single_line_center, style_in);
+	                                      ui::style::text_style::single_line_center, style_in);
 }
 
 inline view_element_ptr make_icon_link_element(const icon_index i, const size_t repeat,
-	const std::function<void()>& func,
-	const std::function<void(view_hover_element&)>& tooltip)
+                                               const std::function<void()>& func,
+                                               const std::function<void(view_hover_element&)>& tooltip)
 {
 	const std::wstring text(repeat, static_cast<wchar_t>(i));
 	return std::make_shared<link_element>(str::utf16_to_utf8(text), func, tooltip, ui::style::font_face::icons,
-		ui::style::text_style::single_line_center, view_element_style::none);
+	                                      ui::style::text_style::single_line_center, view_element_style::none);
 }
 
 inline void xdraw_icon(ui::draw_context& dc, const icon_index i, const recti bounds, const ui::color c,
-	const ui::color bg)
+                       const ui::color bg)
 {
-	const wchar_t text[2] = { static_cast<wchar_t>(i), 0 };
+	const wchar_t text[2] = {static_cast<wchar_t>(i), 0};
 	dc.draw_text(str::utf16_to_utf8(text), bounds, ui::style::font_face::icons,
-		ui::style::text_style::single_line_center, c, bg);
+	             ui::style::text_style::single_line_center, c, bg);
 }
 
-class surface_element : public view_element
+class surface_element final : public view_element
 {
-private:
 	const ui::const_surface_ptr _surface;
 	mutable ui::texture_ptr _tex;
 	int _max_size = 0;
 
 public:
-	surface_element(ui::const_surface_ptr s, int max_size, view_element_style style_in) noexcept :
+	surface_element(ui::const_surface_ptr s, const int max_size, const view_element_style style_in) noexcept :
 		view_element(style_in), _surface(std::move(s)), _max_size(max_size)
 	{
 	}
@@ -1108,7 +1110,7 @@ public:
 	{
 		if (!is_valid(_surface)) return {};
 		return ui::scale_dimensions(_surface->dimensions(),
-			_max_size == 0 ? width_limit : std::min(_max_size, width_limit), true);
+		                            _max_size == 0 ? width_limit : std::min(_max_size, width_limit), true);
 	}
 
 	void dispatch_event(const view_element_event& event) override
@@ -1142,20 +1144,20 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		return { width_limit, mc.padding2 };
+		return {width_limit, mc.padding2};
 	}
 };
 
 class padding_element final : public std::enable_shared_from_this<padding_element>, public view_element
 {
 public:
-	padding_element(int height = 0) noexcept : view_element(view_element_style::grow), _height(height)
+	padding_element(const int height = 0) noexcept : view_element(view_element_style::grow), _height(height)
 	{
 	}
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		return { width_limit, _height ? _height : mc.padding2 };
+		return {width_limit, _height ? _height : mc.padding2};
 	}
 
 	int _height;

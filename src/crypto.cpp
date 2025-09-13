@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
@@ -31,7 +30,7 @@ std::u8string crypto::hmac_sha1(const std::u8string_view key, const std::u8strin
 
 	if (key.size() > SHA1_BLOCK_SIZE)
 	{
-		sha1.update({ std::bit_cast<const uint8_t*>(key.data()), key.size() });
+		sha1.update({std::bit_cast<const uint8_t*>(key.data()), key.size()});
 		sha1.final(hash);
 	}
 	else
@@ -48,12 +47,12 @@ std::u8string crypto::hmac_sha1(const std::u8string_view key, const std::u8strin
 		opad[i] = 0x5c ^ hash[i];
 	}
 
-	sha1.update({ ipad, SHA1_BLOCK_SIZE });
-	sha1.update({ std::bit_cast<const uint8_t*>(data.data()), data.size() });
+	sha1.update({ipad, SHA1_BLOCK_SIZE});
+	sha1.update({std::bit_cast<const uint8_t*>(data.data()), data.size()});
 	sha1.final(hash);
 
-	sha1.update({ opad, SHA1_BLOCK_SIZE });
-	sha1.update({ hash, SHA1_DIGEST_LENGTH });
+	sha1.update({opad, SHA1_BLOCK_SIZE});
+	sha1.update({hash, SHA1_DIGEST_LENGTH});
 	sha1.final(hash);
 
 	return base64_encode(hash, SHA1_DIGEST_LENGTH);
@@ -65,10 +64,10 @@ std::u8string crypto::hmac_sha1(const std::u8string_view key, const std::u8strin
 ///////////////////////////////////////////////////////////////////////////////////
 
 
-std::vector<uint8_t> crypto::encrypt(df::cspan input, const std::u8string_view password)
+std::vector<uint8_t> crypto::encrypt(const df::cspan input, const std::u8string_view password)
 {
 	sha1 hash;
-	hash.update({ std::bit_cast<const uint8_t*>(password.data()), password.size() });
+	hash.update({std::bit_cast<const uint8_t*>(password.data()), password.size()});
 
 	uint8_t digest[sha1::DIGEST_SIZE];
 	hash.final(digest);
@@ -87,10 +86,10 @@ std::vector<uint8_t> crypto::encrypt(const std::vector<uint8_t>& input, const st
 	return result;
 }
 
-std::vector<uint8_t> crypto::decrypt(df::cspan input, const std::u8string_view password)
+std::vector<uint8_t> crypto::decrypt(const df::cspan input, const std::u8string_view password)
 {
 	sha1 hash;
-	hash.update({ std::bit_cast<const uint8_t*>(password.data()), password.size() });
+	hash.update({std::bit_cast<const uint8_t*>(password.data()), password.size()});
 
 	uint8_t digest[sha1::DIGEST_SIZE];
 	hash.final(digest);
@@ -103,7 +102,6 @@ std::vector<uint8_t> crypto::decrypt(df::cspan input, const std::u8string_view p
 }
 
 
-
 ///////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////
@@ -111,13 +109,12 @@ std::vector<uint8_t> crypto::decrypt(df::cspan input, const std::u8string_view p
 // CRC-32
 
 
-
 uint32_t crypto::crc32c(const void* data, const size_t len)
 {
 	return ~crc32c(CRCINIT, data, len);
 }
 
-uint32_t crypto::crc32c(uint32_t crc, const void* data, size_t len)
+uint32_t crypto::crc32c(const uint32_t crc, const void* data, const size_t len)
 {
 	if (platform::crc32_supported)
 	{

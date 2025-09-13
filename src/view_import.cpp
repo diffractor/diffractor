@@ -1,12 +1,10 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
-
 
 #include "pch.h"
 #include "model.h"
@@ -26,8 +24,8 @@ static import_options make_import_options()
 	result.source_filter = setting.import.source_filter;
 	result.dest_folder = df::folder_path(setting.import.destination_path);
 	result.dest_structure = setting.import.dest_folder_structure.empty()
-		? defaut_custom_folder_structure
-		: setting.import.dest_folder_structure;
+		                        ? defaut_custom_folder_structure
+		                        : setting.import.dest_folder_structure;
 	result.is_move = setting.import.is_move;
 	result.overwrite_if_newer = setting.import.overwrite_if_newer;
 	result.set_created_date = setting.import.set_created_date;
@@ -325,19 +323,18 @@ view_controls_host_ptr import_view::controls(const ui::control_frame_ptr& owner)
 	platform::thread_event event_init(true, false);
 
 
+	_state.queue_async(async_queue::work, [&s = _state, &sources = _sources, &event_init]
+	{
+		auto sources_temp = calc_import_sources(s);
 
-	_state.queue_async(async_queue::work, [&s = _state, &sources = _sources, &event_init]()
+		s.queue_ui([&sources, &event_init, sources_temp]
 		{
-			auto sources_temp = calc_import_sources(s);
-
-			s.queue_ui([&sources, &event_init, sources_temp]()
-				{
-					sources = sources_temp;
-					event_init.set();
-				});
+			sources = sources_temp;
+			event_init.set();
 		});
+	});
 
-	platform::wait_for({ event_init }, 100000, false);
+	platform::wait_for({event_init}, 100000, false);
 
 	//auto import_settings = std::make_shared<ui::group_control>();
 	auto is_first_source = true;
@@ -383,20 +380,23 @@ view_controls_host_ptr import_view::controls(const ui::control_frame_ptr& owner)
 	controls.emplace_back(std::make_shared<text_element>(tt.import_dest_folder));
 	controls.emplace_back(std::make_shared<ui::folder_picker_control>(frame, setting.import.destination_path));
 	controls.emplace_back(std::make_shared<text_element>(tt.import_dest_folder_structure));
-	controls.emplace_back(std::make_shared<ui::edit_picker_control>(frame, setting.import.dest_folder_structure, folder_structure_completes));
-	controls.emplace_back(set_margin(std::make_shared<link_element>(tt.more_template_information, []() { platform::open(doc_template_url); })));
+	controls.emplace_back(
+		std::make_shared<ui::edit_picker_control>(frame, setting.import.dest_folder_structure,
+		                                          folder_structure_completes));
+	controls.emplace_back(set_margin(
+		std::make_shared<link_element>(tt.more_template_information, [] { platform::open(doc_template_url); })));
 	controls.emplace_back(std::make_shared<divider_element>());
 	controls.emplace_back(
 		std::make_shared<ui::check_control>(frame, tt.import_ignore_previous, setting.import.ignore_previous));
 	controls.emplace_back(
 		std::make_shared<ui::check_control>(frame, tt.import_overwrite_if_newer,
-			setting.import.overwrite_if_newer));
+		                                    setting.import.overwrite_if_newer));
 	controls.emplace_back(std::make_shared<ui::check_control>(frame, tt.move_items, setting.import.is_move));
 	// TODO controls.emplace_back(std::make_shared<ui::check_control>(frame, tt.import_rename_different_attributes, setting.import.rename_different_attributes));
 	controls.emplace_back(
 		std::make_shared<ui::check_control>(frame, tt.import_set_created_date, setting.import.set_created_date));
 
-	for (auto& c : controls)
+	for (const auto& c : controls)
 	{
 		c->margin.cx = 8;
 		c->margin.cy = 4;
@@ -459,11 +459,12 @@ void import_view::update_rows(const import_analysis_result& analysis_result)
 	}
 
 	_rows = std::move(rows);
-	_status = str::format(u8"{} {}   {} {}   {} {}"sv, imports, tt.import, exists, tt.exists, already_imported, tt.previously_imported);
+	_status = str::format(u8"{} {}   {} {}   {} {}"sv, imports, tt.import, exists, tt.exists, already_imported,
+	                      tt.previously_imported);
 	_state.invalidate_view(view_invalid::view_layout | view_invalid::controller | view_invalid::status);
 }
 
-static auto calc_import_root(const std::vector<import_source>& sources, bool select_other_folder)
+static auto calc_import_root(const std::vector<import_source>& sources, const bool select_other_folder)
 {
 	df::index_roots result;
 
@@ -503,7 +504,7 @@ void import_view::run()
 	detach_file_handles detach(_state);
 
 	const auto title = tt.command_import;
-	const auto icon = icon_index::import;
+	constexpr auto icon = icon_index::import;
 	auto dlg = make_dlg(_host->owner());
 
 	record_feature_use(features::import);
@@ -518,44 +519,45 @@ void import_view::run()
 	auto token = df::cancel_token(ui::cancel_gen);
 	const auto results = std::make_shared<command_status>(_state._async, dlg, icon, title, 0);
 
-	_state._async.queue_database([&s = _state, results, view = shared_from_this(), import_root, options, token](database& db)
+	_state._async.queue_database(
+		[&s = _state, results, view = shared_from_this(), import_root, options, token](const database& db)
 		{
 			const auto previous_imported = setting.import.ignore_previous ? db.load_item_imports() : item_import_set{};
 
-			s.queue_async(async_queue::work, [&s, results, view, previous_imported, import_root, options, token]()
+			s.queue_async(async_queue::work, [&s, results, view, previous_imported, import_root, options, token]
+			{
+				result_scope rr(results);
+				const auto items = s.item_index.scan_items(import_root, true, true, token);
+				const auto analysis_result = import_analysis(items, options, previous_imported, token);
+
+				if (!token.is_cancelled())
 				{
-					result_scope rr(results);
-					const auto items = s.item_index.scan_items(import_root, true, true, token);
-					const auto analysis_result = import_analysis(items, options, previous_imported, token);
-
-					if (!token.is_cancelled())
+					s.queue_ui([analysis_result, view]
 					{
-						s.queue_ui([analysis_result, view]()
-							{
-								view->update_rows(analysis_result);
-							});
-					}
+						view->update_rows(analysis_result);
+					});
+				}
 
-					results->total(count_imports(analysis_result));
+				results->total(count_imports(analysis_result));
 
-					const auto copy_result = import_copy(s.item_index, results, analysis_result, options, token);
+				const auto copy_result = import_copy(s.item_index, results, analysis_result, options, token);
 
-					s._async.queue_database([&s, copy_result](database& db)
-						{
-							db.writes_item_imports(copy_result.imports);
-						});
-
-					if (!copy_result.folder.is_empty())
-					{
-						s.queue_ui([&s, view, folder = copy_result.folder]()
-							{
-								s.open(view->_host, df::search_t().add_selector(folder), {});
-								s.invalidate_view(view_invalid::index);
-							});
-					}
-
-					rr.complete();
+				s._async.queue_database([&s, copy_result](const database& db)
+				{
+					db.writes_item_imports(copy_result.imports);
 				});
+
+				if (!copy_result.folder.is_empty())
+				{
+					s.queue_ui([&s, view, folder = copy_result.folder]
+					{
+						s.open(view->_host, df::search_t().add_selector(folder), {});
+						s.invalidate_view(view_invalid::index);
+					});
+				}
+
+				rr.complete();
+			});
 		});
 
 	results->wait_for_complete();
@@ -566,94 +568,94 @@ void import_view::run()
 void import_view::analyze()
 {
 	const auto title = tt.command_import;
-	const auto icon = icon_index::import;
+	constexpr auto icon = icon_index::import;
 	platform::thread_event event_analyze(true, false);
 	const auto import_root = calc_import_root(_sources, _select_other_folder);
 	auto token = df::cancel_token(ui::cancel_gen);
 
-	auto status_dlg = make_dlg(_host->owner());
+	const auto status_dlg = make_dlg(_host->owner());
 	status_dlg->show_cancel_status(icon, tt.analyzing, [] { ++ui::cancel_gen; });
 
 	const auto options = make_import_options();
 
-	_state._async.queue_database([&s = _state, &event_analyze, import_root, view = shared_from_this(), options, token](database& db)
+	_state._async.queue_database(
+		[&s = _state, &event_analyze, import_root, view = shared_from_this(), options, token](const database& db)
 		{
 			const auto previous_imported = setting.import.ignore_previous ? db.load_item_imports() : item_import_set{};
 
 			s.queue_async(async_queue::work,
-				[&s, &event_analyze, import_root, previous_imported, view, options, token]()
-				{
-					const auto items = s.item_index.scan_items(import_root, true, true, token);
-					const auto analysis_result = import_analysis(items, options, previous_imported, token);
+			              [&s, &event_analyze, import_root, previous_imported, view, options, token]
+			              {
+				              const auto items = s.item_index.scan_items(import_root, true, true, token);
+				              const auto analysis_result = import_analysis(items, options, previous_imported, token);
 
-					if (!token.is_cancelled())
-					{
-						s.queue_ui([analysis_result, view]()
-							{
-								view->update_rows(analysis_result);
-							});
+				              if (!token.is_cancelled())
+				              {
+					              s.queue_ui([analysis_result, view]
+					              {
+						              view->update_rows(analysis_result);
+					              });
 
-						event_analyze.set();
-					}
+					              event_analyze.set();
+				              }
 
 
+				              /*analysis_table->clear();
+          
+				              if (!token.is_cancelled())
+				              {
+					              const auto clr1 = ui::average(ui::style::color::dialog_text,
+						              ui::style::color::view_selected_background);
+					              const auto clr2 = ui::average(ui::style::color::dialog_text,
+						              ui::style::color::important_background);
+					              const auto clr3 = ui::average(ui::style::color::dialog_text,
+						              ui::style::color::duplicate_background);
+          
+					              for (const auto& i : analysis_result)
+					              {
+						              auto element1 = std::make_shared<text_element>(
+							              str::to_string(count_imports(i.second)),
+							              ui::style::text_style::single_line_far);
+						              auto element2 = std::make_shared<text_element>(
+							              str::to_string(count_overwrites(i.second)),
+							              ui::style::text_style::single_line_far);
+						              auto element3 = std::make_shared<text_element>(
+							              str::to_string(count_ignores(i.second)),
+							              ui::style::text_style::single_line_far);
+          
+						              element1->foreground_color(clr1);
+						              element2->foreground_color(clr2);
+						              element3->foreground_color(clr3);
+          
+						              analysis_table->add(u8"...\\"s + i.second.front().sub_folder, element1,
+							              element2, element3);
+					              }
+          
+					              const auto element0 = std::make_shared<text_element>(tt.folder_title);
+					              const auto element1 = std::make_shared<text_element>(
+						              setting.import.is_move ? tt.menu_move : tt.menu_copy);
+					              const auto element2 = std::make_shared<text_element>(tt.import_overwrite);
+					              const auto element3 = std::make_shared<text_element>(tt.import_ignore);
+          
+					              element1->foreground_color(clr1);
+					              element2->foreground_color(clr2);
+					              element3->foreground_color(clr3);
+          
+					              element0->padding(8);
+					              element1->padding(8);
+					              element2->padding(8);
+					              element3->padding(8);
+          
+					              analysis_table->add(element0, element1, element2, element3);
+          
+					              analysis_table->reverse();
+				              }*/
 
-					/*analysis_table->clear();
-
-					if (!token.is_cancelled())
-					{
-						const auto clr1 = ui::average(ui::style::color::dialog_text,
-							ui::style::color::view_selected_background);
-						const auto clr2 = ui::average(ui::style::color::dialog_text,
-							ui::style::color::important_background);
-						const auto clr3 = ui::average(ui::style::color::dialog_text,
-							ui::style::color::duplicate_background);
-
-						for (const auto& i : analysis_result)
-						{
-							auto element1 = std::make_shared<text_element>(
-								str::to_string(count_imports(i.second)),
-								ui::style::text_style::single_line_far);
-							auto element2 = std::make_shared<text_element>(
-								str::to_string(count_overwrites(i.second)),
-								ui::style::text_style::single_line_far);
-							auto element3 = std::make_shared<text_element>(
-								str::to_string(count_ignores(i.second)),
-								ui::style::text_style::single_line_far);
-
-							element1->foreground_color(clr1);
-							element2->foreground_color(clr2);
-							element3->foreground_color(clr3);
-
-							analysis_table->add(u8"...\\"s + i.second.front().sub_folder, element1,
-								element2, element3);
-						}
-
-						const auto element0 = std::make_shared<text_element>(tt.folder_title);
-						const auto element1 = std::make_shared<text_element>(
-							setting.import.is_move ? tt.menu_move : tt.menu_copy);
-						const auto element2 = std::make_shared<text_element>(tt.import_overwrite);
-						const auto element3 = std::make_shared<text_element>(tt.import_ignore);
-
-						element1->foreground_color(clr1);
-						element2->foreground_color(clr2);
-						element3->foreground_color(clr3);
-
-						element0->padding(8);
-						element1->padding(8);
-						element2->padding(8);
-						element3->padding(8);
-
-						analysis_table->add(element0, element1, element2, element3);
-
-						analysis_table->reverse();
-					}*/
-
-					event_analyze.set();
-				});
+				              event_analyze.set();
+			              });
 		});
 
-	platform::wait_for({ event_analyze }, 100000, false);
+	platform::wait_for({event_analyze}, 100000, false);
 	status_dlg->_frame->destroy();
 	//dlg->layout();
 }

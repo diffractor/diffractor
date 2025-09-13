@@ -1,13 +1,10 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
-//
-// Based on code from LibRAW
 
 #include "pch.h"
 #include "files.h"
@@ -381,7 +378,7 @@ static const id2hr_t* lookup_id2hr(const uint64_t id, const id2hr_t* table, cons
 	return nullptr;
 }
 
-std::u8string_view ColorSpace_idx2str(size_t ColorSpace)
+std::u8string_view ColorSpace_idx2str(const size_t ColorSpace)
 {
 	for (const auto& i : ColorSpaceToStr)
 		if (i.NumId == ColorSpace)
@@ -389,7 +386,7 @@ std::u8string_view ColorSpace_idx2str(size_t ColorSpace)
 	return {};
 }
 
-std::u8string_view CameraMaker_idx2str(size_t maker)
+std::u8string_view CameraMaker_idx2str(const size_t maker)
 {
 	for (const auto& i : CorpToStr)
 		if (i.NumId == static_cast<int>(maker))
@@ -397,7 +394,7 @@ std::u8string_view CameraMaker_idx2str(size_t maker)
 	return {};
 }
 
-std::u8string_view WB_idx2str(size_t WBi)
+std::u8string_view WB_idx2str(const size_t WBi)
 {
 	for (const auto& i : WBToStr)
 		if (i.NumId == static_cast<int>(WBi))
@@ -405,7 +402,7 @@ std::u8string_view WB_idx2str(size_t WBi)
 	return {};
 }
 
-std::u8string_view WB_idx2hrstr(size_t WBi)
+std::u8string_view WB_idx2hrstr(const size_t WBi)
 {
 	for (const auto& i : WBToStr)
 		if (i.NumId == static_cast<int>(WBi))
@@ -413,7 +410,7 @@ std::u8string_view WB_idx2hrstr(size_t WBi)
 	return {};
 }
 
-std::u8string_view Fujifilm_WhiteBalance_idx2str(size_t WB)
+std::u8string_view Fujifilm_WhiteBalance_idx2str(const size_t WB)
 {
 	for (const auto& i : Fujifilm_WhiteBalance2Str)
 		if (i.NumId == WB)
@@ -421,7 +418,7 @@ std::u8string_view Fujifilm_WhiteBalance_idx2str(size_t WB)
 	return {};
 }
 
-std::u8string_view Fujifilm_FilmMode_idx2str(size_t FilmMode)
+std::u8string_view Fujifilm_FilmMode_idx2str(const size_t FilmMode)
 {
 	for (const auto& i : Fujifilm_FilmModeToStr)
 		if (i.NumId == FilmMode)
@@ -429,7 +426,7 @@ std::u8string_view Fujifilm_FilmMode_idx2str(size_t FilmMode)
 	return {};
 }
 
-std::u8string_view Fujifilm_DynamicRangeSetting_idx2str(size_t DynamicRangeSetting)
+std::u8string_view Fujifilm_DynamicRangeSetting_idx2str(const size_t DynamicRangeSetting)
 {
 	for (const auto& i : Fujifilm_DynamicRangeSettingToStr)
 		if (i.NumId == DynamicRangeSetting)
@@ -437,7 +434,7 @@ std::u8string_view Fujifilm_DynamicRangeSetting_idx2str(size_t DynamicRangeSetti
 	return {};
 }
 
-static ui::orientation transate_libraw_orientation(int flip)
+static ui::orientation transate_libraw_orientation(const int flip)
 {
 	// 3 if requires 180-deg rotation; 5 if 90 deg counterclockwise, 6 if 90 deg clockwise
 	auto result = flip;
@@ -460,7 +457,7 @@ static void add_metadata(metadata_kv_list& kv, const std::u8string_view name, co
 }
 
 static void add_metadata(metadata_kv_list& kv, const std::u8string_view name, const std::u8string_view val1,
-	const std::u8string_view val2)
+                         const std::u8string_view val2)
 {
 	std::u8string val;
 	str::join(val, val1, val2);
@@ -542,13 +539,13 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 		add_metadata(kv, u8"OriginalRawFileName"sv, C.OriginalRawFileName);
 
 	char sz[64];
-	ctime_s(sz, 64, &(P2.timestamp));
+	ctime_s(sz, 64, &P2.timestamp);
 
 	add_metadata(kv, u8"Timestamp"sv, sz);
 	add_metadata(kv, u8"Camera"sv,
-		str::format(u8"{} {} ID: 0x{:x}"sv, str::utf8_cast(P1.make), str::utf8_cast(P1.model), mnLens.CamID));
+	             str::format(u8"{} {} ID: 0x{:x}"sv, str::utf8_cast(P1.make), str::utf8_cast(P1.model), mnLens.CamID));
 	add_metadata(kv, u8"Normalized Make/Model"sv,
-		str::format(u8"{}/{}"sv, str::utf8_cast(P1.normalized_make), str::utf8_cast(P1.normalized_model)));
+	             str::format(u8"{}/{}"sv, str::utf8_cast(P1.normalized_make), str::utf8_cast(P1.normalized_model)));
 	add_metadata(kv, u8"CamMaker ID"sv, str::to_string(P1.maker_index));
 
 	if (!CamMakerName.empty())
@@ -575,7 +572,7 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 	{
 		add_metadata(kv, u8"Body#"sv, str::trim(ShootingInfo.BodySerial));
 	}
-	else if (C.model2[0] && (!_strnicmp(P1.normalized_make, "Kodak", 5)))
+	else if (C.model2[0] && !_strnicmp(P1.normalized_make, "Kodak", 5))
 	{
 		add_metadata(kv, u8"Body#"sv, str::trim(C.model2));
 	}
@@ -664,12 +661,13 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 			add_metadata(kv, u8"Nikon crop"sv, str::to_string(Nikon.HighSpeedCropFormat));
 		}
 
-		add_metadata(kv, u8"Sensor used area"sv, str::format(u8"{} x {}; crop from: {} x {} at top left pixel: ({}, {})"sv,
-			Nikon.SensorWidth, Nikon.SensorHeight,
-			Nikon.SensorHighSpeedCrop.cwidth,
-			Nikon.SensorHighSpeedCrop.cheight,
-			Nikon.SensorHighSpeedCrop.cleft,
-			Nikon.SensorHighSpeedCrop.ctop));
+		add_metadata(kv, u8"Sensor used area"sv, str::format(
+			             u8"{} x {}; crop from: {} x {} at top left pixel: ({}, {})"sv,
+			             Nikon.SensorWidth, Nikon.SensorHeight,
+			             Nikon.SensorHighSpeedCrop.cwidth,
+			             Nikon.SensorHighSpeedCrop.cheight,
+			             Nikon.SensorHighSpeedCrop.cleft,
+			             Nikon.SensorHighSpeedCrop.ctop));
 	}
 
 	const auto* const MountName = lookup_id2hr(mnLens.CameraMount, MountNames, LIBRAW_MOUNT_TheLastOne);
@@ -746,7 +744,7 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 
 	if (exifLens.makernotes.FocalLengthIn35mmFormat > 1.0f)
 		add_metadata(kv, u8"FocalLengthIn35mmFormat"sv,
-			str::format(u8"{:0.1} mm"sv, exifLens.makernotes.FocalLengthIn35mmFormat));
+		             str::format(u8"{:0.1} mm"sv, exifLens.makernotes.FocalLengthIn35mmFormat));
 
 	if (exifLens.nikon.EffectiveMaxAp > 0.1f)
 		add_metadata(kv, u8"EffectiveMaxAp"sv, str::format(u8"f/{:0.1}"sv, exifLens.nikon.EffectiveMaxAp));
@@ -832,31 +830,34 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 
 	if (Fuji.WB_Preset != 0xffff)
 		add_metadata(kv, u8"Fuji WB preset"sv, str::format(u8"0x{:03x}"sv, Fuji.WB_Preset),
-			Fujifilm_WhiteBalance_idx2str(Fuji.WB_Preset));
+		             Fujifilm_WhiteBalance_idx2str(Fuji.WB_Preset));
 	if (Fuji.ExpoMidPointShift > -999.f) // tag 0x9650
 		add_metadata(kv, u8"Fuji Exposure shift"sv, str::format(u8"{:4.3}"sv, Fuji.ExpoMidPointShift));
 	if (Fuji.DynamicRange != 0xffff)
 		add_metadata(kv, u8"Fuji Dynamic Range (0x1400)"sv, str::format(u8"{}"sv, Fuji.DynamicRange),
-			Fuji.DynamicRange == 1 ? u8"Standard"sv : u8"Wide"sv);
+		             Fuji.DynamicRange == 1 ? u8"Standard"sv : u8"Wide"sv);
 	if (Fuji.FilmMode != 0xffff)
 		add_metadata(kv, u8"Fuji Film Mode (0x1401)"sv, str::format(u8"0x{:03x}"sv, Fuji.FilmMode),
-			Fujifilm_FilmMode_idx2str(Fuji.FilmMode));
+		             Fujifilm_FilmMode_idx2str(Fuji.FilmMode));
 	if (Fuji.DynamicRangeSetting != 0xffff)
-		add_metadata(kv, u8"Fuji Dynamic Range Setting (0x1402)"sv, str::format(u8"0x{:04x}"sv, Fuji.DynamicRangeSetting),
-			Fujifilm_DynamicRangeSetting_idx2str(Fuji.DynamicRangeSetting));
+		add_metadata(kv, u8"Fuji Dynamic Range Setting (0x1402)"sv,
+		             str::format(u8"0x{:04x}"sv, Fuji.DynamicRangeSetting),
+		             Fujifilm_DynamicRangeSetting_idx2str(Fuji.DynamicRangeSetting));
 	if (Fuji.DevelopmentDynamicRange != 0xffff)
 		add_metadata(kv, u8"Fuji Development Dynamic Range (0x1403)"sv, str::to_string(Fuji.DevelopmentDynamicRange));
 	if (Fuji.AutoDynamicRange != 0xffff)
 		add_metadata(kv, u8"Fuji Auto Dynamic Range (0x140b)"sv, str::to_string(Fuji.AutoDynamicRange));
 	if (Fuji.DRangePriority != 0xffff)
 		add_metadata(kv, u8"Fuji Dynamic Range priority (0x1443)"sv, str::format(u8"{}"sv, Fuji.DRangePriority),
-			Fuji.DRangePriority ? u8"Fixed"sv : u8"Auto"sv);
+		             Fuji.DRangePriority ? u8"Fixed"sv : u8"Auto"sv);
 	if (Fuji.DRangePriorityAuto)
-		add_metadata(kv, u8"Fuji Dynamic Range priority Auto (0x1444)"sv, str::format(u8"{}"sv, Fuji.DRangePriorityAuto),
-			Fuji.DRangePriorityAuto == 1 ? u8"Weak"sv : u8"Strong"sv);
+		add_metadata(kv, u8"Fuji Dynamic Range priority Auto (0x1444)"sv,
+		             str::format(u8"{}"sv, Fuji.DRangePriorityAuto),
+		             Fuji.DRangePriorityAuto == 1 ? u8"Weak"sv : u8"Strong"sv);
 	if (Fuji.DRangePriorityFixed)
-		add_metadata(kv, u8"Fuji Dynamic Range priority Fixed (0x1445)"sv, str::format(u8"{}"sv, Fuji.DRangePriorityFixed),
-			Fuji.DRangePriorityFixed == 1 ? u8"Weak"sv : u8"Strong"sv);
+		add_metadata(kv, u8"Fuji Dynamic Range priority Fixed (0x1445)"sv,
+		             str::format(u8"{}"sv, Fuji.DRangePriorityFixed),
+		             Fuji.DRangePriorityFixed == 1 ? u8"Weak"sv : u8"Strong"sv);
 
 	if (S.pixel_aspect != 1)
 		add_metadata(kv, u8"Pixel Aspect Ratio"sv, str::format(u8"{:0.6}"sv, S.pixel_aspect));
@@ -919,10 +920,10 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 	if (Canon.ChannelBlackLevel[0])
 	{
 		add_metadata(kv, u8"Canon makernotes, ChannelBlackLevel"sv, str::format(u8"{} {} {} {}"sv,
-			Canon.ChannelBlackLevel[0],
-			Canon.ChannelBlackLevel[1],
-			Canon.ChannelBlackLevel[2],
-			Canon.ChannelBlackLevel[3]));
+			             Canon.ChannelBlackLevel[0],
+			             Canon.ChannelBlackLevel[1],
+			             Canon.ChannelBlackLevel[2],
+			             Canon.ChannelBlackLevel[3]));
 	}
 
 	if (C.black)
@@ -1093,30 +1094,30 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 	if (Sony.PixelShiftGroupID)
 	{
 		add_metadata(kv, u8"Sony PixelShiftGroupPrefix"sv,
-			str::format(u8"0x{:x} PixelShiftGroupID {}"sv, Sony.PixelShiftGroupPrefix,
-				Sony.PixelShiftGroupID));
+		             str::format(u8"0x{:x} PixelShiftGroupID {}"sv, Sony.PixelShiftGroupPrefix,
+		                         Sony.PixelShiftGroupID));
 
 		if (Sony.numInPixelShiftGroup)
 		{
 			add_metadata(kv, u8"shot#"sv, str::format(u8"{} (starts at 1) of total {}"sv, Sony.numInPixelShiftGroup,
-				Sony.nShotsInPixelShiftGroup));
+			                                          Sony.nShotsInPixelShiftGroup));
 		}
 		else
 		{
 			add_metadata(kv, u8"shots in PixelShiftGroup"sv,
-				str::format(u8"{}, already ARQ"sv, Sony.nShotsInPixelShiftGroup));
+			             str::format(u8"{}, already ARQ"sv, Sony.nShotsInPixelShiftGroup));
 		}
 	}
 
 	if (Sony.Sony0x9400_version)
 	{
 		add_metadata(kv, u8"SONY Sequence data"sv, str::format(u8"tag 0x9400 version '{:x}' ReleaseMode2: {}"sv,
-			Sony.Sony0x9400_version, Sony.Sony0x9400_ReleaseMode2));
+		                                                       Sony.Sony0x9400_version, Sony.Sony0x9400_ReleaseMode2));
 		add_metadata(kv, u8"SequenceImageNumber"sv,
-			str::format(u8"{} (starts at zero)"sv, Sony.Sony0x9400_SequenceImageNumber));
+		             str::format(u8"{} (starts at zero)"sv, Sony.Sony0x9400_SequenceImageNumber));
 		add_metadata(kv, u8"SequenceLength1"sv, str::format(u8"{} shot(s)"sv, Sony.Sony0x9400_SequenceLength1));
 		add_metadata(kv, u8"SequenceFileNumber"sv,
-			str::format(u8"{} (starts at zero, exiftool starts at 1)"sv, Sony.Sony0x9400_SequenceFileNumber));
+		             str::format(u8"{} (starts at zero, exiftool starts at 1)"sv, Sony.Sony0x9400_SequenceFileNumber));
 		add_metadata(kv, u8"SequenceLength2"sv, str::format(u8"{} file(s)"sv, Sony.Sony0x9400_SequenceLength2));
 	}
 
@@ -1124,7 +1125,7 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 }
 
 static ui::orientation calc_orientation(sizei image_extent, const ui::orientation& image_orientation,
-	const libraw_data_t& image_data)
+                                        const libraw_data_t& image_data)
 {
 	// try detect of orientation is invalid
 	auto full_image_extent = sizei(image_data.sizes.width, image_data.sizes.height);
@@ -1143,8 +1144,8 @@ static ui::orientation calc_orientation(sizei image_extent, const ui::orientatio
 			std::swap(image_extent.cx, image_extent.cy);
 		}
 
-		const auto dx_full = full_image_extent.is_empty() ? 0 : ((full_image_extent.cx * 10) / full_image_extent.cy);
-		const auto dx_thumb = image_extent.is_empty() ? 0 : ((image_extent.cx * 10) / image_extent.cy);
+		const auto dx_full = full_image_extent.is_empty() ? 0 : full_image_extent.cx * 10 / full_image_extent.cy;
+		const auto dx_thumb = image_extent.is_empty() ? 0 : image_extent.cx * 10 / image_extent.cy;
 
 		if (dx_full != dx_thumb)
 		{
@@ -1156,7 +1157,7 @@ static ui::orientation calc_orientation(sizei image_extent, const ui::orientatio
 }
 
 
-static ui::surface_ptr thumb_to_surface(const libraw_thumbnail_t& thumbnail, ui::orientation orientation)
+static ui::surface_ptr thumb_to_surface(const libraw_thumbnail_t& thumbnail, const ui::orientation orientation)
 {
 	ui::surface_ptr result;
 
@@ -1172,7 +1173,7 @@ static ui::surface_ptr thumb_to_surface(const libraw_thumbnail_t& thumbnail, ui:
 			{
 				for (auto y = 0; y < thumbnail.theight; ++y)
 				{
-					const auto* src = thumbnail.thumb + (y * thumbnail.twidth * thumbnail.tcolors);
+					const auto* src = thumbnail.thumb + y * thumbnail.twidth * thumbnail.tcolors;
 					auto* dst = result->pixels_line(y);
 
 					for (auto y = 0; y < thumbnail.twidth; ++y)
@@ -1223,7 +1224,7 @@ static raw_processor create_processor()
 }
 
 file_scan_result files::scan_raw(const df::file_path path, const std::u8string_view xmp_sidecar, const bool load_thumb,
-	const sizei max)
+                                 const sizei max)
 {
 	file_scan_result result;
 	const auto w = platform::to_file_system_path(path);
@@ -1251,7 +1252,7 @@ file_scan_result files::scan_raw(const df::file_path path, const std::u8string_v
 					const auto* const data = std::bit_cast<const uint8_t*>(t.thumb);
 					const auto size = t.tlength;
 
-					result.thumbnail_surface = image_to_surface(df::cspan{ data, size }, max);
+					result.thumbnail_surface = image_to_surface(df::cspan{data, size}, max);
 				}
 				else if (LIBRAW_THUMBNAIL_BITMAP == t.tformat && t.tlength > 0)
 				{
@@ -1261,8 +1262,8 @@ file_scan_result files::scan_raw(const df::file_path path, const std::u8string_v
 				if (result.thumbnail_surface)
 				{
 					result.thumbnail_surface->orientation(calc_orientation(result.thumbnail_surface->dimensions(),
-						result.thumbnail_surface->orientation(),
-						rp.processor->imgdata));
+					                                                       result.thumbnail_surface->orientation(),
+					                                                       rp.processor->imgdata));
 				}
 			}
 		}
@@ -1299,7 +1300,8 @@ file_load_result load_raw(const df::file_path path, const bool can_load_preview)
 			{
 				if (LIBRAW_THUMBNAIL_JPEG == thumbnail.tformat)
 				{
-					auto i = load_image_file(df::cspan(std::bit_cast<const uint8_t*>(thumbnail.thumb), thumbnail.tlength));
+					auto i = load_image_file(df::cspan(std::bit_cast<const uint8_t*>(thumbnail.thumb),
+					                                   thumbnail.tlength));
 
 					if (i)
 					{
@@ -1313,7 +1315,8 @@ file_load_result load_raw(const df::file_path path, const bool can_load_preview)
 
 					if (s)
 					{
-						s->orientation(calc_orientation(s->dimensions(), ui::orientation::top_left, rp.processor->imgdata));
+						s->orientation(calc_orientation(s->dimensions(), ui::orientation::top_left,
+						                                rp.processor->imgdata));
 						result.s = std::move(s);
 					}
 				}
@@ -1349,7 +1352,7 @@ file_load_result load_raw(const df::file_path path, const bool can_load_preview)
 
 						if (IO.fuji_width) perc /= 2;
 
-						if (!((O.highlight & ~2) || O.no_auto_bright))
+						if (!(O.highlight & ~2 || O.no_auto_bright))
 						{
 							for (t_white = c = 0; c < P1.colors; c++)
 							{
@@ -1378,13 +1381,13 @@ file_load_result load_raw(const df::file_path path, const bool can_load_preview)
 
 						for (auto y = 0; y < S.height; y++)
 						{
-							auto* bufp = std::bit_cast<COLORREF*>(pixel_buffer + (y * stride));
+							auto* bufp = std::bit_cast<COLORREF*>(pixel_buffer + y * stride);
 
 							for (auto x = 0; x < S.width; x++)
 							{
 								const auto* const id = image_data.image[i++];
-								*bufp++ = (color_curve[id[2]] >> 8) | (0xFF00 & color_curve[id[1]]) | (0xFF0000 &
-									color_curve[id[0]] << 8);
+								*bufp++ = color_curve[id[2]] >> 8 | 0xFF00 & color_curve[id[1]] | 0xFF0000 &
+									color_curve[id[0]] << 8;
 							}
 						}
 

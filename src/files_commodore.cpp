@@ -1,3 +1,11 @@
+// This file is part of the Diffractor photo and video organizer
+// Copyright(C) 2025  Zac Walker
+// 
+// This program is free software; you can redistribute it and / or modify it
+// under the terms of the LGPL License either version 2.1 or later.
+// License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
+// This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
+
 #include "pch.h"
 #include "files.h"
 
@@ -64,7 +72,7 @@ static wchar_t c64_uppercase_normal_chars[] = {
 
 static uint32_t to_unicode(const uint32_t cp, const bool alt)
 {
-	auto c = c64_uppercase_normal_chars[cp & 0xff];
+	const auto c = c64_uppercase_normal_chars[cp & 0xff];
 	if (c == 0) return ' ';
 	return c;
 }
@@ -130,10 +138,10 @@ static d64_media parse_disk(const uint8_t* const data, const size_t data_len)
 	const auto is_d64 = data_len == 0x002ab00;
 	const auto is_d81 = data_len == 0x00c8000;
 
-	const int SECTOR_SIZE = 256;
+	constexpr int SECTOR_SIZE = 256;
 	const int DIR_TRACK = is_d64 ? 18 : 40;
 	const int DIR_SECTOR = is_d64 ? 1 : 3;
-	const int DIR_ENTRY_SIZE = 32;
+	constexpr int DIR_ENTRY_SIZE = 32;
 	const int SECTORS_PER_TRACK = is_d64 ? 21 : 40;
 
 	d64_media disk;
@@ -151,7 +159,7 @@ static d64_media parse_disk(const uint8_t* const data, const size_t data_len)
 		for (int i = 0; i < SECTOR_SIZE; i += DIR_ENTRY_SIZE)
 		{
 			const auto dir_entry = dir_sector_offset + i;
-			uint8_t file_type = data[dir_entry + 2];
+			const uint8_t file_type = data[dir_entry + 2];
 
 			if (file_type != 0)
 			{
@@ -180,7 +188,8 @@ struct t64_header
 	uint8_t reserved[26];
 };
 
-struct t64_file_entry {
+struct t64_file_entry
+{
 	uint8_t type;
 	uint8_t type_1541;
 	uint16_t start_address;
@@ -191,7 +200,8 @@ struct t64_file_entry {
 	uint8_t file_name[16];
 };
 
-struct crt_header {
+struct crt_header
+{
 	uint8_t signature[16];
 	uint32_t header_length;
 	uint16_t version;
@@ -202,7 +212,8 @@ struct crt_header {
 	uint8_t name[32];
 };
 
-struct crt_chip_header {
+struct crt_chip_header
+{
 	uint8_t signature[4];
 	uint32_t chip_packet_length;
 	uint16_t chip_type;
@@ -244,12 +255,14 @@ d64_media parse_crt(const uint8_t* const data, const size_t data_len)
 
 	while (offset < data_len)
 	{
-		if (data_len - offset < sizeof(crt_chip_header)) {
+		if (data_len - offset < sizeof(crt_chip_header))
+		{
 			break;
 		}
 
 		const auto chipHeader = reinterpret_cast<const crt_chip_header*>(data + offset);
-		if (std::memcmp(chipHeader->signature, "CHIP", 4) != 0) {
+		if (std::memcmp(chipHeader->signature, "CHIP", 4) != 0)
+		{
 			break;
 		}
 

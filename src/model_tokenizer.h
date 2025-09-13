@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -44,13 +43,13 @@ class search_tokenizer
 	search_part current_term;
 	std::u8string current_text;
 
-	static bool is_modifier(char8_t c)
+	static bool is_modifier(const char8_t c)
 	{
 		return c == '-' || c == '~' || c == '!' || c == '|' || c == '&' || c == '(' || c == ')' || c == '>' || c == '<'
 			|| c == '=';
 	}
 
-	static bool is_delimiter(char8_t c)
+	static bool is_delimiter(const char8_t c)
 	{
 		return c == '#' || c == ':' || c == ',' || c == ';' || c == '|' || c == '(' || c == ')';
 	}
@@ -104,7 +103,6 @@ class search_tokenizer
 		current_text.clear();
 	}
 
-
 public:
 	std::vector<search_part> parse(const std::u8string_view text)
 	{
@@ -118,7 +116,7 @@ public:
 			if (st == parse_state::text)
 			{
 				if (c == ':' && (is_num(current_text) || current_text.size() == 1))
-					// This typically means a time 12:00 or folder c:\test
+				// This typically means a time 12:00 or folder c:\test
 				{
 					current_text += c;
 				}

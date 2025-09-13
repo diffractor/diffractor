@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -27,12 +26,12 @@ using u8ostream = std::basic_ofstream<char8_t, std::char_traits<char8_t>>;
 
 using namespace std::literals;
 
-constexpr std::size_t operator "" _z(unsigned long long n)
+constexpr std::size_t operator "" _z(const unsigned long long n)
 {
 	return n;
 }
 
-class app_exception : public std::exception
+class app_exception final : public std::exception
 {
 public:
 	using my_base = exception;
@@ -54,7 +53,7 @@ struct text_t
 {
 	text_t() = default;
 
-	text_t(std::u8string_view t) : text(t)
+	text_t(const std::u8string_view t) : text(t)
 	{
 	}
 
@@ -104,7 +103,7 @@ namespace df
 
 	struct free_delete
 	{
-		void operator()(void* x) { _aligned_free(x); }
+		void operator()(void* x) const { _aligned_free(x); }
 	};
 
 	template <typename T>
@@ -117,10 +116,13 @@ namespace df
 	}
 
 	template <typename T>
-	class releaser {
+	class releaser
+	{
 	public:
 		releaser(T* ptr, std::function<void(T*)> destroy_func)
-			: ptr_(ptr), destroy_func_(std::move(destroy_func)) {}  // Move the function for efficiency
+			: ptr_(ptr), destroy_func_(std::move(destroy_func))
+		{
+		} // Move the function for efficiency
 
 		~releaser() { destroy_func_(ptr_); }
 
@@ -184,17 +186,17 @@ namespace df
 
 	constexpr uint32_t byte_clamp(const int n)
 	{
-		return (n > 255) ? 255u : (n < 0) ? 0u : static_cast<uint32_t>(n);
+		return n > 255 ? 255u : n < 0 ? 0u : static_cast<uint32_t>(n);
 	}
 
 	constexpr uint32_t byte_clamp(const uint32_t n)
 	{
-		return (n > 255u) ? 255u : n;
+		return n > 255u ? 255u : n;
 	}
 
 	constexpr int round_up(const int i, const int d)
 	{
-		return (i % d) ? (i / d) + 1 : (i / d);
+		return i % d ? i / d + 1 : i / d;
 	}
 
 	inline int round_up(const float d)
@@ -209,7 +211,7 @@ namespace df
 
 		const auto f = std::floor(d);
 
-		if ((d - f) >= 0.5)
+		if (d - f >= 0.5)
 		{
 			return static_cast<int32_t>(d >= 0.0 ? std::ceil(d) : f);
 		}
@@ -222,7 +224,7 @@ namespace df
 
 		const auto f = std::floor(d);
 
-		if ((d - f) >= 0.5)
+		if (d - f >= 0.5)
 		{
 			return static_cast<int64_t>(d >= 0.0 ? std::ceil(d) : f);
 		}
@@ -235,7 +237,7 @@ namespace df
 
 		const auto f = std::floor(d);
 
-		if ((d - f) >= 0.5f)
+		if (d - f >= 0.5f)
 		{
 			return static_cast<int>(d >= 0.0f ? std::ceil(d) : f);
 		}
@@ -244,23 +246,23 @@ namespace df
 
 	constexpr int round(const int i, const int d)
 	{
-		return (i + (d / 2)) / d;
+		return (i + d / 2) / d;
 	}
 
 	constexpr uint64_t round64(const uint64_t i, const uint64_t d)
 	{
-		return (i + (d / 2)) / d;
+		return (i + d / 2) / d;
 	}
 
 	constexpr int64_t round64(const int64_t i, const int64_t d)
 	{
-		return (i + (d / 2)) / d;
+		return (i + d / 2) / d;
 	}
 
 	constexpr bool in_range(const uint8_t* section, const size_t section_size, const uint8_t* limit,
-		const size_t limit_size)
+	                        const size_t limit_size)
 	{
-		return (section >= limit) && ((section + section_size) <= (limit + limit_size));
+		return section >= limit && section + section_size <= limit + limit_size;
 	}
 
 	// Returns true if x is in range [low..high], else false 
@@ -271,7 +273,7 @@ namespace df
 
 	constexpr int64_t mul_div(const int64_t n64, const int64_t num64, const int64_t den64)
 	{
-		return den64 ? ((n64 * num64) + (den64 / 2)) / den64 : -1;
+		return den64 ? (n64 * num64 + den64 / 2) / den64 : -1;
 	}
 
 	constexpr int mul_div(const int32_t n, const int32_t num, const int32_t den)
@@ -279,7 +281,7 @@ namespace df
 		if (in_range(INT16_MIN, INT16_MAX, n) &&
 			in_range(INT16_MIN, INT16_MAX, num))
 		{
-			return den ? ((n * num) + (den / 2)) / den : -1;
+			return den ? (n * num + den / 2) / den : -1;
 		}
 
 		const int64_t n64 = n;
@@ -395,7 +397,7 @@ namespace df
 		span(span&&) noexcept = default;
 		span& operator=(span&&) noexcept = default;
 
-		span(uint8_t* d, size_t s) noexcept : data(d), size(s)
+		span(uint8_t* d, const size_t s) noexcept : data(d), size(s)
 		{
 		}
 
@@ -428,7 +430,7 @@ namespace df
 
 		operator cspan() const
 		{
-			return { data, size };
+			return {data, size};
 		}
 
 	private:
@@ -453,7 +455,7 @@ namespace df
 
 		constexpr static xy8 make(const uint8_t xx, const uint8_t yy)
 		{
-			const xy8 result = { xx, yy };
+			const xy8 result = {xx, yy};
 			return result;
 		}
 
@@ -490,7 +492,7 @@ namespace df
 
 		constexpr static xy16 make(const int16_t xx, const int16_t yy) noexcept
 		{
-			const xy16 result = { xx, yy };
+			const xy16 result = {xx, yy};
 			return result;
 		}
 
@@ -547,13 +549,13 @@ namespace df
 
 		constexpr static xy32 make(const int32_t xx, const int32_t yy)
 		{
-			const xy32 result = { xx, yy };
+			const xy32 result = {xx, yy};
 			return result;
 		}
 
 		constexpr static xy32 make(const uint32_t xx, const uint32_t yy)
 		{
-			const xy32 result = { static_cast<int32_t>(xx), static_cast<int32_t>(yy) };
+			const xy32 result = {static_cast<int32_t>(xx), static_cast<int32_t>(yy)};
 			return result;
 		}
 
@@ -758,7 +760,7 @@ namespace df
 
 		count_and_size operator+(const count_and_size other) const
 		{
-			return { count + other.count, size + other.size };
+			return {count + other.count, size + other.size};
 		}
 
 		count_and_size operator+=(const count_and_size other)
@@ -786,9 +788,8 @@ namespace df
 		}
 	};
 
-	class scope_locked_inc : public no_copy
+	class scope_locked_inc final : public no_copy
 	{
-	private:
 		std::atomic_int& _i;
 		const long _current;
 
@@ -797,15 +798,14 @@ namespace df
 		{
 		}
 
-		~scope_locked_inc()
+		~scope_locked_inc() override
 		{
 			--_i;
 		}
 	};
 
-	class scope_rendering_func : public no_copy
+	class scope_rendering_func final : public no_copy
 	{
-	private:
 		const char* _prev = "";
 
 	public:
@@ -814,7 +814,7 @@ namespace df
 			rendering_func = f;
 		}
 
-		~scope_rendering_func()
+		~scope_rendering_func() override
 		{
 			rendering_func = _prev;
 		}
@@ -912,7 +912,6 @@ namespace df
 
 	class cancel_token
 	{
-	private:
 		static std::atomic_int empty;
 		std::atomic_int& version;
 		int job_version = 0;
@@ -983,14 +982,14 @@ namespace df
 			if ((48 <= c && c <= 57) || //0-9
 				(65 <= c && c <= 90) || //ABC...XYZ
 				(97 <= c && c <= 122) || //abc...xyz
-				(c == '~' || c == '-' || c == '_' || c == '.')
-				)
+				c == '~' || c == '-' || c == '_' || c == '.'
+			)
 			{
 				result += c;
 			}
 			else
 			{
-				static constexpr std::u8string_view chars = u8"0123456789ABCDEF"sv;
+				static constexpr auto chars = u8"0123456789ABCDEF"sv;
 
 				result += '%';
 				result += chars[(c & 0xF0) >> 4];

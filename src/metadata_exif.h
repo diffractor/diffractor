@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -84,22 +83,22 @@ public:
 
 	bool is_valid() const;
 
-	void latitude_north_south(NorthSouth value)
+	void latitude_north_south(const NorthSouth value)
 	{
 		_south = value;
 	}
 
-	void longitude_east_west(EastWest value)
+	void longitude_east_west(const EastWest value)
 	{
 		_west = value;
 	}
 
-	void latitude(double value)
+	void latitude(const double value)
 	{
 		_latitude = value;
 	}
 
-	void longitude(double value)
+	void longitude(const double value)
 	{
 		_longitude = value;
 	}
@@ -189,7 +188,7 @@ namespace metadata_exif
 			return i;
 		}
 
-		static rational_t<T> from_int64(int64_t i)
+		static rational_t<T> from_int64(const int64_t i)
 		{
 			rational_t result;
 			result.numerator = static_cast<T>(i >> 32);

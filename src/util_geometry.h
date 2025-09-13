@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -49,7 +48,7 @@ public:
 	constexpr sizei() noexcept = default;
 	constexpr sizei(const sizei& other) noexcept = default;
 
-	constexpr sizei(int x, int y) noexcept : cx(x), cy(y)
+	constexpr sizei(const int x, const int y) noexcept : cx(x), cy(y)
 	{
 	}
 
@@ -57,12 +56,12 @@ public:
 
 	constexpr bool operator ==(const sizei size) const noexcept
 	{
-		return (cx == size.cx && cy == size.cy);
+		return cx == size.cx && cy == size.cy;
 	}
 
 	constexpr bool operator !=(const sizei size) const noexcept
 	{
-		return (cx != size.cx || cy != size.cy);
+		return cx != size.cx || cy != size.cy;
 	}
 
 	constexpr bool is_empty() const noexcept
@@ -72,42 +71,42 @@ public:
 
 	constexpr sizei operator +(const sizei size) const noexcept
 	{
-		return { cx + size.cx, cy + size.cy };
+		return {cx + size.cx, cy + size.cy};
 	}
 
 	constexpr sizei operator -(const sizei size) const noexcept
 	{
-		return { cx - size.cx, cy - size.cy };
+		return {cx - size.cx, cy - size.cy};
 	}
 
 	constexpr sizei operator -() const noexcept
 	{
-		return { -cx, -cy };
+		return {-cx, -cy};
 	}
 
 	constexpr sizei operator /(const int i) const noexcept
 	{
-		return { cx / i, cy / i };
+		return {cx / i, cy / i};
 	}
 
 	constexpr sizei operator *(const int i) const noexcept
 	{
-		return { cx * i, cy * i };
+		return {cx * i, cy * i};
 	}
 
 	constexpr sizei operator *(const double d) const noexcept
 	{
-		return { df::round(cx * d), df::round(cy * d) };
+		return {df::round(cx * d), df::round(cy * d)};
 	}
 
 	constexpr sizei inflate(const int n) const noexcept
 	{
-		return { cx + n, cy + n };
+		return {cx + n, cy + n};
 	}
 
 	constexpr sizei flip() const noexcept
 	{
-		return { cy, cx };
+		return {cy, cx};
 	}
 
 	constexpr int area() const noexcept
@@ -148,27 +147,27 @@ public:
 
 	constexpr pointi operator +(const sizei other) const noexcept
 	{
-		return { x + other.cx, y + other.cy };
+		return {x + other.cx, y + other.cy};
 	}
 
 	constexpr pointi operator -(const sizei other) const noexcept
 	{
-		return { x - other.cx, y - other.cy };
+		return {x - other.cx, y - other.cy};
 	}
 
 	constexpr pointi operator -() const noexcept
 	{
-		return { -x, -y };
+		return {-x, -y};
 	}
 
 	constexpr pointi operator +(const pointi other) const noexcept
 	{
-		return { x + other.x, y + other.y };
+		return {x + other.x, y + other.y};
 	}
 
 	constexpr pointi operator -(const pointi other) const noexcept
 	{
-		return { x - other.x, y - other.y };
+		return {x - other.x, y - other.y};
 	}
 
 	constexpr pointi clamp(recti limit) const noexcept;
@@ -177,7 +176,7 @@ public:
 	{
 		const auto dx = x - other.x;
 		const auto dy = y - other.y;
-		return df::round(std::sqrt((dx * dx) + (dy * dy)));
+		return df::round(std::sqrt(dx * dx + dy * dy));
 	}
 };
 
@@ -204,7 +203,7 @@ public:
 	}
 
 	constexpr recti(const pointi point, const sizei size) noexcept : left(point.x), top(point.y),
-		right(point.x + size.cx), bottom(point.y + size.cy)
+	                                                                 right(point.x + size.cx), bottom(point.y + size.cy)
 	{
 	}
 
@@ -229,37 +228,37 @@ public:
 
 	constexpr sizei extent() const noexcept
 	{
-		return { right - left, bottom - top };
+		return {right - left, bottom - top};
 	}
 
 	constexpr pointi top_left() const noexcept
 	{
-		return { left, top };
+		return {left, top};
 	}
 
 	constexpr pointi top_center() const noexcept
 	{
-		return { (left + right) / 2, top };
+		return {(left + right) / 2, top};
 	}
 
 	constexpr pointi bottom_center() const noexcept
 	{
-		return { (left + right) / 2, bottom };
+		return {(left + right) / 2, bottom};
 	}
 
 	constexpr pointi bottom_right() const noexcept
 	{
-		return { right, bottom };
+		return {right, bottom};
 	}
 
 	constexpr pointi center() const noexcept
 	{
-		return { (left + right) / 2, (top + bottom) / 2 };
+		return {(left + right) / 2, (top + bottom) / 2};
 	}
 
 	constexpr recti operator+(const sizei offset) const noexcept
 	{
-		return { left + offset.cx, top + offset.cy, right + offset.cx, bottom + offset.cy };
+		return {left + offset.cx, top + offset.cy, right + offset.cx, bottom + offset.cy};
 	}
 
 	constexpr bool is_empty() const noexcept
@@ -282,7 +281,7 @@ public:
 		left = right = top = bottom = 0;
 	}
 
-	constexpr void set(int x1, int y1, int x2, int y2) noexcept
+	constexpr void set(const int x1, const int y1, const int x2, const int y2) noexcept
 	{
 		left = x1;
 		top = y1;
@@ -297,27 +296,27 @@ public:
 
 	constexpr recti inflate(const int xy) const noexcept
 	{
-		return { left - xy, top - xy, right + xy, bottom + xy };
+		return {left - xy, top - xy, right + xy, bottom + xy};
 	}
 
 	constexpr recti inflate(const int x, const int y) const noexcept
 	{
-		return { left - x, top - y, right + x, bottom + y };
+		return {left - x, top - y, right + x, bottom + y};
 	}
 
 	constexpr recti inflate(const int ll, const int tt, const int rr, const int bb) const noexcept
 	{
-		return { left - ll, top - tt, right + rr, bottom + bb };
+		return {left - ll, top - tt, right + rr, bottom + bb};
 	}
 
 	constexpr recti inflate(const sizei s) const noexcept
 	{
-		return { left - s.cx, top - s.cy, right + s.cx, bottom + s.cy };
+		return {left - s.cx, top - s.cy, right + s.cx, bottom + s.cy};
 	}
 
 	constexpr recti extend(const int x, const int y) const noexcept
 	{
-		return { left, top, right + x, bottom + y };
+		return {left, top, right + x, bottom + y};
 	}
 
 	constexpr bool intersects(const recti other) const noexcept
@@ -380,12 +379,12 @@ public:
 
 	constexpr recti offset(const pointi pt) const noexcept
 	{
-		return { left + pt.x, top + pt.y, right + pt.x, bottom + pt.y };
+		return {left + pt.x, top + pt.y, right + pt.x, bottom + pt.y};
 	}
 
 	constexpr recti offset(const int x, const int y) const noexcept
 	{
-		return { left + x, top + y, right + x, bottom + y };
+		return {left + x, top + y, right + x, bottom + y};
 	}
 
 	constexpr recti& operator =(const recti& other) noexcept = default;
@@ -402,7 +401,7 @@ public:
 
 	constexpr recti normalise() const
 	{
-		return { std::min(left, right), std::min(top, bottom), std::max(left, right), std::max(top, bottom) };
+		return {std::min(left, right), std::min(top, bottom), std::max(left, right), std::max(top, bottom)};
 	}
 
 	constexpr void exclude(const pointi loc, const recti bounds)
@@ -440,24 +439,24 @@ constexpr sizei::sizei(const pointi other) noexcept : cx(other.x), cy(other.y)
 
 constexpr pointi sizei::operator +(const pointi point) const noexcept
 {
-	return { cx + point.x, cy + point.y };
+	return {cx + point.x, cy + point.y};
 }
 
 constexpr pointi sizei::operator -(const pointi point) const noexcept
 {
-	return { cx - point.x, cy - point.y };
+	return {cx - point.x, cy - point.y};
 }
 
 constexpr pointi pointi::clamp(const recti limit) const noexcept
 {
-	return { std::clamp(x, limit.left, limit.right), std::clamp(y, limit.top, limit.bottom) };
+	return {std::clamp(x, limit.left, limit.right), std::clamp(y, limit.top, limit.bottom)};
 }
 
 constexpr recti center_rect(const sizei s, const int xx, const int yy) noexcept
 {
-	const auto x = xx - (s.cx / 2);
-	const auto y = yy - (s.cy / 2);
-	return { x, y, x + s.cx, y + s.cy };
+	const auto x = xx - s.cx / 2;
+	const auto y = yy - s.cy / 2;
+	return {x, y, x + s.cx, y + s.cy};
 }
 
 constexpr recti center_rect(const sizei s, const recti limit) noexcept
@@ -483,7 +482,7 @@ constexpr recti center_rect(const recti r, const recti limit) noexcept
 
 constexpr recti round_rect(const double x, const double y, const double cx, const double cy) noexcept
 {
-	return { df::round(x), df::round(y), df::round(x + cx), df::round(y + cy) };
+	return {df::round(x), df::round(y), df::round(x + cx), df::round(y + cy)};
 }
 
 
@@ -523,27 +522,27 @@ public:
 
 	constexpr sized operator-(const sized other) const noexcept
 	{
-		return { Width - other.Width, Height - other.Height };
+		return {Width - other.Width, Height - other.Height};
 	}
 
 	constexpr sized operator/(const sized other) const noexcept
 	{
-		return { Width / other.Width, Height / other.Height };
+		return {Width / other.Width, Height / other.Height};
 	}
 
 	constexpr sized operator/(const double other) const noexcept
 	{
-		return { Width / other, Height / other };
+		return {Width / other, Height / other};
 	}
 
 	constexpr sized operator*(const sized other) const noexcept
 	{
-		return { Width * other.Width, Height * other.Height };
+		return {Width * other.Width, Height * other.Height};
 	}
 
 	constexpr sized operator*(const double other) const noexcept
 	{
-		return { Width * other, Height * other };
+		return {Width * other, Height * other};
 	}
 
 	constexpr bool operator==(const sized other) const noexcept
@@ -563,17 +562,17 @@ public:
 
 	constexpr bool is_empty() const noexcept
 	{
-		return (Width == 0.0 && Height == 0.0);
+		return Width == 0.0 && Height == 0.0;
 	}
 
 	constexpr sizei round() const noexcept
 	{
-		return { df::round(Width), df::round(Height) };
+		return {df::round(Width), df::round(Height)};
 	}
 
 	constexpr sizei ceil() const noexcept
 	{
-		return { static_cast<int>(std::ceil(Width)), static_cast<int>(std::ceil(Height)) };
+		return {static_cast<int>(std::ceil(Width)), static_cast<int>(std::ceil(Height))};
 	}
 
 	double Width = 0.0;
@@ -586,7 +585,7 @@ public:
 	constexpr pointd() noexcept = default;
 	constexpr pointd(const pointd& point) noexcept = default;
 
-	constexpr pointd(double x, double y) noexcept : X(x), Y(y)
+	constexpr pointd(const double x, const double y) noexcept : X(x), Y(y)
 	{
 	}
 
@@ -616,59 +615,59 @@ public:
 
 	constexpr pointd scale(const double x, const double y) const noexcept
 	{
-		return { X / x, Y / y };
+		return {X / x, Y / y};
 	}
 
 	constexpr pointd offset(const double x, const double y) const noexcept
 	{
-		return { X + x, Y + y };
+		return {X + x, Y + y};
 	}
 
 	constexpr pointi round() const noexcept
 	{
-		return { df::round(X), df::round(Y) };
+		return {df::round(X), df::round(Y)};
 	}
 
 	constexpr pointd operator+(const pointd point) const noexcept
 	{
-		return { X + point.X, Y + point.Y };
+		return {X + point.X, Y + point.Y};
 	}
 
 	constexpr pointd operator+(const sized size) const noexcept
 	{
-		return { X + size.Width, Y + size.Height };
+		return {X + size.Width, Y + size.Height};
 	}
 
 	constexpr pointd operator-(const pointd point) const noexcept
 	{
-		return { X - point.X, Y - point.Y };
+		return {X - point.X, Y - point.Y};
 	}
 
 	constexpr pointd operator/(const double d) const noexcept
 	{
-		return { X / d, Y / d };
+		return {X / d, Y / d};
 	}
 
 	constexpr pointd operator*(const double d) const noexcept
 	{
-		return { X * d, Y * d };
+		return {X * d, Y * d};
 	}
 
 	constexpr pointd mult(const double d) const noexcept
 	{
-		return { X * d, Y * d };
+		return {X * d, Y * d};
 	}
 
 	constexpr pointd mult(const double x, const double y) const noexcept
 	{
-		return { X * x, Y * y };
+		return {X * x, Y * y};
 	}
 
 	constexpr pointd clamp(const sized limit) const noexcept
 	{
 		const auto x = std::clamp(X, -limit.Width, limit.Width);
 		const auto y = std::clamp(Y, -limit.Height, limit.Height);
-		return { x, y };
+		return {x, y};
 	}
 
 	constexpr double dot(const pointd other) const noexcept
@@ -681,20 +680,20 @@ public:
 		const auto s = sin(theta);
 		const auto c = cos(theta);
 
-		const auto x = ((X - center.X) * c) - ((center.Y - Y) * s);
-		const auto y = ((center.Y - Y) * c) - ((X - center.X) * s);
+		const auto x = (X - center.X) * c - (center.Y - Y) * s;
+		const auto y = (center.Y - Y) * c - (X - center.X) * s;
 
-		return { center.X + x, center.Y + y };
+		return {center.X + x, center.Y + y};
 	}
 
 	constexpr pointd operator -() const noexcept
 	{
-		return { -X, -Y };
+		return {-X, -Y};
 	}
 
 	constexpr pointd operator /(const pointd other) const noexcept
 	{
-		return { X / other.X, Y / other.Y };
+		return {X / other.X, Y / other.Y};
 	}
 
 	constexpr pointd& operator/=(const double d) noexcept
@@ -736,12 +735,12 @@ public:
 	}
 
 	constexpr rectd(const double x, const double y, const double width,
-		const double height) noexcept : X(x), Y(y), Width(width), Height(height)
+	                const double height) noexcept : X(x), Y(y), Width(width), Height(height)
 	{
 	}
 
 	constexpr rectd(const pointd location, const sized size) noexcept : X(location.X), Y(location.Y),
-		Width(size.Width), Height(size.Height)
+	                                                                    Width(size.Width), Height(size.Height)
 	{
 	}
 
@@ -760,18 +759,18 @@ public:
 
 	constexpr recti round() const noexcept
 	{
-		return { df::round(X), df::round(Y), df::round(X + Width), df::round(Y + Height) };
+		return {df::round(X), df::round(Y), df::round(X + Width), df::round(Y + Height)};
 	}
 
 
 	constexpr pointd location() const noexcept
 	{
-		return { X, Y };
+		return {X, Y};
 	}
 
 	constexpr sized extent() const noexcept
 	{
-		return { Width, Height };
+		return {Width, Height};
 	}
 
 	constexpr void bounds(rectd* rect) const noexcept
@@ -804,22 +803,22 @@ public:
 
 	constexpr pointd top_left() const noexcept
 	{
-		return { left(), top() };
+		return {left(), top()};
 	}
 
 	constexpr pointd top_right() const noexcept
 	{
-		return { right(), top() };
+		return {right(), top()};
 	}
 
 	constexpr pointd bottom_right() const noexcept
 	{
-		return { right(), bottom() };
+		return {right(), bottom()};
 	}
 
 	constexpr pointd bottom_left() const noexcept
 	{
-		return { left(), bottom() };
+		return {left(), bottom()};
 	}
 
 	constexpr bool is_empty() const
@@ -847,7 +846,7 @@ public:
 
 	constexpr bool contains(const double x, const double y) const noexcept
 	{
-		return x >= X && x < (X + Width) && y >= Y && y < (Y + Height);
+		return x >= X && x < X + Width && y >= Y && y < Y + Height;
 	}
 
 	constexpr bool contains(const pointd pt) const noexcept
@@ -857,7 +856,7 @@ public:
 
 	constexpr bool contains(const rectd rect) const noexcept
 	{
-		return (X <= rect.X) && (rect.right() <= right()) && (Y <= rect.Y) && (rect.bottom() <= bottom());
+		return X <= rect.X && rect.right() <= right() && Y <= rect.Y && rect.bottom() <= bottom();
 	}
 
 	constexpr rectd clamp(const rectd limit) const noexcept
@@ -882,12 +881,12 @@ public:
 
 	constexpr pointd center() const noexcept
 	{
-		return { X + Width / 2.0, Y + Height / 2.0 };
+		return {X + Width / 2.0, Y + Height / 2.0};
 	}
 
 	constexpr rectd scale(const double dx, const double dy) const noexcept
 	{
-		return { X / dx, Y / dy, Width / dx, Height / dy };
+		return {X / dx, Y / dy, Width / dx, Height / dy};
 	}
 
 	constexpr rectd scale(const sized s) const noexcept
@@ -897,12 +896,12 @@ public:
 
 	constexpr rectd inflate(const double d) const noexcept
 	{
-		return { X - d, Y - d, Width + 2 * d, Height + 2 * d };
+		return {X - d, Y - d, Width + 2 * d, Height + 2 * d};
 	}
 
 	constexpr rectd inflate(const double dx, const double dy) const noexcept
 	{
-		return { X - dx, Y - dy, Width + 2 * dx, Height + 2 * dy };
+		return {X - dx, Y - dy, Width + 2 * dx, Height + 2 * dy};
 	}
 
 	constexpr rectd inflate(const pointd point) const noexcept
@@ -939,10 +938,10 @@ public:
 
 	constexpr bool intersects(const rectd rect) const noexcept
 	{
-		return (left() < rect.right() &&
+		return left() < rect.right() &&
 			top() < rect.bottom() &&
 			right() > rect.left() &&
-			bottom() > rect.top());
+			bottom() > rect.top();
 	}
 
 	constexpr rectd offset(const pointd point) const noexcept
@@ -952,21 +951,20 @@ public:
 
 	constexpr rectd offset(const double dx, const double dy) const noexcept
 	{
-		return { X + dx, Y + dy, Width, Height };
+		return {X + dx, Y + dy, Width, Height};
 	}
 
-public:
-	double X{ 0 };
-	double Y{ 0 };
-	double Width{ 0 };
-	double Height{ 0 };
+	double X{0};
+	double Y{0};
+	double Width{0};
+	double Height{0};
 };
 
 
 class affined
 {
 protected:
-	double _trans[6]{ 1.0, 0.0, 0.0, 1.0, 0.0, 0.0 };
+	double _trans[6]{1.0, 0.0, 0.0, 1.0, 0.0, 0.0};
 
 public:
 	affined() noexcept = default;
@@ -975,7 +973,7 @@ public:
 	~affined() = default;
 
 	affined(const double d0, const double d1, const double d2, const double d3, const double d4,
-		const double d5) noexcept
+	        const double d5) noexcept
 	{
 		_trans[0] = d0;
 		_trans[1] = d1;
@@ -1158,7 +1156,6 @@ enum class simple_transform
 
 class quadd
 {
-private:
 	pointd pts[4];
 
 public:
@@ -1196,7 +1193,7 @@ public:
 		pts[3] = pointd(0, s.cy);
 	}
 
-	quadd(const rectd r) noexcept
+	quadd(const rectd& r) noexcept
 	{
 		pts[0] = pointd(r.X, r.Y);
 		pts[1] = pointd(r.X + r.Width, r.Y);
@@ -1241,12 +1238,12 @@ public:
 		const auto l = left();
 		const auto t = top();
 
-		return { l, t, right() - l, bottom() - t };
+		return {l, t, right() - l, bottom() - t};
 	}
 
 	recti bounding_rect_i() const noexcept
 	{
-		return { df::round(left()), df::round(top()), df::round(right()), df::round(bottom()) };
+		return {df::round(left()), df::round(top()), df::round(right()), df::round(bottom())};
 	}
 
 	bool is_empty() const noexcept
@@ -1326,10 +1323,10 @@ public:
 		return offset(pt.X, pt.Y);
 	}
 
-	quadd crop(rectd limit, int active_point = -1) const noexcept;
-	quadd limit(rectd limit) const noexcept;
+	quadd crop(const rectd& limit, int active_point = -1) const noexcept;
+	quadd limit(const rectd& limit) const noexcept;
 
-	double grad(const pointd p1, const pointd p2) const noexcept
+	static double grad(const pointd p1, const pointd p2) noexcept
 	{
 		const auto dx = std::abs(p2.X - p1.X);
 		const auto dy = std::abs(p2.Y - p1.Y);
@@ -1341,7 +1338,7 @@ public:
 	{
 		const auto x = (pts[0].X + pts[1].X + pts[2].X + pts[3].X) / 4.0;
 		const auto y = (pts[0].Y + pts[1].Y + pts[2].Y + pts[3].Y) / 4.0;
-		return { x, y };
+		return {x, y};
 	}
 
 	static constexpr double min(const double a, const double b, const double c, const double d) noexcept
@@ -1388,17 +1385,17 @@ public:
 
 	sized extent() const noexcept
 	{
-		return { width(), height() };
+		return {width(), height()};
 	}
 
 	int origin_point() const
 	{
-		auto cur_dist = pts[0].dist({ 0, 0 });
+		auto cur_dist = pts[0].dist({0, 0});
 		auto result = 0;
 
 		for (int i = 1; i < 4; ++i)
 		{
-			const auto d = pts[i].dist({ 0, 0 });
+			const auto d = pts[i].dist({0, 0});
 
 			if (d < cur_dist)
 			{

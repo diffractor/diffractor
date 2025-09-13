@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
@@ -23,7 +22,7 @@
 
 #include <utility>
 
-static constexpr uint32_t bytes_per_format[] = { 0, 1, 1, 2, 4, 8, 1, 1, 2, 4, 8, 4, 8 };
+static constexpr uint32_t bytes_per_format[] = {0, 1, 1, 2, 4, 8, 1, 1, 2, 4, 8, 4, 8};
 
 
 //// Tags/Constants from http://www.exiv2.org/tags.html
@@ -221,27 +220,26 @@ enum class tag_type
 	canon
 };
 
-static bool is_junk(const uint8_t* p, uint32_t s)
+static bool is_junk(const uint8_t* p, const uint32_t s)
 {
-	static constexpr uint8_t junk_marker[] = { 0x12, 0xf8, 0x0f, 0x3b, };
+	static constexpr uint8_t junk_marker[] = {0x12, 0xf8, 0x0f, 0x3b,};
 	return s >= 4 && memcmp(p, junk_marker, 4) == 0;
 }
 
 class exif_data_buffer
 {
-private:
 	const uint8_t* const _data;
 	const size_t _size;
 	const bool _is_intel;
 
 public:
-	exif_data_buffer(df::cspan cs, bool isIntel) : _data(cs.data), _size(cs.size), _is_intel(isIntel)
+	exif_data_buffer(const df::cspan cs, const bool isIntel) : _data(cs.data), _size(cs.size), _is_intel(isIntel)
 	{
 	}
 
-	bool is_overflow(size_t i, size_t size) const
+	bool is_overflow(const size_t i, const size_t size) const
 	{
-		return (i < 0) || (i + size) > _size;
+		return i < 0 || i + size > _size;
 	}
 
 	const uint8_t* data() const
@@ -254,7 +252,7 @@ public:
 		return _size;
 	}
 
-	const uint8_t* data(uint32_t i, uint32_t size) const
+	const uint8_t* data(const uint32_t i, const uint32_t size) const
 	{
 		if (is_overflow(i, size)) return nullptr;
 		return _data + i;
@@ -265,7 +263,7 @@ public:
 		return _is_intel;
 	}
 
-	str::cached cached_string(uint32_t i, uint32_t len, bool probablyUnicode) const
+	str::cached cached_string(const uint32_t i, uint32_t len, bool probablyUnicode) const
 	{
 		if (!is_overflow(i, len))
 		{
@@ -275,14 +273,14 @@ public:
 			{
 				if (len > 9)
 				{
-					const size_t offset = 8;
+					constexpr size_t offset = 8;
 					p = p + offset;
 					const auto length = len - offset;
 					const auto char_length = length / sizeof(wchar_t);
 
 					if (_is_intel)
 					{
-						return str::strip_and_cache({ std::bit_cast<const wchar_t*>(p), char_length });
+						return str::strip_and_cache({std::bit_cast<const wchar_t*>(p), char_length});
 					}
 
 					const auto buffer = df::unique_alloc<uint8_t>(length + 2);
@@ -297,7 +295,7 @@ public:
 						pos += 2;
 					}
 
-					return str::strip_and_cache({ std::bit_cast<const wchar_t*>(dst), char_length });
+					return str::strip_and_cache({std::bit_cast<const wchar_t*>(dst), char_length});
 				}
 			}
 			else if (len > 5 && memcmp(p, u8"ASCII", 5) == 0)
@@ -306,8 +304,8 @@ public:
 				{
 					p = p + 8;
 					return is_junk(p, len)
-						? str::cached{}
-					: str::strip_and_cache({ std::bit_cast<const char8_t*>(p), len - 8 });
+						       ? str::cached{}
+						       : str::strip_and_cache({std::bit_cast<const char8_t*>(p), len - 8});
 				}
 			}
 			else if (is_junk(p, len))
@@ -316,11 +314,11 @@ public:
 			}
 			else if (str::is_utf16(p, len))
 			{
-				return str::strip_and_cache({ std::bit_cast<const wchar_t*>(p), len / 2 });
+				return str::strip_and_cache({std::bit_cast<const wchar_t*>(p), len / 2});
 			}
 			else if (str::is_utf8(std::bit_cast<const char8_t*>(p), len))
 			{
-				return str::strip_and_cache({ std::bit_cast<const char8_t*>(p), len });
+				return str::strip_and_cache({std::bit_cast<const char8_t*>(p), len});
 			}
 			else
 			{
@@ -331,7 +329,7 @@ public:
 		return {};
 	}
 
-	uint16_t get_uint16(uint32_t i) const
+	uint16_t get_uint16(const uint32_t i) const
 	{
 		if (_is_intel)
 		{
@@ -340,7 +338,7 @@ public:
 		return df::byteswap16(_data + i);
 	}
 
-	uint32_t get_uint32(uint32_t i) const
+	uint32_t get_uint32(const uint32_t i) const
 	{
 		if (_is_intel)
 		{
@@ -349,7 +347,7 @@ public:
 		return df::byteswap32(_data + i);
 	}
 
-	int16_t get_int16(uint32_t i) const
+	int16_t get_int16(const uint32_t i) const
 	{
 		if (_is_intel)
 		{
@@ -358,7 +356,7 @@ public:
 		return static_cast<int16_t>(df::byteswap16(_data + i));
 	}
 
-	int32_t get_int32(uint32_t i) const
+	int32_t get_int32(const uint32_t i) const
 	{
 		if (_is_intel)
 		{
@@ -367,12 +365,12 @@ public:
 		return static_cast<int32_t>(df::byteswap32(_data + i));
 	}
 
-	metadata_exif::srational32_t get_srational(uint32_t i) const
+	metadata_exif::srational32_t get_srational(const uint32_t i) const
 	{
 		return metadata_exif::srational32_t(get_uint32(i), get_uint32(i + 4));
 	}
 
-	metadata_exif::urational32_t get_urational(uint32_t i) const
+	metadata_exif::urational32_t get_urational(const uint32_t i) const
 	{
 		return metadata_exif::urational32_t(get_uint32(i), get_uint32(i + 4));
 	}
@@ -389,7 +387,7 @@ struct exif_dir_entry
 
 	exif_dir_entry() = delete;
 
-	exif_dir_entry(tag_type tt, exif_data_buffer& data, const uint32_t offset) :
+	exif_dir_entry(const tag_type tt, exif_data_buffer& data, const uint32_t offset) :
 		_tag_type(tt),
 		_data(data),
 		_offset(offset),
@@ -424,21 +422,21 @@ struct exif_dir_entry
 
 	int get_int16(const uint32_t i) const
 	{
-		const auto o = data_offset() + (i * 2);
+		const auto o = data_offset() + i * 2;
 		if (_data.is_overflow(o, 2u)) return 0;
 		return _data.get_int16(o);
 	}
 
 	uint32_t get_uint16(const uint32_t i) const
 	{
-		const auto o = data_offset() + (i * 2);
+		const auto o = data_offset() + i * 2;
 		if (_data.is_overflow(o, 2)) return 0;
 		return _data.get_uint16(o);
 	}
 
 	uint32_t get_uint32(const uint32_t i) const
 	{
-		const auto o = data_offset() + (i * 2);
+		const auto o = data_offset() + i * 2;
 		if (_data.is_overflow(o, 2)) return 0;
 		return _data.get_uint32(o);
 	}
@@ -468,16 +466,16 @@ struct exif_dir_entry
 
 	metadata_exif::srational32_t get_srational(const uint32_t i = 0) const
 	{
-		const auto len = 2 * sizeof(int);
-		const auto offset = data_offset() + (i * len);
+		constexpr auto len = 2 * sizeof(int);
+		const auto offset = data_offset() + i * len;
 		if (_data.is_overflow(offset, len)) return {};
 		return _data.get_srational(offset);
 	}
 
 	metadata_exif::urational32_t get_urational(const uint32_t i = 0) const
 	{
-		const auto len = 2 * sizeof(int);
-		const auto offset = data_offset() + (i * len);
+		constexpr auto len = 2 * sizeof(int);
+		const auto offset = data_offset() + i * len;
 		if (_data.is_overflow(offset, len)) return {};
 		return _data.get_urational(offset);
 	}
@@ -486,7 +484,7 @@ struct exif_dir_entry
 	{
 		const auto len = size();
 		const auto* const sz = std::bit_cast<const char8_t*>(_data.data(data_offset(), len));
-		return sz ? std::u8string_view{ sz, len } : std::u8string_view{};
+		return sz ? std::u8string_view{sz, len} : std::u8string_view{};
 	}
 
 	bool is_intel() const
@@ -498,7 +496,6 @@ struct exif_dir_entry
 
 class exif_parser
 {
-private:
 	exif_data_buffer& _data;
 	std::function<void(exif_dir_entry&)> _handler;
 
@@ -551,7 +548,7 @@ public:
 		}
 	}
 
-	void parse_dir(uint32_t offset, const tag_type tagType)
+	void parse_dir(const uint32_t offset, const tag_type tagType)
 	{
 		if (!_data.is_overflow(offset, 2))
 		{
@@ -566,7 +563,7 @@ public:
 
 			for (auto i = 0u; i < entry_count; ++i)
 			{
-				const auto pos = offset + 2 + (12 * i);
+				const auto pos = offset + 2 + 12 * i;
 
 				if (!_data.is_overflow(pos, 12))
 				{
@@ -586,7 +583,7 @@ public:
 	}
 
 private:
-	maker_note_type identify_maker_note(exif_dir_entry& entry) const
+	maker_note_type identify_maker_note(const exif_dir_entry& entry) const
 	{
 		const auto size = entry.size();
 		const auto* const data = entry.data(4);
@@ -594,7 +591,7 @@ private:
 		if (data)
 		{
 			// Olympus & Nikon & Sanyo 
-			if ((size >= 8) &&
+			if (size >= 8 &&
 				(!memcmp(data, u8"OLYMP", 6) ||
 					!memcmp(data, u8"OLYMPUS", 8) ||
 					!memcmp(data, u8"SANYO", 6) ||
@@ -616,7 +613,7 @@ private:
 			}
 
 			// Pentax & some variant of Nikon 
-			if ((size >= 2) && (data[0] == 0x00) && (data[1] == 0x1b))
+			if (size >= 2 && data[0] == 0x00 && data[1] == 0x1b)
 			{
 				if (icmp(_make, u8"Nikon"sv) == 0)
 				{
@@ -624,15 +621,15 @@ private:
 				}
 				return EXIF_DATA_TYPE_MAKER_NOTE_PENTAX;
 			}
-			if ((size >= 8) && !memcmp(data, u8"AOC", 4))
+			if (size >= 8 && !memcmp(data, u8"AOC", 4))
 			{
 				return EXIF_DATA_TYPE_MAKER_NOTE_PENTAX;
 			}
-			if ((size >= 8) && !memcmp(data, u8"QVC", 4))
+			if (size >= 8 && !memcmp(data, u8"QVC", 4))
 			{
 				return EXIF_DATA_TYPE_MAKER_NOTE_CASIO;
 			}
-			if ((size >= 12) && !memcmp(data, u8"FUJIFILM", 8))
+			if (size >= 12 && !memcmp(data, u8"FUJIFILM", 8))
 			{
 				return EXIF_DATA_TYPE_MAKER_NOTE_FUJI;
 			}
@@ -691,7 +688,7 @@ private:
 	}
 };
 
-static void exif_enumerate(const std::function<void(exif_dir_entry&)>& h, df::cspan data)
+static void exif_enumerate(const std::function<void(exif_dir_entry&)>& h, const df::cspan data)
 {
 	if (data > 16)
 	{
@@ -715,7 +712,6 @@ static void exif_enumerate(const std::function<void(exif_dir_entry&)>& h, df::cs
 
 class canon_lenses
 {
-private:
 	df::hash_map<int, const char8_t*> _choices = {
 		{1, u8"Canon EF 50mm f/1.8"},
 		{2, u8"Canon EF 28mm f/2.8"},
@@ -999,7 +995,7 @@ private:
 public:
 	canon_lenses() = default;
 
-	str::cached Lookup(int id)
+	str::cached Lookup(const int id)
 	{
 		const auto found = _choices.find(id);
 		str::cached result = {};
@@ -1014,9 +1010,9 @@ public:
 };
 
 exif_gps_coordinate_builder::exif_gps_coordinate_builder() : _south(NorthSouth::North),
-_west(EastWest::East),
-_latitude(invalid_coordinate),
-_longitude(invalid_coordinate)
+                                                             _west(EastWest::East),
+                                                             _latitude(invalid_coordinate),
+                                                             _longitude(invalid_coordinate)
 {
 }
 
@@ -1058,7 +1054,6 @@ gps_coordinate exif_gps_coordinate_builder::build() const
 
 class exif_camera_settings_processor
 {
-private:
 	prop::item_metadata& _metadata;
 	exif_gps_coordinate_builder _gps_coordinate;
 	bool _created_date_set;
@@ -1092,7 +1087,7 @@ public:
 		}
 	}
 
-	void canon_tag(exif_dir_entry& entry) const
+	void canon_tag(const exif_dir_entry& entry) const
 	{
 		static canon_lenses lenses;
 		//df::log(__FUNCTION__, u8"Canon tag %x (%d)\n"sv, entry.tag, entry.Size());
@@ -1140,19 +1135,19 @@ public:
 			break;
 
 		case MNOTE_CANON_TAG_LENS:
-		{
-			const auto text = entry.text();
-
-			if (!str::is_empty(text))
 			{
-				_metadata.lens = str::strip_and_cache(text);
+				const auto text = entry.text();
+
+				if (!str::is_empty(text))
+				{
+					_metadata.lens = str::strip_and_cache(text);
+				}
 			}
-		}
-		break;
+			break;
 		}
 	}
 
-	int safe_rating(int r)
+	static int safe_rating(int r)
 	{
 		if (r < 0)
 		{
@@ -1167,7 +1162,7 @@ public:
 		return std::clamp(r, 0, 5);
 	}
 
-	void exif_tag(exif_dir_entry& entry)
+	void exif_tag(const exif_dir_entry& entry)
 	{
 		//df::log(__FUNCTION__, u8"Exif tag %x (%d)\n"sv, entry.tag, entry.Size());
 
@@ -1188,7 +1183,7 @@ public:
 			_metadata.f_number = entry.get_urational().to_real();
 			break;
 
-			//case Exif::EXIF_TAG_SHUTTER_SPEED_VALUE: 
+		//case Exif::EXIF_TAG_SHUTTER_SPEED_VALUE: 
 		case EXIF_TAG_EXPOSURE_TIME:
 			_metadata.exposure_time = entry.get_srational().to_real();
 			break;
@@ -1248,48 +1243,48 @@ public:
 
 		case EXIF_TAG_DATE_TIME:
 		case EXIF_TAG_DATE_TIME_ORIGINAL:
-		{
-			df::date_t ft;
-
-			if (!_created_date_set &&
-				ft.parse_exif_date(entry.text()) &&
-				ft.is_valid())
 			{
-				_metadata.created_exif = ft;
-				_created_date_set = true;
-			}
-		}
-		break;
-		case EXIF_TAG_DATE_TIME_DIGITIZED:
-		{
-			df::date_t ft;
+				df::date_t ft;
 
-			if (ft.parse_exif_date(entry.text()) &&
-				ft.is_valid())
-			{
-				_metadata.created_digitized = ft;
-				_created_date_set = true;
+				if (!_created_date_set &&
+					ft.parse_exif_date(entry.text()) &&
+					ft.is_valid())
+				{
+					_metadata.created_exif = ft;
+					_created_date_set = true;
+				}
 			}
 			break;
-		}
+		case EXIF_TAG_DATE_TIME_DIGITIZED:
+			{
+				df::date_t ft;
+
+				if (ft.parse_exif_date(entry.text()) &&
+					ft.is_valid())
+				{
+					_metadata.created_digitized = ft;
+					_created_date_set = true;
+				}
+				break;
+			}
 		}
 	}
 
-	void gps_tag(exif_dir_entry& entry)
+	void gps_tag(const exif_dir_entry& entry)
 	{
 		switch (entry._tag)
 		{
 		case EXIF_TAG_GPS_LATITUDE:
-		{
-			const auto degrees = entry.get_urational(0);
-			const auto minutes = entry.get_urational(1);
-			const auto seconds = entry.get_urational(2);
-			const auto latitude = gps_coordinate::dms_to_decimal(degrees.to_real(), minutes.to_real(),
-				seconds.to_real());
+			{
+				const auto degrees = entry.get_urational(0);
+				const auto minutes = entry.get_urational(1);
+				const auto seconds = entry.get_urational(2);
+				const auto latitude = gps_coordinate::dms_to_decimal(degrees.to_real(), minutes.to_real(),
+				                                                     seconds.to_real());
 
-			_gps_coordinate.latitude(latitude);
-		}
-		break;
+				_gps_coordinate.latitude(latitude);
+			}
+			break;
 
 		case EXIF_TAG_GPS_LATITUDE_REF:
 			// 'N' or 'S'
@@ -1304,16 +1299,16 @@ public:
 			break;
 
 		case EXIF_TAG_GPS_LONGITUDE:
-		{
-			const auto degrees = entry.get_urational(0);
-			const auto minutes = entry.get_urational(1);
-			const auto seconds = entry.get_urational(2);
-			const auto longitude = gps_coordinate::
-				dms_to_decimal(degrees.to_real(), minutes.to_real(), seconds.to_real());
+			{
+				const auto degrees = entry.get_urational(0);
+				const auto minutes = entry.get_urational(1);
+				const auto seconds = entry.get_urational(2);
+				const auto longitude = gps_coordinate::
+					dms_to_decimal(degrees.to_real(), minutes.to_real(), seconds.to_real());
 
-			_gps_coordinate.longitude(longitude);
-		}
-		break;
+				_gps_coordinate.longitude(longitude);
+			}
+			break;
 
 		case EXIF_TAG_GPS_LONGITUDE_REF:
 			// 'E' or 'W'
@@ -1331,7 +1326,7 @@ public:
 };
 
 
-void metadata_exif::parse(prop::item_metadata& pd, df::cspan cs)
+void metadata_exif::parse(prop::item_metadata& pd, const df::cspan cs)
 {
 	if (!cs.empty())
 	{
@@ -1340,7 +1335,7 @@ void metadata_exif::parse(prop::item_metadata& pd, df::cspan cs)
 	}
 }
 
-static void set_uint16(exif_dir_entry& e, df::span cs, uint16_t value)
+static void set_uint16(const exif_dir_entry& e, const df::span cs, const uint16_t value)
 {
 	const auto offset = e.data_offset();
 
@@ -1361,25 +1356,25 @@ void metadata_exif::fix_exif_dimensions(df::span data, const sizei dimensions)
 	if (data > 16)
 	{
 		const auto h = [dimensions, data](exif_dir_entry& e)
+		{
+			if (e._tag_type == tag_type::exif)
 			{
-				if (e._tag_type == tag_type::exif)
+				switch (e._tag)
 				{
-					switch (e._tag)
-					{
-					case EXIF_TAG_PIXEL_X_DIMENSION:
-						set_uint16(e, data, dimensions.cx);
-						break;
+				case EXIF_TAG_PIXEL_X_DIMENSION:
+					set_uint16(e, data, dimensions.cx);
+					break;
 
-					case EXIF_TAG_PIXEL_Y_DIMENSION:
-						set_uint16(e, data, dimensions.cy);
-						break;
+				case EXIF_TAG_PIXEL_Y_DIMENSION:
+					set_uint16(e, data, dimensions.cy);
+					break;
 
-					case EXIF_TAG_ORIENTATION:
-						set_uint16(e, data, static_cast<int>(ui::orientation::top_left));
-						break;
-					}
+				case EXIF_TAG_ORIENTATION:
+					set_uint16(e, data, static_cast<int>(ui::orientation::top_left));
+					break;
 				}
-			};
+			}
+		};
 
 		exif_enumerate(h, data);
 	}
@@ -1390,28 +1385,28 @@ void metadata_exif::fix_exif_rating(df::span data, int rating)
 	if (data > 16)
 	{
 		const auto h = [rating, data](exif_dir_entry& e)
+		{
+			if (e._tag_type == tag_type::exif)
 			{
-				if (e._tag_type == tag_type::exif)
+				switch (e._tag)
 				{
-					switch (e._tag)
-					{
-					case EXIF_TAG_IMAGE_RATING:
-						set_uint16(e, data, rating);
-						break;
+				case EXIF_TAG_IMAGE_RATING:
+					set_uint16(e, data, rating);
+					break;
 
-					case EXIF_TAG_IMAGE_RATING_PERCENT:
-						set_uint16(e, data, rating * 20);
-						break;
-					}
+				case EXIF_TAG_IMAGE_RATING_PERCENT:
+					set_uint16(e, data, rating * 20);
+					break;
 				}
-			};
+			}
+		};
 
 		exif_enumerate(h, data);
 	}
 }
 
 
-static long get_int(ExifData* ed, ExifEntry* ee)
+static long get_int(ExifData* ed, const ExifEntry* ee)
 {
 	const ExifByteOrder o = exif_data_get_byte_order(ed);
 	long value;
@@ -1428,20 +1423,18 @@ static long get_int(ExifData* ed, ExifEntry* ee)
 		value = exif_get_slong(ee->data, o);
 		break;
 	default:
-	{
-		const auto message = "Invalid Exif byte order"sv;
-		df::log(__FUNCTION__, message);
-		throw app_exception(std::string(message));
-	}
+		{
+			constexpr auto message = "Invalid Exif byte order"sv;
+			df::log(__FUNCTION__, message);
+			throw app_exception(std::string(message));
+		}
 	}
 	return value;
 }
 
-static void update_tag(ExifData* ed, int ifd, ExifTag tag, int value)
+static void update_tag(ExifData* ed, const int ifd, const ExifTag tag, const int value)
 {
-	ExifEntry* ee;
-
-	ee = exif_content_get_entry(ed->ifd[ifd], tag);
+	ExifEntry* ee = exif_content_get_entry(ed->ifd[ifd], tag);
 	if (nullptr == ee)
 		return;
 
@@ -1465,10 +1458,10 @@ static void update_tag(ExifData* ed, int ifd, ExifTag tag, int value)
 
 struct exif_free
 {
-	void operator()(ExifData* x) { exif_data_unref(x); }
+	void operator()(ExifData* x) const { exif_data_unref(x); }
 };
 
-metadata_kv_list metadata_exif::to_info(df::cspan data)
+metadata_kv_list metadata_exif::to_info(const df::cspan data)
 {
 	metadata_kv_list result;
 	std::unique_ptr<ExifData, exif_free> ed;
@@ -1498,14 +1491,14 @@ metadata_kv_list metadata_exif::to_info(df::cspan data)
 
 				for (auto j = 0u; j < content->count; j++)
 				{
-					const auto buffer_size = df::sixty_four_k;
+					constexpr auto buffer_size = df::sixty_four_k;
 					auto* const e = content->entries[j];
 					const auto* const text = exif_entry_get_value(e, buffer, buffer_size);
 
 					if (!is_junk(std::bit_cast<const uint8_t*>(text), 4))
 					{
 						result.emplace_back(str::cache(exif_tag_get_name_in_ifd(e->tag, exif_entry_get_ifd(e))),
-							std::u8string(str::utf8_cast(text)));
+						                    std::u8string(str::utf8_cast(text)));
 					}
 				}
 			}
@@ -1543,7 +1536,7 @@ df::blob metadata_exif::fix_dims(const df::span cs, const int image_width, const
 #define FILE_BYTE_ORDER EXIF_BYTE_ORDER_INTEL
 #define ASCII_COMMENT u8"ASCII\0\0\0"
 
-void add_tag(ExifData* exif, ExifTag tag, const str::cached val)
+void add_tag(const ExifData* exif, const ExifTag tag, const str::cached val)
 {
 	auto* const mem = exif_mem_new_default();
 
@@ -1554,7 +1547,7 @@ void add_tag(ExifData* exif, ExifTag tag, const str::cached val)
 		if (entry)
 		{
 			const auto len = val.size() + 1;
-			const auto ifd = EXIF_IFD_EXIF;
+			constexpr auto ifd = EXIF_IFD_EXIF;
 			auto* const buf = static_cast<uint8_t*>(exif_mem_alloc(mem, len));
 
 			if (buf)
@@ -1678,7 +1671,9 @@ df::blob metadata_exif::make_exif(const prop::item_metadata_ptr& md)
 		if (!prop::is_null(md->exposure_time)) add_tag(exif, EXIF_TAG_EXPOSURE_TIME, md->exposure_time);
 		if (!prop::is_null(md->iso_speed)) add_tag(exif, EXIF_TAG_ISO_SPEED_RATINGS, md->iso_speed);
 		if (!prop::is_null(md->focal_length)) add_tag(exif, EXIF_TAG_FOCAL_LENGTH, md->focal_length);
-		if (!prop::is_null(md->focal_length_35mm_equivalent)) add_tag(exif, EXIF_TAG_FOCAL_LENGTH_IN_35MM_FILM, md->focal_length_35mm_equivalent);
+		if (!prop::is_null(md->focal_length_35mm_equivalent))
+			add_tag(exif, EXIF_TAG_FOCAL_LENGTH_IN_35MM_FILM,
+			        md->focal_length_35mm_equivalent);
 		if (!prop::is_null(md->camera_manufacturer)) add_tag(exif, EXIF_TAG_MAKE, md->camera_manufacturer);
 		if (!prop::is_null(md->camera_model)) add_tag(exif, EXIF_TAG_MODEL, md->camera_model);
 		if (!prop::is_null(md->lens)) add_tag(exif, EXIF_TAG_LENS_MODEL, md->lens);

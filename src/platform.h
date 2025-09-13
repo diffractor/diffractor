@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -83,7 +82,7 @@ namespace platform
 
 	std::u8string format_number(const std::u8string& num_text);
 	std::u8string number_dec_sep();
-	bool is_valid_file_name(const std::u8string_view name);
+	bool is_valid_file_name(std::u8string_view name);
 
 	struct file_attributes_t
 	{
@@ -229,15 +228,15 @@ namespace platform
 	};
 
 	file_op_result delete_items(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders,
-		bool allow_undo);
+	                            bool allow_undo);
 	file_op_result move_or_copy(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders,
-		df::folder_path target, bool is_move);
+	                            df::folder_path target, bool is_move);
 
 	file_op_result delete_file(df::file_path path);
 	file_attributes_t file_attributes(df::file_path path);
 	file_attributes_t file_attributes(df::folder_path path);
 	file_op_result copy_file(df::file_path existing, df::file_path destination, bool fail_if_exists,
-		bool can_create_folder);
+	                         bool can_create_folder);
 	file_op_result move_file(df::file_path existing, df::file_path destination, bool fail_if_exists);
 	file_op_result move_file(df::folder_path existing, df::folder_path destination);
 	file_op_result replace_file(df::file_path destination, df::file_path existing, bool create_originals = false);
@@ -291,8 +290,8 @@ namespace platform
 	};
 
 	get_cached_file_properties_response get_cached_file_properties(df::file_path path,
-		prop::item_metadata& properties_out,
-		ui::const_image_ptr& thumbnail_out);
+	                                                               prop::item_metadata& properties_out,
+	                                                               ui::const_image_ptr& thumbnail_out);
 	get_cached_file_properties_response get_shell_thumbnail(df::file_path path, ui::const_image_ptr& thumbnail_out);
 
 	std::u8string user_name();
@@ -310,7 +309,7 @@ namespace platform
 
 	void download_and_verify(bool test_version, const std::function<void(df::file_path)>& complete);
 	file_op_result install(df::file_path installer_path, df::folder_path destination_folder, bool silent,
-		bool run_app_after_install);
+	                       bool run_app_after_install);
 
 
 	// dates
@@ -330,7 +329,8 @@ namespace platform
 	struct open_with_entry
 	{
 		std::u8string name;
-		std::function<bool(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders)> invoke;
+		std::function<bool(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders)>
+		invoke;
 		int weight = 0;
 	};
 
@@ -379,8 +379,8 @@ namespace platform
 		virtual file_op_result save_bitmap(df::folder_path save_path, std::u8string_view name, bool as_png) = 0;
 	};
 
-	drop_effect perform_drag(std::any frame_handle, const std::vector<df::file_path>& files,
-		const std::vector<df::folder_path>& folders);
+	drop_effect perform_drag(const std::any& frame_handle, const std::vector<df::file_path>& files,
+	                         const std::vector<df::folder_path>& folders);
 
 
 	using clipboard_data_ptr = std::shared_ptr<clipboard_data>;
@@ -389,7 +389,7 @@ namespace platform
 	bool clipboard_has_files_or_image();
 
 	void set_clipboard(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders,
-		const file_load_result& loaded, bool is_move);
+	                   const file_load_result& loaded, bool is_move);
 	void set_clipboard(std::u8string_view text);
 
 	class setting_file
@@ -420,19 +420,19 @@ namespace platform
 
 	public:
 		mutex();
-		~mutex();
+		~mutex() override;
 
 		_Acquires_exclusive_lock_(this)
-			void ex_lock() const;
+		void ex_lock() const;
 
 		_Releases_exclusive_lock_(this)
-			void ex_unlock() const;
+		void ex_unlock() const;
 
 		_Acquires_shared_lock_(this)
-			void sh_lock() const;
+		void sh_lock() const;
 
 		_Releases_shared_lock_(this)
-			void sh_unlock() const;
+		void sh_unlock() const;
 
 		void unlock() const
 		{
@@ -448,7 +448,7 @@ namespace platform
 		friend class exclusive_lock;
 	};
 
-	class shared_lock : public df::no_copy
+	class shared_lock final : public df::no_copy
 	{
 		const mutex& _rw;
 		bool _locked = false;
@@ -459,7 +459,7 @@ namespace platform
 			lock();
 		}
 
-		~shared_lock()
+		~shared_lock() override
 		{
 			unlock();
 		}
@@ -483,7 +483,7 @@ namespace platform
 		}
 	};
 
-	class exclusive_lock : public df::no_copy
+	class exclusive_lock final : public df::no_copy
 	{
 		const mutex& _rw;
 
@@ -493,7 +493,7 @@ namespace platform
 			_rw.ex_lock();
 		}
 
-		~exclusive_lock()
+		~exclusive_lock() override
 		{
 			_rw.ex_unlock();
 		}
@@ -593,7 +593,6 @@ namespace platform
 
 	class threads
 	{
-	private:
 		mutex _rw;
 		std::vector<std::thread> _threads;
 
@@ -634,10 +633,10 @@ namespace platform
 
 	extern uint32_t wait_for_timeout;
 	uint32_t wait_for(const std::vector<std::reference_wrapper<thread_event>>& events, uint32_t timeout_ms,
-		bool wait_all);
+	                  bool wait_all);
 	using attachments_t = std::vector<std::pair<std::u8string, df::file_path>>;
 	bool mapi_send(std::u8string_view to, std::u8string_view subject, std::u8string_view text,
-		const attachments_t& attachments);
+	               const attachments_t& attachments);
 	uint32_t tick_count();
 	uint32_t current_thread_id();
 	extern thread_event event_exit;
@@ -657,11 +656,10 @@ namespace platform
 	template <typename T>
 	class pool_allocator
 	{
-	private:
 		memory_pool _pool;
 
 	public:
-		void deallocate(T* const p, const size_t count)
+		static void deallocate(T* const p, const size_t count)
 		{
 			// no-op
 		}

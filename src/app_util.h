@@ -1,7 +1,15 @@
+// This file is part of the Diffractor photo and video organizer
+// Copyright(C) 2025  Zac Walker
+// 
+// This program is free software; you can redistribute it and / or modify it
+// under the terms of the LGPL License either version 2.1 or later.
+// License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
+// This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
+
 #pragma once
 
 
-static constexpr std::u8string_view doc_template_url = u8"https://www.diffractor.com/docs/template"sv;
+static constexpr auto doc_template_url = u8"https://www.diffractor.com/docs/template"sv;
 
 struct item_import;
 struct item_import_hash;
@@ -44,8 +52,8 @@ struct rename_item
 	std::u8string new_name;
 };
 
-std::vector<rename_item> calc_item_renames(const df::item_set& items, const std::u8string_view template_name, const int start);
-std::u8string format_sequence(const std::u8string_view original_name, const std::u8string_view template_name, const int seq);
+std::vector<rename_item> calc_item_renames(const df::item_set& items, std::u8string_view template_name, int start);
+std::u8string format_sequence(std::u8string_view original_name, std::u8string_view template_name, int seq);
 
 struct import_options
 {
@@ -70,7 +78,7 @@ struct import_source
 
 enum class import_action
 {
-import,
+	import,
 	already_exists,
 	already_imported
 };
@@ -95,13 +103,13 @@ struct import_analysis_item
 using import_analysis_result = std::map<df::folder_path, std::vector<import_analysis_item>, df::iless>;
 
 import_analysis_result import_analysis(const std::vector<folder_scan_item>& src_items,
-	const import_options& options, const item_import_set& previous_imported,
-	df::cancel_token token);
+                                       const import_options& options, const item_import_set& previous_imported,
+                                       df::cancel_token token);
 
 import_result import_copy(index_state& index, item_results_ptr results, const import_analysis_result& src_items,
-	const import_options& options, df::cancel_token token);
+                          const import_options& options, df::cancel_token token);
 
-std::vector<import_source> calc_import_sources(view_state& s);
+std::vector<import_source> calc_import_sources(const view_state& s);
 
 size_t count_imports(const std::vector<import_analysis_item>& items);
 size_t count_imports(const import_analysis_result& items);
@@ -141,17 +149,18 @@ struct sync_analysis_folder
 using sync_analysis_items = std::map<std::u8string, sync_analysis_item, df::iless>;
 using sync_analysis_result = std::map<std::u8string, sync_analysis_items, df::iless>;
 
-sync_analysis_result sync_analysis(const df::index_roots& local_roots, const df::folder_path remote_path,
-	const bool sync_local_remote, const bool sync_remote_local,
-	const bool sync_delete_local, const bool sync_delete_remote,
-	const df::cancel_token& token);
+sync_analysis_result sync_analysis(const df::index_roots& local_roots, df::folder_path remote_path,
+                                   bool sync_local_remote, bool sync_remote_local,
+                                   bool sync_delete_local, bool sync_delete_remote,
+                                   const df::cancel_token& token);
 
-void sync_copy(const std::shared_ptr<command_status>& status, const sync_analysis_result& analysis_result, const df::cancel_token& token);
+void sync_copy(const std::shared_ptr<command_status>& status, const sync_analysis_result& analysis_result,
+               const df::cancel_token& token);
 
-void toggle_collection_entry(settings_t::index_t& collection_settings, const df::folder_path folder, const bool is_remove);
+void toggle_collection_entry(settings_t::index_t& collection_settings, df::folder_path folder, bool is_remove);
 
 
-std::vector<std::u8string> check_overwrite(const df::folder_path write_folder, const df::item_set& items,
-	const std::u8string_view new_extension);
+std::vector<std::u8string> check_overwrite(df::folder_path write_folder, const df::item_set& items,
+                                           std::u8string_view new_extension);
 
-icon_index drive_icon(const platform::drive_type d);
+icon_index drive_icon(platform::drive_type d);

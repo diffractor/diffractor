@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
@@ -19,7 +18,7 @@
 #include "minizip/mz.h"
 #include "minizip/mz_compat.h"
 
-df::blob df::zlib_compress(cspan data_in)
+df::blob df::zlib_compress(const cspan data_in)
 {
 	if (data_in.size > std::numeric_limits<uint32_t>::max()) // overflow 
 		return {};
@@ -49,10 +48,12 @@ df::blob df::zlib_compress(cspan data_in)
 		assert_true(res == Z_OK);
 		if (strm.avail_out == 0)
 		{
-			try {
+			try
+			{
 				result.insert(result.end(), temp_buffer.get(), temp_buffer.get() + BUFSIZE);
 			}
-			catch (const std::bad_alloc&) {
+			catch (const std::bad_alloc&)
+			{
 				deflateEnd(&strm);
 				return {}; // Handle memory allocation failure
 			}
@@ -66,10 +67,12 @@ df::blob df::zlib_compress(cspan data_in)
 	{
 		if (strm.avail_out == 0)
 		{
-			try {
+			try
+			{
 				result.insert(result.end(), temp_buffer.get(), temp_buffer.get() + BUFSIZE);
 			}
-			catch (const std::bad_alloc&) {
+			catch (const std::bad_alloc&)
+			{
 				deflateEnd(&strm);
 				return {}; // Handle memory allocation failure
 			}
@@ -80,15 +83,17 @@ df::blob df::zlib_compress(cspan data_in)
 	}
 
 	assert_true(deflate_res == Z_STREAM_END);
-	
-	try {
+
+	try
+	{
 		result.insert(result.end(), temp_buffer.get(), temp_buffer.get() + BUFSIZE - strm.avail_out);
 	}
-	catch (const std::bad_alloc&) {
+	catch (const std::bad_alloc&)
+	{
 		deflateEnd(&strm);
 		return {}; // Handle memory allocation failure
 	}
-	
+
 	deflateEnd(&strm);
 
 	return result;
@@ -120,7 +125,7 @@ bool df::zip_file::close()
 	return true;
 }
 
-bool df::zip_file::add(const file_path path, const std::u8string_view name_in)
+bool df::zip_file::add(const file_path path, const std::u8string_view name_in) const
 {
 	file f;
 
@@ -139,7 +144,7 @@ bool df::zip_file::add(const file_path path, const std::u8string_view name_in)
 		zi.tmz_date.tm_sec = ft.second;
 
 		auto err = zipOpenNewFileInZip(std::any_cast<zipFile>(_handle), str::utf8_cast2(name).c_str(), &zi, nullptr, 0,
-			nullptr, 0, nullptr, Z_DEFLATED, Z_BEST_COMPRESSION);
+		                               nullptr, 0, nullptr, Z_DEFLATED, Z_BEST_COMPRESSION);
 
 		if (err != ZIP_OK)
 		{
@@ -154,7 +159,7 @@ bool df::zip_file::add(const file_path path, const std::u8string_view name_in)
 
 			// Write
 			err = zipWriteInFileInZip(std::any_cast<zipFile>(_handle), f.buffer(),
-				static_cast<uint32_t>(f.buffer_data_size()));
+			                          static_cast<uint32_t>(f.buffer_data_size()));
 
 			if (err != ZIP_OK)
 			{
@@ -187,7 +192,7 @@ size_t df::zip_file::extract(const file_path zip_file_path, const folder_path de
 {
 	std::vector<std::pair<file_path, file_path>> moves;
 
-	const int max_path = 256;
+	constexpr int max_path = 256;
 	char filename[max_path];
 	const auto write_buffer = df::unique_alloc<uint8_t>(sixty_four_k);
 	auto* const hz = unzOpen2_64(zip_file_path.str().c_str(), nullptr);
@@ -229,13 +234,14 @@ size_t df::zip_file::extract(const file_path zip_file_path, const folder_path de
 								}
 
 								f->set_created(platform::dos_date_to_ts(static_cast<uint16_t>(file.dosDate >> 16),
-									static_cast<uint16_t>(file.dosDate)));
+								                                        static_cast<uint16_t>(file.dosDate)));
 							}
 						}
 					}
 				}
 				unzCloseCurrentFile(hz);
-			} while (UNZ_OK == unzGoToNextFile(hz));
+			}
+			while (UNZ_OK == unzGoToNextFile(hz));
 		}
 
 		unzClose(hz);
@@ -258,7 +264,7 @@ std::vector<archive_item> df::zip_file::list(const file_path zip_file_path)
 {
 	std::vector<archive_item> results;
 
-	const int max_path = 256;
+	constexpr int max_path = 256;
 	char filename[max_path];
 	const auto write_buffer = df::unique_alloc<uint8_t>(sixty_four_k);
 	auto* const hz = unzOpen2_64(zip_file_path.str().c_str(), nullptr);
@@ -280,10 +286,11 @@ std::vector<archive_item> df::zip_file::list(const file_path zip_file_path)
 					result_info.uncompressed_size = file.uncompressed_size;
 					result_info.compressed_size = file.compressed_size;
 					result_info.created = platform::dos_date_to_ts(static_cast<uint16_t>(file.dosDate >> 16),
-						static_cast<uint16_t>(file.dosDate));
+					                                               static_cast<uint16_t>(file.dosDate));
 					results.emplace_back(result_info);
 				}
-			} while (UNZ_OK == unzGoToNextFile(hz));
+			}
+			while (UNZ_OK == unzGoToNextFile(hz));
 		}
 
 		unzClose(hz);

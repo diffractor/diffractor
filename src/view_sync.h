@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -17,7 +16,6 @@ class sync_view final :
 	public list_view,
 	public std::enable_shared_from_this<sync_view>
 {
-
 	bool _select_other_folder = false;
 	std::u8string _status;
 
@@ -27,9 +25,9 @@ public:
 		col_count = 3;
 	}
 
-	std::array<text_t, max_col_count> col_titles() override 
+	std::array<text_t, max_col_count> col_titles() override
 	{
-		return std::array<text_t, max_col_count> 
+		return std::array<text_t, max_col_count>
 		{
 			tt.action,
 			tt.local,
@@ -40,7 +38,7 @@ public:
 
 	text_t empty_message() override { return tt.view_empty_message; }
 
-	void run();
+	void run() const;
 	void analyze();
 	void refresh() override;
 	void reload() override;
@@ -70,4 +68,3 @@ public:
 
 	void update_rows(const sync_analysis_result& analysis_result);
 };
-

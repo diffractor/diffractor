@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
@@ -401,9 +400,9 @@ void metadata_edits::apply(SXMPMeta& meta) const
 		//std::u8string v;
 		XMP_OptionBits flags = 0;
 		meta.SetProperty(kXMP_NS_EXIF, "GPSLatitude",
-			str::utf8_cast2(gps_coordinate::decimal_to_dms_str(position.latitude(), true)));
+		                 str::utf8_cast2(gps_coordinate::decimal_to_dms_str(position.latitude(), true)));
 		meta.SetProperty(kXMP_NS_EXIF, "GPSLongitude",
-			str::utf8_cast2(gps_coordinate::decimal_to_dms_str(position.longitude(), false)));
+		                 str::utf8_cast2(gps_coordinate::decimal_to_dms_str(position.longitude(), false)));
 
 		// meta.SetProperty_Float(kXMP_NS_EXIF, "GPSLatitude"sv, position.Latitude());
 		// meta.SetProperty_Float(kXMP_NS_EXIF, "GPSLongitude"sv, position.Longitude());
@@ -563,7 +562,7 @@ void metadata_edits::apply(SXMPMeta& meta) const
 	if (orientation.has_value())
 	{
 		meta.SetProperty(kXMP_NS_TIFF, "Orientation",
-			str::utf8_cast2(str::to_string(static_cast<int>(orientation.value()))), kXMP_DeleteExisting);
+		                 str::utf8_cast2(str::to_string(static_cast<int>(orientation.value()))), kXMP_DeleteExisting);
 	}
 
 	if (!remove_tags.is_empty() || !add_tags.is_empty())
@@ -604,11 +603,11 @@ void metadata_edits::apply(SXMPMeta& meta) const
 	}
 }
 
-void metadata_xmp::parse(prop::item_metadata& pd, df::cspan xmp)
+void metadata_xmp::parse(prop::item_metadata& pd, const df::cspan xmp)
 {
 	try
 	{
-		const auto xmp_sig_len = xmp_signature.size() + 1;
+		constexpr auto xmp_sig_len = xmp_signature.size() + 1;
 		const auto size = xmp.size;
 		const auto* const data = xmp.data;
 
@@ -618,7 +617,8 @@ void metadata_xmp::parse(prop::item_metadata& pd, df::cspan xmp)
 
 			if (memcmp(data, xmp_signature.data(), xmp_sig_len) == 0)
 			{
-				meta.ParseFromBuffer(std::bit_cast<const char*>(data + xmp_sig_len), static_cast<uint32_t>(size - xmp_sig_len));
+				meta.ParseFromBuffer(std::bit_cast<const char*>(data + xmp_sig_len),
+				                     static_cast<uint32_t>(size - xmp_sig_len));
 			}
 			else
 			{
@@ -671,7 +671,7 @@ file_scan_result scan_xmp(const df::file_path path)
 		SXMPFiles f;
 
 		if (f.OpenFile(str::utf8_to_a(path.str()), kXMP_UnknownFile,
-			kXMPFiles_OpenForRead | kXMPFiles_OpenOnlyXMP | kXMPFiles_OpenUseSmartHandler))
+		               kXMPFiles_OpenForRead | kXMPFiles_OpenOnlyXMP | kXMPFiles_OpenUseSmartHandler))
 		{
 			SXMPMeta meta;
 			std::string packet;
@@ -701,7 +701,7 @@ df::file_path probe_xmp_path(const df::file_path src_path, const std::u8string_v
 }
 
 xmp_update_result metadata_xmp::update(const df::file_path update_path, const df::file_path src_path,
-	const metadata_edits& edits, const std::u8string_view xmp_name)
+                                       const metadata_edits& edits, const std::u8string_view xmp_name)
 {
 	xmp_update_result result;
 
@@ -719,7 +719,7 @@ xmp_update_result metadata_xmp::update(const df::file_path update_path, const df
 			SXMPFiles f;
 			const auto w = platform::to_file_system_path(src_path);
 			if (f.OpenFile(str::utf8_cast2(str::utf16_to_utf8(w)), kXMP_UnknownFile,
-				kXMPFiles_OpenForUpdate | kXMPFiles_OpenUseSmartHandler))
+			               kXMPFiles_OpenForUpdate | kXMPFiles_OpenUseSmartHandler))
 			{
 				f.GetXMP(&xmp);
 				f.CloseFile();
@@ -748,7 +748,7 @@ xmp_update_result metadata_xmp::update(const df::file_path update_path, const df
 			const auto w = platform::to_file_system_path(update_path);
 
 			if (xmp_dst_file.OpenFile(str::utf8_cast2(str::utf16_to_utf8(w)), kXMP_UnknownFile,
-				kXMPFiles_OpenForUpdate | kXMPFiles_OpenUseSmartHandler))
+			                          kXMPFiles_OpenForUpdate | kXMPFiles_OpenUseSmartHandler))
 			{
 				if (xmp_dst_file.CanPutXMP(xmp))
 				{
@@ -803,7 +803,7 @@ void metadata_xmp::update(std::u8string& buffer, const metadata_edits& edits)
 	}
 }
 
-metadata_kv_list metadata_xmp::to_info(df::cspan xmp)
+metadata_kv_list metadata_xmp::to_info(const df::cspan xmp)
 {
 	metadata_kv_list result;
 
@@ -811,7 +811,7 @@ metadata_kv_list metadata_xmp::to_info(df::cspan xmp)
 	{
 		SXMPMeta meta;
 
-		const auto xmp_sig_len = xmp_signature.size() + 1;
+		constexpr auto xmp_sig_len = xmp_signature.size() + 1;
 		const auto* data = std::bit_cast<const char*>(xmp.data);
 		auto size = xmp.size;
 

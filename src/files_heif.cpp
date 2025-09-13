@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
@@ -17,7 +16,7 @@
 #include <libheif/heif.h>
 
 
-static ui::surface_ptr image_to_surface(heif_image_handle* handle, heif_image* img)
+static ui::surface_ptr image_to_surface(const heif_image_handle* handle, const heif_image* img)
 {
 	const auto width = heif_image_get_primary_width(img);
 	const auto height = heif_image_get_primary_height(img);
@@ -36,7 +35,7 @@ static ui::surface_ptr image_to_surface(heif_image_handle* handle, heif_image* i
 		for (auto y = 0; y < height; y++)
 		{
 			const auto dst = result->pixels_line(y);
-			const auto src = heif_image_data + (static_cast<size_t>(heif_stride) * y);
+			const auto src = heif_image_data + static_cast<size_t>(heif_stride) * y;
 			std::memcpy(dst, src, copy_stride);
 		}
 
@@ -62,13 +61,13 @@ static int64_t get_position(void* userdata)
 static int read(void* data, const size_t size, void* userdata)
 {
 	const auto s = static_cast<heif_read_stream*>(userdata);
-	if ((s->pos + size) > s->stream->size()) return heif_error_Usage_error;
+	if (s->pos + size > s->stream->size()) return heif_error_Usage_error;
 	s->stream->read(s->pos, static_cast<uint8_t*>(data), size);
 	s->pos += size;
 	return heif_error_Ok;
 }
 
-static int seek(int64_t position, void* userdata)
+static int seek(const int64_t position, void* userdata)
 {
 	const auto s = static_cast<heif_read_stream*>(userdata);
 	if (position > static_cast<int64_t>(s->stream->size())) return heif_error_Usage_error;
@@ -76,14 +75,14 @@ static int seek(int64_t position, void* userdata)
 	return heif_error_Ok;
 }
 
-static heif_reader_grow_status wait_for_file_size(int64_t target_size, void* userdata)
+static heif_reader_grow_status wait_for_file_size(const int64_t target_size, void* userdata)
 {
 	const auto s = static_cast<heif_read_stream*>(userdata);
 	if (target_size > static_cast<int64_t>(s->stream->size())) return heif_reader_grow_status_size_beyond_eof;
 	return heif_reader_grow_status_size_reached;
 }
 
-static metadata_parts extract_metadata(heif_image_handle* handle)
+static metadata_parts extract_metadata(const heif_image_handle* handle)
 {
 	metadata_parts result = {};
 	const int metadata_block_count = heif_image_handle_get_number_of_metadata_blocks(handle, nullptr);
@@ -146,40 +145,46 @@ static metadata_parts extract_metadata(heif_image_handle* handle)
 	return result;
 }
 
-static str::cached extract_pixel_format(heif_image_handle* image_handle)
+static str::cached extract_pixel_format(const heif_image_handle* image_handle)
 {
 	str::cached result = {};
 
 	heif_colorspace out_colorspace;
 	heif_chroma out_chroma;
-	const auto colorspace_result = heif_image_handle_get_preferred_decoding_colorspace(image_handle, &out_colorspace, &out_chroma);
+	const auto colorspace_result = heif_image_handle_get_preferred_decoding_colorspace(
+		image_handle, &out_colorspace, &out_chroma);
 
 	if (colorspace_result.code == heif_error_Ok)
 	{
-		switch (out_chroma) {
-		case heif_chroma_monochrome: result = u8"grayscale"_c; break;
-		case heif_chroma_420: result = u8"yuv420"_c; break;
-		case heif_chroma_422: result = u8"yuv422"_c; break;
-		case heif_chroma_444: result = u8"yuv444"_c; break;
+		switch (out_chroma)
+		{
+		case heif_chroma_monochrome: result = u8"grayscale"_c;
+			break;
+		case heif_chroma_420: result = u8"yuv420"_c;
+			break;
+		case heif_chroma_422: result = u8"yuv422"_c;
+			break;
+		case heif_chroma_444: result = u8"yuv444"_c;
+			break;
 		case heif_chroma_undefined:
 			break;
 		case heif_chroma_interleaved_RGB:
-			result = u8"rgb"_c; 
+			result = u8"rgb"_c;
 			break;
 		case heif_chroma_interleaved_RGBA:
-			result = u8"rgba"_c; 
+			result = u8"rgba"_c;
 			break;
 		case heif_chroma_interleaved_RRGGBB_BE:
-			result = u8"rgb48"_c; 
+			result = u8"rgb48"_c;
 			break;
 		case heif_chroma_interleaved_RRGGBBAA_BE:
-			result = u8"rgba64"_c; 
+			result = u8"rgba64"_c;
 			break;
 		case heif_chroma_interleaved_RRGGBB_LE:
-			result = u8"rgb48"_c; 
+			result = u8"rgb48"_c;
 			break;
 		case heif_chroma_interleaved_RRGGBBAA_LE:
-			result = u8"rgba64"_c; 
+			result = u8"rgba64"_c;
 			break;
 		}
 	}
@@ -192,7 +197,7 @@ file_scan_result scan_heif(read_stream& s)
 	file_scan_result result = {};
 
 	const df::releaser<heif_context> ctx(heif_context_alloc(),
-		[](auto* c) { heif_context_free(c); });
+	                                     [](auto* c) { heif_context_free(c); });
 
 	heif_reader reader = {};
 	reader.get_position = get_position;
@@ -209,7 +214,10 @@ file_scan_result scan_heif(read_stream& s)
 	{
 		heif_image_handle* image_handle = nullptr;
 		const auto image_result = heif_context_get_primary_image_handle(ctx.get(), &image_handle);
-		const df::releaser<heif_image_handle> image_handle_releaser(image_handle, [](auto* c) { heif_image_handle_release(c); });
+		const df::releaser<heif_image_handle> image_handle_releaser(image_handle, [](auto* c)
+		{
+			heif_image_handle_release(c);
+		});
 
 		if (image_result.code == heif_error_Ok)
 		{
@@ -223,14 +231,16 @@ file_scan_result scan_heif(read_stream& s)
 			if (thumbnail_count > 0)
 			{
 				heif_image_handle* thumbnail_handle = nullptr;
-				const auto thumbnail_result = heif_image_handle_get_thumbnail(image_handle, thumbnail_id, &thumbnail_handle);
-				const df::releaser<heif_image_handle> thumbnail_handle_releaser(thumbnail_handle, [](auto* c) { heif_image_handle_release(c); });
+				const auto thumbnail_result = heif_image_handle_get_thumbnail(
+					image_handle, thumbnail_id, &thumbnail_handle);
+				const df::releaser<heif_image_handle> thumbnail_handle_releaser(
+					thumbnail_handle, [](auto* c) { heif_image_handle_release(c); });
 
 				if (thumbnail_result.code == heif_error_Ok)
 				{
 					heif_image* img = nullptr;
 					const auto decode_image_result = heif_decode_image(thumbnail_handle, &img, heif_colorspace_RGB,
-						heif_chroma_interleaved_RGBA, nullptr);
+					                                                   heif_chroma_interleaved_RGBA, nullptr);
 					const df::releaser<heif_image> heif_image_releaser(img, [](auto* i) { heif_image_release(i); });
 
 					if (decode_image_result.code == heif_error_Ok)
@@ -260,7 +270,7 @@ ui::surface_ptr load_heif(read_stream& s)
 	ui::surface_ptr result;
 
 	const std::shared_ptr<heif_context> ctx(heif_context_alloc(),
-		[](heif_context* c) { heif_context_free(c); });
+	                                        [](heif_context* c) { heif_context_free(c); });
 
 	heif_reader reader = {};
 	reader.get_position = get_position;
@@ -278,14 +288,17 @@ ui::surface_ptr load_heif(read_stream& s)
 		// get a handle to the primary image
 		heif_image_handle* image_handle = nullptr;
 		const auto image_handle_result = heif_context_get_primary_image_handle(ctx.get(), &image_handle);
-		const df::releaser<heif_image_handle> image_handle_releaser(image_handle, [](auto* c) { heif_image_handle_release(c); });
+		const df::releaser<heif_image_handle> image_handle_releaser(image_handle, [](auto* c)
+		{
+			heif_image_handle_release(c);
+		});
 
 		if (image_handle_result.code == heif_error_Ok)
 		{
 			// decode the image and convert colorspace to RGB, saved as 24bit interleaved
 			heif_image* img = nullptr;
 			const auto decode_image_result = heif_decode_image(image_handle, &img, heif_colorspace_RGB,
-				heif_chroma_interleaved_RGBA, nullptr);
+			                                                   heif_chroma_interleaved_RGBA, nullptr);
 
 			const df::releaser<heif_image> heif_image_releaser(img, [](auto* i) { heif_image_release(i); });
 

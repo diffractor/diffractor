@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -18,6 +17,7 @@ using id_counts_type = df::hash_map<int, df::int_counter>;
 class tag_set
 {
 	std::vector<std::u8string> _tags;
+
 public:
 	tag_set() noexcept = default;
 	tag_set(const tag_set&) = default;
@@ -70,12 +70,12 @@ public:
 		_tags.clear();
 	}
 
-	std::u8string to_string(const std::u8string_view join = u8" "sv, bool quote = true) const
+	std::u8string to_string(const std::u8string_view join = u8" "sv, const bool quote = true) const
 	{
 		return str::combine(_tags, join, quote);
 	}
 
-	const std::u8string& operator[](int i) const
+	const std::u8string& operator[](const int i) const
 	{
 		return _tags[i];
 	}

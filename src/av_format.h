@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
+// Copyright(C) 2025  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -95,27 +94,27 @@ public:
 	audio_resampler(const audio_info_t& info);
 	~audio_resampler();
 
-	void flush();
+	void flush() const;
 	void resample(const av_frame_ptr& frame, audio_buffer& audio_buffer);
 };
 
 class av_scaler
 {
 	SwsContext* _scaler = nullptr;
+
 public:
 	~av_scaler();
 
 	bool scale_surface(const ui::const_surface_ptr& surface_in, ui::surface_ptr& surface_out, sizei dimensions_out);
-	bool scale_surface(const av_frame_ptr& frame, ui::surface_ptr& surface_out);
+	bool scale_surface(const av_frame_ptr& frame, const ui::surface_ptr& surface_out);
 	bool scale_frame(const AVFrame& frame, ui::surface_ptr& surface, sizei max_dim, double time,
-		ui::orientation orientation);
+	                 ui::orientation orientation);
 };
 
 
 template <typename T>
 class av_queue final : public df::no_copy
 {
-private:
 	mutable platform::mutex _mutex;
 	_Guarded_by_(_mutex) std::deque<std::shared_ptr<T>> _q;
 
@@ -124,7 +123,7 @@ public:
 	{
 	}
 
-	~av_queue()
+	~av_queue() override
 	{
 		clear();
 	}
@@ -265,9 +264,8 @@ struct av_pts_correction
 };
 
 
-class av_format_decoder : public df::no_copy
+class av_format_decoder final : public df::no_copy
 {
-private:
 	AVFormatContext* _format_context = nullptr;
 	df::file_path _path;
 	df::file_size _file_size;
@@ -282,7 +280,7 @@ private:
 
 public:
 	av_format_decoder() = default;
-	~av_format_decoder() { close(); }
+	~av_format_decoder() override { close(); }
 
 	std::unique_ptr<audio_resampler> make_audio_resampler() const;
 
@@ -303,7 +301,6 @@ public:
 	int64_t bitrate() const;
 	const AVStream* Stream(uint32_t i) const;
 	const ui::image_ptr& cover_art() const { return _cover_art; }
-
 
 private:
 	std::unique_ptr<av_scaler> _scaler;
@@ -336,16 +333,15 @@ private:
 	int64_t _video_start_time = 0;
 	int64_t _audio_start_time = 0;
 
-	void update_orientation(AVFrame* frame);
+	void update_orientation(const AVFrame* frame);
 	ui::orientation calc_orientation() const;
 
 	bool decode_frame(ui::surface_ptr& dest_surface, AVCodecContext* ctx, const av_packet_ptr& packet,
-		double audio_time, sizei max_dim);
+	                  double audio_time, sizei max_dim);
 
 	friend class av_player;
 	friend class av_session;
 	friend class av_converter;
-
 
 public:
 	bool has_audio() const
@@ -383,9 +379,9 @@ public:
 	audio_info_t audio_info() const;
 
 	bool extract_seek_frame(ui::surface_ptr& dest_surface, sizei max_dim, double pos_numerator = 10,
-		double pos_denominator = 100);
+	                        double pos_denominator = 100);
 	bool extract_thumbnail(ui::surface_ptr& dest_surface, sizei max_dim, double pos_numerator = 10,
-		double pos_denominator = 100);
+	                       double pos_denominator = 100);
 	file_load_result render_frame(const av_frame_ptr& frame_in) const;
 	void receive_frames(av_packet_queue& packets, av_frame_queue& frames);
 

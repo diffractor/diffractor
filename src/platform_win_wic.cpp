@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
@@ -23,16 +22,16 @@ static void flip_buffer_vertically(uint32_t* buffer, const unsigned width, const
 	{
 		return; // Nothing to flip or invalid parameters
 	}
-	
+
 	const auto rows = height / 2;
 	const auto stride = width * sizeof(uint32_t);
-	
+
 	// Check for potential overflow
 	if (width > SIZE_MAX / sizeof(uint32_t))
 	{
 		return; // Avoid overflow in stride calculation
 	}
-	
+
 	const auto temp_row = df::unique_alloc<uint32_t*>(stride);
 
 	if (temp_row)
@@ -51,7 +50,7 @@ HGLOBAL image_to_handle(const file_load_result& loaded)
 	const auto dimensions = loaded.dimensions();
 
 	// Validate dimensions to prevent integer overflow
-	if (dimensions.cx <= 0 || dimensions.cy <= 0 || 
+	if (dimensions.cx <= 0 || dimensions.cy <= 0 ||
 		dimensions.cx > 65536 || dimensions.cy > 65536)
 	{
 		df::log(__FUNCTION__, "Invalid image dimensions"sv);
@@ -65,7 +64,7 @@ HGLOBAL image_to_handle(const file_load_result& loaded)
 	bi.biPlanes = 1;
 	bi.biBitCount = 32;
 	bi.biCompression = BI_RGB;
-	
+
 	// Check for potential overflow in image size calculation
 	const size_t pixel_count = static_cast<size_t>(dimensions.cx) * dimensions.cy;
 	if (pixel_count > SIZE_MAX / 4)
@@ -73,7 +72,7 @@ HGLOBAL image_to_handle(const file_load_result& loaded)
 		df::log(__FUNCTION__, "Image too large, potential overflow"sv);
 		throw std::invalid_argument("Image too large");
 	}
-	
+
 	bi.biSizeImage = static_cast<DWORD>(pixel_count * 4);
 
 	const auto alloc_size = sizeof(bi) + bi.biSizeImage;
@@ -118,15 +117,15 @@ HGLOBAL image_to_handle(const file_load_result& loaded)
 		{
 			const auto src_offset = stride_in * y;
 			const auto dest_offset = stride_out * y;
-			
+
 			// Bounds checking for buffer operations
-			if (src_offset + copy_len > s->size() || 
+			if (src_offset + copy_len > s->size() ||
 				dest_offset + copy_len > bi.biSizeImage)
 			{
 				df::log(__FUNCTION__, "Buffer bounds exceeded"sv);
 				break;
 			}
-			
+
 			memcpy(pixels_out + dest_offset, pixels_in + src_offset, copy_len);
 		}
 
@@ -170,7 +169,7 @@ static CLSID wic_encoder_clsid(const std::u8string_view format)
 }
 
 platform::file_op_result save_bitmap_info(const df::folder_path save_path, const std::u8string_view name,
-	const bool as_png, const HBITMAP image_buffer_in)
+                                          const bool as_png, const HBITMAP image_buffer_in)
 {
 	platform::file_op_result result;
 
@@ -201,7 +200,7 @@ platform::file_op_result save_bitmap_info(const df::folder_path save_path, const
 
 		df::file_path path(folder, name, ext);
 		const auto encoder_format = wic_encoder_clsid(ext);
-		const int max_file_name = 100;
+		constexpr int max_file_name = 100;
 
 		// Validate path creation to prevent infinite loops
 		if (name.empty())
@@ -242,7 +241,7 @@ platform::file_op_result save_bitmap_info(const df::folder_path save_path, const
 				hr = piEncoder->Initialize(piFileStream.Get(), WICBitmapEncoderNoCache);
 			}
 
-			WICPixelFormatGUID pixelFormat = { 0 };
+			WICPixelFormatGUID pixelFormat = {0};
 			UINT width, height = 0;
 			ComPtr<IWICBitmapFrameEncode> piFrameEncode;
 
@@ -334,7 +333,7 @@ ui::const_surface_ptr platform::create_segoe_md2_icon(const wchar_t ch)
 
 	auto surface_result = std::make_shared<ui::surface>();
 
-	const auto cxy = 160;
+	constexpr auto cxy = 160;
 	surface_result->alloc(cxy, cxy, ui::texture_format::ARGB, ui::orientation::top_left);
 
 	{
@@ -364,12 +363,12 @@ ui::const_surface_ptr platform::create_segoe_md2_icon(const wchar_t ch)
 			ComPtr<ID2D1SolidColorBrush> brush;
 
 			hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, __uuidof(IWICImagingFactory),
-				reinterpret_cast<void**>(wic.GetAddressOf()));
+			                      reinterpret_cast<void**>(wic.GetAddressOf()));
 
 			if (SUCCEEDED(hr))
 			{
 				hr = wic->CreateBitmap(cxy, cxy,
-					GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnDemand, &wic_bitmap);
+				                       GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnDemand, &wic_bitmap);
 			}
 
 			if (SUCCEEDED(hr))
@@ -417,7 +416,7 @@ ui::const_surface_ptr platform::create_segoe_md2_icon(const wchar_t ch)
 
 			if (SUCCEEDED(hr))
 			{
-				const wchar_t icon_text[2] = { ch, 0 };
+				const wchar_t icon_text[2] = {ch, 0};
 
 				rt->BeginDraw();
 
@@ -455,9 +454,9 @@ ui::const_surface_ptr platform::create_segoe_md2_icon(const wchar_t ch)
 					rc.Height = cxy;
 
 					hr = pConverter->CopyPixels(&rc,
-						static_cast<uint32_t>(surface_result->stride()),
-						static_cast<uint32_t>(surface_result->size()),
-						surface_result->pixels());
+					                            static_cast<uint32_t>(surface_result->stride()),
+					                            static_cast<uint32_t>(surface_result->size()),
+					                            surface_result->pixels());
 				}
 			}
 
@@ -477,12 +476,12 @@ ui::surface_ptr platform::image_to_surface(const df::cspan image_buffer_in, cons
 	{
 		return nullptr; // Invalid input
 	}
-	
+
 	if (image_buffer_in.size > UINT32_MAX)
 	{
 		return nullptr; // Size too large for WIC API
 	}
-	
+
 	ui::surface_ptr surface_result;
 	ComPtr<IWICImagingFactory> wic;
 
@@ -537,7 +536,7 @@ ui::surface_ptr platform::image_to_surface(const df::cspan image_buffer_in, cons
 		hr = wic_decoder->GetContainerFormat(&container_format);
 	}
 
-	if (SUCCEEDED(hr) && (uiFrameCount > 0))
+	if (SUCCEEDED(hr) && uiFrameCount > 0)
 	{
 		ComPtr<IWICBitmapSource> pSource;
 
@@ -549,9 +548,9 @@ ui::surface_ptr platform::image_to_surface(const df::cspan image_buffer_in, cons
 			pSource->AddRef();
 
 			hr = pSource->GetSize(&uiWidth, &uiHeight);
-			
+
 			// Validate image dimensions
-			if (SUCCEEDED(hr) && (uiWidth == 0 || uiHeight == 0 || 
+			if (SUCCEEDED(hr) && (uiWidth == 0 || uiHeight == 0 ||
 				uiWidth > 65536 || uiHeight > 65536))
 			{
 				hr = E_INVALIDARG;
@@ -622,9 +621,9 @@ ui::surface_ptr platform::image_to_surface(const df::cspan image_buffer_in, cons
 					else
 					{
 						hr = pSource->CopyPixels(&rc,
-							static_cast<uint32_t>(surface_result->stride()),
-							static_cast<uint32_t>(surface_result->size()),
-							surface_result->pixels());
+						                         static_cast<uint32_t>(surface_result->stride()),
+						                         static_cast<uint32_t>(surface_result->size()),
+						                         surface_result->pixels());
 					}
 				}
 				else

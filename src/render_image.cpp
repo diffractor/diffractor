@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
@@ -22,7 +21,7 @@ void ui::surface::swap_rb()
 	{
 		const auto dest_stride = _stride;
 
-		if (((std::bit_cast<uintptr_t>(_pixels.get())) % 16 == 0) && ((dest_stride % 16) == 0))
+		if (std::bit_cast<uintptr_t>(_pixels.get()) % 16 == 0 && dest_stride % 16 == 0)
 		{
 			const auto mask = _mm_setr_epi8(
 				0x02, 0x01, 0x00, 0x03,
@@ -57,7 +56,6 @@ void ui::surface::swap_rb()
 			*p = bgr(*p);
 		}
 	}
-
 }
 
 

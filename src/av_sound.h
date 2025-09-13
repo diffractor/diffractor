@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
+// Copyright(C) 2025  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -13,7 +12,7 @@
 struct AVChannelLayout;
 using channel_layout_ptr = std::shared_ptr<AVChannelLayout>;
 
-channel_layout_ptr av_get_def_channel_layout(const int num_channels);
+channel_layout_ptr av_get_def_channel_layout(int num_channels);
 
 struct audio_info_t
 {
@@ -33,9 +32,8 @@ struct audio_info_t
 	uint32_t bytes_per_sample() const;
 };
 
-class audio_buffer : df::no_copy
+class audio_buffer final : df::no_copy
 {
-private:
 	int gen = -1;
 
 	uint8_t* data = nullptr;
@@ -53,11 +51,12 @@ public:
 	{
 		format = format_in;
 		size = 4 * format.bytes_per_second();
-		data = static_cast<uint8_t*>(_aligned_realloc(data, static_cast<size_t>(size) + static_cast<size_t>(data_padding), data_alignment));
+		data = static_cast<uint8_t*>(_aligned_realloc(
+			data, static_cast<size_t>(size) + static_cast<size_t>(data_padding), data_alignment));
 		end_pos = 0;
 	}
 
-	~audio_buffer()
+	~audio_buffer() override
 	{
 		_aligned_free(data);
 	}
@@ -109,7 +108,7 @@ public:
 		memset(data, 0, size);
 	}
 
-	void remove(uint32_t bytes_to_remove)
+	void remove(const uint32_t bytes_to_remove)
 	{
 		df::assert_true(bytes_to_remove <= end_pos);
 
@@ -122,7 +121,7 @@ public:
 		time += bytes_to_remove / static_cast<double>(format.bytes_per_second());
 	}
 
-	void append(const uint8_t* data_in, const uint32_t bytes_in, double time_in, int generation_in)
+	void append(const uint8_t* data_in, const uint32_t bytes_in, const double time_in, const int generation_in)
 	{
 		if (generation_in != gen)
 		{
@@ -149,7 +148,7 @@ public:
 				memcpy_s(data + end_pos, size - end_pos, data_in, bytes_in);
 				end_pos += bytes_in;
 
-				time = time_in - (original_end_pos / static_cast<double>(format.bytes_per_second()));
+				time = time_in - original_end_pos / static_cast<double>(format.bytes_per_second());
 			}
 		}
 	}
@@ -165,7 +164,7 @@ public:
 
 	double end_time() const
 	{
-		return time + (used_bytes() / static_cast<double>(format.bytes_per_second()));
+		return time + used_bytes() / static_cast<double>(format.bytes_per_second());
 	}
 
 	double start_time() const

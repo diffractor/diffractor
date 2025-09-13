@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
+// Copyright(C) 2025  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -49,7 +48,6 @@ public:
 
 class av_session final : public std::enable_shared_from_this<av_session>
 {
-private:
 	av_visualizer _visualizer;
 
 	file_type_ref _mt = nullptr;
@@ -61,7 +59,7 @@ private:
 	av_frame_queue _video_frames;
 
 	mutable platform::mutex _decoder_rw;
-	_Guarded_by_(_decoder_rw)  av_format_decoder _decoder;
+	_Guarded_by_(_decoder_rw) av_format_decoder _decoder;
 
 	double _end_time = 0;
 	double _last_frame_decoded = 0;
@@ -130,7 +128,7 @@ public:
 
 	void adjust_volume()
 	{
-		_volume = (_scrubbing || _mute) ? 0 : setting.media_volume;
+		_volume = _scrubbing || _mute ? 0 : setting.media_volume;
 	}
 
 	void toggle_mute()
@@ -187,7 +185,7 @@ public:
 	}
 
 	bool open(const df::item_element_ptr& item, const bool auto_play, const int video_track, const int audio_track,
-		const bool can_use_hw, const bool use_last_played_pos, const bool can_use_threads)
+	          const bool can_use_hw, const bool use_last_played_pos, const bool can_use_threads)
 	{
 		df::assert_true(_state == av_play_state::detached);
 
@@ -236,7 +234,7 @@ public:
 			{
 				const auto starting_pos = item->media_position();
 
-				if ((starting_pos > (start_time + 2.0)) && (starting_pos < (end_time - 5.0)) && (duration > 10.0))
+				if (starting_pos > start_time + 2.0 && starting_pos < end_time - 5.0 && duration > 10.0)
 				{
 					_decoder.seek(starting_pos, _last_frame_decoded);
 					_last_seek = starting_pos;
@@ -282,7 +280,7 @@ public:
 
 	void seek(double pos, bool scrubbing);
 
-	void process_video(platform::thread_event& _read_event)
+	void process_video(const platform::thread_event& _read_event)
 	{
 		auto loop_iteration = 0;
 
@@ -310,14 +308,15 @@ public:
 		}
 	}
 
-	void process_audio(audio_buffer& playback_buffer, audio_buffer& vis_buffer, platform::thread_event& read_event)
+	void process_audio(audio_buffer& playback_buffer, audio_buffer& vis_buffer,
+	                   const platform::thread_event& read_event)
 	{
 		auto loop_iteration = 0;
 
 		if (_decoder.has_audio())
 		{
-			while ((_audio_frames.should_receive() || playback_buffer.should_fill() || _seek_gen != playback_buffer.
-				generation()))
+			while (_audio_frames.should_receive() || playback_buffer.should_fill() || _seek_gen != playback_buffer.
+				generation())
 			{
 				if (_audio_frames.should_receive())
 				{
@@ -382,7 +381,7 @@ public:
 		}
 	}
 
-	void process_io(platform::thread_event& video_event, platform::thread_event& audio_event);
+	void process_io(const platform::thread_event& video_event, const platform::thread_event& audio_event);
 
 	bool has_ended(const double time_now) const
 	{
@@ -404,7 +403,7 @@ public:
 			_item->media_position(time);
 		}
 
-		const auto is_playing_audio = _mt && (_mt->group->traits && file_traits::visualize_audio);
+		const auto is_playing_audio = _mt != nullptr && (_mt->group->traits && file_traits::visualize_audio);
 
 		if (is_playing_audio)
 		{
@@ -467,7 +466,7 @@ public:
 	}
 
 	void update_visualizer(const ui::vertices_ptr& verts, const recti rect, const pointi offset, const float alpha,
-		const double time_now)
+	                       const double time_now) const
 	{
 		const auto time = pos(time_now);
 		_last_frame_time = time;
@@ -477,7 +476,7 @@ public:
 
 	bool capture_frame(const av_frame& frame_in, ui::const_image_ptr& result);
 
-	render_valid update_texture(const ui::texture_ptr& texture)
+	render_valid update_texture(const ui::texture_ptr& texture) const
 	{
 		auto result = render_valid::valid;
 		const auto vf = _frame;
@@ -520,7 +519,6 @@ public:
 
 class av_player final : public std::enable_shared_from_this<av_player>
 {
-private:
 	mutable platform::thread_event _video_event;
 	mutable platform::thread_event _audio_event;
 	mutable platform::thread_event _read_event;
@@ -529,7 +527,7 @@ private:
 	platform::mutex _thread_mutex;
 	std::shared_ptr<av_session> _thread_session;
 
-	mutable _Guarded_by_(_thread_mutex)  std::u8string _audio_device_id;
+	mutable _Guarded_by_(_thread_mutex) std::u8string _audio_device_id;
 	mutable std::u8string _play_audio_device_id;
 
 	_Guarded_by_(_queue_mutex) std::deque<std::function<void(std::shared_ptr<av_player>)>> _q;
@@ -559,16 +557,16 @@ public:
 	}
 
 	void open(const df::item_element_ptr& item, const bool auto_play, const int video_track, const int audio_track,
-		const bool can_use_hw,
-		const bool use_last_played_pos,
-		const std::function<void(std::shared_ptr<av_session>)>& cb)
+	          const bool can_use_hw,
+	          const bool use_last_played_pos,
+	          const std::function<void(std::shared_ptr<av_session>)>& cb)
 	{
 		queue([item, auto_play, video_track, audio_track, can_use_hw, use_last_played_pos, cb](
 			const std::shared_ptr<av_player>& p)
 			{
 				df::scope_locked_inc l(df::loading_media);
 				auto ses = p->open_impl(item, auto_play, video_track, audio_track, can_use_hw, use_last_played_pos);
-				if (cb) p->_host.queue_ui([cb, ses]() { cb(ses); });
+				if (cb) p->_host.queue_ui([cb, ses] { cb(ses); });
 			});
 	}
 
@@ -588,7 +586,7 @@ public:
 	}
 
 private:
-	void seek_impl(const std::shared_ptr<av_session>& ses, const double pos, bool scrubbing) const
+	void seek_impl(const std::shared_ptr<av_session>& ses, const double pos, const bool scrubbing) const
 	{
 		ses->seek(pos, scrubbing);
 
@@ -598,11 +596,12 @@ private:
 	}
 
 	std::shared_ptr<av_session> open_impl(const df::item_element_ptr& item, const bool auto_play, const int video_track,
-		const int audio_track, const bool can_use_hw,
-		const bool use_last_played_pos)
+	                                      const int audio_track, const bool can_use_hw,
+	                                      const bool use_last_played_pos)
 	{
 		const auto ses = std::make_shared<av_session>(_host);
-		const auto open_result = ses->open(item, auto_play, video_track, audio_track, can_use_hw, use_last_played_pos, true);
+		const auto open_result = ses->open(item, auto_play, video_track, audio_track, can_use_hw, use_last_played_pos,
+		                                   true);
 		auto result = open_result ? ses : nullptr;
 
 		if (_thread_session != result)
@@ -676,7 +675,7 @@ public:
 
 	void decode_video() const
 	{
-		const std::vector<std::reference_wrapper<platform::thread_event>> events = { platform::event_exit, _video_event };
+		const std::vector<std::reference_wrapper<platform::thread_event>> events = {platform::event_exit, _video_event};
 		std::shared_ptr<av_session> session;
 
 		while (!df::is_closing)
@@ -709,7 +708,7 @@ public:
 
 		vis_buffer.init(vis_format);
 
-		const std::vector<std::reference_wrapper<platform::thread_event>> events = { platform::event_exit, _audio_event };
+		const std::vector<std::reference_wrapper<platform::thread_event>> events = {platform::event_exit, _audio_event};
 
 		auto has_audio = false;
 		auto base_time = 0.0;
@@ -870,7 +869,7 @@ public:
 	void reading()
 	{
 		const auto player = shared_from_this();
-		const std::vector<std::reference_wrapper<platform::thread_event>> events = { platform::event_exit, _read_event };
+		const std::vector<std::reference_wrapper<platform::thread_event>> events = {platform::event_exit, _read_event};
 
 		while (!df::is_closing)
 		{
@@ -899,7 +898,7 @@ public:
 		}
 	}
 
-	void pause_impl(const std::shared_ptr<av_session>& ses)
+	void pause_impl(const std::shared_ptr<av_session>& ses) const
 	{
 		if (ses->_state == av_play_state::playing)
 		{
@@ -909,9 +908,9 @@ public:
 		}
 	}
 
-	void play_impl(const std::shared_ptr<av_session>& ses)
+	void play_impl(const std::shared_ptr<av_session>& ses) const
 	{
-		if (ses->_state == av_play_state::playing && ses->_last_frame_time >= (ses->_end_time - 1.0))
+		if (ses->_state == av_play_state::playing && ses->_last_frame_time >= ses->_end_time - 1.0)
 		{
 			if (ses->_last_seek != ses->_start_time || ses->_start_time == 0)
 			{
@@ -926,9 +925,9 @@ public:
 	void capture(const std::shared_ptr<av_session>& ses, const std::function<void(file_load_result)>& cb)
 	{
 		queue([ses, cb](const std::shared_ptr<av_player>& p)
-			{
-				cb(ses->capture_first_frame());
-			});
+		{
+			cb(ses->capture_first_frame());
+		});
 	}
 
 private:

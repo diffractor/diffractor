@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -47,7 +46,7 @@ namespace df
 
 		date_t(const int y, const int m, const int d, const int hh = 0, const int mm = 0, const int ss = 0) noexcept
 		{
-			const day_t dd{ y, m, d, hh, mm, ss };
+			const day_t dd{y, m, d, hh, mm, ss};
 			date(dd);
 		}
 
@@ -77,7 +76,7 @@ namespace df
 
 		static date_t null;
 
-		constexpr date_t& operator=(int64_t n)
+		constexpr date_t& operator=(const int64_t n)
 		{
 			_i = n;
 			return *this;
@@ -156,12 +155,12 @@ namespace df
 		{
 			if (!is_valid()) return 0;
 			const auto st = date();
-			return (st.year * 100) + st.month;
+			return st.year * 100 + st.month;
 		}
 
 		static date_t from(std::u8string_view r);
 
-		static date_t from_time_t(time_t t)
+		static date_t from_time_t(const time_t t)
 		{
 			const uint64_t ll = static_cast<uint64_t>(t) * 10000000ll + offset_1970;
 			return date_t(ll);
@@ -189,7 +188,7 @@ namespace df
 
 		date_t local_to_system() const;
 
-		constexpr static date_t from_days(uint32_t days)
+		constexpr static date_t from_days(const uint32_t days)
 		{
 			return date_t(days * intervals_per_day);
 		}
@@ -201,13 +200,13 @@ namespace df
 
 		constexpr date_t previous_day() const
 		{
-			const auto previous = (_i / intervals_per_day) - 1;
+			const auto previous = _i / intervals_per_day - 1;
 			return date_t(previous * intervals_per_day);
 		}
 
 		static constexpr bool is_leap_year(const int year)
 		{
-			return (year % 4 == 0) && (year % 100 != 0 || year % 400 == 0);
+			return year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
 		}
 
 		constexpr int to_years() const
@@ -235,12 +234,12 @@ namespace df
 			return year;
 		}
 
-		constexpr date_t add_day(int d) const
+		constexpr date_t add_day(const int d) const
 		{
 			return from_days(to_days() + d);
 		}
 
-		static constexpr date_t from_seconds(int64_t seconds)
+		static constexpr date_t from_seconds(const int64_t seconds)
 		{
 			return date_t(seconds * intervals_per_second);
 		}
@@ -268,7 +267,7 @@ namespace df
 			return days >= min && days <= max && days != null_date_cpp && days != null_date_mac;
 		}
 
-		void shift_days(int days)
+		void shift_days(const int days)
 		{
 			_i += intervals_per_day * days;
 		}

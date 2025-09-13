@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
@@ -13,7 +12,7 @@
 #include "model_items.h"
 #include "model_tokenizer.h"
 
-constexpr static std::u8string_view sv_duplicates = u8"duplicates"sv;
+constexpr static auto sv_duplicates = u8"duplicates"sv;
 
 void df::search_t::clear_date_properties()
 {
@@ -173,7 +172,7 @@ static std::u8string format_term_value(const df::search_term& term)
 	if (t->data_type == prop::data_type::date) return prop::format_date(df::date_t::from_days(n));
 	if (t == prop::f_number) return prop::format_f_num(d);
 	if (t == prop::megapixels) return str::print(u8"%1.1f"sv, d);
-	if (t == prop::dimensions) return prop::format_dimensions({ xy.x, xy.y });
+	if (t == prop::dimensions) return prop::format_dimensions({xy.x, xy.y});
 	if (t == prop::duration) return prop::format_duration(n);
 	if (t == prop::exposure_time) return prop::format_exposure(d);
 	if (t == prop::iso_speed) return prop::format_iso(n);
@@ -310,8 +309,8 @@ std::u8string df::format_term(const search_term& term)
 				{
 					if (is_cat) result << u8"-"sv;
 					result << (is_month_only
-						? str::month(term.date_val.month, true)
-						: str::short_month(term.date_val.month, true));
+						           ? str::month(term.date_val.month, true)
+						           : str::short_month(term.date_val.month, true));
 					is_cat = true;
 				}
 
@@ -369,7 +368,7 @@ static void term_join(std::u8string& result, const std::u8string_view term)
 	result += term_quote(term);
 }
 
-static void term_join(std::u8string& result, char8_t modifier, const std::u8string_view term)
+static void term_join(std::u8string& result, const char8_t modifier, const std::u8string_view term)
 {
 	if (!result.empty()) result += ' ';
 	result += modifier;
@@ -385,8 +384,8 @@ static void term_join(std::u8string& result, const std::u8string_view scope, con
 	result += term_quote(term);
 }
 
-static void term_join(std::u8string& result, char8_t modifier, const std::u8string_view scope,
-	const std::u8string_view term)
+static void term_join(std::u8string& result, const char8_t modifier, const std::u8string_view scope,
+                      const std::u8string_view term)
 {
 	if (!result.empty()) result += ' ';
 	result += modifier;
@@ -432,7 +431,7 @@ std::u8string df::search_t::text() const
 ///////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////
 
-static int days_per_month(int month, int year = -1)
+static int days_per_month(const int month, const int year = -1)
 {
 	if (month == 4 || month == 6 || month == 9 || month == 11)
 	{
@@ -441,7 +440,7 @@ static int days_per_month(int month, int year = -1)
 
 	if (month == 2)
 	{
-		const auto leap_year = year >= 0 && (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+		const auto leap_year = year >= 0 && year % 4 == 0 && year % 100 != 0 || year % 400 == 0;
 		return leap_year ? 29 : 28;
 	}
 
@@ -467,7 +466,7 @@ df::date_parts df::search_t::find_date_parts() const
 	return result;
 }
 
-void df::search_t::next_date(bool forward)
+void df::search_t::next_date(const bool forward)
 {
 	auto parts = find_date_parts();
 
@@ -622,7 +621,8 @@ bloom_bits df::search_t::calc_bloom_bits() const
 df::date_parts month_and_day(const std::u8string_view s)
 {
 	df::date_parts result;
-	const auto parts = str::split(s, true, [](wchar_t c) { return c == '-' || c == '/' || c == '\\' || c == '.'; });
+	const auto parts = str::split(
+		s, true, [](const wchar_t c) { return c == '-' || c == '/' || c == '\\' || c == '.'; });
 
 	if (parts.size() == 2)
 	{
@@ -646,7 +646,8 @@ df::date_parts month_and_day(const std::u8string_view s)
 df::date_parts year_and_month(const std::u8string_view s)
 {
 	df::date_parts result;
-	const auto parts = str::split(s, true, [](wchar_t c) { return c == '-' || c == '/' || c == '\\' || c == '.'; });
+	const auto parts = str::split(
+		s, true, [](const wchar_t c) { return c == '-' || c == '/' || c == '\\' || c == '.'; });
 
 	if (parts.size() == 2)
 	{
@@ -952,7 +953,7 @@ void df::search_t::parse_part(const search_part& part)
 			duration = n1 * 60 + n2;
 		}
 		else if (_snscanf_s(std::bit_cast<const char*>(part.term.data()), part.term.size(), "%d:%d:%d", &n1, &n2,
-			&n3) == 3)
+		                    &n3) == 3)
 		{
 			duration = n1 * 60 * 60 + n2 * 60 + n3;
 		}
@@ -984,15 +985,15 @@ void df::search_t::parse_part(const search_part& part)
 
 		if (str::ends(part.term, u8"gb"sv))
 		{
-			size = df::round(d * 1024ull * 1024ull * 1024ull);
+			size = round(d * 1024ull * 1024ull * 1024ull);
 		}
 		else if (str::ends(part.term, u8"mb"sv))
 		{
-			size = df::round(d * 1024ull * 1024ull);
+			size = round(d * 1024ull * 1024ull);
 		}
 		else if (str::ends(part.term, u8"kb"sv))
 		{
-			size = df::round(d * 1024ull);
+			size = round(d * 1024ull);
 		}
 		else
 		{
@@ -1080,7 +1081,7 @@ struct compare_result
 	str::cached val_matched = {};
 };
 
-static bool modifier_match(compare_result cmp, const df::search_term_modifier& modifiers)
+static bool modifier_match(const compare_result cmp, const df::search_term_modifier& modifiers)
 {
 	if (modifiers.equals && cmp.com == 0 && cmp.match)
 	{
@@ -1120,8 +1121,8 @@ inline unsigned msb_64(uint64_t mask)
 static compare_result compare_term(const df::search_term& term, const int rr)
 {
 	const auto ll = term.int_val;
-	const auto res = (ll < rr) ? -1 : (ll > rr) ? 1 : 0;
-	return { true, res };
+	const auto res = ll < rr ? -1 : ll > rr ? 1 : 0;
+	return {true, res};
 }
 
 
@@ -1130,8 +1131,8 @@ static compare_result compare_file_size(const df::search_term& term, const uint6
 	const auto ll = prop::round_size(term.int64_val).total();
 	const auto rr = prop::round_size(r).total();
 
-	const auto res = (ll < rr) ? -1 : (ll > rr) ? 1 : 0;
-	return { true, res };
+	const auto res = ll < rr ? -1 : ll > rr ? 1 : 0;
+	return {true, res};
 }
 
 static compare_result compare_term(const df::search_term& term, const df::date_t r)
@@ -1145,14 +1146,14 @@ static compare_result compare_term(const df::search_term& term, const str::cache
 	if (term._is_wildcard)
 	{
 		const auto cmp = wildcard_icmp(r, term.text);
-		return { cmp, 0, r };
+		return {cmp, 0, r};
 	}
 
 	const auto cmp = icmp(term.text, r);
-	return { cmp == 0, 0, r };
+	return {cmp == 0, 0, r};
 }
 
-static compare_result compare_aperture(const df::search_term& term, double f_number)
+static compare_result compare_aperture(const df::search_term& term, const double f_number)
 {
 	auto ll = 0.0;
 	auto rr = 0.0;
@@ -1167,9 +1168,9 @@ static compare_result compare_aperture(const df::search_term& term, double f_num
 		rr = prop::closest_fstop(f_number);
 	}
 
-	if (df::equiv(ll, rr)) return { true, 0 };
-	const auto res = (ll < rr) ? -1 : (ll > rr) ? 1 : 0;
-	return { true, res };
+	if (df::equiv(ll, rr)) return {true, 0};
+	const auto res = ll < rr ? -1 : ll > rr ? 1 : 0;
+	return {true, res};
 }
 
 static double mp_round(const double mp)
@@ -1182,31 +1183,31 @@ static double mp_round(const double mp)
 	return std::round(mp);
 }
 
-static compare_result compare_megapixels(const df::search_term& term, int w, int h)
+static compare_result compare_megapixels(const df::search_term& term, const int w, const int h)
 {
 	const auto ll = mp_round(term.float_val);
 	const auto rr = mp_round(ui::calc_mega_pixels(w, h));
 
-	if (df::equiv(ll, rr)) return { true, 0 };
-	const auto res = (ll < rr) ? -1 : (ll > rr) ? 1 : 0;
-	return { true, res };
+	if (df::equiv(ll, rr)) return {true, 0};
+	const auto res = ll < rr ? -1 : ll > rr ? 1 : 0;
+	return {true, res};
 }
 
 static compare_result compare_term(const df::search_term& term, const double rr)
 {
 	const auto ll = term.float_val;
-	const auto res = (ll < rr) ? -1 : (ll > rr) ? 1 : 0;
-	return { true, res };
+	const auto res = ll < rr ? -1 : ll > rr ? 1 : 0;
+	return {true, res};
 }
 
 static compare_result compare_exposure_time(const df::search_term& term, const double r)
 {
-	const double ll = (term.float_val < 1.0) ? -1.0 / term.float_val : term.float_val;
-	const double rr = (r < 1.0) ? -1.0 / r : r;
+	const double ll = term.float_val < 1.0 ? -1.0 / term.float_val : term.float_val;
+	const double rr = r < 1.0 ? -1.0 / r : r;
 
-	if (df::equiv(ll, rr, 0.00001)) return { true, 0 };
-	const auto res = (ll > rr) ? -1 : (ll < rr) ? 1 : 0;
-	return { true, res };
+	if (df::equiv(ll, rr, 0.00001)) return {true, 0};
+	const auto res = ll > rr ? -1 : ll < rr ? 1 : 0;
+	return {true, res};
 }
 
 static compare_result compare_term(const df::search_term& term, const df::xy8 r)
@@ -1218,7 +1219,7 @@ static compare_result compare_term(const df::search_term& term, const df::xy8 r)
 	else if (l.x < r.x) res = 1;
 	else if (l.y > r.y) res = -1;
 	else if (l.y < r.y) res = 1;
-	return { true, res };
+	return {true, res};
 }
 
 static compare_result compare_term(const df::search_term& term, const df::xy16 r)
@@ -1230,7 +1231,7 @@ static compare_result compare_term(const df::search_term& term, const df::xy16 r
 	else if (l.x < r.x) res = 1;
 	else if (l.y > r.y) res = -1;
 	else if (l.y < r.y) res = 1;
-	return { true, res };
+	return {true, res};
 }
 
 //static compare_result compare_term(const df::search_term& term, const df::file_size& r)
@@ -1241,7 +1242,6 @@ static compare_result compare_term(const df::search_term& term, const df::xy16 r
 //	const auto res = (ll < rr) ? -1 : (ll > rr) ? 1 : 0;
 //	return { true, res };
 //}
-
 
 
 inline bool contains_term(const std::u8string_view text, const df::search_term& term)
@@ -1268,71 +1268,86 @@ df::search_result compare_text(const df::search_term& term, const df::index_file
 {
 	const auto& text = term.text;
 
-	if (contains_term(file.name, term)) return { df::search_result_type::match_prop, prop::file_name };
-	if (same_term(prop::format_size(file.size), term)) return { df::search_result_type::match_prop, prop::file_size };
+	if (contains_term(file.name, term)) return {df::search_result_type::match_prop, prop::file_name};
+	if (same_term(prop::format_size(file.size), term)) return {df::search_result_type::match_prop, prop::file_size};
 	//if (str::contains(prop::format_date(file.file_modified, false), text)) return true;
 	//if (str::contains(prop::format_date(file.file_created, false), text)) return true;
 
-	const auto md = file.metadata.load();;
+	const auto md = file.metadata.load();
 
 	if (md)
 	{
-		if (contains_term(md->album, term)) return { df::search_result_type::match_prop, prop::album };
+		if (contains_term(md->album, term)) return {df::search_result_type::match_prop, prop::album};
 		//if (contains_term(md->album_artist, text)) return {df::search_result_type::match_prop, prop::album_artist};
 		//if (contains_term(md->artist, text)) return {df::search_result_type::match_prop, prop::artist};
-		if (contains_term(md->audio_codec, term)) return { df::search_result_type::match_prop, prop::audio_codec };
-		if (contains_term(md->bitrate, term)) return { df::search_result_type::match_prop, prop::bitrate };
+		if (contains_term(md->audio_codec, term)) return {df::search_result_type::match_prop, prop::audio_codec};
+		if (contains_term(md->bitrate, term)) return {df::search_result_type::match_prop, prop::bitrate};
 		if (contains_term(md->camera_manufacturer, term))
 			return {
 				df::search_result_type::match_prop, prop::camera_manufacturer
-		};
-		if (contains_term(md->camera_model, term)) return { df::search_result_type::match_prop, prop::camera_model };
-		if (contains_term(md->comment, term)) return { df::search_result_type::match_prop, prop::comment };
-		if (contains_term(md->composer, term)) return { df::search_result_type::match_prop, prop::composer };
-		if (contains_term(md->copyright_creator, term)) return { df::search_result_type::match_prop, prop::copyright_creator };
-		if (contains_term(md->copyright_credit, term)) return { df::search_result_type::match_prop, prop::copyright_credit };
-		if (contains_term(md->copyright_notice, term)) return { df::search_result_type::match_prop, prop::copyright_notice };
-		if (contains_term(md->copyright_source, term)) return { df::search_result_type::match_prop, prop::copyright_source };
-		if (contains_term(md->copyright_url, term)) return { df::search_result_type::match_prop, prop::copyright_url };
-		if (contains_term(md->description, term)) return { df::search_result_type::match_prop, prop::description };
-		if (contains_term(md->encoder, term)) return { df::search_result_type::match_prop, prop::encoder };
-		if (contains_term(md->file_name, term)) return { df::search_result_type::match_prop, prop::file_name };
-		if (contains_term(md->genre, term)) return { df::search_result_type::match_prop, prop::genre };
-		if (contains_term(md->lens, term)) return { df::search_result_type::match_prop, prop::lens };
-		if (contains_term(md->location_place, term)) return { df::search_result_type::match_prop, prop::location_place };
-		if (contains_term(md->location_country, term)) return { df::search_result_type::match_prop, prop::location_country };
-		if (contains_term(md->location_state, term)) return { df::search_result_type::match_prop, prop::location_state };
-		if (contains_term(md->performer, term)) return { df::search_result_type::match_prop, prop::performer };
-		if (contains_term(md->pixel_format, term)) return { df::search_result_type::match_prop, prop::pixel_format };
-		if (contains_term(md->publisher, term)) return { df::search_result_type::match_prop, prop::publisher };
-		if (contains_term(md->show, term)) return { df::search_result_type::match_prop, prop::show };
-		if (contains_term(md->synopsis, term)) return { df::search_result_type::match_prop, prop::synopsis };
-		if (contains_term(md->title, term)) return { df::search_result_type::match_prop, prop::title };
-		if (contains_term(md->label, term)) return { df::search_result_type::match_prop, prop::label };
-		if (contains_term(md->video_codec, term)) return { df::search_result_type::match_prop, prop::video_codec };
-		if (contains_term(md->raw_file_name, term)) return { df::search_result_type::match_prop, prop::raw_file_name };
+			};
+		if (contains_term(md->camera_model, term)) return {df::search_result_type::match_prop, prop::camera_model};
+		if (contains_term(md->comment, term)) return {df::search_result_type::match_prop, prop::comment};
+		if (contains_term(md->composer, term)) return {df::search_result_type::match_prop, prop::composer};
+		if (contains_term(md->copyright_creator, term))
+			return {
+				df::search_result_type::match_prop, prop::copyright_creator
+			};
+		if (contains_term(md->copyright_credit, term))
+			return {
+				df::search_result_type::match_prop, prop::copyright_credit
+			};
+		if (contains_term(md->copyright_notice, term))
+			return {
+				df::search_result_type::match_prop, prop::copyright_notice
+			};
+		if (contains_term(md->copyright_source, term))
+			return {
+				df::search_result_type::match_prop, prop::copyright_source
+			};
+		if (contains_term(md->copyright_url, term)) return {df::search_result_type::match_prop, prop::copyright_url};
+		if (contains_term(md->description, term)) return {df::search_result_type::match_prop, prop::description};
+		if (contains_term(md->encoder, term)) return {df::search_result_type::match_prop, prop::encoder};
+		if (contains_term(md->file_name, term)) return {df::search_result_type::match_prop, prop::file_name};
+		if (contains_term(md->genre, term)) return {df::search_result_type::match_prop, prop::genre};
+		if (contains_term(md->lens, term)) return {df::search_result_type::match_prop, prop::lens};
+		if (contains_term(md->location_place, term)) return {df::search_result_type::match_prop, prop::location_place};
+		if (contains_term(md->location_country, term))
+			return {
+				df::search_result_type::match_prop, prop::location_country
+			};
+		if (contains_term(md->location_state, term)) return {df::search_result_type::match_prop, prop::location_state};
+		if (contains_term(md->performer, term)) return {df::search_result_type::match_prop, prop::performer};
+		if (contains_term(md->pixel_format, term)) return {df::search_result_type::match_prop, prop::pixel_format};
+		if (contains_term(md->publisher, term)) return {df::search_result_type::match_prop, prop::publisher};
+		if (contains_term(md->show, term)) return {df::search_result_type::match_prop, prop::show};
+		if (contains_term(md->synopsis, term)) return {df::search_result_type::match_prop, prop::synopsis};
+		if (contains_term(md->title, term)) return {df::search_result_type::match_prop, prop::title};
+		if (contains_term(md->label, term)) return {df::search_result_type::match_prop, prop::label};
+		if (contains_term(md->video_codec, term)) return {df::search_result_type::match_prop, prop::video_codec};
+		if (contains_term(md->raw_file_name, term)) return {df::search_result_type::match_prop, prop::raw_file_name};
 		//if (contains_term(md->tags, text)) return {df::search_result_type::match_prop, prop::tag, str::cache(text)};
 
 		if (same_term(prop::format_dimensions(md->dimensions()), term))
 			return {
 				df::search_result_type::match_prop, prop::dimensions
-		};
+			};
 		if (same_term(prop::format_pixels(md->dimensions(), file.ft), term))
 			return {
 				df::search_result_type::match_prop, prop::dimensions
-		};
+			};
 		if (same_term(prop::format_exposure(md->exposure_time), term))
 			return {
 				df::search_result_type::match_prop, prop::exposure_time
-		};
+			};
 		if (same_term(prop::format_f_num(md->f_number), term))
 			return {
 				df::search_result_type::match_prop, prop::f_number
-		};
+			};
 		if (same_term(prop::format_focal_length(md->focal_length, md->focal_length_35mm_equivalent), term))
 			return {
 				df::search_result_type::match_prop, prop::focal_length
-		};
+			};
 
 		/*if (str::contains_term(prop::format_date(md->created_digitized, false), text)) return true;
 		if (str::contains_term(prop::format_date(md->created_exif, false), text)) return true;
@@ -1340,26 +1355,26 @@ df::search_result compare_text(const df::search_term& term, const df::index_file
 		if (same_term(prop::format_duration(md->duration), term))
 			return {
 				df::search_result_type::match_prop, prop::duration
-		};
+			};
 		//if (str::contains_term(str::to_string(md->height), text)) return df::search_result::match_x;
 		//if (str::contains_term(str::to_string(md->width), text)) return df::search_result::match_x;
 		if (same_term(prop::format_iso(md->iso_speed), term))
 			return {
 				df::search_result_type::match_prop, prop::iso_speed
-		};
+			};
 		//if (same_term(prop::format_rating(md->rating), text)) return { df::search_result_type::match_prop, prop::rating };
 		if (same_term(prop::format_audio_channels(md->audio_channels), term))
 			return {
 				df::search_result_type::match_prop, prop::audio_channels
-		};
+			};
 		if (same_term(prop::format_audio_sample_rate(md->audio_sample_rate), term))
 			return {
 				df::search_result_type::match_prop, prop::audio_sample_rate
-		};
+			};
 		if (same_term(format_audio_sample_type(static_cast<prop::audio_sample_t>(md->audio_sample_type)), term))
 			return
-		{ df::search_result_type::match_prop, prop::audio_sample_type };
-		if (same_term(str::to_string(md->year), term)) return { df::search_result_type::match_prop, prop::year };
+				{df::search_result_type::match_prop, prop::audio_sample_type};
+		if (same_term(str::to_string(md->year), term)) return {df::search_result_type::match_prop, prop::year};
 
 		//if (str::contains_term(prop::format_season(md->season), text)) return true;
 		//if (str::contains_term(prop::format_orientation(md->orientation), text)) return true;
@@ -1375,12 +1390,12 @@ df::search_result compare_text(const df::search_term& term, const df::index_file
 		prop::key_ref key = prop::null;
 
 		auto cmp = [&comp_result, &term](const std::u8string_view part)
+		{
+			if (!comp_result.match)
 			{
-				if (!comp_result.match)
-				{
-					comp_result = compare_term(term, str::cache(part));
-				}
-			};
+				comp_result = compare_term(term, str::cache(part));
+			}
+		};
 
 		if (!is_empty(md->tags)) split2(md->tags, true, cmp);
 
@@ -1409,11 +1424,11 @@ df::search_result compare_text(const df::search_term& term, const df::index_file
 
 		if (comp_result.match)
 		{
-			return { df::search_result_type::match_prop, key, comp_result.val_matched };
+			return {df::search_result_type::match_prop, key, comp_result.val_matched};
 		}
 	}
 
-	return { df::search_result_type::no_match };
+	return {df::search_result_type::no_match};
 }
 
 static compare_result compare_val(const df::search_term& term, const df::index_file_item& file)
@@ -1431,12 +1446,12 @@ static compare_result compare_val(const df::search_term& term, const df::index_f
 		{
 			compare_result comp_result;
 			auto cmp = [&comp_result, &term](const std::u8string_view part)
+			{
+				if (!comp_result.match)
 				{
-					if (!comp_result.match)
-					{
-						comp_result = compare_term(term, str::cache(part));
-					}
-				};
+					comp_result = compare_term(term, str::cache(part));
+				}
+			};
 
 			if (term.key == prop::tag) split2(md->tags, true, cmp);
 			else if (term.key == prop::artist) split2(md->artist, true, cmp, str::is_artist_separator);
@@ -1493,7 +1508,7 @@ static compare_result compare_val(const df::search_term& term, const df::index_f
 		if (t == prop::focal_length && !prop::is_null(md->focal_length)) return compare_term(term, md->focal_length);
 		if (t == prop::focal_length_35mm_equivalent && !prop::is_null(md->focal_length_35mm_equivalent))
 			return
-			compare_term(term, md->focal_length_35mm_equivalent);
+				compare_term(term, md->focal_length_35mm_equivalent);
 		if (t == prop::iso_speed && !prop::is_null(md->iso_speed)) return compare_term(term, md->iso_speed);
 		if (t == prop::latitude && !prop::is_null(md->coordinate.is_valid()))
 			return compare_term(
@@ -1609,7 +1624,7 @@ bool has_type(const prop::key_ref t, const df::index_file_item& file)
 }
 
 static bool is_date_match(const df::date_parts& term, const df::date_t d, const df::search_term_modifier& modifiers,
-	const uint32_t now_days)
+                          const uint32_t now_days)
 {
 	if (!d.is_valid())
 		return false;
@@ -1782,7 +1797,8 @@ static bool eq_ext(std::u8string_view ext1, std::u8string_view ext2)
 	return str::icmp(ext1, ext2) == 0;
 }
 
-df::search_result df::search_matcher::match_term(str::cached folder_name, const index_file_item& file, const search_term& term) const
+df::search_result df::search_matcher::match_term(const str::cached folder_name, const index_file_item& file,
+                                                 const search_term& term) const
 {
 	search_result result;
 
@@ -1940,13 +1956,13 @@ df::search_result df::search_matcher::match_item(const file_path path, const ind
 
 	if (!potential_match(file.bloom))
 	{
-		return { search_result_type::no_match };
+		return {search_result_type::no_match};
 	}
 
 	return match_all_terms(path.folder().text(), file);
 }
 
-df::search_result df::search_matcher::match_all_terms(str::cached folder_name, const index_file_item& file) const
+df::search_result df::search_matcher::match_all_terms(const str::cached folder_name, const index_file_item& file) const
 {
 	if (_search._terms.size() == 1)
 	{
@@ -1960,7 +1976,7 @@ df::search_result df::search_matcher::match_all_terms(str::cached folder_name, c
 		bool state = true;
 	};
 
-	const auto max_levels = 32;
+	constexpr auto max_levels = 32;
 	level level_results[max_levels];
 	auto current_level = 0;
 	auto result_type = search_result_type::no_match;
@@ -2012,10 +2028,10 @@ df::search_result df::search_matcher::match_all_terms(str::cached folder_name, c
 	}
 
 	//return { level_results[0].state ? result_type : search_result_type::no_match };
-	return { level_results[0].state ? search_result_type::match_multiple : search_result_type::no_match };
+	return {level_results[0].state ? search_result_type::match_multiple : search_result_type::no_match};
 }
 
-df::search_result df::search_matcher::match_folder(str::cached folder_name, const str::cached name) const
+df::search_result df::search_matcher::match_folder(const str::cached folder_name, const str::cached name) const
 {
 	if (_search.has_related())
 	{

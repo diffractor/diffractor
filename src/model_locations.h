@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -20,7 +19,7 @@ static constexpr auto max_country_alt_names = 16;
 constexpr uint32_t to_code2(const std::u8string_view s)
 {
 	uint32_t result = 0;
-	for (const auto c : s) result = (result << 8) | str::to_upper(c);
+	for (const auto c : s) result = result << 8 | str::to_upper(c);
 	return result;
 }
 
@@ -36,7 +35,6 @@ str::cached normalize_county_name(str::cached country);
 
 class country_t
 {
-private:
 	char8_t _code[3]{};
 	str::cached _name = {};
 	std::vector<str::cached> _alt_names;
@@ -54,7 +52,7 @@ public:
 	country_t& operator=(country_t&&) noexcept = default;
 
 	country_t(const std::u8string_view code, const str::cached name,
-		std::vector<str::cached> alt_names) noexcept : _name(name), _alt_names(std::move(alt_names))
+	          std::vector<str::cached> alt_names) noexcept : _name(name), _alt_names(std::move(alt_names))
 	{
 		_code[0] = code[0];
 		_code[1] = code[1];
@@ -68,7 +66,7 @@ public:
 
 	std::u8string_view code() const
 	{
-		return { _code, 2 };
+		return {_code, 2};
 	}
 
 	uint32_t code2() const
@@ -137,11 +135,10 @@ using location_matches = std::vector<location_match>;
 
 class location_cache final : public df::no_copy
 {
-private:
 	mutable platform::mutex _rw;
-	_Guarded_by_(_rw)  kd_tree _tree;
-	_Guarded_by_(_rw)  df::hash_map<uint32_t, country_t> _countries;
-	_Guarded_by_(_rw)  const df::file_path _locations_path;
+	_Guarded_by_(_rw) kd_tree _tree;
+	_Guarded_by_(_rw) df::hash_map<uint32_t, country_t> _countries;
+	_Guarded_by_(_rw) const df::file_path _locations_path;
 
 	struct location_id_and_offset
 	{
@@ -215,11 +212,11 @@ private:
 		location_ngram_and_offset(location_ngram_and_offset&&) noexcept = default;
 		location_ngram_and_offset& operator=(location_ngram_and_offset&&) noexcept = default;
 
-		location_ngram_and_offset(const std::u8string_view r, uint32_t off) noexcept : ngram(r), offset(off)
+		location_ngram_and_offset(const std::u8string_view r, const uint32_t off) noexcept : ngram(r), offset(off)
 		{
 		}
 
-		location_ngram_and_offset(const ngram_t& n, uint32_t off) noexcept : ngram(n), offset(off)
+		location_ngram_and_offset(const ngram_t& n, const uint32_t off) noexcept : ngram(n), offset(off)
 		{
 		}
 
@@ -237,14 +234,14 @@ private:
 	void load_states();
 
 	static int scan_entries(std::u8string_view line, csv_entry* entries);
-	int scan_entries(u8istream& file, std::u8string& line, std::streamoff offset, csv_entry* entries) const;
+	static int scan_entries(u8istream& file, std::u8string& line, std::streamoff offset, csv_entry* entries);
 
 	location_t build_location(u8istream& file, int offset) const;
 	location_t build_location(const csv_entry* entries) const;
 
 public:
 	location_cache();
-	~location_cache() = default;
+	~location_cache() override = default;
 
 	void load_index();
 
@@ -259,12 +256,12 @@ public:
 	location_t find_by_id(uint32_t id) const;
 
 	location_matches auto_complete(std::u8string_view query, uint32_t max_results,
-		gps_coordinate default_location) const;
+	                               gps_coordinate default_location) const;
 
 	const country_t& find_country(const uint32_t code) const
 	{
 		platform::shared_lock lock(_rw);
 		const auto found = _countries.find(code);
-		return (found != _countries.cend()) ? found->second : country_t::null;
+		return found != _countries.cend() ? found->second : country_t::null;
 	}
 };

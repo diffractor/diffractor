@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -162,7 +161,7 @@ namespace df
 		uint32_t count = 0;
 	};
 
-	struct duplicate_info2 : public duplicate_info
+	struct duplicate_info2 : duplicate_info
 	{
 		date_t group_modified;
 		bool group_has_modifications = false;
@@ -260,31 +259,31 @@ namespace df
 
 		index_file_item(const index_file_item& other)
 			: flags(other.flags),
-			ft(other.ft),
-			name(other.name),
-			size(other.size),
-			file_created(other.file_created),
-			file_modified(other.file_modified),
-			metadata_scanned(other.metadata_scanned),
-			metadata(other.metadata.load()),
-			duplicates(other.duplicates),
-			bloom(other.bloom),
-			crc32c(other.crc32c)
+			  ft(other.ft),
+			  name(other.name),
+			  size(other.size),
+			  file_created(other.file_created),
+			  file_modified(other.file_modified),
+			  metadata_scanned(other.metadata_scanned),
+			  metadata(other.metadata.load()),
+			  duplicates(other.duplicates),
+			  bloom(other.bloom),
+			  crc32c(other.crc32c)
 		{
 		}
 
 		index_file_item(index_file_item&& other) noexcept
 			: flags(other.flags),
-			ft(other.ft),
-			name(std::move(other.name)),
-			size(std::move(other.size)),
-			file_created(std::move(other.file_created)),
-			file_modified(std::move(other.file_modified)),
-			metadata_scanned(std::move(other.metadata_scanned)),
-			metadata(other.metadata.load()),
-			duplicates(std::move(other.duplicates)),
-			bloom(std::move(other.bloom)),
-			crc32c(other.crc32c)
+			  ft(other.ft),
+			  name(std::move(other.name)),
+			  size(std::move(other.size)),
+			  file_created(std::move(other.file_created)),
+			  file_modified(std::move(other.file_modified)),
+			  metadata_scanned(std::move(other.metadata_scanned)),
+			  metadata(other.metadata.load()),
+			  duplicates(std::move(other.duplicates)),
+			  bloom(std::move(other.bloom)),
+			  crc32c(other.crc32c)
 		{
 			other.metadata.store(nullptr);
 		}
@@ -341,7 +340,7 @@ namespace df
 
 		item_online_status calc_online_status() const
 		{
-			return (flags && index_item_flags::is_offline) ? item_online_status::offline : item_online_status::disk;
+			return flags && index_item_flags::is_offline ? item_online_status::offline : item_online_status::disk;
 		}
 
 		void update_duplicates(const index_folder_item_ptr& f, duplicate_info dup_info) const;
@@ -449,15 +448,15 @@ namespace df
 		static constexpr uint32_t map_width = 256;
 		static constexpr uint32_t map_height = 128;
 
-		std::array<uint32_t, map_width* map_height> coordinates{};
+		std::array<uint32_t, map_width * map_height> coordinates{};
 
 		static pointi calc_map_loc(const gps_coordinate coord)
 		{
-			const auto x = round((coord.longitude() / 180.0 * (map_width / 2.0)) + (map_width / 2.0));
-			const auto y = round((coord.latitude() / 90.0 * (map_height / 2.0)) + (map_height / 2.0));
+			const auto x = round(coord.longitude() / 180.0 * (map_width / 2.0) + map_width / 2.0);
+			const auto y = round(coord.latitude() / 90.0 * (map_height / 2.0) + map_height / 2.0);
 			const auto xx = std::clamp(x, 0, static_cast<int>(map_width) - 1);
-			const auto yy = (static_cast<int>(map_height) - 1) - std::clamp(y, 0, static_cast<int>(map_height) - 1);
-			return { xx, yy };
+			const auto yy = static_cast<int>(map_height) - 1 - std::clamp(y, 0, static_cast<int>(map_height) - 1);
+			return {xx, yy};
 		}
 	};
 
@@ -511,10 +510,10 @@ namespace df
 		icon_index max_type_icon()
 		{
 			const auto ft = std::distance(counts.begin(),
-				std::ranges::max_element(counts, [](auto&& left, auto&& right)
-					{
-						return left.count < right.count;
-					}));
+			                              std::ranges::max_element(counts, [](auto&& left, auto&& right)
+			                              {
+				                              return left.count < right.count;
+			                              }));
 			return file_group_from_index(static_cast<int>(ft))->icon;
 		}
 
@@ -598,7 +597,8 @@ namespace df
 		bool alt_background = false;
 		bool row_layout_valid = true;
 
-		item_element(const file_path id, const index_file_item& info) noexcept : view_element(view_element_style::can_invoke), _random(rand())
+		item_element(const file_path id, const index_file_item& info) noexcept : view_element(
+			view_element_style::can_invoke), _random(rand())
 		{
 			update(id, info);
 		}
@@ -671,19 +671,19 @@ namespace df
 
 		int rating() const
 		{
-			const auto md = _metadata.load();;
+			const auto md = _metadata.load();
 			return md ? md->rating : 0;
 		}
 
 		std::u8string_view label() const
 		{
-			const auto md = _metadata.load();;
+			const auto md = _metadata.load();
 			return md ? md->label : std::u8string_view{};
 		}
 
 		bool has_gps() const
 		{
-			const auto md = _metadata.load();;
+			const auto md = _metadata.load();
 			return md && md->has_gps();
 		}
 
@@ -735,7 +735,7 @@ namespace df
 			return is_style_bit_set(view_element_style::error);
 		}
 
-		void is_error(bool val, const view_host_base_ptr& view, const view_element_ptr& e)
+		void is_error(const bool val, const view_host_base_ptr& view, const view_element_ptr& e)
 		{
 			set_style_bit(view_element_style::error, val, view, e);
 		}
@@ -813,7 +813,7 @@ namespace df
 		sizei measure(ui::measure_context& mc, int width_limit) const override;
 		void layout(ui::measure_context& mc, recti bounds_in, ui::control_layouts& positions) override;
 		view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
-			const std::vector<recti>& excluded_bounds) override;
+		                                             const std::vector<recti>& excluded_bounds) override;
 
 		platform::file_op_result rename(index_state& index, std::u8string_view name);
 
@@ -921,9 +921,9 @@ namespace df
 			return md ? md->media_position : 0;
 		}
 
-		void media_position(const double d)
+		void media_position(const double d) const
 		{
-			const auto md = _metadata.load();;
+			const auto md = _metadata.load();
 
 			if (md)
 			{
@@ -964,7 +964,7 @@ namespace df
 			return _is_loading_thumbnail;
 		}
 
-		void is_loading_thumbnail(bool v)
+		void is_loading_thumbnail(const bool v)
 		{
 			_is_loading_thumbnail = v;
 		}
@@ -974,7 +974,7 @@ namespace df
 			return _failed_loading_thumbnail;
 		}
 
-		void failed_loading_thumbnail(bool v)
+		void failed_loading_thumbnail(const bool v)
 		{
 			_failed_loading_thumbnail = v;
 		}
@@ -989,12 +989,12 @@ namespace df
 			return _random;
 		}
 
-		void random(int i)
+		void random(const int i)
 		{
 			_random = i;
 		}
 
-		void presence(item_presence presence)
+		void presence(const item_presence presence)
 		{
 			_presence = presence;
 		}
@@ -1031,7 +1031,7 @@ namespace df
 
 		item_element_ptr find(const folder_path path_in) const
 		{
-			file_path search_path(path_in);
+			const file_path search_path(path_in);
 			const auto found = _items.find(search_path);
 			return found != _items.end() ? found->second : nullptr;
 		}
@@ -1117,8 +1117,8 @@ namespace df
 			return result;
 		}
 
-		void record_error(const item_element_ptr& i, process_result_code result_code, bool mark_errors,
-			const view_host_base_ptr& view)
+		void record_error(const item_element_ptr& i, const process_result_code result_code, const bool mark_errors,
+		                  const view_host_base_ptr& view)
 		{
 			if (code == process_result_code::ok || code == result_code)
 			{
@@ -1157,7 +1157,6 @@ namespace df
 	public:
 		item_elements _items;
 
-	public:
 		item_set() noexcept = default;
 
 		item_set(item_elements items) : _items(std::move(items))
@@ -1199,7 +1198,7 @@ namespace df
 			return !(lhs == rhs);
 		}
 
-		void shuffle()
+		void shuffle() const
 		{
 			for (const auto& i : _items)
 			{
@@ -1313,11 +1312,11 @@ namespace df
 		}
 
 		std::vector<ui::const_image_ptr> thumbs(size_t max = max_thumbnails_to_display,
-			const item_element_ptr& skip_this = nullptr) const;
+		                                        const item_element_ptr& skip_this = nullptr) const;
 		size_t thumb_count() const;
 
 		process_result can_process(process_items_type file_types, bool mark_errors,
-			const view_host_base_ptr& view) const;
+		                           const view_host_base_ptr& view) const;
 
 		item_set selected() const
 		{
@@ -1338,21 +1337,21 @@ namespace df
 			double distance = 0;
 
 			for_all([&result, &distance, &ignore, &loc](auto&& i)
+			{
+				if (i != ignore)
 				{
-					if (i != ignore)
-					{
-						const auto center = i->bounds.center();
-						const auto dx = static_cast<double>(loc.x) - static_cast<double>(center.x);
-						const auto dy = static_cast<double>(loc.y) - static_cast<double>(center.y);
-						const auto d = (dx * dx) + (dy * dy);
+					const auto center = i->bounds.center();
+					const auto dx = static_cast<double>(loc.x) - static_cast<double>(center.x);
+					const auto dy = static_cast<double>(loc.y) - static_cast<double>(center.y);
+					const auto d = dx * dx + dy * dy;
 
-						if (!result || distance > d)
-						{
-							result = i;
-							distance = d;
-						}
+					if (!result || distance > d)
+					{
+						result = i;
+						distance = d;
 					}
-				});
+				}
+			});
 
 			return result;
 		}
@@ -1371,7 +1370,7 @@ namespace df
 
 		item_element_ptr find(const folder_path id) const
 		{
-			file_path search_path(id);
+			const file_path search_path(id);
 			for (const auto& i : _items) if (i->path() == search_path) return i;
 			return nullptr;
 		}
@@ -1419,7 +1418,7 @@ namespace df
 			return result;
 		}
 
-		std::vector<file_path> file_paths(bool include_sidecars = true) const
+		std::vector<file_path> file_paths(const bool include_sidecars = true) const
 		{
 			hash_set<file_path, ihash, ieq> result;
 
@@ -1444,7 +1443,7 @@ namespace df
 				}
 			}
 
-			return { result.begin(), result.end() };
+			return {result.begin(), result.end()};
 		}
 	};
 
@@ -1469,19 +1468,19 @@ namespace df
 
 		void update_extent(ui::draw_context& dc, const std::u8string_view text, const double val)
 		{
-			const auto max_width = df::round(_max_width * dc.scale_factor);
+			const auto max_width = round(_max_width * dc.scale_factor);
 
 			extent = std::max(extent, dc.measure_text(text, ui::style::font_face::dialog,
-				ui::style::text_style::single_line, max_width).cx);
+			                                          ui::style::text_style::single_line, max_width).cx);
 			val_max = std::max(val_max, val);
 			val_min = std::min(val_min, val);
 		}
 
 		void update_extent(ui::draw_context& dc, const std::u8string_view text)
 		{
-			const auto max_width = df::round(_max_width * dc.scale_factor);
+			const auto max_width = round(_max_width * dc.scale_factor);
 			extent = std::max(extent, dc.measure_text(text, ui::style::font_face::dialog,
-				ui::style::text_style::single_line, max_width).cx);
+			                                          ui::style::text_style::single_line, max_width).cx);
 		}
 
 		/*recti calc_bg_bounds(const recti row_bounds, const int line_height, const int text_x, const int text_y) const
@@ -1497,14 +1496,14 @@ namespace df
 		recti calc_bounds(const recti row_bounds, const int text_x, const int text_y, const int text_padding) const
 		{
 			auto bounds = row_bounds;
-			bounds.left = text_x + (text_padding / 2);
+			bounds.left = text_x + text_padding / 2;
 			bounds.right = bounds.left + width;
 			return bounds;
 		}
 
 		void draw(ui::draw_context& rc, const std::u8string_view text, const double val, const recti bounds,
-			const ui::style::font_face text_font, const ui::style::text_style text_style,
-			const ui::color color) const
+		          const ui::style::font_face text_font, const ui::style::text_style text_style,
+		          const ui::color color) const
 		{
 			ui::color rank_color;
 
@@ -1519,9 +1518,10 @@ namespace df
 			draw(rc, text, rank_color, bounds, text_font, text_style, color);
 		}
 
-		void draw(ui::draw_context& rc, const std::u8string_view text, const ui::color bg_color, const recti bounds,
-			const ui::style::font_face text_font, const ui::style::text_style text_style,
-			const ui::color color) const
+		static void draw(ui::draw_context& rc, const std::u8string_view text, const ui::color bg_color,
+		                 const recti bounds,
+		                 const ui::style::font_face text_font, const ui::style::text_style text_style,
+		                 const ui::color color)
 		{
 			rc.draw_text(text, bounds, text_font, text_style, color, bg_color);
 		}
@@ -1637,7 +1637,6 @@ namespace df
 		std::u8string scroll_text;
 		icon_index icon = icon_index::none;
 
-	public:
 		item_group(view_state& s, item_elements items, const item_group_display display, group_key key) noexcept :
 			_state(s),
 			_items(std::move(items)),
@@ -1672,7 +1671,7 @@ namespace df
 		}
 
 		void toggle_display();
-		void update_row_layout(ui::measure_context& mc) const;
+		void update_row_layout(const ui::measure_context& mc) const;
 		void update_detail_row_layout(ui::draw_context& dc, const item_element_ptr& i, bool has_related) const;
 		void display(item_group_display d);
 
@@ -1692,7 +1691,7 @@ namespace df
 		void scroll_tooltip(const ui::const_image_ptr& thumbnail, const view_elements_ptr& elements) const;
 		void tooltip(view_hover_element& hover, pointi loc, pointi element_offset) const override;
 		view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
-			const std::vector<recti>& excluded_bounds) override;
+		                                             const std::vector<recti>& excluded_bounds) override;
 
 		item_element_ptr drawable_from_layout_location(pointi loc) const;
 		void update_scroll_info(group_by gb);
@@ -1706,5 +1705,5 @@ namespace df
 
 
 	std::shared_ptr<group_title_control> build_group_title(view_state& s, const view_host_base_ptr& view,
-		const item_group_ptr& g);
+	                                                       const item_group_ptr& g);
 };

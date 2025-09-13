@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -16,7 +15,7 @@ namespace df
 		return n >= 0 && n <= INT32_MAX;
 	}
 
-	class file : public no_copy
+	class file final : public no_copy
 	{
 		platform::file_ptr _h;
 		mutable std::unique_ptr<uint8_t, free_delete> _buffer;
@@ -30,7 +29,7 @@ namespace df
 			_h->seek(0, platform::file::whence::begin);
 		}
 
-		~file()
+		~file() override
 		{
 			_h.reset();
 			_buffer.reset();
@@ -39,8 +38,8 @@ namespace df
 		bool open_read(const file_path path, const bool sequential_scan = false)
 		{
 			_h = open_file(path, sequential_scan
-				? platform::file_open_mode::sequential_scan
-				: platform::file_open_mode::read);
+				                     ? platform::file_open_mode::sequential_scan
+				                     : platform::file_open_mode::read);
 			return _h != nullptr;
 		}
 
@@ -64,7 +63,7 @@ namespace df
 
 		bool is_valid_read(const uint64_t offset, const uint64_t size) const
 		{
-			return is_int32(size) && size < one_meg && (file_size() >= (offset + size));
+			return is_int32(size) && size < one_meg && file_size() >= offset + size;
 		}
 
 		bool read(void* result, const int64_t wanted64) const
@@ -101,7 +100,7 @@ namespace df
 				_buffer = df::unique_alloc<uint8_t>(sixty_four_k);
 			}
 
-			const auto wanted = static_cast<uint32_t>(sixty_four_k);
+			constexpr auto wanted = static_cast<uint32_t>(sixty_four_k);
 			const auto read = _h->read(_buffer.get(), wanted);
 			_buffer_data_size = read;
 			return read > 0;
@@ -129,7 +128,7 @@ namespace df
 				const auto read = _h->read(std::bit_cast<uint8_t*>(dst), size);
 				if (read == 0) return {};
 				dst[read] = 0;
-				return str::cache({ dst, std::min(static_cast<size_t>(read), str::len(dst)) });
+				return str::cache({dst, std::min(static_cast<size_t>(read), str::len(dst))});
 			}
 
 			return {};
@@ -142,12 +141,13 @@ namespace df
 			return _h->read(result.data(), size) == size ? result : blob{};
 		}
 
-		bool insert(const uint8_t* data, const int64_t dataSize, const int64_t start = 0, const int64_t replace = 0)
+		bool insert(const uint8_t* data, const int64_t dataSize, const int64_t start = 0,
+		            const int64_t replace = 0) const
 		{
 			const auto size = file_size();
 			const auto delta = static_cast<int>(dataSize) - static_cast<int>(replace);
 
-			const uint64_t buffer_size = sixty_four_k;
+			constexpr uint64_t buffer_size = sixty_four_k;
 			const auto buffer = df::unique_alloc<char8_t>(buffer_size);
 
 			if (delta < 0)

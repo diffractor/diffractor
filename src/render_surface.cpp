@@ -1,25 +1,21 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
-//
-// Transform code inspired https://www.codeproject.com/Articles/13201/Anti-Aliased-Image-Transformation-Aaform
-// AA shape code inspired https://www.codeproject.com/Articles/16600/CTGraphics-Anti-Alias-C-Drawing
 
 #include "pch.h"
 
 #include "files.h"
 #include "util.h"
 
-void ui::surface::clear(const color32 clr)
+void ui::surface::clear(const color32 clr) const
 {
 	for (auto y = 0; y < _dimensions.cy; ++y)
 	{
-		auto* const line = std::bit_cast<color32*>(_pixels.get() + (y * _stride));
+		auto* const line = std::bit_cast<color32*>(_pixels.get() + y * _stride);
 
 		for (int x = 0; x < _dimensions.cx; ++x)
 		{
@@ -43,12 +39,12 @@ ui::surface_ptr ui::surface::transform(const simple_transform t) const
 		{
 			for (int y = 0; y < cy; ++y)
 			{
-				const auto* const line_src = std::bit_cast<const color32*>(_pixels.get() + (y * _stride));
+				const auto* const line_src = std::bit_cast<const color32*>(_pixels.get() + y * _stride);
 
 				for (int x = 0; x < cx; ++x)
 				{
 					auto* const line_dst = std::bit_cast<color32*>(
-						result->_pixels.get() + (((cx - 1) - x) * result->_stride));
+						result->_pixels.get() + (cx - 1 - x) * result->_stride);
 					line_dst[y] = line_src[x];
 				}
 			}
@@ -62,11 +58,11 @@ ui::surface_ptr ui::surface::transform(const simple_transform t) const
 		{
 			for (int y = 0; y < cy; ++y)
 			{
-				const auto* const line_src = std::bit_cast<const color32*>(_pixels.get() + (((cy - 1) - y) * _stride));
+				const auto* const line_src = std::bit_cast<const color32*>(_pixels.get() + (cy - 1 - y) * _stride);
 
 				for (int x = 0; x < cx; ++x)
 				{
-					auto* const line_dst = std::bit_cast<color32*>(result->_pixels.get() + (x * result->_stride));
+					auto* const line_dst = std::bit_cast<color32*>(result->_pixels.get() + x * result->_stride);
 					line_dst[y] = line_src[x];
 				}
 			}
@@ -80,8 +76,8 @@ ui::surface_ptr ui::surface::transform(const simple_transform t) const
 		{
 			for (int y = 0; y < cy; ++y)
 			{
-				const auto* const line_src = std::bit_cast<const color32*>(_pixels.get() + ((cy - 1 - y) * _stride));
-				auto* const line_dst = std::bit_cast<color32*>(result->_pixels.get() + (y * result->_stride));
+				const auto* const line_src = std::bit_cast<const color32*>(_pixels.get() + (cy - 1 - y) * _stride);
+				auto* const line_dst = std::bit_cast<color32*>(result->_pixels.get() + y * result->_stride);
 
 				for (int x = 0; x < cx; ++x)
 				{
@@ -95,15 +91,15 @@ ui::surface_ptr ui::surface::transform(const simple_transform t) const
 }
 
 void ui::surface::fill_pie(const pointi center, const int radius, const color32 color[64], const color32 color_center,
-	const color32 color_bg)
+                           const color32 color_bg) const
 {
-	const auto outer_radius_limit1 = ((radius - 1) * (radius - 1));
-	const auto outer_radius_limit2 = (radius * radius);
+	const auto outer_radius_limit1 = (radius - 1) * (radius - 1);
+	const auto outer_radius_limit2 = radius * radius;
 	const auto outer_radius_diff = outer_radius_limit2 - outer_radius_limit1;
 
 	const auto inner_radius = radius / 2;
-	const auto inner_radius_limit1 = ((inner_radius - 1) * (inner_radius - 1));
-	const auto inner_radius_limit2 = (inner_radius * inner_radius);
+	const auto inner_radius_limit1 = (inner_radius - 1) * (inner_radius - 1);
+	const auto inner_radius_limit2 = inner_radius * inner_radius;
 	const auto inner_radius_diff = inner_radius_limit2 - inner_radius_limit1;
 
 	const auto cx = _dimensions.cx;
@@ -120,20 +116,21 @@ void ui::surface::fill_pie(const pointi center, const int radius, const color32 
 
 	for (auto y = 0; y < cy; ++y)
 	{
-		auto* const line = std::bit_cast<color32*>(_pixels.get() + (y * _stride));
+		auto* const line = std::bit_cast<color32*>(_pixels.get() + y * _stride);
 		const auto pdy = y - center.y;
 
 		for (auto x = 0; x < cx; ++x)
 		{
 			const auto pdx = x - center.x;
-			const auto r = (pdx * pdx) + (pdy * pdy);
+			const auto r = pdx * pdx + pdy * pdy;
 
 			color32 c;
 
 			if (r < inner_radius_limit1)
 			{
 				c = color_center;
-				const auto ff = ((static_cast<float>(r) / static_cast<float>(outer_radius_limit2)) + dither_matrix[x % 4][y % 4]) * 0.25f;
+				const auto ff = (static_cast<float>(r) / static_cast<float>(outer_radius_limit2) + dither_matrix[x %
+					4][y % 4]) * 0.25f;
 				c = lighten(c, ff);
 			}
 			else if (r < outer_radius_limit2)
@@ -144,7 +141,7 @@ void ui::surface::fill_pie(const pointi center, const int radius, const color32 
 				const auto c1 = color[static_cast<int>(i1) % 64];
 				const auto c2 = color[static_cast<int>(i2) % 64];
 
-				c = (c1 == c2) ? c1 : lerp(c1, c2, (i2 > i1) ? i2 - i1 : i1 - i2);
+				c = c1 == c2 ? c1 : lerp(c1, c2, i2 > i1 ? i2 - i1 : i1 - i2);
 
 				if (r > outer_radius_limit1)
 				{
@@ -155,7 +152,8 @@ void ui::surface::fill_pie(const pointi center, const int radius, const color32 
 					c = lerp(color_center, c, df::mul_div(r - inner_radius_limit1, 255, inner_radius_diff));
 				}
 
-				const auto ff = ((static_cast<float>(r) / static_cast<float>(outer_radius_limit2)) + dither_matrix[x % 4][y % 4]) * 0.25f;
+				const auto ff = (static_cast<float>(r) / static_cast<float>(outer_radius_limit2) + dither_matrix[x %
+					4][y % 4]) * 0.25f;
 				c = lighten(c, ff);
 			}
 			else
@@ -191,31 +189,31 @@ static simple_transform to_simple_transform(const image_edits& pe)
 }
 
 static __forceinline ui::color32 blend_colors(const ui::color32 start, const ui::color32 end, const double position,
-	const bool has_alpha)
+                                              const bool has_alpha)
 {
 	const auto pos = df::round(position * 0xff);
 
 	if (has_alpha)
 	{
-		const auto start_a = ((start >> 24) & 0xff) * (pos ^ 0xff);
-		const auto end_a = ((end >> 24) & 0xff) * pos;
+		const auto start_a = (start >> 24 & 0xff) * (pos ^ 0xff);
+		const auto end_a = (end >> 24 & 0xff) * pos;
 		const auto final_a = start_a + end_a;
 
 		if (final_a < 0xff) return 0;
 
 		return (final_a / 0xff) << 24 |
-			((((start >> 16) & 0xff) * start_a + (((end >> 16) & 0xff) * end_a)) / final_a) << 16 |
-			((((start >> 8) & 0xff) * start_a + (((end >> 8) & 0xff) * end_a)) / final_a) << 8 |
-			(((start & 0xff) * start_a + ((end & 0xff) * end_a)) / final_a);
+			(((start >> 16 & 0xff) * start_a + (end >> 16 & 0xff) * end_a) / final_a) << 16 |
+			(((start >> 8 & 0xff) * start_a + (end >> 8 & 0xff) * end_a) / final_a) << 8 |
+			((start & 0xff) * start_a + (end & 0xff) * end_a) / final_a;
 	}
 	const auto start_a = 0xff * (pos ^ 0xff);
 	const auto end_a = 0xff * pos;
 	const auto final_a = start_a + end_a;
 
 	return
-		((((start >> 16) & 0xff) * start_a + (((end >> 16) & 0xff) * end_a)) / final_a) << 16 |
-		((((start >> 8) & 0xff) * start_a + (((end >> 8) & 0xff) * end_a)) / final_a) << 8 |
-		(((start & 0xff) * start_a + ((end & 0xff) * end_a)) / final_a);
+		(((start >> 16 & 0xff) * start_a + (end >> 16 & 0xff) * end_a) / final_a) << 16 |
+		(((start >> 8 & 0xff) * start_a + (end >> 8 & 0xff) * end_a) / final_a) << 8 |
+		((start & 0xff) * start_a + (end & 0xff) * end_a) / final_a;
 }
 
 ui::const_surface_ptr ui::surface::transform(const image_edits& photo_edits) const
@@ -239,7 +237,7 @@ ui::const_surface_ptr ui::surface::transform(const image_edits& photo_edits) con
 	{
 		const auto crop = photo_edits.crop_bounds(_dimensions).crop(rectd(0, 0, _dimensions.cx, _dimensions.cy));
 		const auto angle = -crop.angle();
-		const quadd bounds((_dimensions));
+		const quadd bounds(_dimensions);
 		auto aff = affined().translate(-bounds.center_point()).rotate(angle);
 
 		if (photo_edits.has_scale())
@@ -263,9 +261,9 @@ ui::const_surface_ptr ui::surface::transform(const image_edits& photo_edits) con
 		{
 			const auto has_alpha = _format == texture_format::ARGB;
 
-			const auto dst_to_src_points0 = inc_aff.transform({ 0.0, 0.0 });
-			const auto dst_to_src_points1 = inc_aff.transform({ 1.0, 0.0 });
-			const auto dst_to_src_points2 = inc_aff.transform({ 0.0, 1.0 });
+			const auto dst_to_src_points0 = inc_aff.transform({0.0, 0.0});
+			const auto dst_to_src_points1 = inc_aff.transform({1.0, 0.0});
+			const auto dst_to_src_points2 = inc_aff.transform({0.0, 1.0});
 
 			const auto x_dx = dst_to_src_points1.X - dst_to_src_points0.X;
 			const auto x_dy = dst_to_src_points1.Y - dst_to_src_points0.Y;
@@ -322,8 +320,8 @@ ui::const_surface_ptr ui::surface::transform(const image_edits& photo_edits) con
 	{
 		color_adjust adjust;
 		adjust.color_params(photo_edits.vibrance(), photo_edits.saturation(), photo_edits.darks(),
-			photo_edits.midtones(),
-			photo_edits.lights(), photo_edits.contrast(), photo_edits.brightness());
+		                    photo_edits.midtones(),
+		                    photo_edits.lights(), photo_edits.contrast(), photo_edits.brightness());
 
 		auto canvas = std::make_shared<surface>();
 
@@ -336,8 +334,6 @@ ui::const_surface_ptr ui::surface::transform(const image_edits& photo_edits) con
 
 	return surface_result;
 }
-
-
 
 
 static constexpr int denom = 100000;
@@ -381,7 +377,7 @@ recti ui::scale_dimensions(const sizei dims, const recti limit, const bool dont_
 	const auto x = (limit.width() - scaled.cx) / 2;
 	const auto y = (limit.height() - scaled.cy) / 2;
 
-	return { limit.left + x, limit.top + y, limit.left + x + scaled.cx, limit.top + y + scaled.cy };
+	return {limit.left + x, limit.top + y, limit.left + x + scaled.cx, limit.top + y + scaled.cy};
 }
 
 recti ui::scale_dimensions_up(const sizei dims, const recti limit) noexcept
@@ -397,22 +393,22 @@ recti ui::scale_dimensions_up(const sizei dims, const recti limit) noexcept
 	const int x = (limit.width() - scaled.cx) / 2;
 	const int y = (limit.height() - scaled.cy) / 2;
 
-	return { limit.left + x, limit.top + y, limit.left + x + scaled.cx, limit.top + y + scaled.cy };
+	return {limit.left + x, limit.top + y, limit.left + x + scaled.cx, limit.top + y + scaled.cy};
 }
 
 int ui::calc_scale_down_factor(const sizei dims_in, const sizei size_out) noexcept
 {
 	if (size_out.cx > 0 || size_out.cy > 0)
 	{
-		if ((dims_in.cx / 8) >= size_out.cx && (dims_in.cy / 8) >= size_out.cy)
+		if (dims_in.cx / 8 >= size_out.cx && dims_in.cy / 8 >= size_out.cy)
 		{
 			return 8;
 		}
-		if ((dims_in.cx / 4) >= size_out.cx && (dims_in.cy / 4) >= size_out.cy)
+		if (dims_in.cx / 4 >= size_out.cx && dims_in.cy / 4 >= size_out.cy)
 		{
 			return 4;
 		}
-		if ((dims_in.cx / 2) >= size_out.cx && (dims_in.cy / 2) >= size_out.cy)
+		if (dims_in.cx / 2 >= size_out.cx && dims_in.cy / 2 >= size_out.cy)
 		{
 			return 2;
 		}

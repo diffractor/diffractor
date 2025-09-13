@@ -1,20 +1,15 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
-//
-// Based on iterative implementation of a FFT
-// Parts Copyright (C) 1999 Richard Boulton <richard@tartarus.org>
-
 
 #pragma once
 
 constexpr uint32_t FFT_BUFFER_SIZE_LOG = 9u;
-constexpr uint32_t FFT_BUFFER_SIZE = (1 << FFT_BUFFER_SIZE_LOG);
+constexpr uint32_t FFT_BUFFER_SIZE = 1 << FFT_BUFFER_SIZE_LOG;
 
 class fast_fft
 {
@@ -65,7 +60,7 @@ private:
 
 		while (outputptr <= endptr)
 		{
-			*outputptr = (*realptr * *realptr) + (*imagptr * *imagptr);
+			*outputptr = *realptr * *realptr + *imagptr * *imagptr;
 			outputptr++;
 			realptr++;
 			imagptr++;
@@ -79,7 +74,7 @@ private:
 	/*
 	* Actually perform the FFT
 	*/
-	void calculate(float* re, float* im)
+	void calculate(float* re, float* im) const
 	{
 		/* Set up some variables to reduce calculation in the loops */
 		uint32_t exchanges = 1;
@@ -130,7 +125,7 @@ private:
 		for (auto loop = 0; loop < FFT_BUFFER_SIZE_LOG; loop++)
 		{
 			result <<= 1;
-			result += (initial & 1);
+			result += initial & 1;
 			initial >>= 1;
 		}
 		return result;
@@ -176,7 +171,6 @@ public:
 
 class av_visualizer
 {
-private:
 	static constexpr int num_bars = 64;
 	const double time_offset = 0.01;
 
@@ -191,7 +185,7 @@ private:
 		frame(frame&&) noexcept = default;
 		frame& operator=(frame&&) noexcept = default;
 
-		explicit frame(double t = 0) noexcept : _time(t)
+		explicit frame(const double t = 0) noexcept : _time(t)
 		{
 			memset(_data, 0, sizeof(_data));
 		}
@@ -217,8 +211,8 @@ private:
 				if (_data[0][i] != other._data[0][i] ||
 					_data[1][i] != other._data[1][i])
 				{
-					_data[0][i] = ((3 * _data[0][i]) + other._data[0][i]) / 4;
-					_data[1][i] = ((3 * _data[1][i]) + other._data[1][i]) / 4;
+					_data[0][i] = (3 * _data[0][i] + other._data[0][i]) / 4;
+					_data[1][i] = (3 * _data[1][i] + other._data[1][i]) / 4;
 					changed = true;
 				}
 			}
@@ -234,7 +228,6 @@ private:
 
 	class frame_queue
 	{
-	private:
 		std::deque<frame> _q;
 		frame _current;
 
@@ -264,16 +257,16 @@ private:
 			//}
 
 			const auto found = std::lower_bound(_q.begin(), _q.end(), frame, [](auto&& l, auto&& r)
-				{
-					return l._time < r._time;
-				});
+			{
+				return l._time < r._time;
+			});
 
 			_q.emplace(found, frame); // .emplace_back(frame);
 
 			//df::log(__FUNCTION__, "frame_queue.push "sv << frame._time;
 		}
 
-		bool pop_merge(frame& f, double time)
+		bool pop_merge(frame& f, const double time)
 		{
 			bool invalid = false;
 			bool popped = false;
@@ -356,7 +349,7 @@ public:
 		return FFT_BUFFER_SIZE * 4;
 	}
 
-	bool step(double time)
+	bool step(const double time)
 	{
 		platform::exclusive_lock lock(_mutex);
 		return _frames.pop_merge(_frame, time);
@@ -373,7 +366,8 @@ public:
 		return cos(i * M_PI / 0.25) + 0.5;
 	}
 
-	void render(const ui::vertices_ptr& verts, const recti rect, const pointi offset, const float alpha, const double time) const
+	void render(const ui::vertices_ptr& verts, const recti rect, const pointi offset, const float alpha,
+	            const double time) const
 	{
 		recti rects[num_bars];
 		ui::color colors[num_bars];
@@ -381,11 +375,13 @@ public:
 		{
 			platform::shared_lock lock(_mutex);
 
-			const double scaleY = 444.0;
+			constexpr double scaleY = 444.0;
 			const double hh = rect.height() / 2.0;
 			const double y = static_cast<double>(rect.top + rect.bottom) / 2.0;
-			const double step = std::clamp(static_cast<double>(rect.width()) / (static_cast<double>(num_bars) + 1.0), 3.0, 16.0);
-			double x = static_cast<double>(rect.left) + (static_cast<double>(rect.width()) - ((static_cast<double>(num_bars) + 1.0) * static_cast<double>(step))) / 2.0;
+			const double step = std::clamp(static_cast<double>(rect.width()) / (static_cast<double>(num_bars) + 1.0),
+			                               3.0, 16.0);
+			double x = static_cast<double>(rect.left) + (static_cast<double>(rect.width()) - (static_cast<double>(
+				num_bars) + 1.0) * static_cast<double>(step)) / 2.0;
 
 			for (auto i = 0; i < num_bars; i++)
 			{
@@ -394,8 +390,8 @@ public:
 				const auto yl = static_cast<double>(_frame._data[0][i]);
 				const auto yr = static_cast<double>(_frame._data[1][i]);
 				const double yy = yl + yr;
-				const double a = std::clamp((yy + (scaleY / 2.0)) / (scaleY * 2.0) * alpha, 0.4, 1.0);
-				const double inflate = (step / 2.0) + (yy * (step / 2.0) / (scaleY * 3.0));
+				const double a = std::clamp((yy + scaleY / 2.0) / (scaleY * 2.0) * alpha, 0.4, 1.0);
+				const double inflate = step / 2.0 + yy * (step / 2.0) / (scaleY * 3.0);
 
 				// Lerp based colors
 				//float color_scale = std::clamp(yy / 555.0, 0.0, 1.0);
@@ -405,14 +401,14 @@ public:
 
 				// Cosign palete based colors
 				constexpr auto pi4 = M_PI / 0.25;
-				const auto ic = (0.25 + (i * 0.003) + (yy * 0.04) / scaleY) * pi4;
+				const auto ic = (0.25 + i * 0.003 + yy * 0.04 / scaleY) * pi4;
 				const auto rr = static_cast<float>((cos(ic) + 1.0) / 2.0);
-				const auto gg = static_cast<float>((cos(ic - (0.125 * pi4)) + 1.0) / 2.0);
-				const auto bb = static_cast<float>((cos(ic - (0.25 * pi4)) + 1.0) / 2.0);
+				const auto gg = static_cast<float>((cos(ic - 0.125 * pi4) + 1.0) / 2.0);
+				const auto bb = static_cast<float>((cos(ic - 0.25 * pi4) + 1.0) / 2.0);
 				colors[i] = ui::color(rr, gg, bb, static_cast<float>(a));
 
-				recti col(df::round(x - inflate), df::round(y - (yl * hh / scaleY)), df::round(x + inflate),
-					df::round(y + (yr * hh / scaleY)));
+				recti col(df::round(x - inflate), df::round(y - yl * hh / scaleY), df::round(x + inflate),
+				          df::round(y + yr * hh / scaleY));
 				rects[i] = col.offset(offset);
 			}
 		}
@@ -420,14 +416,13 @@ public:
 		verts->update(rects, colors, num_bars);
 	}
 
-
 private:
-	static int mix_chanel(int c1, int c2, int n, int d)
+	static int mix_chanel(const int c1, const int c2, const int n, const int d)
 	{
 		return (c2 * n + c1 * (d - n)) / d;
 	}
 
-	static ui::color32 mix_color(ui::color32 c1, ui::color32 c2, int n, int d, int a)
+	static ui::color32 mix_color(const ui::color32 c1, const ui::color32 c2, int n, const int d, const int a)
 	{
 		if (n > d) n = d;
 
@@ -437,7 +432,7 @@ private:
 		return ui::rgba(r, g, b, a);
 	}
 
-	static void calc_bars(int16_t* src, int* bars)
+	static void calc_bars(const int16_t* src, int* bars)
 	{
 		float tmp_out[FFT_BUFFER_SIZE / 2 + 1];
 
@@ -462,12 +457,12 @@ private:
 		}
 	}
 
-	static float linear_interpolate(float a, float b, float t)
+	static float linear_interpolate(const float a, const float b, const float t)
 	{
-		return (a * (1.0f - t)) + (b * t);
+		return a * (1.0f - t) + b * t;
 	}
 
-	static ui::color interpolate(ui::color ca, ui::color cb, float t, float a)
+	static ui::color interpolate(const ui::color ca, const ui::color cb, const float t, const float a)
 	{
 		ui::color result;
 		result.r = linear_interpolate(ca.r, cb.r, t);

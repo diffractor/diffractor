@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -13,7 +12,7 @@ namespace crypto
 {
 	using byte_array = std::vector<uint8_t>;
 
-	const uint32_t BLOCK_SIZE = 16;
+	constexpr uint32_t BLOCK_SIZE = 16;
 
 	class aes256
 	{
@@ -34,7 +33,7 @@ namespace crypto
 		size_t decrypt_start(size_t encrypted_length);
 		size_t decrypt_continue(const byte_array& encrypted, byte_array& plain);
 		size_t decrypt_continue(df::cspan encrypted, byte_array& plain);
-		static size_t decrypt_end(byte_array& plain);
+		static size_t decrypt_end(const byte_array& plain);
 
 	private:
 		byte_array m_key;
@@ -61,7 +60,7 @@ namespace crypto
 
 		void copy_key();
 
-		void add_round_key(uint8_t* buffer, uint8_t round);
+		void add_round_key(uint8_t* buffer, uint8_t round) const;
 
 		static void shift_rows(uint8_t* buffer);
 		static void shift_rows_inv(uint8_t* buffer);

@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -57,7 +56,7 @@ struct item_import_eq
 
 using item_import_set = df::hash_set<item_import, item_import_hash, item_import_eq>;
 
-class database : public df::no_copy
+class database final : public df::no_copy
 {
 	index_state& _state;
 	df::file_path _db_path;
@@ -86,29 +85,29 @@ public:
 
 
 	database(index_state& s);
-	~database();
+	~database() override;
 
 	bool is_open() const;
-	void load_index_values();
+	void load_index_values() const;
 
 	bool has_errors() const;
 
-	std::u8string web_service_cache(const std::u8string_view key) const;
-	void web_service_cache(const std::u8string_view key, const std::u8string_view value) const;
+	std::u8string web_service_cache(std::u8string_view key) const;
+	void web_service_cache(std::u8string_view key, std::u8string_view value) const;
 
-	item_import_set load_item_imports();
-	void writes_item_imports(const item_import_set& items);
+	item_import_set load_item_imports() const;
+	void writes_item_imports(const item_import_set& items) const;
 
 	void close();
 
 	void clean(const std::vector<df::file_path>& indexed_items) const;
 	db_thumbnail load_thumbnail(df::file_path id) const;
 	db_thumbnail load_folder_thumbnail(str::cached folder) const;
-	void load_thumbnails(const index_state& index, const df::item_set& items);
+	void load_thumbnails(const index_state& index, const df::item_set& items) const;
 	void open();
 	void open(df::folder_path folder, std::u8string_view file_name);
 	void perform_writes();
-	void perform_writes(std::deque<item_db_write> writes);
+	void perform_writes(std::deque<item_db_write> writes) const;
 	void maintenance(bool is_reset);
 
 

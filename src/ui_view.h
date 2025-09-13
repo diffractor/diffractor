@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -85,7 +84,6 @@ enum class view_invalid
 	refresh_items |
 	address |
 	font_size,
-
 };
 
 constexpr view_invalid operator|(const view_invalid a, const view_invalid b)
@@ -124,12 +122,14 @@ struct interaction_context
 };
 
 constexpr ui::color view_handle_color(const bool selected, const bool hover, const bool tracking,
-	const bool view_has_focus, const bool text_over,
-	ui::color bg_clr = ui::style::color::group_background)
+                                      const bool view_has_focus, const bool text_over,
+                                      const ui::color bg_clr = ui::style::color::group_background)
 {
 	if (tracking)
 	{
-		const auto clr = selected ? ui::color(ui::style::color::view_selected_background) : bg_clr.average(ui::style::color::view_text);
+		const auto clr = selected
+			                 ? ui::color(ui::style::color::view_selected_background)
+			                 : bg_clr.average(ui::style::color::view_text);
 
 		return clr.scale(hover ? 1.22f : 1.0f).aa(0.9f);
 	}
@@ -137,8 +137,8 @@ constexpr ui::color view_handle_color(const bool selected, const bool hover, con
 	if (selected)
 	{
 		const auto clr = view_has_focus
-			? ui::color(ui::style::color::view_selected_background).scale(hover ? 1.22f : 1.0f)
-			: bg_clr.average(ui::style::color::view_selected_background).scale(hover ? 1.33f : 1.0f);
+			                 ? ui::color(ui::style::color::view_selected_background).scale(hover ? 1.22f : 1.0f)
+			                 : bg_clr.average(ui::style::color::view_selected_background).scale(hover ? 1.33f : 1.0f);
 		return clr.aa(0.9f);
 	}
 
@@ -209,7 +209,7 @@ public:
 
 	bool over_min_time() const
 	{
-		return (_first_tic + 200) < platform::tick_count();
+		return _first_tic + 200 < platform::tick_count();
 	}
 
 	virtual void popup_from_location(view_hover_element& hover)
@@ -357,7 +357,7 @@ public:
 
 	void on_mouse_leave(const pointi loc) override
 	{
-		update_controller({ -1, -1 });
+		update_controller({-1, -1});
 		_hover = false;
 	}
 
@@ -398,7 +398,10 @@ public:
 	virtual void activate(sizei extent) = 0;
 	virtual void deactivate() = 0;
 	virtual void refresh() = 0;
-	virtual void reload() {};
+
+	virtual void reload()
+	{
+	};
 
 	virtual void update_media_elements()
 	{
@@ -454,7 +457,7 @@ public:
 	{
 	}
 
-	virtual void focus(bool has_focus)
+	virtual void focus(const bool has_focus)
 	{
 		_view_has_focus = has_focus;
 	}
@@ -478,7 +481,6 @@ public:
 
 	virtual void exit()
 	{
-
 	}
 
 	virtual std::u8string_view title()
@@ -510,7 +512,6 @@ public:
 	std::function<void(view_hover_element&, pointi)> popup_func;
 	std::function<void()> changed_func;
 
-public:
 	bool _active = false;
 	bool _tracking = false;
 	bool _scroll_child_controls = false;
@@ -583,7 +584,7 @@ public:
 		_offset.y = 0;
 	}
 
-	void scrollbar_to(const view_host_ptr& host, int pos, int height)
+	void scrollbar_to(const view_host_ptr& host, const int pos, const int height)
 	{
 		const auto cy = df::mul_div(_client_bounds.height(), height, _scroll_extent.cy) / 2;
 		scroll_offset(host, 0, df::mul_div(pos - cy, _scroll_extent.cy, height));
@@ -591,25 +592,25 @@ public:
 
 	pointi scroll_pos() const
 	{
-		return { 0, _scroll_extent.cy };
+		return {0, _scroll_extent.cy};
 	}
 
 	pointi device_to_logical(const pointi loc) const
 	{
-		return { loc.x, loc.y + _offset.y };
+		return {loc.x, loc.y + _offset.y};
 	}
 
 	pointi logical_to_device(const pointi loc) const
 	{
-		return { loc.x, loc.y - _offset.y };
+		return {loc.x, loc.y - _offset.y};
 	}
 
 	recti logical_to_device(const recti bounds) const
 	{
-		return { {bounds.left, bounds.top - _offset.y}, bounds.extent() };
+		return {{bounds.left, bounds.top - _offset.y}, bounds.extent()};
 	}
 
-	void offset(const view_host_ptr& host, int x, int y)
+	void offset(const view_host_ptr& host, const int x, const int y)
 	{
 		scroll_offset(host, _offset.x + x, _offset.y + y);
 	}
@@ -639,7 +640,7 @@ public:
 		popup_func = {};
 	}
 
-	int logical_to_scrollbar_pos(int y) const
+	int logical_to_scrollbar_pos(const int y) const
 	{
 		return df::mul_div(y, _client_bounds.height(), _scroll_extent.cy);
 	}
@@ -681,7 +682,7 @@ public:
 		return ui::style::cursor::up_down;
 	}
 
-	void update_pos(int y)
+	void update_pos(const int y) const
 	{
 		_parent.scrollbar_to(_host, y - _bounds.top, _bounds.height());
 	}

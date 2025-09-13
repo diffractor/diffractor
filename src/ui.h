@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -267,22 +266,22 @@ namespace ui
 
 	constexpr color32 rgb(const uint32_t r, const uint32_t g, const uint32_t b) noexcept
 	{
-		return r | (g << 8) | (b << 16);
+		return r | g << 8 | b << 16;
 	};
 
 	constexpr color32 rgba(const uint32_t r, const uint32_t g, const uint32_t b, const uint32_t a = 255) noexcept
 	{
-		return r | (g << 8) | (b << 16) | (a << 24);
+		return r | g << 8 | b << 16 | a << 24;
 	};
 
 	constexpr color32 saturate_rgba(const int r, const int g, const int b, const int a) noexcept
 	{
-		return df::byte_clamp(r) | (df::byte_clamp(g) << 8) | (df::byte_clamp(b) << 16) | (df::byte_clamp(a) << 24);
+		return df::byte_clamp(r) | df::byte_clamp(g) << 8 | df::byte_clamp(b) << 16 | df::byte_clamp(a) << 24;
 	};
 
 	constexpr color32 saturate_rgba(const uint32_t r, const uint32_t g, const uint32_t b, const uint32_t a) noexcept
 	{
-		return df::byte_clamp(r) | (df::byte_clamp(g) << 8) | (df::byte_clamp(b) << 16) | (df::byte_clamp(a) << 24);
+		return df::byte_clamp(r) | df::byte_clamp(g) << 8 | df::byte_clamp(b) << 16 | df::byte_clamp(a) << 24;
 	};
 
 	constexpr color32 saturate_rgba(const float r, const float g, const float b, const float a) noexcept
@@ -305,7 +304,7 @@ namespace ui
 
 	constexpr uint32_t get_a(const color32 c) noexcept
 	{
-		return 0xffu & (c >> 24);
+		return 0xffu & c >> 24;
 	}
 
 	constexpr uint32_t get_r(const color32 c) noexcept
@@ -315,17 +314,17 @@ namespace ui
 
 	constexpr uint32_t get_g(const color32 c) noexcept
 	{
-		return 0xffu & (c >> 8);
+		return 0xffu & c >> 8;
 	}
 
 	constexpr uint32_t get_b(const color32 c) noexcept
 	{
-		return 0xffu & (c >> 16);
+		return 0xffu & c >> 16;
 	}
 
 	constexpr uint32_t mul_div_u32(const uint32_t n, const uint32_t num, const uint32_t den)
 	{
-		return den ? ((n * num) + (den / 2)) / den : -1;
+		return den ? (n * num + den / 2) / den : -1;
 	}
 
 	constexpr color32 darken(const color32 c, const float ff) noexcept
@@ -357,13 +356,13 @@ namespace ui
 
 	constexpr color32 abgr(const color32 c, const uint32_t a = 0xFF) noexcept
 	{
-		return ((c >> 16) & 0xFF) | ((c << 16) & 0xFF0000) | (c & 0x0000FF00) | (static_cast<uint32_t>(a) << 24);
+		return c >> 16 & 0xFF | c << 16 & 0xFF0000 | c & 0x0000FF00 | static_cast<uint32_t>(a) << 24;
 		//return rgba(get_b(c), get_g(c), get_r(c), a);
 	}
 
 	constexpr color32 bgr(const color32 c) noexcept
 	{
-		return ((c >> 16) & 0xFF) | ((c << 16) & 0xFF0000) | (c & 0x0000FF00);
+		return c >> 16 & 0xFF | c << 16 & 0xFF0000 | c & 0x0000FF00;
 		// return rgb(get_b(c), get_g(c), get_r(c));
 	}
 
@@ -386,7 +385,7 @@ namespace ui
 		if (t < 0) return a;
 		if (t > 255) return b;
 		const auto tu = static_cast<uint32_t>(t);
-		const auto c16 = (a * (255u - tu)) + (b * tu);
+		const auto c16 = a * (255u - tu) + b * tu;
 		return c16 >> 8;
 	}
 
@@ -413,7 +412,7 @@ namespace ui
 
 	constexpr int calc_stride(const int cx, const int bytes_per_pixel) noexcept
 	{
-		return ((cx * bytes_per_pixel) + 15) & ~15;
+		return cx * bytes_per_pixel + 15 & ~15;
 	}
 
 	inline sizei round_div2(const sizei extent)
@@ -421,7 +420,7 @@ namespace ui
 		auto x = extent.cx & ~1;
 		auto y = extent.cy & ~1;
 
-		return { x, y };
+		return {x, y};
 	}
 
 	inline double calc_mega_pixels(const double x, const double y) noexcept
@@ -440,7 +439,7 @@ namespace ui
 		float bg_alpha = 0.22f;
 	};
 
-	class histogram : public df::no_copy
+	class histogram final : public df::no_copy
 	{
 	public:
 		histogram() noexcept
@@ -503,7 +502,6 @@ namespace ui
 
 	class surface final : public std::enable_shared_from_this<surface>
 	{
-	private:
 		sizei _dimensions;
 		size_t _stride = 0;
 		size_t _size = 0;
@@ -532,7 +530,7 @@ namespace ui
 			_orientation = orientation::top_left;
 		}
 
-		void make_blank()
+		void make_blank() const
 		{
 			memset(_pixels.get(), 0, _size);
 		}
@@ -600,17 +598,17 @@ namespace ui
 		const uint8_t* pixels_line(const int y) const noexcept
 		{
 			df::assert_true(y < _dimensions.cy);
-			return _pixels.get() + (y * _stride);
+			return _pixels.get() + y * _stride;
 		}
 
 		uint8_t* pixels_line(const int y) noexcept
 		{
 			df::assert_true(y < _dimensions.cy);
-			return _pixels.get() + (y * _stride);
+			return _pixels.get() + y * _stride;
 		}
 
 		uint8_t* alloc(const sizei s, const texture_format fmt, const ui::orientation ori = orientation::top_left,
-			const double time = 0.0)
+		               const double time = 0.0)
 		{
 			return alloc(s.cx, s.cy, fmt, ori, time);
 		}
@@ -621,7 +619,7 @@ namespace ui
 		}
 
 		uint8_t* alloc(const int cx, const int cy, const texture_format fmt,
-			const ui::orientation ori = orientation::top_left, const double time = 0.0)
+		               const ui::orientation ori = orientation::top_left, const double time = 0.0)
 		{
 			if (cx < 1 || cy < 1)
 			{
@@ -648,15 +646,15 @@ namespace ui
 
 			const ptrdiff_t stride_out = _stride;
 			const ptrdiff_t stride_in = s._stride;
-			const auto* const p = s._pixels.get() + (r.left * 4_z) + (r.top * stride_in);
+			const auto* const p = s._pixels.get() + r.left * 4_z + r.top * stride_in;
 
 			for (int y = 0; y < _dimensions.cy; ++y)
 			{
-				memcpy_s(_pixels.get() + (y * stride_out), stride_out, p + (y * stride_in), stride_in);
+				memcpy_s(_pixels.get() + y * stride_out, stride_out, p + y * stride_in, stride_in);
 			}
 		}
 
-		void draw(const surface& s, const pointi location, const recti src)
+		void draw(const surface& s, const pointi location, const recti src) const
 		{
 			const ptrdiff_t stride_this = _stride;
 			const ptrdiff_t stride_src = s._stride;
@@ -665,33 +663,33 @@ namespace ui
 			for (int y = 0; y < src.height(); ++y)
 			{
 				memcpy_s(
-					_pixels.get() + ((y + location.y) * stride_this) + (location.x * 4),
+					_pixels.get() + (y + location.y) * stride_this + location.x * 4,
 					stride_this,
-					s._pixels.get() + ((y + src.top) * stride_src) + (src.left * 4),
+					s._pixels.get() + (y + src.top) * stride_src + src.left * 4,
 					copy_bytes_len);
 			}
 		}
 
 		void swap_rb();
 
-		void set_pixel(const int x, const int y, const color32 c)
+		void set_pixel(const int x, const int y, const color32 c) const
 		{
 			if (x < 0 || x >= _dimensions.cx || y < 0 || y >= _dimensions.cy) return;
-			auto* const line = std::bit_cast<color32*>(_pixels.get() + (y * _stride));
+			auto* const line = std::bit_cast<color32*>(_pixels.get() + y * _stride);
 			line[x] = c;
 		}
 
 		color32 get_pixel(const int x, const int y) const
 		{
 			if (x < 0 || x >= _dimensions.cx || y < 0 || y >= _dimensions.cy) return 0;
-			const auto* const line = std::bit_cast<const color32*>(_pixels.get() + (y * _stride));
+			const auto* const line = std::bit_cast<const color32*>(_pixels.get() + y * _stride);
 			return line[x];
 		}
 
-		void clear(color32 clr);
+		void clear(color32 clr) const;
 		surface_ptr transform(simple_transform t) const;
 
-		void fill_pie(pointi center, int radius, const color32 color[64], color32 color_center, color32 color_bg);
+		void fill_pie(pointi center, int radius, const color32 color[64], color32 color_center, color32 color_bg) const;
 
 		const_surface_ptr transform(const image_edits& photo_edits) const;
 
@@ -701,7 +699,6 @@ namespace ui
 
 	class image final : public std::enable_shared_from_this<image>
 	{
-	private:
 		df::blob _data;
 		sizei _dimensions;
 		image_format _format = image_format::Unknown;
@@ -721,7 +718,7 @@ namespace ui
 		{
 		}
 
-		image(df::cspan data, const sizei d, const image_format f, const orientation orientation) noexcept :
+		image(const df::cspan data, const sizei d, const image_format f, const orientation orientation) noexcept :
 			_data(data.begin(), data.end()), _dimensions(d), _format(f), _orientation(orientation)
 		{
 		}
@@ -947,12 +944,12 @@ namespace ui
 
 		color inverse() const
 		{
-			return { 1.0f - r, 1.0f - g, 1.0f - b, a };
+			return {1.0f - r, 1.0f - g, 1.0f - b, a};
 		}
 
 		color a_min(const float aa) const
 		{
-			return { r, g, b, std::min(a, aa) };
+			return {r, g, b, std::min(a, aa)};
 		}
 
 		color32 rgb() const
@@ -967,7 +964,7 @@ namespace ui
 
 		color operator-(const color other) const
 		{
-			return { r - other.r, g - other.g, b - other.b, a - other.a };
+			return {r - other.r, g - other.g, b - other.b, a - other.a};
 		}
 
 		float abs_sum() const
@@ -1021,7 +1018,7 @@ namespace ui
 
 		color scale(const float x) const
 		{
-			return { sat_f(r * x), sat_f(g * x), sat_f(b * x), a };
+			return {sat_f(r * x), sat_f(g * x), sat_f(b * x), a};
 		}
 
 		color average(const color other) const
@@ -1030,12 +1027,13 @@ namespace ui
 				(r + other.r) / 2.0f,
 				(g + other.g) / 2.0f,
 				(b + other.b) / 2.0f,
-				(a + other.a) / 2.0f };
+				(a + other.a) / 2.0f
+			};
 		}
 
 		static float femphasize(const float f)
 		{
-			return ((f - 0.5f) * 0.9f) + 0.5f;
+			return (f - 0.5f) * 0.9f + 0.5f;
 		}
 
 		color emphasize() const
@@ -1056,13 +1054,13 @@ namespace ui
 		static color from_a(const float a)
 		{
 			df::assert_true(a < 1.1f);
-			return { 1.0f, 1.0f, 1.0f, a };
+			return {1.0f, 1.0f, 1.0f, a};
 		}
 
 		color aa(const float a) const
 		{
 			df::assert_true(a < 1.1f);
-			return { r, g, b, a };
+			return {r, g, b, a};
 		}
 	};
 
@@ -1108,7 +1106,6 @@ namespace ui
 
 	class color_adjust
 	{
-	private:
 		static constexpr int curve_len = 0x1000;
 
 		double _curve[curve_len];
@@ -1117,8 +1114,8 @@ namespace ui
 
 	public:
 		void color_params(double vibrance, double saturation, double darks, double midtones, double lights,
-			double contrast, double brightness);
-		void apply(const const_surface_ptr& src, uint8_t* dst, const size_t dst_stride, df::cancel_token token) const;
+		                  double contrast, double brightness);
+		void apply(const const_surface_ptr& src, uint8_t* dst, size_t dst_stride, df::cancel_token token) const;
 
 	private:
 		color32 adjust_color(double y, double u, double v, double a) const;
@@ -1164,7 +1161,7 @@ namespace ui
 		virtual texture_update_result update(const av_frame_ptr& frame) = 0;
 		virtual texture_update_result update(const const_surface_ptr& surface) = 0;
 		virtual texture_update_result update(sizei dims, texture_format format, orientation orientation,
-			const uint8_t* pixels, size_t stride, size_t buffer_size) = 0;
+		                                     const uint8_t* pixels, size_t stride, size_t buffer_size) = 0;
 
 		virtual bool is_valid() const = 0;
 	};
@@ -1198,7 +1195,8 @@ namespace ui
 	class measure_context : public df::no_copy
 	{
 	public:
-		virtual sizei measure_text(std::u8string_view text, style::font_face font, style::text_style style, int cx, int cy = 0) = 0;
+		virtual sizei measure_text(std::u8string_view text, style::font_face font, style::text_style style, int cx,
+		                           int cy = 0) = 0;
 		virtual int text_line_height(style::font_face font) = 0;
 		virtual text_layout_ptr create_text_layout(style::font_face font) = 0;
 
@@ -1219,30 +1217,30 @@ namespace ui
 		color_style colors;
 		bool frame_has_focus = false;
 
-		virtual ~draw_context() = default;
+		~draw_context() override = default;
 
 		virtual void clear(color c) = 0;
 
 		virtual void draw_rounded_rect(recti bounds, color c, int radius) = 0;
 		virtual void draw_rect(recti bounds, color c) = 0;
 		virtual void draw_text(std::u8string_view text, recti bounds, style::font_face font, style::text_style style,
-			color c, color bg) = 0;
+		                       color c, color bg) = 0;
 		virtual void draw_text(std::u8string_view text, const std::vector<text_highlight_t>& highlights, recti bounds,
-			style::font_face font, style::text_style style, color clr, color bg) = 0;
+		                       style::font_face font, style::text_style style, color clr, color bg) = 0;
 		virtual void draw_text(const text_layout_ptr& tl, recti bounds, color clr, color bg) = 0;
 		virtual void draw_shadow(recti bounds, int width, float alpha, bool inverse = false) = 0;
 		virtual void draw_border(recti inside, recti outside, color c_inside, color c_outside) = 0;
 		virtual void draw_texture(const texture_ptr& t, recti dst, float alpha = 1.0f,
-			texture_sampler sampler = texture_sampler::point) = 0;
+		                          texture_sampler sampler = texture_sampler::point) = 0;
 		virtual void draw_texture(const texture_ptr& t, recti dst, recti src, float alpha = 1.0f,
-			texture_sampler sampler = texture_sampler::point, float radius = 0.0) = 0;
+		                          texture_sampler sampler = texture_sampler::point, float radius = 0.0) = 0;
 		virtual void draw_texture(const texture_ptr& t, const quadd& dst, recti src, float alpha,
-			texture_sampler sampler) = 0;
+		                          texture_sampler sampler) = 0;
 		virtual void draw_vertices(const vertices_ptr& v) = 0;
 		virtual void draw_edge_shadows(float alpha) = 0;
 
 		sizei measure_text(std::u8string_view text, style::font_face font, style::text_style style, int width,
-			int height = 0) override = 0;
+		                   int height = 0) override = 0;
 		int text_line_height(style::font_face type) override = 0;
 
 		virtual texture_ptr create_texture() = 0;
@@ -1310,12 +1308,10 @@ namespace ui
 
 	class button : public control_base
 	{
-	public:
 	};
 
 	class date_time_control : public control_base
 	{
-	public:
 	};
 
 	class web_events : public df::no_copy
@@ -1359,7 +1355,7 @@ namespace ui
 	{
 		bool xTBSTYLE_WRAPABLE = false;
 		bool xTBSTYLE_LIST = false;
-		sizei button_extent = { 0, 0 };
+		sizei button_extent = {0, 0};
 	};
 
 	class command
@@ -1367,7 +1363,7 @@ namespace ui
 	public:
 		command() = default;
 
-		command(icon_index icon, std::any opaque, std::function<void()> invoke)
+		command(const icon_index icon, std::any opaque, std::function<void()> invoke)
 			: icon(icon), opaque(std::move(opaque)), invoke(std::move(invoke))
 		{
 		}
@@ -1513,7 +1509,7 @@ namespace ui
 		}
 
 		virtual platform::drop_effect drag_over(const platform::clipboard_data& data, const key_state keys,
-			const pointi loc)
+		                                        const pointi loc)
 		{
 			return platform::drop_effect::none;
 		}
@@ -1574,17 +1570,17 @@ namespace ui
 	{
 	public:
 		virtual edit_ptr create_edit(const edit_styles& styles, std::u8string_view text,
-			std::function<void(const std::u8string&)> changed) = 0;
+		                             std::function<void(const std::u8string&)> changed) = 0;
 		virtual trackbar_ptr create_slider(int min, int max, std::function<void(int, bool)> changed) = 0;
 		virtual toolbar_ptr create_toolbar(const toolbar_styles& styles, const std::vector<command_ptr>& buttons) = 0;
 		virtual button_ptr create_button(std::u8string_view text, std::function<void()> invoke,
-			bool default_button = false) = 0;
+		                                 bool default_button = false) = 0;
 		virtual button_ptr create_button(icon_index icon, std::u8string_view title, std::u8string_view details,
-			std::function<void()> invoke, bool default_button = false) = 0;
+		                                 std::function<void()> invoke, bool default_button = false) = 0;
 		virtual button_ptr create_check_button(bool val, std::u8string_view text, bool is_radio,
-			std::function<void(bool)> changed) = 0;
+		                                       std::function<void(bool)> changed) = 0;
 		virtual date_time_control_ptr create_date_time_control(df::date_t text, std::function<void(df::date_t)> changed,
-			bool include_time) = 0;
+		                                                       bool include_time) = 0;
 		virtual control_frame_ptr create_dlg(frame_host_weak_ptr host, bool is_popup) = 0;
 		virtual frame_ptr create_frame(frame_host_weak_ptr host, const frame_style& ft) = 0;
 		virtual bubble_window_ptr create_bubble() = 0;
@@ -1603,7 +1599,7 @@ namespace ui
 	public:
 		virtual ~bubble_frame() = default;
 		virtual void show(const view_elements_ptr& elements, recti bounds, int x_center, int preferred_size,
-			bool horizontal) = 0;
+		                  bool horizontal) = 0;
 		virtual void hide() = 0;
 		virtual bool is_visible() const = 0;
 	};
@@ -1634,7 +1630,7 @@ namespace ui
 		virtual void folder_changed() = 0;
 		virtual bool key_down(char32_t c, key_state keys) = 0;
 		virtual void track_menu(const frame_ptr& parent, recti button_bounds,
-			const std::vector<command_ptr>& buttons) = 0;
+		                        const std::vector<command_ptr>& buttons) = 0;
 		virtual std::u8string restart_cmd_line() = 0;
 		virtual void save_recovery_state() = 0;
 	};
@@ -1649,7 +1645,7 @@ namespace ui
 		virtual void frame_delay(int animate_delay) = 0;
 		virtual void queue_idle() = 0;
 		virtual control_frame_ptr create_app_frame(const platform::setting_file_ptr& store,
-			const frame_host_weak_ptr& host) = 0;
+		                                           const frame_host_weak_ptr& host) = 0;
 		virtual void monitor_folders(const std::vector<df::folder_path>& vector) = 0;
 		virtual void enable_screen_saver(bool cond) = 0;
 		virtual void set_font_base_size(int i) = 0;
@@ -1658,7 +1654,6 @@ namespace ui
 
 	class animate_alpha
 	{
-	private:
 		float _val = 0.0f;
 		float _target = 0.0f;
 
@@ -1667,7 +1662,7 @@ namespace ui
 		{
 		}
 
-		animate_alpha(float v) : _val(v), _target(v)
+		animate_alpha(const float v) : _val(v), _target(v)
 		{
 		}
 
@@ -1681,23 +1676,23 @@ namespace ui
 			return _target;
 		}
 
-		void reset(float v)
+		void reset(const float v)
 		{
 			_target = _val = v;
 		}
 
-		void reset(float v, float t)
+		void reset(float v, const float t)
 		{
 			_target = t;
 			_val = t;
 		}
 
-		void val(float v)
+		void val(const float v)
 		{
 			_val = v;
 		}
 
-		void target(float v)
+		void target(const float v)
 		{
 			_target = v;
 			_val = v;

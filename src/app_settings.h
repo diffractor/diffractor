@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
+// Copyright(C) 2025  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -16,40 +15,40 @@ constexpr auto defaut_custom_folder_structure = u8"{year}\\{created}"sv;
 
 namespace features
 {
-	const uint64_t show_photo = 1ull << 0;
-	const uint64_t show_video = 1ull << 1;
-	const uint64_t show_audio = 1ull << 3;
-	const uint64_t show_raw = 1ull << 5;
+	constexpr uint64_t show_photo = 1ull << 0;
+	constexpr uint64_t show_video = 1ull << 1;
+	constexpr uint64_t show_audio = 1ull << 3;
+	constexpr uint64_t show_raw = 1ull << 5;
 
-	const uint64_t search_folder = 1ull << 8;
-	const uint64_t search_text = 1ull << 9;
-	const uint64_t search_property = 1ull << 10;
-	const uint64_t search_type = 1ull << 11;
-	const uint64_t search_flatten = 1ull << 12;
-	const uint64_t search_related = 1ull << 13;
-	const uint64_t search_duplicates = 1ull << 14;
+	constexpr uint64_t search_folder = 1ull << 8;
+	constexpr uint64_t search_text = 1ull << 9;
+	constexpr uint64_t search_property = 1ull << 10;
+	constexpr uint64_t search_type = 1ull << 11;
+	constexpr uint64_t search_flatten = 1ull << 12;
+	constexpr uint64_t search_related = 1ull << 13;
+	constexpr uint64_t search_duplicates = 1ull << 14;
 
-	const uint64_t edit_photo_metadata = 1ull << 16;
-	const uint64_t edit_photo_bitmap = 1ull << 17;
-	const uint64_t edit_video_metadata = 1ull << 18;
-	const uint64_t edit_audio_metadata = 1ull << 19;
+	constexpr uint64_t edit_photo_metadata = 1ull << 16;
+	constexpr uint64_t edit_photo_bitmap = 1ull << 17;
+	constexpr uint64_t edit_video_metadata = 1ull << 18;
+	constexpr uint64_t edit_audio_metadata = 1ull << 19;
 
-	const uint64_t tag = 1ull << 32;
-	const uint64_t batch_edit = 1ull << 33;
-	const uint64_t slideshow = 1ull << 34;
-	const uint64_t resize = 1ull << 35;
-	const uint64_t convert = 1ull << 36;
-	const uint64_t rotate = 1ull << 37;
-	const uint64_t locate = 1ull << 38;
-	const uint64_t email = 1ull << 39;
-	const uint64_t adjust_date = 1ull << 40;
-	const uint64_t burn_to_disk = 1ull << 41;
-	const uint64_t print = 1ull << 42;
-	const uint64_t scan = 1ull << 43;
-	const uint64_t import = 1ull << 44;
-	const uint64_t pdf = 1ull << 45;
-	const uint64_t remove_metadata = 1ull << 46;
-	const uint64_t sync = 1ull << 47;
+	constexpr uint64_t tag = 1ull << 32;
+	constexpr uint64_t batch_edit = 1ull << 33;
+	constexpr uint64_t slideshow = 1ull << 34;
+	constexpr uint64_t resize = 1ull << 35;
+	constexpr uint64_t convert = 1ull << 36;
+	constexpr uint64_t rotate = 1ull << 37;
+	constexpr uint64_t locate = 1ull << 38;
+	constexpr uint64_t email = 1ull << 39;
+	constexpr uint64_t adjust_date = 1ull << 40;
+	constexpr uint64_t burn_to_disk = 1ull << 41;
+	constexpr uint64_t print = 1ull << 42;
+	constexpr uint64_t scan = 1ull << 43;
+	constexpr uint64_t import = 1ull << 44;
+	constexpr uint64_t pdf = 1ull << 45;
+	constexpr uint64_t remove_metadata = 1ull << 46;
+	constexpr uint64_t sync = 1ull << 47;
 }
 
 
@@ -61,7 +60,6 @@ public:
 	void read(const platform::setting_file_ptr& store);
 	void write(const platform::setting_file_ptr& store) const;
 
-public:
 	// Constants
 	static constexpr int item_splitter_max = 10000;
 	static constexpr int item_scale_count = 8;
@@ -251,4 +249,4 @@ static void record_feature_use(const uint64_t f)
 	setting.features_used_since_last_report |= f;
 }
 
-std::vector<std::u8string_view> split_collection_folders(const std::u8string_view text);
+std::vector<std::u8string_view> split_collection_folders(std::u8string_view text);

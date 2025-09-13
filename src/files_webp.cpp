@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
@@ -16,7 +15,7 @@
 #include "webp/demux.h"
 #include "webp/encode.h"
 
-ui::surface_ptr load_webp(df::cspan data)
+ui::surface_ptr load_webp(const df::cspan data)
 {
 	ui::surface_ptr result;
 	int32_t width = 0;
@@ -48,9 +47,9 @@ ui::surface_ptr load_webp(df::cspan data)
 
 					if (WEBP_MUX_OK == WebPMuxGetChunk(mux, "EXIF", &chunk))
 					{
-						const auto exif_skip = is_exif_signature({ chunk.bytes, chunk.size }) ? 6u : 0u;
+						const auto exif_skip = is_exif_signature({chunk.bytes, chunk.size}) ? 6u : 0u;
 						prop::item_metadata md;
-						metadata_exif::parse(md, { chunk.bytes + exif_skip, chunk.size - exif_skip });
+						metadata_exif::parse(md, {chunk.bytes + exif_skip, chunk.size - exif_skip});
 						result->orientation(md.orientation);
 					}
 				}
@@ -92,10 +91,12 @@ webp_parts scan_webp(df::cspan data, bool decode_surface)
 			const bool xmp = flags & XMP_FLAG;
 			const bool has_alpha = flags & ALPHA_FLAG;
 
-			if (has_alpha) {
+			if (has_alpha)
+			{
 				result.pixel_format = u8"rgba"_c; // Likely RGBA
 			}
-			else {
+			else
+			{
 				result.pixel_format = u8"yuv420"_c; // Likely YUV420
 			}
 
@@ -133,22 +134,23 @@ webp_parts scan_webp(df::cspan data, bool decode_surface)
 									if (WebPAnimDecoderGetNext(dec, &frame_data, &timestamp))
 									{
 										auto surface = std::make_shared<ui::surface>();
-										auto* buffer = surface->alloc(anim_info.canvas_width, anim_info.canvas_height, ui::texture_format::ARGB);
-										
+										auto* buffer = surface->alloc(anim_info.canvas_width, anim_info.canvas_height,
+										                              ui::texture_format::ARGB);
+
 										if (buffer)
 										{
 											// Copy frame data to surface buffer
-											const size_t bytes_per_pixel = 4; // BGRA
+											constexpr size_t bytes_per_pixel = 4; // BGRA
 											const size_t frame_stride = anim_info.canvas_width * bytes_per_pixel;
 											const size_t surface_stride = surface->stride();
-											
+
 											for (int y = 0; y < anim_info.canvas_height; ++y)
 											{
-												memcpy(buffer + y * surface_stride, 
-													   frame_data + y * frame_stride, 
-													   frame_stride);
+												memcpy(buffer + y * surface_stride,
+												       frame_data + y * frame_stride,
+												       frame_stride);
 											}
-											
+
 											result.frames.emplace_back(surface);
 										}
 									}
@@ -177,13 +179,13 @@ webp_parts scan_webp(df::cspan data, bool decode_surface)
 
 				if (WEBP_MUX_OK == WebPMuxGetChunk(mux, "EXIF", &chunk))
 				{
-					const auto exif_skip = is_exif_signature({ chunk.bytes, chunk.size }) ? 6u : 0u;
+					const auto exif_skip = is_exif_signature({chunk.bytes, chunk.size}) ? 6u : 0u;
 					result.metadata.exif.assign(chunk.bytes + exif_skip, chunk.bytes + chunk.size - exif_skip);
 
 					if (!result.frames.empty())
 					{
 						prop::item_metadata md;
-						metadata_exif::parse(md, { chunk.bytes + exif_skip, chunk.size - exif_skip });
+						metadata_exif::parse(md, {chunk.bytes + exif_skip, chunk.size - exif_skip});
 
 						for (auto&& s : result.frames)
 						{
@@ -209,7 +211,7 @@ webp_parts scan_webp(df::cspan data, bool decode_surface)
 }
 
 ui::image_ptr save_webp(const ui::const_surface_ptr& surface_in, const metadata_parts& metadata,
-	const file_encode_params& params)
+                        const file_encode_params& params)
 {
 	ui::image_ptr result;
 
@@ -231,8 +233,8 @@ ui::image_ptr save_webp(const ui::const_surface_ptr& surface_in, const metadata_
 		picture.use_argb = true;
 
 		const auto ok = use_alpha
-			? WebPPictureImportBGRA(&picture, surface_in->pixels(), surface_in->stride())
-			: WebPPictureImportBGRX(&picture, surface_in->pixels(), surface_in->stride());
+			                ? WebPPictureImportBGRA(&picture, surface_in->pixels(), surface_in->stride())
+			                : WebPPictureImportBGRX(&picture, surface_in->pixels(), surface_in->stride());
 
 		if (ok)
 		{
@@ -266,7 +268,7 @@ ui::image_ptr save_webp(const ui::const_surface_ptr& surface_in, const metadata_
 
 			if (success)
 			{
-				WebPData image_data = { memory_writer.mem, memory_writer.size };
+				WebPData image_data = {memory_writer.mem, memory_writer.size};
 				WebPMuxError img_err = WebPMuxSetImage(mux, &image_data, 0);
 
 				if (img_err == WEBP_MUX_OK)
@@ -317,7 +319,7 @@ ui::image_ptr save_webp(const ui::const_surface_ptr& surface_in, const metadata_
 					if (err == WEBP_MUX_OK)
 					{
 						result = std::make_shared<ui::image>(df::cspan(output_data.bytes, output_data.size), dimensions,
-							ui::image_format::WEBP, surface_in->orientation());
+						                                     ui::image_format::WEBP, surface_in->orientation());
 						WebPDataClear(&output_data);
 					}
 				}

@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -16,7 +15,7 @@ class crash_files_db
 
 	df::file_path _crash_files_path;
 
-	path_set load_paths(const df::file_path path)
+	static path_set load_paths(const df::file_path path)
 	{
 		path_set result;
 
@@ -25,7 +24,7 @@ class crash_files_db
 
 		while (std::getline(file, line))
 		{
-			result.emplace(df::file_path{ line });
+			result.emplace(df::file_path{line});
 		}
 
 		return result;
@@ -42,7 +41,7 @@ public:
 		_crash_files = load_paths(path);
 	}
 
-	bool is_known_crash_file(const df::file_path path)
+	bool is_known_crash_file(const df::file_path path) const
 	{
 		return _crash_files.contains(path);
 	}
@@ -59,7 +58,7 @@ public:
 		_open_files.erase(path);
 	}
 
-	void flush_open_files()
+	void flush_open_files() const
 	{
 		if (!_open_files.empty())
 		{
@@ -74,7 +73,7 @@ public:
 		}
 	}
 
-	void log_open_files()
+	void log_open_files() const
 	{
 		if (!_open_files.empty())
 		{
@@ -85,7 +84,7 @@ public:
 		}
 	}
 
-	std::u8string open_files_list()
+	std::u8string open_files_list() const
 	{
 		u8ostringstream result;
 
@@ -106,9 +105,9 @@ struct record_open_path
 	std::u8string_view _context;
 
 	record_open_path(crash_files_db& files_that_crash_diffractor, const df::file_path path,
-		const std::u8string_view context) : _path(path),
-		files_that_crash_diffractor_(files_that_crash_diffractor),
-		_context(context)
+	                 const std::u8string_view context) : _path(path),
+	                                                     files_that_crash_diffractor_(files_that_crash_diffractor),
+	                                                     _context(context)
 	{
 		files_that_crash_diffractor_.add_open(path, _context);
 	}

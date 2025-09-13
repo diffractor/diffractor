@@ -1,13 +1,10 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
-//
-// Based on code from Thomas render. Lane. and the Independent JPEG Group's software.
 
 #include "pch.h"
 #include "files_jpeg.h"
@@ -23,63 +20,63 @@ extern "C" {
 #include <jpeglib.h>
 
 
-	/*
-	 * Codes for supported types of image transformations.
-	 */
+/*
+ * Codes for supported types of image transformations.
+ */
 
-	using JXFORM_CODE = enum
-	{
-		JXFORM_NONE,
-		/* no transformation */
-		JXFORM_FLIP_H,
-		/* horizontal flip */
-		JXFORM_FLIP_V,
-		/* vertical flip */
-		JXFORM_TRANSPOSE,
-		/* transpose across UL-to-LR axis */
-		JXFORM_TRANSVERSE,
-		/* transpose across UR-to-LL axis */
-		JXFORM_ROT_90,
-		/* 90-degree clockwise rotation */
-		JXFORM_ROT_180,
-		/* 180-degree rotation */
-		JXFORM_ROT_270,
-		/* 270-degree clockwise (or 90 ccw) */
-		JXFORM_WIPE,
-		/* wipe */
-		JXFORM_DROP /* drop */
-	};
+using JXFORM_CODE = enum
+{
+	JXFORM_NONE,
+	/* no transformation */
+	JXFORM_FLIP_H,
+	/* horizontal flip */
+	JXFORM_FLIP_V,
+	/* vertical flip */
+	JXFORM_TRANSPOSE,
+	/* transpose across UL-to-LR axis */
+	JXFORM_TRANSVERSE,
+	/* transpose across UR-to-LL axis */
+	JXFORM_ROT_90,
+	/* 90-degree clockwise rotation */
+	JXFORM_ROT_180,
+	/* 180-degree rotation */
+	JXFORM_ROT_270,
+	/* 270-degree clockwise (or 90 ccw) */
+	JXFORM_WIPE,
+	/* wipe */
+	JXFORM_DROP /* drop */
+};
 
-	/*
-	 * Codes for crop parameters, which can individually be unspecified,
-	 * positive or negative for xoffset or yoffset,
-	 * positive or force or reflect for width or height.
-	 */
+/*
+ * Codes for crop parameters, which can individually be unspecified,
+ * positive or negative for xoffset or yoffset,
+ * positive or force or reflect for width or height.
+ */
 
-	using JCROP_CODE = enum
-	{
-		JCROP_UNSET,
-		JCROP_POS,
-		JCROP_NEG,
-		JCROP_FORCE,
-		JCROP_REFLECT
-	};
+using JCROP_CODE = enum
+{
+	JCROP_UNSET,
+	JCROP_POS,
+	JCROP_NEG,
+	JCROP_FORCE,
+	JCROP_REFLECT
+};
 
-	/*
-	 * Transform parameters struct.
-	 * NB: application must not change any elements of this struct after
-	 * calling jtransform_request_workspace.
-	 */
+/*
+ * Transform parameters struct.
+ * NB: application must not change any elements of this struct after
+ * calling jtransform_request_workspace.
+ */
 
-	using jpeg_transform_info = struct
-	{
-		/* Options: set by caller */
-		JXFORM_CODE transform; /* image transform operator */
-		boolean perfect; /* if TRUE, fail if partial MCUs are requested */
-		boolean trim; /* if TRUE, trim partial MCUs as needed */
-		boolean force_grayscale; /* if TRUE, convert color image to grayscale */
-		boolean crop; /* if TRUE, crop or wipe source image, or drop */
-		boolean slow_hflip; /* For best performance, the JXFORM_FLIP_H transform
+using jpeg_transform_info = struct
+{
+	/* Options: set by caller */
+	JXFORM_CODE transform; /* image transform operator */
+	boolean perfect; /* if TRUE, fail if partial MCUs are requested */
+	boolean trim; /* if TRUE, trim partial MCUs as needed */
+	boolean force_grayscale; /* if TRUE, convert color image to grayscale */
+	boolean crop; /* if TRUE, crop or wipe source image, or drop */
+	boolean slow_hflip; /* For best performance, the JXFORM_FLIP_H transform
 									normally modifies the source coefficients in place.
 									Setting this to TRUE will instead use a slower,
 									double-buffered algorithm, which leaves the source
@@ -87,98 +84,97 @@ extern "C" {
 									images must be generated from the same set of
 									coefficients. */
 
-									/* Crop parameters: application need not set these unless crop is TRUE.
-															 * These can be filled in by jtransform_parse_crop_spec().
-															 */
-		JDIMENSION crop_width; /* Width of selected region */
-		JCROP_CODE crop_width_set; /* (force-disables adjustment) */
-		JDIMENSION crop_height; /* Height of selected region */
-		JCROP_CODE crop_height_set; /* (force-disables adjustment) */
-		JDIMENSION crop_xoffset; /* X offset of selected region */
-		JCROP_CODE crop_xoffset_set; /* (negative measures from right edge) */
-		JDIMENSION crop_yoffset; /* Y offset of selected region */
-		JCROP_CODE crop_yoffset_set; /* (negative measures from bottom edge) */
+	/* Crop parameters: application need not set these unless crop is TRUE.
+							 * These can be filled in by jtransform_parse_crop_spec().
+							 */
+	JDIMENSION crop_width; /* Width of selected region */
+	JCROP_CODE crop_width_set; /* (force-disables adjustment) */
+	JDIMENSION crop_height; /* Height of selected region */
+	JCROP_CODE crop_height_set; /* (force-disables adjustment) */
+	JDIMENSION crop_xoffset; /* X offset of selected region */
+	JCROP_CODE crop_xoffset_set; /* (negative measures from right edge) */
+	JDIMENSION crop_yoffset; /* Y offset of selected region */
+	JCROP_CODE crop_yoffset_set; /* (negative measures from bottom edge) */
 
-		/* Drop parameters: set by caller for drop request */
-		j_decompress_ptr drop_ptr;
-		jvirt_barray_ptr* drop_coef_arrays;
+	/* Drop parameters: set by caller for drop request */
+	j_decompress_ptr drop_ptr;
+	jvirt_barray_ptr* drop_coef_arrays;
 
-		/* Internal workspace: caller should not touch these */
-		int num_components; /* # of components in workspace */
-		jvirt_barray_ptr* workspace_coef_arrays; /* workspace for transformations */
-		JDIMENSION output_width; /* cropped destination dimensions */
-		JDIMENSION output_height;
-		JDIMENSION x_crop_offset; /* destination crop offsets measured in iMCUs */
-		JDIMENSION y_crop_offset;
-		JDIMENSION drop_width; /* drop/wipe dimensions measured in iMCUs */
-		JDIMENSION drop_height;
-		int iMCU_sample_width; /* destination iMCU size */
-		int iMCU_sample_height;
-	};
+	/* Internal workspace: caller should not touch these */
+	int num_components; /* # of components in workspace */
+	jvirt_barray_ptr* workspace_coef_arrays; /* workspace for transformations */
+	JDIMENSION output_width; /* cropped destination dimensions */
+	JDIMENSION output_height;
+	JDIMENSION x_crop_offset; /* destination crop offsets measured in iMCUs */
+	JDIMENSION y_crop_offset;
+	JDIMENSION drop_width; /* drop/wipe dimensions measured in iMCUs */
+	JDIMENSION drop_height;
+	int iMCU_sample_width; /* destination iMCU size */
+	int iMCU_sample_height;
+};
 
 
 #if TRANSFORMS_SUPPORTED
 
-	/* Parse a crop specification (written in X11 geometry style) */
-	EXTERN(boolean) jtransform_parse_crop_spec(jpeg_transform_info* info,
-		const char* spec);
-	/* Request any required workspace */
-	EXTERN(boolean) jtransform_request_workspace(j_decompress_ptr srcinfo,
-		jpeg_transform_info* info);
-	/* Adjust output image parameters */
-	EXTERN(jvirt_barray_ptr*) jtransform_adjust_parameters
-	(j_decompress_ptr srcinfo, j_compress_ptr dstinfo,
-		jvirt_barray_ptr* src_coef_arrays, jpeg_transform_info* info);
-	/* Execute the actual transformation, if any */
-	EXTERN(void) jtransform_execute_transform(j_decompress_ptr srcinfo,
-		j_compress_ptr dstinfo,
-		jvirt_barray_ptr* src_coef_arrays,
-		jpeg_transform_info* info);
-	/* Determine whether lossless transformation is perfectly
-	 * possible for a specified image and transformation.
-	 */
-	EXTERN(boolean) jtransform_perfect_transform(JDIMENSION image_width,
-		JDIMENSION image_height,
-		int MCU_width, int MCU_height,
-		JXFORM_CODE transform);
+/* Parse a crop specification (written in X11 geometry style) */
+EXTERN(boolean) jtransform_parse_crop_spec(jpeg_transform_info* info,
+                                           const char* spec);
+/* Request any required workspace */
+EXTERN(boolean) jtransform_request_workspace(j_decompress_ptr srcinfo,
+                                             jpeg_transform_info* info);
+/* Adjust output image parameters */
+EXTERN(jvirt_barray_ptr*) jtransform_adjust_parameters
+(j_decompress_ptr srcinfo, j_compress_ptr dstinfo,
+ jvirt_barray_ptr* src_coef_arrays, jpeg_transform_info* info);
+/* Execute the actual transformation, if any */
+EXTERN(void) jtransform_execute_transform(j_decompress_ptr srcinfo,
+                                          j_compress_ptr dstinfo,
+                                          jvirt_barray_ptr* src_coef_arrays,
+                                          jpeg_transform_info* info);
+/* Determine whether lossless transformation is perfectly
+ * possible for a specified image and transformation.
+ */
+EXTERN(boolean) jtransform_perfect_transform(JDIMENSION image_width,
+                                             JDIMENSION image_height,
+                                             int MCU_width, int MCU_height,
+                                             JXFORM_CODE transform);
 
-	/* jtransform_execute_transform used to be called
-	 * jtransform_execute_transformation, but some compilers complain about
-	 * routine names that long.  This macro is here to avoid breaking any
-	 * old source code that uses the original name...
-	 */
+/* jtransform_execute_transform used to be called
+ * jtransform_execute_transformation, but some compilers complain about
+ * routine names that long.  This macro is here to avoid breaking any
+ * old source code that uses the original name...
+ */
 #define jtransform_execute_transformation       jtransform_execute_transform
 
 #endif /* TRANSFORMS_SUPPORTED */
 
 
-	 /*
-	  * Support for copying optional markers from source to destination file.
-	  */
+/*
+ * Support for copying optional markers from source to destination file.
+ */
 
-	using JCOPY_OPTION = enum
-	{
-		JCOPYOPT_NONE,
-		/* copy no optional markers */
-		JCOPYOPT_COMMENTS,
-		/* copy only comment (COM) markers */
-		JCOPYOPT_ALL,
-		/* copy all optional markers */
-		JCOPYOPT_ALL_EXCEPT_ICC,
-		/* copy all optional markers except APP2 */
-		JCOPYOPT_ICC /* copy only ICC profile (APP2) markers */
-	};
+using JCOPY_OPTION = enum
+{
+	JCOPYOPT_NONE,
+	/* copy no optional markers */
+	JCOPYOPT_COMMENTS,
+	/* copy only comment (COM) markers */
+	JCOPYOPT_ALL,
+	/* copy all optional markers */
+	JCOPYOPT_ALL_EXCEPT_ICC,
+	/* copy all optional markers except APP2 */
+	JCOPYOPT_ICC /* copy only ICC profile (APP2) markers */
+};
 
 #define JCOPYOPT_DEFAULT  JCOPYOPT_COMMENTS     /* recommended default */
 
-	/* Setup decompression object to save desired markers in memory */
-	EXTERN(void) jcopy_markers_setup(j_decompress_ptr srcinfo,
-		JCOPY_OPTION option);
-	/* Copy markers saved in the given source object to the destination object */
-	EXTERN(void) jcopy_markers_execute(j_decompress_ptr srcinfo,
-		j_compress_ptr dstinfo,
-		JCOPY_OPTION option);
-
+/* Setup decompression object to save desired markers in memory */
+EXTERN(void) jcopy_markers_setup(j_decompress_ptr srcinfo,
+                                 JCOPY_OPTION option);
+/* Copy markers saved in the given source object to the destination object */
+EXTERN(void) jcopy_markers_execute(j_decompress_ptr srcinfo,
+                                   j_compress_ptr dstinfo,
+                                   JCOPY_OPTION option);
 }
 
 static constexpr auto write_buffer_size = df::sixty_four_k;
@@ -280,25 +276,25 @@ bool is_icc_signature(const df::cspan cs)
 	return memcmp(icc_signature.data(), cs.data, icc_signature.size()) == 0;
 }
 
-static boolean fill_input_buffer(struct jpeg_decompress_struct* dinfo)
+static boolean fill_input_buffer(jpeg_decompress_struct* dinfo)
 {
 	//dinfo->src->bytes_in_buffer = 0;
 	//dinfo->src->next_input_byte = nullptr;
 	//ERREXIT(dinfo, JERR_BUFFER_SIZE);
-	static JOCTET fakeEoi[] = { 0xFF, JPEG_EOI };
+	static JOCTET fakeEoi[] = {0xFF, JPEG_EOI};
 	dinfo->src->next_input_byte = fakeEoi;
 	dinfo->src->bytes_in_buffer = 2;
 	return FALSE;
 }
 
-static void skip_input_data(struct jpeg_decompress_struct* dinfo, long num_bytes)
+static void skip_input_data(jpeg_decompress_struct* dinfo, long num_bytes)
 {
 	num_bytes = std::min(static_cast<long>(dinfo->src->bytes_in_buffer), num_bytes);
 	dinfo->src->next_input_byte += num_bytes;
 	dinfo->src->bytes_in_buffer -= num_bytes;
 }
 
-static void source_noop(struct jpeg_decompress_struct* dinfo)
+static void source_noop(jpeg_decompress_struct* dinfo)
 {
 }
 
@@ -328,8 +324,8 @@ static void term_buffer(const j_compress_ptr pi)
 {
 	auto* pThis = static_cast<jpeg_encoder*>(pi->client_data);
 	pThis->_result.insert(pThis->_result.end(), pThis->_impl->_buffer,
-		pThis->_impl->_buffer + static_cast<size_t>(pi->dest->next_output_byte - pThis->_impl->
-			_buffer));
+	                      pThis->_impl->_buffer + static_cast<size_t>(pi->dest->next_output_byte - pThis->_impl->
+		                      _buffer));
 }
 
 static boolean empty_buffer(const j_compress_ptr pi)
@@ -399,12 +395,12 @@ void jpeg_encoder::setup(const uint32_t cx, const uint32_t cy, const file_encode
 
 
 void jpeg_encoder::start(const uint32_t cx, const uint32_t cy, const ui::orientation orientation,
-	const metadata_parts& metadata, const file_encode_params params)
+                         const metadata_parts& metadata, const file_encode_params params)
 {
 	setup(cx, cy, params);
 	jpeg_start_compress(&_impl->cinfo, TRUE);
 
-	_result_dimensions = sizei{ static_cast<int>(_impl->cinfo.jpeg_width), static_cast<int>(_impl->cinfo.jpeg_height) };
+	_result_dimensions = sizei{static_cast<int>(_impl->cinfo.jpeg_width), static_cast<int>(_impl->cinfo.jpeg_height)};
 
 	if (!metadata.exif.empty())
 	{
@@ -460,12 +456,12 @@ void jpeg_encoder::start(const uint32_t cx, const uint32_t cy, const ui::orienta
 	}
 }
 
-void jpeg_encoder::encode_chunk(uint8_t** rows, const uint32_t chunk)
+void jpeg_encoder::encode_chunk(uint8_t** rows, const uint32_t chunk) const
 {
 	jpeg_write_scanlines(&_impl->cinfo, rows, chunk);
 }
 
-df::blob jpeg_encoder::complete(bool can_abort)
+df::blob jpeg_encoder::complete(const bool can_abort)
 {
 	if (can_abort && _impl->cinfo.next_scanline < _impl->cinfo.image_height)
 	{
@@ -478,9 +474,9 @@ df::blob jpeg_encoder::complete(bool can_abort)
 	return _result;
 }
 
-df::blob jpeg_encoder::encode(uint32_t cx, uint32_t cy, const uint8_t* bitmap, uint32_t stride,
-	ui::orientation orientation, const metadata_parts& metadata,
-	const file_encode_params params)
+df::blob jpeg_encoder::encode(const uint32_t cx, const uint32_t cy, const uint8_t* bitmap, const uint32_t stride,
+                              const ui::orientation orientation, const metadata_parts& metadata,
+                              const file_encode_params params)
 {
 	start(cx, cy, orientation, metadata, params);
 
@@ -488,7 +484,7 @@ df::blob jpeg_encoder::encode(uint32_t cx, uint32_t cy, const uint8_t* bitmap, u
 
 	for (auto i = 0u; i < cy; i++)
 	{
-		rows.get()[i] = const_cast<uint8_t*>(bitmap + (stride * i));
+		rows.get()[i] = const_cast<uint8_t*>(bitmap + stride * i);
 	}
 
 	while (_impl->cinfo.next_scanline < _impl->cinfo.image_height)
@@ -520,7 +516,7 @@ bool jpeg_decoder_x::can_render_yuv420() const
 	return _impl->dinfo.jpeg_color_space == JCS_YCbCr;
 }
 
-static boolean cache_file_fill(struct jpeg_decompress_struct* dinfo)
+static boolean cache_file_fill(jpeg_decompress_struct* dinfo)
 {
 	const auto* const pThis = static_cast<jpeg_decoder_x*>(dinfo->client_data);
 	dinfo->src->bytes_in_buffer = 0;
@@ -528,7 +524,7 @@ static boolean cache_file_fill(struct jpeg_decompress_struct* dinfo)
 	return false;
 }
 
-static void cache_file_skip(struct jpeg_decompress_struct* dinfo, long num_bytes)
+static void cache_file_skip(jpeg_decompress_struct* dinfo, long num_bytes)
 {
 }
 
@@ -569,7 +565,7 @@ void jpeg_decoder_x::create()
 	}
 }
 
-bool jpeg_decoder_x::read_header(df::cspan cs)
+bool jpeg_decoder_x::read_header(const df::cspan cs)
 {
 	_impl->mem_source.bytes_in_buffer = cs.size;
 	_impl->mem_source.next_input_byte = cs.data;
@@ -581,7 +577,7 @@ bool jpeg_decoder_x::read_header(df::cspan cs)
 	{
 		for (const auto* marker = _impl->dinfo.marker_list; marker != nullptr; marker = marker->next)
 		{
-			df::span block = { marker->data, marker->data_length };
+			df::span block = {marker->data, marker->data_length};
 
 			if (marker->marker == XMP_EXIF_MARKER &&
 				is_exif_signature(block))
@@ -601,7 +597,7 @@ bool jpeg_decoder_x::read_header(const ui::const_image_ptr& image)
 	return read_header(image->data());
 }
 
-bool jpeg_decoder_x::start_decompress(const int scale_hint, const bool yuv)
+bool jpeg_decoder_x::start_decompress(const int scale_hint, const bool yuv) const
 {
 	if (_impl->dinfo.jpeg_color_space == JCS_YCCK || _impl->dinfo.jpeg_color_space == JCS_CMYK)
 	{
@@ -627,7 +623,7 @@ bool jpeg_decoder_x::start_decompress(const int scale_hint, const bool yuv)
 	return 0 != jpeg_start_decompress(&_impl->dinfo);
 }
 
-void jpeg_decoder_x::read_nv12(uint8_t* pixels, const int stride, const int buffer_size)
+void jpeg_decoder_x::read_nv12(uint8_t* pixels, const int stride, const int buffer_size) const
 {
 	const auto cx = _impl->dinfo.output_width;
 	const auto cy = _impl->dinfo.output_height;
@@ -649,7 +645,7 @@ void jpeg_decoder_x::read_nv12(uint8_t* pixels, const int stride, const int buff
 	const auto cy_div2 = cy & ~1;
 	const auto cx_div2 = cx & ~1;
 
-	JSAMPROW* plane[4]{ py, pu, pv, nullptr };
+	JSAMPROW* plane[4]{py, pu, pv, nullptr};
 
 	for (uint32_t i = 0; i < max_chunk; i++)
 	{
@@ -668,22 +664,22 @@ void jpeg_decoder_x::read_nv12(uint8_t* pixels, const int stride, const int buff
 		if (read <= 0)
 			break;
 
-		for (auto yy = 0u; (yy < read) && (y + yy < cy_div2); yy++)
+		for (auto yy = 0u; yy < read && y + yy < cy_div2; yy++)
 		{
-			auto* const puvp = pixels + (stride * (y + yy));
+			auto* const puvp = pixels + stride * (y + yy);
 			memcpy(puvp, py[yy], std::min(stride, uv_buffer_stride));
 		}
 
-		for (auto yy = 0u; (yy < read) && ((y + yy) < cy_div2); yy += 2)
+		for (auto yy = 0u; yy < read && y + yy < cy_div2; yy += 2)
 		{
-			auto* const puvp = pixels + (stride * (cy_div2 + ((y + yy) / 2)));
-			const auto* const pup = pu[(yy * ucy) / cy];
-			const auto* const pvp = pv[(yy * vcy) / cy];
+			auto* const puvp = pixels + stride * (cy_div2 + (y + yy) / 2);
+			const auto* const pup = pu[yy * ucy / cy];
+			const auto* const pvp = pv[yy * vcy / cy];
 
 			for (auto xx = 0u; xx < cx_div2; xx += 2)
 			{
-				puvp[xx + 0] = pup[(xx * ucx) / cx];
-				puvp[xx + 1] = pvp[(xx * vcx) / cx];
+				puvp[xx + 0] = pup[xx * ucx / cx];
+				puvp[xx + 1] = pvp[xx * vcx / cx];
 			}
 		}
 
@@ -691,7 +687,7 @@ void jpeg_decoder_x::read_nv12(uint8_t* pixels, const int stride, const int buff
 	}
 }
 
-bool jpeg_decoder_x::read_rgb(uint8_t* p, int stride, int buffer_size)
+bool jpeg_decoder_x::read_rgb(uint8_t* p, const int stride, int buffer_size) const
 {
 	auto y = 0u;
 	const auto cy = _impl->dinfo.output_height;
@@ -746,7 +742,7 @@ bool jpeg_decoder_x::read_rgb(uint8_t* p, int stride, int buffer_size)
 	return y > 0;
 }
 
-void jpeg_decoder_x::close()
+void jpeg_decoder_x::close() const
 {
 	try
 	{
@@ -776,12 +772,12 @@ void jpeg_decoder_x::close()
 
 sizei jpeg_decoder_x::dimensions() const
 {
-	return { static_cast<int>(_impl->dinfo.image_width), static_cast<int>(_impl->dinfo.image_height) };
+	return {static_cast<int>(_impl->dinfo.image_width), static_cast<int>(_impl->dinfo.image_height)};
 }
 
 sizei jpeg_decoder_x::dimensions_out() const
 {
-	return { static_cast<int>(_impl->dinfo.output_width), static_cast<int>(_impl->dinfo.output_height) };
+	return {static_cast<int>(_impl->dinfo.output_width), static_cast<int>(_impl->dinfo.output_height)};
 }
 
 void jpeg_decoder_x::destroy()
@@ -817,10 +813,11 @@ static JXFORM_CODE to_transform(simple_transform orientation_e)
 		JXFORM_ROT_270,
 	};
 
-	return (orientation <= 1 || orientation > 8) ? JXFORM_NONE : transform[orientation];
+	return orientation <= 1 || orientation > 8 ? JXFORM_NONE : transform[orientation];
 }
 
-df::blob jpeg_decoder_x::transform(const df::cspan src, jpeg_encoder& encoder, const simple_transform transform_in)
+df::blob jpeg_decoder_x::transform(const df::cspan src, jpeg_encoder& encoder,
+                                   const simple_transform transform_in) const
 {
 	df::blob result;
 
@@ -865,7 +862,7 @@ df::blob jpeg_decoder_x::transform(const df::cspan src, jpeg_encoder& encoder, c
 		// Adjust destination parameters if required by transform options;
 		// also find out which set of coefficient arrays will hold the output.
 		auto* const dst_coef_arrays = jtransform_adjust_parameters(&_impl->dinfo, &encoder._impl->cinfo,
-			src_coef_arrays, &transformoption);
+		                                                           src_coef_arrays, &transformoption);
 
 		// Start compressor (note no image data is actually written here)
 		jpeg_write_coefficients(&encoder._impl->cinfo, dst_coef_arrays);
@@ -875,7 +872,7 @@ df::blob jpeg_decoder_x::transform(const df::cspan src, jpeg_encoder& encoder, c
 		//
 		for (auto* marker = _impl->dinfo.marker_list; marker != nullptr; marker = marker->next)
 		{
-			df::span block = { marker->data, marker->data_length };
+			df::span block = {marker->data, marker->data_length};
 
 			if (marker->marker == XMP_EXIF_MARKER &&
 				is_exif_signature(block))
@@ -905,14 +902,14 @@ df::blob jpeg_decoder_x::transform(const df::cspan src, jpeg_encoder& encoder, c
 
 
 ui::image_ptr save_jpeg(const ui::const_surface_ptr& surface_in, const metadata_parts& metadata,
-	const file_encode_params& encoder_params)
+                        const file_encode_params& encoder_params)
 {
 	const auto dimensions_in = surface_in->dimensions();
 	const auto orientation_in = surface_in->orientation();
 
 	jpeg_encoder encoder;
 	const auto result_data = encoder.encode(dimensions_in.cx, dimensions_in.cy, surface_in->pixels(),
-		surface_in->stride(), orientation_in, metadata, encoder_params);
+	                                        surface_in->stride(), orientation_in, metadata, encoder_params);
 	const auto dimensions_out = encoder._result_dimensions;
 
 	return std::make_shared<ui::image>(result_data, dimensions_out, ui::image_format::JPEG, orientation_in);
@@ -988,72 +985,72 @@ file_scan_result scan_jpg(read_stream& s)
 		case M_SOF13:
 		case M_SOF14:
 		case M_SOF15:
-		{
-			s.read(block_offset + 4u, block_data, block_data_len);
-			const auto bits = *block_data;
-			result.height = df::byteswap16(block_data + 1);
-			result.width = df::byteswap16(block_data + 3);
-			channels = *(block_data + 5);
-		}
-		break;
+			{
+				s.read(block_offset + 4u, block_data, block_data_len);
+				const auto bits = *block_data;
+				result.height = df::byteswap16(block_data + 1);
+				result.width = df::byteswap16(block_data + 3);
+				channels = *(block_data + 5);
+			}
+			break;
 
 		case M_APP0:
-		{
-			s.read(block_offset + 4u, block_data, block_data_len);
-			const auto* const ex = std::bit_cast<const jfif_extension*>(static_cast<const uint8_t*>(block_data));
-
-			if (strcmp("JFXX", ex->identifier) == 0)
 			{
-				result.thumbnail_image = load_image_file({ ex->data, block_data_len - 8 });
-			}
-		}
+				s.read(block_offset + 4u, block_data, block_data_len);
+				const auto* const ex = std::bit_cast<const jfif_extension*>(static_cast<const uint8_t*>(block_data));
 
-		break;
+				if (strcmp("JFXX", ex->identifier) == 0)
+				{
+					result.thumbnail_image = load_image_file({ex->data, block_data_len - 8});
+				}
+			}
+
+			break;
 
 		case M_APP1:
-		{
-			s.read(block_offset + 4u, block_data, block_data_len);
-			df::cspan block = { block_data, block_data_len };
+			{
+				s.read(block_offset + 4u, block_data, block_data_len);
+				df::cspan block = {block_data, block_data_len};
 
-			if (is_exif_signature(block))
-			{
-				const auto exif = block.sub(exif_signature_len);
-				result.metadata.exif.assign(exif.begin(), exif.end());
-				result.exif_file_offset = block_offset + 4u;
+				if (is_exif_signature(block))
+				{
+					const auto exif = block.sub(exif_signature_len);
+					result.metadata.exif.assign(exif.begin(), exif.end());
+					result.exif_file_offset = block_offset + 4u;
+				}
+				else if (is_xmp_signature(block))
+				{
+					const auto xmp = block.sub(xmp_signature_len);
+					result.metadata.xmp.assign(xmp.begin(), xmp.end());
+				}
 			}
-			else if (is_xmp_signature(block))
-			{
-				const auto xmp = block.sub(xmp_signature_len);
-				result.metadata.xmp.assign(xmp.begin(), xmp.end());
-			}
-		}
-		break;
+			break;
 
 		case M_APP2:
-		{
-			s.read(block_offset + 4u, block_data, block_data_len);
-			df::cspan block = { block_data, block_data_len };
-
-			if (is_icc_signature(block))
 			{
-				const auto icc = block.sub(icc_signature_len);
-				result.metadata.icc.assign(icc.begin(), icc.end());
+				s.read(block_offset + 4u, block_data, block_data_len);
+				df::cspan block = {block_data, block_data_len};
+
+				if (is_icc_signature(block))
+				{
+					const auto icc = block.sub(icc_signature_len);
+					result.metadata.icc.assign(icc.begin(), icc.end());
+				}
 			}
-		}
-		break;
+			break;
 
 		case M_APP13:
-		{
-			s.read(block_offset + 4u, block_data, block_data_len);
-			df::cspan block = { block_data, block_data_len };
-
-			if (is_iptc_signature(block))
 			{
-				const auto iptc = block.sub(iptc_signature_len);
-				result.metadata.iptc.assign(iptc.begin(), iptc.end());
+				s.read(block_offset + 4u, block_data, block_data_len);
+				df::cspan block = {block_data, block_data_len};
+
+				if (is_iptc_signature(block))
+				{
+					const auto iptc = block.sub(iptc_signature_len);
+					result.metadata.iptc.assign(iptc.begin(), iptc.end());
+				}
 			}
-		}
-		break;
+			break;
 
 		case M_APP14:
 			if (block_len >= APP14_DATA_LEN)

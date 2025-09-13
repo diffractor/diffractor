@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
+// Copyright(C) 2025  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -21,7 +20,7 @@ class rename_view;
 class sync_view;
 class import_view;
 
-constexpr std::array media_volumes = { 999, 777, 555, 333, 0 };
+constexpr std::array media_volumes = {999, 777, 555, 333, 0};
 extern icon_index volumes_icons[5];
 
 std::vector<std::pair<std::u8string_view, std::u8string>> calc_app_info(const index_state& index, bool include_state);
@@ -44,7 +43,6 @@ public:
 	int _fps_avg = 0;
 	int _fps_second = 0;
 
-public:
 	view_frame(view_state& s) : _state(s)
 	{
 	}
@@ -93,7 +91,7 @@ public:
 		return _fps_avg;
 	}
 
-	void calc_fps(double time)
+	void calc_fps(const double time)
 	{
 		const auto sec = static_cast<int>(time);
 
@@ -184,7 +182,7 @@ public:
 	}
 
 	void on_mouse_other_button_up(const ui::other_mouse_button& button, const pointi loc,
-		const ui::key_state keys) override
+	                              const ui::key_state keys) override
 	{
 		switch (button)
 		{
@@ -199,7 +197,7 @@ public:
 		}
 	}
 
-	void focus_changed(bool has_focus, const ui::control_base_ptr& child) override
+	void focus_changed(const bool has_focus, const ui::control_base_ptr& child) override
 	{
 		df::trace(str::format(u8"render_window::focus {}"sv, has_focus));
 		_view->focus(has_focus);
@@ -241,7 +239,7 @@ public:
 		_state.track_menu(_frame, bounds.offset(_frame->window_bounds().top_left()), commands);
 	}
 
-	void layout()
+	void layout() const
 	{
 		if (_frame)
 		{
@@ -262,10 +260,10 @@ public:
 
 	void update_status(std::u8string_view title, std::u8string_view text);
 	void clear_status();
-	void draw_status(ui::draw_context& dc);
+	void draw_status(ui::draw_context& dc) const;
 
 	platform::drop_effect
-		drag_over(const platform::clipboard_data& data, const ui::key_state keys, const pointi loc) override
+	drag_over(const platform::clipboard_data& data, const ui::key_state keys, const pointi loc) override
 	{
 		auto result = platform::drop_effect::none;
 
@@ -285,7 +283,7 @@ public:
 							platform::drop_effect::copy);
 
 						update_status(is_copy ? tt.menu_copy : tt.menu_move,
-							format(u8"{}\n{}\n{}"sv, desc.first_name, tt.copy_to_join, dest_path.text()));
+						              format(u8"{}\n{}\n{}"sv, desc.first_name, tt.copy_to_join, dest_path.text()));
 
 						result = is_copy ? platform::drop_effect::copy : platform::drop_effect::move;
 					}
@@ -332,7 +330,7 @@ public:
 						if (drop_result.success())
 						{
 							_state.open(shared_from_this(), _state.search(),
-								make_unique_paths(drop_result.created_files));
+							            make_unique_paths(drop_result.created_files));
 							result = drop_action;
 						}
 					}
@@ -344,7 +342,7 @@ public:
 						{
 							result = platform::drop_effect::copy;
 							_state.open(shared_from_this(), _state.search(),
-								make_unique_paths(save_result.created_files));
+							            make_unique_paths(save_result.created_files));
 						}
 					}
 				}
@@ -384,16 +382,16 @@ struct lerp_animate
 		if (val != target)
 		{
 			const auto step = (target - val) / 2;
-			val = (step == 0) ? target : val + step;
+			val = step == 0 ? target : val + step;
 			return true;
 		}
 
 		return false;
 	}
 
-	ui::color32 lerp(const ui::color32& c1, const ui::color32& c2)
+	ui::color32 lerp(const ui::color32& c1, const ui::color32& c2) const
 	{
-		return (val == 0) ? c1 : ui::lerp(c1, c2, val);
+		return val == 0 ? c1 : ui::lerp(c1, c2, val);
 	}
 };
 
@@ -531,7 +529,7 @@ public:
 	void on_window_paint(ui::draw_context& dc) override;
 	void activate(bool is_active) override;
 	void app_fail(std::u8string_view message, std::u8string_view more_text) override;
-	void invalidate_status();
+	void invalidate_status() const;
 	void update_overlay();
 	void tick() override;
 	void prepare_frame() override;
@@ -564,16 +562,16 @@ public:
 	void update_button_state(bool resize);
 	void update_address() const;
 	void toggle_volume();
-	icon_index sound_icon() const;
+	static icon_index sound_icon();
 	void def_command(commands id, command_group group, icon_index icon, std::u8string_view text,
-		std::u8string_view tooltip = {});
+	                 std::u8string_view tooltip = {});
 	void update_command_text();
 	void initialise_commands();
 	command_info_ptr find_or_create_command_info(commands id);
 	void add_command_invoke(commands id, std::function<void()> invoke);
 	ui::command_ptr find_command(commands id) const;
-	void tooltip(view_hover_element& hover, commands id);
-	void search_edit_change(const std::u8string& text);
+	void tooltip(view_hover_element& hover, commands id) const;
+	void search_edit_change(const std::u8string& text) const;
 	void filter_edit_change(const std::u8string& text);
 	void delete_items(const df::item_set& items) override;
 
@@ -581,7 +579,7 @@ public:
 	bool can_exit() override;
 	bool pre_init() override;
 	void start_workers();
-	void update_font_size();
+	void update_font_size() const;
 	bool init(std::u8string_view command_line) override;
 	void final_exit() override;
 	void exit() override;
@@ -612,7 +610,7 @@ public:
 	}
 
 	void on_mouse_other_button_up(const ui::other_mouse_button& button, const pointi loc,
-		const ui::key_state keys) override
+	                              const ui::key_state keys) override
 	{
 	}
 

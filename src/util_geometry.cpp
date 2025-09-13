@@ -1,15 +1,14 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
 
-quadd quadd::crop(const rectd limit, const int active_point) const noexcept
+quadd quadd::crop(const rectd& limit, const int active_point) const noexcept
 {
 	const auto t = limit.top();
 	const auto b = limit.bottom();
@@ -21,8 +20,8 @@ quadd quadd::crop(const rectd limit, const int active_point) const noexcept
 
 	quadd result;
 	const auto abs_angle = fabs(fmod(angle, 90.0));
-	const auto angle_epsilon = 0.001;
-	const auto is_right_angle = abs_angle < angle_epsilon || abs_angle >(90.0 - angle_epsilon);
+	constexpr auto angle_epsilon = 0.001;
+	const auto is_right_angle = abs_angle < angle_epsilon || abs_angle > 90.0 - angle_epsilon;
 
 	if (is_right_angle)
 	{
@@ -51,7 +50,7 @@ quadd quadd::crop(const rectd limit, const int active_point) const noexcept
 				auto cy = anchor.Y - y;
 
 				x = x + dx;
-				y = y + (dx * cy / cx);
+				y = y + dx * cy / cx;
 
 				// y
 				const auto dy = std::clamp(y, t, b) - y;
@@ -59,7 +58,7 @@ quadd quadd::crop(const rectd limit, const int active_point) const noexcept
 				cx = anchor.X - x;
 				cy = anchor.Y - y;
 
-				result.pts[i].X = x + (dy * cx / cy);
+				result.pts[i].X = x + dy * cx / cy;
 				result.pts[i].Y = y + dy;
 			}
 			else
@@ -88,13 +87,13 @@ sized quadd::actual_extent() const noexcept
 	const auto px = pts[1];
 	const auto py = pts[3];
 
-	const auto x = ((px.X - center.X) * c) - ((px.Y - center.Y) * s);
-	const auto y = ((py.X - center.X) * s) + ((py.Y - center.Y) * c);
+	const auto x = (px.X - center.X) * c - (px.Y - center.Y) * s;
+	const auto y = (py.X - center.X) * s + (py.Y - center.Y) * c;
 
-	return { fabs(x), fabs(y) };
+	return {fabs(x), fabs(y)};
 }
 
-quadd quadd::limit(const rectd limit) const noexcept
+quadd quadd::limit(const rectd& limit) const noexcept
 {
 	auto cx = 0.0;
 	auto cy = 0.0;
@@ -193,8 +192,8 @@ quadd quadd::rotate(const double angle, const pointd center) const noexcept
 	for (int i = 0; i < 4; ++i)
 	{
 		const auto point = pts[i];
-		const auto x = ((point.X - center.X) * c) - ((point.Y - center.Y) * s);
-		const auto y = ((point.X - center.X) * s) + ((point.Y - center.Y) * c);
+		const auto x = (point.X - center.X) * c - (point.Y - center.Y) * s;
+		const auto y = (point.X - center.X) * s + (point.Y - center.Y) * c;
 		result.pts[i] = pointd(center.X + x, center.Y + y);
 	}
 
@@ -203,8 +202,8 @@ quadd quadd::rotate(const double angle, const pointd center) const noexcept
 
 rectd quadd::inside_bounds(const double min_size) const noexcept
 {
-	double xx[] = { pts[0].X, pts[1].X, pts[2].X, pts[3].X };
-	double yy[] = { pts[0].Y, pts[1].Y, pts[2].Y, pts[3].Y };
+	double xx[] = {pts[0].X, pts[1].X, pts[2].X, pts[3].X};
+	double yy[] = {pts[0].Y, pts[1].Y, pts[2].Y, pts[3].Y};
 
 	std::sort(xx, xx + 4);
 	std::sort(yy, yy + 4);

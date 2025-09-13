@@ -1,10 +1,9 @@
 ﻿// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
@@ -54,7 +53,7 @@ void test_item::update_row()
 	}
 }
 
-void test_item::perform(view_state& s, shared_test_context& stc)
+void test_item::perform(const view_state& s, shared_test_context& stc)
 {
 	const auto t = df::now();
 
@@ -185,7 +184,7 @@ view_controller_ptr test_view::controller_from_location(const view_host_ptr& hos
 	return nullptr;
 }
 
-std::u8string po_escape(std::u8string_view val)
+std::u8string po_escape(const std::u8string_view val)
 {
 	auto result = std::u8string(val);
 	result = str::replace(result, u8"\\"sv, u8"\\\\"sv);
@@ -206,10 +205,10 @@ static void write_po_entry(u8ostream& f, const std::u8string_view& key, const st
 	{
 		f << key << u8" \"\"\n"sv;
 
-		auto lines = str::split(val, false, str::is_cr_or_lf);
+		const auto lines = str::split(val, false, str::is_cr_or_lf);
 		auto lines_left = lines.size() - 1;
 
-		for (auto line : lines)
+		for (const auto line : lines)
 		{
 			if (lines_left > 0)
 			{
@@ -250,7 +249,7 @@ static void generate_po(const std::u8string_view file_name)
 	const auto lang_path_in = lang_folder.combine_file(file_name);
 	const auto lang_path_out = app_folder.combine_file(file_name);
 
-	auto loaded_po = load_po(lang_path_in);
+	const auto loaded_po = load_po(lang_path_in);
 
 	if (!loaded_po.empty())
 	{
@@ -279,7 +278,7 @@ void test_view::gen_po()
 	generate_po(u8"ja.po"sv);
 }
 
-void test_view::reset_graphics()
+void test_view::reset_graphics() const
 {
 	_state._events.free_graphics_resources(false, false);
 	_host->frame()->reset_graphics();

@@ -1,17 +1,16 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
 #include "ui_elements.h"
 
 
-class text_view_control : public view_element
+class text_view_control final : public view_element
 {
 	const int padding = 4;
 	df::blob _data;
@@ -64,11 +63,11 @@ public:
 			const auto logical_bounds = bounds.offset(element_offset);
 			const auto clip_bounds = dc.clip_bounds().intersection(logical_bounds);
 			const auto first_line = (clip_bounds.top - logical_bounds.top) / _line_height;
-			const auto last_line = first_line + ((clip_bounds.height() + _line_height) / _line_height);
+			const auto last_line = first_line + (clip_bounds.height() + _line_height) / _line_height;
 			const auto clr = ui::color(dc.colors.foreground, dc.colors.alpha);
 
 			std::u8string line(_chars_per_line, ' ');
-			const auto left = (logical_bounds.left + logical_bounds.right - (_char_width * line.size())) / 2;
+			const auto left = (logical_bounds.left + logical_bounds.right - _char_width * line.size()) / 2;
 
 			for (auto i = first_line; i < last_line; ++i)
 			{
@@ -100,26 +99,26 @@ public:
 						line[x] = hex_chars[(byte & 0xF0) >> 4];
 						++x;
 						line[x] = hex_chars[(byte & 0x0F) >> 0];
-						x += ((j % 8) == 7) ? 3 : 2;
+						x += j % 8 == 7 ? 3 : 2;
 					}
 
 					for (auto j = 0u; j < limit; ++j)
 					{
 						line[x] = char_map[data[j] & 0xff];
-						x += ((j % 8) == 7) ? 2 : 1;
+						x += j % 8 == 7 ? 2 : 1;
 					}
 
-					const auto y = logical_bounds.top + (i * _line_height);
+					const auto y = logical_bounds.top + i * _line_height;
 					dc.draw_text(line, recti(left, y, logical_bounds.right, y + _line_height), _font,
-						ui::style::text_style::single_line, clr, {});
+					             ui::style::text_style::single_line, clr, {});
 				}
 			}
 		}
 	}
 
-	static uint32_t calc_chars_per_line(uint32_t bytes_per_line)
+	static uint32_t calc_chars_per_line(const uint32_t bytes_per_line)
 	{
-		return 8 + 4 + (bytes_per_line * 4) + ((bytes_per_line / 8) * 2);
+		return 8 + 4 + bytes_per_line * 4 + bytes_per_line / 8 * 2;
 	}
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
@@ -139,6 +138,6 @@ public:
 
 		_line_count = _bytes_per_line > 0 ? df::round_up(_data.size(), _bytes_per_line) : 0;
 
-		return { width_limit, static_cast<int>(_line_height * _line_count) };
+		return {width_limit, static_cast<int>(_line_height * _line_count)};
 	}
 };

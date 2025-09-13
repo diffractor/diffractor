@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -42,7 +41,7 @@ static std::array<std::array<uint32_t, 256>, 4> create_crc32_precalc()
 		uint32_t x = i;
 
 		for (uint32_t j = 0; j < 8; j++)
-			x = (x >> 1) ^ (CRCPOLY & (-static_cast<int32_t>(x & 1)));
+			x = x >> 1 ^ CRCPOLY & -static_cast<int32_t>(x & 1);
 
 		result[0][i] = x;
 	}
@@ -53,7 +52,7 @@ static std::array<std::array<uint32_t, 256>, 4> create_crc32_precalc()
 
 		for (auto j = 1u; j < 4; j++)
 		{
-			c = result[0][c & 0xFF] ^ (c >> 8);
+			c = result[0][c & 0xFF] ^ c >> 8;
 			result[j][i] = c;
 		}
 	}
@@ -70,24 +69,24 @@ static uint32_t calc_crc32c_c(uint32_t crc, const void* data, const size_t len)
 
 	while (p < end && std::bit_cast<uintptr_t>(p) & 0x0f)
 	{
-		crc = crc_precalc[0][(crc ^ *p++) & 0xFF] ^ (crc >> 8);
+		crc = crc_precalc[0][(crc ^ *p++) & 0xFF] ^ crc >> 8;
 	}
 
 	while (p + (sizeof(uint32_t) - 1) < end)
 	{
 		crc ^= *std::bit_cast<const uint32_t*>(p);
 		crc =
-			crc_precalc[3][(crc) & 0xFF] ^
-			crc_precalc[2][(crc >> 8) & 0xFF] ^
-			crc_precalc[1][(crc >> 16) & 0xFF] ^
-			crc_precalc[0][(crc >> 24) & 0xFF];
+			crc_precalc[3][crc & 0xFF] ^
+			crc_precalc[2][crc >> 8 & 0xFF] ^
+			crc_precalc[1][crc >> 16 & 0xFF] ^
+			crc_precalc[0][crc >> 24 & 0xFF];
 
 		p += sizeof(uint32_t);
 	}
 
 	while (p < end)
 	{
-		crc = crc_precalc[0][(crc ^ *p++) & 0xFF] ^ (crc >> 8);
+		crc = crc_precalc[0][(crc ^ *p++) & 0xFF] ^ crc >> 8;
 	}
 
 	return crc;
@@ -99,7 +98,7 @@ static uint32_t calc_crc32c_sse2(uint32_t crc, const void* data, const size_t le
 	const auto* p = static_cast<const uint8_t*>(data);
 	const auto* const end = p + len;
 
-	while (p < end && (std::bit_cast<uintptr_t>(p) & 0x0f))
+	while (p < end && std::bit_cast<uintptr_t>(p) & 0x0f)
 	{
 		crc = _mm_crc32_u8(crc, *p++);
 	}
@@ -120,7 +119,7 @@ static uint32_t calc_crc32c_sse2(uint32_t crc, const void* data, const size_t le
 	// Fallback to software implementation when SIMD not available
 	// Mark parameters as used to avoid warnings
 	(void)crc;
-	(void)data; 
+	(void)data;
 	(void)len;
 	return calc_crc32c_c(crc, data, len);
 #endif

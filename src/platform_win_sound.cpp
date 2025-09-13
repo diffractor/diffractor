@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
@@ -23,12 +22,12 @@
 #define REFTIMES_PER_SEC  10000000
 #define REFTIMES_PER_MILLISEC  10000
 
-const CLSID CLSID_MMDeviceEnumerator = __uuidof(MMDeviceEnumerator);
-const IID IID_IMMDeviceEnumerator = __uuidof(IMMDeviceEnumerator);
-const IID IID_IAudioClient = __uuidof(IAudioClient);
-const IID IID_IAudioRenderClient = __uuidof(IAudioRenderClient);
-const IID IID_ISimpleAudioVolume = __uuidof(ISimpleAudioVolume);
-const IID IID_IAudioClock = __uuidof(IAudioClock);
+const auto CLSID_MMDeviceEnumerator = __uuidof(MMDeviceEnumerator);
+const auto IID_IMMDeviceEnumerator = __uuidof(IMMDeviceEnumerator);
+const auto IID_IAudioClient = __uuidof(IAudioClient);
+const auto IID_IAudioRenderClient = __uuidof(IAudioRenderClient);
+const auto IID_ISimpleAudioVolume = __uuidof(ISimpleAudioVolume);
+const auto IID_IAudioClock = __uuidof(IAudioClock);
 
 
 #include "av_sound.h"
@@ -43,7 +42,7 @@ static constexpr GUID SDL_KSDATAFORMAT_SUBTYPE_IEEE_FLOAT = {
 #define DEFINE_PROPERTYKEY2(name, l, w1, w2, b1, b2, b3, b4, b5, b6, b7, b8, pid) EXTERN_C const PROPERTYKEY DECLSPEC_SELECTANY name = { { l, w1, w2, { b1, b2,  b3,  b4,  b5,  b6,  b7,  b8 } }, pid }
 
 DEFINE_PROPERTYKEY2(PKEY_AudioEngine_DeviceFormat, 0xf19f064d, 0x82c, 0x4e27, 0xbc, 0x73, 0x68, 0x82, 0xa1, 0xbb, 0x8e,
-	0x4c, 0);
+                    0x4c, 0);
 
 static prop::audio_sample_t calc_sample_fmt(const WAVEFORMATEX* waveformat)
 {
@@ -51,16 +50,16 @@ static prop::audio_sample_t calc_sample_fmt(const WAVEFORMATEX* waveformat)
 	{
 		return prop::audio_sample_t::none;
 	}
-	
-	if ((waveformat->wFormatTag == WAVE_FORMAT_IEEE_FLOAT) && (waveformat->wBitsPerSample == 32))
+
+	if (waveformat->wFormatTag == WAVE_FORMAT_IEEE_FLOAT && waveformat->wBitsPerSample == 32)
 	{
 		return prop::audio_sample_t::signed_float;
 	}
-	if ((waveformat->wFormatTag == WAVE_FORMAT_PCM) && (waveformat->wBitsPerSample == 16))
+	if (waveformat->wFormatTag == WAVE_FORMAT_PCM && waveformat->wBitsPerSample == 16)
 	{
 		return prop::audio_sample_t::signed_16bit;
 	}
-	if ((waveformat->wFormatTag == WAVE_FORMAT_PCM) && (waveformat->wBitsPerSample == 32))
+	if (waveformat->wFormatTag == WAVE_FORMAT_PCM && waveformat->wBitsPerSample == 32)
 	{
 		return prop::audio_sample_t::signed_32bit;
 	}
@@ -71,21 +70,21 @@ static prop::audio_sample_t calc_sample_fmt(const WAVEFORMATEX* waveformat)
 			// Invalid extensible format
 			return prop::audio_sample_t::none;
 		}
-		
+
 		const auto* ext = std::bit_cast<const WAVEFORMATEXTENSIBLE*>(waveformat);
 
-		if ((memcmp(&ext->SubFormat, &SDL_KSDATAFORMAT_SUBTYPE_IEEE_FLOAT, sizeof(GUID)) == 0) && (waveformat->
-			wBitsPerSample == 32))
+		if (memcmp(&ext->SubFormat, &SDL_KSDATAFORMAT_SUBTYPE_IEEE_FLOAT, sizeof(GUID)) == 0 && waveformat->
+			wBitsPerSample == 32)
 		{
 			return prop::audio_sample_t::signed_float;
 		}
-		if ((memcmp(&ext->SubFormat, &SDL_KSDATAFORMAT_SUBTYPE_PCM, sizeof(GUID)) == 0) && (waveformat->wBitsPerSample
-			== 16))
+		if (memcmp(&ext->SubFormat, &SDL_KSDATAFORMAT_SUBTYPE_PCM, sizeof(GUID)) == 0 && waveformat->wBitsPerSample
+			== 16)
 		{
 			return prop::audio_sample_t::signed_16bit;
 		}
-		if ((memcmp(&ext->SubFormat, &SDL_KSDATAFORMAT_SUBTYPE_PCM, sizeof(GUID)) == 0) && (waveformat->wBitsPerSample
-			== 32))
+		if (memcmp(&ext->SubFormat, &SDL_KSDATAFORMAT_SUBTYPE_PCM, sizeof(GUID)) == 0 && waveformat->wBitsPerSample
+			== 32)
 		{
 			return prop::audio_sample_t::signed_32bit;
 		}
@@ -105,9 +104,8 @@ struct guid_comparer
 
 using device_map = std::vector<std::pair<_GUID, std::u8string>>;
 
-class audio_device_enumerator : public df::no_copy
+class audio_device_enumerator final : public df::no_copy
 {
-private:
 	device_map _devices;
 
 public:
@@ -127,10 +125,10 @@ public:
 	}
 
 private:
-	static BOOL CALLBACK DSEnumProc(LPGUID lpGUID,
-		LPCTSTR lpszDesc,
-		LPCTSTR lpszDrvName,
-		LPVOID lpContext)
+	static BOOL CALLBACK DSEnumProc(const LPGUID lpGUID,
+	                                const LPCTSTR lpszDesc,
+	                                LPCTSTR lpszDrvName,
+	                                const LPVOID lpContext)
 	{
 		auto* const map = std::bit_cast<device_map*>(lpContext);
 		const auto id = lpGUID == nullptr ? GUID_NULL : *lpGUID;
@@ -147,9 +145,8 @@ private:
 };
 
 
-class wasapi_sound : public av_audio_device
+class wasapi_sound final : public av_audio_device
 {
-private:
 	mutable platform::mutex _rw;
 	_Guarded_by_(_rw) device_map _devices;
 
@@ -208,7 +205,7 @@ public:
 		{
 			return false;
 		}
-		
+
 		bool success = false;
 
 		ComPtr<IAudioClient> audio;
@@ -269,7 +266,7 @@ public:
 				{
 					CoTaskMemFree(_pwfx);
 				}
-				
+
 				_device = device;
 				_audio = audio;
 				_render = render;
@@ -323,7 +320,7 @@ public:
 			if (SUCCEEDED(hr))
 			{
 				success = activate_device(device);
-								
+
 				if (!success)
 				{
 					// Try with a different device
@@ -428,7 +425,7 @@ public:
 		}
 	}
 
-	void update_status(HRESULT hr)
+	void update_status(const HRESULT hr)
 	{
 		if (hr == AUDCLNT_E_DEVICE_INVALIDATED)
 		{
@@ -447,64 +444,64 @@ public:
 
 		const auto bytes_per_sample = buffer.bytes_per_sample();
 		const auto channel_count = buffer.format.channel_count();
-		
+
 		if (bytes_per_sample == 0 || channel_count == 0)
 		{
 			df::log(u8"wasapi_sound::write"sv, u8"Invalid audio format parameters"sv);
 			return;
 		}
-		
+
 		const auto available_in_buffer = buffer.used_bytes() / (bytes_per_sample * channel_count);
 
 		if (available_in_buffer > 0)
-			{
-				uint32_t bufferFrameCount = 0;
-				uint32_t numFramesPadding = 0;
-				uint8_t* pData = nullptr;
+		{
+			uint32_t bufferFrameCount = 0;
+			uint32_t numFramesPadding = 0;
+			uint8_t* pData = nullptr;
 
-				auto hr = _audio->GetBufferSize(&bufferFrameCount);
+			auto hr = _audio->GetBufferSize(&bufferFrameCount);
+
+			if (SUCCEEDED(hr))
+			{
+				hr = _audio->GetCurrentPadding(&numFramesPadding);
 
 				if (SUCCEEDED(hr))
 				{
-					hr = _audio->GetCurrentPadding(&numFramesPadding);
+					const auto copy_samples = std::min(bufferFrameCount - numFramesPadding, available_in_buffer);
+
+					hr = _render->GetBuffer(copy_samples, &pData);
 
 					if (SUCCEEDED(hr))
 					{
-						const auto copy_samples = std::min(bufferFrameCount - numFramesPadding, available_in_buffer);
+						const auto copy_bytes = copy_samples * bytes_per_sample * channel_count;
 
-						hr = _render->GetBuffer(copy_samples, &pData);
-
-						if (SUCCEEDED(hr))
+						if (copy_bytes <= buffer.used_bytes())
 						{
-							const auto copy_bytes = copy_samples * bytes_per_sample * channel_count;
-
-							if (copy_bytes <= buffer.used_bytes())
-							{
-								memcpy(pData, buffer.data, copy_bytes);
-								buffer.remove(copy_bytes);
-							}
-							else
-							{
-								df::log(u8"wasapi_sound::write"sv, u8"Copy bytes exceeds buffer size"sv);
-							}
-
-							const uint32_t flags = 0;
-							hr = _render->ReleaseBuffer(copy_samples, flags);
+							memcpy(pData, buffer.data, copy_bytes);
+							buffer.remove(copy_bytes);
 						}
+						else
+						{
+							df::log(u8"wasapi_sound::write"sv, u8"Copy bytes exceeds buffer size"sv);
+						}
+
+						constexpr uint32_t flags = 0;
+						hr = _render->ReleaseBuffer(copy_samples, flags);
 					}
 				}
+			}
 
-				if (FAILED(hr))
-				{
-					update_status(hr);
-				}
-		}		
+			if (FAILED(hr))
+			{
+				update_status(hr);
+			}
+		}
 	}
 
-	void volume(double vol) override
+	void volume(const double vol) override
 	{
 		platform::shared_lock lock(_rw);
-		
+
 		if (_sav && !df::equiv(_vol, vol))
 		{
 			const auto hr = _sav->SetMasterVolume(static_cast<float>(vol), nullptr);
@@ -614,7 +611,9 @@ std::vector<sound_device> list_audio_playback_devices()
 
 								if (SUCCEEDED(hr))
 								{
-									d.name = str::is_empty(varName.v.pwszVal) ? str::format(u8"Audio device {}"sv, static_cast<int>(i)) : str::utf16_to_utf8(varName.v.pwszVal);
+									d.name = str::is_empty(varName.v.pwszVal)
+										         ? str::format(u8"Audio device {}"sv, static_cast<int>(i))
+										         : str::utf16_to_utf8(varName.v.pwszVal);
 								}
 								else
 								{

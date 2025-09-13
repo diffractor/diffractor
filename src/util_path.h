@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -89,7 +88,6 @@ namespace df
 
 	class folder_path
 	{
-	private:
 		str::cached _s;
 
 		static str::cached cached_normalized_folder(const std::u8string_view sv_in)
@@ -395,7 +393,6 @@ namespace df
 
 	class file_path
 	{
-	private:
 		folder_path _folder;
 		str::cached _name;
 
@@ -419,7 +416,7 @@ namespace df
 		file_path& operator=(file_path&&) noexcept = default;
 
 		file_path(const folder_path folder, const std::u8string_view name_in,
-			const std::u8string_view ext_in) : _folder(folder)
+		          const std::u8string_view ext_in) : _folder(folder)
 		{
 			auto name = std::u8string(name_in);
 			if (ext_in.front() != '.' && name.back() != '.') name += '.';
@@ -617,7 +614,7 @@ namespace df
 	}
 
 	static std::u8string combine_paths(__in const folder_paths& paths, const std::u8string_view join = u8" "sv,
-		__in bool quote = true)
+	                                   __in const bool quote = true)
 	{
 		std::u8string result;
 		for (const auto& s : paths) str::join(result, s.text(), join, quote);

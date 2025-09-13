@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
@@ -29,7 +28,7 @@ sha1::sha1()
 }
 
 
-void sha1::update(df::cspan input)
+void sha1::update(const df::cspan input)
 {
 	buffer.insert(buffer.end(), input.data, input.data + input.size);
 
@@ -207,7 +206,7 @@ void sha1::buffer_to_block(const std::vector<uint8_t>& buffer, uint32_t block[BL
 	// Convert the std::u8string (byte buffer) to a uint32 array (MSB) 
 	for (uint32_t i = 0; i < BLOCK_INTS; i++)
 	{
-		block[i] = (buffer[4 * i + 3] & 0xff)
+		block[i] = buffer[4 * i + 3] & 0xff
 			| (buffer[4 * i + 2] & 0xff) << 8
 			| (buffer[4 * i + 1] & 0xff) << 16
 			| (buffer[4 * i + 0] & 0xff) << 24;
@@ -263,7 +262,7 @@ const uint32_t sha256::sha256_k[64] = //UL = uint32
 	0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
 };
 
-void sha256::transform(const uint8_t* message, size_t block_nb)
+void sha256::transform(const uint8_t* message, const size_t block_nb)
 {
 	uint32_t w[64];
 	uint32_t wv[8];
@@ -324,7 +323,7 @@ void sha256::reset()
 	m_len = 0;
 }
 
-void sha256::update(df::cspan cs)
+void sha256::update(const df::cspan cs)
 {
 	const auto len = cs.size;
 	const auto* input = cs.data;
@@ -355,7 +354,7 @@ void sha256::update(df::cspan cs)
 
 void sha256::final(uint8_t* digest)
 {
-	const auto block_nb = (1 + ((SHA224_256_BLOCK_SIZE - 9) < (m_len % SHA224_256_BLOCK_SIZE)));
+	const auto block_nb = 1 + (SHA224_256_BLOCK_SIZE - 9 < m_len % SHA224_256_BLOCK_SIZE);
 	const auto len_b = (m_tot_len + m_len) << 3;
 	const auto pm_len = block_nb << 6;
 

@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "pch.h"
@@ -21,9 +20,9 @@
 #include "app_command_status.h"
 
 
-static const sizei video_preview_size = { 256, 256 };
+static constexpr sizei video_preview_size = {256, 256};
 fast_fft av_visualizer::fft;
-int av_visualizer::xscale[num_bars + 1] = { 0 };
+int av_visualizer::xscale[num_bars + 1] = {0};
 
 static bool av_can_use_hw()
 {
@@ -57,7 +56,7 @@ int view_state::displayed_rating() const
 }
 
 void view_state::toggle_rating(const df::results_ptr& results, const df::item_elements& items, const int r,
-	const view_host_base_ptr& view)
+                               const view_host_base_ptr& view)
 {
 	bool add_rating = false;
 
@@ -90,8 +89,8 @@ void view_state::toggle_rating(const df::results_ptr& results, const df::item_el
 
 
 void view_state::modify_items(const ui::control_frame_ptr& frame, const icon_index icon, const std::u8string_view title,
-	const df::item_elements& items_to_modify, const metadata_edits& edits,
-	const view_host_base_ptr& view)
+                              const df::item_elements& items_to_modify, const metadata_edits& edits,
+                              const view_host_base_ptr& view)
 {
 	auto dlg = make_dlg(frame);
 	const auto results = std::make_shared<command_status>(_async, dlg, icon, title, selected_count());
@@ -123,12 +122,12 @@ void display_state_t::load_compare_preview(int pos_numerator, int pos_denominato
 						//surface1.orientation(st1->_item->metadata().orientation);
 						//surface2.orientation(st2->_item->metadata().orientation);
 
-						t->_async.queue_ui([t, st1, st2, surface1, surface2]()
-							{
-								st1->update(surface1);
-								st2->update(surface2);
-								t->_async.invalidate_view(view_invalid::view_redraw);
-							});
+						t->_async.queue_ui([t, st1, st2, surface1, surface2]
+						{
+							st1->update(surface1);
+							st2->update(surface2);
+							t->_async.invalidate_view(view_invalid::view_redraw);
+						});
 					}
 				}
 			});
@@ -150,13 +149,13 @@ void display_state_t::load_seek_preview(int pos_numerator, int pos_denominator, 
 					auto surface = std::make_shared<ui::surface>();
 
 					if (decoder.decoder1->extract_seek_frame(surface, video_preview_size, pos_numerator,
-						pos_denominator))
+					                                         pos_denominator))
 					{
 						t->_async.queue_ui([t, surface = std::move(surface), callback]() mutable
-							{
-								t->_hover_surface = std::move(surface);
-								callback();
-							});
+						{
+							t->_hover_surface = std::move(surface);
+							callback();
+						});
 					}
 				}
 			});
@@ -184,8 +183,8 @@ void display_state_t::update_av_session(const std::shared_ptr<av_session>& ses)
 
 void display_state_t::calc_pixel_difference()
 {
-	auto st1 = _selected_texture1;
-	auto st2 = _selected_texture2;
+	const auto st1 = _selected_texture1;
+	const auto st2 = _selected_texture2;
 
 	if (st1 && st2)
 	{
@@ -202,7 +201,7 @@ void display_state_t::calc_pixel_difference()
 
 
 void view_state::load_hover_thumb(const df::item_element_ptr& item, double pos_numerator,
-	double pos_denominator)
+                                  double pos_denominator)
 {
 	if (item &&
 		(item->file_type()->group->traits && file_traits::preview_video) &&
@@ -217,7 +216,8 @@ void view_state::load_hover_thumb(const df::item_element_ptr& item, double pos_n
 					auto timestamp = platform::now();
 					auto surface = std::make_shared<ui::surface>();
 
-					if (decoder.decoder1->extract_thumbnail(surface, video_preview_size, pos_numerator, pos_denominator))
+					if (decoder.decoder1->
+					            extract_thumbnail(surface, video_preview_size, pos_numerator, pos_denominator))
 					{
 						const auto image = save_png(surface, {});
 
@@ -225,16 +225,16 @@ void view_state::load_hover_thumb(const df::item_element_ptr& item, double pos_n
 						{
 							const auto cover_art = decoder.decoder1->cover_art();
 
-							queue_ui([this, item, image, cover_art, timestamp]()
-								{
-									item->thumbnail(image, cover_art, timestamp);
-									invalidate_view(view_invalid::view_redraw);
-								});
+							queue_ui([this, item, image, cover_art, timestamp]
+							{
+								item->thumbnail(image, cover_art, timestamp);
+								invalidate_view(view_invalid::view_redraw);
+							});
 
-							queue_async(async_queue::scan_folder, [this, item, image, cover_art, timestamp]()
-								{
-									item_index.save_thumbnail(item->path(), image, cover_art, timestamp);
-								});
+							queue_async(async_queue::scan_folder, [this, item, image, cover_art, timestamp]
+							{
+								item_index.save_thumbnail(item->path(), image, cover_art, timestamp);
+							});
 						}
 					}
 				}
@@ -245,9 +245,9 @@ void view_state::load_hover_thumb(const df::item_element_ptr& item, double pos_n
 void view_state::clear_hover_codec() const
 {
 	_async.queue_media_preview([](media_preview_state& decoder)
-		{
-			decoder.close();
-		});
+	{
+		decoder.close();
+	});
 }
 
 detach_file_handles::detach_file_handles(view_state& s, bool should_close) : _state(s)
@@ -278,24 +278,24 @@ detach_file_handles::detach_file_handles(view_state& s, bool should_close) : _st
 
 			if (d->_session)
 			{
-				s._player->close(d->_session, [&event_wait_player]()
-					{
-						event_wait_player.set();
-					});
+				s._player->close(d->_session, [&event_wait_player]
+				{
+					event_wait_player.set();
+				});
 			}
 
 			s._async.queue_media_preview([&event_wait_preview](media_preview_state& decoder)
-				{
-					decoder.close();
-					event_wait_preview.set();
-				});
+			{
+				decoder.close();
+				event_wait_preview.set();
+			});
 
 			if (d->_session)
 			{
-				platform::wait_for({ event_wait_player, platform::event_exit }, 10000, false);
+				platform::wait_for({event_wait_player, platform::event_exit}, 10000, false);
 			}
 
-			platform::wait_for({ event_wait_preview, platform::event_exit }, 10000, false);
+			platform::wait_for({event_wait_preview, platform::event_exit}, 10000, false);
 
 			s._async.invalidate_view(view_invalid::view_layout |
 				view_invalid::screen_saver |
@@ -325,10 +325,10 @@ detach_file_handles::~detach_file_handles()
 			if (_is_playable)
 			{
 				_state._player->open(_i, _is_playing, _video_track, _audio_track, av_can_use_hw(), true,
-					[d](std::shared_ptr<av_session> ses)
-					{
-						d->update_av_session(ses);
-					});
+				                     [d](const std::shared_ptr<av_session>& ses)
+				                     {
+					                     d->update_av_session(ses);
+				                     });
 			}
 		}
 		else
@@ -423,9 +423,9 @@ void view_state::capture_display(std::function<void(file_load_result)> f) const
 		if (d->player_has_video())
 		{
 			_player->capture(d->_session, [f, d = d](file_load_result lr)
-				{
-					d->_async.queue_ui([f, lr = std::move(lr)]() mutable { f(std::move(lr)); });
-				});
+			{
+				d->_async.queue_ui([f, lr = std::move(lr)]() mutable { f(std::move(lr)); });
+			});
 		}
 		else
 		{
@@ -443,7 +443,7 @@ void view_state::capture_display(std::function<void(file_load_result)> f) const
 	}
 }
 
-void view_state::view_mode(view_type m)
+void view_state::view_mode(const view_type m)
 {
 	if (_view_mode != m)
 	{
@@ -525,7 +525,7 @@ void view_state::stop()
 	}
 }
 
-void view_state::change_tracks(int video_track, int audio_track)
+void view_state::change_tracks(const int video_track, const int audio_track) const
 {
 	const auto d = _display;
 
@@ -534,14 +534,14 @@ void view_state::change_tracks(int video_track, int audio_track)
 		const auto auto_play = d->_session->is_playing();
 
 		_player->open(d->_item1, auto_play, video_track, audio_track, av_can_use_hw(), true,
-			[d](std::shared_ptr<av_session> ses)
-			{
-				d->update_av_session(ses);
-			});
+		              [d](const std::shared_ptr<av_session>& ses)
+		              {
+			              d->update_av_session(ses);
+		              });
 	}
 }
 
-void view_state::change_audio_device(const std::u8string& id)
+void view_state::change_audio_device(const std::u8string& id) const
 {
 	if (_player)
 	{
@@ -652,7 +652,7 @@ df::unique_items view_state::existing_items() const
 }
 
 void view_state::append_items(const view_host_base_ptr& view, df::item_set items, const df::unique_paths& selection,
-	const bool is_first, const bool is_complete)
+                              const bool is_first, const bool is_complete)
 {
 	df::item_elements select_list;
 
@@ -736,7 +736,7 @@ bool view_state::update_selection()
 	return changed;
 }
 
-df::item_element_ptr view_state::find_displayed_item_by_name(std::u8string_view file_name) const
+df::item_element_ptr view_state::find_displayed_item_by_name(const std::u8string_view file_name) const
 {
 	for (const auto& b : _item_groups)
 	{
@@ -767,7 +767,7 @@ bool view_state::select(const view_host_base_ptr& view, const std::u8string_view
 }
 
 void view_state::select(const view_host_base_ptr& view, const df::item_element_ptr& selected_item, const bool toggle,
-	const bool extend, bool continue_slideshow)
+                        const bool extend, const bool continue_slideshow)
 {
 	if (is_item_displayed(selected_item))
 	{
@@ -966,7 +966,7 @@ group_and_item view_state::selected_item_group() const
 			{
 				if (_focus == i)
 				{
-					return { g, i };
+					return {g, i};
 				}
 			}
 		}
@@ -1117,7 +1117,7 @@ void view_state::select_next(const view_host_base_ptr& view, const bool forward,
 }
 
 view_state::view_state(state_strategy& ev, async_strategy& ac, index_state& item_index,
-	std::shared_ptr<av_player> player) :
+                       std::shared_ptr<av_player> player) :
 	_events(ev),
 	_async(ac),
 	item_index(item_index),
@@ -1183,29 +1183,29 @@ bool view_state::enter(const view_host_base_ptr& view)
 	return false;
 }
 
-class search_element : public text_element_base, public std::enable_shared_from_this<search_element>
+class search_element final : public text_element_base, public std::enable_shared_from_this<search_element>
 {
 public:
 	view_state& _state;
 	const df::search_t _search;
 	prop::key_ref _prop_key;
 
-	explicit search_element(view_state& state, std::u8string_view text, df::search_t search,
-		const prop::key_ref prop_key) noexcept
+	explicit search_element(view_state& state, const std::u8string_view text, df::search_t search,
+	                        const prop::key_ref prop_key) noexcept
 		: text_element_base(text, view_element_style::has_tooltip | view_element_style::can_invoke), _state(state),
-		_search(std::move(search)), _prop_key(prop_key)
+		  _search(std::move(search)), _prop_key(prop_key)
 	{
 	}
 
-	explicit search_element(view_state& state, std::u8string_view text, df::search_t search) noexcept
+	explicit search_element(view_state& state, const std::u8string_view text, df::search_t search) noexcept
 		: text_element_base(text, view_element_style::has_tooltip | view_element_style::can_invoke), _state(state),
-		_search(std::move(search)), _prop_key(prop::null)
+		  _search(std::move(search)), _prop_key(prop::null)
 	{
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-		const pointi element_offset,
-		const std::vector<recti>& excluded_bounds) override
+	                                             const pointi element_offset,
+	                                             const std::vector<recti>& excluded_bounds) override
 	{
 		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 	}
@@ -1216,13 +1216,13 @@ public:
 		{
 			result.elements->add(make_icon_element(_prop_key->icon, view_element_style::no_break));
 			result.elements->add(std::make_shared<text_element>(_prop_key->text(), ui::style::font_face::dialog,
-				ui::style::text_style::multiline,
-				view_element_style::line_break));
+			                                                    ui::style::text_style::multiline,
+			                                                    view_element_style::line_break));
 		}
 
 		result.elements->add(std::make_shared<text_element>(_search.text(), ui::style::font_face::dialog,
-			ui::style::text_style::multiline,
-			view_element_style::line_break));
+		                                                    ui::style::text_style::multiline,
+		                                                    view_element_style::line_break));
 		result.elements->add(std::make_shared<action_element>(tt.click_to_search_similar));
 
 		result.active_bounds = result.window_bounds = bounds.offset(element_offset);
@@ -1242,7 +1242,7 @@ public:
 };
 
 static view_element_ptr make_link(view_state& s, std::u8string_view text, df::search_t& search,
-	const prop::key_ref prop, const df::search_result& current_search)
+                                  const prop::key_ref prop, const df::search_result& current_search)
 {
 	auto element = std::make_shared<search_element>(s, text, search, prop);
 	if (current_search.is_match(prop)) element->set_style_bit(view_element_style::important, true);
@@ -1250,7 +1250,7 @@ static view_element_ptr make_link(view_state& s, std::u8string_view text, df::se
 }
 
 static view_element_ptr make_link(view_state& s, std::u8string_view text, const prop::key_ref prop,
-	const df::search_result& current_search)
+                                  const df::search_result& current_search)
 {
 	auto element = std::make_shared<search_element>(s, text, df::search_t().with(prop, text), prop);
 	if (current_search.is_match(prop)) element->set_style_bit(view_element_style::important, true);
@@ -1262,7 +1262,8 @@ static uint32_t calc_rank_color()
 	return ui::average(ui::style::color::rank_background, ui::style::color::view_text);
 }
 
-static std::vector<view_element_ptr> format_dims(uint16_t width, uint16_t height, const file_type_ref ft, bool is_rank)
+static std::vector<view_element_ptr> format_dims(const uint16_t width, const uint16_t height, const file_type_ref ft,
+                                                 const bool is_rank)
 {
 	std::vector<view_element_ptr> results;
 
@@ -1275,8 +1276,8 @@ static std::vector<view_element_ptr> format_dims(uint16_t width, uint16_t height
 			// Dimensions too large, skip processing
 			return results;
 		}
-		
-		const auto dims = sizei{ width, height };
+
+		const auto dims = sizei{width, height};
 		auto element = std::make_shared<text_element>(prop::format_dimensions(dims));
 		if (is_rank) element->foreground_color(calc_rank_color());
 		results.emplace_back(element);
@@ -1305,7 +1306,7 @@ static std::vector<view_element_ptr> format_dims(uint16_t width, uint16_t height
 }
 
 static std::vector<view_element_ptr> create_camera_elements(view_state& s, const prop::item_metadata_ptr& md,
-	const df::search_result& search_result)
+                                                            const df::search_result& search_result)
 {
 	std::vector<view_element_ptr> results;
 	if (!is_empty(md->camera_model))
@@ -1313,17 +1314,17 @@ static std::vector<view_element_ptr> create_camera_elements(view_state& s, const
 			make_link(s, md->camera_model, prop::camera_model, search_result));
 	if (!df::is_zero(md->exposure_time))
 		results.emplace_back(make_link(s, prop::format_exposure(md->exposure_time),
-			df::search_t().with(
-				prop::exposure_time, md->exposure_time),
-			prop::exposure_time, search_result));
+		                               df::search_t().with(
+			                               prop::exposure_time, md->exposure_time),
+		                               prop::exposure_time, search_result));
 	if (!df::is_zero(md->f_number))
 		results.emplace_back(make_link(s, prop::format_f_num(md->f_number),
-			df::search_t().with(prop::f_number, md->f_number),
-			prop::f_number, search_result));
+		                               df::search_t().with(prop::f_number, md->f_number),
+		                               prop::f_number, search_result));
 	if (md->iso_speed != 0)
 		results.emplace_back(make_link(s, prop::format_iso(md->iso_speed),
-			df::search_t().with(prop::iso_speed, md->iso_speed),
-			prop::iso_speed, search_result));
+		                               df::search_t().with(prop::iso_speed, md->iso_speed),
+		                               prop::iso_speed, search_result));
 	if (!df::is_zero(md->focal_length))
 		results.emplace_back(make_link(
 			s, prop::format_focal_length(md->focal_length, md->focal_length_35mm_equivalent),
@@ -1334,7 +1335,7 @@ static std::vector<view_element_ptr> create_camera_elements(view_state& s, const
 }
 
 static std::vector<view_element_ptr> create_album_elements(view_state& s, const prop::item_metadata_ptr& md,
-	const df::search_result& search_result)
+                                                           const df::search_result& search_result)
 {
 	std::vector<view_element_ptr> results;
 
@@ -1344,7 +1345,7 @@ static std::vector<view_element_ptr> create_album_elements(view_state& s, const 
 	if (md->year != 0)
 	{
 		results.emplace_back(make_link(s, str::to_string(md->year), df::search_t().with(prop::year, md->year),
-			prop::year, search_result));
+		                               prop::year, search_result));
 	}
 
 	if (!is_empty(md->genre)) results.emplace_back(make_link(s, md->genre, prop::genre, search_result));
@@ -1353,7 +1354,7 @@ static std::vector<view_element_ptr> create_album_elements(view_state& s, const 
 }
 
 static std::vector<view_element_ptr> create_artist_elements(view_state& s, const prop::item_metadata_ptr& md,
-	const df::search_result& search_result)
+                                                            const df::search_result& search_result)
 {
 	std::vector<view_element_ptr> results;
 	df::hash_map<std::u8string_view, prop::key_ref> unique;
@@ -1387,7 +1388,7 @@ static std::vector<view_element_ptr> create_artist_elements(view_state& s, const
 }
 
 static std::vector<view_element_ptr> create_retro_elements(view_state& s, const prop::item_metadata_ptr& md,
-	const df::search_result& search_result)
+                                                           const df::search_result& search_result)
 {
 	std::vector<view_element_ptr> results;
 	if (!is_empty(md->system)) results.emplace_back(make_link(s, md->system, prop::system, search_result));
@@ -1396,7 +1397,7 @@ static std::vector<view_element_ptr> create_retro_elements(view_state& s, const 
 }
 
 static std::vector<view_element_ptr> create_location_elements(view_state& s, const prop::item_metadata_ptr& md,
-	const df::search_result& search_result)
+                                                              const df::search_result& search_result)
 {
 	std::vector<view_element_ptr> results;
 	if (!is_empty(md->location_place))
@@ -1412,7 +1413,7 @@ static std::vector<view_element_ptr> create_location_elements(view_state& s, con
 }
 
 static std::vector<view_element_ptr> create_copyright_elements(view_state& s, const prop::item_metadata_ptr& md,
-	const df::search_result& search_result)
+                                                               const df::search_result& search_result)
 {
 	std::vector<view_element_ptr> results;
 	if (!is_empty(md->copyright_notice))
@@ -1434,7 +1435,7 @@ static std::vector<view_element_ptr> create_copyright_elements(view_state& s, co
 }
 
 static std::vector<view_element_ptr> create_tag_elements(view_state& s, const prop::item_metadata_ptr& md,
-	const df::search_result& search_result)
+                                                         const df::search_result& search_result)
 {
 	std::vector<view_element_ptr> results;
 
@@ -1451,19 +1452,19 @@ static std::vector<view_element_ptr> create_tag_elements(view_state& s, const pr
 }
 
 static void add_row(const std::shared_ptr<ui::table_element>& result, const std::u8string_view label,
-	std::vector<view_element_ptr> e1, std::vector<view_element_ptr> e2)
+                    std::vector<view_element_ptr> e1, std::vector<view_element_ptr> e2)
 {
 	if (!e1.empty() || !e2.empty())
 	{
 		result->add(std::vector<view_element_ptr>{
 			std::make_shared<text_element>(label), std::make_shared<view_elements>(e1),
-				std::make_shared<view_elements>(e2)
+			std::make_shared<view_elements>(e2)
 		});
 	}
 }
 
 static void add_media_elements(view_state& s, const prop::item_metadata_ptr& md, std::vector<view_element_ptr>& video,
-	std::vector<view_element_ptr>& audio, const df::search_result& search_result)
+                               std::vector<view_element_ptr>& audio, const df::search_result& search_result)
 {
 	const auto video_codec = md->video_codec;
 	const auto pixel_format = md->pixel_format;
@@ -1489,23 +1490,22 @@ static void add_media_elements(view_state& s, const prop::item_metadata_ptr& md,
 			search_result));
 	if (!prop::is_null(audio_channels))
 		audio.emplace_back(make_link(s, prop::format_audio_channels(audio_channels),
-			df::search_t().with(
-				prop::audio_channels, md->audio_channels),
-			prop::audio_channels, search_result));
+		                             df::search_t().with(
+			                             prop::audio_channels, md->audio_channels),
+		                             prop::audio_channels, search_result));
 	if (!prop::is_null(audio_codec)) audio.emplace_back(make_link(s, audio_codec, prop::audio_codec, search_result));
 }
 
 
 class title_link_element final : public std::enable_shared_from_this<title_link_element>, public text_element_base
 {
-private:
 	view_state& _state;
 	const df::item_element_ptr _item;
 
 public:
-	title_link_element(view_state& s, df::item_element_ptr i, std::u8string_view text,
-		const view_element_style style_in) noexcept : text_element_base(text), _state(s),
-		_item(std::move(i))
+	title_link_element(view_state& s, df::item_element_ptr i, const std::u8string_view text,
+	                   const view_element_style style_in) noexcept : text_element_base(text), _state(s),
+	                                                                 _item(std::move(i))
 	{
 		style |= style_in | view_element_style::has_tooltip | view_element_style::can_invoke;
 		_font = ui::style::font_face::title;
@@ -1518,7 +1518,7 @@ public:
 		{
 			df::related_info r;
 			r.load(_item);
-			_state.open(event.host, df::search_t().related(r), { {} });
+			_state.open(event.host, df::search_t().related(r), {{}});
 			_state.view_mode(view_type::items);
 		}
 		else if (event.type == view_element_event_type::dpi_changed)
@@ -1539,10 +1539,10 @@ public:
 			const auto sides_text = str::to_string(sides_count);
 			const auto text_extent = _tl->measure_text(logical_bounds.width() + 100);
 			const auto extent_sides = dc.measure_text(sides_text, ui::style::font_face::dialog,
-				ui::style::text_style::single_line_center, logical_bounds.width(),
-				logical_bounds.height());
+			                                          ui::style::text_style::single_line_center, logical_bounds.width(),
+			                                          logical_bounds.height());
 			const auto extent_dups = dc.measure_text(dups_text, ui::style::font_face::dialog,
-				ui::style::text_style::single_line_center, 64, 32);
+			                                         ui::style::text_style::single_line_center, 64, 32);
 
 			const auto min_width = std::min(100, text_extent.cx);
 			const auto show_sidecars = sides_count > 0 && logical_bounds.width() > min_width;
@@ -1553,7 +1553,7 @@ public:
 			const auto sides_width = show_sidecars ? extent_sides.cx + dc.padding2 : 0;
 			const auto dups_width = show_dups ? extent_dups.cx + dc.padding2 : 0;
 			const auto text_width = std::min(text_extent.cx + dc.padding2,
-				bounds.width() - sides_width - dups_width);
+			                                 bounds.width() - sides_width - dups_width);
 
 			if (bg.a > 0.0f)
 			{
@@ -1573,20 +1573,20 @@ public:
 			if (show_sidecars)
 			{
 				const recti bounds_sid(x, logical_bounds.top, x + extent_sides.cx + dc.padding2,
-					logical_bounds.bottom);
+				                       logical_bounds.bottom);
 				const auto bg = ui::color(ui::style::color::sidecar_background, bg_alpha);
 				dc.draw_text(sides_text, bounds_sid, ui::style::font_face::dialog,
-					ui::style::text_style::single_line_center, text_clr, bg);
+				             ui::style::text_style::single_line_center, text_clr, bg);
 				x += extent_sides.cx + dc.padding2;
 			}
 
 			if (show_dups)
 			{
 				const recti bounds_dup(x, logical_bounds.top, x + extent_dups.cx + dc.padding2,
-					logical_bounds.bottom);
+				                       logical_bounds.bottom);
 				const auto bg = ui::color(ui::style::color::duplicate_background, bg_alpha);
 				dc.draw_text(dups_text, bounds_dup, ui::style::font_face::dialog,
-					ui::style::text_style::single_line_center, text_clr, bg);
+				             ui::style::text_style::single_line_center, text_clr, bg);
 			}
 		}
 	}
@@ -1599,14 +1599,14 @@ public:
 		{
 			hover.elements->add(make_icon_element(icon_index::compare, view_element_style::no_break));
 			hover.elements->add(std::make_shared<text_element>(tt.presence_tile,
-				ui::style::font_face::dialog,
-				ui::style::text_style::multiline,
-				view_element_style::line_break));
+			                                                   ui::style::font_face::dialog,
+			                                                   ui::style::text_style::multiline,
+			                                                   view_element_style::line_break));
 
 			hover.elements->add(std::make_shared<text_element>(item_presence_text(_item->presence(), true),
-				ui::style::font_face::dialog,
-				ui::style::text_style::multiline,
-				view_element_style::line_break));
+			                                                   ui::style::font_face::dialog,
+			                                                   ui::style::text_style::multiline,
+			                                                   view_element_style::line_break));
 
 			const bool in_dup_group = i->duplicates().group != 0;
 			const auto sidecars = i->sidecars();
@@ -1632,17 +1632,17 @@ public:
 							view_element_style::line_break));*/
 
 						table->add(i->name(), platform::format_date(i->file_modified().system_to_local()),
-							prop::format_size(i->file_size()));
+						           prop::format_size(i->file_size()));
 
 						for (const auto& d : dups)
 						{
 							if (d.first != i->path())
 							{
 								table->add(d.second.name,
-									ui::average(ui::style::color::duplicate_background,
-										ui::style::color::view_text),
-									platform::format_date(d.second.file_modified.system_to_local()),
-									prop::format_size(d.second.size));
+								           ui::average(ui::style::color::duplicate_background,
+								                       ui::style::color::view_text),
+								           platform::format_date(d.second.file_modified.system_to_local()),
+								           prop::format_size(d.second.size));
 							}
 						}
 					}
@@ -1661,8 +1661,8 @@ public:
 					{
 						const auto attribs = platform::file_attributes(_item->folder().combine_file(part));
 						table->add(part, ui::average(ui::style::color::sidecar_background, ui::style::color::view_text),
-							platform::format_date(df::date_t(attribs.modified).system_to_local()),
-							prop::format_size(df::file_size(attribs.size)));
+						           platform::format_date(df::date_t(attribs.modified).system_to_local()),
+						           prop::format_size(df::file_size(attribs.size)));
 					}
 				}
 
@@ -1681,8 +1681,8 @@ public:
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-		const pointi element_offset,
-		const std::vector<recti>& excluded_bounds) override
+	                                             const pointi element_offset,
+	                                             const std::vector<recti>& excluded_bounds) override
 	{
 		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 	}
@@ -1705,7 +1705,7 @@ static std::vector<view_element_ptr> create_comp_controls(view_state& s, const d
 }
 
 void append_bullet(std::vector<view_element_ptr>& result, icon_index icon,
-	const std::vector<view_element_ptr>& children)
+                   const std::vector<view_element_ptr>& children)
 {
 	if (!children.empty())
 	{
@@ -1770,7 +1770,7 @@ view_elements_ptr view_state::create_selection_controls()
 				{
 					title->elements.emplace_back(
 						std::make_shared<preview_control>(s, d->_selected_texture1, true,
-							view_element_style::right_justified));
+						                                  view_element_style::right_justified));
 				}
 
 				if (md && md->orientation != ui::orientation::top_left && md->orientation != ui::orientation::none)
@@ -1791,7 +1791,7 @@ view_elements_ptr view_state::create_selection_controls()
 				}
 
 				title->elements.emplace_back(make_icon_link_element(icon_index::fit, commands::option_scale_up,
-					view_element_style::right_justified));
+				                                                    view_element_style::right_justified));
 				title->elements.emplace_back(make_icon_link_element(
 					s.is_full_screen ? icon_index::fullscreen_exit : icon_index::fullscreen, commands::view_fullscreen,
 					view_element_style::right_justified));
@@ -1803,7 +1803,7 @@ view_elements_ptr view_state::create_selection_controls()
 					elements.emplace_back(std::make_shared<bullet_element>(
 						icon_index::folder,
 						std::make_shared<link_element>(format(u8"{}\\"sv, item->folder().text()),
-							commands::browse_open_containingfolder),
+						                               commands::browse_open_containingfolder),
 						view_element_style::none));
 				}
 
@@ -1843,11 +1843,11 @@ view_elements_ptr view_state::create_selection_controls()
 					const auto audio_codec = prop::is_null(info.audio_codec) ? md->audio_codec : info.audio_codec;
 					const auto audio_channels = info.audio_channels == 0 ? md->audio_channels : info.audio_channels;
 					const auto audio_sample_rate = prop::is_null(info.audio_sample_rate)
-						? md->audio_sample_rate
-						: info.audio_sample_rate;
+						                               ? md->audio_sample_rate
+						                               : info.audio_sample_rate;
 					const auto audio_sample_type = info.audio_sample_type == prop::audio_sample_t::none
-						? static_cast<prop::audio_sample_t>(md->audio_sample_type)
-						: info.audio_sample_type;
+						                               ? static_cast<prop::audio_sample_t>(md->audio_sample_type)
+						                               : info.audio_sample_type;
 
 					if (!is_empty(video_codec))
 						pixel_elements.emplace_back(
@@ -1862,18 +1862,18 @@ view_elements_ptr view_state::create_selection_controls()
 					if (!prop::is_null(audio_sample_rate))
 						audio_elements.emplace_back(
 							make_link(s, prop::format_audio_sample_rate(audio_sample_rate),
-								df::search_t().with(prop::audio_sample_rate, audio_sample_rate),
-								prop::audio_sample_rate, search_result));
+							          df::search_t().with(prop::audio_sample_rate, audio_sample_rate),
+							          prop::audio_sample_rate, search_result));
 					if (audio_sample_type != prop::audio_sample_t::none)
 						audio_elements.emplace_back(
 							make_link(s, format_audio_sample_type(audio_sample_type),
-								df::search_t().with(prop::audio_sample_type, static_cast<int>(audio_sample_type)),
-								prop::audio_sample_type, search_result));
+							          df::search_t().with(prop::audio_sample_type, static_cast<int>(audio_sample_type)),
+							          prop::audio_sample_type, search_result));
 					if (!prop::is_null(audio_channels))
 						audio_elements.emplace_back(
 							make_link(s, prop::format_audio_channels(audio_channels),
-								df::search_t().with(prop::audio_channels, audio_channels), prop::audio_channels,
-								search_result));
+							          df::search_t().with(prop::audio_channels, audio_channels), prop::audio_channels,
+							          search_result));
 					if (!prop::is_null(audio_codec))
 						audio_elements.emplace_back(
 							make_link(s, audio_codec, prop::audio_codec, search_result));
@@ -1920,7 +1920,7 @@ view_elements_ptr view_state::create_selection_controls()
 				table->add(tt.size_title, file_size);
 
 				auto media_created = std::make_shared<text_element>(platform::format_date_time(item->media_created()),
-					view_element_style::none);
+				                                                    view_element_style::none);
 				if (search_result.type == df::search_result_type::match_date && s.search().
 					is_match(prop::created_utc, item->media_created()))
 					media_created->set_style_bit(
@@ -1928,7 +1928,7 @@ view_elements_ptr view_state::create_selection_controls()
 				table->add(tt.prop_name_created, media_created);
 
 				auto file_modified = std::make_shared<text_element>(platform::format_date_time(item->file_modified()),
-					view_element_style::none);
+				                                                    view_element_style::none);
 				if (search_result.type == df::search_result_type::match_date && s.search().
 					is_match(prop::modified, item->file_modified()))
 					file_modified->set_style_bit(
@@ -1938,8 +1938,8 @@ view_elements_ptr view_state::create_selection_controls()
 				const auto icon = ft->icon;
 				auto split = std::make_shared<split_element>(
 					platform::create_segoe_md2_icon(static_cast<wchar_t>(icon)), table, view_element_style::center);
-				split->padding = { 4, 4 };
-				split->margin = { 4, 4 };
+				split->padding = {4, 4};
+				split->margin = {4, 4};
 				result->add(split);
 			}
 		}
@@ -1963,26 +1963,26 @@ view_elements_ptr view_state::create_selection_controls()
 			table->add(tt.sort_by_name, t1, t2);
 
 			table->add(tt.folder_title,
-				std::make_shared<search_element>(s, i1->folder().text(),
-					df::search_t().add_selector(i1->folder())),
-				std::make_shared<search_element>(s, i2->folder().text(),
-					df::search_t().add_selector(i2->folder())));
+			           std::make_shared<search_element>(s, i1->folder().text(),
+			                                            df::search_t().add_selector(i1->folder())),
+			           std::make_shared<search_element>(s, i2->folder().text(),
+			                                            df::search_t().add_selector(i2->folder())));
 
 			table->add(tt.size_title,
-				make_rank_element(i1->file_size().str(), i1->file_size() > i2->file_size()),
-				make_rank_element(i2->file_size().str(), i1->file_size() < i2->file_size()));
+			           make_rank_element(i1->file_size().str(), i1->file_size() > i2->file_size()),
+			           make_rank_element(i2->file_size().str(), i1->file_size() < i2->file_size()));
 
 			table->add(tt.prop_name_created,
-				make_rank_element(platform::format_date_time(i1->media_created()),
-					i1->media_created() > i2->media_created()),
-				make_rank_element(platform::format_date_time(i2->media_created()),
-					i1->media_created() < i2->media_created()));
+			           make_rank_element(platform::format_date_time(i1->media_created()),
+			                             i1->media_created() > i2->media_created()),
+			           make_rank_element(platform::format_date_time(i2->media_created()),
+			                             i1->media_created() < i2->media_created()));
 
 			table->add(tt.prop_name_modified,
-				make_rank_element(platform::format_date_time(i1->file_modified().system_to_local()),
-					i1->file_modified() > i2->file_modified()),
-				make_rank_element(platform::format_date_time(i2->file_modified().system_to_local()),
-					i1->file_modified() < i2->file_modified()));
+			           make_rank_element(platform::format_date_time(i1->file_modified().system_to_local()),
+			                             i1->file_modified() > i2->file_modified()),
+			           make_rank_element(platform::format_date_time(i2->file_modified().system_to_local()),
+			                             i1->file_modified() < i2->file_modified()));
 
 			const auto md1 = i1->metadata();
 			const auto md2 = i2->metadata();
@@ -1992,13 +1992,13 @@ view_elements_ptr view_state::create_selection_controls()
 				if (md1->duration && md2->duration)
 				{
 					table->add(tt.prop_name_duration, str::format_seconds(md1->duration),
-						str::format_seconds(md2->duration));
+					           str::format_seconds(md2->duration));
 				}
 
 				std::vector<view_element_ptr> video1 = format_dims(md1->width, md1->height, i1->file_type(),
-					md1->width * md1->height > md2->width * md2->height);
+				                                                   md1->width * md1->height > md2->width * md2->height);
 				std::vector<view_element_ptr> video2 = format_dims(md2->width, md2->height, i2->file_type(),
-					md1->width * md1->height < md2->width * md2->height);
+				                                                   md1->width * md1->height < md2->width * md2->height);
 				std::vector<view_element_ptr> audio1;
 				std::vector<view_element_ptr> audio2;
 
@@ -2010,19 +2010,19 @@ view_elements_ptr view_state::create_selection_controls()
 				add_row(table, tt.audio_title, audio1, audio2);
 
 				add_row(table, tt.prop_name_camera, create_camera_elements(s, md1, search_result1),
-					create_camera_elements(s, md2, search_result2));
+				        create_camera_elements(s, md2, search_result2));
 				add_row(table, tt.prop_name_album, create_album_elements(s, md1, search_result1),
-					create_album_elements(s, md2, search_result2));
+				        create_album_elements(s, md2, search_result2));
 				add_row(table, tt.prop_name_artist, create_artist_elements(s, md1, search_result1),
-					create_artist_elements(s, md2, search_result2));
+				        create_artist_elements(s, md2, search_result2));
 				add_row(table, tt.retro_title, create_retro_elements(s, md1, search_result1),
-					create_retro_elements(s, md2, search_result2));
+				        create_retro_elements(s, md2, search_result2));
 				add_row(table, tt.location_title, create_location_elements(s, md1, search_result1),
-					create_location_elements(s, md2, search_result2));
+				        create_location_elements(s, md2, search_result2));
 				add_row(table, tt.copyright_title, create_copyright_elements(s, md1, search_result1),
-					create_copyright_elements(s, md2, search_result2));
+				        create_copyright_elements(s, md2, search_result2));
 				add_row(table, tt.tags_title, create_tag_elements(s, md1, search_result1),
-					create_tag_elements(s, md2, search_result2));
+				        create_tag_elements(s, md2, search_result2));
 
 				if (!is_empty(md1->description) || !is_empty(md2->description))
 				{
@@ -2062,9 +2062,9 @@ view_elements_ptr view_state::create_selection_controls()
 			if (!identical_text.empty())
 			{
 				const auto element = std::make_shared<text_element>(identical_text, ui::style::font_face::dialog,
-					ui::style::text_style::multiline,
-					view_element_style::line_break |
-					view_element_style::center);
+				                                                    ui::style::text_style::multiline,
+				                                                    view_element_style::line_break |
+				                                                    view_element_style::center);
 				element->set_style_bit(view_element_style::info, true);
 				result->add(set_margin(element));
 			}
@@ -2109,8 +2109,8 @@ view_elements_ptr view_state::create_selection_controls()
 				}
 
 				elements->add(std::make_shared<text_element>(title, ui::style::font_face::title,
-					ui::style::text_style::multiline,
-					view_element_style::line_break));
+				                                             ui::style::text_style::multiline,
+				                                             view_element_style::line_break));
 			}
 
 			if (item_count > 0)
@@ -2127,11 +2127,11 @@ view_elements_ptr view_state::create_selection_controls()
 				}
 
 				elements->add(std::make_shared<text_element>(title, ui::style::font_face::title,
-					ui::style::text_style::multiline,
-					view_element_style::line_break));
+				                                             ui::style::text_style::multiline,
+				                                             view_element_style::line_break));
 			}
 
-			if ((folder_count + item_count) > 0)
+			if (folder_count + item_count > 0)
 			{
 				const auto summary = selected.summary();
 				elements->add(std::make_shared<summary_control>(summary, view_element_style::new_line));
@@ -2140,7 +2140,7 @@ view_elements_ptr view_state::create_selection_controls()
 			auto icon = file_type::folder.icon;
 			if (item_count > 0) icon = icon_index::recursive;
 			result->add(std::make_shared<split_element>(platform::create_segoe_md2_icon(static_cast<wchar_t>(icon)),
-				elements, view_element_style::center));
+			                                            elements, view_element_style::center));
 		}
 	}
 
@@ -2238,7 +2238,7 @@ void view_state::update_search_is_favorite_or_collection_root()
 	_search_is_in_collection = calc_search_search_is_in_collection(item_index, _search);
 }
 
-void view_state::update_pixel_difference()
+void view_state::update_pixel_difference() const
 {
 	const auto d = _display;
 
@@ -2323,7 +2323,7 @@ df::search_parent view_state::parent_search() const
 	{
 		result.parent = df::search_t().add_selector(df::item_selector(_search.related().path.folder()));
 		result.name = _search.related().path.name();
-		result.selection.files = { _search.related().path };
+		result.selection.files = {_search.related().path};
 	}
 	else if (_search.has_selector())
 	{
@@ -2354,7 +2354,7 @@ df::search_parent view_state::parent_search() const
 			{
 				result.parent = df::search_t().add_selector(selector.parent());
 				result.name = folder.name();
-				result.selection.folders = { folder };
+				result.selection.folders = {folder};
 			}
 		}
 	}
@@ -2387,7 +2387,7 @@ df::search_parent view_state::parent_search() const
 		{
 			result.parent = df::search_t().add_selector(i->folder());
 			result.name = i->name();
-			result.selection.files = { i->path() };
+			result.selection.files = {i->path()};
 			break;
 		}
 
@@ -2399,7 +2399,7 @@ df::search_parent view_state::parent_search() const
 				{
 					result.parent = df::search_t().add_selector(f->folder());
 					result.name = f->name();
-					result.selection.folders = { f->folder() };
+					result.selection.folders = {f->folder()};
 					break;
 				}
 			}
@@ -2464,7 +2464,7 @@ df::item_element_ptr view_state::next_unselected_item() const
 	return nullptr;
 }
 
-df::item_element_ptr view_state::end_item(bool forward) const
+df::item_element_ptr view_state::end_item(const bool forward) const
 {
 	if (!_item_groups.empty())
 	{
@@ -2478,7 +2478,7 @@ df::item_element_ptr view_state::end_item(bool forward) const
 	return nullptr;
 }
 
-df::item_element_ptr view_state::next_item(bool forward, bool extend) const
+df::item_element_ptr view_state::next_item(const bool forward, const bool extend) const
 {
 	auto found = false;
 	const auto focus = _focus;
@@ -2560,7 +2560,7 @@ df::item_element_ptr view_state::next_item(bool forward, bool extend) const
 	return nullptr;
 }
 
-df::item_element_ptr view_state::next_group_item(bool forward) const
+df::item_element_ptr view_state::next_group_item(const bool forward) const
 {
 	const auto focus = selected_item_group();
 	const auto start = focus.item ? focus.group : nullptr;
@@ -2666,32 +2666,32 @@ bool view_state::open(const view_host_base_ptr& view, const df::search_t& new_se
 	auto existing = existing_items();
 
 	_async.queue_async(async_queue::query, [this, view, new_search, existing, selection, path_changed, token]
+	{
+		bool is_first = true;
+
+		auto cb = [this, view, &is_first, new_search, selection, path_changed, token](
+			df::item_set append_items, const bool is_complete)
 		{
-			bool is_first = true;
-
-			auto cb = [this, view, &is_first, new_search, selection, path_changed, token](
-				df::item_set append_items, const bool is_complete)
+			_async.queue_ui(
+				[this, view, new_search, append_items = std::move(append_items), selection, is_first, is_complete,
+					path_changed]
 				{
-					_async.queue_ui(
-						[this, view, new_search, append_items = std::move(append_items), selection, is_first, is_complete,
-						path_changed]
+					if (new_search == _search)
+					{
+						this->append_items(view, std::move(append_items), selection, is_first, is_complete);
+
+						if (is_complete)
 						{
-							if (new_search == _search)
-							{
-								this->append_items(view, std::move(append_items), selection, is_first, is_complete);
+							_events.search_complete(new_search, path_changed);
+						}
+					}
+				});
 
-								if (is_complete)
-								{
-									_events.search_complete(new_search, path_changed);
-								}
-							}
-						});
+			is_first = false;
+		};
 
-					is_first = false;
-				};
-
-			item_index.query_items(new_search, existing, cb, token);
-		});
+		item_index.query_items(new_search, existing, cb, token);
+	});
 
 
 	return true;
@@ -2712,7 +2712,7 @@ void view_state::open(const view_host_base_ptr& view, const df::item_element_ptr
 
 
 void view_state::toggle_selected_item_tags(const view_host_base_ptr& view, const df::results_ptr& results,
-	const std::u8string_view tag)
+                                           const std::u8string_view tag)
 {
 	record_feature_use(features::tag);
 
@@ -2761,7 +2761,7 @@ void view_state::toggle_selected_item_tags(const view_host_base_ptr& view, const
 using existing_textures_t = df::hash_map<df::file_path, std::shared_ptr<texture_state>, df::ihash, df::ieq>;
 
 static texture_state_ptr get_tex(existing_textures_t existing_textures, const df::item_element_ptr& item,
-	async_strategy& as)
+                                 async_strategy& as)
 {
 	const auto found = existing_textures.find(item->path());
 
@@ -2810,60 +2810,62 @@ void view_state::load_display_state()
 				const auto auto_play = setting.auto_play && play_view && df::file_handles_detached == 0;
 
 				_player->open(display_item, auto_play, -1, -1, av_can_use_hw(), setting.last_played_pos,
-					[new_display](std::shared_ptr<av_session> ses)
-					{
-						new_display->update_av_session(ses);
-					});
+				              [new_display](const std::shared_ptr<av_session>& ses)
+				              {
+					              new_display->update_av_session(ses);
+				              });
 			}
 			else
 			{
-				_async.queue_async(async_queue::load, [new_display, display_item, display_file_type]()
-					{
-						df::scope_locked_inc l(df::loading_media);
-						files ff;
-						const auto scan_result = ff.scan_file(display_item->path(), false, display_file_type,
-							display_item->xmp());
-						auto mi = scan_result.to_info();
+				_async.queue_async(async_queue::load, [new_display, display_item, display_file_type]
+				{
+					df::scope_locked_inc l(df::loading_media);
+					files ff;
+					const auto scan_result = ff.scan_file(display_item->path(), false, display_file_type,
+					                                      display_item->xmp());
+					auto mi = scan_result.to_info();
 
-						new_display->_async.queue_ui([new_display, mi]
-							{
-								new_display->_player_media_info = mi;
-								new_display->_async.invalidate_view(
-									view_invalid::view_layout |
-									view_invalid::app_layout |
-									view_invalid::media_elements |
-									view_invalid::command_state);
-							});
+					new_display->_async.queue_ui([new_display, mi]
+					{
+						new_display->_player_media_info = mi;
+						new_display->_async.invalidate_view(
+							view_invalid::view_layout |
+							view_invalid::app_layout |
+							view_invalid::media_elements |
+							view_invalid::command_state);
 					});
+				});
 			}
 
 			if (!is_bitmap && !is_av)
 			{
-				_async.queue_async(async_queue::load, [new_display, display_item]()
+				_async.queue_async(async_queue::load, [new_display, display_item]
+				{
+					df::scope_locked_inc l(df::loading_media);
+
+					if (display_item->file_type()->group == file_group::archive)
 					{
-						df::scope_locked_inc l(df::loading_media);
+						auto archive_items = files::list_archive(display_item->path());
 
-						if (display_item->file_type()->group == file_group::archive)
+						new_display->_async.queue_ui([new_display, archive_items = std::move(archive_items)]() mutable
 						{
-							auto archive_items = files::list_archive(display_item->path());
+							new_display->_archive_items = std::move(archive_items);
+							new_display->_async.invalidate_view(
+								view_invalid::media_elements | view_invalid::view_layout);
+						});
+					}
+					else
+					{
+						auto data = blob_from_file(display_item->path(), df::one_meg);
 
-							new_display->_async.queue_ui([new_display, archive_items = std::move(archive_items)]() mutable
-								{
-									new_display->_archive_items = std::move(archive_items);
-									new_display->_async.invalidate_view(view_invalid::media_elements | view_invalid::view_layout);
-								});
-						}
-						else
+						new_display->_async.queue_ui([new_display, data = std::move(data)]() mutable
 						{
-							auto data = blob_from_file(display_item->path(), df::one_meg);
-
-							new_display->_async.queue_ui([new_display, data = std::move(data)]() mutable
-								{
-									new_display->_selected_item_data = std::move(data);
-									new_display->_async.invalidate_view(view_invalid::media_elements | view_invalid::view_layout);
-								});
-						}
-					});
+							new_display->_selected_item_data = std::move(data);
+							new_display->_async.invalidate_view(
+								view_invalid::media_elements | view_invalid::view_layout);
+						});
+					}
+				});
 			}
 
 			const auto mt = display_file_type;
@@ -2895,32 +2897,32 @@ void view_state::load_display_state()
 		if (_selected.items().size() <= 2)
 		{
 			queue_async(async_queue::crc, [&s = *this, new_display]
+			{
+				const auto two_files_size_same = new_display->_item1 && new_display->_item2 && new_display->_item1->
+					file_size() == new_display->_item2->file_size();
+				constexpr auto max_load_size = 16u * static_cast<uint64_t>(df::one_meg);
+
+				for (const auto& i : {new_display->_item1, new_display->_item2})
 				{
-					const auto two_files_size_same = new_display->_item1 && new_display->_item2 && new_display->_item1->
-						file_size() == new_display->_item2->file_size();
-					const auto max_load_size = 16u * static_cast<uint64_t>(df::one_meg);
-
-					for (const auto& i : { new_display->_item1, new_display->_item2 })
+					if (i)
 					{
-						if (i)
+						if (i->crc32c() == 0 &&
+							i->online_status() == df::item_online_status::disk &&
+							(two_files_size_same || i->file_size().to_int64() < max_load_size))
 						{
-							if (i->crc32c() == 0 &&
-								i->online_status() == df::item_online_status::disk &&
-								(two_files_size_same || i->file_size().to_int64() < max_load_size))
-							{
-								df::scope_locked_inc l(df::loading_media);
-								const auto crc = platform::file_crc32(i->path());
+							df::scope_locked_inc l(df::loading_media);
+							const auto crc = platform::file_crc32(i->path());
 
-								if (crc)
-								{
-									s.item_index.save_crc(i->path(), crc);
-									i->crc32c(crc);
-									s.invalidate_view(view_invalid::view_layout | view_invalid::presence);
-								}
+							if (crc)
+							{
+								s.item_index.save_crc(i->path(), crc);
+								i->crc32c(crc);
+								s.invalidate_view(view_invalid::view_layout | view_invalid::presence);
 							}
 						}
 					}
-				});
+				}
+			});
 		}
 	}
 
@@ -2937,7 +2939,7 @@ void media_preview_state::close()
 	decoder2.reset();
 }
 
-void view_state::close()
+void view_state::close() const
 {
 	const auto d = _display;
 
@@ -3046,40 +3048,40 @@ void texture_state::load_image(const df::item_element_ptr& i)
 		_photo_timestamp = platform::now();
 		_path = i->path();
 
-		_async.queue_async(async_queue::load, [&as = _async, t = shared_from_this(), path = _path]()
-			{
-				files loader;
-				auto loaded = loader.load(path, true);
+		_async.queue_async(async_queue::load, [&as = _async, t = shared_from_this(), path = _path]
+		{
+			files loader;
+			auto loaded = loader.load(path, true);
 
-				if (loaded.success)
+			if (loaded.success)
+			{
+				as.queue_ui([t, loaded = std::move(loaded), &as]() mutable
 				{
-					as.queue_ui([t, loaded = std::move(loaded), &as]() mutable
-						{
-							t->update(std::move(loaded));
-							as.invalidate_view(view_invalid::view_layout | view_invalid::image_compare);
-						});
-				}
-			});
+					t->update(std::move(loaded));
+					as.invalidate_view(view_invalid::view_layout | view_invalid::image_compare);
+				});
+			}
+		});
 	}
 }
 
 void texture_state::load_raw()
 {
-	_async.queue_async(async_queue::load_raw, [&as = _async, t = shared_from_this(), path = _path]()
-		{
-			df::scope_locked_inc l(t->_preview_rendering);
-			files loader;
-			auto loaded = loader.load(path, false);
+	_async.queue_async(async_queue::load_raw, [&as = _async, t = shared_from_this(), path = _path]
+	{
+		df::scope_locked_inc l(t->_preview_rendering);
+		files loader;
+		auto loaded = loader.load(path, false);
 
-			if (loaded.success)
+		if (loaded.success)
+		{
+			as.queue_ui([t, loaded = std::move(loaded), &as]() mutable
 			{
-				as.queue_ui([t, loaded = std::move(loaded), &as]() mutable
-					{
-						t->update(std::move(loaded));
-						as.invalidate_view(view_invalid::view_layout | view_invalid::image_compare);
-					});
-			}
-		});
+				t->update(std::move(loaded));
+				as.invalidate_view(view_invalid::view_layout | view_invalid::image_compare);
+			});
+		}
+	});
 }
 
 void texture_state::free_graphics_resources()
@@ -3153,11 +3155,11 @@ sizei texture_state::calc_scale_hint() const
 		return dims;
 	}
 
-	return { dims.cx / scale, dims.cy / scale };
+	return {dims.cx / scale, dims.cy / scale};
 }
 
 
-void texture_state::draw(ui::draw_context& rc, const pointi offset, int compare_pos, bool first_texture)
+void texture_state::draw(ui::draw_context& rc, const pointi offset, const int compare_pos, const bool first_texture)
 {
 	const auto alpha = _display_alpha_animation.val();
 	const auto media_bounds = _display_bounds;
@@ -3178,15 +3180,15 @@ void texture_state::draw(ui::draw_context& rc, const pointi offset, int compare_
 			else
 			{
 				_async.queue_async(async_queue::render, [ld = _loaded, scale_hint, t = shared_from_this()]
-					{
-						auto s = ld.to_surface(scale_hint);
+				{
+					auto s = ld.to_surface(scale_hint);
 
-						t->_async.queue_ui([t, s]
-							{
-								t->_staged_surface = s;
-								t->_async.invalidate_view(view_invalid::view_redraw);
-							});
+					t->_async.queue_ui([t, s]
+					{
+						t->_staged_surface = s;
+						t->_async.invalidate_view(view_invalid::view_redraw);
 					});
+				});
 			}
 		}
 
@@ -3203,7 +3205,7 @@ void texture_state::draw(ui::draw_context& rc, const pointi offset, int compare_
 		}
 	}
 
-	const auto tex = (_vid_tex && _vid_tex->is_valid()) ? _vid_tex : _tex;
+	const auto tex = _vid_tex && _vid_tex->is_valid() ? _vid_tex : _tex;
 
 	if (tex && tex->is_valid())
 	{
@@ -3221,8 +3223,8 @@ void texture_state::draw(ui::draw_context& rc, const pointi offset, int compare_
 					draw_bounds.X;
 				draw_bounds.Width = split_x;
 
-				const auto cx = (tex_dims.cx * draw_bounds.Width) / media_bounds.width();
-				const auto cy = (tex_dims.cy * draw_bounds.Width) / media_bounds.width();
+				const auto cx = tex_dims.cx * draw_bounds.Width / media_bounds.width();
+				const auto cy = tex_dims.cy * draw_bounds.Width / media_bounds.width();
 
 				if (flips_xy(orientation))
 				{
@@ -3250,8 +3252,8 @@ void texture_state::draw(ui::draw_context& rc, const pointi offset, int compare_
 				draw_bounds.X += split_x;
 				draw_bounds.Width -= split_x;
 
-				const auto cx = (tex_dims.cx * draw_bounds.Width) / media_bounds.width();
-				const auto cy = (tex_dims.cy * draw_bounds.Width) / media_bounds.width();
+				const auto cx = tex_dims.cx * draw_bounds.Width / media_bounds.width();
+				const auto cy = tex_dims.cy * draw_bounds.Width / media_bounds.width();
 
 				if (flips_xy(orientation))
 				{
@@ -3282,8 +3284,8 @@ void texture_state::draw(ui::draw_context& rc, const pointi offset, int compare_
 		}*/
 
 		const auto dst_quad = setting.show_rotated
-			? quadd(draw_bounds.offset(offset)).transform(to_simple_transform(orientation))
-			: draw_bounds.offset(offset);
+			                      ? quadd(draw_bounds.offset(offset)).transform(to_simple_transform(orientation))
+			                      : draw_bounds.offset(offset);
 
 		rc.draw_texture(tex, dst_quad, tex_bounds.round(), alpha, sampler);
 
@@ -3301,9 +3303,9 @@ void texture_state::draw(ui::draw_context& rc, const pointi offset, int compare_
 		const auto fade_orientation = _fade_out_tex->_orientation;
 
 		const auto fade_dst_quad = setting.show_rotated
-			? quadd(_fade_out_rect.offset(offset)).transform(
-				to_simple_transform(fade_orientation))
-			: _fade_out_rect.offset(offset);
+			                           ? quadd(_fade_out_rect.offset(offset)).transform(
+				                           to_simple_transform(fade_orientation))
+			                           : _fade_out_rect.offset(offset);
 
 		if (alpha < 1.0f)
 		{
@@ -3344,7 +3346,7 @@ ui::texture_ptr texture_state::zoom_texture(ui::draw_context& rc, const sizei ex
 	return _zoom_texture;
 }
 
-void display_state_t::populate(view_state& state)
+void display_state_t::populate(const view_state& state)
 {
 	existing_textures_t existing_textures;
 
@@ -3419,7 +3421,7 @@ void display_state_t::populate(view_state& state)
 		_images = state.selected_items().thumbs(5);
 
 		files ff;
-		const sizei max_dims(256, 256);
+		constexpr sizei max_dims(256, 256);
 
 		for (const auto& image : _images)
 		{
@@ -3456,9 +3458,9 @@ render_valid display_state_t::update_for_present(const double time_now) const
 				const auto has_tex = _player_media_info.has_video && _selected_texture1 && _selected_texture1->_vid_tex;
 				vert_bounds.top = vert_bounds.top + (has_tex ? df::mul_div(_audio_element_bounds.height(), 3, 5) : 0);
 
-				const auto tex_bounds = ui::scale_dimensions(sizei{ 512, 256 }, vert_bounds);
+				const auto tex_bounds = ui::scale_dimensions(sizei{512, 256}, vert_bounds);
 				_session->update_visualizer(_audio_verts, tex_bounds, _audio_element_offset, _audio_element_alpha,
-					time_now);
+				                            time_now);
 
 				result = render_valid::present;
 			}
@@ -3538,7 +3540,7 @@ texture_state::texture_state(async_strategy& async, const df::item_element_ptr& 
 
 
 void draw_texture_info(ui::draw_context& rc, const recti media_bounds, const ui::texture_ptr& tex,
-	ui::orientation orientation, ui::texture_sampler sampler, const float alpha)
+                       const ui::orientation orientation, const ui::texture_sampler sampler, const float alpha)
 {
 	if (tex && setting.show_debug_info && media_bounds.width() > 64)
 	{
@@ -3552,17 +3554,17 @@ void draw_texture_info(ui::draw_context& rc, const recti media_bounds, const ui:
 		auto r = media_bounds;
 
 		const auto text = str::format(u8"{} {}x{} -> {}x{} {}"sv, to_string(tex->format()), tex_dims.cx, tex_dims.cy,
-			r.width(), r.height(), to_string(sampler));
+		                              r.width(), r.height(), to_string(sampler));
 
 		r.left += 8;
 		r.bottom = r.top + rc.text_line_height(ui::style::font_face::dialog) + 8;
 		rc.draw_text(text, r, ui::style::font_face::dialog, ui::style::text_style::single_line,
-			ui::color(0xFFFFFF, alpha), {});
+		             ui::color(0xFFFFFF, alpha), {});
 	}
 }
 
 ui::texture_sampler calc_sampler(const sizei draw_extent, const sizei texture_extent,
-	const ui::orientation& orientation)
+                                 const ui::orientation& orientation)
 {
 	auto dims = texture_extent;
 
@@ -3638,13 +3640,13 @@ void texture_state::clone_fade_out(const std::shared_ptr<texture_state>& other)
 }
 
 df::process_result view_state::can_process_selection_and_mark_errors(const view_host_base_ptr& view,
-	df::process_items_type file_types) const
+                                                                     const df::process_items_type file_types) const
 {
 	clear_error_items(view);
 	return _selected.can_process(file_types, true, view);
 }
 
-bool view_state::can_process_selection(const view_host_base_ptr& view, df::process_items_type file_types) const
+bool view_state::can_process_selection(const view_host_base_ptr& view, const df::process_items_type file_types) const
 {
 	return !_selected.empty() && _selected.can_process(file_types, false, view).success();
 }
@@ -3682,7 +3684,7 @@ df::folder_counts view_state::known_folders() const
 }
 
 
-static df::folder_path next_folder(const df::folder_path current, bool is_forward)
+static df::folder_path next_folder(const df::folder_path current, const bool is_forward)
 {
 	const auto parent = current.parent();
 	auto result = parent;
@@ -3727,7 +3729,7 @@ static df::folder_path next_folder(const df::folder_path current, bool is_forwar
 	return result;
 }
 
-std::u8string view_state::next_path(bool forward) const
+std::u8string view_state::next_path(const bool forward) const
 {
 	auto a = _search;
 	const auto vm = _view_mode;
@@ -3757,13 +3759,13 @@ std::u8string view_state::next_path(bool forward) const
 	}
 	else if (a.is_empty())
 	{
-		return (vm == view_type::items) ? u8"About"s : u8"Items"s;
+		return vm == view_type::items ? u8"About"s : u8"Items"s;
 	}
 
 	return {};
 }
 
-void view_state::open_next_path(const view_host_base_ptr& view, bool forward)
+void view_state::open_next_path(const view_host_base_ptr& view, const bool forward)
 {
 	auto a = _search;
 	const auto vm = _view_mode;
@@ -3797,4 +3799,3 @@ void view_state::open_next_path(const view_host_base_ptr& view, bool forward)
 
 	stop_slideshow();
 }
-

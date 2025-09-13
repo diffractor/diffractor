@@ -1,10 +1,9 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2024  Zac Walker
-//
+// Copyright(C) 2025  Zac Walker
+// 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
-//
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #pragma once
@@ -71,11 +70,11 @@ struct bloom_bits
 	}
 };
 
-constexpr std::u8string_view label_select_text = u8"select"sv;
-constexpr std::u8string_view label_second_text = u8"second"sv;
-constexpr std::u8string_view label_approved_text = u8"approved"sv;
-constexpr std::u8string_view label_review_text = u8"review"sv;
-constexpr std::u8string_view label_to_do_text = u8"to do"sv;
+constexpr auto label_select_text = u8"select"sv;
+constexpr auto label_second_text = u8"second"sv;
+constexpr auto label_approved_text = u8"approved"sv;
+constexpr auto label_review_text = u8"review"sv;
+constexpr auto label_to_do_text = u8"to do"sv;
 
 namespace df
 {
@@ -135,7 +134,6 @@ namespace prop
 
 	class key
 	{
-	private:
 		key(const key& other) = delete;
 		key& operator=(const key& other) = delete;
 		key(key&& other) noexcept = delete;
@@ -143,7 +141,7 @@ namespace prop
 
 	public:
 		key(uint16_t id, std::u8string_view sn, std::u8string_view n, text_t& tx, icon_index i, data_type t,
-			uint32_t f, uint32_t bit);
+		    uint32_t f, uint32_t bit);
 
 		uint16_t id = 0;
 		icon_index icon = {};
@@ -317,7 +315,7 @@ namespace prop
 		item_metadata(const item_metadata& other) = default;
 		item_metadata(item_metadata&& other) = default;
 
-		sizei dimensions() const { return { width, height }; }
+		sizei dimensions() const { return {width, height}; }
 
 		str::cached album;
 		str::cached album_artist;
@@ -377,9 +375,9 @@ namespace prop
 		uint16_t year = 0;
 		uint8_t season = 0;
 		ui::orientation orientation = ui::orientation::top_left;
-		df::xy8 disk = { 0, 0 };
-		df::xy8 episode = { 0, 0 };
-		df::xy8 track = { 0, 0 };
+		df::xy8 disk = {0, 0};
+		df::xy8 episode = {0, 0};
+		df::xy8 track = {0, 0};
 
 		double media_position = 0.0;
 
@@ -442,7 +440,7 @@ namespace prop
 
 		uint64_t total() const
 		{
-			return (n * div) + ((dec * div) / 10);
+			return n * div + dec * div / 10;
 		}
 	};
 
@@ -473,7 +471,8 @@ namespace prop
 	std::u8string format_pixels(sizei v, file_type_ref ft);
 	std::u8string format_video_resolution(sizei v);
 
-	std::u8string replace_tokens(std::u8string_view name_template, const item_metadata_const_ptr& md, std::u8string_view name, df::date_t created);
+	std::u8string replace_tokens(std::u8string_view name_template, const item_metadata_const_ptr& md,
+	                             std::u8string_view name, df::date_t created);
 
 	inline double to_apex_val(const double d)
 	{
