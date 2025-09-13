@@ -112,8 +112,8 @@ static constexpr id2hr_t MountNames[] = {
 	{LIBRAW_MOUNT_Leica_M, u8"Leica M"},
 	{LIBRAW_MOUNT_Leica_R, u8"Leica R"},
 	{LIBRAW_MOUNT_Leica_S, u8"Leica S"},
-	{LIBRAW_MOUNT_Leica_SL, u8"Leica SL"}, // mounts on u8"L"throat
-	{LIBRAW_MOUNT_Leica_TL, u8"Leica TL"}, // mounts on u8"L"throat
+	{LIBRAW_MOUNT_Leica_SL, u8"Leica SL"}, // mounts on "L" throat
+	{LIBRAW_MOUNT_Leica_TL, u8"Leica TL"}, // mounts on "L" throat
 	{LIBRAW_MOUNT_LPS_L, u8"LPS L-mount"}, // throat, Leica / Panasonic / Sigma
 	{LIBRAW_MOUNT_Mamiya67, u8"Mamiya RZ/RB"}, // Mamiya RB67, RZ67
 	{LIBRAW_MOUNT_Mamiya645, u8"Mamiya 645"},
@@ -158,7 +158,7 @@ static constexpr id2hr_t FormatNames[] = {
 	{LIBRAW_FORMAT_69, u8"6x9"},
 	{LIBRAW_FORMAT_SigmaAPSC, u8"Sigma APS-C"}, //  Sigma Foveon X3 orig: 20.7x13.8mm
 	{LIBRAW_FORMAT_SigmaMerrill, u8"Sigma Merrill"},
-	{LIBRAW_FORMAT_SigmaAPSH, u8"Sigma APS-H"}, // Sigma u8"H"26.7 x 17.9mm
+	{LIBRAW_FORMAT_SigmaAPSH, u8"Sigma APS-H"}, // Sigma "H"26.7 x 17.9mm
 	{LIBRAW_FORMAT_MF, u8"Medium Format"},
 	{LIBRAW_FORMAT_LF, u8"Large format"},
 	{LIBRAW_FORMAT_Unknown, u8"Unknown"},
@@ -776,22 +776,21 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 	add_metadata(kv, u8"Focal length"sv, str::format(u8"{:0.1} mm"sv, P2.focal_len));
 
 	if (P3.exifAmbientTemperature > -273.15f)
-		add_metadata(kv, u8"Ambient temperature (exif data)"sv, str::format(u8"{:6.2}\xB0 C"sv, P3.exifAmbientTemperature));
+		add_metadata(kv, u8"Ambient temperature (exif data)"sv, str::format(u8"{:.2f}°C"sv, P3.exifAmbientTemperature));
 	if (P3.CameraTemperature > -273.15f)
-		add_metadata(kv, u8"Camera temperature"sv, str::format(u8"{:6.2}\xB0 C"sv, P3.CameraTemperature));
+		add_metadata(kv, u8"Camera temperature"sv, str::format(u8"{:.2f}°C"sv, P3.CameraTemperature));
 	if (P3.SensorTemperature > -273.15f)
-		add_metadata(kv, u8"Sensor temperature"sv, str::format(u8"{:6.2}\xB0 C"sv, P3.SensorTemperature));
+		add_metadata(kv, u8"Sensor temperature"sv, str::format(u8"{:.2f}°C"sv, P3.SensorTemperature));
 	if (P3.SensorTemperature2 > -273.15f)
-		add_metadata(kv, u8"Sensor temperature2"sv, str::format(u8"{:6.2}\xB0 C"sv, P3.SensorTemperature2));
+		add_metadata(kv, u8"Sensor temperature2"sv, str::format(u8"{:.2f}°C"sv, P3.SensorTemperature2));
 	if (P3.LensTemperature > -273.15f)
-		add_metadata(kv, u8"Lens temperature"sv, str::format(u8"{:6.2}\xB0 C"sv, P3.LensTemperature));
+		add_metadata(kv, u8"Lens temperature"sv, str::format(u8"{:.2f}°C"sv, P3.LensTemperature));
 	if (P3.AmbientTemperature > -273.15f)
-		add_metadata(kv, u8"Ambient temperature"sv, str::format(u8"{:6.2}\xB0 C"sv, P3.AmbientTemperature));
+		add_metadata(kv, u8"Ambient temperature"sv, str::format(u8"{:.2f}°C"sv, P3.AmbientTemperature));
 	if (P3.BatteryTemperature > -273.15f)
-		add_metadata(kv, u8"Battery temperature"sv, str::format(u8"{:6.2}\xB0 C"sv, P3.BatteryTemperature));
+		add_metadata(kv, u8"Battery temperature"sv, str::format(u8"{:.2f}°C"sv, P3.BatteryTemperature));
 	if (P3.FlashGN > 1.0f)
-		add_metadata(kv, u8"Flash Guide Number"sv, str::format(u8"{:6.2}"sv, P3.FlashGN));
-	add_metadata(kv, u8"Flash exposure compensation"sv, str::format(u8"{:0.2} EV"sv, P3.FlashEC));
+		add_metadata(kv, u8"Flash Guide Number"sv, str::format(u8"{:.2f}"sv, P3.FlashGN));
 
 	if (C.profile)
 		add_metadata(kv, u8"Embedded ICC profile"sv, str::format(u8"yes, {} bytes"sv, C.profile_length));
@@ -799,7 +798,7 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 		add_metadata(kv, u8"Embedded ICC profile"sv, u8"no"sv);
 
 	if (C.dng_levels.baseline_exposure > -999.f)
-		add_metadata(kv, u8"Baseline exposure"sv, str::format(u8"{:04.3}"sv, C.dng_levels.baseline_exposure));
+		add_metadata(kv, u8"Baseline exposure"sv, str::format(u8"{:.3f}"sv, C.dng_levels.baseline_exposure));
 
 	add_metadata(kv, u8"Number of raw images"sv, str::to_string(P1.raw_count));
 
@@ -869,7 +868,7 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 
 	if (S.raw_inset_crops[0].cwidth)
 	{
-		auto s = str::format(u8"{:4} x {} u8"sv, S.raw_inset_crops[0].cwidth, S.raw_inset_crops[0].cheight);
+		auto s = str::format(u8"{:4} x {}"sv, S.raw_inset_crops[0].cwidth, S.raw_inset_crops[0].cheight);
 
 		if (S.raw_inset_crops[0].cleft != 0xffff)
 			s += str::format(u8" left {}"sv, S.raw_inset_crops[0].cleft);
@@ -1013,7 +1012,7 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 		if (fabsf(C.cmatrix[0][0]) > 0)
 		{
 			add_metadata(kv, u8"camRGB -> sRGB Matrix:"sv);
-			for (int i = 0; i < P1.colors; i++)
+		 for (int i = 0; i < P1.colors; i++)
 			{
 				for (int j = 0; j < P1.colors; j++)
 					add_metadata(kv, u8"%6.4f\t"sv, C.cmatrix[i][j]);
@@ -1032,18 +1031,18 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 			}
 		}
 
-		for (int cnt = 0; cnt < 2; cnt++) {
-			if (C.dng_color[cnt].illuminant != LIBRAW_WBI_None) {
-				if (C.dng_color[cnt].illuminant <= LIBRAW_WBI_StudioTungsten) {
+		for (int n = 0; n < 2; n++) {
+			if (fabsf(C.dng_color[n].illuminant != LIBRAW_WBI_None)) {
+				if (C.dng_color[n].illuminant <= LIBRAW_WBI_StudioTungsten) {
 					add_metadata(kv, u8"DNG Illuminant {}"sv, str::format(u8"{}"sv,
-						cnt + 1, WB_idx2hrstr(C.dng_color[cnt].illuminant));
+						n + 1, WB_idx2hrstr(C.dng_color[n].illuminant));
 				}
-				else if (C.dng_color[cnt].illuminant == LIBRAW_WBI_Other) {
-					add_metadata(kv, u8"DNG Illuminant {}"sv, str::format(u8"Other"sv, cnt + 1);
+				else if (C.dng_color[n].illuminant == LIBRAW_WBI_Other) {
+					add_metadata(kv, u8"DNG Illuminant {}"sv, str::format(u8"Other"sv, n + 1);
 				}
 				else {
 					add_metadata(kv, u8"DNG Illuminant {} is out of EXIF LightSources range [0:24, 255]"sv, str::format(u8"{}"sv,
-						cnt + 1, C.dng_color[cnt].illuminant);
+						n + 1, C.dng_color[n].illuminant);
 				}
 			}
 		}
@@ -1088,13 +1087,13 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 			add_metadata(kv, u8"%f"sv, C.pre_mul[c]);
 	}*/
 
-	add_metadata(kv, u8"Color space (makernotes) u8"sv, str::format(u8"{}, {}"sv, P3.ColorSpace, ColorSpaceName));
+	add_metadata(kv, u8"Color space (makernotes)"sv, str::format(u8"{}, {}"sv, P3.ColorSpace, ColorSpaceName));
 
 
 	if (Sony.PixelShiftGroupID)
 	{
 		add_metadata(kv, u8"Sony PixelShiftGroupPrefix"sv,
-			str::format(u8"0x{:x} PixelShiftGroupID {}, u8"sv, Sony.PixelShiftGroupPrefix,
+			str::format(u8"0x{:x} PixelShiftGroupID {}"sv, Sony.PixelShiftGroupPrefix,
 				Sony.PixelShiftGroupID));
 
 		if (Sony.numInPixelShiftGroup)

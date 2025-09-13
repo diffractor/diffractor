@@ -2001,7 +2001,7 @@ void file_scan_result::parse_metadata_ffmpeg_kv(prop::item_metadata& result) con
 		else if (is_key(kv.first, u8"disk"sv) || is_key(kv.first, u8"disc"sv)) result.disk = df::xy8::parse(kv.second);
 		else if (is_key(kv.first, u8"track"sv)) result.track = df::xy8::parse(kv.second);
 		else if (is_key(kv.first, u8"variant_bitrate"sv)) result.bitrate = str::strip_and_cache(kv.second);
-		else if (is_key(kv.first, u8"episode_sort"sv)) result.episode, df::xy32::parse(kv.second);
+		else if (is_key(kv.first, u8"episode_sort"sv)) result.episode = df::xy8::parse(kv.second);
 		else if (is_key(kv.first, u8"season_number"sv)) result.season = str::to_int(kv.second);
 		else if (is_key(kv.first, u8"system"sv)) result.system = str::strip_and_cache(kv.second);
 		else if (is_key(kv.first, u8"game"sv)) result.game = str::strip_and_cache(kv.second);
@@ -2019,7 +2019,7 @@ void file_scan_result::parse_metadata_ffmpeg_kv(prop::item_metadata& result) con
 		}
 		else if (is_key(kv.first, u8"keywords"sv))
 		{
-			str::split2(kv.second, true, [this](const std::u8string_view text)
+		 str::split2(kv.second, true, [this](const std::u8string_view text)
 				{
 					keywords.emplace_back(str::cache(text));
 				});

@@ -25,6 +25,8 @@ using u8istringstream = std::basic_istringstream<char8_t, std::char_traits<char8
 using u8istream = std::basic_ifstream<char8_t, std::char_traits<char8_t>>;
 using u8ostream = std::basic_ofstream<char8_t, std::char_traits<char8_t>>;
 
+using namespace std::literals;
+
 constexpr std::size_t operator "" _z(unsigned long long n)
 {
 	return n;
@@ -197,47 +199,47 @@ namespace df
 
 	inline int round_up(const float d)
 	{
-		if (!isnormal(d)) return 0;
-		return static_cast<int>(d < 0.0f ? floor(d) : ceil(d));
+		if (!std::isnormal(d)) return 0;
+		return static_cast<int>(d < 0.0f ? std::floor(d) : std::ceil(d));
 	}
 
 	inline int32_t round(const double d)
 	{
-		if (!isnormal(d)) return 0;
+		if (!std::isnormal(d)) return 0;
 
-		const auto f = floor(d);
+		const auto f = std::floor(d);
 
 		if ((d - f) >= 0.5)
 		{
-			return static_cast<int32_t>(d >= 0.0 ? ceil(d) : f);
+			return static_cast<int32_t>(d >= 0.0 ? std::ceil(d) : f);
 		}
-		return static_cast<int32_t>(d < 0.0 ? ceil(d) : f);
+		return static_cast<int32_t>(d < 0.0 ? std::ceil(d) : f);
 	}
 
 	inline int64_t round64(const double d)
 	{
-		if (!isnormal(d)) return 0;
+		if (!std::isnormal(d)) return 0;
 
-		const auto f = floor(d);
+		const auto f = std::floor(d);
 
 		if ((d - f) >= 0.5)
 		{
-			return static_cast<int64_t>(d >= 0.0 ? ceil(d) : f);
+			return static_cast<int64_t>(d >= 0.0 ? std::ceil(d) : f);
 		}
-		return static_cast<int64_t>(d < 0.0 ? ceil(d) : f);
+		return static_cast<int64_t>(d < 0.0 ? std::ceil(d) : f);
 	}
 
 	inline int round(const float d)
 	{
-		if (!isnormal(d)) return 0;
+		if (!std::isnormal(d)) return 0;
 
-		const auto f = floor(d);
+		const auto f = std::floor(d);
 
 		if ((d - f) >= 0.5f)
 		{
-			return static_cast<int>(d >= 0.0f ? ceil(d) : f);
+			return static_cast<int>(d >= 0.0f ? std::ceil(d) : f);
 		}
-		return static_cast<int>(d < 0.0f ? ceil(d) : f);
+		return static_cast<int>(d < 0.0f ? std::ceil(d) : f);
 	}
 
 	constexpr int round(const int i, const int d)

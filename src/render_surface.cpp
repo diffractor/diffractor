@@ -85,7 +85,7 @@ ui::surface_ptr ui::surface::transform(const simple_transform t) const
 
 				for (int x = 0; x < cx; ++x)
 				{
-					line_dst[y] = line_src[cx - 1 - x];
+					line_dst[x] = line_src[cx - 1 - x];
 				}
 			}
 		}

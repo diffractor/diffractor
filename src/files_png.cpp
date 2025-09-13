@@ -342,49 +342,6 @@ static df::blob load_profile(png_textp txt)
 file_scan_result scan_png(read_stream& rs)
 {
 	file_scan_result result;
-	//uint64_t pos = 8;
-	//const auto len = s.size();
-
-	//// read first and following chunks
-	//while (pos + 16 < len)
-	//{
-	//	const auto chunk_length = df::byteswap32(s.peek32(pos));
-	//	const auto chunk_type = static_cast<png_chunk>(df::byteswap32(s.peek32(pos + 4)));
-
-	//	if (pos + chunk_length > len) // Overflow
-	//		break;
-
-	//	pos += 8;
-	//	//const auto crc = _byteswap_ulong(*reinterpret_cast<const uint32_t*>(p + pos + chunk_length + 8));
-
-	//	if (chunk_type == png_chunk::IHDR)
-	//	{
-	//		result.width = df::byteswap32(s.peek32(pos));
-	//		result.height = df::byteswap32(s.peek32(pos + 4));
-	//	}
-	//	else if (chunk_type == png_chunk::iTXt && chunk_length > png_xmp_header_len)
-	//	{
-	//		const auto chunk = s.read(pos, chunk_length);
-
-	//		if (memcmp(chunk.data(), png_xmp_header, png_xmp_header_len) == 0)
-	//		{
-	//			result.metadata.xmp.copy(chunk.data() + png_xmp_header_len, chunk_length - png_xmp_header_len);
-	//		}
-	//	}
-	//	else if (chunk_type == png_chunk::eXIf && chunk_length > 16)
-	//	{
-	//		result.metadata.exif = s.read(pos, chunk_length);
-	//	}
-	//	else if (chunk_type == png_chunk::iCCP && chunk_length > 16)
-	//	{
-	//		result.metadata.icc = s.read(pos, chunk_length);
-	//	}
-
-	//	pos += chunk_length + 4;
-	//}
-
-
-	//ui::const_surface_ptr result;
 
 	const auto sig_len = 8u;
 	uint8_t sig[sig_len];
@@ -406,17 +363,11 @@ file_scan_result scan_png(read_stream& rs)
 
 	const png_infop info_ptr = png_create_info_struct(png.get());
 
-	/*if (setjmp(png_jmpbuf(png.get())))
-	{
-		throw app_exception(u8"load_png failed"sv);
-	}*/
-
 	png_set_read_fn(png.get(), &stream, png_read_callback2);
 
 	png_set_sig_bytes(png.get(), sig_len);
 	png_read_info(png.get(), info_ptr);
 
-	//png_size_t pitch = png_get_rowbytes(png_ptr.get(), info_ptr);	
 	png_uint_32 width = 0, height = 0;
 	int bit_depth, color_type;
 	png_get_IHDR(png.get(), info_ptr, &width, &height, &bit_depth, &color_type, nullptr, nullptr, nullptr);
@@ -445,7 +396,7 @@ file_scan_result scan_png(read_stream& rs)
 	}
 
 	// png_set_swap_alpha(png_ptr);
-	if (color_type == PNG_COLOR_TYPE_GRAY && bit_depth < sig_len)
+	if (color_type == PNG_COLOR_TYPE_GRAY && bit_depth < 8)
 	{
 		png_set_expand_gray_1_2_4_to_8(png.get());
 	}

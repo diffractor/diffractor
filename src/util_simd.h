@@ -11,6 +11,15 @@
 
 #include "util.h"
 
+// Include proper SIMD intrinsics headers
+#if defined(COMPILE_SIMD_INTRINSIC)
+#include <nmmintrin.h>  // For CRC32 intrinsics
+#endif
+
+#if defined(COMPILE_ARM_INTRINSIC)
+#include <arm_acle.h>   // For ARM CRC intrinsics
+#endif
+
 ///////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -20,8 +29,8 @@
 
 /* CRC-32C (iSCSI) polynomial in reversed bit order. */
 static constexpr uint32_t CRCPOLY = 0x82f63b78;
-
 //static constexpr uint32_t CRCPOLY = 0xEDB88320u;
+static constexpr uint32_t CRCINIT = 0xFFFFFFFF;
 
 
 static std::array<std::array<uint32_t, 256>, 4> create_crc32_precalc()
@@ -106,9 +115,15 @@ static uint32_t calc_crc32c_sse2(uint32_t crc, const void* data, const size_t le
 		crc = _mm_crc32_u8(crc, *p++);
 	}
 
-#endif
-
 	return crc;
+#else
+	// Fallback to software implementation when SIMD not available
+	// Mark parameters as used to avoid warnings
+	(void)crc;
+	(void)data; 
+	(void)len;
+	return calc_crc32c_c(crc, data, len);
+#endif
 }
 
 static uint32_t calc_crc32c_arm(uint32_t crc, const void* data, const size_t len)
@@ -132,9 +147,16 @@ static uint32_t calc_crc32c_arm(uint32_t crc, const void* data, const size_t len
 	{
 		crc = __crc32b(crc, *p++);
 	}
-#endif
 
 	return crc;
+#else
+	// Fallback to software implementation when ARM intrinsics not available
+	// Mark parameters as used to avoid warnings
+	(void)crc;
+	(void)data;
+	(void)len;
+	return calc_crc32c_c(crc, data, len);
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////

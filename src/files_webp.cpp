@@ -118,37 +118,40 @@ webp_parts scan_webp(df::cspan data, bool decode_surface)
 
 					if (WebPAnimDecoderOptionsInit(&dec_options))
 					{
-						// dec_options.color_mode is MODE_RGBA by default here
+						dec_options.color_mode = MODE_BGRA; // Use BGRA to match our surface format
 						auto* dec = WebPAnimDecoderNew(&wp_data, &dec_options);
 
 						if (dec)
 						{
 							if (WebPAnimDecoderGetInfo(dec, &anim_info))
 							{
-								auto* demux = WebPDemux(&wp_data);
-
-								if (demux)
+								while (WebPAnimDecoderHasMoreFrames(dec))
 								{
-									WebPIterator iter = { 0, };
+									uint8_t* frame_data = nullptr;
+									int timestamp = 0;
 
-									if (WebPDemuxGetFrame(demux, 1, &iter))
+									if (WebPAnimDecoderGetNext(dec, &frame_data, &timestamp))
 									{
-										while (WebPAnimDecoderHasMoreFrames(dec))
+										auto surface = std::make_shared<ui::surface>();
+										auto* buffer = surface->alloc(anim_info.canvas_width, anim_info.canvas_height, ui::texture_format::ARGB);
+										
+										if (buffer)
 										{
-											uint8_t* outdata = nullptr;
-											int timestamp = 0;
-
-											if (WebPAnimDecoderGetNext(dec, &outdata, &timestamp))
+											// Copy frame data to surface buffer
+											const size_t bytes_per_pixel = 4; // BGRA
+											const size_t frame_stride = anim_info.canvas_width * bytes_per_pixel;
+											const size_t surface_stride = surface->stride();
+											
+											for (int y = 0; y < anim_info.canvas_height; ++y)
 											{
+												memcpy(buffer + y * surface_stride, 
+													   frame_data + y * frame_stride, 
+													   frame_stride);
 											}
-
-											WebPDemuxNextFrame(&iter);
+											
+											result.frames.emplace_back(surface);
 										}
-
-										WebPDemuxReleaseIterator(&iter);
 									}
-
-									WebPDemuxDelete(demux);
 								}
 							}
 
@@ -274,6 +277,7 @@ ui::image_ptr save_webp(const ui::const_surface_ptr& surface_in, const metadata_
 						chunk_data.bytes = metadata.icc.data();
 						chunk_data.size = metadata.icc.size();
 						WebPMuxError chunk_err = WebPMuxSetChunk(mux, "ICCP", &chunk_data, 0);
+						// Note: ICC profile errors are not critical, continue processing
 					}
 
 					if (!metadata.exif.empty())
@@ -283,6 +287,7 @@ ui::image_ptr save_webp(const ui::const_surface_ptr& surface_in, const metadata_
 						chunk_data.bytes = metadata.exif.data() + exif_skip;
 						chunk_data.size = metadata.exif.size() - exif_skip;
 						WebPMuxError chunk_err = WebPMuxSetChunk(mux, "EXIF", &chunk_data, 0);
+						// Note: EXIF errors are not critical, continue processing
 					}
 					else if (surface_in->orientation() != ui::orientation::top_left)
 					{
@@ -292,6 +297,7 @@ ui::image_ptr save_webp(const ui::const_surface_ptr& surface_in, const metadata_
 						chunk_data.bytes = rotate_exif.data() + exif_skip;
 						chunk_data.size = rotate_exif.size() - exif_skip;
 						WebPMuxError chunk_err = WebPMuxSetChunk(mux, "EXIF", &chunk_data, 0);
+						// Note: EXIF errors are not critical, continue processing
 					}
 
 					if (!metadata.xmp.empty())
@@ -300,6 +306,7 @@ ui::image_ptr save_webp(const ui::const_surface_ptr& surface_in, const metadata_
 						chunk_data.bytes = metadata.xmp.data();
 						chunk_data.size = metadata.xmp.size();
 						WebPMuxError chunk_err = WebPMuxSetChunk(mux, "XMP ", &chunk_data, 0);
+						// Note: XMP errors are not critical, continue processing
 					}
 
 					WebPData output_data;

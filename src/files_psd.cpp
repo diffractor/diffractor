@@ -42,8 +42,6 @@ int channel_to_channel_shift(const int channel)
 	default:
 		return 24;
 	}
-
-	return 0;
 }
 
 class msb_stream
@@ -121,8 +119,7 @@ public:
 };
 
 
-static bool decode_rle_pane(ui::surface_ptr& surface, msb_stream& stream, const int channel_shift,
-	const int channel_scale)
+static bool decode_rle_pane(ui::surface_ptr& surface, msb_stream& stream, const int channel_shift)
 {
 	const int cx = surface->width();
 	const int cy = surface->height();
@@ -134,9 +131,12 @@ static bool decode_rle_pane(ui::surface_ptr& surface, msb_stream& stream, const 
 	bool bReading = false;
 	int count = 0;
 	int x = 0, y = 0;
+	
+	if (cy == 0 || cx == 0) return false;
+	
 	auto* line = std::bit_cast<uint32_t*>(pixels + (y * stride));
 
-	while (number_pixels > 0)
+	while (number_pixels > 0 && y < cy)
 	{
 		if (count <= 0)
 		{
@@ -167,7 +167,10 @@ static bool decode_rle_pane(ui::surface_ptr& surface, msb_stream& stream, const 
 			pixel = stream.read_u8();
 		}
 
-		line[x] |= (0xFF & pixel) << channel_shift;
+		if (x < cx && y < cy)
+		{
+			line[x] |= (0xFF & pixel) << channel_shift;
+		}
 
 		x++;
 		number_pixels--;
@@ -177,16 +180,18 @@ static bool decode_rle_pane(ui::surface_ptr& surface, msb_stream& stream, const 
 		{
 			y++;
 			x = 0;
-			line = std::bit_cast<uint32_t*>(pixels + (y * stride));
+			if (y < cy)
+			{
+				line = std::bit_cast<uint32_t*>(pixels + (y * stride));
+			}
 		}
 	}
 
-	// Guarentee the correct number of pixel packets.
+	// Guarantee the correct number of pixel packets.
 	return number_pixels == 0;
 }
 
-static bool decode_uncompressed_plane(ui::surface_ptr& surface, msb_stream& stream, const int channel_shift,
-	const int channel_scale)
+static bool decode_uncompressed_plane(ui::surface_ptr& surface, msb_stream& stream, const int channel_shift)
 {
 	const int cx = surface->width();
 	const int cy = surface->height();
@@ -202,7 +207,7 @@ static bool decode_uncompressed_plane(ui::surface_ptr& surface, msb_stream& stre
 
 		auto* const dst_line = std::bit_cast<uint32_t*>(pixels + (y * stride));
 
-		for (int x = 0; x < static_cast<long>(cx); x++)
+		for (int x = 0; x < cx; x++)
 		{
 			dst_line[x] |= (0xFF & static_cast<uint32_t>(line_data[x])) << channel_shift;
 		}
@@ -319,7 +324,7 @@ static bool cmy_to_rgb(ui::surface_ptr& imageIn)
 	}
 
 	return true;
-};
+}
 
 
 struct ChannelInfo
@@ -344,7 +349,7 @@ struct LayerInfo
 	uint8_t clipping, visible, flags;
 	uint32_t offset_x, offset_y;
 	uint8_t name[256];
-} LayerInfo;
+};
 
 
 file_scan_result scan_psd(read_stream& s)
@@ -364,8 +369,6 @@ file_scan_result scan_psd(read_stream& s)
 		const auto columns = stream.read_u32();
 		const auto depth = stream.read_u16();
 		const auto mode = stream.read_u16();
-
-		//auto pixel_format_description = "RGB"sv;
 
 		switch (mode)
 		{
@@ -417,7 +420,7 @@ file_scan_result scan_psd(read_stream& s)
 			while (marker == 0x3842494D) // 8BIM
 			{
 				const auto type = stream.read_u16();
-				auto pad = stream.read_u16();
+				stream.read_u16(); // pad - unused
 				auto len = stream.read_u32();
 
 				if (len & 0x01) len += 1; // round up to 2 
@@ -479,37 +482,31 @@ ui::surface_ptr load_psd(read_stream& s)
 	const auto depth = stream.read_u16();
 	const auto mode = stream.read_u16();
 
-	auto pf = u8"argb_32"_c;
 	const int cx = columns;
 	const int cy = rows;
 	bool has_alpha = false;
 	bool is_single_channel = false;
 
-	// cannot yet handel all modes
+	// cannot yet handle all modes
 	switch (mode)
 	{
 	case BitmapMode:
-		pf = u8"mono"_c;
 		break;
 	case RGBMode:
 	case LabMode:
 		has_alpha = (channels >= 4);
-		pf = has_alpha ? u8"argb_32"_c : u8"rgb_24"_c;
 		break;
 
 	case CMYKMode:
 		has_alpha = (channels >= 5);
-		pf = has_alpha ? u8"argb_32"_c : u8"rgb_24"_c;
 		break;
 
 	case GrayscaleMode:
-		pf = u8"gray_8"_c;
 		is_single_channel = true;
 		break;
 	case IndexedMode:
 	case MultichannelMode:
 	case DuotoneMode:
-		pf = u8"pal_8"_c;
 		is_single_channel = true;
 		break;
 	}
@@ -525,7 +522,7 @@ ui::surface_ptr load_psd(read_stream& s)
 
 		if (mode == DuotoneMode)
 		{
-			// Duotone image data;  the format of this data is undocumented.			
+			// Duotone image data; the format of this data is undocumented.			
 		}
 		else
 		{
@@ -565,10 +562,6 @@ ui::surface_ptr load_psd(read_stream& s)
 	{
 		stream.skip(colormap_len);
 	}
-	else
-	{
-		//  image has no layers?
-	}
 
 	if constexpr (number_layers == 0)
 	{
@@ -578,6 +571,7 @@ ui::surface_ptr load_psd(read_stream& s)
 		const auto* const pixels = result->pixels();
 		const auto stride = result->stride();
 
+		// Initialize pixels to zero
 		for (auto y = 0; y < cy; y++)
 		{
 			auto* const line = std::bit_cast<uint32_t*>(pixels + (y * stride));
@@ -599,16 +593,15 @@ ui::surface_ptr load_psd(read_stream& s)
 				stream.read_u16();
 			}
 
-
 			if (is_single_channel)
 			{
-				decode_rle_pane(result, stream, 0, 0);
+				decode_rle_pane(result, stream, 0);
 			}
 			else
 			{
 				for (auto i = 0; i < channels; i++)
 				{
-					decode_rle_pane(result, stream, channel_to_channel_shift(i), 0);
+					decode_rle_pane(result, stream, channel_to_channel_shift(i));
 				}
 			}
 		}
@@ -617,13 +610,13 @@ ui::surface_ptr load_psd(read_stream& s)
 			// Read uncompressed pixel data as separate planes.
 			if (is_single_channel)
 			{
-				decode_uncompressed_plane(result, stream, 0, 0);
+				decode_uncompressed_plane(result, stream, 0);
 			}
 			else
 			{
 				for (auto i = 0; i < channels; i++)
 				{
-					decode_uncompressed_plane(result, stream, channel_to_channel_shift(i), 0);
+					decode_uncompressed_plane(result, stream, channel_to_channel_shift(i));
 				}
 			}
 		}

@@ -36,7 +36,7 @@ static const char* strnstr(const char* haystack, const char* needle, size_t len)
 	if (0 == (needle_len = strnlen(needle, len)))
 		return haystack;
 
-	for (auto i = 0; i <= static_cast<int>(len - needle_len); i++)
+	for (auto i = 0; i <= static_cast<int>(len) - static_cast<int>(needle_len); i++)
 	{
 		if ((haystack[0] == needle[0]) &&
 			(0 == strncmp(haystack, needle, needle_len)))
@@ -272,7 +272,7 @@ enum exif_tag
 
 static void scan_exif(file_scan_result& result, df::cspan data)
 {
-	if (data > 16)
+	if (data.size > 16)
 	{
 		df::assert_true(!is_exif_signature(data));
 
@@ -521,64 +521,64 @@ static file_scan_result scan_tiff(read_stream& s)
 				}
 				break;
 				}
+			}
 
-				const auto entry_ifd1 = offset_ifd0 + 2 + 12 * entry_count;
+			const auto entry_ifd1 = offset_ifd0 + 2 + 12 * entry_count;
 
-				if (entry_ifd1 < limit)
+			if (entry_ifd1 < limit)
+			{
+				const auto offset_ifd1 = get_uint32(s.peek32(entry_ifd1), order);
+
+				if (offset_ifd1 && offset_ifd1 < limit)
 				{
-					const auto offset_ifd1 = get_uint32(s.peek32(entry_ifd1), order);
+					size_t possible_offset = 0;
+					size_t posible_thumbnail_len = 0;
+					const auto ifd1_entry_count = get_uint16(s.peek16(offset_ifd1), order);
 
-					if (offset_ifd1 && offset_ifd1 < limit)
+					for (auto i = 0u; i < ifd1_entry_count; ++i)
 					{
-						size_t possible_offset = 0;
-						size_t posible_thumbnail_len = 0;
-						const auto ifd1_entry_count = get_uint16(s.peek16(offset_ifd1), order);
+						const auto pos = offset_ifd1 + 2 + (12 * i);
 
-						for (auto i = 0u; i < ifd1_entry_count; ++i)
+						if (pos < limit)
 						{
-							const auto pos = offset_ifd1 + 2 + (12 * i);
+							const auto tag = static_cast<exif_tag>(get_uint16(s.peek16(pos), order));
+							// auto format = static_cast<metadata_exif::Format>(get_uint16(s.peek16(pos + 2), order));
+							// auto ifd1_components = get_uint32(s.peek32(pos + 4), order);
 
-							if (pos < limit)
+							switch (tag)
 							{
-								const auto tag = static_cast<exif_tag>(get_uint16(s.peek16(pos), order));
-								// auto format = static_cast<metadata_exif::Format>(get_uint16(s.peek16(pos + 2), order));
-								// auto ifd1_components = get_uint32(s.peek32(pos + 4), order);
+							case EXIF_TAG_JPEG_INTERCHANGE_FORMAT:
+								possible_offset = get_uint32(s.peek32(pos + 8), order);
+								break;
 
-								switch (tag)
-								{
-								case EXIF_TAG_JPEG_INTERCHANGE_FORMAT:
-									possible_offset = get_uint32(s.peek32(pos + 8), order);
-									break;
+							case EXIF_TAG_JPEG_INTERCHANGE_FORMAT_LENGTH:
+								posible_thumbnail_len = get_uint32(s.peek32(pos + 8), order);
+								break;
 
-								case EXIF_TAG_JPEG_INTERCHANGE_FORMAT_LENGTH:
-									posible_thumbnail_len = get_uint32(s.peek32(pos + 8), order);
-									break;
-
-								case EXIF_TAG_ORIENTATION:
-									result.orientation = static_cast<ui::orientation>(get_uint16(
-										s.peek16(pos + 8), order));
-									break;
-								}
+							case EXIF_TAG_ORIENTATION:
+								result.orientation = static_cast<ui::orientation>(get_uint16(
+									s.peek16(pos + 8), order));
+								break;
 							}
 						}
+					}
 
-						if (possible_offset != 0 && posible_thumbnail_len != 0)
+					if (possible_offset != 0 && posible_thumbnail_len != 0)
+					{
+						auto thumb = s.read(possible_offset, posible_thumbnail_len);
+						auto detected = detected_format::Unknown;
+
+						if (thumb.size() > 16 &&
+							(detected = files::detect_format(thumb)) != detected_format::Unknown)
 						{
-							auto thumb = s.read(possible_offset, posible_thumbnail_len);
-							auto detected = detected_format::Unknown;
-
-							if (thumb.size() > 16 &&
-								(detected = files::detect_format(thumb)) != detected_format::Unknown)
+							if (is_image_format(detected))
 							{
-								if (is_image_format(detected))
-								{
-									result.thumbnail_image = load_image_file(thumb);
-								}
-								else
-								{
-									files ff;
-									result.thumbnail_surface = ff.image_to_surface(thumb);
-								}
+								result.thumbnail_image = load_image_file(thumb);
+							}
+							else
+							{
+								files ff;
+								result.thumbnail_surface = ff.image_to_surface(thumb);
 							}
 						}
 					}

@@ -101,12 +101,10 @@ static metadata_parts extract_metadata(heif_image_handle* handle)
 			{
 				const auto metadataSize = heif_image_handle_get_metadata_size(handle, id);
 				df::blob raw_metatdata(metadataSize, 0);
-				const auto result_info = heif_image_handle_get_metadata(handle, id, raw_metatdata.data());
+				const auto error = heif_image_handle_get_metadata(handle, id, raw_metatdata.data());
 
-				if (result_info.code == heif_error_Ok)
+				if (error.code == heif_error_Ok)
 				{
-					int offset = 0;
-
 					if (raw_metatdata.size() > 4 && raw_metatdata[0] == 0)
 					{
 						raw_metatdata.erase(raw_metatdata.begin(), raw_metatdata.begin() + 4);
@@ -166,22 +164,22 @@ static str::cached extract_pixel_format(heif_image_handle* image_handle)
 		case heif_chroma_undefined:
 			break;
 		case heif_chroma_interleaved_RGB:
-			result = u8"rgb"_c; break;
+			result = u8"rgb"_c; 
 			break;
 		case heif_chroma_interleaved_RGBA:
-			result = u8"rgba"_c; break;
+			result = u8"rgba"_c; 
 			break;
 		case heif_chroma_interleaved_RRGGBB_BE:
-			result = u8"rgb48"_c; break;
+			result = u8"rgb48"_c; 
 			break;
 		case heif_chroma_interleaved_RRGGBBAA_BE:
-			result = u8"rgba64"_c; break;
+			result = u8"rgba64"_c; 
 			break;
 		case heif_chroma_interleaved_RRGGBB_LE:
-			result = u8"rgb48"_c; break;
+			result = u8"rgb48"_c; 
 			break;
 		case heif_chroma_interleaved_RRGGBBAA_LE:
-			result = u8"rgba64"_c; break;
+			result = u8"rgba64"_c; 
 			break;
 		}
 	}
@@ -228,10 +226,10 @@ file_scan_result scan_heif(read_stream& s)
 				const auto thumbnail_result = heif_image_handle_get_thumbnail(image_handle, thumbnail_id, &thumbnail_handle);
 				const df::releaser<heif_image_handle> thumbnail_handle_releaser(thumbnail_handle, [](auto* c) { heif_image_handle_release(c); });
 
-				if (thumbnail_result.code != heif_error_Ok)
+				if (thumbnail_result.code == heif_error_Ok)
 				{
 					heif_image* img = nullptr;
-					const auto decode_image_result = heif_decode_image(image_handle, &img, heif_colorspace_RGB,
+					const auto decode_image_result = heif_decode_image(thumbnail_handle, &img, heif_colorspace_RGB,
 						heif_chroma_interleaved_RGBA, nullptr);
 					const df::releaser<heif_image> heif_image_releaser(img, [](auto* i) { heif_image_release(i); });
 

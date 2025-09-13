@@ -10,6 +10,10 @@
 #include "pch.h"
 #include "util.h"
 
+#ifdef COMPILE_SIMD_INTRINSIC
+#include <emmintrin.h>
+#include <tmmintrin.h>
+#endif
 
 void ui::surface::swap_rb()
 {
@@ -66,8 +70,8 @@ ui::pixel_difference_result ui::surface::pixel_difference(const const_surface_pt
 
 	for (auto y = 0; y < _dimensions.cy; y++)
 	{
-		const auto this_line = std::bit_cast<uint32_t*>(pixels_line(y));
-		const auto other_line = std::bit_cast<uint32_t*>(other->pixels_line(y));
+		const auto this_line = std::bit_cast<const uint32_t*>(pixels_line(y));
+		const auto other_line = std::bit_cast<const uint32_t*>(other->pixels_line(y));
 
 		for (auto x = 0; x < _dimensions.cx; x++)
 		{

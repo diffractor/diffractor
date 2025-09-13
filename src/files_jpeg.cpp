@@ -203,7 +203,6 @@ struct jpeg_decoder_impl
 };
 
 constexpr uint32_t max_chunk = static_cast<uint32_t>(2) * DCTSIZE;
-uint32_t jpeg_encoder::max_chunk = static_cast<uint32_t>(2) * DCTSIZE;
 
 
 size_t exif_signature_len = exif_signature.size();
@@ -452,7 +451,7 @@ void jpeg_encoder::start(const uint32_t cx, const uint32_t cy, const ui::orienta
 	if (!metadata.icc.empty())
 	{
 		std::vector<uint8_t> marker;
-		marker.reserve(xmp_signature_len + metadata.icc.size());
+		marker.reserve(icc_signature_len + metadata.icc.size());
 		marker.insert(marker.begin(), icc_signature.begin(), icc_signature.end());
 		marker.push_back(1);
 		marker.push_back(1);

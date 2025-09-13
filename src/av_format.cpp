@@ -126,7 +126,7 @@ double get_rotation(const AVStream* const st)
 
 		if (display_matrix)
 		{
-			theta = -av_display_rotation_get(std::bit_cast<int32_t*>(display_matrix));
+			theta = -av_display_rotation_get(display_matrix);
 		}
 
 		theta -= 360 * floor(theta / 360 + 0.9 / 360);
@@ -1699,8 +1699,7 @@ bool av_scaler::scale_surface(const ui::const_surface_ptr& surface_in, ui::surfa
 
 	const auto scaler_fmt = AV_PIX_FMT_BGRA;
 	_scaler = sws_getCachedContext(_scaler, source_extent.cx, source_extent.cy, scaler_fmt, dimensions_out.cx,
-		dimensions_out.cy, scaler_fmt, SWS_BICUBIC, nullptr, nullptr,
-		nullptr);
+		dimensions_out.cy, scaler_fmt, SWS_BICUBIC, nullptr, nullptr, nullptr);
 
 	if (_scaler)
 	{
