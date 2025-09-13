@@ -132,6 +132,9 @@
     <ClInclude Include="libarchive\config.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="libarchive\archive_time_private.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="libarchive\archive_acl.c">
@@ -516,6 +519,18 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="libarchive\xxhash.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="libarchive\archive_parse_date.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="libarchive\archive_time.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="libarchive\archive_write_set_format_cpio_binary.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="libarchive\archive_write_set_format_cpio_odc.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

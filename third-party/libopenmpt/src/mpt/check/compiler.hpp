@@ -7,13 +7,6 @@
 #include "mpt/base/detect_quirks.hpp"
 #include "mpt/base/compiletime_warning.hpp"
 
-#ifndef MPT_CHECK_CXX_IGNORE_WARNING_O2
-#if defined(MPT_COMPILER_QUIRK_GCC_NO_O2)
-// See <https://gcc.gnu.org/bugzilla/show_bug.cgi?id=115049>.
-MPT_WARNING("GCC 14 is known to cause severe miscompilation of inline functions. OpenMPT has forced optimization settings down to -O1. This comes at a roughly 15% performance cost. It is strongly recommended to stay with GCC 13 for the time being. You will need to edit the source to opt-out of this safety guard.")
-#endif
-#endif
-
 #ifndef MPT_CHECK_CXX_IGNORE_PREPROCESSOR
 #if defined(MPT_COMPILER_QUIRK_MSVC_OLD_PREPROCESSOR)
 MPT_WARNING("C++ preprocessor is not standard conformings.")
@@ -45,13 +38,21 @@ MPT_WARNING("C++ compiler assumes finite math only. This is not standard-conform
 #endif
 
 #ifndef MPT_CHECK_CXX_IGNORE_WARNING_NO_EXCEPTIONS
-#if MPT_COMPILER_GCC
+#if MPT_COMPILER_MSVC
+#if !defined(_CPPUNWIND)
+MPT_WARNING("C++ compiler has no exception support.")
+#endif
+#elif MPT_COMPILER_GCC
 #if (!defined(__EXCEPTIONS) || (__EXCEPTIONS != 1))
 MPT_WARNING("C++ compiler has no exception support.")
 #endif
-#elif MPT_COMPILER_CLANG && !defined(_MSC_VER)
-#if (!defined(__EXCEPTIONS) || (__EXCEPTIONS != 1))
+#elif MPT_COMPILER_CLANG
+#if (!__has_feature(cxx_exceptions) && (!defined(__EXCEPTIONS) || (__EXCEPTIONS != 1)) && !defined(_CPPUNWIND))
 MPT_WARNING("C++ compiler has no exception support.")
+#else
+#if (MPT_CXX_AT_LEAST(20) && !defined(__cpp_exceptions))
+MPT_WARNING("C++ compiler has no exception support.")
+#endif
 #endif
 #endif
 #endif

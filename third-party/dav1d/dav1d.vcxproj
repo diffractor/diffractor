@@ -338,6 +338,7 @@
   <ItemGroup>
     <ClCompile Include="src\cdf.c" />
     <ClCompile Include="src\cpu.c" />
+    <ClCompile Include="src\ctx.c" />
     <ClCompile Include="src\data.c" />
     <ClCompile Include="src\decode.c" />
     <ClCompile Include="src\dequant_tables.c" />

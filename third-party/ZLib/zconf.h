@@ -6,6 +6,8 @@
 #ifndef ZCONF_H
 #define ZCONF_H
 
+//#include "zlib_name_mangling.h"
+
 #if !defined(_WIN32) && defined(__WIN32__)
 #  define _WIN32
 #endif
@@ -41,6 +43,9 @@
  * created by gzip. (Files created by minigzip can still be extracted by
  * gzip.)
  */
+#ifndef MIN_WBITS
+#  define MIN_WBITS   8  /* 256 LZ77 window */
+#endif
 #ifndef MAX_WBITS
 #  define MAX_WBITS   15 /* 32K LZ77 window */
 #endif
@@ -105,6 +110,8 @@
 #  define Z_EXPORTVA
 #endif
 
+/* Conditional exports */
+#define ZNG_CONDEXPORT Z_INTERNAL
 /* For backwards compatibility */
 
 #ifndef ZEXTERN
@@ -129,9 +136,10 @@ typedef int   intf;
 typedef uInt  uIntf;
 typedef uLong uLongf;
 
-typedef void const *voidpc;
-typedef void       *voidpf;
-typedef void       *voidp;
+typedef void const* voidpc;
+typedef void* voidpf;
+typedef void* voidp;
+
 
 typedef unsigned int z_crc_t;
 
@@ -198,13 +206,18 @@ typedef PTRDIFF_TYPE ptrdiff_t;
 #  endif
 #endif
 
+typedef size_t z_size_t;
+
 #if defined(_M_IX86) || defined(_M_X64)
 
 #define X86_AVX_CHUNKSET 1
 #define X86_AVX2 1
 #define X86_AVX2_ADLER32 1
+#define X86_AVX512 1
 #define X86_FEATURES 1
 #define X86_SSE2 1
+#define X86_SSSE3 1
+#define X86_SSE42 1
 #define X86_SSE2_CHUNKSET 1
 #define X86_SSE42_CMP_STR 1
 #define X86_SSE42_CRC_HASH 1

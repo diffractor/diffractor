@@ -47,18 +47,20 @@
 extern "C" {
 #endif
 
-#define ZLIBNG_VERSION "2.0.7"
-#define ZLIBNG_VERNUM 0x2070
+#define ZLIBNG_VERSION "2.2.5"
+#define ZLIBNG_VERNUM 0x020205F0L   /* MMNNRRSM: major minor revision status modified */
 #define ZLIBNG_VER_MAJOR 2
-#define ZLIBNG_VER_MINOR 0
-#define ZLIBNG_VER_REVISION 7
-#define ZLIBNG_VER_SUBREVISION 0
+#define ZLIBNG_VER_MINOR 2
+#define ZLIBNG_VER_REVISION 5
+#define ZLIBNG_VER_STATUS F         /* 0=devel, 1-E=beta, F=Release (DEPRECATED) */
+#define ZLIBNG_VER_STATUSH 0xF      /* Hex values: 0=devel, 1-E=beta, F=Release */
+#define ZLIBNG_VER_MODIFIED 0       /* non-zero if modified externally from zlib-ng */
 
-#define ZLIB_VERSION "1.2.11.zlib-ng"
-#define ZLIB_VERNUM 0x12bf
+#define ZLIB_VERSION "1.3.1.zlib-ng"
+#define ZLIB_VERNUM 0x131f
 #define ZLIB_VER_MAJOR 1
-#define ZLIB_VER_MINOR 2
-#define ZLIB_VER_REVISION 11
+#define ZLIB_VER_MINOR 3
+#define ZLIB_VER_REVISION 1
 #define ZLIB_VER_SUBREVISION 15    /* 15=fork (0xf) */
 
 /*
@@ -216,7 +218,7 @@ typedef gz_header *gz_headerp;
 #define Z_DEFLATED   8
 /* The deflate compression method (the only one supported in this version) */
 
-#define Z_NULL  NULL  /* for compatibility with zlib, was for initializing zalloc, zfree, opaque */
+#define Z_NULL  0  /* for compatibility with zlib, was for initializing zalloc, zfree, opaque */
 
 #define zlib_version zlibVersion()
 /* for compatibility with versions < 1.0.2 */
@@ -234,10 +236,10 @@ Z_EXTERN const char * Z_EXPORT zlibVersion(void);
 /*
 Z_EXTERN int Z_EXPORT deflateInit (z_stream *strm, int level);
 
-     Initializes the internal stream state for compression.  The fields
+      Initializes the internal stream state for compression.  The fields
    zalloc, zfree and opaque must be initialized before by the caller.  If
-   zalloc and zfree are set to NULL, deflateInit updates them to use default
-   allocation functions.
+   zalloc and zfree are set to Z_NULL, deflateInit updates them to use default
+   allocation functions.  total_in, total_out, adler, and msg are initialized.
 
      The compression level must be Z_DEFAULT_COMPRESSION, or between 0 and 9:
    1 gives best speed, 9 gives best compression, 0 gives no compression at all
@@ -327,8 +329,8 @@ Z_EXTERN int Z_EXPORT deflate(z_stream *strm, int flush);
   with the same value of the flush parameter and more output space (updated
   avail_out), until the flush is complete (deflate returns with non-zero
   avail_out).  In the case of a Z_FULL_FLUSH or Z_SYNC_FLUSH, make sure that
-  avail_out is greater than six to avoid repeated flush markers due to
-  avail_out == 0 on return.
+  avail_out is greater than six when the flush marker begins, in order to avoid
+  repeated flush markers upon calling deflate() again when avail_out == 0.
 
     If the parameter flush is set to Z_FINISH, pending input is processed,
   pending output is flushed and deflate returns with Z_STREAM_END if there was
@@ -389,8 +391,9 @@ Z_EXTERN int Z_EXPORT inflateInit (z_stream *strm);
    the caller.  In the current version of inflate, the provided input is not
    read or consumed.  The allocation of a sliding window will be deferred to
    the first call of inflate (if the decompression does not complete on the
-   first call).  If zalloc and zfree are set to NULL, inflateInit updates
-   them to use default allocation functions.
+   first call).  If zalloc and zfree are set to Z_NULL, inflateInit updates
+   them to use default allocation functions.  total_in, total_out, adler, and
+   msg are initialized.
 
      inflateInit returns Z_OK if success, Z_MEM_ERROR if there was not enough
    memory, Z_VERSION_ERROR if the zlib library version is incompatible with the
@@ -700,7 +703,7 @@ Z_EXTERN int Z_EXPORT deflateReset(z_stream *strm);
      This function is equivalent to deflateEnd followed by deflateInit, but
    does not free and reallocate the internal compression state.  The stream
    will leave the compression level and any other attributes that may have been
-   set unchanged.
+   set unchanged.  total_in, total_out, adler, and msg are initialized.
 
      deflateReset returns Z_OK if success, or Z_STREAM_ERROR if the source
    stream state was inconsistent (such as zalloc or state being NULL).
@@ -731,7 +734,7 @@ Z_EXTERN int Z_EXPORT deflateParams(z_stream *strm, int level, int strategy);
    Then no more input data should be provided before the deflateParams() call.
    If this is done, the old level and strategy will be applied to the data
    compressed before deflateParams(), and the new level and strategy will be
-   applied to the the data compressed after deflateParams().
+   applied to the data compressed after deflateParams().
 
      deflateParams returns Z_OK on success, Z_STREAM_ERROR if the source stream
    state was inconsistent or if a parameter was invalid, or Z_BUF_ERROR if
@@ -812,9 +815,10 @@ Z_EXTERN int Z_EXPORT deflateSetHeader(z_stream *strm, gz_headerp head);
    1.3.x) do not support header crc's, and will report that it is a "multi-part
    gzip file" and give up.
 
-     If deflateSetHeader is not used, the default gzip header has text false,
-   the time set to zero, and os set to 255, with no extra, name, or comment
-   fields.  The gzip header is returned to the default state by deflateReset().
+          If deflateSetHeader is not used, the default gzip header has text false,
+   the time set to zero, and os set to the current operating system, with no
+   extra, name, or comment fields.  The gzip header is returned to the default
+   state by deflateReset().
 
      deflateSetHeader returns Z_OK if success, or Z_STREAM_ERROR if the source
    stream state was inconsistent.
@@ -884,7 +888,7 @@ Z_EXTERN int Z_EXPORT inflateSetDictionary(z_stream *strm, const unsigned char *
    deflateSetDictionary).  For raw inflate, this function can be called at any
    time to set the dictionary.  If the provided dictionary is smaller than the
    window and there is already data in the window, then the provided dictionary
-   will amend what's there.  The application must insure that the dictionary
+   will amend what's there.  The application must ensure that the dictionary
    that was used for compression is provided.
 
      inflateSetDictionary returns Z_OK if success, Z_STREAM_ERROR if a
@@ -921,7 +925,7 @@ Z_EXTERN int Z_EXPORT inflateSync(z_stream *strm);
      inflateSync returns Z_OK if a possible full flush point has been found,
    Z_BUF_ERROR if no more input was provided, Z_DATA_ERROR if no flush point
    has been found, or Z_STREAM_ERROR if the stream structure was inconsistent.
-   In the success case, the application may save the current current value of
+   In the success case, the application may save the current value of
    total_in which indicates where valid compressed data was found.  In the
    error case, the application may repeatedly call inflateSync, providing more
    input each time, until success or end of the input data.
@@ -947,6 +951,7 @@ Z_EXTERN int Z_EXPORT inflateReset(z_stream *strm);
      This function is equivalent to inflateEnd followed by inflateInit,
    but does not free and reallocate the internal decompression state.  The
    stream will keep attributes that may have been set by inflateInit2.
+   total_in, total_out, adler, and msg are initialized.
 
      inflateReset returns Z_OK if success, or Z_STREAM_ERROR if the source
    stream state was inconsistent (such as zalloc or state being NULL).
@@ -1729,34 +1734,33 @@ Z_EXTERN unsigned long Z_EXPORT crc32_combine(unsigned long crc1, unsigned long 
 */
 
 /*
-Z_EXTERN void Z_EXPORT crc32_combine_gen(uint32_t op[32], z_off_t len2);
+Z_EXTERN unsigned long Z_EXPORT crc32_combine_gen(z_off_t len2);
 
-     Generate the operator op corresponding to length len2, to be used with
-   crc32_combine_op(). op must have room for 32 z_crc_t values. (32 is the
-   number of bits in the CRC.)
+     Return the operator corresponding to length len2, to be used with
+   crc32_combine_op(). len2 must be non-negative.
 */
 
-Z_EXTERN uint32_t Z_EXPORT crc32_combine_op(uint32_t crc1, uint32_t crc2,
-                                          const uint32_t *op);
+Z_EXTERN unsigned long Z_EXPORT crc32_combine_op(unsigned long crc1, unsigned long crc2,
+    const unsigned long op);
 /*
      Give the same result as crc32_combine(), using op in place of len2. op is
    is generated from len2 by crc32_combine_gen(). This will be faster than
-   crc32_combine() if the generated op is used many times.
+   crc32_combine() if the generated op is used more than once.
 */
 
 
-                        /* various hacks, don't look :) */
+/* various hacks, don't look :) */
 
 /* deflateInit and inflateInit are macros to allow checking the zlib version
  * and the compiler's view of z_stream:
  */
-Z_EXTERN int Z_EXPORT deflateInit_(z_stream *strm, int level, const char *version, int stream_size);
-Z_EXTERN int Z_EXPORT inflateInit_(z_stream *strm, const char *version, int stream_size);
-Z_EXTERN int Z_EXPORT deflateInit2_(z_stream *strm, int  level, int  method, int windowBits, int memLevel,
-                                   int strategy, const char *version, int stream_size);
-Z_EXTERN int Z_EXPORT inflateInit2_(z_stream *strm, int  windowBits, const char *version, int stream_size);
-Z_EXTERN int Z_EXPORT inflateBackInit_(z_stream *strm, int windowBits, unsigned char *window,
-                                      const char *version, int stream_size);
+Z_EXTERN int Z_EXPORT deflateInit_(z_stream* strm, int level, const char* version, int stream_size);
+Z_EXTERN int Z_EXPORT inflateInit_(z_stream* strm, const char* version, int stream_size);
+Z_EXTERN int Z_EXPORT deflateInit2_(z_stream* strm, int  level, int  method, int windowBits, int memLevel,
+    int strategy, const char* version, int stream_size);
+Z_EXTERN int Z_EXPORT inflateInit2_(z_stream* strm, int  windowBits, const char* version, int stream_size);
+Z_EXTERN int Z_EXPORT inflateBackInit_(z_stream* strm, int windowBits, unsigned char* window,
+    const char* version, int stream_size);
 #define deflateInit(strm, level) deflateInit_((strm), (level), ZLIB_VERSION, (int)sizeof(z_stream))
 #define inflateInit(strm) inflateInit_((strm), ZLIB_VERSION, (int)sizeof(z_stream))
 #define deflateInit2(strm, level, method, windowBits, memLevel, strategy) \
@@ -1777,7 +1781,7 @@ Z_EXTERN int Z_EXPORT inflateBackInit_(z_stream *strm, int windowBits, unsigned 
  */
 struct gzFile_s {
     unsigned have;
-    unsigned char *next;
+    unsigned char* next;
     z_off64_t pos;
 };
 Z_EXTERN int Z_EXPORT gzgetc_(gzFile file);  /* backward compatibility */
@@ -1790,13 +1794,13 @@ Z_EXTERN int Z_EXPORT gzgetc_(gzFile file);  /* backward compatibility */
  * without large file support, _LFS64_LARGEFILE must also be true
  */
 #ifdef Z_LARGE64
-   Z_EXTERN gzFile Z_EXPORT gzopen64(const char *, const char *);
-   Z_EXTERN z_off64_t Z_EXPORT gzseek64(gzFile, z_off64_t, int);
-   Z_EXTERN z_off64_t Z_EXPORT gztell64(gzFile);
-   Z_EXTERN z_off64_t Z_EXPORT gzoffset64(gzFile);
-   Z_EXTERN unsigned long Z_EXPORT adler32_combine64(unsigned long, unsigned long, z_off64_t);
-   Z_EXTERN unsigned long Z_EXPORT crc32_combine64(unsigned long, unsigned long, z_off64_t);
-   Z_EXTERN void Z_EXPORT crc32_combine_gen64(uint32_t *op, z_off64_t);
+Z_EXTERN gzFile Z_EXPORT gzopen64(const char*, const char*);
+Z_EXTERN z_off64_t Z_EXPORT gzseek64(gzFile, z_off64_t, int);
+Z_EXTERN z_off64_t Z_EXPORT gztell64(gzFile);
+Z_EXTERN z_off64_t Z_EXPORT gzoffset64(gzFile);
+Z_EXTERN unsigned long Z_EXPORT adler32_combine64(unsigned long, unsigned long, z_off64_t);
+Z_EXTERN unsigned long Z_EXPORT crc32_combine64(unsigned long, unsigned long, z_off64_t);
+Z_EXTERN unsigned long Z_EXPORT crc32_combine_gen64(z_off64_t);
 #endif
 #endif
 
@@ -1809,41 +1813,41 @@ Z_EXTERN int Z_EXPORT gzgetc_(gzFile file);  /* backward compatibility */
 #    define crc32_combine crc32_combine64
 #    define crc32_combine_gen crc32_combine_gen64
 #  ifndef Z_LARGE64
-     Z_EXTERN gzFile Z_EXPORT gzopen64(const char *, const char *);
-     Z_EXTERN z_off_t Z_EXPORT gzseek64(gzFile, z_off_t, int);
-     Z_EXTERN z_off_t Z_EXPORT gztell64(gzFile);
-     Z_EXTERN z_off_t Z_EXPORT gzoffset64(gzFile);
-     Z_EXTERN unsigned long Z_EXPORT adler32_combine64(unsigned long, unsigned long, z_off_t);
-     Z_EXTERN unsigned long Z_EXPORT crc32_combine64(unsigned long, unsigned long, z_off_t);
-     Z_EXTERN void Z_EXPORT crc32_combine_gen64(uint32_t *op, z_off64_t);
+Z_EXTERN gzFile Z_EXPORT gzopen64(const char*, const char*);
+Z_EXTERN z_off_t Z_EXPORT gzseek64(gzFile, z_off_t, int);
+Z_EXTERN z_off_t Z_EXPORT gztell64(gzFile);
+Z_EXTERN z_off_t Z_EXPORT gzoffset64(gzFile);
+Z_EXTERN unsigned long Z_EXPORT adler32_combine64(unsigned long, unsigned long, z_off_t);
+Z_EXTERN unsigned long Z_EXPORT crc32_combine64(unsigned long, unsigned long, z_off_t);
+Z_EXTERN unsigned long Z_EXPORT crc32_combine_gen64(z_off64_t);
 #  endif
 #else
 #  ifndef Z_SOLO
-   Z_EXTERN gzFile Z_EXPORT gzopen(const char *, const char *);
-   Z_EXTERN z_off_t Z_EXPORT gzseek(gzFile, z_off_t, int);
-   Z_EXTERN z_off_t Z_EXPORT gztell(gzFile);
-   Z_EXTERN z_off_t Z_EXPORT gzoffset(gzFile);
-#  endif   
-   Z_EXTERN unsigned long Z_EXPORT adler32_combine(unsigned long, unsigned long, z_off_t);
-   Z_EXTERN unsigned long Z_EXPORT crc32_combine(unsigned long, unsigned long, z_off_t);
-   Z_EXTERN void Z_EXPORT crc32_combine_gen(uint32_t *op, z_off_t);
+Z_EXTERN gzFile Z_EXPORT gzopen(const char*, const char*);
+Z_EXTERN z_off_t Z_EXPORT gzseek(gzFile, z_off_t, int);
+Z_EXTERN z_off_t Z_EXPORT gztell(gzFile);
+Z_EXTERN z_off_t Z_EXPORT gzoffset(gzFile);
+#  endif
+Z_EXTERN unsigned long Z_EXPORT adler32_combine(unsigned long, unsigned long, z_off_t);
+Z_EXTERN unsigned long Z_EXPORT crc32_combine(unsigned long, unsigned long, z_off_t);
+Z_EXTERN unsigned long Z_EXPORT crc32_combine_gen(z_off_t);
 #endif
 
 /* undocumented functions */
-Z_EXTERN const char     * Z_EXPORT zError           (int);
-Z_EXTERN int              Z_EXPORT inflateSyncPoint (z_stream *);
-Z_EXTERN const uint32_t * Z_EXPORT get_crc_table    (void);
-Z_EXTERN int              Z_EXPORT inflateUndermine (z_stream *, int);
-Z_EXTERN int              Z_EXPORT inflateValidate  (z_stream *, int);
-Z_EXTERN unsigned long    Z_EXPORT inflateCodesUsed (z_stream *);
-Z_EXTERN int              Z_EXPORT inflateResetKeep (z_stream *);
-Z_EXTERN int              Z_EXPORT deflateResetKeep (z_stream *);
+Z_EXTERN const char* Z_EXPORT zError(int);
+Z_EXTERN int              Z_EXPORT inflateSyncPoint(z_stream*);
+Z_EXTERN const uint32_t* Z_EXPORT get_crc_table(void);
+Z_EXTERN int              Z_EXPORT inflateUndermine(z_stream*, int);
+Z_EXTERN int              Z_EXPORT inflateValidate(z_stream*, int);
+Z_EXTERN unsigned long    Z_EXPORT inflateCodesUsed(z_stream*);
+Z_EXTERN int              Z_EXPORT inflateResetKeep(z_stream*);
+Z_EXTERN int              Z_EXPORT deflateResetKeep(z_stream*);
 
 #ifndef Z_SOLO
 #if defined(_WIN32)
-    Z_EXTERN gzFile Z_EXPORT gzopen_w(const wchar_t *path, const char *mode);
+Z_EXTERN gzFile Z_EXPORT gzopen_w(const wchar_t* path, const char* mode);
 #endif
-Z_EXTERN int Z_EXPORTVA gzvprintf(gzFile file, const char *format, va_list va);
+Z_EXTERN int Z_EXPORTVA gzvprintf(gzFile file, const char* format, va_list va);
 #endif
 
 #ifdef __cplusplus

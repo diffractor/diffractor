@@ -24,12 +24,12 @@ Diffractor has a built-in test runner. If the application is started from Visual
 - [brotli](https://github.com/google/brotli) 1.1.0 
 - [bzip2](https://sourceware.org/bzip2/) 1.0.8
 - [dng-sdk](https://helpx.adobe.com/camera-raw/digital-negative.html) 1.7.1
-- [dav1d](https://code.videolan.org/videolan/dav1d) 1.4.3
-- [expat](https://libexpat.github.io/) 2.6.2
+- [dav1d](https://code.videolan.org/videolan/dav1d) 1.5.1
+- [expat](https://libexpat.github.io/) 2.7.1
 - [ffmpeg](https://ffmpeg.org/) main
-- [highway](https://github.com/google/highway) 1.1.0
+- [highway](https://github.com/google/highway) 1.3.0
 - [hunspell](https://github.com/hunspell/hunspell) 1.7.2
-- [libarchive](https://github.com/libarchive/libarchive) 3.7.4
+- [libarchive](https://github.com/libarchive/libarchive) 3.8.1
 - [libde265](https://github.com/strukturag/libde265) 1.0.15
 - [libebml](https://github.com/Matroska-Org/libebml) 1.4.5
 - [libexif](https://github.com/libexif/libexif) 0.6.25
@@ -37,8 +37,8 @@ Diffractor has a built-in test runner. If the application is started from Visual
 - [libjpeg-turbo](https://github.com/libjpeg-turbo/libjpeg-turbo) 3.1.2
 - [liblzma](https://github.com/tukaani-project/xz) 5.4.6
 - [libmatroska](https://github.com/Matroska-Org/libmatroska) 1.7.1
-- [libopenmpt](https://lib.openmpt.org) 0.7.7
-- [LibPng](http://www.libpng.org/pub/png/libpng.html) 1.6.43
+- [libopenmpt](https://lib.openmpt.org) 0.8.3
+- [LibPng](http://www.libpng.org/pub/png/libpng.html) 1.6.50
 - [LibRaw](https://www.libraw.org) 0.21.2
 - [libwebp](https://github.com/webmproject/libwebp) 1.4.0
 - [libjxl](https://github.com/libjxl/libjxl) 0.10.3
@@ -48,4 +48,4 @@ Diffractor has a built-in test runner. If the application is started from Visual
 - [skcms](https://skia.googlesource.com/skcms) main
 - [sqlite](https://www.sqlite.org/index.html) 3.50.4
 - [utf-cpp](https://github.com/nemtrif/utfcpp) 4.0.6
-- [zlib-ng](https://github.com/zlib-ng/zlib-ng) 2.0.7
+- [zlib-ng](https://github.com/zlib-ng/zlib-ng) 2.2.5

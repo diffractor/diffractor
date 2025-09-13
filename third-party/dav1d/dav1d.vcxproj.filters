@@ -311,6 +311,9 @@
     <ClCompile Include="src\tmpl16b.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\ctx.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="src\dav1d.rc.in" />

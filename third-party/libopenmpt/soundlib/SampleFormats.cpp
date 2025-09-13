@@ -141,7 +141,7 @@ bool CSoundFile::ReadSampleAsInstrument(INSTRUMENTINDEX nInstr, FileReader &file
 	DestroyInstrument(nInstr, doNoDeleteAssociatedSamples);
 	Instruments[nInstr] = pIns;
 
-#if defined(MPT_ENABLE_FILEIO) && defined(MPT_EXTERNAL_SAMPLES)
+#if defined(MPT_EXTERNAL_SAMPLES)
 	SetSamplePath(nSample, file.GetOptionalFileName().value_or(P_("")));
 #endif
 
@@ -559,7 +559,7 @@ bool CSoundFile::ReadWAVSample(SAMPLEINDEX nSample, FileReader &file, bool mayNo
 bool CSoundFile::SaveWAVSample(SAMPLEINDEX nSample, std::ostream &f) const
 {
 	const ModSample &sample = Samples[nSample];
-	if(sample.uFlags[CHN_ADLIB])
+	if(sample.uFlags[CHN_ADLIB] || !sample.HasSampleData())
 		return false;
 
 	mpt::IO::OFile<std::ostream> ff(f);
@@ -623,7 +623,7 @@ struct Wave64Chunk
 {
 	Wave64ChunkHeader header;
 
-	FileReader::off_t GetLength() const
+	FileReader::pos_type GetLength() const
 	{
 		uint64 length = header.Size;
 		if(length < sizeof(Wave64ChunkHeader))
@@ -633,7 +633,7 @@ struct Wave64Chunk
 		{
 			length -= sizeof(Wave64ChunkHeader);
 		}
-		return mpt::saturate_cast<FileReader::off_t>(length);
+		return mpt::saturate_cast<FileReader::pos_type>(length);
 	}
 
 	mpt::UUID GetID() const
@@ -657,7 +657,7 @@ static void Wave64TagFromLISTINFO(mpt::ustring & dst, uint16 codePage, const Fil
 		return;
 	}
 	std::string str;
-	textChunk.ReadString<mpt::String::maybeNullTerminated>(str, textChunk.GetLength());
+	textChunk.ReadString<mpt::String::maybeNullTerminated>(str, mpt::saturate_cast<std::size_t>(textChunk.GetLength()));
 	str = mpt::replace(str, std::string("\r\n"), std::string("\n"));
 	str = mpt::replace(str, std::string("\r"), std::string("\n"));
 	dst = mpt::ToUnicode(codePage, mpt::Charset::Windows1252, str);
@@ -843,6 +843,8 @@ bool CSoundFile::ReadW64Sample(SAMPLEINDEX nSample, FileReader &file, bool mayNo
 bool CSoundFile::SaveRAWSample(SAMPLEINDEX nSample, std::ostream &f) const
 {
 	const ModSample &sample = Samples[nSample];
+	if(!sample.HasSampleData())
+		return false;
 	SampleIO(
 		sample.uFlags[CHN_16BIT] ? SampleIO::_16bit : SampleIO::_8bit,
 		sample.uFlags[CHN_STEREO] ? SampleIO::stereoInterleaved : SampleIO::mono,
@@ -1188,6 +1190,8 @@ bool CSoundFile::ReadS3ISample(SAMPLEINDEX nSample, FileReader &file)
 bool CSoundFile::SaveS3ISample(SAMPLEINDEX smp, std::ostream &f) const
 {
 	const ModSample &sample = Samples[smp];
+	if(!sample.uFlags[CHN_ADLIB] && !sample.HasSampleData())
+		return false;
 	S3MSampleHeader sampleHeader{};
 	SmpLength length = sampleHeader.ConvertToS3M(sample);
 	mpt::String::WriteBuf(mpt::String::nullTerminated, sampleHeader.name) = m_szNames[smp];
@@ -1337,7 +1341,7 @@ bool CSoundFile::ReadXIInstrument(INSTRUMENTINDEX nInstr, FileReader &file)
 	}
 
 	// Read MPT crap
-	ReadExtendedInstrumentProperties(pIns, file);
+	LoadExtendedInstrumentProperties(mpt::as_span(&Instruments[nInstr], 1), file);
 	pIns->Convert(MOD_TYPE_XM, GetType());
 	pIns->Sanitize(GetType());
 	return true;
@@ -1356,9 +1360,11 @@ bool CSoundFile::SaveXIInstrument(INSTRUMENTINDEX nInstr, std::ostream &f) const
 
 	// Create file header
 	XIInstrumentHeader header;
-	header.ConvertToXM(*pIns, false);
+	const auto sampleList = header.ConvertToXM(*pIns, false);
+	const auto &samples = sampleList.samples;
+	if(sampleList.tooManySamples)
+		AddToLog(LogInformation, MPT_UFORMAT("This instrument references too many samples, only the first {} will be exported.")(samples.size()));
 
-	const std::vector<SAMPLEINDEX> samples = header.instrument.GetSampleList(*pIns, false);
 	if(samples.size() > 0 && samples[0] <= GetNumSamples())
 	{
 		// Copy over auto-vibrato settings of first sample
@@ -1396,9 +1402,7 @@ bool CSoundFile::SaveXIInstrument(INSTRUMENTINDEX nInstr, std::ostream &f) const
 		}
 	}
 
-	// Write 'MPTX' extension tag
-	mpt::IO::WriteText(f, "XTPM");
-	WriteInstrumentHeaderStructOrField(pIns, f);	// Write full extended header.
+	SaveExtendedInstrumentProperties(nInstr, MOD_TYPE_XM, f);
 
 	return true;
 }
@@ -1428,7 +1432,7 @@ bool CSoundFile::ReadXISample(SAMPLEINDEX nSample, FileReader &file)
 	}
 
 	uint16 numSamples = fileHeader.numSamples;
-	FileReader::off_t samplePos = sizeof(XIInstrumentHeader) + numSamples * sizeof(XMSample);
+	FileReader::pos_type samplePos = sizeof(XIInstrumentHeader) + numSamples * sizeof(XMSample);
 	// Preferably read the middle-C sample
 	auto sample = fileHeader.instrument.sampleMap[48];
 	if(sample >= fileHeader.numSamples)
@@ -1501,7 +1505,7 @@ struct CAFChunk
 
 	CAFChunkHeader header;
 
-	FileReader::off_t GetLength() const
+	FileReader::pos_type GetLength() const
 	{
 		int64 length = header.mChunkSize;
 		if(length == -1)
@@ -1512,7 +1516,7 @@ struct CAFChunk
 		{
 			length = std::numeric_limits<int64>::max();  // heuristic
 		}
-		return mpt::saturate_cast<FileReader::off_t>(length);
+		return mpt::saturate_cast<FileReader::pos_type>(length);
 	}
 
 	ChunkIdentifiers GetID() const
@@ -1612,11 +1616,11 @@ bool CSoundFile::ReadCAFSample(SAMPLEINDEX nSample, FileReader &file, bool mayNo
 		return false;
 	}
 
-	if(!mpt::in_range<uint32>(mpt::saturate_round<int64>(audioFormat.mSampleRate)))
+	if(!mpt::in_range<uint32>(mpt::saturate_round<int64>(audioFormat.mSampleRate.get())))
 	{
 		return false;
 	}
-	uint32 sampleRate = static_cast<uint32>(mpt::saturate_round<int64>(audioFormat.mSampleRate));
+	uint32 sampleRate = static_cast<uint32>(mpt::saturate_round<int64>(audioFormat.mSampleRate.get()));
 	if(sampleRate <= 0)
 	{
 		return false;
@@ -1690,9 +1694,9 @@ bool CSoundFile::ReadCAFSample(SAMPLEINDEX nSample, FileReader &file, bool mayNo
 			{
 				uint32 stringID = stringsChunk.ReadUint32BE();
 				int64 offset = stringsChunk.ReadIntBE<int64>();
-				if(offset >= 0 && mpt::in_range<FileReader::off_t>(offset))
+				if(offset >= 0 && mpt::in_range<FileReader::pos_type>(offset))
 				{
-					stringData.Seek(mpt::saturate_cast<FileReader::off_t>(offset));
+					stringData.Seek(mpt::saturate_cast<FileReader::pos_type>(offset));
 					std::string str;
 					if(stringData.ReadNullString(str))
 					{
@@ -2058,7 +2062,7 @@ bool CSoundFile::ReadAIFFSample(SAMPLEINDEX nSample, FileReader &file, bool mayN
 	FileReader nameChunk(chunks.GetChunk(AIFFChunk::idNAME));
 	if(nameChunk.IsValid())
 	{
-		nameChunk.ReadString<mpt::String::spacePadded>(m_szNames[nSample], nameChunk.GetLength());
+		nameChunk.ReadString<mpt::String::spacePadded>(m_szNames[nSample], mpt::saturate_cast<std::size_t>(nameChunk.GetLength()));
 	} else
 	{
 		m_szNames[nSample] = "";
@@ -2370,7 +2374,7 @@ bool CSoundFile::ReadITIInstrument(INSTRUMENTINDEX nInstr, FileReader &file)
 	// In order to properly compute the position, in file, of eventual extended settings
 	// such as "attack" we need to keep the "real" size of the last sample as those extra
 	// setting will follow this sample in the file
-	FileReader::off_t extraOffset = file.GetPosition();
+	FileReader::pos_type extraOffset = file.GetPosition();
 
 	// Reading Samples
 	std::vector<SAMPLEINDEX> samplemap(nsamples, 0);
@@ -2379,7 +2383,7 @@ bool CSoundFile::ReadITIInstrument(INSTRUMENTINDEX nInstr, FileReader &file)
 		smp = GetNextFreeSample(nInstr, smp + 1);
 		if(smp == SAMPLEINDEX_INVALID) break;
 		samplemap[i] = smp;
-		const FileReader::off_t offset = file.GetPosition();
+		const FileReader::pos_type offset = file.GetPosition();
 		if(!ReadITSSample(smp, file, false))
 			smp--;
 		extraOffset = std::max(extraOffset, file.GetPosition());
@@ -2399,7 +2403,7 @@ bool CSoundFile::ReadITIInstrument(INSTRUMENTINDEX nInstr, FileReader &file)
 	if(file.Seek(extraOffset))
 	{
 		// Read MPT crap
-		ReadExtendedInstrumentProperties(pIns, file);
+		LoadExtendedInstrumentProperties(mpt::as_span(&Instruments[nInstr], 1), file);
 	}
 
 	pIns->Convert(MOD_TYPE_IT, GetType());
@@ -2423,7 +2427,8 @@ bool CSoundFile::SaveITIInstrument(INSTRUMENTINDEX nInstr, std::ostream &f, cons
 	// Create sample assignment table
 	std::vector<SAMPLEINDEX> smptable;
 	std::vector<uint8> smpmap(GetNumSamples(), 0);
-	for(size_t i = 0; i < NOTE_MAX; i++)
+	static_assert(NOTE_MAX >= 120);
+	for(size_t i = 0; i < 120; i++)
 	{
 		const SAMPLEINDEX smp = pIns->Keyboard[i];
 		if(smp && smp <= GetNumSamples())
@@ -2484,9 +2489,7 @@ bool CSoundFile::SaveITIInstrument(INSTRUMENTINDEX nInstr, std::ostream &f, cons
 	}
 
 	mpt::IO::SeekEnd(f);
-	// Write 'MPTX' extension tag
-	mpt::IO::WriteRaw(f, "XTPM", 4);
-	WriteInstrumentHeaderStructOrField(pIns, f);	// Write full extended header.
+	SaveExtendedInstrumentProperties(nInstr, MOD_TYPE_MPT, f);
 
 	return true;
 }
@@ -2560,7 +2563,7 @@ struct IFFSampleHeader
 MPT_BINARY_STRUCT(IFFSampleHeader, 20)
 
 
-bool CSoundFile::ReadIFFSample(SAMPLEINDEX nSample, FileReader &file, bool allowLittleEndian)
+bool CSoundFile::ReadIFFSample(SAMPLEINDEX nSample, FileReader &file, bool allowLittleEndian, uint8 octave)
 {
 	file.Rewind();
 
@@ -2651,6 +2654,18 @@ bool CSoundFile::ReadIFFSample(SAMPLEINDEX nSample, FileReader &file, bool allow
 		sampleRate = sampleHeader.samplesPerSec;
 		volume     = sampleHeader.volume;
 		numSamples = mpt::saturate_cast<SmpLength>(sampleData.GetLength() / bytesPerFrame);
+
+		if(octave < sampleHeader.octave)
+		{
+			numSamples = sampleHeader.oneShotHiSamples + sampleHeader.repeatHiSamples;
+			for(uint8 o = 0; o < octave; o++)
+			{
+				sampleData.Skip(numSamples * bytesPerSample * numChannels);
+				numSamples *= 2;
+				loopStart *= 2;
+				loopLength *= 2;
+			}
+		}
 	}
 
 	DestroySampleThreadsafe(nSample);
@@ -2674,7 +2689,7 @@ bool CSoundFile::ReadIFFSample(SAMPLEINDEX nSample, FileReader &file, bool allow
 
 	FileReader nameChunk = chunks.GetChunk(IFFChunk::idNAME);
 	if(nameChunk.IsValid())
-		nameChunk.ReadString<mpt::String::maybeNullTerminated>(m_szNames[nSample], nameChunk.GetLength());
+		nameChunk.ReadString<mpt::String::maybeNullTerminated>(m_szNames[nSample], mpt::saturate_cast<std::size_t>(nameChunk.GetLength()));
 	else
 		m_szNames[nSample] = "";
 
@@ -2762,7 +2777,7 @@ static uint32 WriteIFFStringChunk(std::ostream &f, IFFChunk::ChunkIdentifiers id
 bool CSoundFile::SaveIFFSample(SAMPLEINDEX smp, std::ostream &f) const
 {
 	const ModSample &sample = Samples[smp];
-	if(sample.uFlags[CHN_ADLIB])
+	if(sample.uFlags[CHN_ADLIB] || !sample.HasSampleData())
 		return false;
 
 	mpt::IO::OFile<std::ostream> ff(f);
@@ -2809,7 +2824,7 @@ bool CSoundFile::SaveIFFSample(SAMPLEINDEX smp, std::ostream &f) const
 		chunk.length = 4;
 		mpt::IO::Write(f, chunk);
 		mpt::IO::WriteIntBE<uint32>(f, 6);
-		totalSize += sizeof(chunk) + chunk.length;
+		totalSize += mpt::saturate_cast<uint32>(sizeof(chunk) + chunk.length);
 	}
 
 	totalSize += WriteIFFStringChunk(f, IFFChunk::idNAME, mpt::ToCharset(mpt::Charset::Amiga, GetCharsetInternal(), m_szNames[smp]));
@@ -2825,7 +2840,7 @@ bool CSoundFile::SaveIFFSample(SAMPLEINDEX smp, std::ostream &f) const
 	chunk.length = mpt::saturate_cast<uint32>(sampleIO.CalculateEncodedSize(sample.nLength));
 	mpt::IO::Write(f, chunk);
 	sampleIO.WriteSample(f, sample);
-	totalSize += sizeof(chunk) + chunk.length;
+	totalSize += mpt::saturate_cast<uint32>(sizeof(chunk) + chunk.length);
 	if(totalSize % 2u)
 	{
 		mpt::IO::WriteIntBE<uint8>(f, 0);

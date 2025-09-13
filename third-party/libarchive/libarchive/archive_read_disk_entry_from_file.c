@@ -26,7 +26,6 @@
  */
 
 #include "archive_platform.h"
-__FBSDID("$FreeBSD");
 
 /* This is the tree-walking code for POSIX systems. */
 #if !defined(_WIN32) || defined(__CYGWIN__)
@@ -303,9 +302,11 @@ archive_read_disk_entry_from_file(struct archive *_a,
 		if (r1 < r)
 			r = r1;
 	}
-	r1 = setup_sparse(a, entry, &fd);
-	if (r1 < r)
-		r = r1;
+	if ((a->flags & ARCHIVE_READDISK_NO_SPARSE) == 0) {
+		r1 = setup_sparse(a, entry, &fd);
+		if (r1 < r)
+			r = r1;
+	}
 
 	/* If we opened the file earlier in this function, close it. */
 	if (initial_fd != fd)
@@ -519,6 +520,7 @@ setup_xattr(struct archive_read_disk *a,
 	if (size == -1) {
 		archive_set_error(&a->archive, errno,
 		    "Couldn't read extended attribute");
+		free(value);
 		return (ARCHIVE_WARN);
 	}
 
@@ -886,7 +888,7 @@ setup_sparse_fiemap(struct archive_read_disk *a,
 	count = (sizeof(buff) - sizeof(*fm))/sizeof(*fe);
 	fm = (struct fiemap *)buff;
 	fm->fm_start = 0;
-	fm->fm_length = ~0ULL;;
+	fm->fm_length = ~0ULL;
 	fm->fm_flags = FIEMAP_FLAG_SYNC;
 	fm->fm_extent_count = count;
 	do_fiemap = 1;

@@ -52,6 +52,7 @@
     <ClCompile Include=".\hwy\per_target.cc" />
     <ClCompile Include=".\hwy\print.cc" />
     <ClCompile Include=".\hwy\targets.cc" />
+    <ClCompile Include="hwy\abort.cc" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include=".\hwy\aligned_allocator.h" />
@@ -88,6 +89,7 @@
     <ClInclude Include=".\hwy\ops\x86_256-inl.h" />
     <ClInclude Include=".\hwy\ops\x86_512-inl.h" />
     <ClInclude Include=".\hwy\targets.h" />
+    <ClInclude Include="hwy\abort.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>

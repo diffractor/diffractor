@@ -21,8 +21,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * $FreeBSD$
  */
 
 #ifndef ARCHIVE_ENTRY_LOCALE_H_INCLUDED
@@ -89,4 +87,4 @@ int _archive_entry_copy_symlink_l(struct archive_entry *,
 int _archive_entry_copy_uname_l(struct archive_entry *,
     const char *, size_t, struct archive_string_conv *);
 
-#endif /* ARCHIVE_ENTRY_LOCALE_H_INCLUDED */
+#endif /* !ARCHIVE_ENTRY_LOCALE_H_INCLUDED */

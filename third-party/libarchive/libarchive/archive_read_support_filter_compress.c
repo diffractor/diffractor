@@ -64,7 +64,6 @@
 
 
 #include "archive_platform.h"
-__FBSDID("$FreeBSD$");
 
 #ifdef HAVE_ERRNO_H
 #include <errno.h>
@@ -133,7 +132,6 @@ struct private_data {
 
 static int	compress_bidder_bid(struct archive_read_filter_bidder *, struct archive_read_filter *);
 static int	compress_bidder_init(struct archive_read_filter *);
-static int	compress_bidder_free(struct archive_read_filter_bidder *);
 
 static ssize_t	compress_filter_read(struct archive_read_filter *, const void **);
 static int	compress_filter_close(struct archive_read_filter *);
@@ -150,25 +148,19 @@ archive_read_support_compression_compress(struct archive *a)
 }
 #endif
 
+static const struct archive_read_filter_bidder_vtable
+compress_bidder_vtable = {
+	.bid = compress_bidder_bid,
+	.init = compress_bidder_init,
+};
+
 int
 archive_read_support_filter_compress(struct archive *_a)
 {
 	struct archive_read *a = (struct archive_read *)_a;
-	struct archive_read_filter_bidder *bidder;
 
-	archive_check_magic(_a, ARCHIVE_READ_MAGIC,
-	    ARCHIVE_STATE_NEW, "archive_read_support_filter_compress");
-
-	if (__archive_read_get_bidder(a, &bidder) != ARCHIVE_OK)
-		return (ARCHIVE_FATAL);
-
-	bidder->data = NULL;
-	bidder->name = "compress (.Z)";
-	bidder->bid = compress_bidder_bid;
-	bidder->init = compress_bidder_init;
-	bidder->options = NULL;
-	bidder->free = compress_bidder_free;
-	return (ARCHIVE_OK);
+	return __archive_read_register_bidder(a, NULL, "compress (.Z)",
+			&compress_bidder_vtable);
 }
 
 /*
@@ -205,6 +197,12 @@ compress_bidder_bid(struct archive_read_filter_bidder *self,
 	return (bits_checked);
 }
 
+static const struct archive_read_filter_vtable
+compress_reader_vtable = {
+	.read = compress_filter_read,
+	.close = compress_filter_close,
+};
+
 /*
  * Setup the callbacks.
  */
@@ -219,7 +217,7 @@ compress_bidder_init(struct archive_read_filter *self)
 	self->code = ARCHIVE_FILTER_COMPRESS;
 	self->name = "compress (.Z)";
 
-	state = (struct private_data *)calloc(sizeof(*state), 1);
+	state = calloc(1, sizeof(*state));
 	out_block = malloc(out_block_size);
 	if (state == NULL || out_block == NULL) {
 		free(out_block);
@@ -233,9 +231,7 @@ compress_bidder_init(struct archive_read_filter *self)
 	self->data = state;
 	state->out_block_size = out_block_size;
 	state->out_block = out_block;
-	self->read = compress_filter_read;
-	self->skip = NULL; /* not supported */
-	self->close = compress_filter_close;
+	self->vtable = &compress_reader_vtable;
 
 	/* XXX MOVE THE FOLLOWING OUT OF INIT() XXX */
 
@@ -306,16 +302,6 @@ compress_filter_read(struct archive_read_filter *self, const void **pblock)
 }
 
 /*
- * Clean up the reader.
- */
-static int
-compress_bidder_free(struct archive_read_filter_bidder *self)
-{
-	self->data = NULL;
-	return (ARCHIVE_OK);
-}
-
-/*
  * Close and release the filter.
  */
 static int
@@ -342,6 +328,7 @@ next_code(struct archive_read_filter *self)
 	static int debug_buff[1024];
 	static unsigned debug_index;
 
+again:
 	code = newcode = getbits(self, state->bits);
 	if (code < 0)
 		return (code);
@@ -374,7 +361,7 @@ next_code(struct archive_read_filter *self)
 		state->section_end_code = (1 << state->bits) - 1;
 		state->free_ent = 257;
 		state->oldcode = -1;
-		return (next_code(self));
+		goto again;
 	}
 
 	if (code > state->free_ent

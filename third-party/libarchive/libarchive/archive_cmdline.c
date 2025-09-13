@@ -25,8 +25,6 @@
 
 #include "archive_platform.h"
 
-__FBSDID("$FreeBSD$");
-
 #ifdef HAVE_STRING_H
 #  include <string.h>
 #endif
@@ -73,7 +71,7 @@ get_argument(struct archive_string *as, const char *p)
 	archive_string_empty(as);
 
 	/* Skip beginning space characters. */
-	while (*s != '\0' && *s == ' ')
+	while (*s == ' ')
 		s++;
 	/* Copy non-space characters. */
 	while (*s != '\0' && *s != ' ') {

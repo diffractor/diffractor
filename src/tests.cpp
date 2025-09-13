@@ -2847,7 +2847,7 @@ static void should_encrypt_password()
 	}
 
 	// Check for crash based on bad data
-	constexpr std::vector<uint8_t> empty;
+	std::vector<uint8_t> empty;
 	crypto::decrypt(empty, password);
 
 	std::vector<uint8_t> invalid;

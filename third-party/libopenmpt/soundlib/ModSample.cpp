@@ -9,9 +9,10 @@
 
 
 #include "stdafx.h"
-#include "Sndfile.h"
 #include "ModSample.h"
+#include "AudioCriticalSection.h"
 #include "modsmp_ctrl.h"
+#include "Sndfile.h"
 #include "mpt/base/numbers.hpp"
 
 #include <cmath>
@@ -41,6 +42,13 @@ void ModSample::Convert(MODTYPE fromType, MODTYPE toType)
 			nC5Speed = Util::muldivr_unsigned(nC5Speed, 8363, 8287);
 		FrequencyToTranspose();
 	}
+	if(toType == MOD_TYPE_MOD)
+	{
+		if(RelativeTone == -1 && nFineTune == 0)
+			nFineTune = -128;
+		RelativeTone = 0;
+		nFineTune &= ~0x0F;
+	}
 
 	// No ping-pong loop, panning and auto-vibrato for MOD / S3M samples
 	if(toType & (MOD_TYPE_MOD | MOD_TYPE_S3M))
@@ -51,8 +59,6 @@ void ModSample::Convert(MODTYPE fromType, MODTYPE toType)
 		nVibRate = 0;
 		nVibSweep = 0;
 		nVibType = VIB_SINE;
-
-		RelativeTone = 0;
 	}
 
 	// No global volume / sustain loops for MOD/S3M/XM
@@ -84,7 +90,6 @@ void ModSample::Convert(MODTYPE fromType, MODTYPE toType)
 		LimitMax(nVibDepth, uint8(15));
 		LimitMax(nVibRate, uint8(63));
 	}
-
 
 	// Autovibrato sweep setting is inverse in XM (0 = "no sweep") and IT (0 = "no vibrato")
 	if(((fromType & MOD_TYPE_XM) && (toType & (MOD_TYPE_IT | MOD_TYPE_MPT))) || ((toType & MOD_TYPE_XM) && (fromType & (MOD_TYPE_IT | MOD_TYPE_MPT))))
@@ -150,7 +155,16 @@ void ModSample::Initialize(MODTYPE type)
 	rootNote = 0;
 	filename = "";
 
-	RemoveAllCuePoints();
+	if(type & (MOD_TYPE_DBM | MOD_TYPE_IMF | MOD_TYPE_MED))
+	{
+		for(SmpLength i = 1; i < 10; i++)
+		{
+			cues[i - 1] = Util::muldiv_unsigned(i, 255 * 256, 9);
+		}
+	} else
+	{
+		RemoveAllCuePoints();
+	}
 }
 
 
@@ -186,7 +200,27 @@ bool ModSample::CopyWaveform(const ModSample &smpFrom)
 		return true;
 	}
 	return false;
+}
 
+
+// Replace waveform with given data, keeping the currently chosen format of the sample slot.
+void ModSample::ReplaceWaveform(void *newWaveform, const SmpLength newLength, CSoundFile &sndFile)
+{
+	auto oldWaveform = samplev();
+	FlagSet<ChannelFlags> setFlags, resetFlags;
+
+	setFlags.set(CHN_16BIT, uFlags[CHN_16BIT]);
+	resetFlags.set(CHN_16BIT, !uFlags[CHN_16BIT]);
+
+	setFlags.set(CHN_STEREO, uFlags[CHN_STEREO]);
+	resetFlags.set(CHN_STEREO, !uFlags[CHN_STEREO]);
+
+	CriticalSection cs;
+
+	ctrlChn::ReplaceSample(sndFile, *this, newWaveform, newLength, setFlags, resetFlags);
+	pData.pSample = newWaveform;
+	nLength = newLength;
+	FreeSample(oldWaveform);
 }
 
 
@@ -438,13 +472,67 @@ void ModSample::PrecomputeLoops(CSoundFile &sndFile, bool updateChannels)
 	// Update channels with possibly changed loop values
 	if(updateChannels)
 	{
-		ctrlSmp::UpdateLoopPoints(*this, sndFile);
+		UpdateLoopPointsInActiveChannels(sndFile);
 	}
 
 	if(GetElementarySampleSize() == 2)
 		PrecomputeLoopsImpl<int16>(*this, sndFile);
 	else if(GetElementarySampleSize() == 1)
 		PrecomputeLoopsImpl<int8>(*this, sndFile);
+}
+
+
+// Propagate loop point changes to player
+bool ModSample::UpdateLoopPointsInActiveChannels(CSoundFile &sndFile)
+{
+	if(!HasSampleData())
+		return false;
+
+	CriticalSection cs;
+
+	// Update channels with new loop values
+	for(auto &chn : sndFile.m_PlayState.Chn)
+	{
+		if(chn.pModSample != this || chn.nLength == 0)
+			continue;
+
+		bool looped = false, bidi = false;
+		if(nSustainStart < nSustainEnd && nSustainEnd <= nLength && uFlags[CHN_SUSTAINLOOP] && !chn.dwFlags[CHN_KEYOFF])
+		{
+			// Sustain loop is active
+			chn.nLoopStart = nSustainStart;
+			chn.nLoopEnd = nSustainEnd;
+			chn.nLength = nSustainEnd;
+			looped = true;
+			bidi = uFlags[CHN_PINGPONGSUSTAIN];
+		} else if(nLoopStart < nLoopEnd && nLoopEnd <= nLength && uFlags[CHN_LOOP])
+		{
+			// Normal loop is active
+			chn.nLoopStart = nLoopStart;
+			chn.nLoopEnd = nLoopEnd;
+			chn.nLength = nLoopEnd;
+			looped = true;
+			bidi = uFlags[CHN_PINGPONGLOOP];
+		}
+		chn.dwFlags.set(CHN_LOOP, looped);
+		chn.dwFlags.set(CHN_PINGPONGLOOP, looped && bidi);
+
+		if(chn.position.GetUInt() > chn.nLength)
+		{
+			chn.position.Set(chn.nLoopStart);
+			chn.dwFlags.reset(CHN_PINGPONGFLAG);
+		}
+		if(!bidi)
+		{
+			chn.dwFlags.reset(CHN_PINGPONGFLAG);
+		}
+		if(!looped)
+		{
+			chn.nLength = nLength;
+		}
+	}
+
+	return true;
 }
 
 
@@ -578,5 +666,6 @@ void ModSample::SetAdlib(bool enable, OPLPatch patch)
 		adlib = patch;
 	}
 }
+
 
 OPENMPT_NAMESPACE_END

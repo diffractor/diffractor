@@ -13,8 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <stddef.h>
-
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "tests/if_test.cc"
 #include "hwy/foreach_target.h"  // IWYU pragma: keep
@@ -24,6 +22,7 @@
 HWY_BEFORE_NAMESPACE();
 namespace hwy {
 namespace HWY_NAMESPACE {
+namespace {
 
 struct TestIfThenElse {
   template <class T, class D>
@@ -116,12 +115,93 @@ HWY_NOINLINE void TestAllIfVecThenElse() {
   ForAllTypes(ForPartialVectors<TestIfVecThenElse>());
 }
 
+class TestBitwiseIfThenElse {
+ private:
+  template <class T>
+  static T ValueFromBitPattern(hwy::FloatTag /* type_tag */, T /* unused */,
+                               uint64_t bits) {
+    using TI = MakeSigned<T>;
+    return ConvertScalarTo<T>(
+        ConvertScalarTo<T>(static_cast<TI>(bits & MantissaMask<T>())) +
+        MantissaEnd<T>());
+  }
+  template <class T>
+  static MakeUnsigned<T> ValueFromBitPattern(hwy::NonFloatTag /* type_tag */,
+                                             T /* unused */, uint64_t bits) {
+    return static_cast<MakeUnsigned<T>>(bits);
+  }
+
+ public:
+  template <class T, class D>
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
+    using TU = MakeUnsigned<T>;
+    using TVal = RemoveConst<decltype(ValueFromBitPattern(IsFloatTag<T>(), T(),
+                                                          uint64_t{0}))>;
+    static_assert(!IsFloat<T>() || IsSame<TVal, T>(),
+                  "TVal should be the same as T if T is a floating-point type");
+    static_assert(IsFloat<T>() || IsSame<TVal, TU>(),
+                  "TVal should be the same as TU if T is a integer type");
+
+    static TVal a0 = ValueFromBitPattern(IsFloatTag<T>(), T(),
+                                         uint64_t{0x0FF00FF00FF00FF0u});
+    static TVal b0 = ValueFromBitPattern(IsFloatTag<T>(), T(),
+                                         uint64_t{0x33CC33CC33CC33CCu});
+    static TVal c0 = ValueFromBitPattern(IsFloatTag<T>(), T(),
+                                         uint64_t{0x55AA55AA55AA55AAu});
+    static TVal a1 = ValueFromBitPattern(IsFloatTag<T>(), T(),
+                                         uint64_t{0xF00FF00FF00FF00Fu});
+    static TVal b1 = ValueFromBitPattern(IsFloatTag<T>(), T(),
+                                         uint64_t{0xCC33CC33CC33CC33u});
+    static TVal c1 = ValueFromBitPattern(IsFloatTag<T>(), T(),
+                                         uint64_t{0xAA55AA55AA55AA55u});
+
+    const RebindToUnsigned<decltype(d)> du;
+    const Rebind<TVal, decltype(d)> d_val;
+    const auto v_a0 = BitCast(d, Set(d_val, a0));
+    const auto v_b0 = BitCast(d, Set(d_val, b0));
+    const auto v_c0 = BitCast(d, Set(d_val, c0));
+
+    const auto v_a1 = BitCast(d, Set(d_val, a1));
+    const auto v_b1 = BitCast(d, Set(d_val, b1));
+    const auto v_c1 = BitCast(d, Set(d_val, c1));
+
+    static TVal expected_1 = ValueFromBitPattern(IsFloatTag<T>(), T(),
+                                                 uint64_t{0x53CA53CA53CA53CAu});
+    HWY_ASSERT_VEC_EQ(d, BitCast(d, Set(d_val, expected_1)),
+                      BitwiseIfThenElse(v_a0, v_b0, v_c0));
+
+    static TVal expected_2 = ValueFromBitPattern(IsFloatTag<T>(), T(),
+                                                 uint64_t{0xCA53CA53CA53CA53u});
+    HWY_ASSERT_VEC_EQ(d, BitCast(d, Set(d_val, expected_2)),
+                      BitwiseIfThenElse(v_a1, v_b1, v_c1));
+
+    static TVal expected_3 = ValueFromBitPattern(IsFloatTag<T>(), T(),
+                                                 uint64_t{0x1DB81DB81DB81DB8u});
+    HWY_ASSERT_VEC_EQ(d, BitCast(d, Set(d_val, expected_3)),
+                      BitwiseIfThenElse(v_b1, v_a0, v_c0));
+
+    const auto v_all_ones = BitCast(d, Set(du, static_cast<TU>(-1)));
+    HWY_ASSERT_VEC_EQ(d, v_a0, BitwiseIfThenElse(v_all_ones, v_a0, v_b0));
+    HWY_ASSERT_VEC_EQ(d, v_b0, BitwiseIfThenElse(Zero(d), v_a0, v_b0));
+  }
+};
+
+HWY_NOINLINE void TestAllBitwiseIfThenElse() {
+  ForAllTypes(ForPartialVectors<TestBitwiseIfThenElse>());
+}
+
 struct TestZeroIfNegative {
   template <class T, class D>
   HWY_NOINLINE void operator()(T /*unused*/, D d) {
     const auto v0 = Zero(d);
-    const auto vp = Iota(d, 1);
-    const auto vn = Iota(d, -1E4);  // assumes N < 10^4
+    auto vp = Iota(d, 1);
+    auto vn = Iota(d, ConvertScalarTo<T>((sizeof(T) >= 2) ? -10000 : -100));
+
+    if (MaxLanes(d) > (sizeof(T) >= 2 ? 10000 : 100)) {
+      const auto vsignbit = SignBit(d);
+      vp = AndNot(vsignbit, vp);
+      vn = Or(vn, vsignbit);
+    }
 
     // Zero and positive remain unchanged
     HWY_ASSERT_VEC_EQ(d, v0, ZeroIfNegative(v0));
@@ -134,6 +214,7 @@ struct TestZeroIfNegative {
 
 HWY_NOINLINE void TestAllZeroIfNegative() {
   ForFloatTypes(ForPartialVectors<TestZeroIfNegative>());
+  ForSignedTypes(ForPartialVectors<TestZeroIfNegative>());
 }
 
 struct TestIfNegative {
@@ -173,6 +254,15 @@ struct TestIfNegative {
 
     HWY_ASSERT_VEC_EQ(d, expected_1, IfNegativeThenElse(m1, x1, x2));
     HWY_ASSERT_VEC_EQ(d, expected_2, IfNegativeThenElse(m2, x1, x2));
+
+    const auto expected_3 = And(m1_s, x1);
+    const auto expected_4 = AndNot(m1_s, x2);
+
+    HWY_ASSERT_VEC_EQ(d, expected_3, IfNegativeThenElseZero(m1, x1));
+    HWY_ASSERT_VEC_EQ(d, expected_3, IfNegativeThenZeroElse(m2, x1));
+
+    HWY_ASSERT_VEC_EQ(d, expected_4, IfNegativeThenZeroElse(m1, x2));
+    HWY_ASSERT_VEC_EQ(d, expected_4, IfNegativeThenElseZero(m2, x2));
   }
 };
 
@@ -227,7 +317,7 @@ struct TestIfNegativeThenNegOrUndefIfZero {
 
   template <typename T, class D>
   HWY_NOINLINE void operator()(T /*unused*/, D d) {
-    const auto v1 = PositiveIota(d);
+    const auto v1 = PositiveIota(d, 1);
     const auto v2 = Neg(v1);
 
     HWY_ASSERT_VEC_EQ(d, v1, IfNegativeThenNegOrUndefIfZero(v1, v1));
@@ -257,20 +347,24 @@ HWY_NOINLINE void TestAllIfNegativeThenNegOrUndefIfZero() {
   ForFloatTypes(ForPartialVectors<TestIfNegativeThenNegOrUndefIfZero>());
 }
 
+}  // namespace
 // NOLINTNEXTLINE(google-readability-namespace-comments)
 }  // namespace HWY_NAMESPACE
 }  // namespace hwy
 HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
-
 namespace hwy {
+namespace {
 HWY_BEFORE_TEST(HwyIfTest);
 HWY_EXPORT_AND_TEST_P(HwyIfTest, TestAllIfThenElse);
 HWY_EXPORT_AND_TEST_P(HwyIfTest, TestAllIfVecThenElse);
+HWY_EXPORT_AND_TEST_P(HwyIfTest, TestAllBitwiseIfThenElse);
 HWY_EXPORT_AND_TEST_P(HwyIfTest, TestAllZeroIfNegative);
 HWY_EXPORT_AND_TEST_P(HwyIfTest, TestAllIfNegative);
 HWY_EXPORT_AND_TEST_P(HwyIfTest, TestAllIfNegativeThenNegOrUndefIfZero);
+HWY_AFTER_TEST();
+}  // namespace
 }  // namespace hwy
-
-#endif
+HWY_TEST_MAIN();
+#endif  // HWY_ONCE

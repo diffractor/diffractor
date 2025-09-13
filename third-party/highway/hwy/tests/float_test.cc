@@ -17,7 +17,7 @@
 
 #include <stdio.h>
 
-#include <cmath>  // std::ceil, std::floor
+#include <cmath>  // std::ceil, std::floor, std::log2
 
 #include "hwy/base.h"
 
@@ -30,6 +30,7 @@
 HWY_BEFORE_NAMESPACE();
 namespace hwy {
 namespace HWY_NAMESPACE {
+namespace {
 
 HWY_NOINLINE void TestAllF16FromF32() {
   const FixedTag<float, 1> d1;
@@ -143,8 +144,9 @@ struct TestApproximateReciprocal {
     double worst_expected = 0.0;
     double worst_actual = 0.0;
     for (size_t i = 0; i < N; ++i) {
-      const double expected = 1.0 / input[i];
-      const double l1 = ScalarAbs(expected - actual[i]);
+      const double expected = 1.0 / ConvertScalarTo<double>(input[i]);
+      const double l1 =
+          ScalarAbs(expected - ConvertScalarTo<double>(actual[i]));
       if (l1 > max_l1) {
         max_l1 = l1;
         worst_expected = expected;
@@ -165,6 +167,53 @@ HWY_NOINLINE void TestAllApproximateReciprocal() {
   ForFloatTypes(ForPartialVectors<TestApproximateReciprocal>());
 }
 
+struct TestMaskedApproximateReciprocal {
+  template <typename T, class D>
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
+    const MFromD<D> first_three = FirstN(d, 3);
+    const auto v = Iota(d, -2);
+    const auto nonzero =
+        IfThenElse(Eq(v, Zero(d)), Set(d, ConvertScalarTo<T>(1)), v);
+    const size_t N = Lanes(d);
+    auto input = AllocateAligned<T>(N);
+    auto actual = AllocateAligned<T>(N);
+    HWY_ASSERT(input && actual);
+
+    Store(nonzero, d, input.get());
+    Store(MaskedApproximateReciprocal(first_three, nonzero), d, actual.get());
+
+    double max_l1 = 0.0;
+    double worst_expected = 0.0;
+    double worst_actual = 0.0;
+    double expected;
+    for (size_t i = 0; i < N; ++i) {
+      if (i < 3) {
+        expected = 1.0 / ConvertScalarTo<double>(input[i]);
+      } else {
+        expected = 0.0;
+      }
+      const double l1 =
+          ScalarAbs(expected - ConvertScalarTo<double>(actual[i]));
+      if (l1 > max_l1) {
+        max_l1 = l1;
+        worst_expected = expected;
+        worst_actual = actual[i];
+      }
+    }
+    const double abs_worst_expected = ScalarAbs(worst_expected);
+    if (abs_worst_expected > 1E-5) {
+      const double max_rel = max_l1 / abs_worst_expected;
+      fprintf(stderr, "max l1 %f rel %f (%f vs %f)\n", max_l1, max_rel,
+              worst_expected, worst_actual);
+      HWY_ASSERT(max_rel < 0.004);
+    }
+  }
+};
+
+HWY_NOINLINE void TestAllMaskedApproximateReciprocal() {
+  ForFloatTypes(ForPartialVectors<TestMaskedApproximateReciprocal>());
+}
+
 struct TestSquareRoot {
   template <typename T, class D>
   HWY_NOINLINE void operator()(T /*unused*/, D d) {
@@ -177,6 +226,26 @@ HWY_NOINLINE void TestAllSquareRoot() {
   ForFloatTypes(ForPartialVectors<TestSquareRoot>());
 }
 
+struct TestMaskedSqrt {
+  template <typename T, class D>
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
+    const auto v0 = Zero(d);
+    const auto vi = Iota(d, 4);
+    const auto v2 = Iota(d, 5);
+
+    const MFromD<D> first_four = FirstN(d, 4);
+    const auto expected = IfThenElse(first_four, Sqrt(vi), v0);
+    const auto masked_expected = IfThenElse(first_four, Sqrt(vi), v2);
+
+    HWY_ASSERT_VEC_EQ(d, expected, MaskedSqrt(first_four, vi));
+    HWY_ASSERT_VEC_EQ(d, masked_expected, MaskedSqrtOr(v2, first_four, vi));
+  }
+};
+
+HWY_NOINLINE void TestAllMaskedSqrt() {
+  ForFloatTypes(ForPartialVectors<TestMaskedSqrt>());
+}
+
 struct TestReciprocalSquareRoot {
   template <typename T, class D>
   HWY_NOINLINE void operator()(T /*unused*/, D d) {
@@ -187,7 +256,9 @@ struct TestReciprocalSquareRoot {
     Store(ApproximateReciprocalSqrt(v), d, lanes.get());
     for (size_t i = 0; i < N; ++i) {
       T err = ConvertScalarTo<T>(ConvertScalarTo<float>(lanes[i]) - 0.090166f);
-      if (err < ConvertScalarTo<T>(0)) err = -err;
+      if (err < ConvertScalarTo<T>(0)) {
+        err = ConvertScalarTo<T>(-ConvertScalarTo<float>(err));
+      }
       if (static_cast<double>(err) >= 4E-4) {
         HWY_ABORT("Lane %d (%d): actual %f err %f\n", static_cast<int>(i),
                   static_cast<int>(N), static_cast<double>(lanes[i]),
@@ -199,6 +270,35 @@ struct TestReciprocalSquareRoot {
 
 HWY_NOINLINE void TestAllReciprocalSquareRoot() {
   ForFloatTypes(ForPartialVectors<TestReciprocalSquareRoot>());
+}
+
+struct TestMaskedReciprocalSquareRoot {
+  template <typename T, class D>
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
+    const Vec<D> v = Set(d, ConvertScalarTo<T>(123.0f));
+    const MFromD<D> first_three = FirstN(d, 3);
+    const size_t N = Lanes(d);
+    auto lanes = AllocateAligned<T>(N);
+    HWY_ASSERT(lanes);
+    Store(MaskedApproximateReciprocalSqrt(first_three, v), d,
+          lanes.get());
+    for (size_t i = 0; i < N; ++i) {
+      T expected_val = i < 3 ? ConvertScalarTo<T>(1 / std::sqrt(123.0f))
+                             : ConvertScalarTo<T>(0);
+      T err =
+          ConvertScalarTo<T>(ConvertScalarTo<float>(lanes[i]) - expected_val);
+      if (err < ConvertScalarTo<T>(0)) err = -err;
+      if (static_cast<double>(err) >= 4E-4) {
+        HWY_ABORT("Lane %d (%d): actual %f err %f\n", static_cast<int>(i),
+                  static_cast<int>(N), static_cast<double>(lanes[i]),
+                  static_cast<double>(err));
+      }
+    }
+  }
+};
+
+HWY_NOINLINE void TestAllMaskedReciprocalSquareRoot() {
+  ForFloatTypes(ForPartialVectors<TestMaskedReciprocalSquareRoot>());
 }
 
 template <typename T, class D>
@@ -282,6 +382,18 @@ HWY_NOINLINE void TestAllRound() {
 }
 
 struct TestNearestInt {
+  static HWY_INLINE int16_t RoundScalarFloatToInt(float16_t f) {
+    return static_cast<int16_t>(std::lrintf(ConvertScalarTo<float>(f)));
+  }
+
+  static HWY_INLINE int32_t RoundScalarFloatToInt(float f) {
+    return static_cast<int32_t>(std::lrintf(f));
+  }
+
+  static HWY_INLINE int64_t RoundScalarFloatToInt(double f) {
+    return static_cast<int64_t>(std::llrint(f));
+  }
+
   template <typename TF, class DF>
   HWY_NOINLINE void operator()(TF tf, const DF df) {
     using TI = MakeSigned<TF>;
@@ -298,11 +410,11 @@ struct TestNearestInt {
         // We replace NaN with 0 below (no_nan)
         expected[i] = 0;
       } else if (ScalarIsInf(in[i]) ||
-                 static_cast<double>(ScalarAbs(in[i])) >= kMax) {
-        // Avoid undefined result for lrintf
-        expected[i] = std::signbit(in[i]) ? LimitsMin<TI>() : LimitsMax<TI>();
+                 ConvertScalarTo<double>(ScalarAbs(in[i])) >= kMax) {
+        // Avoid undefined result for std::lrintf or std::llrint
+        expected[i] = ScalarSignBit(in[i]) ? LimitsMin<TI>() : LimitsMax<TI>();
       } else {
-        expected[i] = static_cast<TI>(lrintf(ConvertScalarTo<float>(in[i])));
+        expected[i] = RoundScalarFloatToInt(in[i]);
       }
     }
     for (size_t i = 0; i < padded; i += Lanes(df)) {
@@ -314,7 +426,46 @@ struct TestNearestInt {
 };
 
 HWY_NOINLINE void TestAllNearestInt() {
-  ForPartialVectors<TestNearestInt>()(float());
+  ForFloatTypes(ForPartialVectors<TestNearestInt>());
+}
+
+struct TestDemoteToNearestInt {
+  template <typename TF, class DF>
+  HWY_NOINLINE void operator()(TF tf, const DF df) {
+    using TI = MakeNarrow<MakeSigned<TF>>;
+    const Rebind<TI, DF> di;
+
+    size_t padded;
+    auto in = RoundTestCases(tf, df, padded);
+    auto expected = AllocateAligned<TI>(padded);
+    HWY_ASSERT(expected);
+
+    constexpr double kMax = static_cast<double>(LimitsMax<TI>());
+    for (size_t i = 0; i < padded; ++i) {
+      if (ScalarIsNaN(in[i])) {
+        // We replace NaN with 0 below (no_nan)
+        expected[i] = 0;
+      } else if (ScalarIsInf(in[i]) ||
+                 static_cast<double>(ScalarAbs(in[i])) >= kMax) {
+        // Avoid undefined result for std::lrint
+        expected[i] = ScalarSignBit(in[i]) ? LimitsMin<TI>() : LimitsMax<TI>();
+      } else {
+        expected[i] =
+            static_cast<TI>(std::lrint(ConvertScalarTo<double>(in[i])));
+      }
+    }
+    for (size_t i = 0; i < padded; i += Lanes(df)) {
+      const auto v = Load(df, &in[i]);
+      const auto no_nan = IfThenElse(Eq(v, v), v, Zero(df));
+      HWY_ASSERT_VEC_EQ(di, &expected[i], DemoteToNearestInt(di, no_nan));
+    }
+  }
+};
+
+HWY_NOINLINE void TestAllDemoteToNearestInt() {
+#if HWY_HAVE_FLOAT64
+  ForDemoteVectors<TestDemoteToNearestInt>()(double());
+#endif
 }
 
 struct TestTrunc {
@@ -344,18 +495,38 @@ HWY_NOINLINE void TestAllTrunc() {
 struct TestCeil {
   template <typename T, class D>
   HWY_NOINLINE void operator()(T t, D d) {
+    const RebindToSigned<decltype(d)> di;
+    using TI = MakeSigned<T>;
+
     size_t padded;
     auto in = RoundTestCases(t, d, padded);
     auto expected = AllocateAligned<T>(padded);
-    HWY_ASSERT(expected);
+    auto expected_int = AllocateAligned<TI>(padded);
+    HWY_ASSERT(expected && expected_int);
+
+    constexpr double kMinOutOfRangeVal = -static_cast<double>(LimitsMin<TI>());
+    static_assert(kMinOutOfRangeVal > 0.0,
+                  "kMinOutOfRangeVal > 0.0 must be true");
 
     for (size_t i = 0; i < padded; ++i) {
       // Cast to double because ceil does not support _Float16.
-      expected[i] =
-          ConvertScalarTo<T>(std::ceil(ConvertScalarTo<double>(in[i])));
+      const double ceil_val = std::ceil(ConvertScalarTo<double>(in[i]));
+      expected[i] = ConvertScalarTo<T>(ceil_val);
+      if (ScalarIsNaN(ceil_val)) {
+        expected_int[i] = 0;
+      } else if (ScalarIsInf(ceil_val) || static_cast<double>(ScalarAbs(
+                                              ceil_val)) >= kMinOutOfRangeVal) {
+        expected_int[i] =
+            ScalarSignBit(ceil_val) ? LimitsMin<TI>() : LimitsMax<TI>();
+      } else {
+        expected_int[i] = ConvertScalarTo<TI>(ceil_val);
+      }
     }
     for (size_t i = 0; i < padded; i += Lanes(d)) {
-      HWY_ASSERT_VEC_EQ(d, &expected[i], Ceil(Load(d, &in[i])));
+      const auto v = Load(d, &in[i]);
+      HWY_ASSERT_VEC_EQ(d, &expected[i], Ceil(v));
+      HWY_ASSERT_VEC_EQ(di, &expected_int[i],
+                        IfThenZeroElse(RebindMask(di, IsNaN(v)), CeilInt(v)));
     }
   }
 };
@@ -367,18 +538,39 @@ HWY_NOINLINE void TestAllCeil() {
 struct TestFloor {
   template <typename T, class D>
   HWY_NOINLINE void operator()(T t, D d) {
+    const RebindToSigned<decltype(d)> di;
+    using TI = MakeSigned<T>;
+
     size_t padded;
     auto in = RoundTestCases(t, d, padded);
     auto expected = AllocateAligned<T>(padded);
-    HWY_ASSERT(expected);
+    auto expected_int = AllocateAligned<TI>(padded);
+    HWY_ASSERT(expected && expected_int);
+
+    constexpr double kMinOutOfRangeVal = -static_cast<double>(LimitsMin<TI>());
+    static_assert(kMinOutOfRangeVal > 0.0,
+                  "kMinOutOfRangeVal > 0.0 must be true");
 
     for (size_t i = 0; i < padded; ++i) {
       // Cast to double because floor does not support _Float16.
-      expected[i] =
-          ConvertScalarTo<T>(std::floor(ConvertScalarTo<double>(in[i])));
+      const double floor_val = std::floor(ConvertScalarTo<double>(in[i]));
+      expected[i] = ConvertScalarTo<T>(floor_val);
+      if (ScalarIsNaN(floor_val)) {
+        expected_int[i] = 0;
+      } else if (ScalarIsInf(floor_val) ||
+                 static_cast<double>(ScalarAbs(floor_val)) >=
+                     kMinOutOfRangeVal) {
+        expected_int[i] =
+            ScalarSignBit(floor_val) ? LimitsMin<TI>() : LimitsMax<TI>();
+      } else {
+        expected_int[i] = ConvertScalarTo<TI>(floor_val);
+      }
     }
     for (size_t i = 0; i < padded; i += Lanes(d)) {
-      HWY_ASSERT_VEC_EQ(d, &expected[i], Floor(Load(d, &in[i])));
+      const auto v = Load(d, &in[i]);
+      HWY_ASSERT_VEC_EQ(d, &expected[i], Floor(v));
+      HWY_ASSERT_VEC_EQ(di, &expected_int[i],
+                        IfThenZeroElse(RebindMask(di, IsNaN(v)), FloorInt(v)));
     }
   }
 };
@@ -413,27 +605,70 @@ HWY_NOINLINE void TestAllAbsDiff() {
   ForFloatTypes(ForPartialVectors<TestAbsDiff>());
 }
 
+// Test GetExponent
+struct TestGetExponent {
+  template <typename T, class D>
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
+    const RebindToUnsigned<decltype(d)> du;
+
+    using TFArith = If<IsSpecialFloat<T>(), float, T>;
+    using TU = MakeUnsigned<T>;
+    const size_t N = Lanes(d);
+
+    auto v = Iota(d, 1);
+
+    auto expected = AllocateAligned<T>(N);
+    auto expected_biased = AllocateAligned<TU>(N);
+    HWY_ASSERT(expected && expected_biased);
+
+    constexpr int kNumOfMantBits = MantissaBits<T>();
+
+    for (size_t i = 0; i < N; ++i) {
+      const T test_val = ConvertScalarTo<T>(i + 1);
+      expected[i] = ConvertScalarTo<T>(
+          std::floor(std::log2(ConvertScalarTo<TFArith>(test_val))));
+      expected_biased[i] =
+          static_cast<TU>((BitCastScalar<TU>(test_val) >> kNumOfMantBits) &
+                          static_cast<TU>(MaxExponentField<T>()));
+    }
+    HWY_ASSERT_VEC_EQ(d, expected.get(), GetExponent(v));
+    HWY_ASSERT_VEC_EQ(du, expected_biased.get(), GetBiasedExponent(v));
+  }
+};
+
+HWY_NOINLINE void TestAllGetExponent() {
+  ForFloatTypes(ForPartialVectors<TestGetExponent>());
+}
+
+}  // namespace
 // NOLINTNEXTLINE(google-readability-namespace-comments)
 }  // namespace HWY_NAMESPACE
 }  // namespace hwy
 HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
-
 namespace hwy {
+namespace {
 HWY_BEFORE_TEST(HwyFloatTest);
 HWY_EXPORT_AND_TEST_P(HwyFloatTest, TestAllF16FromF32);
 HWY_EXPORT_AND_TEST_P(HwyFloatTest, TestAllF32FromF16);
 HWY_EXPORT_AND_TEST_P(HwyFloatTest, TestAllDiv);
 HWY_EXPORT_AND_TEST_P(HwyFloatTest, TestAllApproximateReciprocal);
 HWY_EXPORT_AND_TEST_P(HwyFloatTest, TestAllSquareRoot);
+HWY_EXPORT_AND_TEST_P(HwyFloatTest, TestAllMaskedSqrt);
 HWY_EXPORT_AND_TEST_P(HwyFloatTest, TestAllReciprocalSquareRoot);
+HWY_EXPORT_AND_TEST_P(HwyFloatTest, TestAllMaskedReciprocalSquareRoot);
+HWY_EXPORT_AND_TEST_P(HwyFloatTest, TestAllMaskedApproximateReciprocal);
 HWY_EXPORT_AND_TEST_P(HwyFloatTest, TestAllRound);
 HWY_EXPORT_AND_TEST_P(HwyFloatTest, TestAllNearestInt);
+HWY_EXPORT_AND_TEST_P(HwyFloatTest, TestAllDemoteToNearestInt);
 HWY_EXPORT_AND_TEST_P(HwyFloatTest, TestAllTrunc);
 HWY_EXPORT_AND_TEST_P(HwyFloatTest, TestAllCeil);
 HWY_EXPORT_AND_TEST_P(HwyFloatTest, TestAllFloor);
 HWY_EXPORT_AND_TEST_P(HwyFloatTest, TestAllAbsDiff);
+HWY_EXPORT_AND_TEST_P(HwyFloatTest, TestAllGetExponent);
+HWY_AFTER_TEST();
+}  // namespace
 }  // namespace hwy
-
-#endif
+HWY_TEST_MAIN();
+#endif  // HWY_ONCE

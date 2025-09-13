@@ -22,8 +22,6 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- * $FreeBSD$
- *
  */
 
 /*
@@ -2288,5 +2286,4 @@ static const struct unicode_decomposition_table u_decomposition_table[] = {
 	{ 0x110AB , 0x110A5 , 0x110BA },
 };
 
-#endif /* ARCHIVE_STRING_COMPOSITION_H_INCLUDED */
-
+#endif /* !ARCHIVE_STRING_COMPOSITION_H_INCLUDED */

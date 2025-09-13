@@ -25,6 +25,7 @@
 HWY_BEFORE_NAMESPACE();
 namespace hwy {
 namespace HWY_NAMESPACE {
+namespace {
 
 template <typename D, int kLane>
 struct TestBroadcastR {
@@ -121,7 +122,6 @@ struct TestTableLookupBytes {
       // Avoid asan error for partial vectors.
       index_bytes[i] = static_cast<uint8_t>(HWY_MIN(index_bytes[i], max_index));
     }
-    const Vec<D> indices_v = Load(d, indices.get());
 
     uint8_t* expected_bytes = reinterpret_cast<uint8_t*>(expected.get());
 
@@ -138,7 +138,10 @@ struct TestTableLookupBytes {
             in_bytes[(block + index) % HWY_MIN(NT8, 256)];
       }
     }
-    HWY_ASSERT_VEC_EQ(d, expected.get(), TableLookupBytes(in, indices_v));
+    {
+      const Vec<D> indices_v = Load(d, indices.get());
+      HWY_ASSERT_VEC_EQ(d, expected.get(), TableLookupBytes(in, indices_v));
+    }
 
     // Individually test zeroing each byte position.
     for (size_t i = 0; i < N8; ++i) {
@@ -224,10 +227,59 @@ struct TestInterleaveUpper {
   }
 };
 
+struct TestInterleaveEven {
+  template <class T, class D>
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
+    const size_t N = Lanes(d);
+    auto even_lanes = AllocateAligned<T>(N);
+    auto odd_lanes = AllocateAligned<T>(N);
+    auto expected = AllocateAligned<T>(N);
+    HWY_ASSERT(even_lanes && odd_lanes && expected);
+    for (size_t i = 0; i < N; ++i) {
+      even_lanes[i] = ConvertScalarTo<T>(2 * i + 0);
+      odd_lanes[i] = ConvertScalarTo<T>(2 * i + 1);
+    }
+    const auto even = Load(d, even_lanes.get());
+    const auto odd = Load(d, odd_lanes.get());
+
+    for (size_t i = 0; i < N; ++i) {
+      expected[i] = ConvertScalarTo<T>(2 * i - (i & 1));
+    }
+
+    HWY_ASSERT_VEC_EQ(d, expected.get(), InterleaveEven(even, odd));
+    HWY_ASSERT_VEC_EQ(d, expected.get(), InterleaveEven(d, even, odd));
+  }
+};
+
+struct TestInterleaveOdd {
+  template <class T, class D>
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
+    const size_t N = Lanes(d);
+    auto even_lanes = AllocateAligned<T>(N);
+    auto odd_lanes = AllocateAligned<T>(N);
+    auto expected = AllocateAligned<T>(N);
+    HWY_ASSERT(even_lanes && odd_lanes && expected);
+    for (size_t i = 0; i < N; ++i) {
+      even_lanes[i] = ConvertScalarTo<T>(2 * i + 0);
+      odd_lanes[i] = ConvertScalarTo<T>(2 * i + 1);
+    }
+    const auto even = Load(d, even_lanes.get());
+    const auto odd = Load(d, odd_lanes.get());
+
+    for (size_t i = 0; i < N; ++i) {
+      expected[i] = ConvertScalarTo<T>((2 * i) - (i & 1) + 2);
+    }
+
+    HWY_ASSERT_VEC_EQ(d, expected.get(), InterleaveOdd(d, even, odd));
+  }
+};
+
 HWY_NOINLINE void TestAllInterleave() {
   // Not DemoteVectors because this cannot be supported by HWY_SCALAR.
   ForAllTypes(ForShrinkableVectors<TestInterleaveLower>());
   ForAllTypes(ForShrinkableVectors<TestInterleaveUpper>());
+  ForAllTypes(ForShrinkableVectors<TestInterleaveEven>());
+  ForAllTypes(ForShrinkableVectors<TestInterleaveOdd>());
 }
 
 struct TestZipLower {
@@ -445,14 +497,15 @@ HWY_NOINLINE void TestAllSpecialShuffles() {
 #endif
 }
 
+}  // namespace
 // NOLINTNEXTLINE(google-readability-namespace-comments)
 }  // namespace HWY_NAMESPACE
 }  // namespace hwy
 HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
-
 namespace hwy {
+namespace {
 HWY_BEFORE_TEST(HwyBlockwiseTest);
 HWY_EXPORT_AND_TEST_P(HwyBlockwiseTest, TestAllBroadcast);
 HWY_EXPORT_AND_TEST_P(HwyBlockwiseTest, TestAllTableLookupBytesSame);
@@ -463,6 +516,8 @@ HWY_EXPORT_AND_TEST_P(HwyBlockwiseTest, TestAllZipLower);
 HWY_EXPORT_AND_TEST_P(HwyBlockwiseTest, TestAllZipUpper);
 #endif
 HWY_EXPORT_AND_TEST_P(HwyBlockwiseTest, TestAllSpecialShuffles);
+HWY_AFTER_TEST();
+}  // namespace
 }  // namespace hwy
-
-#endif
+HWY_TEST_MAIN();
+#endif  // HWY_ONCE

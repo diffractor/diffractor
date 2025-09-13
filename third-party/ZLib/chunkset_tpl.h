@@ -2,6 +2,9 @@
  * For conditions of distribution and use, see copyright notice in zlib.h
  */
 
+#include "zbuild.h"
+#include <stdlib.h>
+
 /* Returns the chunk size */
 Z_INTERNAL uint32_t CHUNKSIZE(void) {
     return sizeof(chunk_t);
@@ -17,70 +20,26 @@ Z_INTERNAL uint32_t CHUNKSIZE(void) {
    (chunk_t bytes or fewer) will fall straight through the loop
    without iteration, which will hopefully make the branch prediction more
    reliable. */
-Z_INTERNAL uint8_t* CHUNKCOPY(uint8_t *out, uint8_t const *from, unsigned len) {
+#ifndef HAVE_CHUNKCOPY
+static inline uint8_t* CHUNKCOPY(uint8_t *out, uint8_t const *from, unsigned len) {
     Assert(len > 0, "chunkcopy should never have a length 0");
     chunk_t chunk;
-    int32_t align = (--len % sizeof(chunk_t)) + 1;
+    int32_t align = ((len - 1) % sizeof(chunk_t)) + 1;
     loadchunk(from, &chunk);
     storechunk(out, &chunk);
     out += align;
     from += align;
-    len /= sizeof(chunk_t);
+    len -= align;
     while (len > 0) {
         loadchunk(from, &chunk);
         storechunk(out, &chunk);
         out += sizeof(chunk_t);
         from += sizeof(chunk_t);
-        --len;
+        len -= sizeof(chunk_t);
     }
     return out;
 }
-
-/* Behave like chunkcopy, but avoid writing beyond of legal output. */
-Z_INTERNAL uint8_t* CHUNKCOPY_SAFE(uint8_t *out, uint8_t const *from, unsigned len, uint8_t *safe) {
-    unsigned safelen = (unsigned)((safe - out) + 1);
-    len = MIN(len, safelen);
-#if CHUNK_SIZE >= 32
-    while (len >= 32) {
-        memcpy(out, from, 32);
-        out += 32;
-        from += 32;
-        len -= 32;
-    }
 #endif
-#if CHUNK_SIZE >= 16
-    while (len >= 16) {
-        memcpy(out, from, 16);
-        out += 16;
-        from += 16;
-        len -= 16;
-    }
-#endif
-#if CHUNK_SIZE >= 8
-    while (len >= 8) {
-        memcpy(out, from, 8);
-        out += 8;
-        from += 8;
-        len -= 8;
-    }
-#endif
-    if (len >= 4) {
-        memcpy(out, from, 4);
-        out += 4;
-        from += 4;
-        len -= 4;
-    }
-    if (len >= 2) {
-        memcpy(out, from, 2);
-        out += 2;
-        from += 2;
-        len -= 2;
-    }
-    if (len == 1) {
-        *out++ = *from++;
-    }
-    return out;
-}
 
 /* Perform short copies until distance can be rewritten as being at least
    sizeof chunk_t.
@@ -90,7 +49,8 @@ Z_INTERNAL uint8_t* CHUNKCOPY_SAFE(uint8_t *out, uint8_t const *from, unsigned l
    This assumption holds because inflate_fast() starts every iteration with at
    least 258 bytes of output space available (258 being the maximum length
    output from a single token; see inflate_fast()'s assumptions below). */
-Z_INTERNAL uint8_t* CHUNKUNROLL(uint8_t *out, unsigned *dist, unsigned *len) {
+#ifndef HAVE_CHUNKUNROLL
+static inline uint8_t* CHUNKUNROLL(uint8_t *out, unsigned *dist, unsigned *len) {
     unsigned char const *from = out - *dist;
     chunk_t chunk;
     while (*dist < *len && *dist < sizeof(chunk_t)) {
@@ -102,106 +62,222 @@ Z_INTERNAL uint8_t* CHUNKUNROLL(uint8_t *out, unsigned *dist, unsigned *len) {
     }
     return out;
 }
+#endif
+
+#ifndef HAVE_CHUNK_MAG
+/* Loads a magazine to feed into memory of the pattern */
+static inline chunk_t GET_CHUNK_MAG(uint8_t *buf, uint32_t *chunk_rem, uint32_t dist) {
+        /* This code takes string of length dist from "from" and repeats
+         * it for as many times as can fit in a chunk_t (vector register) */
+        uint64_t cpy_dist;
+        uint64_t bytes_remaining = sizeof(chunk_t);
+        chunk_t chunk_load;
+        uint8_t *cur_chunk = (uint8_t *)&chunk_load;
+        while (bytes_remaining) {
+            cpy_dist = MIN(dist, bytes_remaining);
+            memcpy(cur_chunk, buf, (size_t)cpy_dist);
+            bytes_remaining -= cpy_dist;
+            cur_chunk += cpy_dist;
+            /* This allows us to bypass an expensive integer division since we're effectively
+             * counting in this loop, anyway */
+            *chunk_rem = (uint32_t)cpy_dist;
+        }
+
+        return chunk_load;
+}
+#endif
+
+#if defined(HAVE_HALF_CHUNK) && !defined(HAVE_HALFCHUNKCOPY)
+static inline uint8_t* HALFCHUNKCOPY(uint8_t *out, uint8_t const *from, unsigned len) {
+    halfchunk_t chunk;
+    int32_t align = ((len - 1) % sizeof(halfchunk_t)) + 1;
+    loadhalfchunk(from, &chunk);
+    storehalfchunk(out, &chunk);
+    out += align;
+    from += align;
+    len -= align;
+    while (len > 0) {
+        loadhalfchunk(from, &chunk);
+        storehalfchunk(out, &chunk);
+        out += sizeof(halfchunk_t);
+        from += sizeof(halfchunk_t);
+        len -= sizeof(halfchunk_t);
+    }
+    return out;
+}
+#endif
 
 /* Copy DIST bytes from OUT - DIST into OUT + DIST * k, for 0 <= k < LEN/DIST.
    Return OUT + LEN. */
-Z_INTERNAL uint8_t* CHUNKMEMSET(uint8_t *out, unsigned dist, unsigned len) {
+static inline uint8_t* CHUNKMEMSET(uint8_t *out, uint8_t *from, unsigned len) {
     /* Debug performance related issues when len < sizeof(uint64_t):
        Assert(len >= sizeof(uint64_t), "chunkmemset should be called on larger chunks"); */
-    Assert(dist > 0, "chunkmemset cannot have a distance 0");
+    Assert(from != out, "chunkmemset cannot have a distance 0");
 
-    unsigned char *from = out - dist;
-    chunk_t chunk;
-    unsigned sz = sizeof(chunk);
-    if (len < sz) {
-        while (len != 0) {
-            *out++ = *from++;
-            --len;
+    chunk_t chunk_load;
+    uint32_t chunk_mod = 0;
+    uint32_t adv_amount;
+    int64_t sdist = out - from;
+    uint64_t dist = llabs(sdist);
+
+    /* We are supporting the case for when we are reading bytes from ahead in the buffer.
+     * We now have to handle this, though it wasn't _quite_ clear if this rare circumstance
+     * always needed to be handled here or if we're just now seeing it because we are
+     * dispatching to this function, more */
+    if (sdist < 0 && dist < len) {
+#ifdef HAVE_MASKED_READWRITE
+        /* We can still handle this case if we can mitigate over writing _and_ we
+         * fit the entirety of the copy length with one load */
+        if (len <= sizeof(chunk_t)) {
+            /* Tempting to add a goto to the block below but hopefully most compilers
+             * collapse these identical code segments as one label to jump to */
+            return CHUNKCOPY(out, from, len);
         }
-        return out;
+#endif
+        /* Here the memmove semantics match perfectly, as when this happens we are
+         * effectively sliding down the contents of memory by dist bytes */
+        memmove(out, from, len);
+        return out + len;
     }
 
-#ifdef HAVE_CHUNKMEMSET_1
     if (dist == 1) {
-        chunkmemset_1(from, &chunk);
-    } else
+        memset(out, *from, len);
+        return out + len;
+    } else if (dist >= sizeof(chunk_t)) {
+        return CHUNKCOPY(out, from, len);
+    }
+
+    /* Only AVX2+ as there's 128 bit vectors and 256 bit. We allow for shorter vector
+     * lengths because they serve to allow more cases to fall into chunkcopy, as the
+     * distance of the shorter length is still deemed a safe distance. We rewrite this
+     * here rather than calling the ssse3 variant directly now because doing so required
+     * dispatching to another function and broke inlining for this function entirely. We
+     * also can merge an assert and some remainder peeling behavior into the same code blocks,
+     * making the code a little smaller.  */
+#ifdef HAVE_HALF_CHUNK
+    if (len <= sizeof(halfchunk_t)) {
+        if (dist >= sizeof(halfchunk_t))
+            return HALFCHUNKCOPY(out, from, len);
+
+        if ((dist % 2) != 0 || dist == 6) {
+            halfchunk_t halfchunk_load = GET_HALFCHUNK_MAG(from, &chunk_mod, (unsigned)dist);
+
+            if (len == sizeof(halfchunk_t)) {
+                storehalfchunk(out, &halfchunk_load);
+                len -= sizeof(halfchunk_t);
+                out += sizeof(halfchunk_t);
+            }
+
+            chunk_load = halfchunk2whole(&halfchunk_load);
+            goto rem_bytes;
+        }
+    }
 #endif
+
 #ifdef HAVE_CHUNKMEMSET_2
     if (dist == 2) {
-        chunkmemset_2(from, &chunk);
+        chunkmemset_2(from, &chunk_load);
     } else
 #endif
 #ifdef HAVE_CHUNKMEMSET_4
     if (dist == 4) {
-        chunkmemset_4(from, &chunk);
+        chunkmemset_4(from, &chunk_load);
     } else
 #endif
 #ifdef HAVE_CHUNKMEMSET_8
     if (dist == 8) {
-        chunkmemset_8(from, &chunk);
+        chunkmemset_8(from, &chunk_load);
     } else
 #endif
-    if (dist == sz) {
-        loadchunk(from, &chunk);
-    } else if (dist < sz) {
-        unsigned char *end = out + len - 1;
-        while (len > dist) {
-            out = CHUNKCOPY_SAFE(out, from, dist, end);
-            len -= dist;
-        }
-        if (len > 0) {
-            out = CHUNKCOPY_SAFE(out, from, len, end);
-        }
-        return out;
-    } else {
-        out = CHUNKUNROLL(out, &dist, &len);
-        return CHUNKCOPY(out, out - dist, len);
+#ifdef HAVE_CHUNKMEMSET_16
+    if (dist == 16) {
+        chunkmemset_16(from, &chunk_load);
+    } else
+#endif
+    chunk_load = GET_CHUNK_MAG(from, &chunk_mod, (unsigned)dist);
+
+    adv_amount = sizeof(chunk_t) - chunk_mod;
+
+    while (len >= (2 * sizeof(chunk_t))) {
+        storechunk(out, &chunk_load);
+        storechunk(out + adv_amount, &chunk_load);
+        out += 2 * adv_amount;
+        len -= 2 * adv_amount;
     }
 
-    unsigned rem = len % sz;
-    len -= rem;
-    while (len) {
-        storechunk(out, &chunk);
-        out += sz;
-        len -= sz;
+    /* If we don't have a "dist" length that divides evenly into a vector
+     * register, we can write the whole vector register but we need only
+     * advance by the amount of the whole string that fits in our chunk_t.
+     * If we do divide evenly into the vector length, adv_amount = chunk_t size*/
+    while (len >= sizeof(chunk_t)) {
+        storechunk(out, &chunk_load);
+        len -= adv_amount;
+        out += adv_amount;
     }
 
-    /* Last, deal with the case when LEN is not a multiple of SZ. */
-    if (rem) {
-        memcpy(out, from, rem);
-        out += rem;
+#ifdef HAVE_HALF_CHUNK
+rem_bytes:
+#endif
+    if (len) {
+        memcpy(out, &chunk_load, len);
+        out += len;
     }
 
     return out;
 }
 
-Z_INTERNAL uint8_t* CHUNKMEMSET_SAFE(uint8_t *out, unsigned dist, unsigned len, unsigned left) {
-#if !defined(UNALIGNED64_OK)
-#  if !defined(UNALIGNED_OK)
+Z_INTERNAL uint8_t* CHUNKMEMSET_SAFE(uint8_t *out, uint8_t *from, unsigned len, unsigned left) {
+#if OPTIMAL_CMP < 32
     static const uint32_t align_mask = 7;
-#  else
+#elif OPTIMAL_CMP == 32
     static const uint32_t align_mask = 3;
-#  endif
 #endif
 
     len = MIN(len, left);
-    uint8_t *from = out - dist;
-#if !defined(UNALIGNED64_OK)
+
+#if OPTIMAL_CMP < 64
     while (((uintptr_t)out & align_mask) && (len > 0)) {
         *out++ = *from++;
         --len;
         --left;
     }
 #endif
-    if (left < (unsigned)(3 * sizeof(chunk_t))) {
+
+#ifndef HAVE_MASKED_READWRITE
+    if (UNLIKELY(left < sizeof(chunk_t))) {
         while (len > 0) {
             *out++ = *from++;
             --len;
         }
+
         return out;
     }
+#endif
+
     if (len)
-        return CHUNKMEMSET(out, dist, len);
+        out = CHUNKMEMSET(out, from, len);
 
     return out;
+}
+
+static inline uint8_t *CHUNKCOPY_SAFE(uint8_t *out, uint8_t *from, uint64_t len, uint8_t *safe)
+{
+    if (out == from)
+        return out + len;
+
+    uint64_t safelen = (safe - out);
+    len = MIN(len, safelen);
+
+#ifndef HAVE_MASKED_READWRITE
+    uint64_t from_dist = (uint64_t)llabs(safe - from);
+    if (UNLIKELY(from_dist < sizeof(chunk_t) || safelen < sizeof(chunk_t))) {
+        while (len--) {
+            *out++ = *from++;
+        }
+
+        return out;
+    }
+#endif
+
+    return CHUNKMEMSET(out, from, (unsigned)len);
 }

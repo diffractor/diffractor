@@ -52,7 +52,7 @@ int __libarchive_hmac_build_hack(void);
 
 typedef	CCHmacContext archive_hmac_sha1_ctx;
 
-#elif defined(_WIN32) && !defined(__CYGWIN__) && defined(HAVE_BCRYPT_H)
+#elif defined(_WIN32) && !defined(__CYGWIN__) && defined(HAVE_BCRYPT_H) && _WIN32_WINNT >= _WIN32_WINNT_VISTA
 #include <bcrypt.h>
 
 typedef struct {
@@ -74,9 +74,18 @@ typedef mbedtls_md_context_t archive_hmac_sha1_ctx;
 typedef	struct hmac_sha1_ctx archive_hmac_sha1_ctx;
 
 #elif defined(HAVE_LIBCRYPTO)
+#include <openssl/opensslv.h>
+#include <openssl/hmac.h>
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#include <openssl/params.h>
+
+typedef EVP_MAC_CTX *archive_hmac_sha1_ctx;
+
+#else
 #include "archive_openssl_hmac_private.h"
 
 typedef	HMAC_CTX* archive_hmac_sha1_ctx;
+#endif
 
 #else
 
@@ -107,4 +116,4 @@ struct archive_hmac {
 };
 
 extern const struct archive_hmac __archive_hmac;
-#endif /* ARCHIVE_HMAC_PRIVATE_H_INCLUDED */
+#endif /* !ARCHIVE_HMAC_PRIVATE_H_INCLUDED */

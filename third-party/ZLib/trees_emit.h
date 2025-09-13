@@ -7,7 +7,6 @@
 #ifdef ZLIB_DEBUG
 #  include <ctype.h>
 #  include <inttypes.h>
-#  include <stdint.h>
 #endif
 
 
@@ -16,7 +15,7 @@ extern Z_INTERNAL const ct_data static_ltree[L_CODES+2];
 extern Z_INTERNAL const ct_data static_dtree[D_CODES];
 
 extern const unsigned char Z_INTERNAL zng_dist_code[DIST_CODE_LEN];
-extern const unsigned char Z_INTERNAL zng_length_code[MAX_MATCH-MIN_MATCH+1];
+extern const unsigned char Z_INTERNAL zng_length_code[STD_MAX_MATCH-STD_MIN_MATCH+1];
 
 extern Z_INTERNAL const int base_length[LENGTH_CODES];
 extern Z_INTERNAL const int base_dist[D_CODES];
@@ -39,6 +38,10 @@ extern Z_INTERNAL const int base_dist[D_CODES];
 /* If not enough room in bi_buf, use (valid) bits from bi_buf and
  * (64 - bi_valid) bits from value, leaving (width - (64-bi_valid))
  * unused bits in value.
+ *
+ * NOTE: Static analyzers can't evaluate value of total_bits, so we
+ *       also need to make sure bi_valid is within acceptable range,
+ *       otherwise the shifts will overflow.
  */
 #define send_bits(s, t_val, t_len, bi_buf, bi_valid) {\
     uint64_t val = (uint64_t)t_val;\
@@ -46,10 +49,10 @@ extern Z_INTERNAL const int base_dist[D_CODES];
     uint32_t total_bits = bi_valid + len;\
     send_bits_trace(s, val, len);\
     sent_bits_add(s, len);\
-    if (total_bits < BIT_BUF_SIZE) {\
+    if (total_bits < BIT_BUF_SIZE && bi_valid < BIT_BUF_SIZE) {\
         bi_buf |= val << bi_valid;\
         bi_valid = total_bits;\
-    } else if (bi_valid == BIT_BUF_SIZE) {\
+    } else if (bi_valid >= BIT_BUF_SIZE) {\
         put_uint64(s, bi_buf);\
         bi_buf = val;\
         bi_valid = len;\
@@ -126,7 +129,7 @@ static inline uint32_t zng_emit_dist(deflate_state *s, const ct_data *ltree, con
     uint32_t bi_valid = s->bi_valid;
     uint64_t bi_buf = s->bi_buf;
 
-    /* Send the length code, len is the match length - MIN_MATCH */
+    /* Send the length code, len is the match length - STD_MIN_MATCH */
     code = zng_length_code[lc];
     c = code+LITERALS+1;
     Assert(c < L_CODES, "bad l_code");

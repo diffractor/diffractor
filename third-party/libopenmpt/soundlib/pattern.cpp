@@ -37,33 +37,46 @@ CHANNELINDEX CPattern::GetNumChannels() const noexcept
 bool CPattern::IsEmptyRow(ROWINDEX row) const noexcept
 {
 	if(m_ModCommands.empty() || !IsValidRow(row))
-	{
 		return true;
-	}
 
 	for(const auto &m : GetRow(row))
 	{
 		if(!m.IsEmpty())
-		{
 			return false;
-		}
 	}
 	return true;
 }
 
 
+// Check if the row contains any position jumps or pattern breaks.
+bool CPattern::RowHasJump(ROWINDEX row) const noexcept
+{
+	if(m_ModCommands.empty() || !IsValidRow(row))
+		return false;
+
+	for(const auto &m : GetRow(row))
+	{
+		if(m.command == CMD_PATTERNBREAK || m.command == CMD_POSITIONJUMP)
+			return true;
+	}
+	return false;
+}
+
+
 bool CPattern::SetSignature(const ROWINDEX rowsPerBeat, const ROWINDEX rowsPerMeasure) noexcept
 {
-	if(rowsPerBeat < 1
-		|| rowsPerBeat > GetSoundFile().GetModSpecifications().patternRowsMax
-		|| rowsPerMeasure < rowsPerBeat
-		|| rowsPerMeasure > GetSoundFile().GetModSpecifications().patternRowsMax)
-	{
+	if(!IsValidSignature(rowsPerBeat, rowsPerMeasure))
 		return false;
-	}
 	m_RowsPerBeat = rowsPerBeat;
 	m_RowsPerMeasure = rowsPerMeasure;
 	return true;
+}
+
+
+bool CPattern::IsValidSignature(const ROWINDEX rowsPerBeat, const ROWINDEX rowsPerMeasure) noexcept
+{
+	return rowsPerBeat > 0 && rowsPerBeat <= MAX_ROWS_PER_BEAT
+	   && rowsPerBeat <= rowsPerMeasure && rowsPerMeasure <= MAX_ROWS_PER_MEASURE;
 }
 
 
@@ -135,6 +148,7 @@ void CPattern::Deallocate()
 {
 	m_Rows = m_RowsPerBeat = m_RowsPerMeasure = 0;
 	m_ModCommands.clear();
+	m_tempoSwing.clear();
 	m_PatternName.clear();
 }
 
@@ -261,9 +275,9 @@ bool CPattern::Shrink()
 #endif // MODPLUG_TRACKER
 
 
-bool CPattern::SetName(const std::string &newName)
+bool CPattern::SetName(std::string newName)
 {
-	m_PatternName = newName;
+	m_PatternName = std::move(newName);
 	return true;
 }
 
@@ -368,9 +382,9 @@ bool CPattern::WriteEffect(EffectWriter &settings)
 					m->command = settings.m_command;
 
 					if(isS3M)
-						m->vol = static_cast<uint8>((m->param + 1u) / 2u);
+						m->vol = static_cast<ModCommand::VOL>((m->param + 1u) / 2u);
 					else
-						m->vol = static_cast<uint8>((m->param + 2u) / 4u);
+						m->vol = static_cast<ModCommand::VOL>((m->param + 2u) / 4u);
 
 					m->param = settings.m_param;
 					return true;
@@ -641,6 +655,8 @@ void ReadData(std::istream& iStrm, CPattern& pat, const size_t)
 			mpt::IO::ReadIntLE<uint8>(iStrm, size);
 			iStrm.ignore(size);
 		}
+		if(!m.IsPcNote())
+			m.Clear();
 	}
 }
 

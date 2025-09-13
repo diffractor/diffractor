@@ -22,8 +22,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * $FreeBSD$
  */
 
 /*
@@ -49,6 +47,7 @@
 #include "archive_platform.h"
 #include "archive_private.h"
 #include "archive_entry.h"
+#include "archive_time_private.h"
 #include <ctype.h>
 #include <errno.h>
 #include <stddef.h>
@@ -62,8 +61,6 @@
 #include <wchar.h>
 #include <windows.h>
 #include <share.h>
-
-#define EPOC_TIME ARCHIVE_LITERAL_ULL(116444736000000000)
 
 #if defined(__LA_LSEEK_NEEDED)
 static BOOL SetFilePointerEx_perso(HANDLE hFile,
@@ -234,7 +231,11 @@ la_CreateFile(const char *path, DWORD dwDesiredAccess, DWORD dwShareMode,
 {
 	wchar_t *wpath;
 	HANDLE handle;
+# if _WIN32_WINNT >= 0x0602 /* _WIN32_WINNT_WIN8 */
+	CREATEFILE2_EXTENDED_PARAMETERS createExParams;
+#endif
 
+#if !defined(WINAPI_FAMILY_PARTITION) || WINAPI_FAMILY_PARTITION (WINAPI_PARTITION_DESKTOP)
 	handle = CreateFileA(path, dwDesiredAccess, dwShareMode,
 	    lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes,
 	    hTemplateFile);
@@ -242,12 +243,25 @@ la_CreateFile(const char *path, DWORD dwDesiredAccess, DWORD dwShareMode,
 		return (handle);
 	if (GetLastError() != ERROR_PATH_NOT_FOUND)
 		return (handle);
+#endif
 	wpath = __la_win_permissive_name(path);
 	if (wpath == NULL)
-		return (handle);
+		return INVALID_HANDLE_VALUE;
+# if _WIN32_WINNT >= 0x0602 /* _WIN32_WINNT_WIN8 */
+	ZeroMemory(&createExParams, sizeof(createExParams));
+	createExParams.dwSize = sizeof(createExParams);
+	createExParams.dwFileAttributes = dwFlagsAndAttributes & 0xFFFF;
+	createExParams.dwFileFlags = dwFlagsAndAttributes & 0xFFF00000;
+	createExParams.dwSecurityQosFlags = dwFlagsAndAttributes & 0x000F00000;
+	createExParams.lpSecurityAttributes = lpSecurityAttributes;
+	createExParams.hTemplateFile = hTemplateFile;
+	handle = CreateFile2(wpath, dwDesiredAccess, dwShareMode,
+	    dwCreationDisposition, &createExParams);
+#else /* !WINAPI_PARTITION_DESKTOP */
 	handle = CreateFileW(wpath, dwDesiredAccess, dwShareMode,
 	    lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes,
 	    hTemplateFile);
+#endif /* !WINAPI_PARTITION_DESKTOP */
 	free(wpath);
 	return (handle);
 }
@@ -305,7 +319,10 @@ __la_open(const char *path, int flags, ...)
 		 * "Permission denied" error.
 		 */
 		attr = GetFileAttributesA(path);
-		if (attr == (DWORD)-1 && GetLastError() == ERROR_PATH_NOT_FOUND) {
+#if !defined(WINAPI_FAMILY_PARTITION) || WINAPI_FAMILY_PARTITION (WINAPI_PARTITION_DESKTOP)
+		if (attr == (DWORD)-1 && GetLastError() == ERROR_PATH_NOT_FOUND)
+#endif
+		{
 			ws = __la_win_permissive_name(path);
 			if (ws == NULL) {
 				errno = EINVAL;
@@ -320,7 +337,7 @@ __la_open(const char *path, int flags, ...)
 		}
 		if (attr & FILE_ATTRIBUTE_DIRECTORY) {
 			HANDLE handle;
-
+#if !defined(WINAPI_FAMILY_PARTITION) || WINAPI_FAMILY_PARTITION (WINAPI_PARTITION_DESKTOP)
 			if (ws != NULL)
 				handle = CreateFileW(ws, 0, 0, NULL,
 				    OPEN_EXISTING,
@@ -333,6 +350,15 @@ __la_open(const char *path, int flags, ...)
 				    FILE_FLAG_BACKUP_SEMANTICS |
 				    FILE_ATTRIBUTE_READONLY,
 					NULL);
+#else /* !WINAPI_PARTITION_DESKTOP */
+			CREATEFILE2_EXTENDED_PARAMETERS createExParams;
+			ZeroMemory(&createExParams, sizeof(createExParams));
+			createExParams.dwSize = sizeof(createExParams);
+			createExParams.dwFileAttributes = FILE_ATTRIBUTE_READONLY;
+			createExParams.dwFileFlags = FILE_FLAG_BACKUP_SEMANTICS;
+			handle = CreateFile2(ws, 0, 0,
+				OPEN_EXISTING, &createExParams);
+#endif /* !WINAPI_PARTITION_DESKTOP */
 			free(ws);
 			if (handle == INVALID_HANDLE_VALUE) {
 				la_dosmaperr(GetLastError());
@@ -423,24 +449,6 @@ __la_read(int fd, void *buf, size_t nbytes)
 	return ((ssize_t)bytes_read);
 }
 
-/* Convert Windows FILETIME to UTC */
-__inline static void
-fileTimeToUTC(const FILETIME *filetime, time_t *t, long *ns)
-{
-	ULARGE_INTEGER utc;
-
-	utc.HighPart = filetime->dwHighDateTime;
-	utc.LowPart  = filetime->dwLowDateTime;
-	if (utc.QuadPart >= EPOC_TIME) {
-		utc.QuadPart -= EPOC_TIME;
-		*t = (time_t)(utc.QuadPart / 10000000);	/* milli seconds base */
-		*ns = (long)(utc.QuadPart % 10000000) * 100;/* nano seconds base */
-	} else {
-		*t = 0;
-		*ns = 0;
-	}
-}
-
 /* Stat by handle
  * Windows' stat() does not accept the path added "\\?\" especially "?"
  * character.
@@ -460,8 +468,6 @@ __hstat(HANDLE handle, struct ustat *st)
 	ULARGE_INTEGER ino64;
 	DWORD ftype;
 	mode_t mode;
-	time_t t;
-	long ns;
 
 	switch (ftype = GetFileType(handle)) {
 	case FILE_TYPE_UNKNOWN:
@@ -517,15 +523,9 @@ __hstat(HANDLE handle, struct ustat *st)
 		mode |= S_IFREG;
 	st->st_mode = mode;
 
-	fileTimeToUTC(&info.ftLastAccessTime, &t, &ns);
-	st->st_atime = t;
-	st->st_atime_nsec = ns;
-	fileTimeToUTC(&info.ftLastWriteTime, &t, &ns);
-	st->st_mtime = t;
-	st->st_mtime_nsec = ns;
-	fileTimeToUTC(&info.ftCreationTime, &t, &ns);
-	st->st_ctime = t;
-	st->st_ctime_nsec = ns;
+	ntfs_to_unix(FILETIME_to_ntfs(&info.ftLastAccessTime), &st->st_atime, &st->st_atime_nsec);
+	ntfs_to_unix(FILETIME_to_ntfs(&info.ftLastWriteTime), &st->st_mtime, &st->st_mtime_nsec);
+	ntfs_to_unix(FILETIME_to_ntfs(&info.ftCreationTime), &st->st_ctime, &st->st_ctime_nsec);
 	st->st_size =
 	    ((int64_t)(info.nFileSizeHigh) * ((int64_t)MAXDWORD + 1))
 		+ (int64_t)(info.nFileSizeLow);

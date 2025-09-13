@@ -23,8 +23,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * $FreeBSD$
  */
 
 /*
@@ -263,14 +261,7 @@
     #define	F_OK    0       /*  Test for existence of file  */
 #endif
 
-#ifndef _SSIZE_T_DEFINED
-#ifdef  _WIN64
-typedef unsigned __int64    ssize_t;
-#else
-typedef _W64 unsigned int   ssize_t;
-#endif
-#define _SSIZE_T_DEFINED
-#endif
+#define ssize_t ptrdiff_t
 
 /* Replacement POSIX function */
 extern int	 __la_fstat(int fd, struct stat *st);
@@ -281,7 +272,7 @@ extern __int64	 __la_lseek(int fd, __int64 offset, int whence);
 extern int	 __la_open(const char *path, int flags, ...);
 extern ssize_t	 __la_read(int fd, void *buf, size_t nbytes);
 extern int	 __la_stat(const char *path, struct stat *st);
-//extern pid_t	 __la_waitpid(HANDLE child, int *status, int option);
+extern pid_t	 __la_waitpid(HANDLE child, int *status, int option);
 extern ssize_t	 __la_write(int fd, const void *buf, size_t nbytes);
 
 #define _stat64i32(path, st)	__la_stat(path, st)
@@ -302,12 +293,17 @@ typedef int mbstate_t;
 size_t wcrtomb(char *, wchar_t, mbstate_t *);
 #endif
 
-#if defined(_MSC_VER) && _MSC_VER < 1300
+#if !WINAPI_FAMILY_PARTITION (WINAPI_PARTITION_DESKTOP) && NTDDI_VERSION < NTDDI_WIN10_VB
+// not supported in UWP SDK before 20H1
+#define GetVolumePathNameW(f, v, c)   (0)
+#elif defined(_MSC_VER) && _MSC_VER < 1300
 WINBASEAPI BOOL WINAPI GetVolumePathNameW(
        LPCWSTR lpszFileName,
        LPWSTR lpszVolumePathName,
        DWORD cchBufferLength
        );
+#endif
+#if defined(_MSC_VER) && _MSC_VER < 1300
 # if _WIN32_WINNT < 0x0500 /* windows.h not providing 0x500 API */
 typedef struct _FILE_ALLOCATED_RANGE_BUFFER {
        LARGE_INTEGER FileOffset;
@@ -320,4 +316,4 @@ typedef struct _FILE_ALLOCATED_RANGE_BUFFER {
 # endif
 #endif
 
-#endif /* LIBARCHIVE_ARCHIVE_WINDOWS_H_INCLUDED */
+#endif /* !LIBARCHIVE_ARCHIVE_WINDOWS_H_INCLUDED */

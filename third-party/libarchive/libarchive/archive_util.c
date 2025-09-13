@@ -25,7 +25,6 @@
  */
 
 #include "archive_platform.h"
-__FBSDID("$FreeBSD: head/lib/libarchive/archive_util.c 201098 2009-12-28 02:58:14Z kientzle $");
 
 #ifdef HAVE_SYS_TYPES_H
 #include <sys/types.h>
@@ -42,8 +41,19 @@ __FBSDID("$FreeBSD: head/lib/libarchive/archive_util.c 201098 2009-12-28 02:58:1
 #ifdef HAVE_STRING_H
 #include <string.h>
 #endif
-#if defined(HAVE_WINCRYPT_H) && !defined(__CYGWIN__)
+#if defined(_WIN32) && !defined(__CYGWIN__)
+#if defined(HAVE_BCRYPT_H) && _WIN32_WINNT >= _WIN32_WINNT_VISTA
+/* don't use bcrypt when XP needs to be supported */
+#include <bcrypt.h>
+
+/* Common in other bcrypt implementations, but missing from VS2008. */
+#ifndef BCRYPT_SUCCESS
+#define BCRYPT_SUCCESS(r) ((NTSTATUS)(r) == STATUS_SUCCESS)
+#endif
+
+#elif defined(HAVE_WINCRYPT_H)
 #include <wincrypt.h>
+#endif
 #endif
 #ifdef HAVE_ZLIB_H
 #include <zlib.h>
@@ -67,7 +77,9 @@ __FBSDID("$FreeBSD: head/lib/libarchive/archive_util.c 201098 2009-12-28 02:58:1
 #define O_CLOEXEC	0
 #endif
 
-static int archive_utility_string_sort_helper(char **, unsigned int);
+#if ARCHIVE_VERSION_NUMBER < 4000000
+static int __LA_LIBC_CC archive_utility_string_sort_helper(const void *, const void *);
+#endif
 
 /* Generic initialization of 'struct archive' objects. */
 int
@@ -233,20 +245,21 @@ __archive_mktempx(const char *tmpdir, wchar_t *template)
 		L'm', L'n', L'o', L'p', L'q', L'r', L's', L't',
 		L'u', L'v', L'w', L'x', L'y', L'z'
 	};
-	HCRYPTPROV hProv;
 	struct archive_wstring temp_name;
 	wchar_t *ws;
 	DWORD attr;
 	wchar_t *xp, *ep;
 	int fd;
-
-	hProv = (HCRYPTPROV)NULL;
+#if defined(HAVE_BCRYPT_H) && _WIN32_WINNT >= _WIN32_WINNT_VISTA
+	BCRYPT_ALG_HANDLE hAlg = NULL;
+#else
+	HCRYPTPROV hProv = (HCRYPTPROV)NULL;
+#endif
 	fd = -1;
 	ws = NULL;
+	archive_string_init(&temp_name);
 
 	if (template == NULL) {
-		archive_string_init(&temp_name);
-
 		/* Get a temporary directory. */
 		if (tmpdir == NULL) {
 			size_t l;
@@ -269,7 +282,8 @@ __archive_mktempx(const char *tmpdir, wchar_t *template)
 			if (archive_wstring_append_from_mbs(&temp_name, tmpdir,
 			    strlen(tmpdir)) < 0)
 				goto exit_tmpfile;
-			if (temp_name.s[temp_name.length-1] != L'/')
+			if (temp_name.length == 0 ||
+			    temp_name.s[temp_name.length-1] != L'/')
 				archive_wstrappend_wchar(&temp_name, L'/');
 		}
 
@@ -314,23 +328,42 @@ __archive_mktempx(const char *tmpdir, wchar_t *template)
 			abort();
 	}
 
+#if defined(HAVE_BCRYPT_H) && _WIN32_WINNT >= _WIN32_WINNT_VISTA
+	if (!BCRYPT_SUCCESS(BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_RNG_ALGORITHM,
+		NULL, 0))) {
+		la_dosmaperr(GetLastError());
+		goto exit_tmpfile;
+	}
+#else
 	if (!CryptAcquireContext(&hProv, NULL, NULL, PROV_RSA_FULL,
 		CRYPT_VERIFYCONTEXT)) {
 		la_dosmaperr(GetLastError());
 		goto exit_tmpfile;
 	}
+#endif
 
 	for (;;) {
 		wchar_t *p;
 		HANDLE h;
+# if _WIN32_WINNT >= 0x0602 /* _WIN32_WINNT_WIN8 */
+		CREATEFILE2_EXTENDED_PARAMETERS createExParams;
+#endif
 
 		/* Generate a random file name through CryptGenRandom(). */
 		p = xp;
+#if defined(HAVE_BCRYPT_H) && _WIN32_WINNT >= _WIN32_WINNT_VISTA
+		if (!BCRYPT_SUCCESS(BCryptGenRandom(hAlg, (PUCHAR)p,
+		    (DWORD)(ep - p)*sizeof(wchar_t), 0))) {
+			la_dosmaperr(GetLastError());
+			goto exit_tmpfile;
+		}
+#else
 		if (!CryptGenRandom(hProv, (DWORD)(ep - p)*sizeof(wchar_t),
 		    (BYTE*)p)) {
 			la_dosmaperr(GetLastError());
 			goto exit_tmpfile;
 		}
+#endif
 		for (; p < ep; p++)
 			*p = num[((DWORD)*p) % (sizeof(num)/sizeof(num[0]))];
 
@@ -347,6 +380,17 @@ __archive_mktempx(const char *tmpdir, wchar_t *template)
 			/* mkstemp */
 			attr = FILE_ATTRIBUTE_NORMAL;
 		}
+# if _WIN32_WINNT >= 0x0602 /* _WIN32_WINNT_WIN8 */
+		ZeroMemory(&createExParams, sizeof(createExParams));
+		createExParams.dwSize = sizeof(createExParams);
+		createExParams.dwFileAttributes = attr & 0xFFFF;
+		createExParams.dwFileFlags = attr & 0xFFF00000;
+		h = CreateFile2(ws,
+		    GENERIC_READ | GENERIC_WRITE | DELETE,
+		    0,/* Not share */
+			CREATE_NEW,
+			&createExParams);
+#else
 		h = CreateFileW(ws,
 		    GENERIC_READ | GENERIC_WRITE | DELETE,
 		    0,/* Not share */
@@ -354,6 +398,7 @@ __archive_mktempx(const char *tmpdir, wchar_t *template)
 		    CREATE_NEW,/* Create a new file only */
 		    attr,
 		    NULL);
+#endif
 		if (h == INVALID_HANDLE_VALUE) {
 			/* The same file already exists. retry with
 			 * a new filename. */
@@ -372,8 +417,13 @@ __archive_mktempx(const char *tmpdir, wchar_t *template)
 			break;/* success! */
 	}
 exit_tmpfile:
+#if defined(HAVE_BCRYPT_H) && _WIN32_WINNT >= _WIN32_WINNT_VISTA
+	if (hAlg != NULL)
+		BCryptCloseAlgorithmProvider(hAlg, 0);
+#else
 	if (hProv != (HCRYPTPROV)NULL)
 		CryptReleaseContext(hProv, 0);
+#endif
 	free(ws);
 	if (template == temp_name.s)
 		archive_wstring_free(&temp_name);
@@ -407,7 +457,7 @@ get_tempdir(struct archive_string *temppath)
                 tmp = "/tmp";
 #endif
 	archive_strcpy(temppath, tmp);
-	if (temppath->s[temppath->length-1] != '/')
+	if (temppath->length == 0 || temppath->s[temppath->length-1] != '/')
 		archive_strappend_char(temppath, '/');
 	return (ARCHIVE_OK);
 }
@@ -430,7 +480,8 @@ __archive_mktemp(const char *tmpdir)
 			goto exit_tmpfile;
 	} else {
 		archive_strcpy(&temp_name, tmpdir);
-		if (temp_name.s[temp_name.length-1] != '/')
+		if (temp_name.length == 0 ||
+		    temp_name.s[temp_name.length-1] != '/')
 			archive_strappend_char(&temp_name, '/');
 	}
 #ifdef O_TMPFILE
@@ -491,7 +542,7 @@ __archive_mktempx(const char *tmpdir, char *template)
 				goto exit_tmpfile;
 		} else
 			archive_strcpy(&temp_name, tmpdir);
-		if (temp_name.s[temp_name.length-1] == '/') {
+		if (temp_name.length > 0 && temp_name.s[temp_name.length-1] == '/') {
 			temp_name.s[temp_name.length-1] = '\0';
 			temp_name.length --;
 		}
@@ -580,76 +631,28 @@ __archive_ensure_cloexec_flag(int fd)
 #endif
 }
 
+#if ARCHIVE_VERSION_NUMBER < 4000000
 /*
- * Utility function to sort a group of strings using quicksort.
+ * Utility functions to sort a group of strings using quicksort.
  */
 static int
-archive_utility_string_sort_helper(char **strings, unsigned int n)
+__LA_LIBC_CC
+archive_utility_string_sort_helper(const void *p1, const void *p2)
 {
-	unsigned int i, lesser_count, greater_count;
-	char **lesser, **greater, **tmp, *pivot;
-	int retval1, retval2;
+	const char * const * const s1 = p1;
+	const char * const * const s2 = p2;
 
-	/* A list of 0 or 1 elements is already sorted */
-	if (n <= 1)
-		return (ARCHIVE_OK);
-
-	lesser_count = greater_count = 0;
-	lesser = greater = NULL;
-	pivot = strings[0];
-	for (i = 1; i < n; i++)
-	{
-		if (strcmp(strings[i], pivot) < 0)
-		{
-			lesser_count++;
-			tmp = (char **)realloc(lesser,
-				lesser_count * sizeof(char *));
-			if (!tmp) {
-				free(greater);
-				free(lesser);
-				return (ARCHIVE_FATAL);
-			}
-			lesser = tmp;
-			lesser[lesser_count - 1] = strings[i];
-		}
-		else
-		{
-			greater_count++;
-			tmp = (char **)realloc(greater,
-				greater_count * sizeof(char *));
-			if (!tmp) {
-				free(greater);
-				free(lesser);
-				return (ARCHIVE_FATAL);
-			}
-			greater = tmp;
-			greater[greater_count - 1] = strings[i];
-		}
-	}
-
-	/* quicksort(lesser) */
-	retval1 = archive_utility_string_sort_helper(lesser, lesser_count);
-	for (i = 0; i < lesser_count; i++)
-		strings[i] = lesser[i];
-	free(lesser);
-
-	/* pivot */
-	strings[lesser_count] = pivot;
-
-	/* quicksort(greater) */
-	retval2 = archive_utility_string_sort_helper(greater, greater_count);
-	for (i = 0; i < greater_count; i++)
-		strings[lesser_count + 1 + i] = greater[i];
-	free(greater);
-
-	return (retval1 < retval2) ? retval1 : retval2;
+	return strcmp(*s1, *s2);
 }
 
 int
 archive_utility_string_sort(char **strings)
 {
-	  unsigned int size = 0;
-	  while (strings[size] != NULL)
+	size_t size = 0;
+	while (strings[size] != NULL)
 		size++;
-	  return archive_utility_string_sort_helper(strings, size);
+	qsort(strings, size, sizeof(char *),
+	      archive_utility_string_sort_helper);
+	return (ARCHIVE_OK);
 }
+#endif
