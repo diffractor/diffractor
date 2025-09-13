@@ -203,5 +203,8 @@
     <ClInclude Include="libexif\pentax\mnote-pentax-tag.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="libexif\_stdint.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

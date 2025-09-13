@@ -61,6 +61,7 @@
     <ClInclude Include="libexif\pentax\exif-mnote-data-pentax.h" />
     <ClInclude Include="libexif\pentax\mnote-pentax-entry.h" />
     <ClInclude Include="libexif\pentax\mnote-pentax-tag.h" />
+    <ClInclude Include="libexif\_stdint.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="libexif\apple\exif-mnote-data-apple.c" />

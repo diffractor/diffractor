@@ -1,6 +1,4 @@
 /*
- * jsimd_x86_64.c
- *
  * Copyright 2009 Pierre Ossman <ossman@cendio.se> for Cendio AB
  * Copyright (C) 2009-2011, 2014, 2016, 2018, 2022-2024, D. R. Commander.
  * Copyright (C) 2015-2016, 2018, 2022, Matthieu Darbois.
@@ -15,11 +13,11 @@
  */
 
 #define JPEG_INTERNALS
-#include "../../jinclude.h"
-#include "../../jpeglib.h"
-#include "../../jsimd.h"
-#include "../../jdct.h"
-#include "../../jsimddct.h"
+#include "../../src/jinclude.h"
+#include "../../src/jpeglib.h"
+#include "../../src/jsimd.h"
+#include "../../src/jdct.h"
+#include "../../src/jsimddct.h"
 #include "../jsimd.h"
 
 /*

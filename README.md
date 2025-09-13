@@ -34,7 +34,7 @@ Diffractor has a built-in test runner. If the application is started from Visual
 - [libebml](https://github.com/Matroska-Org/libebml) 1.4.5
 - [libexif](https://github.com/libexif/libexif) 0.6.25
 - [libheif](https://github.com/strukturag/libheif) 1.18.0
-- [libjpeg-turbo](https://github.com/libjpeg-turbo/libjpeg-turbo) 3.1.1
+- [libjpeg-turbo](https://github.com/libjpeg-turbo/libjpeg-turbo) 3.1.2
 - [liblzma](https://github.com/tukaani-project/xz) 5.4.6
 - [libmatroska](https://github.com/Matroska-Org/libmatroska) 1.7.1
 - [libopenmpt](https://lib.openmpt.org) 0.7.7
@@ -43,9 +43,9 @@ Diffractor has a built-in test runner. If the application is started from Visual
 - [libwebp](https://github.com/webmproject/libwebp) 1.4.0
 - [libjxl](https://github.com/libjxl/libjxl) 0.10.3
 - [minizip-ng](https://github.com/zlib-ng/minizip-ng) 4.05
-- [parallel-hashmap](https://github.com/greg7mdp/parallel-hashmap) 1.3.12
+- [parallel-hashmap](https://github.com/greg7mdp/parallel-hashmap) 2.0.0
 - [rapidjson](https://github.com/Tencent/rapidjson) main
 - [skcms](https://skia.googlesource.com/skcms) main
 - [sqlite](https://www.sqlite.org/index.html) 3.50.4
-- [utf-cpp](https://github.com/nemtrif/utfcpp) 4.0.5
+- [utf-cpp](https://github.com/nemtrif/utfcpp) 4.0.6
 - [zlib-ng](https://github.com/zlib-ng/zlib-ng) 2.0.7
