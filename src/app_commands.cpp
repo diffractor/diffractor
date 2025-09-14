@@ -1230,7 +1230,6 @@ bool ui::browse_for_location(view_state& vs, const control_frame_ptr& parent, gp
 
 	const auto map_col = std::make_shared<group_control>();
 	map_col->add(map);
-	map_col->add(std::make_shared<text_element>(tt.click_map_to_select, view_element_style::center));
 
 	const auto search_col = std::make_shared<group_control>();
 	search_col->add(std::make_shared<text_element>(tt.type_to_search, view_element_style::center));
@@ -1246,6 +1245,10 @@ bool ui::browse_for_location(view_state& vs, const control_frame_ptr& parent, gp
 	const auto props_col = std::make_shared<group_control>();
 	props_col->add(std::make_shared<title_control>(tt.metadata));
 	props_col->add(props_table);
+	auto instructions = std::make_shared<text_element>(tt.map_instructions, view_element_style::info);
+	instructions->padding = { 10, 10 };
+	instructions->margin = { 10, 10 };
+	props_col->add(instructions);
 
 	const auto cols = std::make_shared<col_control>();
 	cols->add(search_col);
@@ -1286,31 +1289,34 @@ static void locate_invoke(view_state& vs, const ui::control_frame_ptr& parent, c
 	{
 		const auto ls = std::make_shared<selected_location_t>();
 
-		const auto place_edit = std::make_shared<ui::edit_control>(dlg->_frame, ls->place_text);
-		const auto state_edit = std::make_shared<ui::edit_control>(dlg->_frame, ls->state_text);
-		const auto country_edit = std::make_shared<ui::edit_control>(dlg->_frame, ls->country_text);
-		const auto latitude_edit = std::make_shared<ui::float_control>(dlg->_frame, ls->latitude);
-		const auto longitude_edit = std::make_shared<ui::float_control>(dlg->_frame, ls->longitude);
+		const auto place_edit = std::make_shared<text_element>(ls->place_text);
+		const auto state_edit = std::make_shared<text_element>(ls->state_text);
+		const auto country_edit = std::make_shared<text_element>(ls->country_text);
+		const auto latitude_edit = std::make_shared<text_element>(str::to_string(ls->latitude, 5));
+		const auto longitude_edit = std::make_shared<text_element>(str::to_string(ls->longitude, 5));
 
 		auto populate_place = [ls, place_edit, state_edit, country_edit, latitude_edit, longitude_edit, dlg
-			](const location_t& loc)
-		{
-			df::assert_true(ui::is_ui_thread());
+		](const location_t& loc)
+			{
+				df::assert_true(ui::is_ui_thread());
 
-			ls->id = loc.id;
-			ls->place_text = loc.place;
-			ls->state_text = loc.state;
-			ls->country_text = loc.country;
-			ls->latitude = loc.position.latitude();
-			ls->longitude = loc.position.longitude();
+				ls->id = loc.id;
+				ls->place_text = loc.place;
+				ls->state_text = loc.state;
+				ls->country_text = loc.country;
+				ls->latitude = loc.position.latitude();
+				ls->longitude = loc.position.longitude();
 
-			const view_element_event e{view_element_event_type::populate, dlg};
-			place_edit->dispatch_event(e);
-			state_edit->dispatch_event(e);
-			country_edit->dispatch_event(e);
-			latitude_edit->dispatch_event(e);
-			longitude_edit->dispatch_event(e);
-		};
+				view_element_event e{ view_element_event_type::populate, dlg };
+				place_edit->text(ls->place_text);
+				state_edit->text(ls->state_text);
+				country_edit->text(ls->country_text);
+				latitude_edit->text(str::to_string(ls->latitude, 5));
+				longitude_edit->text(str::to_string(ls->longitude, 5));
+
+				dlg->_frame->invalidate();
+				dlg->layout();
+			};
 
 		auto coord_changed = [&vs, populate_place](const gps_coordinate coord)
 		{
@@ -1348,25 +1354,22 @@ static void locate_invoke(view_state& vs, const ui::control_frame_ptr& parent, c
 		const auto search_control = std::make_shared<ui::search_control>(dlg->_frame, ls->search_text, strategy);
 
 		const auto map_col = std::make_shared<ui::group_control>();
-		map_col->add(map);
-		map_col->add(std::make_shared<text_element>(tt.click_map_to_select, view_element_style::center));
+		map_col->add(map);		
 
 		const auto search_col = std::make_shared<ui::group_control>();
 		search_col->add(std::make_shared<text_element>(tt.type_to_search, view_element_style::center));
 		search_col->add(search_control);
 
-		const auto props_col = std::make_shared<ui::group_control>();
+		const auto props_table = std::make_shared<ui::table_element>();
+		props_table->add(tt.prop_name_place, place_edit);
+		props_table->add(tt.prop_name_state, state_edit);
+		props_table->add(tt_prep(tt.prop_name_country), country_edit);
+		props_table->add(tt.prop_name_latitude, latitude_edit);
+		props_table->add(tt.prop_name_longitude, longitude_edit);
+
+		const auto props_col = std::make_shared<ui::group_control>();		
 		props_col->add(std::make_shared<ui::title_control>(tt.metadata));
-		props_col->add(std::make_shared<text_element>(tt.prop_name_place));
-		props_col->add(place_edit);
-		props_col->add(std::make_shared<text_element>(tt.prop_name_state));
-		props_col->add(state_edit);
-		props_col->add(std::make_shared<text_element>(tt_prep(tt.prop_name_country)));
-		props_col->add(country_edit);
-		props_col->add(std::make_shared<text_element>(tt.prop_name_latitude));
-		props_col->add(latitude_edit);
-		props_col->add(std::make_shared<text_element>(tt.prop_name_longitude));
-		props_col->add(longitude_edit);
+		props_col->add(props_table);		
 
 		auto gps_overwrite_count = 0;
 
@@ -1383,10 +1386,18 @@ static void locate_invoke(view_state& vs, const ui::control_frame_ptr& parent, c
 			const auto element = std::make_shared<text_element>(
 				format_plural_text(tt.gps_overwrite_count_fmt, vs.selected_items()),
 				view_element_style::grow | view_element_style::important);
-			element->padding = {8, 8};
-			element->margin = {8, 8};
+			element->margin = { 10, 10 };
+			element->padding = {10, 10};
+			element->update_background_color();
 			props_col->add(element);
 		}
+
+		auto instructions = std::make_shared<text_element>(tt.map_instructions, view_element_style::info);
+		//instructions->padding = { 0, 20 };
+		instructions->padding = { 10, 10 };
+		instructions->margin = { 10, 10 };
+		instructions->update_background_color();
+		props_col->add(instructions);
 
 		const auto cols = std::make_shared<ui::col_control>();
 		cols->add(search_col);
@@ -1409,9 +1420,7 @@ static void locate_invoke(view_state& vs, const ui::control_frame_ptr& parent, c
 			record_feature_use(features::locate);
 
 			metadata_edits edits;
-			edits.location_place = ls->place_text;
-			edits.location_state = ls->state_text;
-			edits.location_country = ls->country_text;
+			// Only set GPS
 			edits.location_coordinate = {ls->latitude, ls->longitude};
 
 			vs.recent_locations.add(str::to_string(ls->id));

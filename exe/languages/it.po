@@ -139,8 +139,8 @@ msgstr "Modifiche"
 msgid "Click for collection options"
 msgstr "Clicca per le opzioni della collezione"
 
-msgid "Click map to select a location."
-msgstr "Clicca sulla mappa per selezionare una posizione."
+msgid "Scroll map to select a location. Use mouse-wheel to zoom."
+msgstr ""
 
 msgid "Click to search for similar items in the collection."
 msgstr "Clicca per cercare elementi simili nella collezione."

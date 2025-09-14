@@ -820,7 +820,7 @@ struct app_text_t
 	text_t copy_to_join = u8"to"sv;
 	text_t save_new_photo = u8"Save new photo"sv;
 	text_t open_title = u8"Open"sv;
-	text_t click_map_to_select = u8"Click map to select a location."sv;
+	text_t map_instructions = u8"Scroll map to select a location. Use mouse-wheel to zoom."sv;
 	text_t command_filter_photos = u8"Photo filter"sv;
 	text_t command_filter_videos = u8"Video filter"sv;
 	text_t command_filter_audio = u8"Audio filter"sv;

@@ -850,6 +850,8 @@ public:
 			const auto clr = _foreground_clr
 				                 ? ui::color(_foreground_clr, dc.colors.alpha)
 				                 : ui::color(dc.colors.foreground, dc.colors.alpha);
+
+			dc.draw_rect(logical_bounds.inflate(padding), bg);
 			dc.draw_text(_tl, logical_bounds, clr, bg);
 		}
 	}

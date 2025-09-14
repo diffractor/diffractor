@@ -281,7 +281,7 @@ void app_text_t::calc_text_mapping()
 		cannot_edit,
 		changes,
 		click_collection_options,
-		click_map_to_select,
+		map_instructions,
 		click_to_search_similar,
 		click_to_search,
 		click_to_open,

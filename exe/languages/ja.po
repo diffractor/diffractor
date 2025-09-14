@@ -139,8 +139,8 @@ msgstr "変更"
 msgid "Click for collection options"
 msgstr "クリックしてコレクションオプションを表示"
 
-msgid "Click map to select a location."
-msgstr "地図をクリックして場所を選択"
+msgid "Scroll map to select a location. Use mouse-wheel to zoom."
+msgstr ""
 
 msgid "Click to search for similar items in the collection."
 msgstr "クリックしてコレクション内の類似アイテムを検索"
