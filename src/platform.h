@@ -686,7 +686,6 @@ namespace platform
 
 	struct web_request
 	{
-		std::u8string host;
 		std::u8string command;
 		std::u8string path;
 
@@ -701,8 +700,6 @@ namespace platform
 		df::file_path download_file_path;
 
 		web_request_verb verb = web_request_verb::GET;
-		bool secure = true;
-		int port = 0;
 	};
 
 	struct web_response
@@ -713,6 +710,11 @@ namespace platform
 		int status_code = 0;
 	};
 
-	web_response send_request(const web_request& req);
+	struct web_host;
+	using web_host_ptr = std::shared_ptr<web_host>;
+
+	web_host_ptr connect_to_host(std::u8string_view host, bool secure = true, int port = 0);
+	web_response send_request(const web_host_ptr &host, const web_request& req);
+
 	ui::surface_ptr image_to_surface(df::cspan image_buffer_in, sizei target_extent);
 }

@@ -47,8 +47,7 @@ static const std::u8string azure_maps_api_key = u8"";
 
 extern bool toggle_details_state;
 
-std::map<map_tile_id, map_control::cache_entry> map_control::_tile_cache;
-
+std::map<map_tile_id, map_control::cache_entry_ptr> map_control::_tile_cache;
 
 static constexpr auto docs_url = u8"https://www.diffractor.com/docs"sv;
 static constexpr auto support_url = u8"https://diffractor.com/help"sv;
@@ -800,12 +799,12 @@ static void fetch(async_strategy& async, std::u8string key, std::u8string host, 
 			if (cache_response.empty())
 			{
 				platform::web_request req;
-				req.host = host;
 				req.path = path;
 
-				async.queue_async(async_queue::web, [&async, req, f, key]
+				async.queue_async(async_queue::web, [&async, req, f, key, host]
 				{
-					auto response = send_request(req);
+					const auto con = platform::connect_to_host(host);
+					auto response = send_request(con, req);
 
 					// only cache if success
 					if (response.status_code == 200)
@@ -3055,7 +3054,6 @@ void send_info(const view_state& s)
 
 	platform::web_request req;
 	req.verb = platform::web_request_verb::POST;
-	req.host = u8"diffractor.com"sv;
 	req.path = u8"/crash"sv;
 	req.form_data.emplace_back(u8"message"sv, message.str());
 	req.form_data.emplace_back(u8"version"sv, platform::OS());
@@ -3067,7 +3065,8 @@ void send_info(const view_state& s)
 	req.file_name = u8"logs.zip"sv;
 	req.file_path = crash_zip_path;
 
-	send_request(req);
+	const auto con = platform::connect_to_host(u8"diffractor.com"sv);
+	send_request(con, req);
 }
 
 static void about_invoke(view_state& s, const ui::control_frame_ptr& parent, commands_map& commands)

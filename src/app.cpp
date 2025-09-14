@@ -836,7 +836,6 @@ static void check_for_updates_and_location(const app_frame_ptr& app, view_state&
 			s.queue_async(async_queue::web, [app, &s]
 			{
 				platform::web_request req;
-				req.host = u8"diffractor.com"sv;
 				req.path = u8"/ver"sv;
 				req.query = platform::web_params{
 					{u8"v"s, std::u8string(s_app_version)},
@@ -847,7 +846,8 @@ static void check_for_updates_and_location(const app_frame_ptr& app, view_state&
 					{u8"os"s, platform::OS()},
 				};
 
-				const auto response = send_request(req);
+				const auto con = platform::connect_to_host(u8"diffractor.com"sv);
+				const auto response = send_request(con, req);
 
 				if (response.status_code == 200)
 				{
@@ -2530,7 +2530,9 @@ void app_frame::queue_async(const async_queue q, std::function<void()> f)
 	case async_queue::web:
 		web_task_queue.enqueue(std::move(f));
 		break;
-
+	case async_queue::map_tile:
+		map_tile_task_queue.enqueue(std::move(f));
+		break;
 	case async_queue::work:
 	default:
 		work_task_queue.enqueue(std::move(f));
@@ -3870,7 +3872,7 @@ void app_frame::start_workers()
 	_threads.start([&q = location_task_queue] { start_worker(q, u8"locations"sv); });
 	_threads.start([&q = sidebar_task_queue] { start_worker(q, u8"sidebar"sv); });
 	_threads.start([&q = web_task_queue] { start_worker(q, u8"web"sv); });
-
+	_threads.start([&q = map_tile_task_queue] { start_worker(q, u8"map"sv); });
 	_threads.start([&q = cloud_task_queue] { start_worker(q, u8"cloud"sv); });
 	_threads.start([&q = index_task_queue] { start_worker(q, u8"index"sv); });
 
@@ -4239,7 +4241,6 @@ void app_frame::crash(const df::file_path dump_file_path)
 
 			platform::web_request req;
 			req.verb = platform::web_request_verb::POST;
-			req.host = u8"diffractor.com"sv;
 			req.path = u8"/crash"sv;
 			req.form_data.emplace_back(u8"message"sv, message.str());
 			//req.form_data.emplace_back(u8"contactname"sv, platform::user_name());
@@ -4253,7 +4254,8 @@ void app_frame::crash(const df::file_path dump_file_path)
 			req.file_name = u8"crash.zip"sv;
 			req.file_path = crash_zip_path;
 
-			send_request(req);
+			const auto con = platform::connect_to_host(u8"diffractor.com"sv);
+			send_request(con, req);
 		}
 	}
 }

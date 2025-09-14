@@ -6,8 +6,6 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
-#include <utility>
-#include <set>
 #include "ui.h"
 
 // For M_PI on some compilers, otherwise define it manually.
@@ -17,7 +15,6 @@
 
 // A standard tile size in pixels (OpenStreetMap tiles are 256x256)
 constexpr int TILE_SIZE = 256;
-
 
 // Represents a tile coordinate (slippy map tilenames).
 struct map_tile_id
@@ -32,7 +29,28 @@ struct map_tile_id
 		if (x != other.x) return x < other.x;
 		return y < other.y;
 	}
+
+	bool operator==(const map_tile_id& other) const
+	{
+		return x == other.x && y == other.y && z == other.z;
+	}
 };
+
+// Hash specialization for map_tile_id to enable use with std::unordered_set
+namespace std {
+	template<>
+	struct hash<map_tile_id> {
+		std::size_t operator()(const map_tile_id& id) const noexcept {
+			// Combine the hash values of x, y, and z
+			std::size_t h1 = std::hash<int>{}(id.x);
+			std::size_t h2 = std::hash<int>{}(id.y);
+			std::size_t h3 = std::hash<int>{}(id.z);
+			
+			// Use a simple combining formula
+			return h1 ^ (h2 << 1) ^ (h3 << 2);
+		}
+	};
+}
 
 // The primary output struct, linking a tile to its drawing position.
 struct map_tile
@@ -53,7 +71,6 @@ static double lat_to_tile_y(const double lat, const int zoom)
 	const double lat_rad = lat * M_PI / 180.0;
 	return (1.0 - asinh(tan(lat_rad)) / M_PI) / 2.0 * pow(2.0, zoom);
 }
-
 
 /**
  * @brief Calculates which tiles are needed to fill a window and where to draw them.
@@ -133,31 +150,6 @@ static std::u8string generate_tile_path(const map_tile_id& coord)
 	return url.str();
 }
 
-static void fetch_tile(async_strategy& async, const map_tile_id& coord, std::function<void(ui::surface_ptr)> f)
-{
-	platform::web_request req;
-	req.host = u8"a.tile.openstreetmap.org";
-	req.path = generate_tile_path(coord);
-
-	async.queue_async(async_queue::web, [&async, req, f]
-	{
-		auto response = send_request(req);
-
-		if (response.status_code == 200)
-		{
-			files ff;
-			const df::cspan data(std::bit_cast<const uint8_t*>(response.body.data()), response.body.size());
-			auto surface = ff.image_to_surface(data);
-
-			async.queue_ui(
-				[&async, surface, f]
-				{
-					f(std::move(surface));
-				});
-		}
-	});
-}
-
 class map_control final : public view_element, public std::enable_shared_from_this<map_control>, public ui::frame_host
 {
 public:
@@ -182,7 +174,7 @@ public:
 	pointi _temp_drag_offset = {0, 0};
 
 	map_control(async_strategy& async, std::function<void(gps_coordinate)> cb) : _async(async), _cb(
-			std::move(cb))
+		std::move(cb))
 	{
 	}
 
@@ -212,6 +204,34 @@ public:
 		_extent = extent;
 	}
 
+	gps_coordinate calc_center_gps() const
+	{
+		// Calculate the center location's GPS coordinates
+		// based on existing _location and scroll offset
+		const auto total_offset = _scroll_offset + _temp_drag_offset;
+
+		// Convert the current location to tile coordinates
+		const double center_tile_x_f = lon_to_tile_x(_location.longitude(), _zoom);
+		const double center_tile_y_f = lat_to_tile_y(_location.latitude(), _zoom);
+
+		// Calculate how many tiles we've moved due to scrolling
+		// Positive scroll offset means we've moved the map right/down, so the center moved left/up
+		const double tile_offset_x = -static_cast<double>(total_offset.x) / TILE_SIZE;
+		const double tile_offset_y = -static_cast<double>(total_offset.y) / TILE_SIZE;
+
+		// Calculate the new center tile coordinates
+		const double new_center_tile_x = center_tile_x_f + tile_offset_x;
+		const double new_center_tile_y = center_tile_y_f + tile_offset_y;
+
+		// Convert tile coordinates back to GPS coordinates
+		const double new_longitude = new_center_tile_x / pow(2.0, _zoom) * 360.0 - 180.0;
+
+		const double n = M_PI - 2.0 * M_PI * new_center_tile_y / pow(2.0, _zoom);
+		const double new_latitude = 180.0 / M_PI * atan(0.5 * (exp(n) - exp(-n)));
+
+		return gps_coordinate(new_latitude, new_longitude);
+	}
+
 	void on_mouse_move(const pointi loc, const bool is_tracking) override
 	{
 		if (!_hover)
@@ -226,6 +246,7 @@ public:
 			_temp_drag_offset = temp_offset;
 			fetch_tiles(calc_bounds().inflate(TILE_SIZE), _scroll_offset + temp_offset);
 			_frame->invalidate();
+			send_location_changed_event(calc_center_gps());
 		}
 	}
 
@@ -239,6 +260,12 @@ public:
 		scroll_map(_temp_drag_offset);
 		_temp_drag_offset = {0, 0};
 		_start_loc = {0, 0};
+
+		const auto gps = calc_center_gps();
+		_location = gps;
+		_scroll_offset = {};
+		fetch_tiles(calc_bounds(), _scroll_offset);
+		send_location_changed_event(gps);
 		_frame->invalidate();
 	}
 
@@ -257,8 +284,46 @@ public:
 		}
 	}
 
+	void send_location_changed_event(const gps_coordinate& loc) const
+	{
+		if (_cb)
+		{
+			_cb(loc);
+		}
+	}
+
 	void on_mouse_wheel(const pointi loc, const int delta, const ui::key_state keys, bool& was_handled) override
 	{
+		// Determine zoom direction based on wheel delta
+		// Positive delta = zoom in, negative delta = zoom out
+		const int zoom_change = delta > 0 ? 1 : -1;
+		const int new_zoom = _zoom + zoom_change;
+
+		// Clamp zoom level to valid range (0 to 19)
+		if (new_zoom >= 3 && new_zoom <= 18)
+		{
+			_zoom = new_zoom;
+
+			// Clear texture cache when zoom changes since tiles are different
+			_texture_cache.clear();
+
+			// Reset scroll offset to keep the map centered
+			_scroll_offset = {0, 0};
+
+			// Fetch new tiles for the updated zoom level
+			fetch_tiles(calc_bounds(), _scroll_offset);
+
+			// Invalidate to trigger a repaint
+			_frame->invalidate();
+
+			// Mark the event as handled
+			was_handled = true;
+		}
+		else
+		{
+			// Don't handle if zoom would go out of bounds
+			was_handled = false;
+		}
 	}
 
 	void tick() override
@@ -295,10 +360,10 @@ public:
 			{
 				auto found_surface = _tile_cache.find(tile.coord);
 
-				if (found_surface != _tile_cache.end() && found_surface->second.surface)
+				if (found_surface != _tile_cache.end() && found_surface->second->surface)
 				{
 					auto texture = dc.create_texture();
-					texture->update(found_surface->second.surface);
+					texture->update(found_surface->second->surface);
 					_texture_cache[tile.coord] = texture;
 					dc.draw_texture(texture, tile_rect);
 				}
@@ -308,38 +373,210 @@ public:
 				}
 			}
 		}
+
+		// Draw crosshair center marker
+		const int center_x = bounds.width() / 2;
+		const int center_y = bounds.height() / 2;
+		const pointi center_point(center_x, center_y);
+
+		// Crosshair parameters
+		constexpr int crosshair_size = 20;
+		constexpr int inner_gap = 4;
+		constexpr int line_width = 2;
+		constexpr int outer_circle_radius = 15;
+		constexpr int inner_circle_radius = 3;
+
+		const auto crosshair_color = ui::color(ui::style::color::dialog_selected_background, 0.7);
+		const auto outline_color = ui::color(1.0f, 1.0f, 1.0f, 0.5f); // White outline for contrast
+
+		// Draw outer circle outline
+		const recti outer_circle_outline(center_point - pointi(outer_circle_radius + 1, outer_circle_radius + 1),
+		                                 sizei((outer_circle_radius + 1) * 2, (outer_circle_radius + 1) * 2));
+		dc.draw_rounded_rect(outer_circle_outline, outline_color, outer_circle_radius + 1);
+
+		// Draw outer circle
+		const recti outer_circle(center_point - pointi(outer_circle_radius, outer_circle_radius),
+		                         sizei(outer_circle_radius * 2, outer_circle_radius * 2));
+		dc.draw_rounded_rect(outer_circle, crosshair_color, outer_circle_radius);
+
+		// Draw horizontal crosshair lines with outline
+		// Left line outline
+		const recti left_line_outline(pointi(center_x - crosshair_size, center_y - line_width / 2 - 1),
+		                              sizei(crosshair_size - inner_gap, line_width + 2));
+		dc.draw_rect(left_line_outline, outline_color);
+
+		// Left line
+		const recti left_line(pointi(center_x - crosshair_size, center_y - line_width / 2),
+		                      sizei(crosshair_size - inner_gap, line_width));
+		dc.draw_rect(left_line, crosshair_color);
+
+		// Right line outline
+		const recti right_line_outline(pointi(center_x + inner_gap, center_y - line_width / 2 - 1),
+		                               sizei(crosshair_size - inner_gap, line_width + 2));
+		dc.draw_rect(right_line_outline, outline_color);
+
+		// Right line
+		const recti right_line(pointi(center_x + inner_gap, center_y - line_width / 2),
+		                       sizei(crosshair_size - inner_gap, line_width));
+		dc.draw_rect(right_line, crosshair_color);
+
+		// Draw vertical crosshair lines with outline
+		// Top line outline
+		const recti top_line_outline(pointi(center_x - line_width / 2 - 1, center_y - crosshair_size),
+		                             sizei(line_width + 2, crosshair_size - inner_gap));
+		dc.draw_rect(top_line_outline, outline_color);
+
+		// Top line
+		const recti top_line(pointi(center_x - line_width / 2, center_y - crosshair_size),
+		                     sizei(line_width, crosshair_size - inner_gap));
+		dc.draw_rect(top_line, crosshair_color);
+
+		// Bottom line outline
+		const recti bottom_line_outline(pointi(center_x - line_width / 2 - 1, center_y + inner_gap),
+		                                sizei(line_width + 2, crosshair_size - inner_gap));
+		dc.draw_rect(bottom_line_outline, outline_color);
+
+		// Bottom line
+		const recti bottom_line(pointi(center_x - line_width / 2, center_y + inner_gap),
+		                        sizei(line_width, crosshair_size - inner_gap));
+		dc.draw_rect(bottom_line, crosshair_color);
+
+		// Draw inner circle outline
+		const recti inner_circle_outline(center_point - pointi(inner_circle_radius + 1, inner_circle_radius + 1),
+		                                 sizei((inner_circle_radius + 1) * 2, (inner_circle_radius + 1) * 2));
+		dc.draw_rounded_rect(inner_circle_outline, outline_color, inner_circle_radius + 1);
+
+		// Draw inner circle
+		const recti inner_circle(center_point - pointi(inner_circle_radius, inner_circle_radius),
+		                         sizei(inner_circle_radius * 2, inner_circle_radius * 2));
+		dc.draw_rounded_rect(inner_circle, crosshair_color, inner_circle_radius);
 	}
 
 	struct cache_entry
 	{
 		ui::surface_ptr surface;
+		bool in_view = false;
 	};
 
-	static std::map<map_tile_id, cache_entry> _tile_cache;
+	using cache_entry_ptr = std::shared_ptr<cache_entry>;
+
+	// Make this non-static since it's a member variable accessed by member functions
+	static std::map<map_tile_id, cache_entry_ptr> _tile_cache;
 	std::map<map_tile_id, ui::texture_ptr> _texture_cache;
+	platform::web_host_ptr _openstreetmap_con;
 
 	recti calc_bounds() const
 	{
 		return recti(_extent);
 	}
 
+	void fetch_tile(async_strategy& async, const cache_entry_ptr& e, const map_tile_id& coord,
+	                std::function<void(ui::surface_ptr)> f)
+	{
+		async.queue_async(async_queue::map_tile, [&async, coord, f, e, t = shared_from_this()]
+		{
+			if (e->in_view && !e->surface)
+			{
+				platform::web_request req;
+				req.path = generate_tile_path(coord);
+
+				if (!t->_openstreetmap_con)
+				{
+					t->_openstreetmap_con = platform::connect_to_host(u8"a.tile.openstreetmap.org"sv);
+				}
+
+				auto response = send_request(t->_openstreetmap_con, req);
+
+				if (response.status_code == 200)
+				{
+					files ff;
+					const df::cspan data(std::bit_cast<const uint8_t*>(response.body.data()), response.body.size());
+					auto surface = ff.image_to_surface(data);
+
+					async.queue_ui(
+						[&async, surface, f]
+						{
+							f(std::move(surface));
+						});
+				}
+			}
+		});
+	}
+
+	void cleanup_cache()
+	{
+		// Remove tiles that are not in view and have been cached for a while
+		// This prevents memory bloat when user pans around extensively
+		constexpr size_t max_cache_size = 1000; // Keep at most 1000 tiles cached
+
+		if (_tile_cache.size() > max_cache_size)
+		{
+			// Remove tiles not in view first
+			auto it = _tile_cache.begin();
+			while (it != _tile_cache.end() && _tile_cache.size() > max_cache_size)
+			{
+				if (!it->second->in_view)
+				{
+					// Also remove from texture cache
+					_texture_cache.erase(it->first);
+					it = _tile_cache.erase(it);
+				}
+				else
+				{
+					++it;
+				}
+			}
+		}
+	}
+
 	void fetch_tiles(const recti& bounds, const pointi scroll_offset)
 	{
 		const auto tiles = get_tiles_for_view(bounds, scroll_offset, _location, _zoom);
-
+		std::unordered_set<map_tile_id> visible_tiles;
+		visible_tiles.reserve(tiles.size());
 		for (const auto& tile : tiles)
 		{
-			if (!_tile_cache.contains(tile.coord))
-			{
-				_tile_cache.emplace(tile.coord, cache_entry{});
+			visible_tiles.insert(tile.coord);
+		}
 
-				fetch_tile(_async, tile.coord, [coord = tile.coord, t = shared_from_this()](ui::surface_ptr surface)
-				{
-					t->_tile_cache[coord].surface = std::move(surface);
-					t->_frame->invalidate();
-				});
+		// First pass: mark all existing cache entries as not in view
+		for (auto& [coord, entry] : _tile_cache)
+		{
+			entry->in_view = visible_tiles.contains(coord);
+		}
+
+		// Second pass: mark tiles that are currently in view and queue loading if needed
+		for (const auto& tile : tiles)
+		{
+			auto found = _tile_cache.find(tile.coord);
+
+			if (found == _tile_cache.end())
+			{
+				auto e = std::make_shared<cache_entry>();
+				e->in_view = true; // Mark as in view immediately
+				_tile_cache.emplace(tile.coord, e);
+			}
+
+			found = _tile_cache.find(tile.coord);
+
+			// Only queue tile fetch if we don't already have the surface
+			if (found != _tile_cache.end() && !found->second->surface)
+			{
+				fetch_tile(_async, found->second, tile.coord,
+				           [e = found->second, t = shared_from_this()](ui::surface_ptr surface)
+				           {
+					           e->surface = std::move(surface);
+
+					           if (e->in_view)
+					           {
+						           t->_frame->invalidate();
+					           }
+				           });
 			}
 		}
+
+		// Clean up cache periodically
+		cleanup_cache();
 	}
 
 	void set_location_marker(const gps_coordinate loc)

@@ -49,13 +49,13 @@ static void download_dic(df::async_i& async, const df::file_path path)
 	const auto temp_path = platform::temp_file(path.extension());
 
 	platform::web_request req;
-	req.host = u8"diffractor.com"sv;
 	req.path = format(u8"/static/dictionaries/{}"sv, path.name());
 	req.download_file_path = temp_path;
 
 	async.queue_async(async_queue::web, [req, path, temp_path]
 	{
-		const auto response = send_request(req);
+		const auto con = platform::connect_to_host(u8"diffractor.com"sv);
+		const auto response = send_request(con, req);
 
 		if (response.status_code == 200)
 		{

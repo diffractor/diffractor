@@ -568,7 +568,7 @@ namespace df
 		ui::const_image_ptr _cover_art;
 		mutable ui::texture_ptr _texture;
 
-		file_size _size = {};
+		df::file_size _size = {};
 		date_t _thumbnail_timestamp = {};
 		date_t _modified = {};
 		date_t _created = {};

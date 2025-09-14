@@ -57,6 +57,7 @@ enum class async_queue
 	index_summary_single,
 	index_presence_single,
 	web,
+	map_tile,
 };
 
 

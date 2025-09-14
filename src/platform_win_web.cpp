@@ -107,19 +107,26 @@ static std::u8string format_path(const platform::web_request& req)
 // RAII wrapper for WinInet handles
 class inet_handle
 {
-	HINTERNET m_handle;
+	HINTERNET _h;
 
 public:
-	explicit inet_handle(const HINTERNET handle = nullptr) : m_handle(handle)
+	explicit inet_handle(const HINTERNET handle = nullptr) : _h(handle)
 	{
 	}
 
 	~inet_handle()
 	{
-		if (m_handle)
+		if (_h)
 		{
-			InternetCloseHandle(m_handle);
+			InternetCloseHandle(_h);
 		}
+	}
+
+	HINTERNET detach()
+	{
+		const auto handle = _h;
+		_h = nullptr;
+		return handle;
 	}
 
 	// No copy constructor/assignment
@@ -127,41 +134,78 @@ public:
 	inet_handle& operator=(const inet_handle&) = delete;
 
 	// Move constructor/assignment
-	inet_handle(inet_handle&& other) noexcept : m_handle(other.m_handle)
+	inet_handle(inet_handle&& other) noexcept : _h(other._h)
 	{
-		other.m_handle = nullptr;
+		other._h = nullptr;
 	}
 
 	inet_handle& operator=(inet_handle&& other) noexcept
 	{
 		if (this != &other)
 		{
-			if (m_handle)
+			if (_h)
 			{
-				InternetCloseHandle(m_handle);
+				InternetCloseHandle(_h);
 			}
-			m_handle = other.m_handle;
-			other.m_handle = nullptr;
+			_h = other._h;
+			other._h = nullptr;
 		}
 		return *this;
 	}
 
-	operator HINTERNET() const { return m_handle; }
-	HINTERNET get() const { return m_handle; }
-	bool is_valid() const { return m_handle != nullptr; }
+	operator HINTERNET() const { return _h; }
+	HINTERNET get() const { return _h; }
+	bool is_valid() const { return _h != nullptr; }
 
 	void reset(const HINTERNET handle = nullptr)
 	{
-		if (m_handle)
+		if (_h)
 		{
-			InternetCloseHandle(m_handle);
+			InternetCloseHandle(_h);
 		}
-		m_handle = handle;
+		_h = handle;
 	}
 };
 
-platform::web_response platform::send_request(const web_request& req)
+struct platform::web_host
 {
+	HINTERNET session_handle = nullptr;
+	HINTERNET connection_handle = nullptr;
+	bool secure = true;
+};
+
+platform::web_host_ptr platform::connect_to_host(const std::u8string_view host, bool secure_in, int port_in)
+{
+	// InternetOpen and InternetConnect
+	inet_handle session_handle(::InternetOpen(s_app_name_l, INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0));
+
+	if (!session_handle.is_valid())
+	{
+		return nullptr; // Return empty response on failure
+	}
+
+	const auto hostW = str::utf8_to_utf16(host);
+	const auto port = port_in == 0
+		? (secure_in ? INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT)
+		: port_in;
+	inet_handle conn(::InternetConnect(session_handle, hostW.c_str(), port, nullptr, nullptr,
+		INTERNET_SERVICE_HTTP, 0, 0));
+
+	if (!conn.is_valid())
+	{
+		return nullptr; // Return empty response on failure
+	}
+
+	return std::make_shared<web_host>(web_host{ session_handle.detach(), conn.detach(), secure_in });
+}
+
+platform::web_response platform::send_request(const web_host_ptr& host, const web_request& req)
+{
+	web_response result;
+
+	if (!host)
+		return result;
+
 	u8ostringstream content;
 	u8ostringstream header;
 
@@ -212,33 +256,13 @@ platform::web_response platform::send_request(const web_request& req)
 		header << u8"Content-Type: multipart/form-data; boundary="sv << boundary << u8"\r\n"sv;
 	}
 
-	web_response result;
-	inet_handle session_handle(::InternetOpen(s_app_name_l, INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0));
-
-	if (!session_handle.is_valid())
-	{
-		return result; // Return empty response on failure
-	}
-
-	const auto hostW = str::utf8_to_utf16(req.host);
-	const auto port = req.port == 0
-		                  ? (req.secure ? INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT)
-		                  : req.port;
-	inet_handle conn(::InternetConnect(session_handle, hostW.c_str(), port, nullptr, nullptr,
-	                                   INTERNET_SERVICE_HTTP, 0, 0));
-
-	if (!conn.is_valid())
-	{
-		return result; // Return empty response on failure
-	}
-
 	const auto wverb = req.verb == web_request_verb::GET ? L"GET" : L"POST";
 	const auto wpath = str::utf8_to_utf16(format_path(req));
 	auto flags = INTERNET_FLAG_KEEP_CONNECTION | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_NO_AUTH |
 		INTERNET_FLAG_RELOAD;
-	if (req.secure) flags |= INTERNET_FLAG_SECURE;
+	if (host->secure) flags |= INTERNET_FLAG_SECURE;
 
-	inet_handle request_handle(HttpOpenRequest(conn, wverb, wpath.c_str(), nullptr, nullptr, nullptr, flags, 0));
+	inet_handle request_handle(HttpOpenRequest(host->connection_handle, wverb, wpath.c_str(), nullptr, nullptr, nullptr, flags, 0));
 
 	if (!request_handle.is_valid())
 	{

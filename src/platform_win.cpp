@@ -2828,11 +2828,11 @@ void platform::download_and_verify(const bool test_version, const std::function<
 	const auto download_path = temp_file(u8"exe"sv);
 
 	web_request req;
-	req.host = u8"diffractor.com"sv;
 	req.path = test_version ? u8"diffractor-setup-test.exe"sv : u8"diffractor-setup.exe"sv;
 	req.download_file_path = download_path;
 
-	const auto response = send_request(req);
+	const auto con = platform::connect_to_host(u8"diffractor.com"sv);
+	const auto response = send_request(con, req);
 
 	if (response.status_code == 200 && verify_package(download_path))
 	{

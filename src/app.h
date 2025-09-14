@@ -423,6 +423,7 @@ public:
 	platform::task_queue location_task_queue;
 	platform::task_queue sidebar_task_queue;
 	platform::task_queue web_task_queue;
+	platform::task_queue map_tile_task_queue;
 	platform::task_queue predictions_task_queue;
 	platform::task_queue summary_task_queue;
 	platform::task_queue presence_task_queue;
