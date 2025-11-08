@@ -15,13 +15,16 @@
 #include <versionhelpers.h>
 #include <Shellapi.h>
 #include <Shobjidl.h>
-#include <DbgHelp.h>
 #include <iostream>
 #include <winsock2.h>
 #include <wtsapi32.h>
 #include <shlguid.h>
 
 #include <Shlwapi.h>
+
+#ifndef WINSTORE
+#include <DbgHelp.h>
+#endif
 
 #include "app_text.h"
 #include "av_format.h"
@@ -8047,6 +8050,14 @@ ui::date_time_control_ptr control_host_impl::create_date_time_control(const df::
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+static std::weak_ptr<ui::app> g_app;
+static std::weak_ptr<win32_app> g_app_impl;
+
+void log_open_files_to_crash_files_list();
+void flush_open_files_to_crash_files_list();
+
+#ifndef WINSTORE
+
 static bool create_dump(EXCEPTION_POINTERS* exception_pointers, const df::file_path dump_file_path)
 {
 	using MINIDUMP_WRITE_DUMP = BOOL(WINAPI*)(
@@ -8113,8 +8124,7 @@ static bool create_dump(EXCEPTION_POINTERS* exception_pointers, const df::file_p
 	return dump_successful;
 }
 
-static std::weak_ptr<ui::app> g_app;
-static std::weak_ptr<win32_app> g_app_impl;
+
 
 static LONG WINAPI exception_callback(EXCEPTION_POINTERS* pExceptionPointers)
 {
@@ -8132,6 +8142,72 @@ static LONG WINAPI exception_callback(EXCEPTION_POINTERS* pExceptionPointers)
 
 	return EXCEPTION_CONTINUE_SEARCH;
 }
+
+struct unhandled_exception_filter
+{
+	PTOP_LEVEL_EXCEPTION_FILTER _original = nullptr;
+
+	unhandled_exception_filter() : _original(SetUnhandledExceptionFilter(exception_callback))
+	{
+	}
+
+	~unhandled_exception_filter()
+	{
+		SetUnhandledExceptionFilter(_original);
+	}
+};
+
+static void register_restart()
+{
+	const auto restart_cmd_line_w = str::utf8_to_utf16(restart_cmd_line);
+	static WCHAR wsCommandLine[RESTART_MAX_CMD_LINE];
+	wcscpy_s(wsCommandLine, restart_cmd_line_w.c_str());
+	const auto hr = RegisterApplicationRestart(wsCommandLine, RESTART_NO_PATCH | RESTART_NO_REBOOT);
+	df::assert_true(SUCCEEDED(hr));
+}
+
+static void unregister_restart()
+{
+	UnregisterApplicationRecoveryCallback();
+	UnregisterApplicationRestart();
+}
+
+static DWORD WINAPI recover_callback(PVOID pContext)
+{
+	df::log(__FUNCTION__, u8"*** recover callback ***"sv);
+	log_open_files_to_crash_files_list();
+	flush_open_files_to_crash_files_list();
+
+	BOOL bCanceled = FALSE;
+	ApplicationRecoveryInProgress(&bCanceled);
+
+	if (bCanceled)
+	{
+		df::log(__FUNCTION__, u8"Recovery was canceled by the user."sv);
+	}
+
+	const auto app = g_app.lock();
+
+	if (app)
+	{
+		app->save_recovery_state();
+	}
+
+	df::close_log();
+
+	ApplicationRecoveryFinished(bCanceled ? FALSE : TRUE);
+	return 0;
+}
+
+
+static void setup_restart()
+{
+	register_restart();
+	const auto hr = RegisterApplicationRecoveryCallback(recover_callback, nullptr, RECOVERY_DEFAULT_PING_INTERVAL, 0);
+	df::assert_true(SUCCEEDED(hr));
+}
+
+#endif
 
 void ui_wait_for_signal(platform::thread_event& te, const uint32_t timeout_ms, const std::function<bool(LPMSG m)>& cb)
 {
@@ -8180,19 +8256,7 @@ bool ui::is_ui_thread()
 	return ui_thread_id == platform::current_thread_id();
 }
 
-struct unhandled_exception_filter
-{
-	PTOP_LEVEL_EXCEPTION_FILTER _original = nullptr;
 
-	unhandled_exception_filter() : _original(SetUnhandledExceptionFilter(exception_callback))
-	{
-	}
-
-	~unhandled_exception_filter()
-	{
-		SetUnhandledExceptionFilter(_original);
-	}
-};
 
 static void show_fatal_error(const std::u8string_view message)
 {
@@ -8209,58 +8273,9 @@ static void show_fatal_error(const std::u8string_view message)
 }
 
 
-static void register_restart()
-{
-	const auto restart_cmd_line_w = str::utf8_to_utf16(restart_cmd_line);
-	static WCHAR wsCommandLine[RESTART_MAX_CMD_LINE];
-	wcscpy_s(wsCommandLine, restart_cmd_line_w.c_str());
-	const auto hr = RegisterApplicationRestart(wsCommandLine, RESTART_NO_PATCH | RESTART_NO_REBOOT);
-	df::assert_true(SUCCEEDED(hr));
-}
-
-static void unregister_restart()
-{
-	UnregisterApplicationRecoveryCallback();
-	UnregisterApplicationRestart();
-}
-
-void log_open_files_to_crash_files_list();
-void flush_open_files_to_crash_files_list();
-
-static DWORD WINAPI recover_callback(PVOID pContext)
-{
-	df::log(__FUNCTION__, u8"*** recover callback ***"sv);
-	log_open_files_to_crash_files_list();
-	flush_open_files_to_crash_files_list();
-
-	BOOL bCanceled = FALSE;
-	ApplicationRecoveryInProgress(&bCanceled);
-
-	if (bCanceled)
-	{
-		df::log(__FUNCTION__, u8"Recovery was canceled by the user."sv);
-	}
-
-	const auto app = g_app.lock();
-
-	if (app)
-	{
-		app->save_recovery_state();
-	}
-
-	df::close_log();
-
-	ApplicationRecoveryFinished(bCanceled ? FALSE : TRUE);
-	return 0;
-}
 
 
-static void setup_restart()
-{
-	register_restart();
-	const auto hr = RegisterApplicationRecoveryCallback(recover_callback, nullptr, RECOVERY_DEFAULT_PING_INTERVAL, 0);
-	df::assert_true(SUCCEEDED(hr));
-}
+
 
 //
 //STDAPI SetProcessDpiAwareness(
@@ -8286,7 +8301,10 @@ int WINAPI wWinMain(const HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, cons
 		//HeapSetInformation(heap, HeapCompatibilityInformation, &heapCompatibility, sizeof(heapCompatibility));
 
 		init_color_styles();
+
+#ifndef WINSTORE
 		unhandled_exception_filter exceptions;
+#endif
 
 		app = app_impl->_app = create_app(app_impl);
 		g_app = app;
@@ -8372,7 +8390,9 @@ int WINAPI wWinMain(const HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, cons
 		if (app->init(str::utf16_to_utf8(lpCmdLine)))
 		{
 			restart_cmd_line = app->restart_cmd_line();
+#ifndef WINSTORE
 			setup_restart();
+#endif
 			app_impl->ui_message_loop();
 		}
 
@@ -8380,7 +8400,9 @@ int WINAPI wWinMain(const HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, cons
 		app_impl->_f->destroy();
 		app_impl->_f.reset();
 
+#ifndef WINSTORE
 		unregister_restart();
+#endif
 		OleUninitialize();
 		CoUninitialize();
 	}

@@ -307,9 +307,11 @@ namespace platform
 
 	std::string utf8_to_a(std::u8string_view utf8);
 
+#ifndef WINSTORE
 	void download_and_verify(bool test_version, const std::function<void(df::file_path)>& complete);
 	file_op_result install(df::file_path installer_path, df::folder_path destination_folder, bool silent,
 	                       bool run_app_after_install);
+#endif
 
 
 	// dates

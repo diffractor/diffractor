@@ -53,6 +53,9 @@
 #pragma comment(lib, "Dwmapi")
 #pragma comment(lib, "Netapi32")
 #pragma comment(lib, "Advapi32")
+
+
+
 //#pragma comment(lib, "SetupAPI"sv)
 
 size_t platform::static_memory_usage = 0;
@@ -2758,6 +2761,8 @@ df::blob platform::load_resource(const resource_item i)
 	return {};
 }
 
+#ifndef WINSTORE
+
 static std::wstring read_cert_name(const std::wstring& path)
 {
 	std::wstring result;
@@ -2868,6 +2873,8 @@ platform::file_op_result platform::install(const df::file_path installer_path, c
 
 	return result;
 }
+
+#endif
 
 
 df::file_path platform::temp_file(const std::u8string_view ext, const df::folder_path folder)

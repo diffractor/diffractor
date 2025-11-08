@@ -192,6 +192,7 @@ void app_frame::app_fail(const std::u8string_view message, const std::u8string_v
 	});
 }
 
+#ifndef WINSTORE
 void app_frame::stage_update()
 {
 	static bool first_time_this_instance = true;
@@ -217,6 +218,7 @@ void app_frame::stage_update()
 		}
 	}
 }
+#endif
 
 void media_view::update_media_elements()
 {
@@ -272,6 +274,7 @@ void media_view::update_media_elements()
 	}
 }
 
+#ifndef WINSTORE
 static bool install_update_if_exists()
 {
 	const auto module_folder = known_path(platform::known_folder::running_app_folder);
@@ -302,7 +305,7 @@ static bool install_update_if_exists()
 
 	return false;
 }
-
+#endif
 
 class search_auto_complete final : public std::enable_shared_from_this<search_auto_complete>,
                                    public ui::complete_strategy_t
@@ -814,10 +817,12 @@ struct app_updates_and_location_params
 
 		s.invalidate_view(view_invalid::app_layout);
 
+#ifndef WINSTORE
 		if (setting.install_updates && should_update && is_app_installed())
 		{
 			app->stage_update();
 		}
+#endif
 
 		app->save_options(true);
 	}
@@ -831,6 +836,7 @@ static void check_for_updates_and_location(const app_frame_ptr& app, view_state&
 
 	if (platform::is_online())
 	{
+#ifndef WINSTORE
 		if (setting.first_run_today && setting.check_for_updates)
 		{
 			s.queue_async(async_queue::web, [app, &s]
@@ -874,7 +880,7 @@ static void check_for_updates_and_location(const app_frame_ptr& app, view_state&
 				}
 			});
 		}
-
+#endif
 		spell.lazy_download(s._async);
 	}
 }
@@ -2667,7 +2673,9 @@ void app_frame::create_toolbars()
 	const std::vector<ui::command_ptr> tbButtonsNav1 =
 	{
 		find_command(commands::view_show_sidebar),
+#ifndef WINSTORE
 		find_command(commands::info_new_version),
+#endif
 		find_command(commands::tool_test),
 		find_command(commands::browse_back),
 		find_command(commands::browse_forward),
@@ -2941,15 +2949,19 @@ void app_frame::update_button_state(const bool resize)
 		view_type::media);
 	const auto has_selection = is_media_or_items_view && _state.has_selection();
 	const auto is_single_media_selection = is_media_or_items_view && selection_status.has_single_media_selection;
+#ifndef WINSTORE
 	const auto new_version_avail = is_media_or_items_view && !setting.install_updates &&
 		df::version(s_app_version) < df::version(setting.available_version) && static_cast<int>(now_days) >= setting.
 		min_show_update_day;
 	const auto show_new_version = is_media_or_items_view && (setting.force_available_version || new_version_avail);
+#endif
 	const auto command_item = _state.command_item();
 	const auto is_displaying_item = is_media_or_items_view && command_item;
 	const auto search_has_selector = _state.search().has_selector();
 
+#ifndef WINSTORE
 	_commands[commands::info_new_version]->visible = !is_edit_view && show_new_version;
+#endif
 	_commands[commands::view_maximize]->visible = !is_maximized;
 	_commands[commands::view_restore]->visible = is_maximized;
 	_commands[commands::view_show_sidebar]->visible = !is_edit_view;
@@ -3004,7 +3016,9 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::group_toggle]->enable = is_items_view;
 	_commands[commands::import_analyze]->enable = view_mode == view_type::import;
 	_commands[commands::import_run]->enable = view_mode == view_type::import;
+#ifndef WINSTORE
 	_commands[commands::info_new_version]->enable = is_items_view;
+#endif
 	_commands[commands::keyboard]->enable = is_items_view;
 	_commands[commands::label_approved]->enable = has_selection;
 	_commands[commands::label_none]->enable = has_selection;
@@ -3325,7 +3339,9 @@ void app_frame::update_command_text()
 	def_command(commands::menu_navigate, command_group::none, icon_index::none, tt.command_navigate);
 	def_command(commands::tool_new_folder, command_group::file_management, icon_index::new_folder,
 	            tt.command_new_folder);
+#ifndef WINSTORE
 	def_command(commands::info_new_version, command_group::none, icon_index::lightbulb, tt.command_new_version);
+#endif
 	def_command(commands::menu_open, command_group::none, icon_index::open_one, tt.command_open, tt.tooltip_open);
 	def_command(commands::browse_open_containingfolder, command_group::navigation, icon_index::none,
 	            tt.command_show_in_folder);
@@ -3746,6 +3762,7 @@ void app_frame::tooltip(view_hover_element& hover, const commands id) const
 			                                                   view_element_style::new_line));
 		}
 	}
+#ifndef WINSTORE
 	else if (id == commands::info_new_version)
 	{
 		hover.elements->add(std::make_shared<text_element>(tt.update_available, ui::style::font_face::dialog,
@@ -3755,6 +3772,7 @@ void app_frame::tooltip(view_hover_element& hover, const commands id) const
 			std::make_shared<text_element>(str::format(tt.update_avail_version_fmt, setting.available_version)));
 		hover.elements->add(std::make_shared<text_element>(str::format(tt.update_current_version_fmt, s_app_version)));
 	}
+#endif
 	else if (id == commands::option_show_rotated)
 	{
 		const auto i = _state.command_item();
@@ -3796,11 +3814,13 @@ bool app_frame::pre_init()
 {
 	df::log(u8"main"sv, df::format_version(false));
 
+#ifndef WINSTORE
 	if (install_update_if_exists())
 	{
 		df::log(__FUNCTION__, u8"Exit because of install"sv);
 		return false;
 	}
+#endif
 
 	std::setlocale(LC_ALL, "en_US.UTF-8");
 

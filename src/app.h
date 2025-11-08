@@ -550,7 +550,9 @@ public:
 	void search_complete(const df::search_t& path, bool path_changed) override;
 	void save_options(bool search_only = false);
 	void reload();
+#ifndef WINSTORE
 	void stage_update();
+#endif
 	void queue_ui(std::function<void()> f) override;
 	void queue_async(async_queue q, std::function<void()> f) override;
 	void queue_location(std::function<void(location_cache&)>) override;

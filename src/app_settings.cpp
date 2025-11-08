@@ -184,8 +184,11 @@ settings_t::settings_t()
 	show_rotated = true;
 	show_results = true;
 	create_originals = true;
+#ifndef WINSTORE
+	is_tester = false;
 	check_for_updates = true;
 	install_updates = true;
+#endif
 	show_hidden = false;
 	show_debug_info = false;
 	use_gpu = true;
@@ -194,8 +197,7 @@ settings_t::settings_t()
 	send_crash_dumps = true;
 	confirm_deletions = true;
 	first_run_today = true;
-	first_run_ever = true;
-	is_tester = false;
+	first_run_ever = true;	
 	can_animate = false;
 	repeat = repeat_mode::repeat_none;
 	auto_play = true;
@@ -527,8 +529,7 @@ public:
 void settings_t::read(const platform::setting_file_ptr& store_in)
 {
 	const setting_formatter store(store_in);
-
-	store.read({}, s_is_tester, is_tester);
+		
 	store.read({}, s_hidden, show_hidden);
 	store.read({}, s_show_shadow, show_shadow);
 	store.read({}, s_update_modified, update_modified);
@@ -566,8 +567,11 @@ void settings_t::read(const platform::setting_file_ptr& store_in)
 	store.read({}, s_show_rotated, show_rotated);
 	store.read({}, s_show_results, show_results);
 	store.read({}, s_create_originals, create_originals);
+#ifndef WINSTORE
 	store.read({}, s_check_for_updates, check_for_updates);
 	store.read({}, s_install_updates, install_updates);
+	store.read({}, s_is_tester, is_tester);
+#endif
 
 	auto lat = default_location.latitude();
 	auto lng = default_location.longitude();
@@ -681,8 +685,7 @@ void settings_t::read(const platform::setting_file_ptr& store_in)
 void settings_t::write(const platform::setting_file_ptr& store_in) const
 {
 	setting_formatter store(store_in);
-
-	store.write({}, s_is_tester, is_tester);
+		
 	store.write({}, s_hidden, show_hidden);
 	store.write({}, s_show_shadow, show_shadow);
 	store.write({}, s_update_modified, update_modified);
@@ -720,8 +723,11 @@ void settings_t::write(const platform::setting_file_ptr& store_in) const
 	store.write({}, s_show_rotated, show_rotated);
 	store.write({}, s_show_results, show_results);
 	store.write({}, s_create_originals, create_originals);
+#ifndef WINSTORE
 	store.write({}, s_check_for_updates, check_for_updates);
 	store.write({}, s_install_updates, install_updates);
+	store.write({}, s_is_tester, is_tester);
+#endif
 	store.write({}, s_last_run, platform::now().to_days());
 	store.write({}, s_location_latitude, default_location.latitude());
 	store.write({}, s_location_longitude, default_location.longitude());

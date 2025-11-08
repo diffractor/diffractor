@@ -2801,6 +2801,7 @@ static void advanced_search_invoke(view_state& state, const ui::control_frame_pt
 	}
 }
 
+#ifndef WINSTORE
 static void upgrade_invoke(view_state& s, const ui::control_frame_ptr& parent)
 {
 	const auto title = tt.update_title;
@@ -2870,6 +2871,7 @@ static void upgrade_invoke(view_state& s, const ui::control_frame_ptr& parent)
 		}
 	}
 }
+#endif
 
 static void test_new_version_invoke(view_state& s, const ui::control_frame_ptr& parent)
 {
@@ -3161,11 +3163,13 @@ static void settings_invoke(view_state& s, const ui::control_frame_ptr& parent)
 	settings2->add(std::make_shared<ui::slider_control>(dlg->_frame, setting.webp_quality, 1, 100));
 	settings2->add(std::make_shared<ui::check_control>(dlg->_frame, tt.lossless_compression, setting.webp_lossless));
 
+#ifndef WINSTORE
 	settings2->add(std::make_shared<ui::title_control>(tt.options_updates));
 	settings2->add(
 		std::make_shared<ui::check_control>(dlg->_frame, tt.options_check_for_update, setting.check_for_updates));
 	settings2->add(std::make_shared<ui::check_control>(dlg->_frame, tt.options_auto_update, setting.install_updates));
 	settings2->add(std::make_shared<ui::check_control>(dlg->_frame, tt.options_beta_tester, setting.is_tester));
+#endif
 
 	advanced->add(std::make_shared<ui::title_control>(tt.options_advanced));
 	advanced->add(
@@ -3780,7 +3784,9 @@ void app_frame::initialise_commands()
 		setting_invoke(_state, setting.show_sidebar, !setting.show_sidebar);
 	});
 	add_command_invoke(commands::tool_new_folder, [this] { new_folder_invoke(_state, _app_frame, _view_frame); });
+#ifndef WINSTORE
 	add_command_invoke(commands::info_new_version, [this] { upgrade_invoke(_state, _app_frame); });
+#endif
 	add_command_invoke(commands::browse_open_containingfolder, [this]
 	{
 		containing_folder_invoke(_state, _app_frame, _view_frame);

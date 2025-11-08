@@ -111,8 +111,7 @@ public:
 	std::u8string genre;
 	bool set_tv_show = false;
 	std::u8string tv_show;
-
-	bool is_tester = false;
+		
 	bool show_hidden = false;
 	bool show_debug_info = false;
 	bool confirm_deletions = false;
@@ -121,8 +120,11 @@ public:
 	bool show_rotated = false;
 	bool show_results = false;
 	bool create_originals = false;
+#ifndef WINSTORE
 	bool check_for_updates = false;
 	bool install_updates = false;
+	bool is_tester = false;
+#endif
 	bool can_animate = false;
 	repeat_mode repeat = repeat_mode::repeat_none;
 	bool auto_play = false;

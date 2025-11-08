@@ -61,7 +61,9 @@ enum class commands
 	group_toggle,
 	import_analyze,
 	import_run,
+#ifndef WINSTORE
 	info_new_version,
+#endif
 	keyboard,
 	label_approved,
 	label_none,

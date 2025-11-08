@@ -402,43 +402,64 @@ static font_renderer_ptr create_font_renderer(IDWriteFactory* dwrite, IDWriteFon
 
 	auto hr = font_collection->FindFamilyName(font_name, &index, &exists);
 
-	if (SUCCEEDED(hr))
+	if (FAILED(hr))
 	{
-		hr = font_collection->GetFontFamily(index, &family);
+		df::log(__FUNCTION__, str::format(u8"Failed to find font family {} - FindFamilyName failed: {:x}"sv, 
+			str::utf16_to_utf8(font_name), static_cast<uint32_t>(hr)));
+		return nullptr;
 	}
 
-	if (SUCCEEDED(hr))
+	if (!exists)
 	{
-		hr = family->GetFirstMatchingFont(DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-		                                  DWRITE_FONT_STYLE_NORMAL, &font);
-	}
-	if (SUCCEEDED(hr))
-	{
-		hr = font->CreateFontFace(&font_face);
+		df::log(__FUNCTION__, str::format(u8"Failed to create font {} - font family not found in collection"sv, 
+			str::utf16_to_utf8(font_name)));
+		return nullptr;
 	}
 
-	if (SUCCEEDED(hr))
+	hr = font_collection->GetFontFamily(index, &family);
+	if (FAILED(hr))
 	{
-		hr = dwrite->CreateTextFormat(
-			font_name,
-			font_collection,
-			DWRITE_FONT_WEIGHT_NORMAL,
-			DWRITE_FONT_STYLE_NORMAL,
-			DWRITE_FONT_STRETCH_NORMAL,
-			static_cast<float>(font_height),
-			L"", //locale
-			&text_format);
+		df::log(__FUNCTION__, str::format(u8"Failed to create font {} - GetFontFamily failed: {:x}"sv, 
+			str::utf16_to_utf8(font_name), static_cast<uint32_t>(hr)));
+		return nullptr;
 	}
 
-	if (SUCCEEDED(hr))
+	hr = family->GetFirstMatchingFont(DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+	                                  DWRITE_FONT_STYLE_NORMAL, &font);
+	if (FAILED(hr))
 	{
-		df::log(__FUNCTION__, str::format(u8"Created font {}"sv, str::utf16_to_utf8(font_name)));
-		return std::make_shared<font_renderer>(dwrite, font_face, text_format, font_height);
+		df::log(__FUNCTION__, str::format(u8"Failed to create font {} - GetFirstMatchingFont failed: {:x}"sv, 
+			str::utf16_to_utf8(font_name), static_cast<uint32_t>(hr)));
+		return nullptr;
 	}
 
-	df::log(__FUNCTION__, str::format(u8"Failed to create font {}"sv, str::utf16_to_utf8(font_name)));
+	hr = font->CreateFontFace(&font_face);
+	if (FAILED(hr))
+	{
+		df::log(__FUNCTION__, str::format(u8"Failed to create font {} - CreateFontFace failed: {:x}"sv, 
+			str::utf16_to_utf8(font_name), static_cast<uint32_t>(hr)));
+		return nullptr;
+	}
 
-	return nullptr;
+	hr = dwrite->CreateTextFormat(
+		font_name,
+		font_collection,
+		DWRITE_FONT_WEIGHT_NORMAL,
+		DWRITE_FONT_STYLE_NORMAL,
+		DWRITE_FONT_STRETCH_NORMAL,
+		static_cast<float>(font_height),
+		L"", //locale
+		&text_format);
+	
+	if (FAILED(hr))
+	{
+		df::log(__FUNCTION__, str::format(u8"Failed to create font {} - CreateTextFormat failed: {:x}"sv, 
+			str::utf16_to_utf8(font_name), static_cast<uint32_t>(hr)));
+		return nullptr;
+	}
+
+	df::log(__FUNCTION__, str::format(u8"Created font {}"sv, str::utf16_to_utf8(font_name)));
+	return std::make_shared<font_renderer>(dwrite, font_face, text_format, font_height);
 }
 
 
