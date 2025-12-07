@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: PNG image format support. Loads and saves PNG files using libpng,
+// handles ICC profiles, EXIF metadata, and XMP data.
+
 #include "pch.h"
 #include "files.h"
 #include "metadata_exif.h"

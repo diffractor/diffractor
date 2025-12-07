@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: File path handling. Defines file_path and folder_path classes for
+// type-safe path manipulation, comparison, and iteration.
+
 #pragma once
 
 namespace platform

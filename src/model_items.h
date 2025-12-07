@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Item representation and selection. Defines item_element for files/folders,
+// item_set for collections, item_group for grouping, and thumbnail management.
+
 #pragma once
 
 #include "files.h"

@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Audio output interface and buffer management. Defines audio format structures,
+// sample buffering, and abstract audio device interface for playback.
+
 #pragma once
 #include "model_property.h"
 

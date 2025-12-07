@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: File selection patterns. Implements item_selector for matching
+// files by path patterns with recursive folder support.
+
 #pragma once
 
 namespace df

@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Crash database management. Tracks recent files for crash recovery
+// and stores application state to restore after unexpected termination.
+
 #pragma once
 
 class crash_files_db

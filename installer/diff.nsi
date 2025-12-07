@@ -114,7 +114,7 @@ VIAddVersionKey CompanyName "${PRODUCT_PUBLISHER}"
 VIAddVersionKey CompanyWebsite "${PRODUCT_WEB_SITE}"
 VIAddVersionKey FileVersion "${FILE_VERSION}"
 VIAddVersionKey FileDescription ""
-VIAddVersionKey LegalCopyright "Copyright (C) 2022 Zac Walker"
+VIAddVersionKey LegalCopyright "Copyright (C) 2025 Zac Walker"
 
 
 
@@ -321,7 +321,7 @@ Section "Diffractor"
 	WriteRegStr HKCU "Software\Classes\${PRODUCT_NAME}" "" "Diffractor"
 	WriteRegStr HKCU "Software\Classes\${PRODUCT_NAME}" "FriendlyTypeName" "Diffractor"
 	;WriteRegStr HKCU "Software\Classes\${PRODUCT_NAME}\DefaultIcon" "" "$INSTDIR\Clipboard.ico"
-	WriteRegStr HKCU "Software\Classes\${PRODUCT_NAME}\shell\open\command" "" '"$INSTDIR\${PRODUCT_NAME}.exe" "%1"'
+    WriteRegStr HKCU "Software\Classes\${PRODUCT_NAME}\shell\open\command" "" '"$INSTDIR\$PRODUCT_EXE" "%1"'
 
 	!insertmacro UPDATEFILEASSOC
 

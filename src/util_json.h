@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: JSON parsing and generation. Provides simple JSON document
+// reading and writing for configuration and API responses.
+
 #pragma once
 
 #define RAPIDJSON_HAS_STDSTRING 1

@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: View state coordination and navigation. Manages display state, media playback,
+// item selection, history, grouping, filtering, and synchronization between views.
+
 #pragma once
 
 #include "model_property.h"
@@ -50,6 +53,34 @@ struct media_preview_state
 	bool open2(df::file_path file_path);
 };
 
+// async_strategy - Core async execution and thread coordination interface.
+//
+// Provides thread-safe context switching between different execution contexts in the application.
+// All background work is dispatched through specialized queues, each running on dedicated threads.
+// Results are marshalled back to the UI thread via queue_ui() for safe UI updates.
+//
+// Queue methods:
+// - queue_ui(f)        : Execute f on the UI thread. Use for all UI updates from background threads.
+// - queue_async(q, f)  : Execute f on a background thread pool based on queue type q.
+// - queue_location(f)  : Execute f with access to the location_cache (reverse geocoding, city lookups).
+// - queue_database(f)  : Execute f with access to the SQLite database (thumbnails, metadata cache).
+// - queue_media_preview(f) : Execute f for video seek preview generation.
+//
+// Typical pattern:
+//   queue_async(async_queue::work, [this] {
+//       auto result = expensive_computation();
+//       queue_ui([result] { update_ui_with(result); });
+//   });
+//
+// The async_queue enum defines specialized queues for different workloads:
+// - scan_folder, scan_modified_items : File system scanning
+// - load, load_raw                   : Image/media loading
+// - crc                              : File hash computation  
+// - index, index_predictions         : Search index operations
+// - web, cloud, map_tile             : Network operations
+// - query, auto_complete             : Search and suggestions
+//
+// See app.cpp for the implementation using platform::task_queue and worker threads.
 class async_strategy : public av_host, public df::async_i
 {
 public:
@@ -66,28 +97,67 @@ public:
 	virtual void web_service_cache(std::u8string key, std::u8string value) = 0;
 };
 
+// state_strategy - Abstract interface for application-level UI coordination and state management.
+//
+// This interface decouples the view_state (model/data layer) from the application frame (app_frame).
+// By using this abstraction, view_state can notify the UI of state changes without depending on
+// concrete UI implementation details. This enables:
+//
+// 1. **Loose Coupling**: view_state communicates through abstract callbacks rather than direct
+//    method calls to app_frame, making the codebase more modular and testable.
+//
+// 2. **Testability**: Unit tests can provide a null implementation (see null_state_strategy in
+//    tests.cpp) that ignores all callbacks, allowing view_state to be tested in isolation.
+//
+// 3. **Separation of Concerns**: The model layer (view_state) focuses on data and business logic,
+//    while the app layer handles UI coordination, window management, and command routing.
+//
+// Key callback categories:
+// - **View Lifecycle**: display_changed(), view_changed(), search_complete()
+// - **User Interaction**: invoke(), track_menu(), command_hover(), toggle_full_screen()
+// - **Item Management**: item_focus_changed(), make_visible(), delete_items()
+// - **Rendering**: invalidate_view(), free_graphics_resources(), element_broadcast()
+//
+// The app_frame class implements this interface to bridge view_state notifications to the
+// actual UI components (toolbars, sidebar, views, etc.).
+//
+// See also: async_strategy for threading/async decoupling, view_host for per-view interactions.
 struct state_strategy
 {
 	virtual ~state_strategy() = default;
 
+	// Window management
 	virtual void toggle_full_screen() = 0;
+
+	// Navigation and search
 	virtual bool can_open_search(const df::search_t& path) = 0;
+	virtual void search_complete(const df::search_t& path, bool path_changed) = 0;
+
+	// Selection and focus
 	virtual void item_focus_changed(const df::item_element_ptr& focus, const df::item_element_ptr& previous) = 0;
+	virtual void make_visible(const df::item_element_ptr& i) = 0;
+
+	// View state changes
 	virtual void display_changed() = 0;
 	virtual void view_changed(view_type m) = 0;
 	virtual void play_state_changed(bool play) = 0;
-	virtual void search_complete(const df::search_t& path, bool path_changed) = 0;
+
+	// Command handling
 	virtual void invoke(commands id) = 0;
+	virtual bool is_command_checked(commands cmd) = 0;
+	virtual void command_hover(const ui::command_ptr& c, recti window_bounds) = 0;
+
+	// UI interactions
 	virtual void track_menu(const ui::frame_ptr& parent, recti bounds,
 	                        const std::vector<ui::command_ptr>& commands) = 0;
-	virtual void make_visible(const df::item_element_ptr& i) = 0;
-	virtual void command_hover(const ui::command_ptr& c, recti window_bounds) = 0;
-	virtual bool is_command_checked(commands cmd) = 0;
 	virtual void element_broadcast(const view_element_event& event) = 0;
 	virtual void focus_view() = 0;
+
+	// Resource management
 	virtual void free_graphics_resources(bool items_only, bool offscreen_only) = 0;
 	virtual void delete_items(const df::item_set& items) = 0;
 
+	// Rendering invalidation
 	virtual void invalidate_view(view_invalid invalid) = 0;
 };
 

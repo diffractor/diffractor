@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Tag management. Handles tag sets for files, including parsing, merging,
+// and comparison of keyword tags used for organization.
+
 #include "pch.h"
 #include "model_tags.h"
 

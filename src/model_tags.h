@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Tag management utilities. Provides tag_set class for managing keyword
+// collections with add/remove operations and string formatting.
+
 #pragma once
 
 #include "util.h"

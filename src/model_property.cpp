@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Property definitions and metadata types. Defines all displayable and searchable
+// properties like camera, date, dimensions, rating, and their formatting.
+
 #include "pch.h"
 #include "app_icons.h"
 #include "model_location.h"

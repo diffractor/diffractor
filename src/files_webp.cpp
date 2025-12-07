@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: WebP image format support. Loads and saves WebP files using libwebp,
+// handles animation, ICC profiles, EXIF, and XMP metadata.
+
 #include "pch.h"
 #include "files.h"
 #include "metadata_exif.h"

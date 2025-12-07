@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: MD5 hash algorithm implementation. Computes 128-bit message digests
+// for data integrity verification and identifier generation.
+
 #pragma once
 
 class md5 final : df::no_copy

@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Direct3D 11 rendering backend. Implements GPU-accelerated texture rendering,
+// shader management, and hardware video decoding support.
+
 #include "pch.h"
 
 #include "platform_win.h"

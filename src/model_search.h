@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Search query parsing and matching. Parses search expressions into terms,
+// handles property filters, date ranges, location queries, and duplicate matching.
+
 #pragma once
 #include "model_property.h"
 #include "model_location.h"

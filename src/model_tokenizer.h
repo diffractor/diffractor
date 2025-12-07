@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Search query tokenizer. Parses search input text into structured parts
+// with modifiers, scopes, and terms for the search engine.
+
 #pragma once
 
 struct search_part

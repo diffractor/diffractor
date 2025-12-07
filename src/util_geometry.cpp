@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Geometry calculations. Implements quadrilateral transformations,
+// rotation, cropping bounds, and affine transform calculations.
+
 #include "pch.h"
 
 quadd quadd::crop(const rectd& limit, const int active_point) const noexcept

@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Search query parsing and execution. Parses user search text into filters,
+// executes queries against the index, and handles date/property searches.
+
 #include "pch.h"
 #include "model_search.h"
 #include "model_index.h"

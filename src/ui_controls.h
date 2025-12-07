@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Custom UI controls and visual elements. Implements rating controls, photo viewers,
+// video controls, scrubbers, hex displays, and other interactive UI components.
+
 #pragma once
 
 #include "app_commands.h"

@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: KD-tree spatial index for nearest-neighbor searches. Used by
+// location cache to efficiently find closest cities to GPS coordinates.
+
 #pragma once
 
 struct kd_coordinates_t

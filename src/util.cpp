@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Core utility functions and data types. Implements file paths, dates, blobs,
+// logging, and other foundational types used throughout the application.
+
 #include "pch.h"
 #include "util.h"
 #include "util_simd.h"

@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: String manipulation utilities. Provides UTF-8/UTF-16 conversion,
+// string comparison, splitting, formatting, and caching.
+
 #pragma once
 
 class sizei;
@@ -126,12 +129,51 @@ namespace str
 		size_t length = 0;
 	};
 
+	////////////////////////////////////////////////////////////////////////////////////////////////////
+	// String Storage Structure for Interning
+	////////////////////////////////////////////////////////////////////////////////////////////////////
+	// Stores the length and UTF-8 data for an interned string. Uses the C "flexible array member"
+	// pattern - actual allocation size is sizeof(chached_string_storage_t) + len + 1 bytes.
+	// Once allocated, the storage is immutable and persists for the application lifetime.
+	////////////////////////////////////////////////////////////////////////////////////////////////////
 	struct chached_string_storage_t
 	{
 		uint32_t len;
 		char8_t sz[1];
 	};
 
+	////////////////////////////////////////////////////////////////////////////////////////////////////
+	// Interned String Handle (str::cached)
+	////////////////////////////////////////////////////////////////////////////////////////////////////
+	// A lightweight handle to an interned string stored in the global string pool. This type enables
+	// efficient string storage and comparison throughout Diffractor's indexing engine.
+	//
+	// BENEFITS:
+	// - Memory efficiency: Each unique string is stored exactly once, regardless of how many
+	//   index_file_item or metadata objects reference it
+	// - Fast equality: Pointer comparison (O(1)) instead of character comparison (O(n))
+	// - Thread-safe reads: The storage pointer is immutable once created
+	// - Cache-friendly: Strings are allocated from a contiguous memory pool
+	//
+	// USAGE:
+	//   str::cached name = str::cache(u8"example.jpg"sv);  // Intern a string
+	//   str::cached trimmed = str::trim_and_cache(value); // Trim and intern
+	//   if (a == b) { ... }  // O(1) pointer comparison
+	//   process(name.sv());  // Convert to string_view for APIs
+	//
+	// THREAD SAFETY:
+	// - Creation via str::cache() is thread-safe (uses sharded hash map with locks)
+	// - Reading from a cached instance is thread-safe (storage is immutable)
+	// - Methods capture 'storage' pointer in local variable before access to prevent races
+	//
+	// LIFETIME:
+	// - Interned strings are never deallocated - they persist for app lifetime
+	// - This is acceptable because total unique strings are bounded by collection size
+	// - The memory pool provides better allocation density than heap allocation
+	//
+	// SIZE: Single pointer (8 bytes on 64-bit systems)
+	// COPYABLE: Trivially copyable - safe to pass by value or store in containers
+	////////////////////////////////////////////////////////////////////////////////////////////////////
 	struct cached
 	{
 		const chached_string_storage_t* storage = nullptr;
@@ -607,10 +649,23 @@ namespace str
 		return sv.back();
 	}
 
-	cached cache(std::wstring_view r);
-	cached cache(std::u8string_view r);
-	cached cache(std::string_view r);
-	cached cache(cached r);
+	////////////////////////////////////////////////////////////////////////////////////////////////////
+	// String Interning Functions
+	////////////////////////////////////////////////////////////////////////////////////////////////////
+	// These functions intern strings into the global string pool. If the string already exists,
+	// the existing interned reference is returned. Thread-safe for concurrent calls.
+	//
+	// The global string pool uses:
+	// - parallel_flat_hash_map with 4 shards for concurrent access
+	// - CRC32C hash for O(1) lookup
+	// - platform::memory_pool for contiguous allocation
+	//
+	// Note: Very long strings (> memory_pool::block_size) are not interned and return empty cached.
+	////////////////////////////////////////////////////////////////////////////////////////////////////
+	cached cache(std::wstring_view r);    // Converts UTF-16 to UTF-8, then interns
+	cached cache(std::u8string_view r);   // Interns UTF-8 string directly
+	cached cache(std::string_view r);     // Treats as UTF-8, then interns
+	cached cache(cached r);               // Returns input unchanged (already interned)
 
 	inline cached trim_and_cache(const std::u8string_view r)
 	{

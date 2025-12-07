@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Media viewing and playback. Displays photos and videos with
+// playback controls, comparison view, and metadata display.
+
 #pragma once
 
 inline view_element_ptr make_icon_link_element2(const icon_index i, commands cmd, const view_element_style style_in)

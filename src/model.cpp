@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Application view state management. Coordinates display state, media playback,
+// selection handling, navigation history, and view mode transitions.
+
 #include "pch.h"
 #include "model.h"
 #include "model_index.h"

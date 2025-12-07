@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Base64 encoding and decoding. Provides conversion between binary data
+// and base64 text representation for web APIs and data serialization.
+
 #include "pch.h"
 #include "util_base64.h"
 

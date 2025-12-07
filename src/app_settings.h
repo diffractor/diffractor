@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Application settings and configuration. Defines all persistent user preferences
+// including display options, collection folders, import/sync settings, and feature flags.
+
 #pragma once
 
 #include "model_location.h"

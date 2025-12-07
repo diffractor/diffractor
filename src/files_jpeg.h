@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: JPEG encoding and decoding using libjpeg-turbo. Handles JPEG compression,
+// decompression, lossless rotation, and metadata marker detection.
+
 #pragma once
 
 class file_scan_result;

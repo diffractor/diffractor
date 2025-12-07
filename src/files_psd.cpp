@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Adobe Photoshop (PSD) file format parser. Decodes layered images,
+// extracts metadata (IPTC, XMP, EXIF, ICC), and converts color modes.
+
 #include "pch.h"
 #include "files.h"
 

@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Windows platform abstraction layer. Provides OS-specific implementations for
+// file system, threading, networking, and shell integration.
+
 #include "pch.h"
 
 #include "platform_win.h"

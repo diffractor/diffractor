@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Built-in test runner UI. Displays and runs unit tests
+// from the embedded test suite with result reporting.
+
 #pragma once
 
 #include "view_list.h"

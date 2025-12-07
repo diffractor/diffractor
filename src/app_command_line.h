@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Command line argument parsing. Handles startup options like folder paths,
+// file selection, no-gpu mode, and test execution flags.
+
 #pragma once
 
 struct command_line_t

@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Spell checking integration. Wraps Hunspell library for
+// spell checking user input in metadata fields.
+
 #pragma once
 
 class Hunspell;

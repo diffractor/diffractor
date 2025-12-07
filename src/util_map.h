@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Hash map and set templates. Provides custom hash containers
+// optimized for file paths, strings, and other common key types.
+
 #pragma once
 
 // Using the excellent 'The Parallel Hashmap'

@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: HEIF/HEIC image format support. Decodes High Efficiency Image Format files
+// using libheif, extracts metadata, and handles thumbnails.
+
 #include "pch.h"
 #include "files.h"
 #include "metadata_exif.h"

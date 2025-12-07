@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Metadata serialization for database storage. Packs and unpacks item
+// metadata into compact binary format for efficient SQLite storage.
+
 #pragma once
 
 

@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Core utility types and functions. Defines fundamental types (file_size, date_t, blob),
+// memory helpers, logging, and common utility functions used throughout the application.
+
 #pragma once
 
 #include <intrin.h>

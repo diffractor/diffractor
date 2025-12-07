@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: DirectWrite font rendering. Handles text layout, font loading,
+// glyph rendering, and text measurement using DirectWrite API.
+
 #include "pch.h"
 
 #include "platform_win.h"

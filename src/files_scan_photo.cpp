@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Image file scanning and metadata extraction. Detects image formats,
+// parses headers for dimensions and orientation, extracts embedded thumbnails.
+
 #include "pch.h"
 #include "metadata_exif.h"
 #include "files.h"

@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Windows UI framework. Implements window management, message handling,
+// input processing, clipboard, drag-drop, and system integration.
+
 #include "pch.h"
 #include "platform_win.h"
 #include "platform_win_visual.h"

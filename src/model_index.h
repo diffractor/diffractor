@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: File indexing engine and duplicate detection. Scans folders, maintains item index,
+// calculates summaries, and identifies duplicate files by name, date, and CRC.
+
 #pragma once
 
 #include "model_items.h"
@@ -359,6 +362,106 @@ struct folder_scan_item
 	df::folder_path folder;
 	df::index_file_item item;
 };
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// index_state - Central File Indexing Engine
+////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// PURPOSE:
+// The index_state class maintains an in-memory index of all files in the user's collection.
+// It coordinates folder scanning, metadata extraction, duplicate detection, and provides
+// fast search capabilities. All operations are designed to work asynchronously to keep the
+// UI responsive.
+//
+// ARCHITECTURE:
+// - Thread-safe index storage via index_items (_items) with reader-writer locking
+// - Summary data (_summary) protected by _summary_rw mutex for aggregate statistics
+// - Database write queue (_db_writes) for batched SQLite persistence
+// - Integration with async_strategy for background thread coordination
+//
+// INDEXING PIPELINE:
+// The indexing process is a multi-stage async pipeline that efficiently context-switches
+// between threads to maximize throughput while keeping the UI responsive:
+//
+// Stage 1: index_roots() - Set collection root folders
+//   - Called on UI thread to configure which folders to index
+//   - Stores roots in _summary._roots under exclusive lock
+//
+// Stage 2: index_folders() - Discover folder structure
+//   - Runs on index_task_queue background thread
+//   - Recursively walks folder tree calling validate_folder() for each
+//   - Marks folders as is_in_collection, tracks excludes
+//   - Updates histograms progressively, triggers sidebar UI updates
+//   - Sets _folders_indexed = true when complete
+//
+// Stage 3: scan_uncached() - Extract file metadata
+//   - Runs on index_task_queue after folder discovery
+//   - Iterates all indexed files, calls scan_item() for those needing metadata
+//   - scan_item() performs I/O-heavy metadata extraction
+//   - Queues item_db_write records to _db_writes for database persistence
+//   - Sets _fully_loaded = true when complete
+//
+// SCANNING METHODS:
+//
+// scan_items(const df::index_roots&, bool recursive, bool scan_if_offline, df::cancel_token)
+//   - Batch scan for a set of root folders
+//   - Used during initial indexing or import operations
+//   - Calls validate_folder() then scan_item() for each file
+//   - Returns vector<folder_scan_item> with all discovered files
+//
+// scan_items(const df::item_set&, load_thumbs, refresh_fs, only_if_needed, scan_if_offline, token)
+//   - Scan specific items (e.g., visible items in view)
+//   - Groups items by folder for efficient batch processing
+//   - Optionally loads thumbnails if load_thumbs=true
+//   - Can force filesystem refresh with refresh_from_file_system=true
+//
+// scan_item(folder, file_path, load_thumb, scan_if_offline, item, ft)
+//   - Low-level per-file scanner
+//   - Calls files::scan_file() to extract metadata/thumbnail
+//   - Updates index_file_item in-place
+//   - Queues item_db_write for database persistence
+//   - Triggers location lookup for GPS coordinates
+//
+// scan_folder(folder_path, folder_ptr)
+//   - Scans all files in a folder, recurses into subfolders
+//   - Queues child folders via queue_scan_folder()
+//
+// validate_folder(folder_path, refresh_from_file_system, timestamp)
+//   - Core folder synchronization method
+//   - Compares in-memory index with filesystem contents
+//   - Merges changes: adds new files, removes deleted files
+//   - Handles sidecar file associations (XMP, etc.)
+//   - Returns validate_folder_result with folder and was_updated flag
+//
+// ASYNC QUEUE METHODS:
+// These methods queue work to appropriate background threads via async_strategy:
+//
+// queue_scan_folder(path)           -> async_queue::scan_folder
+// queue_scan_folders(paths)         -> async_queue::scan_folder
+// queue_scan_listed_items(items)    -> async_queue::scan_folder (with cancel token)
+// queue_scan_modified_items(items)  -> async_queue::scan_modified_items
+// queue_scan_displayed_items(items) -> async_queue::scan_displayed_items (with cancel token)
+// queue_update_presence(items)      -> async_queue::index_presence_single
+// queue_update_predictions()        -> async_queue::index_predictions_single
+// queue_update_summary()            -> async_queue::index_summary_single
+//
+// The "*_single" queues use reset_and_enqueue() to cancel pending work,
+// ensuring only the latest request is processed.
+//
+// DUPLICATE DETECTION:
+// update_predictions() runs after indexing to identify duplicate files:
+//   - Hashes files by: name, created date, CRC32C, file size
+//   - Groups files with matching hashes
+//   - Confirms matches using is_dup_match() (name + date, or CRC32C)
+//   - Assigns duplicate group IDs for UI display
+//
+// DATABASE PERSISTENCE:
+// Item writes are queued to _db_writes (item_writes_t) and batched:
+//   - item_db_write contains optional fields for partial updates
+//   - database thread calls db.perform_writes() periodically
+//   - merge_folder() loads cached items back from database at startup
+//
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 class index_state final : public df::no_copy
 {

@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Progress dialog and status tracking for long-running operations. Displays progress,
+// handles cancellation, and shows success/failure results for batch processing commands.
+
 #pragma once
 #include "ui_elements.h"
 #include "ui_dialog.h"

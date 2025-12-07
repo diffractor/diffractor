@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: String manipulation utilities. Implements UTF-8/UTF-16 conversion,
+// string formatting, parsing, splitting, and comparison functions.
+
 #include "pch.h"
 #include "util.h"
 #include "util_strings.h"
@@ -373,6 +376,34 @@ std::u8string str::print(__in_z __format_string const char8_t* szFormat, ...)
 	return result;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// String Interning Implementation
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// The global string index provides efficient string interning for Diffractor's indexing engine.
+// Each unique string is stored exactly once in a memory pool, and str::cached handles are
+// lightweight pointers to this shared storage.
+//
+// ARCHITECTURE:
+// - string_index_t: Singleton managing the intern pool
+// - parallel_flat_hash_map: 4-shard concurrent hash map for thread-safe lookup/insert
+// - platform::memory_pool: Contiguous block allocator for string storage
+//
+// THREAD SAFETY:
+// The parallel_flat_hash_map uses fine-grained locking with 4 independent shards. Different
+// strings (based on hash) can be inserted concurrently from different threads. The sharding
+// is configured via the template parameter '4' in storage_t typedef.
+//
+// MEMORY MODEL:
+// Strings are never deallocated - they persist for the application lifetime. This is intentional:
+// - Avoids complex reference counting on a hot path
+// - Memory pool provides better allocation density than heap
+// - Total unique strings bounded by collection size (typically < 100K strings)
+//
+// HASH FUNCTION:
+// Uses CRC32C for fast hashing with good distribution. CRC32C is hardware-accelerated on
+// modern CPUs via SSE4.2 instructions.
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 struct string_index_hash
 {
 	uint32_t operator()(const std::u8string_view sv) const
@@ -412,15 +443,19 @@ struct string_index_eq
 //};
 
 
+// Global string intern pool. Manages all interned strings for the application.
+// Uses lazy_emplace_l for atomic lookup-or-insert to avoid race conditions.
 struct string_index_t
 {
 	using K = std::u8string_view;
 	using V = str::chached_string_storage_t*;
+	// 4 shards for concurrent access - different hashes can be inserted in parallel
 	using storage_t = phmap::parallel_flat_hash_map<
 		K, V, string_index_hash, string_index_eq, std::allocator<std::pair<const K, V>>, 4, platform::mutex>;
 	storage_t _storage;
-	platform::memory_pool _pool;
+	platform::memory_pool _pool;  // Contiguous allocation for string data
 
+	// Allocate and initialize storage for a new interned string
 	str::chached_string_storage_t* make_entry(const std::u8string_view sv)
 	{
 		const auto len = sv.size();
@@ -434,15 +469,20 @@ struct string_index_t
 		return copy;
 	}
 
+	// Thread-safe lookup-or-insert. Returns cached handle to interned string.
+	// Uses lazy_emplace_l for atomic operation - either finds existing or creates new.
 	str::cached find_or_insert(const std::u8string_view sv)
 	{
 		if (sv.empty() || sv.size() > platform::memory_pool::block_size) return {};
 		str::chached_string_storage_t* result = nullptr;
 
+		// Called if string already exists in pool
 		const auto exists = [&result](const std::pair<const K, V>& kv) { result = kv.second; };
+		// Called atomically if string needs to be created
 		const auto emplace = [this, sv, &result](const storage_t::constructor& ctor)
 		{
 			result = make_entry(sv);
+			// Key is string_view pointing INTO the newly allocated storage
 			ctor(std::u8string_view(result->sz, result->len), result);
 		};
 
@@ -452,12 +492,14 @@ struct string_index_t
 	}
 };
 
+// Meyer's singleton - thread-safe lazy initialization
 static string_index_t& string_index()
 {
 	static string_index_t index;
 	return index;
 }
 
+// Public interning functions - delegate to singleton
 str::cached str::cache(const std::u8string_view sr)
 {
 	if (sr.empty()) return {};

@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: File indexing engine. Scans folders, extracts metadata, builds searchable
+// index, detects duplicates, and manages the in-memory item collection.
+
 #include "pch.h"
 
 #include "model_index.h"

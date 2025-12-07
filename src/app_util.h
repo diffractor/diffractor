@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Utility functions for file operations. Includes rename templating, import/sync
+// analysis, collection management, and file operation helpers.
+
 #pragma once
 
 

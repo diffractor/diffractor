@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Photo editing view. Implements image adjustments including crop, rotate,
+// straighten, color correction, and provides editing UI controls.
+
 #include "pch.h"
 #include "model_index.h"
 #include "view_edit.h"

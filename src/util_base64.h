@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Base64 encoding and decoding. Provides functions for converting
+// binary data to/from base64 text representation.
+
 #pragma once
 
 std::u8string base64_encode(const uint8_t* input, size_t input_len);

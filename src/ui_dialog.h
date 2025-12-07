@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Dialog management and layout. Provides dialog construction helpers,
+// standard dialog layouts, and modal dialog handling.
+
 #pragma once
 
 #include <utility>

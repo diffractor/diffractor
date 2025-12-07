@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Windows visual styles and theming. Handles DWM composition,
+// visual style detection, and Windows appearance settings.
+
 #pragma once
 
 #include "platform_win.h"

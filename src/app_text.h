@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Localized text strings and translations. Contains all user-visible text for
+// internationalization support with PO file loading and plural text formatting.
+
 #pragma once
 
 std::u8string language_name(std::u8string_view code);

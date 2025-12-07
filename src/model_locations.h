@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Geographic location cache and reverse geocoding. Uses KD-tree for efficient
+// nearest-location lookups and provides place name auto-complete from city database.
+
 #pragma once
 
 #include "util_kdtree.h"

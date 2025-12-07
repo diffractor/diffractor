@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Sidebar navigation panel. Contains collection overview charts, folder list,
+// favorite searches, tags, ratings, labels, and drive information displays.
+
 #pragma once
 #include "ui_controls.h"
 #include "app_util.h"

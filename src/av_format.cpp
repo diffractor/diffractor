@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: FFmpeg media decoder implementation. Provides video/audio decoding, frame scaling,
+// audio resampling, metadata extraction, and hardware acceleration support.
+
 #include "pch.h"
 #include "av_format.h"
 #include "av_player.h"

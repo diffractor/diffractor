@@ -6,4 +6,7 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Precompiled header source file. Includes pch.h to generate the precompiled
+// header for faster compilation.
+
 #include "pch.h"

@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Icon definitions using Segoe UI Symbol font codepoints. Maps icon_index enum
+// values to Unicode characters for rendering icons throughout the application.
+
 #pragma once
 
 

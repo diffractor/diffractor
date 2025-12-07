@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Property definitions and metadata formatting. Defines all item property types
+// (dimensions, dates, camera info, etc.) and provides formatting functions for display.
+
 #pragma once
 
 #include "model_location.h"

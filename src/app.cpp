@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Main application implementation. Handles app initialization, window management,
+// command processing, toolbar/menu creation, and coordinates all background worker threads.
+
 #include "pch.h"
 
 #include "app_text.h"

@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Unit tests and validation. Contains test functions for verifying
+// metadata parsing, crypto, search, and other core functionality.
+
 #include "pch.h"
 #include "model.h"
 #include "model_db.h"

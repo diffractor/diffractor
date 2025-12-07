@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: SQLite database layer for persistent storage. Manages item thumbnails, metadata cache,
+// import history, and web service cache with efficient batch writes.
+
 #pragma once
 
 #include "model_items.h"

@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Text viewer for documents. Displays text files with scrolling and
+// selection support.
+
 #pragma once
 #include "ui_elements.h"
 

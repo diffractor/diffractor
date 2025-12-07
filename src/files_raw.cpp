@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Camera RAW image format support. Decodes RAW files from various cameras
+// using LibRaw and Adobe DNG SDK, extracts metadata and thumbnails.
+
 #include "pch.h"
 #include "files.h"
 

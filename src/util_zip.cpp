@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: ZIP archive handling. Creates and extracts ZIP files, lists archive
+// contents, and provides zlib compression/decompression.
+
 #include "pch.h"
 #include "util_zip.h"
 

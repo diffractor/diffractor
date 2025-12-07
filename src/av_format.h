@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: FFmpeg-based media format decoder. Handles video/audio stream parsing, codec management,
+// frame extraction, seeking, and format conversion using libavformat and libavcodec.
+
 #pragma once
 
 #include "av_sound.h"

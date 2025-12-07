@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Command identifier enumeration. Defines all available application commands
+// used for menus, toolbars, keyboard shortcuts, and programmatic invocation.
+
 #pragma once
 
 

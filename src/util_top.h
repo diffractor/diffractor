@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Top-N tracking container. Maintains a sorted list of the
+// N largest or most frequent items for statistical summaries.
+
 #pragma once
 
 

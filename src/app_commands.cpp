@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Command handlers for all user actions. Implements file operations, editing,
+// sharing, metadata updates, and other application commands.
+
 #include "pch.h"
 
 #include "util_zip.h"

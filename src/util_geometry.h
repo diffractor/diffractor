@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Geometry primitives and math. Defines point, size, rectangle, and quad
+// types with transformation, intersection, and scaling operations.
+
 #pragma once
 
 using real = double;

@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: GPS coordinate and location structures. Defines gps_coordinate for geographic
+// positions, location_t for place information, and distance calculations.
+
 #pragma once
 #include "util.h"
 

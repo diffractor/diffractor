@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Map view and location display using OpenStreetMap tiles. Handles tile
+// fetching, caching, panning, zooming, and GPS coordinate display.
+
 #include "ui.h"
 
 // For M_PI on some compilers, otherwise define it manually.

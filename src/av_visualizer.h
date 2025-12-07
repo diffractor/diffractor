@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Audio spectrum visualization using FFT. Transforms audio samples into frequency
+// data and renders animated bar visualizations synchronized with playback.
+
 #pragma once
 
 constexpr uint32_t FFT_BUFFER_SIZE_LOG = 9u;

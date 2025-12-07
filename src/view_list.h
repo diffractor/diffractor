@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: List view display mode. Renders items in a compact list format
+// with columns for metadata details.
+
 #pragma once
 
 #include "model.h"

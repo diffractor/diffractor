@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: ZIP archive handling using minizip. Provides archive creation,
+// extraction, and listing for backup and export features.
+
 #pragma once
 
 struct archive_item;

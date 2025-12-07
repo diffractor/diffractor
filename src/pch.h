@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: Precompiled header file. Includes common system headers and core utility headers
+// that are used throughout the application to improve build performance.
+
 #pragma once
 
 #include <cstdint>

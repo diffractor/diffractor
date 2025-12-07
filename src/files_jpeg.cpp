@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: JPEG image processing. Handles loading, saving, lossless rotation,
+// metadata extraction, and thumbnail generation using libjpeg-turbo.
+
 #include "pch.h"
 #include "files_jpeg.h"
 

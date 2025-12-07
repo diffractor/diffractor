@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: AES-256 encryption and decryption implementation. Provides block cipher
+// operations for secure data encryption with streaming support.
+
 #pragma once
 
 namespace crypto

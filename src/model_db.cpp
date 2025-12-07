@@ -6,6 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
+// Purpose: SQLite database layer. Manages persistent storage of indexed file metadata,
+// thumbnails, and application state using SQLite database.
+
 #include "pch.h"
 
 #include <Sqlite3.h>
