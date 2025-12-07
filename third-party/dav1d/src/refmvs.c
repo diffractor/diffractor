@@ -380,7 +380,7 @@ void dav1d_refmvs_find(const refmvs_tile *const rt,
     // top
     int have_newmv = 0, have_col_mvs = 0, have_row_mvs = 0;
     unsigned max_rows = 0, n_rows = ~0;
-    const refmvs_block *b_top = 0;
+    const refmvs_block *b_top = NULL;
     if (by4 > rt->tile_row.start) {
         max_rows = imin((by4 - rt->tile_row.start + 1) >> 1, 2 + (bh4 > 1));
         b_top = &rt->r[(by4 & 31) - 1 + 5][bx4];
@@ -391,7 +391,7 @@ void dav1d_refmvs_find(const refmvs_tile *const rt,
 
     // left
     unsigned max_cols = 0, n_cols = ~0U;
-    refmvs_block *const *b_left = 0;
+    refmvs_block *const *b_left = NULL;
     if (bx4 > rt->tile_col.start) {
         max_cols = imin((bx4 - rt->tile_col.start + 1) >> 1, 2 + (bw4 > 1));
         b_left = &rt->r[(by4 & 31) + 5];

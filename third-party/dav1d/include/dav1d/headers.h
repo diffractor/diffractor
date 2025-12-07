@@ -187,10 +187,14 @@ typedef struct Dav1dContentLightLevel {
 } Dav1dContentLightLevel;
 
 typedef struct Dav1dMasteringDisplay {
-    uint16_t primaries[3][2]; ///< 0.16 fixed point
-    uint16_t white_point[2]; ///< 0.16 fixed point
-    uint32_t max_luminance; ///< 24.8 fixed point
-    uint32_t min_luminance; ///< 18.14 fixed point
+    ///< 0.16 fixed point
+    uint16_t primaries[3][2];
+    ///< 0.16 fixed point
+    uint16_t white_point[2];
+    ///< 24.8 fixed point
+    uint32_t max_luminance;
+    ///< 18.14 fixed point
+    uint32_t min_luminance;
 } Dav1dMasteringDisplay;
 
 typedef struct Dav1dITUTT35 {

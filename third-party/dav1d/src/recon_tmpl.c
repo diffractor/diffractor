@@ -1646,7 +1646,7 @@ int bytefn(dav1d_recon_b_inter)(Dav1dTaskContext *const t, const enum BlockSize 
 
         // sub8x8 derivation
         int is_sub8x8 = bw4 == ss_hor || bh4 == ss_ver;
-        refmvs_block *const *r = 0;
+        refmvs_block *const *r = NULL;
         if (is_sub8x8) {
             assert(ss_hor == 1);
             r = &t->rt.r[(t->by & 31) + 5];
@@ -1787,7 +1787,7 @@ int bytefn(dav1d_recon_b_inter)(Dav1dTaskContext *const t, const enum BlockSize 
         int16_t (*tmp)[128 * 128] = t->scratch.compinter;
         int jnt_weight;
         uint8_t *const seg_mask = t->scratch.seg_mask;
-        const uint8_t *mask = 0;
+        const uint8_t *mask = NULL;
 
         for (int i = 0; i < 2; i++) {
             const Dav1dThreadPicture *const refp = &f->refp[b->ref[i]];

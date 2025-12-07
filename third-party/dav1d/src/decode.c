@@ -413,17 +413,17 @@ static void order_palette(const uint8_t *pal_idx, const ptrdiff_t stride,
 
 static void read_pal_indices(Dav1dTaskContext *const t,
                              uint8_t *const pal_idx,
-                             const int pal_sz, const int pl,
+                             const Av1Block *const b, const int pl,
                              const int w4, const int h4,
                              const int bw4, const int bh4)
 {
     Dav1dTileState *const ts = t->ts;
     const ptrdiff_t stride = bw4 * 4;
     assert(pal_idx);
-    uint8_t *const pal_tmp = t->scratch.pal_idx_uv;
-    pal_tmp[0] = dav1d_msac_decode_uniform(&ts->msac, pal_sz);
+    pixel *const pal_tmp = t->scratch.pal_idx_uv;
+    pal_tmp[0] = dav1d_msac_decode_uniform(&ts->msac, b->pal_sz[pl]);
     uint16_t (*const color_map_cdf)[8] =
-        ts->cdf.m.color_map[pl][pal_sz - 2];
+        ts->cdf.m.color_map[pl][b->pal_sz[pl] - 2];
     uint8_t (*const order)[8] = t->scratch.pal_order;
     uint8_t *const ctx = t->scratch.pal_ctx;
     for (int i = 1; i < 4 * (w4 + h4) - 1; i++) {
@@ -433,7 +433,7 @@ static void read_pal_indices(Dav1dTaskContext *const t,
         order_palette(pal_tmp, stride, i, first, last, order, ctx);
         for (int j = first, m = 0; j >= last; j--, m++) {
             const int color_idx = dav1d_msac_decode_symbol_adapt8(&ts->msac,
-                                      color_map_cdf[ctx[m]], pal_sz - 1);
+                                      color_map_cdf[ctx[m]], b->pal_sz[pl] - 1);
             pal_tmp[(i - j) * stride + j] = order[m][color_idx];
         }
     }
@@ -1165,7 +1165,7 @@ static int decode_b(Dav1dTaskContext *const t,
                 ts->frame_thread[p].pal_idx += bw4 * bh4 * 8;
             } else
                 pal_idx = t->scratch.pal_idx_y;
-            read_pal_indices(t, pal_idx, b->pal_sz[0], 0, w4, h4, bw4, bh4);
+            read_pal_indices(t, pal_idx, b, 0, w4, h4, bw4, bh4);
             if (DEBUG_BLOCK_INFO)
                 printf("Post-y-pal-indices: r=%d\n", ts->msac.rng);
         }
@@ -1179,7 +1179,7 @@ static int decode_b(Dav1dTaskContext *const t,
                 ts->frame_thread[p].pal_idx += cbw4 * cbh4 * 8;
             } else
                 pal_idx = t->scratch.pal_idx_uv;
-            read_pal_indices(t, pal_idx, b->pal_sz[1], 1, cw4, ch4, cbw4, cbh4);
+            read_pal_indices(t, pal_idx, b, 1, cw4, ch4, cbw4, cbh4);
             if (DEBUG_BLOCK_INFO)
                 printf("Post-uv-pal-indices: r=%d\n", ts->msac.rng);
         }
@@ -1982,7 +1982,7 @@ static int decode_b(Dav1dTaskContext *const t,
             if (has_chroma) {
                 // sub8x8 derivation
                 int is_sub8x8 = bw4 == ss_hor || bh4 == ss_ver;
-                refmvs_block *const *r = 0;
+                refmvs_block *const *r = NULL;
                 if (is_sub8x8) {
                     assert(ss_hor == 1);
                     r = &t->rt.r[(t->by & 31) + 5];
@@ -2130,7 +2130,7 @@ static int decode_sb(Dav1dTaskContext *const t, const enum BlockLevel bl,
         return decode_sb(t, bl + 1, INTRA_EDGE_SPLIT(node, 0));
     }
 
-    uint16_t *pc = 0;
+    uint16_t *pc = NULL;
     enum BlockPartition bp;
     int ctx, bx8, by8;
     if (t->frame_thread.pass != 2) {
@@ -3331,7 +3331,7 @@ int dav1d_submit_frame(Dav1dContext *const c) {
     int res = -1;
 
     // wait for c->out_delayed[next] and move into c->out if visible
-    Dav1dThreadPicture *out_delayed = 0;
+    Dav1dThreadPicture *out_delayed = NULL;
     if (c->n_fc > 1) {
         pthread_mutex_lock(&c->task_thread.lock);
         const unsigned next = c->frame_thread.next++;
