@@ -577,6 +577,90 @@ namespace str
 		return cl - cr;
 	}
 
+	// Natural sort comparison (alphanum sort) - compares embedded numeric sequences as integers.
+	// This ensures "file10" sorts after "file9" rather than between "file1" and "file2".
+	// Case-insensitive and UTF-8 aware.
+	constexpr int icmp_natural(const std::u8string_view ll, const std::u8string_view rr)
+	{
+		if (ll.data() == rr.data() || (ll.empty() && rr.empty())) return 0;
+		if (ll.empty()) return 1;
+		if (rr.empty()) return -1;
+
+		auto il = ll.begin();
+		auto ir = rr.begin();
+		const auto el = ll.end();
+		const auto er = rr.end();
+
+		while (il < el && ir < er)
+		{
+			auto cl = peek_utf8_char(il, el);
+			auto cr = peek_utf8_char(ir, er);
+
+			// Check if both characters are digits
+			const bool l_is_digit = cl >= '0' && cl <= '9';
+			const bool r_is_digit = cr >= '0' && cr <= '9';
+
+			if (l_is_digit && r_is_digit)
+			{
+				// Skip leading zeros and count them
+				int l_leading_zeros = 0;
+				int r_leading_zeros = 0;
+
+				while (il < el && *il == '0')
+				{
+					++il;
+					++l_leading_zeros;
+				}
+				while (ir < er && *ir == '0')
+				{
+					++ir;
+					++r_leading_zeros;
+				}
+
+				// Extract numeric values
+				uint64_t l_num = 0;
+				uint64_t r_num = 0;
+				int l_digits = 0;
+				int r_digits = 0;
+
+				while (il < el && *il >= '0' && *il <= '9')
+				{
+					l_num = l_num * 10 + (*il - '0');
+					++il;
+					++l_digits;
+				}
+				while (ir < er && *ir >= '0' && *ir <= '9')
+				{
+					r_num = r_num * 10 + (*ir - '0');
+					++ir;
+					++r_digits;
+				}
+
+				// Compare numeric values
+				if (l_num < r_num) return -1;
+				if (l_num > r_num) return 1;
+
+				// If equal, fewer leading zeros comes first (preserves original behavior for "007" vs "7")
+				if (l_leading_zeros < r_leading_zeros) return -1;
+				if (l_leading_zeros > r_leading_zeros) return 1;
+			}
+			else
+			{
+				// Compare as characters (case-insensitive)
+				cl = to_lower(pop_utf8_char(il, el));
+				cr = to_lower(pop_utf8_char(ir, er));
+
+				if (cl < cr) return -1;
+				if (cl > cr) return 1;
+			}
+		}
+
+		// Handle remaining characters
+		if (il < el) return 1;  // left string is longer
+		if (ir < er) return -1; // right string is longer
+		return 0;
+	}
+
 	struct iless
 	{
 		bool operator()(const std::u8string_view l, const std::u8string_view r) const

@@ -36,7 +36,7 @@
 
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("desktop", "store", "run", "bump-build", "bump-ver", "help", "")]
+    [ValidateSet("desktop", "store", "run", "bump-build", "bump-ver", "deploy", "help", "")]
     [string]$Command = ""
 )
 
@@ -216,12 +216,14 @@ function Show-Usage {
     Write-Host "Commands:"
     Write-Host "  desktop      Build desktop versions (Win32 + x64), auto-increments build number"
     Write-Host "  store        Build Windows Store version (MSIX), auto-increments build number"
+    Write-Host "  deploy       Deploy desktop build artifacts to Google Cloud Storage"
     Write-Host "  run          Run the recently built diffractor64.exe"
     Write-Host "  bump-build   Manually increment build number (e.g., $($version.Build) -> $($version.Build + 1))"
     Write-Host "  bump-ver     Increment version (e.g., $($version.VersionString) -> $($version.Major).$($version.Minor).$($version.Patch + 1))"
     Write-Host ""
     Write-Host "Examples:"
     Write-Host "  .\dd.ps1 desktop      Build desktop release (auto-increments build)"
+    Write-Host "  .\dd.ps1 deploy       Upload installers to GCS"
     Write-Host "  .\dd.ps1 store        Build Windows Store package (auto-increments build)"
     Write-Host "  .\dd.ps1 bump-ver     Increment version before a major release"
     Write-Host "  .\dd.ps1 run          Run diffractor64.exe"
@@ -540,10 +542,67 @@ function Start-Diffractor {
     Start-Process $exe64
 }
 
+function Deploy-Desktop {
+    Write-Host ""
+    Write-Host "============================================================================" -ForegroundColor Cyan
+    Write-Host "Deploying Desktop Build to Google Cloud Storage" -ForegroundColor Cyan
+    Write-Host "============================================================================" -ForegroundColor Cyan
+    
+    # Check that build artifacts exist
+    $installer = Join-Path $ScriptDir "diffractor-setup.exe"
+    $testInstaller = Join-Path $ScriptDir "diffractor-setup-test.exe"
+    $zipFile = Join-Path $ScriptDir "diffractor.zip"
+    
+    $missingFiles = @()
+    if (-not (Test-Path $installer)) { $missingFiles += "diffractor-setup.exe" }
+    if (-not (Test-Path $testInstaller)) { $missingFiles += "diffractor-setup-test.exe" }
+    if (-not (Test-Path $zipFile)) { $missingFiles += "diffractor.zip" }
+    
+    if ($missingFiles.Count -gt 0) {
+        Write-Host "Error: Missing build artifacts:" -ForegroundColor Red
+        foreach ($file in $missingFiles) {
+            Write-Host "  - $file" -ForegroundColor Red
+        }
+        Write-Host ""
+        Write-Host "Run '.\dd.ps1 desktop' to build first." -ForegroundColor Yellow
+        exit 1
+    }
+    
+    # Check that gsutil is available
+    $gsutil = Get-Command "gsutil" -ErrorAction SilentlyContinue
+    if (-not $gsutil) {
+        Write-Host "Error: gsutil not found. Please install Google Cloud SDK." -ForegroundColor Red
+        Write-Host "https://cloud.google.com/sdk/docs/install" -ForegroundColor Yellow
+        exit 1
+    }
+    
+    Write-Host ""
+    Write-Host "Uploading to gs://diffractor/..." -ForegroundColor Yellow
+    
+    & gsutil -m cp -a public-read $installer $testInstaller $zipFile gs://diffractor/
+    
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Error: Upload failed" -ForegroundColor Red
+        exit $LASTEXITCODE
+    }
+    
+    Write-Host ""
+    Write-Host "============================================================================" -ForegroundColor Green
+    Write-Host "Deploy completed successfully!" -ForegroundColor Green
+    Write-Host "============================================================================" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "Uploaded files:"
+    Write-Host "  https://storage.googleapis.com/diffractor/diffractor-setup.exe"
+    Write-Host "  https://storage.googleapis.com/diffractor/diffractor-setup-test.exe"
+    Write-Host "  https://storage.googleapis.com/diffractor/diffractor.zip"
+    Write-Host ""
+}
+
 # Main entry point
 switch ($Command) {
     "desktop" { Build-Desktop }
     "store" { Build-Store }
+    "deploy" { Deploy-Desktop }
     "run" { Start-Diffractor }
     "bump-build" { Invoke-BumpBuild }
     "bump-ver" { Invoke-BumpVersion }

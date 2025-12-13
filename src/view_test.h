@@ -25,7 +25,9 @@ struct test_registry
 	virtual void add(std::u8string name, std::function<void(void)> f) = 0;
 };
 
-void register_tests(view_state& state, test_registry& tests);
+void register_tests1(view_state& state, test_registry& tests);
+void register_tests2(view_state& state, test_registry& tests);
+
 bool is_running_tests();
 void run_tests(view_state& state, std::vector<test_ptr> tests);
 

@@ -202,6 +202,8 @@ void app_frame::stage_update()
 
 	if (first_time_this_instance)
 	{
+		first_time_this_instance = false;  // Prevent multiple downloads per instance
+
 		if (setting.is_tester || (setting.install_updates && setting.first_run_today))
 		{
 			auto download_complete = [this](const df::file_path download_path)
@@ -2101,11 +2103,7 @@ void app_frame::toggle_full_screen()
 		_state.view_mode(view_type::items);
 	}
 
-	//const auto display = _state.display_state();
-	//const auto is_playing = display && display->is_playing();
-
 	_pa->full_screen(_state.is_full_screen);
-	//_commands[commands::fullscreen]->checked = _state.is_full_screen;
 	invalidate_view(view_invalid::app_layout | view_invalid::screen_saver | view_invalid::command_state);
 }
 
@@ -3016,7 +3014,6 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::group_rating]->enable = is_items_view;
 	_commands[commands::group_shuffle]->enable = is_items_view;
 	_commands[commands::group_size]->enable = is_items_view;
-	_commands[commands::group_toggle]->enable = is_items_view;
 	_commands[commands::import_analyze]->enable = view_mode == view_type::import;
 	_commands[commands::import_run]->enable = view_mode == view_type::import;
 #ifndef WINSTORE

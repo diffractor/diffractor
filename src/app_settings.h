@@ -127,6 +127,7 @@ public:
 	bool check_for_updates = false;
 	bool install_updates = false;
 	bool is_tester = false;
+	bool send_crash_dumps = false;
 #endif
 	bool can_animate = false;
 	repeat_mode repeat = repeat_mode::repeat_none;
@@ -137,8 +138,7 @@ public:
 	bool show_sidebar = false;
 	bool use_gpu = false;
 	bool use_d3d11va = false;
-	bool use_yuv = false;
-	bool send_crash_dumps = false;
+	bool use_yuv = false;	
 	bool force_available_version = false;
 	bool large_font = false;
 	bool verbose_metadata = false;
