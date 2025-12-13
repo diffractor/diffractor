@@ -1,4 +1,4 @@
-﻿// This file is part of the Diffractor photo and video organizer
+// This file is part of the Diffractor photo and video organizer
 // Copyright(C) 2025  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
@@ -51,7 +51,7 @@ static std::atomic_int index_version;
 auto s_app_name_l = L"Diffractor";
 const auto s_app_name = u8"Diffractor"sv;
 const auto s_app_version = u8"126.2"sv;
-const auto g_app_build = u8"1187"sv;
+const auto g_app_build = u8"1188"sv;
 constexpr auto stage_file_name = u8"diffractor-setup-update.exe"sv;
 static constexpr auto installed_file_name = u8"diffractor-setup-installed.exe"sv;
 static constexpr auto s_search = u8"search"sv;

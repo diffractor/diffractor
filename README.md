@@ -44,13 +44,16 @@ Open `df.sln` in Visual Studio 2022. Submodules: [FFmpeg](https://github.com/dif
 
 ### Build Script
 
-Use `build.cmd` from a Developer Command Prompt:
+Use `dd.ps1` from a Developer PowerShell:
 
 | Command | Description |
 |---------|-------------|
-| `build.cmd` | Show usage information |
-| `build.cmd build` | Build binaries only (Win32, x64, and WinStore) |
-| `build.cmd release` | Full release: build, sign, create installers and packages |
+| `.\dd.ps1` | Show usage information and current version |
+| `.\dd.ps1 desktop` | Build desktop versions (Win32 + x64), auto-increments build number |
+| `.\dd.ps1 store` | Build Windows Store MSIX package, auto-increments build number |
+| `.\dd.ps1 run` | Run the recently built diffractor64.exe |
+| `.\dd.ps1 bump-build` | Manually increment build number without building |
+| `.\dd.ps1 bump-ver` | Increment minor version (e.g., 1.26.2 ? 1.26.3) |
 
 **Prerequisites for release builds:** NSIS, 7-Zip, Windows SDK, code signing certificate.
 

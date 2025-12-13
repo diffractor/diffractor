@@ -61,7 +61,7 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "setup", "setup", "{027D6ECE-CA72-477C-A418-833FD49D4ACE}"
 	ProjectSection(SolutionItems) = preProject
 		exe\AppxManifest.xml = exe\AppxManifest.xml
-		build.cmd = build.cmd
+		dd.ps1 = dd.ps1
 		installer\diff.nsi = installer\diff.nsi
 	EndProjectSection
 EndProject

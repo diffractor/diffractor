@@ -415,7 +415,9 @@ namespace platform
 
 	using setting_file_ptr = std::shared_ptr<setting_file>;
 
+	setting_file_ptr create_default_settings();
 	setting_file_ptr create_registry_settings();
+	setting_file_ptr create_ini_file_settings();
 
 	extern size_t static_memory_usage;
 

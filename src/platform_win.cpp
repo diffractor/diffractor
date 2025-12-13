@@ -1531,13 +1531,38 @@ platform::file_op_result platform::replace_file(const df::file_path destination,
 		const auto destinationW = to_file_system_path(destination);
 		const auto backupW = to_file_system_path(backup);
 
-		return last_op_result(ReplaceFileW(
+		// Try ReplaceFileW first - this is the preferred atomic operation
+		const auto replace_success = ReplaceFileW(
 			destinationW.c_str(),
 			existingW.c_str(),
 			backup.is_empty() ? nullptr : backupW.c_str(),
 			REPLACEFILE_IGNORE_MERGE_ERRORS | REPLACEFILE_IGNORE_ACL_ERRORS,
 			nullptr,
-			nullptr) != 0);
+			nullptr);
+
+		if (replace_success)
+		{
+			return last_op_result(TRUE);
+		}
+
+		// ReplaceFileW failed - this commonly happens on network drives (SMB shares)
+		// Fall back to move with overwrite (MOVEFILE_REPLACE_EXISTING)
+		const auto last_error = GetLastError();
+		df::log(__FUNCTION__, str::format(u8"ReplaceFileW failed with error {}, falling back to move with overwrite"sv, static_cast<uint32_t>(last_error)));
+
+		// If backup was requested, try to create it first by copying destination
+		if (!backup.is_empty())
+		{
+			// Use copy instead of move so we don't lose the destination if the final move fails
+			const auto backup_result = copy_file(destination, backup, true, false);
+			if (backup_result.failed())
+			{
+				df::log(__FUNCTION__, u8"Failed to create backup, proceeding without backup"sv);
+			}
+		}
+
+		// Move existing to destination, overwriting if it exists
+		return move_file(existing, destination, false);
 	}
 
 	return move_file(existing, destination, true);
@@ -4597,177 +4622,6 @@ std::vector<platform::file_info> platform::select_files(const df::item_selector&
 	}
 
 	return results;
-}
-
-class setting_file_impl : public platform::setting_file
-{
-	mutable df::hash_map<std::u8string, HKEY__*> _keys;
-	HKEY _root_key = nullptr;
-	bool _root_created = false;
-
-public:
-	setting_file_impl()
-	{
-		constexpr auto s_reg_key = u8"Software\\Diffractor"sv;
-		_root_key = create_key(HKEY_CURRENT_USER, s_reg_key, _root_created);
-	}
-
-	~setting_file_impl()
-	{
-		close();
-	}
-
-	bool root_created() const override
-	{
-		return _root_created;
-	}
-
-
-	HKEY Key(const std::u8string_view section_in) const
-	{
-		if (str::is_empty(section_in))
-		{
-			return _root_key;
-		}
-
-		const auto section = std::u8string(section_in);
-		const auto found = _keys.find(section);
-
-		if (found != _keys.end())
-		{
-			return found->second;
-		}
-
-		auto was_created = false;
-		auto* const new_key = create_key(_root_key, section, was_created);
-
-		if (new_key != nullptr)
-		{
-			_keys[section] = new_key;
-			return new_key;
-		}
-
-		return nullptr;
-	}
-
-	void close()
-	{
-		for (const auto& k : _keys)
-		{
-			RegCloseKey(k.second);
-		}
-
-		_keys.clear();
-		RegCloseKey(_root_key);
-		_root_key = nullptr;
-	}
-
-	static HKEY create_key(const HKEY parent_key, const std::u8string_view name, bool& was_created)
-	{
-		df::assert_true(parent_key != nullptr);
-
-		DWORD disposition = 0;
-		HKEY result_key = nullptr;
-		const auto result = RegCreateKeyEx(parent_key, str::utf8_to_utf16(name).c_str(), 0, REG_NONE,
-		                                   REG_OPTION_NON_VOLATILE,
-		                                   KEY_ALL_ACCESS, nullptr, &result_key, &disposition);
-		was_created = disposition == REG_CREATED_NEW_KEY;
-		return result == ERROR_SUCCESS ? result_key : nullptr;
-	}
-
-	bool read(const std::u8string_view section, const std::u8string_view name, uint32_t& v) const override
-	{
-		DWORD dwType = 0;
-		DWORD s = sizeof(uint32_t);
-		const int32_t result = RegQueryValueEx(Key(section), str::utf8_to_utf16(name).c_str(), nullptr, &dwType,
-		                                       std::bit_cast<uint8_t*>(&v), &s);
-		df::assert_true(result != ERROR_SUCCESS || dwType == REG_DWORD);
-		df::assert_true(result != ERROR_SUCCESS || s == sizeof(uint32_t));
-		return ERROR_SUCCESS == result;
-	}
-
-	bool read(const std::u8string_view section, const std::u8string_view name, uint64_t& v) const override
-	{
-		DWORD dwType = 0;
-		DWORD s = sizeof(uint64_t);
-		const int32_t result = RegQueryValueEx(Key(section), str::utf8_to_utf16(name).c_str(), nullptr, &dwType,
-		                                       std::bit_cast<uint8_t*>(&v), &s);
-		df::assert_true(result != ERROR_SUCCESS || dwType == REG_QWORD);
-		df::assert_true(result != ERROR_SUCCESS || s == sizeof(uint64_t));
-		return ERROR_SUCCESS == result;
-	}
-
-
-	bool read(const std::u8string_view section, const std::u8string_view name, std::u8string& v) const override
-	{
-		DWORD alloc_len = 0;
-		DWORD type = 0;
-		const auto nameW = str::utf8_to_utf16(name);
-
-		int32_t result = RegQueryValueEx(Key(section), nameW.c_str(), nullptr, &type, nullptr, &alloc_len);
-
-		if (result == ERROR_SUCCESS && (type == REG_SZ || type == REG_MULTI_SZ || type == REG_EXPAND_SZ))
-		{
-			std::vector<uint8_t> data(alloc_len, 0);
-			result = RegQueryValueEx(Key(section), nameW.c_str(), nullptr, &type, data.data(), &alloc_len);
-
-			if (result == ERROR_SUCCESS)
-			{
-				const auto char_len = alloc_len >= sizeof(wchar_t) ? alloc_len / sizeof(wchar_t) - 1 : 0;
-				v = str::utf16_to_utf8({std::bit_cast<const wchar_t*>(data.data()), char_len});
-			}
-		}
-
-		return ERROR_SUCCESS == result;
-	}
-
-	bool read(const std::u8string_view section, const std::u8string_view name, uint8_t* data,
-	          size_t& len) const override
-	{
-		DWORD dwType = REG_BINARY;
-		DWORD dwSize = static_cast<uint32_t>(len);
-		bool success = false;
-
-		if (ERROR_SUCCESS == RegQueryValueEx(Key(section), str::utf8_to_utf16(name).c_str(), nullptr, &dwType, data,
-		                                     &dwSize))
-		{
-			len = dwSize;
-			success = true;
-		}
-
-		return success;
-	}
-
-	bool write(const std::u8string_view section, const std::u8string_view name, const uint32_t v) override
-	{
-		return ERROR_SUCCESS == RegSetValueEx(Key(section), str::utf8_to_utf16(name).c_str(), 0, REG_DWORD,
-		                                      std::bit_cast<const uint8_t*>(&v), sizeof(uint32_t));
-	}
-
-	bool write(const std::u8string_view section, const std::u8string_view name, const uint64_t v) override
-	{
-		return ERROR_SUCCESS == RegSetValueEx(Key(section), str::utf8_to_utf16(name).c_str(), 0, REG_QWORD,
-		                                      std::bit_cast<const uint8_t*>(&v), sizeof(uint64_t));
-	}
-
-	bool write(const std::u8string_view section, const std::u8string_view name, const std::u8string_view v) override
-	{
-		const auto w = str::utf8_to_utf16(v);
-		return ERROR_SUCCESS == RegSetValueEx(Key(section), str::utf8_to_utf16(name).c_str(), 0, REG_SZ,
-		                                      std::bit_cast<const uint8_t*>(w.c_str()),
-		                                      static_cast<uint32_t>(w.size() * sizeof(wchar_t)));
-	}
-
-	bool write(const std::u8string_view section, const std::u8string_view name, const df::cspan data) override
-	{
-		return ERROR_SUCCESS == RegSetValueEx(Key(section), str::utf8_to_utf16(name).c_str(), 0, REG_BINARY, data.data,
-		                                      static_cast<uint32_t>(data.size));
-	}
-};
-
-platform::setting_file_ptr platform::create_registry_settings()
-{
-	return std::make_shared<setting_file_impl>();
 }
 
 platform::mutex::mutex()

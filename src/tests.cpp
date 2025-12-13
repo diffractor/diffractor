@@ -8,6 +8,8 @@
 
 // Purpose: Unit tests and validation. Contains test functions for verifying
 // metadata parsing, crypto, search, and other core functionality.
+//
+// Tests should be implimented in their own function and registered in the test framework.
 
 #include "pch.h"
 #include "model.h"
@@ -2881,6 +2883,48 @@ static void should_persist_to_registry()
 	}
 }
 
+static void should_persist_to_ini_file()
+{
+	// Create INI file settings
+	auto settings = platform::create_ini_file_settings();
+
+	// Verify root was created
+	assert_equal(true, settings->root_created(), u8"root_created"sv, u8"INI file settings"sv);
+
+	// Test uint32_t
+	constexpr uint32_t test_uint32 = 12345;
+	settings->write(u8"test_section"sv, u8"uint32_value"sv, test_uint32);
+	uint32_t read_uint32 = 0;
+	assert_equal(true, settings->read(u8"test_section"sv, u8"uint32_value"sv, read_uint32), u8"read uint32"sv, u8"INI file settings"sv);
+	assert_equal(test_uint32, read_uint32, u8"uint32 value"sv, u8"INI file settings"sv);
+
+	// Test uint64_t
+	constexpr uint64_t test_uint64 = 0xFFFFFFFFFFFFull;
+	settings->write(u8"test_section"sv, u8"uint64_value"sv, test_uint64);
+	uint64_t read_uint64 = 0;
+	assert_equal(true, settings->read(u8"test_section"sv, u8"uint64_value"sv, read_uint64), u8"read uint64"sv, u8"INI file settings"sv);
+	assert_equal(test_uint64, read_uint64, u8"uint64 value"sv, u8"INI file settings"sv);
+
+	// Test string
+	const std::u8string test_string = u8"Hello, World! With special chars: äöü"s;
+	settings->write(u8"test_section"sv, u8"string_value"sv, test_string);
+	std::u8string read_string;
+	assert_equal(true, settings->read(u8"test_section"sv, u8"string_value"sv, read_string), u8"read string"sv, u8"INI file settings"sv);
+	assert_equal(test_string, read_string, u8"string value"sv, u8"INI file settings"sv);
+
+	// Test binary data (base64 encoded)
+	const std::vector<uint8_t> test_binary = { 0x00, 0x01, 0x02, 0xFF, 0xFE, 0xFD };
+	settings->write(u8"test_section"sv, u8"binary_value"sv, df::cspan{ test_binary.data(), test_binary.size() });
+	std::vector<uint8_t> read_buffer(test_binary.size());
+	size_t read_len = read_buffer.size();
+	assert_equal(true, settings->read(u8"test_section"sv, u8"binary_value"sv, read_buffer.data(), read_len), u8"read binary"sv, u8"INI file settings"sv);
+	assert_equal(test_binary.size(), static_cast<size_t>(read_len), u8"binary length"sv, u8"INI file settings"sv);
+	for (size_t i = 0; i < test_binary.size(); ++i)
+	{
+		assert_equal(static_cast<uint32_t>(test_binary[i]), static_cast<uint32_t>(read_buffer[i]), u8"binary byte"sv, u8"INI file settings"sv);
+	}
+}
+
 static void write_binary_file(const df::file_path path, const uint8_t* const data, const int size)
 {
 	const auto f = open_file(path, platform::file_open_mode::create);
@@ -3758,6 +3802,9 @@ void register_tests(view_state& state, test_registry& tests)
 	register_should_search(u8"jpg"sv, 15, 15, 15);
 	register_should_search(u8"-jpg"sv, 30, 29, 28);
 	register_should_search(u8"-ext:jpg"sv, 30, 29, 28);
+
+	// Test INI file settings persistence
+	tests.add(u8"INI file settings should persist values"s, should_persist_to_ini_file);
 
 
 	// Dont run slow tests in debug

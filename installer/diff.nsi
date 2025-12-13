@@ -1,10 +1,10 @@
-﻿;NSIS Modern User Interface
+;NSIS Modern User Interface
 
 !define PRODUCT_NAME "Diffractor"
 !define PRODUCT32_EXE "diffractor.exe"
 !define PRODUCT64_EXE "diffractor64.exe"
 !define PRODUCT_PUBLISHER "Diffractor"
-!define BUILD_NUM "1187"
+!define BUILD_NUM "1188"
 !define PRODUCT_VERSION "126.2"
 !define FILE_VERSION "1.26.2.${BUILD_NUM}"
 !define PRODUCT_WEB_SITE "http://www.Diffractor.com/"

@@ -20,7 +20,7 @@
   <Identity
     Name="Diffractor.Diffractor"
     Publisher="CN=PUBLISHER_ID_PLACEHOLDER"
-    Version="1.26.2.1187"
+    Version="1.26.2.1188"
     ProcessorArchitecture="x64" />
 
   <!--
@@ -47,7 +47,7 @@
   ===============================================================================================================
   -->
   <Dependencies>
-    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.22621.0" />
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="1.26.2.1188" MaxVersionTested="10.0.22621.0" />
   </Dependencies>
 
   <!--
