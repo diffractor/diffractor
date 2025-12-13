@@ -2859,7 +2859,7 @@ static void upgrade_invoke(view_state& s, const ui::control_frame_ptr& parent)
 
 		s.queue_async(async_queue::web, [download_complete]
 		{
-			platform::download_and_verify(setting.is_tester, download_complete);
+			platform::download_and_verify(download_complete);
 		});
 
 		if (dlg->show_modal(controls) == ui::close_result::ok)
@@ -3171,7 +3171,6 @@ static void settings_invoke(view_state& s, const ui::control_frame_ptr& parent)
 	settings2->add(
 		std::make_shared<ui::check_control>(dlg->_frame, tt.options_check_for_update, setting.check_for_updates));
 	settings2->add(std::make_shared<ui::check_control>(dlg->_frame, tt.options_auto_update, setting.install_updates));
-	settings2->add(std::make_shared<ui::check_control>(dlg->_frame, tt.options_beta_tester, setting.is_tester));
 #endif
 
 	advanced->add(std::make_shared<ui::title_control>(tt.options_advanced));
@@ -3180,8 +3179,10 @@ static void settings_invoke(view_state& s, const ui::control_frame_ptr& parent)
 	advanced->add(std::make_shared<ui::check_control>(dlg->_frame, tt.options_use_gpu, setting.use_gpu));
 	advanced->add(std::make_shared<ui::check_control>(dlg->_frame, tt.options_use_gpu_video, setting.use_d3d11va));
 	advanced->add(std::make_shared<ui::check_control>(dlg->_frame, tt.options_use_yuv_tex, setting.use_yuv));
+#ifndef WINSTORE
 	advanced->add(
 		std::make_shared<ui::check_control>(dlg->_frame, tt.options_send_crash_reports, setting.send_crash_dumps));
+#endif
 	advanced->add(
 		std::make_shared<ui::check_control>(dlg->_frame, tt.options_show_debug_info, setting.show_debug_info));
 

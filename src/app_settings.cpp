@@ -50,7 +50,6 @@ static constexpr auto s_available_version = u8"available_version"sv;
 static constexpr auto s_available_test_version = u8"available_test_version"sv;
 static constexpr auto s_tags = u8"tags"sv;
 static constexpr auto s_is_sponsor = u8"awesome"sv;
-static constexpr auto s_is_tester = u8"is_tester"sv;
 static constexpr auto s_first_time = u8"first"sv;
 static constexpr auto s_quality = u8"quality"sv;
 static constexpr auto s_webp_quality = u8"webp_quality"sv;
@@ -188,16 +187,15 @@ settings_t::settings_t()
 	show_results = true;
 	create_originals = true;
 #ifndef WINSTORE
-	is_tester = false;
 	check_for_updates = true;
 	install_updates = true;
+	send_crash_dumps = true;
 #endif
 	show_hidden = false;
 	show_debug_info = false;
 	use_gpu = true;
 	use_d3d11va = true;
-	use_yuv = true;
-	send_crash_dumps = true;
+	use_yuv = true;	
 	confirm_deletions = true;
 	first_run_today = true;
 	first_run_ever = true;	
@@ -541,8 +539,7 @@ void settings_t::read(const platform::setting_file_ptr& store_in)
 	store.read({}, s_show_performance_timings, show_debug_info);
 	store.read({}, s_use_gpu, use_gpu);
 	store.read({}, s_use_d3d11_va, use_d3d11va);
-	store.read({}, s_use_yuv, use_yuv);
-	store.read({}, s_send_crash_dumps, send_crash_dumps);
+	store.read({}, s_use_yuv, use_yuv);	
 	store.read({}, s_confirm, confirm_deletions);
 	store.read({}, s_repeat, repeat);
 	store.read({}, s_auto_play, auto_play);
@@ -573,7 +570,7 @@ void settings_t::read(const platform::setting_file_ptr& store_in)
 #ifndef WINSTORE
 	store.read({}, s_check_for_updates, check_for_updates);
 	store.read({}, s_install_updates, install_updates);
-	store.read({}, s_is_tester, is_tester);
+	store.read({}, s_send_crash_dumps, send_crash_dumps);
 #endif
 
 	auto lat = default_location.latitude();
@@ -697,8 +694,7 @@ void settings_t::write(const platform::setting_file_ptr& store_in) const
 	store.write({}, s_show_performance_timings, show_debug_info);
 	store.write({}, s_use_gpu, use_gpu);
 	store.write({}, s_use_d3d11_va, use_d3d11va);
-	store.write({}, s_use_yuv, use_yuv);
-	store.write({}, s_send_crash_dumps, send_crash_dumps);
+	store.write({}, s_use_yuv, use_yuv);	
 	store.write({}, s_confirm, confirm_deletions);
 	store.write({}, s_repeat, static_cast<int>(repeat));
 	store.write({}, s_auto_play, auto_play);
@@ -729,7 +725,7 @@ void settings_t::write(const platform::setting_file_ptr& store_in) const
 #ifndef WINSTORE
 	store.write({}, s_check_for_updates, check_for_updates);
 	store.write({}, s_install_updates, install_updates);
-	store.write({}, s_is_tester, is_tester);
+	store.write({}, s_send_crash_dumps, send_crash_dumps);
 #endif
 	store.write({}, s_last_run, platform::now().to_days());
 	store.write({}, s_location_latitude, default_location.latitude());

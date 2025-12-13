@@ -409,7 +409,7 @@ static void sort_items(df::item_elements& items, const group_by group_mode, cons
 
 	constexpr auto name_sorter = [](const df::item_element_ptr& l, const df::item_element_ptr& r)
 	{
-		return icmp(l->name(), r->name()) < 0;
+		return str::icmp_natural(l->name(), r->name()) < 0;
 	};
 
 	if (group_mode == group_by::shuffle)
@@ -2089,7 +2089,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 				                           ? sizei{}
 				                           : dc.measure_text(info.title, info.title_font, title_style, avail_width);
 			const auto title_extent2 = dc.measure_text(info.name, info.title_font, title_style, avail_width);
-			const auto extra1 = title_extent1.cx > bg_bounds.width() ? title_extent1.cx - device_bounds.width() : 0;
+		 const auto extra1 = title_extent1.cx > bg_bounds.width() ? title_extent1.cx - device_bounds.width() : 0;
 			const auto extra2 = title_extent2.cx > bg_bounds.width() ? title_extent2.cx - device_bounds.width() : 0;
 			title_text_extra_width = std::max(extra1, extra2);
 			title_line_height1 = title_extent1.cy;
@@ -2671,9 +2671,3 @@ platform::file_op_result df::item_element::rename(index_state& index, const std:
 
 	return result;
 }
-
-
-/////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////

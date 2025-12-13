@@ -9,6 +9,8 @@
     The build command to execute:
     - desktop    : Build desktop versions (diffractor32.exe, diffractor64.exe), create ZIP and NSIS installer
     - store      : Build Windows Store version (MSIX package)
+    - deploy     : Deploy build artifacts to Google Cloud Storage
+    - release    : Create GitHub release with tag and upload installer/zip assets
     - run        : Run the recently built diffractor64.exe
     - bump-build : Increment the build number (e.g., 1187 -> 1188)
     - bump-ver   : Increment the minor version (e.g., 1.26.2 -> 1.26.3)
@@ -20,6 +22,10 @@
 .EXAMPLE
     .\dd.ps1 store
     Build Windows Store MSIX package
+
+.EXAMPLE
+    .\dd.ps1 release
+    Create GitHub release, tag code, and upload diffractor-setup.exe and diffractor.zip
 
 .EXAMPLE
     .\dd.ps1 run
@@ -36,7 +42,7 @@
 
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("desktop", "store", "run", "bump-build", "bump-ver", "help", "")]
+    [ValidateSet("desktop", "store", "run", "bump-build", "bump-ver", "deploy", "release", "loc", "code", "clear-cache", "help", "")]
     [string]$Command = ""
 )
 
@@ -137,10 +143,16 @@ function Update-AllVersionFiles {
     $content = $content -replace '!define PRODUCT_VERSION "\d+\.\d+"', "!define PRODUCT_VERSION `"$productVersion`""
     Set-Content $NsiFile $content -NoNewline
     
-    # Update AppxManifest.xml
+    # Update AppxManifest.xml (Store requires revision/4th part to be 0)
     Write-Host "Updating $AppxManifestFile..." -ForegroundColor Yellow
+    $storeVersion = "$Major.$Minor.$Patch.0"
+    # Get current Windows build for MaxVersionTested
+    $winVer = [System.Environment]::OSVersion.Version
+    $maxVersionTested = "10.0.$($winVer.Build).0"
     $content = Get-Content $AppxManifestFile -Raw
-    $content = $content -replace 'Version="\d+\.\d+\.\d+\.\d+"', "Version=`"$fileVersion`""
+    # Use specific attribute prefixes to avoid matching MinVersion
+    $content = $content -replace '(<Identity[^>]*\s)Version="\d+\.\d+\.\d+\.\d+"', "`$1Version=`"$storeVersion`""
+    $content = $content -replace 'MaxVersionTested="\d+\.\d+\.\d+\.\d+"', "MaxVersionTested=`"$maxVersionTested`""
     Set-Content $AppxManifestFile $content -NoNewline
     
     # Update platform_win_res.rc
@@ -216,12 +228,19 @@ function Show-Usage {
     Write-Host "Commands:"
     Write-Host "  desktop      Build desktop versions (Win32 + x64), auto-increments build number"
     Write-Host "  store        Build Windows Store version (MSIX), auto-increments build number"
+    Write-Host "  deploy       Deploy desktop build artifacts to Google Cloud Storage"
+    Write-Host "  release      Create GitHub release with tag and upload installers"
     Write-Host "  run          Run the recently built diffractor64.exe"
+    Write-Host "  code         Open VS Code with Developer Command Prompt environment"
+    Write-Host "  loc          Regenerate location database files from geonames"
     Write-Host "  bump-build   Manually increment build number (e.g., $($version.Build) -> $($version.Build + 1))"
     Write-Host "  bump-ver     Increment version (e.g., $($version.VersionString) -> $($version.Major).$($version.Minor).$($version.Patch + 1))"
+    Write-Host "  clear-cache  Clear Windows icon and thumbnail cache (requires restart)"
     Write-Host ""
     Write-Host "Examples:"
     Write-Host "  .\dd.ps1 desktop      Build desktop release (auto-increments build)"
+    Write-Host "  .\dd.ps1 deploy       Upload installers to GCS"
+    Write-Host "  .\dd.ps1 release      Create GitHub release and tag code"
     Write-Host "  .\dd.ps1 store        Build Windows Store package (auto-increments build)"
     Write-Host "  .\dd.ps1 bump-ver     Increment version before a major release"
     Write-Host "  .\dd.ps1 run          Run diffractor64.exe"
@@ -326,7 +345,6 @@ function Build-Desktop {
     Write-Host "Cleaning previous release artifacts..." -ForegroundColor Yellow
     $filesToClean = @(
         "diffractor-setup.exe",
-        "diffractor-setup-test.exe",
         "diffractor.zip"
     )
     foreach ($file in $filesToClean) {
@@ -376,9 +394,6 @@ function Build-Desktop {
     Add-ToSymbolStore -File (Join-Path $SourceFilesDir "diffractor32.pdb")
     Add-ToSymbolStore -File (Join-Path $SourceFilesDir "diffractor64.exe")
     Add-ToSymbolStore -File (Join-Path $SourceFilesDir "diffractor64.pdb")
-    
-    # Create test installer copy
-    Copy-Item $installer (Join-Path $ScriptDir "diffractor-setup-test.exe") -Force
     
     # Create portable ZIP
     Write-Host ""
@@ -431,9 +446,6 @@ function Build-Desktop {
 }
 
 function Build-Store {
-    # Auto-increment build number before building
-    Invoke-BumpBuild
-    
     $version = Get-CurrentVersion
     $storePackage = "Diffractor_$($version.FileVersion)_x64"
     
@@ -454,7 +466,8 @@ function Build-Store {
     }
     
     # Build WinStore configuration
-    Invoke-MSBuild -Project "src\app.vcxproj" -Configuration "WinStore" -Platform "x64"
+    # Invoke-MSBuild -Project "src\app.vcxproj" -Configuration "WinStore" -Platform "x64"
+    Invoke-MSBuild -Project "df.sln" -Configuration "WinStore" -Platform "x64"
     
     # Sign executable
     Write-Host ""
@@ -470,6 +483,19 @@ function Build-Store {
     New-Item -ItemType Directory -Path (Join-Path $PackageRoot "languages") -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $PackageRoot "dictionaries") -Force | Out-Null
     
+    # Generate store assets
+    Write-Host ""
+    Write-Host "Generating store assets..." -ForegroundColor Yellow
+    $assetsDir = Join-Path $PackageRoot "Assets"
+    $generateScript = Join-Path $ToolsDir "generate_store_assets.py"
+    
+    & python $generateScript -o $assetsDir
+    
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Error: Failed to generate store assets" -ForegroundColor Red
+        exit $LASTEXITCODE
+    }
+    
     # Copy files
     Copy-Item (Join-Path $SourceFilesDir "diffractor.exe") $PackageRoot -Force
     Copy-Item (Join-Path $SourceFilesDir "location-countries.txt") $PackageRoot -Force
@@ -480,12 +506,40 @@ function Build-Store {
     Copy-Item (Join-Path $SourceFilesDir "dictionaries\*.aff") (Join-Path $PackageRoot "dictionaries") -Force
     Copy-Item (Join-Path $SourceFilesDir "dictionaries\*.dic") (Join-Path $PackageRoot "dictionaries") -Force
     Copy-Item (Join-Path $SourceFilesDir "AppxManifest.xml") $PackageRoot -Force
-    Copy-Item (Join-Path $InstallerDir "StoreLogo.png") (Join-Path $PackageRoot "Assets") -Force
-    Copy-Item (Join-Path $InstallerDir "Square150x150Logo.png") (Join-Path $PackageRoot "Assets") -Force
-    Copy-Item (Join-Path $InstallerDir "Square44x44Logo.png") (Join-Path $PackageRoot "Assets") -Force
-    Copy-Item (Join-Path $InstallerDir "Wide310x150Logo.png") (Join-Path $PackageRoot "Assets") -Force
-    Copy-Item (Join-Path $InstallerDir "SplashScreen.png") (Join-Path $PackageRoot "Assets") -Force
-    Copy-Item (Join-Path $InstallerDir "DiffractorFile.png") (Join-Path $PackageRoot "Assets") -Force
+    
+    # Generate resources.pri using MakePri (required for asset qualifiers like _altform-unplated)
+    Write-Host ""
+    Write-Host "Generating resources.pri..." -ForegroundColor Yellow
+    $makePri = Join-Path $SdkBinDir "MakePri.exe"
+    
+    if (-not (Test-Path $makePri)) {
+        Write-Host "Error: MakePri not found at $makePri" -ForegroundColor Red
+        exit 1
+    }
+    
+    # Create priconfig.xml
+    $priConfig = Join-Path $PackageRoot "priconfig.xml"
+    Push-Location $PackageRoot
+    & $makePri createconfig /cf $priConfig /dq en-US /o
+    
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Error: Failed to create priconfig.xml" -ForegroundColor Red
+        Pop-Location
+        exit $LASTEXITCODE
+    }
+    
+    # Generate resources.pri
+    & $makePri new /pr $PackageRoot /cf $priConfig /o
+    
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Error: Failed to generate resources.pri" -ForegroundColor Red
+        Pop-Location
+        exit $LASTEXITCODE
+    }
+    
+    # Remove priconfig.xml (not needed in package)
+    Remove-Item $priConfig -Force -ErrorAction SilentlyContinue
+    Pop-Location
     
     # Build MSIX package
     Write-Host ""
@@ -540,13 +594,351 @@ function Start-Diffractor {
     Start-Process $exe64
 }
 
+function New-GitHubRelease {
+    Write-Host ""
+    Write-Host "============================================================================" -ForegroundColor Cyan
+    Write-Host "Creating GitHub Release" -ForegroundColor Cyan
+    Write-Host "============================================================================" -ForegroundColor Cyan
+    
+    $version = Get-CurrentVersion
+    $tagName = "v$($version.VersionString)"
+    $releaseName = "Diffractor $($version.VersionString)"
+    
+    # Check that build artifacts exist
+    $installer = Join-Path $ScriptDir "diffractor-setup.exe"
+    $zipFile = Join-Path $ScriptDir "diffractor.zip"
+    
+    $missingFiles = @()
+    if (-not (Test-Path $installer)) { $missingFiles += "diffractor-setup.exe" }
+    if (-not (Test-Path $zipFile)) { $missingFiles += "diffractor.zip" }
+    
+    if ($missingFiles.Count -gt 0) {
+        Write-Host "Error: Missing build artifacts:" -ForegroundColor Red
+        foreach ($file in $missingFiles) {
+            Write-Host "  - $file" -ForegroundColor Red
+        }
+        Write-Host ""
+        Write-Host "Run '.\dd.ps1 desktop' to build first." -ForegroundColor Yellow
+        exit 1
+    }
+    
+    # Check that gh CLI is available
+    $gh = Get-Command "gh" -ErrorAction SilentlyContinue
+    if (-not $gh) {
+        Write-Host "Error: GitHub CLI (gh) not found." -ForegroundColor Red
+        Write-Host "Install from: https://cli.github.com/" -ForegroundColor Yellow
+        Write-Host "Then run: gh auth login" -ForegroundColor Yellow
+        exit 1
+    }
+    
+    # Check if authenticated
+    $authStatus = & gh auth status 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Error: Not authenticated with GitHub CLI." -ForegroundColor Red
+        Write-Host "Run: gh auth login" -ForegroundColor Yellow
+        exit 1
+    }
+    
+    # Check if tag already exists
+    $existingTag = & git tag -l $tagName 2>&1
+    if ($existingTag -eq $tagName) {
+        Write-Host "Warning: Tag $tagName already exists locally." -ForegroundColor Yellow
+        $response = Read-Host "Do you want to delete the existing tag and create a new release? (y/N)"
+        if ($response -ne "y" -and $response -ne "Y") {
+            Write-Host "Aborted." -ForegroundColor Yellow
+            exit 0
+        }
+        # Delete local and remote tag
+        Write-Host "Deleting existing tag..." -ForegroundColor Yellow
+        & git tag -d $tagName 2>&1 | Out-Null
+        & git push origin --delete $tagName 2>&1 | Out-Null
+        # Also delete the release if it exists
+        & gh release delete $tagName --yes 2>&1 | Out-Null
+    }
+    
+    Write-Host ""
+    Write-Host "Creating release: $releaseName" -ForegroundColor Yellow
+    Write-Host "Tag: $tagName" -ForegroundColor Yellow
+    Write-Host ""
+    
+    # Create release with assets, generate notes automatically
+    # Note: gh release create will create the tag automatically
+    & gh release create $tagName `
+        --title $releaseName `
+        --generate-notes `
+        $installer `
+        $zipFile
+    
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Error: Failed to create GitHub release" -ForegroundColor Red
+        exit $LASTEXITCODE
+    }
+    
+    Write-Host ""
+    Write-Host "============================================================================" -ForegroundColor Green
+    Write-Host "GitHub Release created successfully!" -ForegroundColor Green
+    Write-Host "============================================================================" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "Release: $releaseName"
+    Write-Host "Tag: $tagName"
+    Write-Host "URL: https://github.com/diffractor/diffractor/releases/tag/$tagName"
+    Write-Host ""
+    Write-Host "Uploaded assets:"
+    Write-Host "  - diffractor-setup.exe"
+    Write-Host "  - diffractor.zip"
+    Write-Host ""
+}
+
+function Update-Locations {
+    Write-Host ""
+    Write-Host "============================================================================" -ForegroundColor Cyan
+    Write-Host "Regenerating Location Database Files" -ForegroundColor Cyan
+    Write-Host "============================================================================" -ForegroundColor Cyan
+    Write-Host ""
+    
+    $pythonScript = Join-Path $ToolsDir "generate_locations.py"
+    
+    if (-not (Test-Path $pythonScript)) {
+        Write-Host "Error: Python script not found at $pythonScript" -ForegroundColor Red
+        exit 1
+    }
+    
+    # Check for Python
+    $python = Get-Command "python" -ErrorAction SilentlyContinue
+    if (-not $python) {
+        Write-Host "Error: Python not found. Please install Python 3." -ForegroundColor Red
+        exit 1
+    }
+    
+    Write-Host "Running generate_locations.py..." -ForegroundColor Yellow
+    Write-Host ""
+    
+    Push-Location $ScriptDir
+    try {
+        & python $pythonScript
+        
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host ""
+            Write-Host "Error: Location generation failed" -ForegroundColor Red
+            exit $LASTEXITCODE
+        }
+    }
+    finally {
+        Pop-Location
+    }
+    
+    Write-Host ""
+    Write-Host "============================================================================" -ForegroundColor Green
+    Write-Host "Location files updated successfully!" -ForegroundColor Green
+    Write-Host "============================================================================" -ForegroundColor Green
+    Write-Host ""
+}
+
+function Open-VSCode {
+    Write-Host ""
+    Write-Host "Opening VS Code with Developer environment..." -ForegroundColor Cyan
+    Write-Host ""
+    
+    # Find VS Code
+    $codePath = Get-Command "code" -ErrorAction SilentlyContinue
+    if (-not $codePath) {
+        Write-Host "Error: VS Code 'code' command not found in PATH." -ForegroundColor Red
+        Write-Host "Make sure VS Code is installed and added to PATH." -ForegroundColor Yellow
+        exit 1
+    }
+    
+    # Check if already in a dev environment
+    if ($env:VSINSTALLDIR) {
+        Write-Host "Developer environment already active." -ForegroundColor Gray
+    }
+    else {
+        # Find Visual Studio installation using vswhere
+        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        if (-not (Test-Path $vswhere)) {
+            Write-Host "Error: vswhere.exe not found. Is Visual Studio installed?" -ForegroundColor Red
+            exit 1
+        }
+        
+        $vsPath = & $vswhere -latest -property installationPath
+        if (-not $vsPath) {
+            Write-Host "Error: Could not find Visual Studio installation." -ForegroundColor Red
+            exit 1
+        }
+        
+        Write-Host "Using Visual Studio at: $vsPath" -ForegroundColor Gray
+        
+        # Use the DevShell module to set up environment in current session
+        $devShellModule = Join-Path $vsPath "Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+        if (Test-Path $devShellModule) {
+            Import-Module $devShellModule
+            Enter-VsDevShell -VsInstallPath $vsPath -SkipAutomaticLocation -DevCmdArguments "-arch=x64 -no_logo"
+        }
+        else {
+            Write-Host "Error: DevShell module not found at $devShellModule" -ForegroundColor Red
+            exit 1
+        }
+    }
+    
+    Write-Host ""
+    
+    # Launch VS Code from current environment
+    & code $ScriptDir
+    
+    Write-Host "VS Code launched with Developer environment." -ForegroundColor Green
+    Write-Host ""
+}
+
+function Clear-IconCache {
+    Write-Host ""
+    Write-Host "============================================================================" -ForegroundColor Cyan
+    Write-Host "Clearing Windows Icon and Thumbnail Cache" -ForegroundColor Cyan
+    Write-Host "============================================================================" -ForegroundColor Cyan
+    Write-Host ""
+    
+    # Stop Explorer to release file locks on cache files
+    Write-Host "Stopping Explorer..." -ForegroundColor Yellow
+    Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+    
+    $localAppData = $env:LOCALAPPDATA
+    $deletedCount = 0
+    
+    # Delete icon cache files
+    Write-Host "Deleting icon cache files..." -ForegroundColor Yellow
+    $iconCacheFiles = Get-ChildItem -Path $localAppData -Filter "iconcache*.db" -ErrorAction SilentlyContinue
+    foreach ($file in $iconCacheFiles) {
+        try {
+            Remove-Item $file.FullName -Force
+            Write-Host "  Deleted: $($file.Name)" -ForegroundColor Gray
+            $deletedCount++
+        }
+        catch {
+            Write-Host "  Failed to delete: $($file.Name)" -ForegroundColor Red
+        }
+    }
+    
+    # Delete thumbnail cache files
+    Write-Host "Deleting thumbnail cache files..." -ForegroundColor Yellow
+    $thumbCacheDir = Join-Path $localAppData "Microsoft\Windows\Explorer"
+    if (Test-Path $thumbCacheDir) {
+        $thumbCacheFiles = Get-ChildItem -Path $thumbCacheDir -Filter "thumbcache*.db" -ErrorAction SilentlyContinue
+        foreach ($file in $thumbCacheFiles) {
+            try {
+                Remove-Item $file.FullName -Force
+                Write-Host "  Deleted: $($file.Name)" -ForegroundColor Gray
+                $deletedCount++
+            }
+            catch {
+                Write-Host "  Failed to delete: $($file.Name)" -ForegroundColor Red
+            }
+        }
+        
+        # Delete IconCache.db
+        $iconCacheDb = Join-Path $thumbCacheDir "IconCache.db"
+        if (Test-Path $iconCacheDb) {
+            try {
+                Remove-Item $iconCacheDb -Force
+                Write-Host "  Deleted: IconCache.db" -ForegroundColor Gray
+                $deletedCount++
+            }
+            catch {
+                Write-Host "  Failed to delete: IconCache.db" -ForegroundColor Red
+            }
+        }
+        
+        # Delete iconcache_*.db files in Explorer folder
+        $iconCacheFiles2 = Get-ChildItem -Path $thumbCacheDir -Filter "iconcache_*.db" -ErrorAction SilentlyContinue
+        foreach ($file in $iconCacheFiles2) {
+            try {
+                Remove-Item $file.FullName -Force
+                Write-Host "  Deleted: $($file.Name)" -ForegroundColor Gray
+                $deletedCount++
+            }
+            catch {
+                Write-Host "  Failed to delete: $($file.Name)" -ForegroundColor Red
+            }
+        }
+    }
+    
+    # Restart Explorer
+    Write-Host ""
+    Write-Host "Restarting Explorer..." -ForegroundColor Yellow
+    Start-Process explorer
+    
+    Write-Host ""
+    Write-Host "============================================================================" -ForegroundColor Green
+    Write-Host "Cache cleared! Deleted $deletedCount file(s)." -ForegroundColor Green
+    Write-Host "============================================================================" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "Note: You may need to log out and back in for all changes to take effect." -ForegroundColor Yellow
+    Write-Host ""
+}
+
+function Deploy-Desktop {
+    Write-Host ""
+    Write-Host "============================================================================" -ForegroundColor Cyan
+    Write-Host "Deploying Desktop Build to Google Cloud Storage" -ForegroundColor Cyan
+    Write-Host "============================================================================" -ForegroundColor Cyan
+    
+    # Check that build artifacts exist
+    $installer = Join-Path $ScriptDir "diffractor-setup.exe"
+    $zipFile = Join-Path $ScriptDir "diffractor.zip"
+    
+    $missingFiles = @()
+    if (-not (Test-Path $installer)) { $missingFiles += "diffractor-setup.exe" }
+    if (-not (Test-Path $zipFile)) { $missingFiles += "diffractor.zip" }
+    
+    if ($missingFiles.Count -gt 0) {
+        Write-Host "Error: Missing build artifacts:" -ForegroundColor Red
+        foreach ($file in $missingFiles) {
+            Write-Host "  - $file" -ForegroundColor Red
+        }
+        Write-Host ""
+        Write-Host "Run '.\dd.ps1 desktop' to build first." -ForegroundColor Yellow
+        exit 1
+    }
+    
+    # Check that gsutil is available
+    $gsutil = Get-Command "gsutil" -ErrorAction SilentlyContinue
+    if (-not $gsutil) {
+        Write-Host "Error: gsutil not found. Please install Google Cloud SDK." -ForegroundColor Red
+        Write-Host "https://cloud.google.com/sdk/docs/install" -ForegroundColor Yellow
+        exit 1
+    }
+    
+    Write-Host ""
+    Write-Host "Uploading to gs://diffractor/..." -ForegroundColor Yellow
+    
+    & gsutil -m cp $installer $zipFile gs://diffractor/
+    
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Error: Upload failed" -ForegroundColor Red
+        exit $LASTEXITCODE
+    }
+    
+    Write-Host ""
+    Write-Host "============================================================================" -ForegroundColor Green
+    Write-Host "Deploy completed successfully!" -ForegroundColor Green
+    Write-Host "============================================================================" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "Uploaded files:"
+    Write-Host "  https://storage.googleapis.com/diffractor/diffractor-setup.exe"
+    Write-Host "  https://storage.googleapis.com/diffractor/diffractor.zip"
+    Write-Host ""
+}
+
 # Main entry point
 switch ($Command) {
     "desktop" { Build-Desktop }
     "store" { Build-Store }
+    "deploy" { Deploy-Desktop }
+    "release" { New-GitHubRelease }
     "run" { Start-Diffractor }
+    "code" { Open-VSCode }
+    "loc" { Update-Locations }
     "bump-build" { Invoke-BumpBuild }
     "bump-ver" { Invoke-BumpVersion }
+    "clear-cache" { Clear-IconCache }
     "help" { Show-Usage }
     "" { Show-Usage }
     default { Show-Usage }

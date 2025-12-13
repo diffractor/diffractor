@@ -735,7 +735,6 @@ struct app_text_t
 	text_t option_slideshow_delay = u8"Delay before showing the next item (in seconds)"sv;
 	text_t options_check_for_update = u8"Check for updates by connecting to the internet"sv;
 	text_t options_auto_update = u8"Automatically install updates when possible"sv;
-	text_t options_beta_tester = u8"Help test Diffractor. Automatically install test and preview versions."sv;
 	text_t options_use_gpu = u8"Use hardware acceleration to draw the Diffractor user interface (requires restart)"sv;
 	text_t options_use_gpu_video = u8"Use hardware acceleration to decode video (when available)"sv;
 	text_t options_use_yuv_tex =

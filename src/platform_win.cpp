@@ -57,7 +57,12 @@
 #pragma comment(lib, "Netapi32")
 #pragma comment(lib, "Advapi32")
 
-
+#ifdef WINSTORE
+#include <roapi.h>
+#include <windows.storage.h>
+#include <windows.system.h>
+#pragma comment(lib, "runtimeobject")
+#endif
 
 //#pragma comment(lib, "SetupAPI"sv)
 
@@ -1626,6 +1631,69 @@ platform::file_op_result platform::create_folder(const df::folder_path path)
 bool platform::open(const df::file_path path)
 {
 	const auto w = to_file_system_path(path);
+#ifdef WINSTORE
+	// Use WinRT Launcher for Store apps - more reliable in sandbox
+	try
+	{
+		ComPtr<ABI::Windows::System::ILauncherStatics> launcher;
+		HRESULT hr = RoGetActivationFactory(
+			Microsoft::WRL::Wrappers::HStringReference(RuntimeClass_Windows_System_Launcher).Get(),
+			IID_PPV_ARGS(&launcher));
+
+		if (SUCCEEDED(hr))
+		{
+			// Get StorageFile from path
+			ComPtr<ABI::Windows::Storage::IStorageFileStatics> file_statics;
+			hr = RoGetActivationFactory(
+				Microsoft::WRL::Wrappers::HStringReference(RuntimeClass_Windows_Storage_StorageFile).Get(),
+				IID_PPV_ARGS(&file_statics));
+
+			if (SUCCEEDED(hr))
+			{
+				HSTRING path_hstring = nullptr;
+				WindowsCreateString(w.c_str(), static_cast<UINT32>(w.size()), &path_hstring);
+
+				ComPtr<ABI::Windows::Foundation::IAsyncOperation<ABI::Windows::Storage::StorageFile*>> file_op;
+				hr = file_statics->GetFileFromPathAsync(path_hstring, &file_op);
+				WindowsDeleteString(path_hstring);
+
+				if (SUCCEEDED(hr))
+				{
+					ComPtr<ABI::Windows::Storage::IStorageFile> storage_file;
+					// Wait for async operation (simplified - in production consider proper async handling)
+					ABI::Windows::Foundation::AsyncStatus status;
+					ComPtr<ABI::Windows::Foundation::IAsyncInfo> async_info;
+					if (SUCCEEDED(file_op.As(&async_info)))
+					{
+						for (int i = 0; i < 100; ++i)
+						{
+							async_info->get_Status(&status);
+							if (status != ABI::Windows::Foundation::AsyncStatus::Started)
+								break;
+							Sleep(10);
+						}
+
+						if (status == ABI::Windows::Foundation::AsyncStatus::Completed)
+						{
+							hr = file_op->GetResults(&storage_file);
+							if (SUCCEEDED(hr) && storage_file)
+							{
+								ComPtr<ABI::Windows::Foundation::IAsyncOperation<bool>> launch_op;
+								hr = launcher->LaunchFileAsync(storage_file.Get(), &launch_op);
+								return SUCCEEDED(hr);
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	catch (...)
+	{
+		df::log(__FUNCTION__, "WinRT Launcher failed, falling back to ShellExecute"sv);
+	}
+	// Fallback to ShellExecute
+#endif
 	return ShellExecute(app_wnd(), L"open", w.c_str(), L"", L"", SW_SHOWNORMAL) > std::bit_cast<HINSTANCE>(
 		static_cast<uintptr_t>(32));
 }
@@ -1633,6 +1701,47 @@ bool platform::open(const df::file_path path)
 bool platform::open(const std::u8string_view path)
 {
 	const auto w = str::utf8_to_utf16(path);
+#ifdef WINSTORE
+	// Use WinRT Launcher for Store apps - required for URLs and more reliable overall
+	try
+	{
+		ComPtr<ABI::Windows::System::ILauncherStatics> launcher;
+		HRESULT hr = RoGetActivationFactory(
+			Microsoft::WRL::Wrappers::HStringReference(RuntimeClass_Windows_System_Launcher).Get(),
+			IID_PPV_ARGS(&launcher));
+
+		if (SUCCEEDED(hr))
+		{
+			// Create URI from path
+			ComPtr<ABI::Windows::Foundation::IUriRuntimeClassFactory> uri_factory;
+			hr = RoGetActivationFactory(
+				Microsoft::WRL::Wrappers::HStringReference(RuntimeClass_Windows_Foundation_Uri).Get(),
+				IID_PPV_ARGS(&uri_factory));
+
+			if (SUCCEEDED(hr))
+			{
+				HSTRING uri_hstring = nullptr;
+				WindowsCreateString(w.c_str(), static_cast<UINT32>(w.size()), &uri_hstring);
+
+				ComPtr<ABI::Windows::Foundation::IUriRuntimeClass> uri;
+				hr = uri_factory->CreateUri(uri_hstring, &uri);
+				WindowsDeleteString(uri_hstring);
+
+				if (SUCCEEDED(hr) && uri)
+				{
+					ComPtr<ABI::Windows::Foundation::IAsyncOperation<bool>> launch_op;
+					hr = launcher->LaunchUriAsync(uri.Get(), &launch_op);
+					return SUCCEEDED(hr);
+				}
+			}
+		}
+	}
+	catch (...)
+	{
+		df::log(__FUNCTION__, "WinRT Launcher failed, falling back to ShellExecute"sv);
+	}
+	// Fallback to ShellExecute
+#endif
 	return ShellExecute(app_wnd(), L"open", w.c_str(), L"", L"", SW_SHOWNORMAL) > std::bit_cast<HINSTANCE>(
 		static_cast<uintptr_t>(32));
 }
@@ -1747,11 +1856,154 @@ void platform::show_text_in_notepad(const std::u8string_view s)
 
 void platform::show_in_file_browser(const df::file_path path)
 {
+#ifdef WINSTORE
+	// For Store apps, use WinRT Launcher to open the containing folder
+	// We open the parent folder since we can't do "select" like explorer.exe
+	try
+	{
+		ComPtr<ABI::Windows::System::ILauncherStatics> launcher;
+		HRESULT hr = RoGetActivationFactory(
+			Microsoft::WRL::Wrappers::HStringReference(RuntimeClass_Windows_System_Launcher).Get(),
+			IID_PPV_ARGS(&launcher));
+
+		if (SUCCEEDED(hr))
+		{
+			// Get the folder path
+			const auto folder_path = path.folder();
+			const auto w = to_file_system_path(folder_path);
+
+			ComPtr<ABI::Windows::Storage::IStorageFolderStatics> folder_statics;
+			hr = RoGetActivationFactory(
+				Microsoft::WRL::Wrappers::HStringReference(RuntimeClass_Windows_Storage_StorageFolder).Get(),
+				IID_PPV_ARGS(&folder_statics));
+
+			if (SUCCEEDED(hr))
+			{
+				HSTRING path_hstring = nullptr;
+				WindowsCreateString(w.c_str(), static_cast<UINT32>(w.size()), &path_hstring);
+
+				ComPtr<ABI::Windows::Foundation::IAsyncOperation<ABI::Windows::Storage::StorageFolder*>> folder_op;
+				hr = folder_statics->GetFolderFromPathAsync(path_hstring, &folder_op);
+				WindowsDeleteString(path_hstring);
+
+				if (SUCCEEDED(hr))
+				{
+					// Wait for async operation
+					ComPtr<ABI::Windows::Foundation::IAsyncInfo> async_info;
+					if (SUCCEEDED(folder_op.As(&async_info)))
+					{
+						ABI::Windows::Foundation::AsyncStatus status;
+						for (int i = 0; i < 100; ++i)
+						{
+							async_info->get_Status(&status);
+							if (status != ABI::Windows::Foundation::AsyncStatus::Started)
+								break;
+							Sleep(10);
+						}
+
+						if (status == ABI::Windows::Foundation::AsyncStatus::Completed)
+						{
+							ComPtr<ABI::Windows::Storage::IStorageFolder> storage_folder;
+							hr = folder_op->GetResults(&storage_folder);
+
+							if (SUCCEEDED(hr) && storage_folder)
+							{
+								// Use LaunchFolderAsync from ILauncherStatics3
+								ComPtr<ABI::Windows::System::ILauncherStatics3> launcher3;
+								if (SUCCEEDED(launcher.As(&launcher3)))
+								{
+									ComPtr<ABI::Windows::Foundation::IAsyncOperation<bool>> launch_op;
+									launcher3->LaunchFolderAsync(storage_folder.Get(), &launch_op);
+									return;
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	catch (...)
+	{
+		df::log(__FUNCTION__, "WinRT Launcher failed"sv);
+	}
+	// Fallback - shouldn't normally reach here for Store builds
+#endif
 	run_explorer(to_file_system_path(path));
 }
 
 void platform::show_in_file_browser(const df::folder_path path)
 {
+#ifdef WINSTORE
+	// For Store apps, use WinRT Launcher to open the folder
+	try
+	{
+		ComPtr<ABI::Windows::System::ILauncherStatics> launcher;
+		HRESULT hr = RoGetActivationFactory(
+			Microsoft::WRL::Wrappers::HStringReference(RuntimeClass_Windows_System_Launcher).Get(),
+			IID_PPV_ARGS(&launcher));
+
+		if (SUCCEEDED(hr))
+		{
+			const auto w = to_file_system_path(path);
+
+			ComPtr<ABI::Windows::Storage::IStorageFolderStatics> folder_statics;
+			hr = RoGetActivationFactory(
+				Microsoft::WRL::Wrappers::HStringReference(RuntimeClass_Windows_Storage_StorageFolder).Get(),
+				IID_PPV_ARGS(&folder_statics));
+
+			if (SUCCEEDED(hr))
+			{
+				HSTRING path_hstring = nullptr;
+				WindowsCreateString(w.c_str(), static_cast<UINT32>(w.size()), &path_hstring);
+
+				ComPtr<ABI::Windows::Foundation::IAsyncOperation<ABI::Windows::Storage::StorageFolder*>> folder_op;
+				hr = folder_statics->GetFolderFromPathAsync(path_hstring, &folder_op);
+				WindowsDeleteString(path_hstring);
+
+				if (SUCCEEDED(hr))
+				{
+					// Wait for async operation
+					ComPtr<ABI::Windows::Foundation::IAsyncInfo> async_info;
+					if (SUCCEEDED(folder_op.As(&async_info)))
+					{
+						ABI::Windows::Foundation::AsyncStatus status;
+						for (int i = 0; i < 100; ++i)
+						{
+							async_info->get_Status(&status);
+							if (status != ABI::Windows::Foundation::AsyncStatus::Started)
+								break;
+							Sleep(10);
+						}
+
+						if (status == ABI::Windows::Foundation::AsyncStatus::Completed)
+						{
+							ComPtr<ABI::Windows::Storage::IStorageFolder> storage_folder;
+							hr = folder_op->GetResults(&storage_folder);
+
+							if (SUCCEEDED(hr) && storage_folder)
+							{
+								// Use LaunchFolderAsync from ILauncherStatics2
+								ComPtr<ABI::Windows::System::ILauncherStatics3> launcher3;
+								if (SUCCEEDED(launcher.As(&launcher3)))
+								{
+									ComPtr<ABI::Windows::Foundation::IAsyncOperation<bool>> launch_op;
+									launcher3->LaunchFolderAsync(storage_folder.Get(), &launch_op);
+									return;
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	catch (...)
+	{
+		df::log(__FUNCTION__, "WinRT Launcher failed"sv);
+	}
+	// Fallback - shouldn't normally reach here for Store builds
+#endif
 	run_explorer(to_file_system_path(path));
 }
 
@@ -2856,12 +3108,12 @@ static bool verify_package(const df::file_path path_in)
 	return WinVerifyTrust(app_wnd(), &WVTPolicyGUID, &WinTrustData) == ERROR_SUCCESS;
 }
 
-void platform::download_and_verify(const bool test_version, const std::function<void(df::file_path)>& complete)
+void platform::download_and_verify(const std::function<void(df::file_path)>& complete)
 {
 	const auto download_path = temp_file(u8"exe"sv);
 
 	web_request req;
-	req.path = test_version ? u8"diffractor-setup-test.exe"sv : u8"diffractor-setup.exe"sv;
+	req.path = u8"diffractor-setup.exe"sv;
 	req.download_file_path = download_path;
 
 	const auto con = platform::connect_to_host(u8"diffractor.com"sv);
@@ -3635,6 +3887,71 @@ static df::folder_path app_data()
 	return folder;
 }
 
+static df::folder_path app_cache_data()
+{
+#ifdef WINSTORE
+	// For Store apps, use the LocalCache folder as required by Microsoft
+	// This uses raw COM to get the proper package-aware cache location
+	// Note: LocalCacheFolder is on IApplicationData3, not IApplicationData
+	df::folder_path result;
+
+	ComPtr<ABI::Windows::Storage::IApplicationDataStatics> app_data_statics;
+	HRESULT hr = RoGetActivationFactory(
+		Microsoft::WRL::Wrappers::HStringReference(RuntimeClass_Windows_Storage_ApplicationData).Get(),
+		IID_PPV_ARGS(&app_data_statics));
+
+	if (SUCCEEDED(hr))
+	{
+		ComPtr<ABI::Windows::Storage::IApplicationData> app_data;
+		hr = app_data_statics->get_Current(&app_data);
+
+		if (SUCCEEDED(hr))
+		{
+			// LocalCacheFolder is on IApplicationData2
+			ComPtr<ABI::Windows::Storage::IApplicationData2> app_data3;
+			hr = app_data.As(&app_data3);
+
+			if (SUCCEEDED(hr))
+			{
+				ComPtr<ABI::Windows::Storage::IStorageFolder> cache_folder;
+				hr = app_data3->get_LocalCacheFolder(&cache_folder);
+
+				if (SUCCEEDED(hr))
+				{
+					ComPtr<ABI::Windows::Storage::IStorageItem> storage_item;
+					hr = cache_folder.As(&storage_item);
+
+					if (SUCCEEDED(hr))
+					{
+						HSTRING path_hstring = nullptr;
+						hr = storage_item->get_Path(&path_hstring);
+
+						if (SUCCEEDED(hr) && path_hstring)
+						{
+							UINT32 path_length = 0;
+							const wchar_t* path_buffer = WindowsGetStringRawBuffer(path_hstring, &path_length);
+							if (path_buffer && path_length > 0)
+							{
+								result = df::folder_path(std::wstring_view(path_buffer, path_length));
+							}
+							WindowsDeleteString(path_hstring);
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return result;
+#else
+	// For Desktop apps, preserve backwards compatibility with existing location
+	// Existing users already have cache data at %LOCALAPPDATA%\Diffractor
+	const auto folder = path_from_csidl(CSIDL_LOCAL_APPDATA | CSIDL_FLAG_CREATE).combine(s_app_name);
+	platform::create_folder(folder);
+	return folder;
+#endif
+}
+
 static df::folder_path shell_known_folder(REFIID id)
 {
 	df::folder_path result;
@@ -3753,6 +4070,7 @@ df::folder_path platform::known_path(const known_folder f)
 	case known_folder::running_app_folder: return running_app_path().folder();
 	case known_folder::test_files_folder: return running_app_path().folder().combine(u8"test"sv);
 	case known_folder::app_data: return app_data();
+	case known_folder::app_cache_data: return app_cache_data();		
 	case known_folder::downloads: return shell_known_folder(FOLDERID_Downloads);
 	case known_folder::pictures: return path_from_csidl(CSIDL_MYPICTURES);
 	case known_folder::video: return path_from_csidl(CSIDL_MYVIDEO);

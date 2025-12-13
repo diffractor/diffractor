@@ -51,7 +51,7 @@ static std::atomic_int index_version;
 auto s_app_name_l = L"Diffractor";
 const auto s_app_name = u8"Diffractor"sv;
 const auto s_app_version = u8"126.2"sv;
-const auto g_app_build = u8"1188"sv;
+const auto g_app_build = u8"1206"sv;
 constexpr auto stage_file_name = u8"diffractor-setup-update.exe"sv;
 static constexpr auto installed_file_name = u8"diffractor-setup-installed.exe"sv;
 static constexpr auto s_search = u8"search"sv;
@@ -202,7 +202,9 @@ void app_frame::stage_update()
 
 	if (first_time_this_instance)
 	{
-		if (setting.is_tester || (setting.install_updates && setting.first_run_today))
+		first_time_this_instance = false;  // Prevent multiple downloads per instance
+
+		if (setting.install_updates && setting.first_run_today)
 		{
 			auto download_complete = [this](const df::file_path download_path)
 			{
@@ -216,7 +218,7 @@ void app_frame::stage_update()
 
 			queue_async(async_queue::web, [download_complete]
 			{
-				platform::download_and_verify(setting.is_tester, download_complete);
+				platform::download_and_verify(download_complete);
 			});
 		}
 	}
@@ -897,7 +899,7 @@ static void start_database(database& db, platform::task_queue& database_task_que
 	try
 	{
 		platform::thread_init c;
-		db.open(known_path(platform::known_folder::app_data), u8"diffractor-cache"sv);
+		db.open(known_path(platform::known_folder::app_cache_data), u8"diffractor-cache"sv);
 		async.queue_ui(std::move(index_loaded_func));
 
 		if (db.is_open())
@@ -2101,11 +2103,7 @@ void app_frame::toggle_full_screen()
 		_state.view_mode(view_type::items);
 	}
 
-	//const auto display = _state.display_state();
-	//const auto is_playing = display && display->is_playing();
-
 	_pa->full_screen(_state.is_full_screen);
-	//_commands[commands::fullscreen]->checked = _state.is_full_screen;
 	invalidate_view(view_invalid::app_layout | view_invalid::screen_saver | view_invalid::command_state);
 }
 
@@ -3016,7 +3014,6 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::group_rating]->enable = is_items_view;
 	_commands[commands::group_shuffle]->enable = is_items_view;
 	_commands[commands::group_size]->enable = is_items_view;
-	_commands[commands::group_toggle]->enable = is_items_view;
 	_commands[commands::import_analyze]->enable = view_mode == view_type::import;
 	_commands[commands::import_run]->enable = view_mode == view_type::import;
 #ifndef WINSTORE
@@ -4220,6 +4217,7 @@ void app_frame::crash(const df::file_path dump_file_path)
 
 		flush_open_files_to_crash_files_list();
 
+#ifndef WINSTORE
 		if (setting.send_crash_dumps)
 		{
 			df::log(__FUNCTION__, u8"*** CRASH ***"sv);
@@ -4280,6 +4278,7 @@ void app_frame::crash(const df::file_path dump_file_path)
 			const auto con = platform::connect_to_host(u8"diffractor.com"sv);
 			send_request(con, req);
 		}
+#endif
 	}
 }
 

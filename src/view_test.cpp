@@ -98,7 +98,8 @@ void test_view::activate(const sizei extent)
 
 	if (_tests.empty())
 	{
-		register_tests(_state, *this);
+		register_tests1(_state, *this);
+		register_tests2(_state, *this);
 	}
 
 	refresh();

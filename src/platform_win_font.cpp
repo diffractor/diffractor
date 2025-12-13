@@ -604,11 +604,6 @@ font_renderer_ptr factories::font_face(const ui::style::font_face type, const in
 		default:
 			break;
 		}
-
-		if (result)
-		{
-			font_renderers[key] = result;
-		}
 	}
 
 	if (!result)
@@ -621,6 +616,12 @@ font_renderer_ptr factories::font_face(const ui::style::font_face type, const in
 	{
 		// backup font 2
 		result = create_font_face(L"Tahoma", base_font_size);
+	}
+
+	// Cache the backup font result to avoid repeated fallback attempts and log spam
+	if (result)
+	{
+		font_renderers[key] = result;
 	}
 
 	return result;

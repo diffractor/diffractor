@@ -8891,8 +8891,13 @@ ui::control_frame_ptr win32_app::create_app_frame(const platform::setting_file_p
 	}
 
 	SetWindowText(result->m_hWnd, s_app_name_l);
+#ifndef WINSTORE
+	// For desktop builds, set the window icon from embedded resources.
+	// For Windows Store builds, skip this to let Windows use the package's AppList assets
+	// with transparent backgrounds.
 	SendMessage(result->m_hWnd, WM_SETICON, ICON_BIG, std::bit_cast<LPARAM>(resources.diffractor_64));
 	SendMessage(result->m_hWnd, WM_SETICON, ICON_SMALL, std::bit_cast<LPARAM>(resources.diffractor_32));
+#endif
 
 	SetFont(result->m_hWnd, ctx->dialog);
 	WTSRegisterSessionNotification(result->m_hWnd, NOTIFY_FOR_THIS_SESSION);

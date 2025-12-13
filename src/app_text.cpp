@@ -1013,7 +1013,6 @@ void app_text_t::calc_text_mapping()
 		options_app_options,
 		options_auto_update,
 		options_backup_copy,
-		options_beta_tester,
 		options_check_for_update,
 		options_confirm_del,
 		options_jpeg_quality,
