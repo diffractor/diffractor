@@ -1,5 +1,5 @@
 ﻿// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -18,8 +18,6 @@
 #include "av_format.h"
 #include "metadata_icc.h"
 #include "metadata_iptc.h"
-
-#include "rapidjson/istreamwrapper.h"
 
 #define LIBARCHIVE_STATIC
 #include "libarchive/libarchive/archive.h"
@@ -114,7 +112,7 @@ file_group file_group::commodore(u8"commodore"sv, {}, 0xFF8811, icon_index::retr
 
 
 file_type file_type::folder(file_group::folder, {}, {}, {});
-file_type file_type::other(file_group::other, {}, {}, {});;
+file_type file_type::other(file_group::other, {}, {}, {});
 
 void load_file_types()
 {
@@ -185,7 +183,6 @@ void load_file_types()
 		{file_group::video, u8"cavs"sv, {}, {}},
 		{file_group::video, u8"cdata"sv, {}, {}},
 		{file_group::video, u8"cdg"sv, {}, {}},
-		{file_group::video, u8"cdxl"sv, {}, {}},
 		{file_group::video, u8"cgi"sv, {}, {}},
 		{file_group::video, u8"chk"sv, {}, {}},
 		{file_group::video, u8"cif"sv, {}, {}},
@@ -208,7 +205,6 @@ void load_file_types()
 		},
 		{file_group::video, u8"dnxhd"sv, {}, {}},
 		{file_group::video, u8"dnxhr"sv, {}, {}},
-		{file_group::video, u8"dpx"sv, {}, {}},
 		{file_group::video, u8"drc"sv, {}, {}},
 		{file_group::audio, u8"dsf"sv, {}, {}},
 		{file_group::audio, u8"dsm"sv, {}, {}},
@@ -228,7 +224,7 @@ void load_file_types()
 		{file_group::audio, u8"far"sv, {}, {}},
 		{file_group::photo, u8"fff"sv, u8"Imacon raw"sv, file_traits::raw | file_traits::edit},
 		{file_group::video, u8"fits"sv, {}, {}},
-		{file_group::audio, u8"flac"sv, u8"ree Lossless Audio"sv, {}},
+		{file_group::audio, u8"flac"sv, u8"Free Lossless Audio"sv, {}},
 		{file_group::video, u8"flm"sv, {}, {}},
 		{file_group::video, u8"flv"sv, u8"Flash video"sv, file_traits::embedded_xmp | file_traits::edit},
 		{file_group::video, u8"fsb"sv, {}, {}},
@@ -295,7 +291,7 @@ void load_file_types()
 		{file_group::video, u8"m2t"sv, {}, {}},
 		{file_group::video, u8"m2ts"sv, u8"MPEG-2 TS video"sv, {}},
 		{file_group::video, u8"mac"sv, {}, {}},
-		{file_group::photo, u8"mdc,mrw"sv, u8"Minolta  raw"sv, file_traits::raw | file_traits::edit},
+		{file_group::photo, u8"mdc,mrw"sv, u8"Minolta raw"sv, file_traits::raw | file_traits::edit},
 		{file_group::audio, u8"mdl"sv, {}, {}},
 		{file_group::audio, u8"med"sv, {}, {}},
 		{file_group::photo, u8"mef"sv, u8"Mamiya raw"sv, file_traits::raw | file_traits::edit},
@@ -351,7 +347,6 @@ void load_file_types()
 		},
 		{file_group::video, u8"avc1"sv, u8"Advanced Video Coding"sv, {}},
 		{file_group::audio, u8"mptm"sv, {}, {}},
-		{file_group::photo, u8"mrw"sv, {}, file_traits::raw | file_traits::edit},
 		{file_group::video, u8"msbc"sv, {}, {}},
 		{file_group::video, u8"msf"sv, {}, {}},
 		{file_group::audio, u8"mt2"sv, {}, {}},
@@ -397,7 +392,7 @@ void load_file_types()
 			file_group::photo, u8"png"sv, u8"Portable Network Graphic"sv,
 			file_traits::embedded_xmp | file_traits::edit
 		},
-		{file_group::audio, u8"ppm"sv, u8"Portable Pixmap"sv, {}},
+		{file_group::photo, u8"ppm"sv, u8"Portable Pixmap"sv, {}},
 		{
 			file_group::photo, u8"psd"sv, u8"Adobe Photoshop Drawing"sv,
 			file_traits::embedded_xmp | file_traits::edit
@@ -535,7 +530,6 @@ void load_file_types()
 		{file_group::archive, u8"bzip2,bz2"sv, {}, {file_traits::archive}},
 		{file_group::archive, u8"tar"sv, {}, {file_traits::archive}},
 		{file_group::archive, u8"lha"sv, {}, {file_traits::archive}},
-		{file_group::archive, u8"lza"sv, {}, {file_traits::archive}},
 		{file_group::archive, u8"a,ar"sv, {}, {file_traits::archive}},
 
 		{file_group::commodore, u8"d64"sv, {}, {file_traits::disk_image | file_traits::commodore}},
@@ -981,7 +975,8 @@ ui::const_image_ptr files::surface_to_image(const ui::const_surface_ptr& surface
 		else
 		{
 			result = std::make_shared<ui::image>(
-				_jpeg_encoder.encode(dimensions.cx, dimensions.cy, surface_in->pixels(), surface_in->stride(),
+				_jpeg_encoder.encode(dimensions.cx, dimensions.cy, surface_in->pixels(),
+				                     static_cast<uint32_t>(surface_in->stride()),
 				                     orientation, metadata, params), dimensions, ui::image_format::JPEG, orientation);
 		}
 	}
@@ -1096,8 +1091,9 @@ ui::surface_ptr files::image_to_surface(const ui::const_image_ptr& image, const 
 							const auto dimensions = _jpeg_decoder.dimensions_out();
 							temp_surface = std::make_shared<ui::surface>();
 							temp_surface->alloc(dimensions, ui::texture_format::RGB, image->orientation());
-							success = _jpeg_decoder.read_rgb(temp_surface->pixels(), temp_surface->stride(),
-							                                 temp_surface->size());
+							success = _jpeg_decoder.read_rgb(temp_surface->pixels(),
+							                                 static_cast<int>(temp_surface->stride()),
+							                                 static_cast<int>(temp_surface->size()));
 							_jpeg_decoder.close();
 						}
 					}
@@ -1186,8 +1182,9 @@ ui::surface_ptr files::image_to_surface(const df::cspan image_buffer_in, const s
 						{
 							const auto dimensions = _jpeg_decoder.dimensions_out();
 							temp_surface->alloc(dimensions, ui::texture_format::RGB, _jpeg_decoder._orientation_out);
-							success = _jpeg_decoder.read_rgb(temp_surface->pixels(), temp_surface->stride(),
-							                                 temp_surface->size());
+							success = _jpeg_decoder.read_rgb(temp_surface->pixels(),
+							                                 static_cast<int>(temp_surface->stride()),
+							                                 static_cast<int>(temp_surface->size()));
 							_jpeg_decoder.close();
 						}
 					}
@@ -1897,7 +1894,6 @@ std::vector<archive_item> files::list_archive(const df::file_path zip_file_path)
 	archive_entry* entry;
 	int r;
 	const auto a = archive_read_new();
-	const auto ext = archive_write_disk_new();
 
 	archive_read_support_filter_all(a);
 	archive_read_support_format_all(a);
@@ -1926,8 +1922,9 @@ std::vector<archive_item> files::list_archive(const df::file_path zip_file_path)
 			//archive_read_data_skip(a);
 		}
 		archive_read_close(a);
-		archive_read_free(a);
 	}
+
+	archive_read_free(a);
 
 	return results;
 }

@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -22,11 +22,13 @@ class media_view;
 class rename_view;
 class sync_view;
 class import_view;
+class locate_view;
 
 constexpr std::array media_volumes = {999, 777, 555, 333, 0};
 extern icon_index volumes_icons[5];
 
 std::vector<std::pair<std::u8string_view, std::u8string>> calc_app_info(const index_state& index, bool include_state);
+bool is_app_installed();
 
 
 class view_frame final : public std::enable_shared_from_this<view_frame>, public view_host
@@ -449,6 +451,7 @@ public:
 	ui::toolbar_ptr _media_edit_commands;
 	ui::toolbar_ptr _rename_commands;
 	ui::toolbar_ptr _import_commands;
+	ui::toolbar_ptr _locate_commands;
 	ui::toolbar_ptr _sync_commands;
 	ui::toolbar_ptr _test_commands;
 
@@ -476,6 +479,7 @@ public:
 	std::shared_ptr<test_view> _view_test;
 	std::shared_ptr<rename_view> _view_rename;
 	std::shared_ptr<import_view> _view_import;
+	std::shared_ptr<locate_view> _view_locate;
 	std::shared_ptr<sync_view> _view_sync;
 
 	std::shared_ptr<items_view> _view_items;
@@ -567,6 +571,7 @@ public:
 	bool update_toolbar_text(commands cc, const std::u8string& text);
 	void update_button_state(bool resize);
 	void update_address() const;
+	void update_index();
 	void toggle_volume();
 	static icon_index sound_icon();
 	void def_command(commands id, command_group group, icon_index icon, std::u8string_view text,
@@ -587,9 +592,11 @@ public:
 	void start_workers();
 	void update_font_size() const;
 	bool init(std::u8string_view command_line) override;
+	void init_search();
 	void final_exit() override;
 	void exit() override;
 	void system_event(ui::os_event_type ost) override;
+	void search_enter();
 
 	void on_mouse_move(const pointi loc, const bool is_tracking) override
 	{

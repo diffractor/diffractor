@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -571,7 +571,7 @@ namespace df
 		ui::const_image_ptr _cover_art;
 		mutable ui::texture_ptr _texture;
 
-		df::file_size _size = {};
+		file_size _size = {};
 		date_t _thumbnail_timestamp = {};
 		date_t _modified = {};
 		date_t _created = {};
@@ -601,7 +601,7 @@ namespace df
 		bool row_layout_valid = true;
 
 		item_element(const file_path id, const index_file_item& info) noexcept : view_element(
-			view_element_style::can_invoke), _random(rand())
+				view_element_style::can_invoke), _random(rand())
 		{
 			update(id, info);
 		}

@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -7,11 +7,6 @@
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 #include "common.hlsli"
-
-float nrand(float4 pos)
-{
-	return frac(sin(dot(pos.xy, float2(12.9898, 78.233))) * 43758.5453) / 100.0;
-}
 
 float4 main(PS_INPUT input) : SV_Target
 {

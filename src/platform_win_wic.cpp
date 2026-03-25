@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -26,14 +26,14 @@ static void flip_buffer_vertically(uint32_t* buffer, const unsigned width, const
 		return; // Nothing to flip or invalid parameters
 	}
 
-	const auto rows = height / 2;
-	const auto stride = width * sizeof(uint32_t);
-
-	// Check for potential overflow
+	// Check for potential overflow before computing stride
 	if (width > SIZE_MAX / sizeof(uint32_t))
 	{
 		return; // Avoid overflow in stride calculation
 	}
+
+	const auto rows = height / 2;
+	const auto stride = width * sizeof(uint32_t);
 
 	const auto temp_row = df::unique_alloc<uint32_t*>(stride);
 

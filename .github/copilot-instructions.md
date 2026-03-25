@@ -5,6 +5,10 @@ This is the Diffractor application codebase. Diffractor is the fastest photo and
 For build instructions, dependencies, and contribution guidelines, see the main [README.md](../README.md).
 For detailed implementation documentation, see [implementation.md](../implementation.md).
 
+Place temporary files in a tmp/ folder (test output etc.)
+
+Always build using df.sln
+
 ## Quick Reference
 
 - **Language**: C++20 for Windows
@@ -32,6 +36,7 @@ The source code in `src/` is organized into modules identified by filename prefi
 | `ui*` | User Interface | Controls, dialogs, views, layout elements, controllers |
 | `util*` | Utilities | Strings, geometry, dates, ZIP, base64, spell check, helpers |
 | `view*` | Views | Specific UI views (items grid, edit, import, rename, sync, test) |
+| `test*` | Tests | Unit and integration tests |
 
 
 ## Third-Party Dependencies
@@ -46,7 +51,35 @@ Key dependencies include:
 - **zlib-ng, minizip-ng** - Compression
 - **Hunspell** - Spell checking
 
-See [README.md](../README.md) for the complete list with versions.
+See [README.md](../README.md) for the complete list with versions, folder paths, dependency types, and update source URLs.
+
+### Upgrading a Source-Copy Dependency
+
+No package manager is used. Source code is manually copied and built via custom `.vcxproj` files.
+
+1. **Download** the new release source from the GitHub repo listed in the README dependencies table.
+2. **Replace** the source files in the corresponding `third-party/<folder>` (or `Include/<folder>` for header-only libs), preserving the existing `.vcxproj` and `.vcxproj.filters` files.
+3. **Update version headers** if the library requires it (e.g., `de265-version.h`, `heif_version.h`, `jconfig.h`, `vcs_version.h`).
+4. **Diff the `.vcxproj`** against the new source file list. If `.c`/`.cpp`/`.h` files were added or removed upstream, update the `<ClCompile>` and `<ClInclude>` items in the `.vcxproj` accordingly. Do not regenerate the vcxproj from scratch.
+5. **Build** the solution (`df.sln`) for both Win32 and x64 Debug/Release to verify compilation.
+6. **Run tests** via the built-in test runner (toolbar checkmark button) to verify nothing is broken.
+7. **Update the version** in the README dependencies table.
+
+### Upgrading a Fork Dependency (FFmpeg, XMP SDK)
+
+FFmpeg and XMP SDK are maintained as Diffractor forks and included as git submodules.
+
+- **FFmpeg** fork: [diffractor/FFmpeg](https://github.com/diffractor/FFmpeg), upstream: [FFmpeg/FFmpeg](https://github.com/FFmpeg/FFmpeg)
+  - Fork adds a custom `ffmpeg.vcxproj` for MSVC builds.
+  - To update: rebase the fork on latest upstream master, resolve conflicts in the vcxproj, then update the submodule pointer in this repo.
+
+- **XMP SDK** fork: [diffractor/XMP-Toolkit-SDK](https://github.com/diffractor/XMP-Toolkit-SDK), upstream: [adobe/XMP-Toolkit-SDK](https://github.com/adobe/XMP-Toolkit-SDK)
+  - Fork adds: POPM/TPE2 reconciliation for MP3, Windows tag support, C++17 fixes, WebP support from Exempi, and a custom `xmp.vcxproj`.
+  - To update: rebase the fork on latest upstream, resolve conflicts preserving the Diffractor-specific changes, then update the submodule pointer.
+
+### Upgrading a Header-Only Dependency
+
+For `parallel-hashmap` (in `Include/parallel_hashmap/`) and `utf-cpp` (in `Include/utf8-cpp/`): download the new release and replace the header files in the corresponding `Include/` subfolder. No vcxproj changes needed.
 
 ## Source File Comments
 
@@ -55,7 +88,7 @@ Each `.h` and `.cpp` file in the `src` folder contains a concise comment at the 
 Example format for `.cpp` files:
 ```cpp
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+// Copyright 2026  Zac Walker
 // ... (rest of license header)
 
 // Purpose: Brief description of what this file implements.
@@ -69,6 +102,20 @@ Example format for `.cpp` files:
 2. Open `df.sln` in Visual Studio
 3. Build the solution
 
-## Testing
+### Test Runner
 
-Diffractor has a built-in test runner accessible from the toolbar when running from Visual Studio. Tests are defined in `tests.cpp` and displayed via `view_test.cpp`.
+Run tests after changes from the command line:
+
+```
+diffractor64.exe /test
+```
+
+A wildcard filter can be used to run a subset of tests by name:
+
+```
+diffractor64.exe /test:wildcard
+```
+
+The filter uses case-insensitive wildcard matching (`*` and `?`). Examples:
+- `/test` or `/test:*` — run all tests (default)
+- `/test:*scan*` — run tests with "scan" in the name

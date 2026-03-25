@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -596,6 +596,16 @@ void metadata_edits::apply(SXMPMeta& meta) const
 		for (auto i = 0u; i < tags.size(); i++)
 		{
 			meta.AppendArrayItem(kXMP_NS_DC, "subject", kXMP_PropValueIsArray, str::utf8_cast2(tags[i]));
+		}
+
+		// Sync exif:XPKeywords (Windows Explorer tag) with dc:subject
+		if (tags.is_empty())
+		{
+			meta.DeleteProperty(kXMP_NS_EXIF, "XPKeywords");
+		}
+		else
+		{
+			meta.SetProperty(kXMP_NS_EXIF, "XPKeywords", str::utf8_cast2(tags.to_string(u8";"sv, false)));
 		}
 	}
 

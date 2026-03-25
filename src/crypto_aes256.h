@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -48,6 +48,8 @@ namespace crypto
 		size_t m_remainingLength;
 
 		bool m_decryptInitialized;
+		uint8_t m_iv[BLOCK_SIZE];
+		bool m_ivRead;
 
 		void check_and_encrypt_buffer(byte_array& encrypted);
 		void check_and_decrypt_buffer(byte_array& plain);

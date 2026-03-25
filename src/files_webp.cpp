@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -29,7 +29,8 @@ ui::surface_ptr load_webp(const df::cspan data)
 		result = std::make_shared<ui::surface>();
 		auto* const buffer = result->alloc(width, height, ui::texture_format::ARGB);
 
-		if (WebPDecodeBGRAInto(data.data, data.size, buffer, height * result->stride(), result->stride()))
+		if (WebPDecodeBGRAInto(data.data, data.size, buffer, static_cast<int>(height * result->stride()),
+		                       static_cast<int>(result->stride())))
 		{
 			WebPData wp_data;
 			wp_data.bytes = data.data;
@@ -110,7 +111,8 @@ webp_parts scan_webp(df::cspan data, bool decode_surface)
 					auto surface = std::make_shared<ui::surface>();
 					auto* buffer = surface->alloc(width, height, ui::texture_format::ARGB);
 
-					if (WebPDecodeBGRAInto(data.data, data.size, buffer, height * surface->stride(), surface->stride()))
+					if (WebPDecodeBGRAInto(data.data, data.size, buffer, static_cast<int>(height * surface->stride()),
+					                       static_cast<int>(surface->stride())))
 					{
 						result.frames.emplace_back(surface);
 					}
@@ -147,7 +149,7 @@ webp_parts scan_webp(df::cspan data, bool decode_surface)
 											const size_t frame_stride = anim_info.canvas_width * bytes_per_pixel;
 											const size_t surface_stride = surface->stride();
 
-											for (int y = 0; y < anim_info.canvas_height; ++y)
+											for (uint32_t y = 0; y < anim_info.canvas_height; ++y)
 											{
 												memcpy(buffer + y * surface_stride,
 												       frame_data + y * frame_stride,
@@ -236,8 +238,10 @@ ui::image_ptr save_webp(const ui::const_surface_ptr& surface_in, const metadata_
 		picture.use_argb = true;
 
 		const auto ok = use_alpha
-			                ? WebPPictureImportBGRA(&picture, surface_in->pixels(), surface_in->stride())
-			                : WebPPictureImportBGRX(&picture, surface_in->pixels(), surface_in->stride());
+			                ? WebPPictureImportBGRA(&picture, surface_in->pixels(),
+			                                        static_cast<int>(surface_in->stride()))
+			                : WebPPictureImportBGRX(&picture, surface_in->pixels(),
+			                                        static_cast<int>(surface_in->stride()));
 
 		if (ok)
 		{

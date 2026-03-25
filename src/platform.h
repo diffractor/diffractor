@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -67,6 +67,9 @@ namespace platform
 	extern bool avx2_supported;
 	extern bool avx512_supported;
 	extern bool neon_supported;
+
+	void secure_zero(void* ptr, size_t len);
+	void generate_random_bytes(uint8_t* buffer, size_t len);
 
 	void trace(std::u8string_view message);
 	void trace(const std::u8string& message);
@@ -268,6 +271,9 @@ namespace platform
 		std::vector<std::u8string> tags;
 		std::optional<int> rating;
 	};
+
+	bool write_shell_tags(df::file_path path, const std::vector<std::u8string>& tags);
+	metadata_result read_shell_metadata(df::file_path path);
 
 	df::blob from_file(df::file_path path);
 	bool save_to_file(df::file_path path, df::cspan data);
@@ -722,7 +728,7 @@ namespace platform
 	using web_host_ptr = std::shared_ptr<web_host>;
 
 	web_host_ptr connect_to_host(std::u8string_view host, bool secure = true, int port = 0);
-	web_response send_request(const web_host_ptr &host, const web_request& req);
+	web_response send_request(const web_host_ptr& host, const web_request& req);
 
 	ui::surface_ptr image_to_surface(df::cspan image_buffer_in, sizei target_extent);
 }

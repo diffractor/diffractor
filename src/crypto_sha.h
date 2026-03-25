@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -35,7 +35,7 @@ namespace crypto
 		void reset();
 		void transform(uint32_t block[DIGEST_INTS]);
 
-		static void buffer_to_block(const std::vector<uint8_t>& buffer, uint32_t block[BLOCK_BYTES]);
+		static void buffer_to_block(const uint8_t* buf, uint32_t block[BLOCK_INTS]);
 	};
 
 	class sha256

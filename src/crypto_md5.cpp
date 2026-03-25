@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -118,8 +118,10 @@ void md5::finalize()
 	// Store state in digest
 	Encode(digest, state, 16);
 
-	// Zeroize sensitive information
-	memset(buffer, 0, sizeof(buffer));
+	// Zeroize sensitive information (volatile writes prevent compiler optimization)
+	platform::secure_zero(buffer, sizeof(buffer));
+	platform::secure_zero(state, sizeof(state));
+	platform::secure_zero(count, sizeof(count));
 
 	_finalized = true;
 }

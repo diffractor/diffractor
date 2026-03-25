@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -141,7 +141,8 @@ ui::image_ptr save_png(const ui::const_surface_ptr& surface_in, const metadata_p
 			if (!metadata.icc.empty())
 			{
 				const df::cspan data = metadata.icc;
-				png_set_iCCP(png.get(), info_ptr, "icc", PNG_COMPRESSION_TYPE_BASE, data.data, data.size);
+				png_set_iCCP(png.get(), info_ptr, "icc", PNG_COMPRESSION_TYPE_BASE, data.data,
+				             static_cast<png_uint_32>(data.size));
 			}
 
 			if (!metadata.xmp.empty())
@@ -158,14 +159,15 @@ ui::image_ptr save_png(const ui::const_surface_ptr& surface_in, const metadata_p
 			{
 				const df::cspan exif_data = metadata.exif;
 				const auto exif_skip = is_exif_signature(exif_data) ? 6u : 0u;
-				png_set_eXIf_1(png.get(), info_ptr, exif_data.size - exif_skip,
+				png_set_eXIf_1(png.get(), info_ptr, static_cast<png_uint_32>(exif_data.size - exif_skip),
 				               const_cast<png_bytep>(exif_data.data) + exif_skip);
 			}
 			else if (surface_in->orientation() != ui::orientation::top_left)
 			{
 				auto exif = make_orientation_exif(surface_in->orientation());
 				const auto exif_skip = is_exif_signature(exif) ? 6u : 0u;
-				png_set_eXIf_1(png.get(), info_ptr, exif.size() - exif_skip, exif.data() + exif_skip);
+				png_set_eXIf_1(png.get(), info_ptr, static_cast<png_uint_32>(exif.size() - exif_skip),
+				               exif.data() + exif_skip);
 			}
 
 			//png_set_compression_level(p, 6);

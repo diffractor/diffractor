@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -233,7 +233,7 @@ namespace str
 			// capture storage for better thread safety
 			const auto s = storage;
 			df::assert_true(s != nullptr && s->len > i);
-			if (s == nullptr || s->len >= i) return 0;
+			if (s == nullptr || s->len <= i) return 0;
 			return s->sz[i];
 		}
 
@@ -441,18 +441,24 @@ namespace str
 		return {val.begin(), val.end()};
 	}
 
-	constexpr int to_lower(const int c)
+	inline _locale_t utf8_locale()
+	{
+		static const _locale_t loc = _create_locale(LC_CTYPE, ".UTF-8");
+		return loc;
+	}
+
+	inline int to_lower(const int c)
 	{
 		if (c < 128) return c >= L'A' && c <= L'Z' ? c - L'A' + L'a' : c;
 		if (c > USHRT_MAX) return c;
-		return towlower(c);
+		return _towlower_l(c, utf8_locale());
 	}
 
-	constexpr int to_upper(const int c)
+	inline int to_upper(const int c)
 	{
 		if (c < 128) return c >= L'a' && c <= L'z' ? c - L'a' + L'A' : c;
 		if (c > USHRT_MAX) return c;
-		return towupper(c);
+		return _towupper_l(c, utf8_locale());
 	}
 
 	inline std::u8string to_lower(const std::u8string_view s)
@@ -496,7 +502,7 @@ namespace str
 
 	bool wildcard_icmp(std::u8string_view text, std::u8string_view wildcard);
 
-	constexpr int icmp(const std::u8string_view ll, const std::u8string_view rr)
+	inline int icmp(const std::u8string_view ll, const std::u8string_view rr)
 	{
 		if (ll.data() == rr.data() || (ll.empty() && rr.empty())) return 0;
 		if (ll.empty()) return 1;
@@ -523,7 +529,7 @@ namespace str
 		return cl - cr;
 	}
 
-	constexpr int icmp(const std::wstring_view ll, const std::wstring_view rr)
+	inline int icmp(const std::wstring_view ll, const std::wstring_view rr)
 	{
 		if (ll.data() == rr.data() || (ll.empty() && rr.empty())) return 0;
 		if (ll.empty()) return 1;
@@ -550,7 +556,7 @@ namespace str
 		return cl - cr;
 	}
 
-	constexpr int icmp(const std::string_view ll, const std::string_view rr)
+	inline int icmp(const std::string_view ll, const std::string_view rr)
 	{
 		if (ll.data() == rr.data() || (ll.empty() && rr.empty())) return 0;
 		if (ll.empty()) return 1;
@@ -580,7 +586,7 @@ namespace str
 	// Natural sort comparison (alphanum sort) - compares embedded numeric sequences as integers.
 	// This ensures "file10" sorts after "file9" rather than between "file1" and "file2".
 	// Case-insensitive and UTF-8 aware.
-	constexpr int icmp_natural(const std::u8string_view ll, const std::u8string_view rr)
+	inline int icmp_natural(const std::u8string_view ll, const std::u8string_view rr)
 	{
 		if (ll.data() == rr.data() || (ll.empty() && rr.empty())) return 0;
 		if (ll.empty()) return 1;
@@ -656,7 +662,7 @@ namespace str
 		}
 
 		// Handle remaining characters
-		if (il < el) return 1;  // left string is longer
+		if (il < el) return 1; // left string is longer
 		if (ir < er) return -1; // right string is longer
 		return 0;
 	}
@@ -746,10 +752,10 @@ namespace str
 	//
 	// Note: Very long strings (> memory_pool::block_size) are not interned and return empty cached.
 	////////////////////////////////////////////////////////////////////////////////////////////////////
-	cached cache(std::wstring_view r);    // Converts UTF-16 to UTF-8, then interns
-	cached cache(std::u8string_view r);   // Interns UTF-8 string directly
-	cached cache(std::string_view r);     // Treats as UTF-8, then interns
-	cached cache(cached r);               // Returns input unchanged (already interned)
+	cached cache(std::wstring_view r); // Converts UTF-16 to UTF-8, then interns
+	cached cache(std::u8string_view r); // Interns UTF-8 string directly
+	cached cache(std::string_view r); // Treats as UTF-8, then interns
+	cached cache(cached r); // Returns input unchanged (already interned)
 
 	inline cached trim_and_cache(const std::u8string_view r)
 	{

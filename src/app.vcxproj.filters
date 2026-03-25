@@ -147,9 +147,6 @@
     <ClCompile Include="model_locations.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="app.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="crypto_md5.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -162,7 +159,7 @@
     <ClCompile Include="app_settings.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="platform_win.cpp">
+    <ClCompile Include="platform_win_files.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="model_property.cpp">
@@ -213,16 +210,52 @@
     <ClCompile Include="view_import.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="view_locate.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="view_sync.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="tests1.cpp">
+    <ClCompile Include="test_runner.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="platform_win_settings.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="test2.cpp">
+    <ClCompile Include="tests2.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="tests3.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="tests4.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="tests5.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="tests6.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="tests1.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app_workers.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app_toolbar.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app_search.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="platform_win.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="platform_win_d2d.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -440,10 +473,16 @@
     <ClInclude Include="view_list.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="view_map.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="view_rename.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="view_import.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="view_locate.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="view_sync.h">
@@ -452,7 +491,16 @@
     <ClInclude Include="ui_map.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="ui_map_common.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="test.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="test_utils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="util_log.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

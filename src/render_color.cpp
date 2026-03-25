@@ -1,5 +1,5 @@
 ﻿// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -190,15 +190,6 @@ void ui::color_adjust::apply(const const_surface_ptr& src, uint8_t* dst, const s
                              const df::cancel_token token) const
 {
 	const auto dims = src->dimensions();
-
-
-	// TODO sse optimization of this
-	/*while(d < e)
-	{
-	__m128i src128 = _mm_loadu_si128(s);
-	// _mm_mul_ps
-	_mm_cvtps_epi32
-	}*/
 
 	for (auto yy = 0; yy < dims.cy; ++yy)
 	{

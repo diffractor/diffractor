@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -114,7 +114,7 @@ public:
 	std::u8string genre;
 	bool set_tv_show = false;
 	std::u8string tv_show;
-		
+
 	bool show_hidden = false;
 	bool show_debug_info = false;
 	bool confirm_deletions = false;
@@ -137,7 +137,7 @@ public:
 	bool show_sidebar = false;
 	bool use_gpu = false;
 	bool use_d3d11va = false;
-	bool use_yuv = false;	
+	bool use_yuv = false;
 	bool force_available_version = false;
 	bool large_font = false;
 	bool verbose_metadata = false;

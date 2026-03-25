@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -1629,8 +1629,7 @@ void index_state::scan_item(const df::index_folder_item_ptr& folder,
 						}
 						else
 						{
-							// TODO - why
-							// df::assert_true(false);
+							// Thumbnail decode produced an invalid image (corrupt file, unsupported format, etc.)
 							thumbnail_image.reset();
 
 							if (item)

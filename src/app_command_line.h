@@ -1,5 +1,5 @@
 ﻿// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -19,6 +19,8 @@ struct command_line_t
 	bool no_gpu = false;
 	bool no_indexing = false;
 	bool run_tests = false;
+	bool console_test = false;
+	std::u8string test_filter = u8"*";
 
 	void parse(std::u8string_view command_line_text);
 	std::u8string format_restart_cmd_line() const;

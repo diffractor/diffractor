@@ -1,7 +1,7 @@
 
 PRAGMA page_size = 2048;
 PRAGMA journal_mode = WAL;
-PRAGMA synchronous = FULL; 
+PRAGMA synchronous = NORMAL; 
 
 CREATE TABLE IF NOT EXISTS item_properties (
 	folder TEXT NOT NULL,

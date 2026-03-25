@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
     
     strategy:
       matrix:
@@ -27,8 +27,15 @@ jobs:
           submodules: recursive
           
     - name: Add MSBuild to PATH
-      uses: microsoft/setup-msbuild@v2
+      uses: microsoft/setup-msbuild@v3
+      with:
+        vs-prerelease: true
 
     - name: Build ${{matrix.platform}}
       working-directory: ${{env.GITHUB_WORKSPACE}}
       run: msbuild /m /p:Configuration=${{env.BUILD_CONFIGURATION}} /p:Platform=${{matrix.platform}} ${{env.SOLUTION_FILE_PATH}}
+
+    - name: Run tests
+      if: matrix.platform == 'x64'
+      working-directory: ${{env.GITHUB_WORKSPACE}}\exe
+      run: .\diffractor64.exe /test

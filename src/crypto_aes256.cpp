@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -101,6 +101,7 @@ aes256::aes256(const byte_array& key)
 	  , m_buffer{}, m_buffer_pos(0)
 	  , m_remainingLength(0)
 	  , m_decryptInitialized(false)
+	  , m_iv{}, m_ivRead(false)
 {
 	for (auto i = 0u; i < m_key.size(); ++i)
 	{
@@ -109,7 +110,13 @@ aes256::aes256(const byte_array& key)
 }
 
 aes256::~aes256()
-= default;
+{
+	platform::secure_zero(m_key.data(), m_key.size());
+	platform::secure_zero(m_salt.data(), m_salt.size());
+	platform::secure_zero(m_rkey.data(), m_rkey.size());
+	platform::secure_zero(m_buffer, sizeof(m_buffer));
+	platform::secure_zero(m_iv, sizeof(m_iv));
+}
 
 size_t aes256::encrypt(const byte_array& key, const byte_array& plain, byte_array& encrypted)
 {
@@ -159,16 +166,21 @@ size_t aes256::encrypt_start(const size_t plain_length, byte_array& encrypted)
 {
 	m_remainingLength = plain_length;
 
-	// Generate salt
-	auto it = m_salt.begin(), itEnd = m_salt.end();
-	while (it != itEnd)
-		*it++ = rand() & 0xFF;
+	// Generate salt using cryptographically secure RNG
+	if (!m_salt.empty())
+		platform::generate_random_bytes(m_salt.data(), m_salt.size());
+
+	// Generate IV using cryptographically secure RNG
+	platform::generate_random_bytes(m_iv, BLOCK_SIZE);
 
 	// Calculate padding
 	size_t padding = 0;
 	if (m_remainingLength % BLOCK_SIZE != 0)
 		padding = BLOCK_SIZE - m_remainingLength % BLOCK_SIZE;
 	m_remainingLength += padding;
+
+	// Add IV (unencrypted, for CBC mode)
+	encrypted.insert(encrypted.end(), m_iv, m_iv + BLOCK_SIZE);
 
 	// Add salt
 	encrypted.insert(encrypted.end(), m_salt.begin(), m_salt.end());
@@ -215,7 +227,14 @@ void aes256::check_and_encrypt_buffer(byte_array& encrypted)
 {
 	if (m_buffer_pos == BLOCK_SIZE)
 	{
+		// CBC mode: XOR plaintext block with previous ciphertext (or IV for first block)
+		for (uint8_t i = 0; i < BLOCK_SIZE; ++i)
+			m_buffer[i] ^= m_iv[i];
+
 		encrypt(m_buffer);
+
+		// Save ciphertext as next IV for CBC chaining
+		memcpy(m_iv, m_buffer, BLOCK_SIZE);
 
 		for (m_buffer_pos = 0; m_buffer_pos < BLOCK_SIZE; ++m_buffer_pos)
 		{
@@ -234,7 +253,13 @@ size_t aes256::encrypt_end(byte_array& encrypted)
 		while (m_buffer_pos < BLOCK_SIZE)
 			m_buffer[m_buffer_pos++] = 0;
 
+		// CBC mode: XOR with previous ciphertext (or IV)
+		for (uint8_t i = 0; i < BLOCK_SIZE; ++i)
+			m_buffer[i] ^= m_iv[i];
+
 		encrypt(m_buffer);
+
+		memcpy(m_iv, m_buffer, BLOCK_SIZE);
 
 		for (m_buffer_pos = 0; m_buffer_pos < BLOCK_SIZE; ++m_buffer_pos)
 		{
@@ -273,6 +298,9 @@ size_t aes256::decrypt_start(const size_t encrypted_length)
 {
 	m_remainingLength = encrypted_length;
 
+	// Account for IV
+	m_remainingLength -= BLOCK_SIZE;
+
 	// Reset salt
 	for (unsigned char& j : m_salt)
 		j = 0;
@@ -282,6 +310,7 @@ size_t aes256::decrypt_start(const size_t encrypted_length)
 	m_buffer_pos = 0;
 
 	m_decryptInitialized = false;
+	m_ivRead = false;
 
 	return m_remainingLength;
 }
@@ -316,7 +345,14 @@ size_t aes256::decrypt_continue(const df::cspan encrypted, byte_array& plain)
 
 void aes256::check_and_decrypt_buffer(byte_array& plain)
 {
-	if (!m_decryptInitialized && m_buffer_pos == m_salt.size() + 1)
+	if (!m_ivRead && m_buffer_pos == BLOCK_SIZE)
+	{
+		// Read IV from ciphertext
+		memcpy(m_iv, m_buffer, BLOCK_SIZE);
+		m_buffer_pos = 0;
+		m_ivRead = true;
+	}
+	else if (m_ivRead && !m_decryptInitialized && m_buffer_pos == m_salt.size() + 1)
 	{
 		size_t j;
 
@@ -335,7 +371,18 @@ void aes256::check_and_decrypt_buffer(byte_array& plain)
 	}
 	else if (m_decryptInitialized && m_buffer_pos == BLOCK_SIZE)
 	{
+		// CBC mode: save ciphertext before decrypting
+		uint8_t saved_cipher[BLOCK_SIZE];
+		memcpy(saved_cipher, m_buffer, BLOCK_SIZE);
+
 		decrypt(m_buffer);
+
+		// XOR with previous ciphertext (or IV for first block)
+		for (uint8_t i = 0; i < BLOCK_SIZE; ++i)
+			m_buffer[i] ^= m_iv[i];
+
+		// Update IV to current ciphertext for next block
+		memcpy(m_iv, saved_cipher, BLOCK_SIZE);
 
 		for (m_buffer_pos = 0; m_buffer_pos < BLOCK_SIZE; ++m_buffer_pos)
 			if (m_remainingLength > 0)

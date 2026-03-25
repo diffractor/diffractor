@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -2089,7 +2089,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 				                           ? sizei{}
 				                           : dc.measure_text(info.title, info.title_font, title_style, avail_width);
 			const auto title_extent2 = dc.measure_text(info.name, info.title_font, title_style, avail_width);
-		 const auto extra1 = title_extent1.cx > bg_bounds.width() ? title_extent1.cx - device_bounds.width() : 0;
+			const auto extra1 = title_extent1.cx > bg_bounds.width() ? title_extent1.cx - device_bounds.width() : 0;
 			const auto extra2 = title_extent2.cx > bg_bounds.width() ? title_extent2.cx - device_bounds.width() : 0;
 			title_text_extra_width = std::max(extra1, extra2);
 			title_line_height1 = title_extent1.cy;
@@ -2488,7 +2488,7 @@ df::item_display_info df::item_element::populate_info() const
 		result.title_font = ui::style::font_face::title;
 
 		result.title = _info->volume;
-		result.items = _total_count;
+		result.items = static_cast<int>(_total_count);
 		result.size = _size;
 		result.modified = _modified.system_to_local();
 		result.created = media_created();

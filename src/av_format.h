@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -23,7 +23,6 @@ struct AVBufferRef;
 struct AVFrame;
 struct AVHWFramesContext;
 struct ID3D11Texture2D;
-struct AVStream;
 
 class file_scan_result;
 class audio_buffer;
@@ -81,7 +80,7 @@ struct video_info_t
 {
 	sizei display_dimensions;
 	sizei render_dimensions;
-	sizei apsect_ratio;
+	sizei aspect_ratio;
 	AVPixelFormat format = {};
 	bool is_yuv = false;
 };
@@ -137,11 +136,11 @@ public:
 		_q.clear();
 	}
 
-	template <typename T>
-	void push(T&& packet)
+	template <typename U>
+	void push(U&& packet)
 	{
 		platform::exclusive_lock lock(_mutex);
-		_q.emplace_back(std::forward<T>(packet));
+		_q.emplace_back(std::forward<U>(packet));
 	}
 
 	double front_time()
@@ -278,9 +277,6 @@ class av_format_decoder final : public df::no_copy
 	av_pts_correction _pts_aud;
 	platform::file_ptr _file;
 
-
-	friend class av_format_decoder;
-
 public:
 	av_format_decoder() = default;
 	~av_format_decoder() override { close(); }
@@ -306,7 +302,7 @@ public:
 	const ui::image_ptr& cover_art() const { return _cover_art; }
 
 private:
-	std::unique_ptr<av_scaler> _scaler;
+	mutable std::unique_ptr<av_scaler> _scaler;
 
 	AVCodecContext* _video_context = nullptr;
 	AVCodecContext* _audio_context = nullptr;

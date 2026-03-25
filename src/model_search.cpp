@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -1513,10 +1513,10 @@ static compare_result compare_val(const df::search_term& term, const df::index_f
 			return
 				compare_term(term, md->focal_length_35mm_equivalent);
 		if (t == prop::iso_speed && !prop::is_null(md->iso_speed)) return compare_term(term, md->iso_speed);
-		if (t == prop::latitude && !prop::is_null(md->coordinate.is_valid()))
+		if (t == prop::latitude && md->coordinate.is_valid())
 			return compare_term(
 				term, md->coordinate.latitude());
-		if (t == prop::longitude && !prop::is_null(md->coordinate.is_valid()))
+		if (t == prop::longitude && md->coordinate.is_valid())
 			return compare_term(
 				term, md->coordinate.longitude());
 		if (t == prop::location_country && !prop::is_null(md->location_country))

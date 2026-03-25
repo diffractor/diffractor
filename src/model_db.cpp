@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -21,7 +21,6 @@
 #include "model_index.h"
 
 static std::atomic<int> db_fails = 0;
-using cached_statements = df::hash_map<std::u8string, sqlite3_stmt*>;
 
 inline void db_trace_error(sqlite3* db, const std::u8string_view sql)
 {
@@ -66,11 +65,11 @@ public:
 
 	void compile(const std::u8string_view sql)
 	{
-		const int ret = sqlite3_prepare(_db, std::bit_cast<const char*>(sql.data()), static_cast<int>(sql.size()),
-		                                &_handle, nullptr);
+		const int ret = sqlite3_prepare_v2(_db, std::bit_cast<const char*>(sql.data()), static_cast<int>(sql.size()),
+		                                   &_handle, nullptr);
 
 		if (ret != SQLITE_OK)
-			db_trace_error(_db, u8"sqlite3_prepare"sv);
+			db_trace_error(_db, u8"sqlite3_prepare_v2"sv);
 	}
 
 	void bind(const int i, const std::u8string_view v) const
@@ -537,8 +536,14 @@ void database::clean(const std::vector<df::file_path>& indexed_items) const
 		update_properties.reset();
 	}
 
-	db_exec(_db, str::format(u8"DELETE FROM item_properties where last_indexed < {}"sv, today - 30));
-	db_exec(_db, str::format(u8"DELETE FROM web_service_cache where created_date < {}"sv, today - 7));
+	const db_statement delete_old_properties(_db, u8"DELETE FROM item_properties where last_indexed < ?"s);
+	delete_old_properties.bind(1, today - 30);
+	delete_old_properties.exec();
+
+	const db_statement delete_old_cache(_db, u8"DELETE FROM web_service_cache where created_date < ?"s);
+	delete_old_cache.bind(1, today - 7);
+	delete_old_cache.exec();
+
 	db_exec(
 		_db,
 		u8"DELETE FROM item_thumbnails WHERE NOT EXISTS (SELECT 1 FROM item_properties WHERE item_properties.name = item_thumbnails.name AND item_properties.folder = item_thumbnails.folder);"s);
@@ -716,12 +721,11 @@ database::db_thumbnail database::load_thumbnail(const df::file_path id) const
 
 	db_thumbnail result;
 
-	while (find_thumbnail->read())
+	if (find_thumbnail->read())
 	{
 		result.thumb = load_image_file(find_thumbnail->blob(0));
 		result.cover_art = load_image_file(find_thumbnail->blob(1));
 		result.last_indexed = df::date_t(find_thumbnail->int64(2));
-		break;
 	}
 
 	find_thumbnail->reset();
@@ -736,12 +740,11 @@ database::db_thumbnail database::load_folder_thumbnail(const str::cached folder)
 
 	find_folder_thumbnail->bind(1, folder);
 
-	while (find_folder_thumbnail->read())
+	if (find_folder_thumbnail->read())
 	{
 		result.thumb = load_image_file(find_folder_thumbnail->blob(0));
 		result.cover_art = load_image_file(find_folder_thumbnail->blob(1));
 		result.last_indexed = df::date_t(find_folder_thumbnail->int64(2));
-		break;
 	}
 
 	find_folder_thumbnail->reset();
@@ -896,7 +899,7 @@ void database::perform_writes(std::deque<item_db_write> writes) const
 		u8"insert or replace into item_properties (folder, name, properties, hash, crc, media_position, last_scanned, last_indexed) values (?, ?, ?, ?, ?, ?, ?, ?)"s);
 	const db_statement update_metadata_scanned(
 		_db,
-		u8"insert or replace into item_properties (folder, name, last_scanned, last_indexed) values (?, ?, ?, ?)"s);
+		u8"update item_properties set last_scanned = ?, last_indexed = ? where folder = ? and name = ?"s);
 	const db_statement update_hash(_db, u8"update item_properties set hash = ? where folder=? and name=?"s);
 	const db_statement update_crc(_db, u8"update item_properties set crc = ? where folder=? and name=?"s);
 	const db_statement update_media_position(
@@ -942,10 +945,10 @@ void database::perform_writes(std::deque<item_db_write> writes) const
 
 		if (write.metadata_scanned.has_value())
 		{
-			update_metadata_scanned.bind(1, path.folder().text());
-			update_metadata_scanned.bind(2, path.name());
-			update_metadata_scanned.bind(3, write.metadata_scanned.value().to_int64());
-			update_metadata_scanned.bind(4, today);
+			update_metadata_scanned.bind(1, write.metadata_scanned.value().to_int64());
+			update_metadata_scanned.bind(2, today);
+			update_metadata_scanned.bind(3, path.folder().text());
+			update_metadata_scanned.bind(4, path.name());
 			update_metadata_scanned.exec();
 			update_metadata_scanned.reset();
 		}

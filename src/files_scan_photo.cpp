@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -38,7 +38,10 @@ static const char* strnstr(const char* haystack, const char* needle, const size_
 	if (0 == (needle_len = strnlen(needle, len)))
 		return haystack;
 
-	for (auto i = 0; i <= static_cast<int>(len) - static_cast<int>(needle_len); i++)
+	if (len < needle_len)
+		return nullptr;
+
+	for (size_t i = 0; i <= len - needle_len; i++)
 	{
 		if (haystack[0] == needle[0] &&
 			0 == strncmp(haystack, needle, needle_len))
@@ -77,7 +80,7 @@ static file_scan_result scan_gif(read_stream& s)
 	// 1 byte for Pixel Aspect Ratio
 	// Look for Global Color Table if exists
 	const uint8_t fields = header[offset + 4];
-	const int table_size = (1 << ((fields & 0x07) + 1)) * 3;
+	const int table_size = (fields & 0x80) ? (1 << ((fields & 0x07) + 1)) * 3 : 0;
 
 	offset += table_size + 7;
 
@@ -97,7 +100,7 @@ static file_scan_result scan_gif(read_stream& s)
 
 			// ImageDesc is a special case, So read data just like its structure.
 
-			// Reading Dimesnions of image as 
+			// Reading Dimensions of image as 
 			// 2 bytes = Image Left Position
 			// + 2 bytes = Image Right Position
 			// + 2 bytes = Image Width
@@ -149,9 +152,9 @@ static file_scan_result scan_gif(read_stream& s)
 				if (memcmp(app_header, XMP_APP_ID_DATA, APP_ID_LEN) == 0)
 				{
 					offset += APP_ID_LEN;
-					const auto n = s.peek8(offset);
+					const auto first_byte = s.peek8(offset);
 
-					if (n == '<')
+					if (first_byte == '<')
 					{
 						const auto start = offset;
 						auto n = s.peek8(offset);
@@ -178,7 +181,7 @@ static file_scan_result scan_gif(read_stream& s)
 					}
 					else
 					{
-						sub_block_size = n;
+						sub_block_size = first_byte;
 						offset += 1;
 
 						while (sub_block_size != 0 && offset + sub_block_size <= size)
@@ -191,7 +194,9 @@ static file_scan_result scan_gif(read_stream& s)
 						}
 					}
 
-					df::assert_true(result.metadata.xmp.data()[result.metadata.xmp.size() - 1] == '>');
+					df::assert_true(
+						result.metadata.xmp.empty() || result.metadata.xmp.data()[result.metadata.xmp.size() - 1] ==
+						'>');
 					skip_block = false;
 				}
 			}
@@ -316,7 +321,7 @@ static void scan_exif(file_scan_result& result, const df::cspan data)
 					if (offset_ifd1 && offset_ifd1 < limit)
 					{
 						const uint8_t* possible_thumbnail = nullptr;
-						size_t posible_thumbnail_len = 0u;
+						size_t possible_thumbnail_len = 0u;
 						const auto ifd1_entry_count = get_uint16(data.data + offset_ifd1, order);
 
 						offset_ifd1 += 2u;
@@ -338,7 +343,7 @@ static void scan_exif(file_scan_result& result, const df::cspan data)
 									break;
 
 								case EXIF_TAG_JPEG_INTERCHANGE_FORMAT_LENGTH:
-									posible_thumbnail_len = get_uint32(data.data + pos + 8, order);
+									possible_thumbnail_len = get_uint32(data.data + pos + 8, order);
 									break;
 
 								case EXIF_TAG_ORIENTATION:
@@ -352,19 +357,19 @@ static void scan_exif(file_scan_result& result, const df::cspan data)
 						auto detected = detected_format::Unknown;
 
 						if (possible_thumbnail > data.data &&
-							possible_thumbnail + posible_thumbnail_len <= data.data + data.size &&
-							(detected = files::detect_format({possible_thumbnail, posible_thumbnail_len})) !=
+							possible_thumbnail + possible_thumbnail_len <= data.data + data.size &&
+							(detected = files::detect_format({possible_thumbnail, possible_thumbnail_len})) !=
 							detected_format::Unknown)
 						{
 							if (is_image_format(detected))
 							{
-								result.thumbnail_image = load_image_file({possible_thumbnail, posible_thumbnail_len});
+								result.thumbnail_image = load_image_file({possible_thumbnail, possible_thumbnail_len});
 							}
 							else
 							{
 								files ff;
 								result.thumbnail_surface = ff.image_to_surface({
-									possible_thumbnail, posible_thumbnail_len
+									possible_thumbnail, possible_thumbnail_len
 								});
 							}
 						}
@@ -411,6 +416,13 @@ static file_scan_result scan_tiff(read_stream& s)
 	const auto order = *std::bit_cast<const uint16_t*>(static_cast<const uint8_t*>(header));
 	const auto magic = get_uint16(header + 2u, order);
 	const auto size = s.size();
+
+	if (size < 12u)
+	{
+		result.success = false;
+		return result;
+	}
+
 	const auto limit = size - 12u;
 
 	if (magic == 42u)
@@ -534,7 +546,7 @@ static file_scan_result scan_tiff(read_stream& s)
 				if (offset_ifd1 && offset_ifd1 < limit)
 				{
 					size_t possible_offset = 0;
-					size_t posible_thumbnail_len = 0;
+					size_t possible_thumbnail_len = 0;
 					const auto ifd1_entry_count = get_uint16(s.peek16(offset_ifd1), order);
 
 					for (auto i = 0u; i < ifd1_entry_count; ++i)
@@ -554,8 +566,7 @@ static file_scan_result scan_tiff(read_stream& s)
 								break;
 
 							case EXIF_TAG_JPEG_INTERCHANGE_FORMAT_LENGTH:
-								posible_thumbnail_len = get_uint32(s.peek32(pos + 8), order);
-								break;
+								possible_thumbnail_len = get_uint32(s.peek32(pos + 8), order);
 
 							case EXIF_TAG_ORIENTATION:
 								result.orientation = static_cast<ui::orientation>(get_uint16(
@@ -565,9 +576,9 @@ static file_scan_result scan_tiff(read_stream& s)
 						}
 					}
 
-					if (possible_offset != 0 && posible_thumbnail_len != 0)
+					if (possible_offset != 0 && possible_thumbnail_len != 0)
 					{
-						const auto thumb = s.read(possible_offset, posible_thumbnail_len);
+						const auto thumb = s.read(possible_offset, possible_thumbnail_len);
 						auto detected = detected_format::Unknown;
 
 						if (thumb.size() > 16 &&

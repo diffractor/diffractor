@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -409,7 +409,8 @@ void jpeg_encoder::start(const uint32_t cx, const uint32_t cy, const ui::orienta
 	{
 		if (is_exif_signature(metadata.exif))
 		{
-			jpeg_write_marker(&_impl->cinfo, XMP_EXIF_MARKER, metadata.exif.data(), metadata.exif.size());
+			jpeg_write_marker(&_impl->cinfo, XMP_EXIF_MARKER, metadata.exif.data(),
+			                  static_cast<unsigned int>(metadata.exif.size()));
 		}
 		else
 		{
@@ -417,7 +418,7 @@ void jpeg_encoder::start(const uint32_t cx, const uint32_t cy, const ui::orienta
 			marker.reserve(exif_signature.size() + metadata.exif.size());
 			marker.insert(marker.begin(), exif_signature.begin(), exif_signature.end());
 			marker.insert(marker.end(), metadata.exif.data(), metadata.exif.data() + metadata.exif.size());
-			jpeg_write_marker(&_impl->cinfo, XMP_EXIF_MARKER, marker.data(), marker.size());
+			jpeg_write_marker(&_impl->cinfo, XMP_EXIF_MARKER, marker.data(), static_cast<unsigned int>(marker.size()));
 		}
 	}
 	else if (orientation != ui::orientation::top_left &&
@@ -426,7 +427,7 @@ void jpeg_encoder::start(const uint32_t cx, const uint32_t cy, const ui::orienta
 		auto exif = make_orientation_exif(orientation);
 
 		exif.insert(exif.begin(), exif_signature.begin(), exif_signature.end());
-		jpeg_write_marker(&_impl->cinfo, XMP_EXIF_MARKER, exif.data(), exif.size());
+		jpeg_write_marker(&_impl->cinfo, XMP_EXIF_MARKER, exif.data(), static_cast<unsigned int>(exif.size()));
 	}
 
 	if (!metadata.iptc.empty())
@@ -435,7 +436,7 @@ void jpeg_encoder::start(const uint32_t cx, const uint32_t cy, const ui::orienta
 		marker.reserve(iptc_signature.size() + metadata.iptc.size());
 		marker.insert(marker.begin(), iptc_signature.begin(), iptc_signature.end());
 		marker.insert(marker.end(), metadata.iptc.data(), metadata.iptc.data() + metadata.iptc.size());
-		jpeg_write_marker(&_impl->cinfo, IPTC_MARKER, marker.data(), marker.size());
+		jpeg_write_marker(&_impl->cinfo, IPTC_MARKER, marker.data(), static_cast<unsigned int>(marker.size()));
 	}
 
 	if (!metadata.xmp.empty())
@@ -444,7 +445,7 @@ void jpeg_encoder::start(const uint32_t cx, const uint32_t cy, const ui::orienta
 		marker.reserve(xmp_signature.size() + metadata.xmp.size());
 		marker.insert(marker.begin(), xmp_signature.begin(), xmp_signature.end());
 		marker.insert(marker.end(), metadata.xmp.data(), metadata.xmp.data() + metadata.xmp.size());
-		jpeg_write_marker(&_impl->cinfo, XMP_EXIF_MARKER, marker.data(), marker.size());
+		jpeg_write_marker(&_impl->cinfo, XMP_EXIF_MARKER, marker.data(), static_cast<unsigned int>(marker.size()));
 	}
 
 	if (!metadata.icc.empty())
@@ -455,7 +456,7 @@ void jpeg_encoder::start(const uint32_t cx, const uint32_t cy, const ui::orienta
 		marker.push_back(1);
 		marker.push_back(1);
 		marker.insert(marker.end(), metadata.icc.data(), metadata.icc.data() + metadata.icc.size());
-		jpeg_write_marker(&_impl->cinfo, ICC_MARKER, marker.data(), marker.size());
+		jpeg_write_marker(&_impl->cinfo, ICC_MARKER, marker.data(), static_cast<unsigned int>(marker.size()));
 	}
 }
 
@@ -883,8 +884,8 @@ df::blob jpeg_decoder_x::transform(const df::cspan src, jpeg_encoder& encoder,
 				const auto fixed = metadata_exif::fix_dims(block, _impl->dinfo.image_width, _impl->dinfo.image_height);
 				marker->data = static_cast<uint8_t*>(_impl->dinfo.mem->alloc_large(
 					std::bit_cast<j_common_ptr>(&_impl->dinfo), JPOOL_IMAGE, fixed.size()));
-				marker->original_length = fixed.size();
-				marker->data_length = fixed.size();
+				marker->original_length = static_cast<unsigned int>(fixed.size());
+				marker->data_length = static_cast<unsigned int>(fixed.size());
 				memcpy(marker->data, fixed.data(), fixed.size());
 			}
 		}
@@ -912,7 +913,8 @@ ui::image_ptr save_jpeg(const ui::const_surface_ptr& surface_in, const metadata_
 
 	jpeg_encoder encoder;
 	const auto result_data = encoder.encode(dimensions_in.cx, dimensions_in.cy, surface_in->pixels(),
-	                                        surface_in->stride(), orientation_in, metadata, encoder_params);
+	                                        static_cast<uint32_t>(surface_in->stride()), orientation_in, metadata,
+	                                        encoder_params);
 	const auto dimensions_out = encoder._result_dimensions;
 
 	return std::make_shared<ui::image>(result_data, dimensions_out, ui::image_format::JPEG, orientation_in);

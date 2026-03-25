@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -407,23 +407,23 @@ static font_renderer_ptr create_font_renderer(IDWriteFactory* dwrite, IDWriteFon
 
 	if (FAILED(hr))
 	{
-		df::log(__FUNCTION__, str::format(u8"Failed to find font family {} - FindFamilyName failed: {:x}"sv, 
-			str::utf16_to_utf8(font_name), static_cast<uint32_t>(hr)));
+		df::log(__FUNCTION__, str::format(u8"Failed to find font family {} - FindFamilyName failed: {:x}"sv,
+		                                  str::utf16_to_utf8(font_name), static_cast<uint32_t>(hr)));
 		return nullptr;
 	}
 
 	if (!exists)
 	{
-		df::log(__FUNCTION__, str::format(u8"Failed to create font {} - font family not found in collection"sv, 
-			str::utf16_to_utf8(font_name)));
+		df::log(__FUNCTION__, str::format(u8"Failed to create font {} - font family not found in collection"sv,
+		                                  str::utf16_to_utf8(font_name)));
 		return nullptr;
 	}
 
 	hr = font_collection->GetFontFamily(index, &family);
 	if (FAILED(hr))
 	{
-		df::log(__FUNCTION__, str::format(u8"Failed to create font {} - GetFontFamily failed: {:x}"sv, 
-			str::utf16_to_utf8(font_name), static_cast<uint32_t>(hr)));
+		df::log(__FUNCTION__, str::format(u8"Failed to create font {} - GetFontFamily failed: {:x}"sv,
+		                                  str::utf16_to_utf8(font_name), static_cast<uint32_t>(hr)));
 		return nullptr;
 	}
 
@@ -431,16 +431,16 @@ static font_renderer_ptr create_font_renderer(IDWriteFactory* dwrite, IDWriteFon
 	                                  DWRITE_FONT_STYLE_NORMAL, &font);
 	if (FAILED(hr))
 	{
-		df::log(__FUNCTION__, str::format(u8"Failed to create font {} - GetFirstMatchingFont failed: {:x}"sv, 
-			str::utf16_to_utf8(font_name), static_cast<uint32_t>(hr)));
+		df::log(__FUNCTION__, str::format(u8"Failed to create font {} - GetFirstMatchingFont failed: {:x}"sv,
+		                                  str::utf16_to_utf8(font_name), static_cast<uint32_t>(hr)));
 		return nullptr;
 	}
 
 	hr = font->CreateFontFace(&font_face);
 	if (FAILED(hr))
 	{
-		df::log(__FUNCTION__, str::format(u8"Failed to create font {} - CreateFontFace failed: {:x}"sv, 
-			str::utf16_to_utf8(font_name), static_cast<uint32_t>(hr)));
+		df::log(__FUNCTION__, str::format(u8"Failed to create font {} - CreateFontFace failed: {:x}"sv,
+		                                  str::utf16_to_utf8(font_name), static_cast<uint32_t>(hr)));
 		return nullptr;
 	}
 
@@ -453,11 +453,11 @@ static font_renderer_ptr create_font_renderer(IDWriteFactory* dwrite, IDWriteFon
 		static_cast<float>(font_height),
 		L"", //locale
 		&text_format);
-	
+
 	if (FAILED(hr))
 	{
-		df::log(__FUNCTION__, str::format(u8"Failed to create font {} - CreateTextFormat failed: {:x}"sv, 
-			str::utf16_to_utf8(font_name), static_cast<uint32_t>(hr)));
+		df::log(__FUNCTION__, str::format(u8"Failed to create font {} - CreateTextFormat failed: {:x}"sv,
+		                                  str::utf16_to_utf8(font_name), static_cast<uint32_t>(hr)));
 		return nullptr;
 	}
 
@@ -717,7 +717,7 @@ render_char_result font_renderer::render_glyph(const uint16_t glyph_index, const
 
 	if (SUCCEEDED(_face->GetDesignGlyphMetrics(&glyph_index, 1, &glyph_metrics)))
 	{
-		const float glyph_advance = 0;
+		constexpr float glyph_advance = 0;
 
 		DWRITE_GLYPH_OFFSET glyphOffset{};
 		glyphOffset.advanceOffset = 0.0f;

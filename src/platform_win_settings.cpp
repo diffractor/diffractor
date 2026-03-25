@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -21,7 +21,7 @@ class setting_file_ini final : public platform::setting_file
 	bool _root_created = false;
 
 public:
-	explicit setting_file_ini(df::folder_path folder)
+	explicit setting_file_ini(const df::folder_path folder)
 	{
 		// Create the INI file path in the same folder as the database
 		const auto ini_file_path = folder.combine_file(u8"diffractor.ini"sv);
@@ -43,17 +43,17 @@ public:
 		return _root_created;
 	}
 
-	bool write(std::u8string_view section, std::u8string_view name, uint32_t v) override
+	bool write(const std::u8string_view section, const std::u8string_view name, const uint32_t v) override
 	{
 		return write(section, name, str::to_string(v));
 	}
 
-	bool write(std::u8string_view section, std::u8string_view name, uint64_t v) override
+	bool write(const std::u8string_view section, const std::u8string_view name, const uint64_t v) override
 	{
 		return write(section, name, str::to_string(v));
 	}
 
-	bool write(std::u8string_view section, std::u8string_view name, std::u8string_view v) override
+	bool write(const std::u8string_view section, const std::u8string_view name, const std::u8string_view v) override
 	{
 		const auto section_w = str::utf8_to_utf16(section);
 		const auto name_w = str::utf8_to_utf16(name);
@@ -66,14 +66,14 @@ public:
 			_ini_path.c_str()) != 0;
 	}
 
-	bool write(std::u8string_view section, std::u8string_view name, df::cspan cs) override
+	bool write(const std::u8string_view section, const std::u8string_view name, const df::cspan cs) override
 	{
 		// Encode binary data as base64
 		const auto encoded = base64_encode(cs.data, cs.size);
 		return write(section, name, encoded);
 	}
 
-	bool read(std::u8string_view section, std::u8string_view name, uint32_t& v) const override
+	bool read(const std::u8string_view section, const std::u8string_view name, uint32_t& v) const override
 	{
 		std::u8string str_val;
 		if (read(section, name, str_val))
@@ -84,7 +84,7 @@ public:
 		return false;
 	}
 
-	bool read(std::u8string_view section, std::u8string_view name, uint64_t& v) const override
+	bool read(const std::u8string_view section, const std::u8string_view name, uint64_t& v) const override
 	{
 		std::u8string str_val;
 		if (read(section, name, str_val))
@@ -96,7 +96,7 @@ public:
 		return false;
 	}
 
-	bool read(std::u8string_view section, std::u8string_view name, std::u8string& v) const override
+	bool read(const std::u8string_view section, const std::u8string_view name, std::u8string& v) const override
 	{
 		const auto section_w = str::utf8_to_utf16(section);
 		const auto name_w = str::utf8_to_utf16(name);
@@ -142,7 +142,8 @@ public:
 		}
 	}
 
-	bool read(std::u8string_view section, std::u8string_view name, uint8_t* data, size_t& len) const override
+	bool read(const std::u8string_view section, const std::u8string_view name, uint8_t* data,
+	          size_t& len) const override
 	{
 		std::u8string encoded;
 		if (read(section, name, encoded))
@@ -162,7 +163,7 @@ public:
 
 platform::setting_file_ptr platform::create_ini_file_settings()
 {
-	const auto app_data_folder = known_path(platform::known_folder::app_data);
+	const auto app_data_folder = known_path(known_folder::app_data);
 	return std::make_shared<setting_file_ini>(app_data_folder);
 }
 
@@ -266,8 +267,8 @@ public:
 		DWORD disposition = 0;
 		HKEY result_key = nullptr;
 		const auto result = RegCreateKeyEx(parent_key, str::utf8_to_utf16(name).c_str(), 0, REG_NONE,
-			REG_OPTION_NON_VOLATILE,
-			KEY_ALL_ACCESS, nullptr, &result_key, &disposition);
+		                                   REG_OPTION_NON_VOLATILE,
+		                                   KEY_ALL_ACCESS, nullptr, &result_key, &disposition);
 		was_created = disposition == REG_CREATED_NEW_KEY;
 		return result == ERROR_SUCCESS ? result_key : nullptr;
 	}
@@ -277,7 +278,7 @@ public:
 		DWORD dwType = 0;
 		DWORD s = sizeof(uint32_t);
 		const int32_t result = RegQueryValueEx(Key(section), str::utf8_to_utf16(name).c_str(), nullptr, &dwType,
-			std::bit_cast<uint8_t*>(&v), &s);
+		                                       std::bit_cast<uint8_t*>(&v), &s);
 		df::assert_true(result != ERROR_SUCCESS || dwType == REG_DWORD);
 		df::assert_true(result != ERROR_SUCCESS || s == sizeof(uint32_t));
 		return ERROR_SUCCESS == result;
@@ -288,7 +289,7 @@ public:
 		DWORD dwType = 0;
 		DWORD s = sizeof(uint64_t);
 		const int32_t result = RegQueryValueEx(Key(section), str::utf8_to_utf16(name).c_str(), nullptr, &dwType,
-			std::bit_cast<uint8_t*>(&v), &s);
+		                                       std::bit_cast<uint8_t*>(&v), &s);
 		df::assert_true(result != ERROR_SUCCESS || dwType == REG_QWORD);
 		df::assert_true(result != ERROR_SUCCESS || s == sizeof(uint64_t));
 		return ERROR_SUCCESS == result;
@@ -311,7 +312,7 @@ public:
 			if (result == ERROR_SUCCESS)
 			{
 				const auto char_len = alloc_len >= sizeof(wchar_t) ? alloc_len / sizeof(wchar_t) - 1 : 0;
-				v = str::utf16_to_utf8({ std::bit_cast<const wchar_t*>(data.data()), char_len });
+				v = str::utf16_to_utf8({std::bit_cast<const wchar_t*>(data.data()), char_len});
 			}
 		}
 
@@ -319,14 +320,14 @@ public:
 	}
 
 	bool read(const std::u8string_view section, const std::u8string_view name, uint8_t* data,
-		size_t& len) const override
+	          size_t& len) const override
 	{
 		DWORD dwType = REG_BINARY;
 		DWORD dwSize = static_cast<uint32_t>(len);
 		bool success = false;
 
 		if (ERROR_SUCCESS == RegQueryValueEx(Key(section), str::utf8_to_utf16(name).c_str(), nullptr, &dwType, data,
-			&dwSize))
+		                                     &dwSize))
 		{
 			len = dwSize;
 			success = true;
@@ -338,27 +339,27 @@ public:
 	bool write(const std::u8string_view section, const std::u8string_view name, const uint32_t v) override
 	{
 		return ERROR_SUCCESS == RegSetValueEx(Key(section), str::utf8_to_utf16(name).c_str(), 0, REG_DWORD,
-			std::bit_cast<const uint8_t*>(&v), sizeof(uint32_t));
+		                                      std::bit_cast<const uint8_t*>(&v), sizeof(uint32_t));
 	}
 
 	bool write(const std::u8string_view section, const std::u8string_view name, const uint64_t v) override
 	{
 		return ERROR_SUCCESS == RegSetValueEx(Key(section), str::utf8_to_utf16(name).c_str(), 0, REG_QWORD,
-			std::bit_cast<const uint8_t*>(&v), sizeof(uint64_t));
+		                                      std::bit_cast<const uint8_t*>(&v), sizeof(uint64_t));
 	}
 
 	bool write(const std::u8string_view section, const std::u8string_view name, const std::u8string_view v) override
 	{
 		const auto w = str::utf8_to_utf16(v);
 		return ERROR_SUCCESS == RegSetValueEx(Key(section), str::utf8_to_utf16(name).c_str(), 0, REG_SZ,
-			std::bit_cast<const uint8_t*>(w.c_str()),
-			static_cast<uint32_t>(w.size() * sizeof(wchar_t)));
+		                                      std::bit_cast<const uint8_t*>(w.c_str()),
+		                                      static_cast<uint32_t>(w.size() * sizeof(wchar_t)));
 	}
 
 	bool write(const std::u8string_view section, const std::u8string_view name, const df::cspan data) override
 	{
 		return ERROR_SUCCESS == RegSetValueEx(Key(section), str::utf8_to_utf16(name).c_str(), 0, REG_BINARY, data.data,
-			static_cast<uint32_t>(data.size));
+		                                      static_cast<uint32_t>(data.size));
 	}
 };
 

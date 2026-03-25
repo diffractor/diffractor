@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -100,7 +100,7 @@ bool factories::init(const bool use_gpu)
 	if (SUCCEEDED(hr))
 	{
 #ifdef _DEBUG
-		const uint32_t dxgi_flags = DXGI_CREATE_FACTORY_DEBUG;
+		constexpr uint32_t dxgi_flags = DXGI_CREATE_FACTORY_DEBUG;
 		hr = CreateDXGIFactory2(dxgi_flags, __uuidof(dxgi), std::bit_cast<void**>(dxgi.GetAddressOf()));
 #else
 		hr = CreateDXGIFactory1(__uuidof(dxgi), std::bit_cast<void**>(dxgi.GetAddressOf()));
@@ -2302,7 +2302,7 @@ ui::texture_update_result d3d11_texture::update(const sizei dims, const ui::text
 	source_data.SysMemPitch = static_cast<UINT>(stride);
 	source_data.SysMemSlicePitch = static_cast<UINT>(buffer_size);
 
-	D3D11_SUBRESOURCE_DATA* p_source = nullptr;
+	const D3D11_SUBRESOURCE_DATA* p_source = nullptr;
 
 	if (pixels && stride)
 	{
@@ -2609,7 +2609,7 @@ HRESULT d3d11_text_renderer::DrawGlyphRun(void* clientDrawingContext, const FLOA
 		auto vertex_count = 0;
 		auto index_count = 0;
 		const auto ty = floor(baselineOriginY + 0.5f);
-		const auto limit_char = -1;
+		constexpr auto limit_char = -1;
 		auto tx = 0.0f; // -_spacing;
 		const auto is_left_to_right = (glyphRun->bidiLevel & 0x01) == 0;
 		//const int cx = xend - xbegin;

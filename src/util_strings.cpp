@@ -1,5 +1,5 @@
 ﻿// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -318,7 +318,10 @@ std::u8string str::format_impl(const std::u8string_view fmt, const format_arg* a
 				if (c == '}')
 				{
 					const auto aa = has_arg_index ? arg_index : arg_i;
-					format_render_arg(inserter, args[aa], fmt.substr(format_start, format_len));
+					if (aa < num_args)
+					{
+						format_render_arg(inserter, args[aa], fmt.substr(format_start, format_len));
+					}
 					if (!has_arg_index) arg_i += 1;
 				}
 			}
@@ -332,15 +335,22 @@ std::u8string str::format_impl(const std::u8string_view fmt, const format_arg* a
 					break;
 				}
 
-				c = pop_utf8_char(i, end);
+				const auto next = pop_utf8_char(i, end);
 
-				if (c != '}')
+				if (next == '}')
+				{
+					char32_to_utf8(inserter, '}');
+				}
+				else
 				{
 					char32_to_utf8(inserter, c);
+					char32_to_utf8(inserter, next);
 				}
 			}
-
-			char32_to_utf8(inserter, c);
+			else
+			{
+				char32_to_utf8(inserter, c);
+			}
 		}
 	}
 
@@ -453,7 +463,7 @@ struct string_index_t
 	using storage_t = phmap::parallel_flat_hash_map<
 		K, V, string_index_hash, string_index_eq, std::allocator<std::pair<const K, V>>, 4, platform::mutex>;
 	storage_t _storage;
-	platform::memory_pool _pool;  // Contiguous allocation for string data
+	platform::memory_pool _pool; // Contiguous allocation for string data
 
 	// Allocate and initialize storage for a new interned string
 	str::chached_string_storage_t* make_entry(const std::u8string_view sv)
@@ -1080,13 +1090,13 @@ std::u8string str::to_string(const double v, int num_digits)
 			result += '-';
 		}
 
-		if (num_digits > 0 && decimal >= 1.0)
+		if (num_digits > 0 && decimal >= 1)
 		{
 			result.append(text, text + decimal);
 			result += sep;
 			result.append(text + decimal);
 		}
-		else if (decimal < 1.0)
+		else if (decimal < 1)
 		{
 			result += '0';
 			result += sep;
@@ -1103,7 +1113,7 @@ std::u8string str::to_string(const double v, int num_digits)
 		{
 			const auto last_non_zero = result.find_last_not_of('0');
 
-			if (last_non_zero != std::u8string::npos && result[last_non_zero] != '.')
+			if (last_non_zero != std::u8string::npos && result[last_non_zero] != sep)
 			{
 				result.resize(last_non_zero + 1);
 			}
@@ -1168,9 +1178,9 @@ std::u8string str::format_seconds(const int val)
 int32_t str::to_int(const std::u8string_view sv)
 {
 	int result = 0;
-	auto from_result = std::from_chars(std::bit_cast<const char*>(sv.data()),
-	                                   std::bit_cast<const char*>(sv.data() + sv.size()), result);
-	// todo
+	const auto [ptr, ec] = std::from_chars(std::bit_cast<const char*>(sv.data()),
+	                                       std::bit_cast<const char*>(sv.data() + sv.size()), result);
+	if (ec != std::errc{}) result = 0;
 	return result;
 }
 
@@ -1272,8 +1282,6 @@ double str::to_double(const std::u8string_view r)
 				++c;
 			}
 
-			++c;
-
 			while (c < end && iswdigit(*c))
 			{
 				i = i * 10 + (*c - '0');
@@ -1303,7 +1311,7 @@ using word_counts_t = df::hash_map<std::u8string_view, int, df::ihash, df::ieq>;
 df::string_counts top_totals(const word_counts_t& counts, int limit)
 {
 	std::vector<std::pair<int, std::u8string_view>> all;
-	all.reserve(all.size());
+	all.reserve(counts.size());
 
 	for (const auto& i : counts)
 	{
@@ -2121,7 +2129,7 @@ static df::dense_hash_map<int, char32_t> make_normalizations()
 		{0x068f, 'e'}, //	LATIN CAPITAL LETTER SCHWA
 		{0x0690, 'e'}, //	LATIN CAPITAL LETTER OPEN E
 		{0x0691, 'f'}, //	LATIN CAPITAL LETTER F WITH HOOK
-		// TODO {0x0692, 'ƒ'}, //	LATIN SMALL LETTER F WITH HOOK
+		{0x0692, 'f'}, //	LATIN SMALL LETTER F WITH HOOK
 		{0x0693, 'g'}, //	LATIN CAPITAL LETTER G WITH HOOK
 		{0x0694, 'g'}, //	LATIN CAPITAL LETTER GAMMA
 		{0x0696, 'i'}, //	LATIN CAPITAL LETTER IOTA

@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -27,9 +27,24 @@ struct test_registry
 
 void register_tests1(view_state& state, test_registry& tests);
 void register_tests2(view_state& state, test_registry& tests);
+void register_tests3(view_state& state, test_registry& tests);
+void register_tests4(view_state& state, test_registry& tests);
+void register_tests5(view_state& state, test_registry& tests);
+void register_tests6(view_state& state, test_registry& tests);
+
+inline void register_tests(view_state& state, test_registry& registry)
+{
+	register_tests1(state, registry);
+	register_tests2(state, registry);
+	register_tests3(state, registry);
+	register_tests4(state, registry);
+	register_tests5(state, registry);
+	register_tests6(state, registry);
+}
 
 bool is_running_tests();
 void run_tests(view_state& state, std::vector<test_ptr> tests);
+int run_console_tests(std::u8string_view test_filter = u8"*"sv);
 
 class test_assert_exception final : public std::exception
 {

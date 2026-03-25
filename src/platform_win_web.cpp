@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -177,7 +177,7 @@ struct platform::web_host
 	bool secure = true;
 };
 
-platform::web_host_ptr platform::connect_to_host(const std::u8string_view host, bool secure_in, int port_in)
+platform::web_host_ptr platform::connect_to_host(const std::u8string_view host, const bool secure_in, const int port_in)
 {
 	// InternetOpen and InternetConnect
 	inet_handle session_handle(::InternetOpen(s_app_name_l, INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0));
@@ -189,17 +189,17 @@ platform::web_host_ptr platform::connect_to_host(const std::u8string_view host, 
 
 	const auto hostW = str::utf8_to_utf16(host);
 	const auto port = port_in == 0
-		? (secure_in ? INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT)
-		: port_in;
+		                  ? (secure_in ? INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT)
+		                  : port_in;
 	inet_handle conn(::InternetConnect(session_handle, hostW.c_str(), port, nullptr, nullptr,
-		INTERNET_SERVICE_HTTP, 0, 0));
+	                                   INTERNET_SERVICE_HTTP, 0, 0));
 
 	if (!conn.is_valid())
 	{
 		return nullptr; // Return empty response on failure
 	}
 
-	return std::make_shared<web_host>(web_host{ session_handle.detach(), conn.detach(), secure_in });
+	return std::make_shared<web_host>(web_host{session_handle.detach(), conn.detach(), secure_in});
 }
 
 platform::web_response platform::send_request(const web_host_ptr& host, const web_request& req)
@@ -265,7 +265,8 @@ platform::web_response platform::send_request(const web_host_ptr& host, const we
 		INTERNET_FLAG_RELOAD;
 	if (host->secure) flags |= INTERNET_FLAG_SECURE;
 
-	inet_handle request_handle(HttpOpenRequest(host->connection_handle, wverb, wpath.c_str(), nullptr, nullptr, nullptr, flags, 0));
+	inet_handle request_handle(HttpOpenRequest(host->connection_handle, wverb, wpath.c_str(), nullptr, nullptr, nullptr,
+	                                           flags, 0));
 
 	if (!request_handle.is_valid())
 	{

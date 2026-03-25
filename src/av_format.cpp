@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -24,7 +24,6 @@
 extern "C" {
 #include "libavformat/avformat.h"
 #include "libavutil/display.h"
-#include "libavutil/eval.h"
 #include "libavutil/opt.h"
 #include "libavutil/imgutils.h"
 #include "libswscale/swscale.h"
@@ -40,7 +39,7 @@ static_assert(std::is_move_constructible_v<av_stream_info>);
 ////////////////////////////////////////////////
 ////////////////////////////////////////////////
 
-static void av_log(void*, int level, const char* format, va_list argList)
+static void av_log(void*, const int level, const char* format, const va_list argList)
 {
 #ifdef _DEBUG
 	if (level <= AV_LOG_WARNING)
@@ -318,25 +317,31 @@ public:
 		eof = other.eof;
 	}
 
-	const av_frame& operator=(const av_frame& other) noexcept
+	av_frame& operator=(const av_frame& other) noexcept
 	{
-		av_frame_unref(&frm);
-		av_frame_ref(&frm, &other.frm);
-		gen = other.gen;
-		time = other.time;
-		orientation = other.orientation;
-		eof = other.eof;
+		if (this != &other)
+		{
+			av_frame_unref(&frm);
+			av_frame_ref(&frm, &other.frm);
+			gen = other.gen;
+			time = other.time;
+			orientation = other.orientation;
+			eof = other.eof;
+		}
 		return *this;
 	}
 
-	const av_frame& operator=(av_frame&& other) noexcept
+	av_frame& operator=(av_frame&& other) noexcept
 	{
-		av_frame_unref(&frm);
-		av_frame_move_ref(&frm, &other.frm);
-		gen = other.gen;
-		time = other.time;
-		orientation = other.orientation;
-		eof = other.eof;
+		if (this != &other)
+		{
+			av_frame_unref(&frm);
+			av_frame_move_ref(&frm, &other.frm);
+			gen = other.gen;
+			time = other.time;
+			orientation = other.orientation;
+			eof = other.eof;
+		}
 		return *this;
 	}
 
@@ -390,21 +395,27 @@ public:
 		av_packet_ref(pkt, other.pkt);
 	}
 
-	const av_packet& operator=(const av_packet& other) noexcept
+	av_packet& operator=(const av_packet& other) noexcept
 	{
-		av_packet_unref(pkt);
-		av_packet_ref(pkt, other.pkt);
-		seek_ver = other.seek_ver;
-		eof = other.eof;
+		if (this != &other)
+		{
+			av_packet_unref(pkt);
+			av_packet_ref(pkt, other.pkt);
+			seek_ver = other.seek_ver;
+			eof = other.eof;
+		}
 		return *this;
 	}
 
-	const av_packet& operator=(av_packet&& other) noexcept
+	av_packet& operator=(av_packet&& other) noexcept
 	{
-		av_packet_unref(pkt);
-		av_packet_move_ref(pkt, other.pkt);
-		seek_ver = other.seek_ver;
-		eof = other.eof;
+		if (this != &other)
+		{
+			av_packet_unref(pkt);
+			av_packet_move_ref(pkt, other.pkt);
+			seek_ver = other.seek_ver;
+			eof = other.eof;
+		}
 		return *this;
 	}
 
@@ -540,7 +551,7 @@ video_info_t av_format_decoder::video_information() const
 
 		if (ar.num != 0 && ar.den != 0)
 		{
-			result.apsect_ratio = {ar.num, ar.den};
+			result.aspect_ratio = {ar.num, ar.den};
 		}
 
 		if (ar.num == 0 || ar.den == 0 || ar.den == ar.num)
@@ -712,7 +723,6 @@ av_packet_ptr av_format_decoder::read_packet() const
 		{
 			result = std::make_shared<av_packet>();
 			result->move(raw_packet);
-			av_packet_unref(raw_packet);
 		}
 	}
 
@@ -722,7 +732,7 @@ av_packet_ptr av_format_decoder::read_packet() const
 
 void av_format_decoder::extract_metadata(file_scan_result& sr) const
 {
-	auto* const fc = _format_context;
+	const auto* const fc = _format_context;
 
 	if (fc)
 	{
@@ -806,18 +816,18 @@ const AVStream* av_format_decoder::Stream(const uint32_t i) const
 
 void av_format_decoder::close()
 {
-	const av_packet emty_packet;
+	const av_packet empty_packet;
 
 	_is_open = false;
 
 	if (_video_context)
 	{
-		try_avcodec_send_packet(_video_context, emty_packet.pkt);
+		try_avcodec_send_packet(_video_context, empty_packet.pkt);
 	}
 
 	if (_audio_context)
 	{
-		try_avcodec_send_packet(_audio_context, emty_packet.pkt);
+		try_avcodec_send_packet(_audio_context, empty_packet.pkt);
 	}
 
 	if (_video_context)
@@ -890,7 +900,8 @@ bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path
 	auto* const io_buffer = static_cast<uint8_t*>(av_mallocz(io_buffer_size + 16));
 
 	auto* fc = avformat_alloc_context();
-	fc->pb = avio_alloc_context(io_buffer, io_buffer_size, 0, file.get(), av_read, nullptr, av_seek);
+	auto* pb = avio_alloc_context(io_buffer, io_buffer_size, 0, file.get(), av_read, nullptr, av_seek);
+	fc->pb = pb;
 	fc->flags |= AVFMT_FLAG_GENPTS;
 
 	/*if (thumbnail) // slow for gopro videos
@@ -906,7 +917,10 @@ bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path
 
 	if (avformat_open_input(&fc, str::utf8_to_a(path.str()).c_str(), nullptr, &opts) != 0)
 	{
-		avformat_close_input(&fc);
+		// avformat_open_input frees fc on failure and sets it to NULL,
+		// but pb and its buffer are not freed. We saved pb above.
+		av_freep(&pb->buffer);
+		avio_context_free(&pb);
 		return false;
 	}
 
@@ -1023,7 +1037,7 @@ bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path
 static AVPixelFormat get_hw_format(AVCodecContext* ctx,
                                    const AVPixelFormat* pix_fmts)
 {
-	for (const AVPixelFormat* p = pix_fmts; *p != -1; p++)
+	for (const AVPixelFormat* p = pix_fmts; *p != AV_PIX_FMT_NONE; p++)
 	{
 		if (*p == AV_PIX_FMT_D3D11)
 			return *p;
@@ -1144,9 +1158,6 @@ void av_format_decoder::init_streams(int video_track, int audio_track, const boo
 					avcodec_parameters_to_context(ac, audio_stream->codecpar);
 					ac->workaround_bugs = FF_BUG_AUTODETECT;
 					ac->request_sample_fmt = AV_SAMPLE_FMT_S16;
-					// TODO investigate if it is worth using
-					// "downmix" codec private option
-					//ac->request_channel_layout = AV_CH_LAYOUT_STEREO;
 
 					_has_audio = avcodec_open2(ac, aud_decoder, nullptr) == 0;
 					_audio_base = {audio_stream->time_base.num, audio_stream->time_base.den};
@@ -1521,24 +1532,16 @@ file_load_result av_format_decoder::render_frame(const av_frame_ptr& frame_in) c
 	const sizei src_extent = {frame->width, frame->height};
 	const auto source_fmt = static_cast<AVPixelFormat>(frame->format);
 
-	auto* const scaler = sws_getContext(src_extent.cx, src_extent.cy, source_fmt, w, h, AV_PIX_FMT_BGRA, SWS_BICUBIC,
-	                                    nullptr, nullptr, nullptr);
+	if (!_scaler) _scaler = std::make_unique<av_scaler>();
 
-	if (scaler)
+	const auto s = std::make_shared<ui::surface>();
+	if (s->alloc(w, h, ui::texture_format::RGB, calc_orientation()))
 	{
-		const auto s = std::make_shared<ui::surface>();
-		auto* const buffer = s->alloc(w, h, ui::texture_format::RGB, calc_orientation());
-		const auto pitch = static_cast<int>(s->stride());
-
-		uint8_t* data[4] = {buffer, nullptr, nullptr, nullptr};
-		const int linesize[4] = {pitch, 0, 0, 0};
-
-		sws_scale(scaler, frame->data, frame->linesize, 0, src_extent.cy, data, linesize);
-
-		result.s = s;
-		result.success = !result.is_empty();
-
-		sws_freeContext(scaler);
+		if (_scaler->scale_surface(frame_in, s))
+		{
+			result.s = s;
+			result.success = !result.is_empty();
+		}
 	}
 
 	if (sw_frame)
@@ -1620,6 +1623,10 @@ void audio_resampler::resample(const av_frame_ptr& frame, audio_buffer& audio_bu
 				{
 					_aud_resampler = swr;
 				}
+				else
+				{
+					swr_free(&swr);
+				}
 			}
 		}
 	}
@@ -1667,7 +1674,9 @@ void audio_resampler::resample(const av_frame_ptr& frame, audio_buffer& audio_bu
 			}
 			else
 			{
-				audio_buffer.append(buffer[0], expected_out_samples * out_num_channels * out_sample_size, frame->time,
+				const auto silence_size = expected_out_samples * out_num_channels * out_sample_size;
+				memset(buffer[0], 0, silence_size);
+				audio_buffer.append(buffer[0], silence_size, frame->time,
 				                    frame->gen);
 			}
 

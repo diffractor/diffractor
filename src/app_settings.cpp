@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -195,10 +195,10 @@ settings_t::settings_t()
 	show_debug_info = false;
 	use_gpu = true;
 	use_d3d11va = true;
-	use_yuv = true;	
+	use_yuv = true;
 	confirm_deletions = true;
 	first_run_today = true;
-	first_run_ever = true;	
+	first_run_ever = true;
 	can_animate = false;
 	repeat = repeat_mode::repeat_none;
 	auto_play = true;
@@ -530,7 +530,7 @@ public:
 void settings_t::read(const platform::setting_file_ptr& store_in)
 {
 	const setting_formatter store(store_in);
-		
+
 	store.read({}, s_hidden, show_hidden);
 	store.read({}, s_show_shadow, show_shadow);
 	store.read({}, s_update_modified, update_modified);
@@ -539,7 +539,7 @@ void settings_t::read(const platform::setting_file_ptr& store_in)
 	store.read({}, s_show_performance_timings, show_debug_info);
 	store.read({}, s_use_gpu, use_gpu);
 	store.read({}, s_use_d3d11_va, use_d3d11va);
-	store.read({}, s_use_yuv, use_yuv);	
+	store.read({}, s_use_yuv, use_yuv);
 	store.read({}, s_confirm, confirm_deletions);
 	store.read({}, s_repeat, repeat);
 	store.read({}, s_auto_play, auto_play);
@@ -685,7 +685,7 @@ void settings_t::read(const platform::setting_file_ptr& store_in)
 void settings_t::write(const platform::setting_file_ptr& store_in) const
 {
 	setting_formatter store(store_in);
-		
+
 	store.write({}, s_hidden, show_hidden);
 	store.write({}, s_show_shadow, show_shadow);
 	store.write({}, s_update_modified, update_modified);
@@ -694,7 +694,7 @@ void settings_t::write(const platform::setting_file_ptr& store_in) const
 	store.write({}, s_show_performance_timings, show_debug_info);
 	store.write({}, s_use_gpu, use_gpu);
 	store.write({}, s_use_d3d11_va, use_d3d11va);
-	store.write({}, s_use_yuv, use_yuv);	
+	store.write({}, s_use_yuv, use_yuv);
 	store.write({}, s_confirm, confirm_deletions);
 	store.write({}, s_repeat, static_cast<int>(repeat));
 	store.write({}, s_auto_play, auto_play);

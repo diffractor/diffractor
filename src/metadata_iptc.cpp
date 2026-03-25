@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -700,6 +700,17 @@ static const iptc_tag_info iptc_tag_table[] = {
 	{static_cast<iptc_record>(0), static_cast<iptc_tag>(0), {}, {}, {}}
 };
 
+// IPTC uses CR (0x0D) for line endings, normalize to LF (0x0A) for consistency
+static str::cached normalize_iptc_and_cache(const std::u8string_view sv)
+{
+	std::u8string result(sv);
+	for (auto& ch : result)
+	{
+		if (ch == u8'\r') ch = u8'\n';
+	}
+	return str::cache(str::strip(result));
+}
+
 void metadata_iptc::parse(prop::item_metadata& pd, const df::cspan cs)
 {
 	if (!cs.empty())
@@ -771,7 +782,7 @@ void metadata_iptc::parse(prop::item_metadata& pd, const df::cspan cs)
 					break;
 				case IPTC_TAG_BYLINE: artists.add_one(str::strip_and_cache(sv));
 					break;
-				case IPTC_TAG_CAPTION: pd.description = str::strip_and_cache(sv);
+				case IPTC_TAG_CAPTION: pd.description = normalize_iptc_and_cache(sv);
 					break;
 				case IPTC_TAG_OBJECT_NAME: pd.title = str::strip_and_cache(sv);
 					break;

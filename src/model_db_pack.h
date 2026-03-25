@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -133,17 +133,20 @@ public:
 		return prop::from_id(id);
 	}
 
-	const size_t read_len()
+	size_t read_len()
 	{
+		if (remaining() < 1) return 0;
 		size_t result = _data.data[_pos++];
 
 		if (result == 0xFF)
 		{
+			if (remaining() < 2) return 0;
 			result = static_cast<size_t>(_data.data[_pos++]);
 			result |= static_cast<size_t>(_data.data[_pos++]) << 8;
 		}
 		else if (result == 0xFE)
 		{
+			if (remaining() < 4) return 0;
 			result = static_cast<size_t>(_data.data[_pos++]);
 			result |= static_cast<size_t>(_data.data[_pos++]) << 8;
 			result |= static_cast<size_t>(_data.data[_pos++]) << 16;
@@ -159,7 +162,7 @@ public:
 		const auto ser_len = read_len();
 		df::assert_true(sizeof(v) == ser_len);
 
-		if (sizeof(v) == ser_len)
+		if (sizeof(v) == ser_len && remaining() >= ser_len)
 		{
 			v = *std::bit_cast<const T*>(_data.data + _pos);
 		}
@@ -170,7 +173,12 @@ public:
 	void read_val(str::cached& v)
 	{
 		const auto ser_len = read_len();
-		v = str::cache(std::u8string_view{std::bit_cast<const char8_t*>(_data.data + _pos), ser_len});
+
+		if (remaining() >= ser_len)
+		{
+			v = str::cache(std::u8string_view{std::bit_cast<const char8_t*>(_data.data + _pos), ser_len});
+		}
+
 		_pos += ser_len;
 	}
 

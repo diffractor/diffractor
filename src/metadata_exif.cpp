@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -469,7 +469,7 @@ struct exif_dir_entry
 
 	metadata_exif::srational32_t get_srational(const uint32_t i = 0) const
 	{
-		constexpr auto len = 2 * sizeof(int);
+		constexpr uint32_t len = 2 * sizeof(int);
 		const auto offset = data_offset() + i * len;
 		if (_data.is_overflow(offset, len)) return {};
 		return _data.get_srational(offset);
@@ -477,7 +477,7 @@ struct exif_dir_entry
 
 	metadata_exif::urational32_t get_urational(const uint32_t i = 0) const
 	{
-		constexpr auto len = 2 * sizeof(int);
+		constexpr uint32_t len = 2 * sizeof(int);
 		const auto offset = data_offset() + i * len;
 		if (_data.is_overflow(offset, len)) return {};
 		return _data.get_urational(offset);
@@ -1074,7 +1074,7 @@ public:
 		}
 	}
 
-	void tag(exif_dir_entry& entry)
+	void tag(const exif_dir_entry& entry)
 	{
 		switch (entry._tag_type)
 		{
@@ -1178,17 +1178,17 @@ public:
 		case EXIF_TAG_APERTURE_VALUE:
 			if (df::is_zero(_metadata.f_number))
 			{
-				_metadata.f_number = prop::aperture_to_fstop(entry.get_urational().to_real());
+				_metadata.f_number = static_cast<float>(prop::aperture_to_fstop(entry.get_urational().to_real()));
 			}
 			break;
 
 		case EXIF_TAG_FNUMBER:
-			_metadata.f_number = entry.get_urational().to_real();
+			_metadata.f_number = static_cast<float>(entry.get_urational().to_real());
 			break;
 
 		//case Exif::EXIF_TAG_SHUTTER_SPEED_VALUE: 
 		case EXIF_TAG_EXPOSURE_TIME:
-			_metadata.exposure_time = entry.get_srational().to_real();
+			_metadata.exposure_time = static_cast<float>(entry.get_srational().to_real());
 			break;
 
 		case EXIF_TAG_ISO_SPEED_RATINGS:
@@ -1196,7 +1196,7 @@ public:
 			break;
 
 		case EXIF_TAG_FOCAL_LENGTH:
-			_metadata.focal_length = entry.get_urational().to_real();
+			_metadata.focal_length = static_cast<float>(entry.get_urational().to_real());
 			break;
 
 		case EXIF_TAG_FOCAL_LENGTH_IN_35MM_FILM:
@@ -1358,7 +1358,7 @@ void metadata_exif::fix_exif_dimensions(df::span data, const sizei dimensions)
 {
 	if (data > 16)
 	{
-		const auto h = [dimensions, data](exif_dir_entry& e)
+		const auto h = [dimensions, data](const exif_dir_entry& e)
 		{
 			if (e._tag_type == tag_type::exif)
 			{
@@ -1387,7 +1387,7 @@ void metadata_exif::fix_exif_rating(df::span data, int rating)
 {
 	if (data > 16)
 	{
-		const auto h = [rating, data](exif_dir_entry& e)
+		const auto h = [rating, data](const exif_dir_entry& e)
 		{
 			if (e._tag_type == tag_type::exif)
 			{
@@ -1437,7 +1437,7 @@ static long get_int(ExifData* ed, const ExifEntry* ee)
 
 static void update_tag(ExifData* ed, const int ifd, const ExifTag tag, const int value)
 {
-	ExifEntry* ee = exif_content_get_entry(ed->ifd[ifd], tag);
+	const ExifEntry* ee = exif_content_get_entry(ed->ifd[ifd], tag);
 	if (nullptr == ee)
 		return;
 
@@ -1471,7 +1471,8 @@ metadata_kv_list metadata_exif::to_info(const df::cspan data)
 
 	if (is_exif_signature(data))
 	{
-		ed = std::unique_ptr<ExifData, exif_free>(exif_data_new_from_data(data.data, data.size));
+		ed = std::unique_ptr<ExifData, exif_free>(
+			exif_data_new_from_data(data.data, static_cast<unsigned int>(data.size)));
 	}
 	else
 	{
@@ -1479,7 +1480,8 @@ metadata_kv_list metadata_exif::to_info(const df::cspan data)
 		with_sig.reserve(data.size + exif_signature.size());
 		with_sig.assign(exif_signature.begin(), exif_signature.end());
 		with_sig.insert(with_sig.end(), data.data, data.data + data.size);
-		ed = std::unique_ptr<ExifData, exif_free>(exif_data_new_from_data(with_sig.data(), with_sig.size()));
+		ed = std::unique_ptr<ExifData, exif_free>(
+			exif_data_new_from_data(with_sig.data(), static_cast<unsigned int>(with_sig.size())));
 	}
 
 	if (ed)
@@ -1516,7 +1518,7 @@ df::blob metadata_exif::fix_dims(const df::span cs, const int image_width, const
 	df::blob result;
 
 	df::assert_true(is_exif_signature(cs));
-	const std::unique_ptr<ExifData, exif_free> ed(exif_data_new_from_data(cs.data, cs.size));
+	const std::unique_ptr<ExifData, exif_free> ed(exif_data_new_from_data(cs.data, static_cast<unsigned int>(cs.size)));
 
 	if (ed)
 	{
@@ -1549,7 +1551,7 @@ void add_tag(const ExifData* exif, const ExifTag tag, const str::cached val)
 
 		if (entry)
 		{
-			const auto len = val.size() + 1;
+			const auto len = static_cast<uint32_t>(val.size() + 1);
 			constexpr auto ifd = EXIF_IFD_EXIF;
 			auto* const buf = static_cast<uint8_t*>(exif_mem_alloc(mem, len));
 

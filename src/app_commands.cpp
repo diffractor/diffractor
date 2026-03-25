@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -30,6 +30,7 @@
 #include "crypto.h"
 #include "util_base64.h"
 #include "view_import.h"
+#include "view_locate.h"
 #include "view_rename.h"
 #include "view_sync.h"
 #include "view_test.h"
@@ -49,8 +50,6 @@ static const std::u8string azure_maps_api_key = u8"";
 #endif
 
 extern bool toggle_details_state;
-
-std::map<map_tile_id, map_control::cache_entry_ptr> map_control::_tile_cache;
 
 static constexpr auto docs_url = u8"https://www.diffractor.com/docs"sv;
 static constexpr auto support_url = u8"https://diffractor.com/help"sv;
@@ -348,7 +347,7 @@ static void show_flatten_invoke(view_state& s, const ui::control_frame_ptr& pare
 	}
 }
 
-static void setting_invoke(view_state& s, bool& val, const bool new_val)
+static void setting_invoke(const view_state& s, bool& val, const bool new_val)
 {
 	val = new_val;
 	s.invalidate_view(view_invalid::view_layout | view_invalid::group_layout | view_invalid::app_layout);
@@ -1249,8 +1248,8 @@ bool ui::browse_for_location(view_state& vs, const control_frame_ptr& parent, gp
 	props_col->add(std::make_shared<title_control>(tt.metadata));
 	props_col->add(props_table);
 	auto instructions = std::make_shared<text_element>(tt.map_instructions, view_element_style::info);
-	instructions->padding = { 10, 10 };
-	instructions->margin = { 10, 10 };
+	instructions->padding = {10, 10};
+	instructions->margin = {10, 10};
 	props_col->add(instructions);
 
 	const auto cols = std::make_shared<col_control>();
@@ -1273,165 +1272,6 @@ bool ui::browse_for_location(view_state& vs, const control_frame_ptr& parent, gp
 	}
 
 	return false;
-}
-
-static void locate_invoke(view_state& vs, const ui::control_frame_ptr& parent, const view_host_base_ptr& view)
-{
-	auto dlg = make_dlg(parent);
-	const auto title = tt.command_locate;
-	constexpr auto icon = icon_index::location;
-	const auto can_process = vs.can_process_selection_and_mark_errors(view, df::process_items_type::can_save_metadata);
-
-	pause_media pause(vs);
-
-	if (can_process.fail())
-	{
-		dlg->show_message(icon_index::error, title, can_process.to_string());
-	}
-	else
-	{
-		const auto ls = std::make_shared<selected_location_t>();
-
-		const auto place_edit = std::make_shared<text_element>(ls->place_text);
-		const auto state_edit = std::make_shared<text_element>(ls->state_text);
-		const auto country_edit = std::make_shared<text_element>(ls->country_text);
-		const auto latitude_edit = std::make_shared<text_element>(str::to_string(ls->latitude, 5));
-		const auto longitude_edit = std::make_shared<text_element>(str::to_string(ls->longitude, 5));
-
-		auto populate_place = [ls, place_edit, state_edit, country_edit, latitude_edit, longitude_edit, dlg
-		](const location_t& loc)
-			{
-				df::assert_true(ui::is_ui_thread());
-
-				ls->id = loc.id;
-				ls->place_text = loc.place;
-				ls->state_text = loc.state;
-				ls->country_text = loc.country;
-				ls->latitude = loc.position.latitude();
-				ls->longitude = loc.position.longitude();
-
-				view_element_event e{ view_element_event_type::populate, dlg };
-				place_edit->text(ls->place_text);
-				state_edit->text(ls->state_text);
-				country_edit->text(ls->country_text);
-				latitude_edit->text(str::to_string(ls->latitude, 5));
-				longitude_edit->text(str::to_string(ls->longitude, 5));
-
-				dlg->_frame->invalidate();
-				dlg->layout();
-			};
-
-		auto coord_changed = [&vs, populate_place](const gps_coordinate coord)
-		{
-			vs._async.queue_location([&vs, coord, populate_place](const location_cache& locations)
-			{
-				auto place = locations.find_closest(coord.latitude(), coord.longitude());
-				place.position = coord;
-				vs._async.queue_ui([place, populate_place] { populate_place(place); });
-			});
-		};
-
-		auto map = std::make_shared<map_control>(vs._async, coord_changed);
-		map->init(dlg->_frame);
-
-		auto sel_changed = [&vs, map, populate_place](const std::shared_ptr<location_auto_complete>& sel)
-		{
-			if (str::is_empty(sel->_id))
-			{
-				map->set_location_marker(sel->match.location.position);
-				populate_place(sel->match.location);
-			}
-			else
-			{
-				id_to_location(vs._async, sel->_id, [map, populate_place](const location_t& loc)
-				{
-					map->set_location_marker(loc.position);
-					populate_place(loc);
-				});
-			}
-		};
-
-
-		auto strategy = std::make_shared<location_auto_complete_strategy>(
-			vs, dlg->_frame, sel_changed, vs.recent_locations.items());
-		const auto search_control = std::make_shared<ui::search_control>(dlg->_frame, ls->search_text, strategy);
-
-		const auto map_col = std::make_shared<ui::group_control>();
-		map_col->add(map);		
-
-		const auto search_col = std::make_shared<ui::group_control>();
-		search_col->add(std::make_shared<text_element>(tt.type_to_search, view_element_style::center));
-		search_col->add(search_control);
-
-		const auto props_table = std::make_shared<ui::table_element>();
-		props_table->add(tt.prop_name_place, place_edit);
-		props_table->add(tt.prop_name_state, state_edit);
-		props_table->add(tt_prep(tt.prop_name_country), country_edit);
-		props_table->add(tt.prop_name_latitude, latitude_edit);
-		props_table->add(tt.prop_name_longitude, longitude_edit);
-
-		const auto props_col = std::make_shared<ui::group_control>();		
-		props_col->add(std::make_shared<ui::title_control>(tt.metadata));
-		props_col->add(props_table);		
-
-		auto gps_overwrite_count = 0;
-
-		for (const auto& i : vs.selected_items().items())
-		{
-			if (i->has_gps())
-			{
-				++gps_overwrite_count;
-			}
-		}
-
-		if (gps_overwrite_count > 0)
-		{
-			const auto element = std::make_shared<text_element>(
-				format_plural_text(tt.gps_overwrite_count_fmt, vs.selected_items()),
-				view_element_style::grow | view_element_style::important);
-			element->margin = { 10, 10 };
-			element->padding = {10, 10};
-			element->update_background_color();
-			props_col->add(element);
-		}
-
-		auto instructions = std::make_shared<text_element>(tt.map_instructions, view_element_style::info);
-		//instructions->padding = { 0, 20 };
-		instructions->padding = { 10, 10 };
-		instructions->margin = { 10, 10 };
-		instructions->update_background_color();
-		props_col->add(instructions);
-
-		const auto cols = std::make_shared<ui::col_control>();
-		cols->add(search_col);
-		cols->add(map_col, {66});
-		cols->add(props_col);
-
-		const std::vector<view_element_ptr> controls = {
-			set_margin(std::make_shared<ui::title_control2>(dlg->_frame, icon, title,
-			                                                format_plural_text(
-				                                                tt.be_updated_fmt, vs.selected_items().items()),
-			                                                vs.selected_items().thumbs())),
-			std::make_shared<divider_element>(),
-			cols,
-			std::make_shared<divider_element>(),
-			set_margin(std::make_shared<ui::ok_cancel_control>(dlg->_frame)),
-		};
-
-		if (ui::close_result::ok == dlg->show_modal(controls, {122}))
-		{
-			record_feature_use(features::locate);
-
-			metadata_edits edits;
-			// Only set GPS
-			edits.location_coordinate = {ls->latitude, ls->longitude};
-
-			vs.recent_locations.add(str::to_string(ls->id));
-
-			const auto results = std::make_shared<command_status>(vs._async, dlg, icon, title, vs.selected_count());
-			vs.modify_items(results, icon, title, vs.selected_items().items(), edits, view);
-		}
-	}
 }
 
 static void convert_resize_invoke(view_state& s, const ui::control_frame_ptr& parent, const view_host_base_ptr& view)
@@ -2084,7 +1924,7 @@ static void copy_move_invoke(view_state& s, const ui::control_frame_ptr& parent,
 	}
 }
 
-static void repeat_mode_toggle(view_state& s, const ui::control_frame_ptr& parent)
+static void repeat_mode_toggle(const view_state& s, const ui::control_frame_ptr& parent)
 {
 	auto m = setting.repeat;
 
@@ -2105,7 +1945,7 @@ static void repeat_mode_toggle(view_state& s, const ui::control_frame_ptr& paren
 	s.invalidate_view(view_invalid::tooltip | view_invalid::view_redraw | view_invalid::command_state);
 }
 
-static void font_invoke(view_state& s, const ui::control_frame_ptr& parent)
+static void font_invoke(const view_state& s, const ui::control_frame_ptr& parent)
 {
 	setting.large_font = !setting.large_font;
 	s.invalidate_view(view_invalid::options);
@@ -2118,7 +1958,7 @@ static void toggle_layout_scale_invoke(view_state& s, const ui::control_frame_pt
 	setting.item_scale = scale;
 }
 
-static void toggle_details_invoke(view_state& s, const bool only_toggle_selected)
+static void toggle_details_invoke(const view_state& s, const bool only_toggle_selected)
 {
 	const auto sel = s.selected_item_group();
 
@@ -2876,7 +2716,7 @@ static void upgrade_invoke(view_state& s, const ui::control_frame_ptr& parent)
 }
 #endif
 
-static void test_new_version_invoke(view_state& s, const ui::control_frame_ptr& parent)
+static void test_new_version_invoke(const view_state& s, const ui::control_frame_ptr& parent)
 {
 	setting.force_available_version = true;
 	setting.min_show_update_day = 0;
@@ -3276,14 +3116,23 @@ public:
 	}
 };
 
-static void index_maintenance(const ui::control_frame_ptr& parent, view_state& s)
+static void index_maintenance(const ui::control_frame_ptr& parent, const view_state& s)
 {
 	const auto dlg = make_dlg(parent);
 	const auto title = tt.index_maintenance_title;
 	auto dlg_parent = dlg->_frame;
 	bool is_reset = false;
 
-	const std::vector<view_element_ptr> controls = {
+	bool has_db_errors = false;
+	platform::thread_event event_check(true, false);
+	s._async.queue_database([&has_db_errors, &event_check](database& db)
+	{
+		has_db_errors = db.has_errors();
+		event_check.set();
+	});
+	platform::wait_for({event_check}, 5000, false);
+
+	std::vector<view_element_ptr> controls = {
 		set_margin(std::make_shared<ui::title_control2>(dlg->_frame, icon_index::settings, title,
 		                                                tt.defragment_and_compact)),
 		std::make_shared<divider_element>(),
@@ -3295,11 +3144,10 @@ static void index_maintenance(const ui::control_frame_ptr& parent, view_state& s
 		std::make_shared<ui::ok_cancel_control>(dlg->_frame)
 	};
 
-	// TODO
-	/*if (database::has_errors())
+	if (has_db_errors)
 	{
-		controls.emplace_back(set_margin(set_padding(std::make_shared<text_element>(tt.index_maintenance_reset_recommended, true), 8, 8)));
-	}*/
+		controls.emplace_back(set_margin(set_padding(std::make_shared<text_element>(tt.index_maintenance_reset_recommended, ui::style::text_style::multiline), 8, 8)));
+	}
 
 	if (dlg->show_modal(controls) == ui::close_result::ok)
 	{
@@ -3643,6 +3491,7 @@ void app_frame::initialise_commands()
 	_commands[commands::rename_run]->toolbar_text = _commands[commands::rename_run]->text;
 	_commands[commands::import_analyze]->toolbar_text = _commands[commands::import_analyze]->text;
 	_commands[commands::import_run]->toolbar_text = _commands[commands::import_run]->text;
+	_commands[commands::locate_run]->toolbar_text = _commands[commands::locate_run]->text;
 	_commands[commands::test_send_crash_report]->toolbar_text = _commands[commands::test_send_crash_report]->text;
 	_commands[commands::test_gen_po]->toolbar_text = _commands[commands::test_gen_po]->text;
 	_commands[commands::test_reset_graphics]->toolbar_text = _commands[commands::test_reset_graphics]->text;
@@ -3778,7 +3627,20 @@ void app_frame::initialise_commands()
 		index_settings_invoke(_state, _app_frame, setting.collection);
 	});
 	add_command_invoke(commands::keyboard, [this] { show_keyboard_reference(_state, _app_frame, _commands); });
-	add_command_invoke(commands::tool_locate, [this] { locate_invoke(_state, _app_frame, _view_frame); });
+	add_command_invoke(commands::tool_locate, [this]
+	{
+		const auto can_process = _state.can_process_selection_and_mark_errors(
+			_view_frame, df::process_items_type::can_save_metadata);
+		if (can_process.fail())
+		{
+			auto dlg = make_dlg(_app_frame);
+			dlg->show_message(icon_index::error, tt.command_locate, can_process.to_string());
+		}
+		else
+		{
+			_state.view_mode(view_type::locate);
+		}
+	});
 	add_command_invoke(commands::view_maximize, [this] { _pa->sys_command(ui::sys_command_type::MAXIMIZE); });
 	add_command_invoke(commands::view_minimize, [this] { _pa->sys_command(ui::sys_command_type::MINIMIZE); });
 	add_command_invoke(commands::tool_move_to_folder,
@@ -3949,6 +3811,8 @@ void app_frame::initialise_commands()
 
 	add_command_invoke(commands::import_analyze, [this] { _view_import->analyze(); });
 	add_command_invoke(commands::import_run, [this] { _view_import->run(); });
+
+	add_command_invoke(commands::locate_run, [this] { _view_locate->run(); });
 
 	add_command_invoke(commands::sync_analyze, [this] { _view_sync->analyze(); });
 	add_command_invoke(commands::sync_run, [this] { _view_sync->run(); });

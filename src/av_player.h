@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -69,21 +69,21 @@ class av_session final : public std::enable_shared_from_this<av_session>
 	double _start_time = 0;
 	double _audio_buffer_seconds = 0;
 
-	volatile int _seek_gen = 1;
+	std::atomic<int> _seek_gen = 1;
 
 
 	const int max_loop_iteration = 256;
 
 	av_play_state _state = av_play_state::detached;
 
-	volatile bool _scrubbing = false;
+	std::atomic<bool> _scrubbing = false;
 
 	double _last_seek = 0.0;
 	double _time_offset = 0.0;
 	double _audio_buffer_time = 0.0;
 
-	volatile bool _reset_time_offset = false;
-	volatile bool _pending_time_sync = false;
+	std::atomic<bool> _reset_time_offset = false;
+	std::atomic<bool> _pending_time_sync = false;
 
 	int _volume = 1000;
 	bool _mute = false;

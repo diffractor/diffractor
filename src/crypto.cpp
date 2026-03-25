@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -66,19 +66,99 @@ std::u8string crypto::hmac_sha1(const std::u8string_view key, const std::u8strin
 ///////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////
 
+static constexpr size_t KDF_ITERATIONS = 10000;
+static constexpr size_t HMAC_SIZE = crypto::sha256::DIGEST_SIZE; // 32 bytes
+
+static std::vector<uint8_t> hmac_sha256_raw(const uint8_t* key, const size_t key_len,
+                                            const uint8_t* data, const size_t data_len)
+{
+	static constexpr int HMAC_BLOCK_SIZE = 64;
+	crypto::sha256 sha;
+
+	uint8_t adjusted_key[HMAC_BLOCK_SIZE] = {};
+
+	if (key_len > HMAC_BLOCK_SIZE)
+	{
+		sha.update({key, key_len});
+		sha.final(adjusted_key);
+	}
+	else
+	{
+		memcpy(adjusted_key, key, key_len);
+	}
+
+	uint8_t ipad[HMAC_BLOCK_SIZE];
+	uint8_t opad[HMAC_BLOCK_SIZE];
+
+	for (int i = 0; i < HMAC_BLOCK_SIZE; i++)
+	{
+		ipad[i] = 0x36 ^ adjusted_key[i];
+		opad[i] = 0x5c ^ adjusted_key[i];
+	}
+
+	platform::secure_zero(adjusted_key, sizeof(adjusted_key));
+
+	uint8_t inner_hash[crypto::sha256::DIGEST_SIZE];
+	sha.update({ipad, HMAC_BLOCK_SIZE});
+	sha.update({data, data_len});
+	sha.final(inner_hash);
+
+	uint8_t result[crypto::sha256::DIGEST_SIZE];
+	sha.update({opad, HMAC_BLOCK_SIZE});
+	sha.update({inner_hash, crypto::sha256::DIGEST_SIZE});
+	sha.final(result);
+
+	return std::vector<uint8_t>(result, result + crypto::sha256::DIGEST_SIZE);
+}
+
+static void derive_keys(const std::u8string_view password, uint8_t enc_key[32], uint8_t mac_key[32])
+{
+	const auto* pw = std::bit_cast<const uint8_t*>(password.data());
+	const auto pw_len = password.size();
+
+	// Initial hash with SHA-256 (produces full 32-byte key for AES-256)
+	crypto::sha256 sha;
+	sha.update({pw, pw_len});
+	uint8_t derived[crypto::sha256::DIGEST_SIZE];
+	sha.final(derived);
+
+	// Key stretching: iterate SHA-256(previous || password)
+	for (size_t i = 0; i < KDF_ITERATIONS; i++)
+	{
+		sha.update({derived, crypto::sha256::DIGEST_SIZE});
+		sha.update({pw, pw_len});
+		sha.final(derived);
+	}
+
+	memcpy(enc_key, derived, 32);
+
+	// Derive separate MAC key
+	constexpr uint8_t mac_label[] = "hmac-key";
+	sha.update({derived, crypto::sha256::DIGEST_SIZE});
+	sha.update({mac_label, sizeof(mac_label)});
+	sha.final(mac_key);
+
+	platform::secure_zero(derived, sizeof(derived));
+}
+
 
 std::vector<uint8_t> crypto::encrypt(const df::cspan input, const std::u8string_view password)
 {
-	sha1 hash;
-	hash.update({std::bit_cast<const uint8_t*>(password.data()), password.size()});
+	uint8_t enc_key[sha256::DIGEST_SIZE];
+	uint8_t mac_key[sha256::DIGEST_SIZE];
+	derive_keys(password, enc_key, mac_key);
 
-	uint8_t digest[sha1::DIGEST_SIZE];
-	hash.final(digest);
-
-	const std::vector<uint8_t> key(digest, digest + sha1::DIGEST_SIZE);
+	const std::vector<uint8_t> key(enc_key, enc_key + sha256::DIGEST_SIZE);
+	platform::secure_zero(enc_key, sizeof(enc_key));
 
 	std::vector<uint8_t> result;
 	aes256::encrypt(key, input, result);
+
+	// Encrypt-then-MAC: compute HMAC-SHA256 over ciphertext
+	auto hmac = hmac_sha256_raw(mac_key, sizeof(mac_key), result.data(), result.size());
+	platform::secure_zero(mac_key, sizeof(mac_key));
+	result.insert(result.end(), hmac.begin(), hmac.end());
+
 	return result;
 }
 
@@ -91,16 +171,34 @@ std::vector<uint8_t> crypto::encrypt(const std::vector<uint8_t>& input, const st
 
 std::vector<uint8_t> crypto::decrypt(const df::cspan input, const std::u8string_view password)
 {
-	sha1 hash;
-	hash.update({std::bit_cast<const uint8_t*>(password.data()), password.size()});
+	if (input.size < HMAC_SIZE)
+		return {};
 
-	uint8_t digest[sha1::DIGEST_SIZE];
-	hash.final(digest);
+	uint8_t enc_key[sha256::DIGEST_SIZE];
+	uint8_t mac_key[sha256::DIGEST_SIZE];
+	derive_keys(password, enc_key, mac_key);
 
-	const std::vector<uint8_t> key(digest, digest + sha1::DIGEST_SIZE);
+	// Verify HMAC before decrypting (Encrypt-then-MAC)
+	const size_t ciphertext_len = input.size - HMAC_SIZE;
+	auto expected_hmac = hmac_sha256_raw(mac_key, sizeof(mac_key), input.data, ciphertext_len);
+	platform::secure_zero(mac_key, sizeof(mac_key));
+
+	const uint8_t* actual_hmac = input.data + ciphertext_len;
+	uint8_t diff = 0;
+	for (size_t i = 0; i < HMAC_SIZE; ++i)
+		diff |= expected_hmac[i] ^ actual_hmac[i];
+
+	if (diff != 0)
+	{
+		platform::secure_zero(enc_key, sizeof(enc_key));
+		return {}; // Authentication failed
+	}
+
+	const std::vector<uint8_t> key(enc_key, enc_key + sha256::DIGEST_SIZE);
+	platform::secure_zero(enc_key, sizeof(enc_key));
 
 	std::vector<uint8_t> result;
-	aes256::decrypt(key, input, result);
+	aes256::decrypt(key, {input.data, ciphertext_len}, result);
 	return result;
 }
 

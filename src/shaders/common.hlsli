@@ -1,5 +1,5 @@
 // This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -26,6 +26,11 @@ struct PS_INPUT
 SamplerState tex_sampler
 {
 };
+
+float nrand(float4 pos)
+{
+	return frac(sin(dot(pos.xy, float2(12.9898, 78.233))) * 43758.5453) / 100.0;
+}
 
 // Samples a texture with Catmull-Rom filtering, using 9 texture fetches instead of 16.
 // See http://vec3.ca/bicubic-filtering-in-fewer-taps/ for more details

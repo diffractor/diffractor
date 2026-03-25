@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -11,29 +11,12 @@
 
 #include "pch.h"
 #include "model.h"
-#include "model_db.h"
 #include "model_index.h"
+#include "model_db.h"
 #include "ui_dialog.h"
 #include "view_sync.h"
-#include "app.h"
 #include "app_command_status.h"
 #include "app_util.h"
-#include "ui_controls.h"
-
-static uint32_t count_sync(const sync_analysis_items& analysis, const sync_action sync_action)
-{
-	uint32_t result = 0;
-
-	for (const auto& f : analysis)
-	{
-		if (f.second.action == sync_action)
-		{
-			++result;
-		}
-	}
-
-	return result;
-}
 
 static uint32_t count_sync_actions(const sync_analysis_result& analysis)
 {

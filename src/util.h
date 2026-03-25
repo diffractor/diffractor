@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -10,8 +10,6 @@
 // memory helpers, logging, and common utility functions used throughout the application.
 
 #pragma once
-
-#include <intrin.h>
 
 #if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
 #define COMPILE_SIMD_INTRINSIC
@@ -865,10 +863,11 @@ namespace df
 			return !(lhs < rhs);
 		}
 
-		version& operator +(const int i)
+		version operator +(const int i) const
 		{
-			major += 1;
-			return *this;
+			version result = *this;
+			result.major += i;
+			return result;
 		}
 
 		friend u8ostringstream& operator <<(u8ostringstream& stream, const version& ver)

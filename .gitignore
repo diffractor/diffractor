@@ -21,7 +21,8 @@
 *.suo
 *.user
 *.vloptions
-/intermediate
+intermediate/
+/tmp
 /dist
 /msix
 /.wix

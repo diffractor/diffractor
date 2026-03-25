@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -30,8 +30,6 @@ constexpr ui::color32 color_label_second = ui::bgr(0xF2CC51);
 class location_cache;
 class database;
 class av_player;
-class av_format_decoder;
-class av_format_decoder;
 class av_format_decoder;
 class scrubber_element;
 class display_state_t;
@@ -211,7 +209,7 @@ public:
 			}
 		}
 
-		if (_items.size() > max_size)
+		if (_items.size() >= max_size)
 		{
 			_items.erase(_items.cbegin());
 		}

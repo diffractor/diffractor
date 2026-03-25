@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -62,7 +62,7 @@ void rename_view::refresh()
 	const auto& items = _state.selected_items();
 
 	std::vector<row_element_ptr> rows;
-	rows.reserve(rows.size());
+	rows.reserve(items.size());
 
 	const auto error_text_color = ui::lighten(ui::style::color::warning_background, 0.55f);
 	const auto rename_text_color = ui::lighten(ui::style::color::dialog_selected_background, 0.55f);

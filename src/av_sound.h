@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -121,7 +121,8 @@ public:
 		}
 
 		end_pos -= bytes_to_remove;
-		time += bytes_to_remove / static_cast<double>(format.bytes_per_second());
+		const auto bps = format.bytes_per_second();
+		if (bps > 0) time += bytes_to_remove / static_cast<double>(bps);
 	}
 
 	void append(const uint8_t* data_in, const uint32_t bytes_in, const double time_in, const int generation_in)
@@ -151,7 +152,8 @@ public:
 				memcpy_s(data + end_pos, size - end_pos, data_in, bytes_in);
 				end_pos += bytes_in;
 
-				time = time_in - original_end_pos / static_cast<double>(format.bytes_per_second());
+				const auto bps = format.bytes_per_second();
+				time = bps > 0 ? time_in - original_end_pos / static_cast<double>(bps) : time_in;
 			}
 		}
 	}
@@ -167,7 +169,8 @@ public:
 
 	double end_time() const
 	{
-		return time + used_bytes() / static_cast<double>(format.bytes_per_second());
+		const auto bps = format.bytes_per_second();
+		return bps > 0 ? time + used_bytes() / static_cast<double>(bps) : time;
 	}
 
 	double start_time() const
@@ -177,7 +180,8 @@ public:
 
 	double seconds() const
 	{
-		return static_cast<double>(end_pos) / format.bytes_per_second();
+		const auto bps = format.bytes_per_second();
+		return bps > 0 ? static_cast<double>(end_pos) / bps : 0.0;
 	}
 
 

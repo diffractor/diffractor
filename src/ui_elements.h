@@ -1,5 +1,5 @@
-// This file is part of the Diffractor photo and video organizer
-// Copyright(C) 2025  Zac Walker
+﻿// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
 // under the terms of the LGPL License either version 2.1 or later.
@@ -328,8 +328,8 @@ public:
 
 				const auto element_padding = ev->porch() * mc.scale_factor;
 				auto max_extent_width = current_width_limit - element_padding.cx * 2 - (previous_no_break
-					? x - left_x
-					: 0);
+						? x - left_x
+						: 0);
 				auto extent = ev->measure(mc, max_extent_width);
 				el.extent = extent;
 				el.line_start = false;
@@ -399,7 +399,8 @@ public:
 		return calc_layout(elements, mc, width_limit);
 	}
 
-	recti layout(const std::vector<view_element_ptr>& elements, ui::measure_context& mc, const recti bounds) const
+	recti layout(const std::vector<view_element_ptr>& elements, ui::measure_context& mc, const recti bounds,
+	             ui::control_layouts& positions) const
 	{
 		const auto child_count = elements.size();
 		auto line_max_center = 0;
@@ -432,9 +433,9 @@ public:
 				else if (is_centered)
 				{
 					const auto cx_offset = (bounds.right - (_extents[i].bounds.right + padding.cx)) / 2;
-					auto line_i = i;
+					int line_i = static_cast<int>(i);
 
-					while (line_i >= 0u && elements[line_i]->is_centered())
+					while (line_i >= 0 && elements[line_i]->is_centered())
 					{
 						_extents[line_i].bounds.left += cx_offset;
 						_extents[line_i].bounds.right += cx_offset;
@@ -448,9 +449,9 @@ public:
 				else if (is_far)
 				{
 					const auto cx_offset = bounds.right - (_extents[i].bounds.right + padding.cx);
-					auto line_i = i;
+					int line_i = static_cast<int>(i);
 
-					while (line_i >= 0u && elements[line_i]->is_right_justified())
+					while (line_i >= 0 && elements[line_i]->is_right_justified())
 					{
 						_extents[line_i].bounds.left += cx_offset;
 						_extents[line_i].bounds.right += cx_offset;
@@ -467,8 +468,6 @@ public:
 
 				while (line_i >= 0)
 				{
-					auto&& ev = elements[line_i];
-
 					const auto cy_offset = line_max_center - (_extents[line_i].bounds.top + _extents[line_i].bounds.
 						bottom) / 2;
 
@@ -485,8 +484,6 @@ public:
 				line_height = 0;
 			}
 		}
-
-		ui::control_layouts positions;
 
 		for (auto i = 0u; i < child_count; i++)
 		{
@@ -577,6 +574,8 @@ static calc_stack_elements_result calc_stack_elements(ui::measure_context& mc, c
 			const bool is_shrink = elements[i]->is_style_bit_set(view_element_style::shrink);
 			//bool is_prime = elements[i]->is_style_bit_set(view_element_style::prime);
 
+			result.layout_bounds[i] = result.layout_bounds[i].offset(0, -yy);
+
 			if (is_shrink)
 			{
 				if (result.layout_bounds[i].height() > cy + min_shrink_height)
@@ -584,10 +583,6 @@ static calc_stack_elements_result calc_stack_elements(ui::measure_context& mc, c
 					result.layout_bounds[i].bottom -= cy;
 					yy += cy;
 				}
-			}
-			else
-			{
-				result.layout_bounds[i] = result.layout_bounds[i].offset(0, -yy);
 			}
 		}
 	}
@@ -694,7 +689,10 @@ public:
 
 			for (const auto& e : _children)
 			{
-				e->render(dc, offset);
+				if (e->is_visible())
+				{
+					e->render(dc, offset);
+				}
 			}
 		}
 	}
@@ -721,7 +719,7 @@ public:
 	{
 		update_style_from_children();
 		bounds = bounds_in;
-		_flow.layout(_children, mc, bounds);
+		_flow.layout(_children, mc, bounds, positions);
 	}
 
 	void update_style_from_children()
