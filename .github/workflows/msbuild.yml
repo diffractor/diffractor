@@ -31,11 +31,22 @@ jobs:
       with:
         vs-prerelease: true
 
-    - name: Build ${{matrix.platform}}
-      working-directory: ${{env.GITHUB_WORKSPACE}}
-      run: msbuild /m /p:Configuration=${{env.BUILD_CONFIGURATION}} /p:Platform=${{matrix.platform}} ${{env.SOLUTION_FILE_PATH}}
-
-    - name: Run tests
+    - name: Build x64
       if: matrix.platform == 'x64'
-      working-directory: ${{env.GITHUB_WORKSPACE}}\exe
+      working-directory: ${{ github.workspace }}
+      run: msbuild /m /p:Configuration=${{env.BUILD_CONFIGURATION}} /p:Platform=x64 ${{env.SOLUTION_FILE_PATH}}
+
+    - name: Build Win32
+      if: matrix.platform == 'Win32'
+      working-directory: ${{ github.workspace }}
+      run: msbuild /p:Configuration=${{env.BUILD_CONFIGURATION}} /p:Platform=Win32 ${{env.SOLUTION_FILE_PATH}}
+
+    - name: Run x64 tests
+      if: matrix.platform == 'x64'
+      working-directory: ${{ github.workspace }}\exe
       run: .\diffractor64.exe /test
+
+    - name: Run Win32 tests
+      if: matrix.platform == 'Win32'
+      working-directory: ${{ github.workspace }}\exe
+      run: .\diffractor32.exe /test
