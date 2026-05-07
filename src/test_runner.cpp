@@ -10,6 +10,8 @@
 // and console test runner.
 
 #include "pch.h"
+
+#include "metadata_xmp.h"
 #include "test_utils.h"
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -76,7 +78,7 @@ void run_tests(view_state& state, std::vector<test_ptr> tests)
 
 struct console_test_entry
 {
-	std::u8string name;
+	std::string name;
 	std::function<void(shared_test_context& stc)> func;
 };
 
@@ -84,18 +86,18 @@ struct console_test_registry final : test_registry
 {
 	std::vector<console_test_entry> entries;
 
-	void add(std::u8string name, std::function<void(shared_test_context& stc)> f) override
+	void add(std::string name, std::function<void(shared_test_context& stc)> f) override
 	{
 		entries.push_back({std::move(name), std::move(f)});
 	}
 
-	void add(std::u8string name, std::function<void(void)> f) override
+	void add(std::string name, std::function<void(void)> f) override
 	{
 		entries.push_back({std::move(name), [f = std::move(f)](shared_test_context&) { f(); }});
 	}
 };
 
-int run_console_tests(const std::u8string_view test_filter)
+int run_console_tests(const std::string_view test_filter)
 {
 	load_file_types();
 	metadata_xmp::initialise();
@@ -130,7 +132,7 @@ int run_console_tests(const std::u8string_view test_filter)
 	for (const auto& entry : filtered)
 	{
 		const auto t = df::now();
-		const auto name_utf8 = std::string(reinterpret_cast<const char*>(entry.name.data()), entry.name.size());
+		const auto name_utf8 = std::string(entry.name.data(), entry.name.size());
 
 		try
 		{
@@ -142,7 +144,7 @@ int run_console_tests(const std::u8string_view test_filter)
 		catch (const test_assert_exception& e)
 		{
 			const auto elapsed_ms = df::round((df::now() - t) * 1000);
-			const auto msg = std::string(reinterpret_cast<const char*>(e.message.data()), e.message.size());
+			const auto msg = std::string(e.message.data(), e.message.size());
 			printf("  FAIL  %s (%dms)\n        %s\n", name_utf8.c_str(), elapsed_ms, msg.c_str());
 			++failed;
 		}

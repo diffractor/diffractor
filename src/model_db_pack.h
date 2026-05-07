@@ -176,7 +176,7 @@ public:
 
 		if (remaining() >= ser_len)
 		{
-			v = str::cache(std::u8string_view{std::bit_cast<const char8_t*>(_data.data + _pos), ser_len});
+			v = str::cache(std::string_view{std::bit_cast<const char*>(_data.data + _pos), ser_len});
 		}
 
 		_pos += ser_len;

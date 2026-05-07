@@ -13,7 +13,6 @@
 
 #include "model.h"
 #include "ui_view.h"
-#include "ui_controllers.h"
 #include "ui_map_common.h"
 
 class map_view;
@@ -24,7 +23,7 @@ class map_pan_controller final : public view_controller
 	bool _tracking = false;
 
 public:
-	map_pan_controller(map_view& view, const view_host_ptr& host, const recti bounds);
+	map_pan_controller(map_view& view, const view_host_ptr& host, recti bounds);
 
 	ui::style::cursor cursor() const override
 	{

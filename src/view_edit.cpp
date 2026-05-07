@@ -23,7 +23,7 @@ class log_slider_control final : public view_element, public std::enable_shared_
 {
 	ui::trackbar_ptr _slider;
 	ui::edit_ptr _edit;
-	std::u8string _label;
+	std::string _label;
 
 	double& _val;
 	double _min;
@@ -35,7 +35,7 @@ class log_slider_control final : public view_element, public std::enable_shared_
 	constexpr static int Range = 100;
 
 public:
-	log_slider_control(ui::control_frame_ptr& h, const std::u8string_view text, double& v, double min, double max,
+	log_slider_control(ui::control_frame_ptr& h, const std::string_view text, double& v, double min, double max,
 	                   std::function<void()> changed) noexcept :
 		_label(text),
 		_val(v),
@@ -47,12 +47,12 @@ public:
 		ui::edit_styles style;
 		style.number = true;
 		style.align_center = true;
-		_edit = h->create_edit(style, {}, [this](const std::u8string_view text) { edit_change(text); });
+		_edit = h->create_edit(style, {}, [this](const std::string_view text) { edit_change(text); });
 		_slider = h->create_slider(-Range, Range,
 		                           [this](const int pos, const bool is_tracking) { slider_change(pos, is_tracking); });
 	}
 
-	void label(const std::u8string_view label)
+	void label(const std::string_view label)
 	{
 		_label = label;
 	}
@@ -88,7 +88,7 @@ public:
 	{
 		bounds = bounds_in;
 
-		const auto num_extent = mc.measure_text(u8"00.00"sv, ui::style::font_face::dialog,
+		const auto num_extent = mc.measure_text("00.00", ui::style::font_face::dialog,
 		                                        ui::style::text_style::single_line, bounds.width());
 		auto slider_bounds = bounds;
 		auto edit_bounds = bounds;
@@ -129,7 +129,7 @@ public:
 	void update_edit() const
 	{
 		const auto actual = _edit->window_text();
-		const auto expected = str::format(u8"{:.2}"sv, _val);
+		const auto expected = std::format("{:.2f}", _val);
 
 		if (actual.empty() || actual != expected)
 		{
@@ -145,7 +145,7 @@ public:
 		}
 	}
 
-	void edit_change(const std::u8string_view text)
+	void edit_change(const std::string_view text)
 	{
 		_val = str::to_double(text);
 		update_slider();
@@ -260,7 +260,7 @@ public:
 
 		if (_edit)
 		{
-			_edit->window_text(_rating < 1 ? std::u8string_view{} : str::to_string(_rating));
+			_edit->window_text(_rating < 1 ? std::string_view{} : str::to_string(_rating));
 		}
 
 		_frame->invalidate();
@@ -336,22 +336,22 @@ class rating_bar_control final : public view_element, public std::enable_shared_
 {
 	edit_rating_control_ptr _stars;
 	ui::edit_ptr _edit;
-	std::u8string _label;
+	std::string _label;
 	int& _val;
 
 public:
-	rating_bar_control(const ui::control_frame_ptr& owner, const std::u8string_view label,
+	rating_bar_control(const ui::control_frame_ptr& owner, const std::string_view label,
 	                   int& v) : _label(label), _val(v)
 	{
 		ui::edit_styles style;
 		style.number = true;
 		style.align_center = true;
-		_edit = owner->create_edit(style, {}, [this](const std::u8string_view text) { edit_change(text); });
+		_edit = owner->create_edit(style, {}, [this](const std::string_view text) { edit_change(text); });
 		_stars = std::make_shared<edit_rating_control>(_edit);
 		_stars->init(owner);
 	}
 
-	void label(const std::u8string_view label)
+	void label(const std::string_view label)
 	{
 		_label = label;
 	}
@@ -408,7 +408,7 @@ public:
 		}
 	}
 
-	void edit_change(const std::u8string_view text) const
+	void edit_change(const std::string_view text) const
 	{
 		_val = std::clamp(str::to_int(text), 0, 5);
 		_stars->rating(_val);
@@ -644,16 +644,16 @@ bool select_path(df::file_path& path)
 {
 	if (!files::can_save(path))
 	{
-		path = path.extension(u8".jpg"sv);
+		path = path.extension(".jpg");
 	}
 
 	return platform::prompt_for_save_path(path);
 }
 
-std::u8string format_invalid_name_message(const std::u8string_view name)
+std::string format_invalid_name_message(const std::string_view name)
 {
-	const auto name_error = str::format(tt.error_invalid_path_fmt, name);
-	return str::format(u8"{}\n{} \\ / : * ? \" < > |"sv, name_error, tt.error_invalid_path);
+	const auto name_error = str_format(tt.error_invalid_path_fmt.sv(), name);
+	return std::format("{}\n{} \\ / : * ? \" < > |", name_error, tt.error_invalid_path);
 }
 
 bool edit_view::check_path(df::file_path& path, const ui::control_frame_ptr& owner) const
@@ -675,7 +675,7 @@ bool edit_view::check_path(df::file_path& path, const ui::control_frame_ptr& own
 		{
 			const std::vector<view_element_ptr> controls{
 				set_margin(std::make_shared<ui::title_control2>(dlg->_frame, icon_index::save, tt.save_changes,
-				                                                str::format(tt.save_as_jpeg_fmt, path.extension()),
+				                                                str_format(tt.save_as_jpeg_fmt.sv(), path.extension()),
 				                                                std::vector<ui::const_surface_ptr>{preview_surface()})),
 				std::make_shared<divider_element>(),
 				std::make_shared<ui::ok_cancel_control>(dlg->_frame, tt.button_save_as_jpeg)
@@ -685,7 +685,7 @@ bool edit_view::check_path(df::file_path& path, const ui::control_frame_ptr& own
 
 			if (result == ui::close_result::ok)
 			{
-				path = path.extension(u8".jpg"sv);
+				path = path.extension(".jpg");
 			}
 			else
 			{
@@ -720,7 +720,7 @@ bool edit_view::can_exit()
 
 		const std::vector<view_element_ptr> controls = {
 			set_margin(std::make_shared<ui::title_control2>(dlg->_frame, icon_index::save, tt.changes,
-			                                                format(tt.has_changes, _path.name()),
+			                                                str_format(tt.has_changes.sv(), _path.name()),
 			                                                std::vector<ui::const_surface_ptr>{preview_surface()})),
 			std::make_shared<divider_element>(),
 			std::make_shared<save_buttons_control>(dlg->_frame,
@@ -771,13 +771,13 @@ bool edit_view::has_changes() const
 	return metadata_edits.has_changes();
 }
 
-bool edit_view::save(const df::file_path src_path, const df::file_path dst_path, const std::u8string_view xmp_name,
+bool edit_view::save(const df::file_path src_path, const df::file_path dst_path, const std::string_view xmp_name,
                      const ui::control_frame_ptr& owner) const
 {
 	platform::file_op_result update_result;
 
 	const auto dlg = make_dlg(owner);
-	dlg->show_status(icon_index::save, format(tt.saving_file_name, dst_path.name()));
+	dlg->show_status(icon_index::save, str_format(tt.saving_file_name.sv(), dst_path.name()));
 
 	detach_file_handles detach(_state);
 	platform::thread_event event_wait(true, false);
@@ -836,7 +836,7 @@ bool edit_view::save(const df::file_path src_path, const df::file_path dst_path,
 	else
 	{
 		dlg->show_message(icon_index::error, s_app_name,
-		                  update_result.format_error(str::format(tt.error_create_file_failed_fmt, dst_path)));
+		                  update_result.format_error(str_format(tt.error_create_file_failed_fmt.sv(), dst_path)));
 	}
 
 	return update_result.success();
@@ -870,7 +870,7 @@ void edit_view::save_options() const
 	const auto dlg = make_dlg(_host->owner());
 	const std::vector<view_element_ptr> controls = {
 		set_margin(std::make_shared<ui::title_control2>(dlg->_frame, icon_index::settings, tt.options_save_options,
-		                                                std::u8string{})),
+		                                                std::string{})),
 		std::make_shared<divider_element>(),
 		std::make_shared<ui::check_control>(dlg->_frame, tt.options_backup_copy, setting.create_originals),
 		set_margin(std::make_shared<text_element>(tt.options_jpeg_quality)),
@@ -893,7 +893,7 @@ void edit_view::save_as()
 
 	while (path.exists())
 	{
-		auto name = std::u8string(path.file_name_without_extension()) + u8"-edit"s;
+		auto name = std::string(path.file_name_without_extension()) + "-edit"s;
 		path = df::file_path(path.folder(), name, path.extension());
 	}
 
@@ -1005,11 +1005,11 @@ void edit_view::changed()
 }
 
 
-static std::u8string fix_crlf(const std::u8string_view s)
+static std::string fix_crlf(const std::string_view s)
 {
-	std::u8string result;
-	result = str::replace(s, u8"\r\n"sv, u8"\n"sv);
-	result = str::replace(result, u8"\n"sv, u8"\r\n"sv);
+	std::string result;
+	result = str::replace(s, "\r\n", "\n");
+	result = str::replace(result, "\n", "\r\n");
 	return result;
 }
 
@@ -1137,7 +1137,7 @@ void edit_view_controls::create_controls()
 	auto changed_func = [this] { _view->changed(); };
 
 	_straighten_title = std::make_shared<ui::title_control>(icon_index::rotate_clockwise, tt.straighten);
-	_straighten_slider = std::make_shared<log_slider_control>(_dlg, std::u8string_view{}, _edit_state._straighten,
+	_straighten_slider = std::make_shared<log_slider_control>(_dlg, std::string_view{}, _edit_state._straighten,
 	                                                          -44.9, 44.9, changed_func);
 	_rotate_toolbar = std::make_shared<task_toolbar_control>(_dlg, rotate_butons);
 	_color_divider = std::make_shared<divider_element>();
@@ -1175,7 +1175,7 @@ void edit_view_controls::create_controls()
 	_album_artist_edit = std::make_shared<ui::edit_control>(_dlg, tt.album_artist, _edit_state._item_album_artist);
 	_album_edit = std::make_shared<ui::edit_control>(_dlg, tt.prop_name_album, _edit_state._item_album);
 	_genre_edit = std::make_shared<ui::edit_control>(_dlg, tt.prop_name_genre, _edit_state._item_genre,
-	                                                 std::vector<std::u8string>{u8"genre"});
+	                                                 std::vector<std::string>{"genre"});
 	_year_edit = std::make_shared<ui::num_control>(_dlg, tt.prop_name_year, _edit_state._item_year);
 	_episode_edit = std::make_shared<ui::num_pair_control>(_dlg, tt.prop_name_episode, _edit_state._item_episode);
 	_season_edit = std::make_shared<ui::num_control>(_dlg, tt.prop_name_season, _edit_state._item_season);
@@ -1490,7 +1490,7 @@ void edit_view::render(ui::draw_context& dc, view_controller_ptr controller)
 		draw_handle(dc, _crop_handle_bl.round(), alpha);
 		draw_handle(dc, _crop_handle_br.round(), alpha);
 
-		const auto text_dims = str::format(u8"{}x{}"sv, df::round(actual_size.Width), df::round(actual_size.Height));
+		const auto text_dims = std::format("{}x{}", df::round(actual_size.Width), df::round(actual_size.Height));
 		const sizei text_size = dc.measure_text(text_dims, ui::style::font_face::dialog,
 		                                        ui::style::text_style::single_line_center, bounding.width()).inflate(
 			dc.padding2);
@@ -1502,7 +1502,7 @@ void edit_view::render(ui::draw_context& dc, view_controller_ptr controller)
 
 		if (setting.show_debug_info)
 		{
-			const auto text_degs = str::print(u8"%3.3f degrees"sv, selection_angle);
+			const auto text_degs = str::print("%3.3f degrees", selection_angle);
 			dc.draw_text(text_degs, crop_bounding.round().inflate(df::round(100 * dc.scale_factor)),
 			             ui::style::font_face::title,
 			             ui::style::text_style::single_line_center,

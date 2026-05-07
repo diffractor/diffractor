@@ -23,11 +23,14 @@ class rename_view;
 class sync_view;
 class import_view;
 class locate_view;
+class view_controls_host;
+
+using view_controls_host_ptr = std::shared_ptr<view_controls_host>;
 
 constexpr std::array media_volumes = {999, 777, 555, 333, 0};
 extern icon_index volumes_icons[5];
 
-std::vector<std::pair<std::u8string_view, std::u8string>> calc_app_info(const index_state& index, bool include_state);
+std::vector<std::pair<std::string_view, std::string>> calc_app_info(const index_state& index, bool include_state);
 bool is_app_installed();
 
 
@@ -173,6 +176,7 @@ public:
 
 	void pan_start(const pointi start_loc) override
 	{
+		_pan_start_loc = start_loc;
 		_view->pan_start(_pan_start_loc);
 	}
 
@@ -204,7 +208,7 @@ public:
 
 	void focus_changed(const bool has_focus, const ui::control_base_ptr& child) override
 	{
-		df::trace(str::format(u8"render_window::focus {}"sv, has_focus));
+		df::trace(std::format("render_window::focus {}", has_focus));
 		_view->focus(has_focus);
 		_frame->invalidate();
 	}
@@ -260,10 +264,10 @@ public:
 		}
 	}
 
-	std::u8string _status_title;
-	std::u8string _status_text;
+	std::string _status_title;
+	std::string _status_text;
 
-	void update_status(std::u8string_view title, std::u8string_view text);
+	void update_status(std::string_view title, std::string_view text);
 	void clear_status();
 	void draw_status(ui::draw_context& dc) const;
 
@@ -288,7 +292,7 @@ public:
 							platform::drop_effect::copy);
 
 						update_status(is_copy ? tt.menu_copy : tt.menu_move,
-						              format(u8"{}\n{}\n{}"sv, desc.first_name, tt.copy_to_join, dest_path.text()));
+						              std::format("{}\n{}\n{}", desc.first_name, tt.copy_to_join, dest_path.text()));
 
 						result = is_copy ? platform::drop_effect::copy : platform::drop_effect::move;
 					}
@@ -341,7 +345,7 @@ public:
 					}
 					else if (data.has_bitmap())
 					{
-						const auto save_result = data.save_bitmap(_state.save_path(), u8"dropped"sv, false);
+						const auto save_result = data.save_bitmap(_state.save_path(), "dropped", false);
 
 						if (save_result.success())
 						{
@@ -412,10 +416,10 @@ public:
 	using this_type = app_frame;
 
 	std::shared_ptr<av_player> _player;
-	view_state _state;
-	edit_view_state _edit_view_state;
 	location_cache _locations;
 	index_state _item_index;
+	view_state _state;
+	edit_view_state _edit_view_state;
 	database _db;
 	const ui::plat_app_ptr _pa;
 
@@ -460,7 +464,7 @@ public:
 	ui::toolbar_ptr _tools;
 	ui::toolbar_ptr _sorting;
 
-	std::u8string _last_favorite_tags;
+	std::string _last_favorite_tags;
 
 	std::shared_ptr<search_auto_complete> _search_completes;
 	ui::list_window_ptr _search_predictions_frame;
@@ -498,7 +502,7 @@ public:
 	recti _status_bounds;
 	recti _title_bounds;
 	int _sorting_width = 0;
-	std::u8string saved_current_search;
+	std::string saved_current_search;
 	bool _is_active = false;
 
 	commands_map _commands;
@@ -524,7 +528,7 @@ public:
 	bool key_down(char32_t key, ui::key_state keys) override;
 	void create_toolbars();
 	void crash(df::file_path dump_file_path) override;
-	std::u8string restart_cmd_line() override;
+	std::string restart_cmd_line() override;
 	void save_recovery_state() override;
 	void invalidate_view(view_invalid invalid) override;
 	void invoke(commands id) override;
@@ -536,7 +540,7 @@ public:
 	void on_window_layout(ui::measure_context& mc, sizei extent, bool is_minimized) override;
 	void on_window_paint(ui::draw_context& dc) override;
 	void activate(bool is_active) override;
-	void app_fail(std::u8string_view message, std::u8string_view more_text) override;
+	void app_fail(std::string_view message, std::string_view more_text) override;
 	void invalidate_status() const;
 	void update_overlay();
 	void tick() override;
@@ -564,26 +568,26 @@ public:
 	void queue_async(async_queue q, std::function<void()> f) override;
 	void queue_location(std::function<void(location_cache&)>) override;
 	void queue_database(std::function<void(database&)> f) override;
-	void web_service_cache(std::u8string key, std::function<void(const std::u8string&)> f) override;
-	void web_service_cache(std::u8string key, std::u8string value) override;
+	void web_service_cache(std::string key, std::function<void(const std::string&)> f) override;
+	void web_service_cache(std::string key, std::string value) override;
 	void queue_media_preview(std::function<void(media_preview_state&)> f) override;
 	static icon_index repeat_toggle_icon();
-	bool update_toolbar_text(commands cc, const std::u8string& text);
+	bool update_toolbar_text(commands cc, const std::string& text);
 	void update_button_state(bool resize);
 	void update_address() const;
 	void update_index();
 	void toggle_volume();
 	static icon_index sound_icon();
-	void def_command(commands id, command_group group, icon_index icon, std::u8string_view text,
-	                 std::u8string_view tooltip = {});
+	void def_command(commands id, command_group group, icon_index icon, std::string_view text,
+	                 std::string_view tooltip = {});
 	void update_command_text();
 	void initialise_commands();
 	command_info_ptr find_or_create_command_info(commands id);
 	void add_command_invoke(commands id, std::function<void()> invoke);
 	ui::command_ptr find_command(commands id) const;
 	void tooltip(view_hover_element& hover, commands id) const;
-	void search_edit_change(const std::u8string& text) const;
-	void filter_edit_change(const std::u8string& text);
+	void search_edit_change(const std::string& text) const;
+	void filter_edit_change(const std::string& text);
 	void delete_items(const df::item_set& items) override;
 
 	void focus_view() override;
@@ -591,7 +595,7 @@ public:
 	bool pre_init() override;
 	void start_workers();
 	void update_font_size() const;
-	bool init(std::u8string_view command_line) override;
+	bool init(std::string_view command_line) override;
 	void init_search();
 	void final_exit() override;
 	void exit() override;
@@ -663,7 +667,7 @@ public:
 	{
 		_display = s.display_state();
 
-		if (_is_playable)
+		if (_display)
 		{
 			_is_playable = _display->can_play_media();
 			_is_playing = _display->is_playing_media();

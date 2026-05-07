@@ -209,7 +209,7 @@ class av_visualizer
 		{
 			auto changed = false;
 
-			for (auto i = 0; i <= num_bars; i++)
+			for (auto i = 0; i < num_bars; i++)
 			{
 				if (_data[0][i] != other._data[0][i] ||
 					_data[1][i] != other._data[1][i])
@@ -266,7 +266,7 @@ class av_visualizer
 
 			_q.emplace(found, frame); // .emplace_back(frame);
 
-			//df::log(__FUNCTION__, "frame_queue.push "sv << frame._time;
+			//df::log(__FUNCTION__, "frame_queue.push " << frame._time;
 		}
 
 		bool pop_merge(frame& f, const double time)

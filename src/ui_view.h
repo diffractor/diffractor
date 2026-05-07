@@ -486,12 +486,12 @@ public:
 	{
 	}
 
-	virtual std::u8string_view title()
+	virtual std::string_view title()
 	{
 		return {};
 	}
 
-	virtual std::u8string_view status()
+	virtual std::string_view status()
 	{
 		return {};
 	}
@@ -499,7 +499,7 @@ public:
 
 struct view_scroller_section
 {
-	std::u8string text;
+	std::string text;
 	icon_index icon = icon_index::none;
 	int y = 0;
 };

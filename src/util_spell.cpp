@@ -19,8 +19,8 @@ spell_check spell;
 
 spell_check::spell_check()
 {
-	const auto module_folder = known_path(platform::known_folder::running_app_folder).combine(u8"dictionaries"sv);
-	const auto app_data_folder = known_path(platform::known_folder::app_data).combine(u8"dictionaries"sv);
+	const auto module_folder = known_path(platform::known_folder::running_app_folder).combine("dictionaries");
+	const auto app_data_folder = known_path(platform::known_folder::app_data).combine("dictionaries");
 
 	if (module_folder.exists())
 	{
@@ -36,7 +36,7 @@ spell_check::spell_check()
 		}
 	}
 
-	_custom_dic_path = _dictionaries_folder.combine_file(u8"custom.dic"sv);
+	_custom_dic_path = _dictionaries_folder.combine_file("custom.dic");
 }
 
 spell_check::~spell_check()
@@ -52,12 +52,12 @@ static void download_dic(df::async_i& async, const df::file_path path)
 	const auto temp_path = platform::temp_file(path.extension());
 
 	platform::web_request req;
-	req.path = format(u8"/static/dictionaries/{}"sv, path.name());
+	req.path = std::format("/static/dictionaries/{}", path.name());
 	req.download_file_path = temp_path;
 
 	async.queue_async(async_queue::web, [req, path, temp_path]
 	{
-		const auto con = platform::connect_to_host(u8"diffractor.com"sv);
+		const auto con = platform::connect_to_host("diffractor.com");
 		const auto response = send_request(con, req);
 
 		if (response.status_code == 200)
@@ -69,54 +69,54 @@ static void download_dic(df::async_i& async, const df::file_path path)
 
 void spell_check::lazy_download(df::async_i& async) const
 {
-	const std::unordered_set<std::u8string_view, df::ihash, df::ieq> known_dics =
+	const std::unordered_set<std::string_view, df::ihash, df::ieq> known_dics =
 	{
-		u8"bg_BG"sv,
-		u8"ca_ES"sv,
-		u8"cs_CZ"sv,
-		u8"cy_GB"sv,
-		u8"da_DK"sv,
-		u8"de_DE"sv,
-		u8"el_GR"sv,
-		u8"en_AU"sv,
-		u8"en_CA"sv,
-		u8"en_GB"sv,
-		u8"en_US"sv,
-		u8"es_ES"sv,
-		u8"et_EE"sv,
-		u8"fa_IR"sv,
-		u8"fr_FR"sv,
-		u8"he_IL"sv,
-		u8"hi_IN"sv,
-		u8"hr_HR"sv,
-		u8"hu_HU"sv,
-		u8"id_ID"sv,
-		u8"it_IT"sv,
-		u8"ja_JP"sv,
-		u8"lt_LT"sv,
-		u8"lv_LV"sv,
-		u8"nb_NO"sv,
-		u8"nl_NL"sv,
-		u8"pl_PL"sv,
-		u8"pt_BR"sv,
-		u8"pt_PT"sv,
-		u8"ro_RO"sv,
-		u8"ru_RU"sv,
-		u8"sk_SK"sv,
-		u8"sl_SI"sv,
-		u8"sv_SE"sv,
-		u8"ta_IN"sv,
-		u8"tg_TG"sv,
-		u8"uk_UA"sv,
-		u8"vi_VI"sv,
+		"bg_BG",
+		"ca_ES",
+		"cs_CZ",
+		"cy_GB",
+		"da_DK",
+		"de_DE",
+		"el_GR",
+		"en_AU",
+		"en_CA",
+		"en_GB",
+		"en_US",
+		"es_ES",
+		"et_EE",
+		"fa_IR",
+		"fr_FR",
+		"he_IL",
+		"hi_IN",
+		"hr_HR",
+		"hu_HU",
+		"id_ID",
+		"it_IT",
+		"ja_JP",
+		"lt_LT",
+		"lv_LV",
+		"nb_NO",
+		"nl_NL",
+		"pl_PL",
+		"pt_BR",
+		"pt_PT",
+		"ro_RO",
+		"ru_RU",
+		"sk_SK",
+		"sl_SI",
+		"_SE",
+		"ta_IN",
+		"tg_TG",
+		"uk_UA",
+		"vi_VI",
 	};
 
 	const auto language = platform::user_language();
 
 	if (known_dics.contains(language))
 	{
-		const auto aff_path = _dictionaries_folder.combine_file_ext(language, u8".aff"s);
-		const auto dic_path = _dictionaries_folder.combine_file_ext(language, u8".dic"s);
+		const auto aff_path = _dictionaries_folder.combine_file_ext(language, ".aff"s);
+		const auto dic_path = _dictionaries_folder.combine_file_ext(language, ".dic"s);
 
 		if (!aff_path.exists())
 		{
@@ -140,14 +140,14 @@ void spell_check::lazy_load()
 		try
 		{
 			const auto language = platform::user_language();
-			auto aff_path = _dictionaries_folder.combine_file_ext(language, u8".aff"sv);
-			auto dic_path = _dictionaries_folder.combine_file_ext(language, u8".dic"sv);
-			const auto custom_path = _dictionaries_folder.combine_file(u8"custom.dic"sv);
+			auto aff_path = _dictionaries_folder.combine_file_ext(language, ".aff");
+			auto dic_path = _dictionaries_folder.combine_file_ext(language, ".dic");
+			const auto custom_path = _dictionaries_folder.combine_file("custom.dic");
 
 			if (!aff_path.exists())
 			{
-				aff_path = _dictionaries_folder.combine_file(u8"en_US.aff"sv);
-				dic_path = _dictionaries_folder.combine_file(u8"en_US.dic"sv);
+				aff_path = _dictionaries_folder.combine_file("en_US.aff");
+				dic_path = _dictionaries_folder.combine_file("en_US.dic");
 			}
 
 			if (aff_path.exists())
@@ -156,11 +156,11 @@ void spell_check::lazy_load()
 				                                       str::utf8_to_a(dic_path.str()).c_str());
 
 				// Load custom dictionary with proper RAII
-				u8istream f(str::utf8_to_utf16(custom_path.str()));
+				std::ifstream f(str::utf8_to_utf16(custom_path.str()));
 
 				if (f.is_open())
 				{
-					std::u8string line;
+					std::string line;
 
 					while (std::getline(f, line))
 					{
@@ -182,7 +182,7 @@ void spell_check::lazy_load()
 	}
 }
 
-bool spell_check::is_word_valid(const std::u8string_view word) const
+bool spell_check::is_word_valid(const std::string_view word) const
 {
 	// Add input validation
 	if (word.empty())
@@ -193,7 +193,7 @@ bool spell_check::is_word_valid(const std::u8string_view word) const
 	return _hunspell->spell(str::utf8_cast2(word));
 }
 
-std::vector<std::u8string> spell_check::suggest(const std::u8string_view word) const
+std::vector<std::string> spell_check::suggest(const std::string_view word) const
 {
 	// Add input validation
 	if (word.empty())
@@ -204,7 +204,7 @@ std::vector<std::u8string> spell_check::suggest(const std::u8string_view word) c
 
 	const auto suggestions = _hunspell->suggest(str::utf8_cast2(word));
 
-	std::vector<std::u8string> result;
+	std::vector<std::string> result;
 	result.reserve(suggestions.size()); // Reserve space for better performance
 	std::transform(suggestions.begin(),
 	               suggestions.end(),
@@ -214,7 +214,7 @@ std::vector<std::u8string> spell_check::suggest(const std::u8string_view word) c
 	return result;
 }
 
-void spell_check::add_word(const std::u8string_view word) const
+void spell_check::add_word(const std::string_view word) const
 {
 	// Add input validation
 	if (word.empty())
@@ -229,7 +229,7 @@ void spell_check::add_word(const std::u8string_view word) const
 		// Improved file writing with better error handling and RAII
 		try
 		{
-			u8ostream f(platform::to_file_system_path(_custom_dic_path), std::ios::out | std::ios::app);
+			std::ofstream f(platform::to_file_system_path(_custom_dic_path), std::ios::out | std::ios::app);
 			if (f.is_open())
 			{
 				f << word << '\n';

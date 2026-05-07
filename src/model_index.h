@@ -166,7 +166,7 @@ public:
 				const auto parent_node = found_in_index->second;
 				const auto folder_name = i->name;
 				const auto lb = std::lower_bound(parent_node->folders.begin(), parent_node->folders.end(), folder_name,
-				                                 [](const df::index_folder_item_ptr& l, const std::u8string_view r)
+				                                 [](const df::index_folder_item_ptr& l, const std::string_view r)
 				                                 {
 					                                 return icmp(l->name, r) < 0;
 				                                 });
@@ -331,7 +331,7 @@ struct index_histograms
 };
 
 using strings_by_prop = df::hash_map<prop::key_ref, df::dense_unique_strings>;
-using prop_text_summary = df::hash_map<std::u8string_view, df::file_group_histogram, df::ihash, df::ieq>;
+using prop_text_summary = df::hash_map<std::string_view, df::file_group_histogram, df::ihash, df::ieq>;
 using prop_num_summary = std::array<df::file_group_histogram, 6>;
 
 struct index_summary
@@ -518,14 +518,14 @@ public:
 	df::file_group_histogram calc_folder_summary(df::folder_path path, df::cancel_token token) const;
 	df::file_group_histogram count_matches(const df::search_t& a, df::cancel_token token);
 
-	df::file_group_histogram label_summary(const std::u8string_view label) const
+	df::file_group_histogram label_summary(const std::string_view label) const
 	{
 		platform::shared_lock lock(_summary_rw);
 		const auto found = _summary._distinct_labels.find(label);
 		return found != _summary._distinct_labels.end() ? found->second : df::file_group_histogram{};
 	}
 
-	df::file_group_histogram tag_summary(const std::u8string_view tag) const
+	df::file_group_histogram tag_summary(const std::string_view tag) const
 	{
 		platform::shared_lock lock(_summary_rw);
 		const auto found = _summary._distinct_tags.find(tag);
@@ -653,7 +653,7 @@ public:
 		return _summary._distinct_words;
 	}
 
-	using distinct_results = std::vector<std::pair<std::u8string_view, df::file_group_histogram>>;
+	using distinct_results = std::vector<std::pair<std::string_view, df::file_group_histogram>>;
 
 	distinct_results distinct_tags() const
 	{
@@ -695,7 +695,7 @@ public:
 
 	struct auto_complete_word
 	{
-		std::u8string text;
+		std::string text;
 		std::vector<str::part_t> highlights;
 	};
 
@@ -705,7 +705,7 @@ public:
 		std::vector<str::part_t> highlights;
 	};
 
-	std::vector<auto_complete_word> auto_complete_words(std::u8string_view query, size_t max_results);
-	std::vector<auto_complete_folder> auto_complete_folders(std::u8string_view query, size_t max_results) const;
-	std::vector<std::u8string> auto_complete_text(prop::key_ref key);
+	std::vector<auto_complete_word> auto_complete_words(std::string_view query, size_t max_results);
+	std::vector<auto_complete_folder> auto_complete_folders(std::string_view query, size_t max_results) const;
+	std::vector<std::string> auto_complete_text(prop::key_ref key);
 };

@@ -19,7 +19,6 @@
 #include "model.h"
 
 #include "ui_dialog.h"
-#include "view_list.h"
 
 #include "app.h"
 
@@ -37,9 +36,9 @@ class search_auto_complete final : public std::enable_shared_from_this<search_au
 	ui::auto_complete_match_ptr _selected;
 
 public:
-	std::u8string no_results_message() override
+	std::string no_results_message() override
 	{
-		return std::u8string(tt.type_to_search);
+		return std::string(tt.type_to_search);
 	}
 
 	void clear()
@@ -61,15 +60,15 @@ public:
 		_state.history.count_strings(_known, 1);
 		_state.recent_folders.count_strings(_known, 1);
 		//_state.recent_apps.count_strings(_recents, 1);
-		_state.recent_tags.count_strings(_known, 1, u8"#"sv);
+		_state.recent_tags.count_strings(_known, 1, "#");
 		_state.recent_tags.count_strings(_known, 1);
 		//_state.recent_locations.count_strings(_recents, 1);
 		if (!setting.write_folder.empty()) ++_known[str::cache(setting.write_folder)];
 
 		for (const auto ks : prop::key_scopes())
 		{
-			++_known[str::cache(str::format(u8"with:{}"sv, ks.scope))];
-			++_known[str::cache(str::format(u8"without:{}"sv, ks.scope))];
+			++_known[str::cache(std::format("with:{}", ks.scope))];
+			++_known[str::cache(std::format("without:{}", ks.scope))];
 		}
 	}
 
@@ -82,7 +81,7 @@ public:
 	}
 
 	int calc_auto_complete_word_weight(const index_state::auto_complete_folder& path,
-	                                   const std::u8string_view query) const
+	                                   const std::string_view query) const
 	{
 		auto result = 1;
 		const auto found = _known.find(path.path.text());
@@ -91,7 +90,7 @@ public:
 		return result;
 	}
 
-	void search(const std::u8string& query, std::function<void(const ui::auto_complete_results&)> complete) override
+	void search(const std::string& query, std::function<void(const ui::auto_complete_results&)> complete) override
 	{
 		_state._async.queue_async(async_queue::auto_complete, [this, query, complete]
 		{
@@ -151,7 +150,7 @@ public:
 
 					for (const auto& word : found_words)
 					{
-						found.emplace_back(std::make_shared<text_match>(*this, word.text, std::u8string{},
+						found.emplace_back(std::make_shared<text_match>(*this, word.text, std::string{},
 						                                                word.highlights,
 						                                                calc_auto_complete_word_weight(word)));
 					}
@@ -188,14 +187,14 @@ public:
 				{
 					for (const auto& word : _known)
 					{
-						found.emplace_back(std::make_shared<text_match>(*this, std::u8string(word.first), query,
+						found.emplace_back(std::make_shared<text_match>(*this, std::string(word.first), query,
 						                                                ui::match_highlights{}, word.second));
 					}
 				}
 
 				if (found.size() < max_predictions)
 				{
-					const auto found_groups = _state.item_index.auto_complete_words(u8"@"sv, max_predictions);
+					const auto found_groups = _state.item_index.auto_complete_words("@", max_predictions);
 
 					for (const auto& word : found_groups)
 					{
@@ -206,7 +205,7 @@ public:
 
 				if (found.size() < max_predictions)
 				{
-					const auto found_tags = _state.item_index.auto_complete_words(u8"#"sv, max_predictions);
+					const auto found_tags = _state.item_index.auto_complete_words("#", max_predictions);
 
 					for (const auto& word : found_tags)
 					{
@@ -226,7 +225,7 @@ public:
 						found.size() < max_predictions)
 					{
 						found.emplace_back(
-							std::make_shared<text_match>(*this, std::u8string(k.first), std::u8string{}));
+							std::make_shared<text_match>(*this, std::string(k.first), std::string{}));
 					}
 				}
 			}

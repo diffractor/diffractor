@@ -19,10 +19,10 @@ static str::cached make_unique_tags(tag_set tags1, const tag_set& tags2)
 	return str::cache(tags1.to_string());
 }
 
-static void should_save(const std::u8string_view ext, const bool should_support_metadata)
+static void should_save(const std::string_view ext, const bool should_support_metadata)
 {
 	const auto save_path = _temps.next_path(ext);
-	const auto load_path = test_files_folder.combine_file(u8"Test.jpg"sv);
+	const auto load_path = test_files_folder.combine_file("Test.jpg");
 
 	files ff;
 	const image_edits color;
@@ -40,7 +40,7 @@ static void should_save(const std::u8string_view ext, const bool should_support_
 	}
 }
 
-static void should_update_rating(const std::u8string_view name)
+static void should_update_rating(const std::string_view name)
 {
 	files ff;
 
@@ -56,7 +56,7 @@ static void should_update_rating(const std::u8string_view name)
 	{
 		const auto actual_scanned = ff_scan_file(ff, save_path, detect_xmp_sidecar(save_path));
 		const auto ps = actual_scanned.to_props();
-		assert_equal(3, ps->rating, u8"rating"sv);
+		assert_equal(3, ps->rating, "rating");
 	}
 
 	metadata_edits edits2;
@@ -66,14 +66,14 @@ static void should_update_rating(const std::u8string_view name)
 	{
 		const auto actual_scanned = ff_scan_file(ff, save_path, detect_xmp_sidecar(save_path));
 		const auto ps = actual_scanned.to_props();
-		assert_equal(0, ps->rating, u8"rating"sv);
+		assert_equal(0, ps->rating, "rating");
 	}
 }
 
 static void should_update_exif_rating()
 {
-	const auto load_path = test_files_folder.combine_file(u8"exif-rating.jpg"sv);
-	const auto save_path = _temps.next_path(u8".jpg"sv);
+	const auto load_path = test_files_folder.combine_file("exif-rating.jpg");
+	const auto save_path = _temps.next_path(".jpg");
 
 	files ff;
 	metadata_edits edits1;
@@ -84,14 +84,14 @@ static void should_update_exif_rating()
 	{
 		const auto actual_scanned = ff_scan_file(ff, save_path);
 		const auto ps = actual_scanned.to_props();
-		assert_equal(3, ps->rating, u8"to_props"sv);
+		assert_equal(3, ps->rating, "to_props");
 
 		const auto actual_exif = extract_properties(save_path, metadata_type::EXIF);
 		const auto actual_iptc = extract_properties(save_path, metadata_type::IPTC);
 		const auto actual_xmp = extract_properties(save_path, metadata_type::XMP);
 
-		assert_equal(3, actual_xmp->rating, u8"XMP"sv);
-		assert_equal(3, actual_exif->rating, u8"exif"sv);
+		assert_equal(3, actual_xmp->rating, "XMP");
+		assert_equal(3, actual_exif->rating, "exif");
 	}
 
 	metadata_edits edits2;
@@ -106,17 +106,17 @@ static void should_update_exif_rating()
 		const auto actual_iptc = extract_properties(save_path, metadata_type::IPTC);
 		const auto actual_xmp = extract_properties(save_path, metadata_type::XMP);
 
-		assert_equal(0, actual_xmp->rating, u8"XMP"sv);
-		assert_equal(0, actual_exif->rating, u8"exif"sv);
-		assert_equal(0, actual_iptc->rating, u8"IPC"sv);
+		assert_equal(0, actual_xmp->rating, "XMP");
+		assert_equal(0, actual_exif->rating, "exif");
+		assert_equal(0, actual_iptc->rating, "IPC");
 	}
 }
 
 static void should_update_formatted_text()
 {
-	const auto load_path = test_files_folder.combine_file(u8"exif-rating.jpg"sv);
-	const auto save_path = _temps.next_path(u8".jpg"sv);
-	constexpr auto desc_text = u8"a\tb\nc"sv;
+	const auto load_path = test_files_folder.combine_file("exif-rating.jpg");
+	const auto save_path = _temps.next_path(".jpg");
+	constexpr auto desc_text = "a\tb\nc";
 
 	files ff;
 	metadata_edits edits1;
@@ -127,19 +127,19 @@ static void should_update_formatted_text()
 	{
 		const auto actual_scanned = ff_scan_file(ff, save_path);
 		const auto ps = actual_scanned.to_props();
-		assert_equal(desc_text, ps->description, u8"to_props"sv);
+		assert_equal(desc_text, ps->description, "to_props");
 
 		const auto actual_exif = extract_properties(save_path, metadata_type::EXIF);
 		const auto actual_iptc = extract_properties(save_path, metadata_type::IPTC);
 		const auto actual_xmp = extract_properties(save_path, metadata_type::XMP);
 
-		assert_equal(desc_text, actual_xmp->description, u8"XMP"sv);
-		assert_equal(desc_text, actual_exif->description, u8"exif"sv);
-		assert_equal(desc_text, actual_iptc->description, u8"IPC"sv);
+		assert_equal(desc_text, actual_xmp->description, "XMP");
+		assert_equal(desc_text, actual_exif->description, "exif");
+		assert_equal(desc_text, actual_iptc->description, "IPC");
 	}
 }
 
-static void should_update_metadata(const std::u8string_view name)
+static void should_update_metadata(const std::string_view name)
 {
 	files ff;
 
@@ -147,14 +147,14 @@ static void should_update_metadata(const std::u8string_view name)
 	const auto save_path = _temps.next_path(ext);
 	const auto load_path = test_files_folder.combine_file(name);
 
-	const auto tags_to_add = tag_set(u8"key1 key2 key3"sv);
+	const auto tags_to_add = tag_set("key1 key2 key3");
 
 	metadata_edits metadata_edits;
 	metadata_edits.add_tags = tags_to_add;
-	metadata_edits.copyright_notice = u8"Copyright xx"sv;
+	metadata_edits.copyright_notice = "Copyright xx";
 	metadata_edits.rating = 3;
-	metadata_edits.title = u8"Title xx"sv;
-	metadata_edits.description = u8"Description xx"sv;
+	metadata_edits.title = "Title xx";
+	metadata_edits.description = "Description xx";
 
 	ff.update(load_path, save_path, metadata_edits, {}, {}, false, {});
 
@@ -164,23 +164,23 @@ static void should_update_metadata(const std::u8string_view name)
 	const auto expected = sr_expected.to_props();
 	const auto actual = sr_actual.to_props();
 
-	expected->title = u8"Title xx"_c;
-	expected->copyright_notice = u8"Copyright xx"_c;
-	expected->description = u8"Description xx"_c;
+	expected->title = "Title xx"_c;
+	expected->copyright_notice = "Copyright xx"_c;
+	expected->description = "Description xx"_c;
 	expected->rating = 3;
 	expected->tags = make_unique_tags(tag_set(expected->tags), tags_to_add);
 
 	assert_metadata(*expected, *actual);
 }
 
-static void should_add_remove_tags(const std::u8string_view name)
+static void should_add_remove_tags(const std::string_view name)
 {
 	const auto ext = name.substr(df::find_ext(name));
 	const auto save_path = _temps.next_path(ext);
 	const auto load_path = test_files_folder.combine_file(name);
 
-	const auto tags_to_add = tag_set(u8"Максим yyyy zzzz"sv);
-	const auto tags_to_remove = tag_set(u8"Максим zzzz"sv);
+	const auto tags_to_add = tag_set("Максим yyyy zzzz");
+	const auto tags_to_remove = tag_set("Максим zzzz");
 
 	metadata_edits edits1;
 	edits1.add_tags = tags_to_add;
@@ -196,7 +196,7 @@ static void should_add_remove_tags(const std::u8string_view name)
 
 	expected->tags = make_unique_tags(tag_set(expected->tags), tags_to_add);
 
-	assert_metadata(*expected, *actual, u8"added"sv);
+	assert_metadata(*expected, *actual, "added");
 
 	metadata_edits edits2;
 	edits2.remove_tags = tags_to_remove;
@@ -208,27 +208,27 @@ static void should_add_remove_tags(const std::u8string_view name)
 
 	const auto sr_actual2 = ff_scan_file(ff, save_path, detect_xmp_sidecar(save_path));
 	const auto actual2 = sr_actual2.to_props();
-	assert_metadata(*expected, *actual2, u8"removed"sv);
+	assert_metadata(*expected, *actual2, "removed");
 }
 
 static void should_remove_shell_written_tags()
 {
 	// Copy a test JPEG to temp so we can modify it
-	const auto load_path = test_files_folder.combine_file(u8"Test.jpg"sv);
-	const auto save_path = _temps.next_path(u8".jpg"sv);
+	const auto load_path = test_files_folder.combine_file("Test.jpg");
+	const auto save_path = _temps.next_path(".jpg");
 
 	files ff;
 	ff.update(load_path, save_path, {}, {}, {}, false, {});
 
 	// Write tags via Windows shell properties (simulates Windows Explorer tag editing)
-	const std::vector<std::u8string> shell_tags = {u8"ShellTag1", u8"ShellTag2", u8"ShellTag3"};
+	const std::vector<std::string> shell_tags = {"ShellTag1", "ShellTag2", "ShellTag3"};
 	const auto write_ok = platform::write_shell_tags(save_path, shell_tags);
-	assert_equal(true, write_ok, u8"write_shell_tags"sv);
+	assert_equal(true, write_ok, "write_shell_tags");
 
 	// Verify shell tags are readable via shell
 	{
 		const auto shell_meta = platform::read_shell_metadata(save_path);
-		assert_equal(3u, static_cast<unsigned>(shell_meta.tags.size()), u8"shell read count"sv);
+		assert_equal(3u, static_cast<unsigned>(shell_meta.tags.size()), "shell read count");
 	}
 
 	// Verify Diffractor can read the shell-written tags
@@ -236,13 +236,13 @@ static void should_remove_shell_written_tags()
 		const auto sr = ff_scan_file(ff, save_path);
 		const auto ps = sr.to_props();
 		const tag_set scanned_tags(ps->tags);
-		assert_equal(true, scanned_tags.size() >= 3u, u8"diffractor read shell tags"sv);
+		assert_equal(true, scanned_tags.size() >= 3u, "diffractor read shell tags");
 	}
 
 	// Remove one tag via Diffractor
 	{
 		metadata_edits edits;
-		edits.remove_tags = tag_set(u8"ShellTag2"sv);
+		edits.remove_tags = tag_set("ShellTag2");
 		ff.update(save_path, edits, {}, {}, false, {});
 	}
 
@@ -253,11 +253,11 @@ static void should_remove_shell_written_tags()
 		const tag_set remaining(ps->tags);
 
 		// ShellTag2 should be gone
-		tag_set check_removed(u8"ShellTag2"sv);
+		tag_set check_removed("ShellTag2");
 		tag_set test_set = remaining;
 		const auto size_before = test_set.size();
 		test_set.remove(check_removed);
-		assert_equal(size_before, test_set.size(), u8"ShellTag2 should not be present"sv);
+		assert_equal(size_before, test_set.size(), "ShellTag2 should not be present");
 	}
 
 	// Verify tags are also removed from shell perspective (IPTC/EXIF)
@@ -266,15 +266,15 @@ static void should_remove_shell_written_tags()
 		bool found_removed = false;
 		for (const auto& t : shell_meta.tags)
 		{
-			if (str::icmp(t, u8"ShellTag2") == 0) found_removed = true;
+			if (str::icmp(t, "ShellTag2") == 0) found_removed = true;
 		}
-		assert_equal(false, found_removed, u8"ShellTag2 removed from shell"sv);
+		assert_equal(false, found_removed, "ShellTag2 removed from shell");
 	}
 
 	// Remove all remaining tags
 	{
 		metadata_edits edits;
-		edits.remove_tags = tag_set(u8"ShellTag1 ShellTag3"sv);
+		edits.remove_tags = tag_set("ShellTag1 ShellTag3");
 		ff.update(save_path, edits, {}, {}, false, {});
 	}
 
@@ -287,15 +287,15 @@ static void should_remove_shell_written_tags()
 		bool found_any_shell = false;
 		for (const auto& t : shell_meta.tags)
 		{
-			if (str::icmp(t, u8"ShellTag1") == 0 || str::icmp(t, u8"ShellTag2") == 0 || str::icmp(t, u8"ShellTag3") ==
+			if (str::icmp(t, "ShellTag1") == 0 || str::icmp(t, "ShellTag2") == 0 || str::icmp(t, "ShellTag3") ==
 				0)
 				found_any_shell = true;
 		}
-		assert_equal(false, found_any_shell, u8"all shell tags removed"sv);
+		assert_equal(false, found_any_shell, "all shell tags removed");
 	}
 }
 
-static void should_update_location(const std::u8string_view name)
+static void should_update_location(const std::string_view name)
 {
 	files ff;
 
@@ -306,9 +306,9 @@ static void should_update_location(const std::u8string_view name)
 
 	metadata_edits metadata_edits;
 	metadata_edits.location_coordinate = coordinate;
-	metadata_edits.location_place = u8"Big Apple"_c;
-	metadata_edits.location_state = u8"New York"_c;
-	metadata_edits.location_country = u8"USA"_c;
+	metadata_edits.location_place = "Big Apple"_c;
+	metadata_edits.location_state = "New York"_c;
+	metadata_edits.location_country = "USA"_c;
 
 	ff.update(load_path, save_path, metadata_edits, {}, {}, false, {});
 
@@ -319,24 +319,24 @@ static void should_update_location(const std::u8string_view name)
 	const auto actual = sr_actual.to_props();
 
 	expected->coordinate = coordinate;
-	expected->location_place = u8"Big Apple"_c;
-	expected->location_state = u8"New York"_c;
-	expected->location_country = u8"USA"_c;
+	expected->location_place = "Big Apple"_c;
+	expected->location_state = "New York"_c;
+	expected->location_country = "USA"_c;
 
 	assert_metadata(*expected, *actual);
 }
 
 static void should_update_gps_in_exif()
 {
-	const auto save_path = _temps.next_path(u8".jpg"sv);
-	const auto load_path = test_files_folder.combine_file(u8"IMG_9340.jpg"sv);
+	const auto save_path = _temps.next_path(".jpg");
+	const auto load_path = test_files_folder.combine_file("IMG_9340.jpg");
 	const auto coordinate = gps_coordinate(40.71417, -74.00611);
 
 	metadata_edits metadata_edits;
 	metadata_edits.location_coordinate = coordinate;
-	metadata_edits.location_place = u8"Big Apple"_c;
-	metadata_edits.location_state = u8"New York"_c;
-	metadata_edits.location_country = u8"USA"_c;
+	metadata_edits.location_place = "Big Apple"_c;
+	metadata_edits.location_state = "New York"_c;
+	metadata_edits.location_country = "USA"_c;
 
 	files ff;
 	ff.update(load_path, save_path, metadata_edits, {}, {}, false, {});
@@ -345,33 +345,33 @@ static void should_update_gps_in_exif()
 	const auto actual_iptc = extract_properties(save_path, metadata_type::IPTC);
 	const auto actual_xmp = extract_properties(save_path, metadata_type::XMP);
 
-	assert_equal(u8"Big Apple"sv, actual_iptc->location_place, u8"IPTC"sv);
-	assert_equal(u8"New York"sv, actual_iptc->location_state, u8"IPTC"sv);
-	assert_equal(u8"USA"sv, actual_iptc->location_country, u8"IPTC"sv);
-	assert_equal({40.71417, -74.00611}, actual_exif->coordinate, u8"EXIF"sv);
+	assert_equal("Big Apple", actual_iptc->location_place, "IPTC");
+	assert_equal("New York", actual_iptc->location_state, "IPTC");
+	assert_equal("USA", actual_iptc->location_country, "IPTC");
+	assert_equal({40.71417, -74.00611}, actual_exif->coordinate, "EXIF");
 
-	assert_equal(u8"Big Apple"sv, actual_xmp->location_place, u8"XMP"sv);
-	assert_equal(u8"New York"sv, actual_xmp->location_state, u8"XMP"sv);
-	assert_equal(u8"USA"sv, actual_xmp->location_country, u8"XMP"sv);
+	assert_equal("Big Apple", actual_xmp->location_place, "XMP");
+	assert_equal("New York", actual_xmp->location_state, "XMP");
+	assert_equal("USA", actual_xmp->location_country, "XMP");
 }
 
 static void should_handle_international_characters()
 {
-	const auto save_path = _temps.next_path(u8".jpg"sv);
-	const auto load_path = test_files_folder.combine_file(u8"test.jpg"sv);
-	constexpr auto description = u8"In vollen Zügen genießen"sv;
+	const auto save_path = _temps.next_path(".jpg");
+	const auto load_path = test_files_folder.combine_file("test.jpg");
+	constexpr auto description = "In vollen Zügen genießen";
 
 	tag_set tags;
-	tags.add_one(u8"In vollen Zügen genießen"sv);
-	tags.add_one(u8"Nældens takvinge"sv);
-	tags.add_one(u8"Žižkov"sv);
+	tags.add_one("In vollen Zügen genießen");
+	tags.add_one("Nældens takvinge");
+	tags.add_one("Žižkov");
 
 	const auto test = str::utf16_to_utf8(str::utf8_to_utf16(description));
 	assert_equal(description, test);
 
 	metadata_edits edits;
 	edits.description = description;
-	edits.remove_tags = tag_set(u8"key1 key2 key3"sv);
+	edits.remove_tags = tag_set("key1 key2 key3");
 	edits.add_tags = tags;
 
 	files ff;
@@ -381,24 +381,24 @@ static void should_handle_international_characters()
 	const auto actual_iptc = extract_properties(save_path, metadata_type::IPTC);
 	const auto actual_xmp = extract_properties(save_path, metadata_type::XMP);
 
-	assert_equal(description, actual_xmp->description, u8"XMP"sv);
-	assert_equal(description, actual_exif->description, u8"EXIF"sv);
-	assert_equal(description, actual_iptc->description, u8"IPC"sv);
+	assert_equal(description, actual_xmp->description, "XMP");
+	assert_equal(description, actual_exif->description, "EXIF");
+	assert_equal(description, actual_iptc->description, "IPC");
 
 	const auto expected_tags = tags.to_string();
-	assert_equal(expected_tags, actual_xmp->tags, u8"XMP Tags"sv);
-	assert_equal(expected_tags, actual_iptc->tags, u8"IPTC Tags"sv);
+	assert_equal(expected_tags, actual_xmp->tags, "XMP Tags");
+	assert_equal(expected_tags, actual_iptc->tags, "IPTC Tags");
 
 	const auto sr = ff_scan_file(ff, save_path);
 	const auto ps = sr.to_props();
 	assert_equal(description, ps->description);
-	assert_equal(expected_tags, ps->tags, u8"Tags"sv);
+	assert_equal(expected_tags, ps->tags, "Tags");
 }
 
 static void should_convert_raw_to_jpeg()
 {
-	const auto load_path = test_files_folder.combine(u8"raw"sv).combine_file(u8"Screws.CR2"sv);
-	const auto save_path = _temps.next_path(u8".jpg"sv);
+	const auto load_path = test_files_folder.combine("raw").combine_file("Screws.CR2");
+	const auto save_path = _temps.next_path(".jpg");
 
 	files ff;
 	ff.update(load_path, save_path, {}, {}, {}, false, {});
@@ -409,11 +409,11 @@ static void should_convert_raw_to_jpeg()
 	const auto expected = sr_expected.to_props();
 	const auto actual = sr_actual.to_props();
 
-	assert_equal(expected->tags, actual->tags, u8"tags"sv);
-	assert_equal(expected->title, actual->title, u8"title"sv);
-	assert_equal(expected->description, actual->description, u8"description"sv);
-	assert_equal(expected->width, actual->width, u8"width"sv);
-	assert_equal(expected->height, actual->height, u8"height"sv);
+	assert_equal(expected->tags, actual->tags, "tags");
+	assert_equal(expected->title, actual->title, "title");
+	assert_equal(expected->description, actual->description, "description");
+	assert_equal(expected->width, actual->width, "width");
+	assert_equal(expected->height, actual->height, "height");
 }
 
 static void should_rotate()
@@ -422,7 +422,7 @@ static void should_rotate()
 
 	{
 		const auto save_path = _temps.next_path();
-		const auto load_path = test_files_folder.combine_file(u8"Test.jpg"sv);
+		const auto load_path = test_files_folder.combine_file("Test.jpg");
 		const auto loaded = ff.load(load_path, false);
 
 		image_edits edits;
@@ -434,18 +434,18 @@ static void should_rotate()
 
 		ff.update(load_path, save_path, md_edits, edits, {}, false, {});
 
-		const auto expected = extract_properties(test_files_folder.combine_file(u8"Test90.jpg"sv));
+		const auto expected = extract_properties(test_files_folder.combine_file("Test90.jpg"));
 		const auto actual = extract_properties(save_path);
 
-		assert_equal(expected->width, actual->width, u8"width"sv);
-		assert_equal(expected->height, actual->height, u8"height"sv);
+		assert_equal(expected->width, actual->width, "width");
+		assert_equal(expected->height, actual->height, "height");
 
 		assert_metadata(*expected, *actual);
 	}
 
 	{
 		const auto save_path = _temps.next_path();
-		const auto load_path = test_files_folder.combine_file(u8"exif-rotated.jpg"sv);
+		const auto load_path = test_files_folder.combine_file("exif-rotated.jpg");
 		const auto loaded = ff.load(load_path, false);
 
 		image_edits edits;
@@ -458,13 +458,13 @@ static void should_rotate()
 		ff.update(load_path, save_path, md_edits, edits, {}, false, {});
 
 		const auto actual_exif = extract_properties(save_path, metadata_type::EXIF);
-		assert_equal(ui::orientation::top_left, actual_exif->orientation, u8"orientation"sv);
+		assert_equal(ui::orientation::top_left, actual_exif->orientation, "orientation");
 	}
 
 	{
 		// PNG
-		const auto save_path = _temps.next_path(u8".png"sv);
-		const auto load_path = test_files_folder.combine_file(u8"engine.png"sv);
+		const auto save_path = _temps.next_path(".png");
+		const auto load_path = test_files_folder.combine_file("engine.png");
 		const auto loaded = ff.load(load_path, false);
 
 		image_edits edits;
@@ -473,14 +473,14 @@ static void should_rotate()
 		ff.update(load_path, save_path, {}, edits, {}, false, {});
 
 		const auto updated = ff.load(save_path, false);
-		assert_equal(loaded.i->height(), updated.i->width(), u8"png width"sv);
-		assert_equal(loaded.i->width(), updated.i->height(), u8"png width"sv);
+		assert_equal(loaded.i->height(), updated.i->width(), "png width");
+		assert_equal(loaded.i->width(), updated.i->height(), "png width");
 	}
 
 	{
 		// WEBP
-		const auto save_path = _temps.next_path(u8".webp"sv);
-		const auto load_path = test_files_folder.combine_file(u8"lake.webp"sv);
+		const auto save_path = _temps.next_path(".webp");
+		const auto load_path = test_files_folder.combine_file("lake.webp");
 		const auto loaded = ff.load(load_path, false);
 
 		image_edits edits;
@@ -489,16 +489,16 @@ static void should_rotate()
 		ff.update(load_path, save_path, {}, edits, {}, false, {});
 
 		const auto updated = ff.load(save_path, false);
-		assert_equal(false, updated.is_empty(), u8"webp result empty"sv);
-		assert_equal(loaded.i->height(), updated.i->width(), u8"webp width"sv);
-		assert_equal(loaded.i->width(), updated.i->height(), u8"webp width"sv);
+		assert_equal(false, updated.is_empty(), "webp result empty");
+		assert_equal(loaded.i->height(), updated.i->width(), "webp width");
+		assert_equal(loaded.i->width(), updated.i->height(), "webp width");
 	}
 }
 
 static void should_rotate133()
 {
 	const auto save_path = _temps.next_path();
-	const auto load_path = test_files_folder.combine_file(u8"Test.jpg"sv);
+	const auto load_path = test_files_folder.combine_file("Test.jpg");
 
 	files ff;
 	const auto loaded = ff.load(load_path, false);
@@ -519,7 +519,7 @@ static void should_rotate133()
 static void should_rotate_lossless()
 {
 	const auto save_path = _temps.next_path();
-	const auto load_path = test_files_folder.combine_file(u8"Lossless0.jpg"sv);
+	const auto load_path = test_files_folder.combine_file("Lossless0.jpg");
 
 	image_edits edits;
 	const quadd crop(sizei(640, 480));
@@ -528,7 +528,7 @@ static void should_rotate_lossless()
 	files ff;
 	ff.update(load_path, save_path, {}, edits, {}, false, {});
 
-	const auto expected = extract_properties(test_files_folder.combine_file(u8"Lossless90.jpg"sv));
+	const auto expected = extract_properties(test_files_folder.combine_file("Lossless90.jpg"));
 	const auto actual = extract_properties(save_path);
 
 	assert_equal(expected->width, actual->width);
@@ -538,7 +538,7 @@ static void should_rotate_lossless()
 static void should_resize()
 {
 	const auto save_path = _temps.next_path();
-	const auto load_path = test_files_folder.combine_file(u8"Test.jpg"sv);
+	const auto load_path = test_files_folder.combine_file("Test.jpg");
 
 	image_edits edits;
 	edits.scale(sizei(200, 150));
@@ -553,7 +553,7 @@ static void should_resize()
 
 static void should_preserve_orientation()
 {
-	const auto load_path = test_files_folder.combine_file(u8"exif-rotated.jpg"sv);
+	const auto load_path = test_files_folder.combine_file("exif-rotated.jpg");
 
 	files ff;
 	const auto loaded = ff.load(load_path, false);
@@ -561,22 +561,22 @@ static void should_preserve_orientation()
 	const auto loaded_orientation = loaded.i->orientation();
 
 	const auto encoded_jpg = ff.surface_to_image(surface, {}, {}, ui::image_format::JPEG);
-	assert_equal(loaded_orientation, encoded_jpg->orientation(), u8"orientation for created jpg"sv);
+	assert_equal(loaded_orientation, encoded_jpg->orientation(), "orientation for created jpg");
 
 	const auto encoded_png = ff.surface_to_image(surface, {}, {}, ui::image_format::PNG);
-	assert_equal(loaded_orientation, encoded_png->orientation(), u8"orientation for created png"sv);
+	assert_equal(loaded_orientation, encoded_png->orientation(), "orientation for created png");
 
 	const auto encoded_webp = ff.surface_to_image(surface, {}, {}, ui::image_format::WEBP);
-	assert_equal(loaded_orientation, encoded_webp->orientation(), u8"orientation for created webp"sv);
+	assert_equal(loaded_orientation, encoded_webp->orientation(), "orientation for created webp");
 
 	const auto loaded_jpg = load_image_file(encoded_jpg->data());
-	assert_equal(loaded_orientation, loaded_jpg->orientation(), u8"orientation for re-loaded jpg"sv);
+	assert_equal(loaded_orientation, loaded_jpg->orientation(), "orientation for re-loaded jpg");
 
 	const auto loaded_png = load_image_file(encoded_png->data());
-	assert_equal(loaded_orientation, loaded_png->orientation(), u8"orientation for re-loaded png"sv);
+	assert_equal(loaded_orientation, loaded_png->orientation(), "orientation for re-loaded png");
 
 	const auto loaded_webp = load_image_file(encoded_webp->data());
-	assert_equal(loaded_orientation, loaded_webp->orientation(), u8"orientation for re-loaded webp"sv);
+	assert_equal(loaded_orientation, loaded_webp->orientation(), "orientation for re-loaded webp");
 }
 
 void register_tests4(view_state& state, test_registry& tests)
@@ -584,47 +584,47 @@ void register_tests4(view_state& state, test_registry& tests)
 	//
 	// Modify media
 	//
-	constexpr std::u8string_view common_files[] = {
-		u8"Byzantium.avi"sv,
-		u8"cherrys.psd"sv,
-		u8"Colorblind.mp3"sv,
-		u8"engine.png"sv,
-		u8"Gherkin.CR2"sv,
-		u8"gizmo.mp4"sv,
-		u8"IMG_0096.JPG"sv,
-		u8"cmyk.JPG"sv,
-		u8"ipod.mov"sv,
-		u8"jello.tif"sv,
-		u8"StPauls.MOV"sv,
-		u8"Test.jpg"sv,
-		u8"tuesday.gif"sv,
-		u8"lake.webp"sv,
+	constexpr std::string_view common_files[] = {
+		"Byzantium.avi",
+		"cherrys.psd",
+		"Colorblind.mp3",
+		"engine.png",
+		"Gherkin.CR2",
+		"gizmo.mp4",
+		"IMG_0096.JPG",
+		"cmyk.JPG",
+		"ipod.mov",
+		"jello.tif",
+		"StPauls.MOV",
+		"Test.jpg",
+		"tuesday.gif",
+		"lake.webp",
 	};
 
 	for (auto name : common_files)
 	{
-		tests.add(str::format(u8"Should update metadata {}"sv, name), [name] { should_update_metadata(name); });
-		tests.add(str::format(u8"Should update location {}"sv, name), [name] { should_update_location(name); });
-		tests.add(str::format(u8"Should update rating {}"sv, name), [name] { should_update_rating(name); });
-		tests.add(str::format(u8"Should update tags {}"sv, name), [name] { should_add_remove_tags(name); });
+		tests.add(std::format("Should update metadata {}", name), [name] { should_update_metadata(name); });
+		tests.add(std::format("Should update location {}", name), [name] { should_update_location(name); });
+		tests.add(std::format("Should update rating {}", name), [name] { should_update_rating(name); });
+		tests.add(std::format("Should update tags {}", name), [name] { should_add_remove_tags(name); });
 	}
 
-	tests.add(u8"Should update gps in exif"s, should_update_gps_in_exif);
-	tests.add(u8"Should handle international characters"s, should_handle_international_characters);
-	tests.add(u8"Should update exif rating"s, should_update_exif_rating);
-	tests.add(u8"Should update formatted description"s, should_update_formatted_text);
-	tests.add(u8"Should remove shell written tags"s, should_remove_shell_written_tags);
+	tests.add("Should update gps in exif"s, should_update_gps_in_exif);
+	tests.add("Should handle international characters"s, should_handle_international_characters);
+	tests.add("Should update exif rating"s, should_update_exif_rating);
+	tests.add("Should update formatted description"s, should_update_formatted_text);
+	tests.add("Should remove shell written tags"s, should_remove_shell_written_tags);
 
 	//
 	// Bitmap Edit
 	//
-	tests.add(u8"Should preserve orientation"s, should_preserve_orientation);
-	tests.add(u8"Should resize"s, should_resize);
-	tests.add(u8"Should rotate"s, should_rotate);
-	tests.add(u8"Should rotate 133"s, should_rotate133);
-	tests.add(u8"Should rotate lossless"s, should_rotate_lossless);
-	tests.add(u8"Should save .png"s, [] { should_save(u8".png"sv, true); });
-	tests.add(u8"Should save .jpg"s, [] { should_save(u8".jpg"sv, true); });
-	tests.add(u8"Should save .webp"s, [] { should_save(u8".webp"sv, true); });
-	tests.add(u8"Should convert raw to jpeg"s, should_convert_raw_to_jpeg);
+	tests.add("Should preserve orientation"s, should_preserve_orientation);
+	tests.add("Should resize"s, should_resize);
+	tests.add("Should rotate"s, should_rotate);
+	tests.add("Should rotate 133"s, should_rotate133);
+	tests.add("Should rotate lossless"s, should_rotate_lossless);
+	tests.add("Should save .png"s, [] { should_save(".png", true); });
+	tests.add("Should save .jpg"s, [] { should_save(".jpg", true); });
+	tests.add("Should save .webp"s, [] { should_save(".webp", true); });
+	tests.add("Should convert raw to jpeg"s, should_convert_raw_to_jpeg);
 }

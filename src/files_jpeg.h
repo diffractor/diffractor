@@ -14,9 +14,9 @@
 class file_scan_result;
 class read_stream;
 
-static constexpr auto xmp_signature = u8"http://ns.adobe.com/xap/1.0/\0"sv;
-static constexpr auto icc_signature = u8"ICC_PROFILE\0"sv;
-static constexpr auto iptc_signature = u8"Photoshop 3.0\08BIM\04\04\0\0\0\0"sv;
+static constexpr auto xmp_signature = "http://ns.adobe.com/xap/1.0/\0"sv;
+static constexpr auto icc_signature = "ICC_PROFILE\0"sv;
+static constexpr auto iptc_signature = "Photoshop 3.0\08BIM\04\04\0\0\0\0"sv;
 static constexpr std::array<uint8_t, 6> exif_signature = {0x45, 0x78, 0x69, 0x66, 0x00, 0x00};
 
 bool is_exif_signature(df::cspan cs);

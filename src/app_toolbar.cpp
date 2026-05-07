@@ -159,11 +159,11 @@ void app_frame::create_toolbars()
 	_test_commands = _app_frame->create_toolbar(tb_styles, test_commands);
 }
 
-static std::u8string format_items_summary(const group_by grouping, const sort_by order,
-                                          const df::file_group_histogram& summary, const bool is_init_complete)
+static std::string format_items_summary(const group_by grouping, const sort_by order,
+                                        const df::file_group_histogram& summary, const bool is_init_complete)
 {
-	std::u8string_view group_text;
-	std::u8string_view sort_text;
+	std::string_view group_text;
+	std::string_view sort_text;
 
 	switch (grouping)
 	{
@@ -216,10 +216,10 @@ static std::u8string format_items_summary(const group_by grouping, const sort_by
 
 		if (group_text == sort_text || grouping == group_by::shuffle || sort_text.empty() || order == sort_by::def)
 		{
-			return str::format(u8"{}|{} - {}"sv, total_count, total_size, group_text);
+			return std::format("{}|{} - {}", total_count, total_size, group_text);
 		}
 
-		return str::format(u8"{}|{} - {}|{}"sv, total_count, total_size, group_text, sort_text);
+		return std::format("{}|{} - {}|{}", total_count, total_size, group_text, sort_text);
 	}
 	const auto total_folders = summary.total_folders();
 
@@ -229,13 +229,13 @@ static std::u8string format_items_summary(const group_by grouping, const sort_by
 
 		if (group_text == sort_text || grouping == group_by::shuffle || sort_text.empty() || order == sort_by::def)
 		{
-			return str::format(u8"{} {} - {}"sv, total_count, tt.folders, group_text);
+			return std::format("{} {} - {}", total_count, tt.folders, group_text);
 		}
 
-		return str::format(u8"{} {} - {}|{}"sv, total_count, tt.folders, group_text, sort_text);
+		return std::format("{} {} - {}|{}", total_count, tt.folders, group_text, sort_text);
 	}
 
-	return std::u8string(is_init_complete ? tt.empty : tt.loading);
+	return std::string(is_init_complete ? tt.empty : tt.loading);
 }
 
 icon_index volumes_icons[5] = {
@@ -290,7 +290,7 @@ icon_index app_frame::repeat_toggle_icon()
 	return icon_index::repeat_none;
 }
 
-bool app_frame::update_toolbar_text(const commands cc, const std::u8string& text)
+bool app_frame::update_toolbar_text(const commands cc, const std::string& text)
 {
 	const auto command = _commands[cc];
 	const auto changed = text != command->toolbar_text;
@@ -552,7 +552,7 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::sort_name]->checked = _state.sort_order() == sort_by::name;
 	_commands[commands::sort_size]->checked = _state.sort_order() == sort_by::size;
 	_commands[commands::sort_date_modified]->checked = _state.sort_order() == sort_by::date_modified;
-	_commands[commands::english]->checked = setting.language == u8"en"sv;
+	_commands[commands::english]->checked = setting.language == "en";
 
 
 	_commands[commands::playback_volume100]->checked = setting.media_volume == media_volumes[0];
@@ -605,12 +605,12 @@ void app_frame::update_address() const
 {
 	const auto& search = _state.search();
 	auto icon = icon_index::search;
-	std::u8string text;
+	std::string text;
 
 	switch (_state.view_mode())
 	{
 	case view_type::test:
-		text = u8"Testing"sv;
+		text = "Testing";
 		icon = icon_index::check;
 		break;
 	case view_type::media:
@@ -620,7 +620,7 @@ void app_frame::update_address() const
 		text = search.text();
 		break;
 	case view_type::edit:
-		text = _state._edit_item ? _state._edit_item->path().str() : std::u8string{};
+		text = _state._edit_item ? _state._edit_item->path().str() : std::string{};
 		icon = _state.displayed_item_icon();
 		break;
 	}
@@ -685,7 +685,7 @@ void app_frame::update_command_text()
 	            tt.command_desktop_background);
 	def_command(commands::menu_display_options, command_group::none, icon_index::none, tt.command_display_options);
 	def_command(commands::tool_edit, command_group::tools, icon_index::edit, tt.command_edit,
-	            str::format(u8"{}\n{}"sv, tt.tooltip_edit1, tt.tooltip_edit2));
+	            std::format("{}\n{}", tt.tooltip_edit1, tt.tooltip_edit2));
 	def_command(commands::edit_copy, command_group::file_management, icon_index::edit_copy, tt.command_edit_copy);
 	def_command(commands::edit_cut, command_group::file_management, icon_index::edit_cut, tt.command_edit_cut);
 	def_command(commands::edit_paste, command_group::file_management, icon_index::edit_paste, tt.command_edit_paste);
@@ -786,7 +786,7 @@ void app_frame::update_command_text()
 	def_command(commands::menu_tag_with, command_group::none, icon_index::tag, tt.prop_name_tag, tt.tooltip_tag_with);
 	def_command(commands::menu_language, command_group::none, icon_index::language, tt.command_language,
 	            tt.tooltip_language);
-	def_command(commands::english, command_group::none, icon_index::none, u8"English"sv, u8"English language"sv);
+	def_command(commands::english, command_group::none, icon_index::none, "English", "English language");
 	def_command(commands::option_toggle_details, command_group::options, icon_index::details, tt.command_toggle_details,
 	            tt.tooltip_toggle_details_all);
 	def_command(commands::option_toggle_item_size, command_group::options, icon_index::zoom_in,
@@ -845,13 +845,13 @@ void app_frame::update_command_text()
 	def_command(commands::import_run, command_group::none, icon_index::play, tt.command_import);
 	def_command(commands::locate_run, command_group::none, icon_index::play, tt.command_locate);
 
-	def_command(commands::test_gen_po, command_group::none, icon_index::language, u8"Generate language files"sv);
-	def_command(commands::test_reset_graphics, command_group::none, icon_index::screen, u8"Reset graphics"sv);
-	def_command(commands::test_send_crash_report, command_group::none, icon_index::download, u8"Send crash report"sv);
-	def_command(commands::test_crash, command_group::none, icon_index::error, u8"Crash!"sv);
-	def_command(commands::tool_test, command_group::none, icon_index::check, u8"Tests"sv, u8"Show test view"sv);
-	def_command(commands::test_new_version, command_group::none, icon_index::lightbulb, u8"Test new version"sv);
-	def_command(commands::test_run_all, command_group::none, icon_index::play, u8"Run tests"sv);
+	def_command(commands::test_gen_po, command_group::none, icon_index::language, "Generate language files");
+	def_command(commands::test_reset_graphics, command_group::none, icon_index::screen, "Reset graphics");
+	def_command(commands::test_send_crash_report, command_group::none, icon_index::download, "Send crash report");
+	def_command(commands::test_crash, command_group::none, icon_index::error, "Crash!");
+	def_command(commands::tool_test, command_group::none, icon_index::check, "Tests", "Show test view");
+	def_command(commands::test_new_version, command_group::none, icon_index::lightbulb, "Test new version");
+	def_command(commands::test_run_all, command_group::none, icon_index::play, "Run tests");
 
 	_commands[commands::browse_previous_item]->keyboard_accelerator_text = tt.keyboard_left;
 	_commands[commands::browse_next_item]->keyboard_accelerator_text = tt.keyboard_right;
@@ -973,7 +973,7 @@ void app_frame::add_command_invoke(const commands id, std::function<void()> invo
 }
 
 void app_frame::def_command(const commands id, const command_group group, const icon_index icon,
-                            const std::u8string_view text, const std::u8string_view tooltip)
+                            const std::string_view text, const std::string_view tooltip)
 {
 	const auto c = find_or_create_command_info(id);
 	c->group = group;
@@ -1022,7 +1022,7 @@ void app_frame::tooltip(view_hover_element& hover, const commands id) const
 		}
 	}
 
-	std::u8string keyboard_accelerator;
+	std::string keyboard_accelerator;
 
 	if (id == commands::browse_previous_item || id == commands::browse_next_item)
 	{
@@ -1109,7 +1109,8 @@ void app_frame::tooltip(view_hover_element& hover, const commands id) const
 		if (!search.is_empty())
 		{
 			const auto is_favorite = _state.search_is_favorite();
-			const auto text = str::format(is_favorite ? tt.favorite_remove_fmt : tt.favorite_add_fmt, search.text());
+			const auto text = str_format((is_favorite ? tt.favorite_remove_fmt : tt.favorite_add_fmt).sv(),
+			                             search.text());
 			hover.elements->add(std::make_shared<text_element>(text, ui::style::font_face::dialog,
 			                                                   ui::style::text_style::multiline,
 			                                                   view_element_style::new_line));
@@ -1143,8 +1144,9 @@ void app_frame::tooltip(view_hover_element& hover, const commands id) const
 		                                                   ui::style::text_style::multiline,
 		                                                   view_element_style::line_break));
 		hover.elements->add(
-			std::make_shared<text_element>(str::format(tt.update_avail_version_fmt, setting.available_version)));
-		hover.elements->add(std::make_shared<text_element>(str::format(tt.update_current_version_fmt, s_app_version)));
+			std::make_shared<text_element>(str_format(tt.update_avail_version_fmt.sv(), setting.available_version)));
+		hover.elements->add(
+			std::make_shared<text_element>(str_format(tt.update_current_version_fmt.sv(), s_app_version)));
 	}
 #endif
 	else if (id == commands::option_show_rotated)
@@ -1158,7 +1160,7 @@ void app_frame::tooltip(view_hover_element& hover, const commands id) const
 			if (md)
 			{
 				hover.elements->add(std::make_shared<text_element>(
-					str::format(tt.item_oriented_tooltip_fmt, orientation_to_string(md->orientation))));
+					str_format(tt.item_oriented_tooltip_fmt.sv(), orientation_to_string(md->orientation))));
 			}
 		}
 
@@ -1178,7 +1180,7 @@ void app_frame::tooltip(view_hover_element& hover, const commands id) const
 
 	if (!keyboard_accelerator.empty())
 	{
-		keyboard_accelerator = str::format(u8"{} {}"sv, tt.keyboard_accelerator_press, keyboard_accelerator);
+		keyboard_accelerator = std::format("{} {}", tt.keyboard_accelerator_press, keyboard_accelerator);
 		hover.elements->add(std::make_shared<action_element>(keyboard_accelerator));
 	}
 }

@@ -46,7 +46,7 @@ public:
 			else if (std::isspace(c)) { c = ' '; }
 			//else if (std::ispunct(c)) {}
 			//else if (std::isalnum(c)) {}
-			//else { c = "."sv; };
+			//else { c = "."; };
 
 			result[i] = c;
 		}
@@ -57,7 +57,7 @@ public:
 	void render(ui::draw_context& dc, const pointi element_offset) const override
 	{
 		static const auto char_map = make_char_map();
-		static constexpr char8_t hex_chars[16] = {
+		static constexpr char hex_chars[16] = {
 			'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'
 		};
 
@@ -69,7 +69,7 @@ public:
 			const auto last_line = first_line + (clip_bounds.height() + _line_height) / _line_height;
 			const auto clr = ui::color(dc.colors.foreground, dc.colors.alpha);
 
-			std::u8string line(_chars_per_line, ' ');
+			std::string line(_chars_per_line, ' ');
 			const auto left = (logical_bounds.left + logical_bounds.right - _char_width * line.size()) / 2;
 
 			for (auto i = first_line; i < last_line; ++i)
@@ -126,14 +126,15 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		const auto extent = mc.measure_text("00000000"sv, _font, ui::style::text_style::single_line, 200);
+		const auto extent = mc.measure_text("00000000", _font, ui::style::text_style::single_line, 200);
 
 		_char_width = extent.cx / 8;
 		_line_height = extent.cy + padding;
 		_bytes_per_line = 0;
 		_chars_per_line = 0;
 
-		while (static_cast<int>(calc_chars_per_line(_bytes_per_line + 8) * _char_width) < width_limit)
+		while (_char_width > 0 &&
+			static_cast<int>(calc_chars_per_line(_bytes_per_line + 8) * _char_width) < width_limit)
 		{
 			_bytes_per_line += 8;
 			_chars_per_line = calc_chars_per_line(_bytes_per_line);

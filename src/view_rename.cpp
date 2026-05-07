@@ -51,7 +51,7 @@ void rename_view::run() const
 				break;
 		}
 
-		rr.complete(result.failed() ? result.format_error() : std::u8string{});
+		rr.complete(result.failed() ? result.format_error() : std::string{});
 	});
 
 	results->wait_for_complete();
@@ -95,15 +95,15 @@ view_controls_host_ptr rename_view::controls(const ui::control_frame_ptr& owner)
 	const auto& items = _state.selected_items();
 	auto frame = owner->create_dlg(result, false);
 
-	std::vector<std::u8string> folder_structure_completes
+	std::vector<std::string> folder_structure_completes
 	{
 		setting.rename.name_template,
-		u8"file-###"s,
-		u8"{created}-###"s,
-		u8"{year}-{month}-###"s,
-		u8"travel-{country}-###"s,
-		u8"{artist}-{album}-{title}"s,
-		u8"{show}.S{season}E{episode}.{title}"s,
+		"file-###"s,
+		"{created}-###"s,
+		"{year}-{month}-###"s,
+		"travel-{country}-###"s,
+		"{artist}-{album}-{title}"s,
+		"{show}.S{season}E{episode}.{title}"s,
 	};
 
 	std::sort(folder_structure_completes.begin(), folder_structure_completes.end()); // Sort
@@ -127,9 +127,9 @@ view_controls_host_ptr rename_view::controls(const ui::control_frame_ptr& owner)
 		std::make_shared<divider_element>(),
 		std::make_shared<text_element>(tt.rename_template_label),
 		std::make_shared<ui::edit_picker_control>(frame, setting.rename.name_template, folder_structure_completes,
-		                                          [this](std::u8string_view) { refresh(); }),
+		                                          [this](std::string_view) { refresh(); }),
 		std::make_shared<ui::edit_control>(frame, tt.rename_template_start_label, setting.rename.start_seq,
-		                                   [this](std::u8string_view) { refresh(); }),
+		                                   [this](std::string_view) { refresh(); }),
 	};
 
 	for (const auto& c : controls)

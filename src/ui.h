@@ -90,7 +90,7 @@ namespace keys
 	extern char32_t HOME;
 	extern char32_t END;
 
-	std::u8string_view format(int key);
+	std::string_view format(int key);
 };
 
 struct keyboard_accelerator_t
@@ -103,7 +103,7 @@ struct keyboard_accelerator_t
 	static constexpr auto alt = 0x10;
 };
 
-std::u8string format_keyboard_accelerator(const std::vector<keyboard_accelerator_t>& keyboard_accelerators);
+std::string format_keyboard_accelerator(const std::vector<keyboard_accelerator_t>& keyboard_accelerators);
 
 namespace ui
 {
@@ -627,7 +627,7 @@ namespace ui
 			if (cx < 1 || cy < 1)
 			{
 				df::assert_true(false);
-				const auto message = str::format(u8"invalid pixel size {}x{}"sv, cx, cy);
+				const auto message = std::format("invalid pixel size {}x{}", cx, cy);
 				df::log(__FUNCTION__, message);
 				throw app_exception(message);
 			}
@@ -784,19 +784,19 @@ namespace ui
 			_dimensions.cy = 0;
 		}
 
-		std::u8string_view extension() const
+		std::string_view extension() const
 		{
 			switch (_format)
 			{
-			case image_format::JPEG: return u8"jpg"sv;
-			case image_format::PNG: return u8"png"sv;
-			case image_format::WEBP: return u8"webp"sv;
+			case image_format::JPEG: return "jpg";
+			case image_format::PNG: return "png";
+			case image_format::WEBP: return "webp";
 			case image_format::Unknown: break;
 			default: break;
 			}
 
 			df::assert_true(false); // Unknown extension
-			return u8"x"sv;
+			return "x";
 		}
 	};
 
@@ -1080,31 +1080,31 @@ namespace ui
 	};
 
 
-	constexpr std::u8string_view to_string(const texture_format format)
+	constexpr std::string_view to_string(const texture_format format)
 	{
 		switch (format)
 		{
-		case texture_format::ARGB: return u8"ARGB"sv;
-		case texture_format::P010: return u8"p010"sv;
-		case texture_format::NV12: return u8"NV12"sv;
-		case texture_format::RGB: return u8"RGB"sv;
+		case texture_format::ARGB: return "ARGB";
+		case texture_format::P010: return "p010";
+		case texture_format::NV12: return "NV12";
+		case texture_format::RGB: return "RGB";
 		default: break;
 		}
 
-		return u8"?"sv;
+		return "?";
 	}
 
-	constexpr std::u8string_view to_string(const texture_sampler sampler)
+	constexpr std::string_view to_string(const texture_sampler sampler)
 	{
 		switch (sampler)
 		{
-		case texture_sampler::point: return u8"point"sv;
-		case texture_sampler::bicubic: return u8"bicubic"sv;
-		case texture_sampler::bilinear: return u8"bilinear"sv;
+		case texture_sampler::point: return "point";
+		case texture_sampler::bicubic: return "bicubic";
+		case texture_sampler::bilinear: return "bilinear";
 		default: break;
 		}
 
-		return u8"?"sv;
+		return "?";
 	}
 
 	class color_adjust
@@ -1173,7 +1173,7 @@ namespace ui
 	{
 	public:
 		virtual ~text_layout() = default;
-		virtual void update(std::u8string_view text, style::text_style style) = 0;
+		virtual void update(std::string_view text, style::text_style style) = 0;
 		virtual sizei measure_text(int cx, int cy = 1000) = 0;
 	};
 
@@ -1198,7 +1198,7 @@ namespace ui
 	class measure_context : public df::no_copy
 	{
 	public:
-		virtual sizei measure_text(std::u8string_view text, style::font_face font, style::text_style style, int cx,
+		virtual sizei measure_text(std::string_view text, style::font_face font, style::text_style style, int cx,
 		                           int cy = 0) = 0;
 		virtual int text_line_height(style::font_face font) = 0;
 		virtual text_layout_ptr create_text_layout(style::font_face font) = 0;
@@ -1226,9 +1226,9 @@ namespace ui
 
 		virtual void draw_rounded_rect(recti bounds, color c, int radius) = 0;
 		virtual void draw_rect(recti bounds, color c) = 0;
-		virtual void draw_text(std::u8string_view text, recti bounds, style::font_face font, style::text_style style,
+		virtual void draw_text(std::string_view text, recti bounds, style::font_face font, style::text_style style,
 		                       color c, color bg) = 0;
-		virtual void draw_text(std::u8string_view text, const std::vector<text_highlight_t>& highlights, recti bounds,
+		virtual void draw_text(std::string_view text, const std::vector<text_highlight_t>& highlights, recti bounds,
 		                       style::font_face font, style::text_style style, color clr, color bg) = 0;
 		virtual void draw_text(const text_layout_ptr& tl, recti bounds, color clr, color bg) = 0;
 		virtual void draw_shadow(recti bounds, int width, float alpha, bool inverse = false) = 0;
@@ -1242,7 +1242,7 @@ namespace ui
 		virtual void draw_vertices(const vertices_ptr& v) = 0;
 		virtual void draw_edge_shadows(float alpha) = 0;
 
-		sizei measure_text(std::u8string_view text, style::font_face font, style::text_style style, int width,
+		sizei measure_text(std::string_view text, style::font_face font, style::text_style style, int width,
 		                   int height = 0) override = 0;
 		int text_line_height(style::font_face type) override = 0;
 
@@ -1263,8 +1263,8 @@ namespace ui
 		virtual std::any handle() const = 0;
 		virtual void destroy() = 0;
 		virtual void enable(bool enable) = 0;
-		virtual std::u8string window_text() const = 0;
-		virtual void window_text(std::u8string_view val) = 0;
+		virtual std::string window_text() const = 0;
+		virtual void window_text(std::string_view val) = 0;
 		virtual void focus() = 0;
 		virtual sizei measure(int cx) const = 0;
 		virtual bool is_visible() const = 0;
@@ -1293,12 +1293,12 @@ namespace ui
 	{
 	public:
 		virtual void limit_text_len(int i) = 0;
-		virtual void replace_sel(std::u8string_view new_text, bool add_space_if_append) = 0;
+		virtual void replace_sel(std::string_view new_text, bool add_space_if_append) = 0;
 		virtual void select(int start, int end) = 0;
 		virtual void select_all() = 0;
 		virtual void set_icon(icon_index icon) = 0;
 		virtual void set_background(color32 bg) = 0;
-		virtual void auto_completes(const std::vector<std::u8string>& texts) = 0;
+		virtual void auto_completes(const std::vector<std::string>& texts) = 0;
 	};
 
 	class trackbar : public control_base
@@ -1320,8 +1320,8 @@ namespace ui
 	class web_events : public df::no_copy
 	{
 	public:
-		virtual void navigation_complete(std::u8string_view url) = 0;
-		virtual bool before_navigate(std::u8string_view url) = 0;
+		virtual void navigation_complete(std::string_view url) = 0;
+		virtual bool before_navigate(std::string_view url) = 0;
 
 		virtual void select_place(const double lat, const double lng)
 		{
@@ -1331,7 +1331,7 @@ namespace ui
 	class web_window : public control_base
 	{
 	public:
-		virtual void eval_in_browser(std::u8string_view script) const = 0;
+		virtual void eval_in_browser(std::string_view script) const = 0;
 	};
 
 	struct edit_styles
@@ -1350,8 +1350,8 @@ namespace ui
 		style::font_face font = style::font_face::dialog;
 		color32 bg_clr = style::color::dialog_background;
 		std::function<bool(int c, key_state keys)> capture_key_down;
-		std::vector<std::u8string> auto_complete_list;
-		std::u8string cue;
+		std::vector<std::string> auto_complete_list;
+		std::string cue;
 	};
 
 	struct toolbar_styles
@@ -1371,15 +1371,15 @@ namespace ui
 		{
 		}
 
-		command(const std::u8string_view t, std::any opaque, std::function<void()> invoke, const bool ch)
+		command(const std::string_view t, std::any opaque, std::function<void()> invoke, const bool ch)
 			: text(t), checked(ch), opaque(std::move(opaque)), invoke(std::move(invoke))
 		{
 		}
 
-		std::u8string text;
-		std::u8string toolbar_text;
-		std::u8string tooltip_text;
-		std::u8string keyboard_accelerator_text;
+		std::string text;
+		std::string toolbar_text;
+		std::string tooltip_text;
+		std::string keyboard_accelerator_text;
 		std::vector<keyboard_accelerator_t> kba;
 
 		bool visible = true;
@@ -1572,15 +1572,15 @@ namespace ui
 	class control_frame : public frame
 	{
 	public:
-		virtual edit_ptr create_edit(const edit_styles& styles, std::u8string_view text,
-		                             std::function<void(const std::u8string&)> changed) = 0;
+		virtual edit_ptr create_edit(const edit_styles& styles, std::string_view text,
+		                             std::function<void(const std::string&)> changed) = 0;
 		virtual trackbar_ptr create_slider(int min, int max, std::function<void(int, bool)> changed) = 0;
 		virtual toolbar_ptr create_toolbar(const toolbar_styles& styles, const std::vector<command_ptr>& buttons) = 0;
-		virtual button_ptr create_button(std::u8string_view text, std::function<void()> invoke,
+		virtual button_ptr create_button(std::string_view text, std::function<void()> invoke,
 		                                 bool default_button = false) = 0;
-		virtual button_ptr create_button(icon_index icon, std::u8string_view title, std::u8string_view details,
+		virtual button_ptr create_button(icon_index icon, std::string_view title, std::string_view details,
 		                                 std::function<void()> invoke, bool default_button = false) = 0;
-		virtual button_ptr create_check_button(bool val, std::u8string_view text, bool is_radio,
+		virtual button_ptr create_check_button(bool val, std::string_view text, bool is_radio,
 		                                       std::function<void(bool)> changed) = 0;
 		virtual date_time_control_ptr create_date_time_control(df::date_t text, std::function<void(df::date_t)> changed,
 		                                                       bool include_time) = 0;
@@ -1621,9 +1621,9 @@ namespace ui
 		virtual ~app() = default;
 
 		virtual bool pre_init() = 0;
-		virtual bool init(std::u8string_view command_line) = 0;
+		virtual bool init(std::string_view command_line) = 0;
 		virtual void final_exit() = 0;
-		virtual void app_fail(std::u8string_view message, std::u8string_view more_text) = 0;
+		virtual void app_fail(std::string_view message, std::string_view more_text) = 0;
 		virtual void idle() = 0;
 		virtual void exit() = 0;
 		virtual void crash(df::file_path dump_file_path) = 0;
@@ -1634,7 +1634,7 @@ namespace ui
 		virtual bool key_down(char32_t c, key_state keys) = 0;
 		virtual void track_menu(const frame_ptr& parent, recti button_bounds,
 		                        const std::vector<command_ptr>& buttons) = 0;
-		virtual std::u8string restart_cmd_line() = 0;
+		virtual std::string restart_cmd_line() = 0;
 		virtual void save_recovery_state() = 0;
 	};
 

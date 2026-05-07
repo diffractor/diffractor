@@ -29,7 +29,7 @@ namespace df
 		bool create(file_path path);
 		bool close();
 
-		bool add(file_path path, std::u8string_view name) const;
+		bool add(file_path path, std::string_view name) const;
 		bool add(file_path path);
 
 		static size_t extract(file_path zip_file_path, folder_path dest_folder_path);

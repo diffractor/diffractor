@@ -176,7 +176,7 @@ static void iterate_items(const df::search_t& search,
 			if (token.is_cancelled())
 				break;
 
-			//df::log(__FUNCTION__, "query "sv << selector.str();
+			//df::log(__FUNCTION__, "query " << selector.str();
 
 			const auto recursive = selector.is_recursive();
 			const auto wildcard = selector.wildcard();
@@ -411,127 +411,127 @@ void index_state::init_item_index()
 
 	for (const auto& f : all_file_groups())
 	{
-		++_summary._distinct_words[str::cache(str::format(u8"@{}"sv, f->name))];
-		++_summary._distinct_words[str::cache(str::format(u8"@{}"sv, f->plural_name))];
+		++_summary._distinct_words[str::cache(std::format("@{}", f->name))];
+		++_summary._distinct_words[str::cache(std::format("@{}", f->plural_name))];
 	}
 
 	_summary._distinct_text[prop::genre] = df::dense_unique_strings
 	{
-		u8"Abstract"_c,
-		u8"Action & Adventure"_c,
-		u8"Action"_c,
-		u8"Aerial"_c,
-		u8"Alternative"_c,
-		u8"Analog"_c,
-		u8"Animation"_c,
-		u8"Anime"_c,
-		u8"Architectural"_c,
-		u8"Aviation"_c,
-		u8"Blues"_c,
-		u8"Brazilian"_c,
-		u8"Candid"_c,
-		u8"Children's"_c,
-		u8"Christian & Gospel"_c,
-		u8"Classic"_c,
-		u8"Classical"_c,
-		u8"Close-up"_c,
-		u8"Cloudscape"_c,
-		u8"Comedy"_c,
-		u8"Conceptual"_c,
-		u8"Concert Films"_c,
-		u8"Concert"_c,
-		u8"Conservation"_c,
-		u8"Country"_c,
-		u8"Dance"_c,
-		u8"Documentary"_c,
-		u8"Drama"_c,
-		u8"Easy Listening"_c,
-		u8"Electronic"_c,
-		u8"Family"_c,
-		u8"Fashion"_c,
-		u8"Film still"_c,
-		u8"Fine-art"_c,
-		u8"Fire"_c,
-		u8"Fireworks"_c,
-		u8"Fitness & Workout"_c,
-		u8"Food"_c,
-		u8"Foreign"_c,
-		u8"Forensic"_c,
-		u8"Geophotography"_c,
-		u8"Glamour"_c,
-		u8"High key"_c,
-		u8"High-speed"_c,
-		u8"Hip-Hop/Rap"_c,
-		u8"Holiday"_c,
-		u8"Horror"_c,
-		u8"Independent"_c,
-		u8"Instrumental"_c,
-		u8"Jazz"_c,
-		u8"Kids & Family"_c,
-		u8"Kids"_c,
-		u8"Kirlian"_c,
-		u8"Landscape"_c,
-		u8"Latin"_c,
-		u8"Lifestyle"_c,
-		u8"Lo-fi"_c,
-		u8"Lomography"_c,
-		u8"Long-exposure"_c,
-		u8"Low key"_c,
-		u8"Macro"_c,
-		u8"Medical"_c,
-		u8"Monochrome"_c,
-		u8"Music Documentaries"_c,
-		u8"Music Feature Films"_c,
-		u8"Musicals"_c,
-		u8"Narrative"_c,
-		u8"New Age"_c,
-		u8"Night"_c,
-		u8"Nonfiction"_c,
-		u8"Opera"_c,
-		u8"Panorama"_c,
-		u8"Panoramic"_c,
-		u8"Pellier Noir"_c,
-		u8"Photo op"_c,
-		u8"Photobiography"_c,
-		u8"Photojournalism"_c,
-		u8"Photowalking"_c,
-		u8"Podcast"_c,
-		u8"Polaroid"_c,
-		u8"Pop"_c,
-		u8"Portrait"_c,
-		u8"R&B"_c,
-		u8"Reality TV"_c,
-		u8"Reggae"_c,
-		u8"Rock"_c,
-		u8"Romance"_c,
-		u8"Satellite"_c,
-		u8"Sci-Fi & Fantasy"_c,
-		u8"Short Films"_c,
-		u8"Singer/Songwriter"_c,
-		u8"Social"_c,
-		u8"Soft focus"_c,
-		u8"Soul"_c,
-		u8"Soundtrack"_c,
-		u8"Special Interest"_c,
-		u8"Sports"_c,
-		u8"Star trail"_c,
-		u8"Still life"_c,
-		u8"Stock"_c,
-		u8"Street"_c,
-		u8"Subminiature"_c,
-		u8"Teens"_c,
-		u8"Thriller"_c,
-		u8"Time-lapse"_c,
-		u8"Travel"_c,
-		u8"Ultraviolet"_c,
-		u8"Underwater"_c,
-		u8"Urban"_c,
-		u8"Vernacular"_c,
-		u8"Vintage"_c,
-		u8"Vocal"_c,
-		u8"War"_c,
-		u8"Western"_c,
-		u8"World"_c
+		"Abstract"_c,
+		"Action & Adventure"_c,
+		"Action"_c,
+		"Aerial"_c,
+		"Alternative"_c,
+		"Analog"_c,
+		"Animation"_c,
+		"Anime"_c,
+		"Architectural"_c,
+		"Aviation"_c,
+		"Blues"_c,
+		"Brazilian"_c,
+		"Candid"_c,
+		"Children's"_c,
+		"Christian & Gospel"_c,
+		"Classic"_c,
+		"Classical"_c,
+		"Close-up"_c,
+		"Cloudscape"_c,
+		"Comedy"_c,
+		"Conceptual"_c,
+		"Concert Films"_c,
+		"Concert"_c,
+		"Conservation"_c,
+		"Country"_c,
+		"Dance"_c,
+		"Documentary"_c,
+		"Drama"_c,
+		"Easy Listening"_c,
+		"Electronic"_c,
+		"Family"_c,
+		"Fashion"_c,
+		"Film still"_c,
+		"Fine-art"_c,
+		"Fire"_c,
+		"Fireworks"_c,
+		"Fitness & Workout"_c,
+		"Food"_c,
+		"Foreign"_c,
+		"Forensic"_c,
+		"Geophotography"_c,
+		"Glamour"_c,
+		"High key"_c,
+		"High-speed"_c,
+		"Hip-Hop/Rap"_c,
+		"Holiday"_c,
+		"Horror"_c,
+		"Independent"_c,
+		"Instrumental"_c,
+		"Jazz"_c,
+		"Kids & Family"_c,
+		"Kids"_c,
+		"Kirlian"_c,
+		"Landscape"_c,
+		"Latin"_c,
+		"Lifestyle"_c,
+		"Lo-fi"_c,
+		"Lomography"_c,
+		"Long-exposure"_c,
+		"Low key"_c,
+		"Macro"_c,
+		"Medical"_c,
+		"Monochrome"_c,
+		"Music Documentaries"_c,
+		"Music Feature Films"_c,
+		"Musicals"_c,
+		"Narrative"_c,
+		"New Age"_c,
+		"Night"_c,
+		"Nonfiction"_c,
+		"Opera"_c,
+		"Panorama"_c,
+		"Panoramic"_c,
+		"Pellier Noir"_c,
+		"Photo op"_c,
+		"Photobiography"_c,
+		"Photojournalism"_c,
+		"Photowalking"_c,
+		"Podcast"_c,
+		"Polaroid"_c,
+		"Pop"_c,
+		"Portrait"_c,
+		"R&B"_c,
+		"Reality TV"_c,
+		"Reggae"_c,
+		"Rock"_c,
+		"Romance"_c,
+		"Satellite"_c,
+		"Sci-Fi & Fantasy"_c,
+		"Short Films"_c,
+		"Singer/Songwriter"_c,
+		"Social"_c,
+		"Soft focus"_c,
+		"Soul"_c,
+		"Soundtrack"_c,
+		"Special Interest"_c,
+		"Sports"_c,
+		"Star trail"_c,
+		"Still life"_c,
+		"Stock"_c,
+		"Street"_c,
+		"Subminiature"_c,
+		"Teens"_c,
+		"Thriller"_c,
+		"Time-lapse"_c,
+		"Travel"_c,
+		"Ultraviolet"_c,
+		"Underwater"_c,
+		"Urban"_c,
+		"Vernacular"_c,
+		"Vintage"_c,
+		"Vocal"_c,
+		"War"_c,
+		"Western"_c,
+		"World"_c
 	};
 }
 
@@ -577,7 +577,7 @@ bool index_state::is_in_collection(const df::folder_path folder) const
 	return false;
 }
 
-static df::index_item_infos::iterator find_file(df::index_item_infos& files, const std::u8string_view name)
+static df::index_item_infos::iterator find_file(df::index_item_infos& files, const std::string_view name)
 {
 	const auto lb = std::lower_bound(files.begin(), files.end(), name);
 	// , [](auto&& l, auto&& r) { return l._time < r._time; });
@@ -585,7 +585,7 @@ static df::index_item_infos::iterator find_file(df::index_item_infos& files, con
 	return files.end();
 }
 
-static df::index_item_infos::const_iterator find_file(const df::index_item_infos& files, const std::u8string_view name)
+static df::index_item_infos::const_iterator find_file(const df::index_item_infos& files, const std::string_view name)
 {
 	const auto lb = std::lower_bound(files.begin(), files.end(), name);
 	// , [](auto&& l, auto&& r) { return l._time < r._time; });
@@ -630,7 +630,7 @@ void populate_file_info(df::index_file_item& file_node, const platform::file_inf
 		{
 			const auto ext_pos = df::find_ext(name);
 
-			if (ext_pos != std::u8string_view::npos)
+			if (ext_pos != std::string_view::npos)
 			{
 				md = file_node.safe_ps();
 				const auto name_props = scan_info_from_title(name.substr(0, ext_pos));
@@ -663,8 +663,8 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 		df::index_item_infos updated_files;
 		df::index_folder_infos updated_folders;
 		std::vector<df::folder_path> removed_folders;
-		std::unordered_multimap<std::u8string_view, str::cached, df::ihash, df::ieq> sidecars;
-		df::hash_set<std::u8string_view, df::ihash, df::ieq> sidecar_extensions;
+		std::unordered_multimap<std::string_view, str::cached, df::ihash, df::ieq> sidecars;
+		df::hash_set<std::string_view, df::ihash, df::ieq> sidecar_extensions;
 
 		auto less_ptr_name = [](const auto& a, const auto& b) { return str::icmp(a->name, b->name) < 0; };
 		auto less_name = [](const auto& a, const auto& b) { return str::icmp(a.name, b.name) < 0; };
@@ -821,7 +821,7 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 
 					sidecars.emplace(without_extension, name);
 
-					if (str::icmp(ext, u8"xmp"sv) == 0)
+					if (str::icmp(ext, "xmp") == 0)
 					{
 						auto ps = f.safe_ps();
 
@@ -854,7 +854,7 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 				{
 					const auto without_extension = path.file_name_without_extension();
 
-					std::set<std::u8string_view> updated_sidecars;
+					std::set<std::string_view> updated_sidecars;
 					const auto found_with_extension = sidecars.equal_range(name);
 
 					for (auto it = found_with_extension.first; it != found_with_extension.second; ++it)
@@ -883,7 +883,7 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 					{
 						const auto ext = sc_name.substr(df::find_ext(sc_name));
 
-						if (str::icmp(ext, u8".xmp"sv) == 0)
+						if (str::icmp(ext, ".xmp") == 0)
 						{
 							ps->xmp = str::cache(sc_name);
 						}
@@ -1099,12 +1099,17 @@ void index_state::update_predictions()
 
 				if (file.duplicates.group)
 				{
-					const auto found = group_coalesce.find(file.duplicates.group);
+					// Follow coalesce chain transitively (group A may map to B which maps to C).
+					auto resolved = file.duplicates.group;
+					auto found = group_coalesce.find(resolved);
 
-					if (found != group_coalesce.end())
+					while (found != group_coalesce.end() && found->second != resolved)
 					{
-						file.duplicates.group = found->second;
+						resolved = found->second;
+						found = group_coalesce.find(resolved);
 					}
+
+					file.duplicates.group = resolved;
 				}
 
 				++group_counts[file.duplicates.group];
@@ -1132,7 +1137,7 @@ void index_state::update_predictions()
 	stats.indexed_max_compare_count = max_compare_count;
 	stats.update_presence_ms = static_cast<int>(df::now_ms() - start_ms);
 
-	df::trace(str::format(u8"Index update predictions: {} folders in {} ms"sv, folder_count, stats.update_presence_ms));
+	df::trace(std::format("Index update predictions: {} folders in {} ms", folder_count, stats.update_presence_ms));
 }
 
 
@@ -1178,11 +1183,11 @@ void index_state::update_summary()
 				if (md)
 				{
 					split2(md->tags, true,
-					       [&distinct_words, &distinct_tags, &distinct_tag_texts, &file](const std::u8string_view part)
+					       [&distinct_words, &distinct_tags, &distinct_tag_texts, &file](const std::string_view part)
 					       {
 						       const auto cached_tag = str::cache(part);
 						       distinct_tag_texts.emplace(cached_tag);
-						       distinct_words[str::cache(str::format(u8"#{}"sv, part))] += 1;
+						       distinct_words[str::cache(std::format("#{}", part))] += 1;
 						       distinct_tags[cached_tag].record(file);
 					       });
 
@@ -1315,7 +1320,7 @@ void index_state::update_summary()
 
 	_async.invalidate_view(view_invalid::sidebar | view_invalid::tooltip);
 
-	df::trace(str::format(u8"Index update summary in {} ms"sv, df::now_ms() - start_ms));
+	df::trace(std::format("Index update summary in {} ms", df::now_ms() - start_ms));
 }
 
 static bool needs_scan_impl(const df::index_folder_item_ptr& f, const df::index_file_item& file, const bool load_thumb,
@@ -2112,7 +2117,7 @@ void index_state::index_folders(df::cancel_token token)
 }
 
 
-static void scan_trim(std::u8string& s)
+static void scan_trim(std::string& s)
 {
 	const auto pred = [](const int ch)
 	{
@@ -2123,9 +2128,9 @@ static void scan_trim(std::u8string& s)
 	s.erase(std::find_if(s.rbegin(), s.rend(), pred).base(), s.end());
 }
 
-std::u8string build_result_string(const std::vector<std::string>& tokens,
-                                  const std::vector<std::string>::const_iterator& begin,
-                                  const std::vector<std::string>::const_iterator& end)
+std::string build_result_string(const std::vector<std::string>& tokens,
+                                const std::vector<std::string>::const_iterator& begin,
+                                const std::vector<std::string>::const_iterator& end)
 {
 	std::string result;
 	bool brackets = false;
@@ -2133,74 +2138,74 @@ std::u8string build_result_string(const std::vector<std::string>& tokens,
 
 	while (i < end)
 	{
-		if (*i == "["sv)
+		if (*i == "[")
 		{
 			brackets = true;
 		}
 		else if (brackets)
 		{
-			brackets = *i != "]"sv;
+			brackets = *i != "]";
 		}
 		else
 		{
-			if (!result.empty()) result += " "sv;
+			if (!result.empty()) result += " ";
 			result += *i;
 		}
 
 		++i;
 	}
 
-	return std::u8string(str::utf8_cast(result));
+	return std::string(str::utf8_cast(result));
 }
 
-media_name_props scan_info_from_title(const std::u8string_view name8)
+media_name_props scan_info_from_title(const std::string_view name8)
 {
 	media_name_props result;
 
 	static const df::hash_set<std::string_view, df::ihash, df::ieq> stop_words
 	{
-		"480p"sv,
-		"720p"sv,
-		"720"sv,
-		"1080p"sv,
-		"1080"sv,
-		"hdtv"sv,
-		"x264"sv,
-		"x265"sv,
-		"h264"sv,
-		"h265"sv,
-		"ac3"sv,
-		"dts"sv,
-		"aac"sv,
-		"brrip"sv,
-		"bdrip"sv,
-		"bluray"sv,
-		"hdrip"sv,
-		"hdtv"sv,
-		"dvdrip"sv,
-		"webrip"sv,
-		"xvid"sv,
-		"extended"sv,
-		"5.1"sv,
+		"480p",
+		"720p",
+		"720",
+		"1080p",
+		"1080",
+		"hdtv",
+		"x264",
+		"x265",
+		"h264",
+		"h265",
+		"ac3",
+		"dts",
+		"aac",
+		"brrip",
+		"bdrip",
+		"bluray",
+		"hdrip",
+		"hdtv",
+		"dvdrip",
+		"webrip",
+		"xvid",
+		"extended",
+		"5.1",
 		"7.1"
 	};
 
 	static const df::hash_set<std::string_view, df::ihash, df::ieq> pre_title_stop_words
 	{
-		"internal"sv,
-		"web"sv,
-		"("sv,
-		"["sv,
-		"-"sv,
-		"PDTV"sv,
-		"DVDScr"sv,
-		"10bit"sv,
-		"UNRATED"sv,
+		"internal",
+		"web",
+		"(",
+		"[",
+		"-",
+		"PDTV",
+		"DVDScr",
+		"10bit",
+		"UNRATED",
 	};
 
 	static const df::hash_set<std::string_view, df::ihash, df::ieq> pre_show_stop_words
 	{
-		"-"sv,
+		"-",
 	};
 
 	static const auto split_rx = std::regex{R"([\s]+|\-|\.|\(|\[|\]|\))"s, std::regex_constants::icase};
@@ -2238,7 +2243,7 @@ media_name_props scan_info_from_title(const std::u8string_view name8)
 
 	if (end_show != tokens.begin() &&
 		end_show != tokens.end() &&
-		*(end_show - 1) == "sv)"sv)
+		*(end_show - 1) == ")")
 	{
 		--end_show;
 
@@ -2250,7 +2255,7 @@ media_name_props scan_info_from_title(const std::u8string_view name8)
 
 			if (end_show != tokens.begin() &&
 				end_show != tokens.end() &&
-				*(end_show - 1) == "("sv)
+				*(end_show - 1) == "(")
 			{
 				result.year = std::stoi(*end_show);
 				--end_show;
@@ -2265,7 +2270,7 @@ media_name_props scan_info_from_title(const std::u8string_view name8)
 
 	/*for (auto t : tokens)
 	{
-		std::cout << "'"sv << t << "'"sv << std::endl;
+		std::cout << "'" << t << "'" << std::endl;
 	}*/
 
 	while (end_title != tokens.begin() &&
@@ -2491,7 +2496,7 @@ void index_state::update_presence(const df::item_set& items)
 		}
 	}
 
-	df::trace(str::format(u8"Index update presence {} items in {} ms"sv, items.size(), stats.update_presence_ms));
+	df::trace(std::format("Index update presence {} items in {} ms", items.size(), stats.update_presence_ms));
 }
 
 void index_state::scan_items(const df::item_set& items_to_scan,
@@ -2546,7 +2551,7 @@ void index_state::scan_items(const df::item_set& items_to_scan,
 		}
 	}
 
-	df::trace(str::format(u8"Index scan {} items (thumbs={} refresh-fs={}) in {} ms"sv, items_to_scan.size(),
+	df::trace(std::format("Index scan {} items (thumbs={} refresh-fs={}) in {} ms", items_to_scan.size(),
 	                      load_thumbs,
 	                      refresh_from_file_system, stats.scan_items_ms));
 }
@@ -2595,7 +2600,7 @@ void index_state::queue_scan_modified_items(df::item_set items_to_scan)
 		const auto start_ms = df::now_ms();
 		scan_items(items_to_scan, true, true, false, false, {});
 		_async.invalidate_view(view_invalid::index_summary | view_invalid::media_elements);
-		df::trace(str::format(u8"Index scan modified {} items in {} ms"sv, items_to_scan.size(),
+		df::trace(std::format("Index scan modified {} items in {} ms", items_to_scan.size(),
 		                      df::now_ms() - start_ms));
 	});
 }
@@ -2626,7 +2631,7 @@ void index_state::queue_update_presence(df::item_set items)
 			const auto start_ms = df::now_ms();
 			update_presence(items);
 			_async.invalidate_view(view_invalid::view_layout | view_invalid::group_layout);
-			df::trace(str::format(u8"Index update presence in {} ms"sv, df::now_ms() - start_ms));
+			df::trace(std::format("Index update presence in {} ms", df::now_ms() - start_ms));
 		});
 	}
 }
@@ -2659,13 +2664,13 @@ std::vector<str::cached> index_state::distinct_genres() const
 		       : std::vector<str::cached>{};
 }
 
-std::vector<std::u8string> index_state::auto_complete_text(const prop::key_ref key)
+std::vector<std::string> index_state::auto_complete_text(const prop::key_ref key)
 {
 	platform::shared_lock lock(_summary_rw);
 	const auto found = _summary._distinct_text.find(key);
 	return found != _summary._distinct_text.end()
-		       ? std::vector<std::u8string>{found->second.begin(), found->second.end()}
-		       : std::vector<std::u8string>{};
+		       ? std::vector<std::string>{found->second.begin(), found->second.end()}
+		       : std::vector<std::string>{};
 }
 
 void index_state::queue_scan_folder(const df::folder_path path)
@@ -2817,7 +2822,7 @@ std::vector<index_state::folder_total> index_state::includes_with_totals() const
 }
 
 std::vector<index_state::auto_complete_word> index_state::auto_complete_words(
-	const std::u8string_view query, const size_t max_results)
+	const std::string_view query, const size_t max_results)
 {
 	df::assert_true(!ui::is_ui_thread());
 
@@ -2832,7 +2837,7 @@ std::vector<index_state::auto_complete_word> index_state::auto_complete_words(
 
 			if (found.found)
 			{
-				result.emplace_back(std::u8string(word.first), found.parts);
+				result.emplace_back(std::string(word.first), found.parts);
 				if (result.size() > max_results) break;
 			}
 		}
@@ -2843,7 +2848,7 @@ std::vector<index_state::auto_complete_word> index_state::auto_complete_words(
 		{
 			if (str::starts(word.first, query))
 			{
-				result.emplace_back(std::u8string(word.first), std::vector<str::part_t>{{0, query.size()}});
+				result.emplace_back(std::string(word.first), std::vector<str::part_t>{{0, query.size()}});
 				if (result.size() > max_results) break;
 			}
 		}
@@ -2853,7 +2858,7 @@ std::vector<index_state::auto_complete_word> index_state::auto_complete_words(
 }
 
 std::vector<index_state::auto_complete_folder> index_state::auto_complete_folders(
-	const std::u8string_view query, const size_t max_results) const
+	const std::string_view query, const size_t max_results) const
 {
 	df::assert_true(!ui::is_ui_thread());
 
@@ -2868,7 +2873,7 @@ std::vector<index_state::auto_complete_folder> index_state::auto_complete_folder
 			for (const auto& folder : folders)
 			{
 				auto name_pos = folder.is_root() ? 0u : folder.find_last_slash() + 1;
-				if (name_pos == std::u8string_view::npos) name_pos = 0;
+				if (name_pos == std::string_view::npos) name_pos = 0;
 				auto found = str::ifind2(folder.text().substr(name_pos), query, name_pos);
 
 				if (!found.found && name_pos != 0)
@@ -2889,7 +2894,7 @@ std::vector<index_state::auto_complete_folder> index_state::auto_complete_folder
 			{
 				const auto name_pos = folder.is_root() ? 0u : folder.find_last_slash() + 1;
 
-				if (name_pos != std::u8string_view::npos && str::starts(folder.text().substr(name_pos), query))
+				if (name_pos != std::string_view::npos && str::starts(folder.text().substr(name_pos), query))
 				{
 					result.emplace_back(folder, std::vector<str::part_t>{{name_pos, query.size()}});
 					if (result.size() > max_results) break;

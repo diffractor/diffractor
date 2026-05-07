@@ -409,7 +409,7 @@ public:
 		}
 	}
 
-	void draw_text(const std::u8string_view text, const recti bounds, const ui::style::font_face font,
+	void draw_text(const std::string_view text, const recti bounds, const ui::style::font_face font,
 	               const ui::style::text_style style, const ui::color c, const ui::color bg) override
 	{
 		df::scope_rendering_func rf(__FUNCTION__);
@@ -425,7 +425,7 @@ public:
 		}
 	}
 
-	void draw_text(const std::u8string_view text, const std::vector<ui::text_highlight_t>& highlights,
+	void draw_text(const std::string_view text, const std::vector<ui::text_highlight_t>& highlights,
 	               const recti bounds, const ui::style::font_face font, const ui::style::text_style style,
 	               const ui::color clr,
 	               const ui::color bg) override
@@ -582,7 +582,7 @@ public:
 		draw_texture_impl(tt, dst, src, alpha, sampler, radius);
 	}
 
-	sizei measure_text(const std::u8string_view text, const ui::style::font_face font,
+	sizei measure_text(const std::string_view text, const ui::style::font_face font,
 	                   const ui::style::text_style style, const int width, const int height) override
 	{
 		df::scope_rendering_func rf(__FUNCTION__);

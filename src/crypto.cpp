@@ -25,7 +25,7 @@
 static constexpr int SHA1_DIGEST_LENGTH = 20;
 static constexpr int SHA1_BLOCK_SIZE = 64;
 
-std::u8string crypto::hmac_sha1(const std::u8string_view key, const std::u8string_view data)
+std::string crypto::hmac_sha1(const std::string_view key, const std::string_view data)
 {
 	sha1 sha1;
 
@@ -111,7 +111,7 @@ static std::vector<uint8_t> hmac_sha256_raw(const uint8_t* key, const size_t key
 	return std::vector<uint8_t>(result, result + crypto::sha256::DIGEST_SIZE);
 }
 
-static void derive_keys(const std::u8string_view password, uint8_t enc_key[32], uint8_t mac_key[32])
+static void derive_keys(const std::string_view password, uint8_t enc_key[32], uint8_t mac_key[32])
 {
 	const auto* pw = std::bit_cast<const uint8_t*>(password.data());
 	const auto pw_len = password.size();
@@ -142,7 +142,7 @@ static void derive_keys(const std::u8string_view password, uint8_t enc_key[32], 
 }
 
 
-std::vector<uint8_t> crypto::encrypt(const df::cspan input, const std::u8string_view password)
+std::vector<uint8_t> crypto::encrypt(const df::cspan input, const std::string_view password)
 {
 	uint8_t enc_key[sha256::DIGEST_SIZE];
 	uint8_t mac_key[sha256::DIGEST_SIZE];
@@ -169,7 +169,7 @@ std::vector<uint8_t> crypto::encrypt(const std::vector<uint8_t>& input, const st
 	return result;
 }
 
-std::vector<uint8_t> crypto::decrypt(const df::cspan input, const std::u8string_view password)
+std::vector<uint8_t> crypto::decrypt(const df::cspan input, const std::string_view password)
 {
 	if (input.size < HMAC_SIZE)
 		return {};
@@ -180,7 +180,7 @@ std::vector<uint8_t> crypto::decrypt(const df::cspan input, const std::u8string_
 
 	// Verify HMAC before decrypting (Encrypt-then-MAC)
 	const size_t ciphertext_len = input.size - HMAC_SIZE;
-	auto expected_hmac = hmac_sha256_raw(mac_key, sizeof(mac_key), input.data, ciphertext_len);
+	const auto expected_hmac = hmac_sha256_raw(mac_key, sizeof(mac_key), input.data, ciphertext_len);
 	platform::secure_zero(mac_key, sizeof(mac_key));
 
 	const uint8_t* actual_hmac = input.data + ciphertext_len;
@@ -230,7 +230,7 @@ uint32_t crypto::crc32c(const uint32_t crc, const void* data, const size_t len)
 	return calc_crc32c_c(crc, data, len);
 }
 
-uint32_t crypto::crc32c(const std::u8string_view sv)
+uint32_t crypto::crc32c(const std::string_view sv)
 {
 	return crc32c(sv.data(), sv.size());
 }
@@ -251,7 +251,7 @@ uint32_t crypto::fnv1a(const void* data, const size_t len)
 	return result;
 }
 
-uint32_t crypto::fnv1a_i(const std::u8string_view sv)
+uint32_t crypto::fnv1a_i(const std::string_view sv)
 {
 	auto p = sv.begin();
 	uint32_t result = OFFSET_BASIS_32;
@@ -265,20 +265,7 @@ uint32_t crypto::fnv1a_i(const std::u8string_view sv)
 	return result;
 }
 
-uint32_t crypto::fnv1a_i(const std::string_view sv)
-{
-	uint32_t result = OFFSET_BASIS_32;
-
-	for (const auto c : sv)
-	{
-		result ^= str::to_lower(c);
-		result *= FNV_PRIME_32;
-	}
-
-	return result;
-}
-
-uint32_t crypto::fnv1a_i(const std::u8string_view sv1, const std::u8string_view sv2)
+uint32_t crypto::fnv1a_i(const std::string_view sv1, const std::string_view sv2)
 {
 	auto p = sv1.begin();
 	uint32_t result = OFFSET_BASIS_32;

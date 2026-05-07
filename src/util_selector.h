@@ -16,20 +16,20 @@ namespace df
 	class item_selector
 	{
 		folder_path _root;
-		std::u8string _wildcard = u8"*.*"s;
+		std::string _wildcard = "*.*"s;
 		bool _recursive = false;
 
 	public:
 		item_selector() = default;
 
-		item_selector(const std::u8string_view sv)
+		item_selector(const std::string_view sv)
 		{
 			parse(sv);
 			assert_true(is_valid());
 		}
 
 		item_selector(const folder_path f, const bool recursive = false,
-		              const std::u8string_view wildcard = u8"*.*"sv) :
+		              const std::string_view wildcard = "*.*") :
 			_root(f), _wildcard(wildcard), _recursive(recursive)
 		{
 			assert_true(is_valid());
@@ -48,7 +48,7 @@ namespace df
 				is_match = icmp(path.folder().text(), _root.text()) == 0;
 			}
 
-			if (str::icmp(_wildcard, u8"*.*"sv) != 0)
+			if (str::icmp(_wildcard, "*.*") != 0)
 			{
 				is_match = wildcard_icmp(path.name(), _wildcard);
 			}
@@ -56,7 +56,7 @@ namespace df
 			return is_match;
 		}
 
-		static int count_ending_stars(const std::u8string_view sv, size_t& star_start)
+		static int count_ending_stars(const std::string_view sv, size_t& star_start)
 		{
 			auto stars = 0;
 			auto n = sv.size() - 1;
@@ -81,7 +81,7 @@ namespace df
 			return stars;
 		}
 
-		void parse(const std::u8string_view sv)
+		void parse(const std::string_view sv)
 		{
 			const auto len = sv.size();
 
@@ -97,14 +97,14 @@ namespace df
 				}
 				else
 				{
-					const auto last_slash = sv.find_last_of(u8"/\\"sv);
+					const auto last_slash = sv.find_last_of("/\\");
 
-					if (last_slash != std::u8string_view::npos && last_slash < sv.size())
+					if (last_slash != std::string_view::npos && last_slash < sv.size())
 					{
 						const auto tail = sv.substr(last_slash + 1);
 						auto root = sv;
 
-						if (tail.find_first_of(u8"*?"sv) != std::u8string_view::npos)
+						if (tail.find_first_of("*?") != std::string_view::npos)
 						{
 							_wildcard = str::cache(tail);
 							root = sv.substr(0, last_slash);
@@ -129,14 +129,14 @@ namespace df
 			}
 		}
 
-		std::u8string str() const
+		std::string str() const
 		{
-			auto result = std::u8string(_root.text());
+			auto result = std::string(_root.text());
 
 			if (_recursive)
 			{
 				if (result.back() != '\\') result += '\\';
-				result += u8"**"sv;
+				result += "**";
 			}
 
 			if (has_wildcard())
@@ -158,14 +158,14 @@ namespace df
 			return _root;
 		}
 
-		const std::u8string& wildcard() const
+		const std::string& wildcard() const
 		{
 			return _wildcard;
 		}
 
 		bool has_wildcard() const
 		{
-			return _wildcard != u8"*.*"sv;
+			return _wildcard != "*.*";
 		}
 
 		bool is_recursive() const
@@ -186,7 +186,7 @@ namespace df
 			return _root.is_empty();
 		}
 
-		static bool can_iterate(const std::u8string_view sv)
+		static bool can_iterate(const std::string_view sv)
 		{
 			if (is_path(sv))
 			{

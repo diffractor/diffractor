@@ -128,14 +128,14 @@ bool df::zip_file::close()
 	return true;
 }
 
-bool df::zip_file::add(const file_path path, const std::u8string_view name_in) const
+bool df::zip_file::add(const file_path path, const std::string_view name_in) const
 {
 	file f;
 
 	if (f.open_read(path, true))
 	{
 		const auto ft = date_t(platform::file_attributes(path).modified).date();
-		const auto name = std::u8string(name_in);
+		const auto name = std::string(name_in);
 		//const auto wpath = platform::to_file_system_path(path)
 
 		zip_fileinfo zi = {};
@@ -151,7 +151,7 @@ bool df::zip_file::add(const file_path path, const std::u8string_view name_in) c
 
 		if (err != ZIP_OK)
 		{
-			df::log(__FUNCTION__, str::format(u8"error in opening {} in zip file"sv, name));
+			df::log(__FUNCTION__, std::format("error in opening {} in zip file", name));
 			return false;
 		}
 
@@ -167,7 +167,7 @@ bool df::zip_file::add(const file_path path, const std::u8string_view name_in) c
 			if (err != ZIP_OK)
 			{
 				//We could not write the file in the ZIP-File for whatever reason.
-				df::log(__FUNCTION__, str::format(u8"error writing {} in zip file"sv, name));
+				df::log(__FUNCTION__, std::format("error writing {} in zip file", name));
 				return false;
 			}
 		}
@@ -176,7 +176,7 @@ bool df::zip_file::add(const file_path path, const std::u8string_view name_in) c
 
 		if (err != ZIP_OK)
 		{
-			df::log(__FUNCTION__, str::format(u8"error closing {} in zip file"sv, name));
+			df::log(__FUNCTION__, std::format("error closing {} in zip file", name));
 			return false;
 		}
 
@@ -228,7 +228,9 @@ size_t df::zip_file::extract(const file_path zip_file_path, const folder_path de
 								moves.emplace_back(
 									file_path, folder_path(dest_folder_path).combine_file(str::utf8_cast(filename)));
 
-								auto read = unzReadCurrentFile(hz, write_buffer.get(), sixty_four_k);
+								auto read = write_buffer
+									            ? unzReadCurrentFile(hz, write_buffer.get(), sixty_four_k)
+									            : 0;
 
 								while (read > 0)
 								{
@@ -256,7 +258,7 @@ size_t df::zip_file::extract(const file_path zip_file_path, const folder_path de
 
 		if (move_result.failed())
 		{
-			throw app_exception(str::format(u8"Failed to write file {}\n{}"sv, m.second, move_result.format_error()));
+			throw app_exception(std::format("Failed to write file {}\n{}", m.second, move_result.format_error()));
 		}
 	}
 

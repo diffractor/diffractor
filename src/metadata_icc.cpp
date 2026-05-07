@@ -90,40 +90,40 @@ public:
 
 	std::map<uint32_t, Tag> tags_;
 
-	static std::u8string dump4(const uint32_t u)
+	static std::string dump4(const uint32_t u)
 	{
-		return str::print(u8"%c%c%c%c"sv, u >> 24 & 0xFF, u >> 16 & 0xFF, u >> 8 & 0xFF, u & 0xFF);
+		return str::print("%c%c%c%c", u >> 24 & 0xFF, u >> 16 & 0xFF, u >> 8 & 0xFF, u & 0xFF);
 	}
 
 	metadata_kv_list dump()
 	{
 		metadata_kv_list result;
 
-		result.emplace_back(u8"Size"_c, str::print(u8"%x"sv, profileSize_));
-		result.emplace_back(u8"CMM Type"_c, dump4(cmmType_));
-		result.emplace_back(u8"Version"_c,
-		                    str::print(u8"%x (version %d)"sv, profileVersion_, profileVersion_ >> 24 & 0xFF));
-		result.emplace_back(u8"Class"_c, dump4(profileClass_));
-		result.emplace_back(u8"Color Space Data"_c, dump4(colorSpace_));
-		result.emplace_back(u8"Connection Space"_c, dump4(connectionSpace_));
-		result.emplace_back(u8"Date Time"_c,
-		                    str::print(u8"%d-%d-%d,%d:%d,%d"sv, dtime_.year_, dtime_.month_, dtime_.day_, dtime_.hour_,
+		result.emplace_back("Size"_c, str::print("%x", profileSize_));
+		result.emplace_back("CMM Type"_c, dump4(cmmType_));
+		result.emplace_back("Version"_c,
+		                    str::print("%x (version %d)", profileVersion_, profileVersion_ >> 24 & 0xFF));
+		result.emplace_back("Class"_c, dump4(profileClass_));
+		result.emplace_back("Color Space Data"_c, dump4(colorSpace_));
+		result.emplace_back("Connection Space"_c, dump4(connectionSpace_));
+		result.emplace_back("Date Time"_c,
+		                    str::print("%d-%d-%d,%d:%d,%d", dtime_.year_, dtime_.month_, dtime_.day_, dtime_.hour_,
 		                               dtime_.min_, dtime_.sec_));
-		result.emplace_back(u8"File Signature"_c, dump4(acsp_));
-		result.emplace_back(u8"Primary Platform"_c, dump4(platform_));
-		result.emplace_back(u8"CMM Flags"_c, str::print(u8"%x"sv, flags_));
-		result.emplace_back(u8"Device Manufacturer"_c, dump4(deviceManufacture_));
-		result.emplace_back(u8"Device Model"_c, dump4(deviceModel_));
-		result.emplace_back(u8"Device Attributes"_c, str::print(u8"%I64x"sv, deviceAttrib_));
-		result.emplace_back(u8"Rendering Intent"_c, str::print(u8"%d"sv, intent_));
-		result.emplace_back(u8"Connection Space Illuminant"_c,
-		                    str::print(u8"(%f,%f,%f)"sv, connectionIllum_.x_, connectionIllum_.y_,
+		result.emplace_back("File Signature"_c, dump4(acsp_));
+		result.emplace_back("Primary Platform"_c, dump4(platform_));
+		result.emplace_back("CMM Flags"_c, str::print("%x", flags_));
+		result.emplace_back("Device Manufacturer"_c, dump4(deviceManufacture_));
+		result.emplace_back("Device Model"_c, dump4(deviceModel_));
+		result.emplace_back("Device Attributes"_c, str::print("%I64x", deviceAttrib_));
+		result.emplace_back("Rendering Intent"_c, str::print("%d", intent_));
+		result.emplace_back("Connection Space Illuminant"_c,
+		                    str::print("(%f,%f,%f)", connectionIllum_.x_, connectionIllum_.y_,
 		                               connectionIllum_.z_));
-		result.emplace_back(u8"Creator"_c, dump4(creator_));
+		result.emplace_back("Creator"_c, dump4(creator_));
 
 		for (const auto& t : tags_)
 		{
-			auto name = str::print(u8"%c%c%c%c:%c%c%c%c"sv, t.first >> 24 & 0xFF, t.first >> 16 & 0xFF,
+			auto name = str::print("%c%c%c%c:%c%c%c%c", t.first >> 24 & 0xFF, t.first >> 16 & 0xFF,
 			                       t.first >> 8 & 0xFF,
 			                       t.first & 0xFF, t.second.type_ >> 24 & 0xFF, t.second.type_ >> 16 & 0xFF,
 			                       t.second.type_ >> 8 & 0xFF, t.second.type_ & 0xFF);
@@ -131,7 +131,7 @@ public:
 			constexpr auto max_text_len = 16_z;
 			auto hex = str::to_hex(t.second.data_.data(),
 			                       static_cast<int32_t>(std::min(t.second.data_.size(), max_text_len)));
-			if (t.second.data_.size() > max_text_len) hex += u8"..."sv;
+			if (t.second.data_.size() > max_text_len) hex += "...";
 			result.emplace_back(str::cache(name), hex);
 		}
 

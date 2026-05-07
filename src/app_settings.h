@@ -14,7 +14,7 @@
 #include "model_location.h"
 #include "util_interfaces.h"
 
-constexpr auto defaut_custom_folder_structure = u8"{year}\\{created}"sv;
+constexpr auto default_custom_folder_structure = "{year}\\{created}";
 
 namespace features
 {
@@ -82,38 +82,38 @@ public:
 	uint64_t features_used_since_last_report = 0;
 	uint32_t instantiations = 0;
 
-	std::u8string write_folder;
-	std::u8string write_name;
-	std::u8string available_version;
-	std::u8string available_test_version;
-	std::u8string last_tags;
-	std::u8string favorite_tags;
-	std::u8string language;
-	std::u8string sound_device;
+	std::string write_folder;
+	std::string write_name;
+	std::string available_version;
+	std::string available_test_version;
+	std::string last_tags;
+	std::string favorite_tags;
+	std::string language;
+	std::string sound_device;
 
 	bool set_copyright_credit = false;
-	std::u8string copyright_credit;
+	std::string copyright_credit;
 	bool set_copyright_source = false;
-	std::u8string copyright_source;
+	std::string copyright_source;
 	bool set_copyright_creator = false;
-	std::u8string copyright_creator;
+	std::string copyright_creator;
 	bool set_copyright_notice = false;
-	std::u8string copyright_notice;
+	std::string copyright_notice;
 	bool set_copyright_url = false;
-	std::u8string copyright_url;
+	std::string copyright_url;
 
 	bool set_artist = false;
-	std::u8string artist;
+	std::string artist;
 	bool set_caption = false;
-	std::u8string caption;
+	std::string caption;
 	bool set_album = false;
-	std::u8string album;
+	std::string album;
 	bool set_album_artist = false;
-	std::u8string album_artist;
+	std::string album_artist;
 	bool set_genre = false;
-	std::u8string genre;
+	std::string genre;
 	bool set_tv_show = false;
-	std::u8string tv_show;
+	std::string tv_show;
 
 	bool show_hidden = false;
 	bool show_debug_info = false;
@@ -164,10 +164,10 @@ public:
 
 	struct import_t
 	{
-		std::u8string destination_path;
-		std::u8string source_path;
-		std::u8string source_filter;
-		std::u8string dest_folder_structure;
+		std::string destination_path;
+		std::string source_path;
+		std::string source_filter;
+		std::string dest_folder_structure;
 		bool is_move = false;
 		bool set_created_date = false;
 		bool ignore_previous = false;
@@ -177,8 +177,8 @@ public:
 
 	struct sync_t
 	{
-		std::u8string local_path;
-		std::u8string remote_path;
+		std::string local_path;
+		std::string remote_path;
 		bool sync_collection = false;
 		bool sync_local_remote = false;
 		bool sync_remote_local = false;
@@ -193,9 +193,9 @@ public:
 
 	struct email_t
 	{
-		std::u8string to;
-		std::u8string subject;
-		std::u8string message;
+		std::string to;
+		std::string subject;
+		std::string message;
 
 		bool zip = false;
 		bool limit = false;
@@ -217,8 +217,8 @@ public:
 
 	struct rename_t
 	{
-		std::u8string name_template;
-		std::u8string start_seq;
+		std::string name_template;
+		std::string start_seq;
 	} rename;
 
 	struct index_t
@@ -231,15 +231,15 @@ public:
 		bool onedrive_video = false;
 		bool onedrive_music = false;
 
-		std::u8string more_folders;
+		std::string more_folders;
 	} collection;
 
 	struct search_t
 	{
 		static constexpr int count = 10;
 
-		std::u8string title[count];
-		std::u8string path[count];
+		std::string title[count];
+		std::string path[count];
 	} search;
 
 	gps_coordinate default_location;
@@ -253,4 +253,4 @@ static void record_feature_use(const uint64_t f)
 	setting.features_used_since_last_report |= f;
 }
 
-std::vector<std::u8string_view> split_collection_folders(std::u8string_view text);
+std::vector<std::string_view> split_collection_folders(std::string_view text);

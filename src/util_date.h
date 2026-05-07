@@ -161,7 +161,7 @@ namespace df
 			return st.year * 100 + st.month;
 		}
 
-		static date_t from(std::u8string_view r);
+		static date_t from(std::string_view r);
 
 		static date_t from_time_t(const time_t t)
 		{
@@ -169,23 +169,23 @@ namespace df
 			return date_t(ll);
 		}
 
-		bool parse(std::u8string_view text);
-		bool parse_exif_date(std::u8string_view r);
-		bool parse_xml_date(std::u8string_view r);
+		bool parse(std::string_view text);
+		bool parse_exif_date(std::string_view r);
+		bool parse_xml_date(std::string_view r);
 
-		std::u8string to_iptc_date() const
+		std::string to_iptc_date() const
 		{
 			const auto st = date();
-			return str::format(u8"{:04}{:02}{:02}"sv, st.year, st.month, st.day);
+			return std::format("{:04}{:02}{:02}", st.year, st.month, st.day);
 		}
 
-		std::u8string to_polish_date() const
+		std::string to_polish_date() const
 		{
 			const auto st = date();
-			return str::format(u8"{:04}-{:02}-{:02}"sv, st.year, st.month, st.day);
+			return std::format("{:04}-{:02}-{:02}", st.year, st.month, st.day);
 		}
 
-		std::u8string to_xmp_date() const;
+		std::string to_xmp_date() const;
 
 		date_t system_to_local() const;
 
@@ -277,4 +277,13 @@ namespace df
 	};
 
 	__declspec(selectany) date_t date_t::null;
+};
+
+template <>
+struct std::formatter<df::date_t, char> : std::formatter<std::string_view, char>
+{
+	auto format(const df::date_t& d, std::format_context& ctx) const
+	{
+		return std::formatter<std::string_view, char>::format(platform::format_date_time(d), ctx);
+	}
 };

@@ -67,8 +67,7 @@ public:
 
 		if (is_tracking && _engine)
 		{
-			const auto gps = _engine->pan(_start_loc, loc, calc_bounds());
-			send_location_changed_event(gps);
+			_engine->pan(_start_loc, loc, calc_bounds());
 		}
 	}
 

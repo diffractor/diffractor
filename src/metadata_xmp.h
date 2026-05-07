@@ -28,7 +28,7 @@ namespace metadata_xmp
 	void parse(prop::item_metadata& pd, df::file_path path);
 
 	xmp_update_result update(df::file_path file_path, df::file_path src_path, const metadata_edits& edits,
-	                         std::u8string_view xmp_name);
-	void update(std::u8string& buffer, const metadata_edits& edits);
+	                         std::string_view xmp_name);
+	void update(std::string& buffer, const metadata_edits& edits);
 	metadata_kv_list to_info(df::cspan xmp);
 };

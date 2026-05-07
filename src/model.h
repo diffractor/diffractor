@@ -91,8 +91,8 @@ public:
 
 	virtual void queue_media_preview(std::function<void(media_preview_state&)>) = 0;
 
-	virtual void web_service_cache(std::u8string key, std::function<void(const std::u8string&)> f) = 0;
-	virtual void web_service_cache(std::u8string key, std::u8string value) = 0;
+	virtual void web_service_cache(std::string key, std::function<void(const std::string&)> f) = 0;
+	virtual void web_service_cache(std::string key, std::string value) = 0;
 };
 
 // state_strategy - Abstract interface for application-level UI coordination and state management.
@@ -163,16 +163,16 @@ class recent_state final : public df::no_copy
 {
 public:
 	static constexpr int max_size = 64;
-	std::vector<std::u8string> _items;
+	std::vector<std::string> _items;
 
 	recent_state() = default;
 
-	const std::vector<std::u8string>& items() const
+	const std::vector<std::string>& items() const
 	{
 		return _items;
 	}
 
-	void count_strings(df::string_counts& results, const int weight, const std::u8string_view prefix = {}) const
+	void count_strings(df::string_counts& results, const int weight, const std::string_view prefix = {}) const
 	{
 		for (const auto& i : _items)
 		{
@@ -182,7 +182,7 @@ public:
 			}
 			else
 			{
-				results[str::cache(str::format(u8"{}{}"sv, prefix, i))] += weight;
+				results[str::cache(std::format("{}{}", prefix, i))] += weight;
 			}
 		}
 	}
@@ -198,7 +198,7 @@ public:
 		}
 	}
 
-	void add(const std::u8string_view v)
+	void add(const std::string_view v)
 	{
 		for (auto i = _items.cbegin(); i != _items.cend(); ++i)
 		{
@@ -217,7 +217,7 @@ public:
 		_items.emplace_back(v);
 	}
 
-	static void add_list(std::vector<std::u8string>& results, const std::vector<std::u8string_view>& adds)
+	static void add_list(std::vector<std::string>& results, const std::vector<std::string_view>& adds)
 	{
 		for (const auto& a : adds)
 		{
@@ -225,7 +225,7 @@ public:
 		}
 	}
 
-	static void add_list(std::vector<std::u8string>& results, const std::vector<std::u8string>& adds)
+	static void add_list(std::vector<std::string>& results, const std::vector<std::string>& adds)
 	{
 		for (const auto& a : adds)
 		{
@@ -233,7 +233,7 @@ public:
 		}
 	}
 
-	static void add_list(std::vector<df::folder_path>& results, const std::vector<std::u8string_view>& adds)
+	static void add_list(std::vector<df::folder_path>& results, const std::vector<std::string_view>& adds)
 	{
 		for (const auto& a : adds)
 		{
@@ -247,17 +247,17 @@ public:
 		add_list(_items, v);
 	}
 
-	static std::u8string combine(const std::vector<std::u8string>& strings)
+	static std::string combine(const std::vector<std::string>& strings)
 	{
 		return str::combine(strings);
 	}
 
-	static std::u8string combine(const std::vector<df::folder_path>& strings)
+	static std::string combine(const std::vector<df::folder_path>& strings)
 	{
 		return combine_paths(strings);
 	}
 
-	static int compare(const std::u8string_view l, const std::u8string_view r)
+	static int compare(const std::string_view l, const std::string_view r)
 	{
 		return str::icmp(l, r);
 	}
@@ -267,15 +267,15 @@ public:
 		return l.compare(r);
 	}
 
-	void read(const std::u8string_view section, const std::u8string_view key,
+	void read(const std::string_view section, const std::string_view key,
 	          const platform::setting_file_ptr& properties)
 	{
-		std::u8string str;
+		std::string str;
 		properties->read(section, key, str);
 		add_items(str::split(str, true));
 	}
 
-	void write(const std::u8string_view section, const std::u8string_view key,
+	void write(const std::string_view section, const std::string_view key,
 	           const platform::setting_file_ptr& properties) const
 	{
 		properties->write(section, key, combine(_items));
@@ -561,8 +561,8 @@ public:
 	int _last_duration = -1;
 	int _last_seconds = -1;
 
-	std::u8string _duration;
-	std::u8string _time;
+	std::string _duration;
+	std::string _time;
 
 	ui::const_surface_ptr _hover_surface;
 
@@ -818,7 +818,7 @@ struct group_and_item
 class filter_t
 {
 	std::unordered_set<file_group_ref> _groups;
-	std::u8string _text;
+	std::string _text;
 
 public:
 	filter_t() = default;
@@ -863,13 +863,13 @@ public:
 		_text.clear();
 	}
 
-	void wildcard(const std::u8string_view text)
+	void wildcard(const std::string_view text)
 	{
 		if (text.length() > 1)
 		{
-			_text = u8"*"sv;
+			_text = "*";
 			_text += text;
-			_text += u8"*"sv;
+			_text += "*";
 		}
 		else
 		{
@@ -877,7 +877,7 @@ public:
 		}
 	}
 
-	[[nodiscard]] std::u8string text() const
+	[[nodiscard]] std::string text() const
 	{
 		return _text;
 	}
@@ -1080,7 +1080,7 @@ public:
 		return _sort_order;
 	}
 
-	std::u8string next_path(bool forward) const;
+	std::string next_path(bool forward) const;
 	void open_next_path(const view_host_base_ptr& view, bool forward);
 
 	view_type view_mode() const
@@ -1254,7 +1254,7 @@ public:
 			if (md && md->coordinate.is_valid())
 			{
 				const auto coordinate = md->coordinate;
-				platform::open(str::print(u8"https://www.google.com/maps/place/%f,%f"sv, coordinate.latitude(),
+				platform::open(str::print("https://www.google.com/maps/place/%f,%f", coordinate.latitude(),
 				                          coordinate.longitude()));
 				return;
 			}
@@ -1262,7 +1262,7 @@ public:
 	}
 
 	void toggle_selected_item_tags(const view_host_base_ptr& view, const df::results_ptr& results,
-	                               std::u8string_view tag);
+	                               std::string_view tag);
 
 	const df::file_group_histogram& summary_shown() const
 	{
@@ -1286,14 +1286,14 @@ public:
 		return !parent_search().parent.is_empty();
 	}
 
-	void open(const view_host_base_ptr& view, std::u8string_view text);
+	void open(const view_host_base_ptr& view, std::string_view text);
 	void open(const view_host_base_ptr& view, df::file_path path);
 	bool open(const view_host_base_ptr& view, const df::search_t& path, const df::unique_paths& selection);
 	void open(const view_host_base_ptr& view, const df::item_element_ptr& i);
 	void load_display_state();
 
 	void change_tracks(int video_track, int audio_track) const;
-	void change_audio_device(const std::u8string& id) const;
+	void change_audio_device(const std::string& id) const;
 	void play(const view_host_base_ptr& view);
 
 	df::unique_items existing_items() const;
@@ -1315,7 +1315,7 @@ public:
 	void select_inverse(const view_host_base_ptr& view);
 	void select_end(const view_host_base_ptr& view, bool forward, bool toggle, bool extend);
 	void select_next(const view_host_base_ptr& view, bool forward, bool toggle, bool extend);
-	bool select(const view_host_base_ptr& view, std::u8string_view file_name, bool toggle);
+	bool select(const view_host_base_ptr& view, std::string_view file_name, bool toggle);
 	void select(const view_host_base_ptr& view, const df::item_elements& items, bool toggle);
 	void select(const view_host_base_ptr& view, const df::item_element_ptr& i, bool toggle, bool extend,
 	            bool continue_slideshow);
@@ -1361,7 +1361,7 @@ public:
 
 	bool escape(const view_host_base_ptr& view);
 	bool update_selection();
-	df::item_element_ptr find_displayed_item_by_name(std::u8string_view file_name) const;
+	df::item_element_ptr find_displayed_item_by_name(std::string_view file_name) const;
 
 	void update_item_groups();
 	void toggle_group_order();
@@ -1373,10 +1373,10 @@ public:
 	                   const view_host_base_ptr& view);
 	int displayed_rating() const;
 
-	void modify_items(const df::results_ptr& dlg, icon_index icon, std::u8string_view title,
+	void modify_items(const df::results_ptr& dlg, icon_index icon, std::string_view title,
 	                  const df::item_elements& items_to_modify, const metadata_edits& edits,
 	                  const view_host_base_ptr& view);
-	void modify_items(const ui::control_frame_ptr& frame, icon_index icon, std::u8string_view title,
+	void modify_items(const ui::control_frame_ptr& frame, icon_index icon, std::string_view title,
 	                  const df::item_elements& items_to_modify, const metadata_edits& edits,
 	                  const view_host_base_ptr& view);
 
@@ -1459,15 +1459,15 @@ public:
 	view_state& _state;
 	ui::animate_alpha grid_alpha_animation;
 
-	std::u8string _item_title;
-	std::u8string _item_tags;
-	std::u8string _item_description;
-	std::u8string _item_comment;
-	std::u8string _item_artist;
-	std::u8string _item_album;
-	std::u8string _item_album_artist;
-	std::u8string _item_genre;
-	std::u8string _item_show;
+	std::string _item_title;
+	std::string _item_tags;
+	std::string _item_description;
+	std::string _item_comment;
+	std::string _item_artist;
+	std::string _item_album;
+	std::string _item_album_artist;
+	std::string _item_genre;
+	std::string _item_show;
 	df::date_t _item_created;
 
 	int _item_season = 0;

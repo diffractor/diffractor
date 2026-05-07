@@ -278,7 +278,7 @@ static df::group_key resolution_key(const df::item_element_ptr& i)
 			result.order1 = ft->group->id;
 			result.order2 = 1 + df::round(std::sqrt(extent.cx * extent.cy));
 			result.text1 = str::cache(display_name);
-			result.text2 = str::cache(str::format(u8"{}x{}"sv, extent.cx, extent.cy));
+			result.text2 = str::cache(std::format("{}x{}", extent.cx, extent.cy));
 		}
 		else
 		{
@@ -288,7 +288,7 @@ static df::group_key resolution_key(const df::item_element_ptr& i)
 				result.order1 = 1;
 				result.order2 = 0;
 				result.text1 = str::cache(display_name);
-				result.text2 = u8"icon size"_c;
+				result.text2 = "icon size"_c;
 			}
 			else
 			{
@@ -300,7 +300,7 @@ static df::group_key resolution_key(const df::item_element_ptr& i)
 					result.order1 = 1;
 					result.order2 = 1;
 					result.text1 = str::cache(display_name);
-					result.text2 = u8"small size"_c;
+					result.text2 = "small size"_c;
 				}
 				else
 				{
@@ -309,7 +309,7 @@ static df::group_key resolution_key(const df::item_element_ptr& i)
 					result.order1 = 1;
 					result.order2 = 1 + df::round(std::sqrt(n));
 					result.text1 = str::cache(display_name);
-					result.text2 = str::cache(str::format(u8"{} megapixels"sv, n));
+					result.text2 = str::cache(std::format("{} megapixels", n));
 				}
 			}
 		}
@@ -548,7 +548,7 @@ df::item_set_info df::item_set::info() const
 }
 
 
-std::u8string_view item_presence_text(const item_presence v, const bool long_text)
+std::string_view item_presence_text(const item_presence v, const bool long_text)
 {
 	if (v == item_presence::this_in)
 	{
@@ -625,7 +625,7 @@ std::shared_ptr<group_title_control> df::build_group_title(view_state& s, const 
 
 	g->_scroll_tooltip_text.clear();
 
-	const auto add_title_link = [g, &s, view, result, font](const std::u8string_view title, const search_t& search)
+	const auto add_title_link = [g, &s, view, result, font](const std::string_view title, const search_t& search)
 	{
 		if (search.is_empty())
 		{
@@ -728,8 +728,8 @@ std::shared_ptr<group_title_control> df::build_group_title(view_state& s, const 
 				}
 				else
 				{
-					const auto text = str::format(tt.group_title_size_range_fmt, prop::format_size(min_size),
-					                              prop::format_size(max_size));
+					const auto text = str_format(tt.group_title_size_range_fmt.sv(), prop::format_size(min_size),
+					                             prop::format_size(max_size));
 					add_title_link(text, {});
 				}
 			}
@@ -822,7 +822,7 @@ std::shared_ptr<group_title_control> df::build_group_title(view_state& s, const 
 				const auto month = 100 - key.order2;
 				const auto year = 3000 - key.order1;
 
-				add_title_link(str::format(u8"{} {}"sv, str::month(month, true), year),
+				add_title_link(std::format("{} {}", str::month(month, true), year),
 				               search_t(current_search).day(0, month, year, target));
 			}
 		}
@@ -830,7 +830,7 @@ std::shared_ptr<group_title_control> df::build_group_title(view_state& s, const 
 		{
 			if (!is_empty(key.text1) && !is_empty(key.text2))
 			{
-				add_title_link(format(u8"{}:{}"sv, key.text1, key.text2), {});
+				add_title_link(std::format("{}:{}", key.text1, key.text2), {});
 			}
 		}
 		else if (order == group_by::camera)
@@ -854,7 +854,7 @@ std::shared_ptr<group_title_control> df::build_group_title(view_state& s, const 
 
 			if (key.order3 != 0)
 			{
-				add_title_link(str::format(u8"{} {}"sv, prop::season.text(), key.order3),
+				add_title_link(std::format("{} {}", prop::season.text(), key.order3),
 				               search_t(current_search).with(prop::season, key.order3));
 			}
 
@@ -2252,7 +2252,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 		if (show_size || show_created || show_modified)
 		{
 			recti order_text_rect(text_rect.left, y, text_rect.right, y + text_line_height);
-			std::u8string text;
+			std::string text;
 
 			if (show_size)
 			{
@@ -2596,7 +2596,7 @@ void df::item_element::calc_folder_summary(const cancel_token token)
 	_total_count = total.count;
 }
 
-platform::file_op_result df::item_element::rename(index_state& index, const std::u8string_view new_name)
+platform::file_op_result df::item_element::rename(index_state& index, const std::string_view new_name)
 {
 	if (is_folder())
 	{

@@ -95,8 +95,8 @@ public:
 
 	bool has_errors() const;
 
-	std::u8string web_service_cache(std::u8string_view key) const;
-	void web_service_cache(std::u8string_view key, std::u8string_view value) const;
+	std::string web_service_cache(std::string_view key) const;
+	void web_service_cache(std::string_view key, std::string_view value) const;
 
 	item_import_set load_item_imports() const;
 	void writes_item_imports(const item_import_set& items) const;
@@ -108,7 +108,7 @@ public:
 	db_thumbnail load_folder_thumbnail(str::cached folder) const;
 	void load_thumbnails(const index_state& index, const df::item_set& items) const;
 	void open();
-	void open(df::folder_path folder, std::u8string_view file_name);
+	void open(df::folder_path folder, std::string_view file_name);
 	void perform_writes();
 	void perform_writes(std::deque<item_db_write> writes) const;
 	void maintenance(bool is_reset);

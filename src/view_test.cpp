@@ -24,30 +24,30 @@ void test_item::update_row()
 	{
 	case test_state::pass:
 		_row->_text_color[0] = ui::lighten(ui::style::color::info_background, 0.55f);
-		_row->_text[0] = u8"Success"sv;
+		_row->_text[0] = "Success";
 		_row->_order = 100;
 		break;
 	case test_state::fail:
 		_row->_text_color[0] = ui::lighten(ui::style::color::warning_background, 0.55f);
-		_row->_text[0] = u8"Failed"sv;
+		_row->_text[0] = "Failed";
 		_row->_order = 1;
 		break;
 	case test_state::running:
 		_row->_text_color[0] = ui::lighten(ui::style::color::important_background, 0.55f);
-		_row->_text[0] = u8"Running"sv;
+		_row->_text[0] = "Running";
 		_row->_order = 2;
 		break;
 	case test_state::unknown:
 		_row->_text_color[0] = ui::darken(ui::style::color::view_text, 0.22f);
 		_row->_text_color[1] = ui::darken(ui::style::color::view_text, 0.22f);
-		_row->_text[0] = u8"Unknown"sv;
+		_row->_text[0] = "Unknown";
 		_row->_order = 200;
 		break;
 	}
 
 	if (_message.empty() && _time > 0)
 	{
-		_time_text = str::format(u8"{:8} milliseconds"sv, _time);
+		_time_text = std::format("{:8} milliseconds", _time);
 		_row->_text[2] = _time_text;
 	}
 	else
@@ -136,7 +136,7 @@ test_ptr test_view::test_from_location(const int y) const
 	return result;
 }
 
-std::u8string_view test_view::status()
+std::string_view test_view::status()
 {
 	int count_fail = 0;
 	int count_ok = 0;
@@ -151,11 +151,11 @@ std::u8string_view test_view::status()
 
 	if (is_running_tests())
 	{
-		_status = u8"Running tests..."sv;
+		_status = "Running tests...";
 	}
 	else
 	{
-		_status = str::format(u8"{} tests: {} fail - pass {}"sv, total, count_fail, count_ok);
+		_status = std::format("{} tests: {} fail - pass {}", total, count_fail, count_ok);
 	}
 
 	return _status;
@@ -187,26 +187,26 @@ view_controller_ptr test_view::controller_from_location(const view_host_ptr& hos
 	return nullptr;
 }
 
-std::u8string po_escape(const std::u8string_view val)
+std::string po_escape(const std::string_view val)
 {
-	auto result = std::u8string(val);
-	result = str::replace(result, u8"\\"sv, u8"\\\\"sv);
-	result = str::replace(result, u8"\""sv, u8"\\\""sv);
-	result = str::replace(result, u8"\n"sv, u8"\\n"sv);
+	auto result = std::string(val);
+	result = str::replace(result, "\\", "\\\\");
+	result = str::replace(result, "\"", "\\\"");
+	result = str::replace(result, "\n", "\\n");
 	return result;
 }
 
-static void write_po_entry(u8ostream& f, const std::u8string_view& key, const std::u8string_view& val)
+static void write_po_entry(std::ostream& f, const std::string_view& key, const std::string_view& val)
 {
 	const auto found = val.find(u8'\n');
 
-	if (found == std::u8string_view::npos)
+	if (found == std::string_view::npos)
 	{
-		f << key << u8" \"" << po_escape(val) << u8"\"\n"sv;
+		f << key << " \"" << po_escape(val) << "\"\n";
 	}
 	else
 	{
-		f << key << u8" \"\"\n"sv;
+		f << key << " \"\"\n";
 
 		const auto lines = str::split(val, false, str::is_cr_or_lf);
 		auto lines_left = lines.size() - 1;
@@ -215,11 +215,11 @@ static void write_po_entry(u8ostream& f, const std::u8string_view& key, const st
 		{
 			if (lines_left > 0)
 			{
-				f << u8"\"" << po_escape(line) << u8"\\n\"\n"sv;
+				f << "\"" << po_escape(line) << "\\n\"\n";
 			}
 			else
 			{
-				f << u8"\"" << po_escape(line) << u8"\"\n"sv;
+				f << "\"" << po_escape(line) << "\"\n";
 			}
 
 			lines_left -= 1;
@@ -227,28 +227,28 @@ static void write_po_entry(u8ostream& f, const std::u8string_view& key, const st
 	}
 }
 
-static void write_po_entry(u8ostream& f, const po_entry& poe)
+static void write_po_entry(std::ostream& f, const po_entry& poe)
 {
-	write_po_entry(f, u8"msgid"sv, poe.id);
+	write_po_entry(f, "msgid", poe.id);
 
 	if (poe.id_plural.empty())
 	{
-		write_po_entry(f, u8"msgstr"sv, poe.str);
+		write_po_entry(f, "msgstr", poe.str);
 	}
 	else
 	{
-		write_po_entry(f, u8"msgid_plural"sv, poe.id_plural);
-		write_po_entry(f, u8"msgstr[0]"sv, poe.str);
-		write_po_entry(f, u8"msgstr[1]"sv, poe.str_plural);
+		write_po_entry(f, "msgid_plural", poe.id_plural);
+		write_po_entry(f, "msgstr[0]", poe.str);
+		write_po_entry(f, "msgstr[1]", poe.str_plural);
 	}
 
-	f << u8"\n"sv;
+	f << "\n";
 }
 
-static void generate_po(const std::u8string_view file_name)
+static void generate_po(const std::string_view file_name)
 {
 	const auto app_folder = known_path(platform::known_folder::running_app_folder);
-	const auto lang_folder = app_folder.combine(u8"languages"sv);
+	const auto lang_folder = app_folder.combine("languages");
 	const auto lang_path_in = lang_folder.combine_file(file_name);
 	const auto lang_path_out = app_folder.combine_file(file_name);
 
@@ -260,8 +260,8 @@ static void generate_po(const std::u8string_view file_name)
 		texts.load_lang(lang_path_in.name(), loaded_po);
 		const auto generated_po = texts.gen_po();
 
-		u8ostream f(platform::to_file_system_path(lang_path_out), std::ios::out);
-		f << u8"# Diffractor translation\n"sv;
+		std::ofstream f(platform::to_file_system_path(lang_path_out), std::ios::out);
+		f << "# Diffractor translation\n";
 
 		write_po_entry(f, loaded_po[0]);
 
@@ -274,11 +274,11 @@ static void generate_po(const std::u8string_view file_name)
 
 void test_view::gen_po()
 {
-	generate_po(u8"cs.po"sv);
-	generate_po(u8"de.po"sv);
-	generate_po(u8"es.po"sv);
-	generate_po(u8"it.po"sv);
-	generate_po(u8"ja.po"sv);
+	generate_po("cs.po");
+	generate_po("de.po");
+	generate_po("es.po");
+	generate_po("it.po");
+	generate_po("ja.po");
 }
 
 void test_view::reset_graphics() const

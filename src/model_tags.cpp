@@ -27,6 +27,6 @@ void tag_set::add(const tag_set& other)
 
 void tag_set::remove(const tag_set& other)
 {
-	const df::hash_set<std::u8string_view, df::ihash, df::ieq> unique(other._tags.cbegin(), other._tags.cend());
-	std::erase_if(_tags, [&unique](const std::u8string_view tag) { return unique.contains(tag); });
+	const df::hash_set<std::string_view, df::ihash, df::ieq> unique(other._tags.cbegin(), other._tags.cend());
+	std::erase_if(_tags, [&unique](const std::string_view tag) { return unique.contains(tag); });
 }

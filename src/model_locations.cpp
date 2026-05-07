@@ -20,9 +20,9 @@ static_assert(std::is_trivially_copyable_v<location_t>);
 static_assert(std::is_move_constructible_v<country_t>);
 static_assert(std::is_move_constructible_v<location_match>);
 
-static constexpr auto countries_file_name = u8"location-countries.txt"sv;
-static constexpr auto states_file_name = u8"location-states.txt"sv;
-static constexpr auto places_file_name = u8"location-places.txt"sv;
+static constexpr auto countries_file_name = "location-countries.txt";
+static constexpr auto states_file_name = "location-states.txt";
+static constexpr auto places_file_name = "location-places.txt";
 
 constexpr auto max_location_cols = 32;
 
@@ -31,7 +31,7 @@ constexpr auto max_location_cols = 32;
 
 struct csv_entry
 {
-	std::u8string_view _s;
+	std::string_view _s;
 
 	bool is_empty() const
 	{
@@ -49,7 +49,7 @@ struct csv_entry
 		return crypto::fnv1a_i(_s);
 	}
 
-	std::u8string_view to_range() const
+	std::string_view to_range() const
 	{
 		return _s;
 	}
@@ -84,16 +84,16 @@ void location_t::clear()
 	position.clear();
 }
 
-std::u8string location_t::str() const
+std::string location_t::str() const
 {
-	std::u8string result;
-	join(result, place, u8", "sv, false);
-	join(result, state, u8", "sv, false);
-	join(result, country, u8", "sv, false);
+	std::string result;
+	join(result, place, ", ", false);
+	join(result, state, ", ", false);
+	join(result, country, ", ", false);
 	return result;
 }
 
-std::u8string gps_coordinate::str() const
+std::string gps_coordinate::str() const
 {
 	return prop::format_gps(_latitude, _longitude);
 }
@@ -116,24 +116,24 @@ double gps_coordinate::dms_to_decimal(const double deg, const double min, const 
 	return deg + min / 60.0 + sec / 3600.0;
 }
 
-split_location_result split_location(const std::u8string_view text)
+split_location_result split_location(const std::string_view text)
 {
-	constexpr auto delims = u8"+-"sv;
+	constexpr auto delims = "+-";
 	split_location_result result;
 
 	const auto c1 = text.find_first_of(delims);
 
-	if (c1 != std::u8string_view::npos)
+	if (c1 != std::string_view::npos)
 	{
 		const auto c2 = text.find_first_of(delims, c1 + 1);
 
-		if (c2 != std::u8string_view::npos)
+		if (c2 != std::string_view::npos)
 		{
 			const auto c3 = text.find_first_of(delims, c2 + 1);
 
 			const auto lat = text.substr(c1, c2 - c1);
-			const auto lng = text.substr(c2, c3 != std::u8string_view::npos ? c3 - c2 : std::u8string_view::npos);
-			const auto alt = c3 != std::u8string_view::npos ? text.substr(c3) : std::u8string_view{};
+			const auto lng = text.substr(c2, c3 != std::string_view::npos ? c3 - c2 : std::string_view::npos);
+			const auto alt = c3 != std::string_view::npos ? text.substr(c3) : std::string_view{};
 
 			result.x = str::to_double(lat);
 			result.y = str::to_double(lng);
@@ -159,14 +159,15 @@ location_cache::location_cache() : _locations_path(df::probe_data_file(places_fi
 	static_assert(sizeof(kd_coordinates_t) == 16);
 }
 
-static void skip_bom(u8istream& file)
+static void skip_bom(std::ifstream& file)
 {
-	const auto bom = file.get() << 16 |
-		file.get() << 8 |
-		file.get();
+	const auto b0 = file.get();
+	const auto b1 = file.get();
+	const auto b2 = file.get();
 
-	if (bom != 0X00EFBBBF)
+	if (b0 != 0xEF || b1 != 0xBB || b2 != 0xBF)
 	{
+		file.clear();
 		file.seekg(0);
 	}
 }
@@ -435,13 +436,13 @@ void location_cache::load_countries()
 	county_normalize_map abbreviations;
 	county_normalize_map names;
 	csv_entry entries[max_location_cols];
-	u8istream file(platform::to_file_system_path(df::probe_data_file(countries_file_name)), u8istream::binary);
+	std::ifstream file(platform::to_file_system_path(df::probe_data_file(countries_file_name)), std::ifstream::binary);
 
 	if (file.is_open())
 	{
 		skip_bom(file);
 
-		std::u8string line;
+		std::string line;
 		while (std::getline(file, line))
 		{
 			const auto entry_count = scan_entries(line, entries);
@@ -496,12 +497,12 @@ void location_cache::load_countries()
 void location_cache::load_states()
 {
 	csv_entry entries[max_location_cols];
-	u8istream file(platform::to_file_system_path(df::probe_data_file(states_file_name)), u8istream::binary);
+	std::ifstream file(platform::to_file_system_path(df::probe_data_file(states_file_name)), std::ifstream::binary);
 
 	if (file.is_open())
 	{
 		skip_bom(file);
-		std::u8string line;
+		std::string line;
 		while (std::getline(file, line))
 		{
 			const auto entry_count = scan_entries(line, entries);
@@ -512,7 +513,7 @@ void location_cache::load_states()
 				const auto id = entries[0]._s;
 				const auto found_sep = id.find('.');
 
-				if (found_sep != std::u8string_view::npos)
+				if (found_sep != std::string_view::npos)
 				{
 					const auto country_code = to_code2(id.substr(0, found_sep));
 					const auto found_country = _countries.find(country_code);
@@ -542,7 +543,7 @@ namespace Cols
 	};
 };
 
-int location_cache::scan_entries(const std::u8string_view line, csv_entry* entries)
+int location_cache::scan_entries(const std::string_view line, csv_entry* entries)
 {
 	memset(entries, 0, sizeof(csv_entry) * max_location_cols);
 
@@ -567,19 +568,22 @@ int location_cache::scan_entries(const std::u8string_view line, csv_entry* entri
 		++i;
 	}
 
-	col->_s = line.substr(begin, i - begin);
-	col_count += 1;
+	if (col < col_end)
+	{
+		col->_s = line.substr(begin, i - begin);
+		col_count += 1;
+	}
 
 	return col_count;
 }
 
-int location_cache::scan_entries(u8istream& file, std::u8string& line, const std::streamoff offset,
+int location_cache::scan_entries(std::ifstream& file, std::string& line, const std::streamoff offset,
                                  csv_entry* entries)
 {
 	if (file.is_open())
 	{
 		file.clear();
-		file.seekg(offset, u8istream::beg);
+		file.seekg(offset, std::ifstream::beg);
 
 		if (std::getline(file, line))
 		{
@@ -590,10 +594,10 @@ int location_cache::scan_entries(u8istream& file, std::u8string& line, const std
 	return 0;
 }
 
-location_t location_cache::build_location(u8istream& file, const int offset) const
+location_t location_cache::build_location(std::ifstream& file, const int offset) const
 {
 	location_t result;
-	std::u8string line;
+	std::string line;
 	csv_entry entries[max_location_cols];
 	const auto col_count = scan_entries(file, line, offset, entries);
 
@@ -631,15 +635,15 @@ void location_cache::load_index()
 
 	csv_entry entries[max_location_cols];
 
-	u8istream file;
-	file.open(platform::to_file_system_path(_locations_path), u8istream::binary);
+	std::ifstream file;
+	file.open(platform::to_file_system_path(_locations_path), std::ifstream::binary);
 
 	if (file.is_open())
 	{
 		skip_bom(file);
 		auto pos = file.tellg();
 
-		std::u8string line;
+		std::string line;
 		while (std::getline(file, line))
 		{
 			if (df::is_closing) return;
@@ -683,7 +687,7 @@ void location_cache::load_index()
 
 struct location_match_possible
 {
-	std::u8string line;
+	std::string line;
 	location_match_part city;
 	location_match_part state;
 	location_match_part country;
@@ -695,12 +699,12 @@ struct location_match_possible
 	}
 };
 
-static bool find_match(const str::cached text, const std::u8string_view query, str::cached& text_result,
+static bool find_match(const str::cached text, const std::string_view query, str::cached& text_result,
                        str::part_t& highlight_result)
 {
 	const auto found = ifind(text, query);
 
-	if (found != std::u8string_view::npos)
+	if (found != std::string_view::npos)
 	{
 		text_result = text;
 		highlight_result = {found, query.length()};
@@ -710,12 +714,12 @@ static bool find_match(const str::cached text, const std::u8string_view query, s
 	return false;
 }
 
-static bool find_match(const std::u8string_view text, const std::u8string_view query, str::cached& text_result,
+static bool find_match(const std::string_view text, const std::string_view query, str::cached& text_result,
                        str::part_t& highlight_result)
 {
 	const auto found = str::ifind(text, query);
 
-	if (found != std::u8string_view::npos)
+	if (found != std::string_view::npos)
 	{
 		text_result = str::cache(text);
 		highlight_result = {found, query.length()};
@@ -725,12 +729,12 @@ static bool find_match(const std::u8string_view text, const std::u8string_view q
 	return false;
 }
 
-static bool find_match(const csv_entry* entry, const int entry_count, const std::u8string_view query,
+static bool find_match(const csv_entry* entry, const int entry_count, const std::string_view query,
                        str::cached& text_result, str::part_t& highlight_result)
 {
 	for (auto i = 0; i < entry_count; i++)
 	{
-		if (find_match(entry->to_range(), query, text_result, highlight_result))
+		if (find_match(entry[i].to_range(), query, text_result, highlight_result))
 		{
 			return true;
 		}
@@ -739,7 +743,7 @@ static bool find_match(const csv_entry* entry, const int entry_count, const std:
 	return false;
 }
 
-static bool find_match(const country_t& country, const std::u8string_view query, str::cached& text_result,
+static bool find_match(const country_t& country, const std::string_view query, str::cached& text_result,
                        str::part_t& highlight_result)
 {
 	if (find_match(country.name(), query, text_result, highlight_result))
@@ -761,7 +765,7 @@ static bool find_match(const country_t& country, const std::u8string_view query,
 	return false;
 }
 
-location_matches location_cache::auto_complete(const std::u8string_view query, const uint32_t max_results,
+location_matches location_cache::auto_complete(const std::string_view query, const uint32_t max_results,
                                                const gps_coordinate default_location) const
 {
 	platform::shared_lock lock(_rw);
@@ -795,13 +799,13 @@ location_matches location_cache::auto_complete(const std::u8string_view query, c
 		std::ranges::sort(ngram_matches);
 		ngram_matches.erase(std::ranges::unique(ngram_matches).begin(), ngram_matches.end());
 
-		u8istream file;
-		file.open(platform::to_file_system_path(_locations_path), u8istream::binary);
+		std::ifstream file;
+		file.open(platform::to_file_system_path(_locations_path), std::ifstream::binary);
 
 		if (file.is_open())
 		{
 			skip_bom(file);
-			std::u8string line;
+			std::string line;
 
 			for (const auto& line_offset : ngram_matches)
 			{
@@ -947,8 +951,8 @@ location_t location_cache::find_by_id(const uint32_t id) const
 
 	if (found != _locations_by_id.end() && found->id == id)
 	{
-		u8istream file;
-		file.open(platform::to_file_system_path(_locations_path), u8istream::binary);
+		std::ifstream file;
+		file.open(platform::to_file_system_path(_locations_path), std::ifstream::binary);
 
 		if (file.is_open())
 		{
@@ -975,8 +979,8 @@ location_t location_cache::find_closest(const double x, const double y) const
 {
 	platform::shared_lock lock(_rw);
 	location_t result;
-	u8istream file;
-	file.open(platform::to_file_system_path(_locations_path), u8istream::binary);
+	std::ifstream file;
+	file.open(platform::to_file_system_path(_locations_path), std::ifstream::binary);
 
 	if (file.is_open())
 	{

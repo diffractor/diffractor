@@ -23,7 +23,7 @@ class command_status final : public std::enable_shared_from_this<command_status>
 
 	dialog_ptr _dlg;
 	icon_index _icon;
-	std::u8string _title;
+	std::string _title;
 
 	std::shared_ptr<ui::progress_control> _progress;
 	std::shared_ptr<ui::close_control> _cancel;
@@ -37,15 +37,15 @@ class command_status final : public std::enable_shared_from_this<command_status>
 	int64_t _failed_count = 0;
 	int64_t _ignore_count = 0;
 
-	std::u8string _processed_first_name;
-	std::u8string _failed_first_name;
-	std::u8string _ignore_first_name;
+	std::string _processed_first_name;
+	std::string _failed_first_name;
+	std::string _ignore_first_name;
 
-	std::u8string _error_message;
-	std::u8string _message;
+	std::string _error_message;
+	std::string _message;
 
 public:
-	command_status(async_strategy& as, const dialog_ptr& dlg, const icon_index& icon, const std::u8string_view title,
+	command_status(async_strategy& as, const dialog_ptr& dlg, const icon_index& icon, const std::string_view title,
 	               const size_t total) :
 		_async(as),
 		_cancel_ver_inital_val(ui::cancel_gen.load()),
@@ -61,7 +61,7 @@ public:
 		_total(static_cast<int>(total))
 	{
 		const std::vector<view_element_ptr> controls{
-			set_margin(std::make_shared<ui::title_control2>(dlg->_frame, icon, title, std::u8string{})),
+			set_margin(std::make_shared<ui::title_control2>(dlg->_frame, icon, title, std::string{})),
 			std::make_shared<divider_element>(),
 			_progress,
 			_cancel
@@ -77,7 +77,7 @@ public:
 		_total = t;
 	}
 
-	void show_message(const std::u8string_view message) override
+	void show_message(const std::string_view message) override
 	{
 		if (!_closed)
 		{
@@ -91,9 +91,9 @@ public:
 		}
 	}
 
-	void message(const std::u8string_view message)
+	void message(const std::string_view message)
 	{
-		_async.queue_ui([t = shared_from_this(), m = std::u8string(message)]
+		_async.queue_ui([t = shared_from_this(), m = std::string(message)]
 		{
 			if (!t->_closed)
 			{
@@ -102,9 +102,9 @@ public:
 		});
 	}
 
-	void message(const std::u8string_view message, int64_t pos, int64_t total) override
+	void message(const std::string_view message, int64_t pos, int64_t total) override
 	{
-		_async.queue_ui([t = shared_from_this(), m = std::u8string(message), pos, total]
+		_async.queue_ui([t = shared_from_this(), m = std::string(message), pos, total]
 		{
 			if (!t->_closed)
 			{
@@ -128,14 +128,14 @@ public:
 		return _processed_count > 0;
 	}
 
-	void start_item(const std::u8string_view name) override
+	void start_item(const std::string_view name) override
 	{
 		message(name, _pos++, _total);
 	}
 
-	void end_item(const std::u8string_view name, const item_status status) override
+	void end_item(const std::string_view name, const item_status status) override
 	{
-		_async.queue_ui([t = shared_from_this(), n = std::u8string(name), status]
+		_async.queue_ui([t = shared_from_this(), n = std::string(name), status]
 		{
 			if (status == item_status::success)
 			{
@@ -149,7 +149,7 @@ public:
 			}
 			else if (status == item_status::ignore)
 			{
-				if (t->_ignore_first_name.empty()) t->_failed_first_name = n;
+				if (t->_ignore_first_name.empty()) t->_ignore_first_name = n;
 				++t->_ignore_count;
 			}
 		});
@@ -172,9 +172,9 @@ public:
 		}
 	}
 
-	void abort(const std::u8string_view error_message) override
+	void abort(const std::string_view error_message) override
 	{
-		_async.queue_ui([t = shared_from_this(), em = std::u8string(error_message)]
+		_async.queue_ui([t = shared_from_this(), em = std::string(error_message)]
 		{
 			t->_completed = true;
 			t->_error_message = em;
@@ -182,9 +182,9 @@ public:
 		});
 	}
 
-	void complete(const std::u8string_view message = {}) override
+	void complete(const std::string_view message = {}) override
 	{
-		_async.queue_ui([t = shared_from_this(), m = std::u8string(message)]
+		_async.queue_ui([t = shared_from_this(), m = std::string(message)]
 		{
 			t->_completed = true;
 			t->_message = m;
@@ -193,9 +193,9 @@ public:
 	}
 
 private:
-	std::u8string format_processed_message() const
+	std::string format_processed_message() const
 	{
-		std::u8string result;
+		std::string result;
 
 		if (_dlg->is_canceled())
 		{
@@ -209,13 +209,13 @@ private:
 
 		if (_failed_count > 0)
 		{
-			result += u8" "sv;
+			result += " ";
 			result += format_plural_text(tt.failed_items_fmt, _failed_first_name, _failed_count, {}, _total);
 		}
 
 		if (_ignore_count > 0)
 		{
-			result += u8" "sv;
+			result += " ";
 			result += format_plural_text(tt.ignored_fmt, _ignore_first_name, _ignore_count, {}, _total);
 		}
 

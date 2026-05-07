@@ -43,8 +43,8 @@ struct file_tool;
 
 struct media_name_props
 {
-	std::u8string show;
-	std::u8string title;
+	std::string show;
+	std::string title;
 
 	int season = 0;
 	int episode = 0;
@@ -52,10 +52,10 @@ struct media_name_props
 	int year = 0;
 };
 
-using file_group_by_name = df::hash_map<std::u8string_view, file_group_ref, df::ihash, df::ieq>;
-using file_type_by_extension = df::hash_map<std::u8string_view, file_type_ref, df::ihash, df::ieq>;
-using file_tool_by_extension = df::hash_map<std::u8string_view, file_tool*, df::ihash, df::ieq>;
-using file_tool_by_name = df::hash_map<std::u8string_view, file_tool*, df::ihash, df::ieq>;
+using file_group_by_name = df::hash_map<std::string_view, file_group_ref, df::ihash, df::ieq>;
+using file_type_by_extension = df::hash_map<std::string_view, file_type_ref, df::ihash, df::ieq>;
+using file_tool_by_extension = df::hash_map<std::string_view, file_tool*, df::ihash, df::ieq>;
+using file_tool_by_name = df::hash_map<std::string_view, file_tool*, df::ihash, df::ieq>;
 
 enum class file_traits : uint32_t
 {
@@ -116,13 +116,13 @@ class file_group
 {
 public:
 	file_group(
-		const std::u8string_view name,
-		const std::u8string_view plural_name,
+		const std::string_view name,
+		const std::string_view plural_name,
 		const ui::color32 color,
 		const icon_index icon,
 		const file_traits traits,
 		const group_key_type key,
-		std::vector<std::u8string_view> sidecars)
+		std::vector<std::string_view> sidecars)
 		: name(name),
 		  plural_name(plural_name),
 		  key(key),
@@ -133,13 +133,13 @@ public:
 	{
 	}
 
-	std::u8string_view name;
-	std::u8string_view plural_name;
+	std::string_view name;
+	std::string_view plural_name;
 	group_key_type key;
 	ui::color32 color;
 	icon_index icon = icon_index::document;
 	file_traits traits = file_traits::none;
-	std::vector<std::u8string_view> sidecars;
+	std::vector<std::string_view> sidecars;
 	std::vector<file_tool*> tools;
 
 	mutable int id = -1;
@@ -154,7 +154,7 @@ public:
 
 	static constexpr size_t max_count = 7;
 
-	std::u8string display_name(bool is_plural) const;
+	std::string display_name(bool is_plural) const;
 
 	uint32_t bloom_bit() const
 	{
@@ -186,17 +186,17 @@ class file_type
 {
 public:
 	file_group_ref group = nullptr;
-	std::u8string_view extension;
-	std::u8string_view text;
+	std::string_view extension;
+	std::string_view text;
 	file_traits traits = file_traits::none;
 	icon_index icon = icon_index::document;
-	std::vector<std::u8string_view> sidecars;
+	std::vector<std::string_view> sidecars;
 	std::vector<file_tool*> tools;
 
 	static file_type folder;
 	static file_type other;
 
-	file_type(const file_group_ref group, const std::u8string_view extension, const std::u8string_view text,
+	file_type(const file_group_ref group, const std::string_view extension, const std::string_view text,
 	          const file_traits traits)
 		: group(group),
 		  extension(extension),
@@ -230,7 +230,7 @@ public:
 		return has_trait(file_traits::edit);
 	}
 
-	std::u8string display_name(const bool is_plural) const { return group->display_name(is_plural); }
+	std::string display_name(const bool is_plural) const { return group->display_name(is_plural); }
 
 	ui::color32 text_color(const ui::color32 default_text_color) const
 	{
@@ -271,19 +271,19 @@ struct file_tool
 
 
 file_group_ref file_group_from_index(int from_id);
-file_group_ref parse_file_group(const std::u8string& text);
+file_group_ref parse_file_group(const std::string& text);
 void load_file_types();
 void load_tools();
 std::vector<file_group_ref> all_file_groups();
 
-inline std::u8string safe_file_type_name(const file_group_ref fg, const bool is_plural = false)
+inline std::string safe_file_type_name(const file_group_ref fg, const bool is_plural = false)
 {
-	return fg ? fg->display_name(is_plural) : std::u8string{};
+	return fg ? fg->display_name(is_plural) : std::string{};
 }
 
-inline std::u8string safe_file_type_name(const file_type_ref ft, const bool is_plural = false)
+inline std::string safe_file_type_name(const file_type_ref ft, const bool is_plural = false)
 {
-	return ft ? ft->group->display_name(is_plural) : std::u8string{};
+	return ft ? ft->group->display_name(is_plural) : std::string{};
 }
 
 
@@ -325,8 +325,8 @@ inline std::u8string safe_file_type_name(const file_type_ref ft, const bool is_p
 //	return 0;
 //}
 
-//file_type parse_media_type(const std::u8string_view text);
-//std::u8string_view format_file_type(file_type mt, bool plural = false);
+//file_type parse_media_type(const std::string_view text);
+//std::string_view format_file_type(file_type mt, bool plural = false);
 
 struct metadata_parts
 {
@@ -489,7 +489,7 @@ file_scan_result scan_heif(read_stream& s);
 webp_parts scan_webp(df::cspan data, bool decode_surface);
 
 png_parts split_png(read_stream& s);
-media_name_props scan_info_from_title(std::u8string_view name);
+media_name_props scan_info_from_title(std::string_view name);
 
 ui::surface_ptr load_psd(read_stream& s);
 file_load_result load_raw(df::file_path path, bool can_load_preview);
@@ -504,7 +504,7 @@ ui::image_ptr save_jpeg(const ui::const_surface_ptr& surface_in, const metadata_
                         const file_encode_params& encoder_params);
 ui::image_ptr save_surface(const ui::image_format& format, const ui::const_surface_ptr& surface,
                            const metadata_parts& metadata, const file_encode_params& params);
-ui::image_format extension_to_format(std::u8string_view ext);
+ui::image_format extension_to_format(std::string_view ext);
 
 struct pack128
 {
@@ -557,7 +557,7 @@ public:
 	template <typename T>
 	T peek(const uint64_t pos)
 	{
-		if (pos + sizeof(T) > _file_size) throw app_exception(u8"invalid peek"s);
+		if (pos + sizeof(T) > _file_size) throw app_exception("invalid peek"s);
 		return *std::bit_cast<const T*>(_data + pos);
 	}
 
@@ -588,13 +588,13 @@ public:
 
 	void read(const uint64_t pos, uint8_t* buffer, const size_t len) override
 	{
-		if (pos + len > _file_size) throw app_exception(u8"invalid read"s);
+		if (pos + len > _file_size) throw app_exception("invalid read"s);
 		memcpy(buffer, _data + pos, len);
 	}
 
 	df::blob read(const uint64_t pos, const size_t len) override
 	{
-		if (pos + len > _file_size) throw app_exception(u8"invalid read"s);
+		if (pos + len > _file_size) throw app_exception("invalid read"s);
 		df::blob result;
 		result.resize(len);
 		memcpy(result.data(), _data + pos, len);
@@ -682,9 +682,9 @@ public:
 struct codec_info final : df::no_copy
 {
 	bool item_only = false;
-	std::u8string title;
-	std::u8string key;
-	std::u8string extension_default;
+	std::string title;
+	std::string key;
+	std::string extension_default;
 };
 
 namespace photo_edits_default
@@ -940,26 +940,26 @@ public:
 class metadata_edits
 {
 public:
-	std::optional<std::u8string> title;
-	std::optional<std::u8string> copyright_notice;
-	std::optional<std::u8string> copyright_creator;
-	std::optional<std::u8string> copyright_source;
-	std::optional<std::u8string> copyright_credit;
-	std::optional<std::u8string> copyright_url;
-	std::optional<std::u8string> description;
-	std::optional<std::u8string> comment;
-	std::optional<std::u8string> artist;
-	std::optional<std::u8string> album;
-	std::optional<std::u8string> album_artist;
-	std::optional<std::u8string> genre;
-	std::optional<std::u8string> show;
+	std::optional<std::string> title;
+	std::optional<std::string> copyright_notice;
+	std::optional<std::string> copyright_creator;
+	std::optional<std::string> copyright_source;
+	std::optional<std::string> copyright_credit;
+	std::optional<std::string> copyright_url;
+	std::optional<std::string> description;
+	std::optional<std::string> comment;
+	std::optional<std::string> artist;
+	std::optional<std::string> album;
+	std::optional<std::string> album_artist;
+	std::optional<std::string> genre;
+	std::optional<std::string> show;
 	std::optional<df::date_t> created;
 
 	std::optional<int> season;
 	std::optional<df::xy8> episode;
 	std::optional<int> year;
 	std::optional<int> rating;
-	std::optional<std::u8string> label;
+	std::optional<std::string> label;
 	std::optional<ui::orientation> orientation;
 
 	std::optional<df::xy8> track_num;
@@ -971,9 +971,9 @@ public:
 	bool remove_rating = false;
 
 	std::optional<gps_coordinate> location_coordinate;
-	std::optional<std::u8string> location_place;
-	std::optional<std::u8string> location_state;
-	std::optional<std::u8string> location_country;
+	std::optional<std::string> location_place;
+	std::optional<std::string> location_state;
+	std::optional<std::string> location_country;
 
 	metadata_edits() noexcept = default;
 	~metadata_edits() = default;
@@ -1023,7 +1023,7 @@ public:
 
 struct archive_item
 {
-	std::u8string filename;
+	std::string filename;
 	df::file_size uncompressed_size;
 	df::file_size compressed_size;
 	df::date_t created;
@@ -1050,7 +1050,7 @@ class files final : df::no_copy
 
 	mutable platform::mutex _mutex;
 
-	file_scan_result scan_raw(df::file_path path, std::u8string_view xmp_sidecar, bool load_thumb, sizei max);
+	file_scan_result scan_raw(df::file_path path, std::string_view xmp_sidecar, bool load_thumb, sizei max);
 
 public:
 	files();
@@ -1068,45 +1068,45 @@ public:
 	bool save(df::file_path path, const file_load_result& loaded);
 
 
-	static std::u8string_view to_string(const ui::image_format f)
+	static std::string_view to_string(const ui::image_format f)
 	{
 		switch (f)
 		{
-		case ui::image_format::JPEG: return u8"JPEG"sv;
-		case ui::image_format::PNG: return u8"PNG"sv;
-		case ui::image_format::WEBP: return u8"WEBP"sv;
+		case ui::image_format::JPEG: return "JPEG";
+		case ui::image_format::PNG: return "PNG";
+		case ui::image_format::WEBP: return "WEBP";
 		case ui::image_format::Unknown: break;
 		default: ;
 		}
 
-		return u8"Unknown"sv;
+		return "Unknown";
 	}
 
 	static detected_format detect_format(df::cspan image_buffer_in);
 	static file_type_ref file_type_from_name(df::file_path path);
-	static file_type_ref file_type_from_name(std::u8string_view name);
+	static file_type_ref file_type_from_name(std::string_view name);
 
 	static bool can_save(df::file_path path);
-	static bool can_save_extension(std::u8string_view ext);
+	static bool can_save_extension(std::string_view ext);
 	static bool is_jpeg(df::file_path path);
-	static bool is_jpeg(std::u8string_view name);
+	static bool is_jpeg(std::string_view name);
 	static bool is_raw(df::file_path path);
-	static bool is_raw(std::u8string_view name);
+	static bool is_raw(std::string_view name);
 	static bool is_jpeg(uint32_t header);
 
 	file_scan_result scan_file(df::file_path path, bool load_thumb, file_type_ref ft,
-	                           std::u8string_view xmp_sidecar = {}, sizei max_thumb_size = {});
+	                           std::string_view xmp_sidecar = {}, sizei max_thumb_size = {});
 
 	file_load_result load(df::file_path path, bool can_load_preview);
 
 	platform::file_op_result update(df::file_path path_src, df::file_path path_dst,
 	                                const metadata_edits& metadata_edits, const image_edits& photo_edits,
 	                                const file_encode_params& params, bool create_original,
-	                                std::u8string_view xmp_name);
+	                                std::string_view xmp_name);
 
 	platform::file_op_result update(const df::file_path path, const metadata_edits& metadata_edits,
 	                                const image_edits& photo_edits, const file_encode_params& params,
-	                                const bool create_original, const std::u8string_view xmp_name)
+	                                const bool create_original, const std::string_view xmp_name)
 	{
 		return update(path, path, metadata_edits, photo_edits, params, create_original, xmp_name);
 	}
@@ -1115,7 +1115,7 @@ public:
 
 	struct d64_item
 	{
-		std::u8string line;
+		std::string line;
 	};
 
 	static std::vector<d64_item> list_disk(const df::blob& selected_item_data);

@@ -204,8 +204,8 @@ public:
 			const auto end_time = _decoder.end_time();
 			const auto duration = end_time - start_time;
 
-			//df::log(__FUNCTION__, "start_time "sv << start_time;
-			//df::log(__FUNCTION__, "end_time"sv << end_time;
+			//df::log(__FUNCTION__, "start_time " << start_time;
+			//df::log(__FUNCTION__, "end_time" << end_time;
 
 			_audio_buffer_time = 0;
 			_end_time = end_time;
@@ -356,7 +356,7 @@ public:
 										pr->flush();
 										vr->flush();
 
-										df::trace(str::format(u8"Player clear audio_buffer on seek_ver {}"sv, sv));
+										df::trace(std::format("Player clear audio_buffer on seek_ver {}", sv));
 									}
 
 									pr->resample(frame, playback_buffer);
@@ -530,8 +530,8 @@ class av_player final : public std::enable_shared_from_this<av_player>
 	platform::mutex _thread_mutex;
 	std::shared_ptr<av_session> _thread_session;
 
-	mutable _Guarded_by_(_thread_mutex) std::u8string _audio_device_id;
-	mutable std::u8string _play_audio_device_id;
+	mutable _Guarded_by_(_thread_mutex) std::string _audio_device_id;
+	mutable std::string _play_audio_device_id;
 
 	_Guarded_by_(_queue_mutex) std::deque<std::function<void(std::shared_ptr<av_player>)>> _q;
 	av_host& _host;
@@ -650,27 +650,27 @@ private:
 	}
 
 public:
-	void audio_device_id(const std::u8string_view id) const
+	void audio_device_id(const std::string_view id) const
 	{
 		platform::exclusive_lock lock(_thread_mutex);
 		_audio_device_id = id;
 		_audio_event.set();
 	}
 
-	std::u8string_view audio_device_id() const
+	std::string_view audio_device_id() const
 	{
 		platform::exclusive_lock lock(_thread_mutex);
 		return _audio_device_id;
 	}
 
-	void play_audio_device_id(const std::u8string_view id) const
+	void play_audio_device_id(const std::string_view id) const
 	{
 		platform::exclusive_lock lock(_thread_mutex);
 		_play_audio_device_id = id;
 		_audio_event.set();
 	}
 
-	std::u8string_view play_audio_device_id() const
+	std::string_view play_audio_device_id() const
 	{
 		platform::exclusive_lock lock(_thread_mutex);
 		return _audio_device_id.empty() ? _play_audio_device_id : _audio_device_id;
@@ -699,7 +699,7 @@ public:
 
 	void decode_audio() const
 	{
-		std::u8string device_id;
+		std::string device_id;
 		av_audio_device_ptr ds;
 		audio_buffer playback_buffer;
 		audio_buffer vis_buffer;
@@ -826,14 +826,14 @@ public:
 
 							if (ds_is_stopped)
 							{
-								//df::log(__FUNCTION__, "av_player.start-ds "sv << ds.time();
+								//df::log(__FUNCTION__, "av_player.start-ds " << ds.time();
 								ds->start();
 							}
 
 							if (session->_pending_time_sync)
 							{
 								const auto time = base_time + ds->time();
-								//df::log(__FUNCTION__, str::format(u8"sound.clock {}"sv, time));
+								//df::log(__FUNCTION__, std::format("sound.clock {}", time));
 								session->_time_offset = df::now() - time;
 								session->_pending_time_sync = false;
 							}

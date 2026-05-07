@@ -12,51 +12,51 @@
 #include "pch.h"
 #include "app_text.h"
 
-std::u8string language_name(const std::u8string_view code)
+std::string language_name(const std::string_view code)
 {
-	static const df::hash_map<std::u8string_view, std::u8string_view> code_to_name = {
-		{u8"en"sv, u8"English"sv},
-		{u8"de"sv, u8"Deutsch (German)"sv},
-		{u8"br"sv, u8"brezhoneg (Breton)"sv},
-		{u8"cs"sv, u8"čeština (Czech)"sv},
-		{u8"es"sv, u8"Español (Spanish)"sv},
-		{u8"fr"sv, u8"Français (French)"sv},
-		{u8"it"sv, u8"Italiano (Italian)"sv},
-		{u8"ja"sv, u8"日本語 (Japanese)"sv},
-		{u8"lv"sv, u8"Latviešu Valoda (Latvian)"sv},
-		{u8"nl"sv, u8"Nederlands (Dutch)"sv},
-		{u8"pl"sv, u8"Polszczyzna (Polish)"sv},
-		{u8"pt"sv, u8"Português (Portuguese)"sv},
-		{u8"ru"sv, u8"Русский (Russian)"sv},
-		{u8"sr"sv, u8"српски језик (Serbian)"sv},
-		{u8"zh"sv, u8"中文 (Chinese)"sv},
+	static const df::hash_map<std::string_view, std::string_view> code_to_name = {
+		{"en", "English"},
+		{"de", "Deutsch (German)"},
+		{"br", "brezhoneg (Breton)"},
+		{"cs", "čeština (Czech)"},
+		{"es", "Español (Spanish)"},
+		{"fr", "Français (French)"},
+		{"it", "Italiano (Italian)"},
+		{"ja", "日本語 (Japanese)"},
+		{"lv", "Latviešu Valoda (Latvian)"},
+		{"nl", "Nederlands (Dutch)"},
+		{"pl", "Polszczyzna (Polish)"},
+		{"pt", "Português (Portuguese)"},
+		{"ru", "Русский (Russian)"},
+		{"sr", "српски језик (Serbian)"},
+		{"zh", "中文 (Chinese)"},
 	};
 
 	const auto found = code_to_name.find(code);
-	return found == code_to_name.end() ? std::u8string(code) : std::u8string(found->second);
+	return found == code_to_name.end() ? std::string(code) : std::string(found->second);
 }
 
-static std::u8string un_escape(const std::u8string_view text)
+static std::string un_escape(const std::string_view text)
 {
 	const auto start = text.find(u8'"');
 	const auto end = text.rfind(u8'"');
 
-	if (start == std::u8string_view::npos) return {};
-	if (end == std::u8string_view::npos) return {};
+	if (start == std::string_view::npos) return {};
+	if (end == std::string_view::npos) return {};
 	if (start >= end) return {};
 
-	auto result = std::u8string(text.substr(start + 1, end - start - 1));
-	result = str::replace(result, u8"\\n"sv, u8"\n"sv);
-	result = str::replace(result, u8"\\\""sv, u8"\""sv);
-	result = str::replace(result, u8"\\\\"sv, u8"\\"sv);
+	auto result = std::string(text.substr(start + 1, end - start - 1));
+	result = str::replace(result, "\\n", "\n");
+	result = str::replace(result, "\\\"", "\"");
+	result = str::replace(result, "\\\\", "\\");
 	return result;
 }
 
-std::u8string_view tt_prep(std::u8string_view result)
+std::string_view tt_prep(std::string_view result)
 {
-	const auto comment = result.find(u8"//"sv);
+	const auto comment = result.find("//");
 
-	if (comment != std::u8string::npos)
+	if (comment != std::string::npos)
 	{
 		result = result.substr(0, comment);
 	}
@@ -67,7 +67,7 @@ std::u8string_view tt_prep(std::u8string_view result)
 std::vector<po_entry> load_po(const df::file_path lang_file)
 {
 	std::vector<po_entry> result;
-	u8istream fs(platform::to_file_system_path(lang_file));
+	std::ifstream fs(platform::to_file_system_path(lang_file));
 
 	enum class parse_po_state
 	{
@@ -83,24 +83,24 @@ std::vector<po_entry> load_po(const df::file_path lang_file)
 
 	while (fs)
 	{
-		std::u8string line;
+		std::string line;
 		std::getline(fs, line);
 
-		std::u8string::size_type pos = line.find_last_not_of(u8" \t\r\n"sv);
-		if (pos != std::u8string::npos && pos < line.size() - 1)
+		std::string::size_type pos = line.find_last_not_of(" \t\r\n");
+		if (pos != std::string::npos && pos < line.size() - 1)
 		{
-			line.erase(pos + 1, std::u8string::npos);
+			line.erase(pos + 1, std::string::npos);
 		}
 
 		if (!line.empty() && line[0] != '#')
 		{
 			try
 			{
-				if (str::starts(line, u8"msgstr[1]"sv)) parse_state = parse_po_state::str1;
-				else if (str::starts(line, u8"msgstr[0]"sv)) parse_state = parse_po_state::str;
-				else if (str::starts(line, u8"msgid_plural"sv)) parse_state = parse_po_state::id_plural;
-				else if (str::starts(line, u8"msgstr"sv)) parse_state = parse_po_state::str;
-				else if (str::starts(line, u8"msgid"sv)) parse_state = parse_po_state::id;
+				if (str::starts(line, "msgstr[1]")) parse_state = parse_po_state::str1;
+				else if (str::starts(line, "msgstr[0]")) parse_state = parse_po_state::str;
+				else if (str::starts(line, "msgid_plural")) parse_state = parse_po_state::id_plural;
+				else if (str::starts(line, "msgstr")) parse_state = parse_po_state::str;
+				else if (str::starts(line, "msgid")) parse_state = parse_po_state::id;
 
 				if (parse_state == parse_po_state::id && !entry.is_empty() && line[0] != u8'\"')
 				{
@@ -135,12 +135,12 @@ app_text_t::app_text_t()
 	calc_text_mapping();
 }
 
-void app_text_t::load_lang(const std::u8string_view lang_file, const std::vector<po_entry>& entries)
+void app_text_t::load_lang(const std::string_view lang_file, const std::vector<po_entry>& entries)
 {
 	// default
 	clear();
 
-	df::hash_map<std::u8string_view, std::u8string_view> text_map;
+	df::hash_map<std::string_view, std::string_view> text_map;
 
 	for (const auto& entry : entries)
 	{
@@ -166,7 +166,7 @@ void app_text_t::load_lang(const std::u8string_view lang_file, const std::vector
 		}
 		else
 		{
-			df::log(__FUNCTION__, str::format(u8"{} missing: msgid \"{}\""sv, lang_file, t.get().text));
+			df::log(__FUNCTION__, std::format("{} missing: msgid \"{}\"", lang_file, t.get().text));
 			t.get().trans.clear();
 		}
 	}
@@ -181,7 +181,7 @@ void app_text_t::load_lang(const std::u8string_view lang_file, const std::vector
 		}
 		else
 		{
-			df::log(__FUNCTION__, str::format(u8"{} missing: msgid \"{}\""sv, lang_file, p.get().one.text));
+			df::log(__FUNCTION__, std::format("{} missing: msgid \"{}\"", lang_file, p.get().one.text));
 			p.get().one.trans.clear();
 		}
 
@@ -193,7 +193,7 @@ void app_text_t::load_lang(const std::u8string_view lang_file, const std::vector
 		}
 		else
 		{
-			df::log(__FUNCTION__, str::format(u8"{} missing: msgid_plural \"{}\""sv, lang_file, p.get().plural.text));
+			df::log(__FUNCTION__, std::format("{} missing: msgid_plural \"{}\"", lang_file, p.get().plural.text));
 			p.get().plural.trans.clear();
 		}
 	}
@@ -202,17 +202,17 @@ void app_text_t::load_lang(const std::u8string_view lang_file, const std::vector
 std::vector<po_entry> app_text_t::gen_po() const
 {
 	std::vector<po_entry> result;
-	df::hash_set<std::u8string_view> written;
+	df::hash_set<std::string_view> written;
 
 	for (const auto& t : _all_texts)
 	{
 		if (!written.contains(t.get().text))
 		{
 			result.emplace_back(
-				std::u8string{t.get().text},
-				std::u8string{t.get().trans},
-				std::u8string{},
-				std::u8string{});
+				std::string{t.get().text},
+				std::string{t.get().trans},
+				std::string{},
+				std::string{});
 
 			written.insert(t.get().text);
 		}
@@ -221,10 +221,10 @@ std::vector<po_entry> app_text_t::gen_po() const
 	for (const auto& p : _all_plurals)
 	{
 		result.emplace_back(
-			std::u8string{p.get().one.text},
-			std::u8string{p.get().one.trans},
-			std::u8string{p.get().plural.text},
-			std::u8string{p.get().plural.trans});
+			std::string{p.get().one.text},
+			std::string{p.get().one.trans},
+			std::string{p.get().plural.text},
+			std::string{p.get().plural.trans});
 	}
 
 	return result;
@@ -1372,45 +1372,45 @@ void app_text_t::calc_text_mapping()
 	for (auto&& e : _all_texts)
 	{
 		mapping.insert(
-			std::make_pair<std::u8string_view, std::reference_wrapper<text_t>>(
-				std::u8string_view{e.get().text}, e.get()));
+			std::make_pair<std::string_view, std::reference_wrapper<text_t>>(
+				std::string_view{e.get().text}, e.get()));
 	}
 
 	for (auto&& p : _all_plurals)
 	{
 		mapping.insert(
-			std::make_pair<std::u8string_view, std::reference_wrapper<text_t>>(
-				std::u8string_view{p.get().one.text}, p.get().one));
+			std::make_pair<std::string_view, std::reference_wrapper<text_t>>(
+				std::string_view{p.get().one.text}, p.get().one));
 		mapping.insert(
-			std::make_pair<std::u8string_view, std::reference_wrapper<text_t>>(
-				std::u8string_view{p.get().plural.text}, p.get().plural));
+			std::make_pair<std::string_view, std::reference_wrapper<text_t>>(
+				std::string_view{p.get().plural.text}, p.get().plural));
 	}
 
 	_text_mapping = std::move(mapping);
 }
 
-std::u8string app_text_t::translate_text(const std::u8string& text, const std::u8string_view scope) const
+std::string app_text_t::translate_text(const std::string& text, const std::string_view scope) const
 {
 	if (!scope.empty())
 	{
-		const auto found = _text_mapping.find(str::format(u8"{}//{}"sv, text, scope));
+		const auto found = _text_mapping.find(std::format("{}//{}", text, scope));
 
 		if (found != _text_mapping.end())
 		{
-			return std::u8string(tt_prep(found->second.get().sv()));
+			return std::string(tt_prep(found->second.get().sv()));
 		}
 	}
 
 	const auto found = _text_mapping.find(text);
 	return found != _text_mapping.end()
-		       ? std::u8string(tt_prep(found->second.get().sv()))
-		       : std::u8string(tt_prep(text));
+		       ? std::string(tt_prep(found->second.get().sv()))
+		       : std::string(tt_prep(text));
 }
 
-std::vector<std::u8string> app_text_t::add_translate_text(const std::vector<str::cached>& text,
-                                                          const std::u8string_view scope) const
+std::vector<std::string> app_text_t::add_translate_text(const std::vector<str::cached>& text,
+                                                        const std::string_view scope) const
 {
-	df::hash_set<std::u8string, df::ihash, df::ieq> result;
+	df::hash_set<std::string, df::ihash, df::ieq> result;
 	result.reserve(text.size() * 2);
 
 	for (const auto& t : text)

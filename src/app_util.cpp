@@ -17,7 +17,7 @@
 #include "app_util.h"
 #include "model_index.h"
 
-void view_state::modify_items(const df::results_ptr& results, icon_index icon, const std::u8string_view title,
+void view_state::modify_items(const df::results_ptr& results, icon_index icon, const std::string_view title,
                               const df::item_elements& items_to_modify, const metadata_edits& edits,
                               const view_host_base_ptr& view)
 {
@@ -30,7 +30,7 @@ void view_state::modify_items(const df::results_ptr& results, icon_index icon, c
 		queue_async(async_queue::work, [this, items_to_modify, edits, results]
 		{
 			result_scope rr(results);
-			std::u8string message;
+			std::string message;
 			files ff;
 
 			file_encode_params encode_params;
@@ -91,7 +91,7 @@ static bool ignore_existing(const df::file_path path_in, const df::file_path pat
 	return result;
 }
 
-std::vector<rename_item> calc_item_renames(const df::item_set& items, const std::u8string_view template_name,
+std::vector<rename_item> calc_item_renames(const df::item_set& items, const std::string_view template_name,
                                            const int start)
 {
 	std::vector<rename_item> results;
@@ -115,17 +115,17 @@ std::vector<rename_item> calc_item_renames(const df::item_set& items, const std:
 	return results;
 }
 
-std::u8string format_sequence(const std::u8string_view original_name, const std::u8string_view template_name,
-                              const int seq)
+std::string format_sequence(const std::string_view original_name, const std::string_view template_name,
+                            const int seq)
 
 {
-	static auto numbers = u8"0123456789"sv;
-	std::u8string result;
+	static auto numbers = "0123456789";
+	std::string result;
 
 	if (!template_name.empty())
 	{
-		const auto reverse_template = std::u8string(template_name.rbegin(), template_name.rend());
-		const auto reverse_name = std::u8string(original_name.rbegin(), original_name.rend());
+		const auto reverse_template = std::string(template_name.rbegin(), template_name.rend());
+		const auto reverse_name = std::string(original_name.rbegin(), original_name.rend());
 
 		const auto org_len = reverse_name.size();
 		auto i_div = seq;
@@ -151,7 +151,7 @@ std::u8string format_sequence(const std::u8string_view original_name, const std:
 		}
 	}
 
-	return std::u8string(result.rbegin(), result.rend());
+	return std::string(result.rbegin(), result.rend());
 }
 
 import_analysis_result import_analysis(const std::vector<folder_scan_item>& src_items,
@@ -204,7 +204,7 @@ import_analysis_result import_analysis(const std::vector<folder_scan_item>& src_
 				{
 					const auto sidecar_path_in = i.folder.combine_file(file_name);
 					const auto sidecar_path_out = options.dest_folder.combine(import_folder_out).combine_file(
-						path_in.name());
+						file_name);
 					const bool sidecar_already_exists = sidecar_path_out.exists();
 
 					if (!ignore_existing(sidecar_path_in, sidecar_path_out, sidecar_already_exists,
@@ -243,7 +243,7 @@ import_result import_copy(index_state& index, item_results_ptr results, const im
 		if (create_folder_result.failed())
 		{
 			results->abort(
-				create_folder_result.format_error(str::format(tt.error_create_folder_failed_fmt, folder_out)));
+				create_folder_result.format_error(str_format(tt.error_create_folder_failed_fmt.sv(), folder_out)));
 		}
 		else
 		{
@@ -282,7 +282,7 @@ import_result import_copy(index_state& index, item_results_ptr results, const im
 
 	index.queue_scan_folders(write_folders);
 
-	std::u8string result_text;
+	std::string result_text;
 
 	if (!existing.empty())
 	{
@@ -293,7 +293,7 @@ import_result import_copy(index_state& index, item_results_ptr results, const im
 
 	if (!previous.empty())
 	{
-		if (!result_text.empty()) result_text += u8"\n\n"sv;
+		if (!result_text.empty()) result_text += "\n\n";
 		result_text += format_plural_text(tt.ignored_previous_fmt, previous.front().item.name,
 		                                  static_cast<int>(previous.size()), {},
 		                                  static_cast<int>(src_items.size()));
@@ -371,8 +371,8 @@ std::vector<import_source> calc_import_sources(const view_state& s)
 	if (s.has_selection())
 	{
 		import_source source;
-		source.text = str::format(tt.selected_items_fmt,
-		                          format_plural_text(tt.title_item_count_fmt, s.selected_items()));
+		source.text = str_format(tt.selected_items_fmt.sv(),
+		                         format_plural_text(tt.title_item_count_fmt, s.selected_items()));
 		source.items = s.selected_items();
 		result.emplace_back(source);
 	}
@@ -381,7 +381,7 @@ std::vector<import_source> calc_import_sources(const view_state& s)
 
 	if (onedrive_camera_roll.exists())
 	{
-		result.emplace_back(std::u8string(onedrive_camera_roll.text()), onedrive_camera_roll);
+		result.emplace_back(std::string(onedrive_camera_roll.text()), onedrive_camera_roll);
 	}
 
 	auto drives = platform::scan_drives(true);
@@ -396,7 +396,7 @@ std::vector<import_source> calc_import_sources(const view_state& s)
 	{
 		if (d.type == platform::drive_type::removable)
 		{
-			const auto text = str::format(u8"{} {} {}"sv, d.name, d.vol_name, d.used);
+			const auto text = std::format("{} {} {}", d.name, d.vol_name, d.used);
 			result.emplace_back(text, df::folder_path(d.name));
 		}
 	}
@@ -405,7 +405,7 @@ std::vector<import_source> calc_import_sources(const view_state& s)
 }
 
 
-std::u8string relative_combine(const std::u8string& relative, const str::cached name)
+std::string relative_combine(const std::string& relative, const str::cached name)
 {
 	auto result = relative;
 
@@ -424,7 +424,7 @@ sync_analysis_result sync_analysis(const df::index_roots& local_roots, const df:
                                    const df::cancel_token& token)
 {
 	sync_analysis_result result;
-	std::map<std::u8string, df::folder_path, df::iless> local_roots_by_relative;
+	std::map<std::string, df::folder_path, df::iless> local_roots_by_relative;
 
 	std::vector<sync_analysis_folder> local_folders_to_scan;
 
@@ -652,13 +652,13 @@ void toggle_collection_entry(settings_t::index_t& collection_settings, const df:
 		else if (local_folders.onedrive_music == folder) collection_settings.onedrive_music = false;
 		else if (local_folders.dropbox_photos == folder) collection_settings.drop_box = false;
 
-		std::u8string more_folders;
+		std::string more_folders;
 
 		for (const auto existing_folder_path : split_collection_folders(collection_settings.more_folders))
 		{
 			if (folder != df::folder_path(existing_folder_path))
 			{
-				if (!more_folders.empty()) more_folders += u8"\r\n"sv;
+				if (!more_folders.empty()) more_folders += "\r\n";
 				more_folders += existing_folder_path;
 			}
 		}
@@ -677,16 +677,16 @@ void toggle_collection_entry(settings_t::index_t& collection_settings, const df:
 		else if (local_folders.dropbox_photos == folder) collection_settings.drop_box = true;
 		else
 		{
-			if (!collection_settings.more_folders.empty()) collection_settings.more_folders += u8"\r\n"sv;
+			if (!collection_settings.more_folders.empty()) collection_settings.more_folders += "\r\n";
 			collection_settings.more_folders += folder.text();
 		}
 	}
 }
 
-std::vector<std::u8string> check_overwrite(const df::folder_path write_folder, const df::item_set& items,
-                                           const std::u8string_view new_extension)
+std::vector<std::string> check_overwrite(const df::folder_path write_folder, const df::item_set& items,
+                                         const std::string_view new_extension)
 {
-	std::vector<std::u8string> result;
+	std::vector<std::string> result;
 
 	for (const auto f : items.folder_paths())
 	{

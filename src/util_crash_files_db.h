@@ -13,7 +13,7 @@
 
 class crash_files_db
 {
-	using path_map = df::hash_map<df::file_path, std::u8string_view, df::ihash, df::ieq>;
+	using path_map = df::hash_map<df::file_path, std::string_view, df::ihash, df::ieq>;
 	using path_set = df::hash_set<df::file_path, df::ihash, df::ieq>;
 
 	df::file_path _crash_files_path;
@@ -22,8 +22,8 @@ class crash_files_db
 	{
 		path_set result;
 
-		u8istream file(platform::to_file_system_path(path));
-		std::u8string line;
+		std::ifstream file(platform::to_file_system_path(path));
+		std::string line;
 
 		while (std::getline(file, line))
 		{
@@ -49,7 +49,7 @@ public:
 		return _crash_files.contains(path);
 	}
 
-	void add_open(const df::file_path path, const std::u8string_view context)
+	void add_open(const df::file_path path, const std::string_view context)
 	{
 		platform::exclusive_lock lock(_mtx);
 		_open_files[path] = context;
@@ -65,12 +65,12 @@ public:
 	{
 		if (!_open_files.empty())
 		{
-			u8ostream file;
+			std::ofstream file;
 			file.open(platform::to_file_system_path(_crash_files_path), std::ios_base::app); // append 
 
 			for (const auto& path : _open_files)
 			{
-				df::log(__FUNCTION__, str::format(u8"Add file type to crash list {}"sv, path.first.extension()));
+				df::log(__FUNCTION__, std::format("Add file type to crash list {}", path.first.extension()));
 				file << path.first.str() << '\n';
 			}
 		}
@@ -82,18 +82,18 @@ public:
 		{
 			for (const auto& path : _open_files)
 			{
-				df::log(__FUNCTION__, str::format(u8"Open file {}"sv, path.first.str()));
+				df::log(__FUNCTION__, std::format("Open file {}", path.first.str()));
 			}
 		}
 	}
 
-	std::u8string open_files_list() const
+	std::string open_files_list() const
 	{
-		u8ostringstream result;
+		std::ostringstream result;
 
 		for (const auto& path : _open_files)
 		{
-			result << path.first.str() << u8" ["sv << path.second << u8"] "sv << '\n';
+			result << path.first.str() << " [" << path.second << "] " << '\n';
 		}
 
 		return result.str();
@@ -105,12 +105,12 @@ struct record_open_path
 {
 	df::file_path _path;
 	crash_files_db& files_that_crash_diffractor_;
-	std::u8string_view _context;
+	std::string_view _context;
 
 	record_open_path(crash_files_db& files_that_crash_diffractor, const df::file_path path,
-	                 const std::u8string_view context) : _path(path),
-	                                                     files_that_crash_diffractor_(files_that_crash_diffractor),
-	                                                     _context(context)
+	                 const std::string_view context) : _path(path),
+	                                                   files_that_crash_diffractor_(files_that_crash_diffractor),
+	                                                   _context(context)
 	{
 		files_that_crash_diffractor_.add_open(path, _context);
 	}

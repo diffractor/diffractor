@@ -28,7 +28,7 @@
 #include "metadata_exif.h"
 #include "XMP.incl_cpp" // Needed otherwise undefined externs
 
-static df::date_t xmp_parse_date(const std::u8string_view str)
+static df::date_t xmp_parse_date(const std::string_view str)
 {
 	if (!str.empty())
 	{
@@ -44,7 +44,7 @@ static df::date_t xmp_parse_date(const std::u8string_view str)
 	return {};
 }
 
-static double xmp_decode_gps_coordinate(const std::u8string_view str)
+static double xmp_decode_gps_coordinate(const std::string_view str)
 {
 	const auto len = str.size();
 	const auto* const sz = std::bit_cast<const char*>(str.data());
@@ -89,7 +89,7 @@ static double xmp_decode_gps_coordinate(const std::u8string_view str)
 	return 0;
 }
 
-static bool xmp_decode_rational(const std::u8string_view text, metadata_exif::urational32_t& result)
+static bool xmp_decode_rational(const std::string_view text, metadata_exif::urational32_t& result)
 {
 	const auto len = text.size();
 	unsigned long locNum = 0, locDenom = 0;
@@ -116,7 +116,7 @@ static bool xmp_decode_rational(const std::u8string_view text, metadata_exif::ur
 	return true;
 }
 
-std::u8string microsoft_photo_prefix;
+std::string microsoft_photo_prefix;
 
 static str::cached xmp_load_array(const SXMPMeta& xmp, const char* schema_ns, const char* array_name)
 {
@@ -125,7 +125,7 @@ static str::cached xmp_load_array(const SXMPMeta& xmp, const char* schema_ns, co
 
 	if (count > 0)
 	{
-		std::vector<std::u8string> parts;
+		std::vector<std::string> parts;
 		parts.reserve(count);
 
 		for (auto i = 0; i < count; i++)
@@ -385,7 +385,7 @@ void metadata_xmp::initialise()
 	SXMPFiles::Initialize(0UL);
 
 	// https://github.com/nomacs/nomacs/blob/master/exiv2-0.25/src/xmp.cpp	
-	//SXMPMeta::RegisterNamespace(kXMP_NS_MicrosoftPhoto, "MicrosoftPhoto"sv, &microsoft_photo_prefix);
+	//SXMPMeta::RegisterNamespace(kXMP_NS_MicrosoftPhoto, "MicrosoftPhoto", &microsoft_photo_prefix);
 }
 
 void metadata_xmp::term()
@@ -400,15 +400,15 @@ void metadata_edits::apply(SXMPMeta& meta) const
 	{
 		const auto position = location_coordinate.value();
 
-		//std::u8string v;
+		//std::string v;
 		XMP_OptionBits flags = 0;
 		meta.SetProperty(kXMP_NS_EXIF, "GPSLatitude",
 		                 str::utf8_cast2(gps_coordinate::decimal_to_dms_str(position.latitude(), true)));
 		meta.SetProperty(kXMP_NS_EXIF, "GPSLongitude",
 		                 str::utf8_cast2(gps_coordinate::decimal_to_dms_str(position.longitude(), false)));
 
-		// meta.SetProperty_Float(kXMP_NS_EXIF, "GPSLatitude"sv, position.Latitude());
-		// meta.SetProperty_Float(kXMP_NS_EXIF, "GPSLongitude"sv, position.Longitude());
+		// meta.SetProperty_Float(kXMP_NS_EXIF, "GPSLatitude", position.Latitude());
+		// meta.SetProperty_Float(kXMP_NS_EXIF, "GPSLongitude", position.Longitude());
 	}
 
 
@@ -582,9 +582,9 @@ void metadata_edits::apply(SXMPMeta& meta) const
 			}
 		}
 
-		/*while(meta.CountArrayItems(kXMP_NS_DC, "subject"sv) > 0)
+		/*while(meta.CountArrayItems(kXMP_NS_DC, "subject") > 0)
 		{
-			meta.DeleteArrayItem(kXMP_NS_DC, "subject"sv, 1);
+			meta.DeleteArrayItem(kXMP_NS_DC, "subject", 1);
 		}*/
 
 		tags.remove(remove_tags);
@@ -605,7 +605,7 @@ void metadata_edits::apply(SXMPMeta& meta) const
 		}
 		else
 		{
-			meta.SetProperty(kXMP_NS_EXIF, "XPKeywords", str::utf8_cast2(tags.to_string(u8";"sv, false)));
+			meta.SetProperty(kXMP_NS_EXIF, "XPKeywords", str::utf8_cast2(tags.to_string(";", false)));
 		}
 	}
 
@@ -703,18 +703,18 @@ file_scan_result scan_xmp(const df::file_path path)
 	return result;
 }
 
-df::file_path probe_xmp_path(const df::file_path src_path, const std::u8string_view xmp_name)
+df::file_path probe_xmp_path(const df::file_path src_path, const std::string_view xmp_name)
 {
 	if (!xmp_name.empty())
 	{
 		return src_path.folder().combine_file(xmp_name);
 	}
 
-	return src_path.extension(u8".xmp"sv);
+	return src_path.extension(".xmp");
 }
 
 xmp_update_result metadata_xmp::update(const df::file_path update_path, const df::file_path src_path,
-                                       const metadata_edits& edits, const std::u8string_view xmp_name)
+                                       const metadata_edits& edits, const std::string_view xmp_name)
 {
 	xmp_update_result result;
 
@@ -797,7 +797,7 @@ xmp_update_result metadata_xmp::update(const df::file_path update_path, const df
 	return result;
 }
 
-void metadata_xmp::update(std::u8string& buffer, const metadata_edits& edits)
+void metadata_xmp::update(std::string& buffer, const metadata_edits& edits)
 {
 	try
 	{
@@ -828,7 +828,7 @@ metadata_kv_list metadata_xmp::to_info(const df::cspan xmp)
 		const auto* data = std::bit_cast<const char*>(xmp.data);
 		auto size = xmp.size;
 
-		if (memcmp(data, xmp_signature.data(), xmp_sig_len) == 0)
+		if (size > xmp_sig_len && memcmp(data, xmp_signature.data(), xmp_sig_len) == 0)
 		{
 			data = data + xmp_sig_len;
 			size = size - xmp_sig_len;

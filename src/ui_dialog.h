@@ -22,7 +22,7 @@
 namespace ui
 {
 	bool browse_for_location(view_state& vs, const control_frame_ptr& parent, gps_coordinate& position);
-	bool browse_for_term(view_state& vs, const control_frame_ptr& parent, std::u8string& result);
+	bool browse_for_term(view_state& vs, const control_frame_ptr& parent, std::string& result);
 
 	extern std::atomic_int cancel_gen;
 
@@ -45,7 +45,7 @@ namespace ui
 		}
 
 		~auto_complete_match() override = default;
-		virtual std::u8string edit_text() const = 0;
+		virtual std::string edit_text() const = 0;
 	};
 
 	using auto_complete_match_ptr = std::shared_ptr<auto_complete_match>;
@@ -69,10 +69,10 @@ namespace ui
 			init
 		};
 
-		virtual std::u8string no_results_message() = 0;
+		virtual std::string no_results_message() = 0;
 		virtual void selected(const auto_complete_match_ptr& i, select_type st) = 0;
 		virtual auto_complete_match_ptr selected() const = 0;
-		virtual void search(const std::u8string& query, std::function<void(const auto_complete_results&)> complete) = 0;
+		virtual void search(const std::string& query, std::function<void(const auto_complete_results&)> complete) = 0;
 		virtual void initialise(std::function<void(const auto_complete_results&)> complete) = 0;
 	};
 
@@ -93,7 +93,7 @@ namespace ui
 			edit_styles style;
 			style.number = true;
 			style.align_center = true;
-			_edit = h->create_edit(style, {}, [this](const std::u8string_view text) { edit_change(text); });
+			_edit = h->create_edit(style, {}, [this](const std::string_view text) { edit_change(text); });
 			_slider = h->create_slider(min, max, [this](const int pos, bool is_tracking) { slider_change(pos); });
 
 			update_slider();
@@ -115,7 +115,7 @@ namespace ui
 		{
 			bounds = bounds_in;
 
-			const auto num_extent = mc.measure_text(u8"00.00"sv, style::font_face::dialog,
+			const auto num_extent = mc.measure_text("00.00", style::font_face::dialog,
 			                                        style::text_style::single_line, bounds.width());
 			auto slider_bounds = bounds;
 			auto edit_bounds = bounds;
@@ -147,7 +147,7 @@ namespace ui
 			}
 		}
 
-		void edit_change(const std::u8string_view text)
+		void edit_change(const std::string_view text)
 		{
 			_val = str::to_int(text);
 			update_slider();
@@ -162,51 +162,51 @@ namespace ui
 
 	class edit_control final : public view_element, public std::enable_shared_from_this<edit_control>
 	{
-		std::u8string& _val;
-		std::u8string _label;
+		std::string& _val;
+		std::string _label;
 		edit_ptr _edit;
 
 	public:
 		edit_control(const control_frame_ptr& h,
-		             const std::u8string_view label,
-		             std::u8string& v,
-		             std::function<void(std::u8string_view)> changed = {}) : _val(v), _label(label)
+		             const std::string_view label,
+		             std::string& v,
+		             std::function<void(std::string_view)> changed = {}) : _val(v), _label(label)
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
-			_edit = h->create_edit(style, v, [this, changed](const std::u8string_view text)
+			_edit = h->create_edit(style, v, [this, changed](const std::string_view text)
 			{
 				_val = text;
 				if (changed) changed(text);
 			});
 		}
 
-		edit_control(const control_frame_ptr& h, std::u8string& v) : _val(v)
+		edit_control(const control_frame_ptr& h, std::string& v) : _val(v)
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
-			_edit = h->create_edit(style, v, [this](const std::u8string_view text) { _val = text; });
+			_edit = h->create_edit(style, v, [this](const std::string_view text) { _val = text; });
 		}
 
-		edit_control(const control_frame_ptr& h, std::u8string& v,
-		             const std::vector<std::u8string>& auto_completes) : _val(v)
-		{
-			edit_styles style;
-			style.horizontal_scroll = true;
-			style.auto_complete_list = auto_completes;
-			_edit = h->create_edit(style, v, [this](const std::u8string_view text) { _val = text; });
-		}
-
-		edit_control(const control_frame_ptr& h, const std::u8string_view label, std::u8string& v,
-		             const std::vector<std::u8string>& auto_completes) : _val(v), _label(label)
+		edit_control(const control_frame_ptr& h, std::string& v,
+		             const std::vector<std::string>& auto_completes) : _val(v)
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
 			style.auto_complete_list = auto_completes;
-			_edit = h->create_edit(style, v, [this](const std::u8string_view text) { _val = text; });
+			_edit = h->create_edit(style, v, [this](const std::string_view text) { _val = text; });
 		}
 
-		void label(const std::u8string_view label)
+		edit_control(const control_frame_ptr& h, const std::string_view label, std::string& v,
+		             const std::vector<std::string>& auto_completes) : _val(v), _label(label)
+		{
+			edit_styles style;
+			style.horizontal_scroll = true;
+			style.auto_complete_list = auto_completes;
+			_edit = h->create_edit(style, v, [this](const std::string_view text) { _val = text; });
+		}
+
+		void label(const std::string_view label)
 		{
 			_label = label;
 		}
@@ -255,7 +255,7 @@ namespace ui
 			positions.emplace_back(_edit, r, is_visible());
 		}
 
-		void auto_completes(const std::vector<std::u8string>& texts) const
+		void auto_completes(const std::vector<std::string>& texts) const
 		{
 			_edit->auto_completes(texts);
 		}
@@ -263,23 +263,23 @@ namespace ui
 
 	class edit_picker_control final : public view_element, public std::enable_shared_from_this<edit_picker_control>
 	{
-		std::u8string& _val;
-		std::u8string _label;
+		std::string& _val;
+		std::string _label;
 		edit_ptr _edit;
 		toolbar_ptr _tb;
 
-		std::vector<std::u8string> _auto_completes;
+		std::vector<std::string> _auto_completes;
 		control_frame_ptr _parent;
 
 	public:
-		edit_picker_control(control_frame_ptr parent, std::u8string& v,
-		                    std::vector<std::u8string> auto_completes,
-		                    std::function<void(std::u8string_view)> changed = {}) : _val(v),
+		edit_picker_control(control_frame_ptr parent, std::string& v,
+		                    std::vector<std::string> auto_completes,
+		                    std::function<void(std::string_view)> changed = {}) : _val(v),
 			_auto_completes(std::move(auto_completes)), _parent(std::move(parent))
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
-			_edit = _parent->create_edit(style, v, [this, changed](const std::u8string_view text)
+			_edit = _parent->create_edit(style, v, [this, changed](const std::string_view text)
 			{
 				_val = text;
 				if (changed) changed(text);
@@ -294,17 +294,17 @@ namespace ui
 			_tb = _parent->create_toolbar(styles, {c});
 		}
 
-		edit_picker_control(control_frame_ptr parent, const std::u8string_view label, std::u8string& v,
-		                    std::vector<std::u8string> auto_completes) : _val(v), _label(label),
-		                                                                 _auto_completes(std::move(auto_completes)),
-		                                                                 _parent(std::move(parent))
+		edit_picker_control(control_frame_ptr parent, const std::string_view label, std::string& v,
+		                    std::vector<std::string> auto_completes) : _val(v), _label(label),
+		                                                               _auto_completes(std::move(auto_completes)),
+		                                                               _parent(std::move(parent))
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
-			_edit = _parent->create_edit(style, v, [this](const std::u8string_view text) { _val = text; });
+			_edit = _parent->create_edit(style, v, [this](const std::string_view text) { _val = text; });
 		}
 
-		void label(const std::u8string_view label)
+		void label(const std::string_view label)
 		{
 			_label = label;
 		}
@@ -386,26 +386,26 @@ namespace ui
 
 	class password_control final : public view_element, public std::enable_shared_from_this<password_control>
 	{
-		std::u8string& _val;
-		std::u8string _label;
+		std::string& _val;
+		std::string _label;
 		edit_ptr _edit;
 
 	public:
-		password_control(const control_frame_ptr& h, const std::u8string_view label,
-		                 std::u8string& v) : _val(v), _label(label)
+		password_control(const control_frame_ptr& h, const std::string_view label,
+		                 std::string& v) : _val(v), _label(label)
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
 			style.password = true;
-			_edit = h->create_edit(style, v, [this](const std::u8string_view text) { _val = text; });
+			_edit = h->create_edit(style, v, [this](const std::string_view text) { _val = text; });
 		}
 
-		password_control(const control_frame_ptr& h, std::u8string& v) : _val(v)
+		password_control(const control_frame_ptr& h, std::string& v) : _val(v)
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
 			style.password = true;
-			_edit = h->create_edit(style, v, [this](const std::u8string_view text) { _val = text; });
+			_edit = h->create_edit(style, v, [this](const std::string_view text) { _val = text; });
 		}
 
 		void dispatch_event(const view_element_event& event) override
@@ -456,12 +456,12 @@ namespace ui
 	class multi_line_edit_control final : public view_element,
 	                                      public std::enable_shared_from_this<multi_line_edit_control>
 	{
-		std::u8string& _text;
+		std::string& _text;
 		edit_ptr _edit;
 		const int _edit_height;
 
 	public:
-		multi_line_edit_control(const control_frame_ptr& h, std::u8string& v, const int height = 6,
+		multi_line_edit_control(const control_frame_ptr& h, std::string& v, const int height = 6,
 		                        const bool wants_return = false) : _text(v), _edit_height(height)
 		{
 			edit_styles style;
@@ -469,7 +469,7 @@ namespace ui
 			style.multi_line = true;
 			style.want_return = wants_return;
 			style.spelling = true;
-			_edit = h->create_edit(style, v, [this](const std::u8string_view text) { _text = text; });
+			_edit = h->create_edit(style, v, [this](const std::string_view text) { _text = text; });
 		}
 
 		void limit_text(const int n) const
@@ -477,7 +477,7 @@ namespace ui
 			_edit->limit_text_len(n);
 		}
 
-		void add_word(const std::u8string_view s) const
+		void add_word(const std::string_view s) const
 		{
 			_edit->replace_sel(s, true);
 		}
@@ -513,11 +513,11 @@ namespace ui
 	                                        public std::enable_shared_from_this<recommended_words_control>
 	{
 		toolbar_ptr _tb;
-		const std::function<void(std::u8string_view)> _f;
+		const std::function<void(std::string_view)> _f;
 
 	public:
-		recommended_words_control(const control_frame_ptr& h, const std::vector<std::u8string_view>& words,
-		                          const std::function<void(std::u8string_view)>& f)
+		recommended_words_control(const control_frame_ptr& h, const std::vector<std::string_view>& words,
+		                          const std::function<void(std::string_view)>& f)
 		{
 			toolbar_styles styles;
 			styles.xTBSTYLE_WRAPABLE = true;
@@ -568,22 +568,22 @@ namespace ui
 	class num_control final : public view_element, public std::enable_shared_from_this<num_control>
 	{
 		int& _val;
-		std::u8string _label;
+		std::string _label;
 		edit_ptr _edit;
 
 	public:
-		num_control(const control_frame_ptr& h, const std::u8string_view label, int& v) : _val(v), _label(label)
+		num_control(const control_frame_ptr& h, const std::string_view label, int& v) : _val(v), _label(label)
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
 			style.number = true;
-			_edit = h->create_edit(style, str::to_string(v), [this](const std::u8string_view text)
+			_edit = h->create_edit(style, str::to_string(v), [this](const std::string_view text)
 			{
 				_val = str::to_int(text);
 			});
 		}
 
-		void label(const std::u8string_view label)
+		void label(const std::string_view label)
 		{
 			_label = label;
 		}
@@ -636,16 +636,16 @@ namespace ui
 	class float_control final : public view_element, public std::enable_shared_from_this<float_control>
 	{
 		double& _val;
-		std::u8string _label;
+		std::string _label;
 		edit_ptr _edit;
 
 	public:
-		float_control(const control_frame_ptr& h, const std::u8string_view label, double& v) : _val(v), _label(label)
+		float_control(const control_frame_ptr& h, const std::string_view label, double& v) : _val(v), _label(label)
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
 			style.number = true;
-			_edit = h->create_edit(style, str::to_string(v, 5), [this](const std::u8string_view text)
+			_edit = h->create_edit(style, str::to_string(v, 5), [this](const std::string_view text)
 			{
 				_val = str::to_double(text);
 			});
@@ -656,13 +656,13 @@ namespace ui
 			edit_styles style;
 			style.horizontal_scroll = true;
 			style.number = true;
-			_edit = h->create_edit(style, str::to_string(v, 5), [this](const std::u8string_view text)
+			_edit = h->create_edit(style, str::to_string(v, 5), [this](const std::string_view text)
 			{
 				_val = str::to_double(text);
 			});
 		}
 
-		void label(const std::u8string_view label)
+		void label(const std::string_view label)
 		{
 			_label = label;
 		}
@@ -715,28 +715,28 @@ namespace ui
 	class num_pair_control final : public view_element, public std::enable_shared_from_this<num_pair_control>
 	{
 		df::xy8& _val;
-		std::u8string _label;
+		std::string _label;
 		edit_ptr _edit1;
 		edit_ptr _edit2;
 
 	public:
-		num_pair_control(const control_frame_ptr& h, const std::u8string_view label,
+		num_pair_control(const control_frame_ptr& h, const std::string_view label,
 		                 df::xy8& v) : _val(v), _label(label)
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
 			style.number = true;
-			_edit1 = h->create_edit(style, str::to_string(_val.x), [this](const std::u8string_view text)
+			_edit1 = h->create_edit(style, str::to_string(_val.x), [this](const std::string_view text)
 			{
 				_val.x = str::to_int(text);
 			});
-			_edit2 = h->create_edit(style, str::to_string(_val.y), [this](const std::u8string_view text)
+			_edit2 = h->create_edit(style, str::to_string(_val.y), [this](const std::string_view text)
 			{
 				_val.y = str::to_int(text);
 			});
 		}
 
-		void label(const std::u8string_view label)
+		void label(const std::string_view label)
 		{
 			_label = label;
 		}
@@ -744,7 +744,7 @@ namespace ui
 		void visit_controls(const std::function<void(const control_base_ptr&)>& handler) override
 		{
 			handler(_edit1);
-			handler(_edit1);
+			handler(_edit2);
 		}
 
 		void dispatch_event(const view_element_event& event) override
@@ -752,7 +752,7 @@ namespace ui
 			if (event.type == view_element_event_type::populate)
 			{
 				_edit1->window_text(str::to_string(_val.x));
-				const auto y_val = _val.y == 0 ? std::u8string{} : str::to_string(_val.y);
+				const auto y_val = _val.y == 0 ? std::string{} : str::to_string(_val.y);
 				_edit2->window_text(y_val);
 			}
 		}
@@ -803,8 +803,8 @@ namespace ui
 
 	class two_col_table_control final : public view_element, public std::enable_shared_from_this<two_col_table_control>
 	{
-		std::u8string* _val1;
-		std::u8string* _val2;
+		std::string* _val1;
+		std::string* _val2;
 
 		int _row_count = 0;
 		mutable int _control_height = 0;
@@ -813,7 +813,7 @@ namespace ui
 		std::vector<edit_ptr> _edit2;
 
 	public:
-		two_col_table_control(const control_frame_ptr& h, std::u8string* v1, std::u8string* v2, const int row_count) :
+		two_col_table_control(const control_frame_ptr& h, std::string* v1, std::string* v2, const int row_count) :
 			_val1(v1), _val2(v2), _row_count(row_count), _edit1(row_count), _edit2(row_count)
 		{
 			edit_styles style;
@@ -821,11 +821,11 @@ namespace ui
 
 			for (auto i = 0; i < row_count; i++)
 			{
-				_edit1[i] = h->create_edit(style, _val1[i], [this, i](const std::u8string_view text)
+				_edit1[i] = h->create_edit(style, _val1[i], [this, i](const std::string_view text)
 				{
 					_val1[i] = text;
 				});
-				_edit2[i] = h->create_edit(style, _val2[i], [this, i](const std::u8string_view text)
+				_edit2[i] = h->create_edit(style, _val2[i], [this, i](const std::string_view text)
 				{
 					_val2[i] = text;
 				});
@@ -896,14 +896,14 @@ namespace ui
 
 	class folder_picker_control final : public view_element, public std::enable_shared_from_this<folder_picker_control>
 	{
-		std::u8string& _text;
+		std::string& _text;
 		edit_ptr _edit;
 		toolbar_ptr _tb;
 		bool _multiline = false;
 		mutable int _edit_height = 0;
 
 	public:
-		folder_picker_control(const control_frame_ptr& h, std::u8string& path, const bool multiline = false) :
+		folder_picker_control(const control_frame_ptr& h, std::string& path, const bool multiline = false) :
 			_text(path),
 			_multiline(multiline)
 		{
@@ -912,11 +912,11 @@ namespace ui
 			style.file_system_auto_complete = !_multiline;
 			style.multi_line = _multiline;
 			style.want_return = _multiline;
-			_edit = h->create_edit(style, path, [this](const std::u8string_view text) { _text = text; });
+			_edit = h->create_edit(style, path, [this](const std::string_view text) { _text = text; });
 
 			const auto c = std::make_shared<command>();
 			c->icon = icon_index::folder;
-			c->text = _multiline ? tt.add_folder.sv() : std::u8string_view{};
+			c->text = _multiline ? tt.add_folder.sv() : std::string_view{};
 			if (_multiline) c->toolbar_text = c->text;
 			c->invoke = [this] { browse_for_folder(); };
 
@@ -974,7 +974,7 @@ namespace ui
 
 		void browse_for_folder() const
 		{
-			auto existing_last_path = std::u8string(_text);
+			auto existing_last_path = std::string(_text);
 
 			if (_multiline)
 			{
@@ -995,16 +995,16 @@ namespace ui
 			{
 				if (_multiline)
 				{
-					const auto text = std::u8string(browse_path.text());
+					const auto text = std::string(browse_path.text());
 					const auto original_len = static_cast<int>(_text.size());
-					if (!_text.empty()) _text += u8"\r\n"sv;
+					if (!_text.empty()) _text += "\r\n";
 					_text += text;
 					_edit->window_text(_text);
 					_edit->select(original_len, -1);
 				}
 				else
 				{
-					auto text = std::u8string(browse_path.text());
+					auto text = std::string(browse_path.text());
 					if (is_exclude) text.insert(text.begin(), '-');
 					_text = text;
 					_edit->window_text(_text);
@@ -1021,18 +1021,18 @@ namespace ui
 		const control_frame_ptr& _parent;
 		view_state& _state;
 
-		std::u8string& _val;
-		std::u8string _label;
+		std::string& _val;
+		std::string _label;
 		edit_ptr _edit;
 		toolbar_ptr _tb;
 
 	public:
-		term_picker_control(view_state& state, const control_frame_ptr& h, const std::u8string_view label,
-		                    std::u8string& v) : _parent(h), _state(state), _val(v), _label(label)
+		term_picker_control(view_state& state, const control_frame_ptr& h, const std::string_view label,
+		                    std::string& v) : _parent(h), _state(state), _val(v), _label(label)
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
-			_edit = h->create_edit(style, v, [this](const std::u8string_view text) { _val = text; });
+			_edit = h->create_edit(style, v, [this](const std::string_view text) { _val = text; });
 
 			const auto c = std::make_shared<command>();
 			c->icon = icon_index::add;
@@ -1043,7 +1043,7 @@ namespace ui
 			_tb = h->create_toolbar(styles, {c});
 		}
 
-		void label(const std::u8string_view label)
+		void label(const std::string_view label)
 		{
 			_label = label;
 		}
@@ -1102,19 +1102,19 @@ namespace ui
 			positions.emplace_back(_tb, tb_bounds, is_visible());
 		}
 
-		void auto_completes(const std::vector<std::u8string>& texts) const
+		void auto_completes(const std::vector<std::string>& texts) const
 		{
 			_edit->auto_completes(texts);
 		}
 
 		void browse_for_term() const
 		{
-			std::u8string term;
+			std::string term;
 
 			if (ui::browse_for_term(_state, _parent, term))
 			{
 				const auto original_len = _val.size();
-				if (!_val.empty()) _val += u8" "sv;
+				if (!_val.empty()) _val += " ";
 				_val += term;
 				_edit->window_text(_val);
 				_edit->select(static_cast<int>(original_len), -1);
@@ -1130,7 +1130,7 @@ namespace ui
 		const control_frame_ptr _parent;
 
 		location_and_distance_t& _val;
-		std::u8string _gps_text = std::u8string(tt.km_from);
+		std::string _gps_text = std::string(tt.km_from);
 
 		edit_ptr _edit;
 		toolbar_ptr _tb;
@@ -1156,7 +1156,7 @@ namespace ui
 			edit_styles style;
 			style.horizontal_scroll = true;
 			style.number = true;
-			_edit = h->create_edit(style, str::to_string(_val.km, 2), [this](const std::u8string_view text)
+			_edit = h->create_edit(style, str::to_string(_val.km, 2), [this](const std::string_view text)
 			{
 				_val.km = str::to_double(text);
 			});
@@ -1174,7 +1174,7 @@ namespace ui
 		{
 			if (_val.position.is_valid())
 			{
-				_tb_command->toolbar_text = str::format(u8"GPS {} {}"sv, _val.position.latitude(),
+				_tb_command->toolbar_text = std::format("GPS {} {}", _val.position.latitude(),
 				                                        _val.position.longitude());
 			}
 			else
@@ -1251,9 +1251,9 @@ namespace ui
 
 	class select_control final : public view_element, public std::enable_shared_from_this<select_control>
 	{
-		std::u8string& _text;
+		std::string& _text;
 		toolbar_ptr _tb;
-		std::u8string _label;
+		std::string _label;
 
 		mutable recti _label_bounds;
 		mutable recti _text_bounds;
@@ -1262,7 +1262,7 @@ namespace ui
 		std::function<std::vector<command_ptr>(const std::shared_ptr<select_control>&)> _commands;
 
 	public:
-		select_control(const control_frame_ptr& h, const std::u8string_view label, std::u8string& text,
+		select_control(const control_frame_ptr& h, const std::string_view label, std::string& text,
 		               std::function<std::vector<command_ptr>(const std::shared_ptr<select_control>&)> commands) :
 			_text(text), _label(label), _parent(h), _commands(std::move(commands))
 		{
@@ -1330,7 +1330,7 @@ namespace ui
 			}
 		}
 
-		void update_text(const std::u8string_view text) const
+		void update_text(const std::string_view text) const
 		{
 			_text = text;
 			_parent->invalidate();
@@ -1348,10 +1348,10 @@ namespace ui
 	{
 		df::date_t& _val;
 		date_time_control_ptr _control;
-		std::u8string _label;
+		std::string _label;
 
 	public:
-		date_control(const control_frame_ptr& h, const std::u8string_view label, df::date_t& val,
+		date_control(const control_frame_ptr& h, const std::string_view label, df::date_t& val,
 		             const bool include_time = true) : _val(val), _label(label)
 		{
 			_control = h->
@@ -1364,7 +1364,7 @@ namespace ui
 				create_date_time_control(val, [this](const df::date_t val) { on_changed(val); }, include_time);
 		}
 
-		void label(const std::u8string_view label)
+		void label(const std::string_view label)
 		{
 			_label = label;
 		}
@@ -1599,7 +1599,7 @@ namespace ui
 			_rows.emplace_back(r);
 		}
 
-		void add(const std::u8string_view label, const std::u8string_view text) const
+		void add(const std::string_view label, const std::string_view text) const
 		{
 			row r;
 			r.cells.emplace_back(std::make_shared<text_element>(label));
@@ -1607,7 +1607,7 @@ namespace ui
 			_rows.emplace_back(r);
 		}
 
-		void add(const icon_index i, const std::u8string_view label, const std::u8string_view text) const
+		void add(const icon_index i, const std::string_view label, const std::string_view text) const
 		{
 			row r;
 			r.cells.emplace_back(std::make_shared<action_element>(label));
@@ -1615,7 +1615,7 @@ namespace ui
 			_rows.emplace_back(r);
 		}
 
-		void add(const std::u8string_view label, const std::u8string_view text1, const std::u8string_view text2) const
+		void add(const std::string_view label, const std::string_view text1, const std::string_view text2) const
 		{
 			row r;
 			r.cells.emplace_back(std::make_shared<text_element>(label));
@@ -1624,8 +1624,8 @@ namespace ui
 			_rows.emplace_back(r);
 		}
 
-		void add(const std::u8string_view label, const color32 clr, const std::u8string_view text1,
-		         const std::u8string_view text2) const
+		void add(const std::string_view label, const color32 clr, const std::string_view text1,
+		         const std::string_view text2) const
 		{
 			row r;
 			auto label_element = std::make_shared<text_element>(label);
@@ -1636,8 +1636,8 @@ namespace ui
 			_rows.emplace_back(r);
 		}
 
-		void add(const std::u8string_view c1, const std::u8string_view c2, const std::u8string_view c3,
-		         const std::u8string_view c4) const
+		void add(const std::string_view c1, const std::string_view c2, const std::string_view c3,
+		         const std::string_view c4) const
 		{
 			row r;
 			r.cells.emplace_back(std::make_shared<text_element>(c1));
@@ -1647,7 +1647,7 @@ namespace ui
 			_rows.emplace_back(r);
 		}
 
-		void add(const std::u8string_view label, view_element_ptr e) const
+		void add(const std::string_view label, view_element_ptr e) const
 		{
 			row r;
 			r.cells.emplace_back(std::make_shared<text_element>(label));
@@ -1655,7 +1655,7 @@ namespace ui
 			_rows.emplace_back(r);
 		}
 
-		void add(const std::u8string_view label, view_element_ptr e1, view_element_ptr e2) const
+		void add(const std::string_view label, view_element_ptr e1, view_element_ptr e2) const
 		{
 			row r;
 			r.cells.emplace_back(std::make_shared<text_element>(label));
@@ -1686,7 +1686,7 @@ namespace ui
 			_rows.emplace_back(r);
 		}
 
-		void add(const std::u8string_view label, view_element_ptr e1, view_element_ptr e2, view_element_ptr e3) const
+		void add(const std::string_view label, view_element_ptr e1, view_element_ptr e2, view_element_ptr e3) const
 		{
 			row r;
 			r.cells.emplace_back(std::make_shared<text_element>(label));
@@ -1696,7 +1696,7 @@ namespace ui
 			_rows.emplace_back(r);
 		}
 
-		void add(const std::u8string_view label, view_element_ptr e1, view_element_ptr e2, view_element_ptr e3,
+		void add(const std::string_view label, view_element_ptr e1, view_element_ptr e2, view_element_ptr e3,
 		         view_element_ptr e4) const
 		{
 			row r;
@@ -1778,7 +1778,13 @@ namespace ui
 					}
 				}
 
-				max_row_width -= cx_extra;
+				max_row_width = cx_avail;
+			}
+			else if (max_row_width < cx_avail && !col_widths.empty() && is_style_bit_set(view_element_style::grow))
+			{
+				// Expand the last column to fill available width
+				col_widths.back() += cx_avail - max_row_width;
+				max_row_width = cx_avail;
 			}
 
 			_total_height = 0;
@@ -2009,14 +2015,14 @@ namespace ui
 	class settings_control final : public view_element, public std::enable_shared_from_this<settings_control>
 	{
 		button_ptr _button;
-		std::u8string _text;
+		std::string _text;
 		mutable sizei _extent;
 		control_frame_ptr _parent;
 
 		const int button_width = 100;
 
 	public:
-		settings_control(const control_frame_ptr& h, const std::u8string_view text,
+		settings_control(const control_frame_ptr& h, const std::string_view text,
 		                 std::function<void(void)> f) : _text(text), _parent(h)
 		{
 			_button = h->create_button(tt.button_change, std::move(f));
@@ -2035,7 +2041,7 @@ namespace ui
 			return {cx, std::max(_extent.cy, default_control_height(mc) + mc.padding2 * 2)};
 		}
 
-		void text(const std::u8string_view a)
+		void text(const std::string_view a)
 		{
 			_text = a;
 			_parent->invalidate({});
@@ -2070,7 +2076,7 @@ namespace ui
 
 	class progress_control final : public view_element, public std::enable_shared_from_this<progress_control>
 	{
-		std::u8string _text;
+		std::string _text;
 		recti _rect_progress;
 		recti _rect_text;
 		mutable sizei _text_extent;
@@ -2078,7 +2084,7 @@ namespace ui
 		control_frame_ptr _parent;
 
 	public:
-		progress_control(control_frame_ptr h, const std::u8string_view a) : _text(a), _parent(std::move(h))
+		progress_control(control_frame_ptr h, const std::string_view a) : _text(a), _parent(std::move(h))
 		{
 		}
 
@@ -2150,13 +2156,13 @@ namespace ui
 			}
 		}
 
-		void text(const std::u8string_view a)
+		void text(const std::string_view a)
 		{
 			_text = a;
 			layout();
 		}
 
-		void message(const std::u8string_view m, const int64_t nn = 0, const int64_t dd = 0)
+		void message(const std::string_view m, const int64_t nn = 0, const int64_t dd = 0)
 		{
 			df::assert_true(is_ui_thread());
 
@@ -2176,24 +2182,24 @@ namespace ui
 
 	class title_control final : public view_element, public std::enable_shared_from_this<title_control>
 	{
-		std::u8string _text;
+		std::string _text;
 		icon_index _icon = icon_index::none;
 
 	public:
-		title_control(const std::u8string_view text) : _text(text)
+		title_control(const std::string_view text) : _text(text)
 		{
 		}
 
-		title_control(const icon_index& icon, const std::u8string_view text) : _text(text), _icon(icon)
+		title_control(const icon_index& icon, const std::string_view text) : _text(text), _icon(icon)
 		{
 		}
 
-		const std::u8string& text() const
+		const std::string& text() const
 		{
 			return _text;
 		}
 
-		void text(const std::u8string_view a)
+		void text(const std::string_view a)
 		{
 			_text = a;
 		}
@@ -2226,8 +2232,8 @@ namespace ui
 
 	class title_control2 final : public view_element, public std::enable_shared_from_this<title_control2>
 	{
-		std::u8string _text1;
-		std::u8string _text2;
+		std::string _text1;
+		std::string _text2;
 		mutable sizei _text_extent1;
 		mutable sizei _text_extent2;
 		mutable sizei _image_extent;
@@ -2242,31 +2248,31 @@ namespace ui
 		const size_t max_surfaces = 7;
 
 	public:
-		title_control2(control_frame_ptr h, const std::u8string_view text,
-		               const std::u8string_view text2) : _text1(text), _text2(text2), _parent(std::move(h))
+		title_control2(control_frame_ptr h, const std::string_view text,
+		               const std::string_view text2) : _text1(text), _text2(text2), _parent(std::move(h))
 		{
 		}
 
-		title_control2(control_frame_ptr h, const icon_index& icon, const std::u8string_view text,
-		               const std::u8string_view text2) : _text1(text), _text2(text2), _icon(icon), _parent(std::move(h))
+		title_control2(control_frame_ptr h, const icon_index& icon, const std::string_view text,
+		               const std::string_view text2) : _text1(text), _text2(text2), _icon(icon), _parent(std::move(h))
 		{
 		}
 
-		title_control2(control_frame_ptr h, const std::u8string_view text, const std::u8string_view text2,
+		title_control2(control_frame_ptr h, const std::string_view text, const std::string_view text2,
 		               const std::vector<const_image_ptr>& images) : _text1(text), _text2(text2), _parent(std::move(h))
 		{
 			init(images);
 		}
 
-		title_control2(control_frame_ptr h, const icon_index& icon, const std::u8string_view text,
-		               const std::u8string_view text2, const std::vector<const_image_ptr>& images) : _text1(text),
+		title_control2(control_frame_ptr h, const icon_index& icon, const std::string_view text,
+		               const std::string_view text2, const std::vector<const_image_ptr>& images) : _text1(text),
 			_text2(text2), _icon(icon), _parent(std::move(h))
 		{
 			init(images);
 		}
 
-		title_control2(control_frame_ptr h, const icon_index& icon, const std::u8string_view text,
-		               const std::u8string_view text2, const std::vector<const_surface_ptr>& surfaces) : _text1(text),
+		title_control2(control_frame_ptr h, const icon_index& icon, const std::string_view text,
+		               const std::string_view text2, const std::vector<const_surface_ptr>& surfaces) : _text1(text),
 			_text2(text2), _icon(icon), _parent(std::move(h))
 		{
 			init(surfaces);
@@ -2302,12 +2308,12 @@ namespace ui
 			}
 		}
 
-		const std::u8string& text() const
+		const std::string& text() const
 		{
 			return _text1;
 		}
 
-		void text(const std::u8string_view a)
+		void text(const std::string_view a)
 		{
 			_text1 = a;
 		}
@@ -2791,13 +2797,13 @@ namespace ui
 
 	class busy_control final : public view_element, public std::enable_shared_from_this<busy_control>
 	{
-		std::u8string _text;
+		std::string _text;
 		mutable sizei _extent;
 		icon_index _icon = icon_index::none;
 		control_frame_ptr _parent;
 
 	public:
-		busy_control(control_frame_ptr h, const icon_index& icon, const std::u8string_view text) : _text(text),
+		busy_control(control_frame_ptr h, const icon_index& icon, const std::string_view text) : _text(text),
 			_icon(icon), _parent(std::move(h))
 		{
 		}
@@ -2816,7 +2822,7 @@ namespace ui
 			return {cx, std::max(64, _extent.cy + 8)};
 		}
 
-		void text(const std::u8string_view a)
+		void text(const std::string_view a)
 		{
 			_text = a;
 		}
@@ -2877,10 +2883,10 @@ namespace ui
 		mutable sizei _child_extent;
 		view_element_ptr _child;
 		icon_index _icon = icon_index::none;
-		std::u8string _details;
+		std::string _details;
 
 	public:
-		check_control(const control_frame_ptr& h, const std::u8string_view text, bool& val, const bool is_radio = false,
+		check_control(const control_frame_ptr& h, const std::string_view text, bool& val, const bool is_radio = false,
 		              const bool is_wide_format = false,
 		              std::function<void(bool checked)> f = {}) : _val(val), _is_wide_format(is_wide_format)
 		{
@@ -2891,7 +2897,7 @@ namespace ui
 			});
 		}
 
-		check_control(const control_frame_ptr& h, const icon_index icon, const std::u8string_view text, bool& val,
+		check_control(const control_frame_ptr& h, const icon_index icon, const std::string_view text, bool& val,
 		              const bool is_radio = false, const bool is_wide_format = false,
 		              std::function<void(bool checked)> f = nullptr) : _val(val), _is_wide_format(is_wide_format),
 		                                                               _icon(icon)
@@ -2903,7 +2909,7 @@ namespace ui
 			});
 		}
 
-		void details(const std::u8string_view details)
+		void details(const std::string_view details)
 		{
 			_details = details;
 		}
@@ -3013,16 +3019,16 @@ namespace ui
 	{
 		button_ptr _button;
 		icon_index _icon = icon_index::none;
-		std::u8string _details;
+		std::string _details;
 
 	public:
-		button_control(const control_frame_ptr& h, const icon_index icon, const std::u8string_view title,
-		               const std::u8string_view details, std::function<void(void)> f) : _icon(icon), _details(details)
+		button_control(const control_frame_ptr& h, const icon_index icon, const std::string_view title,
+		               const std::string_view details, std::function<void(void)> f) : _icon(icon), _details(details)
 		{
 			_button = h->create_button(icon, title, details, std::move(f));
 		}
 
-		button_control(const control_frame_ptr& h, const std::u8string_view title, std::function<void(void)> f)
+		button_control(const control_frame_ptr& h, const std::string_view title, std::function<void(void)> f)
 		{
 			_button = h->create_button(_icon, title, {}, std::move(f));
 		}
@@ -3055,11 +3061,11 @@ namespace ui
 		mutable int _ok_width = 100;
 		mutable int _cancel_width = 100;
 
-		std::u8string _ok_text;
-		std::u8string _cancel_text;
+		std::string _ok_text;
+		std::string _cancel_text;
 
 	public:
-		ok_cancel_control(const control_frame_ptr& h, const std::u8string_view text = tt.button_ok) : _ok_text(text),
+		ok_cancel_control(const control_frame_ptr& h, const std::string_view text = tt.button_ok) : _ok_text(text),
 			_cancel_text(tt.button_cancel)
 		{
 			_ok = h->create_button(_ok_text, [h] { h->close(false); }, true);
@@ -3112,12 +3118,12 @@ namespace ui
 		mutable int _cancel_width = 100;
 		mutable int _analyze_width = 100;
 
-		std::u8string _ok_text;
-		std::u8string _cancel_text;
-		std::u8string _analyze_text;
+		std::string _ok_text;
+		std::string _cancel_text;
+		std::string _analyze_text;
 
 	public:
-		ok_cancel_control_analyze(const control_frame_ptr& h, const std::u8string_view text,
+		ok_cancel_control_analyze(const control_frame_ptr& h, const std::string_view text,
 		                          std::function<void()> invoke) : _ok_text(text), _cancel_text(tt.button_cancel),
 		                                                          _analyze_text(tt.button_analyze)
 		{
@@ -3176,18 +3182,18 @@ namespace ui
 
 	public:
 		close_control(const control_frame_ptr& h, const bool is_cancel = false,
-		              const std::u8string_view text = tt.button_close)
+		              const std::string_view text = tt.button_close)
 		{
 			_button = h->create_button(text, [h, is_cancel] { h->close(is_cancel); }, true);
 		}
 
 		close_control(const control_frame_ptr& h, std::function<void()> invoke,
-		              const std::u8string_view text = tt.button_close)
+		              const std::string_view text = tt.button_close)
 		{
 			_button = h->create_button(text, std::move(invoke), true);
 		}
 
-		void text(const std::u8string_view text) const
+		void text(const std::string_view text) const
 		{
 			_button->window_text(text);
 		}
@@ -3245,7 +3251,7 @@ namespace ui
 			return _height;
 		}
 
-		void search(const std::u8string& text)
+		void search(const std::string& text)
 		{
 			if (_completes)
 			{
@@ -3516,7 +3522,7 @@ namespace ui
 
 	class search_control final : public view_element, public std::enable_shared_from_this<search_control>
 	{
-		std::u8string& _val;
+		std::string& _val;
 		complete_strategy_ptr _completes;
 
 		std::atomic_int _pin;
@@ -3526,14 +3532,14 @@ namespace ui
 		mutable int _edit_line_height;
 
 	public:
-		search_control(const control_frame_ptr& h, std::u8string& v,
+		search_control(const control_frame_ptr& h, std::string& v,
 		               const complete_strategy_ptr& s) : _val(v), _completes(s)
 		{
 			edit_styles e_style;
 			e_style.horizontal_scroll = true;
 			e_style.font = style::font_face::title;
 			e_style.capture_key_down = [this](const int c, const key_state keys) { return key_down(c, keys); };
-			_edit = h->create_edit(e_style, v, [this](const std::u8string_view text) { edit_change(text); });
+			_edit = h->create_edit(e_style, v, [this](const std::string_view text) { edit_change(text); });
 
 			if (s->folder_select_button)
 			{
@@ -3585,13 +3591,13 @@ namespace ui
 			}
 		}
 
-		void update_edit_text(const std::u8string_view text)
+		void update_edit_text(const std::string_view text)
 		{
 			df::scope_locked_inc l(_pin);
 			_edit->window_text(text);
 		}
 
-		void edit_change(const std::u8string_view text) const
+		void edit_change(const std::string_view text) const
 		{
 			_val = text;
 
@@ -3750,7 +3756,7 @@ public:
 		}
 	}
 
-	void show_status(icon_index icon, const std::u8string_view text, const ui::screen_units cx = {33},
+	void show_status(icon_index icon, const std::string_view text, const ui::screen_units cx = {33},
 	                 const ui::screen_units cy = {66})
 	{
 		const auto scale_factor = _frame->scale_factor();
@@ -3763,7 +3769,7 @@ public:
 		_frame->show(true);
 	}
 
-	void show_cancel_status(icon_index icon, const std::u8string_view text, const std::function<void()>& cb,
+	void show_cancel_status(icon_index icon, const std::string_view text, const std::function<void()>& cb,
 	                        const ui::screen_units cx = {33}, const ui::screen_units cy = {66})
 	{
 		_close_cb = [f = _frame, cb]
@@ -3785,7 +3791,7 @@ public:
 		_frame->show(true);
 	}
 
-	void show_message(icon_index icon, const std::u8string_view title, const std::u8string_view text,
+	void show_message(icon_index icon, const std::string_view title, const std::string_view text,
 	                  const ui::screen_units cx = {33})
 	{
 		const std::vector<view_element_ptr> controls = {

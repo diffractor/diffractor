@@ -48,6 +48,7 @@
 #include <iomanip>
 #include <optional>
 #include <span>
+#include <format>
 
 #include <thread>
 #include <mutex>
@@ -75,7 +76,7 @@ constexpr float M_PIF = 3.14159265358979f;
 #include "ui.h"
 #include "app_settings.h"
 
-extern const std::u8string_view s_app_name;
-extern const std::u8string_view s_app_version;
-extern const std::u8string_view g_app_build;
+extern const std::string_view s_app_name;
+extern const std::string_view s_app_version;
+extern const std::string_view g_app_build;
 extern const wchar_t* s_app_name_l;

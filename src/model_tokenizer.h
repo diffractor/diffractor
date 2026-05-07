@@ -16,8 +16,8 @@ struct search_part
 	df::search_term_modifier modifier;
 	bool literal = false;
 
-	std::u8string scope;
-	std::u8string term;
+	std::string scope;
+	std::string term;
 
 	bool is_empty() const
 	{
@@ -44,20 +44,20 @@ class search_tokenizer
 
 	std::vector<search_part> results;
 	search_part current_term;
-	std::u8string current_text;
+	std::string current_text;
 
-	static bool is_modifier(const char8_t c)
+	static bool is_modifier(const char c)
 	{
 		return c == '-' || c == '~' || c == '!' || c == '|' || c == '&' || c == '(' || c == ')' || c == '>' || c == '<'
 			|| c == '=';
 	}
 
-	static bool is_delimiter(const char8_t c)
+	static bool is_delimiter(const char c)
 	{
 		return c == '#' || c == ':' || c == ',' || c == ';' || c == '|' || c == '(' || c == ')';
 	}
 
-	static bool is_num(const std::u8string_view s)
+	static bool is_num(const std::string_view s)
 	{
 		for (const auto c : s)
 		{
@@ -74,13 +74,13 @@ class search_tokenizer
 		{
 			if (current_term.scope.empty())
 			{
-				if (str::icmp(current_text, u8"or"sv) == 0 || str::icmp(current_text, tt.query_or) == 0)
+				if (str::icmp(current_text, "or") == 0 || str::icmp(current_text, tt.query_or) == 0)
 				{
 					current_term.modifier.logical_op = df::search_term_modifier_bool::m_or;
 					current_text.clear();
 					return;
 				}
-				if (str::icmp(current_text, u8"and"sv) == 0 || str::icmp(current_text, tt.query_and) == 0)
+				if (str::icmp(current_text, "and") == 0 || str::icmp(current_text, tt.query_and) == 0)
 				{
 					current_term.modifier.logical_op = df::search_term_modifier_bool::m_and;
 					current_text.clear();
@@ -107,7 +107,7 @@ class search_tokenizer
 	}
 
 public:
-	std::vector<search_part> parse(const std::u8string_view text)
+	std::vector<search_part> parse(const std::string_view text)
 	{
 		clear();
 
@@ -210,12 +210,12 @@ public:
 				else if (c == '#')
 				{
 					append_current_term();
-					current_term.scope = u8"tag"sv;
+					current_term.scope = "tag";
 				}
 				else if (c == '@')
 				{
 					append_current_term();
-					current_term.scope = u8"@"sv;
+					current_term.scope = "@";
 				}
 				else if (c == ':')
 				{

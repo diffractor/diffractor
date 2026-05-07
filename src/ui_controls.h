@@ -17,7 +17,7 @@
 
 class display_state_t;
 
-static std::u8string_view orientation_to_string(const ui::orientation& o) noexcept
+static std::string_view orientation_to_string(const ui::orientation& o) noexcept
 {
 	switch (o)
 	{
@@ -107,7 +107,7 @@ public:
 
 		if (current_rating == last_hover_rating && current_rating != 0)
 		{
-			hover.elements->add(std::make_shared<text_element>(str::format(tt.rating_remove_fmt, current_rating)));
+			hover.elements->add(std::make_shared<text_element>(str_format(tt.rating_remove_fmt.sv(), current_rating)));
 		}
 		else
 		{
@@ -116,7 +116,8 @@ public:
 
 			if (current_rating != 0)
 			{
-				hover.elements->add(std::make_shared<text_element>(str::format(tt.rating_remove_fmt, current_rating)));
+				hover.elements->add(
+					std::make_shared<text_element>(str_format(tt.rating_remove_fmt.sv(), current_rating)));
 			}
 		}
 
@@ -241,7 +242,7 @@ class items_dates_control final : public std::enable_shared_from_this<items_date
 {
 	view_state& _state;
 	const df::item_element_ptr _item;
-	std::u8string _text;
+	std::string _text;
 	ui::style::font_face _font = ui::style::font_face::dialog;
 	ui::style::text_style _text_style = ui::style::text_style::multiline;
 
@@ -442,7 +443,7 @@ public:
 	void tooltip(view_hover_element& hover, const pointi loc, const pointi element_offset) const override
 	{
 		hover.elements->add(make_icon_element(_icon, view_element_style::no_break));
-		hover.elements->add(std::make_shared<text_element>(format(tt.unselect_fmt, _item->name())));
+		hover.elements->add(std::make_shared<text_element>(str_format(tt.unselect_fmt.sv(), _item->name())));
 		hover.active_bounds = hover.window_bounds = bounds.offset(element_offset);
 	}
 };
@@ -491,7 +492,7 @@ public:
 	void tooltip(view_hover_element& hover, const pointi loc, const pointi element_offset) const override
 	{
 		hover.elements->add(make_icon_element(_icon, view_element_style::no_break));
-		hover.elements->add(std::make_shared<text_element>(format(tt.delete_fmt, _item->name())));
+		hover.elements->add(std::make_shared<text_element>(str_format(tt.delete_fmt.sv(), _item->name())));
 		hover.active_bounds = hover.window_bounds = bounds.offset(element_offset);
 	}
 };
@@ -503,7 +504,7 @@ class stream_element final : public std::enable_shared_from_this<stream_element>
 	const av_stream_info _stream;
 	ui::style::font_face _font = ui::style::font_face::dialog;
 	ui::style::text_style _text_style = ui::style::text_style::multiline;
-	std::u8string _text;
+	std::string _text;
 
 public:
 	stream_element(view_state& state, df::item_element_ptr i, av_stream_info stream) noexcept : _state(state),
@@ -515,7 +516,7 @@ public:
 		}
 
 		_text = _stream.title;
-		if (_text.empty()) _text = str::format(tt.stream_name_fmt, _stream.index);
+		if (_text.empty()) _text = str_format(tt.stream_name_fmt.sv(), _stream.index);
 		set_style_bit(view_element_style::checked, _stream.is_playing);
 	}
 
@@ -556,7 +557,7 @@ public:
 	void tooltip(view_hover_element& hover, const pointi loc, const pointi element_offset) const override
 	{
 		hover.elements->add(make_icon_element(icon_index::audio, view_element_style::no_break));
-		hover.elements->add(std::make_shared<text_element>(str::format(tt.stream_select_fmt, _text)));
+		hover.elements->add(std::make_shared<text_element>(str_format(tt.stream_select_fmt.sv(), _text)));
 		hover.active_bounds = hover.window_bounds = bounds.offset(element_offset);
 	}
 
@@ -580,9 +581,9 @@ class summary_control final : public std::enable_shared_from_this<summary_contro
 	struct entry
 	{
 		icon_index icon;
-		std::u8string name;
-		std::u8string count;
-		std::u8string size;
+		std::string name;
+		std::string count;
+		std::string size;
 		file_group_ref ft;
 	};
 
@@ -606,7 +607,7 @@ public:
 			if (c.count > 0)
 			{
 				const auto* const ft = file_group_from_index(i);
-				const auto size = c.size.is_empty() ? std::u8string{} : prop::format_size(c.size);
+				const auto size = c.size.is_empty() ? std::string{} : prop::format_size(c.size);
 				const auto text = ft->display_name(c.count > 1);
 				const auto num = platform::format_number(str::to_string(c.count));
 
@@ -696,7 +697,7 @@ class file_list_control final : public std::enable_shared_from_this<file_list_co
 	{
 		icon_index icon;
 		ui::color32 color;
-		std::array<std::u8string, col_count> text;
+		std::array<std::string, col_count> text;
 		mutable std::array<sizei, col_count> extents;
 	};
 
@@ -724,13 +725,13 @@ public:
 			const auto color = ft->text_color(ui::style::color::view_text);
 			const auto text = i.filename;
 			const auto created = prop::format_date(i.created);
-			const auto compressed_size = is_empty ? std::u8string{} : prop::format_size(i.compressed_size);
+			const auto compressed_size = is_empty ? std::string{} : prop::format_size(i.compressed_size);
 			const auto uncompressed_size = i.uncompressed_size.is_empty()
-				                               ? std::u8string{}
+				                               ? std::string{}
 				                               : prop::format_size(i.uncompressed_size);
 
 			_lines.emplace_back(ft->icon, color,
-			                    std::array<std::u8string, col_count>{text, created, uncompressed_size, compressed_size},
+			                    std::array<std::string, col_count>{text, created, uncompressed_size, compressed_size},
 			                    std::array<sizei, col_count>{});
 		}
 
@@ -855,7 +856,7 @@ public:
 
 	struct char_entry
 	{
-		char8_t c;
+		char c;
 		ui::color32 clr;
 	};
 
@@ -868,7 +869,7 @@ public:
 
 		for (auto i = 0; i < 256; i++)
 		{
-			auto c = static_cast<char8_t>(i);
+			auto c = static_cast<char>(i);
 			auto clr = ui::style::color::view_text;
 
 			if (c == 32u || c == u8'\t')
@@ -889,7 +890,7 @@ public:
 
 			//else if (std::ispunct(c)) {}
 			//else if (std::isalnum(c)) {}
-			//else { c = "."sv; };
+			//else { c = "."; };
 
 			result[i] = {c, clr};
 		}
@@ -900,7 +901,7 @@ public:
 	void render(ui::draw_context& dc, const pointi element_offset) const override
 	{
 		static const auto char_map = make_char_map();
-		static constexpr char8_t hex_chars[16] = {
+		static constexpr char hex_chars[16] = {
 			'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'
 		};
 
@@ -916,7 +917,7 @@ public:
 			auto x_ascii = 0u;
 			//const auto clr = ui::color(dc.colors.foreground, dc.colors.alpha);
 
-			std::u8string line(_chars_per_line, ' ');
+			std::string line(_chars_per_line, ' ');
 			std::vector<ui::text_highlight_t> highlights;
 
 			const auto left = (logical_bounds.left + logical_bounds.right - _line_width) / 2;
@@ -1012,7 +1013,7 @@ public:
 
 		while (true)
 		{
-			const auto line = std::u8string(calc_chars_per_line(_bytes_per_line + 8), u8'0');
+			const auto line = std::string(calc_chars_per_line(_bytes_per_line + 8), u8'0');
 			const auto extent = mc.measure_text(line, _font, ui::style::text_style::single_line, width_limit + 200);
 
 			if (extent.cx > width_limit)
@@ -1229,7 +1230,7 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		const auto extent = mc.measure_text(u8"00:00:00"sv, ui::style::font_face::dialog,
+		const auto extent = mc.measure_text("00:00:00", ui::style::font_face::dialog,
 		                                    ui::style::text_style::single_line, 200);
 		_display->_time_width = extent.cx + mc.padding2;
 		return {width_limit, std::max(extent.cy, mc.scroll_width)};
@@ -1318,7 +1319,7 @@ public:
 
 	group_title_control() noexcept = default;
 
-	group_title_control(const std::u8string_view title,
+	group_title_control(const std::string_view title,
 	                    const std::vector<view_element_ptr>& other_controls = {}) noexcept
 	{
 		elements.emplace_back(std::make_shared<text_element>(title, ui::style::font_face::title,
@@ -1624,7 +1625,7 @@ public:
 
 	sizei measure_zoom(ui::measure_context& mc) const
 	{
-		const auto text_extent = mc.measure_text(u8"000%"sv, ui::style::font_face::dialog,
+		const auto text_extent = mc.measure_text("000%", ui::style::font_face::dialog,
 		                                         ui::style::text_style::single_line, 100);
 		const auto pad = padding * mc.scale_factor;
 		return {text_extent.cx + pad.cx * 3 + mc.icon_cxy, text_extent.cy + pad.cy * 2};
@@ -1640,7 +1641,7 @@ public:
 
 			if (_scale_percent > 0)
 			{
-				const auto text = str::format(u8"{}%"sv, _scale_percent);
+				const auto text = std::format("{}%", _scale_percent);
 				const auto logical_bounds = _zoom_text_bounds.offset(element_offset);
 				const auto inner_bounds = logical_bounds.inflate(-pad.cx, -pad.cy);
 				const recti icon_bounds(inner_bounds.left, inner_bounds.top, inner_bounds.left + dc.icon_cxy,
@@ -1656,10 +1657,10 @@ public:
 
 			if (_display->_item_pos > 0)
 			{
-				const auto pos_text = str::format(
-					_display->_break_count == _display->_total_count ? u8"{}|{}"sv : u8"{}|{}|{}"sv,
-					_display->_item_pos,
-					_display->_break_count, _display->_total_count);
+				const auto pos_text = _display->_break_count == _display->_total_count
+					                      ? std::format("{}|{}", _display->_item_pos, _display->_break_count)
+					                      : std::format("{}|{}|{}", _display->_item_pos, _display->_break_count,
+					                                    _display->_total_count);
 				const auto pos_text_extent = dc.measure_text(pos_text, ui::style::font_face::dialog,
 				                                             ui::style::text_style::single_line, 100);
 				const auto pos_text_bounds = recti{
@@ -2201,8 +2202,8 @@ public:
 	{
 	}
 
-	bullet_element(const icon_index i, const std::u8string_view text) : _icon(i),
-	                                                                    _child(std::make_shared<text_element>(text))
+	bullet_element(const icon_index i, const std::string_view text) : _icon(i),
+	                                                                  _child(std::make_shared<text_element>(text))
 	{
 	}
 

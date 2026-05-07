@@ -15,11 +15,11 @@ class md5 final : df::no_copy
 {
 public:
 	md5(); // simple initializer
-	md5(std::u8string_view s); // digest string, finalize
+	md5(std::string_view s); // digest string, finalize
 
 	void update(df::cspan data);
 
-	void update(const std::u8string_view input)
+	void update(const std::string_view input)
 	{
 		update({(const uint8_t*)input.data(), input.size()});
 	}
@@ -29,14 +29,14 @@ public:
 		update({input.data(), input.size()});
 	}
 
-	void update(const char8_t* sz)
+	void update(const char* sz)
 	{
 		update({(const uint8_t*)sz, str::len(sz)});
 	}
 
 	void finalize();
 
-	std::u8string hex_digest() const; // digest as a 33-byte ascii-hex string
+	std::string hex_digest() const; // digest as a 33-byte ascii-hex string
 
 	std::vector<uint8_t> bin_digest() const
 	{

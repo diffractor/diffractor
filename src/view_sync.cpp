@@ -12,7 +12,6 @@
 #include "pch.h"
 #include "model.h"
 #include "model_index.h"
-#include "model_db.h"
 #include "ui_dialog.h"
 #include "view_sync.h"
 #include "app_command_status.h"
@@ -68,14 +67,31 @@ view_controls_host_ptr sync_view::controls(const ui::control_frame_ptr& owner)
 	controls.emplace_back(std::make_shared<divider_element>());
 	controls.emplace_back(std::make_shared<text_element>(tt.sync_local));
 
-	bool select_collection = setting.sync.sync_collection;
-	_select_other_folder = !select_collection;
+	// Initialise _select_other_folder from the persisted setting so analyze()
+	// and run() see the user's last choice when controls() is rebuilt.
+	_select_other_folder = !setting.sync.sync_collection;
 
-	auto collection_check = std::make_shared<ui::check_control>(frame, tt.sync_collection, select_collection, true);
+	// Bind directly to the persisted setting and member field so toggle state
+	// survives the lifetime of this controls() call (the previous code bound
+	// the check to a stack-local bool, so changes were silently discarded).
+	auto collection_check = std::make_shared<ui::check_control>(
+		frame, tt.sync_collection, setting.sync.sync_collection, true, false,
+		[this](const bool checked)
+		{
+			// Keep the two source modes mutually exclusive in our internal
+			// state. The check_button widget for "other folder" cannot be
+			// programmatically unchecked, so we rely on calc_sync_source
+			// preferring _select_other_folder when both are toggled on.
+			if (checked) _select_other_folder = false;
+		});
 	controls.emplace_back(collection_check);
 
-	auto other_folder_check = std::make_shared<ui::check_control>(frame, tt.sync_other_folder, _select_other_folder,
-	                                                              true);
+	auto other_folder_check = std::make_shared<ui::check_control>(
+		frame, tt.sync_other_folder, _select_other_folder, true, false,
+		[](const bool checked)
+		{
+			if (checked) setting.sync.sync_collection = false;
+		});
 	other_folder_check->child(std::make_shared<ui::folder_picker_control>(frame, setting.sync.local_path));
 	controls.emplace_back(other_folder_check);
 
@@ -176,7 +192,7 @@ void sync_view::update_rows(const sync_analysis_result& analysis_result)
 	}
 
 	_rows = std::move(rows);
-	_status = str::format(u8"{} {}   {} {}   {} {}   {} {}   {} {}"sv,
+	_status = std::format("{} {}   {} {}   {} {}   {} {}   {} {}",
 	                      copy_local, tt.sync_copy_local_action,
 	                      copy_remote, tt.sync_copy_remote_action,
 	                      delete_local, tt.sync_delete_local_action,
@@ -196,7 +212,12 @@ void sync_view::run() const
 	detach_file_handles detach(_state);
 
 	const auto sync_source = calc_sync_source(_state.item_index.index_roots(), _select_other_folder);
-	_state.recent_folders.add(setting.import.destination_path);
+	// Track the remote sync target as a recent folder (previously this added the
+	// import destination path which has no relevance to sync).
+	if (!setting.sync.remote_path.empty())
+	{
+		_state.recent_folders.add(setting.sync.remote_path);
+	}
 
 	const auto dlg = make_dlg(_host->owner());
 	dlg->show_status(icon, tt.processing);
@@ -251,8 +272,12 @@ void sync_view::analyze()
 			{
 				t->update_rows(analysis_result);
 			});
-			event_analyze.set();
 		}
+
+		// Always signal completion so the modal status dialog is dismissed even
+		// when the analysis is cancelled (otherwise the UI would block for the
+		// full wait_for timeout).
+		event_analyze.set();
 	});
 
 	platform::wait_for({event_analyze}, 100000, false);

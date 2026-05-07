@@ -50,7 +50,7 @@ public:
 
 	~media_view() override
 	{
-		df::log(__FUNCTION__, "destruct"sv);
+		df::log(__FUNCTION__, "destruct");
 	}
 
 	recti calc_media_bounds() const
@@ -94,7 +94,7 @@ public:
 			_media_element->render(dc, {0, 0});
 		}
 
-		if (!_display->zoom() && !_display->comparing())
+		if (_display && !_display->zoom() && !_display->comparing())
 		{
 			dc.colors.alpha = dc.colors.alpha * overlay_alpha;
 
@@ -137,14 +137,14 @@ public:
 		auto avail_bounds = calc_media_bounds();
 		const auto scale_factor = mc.scale_factor;
 
-		if (!_state.is_full_screen || !_display->is_one())
+		if (!_state.is_full_screen || !_display || !_display->is_one())
 		{
 			avail_bounds = avail_bounds.inflate(df::round(-4 * scale_factor));
 		}
 
 		const int minumum_media_control_width = df::round(32 * 7 * scale_factor);
-		const auto overlay_media_control = (_display->is_one() && _display->display_item_has_trait(
-			file_traits::hide_overlays)) || _display->comparing();
+		const auto overlay_media_control = _display && ((_display->is_one() && _display->display_item_has_trait(
+			file_traits::hide_overlays)) || _display->comparing());
 		auto media_bounds_avail = avail_bounds;
 
 		if (avail_bounds.width() > minumum_media_control_width && _controls_element)
@@ -191,8 +191,8 @@ public:
 			{
 				media_bounds = center_rect(media_bounds, media_bounds_avail);
 			}
-			else if (_media_element->is_style_bit_set(view_element_style::shrink) && media_bounds.height() >
-				media_bounds_avail.height() || media_bounds.width() > media_bounds_avail.width())
+			else if (_media_element->is_style_bit_set(view_element_style::shrink) && (media_bounds.height() >
+				media_bounds_avail.height() || media_bounds.width() > media_bounds_avail.width()))
 			{
 				media_bounds = media_bounds_avail;
 			}
@@ -212,7 +212,7 @@ public:
 		constexpr pointi media_offset{};
 		view_controller_ptr controller;
 
-		if (_display->zoom() || _display->comparing())
+		if (_display && (_display->zoom() || _display->comparing()))
 		{
 			if (_media_element)
 			{

@@ -39,18 +39,13 @@ enum AVPixelFormat;
 using av_packet_ptr = std::shared_ptr<av_packet>;
 using av_frame_ptr = std::shared_ptr<av_frame>;
 
-inline bool is_key(const std::u8string_view l, const std::u8string_view r)
+inline bool is_key(const std::string_view l, const std::string_view r)
 {
 	return str::icmp(l, r) == 0;
 }
 
-inline bool is_key(const std::string_view l, const std::u8string_view r)
-{
-	return str::icmp(str::utf8_cast(l), r) == 0;
-}
-
 class file_type;
-using file_type_by_extension = df::hash_map<std::u8string_view, file_type_ref, df::ihash, df::ieq>;
+using file_type_by_extension = df::hash_map<std::string_view, file_type_ref, df::ihash, df::ieq>;
 void av_initialise(file_type_by_extension& file_types);
 
 struct av_frame_d3d
@@ -201,11 +196,11 @@ struct av_stream_info
 	int index = 0;
 	bool is_playing = false;
 	av_stream_type type = av_stream_type::data;
-	std::u8string title;
-	std::u8string codec;
-	std::u8string fourcc;
-	std::u8string language;
-	std::u8string pixel_format;
+	std::string title;
+	std::string codec;
+	std::string fourcc;
+	std::string language;
+	std::string pixel_format;
 	int audio_sample_rate = 0;
 	int audio_channels = 0;
 	prop::audio_sample_t audio_sample_type = prop::audio_sample_t::none;

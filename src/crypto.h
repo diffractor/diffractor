@@ -15,31 +15,30 @@ namespace crypto
 {
 	constexpr uint32_t CRCINIT = 0xFFFFFFFFu;
 
-	std::u8string hmac_sha1(std::u8string_view key_bytes, std::u8string_view data);
+	std::string hmac_sha1(std::string_view key_bytes, std::string_view data);
 	uint32_t crc32c(const void* data, size_t len);
 	uint32_t crc32c(uint32_t crc, const void* data, size_t len);
-	uint32_t crc32c(std::u8string_view sv);
+	uint32_t crc32c(std::string_view sv);
 	uint32_t fnv1a(const void* data, size_t len);
-	uint32_t fnv1a_i(std::u8string_view sv);
 	uint32_t fnv1a_i(std::string_view sv);
-	uint32_t fnv1a_i(std::u8string_view sv1, std::u8string_view sv2);
+	uint32_t fnv1a_i(std::string_view sv1, std::string_view sv2);
 
-	std::vector<uint8_t> encrypt(df::cspan cs, std::u8string_view password);
-	std::vector<uint8_t> decrypt(df::cspan cs, std::u8string_view password);
+	std::vector<uint8_t> encrypt(df::cspan cs, std::string_view password);
+	std::vector<uint8_t> decrypt(df::cspan cs, std::string_view password);
 
 	std::vector<uint8_t> encrypt(const std::vector<uint8_t>& text, const std::vector<uint8_t>& key);
 
-	inline std::vector<uint8_t> encrypt(const std::vector<uint8_t>& s, const std::u8string_view password)
+	inline std::vector<uint8_t> encrypt(const std::vector<uint8_t>& s, const std::string_view password)
 	{
 		return encrypt({s.data(), s.size()}, password);
 	}
 
-	inline std::vector<uint8_t> encrypt(const std::u8string_view s, const std::u8string_view password)
+	inline std::vector<uint8_t> encrypt(const std::string_view s, const std::string_view password)
 	{
 		return encrypt({std::bit_cast<const uint8_t*>(s.data()), s.size()}, password);
 	}
 
-	inline std::vector<uint8_t> decrypt(const std::vector<uint8_t>& data, const std::u8string_view password)
+	inline std::vector<uint8_t> decrypt(const std::vector<uint8_t>& data, const std::string_view password)
 	{
 		return decrypt({(data.data()), data.size()}, password);
 	}
@@ -55,12 +54,12 @@ namespace crypto
 		{
 		}
 
-		hash_gen(const std::u8string_view sv)
+		hash_gen(const std::string_view sv)
 		{
 			append(sv);
 		}
 
-		hash_gen& append(const std::u8string_view sv)
+		hash_gen& append(const std::string_view sv)
 		{
 			auto p = sv.begin();
 

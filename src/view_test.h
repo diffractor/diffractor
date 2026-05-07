@@ -21,8 +21,8 @@ using test_ptr = std::shared_ptr<test_item>;
 
 struct test_registry
 {
-	virtual void add(std::u8string name, std::function<void(shared_test_context& stc)> f) = 0;
-	virtual void add(std::u8string name, std::function<void(void)> f) = 0;
+	virtual void add(std::string name, std::function<void(shared_test_context& stc)> f) = 0;
+	virtual void add(std::string name, std::function<void(void)> f) = 0;
 };
 
 void register_tests1(view_state& state, test_registry& tests);
@@ -44,14 +44,14 @@ inline void register_tests(view_state& state, test_registry& registry)
 
 bool is_running_tests();
 void run_tests(view_state& state, std::vector<test_ptr> tests);
-int run_console_tests(std::u8string_view test_filter = u8"*"sv);
+int run_console_tests(std::string_view test_filter = "*");
 
 class test_assert_exception final : public std::exception
 {
 public:
-	std::u8string message;
+	std::string message;
 
-	explicit test_assert_exception(std::u8string m) : message(std::move(m))
+	explicit test_assert_exception(std::string m) : message(std::move(m))
 	{
 	}
 };
@@ -66,16 +66,16 @@ enum class test_state
 
 struct test_item final : std::enable_shared_from_this<test_item>, view_element
 {
-	std::u8string _name;
-	std::u8string _message;
-	std::u8string _time_text;
+	std::string _name;
+	std::string _message;
+	std::string _time_text;
 	test_state _state = test_state::unknown;
 	int _time = 0;
 	std::function<void(shared_test_context& stc)> _f;
 	test_view& _view;
 	list_view::row_element_ptr _row;
 
-	test_item(test_view& view, std::u8string name, list_view::row_element_ptr row,
+	test_item(test_view& view, std::string name, list_view::row_element_ptr row,
 	          std::function<void(shared_test_context& stc)> f) noexcept
 		: view_element(view_element_style::can_invoke), _name(std::move(name)), _f(std::move(f)), _view(view),
 		  _row(std::move(row))
@@ -104,8 +104,8 @@ protected:
 
 
 	std::vector<test_ptr> _tests;
-	std::u8string _title;
-	std::u8string _status;
+	std::string _title;
+	std::string _status;
 
 public:
 	test_view(view_state& state, view_host_ptr host);
@@ -119,7 +119,7 @@ public:
 	void run_test(const test_ptr& t);
 	void run_all() const { run_tests(_state, _tests); };
 
-	void add(std::u8string name, std::function<void(shared_test_context& stc)> f) override
+	void add(std::string name, std::function<void(shared_test_context& stc)> f) override
 	{
 		auto row = std::make_shared<row_element>(*this);
 		auto test = std::make_shared<test_item>(*this, std::move(name), row, std::move(f));
@@ -127,7 +127,7 @@ public:
 		_tests.emplace_back(test);
 	}
 
-	void add(std::u8string name, std::function<void(void)> f) override
+	void add(std::string name, std::function<void(void)> f) override
 	{
 		auto row = std::make_shared<row_element>(*this);
 		auto test = std::make_shared<test_item>(*this, std::move(name), row, [f = std::move(f)](shared_test_context&)
@@ -142,7 +142,7 @@ public:
 	{
 	}
 
-	std::u8string_view status() override;
+	std::string_view status() override;
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc) override;
 
@@ -153,9 +153,9 @@ public:
 		_state.view_mode(view_type::items);
 	}
 
-	std::u8string_view title() override
+	std::string_view title() override
 	{
-		_title = str::format(u8"{}: Test"sv, s_app_name);
+		_title = std::format("{}: Test", s_app_name);
 		return _title;
 	}
 

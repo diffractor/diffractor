@@ -24,7 +24,7 @@ public:
 	explicit setting_file_ini(const df::folder_path folder)
 	{
 		// Create the INI file path in the same folder as the database
-		const auto ini_file_path = folder.combine_file(u8"diffractor.ini"sv);
+		const auto ini_file_path = folder.combine_file("diffractor.ini");
 		_ini_path = str::utf8_to_utf16(ini_file_path.str());
 
 		// Check if the file exists or can be created
@@ -43,17 +43,17 @@ public:
 		return _root_created;
 	}
 
-	bool write(const std::u8string_view section, const std::u8string_view name, const uint32_t v) override
+	bool write(const std::string_view section, const std::string_view name, const uint32_t v) override
 	{
 		return write(section, name, str::to_string(v));
 	}
 
-	bool write(const std::u8string_view section, const std::u8string_view name, const uint64_t v) override
+	bool write(const std::string_view section, const std::string_view name, const uint64_t v) override
 	{
 		return write(section, name, str::to_string(v));
 	}
 
-	bool write(const std::u8string_view section, const std::u8string_view name, const std::u8string_view v) override
+	bool write(const std::string_view section, const std::string_view name, const std::string_view v) override
 	{
 		const auto section_w = str::utf8_to_utf16(section);
 		const auto name_w = str::utf8_to_utf16(name);
@@ -66,16 +66,16 @@ public:
 			_ini_path.c_str()) != 0;
 	}
 
-	bool write(const std::u8string_view section, const std::u8string_view name, const df::cspan cs) override
+	bool write(const std::string_view section, const std::string_view name, const df::cspan cs) override
 	{
 		// Encode binary data as base64
 		const auto encoded = base64_encode(cs.data, cs.size);
 		return write(section, name, encoded);
 	}
 
-	bool read(const std::u8string_view section, const std::u8string_view name, uint32_t& v) const override
+	bool read(const std::string_view section, const std::string_view name, uint32_t& v) const override
 	{
-		std::u8string str_val;
+		std::string str_val;
 		if (read(section, name, str_val))
 		{
 			v = str::to_uint(str_val);
@@ -84,9 +84,9 @@ public:
 		return false;
 	}
 
-	bool read(const std::u8string_view section, const std::u8string_view name, uint64_t& v) const override
+	bool read(const std::string_view section, const std::string_view name, uint64_t& v) const override
 	{
-		std::u8string str_val;
+		std::string str_val;
 		if (read(section, name, str_val))
 		{
 			// Parse uint64 from string
@@ -96,7 +96,7 @@ public:
 		return false;
 	}
 
-	bool read(const std::u8string_view section, const std::u8string_view name, std::u8string& v) const override
+	bool read(const std::string_view section, const std::string_view name, std::string& v) const override
 	{
 		const auto section_w = str::utf8_to_utf16(section);
 		const auto name_w = str::utf8_to_utf16(name);
@@ -142,10 +142,10 @@ public:
 		}
 	}
 
-	bool read(const std::u8string_view section, const std::u8string_view name, uint8_t* data,
+	bool read(const std::string_view section, const std::string_view name, uint8_t* data,
 	          size_t& len) const override
 	{
-		std::u8string encoded;
+		std::string encoded;
 		if (read(section, name, encoded))
 		{
 			const auto decoded = base64_decode(encoded);
@@ -199,14 +199,14 @@ platform::setting_file_ptr platform::create_default_settings()
 
 class setting_file_impl : public platform::setting_file
 {
-	mutable df::hash_map<std::u8string, HKEY__*> _keys;
+	mutable df::hash_map<std::string, HKEY__*> _keys;
 	HKEY _root_key = nullptr;
 	bool _root_created = false;
 
 public:
 	setting_file_impl()
 	{
-		constexpr auto s_reg_key = u8"Software\\Diffractor"sv;
+		constexpr auto s_reg_key = "Software\\Diffractor";
 		_root_key = create_key(HKEY_CURRENT_USER, s_reg_key, _root_created);
 	}
 
@@ -221,14 +221,14 @@ public:
 	}
 
 
-	HKEY Key(const std::u8string_view section_in) const
+	HKEY Key(const std::string_view section_in) const
 	{
 		if (str::is_empty(section_in))
 		{
 			return _root_key;
 		}
 
-		const auto section = std::u8string(section_in);
+		const auto section = std::string(section_in);
 		const auto found = _keys.find(section);
 
 		if (found != _keys.end())
@@ -260,7 +260,7 @@ public:
 		_root_key = nullptr;
 	}
 
-	static HKEY create_key(const HKEY parent_key, const std::u8string_view name, bool& was_created)
+	static HKEY create_key(const HKEY parent_key, const std::string_view name, bool& was_created)
 	{
 		df::assert_true(parent_key != nullptr);
 
@@ -273,7 +273,7 @@ public:
 		return result == ERROR_SUCCESS ? result_key : nullptr;
 	}
 
-	bool read(const std::u8string_view section, const std::u8string_view name, uint32_t& v) const override
+	bool read(const std::string_view section, const std::string_view name, uint32_t& v) const override
 	{
 		DWORD dwType = 0;
 		DWORD s = sizeof(uint32_t);
@@ -284,7 +284,7 @@ public:
 		return ERROR_SUCCESS == result;
 	}
 
-	bool read(const std::u8string_view section, const std::u8string_view name, uint64_t& v) const override
+	bool read(const std::string_view section, const std::string_view name, uint64_t& v) const override
 	{
 		DWORD dwType = 0;
 		DWORD s = sizeof(uint64_t);
@@ -296,7 +296,7 @@ public:
 	}
 
 
-	bool read(const std::u8string_view section, const std::u8string_view name, std::u8string& v) const override
+	bool read(const std::string_view section, const std::string_view name, std::string& v) const override
 	{
 		DWORD alloc_len = 0;
 		DWORD type = 0;
@@ -319,7 +319,7 @@ public:
 		return ERROR_SUCCESS == result;
 	}
 
-	bool read(const std::u8string_view section, const std::u8string_view name, uint8_t* data,
+	bool read(const std::string_view section, const std::string_view name, uint8_t* data,
 	          size_t& len) const override
 	{
 		DWORD dwType = REG_BINARY;
@@ -336,19 +336,19 @@ public:
 		return success;
 	}
 
-	bool write(const std::u8string_view section, const std::u8string_view name, const uint32_t v) override
+	bool write(const std::string_view section, const std::string_view name, const uint32_t v) override
 	{
 		return ERROR_SUCCESS == RegSetValueEx(Key(section), str::utf8_to_utf16(name).c_str(), 0, REG_DWORD,
 		                                      std::bit_cast<const uint8_t*>(&v), sizeof(uint32_t));
 	}
 
-	bool write(const std::u8string_view section, const std::u8string_view name, const uint64_t v) override
+	bool write(const std::string_view section, const std::string_view name, const uint64_t v) override
 	{
 		return ERROR_SUCCESS == RegSetValueEx(Key(section), str::utf8_to_utf16(name).c_str(), 0, REG_QWORD,
 		                                      std::bit_cast<const uint8_t*>(&v), sizeof(uint64_t));
 	}
 
-	bool write(const std::u8string_view section, const std::u8string_view name, const std::u8string_view v) override
+	bool write(const std::string_view section, const std::string_view name, const std::string_view v) override
 	{
 		const auto w = str::utf8_to_utf16(v);
 		return ERROR_SUCCESS == RegSetValueEx(Key(section), str::utf8_to_utf16(name).c_str(), 0, REG_SZ,
@@ -356,7 +356,7 @@ public:
 		                                      static_cast<uint32_t>(w.size() * sizeof(wchar_t)));
 	}
 
-	bool write(const std::u8string_view section, const std::u8string_view name, const df::cspan data) override
+	bool write(const std::string_view section, const std::string_view name, const df::cspan data) override
 	{
 		return ERROR_SUCCESS == RegSetValueEx(Key(section), str::utf8_to_utf16(name).c_str(), 0, REG_BINARY, data.data,
 		                                      static_cast<uint32_t>(data.size));

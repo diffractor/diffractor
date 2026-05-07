@@ -97,11 +97,11 @@ webp_parts scan_webp(df::cspan data, bool decode_surface)
 
 			if (has_alpha)
 			{
-				result.pixel_format = u8"rgba"_c; // Likely RGBA
+				result.pixel_format = "rgba"_c; // Likely RGBA
 			}
 			else
 			{
-				result.pixel_format = u8"yuv420"_c; // Likely YUV420
+				result.pixel_format = "yuv420"_c; // Likely YUV420
 			}
 
 			if (decode_surface)

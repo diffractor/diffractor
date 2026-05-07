@@ -151,13 +151,13 @@ HRESULT STDMETHODCALLTYPE resource_font_file_stream::GetLastWriteTime(OUT UINT64
 	return E_NOTIMPL;
 }
 
-std::u8string format_guid(REFGUID id)
+std::string format_guid(REFGUID id)
 {
 	wchar_t sz[50]; // GUID string is typically 38 characters + null terminator
 	const int result = StringFromGUID2(id, sz, _countof(sz));
 	if (result == 0)
 	{
-		return u8"<invalid-guid>";
+		return "<invalid-guid>";
 	}
 	return str::utf16_to_utf8(sz);
 }
@@ -183,7 +183,7 @@ public:
 			return S_OK;
 		}
 
-		df::log(__FUNCTION__, str::format(u8"E_NOINTERFACE {}"sv, format_guid(riid)));
+		df::log(__FUNCTION__, std::format("E_NOINTERFACE {}", format_guid(riid)));
 		*ppvObject = nullptr;
 		return E_NOINTERFACE;
 	}
@@ -220,7 +220,7 @@ public:
 		if (!stream->is_initialized())
 		{
 			// Log which resource failed to load for debugging
-			df::log(__FUNCTION__, str::format(u8"Failed to load font resource ID {}"sv, resource_id));
+			df::log(__FUNCTION__, std::format("Failed to load font resource ID {}", resource_id));
 			delete stream;
 			return E_FAIL;
 		}
@@ -268,7 +268,7 @@ public:
 			return S_OK;
 		}
 
-		df::log(__FUNCTION__, str::format(u8"E_NOINTERFACE {}"sv, format_guid(riid)));
+		df::log(__FUNCTION__, std::format("E_NOINTERFACE {}", format_guid(riid)));
 
 		*ppvObject = nullptr;
 		return E_NOINTERFACE;
@@ -311,7 +311,7 @@ public:
 				&font_loader,
 				&current);
 
-			df::log(__FUNCTION__, str::format(u8"CreateCustomFontFileReference {}"sv, hr));
+			df::log(__FUNCTION__, std::format("CreateCustomFontFileReference {}", hr));
 
 			if (SUCCEEDED(hr))
 			{
@@ -353,7 +353,7 @@ public:
 			return S_OK;
 		}
 
-		df::log(__FUNCTION__, str::format(u8"E_NOINTERFACE {}"sv, format_guid(riid)));
+		df::log(__FUNCTION__, std::format("E_NOINTERFACE {}", format_guid(riid)));
 		*ppvObject = nullptr;
 		return E_NOINTERFACE;
 	}
@@ -407,14 +407,14 @@ static font_renderer_ptr create_font_renderer(IDWriteFactory* dwrite, IDWriteFon
 
 	if (FAILED(hr))
 	{
-		df::log(__FUNCTION__, str::format(u8"Failed to find font family {} - FindFamilyName failed: {:x}"sv,
+		df::log(__FUNCTION__, std::format("Failed to find font family {} - FindFamilyName failed: {:x}",
 		                                  str::utf16_to_utf8(font_name), static_cast<uint32_t>(hr)));
 		return nullptr;
 	}
 
 	if (!exists)
 	{
-		df::log(__FUNCTION__, str::format(u8"Failed to create font {} - font family not found in collection"sv,
+		df::log(__FUNCTION__, std::format("Failed to create font {} - font family not found in collection",
 		                                  str::utf16_to_utf8(font_name)));
 		return nullptr;
 	}
@@ -422,7 +422,7 @@ static font_renderer_ptr create_font_renderer(IDWriteFactory* dwrite, IDWriteFon
 	hr = font_collection->GetFontFamily(index, &family);
 	if (FAILED(hr))
 	{
-		df::log(__FUNCTION__, str::format(u8"Failed to create font {} - GetFontFamily failed: {:x}"sv,
+		df::log(__FUNCTION__, std::format("Failed to create font {} - GetFontFamily failed: {:x}",
 		                                  str::utf16_to_utf8(font_name), static_cast<uint32_t>(hr)));
 		return nullptr;
 	}
@@ -431,7 +431,7 @@ static font_renderer_ptr create_font_renderer(IDWriteFactory* dwrite, IDWriteFon
 	                                  DWRITE_FONT_STYLE_NORMAL, &font);
 	if (FAILED(hr))
 	{
-		df::log(__FUNCTION__, str::format(u8"Failed to create font {} - GetFirstMatchingFont failed: {:x}"sv,
+		df::log(__FUNCTION__, std::format("Failed to create font {} - GetFirstMatchingFont failed: {:x}",
 		                                  str::utf16_to_utf8(font_name), static_cast<uint32_t>(hr)));
 		return nullptr;
 	}
@@ -439,7 +439,7 @@ static font_renderer_ptr create_font_renderer(IDWriteFactory* dwrite, IDWriteFon
 	hr = font->CreateFontFace(&font_face);
 	if (FAILED(hr))
 	{
-		df::log(__FUNCTION__, str::format(u8"Failed to create font {} - CreateFontFace failed: {:x}"sv,
+		df::log(__FUNCTION__, std::format("Failed to create font {} - CreateFontFace failed: {:x}",
 		                                  str::utf16_to_utf8(font_name), static_cast<uint32_t>(hr)));
 		return nullptr;
 	}
@@ -456,12 +456,12 @@ static font_renderer_ptr create_font_renderer(IDWriteFactory* dwrite, IDWriteFon
 
 	if (FAILED(hr))
 	{
-		df::log(__FUNCTION__, str::format(u8"Failed to create font {} - CreateTextFormat failed: {:x}"sv,
+		df::log(__FUNCTION__, std::format("Failed to create font {} - CreateTextFormat failed: {:x}",
 		                                  str::utf16_to_utf8(font_name), static_cast<uint32_t>(hr)));
 		return nullptr;
 	}
 
-	df::log(__FUNCTION__, str::format(u8"Created font {}"sv, str::utf16_to_utf8(font_name)));
+	df::log(__FUNCTION__, std::format("Created font {}", str::utf16_to_utf8(font_name)));
 	return std::make_shared<font_renderer>(dwrite, font_face, text_format, font_height);
 }
 
@@ -483,7 +483,7 @@ font_renderer_ptr factories::create_icon_font_face(const int font_height)
 	}
 	else
 	{
-		df::log(__FUNCTION__, str::format(u8"CreateCustomFontCollection failed {:x}"sv, hr));
+		df::log(__FUNCTION__, std::format("CreateCustomFontCollection failed {:x}", hr));
 	}
 
 	if (!result)
@@ -516,7 +516,7 @@ font_renderer_ptr factories::create_petscii_font_face(const int font_height)
 	}
 	else
 	{
-		df::log(__FUNCTION__, str::format(u8"CreateCustomFontCollection failed {:x}"sv, hr));
+		df::log(__FUNCTION__, std::format("CreateCustomFontCollection failed {:x}", hr));
 	}
 
 	if (!result)
@@ -543,9 +543,9 @@ void factories::register_fonts() const
 	{
 		auto hr = dwrite->RegisterFontFileLoader(&font_loader);
 		df::assert_true(SUCCEEDED(hr));
-		df::log(__FUNCTION__, str::format(u8"RegisterFontFileLoader {:x}"sv, hr));
+		df::log(__FUNCTION__, std::format("RegisterFontFileLoader {:x}", hr));
 		hr = dwrite->RegisterFontCollectionLoader(&font_collection_loader);
-		df::log(__FUNCTION__, str::format(u8"RegisterFontCollectionLoader {:x}"sv, hr));
+		df::log(__FUNCTION__, std::format("RegisterFontCollectionLoader {:x}", hr));
 		df::assert_true(SUCCEEDED(hr));
 	}
 }
@@ -877,7 +877,7 @@ static void configure_layout(const ComPtr<IDWriteTextLayout>& layout, const ui::
 	layout->SetTrimming(&trimmingOpt, nullptr);
 }
 
-void text_layout_impl::update(const std::u8string_view text, const ui::style::text_style text_style)
+void text_layout_impl::update(const std::string_view text, const ui::style::text_style text_style)
 {
 	const auto textw = str::utf8_to_utf16(text);
 

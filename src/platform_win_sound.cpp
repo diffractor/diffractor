@@ -105,7 +105,7 @@ struct guid_comparer
 	}
 };
 
-using device_map = std::vector<std::pair<_GUID, std::u8string>>;
+using device_map = std::vector<std::pair<_GUID, std::string>>;
 
 class audio_device_enumerator final : public df::no_copy
 {
@@ -135,7 +135,7 @@ private:
 	{
 		auto* const map = std::bit_cast<device_map*>(lpContext);
 		const auto id = lpGUID == nullptr ? GUID_NULL : *lpGUID;
-		const auto name = str::cache(lpszDesc == nullptr ? L"Default"sv : lpszDesc);
+		const auto name = str::cache(lpszDesc == nullptr ? L"Default" : lpszDesc);
 
 		map->emplace_back(id, name);
 		return TRUE;
@@ -288,7 +288,7 @@ public:
 		return success;
 	}
 
-	bool init(const std::u8string_view device_id)
+	bool init(const std::string_view device_id)
 	{
 		clear();
 
@@ -369,7 +369,7 @@ public:
 			{
 				if (device_frequency == 0)
 				{
-					df::log(u8"wasapi_sound::time"sv, u8"Device frequency is zero, returning 0.0"sv);
+					df::log("wasapi_sound::time", "Device frequency is zero, returning 0.0");
 					return 0.0;
 				}
 				return static_cast<double>(position) / static_cast<double>(device_frequency);
@@ -450,7 +450,7 @@ public:
 
 		if (bytes_per_sample == 0 || channel_count == 0)
 		{
-			df::log(u8"wasapi_sound::write"sv, u8"Invalid audio format parameters"sv);
+			df::log("wasapi_sound::write", "Invalid audio format parameters");
 			return;
 		}
 
@@ -485,7 +485,7 @@ public:
 						}
 						else
 						{
-							df::log(u8"wasapi_sound::write"sv, u8"Copy bytes exceeds buffer size"sv);
+							df::log("wasapi_sound::write", "Copy bytes exceeds buffer size");
 						}
 
 						constexpr uint32_t flags = 0;
@@ -517,10 +517,10 @@ public:
 		}
 	}
 
-	std::u8string id() override
+	std::string id() override
 	{
 		platform::shared_lock lock(_rw);
-		std::u8string result;
+		std::string result;
 
 		if (_device)
 		{
@@ -545,7 +545,7 @@ public:
 	}
 };
 
-av_audio_device_ptr create_av_audio_device(const std::u8string_view device_id)
+av_audio_device_ptr create_av_audio_device(const std::string_view device_id)
 {
 	auto result = std::make_shared<wasapi_sound>();
 
@@ -581,11 +581,11 @@ std::vector<sound_device> list_audio_playback_devices()
 			{
 				if (count == 0)
 				{
-					df::log(u8"list_audio_playback_devices"sv, u8"No sound endpoints found."sv);
+					df::log("list_audio_playback_devices", "No sound endpoints found.");
 				}
 				else if (count > 1000) // Sanity check to prevent excessive memory allocation
 				{
-					df::log(u8"list_audio_playback_devices"sv, u8"Unusually high device count, limiting to 1000"sv);
+					df::log("list_audio_playback_devices", "Unusually high device count, limiting to 1000");
 					count = 1000;
 				}
 
@@ -615,17 +615,17 @@ std::vector<sound_device> list_audio_playback_devices()
 								if (SUCCEEDED(hr))
 								{
 									d.name = str::is_empty(varName.v.pwszVal)
-										         ? str::format(u8"Audio device {}"sv, static_cast<int>(i))
+										         ? std::format("Audio device {}", static_cast<int>(i))
 										         : str::utf16_to_utf8(varName.v.pwszVal);
 								}
 								else
 								{
-									d.name = str::format(u8"Audio device {}"sv, static_cast<int>(i));
+									d.name = std::format("Audio device {}", static_cast<int>(i));
 								}
 							}
 							else
 							{
-								d.name = str::format(u8"Audio device {}"sv, static_cast<int>(i));
+								d.name = std::format("Audio device {}", static_cast<int>(i));
 							}
 
 							CoTaskMemFree(pwszID);

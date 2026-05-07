@@ -122,7 +122,7 @@ namespace df
 		str::cached load_and_cache_string(const uint32_t size_in) const
 		{
 			const auto size = std::min(size_in, sixty_four_k);
-			const auto buffer = df::unique_alloc<char8_t>(size + 2_z);
+			const auto buffer = df::unique_alloc<char>(size + 2_z);
 
 			if (buffer)
 			{
@@ -151,7 +151,7 @@ namespace df
 			const auto delta = static_cast<int>(dataSize) - static_cast<int>(replace);
 
 			constexpr uint64_t buffer_size = sixty_four_k;
-			const auto buffer = df::unique_alloc<char8_t>(buffer_size);
+			const auto buffer = df::unique_alloc<char>(buffer_size);
 
 			if (delta < 0)
 			{

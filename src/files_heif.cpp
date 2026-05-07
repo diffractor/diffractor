@@ -99,7 +99,7 @@ static metadata_parts extract_metadata(const heif_image_handle* handle)
 		{
 			const auto metadata_type = heif_image_handle_get_metadata_type(handle, id);
 
-			if (str::icmp(metadata_type, "Exif"sv) == 0)
+			if (str::icmp(metadata_type, "Exif") == 0)
 			{
 				const auto metadataSize = heif_image_handle_get_metadata_size(handle, id);
 				df::blob raw_metatdata(metadataSize, 0);
@@ -120,7 +120,7 @@ static metadata_parts extract_metadata(const heif_image_handle* handle)
 					result.exif = std::move(raw_metatdata);
 				}
 			}
-			else if (str::icmp(metadata_type, "XMP"sv) == 0)
+			else if (str::icmp(metadata_type, "XMP") == 0)
 			{
 				const size_t metadataSize = heif_image_handle_get_metadata_size(handle, id);
 				df::blob raw_metatdata(metadataSize, 0);
@@ -131,7 +131,7 @@ static metadata_parts extract_metadata(const heif_image_handle* handle)
 					result.xmp = std::move(raw_metatdata);
 				}
 			}
-			else if (str::icmp(metadata_type, "iptc"sv) == 0)
+			else if (str::icmp(metadata_type, "iptc") == 0)
 			{
 				const size_t metadataSize = heif_image_handle_get_metadata_size(handle, id);
 				df::blob raw_metatdata(metadataSize, 0);
@@ -161,33 +161,33 @@ static str::cached extract_pixel_format(const heif_image_handle* image_handle)
 	{
 		switch (out_chroma)
 		{
-		case heif_chroma_monochrome: result = u8"grayscale"_c;
+		case heif_chroma_monochrome: result = "grayscale"_c;
 			break;
-		case heif_chroma_420: result = u8"yuv420"_c;
+		case heif_chroma_420: result = "yuv420"_c;
 			break;
-		case heif_chroma_422: result = u8"yuv422"_c;
+		case heif_chroma_422: result = "yuv422"_c;
 			break;
-		case heif_chroma_444: result = u8"yuv444"_c;
+		case heif_chroma_444: result = "yuv444"_c;
 			break;
 		case heif_chroma_undefined:
 			break;
 		case heif_chroma_interleaved_RGB:
-			result = u8"rgb"_c;
+			result = "rgb"_c;
 			break;
 		case heif_chroma_interleaved_RGBA:
-			result = u8"rgba"_c;
+			result = "rgba"_c;
 			break;
 		case heif_chroma_interleaved_RRGGBB_BE:
-			result = u8"rgb48"_c;
+			result = "rgb48"_c;
 			break;
 		case heif_chroma_interleaved_RRGGBBAA_BE:
-			result = u8"rgba64"_c;
+			result = "rgba64"_c;
 			break;
 		case heif_chroma_interleaved_RRGGBB_LE:
-			result = u8"rgb48"_c;
+			result = "rgb48"_c;
 			break;
 		case heif_chroma_interleaved_RRGGBBAA_LE:
-			result = u8"rgba64"_c;
+			result = "rgba64"_c;
 			break;
 		}
 	}

@@ -33,7 +33,7 @@ static_assert(std::is_trivially_copyable_v<df::xy32>);
 static_assert(std::is_trivially_copyable_v<df::int_counter>);
 static_assert(std::is_trivially_copyable_v<df::file_path>);
 static_assert(std::is_trivially_copyable_v<df::folder_path>);
-static_assert(std::is_trivially_copyable_v<std::u8string_view>);
+static_assert(std::is_trivially_copyable_v<std::string_view>);
 
 static_assert(std::is_trivially_copyable_v<ui::color>);
 static_assert(std::is_move_constructible_v<ui::const_image_ptr>);
@@ -53,22 +53,22 @@ std::atomic_int df::dragging_items = 0;
 std::atomic_int df::handling_crash = 0;
 auto df::rendering_func = "";
 
-auto df::gpu_desc = u8"unknown"s;
-auto df::gpu_id = u8"unknown"s;
-auto df::d3d_info = u8"unknown"s;
+auto df::gpu_desc = "unknown"s;
+auto df::gpu_id = "unknown"s;
+auto df::d3d_info = "unknown"s;
 
 df::date_t df::start_time;
 std::atomic_int df::cancel_token::empty;
 df::file_path df::last_loaded_path;
-df::file_path df::log_path = known_path(platform::known_folder::running_app_folder).combine_file(u8"diffractor.log"sv);
+df::file_path df::log_path = known_path(platform::known_folder::running_app_folder).combine_file("diffractor.log");
 df::file_path df::previous_log_path = known_path(platform::known_folder::running_app_folder).combine_file(
-	u8"diffractor.previous.log"sv);
+	"diffractor.previous.log");
 
 static platform::mutex log_mutex;
-_Guarded_by_(log_mutex) static u8ostream log_file;
+_Guarded_by_(log_mutex) static std::ofstream log_file;
 
 
-void df::log(const std::u8string_view context, const std::u8string_view message)
+void df::log(const std::string_view context, const std::string_view message)
 {
 	platform::exclusive_lock ll(log_mutex);
 	static auto start_time = platform::tick_count();
@@ -76,7 +76,7 @@ void df::log(const std::u8string_view context, const std::u8string_view message)
 
 #ifdef _DEBUG
 
-	platform::trace(str::format(u8"{}:{}\n"sv, context, message));
+	platform::trace(std::format("{}:{}\n", context, message));
 
 #endif
 
@@ -97,41 +97,20 @@ void df::log(const std::u8string_view context, const std::u8string_view message)
 		const auto time = platform::tick_count() - start_time;
 		const auto thread_id = platform::current_thread_id();
 
-		log_file << std::right << std::setfill(u8'0') << std::setw(8) << thread_id
-			<< u8" "sv
+		log_file << std::right << std::setfill('0') << std::setw(8) << thread_id
+			<< " "
 			<< std::setw(8) << time
-			<< u8" "sv
-			<< std::setfill(u8' ')
+			<< " "
+			<< std::setfill(' ')
 			<< std::left << std::setw(33) << context
 			<< message << '\n';
 	}
 }
 
-void df::log(const std::string_view context, const std::u8string_view message)
-{
-	const auto context8 = str::utf8_cast(context);
-	df::log(context8, message);
-}
-
-void df::log(const std::string_view context, const std::string_view message)
-{
-	const auto context8 = str::utf8_cast(context);
-	const auto message8 = str::utf8_cast(message);
-	df::log(context8, message8);
-}
-
-void df::trace(const std::u8string_view message)
-{
-#ifdef _DEBUG
-	platform::trace(str::format(u8"{}\n"sv, message));
-#endif
-}
-
 void df::trace(const std::string_view message)
 {
 #ifdef _DEBUG
-	const auto message8 = str::utf8_cast(message.data());
-	platform::trace(str::format(u8"{}\n"sv, message8));
+	platform::trace(std::format("{}\n", message));
 #endif
 }
 
@@ -145,12 +124,12 @@ df::file_path df::close_log()
 	return log_path;
 }
 
-std::u8string df::file_size::str() const
+std::string df::file_size::str() const
 {
 	return prop::format_size(*this);
 }
 
-df::version::version(const std::u8string_view version)
+df::version::version(const std::string_view version)
 {
 	const auto parts = str::split(version, true, [](const wchar_t c) { return c == '.'; });
 
@@ -165,10 +144,10 @@ df::version::version(const std::u8string_view version)
 	}
 }
 
-std::u8string df::url_extract(const std::u8string_view text)
+std::string df::url_extract(const std::string_view text)
 {
 	static const std::regex url_regex(R"((https?:\/\/[^\s\"\']+))");
-	std::match_results<std::u8string_view::const_iterator> match;
+	std::match_results<std::string_view::const_iterator> match;
 
 	if (std::regex_search(text.begin(), text.end(), match, url_regex))
 	{
@@ -178,10 +157,10 @@ std::u8string df::url_extract(const std::u8string_view text)
 	return {};
 }
 
-std::u8string df::date_t::to_xmp_date() const
+std::string df::date_t::to_xmp_date() const
 {
 	const auto st = date();
-	return str::format(u8"{}-{}-{}T{}:{}:{}"sv, st.year, st.month, st.day, st.hour, st.minute, st.second);
+	return std::format("{}-{}-{}T{}:{}:{}", st.year, st.month, st.day, st.hour, st.minute, st.second);
 }
 
 df::date_t df::date_t::system_to_local() const
@@ -194,14 +173,14 @@ df::date_t df::date_t::local_to_system() const
 	return date_t(platform::local_to_utc(_i));
 }
 
-df::date_t df::date_t::from(const std::u8string_view r)
+df::date_t df::date_t::from(const std::string_view r)
 {
 	date_t ft;
 	ft.parse(r);
 	return ft;
 }
 
-static bool parse_iso_8601_like(const std::u8string_view r, df::day_t& result)
+static bool parse_iso_8601_like(const std::string_view r, df::day_t& result)
 {
 	int yyyy = 0, mm = 0, dd = 0, hh = 0, ss = 0, min = 0;
 	constexpr int mmm_len = 4;
@@ -227,7 +206,7 @@ static bool parse_iso_8601_like(const std::u8string_view r, df::day_t& result)
 			7 == _snscanf_s(source_data, source_len, "%3s %3s %d %d:%d:%d: %d", day, 4, month, 4, &dd, &hh, &min, &ss,
 			                &yyyy))
 		{
-			mm = str::month(std::bit_cast<const char8_t*>(static_cast<char*>(month)));
+			mm = str::month(std::bit_cast<const char*>(static_cast<char*>(month)));
 			sec = ss;
 		}
 		else if (_snscanf_s(source_data, source_len, "%4d-%2d-%2d %2d:%2d:%lg",
@@ -294,7 +273,7 @@ static bool parse_iso_8601_like(const std::u8string_view r, df::day_t& result)
 		                    mmm_len,
 		                    &dd) == 3)
 		{
-			mm = str::month(std::bit_cast<const char8_t*>(static_cast<const char*>(mmm)));
+			mm = str::month(std::bit_cast<const char*>(static_cast<const char*>(mmm)));
 			hh = 0, ss = 0, min = 0;
 			success = true;
 		}
@@ -321,7 +300,7 @@ static int find_val_above(const int n[3], const int v)
 	return -1;
 }
 
-static bool try_parse_date(const std::u8string_view text, df::day_t& result)
+static bool try_parse_date(const std::string_view text, df::day_t& result)
 {
 	const auto parts = str::split(text, true, [](const wchar_t c)
 	{
@@ -357,7 +336,7 @@ static bool try_parse_date(const std::u8string_view text, df::day_t& result)
 	return false;
 }
 
-bool df::date_t::parse(const std::u8string_view text)
+bool df::date_t::parse(const std::string_view text)
 {
 	day_t d = {0};
 
@@ -371,14 +350,14 @@ bool df::date_t::parse(const std::u8string_view text)
 	return false;
 }
 
-bool df::date_t::parse_exif_date(const std::u8string_view r)
+bool df::date_t::parse_exif_date(const std::string_view r)
 {
 	// "2006:01:14 15:51:31"
 	day_t d = {0};
 	return parse_iso_8601_like(r, d) && date(d);
 }
 
-bool df::date_t::parse_xml_date(const std::u8string_view r)
+bool df::date_t::parse_xml_date(const std::string_view r)
 {
 	// "2006:01:14 15:51:31"
 	// "2011-10-03T02:59:13.000000Z"
@@ -393,7 +372,7 @@ bool df::date_t::parse_xml_date(const std::u8string_view r)
 df::file_size df::file_size::null;
 
 
-df::file_path df::probe_data_file(const std::u8string_view file_name)
+df::file_path df::probe_data_file(const std::string_view file_name)
 {
 	const auto module_folder = known_path(platform::known_folder::running_app_folder);
 	const auto app_data_folder = known_path(platform::known_folder::app_data);
@@ -423,7 +402,7 @@ df::blob df::blob_from_file(const file_path path, const size_t max_load)
 
 		if (load_len > max_blob_size)
 		{
-			const auto message = str::format(u8"Cannot read file into memory ({} bytes)"sv, file_len);
+			const auto message = std::format("Cannot read file into memory ({} bytes)", file_len);
 			df::log(__FUNCTION__, message);
 			throw app_exception(message);
 		}
@@ -450,8 +429,8 @@ bool df::blob_save_to_file(const cspan data, const file_path path)
 
 df::util::json::json_doc df::util::json::json_from_file(const file_path path)
 {
-	u8istream ifs(str::utf8_to_utf16(path.str()));
-	rapidjson::BasicIStreamWrapper<u8istream> isw(ifs);
+	std::ifstream ifs(str::utf8_to_utf16(path.str()));
+	rapidjson::BasicIStreamWrapper<std::ifstream> isw(ifs);
 	json_doc d;
 	d.ParseStream(isw);
 	return d;

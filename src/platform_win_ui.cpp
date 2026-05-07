@@ -14,7 +14,7 @@
 #include "platform_win_visual.h"
 #include "app_command_line.h"
 
-int run_console_tests(std::u8string_view test_filter);
+int run_console_tests(std::string_view test_filter);
 
 #include <dwmapi.h>
 #include <Dbt.h>
@@ -63,8 +63,8 @@ static constexpr auto ui_scroll_width = 20;
 
 int ui::ticks_since_last_user_action = 0;
 
-static constexpr auto s_window_rect = u8"window_rect"sv;
-static std::u8string restart_cmd_line;
+static constexpr auto s_window_rect = "window_rect";
+static std::string restart_cmd_line;
 
 extern std::atomic_bool number_format_invalid;
 
@@ -271,7 +271,7 @@ static std::wstring window_text_w(const HWND h)
 	return result;
 }
 
-static std::u8string window_text(const HWND h)
+static std::string window_text(const HWND h)
 {
 	return str::utf16_to_utf8(window_text_w(h));
 }
@@ -318,10 +318,10 @@ struct resources_t
 		diffractor_64 = static_cast<HICON>(LoadImage(h, MAKEINTRESOURCE(IDI_DIFFRACTOR), IMAGE_ICON, 64, 64, 0));
 
 		// Log warnings for failed resource loads to aid debugging
-		if (!normal) df::log(__FUNCTION__, "Failed to load normal cursor"sv);
-		if (!diffractor_16) df::log(__FUNCTION__, "Failed to load 16x16 icon"sv);
-		if (!diffractor_32) df::log(__FUNCTION__, "Failed to load 32x32 icon"sv);
-		if (!diffractor_64) df::log(__FUNCTION__, "Failed to load 64x64 icon"sv);
+		if (!normal) df::log(__FUNCTION__, "Failed to load normal cursor");
+		if (!diffractor_16) df::log(__FUNCTION__, "Failed to load 16x16 icon");
+		if (!diffractor_32) df::log(__FUNCTION__, "Failed to load 32x32 icon");
+		if (!diffractor_64) df::log(__FUNCTION__, "Failed to load 64x64 icon");
 	}
 };
 
@@ -440,7 +440,7 @@ char32_t keys::VOLUME_UP = VK_VOLUME_UP;
 char32_t keys::HOME = VK_HOME;
 char32_t keys::END = VK_END;
 
-std::u8string_view keys::format(const int key)
+std::string_view keys::format(const int key)
 {
 	if (key == BACK) return tt.keyboard_back;
 	if (key == BROWSER_BACK) return tt.keyboard_browser_back;
@@ -483,7 +483,7 @@ std::u8string_view keys::format(const int key)
 	if (key == VOLUME_DOWN) return tt.keyboard_volume_down;
 	if (key == VOLUME_MUTE) return tt.keyboard_volume_mute;
 	if (key == VOLUME_UP) return tt.keyboard_volume_up;
-	return u8"?"sv;
+	return "?";
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////
@@ -1490,7 +1490,7 @@ public:
 	{
 		if (m_hWnd && IsWindow(m_hWnd))
 		{
-			df::log(__FUNCTION__, u8"Destroying win_base of valid window"sv);
+			df::log(__FUNCTION__, "Destroying win_base of valid window");
 			SetWindowLongPtr(m_hWnd, GWLP_USERDATA, 0);
 			m_hWnd = nullptr; // Prevent double destruction
 		}
@@ -1582,9 +1582,9 @@ public:
 	}
 
 	void enable(const bool enable) override { EnableWindow(hwnd(), enable); }
-	std::u8string window_text() const override { return ::window_text(hwnd()); }
+	std::string window_text() const override { return ::window_text(hwnd()); }
 
-	void window_text(const std::u8string_view text) override
+	void window_text(const std::string_view text) override
 	{
 		const auto w = str::utf8_to_utf16(text);
 		::SetWindowText(hwnd(), w.c_str());
@@ -1691,12 +1691,12 @@ public:
 		EnableWindow(hwnd(), enable);
 	}
 
-	std::u8string window_text() const override
+	std::string window_text() const override
 	{
 		return ::window_text(hwnd());
 	}
 
-	void window_text(const std::u8string_view text) override
+	void window_text(const std::string_view text) override
 	{
 		const auto w = str::utf8_to_utf16(text);
 		::SetWindowText(hwnd(), w.c_str());
@@ -1838,7 +1838,7 @@ public:
 		_walk = _data.begin();
 	}
 
-	void load(const std::vector<std::u8string>& data)
+	void load(const std::vector<std::string>& data)
 	{
 		_data.clear();
 		_data.reserve(data.size());
@@ -1928,7 +1928,7 @@ class edit_impl final :
 
 	struct unknown_word
 	{
-		std::u8string word;
+		std::string word;
 		int pos_start = 0;
 		int pos_end = 0;
 
@@ -1954,12 +1954,12 @@ class edit_impl final :
 	std::unordered_map<uint32_t, HBITMAP> _round_rec_skins;
 
 protected:
-	void add_unknown_word(std::u8string_view word_a, int word_start, int word_end);
+	void add_unknown_word(std::string_view word_a, int word_start, int word_end);
 	void update_spelling(const std::wstring& text);
 	void highlight_spelling() const;
 
 public:
-	std::function<void(const std::u8string&)> changed;
+	std::function<void(const std::string&)> changed;
 	edit_string_enum string_enum;
 	owner_context_ptr _ctx;
 
@@ -2039,7 +2039,7 @@ public:
 		return DefSubclassProc(hWnd, uMsg, wParam, lParam);
 	}
 
-	HWND Create(const HWND hWndParent, const std::u8string_view text, const uintptr_t id)
+	HWND Create(const HWND hWndParent, const std::string_view text, const uintptr_t id)
 	{
 		auto style = WS_CHILD | WS_TABSTOP;
 		if (_styles.align_center) style |= ES_CENTER;
@@ -2187,7 +2187,7 @@ public:
 		return DefSubclassProc(m_hWnd, uMsg, wParam, lParam);
 	}
 
-	void auto_completes(const std::vector<std::u8string>& texts) override
+	void auto_completes(const std::vector<std::string>& texts) override
 	{
 		string_enum.load(texts);
 	}
@@ -2199,7 +2199,7 @@ public:
 		::SendMessage(m_hWnd, EM_SETLIMITTEXT, max_len, 0L);
 	}
 
-	void replace_sel(const std::u8string_view new_text, const bool add_space_if_append) override
+	void replace_sel(const std::string_view new_text, const bool add_space_if_append) override
 	{
 		const auto new_text_w = str::utf8_to_utf16(new_text);
 		const auto sel_res = SendMessage(m_hWnd, EM_GETSEL, 0, 0L);
@@ -2231,7 +2231,7 @@ public:
 		::SendMessage(m_hWnd, EM_SETSEL, start, end);
 	}
 
-	void window_text(const std::u8string_view text) override
+	void window_text(const std::string_view text) override
 	{
 		const auto w = str::utf8_to_utf16(text);
 		::SetWindowText(m_hWnd, w.c_str());
@@ -2320,7 +2320,7 @@ static std::wstring trim(const std::wstring& s)
 	return wsback <= wsfront ? std::wstring() : std::wstring(wsfront, wsback);
 }
 
-void edit_impl::add_unknown_word(const std::u8string_view word, const int word_start, const int word_end)
+void edit_impl::add_unknown_word(const std::string_view word, const int word_start, const int word_end)
 {
 	if (_styles.spelling)
 	{
@@ -3434,11 +3434,12 @@ void frame_base::handle_resize(const sizei extent, const bool is_minimised)
 					}
 				}
 
-				InvalidateRect(m_hWnd, nullptr, TRUE);
+				InvalidateRect(m_hWnd, nullptr, FALSE);
 			}
 			else if (_render_target)
 			{
 				_render_target->Resize(D2D1_SIZE_U{static_cast<uint32_t>(extent.cx), static_cast<uint32_t>(extent.cy)});
+				InvalidateRect(m_hWnd, nullptr, FALSE);
 			}
 
 			if (_draw_ctx)
@@ -3470,7 +3471,7 @@ void frame_base::present() const
 		//		DXGI_ERROR_DEVICE_REMOVED == hr)
 		//	{
 		//		// reset the device
-		//		df::log(__FUNCTION__, str::format(u8"D3D device reset. Present returned {:x}"sv, hr));
+		//		df::log(__FUNCTION__, std::format("D3D device reset. Present returned {:x}", hr));
 		//		reset_device();
 		//	}
 		//	else if (SUCCEEDED(hr))
@@ -3829,8 +3830,8 @@ public:
 		if (style.can_focus) dw_style |= WS_TABSTOP;
 		//if (!style.hardware_accelerated) dw_ex_style |= WS_EX_COMPOSITED;
 
-		if (register_class(CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS, nullptr, nullptr,
-		                   _gdi_ctx->gdi_brush(ui::style::color::view_background),
+		if (register_class(CS_DBLCLKS, nullptr, nullptr,
+		                   nullptr,
 		                   nullptr, class_name, nullptr))
 		{
 			m_hWnd = CreateWindowEx(dw_ex_style, class_name, nullptr, dw_style, 0, 0, 0, 0, parent, nullptr,
@@ -4284,7 +4285,7 @@ public:
 
 	STDMETHOD(QueryInterface)(_In_ REFIID iid, _Deref_out_ void** ppvObject) noexcept override
 	{
-		df::trace(str::format(u8"frame_impl::QueryInterface {}"sv, win32_to_string(iid)));
+		df::trace(std::format("frame_impl::QueryInterface {}", win32_to_string(iid)));
 
 		if (IsEqualGUID(iid, IID_IDropTarget))
 		{
@@ -4649,7 +4650,7 @@ public:
 		const auto* const class_name = _is_app_frame ? L"DIFF_MAIN" : L"DIFF_DLG";
 		auto* const icon = _is_app_frame ? resources.diffractor_32 : nullptr;
 
-		if (register_class(CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS, icon, nullptr, _gdi_ctx->gdi_brush(_colors.background),
+		if (register_class(CS_DBLCLKS, icon, nullptr, nullptr,
 		                   nullptr, class_name, nullptr))
 		{
 			auto x = rect.left;
@@ -5221,7 +5222,8 @@ public:
 					if (c.offset) bounds = bounds.offset(scroll_offset);
 					const auto h = std::any_cast<HWND>(c.control->handle());
 					df::assert_true(IsWindow(h));
-					const auto flags = SWP_NOACTIVATE | (c.visible ? SWP_SHOWWINDOW : SWP_HIDEWINDOW);
+					const auto flags = SWP_NOACTIVATE
+						| (c.visible ? SWP_SHOWWINDOW : SWP_HIDEWINDOW);
 					hdwp = DeferWindowPos(hdwp, h, last_h, bounds.left, bounds.top, bounds.width(), bounds.height(),
 					                      flags);
 					last_h = h;
@@ -5245,7 +5247,8 @@ public:
 				auto bounds = c.bounds;
 				if (c.offset) bounds = bounds.offset(scroll_offset);
 				const auto h = std::any_cast<HWND>(c.control->handle());
-				const auto flags = SWP_NOACTIVATE | (c.visible ? SWP_SHOWWINDOW : SWP_HIDEWINDOW);
+				const auto flags = SWP_NOACTIVATE
+					| (c.visible ? SWP_SHOWWINDOW : SWP_HIDEWINDOW);
 				SetWindowPos(h, last_h, bounds.left, bounds.top, bounds.width(), bounds.height(), flags);
 				last_h = h;
 			}
@@ -5557,14 +5560,14 @@ public:
 		}
 	}
 
-	ui::edit_ptr create_edit(const ui::edit_styles& styles, std::u8string_view text,
-	                         std::function<void(const std::u8string&)> changed) override;
+	ui::edit_ptr create_edit(const ui::edit_styles& styles, std::string_view text,
+	                         std::function<void(const std::string&)> changed) override;
 	ui::trackbar_ptr create_slider(int min, int max, std::function<void(int, bool)> changed) override;
-	ui::button_ptr create_button(std::u8string_view text, std::function<void()> invoke,
+	ui::button_ptr create_button(std::string_view text, std::function<void()> invoke,
 	                             bool default_button = false) override;
-	ui::button_ptr create_button(icon_index icon, std::u8string_view title, std::u8string_view details,
+	ui::button_ptr create_button(icon_index icon, std::string_view title, std::string_view details,
 	                             std::function<void()> invoke, bool default_button = false) override;
-	ui::button_ptr create_check_button(bool val, std::u8string_view text, bool is_radio,
+	ui::button_ptr create_check_button(bool val, std::string_view text, bool is_radio,
 	                                   std::function<void(bool)> changed) override;
 	ui::date_time_control_ptr create_date_time_control(df::date_t text, std::function<void(df::date_t)> changed,
 	                                                   bool include_time) override;
@@ -5707,7 +5710,7 @@ public:
 		{
 			/*const auto hWndMenu = std::bit_cast<HWND>(wParam);
 			::GetClassName(hWndMenu, szClassName, 7);
-			if (::lstrcmp(L"#32768"sv, szClassName) == 0)
+			if (::lstrcmp(L"#32768", szClassName) == 0)
 			{
 				df::assert_true(hWndMenu == _current->_menuStack.back());
 				_current->_menuStack.pop_back();
@@ -5942,7 +5945,7 @@ LRESULT edit_impl::on_window_context_menu(const uint32_t uMsg, const WPARAM wPar
 			if (suggestions.size() > 8) suggestions.resize(8);
 
 			uint32_t item_id = ID_SPELLCHECK_OPT0;
-			df::hash_map<unsigned, std::u8string> opt_map;
+			df::hash_map<unsigned, std::string> opt_map;
 
 			for (const auto& sug : suggestions)
 			{
@@ -5958,7 +5961,7 @@ LRESULT edit_impl::on_window_context_menu(const uint32_t uMsg, const WPARAM wPar
 			}
 
 			popup.AppendMenu(MF_ENABLED, ID_SPELLCHECK_ADD,
-			                 str::utf8_to_utf16(str::format(tt.menu_add_fmt, selected_word.word)).c_str());
+			                 str::utf8_to_utf16(str_format(tt.menu_add_fmt.sv(), selected_word.word)).c_str());
 			popup.AppendMenu(MF_SEPARATOR);
 
 			// Now the editing commands (cut, copy, paste, undo, etc)
@@ -6146,14 +6149,14 @@ void control_host_impl::handle_composition_changed()
 		DwmSetWindowAttribute(m_hWnd, DWMWA_NCRENDERING_POLICY, &at, sizeof(DWORD));
 	}
 
-	df::log(__FUNCTION__, str::format(u8"composition_enabled {}"sv, _composition_enabled));
+	df::log(__FUNCTION__, std::format("composition_enabled {}", _composition_enabled));
 
 	update_region();
 }
 
 LRESULT control_host_impl::on_dwm_composition_changed(uint32_t, WPARAM wParam, LPARAM lParam)
 {
-	df::log(__FUNCTION__, u8"WM_DWMCOMPOSITIONCHANGED"sv);
+	df::log(__FUNCTION__, "WM_DWMCOMPOSITIONCHANGED");
 	handle_composition_changed();
 	return 0;
 }
@@ -6511,7 +6514,7 @@ LRESULT control_host_impl::on_window_nc_calc_size(uint32_t, const WPARAM wParam,
 
 			// Find all auto-hide taskbars along the screen edges and adjust in by the
 			// thickness of the auto-hide taskbar on each such edge, so the window isn't
-			// treated as a "fullscreen app"sv, which would cause the taskbars to
+			// treated as a "fullscreen app", which would cause the taskbars to
 			// disappear.
 			if (MonitorHasAutohideTaskbarForEdge(ABE_LEFT, monitor))
 				client_rect->left += kAutoHideTaskbarThicknessPx;
@@ -7003,8 +7006,8 @@ bool edit_impl::init_auto_complete_list()
 	return true;
 }
 
-ui::edit_ptr control_host_impl::create_edit(const ui::edit_styles& styles, const std::u8string_view text,
-                                            std::function<void(const std::u8string&)> changed)
+ui::edit_ptr control_host_impl::create_edit(const ui::edit_styles& styles, const std::string_view text,
+                                            std::function<void(const std::string&)> changed)
 {
 	const auto id = alloc_ids();
 	auto result = std::make_shared<edit_impl>(styles, this, _gdi_ctx);
@@ -7069,7 +7072,7 @@ ui::control_frame_ptr control_host_impl::create_dlg(ui::frame_host_weak_ptr host
 	auto ctx = is_popup ? std::make_shared<owner_context>(_gdi_ctx->scale_factor) : _gdi_ctx;
 	auto result = std::make_shared<control_host_impl>(ctx, host, _app, _pa, false, colors);
 	const auto dw_style = WS_CLIPCHILDREN | WS_CLIPSIBLINGS | (is_popup ? WS_POPUP : WS_CHILD);
-	constexpr auto dw_ex_style = WS_EX_CONTROLPARENT; // | WS_EX_COMPOSITED;
+	constexpr auto dw_ex_style = WS_EX_CONTROLPARENT;
 
 	if (result->Create(m_hWnd, {}, dw_style, dw_ex_style) == nullptr)
 	{
@@ -7082,14 +7085,14 @@ ui::control_frame_ptr control_host_impl::create_dlg(ui::frame_host_weak_ptr host
 }
 
 
-ui::button_ptr control_host_impl::create_button(const std::u8string_view text, std::function<void()> invoke,
+ui::button_ptr control_host_impl::create_button(const std::string_view text, std::function<void()> invoke,
                                                 const bool default_button)
 {
 	return create_button(icon_index::none, text, {}, std::move(invoke), default_button);
 }
 
-ui::button_ptr control_host_impl::create_button(const icon_index icon, const std::u8string_view title,
-                                                const std::u8string_view details, std::function<void()> invoke,
+ui::button_ptr control_host_impl::create_button(const icon_index icon, const std::string_view title,
+                                                const std::string_view details, std::function<void()> invoke,
                                                 const bool default_button)
 {
 	auto style = WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON | BS_TEXT | BS_NOTIFY;
@@ -7116,7 +7119,7 @@ ui::button_ptr control_host_impl::create_button(const icon_index icon, const std
 	return result;
 }
 
-ui::button_ptr control_host_impl::create_check_button(const bool val, const std::u8string_view text,
+ui::button_ptr control_host_impl::create_check_button(const bool val, const std::string_view text,
                                                       const bool is_radio,
                                                       std::function<void(bool)> changed)
 {
@@ -7284,7 +7287,7 @@ static void unregister_restart()
 
 static DWORD WINAPI recover_callback(PVOID pContext)
 {
-	df::log(__FUNCTION__, u8"*** recover callback ***"sv);
+	df::log(__FUNCTION__, "*** recover callback ***");
 	log_open_files_to_crash_files_list();
 	flush_open_files_to_crash_files_list();
 
@@ -7293,7 +7296,7 @@ static DWORD WINAPI recover_callback(PVOID pContext)
 
 	if (bCanceled)
 	{
-		df::log(__FUNCTION__, u8"Recovery was canceled by the user."sv);
+		df::log(__FUNCTION__, "Recovery was canceled by the user.");
 	}
 
 	const auto app = g_app.lock();
@@ -7367,15 +7370,15 @@ bool ui::is_ui_thread()
 }
 
 
-static void show_fatal_error(const std::u8string_view message)
+static void show_fatal_error(const std::string_view message)
 {
 	df::log(__FUNCTION__, message);
 
 	std::wstring s;
 	s += str::utf8_to_utf16(tt.title_error);
-	s += L"\n\n"sv;
+	s += L"\n\n";
 	s += str::utf8_to_utf16(tt.error_cannot_continue);
-	s += L"\n\n"sv;
+	s += L"\n\n";
 	s += str::utf8_to_utf16(message);
 
 	::MessageBox(nullptr, s.c_str(), s_app_name_l, MB_OK | MB_ICONHAND);
@@ -7441,7 +7444,7 @@ int WINAPI wWinMain(const HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, cons
 		}
 
 		df::start_time = platform::now();
-		platform::set_thread_description(u8"main"sv);
+		platform::set_thread_description("main");
 
 		auto hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
 

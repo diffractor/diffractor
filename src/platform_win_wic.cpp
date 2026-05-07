@@ -56,7 +56,7 @@ HGLOBAL image_to_handle(const file_load_result& loaded)
 	if (dimensions.cx <= 0 || dimensions.cy <= 0 ||
 		dimensions.cx > 65536 || dimensions.cy > 65536)
 	{
-		df::log(__FUNCTION__, "Invalid image dimensions"sv);
+		df::log(__FUNCTION__, "Invalid image dimensions");
 		throw std::invalid_argument("Invalid image dimensions");
 	}
 
@@ -72,7 +72,7 @@ HGLOBAL image_to_handle(const file_load_result& loaded)
 	const size_t pixel_count = static_cast<size_t>(dimensions.cx) * dimensions.cy;
 	if (pixel_count > SIZE_MAX / 4)
 	{
-		df::log(__FUNCTION__, "Image too large, potential overflow"sv);
+		df::log(__FUNCTION__, "Image too large, potential overflow");
 		throw std::invalid_argument("Image too large");
 	}
 
@@ -83,7 +83,7 @@ HGLOBAL image_to_handle(const file_load_result& loaded)
 
 	if (h == nullptr)
 	{
-		df::log(__FUNCTION__, "GlobalAlloc failed"sv);
+		df::log(__FUNCTION__, "GlobalAlloc failed");
 		throw std::bad_alloc();
 	}
 
@@ -91,7 +91,7 @@ HGLOBAL image_to_handle(const file_load_result& loaded)
 
 	if (buffer_out == nullptr)
 	{
-		df::log(__FUNCTION__, "GlobalLock failed"sv);
+		df::log(__FUNCTION__, "GlobalLock failed");
 		throw std::bad_alloc();
 	}
 
@@ -110,7 +110,7 @@ HGLOBAL image_to_handle(const file_load_result& loaded)
 		// Validate buffer bounds
 		if (pixels_in == nullptr || pixels_out == nullptr)
 		{
-			df::log(__FUNCTION__, "Invalid pixel buffer pointers"sv);
+			df::log(__FUNCTION__, "Invalid pixel buffer pointers");
 			GlobalUnlock(h);
 			GlobalFree(h);
 			throw std::invalid_argument("Invalid pixel buffers");
@@ -125,7 +125,7 @@ HGLOBAL image_to_handle(const file_load_result& loaded)
 			if (src_offset + copy_len > s->size() ||
 				dest_offset + copy_len > bi.biSizeImage)
 			{
-				df::log(__FUNCTION__, "Buffer bounds exceeded"sv);
+				df::log(__FUNCTION__, "Buffer bounds exceeded");
 				break;
 			}
 
@@ -140,38 +140,38 @@ HGLOBAL image_to_handle(const file_load_result& loaded)
 	return h;
 }
 
-static CLSID wic_encoder_clsid(const std::u8string_view format)
+static CLSID wic_encoder_clsid(const std::string_view format)
 {
 	CLSID result = {};
 
-	static const df::hash_map<std::u8string_view, CLSID, df::ihash, df::ieq> extensions
+	static const df::hash_map<std::string_view, CLSID, df::ihash, df::ieq> extensions
 	{
-		{u8".jpg"sv, GUID_ContainerFormatJpeg},
-		{u8".jpeg"sv, GUID_ContainerFormatJpeg},
-		{u8".jpe"sv, GUID_ContainerFormatJpeg},
-		{u8".png"sv, GUID_ContainerFormatPng},
-		{u8".tiff"sv, GUID_ContainerFormatTiff},
-		{u8".tif"sv, GUID_ContainerFormatTiff},
-		{u8".gif"sv, GUID_ContainerFormatGif},
-		{u8".bmp"sv, GUID_ContainerFormatBmp},
-		{u8".webp"sv, GUID_ContainerFormatWebp},
-		{u8"jpg"sv, GUID_ContainerFormatJpeg},
-		{u8"jpeg"sv, GUID_ContainerFormatJpeg},
-		{u8"jpe"sv, GUID_ContainerFormatJpeg},
-		{u8"png"sv, GUID_ContainerFormatPng},
-		{u8"tiff"sv, GUID_ContainerFormatTiff},
-		{u8"tif"sv, GUID_ContainerFormatTiff},
-		{u8"gif"sv, GUID_ContainerFormatGif},
-		{u8"bmp"sv, GUID_ContainerFormatBmp},
-		{u8"webp"sv, GUID_ContainerFormatWebp},
-		{u8"heic"sv, GUID_ContainerFormatHeif},
+		{".jpg", GUID_ContainerFormatJpeg},
+		{".jpeg", GUID_ContainerFormatJpeg},
+		{".jpe", GUID_ContainerFormatJpeg},
+		{".png", GUID_ContainerFormatPng},
+		{".tiff", GUID_ContainerFormatTiff},
+		{".tif", GUID_ContainerFormatTiff},
+		{".gif", GUID_ContainerFormatGif},
+		{".bmp", GUID_ContainerFormatBmp},
+		{".webp", GUID_ContainerFormatWebp},
+		{"jpg", GUID_ContainerFormatJpeg},
+		{"jpeg", GUID_ContainerFormatJpeg},
+		{"jpe", GUID_ContainerFormatJpeg},
+		{"png", GUID_ContainerFormatPng},
+		{"tiff", GUID_ContainerFormatTiff},
+		{"tif", GUID_ContainerFormatTiff},
+		{"gif", GUID_ContainerFormatGif},
+		{"bmp", GUID_ContainerFormatBmp},
+		{"webp", GUID_ContainerFormatWebp},
+		{"heic", GUID_ContainerFormatHeif},
 	};
 
 	const auto found = extensions.find(format.substr(df::find_ext(format)));
 	return found == extensions.end() ? GUID_ContainerFormatPng : found->second;
 }
 
-platform::file_op_result save_bitmap_info(const df::folder_path save_path, const std::u8string_view name,
+platform::file_op_result save_bitmap_info(const df::folder_path save_path, const std::string_view name,
                                           const bool as_png, const HBITMAP image_buffer_in)
 {
 	platform::file_op_result result;
@@ -199,7 +199,7 @@ platform::file_op_result save_bitmap_info(const df::folder_path save_path, const
 	{
 		auto i = 2;
 		const auto folder = save_path;
-		const auto ext = as_png ? u8"png"sv : u8"jpg"sv;
+		const auto ext = as_png ? "png" : "jpg";
 
 		df::file_path path(folder, name, ext);
 		const auto encoder_format = wic_encoder_clsid(ext);
@@ -208,18 +208,18 @@ platform::file_op_result save_bitmap_info(const df::folder_path save_path, const
 		// Validate path creation to prevent infinite loops
 		if (name.empty())
 		{
-			result.error_message = u8"Invalid filename";
+			result.error_message = "Invalid filename";
 			return result;
 		}
 
 		while (path.exists() && i < max_file_name)
 		{
-			path = df::file_path(folder, str::format(u8"{}{}"sv, name, i++), ext);
+			path = df::file_path(folder, std::format("{}{}", name, i++), ext);
 		}
 
 		if (i >= max_file_name)
 		{
-			result.error_message = u8"Unable to create unique filename after 100 attempts";
+			result.error_message = "Unable to create unique filename after 100 attempts";
 			return result;
 		}
 		{
@@ -411,7 +411,7 @@ ui::const_surface_ptr platform::create_segoe_md2_icon(const wchar_t ch)
 
 			if (SUCCEEDED(hr))
 			{
-				auto hr = rt->CreateSolidColorBrush(
+				hr = rt->CreateSolidColorBrush(
 					D2D1::ColorF(1.0f, 1.0f, 1.0f, 1.0f),
 					&brush
 				);
@@ -548,7 +548,6 @@ ui::surface_ptr platform::image_to_surface(const df::cspan image_buffer_in, cons
 		if (SUCCEEDED(hr))
 		{
 			pSource = pBitmapFrameDecode;
-			pSource->AddRef();
 
 			hr = pSource->GetSize(&uiWidth, &uiHeight);
 

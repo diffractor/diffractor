@@ -20,10 +20,10 @@ struct command_line_t
 	bool no_indexing = false;
 	bool run_tests = false;
 	bool console_test = false;
-	std::u8string test_filter = u8"*";
+	std::string test_filter = "*";
 
-	void parse(std::u8string_view command_line_text);
-	std::u8string format_restart_cmd_line() const;
+	void parse(std::string_view command_line_text);
+	std::string format_restart_cmd_line() const;
 };
 
 extern command_line_t command_line;

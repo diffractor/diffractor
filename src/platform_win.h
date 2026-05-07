@@ -63,7 +63,7 @@ extern HINSTANCE get_resource_instance;
 FILETIME ts_to_ft(uint64_t ts);
 uint64_t ft_to_ts(const FILETIME& ft);
 
-std::u8string win32_to_string(const IID& iid);
+std::string win32_to_string(const IID& iid);
 
 struct char_pos_width
 {
@@ -110,7 +110,7 @@ public:
 	bool has_drop_files() const override;
 	bool has_bitmap() const override;
 	platform::file_op_result drop_files(df::folder_path target, platform::drop_effect effect) override;
-	platform::file_op_result save_bitmap(df::folder_path save_path, std::u8string_view name, bool as_png) override;
+	platform::file_op_result save_bitmap(df::folder_path save_path, std::string_view name, bool as_png) override;
 	DWORD preferred_drop_effect() const;
 	description files_description() const override;
 	df::file_path first_path() const override;
@@ -121,7 +121,7 @@ draw_context_device_ptr d3d11_create_context(const factories_ptr& f, const ComPt
 df::blob load_resource(int id, LPCWSTR lpType);
 
 HGLOBAL image_to_handle(const file_load_result& image);
-platform::file_op_result save_bitmap_info(df::folder_path save_path, std::u8string_view name, bool as_png,
+platform::file_op_result save_bitmap_info(df::folder_path save_path, std::string_view name, bool as_png,
                                           HBITMAP image_buffer_in);
 void draw_surface(HDC hdc, sizei dimensions, ui::texture_format format, int stride, const uint8_t* pixels);
 
@@ -173,7 +173,7 @@ struct bstr_t
 	{
 	}
 
-	explicit bstr_t(const std::u8string_view sv) : m_str(SysAllocString(str::utf8_to_utf16(sv).c_str()))
+	explicit bstr_t(const std::string_view sv) : m_str(SysAllocString(str::utf8_to_utf16(sv).c_str()))
 	{
 	}
 

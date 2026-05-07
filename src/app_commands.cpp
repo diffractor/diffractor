@@ -35,25 +35,25 @@
 #include "view_sync.h"
 #include "view_test.h"
 
-static std::u8string decode_secret(const std::u8string_view input, const std::u8string_view password)
+static std::string decode_secret(const std::string_view input, const std::string_view password)
 {
 	const auto data = base64_decode(input);
 	auto decoded = crypto::decrypt(data, password);
-	return std::u8string(decoded.begin(), decoded.end());
+	return std::string(decoded.begin(), decoded.end());
 }
 
 #if __has_include("secrets.h")
 # include "secrets.h"
 #else
-static const std::u8string google_maps_api_key = u8"";
-static const std::u8string azure_maps_api_key = u8"";
+static const std::string google_maps_api_key = "";
+static const std::string azure_maps_api_key = "";
 #endif
 
 extern bool toggle_details_state;
 
-static constexpr auto docs_url = u8"https://www.diffractor.com/docs"sv;
-static constexpr auto support_url = u8"https://diffractor.com/help"sv;
-static constexpr auto donate_url = u8"https://www.paypal.com/donate/?hosted_button_id=HX5NRS9JGKLRL"sv;
+static constexpr auto docs_url = "https://www.diffractor.com/docs";
+static constexpr auto support_url = "https://diffractor.com/help";
+static constexpr auto donate_url = "https://www.paypal.com/donate/?hosted_button_id=HX5NRS9JGKLRL";
 
 static void zoom_invoke(const view_state& s, const ui::control_frame_ptr& parent)
 {
@@ -134,12 +134,12 @@ static void new_folder_invoke(view_state& s, const ui::control_frame_ptr& parent
 {
 	int i = 2;
 	const auto folder = s.save_path();
-	auto new_name = std::u8string(tt.new_folder_name);
+	auto new_name = std::string(tt.new_folder_name);
 	auto new_path = folder.combine(new_name);
 
 	while (platform::exists(new_path) && i < 100)
 	{
-		new_name = str::format(u8"{} {}"sv, tt.new_folder_name, i++);
+		new_name = std::format("{} {}", tt.new_folder_name, i++);
 		new_path = folder.combine(new_name);
 	}
 
@@ -411,7 +411,7 @@ static void rotate_invoke(view_state& s, const ui::control_frame_ptr& parent, co
 			s.queue_async(async_queue::work, [items, results, t]
 			{
 				result_scope rr(results);
-				std::u8string message;
+				std::string message;
 
 				for (const auto& i : items.items())
 				{
@@ -480,8 +480,8 @@ static void desktop_background_invoke(view_state& s, const ui::control_frame_ptr
 
 		if (dlg->show_modal(controls) == ui::close_result::ok)
 		{
-			constexpr auto write_extension = u8".png"sv;
-			const auto write_path = df::file_path(known_path(platform::known_folder::app_data), u8"wallpaper"sv,
+			constexpr auto write_extension = ".png";
+			const auto write_path = df::file_path(known_path(platform::known_folder::app_data), "wallpaper",
 			                                      write_extension);
 			const auto path_temp = platform::temp_file(write_extension);
 			const auto bounds = ui::desktop_bounds(true);
@@ -530,14 +530,14 @@ static void capture_invoke(view_state& s, const ui::control_frame_ptr& parent)
 		{
 			auto i = 1;
 			const auto source_path = item->path();
-			const auto save_ext = lr.is_jpeg() ? u8"jpg"sv : u8"png"sv;
+			const auto save_ext = lr.is_jpeg() ? "jpg" : "png";
 			const auto save_folder = s.save_path();
 			const auto save_name = source_path.file_name_without_extension();
 			auto save_path = df::file_path(save_folder, save_name, save_ext);
 
 			while (save_path.exists())
 			{
-				save_path = df::file_path(save_folder, str::format(u8"{}-{}"sv, save_name, i++), save_ext);
+				save_path = df::file_path(save_folder, std::format("{}-{}", save_name, i++), save_ext);
 			}
 
 			if (platform::prompt_for_save_path(save_path))
@@ -614,7 +614,7 @@ static void edit_metadata_invoke(view_state& s, const ui::control_frame_ptr& par
 		albumArtist->child(std::make_shared<ui::edit_control>(dlg->_frame, setting.album_artist));
 		col4->add(albumArtist);
 
-		auto genres = tt.add_translate_text(s.item_index.distinct_genres(), u8"genre"sv);
+		auto genres = tt.add_translate_text(s.item_index.distinct_genres(), "genre");
 		std::ranges::sort(genres, str::iless());
 
 		const auto genre = std::make_shared<ui::check_control>(dlg->_frame, tt.prop_name_genre, setting.set_genre);
@@ -696,8 +696,8 @@ public:
 	location_match match;
 	ui::complete_strategy_t& _parent;
 
-	std::u8string _id;
-	std::u8string _text;
+	std::string _id;
+	std::string _text;
 	std::vector<str::part_t> _highlights;
 
 	explicit location_auto_complete(ui::complete_strategy_t& parent, location_match m, const int w) :
@@ -716,7 +716,7 @@ public:
 		match.location = loc;
 	}
 
-	explicit location_auto_complete(ui::complete_strategy_t& parent, std::u8string id, std::u8string text,
+	explicit location_auto_complete(ui::complete_strategy_t& parent, std::string id, std::string text,
 	                                std::vector<str::part_t> highlights, const int w) :
 		auto_complete_match(view_element_style::can_invoke), _parent(parent), _id(std::move(id)),
 		_text(std::move(text)), _highlights(std::move(highlights))
@@ -724,7 +724,7 @@ public:
 		weight = w;
 	}
 
-	std::u8string edit_text() const override
+	std::string edit_text() const override
 	{
 		return match.location.str();
 	}
@@ -789,14 +789,14 @@ public:
 };
 
 
-static void fetch(async_strategy& async, std::u8string key, std::u8string host, std::u8string path,
-                  std::function<void(std::u8string)> f)
+static void fetch(async_strategy& async, std::string key, std::string host, std::string path,
+                  std::function<void(std::string)> f)
 {
 	async.web_service_cache(
 		key, [&async, key,
 			host = std::move(host),
 			path = std::move(path),
-			f = std::move(f)](const std::u8string& cache_response)
+			f = std::move(f)](const std::string& cache_response)
 		{
 			if (cache_response.empty())
 			{
@@ -824,28 +824,28 @@ static void fetch(async_strategy& async, std::u8string key, std::u8string host, 
 		});
 }
 
-static void fetch_place(async_strategy& async, const std::u8string_view place_id, std::function<void(std::u8string)> f)
+static void fetch_place(async_strategy& async, const std::string_view place_id, std::function<void(std::string)> f)
 {
-	const auto url = str::format(u8"/maps/api/place/details/json?placeid={}&key={}"sv, df::url_encode(place_id),
+	const auto url = std::format("/maps/api/place/details/json?placeid={}&key={}", df::url_encode(place_id),
 	                             google_maps_api_key);
-	const auto key = str::format(u8"place_details:{}"sv, place_id);
-	fetch(async, key, u8"maps.googleapis.com"s, url, std::move(f));
+	const auto key = std::format("place_details:{}", place_id);
+	fetch(async, key, "maps.googleapis.com"s, url, std::move(f));
 }
 
-static str::cached find_component(const rapidjson::GenericValue<rapidjson::UTF8<char8_t>>& json,
-                                  const std::u8string& component_field, const std::u8string_view component_name)
+static str::cached find_component(const rapidjson::GenericValue<rapidjson::UTF8<char>>& json,
+                                  const std::string& component_field, const std::string_view component_name)
 {
 	if (json.HasMember(component_field))
 	{
 		for (const auto& component : json[component_field].GetArray())
 		{
-			if (component.HasMember(u8"types"))
+			if (component.HasMember("types"))
 			{
-				for (const auto& type : component[u8"types"].GetArray())
+				for (const auto& type : component["types"].GetArray())
 				{
 					if (str::icmp(component_name, type.GetString()) == 0)
 					{
-						return str::cache(df::util::json::safe_string(component, u8"long_name"));
+						return str::cache(df::util::json::safe_string(component, "long_name"));
 					}
 				}
 			}
@@ -864,15 +864,15 @@ public:
 	ui::auto_complete_results _results;
 	ui::auto_complete_match_ptr _selected;
 
-	df::hash_set<std::u8string, df::ihash, df::ieq> _recent_location_set;
-	std::vector<std::u8string> _recent_locations;
+	df::hash_set<std::string, df::ihash, df::ieq> _recent_location_set;
+	std::vector<std::string> _recent_locations;
 
 	bool _empty_query = true;
 	std::function<void(std::shared_ptr<location_auto_complete>)> _changed;
 
 	location_auto_complete_strategy(view_state& s, ui::control_frame_ptr parent,
 	                                std::function<void(std::shared_ptr<location_auto_complete>)> changed,
-	                                const std::vector<std::u8string>& recent_locations) : _state(s),
+	                                const std::vector<std::string>& recent_locations) : _state(s),
 		_parent(std::move(parent)),
 		_recent_location_set(recent_locations.begin(), recent_locations.end()), _recent_locations(recent_locations),
 		_changed(std::move(changed))
@@ -892,9 +892,9 @@ public:
 	{
 	}
 
-	std::u8string no_results_message() override
+	std::string no_results_message() override
 	{
-		return std::u8string(tt.type_to_search);
+		return std::string(tt.type_to_search);
 	}
 
 	void initialise(std::function<void(const ui::auto_complete_results&)> complete) override
@@ -925,7 +925,7 @@ public:
 		return diff == 0 ? str::icmp(l->edit_text(), r->edit_text()) < 0 : diff < 0;
 	}
 
-	void search(const std::u8string& query, std::function<void(const ui::auto_complete_results&)> complete) override
+	void search(const std::string& query, std::function<void(const ui::auto_complete_results&)> complete) override
 	{
 		_empty_query = str::is_empty(query);
 
@@ -955,13 +955,13 @@ public:
 					else
 					{
 						// Only use google for queries over length 3
-						const auto key = str::format(u8"auto_complete_location:{}"sv, query);
-						const auto path = str::format(
-							u8"/maps/api/place/autocomplete/json?input={}&key={}"sv,
+						const auto key = std::format("auto_complete_location:{}", query);
+						const auto path = std::format(
+							"/maps/api/place/autocomplete/json?input={}&key={}",
 							df::url_encode(query), google_maps_api_key);
 
-						fetch(t->_state._async, key, u8"maps.googleapis.com"s, path,
-						      [t, query, complete, locally_found](const std::u8string& response)
+						fetch(t->_state._async, key, "maps.googleapis.com"s, path,
+						      [t, query, complete, locally_found](const std::string& response)
 						      {
 							      ui::auto_complete_results found;
 
@@ -975,23 +975,23 @@ public:
 							      df::util::json::json_doc json_response;
 							      json_response.Parse(response.data(), response.size());
 
-							      if (json_response.HasMember(u8"predictions"))
+							      if (json_response.HasMember("predictions"))
 							      {
-								      for (const auto& loc : json_response[u8"predictions"].GetArray())
+								      for (const auto& loc : json_response["predictions"].GetArray())
 								      {
-									      auto text = df::util::json::safe_string(loc, u8"description");
-									      auto place_id = df::util::json::safe_string(loc, u8"place_id");
+									      auto text = df::util::json::safe_string(loc, "description");
+									      auto place_id = df::util::json::safe_string(loc, "place_id");
 
 									      std::vector<str::part_t> selections;
 
-									      if (loc.HasMember(u8"matched_substrings"s))
+									      if (loc.HasMember("matched_substrings"s))
 									      {
-										      for (const auto& match : loc[u8"matched_substrings"].GetArray())
+										      for (const auto& match : loc["matched_substrings"].GetArray())
 										      {
 											      const auto length = static_cast<size_t>(df::util::json::safe_int(
-												      match, u8"length"));
+												      match, "length"));
 											      const auto offset = static_cast<size_t>(df::util::json::safe_int(
-												      match, u8"offset"));
+												      match, "offset"));
 
 											      selections.emplace_back(offset, length);
 										      }
@@ -1032,16 +1032,16 @@ public:
 							platform::thread_event event_wait(true, false);
 
 							fetch_place(t->_state._async, recent_place_id,
-							            [t, &event_wait, recent_place_id, &results](const std::u8string& response)
+							            [t, &event_wait, recent_place_id, &results](const std::string& response)
 							            {
 								            df::util::json::json_doc json_response;
 								            json_response.Parse(response);
 
-								            if (json_response.HasMember(u8"result"))
+								            if (json_response.HasMember("result"))
 								            {
 									            std::vector<str::part_t> highlights;
 									            const auto formatted_search = df::util::json::safe_string(
-										            json_response[u8"result"], u8"formatted_address");
+										            json_response["result"], "formatted_address");
 									            results.emplace_back(
 										            std::make_shared<location_auto_complete>(
 											            *t, recent_place_id, formatted_search, highlights,
@@ -1114,7 +1114,7 @@ public:
 };
 
 
-static void id_to_location(async_strategy& async, const std::u8string& place_id, std::function<void(location_t)> cb)
+static void id_to_location(async_strategy& async, const std::string& place_id, std::function<void(location_t)> cb)
 {
 	if (str::is_num(place_id))
 	{
@@ -1132,24 +1132,24 @@ static void id_to_location(async_strategy& async, const std::u8string& place_id,
 	else
 	{
 		fetch_place(async, place_id,
-		            [&async, place_id, cb](const std::u8string& response)
+		            [&async, place_id, cb](const std::string& response)
 		            {
 			            df::util::json::json_doc json_response;
 			            json_response.Parse(response);
 
-			            if (json_response.HasMember(u8"result"))
+			            if (json_response.HasMember("result"))
 			            {
-				            const std::u8string component_field = u8"address_components";
-				            const auto& address = json_response[u8"result"];
-				            auto place = find_component(address, component_field, u8"locality");
-				            if (place.is_empty()) place = find_component(address, component_field, u8"sublocality");
-				            if (place.is_empty()) place = find_component(address, component_field, u8"route");
-				            if (place.is_empty()) place = find_component(address, component_field, u8"postal_town");
+				            const std::string component_field = "address_components";
+				            const auto& address = json_response["result"];
+				            auto place = find_component(address, component_field, "locality");
+				            if (place.is_empty()) place = find_component(address, component_field, "sublocality");
+				            if (place.is_empty()) place = find_component(address, component_field, "route");
+				            if (place.is_empty()) place = find_component(address, component_field, "postal_town");
 				            const auto state =
-					            find_component(address, component_field, u8"administrative_area_level_2");
-				            const auto country = find_component(address, component_field, u8"country");
-				            const gps_coordinate position(address[u8"geometry"][u8"location"][u8"lat"].GetDouble(),
-				                                          address[u8"geometry"][u8"location"][u8"lng"].GetDouble());
+					            find_component(address, component_field, "administrative_area_level_2");
+				            const auto country = find_component(address, component_field, "country");
+				            const gps_coordinate position(address["geometry"]["location"]["lat"].GetDouble(),
+				                                          address["geometry"]["location"]["lng"].GetDouble());
 
 				            location_t loc(0, place, state, country, position, 0.0);
 				            async.queue_ui([cb, loc] { cb(loc); });
@@ -1258,7 +1258,7 @@ bool ui::browse_for_location(view_state& vs, const control_frame_ptr& parent, gp
 	cols->add(props_col);
 
 	const std::vector<view_element_ptr> controls = {
-		set_margin(std::make_shared<title_control2>(dlg->_frame, icon, title, std::u8string{})),
+		set_margin(std::make_shared<title_control2>(dlg->_frame, icon, title, std::string{})),
 		std::make_shared<divider_element>(),
 		cols,
 		std::make_shared<divider_element>(),
@@ -1323,7 +1323,7 @@ static void convert_resize_invoke(view_state& s, const ui::control_frame_ptr& pa
 		auto dimension = std::make_shared<ui::check_control>(dlg->_frame, tt.limit_output_dimensions,
 		                                                     setting.convert.limit_dimension);
 		dimension->child(
-			std::make_shared<ui::num_control>(dlg->_frame, std::u8string_view{}, setting.convert.max_side));
+			std::make_shared<ui::num_control>(dlg->_frame, std::string_view{}, setting.convert.max_side));
 		controls.emplace_back(dimension);
 
 		controls.emplace_back(std::make_shared<ui::check_control>(dlg->_frame, tt.open_dest, setting.show_results));
@@ -1341,7 +1341,7 @@ static void convert_resize_invoke(view_state& s, const ui::control_frame_ptr& pa
 
 			bool can_process = true;
 			const auto folder = df::folder_path(setting.write_folder);
-			const auto overwrite_result = check_overwrite(folder, items, u8"jpg"sv);
+			const auto overwrite_result = check_overwrite(folder, items, "jpg");
 
 			if (!overwrite_result.empty())
 			{
@@ -1362,7 +1362,8 @@ static void convert_resize_invoke(view_state& s, const ui::control_frame_ptr& pa
 				if (create_folder_result.failed())
 				{
 					results->complete(
-						create_folder_result.format_error(str::format(tt.failed_to_create_folder_fmt, write_folder)));
+						create_folder_result.
+						format_error(str_format(tt.failed_to_create_folder_fmt.sv(), write_folder)));
 					results->wait_for_complete();
 				}
 				else
@@ -1373,7 +1374,7 @@ static void convert_resize_invoke(view_state& s, const ui::control_frame_ptr& pa
 					{
 						result_scope rr(results);
 						files ff;
-						std::u8string message;
+						std::string message;
 
 						for (const auto& i : items.items())
 						{
@@ -1391,9 +1392,9 @@ static void convert_resize_invoke(view_state& s, const ui::control_frame_ptr& pa
 									encode_params.webp_quality = setting.convert.webp_quality;
 									encode_params.webp_lossless = setting.convert.webp_lossless;
 
-									auto ext = u8".jpg"sv;
-									if (setting.convert.to_png) ext = u8".png"sv;
-									if (setting.convert.to_webp) ext = u8".webp"sv;
+									auto ext = ".jpg";
+									if (setting.convert.to_png) ext = ".png";
+									if (setting.convert.to_webp) ext = ".webp";
 
 									const auto write_path = df::file_path(
 										write_folder, i->path().file_name_without_extension(), ext);
@@ -1472,7 +1473,7 @@ static void tag_invoke(view_state& s, const ui::control_frame_ptr& parent, const
 				tt.tags_favorite_label, ui::style::font_face::title, ui::style::text_style::multiline,
 				view_element_style::line_break)));
 			list_control->add(set_margin(std::make_shared<ui::recommended_words_control>(
-				dlg->_frame, favorites, [edit](const std::u8string_view tag)
+				dlg->_frame, favorites, [edit](const std::string_view tag)
 				{
 					edit->add_word(str::quote_if_white_space(tag));
 				})));
@@ -1504,7 +1505,7 @@ static void tag_invoke(view_state& s, const ui::control_frame_ptr& parent, const
 				tt.tags_common_label, ui::style::font_face::title, ui::style::text_style::multiline,
 				view_element_style::line_break)));
 			list_control->add(set_margin(std::make_shared<ui::recommended_words_control>(
-				dlg->_frame, common_tags, [edit](const std::u8string_view tag)
+				dlg->_frame, common_tags, [edit](const std::string_view tag)
 				{
 					edit->add_word(str::quote_if_white_space(tag));
 				})));
@@ -1516,9 +1517,9 @@ static void tag_invoke(view_state& s, const ui::control_frame_ptr& parent, const
 				tt.tags_remove_label, ui::style::font_face::title, ui::style::text_style::multiline,
 				view_element_style::line_break)));
 			list_control->add(set_margin(std::make_shared<ui::recommended_words_control>(
-				dlg->_frame, existing, [edit](const std::u8string_view tag)
+				dlg->_frame, existing, [edit](const std::string_view tag)
 				{
-					edit->add_word(str::format(u8"-{}"sv, str::quote_if_white_space(tag)));
+					edit->add_word(std::format("-{}", str::quote_if_white_space(tag)));
 				})));
 		}
 
@@ -1537,8 +1538,8 @@ static void tag_invoke(view_state& s, const ui::control_frame_ptr& parent, const
 			record_feature_use(features::tag);
 
 			setting.last_tags = tags;
-			std::vector<std::u8string> adds;
-			std::vector<std::u8string> removes;
+			std::vector<std::string> adds;
+			std::vector<std::string> removes;
 
 			search_tokenizer t;
 
@@ -1616,10 +1617,11 @@ static void adjust_date_invoke(view_state& s, const ui::control_frame_ptr& paren
 			set_margin(std::make_shared<text_element>(tt.adjust_date_help3)),
 			std::make_shared<divider_element>(),
 			set_margin(std::make_shared<text_element>(tt.selected_date_range_label)),
-			set_margin(std::make_shared<bullet_element>(icon_index::bullet, str::format(tt.starting_fmt, start_date))),
-			set_margin(std::make_shared<bullet_element>(icon_index::bullet, str::format(tt.ending_fmt, end_date))),
+			set_margin(std::make_shared<bullet_element>(icon_index::bullet,
+			                                            str_format(tt.starting_fmt.sv(), start_date))),
+			set_margin(std::make_shared<bullet_element>(icon_index::bullet, str_format(tt.ending_fmt.sv(), end_date))),
 			set_margin(std::make_shared<text_element>(tt.starting_date_label)),
-			set_margin(std::make_shared<ui::date_control>(dlg->_frame, std::u8string_view{}, new_date)),
+			set_margin(std::make_shared<ui::date_control>(dlg->_frame, std::string_view{}, new_date)),
 			std::make_shared<divider_element>(),
 			std::make_shared<ui::ok_cancel_control>(dlg->_frame, tt.button_update),
 		};
@@ -1674,7 +1676,7 @@ static void rate_items_invoke(view_state& s, const ui::control_frame_ptr& parent
 }
 
 static void label_items_invoke(view_state& s, const ui::control_frame_ptr& parent, const view_host_base_ptr& view,
-                               const std::u8string_view label)
+                               const std::string_view label)
 {
 	const auto selected = s.selected_items();
 	auto dlg = make_dlg(parent);
@@ -1723,9 +1725,9 @@ class folder_auto_complete final : public std::enable_shared_from_this<folder_au
 	ui::auto_complete_match_ptr _selected;
 
 public:
-	std::u8string no_results_message() override
+	std::string no_results_message() override
 	{
-		return std::u8string(tt.type_to_search);
+		return std::string(tt.type_to_search);
 	}
 
 	std::weak_ptr<ui::search_control> _search_control;
@@ -1783,7 +1785,7 @@ public:
 		}
 	}
 
-	void search(const std::u8string& query,
+	void search(const std::string& query,
 	            const std::function<void(const ui::auto_complete_results&)> complete) override
 	{
 		df::assert_true(ui::is_ui_thread());
@@ -1875,7 +1877,7 @@ static void copy_move_invoke(view_state& s, const ui::control_frame_ptr& parent,
 	}
 	else
 	{
-		std::u8string text;
+		std::string text;
 
 		const auto auto_complete = std::make_shared<folder_auto_complete>(s, parent);
 		const auto search_control = std::make_shared<ui::search_control>(dlg->_frame, text, auto_complete);
@@ -1899,14 +1901,14 @@ static void copy_move_invoke(view_state& s, const ui::control_frame_ptr& parent,
 
 			if (!write_folder.is_qualified())
 			{
-				dlg->show_message(icon_index::error, title, str::format(tt.is_not_valid_folder_fmt, write_folder));
+				dlg->show_message(icon_index::error, title, str_format(tt.is_not_valid_folder_fmt.sv(), write_folder));
 			}
 			else if (const auto create_folder_result = platform::create_folder(write_folder); create_folder_result.
 				failed())
 			{
 				dlg->show_message(icon_index::error, title,
 				                  create_folder_result.format_error(
-					                  str::format(tt.failed_to_create_folder_fmt, write_folder)));
+					                  str_format(tt.failed_to_create_folder_fmt.sv(), write_folder)));
 			}
 			else
 			{
@@ -1990,7 +1992,7 @@ class open_with_auto_complete final : public ui::complete_strategy_t,
 {
 	struct entry
 	{
-		std::u8string name;
+		std::string name;
 		std::function<void(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders)>
 		invoke;
 		int weight = 0;
@@ -2014,7 +2016,7 @@ class open_with_auto_complete final : public ui::complete_strategy_t,
 		{
 		}
 
-		std::u8string edit_text() const override
+		std::string edit_text() const override
 		{
 			return _handler.name;
 		}
@@ -2071,7 +2073,7 @@ class open_with_auto_complete final : public ui::complete_strategy_t,
 
 	using open_with_match_ptr = std::shared_ptr<open_with_match>;
 
-	df::hash_map<std::u8string, entry, df::ihash, df::ieq> _handlers;
+	df::hash_map<std::string, entry, df::ihash, df::ieq> _handlers;
 
 	//ui::auto_complete_results _results;
 	view_state& _state;
@@ -2081,9 +2083,9 @@ class open_with_auto_complete final : public ui::complete_strategy_t,
 	std::shared_ptr<df::item_set> _items;
 
 public:
-	std::u8string no_results_message() override
+	std::string no_results_message() override
 	{
-		return std::u8string(tt.type_to_search);
+		return std::string(tt.type_to_search);
 	}
 
 	open_with_auto_complete(view_state& s, std::shared_ptr<df::item_set> items, ui::frame_ptr parent,
@@ -2102,7 +2104,7 @@ public:
 			df::assert_true(!str::is_empty(name));
 
 			entry h;
-			h.name = str::format(u8"{} ({})"sv, name, tt.open_with_tool);
+			h.name = std::format("{} ({})", name, tt.open_with_tool);
 			h.invoke = [c](const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders)
 			{
 				c->invoke();
@@ -2121,7 +2123,7 @@ public:
 			for (const auto& h : platform_handlers)
 			{
 				entry e;
-				e.name = str::format(u8"{} ({})"sv, h.name, tt.open_with_app);
+				e.name = std::format("{} ({})", h.name, tt.open_with_app);
 				e.invoke = h.invoke;
 				e.weight = h.weight;
 				_handlers[h.name] = e;
@@ -2133,7 +2135,7 @@ public:
 
 		for (const auto& c : counts)
 		{
-			const auto found = _handlers.find(std::u8string(c.first));
+			const auto found = _handlers.find(std::string(c.first));
 
 			if (found != _handlers.cend())
 			{
@@ -2150,7 +2152,7 @@ public:
 		return diff == 0 ? str::icmp(l->_handler.name, r->_handler.name) < 0 : diff < 0;
 	}
 
-	void search(const std::u8string& query,
+	void search(const std::string& query,
 	            const std::function<void(const ui::auto_complete_results&)> complete) override
 	{
 		std::vector<open_with_match_ptr> results;
@@ -2240,7 +2242,7 @@ static void open_with_invoke(view_state& s, const ui::control_frame_ptr& parent,
 		const auto selected_items = std::make_shared<df::item_set>(s.selected_items());
 		const auto complete = std::make_shared<open_with_auto_complete>(s, selected_items, dlg->_frame, cmds);
 
-		std::u8string text;
+		std::string text;
 		const std::vector<view_element_ptr> controls = {
 			set_margin(std::make_shared<ui::title_control>(icon_index::next, title)),
 			std::make_shared<ui::search_control>(dlg->_frame, text, complete),
@@ -2274,8 +2276,8 @@ static void eject_invoke(view_state& s, const ui::control_frame_ptr& parent)
 	{
 		if (d.type == platform::drive_type::removable)
 		{
-			auto name = str::format(tt.eject_title_fmt, d.name);
-			auto details = str::format(u8"{} {} {} ({} {})"sv, d.vol_name, d.file_system, d.capacity, d.used,
+			auto name = str_format(tt.eject_title_fmt.sv(), d.name);
+			auto details = std::format("{} {} {} ({} {})", d.vol_name, d.file_system, d.capacity, d.used,
 			                           tt.space_used);
 			controls.emplace_back(std::make_shared<ui::button_control>(dlg->_frame, drive_icon(d.type), d.name, details,
 			                                                           [dlg, d, title]
@@ -2288,8 +2290,9 @@ static void eject_invoke(view_state& s, const ui::control_frame_ptr& parent)
 				                                                           {
 					                                                           dlg->show_message(
 						                                                           icon_index::error, title,
-						                                                           str::format(
-							                                                           tt.eject_failed_fmt, d.name));
+						                                                           str_format(
+							                                                           tt.eject_failed_fmt.sv(),
+							                                                           d.name));
 				                                                           }
 			                                                           }));
 		}
@@ -2322,7 +2325,7 @@ static void scan_invoke(view_state& s, const ui::control_frame_ptr& parent, cons
 	{
 		const auto dlg = make_dlg(parent);
 		dlg->show_message(icon_index::error, tt.command_scan,
-		                  str::format(u8"{}\n{}"sv, tt.scan_failed, scan_result.error_message));
+		                  std::format("{}\n{}", tt.scan_failed, scan_result.error_message));
 	}
 };
 
@@ -2358,8 +2361,8 @@ static void favorite_invoke(view_state& state, const ui::control_frame_ptr& pare
 			auto dlg = make_dlg(parent);
 			auto dlg_parent = dlg->_frame;
 
-			const auto text = str::format(tt.favorite_add_fmt, search.text());
-			std::u8string title_text;
+			const auto text = str_format(tt.favorite_add_fmt.sv(), search.text());
+			std::string title_text;
 
 			if (search.selectors().size() == 1)
 			{
@@ -2418,13 +2421,13 @@ static void favorite_invoke(view_state& state, const ui::control_frame_ptr& pare
 	}
 }
 
-bool ui::browse_for_term(view_state& vs, const control_frame_ptr& parent, std::u8string& result)
+bool ui::browse_for_term(view_state& vs, const control_frame_ptr& parent, std::string& result)
 {
 	const auto dlg = make_dlg(parent);
 	auto dlg_parent = dlg->_frame;
 
-	std::u8string scope;
-	std::u8string text;
+	std::string scope;
+	std::string text;
 
 	auto default_texts = vs.item_index.auto_complete_text(prop::tag);
 	auto edit_control = std::make_shared<ui::edit_control>(dlg_parent, tt.value, text, default_texts);
@@ -2460,13 +2463,13 @@ bool ui::browse_for_term(view_state& vs, const control_frame_ptr& parent, std::u
 
 	if (dlg->show_modal(controls) == close_result::ok)
 	{
-		if (str::is_empty(str::trim(scope)) || str::icmp(str::trim(scope), u8"any"sv) == 0)
+		if (str::is_empty(str::trim(scope)) || str::icmp(str::trim(scope), "any") == 0)
 		{
 			result = text;
 		}
 		else
 		{
-			result = str::format(u8"{}:{}"sv, scope, str::quote_if_white_space(text));
+			result = std::format("{}:{}", scope, str::quote_if_white_space(text));
 		}
 
 		return true;
@@ -2484,9 +2487,9 @@ static void advanced_search_invoke(view_state& state, const ui::control_frame_pt
 
 	const auto search = state.search();
 
-	static std::u8string selected_folder;
-	static std::u8string all_terms;
-	static std::u8string none_terms;
+	static std::string selected_folder;
+	static std::string all_terms;
+	static std::string none_terms;
 
 	static bool search_collection = true;
 	static bool search_folder = false;
@@ -2648,7 +2651,7 @@ static void advanced_search_invoke(view_state& state, const ui::control_frame_pt
 static void upgrade_invoke(view_state& s, const ui::control_frame_ptr& parent)
 {
 	const auto title = tt.update_title;
-	auto text = str::format(tt.update_help_fmt, setting.available_version, s_app_version);
+	auto text = str_format(tt.update_help_fmt.sv(), setting.available_version, s_app_version);
 	df::file_path download_path_result;
 
 	auto dlg = make_dlg(parent);
@@ -2674,7 +2677,7 @@ static void upgrade_invoke(view_state& s, const ui::control_frame_ptr& parent)
 	                                                           tt.update_more_info_help, [f = dlg->_frame]
 	                                                           {
 		                                                           platform::open(
-			                                                           u8"https://www.diffractor.com/blog"sv);
+			                                                           "https://www.diffractor.com/blog");
 		                                                           f->close(true);
 	                                                           }));
 
@@ -2725,7 +2728,7 @@ static void test_new_version_invoke(const view_state& s, const ui::control_frame
 
 static void add_keyboard_commands(const dialog_ptr& dlg, const std::shared_ptr<ui::group_control>& controls,
                                   const commands_map& commands, const command_group group,
-                                  const std::u8string_view title)
+                                  const std::string_view title)
 {
 	controls->add(std::make_shared<ui::title_control>(icon_index::none, title));
 
@@ -2760,33 +2763,33 @@ static bool is_not_virt_key(const int key)
 		(key >= 'A' && key <= 'Z');
 }
 
-std::u8string format_keyboard_accelerator(const std::vector<keyboard_accelerator_t>& keyboard_accelerators)
+std::string format_keyboard_accelerator(const std::vector<keyboard_accelerator_t>& keyboard_accelerators)
 {
 	constexpr auto control = keyboard_accelerator_t::control;
 	constexpr auto shift = keyboard_accelerator_t::shift;
 	constexpr auto alt = keyboard_accelerator_t::alt;
 
-	std::u8string result;
+	std::string result;
 
 	for (const auto& ac : keyboard_accelerators)
 	{
 		// Add Accelerator
 		if (!result.empty())
 		{
-			result += str::format(u8" {} "sv, tt.keyboard_or);
+			result += std::format(" {} ", tt.keyboard_or);
 		}
 
 		if (ac.key_state & alt)
 		{
-			result += str::format(u8"{}+"sv, tt.keyboard_alt);
+			result += std::format("{}+", tt.keyboard_alt);
 		}
 		if (ac.key_state & control)
 		{
-			result += str::format(u8"{}+"sv, tt.keyboard_control);
+			result += std::format("{}+", tt.keyboard_control);
 		}
 		if (ac.key_state & shift)
 		{
-			result += str::format(u8"{}+"sv, tt.keyboard_shift);
+			result += std::format("{}+", tt.keyboard_shift);
 		}
 
 		if (ac.key == keys::RETURN)
@@ -2799,11 +2802,11 @@ std::u8string format_keyboard_accelerator(const std::vector<keyboard_accelerator
 		}
 		else if (ac.key == keys::OEM_PLUS)
 		{
-			result += str::format(u8"'{}'"sv, tt.keyboard_oem_plus);
+			result += std::format("'{}'", tt.keyboard_oem_plus);
 		}
 		else if (is_not_virt_key(ac.key))
 		{
-			const char8_t szTemp[2] = {static_cast<char8_t>(ac.key), 0};
+			const char szTemp[2] = {static_cast<char>(ac.key), 0};
 			result += szTemp;
 		}
 		else
@@ -2851,7 +2854,7 @@ static void show_keyboard_reference(view_state& s, const ui::control_frame_ptr& 
 	add_keyboard_commands(dlg, col2, c, command_group::tools, tt.keyboard_tools_title);
 	add_keyboard_commands(dlg, col3, c, command_group::open, tt.keyboard_open_title);
 	add_keyboard_commands(dlg, col3, c, command_group::navigation, tt.keyboard_navigation_title);
-	//add_commands(dlg, col3, c, command_group::sorting, u8"Sorting"sv);
+	//add_commands(dlg, col3, c, command_group::sorting, "Sorting");
 	add_keyboard_commands(dlg, col4, c, command_group::selection, tt.keyboard_selection_title);
 	add_keyboard_commands(dlg, col4, c, command_group::rate_flag, tt.keyboard_rate_label_title);
 	add_keyboard_commands(dlg, col5, c, command_group::options, tt.keyboard_options_title);
@@ -2894,32 +2897,32 @@ void send_info(const view_state& s)
 
 	if (zip.create(crash_zip_path))
 	{
-		if (log_file_copy.exists()) zip.add(log_file_copy, u8"diffractor.log"sv);
+		if (log_file_copy.exists()) zip.add(log_file_copy, "diffractor.log");
 		if (previous_log_path.exists()) zip.add(previous_log_path);
 		zip.close();
 	}
 
-	u8ostringstream message;
+	std::ostringstream message;
 
 	for (const auto& i : calc_app_info(s.item_index, true))
 	{
-		message << i.first << u8" "sv << i.second << '\n';
+		message << i.first << " " << i.second << '\n';
 	}
 
 	platform::web_request req;
 	req.verb = platform::web_request_verb::POST;
-	req.path = u8"/crash"sv;
-	req.form_data.emplace_back(u8"message"sv, message.str());
-	req.form_data.emplace_back(u8"version"sv, platform::OS());
-	req.form_data.emplace_back(u8"diffractor"sv, s_app_version);
-	req.form_data.emplace_back(u8"build"sv, g_app_build);
-	req.form_data.emplace_back(u8"subject"sv, u8"Diffractor LOG"sv);
-	req.form_data.emplace_back(u8"submit"sv, u8"Send Report"sv);
-	req.file_form_data_name = u8"ff"sv;
-	req.file_name = u8"logs.zip"sv;
+	req.path = "/crash";
+	req.form_data.emplace_back("message", message.str());
+	req.form_data.emplace_back("version", platform::OS());
+	req.form_data.emplace_back("diffractor", s_app_version);
+	req.form_data.emplace_back("build", g_app_build);
+	req.form_data.emplace_back("subject", "Diffractor LOG");
+	req.form_data.emplace_back("submit", "Send Report");
+	req.file_form_data_name = "ff";
+	req.file_name = "logs.zip";
 	req.file_path = crash_zip_path;
 
-	const auto con = platform::connect_to_host(u8"diffractor.com"sv);
+	const auto con = platform::connect_to_host("diffractor.com");
 	send_request(con, req);
 }
 
@@ -3033,7 +3036,7 @@ static void settings_invoke(view_state& s, const ui::control_frame_ptr& parent)
 
 	controls.emplace_back(set_margin(
 		std::make_shared<ui::title_control2>(dlg->_frame, icon_index::settings, tt.command_options,
-		                                     std::u8string_view{})));
+		                                     std::string_view{})));
 	controls.emplace_back(std::make_shared<divider_element>());
 	controls.emplace_back(cols);
 	controls.emplace_back(std::make_shared<divider_element>());
@@ -3045,7 +3048,7 @@ static void settings_invoke(view_state& s, const ui::control_frame_ptr& parent)
 }
 
 
-static std::u8string format_index_text(const view_state& s)
+static std::string format_index_text(const view_state& s)
 {
 	const auto file_types = s.item_index.file_types();
 	const auto total = file_types.total_items();
@@ -3053,13 +3056,13 @@ static std::u8string format_index_text(const view_state& s)
 	//const auto num_folder = platform::format_number(str::to_string(df::stats.index_folder_count));
 	//const auto total_size = prop::format_size(total.size);
 	const auto database_size = prop::format_size(s.item_index.stats.database_size);
-	const auto text = str::format(tt.index_size_fmt, database_size, num);
+	const auto text = str_format(tt.index_size_fmt.sv(), database_size, num);
 	return text;
 }
 
 class path_text_element final : public std::enable_shared_from_this<path_text_element>, public view_element
 {
-	std::u8string _text;
+	std::string _text;
 	df::file_path _path;
 	ui::style::font_face _font = ui::style::font_face::dialog;
 	ui::style::text_style _text_style = ui::style::text_style::multiline;
@@ -3125,7 +3128,7 @@ static void index_maintenance(const ui::control_frame_ptr& parent, const view_st
 
 	bool has_db_errors = false;
 	platform::thread_event event_check(true, false);
-	s._async.queue_database([&has_db_errors, &event_check](database& db)
+	s._async.queue_database([&has_db_errors, &event_check](const database& db)
 	{
 		has_db_errors = db.has_errors();
 		event_check.set();
@@ -3146,7 +3149,9 @@ static void index_maintenance(const ui::control_frame_ptr& parent, const view_st
 
 	if (has_db_errors)
 	{
-		controls.emplace_back(set_margin(set_padding(std::make_shared<text_element>(tt.index_maintenance_reset_recommended, ui::style::text_style::multiline), 8, 8)));
+		controls.emplace_back(set_margin(set_padding(
+			std::make_shared<text_element>(tt.index_maintenance_reset_recommended, ui::style::text_style::multiline), 8,
+			8)));
 	}
 
 	if (dlg->show_modal(controls) == ui::close_result::ok)
@@ -3225,7 +3230,7 @@ static void index_settings_invoke(view_state& s, const ui::control_frame_ptr& pa
 
 	auto more_folders_parts = str::split(collection_settings.more_folders, true,
 	                                     [](const wchar_t c) { return c == '\n' || c == '\r'; });
-	auto more_folders_text = str::combine(more_folders_parts, u8"\r\n"sv, false);
+	auto more_folders_text = str::combine(more_folders_parts, "\r\n", false);
 
 	custom_index->add(
 		more_custom_index_paths = std::make_shared<ui::folder_picker_control>(dlg_parent, more_folders_text, true));
@@ -3252,7 +3257,7 @@ static void index_settings_invoke(view_state& s, const ui::control_frame_ptr& pa
 		// apply changes
 		more_folders_parts = str::split(more_folders_text, false,
 		                                [](const wchar_t c) { return c == '\n' || c == '\r'; });
-		collection_settings.more_folders = str::combine(more_folders_parts, u8"\n"sv, true);
+		collection_settings.more_folders = str::combine(more_folders_parts, "\n", true);
 		setting.collection = collection_settings;
 	}
 
@@ -3347,7 +3352,7 @@ static void email_invoke(view_state& s, const ui::control_frame_ptr& parent, con
 			std::make_shared<ui::check_control>(dlg->_frame, tt.email_convert_to_jpeg, setting.email.convert));
 
 		auto limit = std::make_shared<ui::check_control>(dlg->_frame, tt.email_limit_dimensions, setting.email.limit);
-		limit->child(std::make_shared<ui::num_control>(dlg->_frame, std::u8string_view{}, setting.email.max_side));
+		limit->child(std::make_shared<ui::num_control>(dlg->_frame, std::string_view{}, setting.email.max_side));
 		controls.emplace_back(limit);
 		controls.emplace_back(std::make_shared<divider_element>());
 		controls.emplace_back(std::make_shared<ui::ok_cancel_control>(dlg->_frame, tt.button_send));
@@ -3375,7 +3380,7 @@ static void email_invoke(view_state& s, const ui::control_frame_ptr& parent, con
 
 				if (zip)
 				{
-					zip_path = platform::temp_file(u8"zip"sv);
+					zip_path = platform::temp_file("zip");
 					zip_file.create(zip_path);
 				}
 
@@ -3384,7 +3389,7 @@ static void email_invoke(view_state& s, const ui::control_frame_ptr& parent, con
 
 				for (const auto& path : file_paths)
 				{
-					auto format = str::format(tt.email_processing_fmt, path.name());
+					auto format = str_format(tt.email_processing_fmt.sv(), path.name());
 					results->message(format, pos++, file_paths.size());
 
 					auto file_name = path.name();
@@ -3398,7 +3403,7 @@ static void email_invoke(view_state& s, const ui::control_frame_ptr& parent, con
 						if (ft->has_trait(file_traits::bitmap))
 						{
 							image_edits edits;
-							const auto ext = !is_jpeg && convert_to_jpeg ? u8".jpg"sv : path.extension();
+							const auto ext = !is_jpeg && convert_to_jpeg ? ".jpg" : path.extension();
 							const auto edited_path = platform::temp_file(ext);
 
 							if (scale)
@@ -3433,7 +3438,7 @@ static void email_invoke(view_state& s, const ui::control_frame_ptr& parent, con
 				{
 					if (zip_file.close())
 					{
-						attachments.emplace_back(u8"items.zip"sv, zip_path);
+						attachments.emplace_back("items.zip", zip_path);
 						temp_file_paths.emplace_back(zip_path);
 						is_valid = true;
 					}
@@ -3583,7 +3588,7 @@ void app_frame::initialise_commands()
 	                   [this] { copy_move_invoke(_state, _app_frame, _view_frame, false); });
 	add_command_invoke(commands::test_send_crash_report, [this]
 	{
-		crash(known_path(platform::known_folder::test_files_folder).combine_file(u8"Test.jpg"sv));
+		crash(known_path(platform::known_folder::test_files_folder).combine_file("Test.jpg"));
 		_app_frame->show(true);
 	});
 	add_command_invoke(commands::test_crash, [this]
@@ -3633,7 +3638,7 @@ void app_frame::initialise_commands()
 			_view_frame, df::process_items_type::can_save_metadata);
 		if (can_process.fail())
 		{
-			auto dlg = make_dlg(_app_frame);
+			const auto dlg = make_dlg(_app_frame);
 			dlg->show_message(icon_index::error, tt.command_locate, can_process.to_string());
 		}
 		else
@@ -3819,7 +3824,7 @@ void app_frame::initialise_commands()
 
 	add_command_invoke(commands::english, [this]
 	{
-		setting.language = u8"en"sv;
+		setting.language = "en";
 		tt.clear();
 		invalidate_view(view_invalid::options);
 	});
@@ -3876,7 +3881,7 @@ void app_frame::initialise_commands()
 			for (const auto& h : handlers)
 			{
 				auto command = std::make_shared<ui::command>();
-				command->text = str::format(tt.open_with_fmt, h.name);
+				command->text = str_format(tt.open_with_fmt.sv(), h.name);
 				command->invoke = [h, selected_items, f = _app_frame]
 				{
 					const auto success = h.invoke(selected_items->file_paths(), selected_items->folder_paths());
@@ -3902,7 +3907,7 @@ void app_frame::initialise_commands()
 					if (t->exists())
 					{
 						auto command = std::make_shared<ui::command>();
-						command->text = format(tt.open_with_fmt, t->text);
+						command->text = str_format(tt.open_with_fmt.sv(), t->text);
 						command->invoke = [t, first_item, f = _app_frame]
 						{
 							const auto success = t->invoke(first_item->path());
@@ -3968,7 +3973,7 @@ void app_frame::initialise_commands()
 	};
 	_commands[commands::menu_language]->menu = [this]
 	{
-		const auto lang_folder = known_path(platform::known_folder::running_app_folder).combine(u8"languages"sv);
+		const auto lang_folder = known_path(platform::known_folder::running_app_folder).combine("languages");
 		const auto folder_contents = platform::iterate_file_items(lang_folder, false);
 
 		std::vector<ui::command_ptr> result;
@@ -3980,7 +3985,7 @@ void app_frame::initialise_commands()
 			const auto lang_path = lang_folder.combine_file(f.name);
 			const auto extension = lang_path.extension();
 
-			if (str::icmp(extension, u8".po"sv) == 0)
+			if (str::icmp(extension, ".po") == 0)
 			{
 				const auto lang_code = lang_path.file_name_without_extension();
 
@@ -4219,7 +4224,7 @@ void app_frame::initialise_commands()
 				if (st.type == av_stream_type::audio)
 				{
 					auto text = st.title;
-					if (text.empty()) text = str::format(tt.stream_name_fmt, st.index);
+					if (text.empty()) text = str_format(tt.stream_name_fmt.sv(), st.index);
 
 					auto command = std::make_shared<ui::command>();
 					command->text = text;

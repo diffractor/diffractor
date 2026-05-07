@@ -33,9 +33,9 @@ std::vector<val_t> top_vec(std::vector<std::pair<int, val_t>> all, int max)
 	return results;
 }
 
-inline std::vector<std::u8string_view> top_map(const df::string_counts& counts, const int limit)
+inline std::vector<std::string_view> top_map(const df::string_counts& counts, const int limit)
 {
-	std::vector<std::pair<int, std::u8string_view>> all;
+	std::vector<std::pair<int, std::string_view>> all;
 	all.reserve(counts.size());
 
 	for (const auto& i : counts)
@@ -43,5 +43,5 @@ inline std::vector<std::u8string_view> top_map(const df::string_counts& counts, 
 		all.emplace_back(i.second, i.first);
 	}
 
-	return top_vec<std::u8string_view, str::iless>(all, limit);
+	return top_vec<std::string_view, str::iless>(all, limit);
 }

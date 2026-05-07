@@ -29,8 +29,8 @@ struct media_entry
 
 struct d64_media
 {
-	std::u8string filename;
-	std::u8string diskname;
+	std::string filename;
+	std::string diskname;
 	std::vector<media_entry> entries;
 };
 
@@ -107,21 +107,21 @@ static std::vector<files::d64_item> dir_list(const d64_media& disk)
 			line.emplace_back('\"');
 			while (line.size() < 23) line.emplace_back(' ');
 
-			std::u8string file_type;
+			std::string file_type;
 
-			if (entry.file_type == 0x80) file_type = u8"DEL"sv;
-			if (entry.file_type == 0x81) file_type = u8"SEQ"sv;
-			if (entry.file_type == 0x82) file_type = u8"PRG"sv;
-			if (entry.file_type == 0x83) file_type = u8"USR"sv;
-			if (entry.file_type == 0x84) file_type = u8"REL"sv;
-			if (entry.file_type == 0x99) file_type = u8"CRT"sv;
+			if (entry.file_type == 0x80) file_type = "DEL";
+			if (entry.file_type == 0x81) file_type = "SEQ";
+			if (entry.file_type == 0x82) file_type = "PRG";
+			if (entry.file_type == 0x83) file_type = "USR";
+			if (entry.file_type == 0x84) file_type = "REL";
+			if (entry.file_type == 0x99) file_type = "CRT";
 
 			for (const auto c : file_type)
 			{
 				line.emplace_back(c);
 			}
 
-			std::u8string line2;
+			std::string line2;
 			auto inserter = std::back_inserter(line2);
 			for (const uint32_t c : line)
 			{

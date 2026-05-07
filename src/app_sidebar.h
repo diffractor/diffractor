@@ -147,9 +147,9 @@ struct plasma
 };
 
 
-static std::u8string format_total_text(const df::count_and_size total, const bool multi_line)
+static std::string format_total_text(const df::count_and_size total, const bool multi_line)
 {
-	std::u8string result;
+	std::string result;
 
 	if (total.count > 0)
 	{
@@ -160,7 +160,7 @@ static std::u8string format_total_text(const df::count_and_size total, const boo
 	{
 		if (!total.size.is_empty())
 		{
-			result += u8"\n"sv;
+			result += "\n";
 			result += prop::format_size(total.size);
 		}
 	}
@@ -171,7 +171,7 @@ static std::u8string format_total_text(const df::count_and_size total, const boo
 struct text_layout_state
 {
 	ui::text_layout_ptr tf;
-	std::u8string text;
+	std::string text;
 	ui::style::font_face font = ui::style::font_face::dialog;
 	ui::style::text_style style = ui::style::text_style::multiline;
 
@@ -184,7 +184,7 @@ struct text_layout_state
 		}
 	}
 
-	void lazy_load(ui::measure_context& mc, const std::u8string& text_in, const ui::style::text_style style_in,
+	void lazy_load(ui::measure_context& mc, const std::string& text_in, const ui::style::text_style style_in,
 	               const ui::style::font_face font_in = ui::style::font_face::dialog)
 	{
 		const auto need_create = tf == nullptr ||
@@ -224,8 +224,8 @@ public:
 
 	icon_index icon = icon_index::none;
 	icon_index tooltip_icon = icon_index::none;
-	std::u8string tooltip_text;
-	std::u8string key;
+	std::string tooltip_text;
+	std::string key;
 	df::search_t search;
 	std::function<df::file_group_histogram(view_state& s, df::cancel_token token)> calc_sum;
 	df::file_group_histogram summary;
@@ -388,7 +388,7 @@ public:
 	{
 		if (!str::is_empty(_drive.vol_name))
 		{
-			title_layout.text = str::format(u8"{} ({})"sv, _drive.name, _drive.vol_name);
+			title_layout.text = std::format("{} ({})", _drive.name, _drive.vol_name);
 		}
 		else
 		{
@@ -440,7 +440,7 @@ public:
 			             ui::average(ui::style::color::sidebar_background, ui::style::color::important_background),
 			             draw_clr.a));
 
-		const auto total_text = str::format(u8"{}|{}"sv, prop::format_size(_drive.used),
+		const auto total_text = std::format("{}|{}", prop::format_size(_drive.used),
 		                                    prop::format_size(_drive.capacity));
 
 		if (!str::is_empty(total_text))
@@ -513,7 +513,7 @@ public:
 
 using search_item_ptr = std::shared_ptr<sidebar_element>;
 using drive_item_ptr = std::shared_ptr<sidebar_drive_element>;
-using search_items_by_key_t = df::hash_map<std::u8string, std::shared_ptr<sidebar_element>, df::ihash, df::ieq>;
+using search_items_by_key_t = df::hash_map<std::string, std::shared_ptr<sidebar_element>, df::ihash, df::ieq>;
 
 class search_item_factory
 {
@@ -522,10 +522,10 @@ public:
 	{
 		const auto path_text = path.text();
 		if (platform::is_server(path_text) || path.is_unc_path()) return icon_index::network;
-		if (contains(path_text, u8"onedrive"sv) || contains(path_text, tt.folder_onedrive)) return icon_index::cloud;
-		if (contains(path_text, u8"picture"sv) || contains(path_text, tt.folder_picture)) return icon_index::photo;
-		if (contains(path_text, u8"video"sv) || contains(path_text, tt.folder_video)) return icon_index::video;
-		if (contains(path_text, u8"music"sv) || contains(path_text, tt.folder_music)) return icon_index::audio;
+		if (contains(path_text, "onedrive") || contains(path_text, tt.folder_onedrive)) return icon_index::cloud;
+		if (contains(path_text, "picture") || contains(path_text, tt.folder_picture)) return icon_index::photo;
+		if (contains(path_text, "video") || contains(path_text, tt.folder_video)) return icon_index::video;
+		if (contains(path_text, "music") || contains(path_text, tt.folder_music)) return icon_index::audio;
 		return icon_index::folder;
 	}
 
@@ -535,7 +535,7 @@ public:
 
 		for (auto folder : s.item_index.index_roots().folders)
 		{
-			auto key = str::format(u8"f:{}"sv, folder);
+			auto key = std::format("f:{}", folder);
 			auto i = create_or_find_item(s, existing, key);
 			i->tooltip_icon = i->icon = calc_folder_icon(folder);
 			i->title_layout.text = folder.name();
@@ -581,7 +581,7 @@ public:
 			if (!title.empty() && !path.empty())
 			{
 				auto search = df::search_t::parse(path);
-				auto item = create_or_find_item(s, existing, u8"s:"s + path);
+				auto item = create_or_find_item(s, existing, "s:"s + path);
 
 				item->tooltip_icon = item->icon = search.has_selector() ? icon_index::folder : icon_index::search;
 				item->title_layout.text = tt.translate_text(title);
@@ -594,7 +594,7 @@ public:
 			}
 		}
 
-		results.emplace_back(create_item(s, existing, u8"@duplicates"s, icon_index::compare, tt.duplicates,
+		results.emplace_back(create_item(s, existing, "@duplicates"s, icon_index::compare, tt.duplicates,
 		                                 tt.duplicates_tooltip, 0));
 
 		return results;
@@ -647,7 +647,7 @@ public:
 			tags = s.item_index.distinct_tags();
 		}
 
-		str::split2(setting.favorite_tags, true, [&tags](std::u8string_view part)
+		str::split2(setting.favorite_tags, true, [&tags](std::string_view part)
 		{
 			tags.emplace_back(part, df::file_group_histogram{});
 		});
@@ -656,12 +656,12 @@ public:
 
 		for (const auto& t : tags)
 		{
-			auto tag = std::u8string(t.first);
+			auto tag = std::string(t.first);
 			auto search = df::search_t().with(prop::tag, tag);
 
 			if (!str::is_empty(tag) && !search.is_empty())
 			{
-				auto key = str::format(u8"t:{}"sv, tag);
+				auto key = std::format("t:{}", tag);
 				auto i = create_or_find_item(s, existing, key);
 
 				i->tooltip_icon = icon_index::tag;
@@ -679,7 +679,7 @@ public:
 		return results;
 	}
 
-	search_item_ptr create_rating_item(view_state& s, const search_items_by_key_t& existing, const std::u8string& key,
+	search_item_ptr create_rating_item(view_state& s, const search_items_by_key_t& existing, const std::string& key,
 	                                   const int rating) const
 	{
 		auto i = create_or_find_item(s, existing, key);
@@ -694,7 +694,7 @@ public:
 		return i;
 	}
 
-	search_item_ptr create_item(view_state& s, const search_items_by_key_t& existing, const std::u8string& key,
+	search_item_ptr create_item(view_state& s, const search_items_by_key_t& existing, const std::string& key,
 	                            const icon_index icon, const text_t& name, const text_t& tooltip,
 	                            const ui::color32 clr = 0) const
 	{
@@ -714,43 +714,43 @@ public:
 	std::vector<search_item_ptr> create_ratings(view_state& s, const search_items_by_key_t& existing) const
 	{
 		std::vector<search_item_ptr> results;
-		results.emplace_back(create_rating_item(s, existing, u8"rating:5"s, 5));
-		results.emplace_back(create_rating_item(s, existing, u8"rating:4"s, 4));
-		results.emplace_back(create_rating_item(s, existing, u8"rating:3"s, 3));
-		results.emplace_back(create_rating_item(s, existing, u8"rating:2"s, 2));
-		results.emplace_back(create_rating_item(s, existing, u8"rating:1"s, 1));
+		results.emplace_back(create_rating_item(s, existing, "rating:5"s, 5));
+		results.emplace_back(create_rating_item(s, existing, "rating:4"s, 4));
+		results.emplace_back(create_rating_item(s, existing, "rating:3"s, 3));
+		results.emplace_back(create_rating_item(s, existing, "rating:2"s, 2));
+		results.emplace_back(create_rating_item(s, existing, "rating:1"s, 1));
 
-		results.emplace_back(create_item(s, existing, u8"rating:-1"s, icon_index::cancel, tt.command_rate_rejected, {},
+		results.emplace_back(create_item(s, existing, "rating:-1"s, icon_index::cancel, tt.command_rate_rejected, {},
 		                                 color_rate_rejected));
 		return results;
 	}
 
 	std::vector<search_item_ptr> create_labels(view_state& s, const search_items_by_key_t& existing) const
 	{
-		static df::hash_map<std::u8string_view, ui::color32, df::ihash, df::ieq> colors =
+		static df::hash_map<std::string_view, ui::color32, df::ihash, df::ieq> colors =
 		{
-			{u8"select"sv, color_label_select},
-			{u8"second"sv, color_label_second},
-			{u8"approved"sv, color_label_approved},
-			{u8"review"sv, color_label_review},
-			{u8"to do"sv, color_label_to_do},
+			{"select", color_label_select},
+			{"second", color_label_second},
+			{"approved", color_label_approved},
+			{"review", color_label_review},
+			{"to do", color_label_to_do},
 		};
 
 		std::vector<search_item_ptr> results;
 
 		auto labels = s.item_index.distinct_labels();
-		labels.emplace_back(u8"select"sv, df::file_group_histogram{});
-		labels.emplace_back(u8"second"sv, df::file_group_histogram{});
-		labels.emplace_back(u8"approved"sv, df::file_group_histogram{});
-		labels.emplace_back(u8"review"sv, df::file_group_histogram{});
-		labels.emplace_back(u8"to do"sv, df::file_group_histogram{});
+		labels.emplace_back("select", df::file_group_histogram{});
+		labels.emplace_back("second", df::file_group_histogram{});
+		labels.emplace_back("approved", df::file_group_histogram{});
+		labels.emplace_back("review", df::file_group_histogram{});
+		labels.emplace_back("to do", df::file_group_histogram{});
 
 		compact_summary(labels);
 
 		for (const auto& lab : labels)
 		{
-			auto label = std::u8string(lab.first);
-			auto key = str::format(u8"l:{}"sv, label);
+			auto label = std::string(lab.first);
+			auto key = std::format("l:{}", label);
 			auto search = df::search_t().with(prop::label, label);
 
 			if (!str::is_empty(label) && !search.is_empty())
@@ -775,7 +775,7 @@ public:
 
 
 	static search_item_ptr create_or_find_item(view_state& s, const search_items_by_key_t& existing,
-	                                           const std::u8string& key)
+	                                           const std::string& key)
 	{
 		const auto found = existing.find(key);
 
@@ -813,9 +813,9 @@ public:
 		update_background_color();
 	}
 
-	std::u8string format_text() const
+	std::string format_text() const
 	{
-		return str::format(u8"{} {}%"sv, tt.indexing, calc_indexing_perc(_s.item_index.stats));
+		return std::format("{} {}%", tt.indexing, calc_indexing_perc(_s.item_index.stats));
 	}
 
 	void render(ui::draw_context& dc, const pointi element_offset) const override
@@ -865,7 +865,7 @@ class sidebar_file_type_element final : public view_element,
 public:
 	bool _center_hover = false;
 	mutable bool _pie_invalid = true;
-	std::u8string _text;
+	std::string _text;
 	view_state& _state;
 
 	struct pie_chart_entry
@@ -1020,7 +1020,7 @@ public:
 			const auto num = platform::format_number(str::to_string(total.count));
 			const auto num_folder = platform::format_number(str::to_string(_state.item_index.stats.index_folder_count));
 			const auto size = prop::format_size(total.size);
-			const auto text = str::format(tt.total_title, num, size, num_folder);
+			const auto text = str_format(tt.total_title.sv(), num, size, num_folder);
 
 			hover.elements->add(std::make_shared<text_element>(tt.collection_title, ui::style::font_face::title,
 			                                                   ui::style::text_style::multiline,
@@ -1075,7 +1075,7 @@ public:
 					                                                   ui::style::text_style::multiline,
 					                                                   view_element_style::line_break));
 
-					const auto text = str::format(tt.collection_contains, num, ft->display_name(e.count > 1), size);
+					const auto text = str_format(tt.collection_contains.sv(), num, ft->display_name(e.count > 1), size);
 					hover.elements->add(std::make_shared<text_element>(text, ui::style::font_face::dialog,
 					                                                   ui::style::text_style::multiline,
 					                                                   view_element_style::line_break));
@@ -1382,8 +1382,8 @@ struct sidebar_history_element final : view_element, std::enable_shared_from_thi
 			const auto num2 = std::make_shared<text_element>(
 				platform::format_number(str::to_string(date_count.modified)),
 				ui::style::text_style::single_line_far);
-			table->add(num1, std::make_shared<text_element>(str::format(tt.items_created_fmt, month, year)));
-			table->add(num2, std::make_shared<text_element>(str::format(tt.items_modified_fmt, month, year)));
+			table->add(num1, std::make_shared<text_element>(str_format(tt.items_created_fmt.sv(), month, year)));
+			table->add(num2, std::make_shared<text_element>(str_format(tt.items_modified_fmt.sv(), month, year)));
 			hover.elements->add(table);
 
 			hover.elements->add(std::make_shared<action_element>(tt.click_to_open_created_modified));
@@ -1667,7 +1667,7 @@ public:
 			                                                   ui::style::text_style::multiline,
 			                                                   view_element_style::line_break));
 			hover.elements->add(std::make_shared<text_element>(
-				format(tt.click_items_from_fmt, location.count, location.name), ui::style::font_face::dialog,
+				str_format(tt.click_items_from_fmt.sv(), location.count, location.name), ui::style::font_face::dialog,
 				ui::style::text_style::multiline, view_element_style::line_break));
 			hover.elements->add(std::make_shared<action_element>(tt.click_to_search));
 		}
@@ -1689,7 +1689,7 @@ public:
 class sidebar_logo_element final : public std::enable_shared_from_this<sidebar_logo_element>, public view_element
 {
 	view_state& _state;
-	std::u8string_view _text = s_app_name;
+	std::string_view _text = s_app_name;
 	ui::style::font_face _font = ui::style::font_face::title;
 	ui::style::text_style _text_style = ui::style::text_style::single_line;
 
@@ -1704,7 +1704,7 @@ public:
 	{
 	}
 
-	void text(const std::u8string_view t)
+	void text(const std::string_view t)
 	{
 		_text = t;
 	}
@@ -2106,7 +2106,7 @@ public:
 				}
 			}
 
-			df::trace(str::format(u8"Sidebar update {} predictions"sv, update_count));
+			df::trace(std::format("Sidebar update {} predictions", update_count));
 		});
 	}
 
@@ -2183,14 +2183,14 @@ public:
 
 	static int preferred_width(ui::measure_context& mc)
 	{
-		const auto extent = mc.measure_text(u8"Documents"sv, ui::style::font_face::dialog,
+		const auto extent = mc.measure_text("Documents", ui::style::font_face::dialog,
 		                                    ui::style::text_style::single_line, 200);
 		return df::mul_div(extent.cx, 5, 2);
 	}
 
 	void focus_changed(const bool has_focus, const ui::control_base_ptr& child) override
 	{
-		df::trace(str::format(u8"Sidebar navigation_controls::focus {}"sv, has_focus));
+		df::trace(std::format("Sidebar navigation_controls::focus {}", has_focus));
 
 		_has_focus = has_focus;
 		_frame->invalidate();

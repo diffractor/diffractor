@@ -966,7 +966,7 @@ file_scan_result scan_jpg(read_stream& s)
 
 		const auto block_len = df::byteswap16(s.peek16(block_offset + 2));
 
-		if (file_len + 2u < block_offset + block_len)
+		if (file_len < block_offset + 2u + block_len)
 		{
 			// truncated
 			break;
@@ -1101,32 +1101,32 @@ file_scan_result scan_jpg(read_stream& s)
 	switch (channels)
 	{
 	case 1:
-		result.pixel_format = u8"gray8"_c;
+		result.pixel_format = "gray8"_c;
 		break;
 
 	case 3:
 		if (has_jfif_marker)
 		{
-			result.pixel_format = u8"YCbCr"_c;
+			result.pixel_format = "YCbCr"_c;
 		}
 		else if (has_adobe_marker)
 		{
 			switch (adobe_transform)
 			{
 			case 0:
-				result.pixel_format = u8"rgb24"_c;
+				result.pixel_format = "rgb24"_c;
 				break;
 			case 1:
-				result.pixel_format = u8"YCbCr"_c;
+				result.pixel_format = "YCbCr"_c;
 				break;
 			default:
-				result.pixel_format = u8"YCbCr"_c;
+				result.pixel_format = "YCbCr"_c;
 				break;
 			}
 		}
 		else
 		{
-			result.pixel_format = u8"YCbCr"_c;
+			result.pixel_format = "YCbCr"_c;
 		}
 		break;
 
@@ -1136,24 +1136,24 @@ file_scan_result scan_jpg(read_stream& s)
 			switch (adobe_transform)
 			{
 			case 0:
-				result.pixel_format = u8"cmyk"_c;
+				result.pixel_format = "cmyk"_c;
 				break;
 			case 2:
-				result.pixel_format = u8"ycck"_c;
+				result.pixel_format = "ycck"_c;
 				break;
 			default:
-				result.pixel_format = u8"ycck"_c;
+				result.pixel_format = "ycck"_c;
 				break;
 			}
 		}
 		else
 		{
-			result.pixel_format = u8"cmyk"_c;
+			result.pixel_format = "cmyk"_c;
 		}
 		break;
 
 	default:
-		result.pixel_format = u8"YCbCr"_c;
+		result.pixel_format = "YCbCr"_c;
 		break;
 	}
 

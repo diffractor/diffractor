@@ -21,7 +21,7 @@ class rename_view final :
 	public std::enable_shared_from_this<rename_view>
 {
 	std::vector<rename_item> _renames;
-	std::u8string _status;
+	std::string _status;
 
 public:
 	rename_view(view_state& state, view_host_ptr host) : list_view(state, std::move(host))
@@ -50,7 +50,7 @@ public:
 	void run() const;
 	void refresh() override;
 
-	std::u8string_view status() override
+	std::string_view status() override
 	{
 		return _status;
 	}
@@ -67,7 +67,7 @@ public:
 		_status.clear();
 	}
 
-	std::u8string_view title() override
+	std::string_view title() override
 	{
 		return s_app_name;
 	}

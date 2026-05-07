@@ -73,9 +73,9 @@ inline double calc_thumb_scale(const sizei dimensions, const sizei limit, const 
 }
 
 
-std::u8string format_invalid_name_message(std::u8string_view name);
-std::u8string_view item_presence_text(item_presence v, bool long_text);
-void parse_more_folders(df::index_roots& result, std::u8string_view more_folders);
+std::string format_invalid_name_message(std::string_view name);
+std::string_view item_presence_text(item_presence v, bool long_text);
+void parse_more_folders(df::index_roots& result, std::string_view more_folders);
 
 namespace df
 {
@@ -125,7 +125,7 @@ namespace df
 
 	struct item_display_info
 	{
-		std::u8string info = {};
+		std::string info = {};
 
 		str::cached name = {};
 		str::cached title = {};
@@ -374,7 +374,7 @@ namespace df
 			return icmp(name, other) < 0;
 		}
 
-		bool operator<(const std::u8string_view other) const
+		bool operator<(const std::string_view other) const
 		{
 			return icmp(name, other) < 0;
 		}
@@ -389,7 +389,7 @@ namespace df
 			return icmp(name, other) == 0;
 		}
 
-		bool operator==(const std::u8string_view other) const
+		bool operator==(const std::string_view other) const
 		{
 			return icmp(name, other) == 0;
 		}
@@ -642,10 +642,10 @@ namespace df
 		str::cached name() const { return _name; }
 		file_type_ref file_type() const { return _ft; }
 
-		std::u8string_view extension() const
+		std::string_view extension() const
 		{
 			if (is_folder()) return {};
-			const std::u8string_view sv = _name;
+			const std::string_view sv = _name;
 			const auto ext = find_ext(sv);
 			return sv.substr(ext);
 		}
@@ -657,7 +657,7 @@ namespace df
 
 		bool is_link() const
 		{
-			return ends(_name, u8".lnk"sv);
+			return ends(_name, ".lnk");
 		}
 
 		bool has_title() const
@@ -678,10 +678,10 @@ namespace df
 			return md ? md->rating : 0;
 		}
 
-		std::u8string_view label() const
+		std::string_view label() const
 		{
 			const auto md = _metadata.load();
-			return md ? md->label : std::u8string_view{};
+			return md ? md->label : std::string_view{};
 		}
 
 		bool has_gps() const
@@ -818,12 +818,12 @@ namespace df
 		view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
 		                                             const std::vector<recti>& excluded_bounds) override;
 
-		platform::file_op_result rename(index_state& index, std::u8string_view name);
+		platform::file_op_result rename(index_state& index, std::string_view name);
 
-		std::u8string base_name() const
+		std::string base_name() const
 		{
-			if (is_folder()) return std::u8string(_name);
-			return std::u8string(path().file_name_without_extension());
+			if (is_folder()) return std::string(_name);
+			return std::string(path().file_name_without_extension());
 		}
 
 		void add_to(item_set& results);
@@ -1074,9 +1074,9 @@ namespace df
 		size_t items_count = 0;
 		str::cached first_file_name;
 
-		std::u8string to_string() const
+		std::string to_string() const
 		{
-			std::u8string result;
+			std::string result;
 
 			if (code == process_result_code::nothing_selected)
 			{
@@ -1085,7 +1085,7 @@ namespace df
 			else
 			{
 				result = format_plural_text(tt.cannot_process_fmt, first_file_name, static_cast<int>(items_count), {});
-				result += u8" "sv;
+				result += " ";
 
 				if (code == process_result_code::cloud_item)
 				{
@@ -1359,7 +1359,7 @@ namespace df
 			return result;
 		}
 
-		item_element_ptr find(const std::u8string_view s) const
+		item_element_ptr find(const std::string_view s) const
 		{
 			for (const auto& i : _items) if (icmp(i->name(), s) == 0 || icmp(i->path().name(), s) == 0) return i;
 			return nullptr;
@@ -1469,7 +1469,7 @@ namespace df
 			val_min = static_cast<double>(INT64_MAX);
 		}
 
-		void update_extent(ui::draw_context& dc, const std::u8string_view text, const double val)
+		void update_extent(ui::draw_context& dc, const std::string_view text, const double val)
 		{
 			const auto max_width = round(_max_width * dc.scale_factor);
 
@@ -1479,7 +1479,7 @@ namespace df
 			val_min = std::min(val_min, val);
 		}
 
-		void update_extent(ui::draw_context& dc, const std::u8string_view text)
+		void update_extent(ui::draw_context& dc, const std::string_view text)
 		{
 			const auto max_width = round(_max_width * dc.scale_factor);
 			extent = std::max(extent, dc.measure_text(text, ui::style::font_face::dialog,
@@ -1504,7 +1504,7 @@ namespace df
 			return bounds;
 		}
 
-		void draw(ui::draw_context& rc, const std::u8string_view text, const double val, const recti bounds,
+		void draw(ui::draw_context& rc, const std::string_view text, const double val, const recti bounds,
 		          const ui::style::font_face text_font, const ui::style::text_style text_style,
 		          const ui::color color) const
 		{
@@ -1521,7 +1521,7 @@ namespace df
 			draw(rc, text, rank_color, bounds, text_font, text_style, color);
 		}
 
-		static void draw(ui::draw_context& rc, const std::u8string_view text, const ui::color bg_color,
+		static void draw(ui::draw_context& rc, const std::string_view text, const ui::color bg_color,
 		                 const recti bounds,
 		                 const ui::style::font_face text_font, const ui::style::text_style text_style,
 		                 const ui::color color)
@@ -1629,7 +1629,7 @@ namespace df
 		mutable item_row_draw_info _row_draw_info;
 
 		int _scroll_tooltip_rating = 0;
-		std::vector<std::u8string> _scroll_tooltip_text;
+		std::vector<std::string> _scroll_tooltip_text;
 
 		mutable std::vector<recti> _layout_bounds;
 		sort_by _sort_order = sort_by::def;
@@ -1637,7 +1637,7 @@ namespace df
 		bool _show_folder = true;
 		group_key _key;
 
-		std::u8string scroll_text;
+		std::string scroll_text;
 		icon_index icon = icon_index::none;
 
 		item_group(view_state& s, item_elements items, const item_group_display display, group_key key) noexcept :

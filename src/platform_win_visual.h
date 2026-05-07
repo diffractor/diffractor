@@ -80,7 +80,7 @@ public:
 	{
 	}
 
-	void update(std::u8string_view text, ui::style::text_style text_style) override;
+	void update(std::string_view text, ui::style::text_style text_style) override;
 	sizei measure_text(int cx, int cy) override;
 
 	font_renderer_ptr _renderer;

@@ -11,20 +11,20 @@
 
 #pragma once
 
-std::u8string base64_encode(const uint8_t* input, size_t input_len);
-std::vector<uint8_t> base64_decode(const char8_t* input, size_t input_len);
+std::string base64_encode(const uint8_t* input, size_t input_len);
+std::vector<uint8_t> base64_decode(const char* input, size_t input_len);
 
-inline std::u8string base64_encode(const std::u8string_view s)
+inline std::string base64_encode(const std::string_view s)
 {
 	return base64_encode(std::bit_cast<const uint8_t*>(s.data()), s.size());
 };
 
-inline std::u8string base64_encode(const std::vector<uint8_t>& s)
+inline std::string base64_encode(const std::vector<uint8_t>& s)
 {
 	return base64_encode(s.data(), s.size());
 };
 
-inline std::vector<uint8_t> base64_decode(const std::u8string_view s)
+inline std::vector<uint8_t> base64_decode(const std::string_view s)
 {
 	return base64_decode(s.data(), s.size());
 };

@@ -46,7 +46,7 @@ enum class png_chunk : uint32_t
 	eXIf = 'eXIf',
 };
 
-static constexpr auto png_xmp_header = "XML:com.adobe.xmp\0\0\0\0\0"sv;
+static constexpr auto png_xmp_header = "XML:com.adobe.xmp\0\0\0\0\0";
 static constexpr int png_xmp_header_len = 22;
 
 class buffer_stream
@@ -62,14 +62,14 @@ public:
 
 	void read(uint8_t* dest, const size_t len)
 	{
-		if (_pos + len > _size) throw app_exception(u8"invalid read"s);
+		if (_pos + len > _size) throw app_exception("invalid read"s);
 		memcpy_s(dest, len, _data + _pos, len);
 		_pos += len;
 	}
 
 	void skip(const size_t len)
 	{
-		if (_pos > _size - len) throw app_exception(u8"invalid skip"s);
+		if (_pos > _size - len) throw app_exception("invalid skip"s);
 		_pos += len;
 	}
 };
@@ -118,7 +118,7 @@ ui::image_ptr save_png(const ui::const_surface_ptr& surface_in, const metadata_p
 
 		/*if (setjmp(png_jmpbuf(png.get())))
 		{
-			throw app_exception(u8"write_png failed"sv);
+			throw app_exception("write_png failed");
 		}*/
 
 		df::blob result;
@@ -215,7 +215,7 @@ ui::surface_ptr load_png(const df::cspan data)
 {
 	if (data.size < 8 || png_sig_cmp(data.data, 0, 8))
 	{
-		throw app_exception(u8"load_png invalid png header"s);
+		throw app_exception("load_png invalid png header"s);
 	}
 
 	buffer_stream stream(data);
@@ -231,7 +231,7 @@ ui::surface_ptr load_png(const df::cspan data)
 
 	/*if (setjmp(png_jmpbuf(png.get())))
 	{
-		throw app_exception(u8"load_png failed"sv);
+		throw app_exception("load_png failed");
 	}*/
 
 	png_set_read_fn(png.get(), &stream, png_read_callback);
@@ -353,7 +353,7 @@ file_scan_result scan_png(read_stream& rs)
 
 	if (rs.size() < sig_len || png_sig_cmp(sig, 0, sig_len))
 	{
-		throw app_exception(u8"load_png invalid png header"s);
+		throw app_exception("load_png invalid png header"s);
 	}
 
 	buffer_stream2 stream(rs);
@@ -384,19 +384,19 @@ file_scan_result scan_png(read_stream& rs)
 
 	if (color_type == PNG_COLOR_TYPE_GRAY)
 	{
-		result.pixel_format = u8"gray"_c;
+		result.pixel_format = "gray"_c;
 	}
 	else if (color_type == PNG_COLOR_TYPE_PALETTE)
 	{
-		result.pixel_format = u8"palette"_c;
+		result.pixel_format = "palette"_c;
 	}
 	else if (color_type == PNG_COLOR_TYPE_RGB)
 	{
-		result.pixel_format = u8"rgb"_c;
+		result.pixel_format = "rgb"_c;
 	}
 	else if (color_type == PNG_COLOR_TYPE_RGB_ALPHA)
 	{
-		result.pixel_format = u8"rgba"_c;
+		result.pixel_format = "rgba"_c;
 	}
 
 	// png_set_swap_alpha(png_ptr);

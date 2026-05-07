@@ -53,7 +53,7 @@ inline std::vector<uint8_t> make_orientation_exif(ui::orientation orientation)
 	return exif_block;
 }
 
-constexpr bool first_char_is(const std::u8string_view sv, const char8_t c)
+constexpr bool first_char_is(const std::string_view sv, const char c)
 {
 	return !sv.empty() && sv[0] == c;
 }
@@ -200,8 +200,8 @@ namespace metadata_exif
 		}
 	};
 
-	using srational32_t = rational_t<uint32_t>;
-	using urational32_t = rational_t<int32_t>;
+	using srational32_t = rational_t<int32_t>;
+	using urational32_t = rational_t<uint32_t>;
 
 	void parse(prop::item_metadata& pd, df::cspan cs);
 	void fix_exif_dimensions(df::span data, sizei dimensions);

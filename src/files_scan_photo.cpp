@@ -64,7 +64,7 @@ static file_scan_result scan_gif(read_stream& s)
 
 	if (!isGif87a && !isGif89a)
 	{
-		throw app_exception(u8"no gif header"s);
+		throw app_exception("no gif header"s);
 	}
 
 	result.width = *std::bit_cast<const uint16_t*>(header + 6);
@@ -396,12 +396,12 @@ static double load_gps_val(read_stream& s, const uint32_t pos, const unsigned sh
 	return gps_coordinate::dms_to_decimal(degrees.to_real(), minutes.to_real(), seconds.to_real());
 }
 
-static std::u8string load_text(read_stream& s, const uint32_t pos, const unsigned short order)
+static std::string load_text(read_stream& s, const uint32_t pos, const unsigned short order)
 {
 	const auto len = get_uint32(s.peek32(pos + 4), order);
 	const auto offset = len <= 4 ? pos + 8u : get_uint32(s.peek32(pos + 8), order);
 
-	std::u8string result;
+	std::string result;
 	result.resize(len, 0);
 	s.read(offset, std::bit_cast<uint8_t*>(result.data()), len);
 	return result;
@@ -567,6 +567,7 @@ static file_scan_result scan_tiff(read_stream& s)
 
 							case EXIF_TAG_JPEG_INTERCHANGE_FORMAT_LENGTH:
 								possible_thumbnail_len = get_uint32(s.peek32(pos + 8), order);
+								break;
 
 							case EXIF_TAG_ORIENTATION:
 								result.orientation = static_cast<ui::orientation>(get_uint16(
@@ -622,7 +623,7 @@ file_scan_result scan_photo(read_stream& s)
 
 			result.width = abs(bmp_info->biWidth);
 			result.height = abs(bmp_info->biHeight);
-			result.pixel_format = str::cache(str::format(u8"RGB{}"sv, bmp_info->biBitCount));
+			result.pixel_format = str::cache(std::format("RGB{}", bmp_info->biBitCount));
 			result.format = detected_format::BMP;
 			result.success = true;
 		}
@@ -630,7 +631,7 @@ file_scan_result scan_photo(read_stream& s)
 		{
 			result = scan_gif(s);
 			result.format = detected_format::GIF;
-			result.pixel_format = u8"pal8"_c;
+			result.pixel_format = "pal8"_c;
 		}
 		else if (expected == detected_format::JPEG) // && memcmp(p, sig_jpg, 3) == 0)
 		{

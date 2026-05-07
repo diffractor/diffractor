@@ -51,11 +51,6 @@ namespace df
 			return crypto::fnv1a_i(path.text());
 		}
 
-		size_t operator()(const std::u8string_view s) const
-		{
-			return crypto::fnv1a_i(s);
-		}
-
 		size_t operator()(const std::string_view s) const
 		{
 			return crypto::fnv1a_i(s);
@@ -69,7 +64,7 @@ namespace df
 			return l.icmp(r) < 0;
 		}
 
-		bool operator()(const std::u8string_view l, const std::u8string_view r) const
+		bool operator()(const std::string_view l, const std::string_view r) const
 		{
 			return str::icmp(l, r) < 0;
 		}
@@ -92,7 +87,7 @@ namespace df
 			return l.compare(r) == 0;
 		}
 
-		bool operator()(const std::u8string_view l, const std::u8string_view r) const
+		bool operator()(const std::string_view l, const std::string_view r) const
 		{
 			const auto ll = l.size();
 			const auto rl = r.size();
@@ -105,16 +100,11 @@ namespace df
 		{
 			return str::icmp(l, r) == 0;
 		}
-
-		bool operator()(const std::string_view l, const std::string_view r) const
-		{
-			return str::icmp(l, r) == 0;
-		}
 	};
 
 	struct hash
 	{
-		uint32_t operator()(const std::u8string_view r) const
+		uint32_t operator()(const std::string_view r) const
 		{
 			return crypto::crc32c(r.data(), r.size());
 		}
@@ -122,20 +112,20 @@ namespace df
 
 	struct eq
 	{
-		/*bool operator()(const char8_t* l, const char8_t* r) const
+		/*bool operator()(const char* l, const char* r) const
 		{
 			return strcmp(l, r) == 0;
 		}*/
 
-		bool operator()(const std::u8string_view l, const std::u8string_view r) const
+		bool operator()(const std::string_view l, const std::string_view r) const
 		{
 			return l.compare(r) == 0;
 		}
 	};
 
-	using string_map = hash_map<std::u8string, std::u8string, ihash, ieq>;
-	using string_counts = hash_map<std::u8string_view, int_counter, ihash, ieq>;
-	using dense_string_counts = dense_hash_map<std::u8string_view, int_counter, ihash, ieq>;
+	using string_map = hash_map<std::string, std::string, ihash, ieq>;
+	using string_counts = hash_map<std::string_view, int_counter, ihash, ieq>;
+	using dense_string_counts = dense_hash_map<std::string_view, int_counter, ihash, ieq>;
 	using file_path_counts = hash_map<file_path, int_counter, ihash, ieq>;
 	using folder_counts = hash_map<folder_path, int_counter, ihash, ieq>;
 	using unique_folders = hash_set<folder_path, ihash, ieq>;

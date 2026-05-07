@@ -73,9 +73,9 @@ namespace df
 			return find_key == key;
 		}
 
-		bool is_match(const prop::key_ref find_key, const std::u8string_view find_text) const
+		bool is_match(const prop::key_ref find_key, const std::string_view find_text) const
 		{
-			return find_key == key && ifind(text, find_text) != std::u8string_view::npos;
+			return find_key == key && ifind(text, find_text) != std::string_view::npos;
 		}
 
 		search_result_type merge_result_type(const search_result_type& existing) const
@@ -91,17 +91,17 @@ namespace df
 		}
 	};
 
-	inline bool is_probably_selector(const std::u8string_view text)
+	inline bool is_probably_selector(const std::string_view text)
 	{
 		return item_selector::can_iterate(text) &&
-			text.find(u8" #"sv) == std::u8string::npos &&
-			text.find(u8" @"sv) == std::u8string::npos &&
-			text.find(u8" *"sv) == std::u8string::npos &&
-			text.find(u8"** "sv) == std::u8string::npos &&
-			text.find(u8"**\\ "sv) == std::u8string::npos &&
-			text.find(u8"**/ "sv) == std::u8string::npos &&
-			text.find(u8"\\ "sv) == std::u8string::npos &&
-			text.find(u8"/ "sv) == std::u8string::npos;
+			text.find(" #") == std::string::npos &&
+			text.find(" @") == std::string::npos &&
+			text.find(" *") == std::string::npos &&
+			text.find("** ") == std::string::npos &&
+			text.find("**\\ ") == std::string::npos &&
+			text.find("**/ ") == std::string::npos &&
+			text.find("\\ ") == std::string::npos &&
+			text.find("/ ") == std::string::npos;
 	}
 
 	enum class search_term_modifier_bool
@@ -313,7 +313,7 @@ namespace df
 		search_term_modifier modifiers;
 
 		prop::key_ref key = prop::null;
-		std::u8string text;
+		std::string text;
 		bool _is_wildcard = false;
 		int int_val = 0;
 		uint64_t int64_val = 0;
@@ -334,7 +334,7 @@ namespace df
 		{
 		}
 
-		explicit search_term(const search_term_type tt, const std::u8string_view v,
+		explicit search_term(const search_term_type tt, const std::string_view v,
 		                     const search_term_modifier& mods) noexcept :
 			type(tt),
 			modifiers(mods),
@@ -354,7 +354,7 @@ namespace df
 		{
 		}
 
-		explicit search_term(const prop::key_ref k, const std::u8string_view v,
+		explicit search_term(const prop::key_ref k, const std::string_view v,
 		                     const search_term_modifier& mods) noexcept :
 			type(search_term_type::value),
 			modifiers(mods),
@@ -389,7 +389,7 @@ namespace df
 		{
 		}
 
-		explicit search_term(const std::u8string_view v, const search_term_modifier& mods) noexcept :
+		explicit search_term(const std::string_view v, const search_term_modifier& mods) noexcept :
 			type(search_term_type::text),
 			modifiers(mods),
 			text(v),
@@ -551,7 +551,7 @@ namespace df
 		}
 	};
 
-	std::u8string format_term(const search_term& term);
+	std::string format_term(const search_term& term);
 
 
 	struct related_info
@@ -597,7 +597,7 @@ namespace df
 		std::vector<item_selector> _selectors;
 		std::vector<search_term> _terms;
 		related_info _related;
-		std::u8string _raw;
+		std::string _raw;
 
 	public:
 		search_t() noexcept = default;
@@ -676,7 +676,7 @@ namespace df
 		{
 			for (const auto& t : _terms)
 			{
-				if (t.type == search_term_type::text && str::contains(t.text, u8"**"sv))
+				if (t.type == search_term_type::text && str::contains(t.text, "**"))
 				{
 					return true;
 				}
@@ -692,7 +692,7 @@ namespace df
 			return !_related.path.is_empty();
 		}
 
-		search_t& with(const prop::key_ref k, std::u8string_view v)
+		search_t& with(const prop::key_ref k, std::string_view v)
 		{
 			_terms.emplace_back(k, v, search_term_modifier(true));
 			_raw.clear();
@@ -734,7 +734,7 @@ namespace df
 			return *this;
 		}
 
-		search_t& without(const prop::key_ref k, const std::u8string_view v)
+		search_t& without(const prop::key_ref k, const std::string_view v)
 		{
 			_terms.emplace_back(k, v, search_term_modifier(false));
 			_raw.clear();
@@ -748,7 +748,7 @@ namespace df
 			return *this;
 		}
 
-		search_t& with_extension(std::u8string_view v)
+		search_t& with_extension(std::string_view v)
 		{
 			_terms.emplace_back(search_term_type::extension, v, search_term_modifier(true));
 			_raw.clear();
@@ -786,14 +786,14 @@ namespace df
 		date_parts find_date_parts() const;
 		void next_date(bool forward);
 
-		search_t& with(const std::u8string_view a)
+		search_t& with(const std::string_view a)
 		{
 			_terms.emplace_back(a, search_term_modifier(true));
 			_raw.clear();
 			return *this;
 		}
 
-		search_t& with(const std::vector<std::u8string>& a)
+		search_t& with(const std::vector<std::string>& a)
 		{
 			for (const auto& s : a) _terms.emplace_back(s, search_term_modifier(true));
 			_raw.clear();
@@ -835,7 +835,7 @@ namespace df
 			return *this;
 		}
 
-		search_t& fuzzy(const prop::key_ref k, const std::u8string_view v)
+		search_t& fuzzy(const prop::key_ref k, const std::string_view v)
 		{
 			_terms.emplace_back(k, v, search_term_modifier(true, true));
 			_raw.clear();
@@ -933,7 +933,7 @@ namespace df
 			return *this;
 		}
 
-		search_t& add_selector(const std::u8string_view sv)
+		search_t& add_selector(const std::string_view sv)
 		{
 			_selectors.emplace_back(item_selector(sv));
 			_raw.clear();
@@ -1006,7 +1006,7 @@ namespace df
 			return _related;
 		}
 
-		bool contains(const prop::key_ref k, const std::u8string_view v) const
+		bool contains(const prop::key_ref k, const std::string_view v) const
 		{
 			return std::find_if(_terms.begin(), _terms.end(), [k, v](auto&& t) { return t.key == k && t.text == v; }) !=
 				_terms.end();
@@ -1019,16 +1019,16 @@ namespace df
 
 		void parse_part(const search_part& part);
 
-		search_t parse_from_input(std::u8string_view text) const;
-		static search_t parse_path(std::u8string_view text);
-		static search_t parse(std::u8string_view text);
+		search_t parse_from_input(std::string_view text) const;
+		static search_t parse_path(std::string_view text);
+		static search_t parse(std::string_view text);
 
-		void raw_text(const std::u8string_view raw) { _raw = raw; };
-		const std::u8string& raw_text() const { return _raw; };
+		void raw_text(const std::string_view raw) { _raw = raw; };
+		const std::string& raw_text() const { return _raw; };
 
 		void normalize();
-		std::u8string text() const;
-		std::u8string format_terms() const;
+		std::string text() const;
+		std::string format_terms() const;
 
 		bool has_type() const
 		{
@@ -1076,7 +1076,7 @@ namespace df
 	struct search_parent
 	{
 		search_t parent;
-		std::u8string name;
+		std::string name;
 		paths selection;
 	};
 

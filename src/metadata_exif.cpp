@@ -242,7 +242,9 @@ public:
 
 	bool is_overflow(const size_t i, const size_t size) const
 	{
-		return i < 0 || i + size > _size;
+		// Guard against additive overflow on untrusted offsets.
+		if (size > _size) return true;
+		return i > _size - size;
 	}
 
 	const uint8_t* data() const
@@ -272,7 +274,7 @@ public:
 		{
 			const auto* p = _data + i;
 
-			if (len > 7 && memcmp(p, u8"UNICODE", 7) == 0)
+			if (len > 7 && memcmp(p, "UNICODE", 7) == 0)
 			{
 				if (len > 9)
 				{
@@ -301,14 +303,14 @@ public:
 					return str::strip_and_cache({std::bit_cast<const wchar_t*>(dst), char_length});
 				}
 			}
-			else if (len > 5 && memcmp(p, u8"ASCII", 5) == 0)
+			else if (len > 5 && memcmp(p, "ASCII", 5) == 0)
 			{
 				if (len > 8)
 				{
 					p = p + 8;
 					return is_junk(p, len)
 						       ? str::cached{}
-						       : str::strip_and_cache({std::bit_cast<const char8_t*>(p), len - 8});
+						       : str::strip_and_cache({std::bit_cast<const char*>(p), len - 8});
 				}
 			}
 			else if (is_junk(p, len))
@@ -319,13 +321,13 @@ public:
 			{
 				return str::strip_and_cache({std::bit_cast<const wchar_t*>(p), len / 2});
 			}
-			else if (str::is_utf8(std::bit_cast<const char8_t*>(p), len))
+			else if (str::is_utf8(std::bit_cast<const char*>(p), len))
 			{
-				return str::strip_and_cache({std::bit_cast<const char8_t*>(p), len});
+				return str::strip_and_cache({std::bit_cast<const char*>(p), len});
 			}
 			else
 			{
-				return u8"?"_c;
+				return "?"_c;
 			}
 		}
 
@@ -439,8 +441,8 @@ struct exif_dir_entry
 
 	uint32_t get_uint32(const uint32_t i) const
 	{
-		const auto o = data_offset() + i * 2;
-		if (_data.is_overflow(o, 2)) return 0;
+		const auto o = data_offset() + i * 4;
+		if (_data.is_overflow(o, 4)) return 0;
 		return _data.get_uint32(o);
 	}
 
@@ -462,7 +464,7 @@ struct exif_dir_entry
 	str::cached get_cached_string(const bool probably_unicode) const
 	{
 		if (FMT_STRING != _format && FMT_UNDEFINED != _format)
-			return u8"?"_c;
+			return "?"_c;
 
 		return _data.cached_string(data_offset(), size(), probably_unicode);
 	}
@@ -483,11 +485,11 @@ struct exif_dir_entry
 		return _data.get_urational(offset);
 	}
 
-	std::u8string_view text() const
+	std::string_view text() const
 	{
 		const auto len = size();
-		const auto* const sz = std::bit_cast<const char8_t*>(_data.data(data_offset(), len));
-		return sz ? std::u8string_view{sz, len} : std::u8string_view{};
+		const auto* const sz = std::bit_cast<const char*>(_data.data(data_offset(), len));
+		return sz ? std::string_view{sz, len} : std::string_view{};
 	}
 
 	bool is_intel() const
@@ -578,7 +580,7 @@ public:
 					}
 					else
 					{
-						//df::log(__FUNCTION__, u8"Invalid EXIF Tag: u8" << tag._tag;
+						//df::log(__FUNCTION__, "Invalid EXIF Tag: " << tag._tag;
 					}
 				}
 			}
@@ -595,11 +597,11 @@ private:
 		{
 			// Olympus & Nikon & Sanyo 
 			if (size >= 8 &&
-				(!memcmp(data, u8"OLYMP", 6) ||
-					!memcmp(data, u8"OLYMPUS", 8) ||
-					!memcmp(data, u8"SANYO", 6) ||
-					!memcmp(data, u8"EPSON", 6) ||
-					!memcmp(data, u8"Nikon", 6)))
+				(!memcmp(data, "OLYMP", 6) ||
+					!memcmp(data, "OLYMPUS", 8) ||
+					!memcmp(data, "SANYO", 6) ||
+					!memcmp(data, "EPSON", 6) ||
+					!memcmp(data, "Nikon", 6)))
 			{
 				return EXIF_DATA_TYPE_MAKER_NOTE_OLYMPUS;
 			}
@@ -610,7 +612,7 @@ private:
 			}
 
 			// Canon 
-			if (icmp(_make, u8"Canon"sv) == 0)
+			if (icmp(_make, "Canon") == 0)
 			{
 				return EXIF_DATA_TYPE_MAKER_NOTE_CANON;
 			}
@@ -618,21 +620,21 @@ private:
 			// Pentax & some variant of Nikon 
 			if (size >= 2 && data[0] == 0x00 && data[1] == 0x1b)
 			{
-				if (icmp(_make, u8"Nikon"sv) == 0)
+				if (icmp(_make, "Nikon") == 0)
 				{
 					return EXIF_DATA_TYPE_MAKER_NOTE_NIKON;
 				}
 				return EXIF_DATA_TYPE_MAKER_NOTE_PENTAX;
 			}
-			if (size >= 8 && !memcmp(data, u8"AOC", 4))
+			if (size >= 8 && !memcmp(data, "AOC", 4))
 			{
 				return EXIF_DATA_TYPE_MAKER_NOTE_PENTAX;
 			}
-			if (size >= 8 && !memcmp(data, u8"QVC", 4))
+			if (size >= 8 && !memcmp(data, "QVC", 4))
 			{
 				return EXIF_DATA_TYPE_MAKER_NOTE_CASIO;
 			}
-			if (size >= 12 && !memcmp(data, u8"FUJIFILM", 8))
+			if (size >= 12 && !memcmp(data, "FUJIFILM", 8))
 			{
 				return EXIF_DATA_TYPE_MAKER_NOTE_FUJI;
 			}
@@ -715,284 +717,284 @@ static void exif_enumerate(const std::function<void(exif_dir_entry&)>& h, const 
 
 class canon_lenses
 {
-	df::hash_map<int, const char8_t*> _choices = {
-		{1, u8"Canon EF 50mm f/1.8"},
-		{2, u8"Canon EF 28mm f/2.8"},
-		{3, u8"Canon EF 135mm f/2.8 Soft"},
-		{4, u8"Canon EF 35-105mm f/3.5-4.5"}, // 0
-		{4, u8"Sigma UC Zoom 35-135mm f/4-5.6"}, // 1
-		{5, u8"Canon EF 35-70mm f/3.5-4.5"},
-		{6, u8"Canon EF 28-70mm f/3.5-4.5"}, // 0
-		{6, u8"Sigma 18-50mm f/3.5-5.6 DC"}, // 1
-		{6, u8"Sigma 18-125mm f/3.5-5.6 DC IF ASP"}, // 2
-		{6, u8"Tokina AF193-2 19-35mm f/3.5-4.5"}, // 3
-		{6, u8"Sigma 28-80mm f/3.5-5.6 II Macro"}, // 4
-		{7, u8"Canon EF 100-300mm f/5.6L"},
-		{8, u8"Canon EF 100-300mm f/5.6"}, // 0
-		{8, u8"Sigma 70-300mm f/4-5.6 [APO] DG Macro"}, // 1
-		{8, u8"Tokina AT-X 242 AF 24-200mm f/3.5-5.6"}, // 2
-		{9, u8"Canon EF 70-210mm f/4"}, // 0
-		{9, u8"Sigma 55-200mm f/4-5.6 DC"}, // 1
-		{10, u8"Canon EF 50mm f/2.5 Macro"}, // 0
-		{10, u8"Sigma 50mm f/2.8 EX"}, // 1
-		{10, u8"Sigma 28mm f/1.8"}, // 2
-		{10, u8"Sigma 105mm f/2.8 Macro EX"}, // 3
-		{10, u8"Sigma 70mm f/2.8 EX DG Macro EF"}, // 4
-		{11, u8"Canon EF 35mm f/2"},
-		{13, u8"Canon EF 15mm f/2.8 Fisheye"},
-		{14, u8"Canon EF 50-200mm f/3.5-4.5L"},
-		{15, u8"Canon EF 50-200mm f/3.5-4.5"},
-		{16, u8"Canon EF 35-135mm f/3.5-4.5"},
-		{17, u8"Canon EF 35-70mm f/3.5-4.5A"},
-		{18, u8"Canon EF 28-70mm f/3.5-4.5"},
-		{20, u8"Canon EF 100-200mm f/4.5A"},
-		{21, u8"Canon EF 80-200mm f/2.8L"},
-		{22, u8"Canon EF 20-35mm f/2.8L"}, // 0
-		{22, u8"Tokina AT-X 280 AF PRO 28-80mm f/2.8 Aspherical"}, // 1
-		{23, u8"Canon EF 35-105mm f/3.5-4.5"},
-		{24, u8"Canon EF 35-80mm f/4-5.6 Power Zoom"},
-		{25, u8"Canon EF 35-80mm f/4-5.6 Power Zoom"},
-		{26, u8"Canon EF 100mm f/2.8 Macro"}, // 0
-		{26, u8"Cosina 100mm f/3.5 Macro AF"}, // 1
-		{26, u8"Tamron SP AF 90mm f/2.8 Di Macro"}, // 2
-		{26, u8"Tamron SP AF 180mm f/3.5 Di Macro"}, // 3
-		{26, u8"Carl Zeiss Planar T* 50mm f/1.4"}, // 4
-		{27, u8"Canon EF 35-80mm f/4-5.6"},
-		{28, u8"Canon EF 80-200mm f/4.5-5.6"}, // 0
-		{28, u8"Tamron SP AF 28-105mm f/2.8 LD Aspherical IF"}, // 1
-		{28, u8"Tamron SP AF 28-75mm f/2.8 XR Di LD Aspherical [IF] Macro"}, // 2
-		{28, u8"Tamron AF 70-300mm f/4.5-5.6 Di LD 1:2 Macro Zoom"}, // 3
-		{28, u8"Tamron AF Aspherical 28-200mm f/3.8-5.6"}, // 4
-		{29, u8"Canon EF 50mm f/1.8 MkII"},
-		{30, u8"Canon EF 35-105mm f/4.5-5.6"},
-		{31, u8"Canon EF 75-300mm f/4-5.6"}, // 0
-		{31, u8"Tamron SP AF 300mm f/2.8 LD IF"}, // 1
-		{32, u8"Canon EF 24mm f/2.8"}, // 0
-		{32, u8"Sigma 15mm f/2.8 EX Fisheye"}, // 1
-		{33, u8"Voigtlander or Carl Zeiss Lens"}, // 0
-		{33, u8"Voigtlander Ultron 40mm f/2 SLII Aspherical"}, // 1
-		{33, u8"Carl Zeiss Distagon 15mm T* f/2.8 ZE"}, // 2
-		{33, u8"Carl Zeiss Distagon 18mm T* f/3.5 ZE"}, // 3
-		{33, u8"Carl Zeiss Distagon 21mm T* f/2.8 ZE"}, // 4
-		{33, u8"Carl Zeiss Distagon 28mm T* f/2 ZE"}, // 5
-		{33, u8"Carl Zeiss Distagon 35mm T* f/2 ZE"}, // 6
-		{33, u8"Carl Zeiss Planar 50mm T* f/1.4 ZE"}, // 7
-		{35, u8"Canon EF 35-80mm f/4-5.6"},
-		{36, u8"Canon EF 38-76mm f/4.5-5.6"},
-		{37, u8"Canon EF 35-80mm f/4-5.6"}, // 0
-		{37, u8"Tamron 70-200mm f/2.8 Di LD IF Macro"}, // 1
-		{37, u8"Tamron AF 28-300mm f/3.5-6.3 XR Di VC LD Aspherical [IF] Macro Model A20"}, // 2
-		{37, u8"Tamron SP AF 17-50mm f/2.8 XR Di II VC LD Aspherical [IF] u8"}, // 3
-		{37, u8"Tamron AF 18-270mm f/3.5-6.3 Di II VC LD Aspherical [IF] Macro"}, // 4
-		{38, u8"Canon EF 80-200mm f/4.5-5.6"},
-		{39, u8"Canon EF 75-300mm f/4-5.6"},
-		{40, u8"Canon EF 28-80mm f/3.5-5.6"},
-		{41, u8"Canon EF 28-90mm f/4-5.6"},
-		{42, u8"Canon EF 28-200mm f/3.5-5.6"}, // 0
-		{42, u8"Tamron AF 28-300mm f/3.5-6.3 XR Di VC LD Aspherical [IF] Macro Model A20"}, // 1
-		{43, u8"Canon EF 28-105mm f/4-5.6"},
-		{44, u8"Canon EF 90-300mm f/4.5-5.6"},
-		{45, u8"Canon EF-S 18-55mm f/3.5-5.6"},
-		{46, u8"Canon EF 28-90mm f/4-5.6"},
-		{48, u8"Canon EF-S 18-55mm f/3.5-5.6 IS"},
-		{49, u8"Canon EF-S 55-250mm f/4-5.6 IS"},
-		{50, u8"Canon EF-S 18-200mm f/3.5-5.6 IS"},
-		{51, u8"Canon EF-S 18-135mm f/3.5-5.6 IS"},
-		{52, u8"Canon EF-S 18-55mm f/3.5-5.6 IS II"},
-		{53, u8"Canon EF-S 18-55mm f/3.5-5.6 III"},
-		{54, u8"Canon EF-S 55-250mm f/4-5.6 IS II"},
-		{94, u8"Canon TS-E 17mm f/4L"},
-		{95, u8"Canon TS-E 24.0mm f/3.5 L II"},
-		{124, u8"Canon MP-E 65mm f/2.8 1-5x Macro Photo"},
-		{125, u8"Canon TS-E 24mm f/3.5L"},
-		{126, u8"Canon TS-E 45mm f/2.8"},
-		{127, u8"Canon TS-E 90mm f/2.8"},
-		{129, u8"Canon EF 300mm f/2.8L"},
-		{130, u8"Canon EF 50mm f/1.0L"},
-		{131, u8"Canon EF 28-80mm f/2.8-4L"}, // 0
-		{131, u8"Sigma 8mm f/3.5 EX DG Circular Fisheye"}, // 1
-		{131, u8"Sigma 17-35mm f/2.8-4 EX DG Aspherical HSM"}, // 2
-		{131, u8"Sigma 17-70mm f/2.8-4.5 DC Macro"}, // 3
-		{131, u8"Sigma APO 50-150mm f/2.8 EX DC HSM"}, // 4
-		{131, u8"Sigma APO 120-300mm f/2.8 EX DG HSM"}, // 5
-		{131, u8"Sigma 4.5mm F2.8 EX DC HSM Circular Fisheye"}, // 6
-		{131, u8"Sigma 70-200mm f/2.8 APO EX HSM"}, // 7
-		{132, u8"Canon EF 1200mm f/5.6L"},
-		{134, u8"Canon EF 600mm f/4L IS"},
-		{135, u8"Canon EF 200mm f/1.8L"},
-		{136, u8"Canon EF 300mm f/2.8L"},
-		{137, u8"Canon EF 85mm f/1.2L"}, // 0
-		{137, u8"Sigma 18-50mm f/2.8-4.5 DC OS HSM"}, // 1
-		{137, u8"Sigma 50-200mm f/4-5.6 DC OS HSM"}, // 2
-		{137, u8"Sigma 18-250mm f/3.5-6.3 DC OS HSM"}, // 3
-		{137, u8"Sigma 24-70mm f/2.8 IF EX DG HSM"}, // 4
-		{137, u8"Sigma 18-125mm f/3.8-5.6 DC OS HSM"}, // 5
-		{137, u8"Sigma 17-70mm f/2.8-4 DC Macro OS HSM"}, // 6
-		{137, u8"Sigma 17-50mm f/2.8 OS HSM"}, // 7
-		{137, u8"Sigma 18-200mm f/3.5-6.3 II DC OS HSM"}, // 8
-		{137, u8"Tamron AF 18-270mm f/3.5-6.3 Di II VC PZD"}, // 9
-		{137, u8"Sigma 8-16mm f/4.5-5.6 DC HSM"}, // 10
-		{137, u8"Tamron SP 17-50mm f/2.8 XR Di II VC"}, // 11
-		{137, u8"Tamron SP 60mm f/2 Macro Di II"}, // 12
-		{137, u8"Sigma 10-20mm f/3.5 EX DC HSM"}, // 13
-		{137, u8"Tamron SP 24-70mm f/2.8 Di VC USD"}, // 14
-		{137, u8"Sigma 18-35mm f/1.8 DC HSM"}, // 15
-		{137, u8"Sigma 12-24mm f/4.5-5.6 DG HSM II"}, // 16
-		{138, u8"Canon EF 28-80mm f/2.8-4L"},
-		{139, u8"Canon EF 400mm f/2.8L"},
-		{140, u8"Canon EF 500mm f/4.5L"},
-		{141, u8"Canon EF 500mm f/4.5L"},
-		{142, u8"Canon EF 300mm f/2.8L IS"},
-		{143, u8"Canon EF 500mm f/4L IS"},
-		{144, u8"Canon EF 35-135mm f/4-5.6 USM"},
-		{145, u8"Canon EF 100-300mm f/4.5-5.6 USM"},
-		{146, u8"Canon EF 70-210mm f/3.5-4.5 USM"},
-		{147, u8"Canon EF 35-135mm f/4-5.6 USM"},
-		{148, u8"Canon EF 28-80mm f/3.5-5.6 USM"},
-		{149, u8"Canon EF 100mm f/2 USM"},
-		{150, u8"Canon EF 14mm f/2.8L"}, // 0
-		{150, u8"Sigma 20mm EX f/1.8"}, // 1
-		{150, u8"Sigma 30mm f/1.4 DC HSM"}, // 2
-		{150, u8"Sigma 24mm f/1.8 DG Macro EX"}, // 3
-		{151, u8"Canon EF 200mm f/2.8L"},
-		{152, u8"Canon EF 300mm f/4L"}, // 0
-		{152, u8"Sigma 12-24mm f/4.5-5.6 EX DG ASPHERICAL HSM"}, // 1
-		{152, u8"Sigma 14mm f/2.8 EX Aspherical HSM"}, // 2
-		{152, u8"Sigma 10-20mm f/4-5.6"}, // 3
-		{152, u8"Sigma 100-300mm f/4"}, // 4
-		{153, u8"Canon EF 35-350mm f/3.5-5.6L"}, // 0
-		{153, u8"Sigma 50-500mm f/4-6.3 APO HSM EX"}, // 1
-		{153, u8"Tamron AF 28-300mm f/3.5-6.3 XR LD Aspherical [IF] Macro"}, // 2
-		{153, u8"Tamron AF 18-200mm f/3.5-6.3 XR Di II LD Aspherical [IF] Macro Model A14"}, // 3
-		{153, u8"Tamron 18-250mm f/3.5-6.3 Di II LD Aspherical [IF] Macro"}, // 4
-		{154, u8"Canon EF 20mm f/2.8 USM"},
-		{155, u8"Canon EF 85mm f/1.8 USM"},
-		{156, u8"Canon EF 28-105mm f/3.5-4.5 USM"}, // 0
-		{156, u8"Tamron SP AF 70-300mm f/4-5.6 Di VC USD"}, // 1
-		{160, u8"Canon EF 20-35mm f/3.5-4.5 USM"}, // 0
-		{160, u8"Tamron AF 19-35mm f/3.5-4.5"}, // 1
-		{160, u8"Tokina AT-X 124 AF 12-24mm f/4 DX"}, // 2
-		{160, u8"Tokina AT-X 107 AF DX Fish-eye 10-17mm f/3.5-4.5"}, // 3
-		{160, u8"Tokina AT-X 116 PRO DX AF 11-16mm f/2.8"}, // 4
-		{161, u8"Canon EF 28-70mm f/2.8L"}, // 0
-		{161, u8"Sigma 24-70mm EX f/2.8"}, // 1
-		{161, u8"Sigma 28-70mm f/2.8 EX"}, // 2
-		{161, u8"Tamron AF 17-50mm f/2.8 Di-II LD Aspherical"}, // 3
-		{161, u8"Tamron 90mm f/2.8"}, // 4
-		{161, u8"Sigma 24-60mm f/2.8 EX DG"}, // 5
-		{162, u8"Canon EF 200mm f/2.8L"},
-		{163, u8"Canon EF 300mm f/4L"},
-		{164, u8"Canon EF 400mm f/5.6L"},
-		{165, u8"Canon EF 70-200mm f/2.8 L"},
-		{166, u8"Canon EF 70-200mm f/2.8 L + 1.4x"},
-		{167, u8"Canon EF 70-200mm f/2.8 L + 2x"},
-		{168, u8"Canon EF 28mm f/1.8 USM"},
-		{169, u8"Canon EF 17-35mm f/2.8L"}, // 0
-		{169, u8"Sigma 18-200mm f/3.5-6.3 DC OS"}, // 1
-		{169, u8"Sigma 15-30mm f/3.5-4.5 EX DG Aspherical"}, // 2
-		{169, u8"Sigma 18-50mm f/2.8 Macro"}, // 3
-		{169, u8"Sigma 50mm f/1.4 EX DG HSM"}, // 4
-		{169, u8"Sigma 85mm f/1.4 EX DG HSM"}, // 5
-		{169, u8"Sigma 30mm f/1.4 EX DC HSM"}, // 6
-		{169, u8"Sigma 35mm f/1.4 DG HSM"}, // 7
-		{170, u8"Canon EF 200mm f/2.8L II"},
-		{171, u8"Canon EF 300mm f/4L"},
-		{172, u8"Canon EF 400mm f/5.6L"},
-		{173, u8"Canon EF 180mm Macro f/3.5L"}, // 0
-		{173, u8"Sigma 180mm EX HSM Macro f/3.5"}, // 1
-		{173, u8"Sigma APO Macro 150mm f/3.5 EX DG IF HSM"}, // 2
-		{174, u8"Canon EF 135mm f/2L"}, // 0
-		{174, u8"Sigma 70-200mm f/2.8 EX DG APO OS HSM"}, // 1
-		{174, u8"Sigma 50-500mm f/4.5-6.3 APO DG OS HSM"}, // 2
-		{174, u8"Sigma 150-500mm f/5-6.3 APO DG OS HSM"}, // 3
-		{175, u8"Canon EF 400mm f/2.8L"},
-		{176, u8"Canon EF 24-85mm f/3.5-4.5 USM"},
-		{177, u8"Canon EF 300mm f/4L IS"},
-		{178, u8"Canon EF 28-135mm f/3.5-5.6 IS"},
-		{179, u8"Canon EF 24mm f/1.4L"},
-		{180, u8"Canon EF 35mm f/1.4L"},
-		{181, u8"Canon EF 100-400mm f/4.5-5.6L IS + 1.4x"},
-		{182, u8"Canon EF 100-400mm f/4.5-5.6L IS + 2x"},
-		{183, u8"Canon EF 100-400mm f/4.5-5.6L IS"}, // 0
-		{183, u8"Sigma 150mm f/2.8 EX DG OS HSM APO Macro"}, // 1
-		{183, u8"Sigma 105mm f/2.8 EX DG OS HSM Macro"}, // 2
-		{184, u8"Canon EF 400mm f/2.8L + 2x"},
-		{185, u8"Canon EF 600mm f/4L IS"},
-		{186, u8"Canon EF 70-200mm f/4L"},
-		{187, u8"Canon EF 70-200mm f/4L + 1.4x"},
-		{188, u8"Canon EF 70-200mm f/4L + 2x"},
-		{189, u8"Canon EF 70-200mm f/4L + 2.8x"},
-		{190, u8"Canon EF 100mm f/2.8 Macro"},
-		{191, u8"Canon EF 400mm f/4 DO IS"},
-		{193, u8"Canon EF 35-80mm f/4-5.6 USM"},
-		{194, u8"Canon EF 80-200mm f/4.5-5.6 USM"},
-		{195, u8"Canon EF 35-105mm f/4.5-5.6 USM"},
-		{196, u8"Canon EF 75-300mm f/4-5.6 USM"},
-		{197, u8"Canon EF 75-300mm f/4-5.6 IS USM"},
-		{198, u8"Canon EF 50mm f/1.4 USM"}, // 0
-		{198, u8"Zeiss Otus 55mm f/1.4 ZE"}, // 1
-		{199, u8"Canon EF 28-80mm f/3.5-5.6 USM"},
-		{200, u8"Canon EF 75-300mm f/4-5.6 USM"},
-		{201, u8"Canon EF 28-80mm f/3.5-5.6 USM"},
-		{202, u8"Canon EF 28-80mm f/3.5-5.6 USM IV"},
-		{208, u8"Canon EF 22-55mm f/4-5.6 USM"},
-		{209, u8"Canon EF 55-200mm f/4.5-5.6"},
-		{210, u8"Canon EF 28-90mm f/4-5.6 USM"},
-		{211, u8"Canon EF 28-200mm f/3.5-5.6 USM"},
-		{212, u8"Canon EF 28-105mm f/4-5.6 USM"},
-		{213, u8"Canon EF 90-300mm f/4.5-5.6 USM"},
-		{214, u8"Canon EF-S 18-55mm f/3.5-5.6 USM"},
-		{215, u8"Canon EF 55-200mm f/4.5-5.6 II USM"},
-		{224, u8"Canon EF 70-200mm f/2.8L IS"},
-		{225, u8"Canon EF 70-200mm f/2.8L IS + 1.4x"},
-		{226, u8"Canon EF 70-200mm f/2.8L IS + 2x"},
-		{227, u8"Canon EF 70-200mm f/2.8L IS + 2.8x"},
-		{228, u8"Canon EF 28-105mm f/3.5-4.5 USM"},
-		{229, u8"Canon EF 16-35mm f/2.8L"},
-		{230, u8"Canon EF 24-70mm f/2.8L"},
-		{231, u8"Canon EF 17-40mm f/4L"},
-		{232, u8"Canon EF 70-300mm f/4.5-5.6 DO IS USM"},
-		{233, u8"Canon EF 28-300mm f/3.5-5.6L IS"},
-		{234, u8"Canon EF-S 17-85mm f4-5.6 IS USM"},
-		{235, u8"Canon EF-S 10-22mm f/3.5-4.5 USM"},
-		{236, u8"Canon EF-S 60mm f/2.8 Macro USM"},
-		{237, u8"Canon EF 24-105mm f/4L IS"},
-		{238, u8"Canon EF 70-300mm f/4-5.6 IS USM"},
-		{239, u8"Canon EF 85mm f/1.2L II"},
-		{240, u8"Canon EF-S 17-55mm f/2.8 IS USM"},
-		{241, u8"Canon EF 50mm f/1.2L"},
-		{242, u8"Canon EF 70-200mm f/4L IS"},
-		{243, u8"Canon EF 70-200mm f/4L IS + 1.4x"},
-		{244, u8"Canon EF 70-200mm f/4L IS + 2x"},
-		{245, u8"Canon EF 70-200mm f/4L IS + 2.8x"},
-		{246, u8"Canon EF 16-35mm f/2.8L II"},
-		{247, u8"Canon EF 14mm f/2.8L II USM"},
-		{248, u8"Canon EF 200mm f/2L IS"},
-		{249, u8"Canon EF 800mm f/5.6L IS"},
-		{250, u8"Canon EF 24 f/1.4L II"},
-		{251, u8"Canon EF 70-200mm f/2.8L IS II USM"},
-		{252, u8"Canon EF 70-200mm f/2.8L IS II USM + 1.4x"},
-		{253, u8"Canon EF 70-200mm f/2.8L IS II USM + 2x"},
-		{254, u8"Canon EF 100mm f/2.8L Macro IS USM"},
-		{488, u8"Canon EF-S 15-85mm f/3.5-5.6 IS USM"},
-		{489, u8"Canon EF 70-300mm f/4-5.6L IS USM"},
-		{490, u8"Canon EF 8-15mm f/4L USM"},
-		{491, u8"Canon EF 300mm f/2.8L IS II USM"},
-		{492, u8"Canon EF 400mm f/2.8L IS II USM"},
-		{493, u8"Canon EF 24-105mm f/4L IS USM"},
-		{494, u8"Canon EF 600mm f/4.0L IS II USM"},
-		{495, u8"Canon EF 24-70mm f/2.8L II USM"},
-		{496, u8"Canon EF 200-400mm f/4L IS USM"},
-		{502, u8"Canon EF 28mm f/2.8 IS USM"},
-		{503, u8"Canon EF 24mm f/2.8 IS USM"},
-		{504, u8"Canon EF 24-70mm f/4L IS USM"},
-		{505, u8"Canon EF 35mm f/2 IS USM"},
-		{4142, u8"Canon EF-S 18-135mm f/3.5-5.6 IS STM"},
-		{4143, u8"Canon EF-M 18-55mm f/3.5-5.6 IS STM"},
-		{4144, u8"Canon EF 40mm f/2.8 STM"},
-		{4145, u8"Canon EF-M 22mm f/2 STM"},
-		{4146, u8"Canon EF-S 18-55mm f/3.5-5.6 IS STM"},
-		{4147, u8"Canon EF-M 11-22mm f/4-5.6 IS STM"}
+	df::hash_map<int, const char*> _choices = {
+		{1, "Canon EF 50mm f/1.8"},
+		{2, "Canon EF 28mm f/2.8"},
+		{3, "Canon EF 135mm f/2.8 Soft"},
+		{4, "Canon EF 35-105mm f/3.5-4.5"}, // 0
+		{4, "Sigma UC Zoom 35-135mm f/4-5.6"}, // 1
+		{5, "Canon EF 35-70mm f/3.5-4.5"},
+		{6, "Canon EF 28-70mm f/3.5-4.5"}, // 0
+		{6, "Sigma 18-50mm f/3.5-5.6 DC"}, // 1
+		{6, "Sigma 18-125mm f/3.5-5.6 DC IF ASP"}, // 2
+		{6, "Tokina AF193-2 19-35mm f/3.5-4.5"}, // 3
+		{6, "Sigma 28-80mm f/3.5-5.6 II Macro"}, // 4
+		{7, "Canon EF 100-300mm f/5.6L"},
+		{8, "Canon EF 100-300mm f/5.6"}, // 0
+		{8, "Sigma 70-300mm f/4-5.6 [APO] DG Macro"}, // 1
+		{8, "Tokina AT-X 242 AF 24-200mm f/3.5-5.6"}, // 2
+		{9, "Canon EF 70-210mm f/4"}, // 0
+		{9, "Sigma 55-200mm f/4-5.6 DC"}, // 1
+		{10, "Canon EF 50mm f/2.5 Macro"}, // 0
+		{10, "Sigma 50mm f/2.8 EX"}, // 1
+		{10, "Sigma 28mm f/1.8"}, // 2
+		{10, "Sigma 105mm f/2.8 Macro EX"}, // 3
+		{10, "Sigma 70mm f/2.8 EX DG Macro EF"}, // 4
+		{11, "Canon EF 35mm f/2"},
+		{13, "Canon EF 15mm f/2.8 Fisheye"},
+		{14, "Canon EF 50-200mm f/3.5-4.5L"},
+		{15, "Canon EF 50-200mm f/3.5-4.5"},
+		{16, "Canon EF 35-135mm f/3.5-4.5"},
+		{17, "Canon EF 35-70mm f/3.5-4.5A"},
+		{18, "Canon EF 28-70mm f/3.5-4.5"},
+		{20, "Canon EF 100-200mm f/4.5A"},
+		{21, "Canon EF 80-200mm f/2.8L"},
+		{22, "Canon EF 20-35mm f/2.8L"}, // 0
+		{22, "Tokina AT-X 280 AF PRO 28-80mm f/2.8 Aspherical"}, // 1
+		{23, "Canon EF 35-105mm f/3.5-4.5"},
+		{24, "Canon EF 35-80mm f/4-5.6 Power Zoom"},
+		{25, "Canon EF 35-80mm f/4-5.6 Power Zoom"},
+		{26, "Canon EF 100mm f/2.8 Macro"}, // 0
+		{26, "Cosina 100mm f/3.5 Macro AF"}, // 1
+		{26, "Tamron SP AF 90mm f/2.8 Di Macro"}, // 2
+		{26, "Tamron SP AF 180mm f/3.5 Di Macro"}, // 3
+		{26, "Carl Zeiss Planar T* 50mm f/1.4"}, // 4
+		{27, "Canon EF 35-80mm f/4-5.6"},
+		{28, "Canon EF 80-200mm f/4.5-5.6"}, // 0
+		{28, "Tamron SP AF 28-105mm f/2.8 LD Aspherical IF"}, // 1
+		{28, "Tamron SP AF 28-75mm f/2.8 XR Di LD Aspherical [IF] Macro"}, // 2
+		{28, "Tamron AF 70-300mm f/4.5-5.6 Di LD 1:2 Macro Zoom"}, // 3
+		{28, "Tamron AF Aspherical 28-200mm f/3.8-5.6"}, // 4
+		{29, "Canon EF 50mm f/1.8 MkII"},
+		{30, "Canon EF 35-105mm f/4.5-5.6"},
+		{31, "Canon EF 75-300mm f/4-5.6"}, // 0
+		{31, "Tamron SP AF 300mm f/2.8 LD IF"}, // 1
+		{32, "Canon EF 24mm f/2.8"}, // 0
+		{32, "Sigma 15mm f/2.8 EX Fisheye"}, // 1
+		{33, "Voigtlander or Carl Zeiss Lens"}, // 0
+		{33, "Voigtlander Ultron 40mm f/2 SLII Aspherical"}, // 1
+		{33, "Carl Zeiss Distagon 15mm T* f/2.8 ZE"}, // 2
+		{33, "Carl Zeiss Distagon 18mm T* f/3.5 ZE"}, // 3
+		{33, "Carl Zeiss Distagon 21mm T* f/2.8 ZE"}, // 4
+		{33, "Carl Zeiss Distagon 28mm T* f/2 ZE"}, // 5
+		{33, "Carl Zeiss Distagon 35mm T* f/2 ZE"}, // 6
+		{33, "Carl Zeiss Planar 50mm T* f/1.4 ZE"}, // 7
+		{35, "Canon EF 35-80mm f/4-5.6"},
+		{36, "Canon EF 38-76mm f/4.5-5.6"},
+		{37, "Canon EF 35-80mm f/4-5.6"}, // 0
+		{37, "Tamron 70-200mm f/2.8 Di LD IF Macro"}, // 1
+		{37, "Tamron AF 28-300mm f/3.5-6.3 XR Di VC LD Aspherical [IF] Macro Model A20"}, // 2
+		{37, "Tamron SP AF 17-50mm f/2.8 XR Di II VC LD Aspherical [IF] "}, // 3
+		{37, "Tamron AF 18-270mm f/3.5-6.3 Di II VC LD Aspherical [IF] Macro"}, // 4
+		{38, "Canon EF 80-200mm f/4.5-5.6"},
+		{39, "Canon EF 75-300mm f/4-5.6"},
+		{40, "Canon EF 28-80mm f/3.5-5.6"},
+		{41, "Canon EF 28-90mm f/4-5.6"},
+		{42, "Canon EF 28-200mm f/3.5-5.6"}, // 0
+		{42, "Tamron AF 28-300mm f/3.5-6.3 XR Di VC LD Aspherical [IF] Macro Model A20"}, // 1
+		{43, "Canon EF 28-105mm f/4-5.6"},
+		{44, "Canon EF 90-300mm f/4.5-5.6"},
+		{45, "Canon EF-S 18-55mm f/3.5-5.6"},
+		{46, "Canon EF 28-90mm f/4-5.6"},
+		{48, "Canon EF-S 18-55mm f/3.5-5.6 IS"},
+		{49, "Canon EF-S 55-250mm f/4-5.6 IS"},
+		{50, "Canon EF-S 18-200mm f/3.5-5.6 IS"},
+		{51, "Canon EF-S 18-135mm f/3.5-5.6 IS"},
+		{52, "Canon EF-S 18-55mm f/3.5-5.6 IS II"},
+		{53, "Canon EF-S 18-55mm f/3.5-5.6 III"},
+		{54, "Canon EF-S 55-250mm f/4-5.6 IS II"},
+		{94, "Canon TS-E 17mm f/4L"},
+		{95, "Canon TS-E 24.0mm f/3.5 L II"},
+		{124, "Canon MP-E 65mm f/2.8 1-5x Macro Photo"},
+		{125, "Canon TS-E 24mm f/3.5L"},
+		{126, "Canon TS-E 45mm f/2.8"},
+		{127, "Canon TS-E 90mm f/2.8"},
+		{129, "Canon EF 300mm f/2.8L"},
+		{130, "Canon EF 50mm f/1.0L"},
+		{131, "Canon EF 28-80mm f/2.8-4L"}, // 0
+		{131, "Sigma 8mm f/3.5 EX DG Circular Fisheye"}, // 1
+		{131, "Sigma 17-35mm f/2.8-4 EX DG Aspherical HSM"}, // 2
+		{131, "Sigma 17-70mm f/2.8-4.5 DC Macro"}, // 3
+		{131, "Sigma APO 50-150mm f/2.8 EX DC HSM"}, // 4
+		{131, "Sigma APO 120-300mm f/2.8 EX DG HSM"}, // 5
+		{131, "Sigma 4.5mm F2.8 EX DC HSM Circular Fisheye"}, // 6
+		{131, "Sigma 70-200mm f/2.8 APO EX HSM"}, // 7
+		{132, "Canon EF 1200mm f/5.6L"},
+		{134, "Canon EF 600mm f/4L IS"},
+		{135, "Canon EF 200mm f/1.8L"},
+		{136, "Canon EF 300mm f/2.8L"},
+		{137, "Canon EF 85mm f/1.2L"}, // 0
+		{137, "Sigma 18-50mm f/2.8-4.5 DC OS HSM"}, // 1
+		{137, "Sigma 50-200mm f/4-5.6 DC OS HSM"}, // 2
+		{137, "Sigma 18-250mm f/3.5-6.3 DC OS HSM"}, // 3
+		{137, "Sigma 24-70mm f/2.8 IF EX DG HSM"}, // 4
+		{137, "Sigma 18-125mm f/3.8-5.6 DC OS HSM"}, // 5
+		{137, "Sigma 17-70mm f/2.8-4 DC Macro OS HSM"}, // 6
+		{137, "Sigma 17-50mm f/2.8 OS HSM"}, // 7
+		{137, "Sigma 18-200mm f/3.5-6.3 II DC OS HSM"}, // 8
+		{137, "Tamron AF 18-270mm f/3.5-6.3 Di II VC PZD"}, // 9
+		{137, "Sigma 8-16mm f/4.5-5.6 DC HSM"}, // 10
+		{137, "Tamron SP 17-50mm f/2.8 XR Di II VC"}, // 11
+		{137, "Tamron SP 60mm f/2 Macro Di II"}, // 12
+		{137, "Sigma 10-20mm f/3.5 EX DC HSM"}, // 13
+		{137, "Tamron SP 24-70mm f/2.8 Di VC USD"}, // 14
+		{137, "Sigma 18-35mm f/1.8 DC HSM"}, // 15
+		{137, "Sigma 12-24mm f/4.5-5.6 DG HSM II"}, // 16
+		{138, "Canon EF 28-80mm f/2.8-4L"},
+		{139, "Canon EF 400mm f/2.8L"},
+		{140, "Canon EF 500mm f/4.5L"},
+		{141, "Canon EF 500mm f/4.5L"},
+		{142, "Canon EF 300mm f/2.8L IS"},
+		{143, "Canon EF 500mm f/4L IS"},
+		{144, "Canon EF 35-135mm f/4-5.6 USM"},
+		{145, "Canon EF 100-300mm f/4.5-5.6 USM"},
+		{146, "Canon EF 70-210mm f/3.5-4.5 USM"},
+		{147, "Canon EF 35-135mm f/4-5.6 USM"},
+		{148, "Canon EF 28-80mm f/3.5-5.6 USM"},
+		{149, "Canon EF 100mm f/2 USM"},
+		{150, "Canon EF 14mm f/2.8L"}, // 0
+		{150, "Sigma 20mm EX f/1.8"}, // 1
+		{150, "Sigma 30mm f/1.4 DC HSM"}, // 2
+		{150, "Sigma 24mm f/1.8 DG Macro EX"}, // 3
+		{151, "Canon EF 200mm f/2.8L"},
+		{152, "Canon EF 300mm f/4L"}, // 0
+		{152, "Sigma 12-24mm f/4.5-5.6 EX DG ASPHERICAL HSM"}, // 1
+		{152, "Sigma 14mm f/2.8 EX Aspherical HSM"}, // 2
+		{152, "Sigma 10-20mm f/4-5.6"}, // 3
+		{152, "Sigma 100-300mm f/4"}, // 4
+		{153, "Canon EF 35-350mm f/3.5-5.6L"}, // 0
+		{153, "Sigma 50-500mm f/4-6.3 APO HSM EX"}, // 1
+		{153, "Tamron AF 28-300mm f/3.5-6.3 XR LD Aspherical [IF] Macro"}, // 2
+		{153, "Tamron AF 18-200mm f/3.5-6.3 XR Di II LD Aspherical [IF] Macro Model A14"}, // 3
+		{153, "Tamron 18-250mm f/3.5-6.3 Di II LD Aspherical [IF] Macro"}, // 4
+		{154, "Canon EF 20mm f/2.8 USM"},
+		{155, "Canon EF 85mm f/1.8 USM"},
+		{156, "Canon EF 28-105mm f/3.5-4.5 USM"}, // 0
+		{156, "Tamron SP AF 70-300mm f/4-5.6 Di VC USD"}, // 1
+		{160, "Canon EF 20-35mm f/3.5-4.5 USM"}, // 0
+		{160, "Tamron AF 19-35mm f/3.5-4.5"}, // 1
+		{160, "Tokina AT-X 124 AF 12-24mm f/4 DX"}, // 2
+		{160, "Tokina AT-X 107 AF DX Fish-eye 10-17mm f/3.5-4.5"}, // 3
+		{160, "Tokina AT-X 116 PRO DX AF 11-16mm f/2.8"}, // 4
+		{161, "Canon EF 28-70mm f/2.8L"}, // 0
+		{161, "Sigma 24-70mm EX f/2.8"}, // 1
+		{161, "Sigma 28-70mm f/2.8 EX"}, // 2
+		{161, "Tamron AF 17-50mm f/2.8 Di-II LD Aspherical"}, // 3
+		{161, "Tamron 90mm f/2.8"}, // 4
+		{161, "Sigma 24-60mm f/2.8 EX DG"}, // 5
+		{162, "Canon EF 200mm f/2.8L"},
+		{163, "Canon EF 300mm f/4L"},
+		{164, "Canon EF 400mm f/5.6L"},
+		{165, "Canon EF 70-200mm f/2.8 L"},
+		{166, "Canon EF 70-200mm f/2.8 L + 1.4x"},
+		{167, "Canon EF 70-200mm f/2.8 L + 2x"},
+		{168, "Canon EF 28mm f/1.8 USM"},
+		{169, "Canon EF 17-35mm f/2.8L"}, // 0
+		{169, "Sigma 18-200mm f/3.5-6.3 DC OS"}, // 1
+		{169, "Sigma 15-30mm f/3.5-4.5 EX DG Aspherical"}, // 2
+		{169, "Sigma 18-50mm f/2.8 Macro"}, // 3
+		{169, "Sigma 50mm f/1.4 EX DG HSM"}, // 4
+		{169, "Sigma 85mm f/1.4 EX DG HSM"}, // 5
+		{169, "Sigma 30mm f/1.4 EX DC HSM"}, // 6
+		{169, "Sigma 35mm f/1.4 DG HSM"}, // 7
+		{170, "Canon EF 200mm f/2.8L II"},
+		{171, "Canon EF 300mm f/4L"},
+		{172, "Canon EF 400mm f/5.6L"},
+		{173, "Canon EF 180mm Macro f/3.5L"}, // 0
+		{173, "Sigma 180mm EX HSM Macro f/3.5"}, // 1
+		{173, "Sigma APO Macro 150mm f/3.5 EX DG IF HSM"}, // 2
+		{174, "Canon EF 135mm f/2L"}, // 0
+		{174, "Sigma 70-200mm f/2.8 EX DG APO OS HSM"}, // 1
+		{174, "Sigma 50-500mm f/4.5-6.3 APO DG OS HSM"}, // 2
+		{174, "Sigma 150-500mm f/5-6.3 APO DG OS HSM"}, // 3
+		{175, "Canon EF 400mm f/2.8L"},
+		{176, "Canon EF 24-85mm f/3.5-4.5 USM"},
+		{177, "Canon EF 300mm f/4L IS"},
+		{178, "Canon EF 28-135mm f/3.5-5.6 IS"},
+		{179, "Canon EF 24mm f/1.4L"},
+		{180, "Canon EF 35mm f/1.4L"},
+		{181, "Canon EF 100-400mm f/4.5-5.6L IS + 1.4x"},
+		{182, "Canon EF 100-400mm f/4.5-5.6L IS + 2x"},
+		{183, "Canon EF 100-400mm f/4.5-5.6L IS"}, // 0
+		{183, "Sigma 150mm f/2.8 EX DG OS HSM APO Macro"}, // 1
+		{183, "Sigma 105mm f/2.8 EX DG OS HSM Macro"}, // 2
+		{184, "Canon EF 400mm f/2.8L + 2x"},
+		{185, "Canon EF 600mm f/4L IS"},
+		{186, "Canon EF 70-200mm f/4L"},
+		{187, "Canon EF 70-200mm f/4L + 1.4x"},
+		{188, "Canon EF 70-200mm f/4L + 2x"},
+		{189, "Canon EF 70-200mm f/4L + 2.8x"},
+		{190, "Canon EF 100mm f/2.8 Macro"},
+		{191, "Canon EF 400mm f/4 DO IS"},
+		{193, "Canon EF 35-80mm f/4-5.6 USM"},
+		{194, "Canon EF 80-200mm f/4.5-5.6 USM"},
+		{195, "Canon EF 35-105mm f/4.5-5.6 USM"},
+		{196, "Canon EF 75-300mm f/4-5.6 USM"},
+		{197, "Canon EF 75-300mm f/4-5.6 IS USM"},
+		{198, "Canon EF 50mm f/1.4 USM"}, // 0
+		{198, "Zeiss Otus 55mm f/1.4 ZE"}, // 1
+		{199, "Canon EF 28-80mm f/3.5-5.6 USM"},
+		{200, "Canon EF 75-300mm f/4-5.6 USM"},
+		{201, "Canon EF 28-80mm f/3.5-5.6 USM"},
+		{202, "Canon EF 28-80mm f/3.5-5.6 USM IV"},
+		{208, "Canon EF 22-55mm f/4-5.6 USM"},
+		{209, "Canon EF 55-200mm f/4.5-5.6"},
+		{210, "Canon EF 28-90mm f/4-5.6 USM"},
+		{211, "Canon EF 28-200mm f/3.5-5.6 USM"},
+		{212, "Canon EF 28-105mm f/4-5.6 USM"},
+		{213, "Canon EF 90-300mm f/4.5-5.6 USM"},
+		{214, "Canon EF-S 18-55mm f/3.5-5.6 USM"},
+		{215, "Canon EF 55-200mm f/4.5-5.6 II USM"},
+		{224, "Canon EF 70-200mm f/2.8L IS"},
+		{225, "Canon EF 70-200mm f/2.8L IS + 1.4x"},
+		{226, "Canon EF 70-200mm f/2.8L IS + 2x"},
+		{227, "Canon EF 70-200mm f/2.8L IS + 2.8x"},
+		{228, "Canon EF 28-105mm f/3.5-4.5 USM"},
+		{229, "Canon EF 16-35mm f/2.8L"},
+		{230, "Canon EF 24-70mm f/2.8L"},
+		{231, "Canon EF 17-40mm f/4L"},
+		{232, "Canon EF 70-300mm f/4.5-5.6 DO IS USM"},
+		{233, "Canon EF 28-300mm f/3.5-5.6L IS"},
+		{234, "Canon EF-S 17-85mm f4-5.6 IS USM"},
+		{235, "Canon EF-S 10-22mm f/3.5-4.5 USM"},
+		{236, "Canon EF-S 60mm f/2.8 Macro USM"},
+		{237, "Canon EF 24-105mm f/4L IS"},
+		{238, "Canon EF 70-300mm f/4-5.6 IS USM"},
+		{239, "Canon EF 85mm f/1.2L II"},
+		{240, "Canon EF-S 17-55mm f/2.8 IS USM"},
+		{241, "Canon EF 50mm f/1.2L"},
+		{242, "Canon EF 70-200mm f/4L IS"},
+		{243, "Canon EF 70-200mm f/4L IS + 1.4x"},
+		{244, "Canon EF 70-200mm f/4L IS + 2x"},
+		{245, "Canon EF 70-200mm f/4L IS + 2.8x"},
+		{246, "Canon EF 16-35mm f/2.8L II"},
+		{247, "Canon EF 14mm f/2.8L II USM"},
+		{248, "Canon EF 200mm f/2L IS"},
+		{249, "Canon EF 800mm f/5.6L IS"},
+		{250, "Canon EF 24 f/1.4L II"},
+		{251, "Canon EF 70-200mm f/2.8L IS II USM"},
+		{252, "Canon EF 70-200mm f/2.8L IS II USM + 1.4x"},
+		{253, "Canon EF 70-200mm f/2.8L IS II USM + 2x"},
+		{254, "Canon EF 100mm f/2.8L Macro IS USM"},
+		{488, "Canon EF-S 15-85mm f/3.5-5.6 IS USM"},
+		{489, "Canon EF 70-300mm f/4-5.6L IS USM"},
+		{490, "Canon EF 8-15mm f/4L USM"},
+		{491, "Canon EF 300mm f/2.8L IS II USM"},
+		{492, "Canon EF 400mm f/2.8L IS II USM"},
+		{493, "Canon EF 24-105mm f/4L IS USM"},
+		{494, "Canon EF 600mm f/4.0L IS II USM"},
+		{495, "Canon EF 24-70mm f/2.8L II USM"},
+		{496, "Canon EF 200-400mm f/4L IS USM"},
+		{502, "Canon EF 28mm f/2.8 IS USM"},
+		{503, "Canon EF 24mm f/2.8 IS USM"},
+		{504, "Canon EF 24-70mm f/4L IS USM"},
+		{505, "Canon EF 35mm f/2 IS USM"},
+		{4142, "Canon EF-S 18-135mm f/3.5-5.6 IS STM"},
+		{4143, "Canon EF-M 18-55mm f/3.5-5.6 IS STM"},
+		{4144, "Canon EF 40mm f/2.8 STM"},
+		{4145, "Canon EF-M 22mm f/2 STM"},
+		{4146, "Canon EF-S 18-55mm f/3.5-5.6 IS STM"},
+		{4147, "Canon EF-M 11-22mm f/4-5.6 IS STM"}
 	};
 
 public:
@@ -1093,7 +1095,7 @@ public:
 	void canon_tag(const exif_dir_entry& entry) const
 	{
 		static canon_lenses lenses;
-		//df::log(__FUNCTION__, u8"Canon tag %x (%d)\n"sv, entry.tag, entry.Size());
+		//df::log(__FUNCTION__, "Canon tag %x (%d)\n", entry.tag, entry.Size());
 
 		switch (entry._tag)
 		{
@@ -1122,11 +1124,11 @@ public:
 
 					if (abs(low - high) < 0.1 || low < 0.1)
 					{
-						lens_text = str::cache(str::format(u8"{:.1}mm"sv, high));
+						lens_text = str::cache(std::format("{:.1}mm", high));
 					}
 					else if (low >= 0.1 && high >= 0.1)
 					{
-						lens_text = str::cache(str::format(u8"{:.1}f-{:.1}mm"sv, low, high));
+						lens_text = str::cache(std::format("{:.1}f-{:.1}mm", low, high));
 					}
 				}
 
@@ -1167,7 +1169,7 @@ public:
 
 	void exif_tag(const exif_dir_entry& entry)
 	{
-		//df::log(__FUNCTION__, u8"Exif tag %x (%d)\n"sv, entry.tag, entry.Size());
+		//df::log(__FUNCTION__, "Exif tag %x (%d)\n", entry.tag, entry.Size());
 
 		switch (entry._tag)
 		{
@@ -1334,7 +1336,7 @@ void metadata_exif::parse(prop::item_metadata& pd, const df::cspan cs)
 	if (!cs.empty())
 	{
 		exif_camera_settings_processor processor(pd);
-		exif_enumerate([&processor](exif_dir_entry& e) { processor.tag(e); }, cs);
+		exif_enumerate([&processor](const exif_dir_entry& e) { processor.tag(e); }, cs);
 	}
 }
 
@@ -1427,7 +1429,7 @@ static long get_int(ExifData* ed, const ExifEntry* ee)
 		break;
 	default:
 		{
-			constexpr auto message = "Invalid Exif byte order"sv;
+			constexpr auto message = "Invalid Exif byte order";
 			df::log(__FUNCTION__, message);
 			throw app_exception(std::string(message));
 		}
@@ -1503,7 +1505,7 @@ metadata_kv_list metadata_exif::to_info(const df::cspan data)
 					if (!is_junk(std::bit_cast<const uint8_t*>(text), 4))
 					{
 						result.emplace_back(str::cache(exif_tag_get_name_in_ifd(e->tag, exif_entry_get_ifd(e))),
-						                    std::u8string(str::utf8_cast(text)));
+						                    std::string(str::utf8_cast(text)));
 					}
 				}
 			}
@@ -1539,7 +1541,7 @@ df::blob metadata_exif::fix_dims(const df::span cs, const int image_width, const
 }
 
 #define FILE_BYTE_ORDER EXIF_BYTE_ORDER_INTEL
-#define ASCII_COMMENT u8"ASCII\0\0\0"
+#define ASCII_COMMENT "ASCII\0\0\0"
 
 void add_tag(const ExifData* exif, const ExifTag tag, const str::cached val)
 {

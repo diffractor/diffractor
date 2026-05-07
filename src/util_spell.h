@@ -31,9 +31,9 @@ public:
 
 	void lazy_download(df::async_i& async) const;
 	void lazy_load();
-	bool is_word_valid(std::u8string_view word) const;
-	std::vector<std::u8string> suggest(std::u8string_view word) const;
-	void add_word(std::u8string_view word) const;
+	bool is_word_valid(std::string_view word) const;
+	std::vector<std::string> suggest(std::string_view word) const;
+	void add_word(std::string_view word) const;
 };
 
 extern spell_check spell;

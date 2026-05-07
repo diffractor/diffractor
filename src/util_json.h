@@ -18,30 +18,30 @@
 
 namespace df::util::json
 {
-	inline std::u8string safe_string(const rapidjson::GenericValue<rapidjson::UTF8<char8_t>>& json, const char8_t* name)
+	inline std::string safe_string(const rapidjson::GenericValue<rapidjson::UTF8<char>>& json, const char* name)
 	{
 		const auto found = json.FindMember(name);
-		return found != json.MemberEnd() ? str::safe_string(found->value.GetString()) : std::u8string{};
+		return found != json.MemberEnd() ? str::safe_string(found->value.GetString()) : std::string{};
 	}
 
-	inline int safe_int(const rapidjson::GenericValue<rapidjson::UTF8<char8_t>>& json, const char8_t* name)
+	inline int safe_int(const rapidjson::GenericValue<rapidjson::UTF8<char>>& json, const char* name)
 	{
 		const auto found = json.FindMember(name);
 		return found != json.MemberEnd() ? found->value.GetInt() : 0;
 	}
 
-	inline float safe_float(const rapidjson::GenericValue<rapidjson::UTF8<char8_t>>& json, const char8_t* name)
+	inline float safe_float(const rapidjson::GenericValue<rapidjson::UTF8<char>>& json, const char* name)
 	{
 		const auto found = json.FindMember(name);
 		return found != json.MemberEnd() ? found->value.GetFloat() : 0.0f;
 	}
 
-	inline bool safe_bool(const rapidjson::GenericValue<rapidjson::UTF8<char8_t>>& json, const char8_t* name)
+	inline bool safe_bool(const rapidjson::GenericValue<rapidjson::UTF8<char>>& json, const char* name)
 	{
 		const auto found = json.FindMember(name);
 		return found != json.MemberEnd() ? found->value.GetBool() : false;
 	}
 
-	using json_doc = rapidjson::GenericDocument<rapidjson::UTF8<char8_t>>;
+	using json_doc = rapidjson::GenericDocument<rapidjson::UTF8<char>>;
 	json_doc json_from_file(file_path path);
 }

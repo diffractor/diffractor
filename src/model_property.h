@@ -73,11 +73,11 @@ struct bloom_bits
 	}
 };
 
-constexpr auto label_select_text = u8"select"sv;
-constexpr auto label_second_text = u8"second"sv;
-constexpr auto label_approved_text = u8"approved"sv;
-constexpr auto label_review_text = u8"review"sv;
-constexpr auto label_to_do_text = u8"to do"sv;
+constexpr auto label_select_text = "select";
+constexpr auto label_second_text = "second";
+constexpr auto label_approved_text = "approved";
+constexpr auto label_review_text = "review";
+constexpr auto label_to_do_text = "to do";
 
 namespace df
 {
@@ -143,7 +143,7 @@ namespace prop
 		key& operator=(key&& other) = delete;
 
 	public:
-		key(uint16_t id, std::u8string_view sn, std::u8string_view n, text_t& tx, icon_index i, data_type t,
+		key(uint16_t id, std::string_view sn, std::string_view n, text_t& tx, icon_index i, data_type t,
 		    uint32_t f, uint32_t bit);
 
 		uint16_t id = 0;
@@ -195,7 +195,7 @@ namespace prop
 			return this;
 		}
 
-		std::u8string text() const;
+		std::string text() const;
 	};
 
 
@@ -266,7 +266,7 @@ namespace prop
 	extern key label;
 	extern key doc_id;
 
-	constexpr bool is_null(const std::u8string_view s)
+	constexpr bool is_null(const std::string_view s)
 	{
 		return str::is_empty(s);
 	}
@@ -406,7 +406,7 @@ namespace prop
 			return coordinate.is_valid();
 		}
 
-		std::u8string format(std::u8string_view name) const;
+		std::string format(std::string_view name) const;
 	};
 
 #pragma pack(pop)
@@ -416,11 +416,11 @@ namespace prop
 	using item_metadata_const_ptr = std::shared_ptr<const item_metadata>;
 
 	const key* from_id(uint16_t id);
-	const key* from_prefix(std::u8string_view scope);
+	const key* from_prefix(std::string_view scope);
 
 	struct prop_scope
 	{
-		std::u8string scope;
+		std::string scope;
 		const key* type;
 	};
 
@@ -434,8 +434,8 @@ namespace prop
 
 	struct size_rounded
 	{
-		std::u8string_view unit;
-		std::u8string_view short_unit;
+		std::string_view unit;
+		std::string_view short_unit;
 		uint64_t n = 0;
 		uint64_t dec = 0;
 		uint64_t div = 0;
@@ -449,33 +449,33 @@ namespace prop
 
 	size_rounded round_size(uint64_t s);
 
-	std::u8string format_f_num(double d);
-	std::u8string format_fstop(double d);
-	std::u8string format_date(df::date_t d);
-	std::u8string format_polish_date(df::date_t ft);
-	std::u8string format_duration(int d);
-	std::u8string format_exposure(double d);
-	std::u8string format_focal_length(double d, int filmEquivalent);
-	std::u8string format_four_cc(uint32_t f);
-	std::u8string format_gps(double d);
-	std::u8string format_gps(double lat, double lon);
-	std::u8string format_iso(int i);
-	std::u8string format_audio_sample_rate(int v);
-	std::u8string format_audio_sample_rate(uint16_t v);
-	std::u8string format_audio_sample_type(audio_sample_t v);
-	std::u8string format_audio_channels(int v);
-	std::u8string format_size(const df::file_size& s);
-	std::u8string format_magnitude(const df::file_size& s);
-	std::u8string format_streams(int s);
-	std::u8string format_white_balance(int i);
-	std::u8string format_rating(int i);
-	std::u8string format_bit_rate(int64_t i);
-	std::u8string format_dimensions(sizei v);
-	std::u8string format_pixels(sizei v, file_type_ref ft);
-	std::u8string format_video_resolution(sizei v);
+	std::string format_f_num(double d);
+	std::string format_fstop(double d);
+	std::string format_date(df::date_t d);
+	std::string format_polish_date(df::date_t ft);
+	std::string format_duration(int d);
+	std::string format_exposure(double d);
+	std::string format_focal_length(double d, int filmEquivalent);
+	std::string format_four_cc(uint32_t f);
+	std::string format_gps(double d);
+	std::string format_gps(double lat, double lon);
+	std::string format_iso(int i);
+	std::string format_audio_sample_rate(int v);
+	std::string format_audio_sample_rate(uint16_t v);
+	std::string format_audio_sample_type(audio_sample_t v);
+	std::string format_audio_channels(int v);
+	std::string format_size(const df::file_size& s);
+	std::string format_magnitude(const df::file_size& s);
+	std::string format_streams(int s);
+	std::string format_white_balance(int i);
+	std::string format_rating(int i);
+	std::string format_bit_rate(int64_t i);
+	std::string format_dimensions(sizei v);
+	std::string format_pixels(sizei v, file_type_ref ft);
+	std::string format_video_resolution(sizei v);
 
-	std::u8string replace_tokens(std::u8string_view name_template, const item_metadata_const_ptr& md,
-	                             std::u8string_view name, df::date_t created);
+	std::string replace_tokens(std::string_view name_template, const item_metadata_const_ptr& md,
+	                           std::string_view name, df::date_t created);
 
 	inline double to_apex_val(const double d)
 	{

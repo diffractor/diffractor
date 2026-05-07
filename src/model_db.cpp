@@ -22,13 +22,13 @@
 
 static std::atomic<int> db_fails = 0;
 
-inline void db_trace_error(sqlite3* db, const std::u8string_view sql)
+inline void db_trace_error(sqlite3* db, const std::string_view sql)
 {
-	df::log(__FUNCTION__, str::format(u8"Database error: {} [{}]"sv, str::utf8_cast(sqlite3_errmsg(db)), sql));
+	df::log(__FUNCTION__, std::format("Database error: {} [{}]", str::utf8_cast(sqlite3_errmsg(db)), sql));
 	db_fails.fetch_add(1);
 }
 
-inline int db_exec(sqlite3* db, const std::u8string& sql)
+inline int db_exec(sqlite3* db, const std::string& sql)
 {
 	const auto result = sqlite3_exec(db, std::bit_cast<const char*>(sql.c_str()), nullptr, nullptr, nullptr);
 
@@ -46,7 +46,7 @@ class db_statement
 	sqlite3_stmt* _handle;
 
 public:
-	db_statement(sqlite3* db, const std::u8string& sql) : _db(db), _handle(nullptr)
+	db_statement(sqlite3* db, const std::string& sql) : _db(db), _handle(nullptr)
 	{
 		compile(sql);
 	}
@@ -59,20 +59,20 @@ public:
 			_handle = nullptr;
 
 			if (ret != SQLITE_OK)
-				db_trace_error(_db, u8"sqlite3_finalize"sv);
+				db_trace_error(_db, "sqlite3_finalize");
 		}
 	}
 
-	void compile(const std::u8string_view sql)
+	void compile(const std::string_view sql)
 	{
 		const int ret = sqlite3_prepare_v2(_db, std::bit_cast<const char*>(sql.data()), static_cast<int>(sql.size()),
 		                                   &_handle, nullptr);
 
 		if (ret != SQLITE_OK)
-			db_trace_error(_db, u8"sqlite3_prepare_v2"sv);
+			db_trace_error(_db, "sqlite3_prepare_v2");
 	}
 
-	void bind(const int i, const std::u8string_view v) const
+	void bind(const int i, const std::string_view v) const
 	{
 		if (_handle != nullptr)
 		{
@@ -81,7 +81,7 @@ public:
 			                                  SQLITE_STATIC);
 
 			if (ret != SQLITE_OK)
-				db_trace_error(_db, str::format(u8"sqlite3_bind_text {} {}"sv, i, v));
+				db_trace_error(_db, std::format("sqlite3_bind_text {} {}", i, v));
 		}
 	}
 
@@ -92,7 +92,7 @@ public:
 			const int ret = sqlite3_bind_int(_handle, i, n);
 
 			if (ret != SQLITE_OK)
-				db_trace_error(_db, str::format(u8"sqlite3_bind_int {} {}"sv, i, n));
+				db_trace_error(_db, std::format("sqlite3_bind_int {} {}", i, n));
 		}
 	}
 
@@ -103,14 +103,14 @@ public:
 			// Check for overflow before casting
 			if (n > static_cast<uint32_t>(INT_MAX))
 			{
-				db_trace_error(_db, str::format(u8"sqlite3_bind_int overflow: {}"sv, n));
+				db_trace_error(_db, std::format("sqlite3_bind_int overflow: {}", n));
 				return;
 			}
 
 			const int ret = sqlite3_bind_int(_handle, i, static_cast<int>(n));
 
 			if (ret != SQLITE_OK)
-				db_trace_error(_db, str::format(u8"sqlite3_bind_int {} {}"sv, i, n));
+				db_trace_error(_db, std::format("sqlite3_bind_int {} {}", i, n));
 		}
 	}
 
@@ -121,7 +121,7 @@ public:
 			const int ret = sqlite3_bind_double(_handle, i, n);
 
 			if (ret != SQLITE_OK)
-				db_trace_error(_db, str::format(u8"sqlite3_bind_double {} {}"sv, i, n));
+				db_trace_error(_db, std::format("sqlite3_bind_double {} {}", i, n));
 		}
 	}
 
@@ -132,7 +132,7 @@ public:
 			const int ret = sqlite3_bind_int64(_handle, i, n);
 
 			if (ret != SQLITE_OK)
-				db_trace_error(_db, str::format(u8"sqlite3_bind_int64 {} {}"sv, i, n));
+				db_trace_error(_db, std::format("sqlite3_bind_int64 {} {}", i, n));
 		}
 	}
 
@@ -143,14 +143,14 @@ public:
 			// Check for overflow before casting
 			if (n > static_cast<uint64_t>(LLONG_MAX))
 			{
-				db_trace_error(_db, str::format(u8"sqlite3_bind_int64 overflow: {}"sv, n));
+				db_trace_error(_db, std::format("sqlite3_bind_int64 overflow: {}", n));
 				return;
 			}
 
 			const int ret = sqlite3_bind_int64(_handle, i, static_cast<sqlite3_int64>(n));
 
 			if (ret != SQLITE_OK)
-				db_trace_error(_db, str::format(u8"sqlite3_bind_int64 {} {}"sv, i, n));
+				db_trace_error(_db, std::format("sqlite3_bind_int64 {} {}", i, n));
 		}
 	}
 
@@ -161,7 +161,7 @@ public:
 			const int ret = sqlite3_bind_blob(_handle, i, cs.data, static_cast<int>(cs.size), SQLITE_STATIC);
 
 			if (ret != SQLITE_OK)
-				db_trace_error(_db, str::format(u8"sqlite3_bind_blob {}"sv, i));
+				db_trace_error(_db, std::format("sqlite3_bind_blob {}", i));
 		}
 	}
 
@@ -170,10 +170,10 @@ public:
 		if (_handle != nullptr)
 		{
 			if (sqlite3_reset(_handle) != SQLITE_OK)
-				db_trace_error(_db, u8"sqlite3_reset"sv);
+				db_trace_error(_db, "sqlite3_reset");
 
 			if (sqlite3_clear_bindings(_handle) != SQLITE_OK)
-				db_trace_error(_db, u8"sqlite3_clear_bindings"sv);
+				db_trace_error(_db, "sqlite3_clear_bindings");
 		}
 	}
 
@@ -190,7 +190,7 @@ public:
 			case SQLITE_DONE:
 				return false;
 			default:
-				db_trace_error(_db, u8"sqlite3_step"sv);
+				db_trace_error(_db, "sqlite3_step");
 			}
 		}
 
@@ -222,14 +222,14 @@ public:
 		return 0;
 	}
 
-	std::u8string text(const int i) const
+	std::string text(const int i) const
 	{
 		if (_handle != nullptr)
 		{
 			const auto* text_ptr = sqlite3_column_text(_handle, i);
 			if (text_ptr != nullptr)
 			{
-				return std::u8string(std::bit_cast<const char8_t*>(text_ptr));
+				return std::string(std::bit_cast<const char*>(text_ptr));
 			}
 		}
 		return {};
@@ -273,7 +273,7 @@ public:
 	{
 		if (start)
 		{
-			const int ret = db_exec(_db, u8"BEGIN TRANSACTION"s);
+			const int ret = db_exec(_db, "BEGIN TRANSACTION"s);
 			_acquired = ret == SQLITE_OK;
 		}
 	}
@@ -284,12 +284,12 @@ public:
 		{
 			try
 			{
-				db_exec(_db, u8"COMMIT"s);
+				db_exec(_db, "COMMIT"s);
 			}
 			catch (...)
 			{
 				// Log error but don't throw from destructor
-				db_trace_error(_db, u8"COMMIT failed in destructor"sv);
+				db_trace_error(_db, "COMMIT failed in destructor");
 			}
 		}
 	}
@@ -301,12 +301,12 @@ public:
 		{
 			try
 			{
-				db_exec(_db, u8"ROLLBACK"s);
+				db_exec(_db, "ROLLBACK"s);
 				_acquired = false;
 			}
 			catch (...)
 			{
-				db_trace_error(_db, u8"ROLLBACK failed"sv);
+				db_trace_error(_db, "ROLLBACK failed");
 			}
 		}
 	}
@@ -336,20 +336,20 @@ database::~database()
 	close();
 }
 
-void database::open(const df::folder_path folder, const std::u8string_view file_name)
+void database::open(const df::folder_path folder, const std::string_view file_name)
 {
 	sqlite3_initialize();
 
 	df::scope_locked_inc l(_state.searching);
 	_db_thread_id = platform::current_thread_id();
-	_db_path = df::file_path(folder, file_name, u8".db"sv);
+	_db_path = df::file_path(folder, file_name, ".db");
 	open();
 }
 
-static std::u8string load_create_sql()
+static std::string load_create_sql()
 {
 	auto sql = load_resource(platform::resource_item::sql);
-	return std::u8string(std::bit_cast<const char8_t*>(sql.data()), sql.size());
+	return std::string(std::bit_cast<const char*>(sql.data()), sql.size());
 }
 
 void database::open()
@@ -358,14 +358,14 @@ void database::open()
 
 	df::scope_locked_inc slc(df::jobs_running);
 
-	df::log(__FUNCTION__, str::format(u8"Open database: {}"sv, _db_path));
+	df::log(__FUNCTION__, std::format("Open database: {}", _db_path));
 
 	const auto rc = sqlite3_open(std::bit_cast<const char*>(_db_path.str().c_str()), &_db);
 
 	if (rc != SQLITE_OK)
 	{
 		// Get error message before closing
-		std::u8string error_msg;
+		std::string error_msg;
 		if (_db != nullptr)
 		{
 			error_msg = str::utf8_cast(sqlite3_errmsg(_db));
@@ -373,11 +373,11 @@ void database::open()
 		}
 		else
 		{
-			error_msg = u8"Failed to allocate database connection"s;
+			error_msg = "Failed to allocate database connection"s;
 		}
 
 		_db = nullptr;
-		df::log(__FUNCTION__, str::format(u8"Failed to open database: {}"sv, error_msg));
+		df::log(__FUNCTION__, std::format("Failed to open database: {}", error_msg));
 	}
 	else
 	{
@@ -388,35 +388,35 @@ void database::open()
 
 		if (SQLITE_CORRUPT == create_result)
 		{
-			const auto message = str::format(u8"Database is corrupt: {}\n\nPath: {}"sv,
+			const auto message = std::format("Database is corrupt: {}\n\nPath: {}",
 			                                 str::utf8_cast(sqlite3_errmsg(_db)), _db_path);
 			df::log(__FUNCTION__, message);
 			throw app_exception(message);
 		}
 		if (SQLITE_OK != create_result)
 		{
-			const auto message = str::format(u8"Failed to create database: {}\n\nPath: {}"sv,
+			const auto message = std::format("Failed to create database: {}\n\nPath: {}",
 			                                 str::utf8_cast(sqlite3_errmsg(_db)), _db_path);
 			df::log(__FUNCTION__, message);
 			throw app_exception(message);
 		}
 
 		load_index_values();
-		df::log(__FUNCTION__, str::format(u8"Loaded index in {} ms"sv, _state.stats.index_load_ms));
+		df::log(__FUNCTION__, std::format("Loaded index in {} ms", _state.stats.index_load_ms));
 
 		// schema upgrades
 		sqlite3_exec(_db, "ALTER TABLE item_properties ADD COLUMN crc INTEGER;", nullptr, nullptr, nullptr);
 		sqlite3_exec(_db, "ALTER TABLE item_thumbnails ADD COLUMN cover_art BLOB NULL;", nullptr, nullptr, nullptr);
 
-		find_web_request = std::make_unique<db_statement>(_db, u8"select value from web_service_cache where key=?"s);
+		find_web_request = std::make_unique<db_statement>(_db, "select value from web_service_cache where key=?"s);
 		find_folder_thumbnail = std::make_unique<db_statement>(
-			_db, u8"select bitmap, cover_art, last_scanned from item_thumbnails where folder=?"s);
+			_db, "select bitmap, cover_art, last_scanned from item_thumbnails where folder=?"s);
 		find_thumbnail = std::make_unique<db_statement>(
-			_db, u8"select bitmap, cover_art, last_scanned from item_thumbnails where folder=? AND name=?"s);
+			_db, "select bitmap, cover_art, last_scanned from item_thumbnails where folder=? AND name=?"s);
 
 		_state.stats.database_size = platform::file_attributes(_db_path).size;
 		_state.stats.database_path = _db_path;
-		df::log(__FUNCTION__, str::format(u8"Index open {}"sv, _state.stats.database_size));
+		df::log(__FUNCTION__, std::format("Index open {}", _state.stats.database_size));
 	}
 }
 
@@ -460,7 +460,7 @@ inline void metadata_packer::pack(const prop::item_metadata_ptr& md)
 	if (!prop::is_null(md->location_country)) write(prop::location_country.id, md->location_country);
 	if (!prop::is_null(md->description)) write(prop::description.id, md->description);
 	if (!prop::is_null(md->file_name)) write(prop::file_name.id, md->file_name);
-	if (!prop::is_null(md->raw_file_name)) write(prop::raw_file_name.id, md->file_name);
+	if (!prop::is_null(md->raw_file_name)) write(prop::raw_file_name.id, md->raw_file_name);
 	if (!prop::is_null(md->genre)) write(prop::genre.id, md->genre);
 	if (!prop::is_null(md->lens)) write(prop::lens.id, md->lens);
 	if (!prop::is_null(md->pixel_format)) write(prop::pixel_format.id, md->pixel_format);
@@ -525,7 +525,7 @@ void database::clean(const std::vector<df::file_path>& indexed_items) const
 
 	transaction t(_db);
 	const db_statement
-		update_properties(_db, u8"update item_properties set last_indexed = ? where folder=? and name=?"s);
+		update_properties(_db, "update item_properties set last_indexed = ? where folder=? and name=?"s);
 
 	for (const auto& i : indexed_items)
 	{
@@ -536,17 +536,17 @@ void database::clean(const std::vector<df::file_path>& indexed_items) const
 		update_properties.reset();
 	}
 
-	const db_statement delete_old_properties(_db, u8"DELETE FROM item_properties where last_indexed < ?"s);
+	const db_statement delete_old_properties(_db, "DELETE FROM item_properties where last_indexed < ?"s);
 	delete_old_properties.bind(1, today - 30);
 	delete_old_properties.exec();
 
-	const db_statement delete_old_cache(_db, u8"DELETE FROM web_service_cache where created_date < ?"s);
+	const db_statement delete_old_cache(_db, "DELETE FROM web_service_cache where created_date < ?"s);
 	delete_old_cache.bind(1, today - 7);
 	delete_old_cache.exec();
 
 	db_exec(
 		_db,
-		u8"DELETE FROM item_thumbnails WHERE NOT EXISTS (SELECT 1 FROM item_properties WHERE item_properties.name = item_thumbnails.name AND item_properties.folder = item_thumbnails.folder);"s);
+		"DELETE FROM item_thumbnails WHERE NOT EXISTS (SELECT 1 FROM item_properties WHERE item_properties.name = item_thumbnails.name AND item_properties.folder = item_thumbnails.folder);"s);
 }
 
 void metadata_unpacker::unpack(const prop::item_metadata_ptr& md)
@@ -640,7 +640,7 @@ void database::load_index_values() const
 
 	const db_statement items(
 		_db,
-		u8"select folder, name, properties, crc, media_position, last_scanned from item_properties order by folder"s);
+		"select folder, name, properties, crc, media_position, last_scanned from item_properties order by folder"s);
 
 	while (items.read() && !df::is_closing)
 	{
@@ -751,11 +751,11 @@ database::db_thumbnail database::load_folder_thumbnail(const str::cached folder)
 	return result;
 }
 
-std::u8string database::web_service_cache(const std::u8string_view key) const
+std::string database::web_service_cache(const std::string_view key) const
 {
 	df::assert_true(is_db_thread());
 
-	std::u8string result;
+	std::string result;
 	find_web_request->bind(1, key);
 
 	while (find_web_request->read())
@@ -768,14 +768,14 @@ std::u8string database::web_service_cache(const std::u8string_view key) const
 	return result;
 }
 
-void database::web_service_cache(const std::u8string_view key, const std::u8string_view value) const
+void database::web_service_cache(const std::string_view key, const std::string_view value) const
 {
 	df::assert_true(is_db_thread());
 
 	const auto today = platform::now().to_days();
 
 	const db_statement insert_web_request(
-		_db, u8"insert or replace into web_service_cache (key, value, created_date) values (?, ?, ?)"s);
+		_db, "insert or replace into web_service_cache (key, value, created_date) values (?, ?, ?)"s);
 	insert_web_request.bind(1, key);
 	insert_web_request.bind(2, value);
 	insert_web_request.bind(3, today);
@@ -787,7 +787,7 @@ item_import_set database::load_item_imports() const
 	df::assert_true(is_db_thread());
 
 	item_import_set results;
-	const db_statement items(_db, u8"select name, modified, size, imported from item_imports"s);
+	const db_statement items(_db, "select name, modified, size, imported from item_imports"s);
 
 	while (items.read() && !df::is_closing)
 	{
@@ -809,7 +809,7 @@ void database::writes_item_imports(const item_import_set& writes) const
 
 	transaction t(_db);
 	const db_statement insert_properties(
-		_db, u8"insert or replace into item_imports (name, modified, size, imported) values (?, ?, ?, ?)"s);
+		_db, "insert or replace into item_imports (name, modified, size, imported) values (?, ?, ?, ?)"s);
 
 	for (const auto& i : writes)
 	{
@@ -896,17 +896,17 @@ void database::perform_writes(std::deque<item_db_write> writes) const
 	transaction t(_db);
 	const db_statement insert_properties(
 		_db,
-		u8"insert or replace into item_properties (folder, name, properties, hash, crc, media_position, last_scanned, last_indexed) values (?, ?, ?, ?, ?, ?, ?, ?)"s);
+		"insert or replace into item_properties (folder, name, properties, hash, crc, media_position, last_scanned, last_indexed) values (?, ?, ?, ?, ?, ?, ?, ?)"s);
 	const db_statement update_metadata_scanned(
 		_db,
-		u8"update item_properties set last_scanned = ?, last_indexed = ? where folder = ? and name = ?"s);
-	const db_statement update_hash(_db, u8"update item_properties set hash = ? where folder=? and name=?"s);
-	const db_statement update_crc(_db, u8"update item_properties set crc = ? where folder=? and name=?"s);
+		"update item_properties set last_scanned = ?, last_indexed = ? where folder = ? and name = ?"s);
+	const db_statement update_hash(_db, "update item_properties set hash = ? where folder=? and name=?"s);
+	const db_statement update_crc(_db, "update item_properties set crc = ? where folder=? and name=?"s);
 	const db_statement update_media_position(
-		_db, u8"update item_properties set media_position = ? where folder=? and name=?"s);
+		_db, "update item_properties set media_position = ? where folder=? and name=?"s);
 	const db_statement insert_thumbnails(
 		_db,
-		u8"insert or replace into item_thumbnails (folder, name, bitmap, cover_art, last_scanned) values (?, ?, ?, ?, ?)"s);
+		"insert or replace into item_thumbnails (folder, name, bitmap, cover_art, last_scanned) values (?, ?, ?, ?, ?)"s);
 
 	metadata_packer packer;
 
@@ -923,7 +923,7 @@ void database::perform_writes(std::deque<item_db_write> writes) const
 				packer.pack(md);
 			}
 
-			// df::log(__FUNCTION__, "write to db "sv << id.Name << "sv "sv << id.Modified.to_int64() << "sv "sv << properties_row.count();
+			// df::log(__FUNCTION__, "write to db " << id.Name << " " << id.Modified.to_int64() << " " << properties_row.count();
 
 			insert_properties.bind(1, path.folder().text());
 			insert_properties.bind(2, path.name());
@@ -1014,7 +1014,7 @@ void database::maintenance(const bool is_reset)
 		open();
 	}
 
-	db_exec(_db, u8"vacuum;"s);
+	db_exec(_db, "vacuum;"s);
 	_state.stats.database_size = platform::file_attributes(_db_path).size;
 
 	close();

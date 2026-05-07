@@ -91,7 +91,7 @@ void view_state::toggle_rating(const df::results_ptr& results, const df::item_el
 }
 
 
-void view_state::modify_items(const ui::control_frame_ptr& frame, const icon_index icon, const std::u8string_view title,
+void view_state::modify_items(const ui::control_frame_ptr& frame, const icon_index icon, const std::string_view title,
                               const df::item_elements& items_to_modify, const metadata_edits& edits,
                               const view_host_base_ptr& view)
 {
@@ -544,7 +544,7 @@ void view_state::change_tracks(const int video_track, const int audio_track) con
 	}
 }
 
-void view_state::change_audio_device(const std::u8string& id) const
+void view_state::change_audio_device(const std::string& id) const
 {
 	if (_player)
 	{
@@ -739,7 +739,7 @@ bool view_state::update_selection()
 	return changed;
 }
 
-df::item_element_ptr view_state::find_displayed_item_by_name(const std::u8string_view file_name) const
+df::item_element_ptr view_state::find_displayed_item_by_name(const std::string_view file_name) const
 {
 	for (const auto& b : _item_groups)
 	{
@@ -756,7 +756,7 @@ df::item_element_ptr view_state::find_displayed_item_by_name(const std::u8string
 }
 
 
-bool view_state::select(const view_host_base_ptr& view, const std::u8string_view file_name, const bool toggle)
+bool view_state::select(const view_host_base_ptr& view, const std::string_view file_name, const bool toggle)
 {
 	const auto i = find_displayed_item_by_name(file_name);
 
@@ -1193,14 +1193,14 @@ public:
 	const df::search_t _search;
 	prop::key_ref _prop_key;
 
-	explicit search_element(view_state& state, const std::u8string_view text, df::search_t search,
+	explicit search_element(view_state& state, const std::string_view text, df::search_t search,
 	                        const prop::key_ref prop_key) noexcept
 		: text_element_base(text, view_element_style::has_tooltip | view_element_style::can_invoke), _state(state),
 		  _search(std::move(search)), _prop_key(prop_key)
 	{
 	}
 
-	explicit search_element(view_state& state, const std::u8string_view text, df::search_t search) noexcept
+	explicit search_element(view_state& state, const std::string_view text, df::search_t search) noexcept
 		: text_element_base(text, view_element_style::has_tooltip | view_element_style::can_invoke), _state(state),
 		  _search(std::move(search)), _prop_key(prop::null)
 	{
@@ -1244,7 +1244,7 @@ public:
 	}
 };
 
-static view_element_ptr make_link(view_state& s, std::u8string_view text, df::search_t& search,
+static view_element_ptr make_link(view_state& s, std::string_view text, df::search_t& search,
                                   const prop::key_ref prop, const df::search_result& current_search)
 {
 	auto element = std::make_shared<search_element>(s, text, search, prop);
@@ -1252,7 +1252,7 @@ static view_element_ptr make_link(view_state& s, std::u8string_view text, df::se
 	return element;
 }
 
-static view_element_ptr make_link(view_state& s, std::u8string_view text, const prop::key_ref prop,
+static view_element_ptr make_link(view_state& s, std::string_view text, const prop::key_ref prop,
                                   const df::search_result& current_search)
 {
 	auto element = std::make_shared<search_element>(s, text, df::search_t().with(prop, text), prop);
@@ -1360,7 +1360,7 @@ static std::vector<view_element_ptr> create_artist_elements(view_state& s, const
                                                             const df::search_result& search_result)
 {
 	std::vector<view_element_ptr> results;
-	df::hash_map<std::u8string_view, prop::key_ref> unique;
+	df::hash_map<std::string_view, prop::key_ref> unique;
 
 	if (!is_empty(md->artist))
 	{
@@ -1454,7 +1454,7 @@ static std::vector<view_element_ptr> create_tag_elements(view_state& s, const pr
 	return results;
 }
 
-static void add_row(const std::shared_ptr<ui::table_element>& result, const std::u8string_view label,
+static void add_row(const std::shared_ptr<ui::table_element>& result, const std::string_view label,
                     std::vector<view_element_ptr> e1, std::vector<view_element_ptr> e2)
 {
 	if (!e1.empty() || !e2.empty())
@@ -1506,7 +1506,7 @@ class title_link_element final : public std::enable_shared_from_this<title_link_
 	const df::item_element_ptr _item;
 
 public:
-	title_link_element(view_state& s, df::item_element_ptr i, const std::u8string_view text,
+	title_link_element(view_state& s, df::item_element_ptr i, const std::string_view text,
 	                   const view_element_style style_in) noexcept : text_element_base(text), _state(s),
 	                                                                 _item(std::move(i))
 	{
@@ -1654,7 +1654,7 @@ public:
 				if (has_sidecars)
 				{
 					const auto sidecar_parts = split(sidecars, true);
-					const std::set<std::u8string, df::iless> unique(sidecar_parts.begin(), sidecar_parts.end());
+					const std::set<std::string, df::iless> unique(sidecar_parts.begin(), sidecar_parts.end());
 
 					/*hover.elements.add(std::make_shared<text_element>(format_plural_text(tt.sidecar_count_fmt, unique.size()), ui::style::font_size::dialog,
 						ui::style::text_style::multiline,
@@ -1718,7 +1718,7 @@ void append_bullet(std::vector<view_element_ptr>& result, icon_index icon,
 	}
 }
 
-std::shared_ptr<text_element> make_rank_element(std::u8string text, const bool is_rank)
+std::shared_ptr<text_element> make_rank_element(std::string text, const bool is_rank)
 {
 	auto result = std::make_shared<text_element>(text);
 	if (is_rank) result->foreground_color(calc_rank_color());
@@ -1805,7 +1805,7 @@ view_elements_ptr view_state::create_selection_controls()
 				{
 					elements.emplace_back(std::make_shared<bullet_element>(
 						icon_index::folder,
-						std::make_shared<link_element>(format(u8"{}\\"sv, item->folder().text()),
+						std::make_shared<link_element>(std::format("{}\\", item->folder().text()),
 						                               commands::browse_open_containingfolder),
 						view_element_style::none));
 				}
@@ -2043,7 +2043,7 @@ view_elements_ptr view_state::create_selection_controls()
 				}
 			}
 
-			std::u8string_view identical_text;
+			std::string_view identical_text;
 
 
 			const bool crc32_loaded = i1->crc32c() != 0 && i2->crc32c() != 0;
@@ -2100,11 +2100,11 @@ view_elements_ptr view_state::create_selection_controls()
 
 			if (folder_count > 0)
 			{
-				std::u8string title;
+				std::string title;
 
 				if (folder_count == 1)
 				{
-					title = format(tt.title_folder, first_folder->name());
+					title = str_format(tt.title_folder.sv(), first_folder->name());
 				}
 				else
 				{
@@ -2118,11 +2118,11 @@ view_elements_ptr view_state::create_selection_controls()
 
 			if (item_count > 0)
 			{
-				std::u8string title;
+				std::string title;
 
 				if (item_count == 1)
 				{
-					title = format(u8"{}:{}"sv, first_item->file_type()->group->name, first_item->name());
+					title = std::format("{}:{}", first_item->file_type()->group->name, first_item->name());
 				}
 				else
 				{
@@ -2413,9 +2413,9 @@ df::search_parent view_state::parent_search() const
 }
 
 
-void view_state::open(const view_host_base_ptr& view, const std::u8string_view text)
+void view_state::open(const view_host_base_ptr& view, const std::string_view text)
 {
-	if (_search.has_selector() && text == u8"**"sv)
+	if (_search.has_selector() && text == "**")
 	{
 		auto search = _search;
 		const auto s = search.selectors().front();
@@ -2423,7 +2423,7 @@ void view_state::open(const view_host_base_ptr& view, const std::u8string_view t
 
 		open(view, search.clear_selectors().add_selector(sel), {});
 	}
-	else if (text == u8".."sv)
+	else if (text == "..")
 	{
 		const auto p = parent_search();
 		open(view, p.parent, make_unique_paths(p.selection));
@@ -2715,7 +2715,7 @@ void view_state::open(const view_host_base_ptr& view, const df::item_element_ptr
 
 
 void view_state::toggle_selected_item_tags(const view_host_base_ptr& view, const df::results_ptr& results,
-                                           const std::u8string_view tag)
+                                           const std::string_view tag)
 {
 	record_feature_use(features::tag);
 
@@ -2981,7 +2981,7 @@ void view_state::tick(const view_host_base_ptr& view, const double time_now)
 
 			if (is_media_end)
 			{
-				df::trace("view_state::tick detected media played to end"sv);
+				df::trace("view_state::tick detected media played to end");
 
 				if (d->_session)
 				{
@@ -3343,7 +3343,7 @@ ui::texture_ptr texture_state::zoom_texture(ui::draw_context& rc, const sizei ex
 
 	if (!_zoom_texture)
 	{
-		throw app_exception(u8"Failed to create zoom texture."s);
+		throw app_exception("Failed to create zoom texture."s);
 	}
 
 	return _zoom_texture;
@@ -3556,7 +3556,7 @@ void draw_texture_info(ui::draw_context& rc, const recti media_bounds, const ui:
 
 		auto r = media_bounds;
 
-		const auto text = str::format(u8"{} {}x{} -> {}x{} {}"sv, to_string(tex->format()), tex_dims.cx, tex_dims.cy,
+		const auto text = std::format("{} {}x{} -> {}x{} {}", to_string(tex->format()), tex_dims.cx, tex_dims.cy,
 		                              r.width(), r.height(), to_string(sampler));
 
 		r.left += 8;
@@ -3732,7 +3732,7 @@ static df::folder_path next_folder(const df::folder_path current, const bool is_
 	return result;
 }
 
-std::u8string view_state::next_path(const bool forward) const
+std::string view_state::next_path(const bool forward) const
 {
 	auto a = _search;
 	const auto vm = _view_mode;
@@ -3743,7 +3743,7 @@ std::u8string view_state::next_path(const bool forward) const
 
 		if (i)
 		{
-			return std::u8string(i->name());
+			return std::string(i->name());
 		}
 	}
 	else if (a.has_selector())
@@ -3752,7 +3752,7 @@ std::u8string view_state::next_path(const bool forward) const
 
 		if (folder.exists())
 		{
-			return std::u8string(next_folder(folder, forward).text());
+			return std::string(next_folder(folder, forward).text());
 		}
 	}
 	else if (a.has_date())
@@ -3762,7 +3762,7 @@ std::u8string view_state::next_path(const bool forward) const
 	}
 	else if (a.is_empty())
 	{
-		return vm == view_type::items ? u8"About"s : u8"Items"s;
+		return vm == view_type::items ? "About"s : "Items"s;
 	}
 
 	return {};

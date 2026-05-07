@@ -19,9 +19,6 @@
 #include "view_test.h"
 #include "test.h"
 #include "av_player.h"
-#include "metadata_exif.h"
-#include "metadata_iptc.h"
-#include "metadata_xmp.h"
 #include "ui_controls.h"
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -33,10 +30,10 @@ inline constexpr sizei thumbnail_max_dimension = {256, 256};
 inline constexpr int expected_cached_item_count = 38;
 
 inline const auto long_text =
-	u8"The Commodore 64, also known as the C64, C-64, C= 64, or occasionally CBM 64 or VIC-64, is an 8-bit home computer introduced in January 1982 by Commodore International. "
-	u8"It is listed in the Guinness World Records as the highest-selling single computer model of all time, with independent estimates placing the number sold between 10 and 17 million units. "
-	u8"Volume production started in early 1982, with machines being released on to the market in August at a price of US $595(roughly equivalent to $1, 500 in 2015)."
-	u8"Preceded by the Commodore VIC - 20 and Commodore PET, the C64 takes its name from its 64 kilobytes(65, 536 bytes) of RAM, and has technologically superior sound and graphical specifications when compared to some earlier systems such as the Apple II and Atari 800, with multi - color sprites and a more advanced sound processor.";
+	"The Commodore 64, also known as the C64, C-64, C= 64, or occasionally CBM 64 or VIC-64, is an 8-bit home computer introduced in January 1982 by Commodore International. "
+	"It is listed in the Guinness World Records as the highest-selling single computer model of all time, with independent estimates placing the number sold between 10 and 17 million units. "
+	"Volume production started in early 1982, with machines being released on to the market in August at a price of US $595(roughly equivalent to $1, 500 in 2015)."
+	"Preceded by the Commodore VIC - 20 and Commodore PET, the C64 takes its name from its 64 kilobytes(65, 536 bytes) of RAM, and has technologically superior sound and graphical specifications when compared to some earlier systems such as the Apple II and Atari 800, with multi - color sprites and a more advanced sound processor.";
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Shared helper classes
@@ -45,21 +42,21 @@ inline const auto long_text =
 class null_item_results_ui final : public df::status_i
 {
 public:
-	void start_item(const std::u8string_view name) override
+	void start_item(const std::string_view name) override
 	{
 	}
 
-	void end_item(const std::u8string_view name, const item_status status) override
+	void end_item(const std::string_view name, const item_status status) override
 	{
 	}
 
 	bool has_failures() const override { return false; }
 
-	void abort(const std::u8string_view error_message) override
+	void abort(const std::string_view error_message) override
 	{
 	}
 
-	void complete(const std::u8string_view message) override
+	void complete(const std::string_view message) override
 	{
 	}
 
@@ -67,11 +64,11 @@ public:
 	{
 	}
 
-	void message(const std::u8string_view message, int64_t pos, int64_t total) override
+	void message(const std::string_view message, int64_t pos, int64_t total) override
 	{
 	}
 
-	void show_message(const std::u8string_view message) override
+	void show_message(const std::string_view message) override
 	{
 	}
 
@@ -168,11 +165,11 @@ public:
 	{
 	}
 
-	void web_service_cache(std::u8string key, std::function<void(const std::u8string&)> f) override
+	void web_service_cache(std::string key, std::function<void(const std::string&)> f) override
 	{
 	}
 
-	void web_service_cache(std::u8string key, std::u8string value) override
+	void web_service_cache(std::string key, std::string value) override
 	{
 	}
 
@@ -195,7 +192,7 @@ class temp_files
 	df::file_paths _paths;
 
 public:
-	temp_files() : _folder(platform::temp_folder().combine(str::format(u8"diffractor-{}"sv, platform::tick_count())))
+	temp_files() : _folder(platform::temp_folder().combine(std::format("diffractor-{}", platform::tick_count())))
 	{
 	}
 
@@ -225,7 +222,7 @@ public:
 		return _folder;
 	}
 
-	df::file_path next_path(const std::u8string_view ext = u8".jpg"sv)
+	df::file_path next_path(const std::string_view ext = ".jpg")
 	{
 		if (!_folder.exists())
 		{
@@ -277,20 +274,20 @@ struct shared_test_context
 // Shared helper functions (defined in tests1.cpp)
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-file_scan_result ff_scan_file(files& ff, df::file_path path, std::u8string_view xmp_sidecar = {});
+file_scan_result ff_scan_file(files& ff, df::file_path path, std::string_view xmp_sidecar = {});
 file_scan_result ff_scan_and_load_thumb(files& ff, df::file_path path,
-                                        std::u8string_view xmp_sidecar = {});
+                                        std::string_view xmp_sidecar = {});
 void assert_metadata(const prop::item_metadata& expected, const prop::item_metadata& actual,
-                     std::u8string_view message = {});
+                     std::string_view message = {});
 prop::item_metadata_ptr extract_properties(df::file_path path, uint32_t t = metadata_type::ALL);
 prop::item_metadata_ptr expected_test_jpg();
 prop::item_metadata_ptr metadata_from_cache(index_state& index, df::file_path path);
 df::index_file_item make_index_file_info(df::date_t date);
 df::item_element_ptr load_item(index_state& index, df::file_path path, bool load_thumb);
-std::u8string_view detect_xmp_sidecar(df::file_path path);
+std::string_view detect_xmp_sidecar(df::file_path path);
 void build_index(index_state& index, database& db);
 int count_search_results(index_state& index, const df::search_t& search);
-int count_search_results(index_state& index, std::u8string_view query);
+int count_search_results(index_state& index, std::string_view query);
 std::shared_ptr<av_player> make_test_player();
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -305,10 +302,10 @@ class prop_test
 public:
 	prop_test()
 	{
-		_f.ft = files::file_type_from_name(u8"test.jpg"sv);
+		_f.ft = files::file_type_from_name("test.jpg");
 	}
 
-	prop_test& tag(const std::u8string_view s)
+	prop_test& tag(const std::string_view s)
 	{
 		_f.safe_ps()->tags = str::cache(s);
 		return *this;
@@ -327,7 +324,7 @@ public:
 		return *this;
 	}
 
-	prop_test& desc(const std::u8string_view s)
+	prop_test& desc(const std::string_view s)
 	{
 		_f.safe_ps()->description = str::cache(s);
 		return *this;
@@ -339,7 +336,7 @@ public:
 		return *this;
 	}
 
-	prop_test& is_match(const std::u8string_view query)
+	prop_test& is_match(const std::string_view query)
 	{
 		const auto search = df::search_t::parse(query);
 		const df::search_matcher matcher(search, now_days);
@@ -348,7 +345,7 @@ public:
 		return *this;
 	}
 
-	prop_test& is_not_match(const std::u8string_view query)
+	prop_test& is_not_match(const std::string_view query)
 	{
 		const auto search = df::search_t::parse(query);
 		const df::search_matcher matcher(search, now_days);
@@ -363,14 +360,14 @@ public:
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 static void assert_equal(const ui::orientation expected, const ui::orientation actual,
-                         const std::u8string_view name = {},
-                         const std::u8string_view message = {})
+                         const std::string_view name = {},
+                         const std::string_view message = {})
 {
 	assert_equal(orientation_to_string(expected), orientation_to_string(actual), name, message);
 }
 
 static void assert_equal(df::search_term_modifier_bool expected, df::search_term_modifier_bool actual,
-                         const std::u8string_view name = {}, const std::u8string_view message = {})
+                         const std::string_view name = {}, const std::string_view message = {})
 {
 	assert_equal(static_cast<int>(expected), static_cast<int>(actual), name, message);
 }

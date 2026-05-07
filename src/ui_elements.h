@@ -807,7 +807,7 @@ struct view_hover_element
 class text_element_base : public view_element
 {
 protected:
-	std::u8string _text;
+	std::string _text;
 	ui::style::font_face _font = ui::style::font_face::dialog;
 	ui::style::text_style _text_style = ui::style::text_style::multiline;
 	ui::color32 _foreground_clr = 0;
@@ -815,7 +815,7 @@ protected:
 	mutable ui::text_layout_ptr _tl;
 
 public:
-	text_element_base(const std::u8string_view text,
+	text_element_base(const std::string_view text,
 	                  const view_element_style s = view_element_style::none) noexcept : view_element(s), _text(text)
 	{
 	}
@@ -825,7 +825,7 @@ public:
 		_foreground_clr = clr;
 	}
 
-	void text(const std::u8string_view t)
+	void text(const std::string_view t)
 	{
 		_text = t;
 
@@ -885,7 +885,7 @@ public:
 class text_element final : public std::enable_shared_from_this<text_element>, public text_element_base
 {
 public:
-	text_element(const std::u8string_view text, const ui::style::font_face font, const ui::style::text_style text_style,
+	text_element(const std::string_view text, const ui::style::font_face font, const ui::style::text_style text_style,
 	             const view_element_style style_in) noexcept : text_element_base(text, style_in)
 	{
 		_font = font;
@@ -894,23 +894,23 @@ public:
 		update_background_color();
 	}
 
-	text_element(const std::u8string_view text, const ui::style::text_style text_style) noexcept : text_element_base(
+	text_element(const std::string_view text, const ui::style::text_style text_style) noexcept : text_element_base(
 		text)
 	{
 		_text_style = text_style;
 	}
 
-	text_element(const std::u8string_view text, const ui::style::font_face font) noexcept : text_element_base(text)
+	text_element(const std::string_view text, const ui::style::font_face font) noexcept : text_element_base(text)
 	{
 		_font = font;
 	}
 
-	text_element(const std::u8string_view text, const view_element_style style_in) noexcept : text_element_base(
+	text_element(const std::string_view text, const view_element_style style_in) noexcept : text_element_base(
 		text, style_in)
 	{
 	}
 
-	text_element(const std::u8string_view text) noexcept : text_element_base(text)
+	text_element(const std::string_view text) noexcept : text_element_base(text)
 	{
 	}
 };
@@ -919,7 +919,7 @@ public:
 class action_element final : public std::enable_shared_from_this<action_element>, public text_element_base
 {
 public:
-	explicit action_element(const std::u8string_view t) : text_element_base(
+	explicit action_element(const std::string_view t) : text_element_base(
 		t, view_element_style::center | view_element_style::new_line)
 	{
 		_font = ui::style::font_face::dialog;
@@ -927,7 +927,7 @@ public:
 		_foreground_clr = ui::style::color::dialog_selected_background;
 	}
 
-	explicit action_element(std::u8string&& t) : text_element_base(
+	explicit action_element(std::string&& t) : text_element_base(
 		t, view_element_style::center | view_element_style::new_line)
 	{
 		_font = ui::style::font_face::dialog;
@@ -944,7 +944,7 @@ class link_element final : public std::enable_shared_from_this<link_element>, pu
 	bool _full_background = false;
 
 public:
-	link_element(const std::u8string_view text, const commands cmd, const ui::style::font_face font,
+	link_element(const std::string_view text, const commands cmd, const ui::style::font_face font,
 	             const ui::style::text_style text_style,
 	             const view_element_style style_in = view_element_style::none,
 	             const bool full_background = false) noexcept : text_element_base(
@@ -956,7 +956,7 @@ public:
 		update_style();
 	}
 
-	link_element(const std::u8string_view text, std::function<void()> func, const ui::style::font_face font,
+	link_element(const std::string_view text, std::function<void()> func, const ui::style::font_face font,
 	             const ui::style::text_style text_style,
 	             const view_element_style style_in = view_element_style::none) noexcept :
 		text_element_base(text, style_in), _invoke(std::move(func))
@@ -966,7 +966,7 @@ public:
 		update_style();
 	}
 
-	link_element(const std::u8string_view text, std::function<void()> func,
+	link_element(const std::string_view text, std::function<void()> func,
 	             std::function<void(view_hover_element&)> tooltip,
 	             const ui::style::font_face font, const ui::style::text_style text_style,
 	             const view_element_style style_in = view_element_style::none) noexcept :
@@ -977,18 +977,18 @@ public:
 		update_style();
 	}
 
-	link_element(const std::u8string_view text, const commands cmd) noexcept : text_element_base(text), _cmd(cmd)
+	link_element(const std::string_view text, const commands cmd) noexcept : text_element_base(text), _cmd(cmd)
 	{
 		update_style();
 	}
 
-	link_element(const std::u8string_view text, std::function<void()> func) noexcept : text_element_base(text),
+	link_element(const std::string_view text, std::function<void()> func) noexcept : text_element_base(text),
 		_invoke(std::move(func))
 	{
 		update_style();
 	}
 
-	link_element(const std::u8string_view text) noexcept : text_element_base(text)
+	link_element(const std::string_view text) noexcept : text_element_base(text)
 	{
 		update_style();
 	}
@@ -1038,24 +1038,33 @@ public:
 	                                             const std::vector<recti>& excluded_bounds) override;
 };
 
+inline std::string icon_to_utf8(const icon_index i)
+{
+	// Mask to 16 bits to strip the 0x10000 flag bit used for mirroring
+	// (e.g. rotate_anticlockwise) and get the base font glyph code point
+	const wchar_t text[2] = {static_cast<wchar_t>(static_cast<uint32_t>(i) & 0xFFFF), 0};
+	return str::utf16_to_utf8(text);
+}
+
 inline view_element_ptr make_icon_element(const icon_index i, const view_element_style style_in)
 {
-	const wchar_t text[2] = {static_cast<wchar_t>(i), 0};
-	return std::make_shared<text_element>(str::utf16_to_utf8(text), ui::style::font_face::icons,
+	return std::make_shared<text_element>(icon_to_utf8(i), ui::style::font_face::icons,
 	                                      ui::style::text_style::single_line_center, style_in);
 }
 
 inline view_element_ptr make_icon_element(const icon_index i, const size_t repeat, const view_element_style style_in)
 {
-	const std::wstring text(repeat, static_cast<wchar_t>(i));
-	return std::make_shared<text_element>(str::utf16_to_utf8(text), ui::style::font_face::icons,
+	const auto single = icon_to_utf8(i);
+	std::string text;
+	text.reserve(single.size() * repeat);
+	for (size_t n = 0; n < repeat; ++n) text += single;
+	return std::make_shared<text_element>(std::move(text), ui::style::font_face::icons,
 	                                      ui::style::text_style::single_line_center, style_in);
 }
 
 inline view_element_ptr make_icon_link_element(const icon_index i, commands cmd, const view_element_style style_in)
 {
-	const wchar_t text[2] = {static_cast<wchar_t>(i), 0};
-	return std::make_shared<link_element>(str::utf16_to_utf8(text), cmd, ui::style::font_face::icons,
+	return std::make_shared<link_element>(icon_to_utf8(i), cmd, ui::style::font_face::icons,
 	                                      ui::style::text_style::single_line_center, style_in);
 }
 
@@ -1063,16 +1072,18 @@ inline view_element_ptr make_icon_link_element(const icon_index i, const size_t 
                                                const std::function<void()>& func,
                                                const std::function<void(view_hover_element&)>& tooltip)
 {
-	const std::wstring text(repeat, static_cast<wchar_t>(i));
-	return std::make_shared<link_element>(str::utf16_to_utf8(text), func, tooltip, ui::style::font_face::icons,
+	const auto single = icon_to_utf8(i);
+	std::string text;
+	text.reserve(single.size() * repeat);
+	for (size_t n = 0; n < repeat; ++n) text += single;
+	return std::make_shared<link_element>(std::move(text), func, tooltip, ui::style::font_face::icons,
 	                                      ui::style::text_style::single_line_center, view_element_style::none);
 }
 
 inline void xdraw_icon(ui::draw_context& dc, const icon_index i, const recti bounds, const ui::color c,
                        const ui::color bg)
 {
-	const wchar_t text[2] = {static_cast<wchar_t>(i), 0};
-	dc.draw_text(str::utf16_to_utf8(text), bounds, ui::style::font_face::icons,
+	dc.draw_text(icon_to_utf8(i), bounds, ui::style::font_face::icons,
 	             ui::style::text_style::single_line_center, c, bg);
 }
 

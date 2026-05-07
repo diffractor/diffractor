@@ -19,7 +19,7 @@ class db_statement;
 
 static constexpr auto max_country_alt_names = 16;
 
-constexpr uint32_t to_code2(const std::u8string_view s)
+constexpr uint32_t to_code2(const std::string_view s)
 {
 	uint32_t result = 0;
 	for (const auto c : s) result = result << 8 | str::to_upper(c);
@@ -38,7 +38,7 @@ str::cached normalize_county_name(str::cached country);
 
 class country_t
 {
-	char8_t _code[3]{};
+	char _code[3]{};
 	str::cached _name = {};
 	std::vector<str::cached> _alt_names;
 	df::hash_map<uint32_t, str::cached> _states;
@@ -54,7 +54,7 @@ public:
 	country_t(country_t&&) noexcept = default;
 	country_t& operator=(country_t&&) noexcept = default;
 
-	country_t(const std::u8string_view code, const str::cached name,
+	country_t(const std::string_view code, const str::cached name,
 	          std::vector<str::cached> alt_names) noexcept : _name(name), _alt_names(std::move(alt_names))
 	{
 		_code[0] = code[0];
@@ -62,12 +62,12 @@ public:
 		_code[2] = 0;
 	}
 
-	void state(const std::u8string_view code, const str::cached name)
+	void state(const std::string_view code, const str::cached name)
 	{
 		_states[to_code2(code)] = name;
 	}
 
-	std::u8string_view code() const
+	std::string_view code() const
 	{
 		return {_code, 2};
 	}
@@ -166,7 +166,7 @@ class location_cache final : public df::no_copy
 		ngram_t(ngram_t&&) noexcept = default;
 		ngram_t& operator=(ngram_t&&) noexcept = default;
 
-		explicit ngram_t(const std::u8string_view r) noexcept
+		explicit ngram_t(const std::string_view r) noexcept
 		{
 			text[0] = 0;
 
@@ -215,7 +215,7 @@ class location_cache final : public df::no_copy
 		location_ngram_and_offset(location_ngram_and_offset&&) noexcept = default;
 		location_ngram_and_offset& operator=(location_ngram_and_offset&&) noexcept = default;
 
-		location_ngram_and_offset(const std::u8string_view r, const uint32_t off) noexcept : ngram(r), offset(off)
+		location_ngram_and_offset(const std::string_view r, const uint32_t off) noexcept : ngram(r), offset(off)
 		{
 		}
 
@@ -236,10 +236,10 @@ class location_cache final : public df::no_copy
 	void load_countries();
 	void load_states();
 
-	static int scan_entries(std::u8string_view line, csv_entry* entries);
-	static int scan_entries(u8istream& file, std::u8string& line, std::streamoff offset, csv_entry* entries);
+	static int scan_entries(std::string_view line, csv_entry* entries);
+	static int scan_entries(std::ifstream& file, std::string& line, std::streamoff offset, csv_entry* entries);
 
-	location_t build_location(u8istream& file, int offset) const;
+	location_t build_location(std::ifstream& file, int offset) const;
 	location_t build_location(const csv_entry* entries) const;
 
 public:
@@ -258,7 +258,7 @@ public:
 	location_t find_closest(double x, double y) const;
 	location_t find_by_id(uint32_t id) const;
 
-	location_matches auto_complete(std::u8string_view query, uint32_t max_results,
+	location_matches auto_complete(std::string_view query, uint32_t max_results,
 	                               gps_coordinate default_location) const;
 
 	const country_t& find_country(const uint32_t code) const

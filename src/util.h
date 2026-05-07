@@ -19,12 +19,6 @@
 #define COMPILE_ARM_INTRINSIC
 #endif
 
-using u8ostringstream = std::basic_ostringstream<char8_t, std::char_traits<char8_t>, std::allocator<char8_t>>;
-using u8istringstream = std::basic_istringstream<char8_t, std::char_traits<char8_t>, std::allocator<char8_t>>;
-
-using u8istream = std::basic_ifstream<char8_t, std::char_traits<char8_t>>;
-using u8ostream = std::basic_ofstream<char8_t, std::char_traits<char8_t>>;
-
 using namespace std::literals;
 
 constexpr std::size_t operator "" _z(const unsigned long long n)
@@ -41,10 +35,6 @@ public:
 	{
 	}
 
-	explicit app_exception(const std::u8string& message) : my_base(std::bit_cast<const char*>(message.c_str()))
-	{
-	}
-
 	explicit app_exception(const char* message) : my_base(message)
 	{
 	}
@@ -54,16 +44,16 @@ struct text_t
 {
 	text_t() = default;
 
-	text_t(const std::u8string_view t) : text(t)
+	text_t(const std::string_view t) : text(t)
 	{
 	}
 
-	operator std::u8string_view() const
+	operator std::string_view() const
 	{
 		return sv();
 	}
 
-	std::u8string_view sv() const
+	std::string_view sv() const
 	{
 		return trans.empty() ? text : trans;
 	}
@@ -73,8 +63,8 @@ struct text_t
 		trans.clear();
 	}
 
-	std::u8string_view text;
-	std::u8string trans;
+	std::string_view text;
+	std::string trans;
 };
 
 namespace df
@@ -148,21 +138,21 @@ namespace df
 	extern std::atomic_int dragging_items;
 	extern std::atomic_int handling_crash;
 	extern const char* rendering_func;
-	extern std::u8string gpu_desc;
-	extern std::u8string gpu_id;
-	extern std::u8string d3d_info;
+	extern std::string gpu_desc;
+	extern std::string gpu_id;
+	extern std::string d3d_info;
 	extern date_t start_time;
 	extern file_path last_loaded_path;
 	extern file_path previous_log_path;
 	extern file_path log_path;
 
-	void log(std::u8string_view context, std::u8string_view message);
-	void log(std::string_view context, std::u8string_view message);
 	void log(std::string_view context, std::string_view message);
-	void trace(std::u8string_view message);
+	void log(std::string_view context, std::string_view message);
+	void log(std::string_view context, std::string_view message);
+	void trace(std::string_view message);
 	void trace(std::string_view message);
 	file_path close_log();
-	std::u8string format_version(bool short_text);
+	std::string format_version(bool short_text);
 
 	double now();
 	int64_t now_ms();
@@ -470,8 +460,8 @@ namespace df
 			return x != other.x || y != other.y;
 		}
 
-		static xy8 parse(std::u8string_view r);
-		std::u8string str() const;
+		static xy8 parse(std::string_view r);
+		std::string str() const;
 	};
 
 
@@ -560,7 +550,7 @@ namespace df
 			return result;
 		}
 
-		static xy32 parse(std::u8string_view r);
+		static xy32 parse(std::string_view r);
 
 		constexpr operator xy16() const
 		{
@@ -569,7 +559,7 @@ namespace df
 
 		constexpr bool is_empty() const { return x == 0 && y == 0; }
 
-		std::u8string str() const;
+		std::string str() const;
 
 		friend bool operator==(const xy32& lhs, const xy32& rhs)
 		{
@@ -749,7 +739,7 @@ namespace df
 			return static_cast<float>(_i);
 		}
 
-		std::u8string str() const;
+		std::string str() const;
 
 		static file_size null;
 	};
@@ -826,7 +816,7 @@ namespace df
 		int major = 0;
 		int minor = 0;
 
-		version(std::u8string_view version);
+		version(std::string_view version);
 
 		friend bool operator==(const version& lhs, const version& rhs)
 		{
@@ -870,7 +860,7 @@ namespace df
 			return result;
 		}
 
-		friend u8ostringstream& operator <<(u8ostringstream& stream, const version& ver)
+		friend std::ostringstream& operator <<(std::ostringstream& stream, const version& ver)
 		{
 			stream << ver.major;
 			stream << '.';
@@ -878,9 +868,9 @@ namespace df
 			return stream;
 		}
 
-		std::u8string to_string() const
+		std::string to_string() const
 		{
-			u8ostringstream s;
+			std::ostringstream s;
 			s << *this;
 			return s.str();
 		}
@@ -973,11 +963,11 @@ namespace df
 		return _byteswap_ushort(*std::bit_cast<const uint16_t*>(addr));
 	}
 
-	std::u8string url_extract(std::u8string_view text);
+	std::string url_extract(std::string_view text);
 
-	inline std::u8string url_encode(const std::u8string_view url)
+	inline std::string url_encode(const std::string_view url)
 	{
-		std::u8string result;
+		std::string result;
 
 		for (const auto c : url)
 		{
@@ -991,7 +981,7 @@ namespace df
 			}
 			else
 			{
-				static constexpr auto chars = u8"0123456789ABCDEF"sv;
+				static constexpr auto chars = "0123456789ABCDEF";
 
 				result += '%';
 				result += chars[(c & 0xF0) >> 4];
@@ -1002,3 +992,29 @@ namespace df
 		return result;
 	}
 } // namespace
+
+template <>
+struct std::formatter<text_t, char> : std::formatter<std::string_view, char>
+{
+	auto format(const text_t& t, std::format_context& ctx) const
+	{
+		return std::formatter<std::string_view, char>::format(t.sv(), ctx);
+	}
+};
+
+// Helper for formatting with runtime format strings (e.g. text_t).
+// Takes args by value so temporaries can be passed to std::make_format_args.
+template <class... Args>
+std::string str_format(const std::string_view fmt, Args... args)
+{
+	return std::vformat(fmt, std::make_format_args(args...));
+}
+
+template <>
+struct std::formatter<df::file_size, char> : std::formatter<std::string_view, char>
+{
+	auto format(const df::file_size& s, std::format_context& ctx) const
+	{
+		return std::formatter<std::string_view, char>::format(s.str(), ctx);
+	}
+};

@@ -20,7 +20,7 @@ class sync_view final :
 	public std::enable_shared_from_this<sync_view>
 {
 	bool _select_other_folder = false;
-	std::u8string _status;
+	std::string _status;
 
 public:
 	sync_view(view_state& state, view_host_ptr host) : list_view(state, std::move(host))
@@ -48,7 +48,7 @@ public:
 
 	bool can_run() const { return !_rows.empty(); }
 
-	std::u8string_view status() override
+	std::string_view status() override
 	{
 		return _status;
 	}
@@ -66,7 +66,7 @@ public:
 		_state.view_mode(view_type::items);
 	}
 
-	std::u8string_view title() override
+	std::string_view title() override
 	{
 		return s_app_name;
 	}

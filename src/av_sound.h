@@ -194,7 +194,7 @@ public:
 class av_audio_device
 {
 public:
-	virtual std::u8string id() = 0;
+	virtual std::string id() = 0;
 	virtual audio_info_t format() = 0;
 	virtual double time() const = 0;
 	virtual bool is_stopped() const = 0;
@@ -209,12 +209,12 @@ public:
 
 using av_audio_device_ptr = std::shared_ptr<av_audio_device>;
 
-av_audio_device_ptr create_av_audio_device(std::u8string_view device_id);
+av_audio_device_ptr create_av_audio_device(std::string_view device_id);
 
 struct sound_device
 {
-	std::u8string id;
-	std::u8string name;
+	std::string id;
+	std::string name;
 	bool is_current = false;
 };
 

@@ -10,9 +10,9 @@
 // with highlight support for the search box dropdown suggestions.
 
 #pragma once
+#include "ui_controllers.h"
 
-
-static std::u8string_view strip_quotes(const std::u8string_view str)
+static std::string_view strip_quotes(const std::string_view str)
 {
 	if (str.size() > 1 && str::is_quote(str[0]) && str[str.size() - 1] == str[0])
 	{
@@ -23,17 +23,17 @@ static std::u8string_view strip_quotes(const std::u8string_view str)
 }
 
 
-inline bool find_auto_complete(const std::vector<std::u8string_view>& queries, const std::u8string_view text,
+inline bool find_auto_complete(const std::vector<std::string_view>& queries, const std::string_view text,
                                const bool is_path, ui::match_highlights& match)
 {
-	//const std::u8string_view value = text;
+	//const std::string_view value = text;
 	std::vector<str::part_t> found_subs;
 
 	for (const auto& q : queries)
 	{
 		if (!q.empty())
 		{
-			if (q.size() == 1) // Single char8_t?
+			if (q.size() == 1) // Single char?
 			{
 				size_t match_pos = 0;
 
@@ -41,14 +41,15 @@ inline bool find_auto_complete(const std::vector<std::u8string_view>& queries, c
 				{
 					const auto last_slash = df::find_last_slash(text);
 
-					if (last_slash != std::u8string_view::npos && last_slash < text.size())
+					if (last_slash != std::string_view::npos && last_slash < text.size())
 					{
 						match_pos = last_slash + 1;
 						if (match_pos >= text.size()) match_pos = 0;
 					}
 				}
 
-				if (str::normalze_for_compare(text[match_pos]) == str::normalze_for_compare(q[0]))
+				if (match_pos < text.size() &&
+					str::normalze_for_compare(text[match_pos]) == str::normalze_for_compare(q[0]))
 				{
 					found_subs.emplace_back(match_pos, 1);
 					break;
@@ -58,7 +59,7 @@ inline bool find_auto_complete(const std::vector<std::u8string_view>& queries, c
 			{
 				auto found = str::ifind(text, q);
 
-				if (found != std::u8string_view::npos)
+				if (found != std::string_view::npos)
 				{
 					found_subs.emplace_back(found, q.size());
 					break;
@@ -77,7 +78,7 @@ inline bool find_auto_complete(const std::vector<std::u8string_view>& queries, c
 			{
 				auto found = str::ifind(v, q);
 
-				if (found != std::u8string_view::npos)
+				if (found != std::string_view::npos)
 				{
 					found_subs.emplace_back( found, q.size() });
 					break;
@@ -110,7 +111,7 @@ inline bool find_auto_complete(const std::vector<std::u8string_view>& queries, c
 //
 //		if (!q.empty() && !v.empty())
 //		{
-//			if (q.size() == 1) // Single char8_t?
+//			if (q.size() == 1) // Single char?
 //			{
 //				if (str::normalze_for_compare(v[0]) == str::normalze_for_compare(q[0]))
 //				{
@@ -155,7 +156,7 @@ inline bool find_auto_complete(const std::vector<std::u8string_view>& queries, c
 //	//{
 //	//	auto name = platform::PathFindFileName(path.begin);
 //
-//	//	if (q.size() == 1) // Single char8_t?
+//	//	if (q.size() == 1) // Single char?
 //	//	{
 //	//		if (str::normalze_for_compare(name[0]) == str::normalze_for_compare(q[0]))
 //	//		{
@@ -210,7 +211,7 @@ public:
 	ui::complete_strategy_t& _parent;
 	df::folder_path folder;
 	ui::match_highlights match;
-	std::u8string lead;
+	std::string lead;
 
 	folder_match(ui::complete_strategy_t& parent, const df::folder_path f, ui::match_highlights m = {},
 	             const int w = 1) :
@@ -219,14 +220,14 @@ public:
 		weight = w;
 	}
 
-	folder_match(ui::complete_strategy_t& parent, const df::folder_path f, std::u8string l, ui::match_highlights m = {},
+	folder_match(ui::complete_strategy_t& parent, const df::folder_path f, std::string l, ui::match_highlights m = {},
 	             const int w = 1) : auto_complete_match(view_element_style::can_invoke), _parent(parent), folder(f),
 	                                match(std::move(m)), lead(std::move(l))
 	{
 		weight = w;
 	}
 
-	std::u8string edit_text() const override
+	std::string edit_text() const override
 	{
 		return combine2(lead, folder.text());
 	}
@@ -249,7 +250,7 @@ public:
 
 		if (!str::is_empty(lead))
 		{
-			constexpr auto dots = u8" ... "sv;
+			constexpr auto dots = " ... ";
 			const auto dots_extent = dc.measure_text(dots, ui::style::font_face::dialog,
 			                                         ui::style::text_style::single_line, bounds.width());
 			dc.draw_text(dots, {}, rr, ui::style::font_face::dialog, ui::style::text_style::single_line, clr, {});
@@ -286,11 +287,11 @@ class text_match final : public ui::auto_complete_match, public std::enable_shar
 {
 public:
 	ui::complete_strategy_t& _parent;
-	std::u8string lead;
-	std::u8string text;
+	std::string lead;
+	std::string text;
 	ui::match_highlights match;
 
-	text_match(ui::complete_strategy_t& parent, std::u8string t, std::u8string l, ui::match_highlights m = {},
+	text_match(ui::complete_strategy_t& parent, std::string t, std::string l, ui::match_highlights m = {},
 	           const int w = 1) : auto_complete_match(view_element_style::can_invoke), _parent(parent),
 	                              lead(std::move(l)),
 	                              text(std::move(t)), match(std::move(m))
@@ -298,7 +299,7 @@ public:
 		weight = w;
 	}
 
-	std::u8string edit_text() const override
+	std::string edit_text() const override
 	{
 		return str::combine2(lead, text);
 	}
@@ -321,7 +322,7 @@ public:
 
 		if (!str::is_empty(lead))
 		{
-			constexpr auto dots = u8" ... "sv;
+			constexpr auto dots = " ... ";
 			const auto dots_extent = dc.measure_text(dots, ui::style::font_face::dialog,
 			                                         ui::style::text_style::single_line, bounds.width());
 			dc.draw_text(dots, {}, rr, ui::style::font_face::dialog, ui::style::text_style::single_line, clr, {});

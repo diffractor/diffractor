@@ -755,7 +755,7 @@ void items_view::update_visible_items_list()
 	if (_visible_items != new_visible_items)
 	{
 		_visible_items = std::move(new_visible_items);
-		df::trace("items_view::update_visible_items_list changed"sv);
+		df::trace("items_view::update_visible_items_list changed");
 
 		const auto visible_center_loc = logical_items_bounds.center();
 		auto visible_center_distance = INT_MAX;
@@ -1058,7 +1058,7 @@ void items_view::layout(ui::measure_context& mc, const sizei extent)
 
 		_media_scroller.layout({avail_media_bounds.width(), media_height}, avail_media_bounds, media_scroll_bounds);
 
-		const auto scroll_text_width = mc.measure_text(u8"88888"sv, ui::style::font_face::dialog,
+		const auto scroll_text_width = mc.measure_text("88888", ui::style::font_face::dialog,
 		                                               ui::style::text_style::single_line, _client_extent.cx / 5).cx;
 		const auto items_scroll_offset = _items_scroller.scroll_offset();
 		const auto anchor_item_y = anchor_item ? anchor_item->bounds.top - items_scroll_offset.y : 0;
@@ -1155,12 +1155,12 @@ public:
 			}
 			else if (!_kv.empty())
 			{
-				u8ostringstream s;
+				std::ostringstream s;
 
 				for (const auto& m : _kv)
 				{
 					s << m.first.sv();
-					s << u8": "sv;
+					s << ": ";
 					s << m.second;
 					s << '\n';
 				}
@@ -1187,13 +1187,13 @@ public:
 
 class url_element final : public std::enable_shared_from_this<url_element>, public view_element
 {
-	std::u8string _url;
+	std::string _url;
 
 public:
-	url_element(std::u8string url) noexcept : view_element(
-		                                          view_element_style::right_justified |
-		                                          view_element_style::has_tooltip |
-		                                          view_element_style::can_invoke), _url(std::move(url))
+	url_element(std::string url) noexcept : view_element(
+		                                        view_element_style::right_justified |
+		                                        view_element_style::has_tooltip |
+		                                        view_element_style::can_invoke), _url(std::move(url))
 	{
 	}
 
@@ -1223,7 +1223,7 @@ public:
 	void tooltip(view_hover_element& hover, const pointi loc, const pointi element_offset) const override
 	{
 		hover.elements->add(make_icon_element(icon_index::link, view_element_style::no_break));
-		hover.elements->add(std::make_shared<text_element>(str::format(tt.open_link_fmt, _url)));
+		hover.elements->add(std::make_shared<text_element>(str_format(tt.open_link_fmt.sv(), _url)));
 		hover.active_bounds = hover.window_bounds = bounds.offset(element_offset);
 	}
 
@@ -1265,7 +1265,7 @@ inline view_element_ptr margin16(view_element_ptr e)
 	return e;
 }
 
-static std::u8string_view format_metadata_standard(const metadata_standard ms)
+static std::string_view format_metadata_standard(const metadata_standard ms)
 {
 	switch (ms)
 	{
@@ -1395,7 +1395,7 @@ public:
 	}
 };
 
-static std::shared_ptr<group_title_control> create_text_title(std::u8string_view name, str::cached text)
+static std::shared_ptr<group_title_control> create_text_title(std::string_view name, str::cached text)
 {
 	auto url = df::url_extract(text);
 	std::vector<std::shared_ptr<view_element>> buttons;
@@ -1566,7 +1566,7 @@ void items_view::update_media_elements()
 
 					for (const auto& st : display->_player_media_info.streams)
 					{
-						std::u8string type;
+						std::string type;
 
 						switch (st.type)
 						{
@@ -1588,13 +1588,13 @@ void items_view::update_media_elements()
 
 							if (st.audio_channels != 0)
 							{
-								format += u8"  "sv;
+								format += "  ";
 								format += prop::format_audio_channels(st.audio_channels);
 							}
 
 							if (st.audio_sample_type != prop::audio_sample_t::none)
 							{
-								format += u8"  "sv;
+								format += "  ";
 								format += format_audio_sample_type(st.audio_sample_type);
 							}
 						}
@@ -1610,8 +1610,8 @@ void items_view::update_media_elements()
 							//std::make_shared<text_element>(st.language),								
 							std::make_shared<text_element>(format),
 							std::make_shared<text_element>(st.rotation == 0.0
-								                               ? std::u8string{}
-								                               : str::format(u8"rotation={}"sv, st.rotation))
+								                               ? std::string{}
+								                               : std::format("rotation={}", st.rotation))
 						};
 
 						table->add(row);

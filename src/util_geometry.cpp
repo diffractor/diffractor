@@ -53,7 +53,7 @@ quadd quadd::crop(const rectd& limit, const int active_point) const noexcept
 				auto cy = anchor.Y - y;
 
 				x = x + dx;
-				y = y + dx * cy / cx;
+				if (cx != 0.0) y = y + dx * cy / cx;
 
 				// y
 				const auto dy = std::clamp(y, t, b) - y;
@@ -61,7 +61,7 @@ quadd quadd::crop(const rectd& limit, const int active_point) const noexcept
 				cx = anchor.X - x;
 				cy = anchor.Y - y;
 
-				result.pts[i].X = x + dy * cx / cy;
+				result.pts[i].X = (cy != 0.0) ? x + dy * cx / cy : x;
 				result.pts[i].Y = y + dy;
 			}
 			else

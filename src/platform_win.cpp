@@ -57,7 +57,7 @@ str::cached cache_string_var(const PROPVARIANT& propVariant)
 			{
 				if (!value.empty())
 				{
-					value += L", "sv;
+					value += L", ";
 				}
 				value += strings[index];
 				CoTaskMemFree(strings[index]);
@@ -763,7 +763,7 @@ platform::drives platform::scan_drives(const bool scan_contents)
 								if (wcscmp(name, description) != 0)
 								{
 									text = description;
-									text += L"\n"sv;
+									text += L"\n";
 								}
 
 								text += manufacturer;
@@ -824,7 +824,7 @@ void validate_number_format()
 	}
 }
 
-std::u8string platform::format_number(const std::u8string& num_text)
+std::string platform::format_number(const std::string& num_text)
 {
 	validate_number_format();
 
@@ -834,7 +834,7 @@ std::u8string platform::format_number(const std::u8string& num_text)
 	return str::utf8_cast2(result);
 }
 
-std::u8string platform::number_dec_sep()
+std::string platform::number_dec_sep()
 {
 	validate_number_format();
 	return str::utf8_cast2(decimal_sep);
@@ -1071,14 +1071,14 @@ bool platform::eject(const df::folder_path path)
 
 	constexpr auto shareMode = FILE_SHARE_READ | FILE_SHARE_WRITE;
 	constexpr auto accessMode = GENERIC_WRITE | GENERIC_READ;
-	const auto vol = u8"\\\\.\\"s + path.text()[0] + path.text()[1];
+	const auto vol = "\\\\.\\"s + path.text()[0] + path.text()[1];
 	const auto vol_w = str::utf8_to_utf16(vol);
 
 	auto* hDevice = CreateFile(vol_w.c_str(), accessMode, shareMode, nullptr, OPEN_EXISTING, 0, nullptr);
 
 	if (hDevice == INVALID_HANDLE_VALUE)
 	{
-		df::log(__FUNCTION__, str::format(u8"IOCTL_STORAGE_EJECT_MEDIA: {}"sv, last_os_error()));
+		df::log(__FUNCTION__, std::format("IOCTL_STORAGE_EJECT_MEDIA: {}", last_os_error()));
 		return false;
 	}
 
@@ -1086,7 +1086,7 @@ bool platform::eject(const df::folder_path path)
 
 	if (!res)
 	{
-		df::log(__FUNCTION__, str::format(u8"FSCTL_DISMOUNT_VOLUME: {}"sv, last_os_error()));
+		df::log(__FUNCTION__, std::format("FSCTL_DISMOUNT_VOLUME: {}", last_os_error()));
 	}
 
 	PREVENT_MEDIA_REMOVAL PMRBuffer;
@@ -1097,14 +1097,14 @@ bool platform::eject(const df::folder_path path)
 
 	if (!res)
 	{
-		df::log(__FUNCTION__, str::format(u8"IOCTL_STORAGE_MEDIA_REMOVAL: {}"sv, last_os_error()));
+		df::log(__FUNCTION__, std::format("IOCTL_STORAGE_MEDIA_REMOVAL: {}", last_os_error()));
 	}
 
 	res = DeviceIoControl(hDevice, IOCTL_STORAGE_EJECT_MEDIA, nullptr, 0, nullptr, 0, &returned, nullptr);
 
 	if (!res)
 	{
-		df::log(__FUNCTION__, str::format(u8"IOCTL_STORAGE_EJECT_MEDIA: {}"sv, last_os_error()));
+		df::log(__FUNCTION__, std::format("IOCTL_STORAGE_EJECT_MEDIA: {}", last_os_error()));
 	}
 
 	res = CloseHandle(hDevice);
@@ -1112,10 +1112,10 @@ bool platform::eject(const df::folder_path path)
 	return res != 0;
 }
 
-bool platform::is_server(const std::u8string_view path)
+bool platform::is_server(const std::string_view path)
 {
 	static std::regex e(R"(^[\\/]*([^\\\/]+)[\\\/]*$)");
-	std::match_results<std::u8string_view::const_iterator> m;
+	std::match_results<std::string_view::const_iterator> m;
 	return std::regex_match(path.begin(), path.end(), m, e);
 }
 
@@ -1298,20 +1298,20 @@ static df::folder_path shell_known_folder(REFIID id)
 	return result;
 }
 
-static df::folder_path dropbox(const std::u8string_view sub_folder)
+static df::folder_path dropbox(const std::string_view sub_folder)
 {
-	const auto dropbox = path_from_csidl(CSIDL_PROFILE).combine(u8"Dropbox"sv);
+	const auto dropbox = path_from_csidl(CSIDL_PROFILE).combine("Dropbox");
 	if (dropbox.exists()) return dropbox;
 
-	const auto info_path = path_from_csidl(CSIDL_LOCAL_APPDATA).combine(u8"Dropbox"sv).combine_file(u8"info.json"sv);
+	const auto info_path = path_from_csidl(CSIDL_LOCAL_APPDATA).combine("Dropbox").combine_file("info.json");
 
 	if (info_path.exists())
 	{
 		const auto info = df::util::json::json_from_file(info_path);
 
-		if (info.HasMember(u8"personal"))
+		if (info.HasMember("personal"))
 		{
-			const df::folder_path personal_path(df::util::json::safe_string(info[u8"personal"], u8"path"));
+			const df::folder_path personal_path(df::util::json::safe_string(info["personal"], "path"));
 			if (personal_path.exists())
 			{
 				const auto result = personal_path.combine(sub_folder);
@@ -1323,9 +1323,9 @@ static df::folder_path dropbox(const std::u8string_view sub_folder)
 			}
 		}
 
-		if (info.HasMember(u8"business"))
+		if (info.HasMember("business"))
 		{
-			const df::folder_path business_path(df::util::json::safe_string(info[u8"business"], u8"path"));
+			const df::folder_path business_path(df::util::json::safe_string(info["business"], "path"));
 
 			if (business_path.exists())
 			{
@@ -1367,13 +1367,13 @@ static df::folder_path onedrive_root_folder()
 	}
 	else
 	{
-		result = path_from_csidl(CSIDL_PROFILE).combine(u8"OneDrive"sv);
+		result = path_from_csidl(CSIDL_PROFILE).combine("OneDrive");
 	}
 
 	return result;
 }
 
-static df::folder_path onedrive(const std::u8string_view sub_folder, const std::u8string_view sub_folder2 = {})
+static df::folder_path onedrive(const std::string_view sub_folder, const std::string_view sub_folder2 = {})
 {
 	const auto root = onedrive_root_folder();
 
@@ -1400,7 +1400,7 @@ df::folder_path platform::known_path(const known_folder f)
 	switch (f)
 	{
 	case known_folder::running_app_folder: return running_app_path().folder();
-	case known_folder::test_files_folder: return running_app_path().folder().combine(u8"test"sv);
+	case known_folder::test_files_folder: return running_app_path().folder().combine("test");
 	case known_folder::app_data: return app_data();
 	case known_folder::app_cache_data: return app_cache_data();
 	case known_folder::downloads: return shell_known_folder(FOLDERID_Downloads);
@@ -1409,11 +1409,11 @@ df::folder_path platform::known_path(const known_folder f)
 	case known_folder::music: return path_from_csidl(CSIDL_MYMUSIC);
 	case known_folder::documents: return path_from_csidl(CSIDL_MYDOCUMENTS);
 	case known_folder::desktop: return path_from_csidl(CSIDL_DESKTOP);
-	case known_folder::dropbox_photos: return dropbox(u8"photos"sv);
-	case known_folder::onedrive_pictures: return onedrive(u8"pictures"sv);
-	case known_folder::onedrive_video: return onedrive(u8"video"sv);
-	case known_folder::onedrive_music: return onedrive(u8"music"sv);
-	case known_folder::onedrive_camera_roll: return onedrive(u8"pictures"sv, u8"Camera Roll"sv);
+	case known_folder::dropbox_photos: return dropbox("photos");
+	case known_folder::onedrive_pictures: return onedrive("pictures");
+	case known_folder::onedrive_video: return onedrive("video");
+	case known_folder::onedrive_music: return onedrive("music");
+	case known_folder::onedrive_camera_roll: return onedrive("pictures", "Camera Roll");
 	default: ;
 	}
 
@@ -1513,7 +1513,7 @@ local_folders_result platform::local_folders()
 	return result;
 }
 
-std::u8string platform::user_language()
+std::string platform::user_language()
 {
 	wchar_t sz[17];
 	int ccBuf = GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SISO639LANGNAME, sz, 8) - 1;
@@ -1522,7 +1522,7 @@ std::u8string platform::user_language()
 	return str::utf16_to_utf8({sz, static_cast<size_t>(ccBuf)});
 }
 
-bool platform::mapi_send(const std::u8string_view to, const std::u8string_view subject, const std::u8string_view text,
+bool platform::mapi_send(const std::string_view to, const std::string_view subject, const std::string_view text,
                          const attachments_t& attachments)
 {
 	df::assert_true(ui::is_ui_thread());
@@ -1536,7 +1536,7 @@ bool platform::mapi_send(const std::u8string_view to, const std::u8string_view s
 	SetFocus(nullptr);
 
 	HINSTANCE handle = LoadLibraryExA("MAPI32.DLL", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
-	//::LoadLibrary(L"MAPI32.DLL"sv);
+	//::LoadLibrary(L"MAPI32.DLL");
 	bool success = false;
 
 	if (handle)
@@ -1601,9 +1601,9 @@ bool platform::mapi_send(const std::u8string_view to, const std::u8string_view s
 		}
 		else if (send_mail)
 		{
-			auto to_s = std::u8string(to);
-			auto subject_s = std::u8string(subject);
-			auto text_s = std::u8string(text);
+			auto to_s = std::string(to);
+			auto subject_s = std::string(subject);
+			auto text_s = std::string(text);
 
 			MapiRecipDesc recipients = {};
 			recipients.ulRecipClass = MAPI_TO;
@@ -1613,7 +1613,7 @@ bool platform::mapi_send(const std::u8string_view to, const std::u8string_view s
 			MapiMessage message_a = {};
 
 			std::vector<MapiFileDesc> files;
-			std::vector<std::pair<std::u8string, std::u8string>> attachments_a;
+			std::vector<std::pair<std::string, std::string>> attachments_a;
 
 			for (const auto& a : attachments)
 			{
@@ -1721,11 +1721,11 @@ public:
 };
 
 
-static void confirm(const HRESULT hr, const std::u8string_view context)
+static void confirm(const HRESULT hr, const std::string_view context)
 {
 	if (FAILED(hr))
 	{
-		throw app_exception(str::format(u8"{} hr={:x}"sv, context, hr));
+		throw app_exception(std::format("{} hr={:x}", context, hr));
 	}
 }
 
@@ -1739,7 +1739,7 @@ df::blob platform::from_file(const df::file_path path)
 
 		if (file_len > df::max_blob_size)
 		{
-			throw app_exception(str::format(u8"Cannot read file into memory ({} bytes)"sv, file_len));
+			throw app_exception(std::format("Cannot read file into memory ({} bytes)", file_len));
 		}
 
 		return f.read_blob(file_len);
@@ -1782,7 +1782,7 @@ df::date_t platform::dos_date_to_ts(const uint16_t dos_date, const uint16_t dos_
 	return df::date_t(ft_to_ts(ft_utc));
 }
 
-std::u8string platform::format_date_time(const df::date_t d)
+std::string platform::format_date_time(const df::date_t d)
 {
 	constexpr LCID locale = LOCALE_USER_DEFAULT;
 	constexpr int size = 128;
@@ -1799,14 +1799,14 @@ std::u8string platform::format_date_time(const df::date_t d)
 			GetDateFormatW(locale, flags, &st, nullptr, sz_date, size);
 			GetTimeFormatW(locale, 0, &st, nullptr, sz_time, size);
 
-			return str::format(u8"{} {}"sv, str::utf16_to_utf8(sz_date), str::utf16_to_utf8(sz_time));
+			return std::format("{} {}", str::utf16_to_utf8(sz_date), str::utf16_to_utf8(sz_time));
 		}
 	}
 
 	return {};
 }
 
-std::u8string platform::format_date(const df::date_t d)
+std::string platform::format_date(const df::date_t d)
 {
 	constexpr LCID locale = LOCALE_USER_DEFAULT;
 	constexpr int size = 128;
@@ -1825,7 +1825,7 @@ std::u8string platform::format_date(const df::date_t d)
 	return {};
 }
 
-std::u8string platform::format_time(const df::date_t d)
+std::string platform::format_time(const df::date_t d)
 {
 	constexpr LCID locale = LOCALE_USER_DEFAULT;
 	constexpr int size = 128;
@@ -2043,15 +2043,15 @@ void platform::thread_event::set() const noexcept
 }
 
 
-bool platform::is_valid_file_name(const std::u8string_view name)
+bool platform::is_valid_file_name(const std::string_view name)
 {
-	static constexpr auto invalid_chars = u8"\\/:*?\"<>|"sv; // Common invalid characters
-	static constexpr std::u8string_view reserved_names[] = {
-		u8"CON"sv, u8"PRN"sv, u8"AUX"sv, u8"NUL"sv,
-		u8"COM1"sv, u8"COM2"sv, u8"COM3"sv, u8"COM4"sv,
-		u8"COM5"sv, u8"COM6"sv, u8"COM7"sv, u8"COM8"sv, u8"COM9"sv,
-		u8"LPT1"sv, u8"LPT2"sv, u8"LPT3"sv, u8"LPT4"sv, u8"LPT5"sv,
-		u8"LPT6"sv, u8"LPT7"sv, u8"LPT8"sv, u8"LPT9"
+	static constexpr std::string_view invalid_chars = "\\/:*?\"<>|"; // Common invalid characters
+	static constexpr std::string_view reserved_names[] = {
+		"CON", "PRN", "AUX", "NUL",
+		"COM1", "COM2", "COM3", "COM4",
+		"COM5", "COM6", "COM7", "COM8", "COM9",
+		"LPT1", "LPT2", "LPT3", "LPT4", "LPT5",
+		"LPT6", "LPT7", "LPT8", "LPT9"
 	};
 
 
@@ -2060,7 +2060,7 @@ bool platform::is_valid_file_name(const std::u8string_view name)
 	{
 		const auto c = str::pop_utf8_char(i, name.end());
 
-		if (invalid_chars.find(c) != std::wstring::npos)
+		if (c < 128 && invalid_chars.find(static_cast<char>(c)) != std::string_view::npos)
 		{
 			return false;
 		}

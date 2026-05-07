@@ -68,7 +68,7 @@ enum class async_queue
 constexpr auto thumbnail_quality = 85;
 
 
-using metadata_kv = std::pair<str::cached, std::u8string>;
+using metadata_kv = std::pair<str::cached, std::string>;
 using metadata_kv_list = std::vector<metadata_kv>;
 
 namespace df
@@ -82,17 +82,17 @@ namespace df
 	struct status_i
 	{
 		virtual ~status_i() = default;
-		virtual void start_item(std::u8string_view name) = 0;
-		virtual void end_item(std::u8string_view name, item_status status) = 0;
+		virtual void start_item(std::string_view name) = 0;
+		virtual void end_item(std::string_view name, item_status status) = 0;
 
 		virtual bool has_failures() const = 0;
-		virtual void abort(std::u8string_view error_message) = 0;
-		virtual void complete(std::u8string_view message = {}) = 0;
+		virtual void abort(std::string_view error_message) = 0;
+		virtual void complete(std::string_view message = {}) = 0;
 		virtual void show_errors() = 0;
 
-		virtual void message(std::u8string_view message, int64_t pos, int64_t total) = 0;
+		virtual void message(std::string_view message, int64_t pos, int64_t total) = 0;
 
-		virtual void show_message(std::u8string_view message) = 0;
+		virtual void show_message(std::string_view message) = 0;
 		virtual bool is_canceled() const = 0;
 		virtual void wait_for_complete() const = 0;
 	};

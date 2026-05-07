@@ -43,25 +43,25 @@ static bool should_animate()
 	return !GetSystemMetrics(SM_REMOTESESSION);
 }
 
-static constexpr std::u8string_view to_string(const D3D_FEATURE_LEVEL fl)
+static constexpr std::string_view to_string(const D3D_FEATURE_LEVEL fl)
 {
 	switch (fl)
 	{
-	case D3D_FEATURE_LEVEL_1_0_CORE: return u8"1.0.CORE"sv;
-	case D3D_FEATURE_LEVEL_9_1: return u8"9.1"sv;
-	case D3D_FEATURE_LEVEL_9_2: return u8"9.2"sv;
-	case D3D_FEATURE_LEVEL_9_3: return u8"9.3"sv;
-	case D3D_FEATURE_LEVEL_10_0: return u8"10.0"sv;
-	case D3D_FEATURE_LEVEL_10_1: return u8"10.1"sv;
-	case D3D_FEATURE_LEVEL_11_0: return u8"11.0"sv;
-	case D3D_FEATURE_LEVEL_11_1: return u8"11.1"sv;
-	case D3D_FEATURE_LEVEL_12_0: return u8"12.0"sv;
-	case D3D_FEATURE_LEVEL_12_1: return u8"12.1"sv;
+	case D3D_FEATURE_LEVEL_1_0_CORE: return "1.0.CORE";
+	case D3D_FEATURE_LEVEL_9_1: return "9.1";
+	case D3D_FEATURE_LEVEL_9_2: return "9.2";
+	case D3D_FEATURE_LEVEL_9_3: return "9.3";
+	case D3D_FEATURE_LEVEL_10_0: return "10.0";
+	case D3D_FEATURE_LEVEL_10_1: return "10.1";
+	case D3D_FEATURE_LEVEL_11_0: return "11.0";
+	case D3D_FEATURE_LEVEL_11_1: return "11.1";
+	case D3D_FEATURE_LEVEL_12_0: return "12.0";
+	case D3D_FEATURE_LEVEL_12_1: return "12.1";
 	default:
 		break;
 	}
 
-	return u8"?"sv;
+	return "?";
 }
 
 void factories::reset_fonts()
@@ -83,7 +83,7 @@ bool factories::init(const bool use_gpu)
 
 	if (FAILED(hr))
 	{
-		df::log(__FUNCTION__, str::format(u8"Failed to create ID2D1Factory2 {:x}"sv, hr));
+		df::log(__FUNCTION__, std::format("Failed to create ID2D1Factory2 {:x}", hr));
 	}
 
 	if (SUCCEEDED(hr))
@@ -93,7 +93,7 @@ bool factories::init(const bool use_gpu)
 
 		if (FAILED(hr))
 		{
-			df::log(__FUNCTION__, str::format(u8"Failed to create IDWriteFactory {:x}"sv, hr));
+			df::log(__FUNCTION__, std::format("Failed to create IDWriteFactory {:x}", hr));
 		}
 	}
 
@@ -108,7 +108,7 @@ bool factories::init(const bool use_gpu)
 
 		if (FAILED(hr))
 		{
-			df::log(__FUNCTION__, str::format(u8"Failed to create IDXGIFactory {:x}"sv, hr));
+			df::log(__FUNCTION__, std::format("Failed to create IDXGIFactory {:x}", hr));
 		}
 	}
 
@@ -119,7 +119,7 @@ bool factories::init(const bool use_gpu)
 
 		if (FAILED(hr))
 		{
-			df::log(__FUNCTION__, str::format(u8"Failed to create IWICImagingFactory {:x}"sv, hr));
+			df::log(__FUNCTION__, std::format("Failed to create IWICImagingFactory {:x}", hr));
 		}
 	}
 
@@ -191,7 +191,7 @@ bool factories::init(const bool use_gpu)
 
 			if (hr == E_INVALIDARG)
 			{
-				df::log(__FUNCTION__, "D3D11CreateDevice failed with 11_1 - trying 11"sv);
+				df::log(__FUNCTION__, "D3D11CreateDevice failed with 11_1 - trying 11");
 				hr = D3D11CreateDevice(intel_adapter.Get(), driver_type, nullptr, create_device_flags,
 				                       feature_levels_11, std::size(feature_levels_11),
 				                       D3D11_SDK_VERSION, &device, &feature_level, &context);
@@ -200,7 +200,7 @@ bool factories::init(const bool use_gpu)
 
 		if (FAILED(hr) || !use_gpu)
 		{
-			df::log(__FUNCTION__, "D3D11CreateDevice failed - trying software rendering"sv);
+			df::log(__FUNCTION__, "D3D11CreateDevice failed - trying software rendering");
 
 			driver_type = D3D_DRIVER_TYPE_WARP;
 
@@ -245,20 +245,20 @@ bool factories::init(const bool use_gpu)
 			if (SUCCEEDED(adapter->GetDesc(&adapter_desc)))
 			{
 				const auto description = str::utf16_to_utf8(adapter_desc.Description);
-				const auto gpu_id = str::format(u8"{:x}|{:x}|{:x}|{:x}"sv, adapter_desc.VendorId, adapter_desc.DeviceId,
+				const auto gpu_id = std::format("{:x}|{:x}|{:x}|{:x}", adapter_desc.VendorId, adapter_desc.DeviceId,
 				                                adapter_desc.SubSysId, adapter_desc.Revision);
 
 				df::gpu_desc = description;
 				df::gpu_id = gpu_id;
 
-				df::log(__FUNCTION__, u8"     "s + description);
-				df::log(__FUNCTION__, u8"     "s + gpu_id);
+				df::log(__FUNCTION__, "     "s + description);
+				df::log(__FUNCTION__, "     "s + gpu_id);
 				df::log(__FUNCTION__,
-				        u8"     DedicatedVideoMemory "s + df::file_size(adapter_desc.DedicatedVideoMemory).str());
+				        "     DedicatedVideoMemory "s + df::file_size(adapter_desc.DedicatedVideoMemory).str());
 				df::log(__FUNCTION__,
-				        u8"     DedicatedSystemMemory "s + df::file_size(adapter_desc.DedicatedSystemMemory).str());
+				        "     DedicatedSystemMemory "s + df::file_size(adapter_desc.DedicatedSystemMemory).str());
 				df::log(__FUNCTION__,
-				        u8"     SharedSystemMemory "s + df::file_size(adapter_desc.SharedSystemMemory).str());
+				        "     SharedSystemMemory "s + df::file_size(adapter_desc.SharedSystemMemory).str());
 			}
 		}
 
@@ -464,7 +464,7 @@ static_assert(std::is_trivial_v<vertex_2d>);
 
 #pragma comment(lib, "d3d11")
 #pragma comment(lib, "dxgi")
-//#pragma comment(lib, "d3dcompiler"sv)
+//#pragma comment(lib, "d3dcompiler")
 
 // vlc renderer
 // https://github.com/videolan/vlc-unity/blob/master/Assets/PluginSource/RenderAPI_D3D11.cpp
@@ -519,9 +519,9 @@ public:
 		return _font;
 	}
 
-	void draw_text(std::u8string_view text, recti bounds, ui::style::text_style style, ui::color c, ui::color bg);
+	void draw_text(std::string_view text, recti bounds, ui::style::text_style style, ui::color c, ui::color bg);
 
-	void draw_text(std::u8string_view text, const std::vector<ui::text_highlight_t>& highlights, recti bounds,
+	void draw_text(std::string_view text, const std::vector<ui::text_highlight_t>& highlights, recti bounds,
 	               ui::style::text_style style, ui::color clr, ui::color bg);
 
 	void draw_text(const std::shared_ptr<text_layout_impl>& text, const recti bounds, const ui::color clr,
@@ -533,7 +533,7 @@ public:
 		                      bg);
 	}
 
-	sizei measure_text(const std::u8string_view text, const sizei avail, const ui::style::text_style style) const
+	sizei measure_text(const std::string_view text, const sizei avail, const ui::style::text_style style) const
 	{
 		df::scope_rendering_func rf(__FUNCTION__);
 		const auto text16 = str::utf8_to_utf16(text);
@@ -768,7 +768,7 @@ public:
 	void draw_scene(const ComPtr<ID3D11DeviceContext>& context) const;
 
 
-	sizei measure_string(std::u8string_view text, sizei size_avail, ui::style::font_face, ui::style::text_style);
+	sizei measure_string(std::string_view text, sizei size_avail, ui::style::font_face, ui::style::text_style);
 	int line_height(ui::style::font_face);
 
 	bool supports_p010() const
@@ -851,9 +851,9 @@ public:
 	void clear(ui::color c) override;
 	void draw_rounded_rect(recti bounds, ui::color c, int radius) override;
 	void draw_rect(recti bounds, ui::color c) override;
-	void draw_text(std::u8string_view text, recti bounds, ui::style::font_face font, ui::style::text_style style,
+	void draw_text(std::string_view text, recti bounds, ui::style::font_face font, ui::style::text_style style,
 	               ui::color c, ui::color bg) override;
-	void draw_text(std::u8string_view text, const std::vector<ui::text_highlight_t>& highlights, recti bounds,
+	void draw_text(std::string_view text, const std::vector<ui::text_highlight_t>& highlights, recti bounds,
 	               ui::style::font_face font, ui::style::text_style style, ui::color clr, ui::color bg) override;
 	void draw_text(const ui::text_layout_ptr& tl, recti bounds, ui::color clr, ui::color bg) override;
 	void draw_shadow(recti bounds, int width, float alpha, bool inverse) override;
@@ -870,7 +870,7 @@ public:
 	font_renderer_ptr find_font(ui::style::font_face font);
 	ui::text_layout_ptr create_text_layout(ui::style::font_face font) override;
 
-	sizei measure_text(std::u8string_view text, ui::style::font_face font, ui::style::text_style style, int width,
+	sizei measure_text(std::string_view text, ui::style::font_face font, ui::style::text_style style, int width,
 	                   int height) override;
 	int text_line_height(ui::style::font_face type) override;
 
@@ -1005,7 +1005,7 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGIS
 
 	if (swap_chain)
 	{
-		df::log(__FUNCTION__, str::format(u8"D3D11CreateDevice success {}"sv, to_string(_f->d3d_feature_level)));
+		df::log(__FUNCTION__, std::format("D3D11CreateDevice success {}", to_string(_f->d3d_feature_level)));
 
 
 		uint32_t support = 0;
@@ -1016,8 +1016,8 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGIS
 		_supports_nv12 = SUCCEEDED(_f->d3d_device->CheckFormatSupport(to_format(ui::texture_format::NV12), &support))
 			&& support & D3D11_FORMAT_SUPPORT_TEXTURE2D;
 
-		df::log(__FUNCTION__, _supports_p010 ? "     p010 supported"sv : "     p010 not-supported"sv);
-		df::log(__FUNCTION__, _supports_nv12 ? "     nv12 supported"sv : "     nv12 not-supported"sv);
+		df::log(__FUNCTION__, _supports_p010 ? "     p010 supported" : "     p010 not-supported");
+		df::log(__FUNCTION__, _supports_nv12 ? "     nv12 supported" : "     nv12 not-supported");
 
 
 		if (SUCCEEDED(hr))
@@ -1031,13 +1031,13 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGIS
 			{
 				if (!multithread->SetMultithreadProtected(TRUE))
 				{
-					df::log(__FUNCTION__, "Warning: Failed to enable multithread protection"sv);
+					df::log(__FUNCTION__, "Warning: Failed to enable multithread protection");
 				}
 				multithread = nullptr;
 			}
 			else
 			{
-				df::log(__FUNCTION__, "Warning: ID3D10Multithread interface not available"sv);
+				df::log(__FUNCTION__, "Warning: ID3D10Multithread interface not available");
 			}
 		}
 
@@ -1129,7 +1129,7 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGIS
 
 			if (FAILED(hr))
 			{
-				df::log(__FUNCTION__, str::format(u8"CreateBlendState failed {:x}"sv, hr));
+				df::log(__FUNCTION__, std::format("CreateBlendState failed {:x}", hr));
 			}
 		}
 
@@ -1143,7 +1143,7 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGIS
 
 			if (FAILED(hr))
 			{
-				df::log(__FUNCTION__, str::format(u8"CreateRasterizerState failed {:x}"sv, hr));
+				df::log(__FUNCTION__, std::format("CreateRasterizerState failed {:x}", hr));
 			}
 		}
 
@@ -1164,7 +1164,7 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGIS
 
 			if (FAILED(hr))
 			{
-				df::log(__FUNCTION__, str::format(u8"CreateSamplerState point failed {:x}"sv, hr));
+				df::log(__FUNCTION__, std::format("CreateSamplerState point failed {:x}", hr));
 			}
 
 			sampler_desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
@@ -1173,7 +1173,7 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGIS
 
 			if (FAILED(hr))
 			{
-				df::log(__FUNCTION__, str::format(u8"CreateSamplerState bilinear failed {:x}"sv, hr));
+				df::log(__FUNCTION__, std::format("CreateSamplerState bilinear failed {:x}", hr));
 			}
 		}
 
@@ -1182,11 +1182,11 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGIS
 
 	if (FAILED(hr))
 	{
-		df::log(__FUNCTION__, str::format(u8"draw_context_d3d11_impl::create failed {:x}"sv, hr));
+		df::log(__FUNCTION__, std::format("draw_context_d3d11_impl::create failed {:x}", hr));
 
 		if (use_gpu)
 		{
-			df::log(__FUNCTION__, "Retry without gpu."sv);
+			df::log(__FUNCTION__, "Retry without gpu.");
 			create(_f, swap_chain, base_font_size, false);
 			return;
 		}
@@ -1255,7 +1255,7 @@ void d3d11_draw_context_impl::build_index_and_vertex_buffers()
 		const auto buffer_size = sizeof(vertex_2d) * _vertex_buffer_staging.size();
 		if (buffer_size > UINT_MAX)
 		{
-			df::log(__FUNCTION__, "Vertex buffer size exceeds maximum allowed size"sv);
+			df::log(__FUNCTION__, "Vertex buffer size exceeds maximum allowed size");
 			return;
 		}
 
@@ -1277,7 +1277,7 @@ void d3d11_draw_context_impl::build_index_and_vertex_buffers()
 		}
 		else
 		{
-			df::log(__FUNCTION__, str::format(u8"CreateBuffer for vertices failed: {:x}"sv, hr));
+			df::log(__FUNCTION__, std::format("CreateBuffer for vertices failed: {:x}", hr));
 			buffer = nullptr;
 		}
 
@@ -1289,7 +1289,7 @@ void d3d11_draw_context_impl::build_index_and_vertex_buffers()
 		const auto buffer_size = sizeof(WORD) * _index_buffer_staging.size();
 		if (buffer_size > UINT_MAX)
 		{
-			df::log(__FUNCTION__, "Index buffer size exceeds maximum allowed size"sv);
+			df::log(__FUNCTION__, "Index buffer size exceeds maximum allowed size");
 			return;
 		}
 
@@ -1311,7 +1311,7 @@ void d3d11_draw_context_impl::build_index_and_vertex_buffers()
 		}
 		else
 		{
-			df::log(__FUNCTION__, str::format(u8"CreateBuffer for indices failed: {:x}"sv, hr));
+			df::log(__FUNCTION__, std::format("CreateBuffer for indices failed: {:x}", hr));
 			buffer = nullptr;
 		}
 
@@ -1891,7 +1891,6 @@ void d3d11_vertices::update(recti rects[], ui::color colors[], const int num_bar
 		if (SUCCEEDED(hr))
 		{
 			_vertex_buffer = buffer;
-			_canvas->_f->d3d_device = _canvas->_f->d3d_device;
 		}
 	}
 	else
@@ -2049,7 +2048,7 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 
 		if (video_texture_index >= tex_desc_src.ArraySize)
 		{
-			df::log(__FUNCTION__, str::format(u8"Video texture index {} exceeds array size {}"sv, video_texture_index,
+			df::log(__FUNCTION__, std::format("Video texture index {} exceeds array size {}", video_texture_index,
 			                                  tex_desc_src.ArraySize));
 			device_hwctx->unlock(device_hwctx->lock_ctx);
 			return ui::texture_update_result::failed;
@@ -2179,7 +2178,7 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 }
 
 
-sizei d3d11_draw_context_impl::measure_string(const std::u8string_view text, const sizei s,
+sizei d3d11_draw_context_impl::measure_string(const std::string_view text, const sizei s,
                                               const ui::style::font_face font,
                                               const ui::style::text_style style)
 {
@@ -2202,7 +2201,7 @@ int d3d11_draw_context_impl::line_height(const ui::style::font_face font)
 
 static void log_update_texture_crash(const ui::texture_format fmt)
 {
-	df::log(__FUNCTION__, str::format(u8"UpdateSubresource {} ****** crashed ******"sv, to_string(fmt)));
+	df::log(__FUNCTION__, std::format("UpdateSubresource {} ****** crashed ******", to_string(fmt)));
 }
 
 static HRESULT try_create_tex(ID3D11Device* pDevice, const D3D11_TEXTURE2D_DESC& desc,
@@ -2224,7 +2223,7 @@ static HRESULT try_create_tex(ID3D11Device* pDevice, const D3D11_TEXTURE2D_DESC&
 			*t = nullptr;
 		}
 		setting.use_yuv = false;
-		df::log(__FUNCTION__, "Exception caught in CreateTexture2D, YUV disabled"sv);
+		df::log(__FUNCTION__, "Exception caught in CreateTexture2D, YUV disabled");
 	}
 
 	return E_FAIL;
@@ -2325,13 +2324,13 @@ ui::texture_update_result d3d11_texture::update(const sizei dims, const ui::text
 		{
 			if (hr == E_FAIL)
 			{
-				df::log(__FUNCTION__, str::format(u8"CreateTexture2D {} ({} x {}) ****** crashed ******"sv,
+				df::log(__FUNCTION__, std::format("CreateTexture2D {} ({} x {}) ****** crashed ******",
 				                                  to_string(fmt), cx, cy, hr));
 			}
 			else
 			{
 				df::log(__FUNCTION__,
-				        str::format(u8"CreateTexture2D {} ({} x {}) failed: {:x}"sv, to_string(fmt), cx, cy, hr));
+				        std::format("CreateTexture2D {} ({} x {}) failed: {:x}", to_string(fmt), cx, cy, hr));
 			}
 		}
 	}
@@ -2439,7 +2438,7 @@ d3d11_text_renderer::coords d3d11_text_renderer::find_glyph(const uint16_t c, co
 				const auto new_size = std::min(_xy_tex * 2u, 4096u); // Cap at 4096 to prevent excessive memory usage
 				if (new_size <= _xy_tex)
 				{
-					df::log(__FUNCTION__, "Font texture atlas reached maximum size, glyph rendering may fail"sv);
+					df::log(__FUNCTION__, "Font texture atlas reached maximum size, glyph rendering may fail");
 					return result; // Return empty coordinates if we can't grow further
 				}
 
@@ -2514,7 +2513,7 @@ void d3d11_text_renderer::reset()
 	_next_location.y = 0;
 }
 
-void d3d11_text_renderer::draw_text(const std::u8string_view text, const recti bounds,
+void d3d11_text_renderer::draw_text(const std::string_view text, const recti bounds,
                                     const ui::style::text_style style, const ui::color c, const ui::color bg)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
@@ -2527,7 +2526,7 @@ void d3d11_text_renderer::draw_text(const std::u8string_view text, const recti b
 	}
 }
 
-void d3d11_text_renderer::draw_text(const std::u8string_view text, const std::vector<ui::text_highlight_t>& highlights,
+void d3d11_text_renderer::draw_text(const std::string_view text, const std::vector<ui::text_highlight_t>& highlights,
                                     const recti bounds, const ui::style::text_style style, const ui::color clr,
                                     const ui::color bg)
 {
@@ -2737,7 +2736,7 @@ void d3d11_draw_context_impl::draw_shadow(const recti dst, const int sxy, const 
 	}
 }
 
-void d3d11_draw_context_impl::draw_text(const std::u8string_view textA, const recti bounds,
+void d3d11_draw_context_impl::draw_text(const std::string_view textA, const recti bounds,
                                         const ui::style::font_face font, const ui::style::text_style style,
                                         const ui::color clr, const ui::color bg)
 {
@@ -2750,7 +2749,7 @@ void d3d11_draw_context_impl::draw_text(const std::u8string_view textA, const re
 	}
 }
 
-void d3d11_draw_context_impl::draw_text(const std::u8string_view text,
+void d3d11_draw_context_impl::draw_text(const std::string_view text,
                                         const std::vector<ui::text_highlight_t>& highlights, const recti bounds,
                                         const ui::style::font_face font, const ui::style::text_style style,
                                         const ui::color clr,
@@ -3013,7 +3012,7 @@ void d3d11_draw_context_impl::draw_vertices(const ui::vertices_ptr& v)
 	}
 }
 
-sizei d3d11_draw_context_impl::measure_text(const std::u8string_view text, const ui::style::font_face font,
+sizei d3d11_draw_context_impl::measure_text(const std::string_view text, const ui::style::font_face font,
                                             const ui::style::text_style style, const int width, const int height)
 {
 	return measure_string(text, {width, height}, font, style);

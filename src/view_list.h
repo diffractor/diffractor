@@ -51,7 +51,7 @@ public:
 	struct row_element final : std::enable_shared_from_this<row_element>, view_element
 	{
 		list_view& _view;
-		std::u8string _text[max_col_count];
+		std::string _text[max_col_count];
 		ui::color _bg_row;
 		ui::color32 _text_color[max_col_count] = {0, 0, 0, 0};
 		int _order = 0;
@@ -78,7 +78,7 @@ public:
 				{
 					const auto text_color = ui::color(_text_color[i] != 0 ? _text_color[i] : dc.colors.foreground,
 					                                  dc.colors.alpha);
-					const std::u8string_view text = _text[i];
+					const std::string_view text = _text[i];
 					const recti bounds(x, logical_bounds.top, x + _view.col_widths[i], logical_bounds.bottom);
 					dc.draw_text(text, bounds, ui::style::font_face::dialog, ui::style::text_style::single_line,
 					             text_color, {});
@@ -150,7 +150,7 @@ public:
 		const recti client_bounds{0, 0, _extent.cx, _extent.cy};
 
 		auto y_max = 0;
-		std::u8string_view longest_text[max_col_count];
+		std::string_view longest_text[max_col_count];
 
 		bool odd_row = false;
 
@@ -171,7 +171,7 @@ public:
 
 				for (int i = 0; i < col_count; i++)
 				{
-					const std::u8string_view text = r->_text[i];
+					const std::string_view text = r->_text[i];
 					if (text.size() > longest_text[i].size()) longest_text[i] = text;
 				}
 

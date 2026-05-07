@@ -46,9 +46,9 @@ static int get_status_code(const HINTERNET h)
 	return static_cast<int>(result);
 }
 
-static std::u8string get_content_type(const HINTERNET request_handle)
+static std::string get_content_type(const HINTERNET request_handle)
 {
-	std::u8string result;
+	std::string result;
 	DWORD result_size = 0;
 	DWORD header_index = 0;
 
@@ -81,24 +81,24 @@ static std::u8string get_content_type(const HINTERNET request_handle)
 	return result;
 }
 
-static std::u8string format_path(const platform::web_request& req)
+static std::string format_path(const platform::web_request& req)
 {
 	auto result = req.path;
 
 	if (!req.query.empty())
 	{
 		bool is_first = true;
-		result += u8"?"sv;
+		result += "?";
 
 		for (const auto& qp : req.query)
 		{
 			if (!is_first)
 			{
-				result += u8"&"sv;
+				result += "&";
 			}
 
 			result += df::url_encode(qp.first);
-			result += u8"="sv;
+			result += "=";
 			result += df::url_encode(qp.second);
 			is_first = false;
 		}
@@ -177,7 +177,7 @@ struct platform::web_host
 	bool secure = true;
 };
 
-platform::web_host_ptr platform::connect_to_host(const std::u8string_view host, const bool secure_in, const int port_in)
+platform::web_host_ptr platform::connect_to_host(const std::string_view host, const bool secure_in, const int port_in)
 {
 	// InternetOpen and InternetConnect
 	inet_handle session_handle(::InternetOpen(s_app_name_l, INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0));
@@ -209,38 +209,38 @@ platform::web_response platform::send_request(const web_host_ptr& host, const we
 	if (!host)
 		return result;
 
-	u8ostringstream content;
-	u8ostringstream header;
+	std::ostringstream content;
+	std::ostringstream header;
 
 	for (const auto& h : req.headers)
 	{
-		header << h.first << u8": "sv << h.second << u8"\r\n"sv;
+		header << h.first << ": " << h.second << "\r\n";
 	}
 
 	if (!req.form_data.empty())
 	{
-		constexpr auto boundary = u8"54B8723DE6044695A68C838E8BF0CB00"sv;
+		constexpr auto boundary = "54B8723DE6044695A68C838E8BF0CB00";
 
 		for (const auto& f : req.form_data)
 		{
-			content << u8"--"sv << boundary << u8"\r\n"sv;
-			content << u8"Content-Disposition: form-data; name=\""sv << f.first << u8"\"\r\n"sv;
-			content << u8"Content-Type: text/plain; charset=\"utf-8\"\r\n"sv;
-			content << u8"\r\n"sv;
-			content << f.second << u8"\r\n"sv;
+			content << "--" << boundary << "\r\n";
+			content << "Content-Disposition: form-data; name=\"" << f.first << "\"\r\n";
+			content << "Content-Type: text/plain; charset=\"utf-8\"\r\n";
+			content << "\r\n";
+			content << f.second << "\r\n";
 		}
 
 		if (!req.file_path.is_empty() && !req.file_form_data_name.empty())
 		{
-			auto content_type = u8"application/octet-stream"sv;
-			if (str::ends(req.file_path.extension(), u8"zip"sv)) content_type = u8"application/x-zip-compressed"sv;
+			auto content_type = "application/octet-stream";
+			if (str::ends(req.file_path.extension(), "zip")) content_type = "application/x-zip-compressed";
 
-			content << u8"--"sv << boundary << u8"\r\n"sv;
-			content << u8"Content-Disposition: form-data; name=\""sv << req.file_form_data_name << u8"\"; filename=\""sv
+			content << "--" << boundary << "\r\n";
+			content << "Content-Disposition: form-data; name=\"" << req.file_form_data_name << "\"; filename=\""
 				<<
-				req.file_name << u8"\"\r\n"sv;
-			content << u8"Content-Type: "sv << content_type << u8"\r\n"sv;
-			content << u8"\r\n"sv;
+				req.file_name << "\"\r\n";
+			content << "Content-Type: " << content_type << "\r\n";
+			content << "\r\n";
 
 			df::file f;
 
@@ -248,15 +248,15 @@ platform::web_response platform::send_request(const web_host_ptr& host, const we
 			{
 				while (f.read64k())
 				{
-					content << std::u8string_view(reinterpret_cast<const char8_t*>(f.buffer()), f.buffer_data_size());
+					content << std::string_view(reinterpret_cast<const char*>(f.buffer()), f.buffer_data_size());
 				}
 			}
 
-			content << u8"\r\n"sv;
+			content << "\r\n";
 		}
 
-		content << u8"--"sv << boundary << u8"--"sv;
-		header << u8"Content-Type: multipart/form-data; boundary="sv << boundary << u8"\r\n"sv;
+		content << "--" << boundary << "--";
+		header << "Content-Type: multipart/form-data; boundary=" << boundary << "\r\n";
 	}
 
 	const auto wverb = req.verb == web_request_verb::GET ? L"GET" : L"POST";

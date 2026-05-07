@@ -20,7 +20,6 @@
 
 #include "ui_dialog.h"
 #include "view_items.h"
-#include "view_list.h"
 
 #include "app.h"
 
@@ -89,7 +88,7 @@ void app_frame::update_index()
 static void start_media_decode_video(const std::shared_ptr<av_player>& player)
 {
 	log_func lf(__FUNCTION__);
-	platform::set_thread_description(u8"media decode_video"sv);
+	platform::set_thread_description("media decode_video");
 	platform::thread_init c;
 	player->decode_video();
 }
@@ -97,7 +96,7 @@ static void start_media_decode_video(const std::shared_ptr<av_player>& player)
 static void start_media_decode_audio(const std::shared_ptr<av_player>& player)
 {
 	log_func lf(__FUNCTION__);
-	platform::set_thread_description(u8"media decode_audio"sv);
+	platform::set_thread_description("media decode_audio");
 	platform::thread_init c;
 	player->decode_audio();
 }
@@ -105,7 +104,7 @@ static void start_media_decode_audio(const std::shared_ptr<av_player>& player)
 static void start_media_reading(const std::shared_ptr<av_player>& player)
 {
 	log_func lf(__FUNCTION__);
-	platform::set_thread_description(u8"media read"sv);
+	platform::set_thread_description("media read");
 	platform::thread_init c;
 	player->reading();
 }
@@ -115,12 +114,12 @@ static void start_database(database& db, platform::task_queue& database_task_que
                            const app_frame_ptr& app, std::function<void()> index_loaded_func)
 {
 	log_func lf(__FUNCTION__);
-	platform::set_thread_description(u8"database"sv);
+	platform::set_thread_description("database");
 
 	try
 	{
 		platform::thread_init c;
-		db.open(known_path(platform::known_folder::app_cache_data), u8"diffractor-cache"sv);
+		db.open(known_path(platform::known_folder::app_cache_data), "diffractor-cache");
 		async.queue_ui(std::move(index_loaded_func));
 
 		if (db.is_open())
@@ -162,6 +161,16 @@ static void start_database(database& db, platform::task_queue& database_task_que
 	{
 		df::log(__FUNCTION__, e.what());
 		app->app_fail(tt.error_index_database_failed, str::utf8_cast(e.what()));
+	}
+
+	// Truncate any tasks still queued at shutdown so their captured references
+	// are released while owning objects are still alive.
+	try
+	{
+		(void)database_task_queue.dequeue_all();
+	}
+	catch (...)
+	{
 	}
 
 	try
@@ -259,7 +268,7 @@ void app_frame::queue_database(std::function<void(database&)> f)
 static void start_media_preview()
 {
 	log_func lf(__FUNCTION__);
-	platform::set_thread_description(u8"media_preview"sv);
+	platform::set_thread_description("media_preview");
 
 	try
 	{
@@ -299,7 +308,7 @@ static void start_media_preview()
 	}
 }
 
-void start_worker(platform::task_queue& q, const std::u8string_view name)
+void start_worker(platform::task_queue& q, const std::string_view name)
 {
 	log_func lf(__FUNCTION__, name);
 	platform::set_thread_description(name);
@@ -337,6 +346,17 @@ void start_worker(platform::task_queue& q, const std::u8string_view name)
 			df::log(__FUNCTION__, e.what());
 		}
 	}
+
+	// On shutdown: truncate any remaining queued tasks. Lambdas hold references
+	// (this, view_state, etc.) that may become invalid as teardown progresses;
+	// destroying them now while the owning objects are still alive is safe.
+	try
+	{
+		(void)q.dequeue_all();
+	}
+	catch (...)
+	{
+	}
 }
 
 
@@ -367,13 +387,13 @@ void app_frame::start_workers()
 					view_invalid::index_summary);
 			});
 
-			_threads.start([&q = crc_task_queue] { start_worker(q, u8"crc"sv); });
-			_threads.start([&q = scan_folder_task_queue] { start_worker(q, u8"scan_folder"sv); });
-			_threads.start([&q = scan_modified_items_task_queue] { start_worker(q, u8"scan_modified_items"sv); });
-			_threads.start([&q = scan_displayed_items_task_queue] { start_worker(q, u8"scan_displayed_items"sv); });
-			_threads.start([&q = predictions_task_queue] { start_worker(q, u8"predictions"sv); });
-			_threads.start([&q = summary_task_queue] { start_worker(q, u8"summary"sv); });
-			_threads.start([&q = presence_task_queue] { start_worker(q, u8"presence"sv); });
+			_threads.start([&q = crc_task_queue] { start_worker(q, "crc"); });
+			_threads.start([&q = scan_folder_task_queue] { start_worker(q, "scan_folder"); });
+			_threads.start([&q = scan_modified_items_task_queue] { start_worker(q, "scan_modified_items"); });
+			_threads.start([&q = scan_displayed_items_task_queue] { start_worker(q, "scan_displayed_items"); });
+			_threads.start([&q = predictions_task_queue] { start_worker(q, "predictions"); });
+			_threads.start([&q = summary_task_queue] { start_worker(q, "summary"); });
+			_threads.start([&q = presence_task_queue] { start_worker(q, "presence"); });
 		}
 
 		invalidate_view(view_invalid::sidebar |
@@ -397,17 +417,17 @@ void app_frame::start_workers()
 		start_database(db, q, async, app, index_loaded_func);
 	});
 
-	_threads.start([&q = load_task_queue] { start_worker(q, u8"load"sv); });
-	_threads.start([&q = load_raw_task_queue] { start_worker(q, u8"load_raw"sv); });
-	_threads.start([&q = render_task_queue] { start_worker(q, u8"render"sv); });
-	_threads.start([&q = query_task_queue] { start_worker(q, u8"query"sv); });
-	_threads.start([&q = auto_complete_task_queue] { start_worker(q, u8"auto_complete"sv); });
-	_threads.start([&q = location_task_queue] { start_worker(q, u8"locations"sv); });
-	_threads.start([&q = sidebar_task_queue] { start_worker(q, u8"sidebar"sv); });
-	_threads.start([&q = web_task_queue] { start_worker(q, u8"web"sv); });
-	_threads.start([&q = map_tile_task_queue] { start_worker(q, u8"map"sv); });
-	_threads.start([&q = cloud_task_queue] { start_worker(q, u8"cloud"sv); });
-	_threads.start([&q = index_task_queue] { start_worker(q, u8"index"sv); });
+	_threads.start([&q = load_task_queue] { start_worker(q, "load"); });
+	_threads.start([&q = load_raw_task_queue] { start_worker(q, "load_raw"); });
+	_threads.start([&q = render_task_queue] { start_worker(q, "render"); });
+	_threads.start([&q = query_task_queue] { start_worker(q, "query"); });
+	_threads.start([&q = auto_complete_task_queue] { start_worker(q, "auto_complete"); });
+	_threads.start([&q = location_task_queue] { start_worker(q, "locations"); });
+	_threads.start([&q = sidebar_task_queue] { start_worker(q, "sidebar"); });
+	_threads.start([&q = web_task_queue] { start_worker(q, "web"); });
+	_threads.start([&q = map_tile_task_queue] { start_worker(q, "map"); });
+	_threads.start([&q = cloud_task_queue] { start_worker(q, "cloud"); });
+	_threads.start([&q = index_task_queue] { start_worker(q, "index"); });
 
 	index_task_queue.enqueue([this, scan_uncached_func]
 	{

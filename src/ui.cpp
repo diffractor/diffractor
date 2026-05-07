@@ -951,7 +951,7 @@ static metadata_edits make_edit(const int r)
 	return edits;
 }
 
-static metadata_edits make_edit(const std::u8string_view label)
+static metadata_edits make_edit(const std::string_view label)
 {
 	metadata_edits edits;
 	edits.label = label;
@@ -973,7 +973,7 @@ static std::function<void()> make_invoke(view_state& s, const ui::control_frame_
 }
 
 
-static ui::command_ptr def_menu_command(const icon_index icon, const std::u8string_view text, const ui::color32 clr,
+static ui::command_ptr def_menu_command(const icon_index icon, const std::string_view text, const ui::color32 clr,
                                         std::function<void()> invoke, const bool is_checked)
 {
 	auto c = std::make_shared<ui::command>();
@@ -986,7 +986,7 @@ static ui::command_ptr def_menu_command(const icon_index icon, const std::u8stri
 }
 
 
-bool has_label(const df::item_element_ptr& item, const std::u8string_view label_text)
+bool has_label(const df::item_element_ptr& item, const std::string_view label_text)
 {
 	return str::icmp(item->label(), label_text) == 0;
 }
@@ -1023,7 +1023,7 @@ void rate_label_control::dispatch_event(const view_element_event& event)
 			                 make_invoke(_state, parent, view, _item, make_edit(label_second_text)),
 			                 has_label(_item, label_second_text)),
 			def_menu_command(icon_index::none, tt.command_label_none, 0,
-			                 make_invoke(_state, parent, view, _item, make_edit(std::u8string_view{})),
+			                 make_invoke(_state, parent, view, _item, make_edit(std::string_view{})),
 			                 false),
 		};
 
@@ -1039,8 +1039,8 @@ void rate_label_control::tooltip(view_hover_element& hover, const pointi loc, co
 	                                                   view_element_style::line_break));
 
 	const auto table = std::make_shared<ui::table_element>();
-	table->add(str::format(u8"{}:"sv, tt.prop_name_label), _item->label());
-	table->add(str::format(u8"{}:"sv, tt.prop_name_rating), prop::format_rating(_item->rating()));
+	table->add(std::format("{}:", tt.prop_name_label), _item->label());
+	table->add(std::format("{}:", tt.prop_name_rating), prop::format_rating(_item->rating()));
 
 	hover.elements->add(table);
 
@@ -1150,7 +1150,7 @@ void items_dates_control::tooltip(view_hover_element& hover, const pointi loc, c
 
 	e->add(table);
 	e->add(std::make_shared<text_element>(
-		str::format(tt.items_created_on_fmt, matches.total_items().count, prop::format_date(created_date)), font,
+		str_format(tt.items_created_on_fmt.sv(), matches.total_items().count, prop::format_date(created_date)), font,
 		ui::style::text_style::multiline, view_element_style::new_line));
 	e->add(std::make_shared<action_element>(tt.click_to_open));
 

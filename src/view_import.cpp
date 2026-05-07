@@ -26,7 +26,7 @@ static import_options make_import_options()
 	result.source_filter = setting.import.source_filter;
 	result.dest_folder = df::folder_path(setting.import.destination_path);
 	result.dest_structure = setting.import.dest_folder_structure.empty()
-		                        ? defaut_custom_folder_structure
+		                        ? default_custom_folder_structure
 		                        : setting.import.dest_folder_structure;
 	result.is_move = setting.import.is_move;
 	result.overwrite_if_newer = setting.import.overwrite_if_newer;
@@ -40,8 +40,6 @@ view_controls_host_ptr import_view::controls(const ui::control_frame_ptr& owner)
 {
 	auto result = std::make_shared<view_controls_host>(_state);
 	auto frame = owner->create_dlg(result, false);
-
-	const auto& items = _state.selected_items();
 
 	std::vector<view_element_ptr> controls;
 	controls.emplace_back(std::make_shared<text_element>(tt.command_import, ui::style::font_face::title));
@@ -76,13 +74,13 @@ view_controls_host_ptr import_view::controls(const ui::control_frame_ptr& owner)
 		is_first_source = false;
 	}
 
-	const std::vector<std::u8string> folder_structure_completes
+	const std::vector<std::string> folder_structure_completes
 	{
-		std::u8string(defaut_custom_folder_structure),
-		u8"{artist}\\{album}"s,
-		u8"{show}\\Season {season}"s,
-		u8"{year}\\{created}"s,
-		u8"{year}\\{country}"s
+		std::string(default_custom_folder_structure),
+		"{artist}\\{album}"s,
+		"{show}\\Season {season}"s,
+		"{year}\\{created}"s,
+		"{year}\\{country}"s
 	};
 
 	_select_other_folder = is_first_source;
@@ -128,7 +126,7 @@ void import_view::update_rows(const import_analysis_result& analysis_result)
 	const auto orange_text_color = ui::lighten(ui::style::color::important_background, 0.55f);
 
 	std::vector<row_element_ptr> rows;
-	std::vector<std::u8string> text;
+	std::vector<std::string> text;
 
 	int imports = 0;
 	int exists = 0;
@@ -172,7 +170,7 @@ void import_view::update_rows(const import_analysis_result& analysis_result)
 	}
 
 	_rows = std::move(rows);
-	_status = str::format(u8"{} {}   {} {}   {} {}"sv, imports, tt.import, exists, tt.exists, already_imported,
+	_status = std::format("{} {}   {} {}   {} {}", imports, tt.import, exists, tt.exists, already_imported,
 	                      tt.previously_imported);
 	_state.invalidate_view(view_invalid::view_layout | view_invalid::controller | view_invalid::status);
 }
@@ -308,10 +306,10 @@ void import_view::analyze()
 					              {
 						              view->update_rows(analysis_result);
 					              });
-
-					              event_analyze.set();
 				              }
 
+				              // Always signal completion so the modal status dialog
+				              // is dismissed even when analysis is cancelled.
 				              event_analyze.set();
 			              });
 		});

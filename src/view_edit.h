@@ -101,9 +101,9 @@ class edit_view final : public view_base, public std::enable_shared_from_this<ed
 	rectd _crop_handle_bl;
 	rectd _crop_handle_br;
 
-	std::u8string _title;
+	std::string _title;
 	df::file_path _path;
-	std::u8string_view _xmp_name;
+	std::string_view _xmp_name;
 	file_type_ref _mt = nullptr;
 	file_load_result _loaded;
 	ui::const_surface_ptr _preview_surface;
@@ -134,7 +134,7 @@ public:
 	void cancel() const;
 	void exit() override;
 	void save_and_close();
-	bool save(df::file_path src_path, df::file_path dst_path, std::u8string_view xmp_name,
+	bool save(df::file_path src_path, df::file_path dst_path, std::string_view xmp_name,
 	          const ui::control_frame_ptr& owner) const;
 	bool has_changes() const;
 	void preview(ui::const_surface_ptr surface);
@@ -193,13 +193,13 @@ public:
 		return draw_crop.transform(_image_transform).bounding_rect();
 	}
 
-	std::u8string_view title() override
+	std::string_view title() override
 	{
 		const auto i = _state._edit_item;
 
 		if (i)
 		{
-			_title = str::format(u8"{}: {} {}"sv, s_app_name, tt.editing_title, i->name());
+			_title = std::format("{}: {} {}", s_app_name, tt.editing_title, i->name());
 		}
 		else
 		{

@@ -375,28 +375,28 @@ file_scan_result scan_psd(read_stream& s)
 		switch (mode)
 		{
 		case BitmapMode:
-			result.pixel_format = u8"mono"_c;
+			result.pixel_format = "mono"_c;
 			break;
 		case RGBMode:
-			result.pixel_format = channels >= 4 ? u8"argb32"_c : u8"rgb32"_c;
+			result.pixel_format = channels >= 4 ? "argb32"_c : "rgb32"_c;
 			break;
 		case LabMode:
-			result.pixel_format = u8"lab"_c;
+			result.pixel_format = "lab"_c;
 			break;
 		case CMYKMode:
-			result.pixel_format = u8"cmyk"_c;
+			result.pixel_format = "cmyk"_c;
 			break;
 		case GrayscaleMode:
-			result.pixel_format = u8"gray8"_c;
+			result.pixel_format = "gray8"_c;
 			break;
 		case IndexedMode:
-			result.pixel_format = u8"pal8"_c;
+			result.pixel_format = "pal8"_c;
 			break;
 		case MultichannelMode:
-			result.pixel_format = u8"multichannel"_c;
+			result.pixel_format = "multichannel"_c;
 			break;
 		case DuotoneMode:
-			result.pixel_format = u8"duotone"_c;
+			result.pixel_format = "duotone"_c;
 			break;
 		}
 

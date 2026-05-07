@@ -60,7 +60,7 @@
 #pragma comment(lib, "runtimeobject")
 #endif
 
-//#pragma comment(lib, "SetupAPI"sv)
+//#pragma comment(lib, "SetupAPI")
 
 size_t platform::static_memory_usage = 0;
 platform::thread_event platform::event_exit(true, false);
@@ -81,7 +81,7 @@ struct clipboard_formats
 	static FORMATETC DropShellItems;
 };
 
-void __cdecl debug_printf(const char8_t* fmt, ...)
+void __cdecl debug_printf(const char* fmt, ...)
 {
 	char buffer[256];
 	va_list ap;
@@ -97,10 +97,10 @@ bool platform::clipboard_has_files_or_image()
 	return IsClipboardFormatAvailable(CF_HDROP) || IsClipboardFormatAvailable(CF_DIB);
 }
 
-std::u8string win32_to_string(const IID& iid)
+std::string win32_to_string(const IID& iid)
 {
 	LPOLESTR sz = nullptr;
-	auto result = u8"?"s;
+	auto result = "?"s;
 
 	if (SUCCEEDED(StringFromIID(iid, &sz)))
 	{
@@ -137,7 +137,7 @@ public:
 
 	STDMETHOD(QueryInterface)(_In_ REFIID iid, _Deref_out_ void** ppvObject) noexcept override
 	{
-		df::trace(str::format(u8"items_data_object::QueryInterface {}"sv, win32_to_string(iid)));
+		df::trace(std::format("items_data_object::QueryInterface {}", win32_to_string(iid)));
 
 		if (IsEqualGUID(iid, IID_IDataObject))
 		{
@@ -166,7 +166,7 @@ public:
 		const auto n = _refs.fetch_sub(1) - 1;
 		if (n <= 0)
 		{
-			df::trace("items_data::release - delete"sv);
+			df::trace("items_data::release - delete");
 			delete this;
 		}
 		return n;
@@ -194,7 +194,7 @@ public:
 
 	STDMETHOD(QueryInterface)(_In_ REFIID iid, _Deref_out_ void** ppvObject) noexcept override
 	{
-		df::trace(str::format(u8"items_drop_source::QueryInterface {}"sv, win32_to_string(iid)));
+		df::trace(std::format("items_drop_source::QueryInterface {}", win32_to_string(iid)));
 
 		if (IsEqualGUID(iid, IID_IDropSource))
 		{
@@ -223,7 +223,7 @@ public:
 		const auto n = _refs.fetch_sub(1) - 1;
 		if (n <= 0)
 		{
-			df::trace("items_drop_source::release - delete"sv);
+			df::trace("items_drop_source::release - delete");
 			delete this;
 		}
 		return n;
@@ -287,7 +287,7 @@ public:
 
 	STDMETHOD(QueryInterface)(_In_ REFIID iid, _Deref_out_ void** ppvObject) noexcept override
 	{
-		df::trace(str::format(u8"CEnumFORMATETCImpl::QueryInterface {}"sv, win32_to_string(iid)));
+		df::trace(std::format("CEnumFORMATETCImpl::QueryInterface {}", win32_to_string(iid)));
 
 		if (IsEqualGUID(iid, IID_IEnumFORMATETC))
 		{
@@ -316,7 +316,7 @@ public:
 		const auto n = _refs.fetch_sub(1) - 1;
 		if (n <= 0)
 		{
-			df::trace("CEnumFORMATETCImpl::release - delete"sv);
+			df::trace("CEnumFORMATETCImpl::release - delete");
 			delete this;
 		}
 		return n;
@@ -390,7 +390,7 @@ STDMETHODIMP CEnumFORMATETCImpl::Clone(IEnumFORMATETC FAR* FAR* ppCloneEnumForma
 
 //////////////////////////////////////////////////////////////////////
 
-std::u8string platform::utf16_to_utf8(const std::wstring_view text)
+std::string platform::utf16_to_utf8(const std::wstring_view text)
 {
 	if (text.empty()) return {};
 
@@ -403,7 +403,7 @@ std::u8string platform::utf16_to_utf8(const std::wstring_view text)
 	return str::utf8_cast2(result);
 }
 
-std::wstring platform::utf8_to_utf16(const std::u8string_view text)
+std::wstring platform::utf8_to_utf16(const std::string_view text)
 {
 	if (text.empty()) return {};
 
@@ -417,7 +417,7 @@ std::wstring platform::utf8_to_utf16(const std::u8string_view text)
 	return result;
 }
 
-std::string platform::utf8_to_a(const std::u8string_view utf8)
+std::string platform::utf8_to_a(const std::string_view utf8)
 {
 	std::string result;
 	const auto length = MultiByteToWideChar(CP_UTF8, 0, std::bit_cast<LPCSTR>(utf8.data()),
@@ -516,11 +516,11 @@ static uint32_t file_attributes(const df::folder_path path)
 std::wstring platform::to_file_system_path(const df::file_path path)
 {
 	auto result = str::utf8_to_utf16(path.pack());
-	if (result.size() >= MAX_PATH) result.insert(0, L"\\\\?\\"sv);
+	if (result.size() >= MAX_PATH) result.insert(0, L"\\\\?\\");
 	return result;
 };
 
-static std::wstring parse_special_path(const std::u8string_view sv)
+static std::wstring parse_special_path(const std::string_view sv)
 {
 	std::wstring result;
 
@@ -557,7 +557,7 @@ std::wstring platform::to_file_system_path(const df::folder_path path)
 		result = str::utf8_to_utf16(path.text());
 	}
 
-	if (result.size() >= MAX_PATH) result.insert(0, L"\\\\?\\"sv);
+	if (result.size() >= MAX_PATH) result.insert(0, L"\\\\?\\");
 	return result;
 }
 
@@ -866,11 +866,11 @@ STDMETHODIMP items_data_object::EnumFormatEtc(const DWORD dwDirection, IEnumFORM
 		if (GetClipboardFormatNameW(it->cfFormat, szBuf, MAX_PATH))
 		{
 			// remaining entries read from "fmt" members
-			df::log(__FUNCTION__, str::format(u8"EnumFormatEtc "sv, str::utf16_to_utf8(szBuf)));
+			df::log(__FUNCTION__, std::format("EnumFormatEtc ", str::utf16_to_utf8(szBuf)));
 		}
 		else
 		{
-			df::log(__FUNCTION__, "EnumFormatEtc (Unknown)"sv);
+			df::log(__FUNCTION__, "EnumFormatEtc (Unknown)");
 		}
 	}
 
@@ -951,18 +951,18 @@ DWORD data_object_client::preferred_drop_effect() const
 
 static LCID g_lLangId = MAKELCID(LANG_NEUTRAL, SORT_DEFAULT);
 
-static std::u8string format_os_error(const DWORD error)
+static std::string format_os_error(const DWORD error)
 {
 	wchar_t sz[1000];
 	FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr, error, g_lLangId, sz, 1000,
 	               nullptr);
 	auto result = str::utf16_to_utf8(sz);
-	return result.empty() ? std::u8string(tt.error_unknown) : result;
+	return result.empty() ? std::string(tt.error_unknown) : result;
 }
 
-static std::u8string last_os_error_impl()
+static std::string last_os_error_impl()
 {
-	std::u8string result;
+	std::string result;
 	const auto error = GetLastError();
 
 	if (error != 0)
@@ -973,35 +973,35 @@ static std::u8string last_os_error_impl()
 	return result;
 }
 
-static std::u8string shell_error_string(const int e)
+static std::string shell_error_string(const int e)
 {
 	switch (e)
 	{
-	case 0x71: return std::u8string(tt.error_same_file);
-	case 0x72: return std::u8string(tt.error_many_src_1_dest);
-	case 0x73: return std::u8string(tt.error_diff_dir);
-	case 0x74: return std::u8string(tt.error_src_root_dir);
-	case 0x75: return std::u8string(tt.error_op_cancelled);
-	case 0x76: return std::u8string(tt.error_dest_subtree);
-	case 0x78: return std::u8string(tt.error_access_denied_src);
-	case 0x79: return std::u8string(tt.error_path_too_deep);
-	case 0x7A: return std::u8string(tt.error_many_dest);
-	case 0x7C: return std::u8string(tt.error_invalid_files);
-	case 0x7D: return std::u8string(tt.error_dest_same_tree);
-	case 0x7E: return std::u8string(tt.error_fld_dest_is_file);
-	case 0x80: return std::u8string(tt.error_file_dest_is_fld);
-	case 0x81: return std::u8string(tt.error_filename_too_long);
-	case 0x82: return std::u8string(tt.error_dest_is_cd_rom);
-	case 0x83: return std::u8string(tt.error_dest_is_dvd);
-	case 0x84: return std::u8string(tt.error_dest_is_cd_record);
-	case 0x85: return std::u8string(tt.error_file_too_large);
-	case 0x86: return std::u8string(tt.error_src_is_cdrom);
-	case 0x87: return std::u8string(tt.error_src_is_dvd);
-	case 0x88: return std::u8string(tt.error_src_is_cd_record);
-	case 0xB7: return std::u8string(tt.error_max);
-	case 0x402: return std::u8string(tt.error_unknown);
-	case 0x10000: return std::u8string(tt.error_on_dest);
-	case 0x10074: return std::u8string(tt.error_dst_root_dir);
+	case 0x71: return std::string(tt.error_same_file);
+	case 0x72: return std::string(tt.error_many_src_1_dest);
+	case 0x73: return std::string(tt.error_diff_dir);
+	case 0x74: return std::string(tt.error_src_root_dir);
+	case 0x75: return std::string(tt.error_op_cancelled);
+	case 0x76: return std::string(tt.error_dest_subtree);
+	case 0x78: return std::string(tt.error_access_denied_src);
+	case 0x79: return std::string(tt.error_path_too_deep);
+	case 0x7A: return std::string(tt.error_many_dest);
+	case 0x7C: return std::string(tt.error_invalid_files);
+	case 0x7D: return std::string(tt.error_dest_same_tree);
+	case 0x7E: return std::string(tt.error_fld_dest_is_file);
+	case 0x80: return std::string(tt.error_file_dest_is_fld);
+	case 0x81: return std::string(tt.error_filename_too_long);
+	case 0x82: return std::string(tt.error_dest_is_cd_rom);
+	case 0x83: return std::string(tt.error_dest_is_dvd);
+	case 0x84: return std::string(tt.error_dest_is_cd_record);
+	case 0x85: return std::string(tt.error_file_too_large);
+	case 0x86: return std::string(tt.error_src_is_cdrom);
+	case 0x87: return std::string(tt.error_src_is_dvd);
+	case 0x88: return std::string(tt.error_src_is_cd_record);
+	case 0xB7: return std::string(tt.error_max);
+	case 0x402: return std::string(tt.error_unknown);
+	case 0x10000: return std::string(tt.error_on_dest);
+	case 0x10074: return std::string(tt.error_dst_root_dir);
 	default:
 		return format_os_error(e);
 	}
@@ -1050,7 +1050,7 @@ static df::paths dest_file_list(const df::folder_path target, const wchar_t* con
 	return result;
 }
 
-static df::paths dest_file_list(const df::folder_path target, const char8_t* const file_list,
+static df::paths dest_file_list(const df::folder_path target, const char* const file_list,
                                 const name_mapping_t& name_mapping)
 {
 	df::paths result;
@@ -1064,7 +1064,7 @@ static df::paths dest_file_list(const df::folder_path target, const char8_t* con
 		{
 			if (*sz++ == 0)
 			{
-				auto src_path = df::file_path(std::u8string_view(sz_start, sz - sz_start - 1));
+				auto src_path = df::file_path(std::string_view(sz_start, sz - sz_start - 1));
 				auto src_id = target.combine_file(src_path.name());
 				const auto found = name_mapping.find(src_id);
 				result.files.emplace_back(found == name_mapping.end() ? src_id : found->second);
@@ -1213,7 +1213,7 @@ df::file_path data_object_client::first_path() const
 			}
 			else
 			{
-				result = df::file_path(std::bit_cast<const char8_t*>(std::bit_cast<uint8_t*>(pDrop) + pDrop->pFiles));
+				result = df::file_path(std::bit_cast<const char*>(std::bit_cast<uint8_t*>(pDrop) + pDrop->pFiles));
 			}
 
 			GlobalUnlock(h);
@@ -1259,7 +1259,7 @@ data_object_client::description data_object_client::files_description() const
 
 			if (pDrop->fWide)
 			{
-				const auto* sz = std::bit_cast<LPCWSTR>(std::bit_cast<const char8_t*>(pDrop) + pDrop->pFiles);
+				const auto* sz = std::bit_cast<LPCWSTR>(std::bit_cast<const char*>(pDrop) + pDrop->pFiles);
 				result.first_name = str::utf16_to_utf8(sz);
 				result.has_readonly |= (file_attributes(df::folder_path(sz)) & FILE_ATTRIBUTE_READONLY) != 0;
 
@@ -1275,7 +1275,7 @@ data_object_client::description data_object_client::files_description() const
 			{
 				const auto* sz = std::bit_cast<LPCSTR>(std::bit_cast<uint8_t*>(pDrop) + pDrop->pFiles);
 				result.first_name = str::utf8_cast(sz);
-				result.has_readonly |= (file_attributes(df::folder_path(std::bit_cast<const char8_t*>(sz))) &
+				result.has_readonly |= (file_attributes(df::folder_path(std::bit_cast<const char*>(sz))) &
 					FILE_ATTRIBUTE_READONLY) != 0;
 
 				while (sz[0] != 0 || sz[1] != 0)
@@ -1298,7 +1298,7 @@ data_object_client::description data_object_client::files_description() const
 }
 
 
-platform::file_op_result data_object_client::save_bitmap(const df::folder_path save_path, const std::u8string_view name,
+platform::file_op_result data_object_client::save_bitmap(const df::folder_path save_path, const std::string_view name,
                                                          const bool as_png)
 {
 	platform::file_op_result result;
@@ -1385,7 +1385,7 @@ void platform::generate_random_bytes(uint8_t* buffer, const size_t len)
 }
 
 
-std::u8string platform::OS()
+std::string platform::OS()
 {
 #pragma warning(push)
 #pragma warning(disable:4996)
@@ -1405,17 +1405,17 @@ std::u8string platform::OS()
 	return str::utf8_cast2(result);
 }
 
-void platform::trace(const std::u8string_view message)
+void platform::trace(const std::string_view message)
 {
-	trace(std::u8string(message));
+	trace(std::string(message));
 }
 
-void platform::trace(const std::u8string& message)
+void platform::trace(const std::string& message)
 {
 	OutputDebugStringA(std::bit_cast<const char*>(message.c_str()));
 }
 
-void platform::set_thread_description(const std::u8string_view name)
+void platform::set_thread_description(const std::string_view name)
 {
 	if (IsWindows10OrGreater())
 	{
@@ -1446,7 +1446,7 @@ void platform::set_thread_description(const std::u8string_view name)
 }
 
 
-std::u8string platform::user_name()
+std::string platform::user_name()
 {
 	constexpr int size = 200;
 	wchar_t w[size];
@@ -1456,7 +1456,7 @@ std::u8string platform::user_name()
 	return str::utf16_to_utf8(w);
 }
 
-std::u8string platform::last_os_error()
+std::string platform::last_os_error()
 {
 	return last_os_error_impl();
 }
@@ -1538,7 +1538,7 @@ platform::file_op_result platform::replace_file(const df::file_path destination,
 		if (create_originals)
 		{
 			// Create original
-			const auto org_name = std::u8string(destination.file_name_without_extension()) + u8".original"s;
+			const auto org_name = std::string(destination.file_name_without_extension()) + ".original"s;
 			const auto original_path = df::file_path(existing.folder(), org_name, destination.extension());
 
 			if (!original_path.exists())
@@ -1569,7 +1569,7 @@ platform::file_op_result platform::replace_file(const df::file_path destination,
 		// ReplaceFileW failed - this commonly happens on network drives (SMB shares)
 		// Fall back to move with overwrite (MOVEFILE_REPLACE_EXISTING)
 		const auto last_error = GetLastError();
-		df::log(__FUNCTION__, str::format(u8"ReplaceFileW failed with error {}, falling back to move with overwrite"sv,
+		df::log(__FUNCTION__, std::format("ReplaceFileW failed with error {}, falling back to move with overwrite",
 		                                  static_cast<uint32_t>(last_error)));
 
 		// If backup was requested, try to create it first by copying destination
@@ -1579,7 +1579,7 @@ platform::file_op_result platform::replace_file(const df::file_path destination,
 			const auto backup_result = copy_file(destination, backup, true, false);
 			if (backup_result.failed())
 			{
-				df::log(__FUNCTION__, u8"Failed to create backup, proceeding without backup"sv);
+				df::log(__FUNCTION__, "Failed to create backup, proceeding without backup");
 			}
 		}
 
@@ -1707,7 +1707,7 @@ bool platform::open(const df::file_path path)
 	}
 	catch (...)
 	{
-		df::log(__FUNCTION__, "WinRT Launcher failed, falling back to ShellExecute"sv);
+		df::log(__FUNCTION__, "WinRT Launcher failed, falling back to ShellExecute");
 	}
 	// Fallback to ShellExecute
 #endif
@@ -1715,7 +1715,7 @@ bool platform::open(const df::file_path path)
 		static_cast<uintptr_t>(32));
 }
 
-bool platform::open(const std::u8string_view path)
+bool platform::open(const std::string_view path)
 {
 	const auto w = str::utf8_to_utf16(path);
 #ifdef WINSTORE
@@ -1755,7 +1755,7 @@ bool platform::open(const std::u8string_view path)
 	}
 	catch (...)
 	{
-		df::log(__FUNCTION__, "WinRT Launcher failed, falling back to ShellExecute"sv);
+		df::log(__FUNCTION__, "WinRT Launcher failed, falling back to ShellExecute");
 	}
 	// Fallback to ShellExecute
 #endif
@@ -1781,7 +1781,7 @@ static bool run_command_line(const std::wstring& command_line)
 	return false;
 }
 
-bool platform::run(const std::u8string_view cmd)
+bool platform::run(const std::string_view cmd)
 {
 	return run_command_line(str::utf8_to_utf16(cmd));
 }
@@ -1814,7 +1814,7 @@ static BOOL CALLBACK EnumWindowsProc(const HWND hwnd, const LPARAM lParam)
 
 // Could use a simple notepad like this -> https://github.com/estout82/Notepad/blob/master/Src/Main.cpp
 
-void platform::show_text_in_notepad(const std::u8string_view s)
+void platform::show_text_in_notepad(const std::string_view s)
 {
 	TCHAR szCmdline[] = TEXT("Notepad.exe");
 
@@ -1838,7 +1838,7 @@ void platform::show_text_in_notepad(const std::u8string_view s)
 
 	if (started)
 	{
-		//df::log(__FUNCTION__, piProcInfo.dwProcessId << " Notepad Process Id"sv;
+		//df::log(__FUNCTION__, piProcInfo.dwProcessId << " Notepad Process Id";
 
 		WaitForInputIdle(piProcInfo.hProcess, 1000);
 
@@ -1859,7 +1859,7 @@ void platform::show_text_in_notepad(const std::u8string_view s)
 
 				if (!hEditWnd)
 				{
-					SendMessage(hEditWnd, WM_SETTEXT, NULL, (LPARAM)std::u8string(s).c_str());
+					SendMessage(hEditWnd, WM_SETTEXT, NULL, (LPARAM)std::string(s).c_str());
 				}
 			}
 			else
@@ -1942,7 +1942,7 @@ void platform::show_in_file_browser(const df::file_path path)
 	}
 	catch (...)
 	{
-		df::log(__FUNCTION__, "WinRT Launcher failed"sv);
+		df::log(__FUNCTION__, "WinRT Launcher failed");
 	}
 	// Fallback - shouldn't normally reach here for Store builds
 #endif
@@ -2017,7 +2017,7 @@ void platform::show_in_file_browser(const df::folder_path path)
 	}
 	catch (...)
 	{
-		df::log(__FUNCTION__, "WinRT Launcher failed"sv);
+		df::log(__FUNCTION__, "WinRT Launcher failed");
 	}
 	// Fallback - shouldn't normally reach here for Store builds
 #endif
@@ -2120,11 +2120,11 @@ bool platform::prompt_for_save_path(df::file_path& path)
 	wcscpy_s(w, to_file_system_path(path).c_str());
 	const auto extension = str::utf8_to_utf16(path.extension());
 
-	std::u8string filter_a;
-	filter_a += str::format(u8"{} (*.jpg)|*.jpg;*.jpe;*.jpeg|"sv, tt.jpeg_best);
-	filter_a += str::format(u8"{} (*.png)|*.png|"sv, tt.png_best);
-	filter_a += str::format(u8"{} (*.webp)|*.webp|"sv, tt.webp_best);
-	filter_a += u8"|"sv;
+	std::string filter_a;
+	filter_a += std::format("{} (*.jpg)|*.jpg;*.jpe;*.jpeg|", tt.jpeg_best);
+	filter_a += std::format("{} (*.png)|*.png|", tt.png_best);
+	filter_a += std::format("{} (*.webp)|*.webp|", tt.webp_best);
+	filter_a += "|";
 
 	auto filter = str::utf8_to_utf16(filter_a);
 
@@ -2141,8 +2141,8 @@ bool platform::prompt_for_save_path(df::file_path& path)
 	ofn.Flags = OFN_EXPLORER | OFN_OVERWRITEPROMPT;
 	ofn.lpstrDefExt = extension.c_str();
 	ofn.nFilterIndex = 1;
-	if (str::icmp(extension, L".png"sv) == 0) ofn.nFilterIndex = 2;
-	if (str::icmp(extension, L".webp"sv) == 0) ofn.nFilterIndex = 3;
+	if (str::icmp(extension, L".png") == 0) ofn.nFilterIndex = 2;
+	if (str::icmp(extension, L".webp") == 0) ofn.nFilterIndex = 3;
 
 	const auto success = GetSaveFileName(&ofn) != 0;
 	path = df::file_path(w);
@@ -2177,7 +2177,7 @@ platform::scan_result platform::scan(const df::folder_path save_path)
 	{
 		//create a scan dialog and a select device UI
 		const bstr_t folder(to_file_system_path(save_path).c_str());
-		const bstr_t name(L"scan"sv);
+		const bstr_t name(L"scan");
 
 		hr = pWiaDevMgr2->GetImageDlg(0, nullptr, app_wnd(), folder, name, &num_files, &file_paths, &pItem);
 
@@ -2236,10 +2236,10 @@ static bool invoke_assoc(const ComPtr<IAssocHandler>& handler, const std::vector
 	return success;
 }
 
-std::vector<platform::open_with_entry> platform::assoc_handlers(const std::u8string_view ext)
+std::vector<platform::open_with_entry> platform::assoc_handlers(const std::string_view ext)
 {
 	ComPtr<IEnumAssocHandlers> handle_enum;
-	df::hash_map<std::u8string, open_with_entry, df::ihash, df::ieq> handlers;
+	df::hash_map<std::string, open_with_entry, df::ihash, df::ieq> handlers;
 	const auto w = str::utf8_to_utf16(ext);
 
 	if (SUCCEEDED(SHAssocEnumHandlers(w.c_str(), ASSOC_FILTER_RECOMMENDED, &handle_enum)))
@@ -2353,7 +2353,7 @@ static bool verify_package(const df::file_path path_in)
 	const auto path = platform::to_file_system_path(path_in);
 	const auto cert_name = read_cert_name(path);
 
-	if (str::icmp(cert_name, L"Zachariah Walker"sv) != 0)
+	if (str::icmp(cert_name, L"Zachariah Walker") != 0)
 		return false;
 
 	WINTRUST_FILE_INFO FileData = {sizeof(WINTRUST_FILE_INFO)};
@@ -2372,13 +2372,13 @@ static bool verify_package(const df::file_path path_in)
 
 void platform::download_and_verify(const std::function<void(df::file_path)>& complete)
 {
-	const auto download_path = temp_file(u8"exe"sv);
+	const auto download_path = temp_file("exe");
 
 	web_request req;
-	req.path = u8"diffractor-setup.exe"sv;
+	req.path = "diffractor-setup.exe";
 	req.download_file_path = download_path;
 
-	const auto con = connect_to_host(u8"diffractor.com"sv);
+	const auto con = connect_to_host("diffractor.com");
 	const auto response = send_request(con, req);
 
 	if (response.status_code == 200 && verify_package(download_path))
@@ -2419,12 +2419,12 @@ platform::file_op_result platform::install(const df::file_path installer_path, c
 #endif
 
 
-df::file_path platform::temp_file(const std::u8string_view ext, const df::folder_path folder)
+df::file_path platform::temp_file(const std::string_view ext, const df::folder_path folder)
 {
 	static auto counter = GetTickCount64();
 	counter += 1;
 
-	auto name = u8"diffractor_"s;
+	auto name = "diffractor_"s;
 	name += str::to_hex(std::bit_cast<const uint8_t*>(&counter), 8);
 
 	if (!str::is_empty(ext))
@@ -2591,7 +2591,7 @@ void platform::set_clipboard(const std::vector<df::file_path>& files, const std:
 	OleSetClipboard(p);
 }
 
-void platform::set_clipboard(const std::u8string_view text)
+void platform::set_clipboard(const std::string_view text)
 {
 	if (OpenClipboard(app_wnd()))
 	{
@@ -2657,27 +2657,27 @@ platform::drop_effect platform::perform_drag(const std::any& frame_handle, const
 	return DRAGDROP_S_DROP == hr ? to_drop_effect(result_effect) : drop_effect::none;
 }
 
-std::u8string platform::file_op_result::format_error(const std::u8string_view text,
-                                                     const std::u8string_view more_text) const
+std::string platform::file_op_result::format_error(const std::string_view text,
+                                                   const std::string_view more_text) const
 {
-	std::u8string result;
+	std::string result;
 	result = text;
 
 	if (!more_text.empty())
 	{
-		str::join(result, more_text, u8"\n"sv, false);
+		str::join(result, more_text, "\n", false);
 	}
 
 	if (error_message.empty())
 	{
 		if (more_text.empty())
 		{
-			str::join(result, tt.error_unknown, u8"\n"sv, false);
+			str::join(result, tt.error_unknown, "\n", false);
 		}
 	}
 	else
 	{
-		str::join(result, error_message, u8"\n"sv, false);
+		str::join(result, error_message, "\n", false);
 	}
 
 	return result;
@@ -2716,7 +2716,7 @@ platform::file_op_result platform::move_or_copy(const std::vector<df::file_path>
 	return to_file_op_result(SHFileOperation(&shfo), shfo.fAnyOperationsAborted);
 }
 
-static bool folder_exists(const std::u8string_view path)
+static bool folder_exists(const std::string_view path)
 {
 	if (!df::is_path(path)) return false;
 
@@ -3066,7 +3066,7 @@ std::vector<platform::file_info> platform::select_files(const df::item_selector&
 	return results;
 }
 
-bool platform::write_shell_tags(const df::file_path path, const std::vector<std::u8string>& tags)
+bool platform::write_shell_tags(const df::file_path path, const std::vector<std::string>& tags)
 {
 	ComPtr<IPropertyStore> propStore;
 	const auto w = to_file_system_path(path);

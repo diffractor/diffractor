@@ -47,23 +47,23 @@
 command_line_t command_line;
 
 auto s_app_name_l = L"Diffractor";
-const auto s_app_name = u8"Diffractor"sv;
-const auto s_app_version = u8"126.2"sv;
-const auto g_app_build = u8"1206"sv;
-constexpr auto stage_file_name = u8"diffractor-setup-update.exe"sv;
-static constexpr auto installed_file_name = u8"diffractor-setup-installed.exe"sv;
-static constexpr auto s_search = u8"search"sv;
+const std::string_view s_app_name = "Diffractor";
+const std::string_view s_app_version = "126.2";
+const std::string_view g_app_build = "1206";
+constexpr auto stage_file_name = "diffractor-setup-update.exe";
+static constexpr auto installed_file_name = "diffractor-setup-installed.exe";
+static constexpr auto s_search = "search";
 
-extern void start_worker(platform::task_queue& q, std::u8string_view name);
+extern void start_worker(platform::task_queue& q, std::string_view name);
 
-std::u8string df::format_version(const bool short_text)
+std::string df::format_version(const bool short_text)
 {
 	if (short_text)
 	{
-		return str::format(u8"{}.{}"sv, s_app_version, g_app_build);
+		return std::format("{}.{}", s_app_version, g_app_build);
 	}
 
-	return str::format(u8"{}: {}.{}  |  {}"sv, tt.version, s_app_version, g_app_build, str::utf8_cast(__DATE__));
+	return std::format("{}: {}.{}  |  {}", tt.version, s_app_version, g_app_build, str::utf8_cast(__DATE__));
 };
 
 bool is_app_installed()
@@ -76,10 +76,10 @@ bool is_app_installed()
 struct app_updates_and_location_params
 {
 	gps_coordinate gps = setting.default_location;
-	std::u8string city;
-	std::u8string country;
-	std::u8string version;
-	std::u8string test_version = setting.available_test_version;
+	std::string city;
+	std::string country;
+	std::string version;
+	std::string test_version = setting.available_test_version;
 	bool should_update = false;
 
 	void apply(const app_frame_ptr& app, const view_state& s) const
@@ -104,7 +104,7 @@ struct app_updates_and_location_params
 };
 
 
-static gps_coordinate parse_coordinates(const std::u8string_view text, const gps_coordinate def_coords)
+static gps_coordinate parse_coordinates(const std::string_view text, const gps_coordinate def_coords)
 {
 	const auto splits = str::split(text, true);
 
@@ -125,7 +125,7 @@ static gps_coordinate parse_coordinates(const std::u8string_view text, const gps
 static void check_for_updates_and_location(const app_frame_ptr& app, view_state& s)
 {
 	log_func lf(__FUNCTION__);
-	platform::set_thread_description(u8"CheckForUpdates"sv);
+	platform::set_thread_description("CheckForUpdates");
 	platform::thread_init c;
 
 	if (platform::is_online())
@@ -136,17 +136,17 @@ static void check_for_updates_and_location(const app_frame_ptr& app, view_state&
 			s.queue_async(async_queue::web, [app, &s]
 			{
 				platform::web_request req;
-				req.path = u8"/ver"sv;
+				req.path = "/ver";
 				req.query = platform::web_params{
-					{u8"v"s, std::u8string(s_app_version)},
-					{u8"b"s, std::u8string(g_app_build)},
-					{u8"f"s, setting.first_run_ever ? u8"1"s : u8"0"s},
-					{u8"ft"s, str::to_hex(setting.features_used_since_last_report)},
-					{u8"i"s, str::to_hex(setting.instantiations)},
-					{u8"os"s, platform::OS()},
+					{"v"s, std::string(s_app_version)},
+					{"b"s, std::string(g_app_build)},
+					{"f"s, setting.first_run_ever ? "1"s : "0"s},
+					{"ft"s, str::to_hex(setting.features_used_since_last_report)},
+					{"i"s, str::to_hex(setting.instantiations)},
+					{"os"s, platform::OS()},
 				};
 
-				const auto con = platform::connect_to_host(u8"diffractor.com"sv);
+				const auto con = platform::connect_to_host("diffractor.com");
 				const auto response = send_request(con, req);
 
 				if (response.status_code == 200)
@@ -155,13 +155,13 @@ static void check_for_updates_and_location(const app_frame_ptr& app, view_state&
 					json.Parse(response.body);
 
 					app_updates_and_location_params params;
-					params.version = df::util::json::safe_string(json, u8"current_version");
-					params.test_version = df::util::json::safe_string(json, u8"test_version");
-					params.should_update = str::icmp(df::util::json::safe_string(json, u8"action"), u8"update"sv) == 0;
+					params.version = df::util::json::safe_string(json, "current_version");
+					params.test_version = df::util::json::safe_string(json, "test_version");
+					params.should_update = str::icmp(df::util::json::safe_string(json, "action"), "update") == 0;
 
-					params.city = df::util::json::safe_string(json, u8"city");
-					params.country = df::util::json::safe_string(json, u8"country");
-					params.gps = parse_coordinates(df::util::json::safe_string(json, u8"latlon"), params.gps);
+					params.city = df::util::json::safe_string(json, "city");
+					params.country = df::util::json::safe_string(json, "country");
+					params.gps = parse_coordinates(df::util::json::safe_string(json, "latlon"), params.gps);
 
 					setting.first_run_ever = false;
 					setting.features_used_since_last_report = 0;
@@ -179,7 +179,7 @@ static void check_for_updates_and_location(const app_frame_ptr& app, view_state&
 	}
 }
 
-crash_files_db crash_files(df::probe_data_file(u8"diffractor-files-that-crash.txt"sv));
+crash_files_db crash_files(df::probe_data_file("diffractor-files-that-crash.txt"));
 
 void flush_open_files_to_crash_files_list()
 {
@@ -191,65 +191,65 @@ void log_open_files_to_crash_files_list()
 	crash_files.log_open_files();
 }
 
-std::vector<std::pair<std::u8string_view, std::u8string>> calc_app_info(const index_state& index,
-                                                                        const bool include_state)
+std::vector<std::pair<std::string_view, std::string>> calc_app_info(const index_state& index,
+                                                                    const bool include_state)
 {
-	std::vector<std::pair<std::u8string_view, std::u8string>> result;
-	auto arch = u8"32-bit"sv;
-	auto config = u8"release"sv;
+	std::vector<std::pair<std::string_view, std::string>> result;
+	auto arch = "32-bit";
+	auto config = "release";
 
 #ifdef _M_X64
-	arch = u8"64-bit"sv;
+	arch = "64-bit";
 #endif
 
 #ifdef _DEBUG
-	config = u8"debug"sv;
+	config = "debug";
 #endif //_DEBUG
 
 	const auto seconds_running = platform::now().to_seconds() - df::start_time.to_seconds();
 
-	result.emplace_back(u8"Version:"sv, df::format_version(true));
-	result.emplace_back(u8"Windows:"sv, str::format(u8"{} {} {}"sv, platform::OS(), arch, config));
-	result.emplace_back(u8"Id:"sv, str::to_hex(crypto::crc32c(platform::user_name()), false));
-	result.emplace_back(u8"Running:"sv, str::format(u8"{} seconds"sv, seconds_running));
+	result.emplace_back("Version:", df::format_version(true));
+	result.emplace_back("Windows:", std::format("{} {} {}", platform::OS(), arch, config));
+	result.emplace_back("Id:", str::to_hex(crypto::crc32c(platform::user_name()), false));
+	result.emplace_back("Running:", std::format("{} seconds", seconds_running));
 	int64_t current, peak;
 
 	if (platform::working_set(current, peak))
 	{
-		result.emplace_back(u8"Memory:"sv,
-		                    str::format(u8"{} (peak {})"sv, df::file_size(current), df::file_size(peak)));
+		result.emplace_back("Memory:",
+		                    std::format("{} (peak {})", df::file_size(current), df::file_size(peak)));
 	}
 
-	result.emplace_back(u8"Static Memory:"sv, df::file_size(platform::static_memory_usage).str());
+	result.emplace_back("Static Memory:", df::file_size(platform::static_memory_usage).str());
 
-	result.emplace_back(u8"GPU:"sv, df::gpu_desc);
-	result.emplace_back(u8"GPU Id:"sv, df::gpu_id);
-	result.emplace_back(u8"D3D:"sv, df::d3d_info);
+	result.emplace_back("GPU:", df::gpu_desc);
+	result.emplace_back("GPU Id:", df::gpu_id);
+	result.emplace_back("D3D:", df::d3d_info);
 
-	result.emplace_back(u8"Indexed items:"sv, str::to_string(index.stats.index_item_count));
-	result.emplace_back(u8"Indexed folders:"sv, str::to_string(index.stats.index_folder_count));
-	result.emplace_back(u8"Duplicates:"sv,
-	                    str::format(u8"g={} mcomp={}"sv, index.stats.indexed_dup_folder_count,
+	result.emplace_back("Indexed items:", str::to_string(index.stats.index_item_count));
+	result.emplace_back("Indexed folders:", str::to_string(index.stats.index_folder_count));
+	result.emplace_back("Duplicates:",
+	                    std::format("g={} mcomp={}", index.stats.indexed_dup_folder_count,
 	                                index.stats.indexed_max_compare_count));
-	result.emplace_back(u8"Hashes:"sv,
-	                    str::format(u8"crc={}"sv, index.stats.indexed_crc_count));
-	result.emplace_back(u8"DB size:"sv, index.stats.database_size.str());
-	result.emplace_back(u8"Saved:"sv, str::format(u8"{} items | {} thumbs"sv, index.stats.items_saved,
-	                                              index.stats.thumbs_saved));
+	result.emplace_back("Hashes:",
+	                    std::format("crc={}", index.stats.indexed_crc_count));
+	result.emplace_back("DB size:", index.stats.database_size.str());
+	result.emplace_back("Saved:", std::format("{} items | {} thumbs", index.stats.items_saved,
+	                                          index.stats.thumbs_saved));
 
 
-	result.emplace_back(u8"Index load:"sv, str::format(u8"{} ms"sv, index.stats.index_load_ms));
-	result.emplace_back(u8"Predictions:"sv, str::format(u8"{} ms"sv, index.stats.predictions_ms));
-	result.emplace_back(u8"Count Matches:"sv, str::format(u8"{} ms"sv, index.stats.count_matches_ms));
+	result.emplace_back("Index load:", std::format("{} ms", index.stats.index_load_ms));
+	result.emplace_back("Predictions:", std::format("{} ms", index.stats.predictions_ms));
+	result.emplace_back("Count Matches:", std::format("{} ms", index.stats.count_matches_ms));
 
 	if (include_state)
 	{
-		result.emplace_back(u8"Jobs running: "sv, str::to_string(df::jobs_running));
-		result.emplace_back(u8"Is indexing: "sv, str::to_string(index.indexing));
-		result.emplace_back(u8"Is searching: "sv, str::to_string(index.searching));
-		result.emplace_back(u8"Is command active: "sv, str::to_string(df::command_active));
-		result.emplace_back(u8"Is closing: "sv, str::to_string(df::is_closing));
-		result.emplace_back(u8"Rendering function: "sv, str::utf8_cast(df::rendering_func));
+		result.emplace_back("Jobs running: ", str::to_string(df::jobs_running));
+		result.emplace_back("Is indexing: ", str::to_string(index.indexing));
+		result.emplace_back("Is searching: ", str::to_string(index.searching));
+		result.emplace_back("Is command active: ", str::to_string(df::command_active));
+		result.emplace_back("Is closing: ", str::to_string(df::is_closing));
+		result.emplace_back("Rendering function: ", str::utf8_cast(df::rendering_func));
 	}
 
 	return result;
@@ -281,10 +281,10 @@ void sidebar_logo_element::tooltip(view_hover_element& hover, const pointi loc, 
 	hover.active_bounds = hover.window_bounds = bounds.offset(element_offset);
 }
 
-void app_frame::app_fail(const std::u8string_view message, const std::u8string_view more_text)
+void app_frame::app_fail(const std::string_view message, const std::string_view more_text)
 {
-	auto message_s = std::u8string(message);
-	auto more_text_s = std::u8string(more_text);
+	auto message_s = std::string(message);
+	auto more_text_s = std::string(more_text);
 
 	queue_ui([message_s, more_text_s, parent = _app_frame]
 	{
@@ -321,9 +321,17 @@ void app_frame::stage_update()
 			{
 				const auto stage_path = known_path(platform::known_folder::app_data).combine_file(stage_file_name);
 
-				if (download_path.exists())
+				if (!download_path.is_empty() && download_path.exists())
 				{
-					platform::move_file(download_path, stage_path, false);
+					if (const auto move_result = platform::move_file(download_path, stage_path, false); move_result.
+						success())
+					{
+						df::log(__FUNCTION__, "Update staged successfully");
+					}
+					else
+					{
+						df::log(__FUNCTION__, move_result.format_error());
+					}
 				}
 			};
 
@@ -393,13 +401,16 @@ void media_view::update_media_elements()
 #ifndef WINSTORE
 static bool install_update_if_exists()
 {
+	// Note: running_app_folder must match the app_data path used by stage_update().
+	// This is guaranteed because stage_update() is only called when is_app_installed() is true,
+	// meaning the exe is running from the app_data folder.
 	const auto module_folder = known_path(platform::known_folder::running_app_folder);
 	const auto stage_path = module_folder.combine_file(stage_file_name);
 	const auto installed_path = module_folder.combine_file(installed_file_name);
 
 	if (stage_path.exists())
 	{
-		df::log(__FUNCTION__, u8"Staged install found"sv);
+		df::log(__FUNCTION__, "Staged install found");
 
 		if (const auto move_file_result = platform::move_file(stage_path, installed_path, false); move_file_result.
 			success())
@@ -407,10 +418,14 @@ static bool install_update_if_exists()
 			if (const auto install_result = platform::install(installed_path, module_folder, true, true); install_result
 				.success())
 			{
+				df::log(__FUNCTION__, "Update installer launched successfully");
+				return true;
 			}
 			else
 			{
 				df::log(__FUNCTION__, install_result.format_error());
+				// Clean up the renamed installer so we don't leave orphaned files
+				platform::move_file(installed_path, stage_path, false);
 			}
 		}
 		else
@@ -424,7 +439,7 @@ static bool install_update_if_exists()
 #endif
 
 
-void command_line_t::parse(const std::u8string_view command_line_text)
+void command_line_t::parse(const std::string_view command_line_text)
 {
 	const auto raw_cl = command_line_text;
 	const auto trimmed_cl = str::trim(raw_cl);
@@ -440,18 +455,18 @@ void command_line_t::parse(const std::u8string_view command_line_text)
 				if ((stripped[0] == '-' || stripped[0] == '/') && stripped.size() > 1)
 				{
 					const auto op = stripped.substr(stripped[1] == '-' ? 2 : 1);
-					no_gpu = str::icmp(op, u8"no-gpu"sv) == 0;
-					no_indexing = str::icmp(op, u8"no-indexing"sv) == 0;
-					run_tests = str::icmp(op, u8"run-tests"sv) == 0;
+					no_gpu = str::icmp(op, "no-gpu") == 0;
+					no_indexing = str::icmp(op, "no-indexing") == 0;
+					run_tests = str::icmp(op, "run-tests") == 0;
 
-					if (str::icmp(op, u8"test"sv) == 0)
+					if (str::icmp(op, "test") == 0)
 					{
 						console_test = true;
 					}
-					else if (op.size() > 5 && str::icmp(op.substr(0, 5), u8"test:"sv) == 0)
+					else if (op.size() > 5 && str::icmp(op.substr(0, 5), "test:") == 0)
 					{
 						console_test = true;
-						test_filter = std::u8string(op.substr(5));
+						test_filter = std::string(op.substr(5));
 					}
 				}
 				else if (df::is_path(stripped))
@@ -479,45 +494,45 @@ void command_line_t::parse(const std::u8string_view command_line_text)
 	}
 }
 
-std::u8string command_line_t::format_restart_cmd_line() const
+std::string command_line_t::format_restart_cmd_line() const
 {
-	std::u8string result;
-	if (no_gpu) result += u8" -no-gpu"sv;
-	if (no_indexing) result += u8" -no-indexing"sv;
+	std::string result;
+	if (no_gpu) result += " -no-gpu";
+	if (no_indexing) result += " -no-indexing";
 	return result;
 }
 
-std::u8string format_plural_text(const plural_text& fmt, const std::u8string_view first_name, const int64_t count,
-                                 const df::file_size size, const int64_t of_total)
+std::string format_plural_text(const plural_text& fmt, const std::string_view first_name, const int64_t count,
+                               const df::file_size size, const int64_t of_total)
 {
-	const std::u8string_view template_text = count == 1 ? fmt.one : fmt.plural;
+	const std::string_view template_text = count == 1 ? fmt.one : fmt.plural;
 
-	auto substitute = [&](u8ostringstream& result, const std::u8string_view token)
+	auto substitute = [&](std::ostringstream& result, const std::string_view token)
 	{
-		if (token == u8"first-name"sv) result << first_name;
-		else if (token == u8"count"sv) result << platform::format_number(str::to_string(count));
-		else if (token == u8"other"sv) result << platform::format_number(str::to_string(count - 1));
-		else if (token == u8"total"sv) result << platform::format_number(str::to_string(of_total));
-		else if (token == u8"size"sv) result << prop::format_size(size);
+		if (token == "first-name") result << first_name;
+		else if (token == "count") result << platform::format_number(str::to_string(count));
+		else if (token == "other") result << platform::format_number(str::to_string(count - 1));
+		else if (token == "total") result << platform::format_number(str::to_string(of_total));
+		else if (token == "size") result << prop::format_size(size);
 		else if (token.empty()) result << platform::format_number(str::to_string(count));
 	};
 
 	return str::replace_tokens(template_text, substitute);
 }
 
-std::u8string format_plural_text(const plural_text& fmt, const int64_t count, const int64_t of_total)
+std::string format_plural_text(const plural_text& fmt, const int64_t count, const int64_t of_total)
 {
 	return format_plural_text(fmt, {}, count, {}, of_total);
 }
 
-std::u8string format_plural_text(const plural_text& fmt, const df::item_set& items)
+std::string format_plural_text(const plural_text& fmt, const df::item_set& items)
 {
 	const auto summary = items.summary();
 	const auto total_items = summary.total_items() + summary.total_folders();
 	return format_plural_text(fmt, items.first_name(), total_items.count, total_items.size, 0);
 }
 
-std::u8string format_plural_text(const plural_text& fmt, const std::vector<std::u8string>& result)
+std::string format_plural_text(const plural_text& fmt, const std::vector<std::string>& result)
 {
 	return format_plural_text(fmt, result.front(), static_cast<int>(result.size()), {}, 0);
 }
@@ -534,7 +549,7 @@ void rating_control::dispatch_event(const view_element_event& event)
 }
 
 
-void view_frame::update_status(const std::u8string_view title, const std::u8string_view text)
+void view_frame::update_status(const std::string_view title, const std::string_view text)
 {
 	if (_status_title != title || _status_text != text)
 	{
@@ -585,9 +600,9 @@ void view_frame::draw_status(ui::draw_context& dc) const
 
 app_frame::app_frame(ui::plat_app_ptr pa) :
 	_player(std::make_shared<av_player>(*this)),
+	_item_index(*this, _locations),
 	_state(*this, *this, _item_index, _player),
 	_edit_view_state(_state),
-	_item_index(*this, _locations),
 	_db(_state.item_index),
 	_pa(std::move(pa))
 {
@@ -606,9 +621,13 @@ app_frame::app_frame(ui::plat_app_ptr pa) :
 app_frame::~app_frame()
 {
 	_threads.clear();
+	// Truncate any UI tasks queued by workers right before they exited.
+	// Their captured references would otherwise be released later during
+	// member destruction in non-deterministic order.
+	(void)_ui_queue.dequeue_all();
 	_state.close();
 
-	df::log(__FUNCTION__, u8"destruct"sv);
+	df::log(__FUNCTION__, "destruct");
 }
 
 void app_frame::prepare_frame()
@@ -785,13 +804,13 @@ void app_frame::tick()
 	}
 }
 
-static constexpr auto s_recent_folders = u8"recent_folders"sv;
-static constexpr auto s_recent_searches = u8"recent_searches"sv;
-static constexpr auto s_recent_apps = u8"recent_apps"sv;
-static constexpr auto s_recent_tags = u8"recent_tags"sv;
-static constexpr auto s_recent_locations = u8"recent_locations"sv;
-static constexpr auto s_group_order = u8"group_order"sv;
-static constexpr auto s_sort_order = u8"sort_order"sv;
+static constexpr auto s_recent_folders = "recent_folders";
+static constexpr auto s_recent_searches = "recent_searches";
+static constexpr auto s_recent_apps = "recent_apps";
+static constexpr auto s_recent_tags = "recent_tags";
+static constexpr auto s_recent_locations = "recent_locations";
+static constexpr auto s_group_order = "group_order";
+static constexpr auto s_sort_order = "sort_order";
 
 void app_frame::load_options(const platform::setting_file_ptr& store)
 {
@@ -1099,9 +1118,9 @@ void app_frame::layout(ui::measure_context& mc)
 }
 
 
-void parse_more_folders(df::index_roots& result, const std::u8string_view more_folders)
+void parse_more_folders(df::index_roots& result, const std::string_view more_folders)
 {
-	df::hash_set<std::u8string, df::ihash, df::ieq> drive_label_includes;
+	df::hash_set<std::string, df::ihash, df::ieq> drive_label_includes;
 
 	for (auto line : split_collection_folders(more_folders))
 	{
@@ -1658,7 +1677,7 @@ void app_frame::element_broadcast(const view_element_event& event)
 
 void app_frame::focus_changed(const bool has_focus, const ui::control_base_ptr& child)
 {
-	df::trace(str::format(u8"app_frame::focus {}"sv, has_focus));
+	df::trace(std::format("app_frame::focus {}", has_focus));
 	focus_search(_search_edit->has_focus());
 
 	_filter_has_focus = _filter_edit->has_focus();
@@ -1674,7 +1693,7 @@ void app_frame::focus_changed(const bool has_focus, const ui::control_base_ptr& 
 
 void app_frame::item_focus_changed(const df::item_element_ptr& focus, const df::item_element_ptr& previous)
 {
-	df::trace(u8"app_frame::focus_changed"sv);
+	df::trace("app_frame::focus_changed");
 
 	if (_view_items->is_visible(previous))
 	{
@@ -1873,7 +1892,7 @@ void app_frame::on_window_layout(ui::measure_context& mc, const sizei extent, co
 
 void app_frame::on_window_paint(ui::draw_context& dc)
 {
-	const std::u8string_view status = _view->status();
+	const std::string_view status = _view->status();
 
 	if (!status.empty())
 	{
@@ -1934,7 +1953,7 @@ void app_frame::on_window_paint(ui::draw_context& dc)
 			                _logo_tex->dimensions(), dc.colors.alpha);
 		}
 
-		const std::u8string_view title = _view->title();
+		const std::string_view title = _view->title();
 
 		dc.draw_text(title, title_bounds, ui::style::font_face::title, ui::style::text_style::single_line,
 		             ui::color(dc.colors.foreground, dc.colors.alpha), {});
@@ -1965,7 +1984,7 @@ void app_frame::activate(const bool is_active)
 }
 
 
-void app_frame::web_service_cache(std::u8string key, std::function<void(const std::u8string&)> f)
+void app_frame::web_service_cache(std::string key, std::function<void(const std::string&)> f)
 {
 	queue_database([this, key = std::move(key), f = std::move(f)](const database& db)
 	{
@@ -1978,7 +1997,7 @@ void app_frame::web_service_cache(std::u8string key, std::function<void(const st
 	});
 }
 
-void app_frame::web_service_cache(std::u8string key, std::u8string value)
+void app_frame::web_service_cache(std::string key, std::string value)
 {
 	queue_database([key = std::move(key), value = std::move(value)](const database& db)
 	{
@@ -1987,7 +2006,7 @@ void app_frame::web_service_cache(std::u8string key, std::u8string value)
 }
 
 
-void app_frame::search_edit_change(const std::u8string& text) const
+void app_frame::search_edit_change(const std::string& text) const
 {
 	if (_search_predictions_frame && _search_has_focus && _pin_search == 0)
 	{
@@ -1995,7 +2014,7 @@ void app_frame::search_edit_change(const std::u8string& text) const
 	}
 }
 
-void app_frame::filter_edit_change(const std::u8string& text)
+void app_frame::filter_edit_change(const std::string& text)
 {
 	_state.filter().wildcard(text);
 	invalidate_view(view_invalid::group_layout);
@@ -2074,12 +2093,12 @@ bool app_frame::can_exit()
 
 bool app_frame::pre_init()
 {
-	df::log(u8"main"sv, df::format_version(false));
+	df::log("main", df::format_version(false));
 
 #ifndef WINSTORE
 	if (install_update_if_exists())
 	{
-		df::log(__FUNCTION__, u8"Exit because of install"sv);
+		df::log(__FUNCTION__, "Exit because of install");
 		return false;
 	}
 #endif
@@ -2098,14 +2117,14 @@ void app_frame::update_font_size() const
 	}
 }
 
-bool app_frame::init(const std::u8string_view command_line_text)
+bool app_frame::init(const std::string_view command_line_text)
 {
 	//auto size_index_file_info = sizeof(df::index_file_info);
 	//auto size_index_folder_info = sizeof(df::index_folder_info);
 	//auto size_index_item_metadata = sizeof(prop::item_metadata);
 
 	log_func lf(__FUNCTION__);
-	df::log(__FUNCTION__, str::format(u8"is_app_installed {}"sv, is_app_installed()));
+	df::log(__FUNCTION__, std::format("is_app_installed {}", is_app_installed()));
 
 
 	command_line.parse(command_line_text);
@@ -2117,10 +2136,10 @@ bool app_frame::init(const std::u8string_view command_line_text)
 	load_options(store);
 	setting.instantiations++;
 
-	if (setting.language != u8"en"sv)
+	if (setting.language != "en")
 	{
-		const auto lang_folder = known_path(platform::known_folder::running_app_folder).combine(u8"languages"sv);
-		const auto lang_path = lang_folder.combine_file_ext(setting.language, u8".po"sv);
+		const auto lang_folder = known_path(platform::known_folder::running_app_folder).combine("languages");
+		const auto lang_path = lang_folder.combine_file_ext(setting.language, ".po");
 
 		auto po_entries = load_po(lang_path);
 		tt.load_lang(lang_path.name(), po_entries);
@@ -2158,11 +2177,11 @@ bool app_frame::init(const std::u8string_view command_line_text)
 	filter_edit_styles.cue = tt.filter;
 	filter_edit_styles.align_center = true;
 
-	_search_edit = _app_frame->create_edit(search_edit_styles, {}, [this](const std::u8string& text)
+	_search_edit = _app_frame->create_edit(search_edit_styles, {}, [this](const std::string& text)
 	{
 		search_edit_change(text);
 	});
-	_filter_edit = _app_frame->create_edit(filter_edit_styles, {}, [this](const std::u8string& text)
+	_filter_edit = _app_frame->create_edit(filter_edit_styles, {}, [this](const std::string& text)
 	{
 		filter_edit_change(text);
 	});
@@ -2171,7 +2190,7 @@ bool app_frame::init(const std::u8string_view command_line_text)
 
 	_bubble = _app_frame->create_bubble();
 	_state.view_mode(view_type::items);
-	_threads.start([&q = work_task_queue] { start_worker(q, u8"work"sv); });
+	_threads.start([&q = work_task_queue] { start_worker(q, "work"); });
 
 	open_default_folder();
 	invalidate_view(view_invalid::address);
@@ -2342,7 +2361,7 @@ void app_frame::system_event(const ui::os_event_type ost)
 
 void app_frame::final_exit()
 {
-	df::log(u8"main"sv, u8"exit"sv);
+	df::log("main", "exit");
 	df::close_log();
 }
 
@@ -2367,16 +2386,16 @@ void app_frame::crash(const df::file_path dump_file_path)
 #ifndef WINSTORE
 		if (setting.send_crash_dumps)
 		{
-			df::log(__FUNCTION__, u8"*** CRASH ***"sv);
+			df::log(__FUNCTION__, "*** CRASH ***");
 
 			if (!df::last_loaded_path.is_empty())
 			{
-				df::log(__FUNCTION__, str::format(u8"Last file type opened: {}"sv, df::last_loaded_path.extension()));
+				df::log(__FUNCTION__, std::format("Last file type opened: {}", df::last_loaded_path.extension()));
 			}
 
 			if (!str::is_empty(df::rendering_func))
 			{
-				df::log(__FUNCTION__, str::format(u8"Rendering function: {}"sv, str::utf8_cast(df::rendering_func)));
+				df::log(__FUNCTION__, std::format("Rendering function: {}", str::utf8_cast(df::rendering_func)));
 			}
 
 			const auto log_file_path = df::close_log();
@@ -2386,7 +2405,7 @@ void app_frame::crash(const df::file_path dump_file_path)
 			const auto now = platform::now();
 			const auto date = now.date();
 
-			const auto name = str::format(u8"Diffractor-{}-{}-{:04}{:02}{:02}-{:02}{:02}{:02}.dmp"sv,
+			const auto name = std::format("Diffractor-{}-{}-{:04}{:02}{:02}-{:02}{:02}{:02}.dmp",
 			                              s_app_version, g_app_build, date.year, date.month, date.day,
 			                              date.hour, date.minute, date.second);
 
@@ -2400,36 +2419,36 @@ void app_frame::crash(const df::file_path dump_file_path)
 				zip.close();
 			}
 
-			u8ostringstream message;
+			std::ostringstream message;
 
 			for (const auto& i : calc_app_info(_state.item_index, true))
 			{
-				message << i.first << u8" "sv << i.second << '\n';
+				message << i.first << " " << i.second << '\n';
 			}
 
 			platform::web_request req;
 			req.verb = platform::web_request_verb::POST;
-			req.path = u8"/crash"sv;
-			req.form_data.emplace_back(u8"message"sv, message.str());
-			//req.form_data.emplace_back(u8"contactname"sv, platform::user_name());
-			//req.form_data.emplace_back(u8"email"sv, setting.buy_email);
-			req.form_data.emplace_back(u8"version"sv, platform::OS());
-			req.form_data.emplace_back(u8"diffractor"sv, s_app_version);
-			req.form_data.emplace_back(u8"build"sv, g_app_build);
-			req.form_data.emplace_back(u8"subject"sv, u8"Diffractor CRASH report"sv);
-			req.form_data.emplace_back(u8"submit"sv, u8"Send Report"sv);
-			req.file_form_data_name = u8"ff"sv;
-			req.file_name = u8"crash.zip"sv;
+			req.path = "/crash";
+			req.form_data.emplace_back("message", message.str());
+			//req.form_data.emplace_back("contactname", platform::user_name());
+			//req.form_data.emplace_back("email", setting.buy_email);
+			req.form_data.emplace_back("version", platform::OS());
+			req.form_data.emplace_back("diffractor", s_app_version);
+			req.form_data.emplace_back("build", g_app_build);
+			req.form_data.emplace_back("subject", "Diffractor CRASH report");
+			req.form_data.emplace_back("submit", "Send Report");
+			req.file_form_data_name = "ff";
+			req.file_name = "crash.zip";
 			req.file_path = crash_zip_path;
 
-			const auto con = platform::connect_to_host(u8"diffractor.com"sv);
+			const auto con = platform::connect_to_host("diffractor.com");
 			send_request(con, req);
 		}
 #endif
 	}
 }
 
-std::u8string app_frame::restart_cmd_line()
+std::string app_frame::restart_cmd_line()
 {
 	return command_line.format_restart_cmd_line();
 }

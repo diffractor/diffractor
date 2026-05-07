@@ -79,8 +79,9 @@ static double lat_to_tile_y(const double lat, const int zoom)
 	return (1.0 - asinh(tan(lat_rad)) / M_PI) / 2.0 * pow(2.0, zoom);
 }
 
-inline std::vector<map_tile> get_tiles_for_view(const recti& bounds, const pointi scroll_offset, const gps_coordinate& center,
-                                         const int zoom)
+inline std::vector<map_tile> get_tiles_for_view(const recti& bounds, const pointi scroll_offset,
+                                                const gps_coordinate& center,
+                                                const int zoom)
 {
 	std::vector<map_tile> tiles_to_draw;
 
@@ -130,10 +131,10 @@ inline std::vector<map_tile> get_tiles_for_view(const recti& bounds, const point
 	return tiles_to_draw;
 }
 
-inline std::u8string generate_tile_path(const map_tile_id& coord)
+inline std::string generate_tile_path(const map_tile_id& coord)
 {
-	u8ostringstream url;
-	url << u8"/" << coord.z << u8"/" << coord.x << u8"/" << coord.y << u8".png";
+	std::ostringstream url;
+	url << "/" << coord.z << "/" << coord.x << "/" << coord.y << ".png";
 	return url.str();
 }
 
@@ -205,10 +206,12 @@ public:
 		const double new_center_tile_x = center_tile_x_f + tile_offset_x;
 		const double new_center_tile_y = center_tile_y_f + tile_offset_y;
 
-		const double new_longitude = new_center_tile_x / pow(2.0, _zoom) * 360.0 - 180.0;
+		const double new_longitude = std::clamp(
+			new_center_tile_x / pow(2.0, _zoom) * 360.0 - 180.0, -180.0, 180.0);
 
 		const double n = M_PI - 2.0 * M_PI * new_center_tile_y / pow(2.0, _zoom);
-		const double new_latitude = 180.0 / M_PI * atan(0.5 * (exp(n) - exp(-n)));
+		const double new_latitude = std::clamp(
+			180.0 / M_PI * atan(0.5 * (exp(n) - exp(-n))), -85.0, 85.0);
 
 		return gps_coordinate(new_latitude, new_longitude);
 	}
@@ -380,7 +383,7 @@ private:
 				static platform::web_host_ptr s_osm_con;
 				if (!s_osm_con)
 				{
-					s_osm_con = platform::connect_to_host(u8"a.tile.openstreetmap.org"sv);
+					s_osm_con = platform::connect_to_host("a.tile.openstreetmap.org");
 				}
 
 				auto response = send_request(s_osm_con, req);

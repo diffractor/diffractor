@@ -11,12 +11,9 @@
 
 #pragma once
 
+#include "model_db.h"
 
-static constexpr auto doc_template_url = u8"https://www.diffractor.com/docs/template"sv;
-
-struct item_import;
-struct item_import_hash;
-struct item_import_eq;
+static constexpr auto doc_template_url = "https://www.diffractor.com/docs/template";
 
 class command_status;
 
@@ -41,7 +38,7 @@ public:
 		}
 	}
 
-	void complete(const std::u8string_view message = {})
+	void complete(const std::string_view message = {})
 	{
 		_r->complete();
 		_completed = true;
@@ -51,18 +48,18 @@ public:
 struct rename_item
 {
 	df::item_element_ptr item;
-	std::u8string original_name;
-	std::u8string new_name;
+	std::string original_name;
+	std::string new_name;
 };
 
-std::vector<rename_item> calc_item_renames(const df::item_set& items, std::u8string_view template_name, int start);
-std::u8string format_sequence(std::u8string_view original_name, std::u8string_view template_name, int seq);
+std::vector<rename_item> calc_item_renames(const df::item_set& items, std::string_view template_name, int start);
+std::string format_sequence(std::string_view original_name, std::string_view template_name, int seq);
 
 struct import_options
 {
 	df::folder_path dest_folder;
-	std::u8string source_filter;
-	std::u8string dest_structure;
+	std::string source_filter;
+	std::string dest_structure;
 
 	bool is_move = false;
 	bool overwrite_if_newer = false;
@@ -72,7 +69,7 @@ struct import_options
 
 struct import_source
 {
-	std::u8string text;
+	std::string text;
 	df::folder_path path;
 	bool selected = false;
 	df::item_set items;
@@ -100,7 +97,7 @@ struct import_analysis_item
 	df::date_t created_date;
 	item_import import_rec;
 	bool already_exists = false;
-	std::u8string sub_folder;
+	std::string sub_folder;
 };
 
 using import_analysis_result = std::map<df::folder_path, std::vector<import_analysis_item>, df::iless>;
@@ -146,11 +143,11 @@ struct sync_analysis_folder
 {
 	df::folder_path path;
 	df::folder_path root;
-	std::u8string relative;
+	std::string relative;
 };
 
-using sync_analysis_items = std::map<std::u8string, sync_analysis_item, df::iless>;
-using sync_analysis_result = std::map<std::u8string, sync_analysis_items, df::iless>;
+using sync_analysis_items = std::map<std::string, sync_analysis_item, df::iless>;
+using sync_analysis_result = std::map<std::string, sync_analysis_items, df::iless>;
 
 sync_analysis_result sync_analysis(const df::index_roots& local_roots, df::folder_path remote_path,
                                    bool sync_local_remote, bool sync_remote_local,
@@ -163,7 +160,7 @@ void sync_copy(const std::shared_ptr<command_status>& status, const sync_analysi
 void toggle_collection_entry(settings_t::index_t& collection_settings, df::folder_path folder, bool is_remove);
 
 
-std::vector<std::u8string> check_overwrite(df::folder_path write_folder, const df::item_set& items,
-                                           std::u8string_view new_extension);
+std::vector<std::string> check_overwrite(df::folder_path write_folder, const df::item_set& items,
+                                         std::string_view new_extension);
 
 icon_index drive_icon(platform::drive_type d);

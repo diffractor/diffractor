@@ -60,7 +60,7 @@ namespace platform
 {
 	extern size_t static_memory_usage;
 
-	std::u8string OS();
+	std::string OS();
 
 	extern bool sse2_supported;
 	extern bool crc32_supported;
@@ -71,9 +71,9 @@ namespace platform
 	void secure_zero(void* ptr, size_t len);
 	void generate_random_bytes(uint8_t* buffer, size_t len);
 
-	void trace(std::u8string_view message);
-	void trace(const std::u8string& message);
-	inline void trace(const std::string_view message) { trace(str::utf8_cast(message)); };
+	void trace(std::string_view message);
+	void trace(const std::string& message);
+	void trace(std::string_view message);
 
 	df::unique_folders known_folders();
 	local_folders_result local_folders();
@@ -86,9 +86,9 @@ namespace platform
 	void print(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders);
 	void remove_metadata(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders);
 
-	std::u8string format_number(const std::u8string& num_text);
-	std::u8string number_dec_sep();
-	bool is_valid_file_name(std::u8string_view name);
+	std::string format_number(const std::string& num_text);
+	std::string number_dec_sep();
+	bool is_valid_file_name(std::string_view name);
 
 	struct file_attributes_t
 	{
@@ -132,9 +132,9 @@ namespace platform
 	struct drive_t
 	{
 		drive_type type = drive_type::unknown;
-		std::u8string name;
-		std::u8string vol_name;
-		std::u8string file_system;
+		std::string name;
+		std::string vol_name;
+		std::string file_system;
 
 		df::file_size used;
 		df::file_size free;
@@ -218,7 +218,7 @@ namespace platform
 	struct file_op_result
 	{
 		file_op_result_code code = file_op_result_code::FAILED;
-		std::u8string error_message;
+		std::string error_message;
 		df::paths created_files;
 
 		bool success() const
@@ -231,7 +231,7 @@ namespace platform
 			return code != file_op_result_code::OK;
 		}
 
-		std::u8string format_error(std::u8string_view text = {}, std::u8string_view more_text = {}) const;
+		std::string format_error(std::string_view text = {}, std::string_view more_text = {}) const;
 	};
 
 	file_op_result delete_items(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders,
@@ -251,9 +251,9 @@ namespace platform
 	bool exists(df::folder_path path);
 	file_op_result create_folder(df::folder_path path);
 	bool open(df::file_path path);
-	bool open(std::u8string_view path);
-	bool run(std::u8string_view cmd);
-	void show_text_in_notepad(std::u8string_view s);
+	bool open(std::string_view path);
+	bool run(std::string_view cmd);
+	void show_text_in_notepad(std::string_view s);
 	void show_in_file_browser(df::file_path path);
 	void show_in_file_browser(df::folder_path path);
 	bool working_set(int64_t& current, int64_t& peak);
@@ -267,12 +267,12 @@ namespace platform
 
 	struct metadata_result
 	{
-		std::optional<std::u8string> title;
-		std::vector<std::u8string> tags;
+		std::optional<std::string> title;
+		std::vector<std::string> tags;
 		std::optional<int> rating;
 	};
 
-	bool write_shell_tags(df::file_path path, const std::vector<std::u8string>& tags);
+	bool write_shell_tags(df::file_path path, const std::vector<std::string>& tags);
 	metadata_result read_shell_metadata(df::file_path path);
 
 	df::blob from_file(df::file_path path);
@@ -287,7 +287,7 @@ namespace platform
 	{
 		bool success = false;
 		df::file_path saved_file_path;
-		std::u8string error_message;
+		std::string error_message;
 	};
 
 	scan_result scan(df::folder_path save_path);
@@ -304,18 +304,18 @@ namespace platform
 	                                                               ui::const_image_ptr& thumbnail_out);
 	get_cached_file_properties_response get_shell_thumbnail(df::file_path path, ui::const_image_ptr& thumbnail_out);
 
-	std::u8string user_name();
-	std::u8string last_os_error();
-	void set_thread_description(std::u8string_view name);
-	df::file_path temp_file(std::u8string_view ext = u8".tmp"sv, df::folder_path folder = {});
+	std::string user_name();
+	std::string last_os_error();
+	void set_thread_description(std::string_view name);
+	df::file_path temp_file(std::string_view ext = ".tmp", df::folder_path folder = {});
 
 	bool browse_for_folder(df::folder_path& path);
 	bool prompt_for_save_path(df::file_path& path);
 
-	std::u8string utf16_to_utf8(std::wstring_view text);
-	std::wstring utf8_to_utf16(std::u8string_view text);
+	std::string utf16_to_utf8(std::wstring_view text);
+	std::wstring utf8_to_utf16(std::string_view text);
 
-	std::string utf8_to_a(std::u8string_view utf8);
+	std::string utf8_to_a(std::string_view utf8);
 
 #ifndef WINSTORE
 	void download_and_verify(const std::function<void(df::file_path)>& complete);
@@ -330,23 +330,23 @@ namespace platform
 	uint64_t utc_to_local(uint64_t ts);
 	uint64_t local_to_utc(uint64_t ts);
 	df::date_t dos_date_to_ts(uint16_t dos_date, uint16_t dos_time);
-	std::u8string format_date_time(df::date_t d);
-	std::u8string format_date(df::date_t d);
-	std::u8string format_time(df::date_t d);
+	std::string format_date_time(df::date_t d);
+	std::string format_date(df::date_t d);
+	std::string format_time(df::date_t d);
 	df::date_t now();
 
-	std::u8string user_language();
+	std::string user_language();
 
 
 	struct open_with_entry
 	{
-		std::u8string name;
+		std::string name;
 		std::function<bool(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders)>
 		invoke;
 		int weight = 0;
 	};
 
-	std::vector<open_with_entry> assoc_handlers(std::u8string_view ext);
+	std::vector<open_with_entry> assoc_handlers(std::string_view ext);
 
 	enum class resource_item
 	{
@@ -360,7 +360,7 @@ namespace platform
 
 	df::blob load_resource(resource_item i);
 	df::file_path running_app_path();
-	bool is_server(std::u8string_view path);
+	bool is_server(std::string_view path);
 	size_t calc_optimal_read_size(df::file_path path);
 
 	enum class drop_effect
@@ -376,7 +376,7 @@ namespace platform
 	public:
 		struct description
 		{
-			std::u8string first_name;
+			std::string first_name;
 			drop_effect preferred_drop_effect = drop_effect::none;
 			int count = 0;
 			bool has_readonly = false;
@@ -388,7 +388,7 @@ namespace platform
 		virtual df::file_path first_path() const = 0;
 
 		virtual file_op_result drop_files(df::folder_path save_path, drop_effect effect) = 0;
-		virtual file_op_result save_bitmap(df::folder_path save_path, std::u8string_view name, bool as_png) = 0;
+		virtual file_op_result save_bitmap(df::folder_path save_path, std::string_view name, bool as_png) = 0;
 	};
 
 	drop_effect perform_drag(const std::any& frame_handle, const std::vector<df::file_path>& files,
@@ -402,22 +402,22 @@ namespace platform
 
 	void set_clipboard(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders,
 	                   const file_load_result& loaded, bool is_move);
-	void set_clipboard(std::u8string_view text);
+	void set_clipboard(std::string_view text);
 
 	class setting_file
 	{
 	public:
 		virtual bool root_created() const = 0;
 
-		virtual bool write(std::u8string_view section, std::u8string_view name, uint32_t v) = 0;
-		virtual bool write(std::u8string_view section, std::u8string_view name, uint64_t v) = 0;
-		virtual bool write(std::u8string_view section, std::u8string_view name, std::u8string_view v) = 0;
-		virtual bool write(std::u8string_view section, std::u8string_view name, df::cspan cs) = 0;
+		virtual bool write(std::string_view section, std::string_view name, uint32_t v) = 0;
+		virtual bool write(std::string_view section, std::string_view name, uint64_t v) = 0;
+		virtual bool write(std::string_view section, std::string_view name, std::string_view v) = 0;
+		virtual bool write(std::string_view section, std::string_view name, df::cspan cs) = 0;
 
-		virtual bool read(std::u8string_view section, std::u8string_view name, uint32_t& v) const = 0;
-		virtual bool read(std::u8string_view section, std::u8string_view name, uint64_t& v) const = 0;
-		virtual bool read(std::u8string_view section, std::u8string_view name, std::u8string& v) const = 0;
-		virtual bool read(std::u8string_view section, std::u8string_view name, uint8_t* data, size_t& len) const = 0;
+		virtual bool read(std::string_view section, std::string_view name, uint32_t& v) const = 0;
+		virtual bool read(std::string_view section, std::string_view name, uint64_t& v) const = 0;
+		virtual bool read(std::string_view section, std::string_view name, std::string& v) const = 0;
+		virtual bool read(std::string_view section, std::string_view name, uint8_t* data, size_t& len) const = 0;
 	};
 
 	using setting_file_ptr = std::shared_ptr<setting_file>;
@@ -648,8 +648,8 @@ namespace platform
 	extern uint32_t wait_for_timeout;
 	uint32_t wait_for(const std::vector<std::reference_wrapper<thread_event>>& events, uint32_t timeout_ms,
 	                  bool wait_all);
-	using attachments_t = std::vector<std::pair<std::u8string, df::file_path>>;
-	bool mapi_send(std::u8string_view to, std::u8string_view subject, std::u8string_view text,
+	using attachments_t = std::vector<std::pair<std::string, df::file_path>>;
+	bool mapi_send(std::string_view to, std::string_view subject, std::string_view text,
 	               const attachments_t& attachments);
 	uint32_t tick_count();
 	uint32_t current_thread_id();
@@ -690,7 +690,7 @@ namespace platform
 
 	bool is_online();
 
-	using web_params = std::vector<std::pair<std::u8string, std::u8string>>;
+	using web_params = std::vector<std::pair<std::string, std::string>>;
 
 	enum class web_request_verb
 	{
@@ -700,15 +700,15 @@ namespace platform
 
 	struct web_request
 	{
-		std::u8string command;
-		std::u8string path;
+		std::string command;
+		std::string path;
 
 		web_params query;
 		web_params headers;
 		web_params form_data;
 
-		std::u8string file_form_data_name;
-		std::u8string file_name;
+		std::string file_form_data_name;
+		std::string file_name;
 		df::file_path file_path;
 
 		df::file_path download_file_path;
@@ -718,16 +718,16 @@ namespace platform
 
 	struct web_response
 	{
-		std::u8string headers;
-		std::u8string body;
-		std::u8string content_type;
+		std::string headers;
+		std::string body;
+		std::string content_type;
 		int status_code = 0;
 	};
 
 	struct web_host;
 	using web_host_ptr = std::shared_ptr<web_host>;
 
-	web_host_ptr connect_to_host(std::u8string_view host, bool secure = true, int port = 0);
+	web_host_ptr connect_to_host(std::string_view host, bool secure = true, int port = 0);
 	web_response send_request(const web_host_ptr& host, const web_request& req);
 
 	ui::surface_ptr image_to_surface(df::cspan image_buffer_in, sizei target_extent);

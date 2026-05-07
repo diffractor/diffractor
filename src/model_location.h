@@ -97,15 +97,15 @@ public:
 		_longitude = value;
 	}
 
-	std::u8string str() const;
+	std::string str() const;
 
 	static void decimal_to_dms(double coord, uint32_t& deg, uint32_t& min, uint32_t& sec);
 
-	static std::u8string decimal_to_dms_str(const double coord, const bool is_ns)
+	static std::string decimal_to_dms_str(const double coord, const bool is_ns)
 	{
 		uint32_t n[3];
 		decimal_to_dms(coord, n);
-		return str::print(u8"%lu,%lu,%lu%c"sv, n[0], n[1], n[2],
+		return str::print("%lu,%lu,%lu%c", n[0], n[1], n[2],
 		                  is_ns ? (coord < 0 ? 'S' : 'N') : coord < 0 ? 'W' : 'E');
 	}
 
@@ -162,10 +162,10 @@ struct selected_location_t
 {
 	uint32_t id = 0;
 
-	std::u8string search_text;
-	std::u8string place_text;
-	std::u8string state_text;
-	std::u8string country_text;
+	std::string search_text;
+	std::string place_text;
+	std::string state_text;
+	std::string country_text;
 	double latitude = gps_coordinate::invalid_coordinate;
 	double longitude = gps_coordinate::invalid_coordinate;
 };
@@ -179,7 +179,7 @@ struct split_location_result
 	double z = 0.0;
 };
 
-split_location_result split_location(std::u8string_view text);
+split_location_result split_location(std::string_view text);
 
 struct location_t
 {
@@ -233,7 +233,7 @@ struct location_t
 		return !position.is_empty();
 	}
 
-	std::u8string str() const;
+	std::string str() const;
 
 	void clear();
 
