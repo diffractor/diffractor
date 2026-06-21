@@ -1208,6 +1208,20 @@ bool ui::browse_for_location(view_state& vs, const control_frame_ptr& parent, gp
 	auto map = std::make_shared<map_control>(vs._async, coord_changed);
 	map->init(dlg->_frame);
 
+	// Seed the map so it is never blank on open: centre on the incoming position
+	// when editing an existing location, otherwise on the user's default location.
+	// set_location_marker records the centre even before the dialog has been laid
+	// out; map_control fetches the tiles once it receives its real extent.
+	const auto initial_location = position.is_valid() ? position : setting.default_location;
+	map->set_location_marker(initial_location);
+
+	// When given an existing position, reverse-geocode it so the place/state/country
+	// and lat/long fields reflect the current selection rather than starting empty.
+	if (position.is_valid())
+	{
+		coord_changed(position);
+	}
+
 	auto sel_changed = [&vs, map, populate_place](const std::shared_ptr<location_auto_complete>& sel)
 	{
 		if (str::is_empty(sel->_id))
@@ -3765,6 +3779,7 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::view_items, [this] { _state.view_mode(view_type::items); });
 	add_command_invoke(commands::large_font, [this] { font_invoke(_state, _app_frame); });
 	add_command_invoke(commands::playback_volume_toggle, [this] { toggle_volume(); });
+	add_command_invoke(commands::playback_volume200, [this] { setting.media_volume = media_volume_boost; });
 	add_command_invoke(commands::playback_volume100, [this] { setting.media_volume = media_volumes[0]; });
 	add_command_invoke(commands::playback_volume75, [this] { setting.media_volume = media_volumes[1]; });
 	add_command_invoke(commands::playback_volume50, [this] { setting.media_volume = media_volumes[2]; });
@@ -4176,6 +4191,7 @@ void app_frame::initialise_commands()
 	_commands[commands::menu_playback]->menu = _commands[commands::playback_menu]->menu = [this]
 	{
 		std::vector<ui::command_ptr> result = {
+			find_command(commands::playback_volume200),
 			find_command(commands::playback_volume100),
 			find_command(commands::playback_volume75),
 			find_command(commands::playback_volume50),

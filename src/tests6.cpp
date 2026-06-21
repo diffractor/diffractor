@@ -213,6 +213,25 @@ static void should_parse_roots(shared_test_context& stc)
 	assert_equal("secret", exclude_wildcards[1], "parsed exclude");
 }
 
+static void should_parse_drive_label_roots(shared_test_context& stc)
+{
+	// A device label (volume name) entered in the collection list should resolve
+	// to the matching drive by its volume label - not by its drive letter.
+	platform::drives drives;
+
+	platform::drive_t d;
+	d.name = "X:\\";
+	d.vol_name = "DiffractorTestLabel";
+	drives.emplace_back(d);
+
+	// A label matching the drive's volume name resolves to that drive's path
+	// (rather than being stored as the bare label text).
+	df::index_roots roots;
+	parse_more_folders(roots, "DiffractorTestLabel", drives);
+	assert_equal(1_z, roots.folders.size(), "matching label count");
+	assert_equal("X:\\", roots.folders.begin()->text(), "device label resolved to drive path");
+}
+
 static df::item_element_ptr find_item_n(const view_state& s, const int n)
 {
 	auto count = 0;
@@ -712,6 +731,7 @@ void register_tests6(view_state& state, test_registry& tests)
 	tests.add("Should reload thumb after scan"s, should_reload_thumb_after_scan);
 	tests.add("Should detect rotation"s, should_detect_rotation);
 	tests.add("Should parse roots"s, should_parse_roots);
+	tests.add("Should parse drive label roots"s, should_parse_drive_label_roots);
 	tests.add("Should toggle collection entry"s, should_toggle_collection_entry);
 	tests.add("Should record crashes"s, should_record_crashes);
 

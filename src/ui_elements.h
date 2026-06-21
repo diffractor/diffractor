@@ -307,7 +307,7 @@ public:
 
 			for (const auto& ev : elements)
 			{
-				if (ev->is_row_title())
+				if (ev->is_visible() && ev->is_row_title())
 				{
 					auto extent = ev->measure(mc, width_limit);
 					max_row_title_cx = std::max(max_row_title_cx, extent.cx);
@@ -323,6 +323,17 @@ public:
 			{
 				auto&& ev = elements[i];
 				auto&& el = _extents[i];
+
+				// Invisible elements take no space and do not affect line breaks,
+				// mirroring calc_stack_elements() and the render path.
+				if (!ev->is_visible())
+				{
+					el.extent = {};
+					el.offset = {x, y};
+					el.line_start = false;
+					el.line_end = false;
+					continue;
+				}
 
 				const auto current_width_limit = width_limit;
 
@@ -402,9 +413,16 @@ public:
 	recti layout(const std::vector<view_element_ptr>& elements, ui::measure_context& mc, const recti bounds,
 	             ui::control_layouts& positions) const
 	{
+		// layout() consumes the per-element cache produced by the matching measure()/
+		// calc_layout() pass. If that pass was skipped, or the element set changed since,
+		// rebuild it here so we never index a stale or undersized cache.
+		if (_extents.size() != elements.size())
+		{
+			calc_layout(elements, mc, bounds.width());
+		}
+
 		const auto child_count = elements.size();
 		auto line_max_center = 0;
-		auto line_height = 0;
 
 		for (auto i = 0u; i < child_count; i++)
 		{
@@ -416,9 +434,13 @@ public:
 			const recti r(pointi(bounds.left + el.offset.cx, bounds.top + el.offset.cy), el.extent);
 			_extents[i].bounds = r;
 
+			// Invisible elements were skipped during measurement; keep them out of
+			// the line-centre/justify maths too.
+			if (!ev->is_visible())
+				continue;
+
 			const auto line_center = (r.top + r.bottom) / 2;
 			if (line_center > line_max_center) line_max_center = line_center;
-			if (el.extent.cy > line_height) line_height = el.extent.cy;
 
 			if (is_line_end)
 			{
@@ -464,7 +486,7 @@ public:
 				}
 
 				// vertical line center
-				int line_i = i;
+				int line_i = static_cast<int>(i);
 
 				while (line_i >= 0)
 				{
@@ -481,7 +503,6 @@ public:
 				}
 
 				line_max_center = 0;
-				line_height = 0;
 			}
 		}
 
@@ -587,9 +608,11 @@ static calc_stack_elements_result calc_stack_elements(ui::measure_context& mc, c
 		}
 	}
 
-	if (vertical_center && y < avail_bounds.height())
+	// y is an absolute coordinate (it starts at avail_bounds.top), so compare it
+	// against avail_bounds.bottom rather than the relative avail_bounds.height().
+	if (vertical_center && y < avail_bounds.bottom)
 	{
-		const auto offset = (avail_bounds.height() - y) / 2;
+		const auto offset = (avail_bounds.bottom - y) / 2;
 
 		for (auto i = 0u; i < result.layout_bounds.size(); i++)
 		{

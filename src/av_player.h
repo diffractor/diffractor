@@ -74,7 +74,10 @@ class av_session final : public std::enable_shared_from_this<av_session>
 
 	const int max_loop_iteration = 256;
 
-	av_play_state _state = av_play_state::detached;
+	// Read by the audio, video and read threads and written from the read thread
+	// (and, on device loss, the audio thread); atomic so a pause/seek is seen
+	// promptly and consistently rather than via a benign-but-fragile data race.
+	std::atomic<av_play_state> _state = av_play_state::detached;
 
 	std::atomic<bool> _scrubbing = false;
 
@@ -84,6 +87,22 @@ class av_session final : public std::enable_shared_from_this<av_session>
 
 	std::atomic<bool> _reset_time_offset = false;
 	std::atomic<bool> _pending_time_sync = false;
+	std::atomic<bool> _settling = false;
+
+	// Set once the audio stream's end has been handled (decoder tail drained and a
+	// silence pad queued). has_ended() waits for this for audio sessions so the wall
+	// clock - which races ahead when the device under-runs at the end - cannot fire
+	// end-of-stream early and seek away before the silence tail is produced (which
+	// left the WASAPI ring to loop its last buffer). Re-armed on every open/seek.
+	std::atomic<bool> _audio_eof_handled = false;
+
+	// _audio_data_end: absolute time of the last real audio sample (captured when the
+	// EOF is handled, after the decoder tail is drained). _audio_clock: the audio
+	// device's current play position (base_time + device clock), updated each audio
+	// iteration. has_ended() ends the clip when the device has actually played out to
+	// _audio_data_end rather than on the wall clock, which drifts ahead of the device.
+	std::atomic<double> _audio_data_end = 0.0;
+	std::atomic<double> _audio_clock = 0.0;
 
 	int _volume = 1000;
 	bool _mute = false;
@@ -219,6 +238,8 @@ public:
 			_time_offset = df::now();
 			_pending_time_sync = true;
 			_reset_time_offset = !_decoder.has_audio(); // && !scrubbing;
+			_settling = true;
+			_audio_eof_handled = false;
 			_seek_gen = 1;
 
 			_frame.reset();
@@ -337,8 +358,34 @@ public:
 
 						if (eof)
 						{
-							playback_buffer.append_blank_second();
-							vis_buffer.append_blank_second();
+							// End of the audio stream: recover any tail the resamplers
+							// still hold, fade the very end so a clip ending on a non-zero
+							// sample does not click, then pad with silence. Do this once
+							// per end-of-stream (process_io keeps re-issuing EOF markers as
+							// the queue drains; appending a blank second for each would grow
+							// _end_time without bound and the clip would never end).
+							if (!_audio_eof_handled)
+							{
+								const auto pr = _playback_resampler;
+								const auto vr = _vis_resampler;
+
+								if (pr) pr->drain(playback_buffer, _seek_gen);
+								if (vr) vr->drain(vis_buffer, _seek_gen);
+
+								// The real audio ends here (after the decoder tail is
+								// recovered, before the silence pad). has_ended() ends the
+								// clip once the device has played out to this point.
+								_audio_data_end = playback_buffer.end_time();
+
+								playback_buffer.apply_fade_out(0.005);
+
+								playback_buffer.append_blank_second();
+								vis_buffer.append_blank_second();
+
+								// Tell has_ended() the tail is now queued so it may end the
+								// clip. Set last so end_time below reflects the appended pad.
+								_audio_eof_handled = true;
+							}
 						}
 						else
 						{
@@ -359,13 +406,26 @@ public:
 										df::trace(std::format("Player clear audio_buffer on seek_ver {}", sv));
 									}
 
+									// Volume above 100% cannot be delivered by the device
+									// (its volume is 0.0-1.0), so boost it here in software.
+									// The device handles 0-100% attenuation; the 100%..200%
+									// setting range maps onto a 1x..media_volume_boost_gain
+									// software gain so the boost is strong enough to lift very
+									// quiet sources (clamping in apply_audio_gain stops louder
+									// material distorting). 1.0 = no boost for the normal range.
+									const auto boost = std::clamp(_volume, 1000, media_volume_boost);
+									pr->set_gain(1.0 + (boost - 1000) / 1000.0 * (media_volume_boost_gain - 1.0));
+
 									pr->resample(frame, playback_buffer);
 									vr->resample(frame, vis_buffer);
 								}
 							}
 						}
 
-						_end_time = std::max(_end_time, playback_buffer.end_time());
+						// Keep _end_time at the media duration: do NOT let the appended
+						// silence pad push it out, or has_ended() (which waits for the
+						// media end to pass) would hold the last frame for the pad's length.
+						if (!eof) _end_time = std::max(_end_time, playback_buffer.end_time());
 						_audio_buffer_seconds = playback_buffer.seconds();
 					}
 				}
@@ -388,7 +448,34 @@ public:
 
 	bool has_ended(const double time_now) const
 	{
-		return is_playing() && pos(time_now) >= _end_time;
+		if (!is_playing()) return false;
+
+		// For audio sessions, do not declare the end until the audio stream's EOF has
+		// actually been handled (tail drained + silence pad queued). The master clock
+		// pos() is wall-clock based and races ahead of the audio device when the ring
+		// under-runs at the end; without this guard it crosses _end_time early and the
+		// resulting seek-to-start discards the EOF frame before its silence tail is
+		// produced, leaving the device to loop its last buffer. A hard +2s margin still
+		// ends a stream that never signals EOF so playback can never get stuck.
+		if (_decoder.has_audio() && !_audio_eof_handled)
+		{
+			return pos(time_now) >= _end_time + 2.0;
+		}
+
+		if (_decoder.has_audio())
+		{
+			// The EOF has been handled, so a silence tail is queued. End the clip when
+			// the audio device has actually played out the real audio (_audio_clock is
+			// the device play position). The wall clock pos() drifts ahead of the device
+			// (a start-up under-run stalls the device clock), so ending on it would hold
+			// the last frame for ~1s while it catches up. Still require the media end to
+			// pass so a video longer than its audio plays fully; +2s is a hard fallback.
+			const auto audio_played_out = _audio_clock >= _audio_data_end;
+			const auto media_played_out = pos(time_now) >= _end_time;
+			return (audio_played_out && media_played_out) || pos(time_now) >= _end_time + 2.0;
+		}
+
+		return pos(time_now) >= _end_time;
 	}
 
 	static double time_distance(const double l, const double r)
@@ -418,11 +505,64 @@ public:
 		const auto seek_ver_invalid = av_seek_gen_from_frame(_frame) != _seek_gen;
 		const auto current_ft = av_time_from_frame(_frame);
 
+		// After a seek the demuxer leaves us on a key frame that can be a whole GOP
+		// before the sought position. While scrubbing (audio is stopped) and for
+		// audio-less video we "settle" the view forward onto the target frame so it
+		// matches the scrubber preview and the position the user asked for. During
+		// audio playback the audio device stays the master clock, so we keep the
+		// existing key-frame-then-play behaviour to avoid an A/V desync.
+		const auto settling = _scrubbing || (_settling && !_decoder.has_audio());
+
 		if (seek_ver_invalid)
 		{
 			frame_popped = _video_frames.pop(f);
 		}
-		else if (_state == av_play_state::playing && !_scrubbing && !_pending_time_sync && !_reset_time_offset)
+
+		if (settling)
+		{
+			// Drain decoded frames toward the sought time (pos() returns _last_seek
+			// while scrubbing or pending) rather than stepping one frame per present,
+			// so the view reaches the target as decoding catches up.
+			auto best_ft = frame_popped ? av_time_from_frame(f) : current_ft;
+			auto reached = false;
+
+			while (!_video_frames.is_empty())
+			{
+				const auto front_time = _video_frames.front_time();
+
+				if (time_distance(best_ft, time) <= time_distance(front_time, time) && !df::equiv(best_ft, front_time))
+				{
+					reached = true; // the next frame is past the target; this one is nearest
+					break;
+				}
+
+				av_frame_ptr next;
+
+				if (!_video_frames.pop(next))
+				{
+					break;
+				}
+
+				if (av_frame_is_eof(next))
+				{
+					reached = true; // no frame beyond the target will arrive
+					break;
+				}
+
+				if (!av_is_frame_empty(next))
+				{
+					f = std::move(next);
+					best_ft = av_time_from_frame(f);
+					frame_popped = true;
+				}
+			}
+
+			if (reached || best_ft >= time)
+			{
+				_settling = false;
+			}
+		}
+		else if (!seek_ver_invalid && _state == av_play_state::playing && !_pending_time_sync && !_reset_time_offset)
 		{
 			const auto front_time = _video_frames.front_time();
 
@@ -441,7 +581,10 @@ public:
 			_end_time = std::max(_end_time, _last_frame_decoded);
 		}
 
-		if (_reset_time_offset && av_seek_gen_from_frame(_frame) == _seek_gen)
+		// Lock the wall clock to the displayed frame only once the view has settled
+		// on the sought position, so a no-audio seek anchors playback to the target
+		// frame rather than the key frame the settle started from.
+		if (_reset_time_offset && av_seek_gen_from_frame(_frame) == _seek_gen && !_settling)
 		{
 			_time_offset = time_now - _last_frame_decoded;
 			_pending_time_sync = false;
@@ -723,7 +866,14 @@ public:
 
 		while (!df::is_closing)
 		{
-			auto e = wait_for(events, 100, false);
+			// Short idle poll. While decoding, the read thread signals _audio_event as
+			// it pushes packets so this wakes promptly. But at the very end of a clip
+			// the audio packets are exhausted (no more pushes) while the device still
+			// needs the decoded tail; a long idle wait there would let the decoder
+			// deliver only ~one frame per poll - far slower than real-time - draining
+			// the ring and looping the last buffer. A short poll keeps the tail (and
+			// the trailing silence) flowing fast enough to keep the device fed.
+			auto e = wait_for(events, 10, false);
 
 			if (audio_device_id() != device_id)
 			{
@@ -783,13 +933,19 @@ public:
 				{
 					play_audio_device_id(ds->id());
 					playback_buffer.init(ds->format());
+					need_create_device = false;
 				}
 				else
 				{
+					// Device creation failed - for example the audio endpoint was
+					// momentarily unavailable (device switch, exclusive grab by another
+					// app, or not yet ready at startup). Leave need_create_device set so
+					// we retry on a later iteration. Otherwise the track would advance on
+					// the wall clock and play silently for its whole duration.
 					playback_buffer.clear();
+					need_create_device = has_audio && session != nullptr;
 				}
 
-				need_create_device = false;
 				playback_gen = 0;
 				vis_gen = 0;
 			}
@@ -809,6 +965,18 @@ public:
 
 					session->process_audio(playback_buffer, vis_buffer, _read_event);
 
+					// process_audio can run long enough for the session to be paused -
+					// notably at end of stream, where the view pauses AND seeks back to
+					// the start. Re-read the state here: using the value captured above
+					// would let us write and play the freshly sought start-of-stream
+					// audio, an audible blip of the track restarting as the video ended.
+					const auto should_play = session->_state == av_play_state::playing && !session->_scrubbing;
+
+					if (!should_play && !ds->is_stopped())
+					{
+						ds->stop();
+					}
+
 					if (!playback_buffer.is_empty())
 					{
 						if (playback_gen != playback_buffer.generation())
@@ -820,24 +988,45 @@ public:
 							session->_time_offset = df::now() - base_time;
 						}
 
-						if (!should_be_stopped)
+						if (should_play)
 						{
-							ds->write(playback_buffer);
+							// Prime the ring before the first start. Starting with an
+							// almost-empty buffer makes the device under-run immediately:
+							// it loops its tiny initial contents (an audible blip, notably
+							// at each loop restart) and its clock stalls, running behind the
+							// wall clock for the rest of the clip. Wait for a cushion (or an
+							// already-running device, or the stream's end) before starting.
+							const auto primed = !ds->is_stopped()
+								|| playback_buffer.seconds() >= 0.3
+								|| session->_audio_eof_handled;
 
-							if (ds_is_stopped)
+							if (primed)
 							{
-								//df::log(__FUNCTION__, "av_player.start-ds " << ds.time();
-								ds->start();
-							}
+								ds->write(playback_buffer);
 
-							if (session->_pending_time_sync)
-							{
-								const auto time = base_time + ds->time();
-								//df::log(__FUNCTION__, std::format("sound.clock {}", time));
-								session->_time_offset = df::now() - time;
-								session->_pending_time_sync = false;
+								if (ds->is_stopped())
+								{
+									ds->start();
+								}
+
+								if (session->_pending_time_sync)
+								{
+									const auto time = base_time + ds->time();
+									//df::log(__FUNCTION__, std::format("sound.clock {}", time));
+									session->_time_offset = df::now() - time;
+									session->_pending_time_sync = false;
+								}
 							}
 						}
+					}
+					else if (should_play && !ds->is_stopped())
+					{
+						// No decoded audio is available (end of stream, or a brief
+						// decode gap). Push silence so the WASAPI ring does not replay
+						// (loop) its last contents on underrun - that is what made the
+						// audio tail repeat a few times after the video ended. The
+						// device is stopped normally once has_ended pauses the session.
+						ds->write_silence();
 					}
 
 					if (vis_buffer.used_bytes() >= session->_visualizer.min_sample_bytes())
@@ -853,7 +1042,9 @@ public:
 
 					if (!ds->is_stopped())
 					{
-						ds->volume(session->_volume / 1000.0);
+						// Device volume is 0.0-1.0; anything above 100% is applied as a
+						// software gain on the decoded samples (see set_gain above).
+						ds->volume(std::min(session->_volume, 1000) / 1000.0);
 					}
 
 					if (ds->is_device_lost())
@@ -864,6 +1055,7 @@ public:
 					}
 
 					session->_audio_buffer_time = playback_buffer.start_time();
+					session->_audio_clock = base_time + ds->time();
 				}
 			}
 		}
@@ -922,6 +1114,12 @@ public:
 		}
 
 		ses->_pending_time_sync = true;
+		// With audio, the audio thread re-establishes the clock and clears
+		// _pending_time_sync. With no audio there is no such clock, so we must
+		// re-arm _reset_time_offset to let update_for_present rebuild the wall
+		// clock from the next frame - otherwise pos() stays frozen at _last_seek
+		// and playback appears stuck on resume.
+		ses->_reset_time_offset = !ses->_decoder.has_audio();
 		ses->state(av_play_state::playing);
 	}
 

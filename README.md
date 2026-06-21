@@ -3,6 +3,8 @@
 
 Free, high-performance photo and video organizer for Windows. Optimized for speed and local file control�no cloud storage or subscriptions required.
 
+![Diffractor screenshot](screenshot.webp)
+
 ## Features
 
 | Category | Capabilities |
@@ -98,7 +100,7 @@ No package manager is used. Source code for each library is copied into `third-p
 | [parallel-hashmap](https://github.com/greg7mdp/parallel-hashmap) | 2.0.0 | `Include/parallel_hashmap` | Header-only | Copy headers from [greg7mdp/parallel-hashmap](https://github.com/greg7mdp/parallel-hashmap/releases) into `Include/parallel_hashmap/` |
 | [rapidjson](https://github.com/Tencent/rapidjson) | main | `third-party/rapidjson` | Header-only | Copy headers from [Tencent/rapidjson](https://github.com/Tencent/rapidjson) `include/rapidjson/` |
 | [skcms](https://github.com/niclaswue/skcms) | main | `third-party/skcms` | Source copy | Copy from [skia.googlesource.com/skcms](https://skia.googlesource.com/skcms), mirror at [niclaswue/skcms](https://github.com/niclaswue/skcms) |
-| [sqlite](https://github.com/niclaswue/sqlite) | 3.50.4 | `third-party/sqlite` | Source copy | Download amalgamation from [sqlite.org](https://www.sqlite.org/download.html), mirror at [niclaswue/sqlite](https://github.com/niclaswue/sqlite) |
+| [sqlite](https://github.com/niclaswue/sqlite) | 3.53.2 | `third-party/sqlite` | Source copy | Download amalgamation from [sqlite.org](https://www.sqlite.org/download.html), mirror at [niclaswue/sqlite](https://github.com/niclaswue/sqlite) |
 | [utf-cpp](https://github.com/nemtrif/utfcpp) | 4.0.6 | `Include/utf8-cpp` | Header-only | Copy headers from [nemtrif/utfcpp](https://github.com/nemtrif/utfcpp/releases) into `Include/utf8-cpp/` |
 | [xmp-sdk](https://github.com/diffractor/XMP-Toolkit-SDK) | 6.0.0 | `third-party/xmp` | **Fork** (submodule) | Rebase [diffractor/XMP-Toolkit-SDK](https://github.com/diffractor/XMP-Toolkit-SDK) on upstream [adobe/XMP-Toolkit-SDK](https://github.com/adobe/XMP-Toolkit-SDK). Fork adds: POPM/TPE2 reconciliation for MP3, Windows tag support, C++17 fixes, WebP support from Exempi |
 | [zlib-ng](https://github.com/zlib-ng/zlib-ng) | 2.0.7 | `third-party/ZLib` | Source copy | Download release from [zlib-ng/zlib-ng](https://github.com/zlib-ng/zlib-ng/releases), configure for zlib-compat mode |

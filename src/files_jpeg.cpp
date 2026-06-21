@@ -964,6 +964,12 @@ file_scan_result scan_jpg(read_stream& s)
 			break;
 		}
 
+		if (file_len < block_offset + 4u)
+		{
+			// truncated - no room for the segment length field
+			break;
+		}
+
 		const auto block_len = df::byteswap16(s.peek16(block_offset + 2));
 
 		if (file_len < block_offset + 2u + block_len)

@@ -33,6 +33,7 @@ namespace df
 		match_folder,
 		match_ext,
 		match_location,
+		match_volume,
 	};
 
 	enum class search_term_type
@@ -46,6 +47,7 @@ namespace df
 		date,
 		location,
 		duplicate,
+		volume,
 	};
 
 	struct search_result
@@ -553,6 +555,12 @@ namespace df
 
 	std::string format_term(const search_term& term);
 
+	// Returns true when folder_name is on a drive whose volume label matches the
+	// term text (case-insensitive, wildcards supported). drive_labels maps an
+	// upper-case drive letter to its current volume label.
+	bool match_volume_label(std::string_view folder_name, const hash_map<char, str::cached>& drive_labels,
+	                        const search_term& term);
+
 
 	struct related_info
 	{
@@ -618,6 +626,14 @@ namespace df
 		bool has_property_terms() const
 		{
 			return std::ranges::find_if(_terms, [](auto&& v) { return v.is_property_term(); }) != _terms.end();
+		}
+
+		bool has_volume_term() const
+		{
+			return std::ranges::find_if(_terms, [](auto&& v)
+			{
+				return v.type == search_term_type::volume;
+			}) != _terms.end();
 		}
 
 		const std::vector<search_term>& terms() const
@@ -1085,6 +1101,7 @@ namespace df
 		const search_t& _search;
 		const bloom_bits _bloom;
 		const uint32_t _now_days = 0;
+		df::hash_map<char, str::cached> _drive_labels;
 
 	public:
 		search_matcher(const search_t& s, const uint32_t now_days = platform::now().to_days()) :
@@ -1095,6 +1112,19 @@ namespace df
 			need_metadata(s.needs_metadata()),
 			can_match_folder(_search.can_match_folder())
 		{
+			if (s.has_volume_term())
+			{
+				// Resolve current drive letters to volume labels once so a volume:
+				// term can match items by the label of the drive they live on.
+				for (const auto& d : platform::scan_drives(false))
+				{
+					if (!d.name.empty() && !str::is_empty(d.vol_name))
+					{
+						_drive_labels[static_cast<char>(str::to_upper(static_cast<unsigned char>(d.name[0])))] =
+							str::cache(d.vol_name);
+					}
+				}
+			}
 		}
 
 		const bool has_terms = false;

@@ -140,7 +140,7 @@ msgid "Click for collection options"
 msgstr "Haz clic para las opciones de colección"
 
 msgid "Scroll map to select a location. Use mouse-wheel to zoom."
-msgstr ""
+msgstr "Desplaza el mapa para seleccionar una ubicación. Usa la rueda del ratón para hacer zoom."
 
 msgid "Click to search for similar items in the collection."
 msgstr "Haz clic para buscar elementos similares en la colección."
@@ -860,7 +860,7 @@ msgstr "El destino es un CD-ROM escribible, posiblemente sin formatear."
 msgid "The destination is a read-only CD-ROM, possibly unformatted."
 msgstr "El destino es un CD-ROM de solo lectura, posiblemente sin formatear."
 
-msgid "The destination is a read-only DVD, posiblemente unformatted."
+msgid "The destination is a read-only DVD, possibly unformatted."
 msgstr "El destino es un DVD de solo lectura, posiblemente sin formatear."
 
 msgid "The source and destination have the same parent folder."
@@ -947,7 +947,7 @@ msgstr "El origen es un CD-ROM escribible, posiblemente sin formatear."
 msgid "The source is a read-only CD-ROM, possibly unformatted."
 msgstr "El origen es un CD-ROM de solo lectura, posiblemente sin formatear."
 
-msgid "The source is a read-only DVD, posiblemente unformatted."
+msgid "The source is a read-only DVD, possibly unformatted."
 msgstr "El origen es un DVD de solo lectura, posiblemente sin formatear."
 
 msgid "The source is a root directory, which cannot be moved or renamed."
@@ -1265,7 +1265,7 @@ msgstr "Funk"
 msgid "Fusion"
 msgstr "Fusion"
 
-msgid "Game//property"
+msgid "Game//genre"
 msgstr "Juego"
 
 msgid "Gangsta"
@@ -2679,7 +2679,7 @@ msgid "Use '#' to specify position of the numeric sequence"
 msgstr "Usa '#' para especificar la posición de la secuencia numérica"
 
 msgid "Use metadata templates '{property-name}' to include file properties in the name."
-msgstr "Usa plantillas de metadatos '{nombre-propiedad}' para incluir propiedades de archivo en el nombre."
+msgstr "Usa plantillas de metadatos '{property-name}' para incluir propiedades de archivo en el nombre."
 
 msgid "For example:"
 msgstr "Por ejemplo:"
@@ -2688,10 +2688,10 @@ msgid "photo-###"
 msgstr "foto-###"
 
 msgid "{year}-{month}-###"
-msgstr "{año}-{mes}-###"
+msgstr "{year}-{month}-###"
 
 msgid "travel-{country}-###"
-msgstr "viaje-{país}-###"
+msgstr "viaje-{country}-###"
 
 msgid "Rename multiple files based on an incrementing sequence or file metadata template."
 msgstr "Renombrar múltiples archivos basándose en una secuencia incremental o plantilla de metadatos de archivo."
@@ -3080,6 +3080,9 @@ msgstr "Ámbito"
 
 msgid "Value"
 msgstr "Valor"
+
+msgid "Volume 200%"
+msgstr "Volumen 200%"
 
 msgid "Volume 100%"
 msgstr "Volumen 100%"

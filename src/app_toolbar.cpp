@@ -262,7 +262,7 @@ void app_frame::toggle_volume()
 		}
 	}
 
-	setting.media_volume = std::clamp(v, 0, 1000);
+	setting.media_volume = std::clamp(v, 0, media_volume_boost);
 	_commands[commands::playback_volume_toggle]->icon = sound_icon();
 	_tools->update_button_state(false, false);
 }
@@ -431,6 +431,7 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::playback_volume_toggle]->enable = is_media_or_items_view;
 	_commands[commands::playback_volume0]->enable = is_media_or_items_view;
 	_commands[commands::playback_volume100]->enable = is_media_or_items_view;
+	_commands[commands::playback_volume200]->enable = is_media_or_items_view;
 	_commands[commands::playback_volume25]->enable = is_media_or_items_view;
 	_commands[commands::playback_volume50]->enable = is_media_or_items_view;
 	_commands[commands::playback_volume75]->enable = is_media_or_items_view;
@@ -555,6 +556,7 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::english]->checked = setting.language == "en";
 
 
+	_commands[commands::playback_volume200]->checked = setting.media_volume == media_volume_boost;
 	_commands[commands::playback_volume100]->checked = setting.media_volume == media_volumes[0];
 	_commands[commands::playback_volume75]->checked = setting.media_volume == media_volumes[1];
 	_commands[commands::playback_volume50]->checked = setting.media_volume == media_volumes[2];
@@ -806,6 +808,7 @@ void app_frame::update_command_text()
 	def_command(commands::filter_videos, command_group::selection, icon_index::video, tt.command_filter_videos);
 	def_command(commands::filter_audio, command_group::selection, icon_index::audio, tt.command_filter_audio);
 	def_command(commands::menu_group, command_group::none, icon_index::group, tt.command_menu_group_sort);
+	def_command(commands::playback_volume200, command_group::media_playback, icon_index::volume3, tt.command_volume200);
 	def_command(commands::playback_volume100, command_group::media_playback, icon_index::volume3, tt.command_volume100);
 	def_command(commands::playback_volume75, command_group::media_playback, icon_index::volume2, tt.command_volume75);
 	def_command(commands::playback_volume50, command_group::media_playback, icon_index::volume1, tt.command_volume50);

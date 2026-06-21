@@ -2050,8 +2050,8 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 	}
 	else if (display == item_group_display::icons)
 	{
-		const auto thumbnail = _thumbnail;
-		const auto cover_art = _cover_art;
+		const auto thumbnail = _thumbnail.load();
+		const auto cover_art = _cover_art.load();
 		const auto thumb_is_valid = is_valid(thumbnail) || is_valid(cover_art);
 		const auto show_text = is_hover || !thumb_is_valid || is_folder || is_focus;
 		const auto expand_text = (is_hover || is_focus) && thumb_is_valid;
@@ -2142,7 +2142,9 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 
 		if (thumb_is_valid)
 		{
-			if (!_texture)
+			auto tex = _texture.load();
+
+			if (!tex)
 			{
 				const auto t = dc.create_texture();
 				files ff;
@@ -2151,11 +2153,10 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 
 				if (t && t->update(ff.image_to_surface(image)) != ui::texture_update_result::failed)
 				{
-					_texture = t;
+					_texture.store(t);
+					tex = t;
 				}
 			}
-
-			const auto tex = _texture;
 
 			if (tex)
 			{
@@ -2579,7 +2580,7 @@ void df::item_element::update(const file_path path, const index_file_item& info)
 		_ft = files::file_type_from_name(_name);
 	}
 
-	if (md && !ui::is_valid(_thumbnail) && !ui::is_valid(_cover_art))
+	if (md && !ui::is_valid(_thumbnail.load()) && !ui::is_valid(_cover_art.load()))
 	{
 		_thumbnail_dims = md->dimensions();
 		_thumbnail_orientation = md->orientation;

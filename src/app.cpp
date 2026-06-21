@@ -1118,7 +1118,7 @@ void app_frame::layout(ui::measure_context& mc)
 }
 
 
-void parse_more_folders(df::index_roots& result, const std::string_view more_folders)
+void parse_more_folders(df::index_roots& result, const std::string_view more_folders, const platform::drives& drives)
 {
 	df::hash_set<std::string, df::ihash, df::ieq> drive_label_includes;
 
@@ -1151,29 +1151,38 @@ void parse_more_folders(df::index_roots& result, const std::string_view more_fol
 			{
 				const auto path = df::folder_path(line);
 
-				if (path.exists() ||
-					platform::is_server(line))
+				if (path.exists())
 				{
 					result.folders.emplace(path);
 				}
 				else
 				{
+					// Could be a device/volume label or a server name - resolved below.
 					drive_label_includes.emplace(line);
 				}
 			}
 		}
 	}
 
-	const auto drives = platform::scan_drives(false);
+	// Resolve device/volume labels to the matching drive(s) by volume name.
+	df::hash_set<std::string, df::ihash, df::ieq> resolved_labels;
 
 	for (const auto& d : drives)
 	{
-		const auto path = df::folder_path(d.name);
-		const auto vol = d.vol_name;
-
-		if (drive_label_includes.contains(d.name))
+		if (drive_label_includes.contains(d.vol_name))
 		{
-			result.folders.emplace(path);
+			result.folders.emplace(df::folder_path(d.name));
+			resolved_labels.emplace(d.vol_name);
+		}
+	}
+
+	// Remaining bare names that look like a server are added directly. This allows
+	// network shares or removable devices whose mapped drive letter can change.
+	for (const auto& label : drive_label_includes)
+	{
+		if (!resolved_labels.contains(label) && platform::is_server(label))
+		{
+			result.folders.emplace(df::folder_path(label));
 		}
 	}
 
@@ -1181,6 +1190,11 @@ void parse_more_folders(df::index_roots& result, const std::string_view more_fol
 	{
 		result.folders.erase(exclude);
 	}
+}
+
+void parse_more_folders(df::index_roots& result, const std::string_view more_folders)
+{
+	parse_more_folders(result, more_folders, platform::scan_drives(false));
 }
 
 

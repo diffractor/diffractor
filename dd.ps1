@@ -74,8 +74,8 @@ function Get-CurrentVersion {
     # Read version from app.cpp as the source of truth
     $content = Get-Content $AppCppFile -Raw
     
-    # Extract version: const auto s_app_version = u8"126.2"sv;
-    if ($content -match 'const auto s_app_version = u8"(\d+)\.(\d+)"sv;') {
+    # Extract version: const std::string_view s_app_version = "126.2";
+    if ($content -match 'const std::string_view s_app_version = "(\d+)\.(\d+)";') {
         $majorMinor = $Matches[1]  # e.g., "126"
         $patch = $Matches[2]       # e.g., "2"
         
@@ -89,8 +89,8 @@ function Get-CurrentVersion {
         exit 1
     }
     
-    # Extract build: const auto g_app_build = u8"1187"sv;
-    if ($content -match 'const auto g_app_build = u8"(\d+)"sv;') {
+    # Extract build: const std::string_view g_app_build = "1206";
+    if ($content -match 'const std::string_view g_app_build = "(\d+)";') {
         $build = [int]$Matches[1]
     }
     else {
@@ -132,8 +132,8 @@ function Update-AllVersionFiles {
     # Update app.cpp
     Write-Host "Updating $AppCppFile..." -ForegroundColor Yellow
     $content = Get-Content $AppCppFile -Raw
-    $content = $content -replace 'const auto s_app_version = u8"\d+\.\d+"sv;', "const auto s_app_version = u8`"$appVersion`"sv;"
-    $content = $content -replace 'const auto g_app_build = u8"\d+"sv;', "const auto g_app_build = u8`"$Build`"sv;"
+    $content = $content -replace 'const std::string_view s_app_version = "\d+\.\d+";', "const std::string_view s_app_version = `"$appVersion`";"
+    $content = $content -replace 'const std::string_view g_app_build = "\d+";', "const std::string_view g_app_build = `"$Build`";"
     Set-Content $AppCppFile $content -NoNewline
     
     # Update diff.nsi
@@ -400,9 +400,9 @@ function Build-Desktop {
     Write-Host "Creating portable ZIP..." -ForegroundColor Yellow
     Push-Location $SourceFilesDir
     
-    $sevenZip = "C:\Program Files\7-Zip\7z.exe"
+    $sevenZip = Join-Path $ToolsDir "7za.exe"
     if (-not (Test-Path $sevenZip)) {
-        Write-Host "Error: 7-Zip not found at $sevenZip" -ForegroundColor Red
+        Write-Host "Error: 7za.exe not found at $sevenZip" -ForegroundColor Red
         Pop-Location
         exit 1
     }
@@ -414,8 +414,11 @@ function Build-Desktop {
         "location-countries.txt",
         "location-places.txt",
         "location-states.txt",
+        "languages\cs.po",
         "languages\de.po",
+        "languages\es.po",
         "languages\it.po",
+        "languages\ja.po",
         "dictionaries\en_US.aff",
         "dictionaries\en_US.dic"
     )

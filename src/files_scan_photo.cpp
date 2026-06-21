@@ -609,6 +609,12 @@ file_scan_result scan_photo(read_stream& s)
 {
 	file_scan_result result;
 
+	if (s.size() < sizeof(pack128))
+	{
+		// Empty or too small to contain a recognisable image signature.
+		return result;
+	}
+
 	try
 	{
 		const auto expected = files::detect_format(s.peek128(0));

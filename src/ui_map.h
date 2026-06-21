@@ -54,7 +54,17 @@ public:
 
 	void on_window_layout(ui::measure_context& mc, const sizei extent, const bool is_minimized) override
 	{
+		const bool extent_changed = _extent != extent;
 		_extent = extent;
+
+		// The initial location is typically set (via set_location_marker) before the
+		// dialog has been laid out, while _extent is still empty and tile fetching is a
+		// no-op. The first real layout is therefore the earliest point at which we can
+		// fetch the surrounding tiles, mirroring map_view::activate for the full view.
+		if (_engine && extent_changed && !extent.is_empty())
+		{
+			_engine->fetch_tiles_for_bounds(calc_bounds());
+		}
 	}
 
 	void on_mouse_move(const pointi loc, const bool is_tracking) override

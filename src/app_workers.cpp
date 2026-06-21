@@ -98,6 +98,7 @@ static void start_media_decode_audio(const std::shared_ptr<av_player>& player)
 	log_func lf(__FUNCTION__);
 	platform::set_thread_description("media decode_audio");
 	platform::thread_init c;
+	platform::media_thread_priority audio_priority;
 	player->decode_audio();
 }
 

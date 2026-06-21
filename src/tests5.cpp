@@ -112,6 +112,29 @@ static void should_not_match_folder_without()
 	assert_equal(false, matcher.match_folder(test_files_folder.text(), "test"_c).is_match(), "folder name test");
 }
 
+static void should_match_volume_label()
+{
+	// Map a drive letter to a volume label so the volume: term can be matched
+	// deterministically without depending on the drives present on the machine.
+	df::hash_map<char, str::cached> labels;
+	labels['X'] = str::cache("Backup");
+
+	const auto exact = df::search_t::parse("volume:Backup");
+	const auto& exact_term = exact.terms().front();
+
+	assert_equal(true, df::match_volume_label("X:\\photos\\2024", labels, exact_term), "match on drive X");
+	assert_equal(true, df::match_volume_label("x:\\photos", labels, exact_term), "drive letter case-insensitive");
+	assert_equal(false, df::match_volume_label("Y:\\photos", labels, exact_term), "different drive");
+	assert_equal(false, df::match_volume_label("\\\\server\\share", labels, exact_term), "unc path has no drive letter");
+
+	assert_equal(true, df::match_volume_label("X:\\x", labels, df::search_t::parse("volume:BACKUP").terms().front()),
+	             "label case-insensitive");
+	assert_equal(true, df::match_volume_label("X:\\x", labels, df::search_t::parse("volume:Back*").terms().front()),
+	             "label wildcard");
+	assert_equal(false, df::match_volume_label("X:\\x", labels, df::search_t::parse("volume:Other").terms().front()),
+	             "non-matching label");
+}
+
 static void should_match_date(const std::string_view query, const df::date_t d)
 {
 	df::index_file_item props_without_val;
@@ -504,6 +527,7 @@ void register_tests5(view_state& state, test_registry& tests)
 	//
 	tests.add("Should match terms"s, should_match_terms);
 	tests.add("Should match related"s, should_match_related);
+	tests.add("Should match volume label"s, should_match_volume_label);
 	tests.add("Should not match folder without "s, should_not_match_folder_without);
 	tests.add("Should match date"s, [] { should_match_date("2012-09-14", df::date_t(2012, 9, 14)); });
 	tests.add("Should match date"s, [] { should_match_date("2012", df::date_t(2012, 1, 14)); });
@@ -597,6 +621,7 @@ void register_tests5(view_state& state, test_registry& tests)
 	register_assert_parse("size:1mb"s, "size: 1 MB"s);
 	register_assert_parse("> size:1mb"s, "> size: 1 MB"s);
 	register_assert_parse("ext:jpg"s);
+	register_assert_parse("volume:Backup"s);
 	register_assert_parse("with:tag"s, "with: tag"s);
 	register_assert_parse("without:tag"s, "without: tag"s);
 	register_assert_parse("c:\\windows"s);

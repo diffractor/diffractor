@@ -48,6 +48,12 @@ class file_type;
 using file_type_by_extension = df::hash_map<std::string_view, file_type_ref, df::ihash, df::ieq>;
 void av_initialise(file_type_by_extension& file_types);
 
+// Extracts the camcorder recording date/time embedded in a raw DV video frame
+// (DVCAM / DV-in-AVI). FFmpeg's DV demuxer does not surface this, so the
+// BCD-encoded VAUX recording-date (0x62) and recording-time (0x63) packs are
+// decoded here. Returns an invalid date when no usable pack is present.
+df::date_t dv_extract_rec_datetime(const uint8_t* frame, size_t frame_size);
+
 struct av_frame_d3d
 {
 	int width = 0;
@@ -86,13 +92,21 @@ class audio_resampler
 	SwrContext* _aud_resampler = nullptr;
 	audio_info_t _frame_info;
 	audio_info_t _stream_info;
+	double _gain = 1.0;
 
 public:
 	audio_resampler(const audio_info_t& info);
 	~audio_resampler();
 
 	void flush() const;
+	// Emits any samples the resampler still has buffered (e.g. rate-conversion tail)
+	// into audio_buffer at end of stream so the audio is not cut short.
+	void drain(audio_buffer& audio_buffer, int gen) const;
 	void resample(const av_frame_ptr& frame, audio_buffer& audio_buffer);
+
+	// Software gain (>= 1.0) applied to resampled samples. Used for volume boost
+	// above 100%, which the device volume (0.0-1.0) cannot provide. 1.0 = no boost.
+	void set_gain(const double gain) { _gain = gain; }
 };
 
 class av_scaler
@@ -254,10 +268,15 @@ struct av_pts_correction
 	int64_t num_faulty_dts; /// Number of incorrect DTS values so far
 	int64_t last_pts; /// PTS of the last frame
 	int64_t last_dts; /// DTS of the last frame
+	int64_t last_output; /// Last timestamp returned (keeps the output monotonic)
+	int64_t frame_interval; /// Cadence learned from previous frames (synthesis fallback)
 
 	av_pts_correction();
 	void clear();
-	int64_t guess(int64_t pts, int64_t dts);
+	// Returns a usable, strictly increasing timestamp in stream time-base units.
+	// duration is the decoder-reported frame duration (0 if unknown) and is used
+	// to extend the timeline when the stream supplies no usable timestamp.
+	int64_t guess(int64_t pts, int64_t dts, int64_t duration = 0);
 };
 
 

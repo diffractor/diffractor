@@ -40,6 +40,9 @@
 #pragma comment(lib, "runtimeobject")
 #endif
 
+#include <avrt.h>
+#pragma comment(lib, "avrt.lib")
+
 static constexpr CLSID CLSID_ImageThumbnailProvider = {
 	0xC7657C4A, 0x9F68, 0x40fa, {0xA4, 0xDF, 0x96, 0xBC, 0x08, 0xEB, 0x35, 0x51}
 };
@@ -1692,6 +1695,26 @@ platform::thread_init::thread_init()
 platform::thread_init::~thread_init()
 {
 	if (_hr == S_OK) CoUninitialize();
+}
+
+
+
+platform::media_thread_priority::media_thread_priority()
+{
+	// Join the MMCSS "Pro Audio" class so the OS scheduler keeps this audio thread
+	// running promptly even while the video-decode thread is busy. Failure is
+	// non-fatal (the thread simply runs at normal priority).
+	DWORD task_index = 0;
+	_task = AvSetMmThreadCharacteristicsW(L"Pro Audio", &task_index);
+}
+
+platform::media_thread_priority::~media_thread_priority()
+{
+	if (_task)
+	{
+		AvRevertMmThreadCharacteristics(_task);
+		_task = nullptr;
+	}
 }
 
 class CPropVariant : public PROPVARIANT

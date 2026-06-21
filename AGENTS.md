@@ -2,8 +2,8 @@
 
 This is the Diffractor application codebase. Diffractor is the fastest photo and video organizer for Windows. It indexes your files to allow duplicate detection and fast search.
 
-For build instructions, dependencies, and contribution guidelines, see the main [README.md](../README.md).
-For detailed implementation documentation, see [implementation.md](../implementation.md).
+For build instructions, dependencies, and contribution guidelines, see the main [README.md](README.md).
+For detailed implementation documentation, see [implementation.md](implementation.md).
 
 Place temporary files in a tmp/ folder (test output etc.)
 
@@ -51,7 +51,7 @@ Key dependencies include:
 - **zlib-ng, minizip-ng** - Compression
 - **Hunspell** - Spell checking
 
-See [README.md](../README.md) for the complete list with versions, folder paths, dependency types, and update source URLs.
+See [README.md](README.md) for the complete list with versions, folder paths, dependency types, and update source URLs.
 
 ### Upgrading a Source-Copy Dependency
 

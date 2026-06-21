@@ -134,6 +134,107 @@ double get_rotation(const AVStream* const st)
 	return theta;
 }
 
+// Locates a DV VAUX recording-date (0x62) or recording-time (0x63) pack within a
+// raw DV frame. These packs live in the three VAUX DIF blocks (block index 3, 4
+// and 5) of each DIF sequence and are duplicated at two pack slots within each
+// block. The offsets mirror those written by the DV muxer (libavformat/dvenc.c
+// dv_inject_metadata). Returns a pointer to the 5-byte pack, or null.
+static const uint8_t* dv_find_vaux_pack(const uint8_t* frame, const size_t frame_size,
+                                        const uint8_t pack_id, const int off_a, const int off_b)
+{
+	constexpr int dif_sequence_size = 12000; // 150 DIF blocks * 80 bytes
+	constexpr int vaux_blocks[] = {80 * 3, 80 * 4, 80 * 5};
+
+	for (int seq = 0; seq < 12; ++seq)
+	{
+		const int seq_base = seq * dif_sequence_size;
+		if (static_cast<size_t>(seq_base) >= frame_size) break;
+
+		for (const int block : vaux_blocks)
+		{
+			for (const int pack : {off_a, off_b})
+			{
+				const int offs = seq_base + block + pack;
+				if (offs >= 0 && static_cast<size_t>(offs) + 5 <= frame_size &&
+					frame[offs] == pack_id)
+				{
+					return &frame[offs];
+				}
+			}
+		}
+	}
+
+	return nullptr;
+}
+
+df::date_t dv_extract_rec_datetime(const uint8_t* frame, const size_t frame_size)
+{
+	if (!frame) return {};
+
+	const auto* const date_pack = dv_find_vaux_pack(frame, frame_size, 0x62, 13, 58);
+	if (!date_pack) return {};
+
+	// Date pack: PC2 = day, PC3 = month, PC4 = two-digit year (all BCD).
+	const int day = ((date_pack[2] >> 4) & 0x03) * 10 + (date_pack[2] & 0x0f);
+	const int month = ((date_pack[3] >> 4) & 0x01) * 10 + (date_pack[3] & 0x0f);
+	const int year2 = ((date_pack[4] >> 4) & 0x0f) * 10 + (date_pack[4] & 0x0f);
+
+	if (day < 1 || day > 31 || month < 1 || month > 12 || year2 > 99) return {};
+
+	const int year = year2 < 75 ? 2000 + year2 : 1900 + year2;
+
+	// Time pack: PC2 = seconds, PC3 = minutes, PC4 = hours (all BCD). Optional.
+	int hour = 0, minute = 0, second = 0;
+	const auto* const time_pack = dv_find_vaux_pack(frame, frame_size, 0x63, 18, 63);
+
+	if (time_pack)
+	{
+		second = ((time_pack[2] >> 4) & 0x07) * 10 + (time_pack[2] & 0x0f);
+		minute = ((time_pack[3] >> 4) & 0x07) * 10 + (time_pack[3] & 0x0f);
+		hour = ((time_pack[4] >> 4) & 0x03) * 10 + (time_pack[4] & 0x0f);
+
+		if (hour > 23 || minute > 59 || second > 59)
+		{
+			hour = minute = second = 0;
+		}
+	}
+
+	return {year, month, day, hour, minute, second};
+}
+
+// Reads the first full DV video frame from the demuxer and extracts its embedded
+// recording date/time. Used for DVCAM / DV-in-AVI files, whose creation date is
+// stored inside the DV frames rather than the container.
+static df::date_t read_dv_rec_datetime(AVFormatContext* fc, const int video_stream_index)
+{
+	if (!fc) return {};
+
+	// Rewind so we read the first recorded frame (a thumbnail extraction may have
+	// left the demuxer positioned mid-stream).
+	av_seek_frame(fc, -1, 0, AVSEEK_FLAG_BACKWARD);
+
+	df::date_t result;
+	auto* pkt = av_packet_alloc();
+
+	for (int tries = 0; tries < 64 && av_read_frame(fc, pkt) >= 0; ++tries)
+	{
+		// A full SD DV frame is 120000 (NTSC) / 144000 (PAL) bytes; require at
+		// least one DIF sequence so the VAUX pack offsets are in range.
+		if (pkt->stream_index == video_stream_index && pkt->data && pkt->size >= 12000)
+		{
+			result = dv_extract_rec_datetime(pkt->data, static_cast<size_t>(pkt->size));
+			av_packet_unref(pkt);
+			if (result.is_valid()) break;
+			continue;
+		}
+
+		av_packet_unref(pkt);
+	}
+
+	av_packet_free(&pkt);
+	return result;
+}
+
 static void populate_properties(const AVFormatContext* ctx, file_scan_result& result)
 {
 	if (ctx)
@@ -451,22 +552,39 @@ void av_pts_correction::clear()
 {
 	num_faulty_pts = num_faulty_dts = 0;
 	last_pts = last_dts = AV_NOPTS_VALUE;
+	last_output = AV_NOPTS_VALUE;
+	frame_interval = 0;
 }
 
-int64_t av_pts_correction::guess(const int64_t pts, const int64_t dts)
+int64_t av_pts_correction::guess(const int64_t pts, const int64_t dts, const int64_t duration)
 {
-	auto result = AV_NOPTS_VALUE;
+	// Step 1 - choose between the (already reordered) PTS and the DTS using the
+	// same fault-counting heuristic as FFmpeg's guess_correct_pts
+	// (libavcodec/decode.c): whichever stream has so far shown fewer backwards or
+	// duplicate steps is trusted. The else-if branches keep the unused "last"
+	// value aligned with the one that is present so the two fault counters stay
+	// comparable when a stream supplies only one of PTS/DTS intermittently -
+	// without them the choice drifts and flips on such streams.
+	int64_t result = AV_NOPTS_VALUE;
 
 	if (dts != AV_NOPTS_VALUE)
 	{
-		if (dts <= last_dts) num_faulty_dts += 1;
+		num_faulty_dts += dts <= last_dts;
 		last_dts = dts;
+	}
+	else if (pts != AV_NOPTS_VALUE)
+	{
+		last_dts = pts;
 	}
 
 	if (pts != AV_NOPTS_VALUE)
 	{
-		if (pts <= last_pts) num_faulty_pts += 1;
+		num_faulty_pts += pts <= last_pts;
 		last_pts = pts;
+	}
+	else if (dts != AV_NOPTS_VALUE)
+	{
+		last_pts = dts;
 	}
 
 	if ((num_faulty_pts <= num_faulty_dts || dts == AV_NOPTS_VALUE) && pts != AV_NOPTS_VALUE)
@@ -477,15 +595,30 @@ int64_t av_pts_correction::guess(const int64_t pts, const int64_t dts)
 	{
 		result = dts;
 	}
-	else if (last_pts != AV_NOPTS_VALUE)
+
+	// Step 2 - guarantee a usable, strictly increasing result. Some codecs and
+	// containers (raw video, MJPEG sequences, damaged MPEG-TS) supply no usable
+	// timestamp or one that fails to advance. Emitting a stale/duplicate value
+	// makes the presenter treat the frame as "not newer" and stall, so instead we
+	// extend the timeline by one frame interval - preferring the decoder-reported
+	// duration and otherwise the cadence learned from earlier frames.
+	if (result != AV_NOPTS_VALUE && last_output != AV_NOPTS_VALUE && result > last_output)
 	{
-		result = last_pts;
-	}
-	else if (last_dts != AV_NOPTS_VALUE)
-	{
-		result = last_dts;
+		frame_interval = result - last_output;
 	}
 
+	const auto step = duration > 0 ? duration : (frame_interval > 0 ? frame_interval : 1);
+
+	if (result == AV_NOPTS_VALUE)
+	{
+		result = last_output == AV_NOPTS_VALUE ? 0 : last_output + step;
+	}
+	else if (last_output != AV_NOPTS_VALUE && result <= last_output)
+	{
+		result = last_output + step;
+	}
+
+	last_output = result;
 	return result;
 }
 
@@ -772,6 +905,20 @@ void av_format_decoder::extract_metadata(file_scan_result& sr) const
 
 		if (audio_stream) populate_audio_properties(audio_stream, sr);
 		if (video_stream) populate_video_properties(video_stream, sr);
+
+		// DVCAM / DV-in-AVI files store their recording date/time inside the DV
+		// frames rather than the container, so extract it from the first frame.
+		if (video_stream && video_stream->codecpar &&
+			video_stream->codecpar->codec_id == AV_CODEC_ID_DVVIDEO)
+		{
+			const auto dv_date = read_dv_rec_datetime(_format_context, video_stream->index);
+
+			if (dv_date.is_valid())
+			{
+				// DV times are local wall-clock; store so created() round-trips it.
+				sr.created_utc = dv_date.local_to_system();
+			}
+		}
 
 		const auto bit_rate = fc->bit_rate;
 
@@ -1357,7 +1504,7 @@ bool av_format_decoder::decode_frame(ui::surface_ptr& dest_surface, AVCodecConte
 
 		if (rec_res == 0)
 		{
-			const auto pts = _pts_vid.guess(frame.pts, frame.pkt_dts);
+			const auto pts = _pts_vid.guess(frame.pts, frame.pkt_dts, frame.duration);
 			auto time = to_video_seconds(pts);
 
 			if (frame.repeat_pict)
@@ -1384,76 +1531,85 @@ bool av_format_decoder::extract_seek_frame(ui::surface_ptr& dest_surface, const 
                                            const double pos_numerator,
                                            const double pos_denominator)
 {
-	auto success = false;
-
-	if (_has_video)
+	if (!_has_video)
 	{
-		if (_has_audio)
+		return false;
+	}
+
+	auto* const ctx = _video_context;
+	const auto start = start_time();
+	const auto len = end_time() - start;
+
+	// Use the same target time the live scrubber seeks to (media start + a
+	// fraction of the duration) and then decode forward to the frame nearest that
+	// time. Showing only the first (key) frame after the seek - as extract_thumbnail
+	// does - leaves the preview up to a whole GOP away from the pointed-at position,
+	// which is not the frame the player jumps to.
+	const auto x = std::clamp(pos_numerator, 0.0, pos_denominator);
+	const auto wanted_time = start + floor(x * len / std::max(1.0, pos_denominator));
+
+	seek(wanted_time, 0);
+
+	// The preview decoder is reused across hovers without going through the normal
+	// flush path, so drop any buffered frames and reset the timestamp estimator -
+	// otherwise a backward hover is pulled forward by guess()'s monotonic guard.
+	avcodec_flush_buffers(ctx);
+	_pts_vid.clear();
+
+	if (!_scaler)
+	{
+		_scaler = std::make_unique<av_scaler>();
+	}
+
+	auto success = false;
+	auto best_dist = std::numeric_limits<double>::max();
+
+	for (int i = 0; i < 1024 && !df::is_closing; i++)
+	{
+		const auto packet = read_packet();
+
+		if (!packet || packet->eof)
 		{
-			auto* const ctx = _video_context;
-			const auto start = start_time();
-			const auto end = end_time();
-			const auto len = end - start;
-			const auto x = std::clamp(pos_numerator, 0.0, pos_denominator);
+			break;
+		}
 
-			if (x > 2.0)
+		if (packet->pkt->stream_index != _video_stream_index)
+		{
+			continue;
+		}
+
+		if (try_avcodec_send_packet(ctx, packet->pkt) != 0)
+		{
+			continue;
+		}
+
+		AVFrame frame = {};
+
+		while (avcodec_receive_frame(ctx, &frame) == 0)
+		{
+			const auto pts = _pts_vid.guess(frame.pts, frame.pkt_dts, frame.duration);
+			const auto time = to_video_seconds(pts);
+			const auto dist = fabs(time - wanted_time);
+			const auto reached = time >= wanted_time;
+
+			// Frames arrive in presentation order, so the distance to the target
+			// shrinks until we pass it. Scale each improving frame; the last one kept
+			// is the nearest.
+			if (dist < best_dist && _scaler->scale_frame(frame, dest_surface, max_dim, time, calc_orientation()))
 			{
-				const auto wanted_time = start + floor(x * len / std::max(1.0, pos_denominator));
-
-				if (!seek(wanted_time, 0))
-				{
-					return false;
-				}
+				best_dist = dist;
+				success = true;
 			}
 
-			av_packet_queue video_packets;
-			double audio_time = -1;
-			bool has_audio_time = false;
+			av_frame_unref(&frame);
 
-			for (int i = 0; i < 1024 && !success; i++)
+			if (reached)
 			{
-				const auto packet = read_packet();
-
-				if (packet)
-				{
-					if (packet->pkt->stream_index == _video_stream_index)
-					{
-						if (has_audio_time)
-						{
-							success = decode_frame(dest_surface, ctx, packet, audio_time, max_dim);
-						}
-						else
-						{
-							video_packets.push(packet);
-						}
-					}
-					else if (packet->pkt->stream_index == _audio_stream_index)
-					{
-						const auto time = to_audio_seconds(packet->pkt->pts);
-
-						if (audio_time < 0)
-						{
-							audio_time = time;
-							has_audio_time = true;
-						}
-					}
-
-					if (has_audio_time && video_packets.size() > 0)
-					{
-						av_packet_ptr queued_packet;
-
-						while (!success && video_packets.pop(queued_packet))
-						{
-							success = decode_frame(dest_surface, ctx, queued_packet, audio_time, max_dim);
-						}
-					}
-				}
+				return success;
 			}
 		}
-		else
-		{
-			success = extract_thumbnail(dest_surface, max_dim, pos_numerator, pos_denominator);
-		}
+
+		av_frame_unref(&frame);
 	}
 
 	return success;
@@ -1586,6 +1742,107 @@ void audio_resampler::flush() const
 	}
 }
 
+void audio_resampler::drain(audio_buffer& audio_buffer, const int gen) const
+{
+	if (!_aud_resampler)
+	{
+		return;
+	}
+
+	const auto dest_format = audio_buffer.format;
+	const auto dest_sample_fmt = to_AVSampleFormat(dest_format.sample_fmt);
+	const auto out_num_channels = dest_format.channel_count();
+	const auto out_sample_size = dest_format.bytes_per_sample();
+
+	if (out_num_channels == 0 || out_sample_size == 0)
+	{
+		return;
+	}
+
+	for (int guard = 0; guard < 8; ++guard)
+	{
+		const auto pending = swr_get_out_samples(_aud_resampler, 0);
+
+		if (pending <= 0)
+		{
+			break;
+		}
+
+		uint8_t* buffer[AV_NUM_DATA_POINTERS]{nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+		av_samples_alloc(buffer, nullptr, out_num_channels, pending, dest_sample_fmt, 0);
+
+		if (!buffer[0])
+		{
+			break;
+		}
+
+		// NULL input flushes the resampler's internal buffer.
+		const auto out_samples = swr_convert(_aud_resampler, buffer, pending, nullptr, 0);
+
+		if (out_samples > 0)
+		{
+			audio_buffer.append(buffer[0], out_samples * out_num_channels * out_sample_size,
+			                    audio_buffer.end_time(), gen);
+		}
+
+		av_freep(buffer);
+
+		if (out_samples <= 0)
+		{
+			break;
+		}
+	}
+}
+
+
+// Scales `total_samples` interleaved samples in place by `gain`, clamping to the
+// format's range so a boost above 1.0 hard-limits instead of wrapping/overflowing.
+static void apply_audio_gain(uint8_t* const data, const int total_samples, const AVSampleFormat fmt,
+                             const double gain)
+{
+	switch (fmt)
+	{
+	case AV_SAMPLE_FMT_FLT:
+		{
+			auto* const p = reinterpret_cast<float*>(data);
+			const auto g = static_cast<float>(gain);
+
+			for (int i = 0; i < total_samples; ++i)
+			{
+				const auto v = p[i] * g;
+				p[i] = v > 1.0f ? 1.0f : (v < -1.0f ? -1.0f : v);
+			}
+
+			break;
+		}
+	case AV_SAMPLE_FMT_S16:
+		{
+			auto* const p = reinterpret_cast<int16_t*>(data);
+
+			for (int i = 0; i < total_samples; ++i)
+			{
+				const auto v = static_cast<int32_t>(p[i] * gain);
+				p[i] = static_cast<int16_t>(v > 32767 ? 32767 : (v < -32768 ? -32768 : v));
+			}
+
+			break;
+		}
+	case AV_SAMPLE_FMT_S32:
+		{
+			auto* const p = reinterpret_cast<int32_t*>(data);
+
+			for (int i = 0; i < total_samples; ++i)
+			{
+				const auto v = p[i] * gain;
+				p[i] = static_cast<int32_t>(v > 2147483647.0 ? 2147483647.0 : (v < -2147483648.0 ? -2147483648.0 : v));
+			}
+
+			break;
+		}
+	default:
+		break;
+	}
+}
 
 void audio_resampler::resample(const av_frame_ptr& frame, audio_buffer& audio_buffer)
 {
@@ -1676,6 +1933,12 @@ void audio_resampler::resample(const av_frame_ptr& frame, audio_buffer& audio_bu
 				const auto out_samples = swr_convert(_aud_resampler, buffer, expected_out_samples,
 				                                     frame->frm.data,
 				                                     frame->frm.nb_samples);
+
+				if (_gain != 1.0 && out_samples > 0)
+				{
+					apply_audio_gain(buffer[0], out_samples * out_num_channels, dest_sample_fmt, _gain);
+				}
+
 				audio_buffer.append(buffer[0], out_samples * out_num_channels * out_sample_size, frame->time,
 				                    frame->gen);
 			}
@@ -1828,8 +2091,27 @@ void av_session::process_io(const platform::thread_event& video_event, const pla
 		{
 			if (packet->eof)
 			{
-				_video_packets.push(packet);
-				_audio_packets.push(packet);
+				// Push a stream-tagged EOF marker to each queue so receive_frames can
+				// flush (drain) the matching decoder's buffered tail before signalling
+				// end of stream.
+				if (has_video)
+				{
+					auto vp = std::make_shared<av_packet>();
+					vp->eof = true;
+					vp->seek_ver = _seek_gen;
+					vp->pkt->stream_index = video_stream;
+					_video_packets.push(vp);
+				}
+
+				if (has_audio)
+				{
+					auto ap = std::make_shared<av_packet>();
+					ap->eof = true;
+					ap->seek_ver = _seek_gen;
+					ap->pkt->stream_index = audio_stream;
+					_audio_packets.push(ap);
+				}
+
 				audio_event.set();
 				video_event.set();
 				break;
@@ -1874,14 +2156,7 @@ void av_format_decoder::receive_frames(av_packet_queue& packets, av_frame_queue&
 		const auto si = packet->pkt->stream_index;
 		auto stream_name = "unknown stream";
 
-		if (packet->eof)
-		{
-			auto frame = std::make_shared<av_frame>();
-			frame->eof = true;
-			frame->gen = seek_ver;
-			frames.push(frame);
-		}
-		else if (si == _video_stream_index)
+		if (si == _video_stream_index)
 		{
 			c = _video_context;
 			pts_c = &_pts_vid;
@@ -1898,7 +2173,37 @@ void av_format_decoder::receive_frames(av_packet_queue& packets, av_frame_queue&
 			stream_name = "audio stream";
 		}
 
-		if (c != nullptr)
+		if (packet->eof)
+		{
+			// Drain the decoder so frames it still holds (codecs such as AAC delay
+			// output) are emitted rather than dropped - that lost tail is what cut the
+			// sound short at the end - then push an EOF marker for the output path to
+			// follow with silence.
+			if (c)
+			{
+				avcodec_send_packet(c, nullptr);
+
+				auto frame = std::make_shared<av_frame>();
+
+				while (avcodec_receive_frame(c, &frame->frm) == 0)
+				{
+					frame->gen = seek_ver;
+					frame->time = calc_duration(pts_c->guess(frame->frm.pts, frame->frm.pkt_dts, frame->frm.duration),
+					                            base, start);
+					frame->orientation = calc_orientation();
+					frames.push(frame);
+					frame = std::make_shared<av_frame>();
+				}
+
+				avcodec_flush_buffers(c); // reset for a later seek / replay
+			}
+
+			auto eof_frame = std::make_shared<av_frame>();
+			eof_frame->eof = true;
+			eof_frame->gen = seek_ver;
+			frames.push(eof_frame);
+		}
+		else if (c != nullptr)
 		{
 			if (packet->is_empty())
 			{
@@ -1928,7 +2233,7 @@ void av_format_decoder::receive_frames(av_packet_queue& packets, av_frame_queue&
 					while (rec_res == 0)
 					{
 						frame->gen = seek_ver;
-						frame->time = calc_duration(pts_c->guess(frame->frm.pts, frame->frm.pkt_dts), base, start);
+						frame->time = calc_duration(pts_c->guess(frame->frm.pts, frame->frm.pkt_dts, frame->frm.duration), base, start);
 						frame->orientation = calc_orientation();
 						frames.push(frame);
 
@@ -1954,7 +2259,7 @@ void av_format_decoder::receive_frames(av_packet_queue& packets, av_frame_queue&
 							update_orientation(&frame->frm);
 
 							frame->gen = seek_ver;
-							frame->time = calc_duration(pts_c->guess(frame->frm.pts, frame->frm.pkt_dts), base, start);
+							frame->time = calc_duration(pts_c->guess(frame->frm.pts, frame->frm.pkt_dts, frame->frm.duration), base, start);
 							frame->orientation = calc_orientation();
 							frames.push(frame);
 
@@ -1971,9 +2276,8 @@ void av_format_decoder::receive_frames(av_packet_queue& packets, av_frame_queue&
 
 void av_session::state(const av_play_state new_state)
 {
-	if (_state != new_state)
+	if (_state.exchange(new_state) != new_state)
 	{
-		_state = new_state;
 		_host.invalidate_view(view_invalid::view_layout |
 			view_invalid::screen_saver |
 			view_invalid::app_layout |
@@ -2014,6 +2318,8 @@ void av_session::seek(const double pos, const bool scrubbing)
 			_seek_gen += 1;
 			_pending_time_sync = true;
 			_reset_time_offset = !_decoder.has_audio(); // && !scrubbing;
+			_settling = true;
+			_audio_eof_handled = false;
 			_last_seek = pos;
 		}
 	}

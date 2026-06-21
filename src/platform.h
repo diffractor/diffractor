@@ -645,6 +645,19 @@ namespace platform
 		~thread_init();
 	};
 
+	// RAII helper that registers the current thread with the Multimedia Class
+	// Scheduler Service (MMCSS) as a "Pro Audio" task so it is not starved by
+	// heavier CPU work (notably video decoding) - starvation of the audio thread
+	// lets the WASAPI ring underrun and replay its stale contents.
+	class media_thread_priority
+	{
+		void* _task = nullptr;
+
+	public:
+		media_thread_priority();
+		~media_thread_priority();
+	};
+
 	extern uint32_t wait_for_timeout;
 	uint32_t wait_for(const std::vector<std::reference_wrapper<thread_event>>& events, uint32_t timeout_ms,
 	                  bool wait_all);

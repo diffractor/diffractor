@@ -231,7 +231,12 @@ public:
 	}
 };
 
-static resource_font_file_loader font_loader;
+// Immortal singleton: registered with the shared DWrite factory and referenced (via
+// CreateCustomFontFileReference) by custom font faces. It must outlive every DWrite object
+// that depends on it, including during C++ static destruction whose order across translation
+// units is undefined. It is therefore heap-allocated once and intentionally never freed
+// (its Release() is already a deliberate no-op for the same reason).
+static resource_font_file_loader& font_loader = *new resource_font_file_loader();
 
 class resource_font_file_enumerator final : public IDWriteFontFileEnumerator
 {
@@ -311,7 +316,7 @@ public:
 				&font_loader,
 				&current);
 
-			df::log(__FUNCTION__, std::format("CreateCustomFontFileReference {}", hr));
+			df::log(__FUNCTION__, std::format("CreateCustomFontFileReference {:x}", static_cast<uint32_t>(hr)));
 
 			if (SUCCEEDED(hr))
 			{
@@ -390,7 +395,9 @@ public:
 	}
 };
 
-static resource_font_collection_loader font_collection_loader;
+// Immortal singleton (see font_loader above): heap-allocated once and never freed so it
+// cannot be destroyed before the DWrite objects that depend on it during process teardown.
+static resource_font_collection_loader& font_collection_loader = *new resource_font_collection_loader();
 
 
 static font_renderer_ptr create_font_renderer(IDWriteFactory* dwrite, IDWriteFontCollection* font_collection,
@@ -483,7 +490,7 @@ font_renderer_ptr factories::create_icon_font_face(const int font_height)
 	}
 	else
 	{
-		df::log(__FUNCTION__, std::format("CreateCustomFontCollection failed {:x}", hr));
+		df::log(__FUNCTION__, std::format("CreateCustomFontCollection failed {:x}", static_cast<uint32_t>(hr)));
 	}
 
 	if (!result)
@@ -516,7 +523,7 @@ font_renderer_ptr factories::create_petscii_font_face(const int font_height)
 	}
 	else
 	{
-		df::log(__FUNCTION__, std::format("CreateCustomFontCollection failed {:x}", hr));
+		df::log(__FUNCTION__, std::format("CreateCustomFontCollection failed {:x}", static_cast<uint32_t>(hr)));
 	}
 
 	if (!result)
@@ -543,9 +550,9 @@ void factories::register_fonts() const
 	{
 		auto hr = dwrite->RegisterFontFileLoader(&font_loader);
 		df::assert_true(SUCCEEDED(hr));
-		df::log(__FUNCTION__, std::format("RegisterFontFileLoader {:x}", hr));
+		df::log(__FUNCTION__, std::format("RegisterFontFileLoader {:x}", static_cast<uint32_t>(hr)));
 		hr = dwrite->RegisterFontCollectionLoader(&font_collection_loader);
-		df::log(__FUNCTION__, std::format("RegisterFontCollectionLoader {:x}", hr));
+		df::log(__FUNCTION__, std::format("RegisterFontCollectionLoader {:x}", static_cast<uint32_t>(hr)));
 		df::assert_true(SUCCEEDED(hr));
 	}
 }

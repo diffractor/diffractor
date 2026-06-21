@@ -501,6 +501,69 @@ public:
 		}
 	}
 
+	void write_silence() override
+	{
+		platform::shared_lock lock(_rw);
+
+		if (!_render || !_audio)
+		{
+			return;
+		}
+
+		uint32_t bufferFrameCount = 0;
+		uint32_t numFramesPadding = 0;
+
+		auto hr = _audio->GetBufferSize(&bufferFrameCount);
+
+		if (SUCCEEDED(hr))
+		{
+			hr = _audio->GetCurrentPadding(&numFramesPadding);
+		}
+
+		if (SUCCEEDED(hr))
+		{
+			// Keep a silent cushion queued so an underrun plays silence rather than
+			// looping the last buffer. Half a second gives the audio thread plenty of
+			// slack against scheduling delays (e.g. the video-decode burst when the
+			// view seeks back to the start at end of clip). The ring is one second
+			// long (see Initialize).
+			const uint32_t target = _pwfx ? _pwfx->nSamplesPerSec / 2 : 0u; // ~500 ms
+
+			if (numFramesPadding < target)
+			{
+				const auto frames = std::min<uint32_t>(target - numFramesPadding,
+				                                       bufferFrameCount - numFramesPadding);
+
+				if (frames > 0)
+				{
+					uint8_t* pData = nullptr;
+					hr = _render->GetBuffer(frames, &pData);
+
+					if (SUCCEEDED(hr) && pData && _pwfx)
+					{
+						// Write actual zeros rather than relying on
+						// AUDCLNT_BUFFERFLAGS_SILENT: GetBuffer hands back a slot in the
+						// ring that still holds the last audio, and some drivers ignore
+						// the SILENT flag and play it - which replays ("repeats") the last
+						// sound buffer at the end of a clip, especially when the audio
+						// stream ends before the video.
+						memset(pData, 0, static_cast<size_t>(frames) * _pwfx->nBlockAlign);
+						hr = _render->ReleaseBuffer(frames, 0);
+					}
+					else if (SUCCEEDED(hr))
+					{
+						hr = _render->ReleaseBuffer(frames, AUDCLNT_BUFFERFLAGS_SILENT);
+					}
+				}
+			}
+		}
+
+		if (FAILED(hr))
+		{
+			update_status(hr);
+		}
+	}
+
 	void volume(const double vol) override
 	{
 		platform::shared_lock lock(_rw);

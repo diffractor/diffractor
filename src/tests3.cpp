@@ -13,6 +13,7 @@
 
 #include "metadata_xmp.h"
 #include "test_utils.h"
+#include "av_format.h"
 
 static void should_replace_tokens()
 {
@@ -326,6 +327,87 @@ static void should_scan_avi()
 	assert_metadata(expected, *actual.to_props(), "Byzantium.avi");
 }
 
+static void should_extract_dv_datetime()
+{
+	// Build a minimal raw DV frame (one DIF sequence) carrying the VAUX
+	// recording-date (0x62) and recording-time (0x63) packs at the offsets the
+	// DV format places them (VAUX DIF block 3 of the sequence).
+	std::vector<uint8_t> frame(12000, 0);
+
+	auto* const date_pack = &frame[80 * 3 + 13];
+	date_pack[0] = 0x62; // VAUX recording date pack id
+	date_pack[1] = 0xff; // timezone unknown
+	date_pack[2] = 0xc0 | (1 << 4) | 5; // day 15 (reserved bits set)
+	date_pack[3] = (0 << 4) | 7; // month 07
+	date_pack[4] = (0 << 4) | 3; // year 03 -> 2003
+
+	auto* const time_pack = &frame[80 * 3 + 18];
+	time_pack[0] = 0x63; // VAUX recording time pack id
+	time_pack[1] = 0xff; // frames unknown
+	time_pack[2] = (4 << 4) | 5; // 45 seconds
+	time_pack[3] = (3 << 4) | 0; // 30 minutes
+	time_pack[4] = (1 << 4) | 4; // 14 hours
+
+	const auto actual = dv_extract_rec_datetime(frame.data(), frame.size());
+	assert_equal(df::date_t(2003, 7, 15, 14, 30, 45), actual, "dv rec datetime");
+
+	// A frame without recording packs must yield an invalid (absent) date.
+	const std::vector<uint8_t> empty_frame(12000, 0);
+	assert_equal(false, dv_extract_rec_datetime(empty_frame.data(), empty_frame.size()).is_valid(),
+	             "dv no packs");
+}
+
+static void should_correct_pts()
+{
+	// av_pts_correction reproduces FFmpeg's guess_correct_pts (pick the less
+	// faulty of PTS/DTS) and then guarantees a strictly increasing result so the
+	// presenter can always order frames. AV_NOPTS_VALUE is INT64_MIN; mirror it
+	// here so the test does not need to pull in the libav* headers.
+	constexpr int64_t nopts = std::numeric_limits<int64_t>::min();
+
+	// Clean, monotonic PTS passes straight through.
+	{
+		av_pts_correction pc;
+		assert_equal(0, static_cast<int>(pc.guess(0, 0, 100)), "monotonic 0");
+		assert_equal(100, static_cast<int>(pc.guess(100, 100, 100)), "monotonic 100");
+		assert_equal(200, static_cast<int>(pc.guess(200, 200, 100)), "monotonic 200");
+	}
+
+	// A duplicated PTS must not be returned verbatim - that would make the
+	// presenter treat the frame as "not newer" and stall - so it is advanced by
+	// one frame duration instead.
+	{
+		av_pts_correction pc;
+		assert_equal(0, static_cast<int>(pc.guess(0, nopts, 100)), "dup first");
+		assert_equal(100, static_cast<int>(pc.guess(100, nopts, 100)), "dup second");
+		assert_equal(200, static_cast<int>(pc.guess(100, nopts, 100)), "dup advanced by duration");
+	}
+
+	// With no timestamps at all (raw / MJPEG streams) and no reported duration,
+	// the timeline still advances using the cadence learned from earlier frames.
+	{
+		av_pts_correction pc;
+		assert_equal(0, static_cast<int>(pc.guess(0, nopts, 0)), "nopts first");
+		assert_equal(40, static_cast<int>(pc.guess(40, nopts, 0)), "nopts learn cadence");
+		assert_equal(80, static_cast<int>(pc.guess(nopts, nopts, 0)), "nopts synth 1");
+		assert_equal(120, static_cast<int>(pc.guess(nopts, nopts, 0)), "nopts synth 2");
+	}
+
+	// Invariant: however messy the PTS (duplicates, backward jumps), the output is
+	// always strictly increasing.
+	{
+		av_pts_correction pc;
+		const int64_t messy[] = {0, 200, 100, 100, 400, 300, 500};
+		auto prev = nopts;
+		for (const auto p : messy)
+		{
+			const auto t = pc.guess(p, nopts, 50);
+			if (prev != nopts) assert_equal(true, t > prev, "strictly increasing");
+			prev = t;
+		}
+	}
+}
+
 static void should_scan_raw()
 {
 	const auto load_path = test_files_folder.combine("raw").combine_file("Screws.CR2");
@@ -460,6 +542,29 @@ static void should_load_po()
 	             "reset_database");
 }
 
+static void should_ignore_extra_plural_forms()
+{
+	// Czech (and Polish, Russian, ...) declare a third plural form: msgstr[2].
+	// Diffractor uses a binary one/plural model, so the extra form must be
+	// ignored - not appended to the singular (msgstr[0]) value.
+	const auto path = _temps.next_path(".po");
+
+	{
+		std::ofstream fs(platform::to_file_system_path(path));
+		fs << "msgid \"one apple\"\n";
+		fs << "msgid_plural \"{count} apples\"\n";
+		fs << "msgstr[0] \"jedno jablko\"\n";
+		fs << "msgstr[1] \"{count} jablka\"\n";
+		fs << "msgstr[2] \"{count} jablek\"\n";
+	}
+
+	const auto po_entries = load_po(path);
+
+	assert_equal(1, static_cast<int>(po_entries.size()), "entry count");
+	assert_equal("jedno jablko", po_entries.front().str, "singular ignores msgstr[2]");
+	assert_equal("{count} jablka", po_entries.front().str_plural, "plural form");
+}
+
 void register_tests3(view_state& state, test_registry& tests)
 {
 	//
@@ -467,6 +572,8 @@ void register_tests3(view_state& state, test_registry& tests)
 	//
 	tests.add("Should scan jpg metadata"s, should_scan_jpeg);
 	tests.add("Should scan avi metadata"s, should_scan_avi);
+	tests.add("Should extract dv datetime"s, should_extract_dv_datetime);
+	tests.add("Should correct pts"s, should_correct_pts);
 	tests.add("Should scan mov metadata"s, should_scan_mov);
 	tests.add("Should scan mp3 metadata"s, should_scan_mp3);
 	tests.add("Should scan mp4 metadata"s, should_scan_mp4);
@@ -494,4 +601,5 @@ void register_tests3(view_state& state, test_registry& tests)
 	//
 	tests.add("Should parse facebook Json"s, should_parse_facebook_json);
 	tests.add("Should load po"s, should_load_po);
+	tests.add("Should ignore extra plural forms"s, should_ignore_extra_plural_forms);
 }

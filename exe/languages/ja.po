@@ -128,7 +128,7 @@ msgid "Donate online."
 msgstr "オンラインで寄付する"
 
 msgid "Cancel was pressed after "
-msgstr "指定時間経過後、キャンセルされました"
+msgstr "指定時間経過後、キャンセルされました "
 
 msgid "Cannot updated metadata of this file type."
 msgstr "このファイル形式のメタデータは更新できません。"
@@ -140,7 +140,7 @@ msgid "Click for collection options"
 msgstr "クリックしてコレクションオプションを表示"
 
 msgid "Scroll map to select a location. Use mouse-wheel to zoom."
-msgstr ""
+msgstr "地図をスクロールして場所を選択します。マウスホイールでズームします。"
 
 msgid "Click to search for similar items in the collection."
 msgstr "クリックしてコレクション内の類似アイテムを検索"
@@ -3076,6 +3076,9 @@ msgstr "範囲"
 
 msgid "Value"
 msgstr "値"
+
+msgid "Volume 200%"
+msgstr "音量 200%"
 
 msgid "Volume 100%"
 msgstr "音量 100%"

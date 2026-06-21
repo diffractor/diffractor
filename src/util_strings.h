@@ -361,7 +361,7 @@ namespace str
 		}
 
 		return result;
-	};
+	}
 
 	inline std::wstring utf8_to_utf16(const std::string_view s)
 	{

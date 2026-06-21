@@ -340,6 +340,11 @@ std::string df::format_term(const search_term& term)
 			result << "ext:";
 			result << term.text;
 		}
+		else if (term.type == search_term_type::volume)
+		{
+			result << "volume:";
+			result << term_quote(term.text);
+		}
 		else if (term.type == search_term_type::duplicate)
 		{
 			result << "@";
@@ -750,6 +755,11 @@ void df::search_t::parse_part(const search_part& part)
 		str::icmp(part.scope, "type") == 0)
 	{
 		result = search_term(search_term_type::extension, part.term, part.modifier);
+	}
+	else if (str::icmp(part.scope, "volume") == 0 ||
+		str::icmp(part.scope, "vol") == 0)
+	{
+		result = search_term(search_term_type::volume, part.term, part.modifier);
 	}
 	else if (str::icmp(part.scope, "age") == 0 || str::icmp(part.scope, tt.query_age) == 0)
 	{
@@ -1812,6 +1822,23 @@ static bool eq_ext(std::string_view ext1, std::string_view ext2)
 	return str::icmp(ext1, ext2) == 0;
 }
 
+bool df::match_volume_label(const std::string_view folder_name, const df::hash_map<char, str::cached>& drive_labels,
+                            const search_term& term)
+{
+	if (folder_name.size() >= 2 && folder_name[1] == ':')
+	{
+		const auto drive_letter = static_cast<char>(str::to_upper(static_cast<unsigned char>(folder_name[0])));
+		const auto found = drive_labels.find(drive_letter);
+
+		if (found != drive_labels.end())
+		{
+			return same_term(found->second.sv(), term);
+		}
+	}
+
+	return false;
+}
+
 df::search_result df::search_matcher::match_term(const str::cached folder_name, const index_file_item& file,
                                                  const search_term& term) const
 {
@@ -1836,6 +1863,15 @@ df::search_result df::search_matcher::match_term(const str::cached folder_name, 
 		if (match_ext == term.modifiers.positive)
 		{
 			result.type = search_result_type::match_ext;
+		}
+	}
+	else if (term.type == search_term_type::volume)
+	{
+		const bool match_vol = match_volume_label(folder_name.sv(), _drive_labels, term);
+
+		if (match_vol == term.modifiers.positive)
+		{
+			result.type = search_result_type::match_volume;
 		}
 	}
 	else if (term.type == search_term_type::location)

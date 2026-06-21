@@ -167,6 +167,58 @@ public:
 		}
 	}
 
+	// Linearly ramps the last `seconds` of buffered audio down to silence so a clip
+	// that ends on a non-zero sample does not produce an audible click when the
+	// following silence (or stop) begins.
+	void apply_fade_out(const double seconds)
+	{
+		const auto bps = format.bytes_per_second();
+		const auto channels = format.channel_count();
+		const auto sample_size = format.bytes_per_sample();
+
+		if (bps == 0 || channels == 0 || sample_size == 0 || end_pos == 0)
+		{
+			return;
+		}
+
+		const auto frame_bytes = channels * sample_size;
+		auto fade_bytes = std::min(end_pos, static_cast<uint32_t>(seconds * bps));
+		fade_bytes -= fade_bytes % frame_bytes;
+
+		if (fade_bytes == 0)
+		{
+			return;
+		}
+
+		const auto fade_frames = fade_bytes / frame_bytes;
+		auto* p = data + (end_pos - fade_bytes);
+
+		for (uint32_t f = 0; f < fade_frames; ++f)
+		{
+			const auto gain = 1.0f - static_cast<float>(f + 1) / static_cast<float>(fade_frames);
+
+			for (uint32_t ch = 0; ch < channels; ++ch)
+			{
+				switch (format.sample_fmt)
+				{
+				case prop::audio_sample_t::signed_float:
+					reinterpret_cast<float*>(p)[ch] *= gain;
+					break;
+				case prop::audio_sample_t::signed_16bit:
+					reinterpret_cast<int16_t*>(p)[ch] = static_cast<int16_t>(reinterpret_cast<int16_t*>(p)[ch] * gain);
+					break;
+				case prop::audio_sample_t::signed_32bit:
+					reinterpret_cast<int32_t*>(p)[ch] = static_cast<int32_t>(reinterpret_cast<int32_t*>(p)[ch] * gain);
+					break;
+				default:
+					break;
+				}
+			}
+
+			p += frame_bytes;
+		}
+	}
+
 	double end_time() const
 	{
 		const auto bps = format.bytes_per_second();
@@ -204,6 +256,9 @@ public:
 	virtual void start() = 0;
 	virtual void stop() = 0;
 	virtual void write(audio_buffer& audio_buffer) = 0;
+	// Queues a short run of silence so an underrun plays silence instead of looping
+	// the last buffer (used to keep the tail clean at end of stream).
+	virtual void write_silence() = 0;
 	virtual void volume(double x) = 0;
 };
 

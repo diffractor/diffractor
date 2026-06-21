@@ -16,6 +16,12 @@
 
 constexpr auto default_custom_folder_structure = "{year}\\{created}";
 
+// Volume boost above 100%. The device volume caps at 100%, so the 100%..200%
+// setting range maps onto a 1x..media_volume_boost_gain software gain - large
+// enough to lift very quiet sources well above unity.
+constexpr int media_volume_boost = 2000;
+constexpr double media_volume_boost_gain = 8.0;
+
 namespace features
 {
 	constexpr uint64_t show_photo = 1ull << 0;

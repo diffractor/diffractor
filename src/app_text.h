@@ -198,6 +198,7 @@ struct app_text_t
 	text_t tooltip_play = "Play or pause video and audio files. Start a slide show if a photo is selected.";
 	text_t command_zoom = "Zoom 100%";
 	text_t command_toggle_volume = "Toggle volume";
+	text_t command_volume200 = "Volume 200%";
 	text_t command_volume100 = "Volume 100%";
 	text_t command_volume75 = "Volume 75%";
 	text_t command_volume50 = "Volume 50%";

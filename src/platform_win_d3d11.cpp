@@ -83,7 +83,7 @@ bool factories::init(const bool use_gpu)
 
 	if (FAILED(hr))
 	{
-		df::log(__FUNCTION__, std::format("Failed to create ID2D1Factory2 {:x}", hr));
+		df::log(__FUNCTION__, std::format("Failed to create ID2D1Factory2 {:x}", static_cast<uint32_t>(hr)));
 	}
 
 	if (SUCCEEDED(hr))
@@ -93,7 +93,7 @@ bool factories::init(const bool use_gpu)
 
 		if (FAILED(hr))
 		{
-			df::log(__FUNCTION__, std::format("Failed to create IDWriteFactory {:x}", hr));
+			df::log(__FUNCTION__, std::format("Failed to create IDWriteFactory {:x}", static_cast<uint32_t>(hr)));
 		}
 	}
 
@@ -108,7 +108,7 @@ bool factories::init(const bool use_gpu)
 
 		if (FAILED(hr))
 		{
-			df::log(__FUNCTION__, std::format("Failed to create IDXGIFactory {:x}", hr));
+			df::log(__FUNCTION__, std::format("Failed to create IDXGIFactory {:x}", static_cast<uint32_t>(hr)));
 		}
 	}
 
@@ -119,7 +119,7 @@ bool factories::init(const bool use_gpu)
 
 		if (FAILED(hr))
 		{
-			df::log(__FUNCTION__, std::format("Failed to create IWICImagingFactory {:x}", hr));
+			df::log(__FUNCTION__, std::format("Failed to create IWICImagingFactory {:x}", static_cast<uint32_t>(hr)));
 		}
 	}
 
@@ -144,9 +144,6 @@ bool factories::init(const bool use_gpu)
 			D3D_FEATURE_LEVEL_11_0,
 			D3D_FEATURE_LEVEL_10_1,
 			D3D_FEATURE_LEVEL_10_0,
-			D3D_FEATURE_LEVEL_9_3,
-			D3D_FEATURE_LEVEL_9_2,
-			D3D_FEATURE_LEVEL_9_1,
 		};
 
 		constexpr D3D_FEATURE_LEVEL feature_levels_11[] =
@@ -154,45 +151,22 @@ bool factories::init(const bool use_gpu)
 			D3D_FEATURE_LEVEL_11_0,
 			D3D_FEATURE_LEVEL_10_1,
 			D3D_FEATURE_LEVEL_10_0,
-			D3D_FEATURE_LEVEL_9_3,
-			D3D_FEATURE_LEVEL_9_2,
-			D3D_FEATURE_LEVEL_9_1,
 		};
 
 		auto driver_type = D3D_DRIVER_TYPE_HARDWARE;
 
 		if (use_gpu)
 		{
-			//size_t BestAdapterVMem = 0;
-
-			const ComPtr<IDXGIAdapter> intel_adapter;
-			ComPtr<IDXGIAdapter> adapter;
-			ComPtr<IDXGIFactory> factory;
-
-			//if (SUCCEEDED(CreateDXGIFactory(__uuidof(IDXGIFactory), (void**)&factory)))
-			//{
-			//	for (uint32_t i = 0; factory->EnumAdapters(i, &adapter) != DXGI_ERROR_NOT_FOUND; i++)
-			//	{
-			//		DXGI_ADAPTER_DESC adapter_desc;
-			//		adapter->GetDesc(&adapter_desc);
-			//		
-			//		if (adapter_desc.VendorId == 0x00008086) // intel's vendor ID
-			//		{
-			//			intel_adapter = adapter;
-			//		}
-
-			//		adapter = nullptr;
-			//	}
-			//}
-
-			hr = D3D11CreateDevice(intel_adapter.Get(), driver_type, nullptr, create_device_flags, feature_levels_11_1,
+			// Use the default adapter (nullptr) with D3D_DRIVER_TYPE_HARDWARE for the broadest
+			// compatibility - the runtime selects the primary hardware device.
+			hr = D3D11CreateDevice(nullptr, driver_type, nullptr, create_device_flags, feature_levels_11_1,
 			                       std::size(feature_levels_11_1), D3D11_SDK_VERSION, &device,
 			                       &feature_level, &context);
 
 			if (hr == E_INVALIDARG)
 			{
 				df::log(__FUNCTION__, "D3D11CreateDevice failed with 11_1 - trying 11");
-				hr = D3D11CreateDevice(intel_adapter.Get(), driver_type, nullptr, create_device_flags,
+				hr = D3D11CreateDevice(nullptr, driver_type, nullptr, create_device_flags,
 				                       feature_levels_11, std::size(feature_levels_11),
 				                       D3D11_SDK_VERSION, &device, &feature_level, &context);
 			}
@@ -272,6 +246,14 @@ bool factories::init(const bool use_gpu)
 void factories::destroy()
 {
 	df::scope_rendering_func rf(__FUNCTION__);
+
+	// Tear down DirectWrite in the correct order: release all font objects (faces, text
+	// formats, collections) first, THEN detach the custom loaders, THEN release the factory.
+	// Releasing the factory before the font objects (the previous order) relied on COM
+	// reference counting to keep it alive and could leave the loaders attached while font
+	// objects were still being freed.
+	font_renderers.clear();
+	font_collection.Reset();
 	unregister_fonts();
 
 	dxgi.Reset();
@@ -282,8 +264,6 @@ void factories::destroy()
 	d3d_context.Reset();
 	//composition_device.Reset();
 	dxgi_device.Reset();
-	font_collection.Reset();
-	font_renderers.clear();
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -548,16 +528,17 @@ public:
 	HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
 	                                         void** ppvObject) override
 	{
-		if (riid == __uuidof(IDWriteTextRenderer))
+		// IDWriteTextRenderer derives from IDWritePixelSnapping derives from IUnknown, so a single
+		// static_cast yields a valid pointer for all three IIDs.
+		if (riid == __uuidof(IUnknown) ||
+			riid == __uuidof(IDWritePixelSnapping) ||
+			riid == __uuidof(IDWriteTextRenderer))
 		{
 			*ppvObject = static_cast<IDWriteTextRenderer*>(this);
 		}
-		else if (riid == __uuidof(IDWritePixelSnapping))
-		{
-			*ppvObject = static_cast<IDWritePixelSnapping*>(this);
-		}
 		else
 		{
+			*ppvObject = nullptr;
 			return E_NOINTERFACE;
 		}
 
@@ -567,13 +548,12 @@ public:
 
 	ULONG STDMETHODCALLTYPE AddRef() override
 	{
-		return InterlockedIncrement(reinterpret_cast<LONG*>(&_ref_count));
+		return static_cast<ULONG>(++_ref_count);
 	}
 
 	ULONG STDMETHODCALLTYPE Release() override
 	{
-		const auto ref = InterlockedDecrement(reinterpret_cast<LONG*>(&_ref_count));
-		return ref;
+		return static_cast<ULONG>(--_ref_count);
 	}
 
 	HRESULT STDMETHODCALLTYPE IsPixelSnappingDisabled(void* clientDrawingContext, BOOL* isDisabled) override
@@ -1029,10 +1009,9 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGIS
 				_f->d3d_device->QueryInterface(__uuidof(ID3D10Multithread), std::bit_cast<void**>(multithread.
 					GetAddressOf()))))
 			{
-				if (!multithread->SetMultithreadProtected(TRUE))
-				{
-					df::log(__FUNCTION__, "Warning: Failed to enable multithread protection");
-				}
+				// SetMultithreadProtected returns the PREVIOUS protection state (a BOOL), not a
+				// success/failure HRESULT, so its result must not be treated as an error indicator.
+				multithread->SetMultithreadProtected(TRUE);
 				multithread = nullptr;
 			}
 			else
@@ -1129,7 +1108,7 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGIS
 
 			if (FAILED(hr))
 			{
-				df::log(__FUNCTION__, std::format("CreateBlendState failed {:x}", hr));
+				df::log(__FUNCTION__, std::format("CreateBlendState failed {:x}", static_cast<uint32_t>(hr)));
 			}
 		}
 
@@ -1143,7 +1122,7 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGIS
 
 			if (FAILED(hr))
 			{
-				df::log(__FUNCTION__, std::format("CreateRasterizerState failed {:x}", hr));
+				df::log(__FUNCTION__, std::format("CreateRasterizerState failed {:x}", static_cast<uint32_t>(hr)));
 			}
 		}
 
@@ -1164,7 +1143,7 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGIS
 
 			if (FAILED(hr))
 			{
-				df::log(__FUNCTION__, std::format("CreateSamplerState point failed {:x}", hr));
+				df::log(__FUNCTION__, std::format("CreateSamplerState point failed {:x}", static_cast<uint32_t>(hr)));
 			}
 
 			sampler_desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
@@ -1173,7 +1152,7 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGIS
 
 			if (FAILED(hr))
 			{
-				df::log(__FUNCTION__, std::format("CreateSamplerState bilinear failed {:x}", hr));
+				df::log(__FUNCTION__, std::format("CreateSamplerState bilinear failed {:x}", static_cast<uint32_t>(hr)));
 			}
 		}
 
@@ -1182,7 +1161,7 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGIS
 
 	if (FAILED(hr))
 	{
-		df::log(__FUNCTION__, std::format("draw_context_d3d11_impl::create failed {:x}", hr));
+		df::log(__FUNCTION__, std::format("draw_context_d3d11_impl::create failed {:x}", static_cast<uint32_t>(hr)));
 
 		if (use_gpu)
 		{
@@ -1277,7 +1256,7 @@ void d3d11_draw_context_impl::build_index_and_vertex_buffers()
 		}
 		else
 		{
-			df::log(__FUNCTION__, std::format("CreateBuffer for vertices failed: {:x}", hr));
+			df::log(__FUNCTION__, std::format("CreateBuffer for vertices failed: {:x}", static_cast<uint32_t>(hr)));
 			buffer = nullptr;
 		}
 
@@ -1311,7 +1290,7 @@ void d3d11_draw_context_impl::build_index_and_vertex_buffers()
 		}
 		else
 		{
-			df::log(__FUNCTION__, std::format("CreateBuffer for indices failed: {:x}", hr));
+			df::log(__FUNCTION__, std::format("CreateBuffer for indices failed: {:x}", static_cast<uint32_t>(hr)));
 			buffer = nullptr;
 		}
 
@@ -1495,7 +1474,7 @@ void d3d11_draw_context_impl::draw_scene(const ComPtr<ID3D11DeviceContext>& cont
 
 		if (_blend_state)
 		{
-			context->OMSetBlendState(_blend_state.Get(), nullptr, 0xFFFFFF);
+			context->OMSetBlendState(_blend_state.Get(), nullptr, 0xFFFFFFFF);
 		}
 
 		constexpr DirectX::XMVECTORF32 bg_color = {{0.222f, 0.222f, 0.222f, 1.0f}};
@@ -2325,12 +2304,12 @@ ui::texture_update_result d3d11_texture::update(const sizei dims, const ui::text
 			if (hr == E_FAIL)
 			{
 				df::log(__FUNCTION__, std::format("CreateTexture2D {} ({} x {}) ****** crashed ******",
-				                                  to_string(fmt), cx, cy, hr));
+				                                  to_string(fmt), cx, cy));
 			}
 			else
 			{
 				df::log(__FUNCTION__,
-				        std::format("CreateTexture2D {} ({} x {}) failed: {:x}", to_string(fmt), cx, cy, hr));
+				        std::format("CreateTexture2D {} ({} x {}) failed: {:x}", to_string(fmt), cx, cy, static_cast<uint32_t>(hr)));
 			}
 		}
 	}

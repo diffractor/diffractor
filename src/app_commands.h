@@ -109,6 +109,7 @@ enum class commands
 	playback_volume_toggle,
 	playback_volume0,
 	playback_volume100,
+	playback_volume200,
 	playback_volume25,
 	playback_volume50,
 	playback_volume75,

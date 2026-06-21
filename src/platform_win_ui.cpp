@@ -1607,7 +1607,7 @@ public:
 		const auto wnd = hwnd();
 
 		return IsWindowVisible(wnd) != 0
-			&& IsIconic(wnd) != 0;
+			&& IsIconic(wnd) == 0;
 	}
 
 	bool has_focus() const override
@@ -1853,12 +1853,15 @@ public:
 
 	HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** ppvObject) override
 	{
-		if (IsEqualGUID(iid, IID_IEnumString))
+		if (ppvObject == nullptr) return E_POINTER;
+
+		if (IsEqualGUID(iid, IID_IEnumString) || IsEqualGUID(iid, IID_IUnknown))
 		{
 			*ppvObject = static_cast<IEnumString*>(this);
 			return S_OK;
 		}
 
+		*ppvObject = nullptr;
 		return E_NOINTERFACE;
 	}
 
@@ -1896,13 +1899,12 @@ public:
 
 	HRESULT STDMETHODCALLTYPE Skip(ULONG celt) override
 	{
-		while (celt > 0)
+		while (celt > 0 && _walk != _data.end())
 		{
-			if (_walk->empty()) return S_FALSE;
 			--celt;
 			++_walk;
 		}
-		return S_OK;
+		return celt == 0 ? S_OK : S_FALSE;
 	}
 
 	HRESULT STDMETHODCALLTYPE Reset() override
@@ -2642,7 +2644,7 @@ public:
 		const auto is_checked = (button_state & CDIS_CHECKED) != 0;
 		const auto is_focused = (button_state & CDIS_FOCUS) != 0;
 		const auto is_disabled = (button_state & CDIS_DISABLED) != 0;
-		const auto is_default = (button_style & BS_TYPEMASK) == BS_DEFPUSHBUTTON != 0;
+		const auto is_default = (button_style & BS_TYPEMASK) == BS_DEFPUSHBUTTON;
 		const auto is_radio_button = (button_style & BS_TYPEMASK) == BS_AUTORADIOBUTTON;
 		const auto is_check_box = (button_style & BS_TYPEMASK) == BS_AUTOCHECKBOX;
 
@@ -4287,12 +4289,15 @@ public:
 	{
 		df::trace(std::format("frame_impl::QueryInterface {}", win32_to_string(iid)));
 
-		if (IsEqualGUID(iid, IID_IDropTarget))
+		if (ppvObject == nullptr) return E_POINTER;
+
+		if (IsEqualGUID(iid, IID_IDropTarget) || IsEqualGUID(iid, IID_IUnknown))
 		{
 			*ppvObject = static_cast<IDropTarget*>(this);
 			return S_OK;
 		}
 
+		*ppvObject = nullptr;
 		return E_NOINTERFACE;
 	}
 
@@ -5718,7 +5723,9 @@ public:
 		}
 		else if (nCode < 0)
 		{
-			//lRet = CallNextHookEx(current->_hMenuHook, nCode, wParam, lParam);
+			// Per the CBT hook contract, when nCode < 0 the hook must pass the
+			// message to CallNextHookEx and return its result without processing.
+			return CallNextHookEx(current ? current->_hMenuHook : nullptr, nCode, wParam, lParam);
 		}
 		return lRet;
 	}
@@ -8061,5 +8068,7 @@ void win32_app::enable_screen_saver(const bool enable)
 
 			SetThreadExecutionState(ES_DISPLAY_REQUIRED | ES_CONTINUOUS);
 		}
+
+		_enable_screen_saver = enable;
 	}
 }

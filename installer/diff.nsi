@@ -1,7 +1,7 @@
 ;NSIS Modern User Interface
 
 !define PRODUCT_NAME "Diffractor"
-!define PRODUCT32_EXE "diffractor.exe"
+!define PRODUCT32_EXE "diffractor32.exe"
 !define PRODUCT64_EXE "diffractor64.exe"
 !define PRODUCT_PUBLISHER "Diffractor"
 !define BUILD_NUM "1206"
@@ -249,7 +249,7 @@ Section "Diffractor"
 	SetOverwrite ifnewer
 	
 	SetOutPath $INSTDIR\languages  
-;	File "..\exe\languages\cs.po"
+	File "..\exe\languages\cs.po"
 	File "..\exe\languages\de.po"
 	File "..\exe\languages\it.po"
 	File "..\exe\languages\es.po"
@@ -290,8 +290,17 @@ Section "Diffractor"
 	
 	WriteRegStr SHCTX "${PRODUCT_SETTINGS_KEY}" "" $INSTDIR	
 
-	WriteRegStr SHCTX "Software\Classes\Folder\shell\diffractor" "" "Diffractor"
-  	WriteRegStr SHCTX "Software\Classes\Folder\shell\diffractor\command" "" '"$INSTDIR\$PRODUCT_EXE" "%1"'
+	; Remove the legacy context-menu entry from older versions. It was registered under
+	; the generic "Folder" class, which has no default verb; adding the first static verb
+	; there promoted "diffractor" to the default double-click action and hijacked normal
+	; folder navigation in Explorer (folders opened in Diffractor instead of opening).
+	DeleteRegKey SHCTX "Software\Classes\Folder\shell\diffractor"
+
+	; Register the folder context-menu entry under the "Directory" class (file-system
+	; folders). "Directory\shell" ships with its default verb set to "none", so this stays
+	; a right-click entry only and never becomes the default double-click action.
+	WriteRegStr SHCTX "Software\Classes\Directory\shell\diffractor" "" "Diffractor"
+  	WriteRegStr SHCTX "Software\Classes\Directory\shell\diffractor\command" "" '"$INSTDIR\$PRODUCT_EXE" "%1"'
   	WriteRegStr SHCTX "Software\Classes\File\shell\diffractor" "" "Diffractor"
   	WriteRegStr SHCTX "Software\Classes\File\shell\diffractor\command" "" '"$INSTDIR\$PRODUCT_EXE" "%1"'
 
@@ -355,6 +364,9 @@ Section "Uninstall"
 	; remove registry keys
 	DeleteRegKey SHCTX "${PRODUCT_UNINST_KEY}"
 	DeleteRegKey SHCTX "${PRODUCT_SETTINGS_KEY}"
+	DeleteRegKey SHCTX "Software\Classes\Directory\shell\diffractor"
+	; Also remove the legacy "Folder\shell" entry written by older versions, which
+	; hijacked the default folder double-click action (see install section for details).
 	DeleteRegKey SHCTX "Software\Classes\Folder\shell\diffractor"
 	DeleteRegKey SHCTX "Software\Classes\File\shell\diffractor"
 

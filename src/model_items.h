@@ -76,6 +76,7 @@ inline double calc_thumb_scale(const sizei dimensions, const sizei limit, const 
 std::string format_invalid_name_message(std::string_view name);
 std::string_view item_presence_text(item_presence v, bool long_text);
 void parse_more_folders(df::index_roots& result, std::string_view more_folders);
+void parse_more_folders(df::index_roots& result, std::string_view more_folders, const platform::drives& drives);
 
 namespace df
 {
@@ -567,9 +568,13 @@ namespace df
 		file_type_ref _ft = file_type::other;
 		prop::item_metadata_aptr _metadata;
 		index_folder_item_ptr _info;
-		ui::const_image_ptr _thumbnail;
-		ui::const_image_ptr _cover_art;
-		mutable ui::texture_ptr _texture;
+		// _thumbnail/_cover_art/_texture are written by background scan/index/database threads
+		// (see thumbnail() setter) while the UI thread reads them every frame when drawing.
+		// They must be atomic for the same reason _metadata is - a plain shared_ptr copy racing
+		// with assignment corrupts the control block and causes heap corruption.
+		std::atomic<ui::const_image_ptr> _thumbnail;
+		std::atomic<ui::const_image_ptr> _cover_art;
+		mutable std::atomic<ui::texture_ptr> _texture;
 
 		file_size _size = {};
 		date_t _thumbnail_timestamp = {};
@@ -704,22 +709,22 @@ namespace df
 
 		bool has_thumb() const
 		{
-			return is_valid(_thumbnail);
+			return is_valid(_thumbnail.load());
 		}
 
 		bool has_cover_art() const
 		{
-			return is_valid(_cover_art);
+			return is_valid(_cover_art.load());
 		}
 
-		const ui::const_image_ptr& thumbnail() const
+		ui::const_image_ptr thumbnail() const
 		{
-			return _thumbnail;
+			return _thumbnail.load();
 		}
 
-		const ui::const_image_ptr& cover_art() const
+		ui::const_image_ptr cover_art() const
 		{
-			return _cover_art;
+			return _cover_art.load();
 		}
 
 		bool is_selected() const
@@ -783,29 +788,30 @@ namespace df
 
 		void thumbnail(ui::const_image_ptr i, ui::const_image_ptr ca, const date_t timestamp = date_t::null)
 		{
-			_thumbnail = std::move(i);
-			_cover_art = std::move(ca);
-			_texture.reset();
+			_texture.store(nullptr);
 			_thumbnail_timestamp = timestamp;
 
 			if (_ft != file_type::folder)
 			{
-				if (is_valid(_cover_art))
+				if (is_valid(ca))
 				{
-					_thumbnail_dims = _cover_art->dimensions();
-					_thumbnail_orientation = _cover_art->orientation();
+					_thumbnail_dims = ca->dimensions();
+					_thumbnail_orientation = ca->orientation();
 				}
-				else if (is_valid(_thumbnail))
+				else if (is_valid(i))
 				{
-					_thumbnail_dims = _thumbnail->dimensions();
-					_thumbnail_orientation = _thumbnail->orientation();
+					_thumbnail_dims = i->dimensions();
+					_thumbnail_orientation = i->orientation();
 				}
 			}
+
+			_thumbnail.store(std::move(i));
+			_cover_art.store(std::move(ca));
 		}
 
 		void clear_cached_surface() const
 		{
-			_texture.reset();
+			_texture.store(nullptr);
 		}
 
 		void calc_folder_summary(cancel_token token);

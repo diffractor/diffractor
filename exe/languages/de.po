@@ -3081,6 +3081,9 @@ msgstr "Scope"
 msgid "Value"
 msgstr "Wert"
 
+msgid "Volume 200%"
+msgstr "Volume 200 %"
+
 msgid "Volume 100%"
 msgstr "Volume 100 %"
 

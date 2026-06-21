@@ -117,12 +117,20 @@ std::string str::print(const std::string_view svformat, ...)
 	const std::string szFormat = utf8_cast2(svformat);
 	va_list argList;
 	va_start(argList, svformat);
+	va_list argListCopy;
+	va_copy(argListCopy, argList);
 	const auto* const format = std::bit_cast<const char*>(szFormat.c_str());
-	const auto result_length = _vscprintf(szFormat.c_str(), argList);
+	const auto result_length = _vscprintf(format, argList);
 	std::string result;
-	result.resize(result_length + 1, 0);
-	vsprintf_s(std::bit_cast<char*>(result.data()), result_length + 1, format, argList);
-	result.resize(result_length);
+
+	if (result_length > 0)
+	{
+		result.resize(result_length + 1, 0);
+		vsprintf_s(std::bit_cast<char*>(result.data()), result_length + 1, format, argListCopy);
+		result.resize(result_length);
+	}
+
+	va_end(argListCopy);
 	va_end(argList);
 	return result;
 }
@@ -131,12 +139,20 @@ std::string str::print(__in_z __format_string const char* szFormat, ...)
 {
 	va_list argList;
 	va_start(argList, szFormat);
+	va_list argListCopy;
+	va_copy(argListCopy, argList);
 	const auto* const format = std::bit_cast<const char*>(szFormat);
 	const auto result_length = _vscprintf(format, argList);
 	std::string result;
-	result.resize(result_length + 1, 0);
-	vsprintf_s(std::bit_cast<char*>(result.data()), result_length + 1, format, argList);
-	result.resize(result_length);
+
+	if (result_length > 0)
+	{
+		result.resize(result_length + 1, 0);
+		vsprintf_s(std::bit_cast<char*>(result.data()), result_length + 1, format, argListCopy);
+		result.resize(result_length);
+	}
+
+	va_end(argListCopy);
 	va_end(argList);
 	return result;
 }
@@ -557,7 +573,7 @@ void str::split2(const std::string_view text, const bool detect_quotes,
 			}
 		}
 	}
-};
+}
 
 
 df::string_map str::split_url_params(const std::string_view params)
@@ -2386,98 +2402,62 @@ int str::normalze_for_compare(const int c)
 
 bool str::wildcard_icmp(const std::string_view text_in, const std::string_view wildcard_in)
 {
-	auto is_match = true;
-
-	// The location in the tame string, from which we started after last wildcard
 	auto text = text_in.begin();
 	auto wildcard = wildcard_in.begin();
-	const auto wildcard_end = wildcard_in.end();
 	const auto text_end = text_in.end();
-	auto post_last_wildcard = wildcard_end; // The location after the last '*', if we’ve encountered one
-	auto pos_last_text = text_end;
+	const auto wildcard_end = wildcard_in.end();
 
-	// Walk the text strings one character at a time.
-	while (true)
+	// Fallback positions used when a '*' has to absorb more characters before
+	// the rest of the pattern can match. 'seen_star' distinguishes "no '*' yet"
+	// from a trailing '*' whose fallback wildcard position is wildcard_end.
+	auto star_wildcard = wildcard_end; // wildcard position just after the last '*'
+	auto star_text = text_end; // text position to retry the match from
+	auto seen_star = false;
+
+	while (text < text_end)
 	{
-		//const auto t = *text;
-		//const auto w = *wildcard;
+		auto next_text = text;
+		const auto t = normalze_for_compare(pop_utf8_char(next_text, text_end));
 
-		// How do you match a unique text string?
-		if (text == text_end)
+		if (wildcard < wildcard_end)
 		{
-			// Easy: unique up on it!
-			if (wildcard == wildcard_end)
+			auto next_wildcard = wildcard;
+			const auto w = normalze_for_compare(pop_utf8_char(next_wildcard, wildcard_end));
+
+			if (w == '*')
 			{
-				break; // "x" matches "x"
-			}
-			if (peek_utf8_char(wildcard, wildcard_end) == '*')
-			{
-				pop_utf8_char(wildcard, wildcard_end);
-				continue; // "x*" matches "x" or "xy"
-			}
-			if (pos_last_text != text_end)
-			{
-				if (pos_last_text != text_end)
-				{
-					is_match = false;
-					break;
-				}
-				pop_utf8_char(pos_last_text, text_end);
-				text = pos_last_text;
-				wildcard = post_last_wildcard;
+				// Remember where to fall back to, then step over the '*'.
+				wildcard = next_wildcard;
+				star_wildcard = next_wildcard;
+				star_text = text;
+				seen_star = true;
 				continue;
 			}
 
-			is_match = false;
-			break; // "x" doesn't match "xy"
-		}
-
-		if (wildcard == wildcard_end && text != text_end)
-		{
-			is_match = false;
-			break;
-		}
-
-		const auto t = normalze_for_compare(peek_utf8_char(text, text_end));
-		const auto w = normalze_for_compare(peek_utf8_char(wildcard, wildcard_end));
-
-		// How do you match a tame text string?
-		if (t != w)
-		{
-			// The tame way: unique up on it!
-			if (w == '*')
+			if (t == w)
 			{
-				pop_utf8_char(wildcard, wildcard_end);
-				post_last_wildcard = wildcard;
-				pos_last_text = text;
-
-				if (wildcard == wildcard_end)
-				{
-					break; // "*" matches "x"
-				}
-				continue; // "*y" matches "xy"
+				// Literal match - advance both.
+				text = next_text;
+				wildcard = next_wildcard;
+				continue;
 			}
-			if (post_last_wildcard != wildcard_end)
-			{
-				if (post_last_wildcard != wildcard)
-				{
-					wildcard = post_last_wildcard;
-
-					if (t == normalze_for_compare(peek_utf8_char(wildcard, wildcard_end)))
-					{
-						pop_utf8_char(wildcard, wildcard_end);
-					}
-				}
-				pop_utf8_char(text, text_end);
-				continue; // "*sip*" matches "mississippi"
-			}
-			is_match = false;
-			break; // "x" doesn't match "y"
 		}
 
-		pop_utf8_char(text, text_end);
-		pop_utf8_char(wildcard, wildcard_end);
+		// Either the characters differ or the pattern ran out while text
+		// remains. Backtrack to the last '*' and let it absorb one more
+		// character; with no '*' to fall back on the match fails.
+		if (!seen_star) return false;
+
+		wildcard = star_wildcard;
+		pop_utf8_char(star_text, text_end);
+		text = star_text;
 	}
 
-	return is_match;
+	// Text is exhausted - any remaining pattern must consist only of '*'.
+	while (wildcard < wildcard_end)
+	{
+		if (pop_utf8_char(wildcard, wildcard_end) != '*') return false;
+	}
+
+	return true;
 }

@@ -563,6 +563,11 @@ public:
 					return;
 			}
 
+			// Bounds check: a crafted file with many distinct IFD offsets must not
+			// overflow the fixed-size visited-offset array.
+			if (_dir_offsets_size >= std::size(_dir_offsets))
+				return;
+
 			_dir_offsets[_dir_offsets_size++] = offset;
 			const auto entry_count = _data.get_uint16(offset);
 

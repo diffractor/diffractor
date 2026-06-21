@@ -76,6 +76,7 @@ std::vector<po_entry> load_po(const df::file_path lang_file)
 		str1,
 		str,
 		id_plural,
+		ignore,
 	};
 
 	auto parse_state = parse_po_state::none;
@@ -98,6 +99,7 @@ std::vector<po_entry> load_po(const df::file_path lang_file)
 			{
 				if (str::starts(line, "msgstr[1]")) parse_state = parse_po_state::str1;
 				else if (str::starts(line, "msgstr[0]")) parse_state = parse_po_state::str;
+				else if (str::starts(line, "msgstr[")) parse_state = parse_po_state::ignore;
 				else if (str::starts(line, "msgid_plural")) parse_state = parse_po_state::id_plural;
 				else if (str::starts(line, "msgstr")) parse_state = parse_po_state::str;
 				else if (str::starts(line, "msgid")) parse_state = parse_po_state::id;
@@ -1297,6 +1299,7 @@ void app_text_t::calc_text_mapping()
 		zoom_tooltip,
 		scope,
 		value,
+		command_volume200,
 		command_volume100,
 		command_volume75,
 		command_volume50,

@@ -140,7 +140,7 @@ msgid "Click for collection options"
 msgstr "Clicca per le opzioni della collezione"
 
 msgid "Scroll map to select a location. Use mouse-wheel to zoom."
-msgstr ""
+msgstr "Scorri la mappa per selezionare una posizione. Usa la rotellina del mouse per ingrandire."
 
 msgid "Click to search for similar items in the collection."
 msgstr "Clicca per cercare elementi simili nella collezione."
@@ -2679,7 +2679,7 @@ msgid "Use '#' to specify position of the numeric sequence"
 msgstr "Usa '#' per specificare la posizione della sequenza numerica"
 
 msgid "Use metadata templates '{property-name}' to include file properties in the name."
-msgstr "Usa modelli di metadati '{nome-proprietà}' per includere le proprietà del file nel nome."
+msgstr "Usa modelli di metadati '{property-name}' per includere le proprietà del file nel nome."
 
 msgid "For example:"
 msgstr "Ad esempio:"
@@ -2688,10 +2688,10 @@ msgid "photo-###"
 msgstr "foto-###"
 
 msgid "{year}-{month}-###"
-msgstr "{anno}-{mese}-###"
+msgstr "{year}-{month}-###"
 
 msgid "travel-{country}-###"
-msgstr "viaggio-{paese}-###"
+msgstr "viaggio-{country}-###"
 
 msgid "Rename multiple files based on an incrementing sequence or file metadata template."
 msgstr "Rinomina più file in base a una sequenza incrementale o a un modello di metadati del file."
@@ -3080,6 +3080,9 @@ msgstr "Ambito"
 
 msgid "Value"
 msgstr "Valore"
+
+msgid "Volume 200%"
+msgstr "Volume 200%"
 
 msgid "Volume 100%"
 msgstr "Volume 100%"

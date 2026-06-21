@@ -148,7 +148,7 @@ msgid "Donate online."
 msgstr "Darujte online."
 
 msgid "Cancel was pressed after "
-msgstr "Poté bylo stisknuto Storno"
+msgstr "Poté bylo stisknuto Storno "
 
 msgid "Cannot updated metadata of this file type."
 msgstr "Metadata tohoto typu souboru nelze aktualizovat."
@@ -198,7 +198,7 @@ msgid "filter"
 msgstr "filtr"
 
 msgid "Close"
-msgstr "Blízký"
+msgstr "Zavřít"
 
 msgid "Collection options"
 msgstr "Možnosti sběru"
@@ -1224,7 +1224,7 @@ msgid "Classical"
 msgstr "Klasika"
 
 msgid "Close-up"
-msgstr "Blízko"
+msgstr "Detail"
 
 msgid "Cloudscape"
 msgstr "Oblaková krajina"
@@ -3005,7 +3005,7 @@ msgid "Name"
 msgstr "Název"
 
 msgid "Resolution"
-msgstr "Rezoluce"
+msgstr "Rozlišení"
 
 msgid "Rating-Label"
 msgstr "Hodnocení-štítek"
@@ -3274,6 +3274,9 @@ msgstr "Rozsah"
 
 msgid "Value"
 msgstr "Hodnota"
+
+msgid "Volume 200%"
+msgstr "objem 200 %"
 
 msgid "Volume 100%"
 msgstr "objem 100 %"
