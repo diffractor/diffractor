@@ -53,8 +53,9 @@ public:
 			dc.draw_rect(logical_bounds, bg);
 		}
 
-		const auto text_bounds = logical_bounds.inflate(-dc.padding1, 0);
-		auto yy = text_bounds.top + dc.padding1;
+		auto rr = logical_bounds.inflate(-dc.padding1, 0);
+
+		const auto clr = ui::color(dc.colors.foreground, dc.colors.alpha);
 
 		const auto city_text = match.city.text.sv();
 		const auto state_text = match.state.text.sv();
@@ -62,9 +63,11 @@ public:
 
 		if (!city_text.empty())
 		{
-			dc.draw_text(city_text, text_bounds.offset(0, yy - text_bounds.top), ui::style::font_face::dialog,
-			             ui::style::text_style::single_line, dc.colors.foreground, {});
-			yy += dc.text_line_height(ui::style::font_face::dialog) + 2;
+			const auto city_extent = dc.measure_text(city_text, ui::style::font_face::dialog,
+			                                         ui::style::text_style::single_line, rr.width());
+			dc.draw_text(city_text, rr, ui::style::font_face::dialog,
+			             ui::style::text_style::single_line, clr, {});
+			rr.left += city_extent.cx + dc.padding2;
 		}
 
 		std::string sub;
@@ -77,16 +80,16 @@ public:
 
 		if (!sub.empty())
 		{
-			dc.draw_text(sub, text_bounds.offset(0, yy - text_bounds.top), ui::style::font_face::dialog,
+			dc.draw_text(sub, rr, ui::style::font_face::dialog,
 			             ui::style::text_style::single_line,
-			             ui::color(dc.colors.foreground, 0.6f), {});
+			             ui::color(dc.colors.foreground, dc.colors.alpha * 0.6f), {});
 		}
 	}
 
 	sizei measure(ui::measure_context& mc, const int cx) const override
 	{
 		const auto line_height = mc.text_line_height(ui::style::font_face::dialog);
-		return {cx, line_height * 2 + mc.padding2 + 4};
+		return {cx, line_height + mc.padding1};
 	}
 
 	void dispatch_event(const view_element_event& event) override

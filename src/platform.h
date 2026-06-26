@@ -394,6 +394,26 @@ namespace platform
 	drop_effect perform_drag(const std::any& frame_handle, const std::vector<df::file_path>& files,
 	                         const std::vector<df::folder_path>& folders);
 
+	// Test-only probe of the drag/clipboard IDataObject. Lets tests inspect which formats
+	// are advertised (and in what order) and confirm that each file-bearing format
+	// independently resolves to the cached items exactly once. Used to reason about
+	// duplicate-import behaviour in third-party drop targets (e.g. Adobe Premiere).
+	struct data_object_probe
+	{
+		std::vector<uint32_t> enum_formats; // cfFormat ids, in EnumFormatEtc (source-preference) order
+		int hdrop_enum_index = -1; // position of CF_HDROP within enum_formats (-1 = absent)
+		int shell_id_list_enum_index = -1; // position of CFSTR_SHELLIDLIST within enum_formats (-1 = absent)
+		bool advertises_hdrop = false; // QueryGetData(CF_HDROP)
+		bool advertises_shell_id_list = false; // QueryGetData(CFSTR_SHELLIDLIST)
+		int hdrop_count = -1; // files parsed from CF_HDROP (-1 = no data returned)
+		int shell_id_list_count = -1; // CIDA cidl from CFSTR_SHELLIDLIST (-1 = no data returned)
+		std::vector<std::wstring> hdrop_paths;
+		std::vector<std::wstring> shell_id_list_paths;
+	};
+
+	data_object_probe probe_drag_data_object(const std::vector<df::file_path>& files,
+	                                          const std::vector<df::folder_path>& folders);
+
 
 	using clipboard_data_ptr = std::shared_ptr<clipboard_data>;
 

@@ -57,7 +57,7 @@ $InstallerDir = Join-Path $ScriptDir "installer"
 $SdkBinDir = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64"
 
 # Signing certificates
-$DesktopSignName = "Zachariah"
+$DesktopSignThumbprint = "B3B4EA219B9BCB79749D5E84066DDCAC61E5C4C3"
 $StoreSignThumbprint = "0BC1CD0A4F37CE2A5A2CE72DAA9B08B1EC1CB522"
 
 # Version file paths
@@ -304,7 +304,7 @@ function Invoke-SignTool {
         & $signTool sign /fd SHA256 /sha1 $StoreSignThumbprint /d Diffractor /tr "http://timestamp.sectigo.com?td=sha256" /td sha256 @Files
     }
     else {
-        & $signTool sign /fd SHA256 /tr "http://timestamp.sectigo.com/?td=sha256" /td sha256 /d Diffractor /n $DesktopSignName @Files
+        & $signTool sign /fd SHA256 /sha1 $DesktopSignThumbprint /d Diffractor /tr "http://timestamp.sectigo.com/?td=sha256" /td sha256 @Files
     }
     
     if ($LASTEXITCODE -ne 0) {

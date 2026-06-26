@@ -712,6 +712,71 @@ static void should_not_crash(const std::string_view name)
 	}
 }
 
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Premiere duplicate-import investigation
+// The drag/clipboard IDataObject advertises BOTH CF_HDROP and CFSTR_SHELLIDLIST. Per the Windows
+// shell contract a conformant drop target enumerates the offered formats and consumes the FIRST
+// one it supports (one format => one copy of each item). This test proves that each file-bearing
+// format INDEPENDENTLY resolves to the cached items exactly once, so a well-behaved consumer
+// imports a clip once, whereas a consumer that greedily reads multiple formats (the suspected
+// Premiere behaviour) would import the same clip twice.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+static void should_offer_each_drag_format_once()
+{
+	const auto file1 = test_files_folder.combine_file("Test.jpg");
+	const auto file2 = test_files_folder.combine_file("small.jpg");
+
+	assert_equal(true, file1.exists(), "Test.jpg exists");
+	assert_equal(true, file2.exists(), "small.jpg exists");
+
+	const std::vector<df::file_path> files{file1, file2};
+	const std::vector<df::folder_path> folders;
+
+	const auto probe = platform::probe_drag_data_object(files, folders);
+
+	// The source advertises BOTH file-bearing formats. This is spec-compliant source
+	// behaviour (Explorer does exactly the same), not a bug in itself.
+	assert_equal(true, probe.advertises_hdrop, "advertises CF_HDROP");
+	assert_equal(true, probe.advertises_shell_id_list, "advertises CFSTR_SHELLIDLIST");
+
+	// CF_HDROP is enumerated before CFSTR_SHELLIDLIST. A conformant target picks the
+	// first format it understands - so it consumes CF_HDROP and stops.
+	assert_equal(true, probe.hdrop_enum_index >= 0, "CF_HDROP is enumerated");
+	assert_equal(true, probe.shell_id_list_enum_index >= 0, "CFSTR_SHELLIDLIST is enumerated");
+	assert_equal(true, probe.hdrop_enum_index < probe.shell_id_list_enum_index,
+	             "CF_HDROP enumerated before CFSTR_SHELLIDLIST");
+
+	// Each file-bearing format INDEPENDENTLY resolves to exactly the 2 input items.
+	// Neither format duplicates a clip on its own - both are well-formed.
+	assert_equal(2, probe.hdrop_count, "CF_HDROP yields 2 files");
+	assert_equal(2, probe.shell_id_list_count, "CFSTR_SHELLIDLIST yields 2 items");
+	assert_equal(2, static_cast<int>(probe.hdrop_paths.size()), "CF_HDROP resolved path count");
+	assert_equal(2, static_cast<int>(probe.shell_id_list_paths.size()), "CFSTR_SHELLIDLIST resolved path count");
+
+	const auto contains_name = [](const std::vector<std::wstring>& paths, const wchar_t* name)
+	{
+		return std::ranges::any_of(paths, [name](const std::wstring& p)
+		{
+			auto lower = p;
+			std::ranges::transform(lower, lower.begin(), towlower);
+			return lower.find(name) != std::wstring::npos;
+		});
+	};
+
+	// Both formats resolve to the SAME two files.
+	assert_equal(true, contains_name(probe.hdrop_paths, L"test.jpg"), "CF_HDROP resolves Test.jpg");
+	assert_equal(true, contains_name(probe.hdrop_paths, L"small.jpg"), "CF_HDROP resolves small.jpg");
+	assert_equal(true, contains_name(probe.shell_id_list_paths, L"test.jpg"), "CFSTR_SHELLIDLIST resolves Test.jpg");
+	assert_equal(true, contains_name(probe.shell_id_list_paths, L"small.jpg"), "CFSTR_SHELLIDLIST resolves small.jpg");
+
+	// The duplicate mechanism: a conformant consumer reads ONE format => 2 imports.
+	// A consumer that greedily harvests BOTH file formats sees each clip twice => 4 imports.
+	assert_equal(2, probe.hdrop_count, "conformant consumer (one format) imports each clip once");
+	assert_equal(4, probe.hdrop_count + probe.shell_id_list_count,
+	             "greedy consumer (both file formats) would import each clip twice");
+}
+
 void register_tests6(view_state& state, test_registry& tests)
 {
 	//
@@ -741,6 +806,11 @@ void register_tests6(view_state& state, test_registry& tests)
 	tests.add("Should select correctly"s, should_select_items);
 	tests.add("Should Enable based on selection"s, should_enable_based_on_selection);
 	tests.add("Should toggle rating"s, should_toggle_rating);
+
+	//
+	// Drag / drop data object
+	//
+	tests.add("Premiere dup: drag offers each format once"s, should_offer_each_drag_format_once);
 
 #ifndef _DEBUG
 	tests.add("Should not crash on JPEG"s, [] { should_not_crash("small.jpg"); });
