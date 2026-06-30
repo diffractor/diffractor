@@ -252,6 +252,9 @@
     <ClCompile Include="app_search.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="app_gen_docs.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="platform_win.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

@@ -47,18 +47,20 @@ The `WINSTORE` define controls features that differ between Desktop and Store bu
 ```cpp
 #ifndef WINSTORE
     // Desktop-only features
-    bool check_for_updates = true;   // Auto-update checking
-    bool install_updates = true;     // Silent update installation
+    bool check_for_updates = true;   // Check online for newer versions
     bool is_tester = false;          // Beta tester flag
 #endif
 ```
 
 **Features disabled for Windows Store builds:**
-- **Auto-update checking** (`check_for_updates`) – Store handles updates
-- **Silent update installation** (`install_updates`) – Store handles updates
+- **Update checking** (`check_for_updates`) – Store handles updates
 - **Beta tester mode** (`is_tester`) – Not applicable for Store distribution
-- **`stage_update()`** – Downloads and stages installer updates
-- **`install_update_if_exists()`** – Applies staged updates on restart
+- **Manual update flow** – The desktop build checks the `/ver` endpoint for a
+  newer version and surfaces it via the lightbulb toolbar button and a
+  "Check for updates" menu item. When an update is available the user can click
+  "Install now" to download the installer to the Downloads folder and run it
+  (the installer closes any running instance). There is no silent/automatic
+  installation.
 
 **Rationale:** Windows Store apps receive updates through the Microsoft Store infrastructure. Including built-in update functionality would conflict with Store policies and create a confusing user experience.
 

@@ -449,6 +449,18 @@ msgstr "Nueva carpeta"
 msgid "New version available"
 msgstr "Nueva versión disponible"
 
+msgid "Check for updates"
+msgstr "Buscar actualizaciones"
+
+msgid "Install now"
+msgstr "Instalar ahora"
+
+msgid "Checking for updates..."
+msgstr "Buscando actualizaciones..."
+
+msgid "You are using the latest version ({})."
+msgstr "Está utilizando la versión más reciente ({})."
+
 msgid "Open"
 msgstr "Abrir"
 
@@ -2266,9 +2278,6 @@ msgstr "Avanzado"
 
 msgid "Application options"
 msgstr "Opciones de aplicación"
-
-msgid "Automatically install updates when possible"
-msgstr "Instalar actualizaciones automáticamente cuando sea posible"
 
 msgid "When overwriting a photo with irreversible changes make an original backup copy"
 msgstr "Al sobrescribir una foto con cambios irreversibles, hacer una copia de seguridad del original"

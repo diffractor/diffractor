@@ -15,6 +15,7 @@
 #include "app_command_line.h"
 
 int run_console_tests(std::string_view test_filter);
+int generate_wiki_docs(std::string_view output_folder);
 
 #include <dwmapi.h>
 #include <Dbt.h>
@@ -7496,6 +7497,32 @@ int WINAPI wWinMain(const HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, cons
 				WSACleanup();
 
 				return test_result;
+			}
+
+			// Handle /gen-docs command line option: regenerate the wiki
+			// documentation pages in console mode and exit.
+			if (cl.gen_docs)
+			{
+				if (!AttachConsole(ATTACH_PARENT_PROCESS))
+				{
+					AllocConsole();
+				}
+
+				FILE* fp = nullptr;
+				freopen_s(&fp, "CONOUT$", "w", stdout);
+				freopen_s(&fp, "CONOUT$", "w", stderr);
+
+				std::setlocale(LC_ALL, "en_US.UTF-8");
+				df::start_time = platform::now();
+				resources.init(get_resource_instance);
+
+				const int docs_result = generate_wiki_docs(cl.docs_path);
+
+				OleUninitialize();
+				CoUninitialize();
+				WSACleanup();
+
+				return docs_result;
 			}
 		}
 

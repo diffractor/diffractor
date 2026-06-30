@@ -2662,18 +2662,76 @@ static void advanced_search_invoke(view_state& state, const ui::control_frame_pt
 }
 
 #ifndef WINSTORE
-static void upgrade_invoke(view_state& s, const ui::control_frame_ptr& parent)
+static void show_update_dialog(view_state& s, const ui::control_frame_ptr& parent)
 {
 	const auto title = tt.update_title;
-	auto text = str_format(tt.update_help_fmt.sv(), setting.available_version, s_app_version);
 	df::file_path download_path_result;
 
 	auto dlg = make_dlg(parent);
 	std::vector<view_element_ptr> controls;
 
+	pause_media pause(s);
+
+	// Phase 1: always check online for a newer version, showing a busy indicator.
+	controls.emplace_back(
+		set_margin(std::make_shared<ui::title_control>(icon_index::lightbulb, tt.command_check_for_updates)));
+	controls.emplace_back(std::make_shared<ui::busy_control>(dlg->_frame, icon_index::lightbulb, tt.update_checking));
+	controls.emplace_back(std::make_shared<ui::close_control>(dlg->_frame, true, tt.button_cancel));
+
+	auto found_version = std::make_shared<std::string>();
+
+	s.queue_async(async_queue::web, [&s, dlg, found_version]
+	{
+		platform::web_request req;
+		req.path = "/ver";
+		req.query = platform::web_params{
+			{"v"s, std::string(s_app_version)},
+			{"b"s, std::string(g_app_build)},
+			{"os"s, platform::OS()},
+		};
+
+		const auto con = platform::connect_to_host("diffractor.com");
+		const auto response = platform::send_request(con, req);
+
+		std::string version;
+
+		if (response.status_code == 200)
+		{
+			df::util::json::json_doc json;
+			json.Parse(response.body);
+			version = df::util::json::safe_string(json, "current_version");
+		}
+
+		s.queue_ui([dlg, found_version, version]
+		{
+			*found_version = version;
+			dlg->close(false);
+		});
+	});
+
+	if (dlg->show_modal(controls) != ui::close_result::ok)
+	{
+		return;
+	}
+
+	if (!found_version->empty())
+	{
+		setting.available_version = *found_version;
+		s.invalidate_view(view_invalid::view_layout | view_invalid::app_layout);
+	}
+
+	// Phase 2: always show the update dialog. If a newer version is available we
+	// prompt to upgrade; otherwise we report that this is the latest version but
+	// still allow the user to reinstall.
+	const auto up_to_date = df::version(s_app_version) >= df::version(setting.available_version);
+	const auto text = up_to_date
+		                  ? str_format(tt.update_up_to_date_fmt.sv(), s_app_version)
+		                  : str_format(tt.update_help_fmt.sv(), setting.available_version, s_app_version);
+
+	controls.clear();
 	controls.emplace_back(set_margin(std::make_shared<ui::title_control>(icon_index::lightbulb, title)));
 	controls.emplace_back(set_margin(std::make_shared<text_element>(text)));
-	controls.emplace_back(std::make_shared<ui::button_control>(dlg->_frame, icon_index::import, tt.update,
+	controls.emplace_back(std::make_shared<ui::button_control>(dlg->_frame, icon_index::import, tt.update_install_now,
 	                                                           tt.update_help, [f = dlg->_frame] { f->close(); }));
 
 	controls.emplace_back(std::make_shared<ui::button_control>(dlg->_frame, icon_index::time, tt.update_not_now,
@@ -2694,8 +2752,6 @@ static void upgrade_invoke(view_state& s, const ui::control_frame_ptr& parent)
 			                                                           "https://www.diffractor.com/blog");
 		                                                           f->close(true);
 	                                                           }));
-
-	pause_media pause(s);
 
 	if (dlg->show_modal(controls) == ui::close_result::ok)
 	{
@@ -2721,6 +2777,8 @@ static void upgrade_invoke(view_state& s, const ui::control_frame_ptr& parent)
 
 		if (dlg->show_modal(controls) == ui::close_result::ok)
 		{
+			// Launch the downloaded installer. It is interactive and will close any
+			// running instance of Diffractor before installing over the current folder.
 			const auto module_folder = known_path(platform::known_folder::running_app_folder);
 			const auto install_result = platform::install(download_path_result, module_folder, false, false);
 
@@ -2731,7 +2789,9 @@ static void upgrade_invoke(view_state& s, const ui::control_frame_ptr& parent)
 		}
 	}
 }
+
 #endif
+
 
 static void test_new_version_invoke(const view_state& s, const ui::control_frame_ptr& parent)
 {
@@ -3027,7 +3087,6 @@ static void settings_invoke(view_state& s, const ui::control_frame_ptr& parent)
 	settings2->add(std::make_shared<ui::title_control>(tt.options_updates));
 	settings2->add(
 		std::make_shared<ui::check_control>(dlg->_frame, tt.options_check_for_update, setting.check_for_updates));
-	settings2->add(std::make_shared<ui::check_control>(dlg->_frame, tt.options_auto_update, setting.install_updates));
 #endif
 
 	advanced->add(std::make_shared<ui::title_control>(tt.options_advanced));
@@ -3670,7 +3729,8 @@ void app_frame::initialise_commands()
 	});
 	add_command_invoke(commands::tool_new_folder, [this] { new_folder_invoke(_state, _app_frame, _view_frame); });
 #ifndef WINSTORE
-	add_command_invoke(commands::info_new_version, [this] { upgrade_invoke(_state, _app_frame); });
+	add_command_invoke(commands::info_new_version, [this] { show_update_dialog(_state, _app_frame); });
+	add_command_invoke(commands::info_check_for_updates, [this] { show_update_dialog(_state, _app_frame); });
 #endif
 	add_command_invoke(commands::browse_open_containingfolder, [this]
 	{
@@ -3878,6 +3938,9 @@ void app_frame::initialise_commands()
 			nullptr,
 			find_command(commands::keyboard),
 			find_command(commands::view_help),
+#ifndef WINSTORE
+			find_command(commands::info_check_for_updates),
+#endif
 			find_command(commands::exit)
 		};
 		return result;

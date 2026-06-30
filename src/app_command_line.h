@@ -22,6 +22,9 @@ struct command_line_t
 	bool console_test = false;
 	std::string test_filter = "*";
 
+	bool gen_docs = false;
+	std::string docs_path;
+
 	void parse(std::string_view command_line_text);
 	std::string format_restart_cmd_line() const;
 };

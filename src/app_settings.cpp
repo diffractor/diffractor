@@ -79,7 +79,6 @@ static constexpr auto s_use_gpu = "use_gpu";
 static constexpr auto s_use_d3d11_va = "use_d3d11va";
 static constexpr auto s_use_yuv = "use_yuv";
 static constexpr auto s_send_crash_dumps = "send_crash_dumps";
-static constexpr auto s_install_updates = "install_updates";
 static constexpr auto s_show_performance_timings = "show_performance_timings";
 static constexpr auto s_source = "source";
 static constexpr auto s_credit = "credit";
@@ -188,7 +187,6 @@ settings_t::settings_t()
 	create_originals = true;
 #ifndef WINSTORE
 	check_for_updates = true;
-	install_updates = true;
 	send_crash_dumps = true;
 #endif
 	show_hidden = false;
@@ -570,7 +568,6 @@ void settings_t::read(const platform::setting_file_ptr& store_in)
 	store.read({}, s_create_originals, create_originals);
 #ifndef WINSTORE
 	store.read({}, s_check_for_updates, check_for_updates);
-	store.read({}, s_install_updates, install_updates);
 	store.read({}, s_send_crash_dumps, send_crash_dumps);
 #endif
 
@@ -725,7 +722,6 @@ void settings_t::write(const platform::setting_file_ptr& store_in) const
 	store.write({}, s_create_originals, create_originals);
 #ifndef WINSTORE
 	store.write({}, s_check_for_updates, check_for_updates);
-	store.write({}, s_install_updates, install_updates);
 	store.write({}, s_send_crash_dumps, send_crash_dumps);
 #endif
 	store.write({}, s_last_run, platform::now().to_days());

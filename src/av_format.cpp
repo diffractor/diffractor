@@ -63,6 +63,44 @@ void av_initialise(file_type_by_extension& file_types)
 	//#endif
 }
 
+std::vector<av_codec_doc> av_supported_codecs()
+{
+	std::vector<av_codec_doc> result;
+
+	const AVCodec* codec = nullptr;
+	void* iter = nullptr;
+
+	while ((codec = av_codec_iterate(&iter)) != nullptr)
+	{
+		if (!av_codec_is_decoder(codec))
+		{
+			continue;
+		}
+
+		av_codec_media_type media_type = av_codec_media_type::other;
+
+		switch (codec->type)
+		{
+		case AVMEDIA_TYPE_VIDEO:
+			media_type = av_codec_media_type::video;
+			break;
+		case AVMEDIA_TYPE_AUDIO:
+			media_type = av_codec_media_type::audio;
+			break;
+		default:
+			continue; // only document video and audio codecs
+		}
+
+		result.emplace_back(av_codec_doc{
+			codec->name ? codec->name : "",
+			codec->long_name ? codec->long_name : "",
+			media_type
+		});
+	}
+
+	return result;
+}
+
 static double calc_duration(int64_t t, const AVRational& base, const int64_t start)
 {
 	if (t == AV_NOPTS_VALUE) t = 0;

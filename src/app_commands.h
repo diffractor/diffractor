@@ -67,6 +67,7 @@ enum class commands
 	locate_run,
 #ifndef WINSTORE
 	info_new_version,
+	info_check_for_updates,
 #endif
 	keyboard,
 	label_approved,

@@ -705,6 +705,19 @@ std::vector<file_group_ref> all_file_groups()
 	return result;
 }
 
+std::vector<file_type_ref> all_file_types()
+{
+	std::vector<file_type_ref> result;
+	result.reserve(s_config.types.size());
+
+	for (const auto& ft : s_config.types)
+	{
+		result.emplace_back(&ft);
+	}
+
+	return result;
+}
+
 sizei file_load_result::dimensions() const
 {
 	if (success)

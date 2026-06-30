@@ -131,7 +131,6 @@ public:
 	bool create_originals = false;
 #ifndef WINSTORE
 	bool check_for_updates = false;
-	bool install_updates = false;
 	bool send_crash_dumps = false;
 #endif
 	bool can_animate = false;

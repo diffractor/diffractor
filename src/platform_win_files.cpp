@@ -2364,18 +2364,25 @@ static bool verify_package(const df::file_path path_in)
 
 	WINTRUST_DATA WinTrustData = {sizeof(WinTrustData)};
 	WinTrustData.dwUIChoice = WTD_UI_NONE;
-	WinTrustData.fdwRevocationChecks = WTD_REVOKE_NONE;
+	WinTrustData.fdwRevocationChecks = WTD_REVOKE_WHOLECHAIN;
 	WinTrustData.dwUnionChoice = WTD_CHOICE_FILE;
-	WinTrustData.dwProvFlags = WTD_SAFER_FLAG;
+	WinTrustData.dwProvFlags = WTD_SAFER_FLAG | WTD_REVOCATION_CHECK_CHAIN;
 	WinTrustData.pFile = &FileData;
 
 	GUID WVTPolicyGUID = WINTRUST_ACTION_GENERIC_VERIFY_V2;
-	return WinVerifyTrust(app_wnd(), &WVTPolicyGUID, &WinTrustData) == ERROR_SUCCESS;
+	const auto status = WinVerifyTrust(app_wnd(), &WVTPolicyGUID, &WinTrustData);
+
+	// Accept a valid signature even when the revocation status can't be reached
+	// (offline or the CA endpoint is down), but reject a certificate that is
+	// actually revoked.
+	return status == ERROR_SUCCESS
+		|| status == CRYPT_E_REVOCATION_OFFLINE
+		|| status == CRYPT_E_NO_REVOCATION_CHECK;
 }
 
 void platform::download_and_verify(const std::function<void(df::file_path)>& complete)
 {
-	const auto download_path = temp_file("exe");
+	const auto download_path = known_path(known_folder::downloads).combine_file("diffractor-setup.exe");
 
 	web_request req;
 	req.path = "diffractor-setup.exe";

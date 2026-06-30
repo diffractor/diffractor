@@ -1555,6 +1555,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="app_search.cpp" />
+    <ClCompile Include="app_gen_docs.cpp" />
     <ClCompile Include="app_workers.cpp" />
     <ClCompile Include="app_toolbar.cpp" />
     <ClCompile Include="app_commands.cpp">

@@ -48,6 +48,25 @@ class file_type;
 using file_type_by_extension = df::hash_map<std::string_view, file_type_ref, df::ihash, df::ieq>;
 void av_initialise(file_type_by_extension& file_types);
 
+// Describes a single FFmpeg codec for documentation generation.
+enum class av_codec_media_type
+{
+	video,
+	audio,
+	other
+};
+
+struct av_codec_doc
+{
+	std::string name;      // short codec name, e.g. "h264"
+	std::string long_name; // human readable name, e.g. "H.264 / AVC / MPEG-4 AVC"
+	av_codec_media_type media_type = av_codec_media_type::other;
+};
+
+// Enumerates the decoders compiled into the linked FFmpeg build. Used to
+// generate the "Formats and Codecs" documentation page.
+std::vector<av_codec_doc> av_supported_codecs();
+
 // Extracts the camcorder recording date/time embedded in a raw DV video frame
 // (DVCAM / DV-in-AVI). FFmpeg's DV demuxer does not surface this, so the
 // BCD-encoded VAUX recording-date (0x62) and recording-time (0x63) packs are

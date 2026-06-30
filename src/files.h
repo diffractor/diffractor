@@ -275,6 +275,7 @@ file_group_ref parse_file_group(const std::string& text);
 void load_file_types();
 void load_tools();
 std::vector<file_group_ref> all_file_groups();
+std::vector<file_type_ref> all_file_types();
 
 inline std::string safe_file_type_name(const file_group_ref fg, const bool is_plural = false)
 {

@@ -265,6 +265,7 @@ struct app_text_t
 	text_t command_save_and_next = "Save and open next";
 	text_t command_save_options = "Change save options";
 	text_t command_new_version = "New version available";
+	text_t command_check_for_updates = "Check for updates";
 	text_t searching_text = "Searching...";
 	text_t no_results = "No results";
 	text_t folder_onedrive = "onedrive";
@@ -631,9 +632,12 @@ struct app_text_t
 	text_t eject_title_fmt = "Eject {}";
 	text_t space_used = "used";
 	text_t scan_failed = "Failed to Scan.";
-	text_t update_title = "New version available";
+	text_t update_title = "Updates";
 	text_t update_help_fmt = "Version {} of Diffractor is available. You are currently using version {}.";
 	text_t update = "Update";
+	text_t update_install_now = "Install now";
+	text_t update_checking = "Checking for updates...";
+	text_t update_up_to_date_fmt = "You are using the latest version ({}).";
 	text_t update_help = "Download and install now. Diffractor will need to be closed briefly during the install.";
 	text_t update_not_now = "Not now";
 	text_t update_not_now_help = "Remind me again in a week";
@@ -735,7 +739,6 @@ struct app_text_t
 	text_t option_slideshow_title = "Slideshow";
 	text_t option_slideshow_delay = "Delay before showing the next item (in seconds)";
 	text_t options_check_for_update = "Check for updates by connecting to the internet";
-	text_t options_auto_update = "Automatically install updates when possible";
 	text_t options_use_gpu = "Use hardware acceleration to draw the Diffractor user interface (requires restart)";
 	text_t options_use_gpu_video = "Use hardware acceleration to decode video (when available)";
 	text_t options_use_yuv_tex =

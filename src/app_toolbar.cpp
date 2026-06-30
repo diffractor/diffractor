@@ -322,7 +322,7 @@ void app_frame::update_button_state(const bool resize)
 	const auto has_selection = is_media_or_items_view && _state.has_selection();
 	const auto is_single_media_selection = is_media_or_items_view && selection_status.has_single_media_selection;
 #ifndef WINSTORE
-	const auto new_version_avail = is_media_or_items_view && !setting.install_updates &&
+	const auto new_version_avail = is_media_or_items_view &&
 		df::version(s_app_version) < df::version(setting.available_version) && static_cast<int>(now_days) >= setting.
 		min_show_update_day;
 	const auto show_new_version = is_media_or_items_view && (setting.force_available_version || new_version_avail);
@@ -389,6 +389,7 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::import_run]->enable = view_mode == view_type::import && _view_import && _view_import->can_run();
 #ifndef WINSTORE
 	_commands[commands::info_new_version]->enable = is_items_view;
+	_commands[commands::info_check_for_updates]->enable = true;
 #endif
 	_commands[commands::keyboard]->enable = is_items_view;
 	_commands[commands::label_approved]->enable = has_selection;
@@ -716,6 +717,8 @@ void app_frame::update_command_text()
 	            tt.command_new_folder);
 #ifndef WINSTORE
 	def_command(commands::info_new_version, command_group::none, icon_index::lightbulb, tt.command_new_version);
+	def_command(commands::info_check_for_updates, command_group::help, icon_index::lightbulb,
+	            tt.command_check_for_updates);
 #endif
 	def_command(commands::menu_open, command_group::none, icon_index::open_one, tt.command_open, tt.tooltip_open);
 	def_command(commands::browse_open_containingfolder, command_group::navigation, icon_index::none,

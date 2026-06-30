@@ -49,9 +49,7 @@ command_line_t command_line;
 auto s_app_name_l = L"Diffractor";
 const std::string_view s_app_name = "Diffractor";
 const std::string_view s_app_version = "126.3";
-const std::string_view g_app_build = "1209";
-constexpr auto stage_file_name = "diffractor-setup-update.exe";
-static constexpr auto installed_file_name = "diffractor-setup-installed.exe";
+const std::string_view g_app_build = "1211";
 static constexpr auto s_search = "search";
 
 extern void start_worker(platform::task_queue& q, std::string_view name);
@@ -80,7 +78,6 @@ struct app_updates_and_location_params
 	std::string country;
 	std::string version;
 	std::string test_version = setting.available_test_version;
-	bool should_update = false;
 
 	void apply(const app_frame_ptr& app, const view_state& s) const
 	{
@@ -91,13 +88,6 @@ struct app_updates_and_location_params
 		setting.available_test_version = test_version;
 
 		s.invalidate_view(view_invalid::app_layout);
-
-#ifndef WINSTORE
-		if (setting.install_updates && should_update && is_app_installed())
-		{
-			app->stage_update();
-		}
-#endif
 
 		app->save_options(true);
 	}
@@ -157,7 +147,6 @@ static void check_for_updates_and_location(const app_frame_ptr& app, view_state&
 					app_updates_and_location_params params;
 					params.version = df::util::json::safe_string(json, "current_version");
 					params.test_version = df::util::json::safe_string(json, "test_version");
-					params.should_update = str::icmp(df::util::json::safe_string(json, "action"), "update") == 0;
 
 					params.city = df::util::json::safe_string(json, "city");
 					params.country = df::util::json::safe_string(json, "country");
@@ -306,44 +295,6 @@ void app_frame::app_fail(const std::string_view message, const std::string_view 
 	});
 }
 
-#ifndef WINSTORE
-void app_frame::stage_update()
-{
-	static bool first_time_this_instance = true;
-
-	if (first_time_this_instance)
-	{
-		first_time_this_instance = false; // Prevent multiple downloads per instance
-
-		if (setting.install_updates && setting.first_run_today)
-		{
-			auto download_complete = [this](const df::file_path download_path)
-			{
-				const auto stage_path = known_path(platform::known_folder::app_data).combine_file(stage_file_name);
-
-				if (!download_path.is_empty() && download_path.exists())
-				{
-					if (const auto move_result = platform::move_file(download_path, stage_path, false); move_result.
-						success())
-					{
-						df::log(__FUNCTION__, "Update staged successfully");
-					}
-					else
-					{
-						df::log(__FUNCTION__, move_result.format_error());
-					}
-				}
-			};
-
-			queue_async(async_queue::web, [download_complete]
-			{
-				platform::download_and_verify(download_complete);
-			});
-		}
-	}
-}
-#endif
-
 void media_view::update_media_elements()
 {
 	df::assert_true(ui::is_ui_thread());
@@ -398,46 +349,6 @@ void media_view::update_media_elements()
 	}
 }
 
-#ifndef WINSTORE
-static bool install_update_if_exists()
-{
-	// Note: running_app_folder must match the app_data path used by stage_update().
-	// This is guaranteed because stage_update() is only called when is_app_installed() is true,
-	// meaning the exe is running from the app_data folder.
-	const auto module_folder = known_path(platform::known_folder::running_app_folder);
-	const auto stage_path = module_folder.combine_file(stage_file_name);
-	const auto installed_path = module_folder.combine_file(installed_file_name);
-
-	if (stage_path.exists())
-	{
-		df::log(__FUNCTION__, "Staged install found");
-
-		if (const auto move_file_result = platform::move_file(stage_path, installed_path, false); move_file_result.
-			success())
-		{
-			if (const auto install_result = platform::install(installed_path, module_folder, true, true); install_result
-				.success())
-			{
-				df::log(__FUNCTION__, "Update installer launched successfully");
-				return true;
-			}
-			else
-			{
-				df::log(__FUNCTION__, install_result.format_error());
-				// Clean up the renamed installer so we don't leave orphaned files
-				platform::move_file(installed_path, stage_path, false);
-			}
-		}
-		else
-		{
-			df::log(__FUNCTION__, move_file_result.format_error());
-		}
-	}
-
-	return false;
-}
-#endif
-
 
 void command_line_t::parse(const std::string_view command_line_text)
 {
@@ -467,6 +378,15 @@ void command_line_t::parse(const std::string_view command_line_text)
 					{
 						console_test = true;
 						test_filter = std::string(op.substr(5));
+					}
+					else if (str::icmp(op, "gen-docs") == 0)
+					{
+						gen_docs = true;
+					}
+					else if (op.size() > 9 && str::icmp(op.substr(0, 9), "gen-docs:") == 0)
+					{
+						gen_docs = true;
+						docs_path = std::string(op.substr(9));
 					}
 				}
 				else if (df::is_path(stripped))
@@ -2108,14 +2028,6 @@ bool app_frame::can_exit()
 bool app_frame::pre_init()
 {
 	df::log("main", df::format_version(false));
-
-#ifndef WINSTORE
-	if (install_update_if_exists())
-	{
-		df::log(__FUNCTION__, "Exit because of install");
-		return false;
-	}
-#endif
 
 	std::setlocale(LC_ALL, "en_US.UTF-8");
 

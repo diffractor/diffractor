@@ -484,6 +484,18 @@ msgstr "Nová Složka"
 msgid "New version available"
 msgstr "Nová verze je dostupná"
 
+msgid "Check for updates"
+msgstr "Zkontrolovat aktualizace"
+
+msgid "Install now"
+msgstr "Instalovat nyní"
+
+msgid "Checking for updates..."
+msgstr "Kontrola aktualizací..."
+
+msgid "You are using the latest version ({})."
+msgstr "Používáte nejnovější verzi ({})."
+
 msgid "Open"
 msgstr "Otevřít"
 
@@ -2390,9 +2402,6 @@ msgstr "Pokročilé"
 
 msgid "Application options"
 msgstr "Možnosti aplikace"
-
-msgid "Automatically install updates when possible"
-msgstr "Pokud je to možné, automaticky instalujte aktualizace"
 
 msgid ""
 "When overwriting a photo with irreversible changes make an original backup "
