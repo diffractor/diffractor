@@ -1252,19 +1252,22 @@ public:
 struct sidebar_history_element final : view_element, std::enable_shared_from_this<sidebar_history_element>
 {
 	static constexpr int col_count = 12;
-	static constexpr int row_count = 10;
+	static constexpr int max_row_count = df::max_history_years;
 	static constexpr int invalid_hover_month = -1;
 	static constexpr int base_row_height = 10;
 
 	view_state& _state;
-	std::array<double, col_count * row_count> dates{};
-	std::array<df::date_counts, col_count * row_count> _counts;
+	std::array<double, col_count * max_row_count> dates{};
+	std::array<df::date_counts, col_count * max_row_count> _counts{};
 
 	double _min_val = 0.0;
 	double _max_val = 0.0;
 	int _hover_month = invalid_hover_month;
 	int _current_year = 0;
 	int _current_month = 0;
+	// Number of years (rows) actually shown - user configurable via
+	// setting.sidebar.history_years (default 10), clamped to [1, max_row_count].
+	int _row_count = 10;
 	mutable int row_height = base_row_height;
 
 	sidebar_history_element(view_state& state) noexcept : view_element(
@@ -1276,17 +1279,24 @@ struct sidebar_history_element final : view_element, std::enable_shared_from_thi
 
 	void populate(const df::date_histogram& summary)
 	{
+		_row_count = std::clamp(setting.sidebar.history_years, 1, max_row_count);
+
 		_min_val = std::numeric_limits<double>::max();
 		_max_val = 0.0;
 		_counts = summary.dates;
 
-		for (auto i = 0u; i < summary.dates.size(); i++)
+		// Only the visible rows contribute to the min/max used for contrast.
+		const auto shown = std::min(static_cast<size_t>(_row_count) * col_count, summary.dates.size());
+
+		for (auto i = 0u; i < shown; i++)
 		{
 			const auto val = std::cbrt(summary.dates[i].created);
 			dates[i] = val;
 			if (_min_val > val) _min_val = val;
 			if (_max_val < val) _max_val = val;
 		}
+
+		if (_min_val > _max_val) _min_val = _max_val; // no visible data
 
 		const auto now = platform::now().date();
 		_current_year = now.year;
@@ -1298,7 +1308,7 @@ struct sidebar_history_element final : view_element, std::enable_shared_from_thi
 		const auto logical_bounds = bounds.offset(element_offset);
 		//render_background(dc, element_offset, clr);
 
-		for (auto y = 0; y < row_count; y++)
+		for (auto y = 0; y < _row_count; y++)
 		{
 			const auto yy1 = logical_bounds.top + y * row_height;
 			const auto yy2 = logical_bounds.top + (y + 1) * row_height;
@@ -1339,7 +1349,7 @@ struct sidebar_history_element final : view_element, std::enable_shared_from_thi
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
 		row_height = df::round(mc.scale_factor * base_row_height);
-		return {width_limit, row_count * row_height + 1};
+		return {width_limit, _row_count * row_height + 1};
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
@@ -1403,7 +1413,7 @@ struct sidebar_history_element final : view_element, std::enable_shared_from_thi
 		{
 			const auto month = std::clamp((ic.loc.x - logical_bounds.left) * col_count / logical_bounds.width(), 0,
 			                              col_count - 1);
-			const auto year = std::clamp((ic.loc.y - logical_bounds.top) / row_height, 0, row_count - 1);
+			const auto year = std::clamp((ic.loc.y - logical_bounds.top) / row_height, 0, _row_count - 1);
 
 			if (year > 0 || month < _current_month)
 			{

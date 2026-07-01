@@ -754,6 +754,17 @@ namespace str
 		return p < r.end() && *p == '-';
 	}
 
+	// True when every byte is 7-bit ASCII (< 0x80). ASCII text is always already in
+	// Unicode NFC form, so callers can skip normalization on the fast path.
+	constexpr bool is_ascii(const std::string_view r)
+	{
+		for (const auto c : r)
+		{
+			if (static_cast<unsigned char>(c) >= 0x80) return false;
+		}
+		return true;
+	}
+
 	struct find_result
 	{
 		std::vector<part_t> parts;

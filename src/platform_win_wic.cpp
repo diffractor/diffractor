@@ -13,7 +13,6 @@
 
 #include "platform_win.h"
 #include <wincodec.h>
-#include <d2d1.h>
 #include <dwrite.h>
 
 #include "app_text.h"
@@ -324,6 +323,136 @@ platform::file_op_result save_bitmap_info(const df::folder_path save_path, const
 }
 
 
+// Minimal DirectWrite text renderer that rasterises glyph coverage as opaque white
+// (straight-alpha BGRA) into a ui::surface. Replaces the previous Direct2D DrawText path so
+// that icon glyphs can be produced without any Direct2D dependency.
+namespace
+{
+	class icon_glyph_renderer final : public IDWriteTextRenderer
+	{
+		IDWriteFactory* _factory = nullptr;
+		ui::surface* _surface = nullptr;
+		std::atomic<ULONG> _ref = 1;
+
+	public:
+		icon_glyph_renderer(IDWriteFactory* factory, ui::surface* surface) : _factory(factory), _surface(surface)
+		{
+		}
+
+		HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override
+		{
+			if (riid == __uuidof(IUnknown) || riid == __uuidof(IDWritePixelSnapping) ||
+				riid == __uuidof(IDWriteTextRenderer))
+			{
+				*ppv = static_cast<IDWriteTextRenderer*>(this);
+				AddRef();
+				return S_OK;
+			}
+
+			*ppv = nullptr;
+			return E_NOINTERFACE;
+		}
+
+		ULONG STDMETHODCALLTYPE AddRef() override { return ++_ref; }
+		ULONG STDMETHODCALLTYPE Release() override { return --_ref; }
+
+		HRESULT STDMETHODCALLTYPE IsPixelSnappingDisabled(void*, BOOL* isDisabled) override
+		{
+			*isDisabled = FALSE;
+			return S_OK;
+		}
+
+		HRESULT STDMETHODCALLTYPE GetCurrentTransform(void*, DWRITE_MATRIX* transform) override
+		{
+			*transform = {1, 0, 0, 1, 0, 0};
+			return S_OK;
+		}
+
+		HRESULT STDMETHODCALLTYPE GetPixelsPerDip(void*, FLOAT* pixelsPerDip) override
+		{
+			*pixelsPerDip = 1.0f;
+			return S_OK;
+		}
+
+		HRESULT STDMETHODCALLTYPE DrawGlyphRun(void*, const FLOAT baselineOriginX, const FLOAT baselineOriginY,
+		                                       DWRITE_MEASURING_MODE, const DWRITE_GLYPH_RUN* glyphRun,
+		                                       const DWRITE_GLYPH_RUN_DESCRIPTION*, IUnknown*) override
+		{
+			if (!glyphRun || glyphRun->glyphCount == 0) return S_OK;
+
+			ComPtr<IDWriteGlyphRunAnalysis> analysis;
+
+			if (FAILED(_factory->CreateGlyphRunAnalysis(glyphRun, 1.0f, nullptr, DWRITE_RENDERING_MODE_NATURAL,
+			                                            DWRITE_MEASURING_MODE_NATURAL, baselineOriginX, baselineOriginY,
+			                                            &analysis)))
+			{
+				return S_OK;
+			}
+
+			RECT bounds{};
+			if (FAILED(analysis->GetAlphaTextureBounds(DWRITE_TEXTURE_CLEARTYPE_3x1, &bounds))) return S_OK;
+
+			const auto w = bounds.right - bounds.left;
+			const auto h = bounds.bottom - bounds.top;
+			if (w <= 0 || h <= 0) return S_OK;
+
+			std::vector<uint8_t> coverage(static_cast<size_t>(w) * h * 3);
+
+			if (FAILED(analysis->CreateAlphaTexture(DWRITE_TEXTURE_CLEARTYPE_3x1, &bounds, coverage.data(),
+			                                        static_cast<uint32_t>(coverage.size()))))
+			{
+				return S_OK;
+			}
+
+			const auto sw = static_cast<int>(_surface->width());
+			const auto sh = static_cast<int>(_surface->height());
+
+			for (auto y = 0; y < h; ++y)
+			{
+				const auto dy = bounds.top + y;
+				if (dy < 0 || dy >= sh) continue;
+
+				auto* const dst = _surface->pixels_line(dy);
+				const auto* src = coverage.data() + static_cast<size_t>(y) * w * 3;
+
+				for (auto x = 0; x < w; ++x, src += 3)
+				{
+					const auto dx = bounds.left + x;
+					if (dx < 0 || dx >= sw) continue;
+
+					const auto a = (src[0] + src[1] + src[2]) / 3;
+					if (a == 0) continue;
+
+					auto* const p = dst + static_cast<ptrdiff_t>(dx) * 4;
+					const auto na = std::max<int>(a, p[3]);
+					p[0] = 255;
+					p[1] = 255;
+					p[2] = 255;
+					p[3] = static_cast<uint8_t>(na);
+				}
+			}
+
+			return S_OK;
+		}
+
+		HRESULT STDMETHODCALLTYPE DrawUnderline(void*, FLOAT, FLOAT, const DWRITE_UNDERLINE*, IUnknown*) override
+		{
+			return S_OK;
+		}
+
+		HRESULT STDMETHODCALLTYPE DrawStrikethrough(void*, FLOAT, FLOAT, const DWRITE_STRIKETHROUGH*, IUnknown*) override
+		{
+			return S_OK;
+		}
+
+		HRESULT STDMETHODCALLTYPE DrawInlineObject(void*, FLOAT, FLOAT, IDWriteInlineObject*, BOOL, BOOL,
+		                                           IUnknown*) override
+		{
+			return S_OK;
+		}
+	};
+}
+
 ui::const_surface_ptr platform::create_segoe_md2_icon(const wchar_t ch)
 {
 	static std::unordered_map<wchar_t, ui::const_surface_ptr> cache;
@@ -337,141 +466,52 @@ ui::const_surface_ptr platform::create_segoe_md2_icon(const wchar_t ch)
 	auto surface_result = std::make_shared<ui::surface>();
 
 	constexpr auto cxy = 160;
-	surface_result->alloc(cxy, cxy, ui::texture_format::ARGB, ui::orientation::top_left);
 
+	if (!surface_result->alloc(cxy, cxy, ui::texture_format::ARGB, ui::orientation::top_left))
 	{
-		ComPtr<ID2D1Factory> pD2DFactory;
+		return surface_result;
+	}
 
-		HRESULT hr = D2D1CreateFactory(
-			D2D1_FACTORY_TYPE_SINGLE_THREADED,
-			pD2DFactory.GetAddressOf());
+	surface_result->make_blank(); // transparent background
 
-		if (SUCCEEDED(hr))
-		{
-			const D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(
-				D2D1_RENDER_TARGET_TYPE_DEFAULT,
-				D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED),
-				0,
-				0,
-				D2D1_RENDER_TARGET_USAGE_NONE,
-				D2D1_FEATURE_LEVEL_DEFAULT
-			);
+	ComPtr<IDWriteFactory> dwrite_factory;
+	ComPtr<IDWriteTextFormat> text_format;
+	ComPtr<IDWriteTextLayout> text_layout;
 
-			ComPtr<IDWriteFactory> m_pDWriteFactory;
-			ComPtr<IWICImagingFactory> wic;
-			//ComPtr<IWICBitmapSource> wic_source;
-			ComPtr<IWICBitmap> wic_bitmap;
-			ComPtr<ID2D1RenderTarget> rt;
-			ComPtr<IDWriteTextFormat> m_pTextFormat;
-			ComPtr<ID2D1SolidColorBrush> brush;
+	auto hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(dwrite_factory),
+	                              reinterpret_cast<IUnknown**>(dwrite_factory.GetAddressOf()));
 
-			hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, __uuidof(IWICImagingFactory),
-			                      reinterpret_cast<void**>(wic.GetAddressOf()));
+	if (SUCCEEDED(hr))
+	{
+		hr = dwrite_factory->CreateTextFormat(L"Segoe MDL2 Assets", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+		                                      DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 148, L"",
+		                                      &text_format);
+	}
 
-			if (SUCCEEDED(hr))
-			{
-				hr = wic->CreateBitmap(cxy, cxy,
-				                       GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnDemand, &wic_bitmap);
-			}
+	if (SUCCEEDED(hr))
+	{
+		text_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+		text_format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
 
-			if (SUCCEEDED(hr))
-			{
-				hr = pD2DFactory->CreateWicBitmapRenderTarget(wic_bitmap.Get(), props, rt.GetAddressOf());
-			}
+		const wchar_t icon_text[2] = {ch, 0};
+		hr = dwrite_factory->CreateTextLayout(icon_text, 1, text_format.Get(), static_cast<float>(cxy),
+		                                      static_cast<float>(cxy), &text_layout);
+	}
 
-			if (SUCCEEDED(hr))
-			{
-				// Create a DirectWrite factory.
-				hr = DWriteCreateFactory(
-					DWRITE_FACTORY_TYPE_SHARED,
-					__uuidof(m_pDWriteFactory),
-					reinterpret_cast<IUnknown**>(m_pDWriteFactory.GetAddressOf())
-				);
-			}
-			if (SUCCEEDED(hr))
-			{
-				// Create a DirectWrite text format object.
-				hr = m_pDWriteFactory->CreateTextFormat(
-					L"Segoe MDL2 Assets",
-					nullptr,
-					DWRITE_FONT_WEIGHT_NORMAL,
-					DWRITE_FONT_STYLE_NORMAL,
-					DWRITE_FONT_STRETCH_NORMAL,
-					148,
-					L"", //locale
-					&m_pTextFormat
-				);
-			}
+	if (SUCCEEDED(hr))
+	{
+		icon_glyph_renderer renderer(dwrite_factory.Get(), surface_result.get());
+		hr = text_layout->Draw(nullptr, &renderer, 0.0f, 0.0f);
+	}
 
-			if (SUCCEEDED(hr))
-			{
-				m_pTextFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-				m_pTextFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-			}
-
-			if (SUCCEEDED(hr))
-			{
-				hr = rt->CreateSolidColorBrush(
-					D2D1::ColorF(1.0f, 1.0f, 1.0f, 1.0f),
-					&brush
-				);
-			}
-
-			if (SUCCEEDED(hr))
-			{
-				const wchar_t icon_text[2] = {ch, 0};
-
-				rt->BeginDraw();
-
-				rt->SetTransform(D2D1::Matrix3x2F::Identity());
-
-				rt->Clear();
-
-				rt->DrawText(
-					icon_text,
-					1,
-					m_pTextFormat.Get(),
-					D2D1::RectF(0, 0, cxy, cxy),
-					brush.Get()
-				);
-
-				hr = rt->EndDraw();
-			}
-
-			ComPtr<IWICBitmapSource> pConverter;
-
-			if (SUCCEEDED(hr))
-			{
-				hr = WICConvertBitmapSource(GUID_WICPixelFormat32bppBGRA, wic_bitmap.Get(), &pConverter);
-			}
-
-			if (SUCCEEDED(hr))
-			{
-				surface_result = std::make_shared<ui::surface>();
-				if (surface_result->alloc(cxy, cxy, ui::texture_format::ARGB, ui::orientation::top_left))
-				{
-					WICRect rc;
-					rc.X = 0;
-					rc.Y = 0;
-					rc.Width = cxy;
-					rc.Height = cxy;
-
-					hr = pConverter->CopyPixels(&rc,
-					                            static_cast<uint32_t>(surface_result->stride()),
-					                            static_cast<uint32_t>(surface_result->size()),
-					                            surface_result->pixels());
-				}
-			}
-
-			if (SUCCEEDED(hr))
-			{
-				cache[ch] = surface_result;
-			}
-		}
+	if (SUCCEEDED(hr))
+	{
+		cache[ch] = surface_result;
 	}
 
 	return surface_result;
 }
+
 
 ui::surface_ptr platform::image_to_surface(const df::cspan image_buffer_in, const sizei target_extent)
 {

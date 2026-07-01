@@ -1054,13 +1054,11 @@ void parse_more_folders(df::index_roots& result, const std::string_view more_fol
 
 				if (df::is_path(str::trim(line)))
 				{
-					const auto path = df::folder_path(line);
-
-					if (path.exists() ||
-						platform::is_server(line))
-					{
-						result.excludes.emplace(path);
-					}
+					// A syntactic full path is always recorded as an exclude, even
+					// when it is not currently present (offline/removable drive or
+					// a not-yet-created folder). Requiring existence here silently
+					// dropped such excludes, making full-path exclusion unreliable.
+					result.excludes.emplace(df::folder_path(str::trim(line)));
 				}
 				else
 				{

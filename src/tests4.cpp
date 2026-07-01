@@ -395,6 +395,51 @@ static void should_handle_international_characters()
 	assert_equal(expected_tags, ps->tags, "Tags");
 }
 
+// Issue #219 - Korean (Hangul) metadata must survive a write/read round-trip
+// through IPTC and XMP the same as other non-Latin scripts. Uses \u escapes so
+// the source file stays ASCII-clean.
+static void should_handle_korean_characters()
+{
+	const auto save_path = _temps.next_path(".jpg");
+	const auto load_path = test_files_folder.combine_file("test.jpg");
+	// "서울에서 찍은 사진" (a photo taken in Seoul)
+	constexpr auto description = "\uC11C\uC6B8\uC5D0\uC11C \uCC0D\uC740 \uC0AC\uC9C4";
+
+	tag_set tags;
+	tags.add_one("\uAC00\uC871"); // 가족  family
+	tags.add_one("\uC5EC\uD589"); // 여행  travel
+	tags.add_one("\uC11C\uC6B8"); // 서울  Seoul
+	tags.make_unique(); // tags are stored/read back in sorted order
+
+	// UTF-8 <-> UTF-16 round-trip of the Korean text must be lossless.
+	const auto test = str::utf16_to_utf8(str::utf8_to_utf16(description));
+	assert_equal(description, test);
+
+	metadata_edits edits;
+	edits.description = description;
+	edits.remove_tags = tag_set("key1 key2 key3"); // test.jpg ships with these
+	edits.add_tags = tags;
+
+	files ff;
+	ff.update(load_path, save_path, edits, {}, {}, false, {});
+
+	const auto actual_xmp = extract_properties(save_path, metadata_type::XMP);
+	const auto actual_iptc = extract_properties(save_path, metadata_type::IPTC);
+
+	assert_equal(description, actual_xmp->description, "XMP");
+	assert_equal(description, actual_iptc->description, "IPTC");
+
+	const auto expected_tags = tags.to_string();
+	assert_equal(expected_tags, actual_xmp->tags, "XMP Tags");
+	assert_equal(expected_tags, actual_iptc->tags, "IPTC Tags");
+
+	// Full scan (the path used by the index) must also read the Korean values.
+	const auto sr = ff_scan_file(ff, save_path);
+	const auto ps = sr.to_props();
+	assert_equal(description, ps->description, "scan description");
+	assert_equal(expected_tags, ps->tags, "scan tags");
+}
+
 static void should_convert_raw_to_jpeg()
 {
 	const auto load_path = test_files_folder.combine("raw").combine_file("Screws.CR2");
@@ -547,6 +592,12 @@ static void should_resize()
 	ff.update(load_path, save_path, {}, edits, {}, false, {});
 
 	const auto actual = extract_properties(save_path);
+
+	if (!actual)
+	{
+		throw test_assert_exception(std::format("Should resize: could not extract properties from {}", save_path.str()));
+	}
+
 	assert_equal(200, actual->width);
 	assert_equal(133, actual->height);
 }
@@ -611,6 +662,7 @@ void register_tests4(view_state& state, test_registry& tests)
 
 	tests.add("Should update gps in exif"s, should_update_gps_in_exif);
 	tests.add("Should handle international characters"s, should_handle_international_characters);
+	tests.add("Should handle korean characters"s, should_handle_korean_characters);
 	tests.add("Should update exif rating"s, should_update_exif_rating);
 	tests.add("Should update formatted description"s, should_update_formatted_text);
 	tests.add("Should remove shell written tags"s, should_remove_shell_written_tags);

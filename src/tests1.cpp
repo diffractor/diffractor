@@ -12,6 +12,10 @@
 #include "pch.h"
 #include "test_utils.h"
 
+#include <dwrite.h>
+#include <wrl/client.h>
+#pragma comment(lib, "dwrite")
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Issue #197 - Natural sort order broken for numbers > 99
 // Files like "43_100" should sort after "43_99", not between "43_10" and "43_11".
@@ -219,6 +223,208 @@ static void should_negate_rating_search()
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+// Issue #175 - Sidebar history chart doesn't show the whole collection
+// The date histogram must record files older than 10 years so the (now
+// user-configurable) chart can display the full collection span.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+static void should_record_history_beyond_ten_years()
+{
+	const auto this_year = platform::now().year();
+	location_cache locations;
+	index_histograms h;
+
+	const auto record_created = [&](const int years_ago, const int month)
+	{
+		df::index_file_item f;
+		f.ft = files::file_type_from_name("test.jpg");
+		f.file_created = df::date_t(this_year - years_ago, month, 1);
+		f.file_modified = df::date_t(this_year - years_ago, month, 1);
+		h.record(locations, f);
+	};
+
+	record_created(0, 3); // this year, March
+	record_created(9, 6); // within the old 10-year window
+	record_created(15, 6); // BEYOND the old 10-year cap - previously dropped
+	record_created(40, 1); // decades back, still within max_history_years
+
+	assert_equal(1, h._dates.dates[0 * 12 + (3 - 1)].created, "this year recorded");
+	assert_equal(1, h._dates.dates[9 * 12 + (6 - 1)].created, "9-year-old recorded");
+	assert_equal(1, h._dates.dates[15 * 12 + (6 - 1)].created, "15-year-old recorded (beyond old cap)");
+	assert_equal(1, h._dates.dates[40 * 12 + (1 - 1)].created, "40-year-old recorded");
+
+	// The storage capacity must exceed the old hard-coded 10-year limit.
+	assert_equal(true, df::max_history_years > 10, "history capacity beyond 10 years");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Issue #219 - Korean tags are not working
+// Korean (Hangul) tags must round-trip through tag parsing and be searchable.
+// Hangul has no letter case, so case-folding must leave it unchanged.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Hangul samples (via \u escapes to avoid source-encoding issues):
+//   family = \uAC00\uC871 (가족), travel = \uC5EC\uD589 (여행),
+//   photo  = \uC0AC\uC9C4 (사진), Seoul  = \uC11C\uC6B8 (서울)
+
+static void should_case_fold_korean()
+{
+	// Hangul has no case - normalisation/lowercasing must be identity.
+	constexpr auto family = "\uAC00\uC871"; // 가족
+	assert_equal_strict(family, str::to_lower(family), "Korean to_lower identity");
+	assert_equal(0, str::icmp(family, family), "Korean icmp equal");
+
+	// A single Hangul syllable normalises to itself for comparison.
+	assert_equal(static_cast<int>(0xAC00), str::normalze_for_compare(0xAC00), "Hangul normalise identity");
+
+	// Different Korean words must not compare equal.
+	assert_equal(true, str::icmp(family, "\uC5EC\uD589") != 0, "different Korean words differ");
+}
+
+static void should_parse_korean_tags()
+{
+	constexpr auto family = "\uAC00\uC871"; // 가족
+	constexpr auto travel = "\uC5EC\uD589"; // 여행
+	constexpr auto photo = "\uC0AC\uC9C4"; // 사진
+
+	// Space-separated Korean tags split into individual tags.
+	tag_set tags(std::format("{} {} {}", family, travel, photo));
+	assert_equal(3, static_cast<int>(tags.size()), "korean tag count");
+
+	// Removing one Korean tag leaves the others intact (case-insensitive path).
+	tags.remove(tag_set(travel));
+	assert_equal(2, static_cast<int>(tags.size()), "korean tag count after remove");
+	assert_equal(true, tags.to_string().find(travel) == std::string::npos, "travel tag removed");
+	assert_equal(true, tags.to_string().find(family) != std::string::npos, "family tag remains");
+	assert_equal(true, tags.to_string().find(photo) != std::string::npos, "photo tag remains");
+}
+
+static void should_search_korean_tags()
+{
+	constexpr auto family = "\uAC00\uC871"; // 가족
+	constexpr auto travel = "\uC5EC\uD589"; // 여행
+	constexpr auto photo = "\uC0AC\uC9C4"; // 사진
+
+	// A file tagged with Korean words matches a #tag search for those words.
+	prop_test().tag(std::format("{} {}", family, travel))
+	           .is_match(std::format("#{}", family))
+	           .is_match(std::format("#{}", travel))
+	           .is_not_match(std::format("#{}", photo));
+
+	// Bare (non-scoped) text search across metadata finds the Korean tag too.
+	prop_test().tag(family)
+	           .is_match(std::string(family));
+}
+
+static void should_search_korean_description()
+{
+	// Korean text embedded in a description is found by a substring search,
+	// mirroring the Cyrillic #203 scenario for Hangul.
+	// "서울에서 찍은 사진" (photo taken in Seoul)
+	constexpr auto description = "\uC11C\uC6B8\uC5D0\uC11C \uCC0D\uC740 \uC0AC\uC9C4";
+
+	const auto search = df::search_t::parse("\uC11C\uC6B8"); // 서울 (Seoul)
+	const df::search_matcher matcher(search);
+
+	df::index_file_item info;
+	info.ft = files::file_type_from_name("test.jpg");
+	info.safe_ps()->description = str::cache(description);
+
+	assert_equal(true, matcher.match_item({}, info).is_match(), "Korean description search");
+}
+
+// Issue #219 - Font glyph fallback for missing (Hangul) glyphs.
+// The custom UI renders text with the system font "Calibri" (factories::font_face),
+// which has NO Hangul. DirectWrite substitutes a fallback face (e.g. Malgun Gothic)
+// for Korean. This test verifies the fallback path resolves Korean glyphs, and
+// guards the render_glyph fix: metrics for a glyph must be read from the glyph
+// run's OWN face (glyph_run->fontFace), not the primary UI font (_face). Reading
+// them from the primary face returns a different glyph's metrics (or fails for an
+// out-of-range index, dropping the glyph). render_glyph now queries glyph_face.
+static void should_fall_back_for_missing_glyphs()
+{
+	using Microsoft::WRL::ComPtr;
+
+	ComPtr<IDWriteFactory> factory;
+	const auto hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
+	                                    reinterpret_cast<IUnknown**>(factory.GetAddressOf()));
+	assert_equal(true, SUCCEEDED(hr), "DWriteCreateFactory");
+	if (!factory) return;
+
+	ComPtr<IDWriteFontCollection> sys;
+	factory->GetSystemFontCollection(sys.GetAddressOf());
+	if (!sys) return;
+
+	const auto make_face = [&](const wchar_t* name) -> ComPtr<IDWriteFontFace>
+	{
+		ComPtr<IDWriteFontFace> face;
+		uint32_t idx = 0;
+		BOOL exists = FALSE;
+		if (SUCCEEDED(sys->FindFamilyName(name, &idx, &exists)) && exists)
+		{
+			ComPtr<IDWriteFontFamily> family;
+			ComPtr<IDWriteFont> font;
+			if (SUCCEEDED(sys->GetFontFamily(idx, family.GetAddressOf())) &&
+				SUCCEEDED(family->GetFirstMatchingFont(DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+				                                       DWRITE_FONT_STYLE_NORMAL, font.GetAddressOf())))
+			{
+				font->CreateFontFace(face.GetAddressOf());
+			}
+		}
+		return face;
+	};
+
+	const auto primary = make_face(L"Calibri"); // the app's dialog/UI font
+	const auto fallback = make_face(L"Malgun Gothic"); // Windows Korean font
+	if (!primary || !fallback) return; // fonts not installed on this machine - skip
+
+	// 1. The primary UI font genuinely lacks Hangul -> fallback is mandatory.
+	const uint32_t hangul = 0xAC00; // 가
+	uint16_t primary_glyph = 0xFFFF;
+	primary->GetGlyphIndices(&hangul, 1, &primary_glyph);
+	assert_equal(0, static_cast<int>(primary_glyph), "Calibri has no Hangul glyph (fallback required)");
+
+	// 2. The fallback face maps the same character to a real glyph, and querying
+	//    that face for the glyph (what render_glyph SHOULD do) succeeds.
+	uint16_t fallback_glyph = 0;
+	fallback->GetGlyphIndices(&hangul, 1, &fallback_glyph);
+	assert_equal(true, fallback_glyph != 0, "fallback face has a Hangul glyph");
+
+	DWRITE_GLYPH_METRICS gm_right{};
+	const auto right_hr = fallback->GetDesignGlyphMetrics(&fallback_glyph, 1, &gm_right);
+	assert_equal(true, SUCCEEDED(right_hr), "fallback-face metrics query succeeds (correct face)");
+
+	// 3. Querying the PRIMARY face for the same (fallback) glyph index yields the
+	//    wrong glyph's metrics - the latent render_glyph bug.
+	DWRITE_GLYPH_METRICS gm_wrong{};
+	const auto wrong_hr = primary->GetDesignGlyphMetrics(&fallback_glyph, 1, &gm_wrong);
+	const bool wrong_is_broken = FAILED(wrong_hr) ||
+		gm_wrong.advanceWidth != gm_right.advanceWidth ||
+		gm_wrong.verticalOriginY != gm_right.verticalOriginY;
+	assert_equal(true, wrong_is_broken, "primary-face metrics for a fallback glyph are wrong (latent bug)");
+}
+
+// Issue #219 - Korean tags stored in a different Unicode normalization form.
+// Hangul can be encoded precomposed (NFC: 가 = U+AC00) or decomposed into
+// conjoining jamo (NFD: U+1100 U+1161). macOS/Finder, some cameras and apps emit
+// NFD; Windows IMEs emit NFC. The two are canonically equivalent and must compare
+// and search as equal, otherwise a Korean tag "cannot be found / deleted".
+static void should_match_korean_nfc_nfd()
+{
+	constexpr auto nfc = "\uAC00"; // 가 precomposed syllable
+	constexpr auto nfd = "\u1100\u1161"; // 가 decomposed conjoining jamo
+
+	// Canonical equivalence: normalising both forms to NFC yields identical bytes.
+	// (Generic str::icmp intentionally stays byte-exact for path safety, so the
+	// normalization happens in the search layer, not in icmp.)
+	assert_equal(platform::normalize_nfc(nfc), platform::normalize_nfc(nfd), "NFC(nfc) == NFC(nfd)");
+
+	// A tag stored in either form is found by a search in the other form.
+	prop_test().tag(nfd).is_match(std::string(nfc));
+	prop_test().tag(nfc).is_match(std::string(nfd));
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 // Issue #174 - Folders starting with '.' can't be excluded with '-'
 // Wildcard patterns like ".*" should match folder names starting with a dot.
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -254,6 +460,52 @@ static void should_exclude_specific_folder_name()
 	             "Proxy in different parent excluded");
 	assert_equal(false, df::is_excluded(roots, df::folder_path("c:\\photos\\originals")),
 	             "originals not excluded");
+}
+
+// Reproduces the follow-up report on #174: excluding a dot-folder by NAME
+// ("-.dtrash") must work the same as excluding it by full path
+// ("-c:\path\.dtrash"). This exercises the real parse path used by the
+// collection-folders edit box (parse_more_folders), not just is_excluded.
+static void should_parse_exclude_dot_folder_by_name()
+{
+	// Exclude a dot-folder by bare name.
+	df::index_roots by_name;
+	parse_more_folders(by_name, "-.dtrash");
+
+	assert_equal(0_z, by_name.excludes.size(), "no full-path excludes");
+	assert_equal(1_z, by_name.exclude_wildcards.size(), "dot name stored as wildcard");
+	assert_equal(".dtrash", *by_name.exclude_wildcards.begin(), "wildcard text preserved");
+
+	assert_equal(true, df::is_excluded(by_name, df::folder_path("c:\\photos\\.dtrash")),
+	             ".dtrash excluded by name");
+	assert_equal(true, df::is_excluded(by_name, df::folder_path("d:\\other\\sub\\.dtrash")),
+	             ".dtrash excluded by name in any parent");
+	assert_equal(false, df::is_excluded(by_name, df::folder_path("c:\\photos\\dtrash")),
+	             "non-dot folder not excluded");
+
+	// Exclude the same dot-folder by full path - the case the user confirmed works.
+	df::index_roots by_path;
+	parse_more_folders(by_path, "-c:\\photos\\.dtrash");
+
+	assert_equal(1_z, by_path.excludes.size(), "full path stored as exclude");
+	assert_equal(true, df::is_excluded(by_path, df::folder_path("c:\\photos\\.dtrash")),
+	             ".dtrash excluded by full path");
+}
+
+// A dot-prefixed wildcard ("-.*") entered in the collection box should also
+// round-trip through the parser into an exclude wildcard.
+static void should_parse_exclude_dot_wildcard()
+{
+	df::index_roots roots;
+	parse_more_folders(roots, "-.*");
+
+	assert_equal(1_z, roots.exclude_wildcards.size(), "dot wildcard stored");
+	assert_equal(".*", *roots.exclude_wildcards.begin(), "wildcard text preserved");
+
+	assert_equal(true, df::is_excluded(roots, df::folder_path("c:\\photos\\.git")),
+	             ".git excluded by .* wildcard");
+	assert_equal(false, df::is_excluded(roots, df::folder_path("c:\\photos\\normal")),
+	             "normal folder not excluded by .* wildcard");
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -295,4 +547,21 @@ void register_tests1(view_state& state, test_registry& tests)
 	//
 	tests.add("Issue #174: Should exclude dot folders with wildcard"s, should_exclude_dot_folders_with_wildcard);
 	tests.add("Issue #174: Should exclude specific folder name"s, should_exclude_specific_folder_name);
+	tests.add("Issue #174: Should parse -.dtrash exclude by name"s, should_parse_exclude_dot_folder_by_name);
+	tests.add("Issue #174: Should parse -.* exclude wildcard"s, should_parse_exclude_dot_wildcard);
+
+	//
+	// Issue #219 - Korean tags
+	//
+	tests.add("Issue #219: Should case-fold Korean"s, should_case_fold_korean);
+	tests.add("Issue #219: Should parse Korean tags"s, should_parse_korean_tags);
+	tests.add("Issue #219: Should search Korean tags"s, should_search_korean_tags);
+	tests.add("Issue #219: Should search Korean description"s, should_search_korean_description);
+	tests.add("Issue #219: Should fall back for missing glyphs"s, should_fall_back_for_missing_glyphs);
+	tests.add("Issue #219: Should match Korean NFC and NFD"s, should_match_korean_nfc_nfd);
+
+	//
+	// Issue #175 - Sidebar history chart span
+	//
+	tests.add("Issue #175: Should record history beyond ten years"s, should_record_history_beyond_ten_years);
 }

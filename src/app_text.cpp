@@ -471,6 +471,7 @@ void app_text_t::calc_text_mapping()
 		customise_tags_help,
 		customise_tags_title,
 		customize_display_title,
+		customize_history_years,
 		customize_labels,
 		customize_ratings,
 		customize_show_drives,

@@ -470,9 +470,15 @@ namespace df
 		int created = 0;
 	};
 
+	// Maximum number of years the sidebar history chart can hold/display. The
+	// visible span is user-configurable (setting.sidebar.history_years, default
+	// 10); the storage is always sized to this upper bound so changing the
+	// setting does not require re-indexing. Covers collections back to ~1900s.
+	constexpr int max_history_years = 100;
+
 	struct date_histogram
 	{
-		std::array<date_counts, 12 * 10> dates{};
+		std::array<date_counts, 12 * max_history_years> dates{};
 	};
 
 	class file_group_histogram

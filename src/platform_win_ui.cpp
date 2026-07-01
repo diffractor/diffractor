@@ -40,10 +40,8 @@ int generate_wiki_docs(std::string_view output_folder);
 #include "platform_win_res.h"
 
 #pragma comment(lib, "wtsapi32")
-#pragma comment(lib, "D2d1")
 #pragma comment(lib, "dxgi")
 #pragma comment(lib, "d3d11")
-#pragma comment(lib, "dcomp")
 #pragma comment(lib, "Dwrite")
 #pragma comment(lib, "dxguid")
 #pragma comment(lib, "Shlwapi")
@@ -76,38 +74,6 @@ class win32_app;
 int calc_icon_cxy(const double scale_factor)
 {
 	return df::round(ui_base_icon_cxy * scale_factor);
-}
-
-/////////////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////////
-
-int (WINAPI*ptrGetSystemMetricsForDpi)(int, UINT) = nullptr;
-BOOL (WINAPI*ptrEnableNonClientDpiScaling)(HWND) = nullptr;
-UINT (WINAPI*pfnGetDpiForSystem)() = nullptr;
-UINT (WINAPI*pfnGetDpiForWindow)(HWND) = nullptr;
-BOOL (WINAPI*ptrAreDpiAwarenessContextsEqual)(DPI_AWARENESS_CONTEXT, DPI_AWARENESS_CONTEXT) = nullptr;
-DPI_AWARENESS_CONTEXT (WINAPI*ptrGetWindowDpiAwarenessContext)(HWND) = nullptr;
-
-// Convenient loading function, see WinMain
-//  - simplified version of https://github.com/tringi/emphasize/blob/master/Windows/Windows_Symbol.hpp
-
-template <typename P>
-bool Symbol(const HMODULE h, P& pointer, const char* name)
-{
-	if (P p = reinterpret_cast<P>(GetProcAddress(h, name)))
-	{
-		pointer = p;
-		return true;
-	}
-	return false;
-}
-
-template <typename P>
-bool Symbol(HMODULE h, P& pointer, const USHORT index)
-{
-	return Symbol(h, pointer, MAKEINTRESOURCEA(index));
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////
@@ -788,64 +754,28 @@ HBITMAP create_round_rect(const HDC hdc_ref, const COLORREF fill_clr, const COLO
 
 			if (hbm_old)
 			{
-				ComPtr<ID2D1Factory> pD2DFactory;
-				ComPtr<ID2D1DCRenderTarget> rt;
+				// Fill the background.
+				const RECT rc = {0, 0, cxy, cxy};
+				auto* const bg_brush = CreateSolidBrush(bg_clr);
+				FillRect(hdc_bm, &rc, bg_brush);
+				DeleteObject(bg_brush);
 
-				HRESULT hr = D2D1CreateFactory(
-					D2D1_FACTORY_TYPE_SINGLE_THREADED,
-					pD2DFactory.GetAddressOf());
+				// Draw the filled rounded rectangle (GDI's RoundRect ellipse size is 2 * radius).
+				const auto has_edge = fill_clr != edge_clr;
+				const auto pen_width = has_edge ? std::max(1, df::round(border_width)) : 1;
 
-				if (SUCCEEDED(hr))
-				{
-					const D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(
-						D2D1_RENDER_TARGET_TYPE_DEFAULT,
-						D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE),
-						0,
-						0,
-						D2D1_RENDER_TARGET_USAGE_NONE,
-						D2D1_FEATURE_LEVEL_DEFAULT
-					);
+				auto* const fill_brush = CreateSolidBrush(fill_clr);
+				auto* const pen = CreatePen(PS_SOLID, pen_width, has_edge ? edge_clr : fill_clr);
 
-					hr = pD2DFactory->CreateDCRenderTarget(&props, &rt);
-				}
+				auto* const old_brush = SelectObject(hdc_bm, fill_brush);
+				auto* const old_pen = SelectObject(hdc_bm, pen);
 
-				if (SUCCEEDED(hr))
-				{
-					const RECT rc = {0, 0, cxy, cxy};
-					hr = rt->BindDC(hdc_bm, &rc);
-				}
+				RoundRect(hdc_bm, 1, 1, cxy - 1, cxy - 1, radius * 2, radius * 2);
 
-				if (SUCCEEDED(hr))
-				{
-					rt->BeginDraw();
-					rt->Clear(D2D1::ColorF(ui::bgr(bg_clr), 1.0f));
-
-					ComPtr<ID2D1SolidColorBrush> fill_brush;
-					hr = rt->CreateSolidColorBrush(D2D1::ColorF(ui::bgr(fill_clr), 1.0), &fill_brush);
-
-					D2D1_ROUNDED_RECT r;
-					r.rect = D2D1::RectF(1.0f, 1.0f, cxy - 1.0f, cxy - 1.0f);
-					r.radiusX = static_cast<float>(radius);
-					r.radiusY = static_cast<float>(radius);
-
-					if (SUCCEEDED(hr))
-					{
-						rt->FillRoundedRectangle(r, fill_brush.Get());
-					}
-
-					if (fill_clr != edge_clr)
-					{
-						ComPtr<ID2D1SolidColorBrush> edge_brush;
-						hr = rt->CreateSolidColorBrush(D2D1::ColorF(ui::bgr(edge_clr), 1.0), &edge_brush);
-
-						if (SUCCEEDED(hr))
-						{
-							rt->DrawRoundedRectangle(r, edge_brush.Get(), border_width);
-						}
-					}
-
-					rt->EndDraw();
-				}
+				SelectObject(hdc_bm, old_brush);
+				SelectObject(hdc_bm, old_pen);
+				DeleteObject(fill_brush);
+				DeleteObject(pen);
 
 				SelectObject(hdc_bm, hbm_old);
 			}
@@ -3207,14 +3137,6 @@ public:
 };
 
 
-extern void draw_bubble_background(const factories_ptr& f, ID2D1RenderTarget* dc, recti bounds,
-                                   pointi focus_location, float padding, float shadow_xy,
-                                   float radius);
-
-extern draw_context_device_ptr create_d2d_draw_context(const factories_ptr& f, ID2D1RenderTarget* rt,
-                                                       int base_font_size);
-
-
 class frame_base : public win_impl
 {
 public:
@@ -3239,8 +3161,6 @@ public:
 	factories_ptr _f;
 	draw_context_device_ptr _draw_ctx;
 
-	ComPtr<ID2D1DeviceContext> _device_context;
-	ComPtr<ID2D1HwndRenderTarget> _render_target;
 	ComPtr<IDXGISwapChain> _swap_chain;
 
 	mutable df::hash_map<unsigned long, HBRUSH> cached_gdi_brushes;
@@ -3252,8 +3172,6 @@ public:
 
 	void destroy_frame_base()
 	{
-		_device_context.Reset();
-		_render_target.Reset();
 		_swap_chain.Reset();
 		_draw_ctx.reset();
 		_f.reset();
@@ -3263,12 +3181,6 @@ public:
 			SetWindowLongPtr(m_hWnd, GWLP_USERDATA, 0);
 			m_hWnd = nullptr;
 		}
-	}
-
-	ID2D1RenderTarget* get_render_target() const
-	{
-		if (_device_context) return _device_context.Get();
-		return _render_target.Get();
 	}
 };
 
@@ -3280,7 +3192,7 @@ void frame_base::create_draw_context(const factories_ptr& f, const bool use_d3d,
 	{
 		HRESULT hr = S_OK;
 
-		if (use_d3d)
+		if (use_d3d && _f->d3d_device)
 		{
 			ComPtr<IDXGISwapChain> sc;
 			ComPtr<IDXGIFactory2> f2;
@@ -3336,39 +3248,11 @@ void frame_base::create_draw_context(const factories_ptr& f, const bool use_d3d,
 		}
 		else
 		{
-			RECT rc;
-			GetClientRect(m_hWnd, &rc);
-
-			const D2D1_SIZE_U size = D2D1::SizeU(
-				rc.right - rc.left,
-				rc.bottom - rc.top
-			);
-
-			ComPtr<ID2D1HwndRenderTarget> rt;
-			const auto pixel_format = D2D1::PixelFormat(DXGI_FORMAT_UNKNOWN,
-			                                            use_transparency
-				                                            ? D2D1_ALPHA_MODE_PREMULTIPLIED
-				                                            : D2D1_ALPHA_MODE_UNKNOWN);
-
-			hr = _f->d2d->CreateHwndRenderTarget(
-				D2D1::RenderTargetProperties(D2D1_RENDER_TARGET_TYPE_DEFAULT, pixel_format, 96.0f, 96.0f),
-				D2D1::HwndRenderTargetProperties(m_hWnd, size),
-				&rt);
-
-			if (SUCCEEDED(hr))
-			{
-				rt->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
-
-				ComPtr<ID2D1DeviceContext> dc;
-
-				if (SUCCEEDED(rt.As(&dc)) && dc)
-				{
-					dc->SetUnitMode(D2D1_UNIT_MODE_PIXELS);
-				}
-
-				_render_target = rt;
-				_draw_ctx = create_d2d_draw_context(_f, get_render_target(), _gdi_ctx->calc_base_font_size());
-			}
+			// CPU software rendering (dialogs, bubble popups, and the fallback when Direct3D
+			// hardware is unavailable). use_transparency selects a layered (per-pixel alpha)
+			// window for bubbles.
+			_draw_ctx = create_software_draw_context(_f, m_hWnd, use_transparency,
+			                                         _gdi_ctx->calc_base_font_size());
 		}
 	}
 
@@ -3398,50 +3282,8 @@ void frame_base::handle_resize(const sizei extent, const bool is_minimised)
 		{
 			if (_swap_chain)
 			{
-				/*DXGI_MODE_DESC mode_desc;
-				mode_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-				mode_desc.Height = extent.cy;
-				mode_desc.Width = extent.cx;
-				_swap_chain->ResizeTarget(&mode_desc);*/
-
-				if (_device_context)
-				{
-					_device_context->SetTarget(nullptr);
-				}
-
 				constexpr UINT flags = 0;
 				_swap_chain->ResizeBuffers(swap_buffer_count, extent.cx, extent.cy, back_buffer_format, flags);
-
-				if (_device_context)
-				{
-					D2D1_BITMAP_PROPERTIES1 properties = {};
-					properties.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
-					properties.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM;
-					properties.bitmapOptions = D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW;
-
-					ComPtr<IDXGISurface2> surface;
-					ComPtr<ID2D1Bitmap1> bitmap;
-
-					auto hr = _swap_chain->GetBuffer(0, __uuidof(surface),
-					                                 std::bit_cast<void**>(surface.GetAddressOf()));
-
-					if (SUCCEEDED(hr))
-					{
-						hr = _device_context->CreateBitmapFromDxgiSurface(
-							surface.Get(), properties, bitmap.GetAddressOf());
-
-						if (SUCCEEDED(hr))
-						{
-							_device_context->SetTarget(bitmap.Get());
-						}
-					}
-				}
-
-				InvalidateRect(m_hWnd, nullptr, FALSE);
-			}
-			else if (_render_target)
-			{
-				_render_target->Resize(D2D1_SIZE_U{static_cast<uint32_t>(extent.cx), static_cast<uint32_t>(extent.cy)});
 				InvalidateRect(m_hWnd, nullptr, FALSE);
 			}
 
@@ -3572,8 +3414,6 @@ public:
 
 			if (m_hWnd)
 			{
-				constexpr MARGINS margins = {-1};
-				DwmExtendFrameIntoClientArea(m_hWnd, &margins);
 				create_draw_context(f, false, true);
 				SetFont(m_hWnd, _gdi_ctx->dialog);
 				return true;
@@ -3602,9 +3442,16 @@ public:
 		{
 			_alpha = (_alpha * 5 + _alpha_target * 2) / 7;
 
-			constexpr DWORD flags = LWA_ALPHA;
-			constexpr DWORD col = RGB(255, 255, 255);
-			SetLayeredWindowAttributes(m_hWnd, col, _alpha, flags);
+			if (std::abs(_alpha - _alpha_target) <= 1)
+			{
+				_alpha = _alpha_target;
+			}
+
+			// Re-present the layered window with the updated fade alpha.
+			if (_draw_ctx && _alpha > 0)
+			{
+				handle_render();
+			}
 		}
 		else if (_timer_id)
 		{
@@ -3700,9 +3547,8 @@ public:
 
 	void on_render(const draw_context_device_ptr& ctx) override
 	{
-		const auto rt = get_render_target();
-		draw_bubble_background(_f, rt, _bounds, _focus_loc, static_cast<float>(shadow_padding),
-		                       static_cast<float>(shadow_xy), radius);
+		ctx->set_layer_alpha(_alpha);
+		ctx->draw_bubble_background(_bounds, _focus_loc, shadow_padding, radius);
 		_draw_ctx->colors = {
 			ui::style::color::bubble_background, ui::style::color::view_text, ui::style::color::view_selected_background
 		};
@@ -7278,19 +7124,49 @@ struct unhandled_exception_filter
 	}
 };
 
+// The application recovery/restart APIs live in kernel32 but are not implemented on every
+// host. Wine, for example, terminates the process when its unimplemented
+// UnregisterApplicationRecoveryCallback stub is called. Resolve them dynamically so a missing
+// export degrades to a harmless no-op instead of aborting the app.
+namespace
+{
+	template <typename T>
+	T resolve_kernel32(const char* name)
+	{
+		const auto h = GetModuleHandleW(L"kernel32.dll");
+		return h ? reinterpret_cast<T>(GetProcAddress(h, name)) : nullptr;
+	}
+
+	using register_application_restart_t = HRESULT(WINAPI*)(PCWSTR, DWORD);
+	using unregister_application_restart_t = HRESULT(WINAPI*)();
+	using register_application_recovery_callback_t = HRESULT(WINAPI*)(APPLICATION_RECOVERY_CALLBACK, PVOID, DWORD,
+	                                                                   DWORD);
+	using unregister_application_recovery_callback_t = HRESULT(WINAPI*)();
+	using application_recovery_in_progress_t = HRESULT(WINAPI*)(PBOOL);
+	using application_recovery_finished_t = void(WINAPI*)(BOOL);
+}
+
 static void register_restart()
 {
+	const auto pRegisterApplicationRestart = resolve_kernel32<register_application_restart_t>(
+		"RegisterApplicationRestart");
+	if (!pRegisterApplicationRestart) return;
+
 	const auto restart_cmd_line_w = str::utf8_to_utf16(restart_cmd_line);
 	static WCHAR wsCommandLine[RESTART_MAX_CMD_LINE];
 	wcscpy_s(wsCommandLine, restart_cmd_line_w.c_str());
-	const auto hr = RegisterApplicationRestart(wsCommandLine, RESTART_NO_PATCH | RESTART_NO_REBOOT);
+	const auto hr = pRegisterApplicationRestart(wsCommandLine, RESTART_NO_PATCH | RESTART_NO_REBOOT);
 	df::assert_true(SUCCEEDED(hr));
 }
 
 static void unregister_restart()
 {
-	UnregisterApplicationRecoveryCallback();
-	UnregisterApplicationRestart();
+	const auto pUnregisterApplicationRecoveryCallback = resolve_kernel32<unregister_application_recovery_callback_t>(
+		"UnregisterApplicationRecoveryCallback");
+	const auto pUnregisterApplicationRestart = resolve_kernel32<unregister_application_restart_t>(
+		"UnregisterApplicationRestart");
+	if (pUnregisterApplicationRecoveryCallback) pUnregisterApplicationRecoveryCallback();
+	if (pUnregisterApplicationRestart) pUnregisterApplicationRestart();
 }
 
 static DWORD WINAPI recover_callback(PVOID pContext)
@@ -7300,7 +7176,9 @@ static DWORD WINAPI recover_callback(PVOID pContext)
 	flush_open_files_to_crash_files_list();
 
 	BOOL bCanceled = FALSE;
-	ApplicationRecoveryInProgress(&bCanceled);
+	const auto pApplicationRecoveryInProgress = resolve_kernel32<application_recovery_in_progress_t>(
+		"ApplicationRecoveryInProgress");
+	if (pApplicationRecoveryInProgress) pApplicationRecoveryInProgress(&bCanceled);
 
 	if (bCanceled)
 	{
@@ -7316,7 +7194,9 @@ static DWORD WINAPI recover_callback(PVOID pContext)
 
 	df::close_log();
 
-	ApplicationRecoveryFinished(bCanceled ? FALSE : TRUE);
+	const auto pApplicationRecoveryFinished = resolve_kernel32<application_recovery_finished_t>(
+		"ApplicationRecoveryFinished");
+	if (pApplicationRecoveryFinished) pApplicationRecoveryFinished(bCanceled ? FALSE : TRUE);
 	return 0;
 }
 
@@ -7324,7 +7204,10 @@ static DWORD WINAPI recover_callback(PVOID pContext)
 static void setup_restart()
 {
 	register_restart();
-	const auto hr = RegisterApplicationRecoveryCallback(recover_callback, nullptr, RECOVERY_DEFAULT_PING_INTERVAL, 0);
+	const auto pRegisterApplicationRecoveryCallback = resolve_kernel32<register_application_recovery_callback_t>(
+		"RegisterApplicationRecoveryCallback");
+	if (!pRegisterApplicationRecoveryCallback) return;
+	const auto hr = pRegisterApplicationRecoveryCallback(recover_callback, nullptr, RECOVERY_DEFAULT_PING_INTERVAL, 0);
 	df::assert_true(SUCCEEDED(hr));
 }
 
@@ -7433,16 +7316,6 @@ int WINAPI wWinMain(const HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, cons
 
 		resources.init(get_resource_instance);
 
-		if (const HMODULE hUser32 = GetModuleHandle(L"USER32"))
-		{
-			Symbol(hUser32, ptrEnableNonClientDpiScaling, "EnableNonClientDpiScaling");
-			Symbol(hUser32, pfnGetDpiForSystem, "GetDpiForSystem");
-			Symbol(hUser32, pfnGetDpiForWindow, "GetDpiForWindow");
-			Symbol(hUser32, ptrGetSystemMetricsForDpi, "GetSystemMetricsForDpi");
-			Symbol(hUser32, ptrGetWindowDpiAwarenessContext, "GetWindowDpiAwarenessContext");
-			Symbol(hUser32, ptrAreDpiAwarenessContextsEqual, "AreDpiAwarenessContextsEqual");
-		}
-
 		WSADATA wsaData;
 
 		if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
@@ -7470,12 +7343,14 @@ int WINAPI wWinMain(const HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, cons
 			return 0;
 		}
 
-		// Handle /test command line option: run tests in console mode and exit
+		// Handle /test command line option: run tests in console mode and exit.
+		// Parse into the global command_line early so options such as -no-gpu are available
+		// before the graphics factories are created below (app->init re-parses the same
+		// command line later, which is idempotent).
 		{
-			command_line_t cl;
-			cl.parse(str::utf16_to_utf8(lpCmdLine));
+			command_line.parse(str::utf16_to_utf8(lpCmdLine));
 
-			if (cl.console_test)
+			if (command_line.console_test)
 			{
 				if (!AttachConsole(ATTACH_PARENT_PROCESS))
 				{
@@ -7490,7 +7365,7 @@ int WINAPI wWinMain(const HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, cons
 				df::start_time = platform::now();
 				resources.init(get_resource_instance);
 
-				const int test_result = run_console_tests(cl.test_filter);
+				const int test_result = run_console_tests(command_line.test_filter);
 
 				OleUninitialize();
 				CoUninitialize();
@@ -7501,7 +7376,7 @@ int WINAPI wWinMain(const HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, cons
 
 			// Handle /gen-docs command line option: regenerate the wiki
 			// documentation pages in console mode and exit.
-			if (cl.gen_docs)
+			if (command_line.gen_docs)
 			{
 				if (!AttachConsole(ATTACH_PARENT_PROCESS))
 				{
@@ -7516,7 +7391,7 @@ int WINAPI wWinMain(const HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, cons
 				df::start_time = platform::now();
 				resources.init(get_resource_instance);
 
-				const int docs_result = generate_wiki_docs(cl.docs_path);
+				const int docs_result = generate_wiki_docs(command_line.docs_path);
 
 				OleUninitialize();
 				CoUninitialize();
@@ -7551,7 +7426,16 @@ int WINAPI wWinMain(const HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, cons
 
 		app_impl->_f = std::make_shared<factories>();
 
-		if (!app_impl->_f->init(setting.use_gpu))
+		// Load persisted settings before creating the graphics factories so the
+		// "use hardware acceleration" (use_gpu) preference is honoured at startup. Without this
+		// the factories would be initialised with the constructor default (hardware on) because
+		// the saved settings are otherwise not read until later during app init (which is
+		// idempotent, so reading them here as well is harmless).
+		setting.read(platform::create_registry_settings());
+
+		// Honour the -no-gpu command line switch (parsed into command_line above) as well as the
+		// persisted use_gpu preference, so software (WARP) rendering can be forced from launch.
+		if (!app_impl->_f->init(setting.use_gpu && !command_line.no_gpu))
 		{
 			show_fatal_error(tt.error_atl_direct3d);
 			return 0;

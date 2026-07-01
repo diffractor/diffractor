@@ -116,6 +116,7 @@ static constexpr auto s_show_favorite_searches = "show_favorite_searches";
 static constexpr auto s_show_tags = "show_tags";
 static constexpr auto s_show_ratings = "show_ratings";
 static constexpr auto s_show_labels = "show_labels";
+static constexpr auto s_history_years = "history_years";
 static constexpr auto s_lang = "lang";
 static constexpr auto s_verbose_metadata = "verbose_metadata";
 static constexpr auto s_location_latitude = "location_latitude";
@@ -271,6 +272,7 @@ settings_t::settings_t()
 	sidebar.show_tags = true;
 	sidebar.show_ratings = true;
 	sidebar.show_labels = true;
+	sidebar.history_years = 10;
 
 	collection.pictures = true;
 	collection.video = true;
@@ -678,6 +680,7 @@ void settings_t::read(const platform::setting_file_ptr& store_in)
 	store.read(s_sidebar, s_show_ratings, sidebar.show_ratings);
 	store.read(s_sidebar, s_show_labels, sidebar.show_labels);
 	store.read(s_sidebar, s_favorite_tags, sidebar.show_favorite_tags_only);
+	store.read(s_sidebar, s_history_years, sidebar.history_years);
 }
 
 void settings_t::write(const platform::setting_file_ptr& store_in) const
@@ -821,6 +824,7 @@ void settings_t::write(const platform::setting_file_ptr& store_in) const
 	store.write(s_sidebar, s_show_ratings, sidebar.show_ratings);
 	store.write(s_sidebar, s_show_labels, sidebar.show_labels);
 	store.write(s_sidebar, s_favorite_tags, sidebar.show_favorite_tags_only);
+	store.write(s_sidebar, s_history_years, sidebar.history_years);
 }
 
 std::vector<std::string_view> split_collection_folders(const std::string_view text)

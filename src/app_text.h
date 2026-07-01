@@ -778,6 +778,7 @@ struct app_text_t
 	text_t customise_sidebar_desc = "Define what items are shown in the sidebar.";
 	text_t customize_show_total = "Show total items pie chart";
 	text_t customize_show_history = "Show history chart";
+	text_t customize_history_years = "History chart years";
 	text_t customize_show_world_map = "Show world map";
 	text_t customize_show_indexed_folders = "Show indexed folders";
 	text_t customize_show_drives = "Show drives";

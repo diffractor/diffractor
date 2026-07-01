@@ -95,6 +95,16 @@ public:
 	virtual void render() = 0;
 	virtual void resize(sizei size) = 0;
 	virtual bool is_valid() const = 0;
+
+	// Software-rendering extensions (only implemented by the software backend used for
+	// layered bubble popups; no-ops on the hardware backend).
+	virtual void set_layer_alpha(int alpha)
+	{
+	}
+
+	virtual void draw_bubble_background(recti bounds, pointi focus_location, int padding, float radius)
+	{
+	}
 };
 
 using draw_context_device_ptr = std::shared_ptr<draw_context_device>;
@@ -118,6 +128,8 @@ public:
 
 draw_context_device_ptr d3d11_create_context(const factories_ptr& f, const ComPtr<IDXGISwapChain>& swap_chain,
                                              int base_font_size);
+draw_context_device_ptr create_software_draw_context(const factories_ptr& f, HWND hwnd, bool layered,
+                                                     int base_font_size);
 df::blob load_resource(int id, LPCWSTR lpType);
 
 HGLOBAL image_to_handle(const file_load_result& image);

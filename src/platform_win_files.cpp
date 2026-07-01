@@ -417,6 +417,26 @@ std::wstring platform::utf8_to_utf16(const std::string_view text)
 	return result;
 }
 
+std::string platform::normalize_nfc(const std::string_view text)
+{
+	// ASCII is already NFC - avoid the conversion round-trip entirely.
+	if (str::is_ascii(text)) return std::string(text);
+
+	const auto w = platform::utf8_to_utf16(text);
+	if (w.empty()) return std::string(text);
+
+	// First call estimates the required buffer (documented to be an upper bound).
+	const auto est = NormalizeString(NormalizationC, w.c_str(), static_cast<int>(w.size()), nullptr, 0);
+	if (est <= 0) return std::string(text); // error - leave text unchanged
+
+	std::wstring out(static_cast<size_t>(est), L'\0');
+	const auto len = NormalizeString(NormalizationC, w.c_str(), static_cast<int>(w.size()), out.data(), est);
+	if (len <= 0) return std::string(text);
+
+	out.resize(static_cast<size_t>(len));
+	return platform::utf16_to_utf8(out);
+}
+
 std::string platform::utf8_to_a(const std::string_view utf8)
 {
 	std::string result;

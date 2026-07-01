@@ -1835,7 +1835,7 @@ void index_histograms::record(const location_cache& locations, const df::index_f
 	const auto created_date_parts = created.date();
 	const auto created_year_offset = year - created_date_parts.year;
 
-	if (created_year_offset >= 0 && created_year_offset < 10)
+	if (created_year_offset >= 0 && created_year_offset < df::max_history_years)
 	{
 		_dates.dates[created_year_offset * 12 + created_date_parts.month - 1].created += 1;
 	}
@@ -1843,7 +1843,7 @@ void index_histograms::record(const location_cache& locations, const df::index_f
 	const auto modified_date_parts = file.file_modified.date();
 	const auto modified_date_parts_year_offset = year - modified_date_parts.year;
 
-	if (modified_date_parts_year_offset >= 0 && modified_date_parts_year_offset < 10)
+	if (modified_date_parts_year_offset >= 0 && modified_date_parts_year_offset < df::max_history_years)
 	{
 		_dates.dates[modified_date_parts_year_offset * 12 + modified_date_parts.month - 1].modified += 1;
 	}

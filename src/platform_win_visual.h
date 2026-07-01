@@ -15,8 +15,8 @@
 
 #undef SelectBitmap
 
-#include <dcomp.h>
 #include <d3d11_1.h>
+#include <dxgi1_3.h>
 #include <wincodec.h>
 #include <dwrite.h>
 #include <directxmath.h>
@@ -59,10 +59,6 @@ public:
 
 	render_char_result render_glyph(uint16_t glyph_index, int spacing, const DWRITE_GLYPH_RUN* glyph_run) const;
 	sizei measure(std::wstring_view text, ui::style::text_style style, int width, int height) const;
-	void draw(ui::draw_context*, ID2D1RenderTarget*, std::wstring_view text, recti bounds, ui::style::text_style style,
-	          ui::color color, ui::color bg, const std::vector<ui::text_highlight_t>& highlights) const;
-	static void draw(ui::draw_context*, ID2D1RenderTarget*, IDWriteTextLayout*, recti bounds, ui::color color,
-	                 ui::color bg);
 	void draw(ui::draw_context*, IDWriteTextRenderer*, std::wstring_view text, recti bounds,
 	          ui::style::text_style style, ui::color color, ui::color bg,
 	          const std::vector<ui::text_highlight_t>& highlights);
@@ -91,9 +87,12 @@ public:
 struct factories
 {
 	ComPtr<IDXGIFactory1> dxgi;
-	ComPtr<ID2D1Factory> d2d;
 	ComPtr<IDWriteFactory> dwrite;
 	ComPtr<IWICImagingFactory> wic;
+
+	// True when Direct3D 11 hardware/WARP device creation failed and the app is running
+	// with the CPU software rendering backend.
+	bool software_mode = false;
 
 	ComPtr<ID3D11Device> d3d_device;
 	ComPtr<ID3D11DeviceContext> d3d_context;

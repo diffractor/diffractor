@@ -119,3 +119,50 @@ diffractor64.exe /test:wildcard
 The filter uses case-insensitive wildcard matching (`*` and `?`). Examples:
 - `/test` or `/test:*` — run all tests (default)
 - `/test:*scan*` — run tests with "scan" in the name
+
+## Running under Wine (Linux / WSL)
+
+Diffractor is a Windows-only app, but it can be run under Wine (e.g. for reproducing
+Linux/CrossOver/Proton user reports) inside WSL2. This is useful for debugging shutdown
+crashes and rendering issues that only appear under Wine's Direct3D translation.
+
+### One-time setup (Ubuntu 24.04 on WSL2)
+
+```bash
+# WineHQ stable (10.x/11.x); the distro 'wine' 9.0 also works but is older
+sudo dpkg --add-architecture i386
+sudo mkdir -pm755 /etc/apt/keyrings
+sudo wget -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key
+sudo wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/ubuntu/dists/noble/winehq-noble.sources
+sudo apt-get update && sudo apt-get install --install-recommends winehq-stable
+
+# Create a dedicated 64-bit prefix (avoids needing the 32-bit loader)
+WINEARCH=win64 WINEPREFIX=$HOME/.wine-diff wineboot -i
+```
+
+### CRITICAL: run from the Linux filesystem, not `/mnt/c`
+
+Running the exe directly from `/mnt/c/...` **crashes at the process entry point**. `/mnt/c` is a
+9p/DrvFs filesystem that does not honour the memory mappings Wine uses to load the PE, so the
+code pages come back zero-filled and Wine jumps into zero bytes (`add [rax],al`, write to NULL).
+This is a Wine/WSL filesystem issue, **not** an app bug. Copy the app to an ext4 path first:
+
+```bash
+rsync -a --delete --exclude='*.pdb' --exclude='diffractor32.exe' --exclude='diffractor64-d.exe' \
+      /mnt/c/code/diffractor/exe/ $HOME/diffapp/
+cd $HOME/diffapp
+WINEARCH=win64 WINEPREFIX=$HOME/.wine-diff WINEDEBUG=-all DISPLAY=:0 wine diffractor64.exe
+```
+
+### Notes
+
+- **Rendering**: under WSLg, Mesa often can't get accelerated GL (`DRI3 error: Could not get DRI3
+  device`), so wined3d's D3D11→OpenGL runs on software (llvmpipe). Expect artifacts/slowness that
+  are environmental, not necessarily app bugs. Force the software/WARP path with `-no-gpu`.
+- **Screenshots**: WSLg runs Xwayland *rootless*, so `scrot` of the X root captures black. Capture
+  the specific window instead (e.g. `import -window <id>`), or grab it on the host.
+- **Debugging crashes**: `WINEDEBUG=+seh` prints the first-chance exception record (code, address,
+  registers). For a symbolic backtrace, run under `winedbg diffractor64.exe` (the on-disk
+  `diffractor64.pdb` next to the exe is auto-loaded). Wine's own DLLs have no symbols (expected).
+- **Minidumps** written by the app's crash handler can be analysed on Windows with `cdb`
+  (from the Store "WinDbg" package: `%LOCALAPPDATA%\Microsoft\WindowsApps\cdbX64.exe`).

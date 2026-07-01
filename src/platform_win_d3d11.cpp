@@ -73,28 +73,13 @@ void factories::reset_fonts()
 bool factories::init(const bool use_gpu)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
-	D2D1_FACTORY_OPTIONS d2d_options = {D2D1_DEBUG_LEVEL_NONE};
 
-#ifdef _DEBUG
-	d2d_options.debugLevel = D2D1_DEBUG_LEVEL_INFORMATION;
-#endif
-
-	auto hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, d2d_options, d2d.GetAddressOf());
+	auto hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(dwrite),
+	                              std::bit_cast<IUnknown**>(dwrite.GetAddressOf()));
 
 	if (FAILED(hr))
 	{
-		df::log(__FUNCTION__, std::format("Failed to create ID2D1Factory2 {:x}", static_cast<uint32_t>(hr)));
-	}
-
-	if (SUCCEEDED(hr))
-	{
-		hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(dwrite),
-		                         std::bit_cast<IUnknown**>(dwrite.GetAddressOf()));
-
-		if (FAILED(hr))
-		{
-			df::log(__FUNCTION__, std::format("Failed to create IDWriteFactory {:x}", static_cast<uint32_t>(hr)));
-		}
+		df::log(__FUNCTION__, std::format("Failed to create IDWriteFactory {:x}", static_cast<uint32_t>(hr)));
 	}
 
 	if (SUCCEEDED(hr))
@@ -174,25 +159,24 @@ bool factories::init(const bool use_gpu)
 
 		if (FAILED(hr) || !use_gpu)
 		{
-			df::log(__FUNCTION__, "D3D11CreateDevice failed - trying software rendering");
-
-			driver_type = D3D_DRIVER_TYPE_WARP;
-
-			hr = D3D11CreateDevice(nullptr, driver_type, nullptr, create_device_flags, feature_levels_11,
-			                       std::size(feature_levels_11),
-			                       D3D11_SDK_VERSION, &device, &feature_level, &context);
-
-			// dont animate for software rendering
+			// Hardware Direct3D 11 is unavailable (or disabled). Rather than falling back to the
+			// WARP software rasterizer, run with the CPU software rendering backend. Leave the
+			// D3D/DXGI device objects null and mark software_mode; frames use software_draw_context.
+			df::log(__FUNCTION__, "D3D11 hardware unavailable - using CPU software rendering");
+			software_mode = true;
 			setting.can_animate = false;
+			device.Reset();
+			context.Reset();
+			hr = S_OK;
 		}
 	}
 
-	if (SUCCEEDED(hr))
+	if (SUCCEEDED(hr) && device)
 	{
 		hr = device.As(&dxgi_device);
 	}
 
-	if (SUCCEEDED(hr))
+	if (SUCCEEDED(hr) && device)
 	{
 		ComPtr<IDXGIDevice1> dxgi_device1;
 
@@ -202,7 +186,7 @@ bool factories::init(const bool use_gpu)
 		}
 	}
 
-	if (SUCCEEDED(hr))
+	if (SUCCEEDED(hr) && device)
 	{
 		d3d_device = device;
 		d3d_context = context;
@@ -235,6 +219,14 @@ bool factories::init(const bool use_gpu)
 				        "     SharedSystemMemory "s + df::file_size(adapter_desc.SharedSystemMemory).str());
 			}
 		}
+	}
+
+	if (SUCCEEDED(hr))
+	{
+		if (software_mode)
+		{
+			df::d3d_info = "software";
+		}
 
 		register_fonts();
 	}
@@ -257,7 +249,6 @@ void factories::destroy()
 	unregister_fonts();
 
 	dxgi.Reset();
-	d2d.Reset();
 	dwrite.Reset();
 	wic.Reset();
 	d3d_device.Reset();

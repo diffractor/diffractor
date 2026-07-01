@@ -1168,15 +1168,32 @@ static compare_result compare_term(const df::search_term& term, const df::date_t
 	return {};
 }
 
+// Returns text unchanged when it is ASCII (already Unicode NFC); otherwise
+// NFC-normalises it into 'buf' and returns a view of that. This lets Korean (and
+// other) text that differs only in normalization form (precomposed NFC vs
+// decomposed NFD jamo) match during search. The ASCII path is allocation-free, so
+// only non-ASCII comparisons pay the cost. NOTE: applied only to search text
+// matching - never to file-path comparisons, which must stay byte-exact.
+static std::string_view nfc_view(const std::string_view text, std::string& buf)
+{
+	if (str::is_ascii(text)) return text;
+	buf = platform::normalize_nfc(text);
+	return buf;
+}
+
 static compare_result compare_term(const df::search_term& term, const str::cached r)
 {
+	std::string qb, rb;
+	const auto q = nfc_view(term.text, qb);
+	const auto rr = nfc_view(r, rb);
+
 	if (term._is_wildcard)
 	{
-		const auto cmp = wildcard_icmp(r, term.text);
+		const auto cmp = str::wildcard_icmp(rr, q);
 		return {cmp, 0, r};
 	}
 
-	const auto cmp = icmp(term.text, r);
+	const auto cmp = str::icmp(q, rr);
 	return {cmp == 0, 0, r};
 }
 
@@ -1273,22 +1290,30 @@ static compare_result compare_term(const df::search_term& term, const df::xy16 r
 
 inline bool contains_term(const std::string_view text, const df::search_term& term)
 {
+	std::string qb, tb;
+	const auto q = nfc_view(term.text, qb);
+	const auto t = nfc_view(text, tb);
+
 	if (term._is_wildcard)
 	{
-		return str::wildcard_icmp(text, term.text);
+		return str::wildcard_icmp(t, q);
 	}
 
-	return str::contains(text, term.text);
+	return str::contains(t, q);
 }
 
 inline bool same_term(const std::string_view text, const df::search_term& term)
 {
+	std::string qb, tb;
+	const auto q = nfc_view(term.text, qb);
+	const auto t = nfc_view(text, tb);
+
 	if (term._is_wildcard)
 	{
-		return str::wildcard_icmp(text, term.text);
+		return str::wildcard_icmp(t, q);
 	}
 
-	return str::same(text, term.text);
+	return str::same(t, q);
 }
 
 df::search_result compare_text(const df::search_term& term, const df::index_file_item& file)

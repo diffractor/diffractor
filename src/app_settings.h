@@ -165,6 +165,7 @@ public:
 		bool show_ratings = false;
 		bool show_labels = false;
 		bool show_favorite_tags_only = false;
+		int history_years = 10;
 	} sidebar;
 
 	struct import_t

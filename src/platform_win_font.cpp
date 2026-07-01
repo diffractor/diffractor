@@ -722,7 +722,15 @@ render_char_result font_renderer::render_glyph(const uint16_t glyph_index, const
 
 	DWRITE_GLYPH_METRICS glyph_metrics{};
 
-	if (SUCCEEDED(_face->GetDesignGlyphMetrics(&glyph_index, 1, &glyph_metrics)))
+	// Query metrics from the glyph run's OWN face, not the primary font face
+	// (_face). For a fallback run (e.g. Hangul rendered via Malgun Gothic) the
+	// glyph_index belongs to that fallback face; querying _face here would fail
+	// for out-of-range indices (dropping the glyph) or return a different glyph's
+	// metrics. The line box below intentionally stays on _face for a consistent
+	// baseline across mixed-font text.
+	const auto glyph_face = glyph_run->fontFace ? glyph_run->fontFace : _face.Get();
+
+	if (SUCCEEDED(glyph_face->GetDesignGlyphMetrics(&glyph_index, 1, &glyph_metrics)))
 	{
 		constexpr float glyph_advance = 0;
 
@@ -923,107 +931,6 @@ sizei text_layout_impl::measure_text(const int cx, const int cy)
 
 	return {};
 }
-
-void font_renderer::draw(ui::draw_context* dc, ID2D1RenderTarget* rt, const std::wstring_view text, const recti bounds,
-                         const ui::style::text_style style, const ui::color color, const ui::color bg,
-                         const std::vector<ui::text_highlight_t>& highlights) const
-{
-	ComPtr<IDWriteTextLayout> layout;
-	auto hr = _factory->CreateTextLayout(text.data(), static_cast<int>(text.size()), _text_format.Get(), 0.0f, 0.0f,
-	                                     &layout);
-	//auto hr = _factory->CreateGdiCompatibleTextLayout(text.data(), static_cast<int>(text.size()), _text_format.Get(), 0.0f, 0.0f, 1.0f, nullptr, TRUE, &layout);
-
-	if (SUCCEEDED(hr))
-	{
-		configure_layout(layout, style);
-		layout->SetMaxWidth(static_cast<float>(bounds.width()));
-		layout->SetMaxHeight(static_cast<float>(bounds.height()));
-
-		for (const auto& h : highlights)
-		{
-			ComPtr<ID2D1SolidColorBrush> brush;
-
-			hr = rt->CreateSolidColorBrush(
-				D2D1::ColorF(h.clr.r, h.clr.g, h.clr.b, h.clr.a),
-				&brush);
-
-			if (SUCCEEDED(hr))
-			{
-				layout->SetDrawingEffect(brush.Get(), {h.offset, h.length});
-			}
-		}
-
-		if (bg.a > 0.0f)
-		{
-			DWRITE_TEXT_METRICS m{};
-			hr = layout->GetMetrics(&m);
-
-			if (SUCCEEDED(hr))
-			{
-				const rectd bb{bounds.left + m.left, bounds.top + m.top, m.width, m.height};
-				dc->draw_rounded_rect(bb.round().inflate(2), bg, dc->padding1);
-			}
-		}
-
-		ComPtr<ID2D1SolidColorBrush> brush;
-
-		hr = rt->CreateSolidColorBrush(
-			D2D1::ColorF(color.r, color.g, color.b, color.a),
-			&brush
-		);
-
-		if (SUCCEEDED(hr))
-		{
-			rt->DrawTextLayout(
-				{static_cast<float>(bounds.left), static_cast<float>(bounds.top)},
-				layout.Get(),
-				brush.Get()
-			);
-		}
-	}
-}
-
-void font_renderer::draw(ui::draw_context* dc, ID2D1RenderTarget* rt, IDWriteTextLayout* layout, const recti bounds,
-                         const ui::color color, const ui::color bg)
-{
-	if (rt && layout)
-	{
-		layout->SetMaxWidth(static_cast<float>(bounds.width()));
-		layout->SetMaxHeight(static_cast<float>(bounds.height()));
-
-		if (bg.a > 0.0f)
-		{
-			DWRITE_TEXT_METRICS m{};
-			const auto hr = layout->GetMetrics(&m);
-
-			if (SUCCEEDED(hr))
-			{
-				const rectd bb{
-					static_cast<double>(bounds.left) + m.left, static_cast<double>(bounds.top) + m.top, m.width,
-					m.height
-				};
-				dc->draw_rounded_rect(bb.round().inflate(2), bg, dc->padding1);
-			}
-		}
-
-		ComPtr<ID2D1SolidColorBrush> brush;
-
-		const auto hr = rt->CreateSolidColorBrush(
-			D2D1::ColorF(color.r, color.g, color.b, color.a),
-			&brush
-		);
-
-		if (SUCCEEDED(hr))
-		{
-			rt->DrawTextLayout(
-				{static_cast<float>(bounds.left), static_cast<float>(bounds.top)},
-				layout,
-				brush.Get()
-			);
-		}
-	}
-}
-
 
 void font_renderer::draw(ui::draw_context* dc, IDWriteTextRenderer* tr, const std::wstring_view text,
                          const recti bounds, const ui::style::text_style style, const ui::color color,

@@ -258,7 +258,7 @@
     <ClCompile Include="platform_win.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="platform_win_d2d.cpp">
+    <ClCompile Include="platform_win_software.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

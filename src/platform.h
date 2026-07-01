@@ -317,6 +317,11 @@ namespace platform
 
 	std::string utf8_to_a(std::string_view utf8);
 
+	// Canonical Unicode composition (NFC). Used to make text that differs only in
+	// normalization form (e.g. Korean Hangul as precomposed syllables vs decomposed
+	// conjoining jamo) compare and search as equal. ASCII input is returned as-is.
+	std::string normalize_nfc(std::string_view text);
+
 #ifndef WINSTORE
 	void download_and_verify(const std::function<void(df::file_path)>& complete);
 	file_op_result install(df::file_path installer_path, df::folder_path destination_folder, bool silent,
