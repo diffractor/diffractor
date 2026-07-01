@@ -535,6 +535,26 @@ static void should_split()
 	}
 }
 
+static void should_split_genre()
+{
+	// Genre values use ';' as the multi-value separator. Multi-word genres and
+	// genres containing '&' or '/' must survive splitting intact.
+	const auto parts = str::split("Rock; Pop ; Hip Hop", false, str::is_genre_separator);
+	assert_equal(size_t{3}, parts.size(), "genre part count");
+	assert_equal("Rock", str::trim(parts[0]), "genre 1");
+	assert_equal("Pop", str::trim(parts[1]), "genre 2");
+	assert_equal("Hip Hop", str::trim(parts[2]), "genre 3");
+
+	const auto parts2 = str::split("Action & Adventure; R&B/Soul", false, str::is_genre_separator);
+	assert_equal(size_t{2}, parts2.size(), "genre part count 2");
+	assert_equal("Action & Adventure", str::trim(parts2[0]), "genre with ampersand");
+	assert_equal("R&B/Soul", str::trim(parts2[1]), "genre with slash");
+
+	const auto parts3 = str::split("Jazz", false, str::is_genre_separator);
+	assert_equal(size_t{1}, parts3.size(), "single genre part count");
+	assert_equal("Jazz", str::trim(parts3[0]), "single genre");
+}
+
 static void should_extract_url()
 {
 	constexpr auto input1 = "Visit my website at https://www.example.com for more info.";
@@ -976,6 +996,7 @@ void register_tests2(view_state& state, test_registry& tests)
 	tests.add("Should calc Hashes"s, should_calc_hashes);
 	tests.add("Should convert Utf8"s, should_convert_utf8);
 	tests.add("Should split"s, should_split);
+	tests.add("Should split genre"s, should_split_genre);
 	tests.add("Should extract url"s, should_extract_url);
 	tests.add("Should detect wildcard"s, should_detect_wildcard);
 	tests.add("Should match wildcard"s, should_match_wildcard);

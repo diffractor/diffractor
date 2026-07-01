@@ -1238,7 +1238,17 @@ void index_state::update_summary()
 					if (!prop::is_null(md->file_name))
 						add_words(distinct_words, distinct_text, md->file_name,
 						          prop::file_name);
-					if (!prop::is_null(md->genre)) add_words(distinct_words, distinct_text, md->genre, prop::genre);
+					if (!prop::is_null(md->genre))
+					{
+						// Genre is a single ';'-separated field; index each value
+						// separately so the sidebar and autocomplete list them individually.
+						count_ranges(distinct_words, md->genre);
+						split2(md->genre, false, [&distinct_text](const std::string_view part)
+						{
+							const auto g = str::trim(part);
+							if (!g.empty()) distinct_text[prop::genre].emplace(str::cache(g));
+						}, str::is_genre_separator);
+					}
 					if (!prop::is_null(md->lens)) add_words(distinct_words, distinct_text, md->lens, prop::lens);
 					if (!prop::is_null(md->location_place))
 						add_words(distinct_words, distinct_text, md->location_place,

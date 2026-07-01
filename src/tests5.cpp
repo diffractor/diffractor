@@ -104,6 +104,23 @@ static void should_match_terms()
 	           .is_match("created:2000-jan");
 }
 
+static void should_match_multi_value_genre()
+{
+	// A single ';'-separated genre field should match a query for any one of its values.
+	prop_test().genre("Rock; Pop; Hip Hop")
+	           .is_match("genre:Rock")
+	           .is_match("genre:Pop")
+	           .is_match("genre:'Hip Hop'")
+	           .is_not_match("genre:Jazz")
+	           .is_match("genre:Rock or genre:Jazz")
+	           .is_not_match("-genre:Rock");
+
+	// A single-value genre still matches exactly.
+	prop_test().genre("Jazz")
+	           .is_match("genre:Jazz")
+	           .is_not_match("genre:Rock");
+}
+
 static void should_not_match_folder_without()
 {
 	const auto now_days = df::date_t(2000, 1, 1).to_days();
@@ -528,6 +545,7 @@ void register_tests5(view_state& state, test_registry& tests)
 	tests.add("Should match terms"s, should_match_terms);
 	tests.add("Should match related"s, should_match_related);
 	tests.add("Should match volume label"s, should_match_volume_label);
+	tests.add("Should match multi-value genre"s, should_match_multi_value_genre);
 	tests.add("Should not match folder without "s, should_not_match_folder_without);
 	tests.add("Should match date"s, [] { should_match_date("2012-09-14", df::date_t(2012, 9, 14)); });
 	tests.add("Should match date"s, [] { should_match_date("2012", df::date_t(2012, 1, 14)); });

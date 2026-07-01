@@ -1492,20 +1492,22 @@ static compare_result compare_val(const df::search_term& term, const df::index_f
 
 	if (md)
 	{
-		if (term.key == prop::tag || term.key == prop::artist || term.key == prop::album_artist)
+		if (term.key == prop::tag || term.key == prop::artist || term.key == prop::album_artist ||
+			term.key == prop::genre)
 		{
 			compare_result comp_result;
 			auto cmp = [&comp_result, &term](const std::string_view part)
 			{
 				if (!comp_result.match)
 				{
-					comp_result = compare_term(term, str::cache(part));
+					comp_result = compare_term(term, str::cache(str::trim(part)));
 				}
 			};
 
 			if (term.key == prop::tag) split2(md->tags, true, cmp);
 			else if (term.key == prop::artist) split2(md->artist, true, cmp, str::is_artist_separator);
 			else if (term.key == prop::album_artist) split2(md->album_artist, true, cmp, str::is_artist_separator);
+			else if (term.key == prop::genre) split2(md->genre, true, cmp, str::is_genre_separator);
 
 			return comp_result;
 		}
@@ -1518,7 +1520,6 @@ static compare_result compare_val(const df::search_term& term, const df::index_f
 		if (t == prop::encoder && !prop::is_null(md->encoder)) return compare_term(term, md->encoder);
 		if (t == prop::publisher && !prop::is_null(md->publisher)) return compare_term(term, md->publisher);
 		if (t == prop::performer && !prop::is_null(md->performer)) return compare_term(term, md->performer);
-		if (t == prop::genre && !prop::is_null(md->genre)) return compare_term(term, md->genre);
 		if (t == prop::copyright_credit && !prop::is_null(md->copyright_credit))
 			return compare_term(
 				term, md->copyright_credit);

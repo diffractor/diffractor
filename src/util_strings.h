@@ -727,6 +727,13 @@ namespace str
 		return c == L';' || c == L',' || c == L'\t' || c == L'\r' || c == L'\n' || c == L'\\' || c == L'/';
 	}
 
+	// Genre names may contain spaces, '&' and '/' (e.g. "Action & Adventure", "R&B/Soul"),
+	// so only ';' (plus control whitespace) separates multiple genre values.
+	constexpr bool is_genre_separator(const wchar_t c)
+	{
+		return c == L';' || c == L'\t' || c == L'\r' || c == L'\n';
+	}
+
 	constexpr bool is_white_space(const wchar_t c)
 	{
 		return c == L' ' || c == L'\t';

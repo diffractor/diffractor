@@ -330,6 +330,12 @@ public:
 		return *this;
 	}
 
+	prop_test& genre(const std::string_view s)
+	{
+		_f.safe_ps()->genre = str::cache(s);
+		return *this;
+	}
+
 	prop_test& rate(const int16_t n)
 	{
 		_f.safe_ps()->rating = n;
