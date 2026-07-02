@@ -144,7 +144,7 @@
     <ClCompile>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)third-party\highway;$(SolutionDir)third-party\brotli\c\include;$(SolutionDir)third-party\libjx\lib\include;$(SolutionDir)third-party\libjpeg;$(SolutionDir)third-party\skcms</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)third-party\highway;$(SolutionDir)third-party\brotli\c\include;$(SolutionDir)third-party\libjx\lib\include;$(SolutionDir)third-party\libjpeg\src;$(SolutionDir)third-party\skcms</AdditionalIncludeDirectories>
       <StringPooling>true</StringPooling>
       <PreprocessorDefinitions>JPEGXL_ENABLE_SKCMS=1;_UNICODE;UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
@@ -184,7 +184,7 @@
     <ClCompile>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)third-party\highway;$(SolutionDir)third-party\brotli\c\include;$(SolutionDir)third-party\libjx\lib\include;$(SolutionDir)third-party\libjpeg;$(SolutionDir)third-party\skcms</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)third-party\highway;$(SolutionDir)third-party\brotli\c\include;$(SolutionDir)third-party\libjx\lib\include;$(SolutionDir)third-party\libjpeg\src;$(SolutionDir)third-party\skcms</AdditionalIncludeDirectories>
       <StringPooling>true</StringPooling>
       <PreprocessorDefinitions>JPEGXL_ENABLE_SKCMS=1;_UNICODE;UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
@@ -238,7 +238,7 @@
     <ClCompile>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)third-party\highway;$(SolutionDir)third-party\brotli\c\include;$(SolutionDir)third-party\libjx\lib\include;$(SolutionDir)third-party\libjpeg;$(SolutionDir)third-party\skcms</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)third-party\highway;$(SolutionDir)third-party\brotli\c\include;$(SolutionDir)third-party\libjx\lib\include;$(SolutionDir)third-party\libjpeg\src;$(SolutionDir)third-party\skcms</AdditionalIncludeDirectories>
       <StringPooling>true</StringPooling>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
@@ -282,7 +282,7 @@
     <ClCompile>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)third-party\highway;$(SolutionDir)third-party\brotli\c\include;$(SolutionDir)third-party\libjx\lib\include;$(SolutionDir)third-party\libjpeg;$(SolutionDir)third-party\skcms</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)third-party\highway;$(SolutionDir)third-party\brotli\c\include;$(SolutionDir)third-party\libjx\lib\include;$(SolutionDir)third-party\libjpeg\src;$(SolutionDir)third-party\skcms</AdditionalIncludeDirectories>
       <StringPooling>true</StringPooling>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>

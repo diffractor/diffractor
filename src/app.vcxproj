@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Code Analysis (Release)|ARM64">
@@ -425,7 +425,7 @@
     <ClCompile>
       <AdditionalOptions>/bigobj /utf-8</AdditionalOptions>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)\third-party\webp\src;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg\src;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)\third-party\webp\src;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_DEBUG;WIN32;_WINDOWS;_WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <MinimalRebuild>false</MinimalRebuild>
@@ -521,7 +521,7 @@
     <ClCompile>
       <AdditionalOptions>/bigobj /utf-8</AdditionalOptions>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg\src;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_DEBUG;WIN32;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <MinimalRebuild>false</MinimalRebuild>
@@ -613,7 +613,7 @@
     <ClCompile>
       <AdditionalOptions>/bigobj /utf-8</AdditionalOptions>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg\src;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_DEBUG;WIN32;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <MinimalRebuild>false</MinimalRebuild>
@@ -708,7 +708,7 @@
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
       <WholeProgramOptimization>true</WholeProgramOptimization>
-      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)\third-party\webp\src;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg\src;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)\third-party\webp\src;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_WINDOWS;STRICT;NDEBUG;_WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
@@ -801,7 +801,7 @@
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
       <WholeProgramOptimization>true</WholeProgramOptimization>
-      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)\third-party\webp\src;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg\src;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)\third-party\webp\src;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_WINDOWS;STRICT;NDEBUG;_WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
@@ -894,7 +894,7 @@
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
       <WholeProgramOptimization>true</WholeProgramOptimization>
-      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)\third-party\webp\src;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg\src;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)\third-party\webp\src;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_WINDOWS;STRICT;WIN32;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
@@ -984,7 +984,7 @@
       <OmitFramePointers>true</OmitFramePointers>
       <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
       <WholeProgramOptimization>true</WholeProgramOptimization>
-      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg\src;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_WINDOWS;WIN32;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
@@ -1074,7 +1074,7 @@
       <OmitFramePointers>true</OmitFramePointers>
       <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
       <WholeProgramOptimization>true</WholeProgramOptimization>
-      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg\src;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WINSTORE;_WINDOWS;WIN32;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
@@ -1165,7 +1165,7 @@
       <OmitFramePointers>true</OmitFramePointers>
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
       <WholeProgramOptimization>true</WholeProgramOptimization>
-      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg\src;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_WINDOWS;WIN32;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
@@ -1255,7 +1255,7 @@
       <OmitFramePointers>true</OmitFramePointers>
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
       <WholeProgramOptimization>true</WholeProgramOptimization>
-      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg\src;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_WINDOWS;WIN32;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
@@ -1345,7 +1345,7 @@
       <OmitFramePointers>true</OmitFramePointers>
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
       <WholeProgramOptimization>true</WholeProgramOptimization>
-      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg\src;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_WINDOWS;STRICT;WIN32;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
@@ -1423,7 +1423,7 @@
       <OmitFramePointers>true</OmitFramePointers>
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
       <WholeProgramOptimization>true</WholeProgramOptimization>
-      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg\src;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_WINDOWS;STRICT;WIN32;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
@@ -1485,7 +1485,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Template|Win32'">
     <ClCompile>
-      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)\third-party\webp\src;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg\src;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)\third-party\webp\src;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <WarningLevel>Level3</WarningLevel>
@@ -1515,7 +1515,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Template|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg\src;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
@@ -1535,7 +1535,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Template|ARM64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg\src;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>

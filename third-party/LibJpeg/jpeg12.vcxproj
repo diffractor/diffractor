@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <PreferredToolArchitecture>
@@ -119,7 +119,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
@@ -170,7 +170,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <DebugInformationFormat>OldStyle</DebugInformationFormat>
@@ -206,7 +206,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
-      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
@@ -255,7 +255,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <ExceptionHandling>
       </ExceptionHandling>
@@ -305,7 +305,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <ExceptionHandling>
       </ExceptionHandling>
@@ -345,7 +345,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
-      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <ExceptionHandling>
       </ExceptionHandling>
@@ -394,34 +394,34 @@
     </Midl>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="jcapistd.c" />
-    <ClCompile Include="jccolor.c" />
-    <ClCompile Include="jcdiffct.c" />
-    <ClCompile Include="jclossls.c" />
-    <ClCompile Include="jcmainct.c" />
-    <ClCompile Include="jcprepct.c" />
-    <ClCompile Include="jcsample.c" />
-    <ClCompile Include="jdapistd.c" />
-    <ClCompile Include="jdcolor.c" />
-    <ClCompile Include="jddiffct.c" />
-    <ClCompile Include="jdlossls.c" />
-    <ClCompile Include="jdmainct.c" />
-    <ClCompile Include="jdpostct.c" />
-    <ClCompile Include="jdsample.c" />
-    <ClCompile Include="jutils.c" />
-    <ClCompile Include="jccoefct.c" />
-    <ClCompile Include="jcdctmgr.c" />
-    <ClCompile Include="jdcoefct.c" />
-    <ClCompile Include="jddctmgr.c" />
-    <ClCompile Include="jdmerge.c" />
-    <ClCompile Include="jfdctfst.c" />
-    <ClCompile Include="jfdctint.c" />
-    <ClCompile Include="jidctflt.c" />
-    <ClCompile Include="jidctfst.c" />
-    <ClCompile Include="jidctint.c" />
-    <ClCompile Include="jidctred.c" />
-    <ClCompile Include="jquant1.c" />
-    <ClCompile Include="jquant2.c" />
+    <ClCompile Include="src\jcapistd.c" />
+    <ClCompile Include="src\jccolor.c" />
+    <ClCompile Include="src\jcdiffct.c" />
+    <ClCompile Include="src\jclossls.c" />
+    <ClCompile Include="src\jcmainct.c" />
+    <ClCompile Include="src\jcprepct.c" />
+    <ClCompile Include="src\jcsample.c" />
+    <ClCompile Include="src\jdapistd.c" />
+    <ClCompile Include="src\jdcolor.c" />
+    <ClCompile Include="src\jddiffct.c" />
+    <ClCompile Include="src\jdlossls.c" />
+    <ClCompile Include="src\jdmainct.c" />
+    <ClCompile Include="src\jdpostct.c" />
+    <ClCompile Include="src\jdsample.c" />
+    <ClCompile Include="src\jutils.c" />
+    <ClCompile Include="src\jccoefct.c" />
+    <ClCompile Include="src\jcdctmgr.c" />
+    <ClCompile Include="src\jdcoefct.c" />
+    <ClCompile Include="src\jddctmgr.c" />
+    <ClCompile Include="src\jdmerge.c" />
+    <ClCompile Include="src\jfdctfst.c" />
+    <ClCompile Include="src\jfdctint.c" />
+    <ClCompile Include="src\jidctflt.c" />
+    <ClCompile Include="src\jidctfst.c" />
+    <ClCompile Include="src\jidctint.c" />
+    <ClCompile Include="src\jidctred.c" />
+    <ClCompile Include="src\jquant1.c" />
+    <ClCompile Include="src\jquant2.c" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

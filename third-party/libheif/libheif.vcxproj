@@ -415,7 +415,7 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <FloatingPointModel>Fast</FloatingPointModel>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)\api;$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\ffmpeg;$(SolutionDir)third-party\libjpeg;$(SolutionDir)third-party\libde265</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)\api;$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\ffmpeg;$(SolutionDir)third-party\libjpeg\src;$(SolutionDir)third-party\libde265</AdditionalIncludeDirectories>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <OpenMPSupport>false</OpenMPSupport>
       <LanguageStandard>stdcpp20</LanguageStandard>
@@ -461,7 +461,7 @@
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <OmitFramePointers>true</OmitFramePointers>
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)\api;$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\ffmpeg;$(SolutionDir)third-party\libjpeg;$(SolutionDir)third-party\libde265</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)\api;$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\ffmpeg;$(SolutionDir)third-party\libjpeg\src;$(SolutionDir)third-party\libde265</AdditionalIncludeDirectories>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <OpenMPSupport>false</OpenMPSupport>
       <LanguageStandard>stdcpp20</LanguageStandard>
@@ -498,7 +498,7 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <FloatingPointModel>Fast</FloatingPointModel>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)\api;$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\ffmpeg;$(SolutionDir)third-party\libjpeg;$(SolutionDir)third-party\libde265</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)\api;$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\ffmpeg;$(SolutionDir)third-party\libjpeg\src;$(SolutionDir)third-party\libde265</AdditionalIncludeDirectories>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <OpenMPSupport>false</OpenMPSupport>
       <LanguageStandard>stdcpp20</LanguageStandard>
@@ -541,7 +541,7 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <FloatingPointModel>Fast</FloatingPointModel>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)\api;$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\ffmpeg;$(SolutionDir)third-party\libjpeg;$(SolutionDir)third-party\libde265</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)\api;$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\ffmpeg;$(SolutionDir)third-party\libjpeg\src;$(SolutionDir)third-party\libde265</AdditionalIncludeDirectories>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <OpenMPSupport>false</OpenMPSupport>
       <LanguageStandard>stdcpp20</LanguageStandard>
@@ -574,7 +574,7 @@
       <FavorSizeOrSpeed>Size</FavorSizeOrSpeed>
       <OmitFramePointers>true</OmitFramePointers>
       <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)\api;$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\ffmpeg;$(SolutionDir)third-party\libjpeg;$(SolutionDir)third-party\libde265</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)\api;$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\ffmpeg;$(SolutionDir)third-party\libjpeg\src;$(SolutionDir)third-party\libde265</AdditionalIncludeDirectories>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <OpenMPSupport>false</OpenMPSupport>
       <LanguageStandard>stdcpp20</LanguageStandard>
@@ -618,7 +618,7 @@
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <OmitFramePointers>true</OmitFramePointers>
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)\api;$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\ffmpeg;$(SolutionDir)third-party\libjpeg;$(SolutionDir)third-party\libde265</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)\api;$(SolutionDir)\third-party\dav1d\include;$(SolutionDir)third-party;$(SolutionDir)third-party\ffmpeg;$(SolutionDir)third-party\libjpeg\src;$(SolutionDir)third-party\libde265</AdditionalIncludeDirectories>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <OpenMPSupport>false</OpenMPSupport>
       <LanguageStandard>stdcpp20</LanguageStandard>

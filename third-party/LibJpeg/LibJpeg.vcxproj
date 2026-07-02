@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ImportGroup Label="ExtensionSettings">
     <Import Project="..\nasm.props" />
@@ -143,7 +143,7 @@
       <WarningLevel>Level1</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions);;BITS_IN_JSAMPLE=8</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(SolutionDir)Include;.\</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)Include;$(ProjectDir)src;.\</AdditionalIncludeDirectories>
       <FloatingPointModel>Fast</FloatingPointModel>
       <StringPooling>true</StringPooling>
       <FunctionLevelLinking>true</FunctionLevelLinking>
@@ -193,7 +193,7 @@
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>NEON_INTRINSICS;NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions);;BITS_IN_JSAMPLE=8</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(SolutionDir)Include;.\</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)Include;$(ProjectDir)src;.\</AdditionalIncludeDirectories>
       <FloatingPointModel>Fast</FloatingPointModel>
       <StringPooling>true</StringPooling>
       <FunctionLevelLinking>true</FunctionLevelLinking>
@@ -239,7 +239,7 @@
       <WarningLevel>Level1</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions);;BITS_IN_JSAMPLE=8</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(SolutionDir)Include;.\</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)Include;$(ProjectDir)src;.\</AdditionalIncludeDirectories>
       <FloatingPointModel>Fast</FloatingPointModel>
       <StringPooling>true</StringPooling>
       <FunctionLevelLinking>true</FunctionLevelLinking>
@@ -292,7 +292,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions);;BITS_IN_JSAMPLE=8</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(SolutionDir)Include;.\</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)Include;$(ProjectDir)src;.\</AdditionalIncludeDirectories>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <FloatingPointModel>Fast</FloatingPointModel>
@@ -343,7 +343,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>NEON_INTRINSICS;NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions);;BITS_IN_JSAMPLE=8</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(SolutionDir)Include;.\</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)Include;$(ProjectDir)src;.\</AdditionalIncludeDirectories>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <FloatingPointModel>Fast</FloatingPointModel>
@@ -393,7 +393,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions);;BITS_IN_JSAMPLE=8</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(SolutionDir)Include;.\</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)Include;$(ProjectDir)src;.\</AdditionalIncludeDirectories>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <FloatingPointModel>Fast</FloatingPointModel>
@@ -712,7 +712,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
     </nasm>
-    <nasm Include="simd\i386\jquant-3dn.asm">
+    <nasm Include="simd\i386\jquantf-3dn.asm">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
@@ -720,7 +720,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
     </nasm>
-    <nasm Include="simd\i386\jquant-mmx.asm">
+    <nasm Include="simd\i386\jquanti-mmx.asm">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
@@ -728,7 +728,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
     </nasm>
-    <nasm Include="simd\i386\jquant-sse.asm">
+    <nasm Include="simd\i386\jquantf-sse.asm">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
@@ -1010,11 +1010,11 @@
     </nasm>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="jaricom.c" />
-    <ClCompile Include="jcapimin.c" />
-    <ClCompile Include="jcapistd.c" />
-    <ClCompile Include="jcarith.c" />
-    <ClCompile Include="jccoefct.c">
+    <ClCompile Include="src\jaricom.c" />
+    <ClCompile Include="src\jcapimin.c" />
+    <ClCompile Include="src\jcapistd.c" />
+    <ClCompile Include="src\jcarith.c" />
+    <ClCompile Include="src\jccoefct.c">
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">NEON_INTRINSICS;NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -1022,8 +1022,8 @@
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
-    <ClCompile Include="jccolor.c" />
-    <ClCompile Include="jcdctmgr.c">
+    <ClCompile Include="src\jccolor.c" />
+    <ClCompile Include="src\jcdctmgr.c">
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">NEON_INTRINSICS;NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -1031,29 +1031,29 @@
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
-    <ClCompile Include="jcdiffct.c" />
-    <ClCompile Include="jchuff.c" />
-    <ClCompile Include="jcinit.c" />
-    <ClCompile Include="jclhuff.c" />
-    <ClCompile Include="jclossls.c" />
-    <ClCompile Include="jcmainct.c" />
-    <ClCompile Include="jcmarker.c" />
-    <ClCompile Include="jcmaster.c" />
-    <ClCompile Include="jcomapi.c" />
-    <ClCompile Include="jcparam.c" />
-    <ClCompile Include="jcphuff.c" />
-    <ClCompile Include="jcprepct.c" />
-    <ClCompile Include="jcsample.c" />
-    <ClCompile Include="jcstest.c" />
-    <ClCompile Include="jctrans.c" />
-    <ClCompile Include="jdapimin.c" />
-    <ClCompile Include="jdapistd.c" />
-    <ClCompile Include="jdarith.c" />
-    <ClCompile Include="jdatadst-tj.c" />
-    <ClCompile Include="jdatadst.c" />
-    <ClCompile Include="jdatasrc-tj.c" />
-    <ClCompile Include="jdatasrc.c" />
-    <ClCompile Include="jdcoefct.c">
+    <ClCompile Include="src\jcdiffct.c" />
+    <ClCompile Include="src\jchuff.c" />
+    <ClCompile Include="src\jcinit.c" />
+    <ClCompile Include="src\jclhuff.c" />
+    <ClCompile Include="src\jclossls.c" />
+    <ClCompile Include="src\jcmainct.c" />
+    <ClCompile Include="src\jcmarker.c" />
+    <ClCompile Include="src\jcmaster.c" />
+    <ClCompile Include="src\jcomapi.c" />
+    <ClCompile Include="src\jcparam.c" />
+    <ClCompile Include="src\jcphuff.c" />
+    <ClCompile Include="src\jcprepct.c" />
+    <ClCompile Include="src\jcsample.c" />
+    <ClCompile Include="src\jcstest.c" />
+    <ClCompile Include="src\jctrans.c" />
+    <ClCompile Include="src\jdapimin.c" />
+    <ClCompile Include="src\jdapistd.c" />
+    <ClCompile Include="src\jdarith.c" />
+    <ClCompile Include="src\jdatadst-tj.c" />
+    <ClCompile Include="src\jdatadst.c" />
+    <ClCompile Include="src\jdatasrc-tj.c" />
+    <ClCompile Include="src\jdatasrc.c" />
+    <ClCompile Include="src\jdcoefct.c">
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">NEON_INTRINSICS;NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -1061,8 +1061,8 @@
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
-    <ClCompile Include="jdcolor.c" />
-    <ClCompile Include="jddctmgr.c">
+    <ClCompile Include="src\jdcolor.c" />
+    <ClCompile Include="src\jddctmgr.c">
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">NEON_INTRINSICS;NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -1070,16 +1070,16 @@
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
-    <ClCompile Include="jddiffct.c" />
-    <ClCompile Include="jdhuff.c" />
-    <ClCompile Include="jdicc.c" />
-    <ClCompile Include="jdinput.c" />
-    <ClCompile Include="jdlhuff.c" />
-    <ClCompile Include="jdlossls.c" />
-    <ClCompile Include="jdmainct.c" />
-    <ClCompile Include="jdmarker.c" />
-    <ClCompile Include="jdmaster.c" />
-    <ClCompile Include="jdmerge.c">
+    <ClCompile Include="src\jddiffct.c" />
+    <ClCompile Include="src\jdhuff.c" />
+    <ClCompile Include="src\jdicc.c" />
+    <ClCompile Include="src\jdinput.c" />
+    <ClCompile Include="src\jdlhuff.c" />
+    <ClCompile Include="src\jdlossls.c" />
+    <ClCompile Include="src\jdmainct.c" />
+    <ClCompile Include="src\jdmarker.c" />
+    <ClCompile Include="src\jdmaster.c" />
+    <ClCompile Include="src\jdmerge.c">
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">NEON_INTRINSICS;NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -1087,13 +1087,13 @@
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
-    <ClCompile Include="jdphuff.c" />
-    <ClCompile Include="jdpostct.c" />
-    <ClCompile Include="jdsample.c" />
-    <ClCompile Include="jdtrans.c" />
-    <ClCompile Include="jerror.c" />
-    <ClCompile Include="jfdctflt.c" />
-    <ClCompile Include="jfdctfst.c">
+    <ClCompile Include="src\jdphuff.c" />
+    <ClCompile Include="src\jdpostct.c" />
+    <ClCompile Include="src\jdsample.c" />
+    <ClCompile Include="src\jdtrans.c" />
+    <ClCompile Include="src\jerror.c" />
+    <ClCompile Include="src\jfdctflt.c" />
+    <ClCompile Include="src\jfdctfst.c">
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">NEON_INTRINSICS;NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -1101,7 +1101,7 @@
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
-    <ClCompile Include="jfdctint.c">
+    <ClCompile Include="src\jfdctint.c">
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">NEON_INTRINSICS;NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -1109,7 +1109,7 @@
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
-    <ClCompile Include="jidctflt.c">
+    <ClCompile Include="src\jidctflt.c">
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">NEON_INTRINSICS;NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -1117,7 +1117,7 @@
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
-    <ClCompile Include="jidctfst.c">
+    <ClCompile Include="src\jidctfst.c">
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">NEON_INTRINSICS;NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -1125,7 +1125,7 @@
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
-    <ClCompile Include="jidctint.c">
+    <ClCompile Include="src\jidctint.c">
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">NEON_INTRINSICS;NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -1133,7 +1133,7 @@
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
-    <ClCompile Include="jidctred.c">
+    <ClCompile Include="src\jidctred.c">
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">NEON_INTRINSICS;NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -1141,9 +1141,9 @@
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
-    <ClCompile Include="jmemmgr.c" />
-    <ClCompile Include="jmemnobs.c" />
-    <ClCompile Include="jquant1.c">
+    <ClCompile Include="src\jmemmgr.c" />
+    <ClCompile Include="src\jmemnobs.c" />
+    <ClCompile Include="src\jquant1.c">
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">NEON_INTRINSICS;NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -1151,7 +1151,7 @@
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
-    <ClCompile Include="jquant2.c">
+    <ClCompile Include="src\jquant2.c">
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">NEON_INTRINSICS;NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -1159,7 +1159,7 @@
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NO_GETENV;_CRT_SECURE_NO_WARNINGS; WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
-    <ClCompile Include="jutils.c" />
+    <ClCompile Include="src\jutils.c" />
     <ClCompile Include="simd\arm\aarch64\jchuff-neon.c">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
@@ -1252,43 +1252,35 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="simd\i386\jsimd.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    <ClCompile Include="simd\jsimd.c">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="simd\x86_64\jsimd.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="tjutil.c" />
-    <ClCompile Include="transupp.c" />
+    <ClCompile Include="src\tjutil.c" />
+    <ClCompile Include="src\transupp.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="jchuff.h" />
-    <ClInclude Include="jconfig.h" />
-    <ClInclude Include="jconfigint.h" />
-    <ClInclude Include="jdcoefct.h" />
-    <ClInclude Include="jdct.h" />
-    <ClInclude Include="jdhuff.h" />
-    <ClInclude Include="jdmainct.h" />
-    <ClInclude Include="jdmaster.h" />
-    <ClInclude Include="jdmerge.h" />
-    <ClInclude Include="jdsample.h" />
-    <ClInclude Include="jerror.h" />
-    <ClInclude Include="jinclude.h" />
-    <ClInclude Include="jmemsys.h" />
-    <ClInclude Include="jmorecfg.h" />
-    <ClInclude Include="jpegcomp.h" />
-    <ClInclude Include="jpegint.h" />
-    <ClInclude Include="jpeglib.h" />
-    <ClInclude Include="jpeg_nbits_table.h" />
-    <ClInclude Include="jsimd.h" />
-    <ClInclude Include="jsimddct.h" />
-    <ClInclude Include="jversion.h" />
+    <ClInclude Include="src\jchuff.h" />
+    <ClInclude Include="src\jconfig.h" />
+    <ClInclude Include="src\jconfigint.h" />
+    <ClInclude Include="src\jdcoefct.h" />
+    <ClInclude Include="src\jdct.h" />
+    <ClInclude Include="src\jdhuff.h" />
+    <ClInclude Include="src\jdmainct.h" />
+    <ClInclude Include="src\jdmaster.h" />
+    <ClInclude Include="src\jdmerge.h" />
+    <ClInclude Include="src\jdsample.h" />
+    <ClInclude Include="src\jerror.h" />
+    <ClInclude Include="src\jinclude.h" />
+    <ClInclude Include="src\jmemsys.h" />
+    <ClInclude Include="src\jmorecfg.h" />
+    <ClInclude Include="src\jpegcomp.h" />
+    <ClInclude Include="src\jpegint.h" />
+    <ClInclude Include="src\jpeglib.h" />
+    <ClInclude Include="src\jpeg_nbits_table.h" />
+    <ClInclude Include="src\jsimd.h" />
+    <ClInclude Include="src\jsimddct.h" />
+    <ClInclude Include="src\jversion.h" />
     <ClInclude Include="simd\arm\align.h">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
@@ -1309,8 +1301,8 @@
     </ClInclude>
     <ClInclude Include="simd\i386\jsimd.h" />
     <ClInclude Include="simd\i386\jsimdcfg.inc.h" />
-    <ClInclude Include="tjutil.h" />
-    <ClInclude Include="transupp.h" />
+    <ClInclude Include="src\tjutil.h" />
+    <ClInclude Include="src\transupp.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
