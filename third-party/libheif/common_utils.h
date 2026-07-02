@@ -22,7 +22,11 @@
 #define LIBHEIF_COMMON_UTILS_H
 
 #include <cinttypes>
+#include <string>
+#include <vector>
+
 #include "libheif/heif.h"
+#include "error.h"
 
 #ifdef _MSC_VER
 #define MAYBE_UNUSED
@@ -31,13 +35,29 @@
 #endif
 
 
-constexpr inline uint32_t fourcc_to_uint32(const char* id)
+constexpr uint32_t four_bytes_to_uint32(uint8_t msb, uint8_t b, uint8_t c, uint8_t lsb)
 {
-  return (((((uint32_t) id[0])&0xFF) << 24) |
-          ((((uint32_t) id[1])&0xFF) << 16) |
-          ((((uint32_t) id[2])&0xFF) << 8) |
-          ((((uint32_t) id[3])&0xFF) << 0));
+  return (static_cast<uint32_t>(msb << 24) |
+          static_cast<uint32_t>(b << 16) |
+          static_cast<uint32_t>(c << 8) |
+          static_cast<uint32_t>(lsb));
 }
+
+constexpr uint16_t two_bytes_to_uint16(uint8_t msb, uint8_t lsb)
+{
+  return (static_cast<uint16_t>(msb << 8) |
+          static_cast<uint16_t>(lsb));
+}
+
+constexpr uint32_t fourcc(const char* id)
+{
+  return four_bytes_to_uint32(static_cast<uint8_t>(id[0]),
+                              static_cast<uint8_t>(id[1]),
+                              static_cast<uint8_t>(id[2]),
+                              static_cast<uint8_t>(id[3]));
+}
+
+std::string fourcc_to_string(uint32_t code);
 
 
 // Functions for common use in libheif and the plugins.
@@ -46,10 +66,26 @@ uint8_t chroma_h_subsampling(heif_chroma c);
 
 uint8_t chroma_v_subsampling(heif_chroma c);
 
-void get_subsampled_size(int width, int height,
+enum class scaling_mode : uint8_t {
+  round_down,
+  round_up,
+  is_divisible
+};
+
+uint32_t get_subsampled_size_h(uint32_t width,
+                               heif_channel channel,
+                               heif_chroma chroma,
+                               scaling_mode mode);
+
+uint32_t get_subsampled_size_v(uint32_t height,
+                               heif_channel channel,
+                               heif_chroma chroma,
+                               scaling_mode mode);
+
+void get_subsampled_size(uint32_t width, uint32_t height,
                          heif_channel channel,
                          heif_chroma chroma,
-                         int* subsampled_width, int* subsampled_height);
+                         uint32_t* subsampled_width, uint32_t* subsampled_height);
 
 uint8_t compute_avif_profile(int bits_per_pixel, heif_chroma chroma);
 
@@ -61,22 +97,30 @@ inline uint8_t clip_int_u8(int x)
   return static_cast<uint8_t>(x);
 }
 
+inline uint16_t clip_int_u16(int32_t x, uint16_t maxi)
+{
+  if (x < 0) return 0;
+  if (x > maxi) return maxi;
+  return static_cast<uint16_t>(x);
+}
+
 
 inline uint16_t clip_f_u16(float fx, int32_t maxi)
 {
-  long x = (long int) (fx + 0.5f);
+  int32_t x = (int32_t) (fx + 0.5f);
   if (x < 0) return 0;
   if (x > maxi) return (uint16_t) maxi;
   return static_cast<uint16_t>(x);
 }
 
-
 inline uint8_t clip_f_u8(float fx)
 {
-  long x = (long int) (fx + 0.5f);
+  int32_t x = (int32_t) (fx + 0.5f);
   if (x < 0) return 0;
   if (x > 255) return 255;
   return static_cast<uint8_t>(x);
 }
+
+Result<std::string> vector_to_string(const std::vector<uint8_t>& vec);
 
 #endif //LIBHEIF_COMMON_UTILS_H

@@ -96,8 +96,8 @@ struct encoder_struct_ojph
 
 
 #define MAX_NPARAMETERS 10
-static struct heif_encoder_parameter ojph_encoder_params[MAX_NPARAMETERS];
-const static struct heif_encoder_parameter* ojph_encoder_parameter_ptrs[MAX_NPARAMETERS + 1];
+static heif_encoder_parameter ojph_encoder_params[MAX_NPARAMETERS];
+const static heif_encoder_parameter* ojph_encoder_parameter_ptrs[MAX_NPARAMETERS + 1];
 
 static const char* kParam_chroma = "chroma";
 static const char* const kParam_chroma_valid_values[] = {
@@ -113,23 +113,27 @@ static const char* const kParam_progression_order_valid_values[] = {
     "LRCP", "RLCP", "RPCL", "PCRL", "CPRL", nullptr
 };
 
+#if OPENJPH_MAJOR_VERSION > 1 || OPENJPH_MINOR_VERSION > 10
 static const char* kParam_tlm_marker = "tlm_marker";
+#endif
 
 static const char* kParam_codestream_comment = "codestream_comment";
 
 static const char* kParam_tile_size = "tile_size";
 
+#if OPENJPH_MAJOR_VERSION > 1 || OPENJPH_MINOR_VERSION > 11
 static const char* kParam_tilepart_division = "tilepart_division";
 static const char* const kParam_tilepart_division_valid_values[] = {
     "none", "resolution", "component", "both", nullptr
 };
+#endif
 
 static const char* kParam_block_dimensions = "block_dimensions";
 
 static void ojph_init_encoder_parameters()
 {
-  struct heif_encoder_parameter* p = ojph_encoder_params;
-  const struct heif_encoder_parameter** d = ojph_encoder_parameter_ptrs;
+  heif_encoder_parameter* p = ojph_encoder_params;
+  const heif_encoder_parameter** d = ojph_encoder_parameter_ptrs;
   int i = 0;
 
   assert(i < MAX_NPARAMETERS);
@@ -171,6 +175,7 @@ static void ojph_init_encoder_parameters()
   p->string.valid_values = kParam_progression_order_valid_values;
   d[i++] = p++;
 
+#if OPENJPH_MAJOR_VERSION > 1 || OPENJPH_MINOR_VERSION > 10
   assert(i < MAX_NPARAMETERS);
   p->version = 2;
   p->name = kParam_tlm_marker;
@@ -178,6 +183,7 @@ static void ojph_init_encoder_parameters()
   p->boolean.default_value = false;
   p->has_default = true;
   d[i++] = p++;
+#endif
 
   assert(i < MAX_NPARAMETERS);
   p->version = 2;
@@ -197,6 +203,7 @@ static void ojph_init_encoder_parameters()
   p->string.valid_values = nullptr;
   d[i++] = p++;
 
+#if OPENJPH_MAJOR_VERSION > 1 || OPENJPH_MINOR_VERSION > 11
   assert(i < MAX_NPARAMETERS);
   p->version = 2;
   p->name = kParam_tilepart_division;
@@ -205,6 +212,7 @@ static void ojph_init_encoder_parameters()
   p->has_default = true;
   p->string.valid_values = kParam_tilepart_division_valid_values;
   d[i++] = p++;
+#endif
 
   assert(i < MAX_NPARAMETERS);
   p->version = 2;
@@ -233,9 +241,9 @@ void ojph_cleanup_plugin()
 
 // Note quality is part of the plugin API.
 
-struct heif_error ojph_set_parameter_quality(void* encoder_raw, int quality)
+heif_error ojph_set_parameter_quality(void* encoder_raw, int quality)
 {
-  auto* encoder = (struct encoder_struct_ojph*) encoder_raw;
+  auto* encoder = (encoder_struct_ojph*) encoder_raw;
 
   encoder->quality = quality;
 
@@ -251,9 +259,9 @@ static const heif_error &ojph_set_num_decompositions(int value, encoder_struct_o
   return heif_error_ok;
 }
 
-struct heif_error ojph_set_parameter_integer(void *encoder_raw, const char *name, int value)
+heif_error ojph_set_parameter_integer(void *encoder_raw, const char *name, int value)
 {
-  struct encoder_struct_ojph* encoder = (struct encoder_struct_ojph*) encoder_raw;
+  encoder_struct_ojph* encoder = (encoder_struct_ojph*) encoder_raw;
 
   if (strcmp(name, heif_encoder_parameter_name_quality) == 0) {
     return  ojph_set_parameter_quality(encoder, value);
@@ -269,9 +277,9 @@ struct heif_error ojph_set_parameter_integer(void *encoder_raw, const char *name
 
 // Note quality is part of the plugin API
 
-struct heif_error ojph_get_parameter_quality(void* encoder_raw, int* quality)
+heif_error ojph_get_parameter_quality(void* encoder_raw, int* quality)
 {
-  auto* encoder = (struct encoder_struct_ojph*) encoder_raw;
+  auto* encoder = (encoder_struct_ojph*) encoder_raw;
 
   *quality = encoder->quality;
 
@@ -284,9 +292,9 @@ const heif_error &ojph_get_parameter_num_decompositions(encoder_struct_ojph *enc
   return heif_error_ok;
 }
 
-struct heif_error ojph_get_parameter_integer(void *encoder_raw, const char *name, int *value)
+heif_error ojph_get_parameter_integer(void *encoder_raw, const char *name, int *value)
 {
-  struct encoder_struct_ojph* encoder = (struct encoder_struct_ojph*) encoder_raw;
+  encoder_struct_ojph* encoder = (encoder_struct_ojph*) encoder_raw;
 
   if (strcmp(name, heif_encoder_parameter_name_quality) == 0) {
     return ojph_get_parameter_quality(encoder, value);
@@ -302,26 +310,30 @@ struct heif_error ojph_get_parameter_integer(void *encoder_raw, const char *name
 
 // Note lossless is part of the plugin API
 
-struct heif_error ojph_set_parameter_lossless(void* encoder_raw, int lossless)
+heif_error ojph_set_parameter_lossless(void* encoder_raw, int lossless)
 {
-  auto* encoder = (struct encoder_struct_ojph*) encoder_raw;
+  auto* encoder = (encoder_struct_ojph*) encoder_raw;
   encoder->codestream.access_cod().set_reversible(lossless);
   return heif_error_ok;
 }
 
+#if OPENJPH_MAJOR_VERSION > 1 || OPENJPH_MINOR_VERSION > 10
 const heif_error &ojph_set_tlm_marker_requested(encoder_struct_ojph *encoder, int value)
 {
   encoder->codestream.request_tlm_marker(value);
   return heif_error_ok;
 }
+#endif
 
-struct heif_error ojph_set_parameter_boolean(void *encoder_raw, const char *name, int value)
+heif_error ojph_set_parameter_boolean(void *encoder_raw, const char *name, int value)
 {
-  auto* encoder = (struct encoder_struct_ojph*) encoder_raw;
+  auto* encoder = (encoder_struct_ojph*) encoder_raw;
   if (strcmp(name, heif_encoder_parameter_name_lossless) == 0) {
     return ojph_set_parameter_lossless(encoder, value);
+#if OPENJPH_MAJOR_VERSION > 1 || OPENJPH_MINOR_VERSION > 10
   } else if (strcmp(name, kParam_tlm_marker) == 0) {
     return ojph_set_tlm_marker_requested(encoder, value);
+#endif
   }
   return heif_error_unsupported_parameter;
 }
@@ -330,26 +342,30 @@ struct heif_error ojph_set_parameter_boolean(void *encoder_raw, const char *name
 
 // Note lossless is part of the plugin API
 
-struct heif_error ojph_get_parameter_lossless(void* encoder_raw, int* lossless)
+heif_error ojph_get_parameter_lossless(void* encoder_raw, int* lossless)
 {
-  auto* encoder = (struct encoder_struct_ojph*) encoder_raw;
+  auto* encoder = (encoder_struct_ojph*) encoder_raw;
   *lossless = encoder->codestream.access_cod().is_reversible();
   return heif_error_ok;
 }
 
+#if OPENJPH_MAJOR_VERSION > 1 || OPENJPH_MINOR_VERSION > 10
 const heif_error &ojph_get_parameter_tlm_marker(encoder_struct_ojph *encoder, int *value)
 {
   *value = encoder->codestream.is_tlm_requested();
   return heif_error_ok;
 }
+#endif
 
-struct heif_error ojph_get_parameter_boolean(void *encoder_raw, const char *name, int *value)
+heif_error ojph_get_parameter_boolean(void *encoder_raw, const char *name, int *value)
 {
-  auto* encoder = (struct encoder_struct_ojph*) encoder_raw;
+  auto* encoder = (encoder_struct_ojph*) encoder_raw;
   if (strcmp(name, heif_encoder_parameter_name_lossless) == 0) {
     return ojph_get_parameter_lossless(encoder, value);
+#if OPENJPH_MAJOR_VERSION > 1 || OPENJPH_MINOR_VERSION > 10
   } else if (strcmp(name, kParam_tlm_marker) == 0) {
     return ojph_get_parameter_tlm_marker(encoder, value);
+#endif
   } else {
     return heif_error_unsupported_parameter;
   }
@@ -407,6 +423,7 @@ const heif_error &ojph_get_parameter_tile_size(encoder_struct_ojph *encoder, cha
   return heif_error_ok;
 }
 
+#if OPENJPH_MAJOR_VERSION > 1 || OPENJPH_MINOR_VERSION > 11
 const heif_error &ojph_get_parameter_tilepart_division(encoder_struct_ojph *encoder, char *value, int value_size)
 {
   bool res = encoder->codestream.is_tilepart_division_at_resolutions();
@@ -422,6 +439,7 @@ const heif_error &ojph_get_parameter_tilepart_division(encoder_struct_ojph *enco
   }
   return heif_error_ok;
 }
+#endif
 
 const heif_error &ojph_get_parameter_block_dimensions(encoder_struct_ojph *encoder, char *value, int value_size)
 {
@@ -432,9 +450,9 @@ const heif_error &ojph_get_parameter_block_dimensions(encoder_struct_ojph *encod
   return heif_error_ok;
 }
 
-struct heif_error ojph_get_parameter_string(void *encoder_raw, const char *name, char *value, int value_size)
+heif_error ojph_get_parameter_string(void *encoder_raw, const char *name, char *value, int value_size)
 {
-  struct encoder_struct_ojph* encoder = (struct encoder_struct_ojph*) encoder_raw;
+  encoder_struct_ojph* encoder = (encoder_struct_ojph*) encoder_raw;
 
   if (strcmp(name, kParam_chroma) == 0) {
     return ojph_get_parameter_chroma(encoder, value, value_size);
@@ -444,8 +462,10 @@ struct heif_error ojph_get_parameter_string(void *encoder_raw, const char *name,
     return ojph_get_parameter_codestream_comment(encoder, value, value_size);
   } else if (strcmp(name, kParam_tile_size) == 0) {
     return ojph_get_parameter_tile_size(encoder, value, value_size);
+#if OPENJPH_MAJOR_VERSION > 1 || OPENJPH_MINOR_VERSION > 11
   } else if (strcmp(name, kParam_tilepart_division) == 0) {
     return ojph_get_parameter_tilepart_division(encoder, value, value_size);
+#endif
   } else if (strcmp(name, kParam_block_dimensions) == 0) {
     return ojph_get_parameter_block_dimensions(encoder, value, value_size);
   } else {
@@ -521,6 +541,7 @@ static const heif_error &ojph_set_tile_size(encoder_struct_ojph *encoder, const 
   return heif_error_ok;
 }
 
+#if OPENJPH_MAJOR_VERSION > 1 || OPENJPH_MINOR_VERSION > 11
 static const heif_error &ojph_set_tilepart_division(encoder_struct_ojph *encoder, const char *value)
 {
   if (strcmp(value, "none") == 0) {
@@ -539,6 +560,7 @@ static const heif_error &ojph_set_tilepart_division(encoder_struct_ojph *encoder
     return heif_error_invalid_parameter_value;
   }
 }
+#endif
 
 // Get the base 2 logarithm for code block sizes. See ITU-T T.800 (11/2015) Table A.18
 // Values are encoded 0 to 8 (i.e. its -2)
@@ -589,9 +611,9 @@ static const heif_error &ojph_set_block_dimensions(encoder_struct_ojph *encoder,
   return heif_error_ok;
 }
 
-struct heif_error ojph_set_parameter_string(void *encoder_raw, const char *name, const char *value)
+heif_error ojph_set_parameter_string(void *encoder_raw, const char *name, const char *value)
 {
-  auto* encoder = (struct encoder_struct_ojph*) encoder_raw;
+  auto* encoder = (encoder_struct_ojph*) encoder_raw;
 
   if (strcmp(name, kParam_chroma) == 0) {
     return ojph_set_chroma(encoder, value);
@@ -601,8 +623,10 @@ struct heif_error ojph_set_parameter_string(void *encoder_raw, const char *name,
     return ojph_set_codestream_comment(encoder, value);
   } else if (strcmp(name, kParam_tile_size) == 0) {
     return ojph_set_tile_size(encoder, value);
+#if OPENJPH_MAJOR_VERSION > 1 || OPENJPH_MINOR_VERSION > 11
   } else if (strcmp(name, kParam_tilepart_division) == 0) {
     return ojph_set_tilepart_division(encoder, value);
+#endif
   } else if (strcmp(name, kParam_block_dimensions) == 0) {
     return ojph_set_block_dimensions(encoder, value);
   } else {
@@ -612,9 +636,9 @@ struct heif_error ojph_set_parameter_string(void *encoder_raw, const char *name,
 
 static void ojph_set_default_parameters(void* encoder_raw)
 {
-  struct encoder_struct_ojph* encoder = (struct encoder_struct_ojph*) encoder_raw;
-  for (const struct heif_encoder_parameter** p = ojph_encoder_parameter_ptrs; *p; p++) {
-    const struct heif_encoder_parameter* param = *p;
+  encoder_struct_ojph* encoder = (encoder_struct_ojph*) encoder_raw;
+  for (const heif_encoder_parameter** p = ojph_encoder_parameter_ptrs; *p; p++) {
+    const heif_encoder_parameter* param = *p;
 
     if (param->has_default) {
       switch (param->type) {
@@ -634,9 +658,9 @@ static void ojph_set_default_parameters(void* encoder_raw)
 
 ///// Actual encoding functionality
 
-struct heif_error ojph_new_encoder(void** encoder_out)
+heif_error ojph_new_encoder(void** encoder_out)
 {
-  struct encoder_struct_ojph* encoder = new encoder_struct_ojph();
+  encoder_struct_ojph* encoder = new encoder_struct_ojph();
   encoder->outfile.open();
   *encoder_out = encoder;
 
@@ -647,30 +671,30 @@ struct heif_error ojph_new_encoder(void** encoder_out)
 
 void ojph_free_encoder(void* encoder_raw)
 {
-  struct encoder_struct_ojph* encoder = (struct encoder_struct_ojph*) encoder_raw;
+  encoder_struct_ojph* encoder = (encoder_struct_ojph*) encoder_raw;
   encoder->codestream.close();
   delete encoder;
 }
 
-struct heif_error ojph_set_parameter_logging_level(void* encoder, int logging)
+heif_error ojph_set_parameter_logging_level(void* encoder, int logging)
 {
   // No logging level options in OpenJPH
   return heif_error_ok;
 }
 
-struct heif_error ojph_get_parameter_logging_level(void* encoder, int* logging)
+heif_error ojph_get_parameter_logging_level(void* encoder, int* logging)
 {
   // No logging level options in OpenJPH
   return heif_error_ok;
 }
 
-const struct heif_encoder_parameter** ojph_list_parameters(void* encoder_raw)
+const heif_encoder_parameter** ojph_list_parameters(void* encoder_raw)
 {
   return ojph_encoder_parameter_ptrs;
 }
 
 
-void ojph_query_input_colorspace(enum heif_colorspace* inout_colorspace, enum heif_chroma* inout_chroma)
+void ojph_query_input_colorspace(heif_colorspace* inout_colorspace, heif_chroma* inout_chroma)
 {
   // Replace the input colorspace/chroma with the one that is supported by the encoder and that
   // comes as close to the input colorspace/chroma as possible.
@@ -685,9 +709,9 @@ void ojph_query_input_colorspace(enum heif_colorspace* inout_colorspace, enum he
   }
 }
 
-void ojph_query_input_colorspace2(void* encoder_raw, enum heif_colorspace* inout_colorspace, enum heif_chroma* inout_chroma)
+void ojph_query_input_colorspace2(void* encoder_raw, heif_colorspace* inout_colorspace, heif_chroma* inout_chroma)
 {
-  auto* encoder = (struct encoder_struct_ojph*) encoder_raw;
+  auto* encoder = (encoder_struct_ojph*) encoder_raw;
 
   if (*inout_colorspace == heif_colorspace_monochrome) {
     *inout_colorspace = heif_colorspace_monochrome;
@@ -716,7 +740,13 @@ std::vector<heif_channel> build_SIZ(encoder_struct_ojph *encoder, const heif_ima
   heif_chroma chroma = heif_image_get_chroma_format(image);
 
   encoder->codestream.set_planar(true);
-  sourceChannels = {heif_channel_Y, heif_channel_Cb, heif_channel_Cr};
+
+  if (chroma == heif_chroma_monochrome) {
+    sourceChannels = {heif_channel_Y};
+  } else {
+    sourceChannels = {heif_channel_Y, heif_channel_Cb, heif_channel_Cr};
+  }
+
   siz.set_num_components((ojph::ui32)sourceChannels.size());
   for (ojph::ui32 i = 0; i < siz.get_num_components(); i++) {
     int bit_depth = heif_image_get_bits_per_pixel_range(image, sourceChannels[i]);
@@ -743,31 +773,41 @@ void build_COD(encoder_struct_ojph *encoder)
   cod.set_color_transform(false);
 }
 
-struct heif_error ojph_encode_image(void *encoder_raw, const struct heif_image *image, enum heif_image_input_class image_class)
+heif_error ojph_encode_image(void *encoder_raw, const heif_image *image, heif_image_input_class image_class)
 {
-  struct encoder_struct_ojph* encoder = (struct encoder_struct_ojph*) encoder_raw;
+  encoder_struct_ojph* encoder = (encoder_struct_ojph*) encoder_raw;
 
-  if (heif_image_get_colorspace(image) != heif_colorspace_YCbCr) {
-    return heif_error{heif_error_Encoding_error,
-                      heif_suberror_Unspecified,
-                      "OpenJPH encoder plugin received image with invalid colorspace."};
+  if (heif_image_get_colorspace(image) != heif_colorspace_YCbCr &&
+      heif_image_get_colorspace(image) != heif_colorspace_monochrome) {
+    return {
+      heif_error_Encoding_error,
+      heif_suberror_Unspecified,
+      "OpenJPH encoder plugin received image with invalid colorspace."
+    };
   }
+
+  // reset output position to start
+  encoder->outfile.seek(0, ojph::outfile_base::seek::OJPH_SEEK_SET);
+  encoder->data_read = false;
 
   std::vector<heif_channel> sourceChannels = build_SIZ(encoder, image);
   build_COD(encoder);
+#if OPENJPH_MAJOR_VERSION > 1 || OPENJPH_MINOR_VERSION > 10
   bool hasComment = (encoder->comment.length() > 0);
   ojph::comment_exchange com_ex;
   if (hasComment) {
     com_ex.set_string(encoder->comment.c_str());
   }
   encoder->codestream.write_headers(&(encoder->outfile), &com_ex, hasComment ? 1 : 0);
-
+#else
+  encoder->codestream.write_headers(&(encoder->outfile));
+#endif
   ojph::ui32 next_comp;
   ojph::line_buf* cur_line = encoder->codestream.exchange(NULL, next_comp);
 
   for (const auto& sourceChannel : sourceChannels) {
-    int stride;
-    const uint8_t *data = heif_image_get_plane_readonly(image, sourceChannel, &stride);
+    size_t stride;
+    const uint8_t *data = heif_image_get_plane_readonly2(image, sourceChannel, &stride);
     uint32_t component_height = heif_image_get_height(image, sourceChannel);
     for (uint32_t y = 0; y < component_height; y++) {
       const uint8_t *sourceLine = data + y * stride;
@@ -784,9 +824,9 @@ struct heif_error ojph_encode_image(void *encoder_raw, const struct heif_image *
   return heif_error_ok;
 }
 
-struct heif_error ojph_get_compressed_data(void* encoder_raw, uint8_t** data, int* size, enum heif_encoded_data_type* type)
+heif_error ojph_get_compressed_data(void* encoder_raw, uint8_t** data, int* size, heif_encoded_data_type* type)
 {
-  struct encoder_struct_ojph* encoder = (struct encoder_struct_ojph*) encoder_raw;
+  encoder_struct_ojph* encoder = (encoder_struct_ojph*) encoder_raw;
 
   if (encoder->data_read) {
     *size = 0;
@@ -817,8 +857,44 @@ const char* ojph_plugin_name()
   return plugin_name;
 }
 
-static const struct heif_encoder_plugin encoder_plugin_openjph {
-    /* plugin_api_version */ 3,
+
+heif_error ojph_start_sequence_encoding(void* encoder, const heif_image* image,
+                                       enum heif_image_input_class image_class,
+                                       uint32_t framerate_num, uint32_t framerate_denom,
+                                       const heif_sequence_encoding_options* options)
+{
+  return heif_error_ok;
+}
+
+heif_error ojph_encode_sequence_frame(void* encoder, const heif_image* image, uintptr_t frame_nr)
+{
+  return ojph_encode_image(encoder, image, heif_image_input_class_normal);
+}
+
+heif_error ojph_end_sequence_encoding(void* encoder)
+{
+  return heif_error_ok;
+}
+
+heif_error ojph_get_compressed_data2(void* encoder, uint8_t** data, int* size,
+                                    uintptr_t* frame_nr,
+                                    int* is_keyframe, int* more_frame_packets)
+{
+  heif_error err = ojph_get_compressed_data(encoder, data, size, nullptr);
+
+  if (is_keyframe) {
+    *is_keyframe = true;
+  }
+
+  if (more_frame_packets) {
+    *more_frame_packets = true;
+  }
+
+  return err;
+}
+
+static const heif_encoder_plugin encoder_plugin_openjph {
+    /* plugin_api_version */ 4,
     /* compression_format */ heif_compression_HTJ2K,
     /* id_name */ "openjph",
     /* priority */ OJPH_PLUGIN_PRIORITY,
@@ -846,10 +922,16 @@ static const struct heif_encoder_plugin encoder_plugin_openjph {
     /* encode_image */ ojph_encode_image,
     /* get_compressed_data */ ojph_get_compressed_data,
     /* query_input_colorspace (v2) */ ojph_query_input_colorspace2,
-    /* query_encoded_size (v3) */ nullptr
+    /* query_encoded_size (v3) */ nullptr,
+    /* minimum_required_libheif_version */ LIBHEIF_MAKE_VERSION(1,21,0),
+    /* start_sequence_encoding (v4) */ ojph_start_sequence_encoding,
+    /* encode_sequence_frame (v4) */ ojph_encode_sequence_frame,
+    /* end_sequence_encoding (v4) */ ojph_end_sequence_encoding,
+    /* get_compressed_data2 (v4) */ ojph_get_compressed_data2,
+    /* does_indicate_keyframes (v4) */ 1
 };
 
-const struct heif_encoder_plugin* get_encoder_plugin_openjph()
+const heif_encoder_plugin* get_encoder_plugin_openjph()
 {
   return &encoder_plugin_openjph;
 }

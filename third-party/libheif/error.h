@@ -33,9 +33,12 @@
 #include <sstream>
 
 #include "libheif/heif.h"
+#include <cassert>
+#include <variant>
+#include <utility>
 
 
-static constexpr char kSuccess[] = "Success";
+extern const heif_error heif_error_null_pointer_argument;
 
 
 class ErrorBuffer
@@ -69,8 +72,8 @@ private:
 class Error
 {
 public:
-  enum heif_error_code error_code = heif_error_Ok;
-  enum heif_suberror_code sub_error_code = heif_suberror_Unspecified;
+  heif_error_code error_code = heif_error_Ok;
+  heif_suberror_code sub_error_code = heif_suberror_Unspecified;
   std::string message;
 
   Error();
@@ -79,13 +82,26 @@ public:
         heif_suberror_code sc = heif_suberror_Unspecified,
         const std::string& msg = "");
 
-  static Error Ok;
+  static Error from_heif_error(const heif_error&);
+
+  static const Error Ok;
+
+  static const Error InternalError;
 
   static const char kSuccess[];
 
   bool operator==(const Error& other) const { return error_code == other.error_code; }
 
   bool operator!=(const Error& other) const { return !(*this == other); }
+
+  Error operator||(const Error& other) const {
+    if (error_code != heif_error_Ok) {
+      return *this;
+    }
+    else {
+      return other;
+    }
+  }
 
   operator bool() const { return error_code != heif_error_Ok; }
 
@@ -107,10 +123,55 @@ inline std::ostream& operator<<(std::ostream& ostr, const Error& err)
 template <typename T> class Result
 {
 public:
-  operator bool() const { return error.error_code == heif_error_Ok; }
+  Result() = default;
 
-  T value;
-  Error error;
+  Result(T v) : m_data(std::move(v)) {}
+
+  Result(const Error& e) : m_data(e) {}
+
+  operator bool() const { return std::holds_alternative<T>(m_data); }
+
+  //void set(const T& v) { m_data = v; }
+
+  // Pointer-like access for `r->member`
+  T* operator->()
+  {
+    assert(*this); // Uses the operator bool() above
+    return &std::get<T>(m_data);
+  }
+
+  // Dereference access for `*r`
+  T& operator*()
+  {
+    assert(*this);
+    return std::get<T>(m_data);
+  }
+
+  [[nodiscard]] bool is_error() const {
+    return std::holds_alternative<Error>(m_data);
+  }
+
+  // Accessor for the error, if it exists
+  [[nodiscard]] const Error& error() const
+  {
+    if (*this) {
+      return Error::Ok;
+    }
+
+    return std::get<Error>(m_data);
+  }
+
+  // Directly get the C error struct.
+  heif_error error_struct(ErrorBuffer* error_buffer) const
+  {
+    if (*this) {
+      return heif_error_success;
+    }
+
+    return std::get<Error>(m_data).error_struct(error_buffer);
+  }
+
+  std::variant<T, Error> m_data;
 };
 
 #endif

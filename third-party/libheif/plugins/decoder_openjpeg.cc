@@ -22,19 +22,25 @@
 #include "libheif/heif.h"
 #include "libheif/heif_plugin.h"
 #include "decoder_openjpeg.h"
+#include "common_utils.h"
 #include <openjpeg.h>
 #include <cstring>
 
 #include <vector>
 #include <cassert>
+#include <memory>
+#include <string>
 
 static const int OPENJPEG_PLUGIN_PRIORITY = 100;
-
+static const int OPENJPEG_PLUGIN_PRIORITY_HTJ2K = 90;
 
 struct openjpeg_decoder
 {
   std::vector<uint8_t> encoded_data;
+  uintptr_t user_data;
+
   size_t read_position = 0;
+  std::string error_message;
 };
 
 
@@ -60,30 +66,46 @@ static void openjpeg_deinit_plugin()
 }
 
 
-static int openjpeg_does_support_format(enum heif_compression_format format)
+static int openjpeg_does_support_format(heif_compression_format format)
 {
   if (format == heif_compression_JPEG2000) {
     return OPENJPEG_PLUGIN_PRIORITY;
+  }
+  else if (format == heif_compression_HTJ2K) {
+    return OPENJPEG_PLUGIN_PRIORITY_HTJ2K;
   }
   else {
     return 0;
   }
 }
 
-
-struct heif_error openjpeg_new_decoder(void** dec)
+static int openjpeg_does_support_format2(const heif_decoder_plugin_compressed_format_description* format)
 {
-  struct openjpeg_decoder* decoder = new openjpeg_decoder();
+  return openjpeg_does_support_format(format->format);
+}
+
+heif_error openjpeg_new_decoder2(void** dec, const heif_decoder_plugin_options* options)
+{
+  openjpeg_decoder* decoder = new openjpeg_decoder();
 
   *dec = decoder;
 
   return heif_error_ok;
 }
 
+heif_error openjpeg_new_decoder(void** dec)
+{
+  heif_decoder_plugin_options options{};
+  options.format = heif_compression_JPEG2000;
+  options.num_threads = 0;
+  options.strict_decoding = false;
+
+  return openjpeg_new_decoder2(dec, &options);
+}
 
 void openjpeg_free_decoder(void* decoder_raw)
 {
-  struct openjpeg_decoder* decoder = (openjpeg_decoder*) decoder_raw;
+  openjpeg_decoder* decoder = (openjpeg_decoder*) decoder_raw;
 
   if (!decoder) {
     return;
@@ -99,16 +121,22 @@ void openjpeg_set_strict_decoding(void* decoder_raw, int flag)
 }
 
 
-struct heif_error openjpeg_push_data(void* decoder_raw, const void* frame_data, size_t frame_size)
+heif_error openjpeg_push_data2(void* decoder_raw, const void* frame_data, size_t frame_size,
+                               uintptr_t user_data)
 {
-  struct openjpeg_decoder* decoder = (struct openjpeg_decoder*) decoder_raw;
+  openjpeg_decoder* decoder = (openjpeg_decoder*) decoder_raw;
   const uint8_t* frame_data_src = (const uint8_t*) frame_data;
 
   decoder->encoded_data.insert(decoder->encoded_data.end(), frame_data_src, frame_data_src + frame_size);
+  decoder->user_data = user_data;
 
   return heif_error_ok;
 }
 
+heif_error openjpeg_push_data(void* decoder_raw, const void* frame_data, size_t frame_size)
+{
+  return openjpeg_push_data2(decoder_raw, frame_data, frame_size, 0);
+}
 
 //**************************************************************************
 
@@ -249,46 +277,110 @@ opj_stream_t* opj_stream_create_default_memory_stream(openjpeg_decoder* p_decode
 //**************************************************************************
 
 
-struct heif_error openjpeg_decode_image(void* decoder_raw, struct heif_image** out_img)
+// Conservative upper bound on bytes OpenJPEG will allocate to decode this
+// codestream. Saturates to UINT64_MAX on overflow. OpenJPEG stores each sample
+// internally as OPJ_INT32 regardless of the codestream bit depth; the 3x
+// multiplier covers the final image planes plus in-flight tile and DWT
+// working buffers.
+static uint64_t openjpeg_estimate_decode_memory_bytes(const opj_image_t* image)
 {
-  struct openjpeg_decoder* decoder = (struct openjpeg_decoder*) decoder_raw;
+  auto sat_mul = [](uint64_t a, uint64_t b) -> uint64_t {
+    if (a == 0 || b == 0) return 0;
+    if (a > UINT64_MAX / b) return UINT64_MAX;
+    return a * b;
+  };
+
+  auto sat_add = [](uint64_t a, uint64_t b) -> uint64_t {
+    uint64_t s = a + b;
+    return (s < a) ? UINT64_MAX : s;
+  };
+
+  uint64_t total = 0;
+  for (uint32_t c = 0; c < image->numcomps; c++) {
+    const opj_image_comp_t& comp = image->comps[c];
+    uint64_t plane = sat_mul(uint64_t(comp.w), uint64_t(comp.h));
+    plane = sat_mul(plane, sizeof(OPJ_INT32));
+    total = sat_add(total, plane);
+  }
+
+  return sat_mul(total, 3);
+}
+
+
+heif_error openjpeg_decode_next_image2(void* decoder_raw, heif_image** out_img,
+                                       uintptr_t* out_user_data,
+                                       const heif_security_limits* limits)
+{
+  auto* decoder = (struct openjpeg_decoder*) decoder_raw;
+
+  if (decoder->encoded_data.empty()) {
+    *out_img = nullptr;
+    return heif_error_ok;
+  }
+
 
   OPJ_BOOL success;
   opj_dparameters_t decompression_parameters;
-  opj_codec_t* l_codec;
+  std::unique_ptr<opj_codec_t, void (OPJ_CALLCONV *)(opj_codec_t*)> l_codec(opj_create_decompress(OPJ_CODEC_J2K),
+                                                               opj_destroy_codec);
 
   // Initialize Decoder
   opj_set_default_decoder_parameters(&decompression_parameters);
-  l_codec = opj_create_decompress(OPJ_CODEC_J2K);
-  success = opj_setup_decoder(l_codec, &decompression_parameters);
+  success = opj_setup_decoder(l_codec.get(), &decompression_parameters);
   if (!success) {
-    struct heif_error err = {heif_error_Decoder_plugin_error, heif_suberror_Unspecified, "opj_setup_decoder()"};
-    return err;
+    return {heif_error_Decoder_plugin_error, heif_suberror_Unspecified, "opj_setup_decoder()"};
   }
 
 
   // Create Input Stream
 
   OPJ_BOOL is_read_stream = true;
-  opj_stream_t* stream = opj_stream_create_default_memory_stream(decoder, is_read_stream);
+  std::unique_ptr<opj_stream_t, void (OPJ_CALLCONV *)(opj_stream_t*)> stream(opj_stream_create_default_memory_stream(decoder, is_read_stream),
+                                                                opj_stream_destroy);
 
 
   // Read Codestream Header
-  opj_image_t* image = NULL;
-  success = opj_read_header(stream, l_codec, &image);
+  opj_image_t* image_ptr = nullptr;
+  success = opj_read_header(stream.get(), l_codec.get(), &image_ptr);
   if (!success) {
-    struct heif_error err = {heif_error_Decoder_plugin_error, heif_suberror_Unspecified, "opj_read_header()"};
-    return err;
+    return {heif_error_Decoder_plugin_error, heif_suberror_Unspecified, "opj_read_header()"};
   }
-  else if (image->numcomps != 3 && image->numcomps != 1) {
+
+  std::unique_ptr<opj_image_t, void (OPJ_CALLCONV *)(opj_image_t*)> image(image_ptr, opj_image_destroy);
+
+  // Reject obvious memory bombs before letting OpenJPEG allocate decode buffers.
+  // OpenJPEG has no built-in resource limit API, so we enforce libheif's limits here.
+  if (image->x1 < image->x0 || image->y1 < image->y0) {
+    return {heif_error_Decoder_plugin_error, heif_suberror_Unspecified,
+            "Invalid JPEG 2000 image bounding box"};
+  }
+
+  uint64_t img_w = image->x1 - image->x0;
+  uint64_t img_h = image->y1 - image->y0;
+
+  // image->x0,x1,y0,y1 are uint32, thus no overflow here
+  uint64_t pixels = img_w * img_h;
+  if (limits->max_image_size_pixels > 0 && pixels > limits->max_image_size_pixels) {
+    return {heif_error_Memory_allocation_error, heif_suberror_Security_limit_exceeded,
+            "JPEG 2000 image exceeds maximum allowed image size"};
+  }
+
+  uint64_t estimated_memory = openjpeg_estimate_decode_memory_bytes(image.get());
+  if (limits->max_memory_block_size > 0 && estimated_memory > limits->max_memory_block_size) {
+    return {heif_error_Memory_allocation_error, heif_suberror_Security_limit_exceeded,
+            "JPEG 2000 image would require too much memory to decode"};
+  }
+
+  // TODO: also enforce limits->max_components against image->numcomps, and
+  // limits->max_number_of_tiles against opj_get_cstr_info()->tw * th.
+
+  if (image->numcomps != 3 && image->numcomps != 1) {
     //TODO - Handle other numbers of components
-    struct heif_error err = {heif_error_Unsupported_feature, heif_suberror_Unsupported_data_version, "Number of components must be 3 or 1"};
-    return err;
+    return {heif_error_Unsupported_feature, heif_suberror_Unsupported_data_version, "Number of components must be 3 or 1"};
   }
   else if ((image->color_space != OPJ_CLRSPC_UNSPECIFIED) && (image->color_space != OPJ_CLRSPC_SRGB)) {
     //TODO - Handle other colorspaces
-    struct heif_error err = {heif_error_Unsupported_feature, heif_suberror_Unsupported_data_version, "Colorspace must be SRGB"};
-    return err;
+    return {heif_error_Unsupported_feature, heif_suberror_Unsupported_data_version, "Colorspace must be SRGB"};
   }
 
   const int width = (image->x1 - image->x0);
@@ -296,22 +388,16 @@ struct heif_error openjpeg_decode_image(void* decoder_raw, struct heif_image** o
 
 
   /* Get the decoded image */
-  success = opj_decode(l_codec, stream, image);
+  success = opj_decode(l_codec.get(), stream.get(), image.get());
   if (!success) {
-    struct heif_error err = {heif_error_Decoder_plugin_error, heif_suberror_Unspecified, "opj_decode()"};
-    return err;
+    return {heif_error_Decoder_plugin_error, heif_suberror_Unspecified, "opj_decode()"};
   }
 
 
-  success = opj_end_decompress(l_codec, stream);
+  success = opj_end_decompress(l_codec.get(), stream.get());
   if (!success) {
-    struct heif_error err = {heif_error_Decoder_plugin_error, heif_suberror_Unspecified, "opj_end_decompress()"};
-    return err;
+    return {heif_error_Decoder_plugin_error, heif_suberror_Unspecified, "opj_end_decompress()"};
   }
-
-
-  /* Close the byte stream */
-  opj_stream_destroy(stream);
 
 
   heif_colorspace colorspace = heif_colorspace_YCbCr;
@@ -346,12 +432,25 @@ struct heif_error openjpeg_decode_image(void* decoder_raw, struct heif_image** o
     channels = {heif_channel_Y, heif_channel_Cb, heif_channel_Cr};
   }
   else {
-    struct heif_error err = {heif_error_Decoder_plugin_error, heif_suberror_Unspecified, "unsupported image format"};
-    return err;
+    return {heif_error_Decoder_plugin_error, heif_suberror_Unspecified, "unsupported image format"};
   }
 
 
-  struct heif_error error = heif_image_create(width, height, colorspace, chroma, out_img);
+  // Validate per-component sizes against the chroma format derived above. A malformed
+  // JPEG 2000 stream may set comp[1].dx/dy consistently with a chroma format yet declare
+  // comp[c].w/h that do not match the subsampled dimensions; using such planes downstream
+  // causes out-of-bounds reads in color conversion (issue #1796).
+  for (size_t c = 0; c < image->numcomps; c++) {
+    uint32_t expected_w, expected_h;
+    get_subsampled_size(static_cast<uint32_t>(width), static_cast<uint32_t>(height),
+                        channels[c], chroma, &expected_w, &expected_h);
+    if (image->comps[c].w != expected_w || image->comps[c].h != expected_h) {
+      return {heif_error_Decoder_plugin_error, heif_suberror_Unspecified,
+              "JPEG 2000 component size does not match the image's chroma subsampling"};
+    }
+  }
+
+  heif_error error = heif_image_create(width, height, colorspace, chroma, out_img);
   if (error.code) {
     return error;
   }
@@ -363,35 +462,71 @@ struct heif_error openjpeg_decode_image(void* decoder_raw, struct heif_image** o
     int cwidth = opj_comp.w;
     int cheight = opj_comp.h;
 
-    error = heif_image_add_plane(*out_img, channels[c], cwidth, cheight, bit_depth);
+    error = heif_image_add_plane_safe(*out_img, channels[c], cwidth, cheight, bit_depth, limits);
+    if (error.code) {
+      // copy error message to decoder object because heif_image will be released
+      decoder->error_message = error.message;
+      error.message = decoder->error_message.c_str();
 
-    int stride = -1;
-    uint8_t* p = heif_image_get_plane(*out_img, channels[c], &stride);
+      heif_image_release(*out_img);
+      *out_img = nullptr;
+      return error;
+    }
+
+    size_t stride = 0;
+    uint8_t* p = heif_image_get_plane2(*out_img, channels[c], &stride);
 
 
     // TODO: a SIMD implementation to convert int32 to uint8 would speed this up
     // https://stackoverflow.com/questions/63774643/how-to-convert-uint32-to-uint8-using-simd-but-not-avx512
 
-    if (stride == cwidth) {
-      for (int i = 0; i < cwidth * cheight; i++) {
-        p[i] = (uint8_t) opj_comp.data[i];
-      }
-    }
-    else {
+    if (bit_depth <= 8) {
       for (int y = 0; y < cheight; y++) {
         for (int x = 0; x < cwidth; x++) {
           p[y * stride + x] = (uint8_t) opj_comp.data[y * cwidth + x];
         }
       }
     }
+    else {
+      uint16_t* p16 = (uint16_t*)p;
+      for (int y = 0; y < cheight; y++) {
+        for (int x = 0; x < cwidth; x++) {
+          p16[y * stride/2 + x] = (uint16_t) opj_comp.data[y * cwidth + x];
+        }
+      }
+    }
   }
+
+  if (out_user_data) {
+    *out_user_data = decoder->user_data;
+  }
+
+  decoder->encoded_data.clear();
+  decoder->read_position = 0;
 
   return heif_error_ok;
 }
 
+heif_error openjpeg_decode_next_image(void* decoder_raw, heif_image** out_img,
+                                      const heif_security_limits* limits)
+{
+  return openjpeg_decode_next_image2(decoder_raw, out_img, nullptr, limits);
+}
 
-static const struct heif_decoder_plugin decoder_openjpeg{
-    3,
+heif_error openjpeg_decode_image(void* decoder_raw, heif_image** out_img)
+{
+  auto* limits = heif_get_global_security_limits();
+  return openjpeg_decode_next_image(decoder_raw, out_img, limits);
+}
+
+heif_error openjpeg_flush_data(void* decoder)
+{
+  return heif_error_ok;
+}
+
+
+static const heif_decoder_plugin decoder_openjpeg{
+    5,
     openjpeg_plugin_name,
     openjpeg_init_plugin,
     openjpeg_deinit_plugin,
@@ -401,10 +536,17 @@ static const struct heif_decoder_plugin decoder_openjpeg{
     openjpeg_push_data,
     openjpeg_decode_image,
     openjpeg_set_strict_decoding,
-    "openjpeg"
+    "openjpeg",
+    openjpeg_decode_next_image,
+    /* minimum_required_libheif_version */ LIBHEIF_MAKE_VERSION(1,21,0),
+    openjpeg_does_support_format2,
+    openjpeg_new_decoder2,
+    openjpeg_push_data2,
+    openjpeg_flush_data,
+    openjpeg_decode_next_image2
 };
 
-const struct heif_decoder_plugin* get_decoder_plugin_openjpeg()
+const heif_decoder_plugin* get_decoder_plugin_openjpeg()
 {
   return &decoder_openjpeg;
 }

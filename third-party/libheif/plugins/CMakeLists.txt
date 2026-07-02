@@ -22,14 +22,20 @@ macro(plugin_compilation name varName foundName optionName defineName)
             target_link_libraries(heif-${name} PRIVATE ${${varName}_LIBRARIES} heif)
 
             install(TARGETS heif-${name}
-                    LIBRARY DESTINATION ${PLUGIN_DIRECTORY}
+                    LIBRARY DESTINATION ${COMPUTED_PLUGIN_INSTALL_DIRECTORY}
                     )
         else ()
             message("Compiling '" ${name} "' as built-in backend")
             target_sources(heif PRIVATE ${${optionName}_sources})
             target_compile_definitions(heif PRIVATE HAVE_${defineName}=1)
             target_include_directories(heif PRIVATE ${${varName}_INCLUDE_DIRS})
-            target_link_libraries(heif PRIVATE ${${varName}_LIBRARIES})
+            target_link_directories(heif PRIVATE ${${varName}_LINK_DIRS})
+            if (${varName}_DEBUG_LIBRARY)
+                target_link_libraries(heif PRIVATE debug ${${varName}_DEBUG_LIBRARY})
+                target_link_libraries(heif PRIVATE optimized ${${varName}_LIBRARIES})
+            else()
+                target_link_libraries(heif PRIVATE ${${varName}_LIBRARIES})
+            endif()
         endif ()
 
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${${varName}_CFLAGS}")
@@ -48,7 +54,7 @@ set(LIBDE265_extra_plugin_sources ../error.cc)
 plugin_compilation(libde265 LIBDE265 LIBDE265_FOUND LIBDE265 LIBDE265)
 
 set(DAV1D_sources decoder_dav1d.cc decoder_dav1d.h)
-set(DAV1D_extra_plugin_sources ../common_utils.cc ../common_utils.h)
+set(DAV1D_extra_plugin_sources ../error.cc ../common_utils.cc ../common_utils.h)
 plugin_compilation(dav1d DAV1D DAV1D_FOUND DAV1D DAV1D)
 
 set(AOM_DECODER_sources decoder_aom.cc decoder_aom.h)
@@ -60,7 +66,7 @@ set(AOM_ENCODER_extra_plugin_sources ../error.cc ../common_utils.cc ../common_ut
 plugin_compilation(aomenc AOM AOM_ENCODER_FOUND AOM_ENCODER AOM_ENCODER)
 
 set(SvtEnc_sources encoder_svt.cc encoder_svt.h)
-set(SvtEnc_extra_plugin_sources)
+set(SvtEnc_extra_plugin_sources ../error.cc ../common_utils.cc ../common_utils.h)
 plugin_compilation(svtenc SvtEnc SvtEnc_FOUND SvtEnc SvtEnc)
 
 set(RAV1E_sources encoder_rav1e.cc encoder_rav1e.h)
@@ -76,7 +82,7 @@ set(JPEG_ENCODER_extra_plugin_sources)
 plugin_compilation(jpegenc JPEG JPEG_FOUND JPEG_ENCODER JPEG_ENCODER)
 
 set(OpenJPEG_DECODER_sources decoder_openjpeg.cc decoder_openjpeg.h)
-set(OpenJPEG_DECODER_extra_plugin_sources ) 
+set(OpenJPEG_DECODER_extra_plugin_sources ../error.cc ../common_utils.cc ../common_utils.h)
 plugin_compilation(j2kdec OPENJPEG OPENJPEG_FOUND OpenJPEG_DECODER OPENJPEG_DECODER)
 
 set(OpenJPEG_ENCODER_sources encoder_openjpeg.cc encoder_openjpeg.h)
@@ -88,9 +94,8 @@ set(KVAZAAR_extra_plugin_sources)
 plugin_compilation(kvazaar KVAZAAR KVAZAAR_FOUND KVAZAAR KVAZAAR)
 
 set(FFMPEG_DECODER_sources decoder_ffmpeg.cc decoder_ffmpeg.h)
-set(FFMPEG_DECODER_extra_plugin_sources ../error.cc)
+set(FFMPEG_DECODER_extra_plugin_sources ../error.cc nalu_utils.cc)
 plugin_compilation(ffmpegdec FFMPEG FFMPEG_FOUND FFMPEG_DECODER FFMPEG_DECODER)
-
 
 set(OPENJPH_ENCODER_sources encoder_openjph.cc encoder_openjph.h)
 set(OPENJPH_ENCODER_extra_plugin_sources)
@@ -108,13 +113,33 @@ set(VVENC_sources encoder_vvenc.cc encoder_vvenc.h)
 set(VVENC_extra_plugin_sources)
 plugin_compilation(vvenc vvenc vvenc_FOUND VVENC VVENC)
 
+set(X264_sources encoder_x264.h encoder_x264.cc)
+set(X264_extra_plugin_sources)
+plugin_compilation(x264 X264 X264_FOUND X264 X264)
+
+set(OpenH264_DECODER_sources decoder_openh264.cc decoder_openh264.h)
+set(OpenH264_DECODER_extra_plugin_sources)
+plugin_compilation(openh264dec OpenH264 OpenH264_DECODER_FOUND OpenH264_DECODER OpenH264_DECODER)
+
 target_sources(heif PRIVATE
                encoder_mask.h
-               encoder_mask.cc)
+               encoder_mask.cc
+               nalu_utils.h
+               nalu_utils.cc)
 
 if (WITH_UNCOMPRESSED_CODEC)
     target_sources(heif PRIVATE
             encoder_uncompressed.h
-            encoder_uncompressed.cc)
+            encoder_uncompressed.cc
+            decoder_uncompressed.h
+            decoder_uncompressed.cc)
 endif ()
+
+if (WITH_WEBCODECS)
+   target_sources(heif PRIVATE
+   		  decoder_webcodecs.h
+		  decoder_webcodecs.cc)
+   target_compile_definitions(heif PRIVATE HAVE_WEBCODECS=1)
+endif()
+
 

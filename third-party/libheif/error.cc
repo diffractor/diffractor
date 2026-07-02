@@ -21,13 +21,26 @@
 #include "error.h"
 
 #include <cassert>
+#include <cstring>
+
+
+const heif_error heif_error_null_pointer_argument {
+  heif_error_Usage_error,
+  heif_suberror_Null_pointer_argument,
+  "NULL argument passed"
+};
+
 
 // static
 const char Error::kSuccess[] = "Success";
 const char* cUnknownError = "Unknown error";
 
 
-Error Error::Ok(heif_error_Ok);
+const Error Error::Ok(heif_error_Ok);
+
+const Error Error::InternalError{heif_error_Unsupported_feature, // TODO: use better value
+                                 heif_suberror_Unspecified,
+                                 "Internal error"};
 
 
 Error::Error() = default;
@@ -40,6 +53,44 @@ Error::Error(heif_error_code c,
       sub_error_code(sc),
       message(msg)
 {
+}
+
+
+// Replacement for C++20 std::string::starts_with()
+static bool starts_with(const std::string& str, const std::string& prefix) {
+    if (str.length() < prefix.length()) {
+        return false;
+    }
+
+  return str.compare(0, prefix.size(), prefix) == 0;
+}
+
+
+Error Error::from_heif_error(const heif_error& c_error)
+{
+  // unpack the concatenated error message and extract the last part only
+
+  const char* err_string = get_error_string(c_error.code);
+  const char* sub_err_string = get_error_string(c_error.subcode);
+
+  std::string msg = c_error.message;
+  if (starts_with(msg, err_string)) {
+    msg = msg.substr(strlen(err_string));
+
+    if (starts_with(msg, ": ")) {
+      msg = msg.substr(2);
+    }
+
+    if (starts_with(msg, sub_err_string)) {
+      msg = msg.substr(strlen(sub_err_string));
+
+      if (starts_with(msg, ": ")) {
+        msg = msg.substr(2);
+      }
+    }
+  }
+
+  return {c_error.code, c_error.subcode, msg};
 }
 
 
@@ -70,6 +121,10 @@ const char* Error::get_error_string(heif_error_code err)
       return "Color profile does not exist";
     case heif_error_Plugin_loading_error:
       return "Error while loading plugin";
+    case heif_error_Canceled:
+      return "Canceled by user";
+    case heif_error_End_of_sequence:
+      return "End of sequence";
   }
 
   assert(false);
@@ -106,6 +161,8 @@ const char* Error::get_error_string(heif_suberror_code err)
       return "No 'vvcC' box";
     case heif_suberror_No_av1C_box:
       return "No 'av1C' box";
+    case heif_suberror_No_avcC_box:
+      return "No 'avcC' box";
     case heif_suberror_No_pitm_box:
       return "No 'pitm' box";
     case heif_suberror_No_ipco_box:
@@ -161,7 +218,7 @@ const char* Error::get_error_string(heif_suberror_code err)
     case heif_suberror_Invalid_region_data:
       return "Invalid region item data";
     case heif_suberror_No_ispe_property:
-      return "No ispe property";
+      return "Image has no 'ispe' property";
     case heif_suberror_Camera_intrinsic_matrix_undefined:
       return "Camera intrinsic matrix undefined";
     case heif_suberror_Camera_extrinsic_matrix_undefined:
@@ -170,8 +227,14 @@ const char* Error::get_error_string(heif_suberror_code err)
       return "Invalid JPEG 2000 codestream";
     case heif_suberror_Decompression_invalid_data:
       return "Invalid data in generic compression inflation";
+    case heif_suberror_No_moov_box:
+      return "No 'moov' box";
+    case heif_suberror_NCLX_colr_VUI_mismatch:
+      return "colr box and bitstream colour signalling disagree";
     case heif_suberror_No_icbr_box:
       return "No 'icbr' box";
+    case heif_suberror_Invalid_mini_box:
+      return "Unsupported or invalid 'mini' box";
 
 
       // --- Memory_allocation_error ---
@@ -218,6 +281,10 @@ const char* Error::get_error_string(heif_suberror_code err)
       return "Unsupported header compression method";
     case heif_suberror_Unsupported_generic_compression_method:
       return "Unsupported generic compression method";
+    case heif_suberror_Unsupported_essential_property:
+      return "Unsupported essential item property";
+    case heif_suberror_Unsupported_track_type:
+      return "Unsupported track type";
 
       // --- Encoder_plugin_error --
 
@@ -246,7 +313,11 @@ const char* Error::get_error_string(heif_suberror_code err)
     case heif_suberror_Cannot_read_plugin_directory:
       return "Error while scanning the directory for plugins";
     case heif_suberror_No_matching_decoder_installed:
+#if ENABLE_PLUGIN_LOADING
       return "No decoding plugin installed for this compression format";
+#else
+      return "Support for this compression format has not been built in";
+#endif
   }
 
   assert(false);

@@ -1,5 +1,5 @@
 /*
- * AVIF codec.
+ * JPEG codec.
  * Copyright (c) 2023 Dirk Farin <dirk.farin@gmail.com>
  *
  * This file is part of libheif.
@@ -24,8 +24,10 @@
 #include <memory>
 #include <cstring>
 #include <cassert>
+#include <csetjmp>
 #include <vector>
 #include <cstdio>
+#include <string>
 
 extern "C" {
 #include <jpeglib.h>
@@ -35,6 +37,9 @@ extern "C" {
 struct jpeg_decoder
 {
   std::vector<uint8_t> data;
+  uintptr_t user_data;
+
+  std::string error_message;
 };
 
 static const char kSuccess[] = "Success";
@@ -71,7 +76,7 @@ static void jpeg_deinit_plugin()
 }
 
 
-static int jpeg_does_support_format(enum heif_compression_format format)
+static int jpeg_does_support_format(heif_compression_format format)
 {
   if (format == heif_compression_JPEG) {
     return JPEG_PLUGIN_PRIORITY;
@@ -82,19 +87,34 @@ static int jpeg_does_support_format(enum heif_compression_format format)
 }
 
 
-struct heif_error jpeg_new_decoder(void** dec)
+static int jpeg_does_support_format2(const heif_decoder_plugin_compressed_format_description* format)
+{
+  return jpeg_does_support_format(format->format);
+}
+
+heif_error jpeg_new_decoder2(void** dec, const heif_decoder_plugin_options* options)
 {
   struct jpeg_decoder* decoder = new jpeg_decoder();
   *dec = decoder;
 
-  struct heif_error err = {heif_error_Ok, heif_suberror_Unspecified, kSuccess};
-  return err;
+  return {heif_error_Ok, heif_suberror_Unspecified, kSuccess};
+}
+
+
+heif_error jpeg_new_decoder(void** dec)
+{
+  heif_decoder_plugin_options options{};
+  options.format = heif_compression_JPEG;
+  options.num_threads = 0;
+  options.strict_decoding = false;
+
+  return jpeg_new_decoder2(dec, &options);
 }
 
 
 void jpeg_free_decoder(void* decoder_raw)
 {
-  struct jpeg_decoder* decoder = (jpeg_decoder*) decoder_raw;
+  jpeg_decoder* decoder = (jpeg_decoder*) decoder_raw;
 
   if (!decoder) {
     return;
@@ -110,26 +130,79 @@ void jpeg_set_strict_decoding(void* decoder_raw, int flag)
 }
 
 
-struct heif_error jpeg_push_data(void* decoder_raw, const void* frame_data, size_t frame_size)
+heif_error jpeg_push_data2(void* decoder_raw, const void* frame_data, size_t frame_size, uintptr_t user_data)
 {
-  struct jpeg_decoder* decoder = (struct jpeg_decoder*) decoder_raw;
+  jpeg_decoder* decoder = (jpeg_decoder*) decoder_raw;
 
   const uint8_t* input_data = (const uint8_t*)frame_data;
 
   decoder->data.insert(decoder->data.end(), input_data, input_data + frame_size);
+  decoder->user_data = user_data;
 
-  struct heif_error err = {heif_error_Ok, heif_suberror_Unspecified, kSuccess};
-  return err;
+  return {heif_error_Ok, heif_suberror_Unspecified, kSuccess};
+}
+
+heif_error jpeg_push_data(void* decoder_raw, const void* frame_data, size_t frame_size)
+{
+  return jpeg_push_data2(decoder_raw, frame_data, frame_size, 0);
 }
 
 
-struct heif_error jpeg_decode_image(void* decoder_raw, struct heif_image** out_img)
+struct my_error_manager {
+  jpeg_error_mgr mgr;
+  jmp_buf setjmp_buffer;
+};
+
+static char last_libjpeg_error_message[JMSG_LENGTH_MAX];
+
+void on_jpeg_error(j_common_ptr cinfo)
 {
-  struct jpeg_decoder* decoder = (struct jpeg_decoder*) decoder_raw;
+  /* cinfo->err actually points to a jpegErrorManager struct */
+  auto* my_err_mgr = (my_error_manager*) cinfo->err;
+  /* note : *(cinfo->err) is now equivalent to myerr->mgr */
+
+  // Create the message
+  ( *(cinfo->err->format_message) ) (cinfo, last_libjpeg_error_message);
+
+  // Jump to the setjmp point
+  longjmp(my_err_mgr->setjmp_buffer, 1);
+}
 
 
-  struct jpeg_decompress_struct cinfo;
-  struct jpeg_error_mgr jerr;
+// Conservative upper bound on bytes libjpeg will allocate to decode this JPEG.
+// Saturates to UINT64_MAX on overflow so callers can compare against limits
+// without further overflow checks. The 3x multiplier covers libjpeg's output
+// buffer plus internal sample arrays and MCU/row working buffers.
+static uint64_t jpeg_estimate_decode_memory_bytes(const jpeg_decompress_struct* cinfo)
+{
+  auto sat_mul = [](uint64_t a, uint64_t b) -> uint64_t {
+    if (a == 0 || b == 0) return 0;
+    if (a > UINT64_MAX / b) return UINT64_MAX;
+    return a * b;
+  };
+
+  uint64_t bytes_per_sample = (cinfo->data_precision > 8) ? 2 : 1;
+  uint64_t total = sat_mul(uint64_t(cinfo->image_width), uint64_t(cinfo->image_height));
+  total = sat_mul(total, uint64_t(cinfo->num_components));
+  total = sat_mul(total, bytes_per_sample);
+  return sat_mul(total, 3);
+}
+
+
+heif_error jpeg_decode_next_image2(void* decoder_raw, heif_image** out_img,
+                                   uintptr_t* out_user_data,
+                                   const heif_security_limits* limits)
+{
+  jpeg_decoder* decoder = (jpeg_decoder*) decoder_raw;
+
+  // When there is no input data yet, return NULL image.
+  if (decoder->data.empty()) {
+    *out_img = nullptr;
+    return heif_error_ok;
+  }
+
+  jpeg_decompress_struct cinfo;
+  my_error_manager jerr;
 
   // to store embedded icc profile
 //  uint32_t iccLen;
@@ -142,7 +215,27 @@ struct heif_error jpeg_decode_image(void* decoder_raw, struct heif_image** out_i
 
   jpeg_create_decompress(&cinfo);
 
-  cinfo.err = jpeg_std_error(&jerr);
+  heif_image* heif_img = nullptr;
+
+  cinfo.err = jpeg_std_error(&jerr.mgr);
+  jerr.mgr.error_exit = on_jpeg_error;
+  if (setjmp(jerr.setjmp_buffer)) {
+    // If we get here, the JPEG code has signaled an error.
+
+    jpeg_destroy_decompress(&cinfo);
+
+    if (heif_img) {
+      heif_image_release(heif_img);
+    }
+
+    return heif_error{
+      heif_error_Decoder_plugin_error,
+      heif_suberror_Unspecified,
+      last_libjpeg_error_message,
+    };
+  }
+
+
   jpeg_mem_src(&cinfo, decoder->data.data(), static_cast<unsigned long>(decoder->data.size()));
 
   /* Adding this part to prepare for icc profile reading. */
@@ -151,6 +244,24 @@ struct heif_error jpeg_decode_image(void* decoder_raw, struct heif_image** out_i
 //  jpeg_save_markers(&cinfo, JPEG_EXIF_MARKER, 0xFFFF);
 
   jpeg_read_header(&cinfo, TRUE);
+
+  // Reject obvious memory bombs before letting libjpeg allocate decode buffers.
+  // libjpeg has no built-in resource limit API, so we enforce libheif's limits here.
+  {
+    uint64_t pixels = uint64_t(cinfo.image_width) * uint64_t(cinfo.image_height);
+    if (limits->max_image_size_pixels > 0 && pixels > limits->max_image_size_pixels) {
+      jpeg_destroy_decompress(&cinfo);
+      return {heif_error_Memory_allocation_error, heif_suberror_Security_limit_exceeded,
+              "JPEG image exceeds maximum allowed image size"};
+    }
+
+    uint64_t estimated_memory = jpeg_estimate_decode_memory_bytes(&cinfo);
+    if (limits->max_memory_block_size > 0 && estimated_memory > limits->max_memory_block_size) {
+      jpeg_destroy_decompress(&cinfo);
+      return {heif_error_Memory_allocation_error, heif_suberror_Security_limit_exceeded,
+              "JPEG image would require too much memory to decode"};
+    }
+  }
 
 //  bool embeddedIccFlag = ReadICCProfileFromJPEG(&cinfo, &iccBuffer, &iccLen);
 //  bool embeddedXMPFlag = ReadXMPFromJPEG(&cinfo, xmpData);
@@ -176,20 +287,30 @@ struct heif_error jpeg_decode_image(void* decoder_raw, struct heif_image** out_i
 
     // create destination image
 
-    struct heif_image* heif_img = nullptr;
-    struct heif_error err = heif_image_create(cinfo.output_width, cinfo.output_height,
-                                              heif_colorspace_monochrome,
-                                              heif_chroma_monochrome,
-                                              &heif_img);
+    heif_error err = heif_image_create(cinfo.output_width, cinfo.output_height,
+                                       heif_colorspace_monochrome,
+                                       heif_chroma_monochrome,
+                                       &heif_img);
     if (err.code != heif_error_Ok) {
       assert(heif_img==nullptr);
+      jpeg_destroy_decompress(&cinfo);
       return err;
     }
 
-    heif_image_add_plane(heif_img, heif_channel_Y, cinfo.output_width, cinfo.output_height, 8);
+    err = heif_image_add_plane_safe(heif_img, heif_channel_Y, cinfo.output_width, cinfo.output_height, 8, limits);
+    if (err.code) {
+      // copy error message to decoder object because heif_image will be released
+      decoder->error_message = err.message;
+      err.message = decoder->error_message.c_str();
 
-    int y_stride;
-    uint8_t* py = heif_image_get_plane(heif_img, heif_channel_Y, &y_stride);
+      heif_image_release(heif_img);
+      heif_img = nullptr;
+      jpeg_destroy_decompress(&cinfo);
+      return err;
+    }
+
+    size_t y_stride;
+    uint8_t* py = heif_image_get_plane2(heif_img, heif_channel_Y, &y_stride);
 
 
     // read the image
@@ -199,8 +320,6 @@ struct heif_error jpeg_decode_image(void* decoder_raw, struct heif_image** out_i
 
       memcpy(py + (cinfo.output_scanline - 1) * y_stride, *buffer, cinfo.output_width);
     }
-
-    *out_img = heif_img;
   }
   else {
     cinfo.out_color_space = JCS_YCbCr;
@@ -214,26 +333,56 @@ struct heif_error jpeg_decode_image(void* decoder_raw, struct heif_image** out_i
 
     // create destination image
 
-    struct heif_image* heif_img = nullptr;
-    struct heif_error err = heif_image_create(cinfo.output_width, cinfo.output_height,
-                                              heif_colorspace_YCbCr,
-                                              heif_chroma_420,
-                                              &heif_img);
+    heif_error err = heif_image_create(cinfo.output_width, cinfo.output_height,
+                                       heif_colorspace_YCbCr,
+                                       heif_chroma_420,
+                                       &heif_img);
     if (err.code != heif_error_Ok) {
       assert(heif_img==nullptr);
+      jpeg_destroy_decompress(&cinfo);
       return err;
     }
 
-    heif_image_add_plane(heif_img, heif_channel_Y, cinfo.output_width, cinfo.output_height, 8);
-    heif_image_add_plane(heif_img, heif_channel_Cb, (cinfo.output_width + 1) / 2, (cinfo.output_height + 1) / 2, 8);
-    heif_image_add_plane(heif_img, heif_channel_Cr, (cinfo.output_width + 1) / 2, (cinfo.output_height + 1) / 2, 8);
+    err = heif_image_add_plane_safe(heif_img, heif_channel_Y, cinfo.output_width, cinfo.output_height, 8, limits);
+    if (err.code) {
+      // copy error message to decoder object because heif_image will be released
+      decoder->error_message = err.message;
+      err.message = decoder->error_message.c_str();
 
-    int y_stride;
-    int cb_stride;
-    int cr_stride;
-    uint8_t* py = heif_image_get_plane(heif_img, heif_channel_Y, &y_stride);
-    uint8_t* pcb = heif_image_get_plane(heif_img, heif_channel_Cb, &cb_stride);
-    uint8_t* pcr = heif_image_get_plane(heif_img, heif_channel_Cr, &cr_stride);
+      heif_image_release(heif_img);
+      heif_img = nullptr; // avoid double free in jpeg error handler
+      jpeg_destroy_decompress(&cinfo);
+      return err;
+    }
+    err = heif_image_add_plane_safe(heif_img, heif_channel_Cb, (cinfo.output_width + 1) / 2, (cinfo.output_height + 1) / 2, 8, limits);
+    if (err.code) {
+      // copy error message to decoder object because heif_image will be released
+      decoder->error_message = err.message;
+      err.message = decoder->error_message.c_str();
+
+      heif_image_release(heif_img);
+      heif_img = nullptr; // avoid double free in jpeg error handler
+      jpeg_destroy_decompress(&cinfo);
+      return err;
+    }
+    err = heif_image_add_plane_safe(heif_img, heif_channel_Cr, (cinfo.output_width + 1) / 2, (cinfo.output_height + 1) / 2, 8, limits);
+    if (err.code) {
+      // copy error message to decoder object because heif_image will be released
+      decoder->error_message = err.message;
+      err.message = decoder->error_message.c_str();
+
+      heif_image_release(heif_img);
+      heif_img = nullptr; // avoid double free in jpeg error handler
+      jpeg_destroy_decompress(&cinfo);
+      return err;
+    }
+
+    size_t y_stride;
+    size_t cb_stride;
+    size_t cr_stride;
+    uint8_t* py = heif_image_get_plane2(heif_img, heif_channel_Y, &y_stride);
+    uint8_t* pcb = heif_image_get_plane2(heif_img, heif_channel_Cb, &cb_stride);
+    uint8_t* pcr = heif_image_get_plane2(heif_img, heif_channel_Cr, &cr_stride);
 
     // read the image
 
@@ -274,8 +423,10 @@ struct heif_error jpeg_decode_image(void* decoder_raw, struct heif_image** out_i
         }
       }
     }
+  }
 
-    *out_img = heif_img;
+  if (out_user_data) {
+    *out_user_data = decoder->user_data;
   }
 
 //  if (embeddedIccFlag && iccLen > 0) {
@@ -287,15 +438,39 @@ struct heif_error jpeg_decode_image(void* decoder_raw, struct heif_image** out_i
   jpeg_finish_decompress(&cinfo);
   jpeg_destroy_decompress(&cinfo);
 
+  // Transfer ownership to the caller only after all libjpeg operations have
+  // completed. jpeg_finish_decompress() can still raise a fatal error (longjmp)
+  // on corrupt trailing data; until then heif_img must stay owned locally so the
+  // setjmp error handler can release it.
+  *out_img = heif_img;
+  heif_img = nullptr;
+
   decoder->data.clear();
 
   return heif_error_ok;
 }
 
+heif_error jpeg_decode_next_image(void* decoder_raw, heif_image** out_img,
+                                  const heif_security_limits* limits)
+{
+  return jpeg_decode_next_image2(decoder_raw, out_img, nullptr, limits);
+}
 
-static const struct heif_decoder_plugin decoder_jpeg
+heif_error jpeg_decode_image(void* decoder_raw, heif_image** out_img)
+{
+  auto* limits = heif_get_global_security_limits();
+  return jpeg_decode_next_image(decoder_raw, out_img, limits);
+}
+
+heif_error jpeg_flush_data(void* decoder)
+{
+  return heif_error_ok;
+}
+
+
+static const heif_decoder_plugin decoder_jpeg
     {
-        3,
+        5,
         jpeg_plugin_name,
         jpeg_init_plugin,
         jpeg_deinit_plugin,
@@ -305,11 +480,18 @@ static const struct heif_decoder_plugin decoder_jpeg
         jpeg_push_data,
         jpeg_decode_image,
         jpeg_set_strict_decoding,
-        "jpeg"
+        "jpeg",
+        jpeg_decode_next_image,
+        /* minimum_required_libheif_version */ LIBHEIF_MAKE_VERSION(1,21,0),
+        jpeg_does_support_format2,
+        jpeg_new_decoder2,
+        jpeg_push_data2,
+        jpeg_flush_data,
+        jpeg_decode_next_image2,
     };
 
 
-const struct heif_decoder_plugin* get_decoder_plugin_jpeg()
+const heif_decoder_plugin* get_decoder_plugin_jpeg()
 {
   return &decoder_jpeg;
 }

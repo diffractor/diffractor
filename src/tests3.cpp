@@ -510,7 +510,9 @@ static void should_scan_avif()
 
 	assert_equal(3078, props->width, "width", file_name);
 	assert_equal(2048, props->height, "height", file_name);
-	assert_equal("yuv444", props->pixel_format, "pixel_format", file_name);
+	// libheif 1.23 reports the file's native chroma (yuv420, per AV1 profile0) via
+	// heif_image_handle_get_preferred_decoding_colorspace; 1.18 returned yuv444.
+	assert_equal("yuv420", props->pixel_format, "pixel_format", file_name);
 }
 
 static void should_scan_webp()

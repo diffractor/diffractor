@@ -24,7 +24,27 @@
 #include <cinttypes>
 #include <cstddef>
 
-#include "error.h"
+#include <error.h>
+#include <libheif/heif_uncompressed.h>
+
+/**
+ * Convert heif_unci_compression enum to a fourcc code.
+ *
+ * @param method the compression method
+ * @return the corresponding fourcc code, or 0 for heif_unci_compression_off
+ */
+uint32_t unci_compression_to_fourcc(heif_unci_compression method);
+
+/**
+ * Compress data using the compression method identified by a fourcc code.
+ *
+ * @param fourcc_code the fourcc code for the compression method (e.g. "defl", "zlib", "brot")
+ * @param data pointer to the data to be compressed
+ * @param size the length of the input array in bytes
+ * @return the corresponding compressed data, or an error
+ */
+Result<std::vector<uint8_t>> compress_unci_fourcc(uint32_t fourcc_code,
+                                                   const uint8_t* data, size_t size);
 
 #if HAVE_ZLIB
 /**
@@ -61,7 +81,7 @@ std::vector<uint8_t> compress_deflate(const uint8_t* input, size_t size);
  * @sa decompress_deflate
  * @sa compress_zlib
  */
-Error decompress_zlib(const std::vector<uint8_t>& compressed_input, std::vector<uint8_t>* output);
+Result<std::vector<uint8_t>> decompress_zlib(const std::vector<uint8_t>& compressed_input);
 
 /**
  * Decompress "deflate" compressed data.
@@ -75,7 +95,7 @@ Error decompress_zlib(const std::vector<uint8_t>& compressed_input, std::vector<
  * @sa decompress_zlib
  * @sa compress_deflate
  */
-Error decompress_deflate(const std::vector<uint8_t>& compressed_input, std::vector<uint8_t>* output);
+Result<std::vector<uint8_t>> decompress_deflate(const std::vector<uint8_t>& compressed_input);
 
 #endif
 
@@ -89,8 +109,9 @@ Error decompress_deflate(const std::vector<uint8_t>& compressed_input, std::vect
  * @param output pointer to the resulting vector of decompressed data
  * @return success (Ok) or an error on failure (usually corrupt data)
  */
-Error decompress_brotli(const std::vector<uint8_t>& compressed_input, std::vector<uint8_t>* output);
+Result<std::vector<uint8_t>> decompress_brotli(const std::vector<uint8_t>& compressed_input);
 
+std::vector<uint8_t> compress_brotli(const uint8_t* input, size_t size);
 #endif
 
 #endif //LIBHEIF_COMPRESSION_H

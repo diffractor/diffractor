@@ -21,13 +21,14 @@
 #include "heif_experimental.h"
 #include "context.h"
 #include "api_structs.h"
-#include "file.h"
+#include "image-items/unc_image.h"
+#include "image-items/tiled.h"
 
 #include <array>
 #include <cstring>
 #include <memory>
 #include <vector>
-#include <string>
+#include <limits>
 
 
 struct heif_property_camera_intrinsic_matrix
@@ -35,51 +36,39 @@ struct heif_property_camera_intrinsic_matrix
   Box_cmin::RelativeIntrinsicMatrix matrix;
 };
 
-struct heif_error heif_item_get_property_camera_intrinsic_matrix(const struct heif_context* context,
-                                                                 heif_item_id itemId,
-                                                                 heif_property_id propertyId,
-                                                                 struct heif_property_camera_intrinsic_matrix** out_matrix)
+heif_error heif_item_get_property_camera_intrinsic_matrix(const heif_context* context,
+                                                          heif_item_id itemId,
+                                                          heif_property_id propertyId,
+                                                          heif_property_camera_intrinsic_matrix** out_matrix)
 {
   if (!out_matrix || !context) {
-    return {heif_error_Usage_error, heif_suberror_Invalid_parameter_value, "NULL passed"};
+    return heif_error_null_pointer_argument;
   }
 
-  auto file = context->context->get_heif_file();
-
-  std::vector<std::shared_ptr<Box>> properties;
-  Error err = file->get_properties(itemId, properties);
-  if (err) {
-    return err.error_struct(context->context.get());
-  }
-
-  if (propertyId - 1 < 0 || propertyId - 1 >= properties.size()) {
-    return {heif_error_Usage_error, heif_suberror_Invalid_property, "property index out of range"};
-  }
-
-  auto cmin = std::dynamic_pointer_cast<Box_cmin>(properties[propertyId - 1]);
+  auto cmin = context->context->find_property<Box_cmin>(itemId, propertyId);
   if (!cmin) {
-    return {heif_error_Usage_error, heif_suberror_Invalid_property, "wrong property type"};
+    return cmin.error_struct(context->context.get());
   }
 
   *out_matrix = new heif_property_camera_intrinsic_matrix;
-  (*out_matrix)->matrix = cmin->get_intrinsic_matrix();
+  (*out_matrix)->matrix = (*cmin)->get_intrinsic_matrix();
 
   return heif_error_success;
 }
 
 
-void heif_property_camera_intrinsic_matrix_release(struct heif_property_camera_intrinsic_matrix* matrix)
+void heif_property_camera_intrinsic_matrix_release(heif_property_camera_intrinsic_matrix* matrix)
 {
   delete matrix;
 }
 
-struct heif_error heif_property_camera_intrinsic_matrix_get_focal_length(const struct heif_property_camera_intrinsic_matrix* matrix,
-                                                                int image_width, int image_height,
-                                                                double* out_focal_length_x,
-                                                                double* out_focal_length_y)
+heif_error heif_property_camera_intrinsic_matrix_get_focal_length(const heif_property_camera_intrinsic_matrix* matrix,
+                                                                  int image_width, int image_height,
+                                                                  double* out_focal_length_x,
+                                                                  double* out_focal_length_y)
 {
   if (!matrix) {
-    return {heif_error_Usage_error, heif_suberror_Invalid_parameter_value, "NULL passed as matrix"};
+    return heif_error_null_pointer_argument;
   }
 
   double fx, fy;
@@ -92,13 +81,13 @@ struct heif_error heif_property_camera_intrinsic_matrix_get_focal_length(const s
 }
 
 
-struct heif_error heif_property_camera_intrinsic_matrix_get_principal_point(const struct heif_property_camera_intrinsic_matrix* matrix,
-                                                                   int image_width, int image_height,
-                                                                   double* out_principal_point_x,
-                                                                   double* out_principal_point_y)
+heif_error heif_property_camera_intrinsic_matrix_get_principal_point(const heif_property_camera_intrinsic_matrix* matrix,
+                                                                     int image_width, int image_height,
+                                                                     double* out_principal_point_x,
+                                                                     double* out_principal_point_y)
 {
   if (!matrix) {
-    return {heif_error_Usage_error, heif_suberror_Invalid_parameter_value, "NULL passed as matrix"};
+    return heif_error_null_pointer_argument;
   }
 
   double px, py;
@@ -111,11 +100,11 @@ struct heif_error heif_property_camera_intrinsic_matrix_get_principal_point(cons
 }
 
 
-struct heif_error heif_property_camera_intrinsic_matrix_get_skew(const struct heif_property_camera_intrinsic_matrix* matrix,
-                                                        double* out_skew)
+heif_error heif_property_camera_intrinsic_matrix_get_skew(const heif_property_camera_intrinsic_matrix* matrix,
+                                                          double* out_skew)
 {
   if (!matrix || !out_skew) {
-    return {heif_error_Usage_error, heif_suberror_Invalid_parameter_value, "NULL passed"};
+    return heif_error_null_pointer_argument;
   }
 
   *out_skew = matrix->matrix.skew;
@@ -124,14 +113,14 @@ struct heif_error heif_property_camera_intrinsic_matrix_get_skew(const struct he
 }
 
 
-struct heif_property_camera_intrinsic_matrix* heif_property_camera_intrinsic_matrix_alloc()
+heif_property_camera_intrinsic_matrix* heif_property_camera_intrinsic_matrix_alloc()
 {
   return new heif_property_camera_intrinsic_matrix;
 }
 
-void heif_property_camera_intrinsic_matrix_set_simple(struct heif_property_camera_intrinsic_matrix* matrix,
-                                             int image_width, int image_height,
-                                             double focal_length, double principal_point_x, double principal_point_y)
+void heif_property_camera_intrinsic_matrix_set_simple(heif_property_camera_intrinsic_matrix* matrix,
+                                                      int image_width, int image_height,
+                                                      double focal_length, double principal_point_x, double principal_point_y)
 {
   if (!matrix) {
     return;
@@ -143,12 +132,12 @@ void heif_property_camera_intrinsic_matrix_set_simple(struct heif_property_camer
   matrix->matrix.principal_point_y = principal_point_y / image_height;
 }
 
-void heif_property_camera_intrinsic_matrix_set_full(struct heif_property_camera_intrinsic_matrix* matrix,
-                                           int image_width, int image_height,
-                                           double focal_length_x,
-                                           double focal_length_y,
-                                           double principal_point_x, double principal_point_y,
-                                           double skew)
+void heif_property_camera_intrinsic_matrix_set_full(heif_property_camera_intrinsic_matrix* matrix,
+                                                    int image_width, int image_height,
+                                                    double focal_length_x,
+                                                    double focal_length_y,
+                                                    double principal_point_x, double principal_point_y,
+                                                    double skew)
 {
   if (!matrix) {
     return;
@@ -168,13 +157,13 @@ void heif_property_camera_intrinsic_matrix_set_full(struct heif_property_camera_
 }
 
 
-struct heif_error heif_item_add_property_camera_intrinsic_matrix(const struct heif_context* context,
-                                                                 heif_item_id itemId,
-                                                                 const struct heif_property_camera_intrinsic_matrix* matrix,
-                                                                 heif_property_id* out_propertyId)
+heif_error heif_item_add_property_camera_intrinsic_matrix(const heif_context* context,
+                                                          heif_item_id itemId,
+                                                          const heif_property_camera_intrinsic_matrix* matrix,
+                                                          heif_property_id* out_propertyId)
 {
   if (!context || !matrix) {
-    return {heif_error_Usage_error, heif_suberror_Null_pointer_argument, "NULL passed"};
+    return heif_error_null_pointer_argument;
   }
 
   auto cmin = std::make_shared<Box_cmin>();
@@ -196,50 +185,38 @@ struct heif_property_camera_extrinsic_matrix
 };
 
 
-struct heif_error heif_item_get_property_camera_extrinsic_matrix(const struct heif_context* context,
-                                                                 heif_item_id itemId,
-                                                                 heif_property_id propertyId,
-                                                                 struct heif_property_camera_extrinsic_matrix** out_matrix)
+heif_error heif_item_get_property_camera_extrinsic_matrix(const heif_context* context,
+                                                          heif_item_id itemId,
+                                                          heif_property_id propertyId,
+                                                          heif_property_camera_extrinsic_matrix** out_matrix)
 {
   if (!out_matrix || !context) {
-    return {heif_error_Usage_error, heif_suberror_Invalid_parameter_value, "NULL passed"};
+    return heif_error_null_pointer_argument;
   }
 
-  auto file = context->context->get_heif_file();
-
-  std::vector<std::shared_ptr<Box>> properties;
-  Error err = file->get_properties(itemId, properties);
-  if (err) {
-    return err.error_struct(context->context.get());
-  }
-
-  if (propertyId - 1 < 0 || propertyId - 1 >= properties.size()) {
-    return {heif_error_Usage_error, heif_suberror_Invalid_property, "property index out of range"};
-  }
-
-  auto cmex = std::dynamic_pointer_cast<Box_cmex>(properties[propertyId - 1]);
+  auto cmex = context->context->find_property<Box_cmex>(itemId, propertyId);
   if (!cmex) {
-    return {heif_error_Usage_error, heif_suberror_Invalid_property, "wrong property type"};
+    return cmex.error_struct(context->context.get());
   }
 
   *out_matrix = new heif_property_camera_extrinsic_matrix;
-  (*out_matrix)->matrix = cmex->get_extrinsic_matrix();
+  (*out_matrix)->matrix = (*cmex)->get_extrinsic_matrix();
 
   return heif_error_success;
 }
 
 
-void heif_property_camera_extrinsic_matrix_release(struct heif_property_camera_extrinsic_matrix* matrix)
+void heif_property_camera_extrinsic_matrix_release(heif_property_camera_extrinsic_matrix* matrix)
 {
   delete matrix;
 }
 
 
-struct heif_error heif_property_camera_extrinsic_matrix_get_rotation_matrix(const struct heif_property_camera_extrinsic_matrix* matrix,
-                                                                   double* out_matrix)
+heif_error heif_property_camera_extrinsic_matrix_get_rotation_matrix(const heif_property_camera_extrinsic_matrix* matrix,
+                                                                     double* out_matrix)
 {
   if (!matrix || !out_matrix) {
-    return {heif_error_Usage_error, heif_suberror_Invalid_parameter_value, "NULL passed"};
+    return heif_error_null_pointer_argument;
   }
 
   auto rot_matrix = matrix->matrix.calculate_rotation_matrix();
@@ -251,11 +228,11 @@ struct heif_error heif_property_camera_extrinsic_matrix_get_rotation_matrix(cons
 }
 
 
-struct heif_error heif_property_camera_extrinsic_matrix_get_position_vector(const struct heif_property_camera_extrinsic_matrix* matrix,
-                                                                   int32_t* out_vector)
+heif_error heif_property_camera_extrinsic_matrix_get_position_vector(const heif_property_camera_extrinsic_matrix* matrix,
+                                                                     int32_t* out_vector)
 {
   if (!matrix || !out_vector) {
-    return {heif_error_Usage_error, heif_suberror_Invalid_parameter_value, "NULL passed"};
+    return heif_error_null_pointer_argument;
   }
 
   out_vector[0] = matrix->matrix.pos_x;
@@ -266,14 +243,130 @@ struct heif_error heif_property_camera_extrinsic_matrix_get_position_vector(cons
 }
 
 
-struct heif_error heif_property_camera_extrinsic_matrix_get_world_coordinate_system_id(const struct heif_property_camera_extrinsic_matrix* matrix,
-                                                                              uint32_t* out_wcs_id)
+heif_error heif_property_camera_extrinsic_matrix_get_world_coordinate_system_id(const heif_property_camera_extrinsic_matrix* matrix,
+                                                                                uint32_t* out_wcs_id)
 {
   if (!matrix || !out_wcs_id) {
-    return {heif_error_Usage_error, heif_suberror_Invalid_parameter_value, "NULL passed"};
+    return heif_error_null_pointer_argument;
   }
 
   *out_wcs_id = matrix->matrix.world_coordinate_system_id;
 
   return heif_error_success;
 }
+
+
+#if HEIF_ENABLE_EXPERIMENTAL_FEATURES
+
+heif_error heif_context_add_pyramid_entity_group(struct heif_context* ctx,
+                                                 const heif_item_id* layer_item_ids,
+                                                 size_t num_layers,
+                                                 /*
+                                                 uint16_t tile_width,
+                                                 uint16_t tile_height,
+                                                 uint32_t num_layers,
+                                                 const heif_pyramid_layer_info* in_layers,
+                                                  */
+                                                 heif_item_id* out_group_id)
+{
+  if (!layer_item_ids) {
+    return heif_error_null_pointer_argument;
+  }
+
+  if (num_layers == 0) {
+    return {heif_error_Usage_error, heif_suberror_Invalid_parameter_value, "Number of layers cannot be 0."};
+  }
+
+  std::vector<heif_item_id> layers(num_layers);
+  for (size_t i = 0; i < num_layers; i++) {
+    layers[i] = layer_item_ids[i];
+  }
+
+  Result<heif_item_id> result = ctx->context->add_pyramid_group(layers);
+
+  if (result) {
+    if (out_group_id) {
+      *out_group_id = result;
+    }
+    return heif_error_success;
+  }
+  else {
+    return result.error_struct(ctx->context.get());
+  }
+}
+
+
+heif_pyramid_layer_info* heif_context_get_pyramid_entity_group_info(heif_context* ctx, heif_entity_group_id id, int* out_num_layers)
+{
+  if (!out_num_layers) {
+    return nullptr;
+  }
+
+  std::shared_ptr<Box_EntityToGroup> groupBox = ctx->context->get_heif_file()->get_entity_group(id);
+  if (!groupBox) {
+    return nullptr;
+  }
+
+  const auto pymdBox = std::dynamic_pointer_cast<Box_pymd>(groupBox);
+  if (!pymdBox) {
+    return nullptr;
+  }
+
+  const std::vector<Box_pymd::LayerInfo> pymd_layers = pymdBox->get_layers();
+  if (pymd_layers.empty()) {
+    return nullptr;
+  }
+
+  auto items = pymdBox->get_item_ids();
+  assert(items.size() == pymd_layers.size());
+
+  auto* layerInfo = new heif_pyramid_layer_info[pymd_layers.size()];
+  for (size_t i = 0; i < pymd_layers.size(); i++) {
+    layerInfo[i].layer_image_id = items[i];
+    layerInfo[i].layer_binning = pymd_layers[i].layer_binning;
+    layerInfo[i].tile_rows_in_layer = pymd_layers[i].tiles_in_layer_row_minus1 + 1;
+    layerInfo[i].tile_columns_in_layer = pymd_layers[i].tiles_in_layer_column_minus1 + 1;
+  }
+
+  *out_num_layers = static_cast<int>(pymd_layers.size());
+
+  return layerInfo;
+}
+
+
+void heif_pyramid_layer_info_release(heif_pyramid_layer_info* infos)
+{
+  delete[] infos;
+}
+
+
+#endif
+
+
+#if HEIF_ENABLE_EXPERIMENTAL_FEATURES
+heif_error heif_context_add_tiled_image(heif_context* ctx,
+                                        const heif_tiled_image_parameters* parameters,
+                                        const heif_encoding_options* options,
+                                        const heif_encoder* encoder,
+                                        heif_image_handle** out_grid_image_handle)
+{
+  if (out_grid_image_handle) {
+    *out_grid_image_handle = nullptr;
+  }
+
+  Result<std::shared_ptr<ImageItem_Tiled> > gridImageResult;
+  gridImageResult = ImageItem_Tiled::add_new_tiled_item(ctx->context.get(), parameters, encoder, options);
+
+  if (!gridImageResult) {
+    return gridImageResult.error_struct(ctx->context.get());
+  }
+
+  if (out_grid_image_handle) {
+    *out_grid_image_handle = new heif_image_handle;
+    (*out_grid_image_handle)->image = *gridImageResult;
+    (*out_grid_image_handle)->context = ctx->context;
+  }
+
+  return heif_error_success;
+}
+#endif
