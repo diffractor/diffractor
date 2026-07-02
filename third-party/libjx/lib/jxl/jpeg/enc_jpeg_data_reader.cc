@@ -5,11 +5,9 @@
 
 #include "lib/jxl/jpeg/enc_jpeg_data_reader.h"
 
-#include <inttypes.h>
-#include <string.h>
-
 #include <algorithm>
-#include <string>
+#include <cstdint>
+#include <cstring>
 #include <vector>
 
 #include "lib/jxl/base/common.h"
@@ -66,8 +64,8 @@ inline int ReadUint16(const uint8_t* data, size_t* pos) {
 
 // Reads the Start of Frame (SOF) marker segment and fills in *jpg with the
 // parsed data.
-bool ProcessSOF(const uint8_t* data, const size_t len, JpegReadMode mode,
-                size_t* pos, JPEGData* jpg) {
+Status ProcessSOF(const uint8_t* data, const size_t len, JpegReadMode mode,
+                  size_t* pos, JPEGData* jpg) {
   if (jpg->width != 0) {
     return JXL_FAILURE("Duplicate SOF marker.");
   }
@@ -92,21 +90,21 @@ bool ProcessSOF(const uint8_t* data, const size_t len, JpegReadMode mode,
   std::vector<bool> ids_seen(256, false);
   int max_h_samp_factor = 1;
   int max_v_samp_factor = 1;
-  for (size_t i = 0; i < jpg->components.size(); ++i) {
+  for (auto& component : jpg->components) {
     const int id = ReadUint8(data, pos);
     if (ids_seen[id]) {  // (cf. section B.2.2, syntax of Ci)
       return JXL_FAILURE("Duplicate ID %d in SOF.", id);
     }
     ids_seen[id] = true;
-    jpg->components[i].id = id;
+    component.id = id;
     int factor = ReadUint8(data, pos);
     int h_samp_factor = factor >> 4;
     int v_samp_factor = factor & 0xf;
     JXL_JPEG_VERIFY_INPUT(h_samp_factor, 1, kBrunsliMaxSampling, SAMP_FACTOR);
     JXL_JPEG_VERIFY_INPUT(v_samp_factor, 1, kBrunsliMaxSampling, SAMP_FACTOR);
-    jpg->components[i].h_samp_factor = h_samp_factor;
-    jpg->components[i].v_samp_factor = v_samp_factor;
-    jpg->components[i].quant_idx = ReadUint8(data, pos);
+    component.h_samp_factor = h_samp_factor;
+    component.v_samp_factor = v_samp_factor;
+    component.quant_idx = ReadUint8(data, pos);
     max_h_samp_factor = std::max(max_h_samp_factor, h_samp_factor);
     max_v_samp_factor = std::max(max_v_samp_factor, v_samp_factor);
   }
@@ -116,19 +114,13 @@ bool ProcessSOF(const uint8_t* data, const size_t len, JpegReadMode mode,
   int MCU_rows = DivCeil(jpg->height, max_v_samp_factor * 8);
   int MCU_cols = DivCeil(jpg->width, max_h_samp_factor * 8);
   // Compute the block dimensions for each component.
-  for (size_t i = 0; i < jpg->components.size(); ++i) {
-    JPEGComponent* c = &jpg->components[i];
-    if (max_h_samp_factor % c->h_samp_factor != 0 ||
-        max_v_samp_factor % c->v_samp_factor != 0) {
+  for (JPEGComponent& c : jpg->components) {
+    if (max_h_samp_factor % c.h_samp_factor != 0 ||
+        max_v_samp_factor % c.v_samp_factor != 0) {
       return JXL_FAILURE("Non-integral subsampling ratios.");
     }
-    c->width_in_blocks = MCU_cols * c->h_samp_factor;
-    c->height_in_blocks = MCU_rows * c->v_samp_factor;
-    const uint64_t num_blocks =
-        static_cast<uint64_t>(c->width_in_blocks) * c->height_in_blocks;
-    if (mode == JpegReadMode::kReadAll) {
-      c->coeffs.resize(num_blocks * kDCTBlockSize);
-    }
+    c.width_in_blocks = MCU_cols * c.h_samp_factor;
+    c.height_in_blocks = MCU_rows * c.v_samp_factor;
   }
   JXL_JPEG_VERIFY_MARKER_END();
   return true;
@@ -136,8 +128,8 @@ bool ProcessSOF(const uint8_t* data, const size_t len, JpegReadMode mode,
 
 // Reads the Start of Scan (SOS) marker segment and fills in *scan_info with the
 // parsed data.
-bool ProcessSOS(const uint8_t* data, const size_t len, size_t* pos,
-                JPEGData* jpg) {
+Status ProcessSOS(const uint8_t* data, const size_t len, size_t* pos,
+                  JPEGData* jpg) {
   const size_t start_pos = *pos;
   JXL_JPEG_VERIFY_LEN(3);
   size_t marker_len = ReadUint16(data, pos);
@@ -192,8 +184,8 @@ bool ProcessSOS(const uint8_t* data, const size_t len, size_t* pos,
   for (size_t i = 0; i < comps_in_scan; ++i) {
     bool found_dc_table = false;
     bool found_ac_table = false;
-    for (size_t j = 0; j < jpg->huffman_code.size(); ++j) {
-      uint32_t slot_id = jpg->huffman_code[j].slot_id;
+    for (const auto& code : jpg->huffman_code) {
+      uint32_t slot_id = code.slot_id;
       if (slot_id == scan_info.components[i].dc_tbl_idx) {
         found_dc_table = true;
       } else if (slot_id == scan_info.components[i].ac_tbl_idx + 16) {
@@ -219,15 +211,20 @@ bool ProcessSOS(const uint8_t* data, const size_t len, size_t* pos,
 // Reads the Define Huffman Table (DHT) marker segment and fills in *jpg with
 // the parsed data. Builds the Huffman decoding table in either dc_huff_lut or
 // ac_huff_lut, depending on the type and solt_id of Huffman code being read.
-bool ProcessDHT(const uint8_t* data, const size_t len, JpegReadMode mode,
-                std::vector<HuffmanTableEntry>* dc_huff_lut,
-                std::vector<HuffmanTableEntry>* ac_huff_lut, size_t* pos,
-                JPEGData* jpg) {
+Status ProcessDHT(const uint8_t* data, const size_t len, JpegReadMode mode,
+                  std::vector<HuffmanTableEntry>* dc_huff_lut,
+                  std::vector<HuffmanTableEntry>* ac_huff_lut, size_t* pos,
+                  JPEGData* jpg) {
   const size_t start_pos = *pos;
   JXL_JPEG_VERIFY_LEN(2);
   size_t marker_len = ReadUint16(data, pos);
   if (marker_len == 2) {
-    return JXL_FAILURE("DHT marker: no Huffman table found");
+    // Empty DHT marker. Useless but does seem to occur in the wild.
+    // We represent this situation with a dummy all-zeroes Huffman table.
+    JPEGHuffmanCode huff;
+    huff.is_last = true;
+    jpg->huffman_code.push_back(huff);
+    return true;
   }
   while (*pos < start_pos + marker_len) {
     JXL_JPEG_VERIFY_LEN(1 + kJpegHuffmanMaxBitLength);
@@ -302,8 +299,8 @@ bool ProcessDHT(const uint8_t* data, const size_t len, JpegReadMode mode,
 
 // Reads the Define Quantization Table (DQT) marker segment and fills in *jpg
 // with the parsed data.
-bool ProcessDQT(const uint8_t* data, const size_t len, size_t* pos,
-                JPEGData* jpg) {
+Status ProcessDQT(const uint8_t* data, const size_t len, size_t* pos,
+                  JPEGData* jpg) {
   const size_t start_pos = *pos;
   JXL_JPEG_VERIFY_LEN(2);
   size_t marker_len = ReadUint16(data, pos);
@@ -335,8 +332,8 @@ bool ProcessDQT(const uint8_t* data, const size_t len, size_t* pos,
 }
 
 // Reads the DRI marker and saves the restart interval into *jpg.
-bool ProcessDRI(const uint8_t* data, const size_t len, size_t* pos,
-                bool* found_dri, JPEGData* jpg) {
+Status ProcessDRI(const uint8_t* data, const size_t len, size_t* pos,
+                  bool* found_dri, JPEGData* jpg) {
   if (*found_dri) {
     return JXL_FAILURE("Duplicate DRI marker.");
   }
@@ -351,13 +348,13 @@ bool ProcessDRI(const uint8_t* data, const size_t len, size_t* pos,
 }
 
 // Saves the APP marker segment as a string to *jpg.
-bool ProcessAPP(const uint8_t* data, const size_t len, size_t* pos,
-                JPEGData* jpg) {
+Status ProcessAPP(const uint8_t* data, const size_t len, size_t* pos,
+                  JPEGData* jpg) {
   JXL_JPEG_VERIFY_LEN(2);
   size_t marker_len = ReadUint16(data, pos);
   JXL_JPEG_VERIFY_INPUT(marker_len, 2, 65535, MARKER_LEN);
   JXL_JPEG_VERIFY_LEN(marker_len - 2);
-  JXL_DASSERT(*pos >= 3);
+  JXL_ENSURE(*pos >= 3);
   // Save the marker type together with the app data.
   const uint8_t* app_str_start = data + *pos - 3;
   std::vector<uint8_t> app_str(app_str_start, app_str_start + marker_len + 1);
@@ -367,8 +364,8 @@ bool ProcessAPP(const uint8_t* data, const size_t len, size_t* pos,
 }
 
 // Saves the COM marker segment as a string to *jpg.
-bool ProcessCOM(const uint8_t* data, const size_t len, size_t* pos,
-                JPEGData* jpg) {
+Status ProcessCOM(const uint8_t* data, const size_t len, size_t* pos,
+                  JPEGData* jpg) {
   JXL_JPEG_VERIFY_LEN(2);
   size_t marker_len = ReadUint16(data, pos);
   JXL_JPEG_VERIFY_INPUT(marker_len, 2, 65535, MARKER_LEN);
@@ -534,11 +531,11 @@ int HuffExtend(int x, int s) {
 }
 
 // Decodes one 8x8 block of DCT coefficients from the bit stream.
-bool DecodeDCTBlock(const HuffmanTableEntry* dc_huff,
-                    const HuffmanTableEntry* ac_huff, int Ss, int Se, int Al,
-                    int* eobrun, bool* reset_state, int* num_zero_runs,
-                    BitReaderState* br, JPEGData* jpg, coeff_t* last_dc_coeff,
-                    coeff_t* coeffs) {
+Status DecodeDCTBlock(const HuffmanTableEntry* dc_huff,
+                      const HuffmanTableEntry* ac_huff, int Ss, int Se, int Al,
+                      int* eobrun, bool* reset_state, int* num_zero_runs,
+                      BitReaderState* br, JPEGData* jpg, coeff_t* last_dc_coeff,
+                      coeff_t* coeffs) {
   // Nowadays multiplication is even faster than variable shift.
   int Am = 1 << Al;
   bool eobrun_allowed = Ss > 0;
@@ -616,9 +613,9 @@ bool DecodeDCTBlock(const HuffmanTableEntry* dc_huff,
   return true;
 }
 
-bool RefineDCTBlock(const HuffmanTableEntry* ac_huff, int Ss, int Se, int Al,
-                    int* eobrun, bool* reset_state, BitReaderState* br,
-                    JPEGData* jpg, coeff_t* coeffs) {
+Status RefineDCTBlock(const HuffmanTableEntry* ac_huff, int Ss, int Se, int Al,
+                      int* eobrun, bool* reset_state, BitReaderState* br,
+                      JPEGData* jpg, coeff_t* coeffs) {
   // Nowadays multiplication is even faster than variable shift.
   int Am = 1 << Al;
   bool eobrun_allowed = Ss > 0;
@@ -745,23 +742,19 @@ bool ProcessRestart(const uint8_t* data, const size_t len,
   return true;
 }
 
-bool ProcessScan(const uint8_t* data, const size_t len,
-                 const std::vector<HuffmanTableEntry>& dc_huff_lut,
-                 const std::vector<HuffmanTableEntry>& ac_huff_lut,
-                 uint16_t scan_progression[kMaxComponents][kDCTBlockSize],
-                 bool is_progressive, size_t* pos, JPEGData* jpg) {
-  if (!ProcessSOS(data, len, pos, jpg)) {
-    return false;
-  }
+Status ProcessScan(const uint8_t* data, const size_t len,
+                   const std::vector<HuffmanTableEntry>& dc_huff_lut,
+                   const std::vector<HuffmanTableEntry>& ac_huff_lut,
+                   uint16_t scan_progression[kMaxComponents][kDCTBlockSize],
+                   bool is_progressive, size_t* pos, JPEGData* jpg) {
+  JXL_RETURN_IF_ERROR(ProcessSOS(data, len, pos, jpg));
   JPEGScanInfo* scan_info = &jpg->scan_info.back();
   bool is_interleaved = (scan_info->num_components > 1);
   int max_h_samp_factor = 1;
   int max_v_samp_factor = 1;
-  for (size_t i = 0; i < jpg->components.size(); ++i) {
-    max_h_samp_factor =
-        std::max(max_h_samp_factor, jpg->components[i].h_samp_factor);
-    max_v_samp_factor =
-        std::max(max_v_samp_factor, jpg->components[i].v_samp_factor);
+  for (const auto& component : jpg->components) {
+    max_h_samp_factor = std::max(max_h_samp_factor, component.h_samp_factor);
+    max_v_samp_factor = std::max(max_v_samp_factor, component.v_samp_factor);
   }
 
   int MCU_rows = DivCeil(jpg->height, max_v_samp_factor * 8);
@@ -803,6 +796,15 @@ bool ProcessScan(const uint8_t* data, const size_t len,
   if (Al > 10) {
     return JXL_FAILURE("Scan parameter Al=%d is not supported.", Al);
   }
+
+  for (auto& c : jpg->components) {
+    if (c.coeffs.empty()) {
+      const uint64_t num_blocks =
+          static_cast<uint64_t>(c.width_in_blocks) * c.height_in_blocks;
+      c.coeffs.resize(num_blocks * kDCTBlockSize);
+    }
+  }
+
   for (int mcu_y = 0; mcu_y < MCU_rows; ++mcu_y) {
     for (int mcu_x = 0; mcu_x < MCUs_per_row; ++mcu_x) {
       // Handle the restart intervals.
@@ -835,21 +837,20 @@ bool ProcessScan(const uint8_t* data, const size_t len,
           for (int ix = 0; ix < nblocks_x; ++ix) {
             int block_y = mcu_y * nblocks_y + iy;
             int block_x = mcu_x * nblocks_x + ix;
-            int block_idx = block_y * c->width_in_blocks + block_x;
+            size_t block_idx =
+                static_cast<size_t>(block_y) * c->width_in_blocks +
+                static_cast<size_t>(block_x);
             bool reset_state = false;
             int num_zero_runs = 0;
             coeff_t* coeffs = &c->coeffs[block_idx * kDCTBlockSize];
             if (Ah == 0) {
-              if (!DecodeDCTBlock(dc_lut, ac_lut, Ss, Se, Al, &eobrun,
-                                  &reset_state, &num_zero_runs, &br, jpg,
-                                  &last_dc_coeff[si->comp_idx], coeffs)) {
-                return false;
-              }
+              JXL_RETURN_IF_ERROR(
+                  DecodeDCTBlock(dc_lut, ac_lut, Ss, Se, Al, &eobrun,
+                                 &reset_state, &num_zero_runs, &br, jpg,
+                                 &last_dc_coeff[si->comp_idx], coeffs));
             } else {
-              if (!RefineDCTBlock(ac_lut, Ss, Se, Al, &eobrun, &reset_state,
-                                  &br, jpg, coeffs)) {
-                return false;
-              }
+              JXL_RETURN_IF_ERROR(RefineDCTBlock(
+                  ac_lut, Ss, Se, Al, &eobrun, &reset_state, &br, jpg, coeffs));
             }
             if (reset_state) {
               scan_info->reset_points.emplace_back(block_scan_index);
@@ -882,7 +883,7 @@ bool ProcessScan(const uint8_t* data, const size_t len,
 
 // Changes the quant_idx field of the components to refer to the index of the
 // quant table in the jpg->quant array.
-bool FixupIndexes(JPEGData* jpg) {
+Status FixupIndexes(JPEGData* jpg) {
   for (size_t i = 0; i < jpg->components.size(); ++i) {
     JPEGComponent* c = &jpg->components[i];
     bool found_index = false;
@@ -919,8 +920,8 @@ size_t FindNextMarker(const uint8_t* data, const size_t len, size_t pos) {
 
 }  // namespace
 
-bool ReadJpeg(const uint8_t* data, const size_t len, JpegReadMode mode,
-              JPEGData* jpg) {
+Status ReadJpeg(const uint8_t* data, const size_t len, JpegReadMode mode,
+                JPEGData* jpg) {
   size_t pos = 0;
   // Check SOI marker.
   JXL_JPEG_EXPECT_MARKER();
@@ -933,6 +934,7 @@ bool ReadJpeg(const uint8_t* data, const size_t len, JpegReadMode mode,
   std::vector<HuffmanTableEntry> dc_huff_lut(lut_size);
   std::vector<HuffmanTableEntry> ac_huff_lut(lut_size);
   bool found_sof = false;
+  bool found_sos = false;
   bool found_dri = false;
   uint16_t scan_progression[kMaxComponents][kDCTBlockSize] = {{0}};
 
@@ -950,17 +952,17 @@ bool ReadJpeg(const uint8_t* data, const size_t len, JpegReadMode mode,
     JXL_JPEG_EXPECT_MARKER();
     marker = data[pos + 1];
     pos += 2;
-    bool ok = true;
     switch (marker) {
       case 0xc0:
       case 0xc1:
       case 0xc2:
         is_progressive = (marker == 0xc2);
-        ok = ProcessSOF(data, len, mode, &pos, jpg);
+        JXL_RETURN_IF_ERROR(ProcessSOF(data, len, mode, &pos, jpg));
         found_sof = true;
         break;
       case 0xc4:
-        ok = ProcessDHT(data, len, mode, &dc_huff_lut, &ac_huff_lut, &pos, jpg);
+        JXL_RETURN_IF_ERROR(
+            ProcessDHT(data, len, mode, &dc_huff_lut, &ac_huff_lut, &pos, jpg));
         break;
       case 0xd0:
       case 0xd1:
@@ -977,15 +979,17 @@ bool ReadJpeg(const uint8_t* data, const size_t len, JpegReadMode mode,
         break;
       case 0xda:
         if (mode == JpegReadMode::kReadAll) {
-          ok = ProcessScan(data, len, dc_huff_lut, ac_huff_lut,
-                           scan_progression, is_progressive, &pos, jpg);
+          JXL_RETURN_IF_ERROR(ProcessScan(data, len, dc_huff_lut, ac_huff_lut,
+                                          scan_progression, is_progressive,
+                                          &pos, jpg));
         }
+        found_sos = true;
         break;
       case 0xdb:
-        ok = ProcessDQT(data, len, &pos, jpg);
+        JXL_RETURN_IF_ERROR(ProcessDQT(data, len, &pos, jpg));
         break;
       case 0xdd:
-        ok = ProcessDRI(data, len, &pos, &found_dri, jpg);
+        JXL_RETURN_IF_ERROR(ProcessDRI(data, len, &pos, &found_dri, jpg));
         break;
       case 0xe0:
       case 0xe1:
@@ -1004,20 +1008,17 @@ bool ReadJpeg(const uint8_t* data, const size_t len, JpegReadMode mode,
       case 0xee:
       case 0xef:
         if (mode != JpegReadMode::kReadTables) {
-          ok = ProcessAPP(data, len, &pos, jpg);
+          JXL_RETURN_IF_ERROR(ProcessAPP(data, len, &pos, jpg));
         }
         break;
       case 0xfe:
         if (mode != JpegReadMode::kReadTables) {
-          ok = ProcessCOM(data, len, &pos, jpg);
+          JXL_RETURN_IF_ERROR(ProcessCOM(data, len, &pos, jpg));
         }
         break;
       default:
         return JXL_FAILURE("Unsupported marker: %d pos=%" PRIuS " len=%" PRIuS,
                            marker, pos, len);
-    }
-    if (!ok) {
-      return false;
     }
     jpg->marker_order.push_back(marker);
     if (mode == JpegReadMode::kReadHeader && found_sof) {
@@ -1028,15 +1029,16 @@ bool ReadJpeg(const uint8_t* data, const size_t len, JpegReadMode mode,
   if (!found_sof) {
     return JXL_FAILURE("Missing SOF marker.");
   }
+  if (!found_sos) {
+    return JXL_FAILURE("Missing SOS marker.");
+  }
 
   // Supplemental checks.
   if (mode == JpegReadMode::kReadAll) {
     if (pos < len) {
       jpg->tail_data = std::vector<uint8_t>(data + pos, data + len);
     }
-    if (!FixupIndexes(jpg)) {
-      return false;
-    }
+    JXL_RETURN_IF_ERROR(FixupIndexes(jpg));
     if (jpg->huffman_code.empty()) {
       // Section B.2.4.2: "If a table has never been defined for a particular
       // destination, then when this destination is specified in a scan header,

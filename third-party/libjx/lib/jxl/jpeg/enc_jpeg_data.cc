@@ -6,40 +6,56 @@
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 
 #include <brotli/encode.h>
+#include <jxl/cms.h>
+#include <jxl/memory_manager.h>
+#include <jxl/types.h>
 
-#include "lib/jxl/codec_in_out.h"
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <memory>
+#include <utility>
+#include <vector>
+
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/sanitizers.h"
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
-#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/enc_params.h"
+#include "lib/jxl/fields.h"
+#include "lib/jxl/frame_header.h"
 #include "lib/jxl/jpeg/enc_jpeg_data_reader.h"
-#include "lib/jxl/luminance.h"
-#include "lib/jxl/sanitizers.h"
+#include "lib/jxl/jpeg/jpeg_data.h"
+#include "lib/jxl/padded_bytes.h"
 
 namespace jxl {
 namespace jpeg {
 
 namespace {
 
-constexpr int BITS_IN_JSAMPLE = 8;
-using ByteSpan = Span<const uint8_t>;
-
 // TODO(eustas): move to jpeg_data, to use from codec_jpg as well.
 // See if there is a canonically chunked ICC profile and mark corresponding
 // app-tags with AppMarkerType::kICC.
 Status DetectIccProfile(JPEGData& jpeg_data) {
-  JXL_DASSERT(jpeg_data.app_data.size() == jpeg_data.app_marker_type.size());
+  JXL_ENSURE(jpeg_data.app_data.size() == jpeg_data.app_marker_type.size());
   size_t num_icc = 0;
   size_t num_icc_jpeg = 0;
   for (size_t i = 0; i < jpeg_data.app_data.size(); i++) {
     const auto& app = jpeg_data.app_data[i];
+    // At least APPn + size; otherwise it should be intermarker-data.
+    JXL_ENSURE(app.size() >= 3);
     size_t pos = 0;
     if (app[pos++] != 0xE2) continue;
-    // At least APPn + size; otherwise it should be intermarker-data.
-    JXL_DASSERT(app.size() >= 3);
     size_t tag_length = (app[pos] << 8) + app[pos + 1];
     pos += 2;
-    JXL_DASSERT(app.size() == tag_length + 1);
-    // Empty payload is 2 bytes for tag length itself + signature
-    if (tag_length < 2 + sizeof kIccProfileTag) continue;
+    JXL_ENSURE(app.size() == tag_length + 1);
+    // Minimum is 2 bytes for tag length itself + signature + 2 bytes for
+    // chunk_id and num_chunks (read below).
+    if (tag_length < 2 + sizeof kIccProfileTag + 2) continue;
 
     if (memcmp(&app[pos], kIccProfileTag, sizeof kIccProfileTag) != 0) continue;
     pos += sizeof kIccProfileTag;
@@ -57,7 +73,7 @@ Status DetectIccProfile(JPEGData& jpeg_data) {
   return true;
 }
 
-bool GetMarkerPayload(const uint8_t* data, size_t size, ByteSpan* payload) {
+bool GetMarkerPayload(const uint8_t* data, size_t size, Bytes* payload) {
   if (size < 3) {
     return false;
   }
@@ -69,13 +85,13 @@ bool GetMarkerPayload(const uint8_t* data, size_t size, ByteSpan* payload) {
     return false;
   }
   // cut second marker byte and "length" from payload.
-  *payload = ByteSpan(data, size);
-  payload->remove_prefix(3);
+  *payload = Bytes(data, size);
+  if (!payload->remove_prefix(3)) return false;
   return true;
 }
 
 Status DetectBlobs(jpeg::JPEGData& jpeg_data) {
-  JXL_DASSERT(jpeg_data.app_data.size() == jpeg_data.app_marker_type.size());
+  JXL_ENSURE(jpeg_data.app_data.size() == jpeg_data.app_marker_type.size());
   bool have_exif = false;
   bool have_xmp = false;
   for (size_t i = 0; i < jpeg_data.app_data.size(); i++) {
@@ -83,12 +99,12 @@ Status DetectBlobs(jpeg::JPEGData& jpeg_data) {
     if (marker.empty() || marker[0] != kApp1) {
       continue;
     }
-    ByteSpan payload;
+    Bytes payload;
     if (!GetMarkerPayload(marker.data(), marker.size(), &payload)) {
       // Something is wrong with this marker; does not care.
       continue;
     }
-    if (!have_exif && payload.size() >= sizeof kExifTag &&
+    if (!have_exif && payload.size() > sizeof kExifTag &&
         !memcmp(payload.data(), kExifTag, sizeof kExifTag)) {
       jpeg_data.app_marker_type[i] = AppMarkerType::kExif;
       have_exif = true;
@@ -103,11 +119,11 @@ Status DetectBlobs(jpeg::JPEGData& jpeg_data) {
 }
 
 Status ParseChunkedMarker(const jpeg::JPEGData& src, uint8_t marker_type,
-                          const ByteSpan& tag, IccBytes* output,
+                          const Bytes& tag, IccBytes* output,
                           bool allow_permutations = false) {
   output->clear();
 
-  std::vector<ByteSpan> chunks;
+  std::vector<Bytes> chunks;
   std::vector<bool> presence;
   size_t expected_number_of_parts = 0;
   bool is_first_chunk = true;
@@ -116,7 +132,7 @@ Status ParseChunkedMarker(const jpeg::JPEGData& src, uint8_t marker_type,
     if (marker.empty() || marker[0] != marker_type) {
       continue;
     }
-    ByteSpan payload;
+    Bytes payload;
     if (!GetMarkerPayload(marker.data(), marker.size(), &payload)) {
       // Something is wrong with this marker; does not care.
       continue;
@@ -125,7 +141,7 @@ Status ParseChunkedMarker(const jpeg::JPEGData& src, uint8_t marker_type,
         memcmp(payload.data(), tag.data(), tag.size()) != 0) {
       continue;
     }
-    payload.remove_prefix(tag.size());
+    JXL_RETURN_IF_ERROR(payload.remove_prefix(tag.size()));
     if (payload.size() < 2) {
       return JXL_FAILURE("Chunk is too small.");
     }
@@ -136,7 +152,7 @@ Status ParseChunkedMarker(const jpeg::JPEGData& src, uint8_t marker_type,
       if (index != ordinal) return JXL_FAILURE("Invalid chunk order.");
     }
 
-    payload.remove_prefix(2);
+    JXL_RETURN_IF_ERROR(payload.remove_prefix(2));
 
     JXL_RETURN_IF_ERROR(total != 0);
     if (is_first_chunk) {
@@ -172,55 +188,16 @@ Status ParseChunkedMarker(const jpeg::JPEGData& src, uint8_t marker_type,
   return true;
 }
 
-Status SetBlobsFromJpegData(const jpeg::JPEGData& jpeg_data, Blobs* blobs) {
-  for (size_t i = 0; i < jpeg_data.app_data.size(); i++) {
-    const auto& marker = jpeg_data.app_data[i];
-    if (marker.empty() || marker[0] != kApp1) {
-      continue;
-    }
-    ByteSpan payload;
-    if (!GetMarkerPayload(marker.data(), marker.size(), &payload)) {
-      // Something is wrong with this marker; does not care.
-      continue;
-    }
-    if (payload.size() >= sizeof kExifTag &&
-        !memcmp(payload.data(), kExifTag, sizeof kExifTag)) {
-      if (blobs->exif.empty()) {
-        blobs->exif.resize(payload.size() - sizeof kExifTag);
-        memcpy(blobs->exif.data(), payload.data() + sizeof kExifTag,
-               payload.size() - sizeof kExifTag);
-      } else {
-        JXL_WARNING(
-            "ReJPEG: multiple Exif blobs, storing only first one in the JPEG "
-            "XL container\n");
-      }
-    }
-    if (payload.size() >= sizeof kXMPTag &&
-        !memcmp(payload.data(), kXMPTag, sizeof kXMPTag)) {
-      if (blobs->xmp.empty()) {
-        blobs->xmp.resize(payload.size() - sizeof kXMPTag);
-        memcpy(blobs->xmp.data(), payload.data() + sizeof kXMPTag,
-               payload.size() - sizeof kXMPTag);
-      } else {
-        JXL_WARNING(
-            "ReJPEG: multiple XMP blobs, storing only first one in the JPEG "
-            "XL container\n");
-      }
-    }
-  }
-  return true;
-}
-
-inline bool IsJPG(const Span<const uint8_t> bytes) {
+inline bool IsJPG(const Bytes bytes) {
   return bytes.size() >= 2 && bytes[0] == 0xFF && bytes[1] == 0xD8;
 }
 
 }  // namespace
 
-void SetColorEncodingFromJpegData(const jpeg::JPEGData& jpg,
-                                  ColorEncoding* color_encoding) {
+Status SetColorEncodingFromJpegData(const jpeg::JPEGData& jpg,
+                                    ColorEncoding* color_encoding) {
   IccBytes icc_profile;
-  if (!ParseChunkedMarker(jpg, kApp2, ByteSpan(kIccProfileTag), &icc_profile)) {
+  if (!ParseChunkedMarker(jpg, kApp2, Bytes(kIccProfileTag), &icc_profile)) {
     JXL_WARNING("ReJPEG: corrupted ICC profile\n");
     icc_profile.clear();
   }
@@ -229,8 +206,10 @@ void SetColorEncodingFromJpegData(const jpeg::JPEGData& jpg,
     bool is_gray = (jpg.components.size() == 1);
     *color_encoding = ColorEncoding::SRGB(is_gray);
   } else {
-    color_encoding->SetICCRaw(std::move(icc_profile));
+    JXL_RETURN_IF_ERROR(
+        color_encoding->SetICC(std::move(icc_profile), JxlGetDefaultCms()));
   }
+  return true;
 }
 
 Status SetChromaSubsamplingFromJpegData(const JPEGData& jpg,
@@ -263,7 +242,8 @@ Status SetColorTransformFromJpegData(const JPEGData& jpg,
                                      ColorTransform* color_transform) {
   size_t nbcomp = jpg.components.size();
   if (nbcomp != 1 && nbcomp != 3) {
-    return JXL_FAILURE("Cannot recompress JPEGs with neither 1 nor 3 channels");
+    return JXL_UNSUPPORTED(
+        "Cannot recompress JPEGs with neither 1 nor 3 channels");
   }
   bool is_rgb = false;
   {
@@ -276,7 +256,7 @@ Status SetColorTransformFromJpegData(const JPEGData& jpg,
       for (; i < markers.size(); i++) {
         // This is an APP marker.
         if ((markers[i] & 0xF0) == 0xE0) {
-          JXL_CHECK(app_markers < jpg.app_data.size());
+          JXL_ENSURE(app_markers < jpg.app_data.size());
           // APP14 marker
           if (markers[i] == 0xEE) {
             const auto& data = jpg.app_data[app_markers];
@@ -303,7 +283,8 @@ Status SetColorTransformFromJpegData(const JPEGData& jpg,
   return true;
 }
 
-Status EncodeJPEGData(JPEGData& jpeg_data, std::vector<uint8_t>* bytes,
+Status EncodeJPEGData(JxlMemoryManager* memory_manager, JPEGData& jpeg_data,
+                      std::vector<uint8_t>* bytes,
                       const CompressParams& cparams) {
   bytes->clear();
   jpeg_data.app_marker_type.resize(jpeg_data.app_data.size(),
@@ -318,17 +299,18 @@ Status EncodeJPEGData(JPEGData& jpeg_data, std::vector<uint8_t>* bytes,
     }
     total_data += jpeg_data.app_data[i].size();
   }
-  for (size_t i = 0; i < jpeg_data.com_data.size(); i++) {
-    total_data += jpeg_data.com_data[i].size();
+  for (const auto& data : jpeg_data.com_data) {
+    total_data += data.size();
   }
-  for (size_t i = 0; i < jpeg_data.inter_marker_data.size(); i++) {
-    total_data += jpeg_data.inter_marker_data[i].size();
+  for (const auto& data : jpeg_data.inter_marker_data) {
+    total_data += data.size();
   }
   total_data += jpeg_data.tail_data.size();
   size_t brotli_capacity = BrotliEncoderMaxCompressedSize(total_data);
 
-  BitWriter writer;
-  JXL_RETURN_IF_ERROR(Bundle::Write(jpeg_data, &writer, 0, nullptr));
+  BitWriter writer{memory_manager};
+  JXL_RETURN_IF_ERROR(
+      Bundle::Write(jpeg_data, &writer, LayerType::Header, nullptr));
   writer.ZeroPadToByte();
   {
     PaddedBytes serialized_jpeg_data = std::move(writer).TakeBytes();
@@ -345,62 +327,85 @@ Status EncodeJPEGData(JPEGData& jpeg_data, std::vector<uint8_t>* bytes,
   BrotliEncoderSetParameter(brotli_enc, BROTLI_PARAM_SIZE_HINT, total_data);
   bytes->resize(initial_size + brotli_capacity);
   size_t enc_size = 0;
-  auto br_append = [&](const std::vector<uint8_t>& data, bool last) {
+  auto br_append = [&](const std::vector<uint8_t>& data, bool last) -> Status {
     size_t available_in = data.size();
     const uint8_t* in = data.data();
     uint8_t* out = &(*bytes)[initial_size + enc_size];
     do {
       uint8_t* out_before = out;
       msan::MemoryIsInitialized(in, available_in);
-      JXL_CHECK(BrotliEncoderCompressStream(
+      JXL_ENSURE(BrotliEncoderCompressStream(
           brotli_enc, last ? BROTLI_OPERATION_FINISH : BROTLI_OPERATION_PROCESS,
           &available_in, &in, &brotli_capacity, &out, &enc_size));
       msan::UnpoisonMemory(out_before, out - out_before);
-    } while (BrotliEncoderHasMoreOutput(brotli_enc) || available_in > 0);
+    } while (FROM_JXL_BOOL(BrotliEncoderHasMoreOutput(brotli_enc)) ||
+             available_in > 0);
+    return true;
   };
 
   for (size_t i = 0; i < jpeg_data.app_data.size(); i++) {
     if (jpeg_data.app_marker_type[i] != AppMarkerType::kUnknown) {
       continue;
     }
-    br_append(jpeg_data.app_data[i], /*last=*/false);
+    JXL_RETURN_IF_ERROR(br_append(jpeg_data.app_data[i], /*last=*/false));
   }
-  for (size_t i = 0; i < jpeg_data.com_data.size(); i++) {
-    br_append(jpeg_data.com_data[i], /*last=*/false);
+  for (const auto& data : jpeg_data.com_data) {
+    JXL_RETURN_IF_ERROR(br_append(data, /*last=*/false));
   }
-  for (size_t i = 0; i < jpeg_data.inter_marker_data.size(); i++) {
-    br_append(jpeg_data.inter_marker_data[i], /*last=*/false);
+  for (const auto& data : jpeg_data.inter_marker_data) {
+    JXL_RETURN_IF_ERROR(br_append(data, /*last=*/false));
   }
-  br_append(jpeg_data.tail_data, /*last=*/true);
+  JXL_RETURN_IF_ERROR(br_append(jpeg_data.tail_data, /*last=*/true));
   BrotliEncoderDestroyInstance(brotli_enc);
   bytes->resize(initial_size + enc_size);
   return true;
 }
 
-Status DecodeImageJPG(const Span<const uint8_t> bytes, CodecInOut* io) {
-  if (!IsJPG(bytes)) return false;
-  io->frames.clear();
-  io->frames.reserve(1);
-  io->frames.emplace_back(&io->metadata.m);
-  io->Main().jpeg_data = make_unique<jpeg::JPEGData>();
-  jpeg::JPEGData* jpeg_data = io->Main().jpeg_data.get();
-  if (!jpeg::ReadJpeg(bytes.data(), bytes.size(), jpeg::JpegReadMode::kReadAll,
-                      jpeg_data)) {
-    return JXL_FAILURE("Error reading JPEG");
-  }
-  SetColorEncodingFromJpegData(*jpeg_data, &io->metadata.m.color_encoding);
-  JXL_RETURN_IF_ERROR(SetBlobsFromJpegData(*jpeg_data, &io->blobs));
-  JXL_RETURN_IF_ERROR(SetChromaSubsamplingFromJpegData(
-      *jpeg_data, &io->Main().chroma_subsampling));
-  JXL_RETURN_IF_ERROR(
-      SetColorTransformFromJpegData(*jpeg_data, &io->Main().color_transform));
+StatusOr<std::unique_ptr<JPEGData>> ParseJPG(JxlMemoryManager* memory_manager,
+                                             const Bytes bytes) {
+  if (!IsJPG(bytes)) return JXL_FAILURE("Not JPEG");
+  auto jpeg_data = jxl::make_unique<jxl::jpeg::JPEGData>();
+  JXL_RETURN_IF_ERROR(jpeg::ReadJpeg(bytes.data(), bytes.size(),
+                                     jpeg::JpegReadMode::kReadAll,
+                                     jpeg_data.get()));
+  return jpeg_data;
+}
 
-  io->metadata.m.SetIntensityTarget(kDefaultIntensityTarget);
-  io->metadata.m.SetUintSamples(BITS_IN_JSAMPLE);
-  JXL_ASSIGN_OR_RETURN(Image3F tmp,
-                       Image3F::Create(jpeg_data->width, jpeg_data->height));
-  io->SetFromImage(std::move(tmp), io->metadata.m.color_encoding);
-  SetIntensityTarget(&io->metadata.m);
+Status SetBlobsFromJpegData(const jpeg::JPEGData& jpeg_data, Blobs* blobs) {
+  for (const auto& marker : jpeg_data.app_data) {
+    if (marker.empty() || marker[0] != kApp1) {
+      continue;
+    }
+    Bytes payload;
+    if (!GetMarkerPayload(marker.data(), marker.size(), &payload)) {
+      // Something is wrong with this marker; does not care.
+      continue;
+    }
+    if (payload.size() >= sizeof kExifTag &&
+        !memcmp(payload.data(), kExifTag, sizeof kExifTag)) {
+      if (blobs->exif.empty()) {
+        blobs->exif.resize(payload.size() - sizeof kExifTag);
+        memcpy(blobs->exif.data(), payload.data() + sizeof kExifTag,
+               payload.size() - sizeof kExifTag);
+      } else {
+        JXL_WARNING(
+            "ReJPEG: multiple Exif blobs, storing only first one in the JPEG "
+            "XL container\n");
+      }
+    }
+    if (payload.size() >= sizeof kXMPTag &&
+        !memcmp(payload.data(), kXMPTag, sizeof kXMPTag)) {
+      if (blobs->xmp.empty()) {
+        blobs->xmp.resize(payload.size() - sizeof kXMPTag);
+        memcpy(blobs->xmp.data(), payload.data() + sizeof kXMPTag,
+               payload.size() - sizeof kXMPTag);
+      } else {
+        JXL_WARNING(
+            "ReJPEG: multiple XMP blobs, storing only first one in the JPEG "
+            "XL container\n");
+      }
+    }
+  }
   return true;
 }
 

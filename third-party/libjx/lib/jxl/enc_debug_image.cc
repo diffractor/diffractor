@@ -5,13 +5,27 @@
 
 #include "lib/jxl/enc_debug_image.h"
 
-#include <stddef.h>
-#include <stdint.h>
+#include <jxl/color_encoding.h>
+#include <jxl/memory_manager.h>
+#include <jxl/types.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <type_traits>
+#include <vector>
+
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/dec_cache.h"
 #include "lib/jxl/dec_external_image.h"
+#include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/enc_params.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/image_ops.h"
 
 namespace jxl {
@@ -23,7 +37,9 @@ StatusOr<Image3F> ConvertToFloat(const Image3<From>& from) {
   if (std::is_same<From, double>::value || std::is_same<From, float>::value) {
     factor = 1.0f;
   }
-  JXL_ASSIGN_OR_RETURN(Image3F to, Image3F::Create(from.xsize(), from.ysize()));
+  JxlMemoryManager* memory_manager = from.memory_manager();
+  JXL_ASSIGN_OR_RETURN(
+      Image3F to, Image3F::Create(memory_manager, from.xsize(), from.ysize()));
   for (size_t c = 0; c < 3; ++c) {
     for (size_t y = 0; y < from.ysize(); ++y) {
       const From* const JXL_RESTRICT row_from = from.ConstPlaneRow(c, y);
@@ -48,7 +64,7 @@ Status DumpImageT(const CompressParams& cparams, const char* label,
   for (int c = 0; c < 3; ++c) {
     channels[c] = &float_image.Plane(c);
   }
-  JXL_CHECK(ConvertChannelsToExternal(
+  JXL_RETURN_IF_ERROR(ConvertChannelsToExternal(
       channels, 3, 16, false, JXL_BIG_ENDIAN, 6 * image.xsize(), nullptr,
       pixels.data(), 2 * num_pixels, PixelCallback(), Orientation::kIdentity));
   (*cparams.debug_image)(cparams.debug_image_opaque, label, image.xsize(),
@@ -62,8 +78,11 @@ Status DumpPlaneNormalizedT(const CompressParams& cparams, const char* label,
   T min;
   T max;
   ImageMinMax(image, &min, &max);
-  JXL_ASSIGN_OR_RETURN(Image3B normalized,
-                       Image3B::Create(image.xsize(), image.ysize()));
+  JxlMemoryManager* memory_manager = image.memory_manager();
+
+  JXL_ASSIGN_OR_RETURN(
+      Image3B normalized,
+      Image3B::Create(memory_manager, image.xsize(), image.ysize()));
   for (size_t c = 0; c < 3; ++c) {
     float mul = min == max ? 0 : (255.0f / (max - min));
     for (size_t y = 0; y < image.ysize(); ++y) {
@@ -92,12 +111,15 @@ Status DumpImage(const CompressParams& cparams, const char* label,
 Status DumpXybImage(const CompressParams& cparams, const char* label,
                     const Image3F& image) {
   if (!cparams.debug_image) return true;
+  JxlMemoryManager* memory_manager = image.memory_manager();
 
-  JXL_ASSIGN_OR_RETURN(Image3F linear,
-                       Image3F::Create(image.xsize(), image.ysize()));
+  JXL_ASSIGN_OR_RETURN(
+      Image3F linear,
+      Image3F::Create(memory_manager, image.xsize(), image.ysize()));
   OpsinParams opsin_params;
   opsin_params.Init(kDefaultIntensityTarget);
-  OpsinToLinear(image, Rect(linear), nullptr, &linear, opsin_params);
+  JXL_RETURN_IF_ERROR(
+      OpsinToLinear(image, Rect(linear), nullptr, &linear, opsin_params));
 
   return DumpImageT(cparams, label, ColorEncoding::LinearSRGB(), linear);
 }

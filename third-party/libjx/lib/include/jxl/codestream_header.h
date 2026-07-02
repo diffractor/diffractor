@@ -19,7 +19,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#if defined(__cplusplus) || defined(c_plusplus)
+#ifdef __cplusplus
 extern "C" {
 #endif
 
@@ -163,7 +163,7 @@ typedef struct {
    * original profile is not used, the decoder only outputs the data as sRGB
    * (linear if outputting to floating point, nonlinear with standard sRGB
    * transfer function if outputting to unsigned integers) but will not convert
-   * it to to the original color profile. The decoder also does not convert to
+   * it to the original color profile. The decoder also does not convert to
    * the target display color profile. To convert the pixel data produced by
    * the decoder to the original color profile, one of the JxlDecoderGetColor*
    * functions needs to be called with
@@ -424,7 +424,7 @@ typedef struct {
   JxlLayerInfo layer_info;
 } JxlFrameHeader;
 
-#if defined(__cplusplus) || defined(c_plusplus)
+#ifdef __cplusplus
 }
 #endif
 

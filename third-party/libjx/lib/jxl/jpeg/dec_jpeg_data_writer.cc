@@ -5,22 +5,24 @@
 
 #include "lib/jxl/jpeg/dec_jpeg_data_writer.h"
 
-#include <stdlib.h>
-#include <string.h> /* for memset, memcpy */
+#include <jxl/types.h>
 
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring> /* for memset, memcpy */
 #include <deque>
-#include <string>
+#include <utility>
 #include <vector>
 
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/frame_dimensions.h"
-#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/jpeg/dec_jpeg_output_chunk.h"
 #include "lib/jxl/jpeg/dec_jpeg_serialization_state.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 
@@ -137,6 +139,7 @@ void EmitMarker(JpegBitWriter* bw, int marker) {
 bool JumpToByteBoundary(JpegBitWriter* bw, const uint8_t** pad_bits,
                         const uint8_t* pad_bits_end) {
   size_t n_bits = bw->put_bits & 7u;
+  uint8_t dangling_bits = 0;
   uint8_t pad_pattern;
   if (*pad_bits == nullptr) {
     pad_pattern = (1u << n_bits) - 1;
@@ -149,11 +152,12 @@ bool JumpToByteBoundary(JpegBitWriter* bw, const uint8_t** pad_bits,
       if (src >= pad_bits_end) return false;
       uint8_t bit = *src;
       src++;
-      JXL_ASSERT(bit <= 1);
+      dangling_bits |= bit;
       pad_pattern |= bit;
     }
     *pad_bits = src;
   }
+  if ((dangling_bits & ~1) != 0) return false;
 
   Reserve(bw, 16);
 
@@ -384,10 +388,12 @@ bool EncodeDHT(const JPEGData& jpg, SerializationState* state) {
   size_t marker_len = 2;
   for (size_t i = state->dht_index; i < huffman_code.size(); ++i) {
     const JPEGHuffmanCode& huff = huffman_code[i];
-    marker_len += kJpegHuffmanMaxBitLength;
-    for (size_t j = 0; j < huff.counts.size(); ++j) {
-      marker_len += huff.counts[j];
+    for (uint32_t count : huff.counts) {
+      marker_len += count;
     }
+    // special case: empty DHT marker
+    if (marker_len == 2) break;
+    marker_len += kJpegHuffmanMaxBitLength;
     if (huff.is_last) break;
   }
   state->output_queue.emplace_back(marker_len + 2);
@@ -405,6 +411,17 @@ bool EncodeDHT(const JPEGData& jpg, SerializationState* state) {
     const JPEGHuffmanCode& huff = huffman_code[huffman_code_index];
     size_t index = huff.slot_id;
     HuffmanCodeTable* huff_table;
+    size_t total_count = 0;
+    size_t max_length = 0;
+    for (size_t i = 0; i < huff.counts.size(); ++i) {
+      if (huff.counts[i] != 0) {
+        max_length = i;
+      }
+      total_count += huff.counts[i];
+    }
+    // Empty DHT marker
+    if (total_count == 0) break;
+
     if (index & 0x10) {
       index -= 0x10;
       huff_table = &state->ac_huff_table[index];
@@ -417,14 +434,6 @@ bool EncodeDHT(const JPEGData& jpg, SerializationState* state) {
       return false;
     }
     huff_table->initialized = true;
-    size_t total_count = 0;
-    size_t max_length = 0;
-    for (size_t i = 0; i < huff.counts.size(); ++i) {
-      if (huff.counts[i] != 0) {
-        max_length = i;
-      }
-      total_count += huff.counts[i];
-    }
     --total_count;
     data[pos++] = huff.slot_id;
     for (size_t i = 1; i <= kJpegHuffmanMaxBitLength; ++i) {
@@ -763,7 +772,7 @@ SerializationStatus JXL_NOINLINE DoEncodeScan(const JPEGData& jpg,
   JpegBitWriter* bw = &ss.bw;
   DCTCodingState* coding_state = &ss.coding_state;
 
-  JXL_DASSERT(ss.stage == EncodeScanState::BODY);
+  if (ss.stage != EncodeScanState::BODY) return SerializationStatus::ERROR;
 
   // "Non-interleaved" means color data comes in separate scans, in other words
   // each scan can contain only one color component.
@@ -834,7 +843,9 @@ SerializationStatus JXL_NOINLINE DoEncodeScan(const JPEGData& jpg,
           for (int ix = 0; ix < n_blocks_x; ++ix) {
             int block_y = ss.mcu_y * n_blocks_y + iy;
             int block_x = mcu_x * n_blocks_x + ix;
-            int block_idx = block_y * c.width_in_blocks + block_x;
+            size_t block_idx =
+                static_cast<size_t>(block_y) * c.width_in_blocks +
+                static_cast<size_t>(block_x);
             if (ss.block_scan_index == ss.next_reset_point) {
               Flush(coding_state, bw);
               ss.next_reset_point = get_next_reset_point();
@@ -982,8 +993,7 @@ Status WriteJpegInternal(const JPEGData& jpg, const JPEGOutput& out,
         auto& chunk = ss->output_queue.front();
         size_t num_written = out(chunk.next, chunk.len);
         if (num_written == 0 && chunk.len > 0) {
-          return StatusMessage(Status(StatusCode::kNotEnoughBytes),
-                               "Failed to write output");
+          return JXL_NOT_ENOUGH_BYTES("Failed to write output");
         }
         chunk.len -= num_written;
         if (chunk.len == 0) {
@@ -1033,8 +1043,8 @@ Status WriteJpegInternal(const JPEGData& jpg, const JPEGOutput& out,
         if (status == SerializationStatus::NEEDS_MORE_INPUT) {
           return JXL_FAILURE("Incomplete serialization data");
         } else if (status != SerializationStatus::DONE) {
-          JXL_DASSERT(false);
           ss->stage = SerializationState::STAGE_ERROR;
+          return JXL_FAILURE("Internal logic error");
           break;
         }
         ++ss->section_index;
@@ -1042,7 +1052,7 @@ Status WriteJpegInternal(const JPEGData& jpg, const JPEGOutput& out,
       }
 
       case SerializationState::STAGE_DONE:
-        JXL_ASSERT(ss->output_queue.empty());
+        JXL_ENSURE(ss->output_queue.empty());
         if (ss->pad_bits != nullptr && ss->pad_bits != ss->pad_bits_end) {
           return JXL_FAILURE("Invalid number of padding bits.");
         }

@@ -8,19 +8,13 @@
 
 // 2D convolution.
 
-#include <stddef.h>
-
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/rect.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/image.h"
 
 namespace jxl {
-
-// No valid values outside [0, xsize), but the strategy may still safely load
-// the preceding vector, and/or round xsize up to the vector lane count. This
-// avoids needing PadImage.
-// Requires xsize >= kConvolveLanes + kConvolveMaxRadius.
-static constexpr size_t kConvolveMaxRadius = 3;
 
 // Weights must already be normalized.
 
@@ -55,33 +49,21 @@ struct WeightsSeparable5 {
   float vert[3 * 4];
 };
 
-const WeightsSymmetric3& WeightsSymmetric3Lowpass();
-const WeightsSeparable5& WeightsSeparable5Lowpass();
-const WeightsSymmetric5& WeightsSymmetric5Lowpass();
+Status SlowSymmetric3(const ImageF& in, const Rect& rect,
+                      const WeightsSymmetric3& weights, ThreadPool* pool,
+                      ImageF* JXL_RESTRICT out);
 
-void SlowSymmetric3(const ImageF& in, const Rect& rect,
-                    const WeightsSymmetric3& weights, ThreadPool* pool,
-                    ImageF* JXL_RESTRICT out);
+Status SlowSeparable5(const ImageF& in, const Rect& in_rect,
+                      const WeightsSeparable5& weights, ThreadPool* pool,
+                      ImageF* out, const Rect& out_rect);
 
-void SlowSeparable5(const ImageF& in, const Rect& in_rect,
-                    const WeightsSeparable5& weights, ThreadPool* pool,
-                    ImageF* out, const Rect& out_rect);
+Status Symmetric5(const ImageF& in, const Rect& in_rect,
+                  const WeightsSymmetric5& weights, ThreadPool* pool,
+                  ImageF* JXL_RESTRICT out, const Rect& out_rect);
 
-void Symmetric3(const ImageF& in, const Rect& rect,
-                const WeightsSymmetric3& weights, ThreadPool* pool,
-                ImageF* out);
-
-void Symmetric5(const ImageF& in, const Rect& in_rect,
-                const WeightsSymmetric5& weights, ThreadPool* pool,
-                ImageF* JXL_RESTRICT out, const Rect& out_rect);
-
-void Symmetric5(const ImageF& in, const Rect& rect,
-                const WeightsSymmetric5& weights, ThreadPool* pool,
-                ImageF* JXL_RESTRICT out);
-
-void Separable5(const ImageF& in, const Rect& rect,
-                const WeightsSeparable5& weights, ThreadPool* pool,
-                ImageF* out);
+Status Separable5(const ImageF& in, const Rect& rect,
+                  const WeightsSeparable5& weights, ThreadPool* pool,
+                  ImageF* out);
 
 }  // namespace jxl
 

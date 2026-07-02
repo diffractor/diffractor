@@ -37,6 +37,8 @@ struct CompressParams {
   bool max_error_mode = false;
   float max_error[3] = {0.0, 0.0, 0.0};
 
+  bool disable_perceptual_optimizations = false;
+
   SpeedTier speed_tier = SpeedTier::kSquirrel;
   int brotli_effort = -1;
 
@@ -82,8 +84,8 @@ struct CompressParams {
 
   JxlCmsInterface cms;
   bool cms_set = false;
-  void SetCms(const JxlCmsInterface& cms) {
-    this->cms = cms;
+  void SetCms(const JxlCmsInterface& new_cms) {
+    cms = new_cms;
     cms_set = true;
   }
 
@@ -106,9 +108,12 @@ struct CompressParams {
 
   // modular mode options below
   ModularOptions options;
+
+  // TODO(eustas): use Override?
   int responsive = -1;
   int colorspace = -1;
   int move_to_front_from_channel = -1;
+
   // Use Global channel palette if #colors < this percentage of range
   float channel_colors_pre_transform_percent = 95.f;
   // Use Local channel palette if #colors < this percentage of range
@@ -164,6 +169,8 @@ struct CompressParams {
 
   // See JXL_ENC_FRAME_SETTING_BUFFERING option value.
   int buffering = -1;
+  // Output streaming mode: 0=buffered, 1=seek-based streaming, 2=OOO jxlp.
+  int output_mode = 0;
   // See JXL_ENC_FRAME_SETTING_USE_FULL_IMAGE_HEURISTICS option value.
   bool use_full_image_heuristics = true;
 
@@ -175,7 +182,7 @@ struct CompressParams {
   Tree custom_fixed_tree;
   // If not empty, these custom splines will be used instead of the computed
   // ones. Used in jxl_from_tee tool.
-  Splines custom_splines;
+  SplineDataView custom_splines{};
   // If not null, overrides progressive mode settings. Used in decode_test.
   const ProgressiveMode* custom_progressive_mode = nullptr;
 
@@ -191,7 +198,9 @@ static constexpr float kMinButteraugliToSubtractOriginalPatches = 3.0f;
 static constexpr float kMinButteraugliForNoise = 99.0f;
 
 // Minimum butteraugli distance the encoder accepts.
-static constexpr float kMinButteraugliDistance = 0.001f;
+// Below d0.05 is not useful and risks going outside Level 5 limits
+// (in particular modular_16bit_buffers becomes an issue for DC)
+static constexpr float kMinButteraugliDistance = 0.05f;
 
 // Tile size for encoder-side processing. Must be equal to color tile dim in the
 // current implementation.

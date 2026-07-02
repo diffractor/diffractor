@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "lib/extras/dec/color_hints.h"
 #include "lib/extras/dec/decode.h"
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/packed_image.h"
@@ -20,17 +21,15 @@
 namespace jxl {
 namespace {
 
-using ::testing::SizeIs;
-
 TEST(BlendingTest, Crops) {
   const std::vector<uint8_t> compressed =
       jxl::test::ReadTestData("jxl/blending/cropped_traffic_light.jxl");
   extras::JXLDecompressParams dparams;
-  dparams.accepted_formats = {{3, JXL_TYPE_UINT16, JXL_LITTLE_ENDIAN, 0}};
+  dparams.accepted_formats = {{3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0}};
   extras::PackedPixelFile decoded;
   ASSERT_TRUE(DecodeImageJXL(compressed.data(), compressed.size(), dparams,
                              /*decoded_bytes=*/nullptr, &decoded));
-  ASSERT_THAT(decoded.frames, SizeIs(4));
+  ASSERT_EQ(decoded.frames.size(), 4u);
 
   int i = 0;
   for (auto&& decoded_frame : decoded.frames) {

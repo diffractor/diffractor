@@ -8,17 +8,15 @@
 
 // Decodes PBM/PGM/PPM/PFM pixels in memory.
 
-#include <stddef.h>
-#include <stdint.h>
+#include <jxl/codestream_header.h>
 
+#include <cstddef>
+#include <cstdint>
 // TODO(janwas): workaround for incorrect Win64 codegen (cause unknown)
 #include <hwy/highway.h>
-#include <mutex>
+#include <vector>
 
-#include "lib/extras/dec/color_hints.h"
 #include "lib/extras/mmap.h"
-#include "lib/extras/packed_image.h"
-#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 
@@ -28,13 +26,14 @@ struct SizeConstraints;
 
 namespace extras {
 
+class ColorHints;
+class PackedPixelFile;
+
 // Decodes `bytes` into `ppf`. color_hints may specify "color_space", which
 // defaults to sRGB.
 Status DecodeImagePNM(Span<const uint8_t> bytes, const ColorHints& color_hints,
                       PackedPixelFile* ppf,
                       const SizeConstraints* constraints = nullptr);
-
-void TestCodecPNM();
 
 struct HeaderPNM {
   size_t xsize;
@@ -49,7 +48,8 @@ struct HeaderPNM {
 
 class ChunkedPNMDecoder {
  public:
-  static StatusOr<ChunkedPNMDecoder> Init(const char* file_path);
+  static StatusOr<ChunkedPNMDecoder> Init(
+      const char* file_path, const SizeConstraints* constraints = nullptr);
   // Initializes `ppf` with a pointer to this `ChunkedPNMDecoder`.
   jxl::Status InitializePPF(const ColorHints& color_hints,
                             PackedPixelFile* ppf);

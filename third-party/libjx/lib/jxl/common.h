@@ -8,7 +8,9 @@
 
 // Shared constants.
 
+#include <array>
 #include <cstddef>
+#include <cstdint>
 
 #ifndef JXL_HIGH_PRECISION
 #define JXL_HIGH_PRECISION 1
@@ -26,6 +28,10 @@
 
 namespace jxl {
 // Some enums and typedefs used by more than one header file.
+
+// The 12-byte JXL container signature box (all valid containers start with it).
+constexpr std::array<uint8_t, 12> kJxlSignatureBox = {
+    0x00, 0x00, 0x00, 0x0C, 'J', 'X', 'L', ' ', 0x0D, 0x0A, 0x87, 0x0A};
 
 // Maximum number of passes in an image.
 constexpr size_t kMaxNumPasses = 11;
@@ -49,10 +55,9 @@ enum class SpeedTier {
   // Turns on error diffusion and full AC strategy heuristics. Equivalent to
   // "fast" mode.
   kWombat = 4,
-  // Turns on gaborish by default, non-default cmap, initial quant field.
+  // Turns on simple heuristics for AC strategy, quant field, gaborish by default, non-default cmap, initial quant field, non-default CFL.
   kHare = 5,
-  // Turns on simple heuristics for AC strategy, quant field, and clustering;
-  // also enables coefficient reordering.
+  // Turns on clustering and enables coefficient reordering.
   kCheetah = 6,
   // Turns off most encoder features. Does context clustering.
   // Modular: uses fixed tree with Weighted predictor.

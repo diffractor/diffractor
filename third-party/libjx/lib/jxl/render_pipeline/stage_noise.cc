@@ -5,12 +5,25 @@
 
 #include "lib/jxl/render_pipeline/stage_noise.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <memory>
+
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/sanitizers.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/chroma_from_luma.h"
+#include "lib/jxl/frame_dimensions.h"
+#include "lib/jxl/noise.h"
+#include "lib/jxl/render_pipeline/render_pipeline_stage.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_noise.cc"
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
-
-#include "lib/jxl/sanitizers.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
@@ -27,14 +40,16 @@ using hwy::HWY_NAMESPACE::Min;
 using hwy::HWY_NAMESPACE::Mul;
 using hwy::HWY_NAMESPACE::MulAdd;
 using hwy::HWY_NAMESPACE::Or;
+using hwy::HWY_NAMESPACE::Rebind;
+using hwy::HWY_NAMESPACE::Repartition;
 using hwy::HWY_NAMESPACE::Sub;
 using hwy::HWY_NAMESPACE::TableLookupBytes;
 using hwy::HWY_NAMESPACE::Vec;
 using hwy::HWY_NAMESPACE::ZeroIfNegative;
 
 using D = HWY_CAPPED(float, kBlockDim);
-using DI = hwy::HWY_NAMESPACE::Rebind<int32_t, D>;
-using DI8 = hwy::HWY_NAMESPACE::Repartition<uint8_t, D>;
+using DI = Rebind<int32_t, D>;
+using DI8 = Repartition<uint8_t, D>;
 
 // [0, max_value]
 template <class D, class V>
@@ -61,9 +76,11 @@ class StrengthEvalLut {
 #endif
   {
 #if HWY_TARGET != HWY_SCALAR
-    uint32_t lut[8];
-    memcpy(lut, noise_params.lut, sizeof(lut));
-    for (size_t i = 0; i < 8; i++) {
+    uint32_t lut[NoiseParams::kNumNoisePoints];
+    memcpy(lut, noise_params.lut.data(),
+           NoiseParams::kNumNoisePoints * sizeof(uint32_t));
+    // TODO(eustas): make sure it works on big-endian
+    for (size_t i = 0; i < NoiseParams::kNumNoisePoints; i++) {
       low16_lut[2 * i] = (lut[i] >> 0) & 0xFF;
       low16_lut[2 * i + 1] = (lut[i] >> 8) & 0xFF;
       high16_lut[2 * i] = (lut[i] >> 16) & 0xFF;
@@ -154,17 +171,18 @@ void AddNoiseToRGB(const D d, const Vec<D> rnd_noise_r,
 class AddNoiseStage : public RenderPipelineStage {
  public:
   AddNoiseStage(const NoiseParams& noise_params,
-                const ColorCorrelationMap& cmap, size_t first_c)
-      : RenderPipelineStage(RenderPipelineStage::Settings::Symmetric(
-            /*shift=*/0, /*border=*/0)),
+                const ColorCorrelation& color_correlation, size_t first_c)
+      : RenderPipelineStage(RenderPipelineStage::Settings()),
         noise_params_(noise_params),
-        cmap_(cmap),
+        color_correlation_(color_correlation),
         first_c_(first_c) {}
 
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                    size_t thread_id) const final {
+                    size_t xextra_left, size_t xextra_right, size_t xsize,
+                    size_t xpos, size_t ypos, size_t thread_id) const final {
     if (!noise_params_.HasAny()) return true;
+    JXL_ENSURE(xextra_left == 0 && xextra_right == 0);
+
     const StrengthEvalLut noise_model(noise_params_);
     D d;
     const auto half = Set(d, 0.5f);
@@ -174,10 +192,10 @@ class AddNoiseStage : public RenderPipelineStage {
     // normalizer is half of what it was before (0.5).
     const auto norm_const = Set(d, 0.22f);
 
-    float ytox = cmap_.YtoXRatio(0);
-    float ytob = cmap_.YtoBRatio(0);
+    float ytox = color_correlation_.YtoXRatio(0);
+    float ytob = color_correlation_.YtoBRatio(0);
 
-    const size_t xsize_v = RoundUpTo(xsize, Lanes(d));
+    size_t x_span_tail = RoundUpTo(xsize, Lanes(d)) - xsize;
 
     float* JXL_RESTRICT row_x = GetInputRow(input_rows, 0, 0);
     float* JXL_RESTRICT row_y = GetInputRow(input_rows, 1, 0);
@@ -190,9 +208,10 @@ class AddNoiseStage : public RenderPipelineStage {
         GetInputRow(input_rows, first_c_ + 2, 0);
     // Needed by the calls to Floor() in StrengthEvalLut. Only arithmetic and
     // shuffles are otherwise done on the data, so this is safe.
-    msan::UnpoisonMemory(row_x + xsize, (xsize_v - xsize) * sizeof(float));
-    msan::UnpoisonMemory(row_y + xsize, (xsize_v - xsize) * sizeof(float));
-    for (size_t x = 0; x < xsize_v; x += Lanes(d)) {
+    msan::UnpoisonMemory(row_x + xsize, sizeof(float) * x_span_tail);
+    msan::UnpoisonMemory(row_y + xsize, sizeof(float) * x_span_tail);
+    // TODO(eustas): why unaligned load/store?
+    for (size_t x = 0; x < xsize; x += Lanes(d)) {
       const auto vx = LoadU(d, row_x + x);
       const auto vy = LoadU(d, row_y + x);
       const auto in_g = Sub(vy, vx);
@@ -209,9 +228,9 @@ class AddNoiseStage : public RenderPipelineStage {
                     noise_strength_r, ytox, ytob, row_x + x, row_y + x,
                     row_b + x);
     }
-    msan::PoisonMemory(row_x + xsize, (xsize_v - xsize) * sizeof(float));
-    msan::PoisonMemory(row_y + xsize, (xsize_v - xsize) * sizeof(float));
-    msan::PoisonMemory(row_b + xsize, (xsize_v - xsize) * sizeof(float));
+    msan::PoisonMemory(row_x + xsize, sizeof(float) * x_span_tail);
+    msan::PoisonMemory(row_y + xsize, sizeof(float) * x_span_tail);
+    msan::PoisonMemory(row_b + xsize, sizeof(float) * x_span_tail);
     return true;
   }
 
@@ -225,39 +244,44 @@ class AddNoiseStage : public RenderPipelineStage {
 
  private:
   const NoiseParams& noise_params_;
-  const ColorCorrelationMap& cmap_;
+  const ColorCorrelation& color_correlation_;
   size_t first_c_;
 };
 
 std::unique_ptr<RenderPipelineStage> GetAddNoiseStage(
-    const NoiseParams& noise_params, const ColorCorrelationMap& cmap,
+    const NoiseParams& noise_params, const ColorCorrelation& color_correlation,
     size_t noise_c_start) {
-  return jxl::make_unique<AddNoiseStage>(noise_params, cmap, noise_c_start);
+  return jxl::make_unique<AddNoiseStage>(noise_params, color_correlation,
+                                         noise_c_start);
 }
 
 class ConvolveNoiseStage : public RenderPipelineStage {
  public:
   explicit ConvolveNoiseStage(size_t first_c)
-      : RenderPipelineStage(RenderPipelineStage::Settings::Symmetric(
-            /*shift=*/0, /*border=*/2)),
+      : RenderPipelineStage(
+            RenderPipelineStage::Settings::SymmetricBorderOnly(2)),
         first_c_(first_c) {}
 
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                    size_t thread_id) const final {
+                    size_t xextra_left, size_t xextra_right, size_t xsize,
+                    size_t xpos, size_t ypos, size_t thread_id) const final {
     const HWY_FULL(float) d;
+
+    // TODO(eustas): check if aligning is useful.
+    ptrdiff_t x_start = -static_cast<ptrdiff_t>(xextra_left);
+    ptrdiff_t x_end = static_cast<ptrdiff_t>(xsize + xextra_right);
+
     for (size_t c = first_c_; c < first_c_ + 3; c++) {
       float* JXL_RESTRICT rows[5];
       for (size_t i = 0; i < 5; i++) {
         rows[i] = GetInputRow(input_rows, c, i - 2);
       }
       float* JXL_RESTRICT row_out = GetOutputRow(output_rows, c, 0);
-      for (ssize_t x = -RoundUpTo(xextra, Lanes(d));
-           x < static_cast<ssize_t>(xsize + xextra); x += Lanes(d)) {
+      for (ptrdiff_t x = x_start; x < x_end; x += Lanes(d)) {
         const auto p00 = LoadU(d, rows[2] + x);
         auto others = Zero(d);
         // TODO(eustas): sum loaded values to reduce the calculation chain
-        for (ssize_t i = -2; i <= 2; i++) {
+        for (ptrdiff_t i = -2; i <= 2; i++) {
           others = Add(others, LoadU(d, rows[0] + x + i));
           others = Add(others, LoadU(d, rows[1] + x + i));
           others = Add(others, LoadU(d, rows[3] + x + i));
@@ -303,9 +327,9 @@ HWY_EXPORT(GetAddNoiseStage);
 HWY_EXPORT(GetConvolveNoiseStage);
 
 std::unique_ptr<RenderPipelineStage> GetAddNoiseStage(
-    const NoiseParams& noise_params, const ColorCorrelationMap& cmap,
+    const NoiseParams& noise_params, const ColorCorrelation& color_correlation,
     size_t noise_c_start) {
-  return HWY_DYNAMIC_DISPATCH(GetAddNoiseStage)(noise_params, cmap,
+  return HWY_DYNAMIC_DISPATCH(GetAddNoiseStage)(noise_params, color_correlation,
                                                 noise_c_start);
 }
 

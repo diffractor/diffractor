@@ -5,12 +5,20 @@
 
 #include "lib/jxl/modular/transform/enc_squeeze.h"
 
-#include <stdlib.h>
+#include <jxl/memory_manager.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <utility>
+#include <vector>
+
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/transform/squeeze.h"
-#include "lib/jxl/modular/transform/transform.h"
+#include "lib/jxl/modular/transform/squeeze_params.h"
 
 namespace jxl {
 
@@ -18,16 +26,19 @@ namespace jxl {
 
 Status FwdHSqueeze(Image &input, int c, int rc) {
   const Channel &chin = input.channel[c];
+  JxlMemoryManager *memory_manager = input.memory_manager();
 
   JXL_DEBUG_V(4, "Doing horizontal squeeze of channel %i to new channel %i", c,
               rc);
 
-  JXL_ASSIGN_OR_RETURN(
-      Channel chout,
-      Channel::Create((chin.w + 1) / 2, chin.h, chin.hshift + 1, chin.vshift));
-  JXL_ASSIGN_OR_RETURN(
-      Channel chout_residual,
-      Channel::Create(chin.w - chout.w, chout.h, chin.hshift + 1, chin.vshift));
+  JXL_ASSIGN_OR_RETURN(Channel chout,
+                       Channel::Create(memory_manager, (chin.w + 1) / 2, chin.h,
+                                       chin.hshift + 1, chin.vshift));
+  JXL_ASSIGN_OR_RETURN(Channel chout_residual,
+                       Channel::Create(memory_manager, chin.w - chout.w,
+                                       chout.h, chin.hshift + 1, chin.vshift));
+  chout.component = chin.component;
+  chout_residual.component = chin.component;
 
   for (size_t y = 0; y < chout.h; y++) {
     const pixel_type *JXL_RESTRICT p_in = chin.Row(y);
@@ -66,17 +77,21 @@ Status FwdHSqueeze(Image &input, int c, int rc) {
 
 Status FwdVSqueeze(Image &input, int c, int rc) {
   const Channel &chin = input.channel[c];
+  JxlMemoryManager *memory_manager = input.memory_manager();
 
   JXL_DEBUG_V(4, "Doing vertical squeeze of channel %i to new channel %i", c,
               rc);
 
-  JXL_ASSIGN_OR_RETURN(
-      Channel chout,
-      Channel::Create(chin.w, (chin.h + 1) / 2, chin.hshift, chin.vshift + 1));
-  JXL_ASSIGN_OR_RETURN(
-      Channel chout_residual,
-      Channel::Create(chin.w, chin.h - chout.h, chin.hshift, chin.vshift + 1));
-  intptr_t onerow_in = chin.plane.PixelsPerRow();
+  JXL_ASSIGN_OR_RETURN(Channel chout,
+                       Channel::Create(memory_manager, chin.w, (chin.h + 1) / 2,
+                                       chin.hshift, chin.vshift + 1));
+  JXL_ASSIGN_OR_RETURN(Channel chout_residual,
+                       Channel::Create(memory_manager, chin.w, chin.h - chout.h,
+                                       chin.hshift, chin.vshift + 1));
+  chout.component = chin.component;
+  chout_residual.component = chin.component;
+
+  ptrdiff_t onerow_in = chin.plane.PixelsPerRow();
   for (size_t y = 0; y < chout_residual.h; y++) {
     const pixel_type *JXL_RESTRICT p_in = chin.Row(y * 2);
     pixel_type *JXL_RESTRICT p_out = chout.Row(y);
@@ -98,7 +113,7 @@ Status FwdVSqueeze(Image &input, int c, int rc) {
         next_avg = p_in[x + 2 * onerow_in];
       }
       pixel_type top =
-          (y > 0 ? p_in[static_cast<ssize_t>(x) - onerow_in] : avg);
+          (y > 0 ? p_in[static_cast<ptrdiff_t>(x) - onerow_in] : avg);
       pixel_type tendency = SmoothTendency(top, avg, next_avg);
 
       p_res[x] = diff - tendency;
@@ -124,13 +139,13 @@ Status FwdSqueeze(Image &input, std::vector<SqueezeParams> parameters,
   }
   // if nothing to do, don't do squeeze
   if (parameters.empty()) return false;
-  for (size_t i = 0; i < parameters.size(); i++) {
+  for (auto &parameter : parameters) {
     JXL_RETURN_IF_ERROR(
-        CheckMetaSqueezeParams(parameters[i], input.channel.size()));
-    bool horizontal = parameters[i].horizontal;
-    bool in_place = parameters[i].in_place;
-    uint32_t beginc = parameters[i].begin_c;
-    uint32_t endc = parameters[i].begin_c + parameters[i].num_c - 1;
+        CheckMetaSqueezeParams(parameter, input.channel.size()));
+    bool horizontal = parameter.horizontal;
+    bool in_place = parameter.in_place;
+    uint32_t beginc = parameter.begin_c;
+    uint32_t endc = parameter.begin_c + parameter.num_c - 1;
     uint32_t offset;
     if (in_place) {
       offset = endc + 1;

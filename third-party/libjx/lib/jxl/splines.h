@@ -6,6 +6,9 @@
 #ifndef LIB_JXL_SPLINES_H_
 #define LIB_JXL_SPLINES_H_
 
+#include <jxl/memory_manager.h>
+
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -13,9 +16,12 @@
 #include <vector>
 
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/rect.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/image.h"
+#include "lib/jxl/memory_manager_internal.h"
 
 namespace jxl {
 
@@ -23,6 +29,8 @@ class ANSSymbolReader;
 class BitReader;
 
 static constexpr float kDesiredRenderingDistance = 1.f;
+
+using Dct32 = std::array<float, 32>;
 
 enum SplineEntropyContexts : size_t {
   kQuantizationAdjustmentContext = 0,
@@ -45,10 +53,10 @@ struct Spline {
   };
   std::vector<Point> control_points;
   // X, Y, B.
-  float color_dct[3][32];
+  std::array<Dct32, 3> color_dct;
   // Splines are draws by normalized Gaussian splatting. This controls the
   // Gaussian's parameter along the spline.
-  float sigma_dct[32];
+  Dct32 sigma_dct;
 };
 
 class QuantizedSplineEncoder;
@@ -56,9 +64,11 @@ class QuantizedSplineEncoder;
 class QuantizedSpline {
  public:
   QuantizedSpline() = default;
-  explicit QuantizedSpline(const Spline& original,
-                           int32_t quantization_adjustment, float y_to_x,
-                           float y_to_b);
+
+  // TODO(eustas): move this out of library code
+  static StatusOr<QuantizedSpline> Create(const Spline& original,
+                                          int32_t quantization_adjustment,
+                                          float y_to_x, float y_to_b);
 
   Status Dequantize(const Spline::Point& starting_point,
                     int32_t quantization_adjustment, float y_to_x, float y_to_b,
@@ -90,57 +100,81 @@ struct SplineSegment {
   float color[3];
 };
 
+struct SplineSegmentSpan {
+  SplineSegmentSpan() = default;
+  SplineSegmentSpan(size_t start, size_t end) : start(start), end(end) {}
+  size_t start;  // inclusive
+  size_t end;    // exclusive
+};
+
+struct SplineDataView {
+  Span<const QuantizedSpline> splines;
+  Span<const Spline::Point> starting_points;
+  bool HasAny() const { return !splines.empty(); }
+};
+
 class Splines {
  public:
-  Splines() = default;
-  explicit Splines(const int32_t quantization_adjustment,
-                   std::vector<QuantizedSpline> splines,
-                   std::vector<Spline::Point> starting_points)
-      : quantization_adjustment_(quantization_adjustment),
-        splines_(std::move(splines)),
-        starting_points_(std::move(starting_points)) {}
+  explicit Splines(JxlMemoryManager* memory_manager)
+      : memory_manager_(memory_manager) {
+    Clear();
+  }
 
-  bool HasAny() const { return !splines_.empty(); }
+  // Cannot copy.
+  Splines(const Splines&) = delete;
+  Splines& operator=(const Splines&) = delete;
+
+  // Move default.
+  Splines(Splines&&) noexcept = default;
+  Splines& operator=(Splines&&) noexcept = default;
+
+  void SetData(SplineDataView data);
+
+  bool HasAny() const { return data_.HasAny(); }
 
   void Clear();
 
   Status Decode(BitReader* br, size_t num_pixels);
 
-  void AddTo(Image3F* opsin, const Rect& opsin_rect,
-             const Rect& image_rect) const;
+  void AddTo(Image3F* opsin, const Rect& opsin_rect) const;
   void AddToRow(float* JXL_RESTRICT row_x, float* JXL_RESTRICT row_y,
-                float* JXL_RESTRICT row_b, const Rect& image_row) const;
+                float* JXL_RESTRICT row_b, size_t y, size_t x0,
+                size_t x1) const;
   void SubtractFrom(Image3F* opsin) const;
 
-  const std::vector<QuantizedSpline>& QuantizedSplines() const {
-    return splines_;
-  }
-  const std::vector<Spline::Point>& StartingPoints() const {
-    return starting_points_;
+  Span<const QuantizedSpline> QuantizedSplines() const { return data_.splines; }
+  Span<const Spline::Point> StartingPoints() const {
+    return data_.starting_points;
   }
 
   int32_t GetQuantizationAdjustment() const { return quantization_adjustment_; }
 
   Status InitializeDrawCache(size_t image_xsize, size_t image_ysize,
-                             const ColorCorrelationMap& cmap);
+                             const ColorCorrelation& color_correlation);
 
  private:
   template <bool>
   void ApplyToRow(float* JXL_RESTRICT row_x, float* JXL_RESTRICT row_y,
-                  float* JXL_RESTRICT row_b, const Rect& image_row) const;
+                  float* JXL_RESTRICT row_b, size_t y, size_t x0,
+                  size_t x1) const;
   template <bool>
-  void Apply(Image3F* opsin, const Rect& opsin_rect,
-             const Rect& image_rect) const;
+  void Apply(Image3F* opsin, const Rect& opsin_rect) const;
 
   // If positive, quantization weights are multiplied by 1 + this/8, which
   // increases precision. If negative, they are divided by 1 - this/8. If 0,
   // they are unchanged.
+  JxlMemoryManager* memory_manager_;
   int32_t quantization_adjustment_ = 0;
-  std::vector<QuantizedSpline> splines_;
-  std::vector<Spline::Point> starting_points_;
+
+  // Spline data storage
+  // TODO(eustas): make memory-manager-tracked.
+  std::vector<QuantizedSpline> splines_storage_;
+  std::vector<Spline::Point> starting_points_storage_;
+
+  SplineDataView data_;
   std::vector<SplineSegment> segments_;
-  std::vector<size_t> segment_indices_;
-  std::vector<size_t> segment_y_start_;
+  AlignedMemory /*size_t*/ segment_indices_;
+  AlignedMemory /*ptrdiff_t*/ segment_y_start_;
 };
 
 }  // namespace jxl

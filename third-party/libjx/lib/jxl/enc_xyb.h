@@ -17,19 +17,14 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/image.h"
-#include "lib/jxl/image_bundle.h"
 
 namespace jxl {
 
 // Converts any color space to XYB in-place. If `linear` is not null, fills it
 // with a linear sRGB copy of `image`.
-void ToXYB(const ColorEncoding& c_current, float intensity_target,
-           const ImageF* black, ThreadPool* pool, Image3F* JXL_RESTRICT image,
-           const JxlCmsInterface& cms, Image3F* JXL_RESTRICT linear);
-
-Status ToXYB(const ImageBundle& in, ThreadPool* pool, Image3F* JXL_RESTRICT xyb,
-             const JxlCmsInterface& cms,
-             Image3F* JXL_RESTRICT linear = nullptr);
+Status ToXYB(const ColorEncoding& c_current, float intensity_target,
+             const ImageF* black, ThreadPool* pool, Image3F* JXL_RESTRICT image,
+             const JxlCmsInterface& cms, Image3F* JXL_RESTRICT linear);
 
 void LinearRGBRowToXYB(float* JXL_RESTRICT row0, float* JXL_RESTRICT row1,
                        float* JXL_RESTRICT row2,

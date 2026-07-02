@@ -5,6 +5,14 @@
 
 #include "lib/jxl/render_pipeline/stage_ycbcr.h"
 
+#include <cstddef>
+#include <memory>
+
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/render_pipeline/render_pipeline_stage.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_ycbcr.cc"
 #include <hwy/foreach_target.h>
@@ -23,9 +31,10 @@ class kYCbCrStage : public RenderPipelineStage {
   kYCbCrStage() : RenderPipelineStage(RenderPipelineStage::Settings()) {}
 
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                    size_t thread_id) const final {
+                    size_t xextra_left, size_t xextra_right, size_t xsize,
+                    size_t xpos, size_t ypos, size_t thread_id) const final {
     const HWY_FULL(float) df;
+    JXL_ENSURE(xextra_left == 0 && xextra_right == 0);
 
     // Full-range BT.601 as defined by JFIF Clause 7:
     // https://www.itu.int/rec/T-REC-T.871-201105-I/en
@@ -34,7 +43,6 @@ class kYCbCrStage : public RenderPipelineStage {
     const auto cgcb = Set(df, -0.114f * 1.772f / 0.587f);
     const auto cgcr = Set(df, -0.299f * 1.402f / 0.587f);
     const auto cbcb = Set(df, 1.772f);
-
     float* JXL_RESTRICT row0 = GetInputRow(input_rows, 0, 0);
     float* JXL_RESTRICT row1 = GetInputRow(input_rows, 1, 0);
     float* JXL_RESTRICT row2 = GetInputRow(input_rows, 2, 0);

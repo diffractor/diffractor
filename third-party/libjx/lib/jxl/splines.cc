@@ -5,19 +5,31 @@
 
 #include "lib/jxl/splines.h"
 
-#include <algorithm>
-#include <cinttypes>
-#include <cmath>
-#include <limits>
+#include <jxl/memory_manager.h>
 
+#include <algorithm>
+#include <cinttypes>  // PRIu64
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <limits>
+#include <utility>
+#include <vector>
+
+#include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
 #include "lib/jxl/dct_scales.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_bit_reader.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/memory_manager_internal.h"
 #include "lib/jxl/pack_signed.h"
 
 #undef HWY_TARGET_INCLUDE
@@ -40,7 +52,7 @@ using hwy::HWY_NAMESPACE::Sub;
 
 // Given a set of DCT coefficients, this returns the result of performing cosine
 // interpolation on the original samples.
-float ContinuousIDCT(const float dct[32], const float t) {
+float ContinuousIDCT(const Dct32& dct, const float t) {
   // We compute here the DCT-3 of the `dct` vector, rescaled by a factor of
   // sqrt(32). This is such that an input vector vector {x, 0, ..., 0} produces
   // a constant result of x. dct[0] was scaled in Dequantize() to allow uniform
@@ -60,7 +72,7 @@ float ContinuousIDCT(const float dct[32], const float t) {
   for (int i = 0; i < 32; i += Lanes(df)) {
     auto cos_arg = Mul(LoadU(df, kMultipliers + i), tandhalf);
     auto cos = FastCosf(df, cos_arg);
-    auto local_res = Mul(LoadU(df, dct + i), cos);
+    auto local_res = Mul(LoadU(df, dct.data() + i), cos);
     result = MulAdd(Set(df, kSqrt2), local_res, result);
   }
   return GetLane(SumOfLanes(df, result));
@@ -68,14 +80,16 @@ float ContinuousIDCT(const float dct[32], const float t) {
 
 template <typename DF>
 void DrawSegment(DF df, const SplineSegment& segment, const bool add,
-                 const size_t y, const size_t x, float* JXL_RESTRICT rows[3]) {
+                 const size_t y, const size_t x, const size_t x0,
+                 float* JXL_RESTRICT rows[3]) {
   Rebind<int32_t, DF> di;
   const auto inv_sigma = Set(df, segment.inv_sigma);
   const auto half = Set(df, 0.5f);
   const auto one_over_2s2 = Set(df, 0.353553391f);
   const auto sigma_over_4_times_intensity =
       Set(df, segment.sigma_over_4_times_intensity);
-  const auto dx = Sub(ConvertTo(df, Iota(di, x)), Set(df, segment.center_x));
+  const auto dx =
+      Sub(ConvertTo(df, Iota(di, x + x0)), Set(df, segment.center_x));
   const auto dy = Set(df, y - segment.center_y);
   const auto sqd = MulAdd(dx, dx, Mul(dy, dy));
   const auto distance = Sqrt(sqd);
@@ -93,25 +107,29 @@ void DrawSegment(DF df, const SplineSegment& segment, const bool add,
 }
 
 void DrawSegment(const SplineSegment& segment, const bool add, const size_t y,
-                 const ssize_t x0, ssize_t x1, float* JXL_RESTRICT rows[3]) {
-  ssize_t x =
-      std::max<ssize_t>(x0, segment.center_x - segment.maximum_distance + 0.5f);
-  // one-past-the-end
-  x1 =
-      std::min<ssize_t>(x1, segment.center_x + segment.maximum_distance + 1.5f);
-  HWY_FULL(float) df;
-  for (; x + static_cast<ssize_t>(Lanes(df)) <= x1; x += Lanes(df)) {
-    DrawSegment(df, segment, add, y, x, rows);
+                 const size_t x0, const size_t x1,
+                 float* JXL_RESTRICT rows[3]) {
+  ptrdiff_t start = std::llround(segment.center_x - segment.maximum_distance);
+  ptrdiff_t end = std::llround(segment.center_x + segment.maximum_distance);
+  if (end < static_cast<ptrdiff_t>(x0) || start >= static_cast<ptrdiff_t>(x1)) {
+    return;  // span does not intersect scan
   }
-  for (; x < x1; ++x) {
-    DrawSegment(HWY_CAPPED(float, 1)(), segment, add, y, x, rows);
+  size_t span_x0 = std::max<ptrdiff_t>(x0, start) - x0;
+  size_t span_x1 = std::min<ptrdiff_t>(x1, end + 1) - x0;  // exclusive
+  HWY_FULL(float) df;
+  size_t x = span_x0;
+  for (; x + Lanes(df) <= span_x1; x += Lanes(df)) {
+    DrawSegment(df, segment, add, y, x, x0, rows);
+  }
+  for (; x < span_x1; ++x) {
+    DrawSegment(HWY_CAPPED(float, 1)(), segment, add, y, x, x0, rows);
   }
 }
 
-void ComputeSegments(const Spline::Point& center, const float intensity,
-                     const float color[3], const float sigma,
-                     std::vector<SplineSegment>& segments,
-                     std::vector<std::pair<size_t, size_t>>& segments_by_y) {
+void ComputeSegments(size_t image_ysize, const Spline::Point& center,
+                     const float intensity, const float color[3],
+                     const float sigma, std::vector<SplineSegment>& segments,
+                     std::vector<SplineSegmentSpan>& segment_spans) {
   // Sanity check sigma, inverse sigma and intensity
   if (!(std::isfinite(sigma) && sigma != 0.0f && std::isfinite(1.0f / sigma) &&
         std::isfinite(intensity))) {
@@ -131,8 +149,15 @@ void ComputeSegments(const Spline::Point& center, const float intensity,
   // Distance beyond which max_color*intensity*exp(-d^2 / (2 * sigma^2)) drops
   // below 10^-kDistanceExp.
   const float maximum_distance =
-      std::sqrt(-2 * sigma * sigma *
-                (std::log(0.1) * kDistanceExp - std::log(max_color)));
+      std::sqrt(-2.0f * sigma * sigma *
+                (std::log(0.1f) * kDistanceExp - std::log(max_color)));
+
+  ptrdiff_t y0 = std::llround(center.y - maximum_distance);
+  y0 = std::max<ptrdiff_t>(y0, 0);
+  ptrdiff_t y1 = std::llround(center.y + maximum_distance) + 1;
+  y1 = std::min<ptrdiff_t>(y1, image_ysize);
+  if (y1 <= y0) return;
+
   SplineSegment segment;
   segment.center_y = center.y;
   segment.center_x = center.x;
@@ -140,36 +165,27 @@ void ComputeSegments(const Spline::Point& center, const float intensity,
   segment.inv_sigma = 1.0f / sigma;
   segment.sigma_over_4_times_intensity = .25f * sigma * intensity;
   segment.maximum_distance = maximum_distance;
-  ssize_t y0 = std::llround(center.y - maximum_distance);
-  ssize_t y1 =
-      std::llround(center.y + maximum_distance) + 1;  // one-past-the-end
-  for (ssize_t y = std::max<ssize_t>(y0, 0); y < y1; y++) {
-    segments_by_y.emplace_back(y, segments.size());
-  }
-  segments.push_back(segment);
+  segments.emplace_back(segment);
+
+  segment_spans.emplace_back(y0, y1);
 }
 
 void DrawSegments(float* JXL_RESTRICT row_x, float* JXL_RESTRICT row_y,
-                  float* JXL_RESTRICT row_b, const Rect& image_rect,
+                  float* JXL_RESTRICT row_b, size_t y, size_t x0, size_t x1,
                   const bool add, const SplineSegment* segments,
                   const size_t* segment_indices,
-                  const size_t* segment_y_start) {
-  JXL_ASSERT(image_rect.ysize() == 1);
-  float* JXL_RESTRICT rows[3] = {row_x - image_rect.x0(),
-                                 row_y - image_rect.x0(),
-                                 row_b - image_rect.x0()};
-  size_t y = image_rect.y0();
-  for (size_t i = segment_y_start[y]; i < segment_y_start[y + 1]; i++) {
-    DrawSegment(segments[segment_indices[i]], add, y, image_rect.x0(),
-                image_rect.x0() + image_rect.xsize(), rows);
+                  const ptrdiff_t* segment_y_start) {
+  float* JXL_RESTRICT rows[3] = {row_x, row_y, row_b};
+  for (ptrdiff_t i = segment_y_start[y]; i < segment_y_start[y + 1]; i++) {
+    DrawSegment(segments[segment_indices[i]], add, y, x0, x1, rows);
   }
 }
 
 void SegmentsFromPoints(
-    const Spline& spline,
+    size_t image_ysize, const Spline& spline,
     const std::vector<std::pair<Spline::Point, float>>& points_to_draw,
     const float arc_length, std::vector<SplineSegment>& segments,
-    std::vector<std::pair<size_t, size_t>>& segments_by_y) {
+    std::vector<SplineSegmentSpan>& segments_spans) {
   const float inv_arc_length = 1.0f / arc_length;
   int k = 0;
   for (const auto& point_to_draw : points_to_draw) {
@@ -185,7 +201,8 @@ void SegmentsFromPoints(
     }
     const float sigma =
         ContinuousIDCT(spline.sigma_dct, (32 - 1) * progress_along_arc);
-    ComputeSegments(point, multiplier, color, sigma, segments, segments_by_y);
+    ComputeSegments(image_ysize, point, multiplier, color, sigma, segments,
+                    segments_spans);
   }
 }
 }  // namespace
@@ -239,13 +256,18 @@ Status DecodeAllStartingPoints(std::vector<Spline::Point>* const points,
   int64_t last_x = 0;
   int64_t last_y = 0;
   for (size_t i = 0; i < num_splines; i++) {
-    int64_t x =
+    size_t dx =
         reader->ReadHybridUint(kStartingPositionContext, br, context_map);
-    int64_t y =
+    size_t dy =
         reader->ReadHybridUint(kStartingPositionContext, br, context_map);
+    int64_t x;
+    int64_t y;
     if (i != 0) {
-      x = UnpackSigned(x) + last_x;
-      y = UnpackSigned(y) + last_y;
+      x = UnpackSigned(dx) + last_x;
+      y = UnpackSigned(dy) + last_y;
+    } else {
+      x = dx;
+      y = dy;
     }
     JXL_RETURN_IF_ERROR(ValidateSplinePointPos(x, y));
     points->emplace_back(static_cast<float>(x), static_cast<float>(y));
@@ -326,8 +348,8 @@ void DrawCentripetalCatmullRomSpline(std::vector<Spline::Point> points,
 // TODO(eustas): this method always adds the last point, but never the first
 //               (unless those are one); I believe both ends matter.
 template <typename Points, typename Functor>
-void ForEachEquallySpacedPoint(const Points& points, const Functor& functor) {
-  JXL_ASSERT(!points.empty());
+Status ForEachEquallySpacedPoint(const Points& points, const Functor& functor) {
+  JXL_ENSURE(!points.empty());
   Spline::Point current = points.front();
   functor(current, kDesiredRenderingDistance);
   auto next = points.begin();
@@ -337,7 +359,7 @@ void ForEachEquallySpacedPoint(const Points& points, const Functor& functor) {
     for (;;) {
       if (next == points.end()) {
         functor(*previous, arclength_from_previous);
-        return;
+        return true;
       }
       const float arclength_to_next =
           std::sqrt((*next - *previous).SquaredNorm());
@@ -355,28 +377,30 @@ void ForEachEquallySpacedPoint(const Points& points, const Functor& functor) {
       ++next;
     }
   }
+  return true;
 }
 
 }  // namespace
 
-QuantizedSpline::QuantizedSpline(const Spline& original,
-                                 const int32_t quantization_adjustment,
-                                 const float y_to_x, const float y_to_b) {
-  JXL_ASSERT(!original.control_points.empty());
-  control_points_.reserve(original.control_points.size() - 1);
+StatusOr<QuantizedSpline> QuantizedSpline::Create(
+    const Spline& original, const int32_t quantization_adjustment,
+    const float y_to_x, const float y_to_b) {
+  JXL_ENSURE(!original.control_points.empty());
+  QuantizedSpline result;
+  result.control_points_.reserve(original.control_points.size() - 1);
   const Spline::Point& starting_point = original.control_points.front();
-  int previous_x = static_cast<int>(std::roundf(starting_point.x));
-  int previous_y = static_cast<int>(std::roundf(starting_point.y));
+  int previous_x = static_cast<int>(std::round(starting_point.x));
+  int previous_y = static_cast<int>(std::round(starting_point.y));
   int previous_delta_x = 0;
   int previous_delta_y = 0;
   for (auto it = original.control_points.begin() + 1;
        it != original.control_points.end(); ++it) {
-    const int new_x = static_cast<int>(std::roundf(it->x));
-    const int new_y = static_cast<int>(std::roundf(it->y));
+    const int new_x = static_cast<int>(std::round(it->x));
+    const int new_y = static_cast<int>(std::round(it->y));
     const int new_delta_x = new_x - previous_x;
     const int new_delta_y = new_y - previous_y;
-    control_points_.emplace_back(new_delta_x - previous_delta_x,
-                                 new_delta_y - previous_delta_y);
+    result.control_points_.emplace_back(new_delta_x - previous_delta_x,
+                                        new_delta_y - previous_delta_y);
     previous_delta_x = new_delta_x;
     previous_delta_y = new_delta_y;
     previous_x = new_x;
@@ -387,7 +411,7 @@ QuantizedSpline::QuantizedSpline(const Spline& original,
     // Maximal int representable with float.
     constexpr float kMax = std::numeric_limits<int>::max() - 127;
     constexpr float kMin = -kMax;
-    return static_cast<int>(std::roundf(Clamp1(v, kMin, kMax)));
+    return static_cast<int>(std::round(Clamp1(v, kMin, kMax)));
   };
 
   const auto quant = AdjustedQuant(quantization_adjustment);
@@ -397,18 +421,19 @@ QuantizedSpline::QuantizedSpline(const Spline& original,
     for (int i = 0; i < 32; ++i) {
       const float dct_factor = (i == 0) ? kSqrt2 : 1.0f;
       const float inv_dct_factor = (i == 0) ? kSqrt0_5 : 1.0f;
-      auto restored_y =
-          color_dct_[1][i] * inv_dct_factor * kChannelWeight[1] * inv_quant;
-      auto decorellated = original.color_dct[c][i] - factor * restored_y;
-      color_dct_[c][i] =
-          to_int(decorellated * dct_factor * quant / kChannelWeight[c]);
+      auto restored_y = result.color_dct_[1][i] * inv_dct_factor *
+                        kChannelWeight[1] * inv_quant;
+      auto decorrelated = original.color_dct[c][i] - factor * restored_y;
+      result.color_dct_[c][i] =
+          to_int(decorrelated * dct_factor * quant / kChannelWeight[c]);
     }
   }
   for (int i = 0; i < 32; ++i) {
     const float dct_factor = (i == 0) ? kSqrt2 : 1.0f;
-    sigma_dct_[i] =
+    result.sigma_dct_[i] =
         to_int(original.sigma_dct[i] * dct_factor * quant / kChannelWeight[3]);
   }
+  return result;
 }
 
 Status QuantizedSpline::Dequantize(const Spline::Point& starting_point,
@@ -423,8 +448,8 @@ Status QuantizedSpline::Dequantize(const Spline::Point& starting_point,
 
   result.control_points.clear();
   result.control_points.reserve(control_points_.size() + 1);
-  float px = std::roundf(starting_point.x);
-  float py = std::roundf(starting_point.y);
+  float px = std::round(starting_point.x);
+  float py = std::round(starting_point.y);
   JXL_RETURN_IF_ERROR(ValidateSplinePointPos(px, py));
   int current_x = static_cast<int>(px);
   int current_y = static_cast<int>(py);
@@ -550,28 +575,35 @@ Status QuantizedSpline::Decode(const std::vector<uint8_t>& context_map,
     }
     return true;
   };
-  for (int c = 0; c < 3; ++c) {
-    JXL_RETURN_IF_ERROR(decode_dct(color_dct_[c]));
+  for (auto& dct : color_dct_) {
+    JXL_RETURN_IF_ERROR(decode_dct(dct));
   }
   JXL_RETURN_IF_ERROR(decode_dct(sigma_dct_));
   return true;
 }
 
+void Splines::SetData(SplineDataView data) {
+  Clear();
+  data_ = data;
+}
+
 void Splines::Clear() {
   quantization_adjustment_ = 0;
-  splines_.clear();
-  starting_points_.clear();
+  splines_storage_.clear();
+  starting_points_storage_.clear();
+  data_ = {};
   segments_.clear();
-  segment_indices_.clear();
-  segment_y_start_.clear();
+  segment_indices_ = AlignedMemory();
+  segment_y_start_ = AlignedMemory();
 }
 
 Status Splines::Decode(jxl::BitReader* br, const size_t num_pixels) {
   std::vector<uint8_t> context_map;
   ANSCode code;
-  JXL_RETURN_IF_ERROR(
-      DecodeHistograms(br, kNumSplineContexts, &code, &context_map));
-  ANSSymbolReader decoder(&code, br);
+  JXL_RETURN_IF_ERROR(DecodeHistograms(memory_manager_, br, kNumSplineContexts,
+                                       &code, &context_map));
+  JXL_ASSIGN_OR_RETURN(ANSSymbolReader decoder,
+                       ANSSymbolReader::Create(&code, br));
   size_t num_splines =
       decoder.ReadHybridUint(kNumSplinesContext, br, context_map);
   size_t max_control_points = std::min(
@@ -581,23 +613,26 @@ Status Splines::Decode(jxl::BitReader* br, const size_t num_pixels) {
     return JXL_FAILURE("Too many splines: %" PRIuS, num_splines);
   }
   num_splines++;
-  JXL_RETURN_IF_ERROR(DecodeAllStartingPoints(&starting_points_, br, &decoder,
-                                              context_map, num_splines));
+  JXL_RETURN_IF_ERROR(DecodeAllStartingPoints(
+      &starting_points_storage_, br, &decoder, context_map, num_splines));
 
   quantization_adjustment_ = UnpackSigned(
       decoder.ReadHybridUint(kQuantizationAdjustmentContext, br, context_map));
 
-  splines_.clear();
-  splines_.reserve(num_splines);
+  splines_storage_.clear();
+  splines_storage_.reserve(num_splines);
   size_t num_control_points = num_splines;
   for (size_t i = 0; i < num_splines; ++i) {
     QuantizedSpline spline;
     JXL_RETURN_IF_ERROR(spline.Decode(context_map, &decoder, br,
                                       max_control_points, &num_control_points));
-    splines_.push_back(std::move(spline));
+    splines_storage_.push_back(std::move(spline));
   }
 
   JXL_RETURN_IF_ERROR(decoder.CheckANSFinalState());
+
+  data_ = SplineDataView{Span<const QuantizedSpline>(splines_storage_),
+                         Span<const Spline::Point>(starting_points_storage_)};
 
   if (!HasAny()) {
     return JXL_FAILURE("Decoded splines but got none");
@@ -606,37 +641,37 @@ Status Splines::Decode(jxl::BitReader* br, const size_t num_pixels) {
   return true;
 }
 
-void Splines::AddTo(Image3F* const opsin, const Rect& opsin_rect,
-                    const Rect& image_rect) const {
-  Apply</*add=*/true>(opsin, opsin_rect, image_rect);
+void Splines::AddTo(Image3F* const opsin, const Rect& opsin_rect) const {
+  Apply</*add=*/true>(opsin, opsin_rect);
 }
 void Splines::AddToRow(float* JXL_RESTRICT row_x, float* JXL_RESTRICT row_y,
-                       float* JXL_RESTRICT row_b, const Rect& image_row) const {
-  ApplyToRow</*add=*/true>(row_x, row_y, row_b, image_row);
+                       float* JXL_RESTRICT row_b, size_t y, size_t x0,
+                       size_t x1) const {
+  ApplyToRow</*add=*/true>(row_x, row_y, row_b, y, x0, x1);
 }
 
 void Splines::SubtractFrom(Image3F* const opsin) const {
-  Apply</*add=*/false>(opsin, Rect(*opsin), Rect(*opsin));
+  Apply</*add=*/false>(opsin, Rect(*opsin));
 }
 
 Status Splines::InitializeDrawCache(const size_t image_xsize,
                                     const size_t image_ysize,
-                                    const ColorCorrelationMap& cmap) {
+                                    const ColorCorrelation& color_correlation) {
   // TODO(veluca): avoid storing segments that are entirely outside image
   // boundaries.
   segments_.clear();
-  segment_indices_.clear();
-  segment_y_start_.clear();
-  std::vector<std::pair<size_t, size_t>> segments_by_y;
+  segment_indices_ = AlignedMemory();
+  segment_y_start_ = AlignedMemory();
+  std::vector<SplineSegmentSpan> segments_spans;
   std::vector<Spline::Point> intermediate_points;
   uint64_t total_estimated_area_reached = 0;
   std::vector<Spline> splines;
-  for (size_t i = 0; i < splines_.size(); ++i) {
+  for (size_t i = 0; i < data_.splines.size(); ++i) {
     Spline spline;
-    JXL_RETURN_IF_ERROR(splines_[i].Dequantize(
-        starting_points_[i], quantization_adjustment_, cmap.YtoXRatio(0),
-        cmap.YtoBRatio(0), image_xsize * image_ysize,
-        &total_estimated_area_reached, spline));
+    JXL_RETURN_IF_ERROR(data_.splines[i].Dequantize(
+        data_.starting_points[i], quantization_adjustment_,
+        color_correlation.YtoXRatio(0), color_correlation.YtoBRatio(0),
+        image_xsize * image_ysize, &total_estimated_area_reached, spline));
     if (std::adjacent_find(spline.control_points.begin(),
                            spline.control_points.end()) !=
         spline.control_points.end()) {
@@ -667,7 +702,8 @@ Status Splines::InitializeDrawCache(const size_t image_xsize,
     };
     intermediate_points.clear();
     DrawCentripetalCatmullRomSpline(spline.control_points, intermediate_points);
-    ForEachEquallySpacedPoint(intermediate_points, add_point);
+    JXL_RETURN_IF_ERROR(
+        ForEachEquallySpacedPoint(intermediate_points, add_point));
     const float arc_length =
         (points_to_draw.size() - 2) * kDesiredRenderingDistance +
         points_to_draw.back().second;
@@ -676,48 +712,71 @@ Status Splines::InitializeDrawCache(const size_t image_xsize,
       continue;
     }
     HWY_DYNAMIC_DISPATCH(SegmentsFromPoints)
-    (spline, points_to_draw, arc_length, segments_, segments_by_y);
+    (image_ysize, spline, points_to_draw, arc_length, segments_,
+     segments_spans);
   }
 
-  // TODO(eustas): consider linear sorting here.
-  std::sort(segments_by_y.begin(), segments_by_y.end());
-  segment_indices_.resize(segments_by_y.size());
-  segment_y_start_.resize(image_ysize + 1);
-  for (size_t i = 0; i < segments_by_y.size(); i++) {
-    segment_indices_[i] = segments_by_y[i].second;
-    size_t y = segments_by_y[i].first;
-    if (y < image_ysize) {
-      segment_y_start_[y + 1]++;
+  size_t segment_y_start_num_bytes = (image_ysize + 2) * sizeof(ptrdiff_t);
+  JXL_ASSIGN_OR_RETURN(
+      segment_y_start_,
+      AlignedMemory::Create(memory_manager_, segment_y_start_num_bytes));
+  ptrdiff_t* segment_y_start = segment_y_start_.address<ptrdiff_t>();
+  memset(segment_y_start, 0, segment_y_start_num_bytes);
+  ptrdiff_t* population = segment_y_start + 1;
+  for (const auto& segment_span : segments_spans) {
+    population[segment_span.start]++;
+    population[segment_span.end]--;
+  }
+  // Turn to cumulative.
+  size_t total = 0;
+  ptrdiff_t coverage = 0;
+  for (size_t y = 0; y < image_ysize; y++) {
+    if (population[y] < 0) {
+      JXL_ENSURE(coverage >= -population[y]);
+    }
+    coverage += population[y];
+    population[y] = total;
+    total += coverage;
+  }
+  // population[0] == 0 (that is segment_y_start[1])
+  // We are going to place segments using population[y] as index for elements
+  // of y-th line (and increment them); that way final value of population[y]
+  // is the staring index for (y+1)-th line. Thus segment_y_start will contain
+  // indices without an offset.
+  JXL_ASSIGN_OR_RETURN(
+      segment_indices_,
+      AlignedMemory::Create(memory_manager_, total * sizeof(size_t)));
+  size_t* segment_indices = segment_indices_.address<size_t>();
+  for (size_t i = 0; i < segments_.size(); ++i) {
+    const auto& segment_span = segments_spans[i];
+    for (size_t y = segment_span.start; y < segment_span.end; y++) {
+      segment_indices[population[y]++] = i;
     }
   }
-  for (size_t y = 0; y < image_ysize; y++) {
-    segment_y_start_[y + 1] += segment_y_start_[y];
-  }
+
   return true;
 }
 
 template <bool add>
 void Splines::ApplyToRow(float* JXL_RESTRICT row_x, float* JXL_RESTRICT row_y,
-                         float* JXL_RESTRICT row_b,
-                         const Rect& image_row) const {
+                         float* JXL_RESTRICT row_b, size_t y, size_t x0,
+                         size_t x1) const {
   if (segments_.empty()) return;
-  JXL_ASSERT(image_row.ysize() == 1);
-  for (size_t iy = 0; iy < image_row.ysize(); iy++) {
-    HWY_DYNAMIC_DISPATCH(DrawSegments)
-    (row_x, row_y, row_b, image_row.Line(iy), add, segments_.data(),
-     segment_indices_.data(), segment_y_start_.data());
-  }
+  HWY_DYNAMIC_DISPATCH(DrawSegments)
+  (row_x, row_y, row_b, y, x0, x1, add, segments_.data(),
+   segment_indices_.address<size_t>(), segment_y_start_.address<ptrdiff_t>());
 }
 
 template <bool add>
-void Splines::Apply(Image3F* const opsin, const Rect& opsin_rect,
-                    const Rect& image_rect) const {
+void Splines::Apply(Image3F* const opsin, const Rect& opsin_rect) const {
   if (segments_.empty()) return;
-  for (size_t iy = 0; iy < image_rect.ysize(); iy++) {
-    const size_t y0 = opsin_rect.Line(iy).y0();
-    const size_t x0 = opsin_rect.x0();
-    ApplyToRow<add>(opsin->PlaneRow(0, y0) + x0, opsin->PlaneRow(1, y0) + x0,
-                    opsin->PlaneRow(2, y0) + x0, image_rect.Line(iy));
+  const size_t y0 = opsin_rect.y0();
+  const size_t x0 = opsin_rect.x0();
+  const size_t x1 = opsin_rect.x1();
+  for (size_t y = 0; y < opsin_rect.ysize(); y++) {
+    ApplyToRow<add>(opsin->PlaneRow(0, y0 + y) + x0,
+                    opsin->PlaneRow(1, y0 + y) + x0,
+                    opsin->PlaneRow(2, y0 + y) + x0, y0 + y, x0, x1);
   }
 }
 

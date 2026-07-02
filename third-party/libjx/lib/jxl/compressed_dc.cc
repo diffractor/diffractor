@@ -5,21 +5,26 @@
 
 #include "lib/jxl/compressed_dc.h"
 
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
+#include <jxl/memory_manager.h>
 
 #include <algorithm>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <vector>
+
+#include "lib/jxl/ac_context.h"
+#include "lib/jxl/frame_header.h"
+#include "lib/jxl/modular/modular_image.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/compressed_dc.cc"
-#include <hwy/aligned_allocator.h>
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/image.h"
 HWY_BEFORE_NAMESPACE();
@@ -120,7 +125,8 @@ JXL_INLINE void ComputePixel(
   Store(out, d, out_rows[2] + x);
 }
 
-Status AdaptiveDCSmoothing(const float* dc_factors, Image3F* dc,
+Status AdaptiveDCSmoothing(JxlMemoryManager* memory_manager,
+                           const float* dc_factors, Image3F* dc,
                            ThreadPool* pool) {
   const size_t xsize = dc->xsize();
   const size_t ysize = dc->ysize();
@@ -129,9 +135,10 @@ Status AdaptiveDCSmoothing(const float* dc_factors, Image3F* dc,
   // TODO(veluca): use tile-based processing?
   // TODO(veluca): decide if changes to the y channel should be propagated to
   // the x and b channels through color correlation.
-  JXL_ASSERT(w1 + w2 < 0.25f);
+  JXL_ENSURE(w1 + w2 < 0.25f);
 
-  JXL_ASSIGN_OR_RETURN(Image3F smoothed, Image3F::Create(xsize, ysize));
+  JXL_ASSIGN_OR_RETURN(Image3F smoothed,
+                       Image3F::Create(memory_manager, xsize, ysize));
   // Fill in borders that the loop below will not. First and last are unused.
   for (size_t c = 0; c < 3; c++) {
     for (size_t y : {static_cast<size_t>(0), ysize - 1}) {
@@ -139,7 +146,7 @@ Status AdaptiveDCSmoothing(const float* dc_factors, Image3F* dc,
              xsize * sizeof(float));
     }
   }
-  auto process_row = [&](const uint32_t y, size_t /*thread*/) {
+  auto process_row = [&](const uint32_t y, size_t /*thread*/) -> Status {
     const float* JXL_RESTRICT rows_top[3]{
         dc->ConstPlaneRow(0, y - 1),
         dc->ConstPlaneRow(1, y - 1),
@@ -182,9 +189,10 @@ Status AdaptiveDCSmoothing(const float* dc_factors, Image3F* dc,
       ComputePixel<DScalar>(dc_factors, rows_top, rows, rows_bottom, rows_out,
                             x);
     }
+    return true;
   };
-  JXL_CHECK(RunOnPool(pool, 1, ysize - 1, ThreadPool::NoInit, process_row,
-                      "DCSmoothingRow"));
+  JXL_RETURN_IF_ERROR(RunOnPool(pool, 1, ysize - 1, ThreadPool::NoInit,
+                                process_row, "DCSmoothingRow"));
   dc->Swap(smoothed);
   return true;
 }
@@ -234,8 +242,8 @@ void DequantDC(const Rect& r, Image3F* dc, ImageB* quant_dc, const Image& in,
         float* row = rect.PlaneRow(dc, c, y);
         for (size_t x = 0; x < rect.xsize(); x += Lanes(di)) {
           const auto in_q = Load(di, quant_row + x);
-          const auto in = Mul(ConvertTo(df, in_q), fac);
-          Store(in, df, row + x);
+          const auto out = Mul(ConvertTo(df, in_q), fac);
+          Store(out, df, row + x);
         }
       }
     }
@@ -246,6 +254,15 @@ void DequantDC(const Rect& r, Image3F* dc, ImageB* quant_dc, const Image& in,
       memset(qdc_row, 0, sizeof(*qdc_row) * r.xsize());
     }
   } else {
+    JXL_DASSERT(r.ysize() == 0 ||
+                (r.ysize() - 1) >> chroma_subsampling.VShift(0) <
+                    in.channel[1].plane.ysize());
+    JXL_DASSERT(r.ysize() == 0 ||
+                (r.ysize() - 1) >> chroma_subsampling.VShift(1) <
+                    in.channel[0].plane.ysize());
+    JXL_DASSERT(r.ysize() == 0 ||
+                (r.ysize() - 1) >> chroma_subsampling.VShift(2) <
+                    in.channel[2].plane.ysize());
     for (size_t y = 0; y < r.ysize(); y++) {
       uint8_t* qdc_row_val = r.Row(quant_dc, y);
       const int32_t* quant_row_x =
@@ -288,9 +305,11 @@ namespace jxl {
 
 HWY_EXPORT(DequantDC);
 HWY_EXPORT(AdaptiveDCSmoothing);
-Status AdaptiveDCSmoothing(const float* dc_factors, Image3F* dc,
+Status AdaptiveDCSmoothing(JxlMemoryManager* memory_manager,
+                           const float* dc_factors, Image3F* dc,
                            ThreadPool* pool) {
-  return HWY_DYNAMIC_DISPATCH(AdaptiveDCSmoothing)(dc_factors, dc, pool);
+  return HWY_DYNAMIC_DISPATCH(AdaptiveDCSmoothing)(memory_manager, dc_factors,
+                                                   dc, pool);
 }
 
 void DequantDC(const Rect& r, Image3F* dc, ImageB* quant_dc, const Image& in,

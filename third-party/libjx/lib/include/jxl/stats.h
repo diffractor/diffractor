@@ -16,7 +16,7 @@
 #include <jxl/jxl_export.h>
 #include <stddef.h>
 
-#if defined(__cplusplus) || defined(c_plusplus)
+#ifdef __cplusplus
 extern "C" {
 #endif
 
@@ -26,7 +26,7 @@ extern "C" {
  * Allocated and initialized with @ref JxlEncoderStatsCreate().
  * Cleaned up and deallocated with @ref JxlEncoderStatsDestroy().
  */
-typedef struct JxlEncoderStatsStruct JxlEncoderStats;
+typedef struct JxlEncoderStats JxlEncoderStats;
 
 /**
  * Creates an instance of JxlEncoderStats and initializes it.
@@ -94,7 +94,7 @@ JXL_EXPORT size_t JxlEncoderStatsGet(const JxlEncoderStats* stats,
 JXL_EXPORT void JxlEncoderStatsMerge(JxlEncoderStats* stats,
                                      const JxlEncoderStats* other);
 
-#if defined(__cplusplus) || defined(c_plusplus)
+#ifdef __cplusplus
 }
 #endif
 

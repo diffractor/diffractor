@@ -14,7 +14,9 @@
 
 #include <hwy/highway.h>
 
+#include "lib/jxl/common.h"
 #include "lib/jxl/dec_xyb.h"
+
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
@@ -83,6 +85,7 @@ HWY_INLINE HWY_MAYBE_UNUSED void XybToRgb(D d, const V opsin_x, const V opsin_y,
   *linear_b = MulAdd(LoadDup128(d, &inverse_matrix[8 * 4]), mixed_b, *linear_b);
 }
 
+#if !JXL_HIGH_PRECISION
 inline HWY_MAYBE_UNUSED bool HasFastXYBTosRGB8() {
 #if HWY_TARGET == HWY_NEON
   return true;
@@ -91,9 +94,9 @@ inline HWY_MAYBE_UNUSED bool HasFastXYBTosRGB8() {
 #endif
 }
 
-inline HWY_MAYBE_UNUSED void FastXYBTosRGB8(const float* input[4],
-                                            uint8_t* output, bool is_rgba,
-                                            size_t xsize) {
+inline HWY_MAYBE_UNUSED Status FastXYBTosRGB8(const float* input[4],
+                                              uint8_t* output, bool is_rgba,
+                                              size_t xsize) {
   // This function is very NEON-specific. As such, it uses intrinsics directly.
 #if HWY_TARGET == HWY_NEON
   // WARNING: doing fixed point arithmetic correctly is very complicated.
@@ -328,14 +331,16 @@ inline HWY_MAYBE_UNUSED void FastXYBTosRGB8(const float* input[4],
       }
     }
   }
-#else
+  return true;
+#else   // HWY_TARGET == HWY_NEON
   (void)input;
   (void)output;
   (void)is_rgba;
   (void)xsize;
-  JXL_UNREACHABLE("Unreachable");
-#endif
+  return JXL_UNREACHABLE("unsupported platform");
+#endif  // HWY_TARGET == HWY_NEON
 }
+#endif  // !JXL_HIGH_PRECISION
 
 }  // namespace
 // NOLINTNEXTLINE(google-readability-namespace-comments)

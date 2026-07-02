@@ -7,10 +7,17 @@
 
 #include <brotli/decode.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <vector>
+
+#include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_bit_reader.h"
-#include "lib/jxl/sanitizers.h"
+#include "lib/jxl/fields.h"
+#include "lib/jxl/jpeg/jpeg_data.h"
 
 namespace jxl {
 namespace jpeg {
@@ -20,7 +27,7 @@ Status DecodeJPEGData(Span<const uint8_t> encoded, JPEGData* jpeg_data) {
   size_t available_in = encoded.size();
   {
     BitReader br(encoded);
-    BitReaderScopedCloser br_closer(&br, &ret);
+    BitReaderScopedCloser br_closer(br, ret);
     JXL_RETURN_IF_ERROR(Bundle::Read(&br, jpeg_data));
     JXL_RETURN_IF_ERROR(br.JumpToByteBoundary());
     in += br.TotalBitsConsumed() / 8;
@@ -65,6 +72,9 @@ Status DecodeJPEGData(Span<const uint8_t> encoded, JPEGData* jpeg_data) {
   size_t num_icc = 0;
   for (size_t i = 0; i < jpeg_data->app_data.size(); i++) {
     auto& marker = jpeg_data->app_data[i];
+    if (marker.size() < 3) {
+      return JXL_FAILURE("APP marker too short");
+    }
     if (jpeg_data->app_marker_type[i] != AppMarkerType::kUnknown) {
       // Set the size of the marker.
       size_t size_minus_1 = marker.size() - 1;
@@ -91,30 +101,29 @@ Status DecodeJPEGData(Span<const uint8_t> encoded, JPEGData* jpeg_data) {
       marker[16] = num_icc;
     }
     if (jpeg_data->app_marker_type[i] == AppMarkerType::kExif) {
-      marker[0] = 0xE1;
       if (marker.size() < 3 + sizeof kExifTag) {
         return JXL_FAILURE("Incorrect Exif marker size");
       }
+      marker[0] = 0xE1;
       memcpy(&marker[3], kExifTag, sizeof kExifTag);
     }
     if (jpeg_data->app_marker_type[i] == AppMarkerType::kXMP) {
-      marker[0] = 0xE1;
       if (marker.size() < 3 + sizeof kXMPTag) {
         return JXL_FAILURE("Incorrect XMP marker size");
       }
+      marker[0] = 0xE1;
       memcpy(&marker[3], kXMPTag, sizeof kXMPTag);
     }
   }
   // TODO(eustas): actually inject ICC profile and check it fits perfectly.
-  for (size_t i = 0; i < jpeg_data->com_data.size(); i++) {
-    auto& marker = jpeg_data->com_data[i];
+  for (auto& marker : jpeg_data->com_data) {
     JXL_RETURN_IF_ERROR(br_read(marker));
     if (marker[1] * 256u + marker[2] + 1u != marker.size()) {
       return JXL_FAILURE("Incorrect marker size");
     }
   }
-  for (size_t i = 0; i < jpeg_data->inter_marker_data.size(); i++) {
-    JXL_RETURN_IF_ERROR(br_read(jpeg_data->inter_marker_data[i]));
+  for (auto& data : jpeg_data->inter_marker_data) {
+    JXL_RETURN_IF_ERROR(br_read(data));
   }
   JXL_RETURN_IF_ERROR(br_read(jpeg_data->tail_data));
 

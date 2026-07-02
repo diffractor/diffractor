@@ -14,8 +14,8 @@
 #define JXL_VERSION_H_
 
 #define JPEGXL_MAJOR_VERSION 0
-#define JPEGXL_MINOR_VERSION 10
-#define JPEGXL_PATCH_VERSION 3
+#define JPEGXL_MINOR_VERSION 12
+#define JPEGXL_PATCH_VERSION 0
 
 /** Can be used to conditionally compile code for a specific JXL version
  * @param[maj] major version

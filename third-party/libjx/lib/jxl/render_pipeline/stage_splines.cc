@@ -5,10 +5,19 @@
 
 #include "lib/jxl/render_pipeline/stage_splines.h"
 
+#include <cstddef>
+#include <memory>
+
+#include "lib/jxl/base/common.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_splines.cc"
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
+
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/render_pipeline/render_pipeline_stage.h"
+#include "lib/jxl/splines.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
@@ -21,12 +30,13 @@ class SplineStage : public RenderPipelineStage {
         splines_(*splines) {}
 
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                    size_t thread_id) const final {
-    float* row_x = GetInputRow(input_rows, 0, 0);
-    float* row_y = GetInputRow(input_rows, 1, 0);
-    float* row_b = GetInputRow(input_rows, 2, 0);
-    splines_.AddToRow(row_x, row_y, row_b, Rect(xpos, ypos, xsize, 1));
+                    size_t xextra_left, size_t xextra_right, size_t xsize,
+                    size_t xpos, size_t ypos, size_t thread_id) const final {
+    float* row_x = GetInputRow(input_rows, 0, 0) - xextra_left;
+    float* row_y = GetInputRow(input_rows, 1, 0) - xextra_left;
+    float* row_b = GetInputRow(input_rows, 2, 0) - xextra_left;
+    splines_.AddToRow(row_x, row_y, row_b, ypos, xpos - xextra_left,
+                      xpos + xsize + xextra_right);
     return true;
   }
 

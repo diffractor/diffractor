@@ -3,8 +3,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <algorithm>
 #include <cmath>
-#include <string>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/rational_polynomial_test.cc"
@@ -14,7 +17,6 @@
 
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/rational_polynomial-inl.h"
-#include "lib/jxl/base/status.h"
 #include "lib/jxl/testing.h"
 
 HWY_BEFORE_NAMESPACE();
@@ -25,7 +27,9 @@ using T = float;  // required by EvalLog2
 using D = HWY_FULL(T);
 
 // These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Abs;
 using hwy::HWY_NAMESPACE::Add;
+using hwy::HWY_NAMESPACE::Eq;
 using hwy::HWY_NAMESPACE::GetLane;
 using hwy::HWY_NAMESPACE::ShiftLeft;
 using hwy::HWY_NAMESPACE::ShiftRight;
@@ -52,7 +56,7 @@ struct EvalLog2 {
     const HWY_FULL(int32_t) di;
     const auto x_bits = BitCast(di, vx);
     // Cannot handle negative numbers / NaN.
-    JXL_DASSERT(AllTrue(di, Eq(Abs(x_bits), x_bits)));
+    EXPECT_TRUE(AllTrue(di, Eq(Abs(x_bits), x_bits)));
 
     // Range reduction to [-1/3, 1/3] - 3 integer, 2 float ops
     const auto exp_bits = Sub(x_bits, Set(di, 0x3f2aaaab));  // = 2/3
@@ -107,10 +111,10 @@ T RunApproximation(T x0, T x1, const T (&p)[NP], const T (&q)[NQ],
   for (T x = x0; x <= x1; x += (x1 - x0) / 10000.0) {
     const T f = func_to_approx(x);
     const T g = eval(x, p, q);
-    maxerr = std::max(fabsf(g - f), maxerr);
+    const float err = std::abs(static_cast<float>(g - f));
+    maxerr = std::max(err, maxerr);
     if (x == x0 || x - lastPrint > (x1 - x0) / 20.0) {
-      printf("x: %11.6f, f: %11.6f, g: %11.6f, e: %11.6f\n", x, f, g,
-             fabs(g - f));
+      printf("x: %11.6f, f: %11.6f, g: %11.6f, e: %11.6f\n", x, f, g, err);
       lastPrint = x;
     }
   }

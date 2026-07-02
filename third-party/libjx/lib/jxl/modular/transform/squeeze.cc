@@ -5,13 +5,22 @@
 
 #include "lib/jxl/modular/transform/squeeze.h"
 
-#include <stdlib.h>
+#include <jxl/memory_manager.h>
+
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <utility>
+#include <vector>
 
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/modular/modular_image.h"
-#include "lib/jxl/modular/transform/transform.h"
+#include "lib/jxl/modular/transform/squeeze_params.h"
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/modular/transform/squeeze.cc"
 #include <hwy/foreach_target.h>
@@ -23,15 +32,20 @@ HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
 
+#if HWY_TARGET != HWY_SCALAR
+
 // These templates are not found via ADL.
 using hwy::HWY_NAMESPACE::Abs;
 using hwy::HWY_NAMESPACE::Add;
 using hwy::HWY_NAMESPACE::And;
+using hwy::HWY_NAMESPACE::DupEven;
+using hwy::HWY_NAMESPACE::DupOdd;
 using hwy::HWY_NAMESPACE::Gt;
 using hwy::HWY_NAMESPACE::IfThenElse;
 using hwy::HWY_NAMESPACE::IfThenZeroElse;
 using hwy::HWY_NAMESPACE::Lt;
 using hwy::HWY_NAMESPACE::MulEven;
+using hwy::HWY_NAMESPACE::MulOdd;
 using hwy::HWY_NAMESPACE::Ne;
 using hwy::HWY_NAMESPACE::Neg;
 using hwy::HWY_NAMESPACE::OddEven;
@@ -41,7 +55,10 @@ using hwy::HWY_NAMESPACE::ShiftRight;
 using hwy::HWY_NAMESPACE::Sub;
 using hwy::HWY_NAMESPACE::Xor;
 
-#if HWY_TARGET != HWY_SCALAR
+using D = HWY_CAPPED(pixel_type, 8);
+using DU = RebindToUnsigned<D>;
+constexpr D d;
+constexpr DU du;
 
 JXL_INLINE void FastUnsqueeze(const pixel_type *JXL_RESTRICT p_residual,
                               const pixel_type *JXL_RESTRICT p_avg,
@@ -49,8 +66,6 @@ JXL_INLINE void FastUnsqueeze(const pixel_type *JXL_RESTRICT p_residual,
                               const pixel_type *p_pout,
                               pixel_type *JXL_RESTRICT p_out,
                               pixel_type *p_nout) {
-  const HWY_CAPPED(pixel_type, 8) d;
-  const RebindToUnsigned<decltype(d)> du;
   const size_t N = Lanes(d);
   auto onethird = Set(d, 0x55555556);
   for (size_t x = 0; x < 8; x += N) {
@@ -58,6 +73,7 @@ JXL_INLINE void FastUnsqueeze(const pixel_type *JXL_RESTRICT p_residual,
     auto next_avg = Load(d, p_navg + x);
     auto top = Load(d, p_pout + x);
     // Equivalent to SmoothTendency(top,avg,next_avg), but without branches
+    // typo:off
     auto Ba = Sub(top, avg);
     auto an = Sub(avg, next_avg);
     auto nonmono = Xor(Ba, an);
@@ -65,12 +81,23 @@ JXL_INLINE void FastUnsqueeze(const pixel_type *JXL_RESTRICT p_residual,
     auto absan = Abs(an);
     auto absBn = Abs(Sub(top, next_avg));
     // Compute a3 = absBa / 3
-    auto a3e = BitCast(d, ShiftRight<32>(MulEven(absBa, onethird)));
-    auto a3oi = MulEven(Reverse(d, absBa), onethird);
-    auto a3o = BitCast(
-        d, Reverse(hwy::HWY_NAMESPACE::Repartition<pixel_type_w, decltype(d)>(),
-                   a3oi));
-    auto a3 = OddEven(a3o, a3e);
+    auto a3eh = MulEven(absBa, onethird);
+    auto a3oh = MulOdd(absBa, onethird);
+
+#if (HWY_MAJOR > 1 || (HWY_MAJOR == 1 && HWY_MINOR >= 2))
+#if HWY_IS_LITTLE_ENDIAN
+    auto a3 = InterleaveOdd(d, BitCast(d, a3eh), BitCast(d, a3oh));
+#else  // not little endian
+    auto a3 = InterleaveEven(d, BitCast(d, a3eh), BitCast(d, a3oh));
+#endif  // endianness
+#else  // hwy < 1.2
+#if HWY_IS_LITTLE_ENDIAN
+    auto a3 = OddEven(BitCast(d, a3oh), DupOdd(BitCast(d, a3eh)));
+#else  // not little endian
+    auto a3 = OddEven(DupEven(BitCast(d, a3oh)), BitCast(d, a3eh));
+#endif  // endianness
+#endif  // hwy version
+
     a3 = Add(a3, Add(absBn, Set(d, 2)));
     auto absdiff = ShiftRight<2>(a3);
     auto skipdiff = Ne(Ba, Zero(d));
@@ -79,6 +106,7 @@ JXL_INLINE void FastUnsqueeze(const pixel_type *JXL_RESTRICT p_residual,
     auto absBa2 = Add(ShiftLeft<1>(absBa), And(absdiff, Set(d, 1)));
     absdiff = IfThenElse(Gt(absdiff, absBa2),
                          Add(ShiftLeft<1>(absBa), Set(d, 1)), absdiff);
+    // typo:on
     auto absan2 = ShiftLeft<1>(absan);
     absdiff = IfThenElse(Gt(Add(absdiff, And(absdiff, Set(d, 1))), absan2),
                          absan2, absdiff);
@@ -95,16 +123,17 @@ JXL_INLINE void FastUnsqueeze(const pixel_type *JXL_RESTRICT p_residual,
   }
 }
 
-#endif
+#endif  // HWY_TARGET != HWY_SCALAR
 
 Status InvHSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
-  JXL_ASSERT(c < input.channel.size());
-  JXL_ASSERT(rc < input.channel.size());
+  JXL_ENSURE(c < input.channel.size());
+  JXL_ENSURE(rc < input.channel.size());
   Channel &chin = input.channel[c];
   const Channel &chin_residual = input.channel[rc];
   // These must be valid since we ran MetaApply already.
-  JXL_ASSERT(chin.w == DivCeil(chin.w + chin_residual.w, 2));
-  JXL_ASSERT(chin.h == chin_residual.h);
+  JXL_ENSURE(chin.w == DivCeil(chin.w + chin_residual.w, 2));
+  JXL_ENSURE(chin.h == chin_residual.h);
+  JxlMemoryManager *memory_manager = input.memory_manager();
 
   if (chin_residual.w == 0) {
     // Short-circuit: output channel has same dimensions as input.
@@ -114,8 +143,8 @@ Status InvHSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
 
   // Note: chin.w >= chin_residual.w and at most 1 different.
   JXL_ASSIGN_OR_RETURN(Channel chout,
-                       Channel::Create(chin.w + chin_residual.w, chin.h,
-                                       chin.hshift - 1, chin.vshift));
+                       Channel::Create(memory_manager, chin.w + chin_residual.w,
+                                       chin.h, chin.hshift - 1, chin.vshift));
   JXL_DEBUG_V(4,
               "Undoing horizontal squeeze of channel %i using residuals in "
               "channel %i (going from width %" PRIuS " to %" PRIuS ")",
@@ -150,15 +179,16 @@ Status InvHSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
   // 8 rows at a time and treat it as a vertical unsqueeze of a
   // transposed 8x8 block (or 9x8 for one input).
   static constexpr const size_t kRowsPerThread = 8;
-  const auto unsqueeze_span = [&](const uint32_t task, size_t /* thread */) {
+  const auto unsqueeze_span = [&](const uint32_t task,
+                                  size_t /* thread */) -> Status {
     const size_t y0 = task * kRowsPerThread;
     const size_t rows = std::min(kRowsPerThread, chin.h - y0);
     size_t x = 0;
 
 #if HWY_TARGET != HWY_SCALAR
-    intptr_t onerow_in = chin.plane.PixelsPerRow();
-    intptr_t onerow_inr = chin_residual.plane.PixelsPerRow();
-    intptr_t onerow_out = chout.plane.PixelsPerRow();
+    ptrdiff_t onerow_in = chin.plane.PixelsPerRow();
+    ptrdiff_t onerow_inr = chin_residual.plane.PixelsPerRow();
+    ptrdiff_t onerow_out = chout.plane.PixelsPerRow();
     const pixel_type *JXL_RESTRICT p_residual = chin_residual.Row(y0);
     const pixel_type *JXL_RESTRICT p_avg = chin.Row(y0);
     pixel_type *JXL_RESTRICT p_out = chout.Row(y0);
@@ -168,7 +198,6 @@ Status InvHSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
     HWY_ALIGN pixel_type b_p_out_odd[8 * kRowsPerThread];
     HWY_ALIGN pixel_type b_p_out_evenT[8 * kRowsPerThread];
     HWY_ALIGN pixel_type b_p_out_oddT[8 * kRowsPerThread];
-    const HWY_CAPPED(pixel_type, 8) d;
     const size_t N = Lanes(d);
     if (chin_residual.w > 16 && rows == kRowsPerThread) {
       for (; x < chin_residual.w - 9; x += 8) {
@@ -196,10 +225,11 @@ Status InvHSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
         }
       }
     }
-#endif
+#endif  // HWY_TARGET != HWY_SCALAR
     for (size_t y = 0; y < rows; y++) {
       unsqueeze_row(y0 + y, x);
     }
+    return true;
   };
   JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, DivCeil(chin.h, kRowsPerThread),
                                 ThreadPool::NoInit, unsqueeze_span,
@@ -209,13 +239,14 @@ Status InvHSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
 }
 
 Status InvVSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
-  JXL_ASSERT(c < input.channel.size());
-  JXL_ASSERT(rc < input.channel.size());
+  JXL_ENSURE(c < input.channel.size());
+  JXL_ENSURE(rc < input.channel.size());
   const Channel &chin = input.channel[c];
   const Channel &chin_residual = input.channel[rc];
   // These must be valid since we ran MetaApply already.
-  JXL_ASSERT(chin.h == DivCeil(chin.h + chin_residual.h, 2));
-  JXL_ASSERT(chin.w == chin_residual.w);
+  JXL_ENSURE(chin.h == DivCeil(chin.h + chin_residual.h, 2));
+  JXL_ENSURE(chin.w == chin_residual.w);
+  JxlMemoryManager *memory_manager = input.memory_manager();
 
   if (chin_residual.h == 0) {
     // Short-circuit: output channel has same dimensions as input.
@@ -224,9 +255,10 @@ Status InvVSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
   }
 
   // Note: chin.h >= chin_residual.h and at most 1 different.
-  JXL_ASSIGN_OR_RETURN(Channel chout,
-                       Channel::Create(chin.w, chin.h + chin_residual.h,
-                                       chin.hshift, chin.vshift - 1));
+  JXL_ASSIGN_OR_RETURN(
+      Channel chout,
+      Channel::Create(memory_manager, chin.w, chin.h + chin_residual.h,
+                      chin.hshift, chin.vshift - 1));
   JXL_DEBUG_V(
       4,
       "Undoing vertical squeeze of channel %i using residuals in channel "
@@ -240,7 +272,8 @@ Status InvVSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
   }
 
   static constexpr const int kColsPerThread = 64;
-  const auto unsqueeze_slice = [&](const uint32_t task, size_t /* thread */) {
+  const auto unsqueeze_slice = [&](const uint32_t task,
+                                   size_t /* thread */) -> Status {
     const size_t x0 = task * kColsPerThread;
     const size_t x1 =
         std::min(static_cast<size_t>(task + 1) * kColsPerThread, chin.w);
@@ -277,6 +310,7 @@ Status InvVSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
         p_nout[x] = out - diff;
       }
     }
+    return true;
   };
   JXL_RETURN_IF_ERROR(RunOnPool(pool, 0, DivCeil(chin.w, kColsPerThread),
                                 ThreadPool::NoInit, unsqueeze_slice,
@@ -311,7 +345,7 @@ Status InvSqueeze(Image &input, const std::vector<SqueezeParams> &parameters,
     }
     if (beginc < input.nb_meta_channels) {
       // This is checked in MetaSqueeze.
-      JXL_ASSERT(input.nb_meta_channels > parameters[i].num_c);
+      JXL_ENSURE(input.nb_meta_channels > parameters[i].num_c);
       input.nb_meta_channels -= parameters[i].num_c;
     }
 
@@ -319,7 +353,7 @@ Status InvSqueeze(Image &input, const std::vector<SqueezeParams> &parameters,
       uint32_t rc = offset + c - beginc;
       // MetaApply should imply that `rc` is within range, otherwise there's a
       // programming bug.
-      JXL_ASSERT(rc < input.channel.size());
+      JXL_ENSURE(rc < input.channel.size());
       if ((input.channel[c].w < input.channel[rc].w) ||
           (input.channel[c].h < input.channel[rc].h)) {
         return JXL_FAILURE("Corrupted squeeze transform");
@@ -385,21 +419,21 @@ void DefaultSqueezeParameters(std::vector<SqueezeParams> *parameters,
   params.in_place = true;
 
   if (!wide) {
-    if (h > JXL_MAX_FIRST_PREVIEW_SIZE) {
+    if (h > kMaxFirstPreviewSize) {
       params.horizontal = false;
       parameters->push_back(params);
       h = (h + 1) / 2;
       JXL_DEBUG_V(7, "Vertical (%" PRIuS "x%" PRIuS "), ", w, h);
     }
   }
-  while (w > JXL_MAX_FIRST_PREVIEW_SIZE || h > JXL_MAX_FIRST_PREVIEW_SIZE) {
-    if (w > JXL_MAX_FIRST_PREVIEW_SIZE) {
+  while (w > kMaxFirstPreviewSize || h > kMaxFirstPreviewSize) {
+    if (w > kMaxFirstPreviewSize) {
       params.horizontal = true;
       parameters->push_back(params);
       w = (w + 1) / 2;
       JXL_DEBUG_V(7, "Horizontal (%" PRIuS "x%" PRIuS "), ", w, h);
     }
-    if (h > JXL_MAX_FIRST_PREVIEW_SIZE) {
+    if (h > kMaxFirstPreviewSize) {
       params.horizontal = false;
       parameters->push_back(params);
       h = (h + 1) / 2;
@@ -420,17 +454,18 @@ Status CheckMetaSqueezeParams(const SqueezeParams &parameter,
 }
 
 Status MetaSqueeze(Image &image, std::vector<SqueezeParams> *parameters) {
+  JxlMemoryManager *memory_manager = image.memory_manager();
   if (parameters->empty()) {
     DefaultSqueezeParameters(parameters, image);
   }
 
-  for (size_t i = 0; i < parameters->size(); i++) {
+  for (auto &parameter : *parameters) {
     JXL_RETURN_IF_ERROR(
-        CheckMetaSqueezeParams((*parameters)[i], image.channel.size()));
-    bool horizontal = (*parameters)[i].horizontal;
-    bool in_place = (*parameters)[i].in_place;
-    uint32_t beginc = (*parameters)[i].begin_c;
-    uint32_t endc = (*parameters)[i].begin_c + (*parameters)[i].num_c - 1;
+        CheckMetaSqueezeParams(parameter, image.channel.size()));
+    bool horizontal = parameter.horizontal;
+    bool in_place = parameter.in_place;
+    uint32_t beginc = parameter.begin_c;
+    uint32_t endc = parameter.begin_c + parameter.num_c - 1;
 
     uint32_t offset;
     if (beginc < image.nb_meta_channels) {
@@ -441,7 +476,7 @@ Status MetaSqueeze(Image &image, std::vector<SqueezeParams> *parameters) {
         return JXL_FAILURE(
             "Invalid squeeze: meta channels require in-place residuals");
       }
-      image.nb_meta_channels += (*parameters)[i].num_c;
+      image.nb_meta_channels += parameter.num_c;
     }
     if (in_place) {
       offset = endc + 1;
@@ -465,13 +500,14 @@ Status MetaSqueeze(Image &image, std::vector<SqueezeParams> *parameters) {
         h = h - (h + 1) / 2;
       }
       JXL_RETURN_IF_ERROR(image.channel[c].shrink());
-      JXL_ASSIGN_OR_RETURN(Channel placeholder, Channel::Create(w, h));
+      JXL_ASSIGN_OR_RETURN(Channel placeholder,
+                           Channel::Create(memory_manager, w, h));
       placeholder.hshift = image.channel[c].hshift;
       placeholder.vshift = image.channel[c].vshift;
-
+      placeholder.component = image.channel[c].component;
       image.channel.insert(image.channel.begin() + offset + (c - beginc),
                            std::move(placeholder));
-      JXL_DEBUG_V(8, "MetaSqueeze applied, current image: %s",
+      JXL_DEBUG_V(0, "MetaSqueeze applied, current image: %s",
                   image.DebugString().c_str());
     }
   }

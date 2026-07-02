@@ -10,24 +10,21 @@
 // the common format used by other libraries and in the libjxl API.
 
 #include <jxl/codestream_header.h>
+#include <jxl/color_encoding.h>
 #include <jxl/encode.h>
 #include <jxl/types.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 
-#include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <memory>
-#include <mutex>
-#include <set>
 #include <string>
 #include <vector>
 
 #include "lib/jxl/base/byte_order.h"
-#include "lib/jxl/base/c_callback_support.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/status.h"
 
@@ -37,15 +34,10 @@ namespace extras {
 // Class representing an interleaved image with a bunch of channels.
 class PackedImage {
  public:
-  PackedImage(size_t xsize, size_t ysize, const JxlPixelFormat& format)
-      : PackedImage(xsize, ysize, format, CalcStride(format, xsize)) {}
+  static StatusOr<PackedImage> Create(size_t xsize, size_t ysize,
+                                      const JxlPixelFormat& format);
 
-  PackedImage Copy() const {
-    PackedImage copy(xsize, ysize, format);
-    memcpy(reinterpret_cast<uint8_t*>(copy.pixels()),
-           reinterpret_cast<const uint8_t*>(pixels()), pixels_size);
-    return copy;
-  }
+  StatusOr<PackedImage> Copy() const;
 
   // The interleaved pixels as defined in the storage format.
   void* pixels() const { return pixels_.get(); }
@@ -73,20 +65,9 @@ class PackedImage {
 
   size_t pixel_stride() const { return pixel_stride_; }
 
-  static size_t BitsPerChannel(JxlDataType data_type) {
-    switch (data_type) {
-      case JXL_TYPE_UINT8:
-        return 8;
-      case JXL_TYPE_UINT16:
-        return 16;
-      case JXL_TYPE_FLOAT:
-        return 32;
-      case JXL_TYPE_FLOAT16:
-        return 16;
-      default:
-        JXL_ABORT("Unhandled JxlDataType");
-    }
-  }
+  static Status ValidateDataType(JxlDataType data_type);
+
+  static size_t BitsPerChannel(JxlDataType data_type);
 
   float GetPixelValue(size_t y, size_t x, size_t c) const {
     const uint8_t* data = const_pixels(y, x, c);
@@ -104,7 +85,8 @@ class PackedImage {
         return swap_endianness_ ? BSwapFloat(val) : val;
       }
       default:
-        JXL_ABORT("Unhandled JxlDataType");
+        JXL_DEBUG_ABORT("Unreachable");
+        return 0.0f;
     }
   }
 
@@ -130,32 +112,19 @@ class PackedImage {
         break;
       }
       default:
-        JXL_ABORT("Unhandled JxlDataType");
+        JXL_DEBUG_ABORT("Unreachable");
     }
   }
+
+  // Logical resize; use Copy() for storage reallocation, if necessary.
+  Status ShrinkTo(size_t new_xsize, size_t new_ysize);
 
  private:
   PackedImage(size_t xsize, size_t ysize, const JxlPixelFormat& format,
-              size_t stride)
-      : xsize(xsize),
-        ysize(ysize),
-        stride(stride),
-        format(format),
-        pixels_size(ysize * stride),
-        pixels_(malloc(std::max<size_t>(1, pixels_size)), free) {
-    bytes_per_channel_ = BitsPerChannel(format.data_type) / jxl::kBitsPerByte;
-    pixel_stride_ = format.num_channels * bytes_per_channel_;
-    swap_endianness_ = SwapEndianness(format.endianness);
-  }
+              size_t stride);
 
-  static size_t CalcStride(const JxlPixelFormat& format, size_t xsize) {
-    size_t stride = xsize * (BitsPerChannel(format.data_type) *
-                             format.num_channels / jxl::kBitsPerByte);
-    if (format.align > 1) {
-      stride = jxl::DivCeil(stride, format.align) * format.align;
-    }
-    return stride;
-  }
+  static StatusOr<size_t> CalcStride(const JxlPixelFormat& format,
+                                     size_t xsize);
 
   size_t bytes_per_channel_;
   size_t pixel_stride_;
@@ -169,19 +138,19 @@ class PackedImage {
 // as all other frames in the same image.
 class PackedFrame {
  public:
-  template <typename... Args>
-  explicit PackedFrame(Args&&... args) : color(std::forward<Args>(args)...) {}
+  explicit PackedFrame(PackedImage&& image);
 
-  PackedFrame Copy() const {
-    PackedFrame copy(color.xsize, color.ysize, color.format);
-    copy.frame_info = frame_info;
-    copy.name = name;
-    copy.color = color.Copy();
-    for (const auto& ec : extra_channels) {
-      copy.extra_channels.emplace_back(ec.Copy());
-    }
-    return copy;
-  }
+  PackedFrame(PackedFrame&& other);
+  PackedFrame& operator=(PackedFrame&& other);
+  ~PackedFrame();
+
+  static StatusOr<PackedFrame> Create(size_t xsize, size_t ysize,
+                                      const JxlPixelFormat& format);
+
+  StatusOr<PackedFrame> Copy() const;
+
+  // Logical resize; use Copy() for storage reallocation, if necessary.
+  Status ShrinkTo(size_t new_xsize, size_t new_ysize);
 
   // The Frame metadata.
   JxlFrameHeader frame_info = {};
@@ -197,13 +166,7 @@ class ChunkedPackedFrame {
  public:
   ChunkedPackedFrame(
       size_t xsize, size_t ysize,
-      std::function<JxlChunkedFrameInputSource()> get_input_source)
-      : xsize(xsize),
-        ysize(ysize),
-        get_input_source_(std::move(get_input_source)) {
-    const auto input_source = get_input_source_();
-    input_source.get_color_channels_pixel_format(input_source.opaque, &format);
-  }
+      std::function<JxlChunkedFrameInputSource()> get_input_source);
 
   JxlChunkedFrameInputSource GetInputSource() { return get_input_source_(); }
 
@@ -224,6 +187,7 @@ class PackedMetadata {
  public:
   std::vector<uint8_t> exif;
   std::vector<uint8_t> iptc;
+  std::vector<uint8_t> jhgm;
   std::vector<uint8_t> jumbf;
   std::vector<uint8_t> xmp;
 };
@@ -261,18 +225,23 @@ class PackedPixelFile {
   // The icc profile of the original image.
   std::vector<uint8_t> orig_icc;
 
+  JxlBitDepth input_bitdepth = {JXL_BIT_DEPTH_FROM_PIXEL_FORMAT, 0, 0};
+
   std::unique_ptr<PackedFrame> preview_frame;
   std::vector<PackedFrame> frames;
   mutable std::vector<ChunkedPackedFrame> chunked_frames;
 
   PackedMetadata metadata;
-  PackedPixelFile() { JxlEncoderInitBasicInfo(&info); };
+  PackedPixelFile();
 
   size_t num_frames() const {
     return chunked_frames.empty() ? frames.size() : chunked_frames.size();
   }
   size_t xsize() const { return info.xsize; }
   size_t ysize() const { return info.ysize; }
+
+  // Logical resize; storage is not reallocated; stride is unchanged.
+  Status ShrinkTo(size_t new_xsize, size_t new_ysize);
 };
 
 }  // namespace extras

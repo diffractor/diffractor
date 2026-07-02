@@ -5,20 +5,29 @@
 
 #include "lib/jxl/test_image.h"
 
+#include <jxl/codestream_header.h>
+#include <jxl/color_encoding.h>
 #include <jxl/encode.h>
+#include <jxl/types.h>
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "lib/extras/dec/color_description.h"
 #include "lib/extras/dec/color_hints.h"
 #include "lib/extras/dec/decode.h"
+#include "lib/extras/packed_image.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/random.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/test_utils.h"
 
 namespace jxl {
 namespace test {
@@ -87,7 +96,7 @@ void FillPackedImage(size_t bits_per_sample, uint16_t seed,
   size_t rect_y0 = rngu(ysize);
   size_t rect_x1 = rngu(xsize);
   size_t rect_y1 = rngu(ysize);
-  if (rect_x1 < rect_x0) std::swap(rect_x0, rect_y1);
+  if (rect_x1 < rect_x0) std::swap(rect_x0, rect_x1);
   if (rect_y1 < rect_y0) std::swap(rect_y0, rect_y1);
 
   // Create pixel content to test, actual content does not matter as long as it
@@ -165,7 +174,7 @@ std::vector<uint8_t> GetSomeTestImage(size_t xsize, size_t ysize,
   size_t rect_y0 = rng(ysize);
   size_t rect_x1 = rng(xsize);
   size_t rect_y1 = rng(ysize);
-  if (rect_x1 < rect_x0) std::swap(rect_x0, rect_y1);
+  if (rect_x1 < rect_x0) std::swap(rect_x0, rect_x1);
   if (rect_y1 < rect_y0) std::swap(rect_y0, rect_y1);
 
   size_t num_pixels = xsize * ysize;
@@ -215,18 +224,18 @@ std::vector<uint8_t> GetSomeTestImage(size_t xsize, size_t ysize,
 }
 
 TestImage::TestImage() {
-  SetChannels(3);
+  Check(SetChannels(3));
   SetAllBitDepths(8);
-  SetColorEncoding("RGB_D65_SRG_Rel_SRG");
+  Check(SetColorEncoding("RGB_D65_SRG_Rel_SRG"));
 }
 
-TestImage& TestImage::DecodeFromBytes(const std::vector<uint8_t>& bytes) {
+Status TestImage::DecodeFromBytes(const std::vector<uint8_t>& bytes) {
   ColorEncoding c_enc;
-  JXL_CHECK(c_enc.FromExternal(ppf_.color_encoding));
+  JXL_RETURN_IF_ERROR(c_enc.FromExternal(ppf_.color_encoding));
   extras::ColorHints color_hints;
   color_hints.Add("color_space", Description(c_enc));
-  JXL_CHECK(extras::DecodeBytes(Bytes(bytes), color_hints, &ppf_));
-  return *this;
+  JXL_RETURN_IF_ERROR(extras::DecodeBytes(Bytes(bytes), color_hints, &ppf_));
+  return true;
 }
 
 TestImage& TestImage::ClearMetadata() {
@@ -234,7 +243,7 @@ TestImage& TestImage::ClearMetadata() {
   return *this;
 }
 
-TestImage& TestImage::SetDimensions(size_t xsize, size_t ysize) {
+Status TestImage::SetDimensions(size_t xsize, size_t ysize) {
   if (xsize <= ppf_.info.xsize && ysize <= ppf_.info.ysize) {
     for (auto& frame : ppf_.frames) {
       CropLayerInfo(xsize, ysize, &frame.frame_info.layer_info);
@@ -244,16 +253,16 @@ TestImage& TestImage::SetDimensions(size_t xsize, size_t ysize) {
       }
     }
   } else {
-    JXL_CHECK(ppf_.info.xsize == 0 && ppf_.info.ysize == 0);
+    JXL_ENSURE(ppf_.info.xsize == 0 && ppf_.info.ysize == 0);
   }
   ppf_.info.xsize = xsize;
   ppf_.info.ysize = ysize;
-  return *this;
+  return true;
 }
 
-TestImage& TestImage::SetChannels(size_t num_channels) {
-  JXL_CHECK(ppf_.frames.empty());
-  JXL_CHECK(!ppf_.preview_frame);
+Status TestImage::SetChannels(size_t num_channels) {
+  JXL_ENSURE(ppf_.frames.empty());
+  JXL_ENSURE(!ppf_.preview_frame);
   ppf_.info.num_color_channels = num_channels < 3 ? 1 : 3;
   ppf_.info.num_extra_channels = num_channels - ppf_.info.num_color_channels;
   if (ppf_.info.num_extra_channels > 0 && ppf_.info.alpha_bits == 0) {
@@ -274,9 +283,9 @@ TestImage& TestImage::SetChannels(size_t num_channels) {
   format_.num_channels = std::min(static_cast<size_t>(4), num_channels);
   if (ppf_.info.num_color_channels == 1 &&
       ppf_.color_encoding.color_space != JXL_COLOR_SPACE_GRAY) {
-    SetColorEncoding("Gra_D65_Rel_SRG");
+    JXL_RETURN_IF_ERROR(SetColorEncoding("Gra_D65_Rel_SRG"));
   }
-  return *this;
+  return true;
 }
 
 // Sets the same bit depth on color, alpha and all extra channels.
@@ -288,8 +297,7 @@ TestImage& TestImage::SetAllBitDepths(uint32_t bits_per_sample,
     ppf_.info.alpha_bits = bits_per_sample;
     ppf_.info.alpha_exponent_bits = exponent_bits_per_sample;
   }
-  for (size_t i = 0; i < ppf_.extra_channels_info.size(); ++i) {
-    extras::PackedExtraChannel& ec = ppf_.extra_channels_info[i];
+  for (auto& ec : ppf_.extra_channels_info) {
     ec.ec_info.bits_per_sample = bits_per_sample;
     ec.ec_info.exponent_bits_per_sample = exponent_bits_per_sample;
   }
@@ -312,26 +320,26 @@ TestImage& TestImage::SetRowAlignment(size_t align) {
   return *this;
 }
 
-TestImage& TestImage::SetColorEncoding(const std::string& description) {
-  JXL_CHECK(ParseDescription(description, &ppf_.color_encoding));
+Status TestImage::SetColorEncoding(const std::string& description) {
+  JXL_RETURN_IF_ERROR(ParseDescription(description, &ppf_.color_encoding));
   ColorEncoding c_enc;
-  JXL_CHECK(c_enc.FromExternal(ppf_.color_encoding));
+  JXL_RETURN_IF_ERROR(c_enc.FromExternal(ppf_.color_encoding));
   IccBytes icc = c_enc.ICC();
-  JXL_CHECK(!icc.empty());
+  JXL_ENSURE(!icc.empty());
   ppf_.icc.assign(icc.begin(), icc.end());
-  return *this;
+  return true;
 }
 
-TestImage& TestImage::CoalesceGIFAnimationWithAlpha() {
-  extras::PackedFrame canvas = ppf_.frames[0].Copy();
-  JXL_CHECK(canvas.color.format.num_channels == 3);
-  JXL_CHECK(canvas.color.format.data_type == JXL_TYPE_UINT8);
-  JXL_CHECK(canvas.extra_channels.size() == 1);
+Status TestImage::CoalesceGIFAnimationWithAlpha() {
+  JXL_ASSIGN_OR_RETURN(extras::PackedFrame canvas, ppf_.frames[0].Copy());
+  JXL_ENSURE(canvas.color.format.num_channels == 3);
+  JXL_ENSURE(canvas.color.format.data_type == JXL_TYPE_UINT8);
+  JXL_ENSURE(canvas.extra_channels.size() == 1);
   for (size_t i = 1; i < ppf_.frames.size(); i++) {
     const extras::PackedFrame& frame = ppf_.frames[i];
-    JXL_CHECK(frame.extra_channels.size() == 1);
+    JXL_ENSURE(frame.extra_channels.size() == 1);
     const JxlLayerInfo& layer_info = frame.frame_info.layer_info;
-    extras::PackedFrame rendered = canvas.Copy();
+    JXL_ASSIGN_OR_RETURN(extras::PackedFrame rendered, canvas.Copy());
     uint8_t* pixels_rendered =
         reinterpret_cast<uint8_t*>(rendered.color.pixels());
     const uint8_t* pixels_frame =
@@ -353,11 +361,11 @@ TestImage& TestImage::CoalesceGIFAnimationWithAlpha() {
       }
     }
     if (layer_info.save_as_reference != 0) {
-      canvas = rendered.Copy();
+      JXL_ASSIGN_OR_RETURN(canvas, rendered.Copy());
     }
     ppf_.frames[i] = std::move(rendered);
   }
-  return *this;
+  return true;
 }
 
 TestImage::Frame::Frame(TestImage* parent, bool is_preview, size_t index)
@@ -378,49 +386,43 @@ void TestImage::Frame::RandomFill(uint16_t seed) {
   }
 }
 
-void TestImage::Frame::SetValue(size_t y, size_t x, size_t c, float val) {
+Status TestImage::Frame::SetValue(size_t y, size_t x, size_t c, float val) {
   const extras::PackedImage& color = frame().color;
   JxlPixelFormat format = color.format;
-  JXL_CHECK(y < ppf().info.ysize);
-  JXL_CHECK(x < ppf().info.xsize);
-  JXL_CHECK(c < format.num_channels);
+  JXL_ENSURE(y < ppf().info.ysize);
+  JXL_ENSURE(x < ppf().info.xsize);
+  JXL_ENSURE(c < format.num_channels);
   size_t pwidth = extras::PackedImage::BitsPerChannel(format.data_type) / 8;
   size_t idx = ((y * color.xsize + x) * format.num_channels + c) * pwidth;
   uint8_t* pixels = reinterpret_cast<uint8_t*>(frame().color.pixels());
   uint8_t* p = pixels + idx;
   StoreValue(val, ppf().info.bits_per_sample, frame().color.format, &p);
+  return true;
 }
 
-TestImage::Frame TestImage::AddFrame() {
+StatusOr<TestImage::Frame> TestImage::AddFrame() {
   size_t index = ppf_.frames.size();
-  extras::PackedFrame frame(ppf_.info.xsize, ppf_.info.ysize, format_);
+  JXL_ASSIGN_OR_RETURN(
+      extras::PackedFrame frame,
+      extras::PackedFrame::Create(ppf_.info.xsize, ppf_.info.ysize, format_));
   for (size_t i = 0; i < ppf_.extra_channels_info.size(); ++i) {
     JxlPixelFormat ec_format = {1, format_.data_type, format_.endianness, 0};
-    extras::PackedImage image(ppf_.info.xsize, ppf_.info.ysize, ec_format);
+    JXL_ASSIGN_OR_RETURN(extras::PackedImage image,
+                         extras::PackedImage::Create(
+                             ppf_.info.xsize, ppf_.info.ysize, ec_format));
     frame.extra_channels.emplace_back(std::move(image));
   }
   ppf_.frames.emplace_back(std::move(frame));
   return Frame(this, false, index);
 }
 
-TestImage::Frame TestImage::AddPreview(size_t xsize, size_t ysize) {
-  extras::PackedFrame frame(xsize, ysize, format_);
-  for (size_t i = 0; i < ppf_.extra_channels_info.size(); ++i) {
-    JxlPixelFormat ec_format = {1, format_.data_type, format_.endianness, 0};
-    extras::PackedImage image(xsize, ysize, ec_format);
-    frame.extra_channels.emplace_back(std::move(image));
-  }
-  ppf_.preview_frame = make_unique<extras::PackedFrame>(std::move(frame));
-  return Frame(this, true, 0);
-}
-
 void TestImage::CropLayerInfo(size_t xsize, size_t ysize, JxlLayerInfo* info) {
-  if (info->crop_x0 < static_cast<ssize_t>(xsize)) {
+  if (info->crop_x0 < static_cast<ptrdiff_t>(xsize)) {
     info->xsize = std::min<size_t>(info->xsize, xsize - info->crop_x0);
   } else {
     info->xsize = 0;
   }
-  if (info->crop_y0 < static_cast<ssize_t>(ysize)) {
+  if (info->crop_y0 < static_cast<ptrdiff_t>(ysize)) {
     info->ysize = std::min<size_t>(info->ysize, ysize - info->crop_y0);
   } else {
     info->ysize = 0;

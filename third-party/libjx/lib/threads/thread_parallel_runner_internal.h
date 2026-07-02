@@ -34,14 +34,14 @@
 
 #include <jxl/memory_manager.h>
 #include <jxl/parallel_runner.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <stdlib.h>
 
 #include <atomic>
 #include <condition_variable>  //NOLINT
-#include <mutex>               //NOLINT
-#include <thread>              //NOLINT
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <mutex>   //NOLINT
+#include <thread>  //NOLINT
 #include <vector>
 
 namespace jpegxl {
@@ -143,7 +143,8 @@ class ThreadParallelRunner {
   const uint32_t num_worker_threads_;  // == threads_.size()
   const uint32_t num_threads_;
 
-  std::atomic<int> depth_{0};  // detects if Run is re-entered (not supported).
+  std::atomic<uint32_t> depth_{
+      0};  // detects if Run is re-entered (not supported).
 
   std::mutex mutex_;  // guards both cv and their variables.
   std::condition_variable workers_ready_cv_;

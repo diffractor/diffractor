@@ -8,13 +8,14 @@
 #ifndef LIB_JXL_JPEG_JPEG_DATA_H_
 #define LIB_JXL_JPEG_JPEG_DATA_H_
 
-#include <stddef.h>
-#include <stdint.h>
-
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"  // JPEGXL_ENABLE_TRANSCODE_JPEG
+#include "lib/jxl/field_encodings.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/frame_dimensions.h"
 
@@ -119,14 +120,14 @@ struct JPEGScanInfo {
   // block (if nonzero), indexed by block index.
   // All of these symbols can be omitted without changing the pixel values, but
   // some jpeg encoders put these at the end of blocks.
-  typedef struct {
+  struct ExtraZeroRunInfo {
     uint32_t block_idx;
     uint32_t num_extra_zero_runs;
-  } ExtraZeroRunInfo;
+  };
   std::vector<ExtraZeroRunInfo> extra_zero_runs;
 };
 
-typedef int16_t coeff_t;
+using coeff_t = int16_t;
 
 // Represents one component of a jpeg file.
 struct JPEGComponent {
@@ -174,7 +175,7 @@ struct JPEGData : public Fields {
   Status VisitFields(Visitor* visitor) override;
 #else
   Status VisitFields(Visitor* /* visitor */) override {
-    JXL_UNREACHABLE("JPEG transcoding support not enabled");
+    return JXL_UNREACHABLE("JPEG transcoding support not enabled");
   }
 #endif  // JPEGXL_ENABLE_TRANSCODE_JPEG
 
@@ -208,7 +209,7 @@ Status SetJPEGDataFromICC(const std::vector<uint8_t>& icc,
 #else
 static JXL_INLINE Status SetJPEGDataFromICC(
     const std::vector<uint8_t>& /* icc */, jpeg::JPEGData* /* jpeg_data */) {
-  JXL_UNREACHABLE("JPEG transcoding support not enabled");
+  return JXL_UNREACHABLE("JPEG transcoding support not enabled");
 }
 #endif  // JPEGXL_ENABLE_TRANSCODE_JPEG
 

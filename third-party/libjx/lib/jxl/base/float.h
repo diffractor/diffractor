@@ -18,7 +18,7 @@
 namespace jxl {
 
 namespace detail {
-// Based on highway scalar implementation, for testing
+
 static JXL_INLINE float LoadFloat16(uint16_t bits16) {
   const uint32_t sign = bits16 >> 15;
   const uint32_t biased_exp = (bits16 >> 10) & 0x1F;
@@ -32,7 +32,8 @@ static JXL_INLINE float LoadFloat16(uint16_t bits16) {
   }
 
   // Normalized: convert the representation directly (faster than ldexp/tables).
-  const uint32_t biased_exp32 = biased_exp + (127 - 15);
+  const uint32_t biased_exp32 =
+      biased_exp == 0b11111 ? 0b11111111 : biased_exp + (127 - 15);
   const uint32_t mantissa32 = mantissa << (23 - 10);
   const uint32_t bits32 = (sign << 31) | (biased_exp32 << 23) | mantissa32;
 
@@ -62,9 +63,7 @@ static Status JXL_INLINE LoadFloatRow(const uint8_t* src, size_t count,
 
     case JXL_TYPE_UINT8:
       for (size_t i = 0; i < count; ++i) {
-        // Integer multiply uint8 value before scaling so that the UINT8 value
-        // and the corresponding UINT16 value convert to the same float
-        callback(i, (src[stride * i] * 257) * scale);
+        callback(i, src[stride * i] * scale);
       }
       return true;
 

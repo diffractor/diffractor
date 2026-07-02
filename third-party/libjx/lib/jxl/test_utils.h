@@ -10,25 +10,41 @@
 
 // Macros and functions useful for tests.
 
+#include <jxl/cms_interface.h>
 #include <jxl/codestream_header.h>
+#include <jxl/thread_parallel_runner.h>
 #include <jxl/thread_parallel_runner_cxx.h>
+#include <jxl/types.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <ostream>
+#include <sstream>
+#include <string>
 #include <vector>
 
+#include "lib/extras/codec_in_out.h"
+#include "lib/extras/dec/decode.h"  // IWYU pragma: keep TEST_LIBJPEG_SUPPORT
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/enc/jxl.h"
 #include "lib/extras/packed_image.h"
+#include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/butteraugli/butteraugli.h"
-#include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/enc_params.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/jpeg/jpeg_data.h"
 
+#define Check(OK) ::jxl::test::CheckImpl((OK), #OK, __FILE__, __LINE__)
+
+// TODO(eustas): rewrite
 #define TEST_LIBJPEG_SUPPORT()                                              \
   do {                                                                      \
     if (!jxl::extras::CanDecode(jxl::extras::Codec::kJPG)) {                \
@@ -47,7 +63,30 @@ class ThreadPool;
 
 namespace test {
 
+// Don't use this directly!
+void CheckImpl(bool ok, const char* condition, const char* file, int line);
+
+#define JXL_TEST_ASSIGN_OR_DIE(lhs, statusor) \
+  PRIVATE_JXL_TEST_ASSIGN_OR_DIE_IMPL(        \
+      JXL_JOIN(assign_or_die_temporary_variable, __LINE__), lhs, statusor)
+
+// NOLINTBEGIN(bugprone-macro-parentheses)
+#define PRIVATE_JXL_TEST_ASSIGN_OR_DIE_IMPL(name, lhs, statusor) \
+  auto name = statusor;                                          \
+  Check(name.ok());                                              \
+  lhs = std::move(name).value_();
+// NOLINTEND(bugprone-macro-parentheses)
+
 std::string GetTestDataPath(const std::string& filename);
+
+// Returns an ICC profile output by the JPEG XL decoder for RGB_D65_SRG_Rel_Lin,
+// but with, on purpose, rXYZ, bXYZ and gXYZ (the RGB primaries) switched to a
+// different order to ensure the profile does not match any known profile, so
+// the encoder cannot encode it in a compact struct instead.
+jxl::IccBytes GetIccTestProfile();
+
+std::vector<uint8_t> GetCompressedIccTestProfile();
+
 std::vector<uint8_t> ReadTestData(const std::string& filename);
 
 void JxlBasicInfoSetFromPixelFormat(JxlBasicInfo* basic_info,
@@ -63,19 +102,21 @@ void SetThreadParallelRunner(Params params, ThreadPool* pool) {
   }
 }
 
-Status DecodeFile(extras::JXLDecompressParams dparams, Span<const uint8_t> file,
-                  CodecInOut* JXL_RESTRICT io, ThreadPool* pool = nullptr);
+Status DecodeFile(const extras::JXLDecompressParams& dparams,
+                  Span<const uint8_t> file, CodecInOut* JXL_RESTRICT io,
+                  ThreadPool* pool = nullptr);
 
-bool Roundtrip(const CodecInOut* io, const CompressParams& cparams,
-               extras::JXLDecompressParams dparams,
+bool Roundtrip(CodecInOut* io, const CompressParams& cparams,
+               const extras::JXLDecompressParams& dparams,
                CodecInOut* JXL_RESTRICT io2, std::stringstream& failures,
                size_t* compressed_size = nullptr, ThreadPool* pool = nullptr);
 
 // Returns compressed size [bytes].
 size_t Roundtrip(const extras::PackedPixelFile& ppf_in,
                  const extras::JXLCompressParams& cparams,
-                 extras::JXLDecompressParams dparams, ThreadPool* pool,
-                 extras::PackedPixelFile* ppf_out);
+                 const extras::JXLDecompressParams& dparams, ThreadPool* pool,
+                 extras::PackedPixelFile* ppf_out,
+                 size_t* decoded_size = nullptr);
 
 // A POD descriptor of a ColorEncoding. Only used in tests as the return value
 // of AllEncodings().
@@ -102,9 +143,9 @@ std::vector<ColorEncodingDescriptor> AllEncodings();
 
 // Returns a CodecInOut based on the buf, xsize, ysize, and the assumption
 // that the buffer was created using `GetSomeTestImage`.
-jxl::CodecInOut SomeTestImageToCodecInOut(const std::vector<uint8_t>& buf,
-                                          size_t num_channels, size_t xsize,
-                                          size_t ysize);
+std::unique_ptr<jxl::CodecInOut> SomeTestImageToCodecInOut(
+    const std::vector<uint8_t>& buf, size_t num_channels, size_t xsize,
+    size_t ysize);
 
 bool Near(double expected, double value, double max_dist);
 
@@ -170,6 +211,12 @@ bool SamePixels(const extras::PackedImage& a, const extras::PackedImage& b);
 bool SamePixels(const extras::PackedPixelFile& a,
                 const extras::PackedPixelFile& b);
 
+extras::JXLCompressParams CompressParamsForLossless();
+
+StatusOr<ImageF> GetImage(const extras::PackedPixelFile& ppf);
+
+StatusOr<Image3F> GetColorImage(const extras::PackedPixelFile& ppf);
+
 class ThreadPoolForTests {
  public:
   explicit ThreadPoolForTests(int num_threads) {
@@ -180,8 +227,7 @@ class ThreadPoolForTests {
   }
   ThreadPoolForTests(const ThreadPoolForTests&) = delete;
   ThreadPoolForTests& operator&(const ThreadPoolForTests&) = delete;
-  // TODO(eustas): avoid unary `&` overload?
-  ThreadPool* operator&() { return pool_.get(); }
+  ThreadPool* get() { return pool_.get(); }
 
  private:
   JxlThreadParallelRunnerPtr runner_;
@@ -193,14 +239,17 @@ class ThreadPoolForTests {
 // If `output_limit` is not 0, then returns error if resulting profile would be
 // longer than `output_limit`
 Status ReadICC(BitReader* JXL_RESTRICT reader,
-               std::vector<uint8_t>* JXL_RESTRICT icc, size_t output_limit = 0);
+               std::vector<uint8_t>* JXL_RESTRICT icc);
 
 // Compresses pixels from `io` (given in any ColorEncoding).
 // `io->metadata.m.original` must be set.
-Status EncodeFile(const CompressParams& params, const CodecInOut* io,
+Status EncodeFile(const CompressParams& params, CodecInOut* io,
                   std::vector<uint8_t>* compressed, ThreadPool* pool = nullptr);
 
 constexpr const char* BoolToCStr(bool b) { return b ? "true" : "false"; }
+
+Status JpegDataToCodecInOut(std::unique_ptr<jxl::jpeg::JPEGData>&& data,
+                            CodecInOut* io);
 
 }  // namespace test
 

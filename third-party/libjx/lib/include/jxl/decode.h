@@ -24,7 +24,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#if defined(__cplusplus) || defined(c_plusplus)
+#ifdef __cplusplus
 extern "C" {
 #endif
 
@@ -81,7 +81,7 @@ JXL_EXPORT JxlSignature JxlSignatureCheck(const uint8_t* buf, size_t len);
  * Allocated and initialized with @ref JxlDecoderCreate().
  * Cleaned up and deallocated with @ref JxlDecoderDestroy().
  */
-typedef struct JxlDecoderStruct JxlDecoder;
+typedef struct JxlDecoder JxlDecoder;
 
 /**
  * Creates an instance of @ref JxlDecoder and initializes it.
@@ -159,11 +159,10 @@ typedef enum {
   /** The decoder is able to decode a preview image and requests setting a
    * preview output buffer using @ref JxlDecoderSetPreviewOutBuffer. This occurs
    * if ::JXL_DEC_PREVIEW_IMAGE is requested and it is possible to decode a
-   * preview image from the codestream and the preview out buffer was not yet
-   * set. There is maximum one preview image in a codestream.
-   * In this case, @ref JxlDecoderReleaseInput will return all bytes from the
-   * end of the frame header (including ToC) of the preview frame as
-   * unprocessed.
+   * preview image from the codestream. There is maximum one preview image in
+   * a codestream. In this case, @ref JxlDecoderReleaseInput will return all
+   * bytes from the end of the frame header (including ToC) of the preview frame
+   * as unprocessed.
    */
   JXL_DEC_NEED_PREVIEW_OUT_BUFFER = 3,
 
@@ -290,12 +289,13 @@ typedef enum {
    *
    * The buffer set with @ref JxlDecoderSetBoxBuffer must be set again for each
    * next box to be obtained, or can be left unset to skip outputting this box.
-   * The output buffer contains the full box data when the next ::JXL_DEC_BOX
-   * event or ::JXL_DEC_SUCCESS occurs. ::JXL_DEC_BOX occurs for all
-   * boxes, including non-metadata boxes such as the signature box or codestream
-   * boxes. To check whether the box is a metadata type for respectively EXIF,
-   * XMP or JUMBF, use @ref JxlDecoderGetBoxType and check for types "Exif",
-   * "xml " and "jumb" respectively.
+   * The output buffer contains the full box data when the
+   * ::JXL_DEC_BOX_COMPLETE (if subscribed to) or subsequent ::JXL_DEC_SUCCESS
+   * or ::JXL_DEC_BOX event occurs. ::JXL_DEC_BOX occurs for all boxes,
+   * including non-metadata boxes such as the signature box or codestream boxes.
+   * To check whether the box is a metadata type for respectively EXIF, XMP or
+   * JUMBF, use @ref JxlDecoderGetBoxType and check for types "Exif", "xml " and
+   * "jumb" respectively.
    *
    * In this case, @ref JxlDecoderReleaseInput will return all bytes from the
    * start of the box header as unprocessed.
@@ -318,6 +318,11 @@ typedef enum {
    * unprocessed.
    */
   JXL_DEC_FRAME_PROGRESSION = 0x8000,
+
+  /** The box being decoded is now complete. This is only emitted if a buffer
+   * was set for the box.
+   */
+  JXL_DEC_BOX_COMPLETE = 0x10000,
 } JxlDecoderStatus;
 
 /** Types of progressive detail.
@@ -721,7 +726,7 @@ typedef enum {
  * It is often possible to use @ref JxlDecoderGetColorAsICCProfile as an
  * alternative anyway. The following scenarios are possible:
  *  - The JPEG XL image has an attached ICC Profile, in that case, the encoded
- *    structured data is not available, this function will return an error
+ *    structured data is not available and this function will return an error
  *    status. @ref JxlDecoderGetColorAsICCProfile should be called instead.
  *  - The JPEG XL image has an encoded structured color profile, and it
  *    represents an RGB or grayscale color space. This function will return it.
@@ -800,8 +805,8 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetICCProfileSize(
  *     or the color profile of the decoded pixels.
  * @param icc_profile buffer to copy the ICC profile into
  * @param size size of the icc_profile buffer in bytes
- * @return ::JXL_DEC_SUCCESS if the profile was successfully returned is
- *     available, ::JXL_DEC_NEED_MORE_INPUT if not yet available, @ref
+ * @return ::JXL_DEC_SUCCESS if the profile was successfully returned,
+ *     ::JXL_DEC_NEED_MORE_INPUT if not yet available, @ref
  *     JXL_DEC_ERROR if the profile doesn't exist or the output size is not
  *     large enough.
  */
@@ -869,7 +874,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDesiredIntensityTarget(
  *
  * This function must not be called before @ref JxlDecoderSetCms.
  *
- * @param dec decoder orbject
+ * @param dec decoder object
  * @param color_encoding the output color encoding
  * @param icc_data bytes of the icc profile
  * @param icc_size size of the icc profile in bytes
@@ -913,11 +918,14 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderPreviewOutBufferSize(
     const JxlDecoder* dec, const JxlPixelFormat* format, size_t* size);
 
 /**
- * Sets the buffer to write the small resolution preview image
- * to. The size of the buffer must be at least as large as given by @ref
+ * Sets the buffer to write the low-resolution preview image to. This must be
+ * set when the ::JXL_DEC_NEED_PREVIEW_OUT_BUFFER event occurs. The size of
+ * the buffer must be at least as large as given by @ref
  * JxlDecoderPreviewOutBufferSize. The buffer follows the format described
  * by @ref JxlPixelFormat. The preview image dimensions are given by the
- * @ref JxlPreviewHeader. The buffer is owned by the caller.
+ * @ref JxlPreviewHeader. The buffer is owned by the caller. Attempt to set
+ * preview buffer before ::JXL_DEC_NEED_PREVIEW_OUT_BUFFER or after
+ * ::JXL_DEC_PREVIEW_IMAGE will fail.
  *
  * @param dec decoder object
  * @param format format of pixels. Object owned by user and its contents are
@@ -962,10 +970,10 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetFrameName(const JxlDecoder* dec,
 
 /**
  * Outputs the blend information for the current frame for a specific extra
- * channel. This function can be called when ::JXL_DEC_FRAME occurred for the
- * current frame, even when have_animation in the @ref JxlBasicInfo is @ref
- * JXL_FALSE. This information is only useful if coalescing is disabled;
- * otherwise the decoder will have performed blending already.
+ * channel. This function can be called once the ::JXL_DEC_FRAME event occurred
+ * for the current frame, even if the `have_animation` field in the @ref
+ * JxlBasicInfo is @ref JXL_FALSE. This information is only useful if coalescing
+ * is disabled; otherwise the decoder will have performed blending already.
  *
  * @param dec decoder object
  * @param index the index of the extra channel
@@ -995,11 +1003,12 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderImageOutBufferSize(
 
 /**
  * Sets the buffer to write the full resolution image to. This can be set when
- * the ::JXL_DEC_FRAME event occurs, must be set when the @ref
- * JXL_DEC_NEED_IMAGE_OUT_BUFFER event occurs, and applies only for the
+ * the ::JXL_DEC_FRAME event occurs, must be set when the
+ * ::JXL_DEC_NEED_IMAGE_OUT_BUFFER event occurs, and applies only for the
  * current frame. The size of the buffer must be at least as large as given
  * by @ref JxlDecoderImageOutBufferSize. The buffer follows the format described
- * by @ref JxlPixelFormat. The buffer is owned by the caller.
+ * by @ref JxlPixelFormat. The buffer is owned by the caller. Attempt to set
+ * image buffer while preview buffer is expected will fail.
  *
  * @param dec decoder object
  * @param format format of the pixels. Object owned by user and its contents
@@ -1344,7 +1353,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDecompressBoxes(JxlDecoder* dec,
  *    animation allowing the decoder to jump to individual frames more
  *    efficiently.
  *  - "jbrd": JPEG reconstruction box, contains the information required to
- *    byte-for-byte losslessly recontruct a JPEG-1 image. The JPEG DCT
+ *    byte-for-byte losslessly reconstruct a JPEG-1 image. The JPEG DCT
  *    coefficients (pixel content) themselves as well as the ICC profile are
  *    encoded in the JXL codestream (jxlc or jxlp) itself. EXIF, XMP and JUMBF
  *    metadata is encoded in the corresponding boxes. The jbrd box itself
@@ -1366,7 +1375,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDecompressBoxes(JxlDecoder* dec,
  * @param decompressed which box type to get: JXL_FALSE to get the raw box type,
  *     which can be "brob", JXL_TRUE, get the underlying box type.
  * @return ::JXL_DEC_SUCCESS if the value is available, ::JXL_DEC_ERROR if
- *     not, for example the JXL file does not use the container format.
+ *     not, for example the JPEG XL file does not use the container format.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderGetBoxType(JxlDecoder* dec,
                                                  JxlBoxType type,
@@ -1457,7 +1466,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec);
 JXL_EXPORT JxlDecoderStatus
 JxlDecoderSetImageOutBitDepth(JxlDecoder* dec, const JxlBitDepth* bit_depth);
 
-#if defined(__cplusplus) || defined(c_plusplus)
+#ifdef __cplusplus
 }
 #endif
 

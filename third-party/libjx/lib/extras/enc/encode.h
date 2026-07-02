@@ -54,6 +54,9 @@ class Encoder {
   // If empty, the 'encoder' does not need any pixels (it's metadata-only).
   virtual std::vector<JxlPixelFormat> AcceptedFormats() const = 0;
 
+  // Can this encoder write CMYK images?
+  virtual bool AcceptsCmyk() const { return false; }
+
   // Any existing data in encoded_image is discarded.
   virtual Status Encode(const PackedPixelFile& ppf, EncodedImage* encoded_image,
                         ThreadPool* pool) const = 0;
@@ -81,6 +84,8 @@ class Encoder {
  private:
   std::unordered_map<std::string, std::string> options_;
 };
+
+std::string ListOfEncodeCodecs();
 
 }  // namespace extras
 }  // namespace jxl

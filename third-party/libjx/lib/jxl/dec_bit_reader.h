@@ -9,9 +9,9 @@
 // Bounds-checked bit reader; 64-bit buffer with support for deferred refills
 // and switching to reading byte-aligned words.
 
-#include <stddef.h>
-#include <stdint.h>
-#include <string.h>  // memcpy
+#include <cstddef>
+#include <cstdint>
+#include <cstring>  // memcpy
 
 #ifdef __BMI2__
 #include <immintrin.h>
@@ -20,7 +20,6 @@
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 
 namespace jxl {
@@ -54,7 +53,7 @@ class BitReader {
   ~BitReader() {
     // Close() must be called before destroying an initialized bit reader.
     // Invalid bit readers will have a nullptr in first_byte_.
-    JXL_ASSERT(close_called_ || !first_byte_);
+    JXL_DASSERT(close_called_ || !first_byte_);
   }
 
   // Move operator needs to invalidate the other BitReader such that it is
@@ -62,7 +61,7 @@ class BitReader {
   BitReader& operator=(BitReader&& other) noexcept {
     // Ensure the current instance was already closed, before we overwrite it
     // with other.
-    JXL_ASSERT(close_called_ || !first_byte_);
+    JXL_DASSERT(close_called_ || !first_byte_);
 
     JXL_DASSERT(!other.close_called_);
     buf_ = other.buf_;
@@ -133,13 +132,13 @@ class BitReader {
   JXL_INLINE void Consume(size_t num_bits) {
     JXL_DASSERT(!close_called_);
     JXL_DASSERT(bits_in_buf_ >= num_bits);
-#ifdef JXL_CRASH_ON_ERROR
-    // When JXL_CRASH_ON_ERROR is defined, it is a fatal error to read more bits
-    // than available in the stream. A non-zero overread_bytes_ implies that
-    // next_byte_ is already at the end of the stream, so we don't need to
-    // check that.
-    JXL_ASSERT(bits_in_buf_ >= num_bits + overread_bytes_ * kBitsPerByte);
-#endif
+    if (JXL_CRASH_ON_ERROR) {
+      // When JXL_CRASH_ON_ERROR is defined, it is a fatal error to read more
+      // bits than available in the stream. A non-zero overread_bytes_ implies
+      // that next_byte_ is already at the end of the stream, so we don't need
+      // to check that.
+      JXL_DASSERT(bits_in_buf_ >= num_bits + overread_bytes_ * kBitsPerByte);
+    }
     bits_in_buf_ -= num_bits;
     buf_ >>= num_bits;
   }
@@ -220,14 +219,17 @@ class BitReader {
     return static_cast<size_t>(end_minus_8_ + 8 - first_byte_);
   }
 
-  // Returns span of the remaining (unconsumed) bytes, e.g. for passing to
-  // external decoders such as Brotli.
-  Span<const uint8_t> GetSpan() const {
-    JXL_DASSERT(first_byte_ != nullptr);
-    JXL_ASSERT(TotalBitsConsumed() % kBitsPerByte == 0);
-    const size_t offset = TotalBitsConsumed() / kBitsPerByte;  // no remainder
-    JXL_ASSERT(offset <= TotalBytes());
-    return Bytes(first_byte_ + offset, TotalBytes() - offset);
+  // Forces the BitReader into an out-of-bounds state. Used by higher-level
+  // decoders to short-circuit further reads when they detect a corrupt stream
+  // (e.g. an LZ77 length-code overflow): after this call, subsequent reads
+  // still return zeros, but AllReadsWithinBounds() and Close() will report
+  // failure so the corruption surfaces at the next checkpoint rather than
+  // silently producing phantom-zero symbols.
+  void MarkUnhealthy() {
+    next_byte_ = end_minus_8_ + 8;
+    // Add enough overread to make TotalBitsConsumed() exceed TotalBytes() *
+    // kBitsPerByte regardless of how many bits remain in buf_.
+    overread_bytes_ += 8;
   }
 
   // Returns whether all the bits read so far have been within the input bounds.
@@ -262,25 +264,7 @@ class BitReader {
 
  private:
   // Separate function avoids inlining this relatively cold code into callers.
-  JXL_NOINLINE void BoundsCheckedRefill() {
-    const uint8_t* end = end_minus_8_ + 8;
-
-    // Read whole bytes until we have [56, 64) bits (same as LoadLE64)
-    for (; bits_in_buf_ < 64 - kBitsPerByte; bits_in_buf_ += kBitsPerByte) {
-      if (next_byte_ >= end) break;
-      buf_ |= static_cast<uint64_t>(*next_byte_++) << bits_in_buf_;
-    }
-    JXL_DASSERT(bits_in_buf_ < 64);
-
-    // Add extra bytes as 0 at the end of the stream in the bit_buffer_. If
-    // these bits are read, Close() will return a failure.
-    size_t extra_bytes = (63 - bits_in_buf_) / kBitsPerByte;
-    overread_bytes_ += extra_bytes;
-    bits_in_buf_ += extra_bytes * kBitsPerByte;
-
-    JXL_DASSERT(bits_in_buf_ < 64);
-    JXL_DASSERT(bits_in_buf_ >= 56);
-  }
+  JXL_NOINLINE void BoundsCheckedRefill();
 
   JXL_NOINLINE uint32_t BoundsCheckedReadByteAlignedWord() {
     if (next_byte_ + 1 < end_minus_8_ + 8) {
@@ -324,21 +308,13 @@ class BitReader {
 
 class BitReaderScopedCloser {
  public:
-  BitReaderScopedCloser(BitReader* reader, Status* status)
-      : reader_(reader), status_(status) {
-    JXL_DASSERT(reader_ != nullptr);
-    JXL_DASSERT(status_ != nullptr);
-  }
+  BitReaderScopedCloser(BitReader& reader, Status& status)
+      : reader_(&reader), status_(&status) {}
   ~BitReaderScopedCloser() {
     if (reader_ != nullptr) {
       Status close_ret = reader_->Close();
       if (!close_ret) *status_ = close_ret;
     }
-  }
-  void CloseAndSuppressError() {
-    JXL_ASSERT(reader_ != nullptr);
-    (void)reader_->Close();
-    reader_ = nullptr;
   }
   BitReaderScopedCloser(const BitReaderScopedCloser&) = delete;
 

@@ -7,9 +7,19 @@
 
 #include <jxl/types.h>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <hwy/base.h>
+#include <vector>
+
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"  // kMaxNumPasses, JPEGXL_ENABLE_TRANSCODE_JPEG
+#include "lib/jxl/field_encodings.h"
+#include "lib/jxl/fields.h"
 
 namespace jxl {
 namespace jpeg {
@@ -78,13 +88,17 @@ Status JPEGData::VisitFields(Visitor* visitor) {
     if (marker_order.size() > 16384) {
       return JXL_FAILURE("Too many markers: %" PRIuS "\n", marker_order.size());
     }
-    for (size_t i = 0; i < marker_order.size(); i++) {
-      JXL_RETURN_IF_ERROR(VisitMarker(&marker_order[i], visitor, &info));
+    for (uint8_t& marker : marker_order) {
+      JXL_RETURN_IF_ERROR(VisitMarker(&marker, visitor, &info));
     }
     if (!marker_order.empty()) {
       // Last marker should always be EOI marker.
-      JXL_CHECK(marker_order.back() == 0xd9);
+      JXL_ENSURE(marker_order.back() == 0xd9);
     }
+  }
+
+  if (info.num_scans == 0) {
+    return JXL_FAILURE("JPEG: no scans\n");
   }
 
   // Size of the APP and COM markers.
@@ -94,10 +108,10 @@ Status JPEGData::VisitFields(Visitor* visitor) {
     com_data.resize(info.num_com_markers);
     scan_info.resize(info.num_scans);
   }
-  JXL_ASSERT(app_data.size() == info.num_app_markers);
-  JXL_ASSERT(app_marker_type.size() == info.num_app_markers);
-  JXL_ASSERT(com_data.size() == info.num_com_markers);
-  JXL_ASSERT(scan_info.size() == info.num_scans);
+  JXL_ENSURE(app_data.size() == info.num_app_markers);
+  JXL_ENSURE(app_marker_type.size() == info.num_app_markers);
+  JXL_ENSURE(com_data.size() == info.num_com_markers);
+  JXL_ENSURE(scan_info.size() == info.num_scans);
   for (size_t i = 0; i < app_data.size(); i++) {
     auto& app = app_data[i];
     // Encodes up to 8 different values.
@@ -175,8 +189,8 @@ Status JPEGData::VisitFields(Visitor* visitor) {
     components.resize(num_components);
   }
   if (component_type == JPEGComponentType::kCustom) {
-    for (size_t i = 0; i < components.size(); i++) {
-      JXL_RETURN_IF_ERROR(visitor->Bits(8, 0, &components[i].id));
+    for (auto& component : components) {
+      JXL_RETURN_IF_ERROR(visitor->Bits(8, 0, &component.id));
     }
   } else if (component_type == JPEGComponentType::kGray) {
     components[0].id = 1;
@@ -228,9 +242,10 @@ Status JPEGData::VisitFields(Visitor* visitor) {
                                        Bits(8), 0, &hc.counts[i]));
       num_symbols += hc.counts[i];
     }
-    if (num_symbols < 1) {
+    if (num_symbols == 0) {
       // Actually, at least 2 symbols are required, since one of them is EOI.
-      return JXL_FAILURE("Empty Huffman table");
+      // This case is used to represent an empty DHT marker.
+      continue;
     }
     if (num_symbols > hc.values.size()) {
       return JXL_FAILURE("Huffman code too large (%" PRIuS ")", num_symbols);
@@ -249,7 +264,7 @@ Status JPEGData::VisitFields(Visitor* visitor) {
       return JXL_FAILURE("Missing EOI symbol");
     }
     // Last element, denoting EOI, have to be 1 after the loop.
-    JXL_ASSERT(value_slots[4] == 1);
+    JXL_ENSURE(value_slots[4] == 1);
     size_t num_values = 1;
     for (size_t i = 0; i < 4; ++i) num_values += hwy::PopCount(value_slots[i]);
     if (num_values != num_symbols) {
@@ -322,16 +337,21 @@ Status JPEGData::VisitFields(Visitor* visitor) {
       scan.extra_zero_runs.resize(num_extra_zero_runs);
     }
     last_block_idx = -1;
-    for (size_t i = 0; i < scan.extra_zero_runs.size(); ++i) {
-      uint32_t& block_idx = scan.extra_zero_runs[i].block_idx;
-      JXL_RETURN_IF_ERROR(visitor->U32(
-          Val(1), BitsOffset(2, 2), BitsOffset(4, 5), BitsOffset(8, 20), 1,
-          &scan.extra_zero_runs[i].num_extra_zero_runs));
+    for (auto& extra_zero_run : scan.extra_zero_runs) {
+      uint32_t& block_idx = extra_zero_run.block_idx;
+      uint32_t& extra_zero_runs = extra_zero_run.num_extra_zero_runs;
+      JXL_RETURN_IF_ERROR(visitor->U32(Val(1), BitsOffset(2, 2),
+                                       BitsOffset(4, 5), BitsOffset(8, 20), 1,
+                                       &extra_zero_runs));
       block_idx -= last_block_idx + 1;
       JXL_RETURN_IF_ERROR(visitor->U32(Val(0), BitsOffset(3, 1),
                                        BitsOffset(5, 9), BitsOffset(28, 41), 0,
                                        &block_idx));
       block_idx += last_block_idx + 1;
+      if (extra_zero_runs > 4) {
+        return JXL_FAILURE("Invalid number of extra zero runs: %u",
+                           extra_zero_runs);
+      }
       if (block_idx > (3u << 26)) {
         return JXL_FAILURE("Invalid block ID: %u", block_idx);
       }
@@ -418,7 +438,7 @@ Status JPEGData::VisitFields(Visitor* visitor) {
   // Apply postponed actions.
   if (visitor->IsReading()) {
     tail_data.resize(tail_data_len);
-    JXL_ASSERT(inter_marker_data_sizes.size() == info.num_intermarker);
+    JXL_ENSURE(inter_marker_data_sizes.size() == info.num_intermarker);
     inter_marker_data.reserve(info.num_intermarker);
     for (size_t i = 0; i < info.num_intermarker; ++i) {
       inter_marker_data.emplace_back(inter_marker_data_sizes[i]);
@@ -437,7 +457,7 @@ void JPEGData::CalculateMcuSize(const JPEGScanInfo& scan, int* MCUs_per_row,
   // h_group / v_group act as numerators for converting number of blocks to
   // number of MCU. In interleaved mode it is 1, so MCU is represented with
   // max_*_samp_factor blocks. In non-interleaved mode we choose numerator to
-  // be the samping factor, consequently MCU is always represented with single
+  // be the sampling factor, consequently MCU is always represented with single
   // block.
   const int h_group = is_interleaved ? 1 : base_component.h_samp_factor;
   const int v_group = is_interleaved ? 1 : base_component.v_samp_factor;
@@ -459,6 +479,10 @@ Status SetJPEGDataFromICC(const std::vector<uint8_t>& icc,
   for (size_t i = 0; i < jpeg_data->app_data.size(); i++) {
     if (jpeg_data->app_marker_type[i] != jpeg::AppMarkerType::kICC) {
       continue;
+    }
+    if (jpeg_data->app_data[i].size() < 17) {
+      return JXL_FAILURE("ICC APP marker too small: %" PRIuS,
+                         jpeg_data->app_data[i].size());
     }
     size_t len = jpeg_data->app_data[i].size() - 17;
     if (icc_pos + len > icc.size()) {

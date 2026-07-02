@@ -5,9 +5,21 @@
 
 #include "lib/jxl/render_pipeline/stage_epf.h"
 
+#include <array>
+#include <cstddef>
+#include <memory>
+#include <utility>
+
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
+#include "lib/jxl/dec_cache.h"
 #include "lib/jxl/epf.h"
+#include "lib/jxl/frame_dimensions.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/loop_filter.h"
+#include "lib/jxl/render_pipeline/render_pipeline_stage.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/render_pipeline/stage_epf.cc"
@@ -24,6 +36,7 @@ using DF = HWY_CAPPED(float, 8);
 // These templates are not found via ADL.
 using hwy::HWY_NAMESPACE::AbsDiff;
 using hwy::HWY_NAMESPACE::Add;
+using hwy::HWY_NAMESPACE::ApproximateReciprocal;
 using hwy::HWY_NAMESPACE::Div;
 using hwy::HWY_NAMESPACE::Mul;
 using hwy::HWY_NAMESPACE::MulAdd;
@@ -40,14 +53,14 @@ JXL_INLINE Vec<DF> Weight(Vec<DF> sad, Vec<DF> inv_sigma, Vec<DF> thres) {
 // this filter a 7x7 filter.
 class EPF0Stage : public RenderPipelineStage {
  public:
-  EPF0Stage(const LoopFilter& lf, const ImageF& sigma)
-      : RenderPipelineStage(RenderPipelineStage::Settings::Symmetric(
-            /*shift=*/0, /*border=*/3)),
-        lf_(lf),
+  EPF0Stage(LoopFilter lf, const ImageF& sigma)
+      : RenderPipelineStage(
+            RenderPipelineStage::Settings::SymmetricBorderOnly(3)),
+        lf_(std::move(lf)),
         sigma_(&sigma) {}
 
   template <bool aligned>
-  JXL_INLINE void AddPixel(int row, float* JXL_RESTRICT rows[3][7], ssize_t x,
+  JXL_INLINE void AddPixel(int row, float* JXL_RESTRICT rows[3][7], ptrdiff_t x,
                            Vec<DF> sad, Vec<DF> inv_sigma,
                            Vec<DF>* JXL_RESTRICT X, Vec<DF>* JXL_RESTRICT Y,
                            Vec<DF>* JXL_RESTRICT B,
@@ -67,15 +80,18 @@ class EPF0Stage : public RenderPipelineStage {
   }
 
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                    size_t thread_id) const final {
+                    size_t xextra_left, size_t xextra_right, size_t xsize,
+                    size_t xpos, size_t ypos, size_t thread_id) const final {
     DF df;
 
     using V = decltype(Zero(df));
-    V t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, tA, tB;
+    V t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, tA, tB;  // NOLINT
     V* sads[12] = {&t0, &t1, &t2, &t3, &t4, &t5, &t6, &t7, &t8, &t9, &tA, &tB};
 
-    xextra = RoundUpTo(xextra, Lanes(df));
+    ptrdiff_t x_start =
+        -static_cast<ptrdiff_t>(RoundUpTo(xextra_left, Lanes(df)));
+    ptrdiff_t x_end = static_cast<ptrdiff_t>(xsize + xextra_right);
+
     const float* JXL_RESTRICT row_sigma =
         sigma_->Row(ypos / kBlockDim + kSigmaPadding);
 
@@ -98,23 +114,23 @@ class EPF0Stage : public RenderPipelineStage {
             ? sad_mul_border
             : sad_mul_center;
 
-    for (ssize_t x = -xextra; x < static_cast<ssize_t>(xsize + xextra);
-         x += Lanes(df)) {
+    for (ptrdiff_t x = x_start; x < x_end; x += Lanes(df)) {
       size_t bx = (x + xpos + kSigmaPadding * kBlockDim) / kBlockDim;
       size_t ix = (x + xpos) % kBlockDim;
 
       if (row_sigma[bx] < kMinSigma) {
         for (size_t c = 0; c < 3; c++) {
           auto px = Load(df, rows[c][3 + 0] + x);
+          // TODO(eustas): why unaligned?
           StoreU(px, df, GetOutputRow(output_rows, c, 0) + x);
         }
         continue;
       }
 
-      const auto sm = Load(df, sad_mul + ix);
-      const auto inv_sigma = Mul(Set(df, row_sigma[bx]), sm);
+      const auto vsm = Load(df, sad_mul + ix);
+      const auto inv_sigma = Mul(Set(df, row_sigma[bx]), vsm);
 
-      for (size_t i = 0; i < 12; i++) *sads[i] = Zero(df);
+      for (auto& sad : sads) *sad = Zero(df);
       constexpr std::array<int, 2> sads_off[12] = {
           {{-2, 0}}, {{-1, -1}}, {{-1, 0}}, {{-1, 1}}, {{0, -2}}, {{0, -1}},
           {{0, 1}},  {{0, 2}},   {{1, -1}}, {{1, 0}},  {{1, 1}},  {{2, 0}},
@@ -128,12 +144,10 @@ class EPF0Stage : public RenderPipelineStage {
           auto sad = Zero(df);
           constexpr std::array<int, 2> plus_off[] = {
               {{0, 0}}, {{-1, 0}}, {{0, -1}}, {{1, 0}}, {{0, 1}}};
-          for (size_t j = 0; j < 5; j++) {
-            const auto r11 =
-                LoadU(df, rows[c][3 + plus_off[j][0]] + x + plus_off[j][1]);
-            const auto c11 =
-                LoadU(df, rows[c][3 + sads_off[i][0] + plus_off[j][0]] + x +
-                              sads_off[i][1] + plus_off[j][1]);
+          for (const auto& off : plus_off) {
+            const auto r11 = LoadU(df, rows[c][3 + off[0]] + x + off[1]);
+            const auto c11 = LoadU(df, rows[c][3 + sads_off[i][0] + off[0]] +
+                                           x + sads_off[i][1] + off[1]);
             sad = Add(sad, AbsDiff(r11, c11));
           }
           *sads[i] = MulAdd(sad, scale, *sads[i]);
@@ -158,6 +172,7 @@ class EPF0Stage : public RenderPipelineStage {
 #else
       auto inv_w = ApproximateReciprocal(w);
 #endif
+      // TODO(eustas): why unaligned?
       StoreU(Mul(X, inv_w), df, GetOutputRow(output_rows, 0, 0) + x);
       StoreU(Mul(Y, inv_w), df, GetOutputRow(output_rows, 1, 0) + x);
       StoreU(Mul(B, inv_w), df, GetOutputRow(output_rows, 2, 0) + x);
@@ -181,14 +196,14 @@ class EPF0Stage : public RenderPipelineStage {
 // makes this filter a 5x5 filter.
 class EPF1Stage : public RenderPipelineStage {
  public:
-  EPF1Stage(const LoopFilter& lf, const ImageF& sigma)
-      : RenderPipelineStage(RenderPipelineStage::Settings::Symmetric(
-            /*shift=*/0, /*border=*/2)),
-        lf_(lf),
+  EPF1Stage(LoopFilter lf, const ImageF& sigma)
+      : RenderPipelineStage(
+            RenderPipelineStage::Settings::SymmetricBorderOnly(2)),
+        lf_(std::move(lf)),
         sigma_(&sigma) {}
 
   template <bool aligned>
-  JXL_INLINE void AddPixel(int row, float* JXL_RESTRICT rows[3][5], ssize_t x,
+  JXL_INLINE void AddPixel(int row, float* JXL_RESTRICT rows[3][5], ptrdiff_t x,
                            Vec<DF> sad, Vec<DF> inv_sigma,
                            Vec<DF>* JXL_RESTRICT X, Vec<DF>* JXL_RESTRICT Y,
                            Vec<DF>* JXL_RESTRICT B,
@@ -208,10 +223,14 @@ class EPF1Stage : public RenderPipelineStage {
   }
 
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                    size_t thread_id) const final {
+                    size_t xextra_left, size_t xextra_right, size_t xsize,
+                    size_t xpos, size_t ypos, size_t thread_id) const final {
     DF df;
-    xextra = RoundUpTo(xextra, Lanes(df));
+
+    ptrdiff_t x_start =
+        -static_cast<ptrdiff_t>(RoundUpTo(xextra_left, Lanes(df)));
+    ptrdiff_t x_end = static_cast<ptrdiff_t>(xsize + xextra_right);
+
     const float* JXL_RESTRICT row_sigma =
         sigma_->Row(ypos / kBlockDim + kSigmaPadding);
 
@@ -235,8 +254,8 @@ class EPF1Stage : public RenderPipelineStage {
             ? sad_mul_border
             : sad_mul_center;
 
-    for (ssize_t x = -xextra; x < static_cast<ssize_t>(xsize + xextra);
-         x += Lanes(df)) {
+    // TODO(eustas): cache GetOutputRow
+    for (ptrdiff_t x = x_start; x < x_end; x += Lanes(df)) {
       size_t bx = (x + xpos + kSigmaPadding * kBlockDim) / kBlockDim;
       size_t ix = (x + xpos) % kBlockDim;
 
@@ -248,8 +267,8 @@ class EPF1Stage : public RenderPipelineStage {
         continue;
       }
 
-      const auto sm = Load(df, sad_mul + ix);
-      const auto inv_sigma = Mul(Set(df, row_sigma[bx]), sm);
+      const auto vsm = Load(df, sad_mul + ix);
+      const auto inv_sigma = Mul(Set(df, row_sigma[bx]), vsm);
       auto sad0 = Zero(df);
       auto sad1 = Zero(df);
       auto sad2 = Zero(df);
@@ -275,12 +294,13 @@ class EPF1Stage : public RenderPipelineStage {
         sad1c = Add(sad1c, AbsDiff(p02, p12));  // SAD 1, 2
         sad0c = Add(sad0c, AbsDiff(p11, p12));  // SAD 2, 1
 
+        // TODO(eustas): why unaligned?
         const auto p22 = LoadU(df, rows[c][2 + 0] + x);
         t = AbsDiff(p12, p22);
         sad1c = Add(sad1c, t);  // SAD 1, 2
         sad2c = Add(sad2c, t);  // SAD 3, 2
         t = AbsDiff(p22, p21);
-        auto sad3c = t;  // SAD 2, 3
+        auto sad3c = t;         // SAD 2, 3
         sad0c = Add(sad0c, t);  // SAD 2, 1
 
         const auto p32 = LoadU(df, rows[c][2 + 0] + x + 1);
@@ -362,14 +382,14 @@ class EPF1Stage : public RenderPipelineStage {
 // filter.
 class EPF2Stage : public RenderPipelineStage {
  public:
-  EPF2Stage(const LoopFilter& lf, const ImageF& sigma)
-      : RenderPipelineStage(RenderPipelineStage::Settings::Symmetric(
-            /*shift=*/0, /*border=*/1)),
-        lf_(lf),
+  EPF2Stage(LoopFilter lf, const ImageF& sigma)
+      : RenderPipelineStage(
+            RenderPipelineStage::Settings::SymmetricBorderOnly(1)),
+        lf_(std::move(lf)),
         sigma_(&sigma) {}
 
   template <bool aligned>
-  JXL_INLINE void AddPixel(int row, float* JXL_RESTRICT rows[3][3], ssize_t x,
+  JXL_INLINE void AddPixel(int row, float* JXL_RESTRICT rows[3][3], ptrdiff_t x,
                            Vec<DF> rx, Vec<DF> ry, Vec<DF> rb,
                            Vec<DF> inv_sigma, Vec<DF>* JXL_RESTRICT X,
                            Vec<DF>* JXL_RESTRICT Y, Vec<DF>* JXL_RESTRICT B,
@@ -394,10 +414,14 @@ class EPF2Stage : public RenderPipelineStage {
   }
 
   Status ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
-                    size_t xextra, size_t xsize, size_t xpos, size_t ypos,
-                    size_t thread_id) const final {
+                    size_t xextra_left, size_t xextra_right, size_t xsize,
+                    size_t xpos, size_t ypos, size_t thread_id) const final {
     DF df;
-    xextra = RoundUpTo(xextra, Lanes(df));
+
+    ptrdiff_t x_start =
+        -static_cast<ptrdiff_t>(RoundUpTo(xextra_left, Lanes(df)));
+    ptrdiff_t x_end = static_cast<ptrdiff_t>(xsize + xextra_right);
+
     const float* JXL_RESTRICT row_sigma =
         sigma_->Row(ypos / kBlockDim + kSigmaPadding);
 
@@ -421,8 +445,8 @@ class EPF2Stage : public RenderPipelineStage {
             ? sad_mul_border
             : sad_mul_center;
 
-    for (ssize_t x = -xextra; x < static_cast<ssize_t>(xsize + xextra);
-         x += Lanes(df)) {
+    // TODO(eustas): cache GetOutputRow
+    for (ptrdiff_t x = x_start; x < x_end; x += Lanes(df)) {
       size_t bx = (x + xpos + kSigmaPadding * kBlockDim) / kBlockDim;
       size_t ix = (x + xpos) % kBlockDim;
 
@@ -434,8 +458,8 @@ class EPF2Stage : public RenderPipelineStage {
         continue;
       }
 
-      const auto sm = Load(df, sad_mul + ix);
-      const auto inv_sigma = Mul(Set(df, row_sigma[bx]), sm);
+      const auto vsm = Load(df, sad_mul + ix);
+      const auto inv_sigma = Mul(Set(df, row_sigma[bx]), vsm);
 
       const auto x_cc = Load(df, rows[0][1 + 0] + x);
       const auto y_cc = Load(df, rows[1][1 + 0] + x);
@@ -510,18 +534,19 @@ HWY_EXPORT(GetEPFStage2);
 
 std::unique_ptr<RenderPipelineStage> GetEPFStage(const LoopFilter& lf,
                                                  const ImageF& sigma,
-                                                 size_t epf_stage) {
-  JXL_ASSERT(lf.epf_iters != 0);
+                                                 EpfStage epf_stage) {
+  if (lf.epf_iters == 0) return nullptr;
   switch (epf_stage) {
-    case 0:
+    case EpfStage::Zero:
       return HWY_DYNAMIC_DISPATCH(GetEPFStage0)(lf, sigma);
-    case 1:
+    case EpfStage::One:
       return HWY_DYNAMIC_DISPATCH(GetEPFStage1)(lf, sigma);
-    case 2:
+    case EpfStage::Two:
       return HWY_DYNAMIC_DISPATCH(GetEPFStage2)(lf, sigma);
-    default:
-      JXL_UNREACHABLE("Invalid EPF stage");
   }
+  JXL_DEBUG_ABORT("internal: unexpected EpfStage: %d",
+                  static_cast<int>(epf_stage));
+  return nullptr;
 }
 
 }  // namespace jxl

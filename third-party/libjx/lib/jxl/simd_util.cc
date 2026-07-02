@@ -5,25 +5,48 @@
 
 #include "lib/jxl/simd_util.h"
 
-#include <algorithm>
 #include <cstddef>
+#include <cstdint>
+
+#include "lib/jxl/base/compiler_specific.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/simd_util.cc"
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
-#include "lib/jxl/base/common.h"
-#include "lib/jxl/base/status.h"
-#include "lib/jxl/cache_aligned.h"
-
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
 
+using hwy::HWY_NAMESPACE::GetLane;
+using hwy::HWY_NAMESPACE::IfThenElseZero;
+using hwy::HWY_NAMESPACE::Iota;
+using hwy::HWY_NAMESPACE::LoadU;
+using hwy::HWY_NAMESPACE::Lt;
+using hwy::HWY_NAMESPACE::Max;
+using hwy::HWY_NAMESPACE::MaxOfLanes;
+using hwy::HWY_NAMESPACE::Set;
+
 size_t MaxVectorSize() {
   HWY_FULL(float) df;
   return Lanes(df) * sizeof(float);
+}
+
+uint32_t MaxValue(uint32_t* JXL_RESTRICT data, size_t len) {
+  HWY_FULL(uint32_t) du;
+  size_t last_full = Lanes(du) * (len / Lanes(du));
+  auto max = Set(du, 0);
+  for (size_t i = 0; i < last_full; i += Lanes(du)) {
+    max = Max(max, LoadU(du, data + i));
+  }
+  if (last_full < len) {
+    const auto stop = Set(du, len);
+    const auto fence = Iota(du, last_full);
+    const auto take = Lt(fence, stop);
+    max = Max(max, IfThenElseZero(take, LoadU(du, data + last_full)));
+  }
+  return GetLane(MaxOfLanes(du, max));
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)
@@ -35,6 +58,7 @@ HWY_AFTER_NAMESPACE();
 namespace jxl {
 
 HWY_EXPORT(MaxVectorSize);
+HWY_EXPORT(MaxValue);
 
 size_t MaxVectorSize() {
   // Ideally HWY framework should provide us this value.
@@ -43,36 +67,8 @@ size_t MaxVectorSize() {
   return HWY_DYNAMIC_DISPATCH(MaxVectorSize)();
 }
 
-size_t BytesPerRow(const size_t xsize, const size_t sizeof_t) {
-  // Special case: we don't allow any ops -> don't need extra padding/
-  if (xsize == 0) {
-    return 0;
-  }
-
-  const size_t vec_size = MaxVectorSize();
-  size_t valid_bytes = xsize * sizeof_t;
-
-  // Allow unaligned accesses starting at the last valid value.
-  // Skip for the scalar case because no extra lanes will be loaded.
-  if (vec_size != 0) {
-    valid_bytes += vec_size - sizeof_t;
-  }
-
-  // Round up to vector and cache line size.
-  const size_t align = std::max(vec_size, CacheAligned::kAlignment);
-  size_t bytes_per_row = RoundUpTo(valid_bytes, align);
-
-  // During the lengthy window before writes are committed to memory, CPUs
-  // guard against read after write hazards by checking the address, but
-  // only the lower 11 bits. We avoid a false dependency between writes to
-  // consecutive rows by ensuring their sizes are not multiples of 2 KiB.
-  // Avoid2K prevents the same problem for the planes of an Image3.
-  if (bytes_per_row % CacheAligned::kAlias == 0) {
-    bytes_per_row += align;
-  }
-
-  JXL_ASSERT(bytes_per_row % align == 0);
-  return bytes_per_row;
+uint32_t MaxValue(uint32_t* JXL_RESTRICT data, size_t len) {
+  return HWY_DYNAMIC_DISPATCH(MaxValue)(data, len);
 }
 
 }  // namespace jxl

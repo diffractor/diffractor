@@ -3,6 +3,10 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <cmath>
+
+#include "lib/jxl/base/matrix_ops.h"
+
 #if defined(LIB_JXL_CMS_TONE_MAPPING_INL_H_) == defined(HWY_TARGET_TOGGLE)
 #ifdef LIB_JXL_CMS_TONE_MAPPING_INL_H_
 #undef LIB_JXL_CMS_TONE_MAPPING_INL_H_
@@ -34,7 +38,7 @@ class Rec2408ToneMapper : Rec2408ToneMapperBase {
   using Rec2408ToneMapperBase::Rec2408ToneMapperBase;
 
   void ToneMap(V* red, V* green, V* blue) const {
-    const V luminance = Mul(Set(df_, source_range_.second),
+    const V luminance = Mul(Set(df_, source_range_[1]),
                             (MulAdd(Set(df_, red_Y_), *red,
                                     MulAdd(Set(df_, green_Y_), *green,
                                            Mul(Set(df_, blue_Y_), *blue)))));
@@ -54,7 +58,7 @@ class Rec2408ToneMapper : Rec2408ToneMapperBase {
     const V pq_mastering_range = Set(df_, pq_mastering_range_);
     const V e4 = MulAdd(e3, pq_mastering_range, pq_mastering_min);
     const V new_luminance =
-        Min(Set(df_, target_range_.second),
+        Min(Set(df_, target_range_[1]),
             ZeroIfNegative(tf_pq_.DisplayFromEncoded(df_, e4)));
     const V min_luminance = Set(df_, 1e-6f);
     const auto use_cap = Le(luminance, min_luminance);
@@ -100,14 +104,14 @@ class HlgOOTF : HlgOOTF_Base {
   using HlgOOTF_Base::HlgOOTF_Base;
 
   static HlgOOTF FromSceneLight(float display_luminance,
-                                const float primaries_luminances[3]) {
+                                const Vector3& primaries_luminances) {
     return HlgOOTF(/*gamma=*/1.2f *
                        std::pow(1.111f, std::log2(display_luminance / 1000.f)),
                    primaries_luminances);
   }
 
   static HlgOOTF ToSceneLight(float display_luminance,
-                              const float primaries_luminances[3]) {
+                              const Vector3& primaries_luminances) {
     return HlgOOTF(
         /*gamma=*/(1 / 1.2f) *
             std::pow(1.111f, -std::log2(display_luminance / 1000.f)),
@@ -132,7 +136,7 @@ class HlgOOTF : HlgOOTF_Base {
 };
 
 template <typename V>
-void GamutMap(V* red, V* green, V* blue, const float primaries_luminances[3],
+void GamutMap(V* red, V* green, V* blue, const Vector3& primaries_luminances,
               float preserve_saturation = 0.1f) {
   hwy::HWY_NAMESPACE::DFromV<V> df;
   const V luminance =

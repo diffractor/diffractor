@@ -50,7 +50,7 @@ typedef void(FJxlParallelRunner)(void* runner_opaque, void* opaque,
 // You may pass `nullptr` as a runner: encoding will be sequential.
 size_t JxlFastLosslessEncode(const unsigned char* rgba, size_t width,
                              size_t row_stride, size_t height, size_t nb_chans,
-                             size_t bitdepth, int big_endian, int effort,
+                             size_t bitdepth, bool big_endian, int effort,
                              unsigned char** output, void* runner_opaque,
                              FJxlParallelRunner runner);
 #endif
@@ -65,13 +65,13 @@ struct JxlFastLosslessFrameState;
 // JxlFastLosslessFreeFrameState.
 JxlFastLosslessFrameState* JxlFastLosslessPrepareFrame(
     JxlChunkedFrameInputSource input, size_t width, size_t height,
-    size_t nb_chans, size_t bitdepth, int big_endian, int effort, int oneshot);
+    size_t nb_chans, size_t bitdepth, bool big_endian, int effort, int oneshot);
 
 #if !FJXL_STANDALONE
 class JxlEncoderOutputProcessorWrapper;
 #endif
 
-void JxlFastLosslessProcessFrame(
+bool JxlFastLosslessProcessFrame(
     JxlFastLosslessFrameState* frame_state, bool is_last, void* runner_opaque,
     FJxlParallelRunner runner,
     JxlEncoderOutputProcessorWrapper* output_processor);
@@ -81,7 +81,7 @@ void JxlFastLosslessProcessFrame(
 // 1 and subsequent ones have add_image_header = 0, and all frames but the last
 // one have is_last = 0.
 // (when FJXL_STANDALONE=0, add_image_header has to be 0)
-void JxlFastLosslessPrepareHeader(JxlFastLosslessFrameState* frame,
+bool JxlFastLosslessPrepareHeader(JxlFastLosslessFrameState* frame,
                                   int add_image_header, int is_last);
 
 // Upper bound on the required output size, including any padding that may be
@@ -109,7 +109,7 @@ void JxlFastLosslessFreeFrameState(JxlFastLosslessFrameState* frame);
 #endif
 
 #if !FJXL_STANDALONE
-void JxlFastLosslessOutputFrame(
+bool JxlFastLosslessOutputFrame(
     JxlFastLosslessFrameState* frame_state,
     JxlEncoderOutputProcessorWrapper* output_process);
 #endif
