@@ -84,7 +84,7 @@ No package manager is used. Source code for each library is copied into `third-p
 | [highway](https://github.com/google/highway) | 1.4.0 | `third-party/highway` | Source copy | Download release from [google/highway](https://github.com/google/highway/releases) |
 | [hunspell](https://github.com/hunspell/hunspell) | 1.7.3 | `third-party/hunspell` | Source copy | Download release from [hunspell/hunspell](https://github.com/hunspell/hunspell/releases), replace `src/hunspell/` sources |
 | [libarchive](https://github.com/libarchive/libarchive) | 3.8.8 | `third-party/libarchive` | Source copy | Download release from [libarchive/libarchive](https://github.com/libarchive/libarchive/releases) |
-| [libde265](https://github.com/strukturag/libde265) | 1.0.8 | `third-party/libde265` | Source copy | Download release from [strukturag/libde265](https://github.com/strukturag/libde265/releases), update `de265-version.h` |
+| [libde265](https://github.com/strukturag/libde265) | 1.1.1 | `third-party/libde265` | Source copy | Download release from [strukturag/libde265](https://github.com/strukturag/libde265/releases), update `de265-version.h` |
 | [libebml](https://github.com/Matroska-Org/libebml) | 1.4.5 | `third-party/libebml` | Source copy | Download release from [Matroska-Org/libebml](https://github.com/Matroska-Org/libebml/releases) |
 | [libexif](https://github.com/libexif/libexif) | 0.6.26 | `third-party/libexif` | Source copy | Download release from [libexif/libexif](https://github.com/libexif/libexif/releases) |
 | [libheif](https://github.com/strukturag/libheif) | 1.18.0 | `third-party/libheif` | Source copy | Download release from [strukturag/libheif](https://github.com/strukturag/libheif/releases), update `heif_version.h` |

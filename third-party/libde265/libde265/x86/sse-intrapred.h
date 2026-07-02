@@ -1,6 +1,6 @@
 /*
  * H.265 video codec.
- * Copyright (c) 2013-2014 struktur AG, Dirk Farin <farin@struktur.de>
+ * Copyright (c) 2026 Dirk Farin <dirk.farin@gmail.com>
  *
  * This file is part of libde265.
  *
@@ -18,20 +18,18 @@
  * along with libde265.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef DE265_SSE_H
-#define DE265_SSE_H
+#ifndef SSE_INTRAPRED_H
+#define SSE_INTRAPRED_H
 
-#include "acceleration.h"
+#include <stddef.h>
+#include <stdint.h>
 
-void init_acceleration_functions_sse(struct acceleration_functions* accel);
+// SSE4.1 accelerated 8-bit intra prediction. All three are bit-identical to the
+// scalar kernels in intrapred.h (verified by dev-tools/test-intrapred.cc).
 
-// Overrides selected transform kernels with AVX2 versions, but only if the
-// running CPU actually supports AVX2 (checked at runtime). Safe to call on any
-// CPU; a no-op when AVX2 is unavailable.
-void init_acceleration_functions_avx2(struct acceleration_functions* accel);
-
-// Overrides selected transform kernels with AVX-512 versions, runtime-checked.
-// Safe to call on any CPU; a no-op when AVX-512 is unavailable.
-void init_acceleration_functions_avx512(struct acceleration_functions* accel);
+void intra_pred_dc_8_sse4    (uint8_t* dst, ptrdiff_t stride, int nT, int cIdx, const uint8_t* border);
+void intra_pred_planar_8_sse4(uint8_t* dst, ptrdiff_t stride, int nT, int cIdx, const uint8_t* border);
+void intra_pred_angular_8_sse4(uint8_t* dst, ptrdiff_t stride, int bit_depth, int disableBoundaryFilter,
+                               int xB0, int yB0, int mode, int nT, int cIdx, const uint8_t* border);
 
 #endif

@@ -56,41 +56,17 @@
     <ClInclude Include="extra\win32cond.h" />
     <ClInclude Include="libde265\acceleration.h" />
     <ClInclude Include="libde265\alloc_pool.h" />
-    <ClInclude Include="libde265\arm\arm.h" />
     <ClInclude Include="libde265\bitstream.h" />
     <ClInclude Include="libde265\cabac.h" />
-    <ClInclude Include="libde265\configparam.h" />
     <ClInclude Include="libde265\contextmodel.h" />
     <ClInclude Include="libde265\de265-version.h" />
     <ClInclude Include="libde265\de265.h" />
     <ClInclude Include="libde265\deblock.h" />
     <ClInclude Include="libde265\decctx.h" />
     <ClInclude Include="libde265\dpb.h" />
-    <ClInclude Include="libde265\en265.h" />
-    <ClInclude Include="libde265\encoder\algo\algo.h" />
-    <ClInclude Include="libde265\encoder\algo\cb-interpartmode.h" />
-    <ClInclude Include="libde265\encoder\algo\cb-intra-inter.h" />
-    <ClInclude Include="libde265\encoder\algo\cb-intrapartmode.h" />
-    <ClInclude Include="libde265\encoder\algo\cb-mergeindex.h" />
-    <ClInclude Include="libde265\encoder\algo\cb-skip.h" />
-    <ClInclude Include="libde265\encoder\algo\cb-split.h" />
-    <ClInclude Include="libde265\encoder\algo\coding-options.h" />
-    <ClInclude Include="libde265\encoder\algo\ctb-qscale.h" />
-    <ClInclude Include="libde265\encoder\algo\pb-mv.h" />
-    <ClInclude Include="libde265\encoder\algo\tb-intrapredmode.h" />
-    <ClInclude Include="libde265\encoder\algo\tb-rateestim.h" />
-    <ClInclude Include="libde265\encoder\algo\tb-split.h" />
-    <ClInclude Include="libde265\encoder\algo\tb-transform.h" />
-    <ClInclude Include="libde265\encoder\encoder-context.h" />
-    <ClInclude Include="libde265\encoder\encoder-core.h" />
-    <ClInclude Include="libde265\encoder\encoder-intrapred.h" />
-    <ClInclude Include="libde265\encoder\encoder-motion.h" />
-    <ClInclude Include="libde265\encoder\encoder-params.h" />
-    <ClInclude Include="libde265\encoder\encoder-syntax.h" />
-    <ClInclude Include="libde265\encoder\encoder-types.h" />
-    <ClInclude Include="libde265\encoder\encpicbuf.h" />
-    <ClInclude Include="libde265\encoder\sop.h" />
     <ClInclude Include="libde265\fallback-dct.h" />
+    <ClInclude Include="libde265\fallback-deblk.h" />
+    <ClInclude Include="libde265\fallback-intrapred.h" />
     <ClInclude Include="libde265\fallback-motion.h" />
     <ClInclude Include="libde265\fallback.h" />
     <ClInclude Include="libde265\image-io.h" />
@@ -118,6 +94,8 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
     </ClInclude>
+    <ClInclude Include="libde265\x86\sse-deblk.h" />
+    <ClInclude Include="libde265\x86\sse-intrapred.h" />
     <ClInclude Include="libde265\x86\sse-motion.h">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
@@ -135,40 +113,16 @@
     <ClCompile Include="extra\getopt_long.c" />
     <ClCompile Include="extra\win32cond.c" />
     <ClCompile Include="libde265\alloc_pool.cc" />
-    <ClCompile Include="libde265\arm\arm.cc" />
     <ClCompile Include="libde265\bitstream.cc" />
     <ClCompile Include="libde265\cabac.cc" />
-    <ClCompile Include="libde265\configparam.cc" />
     <ClCompile Include="libde265\contextmodel.cc" />
     <ClCompile Include="libde265\de265.cc" />
     <ClCompile Include="libde265\deblock.cc" />
     <ClCompile Include="libde265\decctx.cc" />
     <ClCompile Include="libde265\dpb.cc" />
-    <ClCompile Include="libde265\en265.cc" />
-    <ClCompile Include="libde265\encoder\algo\algo.cc" />
-    <ClCompile Include="libde265\encoder\algo\cb-interpartmode.cc" />
-    <ClCompile Include="libde265\encoder\algo\cb-intra-inter.cc" />
-    <ClCompile Include="libde265\encoder\algo\cb-intrapartmode.cc" />
-    <ClCompile Include="libde265\encoder\algo\cb-mergeindex.cc" />
-    <ClCompile Include="libde265\encoder\algo\cb-skip.cc" />
-    <ClCompile Include="libde265\encoder\algo\cb-split.cc" />
-    <ClCompile Include="libde265\encoder\algo\coding-options.cc" />
-    <ClCompile Include="libde265\encoder\algo\ctb-qscale.cc" />
-    <ClCompile Include="libde265\encoder\algo\pb-mv.cc" />
-    <ClCompile Include="libde265\encoder\algo\tb-intrapredmode.cc" />
-    <ClCompile Include="libde265\encoder\algo\tb-rateestim.cc" />
-    <ClCompile Include="libde265\encoder\algo\tb-split.cc" />
-    <ClCompile Include="libde265\encoder\algo\tb-transform.cc" />
-    <ClCompile Include="libde265\encoder\encoder-context.cc" />
-    <ClCompile Include="libde265\encoder\encoder-core.cc" />
-    <ClCompile Include="libde265\encoder\encoder-intrapred.cc" />
-    <ClCompile Include="libde265\encoder\encoder-motion.cc" />
-    <ClCompile Include="libde265\encoder\encoder-params.cc" />
-    <ClCompile Include="libde265\encoder\encoder-syntax.cc" />
-    <ClCompile Include="libde265\encoder\encoder-types.cc" />
-    <ClCompile Include="libde265\encoder\encpicbuf.cc" />
-    <ClCompile Include="libde265\encoder\sop.cc" />
     <ClCompile Include="libde265\fallback-dct.cc" />
+    <ClCompile Include="libde265\fallback-deblk.cc" />
+    <ClCompile Include="libde265\fallback-intrapred.cc" />
     <ClCompile Include="libde265\fallback-motion.cc" />
     <ClCompile Include="libde265\fallback.cc" />
     <ClCompile Include="libde265\image-io.cc" />
@@ -196,6 +150,14 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="libde265\x86\sse-deblk.cc">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="libde265\x86\sse-intrapred.cc">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="libde265\x86\sse-motion.cc">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
@@ -206,10 +168,6 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="libde265\arm\asm.S" />
-    <None Include="libde265\arm\cpudetect.S" />
-    <None Include="libde265\arm\hevcdsp_qpel_neon.S" />
-    <None Include="libde265\arm\neon.S" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>

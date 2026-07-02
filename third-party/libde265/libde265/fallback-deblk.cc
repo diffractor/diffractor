@@ -1,6 +1,6 @@
 /*
  * H.265 video codec.
- * Copyright (c) 2013-2014 struktur AG, Dirk Farin <farin@struktur.de>
+ * Copyright (c) 2026 Dirk Farin <dirk.farin@gmail.com>
  *
  * This file is part of libde265.
  *
@@ -18,15 +18,17 @@
  * along with libde265.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef DE265_ENCODER_MOTION_H
-#define DE265_ENCODER_MOTION_H
+#include "fallback-deblk.h"
 
-#include "libde265/motion.h"
+void deblock_luma_8_fallback(uint8_t* ptr, ptrdiff_t stride, int vertical,
+                             int dE, int dEp, int dEq, int tc, int filterP, int filterQ)
+{
+  deblock_luma_kernel<uint8_t>(ptr, stride, vertical!=0, dE, dEp, dEq, tc,
+                               filterP!=0, filterQ!=0, 8);
+}
 
-void get_merge_candidate_list_from_tree(class encoder_context* ectx,
-                                        const slice_segment_header* shdr,
-                                        int xC,int yC, int xP,int yP,
-                                        int nCS, int nPbW,int nPbH, int partIdx,
-                                        PBMotion* mergeCandList);
-
-#endif
+void deblock_chroma_8_fallback(uint8_t* ptr, ptrdiff_t stride, int vertical,
+                               int tc, int filterP, int filterQ)
+{
+  deblock_chroma_kernel<uint8_t>(ptr, stride, vertical!=0, tc, filterP!=0, filterQ!=0, 8);
+}

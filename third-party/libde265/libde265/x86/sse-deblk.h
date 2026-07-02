@@ -1,6 +1,6 @@
 /*
  * H.265 video codec.
- * Copyright (c) 2013-2014 struktur AG, Dirk Farin <farin@struktur.de>
+ * Copyright (c) 2026 Dirk Farin <dirk.farin@gmail.com>
  *
  * This file is part of libde265.
  *
@@ -18,20 +18,16 @@
  * along with libde265.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef DE265_SSE_H
-#define DE265_SSE_H
+#ifndef SSE_DEBLK_H
+#define SSE_DEBLK_H
 
-#include "acceleration.h"
+#include <stddef.h>
+#include <stdint.h>
 
-void init_acceleration_functions_sse(struct acceleration_functions* accel);
-
-// Overrides selected transform kernels with AVX2 versions, but only if the
-// running CPU actually supports AVX2 (checked at runtime). Safe to call on any
-// CPU; a no-op when AVX2 is unavailable.
-void init_acceleration_functions_avx2(struct acceleration_functions* accel);
-
-// Overrides selected transform kernels with AVX-512 versions, runtime-checked.
-// Safe to call on any CPU; a no-op when AVX-512 is unavailable.
-void init_acceleration_functions_avx512(struct acceleration_functions* accel);
+// SSE4.1 8-bit deblocking of one 4-line edge segment. Bit-identical to the
+// scalar kernels in fallback-deblk.h (verified by dev-tools/test-deblk).
+void deblock_luma_8_sse4(uint8_t* ptr, ptrdiff_t stride, int vertical,
+                         int dE, int dEp, int dEq, int tc, int filterP, int filterQ);
+// (chroma deblock stays scalar — SSE measured slower; see sse-deblk.cc)
 
 #endif
