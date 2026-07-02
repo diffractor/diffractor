@@ -19,7 +19,8 @@
 
 #include "zlib.h"
 #include "minizip/mz.h"
-#include "minizip/mz_compat.h"
+#include "minizip/compat/zip.h"
+#include "minizip/compat/unzip.h"
 
 df::blob df::zlib_compress(const cspan data_in)
 {

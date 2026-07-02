@@ -1,7 +1,7 @@
 /* mz_strm_libcomp.h -- Stream for apple compression
    part of the minizip-ng project
 
-   Copyright (C) 2010-2021 Nathan Moinvaziri
+   Copyright (C) Nathan Moinvaziri
       https://github.com/zlib-ng/minizip-ng
 
    This program is distributed under the terms of the same license as zlib.
@@ -10,8 +10,6 @@
 
 #ifndef MZ_STREAM_LIBCOMP_H
 #define MZ_STREAM_LIBCOMP_H
-
-#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -31,10 +29,10 @@ int32_t mz_stream_libcomp_error(void *stream);
 int32_t mz_stream_libcomp_get_prop_int64(void *stream, int32_t prop, int64_t *value);
 int32_t mz_stream_libcomp_set_prop_int64(void *stream, int32_t prop, int64_t value);
 
-void*   mz_stream_libcomp_create(void **stream);
-void    mz_stream_libcomp_delete(void **stream);
+void *mz_stream_libcomp_create(void);
+void mz_stream_libcomp_delete(void **stream);
 
-void*   mz_stream_libcomp_get_interface(void);
+void *mz_stream_libcomp_get_interface(void);
 
 /***************************************************************************/
 

@@ -1,7 +1,7 @@
 /* mz_strm_posix.c -- Stream for filesystem access for posix/linux
    part of the minizip-ng project
 
-   Copyright (C) 2010-2021 Nathan Moinvaziri
+   Copyright (C) Nathan Moinvaziri
      https://github.com/zlib-ng/minizip-ng
    Modifications for Zip64 support
      Copyright (C) 2009-2010 Mathias Svensson
@@ -13,19 +13,22 @@
    See the accompanying LICENSE file for the full text of the license.
 */
 
-
 #include "mz.h"
+#include "mz_config.h"
 #include "mz_strm.h"
 #include "mz_strm_os.h"
 
-#include <stdio.h> /* fopen, fread.. */
+#include <stdio.h> /* fopen, fread, ... */
 #include <errno.h>
+#include <sys/stat.h> /* S_IRUSR, S_IWUSR, ... */
+#include <unistd.h>   /* open, close, ... */
+#include <fcntl.h>    /* O_NOFOLLOW, ... */
 
 /***************************************************************************/
 
 #define fopen64 fopen
 #ifndef MZ_FILE32_API
-#  ifndef NO_FSEEKO
+#  if HAVE_FSEEKO
 #    define ftello64 ftello
 #    define fseeko64 fseeko
 #  elif defined(_MSC_VER) && (_MSC_VER >= 1400)
@@ -42,27 +45,25 @@
 
 /***************************************************************************/
 
-static mz_stream_vtbl mz_stream_os_vtbl = {
-    mz_stream_os_open,
-    mz_stream_os_is_open,
-    mz_stream_os_read,
-    mz_stream_os_write,
-    mz_stream_os_tell,
-    mz_stream_os_seek,
-    mz_stream_os_close,
-    mz_stream_os_error,
-    mz_stream_os_create,
-    mz_stream_os_delete,
-    NULL,
-    NULL
-};
+static mz_stream_vtbl mz_stream_os_vtbl = {mz_stream_os_open,
+                                           mz_stream_os_is_open,
+                                           mz_stream_os_read,
+                                           mz_stream_os_write,
+                                           mz_stream_os_tell,
+                                           mz_stream_os_seek,
+                                           mz_stream_os_close,
+                                           mz_stream_os_error,
+                                           mz_stream_os_create,
+                                           mz_stream_os_delete,
+                                           NULL,
+                                           NULL};
 
 /***************************************************************************/
 
 typedef struct mz_stream_posix_s {
-    mz_stream   stream;
-    int32_t     error;
-    FILE        *handle;
+    mz_stream stream;
+    int32_t error;
+    FILE *handle;
 } mz_stream_posix;
 
 /***************************************************************************/
@@ -70,21 +71,34 @@ typedef struct mz_stream_posix_s {
 int32_t mz_stream_os_open(void *stream, const char *path, int32_t mode) {
     mz_stream_posix *posix = (mz_stream_posix *)stream;
     const char *mode_fopen = NULL;
+    int mode_open = 0;
+    int fd;
 
-    if (path == NULL)
+    if (!path)
         return MZ_PARAM_ERROR;
 
-    if ((mode & MZ_OPEN_MODE_READWRITE) == MZ_OPEN_MODE_READ)
-        mode_fopen = "rb";
-    else if (mode & MZ_OPEN_MODE_APPEND)
-        mode_fopen = "r+b";
-    else if (mode & MZ_OPEN_MODE_CREATE)
-        mode_fopen = "wb";
-    else
+    if ((mode & MZ_OPEN_MODE_READWRITE) == MZ_OPEN_MODE_READ) {
+        mode_fopen = "r";
+        mode_open = O_RDONLY;
+    } else if (mode & MZ_OPEN_MODE_APPEND) {
+        mode_fopen = "r+";
+        mode_open = O_RDWR;
+    } else if (mode & MZ_OPEN_MODE_CREATE) {
+        mode_fopen = "w";
+        mode_open = O_WRONLY | O_CREAT | O_TRUNC;
+    } else
         return MZ_OPEN_ERROR;
 
-    posix->handle = fopen64(path, mode_fopen);
-    if (posix->handle == NULL) {
+    if (mode & MZ_OPEN_MODE_NOFOLLOW)
+        mode_open |= O_NOFOLLOW;
+
+    fd = open(path, mode_open, S_IRUSR | S_IWUSR | S_IRGRP);
+    if (fd != -1) {
+        posix->handle = fdopen(fd, mode_fopen);
+        if (!posix->handle)
+            close(fd);
+    }
+    if (!posix->handle) {
         posix->error = errno;
         return MZ_OPEN_ERROR;
     }
@@ -96,14 +110,14 @@ int32_t mz_stream_os_open(void *stream, const char *path, int32_t mode) {
 }
 
 int32_t mz_stream_os_is_open(void *stream) {
-    mz_stream_posix *posix = (mz_stream_posix*)stream;
-    if (posix->handle == NULL)
+    mz_stream_posix *posix = (mz_stream_posix *)stream;
+    if (!posix->handle)
         return MZ_OPEN_ERROR;
     return MZ_OK;
 }
 
 int32_t mz_stream_os_read(void *stream, void *buf, int32_t size) {
-    mz_stream_posix *posix = (mz_stream_posix*)stream;
+    mz_stream_posix *posix = (mz_stream_posix *)stream;
     int32_t read = (int32_t)fread(buf, 1, (size_t)size, posix->handle);
     if (read < size && ferror(posix->handle)) {
         posix->error = errno;
@@ -113,7 +127,7 @@ int32_t mz_stream_os_read(void *stream, void *buf, int32_t size) {
 }
 
 int32_t mz_stream_os_write(void *stream, const void *buf, int32_t size) {
-    mz_stream_posix *posix = (mz_stream_posix*)stream;
+    mz_stream_posix *posix = (mz_stream_posix *)stream;
     int32_t written = (int32_t)fwrite(buf, 1, (size_t)size, posix->handle);
     if (written < size && ferror(posix->handle)) {
         posix->error = errno;
@@ -123,7 +137,7 @@ int32_t mz_stream_os_write(void *stream, const void *buf, int32_t size) {
 }
 
 int64_t mz_stream_os_tell(void *stream) {
-    mz_stream_posix *posix = (mz_stream_posix*)stream;
+    mz_stream_posix *posix = (mz_stream_posix *)stream;
     int64_t position = ftello64(posix->handle);
     if (position == -1) {
         posix->error = errno;
@@ -133,7 +147,7 @@ int64_t mz_stream_os_tell(void *stream) {
 }
 
 int32_t mz_stream_os_seek(void *stream, int64_t offset, int32_t origin) {
-    mz_stream_posix *posix = (mz_stream_posix*)stream;
+    mz_stream_posix *posix = (mz_stream_posix *)stream;
     int32_t fseek_origin = 0;
 
     switch (origin) {
@@ -159,9 +173,9 @@ int32_t mz_stream_os_seek(void *stream, int64_t offset, int32_t origin) {
 }
 
 int32_t mz_stream_os_close(void *stream) {
-    mz_stream_posix *posix = (mz_stream_posix*)stream;
+    mz_stream_posix *posix = (mz_stream_posix *)stream;
     int32_t closed = 0;
-    if (posix->handle != NULL) {
+    if (posix->handle) {
         closed = fclose(posix->handle);
         posix->handle = NULL;
     }
@@ -173,31 +187,23 @@ int32_t mz_stream_os_close(void *stream) {
 }
 
 int32_t mz_stream_os_error(void *stream) {
-    mz_stream_posix *posix = (mz_stream_posix*)stream;
+    mz_stream_posix *posix = (mz_stream_posix *)stream;
     return posix->error;
 }
 
-void *mz_stream_os_create(void **stream) {
-    mz_stream_posix *posix = NULL;
-
-    posix = (mz_stream_posix *)MZ_ALLOC(sizeof(mz_stream_posix));
-    if (posix != NULL) {
-        memset(posix, 0, sizeof(mz_stream_posix));
+void *mz_stream_os_create(void) {
+    mz_stream_posix *posix = (mz_stream_posix *)calloc(1, sizeof(mz_stream_posix));
+    if (posix)
         posix->stream.vtbl = &mz_stream_os_vtbl;
-    }
-    if (stream != NULL)
-        *stream = posix;
-
     return posix;
 }
 
 void mz_stream_os_delete(void **stream) {
     mz_stream_posix *posix = NULL;
-    if (stream == NULL)
+    if (!stream)
         return;
     posix = (mz_stream_posix *)*stream;
-    if (posix != NULL)
-        MZ_FREE(posix);
+    free(posix);
     *stream = NULL;
 }
 

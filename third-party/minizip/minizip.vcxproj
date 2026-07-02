@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|ARM64">
@@ -135,7 +135,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>$(SolutionDir)third-party;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\liblzma\src\liblzma\api;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)third-party;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\liblzma\src\liblzma\api;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>ZLIB_COMPAT;LZMA_API_STATIC;HAVE_BZIP2;HAVE_ZLIB;HAVE_LZMA;_CRT_SECURE_NO_WARNINGS; WIN32;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MinimalRebuild>false</MinimalRebuild>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
@@ -191,7 +191,7 @@
     <ClCompile>
       <Optimization>MaxSpeed</Optimization>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
-      <AdditionalIncludeDirectories>$(SolutionDir)third-party;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\liblzma\src\liblzma\api;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)third-party;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\liblzma\src\liblzma\api;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>ZLIB_COMPAT;LZMA_API_STATIC;HAVE_BZIP2;HAVE_ZLIB;HAVE_LZMA;_CRT_SECURE_NO_WARNINGS; WIN32;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
@@ -249,8 +249,8 @@
     </Midl>
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>$(SolutionDir)third-party;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\liblzma\src\liblzma\api;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>ZLIB_COMPAT;LZMA_API_STATIC;HAVE_BZIP2;HAVE_ZLIB;HAVE_LZMA;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;ZLIB_WINAPI;_DEBUG;_CONSOLE;WIN64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)third-party;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\liblzma\src\liblzma\api;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>ZLIB_COMPAT;LZMA_API_STATIC;HAVE_BZIP2;HAVE_ZLIB;HAVE_LZMA;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;_DEBUG;_CONSOLE;WIN64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MinimalRebuild>false</MinimalRebuild>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
@@ -298,8 +298,8 @@
     <Midl />
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>$(SolutionDir)third-party;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\liblzma\src\liblzma\api;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>ZLIB_COMPAT;LZMA_API_STATIC;HAVE_BZIP2;HAVE_ZLIB;HAVE_LZMA;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;ZLIB_WINAPI;_DEBUG;_CONSOLE;WIN64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)third-party;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\liblzma\src\liblzma\api;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>ZLIB_COMPAT;LZMA_API_STATIC;HAVE_BZIP2;HAVE_ZLIB;HAVE_LZMA;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;_DEBUG;_CONSOLE;WIN64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MinimalRebuild>false</MinimalRebuild>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
@@ -348,8 +348,8 @@
       <Optimization>MaxSpeed</Optimization>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <OmitFramePointers>true</OmitFramePointers>
-      <AdditionalIncludeDirectories>$(SolutionDir)third-party;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\liblzma\src\liblzma\api;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>ZLIB_COMPAT;LZMA_API_STATIC;HAVE_BZIP2;HAVE_ZLIB;HAVE_LZMA;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;ZLIB_WINAPI;NDEBUG;_CONSOLE;WIN64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)third-party;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\liblzma\src\liblzma\api;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>ZLIB_COMPAT;LZMA_API_STATIC;HAVE_BZIP2;HAVE_ZLIB;HAVE_LZMA;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;NDEBUG;_CONSOLE;WIN64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
@@ -401,8 +401,8 @@
       <Optimization>MaxSpeed</Optimization>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <OmitFramePointers>true</OmitFramePointers>
-      <AdditionalIncludeDirectories>$(SolutionDir)third-party;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\liblzma\src\liblzma\api;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>ZLIB_COMPAT;LZMA_API_STATIC;HAVE_BZIP2;HAVE_ZLIB;HAVE_LZMA;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;ZLIB_WINAPI;NDEBUG;_CONSOLE;WIN64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)third-party;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\liblzma\src\liblzma\api;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>ZLIB_COMPAT;LZMA_API_STATIC;HAVE_BZIP2;HAVE_ZLIB;HAVE_LZMA;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;NDEBUG;_CONSOLE;WIN64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
@@ -447,11 +447,11 @@
     </Lib>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="minigzip.c" />
-    <ClCompile Include="minizip.c" />
-    <ClCompile Include="mz_compat.c" />
+    <ClCompile Include="compat\ioapi.c" />
+    <ClCompile Include="compat\unzip.c" />
+    <ClCompile Include="compat\zip.c" />
     <ClCompile Include="mz_crypt.c" />
-    <ClCompile Include="mz_crypt_win32.c" />
+    <ClCompile Include="mz_crypt_winvista.c" />
     <ClCompile Include="mz_os.c" />
     <ClCompile Include="mz_os_win32.c" />
     <ClCompile Include="mz_strm.c" />
@@ -472,7 +472,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="mz.h" />
-    <ClInclude Include="mz_compat.h" />
+    <ClInclude Include="compat\unzip.h" />
+    <ClInclude Include="compat\zip.h" />
     <ClInclude Include="mz_crypt.h" />
     <ClInclude Include="mz_os.h" />
     <ClInclude Include="mz_strm.h" />

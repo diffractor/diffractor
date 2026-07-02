@@ -1,7 +1,7 @@
 /* mz_os.h -- System functions
    part of the minizip-ng project
 
-   Copyright (C) 2010-2021 Nathan Moinvaziri
+   Copyright (C) Nathan Moinvaziri
      https://github.com/zlib-ng/minizip-ng
 
    This program is distributed under the terms of the same license as zlib.
@@ -10,10 +10,6 @@
 
 #ifndef MZ_OS_H
 #define MZ_OS_H
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /***************************************************************************/
 
@@ -27,7 +23,7 @@ extern "C" {
 #  define MZ_VERSION_MADEBY_HOST_SYSTEM (MZ_HOST_SYSTEM_UNIX)
 #endif
 
-#if defined(HAVE_LZMA) || defined(HAVE_LIBCOMP)
+#if defined(HAVE_LZMA) || defined(HAVE_LIBCOMP) || defined(HAVE_PPMD)
 #  define MZ_VERSION_MADEBY_ZIP_VERSION (63)
 #elif defined(HAVE_WZAES)
 #  define MZ_VERSION_MADEBY_ZIP_VERSION (51)
@@ -37,25 +33,38 @@ extern "C" {
 #  define MZ_VERSION_MADEBY_ZIP_VERSION (45)
 #endif
 
-#define MZ_VERSION_MADEBY               ((MZ_VERSION_MADEBY_HOST_SYSTEM << 8) | \
-                                         (MZ_VERSION_MADEBY_ZIP_VERSION))
+#define MZ_VERSION_MADEBY     ((MZ_VERSION_MADEBY_HOST_SYSTEM << 8) | (MZ_VERSION_MADEBY_ZIP_VERSION))
 
-#define MZ_PATH_SLASH_UNIX              ('/')
+#define MZ_PATH_SLASH_UNIX    ('/')
+#define MZ_PATH_SLASH_WINDOWS ('\\')
 #if defined(_WIN32)
-#  define MZ_PATH_SLASH_PLATFORM        ('\\')
+#  define MZ_PATH_SLASH_PLATFORM (MZ_PATH_SLASH_WINDOWS)
 #else
-#  define MZ_PATH_SLASH_PLATFORM        (MZ_PATH_SLASH_UNIX)
+#  define MZ_PATH_SLASH_PLATFORM (MZ_PATH_SLASH_UNIX)
 #endif
 
 /***************************************************************************/
 
-#if defined(_WIN32)
+#include "mz_config.h"
+
+#if HAVE_DIRENT_H
+#  include <dirent.h>
+#elif HAVE_SYS_DIRENT_H
+#  include <sys/dirent.h>
+#else
 struct dirent {
     char d_name[256];
 };
-typedef void* DIR;
-#else
-#include <dirent.h>
+#endif
+
+#if !HAVE_PDIR
+typedef struct DIR DIR;
+#endif
+
+/***************************************************************************/
+
+#ifdef __cplusplus
+extern "C" {
 #endif
 
 /***************************************************************************/
@@ -91,6 +100,12 @@ int32_t mz_path_remove_extension(char *path);
 int32_t mz_path_get_filename(const char *path, const char **filename);
 /* Get the filename from a path */
 
+int32_t mz_path_is_symlink_target_safe(const char *link_path, const char *target, const char *base_path);
+/* Checks if a symlink target resolves within base path. */
+
+int32_t mz_dir_has_unsafe_symlink(const char *path, const char *base_path);
+/* Checks if any existing component of path is a symlink that escapes base path. */
+
 int32_t mz_dir_make(const char *path);
 /* Creates a directory recursively */
 
@@ -103,64 +118,75 @@ int32_t mz_file_get_crc(const char *path, uint32_t *result_crc);
 wchar_t *mz_os_unicode_string_create(const char *string, int32_t encoding);
 /* Create unicode string from a utf8 string */
 
-void     mz_os_unicode_string_delete(wchar_t **string);
+void mz_os_unicode_string_delete(wchar_t **string);
 /* Delete a unicode string that was created */
 
-uint8_t *mz_os_utf8_string_create(const char *string, int32_t encoding);
+char *mz_os_utf8_string_create(const char *string, int32_t encoding);
 /* Create a utf8 string from a string with another encoding */
 
-void     mz_os_utf8_string_delete(uint8_t **string);
+void mz_os_utf8_string_delete(char **string);
 /* Delete a utf8 string that was created */
 
-int32_t  mz_os_rand(uint8_t *buf, int32_t size);
+int32_t mz_os_rand(uint8_t *buf, int32_t size);
 /* Random number generator (not cryptographically secure) */
 
-int32_t  mz_os_rename(const char *source_path, const char *target_path);
+int32_t mz_os_rename(const char *source_path, const char *target_path);
 /* Rename a file */
 
-int32_t  mz_os_unlink(const char *path);
+int32_t mz_os_unlink(const char *path);
 /* Delete an existing file  */
 
-int32_t  mz_os_file_exists(const char *path);
+int32_t mz_os_file_exists(const char *path);
 /* Check to see if a file exists */
 
-int64_t  mz_os_get_file_size(const char *path);
+int64_t mz_os_get_file_size(const char *path);
 /* Gets the length of a file */
 
-int32_t  mz_os_get_file_date(const char *path, time_t *modified_date, time_t *accessed_date, time_t *creation_date);
+int32_t mz_os_get_file_date(const char *path, time_t *modified_date, time_t *accessed_date, time_t *creation_date);
 /* Gets a file's modified, access, and creation dates if supported */
 
-int32_t  mz_os_set_file_date(const char *path, time_t modified_date, time_t accessed_date, time_t creation_date);
+int32_t mz_os_set_file_date(const char *path, time_t modified_date, time_t accessed_date, time_t creation_date);
 /* Sets a file's modified, access, and creation dates if supported */
 
-int32_t  mz_os_get_file_attribs(const char *path, uint32_t *attributes);
-/* Gets a file's attributes */
+int32_t mz_os_get_file_attribs(const char *path, uint32_t *attributes);
+/* Gets a file's attributes, following symbolic links */
 
-int32_t  mz_os_set_file_attribs(const char *path, uint32_t attributes);
+int32_t mz_os_set_file_attribs(const char *path, uint32_t attributes);
 /* Sets a file's attributes */
 
-int32_t  mz_os_make_dir(const char *path);
+int32_t mz_os_get_temp_path(char *path, int32_t max_path, const char *prefix);
+/* Gets a unique temporary file path */
+
+int32_t mz_os_path_same_fs(const char *path_a, const char *path_b);
+/* Checks if both paths are on the same filesystem */
+
+int32_t mz_os_make_dir(const char *path);
 /* Recursively creates a directory */
 
-DIR*     mz_os_open_dir(const char *path);
+DIR *mz_os_open_dir(const char *path);
 /* Opens a directory for listing */
-struct
-dirent*  mz_os_read_dir(DIR *dir);
+struct dirent *mz_os_read_dir(DIR *dir);
 /* Reads a directory listing entry */
 
-int32_t  mz_os_close_dir(DIR *dir);
+int32_t mz_os_close_dir(DIR *dir);
 /* Closes a directory that has been opened for listing */
 
-int32_t  mz_os_is_dir(const char *path);
+int32_t mz_os_is_dir_separator(char c);
+/* Checks to see if character is a directory separator */
+
+int32_t mz_os_is_dir(const char *path);
 /* Checks to see if path is a directory */
 
-int32_t  mz_os_is_symlink(const char *path);
+int32_t mz_os_is_symlink(const char *path);
 /* Checks to see if path is a symbolic link */
 
-int32_t  mz_os_make_symlink(const char *path, const char *target_path);
+int32_t mz_os_get_link_attribs(const char *path, uint32_t *attributes);
+/* Gets a symbolic link's attributes */
+
+int32_t mz_os_make_symlink(const char *path, const char *target_path);
 /* Creates a symbolic link pointing to a target */
 
-int32_t  mz_os_read_symlink(const char *path, char *target_path, int32_t max_target_path);
+int32_t mz_os_read_symlink(const char *path, char *target_path, int32_t max_target_path);
 /* Gets the target path for a symbolic link */
 
 uint64_t mz_os_ms_time(void);

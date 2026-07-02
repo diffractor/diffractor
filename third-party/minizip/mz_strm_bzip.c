@@ -1,13 +1,12 @@
 /* mz_strm_bzip.c -- Stream for bzip inflate/deflate
    part of the minizip-ng project
 
-   Copyright (C) 2010-2021 Nathan Moinvaziri
+   Copyright (C) Nathan Moinvaziri
       https://github.com/zlib-ng/minizip-ng
 
    This program is distributed under the terms of the same license as zlib.
    See the accompanying LICENSE file for the full text of the license.
 */
-
 
 #include "mz.h"
 #include "mz_strm.h"
@@ -18,35 +17,25 @@
 /***************************************************************************/
 
 static mz_stream_vtbl mz_stream_bzip_vtbl = {
-    mz_stream_bzip_open,
-    mz_stream_bzip_is_open,
-    mz_stream_bzip_read,
-    mz_stream_bzip_write,
-    mz_stream_bzip_tell,
-    mz_stream_bzip_seek,
-    mz_stream_bzip_close,
-    mz_stream_bzip_error,
-    mz_stream_bzip_create,
-    mz_stream_bzip_delete,
-    mz_stream_bzip_get_prop_int64,
-    mz_stream_bzip_set_prop_int64
-};
+    mz_stream_bzip_open,   mz_stream_bzip_is_open, mz_stream_bzip_read,           mz_stream_bzip_write,
+    mz_stream_bzip_tell,   mz_stream_bzip_seek,    mz_stream_bzip_close,          mz_stream_bzip_error,
+    mz_stream_bzip_create, mz_stream_bzip_delete,  mz_stream_bzip_get_prop_int64, mz_stream_bzip_set_prop_int64};
 
 /***************************************************************************/
 
 typedef struct mz_stream_bzip_s {
-    mz_stream   stream;
-    bz_stream   bzstream;
-    int32_t     mode;
-    int32_t     error;
-    uint8_t     buffer[INT16_MAX];
-    int32_t     buffer_len;
-    int16_t     stream_end;
-    int64_t     total_in;
-    int64_t     total_out;
-    int64_t     max_total_in;
-    int8_t      initialized;
-    int16_t     level;
+    mz_stream stream;
+    bz_stream bzstream;
+    int32_t mode;
+    int32_t error;
+    uint8_t buffer[INT16_MAX];
+    int8_t initialized;
+    int32_t buffer_len;
+    int16_t stream_end;
+    int16_t level;
+    int64_t total_in;
+    int64_t total_out;
+    int64_t max_total_in;
 } mz_stream_bzip;
 
 /***************************************************************************/
@@ -115,14 +104,12 @@ int32_t mz_stream_bzip_read(void *stream, void *buf, int32_t size) {
     uint64_t total_out_before = 0;
     uint64_t total_in_after = 0;
     uint64_t total_out_after = 0;
-    int32_t total_in = 0;
     int32_t total_out = 0;
     int32_t in_bytes = 0;
     int32_t out_bytes = 0;
     int32_t bytes_to_read = sizeof(bzip->buffer);
     int32_t read = 0;
     int32_t err = BZ_OK;
-
 
     if (bzip->stream_end)
         return 0;
@@ -147,19 +134,16 @@ int32_t mz_stream_bzip_read(void *stream, void *buf, int32_t size) {
         }
 
         total_in_before = bzip->bzstream.avail_in;
-        total_out_before = bzip->bzstream.total_out_lo32 +
-                (((uint64_t)bzip->bzstream.total_out_hi32) << 32);
+        total_out_before = bzip->bzstream.total_out_lo32 + (((uint64_t)bzip->bzstream.total_out_hi32) << 32);
 
         err = BZ2_bzDecompress(&bzip->bzstream);
 
         total_in_after = bzip->bzstream.avail_in;
-        total_out_after = bzip->bzstream.total_out_lo32 +
-                (((uint64_t)bzip->bzstream.total_out_hi32) << 32);
+        total_out_after = bzip->bzstream.total_out_lo32 + (((uint64_t)bzip->bzstream.total_out_hi32) << 32);
 
         in_bytes = (int32_t)(total_in_before - total_in_after);
         out_bytes = (int32_t)(total_out_after - total_out_before);
 
-        total_in += in_bytes;
         total_out += out_bytes;
 
         bzip->total_in += in_bytes;
@@ -209,13 +193,11 @@ static int32_t mz_stream_bzip_compress(void *stream, int flush) {
             bzip->buffer_len = 0;
         }
 
-        total_out_before = bzip->bzstream.total_out_lo32 +
-                (((uint64_t)bzip->bzstream.total_out_hi32) << 32);
+        total_out_before = bzip->bzstream.total_out_lo32 + (((uint64_t)bzip->bzstream.total_out_hi32) << 32);
 
         err = BZ2_bzCompress(&bzip->bzstream, flush);
 
-        total_out_after = bzip->bzstream.total_out_lo32 +
-                (((uint64_t)bzip->bzstream.total_out_hi32) << 32);
+        total_out_after = bzip->bzstream.total_out_lo32 + (((uint64_t)bzip->bzstream.total_out_hi32) << 32);
 
         out_bytes = (uint32_t)(total_out_after - total_out_before);
 
@@ -328,7 +310,7 @@ int32_t mz_stream_bzip_set_prop_int64(void *stream, int32_t prop, int64_t value)
     mz_stream_bzip *bzip = (mz_stream_bzip *)stream;
     switch (prop) {
     case MZ_STREAM_PROP_COMPRESS_LEVEL:
-        if (value < 0)
+        if (value == MZ_COMPRESS_LEVEL_DEFAULT)
             bzip->level = 6;
         else
             bzip->level = (int16_t)value;
@@ -340,28 +322,21 @@ int32_t mz_stream_bzip_set_prop_int64(void *stream, int32_t prop, int64_t value)
     return MZ_EXIST_ERROR;
 }
 
-void *mz_stream_bzip_create(void **stream) {
-    mz_stream_bzip *bzip = NULL;
-
-    bzip = (mz_stream_bzip *)MZ_ALLOC(sizeof(mz_stream_bzip));
-    if (bzip != NULL) {
-        memset(bzip, 0, sizeof(mz_stream_bzip));
+void *mz_stream_bzip_create(void) {
+    mz_stream_bzip *bzip = (mz_stream_bzip *)calloc(1, sizeof(mz_stream_bzip));
+    if (bzip) {
         bzip->stream.vtbl = &mz_stream_bzip_vtbl;
         bzip->level = 6;
     }
-    if (stream != NULL)
-        *stream = bzip;
-
     return bzip;
 }
 
 void mz_stream_bzip_delete(void **stream) {
     mz_stream_bzip *bzip = NULL;
-    if (stream == NULL)
+    if (!stream)
         return;
     bzip = (mz_stream_bzip *)*stream;
-    if (bzip != NULL)
-        MZ_FREE(bzip);
+    free(bzip);
     *stream = NULL;
 }
 
