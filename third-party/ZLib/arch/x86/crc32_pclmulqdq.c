@@ -17,8 +17,6 @@
  * For conditions of distribution and use, see copyright notice in zlib.h
  */
 
-#include "zbuild.h"
-
 #ifdef X86_PCLMULQDQ_CRC
 
 #define CRC32_FOLD_COPY  crc32_fold_pclmulqdq_copy

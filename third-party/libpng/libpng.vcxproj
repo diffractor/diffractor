@@ -138,6 +138,7 @@
     <ClCompile>
       <WarningLevel>Level1</WarningLevel>
       <SDLCheck>true</SDLCheck>
+      <DisableSpecificWarnings>4146;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>false</ConformanceMode>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
@@ -184,6 +185,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
+      <DisableSpecificWarnings>4146;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>false</ConformanceMode>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
@@ -225,6 +227,7 @@
     <ClCompile>
       <WarningLevel>Level1</WarningLevel>
       <SDLCheck>true</SDLCheck>
+      <DisableSpecificWarnings>4146;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>false</ConformanceMode>
       <CompileAsManaged>false</CompileAsManaged>
@@ -268,6 +271,7 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
+      <DisableSpecificWarnings>4146;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>Default</ConformanceMode>
       <CompileAsManaged>false</CompileAsManaged>
@@ -311,6 +315,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
+      <DisableSpecificWarnings>4146;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>Default</ConformanceMode>
       <CompileAsManaged>false</CompileAsManaged>
@@ -354,6 +359,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
+      <DisableSpecificWarnings>4146;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>Default</ConformanceMode>
       <CompileAsManaged>false</CompileAsManaged>

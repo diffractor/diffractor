@@ -1,23 +1,15 @@
 /* zconf.h -- configuration of the zlib compression library
- * Copyright (C) 1995-2016 Jean-loup Gailly, Mark Adler
+ * Copyright (C) 1995-2024 Jean-loup Gailly, Mark Adler
  * For conditions of distribution and use, see copyright notice in zlib.h
  */
 
 #ifndef ZCONF_H
 #define ZCONF_H
 
-//#include "zlib_name_mangling.h"
+#include "zlib_name_mangling.h"
 
 #if !defined(_WIN32) && defined(__WIN32__)
 #  define _WIN32
-#endif
-
-#ifdef __STDC_VERSION__
-#  if __STDC_VERSION__ >= 199901L
-#    ifndef STDC99
-#      define STDC99
-#    endif
-#  endif
 #endif
 
 /* Clang macro for detecting declspec support
@@ -112,6 +104,7 @@
 
 /* Conditional exports */
 #define ZNG_CONDEXPORT Z_INTERNAL
+
 /* For backwards compatibility */
 
 #ifndef ZEXTERN
@@ -122,6 +115,9 @@
 #endif
 #ifndef ZEXPORTVA
 #  define ZEXPORTVA Z_EXPORTVA
+#endif
+#ifndef FAR
+#  define FAR
 #endif
 
 /* Legacy zlib typedefs for backwards compatibility. Don't assume stdint.h is defined. */
@@ -136,14 +132,13 @@ typedef int   intf;
 typedef uInt  uIntf;
 typedef uLong uLongf;
 
-typedef void const* voidpc;
-typedef void* voidpf;
-typedef void* voidp;
-
+typedef void const *voidpc;
+typedef void       *voidpf;
+typedef void       *voidp;
 
 typedef unsigned int z_crc_t;
 
-#ifdef HAVE_UNISTD_H    /* may be set to #if 1 by configure/cmake/etc */
+#if 0    /* was set to #if 0 by configure/cmake/etc */
 #  define Z_HAVE_UNISTD_H
 #endif
 
@@ -207,31 +202,5 @@ typedef PTRDIFF_TYPE ptrdiff_t;
 #endif
 
 typedef size_t z_size_t;
-
-#if defined(_M_IX86) || defined(_M_X64)
-
-#define X86_AVX_CHUNKSET 1
-#define X86_AVX2 1
-#define X86_AVX2_ADLER32 1
-#define X86_AVX512 1
-#define X86_FEATURES 1
-#define X86_SSE2 1
-#define X86_SSSE3 1
-#define X86_SSE42 1
-#define X86_SSE2_CHUNKSET 1
-#define X86_SSE42_CMP_STR 1
-#define X86_SSE42_CRC_HASH 1
-#define X86_SSE42_CRC_INTRIN 1
-#define X86_SSSE3_ADLER32 1
-#define HAVE_BITSCANFORWARD64 1
-#define HAVE_BITSCANFORWARD 1
-
-#endif
-
-#if defined(_M_ARM64)
-
-#define ARM_FEATURES 1
-
-#endif
 
 #endif /* ZCONF_H */

@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|ARM64">
@@ -121,7 +121,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>ZLIB_COMPAT;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ZLIB_COMPAT;WITH_ALL_FALLBACKS;WITH_GZFILEOP;NO_FSEEKO;HAVE_CPUID_MS;HAVE_BUILTIN_ASSUME_ALIGNED;WITH_OPTIM;X86_FEATURES;X86_HAVE_XSAVE_INTRIN;X86_SSE2;X86_SSSE3;X86_SSE41;X86_SSE42;X86_PCLMULQDQ_CRC;X86_AVX2;X86_AVX512;X86_AVX512VNNI;X86_VPCLMULQDQ_CRC;_CRT_SECURE_NO_WARNINGS; WIN32;_DEBUG;_LIB;_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
@@ -176,7 +176,7 @@
     </Midl>
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>ZLIB_COMPAT;WIN32;_DEBUG;_LIB;_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ZLIB_COMPAT;WITH_ALL_FALLBACKS;WITH_GZFILEOP;NO_FSEEKO;HAVE_CPUID_MS;HAVE_BUILTIN_ASSUME_ALIGNED;WITH_OPTIM;X86_FEATURES;X86_HAVE_XSAVE_INTRIN;X86_SSE2;X86_SSSE3;X86_SSE41;X86_SSE42;X86_PCLMULQDQ_CRC;X86_AVX2;X86_AVX512;X86_AVX512VNNI;X86_VPCLMULQDQ_CRC;WIN32;_DEBUG;_LIB;_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
@@ -226,7 +226,7 @@
     <Midl />
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>ZLIB_COMPAT;WIN32;_DEBUG;_LIB;_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ZLIB_COMPAT;WITH_ALL_FALLBACKS;WITH_GZFILEOP;NO_FSEEKO;HAVE_BUILTIN_ASSUME_ALIGNED;WIN32;_DEBUG;_LIB;_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
@@ -278,7 +278,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <AdditionalIncludeDirectories>$(ProjectDir)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>ZLIB_COMPAT;WIN32;NDEBUG;_LIB;_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ZLIB_COMPAT;WITH_ALL_FALLBACKS;WITH_GZFILEOP;NO_FSEEKO;HAVE_CPUID_MS;HAVE_BUILTIN_ASSUME_ALIGNED;WITH_OPTIM;X86_FEATURES;X86_HAVE_XSAVE_INTRIN;X86_SSE2;X86_SSSE3;X86_SSE41;X86_SSE42;X86_PCLMULQDQ_CRC;X86_AVX2;X86_AVX512;X86_AVX512VNNI;X86_VPCLMULQDQ_CRC;WIN32;NDEBUG;_LIB;_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <BufferSecurityCheck>true</BufferSecurityCheck>
@@ -335,7 +335,7 @@
       <FavorSizeOrSpeed>Size</FavorSizeOrSpeed>
       <OmitFramePointers>true</OmitFramePointers>
       <AdditionalIncludeDirectories>$(ProjectDir)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>ZLIB_COMPAT;WIN32;NDEBUG;_LIB;_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ZLIB_COMPAT;WITH_ALL_FALLBACKS;WITH_GZFILEOP;NO_FSEEKO;HAVE_CPUID_MS;HAVE_BUILTIN_ASSUME_ALIGNED;WITH_OPTIM;X86_FEATURES;X86_HAVE_XSAVE_INTRIN;X86_SSE2;X86_SSSE3;X86_SSE41;X86_SSE42;X86_PCLMULQDQ_CRC;X86_AVX2;X86_AVX512;X86_AVX512VNNI;X86_VPCLMULQDQ_CRC;WIN32;NDEBUG;_LIB;_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <BufferSecurityCheck>true</BufferSecurityCheck>
@@ -386,7 +386,7 @@
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <OmitFramePointers>true</OmitFramePointers>
       <AdditionalIncludeDirectories>$(ProjectDir)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>ZLIB_COMPAT;WIN32;NDEBUG;_LIB;_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ZLIB_COMPAT;WITH_ALL_FALLBACKS;WITH_GZFILEOP;NO_FSEEKO;HAVE_BUILTIN_ASSUME_ALIGNED;WIN32;NDEBUG;_LIB;_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <BufferSecurityCheck>true</BufferSecurityCheck>
@@ -446,7 +446,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="arch\arm\crc32_acle.c">
+    <ClCompile Include="arch\arm\crc32_armv8.c">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">false</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">false</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
@@ -459,6 +459,7 @@
     <ClCompile Include="arch\generic\chunkset_c.c" />
     <ClCompile Include="arch\generic\compare256_c.c" />
     <ClCompile Include="arch\generic\crc32_braid_c.c" />
+    <ClCompile Include="arch\generic\crc32_chorba_c.c" />
     <ClCompile Include="arch\generic\crc32_fold_c.c" />
     <ClCompile Include="arch\generic\slide_hash_c.c" />
     <ClCompile Include="arch\x86\adler32_avx2.c" />
@@ -471,11 +472,14 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="arch\x86\chorba_sse2.c" />
+    <ClCompile Include="arch\x86\chorba_sse41.c" />
     <ClCompile Include="arch\x86\chunkset_avx2.c" />
     <ClCompile Include="arch\x86\chunkset_avx512.c" />
     <ClCompile Include="arch\x86\chunkset_sse2.c" />
     <ClCompile Include="arch\x86\chunkset_ssse3.c" />
     <ClCompile Include="arch\x86\compare256_avx2.c" />
+    <ClCompile Include="arch\x86\compare256_avx512.c" />
     <ClCompile Include="arch\x86\compare256_sse2.c" />
     <ClCompile Include="arch\x86\crc32_pclmulqdq.c" />
     <ClCompile Include="arch\x86\crc32_vpclmulqdq.c" />

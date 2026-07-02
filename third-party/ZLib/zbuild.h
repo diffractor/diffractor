@@ -1,25 +1,6 @@
 #ifndef _ZBUILD_H
 #define _ZBUILD_H
 
-
-#define X86_AVX_CHUNKSET 1
-#define X86_AVX2 1
-#define X86_AVX2_ADLER32 1
-#define X86_AVX512 1
-#define X86_AVX512VNNI 1
-#define X86_FEATURES 1
-#define X86_SSE2 1
-#define X86_SSSE3 1
-#define X86_SSE42 1
-#define X86_SSE2_CHUNKSET 1
-#define X86_SSE42_CMP_STR 1
-#define X86_SSE42_CRC_HASH 1
-#define X86_SSE42_CRC_INTRIN 1
-#define X86_SSSE3_ADLER32 1
-#define HAVE_BITSCANFORWARD64 1
-#define HAVE_BITSCANFORWARD 1
-
-
 #define _POSIX_SOURCE 1  /* fileno */
 #ifndef _POSIX_C_SOURCE
 #  define _POSIX_C_SOURCE 200809L /* snprintf, posix_memalign, strdup */
@@ -35,6 +16,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdio.h>
 
 /* Determine compiler version of C Standard */
 #ifdef __STDC_VERSION__
@@ -89,6 +71,16 @@
 #  endif
 #endif
 
+/* A forced inline decorator */
+#if defined(_MSC_VER)
+#  define Z_FORCEINLINE __forceinline
+#elif defined(__GNUC__)
+#  define Z_FORCEINLINE inline __attribute__((always_inline))
+#else
+    /* It won't actually force inlining but it will suggest it */
+#  define Z_FORCEINLINE inline
+#endif
+
 /* MS Visual Studio does not allow inline in C, only C++.
    But it provides __inline instead, so use that. */
 #if defined(_MSC_VER) && !defined(inline) && !defined(__cplusplus)
@@ -115,6 +107,17 @@
 #  define z_uintmax_t unsigned long
 #else
 #  define z_uintmax_t size_t
+#endif
+
+/* In zlib-compat headers some function return values and parameter types use int or unsigned, but zlib-ng headers use
+   int32_t and uint32_t, which will cause type mismatch when compiling zlib-ng if int32_t is long and uint32_t is
+   unsigned long */
+#if defined(ZLIB_COMPAT)
+#  define z_int32_t int
+#  define z_uint32_t unsigned int
+#else
+#  define z_int32_t int32_t
+#  define z_uint32_t uint32_t
 #endif
 
 /* Minimum of a and b. */
@@ -244,7 +247,6 @@
 
 /* Diagnostic functions */
 #ifdef ZLIB_DEBUG
-#  include <stdio.h>
    extern int Z_INTERNAL z_verbose;
    extern void Z_INTERNAL z_error(const char *m);
 #  define Assert(cond, msg) {int _cond = (cond); if (!_cond) z_error(msg);}
