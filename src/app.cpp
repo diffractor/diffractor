@@ -48,8 +48,8 @@ command_line_t command_line;
 
 auto s_app_name_l = L"Diffractor";
 const std::string_view s_app_name = "Diffractor";
-const std::string_view s_app_version = "126.3";
-const std::string_view g_app_build = "1211";
+const std::string_view s_app_version = "126.4";
+const std::string_view g_app_build = "1212";
 static constexpr auto s_search = "search";
 
 extern void start_worker(platform::task_queue& q, std::string_view name);

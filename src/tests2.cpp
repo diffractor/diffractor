@@ -850,6 +850,131 @@ static void should_compare_versions()
 	assert_equal("457.1", (test_version2 + 1).to_string(), "+ op version");
 }
 
+static void should_parse_exif_tags()
+{
+	// Builds a minimal little-endian TIFF/EXIF block that exercises the tags added to
+	// the EXIF parser: Software (-> encoder), Artist (-> artist), the Windows XP string
+	// tags (XPTitle/XPAuthor/XPKeywords/XPSubject) and the APEX MaxApertureValue /
+	// ShutterSpeedValue fallbacks. XP values use ASCII payloads so decoding is
+	// deterministic; the point of this test is the tag-dispatch and fallback logic.
+	struct exif_entry
+	{
+		uint16_t tag;
+		uint16_t fmt;
+		uint32_t count;
+		std::vector<uint8_t> data;
+	};
+
+	const auto ascii = [](const std::string_view s) { return std::vector<uint8_t>(s.begin(), s.end()); };
+	const auto rational_bytes = [](const int32_t n, const int32_t d)
+	{
+		std::vector<uint8_t> v(8);
+		memcpy(v.data(), &n, 4);
+		memcpy(v.data() + 4, &d, 4);
+		return v;
+	};
+
+	// Entries must be in ascending tag order (ARTIST before XPAuthor so the XPAuthor
+	// guard is proven not to overwrite the already-set artist).
+	std::vector<exif_entry> entries = {
+		{0x0131, FMT_STRING, 0, ascii("DiffractorApp")}, // Software      -> encoder
+		{0x013b, FMT_STRING, 0, ascii("Ansel Adams")}, //   Artist        -> artist
+		{0x9201, FMT_SRATIONAL, 1, rational_bytes(6, 1)}, // ShutterSpeed  -> 2^-6 = 1/64s
+		{0x9205, FMT_URATIONAL, 1, rational_bytes(4, 1)}, // MaxAperture   -> 2^(4/2) = f/4
+		{0x9c9b, FMT_STRING, 0, ascii("Winter")}, //         XPTitle       -> title
+		{0x9c9d, FMT_STRING, 0, ascii("Ignored Author")}, // XPAuthor      -> artist (guarded)
+		{0x9c9e, FMT_STRING, 0, ascii("alpha beta")}, //     XPKeywords    -> tags
+		{0x9c9f, FMT_STRING, 0, ascii("A subject")}, //      XPSubject     -> description
+	};
+
+	for (auto& e : entries)
+	{
+		if (e.count == 0) e.count = static_cast<uint32_t>(e.data.size());
+	}
+
+	std::vector<uint8_t> buf;
+	const auto put16 = [&buf](const uint16_t v)
+	{
+		buf.push_back(static_cast<uint8_t>(v));
+		buf.push_back(static_cast<uint8_t>(v >> 8));
+	};
+	const auto put32 = [&buf](const uint32_t v)
+	{
+		buf.push_back(static_cast<uint8_t>(v));
+		buf.push_back(static_cast<uint8_t>(v >> 8));
+		buf.push_back(static_cast<uint8_t>(v >> 16));
+		buf.push_back(static_cast<uint8_t>(v >> 24));
+	};
+
+	const auto entry_count = static_cast<uint32_t>(entries.size());
+	const uint32_t ifd0_offset = 8;
+	const uint32_t data_start = ifd0_offset + 2 + entry_count * 12 + 4;
+
+	// Reserve word-aligned out-of-line offsets for payloads that don't fit in 4 bytes.
+	std::vector<uint32_t> data_offset(entries.size(), 0);
+	uint32_t cursor = data_start;
+	for (size_t i = 0; i < entries.size(); ++i)
+	{
+		const auto size = static_cast<uint32_t>(entries[i].data.size());
+		if (size > 4)
+		{
+			data_offset[i] = cursor;
+			cursor += size;
+			if (cursor & 1) ++cursor;
+		}
+	}
+
+	// TIFF header (little-endian).
+	put16(0x4949);
+	put16(0x002a);
+	put32(ifd0_offset);
+
+	// IFD0.
+	put16(static_cast<uint16_t>(entry_count));
+	for (size_t i = 0; i < entries.size(); ++i)
+	{
+		const auto& e = entries[i];
+		put16(e.tag);
+		put16(e.fmt);
+		put32(e.count);
+
+		const auto size = static_cast<uint32_t>(e.data.size());
+		if (size > 4)
+		{
+			put32(data_offset[i]);
+		}
+		else
+		{
+			uint32_t inline_value = 0;
+			memcpy(&inline_value, e.data.data(), size);
+			put32(inline_value);
+		}
+	}
+	put32(0); // No IFD1.
+
+	// Out-of-line payloads (word aligned, matching the reserved offsets above).
+	for (const auto& e : entries)
+	{
+		if (e.data.size() > 4)
+		{
+			buf.insert(buf.end(), e.data.begin(), e.data.end());
+			if (buf.size() & 1) buf.push_back(0);
+		}
+	}
+
+	prop::item_metadata md;
+	metadata_exif::parse(md, df::cspan{buf.data(), buf.size()});
+
+	assert_equal("DiffractorApp", md.encoder, "Software -> encoder");
+	assert_equal("Ansel Adams", md.artist, "Artist -> artist (XPAuthor must not override)");
+	assert_equal("Winter", md.title, "XPTitle -> title");
+	assert_equal("alpha beta", md.tags, "XPKeywords -> tags");
+	assert_equal("A subject", md.description, "XPSubject -> description");
+	assert_equal(prop::format_f_num(4.0f), prop::format_f_num(md.f_number), "MaxApertureValue -> f_number");
+	assert_equal(prop::format_exposure(1.0f / 64.0f), prop::format_exposure(md.exposure_time),
+	             "ShutterSpeedValue -> exposure_time");
+}
+
 static void should_copy_preserve_properties()
 {
 	prop::item_metadata src;
@@ -1014,6 +1139,7 @@ void register_tests2(view_state& state, test_registry& tests)
 	// Data Model / Properties
 	//
 	tests.add("Should copy preserve properties"s, should_copy_preserve_properties);
+	tests.add("Should parse exif tags"s, should_parse_exif_tags);
 	tests.add("Should Rename with substitutions"s, should_rename_with_substitutions);
 	tests.add("Should format plural text"s, should_format_plural_text);
 	tests.add("Should format rename"s, should_format_rename);

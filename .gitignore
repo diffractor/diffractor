@@ -36,3 +36,4 @@ intermediate/
 /.vscode
 /DiffractorStoreCert.pfx
 *.msix
+/third-party/FFmpeg/intermediate

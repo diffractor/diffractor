@@ -29,7 +29,7 @@ ui::surface_ptr load_webp(const df::cspan data)
 		result = std::make_shared<ui::surface>();
 		auto* const buffer = result->alloc(width, height, ui::texture_format::ARGB);
 
-		if (WebPDecodeBGRAInto(data.data, data.size, buffer, static_cast<int>(height * result->stride()),
+		if (buffer && WebPDecodeBGRAInto(data.data, data.size, buffer, static_cast<int>(height * result->stride()),
 		                       static_cast<int>(result->stride())))
 		{
 			WebPData wp_data;
@@ -95,13 +95,18 @@ webp_parts scan_webp(df::cspan data, bool decode_surface)
 			const bool xmp = flags & XMP_FLAG;
 			const bool has_alpha = flags & ALPHA_FLAG;
 
-			if (has_alpha)
+			WebPBitstreamFeatures features;
+			const bool lossless = WebPGetFeatures(data.data, data.size, &features) == VP8_STATUS_OK
+				                      && features.format == 2; // 2 = lossless (VP8L)
+
+			if (lossless)
 			{
-				result.pixel_format = "rgba"_c; // Likely RGBA
+				// Lossless WebP stores RGB(A) directly, not YUV.
+				result.pixel_format = has_alpha ? "rgba"_c : "rgb"_c;
 			}
 			else
 			{
-				result.pixel_format = "yuv420"_c; // Likely YUV420
+				result.pixel_format = has_alpha ? "rgba"_c : "yuv420"_c;
 			}
 
 			if (decode_surface)
@@ -111,7 +116,7 @@ webp_parts scan_webp(df::cspan data, bool decode_surface)
 					auto surface = std::make_shared<ui::surface>();
 					auto* buffer = surface->alloc(width, height, ui::texture_format::ARGB);
 
-					if (WebPDecodeBGRAInto(data.data, data.size, buffer, static_cast<int>(height * surface->stride()),
+					if (buffer && WebPDecodeBGRAInto(data.data, data.size, buffer, static_cast<int>(height * surface->stride()),
 					                       static_cast<int>(surface->stride())))
 					{
 						result.frames.emplace_back(surface);
@@ -254,6 +259,7 @@ ui::image_ptr save_webp(const ui::const_surface_ptr& surface_in, const metadata_
 			if (params.webp_lossless)
 			{
 				WebPConfigLosslessPreset(&config, 7);
+				config.thread_level = 1;
 			}
 			else
 			{

@@ -1461,6 +1461,13 @@ void items_view::update_media_elements()
 				{
 					elements.emplace_back(std::make_shared<padding_element>(4));
 					elements.emplace_back(std::make_shared<comodore_disk_control>(display, view_element_style::center));
+
+					// Single-file program containers also show a hex view of the content.
+					if (file_type->extension == "prg" || file_type->extension == "p00")
+					{
+						elements.emplace_back(std::make_shared<padding_element>(4));
+						elements.emplace_back(std::make_shared<hex_control>(display, view_element_style::center));
+					}
 				}
 			}
 			else

@@ -30,7 +30,8 @@ static ui::surface_ptr image_to_surface(const heif_image_handle* handle, const h
 
 	auto result = std::make_shared<ui::surface>();
 
-	if (result->alloc(width, height, has_alpha ? ui::texture_format::ARGB : ui::texture_format::RGB))
+	if (heif_image_data != nullptr && heif_stride > 0 &&
+		result->alloc(width, height, has_alpha ? ui::texture_format::ARGB : ui::texture_format::RGB))
 	{
 		const auto dest_stride = result->stride();
 		const auto copy_stride = std::min(static_cast<size_t>(heif_stride), dest_stride);
@@ -107,9 +108,20 @@ static metadata_parts extract_metadata(const heif_image_handle* handle)
 
 				if (error.code == heif_error_Ok)
 				{
-					if (raw_metatdata.size() > 4 && raw_metatdata[0] == 0)
+					// The HEIF Exif payload begins with a 4-byte big-endian offset that
+					// gives the number of bytes between the end of that field and the TIFF
+					// header. Skip the offset field plus that many bytes.
+					if (raw_metatdata.size() >= 4)
 					{
-						raw_metatdata.erase(raw_metatdata.begin(), raw_metatdata.begin() + 4);
+						const size_t tiff_offset = 4 + (static_cast<size_t>(raw_metatdata[0]) << 24 |
+							static_cast<size_t>(raw_metatdata[1]) << 16 |
+							static_cast<size_t>(raw_metatdata[2]) << 8 |
+							static_cast<size_t>(raw_metatdata[3]));
+
+						if (tiff_offset <= raw_metatdata.size())
+						{
+							raw_metatdata.erase(raw_metatdata.begin(), raw_metatdata.begin() + tiff_offset);
+						}
 					}
 
 					if (is_exif_signature(raw_metatdata))
@@ -141,6 +153,25 @@ static metadata_parts extract_metadata(const heif_image_handle* handle)
 				{
 					result.iptc = std::move(raw_metatdata);
 				}
+			}
+		}
+	}
+
+	// The ICC / color profile is stored separately from the metadata blocks.
+	const auto profile_type = heif_image_handle_get_color_profile_type(handle);
+
+	if (profile_type == heif_color_profile_type_prof || profile_type == heif_color_profile_type_rICC)
+	{
+		const auto icc_size = heif_image_handle_get_raw_color_profile_size(handle);
+
+		if (icc_size > 0)
+		{
+			df::blob icc(icc_size, 0);
+			const auto icc_error = heif_image_handle_get_raw_color_profile(handle, icc.data());
+
+			if (icc_error.code == heif_error_Ok)
+			{
+				result.icc = std::move(icc);
 			}
 		}
 	}
@@ -253,7 +284,7 @@ file_scan_result scan_heif(read_stream& s)
 				}
 			}
 
-			result.metadata = std::move(extract_metadata(image_handle));
+			result.metadata = extract_metadata(image_handle);
 			result.success = true;
 
 			if (result.thumbnail_surface)

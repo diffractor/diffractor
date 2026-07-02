@@ -721,12 +721,12 @@ void register_tests5(view_state& state, test_registry& tests)
 	register_should_search("f/4.0", 0, 0, 0);
 	register_should_search("f/6.3", 5, 5, 5);
 
-	register_should_search("with:Exposure @photo", 15, 15, 14);
-	register_should_search("with: Exposure @ photo", 15, 15, 14);
-	register_should_search("without:Exposure @photo", 13, 13, 13);
-	register_should_search("without:Exposure", 26, 26, 24);
-	register_should_search("with:Exposure", 16, 16, 15);
-	register_should_search("with: Exposure", 16, 16, 15);
+	register_should_search("with:Exposure @photo", 17, 17, 16);
+	register_should_search("with: Exposure @ photo", 17, 17, 16);
+	register_should_search("without:Exposure @photo", 11, 11, 11);
+	register_should_search("without:Exposure", 24, 24, 22);
+	register_should_search("with:Exposure", 18, 18, 17);
+	register_should_search("with: Exposure", 18, 18, 17);
 	register_should_search("ExposureTime:1/20s", 1, 1, 1);
 	register_should_search("ExposureTime: 1/20s", 1, 1, 1);
 	register_should_search("1/20s", 1, 1, 1);

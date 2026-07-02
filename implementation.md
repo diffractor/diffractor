@@ -143,7 +143,7 @@ Format-specific loaders and savers for images and media files.
 |------|---------|
 | `files.h` | Core file operations and format handling. Coordinates format detection, metadata extraction, image loading/saving, and file type classification for photos, videos, and archives. |
 | `files_core.cpp` | Core file handling operations. Manages file loading, saving, and format detection for images and media files. Coordinates metadata extraction across different file types. |
-| `files_commodore.cpp` | Commodore 64 disk image (D64, D81, T64, CRT) parser. Reads and lists contents of retro computing disk and cartridge formats. |
+| `files_commodore.cpp` | Commodore 64 disk image (D64, D71, D81, T64, CRT) and single-file program (P00, PRG) parser. Reads and lists contents of retro computing disk, cartridge and program formats. |
 | `files_heif.cpp` | HEIF/HEIC image format support. Decodes High Efficiency Image Format files using libheif, extracts metadata, and handles HDR content. |
 | `files_jpeg.cpp` | JPEG image processing. Handles loading, saving, lossless rotation, and metadata preservation using libjpeg-turbo. |
 | `files_jpeg.h` | JPEG processing declarations. Defines interfaces for JPEG loading, saving, and lossless transformations. |

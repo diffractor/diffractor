@@ -1193,9 +1193,24 @@ public:
 			_metadata.f_number = static_cast<float>(entry.get_urational().to_real());
 			break;
 
-		//case Exif::EXIF_TAG_SHUTTER_SPEED_VALUE: 
+		case EXIF_TAG_MAX_APERTURE_VALUE:
+			// APEX aperture; only used as a fallback when no F-number is present.
+			if (df::is_zero(_metadata.f_number))
+			{
+				_metadata.f_number = static_cast<float>(prop::aperture_to_fstop(entry.get_urational().to_real()));
+			}
+			break;
+
 		case EXIF_TAG_EXPOSURE_TIME:
 			_metadata.exposure_time = static_cast<float>(entry.get_srational().to_real());
+			break;
+
+		case EXIF_TAG_SHUTTER_SPEED_VALUE:
+			// APEX shutter speed (exposure_time = 2^-value); fallback when no exposure time is present.
+			if (df::is_zero(_metadata.exposure_time))
+			{
+				_metadata.exposure_time = static_cast<float>(std::pow(2.0, -entry.get_srational().to_real()));
+			}
 			break;
 
 		case EXIF_TAG_ISO_SPEED_RATINGS:
@@ -1216,6 +1231,14 @@ public:
 
 		case EXIF_TAG_MODEL:
 			_metadata.camera_model = entry.get_cached_string(false);
+			break;
+
+		case EXIF_TAG_SOFTWARE:
+			if (is_empty(_metadata.encoder)) _metadata.encoder = entry.get_cached_string(false);
+			break;
+
+		case EXIF_TAG_ARTIST:
+			if (is_empty(_metadata.artist)) _metadata.artist = entry.get_cached_string(false);
 			break;
 
 		case EXIF_TAG_LENS_MODEL:
@@ -1241,6 +1264,22 @@ public:
 
 		case EXIF_TAG_USER_COMMENT_XP:
 			if (is_empty(_metadata.comment)) _metadata.comment = entry.get_cached_string(true);
+			break;
+
+		case EXIF_TAG_XP_TITLE:
+			if (is_empty(_metadata.title)) _metadata.title = entry.get_cached_string(true);
+			break;
+
+		case EXIF_TAG_XP_AUTHOR:
+			if (is_empty(_metadata.artist)) _metadata.artist = entry.get_cached_string(true);
+			break;
+
+		case EXIF_TAG_XP_KEYWORDS:
+			if (is_empty(_metadata.tags)) _metadata.tags = entry.get_cached_string(true);
+			break;
+
+		case EXIF_TAG_XP_SUBJECT:
+			if (is_empty(_metadata.description)) _metadata.description = entry.get_cached_string(true);
 			break;
 
 		case EXIF_TAG_IMAGE_RATING:

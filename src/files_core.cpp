@@ -533,9 +533,12 @@ void load_file_types()
 		{file_group::archive, "a,ar", {}, {file_traits::archive}},
 
 		{file_group::commodore, "d64", {}, {file_traits::disk_image | file_traits::commodore}},
+		{file_group::commodore, "d71", {}, {file_traits::disk_image | file_traits::commodore}},
 		{file_group::commodore, "d81", {}, {file_traits::disk_image | file_traits::commodore}},
 		{file_group::commodore, "t64", {}, {file_traits::commodore}},
 		{file_group::commodore, "crt", {}, {file_traits::commodore}},
+		{file_group::commodore, "prg", {}, {file_traits::commodore}},
+		{file_group::commodore, "p00", {}, {file_traits::commodore}},
 	};
 
 	int next_id = 0;

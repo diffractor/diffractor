@@ -6,8 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
-// Purpose: Commodore 64 disk image (D64, D81, T64, CRT) parser. Reads and lists
-// contents of retro computing disk and cartridge formats.
+// Purpose: Commodore 64 disk image (D64, D71, D81, T64, CRT) and single-file
+// program container (P00, PRG) parser. Reads and lists contents of retro
+// computing disk, cartridge and program formats.
 
 #include "pch.h"
 #include "files.h"
@@ -136,28 +137,92 @@ static std::vector<files::d64_item> dir_list(const d64_media& disk)
 	return result;
 }
 
+enum class disk_format
+{
+	unknown,
+	d64, // 1541 single sided (35 or 40 tracks, optional error info)
+	d71, // 1571 double sided (70 tracks, optional error info)
+	d81 // 1581 3.5" (80 tracks)
+};
+
+static disk_format classify_disk(const size_t len)
+{
+	switch (len)
+	{
+	case 174848: // 35 tracks, no error info
+	case 175531: // 35 tracks + 683 error bytes
+	case 196608: // 40 tracks, no error info
+	case 197376: // 40 tracks + 768 error bytes
+		return disk_format::d64;
+	case 349696: // 70 tracks, no error info
+	case 351062: // 70 tracks + 1366 error bytes
+		return disk_format::d71;
+	case 819200: // 80 tracks
+		return disk_format::d81;
+	default:
+		return disk_format::unknown;
+	}
+}
+
+// 1541/1571 use a zoned recording scheme with a variable number of sectors per track.
+static int d64_sectors_per_track(int track)
+{
+	if (track <= 17) return 21;
+	if (track <= 24) return 19;
+	if (track <= 30) return 18;
+	return 17;
+}
+
+// Byte offset of a (track, sector) within a disk image. Tracks are 1-based.
+static int disk_sector_offset(const disk_format fmt, const int track, const int sector)
+{
+	constexpr int SECTOR_SIZE = 256;
+
+	if (fmt == disk_format::d81)
+	{
+		return ((track - 1) * 40 + sector) * SECTOR_SIZE;
+	}
+
+	int sectors = 0;
+
+	for (int t = 1; t < track; ++t)
+	{
+		// On a 1571 the second side (tracks 36..70) mirrors the zoning of side one.
+		const int zone_track = (fmt == disk_format::d71 && t > 35) ? t - 35 : t;
+		sectors += d64_sectors_per_track(zone_track);
+	}
+
+	return (sectors + sector) * SECTOR_SIZE;
+}
+
 static d64_media parse_disk(const uint8_t* const data, const size_t data_len)
 {
-	const auto is_d64 = data_len == 0x002ab00;
-	const auto is_d81 = data_len == 0x00c8000;
+	const auto fmt = classify_disk(data_len);
+
+	if (fmt == disk_format::unknown)
+		return {};
 
 	constexpr int SECTOR_SIZE = 256;
-	const int DIR_TRACK = is_d64 ? 18 : 40;
-	const int DIR_SECTOR = is_d64 ? 1 : 3;
 	constexpr int DIR_ENTRY_SIZE = 32;
-	const int SECTORS_PER_TRACK = is_d64 ? 21 : 40;
+	const int dir_track = (fmt == disk_format::d81) ? 40 : 18;
+	const int dir_sector = (fmt == disk_format::d81) ? 3 : 1;
 
 	d64_media disk;
+	std::unordered_set<int> visited; // guard against cyclic directory chains
 
-	int next_track = DIR_TRACK;
-	int next_sector = DIR_SECTOR;
+	int next_track = dir_track;
+	int next_sector = dir_sector;
 
 	while (next_track != 0)
 	{
-		const auto dir_sector_offset = ((next_track - 1) * SECTORS_PER_TRACK + next_sector) * SECTOR_SIZE;
+		const auto dir_sector_offset = disk_sector_offset(fmt, next_track, next_sector);
 
-		if (dir_sector_offset + SECTOR_SIZE > data_len)
+		if (dir_sector_offset < 0 ||
+			dir_sector_offset + SECTOR_SIZE > static_cast<int>(data_len))
 			break;
+
+		if (!visited.insert(dir_sector_offset).second)
+			break; // already visited this sector - malformed cyclic chain
 
 		for (int i = 0; i < SECTOR_SIZE; i += DIR_ENTRY_SIZE)
 		{
@@ -230,9 +295,17 @@ struct crt_chip_header
 d64_media parse_t64(const uint8_t* const data, const size_t data_len)
 {
 	d64_media result;
+
+	if (data_len < sizeof(t64_header))
+		return result;
+
 	const auto header = reinterpret_cast<const t64_header*>(data);
 
-	for (uint16_t i = 0; i < header->used_entries; ++i)
+	// Some tools write an incorrect used_entries count; fall back to the total.
+	uint32_t count = header->used_entries;
+	if (count == 0 || count > header->total_entries) count = header->total_entries;
+
+	for (uint32_t i = 0; i < count; ++i)
 	{
 		const auto dir_offset = sizeof(t64_header) + i * sizeof(t64_file_entry);
 
@@ -240,8 +313,12 @@ d64_media parse_t64(const uint8_t* const data, const size_t data_len)
 			break;
 
 		const auto file = reinterpret_cast<const t64_file_entry*>(data + dir_offset);
+
+		if (file->type == 0)
+			continue; // free / unused entry
+
 		media_entry entry;
-		entry.file_type = file->type_1541;
+		entry.file_type = file->type_1541 ? file->type_1541 : 0x82; // default to PRG
 		entry.pet_name.assign(file->file_name, file->file_name + 16);
 		result.entries.push_back(entry);
 	}
@@ -251,31 +328,58 @@ d64_media parse_t64(const uint8_t* const data, const size_t data_len)
 
 d64_media parse_crt(const uint8_t* const data, const size_t data_len)
 {
+	d64_media result;
+
+	// A CRT header is 64 bytes; the 32-byte cartridge name lives at offset 32.
+	if (data_len < sizeof(crt_header))
+		return result;
+
 	const auto header = reinterpret_cast<const crt_header*>(data);
 
+	// A cartridge is a single logical item regardless of how many ROM (CHIP)
+	// banks it contains, so list it once by name.
+	media_entry entry;
+	entry.file_type = 0x99;
+	entry.pet_name.assign(header->name, header->name + 32);
+	result.entries.push_back(entry);
+
+	return result;
+}
+
+// A .P00 file wraps a single program: an 8-byte "C64File\0" signature, a
+// 16-byte PETSCII name, a record-size byte, then the raw file data.
+static d64_media parse_p00(const uint8_t* const data, const size_t data_len)
+{
 	d64_media result;
-	size_t offset = sizeof(crt_header);
 
-	while (offset < data_len)
-	{
-		if (data_len - offset < sizeof(crt_chip_header))
-		{
-			break;
-		}
+	if (data_len < 26)
+		return result;
 
-		const auto chipHeader = reinterpret_cast<const crt_chip_header*>(data + offset);
-		if (std::memcmp(chipHeader->signature, "CHIP", 4) != 0)
-		{
-			break;
-		}
+	media_entry entry;
+	entry.file_type = 0x82; // PRG
+	entry.pet_name.assign(data + 8, data + 8 + 16);
+	const size_t payload = data_len - 26;
+	entry.file_size = static_cast<uint32_t>((payload + 253) / 254); // size in disk blocks
+	result.entries.push_back(entry);
 
-		media_entry entry;
-		entry.file_type = 0x99;
-		entry.pet_name.assign(header->name, header->name + 32);
-		result.entries.push_back(entry);
+	return result;
+}
 
-		offset += sizeof(crt_chip_header) + chipHeader->rom_image_size;
-	}
+// A raw .PRG is just a 2-byte little-endian load address followed by data.
+// It carries no embedded name, so present it as a single unnamed program.
+static d64_media parse_prg(const uint8_t* const data, const size_t data_len)
+{
+	d64_media result;
+
+	if (data_len < 2)
+		return result;
+
+	media_entry entry;
+	entry.file_type = 0x82; // PRG
+	entry.pet_name.assign(16, 0xA0); // shifted spaces render as blanks
+	const size_t payload = data_len - 2;
+	entry.file_size = static_cast<uint32_t>((payload + 253) / 254); // size in disk blocks
+	result.entries.push_back(entry);
 
 	return result;
 }
@@ -283,24 +387,34 @@ d64_media parse_crt(const uint8_t* const data, const size_t data_len)
 
 std::vector<files::d64_item> files::list_disk(const df::blob& selected_item_data)
 {
-	const auto is_d64 = selected_item_data.size() == 0x002ab00;
-	const auto is_d81 = selected_item_data.size() == 0x00c8000;
+	const auto* const data = selected_item_data.data();
+	const auto len = selected_item_data.size();
 
 	d64_media media;
 
-	if (selected_item_data.size() > 32 &&
-		std::memcmp(selected_item_data.data(), "C64 tape image file", 19) == 0)
+	if (len >= 8 &&
+		std::memcmp(data, "C64File", 7) == 0)
 	{
-		media = parse_t64(selected_item_data.data(), selected_item_data.size());
+		media = parse_p00(data, len);
 	}
-	else if (selected_item_data.size() > 16 &&
-		std::memcmp(selected_item_data.data(), "C64 CARTRIDGE   ", 16) == 0)
+	else if (len > 32 &&
+		std::memcmp(data, "C64 tape image file", 19) == 0)
 	{
-		media = parse_crt(selected_item_data.data(), selected_item_data.size());
+		media = parse_t64(data, len);
 	}
-	else if (is_d64 || is_d81)
+	else if (len >= sizeof(crt_header) &&
+		std::memcmp(data, "C64 CARTRIDGE   ", 16) == 0)
 	{
-		media = parse_disk(selected_item_data.data(), selected_item_data.size());
+		media = parse_crt(data, len);
+	}
+	else if (classify_disk(len) != disk_format::unknown)
+	{
+		media = parse_disk(data, len);
+	}
+	else
+	{
+		// A raw .PRG program has no signature or fixed size.
+		media = parse_prg(data, len);
 	}
 
 	return dir_list(media);
