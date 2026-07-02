@@ -254,8 +254,13 @@ archive_read_disk_entry_from_file(struct archive *_a,
 	if (S_ISLNK(st->st_mode)) {
 		size_t linkbuffer_len = st->st_size;
 		char *linkbuffer;
-		int lnklen;
+		ssize_t lnklen;
 
+		if (st->st_size >= SSIZE_MAX) {
+			archive_set_error(&a->archive, ENOMEM,
+			    "Couldn't read link data");
+			return (ARCHIVE_FAILED);
+		}
 		linkbuffer = malloc(linkbuffer_len + 1);
 		if (linkbuffer == NULL) {
 			archive_set_error(&a->archive, ENOMEM,
@@ -338,7 +343,7 @@ setup_mac_metadata(struct archive_read_disk *a,
 	int ret = ARCHIVE_OK;
 	void *buff = NULL;
 	int have_attrs;
-	const char *name, *tempdir;
+	const char *name;
 	struct archive_string tempfile;
 
 	(void)fd; /* UNUSED */
@@ -357,15 +362,11 @@ setup_mac_metadata(struct archive_read_disk *a,
 	if (have_attrs == 0)
 		return (ARCHIVE_OK);
 
-	tempdir = NULL;
-	if (issetugid() == 0)
-		tempdir = getenv("TMPDIR");
-	if (tempdir == NULL)
-		tempdir = _PATH_TMP;
 	archive_string_init(&tempfile);
-	archive_strcpy(&tempfile, tempdir);
-	archive_strcat(&tempfile, "tar.md.XXXXXX");
-	tempfd = mkstemp(tempfile.s);
+	archive_strcpy(&tempfile, name);
+	archive_string_dirname(&tempfile);
+	archive_strcat(&tempfile, "/tar.XXXXXXXX");
+	tempfd = __archive_mkstemp(tempfile.s);
 	if (tempfd < 0) {
 		archive_set_error(&a->archive, errno,
 		    "Could not open extended attribute file");
@@ -896,9 +897,9 @@ setup_sparse_fiemap(struct archive_read_disk *a,
 	for (iters = 0; ; ++iters) {
 		int i, r;
 
-		r = ioctl(*fd, FS_IOC_FIEMAP, fm); 
+		r = ioctl(*fd, FS_IOC_FIEMAP, fm);
 		if (r < 0) {
-			/* When something error happens, it is better we
+			/* When some error happens, it is better we
 			 * should return ARCHIVE_OK because an earlier
 			 * version(<2.6.28) cannot perform FS_IOC_FIEMAP. */
 			goto exit_setup_sparse_fiemap;
@@ -1083,4 +1084,3 @@ setup_sparse(struct archive_read_disk *a,
 #endif
 
 #endif /* !defined(_WIN32) || defined(__CYGWIN__) */
-

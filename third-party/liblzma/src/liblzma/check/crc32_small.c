@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: 0BSD
+
 ///////////////////////////////////////////////////////////////////////////////
 //
 /// \file       crc32_small.c
@@ -5,14 +7,14 @@
 //
 //  Author:     Lasse Collin
 //
-//  This file has been put into the public domain.
-//  You can do whatever you want with this file.
-//
 ///////////////////////////////////////////////////////////////////////////////
 
 #include "check.h"
+#include "crc_common.h"
 
 
+// The table is used by the LZ encoder too, thus it's not static like
+// in crc64_small.c.
 uint32_t lzma_crc32_table[1][256];
 
 

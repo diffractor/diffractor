@@ -398,16 +398,17 @@ archive_write_zip_options(struct archive_write *a, const char *key,
 		return (ret);
 	} else if (strcmp(key, "compression-level") == 0) {
 		char *endptr;
+		unsigned long v;
 
 		if (val == NULL)
 			return (ARCHIVE_WARN);
 		errno = 0;
-		zip->compression_level = (short)strtoul(val, &endptr, 10);
-		if (errno != 0 || *endptr != '\0' || zip->compression_level < 0 ||
-			zip->compression_level > 9) {
+		v = strtoul(val, &endptr, 10);
+		if (errno != 0 || *endptr != '\0' || v > 9) {
 			zip->compression_level = 6; // set to default
 			return (ARCHIVE_WARN);
 		}
+		zip->compression_level = (short)v;
 
 		if (zip->compression_level == 0) {
 			zip->requested_compression = COMPRESSION_STORE;
@@ -435,17 +436,19 @@ archive_write_zip_options(struct archive_write *a, const char *key,
 		}
 	} else if (strcmp(key, "threads") == 0) {
 		char *endptr;
+		unsigned long v;
 
 		if (val == NULL)
 			return (ARCHIVE_FAILED);
 		errno = 0;
-		zip->threads = (short)strtoul(val, &endptr, 10);
-		if (errno != 0 || *endptr != '\0') {
+		v = strtoul(val, &endptr, 10);
+		if (errno != 0 || *endptr != '\0' || v > SHRT_MAX) {
 			zip->threads = 1;
 			archive_set_error(&(a->archive), ARCHIVE_ERRNO_MISC,
 			    "Illegal value `%s'", val);
 			return (ARCHIVE_FAILED);
 		}
+		zip->threads = (short)v;
 		if (zip->threads == 0) {
 #ifdef HAVE_LZMA_STREAM_ENCODER_MT
 			zip->threads = lzma_cputhreads();
@@ -794,6 +797,7 @@ archive_write_zip_header(struct archive_write *a, struct archive_entry *entry)
 	unsigned char *e;
 	unsigned char *cd_extra;
 	size_t filename_length;
+	const char *path;
 	const char *slink = NULL;
 	size_t slink_size = 0;
 	struct archive_string_conv *sconv = get_sconv(a, zip);
@@ -801,6 +805,17 @@ archive_write_zip_header(struct archive_write *a, struct archive_entry *entry)
 	mode_t type;
 	int version_needed = 10;
 #define MIN_VERSION_NEEDED(x) do { if (version_needed < x) { version_needed = x; } } while (0)
+
+	/* Sanity check. */
+	if (archive_entry_pathname(entry) == NULL
+#if defined(_WIN32) && !defined(__CYGWIN__)
+	    && archive_entry_pathname_w(entry) == NULL
+#endif
+	    ) {
+		archive_set_error(&a->archive, ARCHIVE_ERRNO_MISC,
+		    "Can't record entry in zip file without pathname");
+		return ARCHIVE_FAILED;
+	}
 
 	/* Ignore types of entries that we don't support. */
 	type = archive_entry_filetype(entry);
@@ -882,22 +897,33 @@ archive_write_zip_header(struct archive_write *a, struct archive_entry *entry)
 		return (ARCHIVE_FATAL);
 	}
 
-	if (sconv != NULL) {
+	{
 		const char *p;
 		size_t len;
 
 		if (archive_entry_pathname_l(zip->entry, &p, &len, sconv) != 0) {
+			const char* p_mbs;
 			if (errno == ENOMEM) {
 				archive_set_error(&a->archive, ENOMEM,
 				    "Can't allocate memory for Pathname");
 				return (ARCHIVE_FATAL);
 			}
-			archive_set_error(&a->archive,
-			    ARCHIVE_ERRNO_FILE_FORMAT,
-			    "Can't translate Pathname '%s' to %s",
-			    archive_entry_pathname(zip->entry),
-			    archive_string_conversion_charset_name(sconv));
-			ret2 = ARCHIVE_WARN;
+			p_mbs = archive_entry_pathname(zip->entry);
+			if (p_mbs) {
+				/* We have a wrongly-encoded MBS pathname.  Warn and use it.  */
+				archive_set_error(&a->archive,
+				    ARCHIVE_ERRNO_FILE_FORMAT,
+				    "Can't translate pathname '%s' to %s", p_mbs,
+				    archive_string_conversion_charset_name(sconv));
+				ret2 = ARCHIVE_WARN;
+			} else {
+				/* We have no MBS pathname.  Fail.  */
+				archive_set_error(&a->archive,
+				    ARCHIVE_ERRNO_FILE_FORMAT,
+				    "Can't translate pathname to %s",
+				    archive_string_conversion_charset_name(sconv));
+				return ARCHIVE_FAILED;
+			}
 		}
 		if (len > 0)
 			archive_entry_set_pathname(zip->entry, p);
@@ -934,6 +960,19 @@ archive_write_zip_header(struct archive_write *a, struct archive_entry *entry)
 		}
 	}
 	filename_length = path_length(zip->entry);
+
+	/* Reject empty or overlong pathnames */
+	path = archive_entry_pathname(zip->entry);
+	if (path == NULL || path[0] == '\0') {
+		archive_set_error(&a->archive, ARCHIVE_ERRNO_MISC,
+		    "ZIP format requires a non-empty pathname");
+		return (ARCHIVE_FAILED);
+	}
+	if (filename_length > 0xffff) {
+		archive_set_error(&a->archive, ENAMETOOLONG,
+		    "Pathname too long for ZIP format");
+		return (ARCHIVE_FAILED);
+	}
 
 	/* Determine appropriate compression and size for this entry. */
 	if (type == AE_IFLNK) {
@@ -1856,7 +1895,10 @@ archive_write_zip_finish_entry(struct archive_write *a)
 			}
 			ret = __archive_write_output(a, zip->buf, remainder);
 			if (ret != ARCHIVE_OK)
+			{
+				deflateEnd(&zip->stream.deflate);
 				return (ret);
+			}
 			zip->entry_compressed_written += remainder;
 			zip->written_bytes += remainder;
 			zip->stream.deflate.next_out = zip->buf;
@@ -1898,7 +1940,10 @@ archive_write_zip_finish_entry(struct archive_write *a)
 			}
 			ret = __archive_write_output(a, zip->buf, remainder);
 			if (ret != ARCHIVE_OK)
+			{
+				BZ2_bzCompressEnd(&zip->stream.bzip2);
 				return (ret);
+			}
 			zip->entry_compressed_written += remainder;
 			zip->written_bytes += remainder;
 			zip->stream.bzip2.next_out = (char*)zip->buf;
@@ -1940,13 +1985,17 @@ archive_write_zip_finish_entry(struct archive_write *a)
 			}
 			ret = __archive_write_output(a, zip->buf, remainder);
 			if (ret != ARCHIVE_OK)
+			{
+				ZSTD_freeCStream(zip->stream.zstd.context);
 				return (ret);
+			}
 			zip->entry_compressed_written += remainder;
 			zip->written_bytes += remainder;
-			zip->stream.zstd.out.dst = zip->buf;
 			if (zip->stream.zstd.out.pos != zip->stream.zstd.out.size)
 				finishing = 0;
+			zip->stream.zstd.out.dst = zip->buf;
 			zip->stream.zstd.out.size = zip->len_buf;
+			zip->stream.zstd.out.pos = 0;
 		} while (finishing);
 		ZSTD_freeCStream(zip->stream.zstd.context);
 		break;
@@ -1984,7 +2033,10 @@ archive_write_zip_finish_entry(struct archive_write *a)
 			}
 			ret = __archive_write_output(a, zip->buf, remainder);
 			if (ret != ARCHIVE_OK)
+			{
+				lzma_end(&zip->stream.lzma.context);
 				return (ret);
+			}
 			zip->entry_compressed_written += remainder;
 			zip->written_bytes += remainder;
 			zip->stream.lzma.context.next_out = zip->buf;
@@ -2266,7 +2318,7 @@ write_path(struct archive_entry *entry, struct archive_write *archive)
 	written_bytes += strlen(path);
 
 	/* Folders are recognized by a trailing slash. */
-	if ((type == AE_IFDIR) & (path[strlen(path) - 1] != '/')) {
+	if ((type == AE_IFDIR) && (path[strlen(path) - 1] != '/')) {
 		ret = __archive_write_output(archive, "/", 1);
 		if (ret != ARCHIVE_OK)
 			return (ARCHIVE_FATAL);
@@ -2434,13 +2486,19 @@ init_winzip_aes_encryption(struct archive_write *a)
 		    "Can't generate random number for encryption");
 		return (ARCHIVE_FATAL);
 	}
-	archive_pbkdf2_sha1(passphrase, strlen(passphrase),
+	ret = archive_pbkdf2_sha1(passphrase, strlen(passphrase),
 	    salt, salt_len, 1000, derived_key, key_len * 2 + 2);
+	if (ret != 0) {
+		archive_set_error(&a->archive, ARCHIVE_ERRNO_MISC,
+		    ret == CRYPTOR_STUB_FUNCTION ? "Encryption is unsupported due to "
+			"lack of crypto library" : "Failed to process passphrase");
+		return (ARCHIVE_FAILED);
+	}
 
 	ret = archive_encrypto_aes_ctr_init(&zip->cctx, derived_key, key_len);
 	if (ret != 0) {
 		archive_set_error(&a->archive, ARCHIVE_ERRNO_MISC,
-		    "Decryption is unsupported due to lack of crypto library");
+		    "Failed to initialize AES CTR mode");
 		return (ARCHIVE_FAILED);
 	}
 	ret = archive_hmac_sha1_init(&zip->hctx, derived_key + key_len,

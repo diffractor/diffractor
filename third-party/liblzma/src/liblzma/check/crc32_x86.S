@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: 0BSD */
+
 /*
  * Speed-optimized CRC32 using slicing-by-eight algorithm
  *
@@ -10,9 +12,6 @@
  *
  * Authors: Igor Pavlov (original version)
  *          Lasse Collin (AT&T syntax, PIC support, better portability)
- *
- * This file has been put into the public domain.
- * You can do whatever you want with this file.
  *
  * This code needs lzma_crc32_table, which can be created using the
  * following C code:
@@ -68,7 +67,7 @@ init_table(void)
 #endif
 #define MAKE_SYM_CAT(prefix, sym) prefix ## sym
 #define MAKE_SYM(prefix, sym) MAKE_SYM_CAT(prefix, sym)
-#define LZMA_CRC32 MAKE_SYM(__USER_LABEL_PREFIX__, lzma_crc32)
+#define LZMA_CRC32 MAKE_SYM(__USER_LABEL_PREFIX__, lzma_crc32_generic)
 #define LZMA_CRC32_TABLE MAKE_SYM(__USER_LABEL_PREFIX__, lzma_crc32_table)
 
 /*
@@ -83,6 +82,9 @@ init_table(void)
 
 	.text
 	.globl	LZMA_CRC32
+#ifdef __ELF__
+	.hidden	LZMA_CRC32
+#endif
 
 #if !defined(__APPLE__) && !defined(_WIN32) && !defined(__CYGWIN__) \
 		&& !defined(__MSDOS__)
@@ -291,14 +293,7 @@ LZMA_CRC32:
 	.indirect_symbol LZMA_CRC32_TABLE
 	.long 0
 
-#elif defined(_WIN32) || defined(__CYGWIN__)
-#	ifdef DLL_EXPORT
-	/* This is equivalent of __declspec(dllexport). */
-	.section .drectve
-	.ascii " -export:lzma_crc32"
-#	endif
-
-#elif !defined(__MSDOS__)
+#elif !defined(_WIN32) && !defined(__CYGWIN__) && !defined(__MSDOS__)
 	/* ELF */
 	.size	LZMA_CRC32, .-LZMA_CRC32
 #endif

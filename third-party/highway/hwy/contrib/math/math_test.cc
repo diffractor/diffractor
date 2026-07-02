@@ -19,14 +19,20 @@
 #include <cfloat>  // FLT_MAX
 #include <cmath>   // std::abs
 
+// For faster tests. Not using AES, hence NEON_WITHOUT_AES is sufficient.
+// SVE is mostly superseded by SVE2.
+#ifndef HWY_DISABLED_TARGETS
+#define HWY_DISABLED_TARGETS (HWY_NEON | HWY_SVE)
+#endif  // HWY_DISABLED_TARGETS
+
 #include "hwy/base.h"
-#include "hwy/nanobenchmark.h"
 
 // clang-format off
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "hwy/contrib/math/math_test.cc"
 #include "hwy/foreach_target.h"  // IWYU pragma: keep
 #include "hwy/highway.h"
+#include "hwy/contrib/math/fast_math-inl.h"
 #include "hwy/contrib/math/math-inl.h"
 #include "hwy/tests/test_util-inl.h"
 // clang-format on
@@ -89,17 +95,27 @@ HWY_NOINLINE void TestMath(const char* name, T (*fx1)(T),
   // two pieces, [+0, max] and [-0, min], otherwise [min, max].
   int range_count = 1;
   UintT ranges[2][2] = {{min_bits, max_bits}, {0, 0}};
-  if ((min < 0.0) && (max > 0.0)) {
+  if ((min < T{0}) && (max > T{0})) {
     ranges[0][0] = BitCastScalar<UintT>(ConvertScalarTo<T>(+0.0));
     ranges[0][1] = max_bits;
     ranges[1][0] = BitCastScalar<UintT>(ConvertScalarTo<T>(-0.0));
     ranges[1][1] = min_bits;
     range_count = 2;
+  } else {
+    // If not splitting, ensure we iterate from smaller uint to larger uint.
+    // For negative numbers, min (e.g. -1000) has larger uint representation
+    // than max (e.g. -1).
+    if (ranges[0][0] > ranges[0][1]) {
+      auto tmp = ranges[0][0];
+      ranges[0][0] = ranges[0][1];
+      ranges[0][1] = tmp;
+    }
   }
 
   uint64_t max_ulp = 0;
   // Emulation is slower, so cannot afford as many.
-  constexpr UintT kSamplesPerRange = static_cast<UintT>(AdjustedReps(4000));
+  constexpr UintT kSamplesPerRange =
+      static_cast<UintT>(AdjustedReps(static_cast<size_t>(1000)));
   for (int range_index = 0; range_index < range_count; ++range_index) {
     const UintT start = ranges[range_index][0];
     const UintT stop = ranges[range_index][1];
@@ -123,9 +139,9 @@ HWY_NOINLINE void TestMath(const char* name, T (*fx1)(T),
       max_ulp = HWY_MAX(max_ulp, ulp);
       if (ulp > max_error_ulp) {
         fprintf(stderr, "%s: %s(%f) expected %E actual %E ulp %g max ulp %u\n",
-                hwy::TypeName(T(), Lanes(d)).c_str(), name, value, expected,
-                actual, static_cast<double>(ulp),
-                static_cast<uint32_t>(max_error_ulp));
+                hwy::TypeName(T(), Lanes(d)).c_str(), name, value,
+                static_cast<double>(expected), static_cast<double>(actual),
+                static_cast<double>(ulp), static_cast<uint32_t>(max_error_ulp));
       }
     }
   }
@@ -140,101 +156,23 @@ HWY_NOINLINE void TestMath(const char* name, T (*fx1)(T),
   }
 
 #undef DEFINE_MATH_TEST
-#define DEFINE_MATH_TEST(NAME, F32x1, F32xN, F32_MIN, F32_MAX, F32_ERROR, \
-                         F64x1, F64xN, F64_MIN, F64_MAX, F64_ERROR)       \
-  struct Test##NAME {                                                     \
-    template <class T, class D>                                           \
-    HWY_NOINLINE void operator()(T, D d) {                                \
-      if (sizeof(T) == 4) {                                               \
-        TestMath<T, D>(HWY_STR(NAME), F32x1, F32xN, d, F32_MIN, F32_MAX,  \
-                       F32_ERROR);                                        \
-      } else {                                                            \
-        TestMath<T, D>(HWY_STR(NAME), F64x1, F64xN, d,                    \
-                       static_cast<T>(F64_MIN), static_cast<T>(F64_MAX),  \
-                       F64_ERROR);                                        \
-      }                                                                   \
-    }                                                                     \
-  };                                                                      \
+#define DEFINE_MATH_TEST(NAME, F32x1, F32xN, F32_MIN, F32_MAX, F32_ERROR,     \
+                         F64x1, F64xN, F64_MIN, F64_MAX, F64_ERROR)           \
+  struct Test##NAME {                                                         \
+    template <class T, class D, HWY_IF_T_SIZE(T, 4)>                          \
+    HWY_NOINLINE void operator()(T, D d) {                                    \
+      TestMath<T, D>(HWY_STR(NAME), F32x1, F32xN, d, F32_MIN, F32_MAX,        \
+                     F32_ERROR);                                              \
+    }                                                                         \
+    template <class T, class D, HWY_IF_T_SIZE(T, 8)>                          \
+    HWY_NOINLINE void operator()(T, D d) {                                    \
+      TestMath<T, D>(HWY_STR(NAME), F64x1, F64xN, d, static_cast<T>(F64_MIN), \
+                     static_cast<T>(F64_MAX), F64_ERROR);                     \
+    }                                                                         \
+  };                                                                          \
   DEFINE_MATH_TEST_FUNC(NAME)
 
-// Floating point values closest to but less than 1.0. Avoid variables with
-// static initializers inside HWY_BEFORE_NAMESPACE/HWY_AFTER_NAMESPACE to
-// ensure target-specific code does not leak into startup code.
-float kNearOneF() { return BitCastScalar<float>(0x3F7FFFFF); }
-double kNearOneD() { return BitCastScalar<double>(0x3FEFFFFFFFFFFFFFULL); }
-
-// The discrepancy is unacceptably large for MSYS2 (less accurate libm?), so
-// only increase the error tolerance there.
-constexpr uint64_t Cos64ULP() {
-#if defined(__MINGW32__)
-  return 23;
-#else
-  return 3;
-#endif
-}
-
-constexpr uint64_t ACosh32ULP() {
-#if defined(__MINGW32__)
-  return 8;
-#else
-  return 3;
-#endif
-}
-
-template <class D>
-static Vec<D> SinCosSin(const D d, VecArg<Vec<D>> x) {
-  Vec<D> s, c;
-  CallSinCos(d, x, s, c);
-  return s;
-}
-
-template <class D>
-static Vec<D> SinCosCos(const D d, VecArg<Vec<D>> x) {
-  Vec<D> s, c;
-  CallSinCos(d, x, s, c);
-  return c;
-}
-
-// on targets without FMA the result is less inaccurate
-constexpr uint64_t SinCosSin32ULP() {
-#if !(HWY_NATIVE_FMA)
-  return 256;
-#else
-  return 3;
-#endif
-}
-
-constexpr uint64_t SinCosCos32ULP() {
-#if !(HWY_NATIVE_FMA)
-  return 64;
-#else
-  return 3;
-#endif
-}
-
 // clang-format off
-DEFINE_MATH_TEST(Acos,
-  std::acos,  CallAcos,  -1.0f,      +1.0f,       3,  // NEON is 3 instead of 2
-  std::acos,  CallAcos,  -1.0,       +1.0,        2)
-DEFINE_MATH_TEST(Acosh,
-  std::acosh, CallAcosh, +1.0f,      +FLT_MAX,    ACosh32ULP(),
-  std::acosh, CallAcosh, +1.0,       +DBL_MAX,    3)
-DEFINE_MATH_TEST(Asin,
-  std::asin,  CallAsin,  -1.0f,      +1.0f,       4,  // 4 ulp on Armv7, not 2
-  std::asin,  CallAsin,  -1.0,       +1.0,        2)
-DEFINE_MATH_TEST(Asinh,
-  std::asinh, CallAsinh, -FLT_MAX,   +FLT_MAX,    3,
-  std::asinh, CallAsinh, -DBL_MAX,   +DBL_MAX,    3)
-DEFINE_MATH_TEST(Atan,
-  std::atan,  CallAtan,  -FLT_MAX,   +FLT_MAX,    3,
-  std::atan,  CallAtan,  -DBL_MAX,   +DBL_MAX,    3)
-// NEON has ULP 4 instead of 3
-DEFINE_MATH_TEST(Atanh,
-  std::atanh, CallAtanh, -kNearOneF(), +kNearOneF(),  4,
-  std::atanh, CallAtanh, -kNearOneD(), +kNearOneD(),  3)
-DEFINE_MATH_TEST(Cos,
-  std::cos,   CallCos,   -39000.0f,  +39000.0f,   3,
-  std::cos,   CallCos,   -39000.0,   +39000.0,    Cos64ULP())
 DEFINE_MATH_TEST(Exp,
   std::exp,   CallExp,   -FLT_MAX,   +104.0f,     1,
   std::exp,   CallExp,   -DBL_MAX,   +104.0,      1)
@@ -251,378 +189,424 @@ DEFINE_MATH_TEST(Log10,
   std::log10, CallLog10, +FLT_MIN,   +FLT_MAX,    2,
   std::log10, CallLog10, +DBL_MIN,   +DBL_MAX,    2)
 DEFINE_MATH_TEST(Log1p,
-  std::log1p, CallLog1p, +0.0f,      +1e37f,      3,  // NEON is 3 instead of 2
+  std::log1p, CallLog1p, +0.0f,      +FLT_MAX,    3,  // NEON is 3 instead of 2
   std::log1p, CallLog1p, +0.0,       +DBL_MAX,    2)
 DEFINE_MATH_TEST(Log2,
   std::log2,  CallLog2,  +FLT_MIN,   +FLT_MAX,    2,
   std::log2,  CallLog2,  +DBL_MIN,   +DBL_MAX,    2)
-DEFINE_MATH_TEST(Sin,
-  std::sin,   CallSin,   -39000.0f,  +39000.0f,   3,
-  std::sin,   CallSin,   -39000.0,   +39000.0,    4)  // MSYS is 4 instead of 3
-DEFINE_MATH_TEST(Sinh,
-  std::sinh,  CallSinh,  -80.0f,     +80.0f,      4,
-  std::sinh,  CallSinh,  -709.0,     +709.0,      4)
-DEFINE_MATH_TEST(Tanh,
-  std::tanh,  CallTanh,  -FLT_MAX,   +FLT_MAX,    4,
-  std::tanh,  CallTanh,  -DBL_MAX,   +DBL_MAX,    4)
-DEFINE_MATH_TEST(SinCosSin,
-  std::sin,   SinCosSin,   -39000.0f,  +39000.0f,   SinCosSin32ULP(),
-  std::sin,   SinCosSin,   -39000.0,   +39000.0,    1)
-DEFINE_MATH_TEST(SinCosCos,
-  std::cos,   SinCosCos,   -39000.0f,  +39000.0f,   SinCosCos32ULP(),
-  std::cos,   SinCosCos,   -39000.0,   +39000.0,    1)
 // clang-format on
 
-template <typename T, class D>
-void Atan2TestCases(T /*unused*/, D d, size_t& padded,
-                    AlignedFreeUniquePtr<T[]>& out_y,
-                    AlignedFreeUniquePtr<T[]>& out_x,
-                    AlignedFreeUniquePtr<T[]>& out_expected) {
-  struct YX {
-    T y;
-    T x;
-    T expected;
-  };
-  const T pos = ConvertScalarTo<T>(1E5);
-  const T neg = ConvertScalarTo<T>(-1E7);
-  const T p0 = ConvertScalarTo<T>(0);
-  // -0 is not enough to get an actual negative zero.
-  const T n0 = ConvertScalarTo<T>(-0.0);
-  const T p1 = ConvertScalarTo<T>(1);
-  const T n1 = ConvertScalarTo<T>(-1);
-  const T p2 = ConvertScalarTo<T>(2);
-  const T n2 = ConvertScalarTo<T>(-2);
-  const T inf = GetLane(Inf(d));
-  const T nan = GetLane(NaN(d));
-
-  const T pi = ConvertScalarTo<T>(3.141592653589793238);
-  const YX test_cases[] = {                        // 45 degree steps:
-                           {p0, p1, p0},           // E
-                           {n1, p1, -pi / 4},      // SE
-                           {n1, p0, -pi / 2},      // S
-                           {n1, n1, -3 * pi / 4},  // SW
-                           {p0, n1, pi},           // W
-                           {p1, n1, 3 * pi / 4},   // NW
-                           {p1, p0, pi / 2},       // N
-                           {p1, p1, pi / 4},       // NE
-
-                           // y = ±0, x < 0 or -0
-                           {p0, n1, pi},
-                           {n0, n2, -pi},
-                           // y = ±0, x > 0 or +0
-                           {p0, p2, p0},
-                           {n0, p2, n0},
-                           // y = ±∞, x finite
-                           {inf, p2, pi / 2},
-                           {-inf, p2, -pi / 2},
-                           // y = ±∞, x = -∞
-                           {inf, -inf, 3 * pi / 4},
-                           {-inf, -inf, -3 * pi / 4},
-                           // y = ±∞, x = +∞
-                           {inf, inf, pi / 4},
-                           {-inf, inf, -pi / 4},
-                           // y < 0, x = ±0
-                           {n2, p0, -pi / 2},
-                           {n1, n0, -pi / 2},
-                           // y > 0, x = ±0
-                           {pos, p0, pi / 2},
-                           {p2, n0, pi / 2},
-                           // finite y > 0, x = -∞
-                           {pos, -inf, pi},
-                           // finite y < 0, x = -∞
-                           {neg, -inf, -pi},
-                           // finite y > 0, x = +∞
-                           {pos, inf, p0},
-                           // finite y < 0, x = +∞
-                           {neg, inf, n0},
-                           // y NaN xor x NaN
-                           {nan, p0, nan},
-                           {pos, nan, nan}};
-  const size_t kNumTestCases = sizeof(test_cases) / sizeof(test_cases[0]);
-  const size_t N = Lanes(d);
-  padded = RoundUpTo(kNumTestCases, N);  // allow loading whole vectors
-  out_y = AllocateAligned<T>(padded);
-  out_x = AllocateAligned<T>(padded);
-  out_expected = AllocateAligned<T>(padded);
-  HWY_ASSERT(out_y && out_x && out_expected);
-  size_t i = 0;
-  for (; i < kNumTestCases; ++i) {
-    out_y[i] = test_cases[i].y;
-    out_x[i] = test_cases[i].x;
-    out_expected[i] = test_cases[i].expected;
+template <class T, class D>
+HWY_NOINLINE void TestMathRelative(const char* name, T (*fx1)(T),
+                                   Vec<D> (*fxN)(D, VecArg<Vec<D>>), D d, T min,
+                                   T max, double max_relative_error,
+                                   uint64_t samples = 4000) {
+  if (HWY_MATH_TEST_EXCESS_PRECISION) {
+    static bool once = true;
+    if (once) {
+      once = false;
+      HWY_WARN("Skipping math_test due to GCC issue with excess precision.\n");
+    }
+    return;
   }
-  for (; i < padded; ++i) {
-    out_y[i] = p0;
-    out_x[i] = p0;
-    out_expected[i] = p0;
+
+  using UintT = MakeUnsigned<T>;
+
+  const UintT min_bits = BitCastScalar<UintT>(min);
+  const UintT max_bits = BitCastScalar<UintT>(max);
+
+  // If min is negative and max is positive, the range needs to be broken into
+  // two pieces, [+0, max] and [-0, min], otherwise [min, max].
+  int range_count = 1;
+  UintT ranges[2][2] = {{min_bits, max_bits}, {0, 0}};
+  if ((min < 0.0) && (max > 0.0)) {
+    ranges[0][0] = BitCastScalar<UintT>(ConvertScalarTo<T>(+0.0));
+    ranges[0][1] = max_bits;
+    ranges[1][0] = BitCastScalar<UintT>(ConvertScalarTo<T>(-0.0));
+    ranges[1][1] = min_bits;
+    range_count = 2;
+  } else {
+    // If not splitting, ensure we iterate from smaller uint to larger uint.
+    // For negative numbers, min (e.g. -1000) has larger uint representation
+    // than max (e.g. -1).
+    if (ranges[0][0] > ranges[0][1]) {
+      auto tmp = ranges[0][0];
+      ranges[0][0] = ranges[0][1];
+      ranges[0][1] = tmp;
+    }
   }
+
+  double max_actual_rel_error = 0.0;
+  double max_error_value = 0.0;
+  double sum_rel_error = 0.0;
+  uint64_t count = 0;
+  // Emulation is slower, so cannot afford as many.
+  const UintT kSamplesPerRange =
+      static_cast<UintT>(AdjustedReps(static_cast<size_t>(samples)));
+  for (int range_index = 0; range_index < range_count; ++range_index) {
+    const UintT start = ranges[range_index][0];
+    const UintT stop = ranges[range_index][1];
+    const UintT step = HWY_MAX(1, ((stop - start) / kSamplesPerRange));
+    for (UintT value_bits = start; value_bits <= stop; value_bits += step) {
+      // For reasons unknown, the HWY_MAX is necessary on RVV, otherwise
+      // value_bits can be less than start, and thus possibly NaN.
+      const T value =
+          BitCastScalar<T>(HWY_MIN(HWY_MAX(start, value_bits), stop));
+      const T actual = GetLane(fxN(d, Set(d, value)));
+      const T expected = fx1(value);
+
+      // Skip small inputs and outputs on armv7, it flushes subnormals to zero.
+#if HWY_TARGET <= HWY_NEON_WITHOUT_AES && HWY_ARCH_ARM_V7
+      if ((std::abs(value) < 1e-37f) || (std::abs(expected) < 1e-37f)) {
+        continue;
+      }
+#endif
+
+      if (std::abs(expected) > 0.0) {
+        double rel = std::abs(static_cast<double>(actual) -
+                              static_cast<double>(expected)) /
+                     std::abs(static_cast<double>(expected));
+        if (ScalarIsNaN(rel) || rel > max_actual_rel_error) {
+          max_actual_rel_error = rel;
+          max_error_value = static_cast<double>(value);
+        }
+        sum_rel_error += rel;
+        count++;
+        if (rel > max_relative_error) {
+          static int print_count = 0;
+          if (print_count < 10) {
+            fprintf(stderr,
+                    "%s: %s(%f) expected %E actual %E rel %E max rel %E\n",
+                    hwy::TypeName(T(), Lanes(d)).c_str(), name,
+                    static_cast<double>(value), static_cast<double>(expected),
+                    static_cast<double>(actual), rel, max_relative_error);
+            print_count++;
+          }
+        }
+      }
+    }
+  }
+  fprintf(stderr, "%s: %s max_rel_error %E at %E\n",
+          hwy::TypeName(T(), Lanes(d)).c_str(), name, max_actual_rel_error,
+          max_error_value);
+  if (count > 0) {
+    fprintf(stderr, "%s: %s avg_rel_error %E\n",
+            hwy::TypeName(T(), Lanes(d)).c_str(), name,
+            sum_rel_error / static_cast<double>(count));
+  }
+  HWY_ASSERT(max_actual_rel_error <= max_relative_error);
 }
 
-struct TestAtan2 {
-  template <typename T, class D>
-  HWY_NOINLINE void operator()(T t, D d) {
-    const size_t N = Lanes(d);
+struct TestFastLog {
+  template <class T, class D>
+  HWY_NOINLINE void operator()(T, D d) {
+    const double max_relative_error = 9.5E-5;  // SVE: 8.99
+    const uint64_t samples = 1000000;
+    if (sizeof(T) == 4) {
+      TestMathRelative<T, D>("FastLog", std::log, CallFastLog, d,
+                             static_cast<T>(FLT_MIN), static_cast<T>(FLT_MAX),
+                             max_relative_error, samples);
+      TestMathRelative<T, D>("FastLogPositiveNormal", std::log,
+                             CallFastLogPositiveNormal, d,
+                             static_cast<T>(1.18e-38f), static_cast<T>(FLT_MAX),
+                             max_relative_error, samples);
 
-    size_t padded;
-    AlignedFreeUniquePtr<T[]> in_y, in_x, expected;
-    Atan2TestCases(t, d, padded, in_y, in_x, expected);
-
-    const Vec<D> tolerance = Set(d, ConvertScalarTo<T>(1E-5));
-
-    for (size_t i = 0; i < padded; ++i) {
-      const T actual = ConvertScalarTo<T>(atan2(in_y[i], in_x[i]));
-      // fprintf(stderr, "%zu: table %f atan2 %f\n", i, expected[i], actual);
-      HWY_ASSERT_EQ(expected[i], actual);
-    }
-    for (size_t i = 0; i < padded; i += N) {
-      const Vec<D> y = Load(d, &in_y[i]);
-      const Vec<D> x = Load(d, &in_x[i]);
-#if HWY_ARCH_ARM_A64
-      // TODO(b/287462770): inline to work around incorrect SVE codegen
-      const Vec<D> actual = Atan2(d, y, x);
-#else
-      const Vec<D> actual = CallAtan2(d, y, x);
-#endif
-      const Vec<D> vexpected = Load(d, &expected[i]);
-
-      const Mask<D> exp_nan = IsNaN(vexpected);
-      const Mask<D> act_nan = IsNaN(actual);
-      HWY_ASSERT_MASK_EQ(d, exp_nan, act_nan);
-
-      // If not NaN, then compare with tolerance
-      const Mask<D> ge = Ge(actual, Sub(vexpected, tolerance));
-      const Mask<D> le = Le(actual, Add(vexpected, tolerance));
-      const Mask<D> ok = Or(act_nan, And(le, ge));
-      if (!AllTrue(d, ok)) {
-        const size_t mismatch =
-            static_cast<size_t>(FindKnownFirstTrue(d, Not(ok)));
-        fprintf(stderr, "Mismatch for i=%d expected %E actual %E\n",
-                static_cast<int>(i + mismatch), expected[i + mismatch],
-                ExtractLane(actual, mismatch));
-        HWY_ASSERT(0);
-      }
+    } else {
+      TestMathRelative<T, D>("FastLog", std::log, CallFastLog, d,
+                             static_cast<T>(DBL_MIN), static_cast<T>(DBL_MAX),
+                             max_relative_error, samples);
+      TestMathRelative<T, D>("FastLogPositiveNormal", std::log,
+                             CallFastLogPositiveNormal, d,
+                             static_cast<T>(2.23e-308), static_cast<T>(DBL_MAX),
+                             max_relative_error, samples);
     }
   }
 };
 
-HWY_NOINLINE void TestAllAtan2() {
-  if (HWY_MATH_TEST_EXCESS_PRECISION) return;
+struct TestFastExp {
+  template <class T, class D>
+  HWY_NOINLINE void operator()(T, D d) {
+    if (sizeof(T) == 4) {
+      // Float Normal Range: [-87.0, +88.0]
+      // exp(-87) ~= 1.6e-38 (just above min normal 1.17e-38)
+      TestMathRelative<T, D>("FastExpNormal", std::exp, CallFastExp, d,
+                             static_cast<T>(-87.0), static_cast<T>(88.0),
+                             0.000008, 10'000'000);
 
-  ForFloat3264Types(ForPartialVectors<TestAtan2>());
-}
-
-template <typename T, class D>
-void HypotTestCases(T /*unused*/, D d, size_t& padded,
-                    AlignedFreeUniquePtr<T[]>& out_a,
-                    AlignedFreeUniquePtr<T[]>& out_b,
-                    AlignedFreeUniquePtr<T[]>& out_expected) {
-  using TU = MakeUnsigned<T>;
-
-  struct AB {
-    T a;
-    T b;
-  };
-
-  constexpr int kNumOfMantBits = MantissaBits<T>();
-  static_assert(kNumOfMantBits > 0, "kNumOfMantBits > 0 must be true");
-
-  // Ensures inputs are not constexpr.
-  const TU u1 = static_cast<TU>(hwy::Unpredictable1());
-  const double k1 = static_cast<double>(u1);
-
-  const T pos = ConvertScalarTo<T>(1E5 * k1);
-  const T neg = ConvertScalarTo<T>(-1E7 * k1);
-  const T p0 = ConvertScalarTo<T>(k1 - 1.0);
-  // -0 is not enough to get an actual negative zero.
-  const T n0 = ScalarCopySign<T>(p0, neg);
-  const T p1 = ConvertScalarTo<T>(k1);
-  const T n1 = ConvertScalarTo<T>(-k1);
-  const T p2 = ConvertScalarTo<T>(2 * k1);
-  const T n2 = ConvertScalarTo<T>(-2 * k1);
-  const T inf = BitCastScalar<T>(ExponentMask<T>() * u1);
-  const T neg_inf = ScalarCopySign(inf, n1);
-  const T nan = BitCastScalar<T>(
-      static_cast<TU>(ExponentMask<T>() | (u1 << (kNumOfMantBits - 1))));
-
-  const double max_as_f64 = ConvertScalarTo<double>(HighestValue<T>()) * k1;
-  const T max = ConvertScalarTo<T>(max_as_f64);
-
-  const T huge = ConvertScalarTo<T>(max_as_f64 * 0.25);
-  const T neg_huge = ScalarCopySign(huge, n1);
-
-  const T huge2 = ConvertScalarTo<T>(max_as_f64 * 0.039415044328304796);
-
-  const T large = ConvertScalarTo<T>(3.512227595593985E18 * k1);
-  const T neg_large = ScalarCopySign(large, n1);
-  const T large2 = ConvertScalarTo<T>(2.1190576943127544E16 * k1);
-
-  const T small = ConvertScalarTo<T>(1.067033284841808E-11 * k1);
-  const T neg_small = ScalarCopySign(small, n1);
-  const T small2 = ConvertScalarTo<T>(1.9401409532292856E-12 * k1);
-
-  const T tiny = BitCastScalar<T>(static_cast<TU>(u1 << kNumOfMantBits));
-  const T neg_tiny = ScalarCopySign(tiny, n1);
-
-  const T tiny2 =
-      ConvertScalarTo<T>(78.68466968859765 * ConvertScalarTo<double>(tiny));
-
-  const AB test_cases[] = {{p0, p0},          {p0, n0},
-                           {n0, n0},          {p1, p1},
-                           {p1, n1},          {n1, n1},
-                           {p2, p2},          {p2, n2},
-                           {p2, pos},         {p2, neg},
-                           {n2, pos},         {n2, neg},
-                           {n2, n2},          {p0, tiny},
-                           {p0, neg_tiny},    {n0, tiny},
-                           {n0, neg_tiny},    {p1, tiny},
-                           {p1, neg_tiny},    {n1, tiny},
-                           {n1, neg_tiny},    {tiny, p0},
-                           {tiny2, p0},       {tiny, tiny2},
-                           {neg_tiny, tiny2}, {huge, huge2},
-                           {neg_huge, huge2}, {huge, p0},
-                           {huge, tiny},      {huge2, tiny2},
-                           {large, p0},       {large, large2},
-                           {neg_large, p0},   {neg_large, large2},
-                           {small, p0},       {small, small2},
-                           {neg_small, p0},   {neg_small, small2},
-                           {max, p0},         {max, huge},
-                           {max, max},        {p0, inf},
-                           {n0, inf},         {p1, inf},
-                           {n1, inf},         {p2, inf},
-                           {n2, inf},         {p0, neg_inf},
-                           {n0, neg_inf},     {p1, neg_inf},
-                           {n1, neg_inf},     {p2, neg_inf},
-                           {n2, neg_inf},     {p0, nan},
-                           {n0, nan},         {p1, nan},
-                           {n1, nan},         {p2, nan},
-                           {n2, nan},         {huge, inf},
-                           {inf, nan},        {neg_inf, nan},
-                           {nan, nan}};
-
-  const size_t kNumTestCases = sizeof(test_cases) / sizeof(test_cases[0]);
-  const size_t N = Lanes(d);
-  padded = RoundUpTo(kNumTestCases, N);  // allow loading whole vectors
-  out_a = AllocateAligned<T>(padded);
-  out_b = AllocateAligned<T>(padded);
-  out_expected = AllocateAligned<T>(padded);
-  HWY_ASSERT(out_a && out_b && out_expected);
-
-  size_t i = 0;
-  for (; i < kNumTestCases; ++i) {
-    const T a =
-        test_cases[i].a * hwy::ConvertScalarTo<T>(hwy::Unpredictable1());
-    const T b = test_cases[i].b;
-
-#if HWY_TARGET <= HWY_NEON_WITHOUT_AES && HWY_ARCH_ARM_V7
-    // Ignore test cases that have infinite or NaN inputs on Armv7 NEON
-    if (!ScalarIsFinite(a) || !ScalarIsFinite(b)) {
-      out_a[i] = p0;
-      out_b[i] = p0;
-      out_expected[i] = p0;
-      continue;
-    }
-#endif
-
-    out_a[i] = a;
-    out_b[i] = b;
-
-    if (ScalarIsInf(a) || ScalarIsInf(b)) {
-      out_expected[i] = inf;
-    } else if (ScalarIsNaN(a) || ScalarIsNaN(b)) {
-      out_expected[i] = nan;
+      // Float Subnormal Range: [-104.0, -87.0]
+      // exp(-104) is very small. Quantization error is expected.
+      TestMathRelative<T, D>("FastExpSubnormal", std::exp, CallFastExp, d,
+                             static_cast<T>(-104.0), static_cast<T>(-87.0),
+                             0.03);
     } else {
-      out_expected[i] = std::hypot(a, b);
+      // Double Normal Range: [-708.0, +706.0]
+      // exp(-708) ~= 2.2e-308 (min normal 2.22e-308)
+      TestMathRelative<T, D>("FastExpNormal", std::exp, CallFastExp, d,
+                             static_cast<T>(-708.0), static_cast<T>(706.0),
+                             0.000008, 10'000'000);
+
+      // Double Subnormal Range: [-744.0, -708.0]
+      // exp(-744) is very small. Quantization error is expected.
+      TestMathRelative<T, D>("FastExpSubnormal", std::exp, CallFastExp, d,
+                             static_cast<T>(-744.0), static_cast<T>(-708.0),
+                             1.4E-4);
     }
   }
-  for (; i < padded; ++i) {
-    out_a[i] = p0;
-    out_b[i] = p0;
-    out_expected[i] = p0;
+};
+
+struct TestFastExp2 {
+  template <class T, class D>
+  HWY_NOINLINE void operator()(T, D d) {
+    if (sizeof(T) == 4) {
+      // Float Normal Range: [-126.0, +127.0]
+      // exp2(-126) is min normal
+      TestMathRelative<T, D>("FastExp2Normal", std::exp2, CallFastExp2, d,
+                             static_cast<T>(-126.0), static_cast<T>(127.0),
+                             0.000008, 10'000'000);
+
+      // Float Subnormal Range: [-150.0, -126.0]
+      TestMathRelative<T, D>("FastExp2Subnormal", std::exp2, CallFastExp2, d,
+                             static_cast<T>(-150.0), static_cast<T>(-126.0),
+                             0.0009);
+    } else {
+      // Double Normal Range: [-1022.0, +1023.0]
+      TestMathRelative<T, D>("FastExp2Normal", std::exp2, CallFastExp2, d,
+                             static_cast<T>(-1022.0), static_cast<T>(1023.0),
+                             0.000008, 10'000'000);
+
+      // Double Subnormal Range: [-1075.0, -1022.0]
+      TestMathRelative<T, D>("FastExp2Subnormal", std::exp2, CallFastExp2, d,
+                             static_cast<T>(-1075.0), static_cast<T>(-1022.0),
+                             0.0004);
+    }
   }
+};
+
+struct TestFastExpMinusOrZero {
+  template <class T, class D>
+  HWY_NOINLINE void operator()(T, D d) {
+    if (sizeof(T) == 4) {
+      // Float Normal Range: [-87.0, 0.0]
+      TestMathRelative<T, D>("FastExpMinusOrZeroNormal", std::exp,
+                             CallFastExpMinusOrZero, d, static_cast<T>(-87.0),
+                             static_cast<T>(-0.0), 0.000008, 10'000'000);
+    } else {
+      // Double Normal Range: [-708.0, 0.0]
+      TestMathRelative<T, D>("FastExpMinusOrZeroNormal", std::exp,
+                             CallFastExpMinusOrZero, d, static_cast<T>(-708.0),
+                             static_cast<T>(-0.0), 0.000008, 10'000'000);
+    }
+  }
+};
+
+struct TestFastLog2 {
+  template <class T, class D>
+  HWY_NOINLINE void operator()(T, D d) {
+    const double max_relative_error = 0.000082;
+    const uint64_t samples = 1000000;
+    if (sizeof(T) == 4) {
+      TestMathRelative<T, D>("FastLog2", std::log2, CallFastLog2, d,
+                             static_cast<T>(FLT_MIN), static_cast<T>(FLT_MAX),
+                             max_relative_error, samples);
+      TestMathRelative<T, D>("FastLog2PositiveNormal", std::log2,
+                             CallFastLog2PositiveNormal, d,
+                             static_cast<T>(1.18e-38f), static_cast<T>(FLT_MAX),
+                             max_relative_error, samples);
+    } else {
+      TestMathRelative<T, D>("FastLog2", std::log2, CallFastLog2, d,
+                             static_cast<T>(DBL_MIN), static_cast<T>(DBL_MAX),
+                             max_relative_error, samples);
+      TestMathRelative<T, D>("FastLog2PositiveNormal", std::log2,
+                             CallFastLog2PositiveNormal, d,
+                             static_cast<T>(2.23e-308), static_cast<T>(DBL_MAX),
+                             max_relative_error, samples);
+    }
+  }
+};
+
+struct TestFastLog10 {
+  template <class T, class D>
+  HWY_NOINLINE void operator()(T, D d) {
+    const double max_relative_error = 0.000082;
+    const uint64_t samples = 1000000;
+    if (sizeof(T) == 4) {
+      TestMathRelative<T, D>("FastLog10", std::log10, CallFastLog10, d,
+                             static_cast<T>(FLT_MIN), static_cast<T>(FLT_MAX),
+                             max_relative_error, samples);
+      TestMathRelative<T, D>("FastLog10PositiveNormal", std::log10,
+                             CallFastLog10PositiveNormal, d,
+                             static_cast<T>(1.18e-38f), static_cast<T>(FLT_MAX),
+                             max_relative_error, samples);
+    } else {
+      TestMathRelative<T, D>("FastLog10", std::log10, CallFastLog10, d,
+                             static_cast<T>(DBL_MIN), static_cast<T>(DBL_MAX),
+                             max_relative_error, samples);
+      TestMathRelative<T, D>("FastLog10PositiveNormal", std::log10,
+                             CallFastLog10PositiveNormal, d,
+                             static_cast<T>(2.23e-308), static_cast<T>(DBL_MAX),
+                             max_relative_error, samples);
+    }
+  }
+};
+
+struct TestFastLog1p {
+  template <class T, class D>
+  HWY_NOINLINE void operator()(T, D d) {
+    const double max_relative_error = 0.00009;
+    const uint64_t samples = 1000000;
+    if (sizeof(T) == 4) {
+      TestMathRelative<T, D>("FastLog1p", std::log1p, CallFastLog1p, d,
+                             static_cast<T>(-0.9f), static_cast<T>(FLT_MAX),
+                             max_relative_error, samples);
+      TestMathRelative<T, D>("FastLog1pPositiveNormal", std::log1p,
+                             CallFastLog1pPositiveNormal, d,
+                             static_cast<T>(0.0f), static_cast<T>(FLT_MAX),
+                             max_relative_error, samples);
+    } else {
+      TestMathRelative<T, D>("FastLog1p", std::log1p, CallFastLog1p, d,
+                             static_cast<T>(-0.9), static_cast<T>(DBL_MAX),
+                             max_relative_error, samples);
+      TestMathRelative<T, D>("FastLog1pPositiveNormal", std::log1p,
+                             CallFastLog1pPositiveNormal, d,
+                             static_cast<T>(0.0), static_cast<T>(DBL_MAX),
+                             max_relative_error, samples);
+    }
+  }
+};
+
+HWY_NOINLINE void TestAllFastExp() {
+  ForFloat3264Types(ForPartialVectors<TestFastExp>());
 }
 
-struct TestHypot {
-  template <typename T, class D>
-  HWY_NOINLINE void operator()(T t, D d) {
+HWY_NOINLINE void TestAllFastExp2() {
+  ForFloat3264Types(ForPartialVectors<TestFastExp2>());
+}
+
+HWY_NOINLINE void TestAllFastExpMinusOrZero() {
+  ForFloat3264Types(ForPartialVectors<TestFastExpMinusOrZero>());
+}
+
+HWY_NOINLINE void TestAllFastLog() {
+  ForFloat3264Types(ForPartialVectors<TestFastLog>());
+}
+
+HWY_NOINLINE void TestAllFastLog2() {
+  ForFloat3264Types(ForPartialVectors<TestFastLog2>());
+}
+
+HWY_NOINLINE void TestAllFastLog10() {
+  ForFloat3264Types(ForPartialVectors<TestFastLog10>());
+}
+
+HWY_NOINLINE void TestAllFastLog1p() {
+  ForFloat3264Types(ForPartialVectors<TestFastLog1p>());
+}
+
+struct TestFastPow {
+  template <class T, class D>
+  HWY_NOINLINE void operator()(T, D d) {
     if (HWY_MATH_TEST_EXCESS_PRECISION) {
       return;
     }
 
-    const size_t N = Lanes(d);
+    const T bases[] = {
+        static_cast<T>(0.1),   static_cast<T>(0.5),     static_cast<T>(0.99),
+        static_cast<T>(1.0),   static_cast<T>(1.0001),  static_cast<T>(1.5),
+        static_cast<T>(2.0),   static_cast<T>(2.71828), static_cast<T>(10.0),
+        static_cast<T>(100.0), static_cast<T>(1.0e-10), static_cast<T>(1.0e10),
+    };
 
-    constexpr uint64_t kMaxErrorUlp = 4;
+    double max_actual_rel_error = 0.0;
+    double max_error_base = 0.0;
+    double max_error_exp = 0.0;
 
-    size_t padded;
-    AlignedFreeUniquePtr<T[]> in_a, in_b, expected;
-    HypotTestCases(t, d, padded, in_a, in_b, expected);
+    for (T base : bases) {
+      T logb = std::log(base);
+      T limit = (sizeof(T) == 8) ? static_cast<T>(25.0) : static_cast<T>(25.0);
+      T min_exp_val = -limit / logb;
+      T max_exp_val = limit / logb;
 
-    auto actual1_lanes = AllocateAligned<T>(N);
-    auto actual2_lanes = AllocateAligned<T>(N);
-    HWY_ASSERT(actual1_lanes && actual2_lanes);
+      if (min_exp_val > max_exp_val) {
+        T tmp = min_exp_val;
+        min_exp_val = max_exp_val;
+        max_exp_val = tmp;
+      }
 
-    uint64_t max_ulp = 0;
-    for (size_t i = 0; i < padded; i += N) {
-      const auto a = Load(d, in_a.get() + i);
-      const auto b = Load(d, in_b.get() + i);
+      using UintT = MakeUnsigned<T>;
+      const UintT min_bits = BitCastScalar<UintT>(min_exp_val);
+      const UintT max_bits = BitCastScalar<UintT>(max_exp_val);
 
-#if HWY_ARCH_ARM_A64
-      // TODO(b/287462770): inline to work around incorrect SVE codegen
-      const auto actual1 = Hypot(d, a, b);
-      const auto actual2 = Hypot(d, b, a);
-#else
-      const auto actual1 = CallHypot(d, a, b);
-      const auto actual2 = CallHypot(d, b, a);
+      int range_count = 1;
+      UintT ranges[2][2] = {{min_bits, max_bits}, {0, 0}};
+      if ((min_exp_val < 0.0) && (max_exp_val > 0.0)) {
+        ranges[0][0] = BitCastScalar<UintT>(ConvertScalarTo<T>(+0.0));
+        ranges[0][1] = max_bits;
+        ranges[1][0] = BitCastScalar<UintT>(ConvertScalarTo<T>(-0.0));
+        ranges[1][1] = min_bits;
+        range_count = 2;
+      } else {
+        if (ranges[0][0] > ranges[0][1]) {
+          auto tmp = ranges[0][0];
+          ranges[0][0] = ranges[0][1];
+          ranges[0][1] = tmp;
+        }
+      }
+
+      const UintT kSamplesPerRange =
+          static_cast<UintT>(AdjustedReps(static_cast<size_t>(10000)));
+      for (int range_index = 0; range_index < range_count; ++range_index) {
+        const UintT start = ranges[range_index][0];
+        const UintT stop = ranges[range_index][1];
+        const UintT step = HWY_MAX(1, ((stop - start) / kSamplesPerRange));
+        for (UintT value_bits = start; value_bits <= stop; value_bits += step) {
+          const T exp_val =
+              BitCastScalar<T>(HWY_MIN(HWY_MAX(start, value_bits), stop));
+          const T actual =
+              GetLane(CallFastPow(d, Set(d, base), Set(d, exp_val)));
+          const T expected = std::pow(base, exp_val);
+
+#if HWY_TARGET <= HWY_NEON_WITHOUT_AES && HWY_ARCH_ARM_V7
+          if ((std::abs(exp_val) < 1e-37f) || (std::abs(expected) < 1e-37f)) {
+            continue;
+          }
 #endif
 
-      Store(actual1, d, actual1_lanes.get());
-      Store(actual2, d, actual2_lanes.get());
+          if (std::abs(expected) > 0.0) {
+            double rel = std::abs(static_cast<double>(actual) -
+                                  static_cast<double>(expected)) /
+                         std::abs(static_cast<double>(expected));
 
-      for (size_t j = 0; j < N; j++) {
-        const T val_a = in_a[i + j];
-        const T val_b = in_b[i + j];
-        const T expected_val = expected[i + j];
-        const T actual1_val = actual1_lanes[j];
-        const T actual2_val = actual2_lanes[j];
-
-        const auto ulp1 =
-            hwy::detail::ComputeUlpDelta(actual1_val, expected_val);
-        if (ulp1 > kMaxErrorUlp) {
-          fprintf(stderr,
-                  "%s: Hypot(%e, %e) lane %d expected %E actual %E ulp %g max "
-                  "ulp %u\n",
-                  hwy::TypeName(T(), Lanes(d)).c_str(), val_a, val_b,
-                  static_cast<int>(j), expected_val, actual1_val,
-                  static_cast<double>(ulp1),
-                  static_cast<uint32_t>(kMaxErrorUlp));
+            if (ScalarIsNaN(rel) || rel > max_actual_rel_error) {
+              max_actual_rel_error = rel;
+              max_error_base = static_cast<double>(base);
+              max_error_exp = static_cast<double>(exp_val);
+            }
+            if (rel > 0.006) {
+              static int print_count = 0;
+              if (print_count < 10) {
+                fprintf(stderr,
+                        "%s: FastPow(%f, %f) expected %E actual %E rel %E max "
+                        "rel %E\n",
+                        hwy::TypeName(T(), Lanes(d)).c_str(),
+                        static_cast<double>(base), static_cast<double>(exp_val),
+                        static_cast<double>(expected),
+                        static_cast<double>(actual), rel, 0.006);
+                print_count++;
+              }
+            }
+          }
         }
-
-        const auto ulp2 =
-            hwy::detail::ComputeUlpDelta(actual2_val, expected_val);
-        if (ulp2 > kMaxErrorUlp) {
-          fprintf(stderr,
-                  "%s: Hypot(%e, %e) expected %E actual %E ulp %g max ulp %u\n",
-                  hwy::TypeName(T(), Lanes(d)).c_str(), val_b, val_a,
-                  expected_val, actual2_val, static_cast<double>(ulp2),
-                  static_cast<uint32_t>(kMaxErrorUlp));
-        }
-
-        max_ulp = HWY_MAX(max_ulp, HWY_MAX(ulp1, ulp2));
       }
     }
-
-    if (max_ulp != 0) {
-      fprintf(stderr, "%s: Hypot max_ulp %g\n",
-              hwy::TypeName(T(), Lanes(d)).c_str(),
-              static_cast<double>(max_ulp));
-      HWY_ASSERT(max_ulp <= kMaxErrorUlp);
-    }
+    fprintf(stderr, "%s: FastPow max_rel_error %E at base=%E exp=%E\n",
+            hwy::TypeName(T(), Lanes(d)).c_str(), max_actual_rel_error,
+            max_error_base, max_error_exp);
+    HWY_ASSERT(max_actual_rel_error <= 0.006);
   }
 };
 
-HWY_NOINLINE void TestAllHypot() {
-  if (HWY_MATH_TEST_EXCESS_PRECISION) return;
-
-  ForFloat3264Types(ForPartialVectors<TestHypot>());
+HWY_NOINLINE void TestAllFastPow() {
+  ForFloat3264Types(ForPartialVectors<TestFastPow>());
 }
 
 }  // namespace
@@ -635,13 +619,6 @@ HWY_AFTER_NAMESPACE();
 namespace hwy {
 namespace {
 HWY_BEFORE_TEST(HwyMathTest);
-HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllAcos);
-HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllAcosh);
-HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllAsin);
-HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllAsinh);
-HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllAtan);
-HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllAtanh);
-HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllCos);
 HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllExp);
 HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllExp2);
 HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllExpm1);
@@ -649,13 +626,14 @@ HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllLog);
 HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllLog10);
 HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllLog1p);
 HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllLog2);
-HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllSin);
-HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllSinh);
-HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllTanh);
-HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllAtan2);
-HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllSinCosSin);
-HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllSinCosCos);
-HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllHypot);
+HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllFastLog);
+HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllFastExp);
+HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllFastExp2);
+HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllFastExpMinusOrZero);
+HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllFastLog2);
+HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllFastLog10);
+HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllFastLog1p);
+HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllFastPow);
 HWY_AFTER_TEST();
 }  // namespace
 }  // namespace hwy

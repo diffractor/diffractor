@@ -1,6 +1,51 @@
 # Diffractor Open Issues Summary
 
-Generated: 2026-03-25 | Total open: **128 issues**
+Generated: 2026-03-25 | Reconciled with GitHub: 2026-07-01 | Total open on GitHub: **96 issues**
+
+---
+
+## Reconciliation (2026-07-01)
+
+Compared this file against the live GitHub open-issue list (96 open).
+
+### Closed on GitHub since the snapshot (34 — fixed & released)
+
+These were tracked here (many as "Fixed" / "Likely fixed") and are now **closed** upstream:
+
+**Bugs:** [209](https://github.com/diffractor/diffractor/issues/209), [203](https://github.com/diffractor/diffractor/issues/203), [197](https://github.com/diffractor/diffractor/issues/197), [177](https://github.com/diffractor/diffractor/issues/177), [174](https://github.com/diffractor/diffractor/issues/174), [144](https://github.com/diffractor/diffractor/issues/144), [131](https://github.com/diffractor/diffractor/issues/131), [115](https://github.com/diffractor/diffractor/issues/115)
+
+**Features:** [213](https://github.com/diffractor/diffractor/issues/213), [212](https://github.com/diffractor/diffractor/issues/212), [211](https://github.com/diffractor/diffractor/issues/211), [201](https://github.com/diffractor/diffractor/issues/201), [195](https://github.com/diffractor/diffractor/issues/195), [191](https://github.com/diffractor/diffractor/issues/191), [188](https://github.com/diffractor/diffractor/issues/188), [176](https://github.com/diffractor/diffractor/issues/176), [156](https://github.com/diffractor/diffractor/issues/156), [155](https://github.com/diffractor/diffractor/issues/155), [147](https://github.com/diffractor/diffractor/issues/147), [146](https://github.com/diffractor/diffractor/issues/146), [145](https://github.com/diffractor/diffractor/issues/145), [140](https://github.com/diffractor/diffractor/issues/140), [133](https://github.com/diffractor/diffractor/issues/133), [130](https://github.com/diffractor/diffractor/issues/130), [113](https://github.com/diffractor/diffractor/issues/113), [106](https://github.com/diffractor/diffractor/issues/106), [101](https://github.com/diffractor/diffractor/issues/101), [98](https://github.com/diffractor/diffractor/issues/98), [83](https://github.com/diffractor/diffractor/issues/83), [50](https://github.com/diffractor/diffractor/issues/50), [45](https://github.com/diffractor/diffractor/issues/45), [35](https://github.com/diffractor/diffractor/issues/35), [30](https://github.com/diffractor/diffractor/issues/30), [21](https://github.com/diffractor/diffractor/issues/21)
+
+### Still OPEN on GitHub but marked fixed here — **candidates to verify & close** (might already be fixed)
+
+Cross-referenced against application code and the unit tests (`tests1.cpp`–`tests7.cpp`) on 2026-07-02.
+**Verdict key:** CONFIRMED = code path + passing unit test; LIKELY = code path present, no dedicated test.
+
+| # | Title | Fix in code | Test | Verdict |
+|---|-------|-------------|------|---------|
+| [219](https://github.com/diffractor/diffractor/issues/219) | Korean tags not working | `platform::normalize_nfc` (`platform_win_files.cpp:420`), NFC-aware matchers (`model_search.cpp:1180`) | `should_match_korean_nfc_nfd` (tests1.cpp:412) | **CONFIRMED** |
+| [217](https://github.com/diffractor/diffractor/issues/217) | MP3 silent playback | `decode_audio()` device-recreate retry (`av_player.h:843-946`) | none | LIKELY (startup-crash part unverifiable) |
+| [175](https://github.com/diffractor/diffractor/issues/175) | Sidebar history chart cap | `max_history_years=100` (`model_items.h:477`), `history_years` setting, `sidebar_history_element` (`app_sidebar.h:1252`) | `should_record_history_beyond_ten_years` (tests1.cpp:231) | **CONFIRMED** |
+| [193](https://github.com/diffractor/diffractor/issues/193) | Tags not saved to video files | `video_metadata` trait (`files.h:76`), XMP SmartHandler write (`metadata_xmp.cpp:763`) | `should_update_metadata("gizmo.mp4"/"ipod.mov")` (tests4.cpp:657) | **CONFIRMED** |
+| [123](https://github.com/diffractor/diffractor/issues/123) | Video tags not persisted (dup of #193) | same as #193 | same as #193 | **CONFIRMED** |
+| [185](https://github.com/diffractor/diffractor/issues/185) | Chinese names garbled | UTF-8 locale at startup (`app.cpp:2030`), `MultiByteToWideChar(CP_UTF8)` (`platform_win_files.cpp:410`) | `Should convert Utf8` (tests2.cpp:403), `Should handle international characters` (tests4.cpp:358) | **CONFIRMED** |
+| [192](https://github.com/diffractor/diffractor/issues/192) | Star rating changes date grouping | `rating_label`/`date_created`/`date_modified` are separate `group_by` enums (`model_items.h:24`), independent sort branches (`model_items.cpp:438`) | none (structural) | LIKELY |
+| [184](https://github.com/diffractor/diffractor/issues/184) | Date grouping ModifyDate vs Original | separate `date_created`/`date_modified` group + search options (`model_items.cpp:438`, `app_commands.cpp:2620`) | none (structural) | LIKELY |
+| [200](https://github.com/diffractor/diffractor/issues/200) | Slideshow only plays 1 image | `slideshow_delay` 0–30s (`app_settings.h:80`), tick-based advance (`model.cpp:2969`, `model.h:740`) | none | LIKELY |
+| [116](https://github.com/diffractor/diffractor/issues/116) | Location map not working | OSM tile client, no WebView2 (`ui_map_common.h:386`) | none | LIKELY |
+| [78](https://github.com/diffractor/diffractor/issues/78) | Some videos ignore aspect ratio | sample/stream aspect ratio (`av_format.cpp:716`), `aspect_ratio` in `video_info_t` (`av_format.h:103`) | none | LIKELY |
+| [132](https://github.com/diffractor/diffractor/issues/132) | Bluetooth audio switch crash | WASAPI `IMMDevice` activate + default fallback (`platform_win_sound.cpp:205,291`), device-change reset (`av_player.h:878`) | none | LIKELY |
+| [141](https://github.com/diffractor/diffractor/issues/141) | Rotate keyboard DE-DE | `VK_OEM_4`/`VK_OEM_6` mapped to rotate (`app_toolbar.cpp:941`, `platform_win_ui.cpp:395`) | `Should rotate` (tests4.cpp:675, indirect) | LIKELY |
+| [102](https://github.com/diffractor/diffractor/issues/102) | Rotate with `[` `]` keys (dup of #141) | same as #141 | same as #141 (indirect) | LIKELY |
+| [189](https://github.com/diffractor/diffractor/issues/189) | Large Font toggle inconsistent | `update_font_size()`→`set_font_base_size` (`app.cpp:2040`), toggle invalidates view (`app_commands.cpp:1966`) | none | LIKELY |
+| [182](https://github.com/diffractor/diffractor/issues/182) | Description not visible in preview | visibility bound to `has_photo_metadata`/`has_video_metadata` (`view_edit.cpp:1030`) | none | LIKELY |
+| [180](https://github.com/diffractor/diffractor/issues/180) | Hang writing file in use | `sqlite3_busy_timeout(_db, 1000)` (`model_db.cpp:384`), temp-file write (`app_commands.cpp:486`) | none | LIKELY |
+
+### Open on GitHub but NOT tracked in this file
+
+| # | Title | Note |
+|---|-------|------|
+| [3](https://github.com/diffractor/diffractor/issues/3) | Cannot remove MP4 tags added in version 121.x | Not yet triaged in this file; related to #22 (WM/Category) and video tag removal |
 
 ---
 
@@ -147,7 +192,7 @@ Generated: 2026-03-25 | Total open: **128 issues**
 
 ## Statistics
 
-- **Total open issues**: 128
+- **Total open issues (GitHub, 2026-07-01)**: 96 (was 128 at snapshot; 34 closed/released since, 1 new: #3)
 - **Bugs**: ~49
 - **Feature requests**: ~79
 - **Most active reporters**: Peceha (12), ZacWalk (22 self-filed), BMSvsDave (6), George-1958 (5), desbest (6), venik-fi (4), Charliopoulos (5), AB-Dave (3)

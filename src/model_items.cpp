@@ -2151,7 +2151,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 
 				const auto image = !is_valid(cover_art) || is_hover ? thumbnail : cover_art;
 
-				if (t && t->update(ff.image_to_surface(image)) != ui::texture_update_result::failed)
+				if (t && t->update(ff.image_to_surface(image, {}, true)) != ui::texture_update_result::failed)
 				{
 					_texture.store(t);
 					tex = t;

@@ -72,6 +72,8 @@
 #include <windows.h>
 //#define	EFTYPE 7
 
+#include "archive_platform_stat.h"
+
 #if defined(__BORLANDC__)
 #pragma warn -8068	/* Constant out of range in comparison. */
 #pragma warn -8072	/* Suspicious pointer arithmetic. */
@@ -106,6 +108,7 @@
 #endif
 #define	lstat		__la_stat
 #define	open		__la_open
+#define	_wopen		__la_wopen
 #define	read		__la_read
 #if !defined(__BORLANDC__) && !defined(__WATCOMC__)
 #define setmode		_setmode
@@ -261,7 +264,9 @@
     #define	F_OK    0       /*  Test for existence of file  */
 #endif
 
-#define ssize_t ptrdiff_t
+/* Functions to circumvent off_t limitations */
+int __la_seek_fstat(int fd, la_seek_stat_t *st);
+int __la_seek_stat(const char *path, la_seek_stat_t *st);
 
 /* Replacement POSIX function */
 extern int	 __la_fstat(int fd, struct stat *st);
@@ -270,6 +275,7 @@ extern int	 __la_lstat(const char *path, struct stat *st);
 extern __int64	 __la_lseek(int fd, __int64 offset, int whence);
 #endif
 extern int	 __la_open(const char *path, int flags, ...);
+extern int	 __la_wopen(const wchar_t *path, int flags, ...);
 extern ssize_t	 __la_read(int fd, void *buf, size_t nbytes);
 extern int	 __la_stat(const char *path, struct stat *st);
 extern pid_t	 __la_waitpid(HANDLE child, int *status, int option);
@@ -293,6 +299,26 @@ typedef int mbstate_t;
 size_t wcrtomb(char *, wchar_t, mbstate_t *);
 #endif
 
+#ifndef WINAPI_FAMILY_PARTITION
+#define WINAPI_FAMILY_PARTITION(x) (x)
+#endif
+
+#ifndef WINAPI_PARTITION_DESKTOP
+#define WINAPI_PARTITION_DESKTOP 1
+#endif
+
+#ifndef WINAPI_PARTITION_SYSTEM
+#define WINAPI_PARTITION_SYSTEM 1
+#endif
+
+#ifndef NTDDI_VERSION
+#define NTDDI_VERSION  0x05020000
+#endif
+
+#ifndef NTDDI_WIN10_VB
+#define NTDDI_WIN10_VB 0x0A000008
+#endif
+
 #if !WINAPI_FAMILY_PARTITION (WINAPI_PARTITION_DESKTOP) && NTDDI_VERSION < NTDDI_WIN10_VB
 // not supported in UWP SDK before 20H1
 #define GetVolumePathNameW(f, v, c)   (0)
@@ -303,17 +329,4 @@ WINBASEAPI BOOL WINAPI GetVolumePathNameW(
        DWORD cchBufferLength
        );
 #endif
-#if defined(_MSC_VER) && _MSC_VER < 1300
-# if _WIN32_WINNT < 0x0500 /* windows.h not providing 0x500 API */
-typedef struct _FILE_ALLOCATED_RANGE_BUFFER {
-       LARGE_INTEGER FileOffset;
-       LARGE_INTEGER Length;
-} FILE_ALLOCATED_RANGE_BUFFER, *PFILE_ALLOCATED_RANGE_BUFFER;
-#  define FSCTL_SET_SPARSE \
-     CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 49, METHOD_BUFFERED, FILE_WRITE_DATA)
-#  define FSCTL_QUERY_ALLOCATED_RANGES \
-     CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 51,  METHOD_NEITHER, FILE_READ_DATA)
-# endif
-#endif
-
 #endif /* !LIBARCHIVE_ARCHIVE_WINDOWS_H_INCLUDED */

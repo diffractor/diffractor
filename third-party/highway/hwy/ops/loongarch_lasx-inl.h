@@ -15,10 +15,27 @@
 // 256-bit LASX vectors and operations.
 // External include guard in highway.h - see comment there.
 
-#include <lasxintrin.h>
-
 #include "hwy/ops/loongarch_lsx-inl.h"
 #include "hwy/ops/shared-inl.h"
+
+#ifndef __loongarch_asx
+// If LASX is to be runtime dispatched (instead of in baseline), we need
+// to enable it *and* define __loongarch_asx or the intrinsic header will
+// fail to compile.
+//
+// For consistency, the same pattern as the lsxintrin.h handling in
+// loongarch_lsx-inl.h is used (instead of moving lasxintrin.h after
+// HWY_BEFORE_NAMESPACE).
+HWY_PUSH_ATTRIBUTES("lsx,lasx")
+#define __loongarch_asx
+#include <lasxintrin.h>
+#undef __loongarch_asx
+// Prevent "unused push_attribute" warning from Clang.
+HWY_MAYBE_UNUSED static void HWY_CONCAT(hwy_lasx_dummy, __COUNTER__) () {}
+HWY_POP_ATTRIBUTES
+#else
+#include <lasxintrin.h>
+#endif
 
 HWY_BEFORE_NAMESPACE();
 namespace hwy {
@@ -370,12 +387,6 @@ HWY_API Vec256<T> Not(const Vec256<T> v) {
   const RebindToUnsigned<decltype(d)> du;
   return BitCast(d, VFromD<decltype(du)>{__lasx_xvnor_v(BitCast(du, v).raw,
                                                         BitCast(du, v).raw)});
-}
-
-// ------------------------------ Xor3
-template <typename T>
-HWY_API Vec256<T> Xor3(Vec256<T> x1, Vec256<T> x2, Vec256<T> x3) {
-  return Xor(x1, Xor(x2, x3));
 }
 
 // ------------------------------ Or3
@@ -2462,7 +2473,7 @@ HWY_API Vec256<T> TableLookupLanes(Vec256<T> v, Indices256<T> idx) {
   // Replicate 64-bit index into upper 32 bits
   const Vec256<TI> dup{__lasx_xvpackev_w(idx.raw, idx.raw)};
   // For each idx64 i, idx32 are 2*i and 2*i+1.
-  const Vec256<TI> idx32 = dup + dup + Set(di64, int64_t(1) << 32);
+  const Vec256<TI> idx32 = dup + dup + Set(di64, int64_t{1} << 32);
   return BitCast(
       d, TableLookupLanes(BitCast(di32, v), Indices256<int32_t>{idx32.raw}));
 }
@@ -2513,6 +2524,17 @@ HWY_API V InterleaveEvenBlocks(D d, V a, V b) {
 template <class D, class V = VFromD<D>, HWY_IF_V_SIZE_D(D, 32)>
 HWY_API V InterleaveOddBlocks(D d, V a, V b) {
   return ConcatUpperUpper(d, b, a);
+}
+
+// ------------------------------ InterleaveLowerBlocks
+template <class D, class V = VFromD<D>, HWY_IF_V_SIZE_D(D, 32)>
+HWY_API V InterleaveLowerBlocks(D d, V a, V b) {
+  return InterleaveEvenBlocks(d, a, b);
+}
+// ------------------------------ InterleaveUpperBlocks
+template <class D, class V = VFromD<D>, HWY_IF_V_SIZE_D(D, 32)>
+HWY_API V InterleaveUpperBlocks(D d, V a, V b) {
+  return InterleaveOddBlocks(d, a, b);
 }
 
 // ------------------------------ Reverse (RotateRight)

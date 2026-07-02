@@ -53,6 +53,8 @@
 /* To deal with absolute symlink issues */
 #define START_ABSOLUTE_SYMLINK_REPARSE L"\\??\\"
 
+#define MAX_FILESYSTEM_ID 1000000
+
 /*-
  * This is a new directory-walking system that addresses a number
  * of problems I've had with fts(3).  In particular, it has no
@@ -356,6 +358,8 @@ la_linkname_from_handle(HANDLE h, wchar_t **linkname, int *linktype)
 	}
 
 	indata = malloc(MAXIMUM_REPARSE_DATA_BUFFER_SIZE);
+	if (indata == NULL)
+		return (-1);
 	ret = DeviceIoControl(h, FSCTL_GET_REPARSE_POINT, NULL, 0, indata,
 	    1024, &inbytes, NULL);
 	if (ret == 0) {
@@ -944,8 +948,8 @@ next_entry(struct archive_read_disk *a, struct tree *t,
 	if (a->matching) {
 		r = archive_match_path_excluded(a->matching, entry);
 		if (r < 0) {
-			archive_set_error(&(a->archive), errno,
-			    "Failed : %s", archive_error_string(a->matching));
+			archive_set_error(&(a->archive), archive_errno(a->matching),
+			    "%s", archive_error_string(a->matching));
 			return (r);
 		}
 		if (r) {
@@ -1016,8 +1020,8 @@ next_entry(struct archive_read_disk *a, struct tree *t,
 	if (a->matching) {
 		r = archive_match_time_excluded(a->matching, entry);
 		if (r < 0) {
-			archive_set_error(&(a->archive), errno,
-			    "Failed : %s", archive_error_string(a->matching));
+			archive_set_error(&(a->archive), archive_errno(a->matching),
+			    "%s", archive_error_string(a->matching));
 			return (r);
 		}
 		if (r) {
@@ -1042,8 +1046,8 @@ next_entry(struct archive_read_disk *a, struct tree *t,
 	if (a->matching) {
 		r = archive_match_owner_excluded(a->matching, entry);
 		if (r < 0) {
-			archive_set_error(&(a->archive), errno,
-			    "Failed : %s", archive_error_string(a->matching));
+			archive_set_error(&(a->archive), archive_errno(a->matching),
+			    "%s", archive_error_string(a->matching));
 			return (r);
 		}
 		if (r) {
@@ -1448,22 +1452,27 @@ update_current_filesystem(struct archive_read_disk *a, int64_t dev)
 	/*
 	 * There is a new filesystem, we generate a new ID for.
 	 */
-	fid = t->max_filesystem_id++;
-	if (t->max_filesystem_id > t->allocated_filesystem) {
-		size_t s;
+	fid = t->max_filesystem_id;
+	if (fid >= MAX_FILESYSTEM_ID) {
+		archive_set_error(&a->archive, ENOMEM, "Too many filesystems");
+		return (ARCHIVE_FATAL);
+	}
+	if (fid + 1 > t->allocated_filesystem) {
+		int s;
 		void *p;
 
-		s = t->max_filesystem_id * 2;
+		s = (fid + 1) * 2;
 		p = realloc(t->filesystem_table,
-			s * sizeof(*t->filesystem_table));
+		    s * sizeof(*t->filesystem_table));
 		if (p == NULL) {
 			archive_set_error(&a->archive, ENOMEM,
 			    "Can't allocate tar data");
 			return (ARCHIVE_FATAL);
 		}
 		t->filesystem_table = (struct filesystem *)p;
-		t->allocated_filesystem = (int)s;
+		t->allocated_filesystem = s;
 	}
+	t->max_filesystem_id = fid + 1;
 	t->current_filesystem_id = fid;
 	t->current_filesystem = &(t->filesystem_table[fid]);
 	t->current_filesystem->dev = dev;
@@ -1626,6 +1635,8 @@ tree_push(struct tree *t, const wchar_t *path, const wchar_t *full_path,
 	struct tree_entry *te;
 
 	te = calloc(1, sizeof(*te));
+	if (te == NULL)
+		return;
 	te->next = t->stack;
 	te->parent = t->current;
 	if (te->parent)
@@ -1698,6 +1709,8 @@ tree_open(const wchar_t *path, int symlink_mode, int restore_time)
 	struct tree *t;
 
 	t = calloc(1, sizeof(*t));
+	if (t == NULL)
+		return (NULL);
 	archive_string_init(&(t->full_path));
 	archive_string_init(&t->path);
 	if (archive_wstring_ensure(&t->path, 15) == NULL) {

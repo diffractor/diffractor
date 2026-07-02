@@ -1,5 +1,5 @@
 /* -*- C++ -*-
- * Copyright 2019-2021 LibRaw LLC (info@libraw.org)
+ * Copyright 2019-2025 LibRaw LLC (info@libraw.org)
  *
  LibRaw uses code from dcraw.c -- Dave Coffin's raw photo decoder,
  dcraw.c is copyright 1997-2018 by Dave Coffin, dcoffin a cybercom o net.
@@ -18,7 +18,7 @@
 
 #include "../../internal/dcraw_defs.h"
 
-void LibRaw::parse_phase_one(int base)
+void LibRaw::parse_phase_one(INT64 base)
 {
   unsigned entries, tag, type, len, data, i, c;
   INT64 save;
@@ -38,6 +38,8 @@ void LibRaw::parse_phase_one(int base)
   if (entries > 8192)
     return; // too much??
   get4();
+  INT64 fsize = ifp->size();
+
   while (entries--)
   {
     tag = get4();
@@ -50,6 +52,14 @@ void LibRaw::parse_phase_one(int base)
 	bool do_seek = (tag < 0x0108 || tag > 0x0110); // to make it single rule, not copy-paste
 	if(do_seek)
 		fseek(ifp, base + data, SEEK_SET);
+
+	INT64 savepos = ftell(ifp);
+	if (len > 8 && savepos + len > 2 * fsize)
+    {
+      fseek(ifp, save, SEEK_SET); // Recover tiff-read position!!
+      continue;
+    }
+
     switch (tag)
     {
 
@@ -135,13 +145,13 @@ void LibRaw::parse_phase_one(int base)
       ph1.split_col = data;
       break;
     case 0x0223:
-      ph1.black_col = data + base;
+      ph1.black_col = int(data + base);
       break;
     case 0x0224:
       ph1.split_row = data;
       break;
     case 0x0225:
-      ph1.black_row = data + base;
+      ph1.black_row = int(data + base);
       break;
     case 0x0226:
       for (i = 0; i < 9; i++)
@@ -193,7 +203,7 @@ void LibRaw::parse_phase_one(int base)
       if (tagtypeIs(LIBRAW_EXIFTAG_TYPE_LONG))
         ilm.CurAp = libraw_powf64l(2.0f, (int_to_float(data) / 2.0f));
       else
-        ilm.CurAp = libraw_powf64l(2.0f, float(getreal(type) / 2.0f));
+        ilm.CurAp = libraw_powf64l(2.0f, getrealf(type) / 2.0f);
       break;
     case 0x0403:
       if (tagtypeIs(LIBRAW_EXIFTAG_TYPE_LONG))
@@ -218,7 +228,7 @@ void LibRaw::parse_phase_one(int base)
       }
       else
       {
-        ilm.MaxAp4CurFocal = libraw_powf64l(2.0f, float(getreal(type) / 2.0f));
+        ilm.MaxAp4CurFocal = libraw_powf64l(2.0f, getrealf(type) / 2.0f);
       }
       break;
     case 0x0415:
@@ -228,7 +238,7 @@ void LibRaw::parse_phase_one(int base)
       }
       else
       {
-        ilm.MinAp4CurFocal = libraw_powf64l(2.0f, float(getreal(type) / 2.0f));
+        ilm.MinAp4CurFocal = libraw_powf64l(2.0f, getrealf(type) / 2.0f);
       }
       break;
     case 0x0416:
@@ -279,6 +289,14 @@ void LibRaw::parse_phase_one(int base)
       data = get4();
       save = ftell(ifp);
       fseek(ifp, meta_offset + data, SEEK_SET);
+
+	  INT64 savepos = ftell(ifp);
+      if (len > 8 && savepos + len > 2 * fsize)
+      {
+        fseek(ifp, save, SEEK_SET); // Recover tiff-read position!!
+        continue;
+      }
+
       if (tag == 0x0407)
       {
         stmread(imgdata.shootinginfo.BodySerial, len, ifp);
@@ -389,7 +407,9 @@ void LibRaw::parse_mos(INT64 offset)
     if (get4() != 0x504b5453)
       break;
     get4();
+    memset(data,0,sizeof(data));
     fread(data, 1, 40, ifp);
+    data[39] = 0;
     skip = get4();
     from = ftell(ifp);
 

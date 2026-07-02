@@ -13,8 +13,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <lsxintrin.h>
 #include <stdio.h>
+
+#ifndef __loongarch_sx
+// If LSX is to be runtime dispatched (instead of in baseline), we need
+// to enable it *and* define __loongarch_sx or the intrinsic header will
+// fail to compile.
+//
+// We cannot simply move lsxintrin.h after HWY_BEFORE_NAMESPACE because
+// doing so may cause the first (the only effective) inclusion of
+// lsxintrin.h to be compiled with both LSX and LASX enabled.  Then when
+// we call the inline functions in the header with only LSX enabled,
+// we'll get an "always_inline function requires lasx but would be inlined
+// into a function that is compiled without suport for lasx" error.
+HWY_PUSH_ATTRIBUTES("lsx")
+#define __loongarch_sx
+#include <lsxintrin.h>
+#undef __loongarch_sx
+// Prevent "unused push_attribute" warning from Clang.
+HWY_MAYBE_UNUSED static void HWY_CONCAT(hwy_lsx_dummy, __COUNTER__) () {}
+HWY_POP_ATTRIBUTES
+#else
+#include <lsxintrin.h>
+#endif
 
 #include "hwy/base.h"
 #include "hwy/ops/shared-inl.h"
@@ -413,12 +434,6 @@ HWY_API Vec128<T, N> Not(const Vec128<T, N> v) {
   const RebindToUnsigned<decltype(d)> du;
   return BitCast(d, VFromD<decltype(du)>{
                         __lsx_vnor_v(BitCast(du, v).raw, BitCast(du, v).raw)});
-}
-
-// ------------------------------ Xor3
-template <typename T, size_t N>
-HWY_API Vec128<T, N> Xor3(Vec128<T, N> x1, Vec128<T, N> x2, Vec128<T, N> x3) {
-  return Xor(x1, Xor(x2, x3));
 }
 
 // ------------------------------ Or3
@@ -4297,6 +4312,17 @@ HWY_API V InterleaveOddBlocks(D, V a, V /*b*/) {
   return a;
 }
 
+// ------------------------------ InterleaveLowerBlocks
+template <class D, class V = VFromD<D>, HWY_IF_V_SIZE_LE_D(D, 16)>
+HWY_API V InterleaveLowerBlocks(D, V a, V /*b*/) {
+  return a;
+}
+// ------------------------------ InterleaveUpperBlocks
+template <class D, class V = VFromD<D>, HWY_IF_V_SIZE_LE_D(D, 16)>
+HWY_API V InterleaveUpperBlocks(D, V a, V /*b*/) {
+  return a;
+}
+
 // ------------------------------ Shl
 
 template <typename T, size_t N, HWY_IF_UI8(T)>
@@ -4425,11 +4451,6 @@ template <size_t N>
 HWY_API Vec128<uint32_t, N> RearrangeToOddPlusEven(
     const Vec128<uint32_t, N> sum0, Vec128<uint32_t, N> /*sum1*/) {
   return sum0;  // invariant already holds
-}
-
-template <class VW>
-HWY_API VW RearrangeToOddPlusEven(const VW sum0, const VW sum1) {
-  return Add(sum0, sum1);
 }
 
 // ------------------------------ Demotions

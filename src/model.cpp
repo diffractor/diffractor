@@ -3178,13 +3178,13 @@ void texture_state::draw(ui::draw_context& rc, const pointi offset, const int co
 
 			if (_loaded.dimensions().area() <= 1000000 || is_valid(_loaded.s))
 			{
-				_staged_surface = _loaded.to_surface();
+				_staged_surface = _loaded.to_surface({}, true);
 			}
 			else
 			{
 				_async.queue_async(async_queue::render, [ld = _loaded, scale_hint, t = shared_from_this()]
 				{
-					auto s = ld.to_surface(scale_hint);
+					auto s = ld.to_surface(scale_hint, true);
 
 					t->_async.queue_ui([t, s]
 					{

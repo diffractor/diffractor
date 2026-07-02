@@ -28,6 +28,9 @@
 #ifdef HAVE_ERRNO_H
 #include <errno.h>
 #endif
+#ifdef HAVE_LIMITS_H
+#include <limits.h>
+#endif
 #ifdef HAVE_STDLIB_H
 #include <stdlib.h>
 #endif
@@ -36,6 +39,7 @@
 #endif
 
 #include "archive.h"
+#include "archive_integer.h"
 #include "archive_private.h"
 #include "archive_string.h"
 #include "archive_write_private.h"
@@ -116,12 +120,20 @@ archive_filter_b64encode_options(struct archive_write_filter *f, const char *key
 	struct private_b64encode *state = (struct private_b64encode *)f->data;
 
 	if (strcmp(key, "mode") == 0) {
+		int64_t val;
+
 		if (value == NULL) {
 			archive_set_error(f->archive, ARCHIVE_ERRNO_MISC,
 			    "mode option requires octal digits");
 			return (ARCHIVE_FAILED);
 		}
-		state->mode = (int)atol8(value, strlen(value)) & 0777;
+		val = atol8(value, strlen(value));
+		if (val < 0 || val > INT_MAX) {
+			archive_set_error(f->archive, ARCHIVE_ERRNO_MISC,
+			    "invalid mode option");
+			return (ARCHIVE_FAILED);
+		}
+		state->mode = (int)val & 0777;
 		return (ARCHIVE_OK);
 	} else if (strcmp(key, "name") == 0) {
 		if (value == NULL) {
@@ -286,16 +298,20 @@ atol8(const char *p, size_t char_cnt)
 {
 	int64_t l;
 	int digit;
-        
+
+	if (char_cnt == 0)
+		return (-1);
+
 	l = 0;
 	while (char_cnt-- > 0) {
 		if (*p >= '0' && *p <= '7')
 			digit = *p - '0';
 		else
-			break;
+			return (-1);
 		p++;
-		l <<= 3;
-		l |= digit;
+		if (archive_ckd_mul_i64(&l, l, 8) ||
+		    archive_ckd_add_i64(&l, l, digit))
+			return (-1);
 	}
 	return (l);
 }

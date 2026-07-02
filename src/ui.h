@@ -189,6 +189,20 @@ namespace ui
 		P010
 	};
 
+	// Selects the YUV->RGB conversion applied to NV12/P010 textures. A single value
+	// encodes both the colour matrix (BT.601/709/2020) and the signal range: the
+	// *_limited variants are the usual video ranges (Y 16-235), rec601_full is
+	// JPEG/JFIF (Y 0-255). See compute_yuv_matrix() in the D3D11 backend.
+	enum class color_space : uint8_t
+	{
+		rec601_limited,
+		rec601_full,
+		rec709_limited,
+		rec709_full,
+		rec2020_limited,
+		rec2020_full,
+	};
+
 	/*struct BITMAPINFOANDPALETTE
 	{
 		BITMAPINFOHEADER bmiHeader;
@@ -512,6 +526,7 @@ namespace ui
 		std::unique_ptr<uint8_t, df::free_delete> _pixels;
 		texture_format _format = texture_format::None;
 		orientation _orientation = orientation::top_left;
+		color_space _cs = color_space::rec601_limited;
 
 	public:
 		surface() noexcept = default;
@@ -528,6 +543,7 @@ namespace ui
 			_dimensions.cx = 0;
 			_dimensions.cy = 0;
 			_size = 0;
+			_cs = color_space::rec601_limited;
 			_format = texture_format::None;
 			_time = 0.0;
 			_orientation = orientation::top_left;
@@ -588,6 +604,16 @@ namespace ui
 			_orientation = ori;
 		}
 
+		ui::color_space color_space() const noexcept
+		{
+			return _cs;
+		}
+
+		void color_space(const ui::color_space cs) noexcept
+		{
+			_cs = cs;
+		}
+
 		uint8_t* pixels() noexcept
 		{
 			return _pixels.get();
@@ -632,8 +658,14 @@ namespace ui
 				throw app_exception(message);
 			}
 
-			_stride = calc_stride(cx, calc_bytes_per_pixel(fmt));
-			_size = _stride * cy;
+			// NV12/P010 are planar 4:2:0: a full-resolution luma plane followed by a
+			// half-height interleaved chroma plane, so the buffer is 1.5x the luma size.
+			// (calc_bytes_per_pixel stays 4 for the RGBA copy/draw helpers.)
+			const auto is_yuv = fmt == texture_format::NV12 || fmt == texture_format::P010;
+			const auto bytes_per_luma = fmt == texture_format::P010 ? 2 : (fmt == texture_format::NV12 ? 1 : 4);
+
+			_stride = calc_stride(cx, bytes_per_luma);
+			_size = is_yuv ? (_stride * cy * 3_z / 2_z) : (_stride * cy);
 			_pixels = df::unique_alloc<uint8_t>(_size + 64_z);
 			_dimensions.cx = cx;
 			_dimensions.cy = cy;
@@ -1138,6 +1170,7 @@ namespace ui
 		sizei _src_extent;
 		texture_format _format = texture_format::None;
 		orientation _orientation = orientation::top_left;
+		color_space _cs = color_space::rec601_limited;
 
 		virtual ~texture() = default;
 

@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: 0BSD */
+
 /*
  * Speed-optimized CRC64 using slicing-by-four algorithm
  *
@@ -6,9 +8,6 @@
  *
  * Authors: Igor Pavlov (original CRC32 assembly code)
  *          Lasse Collin (CRC64 adaptation of the modified CRC32 code)
- *
- * This file has been put into the public domain.
- * You can do whatever you want with this file.
  *
  * This code needs lzma_crc64_table, which can be created using the
  * following C code:
@@ -58,7 +57,7 @@ init_table(void)
 #endif
 #define MAKE_SYM_CAT(prefix, sym) prefix ## sym
 #define MAKE_SYM(prefix, sym) MAKE_SYM_CAT(prefix, sym)
-#define LZMA_CRC64 MAKE_SYM(__USER_LABEL_PREFIX__, lzma_crc64)
+#define LZMA_CRC64 MAKE_SYM(__USER_LABEL_PREFIX__, lzma_crc64_generic)
 #define LZMA_CRC64_TABLE MAKE_SYM(__USER_LABEL_PREFIX__, lzma_crc64_table)
 
 /*
@@ -73,6 +72,9 @@ init_table(void)
 
 	.text
 	.globl	LZMA_CRC64
+#ifdef __ELF__
+	.hidden	LZMA_CRC64
+#endif
 
 #if !defined(__APPLE__) && !defined(_WIN32) && !defined(__CYGWIN__) \
 		&& !defined(__MSDOS__)
@@ -274,14 +276,7 @@ LZMA_CRC64:
 	.indirect_symbol LZMA_CRC64_TABLE
 	.long 0
 
-#elif defined(_WIN32) || defined(__CYGWIN__)
-#	ifdef DLL_EXPORT
-	/* This is equivalent of __declspec(dllexport). */
-	.section .drectve
-	.ascii " -export:lzma_crc64"
-#	endif
-
-#elif !defined(__MSDOS__)
+#elif !defined(_WIN32) && !defined(__CYGWIN__) && !defined(__MSDOS__)
 	/* ELF */
 	.size	LZMA_CRC64, .-LZMA_CRC64
 #endif

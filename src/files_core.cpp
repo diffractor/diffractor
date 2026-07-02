@@ -130,7 +130,7 @@ void load_file_types()
 		{file_group::video, "264", {}, {}},
 		{file_group::video, "265", {}, {}},
 		{file_group::video, "302", {}, {}},
-		{file_group::video, "3fr", "Hasselblad Raw", file_traits::raw | file_traits::edit},
+		{file_group::photo, "3fr", "Hasselblad Raw", file_traits::raw | file_traits::edit},
 		{file_group::audio, "669", {}, {}},
 		{file_group::video, "722", {}, {}},
 		{file_group::video, "A64", {}, {}},
@@ -194,7 +194,7 @@ void load_file_types()
 		{file_group::video, "dav", {}, {}},
 		{file_group::audio, "dbm", {}, {}},
 		{file_group::audio, "cda", "CD Audio Track", {}},
-		{file_group::photo, "dc2,dcr,drf,dsc,k25,kc2,kdc", "Kodak raw", {}},
+		{file_group::photo, "dc2,dcr,drf,dsc,k25,kc2,kdc", "Kodak raw", file_traits::raw | file_traits::edit},
 		{file_group::audio, "dff", {}, {}},
 		{file_group::audio, "digi", {}, {}},
 		{file_group::video, "divx", {}, {}},
@@ -1092,21 +1092,47 @@ ui::surface_ptr files::image_to_surface(const ui::const_image_ptr& image, const 
 			{
 				ui::surface_ptr temp_surface;
 				bool success = false;
+				bool is_yuv = false;
 
 				try
 				{
 					if (_jpeg_decoder.read_header(image_buffer_in))
 					{
+						// YCbCr JPEGs can be uploaded as an NV12 texture and converted on the
+						// GPU (smaller uploads, no CPU colour conversion). JPEG/JFIF is full-range
+						// BT.601, which the shader applies via the rec601_full matrix.
+						const auto use_yuv = can_use_yuv && _jpeg_decoder.can_render_yuv420();
 						const auto scale_hint = ui::calc_scale_down_factor(_jpeg_decoder.dimensions(), target_extent);
 
-						if (_jpeg_decoder.start_decompress(scale_hint, false))
+						if (_jpeg_decoder.start_decompress(scale_hint, use_yuv))
 						{
 							const auto dimensions = _jpeg_decoder.dimensions_out();
 							temp_surface = std::make_shared<ui::surface>();
-							temp_surface->alloc(dimensions, ui::texture_format::RGB, image->orientation());
-							success = _jpeg_decoder.read_rgb(temp_surface->pixels(),
-							                                 static_cast<int>(temp_surface->stride()),
-							                                 static_cast<int>(temp_surface->size()));
+
+							if (use_yuv)
+							{
+								// NV12 requires even dimensions; crop at most one pixel per odd axis.
+								const sizei nv12_dims{dimensions.cx & ~1, dimensions.cy & ~1};
+
+								if (nv12_dims.cx >= 2 && nv12_dims.cy >= 2)
+								{
+									temp_surface->alloc(nv12_dims, ui::texture_format::NV12, image->orientation());
+									temp_surface->color_space(ui::color_space::rec601_full);
+									_jpeg_decoder.read_nv12(temp_surface->pixels(),
+									                        static_cast<int>(temp_surface->stride()),
+									                        static_cast<int>(temp_surface->size()));
+									is_yuv = true;
+									success = true;
+								}
+							}
+							else
+							{
+								temp_surface->alloc(dimensions, ui::texture_format::RGB, image->orientation());
+								success = _jpeg_decoder.read_rgb(temp_surface->pixels(),
+								                                 static_cast<int>(temp_surface->stride()),
+								                                 static_cast<int>(temp_surface->size()));
+							}
+
 							_jpeg_decoder.close();
 						}
 					}
@@ -1119,7 +1145,10 @@ ui::surface_ptr files::image_to_surface(const ui::const_image_ptr& image, const 
 
 				if (success)
 				{
-					surface_result = scale_if_needed(std::move(temp_surface), target_extent);
+					// NV12 is resized by the GPU sampler at draw time; RGB is resized to the target here.
+					surface_result = is_yuv
+						                 ? std::move(temp_surface)
+						                 : scale_if_needed(std::move(temp_surface), target_extent);
 				}
 			}
 			else if (format == ui::image_format::PNG)

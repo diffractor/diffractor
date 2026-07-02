@@ -81,6 +81,7 @@ struct av_frame_d3d
 	ID3D11Texture2D* tex = nullptr;
 	uintptr_t tex_index = 0;
 	ui::orientation orientation = ui::orientation::top_left;
+	ui::color_space color_space = ui::color_space::rec601_limited;
 };
 
 av_frame_d3d av_get_d3d_info(const av_frame_ptr& frame_in);

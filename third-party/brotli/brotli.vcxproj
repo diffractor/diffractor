@@ -97,7 +97,9 @@
     <ClCompile Include=".\c\dec\bit_reader.c" />
     <ClCompile Include=".\c\dec\decode.c" />
     <ClCompile Include=".\c\dec\huffman.c" />
+    <ClCompile Include=".\c\dec\prefix.c" />
     <ClCompile Include=".\c\dec\state.c" />
+    <ClCompile Include=".\c\dec\static_init.c" />
     <ClCompile Include=".\c\enc\backward_references.c" />
     <ClCompile Include=".\c\enc\backward_references_hq.c" />
     <ClCompile Include=".\c\enc\bit_cost.c" />
@@ -115,6 +117,8 @@
     <ClCompile Include=".\c\enc\memory.c" />
     <ClCompile Include=".\c\enc\metablock.c" />
     <ClCompile Include=".\c\enc\static_dict.c" />
+    <ClCompile Include=".\c\enc\static_dict_lut.c" />
+    <ClCompile Include=".\c\enc\static_init.c" />
     <ClCompile Include=".\c\enc\utf8_util.c" />
     <ClCompile Include="c\common\constants.c" />
     <ClCompile Include="c\common\context.c" />

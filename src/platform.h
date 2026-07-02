@@ -63,10 +63,12 @@ namespace platform
 	std::string OS();
 
 	extern bool sse2_supported;
+	extern bool ssse3_supported;
 	extern bool crc32_supported;
 	extern bool avx2_supported;
 	extern bool avx512_supported;
 	extern bool neon_supported;
+	extern bool arm_crc32_supported;
 
 	void secure_zero(void* ptr, size_t len);
 	void generate_random_bytes(uint8_t* buffer, size_t len);

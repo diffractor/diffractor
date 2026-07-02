@@ -31,7 +31,6 @@
     <ClInclude Include="libarchive\archive_entry.h" />
     <ClInclude Include="libarchive\archive_entry_locale.h" />
     <ClInclude Include="libarchive\archive_entry_private.h" />
-    <ClInclude Include="libarchive\archive_getdate.h" />
     <ClInclude Include="libarchive\archive_hmac_private.h" />
     <ClInclude Include="libarchive\archive_openssl_evp_private.h" />
     <ClInclude Include="libarchive\archive_openssl_hmac_private.h" />
@@ -80,12 +79,11 @@
     <ClCompile Include="libarchive\archive_entry_stat.c" />
     <ClCompile Include="libarchive\archive_entry_strmode.c" />
     <ClCompile Include="libarchive\archive_entry_xattr.c" />
-    <ClCompile Include="libarchive\archive_getdate.c" />
+    <ClCompile Include="libarchive\archive_parse_date.c" />
     <ClCompile Include="libarchive\archive_hmac.c" />
     <ClCompile Include="libarchive\archive_match.c" />
     <ClCompile Include="libarchive\archive_options.c" />
     <ClCompile Include="libarchive\archive_pack_dev.c" />
-    <ClCompile Include="libarchive\archive_parse_date.c" />
     <ClCompile Include="libarchive\archive_pathmatch.c" />
     <ClCompile Include="libarchive\archive_ppmd7.c" />
     <ClCompile Include="libarchive\archive_ppmd8.c" />

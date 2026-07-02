@@ -1386,10 +1386,12 @@ df::file_path platform::resolve_link(const df::file_path path)
 }
 
 bool platform::sse2_supported = IsProcessorFeaturePresent(PF_XMMI64_INSTRUCTIONS_AVAILABLE) != 0;
+bool platform::ssse3_supported = IsProcessorFeaturePresent(PF_SSSE3_INSTRUCTIONS_AVAILABLE) != 0;
 bool platform::crc32_supported = IsProcessorFeaturePresent(PF_SSE4_2_INSTRUCTIONS_AVAILABLE) != 0;
 bool platform::avx2_supported = IsProcessorFeaturePresent(PF_AVX2_INSTRUCTIONS_AVAILABLE) != 0;
 bool platform::avx512_supported = IsProcessorFeaturePresent(PF_AVX512F_INSTRUCTIONS_AVAILABLE) != 0;
 bool platform::neon_supported = IsProcessorFeaturePresent(PF_ARM_NEON_INSTRUCTIONS_AVAILABLE) != 0;
+bool platform::arm_crc32_supported = IsProcessorFeaturePresent(PF_ARM_V8_CRC32_INSTRUCTIONS_AVAILABLE) != 0;
 
 #include <bcrypt.h>
 #pragma comment(lib, "bcrypt")

@@ -651,6 +651,8 @@ struct scene_atom
 	uint32_t index_count = 0;
 
 	std::shared_ptr<d3d11_vertices> verts;
+
+	ui::color_space cs = ui::color_space::rec601_limited;
 };
 
 
@@ -695,6 +697,7 @@ public:
 	ComPtr<ID3D11PixelShader> _pixel_shader_circle;
 	ComPtr<ID3D11PixelShader> _pixel_shader_yuv;
 	ComPtr<ID3D11PixelShader> _pixel_shader_yuv_bicubic;
+	ComPtr<ID3D11Buffer> _yuv_cbuffer;
 	ComPtr<ID3D11Buffer> _vertex_buffer;
 	ComPtr<ID3D11Buffer> _index_buffer;
 	ComPtr<ID3D11BlendState> _blend_state;
@@ -766,7 +769,8 @@ public:
 
 	void add_scene_atom(const ComPtr<ID3D11Texture2D>& vv, const ComPtr<ID3D11PixelShader>& ss,
 	                    ui::texture_format tex_fmt, ui::texture_sampler sampler, const vertex_2d* vertices,
-	                    size_t vertex_count, const WORD* indexes, size_t index_count);
+	                    size_t vertex_count, const WORD* indexes, size_t index_count,
+	                    ui::color_space cs = ui::color_space::rec601_limited);
 	void draw_texture(const texture_d3d11_ptr& t, const quadd& dst, recti src, ui::color c,
 	                  ui::texture_sampler sampler);
 	void draw_texture(const texture_d3d11_ptr& t, recti dst, recti src, ui::color c, ui::texture_sampler sampler,
@@ -893,6 +897,7 @@ void d3d11_draw_context_impl::destroy()
 	_pixel_shader_circle.Reset();
 	_pixel_shader_yuv.Reset();
 	_pixel_shader_yuv_bicubic.Reset();
+	_yuv_cbuffer.Reset();
 	_vertex_buffer.Reset();
 	_index_buffer.Reset();
 	_blend_state.Reset();
@@ -1147,6 +1152,23 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGIS
 			}
 		}
 
+		if (SUCCEEDED(hr))
+		{
+			// Constant buffer holding the YUV->RGB affine matrix (row_major float3x4 = 48 bytes).
+			D3D11_BUFFER_DESC bd = {};
+			bd.ByteWidth = sizeof(float) * 12;
+			bd.Usage = D3D11_USAGE_DYNAMIC;
+			bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+			bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+
+			hr = _f->d3d_device->CreateBuffer(&bd, nullptr, &_yuv_cbuffer);
+
+			if (FAILED(hr))
+			{
+				df::log(__FUNCTION__, std::format("CreateBuffer for yuv params failed {:x}", static_cast<uint32_t>(hr)));
+			}
+		}
+
 		update_font_size(base_font_size);
 	}
 
@@ -1289,6 +1311,64 @@ void d3d11_draw_context_impl::build_index_and_vertex_buffers()
 	}
 }
 
+struct yuv_matrix
+{
+	float m[12];
+};
+
+// Builds an affine YUV->RGB transform (3x3 matrix + bias column, row-major) for the
+// requested colour space and range. Fed to the yuv_params constant buffer; a single
+// matrix therefore handles BT.601/709/2020 and limited/full range with one shader.
+// The limited-range BT.601 case reproduces the previously hard-coded coefficients.
+static yuv_matrix compute_yuv_matrix(const ui::color_space cs)
+{
+	double kr, kb;
+	bool full;
+
+	switch (cs)
+	{
+	case ui::color_space::rec709_limited: kr = 0.2126; kb = 0.0722; full = false; break;
+	case ui::color_space::rec709_full: kr = 0.2126; kb = 0.0722; full = true; break;
+	case ui::color_space::rec2020_limited: kr = 0.2627; kb = 0.0593; full = false; break;
+	case ui::color_space::rec2020_full: kr = 0.2627; kb = 0.0593; full = true; break;
+	case ui::color_space::rec601_full: kr = 0.299; kb = 0.114; full = true; break;
+	case ui::color_space::rec601_limited:
+	default: kr = 0.299; kb = 0.114; full = false; break;
+	}
+
+	const double kg = 1.0 - kr - kb;
+	const double vr = 2.0 * (1.0 - kr);
+	const double ug = -2.0 * kb * (1.0 - kb) / kg;
+	const double vg = -2.0 * kr * (1.0 - kr) / kg;
+	const double ub = 2.0 * (1.0 - kb);
+
+	const double y_scale = full ? 1.0 : (255.0 / 219.0);
+	const double y_off = full ? 0.0 : (16.0 / 255.0);
+	const double c_scale = full ? 1.0 : (255.0 / 224.0);
+	const double c_off = 0.5;
+
+	const double a = y_scale;
+	const double ay = -y_scale * y_off;
+
+	yuv_matrix r{};
+	// R = a*Y + (vr*c_scale)*V + bias
+	r.m[0] = static_cast<float>(a);
+	r.m[1] = 0.0f;
+	r.m[2] = static_cast<float>(vr * c_scale);
+	r.m[3] = static_cast<float>(ay - vr * c_scale * c_off);
+	// G = a*Y + (ug*c_scale)*U + (vg*c_scale)*V + bias
+	r.m[4] = static_cast<float>(a);
+	r.m[5] = static_cast<float>(ug * c_scale);
+	r.m[6] = static_cast<float>(vg * c_scale);
+	r.m[7] = static_cast<float>(ay - (ug + vg) * c_scale * c_off);
+	// B = a*Y + (ub*c_scale)*U + bias
+	r.m[8] = static_cast<float>(a);
+	r.m[9] = static_cast<float>(ub * c_scale);
+	r.m[10] = 0.0f;
+	r.m[11] = static_cast<float>(ay - ub * c_scale * c_off);
+	return r;
+}
+
 struct context_state final
 {
 	ID3D11PixelShader* shader = nullptr;
@@ -1296,6 +1376,10 @@ struct context_state final
 	ID3D11SamplerState* sampler = nullptr;
 	ID3D11Buffer* vertex_buffer = nullptr;
 	ID3D11Buffer* index_buffer = nullptr;
+
+	ID3D11Buffer* yuv_cbuffer = nullptr;
+	ui::color_space uploaded_cs = ui::color_space::rec601_limited;
+	bool cs_uploaded = false;
 
 	df::hash_map<ID3D11Texture2D*, ComPtr<ID3D11ShaderResourceView>> texture_views;
 
@@ -1317,6 +1401,23 @@ struct context_state final
 		{
 			shader = s;
 			context->PSSetShader(s, nullptr, 0);
+		}
+
+		// For YUV shaders, upload the colour-space/range conversion matrix when it changes.
+		if ((tx_fmt == ui::texture_format::NV12 || tx_fmt == ui::texture_format::P010) && yuv_cbuffer &&
+			(!cs_uploaded || a.cs != uploaded_cs))
+		{
+			uploaded_cs = a.cs;
+			cs_uploaded = true;
+
+			const auto ym = compute_yuv_matrix(a.cs);
+			D3D11_MAPPED_SUBRESOURCE mapped;
+
+			if (SUCCEEDED(context->Map(yuv_cbuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
+			{
+				memcpy(mapped.pData, ym.m, sizeof(ym.m));
+				context->Unmap(yuv_cbuffer, 0);
+			}
 		}
 
 		if (ss != sampler)
@@ -1472,6 +1573,13 @@ void d3d11_draw_context_impl::draw_scene(const ComPtr<ID3D11DeviceContext>& cont
 		context->ClearRenderTargetView(rtv.Get(), bg_color);
 
 		context_state state(_f->d3d_device.Get(), context.Get());
+		state.yuv_cbuffer = _yuv_cbuffer.Get();
+
+		if (_yuv_cbuffer)
+		{
+			ID3D11Buffer* cbs[] = {_yuv_cbuffer.Get()};
+			context->PSSetConstantBuffers(0, 1, cbs);
+		}
 
 		for (const auto& a : _scene_atoms)
 		{
@@ -1519,7 +1627,8 @@ void d3d11_draw_context_impl::render()
 void d3d11_draw_context_impl::add_scene_atom(const ComPtr<ID3D11Texture2D>& texture,
                                              const ComPtr<ID3D11PixelShader>& shader, const ui::texture_format tex_fmt,
                                              const ui::texture_sampler sampler, const vertex_2d* vertices,
-                                             const size_t vertex_count, const WORD* indexes, const size_t index_count)
+                                             const size_t vertex_count, const WORD* indexes, const size_t index_count,
+                                             const ui::color_space cs)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	auto combine_with_last_atom = false;
@@ -1559,6 +1668,7 @@ void d3d11_draw_context_impl::add_scene_atom(const ComPtr<ID3D11Texture2D>& text
 			static_cast<uint32_t>(index_count)
 		};
 
+		sa.cs = cs;
 		_scene_atoms.emplace_back(sa);
 
 		if (!_scene_textures.contains(texture))
@@ -1620,7 +1730,7 @@ void d3d11_draw_context_impl::draw_texture(const texture_d3d11_ptr& t, const rec
 			const auto tex_fmt = t->_format;
 			const auto shader = calc_shader(sampler == ui::texture_sampler::bicubic, tex_fmt);
 			add_scene_atom(t->_texture, shader, tex_fmt, sampler, vertices, std::size(vertices), indexes,
-			               std::size(indexes));
+			               std::size(indexes), t->_cs);
 		}
 	}
 }
@@ -1660,7 +1770,7 @@ void d3d11_draw_context_impl::draw_texture(const texture_d3d11_ptr& t, const qua
 			const auto tex_fmt = t->_format;
 			const auto shader = calc_shader(sampler == ui::texture_sampler::bicubic, tex_fmt);
 			add_scene_atom(t->_texture, shader, tex_fmt, sampler, vertices, std::size(vertices), indexes,
-			               std::size(indexes));
+			               std::size(indexes), t->_cs);
 		}
 	}
 }
@@ -1984,6 +2094,7 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 
 	auto result = ui::texture_update_result::failed;
 	auto info = av_get_d3d_info(frame_in);
+	_cs = info.color_space;
 
 	if (info.tex)
 	{
@@ -2327,6 +2438,7 @@ ui::texture_update_result d3d11_texture::update(const ui::const_surface_ptr& s)
 	if (ui::is_valid(s))
 	{
 		const auto fmt = s->format();
+		_cs = s->color_space();
 		return update(s->dimensions(), fmt, s->orientation(), s->pixels(), s->stride(), s->size());
 	}
 

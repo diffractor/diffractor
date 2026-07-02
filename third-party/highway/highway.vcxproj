@@ -50,8 +50,11 @@
     <ClCompile Include=".\hwy\contrib\sort\vqsort_u64a.cc" />
     <ClCompile Include=".\hwy\contrib\sort\vqsort_u64d.cc" />
     <ClCompile Include=".\hwy\per_target.cc" />
+    <ClCompile Include=".\hwy\perf_counters.cc" />
     <ClCompile Include=".\hwy\print.cc" />
+    <ClCompile Include=".\hwy\profiler.cc" />
     <ClCompile Include=".\hwy\targets.cc" />
+    <ClCompile Include=".\hwy\timer.cc" />
     <ClCompile Include="hwy\abort.cc" />
   </ItemGroup>
   <ItemGroup>

@@ -389,11 +389,11 @@ static void should_calc_hashes()
 
 	if (platform::crc32_supported)
 	{
-		const auto crc_sse2 = ~calc_crc32c_sse2(crypto::CRCINIT, crc_data.data(), crc_data.size());
-		assert_equal(0xc99465aa, crc_sse2, "crc32 sse");
+		const auto crc_x86 = ~calc_crc32c_x86(crypto::CRCINIT, crc_data.data(), crc_data.size());
+		assert_equal(0xc99465aa, crc_x86, "crc32 x86");
 	}
 
-	if (platform::neon_supported)
+	if (platform::arm_crc32_supported)
 	{
 		const auto crc_neon = ~calc_crc32c_arm(crypto::CRCINIT, crc_data.data(), crc_data.size());
 		assert_equal(0xc99465aa, crc_neon, "crc32 neon");

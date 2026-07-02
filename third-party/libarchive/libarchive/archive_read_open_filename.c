@@ -40,6 +40,9 @@
 #ifdef HAVE_IO_H
 #include <io.h>
 #endif
+#ifdef HAVE_LIMITS_H
+#include <limits.h>
+#endif
 #ifdef HAVE_STDLIB_H
 #include <stdlib.h>
 #endif
@@ -59,6 +62,7 @@
 #endif
 
 #include "archive.h"
+#include "archive_platform_stat.h"
 #include "archive_private.h"
 #include "archive_string.h"
 
@@ -121,13 +125,14 @@ archive_read_open_filenames(struct archive *a, const char **filenames,
 	archive_clear_error(a);
 	do
 	{
+		size_t len;
 		if (filename == NULL)
 			filename = "";
-		mine = calloc(1,
-			sizeof(*mine) + strlen(filename));
+		len = strlen(filename);
+		mine = calloc(1, sizeof(*mine) + len);
 		if (mine == NULL)
 			goto no_memory;
-		strcpy(mine->filename.m, filename);
+		memcpy(mine->filename.m, filename, len + 1);
 		mine->block_size = block_size;
 		mine->fd = -1;
 		mine->buffer = NULL;
@@ -136,8 +141,10 @@ archive_read_open_filenames(struct archive *a, const char **filenames,
 			mine->filename_type = FNT_STDIN;
 		} else
 			mine->filename_type = FNT_MBS;
-		if (archive_read_append_callback_data(a, mine) != (ARCHIVE_OK))
+		if (archive_read_append_callback_data(a, mine) != (ARCHIVE_OK)) {
+			free(mine);
 			return (ARCHIVE_FATAL);
+		}
 		if (filenames == NULL)
 			break;
 		filename = *(filenames++);
@@ -177,7 +184,7 @@ archive_read_open_filenames_w(struct archive *a, const wchar_t **wfilenames,
 		if (wfilename == NULL)
 			wfilename = L"";
 		mine = calloc(1,
-			sizeof(*mine) + wcslen(wfilename) * sizeof(wchar_t));
+			sizeof(*mine) + wcslen(wfilename) * MB_LEN_MAX);
 		if (mine == NULL)
 			goto no_memory;
 		mine->block_size = block_size;
@@ -216,8 +223,10 @@ archive_read_open_filenames_w(struct archive *a, const wchar_t **wfilenames,
 			archive_string_free(&fn);
 #endif
 		}
-		if (archive_read_append_callback_data(a, mine) != (ARCHIVE_OK))
+		if (archive_read_append_callback_data(a, mine) != (ARCHIVE_OK)) {
+			free(mine);
 			return (ARCHIVE_FATAL);
+		}
 		if (wfilenames == NULL)
 			break;
 		wfilename = *(wfilenames++);
@@ -248,7 +257,7 @@ archive_read_open_filename_w(struct archive *a, const wchar_t *wfilename,
 static int
 file_open(struct archive *a, void *client_data)
 {
-	struct stat st;
+	la_seek_stat_t st;
 	struct read_file_data *mine = (struct read_file_data *)client_data;
 	void *buffer;
 	const char *filename = NULL;
@@ -309,11 +318,11 @@ file_open(struct archive *a, void *client_data)
 		}
 #else
 		archive_set_error(a, ARCHIVE_ERRNO_MISC,
-		    "Unexpedted operation in archive_read_open_filename");
+		    "Unexpected operation in archive_read_open_filename");
 		goto fail;
 #endif
 	}
-	if (fstat(fd, &st) != 0) {
+	if (la_seek_fstat(fd, &st) != 0) {
 #if defined(_WIN32) && !defined(__CYGWIN__)
 		if (mine->filename_type == FNT_WCS)
 			archive_set_error(a, errno, "Can't stat '%ls'",
@@ -482,10 +491,11 @@ file_skip_lseek(struct archive *a, void *client_data, int64_t request)
 	struct read_file_data *mine = (struct read_file_data *)client_data;
 #if defined(_WIN32) && !defined(__CYGWIN__)
 	/* We use _lseeki64() on Windows. */
-	int64_t old_offset, new_offset, skip = request;
+	int64_t old_offset, new_offset;
 #else
-	off_t old_offset, new_offset, skip = (off_t)request;
+	off_t old_offset, new_offset;
 #endif
+	la_seek_t skip = (la_seek_t)request;
 	int skip_bits = sizeof(skip) * 8 - 1;
 
 	/* We use off_t here because lseek() is declared that way. */
@@ -552,21 +562,21 @@ static int64_t
 file_seek(struct archive *a, void *client_data, int64_t request, int whence)
 {
 	struct read_file_data *mine = (struct read_file_data *)client_data;
-	off_t seek = (off_t)request;
+	la_seek_t seek = (la_seek_t)request;
 	int64_t r;
 	int seek_bits = sizeof(seek) * 8 - 1;
 
 	/* We use off_t here because lseek() is declared that way. */
 
-	/* Reduce a request that would overflow the 'seek' variable. */
+	/* Do not perform a seek which cannot be fulfilled. */
 	if (sizeof(request) > sizeof(seek)) {
 		const int64_t max_seek =
 		    (((int64_t)1 << (seek_bits - 1)) - 1) * 2 + 1;
 		const int64_t min_seek = ~max_seek;
-		if (request > max_seek)
-			seek = (off_t)max_seek;
-		else if (request < min_seek)
-			seek = (off_t)min_seek;
+		if (request < min_seek || request > max_seek) {
+			errno = EOVERFLOW;
+			goto err;
+		}
 	}
 
 	r = lseek(mine->fd, seek, whence);
@@ -574,6 +584,7 @@ file_seek(struct archive *a, void *client_data, int64_t request, int whence)
 		return r;
 
 	/* If the input is corrupted or truncated, fail. */
+err:
 	if (mine->filename_type == FNT_STDIN)
 		archive_set_error(a, errno, "Error seeking in stdin");
 	else if (mine->filename_type == FNT_MBS)

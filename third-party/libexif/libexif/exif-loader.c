@@ -45,6 +45,8 @@
 #define JPEG_MARKER_APP1 0xe1
 #undef JPEG_MARKER_APP2
 #define JPEG_MARKER_APP2 0xe2
+#undef JPEG_MARKER_APP3
+#define JPEG_MARKER_APP3 0xe3
 #undef JPEG_MARKER_APP4
 #define JPEG_MARKER_APP4 0xe4
 #undef JPEG_MARKER_APP5
@@ -306,7 +308,7 @@ begin:
 		default:
 			switch (eld->b[i]) {
 			case JPEG_MARKER_APP1:
-			  if (!memcmp (eld->b + i + 3, ExifHeader, MIN((ptrdiff_t)(sizeof(ExifHeader)), MAX(0, ((ptrdiff_t)(sizeof(eld->b))) - ((ptrdiff_t)i) - 3)))) {
+			  if (!memcmp (eld->b + i + 3, ExifHeader, MIN((ssize_t)(sizeof(ExifHeader)), MAX(0, ((ssize_t)(sizeof(eld->b))) - ((ssize_t)i) - 3)))) {
 					eld->data_format = EL_DATA_FORMAT_EXIF;
 				} else {
 					eld->data_format = EL_DATA_FORMAT_JPEG; /* Probably JFIF - keep searching for APP1 EXIF*/
@@ -319,6 +321,7 @@ begin:
 			case JPEG_MARKER_DQT:
 			case JPEG_MARKER_APP0:
 			case JPEG_MARKER_APP2:
+			case JPEG_MARKER_APP3:
 			case JPEG_MARKER_APP4:
 			case JPEG_MARKER_APP5:
 			case JPEG_MARKER_APP10:
@@ -338,7 +341,7 @@ begin:
 					EXIF_LOG_CODE_CORRUPT_DATA,
 					"ExifLoader", _("The data supplied "
 						"does not seem to contain "
-						"EXIF data."));
+						"EXIF data. JPEG Marker type 0x%02x"), eld->b[i]);
 				exif_loader_reset (eld);
 				return 0;
 			}

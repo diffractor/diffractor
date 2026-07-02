@@ -1,4 +1,6 @@
-# Placeholder for cc_test, do not remove
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -175,6 +177,7 @@ cc_library(
         ":vxsort",  # required if HAVE_VXSORT
         "//:algo",
         "//:hwy",
+        "//:nanobenchmark",
     ],
 )
 
@@ -201,6 +204,7 @@ cc_library(
     deps = [
         "//:algo",
         "//:hwy",
+        "//:nanobenchmark",
     ],
 )
 

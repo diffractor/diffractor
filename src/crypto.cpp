@@ -219,10 +219,10 @@ uint32_t crypto::crc32c(const uint32_t crc, const void* data, const size_t len)
 {
 	if (platform::crc32_supported)
 	{
-		return calc_crc32c_sse2(crc, data, len);
+		return calc_crc32c_x86(crc, data, len);
 	}
 
-	if (platform::neon_supported)
+	if (platform::arm_crc32_supported)
 	{
 		return calc_crc32c_arm(crc, data, len);
 	}

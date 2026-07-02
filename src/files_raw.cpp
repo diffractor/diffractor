@@ -602,19 +602,19 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 	add_metadata(kv, "Focal length", std::format("{:0.1} mm", P2.focal_len));
 
 	if (P3.exifAmbientTemperature > -273.15f)
-		add_metadata(kv, "Ambient temperature (exif data)", std::format("{:.2f}�C", P3.exifAmbientTemperature));
+		add_metadata(kv, "Ambient temperature (exif data)", std::format("{:.2f}°C", P3.exifAmbientTemperature));
 	if (P3.CameraTemperature > -273.15f)
-		add_metadata(kv, "Camera temperature", std::format("{:.2f}�C", P3.CameraTemperature));
+		add_metadata(kv, "Camera temperature", std::format("{:.2f}°C", P3.CameraTemperature));
 	if (P3.SensorTemperature > -273.15f)
-		add_metadata(kv, "Sensor temperature", std::format("{:.2f}�C", P3.SensorTemperature));
+		add_metadata(kv, "Sensor temperature", std::format("{:.2f}°C", P3.SensorTemperature));
 	if (P3.SensorTemperature2 > -273.15f)
-		add_metadata(kv, "Sensor temperature2", std::format("{:.2f}�C", P3.SensorTemperature2));
+		add_metadata(kv, "Sensor temperature2", std::format("{:.2f}°C", P3.SensorTemperature2));
 	if (P3.LensTemperature > -273.15f)
-		add_metadata(kv, "Lens temperature", std::format("{:.2f}�C", P3.LensTemperature));
+		add_metadata(kv, "Lens temperature", std::format("{:.2f}°C", P3.LensTemperature));
 	if (P3.AmbientTemperature > -273.15f)
-		add_metadata(kv, "Ambient temperature", std::format("{:.2f}�C", P3.AmbientTemperature));
+		add_metadata(kv, "Ambient temperature", std::format("{:.2f}°C", P3.AmbientTemperature));
 	if (P3.BatteryTemperature > -273.15f)
-		add_metadata(kv, "Battery temperature", std::format("{:.2f}�C", P3.BatteryTemperature));
+		add_metadata(kv, "Battery temperature", std::format("{:.2f}°C", P3.BatteryTemperature));
 	if (P3.FlashGN > 1.0f)
 		add_metadata(kv, "Flash Guide Number", std::format("{:.2f}", P3.FlashGN));
 
@@ -792,7 +792,17 @@ static ui::surface_ptr thumb_to_surface(const libraw_thumbnail_t& thumbnail, con
 
 	if (LIBRAW_THUMBNAIL_BITMAP == thumbnail.tformat)
 	{
-		const auto expected_size = thumbnail.theight * thumbnail.twidth * static_cast<uint32_t>(thumbnail.tcolors);
+		const auto tcolors = thumbnail.tcolors;
+
+		// Only 1 (monochrome), 3 (RGB) and 4 (RGBA) channel bitmaps are handled. Any other
+		// channel count would leave the destination partially written (alloc does not zero),
+		// so bail out rather than display uninitialised memory.
+		if (tcolors != 1 && tcolors != 3 && tcolors != 4)
+		{
+			return result;
+		}
+
+		const auto expected_size = thumbnail.theight * thumbnail.twidth * static_cast<uint32_t>(tcolors);
 
 		if (expected_size <= thumbnail.tlength)
 		{
@@ -802,12 +812,21 @@ static ui::surface_ptr thumb_to_surface(const libraw_thumbnail_t& thumbnail, con
 			{
 				for (auto y = 0; y < thumbnail.theight; ++y)
 				{
-					const auto* src = thumbnail.thumb + y * thumbnail.twidth * thumbnail.tcolors;
+					const auto* src = thumbnail.thumb + y * thumbnail.twidth * tcolors;
 					auto* dst = result->pixels_line(y);
 
 					for (auto x = 0; x < thumbnail.twidth; ++x)
 					{
-						if (thumbnail.tcolors == 3)
+						if (tcolors == 1)
+						{
+							const auto g = static_cast<uint8_t>(src[0]);
+							*dst++ = g;
+							*dst++ = g;
+							*dst++ = g;
+							*dst++ = 0;
+							src += 1;
+						}
+						else if (tcolors == 3)
 						{
 							*dst++ = src[2];
 							*dst++ = src[1];
@@ -815,12 +834,13 @@ static ui::surface_ptr thumb_to_surface(const libraw_thumbnail_t& thumbnail, con
 							*dst++ = 0;
 							src += 3;
 						}
-						else if (thumbnail.tcolors == 4)
+						else // tcolors == 4
 						{
-							*dst++ = *src++;
-							*dst++ = *src++;
-							*dst++ = *src++;
-							*dst++ = *src++;
+							*dst++ = src[2];
+							*dst++ = src[1];
+							*dst++ = src[0];
+							*dst++ = src[3];
+							src += 4;
 						}
 					}
 				}
@@ -831,16 +851,27 @@ static ui::surface_ptr thumb_to_surface(const libraw_thumbnail_t& thumbnail, con
 	return result;
 }
 
+// LibRaw 0.22 moved gamma_curve() and the libraw_internal_data member to a
+// protected section. This thin subclass re-exposes them so the full-image
+// decode path can replicate dcraw_make_mem_image's auto-brightness while
+// reading imgdata.image directly (avoiding an extra full-frame copy).
+class libraw_ex : public LibRaw
+{
+public:
+	using LibRaw::gamma_curve;
+	using LibRaw::libraw_internal_data;
+};
+
 struct raw_processor
 {
-	std::unique_ptr<LibRaw> processor;
+	std::unique_ptr<libraw_ex> processor;
 	std::unique_ptr<dng_host> dng;
 };
 
 static raw_processor create_processor()
 {
 	raw_processor result;
-	result.processor = std::make_unique<LibRaw>();
+	result.processor = std::make_unique<libraw_ex>();
 
 	//iProcessor.set_exifparser_handler(exif_callback, &context);
 
@@ -849,7 +880,42 @@ static raw_processor create_processor()
 	//result.processor->imgdata.params.use_dngsdk = LIBRAW_DNG_ALL;
 	// LIBRAW_DNG_FLOAT | LIBRAW_DNG_LINEAR | LIBRAW_DNG_XTRANS | LIBRAW_DNG_OTHER;
 
+	// Apply the camera's white balance when decoding the full image, otherwise
+	// the output has a strong colour cast (LibRaw defaults to no white balance).
+	result.processor->imgdata.params.use_camera_wb = 1;
+
 	return result;
+}
+
+// Finds the index of the largest embedded JPEG thumbnail in LibRaw's thumbnail list,
+// or -1 if there is none. Used as a fallback when the default (largest) thumbnail is a
+// format we cannot decode - notably Canon CR3's H.265 preview, which is a proprietary
+// CISZ-wrapped HEVC blob that LibRaw flags but does not decode. CR3 files also embed a
+// standard JPEG thumbnail, so we pick that instead of trying to decode the HEVC preview.
+static int find_largest_jpeg_thumb(const libraw_thumbnail_list_t& list)
+{
+	int best = -1;
+	uint32_t best_area = 0;
+
+	const auto count = std::min(static_cast<int>(list.thumbcount), static_cast<int>(std::size(list.thumblist)));
+
+	for (auto i = 0; i < count; ++i)
+	{
+		const auto& item = list.thumblist[i];
+
+		if (item.tformat == LIBRAW_INTERNAL_THUMBNAIL_JPEG && item.tlength > 0)
+		{
+			const auto area = static_cast<uint32_t>(item.twidth) * static_cast<uint32_t>(item.theight);
+
+			if (best < 0 || area > best_area)
+			{
+				best = i;
+				best_area = area;
+			}
+		}
+	}
+
+	return best;
 }
 
 file_scan_result files::scan_raw(const df::file_path path, const std::string_view xmp_sidecar, const bool load_thumb,
@@ -871,6 +937,20 @@ file_scan_result files::scan_raw(const df::file_path path, const std::string_vie
 		{
 			if (rp.processor->unpack_thumb() == LIBRAW_SUCCESS)
 			{
+				// The default (largest) thumbnail may be a format we cannot decode - notably
+				// Canon CR3's H.265 preview. In that case fall back to the largest embedded
+				// JPEG thumbnail, which reuses the standard JPEG decode path below.
+				if (rp.processor->imgdata.thumbnail.tformat != LIBRAW_THUMBNAIL_JPEG &&
+					rp.processor->imgdata.thumbnail.tformat != LIBRAW_THUMBNAIL_BITMAP)
+				{
+					const auto jpeg_index = find_largest_jpeg_thumb(rp.processor->imgdata.thumbs_list);
+
+					if (jpeg_index >= 0)
+					{
+						rp.processor->unpack_thumb_ex(jpeg_index);
+					}
+				}
+
 				const auto& t = rp.processor->imgdata.thumbnail;
 
 				if (LIBRAW_THUMBNAIL_JPEG == t.tformat &&
@@ -974,10 +1054,15 @@ file_load_result load_raw(const df::file_path path, const bool can_load_preview)
 					const auto& P1 = image_data.idata;
 					const auto& O = image_data.params;
 
+					// Read imgdata.image[] directly into the surface (skipping
+					// dcraw_make_mem_image to avoid a second full-frame copy). This block
+					// mirrors LibRaw's dcraw_make_mem_image auto-brightness (see
+					// third-party/LibRaw/src/postprocessing/mem_image.cpp) and reaches into
+					// libraw_internal_data internals, so keep it in sync on LibRaw upgrades.
 					if (libraw_internal_data.output_data.histogram)
 					{
 						int val, total, t_white = 0x2000, c;
-						int perc = df::round(S.width * S.height * 0.01); /* 99th percentile white level */
+						int perc = df::round(S.width * S.height * O.auto_bright_thr); /* 99th percentile white level */
 
 						if (IO.fuji_width) perc /= 2;
 
@@ -1023,8 +1108,20 @@ file_load_result load_raw(const df::file_path path, const bool can_load_preview)
 						result.success = true;
 					}
 				}
+				else
+				{
+					df::log(__FUNCTION__, std::format("dcraw_process failed for {}", path.name()));
+				}
+			}
+			else
+			{
+				df::log(__FUNCTION__, std::format("unpack failed for {}", path.name()));
 			}
 		}
+	}
+	else
+	{
+		df::log(__FUNCTION__, std::format("open_file failed for {}", path.name()));
 	}
 
 	return result;

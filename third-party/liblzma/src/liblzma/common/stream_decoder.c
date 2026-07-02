@@ -1,12 +1,11 @@
+// SPDX-License-Identifier: 0BSD
+
 ///////////////////////////////////////////////////////////////////////////////
 //
 /// \file       stream_decoder.c
 /// \brief      Decodes .xz Streams
 //
 //  Author:     Lasse Collin
-//
-//  This file has been put into the public domain.
-//  You can do whatever you want with this file.
 //
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -155,9 +154,9 @@ stream_decode(void *coder_ptr, const lzma_allocator *allocator,
 
 		if (coder->tell_any_check)
 			return LZMA_GET_CHECK;
-	}
 
-	// Fall through
+		FALLTHROUGH;
+	}
 
 	case SEQ_BLOCK_HEADER: {
 		if (*in_pos >= in_size)
@@ -188,9 +187,8 @@ stream_decode(void *coder_ptr, const lzma_allocator *allocator,
 
 		coder->pos = 0;
 		coder->sequence = SEQ_BLOCK_INIT;
+		FALLTHROUGH;
 	}
-
-	// Fall through
 
 	case SEQ_BLOCK_INIT: {
 		// Checking memusage and doing the initialization needs
@@ -253,9 +251,8 @@ stream_decode(void *coder_ptr, const lzma_allocator *allocator,
 			return ret;
 
 		coder->sequence = SEQ_BLOCK_RUN;
+		FALLTHROUGH;
 	}
-
-	// Fall through
 
 	case SEQ_BLOCK_RUN: {
 		const lzma_ret ret = coder->block_decoder.code(
@@ -292,9 +289,8 @@ stream_decode(void *coder_ptr, const lzma_allocator *allocator,
 			return ret;
 
 		coder->sequence = SEQ_STREAM_FOOTER;
+		FALLTHROUGH;
 	}
-
-	// Fall through
 
 	case SEQ_STREAM_FOOTER: {
 		// Copy the Stream Footer to the internal buffer.
@@ -332,9 +328,8 @@ stream_decode(void *coder_ptr, const lzma_allocator *allocator,
 			return LZMA_STREAM_END;
 
 		coder->sequence = SEQ_STREAM_PADDING;
+		FALLTHROUGH;
 	}
-
-	// Fall through
 
 	case SEQ_STREAM_PADDING:
 		assert(coder->concatenated);

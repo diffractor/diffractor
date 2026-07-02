@@ -3210,7 +3210,7 @@ void frame_base::create_draw_context(const factories_ptr& f, const bool use_d3d,
 				// DXGI_SWAP_EFFECT_FLIP_DISCARD; //'/*is_d3d ? (is_win_10 ? DXGI_SWAP_EFFECT_FLIP_DISCARD : DXGI_SWAP_EFFECT_DISCARD) :*/ DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
 				sd.BufferCount = 2;
 				sd.SampleDesc.Count = 1;
-				sd.AlphaMode = use_d3d ? DXGI_ALPHA_MODE_IGNORE : DXGI_ALPHA_MODE_PREMULTIPLIED;
+				sd.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
 				sd.Width = std::max(_extent.cx, 64);
 				sd.Height = std::max(_extent.cy, 64);
 
@@ -3245,12 +3245,23 @@ void frame_base::create_draw_context(const factories_ptr& f, const bool use_d3d,
 				_f->dxgi->MakeWindowAssociation(m_hWnd, DXGI_MWA_NO_WINDOW_CHANGES);
 				_draw_ctx = d3d11_create_context(_f, _swap_chain, _gdi_ctx->calc_base_font_size());
 			}
+
+			if (!_draw_ctx)
+			{
+				// The Direct3D path was requested but failed to produce a valid draw context
+				// (swap-chain creation failed, or shader/device-resource setup in
+				// d3d11_create_context failed). Reset any partial swap chain and fall back to
+				// CPU software rendering below so the window still renders instead of staying blank.
+				df::log(__FUNCTION__, "Direct3D draw context unavailable - falling back to software rendering");
+				_swap_chain.Reset();
+			}
 		}
-		else
+
+		if (!_draw_ctx)
 		{
-			// CPU software rendering (dialogs, bubble popups, and the fallback when Direct3D
-			// hardware is unavailable). use_transparency selects a layered (per-pixel alpha)
-			// window for bubbles.
+			// CPU software rendering: used for dialogs and bubble popups, and as the fallback
+			// when Direct3D hardware is unavailable or its draw context failed to initialise.
+			// use_transparency selects a layered (per-pixel alpha) window for bubbles.
 			_draw_ctx = create_software_draw_context(_f, m_hWnd, use_transparency,
 			                                         _gdi_ctx->calc_base_font_size());
 		}

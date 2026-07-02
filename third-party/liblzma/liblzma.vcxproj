@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|ARM64">
@@ -493,9 +493,7 @@
     <ClCompile Include="src\common\tuklib_progname.c" />
     <ClCompile Include="src\liblzma\check\check.c" />
     <ClCompile Include="src\liblzma\check\crc32_fast.c" />
-    <ClCompile Include="src\liblzma\check\crc32_table.c" />
     <ClCompile Include="src\liblzma\check\crc64_fast.c" />
-    <ClCompile Include="src\liblzma\check\crc64_table.c" />
     <ClCompile Include="src\liblzma\check\sha256.c" />
     <ClCompile Include="src\liblzma\common\alone_decoder.c" />
     <ClCompile Include="src\liblzma\common\alone_encoder.c" />

@@ -20,7 +20,10 @@
 void ui::surface::swap_rb()
 {
 #ifdef COMPILE_SIMD_INTRINSIC
-	if (platform::sse2_supported)
+	// _mm_shuffle_epi8 is an SSSE3 instruction, so gate on SSSE3 support (not
+	// just SSE2 which is the x64 baseline) to avoid an illegal-instruction fault
+	// on early x64 CPUs that have SSE2 but lack SSSE3.
+	if (platform::ssse3_supported)
 	{
 		const auto dest_stride = _stride;
 

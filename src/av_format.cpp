@@ -665,12 +665,44 @@ int64_t av_pts_correction::guess(const int64_t pts, const int64_t dts, const int
 ////////////////////////////////////////////////
 ////////////////////////////////////////////////
 
+// Maps an AVFrame's signalled colour space + range onto the app's color_space enum.
+// When the matrix is unspecified (very common) it falls back to the standard
+// resolution heuristic: SD -> BT.601, HD -> BT.709, UHD -> BT.2020.
+static ui::color_space av_frame_color_space(const AVFrame& frm)
+{
+	const bool full_range = frm.color_range == AVCOL_RANGE_JPEG;
+
+	auto matrix = frm.colorspace;
+
+	if (matrix == AVCOL_SPC_UNSPECIFIED)
+	{
+		if (frm.height >= 2000) matrix = AVCOL_SPC_BT2020_NCL;
+		else if (frm.height > 576) matrix = AVCOL_SPC_BT709;
+		else matrix = AVCOL_SPC_BT470BG;
+	}
+
+	switch (matrix)
+	{
+	case AVCOL_SPC_BT709:
+		return full_range ? ui::color_space::rec709_full : ui::color_space::rec709_limited;
+	case AVCOL_SPC_BT2020_NCL:
+	case AVCOL_SPC_BT2020_CL:
+		return full_range ? ui::color_space::rec2020_full : ui::color_space::rec2020_limited;
+	case AVCOL_SPC_BT470BG:
+	case AVCOL_SPC_SMPTE170M:
+	case AVCOL_SPC_SMPTE240M:
+	default:
+		return full_range ? ui::color_space::rec601_full : ui::color_space::rec601_limited;
+	}
+}
+
 av_frame_d3d av_get_d3d_info(const av_frame_ptr& frame_in)
 {
 	av_frame_d3d result;
 	result.width = frame_in->frm.width;
 	result.height = frame_in->frm.height;
 	result.orientation = frame_in->orientation;
+	result.color_space = av_frame_color_space(frame_in->frm);
 
 	if (frame_in->frm.format == AV_PIX_FMT_D3D11)
 	{

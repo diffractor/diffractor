@@ -42,17 +42,11 @@
 #include <string.h>
 #endif
 #if defined(_WIN32) && !defined(__CYGWIN__)
-#if defined(HAVE_BCRYPT_H) && _WIN32_WINNT >= _WIN32_WINNT_VISTA
-/* don't use bcrypt when XP needs to be supported */
 #include <bcrypt.h>
 
 /* Common in other bcrypt implementations, but missing from VS2008. */
 #ifndef BCRYPT_SUCCESS
 #define BCRYPT_SUCCESS(r) ((NTSTATUS)(r) == STATUS_SUCCESS)
-#endif
-
-#elif defined(HAVE_WINCRYPT_H)
-#include <wincrypt.h>
 #endif
 #endif
 #ifdef HAVE_ZLIB_H
@@ -110,8 +104,7 @@ archive_errno(struct archive *a)
 const char *
 archive_error_string(struct archive *a)
 {
-
-	if (a->error != NULL  &&  *a->error != '\0')
+	if (a->error != NULL && *a->error != '\0')
 		return (a->error);
 	else
 		return (NULL);
@@ -250,11 +243,7 @@ __archive_mktempx(const char *tmpdir, wchar_t *template)
 	DWORD attr;
 	wchar_t *xp, *ep;
 	int fd;
-#if defined(HAVE_BCRYPT_H) && _WIN32_WINNT >= _WIN32_WINNT_VISTA
 	BCRYPT_ALG_HANDLE hAlg = NULL;
-#else
-	HCRYPTPROV hProv = (HCRYPTPROV)NULL;
-#endif
 	fd = -1;
 	ws = NULL;
 	archive_string_init(&temp_name);
@@ -262,22 +251,36 @@ __archive_mktempx(const char *tmpdir, wchar_t *template)
 	if (template == NULL) {
 		/* Get a temporary directory. */
 		if (tmpdir == NULL) {
-			size_t l;
-			wchar_t *tmp;
+			wchar_t buf[MAX_PATH + 1];
+			wchar_t *p = buf, *buf2 = NULL;
+			size_t l, s;
 
-			l = GetTempPathW(0, NULL);
+			s = MAX_PATH + 1;
+			l = GetTempPathW((DWORD)s, buf);
 			if (l == 0) {
 				la_dosmaperr(GetLastError());
 				goto exit_tmpfile;
 			}
-			tmp = malloc(l*sizeof(wchar_t));
-			if (tmp == NULL) {
-				errno = ENOMEM;
-				goto exit_tmpfile;
+			while (l > s) {
+				wchar_t *tmp;
+
+				s = l;
+				tmp = realloc(buf2, s * sizeof(wchar_t));
+				if (tmp == NULL) {
+					free(buf2);
+					errno = ENOMEM;
+					goto exit_tmpfile;
+				}
+				p = buf2 = tmp;
+				l = GetTempPathW((DWORD)s, buf2);
+				if (l == 0) {
+					free(buf2);
+					la_dosmaperr(GetLastError());
+					goto exit_tmpfile;
+				}
 			}
-			GetTempPathW((DWORD)l, tmp);
-			archive_wstrcpy(&temp_name, tmp);
-			free(tmp);
+			archive_wstrcpy(&temp_name, p);
+			free(buf2);
 		} else {
 			if (archive_wstring_append_from_mbs(&temp_name, tmpdir,
 			    strlen(tmpdir)) < 0)
@@ -328,19 +331,11 @@ __archive_mktempx(const char *tmpdir, wchar_t *template)
 			abort();
 	}
 
-#if defined(HAVE_BCRYPT_H) && _WIN32_WINNT >= _WIN32_WINNT_VISTA
 	if (!BCRYPT_SUCCESS(BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_RNG_ALGORITHM,
 		NULL, 0))) {
 		la_dosmaperr(GetLastError());
 		goto exit_tmpfile;
 	}
-#else
-	if (!CryptAcquireContext(&hProv, NULL, NULL, PROV_RSA_FULL,
-		CRYPT_VERIFYCONTEXT)) {
-		la_dosmaperr(GetLastError());
-		goto exit_tmpfile;
-	}
-#endif
 
 	for (;;) {
 		wchar_t *p;
@@ -351,19 +346,11 @@ __archive_mktempx(const char *tmpdir, wchar_t *template)
 
 		/* Generate a random file name through CryptGenRandom(). */
 		p = xp;
-#if defined(HAVE_BCRYPT_H) && _WIN32_WINNT >= _WIN32_WINNT_VISTA
 		if (!BCRYPT_SUCCESS(BCryptGenRandom(hAlg, (PUCHAR)p,
 		    (DWORD)(ep - p)*sizeof(wchar_t), 0))) {
 			la_dosmaperr(GetLastError());
 			goto exit_tmpfile;
 		}
-#else
-		if (!CryptGenRandom(hProv, (DWORD)(ep - p)*sizeof(wchar_t),
-		    (BYTE*)p)) {
-			la_dosmaperr(GetLastError());
-			goto exit_tmpfile;
-		}
-#endif
 		for (; p < ep; p++)
 			*p = num[((DWORD)*p) % (sizeof(num)/sizeof(num[0]))];
 
@@ -417,13 +404,8 @@ __archive_mktempx(const char *tmpdir, wchar_t *template)
 			break;/* success! */
 	}
 exit_tmpfile:
-#if defined(HAVE_BCRYPT_H) && _WIN32_WINNT >= _WIN32_WINNT_VISTA
 	if (hAlg != NULL)
 		BCryptCloseAlgorithmProvider(hAlg, 0);
-#else
-	if (hProv != (HCRYPTPROV)NULL)
-		CryptReleaseContext(hProv, 0);
-#endif
 	free(ws);
 	if (template == temp_name.s)
 		archive_wstring_free(&temp_name);
@@ -445,11 +427,39 @@ __archive_mkstemp(wchar_t *template)
 #else
 
 static int
-get_tempdir(struct archive_string *temppath)
+__archive_issetugid(void)
 {
-	const char *tmp;
+#ifdef HAVE_ISSETUGID
+	return (issetugid());
+#elif HAVE_GETRESUID
+	uid_t ruid, euid, suid;
+	gid_t rgid, egid, sgid;
+	if (getresuid(&ruid, &euid, &suid) != 0)
+		return (-1);
+	if (ruid != euid || ruid != suid)
+		return (1);
+	if (getresgid(&rgid, &egid, &sgid) != 0)
+		return (-1);
+	if (rgid != egid || rgid != sgid)
+		return (1);
+#elif HAVE_GETEUID
+	if (geteuid() != getuid())
+		return (1);
+#if HAVE_GETEGID
+	if (getegid() != getgid())
+		return (1);
+#endif
+#endif
+	return (0);
+}
 
-	tmp = getenv("TMPDIR");
+int
+__archive_get_tempdir(struct archive_string *temppath)
+{
+	const char *tmp = NULL;
+
+	if (__archive_issetugid() == 0)
+		tmp = getenv("TMPDIR");
 	if (tmp == NULL)
 #ifdef _PATH_TMP
 		tmp = _PATH_TMP;
@@ -476,7 +486,7 @@ __archive_mktemp(const char *tmpdir)
 
 	archive_string_init(&temp_name);
 	if (tmpdir == NULL) {
-		if (get_tempdir(&temp_name) != ARCHIVE_OK)
+		if (__archive_get_tempdir(&temp_name) != ARCHIVE_OK)
 			goto exit_tmpfile;
 	} else {
 		archive_strcpy(&temp_name, tmpdir);
@@ -538,7 +548,7 @@ __archive_mktempx(const char *tmpdir, char *template)
 	if (template == NULL) {
 		archive_string_init(&temp_name);
 		if (tmpdir == NULL) {
-			if (get_tempdir(&temp_name) != ARCHIVE_OK)
+			if (__archive_get_tempdir(&temp_name) != ARCHIVE_OK)
 				goto exit_tmpfile;
 		} else
 			archive_strcpy(&temp_name, tmpdir);

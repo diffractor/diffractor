@@ -1,12 +1,11 @@
+// SPDX-License-Identifier: 0BSD
+
 ///////////////////////////////////////////////////////////////////////////////
 //
 /// \file       index_hash.c
 /// \brief      Validates Index by using a hash function
 //
 //  Author:     Lasse Collin
-//
-//  This file has been put into the public domain.
-//  You can do whatever you want with this file.
 //
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -268,9 +267,9 @@ lzma_index_hash_decode(lzma_index_hash *index_hash, const uint8_t *in,
 		index_hash->pos = (LZMA_VLI_C(4) - index_size_unpadded(
 				index_hash->records.count,
 				index_hash->records.index_list_size)) & 3;
-		index_hash->sequence = SEQ_PADDING;
 
-	// Fall through
+		index_hash->sequence = SEQ_PADDING;
+		FALLTHROUGH;
 
 	case SEQ_PADDING:
 		if (index_hash->pos > 0) {
@@ -303,8 +302,7 @@ lzma_index_hash_decode(lzma_index_hash *index_hash, const uint8_t *in,
 				*in_pos - in_start, index_hash->crc32);
 
 		index_hash->sequence = SEQ_CRC32;
-
-	// Fall through
+		FALLTHROUGH;
 
 	case SEQ_CRC32:
 		do {

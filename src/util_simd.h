@@ -95,18 +95,33 @@ static uint32_t calc_crc32c_c(uint32_t crc, const void* data, const size_t len)
 	return crc;
 }
 
-static uint32_t calc_crc32c_sse2(uint32_t crc, const void* data, const size_t len)
+static uint32_t calc_crc32c_x86(uint32_t crc, const void* data, const size_t len)
 {
 #if defined(COMPILE_SIMD_INTRINSIC)
 	const auto* p = static_cast<const uint8_t*>(data);
 	const auto* const end = p + len;
 
-	while (p < end && std::bit_cast<uintptr_t>(p) & 0x0f)
+	// Align to an 8-byte boundary so the wide loop below reads aligned words.
+	while (p < end && (std::bit_cast<uintptr_t>(p) & 0x07))
 	{
 		crc = _mm_crc32_u8(crc, *p++);
 	}
 
-	while (p + (sizeof(uint32_t) - 1) < end)
+#if defined(_M_X64)
+	// _mm_crc32_u64 consumes 8 bytes per instruction (64-bit targets only),
+	// roughly doubling throughput versus the 32-bit path on large buffers.
+	uint64_t crc64 = crc;
+
+	while (p + sizeof(uint64_t) <= end)
+	{
+		crc64 = _mm_crc32_u64(crc64, *std::bit_cast<const uint64_t*>(p));
+		p += sizeof(uint64_t);
+	}
+
+	crc = static_cast<uint32_t>(crc64);
+#endif
+
+	while (p + sizeof(uint32_t) <= end)
 	{
 		crc = _mm_crc32_u32(crc, *std::bit_cast<const uint32_t*>(p));
 		p += sizeof(uint32_t);
@@ -134,12 +149,21 @@ static uint32_t calc_crc32c_arm(uint32_t crc, const void* data, const size_t len
 	const auto* p = static_cast<const uint8_t*>(data);
 	const auto* const end = p + len;
 
-	while (p < end && (std::bit_cast<uintptr_t>(p) & 0x0f))
+	// Align to an 8-byte boundary so the wide loop below reads aligned words.
+	while (p < end && (std::bit_cast<uintptr_t>(p) & 0x07))
 	{
 		crc = __crc32b(crc, *p++);
 	}
 
-	while (p + (sizeof(uint32_t) - 1) < end)
+	// __crc32d consumes 8 bytes per instruction, roughly doubling throughput
+	// versus the 32-bit path on large buffers.
+	while (p + sizeof(uint64_t) <= end)
+	{
+		crc = __crc32d(crc, *std::bit_cast<const uint64_t*>(p));
+		p += sizeof(uint64_t);
+	}
+
+	while (p + sizeof(uint32_t) <= end)
 	{
 		crc = __crc32w(crc, *std::bit_cast<const uint32_t*>(p));
 		p += sizeof(uint32_t);

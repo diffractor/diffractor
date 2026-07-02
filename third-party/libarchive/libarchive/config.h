@@ -35,6 +35,16 @@ typedef int uid_t;
 typedef int pid_t;
 typedef int id_t;
 
+/* MSVC lacks POSIX ssize_t used by archive_windows.h (3.8.8+). */
+#if defined(_MSC_VER) && !defined(_SSIZE_T_DEFINED) && !defined(ssize_t)
+#if defined(_WIN64)
+typedef __int64 ssize_t;
+#else
+typedef long ssize_t;
+#endif
+#define _SSIZE_T_DEFINED
+#endif
+
 #if defined(_WIN64)
 #define SSIZE_MAX _I64_MAX
 #else
@@ -42,6 +52,8 @@ typedef int id_t;
 #endif
 
 #define HAVE_WINCRYPT_H 1
+/* libarchive 3.8.x uses the CNG (bcrypt) backend for Windows digests. */
+#define HAVE_BCRYPT_H 1
 #define ARCHIVE_CRYPTO_MD5_WIN 1
 #define ARCHIVE_CRYPTO_SHA1_WIN 1
 #define ARCHIVE_CRYPTO_SHA256_WIN 1
