@@ -33,8 +33,8 @@
 #ifndef LIBMATROSKA_DEFINES_H
 #define LIBMATROSKA_DEFINES_H
 
-#include "ebml/EbmlVersion.h"
-#include "ebml/EbmlElement.h"
+#include <ebml/EbmlVersion.h>
+#include <ebml/EbmlElement.h>
 
 #if defined(HAVE_EBML2) || defined(HAS_EBML2)
 #define DEFINE_MKX_CONTEXT(a)                DEFINE_xxx_CONTEXT(a,EBML_SemanticGlobal)
@@ -62,6 +62,7 @@
 class MATROSKA_DLL_API x : public EbmlMaster { \
     public: x(EBML_EXTRA_PARAM); \
     x(const x & ElementToClone) :EbmlMaster(ElementToClone) {} \
+    bool SetSizeInfinite(bool finite = true) override { return !finite; } \
     EBML_CONCRETE_CLASS(x)
 
 #define DECLARE_MKX_MASTER_CONS(x)     DECLARE_MKX_CONTEXT(x) \
@@ -150,6 +151,7 @@ class MATROSKA_DLL_API x : public EbmlMaster { \
 class MATROSKA_DLL_API x : public EbmlMaster { \
     public: x(); \
     x(const x & ElementToClone) :EbmlMaster(ElementToClone) {} \
+    bool SetSizeInfinite(bool finite = true) override { return !finite; } \
     EBML_CONCRETE_CLASS(x)
 
 #define DECLARE_MKX_MASTER_CONS(x)     DECLARE_MKX_CONTEXT(x) \

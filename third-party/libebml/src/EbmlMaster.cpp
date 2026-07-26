@@ -36,6 +36,7 @@
 
 #include <cassert>
 #include <algorithm>
+#include <iterator>
 
 #include "ebml/EbmlMaster.h"
 #include "ebml/EbmlStream.h"
@@ -444,8 +445,13 @@ void EbmlMaster::Read(EbmlStream & inDataStream, const EbmlSemanticContext & sCo
 
           if (UpperEltFound) {
             --UpperEltFound;
-            if (UpperEltFound > 0 || MaxSizeToRead <= 0)
+            if (UpperEltFound > 0)
               goto processCrc;
+            if (MaxSizeToRead <= 0) {
+              delete FoundElt;
+              FoundElt = nullptr;
+              goto processCrc;
+            }
             ElementLevelA = FoundElt;
           }
 
@@ -455,9 +461,20 @@ void EbmlMaster::Read(EbmlStream & inDataStream, const EbmlSemanticContext & sCo
 
       if (UpperEltFound > 0) {
         UpperEltFound--;
-        if (UpperEltFound > 0 || MaxSizeToRead <= 0)
+        if (UpperEltFound > 0)
           goto processCrc;
+        if (MaxSizeToRead <= 0) {
+          delete FoundElt;
+          FoundElt = nullptr;
+          goto processCrc;
+        }
         ElementLevelA = FoundElt;
+        if (IsFiniteSize() && ElementLevelA->IsFiniteSize()) {
+          if (ElementLevelA->GetEndPosition() > GetEndPosition()) {
+            goto processCrc; // found an upper element that ends after this, we were truncated
+          }
+          MaxSizeToRead = GetEndPosition() - ElementLevelA->GetEndPosition(); // even if it's the default value
+        }
         continue;
       }
 
