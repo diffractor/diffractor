@@ -146,6 +146,9 @@ bool WinIOCallback::open(const wchar_t* Path, const open_mode aMode, DWORD dwFla
       assert(false);
   }
 
+  // Diffractor patch: always use the Unicode CreateFileW path. The upstream code branches
+  // on GetVersion() to fall back to an ANSI CreateFileA on Win9x; GetVersion() is deprecated
+  // (C4996 under /sdl) and Win9x is unsupported. Re-apply this after libebml upgrades.
   //if ((LONG)GetVersion() >= 0) {
     mFile = CreateFileW(Path, AccessMode, ShareMode, NULL, Disposition, dwFlags, NULL);
 //  } else {

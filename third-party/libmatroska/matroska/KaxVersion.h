@@ -35,12 +35,12 @@
 
 #include <string>
 
-#include "ebml/EbmlConfig.h"
+#include <ebml/EbmlConfig.h>
 #include "matroska/KaxConfig.h"
 
 namespace libmatroska {
 
-#define LIBMATROSKA_VERSION 0x010701
+#define LIBMATROSKA_VERSION 0x010702
 
 extern const MATROSKA_DLL_API std::string KaxCodeVersion;
 extern const MATROSKA_DLL_API std::string KaxCodeDate;

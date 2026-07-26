@@ -225,8 +225,8 @@ DEFINE_SEMANTIC_ITEM(false, true, KaxFlagTextDescriptions)
 DEFINE_SEMANTIC_ITEM(false, true, KaxFlagOriginal)
 DEFINE_SEMANTIC_ITEM(false, true, KaxFlagCommentary)
 DEFINE_SEMANTIC_ITEM(true, true, KaxTrackFlagLacing)
-DEFINE_SEMANTIC_ITEM(true, true, KaxTrackMinCache)
-DEFINE_SEMANTIC_ITEM(false, true, KaxTrackMaxCache)
+DEFINE_SEMANTIC_ITEM(true, true, KaxTrackMinCache) // not supported
+DEFINE_SEMANTIC_ITEM(false, true, KaxTrackMaxCache) // not supported
 DEFINE_SEMANTIC_ITEM(false, true, KaxTrackDefaultDuration)
 DEFINE_SEMANTIC_ITEM(false, true, KaxTrackDefaultDecodedFieldDuration)
 DEFINE_SEMANTIC_ITEM(true, true, KaxTrackTimecodeScale)
@@ -244,7 +244,7 @@ DEFINE_SEMANTIC_ITEM(false, true, KaxCodecSettings) // not supported
 DEFINE_SEMANTIC_ITEM(false, false, KaxCodecInfoURL) // not supported
 DEFINE_SEMANTIC_ITEM(false, false, KaxCodecDownloadURL) // not supported
 DEFINE_SEMANTIC_ITEM(true, true, KaxCodecDecodeAll) // not supported
-DEFINE_SEMANTIC_ITEM(false, false, KaxTrackOverlay)
+DEFINE_SEMANTIC_ITEM(false, false, KaxTrackOverlay) // not supported
 DEFINE_SEMANTIC_ITEM(true, true, KaxCodecDelay)
 DEFINE_SEMANTIC_ITEM(true, true, KaxSeekPreRoll)
 DEFINE_SEMANTIC_ITEM(false, false, KaxTrackTranslate)
@@ -832,6 +832,16 @@ filepos_t KaxEncryptedBlock::RenderData(IOCallback & /* output */, bool /* bForc
   return 0;
 }
 
+filepos_t KaxTrackMinCache::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
+  assert(false); // no you are not allowed to use this element !
+  return 0;
+}
+
+filepos_t KaxTrackMaxCache::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
+  assert(false); // no you are not allowed to use this element !
+  return 0;
+}
+
 filepos_t KaxTrackTimecodeScale::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
   assert(false); // no you are not allowed to use this element !
   return 0;
@@ -863,6 +873,11 @@ filepos_t KaxCodecDownloadURL::RenderData(IOCallback & /* output */, bool /* bFo
 }
 
 filepos_t KaxCodecDecodeAll::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
+  assert(false); // no you are not allowed to use this element !
+  return 0;
+}
+
+filepos_t KaxTrackOverlay::RenderData(IOCallback & /* output */, bool /* bForceRender */, bool /* bSaveDefault */) {
   assert(false); // no you are not allowed to use this element !
   return 0;
 }
