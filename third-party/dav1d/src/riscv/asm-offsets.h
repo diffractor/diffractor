@@ -1,5 +1,6 @@
 /*
- * Copyright © 2021, VideoLAN and dav1d authors
+ * Copyright © 2026, VideoLAN and dav1d authors
+ * Copyright © 2026, Mohd Zaid
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -24,10 +25,8 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef ARM_ASM_OFFSETS_H
-#define ARM_ASM_OFFSETS_H
-
-#include "config.h"
+#ifndef DAV1D_SRC_RISCV_64_ASM_OFFSETS_H
+#define DAV1D_SRC_RISCV_64_ASM_OFFSETS_H
 
 #define FGD_SEED                         0
 #define FGD_AR_COEFF_LAG                 92
@@ -42,17 +41,4 @@
 #define FGD_UV_OFFSET                    204
 #define FGD_CLIP_TO_RESTRICTED_RANGE     216
 
-#if ARCH_AARCH64
-#define RMVSF_IW8                        16
-#define RMVSF_IH8                        20
-#define RMVSF_MFMV_REF                   53
-#define RMVSF_MFMV_REF2CUR               56
-#define RMVSF_MFMV_REF2REF               59
-#define RMVSF_N_MFMVS                    80
-#define RMVSF_RP_REF                     96
-#define RMVSF_RP_PROJ                    104
-#define RMVSF_RP_STRIDE                  112
-#define RMVSF_N_TILE_THREADS             128
-#endif
-
-#endif /* ARM_ASM_OFFSETS_H */
+#endif /*DAV1D_SRC_RISCV_64_ASM_OFFSETS_H*/

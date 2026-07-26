@@ -1,5 +1,6 @@
 /*
- * Copyright © 2021, VideoLAN and dav1d authors
+ * Copyright © 2026, VideoLAN and dav1d authors
+ * Copyright © 2026, Mohd Zaid
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -24,35 +25,24 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef ARM_ASM_OFFSETS_H
-#define ARM_ASM_OFFSETS_H
+#ifndef DAV1D_SRC_RISCV_64_FILMGRAIN_H
+#define DAV1D_SRC_RISCV_64_FILMGRAIN_H
 
-#include "config.h"
+#include "src/cpu.h"
+#include "src/filmgrain.h"
 
-#define FGD_SEED                         0
-#define FGD_AR_COEFF_LAG                 92
-#define FGD_AR_COEFFS_Y                  96
-#define FGD_AR_COEFFS_UV                 120
-#define FGD_AR_COEFF_SHIFT               176
-#define FGD_GRAIN_SCALE_SHIFT            184
+decl_generate_grain_y_fn(BF(dav1d_generate_grain_y, rvv));
 
-#define FGD_SCALING_SHIFT                88
-#define FGD_UV_MULT                      188
-#define FGD_UV_LUMA_MULT                 196
-#define FGD_UV_OFFSET                    204
-#define FGD_CLIP_TO_RESTRICTED_RANGE     216
+static ALWAYS_INLINE void film_grain_dsp_init_riscv(Dav1dFilmGrainDSPContext *const c){
+    const unsigned flags = dav1d_get_cpu_flags();
 
-#if ARCH_AARCH64
-#define RMVSF_IW8                        16
-#define RMVSF_IH8                        20
-#define RMVSF_MFMV_REF                   53
-#define RMVSF_MFMV_REF2CUR               56
-#define RMVSF_MFMV_REF2REF               59
-#define RMVSF_N_MFMVS                    80
-#define RMVSF_RP_REF                     96
-#define RMVSF_RP_PROJ                    104
-#define RMVSF_RP_STRIDE                  112
-#define RMVSF_N_TILE_THREADS             128
+    if (!(flags & DAV1D_RISCV_CPU_FLAG_V)) return;
+
+#if BITDEPTH == 8
+    c->generate_grain_y = dav1d_generate_grain_y_8bpc_rvv;
+#elif BITDEPTH == 16
+    c->generate_grain_y = dav1d_generate_grain_y_16bpc_rvv;
 #endif
+}
 
-#endif /* ARM_ASM_OFFSETS_H */
+#endif /* DAV1D_SRC_RISCV_FILMGRAIN_H */
