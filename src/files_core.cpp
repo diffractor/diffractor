@@ -1974,8 +1974,42 @@ std::vector<archive_item> files::list_archive(const df::file_path zip_file_path)
 	return results;
 }
 
+
+// The app UI language is a 2-letter code (app_settings::language). FFmpeg tags id3v2
+// COMM/USLT comments with a lowercase ISO 639-2 3-letter code taken verbatim from the
+// file, so either the bibliographic (e.g. "ger") or terminologic ("deu") variant may
+// appear. Returns true when `key` is exactly "comment-<code>" for a code matching ui_lang.
+static bool comment_key_matches_ui_language(const std::string_view key, const std::string_view ui_lang)
+{
+	if (ui_lang.empty()) return false;
+
+	struct lang_map { std::string_view ui2; std::string_view iso3; };
+	static constexpr lang_map map[] = {
+		{"en", "eng"}, {"de", "deu"}, {"de", "ger"}, {"cs", "ces"}, {"cs", "cze"},
+		{"es", "spa"}, {"fr", "fra"}, {"fr", "fre"}, {"it", "ita"}, {"ja", "jpn"},
+		{"ko", "kor"}, {"pl", "pol"}, {"pt", "por"}, {"ru", "rus"}, {"tr", "tur"},
+		{"uk", "ukr"}, {"zh", "zho"}, {"zh", "chi"}, {"nl", "nld"}, {"nl", "dut"},
+		{"br", "bre"}, {"lv", "lav"}, {"sr", "srp"}, {"sr", "scc"},
+	};
+
+	constexpr std::string_view prefix = "comment-";
+	if (key.size() != prefix.size() + 3) return false;
+	const auto code = key.substr(prefix.size());
+
+	for (const auto& m : map)
+	{
+		if (str::icmp(ui_lang, m.ui2) == 0 && str::icmp(code, m.iso3) == 0)
+			return true;
+	}
+
+	return false;
+}
+
 void file_scan_result::parse_metadata_ffmpeg_kv(prop::item_metadata& result) const
 {
+	const auto ui_lang = setting.language;
+	int comment_priority = 0;
+
 	for (const auto& kv : ffmpeg_metadata)
 	{
 		if (is_key(kv.first, "album")) result.album = str::strip_and_cache(kv.second);
@@ -1983,7 +2017,18 @@ void file_scan_result::parse_metadata_ffmpeg_kv(prop::item_metadata& result) con
 		else if (is_key(kv.first, "programme")) result.show = str::strip_and_cache(kv.second);
 		else if (is_key(kv.first, "album_artist")) result.album_artist = str::strip_and_cache(kv.second);
 		else if (is_key(kv.first, "artist")) result.artist = str::strip_and_cache(kv.second);
-		else if (is_key(kv.first, "comment")) result.comment = str::strip_and_cache(kv.second);
+		else if (is_key(kv.first, "comment") || str::starts(kv.first, "comment-"))
+		{
+			const auto priority = is_key(kv.first, "comment") ? 3
+				: comment_key_matches_ui_language(kv.first, ui_lang) ? 2
+				: 1;
+
+			if (priority > comment_priority)
+			{
+				comment_priority = priority;
+				result.comment = str::strip_and_cache(kv.second);
+			}
+		}
 		else if (is_key(kv.first, "description")) result.description = str::strip_and_cache(kv.second);
 		else if (is_key(kv.first, "composer")) result.composer = str::strip_and_cache(kv.second);
 		else if (is_key(kv.first, "copyright")) result.copyright_notice = str::strip_and_cache(kv.second);
