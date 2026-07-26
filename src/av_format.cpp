@@ -30,9 +30,10 @@ extern "C" {
 #include "libswresample/swresample.h"
 #include "libavcodec/avcodec.h"
 #include "libavutil/frame.h"
+#include "libavutil/hwcontext.h"
 }
 
-static_assert(std::is_move_constructible_v<av_stream_info>);
+df_assert_movable(av_stream_info);
 
 ////////////////////////////////////////////////
 ////////////////////////////////////////////////
@@ -77,7 +78,7 @@ std::vector<av_codec_doc> av_supported_codecs()
 			continue;
 		}
 
-		av_codec_media_type media_type = av_codec_media_type::other;
+		auto media_type = av_codec_media_type::other;
 
 		switch (codec->type)
 		{
@@ -105,7 +106,8 @@ static double calc_duration(int64_t t, const AVRational& base, const int64_t sta
 {
 	if (t == AV_NOPTS_VALUE) t = 0;
 	if (start != AV_NOPTS_VALUE) t -= start;
-	return t * base.num / static_cast<double>(base.den);
+	// Scale in double: a 64-bit timestamp times a large time-base numerator overflows.
+	return static_cast<double>(t) * base.num / base.den;
 }
 
 static double calc_duration(int64_t t, const int64_t& start)
@@ -149,27 +151,27 @@ static df::blob unescape_xmp(const char* sz)
 	return {result.data(), result.data() + result.size()};
 }
 
+// Decodes a 3x3 display matrix into a clockwise rotation normalised onto [0,360).
+// Shared by the container-level (stream) and frame-level side data so both map
+// onto the same set of orientations.
+static double rotation_from_display_matrix(const uint8_t* const data, const size_t size)
+{
+	if (!data || size < 9 * sizeof(int32_t))
+	{
+		return 0.0;
+	}
+
+	const auto theta = -av_display_rotation_get(reinterpret_cast<const int32_t*>(data));
+	return theta - 360.0 * floor(theta / 360.0 + 0.9 / 360.0);
+}
+
 double get_rotation(const AVStream* const st)
 {
 	const AVPacketSideData* side_data = av_packet_side_data_get(st->codecpar->coded_side_data,
 	                                                            st->codecpar->nb_coded_side_data,
 	                                                            AV_PKT_DATA_DISPLAYMATRIX);
 
-	double theta = 0.0;
-
-	if (side_data)
-	{
-		const auto* display_matrix = reinterpret_cast<const int32_t*>(side_data->data);
-
-		if (display_matrix)
-		{
-			theta = -av_display_rotation_get(display_matrix);
-		}
-
-		theta -= 360 * floor(theta / 360 + 0.9 / 360);
-	}
-
-	return theta;
+	return side_data ? rotation_from_display_matrix(side_data->data, side_data->size) : 0.0;
 }
 
 // Locates a DV VAUX recording-date (0x62) or recording-time (0x63) pack within a
@@ -278,7 +280,7 @@ static void populate_properties(const AVFormatContext* ctx, file_scan_result& re
 	if (ctx)
 	{
 		result.nb_streams = ctx->nb_streams;
-		result.duration = calc_duration(ctx->duration, ctx->start_time);
+		result.duration = calc_duration(ctx->duration, AV_NOPTS_VALUE);
 
 
 		const AVDictionaryEntry* tag = nullptr;
@@ -291,7 +293,7 @@ static void populate_properties(const AVFormatContext* ctx, file_scan_result& re
 			}
 			else
 			{
-				result.ffmpeg_metadata.emplace_back(str::cache(tag->key), str::utf8_cast(tag->value));
+				result.ffmpeg_metadata.emplace_back(tag->key, str::utf8_cast(tag->value));
 			}
 		}
 	}
@@ -352,14 +354,29 @@ static ui::orientation calc_orientation_impl(const int rr)
 	return ui::orientation::top_left;
 }
 
+// Name of the decoder that would be used for a stream, or empty when none is built in.
+static str::cached decoder_name(const AVCodecParameters* const codec)
+{
+	const auto* const found = codec ? avcodec_find_decoder(codec->codec_id) : nullptr;
+	return found ? str::cache(found->name) : str::cached{};
+}
+
+// Human-readable name of an AVPixelFormat value, or empty when unset/unknown.
+static str::cached pixel_format_name(const int format)
+{
+	const auto* const desc = format == AV_PIX_FMT_NONE
+		                         ? nullptr
+		                         : av_pix_fmt_desc_get(static_cast<AVPixelFormat>(format));
+	return desc ? str::cache(desc->name) : str::cached{};
+}
+
 static void populate_audio_properties(const AVStream* const s, file_scan_result& result)
 {
 	auto* codec = s->codecpar;
 
 	if (codec && codec->codec_type == AVMEDIA_TYPE_AUDIO)
 	{
-		auto* const found = avcodec_find_decoder(codec->codec_id);
-		if (found) result.audio_codec = str::cache(found->name);
+		if (const auto name = decoder_name(codec); !str::is_empty(name)) result.audio_codec = name;
 
 		result.audio_sample_rate = codec->sample_rate;
 		result.audio_channels = codec->ch_layout.nb_channels;
@@ -373,20 +390,31 @@ static void populate_video_properties(const AVStream* const s, file_scan_result&
 
 	if (codec && codec->codec_type == AVMEDIA_TYPE_VIDEO)
 	{
-		auto* const found = avcodec_find_decoder(codec->codec_id);
-		if (found) result.video_codec = str::cache(found->name);
+		if (const auto name = decoder_name(codec); !str::is_empty(name)) result.video_codec = name;
 
 		result.width = codec->width;
 		result.height = codec->height;
 
-		if (codec->format != AV_PIX_FMT_NONE)
-		{
-			const auto* const desc = av_pix_fmt_desc_get(static_cast<AVPixelFormat>(codec->format));
+		// Apply the pixel (sample) aspect ratio so anamorphic / non-square-pixel
+		// video reports its display dimensions rather than the stored frame size,
+		// matching the aspect used during playback (#78).
+		auto sar = codec->sample_aspect_ratio;
 
-			if (desc)
-			{
-				result.pixel_format = str::cache(desc->name);
-			}
+		if (sar.num == 0 || sar.den == 0 || sar.num == sar.den)
+		{
+			sar = s->sample_aspect_ratio;
+		}
+
+		if (sar.num > 0 && sar.den > 0 && sar.num != sar.den && codec->width > 0 && codec->height > 0)
+		{
+			const auto w = static_cast<int64_t>(codec->width);
+			result.height = static_cast<uint32_t>(df::mul_div(
+				w, static_cast<int64_t>(sar.den) * codec->height, static_cast<int64_t>(sar.num) * w));
+		}
+
+		if (const auto name = pixel_format_name(codec->format); !str::is_empty(name))
+		{
+			result.pixel_format = name;
 		}
 
 		result.orientation = calc_orientation_impl(df::round(get_rotation(s)));
@@ -395,19 +423,18 @@ static void populate_video_properties(const AVStream* const s, file_scan_result&
 
 int try_avcodec_send_packet(AVCodecContext* avctx, const AVPacket* avpkt)
 {
-	const bool is_hw = avctx->hw_device_ctx != nullptr;
-
-	__try
-	{
-		return avcodec_send_packet(avctx, avpkt);
-	}
-	__except (is_hw ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH)
-	{
-		setting.use_d3d11va = false;
-	}
-
-	return AVERROR(EINVAL);
+	// A fault here (typically in a hardware decoder / GPU driver) is deliberately NOT caught:
+	// it propagates to the global unhandled-exception handler so the app writes a minidump,
+	// reports the crash, and is relaunched by Application Restart. The persisted hardware-decode
+	// crash guard (see init_streams / apply_gpu_crash_guard) then disables HW video decoding on
+	// the next launch. Swallowing the fault here would instead leave playback silently broken.
+	return avcodec_send_packet(avctx, avpkt);
 }
+
+// Number of live decoders currently using hardware video decode. The crash guard flag is
+// written on the 0->1 transition and cleared on the 1->0 transition so concurrent decoders
+// (playback plus any preview) keep it set for as long as any hardware decode is in progress.
+static std::atomic<int> g_hw_decode_sessions{0};
 
 ////////////////////////////////////////////////
 ////////////////////////////////////////////////
@@ -487,13 +514,6 @@ public:
 	~av_frame()
 	{
 		av_frame_unref(&frm);
-	}
-
-	void unref()
-	{
-		av_frame_unref(&frm);
-		memset(&frm, 0, sizeof(frm));
-		time = 0.0;
 	}
 
 	AVPixelFormat pix_fmt() const
@@ -588,51 +608,21 @@ av_pts_correction::av_pts_correction()
 
 void av_pts_correction::clear()
 {
-	num_faulty_pts = num_faulty_dts = 0;
-	last_pts = last_dts = AV_NOPTS_VALUE;
 	last_output = AV_NOPTS_VALUE;
 	frame_interval = 0;
 }
 
-int64_t av_pts_correction::guess(const int64_t pts, const int64_t dts, const int64_t duration)
+int64_t av_pts_correction::guess(const int64_t best_effort, const int64_t pts, const int64_t dts,
+                                 const int64_t duration)
 {
-	// Step 1 - choose between the (already reordered) PTS and the DTS using the
-	// same fault-counting heuristic as FFmpeg's guess_correct_pts
-	// (libavcodec/decode.c): whichever stream has so far shown fewer backwards or
-	// duplicate steps is trusted. The else-if branches keep the unused "last"
-	// value aligned with the one that is present so the two fault counters stay
-	// comparable when a stream supplies only one of PTS/DTS intermittently -
-	// without them the choice drifts and flips on such streams.
-	int64_t result = AV_NOPTS_VALUE;
+	// Step 1 - take FFmpeg's own answer. avcodec_receive_frame runs guess_correct_pts over
+	// (pts, pkt_dts) and publishes the result as best_effort_timestamp, using fault counters
+	// that avcodec_flush_buffers resets with the decoder. Running a second, separately reset
+	// copy of that heuristic here could only diverge from the decoder's view.
+	int64_t result = best_effort;
 
-	if (dts != AV_NOPTS_VALUE)
-	{
-		num_faulty_dts += dts <= last_dts;
-		last_dts = dts;
-	}
-	else if (pts != AV_NOPTS_VALUE)
-	{
-		last_dts = pts;
-	}
-
-	if (pts != AV_NOPTS_VALUE)
-	{
-		num_faulty_pts += pts <= last_pts;
-		last_pts = pts;
-	}
-	else if (dts != AV_NOPTS_VALUE)
-	{
-		last_pts = dts;
-	}
-
-	if ((num_faulty_pts <= num_faulty_dts || dts == AV_NOPTS_VALUE) && pts != AV_NOPTS_VALUE)
-	{
-		result = pts;
-	}
-	else if (dts != AV_NOPTS_VALUE)
-	{
-		result = dts;
-	}
+	if (result == AV_NOPTS_VALUE) result = pts;
+	if (result == AV_NOPTS_VALUE) result = dts;
 
 	// Step 2 - guarantee a usable, strictly increasing result. Some codecs and
 	// containers (raw video, MJPEG sequences, damaged MPEG-TS) supply no usable
@@ -642,7 +632,10 @@ int64_t av_pts_correction::guess(const int64_t pts, const int64_t dts, const int
 	// duration and otherwise the cadence learned from earlier frames.
 	if (result != AV_NOPTS_VALUE && last_output != AV_NOPTS_VALUE && result > last_output)
 	{
-		frame_interval = result - last_output;
+		// Smallest positive step seen, not the most recent one: a gap in a damaged stream
+		// would otherwise become the synthetic step and run the timeline away from the media.
+		const auto observed = result - last_output;
+		frame_interval = frame_interval > 0 ? std::min(frame_interval, observed) : observed;
 	}
 
 	const auto step = duration > 0 ? duration : (frame_interval > 0 ? frame_interval : 1);
@@ -729,6 +722,12 @@ bool av_frame_is_eof(const av_frame_ptr& f)
 	return f ? f->eof : false;
 }
 
+double av_audio_frame_duration(const av_frame_ptr& f)
+{
+	if (!f || f->frm.sample_rate <= 0) return 0.0;
+	return static_cast<double>(f->frm.nb_samples) / f->frm.sample_rate;
+}
+
 bool av_is_frame_empty(const av_frame_ptr& f)
 {
 	return f ? f->is_empty() : false;
@@ -777,17 +776,42 @@ video_info_t av_format_decoder::video_information() const
 	return result;
 }
 
+// An empty, owning AVChannelLayout. The deleter uninitialises the layout (it can
+// own a heap allocation for custom orders) before releasing it.
+static channel_layout_ptr make_channel_layout()
+{
+	return {
+		new AVChannelLayout{}, [](AVChannelLayout* layout)
+		{
+			av_channel_layout_uninit(layout);
+			delete layout;
+		}
+	};
+}
+
 channel_layout_ptr av_get_def_channel_layout(const int num_channels)
 {
-	auto dst = std::make_shared<AVChannelLayout>();
+	auto dst = make_channel_layout();
 	av_channel_layout_default(dst.get(), num_channels);
+	return dst;
+}
+
+channel_layout_ptr av_get_channel_layout(const uint64_t mask, const int fallback_channels)
+{
+	auto dst = make_channel_layout();
+
+	if (mask == 0 || av_channel_layout_from_mask(dst.get(), mask) < 0)
+	{
+		av_channel_layout_default(dst.get(), fallback_channels);
+	}
+
 	return dst;
 }
 
 static channel_layout_ptr av_copy_to_ptr(const AVChannelLayout& src)
 {
-	auto dst = std::make_shared<AVChannelLayout>();
-	av_channel_layout_copy(dst.get(), &src);
+	auto dst = make_channel_layout();
+	if (av_channel_layout_copy(dst.get(), &src) < 0) return {};
 	return dst;
 }
 
@@ -819,20 +843,21 @@ static int64_t av_seek(void* opaque, const int64_t offset, const int whence)
 {
 	const auto* const h = static_cast<platform::file*>(opaque);
 	int64_t result = 0;
+	const auto seek_whence = whence & ~AVSEEK_FORCE;
 
-	if (AVSEEK_SIZE == whence)
+	if (AVSEEK_SIZE == seek_whence)
 	{
 		result = static_cast<int64_t>(h->size());
 	}
-	else if (whence == SEEK_SET)
+	else if (seek_whence == SEEK_SET)
 	{
 		result = static_cast<int64_t>(h->seek(offset, platform::file::whence::begin));
 	}
-	else if (whence == SEEK_CUR)
+	else if (seek_whence == SEEK_CUR)
 	{
 		result = static_cast<int64_t>(h->seek(offset, platform::file::whence::current));
 	}
-	else if (whence == SEEK_END)
+	else if (seek_whence == SEEK_END)
 	{
 		result = static_cast<int64_t>(h->seek(offset, platform::file::whence::end));
 	}
@@ -859,7 +884,7 @@ static int get_stream_type(const AVFormatContext* ctx, const int stream_num)
 	return AVMEDIA_TYPE_UNKNOWN;
 }
 
-bool av_format_decoder::seek(const double wanted, const double current) const
+bool av_format_decoder::seek(const double wanted) const
 {
 	auto success = false;
 
@@ -869,22 +894,27 @@ bool av_format_decoder::seek(const double wanted, const double current) const
 	{
 		df::trace(std::format("av_format_decoder::seek {}", wanted));
 
-		const auto target = static_cast<int64_t>(wanted * AV_TIME_BASE);
-		const auto target_min = static_cast<int64_t>(std::max(_start_time, wanted - 1.0) * AV_TIME_BASE);
-		const auto target_max = static_cast<int64_t>(std::min(_end_time, wanted + 1.0) * AV_TIME_BASE);
-		const auto back = wanted < current;
-		auto flags = back ? AVSEEK_FLAG_BACKWARD : 0;
+		const auto to_ts = [](const double t) { return static_cast<int64_t>(t * AV_TIME_BASE); };
 
-		//auto ret = av_seek_frame(fc, -1, target, flags);
-		auto ret = avformat_seek_file(fc, -1, target_min, target, target_max, flags);
+		// avformat_seek_file takes absolute container timestamps, but `wanted` is on the
+		// presentation timeline, which starts at _time_origin. Files whose first PTS is not
+		// zero - MPEG-TS especially - were therefore seeked short by their whole start offset.
+		const auto target = to_ts(wanted) + _time_origin;
+		const auto file_min = std::min(target, to_ts(_start_time) + _time_origin);
+		const auto file_max = std::max(target, to_ts(_end_time) + _time_origin);
 
-		//df::log(__FUNCTION__, "av_format_decoder.seek " , wanted);
+		// avformat_seek_file clears AVSEEK_FLAG_BACKWARD and derives the direction from the
+		// window instead: it only searches backwards when the target sits nearer max_ts than
+		// min_ts. A window centred on the target therefore always resolved to a forward seek,
+		// landing on the key frame *after* the request and skipping up to a whole GOP. Asking
+		// for a window that ends at the target is the only way to express "at or before".
+		auto ret = avformat_seek_file(fc, -1, file_min, target, target, 0);
 
-		if (ret < 0 && flags & AVSEEK_FLAG_BACKWARD)
+		if (ret < 0)
 		{
-			flags &= ~AVSEEK_FLAG_BACKWARD;
-			//ret = av_seek_frame(fc, -1, target, flags);
-			ret = avformat_seek_file(fc, -1, target_min, target, target_max, flags);
+			// No key frame at or before the target; take the first one that does exist rather
+			// than leaving the demuxer where it was.
+			ret = avformat_seek_file(fc, -1, file_min, target, file_max, 0);
 		}
 
 		_eof = ret == AVERROR_EOF;
@@ -906,30 +936,31 @@ bool av_format_decoder::seek(const double wanted, const double current) const
 
 av_packet_ptr av_format_decoder::read_packet() const
 {
-	av_packet_ptr result;
-
-	auto* raw_packet = av_packet_alloc();
 	auto* const fc = _format_context;
 
-	if (fc && !_eof)
+	if (!fc || _eof)
 	{
-		const auto ret = av_read_frame(fc, raw_packet);
-
-		if (ret == AVERROR_EOF)
-		{
-			_eof = true;
-			result = std::make_shared<av_packet>();
-			result->eof = true;
-			df::trace("av_format_decoder:read_packet end of stream");
-		}
-		else if (0 == ret)
-		{
-			result = std::make_shared<av_packet>();
-			result->move(raw_packet);
-		}
+		return {};
 	}
 
-	av_packet_free(&raw_packet);
+	// Read straight into the wrapper's packet: demuxing into a second AVPacket and
+	// moving the reference costs an alloc/free pair on the hottest playback path.
+	auto result = std::make_shared<av_packet>();
+	const auto ret = av_read_frame(fc, result->pkt);
+
+	if (ret == AVERROR_EOF)
+	{
+		_eof = true;
+		result->eof = true;
+		df::trace("av_format_decoder:read_packet end of stream");
+		return result;
+	}
+
+	if (ret != 0)
+	{
+		return {};
+	}
+
 	return result;
 }
 
@@ -951,10 +982,11 @@ void av_format_decoder::extract_metadata(file_scan_result& sr) const
 			{
 				const auto is_cover_art = (stream->disposition & AV_DISPOSITION_ATTACHED_PIC) != 0;
 
-				if (is_cover_art)
+				if (is_cover_art && !sr.cover_art)
 				{
 					const auto& packet = stream->attached_pic;
-					sr.cover_art = load_image_file({packet.data, static_cast<size_t>(packet.size)});
+					const auto decoded = load_image_file({packet.data, static_cast<size_t>(packet.size)});
+					if (decoded) sr.cover_art = decoded;
 				}
 
 				if (stream->codecpar)
@@ -967,7 +999,11 @@ void av_format_decoder::extract_metadata(file_scan_result& sr) const
 					}*/
 
 					const auto ct = stream->codecpar->codec_type;
-					if (ct == AVMEDIA_TYPE_VIDEO && (!is_cover_art || !video_stream)) video_stream = stream;
+					// An attached-picture (cover art) stream reports as AVMEDIA_TYPE_VIDEO but is a
+					// still image, not a real video track. Never treat it as the video stream, or an
+					// audio file with embedded cover art would report the image's dimensions/codec as
+					// video properties. Cover art is extracted separately above.
+					if (ct == AVMEDIA_TYPE_VIDEO && !is_cover_art && !video_stream) video_stream = stream;
 					if (ct == AVMEDIA_TYPE_AUDIO && !audio_stream) audio_stream = stream;
 				}
 			}
@@ -999,7 +1035,7 @@ void av_format_decoder::extract_metadata(file_scan_result& sr) const
 
 		if (fc->duration != AV_NOPTS_VALUE)
 		{
-			sr.duration = df::round(calc_duration(fc->duration, fc->start_time));
+			sr.duration = df::round(calc_duration(fc->duration, AV_NOPTS_VALUE));
 		}
 
 		sr.orientation = calc_orientation();
@@ -1018,51 +1054,26 @@ int64_t av_format_decoder::bitrate() const
 	return 0;
 }
 
-const AVStream* av_format_decoder::Stream(const uint32_t i) const
-{
-	const auto* const fc = _format_context;
-
-	if (fc && fc->nb_streams > i)
-	{
-		return fc->streams[i];
-	}
-
-	return nullptr;
-}
-
-
 void av_format_decoder::close()
 {
-	const av_packet empty_packet;
-
 	_is_open = false;
 
-	if (_video_context)
-	{
-		try_avcodec_send_packet(_video_context, empty_packet.pkt);
-	}
+	// The codec contexts are about to be freed, so there is nothing to gain from
+	// draining them first - and draining a hardware decoder is far from free.
+	avcodec_free_context(&_video_context);
+	avcodec_free_context(&_audio_context);
+	av_buffer_unref(&_hw_device_ctx);
 
-	if (_audio_context)
+	// Release this decoder's hold on the hardware-decode crash guard. Clearing on the
+	// 1->0 transition marks a clean end to HW decode so a later unrelated crash is not
+	// misattributed to video decoding.
+	if (_hw_decode_guard_held)
 	{
-		try_avcodec_send_packet(_audio_context, empty_packet.pkt);
-	}
-
-	if (_video_context)
-	{
-		avcodec_free_context(&_video_context);
-		_video_context = nullptr;
-	}
-
-	if (_audio_context)
-	{
-		avcodec_free_context(&_audio_context);
-		_audio_context = nullptr;
-	}
-
-	if (_hw_device_ctx)
-	{
-		av_buffer_unref(&_hw_device_ctx);
-		_hw_device_ctx = nullptr;
+		_hw_decode_guard_held = false;
+		if (g_hw_decode_sessions.fetch_sub(1) == 1)
+		{
+			platform::set_crash_guard(platform::crash_guard::hw_video_decode, false);
+		}
 	}
 
 	_pts_vid.clear();
@@ -1073,14 +1084,40 @@ void av_format_decoder::close()
 
 	if (fc)
 	{
-		av_freep(&fc->pb->buffer);
-		//avio_context_free(&fc->pb);
+		auto* pb = fc->pb;
 		avformat_close_input(&fc);
+
+		if (pb)
+		{
+			// A caller-supplied AVIOContext (AVFMT_FLAG_CUSTOM_IO) is left alone by
+			// avformat_close_input, and avio_context_free does not release the read
+			// buffer - both must go or every opened file leaks its 256K buffer.
+			av_freep(&pb->buffer);
+			avio_context_free(&pb);
+		}
 	}
 
 	_scaler.reset();
 	_file.reset();
 	_path.clear();
+	_eof = false;
+	_has_video = false;
+	_has_audio = false;
+	_has_multiple_audio_streams = false;
+	_video_stream_index = -1;
+	_audio_stream_index = -1;
+	_bitrate = 0;
+	_streams.clear();
+	_cover_art.reset();
+	_start_time = 0;
+	_end_time = 0;
+	_rotation = 0;
+	_video_base = {};
+	_audio_base = {};
+	_video_stream_aspect_ratio = {};
+	_video_start_time = 0;
+	_audio_start_time = 0;
+	_time_origin = 0;
 }
 
 
@@ -1112,6 +1149,10 @@ bool av_format_decoder::open(const df::file_path path)
 bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path path)
 {
 	close();
+
+	// The AVIOContext assumes the stream starts at zero, and a handed-over handle has already been
+	// read - by the write that produced it, or by the scan that inspected it.
+	file->seek(0, platform::file::whence::begin);
 
 	static constexpr int io_buffer_size = df::two_fifty_six_k;
 	auto* const io_buffer = static_cast<uint8_t*>(av_mallocz(io_buffer_size + 16));
@@ -1146,11 +1187,13 @@ bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path
 
 	_format_context = fc;
 	_path = path;
-	_file_size = file->size();
 	_file = file;
-	_bitrate = bitrate();
 
 	avformat_find_stream_info(fc, nullptr);
+
+	// Read the bit rate only after probing: many containers (and every stream that
+	// needs its rate estimating) report 0 until avformat_find_stream_info has run.
+	_bitrate = fc->bit_rate;
 
 	auto audio_stream_count = 0;
 
@@ -1172,15 +1215,18 @@ bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path
 				if (is_key(tag->key, "codec")) s.codec = str::utf8_cast(tag->value);
 				if (is_key(tag->key, "FourCC")) s.fourcc = str::utf8_cast(tag->value);
 				if (is_key(tag->key, "language")) s.language = str::utf8_cast(tag->value);
-				s.metadata.emplace_back(str::cache(tag->key), str::utf8_cast(tag->value));
+				s.metadata.emplace_back(tag->key, str::utf8_cast(tag->value));
 			}
 
+			s.is_commentary = (stream->disposition & AV_DISPOSITION_COMMENT) != 0;
+			s.is_audio_description = (stream->disposition & AV_DISPOSITION_VISUAL_IMPAIRED) != 0;
 			s.rotation = df::round(get_rotation(stream));
 
-			if (stream->disposition & AV_DISPOSITION_ATTACHED_PIC)
+			if ((stream->disposition & AV_DISPOSITION_ATTACHED_PIC) && !_cover_art)
 			{
 				const auto& packet = stream->attached_pic;
-				_cover_art = load_image_file({packet.data, static_cast<size_t>(packet.size)});
+				const auto decoded = load_image_file({packet.data, static_cast<size_t>(packet.size)});
+				if (decoded) _cover_art = decoded;
 			}
 
 			if (codec)
@@ -1193,15 +1239,7 @@ bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path
 
 				if (codec->codec_type == AVMEDIA_TYPE_VIDEO)
 				{
-					if (codec->format != AV_PIX_FMT_NONE)
-					{
-						const auto* const desc = av_pix_fmt_desc_get(static_cast<AVPixelFormat>(codec->format));
-
-						if (desc)
-						{
-							s.pixel_format = str::cache(desc->name);
-						}
-					}
+					s.pixel_format = pixel_format_name(codec->format);
 				}
 
 				if (codec->codec_type == AVMEDIA_TYPE_AUDIO)
@@ -1210,8 +1248,9 @@ bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path
 					s.audio_channels = codec->ch_layout.nb_channels;
 					s.audio_sample_type = to_sample_type(static_cast<AVSampleFormat>(codec->format));
 				}
-				s.metadata.emplace_back("codec"_c,
-				                        std::string(str::utf8_cast(avcodec_get_name(codec->codec_id))));
+				const auto codec_name = std::string(str::utf8_cast(avcodec_get_name(codec->codec_id)));
+				if (s.codec.empty()) s.codec = codec_name;
+				s.metadata.emplace_back("codec"_c, codec_name);
 				//s.metadata.emplace_back( "profile", av_get_profile_name(avcodec_find_decoder(stream->codecpar->codec_id), stream->codecpar->profile) });
 
 				if (codec->codec_tag)
@@ -1263,7 +1302,10 @@ static AVPixelFormat get_hw_format(AVCodecContext* ctx,
 			return *p;
 	}
 
-	fprintf(stderr, "Failed to get HW surface format.\n");
+	// The decoder offered no D3D11 surface format. Returning NONE aborts this
+	// decode; the caller only installs this callback once a D3D11VA device is
+	// live, so this indicates a driver/codec mismatch rather than a normal path.
+	df::log(__FUNCTION__, "Failed to get D3D11 HW surface format");
 	return AV_PIX_FMT_NONE;
 }
 
@@ -1320,41 +1362,66 @@ void av_format_decoder::init_streams(int video_track, int audio_track, const boo
 
 				if (can_use_hw)
 				{
+					// Only the D3D11VA path is wired into the renderer: decoded frames must
+					// arrive as AV_PIX_FMT_D3D11 array textures so update() can share them
+					// with the render device. Scan every advertised hw config (they are not
+					// ordered, and a non-matching config must not abort the search) and pick
+					// the D3D11VA one. Other hwaccels (e.g. dxva2) are skipped so we never
+					// install get_hw_format for a surface format the pipeline cannot present.
 					for (int i = 0;; i++)
 					{
 						const auto* hw_config = avcodec_get_hw_config(video_codec, i);
 
-						if (hw_config && hw_config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX)
+						if (!hw_config)
 						{
-							vc->get_format = get_hw_format;
+							break; // end of the config list
+						}
 
+						if ((hw_config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX) &&
+							hw_config->pix_fmt == AV_PIX_FMT_D3D11 &&
+							hw_config->device_type == AV_HWDEVICE_TYPE_D3D11VA)
+						{
 							const auto ret = av_hwdevice_ctx_create(&_hw_device_ctx,
 							                                        hw_config->device_type,
 							                                        nullptr, nullptr, 0);
 
 							if (ret == 0)
 							{
+								vc->get_format = get_hw_format;
 								vc->extra_hw_frames = 16;
 								vc->hw_device_ctx = av_buffer_ref(_hw_device_ctx);
 								break;
 							}
 						}
-						else
-						{
-							break;
-						}
 					}
 				}
 
+				// Decoding-side timing inputs. Without pkt_timebase FFmpeg cannot express a
+				// frame duration or a priming-sample adjustment, and leaves both unset.
+				vc->pkt_timebase = video_stream->time_base;
+				vc->framerate = av_guess_frame_rate(fc, fc->streams[video_stream_index], nullptr);
+
 				_has_video = avcodec_open2(vc, video_codec, nullptr) == 0;
 				_video_base = {video_stream->time_base.num, video_stream->time_base.den};
-				_video_start_time = video_stream->start_time;
 				_video_stream_index = video_stream_index;
 				_video_context = vc;
 				_video_stream_aspect_ratio = {
 					video_stream->sample_aspect_ratio.num, video_stream->sample_aspect_ratio.den
 				};
 				_rotation = df::round(get_rotation(video_stream));
+
+				// Hardware decode is now live for this decoder. Raise the process-wide crash
+				// guard so a fault during HW decode is detected on the next launch and only HW
+				// video decoding is disabled (GPU rendering is left on).
+				if (_has_video && _hw_device_ctx && !_hw_decode_guard_held)
+				{
+					_hw_decode_guard_held = true;
+					if (g_hw_decode_sessions.fetch_add(1) == 0)
+					{
+						platform::set_crash_guard(platform::crash_guard::hw_video_decode, true);
+					}
+					df::log(__FUNCTION__, "hardware video decode active");
+				}
 			}
 		}
 	}
@@ -1378,10 +1445,14 @@ void av_format_decoder::init_streams(int video_track, int audio_track, const boo
 					avcodec_parameters_to_context(ac, audio_stream->codecpar);
 					ac->workaround_bugs = FF_BUG_AUTODETECT;
 					ac->request_sample_fmt = AV_SAMPLE_FMT_S16;
+					// Required for FFmpeg to shift the timestamps of gapless formats (AAC, MP3,
+					// Opus) by their encoder delay. Without it the decoder still drops the priming
+					// samples but leaves the PTS where it was, so the audio timeline starts early
+					// by that delay and every video frame is matched against it.
+					ac->pkt_timebase = audio_stream->time_base;
 
 					_has_audio = avcodec_open2(ac, aud_decoder, nullptr) == 0;
 					_audio_base = {audio_stream->time_base.num, audio_stream->time_base.den};
-					_audio_start_time = audio_stream->start_time;
 					_audio_stream_index = aud_stream;
 					_audio_context = ac;
 				}
@@ -1394,23 +1465,50 @@ void av_format_decoder::init_streams(int video_track, int audio_track, const boo
 		st.is_playing = st.index == _audio_stream_index || st.index == _video_stream_index;
 	}
 
+	// One origin for the whole presentation: the earliest start among the streams actually
+	// being played, expressed once and then rescaled into each stream's own time base. Taking
+	// each stream's own start_time (as this used to) pulled both to zero independently and so
+	// discarded the offset between them - the container-level A/V delay that MPEG-TS and
+	// edit-listed MP4 rely on. The earliest playing stream, rather than fc->start_time, keeps
+	// the result non-negative even when the container's own figure covers streams we ignore.
+	auto origin = std::numeric_limits<int64_t>::max();
+
+	if (video_stream && video_stream->start_time != AV_NOPTS_VALUE)
+	{
+		origin = std::min(origin, av_rescale_q(video_stream->start_time, video_stream->time_base, AV_TIME_BASE_Q));
+	}
+
+	if (audio_stream && audio_stream->start_time != AV_NOPTS_VALUE)
+	{
+		origin = std::min(origin, av_rescale_q(audio_stream->start_time, audio_stream->time_base, AV_TIME_BASE_Q));
+	}
+
+	if (origin == std::numeric_limits<int64_t>::max())
+	{
+		origin = fc && fc->start_time != AV_NOPTS_VALUE ? fc->start_time : 0;
+	}
+
+	_time_origin = origin;
+	_video_start_time = video_stream ? av_rescale_q(origin, AV_TIME_BASE_Q, video_stream->time_base) : 0;
+	_audio_start_time = audio_stream ? av_rescale_q(origin, AV_TIME_BASE_Q, audio_stream->time_base) : 0;
+
 	double end_time_context = 0;
 	double end_time_video = 0;
 	double end_time_audio = 0;
 
 	if (fc && fc->duration != AV_NOPTS_VALUE)
 	{
-		end_time_context = calc_duration(fc->duration, fc->start_time);
+		end_time_context = calc_duration(fc->duration, AV_NOPTS_VALUE);
 	}
 
 	if (video_stream && video_stream->duration != AV_NOPTS_VALUE)
 	{
-		end_time_video = calc_duration(video_stream->duration, video_stream->time_base, video_stream->start_time);
+		end_time_video = calc_duration(video_stream->duration, video_stream->time_base, AV_NOPTS_VALUE);
 	}
 
 	if (audio_stream && audio_stream->duration != AV_NOPTS_VALUE)
 	{
-		end_time_audio = calc_duration(audio_stream->duration, audio_stream->time_base, audio_stream->start_time);
+		end_time_audio = calc_duration(audio_stream->duration, audio_stream->time_base, AV_NOPTS_VALUE);
 	}
 
 	_start_time = 0.0; // std::min(start_time_context, start_time_video, start_time_audio);
@@ -1445,12 +1543,22 @@ av_media_info av_format_decoder::info() const
 		{
 			if (str::icmp(tag->key, "id3v2_priv.XMP") == 0 || str::icmp(tag->key, "xmp") == 0)
 			{
-				const auto xmp_kv = metadata_xmp::to_info(unescape_xmp(tag->value));
-				result.metadata.emplace_back(metadata_standard::xmp, xmp_kv);
+				const auto packet = unescape_xmp(tag->value);
+				auto xmp_kv = metadata_xmp::to_info(packet);
+				const auto parsed = !xmp_kv.empty();
+
+				// The packet is the block's real content, so it stays reachable whether or not the
+				// toolkit could make a tree from it.
+				constexpr size_t max_raw_bytes = 256 * 1024;
+				std::string raw;
+				raw.assign(std::bit_cast<const char*>(packet.data()), std::min(packet.size(), max_raw_bytes));
+
+				result.metadata.emplace_back(metadata_standard::xmp, std::move(xmp_kv), packet.size(), parsed,
+				                             std::move(raw));
 			}
 			else
 			{
-				kv.emplace_back(str::cache(tag->key), str::utf8_cast(tag->value));
+				kv.emplace_back(tag->key, str::utf8_cast(tag->value));
 			}
 		}
 
@@ -1458,42 +1566,25 @@ av_media_info av_format_decoder::info() const
 
 		for (uint32_t i = 0; i < ctx->nb_streams; ++i)
 		{
-			auto* codec = ctx->streams[i]->codecpar;
+			const auto* const codec = ctx->streams[i]->codecpar;
 
-			if (codec)
+			if (!codec)
 			{
-				if (codec->codec_type == AVMEDIA_TYPE_VIDEO)
-				{
-					auto* const found = avcodec_find_decoder(codec->codec_id);
-					if (found)
-					{
-						result.video_codec = str::cache(found->name);
-					}
+				continue;
+			}
 
-					if (codec->format != AV_PIX_FMT_NONE)
-					{
-						const auto* const desc = av_pix_fmt_desc_get(static_cast<AVPixelFormat>(codec->format));
+			if (codec->codec_type == AVMEDIA_TYPE_VIDEO)
+			{
+				if (const auto name = decoder_name(codec); !str::is_empty(name)) result.video_codec = name;
+				if (const auto fmt = pixel_format_name(codec->format); !str::is_empty(fmt)) result.pixel_format = fmt;
+			}
+			else if (codec->codec_type == AVMEDIA_TYPE_AUDIO)
+			{
+				if (const auto name = decoder_name(codec); !str::is_empty(name)) result.audio_codec = name;
 
-						if (desc)
-						{
-							result.pixel_format = str::cache(desc->name);
-						}
-					}
-				}
-
-				if (codec->codec_type == AVMEDIA_TYPE_AUDIO)
-				{
-					auto* const found = avcodec_find_decoder(codec->codec_id);
-
-					if (found)
-					{
-						result.audio_codec = str::cache(found->name);
-					}
-
-					result.audio_sample_rate = codec->sample_rate;
-					result.audio_channels = codec->ch_layout.nb_channels;
-					result.audio_sample_type = to_sample_type(static_cast<AVSampleFormat>(codec->format));
-				}
+				result.audio_sample_rate = codec->sample_rate;
+				result.audio_channels = codec->ch_layout.nb_channels;
+				result.audio_sample_type = to_sample_type(static_cast<AVSampleFormat>(codec->format));
 			}
 		}
 	}
@@ -1502,79 +1593,41 @@ av_media_info av_format_decoder::info() const
 }
 
 
-void av_format_decoder::flush_audio() const
-{
-	if (_audio_context)
-	{
-		avcodec_flush_buffers(_audio_context);
-	}
-}
-
-void av_format_decoder::flush_video() const
-{
-	if (_video_context)
-	{
-		avcodec_flush_buffers(_video_context);
-	}
-}
-
-//void av_format_decoder::clear()
-//{
-//	_pts.clear();
-//
-//	if (_video_context)
-//	{
-//		avcodec_flush_buffers(_video_context);
-//	}
-//
-//	if (_audio_context)
-//	{
-//		avcodec_flush_buffers(_audio_context);
-//	}
-//}
-
-
 ui::orientation av_format_decoder::calc_orientation() const
 {
 	return calc_orientation_impl(_rotation);
 }
 
-void av_format_decoder::update_orientation(const AVFrame* frame)
+void av_format_decoder::update_orientation(const AVFrame* const frame)
 {
-	if (frame)
+	if (!frame)
 	{
-		const AVFrameSideData* side_data = av_frame_get_side_data(frame, AV_FRAME_DATA_DISPLAYMATRIX);
-		double theta = 0.0;
+		return;
+	}
 
-		if (side_data)
-		{
-			const auto* display_matrix = reinterpret_cast<const int32_t*>(side_data->data);
+	const AVFrameSideData* side_data = av_frame_get_side_data(frame, AV_FRAME_DATA_DISPLAYMATRIX);
 
-			if (display_matrix)
-			{
-				theta = -av_display_rotation_get(std::bit_cast<int32_t*>(display_matrix));
-			}
-
-			_rotation -= df::round(360.0 * floor(theta / 360.0 + 0.9 / 360.0));
-		}
+	if (side_data)
+	{
+		// Adopt the frame's rotation outright. Subtracting the whole-turn part of the
+		// angle (as this used to) left _rotation at the container value and silently
+		// dropped a rotation signalled only per frame.
+		_rotation = df::round(rotation_from_display_matrix(side_data->data, side_data->size));
 	}
 }
 
 bool av_format_decoder::decode_frame(ui::surface_ptr& dest_surface, AVCodecContext* ctx, const av_packet_ptr& packet,
-                                     const double audio_time, const sizei max_dim)
+                                     const sizei max_dim)
 {
 	auto success = false;
-	const auto send_res = try_avcodec_send_packet(ctx, packet->pkt);
 
-	if (send_res == 0)
+	if (try_avcodec_send_packet(ctx, packet->pkt) == 0)
 	{
 		AVFrame frame = {};
 
-		const auto rec_res = avcodec_receive_frame(ctx, &frame);
-
-		if (rec_res == 0)
+		if (avcodec_receive_frame(ctx, &frame) == 0)
 		{
-			const auto pts = _pts_vid.guess(frame.pts, frame.pkt_dts, frame.duration);
+			const auto pts = _pts_vid.guess(frame.best_effort_timestamp, frame.pts, frame.pkt_dts, frame.duration);
 			auto time = to_video_seconds(pts);
 
 			if (frame.repeat_pict)
@@ -1582,12 +1635,8 @@ bool av_format_decoder::decode_frame(ui::surface_ptr& dest_surface, AVCodecConte
 				time += 1 / 25.0;
 			}
 
-			if (df::equiv(audio_time, 0.0) ||
-				(time >= audio_time - 0.1 && time <= audio_time + 1.0))
-			{
-				if (!_scaler) _scaler = std::make_unique<av_scaler>();
-				success = _scaler->scale_frame(frame, dest_surface, max_dim, time, calc_orientation());
-			}
+			if (!_scaler) _scaler = std::make_unique<av_scaler>();
+			success = _scaler->scale_frame(frame, dest_surface, max_dim, time, calc_orientation());
 		}
 
 		av_frame_unref(&frame);
@@ -1597,9 +1646,8 @@ bool av_format_decoder::decode_frame(ui::surface_ptr& dest_surface, AVCodecConte
 }
 
 
-bool av_format_decoder::extract_seek_frame(ui::surface_ptr& dest_surface, const sizei max_dim,
-                                           const double pos_numerator,
-                                           const double pos_denominator)
+bool av_format_decoder::decode_nearest_frame(ui::surface_ptr& dest_surface, const sizei max_dim,
+                                             const double wanted_time)
 {
 	if (!_has_video)
 	{
@@ -1607,24 +1655,6 @@ bool av_format_decoder::extract_seek_frame(ui::surface_ptr& dest_surface, const 
 	}
 
 	auto* const ctx = _video_context;
-	const auto start = start_time();
-	const auto len = end_time() - start;
-
-	// Use the same target time the live scrubber seeks to (media start + a
-	// fraction of the duration) and then decode forward to the frame nearest that
-	// time. Showing only the first (key) frame after the seek - as extract_thumbnail
-	// does - leaves the preview up to a whole GOP away from the pointed-at position,
-	// which is not the frame the player jumps to.
-	const auto x = std::clamp(pos_numerator, 0.0, pos_denominator);
-	const auto wanted_time = start + floor(x * len / std::max(1.0, pos_denominator));
-
-	seek(wanted_time, 0);
-
-	// The preview decoder is reused across hovers without going through the normal
-	// flush path, so drop any buffered frames and reset the timestamp estimator -
-	// otherwise a backward hover is pulled forward by guess()'s monotonic guard.
-	avcodec_flush_buffers(ctx);
-	_pts_vid.clear();
 
 	if (!_scaler)
 	{
@@ -1634,7 +1664,13 @@ bool av_format_decoder::extract_seek_frame(ui::surface_ptr& dest_surface, const 
 	auto success = false;
 	auto best_dist = std::numeric_limits<double>::max();
 
-	for (int i = 0; i < 1024 && !df::is_closing; i++)
+	// The walk normally stops the moment it passes wanted_time; this only bounds a stream that
+	// never gets there (a truncated or corrupt file). It therefore has to be wide enough to
+	// span a whole GOP of interleaved video and audio packets - a ten second GOP alone is well
+	// over a thousand - or the caller silently gets a frame short of the position it asked for.
+	constexpr int max_packets = 8192;
+
+	for (int i = 0; i < max_packets && !df::is_closing; i++)
 	{
 		const auto packet = read_packet();
 
@@ -1657,7 +1693,7 @@ bool av_format_decoder::extract_seek_frame(ui::surface_ptr& dest_surface, const 
 
 		while (avcodec_receive_frame(ctx, &frame) == 0)
 		{
-			const auto pts = _pts_vid.guess(frame.pts, frame.pkt_dts, frame.duration);
+			const auto pts = _pts_vid.guess(frame.best_effort_timestamp, frame.pts, frame.pkt_dts, frame.duration);
 			const auto time = to_video_seconds(pts);
 			const auto dist = fabs(time - wanted_time);
 			const auto reached = time >= wanted_time;
@@ -1685,9 +1721,42 @@ bool av_format_decoder::extract_seek_frame(ui::surface_ptr& dest_surface, const 
 	return success;
 }
 
+bool av_format_decoder::extract_seek_frame(ui::surface_ptr& dest_surface, const sizei max_dim,
+                                           const double pos_numerator,
+                                           const double pos_denominator)
+{
+	if (!_has_video)
+	{
+		return false;
+	}
+
+	auto* const ctx = _video_context;
+	const auto start = start_time();
+	const auto len = end_time() - start;
+
+	// Use the same target time the live scrubber seeks to (media start + a
+	// fraction of the duration) and then decode forward to the frame nearest that
+	// time. Showing only the first (key) frame after the seek - as extract_thumbnail
+	// used to - leaves the preview up to a whole GOP away from the pointed-at
+	// position, which is not the frame the player jumps to.
+	const auto x = std::clamp(pos_numerator, 0.0, pos_denominator);
+	const auto wanted_time = start + floor(x * len / std::max(1.0, pos_denominator));
+
+	seek(wanted_time);
+
+	// The preview decoder is reused across hovers without going through the normal
+	// flush path, so drop any buffered frames and reset the timestamp estimator -
+	// otherwise a backward hover is pulled forward by guess()'s monotonic guard.
+	avcodec_flush_buffers(ctx);
+	_pts_vid.clear();
+
+	return decode_nearest_frame(dest_surface, max_dim, wanted_time);
+}
+
 bool av_format_decoder::extract_thumbnail(ui::surface_ptr& dest_surface, const sizei max_dim,
                                           const double pos_numerator,
-                                          const double pos_denominator)
+	                                      const double pos_denominator,
+	                                      const bool exact_frame)
 {
 	auto success = false;
 
@@ -1703,20 +1772,39 @@ bool av_format_decoder::extract_thumbnail(ui::surface_ptr& dest_surface, const s
 
 			if (time_wanted > 2.0)
 			{
-				seek_success = seek(time_wanted, 0);
+				seek_success = seek(time_wanted);
+
+				if (seek_success)
+				{
+					// A container-level seek does not flush the decoder, so drop any
+					// frames buffered before the seek and reset the timestamp estimator -
+					// otherwise the thumbnail can come from a stale pre-seek frame (matches
+					// the flush in extract_seek_frame).
+					avcodec_flush_buffers(ctx);
+					_pts_vid.clear();
+				}
 			}
 
 			if (seek_success)
 			{
-				for (int i = 0; i < 1024 && !success && !df::is_closing; i++)
+				if (exact_frame)
 				{
-					const auto packet = read_packet();
-
-					if (packet)
+					success = decode_nearest_frame(dest_surface, max_dim, time_wanted);
+				}
+				else
+				{
+					for (int i = 0; i < 1024 && !success && !df::is_closing; i++)
 					{
+						const auto packet = read_packet();
+
+						if (!packet || packet->eof)
+						{
+							break;
+						}
+
 						if (packet->pkt->stream_index == _video_stream_index)
 						{
-							success = decode_frame(dest_surface, ctx, packet, 0.0, max_dim);
+							success = decode_frame(dest_surface, ctx, packet, max_dim);
 						}
 					}
 				}
@@ -1732,51 +1820,27 @@ double av_format_decoder::to_video_seconds(const int64_t vt) const
 	return calc_duration(vt, {_video_base.num, _video_base.den}, _video_start_time);
 }
 
-double av_format_decoder::to_audio_seconds(const int64_t vt) const
-{
-	return calc_duration(vt, {_audio_base.num, _audio_base.den}, _audio_start_time);
-}
-
 
 file_load_result av_format_decoder::render_frame(const av_frame_ptr& frame_in) const
 {
 	file_load_result result;
-	const auto* const video_codec_context = _video_context;
-	const auto h = video_codec_context->height;
-	const auto w = video_codec_context->width;
 
-	AVFrame* sw_frame = nullptr;
-	auto* frame = &frame_in->frm;
-
-	if (frame->format == AV_PIX_FMT_D3D11)
+	if (!_video_context || !frame_in)
 	{
-		sw_frame = av_frame_alloc();
-
-		if (sw_frame && av_hwframe_transfer_data(sw_frame, frame, 0) == 0)
-		{
-			frame = sw_frame;
-		}
+		return result;
 	}
-
-	const sizei src_extent = {frame->width, frame->height};
-	const auto source_fmt = static_cast<AVPixelFormat>(frame->format);
 
 	if (!_scaler) _scaler = std::make_unique<av_scaler>();
 
+	// scale_surface sizes and allocates the destination and downloads a hardware
+	// frame itself, so doing either here would only duplicate the work (the readback
+	// this used to perform was a full GPU->CPU frame copy that was then thrown away).
 	const auto s = std::make_shared<ui::surface>();
-	if (s->alloc(w, h, ui::texture_format::RGB, calc_orientation()))
-	{
-		if (_scaler->scale_surface(frame_in, s))
-		{
-			result.s = s;
-			result.success = !result.is_empty();
-		}
-	}
 
-	if (sw_frame)
+	if (_scaler->scale_surface(frame_in, s))
 	{
-		av_frame_free(&sw_frame);
-		sw_frame = nullptr;
+		result.s = s;
+		result.success = !result.is_empty();
 	}
 
 	return result;
@@ -1793,26 +1857,72 @@ audio_resampler::~audio_resampler()
 	{
 		swr_close(_aud_resampler);
 		swr_free(&_aud_resampler);
-		_aud_resampler = nullptr;
 	}
+
+	av_freep(&_out_buffer);
 }
 
-void audio_resampler::flush() const
+// Points `planes` at the reusable output buffer, growing it when the requested run
+// of samples does not fit. Keeping one buffer for the whole session removes an
+// allocate/free pair from every decoded audio frame and gives resample(), drain()
+// and flush() a single, correctly sized place to convert into.
+bool audio_resampler::prepare_output(uint8_t** planes, const int samples, const audio_info_t& format)
 {
-	if (_aud_resampler)
-	{
-		const auto buffer_len = _stream_info.bytes_per_second();
-		const auto buffer = df::unique_alloc<uint8_t>(buffer_len);
+	const auto channels = static_cast<int>(format.channel_count());
+	const auto fmt = to_AVSampleFormat(format.sample_fmt);
 
-		if (buffer)
+	if (samples <= 0 || channels <= 0 || fmt == AV_SAMPLE_FMT_NONE)
+	{
+		return false;
+	}
+
+	if (av_sample_fmt_is_planar(fmt) && channels > AV_NUM_DATA_POINTERS)
+	{
+		return false;
+	}
+
+	const auto needed = av_samples_get_buffer_size(nullptr, channels, samples, fmt, 0);
+
+	if (needed <= 0)
+	{
+		return false;
+	}
+
+	if (needed > _out_buffer_size)
+	{
+		av_freep(&_out_buffer);
+		_out_buffer = static_cast<uint8_t*>(av_malloc(needed));
+		_out_buffer_size = _out_buffer ? needed : 0;
+	}
+
+	return _out_buffer &&
+		av_samples_fill_arrays(planes, nullptr, _out_buffer, channels, samples, fmt, 0) >= 0;
+}
+
+void audio_resampler::flush()
+{
+	if (!_aud_resampler)
+	{
+		return;
+	}
+
+	// Discard whatever the resampler still holds. The scratch must be sized for the
+	// OUTPUT format: sizing it from the source stream (as this used to) overflows
+	// whenever the device rate/width exceeds the stream's.
+	const auto pending = swr_get_out_samples(_aud_resampler, 0);
+
+	if (pending > 0)
+	{
+		uint8_t* planes[AV_NUM_DATA_POINTERS] = {};
+
+		if (prepare_output(planes, pending, _output_info))
 		{
-			uint8_t* output[AV_NUM_DATA_POINTERS]{buffer.get(), nullptr, nullptr, nullptr, nullptr, nullptr};
-			swr_convert(_aud_resampler, output, buffer_len / 4u, nullptr, 0);
+			swr_convert(_aud_resampler, planes, pending, nullptr, 0);
 		}
 	}
 }
 
-void audio_resampler::drain(audio_buffer& audio_buffer, const int gen) const
+void audio_resampler::drain(audio_buffer& audio_buffer, const int gen)
 {
 	if (!_aud_resampler)
 	{
@@ -1820,7 +1930,6 @@ void audio_resampler::drain(audio_buffer& audio_buffer, const int gen) const
 	}
 
 	const auto dest_format = audio_buffer.format;
-	const auto dest_sample_fmt = to_AVSampleFormat(dest_format.sample_fmt);
 	const auto out_num_channels = dest_format.channel_count();
 	const auto out_sample_size = dest_format.bytes_per_sample();
 
@@ -1838,29 +1947,23 @@ void audio_resampler::drain(audio_buffer& audio_buffer, const int gen) const
 			break;
 		}
 
-		uint8_t* buffer[AV_NUM_DATA_POINTERS]{nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
-		av_samples_alloc(buffer, nullptr, out_num_channels, pending, dest_sample_fmt, 0);
+		uint8_t* planes[AV_NUM_DATA_POINTERS] = {};
 
-		if (!buffer[0])
+		if (!prepare_output(planes, pending, dest_format))
 		{
 			break;
 		}
 
 		// NULL input flushes the resampler's internal buffer.
-		const auto out_samples = swr_convert(_aud_resampler, buffer, pending, nullptr, 0);
-
-		if (out_samples > 0)
-		{
-			audio_buffer.append(buffer[0], out_samples * out_num_channels * out_sample_size,
-			                    audio_buffer.end_time(), gen);
-		}
-
-		av_freep(buffer);
+		const auto out_samples = swr_convert(_aud_resampler, planes, pending, nullptr, 0);
 
 		if (out_samples <= 0)
 		{
 			break;
 		}
+
+		audio_buffer.append(planes[0], out_samples * out_num_channels * out_sample_size,
+		                    audio_buffer.end_time(), gen);
 	}
 }
 
@@ -1917,11 +2020,13 @@ static void apply_audio_gain(uint8_t* const data, const int total_samples, const
 void audio_resampler::resample(const av_frame_ptr& frame, audio_buffer& audio_buffer)
 {
 	audio_info_t source_format;
-	source_format.channel_layout = frame->frm.ch_layout.nb_channels == 0
-		                               ? _stream_info.channel_layout
-		                               : av_copy_to_ptr(frame->frm.ch_layout);
+	source_format.channel_layout = av_channel_layout_check(&frame->frm.ch_layout)
+		                               ? av_copy_to_ptr(frame->frm.ch_layout)
+		                               : _stream_info.channel_layout;
 
-	source_format.sample_fmt = frame->frm.format == 0
+	// AV_SAMPLE_FMT_NONE is -1 and is what an undecoded frame carries; 0 is
+	// AV_SAMPLE_FMT_U8, a valid format, so test for < 0 rather than == 0.
+	source_format.sample_fmt = frame->frm.format < 0
 		                           ? _stream_info.sample_fmt
 		                           : to_sample_type(static_cast<AVSampleFormat>(frame->frm.format));
 
@@ -1930,10 +2035,8 @@ void audio_resampler::resample(const av_frame_ptr& frame, audio_buffer& audio_bu
 	const auto dest_format = audio_buffer.format;
 	const auto dest_sample_fmt = to_AVSampleFormat(dest_format.sample_fmt);
 
-	if (source_format != _frame_info)
+	if (source_format != _frame_info || dest_format != _output_info)
 	{
-		_frame_info = source_format;
-
 		SwrContext* swr = nullptr;
 		std::swap(swr, _aud_resampler);
 
@@ -1945,84 +2048,74 @@ void audio_resampler::resample(const av_frame_ptr& frame, audio_buffer& audio_bu
 		                             to_AVSampleFormat(source_format.sample_fmt),
 		                             source_format.sample_rate,
 		                             0,
-		                             nullptr))
+		                             nullptr) && swr && swr_init(swr) == 0)
 		{
-			if (swr)
-			{
-				if (swr_init(swr) == 0)
-				{
-					_aud_resampler = swr;
-				}
-				else
-				{
-					swr_free(&swr);
-				}
-			}
+			_aud_resampler = swr;
+			_frame_info = source_format;
+			_output_info = dest_format;
 		}
 		else if (swr)
 		{
+			// Leave the cached formats alone so a later frame retries the setup
+			// rather than silently dropping every remaining sample.
 			swr_free(&swr);
 		}
 	}
 
-	if (_aud_resampler)
+	if (!_aud_resampler)
 	{
-		//uint8_t* output = nullptr;
-
-		const int in_samples = frame->frm.nb_samples;
-		const auto expected_out_samples = swr_get_out_samples(_aud_resampler, in_samples);
-		const auto is_planar = av_sample_fmt_is_planar(static_cast<AVSampleFormat>(frame->frm.format));
-		const auto planes_expected = is_planar ? frame->frm.ch_layout.nb_channels : 1;
-
-		bool is_valid = true;
-
-		if (frame->frm.linesize[0] == 0 ||
-			planes_expected > 6)
-		{
-			is_valid = false;
-		}
-
-		for (int i = 0; i < planes_expected; ++i)
-		{
-			if (frame->frm.data[i] == nullptr)
-			{
-				is_valid = false;
-			}
-		}
-
-		const auto out_num_channels = dest_format.channel_count();
-		const auto out_sample_size = dest_format.bytes_per_sample();
-
-		uint8_t* buffer[AV_NUM_DATA_POINTERS]{nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
-		av_samples_alloc(buffer, nullptr, out_num_channels, expected_out_samples, dest_sample_fmt, 0);
-
-		if (buffer[0])
-		{
-			if (is_valid)
-			{
-				const auto out_samples = swr_convert(_aud_resampler, buffer, expected_out_samples,
-				                                     frame->frm.data,
-				                                     frame->frm.nb_samples);
-
-				if (_gain != 1.0 && out_samples > 0)
-				{
-					apply_audio_gain(buffer[0], out_samples * out_num_channels, dest_sample_fmt, _gain);
-				}
-
-				audio_buffer.append(buffer[0], out_samples * out_num_channels * out_sample_size, frame->time,
-				                    frame->gen);
-			}
-			else
-			{
-				const auto silence_size = expected_out_samples * out_num_channels * out_sample_size;
-				memset(buffer[0], 0, silence_size);
-				audio_buffer.append(buffer[0], silence_size, frame->time,
-				                    frame->gen);
-			}
-
-			av_freep(buffer);
-		}
+		return;
 	}
+
+	// Use the resolved source format/layout (which may fall back to the stream
+	// info) so planarity and the expected plane count match what swr was set up
+	// with, even when the frame left format/ch_layout unset.
+	const auto is_planar = av_sample_fmt_is_planar(to_AVSampleFormat(source_format.sample_fmt));
+	const int planes_expected = is_planar ? static_cast<int>(source_format.channel_count()) : 1;
+
+	auto is_valid = frame->frm.linesize[0] != 0 && frame->frm.extended_data != nullptr;
+
+	for (int i = 0; is_valid && i < planes_expected; ++i)
+	{
+		is_valid = frame->frm.extended_data[i] != nullptr;
+	}
+
+	const auto expected_out_samples = swr_get_out_samples(_aud_resampler, frame->frm.nb_samples);
+	const auto out_num_channels = dest_format.channel_count();
+	const auto out_sample_size = dest_format.bytes_per_sample();
+
+	uint8_t* planes[AV_NUM_DATA_POINTERS] = {};
+
+	if (!prepare_output(planes, expected_out_samples, dest_format))
+	{
+		return;
+	}
+
+	if (!is_valid)
+	{
+		// The frame carries no usable sample data - emit the equivalent run of
+		// silence so the timeline does not jump.
+		const auto silence_size = expected_out_samples * out_num_channels * out_sample_size;
+		memset(planes[0], 0, silence_size);
+		audio_buffer.append(planes[0], silence_size, frame->time, frame->gen);
+		return;
+	}
+
+	const auto out_samples = swr_convert(_aud_resampler, planes, expected_out_samples,
+	                                     frame->frm.extended_data, frame->frm.nb_samples);
+
+	if (out_samples < 0)
+	{
+		df::log(__FUNCTION__, "swr_convert failed");
+		return;
+	}
+
+	if (_gain != 1.0 && out_samples > 0)
+	{
+		apply_audio_gain(planes[0], out_samples * out_num_channels, dest_sample_fmt, _gain);
+	}
+
+	audio_buffer.append(planes[0], out_samples * out_num_channels * out_sample_size, frame->time, frame->gen);
 }
 
 av_scaler::~av_scaler()
@@ -2036,66 +2129,149 @@ av_scaler::~av_scaler()
 
 
 bool av_scaler::scale_surface(const ui::const_surface_ptr& surface_in, ui::surface_ptr& surface_out,
-                              const sizei dimensions_out)
+	                          const sizei dimensions_out, const bool high_quality)
 {
 	const auto source_extent = surface_in->dimensions();
 	const auto fmt = surface_in->format();
+	const auto source_fmt = fmt == ui::texture_format::NV12 ? AV_PIX_FMT_NV12 :
+		fmt == ui::texture_format::P010 ? AV_PIX_FMT_P010LE :
+		fmt == ui::texture_format::RGB || fmt == ui::texture_format::ARGB ? AV_PIX_FMT_BGRA : AV_PIX_FMT_NONE;
+	if (source_fmt == AV_PIX_FMT_NONE) return false;
 
-	if (fmt != ui::texture_format::RGB &&
-		fmt != ui::texture_format::ARGB)
-	{
-		return false;
-	}
-
-	constexpr auto scaler_fmt = AV_PIX_FMT_BGRA;
-	_scaler = sws_getCachedContext(_scaler, source_extent.cx, source_extent.cy, scaler_fmt, dimensions_out.cx,
-	                               dimensions_out.cy, scaler_fmt, SWS_BICUBIC, nullptr, nullptr, nullptr);
+	constexpr auto output_fmt = AV_PIX_FMT_BGRA;
+	_scaler = sws_getCachedContext(_scaler, source_extent.cx, source_extent.cy, source_fmt, dimensions_out.cx,
+	                               dimensions_out.cy, output_fmt,
+	                               high_quality ? SWS_BICUBIC : SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
 
 	if (_scaler)
 	{
 		surface_out = std::make_shared<ui::surface>();
-		surface_out->alloc(dimensions_out.cx, dimensions_out.cy, surface_in->format(), surface_in->orientation());
+		// YUV carries no alpha, so a converted frame is opaque RGB - flagging it ARGB would force the
+		// software canvas down its per-pixel Porter-Duff path for every draw.
+		const auto destination_format = source_fmt == AV_PIX_FMT_BGRA ? fmt : ui::texture_format::RGB;
+		surface_out->alloc(dimensions_out.cx, dimensions_out.cy, destination_format, surface_in->orientation());
+		surface_out->color_space(surface_in->color_space());
 
-		const uint8_t* src_data[4] = {surface_in->pixels(), nullptr, nullptr, nullptr};
-		const int src_stride[4] = {static_cast<int>(surface_in->stride()), 0, 0, 0};
+		const auto stride = static_cast<int>(surface_in->stride());
+		const auto* const pixels = surface_in->pixels();
+		const auto is_yuv = source_fmt == AV_PIX_FMT_NV12 || source_fmt == AV_PIX_FMT_P010LE;
+		const uint8_t* src_data[4] = {
+			pixels,
+			is_yuv ? pixels + static_cast<ptrdiff_t>(stride) * source_extent.cy : nullptr,
+			nullptr,
+			nullptr
+		};
+		const int src_stride[4] = {stride, is_yuv ? stride : 0, 0, 0};
 
 		uint8_t* dst_data[4] = {surface_out->pixels(), nullptr, nullptr, nullptr};
 		const int dst_stride[4] = {static_cast<int>(surface_out->stride()), 0, 0, 0};
 
-		sws_scale(_scaler, src_data, src_stride, 0, source_extent.cy,
-		          dst_data, dst_stride);
+		const auto scaled = sws_scale(_scaler, src_data, src_stride, 0, source_extent.cy,
+		                              dst_data, dst_stride);
+
+		return scaled == dimensions_out.cy && is_valid(surface_out);
 	}
 
-	return is_valid(surface_out);
+	return false;
 }
 
-bool av_scaler::scale_surface(const av_frame_ptr& frame_in2, const ui::surface_ptr& surface_out)
+// swscale defaults to BT.601 limited range for any YUV source, which is wrong for most HD and for
+// anything full range, so the signalled matrix has to be pushed into the context explicitly.
+static void apply_colorspace_details(SwsContext* scaler, const ui::color_space cs)
+{
+	int colorspace = SWS_CS_ITU601;
+	bool full_range = false;
+
+	switch (cs)
+	{
+	case ui::color_space::rec709_limited: colorspace = SWS_CS_ITU709;
+		break;
+	case ui::color_space::rec709_full: colorspace = SWS_CS_ITU709;
+		full_range = true;
+		break;
+	case ui::color_space::rec2020_limited: colorspace = SWS_CS_BT2020;
+		break;
+	case ui::color_space::rec2020_full: colorspace = SWS_CS_BT2020;
+		full_range = true;
+		break;
+	case ui::color_space::rec601_full: full_range = true;
+		break;
+	case ui::color_space::rec601_limited:
+	default: break;
+	}
+
+	const auto* const coefficients = sws_getCoefficients(colorspace);
+
+	// Refused when the source is RGB and there is no matrix to set, which is not an error here.
+	sws_setColorspaceDetails(scaler, coefficients, full_range, coefficients, true, 0, 1 << 16, 1 << 16);
+}
+
+bool av_scaler::convert_yuv_surface(const ui::surface& surface_in, const ui::surface_ptr& surface_out)
+{
+	const auto source_extent = surface_in.dimensions();
+	const auto fmt = surface_in.format();
+	const auto source_fmt = fmt == ui::texture_format::NV12 ? AV_PIX_FMT_NV12 :
+		fmt == ui::texture_format::P010 ? AV_PIX_FMT_P010LE : AV_PIX_FMT_NONE;
+	if (source_fmt == AV_PIX_FMT_NONE || !surface_out) return false;
+
+	constexpr auto render_fmt = AV_PIX_FMT_BGRA;
+	_scaler = sws_getCachedContext(_scaler, source_extent.cx, source_extent.cy, source_fmt,
+	                               source_extent.cx, source_extent.cy, render_fmt,
+	                               SWS_POINT, nullptr, nullptr, nullptr);
+	if (!_scaler) return false;
+
+	apply_colorspace_details(_scaler, surface_in.color_space());
+
+	if (!surface_out->alloc(source_extent, ui::texture_format::RGB, surface_in.orientation(), surface_in.time()))
+	{
+		return false;
+	}
+	surface_out->color_space(surface_in.color_space());
+
+	const auto stride = static_cast<int>(surface_in.stride());
+	const auto* const y_plane = surface_in.pixels();
+	const uint8_t* src_data[4] = {y_plane, y_plane + static_cast<ptrdiff_t>(stride) * source_extent.cy,
+	                              nullptr, nullptr};
+	const int src_stride[4] = {stride, stride, 0, 0};
+	uint8_t* dst_data[4] = {surface_out->pixels(), nullptr, nullptr, nullptr};
+	const int dst_stride[4] = {static_cast<int>(surface_out->stride()), 0, 0, 0};
+
+	return sws_scale(_scaler, src_data, src_stride, 0, source_extent.cy, dst_data, dst_stride) == source_extent.cy;
+}
+
+bool av_scaler::scale_surface(const av_frame_ptr& frame_in, const ui::surface_ptr& surface_out)
 {
 	bool success = false;
-	const AVFrame* frame = &frame_in2->frm;
+	const AVFrame* frame = &frame_in->frm;
 	AVFrame* sw_frame = nullptr;
+
+	// Read before any hardware transfer: av_hwframe_transfer_data moves pixels, not frame properties,
+	// so the software copy has no matrix or range signalling of its own.
+	const auto cs = av_frame_color_space(frame_in->frm);
 
 	if (frame->format == AV_PIX_FMT_D3D11)
 	{
 		sw_frame = av_frame_alloc();
 
-		if (av_hwframe_transfer_data(sw_frame, frame, 0) == 0)
+		if (sw_frame && av_hwframe_transfer_data(sw_frame, frame, 0) == 0)
 		{
 			frame = sw_frame;
 		}
 	}
 
-	const sizei src_extent = {static_cast<int>(frame->width), static_cast<int>(frame->height)};
+	const sizei src_extent = {frame->width, frame->height};
 	const auto source_fmt = static_cast<AVPixelFormat>(frame->format);
 	constexpr auto render_fmt = AV_PIX_FMT_BGRA;
 
 	_scaler = sws_getCachedContext(_scaler, src_extent.cx, src_extent.cy, source_fmt,
 	                               src_extent.cx, src_extent.cy, render_fmt,
-	                               SWS_POINT, nullptr, nullptr, nullptr);
+	                               SWS_BILINEAR, nullptr, nullptr, nullptr);
 
 	if (_scaler)
 	{
-		if (surface_out->alloc(src_extent, ui::texture_format::RGB, frame_in2->orientation, frame_in2->time))
+		apply_colorspace_details(_scaler, cs);
+
+		if (surface_out->alloc(src_extent, ui::texture_format::RGB, frame_in->orientation, frame_in->time))
 		{
 			uint8_t* data[4] = {surface_out->pixels(), nullptr, nullptr, nullptr};
 			const int linesize[4] = {static_cast<int>(surface_out->stride()), 0, 0, 0};
@@ -2105,11 +2281,7 @@ bool av_scaler::scale_surface(const av_frame_ptr& frame_in2, const ui::surface_p
 		}
 	}
 
-	if (sw_frame)
-	{
-		av_frame_free(&sw_frame);
-		sw_frame = nullptr;
-	}
+	av_frame_free(&sw_frame);
 
 	return success;
 }
@@ -2120,13 +2292,28 @@ bool av_scaler::scale_frame(const AVFrame& frame, ui::surface_ptr& surface, cons
 	bool success = false;
 	const auto fmt = static_cast<AVPixelFormat>(frame.format);
 	const sizei src_dims(frame.width, frame.height);
-	const auto dst_dims = ui::scale_dimensions(src_dims, max_dim);
+
+	// Correct for the pixel (sample) aspect ratio so anamorphic / non-square-pixel
+	// video is scaled to its display shape rather than the stored frame shape (#78).
+	auto disp_dims = src_dims;
+	const auto sar = frame.sample_aspect_ratio;
+
+	if (sar.num > 0 && sar.den > 0 && sar.num != sar.den && frame.width > 0 && frame.height > 0)
+	{
+		const auto w = static_cast<int64_t>(frame.width);
+		disp_dims.cy = static_cast<int>(df::mul_div(
+			w, static_cast<int64_t>(sar.den) * frame.height, static_cast<int64_t>(sar.num) * w));
+	}
+
+	const auto dst_dims = ui::scale_dimensions(disp_dims, max_dim);
 
 	_scaler = sws_getCachedContext(_scaler, src_dims.cx, src_dims.cy, fmt, dst_dims.cx, dst_dims.cy,
 	                               AV_PIX_FMT_BGRA, SWS_BICUBIC, nullptr, nullptr, nullptr);
 
 	if (_scaler)
 	{
+		apply_colorspace_details(_scaler, av_frame_color_space(frame));
+
 		surface = std::make_shared<ui::surface>();
 		surface->alloc(dst_dims.cx, dst_dims.cy, ui::texture_format::RGB, orientation, time);
 
@@ -2146,10 +2333,11 @@ bool av_scaler::scale_frame(const AVFrame& frame, ui::surface_ptr& surface, cons
 
 void av_session::process_io(const platform::thread_event& video_event, const platform::thread_event& audio_event)
 {
-	const auto has_audio = _decoder.has_audio();
-	const auto has_video = _decoder.has_video();
-	const auto video_stream = _decoder.video_stream_id();
-	const auto audio_stream = _decoder.audio_stream_id();
+	// The open-time snapshots, not the decoder: these are read before the lock is taken.
+	const auto has_audio = _has_audio.load();
+	const auto has_video = _has_video.load();
+	const auto video_stream = _video_stream_id.load();
+	const auto audio_stream = _audio_stream_id.load();
 	auto loop_iteration = 0;
 
 	while ((has_audio && _audio_packets.should_receive()) || (has_video && _video_packets.should_receive()))
@@ -2212,134 +2400,122 @@ void av_session::process_io(const platform::thread_event& video_event, const pla
 }
 
 
+void av_format_decoder::receive_available_frames(AVCodecContext* const ctx, av_pts_correction& pts,
+                                                 const av_rational base, const int64_t start, const int seek_gen,
+                                                 av_frame_queue& frames)
+{
+	const AVRational time_base{base.num, base.den};
+	av_frame_ptr frame;
+
+	for (;;)
+	{
+		if (!frame) frame = std::make_shared<av_frame>();
+
+		if (avcodec_receive_frame(ctx, &frame->frm) != 0)
+		{
+			break;
+		}
+
+		update_orientation(&frame->frm);
+
+		frame->gen = seek_gen;
+		frame->time = calc_duration(pts.guess(frame->frm.best_effort_timestamp, frame->frm.pts, frame->frm.pkt_dts,
+		                                      frame->frm.duration),
+		                            time_base, start);
+		frame->orientation = calc_orientation();
+
+		frames.push(std::move(frame));
+	}
+}
+
 void av_format_decoder::receive_frames(av_packet_queue& packets, av_frame_queue& frames)
 {
 	av_packet_ptr packet;
 
-	if (packets.pop(packet))
+	if (!packets.pop(packet))
 	{
-		AVCodecContext* c = nullptr;
-		av_pts_correction* pts_c = nullptr;
-		const auto seek_ver = packet->seek_ver;
-		AVRational base;
-		int64_t start = AV_NOPTS_VALUE;
-		const auto si = packet->pkt->stream_index;
-		auto stream_name = "unknown stream";
+		return;
+	}
 
-		if (si == _video_stream_index)
-		{
-			c = _video_context;
-			pts_c = &_pts_vid;
-			base = {_video_base.num, _video_base.den};
-			start = _video_start_time;
-			stream_name = "video stream";
-		}
-		else if (si == _audio_stream_index)
-		{
-			c = _audio_context;
-			pts_c = &_pts_aud;
-			base = {_audio_base.num, _audio_base.den};
-			start = _audio_start_time;
-			stream_name = "audio stream";
-		}
+	AVCodecContext* c = nullptr;
+	av_pts_correction* pts = nullptr;
+	av_rational base;
+	int64_t start = AV_NOPTS_VALUE;
+	const auto si = packet->pkt->stream_index;
+	const auto* stream_name = "unknown stream";
 
-		if (packet->eof)
+	if (si == _video_stream_index)
+	{
+		c = _video_context;
+		pts = &_pts_vid;
+		base = _video_base;
+		start = _video_start_time;
+		stream_name = "video stream";
+	}
+	else if (si == _audio_stream_index)
+	{
+		c = _audio_context;
+		pts = &_pts_aud;
+		base = _audio_base;
+		start = _audio_start_time;
+		stream_name = "audio stream";
+	}
+
+	const auto seek_gen = packet->seek_ver;
+
+	if (packet->eof)
+	{
+		if (c)
 		{
 			// Drain the decoder so frames it still holds (codecs such as AAC delay
 			// output) are emitted rather than dropped - that lost tail is what cut the
 			// sound short at the end - then push an EOF marker for the output path to
 			// follow with silence.
-			if (c)
-			{
-				avcodec_send_packet(c, nullptr);
-
-				auto frame = std::make_shared<av_frame>();
-
-				while (avcodec_receive_frame(c, &frame->frm) == 0)
-				{
-					frame->gen = seek_ver;
-					frame->time = calc_duration(pts_c->guess(frame->frm.pts, frame->frm.pkt_dts, frame->frm.duration),
-					                            base, start);
-					frame->orientation = calc_orientation();
-					frames.push(frame);
-					frame = std::make_shared<av_frame>();
-				}
-
-				avcodec_flush_buffers(c); // reset for a later seek / replay
-			}
-
-			auto eof_frame = std::make_shared<av_frame>();
-			eof_frame->eof = true;
-			eof_frame->gen = seek_ver;
-			frames.push(eof_frame);
+			avcodec_send_packet(c, nullptr);
+			receive_available_frames(c, *pts, base, start, seek_gen, frames);
+			avcodec_flush_buffers(c); // reset for a later seek / replay
 		}
-		else if (c != nullptr)
+
+		auto eof_frame = std::make_shared<av_frame>();
+		eof_frame->eof = true;
+		eof_frame->gen = seek_gen;
+		frames.push(std::move(eof_frame));
+		return;
+	}
+
+	if (!c)
+	{
+		return;
+	}
+
+	if (packet->is_empty())
+	{
+		// A seek queues an empty packet as a flush marker: drop the frames decoded
+		// for the old position and reset the decoder and timestamp estimator.
+		frames.clear();
+		pts->clear();
+		avcodec_flush_buffers(c);
+		df::trace(std::format("av_format_decoder::receive_frames avcodec_flush_buffers {}", stream_name));
+		return;
+	}
+
+	// The decoder refuses a new packet with EAGAIN while it still has output
+	// buffered, so alternate sending and draining until it takes the packet. The
+	// iteration cap keeps a misbehaving decoder from spinning this thread forever.
+	for (int attempt = 0; attempt < 64; ++attempt)
+	{
+		const auto send_res = try_avcodec_send_packet(c, packet->pkt);
+
+		if (send_res != 0 && send_res != AVERROR(EAGAIN))
 		{
-			if (packet->is_empty())
-			{
-				frames.clear();
-				pts_c->clear();
+			break;
+		}
 
-				avcodec_flush_buffers(c);
-				df::trace(std::format("av_format_decoder::receive_frames avcodec_flush_buffers {}", stream_name));
+		receive_available_frames(c, *pts, base, start, seek_gen, frames);
 
-				//try_avcodec_send_packet(c, &packet.pkt);
-
-				//auto frame = std::make_shared<av_frame>();
-				//frame->seek_ver = seek_ver;
-				//frames.push(frame);
-			}
-			else
-			{
-				auto send_res = try_avcodec_send_packet(c, packet->pkt);
-				//df::trace(std::format("[{}] try_avcodec_send_packet 111 {}", si, send_res));
-
-				if (send_res == 0)
-				{
-					auto frame = std::make_shared<av_frame>();
-					auto rec_res = avcodec_receive_frame(c, &frame->frm);
-					//df::trace(std::format("[{}] avcodec_receive_frame 111 {}", si, rec_res));
-
-					while (rec_res == 0)
-					{
-						frame->gen = seek_ver;
-						frame->time = calc_duration(pts_c->guess(frame->frm.pts, frame->frm.pkt_dts, frame->frm.duration), base, start);
-						frame->orientation = calc_orientation();
-						frames.push(frame);
-
-						frame = std::make_shared<av_frame>();
-						rec_res = avcodec_receive_frame(c, &frame->frm);
-						//df::trace(std::format("[{}] avcodec_receive_frame 222 {} {}", si, rec_res, frame->time));
-					}
-				}
-
-				while (AVERROR(EAGAIN) == send_res)
-				{
-					send_res = try_avcodec_send_packet(c, packet->pkt);
-					//df::trace(std::format("[{}] try_avcodec_send_packet 333 {}", si, send_res));
-
-					if (send_res == 0 || AVERROR(EAGAIN) == send_res)
-					{
-						auto frame = std::make_shared<av_frame>();
-						auto rec_res = avcodec_receive_frame(c, &frame->frm);
-						//df::trace(std::format("[{}] avcodec_receive_frame 333 {}", si, rec_res));
-
-						while (rec_res == 0)
-						{
-							update_orientation(&frame->frm);
-
-							frame->gen = seek_ver;
-							frame->time = calc_duration(pts_c->guess(frame->frm.pts, frame->frm.pkt_dts, frame->frm.duration), base, start);
-							frame->orientation = calc_orientation();
-							frames.push(frame);
-
-							frame = std::make_shared<av_frame>();
-							rec_res = avcodec_receive_frame(c, &frame->frm);
-							//df::trace(std::format("[{}] avcodec_receive_frame 444 {} {}", si, rec_res, frame->time));
-						}
-					}
-				}
-			}
+		if (send_res == 0)
+		{
+			break;
 		}
 	}
 }
@@ -2364,7 +2540,7 @@ void av_session::seek(const double pos, const bool scrubbing)
 	{
 		platform::shared_lock lock(_decoder_rw);
 
-		if (_decoder.seek(pos, _last_frame_decoded))
+		if (_decoder.seek(pos))
 		{
 			_video_packets.clear();
 			_audio_packets.clear();
@@ -2386,11 +2562,13 @@ void av_session::seek(const double pos, const bool scrubbing)
 			}
 
 			_seek_gen += 1;
+			// Published before _pending_time_sync, which is what tells pos() to use it.
+			_last_seek = pos;
 			_pending_time_sync = true;
 			_reset_time_offset = !_decoder.has_audio(); // && !scrubbing;
 			_settling = true;
 			_audio_eof_handled = false;
-			_last_seek = pos;
+			_video_eof_handled = false;
 		}
 	}
 }

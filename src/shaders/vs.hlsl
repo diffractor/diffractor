@@ -12,10 +12,8 @@ PS_INPUT main(VS_INPUT input)
 {
 	PS_INPUT output;
 
-	output.pos.x = input.pos.x * 2.0f - 1.0f;
-	output.pos.y = input.pos.y * -2.0f + 1.0f;
-	output.pos.z = input.pos.z;
-	output.pos.w = input.pos.w;
+	// Client space (0..1, y down) to clip space (-1..1, y up) in a single mad.
+	output.pos = float4(input.pos.xy * float2(2.0f, -2.0f) + float2(-1.0f, 1.0f), input.pos.z, input.pos.w);
 	output.uv = input.uv;
 	output.c = input.c;
 	output.tex_size = input.tex_size;

@@ -19,7 +19,7 @@ namespace crypto
 	uint32_t crc32c(const void* data, size_t len);
 	uint32_t crc32c(uint32_t crc, const void* data, size_t len);
 	uint32_t crc32c(std::string_view sv);
-	uint32_t fnv1a(const void* data, size_t len);
+
 	uint32_t fnv1a_i(std::string_view sv);
 	uint32_t fnv1a_i(std::string_view sv1, std::string_view sv2);
 

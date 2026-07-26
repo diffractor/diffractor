@@ -27,6 +27,7 @@ static constexpr auto s_album = "album";
 static constexpr auto s_maximize = "maximize";
 static constexpr auto s_favorite_tags_old = "FavoriteTags";
 static constexpr auto s_favorite_tags = "favorite_tags";
+static constexpr auto s_favorite_tags_initialized = "favorite_tags_initialized";
 static constexpr auto s_out_folder = "out_folder";
 static constexpr auto s_resize_size = "resize_size";
 static constexpr auto s_volume = "volume";
@@ -48,7 +49,6 @@ static constexpr auto s_out_name = "out_name";
 static constexpr auto s_convert = "convert";
 static constexpr auto s_available_version = "available_version";
 static constexpr auto s_available_test_version = "available_test_version";
-static constexpr auto s_tags = "tags";
 static constexpr auto s_is_sponsor = "awesome";
 static constexpr auto s_first_time = "first";
 static constexpr auto s_quality = "quality";
@@ -64,8 +64,12 @@ static constexpr auto s_to = "to";
 static constexpr auto s_subject = "subject";
 static constexpr auto s_message = "message";
 static constexpr auto s_items_scale = "items_scale";
+static constexpr auto s_items_scale_position = "items_scale_position";
 static constexpr auto s_item_splitter = "item_splitter";
+static constexpr auto s_view_splitters = "view_splitters";
 static constexpr auto s_auto_play = "auto_play";
+static constexpr auto s_auto_advance = "auto_advance";
+static constexpr auto s_zoom_navigator = "zoom_navigator";
 static constexpr auto s_scale_up = "scale_up";
 static constexpr auto s_features = "features";
 static constexpr auto s_update_min = "update_min";
@@ -101,6 +105,7 @@ static constexpr auto s_overwrite_if_newer = "overwrite_if_newer";
 static constexpr auto s_hidden = "hidden";
 static constexpr auto s_email = "email";
 static constexpr auto s_rename = "rename";
+static constexpr auto s_collision = "collision_policy";
 static constexpr auto s_template = "template";
 static constexpr auto s_wall_paper = "wallpaper";
 static constexpr auto s_confirm = "confirm";
@@ -117,10 +122,13 @@ static constexpr auto s_show_tags = "show_tags";
 static constexpr auto s_show_ratings = "show_ratings";
 static constexpr auto s_show_labels = "show_labels";
 static constexpr auto s_history_years = "history_years";
+static constexpr auto s_history_start_year = "history_start_year";
+static constexpr auto s_sidebar_width = "width";
 static constexpr auto s_lang = "lang";
 static constexpr auto s_verbose_metadata = "verbose_metadata";
 static constexpr auto s_location_latitude = "location_latitude";
 static constexpr auto s_location_longitude = "location_longitude";
+static constexpr auto s_locate_only_without_location = "locate_only_without_location";
 static constexpr auto s_raw_preview = "raw_preview";
 static constexpr auto s_onedrive_pictures = "onedrive_pictures";
 static constexpr auto s_onedrive_video = "onedrive_video";
@@ -139,12 +147,33 @@ static constexpr auto s_rename_different_attributes = "rename_different_attribut
 static constexpr auto s_source_path = "source_path";
 static constexpr auto s_source_filter = "source_filter";
 static constexpr auto s_show_shadow = "show_shadow";
-static constexpr auto s_update_modified = "update_modified";
 static constexpr auto s_last_played_pos = "last_played_pos";
 static constexpr auto s_show_help_tooltips = "show_help_tooltips";
 static constexpr auto s_sound_device = "sound_device";
 
 settings_t setting;
+
+static std::atomic<uint64_t> s_feature_use{0};
+
+void record_feature_use(const uint64_t f)
+{
+	s_feature_use.fetch_or(f, std::memory_order_relaxed);
+}
+
+uint64_t features_used_since_last_report()
+{
+	return s_feature_use.load(std::memory_order_relaxed);
+}
+
+void load_feature_use(const uint64_t f)
+{
+	s_feature_use.store(f, std::memory_order_relaxed);
+}
+
+void clear_reported_feature_use(const uint64_t reported)
+{
+	s_feature_use.fetch_and(~reported, std::memory_order_relaxed);
+}
 
 constexpr uint32_t operator|(group_key_type lhs, group_key_type rhs)
 {
@@ -164,6 +193,23 @@ constexpr uint32_t default_detail_items = group_key_type::folder |
 	group_key_type::other |
 	group_key_type::retro;
 
+bool settings_t::is_detail_display(const group_key_type type) const
+{
+	return (detail_items & static_cast<uint32_t>(type)) != 0;
+}
+
+void settings_t::set_detail_display(const group_key_type type, const bool detail)
+{
+	if (detail)
+	{
+		detail_items |= static_cast<uint32_t>(type);
+	}
+	else
+	{
+		detail_items &= ~static_cast<uint32_t>(type);
+	}
+}
+
 int settings_t::item_scale_snaps[item_scale_count];
 
 static void init_item_scale_snaps()
@@ -175,6 +221,109 @@ static void init_item_scale_snaps()
 		settings_t::item_scale_snaps[i] = df::round(std::sqrt(prime));
 		prime *= 1.3333;
 	}
+}
+
+static int item_scale_snap_position(const int index)
+{
+	const auto clamped_index = std::clamp(index, 0, settings_t::item_scale_count - 1);
+	const auto min_dimension = settings_t::item_scale_snaps[0];
+	const auto dimension_range = settings_t::item_scale_snaps[settings_t::item_scale_count - 1] - min_dimension;
+	return df::round(static_cast<double>(settings_t::item_scale_snaps[clamped_index] - min_dimension) *
+	                 settings_t::item_scale_position_max / std::max(1, dimension_range));
+}
+
+int settings_t::item_scale_dimension() const
+{
+	const auto min_dimension = item_scale_snaps[0];
+	const auto dimension_range = item_scale_snaps[item_scale_count - 1] - min_dimension;
+	const auto position = item_scale_position < 0 ? item_scale_snap_position(item_scale) : item_scale_position;
+	return min_dimension + df::round(static_cast<double>(std::clamp(position, 0, item_scale_position_max)) *
+	                                 dimension_range / item_scale_position_max);
+}
+
+void settings_t::set_item_scale_position(const int position)
+{
+	item_scale_position = std::clamp(position, 0, item_scale_position_max);
+	item_scale = 0;
+	for (auto index = 1; index < item_scale_count; ++index)
+	{
+		if (std::abs(item_scale_snap_position(index) - item_scale_position) <
+			std::abs(item_scale_snap_position(item_scale) - item_scale_position))
+		{
+			item_scale = index;
+		}
+	}
+}
+
+void settings_t::step_item_scale(const int direction)
+{
+	if (direction == 0) return;
+	const auto current = item_scale_position < 0 ? item_scale_snap_position(item_scale) : item_scale_position;
+	if (direction > 0)
+	{
+		for (auto index = 0; index < item_scale_count; ++index)
+		{
+			const auto position = item_scale_snap_position(index);
+			if (position > current)
+			{
+				item_scale = index;
+				item_scale_position = position;
+				return;
+			}
+		}
+		item_scale = 0;
+	}
+	else
+	{
+		for (auto index = item_scale_count - 1; index >= 0; --index)
+		{
+			const auto position = item_scale_snap_position(index);
+			if (position < current)
+			{
+				item_scale = index;
+				item_scale_position = position;
+				return;
+			}
+		}
+		item_scale = item_scale_count - 1;
+	}
+
+	item_scale_position = item_scale_snap_position(item_scale);
+}
+
+// Slot for each view that shows a controls panel. Order must match s_view_splitter_names so a
+// stored position can never be attributed to a different view after a reorder.
+static int view_splitter_index(const view_type view)
+{
+	switch (view)
+	{
+	case view_type::edit: return 0;
+	case view_type::rename: return 1;
+	case view_type::batch: return 2;
+	case view_type::import: return 3;
+	case view_type::sync: return 4;
+	case view_type::locate: return 5;
+	case view_type::tags: return 6;
+	default: return -1;
+	}
+}
+
+static constexpr std::string_view s_view_splitter_names[settings_t::view_splitter_count] = {
+	"edit", "rename", "batch", "import", "sync", "locate", "tags"
+};
+
+int settings_t::view_splitter(const view_type view) const
+{
+	const auto index = view_splitter_index(view);
+	return index < 0 ? 0 : view_splitter_positions[index];
+}
+
+bool settings_t::set_view_splitter(const view_type view, const int pos)
+{
+	const auto index = view_splitter_index(view);
+	if (index < 0 || view_splitter_positions[index] == pos) return false;
+	view_splitter_positions[index] = pos;
+	return true;
 }
 
 settings_t::settings_t()
@@ -201,7 +350,8 @@ settings_t::settings_t()
 	can_animate = false;
 	repeat = repeat_mode::repeat_none;
 	auto_play = true;
-	scale_up = true;
+	auto_advance = true;
+	scale_up = false;
 	highlight_large_items = true;
 	sort_dates_descending = true;
 	show_sidebar = true;
@@ -211,7 +361,6 @@ settings_t::settings_t()
 	default_location = gps_coordinate(51.5255317687988, -0.116743430495262); // London
 	detail_items = default_detail_items;
 
-	features_used_since_last_report = 0;
 	instantiations = 0;
 
 	copyright_notice = std::format("\xC2\xA9 {} {} - All Rights Reserved",
@@ -244,7 +393,7 @@ settings_t::settings_t()
 	sync.sync_local_remote = true;
 	sync.sync_remote_local = false;
 	sync.sync_delete_local = false;
-	sync.sync_delete_remote = true;
+	sync.sync_delete_remote = false;
 
 
 	desktop_background.maximize = true;
@@ -272,7 +421,7 @@ settings_t::settings_t()
 	sidebar.show_tags = true;
 	sidebar.show_ratings = true;
 	sidebar.show_labels = true;
-	sidebar.history_years = 10;
+	sidebar.history_start_year = 0;
 
 	collection.pictures = true;
 	collection.video = true;
@@ -383,6 +532,38 @@ public:
 			return true;
 		}
 		return false;
+	}
+
+	bool read(const std::string_view section, const std::string_view name, zoom_navigator_mode& v) const
+	{
+		uint32_t value{};
+		if (!_file->read(section, name, value) || !is_valid_zoom_navigator_mode(value)) return false;
+		v = static_cast<zoom_navigator_mode>(value);
+		if (v == zoom_navigator_mode::pinned) v = zoom_navigator_mode::auto_hide;
+		return true;
+	}
+
+	bool write(const std::string_view section, const std::string_view name, const zoom_navigator_mode v) const
+	{
+		return _file->write(section, name, static_cast<uint32_t>(v));
+	}
+
+	bool read(const std::string_view section, const std::string_view name, collision_policy& v) const
+	{
+		uint32_t vv{};
+		if (_file->read(section, name, vv))
+		{
+			// Reject values outside the closed ontology rather than inventing a state.
+			if (vv > static_cast<uint32_t>(collision_policy::auto_rename)) return false;
+			v = static_cast<collision_policy>(vv);
+			return true;
+		}
+		return false;
+	}
+
+	bool write(const std::string_view section, const std::string_view name, const collision_policy v) const
+	{
+		return _file->write(section, name, static_cast<uint32_t>(v));
 	}
 
 	bool write(const std::string_view section, const std::string_view name, const int64_t v) const
@@ -528,13 +709,12 @@ public:
 	}
 };
 
-void settings_t::read(const platform::setting_file_ptr& store_in)
+void settings_t::read()
 {
-	const setting_formatter store(store_in);
+	const setting_formatter store(platform::settings());
 
 	store.read({}, s_hidden, show_hidden);
 	store.read({}, s_show_shadow, show_shadow);
-	store.read({}, s_update_modified, update_modified);
 	store.read({}, s_last_played_pos, last_played_pos);
 	store.read({}, s_show_help_tooltips, show_help_tooltips);
 	store.read({}, s_show_performance_timings, show_debug_info);
@@ -543,7 +723,9 @@ void settings_t::read(const platform::setting_file_ptr& store_in)
 	store.read({}, s_use_yuv, use_yuv);
 	store.read({}, s_confirm, confirm_deletions);
 	store.read({}, s_repeat, repeat);
+	store.read({}, s_zoom_navigator, zoom_navigator);
 	store.read({}, s_auto_play, auto_play);
+	store.read({}, s_auto_advance, auto_advance);
 	store.read({}, s_scale_up, scale_up);
 	store.read({}, s_highlight_large_items, highlight_large_items);
 	store.read({}, s_sort_dates_descending, sort_dates_descending);
@@ -555,8 +737,18 @@ void settings_t::read(const platform::setting_file_ptr& store_in)
 	store.read({}, s_webp_quality, webp_quality);
 	store.read({}, s_webp_lossless, webp_lossless);
 	store.read({}, s_slideshow_delay, slideshow_delay);
+	slideshow_delay = std::clamp(slideshow_delay, min_slideshow_delay, max_slideshow_delay);
 	store.read({}, s_items_scale, item_scale);
+	store.read({}, s_items_scale_position, item_scale_position);
+	if (item_scale_position < 0) item_scale_position = item_scale_snap_position(item_scale);
+	set_item_scale_position(item_scale_position);
 	store.read({}, s_item_splitter, item_splitter_pos);
+
+	for (auto i = 0; i < view_splitter_count; ++i)
+	{
+		store.read(s_view_splitters, s_view_splitter_names[i], view_splitter_positions[i]);
+	}
+
 	store.read({}, s_update_min, min_show_update_day);
 	store.read({}, s_large_font, large_font);
 	store.read({}, s_verbose_metadata, verbose_metadata);
@@ -580,11 +772,13 @@ void settings_t::read(const platform::setting_file_ptr& store_in)
 	default_location.latitude(lat);
 	default_location.longitude(lng);
 
+	store.read({}, s_locate_only_without_location, locate_only_without_location);
+
 	store.read({}, s_available_version, available_version);
 	store.read({}, s_available_test_version, available_test_version);
-	store.read({}, s_tags, last_tags);
 	store.read({}, s_favorite_tags_old, favorite_tags);
 	store.read({}, s_favorite_tags, favorite_tags);
+	store.read({}, s_favorite_tags_initialized, favorite_tags_initialized);
 
 	store.read({}, s_copyright, copyright_notice);
 	store.read({}, s_creator, copyright_creator);
@@ -610,7 +804,9 @@ void settings_t::read(const platform::setting_file_ptr& store_in)
 	store.read({}, s_set_genre, set_genre);
 	store.read({}, s_set_tv_show, set_tv_show);
 
-	store.read({}, s_features, features_used_since_last_report);
+	uint64_t stored_feature_use = 0;
+	store.read({}, s_features, stored_feature_use);
+	load_feature_use(stored_feature_use);
 	store.read({}, s_instantiations, instantiations);
 
 	int last_run = 0;
@@ -620,6 +816,7 @@ void settings_t::read(const platform::setting_file_ptr& store_in)
 
 	store.read(s_rename, s_template, rename.name_template);
 	store.read(s_rename, s_start, rename.start_seq);
+	store.read(s_rename, s_collision, rename.collision);
 
 	store.read(s_import, s_source_path, import.source_path);
 	store.read(s_import, s_source_filter, import.source_filter);
@@ -631,6 +828,12 @@ void settings_t::read(const platform::setting_file_ptr& store_in)
 	store.read(s_import, s_custom_folder_structure, import.dest_folder_structure);
 	store.read(s_import, s_rename_different_attributes, import.rename_different_attributes);
 
+	if (!store.read(s_import, s_collision, import.collision) && import.overwrite_if_newer)
+	{
+		// Migrate the previous unnamed "overwrite if newer" option onto the named policy.
+		import.collision = collision_policy::replace;
+	}
+
 	store.read(s_sync, s_local_path, sync.local_path);
 	store.read(s_sync, s_remote_path, sync.remote_path);
 	store.read(s_sync, s_sync_collection, sync.sync_collection);
@@ -638,6 +841,7 @@ void settings_t::read(const platform::setting_file_ptr& store_in)
 	store.read(s_sync, s_sync_remote_local, sync.sync_remote_local);
 	store.read(s_sync, s_sync_delete_local, sync.sync_delete_local);
 	store.read(s_sync, s_sync_delete_remote, sync.sync_delete_remote);
+	store.read(s_sync, s_collision, sync.collision);
 
 	store.read(s_wall_paper, s_maximize, desktop_background.maximize);
 
@@ -649,6 +853,7 @@ void settings_t::read(const platform::setting_file_ptr& store_in)
 	store.read(s_convert, s_quality, convert.jpeg_quality);
 	store.read(s_convert, s_webp_quality, convert.webp_quality);
 	store.read(s_convert, s_webp_lossless, convert.webp_lossless);
+	store.read(s_convert, s_collision, convert.collision);
 
 	store.read(s_email, s_to, email.to);
 	store.read(s_email, s_subject, email.subject);
@@ -680,16 +885,23 @@ void settings_t::read(const platform::setting_file_ptr& store_in)
 	store.read(s_sidebar, s_show_ratings, sidebar.show_ratings);
 	store.read(s_sidebar, s_show_labels, sidebar.show_labels);
 	store.read(s_sidebar, s_favorite_tags, sidebar.show_favorite_tags_only);
-	store.read(s_sidebar, s_history_years, sidebar.history_years);
+	if (!store.read(s_sidebar, s_history_start_year, sidebar.history_start_year))
+	{
+		int history_years = 0;
+		if (store.read(s_sidebar, s_history_years, history_years) && history_years > 0)
+		{
+			sidebar.history_start_year = platform::now().date().year - history_years + 1;
+		}
+	}
+	store.read(s_sidebar, s_sidebar_width, sidebar.width);
 }
 
-void settings_t::write(const platform::setting_file_ptr& store_in) const
+void settings_t::write() const
 {
-	setting_formatter store(store_in);
+	setting_formatter store(platform::settings());
 
 	store.write({}, s_hidden, show_hidden);
 	store.write({}, s_show_shadow, show_shadow);
-	store.write({}, s_update_modified, update_modified);
 	store.write({}, s_last_played_pos, last_played_pos);
 	store.write({}, s_show_help_tooltips, show_help_tooltips);
 	store.write({}, s_show_performance_timings, show_debug_info);
@@ -698,7 +910,9 @@ void settings_t::write(const platform::setting_file_ptr& store_in) const
 	store.write({}, s_use_yuv, use_yuv);
 	store.write({}, s_confirm, confirm_deletions);
 	store.write({}, s_repeat, static_cast<int>(repeat));
+	store.write({}, s_zoom_navigator, zoom_navigator);
 	store.write({}, s_auto_play, auto_play);
+	store.write({}, s_auto_advance, auto_advance);
 	store.write({}, s_scale_up, scale_up);
 	store.write({}, s_highlight_large_items, highlight_large_items);
 	store.write({}, s_sort_dates_descending, sort_dates_descending);
@@ -711,7 +925,14 @@ void settings_t::write(const platform::setting_file_ptr& store_in) const
 	store.write({}, s_webp_lossless, webp_lossless);
 	store.write({}, s_slideshow_delay, slideshow_delay);
 	store.write({}, s_items_scale, item_scale);
+	store.write({}, s_items_scale_position, item_scale_position);
 	store.write({}, s_item_splitter, item_splitter_pos);
+
+	for (auto i = 0; i < view_splitter_count; ++i)
+	{
+		store.write(s_view_splitters, s_view_splitter_names[i], view_splitter_positions[i]);
+	}
+
 	store.write({}, s_update_min, min_show_update_day);
 	store.write({}, s_large_font, large_font);
 	store.write({}, s_verbose_metadata, verbose_metadata);
@@ -730,10 +951,11 @@ void settings_t::write(const platform::setting_file_ptr& store_in) const
 	store.write({}, s_last_run, platform::now().to_days());
 	store.write({}, s_location_latitude, default_location.latitude());
 	store.write({}, s_location_longitude, default_location.longitude());
+	store.write({}, s_locate_only_without_location, locate_only_without_location);
 	store.write({}, s_available_version, available_version);
 	store.write({}, s_available_test_version, available_test_version);
-	store.write({}, s_tags, last_tags);
 	store.write({}, s_favorite_tags, favorite_tags);
+	store.write({}, s_favorite_tags_initialized, favorite_tags_initialized);
 	store.write({}, s_first_time, first_run_ever);
 	store.write({}, s_copyright, copyright_notice);
 	store.write({}, s_creator, copyright_creator);
@@ -759,11 +981,12 @@ void settings_t::write(const platform::setting_file_ptr& store_in) const
 	store.write({}, s_set_genre, set_genre);
 	store.write({}, s_set_tv_show, set_tv_show);
 
-	store.write({}, s_features, features_used_since_last_report);
+	store.write({}, s_features, features_used_since_last_report());
 	store.write({}, s_instantiations, instantiations);
 
 	store.write(s_rename, s_template, rename.name_template);
 	store.write(s_rename, s_start, rename.start_seq);
+	store.write(s_rename, s_collision, rename.collision);
 
 	store.write(s_import, s_source_path, import.source_path);
 	store.write(s_import, s_source_filter, import.source_filter);
@@ -774,6 +997,7 @@ void settings_t::write(const platform::setting_file_ptr& store_in) const
 	store.write(s_import, s_overwrite_if_newer, import.overwrite_if_newer);
 	store.write(s_import, s_custom_folder_structure, import.dest_folder_structure);
 	store.write(s_import, s_rename_different_attributes, import.rename_different_attributes);
+	store.write(s_import, s_collision, import.collision);
 
 	store.write(s_sync, s_local_path, sync.local_path);
 	store.write(s_sync, s_remote_path, sync.remote_path);
@@ -782,6 +1006,7 @@ void settings_t::write(const platform::setting_file_ptr& store_in) const
 	store.write(s_sync, s_sync_remote_local, sync.sync_remote_local);
 	store.write(s_sync, s_sync_delete_local, sync.sync_delete_local);
 	store.write(s_sync, s_sync_delete_remote, sync.sync_delete_remote);
+	store.write(s_sync, s_collision, sync.collision);
 
 	store.write(s_wall_paper, s_maximize, desktop_background.maximize);
 
@@ -793,6 +1018,7 @@ void settings_t::write(const platform::setting_file_ptr& store_in) const
 	store.write(s_convert, s_quality, convert.jpeg_quality);
 	store.write(s_convert, s_webp_quality, convert.webp_quality);
 	store.write(s_convert, s_webp_lossless, convert.webp_lossless);
+	store.write(s_convert, s_collision, convert.collision);
 
 	store.write(s_email, s_to, email.to);
 	store.write(s_email, s_subject, email.subject);
@@ -824,7 +1050,8 @@ void settings_t::write(const platform::setting_file_ptr& store_in) const
 	store.write(s_sidebar, s_show_ratings, sidebar.show_ratings);
 	store.write(s_sidebar, s_show_labels, sidebar.show_labels);
 	store.write(s_sidebar, s_favorite_tags, sidebar.show_favorite_tags_only);
-	store.write(s_sidebar, s_history_years, sidebar.history_years);
+	store.write(s_sidebar, s_history_start_year, sidebar.history_start_year);
+	store.write(s_sidebar, s_sidebar_width, sidebar.width);
 }
 
 std::vector<std::string_view> split_collection_folders(const std::string_view text)

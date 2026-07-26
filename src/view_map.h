@@ -21,6 +21,7 @@ class map_pan_controller final : public view_controller
 {
 	map_view& _view;
 	bool _tracking = false;
+	int _hover_marker = -1;
 
 public:
 	map_pan_controller(map_view& view, const view_host_ptr& host, recti bounds);
@@ -33,6 +34,7 @@ public:
 	void on_mouse_left_button_down(pointi loc, ui::key_state keys) override;
 	void on_mouse_move(pointi loc) override;
 	void on_mouse_left_button_up(pointi loc, ui::key_state keys) override;
+	void popup_from_location(view_hover_element& hover) override;
 };
 
 class map_view : public view_base
@@ -83,7 +85,7 @@ public:
 
 	void mouse_wheel(const pointi loc, const int zDelta, const ui::key_state keys) override
 	{
-		_engine.zoom(zDelta, recti(_extent));
+		if (_engine.zoom(zDelta, recti(_extent))) on_map_zoomed(_engine.zoom_level());
 	}
 
 	void pan_start(const pointi start_loc) override
@@ -111,6 +113,18 @@ public:
 	virtual void on_map_panned(const gps_coordinate& new_center)
 	{
 	}
+
+	virtual void on_map_zoomed(int zoom)
+	{
+	}
+
+	// Called when the cursor hovers an aggregated marker cluster. `marker_index` is
+	// the representative marker index (as passed to map_engine::set_markers), `count`
+	// the number of aggregated items, and `anchor` the cluster's screen position.
+	// Override to populate the hover bubble (e.g. with a thumbnail). Default: no popup.
+	virtual void on_marker_hover(view_hover_element& hover, int marker_index, int count, pointi anchor)
+	{
+	}
 };
 
 // --- map_pan_controller inline implementations (after map_view is complete) ---
@@ -129,9 +143,43 @@ inline void map_pan_controller::on_mouse_left_button_down(const pointi loc, cons
 
 inline void map_pan_controller::on_mouse_move(const pointi loc)
 {
+	_last_loc = loc;
+
 	if (_tracking)
 	{
 		_view.pan(_start_loc, loc);
+		return;
+	}
+
+	// Track which marker cluster is under the cursor. When it changes we must
+	// re-evaluate the hover bubble: the map controller persists across mouse moves
+	// (its bounds cover the whole view), so unlike a transient controller it never
+	// re-fires controller_changed(). Invalidating the tooltip re-runs
+	// app_frame::update_tooltip -> popup_from_location so the bubble shows/hides.
+	pointi anchor;
+	int count = 0;
+	const int marker = _view._engine.hit_test_marker(loc, _view._extent, anchor, count);
+
+	if (marker != _hover_marker)
+	{
+		_hover_marker = marker;
+
+		if (_host)
+		{
+			_host->invalidate_view(view_invalid::tooltip | view_invalid::view_redraw);
+		}
+	}
+}
+
+inline void map_pan_controller::popup_from_location(view_hover_element& hover)
+{
+	pointi anchor;
+	int count = 0;
+	const int marker = _view._engine.hit_test_marker(_last_loc, _view._extent, anchor, count);
+
+	if (marker >= 0)
+	{
+		_view.on_marker_hover(hover, marker, count, anchor);
 	}
 }
 

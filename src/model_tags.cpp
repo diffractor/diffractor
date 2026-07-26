@@ -15,8 +15,10 @@
 
 void tag_set::make_unique()
 {
+	// The comparator must match the sort: a case-sensitive unique would leave both
+	// "Beach" and "beach" behind, which every other tag operation treats as one tag.
 	std::ranges::sort(_tags, df::iless());
-	_tags.erase(std::ranges::unique(_tags).begin(), _tags.end());
+	_tags.erase(std::ranges::unique(_tags, df::ieq()).begin(), _tags.end());
 }
 
 void tag_set::add(const tag_set& other)

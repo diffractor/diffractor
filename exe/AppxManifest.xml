@@ -20,7 +20,7 @@
   <Identity
     Name="46714Diffractor.Diffractor"
     Publisher="CN=93EAD558-C663-408E-B7C1-B1A6FED88763"
-    Version="1.26.4.0"
+    Version="1.27.0.0"
     ProcessorArchitecture="x64" />
 
   <!--
@@ -59,10 +59,19 @@
   -->
   <Resources>
     <Resource Language="EN-US"/>
+    <Resource Language="CS"/>
     <Resource Language="DE"/>
+    <Resource Language="ES"/>
+    <Resource Language="FR"/>
     <Resource Language="IT"/>
     <Resource Language="JA"/>
-    <Resource Language="ES"/>
+    <Resource Language="KO"/>
+    <Resource Language="PL"/>
+    <Resource Language="PT"/>
+    <Resource Language="RU"/>
+    <Resource Language="TR"/>
+    <Resource Language="UK"/>
+    <Resource Language="ZH"/>
   </Resources>
 
   <!--
@@ -106,18 +115,198 @@
             <uap:DisplayName>Diffractor Media</uap:DisplayName>
             <uap:Logo>Assets\DiffractorFile.png</uap:Logo>
             <uap:SupportedFileTypes>
+              <!-- Generated from the named photo/video/audio entries in src/files_core.cpp.
+                   A packaged app can only be made default for types declared here, so the list
+                   is broad; Windows still requires the user to opt in per type. -->
+              <uap:FileType>.3fr</uap:FileType>
+              <uap:FileType>.3g2</uap:FileType>
+              <uap:FileType>.3gp</uap:FileType>
+              <uap:FileType>.3gp2</uap:FileType>
+              <uap:FileType>.3gpp</uap:FileType>
+              <uap:FileType>.aac</uap:FileType>
+              <uap:FileType>.aax</uap:FileType>
+              <uap:FileType>.ac3</uap:FileType>
+              <uap:FileType>.ac4</uap:FileType>
+              <uap:FileType>.adt</uap:FileType>
+              <uap:FileType>.adts</uap:FileType>
+              <uap:FileType>.aif</uap:FileType>
+              <uap:FileType>.aifc</uap:FileType>
+              <uap:FileType>.aiff</uap:FileType>
+              <uap:FileType>.amr</uap:FileType>
+              <uap:FileType>.ape</uap:FileType>
+              <uap:FileType>.apv</uap:FileType>
+              <uap:FileType>.arw</uap:FileType>
+              <uap:FileType>.asf</uap:FileType>
+              <uap:FileType>.ast</uap:FileType>
+              <uap:FileType>.au</uap:FileType>
+              <uap:FileType>.avc1</uap:FileType>
+              <uap:FileType>.avci</uap:FileType>
+              <uap:FileType>.avcs</uap:FileType>
+              <uap:FileType>.avi</uap:FileType>
+              <uap:FileType>.avif</uap:FileType>
+              <uap:FileType>.avifs</uap:FileType>
+              <uap:FileType>.bay</uap:FileType>
+              <uap:FileType>.bmp</uap:FileType>
+              <uap:FileType>.bmq</uap:FileType>
+              <uap:FileType>.brstm</uap:FileType>
+              <uap:FileType>.cap</uap:FileType>
+              <uap:FileType>.cda</uap:FileType>
+              <uap:FileType>.cdxl</uap:FileType>
+              <uap:FileType>.cin</uap:FileType>
+              <uap:FileType>.cine</uap:FileType>
+              <uap:FileType>.cr2</uap:FileType>
+              <uap:FileType>.cr3</uap:FileType>
+              <uap:FileType>.crm</uap:FileType>
+              <uap:FileType>.crw</uap:FileType>
+              <uap:FileType>.cs1</uap:FileType>
+              <uap:FileType>.dc2</uap:FileType>
+              <uap:FileType>.dcr</uap:FileType>
+              <uap:FileType>.divx</uap:FileType>
+              <uap:FileType>.dng</uap:FileType>
+              <uap:FileType>.dpx</uap:FileType>
+              <uap:FileType>.drf</uap:FileType>
+              <uap:FileType>.dsc</uap:FileType>
+              <uap:FileType>.dts</uap:FileType>
+              <uap:FileType>.dtshd</uap:FileType>
+              <uap:FileType>.dvr-ms</uap:FileType>
+              <uap:FileType>.eac3</uap:FileType>
+              <uap:FileType>.ec3</uap:FileType>
+              <uap:FileType>.erf</uap:FileType>
+              <uap:FileType>.evc</uap:FileType>
+              <uap:FileType>.f4v</uap:FileType>
+              <uap:FileType>.fff</uap:FileType>
+              <uap:FileType>.flac</uap:FileType>
+              <uap:FileType>.flv</uap:FileType>
+              <uap:FileType>.gif</uap:FileType>
+              <uap:FileType>.giff</uap:FileType>
+              <uap:FileType>.gsm</uap:FileType>
+              <uap:FileType>.h261</uap:FileType>
+              <uap:FileType>.h263</uap:FileType>
+              <uap:FileType>.h264</uap:FileType>
+              <uap:FileType>.h265</uap:FileType>
+              <uap:FileType>.heic</uap:FileType>
+              <uap:FileType>.heics</uap:FileType>
+              <uap:FileType>.heif</uap:FileType>
+              <uap:FileType>.heifs</uap:FileType>
+              <uap:FileType>.hevc</uap:FileType>
+              <uap:FileType>.ia</uap:FileType>
+              <uap:FileType>.iamf</uap:FileType>
+              <uap:FileType>.ico</uap:FileType>
+              <uap:FileType>.iff</uap:FileType>
+              <uap:FileType>.iiq</uap:FileType>
+              <uap:FileType>.ivf</uap:FileType>
+              <uap:FileType>.jfif</uap:FileType>
+              <uap:FileType>.jp2</uap:FileType>
               <uap:FileType>.jpe</uap:FileType>
               <uap:FileType>.jpeg</uap:FileType>
               <uap:FileType>.jpg</uap:FileType>
-              <uap:FileType>.png</uap:FileType>
-              <uap:FileType>.gif</uap:FileType>
-              <uap:FileType>.mp4</uap:FileType>
+              <uap:FileType>.jpx</uap:FileType>
+              <uap:FileType>.jxl</uap:FileType>
+              <uap:FileType>.k25</uap:FileType>
+              <uap:FileType>.kc2</uap:FileType>
+              <uap:FileType>.kdc</uap:FileType>
+              <uap:FileType>.lbm</uap:FileType>
+              <uap:FileType>.lc3</uap:FileType>
+              <uap:FileType>.m1v</uap:FileType>
+              <uap:FileType>.m2a</uap:FileType>
+              <uap:FileType>.m2p</uap:FileType>
+              <uap:FileType>.m2t</uap:FileType>
+              <uap:FileType>.m2ts</uap:FileType>
+              <uap:FileType>.m2v</uap:FileType>
+              <uap:FileType>.m4a</uap:FileType>
+              <uap:FileType>.m4b</uap:FileType>
+              <uap:FileType>.m4p</uap:FileType>
+              <uap:FileType>.m4r</uap:FileType>
+              <uap:FileType>.m4v</uap:FileType>
+              <uap:FileType>.mdc</uap:FileType>
+              <uap:FileType>.mef</uap:FileType>
+              <uap:FileType>.mfw</uap:FileType>
+              <uap:FileType>.mid</uap:FileType>
+              <uap:FileType>.midi</uap:FileType>
+              <uap:FileType>.mkv</uap:FileType>
+              <uap:FileType>.mng</uap:FileType>
+              <uap:FileType>.mos</uap:FileType>
               <uap:FileType>.mov</uap:FileType>
-              <uap:FileType>.avi</uap:FileType>
+              <uap:FileType>.mp2</uap:FileType>
               <uap:FileType>.mp3</uap:FileType>
-              <uap:FileType>.cr2</uap:FileType>
-              <uap:FileType>.cr3</uap:FileType>
+              <uap:FileType>.mp4</uap:FileType>
+              <uap:FileType>.mp4a</uap:FileType>
+              <uap:FileType>.mp4v</uap:FileType>
+              <uap:FileType>.mpa</uap:FileType>
+              <uap:FileType>.mpc</uap:FileType>
+              <uap:FileType>.mpe</uap:FileType>
+              <uap:FileType>.mpeg</uap:FileType>
+              <uap:FileType>.mpg</uap:FileType>
+              <uap:FileType>.mpv</uap:FileType>
+              <uap:FileType>.mrw</uap:FileType>
+              <uap:FileType>.ms-pvr</uap:FileType>
+              <uap:FileType>.mts</uap:FileType>
+              <uap:FileType>.mxf</uap:FileType>
+              <uap:FileType>.nef</uap:FileType>
+              <uap:FileType>.nrw</uap:FileType>
+              <uap:FileType>.obu</uap:FileType>
+              <uap:FileType>.oga</uap:FileType>
+              <uap:FileType>.ogg</uap:FileType>
+              <uap:FileType>.opus</uap:FileType>
+              <uap:FileType>.orf</uap:FileType>
+              <uap:FileType>.pbm</uap:FileType>
+              <uap:FileType>.pct</uap:FileType>
+              <uap:FileType>.pcx</uap:FileType>
+              <uap:FileType>.pef</uap:FileType>
+              <uap:FileType>.pgm</uap:FileType>
+              <uap:FileType>.pict</uap:FileType>
+              <uap:FileType>.png</uap:FileType>
+              <uap:FileType>.ppm</uap:FileType>
+              <uap:FileType>.psd</uap:FileType>
+              <uap:FileType>.psp</uap:FileType>
+              <uap:FileType>.ptx</uap:FileType>
+              <uap:FileType>.pxn</uap:FileType>
+              <uap:FileType>.qoa</uap:FileType>
+              <uap:FileType>.qtk</uap:FileType>
+              <uap:FileType>.r3d</uap:FileType>
+              <uap:FileType>.ra</uap:FileType>
+              <uap:FileType>.raf</uap:FileType>
+              <uap:FileType>.raw</uap:FileType>
+              <uap:FileType>.rdc</uap:FileType>
+              <uap:FileType>.rgb</uap:FileType>
+              <uap:FileType>.rm</uap:FileType>
+              <uap:FileType>.rmd</uap:FileType>
+              <uap:FileType>.rmi</uap:FileType>
+              <uap:FileType>.roq</uap:FileType>
+              <uap:FileType>.rw2</uap:FileType>
+              <uap:FileType>.rwl</uap:FileType>
+              <uap:FileType>.rwz</uap:FileType>
+              <uap:FileType>.sgi</uap:FileType>
+              <uap:FileType>.shn</uap:FileType>
+              <uap:FileType>.snd</uap:FileType>
+              <uap:FileType>.spx</uap:FileType>
+              <uap:FileType>.sr2</uap:FileType>
+              <uap:FileType>.srf</uap:FileType>
+              <uap:FileType>.srw</uap:FileType>
+              <uap:FileType>.sti</uap:FileType>
+              <uap:FileType>.swf</uap:FileType>
+              <uap:FileType>.tak</uap:FileType>
+              <uap:FileType>.targa</uap:FileType>
+              <uap:FileType>.tga</uap:FileType>
+              <uap:FileType>.tif</uap:FileType>
+              <uap:FileType>.tiff</uap:FileType>
+              <uap:FileType>.ts</uap:FileType>
+              <uap:FileType>.tta</uap:FileType>
+              <uap:FileType>.vc1</uap:FileType>
+              <uap:FileType>.vob</uap:FileType>
+              <uap:FileType>.voc</uap:FileType>
+              <uap:FileType>.vqf</uap:FileType>
+              <uap:FileType>.wav</uap:FileType>
+              <uap:FileType>.webm</uap:FileType>
               <uap:FileType>.webp</uap:FileType>
+              <uap:FileType>.wm</uap:FileType>
+              <uap:FileType>.wma</uap:FileType>
+              <uap:FileType>.wmv</uap:FileType>
+              <uap:FileType>.wv</uap:FileType>
+              <uap:FileType>.x3f</uap:FileType>
+              <uap:FileType>.xbm</uap:FileType>
+              <uap:FileType>.xpm</uap:FileType>
+              <uap:FileType>.yuv</uap:FileType>
             </uap:SupportedFileTypes>
           </uap:FileTypeAssociation>
         </uap:Extension>

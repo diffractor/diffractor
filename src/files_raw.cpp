@@ -18,7 +18,17 @@
 #define USE_DNGSDK 1
 
 #include "dng/dng_host.h"
+#include "dng/dng_tag_values.h"
 #include <LibRaw/libraw.h>
+
+// LibRaw hands DNG 1.7 JPEG-XL images (TIFF compression 52546) to the SDK only while qDNGSupportJXL
+// is visible and the SDK is 1.7 or newer - see valid_for_dngsdk in LibRaw's dngsdk_glue.cpp. In SDK
+// 1.7 that macro survives only as a deprecated-flag sentinel, so an SDK upgrade could remove it and
+// silently turn every JPEG-XL DNG into an open failure with no other symptom.
+#ifndef qDNGSupportJXL
+#error "qDNGSupportJXL is not visible - LibRaw will reject JPEG XL DNG files"
+#endif
+static_assert(dngVersion_Current >= dngVersion_1_7_0_0, "DNG SDK predates JPEG XL DNG support");
 
 struct id2hr_t
 {
@@ -310,7 +320,7 @@ static const id2hr_t* lookup_id2hr(const uint64_t id, const id2hr_t* table, cons
 	return nullptr;
 }
 
-static ui::orientation transate_libraw_orientation(const int flip)
+static ui::orientation translate_libraw_orientation(const int flip)
 {
 	// 3 if requires 180-deg rotation; 5 if 90 deg counterclockwise, 6 if 90 deg clockwise
 	auto result = flip;
@@ -323,8 +333,42 @@ static void add_metadata(metadata_kv_list& kv, const std::string_view name, cons
 {
 	if (!name.empty() && !val.empty())
 	{
-		kv.emplace_back(str::cache(name), val);
+		auto& row = kv.emplace_back(std::string(name), std::string(val));
+		row.depth = 1;
 	}
+}
+
+// LibRaw reports one long flat list, so it is grouped by subject here to give the block the same
+// shape the other metadata standards have.
+static void add_section(metadata_kv_list& kv, const std::string_view name)
+{
+	auto& row = kv.emplace_back(std::string(name), std::string{});
+	row.container = true;
+	row.id = std::format("raw.{}", name);
+}
+
+// Most sections are conditional on the camera and format, so the ones that gathered nothing are
+// removed rather than shown as empty headings. The survivors report how much they hold.
+static void drop_empty_sections(metadata_kv_list& kv)
+{
+	metadata_kv_list kept;
+	kept.reserve(kv.size());
+
+	for (size_t i = 0; i < kv.size(); ++i)
+	{
+		if (kv[i].container)
+		{
+			size_t count = 0;
+			while (i + 1 + count < kv.size() && !kv[i + 1 + count].container) ++count;
+			if (count == 0) continue;
+
+			kv[i].key = std::format("{} ({})", kv[i].key, count);
+		}
+
+		kept.emplace_back(std::move(kv[i]));
+	}
+
+	kv = std::move(kept);
 }
 
 static void add_metadata(metadata_kv_list& kv, const std::string_view name, const std::string_view val1,
@@ -346,14 +390,34 @@ static void add_id2hr_metadata(metadata_kv_list& kv, const std::string_view name
 		add_metadata(kv, name, str::to_string(id));
 }
 
-static void populate_raw_metadata(file_scan_result& result, const libraw_data_t& data)
+// The colour filter array LibRaw inferred, spelled from the 2x2 repeat of the `filters` mask.
+static std::string cfa_pattern(const libraw_iparams_t& P1)
+{
+	if (P1.filters == 0) return {};
+	if (P1.filters == 9) return "X-Trans (6x6)";
+	if (P1.filters == 1) return "monochrome or variable";
+
+	std::string result;
+
+	for (auto row = 0; row < 2; ++row)
+	{
+		for (auto col = 0; col < 2; ++col)
+		{
+			result += P1.cdesc[(P1.filters >> (((row << 1 & 14) + (col & 1)) << 1)) & 3];
+		}
+	}
+
+	return result;
+}
+
+static void populate_raw_metadata(file_scan_result& result, const libraw_data_t& data, const scan_intent intent)
 {
 	result.width = data.sizes.width;
 	result.height = data.sizes.height;
 
 	if (data.sizes.flip)
 	{
-		result.orientation = transate_libraw_orientation(data.sizes.flip);
+		result.orientation = translate_libraw_orientation(data.sizes.flip);
 	}
 
 	if (data.idata.xmpdata && data.idata.xmplen > 0)
@@ -361,8 +425,24 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 		result.metadata.xmp.assign(data.idata.xmpdata, data.idata.xmpdata + data.idata.xmplen);
 	}
 
-	const auto created = df::date_t::from_time_t(data.other.timestamp);
-	if (created.is_valid()) result.created_utc = created;
+	// LibRaw builds data.other.timestamp by feeding the EXIF DateTimeOriginal (a
+	// naive local time with no timezone) through mktime(), which applies the
+	// process's local timezone. Interpreting that epoch as UTC would shift the
+	// value by the machine's UTC offset, making the result machine-dependent (and
+	// inconsistent with the JPEG/EXIF path, which stores the naive time as-is).
+	// Invert the mktime() with localtime_s() to recover the original naive fields
+	// so the timestamp is identical regardless of the host timezone.
+	if (data.other.timestamp != 0)
+	{
+		tm local_tm{};
+
+		if (localtime_s(&local_tm, &data.other.timestamp) == 0)
+		{
+			const auto created = df::date_t(local_tm.tm_year + 1900, local_tm.tm_mon + 1, local_tm.tm_mday,
+			                                local_tm.tm_hour, local_tm.tm_min, local_tm.tm_sec);
+			if (created.is_valid()) result.created_utc = created;
+		}
+	}
 
 	if (!str::is_empty(data.idata.cdesc)) result.pixel_format = str::trim_and_cache(data.idata.cdesc);
 	if (!str::is_empty(data.idata.make)) result.camera_manufacturer = str::trim_and_cache(data.idata.make);
@@ -384,6 +464,9 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 		result.gps._latitude = (gps.latref == 'S') ? -lat : lat;
 		result.gps._longitude = (gps.longref == 'W') ? -lon : lon;
 	}
+
+	// Everything below only feeds the verbose block, so indexing stops here.
+	if (intent != scan_intent::inspect) return;
 
 	const auto& P1 = data.idata;
 	const auto& P2 = data.other;
@@ -407,6 +490,8 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 	const auto ColorSpaceName = find_name_by_id(ColorSpaceToStr, P3.ColorSpace);
 
 	metadata_kv_list kv;
+
+	add_section(kv, "Identification");
 
 	if (!str::is_empty(C.OriginalRawFileName))
 		add_metadata(kv, "OriginalRawFileName", C.OriginalRawFileName);
@@ -462,6 +547,22 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 	{
 		add_metadata(kv, "Owner", str::trim(P2.artist));
 	}
+	if (!str::is_empty(P1.software))
+	{
+		add_metadata(kv, "Software", str::trim(P1.software));
+	}
+	if (!str::is_empty(P3.firmware))
+	{
+		add_metadata(kv, "Firmware", str::trim(P3.firmware));
+	}
+	if (P2.shot_order)
+	{
+		add_metadata(kv, "Shot order", str::to_string(P2.shot_order));
+	}
+	if (P1.is_foveon)
+	{
+		add_metadata(kv, "Foveon sensor", "yes");
+	}
 
 	if (P1.dng_version)
 	{
@@ -473,6 +574,7 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 	}
 
 
+	add_section(kv, "Lens (Exif)");
 	add_metadata(kv, "MinFocal", std::format("{:0.1} mm", exifLens.MinFocal));
 	add_metadata(kv, "MaxFocal", std::format("{:0.1} mm", exifLens.MaxFocal));
 	add_metadata(kv, "MaxAp @MinFocal", std::format("f/{:0.1}", exifLens.MaxAp4MinFocal));
@@ -484,6 +586,7 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 	add_metadata(kv, "Lens", exifLens.Lens);
 
 
+	add_section(kv, "Shooting");
 	add_metadata(kv, "DriveMode", str::to_string(ShootingInfo.DriveMode));
 	add_metadata(kv, "FocusMode", str::to_string(ShootingInfo.FocusMode));
 	add_metadata(kv, "MeteringMode", str::to_string(ShootingInfo.MeteringMode));
@@ -491,6 +594,8 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 	add_metadata(kv, "ExposureMode", str::to_string(ShootingInfo.ExposureMode));
 	add_metadata(kv, "ExposureProgram", str::to_string(ShootingInfo.ExposureProgram));
 	add_metadata(kv, "ImageStabilization", str::to_string(ShootingInfo.ImageStabilization));
+
+	add_section(kv, "Lens (makernotes)");
 
 	if (!str::is_empty(mnLens.body))
 	{
@@ -587,6 +692,14 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 	add_metadata(kv, "AttachmentID", str::to_string(mnLens.AttachmentID));
 	add_metadata(kv, "Attachment", mnLens.Attachment);
 
+	if (mnLens.MinFocusDistance > 0.f)
+		add_metadata(kv, "MinFocusDistance", std::format("{:0.2} m", mnLens.MinFocusDistance));
+	if (mnLens.FocusRangeIndex > 0.f)
+		add_metadata(kv, "FocusRangeIndex", std::format("{:0.2}", mnLens.FocusRangeIndex));
+	if (mnLens.FocalUnits)
+		add_metadata(kv, "FocalUnits", std::format("{} per mm", mnLens.FocalUnits));
+
+	add_section(kv, "Exposure");
 	add_metadata(kv, "ISO speed", str::to_string(static_cast<int>(P2.iso_speed)));
 	if (P3.real_ISO > 0.1f)
 		add_metadata(kv, "real ISO speed", str::to_string(static_cast<int>(P3.real_ISO)));
@@ -600,6 +713,21 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 
 	add_metadata(kv, "Aperture", std::format("f/{:0.1}", P2.aperture));
 	add_metadata(kv, "Focal length", std::format("{:0.1} mm", P2.focal_len));
+
+	if (P3.exifExposureIndex > 0.f)
+		add_metadata(kv, "Exposure index", std::format("{:0.1}", P3.exifExposureIndex));
+	if (P3.ExposureCalibrationShift != 0.f)
+		add_metadata(kv, "Exposure calibration shift", std::format("{:0.3} EV", P3.ExposureCalibrationShift));
+	if (P3.FlashEC != 0.f)
+		add_metadata(kv, "Flash exposure compensation", std::format("{:0.2} EV", P3.FlashEC));
+	if (C.flash_used != 0.f)
+		add_metadata(kv, "Flash used", std::format("{:0.3}", C.flash_used));
+	if (C.canon_ev != 0.f)
+		add_metadata(kv, "Canon EV", std::format("{:0.3}", C.canon_ev));
+	if (P3.afcount > 0)
+		add_metadata(kv, "Autofocus records", str::to_string(P3.afcount));
+
+	add_section(kv, "Temperature");
 
 	if (P3.exifAmbientTemperature > -273.15f)
 		add_metadata(kv, "Ambient temperature (exif data)", std::format("{:.2f}°C", P3.exifAmbientTemperature));
@@ -618,6 +746,39 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 	if (P3.FlashGN > 1.0f)
 		add_metadata(kv, "Flash Guide Number", std::format("{:.2f}", P3.FlashGN));
 
+	add_section(kv, "Environment");
+
+	if (P3.exifHumidity > 0.f)
+		add_metadata(kv, "Humidity", std::format("{:.1f} %", P3.exifHumidity));
+	if (P3.exifPressure > 0.f)
+		add_metadata(kv, "Pressure", std::format("{:.1f} hPa", P3.exifPressure));
+	if (P3.exifWaterDepth != 0.f)
+		add_metadata(kv, "Water depth", std::format("{:.2f} m", P3.exifWaterDepth));
+	if (P3.exifAcceleration != 0.f)
+		add_metadata(kv, "Acceleration", std::format("{:.3f}", P3.exifAcceleration));
+	if (P3.exifCameraElevationAngle != 0.f)
+		add_metadata(kv, "Camera elevation angle", std::format("{:.2f}°", P3.exifCameraElevationAngle));
+
+	add_section(kv, "GPS");
+
+	if (P2.parsed_gps.gpsparsed)
+	{
+		const auto& G = P2.parsed_gps;
+		add_metadata(kv, "Latitude", std::format("{:.0f}° {:.0f}' {:.2f}\" {}", G.latitude[0], G.latitude[1],
+		                                          G.latitude[2], G.latref ? G.latref : '?'));
+		add_metadata(kv, "Longitude", std::format("{:.0f}° {:.0f}' {:.2f}\" {}", G.longitude[0], G.longitude[1],
+		                                           G.longitude[2], G.longref ? G.longref : '?'));
+		add_metadata(kv, "Altitude", std::format("{:.2f} m{}", G.altitude, G.altref ? " (below sea level)" : ""));
+		add_metadata(kv, "GPS timestamp", std::format("{:02.0f}:{:02.0f}:{:05.2f} UTC", G.gpstimestamp[0],
+		                                              G.gpstimestamp[1], G.gpstimestamp[2]));
+
+		// 'A' is an active fix; 'V' means the receiver reported the position as unreliable.
+		if (G.gpsstatus)
+			add_metadata(kv, "Fix status", G.gpsstatus == 'A' ? "A (active)" : std::format("{}", G.gpsstatus));
+	}
+
+	add_section(kv, "Color profile");
+
 	if (C.profile)
 		add_metadata(kv, "Embedded ICC profile", std::format("yes, {} bytes", C.profile_length));
 	else
@@ -626,7 +787,10 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 	if (C.dng_levels.baseline_exposure > -999.f)
 		add_metadata(kv, "Baseline exposure", std::format("{:.3f}", C.dng_levels.baseline_exposure));
 
+	add_section(kv, "Raw image");
 	add_metadata(kv, "Number of raw images", str::to_string(P1.raw_count));
+
+	add_section(kv, "Fujifilm");
 
 	if (Fuji.DriveMode != -1)
 		add_id2hr_metadata(kv, "Fuji Drive Mode", Fuji.DriveMode, FujiDriveModes);
@@ -665,6 +829,8 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 		             std::format("{}", Fuji.DRangePriorityFixed),
 		             Fuji.DRangePriorityFixed == 1 ? "Weak" : "Strong");
 
+	add_section(kv, "Sizes");
+
 	if (S.pixel_aspect != 1)
 		add_metadata(kv, "Pixel Aspect Ratio", std::format("{:0.6}", S.pixel_aspect));
 
@@ -689,6 +855,43 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 	add_metadata(kv, "Output size", std::format("{:4} x {}", S.iwidth, S.iheight));
 	add_metadata(kv, "Image flip", str::to_string(S.flip));
 
+	if (S.top_margin || S.left_margin)
+		add_metadata(kv, "Active area margin", std::format("left {}, top {}", S.left_margin, S.top_margin));
+	if (S.raw_pitch)
+		add_metadata(kv, "Raw row pitch", std::format("{} bytes", S.raw_pitch));
+	if (S.raw_aspect)
+		add_metadata(kv, "Raw aspect", str::to_string(S.raw_aspect));
+
+	if (S.raw_inset_crops[1].cwidth)
+	{
+		add_metadata(kv, "Raw inset 2, width x height",
+		             std::format("{:4} x {}", S.raw_inset_crops[1].cwidth, S.raw_inset_crops[1].cheight));
+	}
+
+	if (C.dng_levels.default_crop[2] || C.dng_levels.default_crop[3])
+	{
+		add_metadata(kv, "DNG default crop", std::format("{} x {} at ({}, {})", C.dng_levels.default_crop[2],
+		                                                 C.dng_levels.default_crop[3], C.dng_levels.default_crop[0],
+		                                                 C.dng_levels.default_crop[1]));
+	}
+
+	add_section(kv, "Thumbnails");
+
+	if (T.tlength)
+	{
+		add_metadata(kv, "Preferred thumbnail", std::format("{} x {}, {} bytes, {} colors", T.twidth, T.theight,
+		                                                    T.tlength, T.tcolors));
+	}
+
+	for (auto i = 0; i < data.thumbs_list.thumbcount && i < LIBRAW_THUMBNAIL_MAXCOUNT; ++i)
+	{
+		const auto& t = data.thumbs_list.thumblist[i];
+		add_metadata(kv, std::format("Thumbnail {}", i + 1),
+		             std::format("{} x {}, {} bytes at offset {}", t.twidth, t.theight, t.tlength, t.toffset));
+	}
+
+	add_section(kv, "Canon");
+
 	if (Canon.RecordMode)
 		add_id2hr_metadata(kv, "Canon record mode", Canon.RecordMode, CanonRecordModes);
 	if (Canon.SensorWidth)
@@ -696,12 +899,59 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 	if (Canon.SensorHeight)
 		add_metadata(kv, "SensorHeight", str::to_string(Canon.SensorHeight));
 
+	add_section(kv, "Hasselblad");
+
 	if (Hasselblad.BaseISO)
 		add_metadata(kv, "Hasselblad base ISO", str::to_string(Hasselblad.BaseISO));
 	if (Hasselblad.Gain)
 		add_metadata(kv, "Hasselblad gain", str::to_string(Hasselblad.Gain, 3));
 
+	add_section(kv, "Raw color data");
 	add_metadata(kv, "Raw colors", str::to_string(P1.colors));
+	add_metadata(kv, "Color description", P1.cdesc);
+
+	if (const auto cfa = cfa_pattern(P1); !cfa.empty())
+	{
+		add_metadata(kv, "CFA pattern", cfa);
+	}
+
+	if (C.raw_bps)
+		add_metadata(kv, "Bits per raw pixel", str::to_string(C.raw_bps));
+	if (C.maximum)
+		add_metadata(kv, "White level", str::to_string(C.maximum));
+	if (C.data_maximum)
+		add_metadata(kv, "Highest sampled value", str::to_string(C.data_maximum));
+	if (C.linear_max[0])
+	{
+		add_metadata(kv, "Linear maximum", std::format("{} {} {} {}", C.linear_max[0], C.linear_max[1],
+		                                               C.linear_max[2], C.linear_max[3]));
+	}
+
+	if (C.cam_mul[0] > 0.f)
+	{
+		add_metadata(kv, "As shot white balance", std::format("{:0.4} {:0.4} {:0.4} {:0.4}", C.cam_mul[0],
+		                                                      C.cam_mul[1], C.cam_mul[2], C.cam_mul[3]));
+		add_metadata(kv, "White balance applied", C.as_shot_wb_applied ? "yes" : "no");
+	}
+
+	if (C.pre_mul[0] > 0.f)
+	{
+		add_metadata(kv, "Camera daylight multipliers", std::format("{:0.4} {:0.4} {:0.4} {:0.4}", C.pre_mul[0],
+		                                                            C.pre_mul[1], C.pre_mul[2], C.pre_mul[3]));
+	}
+
+	if (C.dng_levels.asshotneutral[0] > 0.f)
+	{
+		add_metadata(kv, "DNG AsShotNeutral", std::format("{:0.4} {:0.4} {:0.4}", C.dng_levels.asshotneutral[0],
+		                                                  C.dng_levels.asshotneutral[1],
+		                                                  C.dng_levels.asshotneutral[2]));
+	}
+
+	if (C.dng_levels.LinearResponseLimit != 0.f && C.dng_levels.LinearResponseLimit != 1.f)
+		add_metadata(kv, "Linear response limit", std::format("{:0.4}", C.dng_levels.LinearResponseLimit));
+
+	if (C.ExifColorSpace != LIBRAW_COLORSPACE_Unknown)
+		add_metadata(kv, "Exif color space", str::to_string(C.ExifColorSpace));
 
 	if (Canon.ChannelBlackLevel[0])
 	{
@@ -719,6 +969,8 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 
 	add_metadata(kv, "Color space (makernotes)", std::format("{}, {}", P3.ColorSpace, ColorSpaceName));
 
+
+	add_section(kv, "Sony");
 
 	if (Sony.PixelShiftGroupID)
 	{
@@ -750,6 +1002,8 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 		add_metadata(kv, "SequenceLength2", std::format("{} file(s)", Sony.Sony0x9400_SequenceLength2));
 	}
 
+	drop_empty_sections(kv);
+
 	result.libraw_metadata = kv;
 }
 
@@ -761,7 +1015,7 @@ static ui::orientation calc_orientation(sizei image_extent, const ui::orientatio
 
 	if (full_image_extent.cx != full_image_extent.cy)
 	{
-		const auto full_orientation = transate_libraw_orientation(image_data.sizes.flip);
+		const auto full_orientation = translate_libraw_orientation(image_data.sizes.flip);
 
 		if (flips_xy(full_orientation))
 		{
@@ -802,18 +1056,20 @@ static ui::surface_ptr thumb_to_surface(const libraw_thumbnail_t& thumbnail, con
 			return result;
 		}
 
-		const auto expected_size = thumbnail.theight * thumbnail.twidth * static_cast<uint32_t>(tcolors);
+		// 64-bit so the product of two file-supplied 16-bit dimensions cannot wrap and
+		// defeat the bounds check below.
+		const auto expected_size = static_cast<uint64_t>(thumbnail.theight) * thumbnail.twidth * tcolors;
 
 		if (expected_size <= thumbnail.tlength)
 		{
-			result = std::make_shared<ui::surface>();
+			auto temp_surface = std::make_shared<ui::surface>();
 
-			if (result->alloc(thumbnail.twidth, thumbnail.theight, ui::texture_format::RGB, orientation))
+			if (temp_surface->alloc(thumbnail.twidth, thumbnail.theight, ui::texture_format::RGB, orientation))
 			{
 				for (auto y = 0; y < thumbnail.theight; ++y)
 				{
-					const auto* src = thumbnail.thumb + y * thumbnail.twidth * tcolors;
-					auto* dst = result->pixels_line(y);
+					const auto* src = thumbnail.thumb + static_cast<size_t>(y) * thumbnail.twidth * tcolors;
+					auto* dst = temp_surface->pixels_line(y);
 
 					for (auto x = 0; x < thumbnail.twidth; ++x)
 					{
@@ -844,6 +1100,9 @@ static ui::surface_ptr thumb_to_surface(const libraw_thumbnail_t& thumbnail, con
 						}
 					}
 				}
+
+				// Only publish the surface once it is fully allocated and written.
+				result = std::move(temp_surface);
 			}
 		}
 	}
@@ -855,7 +1114,7 @@ static ui::surface_ptr thumb_to_surface(const libraw_thumbnail_t& thumbnail, con
 // protected section. This thin subclass re-exposes them so the full-image
 // decode path can replicate dcraw_make_mem_image's auto-brightness while
 // reading imgdata.image directly (avoiding an extra full-frame copy).
-class libraw_ex : public LibRaw
+class libraw_ex final : public LibRaw
 {
 public:
 	using LibRaw::gamma_curve;
@@ -864,8 +1123,10 @@ public:
 
 struct raw_processor
 {
-	std::unique_ptr<libraw_ex> processor;
+	// Declared first so the host outlives the LibRaw instance: ~LibRaw runs recycle(),
+	// which releases the dng_negative/dng_image it allocated through this host.
 	std::unique_ptr<dng_host> dng;
+	std::unique_ptr<libraw_ex> processor;
 };
 
 static raw_processor create_processor()
@@ -875,10 +1136,13 @@ static raw_processor create_processor()
 
 	//iProcessor.set_exifparser_handler(exif_callback, &context);
 
+	// Installing the host is what activates the Adobe SDK - LibRaw already defaults
+	// rawparams.use_dngsdk to LIBRAW_DNG_DEFAULT (float, linear, deflate and 8-bit DNG), and unpack()
+	// additionally routes DNG over 2GB, lossy DNG and JPEG-XL DNG through it. Everything else, notably
+	// ordinary lossless-JPEG Bayer DNG, stays on LibRaw's faster native decoder: widening this to
+	// LIBRAW_DNG_ALL would move the most common case onto the slower path for no accuracy gain.
 	result.dng = std::make_unique<dng_host>();
 	result.processor->set_dng_host(result.dng.get());
-	//result.processor->imgdata.params.use_dngsdk = LIBRAW_DNG_ALL;
-	// LIBRAW_DNG_FLOAT | LIBRAW_DNG_LINEAR | LIBRAW_DNG_XTRANS | LIBRAW_DNG_OTHER;
 
 	// Apply the camera's white balance when decoding the full image, otherwise
 	// the output has a strong colour cast (LibRaw defaults to no white balance).
@@ -892,6 +1156,8 @@ static raw_processor create_processor()
 // format we cannot decode - notably Canon CR3's H.265 preview, which is a proprietary
 // CISZ-wrapped HEVC blob that LibRaw flags but does not decode. CR3 files also embed a
 // standard JPEG thumbnail, so we pick that instead of trying to decode the HEVC preview.
+// thumbs_list entries carry LIBRAW_INTERNAL_THUMBNAIL_* codes, a different enum from the
+// LIBRAW_THUMBNAIL_* values in imgdata.thumbnail, so the two spellings below are deliberate.
 static int find_largest_jpeg_thumb(const libraw_thumbnail_list_t& list)
 {
 	int best = -1;
@@ -918,8 +1184,33 @@ static int find_largest_jpeg_thumb(const libraw_thumbnail_list_t& list)
 	return best;
 }
 
+// Unpacks the embedded thumbnail, preferring a format we can decode. The default (largest)
+// thumbnail may be one we cannot - notably Canon CR3's H.265 preview - in which case fall
+// back to the largest embedded JPEG. Returns false only when no thumbnail could be unpacked.
+static bool unpack_decodable_thumb(libraw_ex& processor)
+{
+	if (processor.unpack_thumb() != LIBRAW_SUCCESS)
+	{
+		return false;
+	}
+
+	const auto format = processor.imgdata.thumbnail.tformat;
+
+	if (format != LIBRAW_THUMBNAIL_JPEG && format != LIBRAW_THUMBNAIL_BITMAP)
+	{
+		const auto jpeg_index = find_largest_jpeg_thumb(processor.imgdata.thumbs_list);
+
+		// unpack_thumb_ex overwrites the imgdata.thumbnail descriptor before it decodes, so on failure
+		// tlength describes the JPEG entry while thumb still holds the old, undecodable payload.
+		// Report that rather than leave the caller to read the mismatched pair.
+		return jpeg_index >= 0 && processor.unpack_thumb_ex(jpeg_index) == LIBRAW_SUCCESS;
+	}
+
+	return true;
+}
+
 file_scan_result files::scan_raw(const df::file_path path, const std::string_view xmp_sidecar, const bool load_thumb,
-                                 const sizei max)
+                                 const sizei max, const scan_intent intent)
 {
 	file_scan_result result;
 	const auto w = platform::to_file_system_path(path);
@@ -929,28 +1220,14 @@ file_scan_result files::scan_raw(const df::file_path path, const std::string_vie
 	{
 		if (rp.processor->adjust_sizes_info_only() == LIBRAW_SUCCESS)
 		{
-			populate_raw_metadata(result, rp.processor->imgdata);
+			populate_raw_metadata(result, rp.processor->imgdata, intent);
 			result.success = true;
 		}
 
 		if (load_thumb)
 		{
-			if (rp.processor->unpack_thumb() == LIBRAW_SUCCESS)
+			if (unpack_decodable_thumb(*rp.processor))
 			{
-				// The default (largest) thumbnail may be a format we cannot decode - notably
-				// Canon CR3's H.265 preview. In that case fall back to the largest embedded
-				// JPEG thumbnail, which reuses the standard JPEG decode path below.
-				if (rp.processor->imgdata.thumbnail.tformat != LIBRAW_THUMBNAIL_JPEG &&
-					rp.processor->imgdata.thumbnail.tformat != LIBRAW_THUMBNAIL_BITMAP)
-				{
-					const auto jpeg_index = find_largest_jpeg_thumb(rp.processor->imgdata.thumbs_list);
-
-					if (jpeg_index >= 0)
-					{
-						rp.processor->unpack_thumb_ex(jpeg_index);
-					}
-				}
-
 				const auto& t = rp.processor->imgdata.thumbnail;
 
 				if (LIBRAW_THUMBNAIL_JPEG == t.tformat &&
@@ -996,12 +1273,10 @@ file_load_result load_raw(const df::file_path path, const bool can_load_preview)
 
 	if (rp.processor->open_file(w.c_str()) == LIBRAW_SUCCESS)
 	{
-		file_scan_result md;
 		const auto& image_data = rp.processor->imgdata;
-		populate_raw_metadata(md, image_data);
 
 		// The thumbnail often large enough, lets just use it :)
-		if (can_load_preview && rp.processor->unpack_thumb() == LIBRAW_SUCCESS)
+		if (can_load_preview && unpack_decodable_thumb(*rp.processor))
 		{
 			const auto& thumbnail = image_data.thumbnail;
 
@@ -1045,14 +1320,34 @@ file_load_result load_raw(const df::file_path path, const bool can_load_preview)
 			{
 				if (rp.processor->dcraw_process() == LIBRAW_SUCCESS)
 				{
-					int width, height, colors, bps;
-					rp.processor->get_mem_image_format(&width, &height, &colors, &bps);
-
 					const auto& libraw_internal_data = rp.processor->libraw_internal_data;
 					const auto& S = image_data.sizes;
 					const auto& IO = libraw_internal_data.internal_output_params;
 					const auto& P1 = image_data.idata;
 					const auto& O = image_data.params;
+
+					// get_mem_image_format() reports P1.colors, so read it directly rather
+					// than round-tripping through dimensions we do not use (it also swaps
+					// width/height for flipped images, which we handle via orientation).
+					const auto colors = P1.colors;
+
+					if (colors != 1 && colors < 3)
+					{
+						df::log(__FUNCTION__, std::format("unsupported RAW channel count {} for {}", colors, path.name()));
+						return result;
+					}
+
+					// After dcraw_process, imgdata.image holds exactly sizes.height rows of
+					// sizes.width pixels (pre_interpolate, fuji_rotate and stretch all keep
+					// width/height in step with the allocation), so the raster below can walk
+					// it linearly. Guard anyway: a null, empty or shrunk image (half_size,
+					// aber or threshold set) would otherwise read out of bounds.
+					if (!image_data.image || S.width <= 0 || S.height <= 0 ||
+						S.iwidth != S.width || S.iheight != S.height)
+					{
+						df::log(__FUNCTION__, std::format("empty RAW image for {}", path.name()));
+						return result;
+					}
 
 					// Read imgdata.image[] directly into the surface (skipping
 					// dcraw_make_mem_image to avoid a second full-frame copy). This block
@@ -1062,7 +1357,9 @@ file_load_result load_raw(const df::file_path path, const bool can_load_preview)
 					if (libraw_internal_data.output_data.histogram)
 					{
 						int val, total, t_white = 0x2000, c;
-						int perc = df::round(S.width * S.height * O.auto_bright_thr); /* 99th percentile white level */
+						/* 99th percentile white level */
+						auto perc = df::round(
+							static_cast<double>(S.width) * static_cast<double>(S.height) * O.auto_bright_thr);
 
 						if (IO.fuji_width) perc /= 2;
 
@@ -1082,16 +1379,16 @@ file_load_result load_raw(const df::file_path path, const bool can_load_preview)
 						rp.processor->gamma_curve(O.gamm[0], O.gamm[1], 2, df::round((t_white << 3) / O.bright));
 					}
 
-					auto s = std::make_shared<ui::surface>();
-					const auto orientation = transate_libraw_orientation(image_data.sizes.flip);
-					const auto* const pixel_buffer = s->alloc(S.width, S.height, ui::texture_format::RGB, orientation);
-					const auto stride = s->stride();
-					result.s = std::move(s);
+					auto temp_surface = std::make_shared<ui::surface>();
+					const auto orientation = translate_libraw_orientation(S.flip);
+					auto* const pixel_buffer = temp_surface->alloc(S.width, S.height, ui::texture_format::RGB,
+					                                               orientation);
 
 					if (pixel_buffer)
 					{
+						const auto stride = temp_surface->stride();
 						const auto& color_curve = image_data.color.curve;
-						int i = 0;
+						size_t i = 0;
 
 						for (auto y = 0; y < S.height; y++)
 						{
@@ -1100,11 +1397,21 @@ file_load_result load_raw(const df::file_path path, const bool can_load_preview)
 							for (auto x = 0; x < S.width; x++)
 							{
 								const auto* const id = image_data.image[i++];
-								*bufp++ = color_curve[id[2]] >> 8 | 0xFF00 & color_curve[id[1]] | 0xFF0000 &
-									color_curve[id[0]] << 8;
+								if (colors == 1)
+								{
+									const auto gray = color_curve[id[0]] >> 8;
+									*bufp++ = ui::rgb(gray, gray, gray);
+								}
+								else
+								{
+									*bufp++ = color_curve[id[2]] >> 8 | 0xFF00 & color_curve[id[1]] | 0xFF0000 &
+										color_curve[id[0]] << 8;
+								}
 							}
 						}
 
+						// Only publish the surface once it is fully allocated and written.
+						result.s = std::move(temp_surface);
 						result.success = true;
 					}
 				}

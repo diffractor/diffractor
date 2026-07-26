@@ -1,3 +1,42 @@
+msgid "Fit"
+msgstr "Přizpůsobit"
+
+msgid "Zoom in"
+msgstr "Přiblížit"
+
+msgid "Zoom out"
+msgstr "Oddálit"
+
+msgid "Zoom"
+msgstr "Zvětšení"
+
+msgid "Fit Width"
+msgstr "Přizpůsobit šířce"
+
+msgid "Fill"
+msgstr "Vyplnit"
+
+msgid "100% (1:1)"
+msgstr "100 % (1:1)"
+
+msgid "Audio: {}"
+msgstr "Zvuk: {}"
+
+msgid "Audio track {}"
+msgstr "Zvuková stopa {}"
+
+msgid "Audio tracks"
+msgstr "Zvukové stopy"
+
+msgid "Audio output"
+msgstr "Zvukový výstup"
+
+msgid "commentary"
+msgstr "komentář"
+
+msgid "audio description"
+msgstr "audiopopis"
+
 # Diffractor translation
 msgid ""
 msgstr ""
@@ -13,29 +52,37 @@ msgstr ""
 "Plural-Forms: nplurals=3; plural=(n==1 ? 0 : n>=2 && n<=4 ? 1 : 2);\n"
 "X-Generator: Poedit 3.4.4\n"
 
-msgid ""
-"Diffractor provides simple tools to make you more productive when sorting, "
-"comparing and organizing photos or videos."
-msgstr ""
-"Difraktor poskytuje jednoduché nástroje, díky kterým budete při třídění, "
-"porovnávání a organizování fotografií nebo videí produktivnější."
+msgid "Diffractor organizes photos, videos and music where they already are. You choose the folders that make up your collection; indexing them adds fast search, duplicate detection and metadata editing without moving or copying anything."
+msgstr "Diffractor organizuje fotografie, videa a hudbu tam, kde už jsou. Vyberete složky, které tvoří vaši sbírku; jejich indexace přidá rychlé vyhledávání, detekci duplicit a úpravu metadat, aniž by se cokoli přesouvalo nebo kopírovalo."
+
+msgid "Diagnostics information was sent to Diffractor HQ."
+msgstr "Diagnostické informace byly odeslány do Diffractor HQ."
+
+msgid "Releases - Diffractor"
+msgstr "Vydání - Diffractor"
+
+msgid "Workflow Tags"
+msgstr "Značky pracovního postupu"
+
+msgid "Configure favorite tags."
+msgstr "Nastavit oblíbené značky."
 
 msgid "Add folder"
 msgstr "Přidat složku"
 
 msgid ""
-"Items in this date range will be modified to start at a new date and time. "
-"The time gap between items will be preserved."
+"Capture metadata and the Windows file created time will be shifted to start "
+"at a new local date and time."
 msgstr ""
-"Položky v tomto časovém období budou upraveny tak, aby začínaly v novém datu"
-" a čase. Časový odstup mezi položkami bude zachován."
+"Metadata pořízení a čas vytvoření souboru ve Windows se posunou tak, aby "
+"začínaly novým místním datem a časem."
 
 msgid ""
-"For example, if you have 2 photos taken one hour apart, after the update "
-"they will still be one hour apart."
+"Time gaps between dated items are preserved. Items without a known date "
+"receive the new starting date."
 msgstr ""
-"Pokud máte například 2 fotografie pořízené s hodinovým odstupem, po "
-"aktualizaci budou stále s hodinovým odstupem."
+"Časové rozestupy mezi položkami se známým datem zůstanou zachovány. Položky "
+"bez známého data obdrží nové počáteční datum."
 
 msgid ""
 "This is useful if your camera date was set wrongly and you need to fix photo"
@@ -59,17 +106,11 @@ msgstr "archiv"
 msgid "archives"
 msgstr "archiv"
 
-msgid "Ask the Diffractor team a question."
-msgstr "Zeptejte se týmu Diffractor na otázku."
-
 msgid "audio"
 msgstr "zvuk"
 
 msgid "Audio"
 msgstr "Zvuk"
-
-msgid "Diffractor has been authorized"
-msgstr "Diffractor byl autorizován"
 
 msgid "Before"
 msgstr "Předtím"
@@ -78,16 +119,13 @@ msgid "Brightness"
 msgstr "Jas"
 
 msgid "Burn"
-msgstr "Ztmavit"
+msgstr "Vypálit"
 
 msgid "Analyze"
 msgstr "Analyzovat"
 
 msgid "&Analyze"
 msgstr "&Analyzovat"
-
-msgid "&Background"
-msgstr "&Pozadí"
 
 msgid "&Cancel"
 msgstr "&Zrušit"
@@ -107,11 +145,8 @@ msgstr "O&dstranit"
 msgid "&Don't Save"
 msgstr "&Neukládat"
 
-msgid "&Import"
-msgstr "&Importovat"
-
 msgid "&OK"
-msgstr "a DOBRÍ"
+msgstr "&OK"
 
 msgid "&Rotate"
 msgstr "&Otočit"
@@ -141,36 +176,19 @@ msgid ""
 "Diffractor can be used for free. If you find it useful, please help the "
 "project by donating."
 msgstr ""
-"Difraktor lze použít zdarma. Pokud to považujete za užitečné, pomozte "
+"Diffractor lze použít zdarma. Pokud to považujete za užitečné, pomozte "
 "projektu darem."
 
 msgid "Donate online."
 msgstr "Darujte online."
 
-msgid "Cancel was pressed after "
-msgstr "Poté bylo stisknuto Storno "
-
-msgid "Cannot updated metadata of this file type."
-msgstr "Metadata tohoto typu souboru nelze aktualizovat."
 
 msgid "Changes"
 msgstr "Změny"
 
-msgid "Click for collection options"
-msgstr "Kliknutím zobrazíte možnosti sbírky"
-
-msgid "Scroll map to select a location. Use mouse-wheel to zoom."
+msgid "Set the location for the selected files by scrolling the map or searching for a place. Use the mouse wheel to zoom."
 msgstr ""
 "Posouváním mapy vyberte umístění. Pro přiblížení použijte kolečko myši."
-
-msgid "Click to search for similar items in the collection."
-msgstr "Kliknutím vyhledáte podobné položky ve sbírce."
-
-msgid "Click to search in the collection"
-msgstr "Kliknutím vyhledáte ve sbírce"
-
-msgid "Click to open"
-msgstr "Kliknutím otevřete"
 
 msgid "The collection contains {} {} ({})."
 msgstr "Kolekce obsahuje {} {} ({})."
@@ -184,15 +202,14 @@ msgstr "Položky vytvořené {} {}"
 msgid "Items modified {} {}"
 msgstr "Upravené položky {} {}"
 
-msgid ""
-"Click to open created items.\n"
-"Ctrl+click to open modified items."
-msgstr ""
-"Kliknutím otevřete vytvořené položky.\n"
-"Ctrl+kliknutím otevřete upravené položky."
+msgid "Opens created items.\nCtrl+click opens modified items."
+msgstr "Otevře vytvořené položky.\nCtrl+kliknutí otevře upravené položky."
 
-msgid "{} items from {} in the collection."
-msgstr "{} položek od {} ve sbírce."
+msgid "{} items close to {} in the collection."
+msgstr "{} položek ve sbírce poblíž {}."
+
+msgid "{} items close to {}"
+msgstr "{} položek poblíž {}"
 
 msgid "filter"
 msgstr "filtr"
@@ -201,19 +218,13 @@ msgid "Close"
 msgstr "Zavřít"
 
 msgid "Collection options"
-msgstr "Možnosti sběru"
+msgstr "Možnosti sbírky"
 
-msgid ""
-"Prefix the folder name with minus '-' to exclude it from the collection. You"
-" exclude folders by the full path -c:\\collection\\secret, with a folder "
-"name -secret, or with a wildcard -secret*."
-msgstr ""
-"Před názvem složky uveďte mínus '-', abyste ji vyloučili z kolekce. Složky "
-"vyloučíte úplnou cestou -c:\\collection\\secret, s názvem složky -secret "
-"nebo se zástupným znakem -secret*."
+msgid "Prefix an entry with '-' to exclude it. A full path such as -c:\\photos\\secret excludes one folder. A name such as -secret, or a wildcard such as -proxy*, excludes matching folders anywhere in your collection."
+msgstr "Předřaďte položce '-', chcete-li ji vyloučit. Úplná cesta jako -c:\\photos\\secret vyloučí jednu složku. Název jako -secret nebo zástupný znak jako -proxy* vyloučí odpovídající složky kdekoli ve vaší sbírce."
 
-msgid "More Collection folders"
-msgstr "Další složky kolekce"
+msgid "Other folders"
+msgstr "Další složky"
 
 msgid ""
 "Folders can be drives, folders, network shares or device labels. Labels are "
@@ -224,49 +235,20 @@ msgstr ""
 "zařízení. Štítky jsou užitečné pro vyměnitelná nebo síťová zařízení, kde se "
 "mohou změnit namapovaná písmena jednotek."
 
-msgid "Desktop"
-msgstr "Pracovní plocha"
-
-msgid "Documents"
-msgstr "Dokumenty"
-
-msgid "Downloads"
-msgstr "Stahování"
-
-msgid "Local DropBox Folder"
-msgstr "Místní složka DropBox"
-
-msgid "Local GoogleDrive Folder"
-msgstr "Místní složka Disku Google"
-
-msgid "You can choose what is indexed in collection options (press Ctrl+F6)."
-msgstr ""
-"V možnostech kolekce si můžete vybrat, co se má indexovat (stiskněte "
-"Ctrl+F6)."
-
-msgid "Define the folders that make your collection."
-msgstr "Definujte složky, které tvoří vaši sbírku."
+msgid "Choose the folders that make up your collection. Your files stay where they are."
+msgstr "Vyberte složky, které tvoří vaši sbírku. Vaše soubory zůstanou tam, kde jsou."
 
 msgid "Collection folders"
 msgstr "Složky sbírky"
 
-msgid "More folders. Separate each folder with a new line."
-msgstr "Více složek. Každou složku oddělte novým řádkem."
+msgid "One folder per line."
+msgstr "Jedna složka na řádek."
 
 msgid "More information about collection management."
 msgstr "Další informace o správě sbírky."
 
 msgid "More information about metadata templates."
 msgstr "Další informace o šablonách metadat."
-
-msgid "Music"
-msgstr "Hudba"
-
-msgid "Local OneDrive Folder"
-msgstr "Místní složka OneDrive"
-
-msgid "Pictures"
-msgstr "obrázky"
 
 msgid "Videos"
 msgstr "videa"
@@ -283,11 +265,8 @@ msgstr "Opravit datum a čas"
 msgid "Advanced Search"
 msgstr "Pokročilé vyhledávání"
 
-msgid "Update artist and album"
-msgstr "Aktualizujte interpreta a album"
-
 msgid "Exit"
-msgstr "Výstup"
+msgstr "Ukončit"
 
 msgid "Back"
 msgstr "Zpět"
@@ -308,7 +287,7 @@ msgid "Extend selection to next item"
 msgstr "Rozšířit výběr na další položku"
 
 msgid "Parent"
-msgstr "Rodič"
+msgstr "Nadřazená složka"
 
 msgid "Previous folder or search"
 msgstr "Předchozí složka nebo hledání"
@@ -337,9 +316,6 @@ msgstr "Převést nebo změnit velikost"
 msgid "Copy to folder"
 msgstr "Kopírovat do složky"
 
-msgid "Update copyright"
-msgstr "Aktualizujte autorská práva"
-
 msgid "Customise sidebar"
 msgstr "Přizpůsobte postranní panel"
 
@@ -351,9 +327,6 @@ msgstr "Pozadí plochy"
 
 msgid "Display options"
 msgstr "Možnosti zobrazení"
-
-msgid "Download"
-msgstr "Stáhnout"
 
 msgid "Edit"
 msgstr "Upravit"
@@ -409,6 +382,21 @@ msgstr "Seskupit podle umístění"
 msgid "Group by Date Modified"
 msgstr "Seskupit podle data změny"
 
+msgid "Group by Aspect ratio"
+msgstr "Seskupit podle poměru stran"
+
+msgid "Aspect ratio"
+msgstr "Poměr stran"
+
+msgid "No aspect ratio"
+msgstr "Bez poměru stran"
+
+msgid "Other landscape"
+msgstr "Jiné na šířku"
+
+msgid "Other portrait"
+msgstr "Jiné na výšku"
+
 msgid "Group by Resolution"
 msgstr "Seskupit podle rozlišení"
 
@@ -434,7 +422,7 @@ msgid "Import"
 msgstr "Importovat"
 
 msgid "Keyboard reference"
-msgstr "Odkaz na klávesnici"
+msgstr "Přehled klávesových zkratek"
 
 msgid "Approved"
 msgstr "Schválený"
@@ -452,7 +440,7 @@ msgid "Select"
 msgstr "Vybrat"
 
 msgid "To Do"
-msgstr "Chcete-li udělat"
+msgstr "K vyřízení"
 
 msgid "Language"
 msgstr "Jazyk"
@@ -518,7 +506,7 @@ msgid "Print"
 msgstr "Tisk"
 
 msgid "Rate"
-msgstr "Míra"
+msgstr "Ohodnotit"
 
 msgid "Remove rating"
 msgstr "Odebrat hodnocení"
@@ -544,7 +532,7 @@ msgstr "Odmítnout"
 msgid "Refresh"
 msgstr "Aktualizovat"
 
-msgid "Duplicate or related items in the collection"
+msgid "Matching or possible copy items in the collection"
 msgstr "Duplicitní nebo související položky ve sbírce"
 
 msgid "Rename"
@@ -559,9 +547,6 @@ msgstr "Přepnout opakované přehrávání"
 msgid "Restore"
 msgstr "Obnovit"
 
-msgid "Revert to original"
-msgstr "Vrátit se k originálu"
-
 msgid "Rotate anticlockwise"
 msgstr "Otočte proti směru hodinových ručiček"
 
@@ -571,8 +556,14 @@ msgstr "Otočte po směru hodinových ručiček"
 msgid "Reset rotation"
 msgstr "Resetujte rotaci"
 
-msgid "Save and close"
-msgstr "Uložit a zavřít"
+msgid "Save"
+msgstr "Uložit"
+
+msgid "Add location and open previous"
+msgstr "Přidat polohu a otevřít předchozí"
+
+msgid "Add location and open next"
+msgstr "Přidat polohu a otevřít následující"
 
 msgid "Save and open previous"
 msgstr "Uložit a otevřít předchozí"
@@ -589,8 +580,8 @@ msgstr "Uložte aktuální položku a otevřete další položku."
 msgid "Save as"
 msgstr "Uložit jako"
 
-msgid "Change save options"
-msgstr "Změňte možnosti uložení"
+msgid "Adjust the crop, rotation, perspective, and color of a photo. Nothing is written to disk until you save."
+msgstr "Upravte oříznutí, otočení, perspektivu a barvy fotografie. Na disk se nic nezapíše, dokud neuložíte."
 
 msgid "Scale up items"
 msgstr "Zvětšujte položky"
@@ -614,13 +605,13 @@ msgid "Show in file browser"
 msgstr "Zobrazit v prohlížeči souborů"
 
 msgid "Open containing folder"
-msgstr "Otevřete složku obsahující"
-
-msgid "Hide/Show thumbnails"
-msgstr "Skrýt/Zobrazit miniatury"
+msgstr "Otevřít složku se souborem"
 
 msgid "Sort by Date modified"
 msgstr "Řadit podle data změny"
+
+msgid "Sort by Date created"
+msgstr "Řadit podle data vytvoření"
 
 msgid "Sort dates ascending"
 msgstr "Seřadit data vzestupně"
@@ -628,8 +619,8 @@ msgstr "Seřadit data vzestupně"
 msgid "Sort dates descending"
 msgstr "Seřadit data sestupně"
 
-msgid "Sort by Default"
-msgstr "Řadit podle výchozího nastavení"
+msgid "Sort by Group order (Default)"
+msgstr "Řadit podle pořadí skupiny (výchozí)"
 
 msgid "Sort by Name"
 msgstr "Seřadit podle jména"
@@ -649,11 +640,17 @@ msgstr "Přepnout seskupování položek"
 msgid "Toggle thumbnail size"
 msgstr "Přepnout velikost miniatury"
 
+msgid "Change thumbnail size"
+msgstr "Změnit velikost miniatur"
+
+msgid "Back to the top of the list"
+msgstr "Zpět na začátek seznamu"
+
 msgid "Tools"
 msgstr "Nástroje"
 
 msgid "About Diffractor"
-msgstr "O difraktoru"
+msgstr "O aplikaci Diffractor"
 
 msgid "Show items"
 msgstr "Zobrazit položky"
@@ -676,8 +673,8 @@ msgstr "Seřadit"
 msgid "Toggle volume"
 msgstr "Přepnout hlasitost"
 
-msgid "Zoom 100%"
-msgstr "Zvětšit 100%"
+msgid "Zoom mode"
+msgstr "Režim přiblížení"
 
 msgid "Compare"
 msgstr "Porovnejte"
@@ -706,6 +703,9 @@ msgstr "Zásluhy"
 msgid "Notice"
 msgstr "Oznámení"
 
+msgid "File"
+msgstr "Soubor"
+
 msgid "Source"
 msgstr "Zdroj"
 
@@ -716,7 +716,7 @@ msgid "URL"
 msgstr "URL"
 
 msgid "Count"
-msgstr "Počítat"
+msgstr "Počet"
 
 msgid "Favorite Searches"
 msgstr "Oblíbené vyhledávání"
@@ -735,9 +735,6 @@ msgstr ""
 msgid "Favorite Tags"
 msgstr "Oblíbené značky"
 
-msgid "Display"
-msgstr "Zobrazit"
-
 msgid "Show labels"
 msgstr "Zobrazit štítky"
 
@@ -750,8 +747,11 @@ msgstr "Zobrazit disky"
 msgid "Show history chart"
 msgstr "Zobrazit graf historie"
 
-msgid "Show indexed folders"
-msgstr "Zobrazit indexované složky"
+msgid "History chart start year. Empty defaults to 10 years."
+msgstr "Počáteční rok grafu historie. Prázdné znamená výchozích 10 let."
+
+msgid "Show collection folders"
+msgstr "Zobrazit složky sbírky"
 
 msgid "Show favorite searches"
 msgstr "Zobrazit oblíbená vyhledávání"
@@ -781,7 +781,7 @@ msgid "Metadata created:"
 msgstr "Metadata vytvořena:"
 
 msgid "Dates"
-msgstr "Termíny"
+msgstr "Data"
 
 msgid ""
 "family food friends landscape nature night portrait selfie todo travel urban"
@@ -811,17 +811,11 @@ msgstr "Nastavte pozadí plochy na aktuální obrázek."
 msgid "Destination folder:"
 msgstr "Cílová složka:"
 
-msgid "Destination name:"
-msgstr "Název cíle:"
-
-msgid "Detecting {} folders"
-msgstr "Detekce {} složek"
-
 msgid "Capacity"
 msgstr "Kapacita"
 
-msgid "Free"
-msgstr "Uvolnit"
+msgid "Free//disk"
+msgstr "Volné"
 
 msgid "Label"
 msgstr "Označení"
@@ -838,7 +832,7 @@ msgstr "Dokumentace"
 msgid "Duplicates"
 msgstr "Duplikáty"
 
-msgid "Duplicate or similar items in the collection."
+msgid "Matching or possible copy items in the collection."
 msgstr "Duplicitní nebo podobné položky ve sbírce."
 
 msgid "Editing"
@@ -883,11 +877,11 @@ msgid "Sending email using MAPI..."
 msgstr "Odesílání e-mailu pomocí MAPI..."
 
 msgid ""
-"Email sizes can be reduced using the following options. Smaller emails are "
-"faster to send."
+"Create a draft in your desktop email client with the selected files "
+"attached. Originals are unchanged."
 msgstr ""
-"Velikost e-mailu lze zmenšit pomocí následujících možností. Menší e-maily se"
-" posílají rychleji."
+"Vytvořit v e-mailovém klientovi koncept s přiloženými vybranými soubory. "
+"Originály zůstanou beze změny."
 
 msgid "Zip files in the email"
 msgstr "ZIP soubory v e-mailu"
@@ -901,11 +895,8 @@ msgstr "Končící {}"
 msgid "Security options denied access to the source."
 msgstr "Možnosti zabezpečení odepřely přístup ke zdroji."
 
-msgid "Failed to Initialize ATL"
-msgstr "Inicializace ATL se nezdařila"
-
 msgid "Diffractor has a serious problem and cannot continue."
-msgstr "Difraktor má vážný problém a nemůže pokračovat."
+msgstr "Diffractor má vážný problém a nemůže pokračovat."
 
 msgid "Could not connect to scanner"
 msgstr "Nelze se připojit ke skeneru"
@@ -917,7 +908,7 @@ msgid "The destination folder '{}' cannot be opened or created."
 msgstr "Cílovou složku '{}' nelze otevřít ani vytvořit."
 
 msgid "Diffractor cannot be started. The main window could not be created."
-msgstr "Difraktor nelze spustit. Hlavní okno se nepodařilo vytvořit."
+msgstr "Diffractor nelze spustit. Hlavní okno se nepodařilo vytvořit."
 
 msgid "The destination is a writable CD-ROM, possibly unformatted."
 msgstr "Cíl je zapisovatelný disk CD-ROM, případně neformátovaný."
@@ -963,13 +954,6 @@ msgstr "Cílová cesta je existující soubor."
 msgid "Index database failed."
 msgstr "Databáze indexu se nezdařila."
 
-msgid ""
-"Could be a problem with the internet connection? Try again later if that "
-"seems likely."
-msgstr ""
-"Může být problém s připojením k internetu? Zkuste to znovu později, pokud se"
-" to zdá pravděpodobné."
-
 msgid "The path in the source or destination or both was invalid."
 msgstr "Cesta ve zdroji nebo cíli nebo obojí byla neplatná."
 
@@ -993,13 +977,6 @@ msgstr ""
 "Ve zdrojové vyrovnávací paměti bylo zadáno více cest k souboru, ale pouze "
 "jedna cesta k cílovému souboru."
 
-msgid ""
-"Failed to send EMail using MAPI. Your Email client may not be configured in "
-"a compatible way with Diffractor."
-msgstr ""
-"Odeslání e-mailu pomocí MAPI se nezdařilo. Váš e-mailový klient nemusí být "
-"nakonfigurován kompatibilním způsobem s difraktorem."
-
 msgid "MAX_PATH was exceeded during the operation."
 msgstr "Během operace byla překročena MAX_PATH."
 
@@ -1009,12 +986,14 @@ msgstr "OleInitialize se nezdařilo"
 msgid "An unspecified error occurred on the destination."
 msgstr "V cíli došlo k nespecifikované chybě."
 
-msgid ""
-"The operation was canceled by the user, or silently canceled if the "
-"appropriate flags were supplied to SHFileOperation."
-msgstr ""
-"Operace byla zrušena uživatelem nebo byla zrušena v tichosti, pokud byly "
-"příslušné příznaky dodány SHFileOperation."
+msgid "The operation was canceled."
+msgstr "Operace byla zrušena."
+
+msgid "The analysis was canceled."
+msgstr "Analýza byla zrušena."
+
+msgid "Cancel"
+msgstr "Zrušit"
 
 msgid "The source or destination path exceeded or would exceed MAX_PATH."
 msgstr "Zdrojová nebo cílová cesta překročila nebo by překročila MAX_PATH."
@@ -1024,9 +1003,6 @@ msgstr "Přejmenování se nezdařilo."
 
 msgid "The source and destination files are the same file."
 msgstr "Zdrojové a cílové soubory jsou stejný soubor."
-
-msgid "Diffractor could not save the updated image file."
-msgstr "Difraktoru se nepodařilo uložit aktualizovaný soubor obrázku."
 
 msgid "Failed to save image."
 msgstr "Obrázek se nepodařilo uložit."
@@ -1047,13 +1023,13 @@ msgid "The source is a root directory, which cannot be moved or renamed."
 msgstr "Zdrojem je kořenový adresář, který nelze přesunout ani přejmenovat."
 
 msgid "Diffractor requires a processor with sse2."
-msgstr "Difraktor vyžaduje procesor s sse2."
+msgstr "Diffractor vyžaduje procesor s SSE2."
 
 msgid "An unknown error occurred."
 msgstr "Došlo k neznámé chybě."
 
 msgid "Diffractor requires Windows 7 or newer."
-msgstr "Difraktor vyžaduje Windows 7 nebo novější."
+msgstr "Diffractor vyžaduje Windows 7 nebo novější."
 
 msgid "Failed to register windows common control classes."
 msgstr "Nepodařilo se zaregistrovat běžné třídy ovládání systému Windows."
@@ -1063,9 +1039,6 @@ msgstr "Inicializace Winsock se nezdařila"
 
 msgid "EXIF"
 msgstr "EXIF"
-
-msgid "Failed to connect to the internet"
-msgstr "Připojení k internetu se nezdařilo"
 
 msgid "Failed to create folder: {}"
 msgstr "Nepodařilo se vytvořit složku: {}"
@@ -1085,20 +1058,14 @@ msgstr "Oblíbený titul"
 msgid "Favorites are listed in the sidebar for quick access."
 msgstr "Oblíbené jsou uvedeny v postranním panelu pro rychlý přístup."
 
-msgid "Shown items are from the collection."
-msgstr "Zobrazené předměty jsou z kolekce."
+msgid "These items are in your collection."
+msgstr "Tyto položky jsou ve vaší sbírce."
 
-msgid "Shown items are NOT from the collection."
-msgstr "Zobrazené položky NEJSOU z kolekce."
+msgid "These items are outside your collection, so search and duplicate detection do not cover them. Add this folder to your collection to include them."
+msgstr "Tyto položky jsou mimo vaši sbírku, takže je vyhledávání ani detekce duplicit nepokrývají. Přidejte tuto složku do sbírky, aby byly zahrnuty."
 
-msgid ""
-"The collection is a set of indexed folders. Indexing allows fast searching "
-"and duplicate detection. Diffractor will also highlight when items are not "
-"in the collection."
-msgstr ""
-"Kolekce je sada indexovaných složek. Indexování umožňuje rychlé vyhledávání "
-"a detekci duplicit. Difraktor se také zvýrazní, když položky nejsou ve "
-"sbírce."
+msgid "Your collection is the folders you choose, including their subfolders. Diffractor indexes them so search, duplicate detection and totals cover everything at once. Adding or removing a folder changes only what Diffractor knows. No files are moved or copied."
+msgstr "Vaše sbírka jsou složky, které si vyberete, včetně jejich podsložek. Diffractor je indexuje, takže vyhledávání, detekce duplicit a součty pokrývají vše najednou. Přidání nebo odebrání složky změní jen to, co Diffractor ví. Žádné soubory se nepřesouvají ani nekopírují."
 
 msgid "folder"
 msgstr "Složka"
@@ -1128,7 +1095,7 @@ msgid "Abstract"
 msgstr "Shrnutí"
 
 msgid "Acid"
-msgstr "Žíravina"
+msgstr "Acid"
 
 msgid "Acid Jazz"
 msgstr "Acid Jazz"
@@ -1155,13 +1122,13 @@ msgid "AlternRock"
 msgstr "AlternRock"
 
 msgid "Ambient"
-msgstr "Okolní"
+msgstr "Ambient"
 
 msgid "Analog"
 msgstr "Analogový"
 
 msgid "Animation"
-msgstr "Informace"
+msgstr "Animace"
 
 msgid "Anime"
 msgstr "Anime"
@@ -1260,7 +1227,7 @@ msgid "Conservation"
 msgstr "Zachování"
 
 msgid "Country//genre"
-msgstr "Country//žánr"
+msgstr "Country"
 
 msgid "Cult"
 msgstr "Kultovní"
@@ -1365,7 +1332,7 @@ msgid "Fusion"
 msgstr "Fúze"
 
 msgid "Game//genre"
-msgstr "Hra//žánr"
+msgstr "Hra"
 
 msgid "Gangsta"
 msgstr "Gangsta"
@@ -1377,7 +1344,7 @@ msgid "Glamour"
 msgstr "Půvab"
 
 msgid "Gospel"
-msgstr "Evangelium"
+msgstr "Gospel"
 
 msgid "Gothic"
 msgstr "Gotická"
@@ -1410,7 +1377,7 @@ msgid "Horror"
 msgstr "Hrůza"
 
 msgid "House"
-msgstr "Dům"
+msgstr "House"
 
 msgid "Humour"
 msgstr "Humor"
@@ -1479,7 +1446,7 @@ msgid "Meditative"
 msgstr "Meditační"
 
 msgid "Metal"
-msgstr "Kov"
+msgstr "Metal"
 
 msgid "Monochrome"
 msgstr "Černobílý"
@@ -1535,8 +1502,8 @@ msgstr "Panorama"
 msgid "Panoramic"
 msgstr "Panoramatický"
 
-msgid "Pellier Noir"
-msgstr "Pellier Noir"
+msgid "Film Noir"
+msgstr "Film Noir"
 
 msgid "Photo op"
 msgstr "Foto op"
@@ -1605,7 +1572,7 @@ msgid "Rap"
 msgstr "Rap"
 
 msgid "Rave"
-msgstr "Blouznit"
+msgstr "Rave"
 
 msgid "Reality TV"
 msgstr "Reality TV"
@@ -1647,7 +1614,7 @@ msgid "Short Films"
 msgstr "Krátké filmy"
 
 msgid "Show tunes"
-msgstr "Zobrazit melodie"
+msgstr "Show tunes"
 
 msgid "Singer/Songwriter"
 msgstr "Zpěvák/skladatel"
@@ -1671,7 +1638,7 @@ msgid "Sonata"
 msgstr "Sonáta"
 
 msgid "Soul"
-msgstr "Duše"
+msgstr "Soul"
 
 msgid "Sound Clip"
 msgstr "Zvuková ukázka"
@@ -1710,7 +1677,7 @@ msgid "Subminiature"
 msgstr "Subminiatura"
 
 msgid "Swing"
-msgstr "Houpačka"
+msgstr "Swing"
 
 msgid "Symphonic Rock"
 msgstr "Symfonický rock"
@@ -1740,7 +1707,7 @@ msgid "Top 40"
 msgstr "Top 40"
 
 msgid "Trailer"
-msgstr "Přívěs"
+msgstr "Upoutávka"
 
 msgid "Trance"
 msgstr "Trans"
@@ -1784,9 +1751,6 @@ msgstr "Západní"
 msgid "World"
 msgstr "Svět"
 
-msgid "Click to group or sort"
-msgstr "Kliknutím můžete seskupit nebo seřadit"
-
 msgid "Group and sort items"
 msgstr "Seskupování a řazení položek"
 
@@ -1800,7 +1764,7 @@ msgid "No camera"
 msgstr "Žádná kamera"
 
 msgid "No extension"
-msgstr "Žádné prodloužení"
+msgstr "Bez přípony"
 
 msgid "No location"
 msgstr "Bez umístění"
@@ -1836,7 +1800,7 @@ msgid "Help or more information"
 msgstr "Nápověda nebo další informace"
 
 msgid "Send anonymous log information to Diffractor HQ."
-msgstr "Odešlete anonymní informace protokolu do ústředí difraktoru."
+msgstr "Odeslat anonymní informace protokolu do Diffractor HQ."
 
 msgid "Tags can be removed by prefixing with a minus: -remove"
 msgstr "Štítky lze odstranit přidáním předpony mínus: -odstranit"
@@ -1856,17 +1820,8 @@ msgid ""
 msgstr ""
 "Cílová kořenová složka. V této složce budou vytvořeny strukturované složky."
 
-msgid "Detecting folders..."
-msgstr "Zjišťování složek..."
-
 msgid "Source of import:"
 msgstr "Zdroj importu:"
-
-msgid "Source files filter:"
-msgstr "Filtr zdrojových souborů:"
-
-msgid "Ignore"
-msgstr "Ignorovat"
 
 msgid "Ignore previously imported items."
 msgstr "Ignorovat dříve importované položky."
@@ -1874,34 +1829,14 @@ msgstr "Ignorovat dříve importované položky."
 msgid "Overwrite if source items are newer."
 msgstr "Přepište, pokud jsou zdrojové položky novější."
 
-msgid ""
-"Copy (or move) files into a structured folder hierarchy. The folder "
-"structure can be based on file metadata templates such year/date or "
-"album/artist. This is useful if you want to organize files in a structured "
-"hierarchy."
-msgstr ""
-"Zkopírujte (nebo přesouvejte) soubory do strukturované hierarchie složek. "
-"Struktura složek může být založena na šablonách metadat souborů, jako je "
-"rok/datum nebo album/interpret. To je užitečné, pokud chcete organizovat "
-"soubory ve strukturované hierarchii."
-
 msgid "Other folder"
 msgstr "Jiná složka"
-
-msgid "Overwrite"
-msgstr "Přepsat"
 
 msgid "Destination folder structure:"
 msgstr "Struktura cílové složky:"
 
-msgid "Rename if files have same name but different attributes."
-msgstr "Přejmenujte, pokud mají soubory stejný název, ale různé atributy."
-
 msgid "Set file date created to metadata date created."
 msgstr "Nastavit datum vytvoření souboru na datum vytvoření metadat."
-
-msgid "Index later"
-msgstr "Index později"
 
 msgid ""
 "Defragmenting or cleaning can improve performance. The index stores a copy "
@@ -1912,7 +1847,7 @@ msgstr ""
 "vašich mediálních souborů. Lze jej znovu sestavit z původních souborů."
 
 msgid "The index is reporting errors. Restarting Diffractor is recommended."
-msgstr "Index hlásí chyby. Doporučuje se restartovat difraktor."
+msgstr "Index hlásí chyby. Doporučuje se restartovat Diffractor."
 
 msgid "Maintenance"
 msgstr "Údržba"
@@ -1927,19 +1862,8 @@ msgstr ""
 msgid "Indexing"
 msgstr "Indexování"
 
-msgid ""
-"Diffractor indexes your photos and videos to enable searching and duplicate "
-"detection."
-msgstr ""
-"Difraktor indexuje vaše fotografie a videa, aby umožnil vyhledávání a "
-"detekci duplicit."
-
-msgid "Super-fast searching, viewing and comparing of photos or videos."
-msgstr ""
-"Super rychlé vyhledávání, prohlížení a porovnávání fotografií nebo videí."
-
-msgid "Optimized for your graphics card and PC."
-msgstr "Optimalizováno pro vaši grafickou kartu a PC."
+msgid "Diffractor is reading your collection so search, duplicates and totals stay complete. You can keep browsing while it works."
+msgstr "Diffractor načítá vaši sbírku, aby vyhledávání, duplicity a součty zůstaly úplné. Mezitím můžete dál procházet."
 
 msgid "invalid"
 msgstr "neplatný"
@@ -1950,21 +1874,12 @@ msgstr "IPTC"
 msgid "'{}' is not a valid folder."
 msgstr "'{}' není platná složka."
 
-msgid "item"
-msgstr "položka"
-
-msgid "items"
-msgstr "položek"
-
 msgid "Show items rotated"
 msgstr "Ukázat otočené soubory"
 
 msgid "This item is shown oriented based on camera information. [{}]"
 msgstr ""
 "Tato položka je zobrazena orientovaná na základě informací o kameře. [{}]"
-
-msgid "Click to toggle if all items are shown rotated."
-msgstr "Kliknutím přepnete, pokud jsou všechny položky zobrazeny otočené."
 
 msgid "Files are identical."
 msgstr "Soubory jsou totožné."
@@ -2106,7 +2021,6 @@ msgstr "o stránku dolů"
 
 msgid "["
 msgstr "["
-
 msgid "]"
 msgstr "]"
 
@@ -2136,10 +2050,6 @@ msgstr "Posun"
 
 msgid "space"
 msgstr "plocha"
-
-msgid "Stops or starts a slideshow or playing a video/audio file."
-msgstr ""
-"Zastaví nebo spustí prezentaci nebo přehrávání video/zvukového souboru."
 
 msgid "tab"
 msgstr "Tabulátor"
@@ -2174,17 +2084,8 @@ msgstr "Bezeztrátová komprese"
 msgid "List of keyboard accelerators"
 msgstr "Seznam klávesových akcelerátorů"
 
-msgid "Listed"
-msgstr "Uvedeno"
-
-msgid "Including sub folders:"
-msgstr "Včetně podsložek:"
-
 msgid "Loading..."
 msgstr "Načítání..."
-
-msgid "Location could not be loaded from database or internet."
-msgstr "Umístění nelze načíst z databáze nebo internetu."
 
 msgid "No location selected."
 msgstr "Není vybráno žádné místo."
@@ -2198,9 +2099,6 @@ msgstr "Umístění"
 msgid "Maximize image"
 msgstr "Maximalizujte obrázek"
 
-msgid "OK - maybe later."
-msgstr "OK - možná později."
-
 msgid "Media"
 msgstr "Média"
 
@@ -2208,7 +2106,7 @@ msgid "Add '{}'"
 msgstr "Přidat '{}'"
 
 msgid "Move"
-msgstr "Pohyb"
+msgstr "Přesunout"
 
 msgid "Select All"
 msgstr "Vybrat vše"
@@ -2259,64 +2157,49 @@ msgid "September"
 msgstr "Září"
 
 msgid "apr"
-msgstr "duben"
+msgstr "dub"
 
 msgid "aug"
-msgstr "srpen"
+msgstr "srp"
 
 msgid "dec"
-msgstr "prosinec"
+msgstr "pro"
 
 msgid "feb"
-msgstr "únor"
+msgstr "úno"
 
 msgid "jan"
-msgstr "jan"
+msgstr "led"
 
 msgid "jul"
-msgstr "července"
+msgstr "čvc"
 
 msgid "jun"
-msgstr "jun"
+msgstr "čvn"
 
 msgid "mar"
-msgstr "mar"
+msgstr "bře"
 
 msgid "may"
-msgstr "Květen"
+msgstr "kvě"
 
 msgid "nov"
-msgstr "listopad"
+msgstr "lis"
 
 msgid "oct"
-msgstr "okt"
+msgstr "říj"
 
 msgid "sep"
-msgstr "září"
+msgstr "zář"
 
 msgid "Move source items."
 msgstr "Přesunout zdrojové položky."
 
-msgid "Countries"
-msgstr "Země"
-
-msgid "Drives"
-msgstr "Mechaniky"
-
-msgid "Folders"
-msgstr "Složky"
-
 msgid "History"
 msgstr "Historie"
 
-msgid "After long periods of use, the index may need some maintenance."
-msgstr "Po dlouhé době používání může index vyžadovat určitou údržbu."
-
 msgid "No items are selected"
 msgstr "Nejsou vybrány žádné položky"
-
-msgid "No results"
-msgstr "Žádné výsledky"
 
 msgid "None"
 msgstr "Žádný"
@@ -2333,32 +2216,25 @@ msgstr "Položky musí být fotografie nebo obrázek."
 msgid "Readonly items are not supported."
 msgstr "Položky pouze pro čtení nejsou podporovány."
 
-msgid "Cannot updated metadata of readonly items."
+msgid "Cannot update metadata of readonly items."
 msgstr "Nelze aktualizovat metadata položek pouze pro čtení."
 
 msgid "Diffractor can only save or update JPG, WEBP and PNG image files."
 msgstr ""
-"Difraktor může ukládat nebo aktualizovat pouze obrazové soubory JPG, WEBP a "
+"Diffractor může ukládat nebo aktualizovat pouze obrazové soubory JPG, WEBP a "
 "PNG."
 
 msgid "Nothing found."
 msgstr "Nic nenalezeno."
 
-msgid ""
-"Diffractor only searches in folders that are indexed. Use collection options"
-" to add more folders. (Ctrl+F6)"
-msgstr ""
-"Difraktor vyhledává pouze ve složkách, které jsou indexovány. Chcete-li "
-"přidat další složky, použijte možnosti kolekce. (Ctrl+F6)"
+msgid "Empty Folder"
+msgstr "Prázdná složka"
+
+msgid "Search only covers folders in your collection."
+msgstr "Vyhledávání pokrývá pouze složky ve vaší sbírce."
 
 msgid "of"
 msgstr "z"
-
-msgid "OK - all done."
-msgstr "OK - vše hotovo."
-
-msgid "OK - got it."
-msgstr "OK – rozumím."
 
 msgid "Open destination folder afterwards"
 msgstr "Poté otevřete cílovou složku"
@@ -2384,16 +2260,6 @@ msgstr "Otevřít pomocí {}"
 msgid "tool"
 msgstr "Nástroj"
 
-msgid "Optimize"
-msgstr "Optimalizovat"
-
-msgid ""
-"Overwrite GPS coordinates when setting a location. Otherwise only place, "
-"state and country names are updated."
-msgstr ""
-"Při nastavování polohy přepište souřadnice GPS. Jinak se aktualizují pouze "
-"názvy míst, států a zemí."
-
 msgid "Delay before showing the next item (in seconds)"
 msgstr "Prodleva před zobrazením další položky (v sekundách)"
 
@@ -2409,11 +2275,6 @@ msgid ""
 msgstr ""
 "Při přepisování fotografie nevratnými změnami vytvořte originální záložní "
 "kopii"
-
-msgid "Help test Diffractor. Automatically install test and preview versions."
-msgstr ""
-"Pomozte otestovat difraktor. Automaticky nainstalujte testovací a náhledové "
-"verze."
 
 msgid "Check for updates by connecting to the internet"
 msgstr "Zkontrolujte aktualizace připojením k internetu"
@@ -2436,15 +2297,15 @@ msgid ""
 "diagnostics to Diffractor HQ. No personal data is sent - just crash "
 "diagnostics."
 msgstr ""
-"Pomozte vylepšit difraktor. Pokud se difraktor zhroutí, pošlete anonymní "
-"diagnostiku do ústředí difraktoru. Nejsou odesílány žádné osobní údaje – "
+"Pomozte vylepšit Diffractor. Pokud se Diffractor zhroutí, pošlete anonymní "
+"diagnostiku do Diffractor HQ. Nejsou odesílány žádné osobní údaje – "
 "pouze diagnostika havárie."
 
 msgid "Show application debugging information (for the programmers)."
 msgstr "Zobrazit informace o ladění aplikace (pro programátory)."
 
 msgid "Show hidden files"
-msgstr "Zobrazit podrobnosti"
+msgstr "Zobrazit skryté soubory"
 
 msgid "Show photos rotated based on recorded camera orientation"
 msgstr "Zobrazit fotografie otočené na základě natočené orientace fotoaparátu"
@@ -2456,7 +2317,7 @@ msgid ""
 "Use hardware acceleration to draw the Diffractor user interface (requires "
 "restart)"
 msgstr ""
-"K vykreslení uživatelského rozhraní difraktoru použít hardwarovou akceleraci"
+"K vykreslení uživatelského rozhraní Diffractor použít hardwarovou akceleraci"
 " (vyžaduje restart)"
 
 msgid "Use hardware acceleration to decode video (when available)"
@@ -2471,9 +2332,6 @@ msgstr ""
 
 msgid "Show an inset shadow surrounding the image view panel."
 msgstr "Zobrazit vložený stín kolem panelu zobrazení obrázku."
-
-msgid "Update file date modified when editing."
-msgstr "Datum aktualizace změněno při úpravách."
 
 msgid "Resume playing media from the last position played."
 msgstr "Obnovit přehrávání média od poslední přehrávané pozice."
@@ -2535,40 +2393,32 @@ msgstr "pixelů"
 msgid "PNG - Best for non photos"
 msgstr "PNG – Nejlepší pro jiné než fotografie"
 
-msgid "Presence loading..."
-msgstr "Načítání přítomnosti..."
+msgid "Checking presence..."
+msgstr "Kontrola přítomnosti..."
 
-msgid "Newer in collection"
-msgstr "Novější ve sbírce"
+msgid "Possible newer copy in collection"
+msgstr "Možná novější kopie ve sbírce"
 
-msgid ""
-"This item is outside the collection but similar NEWER item(s) exist in the "
-"collection."
-msgstr ""
-"Tato položka je mimo sbírku, ale ve sbírce existují podobné NOVĚJŠÍ položky."
+msgid "This item is outside the collection. One or more possible newer copies exist in the collection."
+msgstr "Tato položka je mimo sbírku. Ve sbírce existuje jedna nebo více možných novějších kopií."
 
-msgid "NOT in collection"
-msgstr "NENÍ ve sbírce"
+msgid "Outside collection; no possible copy identified"
+msgstr "Mimo sbírku; nebyla identifikována žádná možná kopie"
 
-msgid "This item is NOT in the collection."
-msgstr "Tato položka NENÍ ve sbírce."
+msgid "This item is outside the collection. No possible copy was identified in the collection."
+msgstr "Tato položka je mimo sbírku. Ve sbírce nebyla identifikována žádná možná kopie."
 
-msgid "Older in collection"
-msgstr "Starší ve sbírce"
+msgid "Possible older copy in collection"
+msgstr "Možná starší kopie ve sbírce"
 
-msgid ""
-"This item is outside the collection but similar OLDER item(s) exist in the "
-"collection."
-msgstr ""
-"Tato položka je mimo sbírku, ale ve sbírce existují podobné STARŠÍ položky."
+msgid "This item is outside the collection. One or more possible older copies exist in the collection."
+msgstr "Tato položka je mimo sbírku. Ve sbírce existuje jedna nebo více možných starších kopií."
 
-msgid "Similar in collection"
-msgstr "Podobné ve sbírce"
+msgid "Possible copy in collection"
+msgstr "Možná kopie ve sbírce"
 
-msgid ""
-"This item is outside the collection but similar item(s) exist in the "
-"collection."
-msgstr "Tato položka je mimo sbírku, ale ve sbírce existují podobné položky."
+msgid "This item is outside the collection. One or more possible copies exist in the collection."
+msgstr "Tato položka je mimo sbírku. Ve sbírce existuje jedna nebo více možných kopií."
 
 msgid "In collection"
 msgstr "Ve sbírce"
@@ -2593,6 +2443,9 @@ msgstr "Zobrazení náhledu fotografie RAW."
 
 msgid "Processing..."
 msgstr "Zpracovává se..."
+
+msgid "Processing files"
+msgstr "Zpracování souborů"
 
 msgid "Focal length 35mm equivalent"
 msgstr "Ekvivalent ohniskové vzdálenosti 35 mm"
@@ -2642,8 +2495,8 @@ msgstr "Zdroj autorských práv"
 msgid "Copyright URL"
 msgstr "Adresa URL autorských práv"
 
-msgid "Country//propertry"
-msgstr "Země//nemovitost"
+msgid "Country//property"
+msgstr "Země"
 
 msgid "Created"
 msgstr "Vytvořeno"
@@ -2690,8 +2543,8 @@ msgstr "Clonové číslo"
 msgid "Focal length"
 msgstr "Ohnisková vzdálenost"
 
-msgid "Game//propertry"
-msgstr "Hra//vlastnictví"
+msgid "Game//property"
+msgstr "Hra"
 
 msgid "Genre"
 msgstr "Žánr"
@@ -2742,7 +2595,7 @@ msgid "Rating"
 msgstr "Hodnocení"
 
 msgid "Raw file"
-msgstr "Nezpracovaný soubor"
+msgstr "Soubor RAW"
 
 msgid "Sample rate"
 msgstr "Vzorkovací frekvence"
@@ -2751,7 +2604,7 @@ msgid "Sample type"
 msgstr "Typ vzorku"
 
 msgid "Season"
-msgstr "Série"
+msgstr "Řada"
 
 msgid "Show"
 msgstr "Show"
@@ -2763,7 +2616,7 @@ msgid "State"
 msgstr "Stát"
 
 msgid "Streams"
-msgstr "Proudy"
+msgstr "Datové proudy"
 
 msgid "Synopsis"
 msgstr "Synopse"
@@ -2823,10 +2676,10 @@ msgid "Number keys 0-5"
 msgstr "Čísla 0-5"
 
 msgid "Click {} to remove rating"
-msgstr "Zmáčkněte {} aby jste daly pryč hodnocení"
+msgstr "Kliknutím na {} odeberete hodnocení"
 
 msgid "Raw"
-msgstr "Syrový"
+msgstr "RAW"
 
 msgid "Remove Metadata"
 msgstr "Odebrat metadata"
@@ -2859,27 +2712,11 @@ msgstr "{year}-{month}-###"
 msgid "travel-{country}-###"
 msgstr "cestování-{country}-###"
 
-msgid ""
-"Rename multiple files based on an incrementing sequence or file metadata "
-"template."
-msgstr ""
-"Přejmenujte více souborů na základě rostoucí sekvence nebo šablony metadat "
-"souboru."
-
 msgid "Template:"
 msgstr "Šablona:"
 
 msgid "Start at:"
 msgstr "Začátek v:"
-
-msgid ""
-"When one media item plays to the end, start playing the next automatically"
-msgstr ""
-"Když se jedna mediální položka přehraje do konce, automaticky se spustí "
-"přehrávání další"
-
-msgid "Don't repeat or auto play"
-msgstr "Neopakujte ani nepřehrávejte automaticky"
 
 msgid "Repeat play single media item"
 msgstr "Opakované přehrávání jedné mediální položky"
@@ -2894,9 +2731,6 @@ msgstr ""
 msgid "Cleaning..."
 msgstr "Čištění..."
 
-msgid "Maximum photo dimension (in pixels):"
-msgstr "Maximální rozměr fotografie (v pixelech):"
-
 msgid "retro"
 msgstr "Retro"
 
@@ -2907,7 +2741,7 @@ msgid ""
 "Diffractor cannot crop, rotate or color {} files. You can save the file as a"
 " JPEG?"
 msgstr ""
-"Difraktor nemůže oříznout, otočit nebo obarvit {} soubory. Můžete soubor "
+"Diffractor nemůže oříznout, otočit nebo obarvit {} soubory. Můžete soubor "
 "uložit jako JPEG?"
 
 msgid "Save Changes"
@@ -2924,9 +2758,6 @@ msgstr "Skenování se nezdařilo."
 
 msgid "All these terms"
 msgstr "Všechny tyto termíny"
-
-msgid "Any of these terms"
-msgstr "Kterýkoli z těchto termínů"
 
 msgid "Christmas"
 msgstr "Vánoce"
@@ -2952,9 +2783,6 @@ msgstr "Nachází se uvnitř"
 msgid "None of these terms"
 msgstr "Žádný z těchto termínů"
 
-msgid "Find files not in collection"
-msgstr "Najít soubory, které nejsou ve sbírce"
-
 msgid "Search criteria or folder"
 msgstr "Hledat kritéria nebo složky"
 
@@ -2966,9 +2794,6 @@ msgstr "Vyberte termín"
 
 msgid "Search in subfolders"
 msgstr "Vyhledávání v podsložkách"
-
-msgid "Top rated"
-msgstr "Nejlépe hodnocené"
 
 msgid "Searching..."
 msgstr "Hledání..."
@@ -2991,7 +2816,7 @@ msgstr "Vždy zobrazovat fotografie RAW (pomalejší)"
 msgid "Show this RAW photo"
 msgstr "Ukaž tuto RAW fotku"
 
-msgid "press R to view duplicate or related items in the collection"
+msgid "press R to view matching or possible copy items in the collection"
 msgstr ""
 "stiskněte R pro zobrazení duplicitních nebo souvisejících položek v kolekci"
 
@@ -3001,8 +2826,8 @@ msgstr "Zobrazit podrobná metadata"
 msgid "Album-Show"
 msgstr "Album-Show"
 
-msgid "Default"
-msgstr "Výchozí"
+msgid "Group order (Default)"
+msgstr "Pořadí skupiny (výchozí)"
 
 msgid "Extension"
 msgstr "Rozšíření"
@@ -3019,9 +2844,6 @@ msgstr "Rozlišení"
 msgid "Rating-Label"
 msgstr "Hodnocení-štítek"
 
-msgid "used"
-msgstr "Využito"
-
 msgid "Staring"
 msgstr "Zírání"
 
@@ -3031,17 +2853,65 @@ msgstr "Nové datum zahájení (místní čas):"
 msgid "Starting {}"
 msgstr "Počínaje {}"
 
+msgid "Preparing to convert files..."
+msgstr "Příprava převodu souborů..."
+
+msgid "Preparing to import files..."
+msgstr "Příprava importu souborů..."
+
+msgid "Preparing files for email..."
+msgstr "Příprava souborů pro e-mail..."
+
+msgid "Preparing to synchronize files..."
+msgstr "Příprava synchronizace souborů..."
+
 msgid "Straighten"
 msgstr "Narovnat"
+
+msgid "Auto color"
+msgstr "Automatické barvy"
+
+msgid "Copy item path"
+msgstr "Kopírovat cestu k položce"
+
+msgid "Auto document"
+msgstr "Automaticky upravit dokument"
+
+msgid "Auto straighten"
+msgstr "Automaticky vyrovnat"
+
+msgid "Original"
+msgstr "Originál"
+
+msgid "Preview"
+msgstr "Náhled"
+
+msgid "Automatically improve exposure and color balance"
+msgstr "Automaticky zlepšit expozici a vyvážení barev"
+
+msgid "Automatically straighten horizontal and vertical lines"
+msgstr "Automaticky vyrovnat vodorovné a svislé linie"
+
+msgid "Show the final cropped image"
+msgstr "Zobrazit výsledný oříznutý obrázek"
+
+msgid "Horizontal perspective"
+msgstr "Vodorovná perspektiva"
+
+msgid "Vertical perspective"
+msgstr "Svislá perspektiva"
+
+msgid "Temperature"
+msgstr "Teplota"
+
+msgid "Tint"
+msgstr "Barevný odstín"
 
 msgid "Stream {}"
 msgstr "Stream {}"
 
-msgid "Click to select stream '{}'"
-msgstr "Kliknutím vyberte stream '{}'"
-
 msgid "subtitle"
-msgstr "podtitulek"
+msgstr "titulky"
 
 msgid "Support"
 msgstr "Podpora"
@@ -3050,19 +2920,25 @@ msgid "Synchronize whole collection"
 msgstr "Synchronizujte celou sbírku"
 
 msgid "copy local"
-msgstr "kopírovat místní"
+msgstr "kopírovat do místního umístění"
 
 msgid "copy remote"
-msgstr "kopírovat dálkově"
+msgstr "kopírovat do vzdáleného umístění"
 
 msgid "delete local"
 msgstr "odstranit místní"
 
 msgid "delete remote"
-msgstr "smazat dálkový ovladač"
+msgstr "odstranit vzdálené soubory"
 
-msgid "Synchronize your collection with a remote location."
-msgstr "Synchronizujte svou sbírku se vzdáleným umístěním."
+msgid "Files changed after analysis. Analyze again to review the updated actions."
+msgstr "Soubory se po analýze změnily. Pro kontrolu aktualizovaných akcí proveďte analýzu znovu."
+
+msgid "Local files to delete: {}. Remote files to delete: {}."
+msgstr "Místní soubory k odstranění: {}. Vzdálené soubory k odstranění: {}."
+
+msgid "Synchronization will permanently delete files. These files cannot be recovered from the Recycle Bin."
+msgstr "Synchronizace soubory trvale odstraní. Tyto soubory nelze obnovit z koše."
 
 msgid "Delete local files that do not exist remotely"
 msgstr "Odstraňte místní soubory, které vzdáleně neexistují"
@@ -3070,27 +2946,17 @@ msgstr "Odstraňte místní soubory, které vzdáleně neexistují"
 msgid "Delete remote files that do not exist locally"
 msgstr "Odstraňte vzdálené soubory, které lokálně neexistují"
 
-msgid ""
-"Synchronize local files to a remote location. This is useful to synchronize "
-"your local file collection to a backup location."
-msgstr ""
-"Synchronizujte místní soubory se vzdáleným umístěním. To je užitečné pro "
-"synchronizaci místní sbírky souborů do umístění zálohy."
+msgid "c:\\photos with \\\\nas\\\\backup"
+msgstr "c:\\photos s \\\\nas\\\\backup"
 
-msgid "c:\\file-collection with \\\\nas\\\\backup-files"
-msgstr "c:\\file-collection s \\\\nas\\\\backup-files"
-
-msgid "Source of synchronization (Local)"
-msgstr "Zdroj synchronizace (místní)"
+msgid "Local folders"
+msgstr "Místní složky"
 
 msgid "Copy newer local files to remote folders"
 msgstr "Zkopírujte novější místní soubory do vzdálených složek"
 
 msgid "Synchronize only one folder"
 msgstr "Synchronizujte pouze jednu složku"
-
-msgid "Destination of synchronization (Remote)"
-msgstr "Cíl synchronizace (vzdálený)"
 
 msgid "Remote folder"
 msgstr "Vzdálená složka"
@@ -3120,7 +2986,7 @@ msgid "false"
 msgstr "falešný"
 
 msgid "true"
-msgstr "věrný"
+msgstr "pravda"
 
 msgid "Diffractor ERROR"
 msgstr "Diffractor CHYBA"
@@ -3140,12 +3006,6 @@ msgstr "Resetovat úpravy barev"
 msgid "Color, straighten or crop photos."
 msgstr "Upravte barvy, narovnejte nebo ořízněte fotografie."
 
-msgid "Add and edit metadata."
-msgstr "Přidejte a upravte metadata."
-
-msgid "Items can be flagged for later delete."
-msgstr "Položky lze označit pro pozdější smazání."
-
 msgid "Toggle full screen for media-items or open non-media-items."
 msgstr ""
 "Přepnout celou obrazovku pro mediální položky nebo otevřít jiné než mediální"
@@ -3155,7 +3015,7 @@ msgid "Change language"
 msgstr "Změňte jazyk"
 
 msgid "Contains common folders, searches and favorites"
-msgstr "Obsahuje používané  soubory, hledané a oblíbené"
+msgstr "Obsahuje běžné složky, vyhledávání a oblíbené položky"
 
 msgid "Open selected items with external app"
 msgstr "Otevřete vybrané položky pomocí externí aplikace"
@@ -3167,22 +3027,8 @@ msgstr ""
 "Připnuté položky zůstanou vybrané. Použijte to, když chcete rychle porovnat "
 "položku s jinými položkami."
 
-msgid ""
-"Play or pause video and audio files. Start a slide show if a photo is "
-"selected."
-msgstr ""
-"Přehrajte nebo pozastavte video a audio soubory. Pokud je vybrána "
-"fotografie, spusťte prezentaci."
-
 msgid "Reset straighten and rotate"
 msgstr "Reset narovnejte a otočte"
-
-msgid ""
-"Scale up small photos and videos. Large media is automatically scaled down "
-"to fit on the screen."
-msgstr ""
-"Zvětšení malých fotografií a videí. Velká média se automaticky zmenší, aby "
-"se vešla na obrazovku."
 
 msgid "Tag or un-tag selected items"
 msgstr "Označte nebo zrušte označení vybraných položek"
@@ -3201,7 +3047,7 @@ msgid "More options and controls"
 msgstr "Více možností a ovládacích prvků"
 
 msgid "{} ({}) total items in {} folders."
-msgstr "Celkový počet položek v {} složkách: {} ({})."
+msgstr "Celkem {} položek ({}) v {} složkách."
 
 msgid "Truncated at 1MB"
 msgstr "Zkráceno na 1 MB"
@@ -3216,7 +3062,7 @@ msgid "Update"
 msgstr "Aktualizovat"
 
 msgid "Version {} of Diffractor is available."
-msgstr "Verze {} difraktoru je k dispozici."
+msgstr "Je k dispozici verze {} aplikace Diffractor."
 
 msgid "Update available"
 msgstr "Aktualizace k dispozici"
@@ -3231,12 +3077,12 @@ msgid ""
 "Download and install now. Diffractor will need to be closed briefly during "
 "the install."
 msgstr ""
-"Stáhněte a nainstalujte nyní. Během instalace bude nutné difraktor krátce "
+"Stáhněte a nainstalujte nyní. Během instalace bude nutné Diffractor krátce "
 "uzavřít."
 
 msgid ""
 "Version {} of Diffractor is available. You are currently using version {}."
-msgstr "Verze {} difraktoru je k dispozici. Momentálně používáte verzi {}."
+msgstr "Je k dispozici verze {} aplikace Diffractor. Momentálně používáte verzi {}."
 
 msgid "More info"
 msgstr "Více informací"
@@ -3273,10 +3119,6 @@ msgstr "ICC"
 
 msgid "press ctrl+space"
 msgstr "stiskněte ctrl+mezera"
-
-msgid "Hold down left mouse button to show photo 100% size."
-msgstr ""
-"Podržením levého tlačítka myši zobrazíte fotografii ve 100% velikosti."
 
 msgid "Scope"
 msgstr "Rozsah"
@@ -3315,13 +3157,16 @@ msgid "Repeat play all media items"
 msgstr "Opakované přehrávání všech mediálních položek"
 
 msgid "Don't repeat"
-msgstr "Neopakujte se"
+msgstr "Neopakovat"
 
 msgid "Playback Options"
 msgstr "Možnosti přehrávání"
 
 msgid "Playback"
 msgstr "Přehrávání"
+
+msgid "Filter items"
+msgstr "Filtrovat položky"
 
 msgid "Photo filter"
 msgstr "Fotografický filtr"
@@ -3332,12 +3177,8 @@ msgstr "Video filtr"
 msgid "Audio filter"
 msgstr "Zvukový filtr"
 
-msgid ""
-"All items filtered out.\n"
-"Click to clear filter."
-msgstr ""
-"Všechny položky byly odfiltrovány.\n"
-"Kliknutím vymažete filtr."
+msgid "Show {} filtered out items"
+msgstr "Zobrazit {} odfiltrovaných položek"
 
 msgid "The collection contains {} items created on {}."
 msgstr "Sbírka obsahuje {} položek vytvořených dne {}."
@@ -3350,9 +3191,6 @@ msgstr "Zobrazit pouze oblíbené štítky"
 
 msgid "Show only favorite tags in the sidebar"
 msgstr "Na postranním panelu zobrazit pouze oblíbené štítky"
-
-msgid "Collection"
-msgstr "Sbírka"
 
 msgid "Destination"
 msgstr "Cíl"
@@ -3370,7 +3208,7 @@ msgid "Remote"
 msgstr "Vzdálený"
 
 msgid "Status"
-msgstr "Postavení"
+msgstr "Stav"
 
 msgid "Message"
 msgstr "Zpráva"
@@ -3386,9 +3224,6 @@ msgstr "dříve importované"
 
 msgid "ignore"
 msgstr "ignorovat"
-
-msgid "test"
-msgstr "test"
 
 msgid "Click analyze to show items"
 msgstr "Kliknutím na analyzovat zobrazíte položky"
@@ -3411,11 +3246,16 @@ msgstr[0] "{count} položka"
 msgstr[1] "{count} položek"
 msgstr[2] "{count} položek"
 
-msgid "Click to rate as 1 star"
-msgid_plural "Click to rate as {count} stars"
-msgstr[0] "Kliknutím ohodnotíte 1 hvězdičkou"
-msgstr[1] "Kliknutím ohodnotíte {count} hvězdičkami"
-msgstr[2] "Kliknutím ohodnotíte {count} hvězdičkami"
+msgid "1 item here"
+msgid_plural "{count} items here"
+msgstr[0] "1 položka zde"
+msgstr[1] "{count} položek zde"
+msgstr[2] "{count} položek zde"
+
+msgid "Set rating to 1 star"
+msgid_plural "Set rating to {count} stars"
+msgstr[0] "Nastavit hodnocení na 1 hvězdičku"
+msgstr[1] "Nastavit hodnocení na {count} hvězdičky"
 
 msgid "Cannot process {first-name}."
 msgid_plural "Cannot process {first-name} and {other} other items."
@@ -3466,7 +3306,7 @@ msgstr[1] "{count} položek bylo ignorováno."
 msgstr[2] "{count} položek bylo ignorováno."
 
 msgid ""
-"{first-name} was ignored because it exist already in the destination "
+"{first-name} was ignored because it exists already in the destination "
 "location."
 msgid_plural ""
 "{count} items were ignored because they exist already in the destination "
@@ -3490,6 +3330,21 @@ msgid_plural "{count} items ({size}) will be moved to the recycle bin."
 msgstr[0] "{first-name} bude přesunuto do koše."
 msgstr[1] "{count} položek ({size}) bude přesunuto do koše."
 msgstr[2] "{count} položek ({size}) bude přesunuto do koše."
+
+msgid "{first-name} will be permanently deleted."
+msgid_plural "{count} items ({size}) will be permanently deleted."
+msgstr[0] "{first-name} bude trvale odstraněno."
+msgstr[1] "{count} položky ({size}) budou trvale odstraněny."
+msgstr[2] "{count} položek ({size}) bude trvale odstraněno."
+
+msgid "You are about to delete {count} item."
+msgid_plural "You are about to delete {count} items."
+msgstr[0] "Chystáte se odstranit {count} položku."
+msgstr[1] "Chystáte se odstranit {count} položky."
+msgstr[2] "Chystáte se odstranit {count} položek."
+
+msgid "These items are on a network path. They will be permanently deleted and cannot be recovered from the recycle bin."
+msgstr "Tyto položky se nacházejí na síťové cestě (UNC). Budou trvale odstraněny a nelze je obnovit z koše."
 
 msgid "{first-name} will be copied."
 msgid_plural "{count} items ({size}) will be copied."
@@ -3533,28 +3388,11 @@ msgstr[0] "{first-name} bude mít datum upraveno."
 msgstr[1] "U {count} položek bude datum upraveno."
 msgstr[2] "U {count} položek bude datum upraveno."
 
-msgid "{first-name} will be shared."
-msgid_plural "{count} items will be shared."
-msgstr[0] "{first-name} bude sdíleno."
-msgstr[1] "Bude sdíleno {count} položek."
-msgstr[2] "Bude sdíleno {count} položek."
-
-msgid "{first-name} will be copied or moved."
-msgid_plural "{count} items ({size}) will be copied or moved."
-msgstr[0] "{first-name} bude zkopírováno nebo přesunuto."
-msgstr[1] "{count} položek ({size}) bude zkopírováno nebo přesunuto."
-msgstr[2] "{count} položek ({size}) bude zkopírováno nebo přesunuto."
-
-msgid "{first-name} will be sent using your desktop email client."
-msgid_plural "{count} items will be sent using your desktop email client."
-msgstr[0] ""
-"{first-name} bude odesláno pomocí vašeho e-mailového klienta pro počítače."
-msgstr[1] ""
-"{count} položek bude odesláno pomocí vašeho e-mailového klienta pro "
-"počítače."
-msgstr[2] ""
-"{count} položek bude odesláno pomocí vašeho e-mailového klienta pro "
-"počítače."
+msgid "A desktop email draft will be opened with {first-name} attached."
+msgid_plural "A desktop email draft will be opened with {count} selected items attached."
+msgstr[0] "V e-mailovém klientovi se otevře koncept s přílohou {first-name}."
+msgstr[1] "V e-mailovém klientovi se otevře koncept s vybranými položkami v počtu {count}."
+msgstr[2] "V e-mailovém klientovi se otevře koncept s vybranými položkami v počtu {count}."
 
 msgid "{first-name} already exists. Do you want to replace it?"
 msgid_plural ""
@@ -3577,3 +3415,325 @@ msgstr[1] ""
 msgstr[2] ""
 "{first-name} a {other} další položky budou mít přepsány stávající metadata "
 "polohy GPS."
+
+msgid "Choose a valid new starting date and time."
+msgstr "Zvolte platné nové počáteční datum a čas."
+
+msgid "Windows could not stage the selected items for disc burning."
+msgstr "Systému Windows se nepodařilo připravit vybrané položky k vypálení na disk."
+
+msgid "The selected items will be staged in Windows Disc Burning. Windows will guide you through writing the disc."
+msgstr "Vybrané položky budou připraveny v nástroji Windows pro vypalování disků. Systém Windows vás provede zápisem na disk."
+
+msgid "&Stage files"
+msgstr "&Připravit soubory"
+
+msgid "Email draft was canceled."
+msgstr "Koncept e-mailu byl zrušen."
+
+msgid "Maximum dimension must be at least 1 pixel."
+msgstr "Maximální rozměr musí být alespoň 1 pixel."
+
+msgid "Select at least one metadata field to update. Checked empty fields clear existing values; unchecked fields are unchanged."
+msgstr "Vyberte alespoň jedno pole metadat, které chcete aktualizovat. Zaškrtnutá prázdná pole vymažou stávající hodnoty; nezaškrtnutá pole zůstanou beze změny."
+
+msgid "{first-name} was canceled."
+msgid_plural "{count} items were canceled."
+msgstr[0] "Operace pro {first-name} byla zrušena."
+msgstr[1] "Operace byla zrušena pro tento počet položek: {count}."
+msgstr[2] "Operace byla zrušena pro tento počet položek: {count}."
+
+msgid "{first-name} will be staged for disc burning."
+msgid_plural "{count} selected items ({size}) will be staged for disc burning."
+msgstr[0] "Položka {first-name} bude připravena k vypálení na disk."
+msgstr[1] "Vybrané položky ({count}, {size}) budou připraveny k vypálení na disk."
+msgstr[2] "Vybrané položky ({count}, {size}) budou připraveny k vypálení na disk."
+
+msgid "Detect and straighten a photographed document"
+msgstr "Rozpoznat a narovnat fotografovaný dokument"
+
+msgid "Failed to Initialize Direct3d"
+msgstr "Inicializace Direct3D se nezdařila"
+
+msgid "Navigator"
+msgstr "Navigátor"
+
+msgid "Flip comparison panes"
+msgstr "Prohodit srovnávací panely"
+
+msgid "Auto-hide"
+msgstr "Automaticky skrýt"
+
+msgid "Off"
+msgstr "Vypnuto"
+
+msgid "Slideshow"
+msgstr "Prezentace"
+
+
+msgid "Altitude"
+msgstr "Nadmořská výška"
+
+msgid "GPS speed"
+msgstr "Rychlost GPS"
+
+msgid "In flight"
+msgstr "Za letu"
+
+msgid "{} m"
+msgstr "{} m"
+
+msgid "{} m underwater"
+msgstr "{} m pod vodou"
+
+msgid "Cancel was pressed after {}"
+msgstr "Zrušení bylo stisknuto po {}"
+
+msgid "Apply tags"
+msgstr "Použít značky"
+
+msgid "Item"
+msgstr "Položka"
+
+msgid "Tags after run"
+msgstr "Značky po spuštění"
+
+msgid "Enter one or more tags to add or remove."
+msgstr "Zadejte jednu nebo více značek k přidání nebo odebrání."
+
+msgid "no change"
+msgstr "beze změny"
+
+msgid "Select items to tag"
+msgstr "Vyberte položky k označení"
+
+msgid "Cancel operation"
+msgstr "Zrušit operaci"
+
+msgid "{} is still running. Cancel it and close?"
+msgstr "{} stále běží. Zrušit a zavřít?"
+
+msgid "Keep running"
+msgstr "Nechat běžet"
+
+msgid "Location unavailable"
+msgstr "Umístění není dostupné"
+
+msgid "{} could not be opened. It may be disconnected, renamed or removed."
+msgstr "{} se nepodařilo otevřít. Může být odpojeno, přejmenováno nebo odstraněno."
+
+msgid "Try again"
+msgstr "Zkusit znovu"
+
+msgid "Go to the parent folder"
+msgstr "Přejít do nadřazené složky"
+
+msgid "{} is still running. Close it before browsing somewhere else."
+msgstr "{} stále běží. Zavřete jej, než přejdete jinam."
+
+msgid "If the destination already exists:"
+msgstr "Pokud cíl již existuje:"
+
+msgid "If both sides have the file, the newer one replaces the older one."
+msgstr "Pokud soubor mají obě strany, novější nahradí starší."
+
+msgid "Replace"
+msgstr "Nahradit"
+
+msgid "Skip"
+msgstr "Přeskočit"
+
+msgid "Auto-rename"
+msgstr "Automaticky přejmenovat"
+
+msgid "Block run"
+msgstr "Zablokovat spuštění"
+
+msgid "{} destinations already exist. Choose Replace, Skip or Auto-rename."
+msgstr "{} cílů již existuje. Zvolte Nahradit, Přeskočit nebo Automaticky přejmenovat."
+
+msgid "{} items will be skipped because the destination exists."
+msgstr "{} položek bude přeskočeno, protože cíl již existuje."
+
+msgid "{} existing destinations will be replaced."
+msgstr "{} existujících cílů bude nahrazeno."
+
+msgid "{} items will be given a new name to avoid a collision."
+msgstr "{} položek dostane nový název, aby se předešlo kolizi."
+
+msgid "Distance: {}"
+msgstr "Vzdálenost: {}"
+
+msgid "Change how far from this place to search"
+msgstr "Změnit, jak daleko od tohoto místa hledat"
+
+msgid "N,NE,E,SE,S,SW,W,NW"
+msgstr "S,SV,V,JV,J,JZ,Z,SZ"
+
+msgid "{} {} of {}"
+msgstr "{} {} od {}"
+
+msgid "Near {}"
+msgstr "Poblíž {}"
+
+msgid "Remote area"
+msgstr "Odlehlá oblast"
+
+msgid "Nothing within {} of {}."
+msgstr "Nic ve vzdálenosti {} od {}."
+
+msgid "Nothing found at {}."
+msgstr "V {} nic nenalezeno."
+
+msgid "Widen to {}"
+msgstr "Rozšířit na {}"
+
+msgid "Search all places named {}"
+msgstr "Hledat všechna místa s názvem {}"
+
+msgid "Show items with no location"
+msgstr "Zobrazit položky bez polohy"
+
+msgid "Search within {} of {}"
+msgstr "Hledat v okruhu {} od {}"
+
+msgid "High altitude"
+msgstr "Velká výška"
+
+msgid "Timeline"
+msgstr "Časová osa"
+
+msgid "Places"
+msgstr "Místa"
+
+msgid "{} items"
+msgstr "{} položek"
+
+msgid "Grouped by {}"
+msgstr "Seskupeno podle {}"
+
+msgid "Grouped by {} - {}"
+msgstr "Seskupeno podle {} - {}"
+
+msgid "Clear"
+msgstr "Vymazat"
+
+msgid "From {} to {}"
+msgstr "Od {} do {}"
+
+msgid "Plays or pauses video and audio. Stops a running slideshow."
+msgstr "Přehraje nebo pozastaví video a zvuk. Zastaví probíhající prezentaci."
+
+msgid "Replaces Reject"
+msgstr "Nahradí Odmítnout"
+
+msgid "Click to apply"
+msgstr "Kliknutím použijete"
+
+msgid "Click to clear"
+msgstr "Kliknutím vymažete"
+
+msgid "Replaces the current label: {}"
+msgstr "Nahradí aktuální označení: {}"
+
+msgid "Replaces the star rating"
+msgstr "Nahradí hodnocení hvězdičkami"
+
+msgid "When the last item has played, start again from the first"
+msgstr "Po přehrání poslední položky začít znovu od první"
+
+msgid "Stop after the last item"
+msgstr "Zastavit po poslední položce"
+
+msgid "Play or pause the displayed video or audio file."
+msgstr "Přehraje nebo pozastaví zobrazený video nebo zvukový soubor."
+
+msgid "Play through the visible items. Photos are shown for the slideshow delay; video and audio play to the end."
+msgstr "Přehraje viditelné položky. Fotografie se zobrazují po dobu prodlevy prezentace; video a zvuk se přehrají až do konce."
+
+msgid "Continue with the next item"
+msgstr "Pokračovat další položkou"
+
+msgid "When an item finishes, continue with the next photo, video or audio item"
+msgstr "Když položka skončí, pokračovat další fotografií, videem nebo zvukovou položkou"
+
+msgid "Diffractor cannot write ratings, labels or other metadata into {} files, and does not write a sidecar for them."
+msgstr "Diffractor neumí zapisovat hodnocení, označení ani další metadata do souborů {} a nevytváří pro ně vedlejší soubor."
+
+msgid "Use a semicolon to list more than one genre. For example: Rock; Blues"
+msgstr "Pro uvedení více žánrů použijte středník. Například: Rock; Blues"
+
+msgid "Select one photo to edit. Videos, audio, folders and formats Diffractor cannot save are not supported."
+msgstr "Vyberte jednu fotografii k úpravě. Videa, zvuk, složky a formáty, které Diffractor neumí uložit, nejsou podporovány."
+
+msgid "Off: photos and videos smaller than the window are shown at their real size. On: they are enlarged to fit the window. Media larger than the window is always scaled down to fit."
+msgstr "Vypnuto: fotografie a videa menší než okno se zobrazují ve skutečné velikosti. Zapnuto: zvětší se na velikost okna. Média větší než okno se vždy zmenší, aby se vešla."
+
+msgid "Convert the selected photos to another format and optionally limit their size. The originals are kept and new files are written to the destination folder."
+msgstr "Převede vybrané fotografie do jiného formátu a volitelně omezí jejich velikost. Originály zůstanou zachovány a nové soubory se zapíší do cílové složky."
+
+msgid "Write the same metadata values to every selected item. Only the fields you check are changed."
+msgstr "Zapíše stejné hodnoty metadat do všech vybraných položek. Změní se pouze zaškrtnutá pole."
+
+msgid "Shift the dates of the selected items so the earliest item starts at a new date and time."
+msgstr "Posune data vybraných položek tak, aby nejstarší položka začínala novým datem a časem."
+
+msgid "Add or remove tags across the selected items. Tags you do not mention are left in place."
+msgstr "Přidá nebo odebere štítky u vybraných položek. Štítky, které neuvedete, zůstanou beze změny."
+
+msgid "Convert"
+msgstr "Převést"
+
+msgid "Update metadata"
+msgstr "Aktualizovat metadata"
+
+msgid "No removable drive was found."
+msgstr "Nebyl nalezen žádný vyměnitelný disk."
+
+msgid "Copy or move files into a folder structure built from metadata such as date, album, or artist. If the destination is in your collection, the copies join it automatically. Analyze first to review every action before you run."
+msgstr "Kopíruje nebo přesouvá soubory do struktury složek vytvořené z metadat, jako je datum, album nebo interpret. Pokud je cíl ve vaší sbírce, kopie se do ní automaticky zařadí. Nejprve spusťte analýzu a zkontrolujte každou akci před spuštěním."
+
+msgid "Rename the selected files from a template that can combine text, an incrementing number, and metadata properties. Review the new names below before you run."
+msgstr "Přejmenuje vybrané soubory podle šablony, která může kombinovat text, rostoucí číslo a vlastnosti metadat. Před spuštěním si níže zkontrolujte nové názvy."
+
+msgid "Synchronize local folders with a remote or backup folder. Analyze first to review every copy and delete before you run."
+msgstr "Synchronizuje místní složky se vzdálenou nebo zálohovací složkou. Nejprve spusťte Analyzovat, abyste si před spuštěním prohlédli každé kopírování a mazání."
+
+msgid "home"
+msgstr "home"
+
+msgid "end"
+msgstr "end"
+
+msgid "-"
+msgstr "-"
+
+msgid "Grouping"
+msgstr "Seskupení"
+
+msgid "Move to the first or last item. Pans a zoomed image to the left or right edge."
+msgstr "Přechod na první nebo poslední položku. Posune přiblížený obrázek k levému nebo pravému okraji."
+
+msgid "Move up or down a row of items. Pans a zoomed image."
+msgstr "Posun o řádek položek nahoru nebo dolů. Posouvá přiblížený obrázek."
+
+msgid "Zoom a displayed image in or out. Press 0 to fit it to the window."
+msgstr "Přiblíží nebo oddálí zobrazený obrázek. Stisknutím 0 jej přizpůsobíte oknu."
+
+msgid "Add folders to your collection (Ctrl+F6)"
+msgstr "Přidat složky do sbírky (Ctrl+F6)"
+
+msgid "Select at least one search criterion."
+msgstr "Vyberte alespoň jedno kritérium hledání."
+
+msgid "Could not check for updates. Check your internet connection and try again."
+msgstr "Nepodařilo se zkontrolovat aktualizace. Zkontrolujte připojení k internetu a zkuste to znovu."
+
+msgid "Diagnostics information could not be sent. Check your internet connection and try again."
+msgstr "Diagnostické informace se nepodařilo odeslat. Zkontrolujte připojení k internetu a zkuste to znovu."
+
+msgid "Too large to display"
+msgstr "Příliš velké pro zobrazení"
+
+msgid "This image could not be displayed"
+msgstr "Tento obrázek nelze zobrazit"

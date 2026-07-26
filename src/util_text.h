@@ -13,8 +13,6 @@
 
 namespace str
 {
-	df::string_map extract_url_params(std::string_view s);
-	df::string_map split_url_params(std::string_view s);
 	void count_ranges(df::dense_string_counts& counts, std::string_view text);
-	df::string_counts guess_word(const df::string_counts& counts, std::string_view pattern);
+
 };

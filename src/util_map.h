@@ -11,11 +11,8 @@
 
 #pragma once
 
-// Using the excellent 'The Parallel Hashmap'
-// From Gregory Popovitch
-// https://github.com/greg7mdp/parallel-hashmap
-#include <parallel_hashmap/phmap.h>
-#include <parallel_hashmap/btree.h>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "crypto.h"
 #include "util_path.h"
@@ -30,14 +27,19 @@ namespace df
 	template <typename K, typename V, typename H = std::hash<K>, typename E = std::equal_to<K>>
 	using hash_map = std::unordered_map<K, V, H, E>;
 
+	// 'dense_*' historically used a flat/parallel hash map. The interning pool (the one place
+	// that genuinely needed a dense, cache-friendly table for a very large number of strings)
+	// now has its own purpose-built append-only table, so the general containers use the
+	// standard library. The distinct alias is kept so intent is documented and a specialised
+	// implementation can be reintroduced in one place if a specific case ever needs it.
 	template <typename K, typename V, typename H = std::hash<K>, typename E = std::equal_to<K>>
-	using dense_hash_map = phmap::parallel_flat_hash_map<K, V, H, E>;
+	using dense_hash_map = std::unordered_map<K, V, H, E>;
 
 	template <typename V, typename H = std::hash<V>, typename E = std::equal_to<V>>
 	using hash_set = std::unordered_set<V, H, E>;
 
 	template <typename V, typename H = std::hash<V>, typename E = std::equal_to<V>>
-	using dense_hash_set = phmap::parallel_flat_hash_set<V, H, E>;
+	using dense_hash_set = std::unordered_set<V, H, E>;
 
 	struct ihash
 	{

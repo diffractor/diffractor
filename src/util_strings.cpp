@@ -19,8 +19,8 @@
 #include "app_text.h"
 #include "util_text.h"
 
-static_assert(std::is_trivially_copyable_v<str::part_t>);
-static_assert(std::is_trivially_copyable_v<str::cached>);
+df_assert_pod(str::part_t);
+df_assert_pod(str::cached);
 
 bool str::is_utf8(const char* sz, const int len)
 {
@@ -99,19 +99,6 @@ bool str::is_utf16(const uint8_t* sz, const int len)
 	return len > 4 && sz[0] == 0 && sz[2] == 0; // if every other char is zero then likely utf16
 }
 
-static bool is_utf7(const char* p, const int len)
-{
-	const auto* const limit = p + len;
-
-	while (p < limit)
-	{
-		if (*p & 0x80 || !*p) return false;
-		p++;
-	}
-
-	return true;
-}
-
 std::string str::print(const std::string_view svformat, ...)
 {
 	const std::string szFormat = utf8_cast2(svformat);
@@ -166,17 +153,19 @@ std::string str::print(__in_z __format_string const char* szFormat, ...)
 //
 // ARCHITECTURE:
 // - string_index_t: Singleton managing the intern pool
-// - parallel_flat_hash_map: 4-shard concurrent hash map for thread-safe lookup/insert
+// - append-only sharded open-addressing table: linear-probing, grow-only (no deletes, so no
+//   tombstones); 16 shards, one lock per shard for concurrent lookup/insert
 // - platform::memory_pool: Contiguous block allocator for string storage
 //
 // THREAD SAFETY:
-// The parallel_flat_hash_map uses fine-grained locking with 4 independent shards. Different
-// strings (based on hash) can be inserted concurrently from different threads. The sharding
-// is configured via the template parameter '4' in storage_t typedef.
+// Each shard is guarded by its own lock, so strings whose hashes map to different shards can be
+// interned concurrently from different threads. The shard is chosen from the top bits of the
+// CRC32C hash; the low bits index the probe sequence.
 //
 // MEMORY MODEL:
 // Strings are never deallocated - they persist for the application lifetime. This is intentional:
 // - Avoids complex reference counting on a hot path
+// - Because entries are never removed, the table needs no tombstones and only ever grows
 // - Memory pool provides better allocation density than heap
 // - Total unique strings bounded by collection size (typically < 100K strings)
 //
@@ -184,23 +173,6 @@ std::string str::print(__in_z __format_string const char* szFormat, ...)
 // Uses CRC32C for fast hashing with good distribution. CRC32C is hardware-accelerated on
 // modern CPUs via SSE4.2 instructions.
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-
-struct string_index_hash
-{
-	uint32_t operator()(const std::string_view sv) const
-	{
-		return crypto::crc32c(sv.data(), sv.size());
-	}
-};
-
-struct string_index_eq
-{
-	bool operator()(const std::string_view l, const std::string_view r) const
-	{
-		return l.compare(r) == 0;
-	}
-};
-
 
 //struct string_index_less
 //{
@@ -225,59 +197,124 @@ struct string_index_eq
 
 
 // Global string intern pool. Manages all interned strings for the application.
-// Uses lazy_emplace_l for atomic lookup-or-insert to avoid race conditions.
+//
+// Interned strings are never removed, so the table needs no tombstones or deletion
+// bookkeeping: it is a plain linear-probing open-addressing table that only ever grows.
+// This is denser and simpler than a general-purpose node-based hash map (one small slot
+// per entry, contiguous storage). Concurrency uses fixed sharding with one lock per shard;
+// the string bytes live in the shared, thread-safe memory_pool.
 struct string_index_t
 {
-	using K = std::string_view;
-	using V = str::chached_string_storage_t*;
-	// 4 shards for concurrent access - different hashes can be inserted in parallel
-	using storage_t = phmap::parallel_flat_hash_map<
-		K, V, string_index_hash, string_index_eq, std::allocator<std::pair<const K, V>>, 4, platform::mutex>;
-	storage_t _storage;
-	platform::memory_pool _pool; // Contiguous allocation for string data
+	struct shard
+	{
+		platform::mutex cs;
+		std::vector<uint32_t> hashes; // power-of-two size; 0 marks an empty slot
+		std::vector<str::chached_string_storage_t*> entries;
+		uint32_t mask = 0;
+		uint32_t count = 0;
+	};
 
-	// Allocate and initialize storage for a new interned string
+	static constexpr uint32_t shard_count = 16; // power of two; top hash bits select the shard
+	static constexpr uint32_t shard_bits = 4;
+	static_assert(shard_count == (1u << shard_bits), "shard_bits must match shard_count");
+	static constexpr uint32_t initial_capacity = 16; // per shard, power of two
+	static constexpr size_t entry_overhead = offsetof(str::chached_string_storage_t, sz) + 1;
+
+	shard _shards[shard_count];
+	platform::memory_pool _pool; // contiguous storage for the immutable string bytes
+
+	// Allocate immutable storage for a new interned string (flexible array member layout).
 	str::chached_string_storage_t* make_entry(const std::string_view sv)
 	{
 		const auto len = sv.size();
-		const auto allocation = sizeof(str::chached_string_storage_t) + (len + 1) * sizeof(char);
+		const auto allocation = entry_overhead + len;
 		auto* const copy = static_cast<str::chached_string_storage_t*>(_pool.alloc(allocation));
 
 		copy->len = static_cast<uint32_t>(len);
-		memcpy_s(copy->sz, allocation, sv.data(), len * sizeof(char));
+		memcpy_s(copy->sz, allocation - offsetof(str::chached_string_storage_t, sz), sv.data(), len * sizeof(char));
 		copy->sz[len] = 0;
 
 		return copy;
 	}
 
-	// Thread-safe lookup-or-insert. Returns cached handle to interned string.
-	// Uses lazy_emplace_l for atomic operation - either finds existing or creates new.
+	// Grow a shard to the next power of two, rehashing existing entries. Caller holds the lock.
+	static void grow_locked(shard& s)
+	{
+		const uint32_t new_size = s.hashes.empty()
+			                          ? initial_capacity
+			                          : static_cast<uint32_t>(s.hashes.size()) * 2;
+		std::vector<uint32_t> next_hashes(new_size);
+		std::vector<str::chached_string_storage_t*> next_entries(new_size);
+		const uint32_t new_mask = new_size - 1;
+
+		for (uint32_t old_i = 0; old_i < s.hashes.size(); ++old_i)
+		{
+			const auto hash = s.hashes[old_i];
+			if (hash == 0) continue;
+			auto i = hash & new_mask;
+			while (next_hashes[i] != 0) i = (i + 1) & new_mask;
+			next_hashes[i] = hash;
+			next_entries[i] = s.entries[old_i];
+		}
+
+		s.hashes.swap(next_hashes);
+		s.entries.swap(next_entries);
+		s.mask = new_mask;
+	}
+
+	// Thread-safe lookup-or-insert. Returns a handle to the single interned copy.
 	str::cached find_or_insert(const std::string_view sv)
 	{
-		if (sv.empty() || sv.size() > platform::memory_pool::block_size) return {};
-		str::chached_string_storage_t* result = nullptr;
+		if (sv.empty() || sv.size() > platform::memory_pool::block_size - entry_overhead) return {};
 
-		// Called if string already exists in pool
-		const auto exists = [&result](const std::pair<const K, V>& kv) { result = kv.second; };
-		// Called atomically if string needs to be created
-		const auto emplace = [this, sv, &result](const storage_t::constructor& ctor)
+		auto hash = crypto::crc32c(sv.data(), sv.size());
+		if (hash == 0) hash = 1; // reserve 0 as the empty-slot marker
+
+		shard& s = _shards[hash >> (32 - shard_bits)];
+		const platform::exclusive_lock lock(s.cs);
+
+		if (s.hashes.empty())
 		{
-			result = make_entry(sv);
-			// Key is string_view pointing INTO the newly allocated storage
-			ctor(std::string_view(result->sz, result->len), result);
-		};
+			grow_locked(s);
+		}
 
-		_storage.lazy_emplace_l(sv, exists, emplace);
+		while (true)
+		{
+			auto i = hash & s.mask;
 
-		return {result};
+			while (s.hashes[i] != 0)
+			{
+				if (s.hashes[i] == hash)
+				{
+					const auto* const entry = s.entries[i];
+					if (std::string_view(entry->sz, entry->len) == sv) return {entry};
+				}
+				i = (i + 1) & s.mask;
+			}
+
+			// Grow only for a new insertion. Existing-string lookups never trigger a rehash.
+			// 0.75 keeps linear-probing miss cost (the scan-time common case) near 8 probes.
+			if ((static_cast<size_t>(s.count) + 1u) * 4u >= s.hashes.size() * 3u)
+			{
+				grow_locked(s);
+				continue;
+			}
+
+			auto* const entry = make_entry(sv);
+			s.entries[i] = entry;
+			s.hashes[i] = hash;
+			s.count += 1;
+			return {entry};
+		}
 	}
 };
 
-// Meyer's singleton - thread-safe lazy initialization
+// Deliberately immortal: interned strings outlive static destruction, and a worker still
+// running at exit must not race the table's destructor.
 static string_index_t& string_index()
 {
-	static string_index_t index;
-	return index;
+	static auto* const index = new string_index_t();
+	return *index;
 }
 
 // Public interning functions - delegate to singleton
@@ -339,13 +376,21 @@ std::wstring_view str::trim(const std::wstring_view s)
 
 bool str::is_num(const std::string_view sv)
 {
+	auto digits = 0;
+
 	for (const auto& c : sv)
 	{
-		if (!isdigit(static_cast<unsigned char>(c)) && c != '.' && c != ',')
+		if (isdigit(static_cast<unsigned char>(c)))
+		{
+			digits += 1;
+		}
+		else if (c != '.' && c != ',')
+		{
 			return false;
+		}
 	}
 
-	return true;
+	return digits > 0;
 }
 
 
@@ -459,11 +504,13 @@ str::find_result str::ifind2(const std::string_view text, const std::string_view
 
 		while (text_p < text_end && sub_p <= sub_end)
 		{
+			const auto text_start = text_p;
 			const auto text_char = normalze_for_compare(pop_utf8_char(text_p, text_end));
 
 			if (text_char == first_sub_char) // Is matching?
 			{
-				const auto match_start = static_cast<size_t>(std::distance(text.begin(), text_p)) - 1u;
+				// Consumers match this against a character-start byte offset, so measure before the pop.
+				const auto match_start = static_cast<size_t>(std::distance(text.begin(), text_start));
 				auto match_len = 0u;
 
 				auto text_match = text_p;
@@ -575,53 +622,12 @@ void str::split2(const std::string_view text, const bool detect_quotes,
 	}
 }
 
-
-df::string_map str::split_url_params(const std::string_view params)
-{
-	const auto copy = std::string(params);
-	df::string_map results;
-	std::istringstream ss(copy);
-	std::string item;
-
-	while (std::getline(ss, item, '&'))
-	{
-		const auto split = item.find('=');
-
-		if (split != std::wstring::npos)
-		{
-			results[item.substr(0, split)] = item.substr(split + 1);
-		}
-	}
-
-	return results;
-}
-
-df::string_map str::extract_url_params(const std::string_view url)
-{
-	df::string_map results;
-	auto found = url.find(u8'?');
-
-	if (found != std::wstring::npos)
-	{
-		results = split_url_params(url.substr(found + 1));
-	}
-	else
-	{
-		found = url.find(u8'#');
-
-		if (found != std::wstring::npos)
-		{
-			results = split_url_params(url.substr(found + 1));
-		}
-	}
-
-	return results;
-}
-
 std::string str::replace(const std::string_view s, const std::string_view find,
                          const std::string_view replacement)
 {
 	auto result = std::string(s);
+	if (find.empty()) return result; // an empty needle matches at every position and never advances
+
 	size_t pos = 0;
 	const auto find_length = find.size();
 	const auto replacement_length = replacement.size();
@@ -731,23 +737,18 @@ int str::month(const std::string_view r)
 		if (icmp(months[i], r) == 0)
 			return i;
 
-	if (r.size() == 3)
-	{
-		for (int i = 1; i <= 12; i++)
-			if (icmp(short_months[i], r) == 0)
-				return i;
-	}
+	for (int i = 1; i <= 12; i++)
+		if (icmp(short_months[i], r) == 0)
+			return i;
 
 	for (int i = 1; i <= 12; i++)
 		if (icmp(tt_months(i), r) == 0)
 			return i;
 
-	if (r.size() == 3)
-	{
-		for (int i = 1; i <= 12; i++)
-			if (icmp(tt_short_months(i), r) == 0)
-				return i;
-	}
+	// No length gate here: translated short months are not all 3 bytes (French "janv", Cyrillic, CJK).
+	for (int i = 1; i <= 12; i++)
+		if (icmp(tt_short_months(i), r) == 0)
+			return i;
 
 	return 0;
 }
@@ -756,14 +757,22 @@ std::string str::quote_if_white_space(const std::string_view s)
 {
 	if (need_quotes(s))
 	{
-		const auto q = s.find(L'\"') == std::string::npos ? '"' : '\'';
+		const auto no_dquote = s.find('"') == std::string_view::npos;
+		const auto no_squote = s.find('\'') == std::string_view::npos;
 
-		std::string result;
-		result.reserve(s.size() + 2);
-		result = q;
-		result += s;
-		result += q;
-		return result;
+		if (no_dquote || no_squote)
+		{
+			const auto q = no_dquote ? '"' : '\'';
+
+			std::string result;
+			result.reserve(s.size() + 2);
+			result = q;
+			result += s;
+			result += q;
+			return result;
+		}
+
+		// Both quote kinds present - matches str::join, which also emits these unquoted.
 	}
 
 	return std::string(s);
@@ -828,7 +837,8 @@ std::string str::to_string(const double v, int num_digits)
 	int decimal = 0;
 	int sign = 0;
 	bool strip_trailing_zeros = false;
-	const auto sep = std::use_facet<std::numpunct<char>>(std::locale()).decimal_point();
+	// The app never calls std::locale::global, so resolve the separator once instead of per call.
+	static const auto sep = std::use_facet<std::numpunct<char>>(std::locale()).decimal_point();
 
 	if (num_digits == -1)
 	{
@@ -910,7 +920,7 @@ std::string str::format_seconds(const int val)
 
 	const auto secs = val % 60;
 	const auto mins = val / 60 % 60;
-	const auto hours = val / (60 * 60) % 60;
+	const auto hours = val / (60 * 60);
 
 	if (hours)
 	{
@@ -940,16 +950,29 @@ int32_t str::to_int(const std::string_view sv)
 int64_t str::to_int64(const std::string_view r)
 {
 	int64_t result = 0;
+	auto negative = false;
+	auto seen_digit = false;
 
 	for (const auto c : r)
 	{
 		if (isdigit(static_cast<unsigned char>(c)))
 		{
+			if (result > (std::numeric_limits<int64_t>::max() - (c - '0')) / 10)
+			{
+				result = std::numeric_limits<int64_t>::max();
+				break;
+			}
+
 			result = result * 10 + (c - '0');
+			seen_digit = true;
+		}
+		else if (c == '-' && !seen_digit)
+		{
+			negative = true;
 		}
 	}
 
-	return result;
+	return negative ? -result : result;
 }
 
 uint32_t str::to_uint(const std::string_view r)
@@ -960,6 +983,11 @@ uint32_t str::to_uint(const std::string_view r)
 	{
 		if (isdigit(static_cast<unsigned char>(c)))
 		{
+			if (result > (std::numeric_limits<uint32_t>::max() - static_cast<uint32_t>(c - '0')) / 10)
+			{
+				return std::numeric_limits<uint32_t>::max();
+			}
+
 			result = result * 10 + (c - '0');
 		}
 	}
@@ -969,6 +997,8 @@ uint32_t str::to_uint(const std::string_view r)
 
 double str::to_double(const std::string_view r)
 {
+	constexpr auto max_abs_exponent = 400; // a double saturates to 0 or infinity well before this
+
 	auto a = 0.0;
 	auto e = 0;
 	auto c = r.begin();
@@ -998,7 +1028,7 @@ double str::to_double(const std::string_view r)
 		++c;
 	}
 
-	while (c < end && iswdigit(*c))
+	while (c < end && *c >= '0' && *c <= '9')
 	{
 		a = a * 10.0 + (*c - '0');
 		++c;
@@ -1008,7 +1038,7 @@ double str::to_double(const std::string_view r)
 	{
 		++c;
 
-		while (c < end && iswdigit(*c))
+		while (c < end && *c >= '0' && *c <= '9')
 		{
 			a = a * 10.0 + (*c - '0');
 			e = e - 1;
@@ -1035,14 +1065,18 @@ double str::to_double(const std::string_view r)
 				++c;
 			}
 
-			while (c < end && iswdigit(*c))
+			// Stop accumulating past the double range: an unbounded digit run would overflow i and
+			// spin the scaling loops below billions of times.
+			while (c < end && *c >= '0' && *c <= '9')
 			{
-				i = i * 10 + (*c - '0');
+				if (i < max_abs_exponent) i = i * 10 + (*c - '0');
 				++c;
 			}
 			e += i * sign;
 		}
 	}
+
+	e = std::clamp(e, -max_abs_exponent, max_abs_exponent);
 
 	while (e > 0)
 	{
@@ -1061,31 +1095,6 @@ double str::to_double(const std::string_view r)
 
 using word_counts_t = df::hash_map<std::string_view, int, df::ihash, df::ieq>;
 
-df::string_counts top_totals(const word_counts_t& counts, int limit)
-{
-	std::vector<std::pair<int, std::string_view>> all;
-	all.reserve(counts.size());
-
-	for (const auto& i : counts)
-	{
-		all.emplace_back(i.second, i.first);
-	}
-
-	std::ranges::sort(all, [](auto&& l, auto&& r) { return l.first > r.first; });
-
-	df::string_counts results;
-
-	for (const auto& i : all)
-	{
-		if (limit-- > 0)
-		{
-			results[i.second] = i.first;
-		}
-	}
-
-	return results;
-}
-
 static const df::hash_set<std::string_view, df::ihash, df::ieq> unwanted_english_word = {
 	"and",
 };
@@ -1097,8 +1106,10 @@ static bool is_range_separator(const wchar_t c)
 
 static bool is_num(const std::string_view text)
 {
-	return !text.empty() && std::find_if(text.begin(),
-	                                     text.end(), [](const int c) { return !std::isdigit(c); }) == text.end();
+	return !text.empty() && std::find_if(text.begin(), text.end(), [](const char c)
+	{
+		return !std::isdigit(static_cast<unsigned char>(c));
+	}) == text.end();
 }
 
 static bool is_num_with_prefix(const std::string_view text, const std::string_view prefix)
@@ -1171,23 +1182,6 @@ void str::count_ranges(df::dense_string_counts& totals, const std::string_view t
 			}
 		}
 	}
-}
-
-df::string_counts str::guess_word(const df::string_counts& counts, const std::string_view pattern)
-{
-	constexpr auto max_results = 16;
-
-	word_counts_t totals;
-
-	for (const auto& entry : counts)
-	{
-		if (contains(entry.first, pattern))
-		{
-			totals[entry.first] += entry.second;
-		}
-	}
-
-	return top_totals(totals, max_results);
 }
 
 static df::dense_hash_map<int, char32_t> make_normalizations()

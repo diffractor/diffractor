@@ -20,12 +20,23 @@ class sync_view final :
 	public std::enable_shared_from_this<sync_view>
 {
 	bool _select_other_folder = false;
+	std::string _title;
 	std::string _status;
+	sync_analysis_result _analysis;
+	df::index_roots _analysis_source;
+	df::folder_path _analysis_remote;
+	bool _analysis_local_remote = false;
+	bool _analysis_remote_local = false;
+	bool _analysis_delete_local = false;
+	bool _analysis_delete_remote = false;
+	bool _analysis_valid = false;
+
+	void invalidate_analysis();
 
 public:
 	sync_view(view_state& state, view_host_ptr host) : list_view(state, std::move(host))
 	{
-		col_count = 3;
+		col_count = 4;
 	}
 
 	std::array<text_t, max_col_count> col_titles() override
@@ -34,19 +45,19 @@ public:
 		{
 			tt.action,
 			tt.local,
+			{},
 			tt.remote,
-			{}
 		};
 	};
 
 	text_t empty_message() override { return tt.view_empty_message; }
 
-	void run() const;
+	void run();
 	void analyze();
 	void refresh() override;
 	void reload() override;
 
-	bool can_run() const { return !_rows.empty(); }
+	bool can_run() const { return _analysis_valid && count_sync_actions(_analysis) > 0; }
 
 	std::string_view status() override
 	{
@@ -57,19 +68,27 @@ public:
 	{
 		_rows.clear();
 		_status.clear();
+		_analysis.clear();
+		_analysis_valid = false;
 	}
 
 	view_controls_host_ptr controls(const ui::control_frame_ptr& owner);
 
+	std::string_view operation_name() const override { return tt.command_sync; }
+
 	void exit() override
 	{
+		if (!confirm_exit_while_processing(operation_name())) return;
 		_state.view_mode(view_type::items);
 	}
 
 	std::string_view title() override
 	{
-		return s_app_name;
+		_title = std::format("{}: {}", s_app_name, tt.command_sync);
+		return _title;
 	}
 
-	void update_rows(const sync_analysis_result& analysis_result);
+	void update_rows(const sync_analysis_result& analysis_result, const df::index_roots& source,
+	                 df::folder_path remote, bool local_remote, bool remote_local,
+	                 bool delete_local, bool delete_remote);
 };

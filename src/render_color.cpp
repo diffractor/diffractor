@@ -129,10 +129,13 @@ private:
 
 void ui::color_adjust::color_params(const double vibrance, const double saturation,
                                     const double darks, const double midtones, const double lights,
-                                    const double contrast, const double brightness)
+	                                const double contrast, const double brightness, const double temperature,
+	                                const double tint)
 {
-	_saturation = static_cast<float>(saturation + 1.0);
-	_vibrance = static_cast<float>(vibrance);
+	_saturation = saturation + 1.0;
+	_vibrance = vibrance;
+	_temperature = temperature;
+	_tint = tint;
 
 	const auto cc = contrast / (contrast < 0.0 ? 2 : 1.5) + 1.0;
 	const auto bb = brightness / 3.0;
@@ -152,7 +155,9 @@ void ui::color_adjust::color_params(const double vibrance, const double saturati
 
 	for (auto i = 0; i < curve_len; ++i)
 	{
-		_curve[i] = static_cast<float>(interpolator.interpolate(i / static_cast<double>(curve_len)));
+		// Sampled at the centre of the bin the lookup below selects, and clamped because the spline is
+		// only pinned at its knots and overshoots between them.
+		_curve[i] = std::clamp(interpolator.interpolate((i + 0.5) / curve_len), 0.0, 1.0);
 	}
 }
 
@@ -179,11 +184,14 @@ ui::color32 ui::color_adjust::adjust_color(double y, double u, double v, const d
 	u = std::clamp(u, -1.0, 1.0);
 	v = std::clamp(v, -1.0, 1.0);
 
-	const auto r = y + 1.140 * v;
-	const auto g = y - 0.396 * u - 0.581 * v;
-	const auto b = y + 2.029 * u;
+	// Exact inverse of the forward matrix below (U = 0.492(B-Y), V = 0.877(R-Y)); rounder constants
+	// leave a residual error on every edited pixel.
+	const auto r = y + 1.14025 * v;
+	const auto g = y - 0.39473 * u - 0.58081 * v;
+	const auto b = y + 2.03252 * u;
 
-	return saturate_rgba(b, g, r, a);
+	// Rounded, not truncated: truncation biases every edited pixel half a level darker.
+	return saturate_rgba(df::round(r * 255.0), df::round(g * 255.0), df::round(b * 255.0), df::round(a * 255.0));
 }
 
 void ui::color_adjust::apply(const const_surface_ptr& src, uint8_t* dst, const size_t dst_stride,
@@ -200,9 +208,9 @@ void ui::color_adjust::apply(const const_surface_ptr& src, uint8_t* dst, const s
 		{
 			const auto c = *s++;
 
-			const auto r = get_b(c) / 255.0;
-			const auto g = get_g(c) / 255.0;
-			const auto b = get_r(c) / 255.0;
+			const auto r = std::clamp(get_r(c) / 255.0 * (1.0 + 0.2 * _temperature + 0.1 * _tint), 0.0, 1.0);
+			const auto g = std::clamp(get_g(c) / 255.0 * (1.0 - 0.2 * _tint), 0.0, 1.0);
+			const auto b = std::clamp(get_b(c) / 255.0 * (1.0 - 0.2 * _temperature + 0.1 * _tint), 0.0, 1.0);
 			const auto a = get_a(c) / 255.0;
 
 			const auto y = 0.299 * r + 0.587 * g + 0.114 * b;
@@ -217,4 +225,23 @@ void ui::color_adjust::apply(const const_surface_ptr& src, uint8_t* dst, const s
 			break;
 		}
 	}
+}
+
+void ui::color_adjust::populate_texture_transform(texture_transform& transform) const
+{
+	constexpr auto bin = curve_len / texture_transform::curve_len;
+
+	for (auto index = 0; index < texture_transform::curve_len; ++index)
+	{
+		// Centre of the source bins this preview entry stands in for, so the preview curve tracks the
+		// saved one instead of drifting toward the shadow end of each bin.
+		transform.curve[index] = static_cast<float>(_curve[index * bin + bin / 2]);
+	}
+
+	transform.saturation = static_cast<float>(_saturation);
+	transform.vibrance = static_cast<float>(_vibrance);
+	transform.red_gain = static_cast<float>(1.0 + 0.2 * _temperature + 0.1 * _tint);
+	transform.green_gain = static_cast<float>(1.0 - 0.2 * _tint);
+	transform.blue_gain = static_cast<float>(1.0 - 0.2 * _temperature + 0.1 * _tint);
+	transform.has_color_changes = true;
 }

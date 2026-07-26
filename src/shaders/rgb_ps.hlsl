@@ -6,11 +6,4 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
-#include "common.hlsli"
-
-Texture2D tx : register(t0);
-
-float4 main(PS_INPUT input) : SV_Target
-{
-	return tx.Sample(tex_sampler, input.uv) * input.c;
-}
+#include "rgb_common.hlsli"

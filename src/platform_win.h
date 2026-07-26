@@ -58,10 +58,35 @@ constexpr int max_vert_count = 4 * 512;
 constexpr int max_index_count = 6 * 512;
 constexpr int max_text_len = 2000;
 
+// Colour every render target is cleared to before the scene is drawn. Both the Direct3D and the
+// software backend must use this, otherwise anything the scene does not explicitly paint shows
+// through as black on one backend and as this grey on the other.
+constexpr float scene_clear_shade = 0.222f;
+
 HWND app_wnd();
+bool is_device_loss_error(HRESULT hr);
+
+// Private window message posted by a frame when a Direct3D device-loss result is seen. It
+// is posted (never sent) so recovery runs after the render or resize call stack has
+// unwound and no draw-context or device object is still live on the stack.
+constexpr UINT WM_DIFF_DEVICE_LOST = WM_APP + 0x3d1;
+
+// Switches the whole process to CPU software rendering after the Direct3D device is lost,
+// then asks the app to release GPU resources and rebuild every frame's draw context.
+void handle_graphics_device_lost(const factories_ptr& f);
+
 extern HINSTANCE get_resource_instance;
 FILETIME ts_to_ft(uint64_t ts);
 uint64_t ft_to_ts(const FILETIME& ft);
+
+// Wrap an already-open Win32 file HANDLE in a platform::file. Takes ownership of the
+// handle (closed when the returned file_ptr is released). Used by replace_file to hand
+// back the still-open, cache-coherent handle it renamed through, so the file can be
+// read back immediately without a stale by-name reopen over SMB. See platform_win_files.cpp.
+namespace platform
+{
+	file_ptr make_file_from_handle(HANDLE h);
+}
 
 std::string win32_to_string(const IID& iid);
 
@@ -92,9 +117,20 @@ public:
 	virtual void destroy() = 0;
 	virtual void update_font_size(int base_font_size) = 0;
 	virtual void begin_draw(sizei client_extent, int base_font_size) = 0;
-	virtual void render() = 0;
+
+	// Flushes the accumulated scene. Returns the underlying graphics result so the window
+	// layer can detect device loss and downgrade to the CPU backend; the software backend
+	// always returns S_OK.
+	virtual HRESULT render() = 0;
 	virtual void resize(sizei size) = 0;
 	virtual bool is_valid() const = 0;
+
+	// Releases every reference this context holds on the swap-chain back buffer. Must be
+	// called before IDXGISwapChain::ResizeBuffers - a still-bound render target view makes
+	// ResizeBuffers fail with DXGI_ERROR_INVALID_CALL. No-op on the software backend.
+	virtual void release_back_buffer_references()
+	{
+	}
 
 	// Software-rendering extensions (only implemented by the software backend used for
 	// layered bubble popups; no-ops on the hardware backend).

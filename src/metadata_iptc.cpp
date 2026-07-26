@@ -700,10 +700,46 @@ static const iptc_tag_info iptc_tag_table[] = {
 	{static_cast<iptc_record>(0), static_cast<iptc_tag>(0), {}, {}, {}}
 };
 
+// IPTC records carry no dependable encoding marker, so text that is not valid UTF-8 is read as
+// Latin-1 - what Photoshop and the wire services wrote for years. Without this the accented
+// characters in older captions and bylines arrive as mojibake.
+static std::string decode_iptc_text(const std::string_view sv)
+{
+	if (sv.empty() || str::is_utf8(sv.data(), static_cast<int>(sv.size())))
+	{
+		return std::string(sv);
+	}
+
+	std::string result;
+	result.reserve(sv.size() + sv.size() / 2);
+
+	for (const auto ch : sv)
+	{
+		const auto c = static_cast<uint8_t>(ch);
+
+		if (c < 0x80)
+		{
+			result.push_back(static_cast<char>(c));
+		}
+		else
+		{
+			result.push_back(static_cast<char>(0xC0 | c >> 6));
+			result.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+		}
+	}
+
+	return result;
+}
+
+static str::cached iptc_string(const std::string_view sv)
+{
+	return str::strip_and_cache(decode_iptc_text(sv));
+}
+
 // IPTC uses CR (0x0D) for line endings, normalize to LF (0x0A) for consistency
 static str::cached normalize_iptc_and_cache(const std::string_view sv)
 {
-	std::string result(sv);
+	auto result = decode_iptc_text(sv);
 	for (auto& ch : result)
 	{
 		if (ch == u8'\r') ch = u8'\n';
@@ -711,211 +747,188 @@ static str::cached normalize_iptc_and_cache(const std::string_view sv)
 	return str::cache(str::strip(result));
 }
 
-void metadata_iptc::parse(prop::item_metadata& pd, const df::cspan cs)
+// IPTC is parsed after Exif, so an empty dataset must not erase a value the Exif block supplied.
+static void assign_if_set(str::cached& dst, const str::cached val)
 {
-	if (!cs.empty())
+	if (!str::is_empty(val)) dst = val;
+}
+
+static const iptc_tag_info* find_tag_info(const iptc_record r, const iptc_tag t)
+{
+	for (const auto* p = iptc_tag_table; p->record != 0; ++p)
 	{
+		if (r == p->record && t == p->tag) return p;
+	}
+
+	return nullptr;
+}
+
+// Walks the datasets in an IPTC binary block, bounds-checking every header, and calls
+// handler(record, dataset, bytes, length) for each non-empty payload. Lengths are attacker
+// controlled, so a malformed or over-long header stops the walk rather than being trusted.
+template <typename Handler>
+static void walk_iptc_datasets(const df::cspan cs, Handler handler)
+{
+	uint32_t i = 0;
+
+	// Find the beginning of the IPTC portion of the binary data.
+	while (i + 1 < cs.size && (cs.data[i] != 0x1c || cs.data[i + 1] != 0x02))
+	{
+		i += 1;
+	}
+
+	while (i < cs.size)
+	{
+		if (cs.data[i] != 0x1c)
+		{
+			break;
+		}
+
+		// Check bounds before accessing cs.data[i + 3]
+		if (i + 4 >= cs.size)
+		{
+			break;
+		}
+
 		uint32_t block_len = 0;
 		uint32_t header_len = 0;
-		uint32_t i = 0;
-		tag_set tags;
-		tag_set artists;
 
-		// Find the beginning of the IPTC portion of the binary data.
-		while (i + 1 < cs.size && (cs.data[i] != 0x1c || cs.data[i + 1] != 0x02))
+		if (cs.data[i + 3] & static_cast<uint8_t>(0x80))
 		{
-			i += 1;
-		}
-
-		while (i < cs.size)
-		{
-			if (i >= cs.size || cs.data[i] != 0x1c)
+			// Extended length - need at least 8 bytes total
+			if (i + 7 >= cs.size)
 			{
 				break;
 			}
 
-			// Check bounds before accessing cs.data[i + 3]
-			if (i + 4 >= cs.size)
-			{
-				break;
-			}
+			block_len = static_cast<long>(cs.data[i + 4]) << 24 |
+				static_cast<long>(cs.data[i + 5]) << 16 |
+				static_cast<long>(cs.data[i + 6]) << 8 |
+				static_cast<long>(cs.data[i + 7]);
 
-			if (cs.data[i + 3] & static_cast<uint8_t>(0x80))
-			{
-				// Extended length - need at least 8 bytes total
-				if (i + 7 >= cs.size)
-				{
-					break;
-				}
-
-				block_len = static_cast<long>(cs.data[i + 4]) << 24 |
-					static_cast<long>(cs.data[i + 5]) << 16 |
-					static_cast<long>(cs.data[i + 6]) << 8 |
-					static_cast<long>(cs.data[i + 7]);
-
-				header_len = 8;
-			}
-			else
-			{
-				block_len = cs.data[i + 3] << 8;
-				block_len |= cs.data[i + 4];
-				header_len = 5;
-			}
-
-			// Check for maximum reasonable block length to prevent memory issues
-			if (block_len > 256000) // Maximum size from IPTC spec
-			{
-				break;
-			}
-
-			const auto dataset = cs.data[i + 1];
-			const auto record = static_cast<iptc_tag>(cs.data[i + 2]);
-
-			if (cs.size >= i + header_len + block_len && block_len > 0 && dataset == 2)
-			{
-				const auto* const sz = std::bit_cast<const char*>(cs.data + i + header_len);
-				const auto sv = std::string_view{sz, block_len};
-
-				switch (record)
-				{
-				case IPTC_TAG_KEYWORDS: tags.add_one(str::strip(sv));
-					break;
-				case IPTC_TAG_BYLINE: artists.add_one(str::strip_and_cache(sv));
-					break;
-				case IPTC_TAG_CAPTION: pd.description = normalize_iptc_and_cache(sv);
-					break;
-				case IPTC_TAG_OBJECT_NAME: pd.title = str::strip_and_cache(sv);
-					break;
-				case IPTC_TAG_CITY: pd.location_place = str::strip_and_cache(sv);
-					break;
-				case IPTC_TAG_STATE: pd.location_state = str::strip_and_cache(sv);
-					break;
-				case IPTC_TAG_COUNTRY_NAME: pd.location_country = str::strip_and_cache(sv);
-					break;
-				case IPTC_TAG_CREDIT: pd.copyright_credit = str::strip_and_cache(sv);
-					break;
-				case IPTC_TAG_SOURCE: pd.copyright_source = str::strip_and_cache(sv);
-					break;
-				case IPTC_TAG_COPYRIGHT_NOTICE: pd.copyright_notice = str::strip_and_cache(sv);
-					break;
-				default:
-					break;
-				}
-			}
-
-			// Check for potential overflow before incrementing
-			if (i > cs.size - block_len - header_len)
-			{
-				break;
-			}
-
-			i += block_len + header_len;
+			header_len = 8;
 		}
-
-		if (!tags.is_empty())
+		else
 		{
-			tags.add(tag_set(pd.tags));
-			tags.make_unique();
-			pd.tags = str::cache(tags.to_string());
+			block_len = cs.data[i + 3] << 8;
+			block_len |= cs.data[i + 4];
+			header_len = 5;
 		}
 
-		if (!artists.is_empty())
+		// Check for maximum reasonable block length to prevent memory issues
+		if (block_len > 256000) // Maximum size from IPTC spec
 		{
-			artists.add(tag_set(pd.artist));
-			artists.make_unique();
-			pd.artist = str::cache(artists.to_string());
+			break;
 		}
+
+		if (cs.size >= i + header_len + block_len && block_len > 0)
+		{
+			handler(static_cast<iptc_record>(cs.data[i + 1]), static_cast<iptc_tag>(cs.data[i + 2]),
+			        cs.data + i + header_len, block_len);
+		}
+
+		// Check for potential overflow before incrementing
+		if (i > cs.size - block_len - header_len)
+		{
+			break;
+		}
+
+		i += block_len + header_len;
+	}
+}
+
+void metadata_iptc::parse(prop::item_metadata& pd, const df::cspan cs)
+{
+	tag_set tags;
+	tag_set artists;
+
+	walk_iptc_datasets(cs, [&](const iptc_record record, const iptc_tag dataset, const uint8_t* bytes,
+	                           const uint32_t block_len)
+	{
+		if (record != IPTC_RECORD_APP_2) return;
+
+		const auto sv = std::string_view{std::bit_cast<const char*>(bytes), block_len};
+
+		switch (dataset)
+		{
+		case IPTC_TAG_KEYWORDS: tags.add_one(iptc_string(sv));
+			break;
+		case IPTC_TAG_BYLINE: artists.add_one(iptc_string(sv));
+			break;
+		case IPTC_TAG_CAPTION: assign_if_set(pd.description, normalize_iptc_and_cache(sv));
+			break;
+		case IPTC_TAG_OBJECT_NAME: assign_if_set(pd.title, iptc_string(sv));
+			break;
+		case IPTC_TAG_CITY: assign_if_set(pd.location_place, iptc_string(sv));
+			break;
+		case IPTC_TAG_STATE: assign_if_set(pd.location_state, iptc_string(sv));
+			break;
+		case IPTC_TAG_COUNTRY_NAME: assign_if_set(pd.location_country, iptc_string(sv));
+			break;
+		case IPTC_TAG_CREDIT: assign_if_set(pd.copyright_credit, iptc_string(sv));
+			break;
+		case IPTC_TAG_SOURCE: assign_if_set(pd.copyright_source, iptc_string(sv));
+			break;
+		case IPTC_TAG_COPYRIGHT_NOTICE: assign_if_set(pd.copyright_notice, iptc_string(sv));
+			break;
+		default:
+			break;
+		}
+	});
+
+	if (!tags.is_empty())
+	{
+		tags.add(tag_set(pd.tags));
+		tags.make_unique();
+		pd.tags = str::cache(tags.to_string());
+	}
+
+	if (!artists.is_empty())
+	{
+		artists.add(tag_set(pd.artist));
+		artists.make_unique();
+		pd.artist = str::cache(artists.to_string());
 	}
 }
 
 static str::cached tag_name(const iptc_record r, const iptc_tag t)
 {
-	const auto* p = iptc_tag_table;
-
-	while (p->record != 0)
-	{
-		if (r == p->record && t == p->tag) return str::cache(p->title);
-		++p;
-	}
-
-	return "?"_c;
+	const auto* const info = find_tag_info(r, t);
+	return info ? str::cache(info->title) : "?"_c;
 }
 
 metadata_kv_list metadata_iptc::to_info(const df::cspan cs)
 {
 	metadata_kv_list result;
 
-	if (!cs.empty())
+	walk_iptc_datasets(cs, [&result](const iptc_record record, const iptc_tag tag, const uint8_t* bytes,
+	                                 const uint32_t block_len)
 	{
-		uint32_t block_len = 0;
-		uint32_t header_len = 0;
-		uint32_t i = 0;
+		const auto* const info = find_tag_info(record, tag);
 
-		// Find the beginning of the IPTC portion of the binary data.
-		while (i + 1 < cs.size && (cs.data[i] != 0x1c || cs.data[i + 1] != 0x02))
+		// Preview images and the coded character set escape are binary; rendering them as
+		// text fills the properties list with unreadable bytes.
+		if (info && info->format == IPTC_FORMAT_BINARY) return;
+
+		std::string value;
+
+		if (info && (info->format == IPTC_FORMAT_BYTE || info->format == IPTC_FORMAT_SHORT ||
+			info->format == IPTC_FORMAT_LONG))
 		{
-			i += 1;
+			uint64_t n = 0;
+			for (auto b = 0u; b < block_len && b < 8u; ++b) n = n << 8 | bytes[b];
+			value = std::to_string(n);
+		}
+		else
+		{
+			value = str::strip(decode_iptc_text({std::bit_cast<const char*>(bytes), block_len}));
 		}
 
-		while (i < cs.size)
+		if (!value.empty())
 		{
-			if (i >= cs.size || cs.data[i] != 0x1c)
-			{
-				break;
-			}
-
-			// Check bounds before accessing cs.data[i + 3]
-			if (i + 4 >= cs.size)
-			{
-				break;
-			}
-
-			if (cs.data[i + 3] & static_cast<uint8_t>(0x80))
-			{
-				// Extended length - need at least 8 bytes total
-				if (i + 7 >= cs.size)
-				{
-					break;
-				}
-
-				block_len = static_cast<long>(cs.data[i + 4]) << 24 |
-					static_cast<long>(cs.data[i + 5]) << 16 |
-					static_cast<long>(cs.data[i + 6]) << 8 |
-					static_cast<long>(cs.data[i + 7]);
-
-				header_len = 8;
-			}
-			else
-			{
-				block_len = cs.data[i + 3] << 8;
-				block_len |= cs.data[i + 4];
-				header_len = 5;
-			}
-
-			// Check for maximum reasonable block length to prevent memory issues  
-			if (block_len > 256000) // Maximum size from IPTC spec
-			{
-				break;
-			}
-
-			const auto record = static_cast<iptc_record>(cs.data[i + 1]);
-			const auto tag = static_cast<iptc_tag>(cs.data[i + 2]);
-
-			if (cs.size >= i + header_len + block_len && block_len > 0)
-			{
-				const auto* const sz = std::bit_cast<const char*>(cs.data + i + header_len);
-				result.emplace_back(tag_name(record, tag), str::strip({sz, block_len}));
-			}
-
-			// Check for potential overflow before incrementing
-			if (i > cs.size - block_len - header_len)
-			{
-				break;
-			}
-
-			i += block_len + header_len;
+			result.emplace_back(tag_name(record, tag), std::move(value));
 		}
-	}
+	});
 
 	return result;
 }

@@ -6,8 +6,7 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
-// Purpose: Photo editing view. Implements crop, rotate, color adjustments,
-// and other image editing operations with live preview.
+// Purpose: Photo editing view. Implements pixel adjustments and comparison.
 
 #pragma once
 
@@ -19,10 +18,33 @@
 
 class log_slider_control;
 class edit_view;
-class media_control;
 class task_toolbar_control;
 class rating_bar_control;
 
+struct document_detection_result
+{
+	std::array<pointd, 4> corners{};
+	sizei extent;
+	double confidence = 0;
+
+	explicit operator bool() const { return extent.cx > 0 && extent.cy > 0; }
+};
+
+// The straighten, perspective and crop that present a detected page upright. Expressed in the same
+// controls the user already has, so the image morphs and the crop stays a rectangle they can adjust.
+struct document_correction
+{
+	double straighten = 0;
+	double perspective_horizontal = 0;
+	double perspective_vertical = 0;
+	quadd crop;
+
+	explicit operator bool() const { return !crop.is_empty(); }
+};
+
+document_detection_result detect_document(const ui::const_surface_ptr& surface, sizei source_extent);
+document_correction fit_document_correction(const std::array<pointd, 4>& corners, sizei extent,
+                                            ui::orientation orientation);
 
 class edit_view_controls final : public view_controls_host
 {
@@ -30,37 +52,13 @@ public:
 	edit_view_state& _edit_state;
 	std::shared_ptr<edit_view> _view;
 
-	std::shared_ptr<ui::edit_control> _title_edit;
-	std::shared_ptr<text_element> _description_label;
-	std::shared_ptr<ui::multi_line_edit_control> _description_edit;
-	std::shared_ptr<text_element> _comment_label;
-	std::shared_ptr<ui::multi_line_edit_control> _comment_edit;
-	std::shared_ptr<text_element> _staring_label;
-	std::shared_ptr<ui::multi_line_edit_control> _staring_edit;
-	std::shared_ptr<text_element> _staring_help;
-	std::shared_ptr<text_element> _tags_label;
-	std::shared_ptr<ui::multi_line_edit_control> _tags_edit;
-	std::shared_ptr<text_element> _tags_help1;
-	std::shared_ptr<text_element> _tags_help2;
-	std::shared_ptr<rating_bar_control> _raiting_control;
-	std::shared_ptr<ui::edit_control> _show_edit;
-	std::shared_ptr<ui::edit_control> _artist_edit;
-	std::shared_ptr<ui::edit_control> _album_artist_edit;
-	std::shared_ptr<ui::edit_control> _album_edit;
-	std::shared_ptr<ui::edit_control> _genre_edit;
-	std::shared_ptr<ui::num_control> _year_edit;
-	std::shared_ptr<ui::num_pair_control> _episode_edit;
-	std::shared_ptr<ui::num_control> _season_edit;
-	std::shared_ptr<ui::num_pair_control> _track_edit;
-	std::shared_ptr<ui::num_pair_control> _disk_edit;
-	std::shared_ptr<ui::date_control> _created_control;
+	std::shared_ptr<text_element> _info;
 	std::shared_ptr<ui::title_control> _straighten_title;
-	std::shared_ptr<ui::title_control> _metadata_title;
 	std::shared_ptr<log_slider_control> _straighten_slider;
+	std::shared_ptr<log_slider_control> _perspective_horizontal_slider;
+	std::shared_ptr<log_slider_control> _perspective_vertical_slider;
 	std::shared_ptr<task_toolbar_control> _rotate_toolbar;
 	std::shared_ptr<divider_element> _color_divider;
-	std::shared_ptr<divider_element> _metadata_divider;
-	std::shared_ptr<divider_element> _artist_divider;
 	std::shared_ptr<ui::title_control> _color_title;
 	std::shared_ptr<log_slider_control> _vibrance_slider;
 	std::shared_ptr<log_slider_control> _darks_slider;
@@ -69,7 +67,15 @@ public:
 	std::shared_ptr<log_slider_control> _contrast_slider;
 	std::shared_ptr<log_slider_control> _brightness_slider;
 	std::shared_ptr<log_slider_control> _saturation_slider;
+	std::shared_ptr<log_slider_control> _temperature_slider;
+	std::shared_ptr<log_slider_control> _tint_slider;
 	std::shared_ptr<task_toolbar_control> _color_toolbar;
+	std::shared_ptr<divider_element> _save_divider;
+	std::shared_ptr<ui::title_control> _save_title;
+	std::shared_ptr<ui::check_control> _backup_check;
+	std::shared_ptr<ui::slider_control> _jpeg_quality_slider;
+	std::shared_ptr<ui::slider_control> _webp_quality_slider;
+	std::shared_ptr<ui::check_control> _webp_lossless_check;
 
 	edit_view_controls(view_state& s, edit_view_state& es) : view_controls_host(s), _edit_state(es)
 	{
@@ -78,6 +84,7 @@ public:
 
 	void layout_controls(ui::measure_context& mc) override;
 	void create_controls();
+	bool is_tracking() const;
 
 	void options_changed() override;
 };
@@ -106,8 +113,14 @@ class edit_view final : public view_base, public std::enable_shared_from_this<ed
 	std::string_view _xmp_name;
 	file_type_ref _mt = nullptr;
 	file_load_result _loaded;
-	ui::const_surface_ptr _preview_surface;
+	ui::const_surface_ptr _preview_source;
+	ui::const_surface_ptr _dialog_preview_source;
 	ui::texture_ptr _texture;
+	display_state_ptr _media_display;
+	view_element_ptr _media_element;
+	view_element_ptr _play_element;
+	view_element_ptr _scrubber_element;
+	size_t _display_generation = 0;
 	bool _invalid = true;
 
 	friend class selection_move_controller<this_type>;
@@ -122,37 +135,47 @@ public:
 	}
 
 	view_controls_host_ptr controls(const ui::control_frame_ptr& owner);
+	static ui::const_surface_ptr build_preview_surface(ui::const_surface_ptr source, sizei loaded_dimensions,
+	                                                   const image_edits& edits);
 	ui::const_surface_ptr preview_surface() const;
 
 	void activate(sizei extent) override;
 	void deactivate() override;
 	void refresh() override;
+	void update_media_elements() override;
 
 	void layout(ui::measure_context& mc, sizei extent) override;
 	bool is_photo() const;
 	void changed();
 	void cancel() const;
 	void exit() override;
-	void save_and_close();
-	bool save(df::file_path src_path, df::file_path dst_path, std::string_view xmp_name,
-	          const ui::control_frame_ptr& owner) const;
+	bool escape() override;
+	void save_current();
+	void save(df::file_path src_path, df::file_path dst_path, std::string_view xmp_name,
+	          const ui::control_frame_ptr& owner, std::function<void(bool)> complete) const;
 	bool has_changes() const;
-	void preview(ui::const_surface_ptr surface);
+	void select_item(const df::item_element_ptr& item);
 	void render(ui::draw_context& dc, view_controller_ptr controller) override;
 	bool can_exit() override;
 	void display_changed() override;
 	static void draw_handle(ui::draw_context& dc, recti handle_bounds2, float alpha);
-	pointi clamp_offset(sizei render_extent, pointi offset) const;
 
 	bool check_path(df::file_path& path, const ui::control_frame_ptr& owner) const;
+	df::item_element_ptr next_editable_item(bool forward) const;
 	void save_and_next(bool forward);
-	void save_options() const;
 	void save_as();
 
 	void rotate_anticlockwise();
 	void rotate_clockwise();
 	void rotate_reset();
 	void color_reset();
+	void report_no_result(std::string_view title) const;
+	void queue_auto_adjust(int max_dimension, std::string title,
+	                       std::function<std::function<void(edit_view_state&)>(const ui::const_surface_ptr&)> analyze);
+	void auto_color();
+	void auto_straighten();
+	void auto_document();
+	void toggle_preview();
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc) override;
 
@@ -176,7 +199,7 @@ public:
 
 	quadd selection() const
 	{
-		return _edit_state.selection();
+		return _edit_state._edits.effective_crop_bounds(_loaded.dimensions());
 	}
 
 	void selection(const quadd& s) const
@@ -199,7 +222,7 @@ public:
 
 		if (i)
 		{
-			_title = std::format("{}: {} {}", s_app_name, tt.editing_title, i->name());
+			_title = std::format("{}: {}", s_app_name, tt.editing_title);
 		}
 		else
 		{

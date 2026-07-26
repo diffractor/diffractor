@@ -12,6 +12,10 @@
     - deploy     : Deploy build artifacts to Google Cloud Storage
     - release    : Create GitHub release with tag and upload installer/zip assets
     - run        : Run the recently built diffractor64.exe
+    - cpu        : Run diffractor64.exe using CPU software rendering
+    - build      : Bump the build number and build Release x64 (diffractor64.exe)
+    - test       : Run unit tests and validate translation (.po) files
+    - bean       : Run unit tests with the temp folder on the bean NAS (\\bean.local\home\tmp)
     - bump-build : Increment the build number (e.g., 1187 -> 1188)
     - bump-ver   : Increment the minor version (e.g., 1.26.2 -> 1.26.3)
 
@@ -32,6 +36,14 @@
     Run diffractor64.exe
 
 .EXAMPLE
+    .\dd.ps1 cpu
+    Run diffractor64.exe using CPU software rendering
+
+.EXAMPLE
+    .\dd.ps1 test
+    Run unit tests and validate translation (.po) files
+
+.EXAMPLE
     .\dd.ps1 bump-build
     Increment build number in all version files
 
@@ -42,7 +54,7 @@
 
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("desktop", "store", "run", "bump-build", "bump-ver", "deploy", "release", "loc", "code", "clear-cache", "help", "")]
+    [ValidateSet("desktop", "store", "run", "cpu", "test", "bean", "build", "bump-build", "bump-ver", "deploy", "release", "loc", "code", "clear-cache", "help", "")]
     [string]$Command = ""
 )
 
@@ -54,7 +66,18 @@ $ToolsDir = Join-Path $ScriptDir "tools"
 $SourceFilesDir = Join-Path $ScriptDir "exe"
 $PackageRoot = Join-Path $ScriptDir "dist"
 $InstallerDir = Join-Path $ScriptDir "installer"
-$SdkBinDir = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64"
+
+# Newest installed SDK that actually has the packaging tools.
+$SdkRoot = "C:\Program Files (x86)\Windows Kits\10\bin"
+$SdkBinDir = Get-ChildItem $SdkRoot -Directory -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match '^10(\.\d+){3}$' -and (Test-Path (Join-Path $_.FullName "x64\MakeAppx.exe")) } |
+    Sort-Object { [version]$_.Name } |
+    Select-Object -Last 1 -ExpandProperty FullName
+if ($SdkBinDir) { $SdkBinDir = Join-Path $SdkBinDir "x64" } else { $SdkBinDir = Join-Path $SdkRoot "10.0.26100.0\x64" }
+
+# The Store rejects a MaxVersionTested above the newest publicly released Windows, so an
+# Insider dev machine must not raise it. Bump this when a new release ships.
+$MaxVersionTestedCap = "10.0.26200.0"
 
 # Signing certificates
 $DesktopSignThumbprint = "B3B4EA219B9BCB79749D5E84066DDCAC61E5C4C3"
@@ -64,6 +87,7 @@ $StoreSignThumbprint = "0BC1CD0A4F37CE2A5A2CE72DAA9B08B1EC1CB522"
 $NsiFile = Join-Path $InstallerDir "diff.nsi"
 $AppxManifestFile = Join-Path $SourceFilesDir "AppxManifest.xml"
 $ResourceFile = Join-Path $ScriptDir "src\platform_win_res.rc"
+$AppManifestFile = Join-Path $ScriptDir "src\platform_win.manifest"
 $AppCppFile = Join-Path $ScriptDir "src\app.cpp"
 
 # ============================================================================
@@ -141,14 +165,14 @@ function Update-AllVersionFiles {
     $content = Get-Content $NsiFile -Raw
     $content = $content -replace '!define BUILD_NUM "\d+"', "!define BUILD_NUM `"$Build`""
     $content = $content -replace '!define PRODUCT_VERSION "\d+\.\d+"', "!define PRODUCT_VERSION `"$productVersion`""
+    $content = $content -replace '!define FILE_VERSION "\d+\.\d+\.\d+\.\$\{BUILD_NUM\}"', "!define FILE_VERSION `"$Major.$Minor.$Patch.`${BUILD_NUM}`""
     Set-Content $NsiFile $content -NoNewline
     
     # Update AppxManifest.xml (Store requires revision/4th part to be 0)
     Write-Host "Updating $AppxManifestFile..." -ForegroundColor Yellow
     $storeVersion = "$Major.$Minor.$Patch.0"
-    # Get current Windows build for MaxVersionTested
-    $winVer = [System.Environment]::OSVersion.Version
-    $maxVersionTested = "10.0.$($winVer.Build).0"
+    $localWinVersion = [version]"10.0.$([System.Environment]::OSVersion.Version.Build).0"
+    $maxVersionTested = if ($localWinVersion -gt [version]$MaxVersionTestedCap) { $MaxVersionTestedCap } else { $localWinVersion.ToString() }
     $content = Get-Content $AppxManifestFile -Raw
     # Use specific attribute prefixes to avoid matching MinVersion
     $content = $content -replace '(<Identity[^>]*\s)Version="\d+\.\d+\.\d+\.\d+"', "`$1Version=`"$storeVersion`""
@@ -163,6 +187,13 @@ function Update-AllVersionFiles {
     $content = $content -replace 'VALUE "FileVersion", "\d+\.\d+\.\d+\.\d+"', "VALUE `"FileVersion`", `"$fileVersion`""
     $content = $content -replace 'VALUE "ProductVersion", "\d+\.\d+\.\d+\.\d+"', "VALUE `"ProductVersion`", `"$fileVersion`""
     Set-Content $ResourceFile $content -NoNewline
+    
+    # Update platform_win.manifest assembly identity
+    # Scoped to the diffractor.exe identity so the Common-Controls dependency version is left alone.
+    Write-Host "Updating $AppManifestFile..." -ForegroundColor Yellow
+    $content = Get-Content $AppManifestFile -Raw
+    $content = $content -replace '(name="diffractor\.exe"\s+)version="\d+\.\d+\.\d+\.\d+"', "`$1version=`"$fileVersion`""
+    Set-Content $AppManifestFile $content -NoNewline
     
     # Update dd.ps1 StorePackageName
     Write-Host "Updating dd.ps1 StorePackageName..." -ForegroundColor Yellow
@@ -226,11 +257,15 @@ function Show-Usage {
     Write-Host "Usage: .\dd.ps1 <command>"
     Write-Host ""
     Write-Host "Commands:"
-    Write-Host "  desktop      Build desktop versions (Win32 + x64), auto-increments build number"
-    Write-Host "  store        Build Windows Store version (MSIX), auto-increments build number"
+    Write-Host "  desktop      Build desktop versions (Win32 + x64), runs tests, auto-increments build number"
+    Write-Host "  store        Build Windows Store version (MSIX), runs tests, auto-increments build number"
     Write-Host "  deploy       Deploy desktop build artifacts to Google Cloud Storage"
     Write-Host "  release      Create GitHub release with tag and upload installers"
     Write-Host "  run          Run the recently built diffractor64.exe"
+    Write-Host "  cpu          Run diffractor64.exe using CPU software rendering"
+    Write-Host "  build        Bump the build number and build Release x64 (diffractor64.exe)"
+    Write-Host "  test         Run unit tests and validate translation (.po) files"
+    Write-Host "  bean         Run unit tests with the temp folder on the bean NAS (\\bean.local\home\tmp)"
     Write-Host "  code         Open VS Code with Developer Command Prompt environment"
     Write-Host "  loc          Regenerate location database files from geonames"
     Write-Host "  bump-build   Manually increment build number (e.g., $($version.Build) -> $($version.Build + 1))"
@@ -241,19 +276,44 @@ function Show-Usage {
     Write-Host "  .\dd.ps1 desktop      Build desktop release (auto-increments build)"
     Write-Host "  .\dd.ps1 deploy       Upload installers to GCS"
     Write-Host "  .\dd.ps1 release      Create GitHub release and tag code"
-    Write-Host "  .\dd.ps1 store        Build Windows Store package (auto-increments build)"
+    Write-Host "  .\dd.ps1 store        Build Windows Store package (run bump-ver first)"
     Write-Host "  .\dd.ps1 bump-ver     Increment version before a major release"
     Write-Host "  .\dd.ps1 run          Run diffractor64.exe"
+    Write-Host "  .\dd.ps1 cpu          Run diffractor64.exe using CPU software rendering"
+    Write-Host "  .\dd.ps1 test         Run unit tests and validate .po files"
     Write-Host ""
 }
 
+function Get-VisualStudioPath {
+    if ($env:VSINSTALLDIR) {
+        return $env:VSINSTALLDIR
+    }
+
+    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+
+    if (Test-Path $vswhere) {
+        $vsPath = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath |
+            Select-Object -First 1
+
+        if ($vsPath) {
+            return $vsPath
+        }
+    }
+
+    return $null
+}
+
 function Test-VisualStudioEnvironment {
-    if (-not $env:VSINSTALLDIR) {
-        Write-Host "Error: Visual Studio environment not detected." -ForegroundColor Red
-        Write-Host "Please run from a Developer PowerShell or run vcvars64.bat first." -ForegroundColor Red
+    # MSBuild configures the toolchain from the solution, so locating the install is enough - vcvars is not required.
+    $vsPath = Get-VisualStudioPath
+
+    if (-not $vsPath) {
+        Write-Host "Error: Visual Studio not found." -ForegroundColor Red
+        Write-Host "Install Visual Studio with the C++ workload, or run from a Developer PowerShell." -ForegroundColor Red
         exit 1
     }
-    return $env:VSINSTALLDIR
+
+    return $vsPath
 }
 
 function Get-MSBuildPath {
@@ -277,7 +337,7 @@ function Invoke-MSBuild {
     Write-Host ""
     Write-Host "Building $Configuration | $Platform..." -ForegroundColor Yellow
     
-    & $msbuild $Project /p:Configuration=$Configuration /p:Platform=$Platform /m
+    & $msbuild $Project /p:Configuration=$Configuration /p:Platform=$Platform /m | Out-Host
     
     if ($LASTEXITCODE -ne 0) {
         Write-Host "Error: Build failed for $Configuration | $Platform" -ForegroundColor Red
@@ -362,6 +422,11 @@ function Build-Desktop {
     Write-Host ""
     $exe32 = Join-Path $SourceFilesDir "diffractor32.exe"
     $exe64 = Join-Path $SourceFilesDir "diffractor64.exe"
+
+    # Gate on the exact binary being shipped, before it is signed and packaged
+    Invoke-Tests -Exe $exe64
+
+    Write-Host ""
     Invoke-SignTool -Description "desktop executables" -Files @($exe32, $exe64)
     
     # Build NSIS installer
@@ -414,11 +479,7 @@ function Build-Desktop {
         "location-countries.txt",
         "location-places.txt",
         "location-states.txt",
-        "languages\cs.po",
-        "languages\de.po",
-        "languages\es.po",
-        "languages\it.po",
-        "languages\ja.po",
+        "languages\*.po",
         "dictionaries\en_US.aff",
         "dictionaries\en_US.dic"
     )
@@ -448,10 +509,44 @@ function Build-Desktop {
     Write-Host ""
 }
 
+function Get-PythonExe {
+    # The repo venv carries the tooling dependencies (Pillow, polib); a bare `python` often does not.
+    $venvPython = Join-Path $ScriptDir ".venv\Scripts\python.exe"
+    if (Test-Path $venvPython) { return $venvPython }
+    return "python"
+}
+
+function Assert-StoreVersionUnused {
+    param(
+        [hashtable]$Version
+    )
+
+    # The Store pins the package revision to 0, so Major.Minor.Patch alone identifies a
+    # submission. Re-submitting the same triple is rejected after the upload.
+    $packageVersion = "$($Version.Major).$($Version.Minor).$($Version.Patch).0"
+    $existing = Get-ChildItem $ScriptDir -Filter "Diffractor_$($Version.Major).$($Version.Minor).$($Version.Patch).*_x64.msix" -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.BaseName -ne "Diffractor_$($Version.FileVersion)_x64" }
+
+    if ($existing) {
+        Write-Host ""
+        Write-Host "Error: package version $packageVersion has already been packaged." -ForegroundColor Red
+        $existing | ForEach-Object { Write-Host "  $($_.Name)" -ForegroundColor Red }
+        Write-Host ""
+        Write-Host "Run '.\dd.ps1 bump-ver' before building a new Store submission," -ForegroundColor Yellow
+        Write-Host "or delete the stale .msix if you are rebuilding this version." -ForegroundColor Yellow
+        exit 1
+    }
+}
+
 function Build-Store {
+    # Auto-increment build number before building
+    Invoke-BumpBuild
+
     $version = Get-CurrentVersion
     $storePackage = "Diffractor_$($version.FileVersion)_x64"
-    
+
+    Assert-StoreVersionUnused -Version $version
+
     Write-Host ""
     Write-Host "============================================================================" -ForegroundColor Cyan
     Write-Host "Building Diffractor Windows Store Package v$($version.FileVersion)" -ForegroundColor Cyan
@@ -472,9 +567,12 @@ function Build-Store {
     # Invoke-MSBuild -Project "src\app.vcxproj" -Configuration "WinStore" -Platform "x64"
     Invoke-MSBuild -Project "df.sln" -Configuration "WinStore" -Platform "x64"
     
+    # Gate on the exact binary being shipped, before it is signed and packaged
+    $storeExe = Join-Path $SourceFilesDir "diffractor.exe"
+    Invoke-Tests -Exe $storeExe
+
     # Sign executable
     Write-Host ""
-    $storeExe = Join-Path $SourceFilesDir "diffractor.exe"
     Invoke-SignTool -Description "store executable" -Files @($storeExe) -UseThumbprint
     
     # Prepare MSIX package directory
@@ -492,11 +590,20 @@ function Build-Store {
     $assetsDir = Join-Path $PackageRoot "Assets"
     $generateScript = Join-Path $ToolsDir "generate_store_assets.py"
     
-    & python $generateScript -o $assetsDir
+    & (Get-PythonExe) $generateScript -o $assetsDir
     
     if ($LASTEXITCODE -ne 0) {
         Write-Host "Error: Failed to generate store assets" -ForegroundColor Red
         exit $LASTEXITCODE
+    }
+    
+    # MakeAppx only checks manifest-referenced images when no resources.pri is present, and
+    # this pipeline always builds one, so a partial generation would slip through to the Store.
+    foreach ($asset in "StoreLogo.png", "Square150x150Logo.png", "Square44x44Logo.png", "Wide310x150Logo.png", "SplashScreen.png", "DiffractorFile.png") {
+        if (-not (Test-Path (Join-Path $assetsDir $asset))) {
+            Write-Host "Error: store asset '$asset' was not generated" -ForegroundColor Red
+            exit 1
+        }
     }
     
     # Copy files
@@ -585,16 +692,128 @@ function Build-Store {
 }
 
 function Start-Diffractor {
+    param(
+        [switch]$SoftwareRendering
+    )
+
+    # Build the executable if it is missing or out of date (no build-number bump)
+    $exe64 = Build-App
+
+    if ($SoftwareRendering) {
+        Write-Host "Starting diffractor64.exe using CPU software rendering..." -ForegroundColor Yellow
+        Start-Process $exe64 -ArgumentList "-no-gpu" -WorkingDirectory $SourceFilesDir
+    }
+    else {
+        Write-Host "Starting diffractor64.exe..." -ForegroundColor Yellow
+        Start-Process $exe64 -WorkingDirectory $SourceFilesDir
+    }
+}
+
+function Build-App {
+    # Build the Release x64 executable if it is missing or out of date
+    # relative to the source files. Returns the path to diffractor64.exe.
     $exe64 = Join-Path $SourceFilesDir "diffractor64.exe"
-    
+
+    $needBuild = $false
     if (-not (Test-Path $exe64)) {
-        Write-Host "Error: diffractor64.exe not found at $exe64" -ForegroundColor Red
-        Write-Host "Run '.\dd.ps1 desktop' to build first." -ForegroundColor Yellow
+        Write-Host "diffractor64.exe not found - building..." -ForegroundColor Yellow
+        $needBuild = $true
+    }
+    else {
+        $exeTime = (Get-Item $exe64).LastWriteTimeUtc
+        $srcDir = Join-Path $ScriptDir "src"
+        $newestSrc = Get-ChildItem -Path $srcDir -Recurse -File -Include *.cpp, *.h, *.rc, *.manifest -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+        if ($newestSrc -and $newestSrc.LastWriteTimeUtc -gt $exeTime) {
+            Write-Host "Source changes detected since last build - rebuilding..." -ForegroundColor Yellow
+            $needBuild = $true
+        }
+    }
+
+    if ($needBuild) {
+        Invoke-MSBuild -Project "df.sln" -Configuration "Release" -Platform "x64"
+    }
+    else {
+        Write-Host "diffractor64.exe is up to date." -ForegroundColor Green
+    }
+
+    if (-not (Test-Path $exe64)) {
+        Write-Host "Error: diffractor64.exe not found at $exe64 after build." -ForegroundColor Red
         exit 1
     }
-    
-    Write-Host "Starting diffractor64.exe..." -ForegroundColor Yellow
-    Start-Process $exe64
+
+    return $exe64
+}
+
+function Invoke-Tests {
+    param(
+        [string]$TempPath,
+        [string]$Exe
+    )
+
+    # Release builds gate on the exe they are about to ship; plain `dd test` builds one.
+    $testExe = if ($Exe) { $Exe } else { Build-App }
+
+    Write-Host ""
+    Write-Host "============================================================================" -ForegroundColor Cyan
+    Write-Host "Running Tests and Validating Translation Files" -ForegroundColor Cyan
+    Write-Host "============================================================================" -ForegroundColor Cyan
+
+    # Build the test arguments. When a temp path is supplied, the file-I/O tests do their
+    # scratch work there (e.g. \\bean.local\home\tmp to exercise the SMB read-after-write paths).
+    $testArgs = @("/test")
+    if ($TempPath) {
+        $testArgs = @("/test-temp:$TempPath", "/test")
+        Write-Host ""
+        Write-Host "Test temp folder: $TempPath" -ForegroundColor Yellow
+    }
+
+    # Run unit tests
+    Write-Host ""
+    Write-Host "Running unit tests ($([System.IO.Path]::GetFileName($testExe)))..." -ForegroundColor Yellow
+    Write-Host ""
+    & $testExe @testArgs | Out-Host
+    $testResult = $LASTEXITCODE
+
+    # Validate translation (.po) files
+    Write-Host ""
+    Write-Host "Validating translation (.po) files..." -ForegroundColor Yellow
+    Write-Host ""
+    & $testExe /validate-po | Out-Host
+    $poResult = $LASTEXITCODE
+
+    # Validate translation content (registration integrity + placeholder/quality
+    # checks) via the combined Python validator.
+    Write-Host ""
+    Write-Host "Validating translation content (check_translations.py)..." -ForegroundColor Yellow
+    Write-Host ""
+    $python = Get-PythonExe
+    $checkScript = Join-Path $ToolsDir "check_translations.py"
+    & $python $checkScript | Out-Host
+    $transResult = $LASTEXITCODE
+
+    Write-Host ""
+    if ($testResult -eq 0 -and $poResult -eq 0 -and $transResult -eq 0) {
+        Write-Host "============================================================================" -ForegroundColor Green
+        Write-Host "All tests passed and .po files are valid!" -ForegroundColor Green
+        Write-Host "============================================================================" -ForegroundColor Green
+        Write-Host ""
+    }
+    else {
+        Write-Host "============================================================================" -ForegroundColor Red
+        if ($testResult -ne 0) {
+            Write-Host "Unit tests FAILED (exit code $testResult)." -ForegroundColor Red
+        }
+        if ($poResult -ne 0) {
+            Write-Host "Translation (.po) validation FAILED (exit code $poResult)." -ForegroundColor Red
+        }
+        if ($transResult -ne 0) {
+            Write-Host "Translation content validation FAILED (exit code $transResult)." -ForegroundColor Red
+        }
+        Write-Host "============================================================================" -ForegroundColor Red
+        Write-Host ""
+        exit 1
+    }
 }
 
 function New-GitHubRelease {
@@ -937,6 +1156,10 @@ switch ($Command) {
     "deploy" { Deploy-Desktop }
     "release" { New-GitHubRelease }
     "run" { Start-Diffractor }
+    "cpu" { Start-Diffractor -SoftwareRendering }
+    "build" { Invoke-BumpBuild; Build-App | Out-Null }
+    "test" { Invoke-Tests }
+    "bean" { Invoke-Tests -TempPath "\\bean.local\home\tmp" }
     "code" { Open-VSCode }
     "loc" { Update-Locations }
     "bump-build" { Invoke-BumpBuild }

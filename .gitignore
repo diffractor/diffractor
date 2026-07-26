@@ -37,3 +37,4 @@ intermediate/
 /DiffractorStoreCert.pfx
 *.msix
 /third-party/FFmpeg/intermediate
+exe/tiles/*.png

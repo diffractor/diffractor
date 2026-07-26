@@ -222,9 +222,3 @@ rectd quadd::inside_bounds(const double min_size) const noexcept
 		std::max(yy[2] - yy[1], min_size)
 	};
 }
-
-affined quadd::calc_transform(const quadd& other) const noexcept
-{
-	const auto s = other.pts[0].dist(other.pts[1]) / pts[0].dist(pts[1]);
-	return affined().translate(-pts[0]).rotate(other.angle() - angle()).scale(s).translate(other.pts[0]);
-}

@@ -154,36 +154,11 @@ namespace df
 			return _i != 0;
 		}
 
-		int to_order() const
-		{
-			if (!is_valid()) return 0;
-			const auto st = date();
-			return st.year * 100 + st.month;
-		}
-
 		static date_t from(std::string_view r);
-
-		static date_t from_time_t(const time_t t)
-		{
-			const uint64_t ll = static_cast<uint64_t>(t) * 10000000ll + offset_1970;
-			return date_t(ll);
-		}
 
 		bool parse(std::string_view text);
 		bool parse_exif_date(std::string_view r);
 		bool parse_xml_date(std::string_view r);
-
-		std::string to_iptc_date() const
-		{
-			const auto st = date();
-			return std::format("{:04}{:02}{:02}", st.year, st.month, st.day);
-		}
-
-		std::string to_polish_date() const
-		{
-			const auto st = date();
-			return std::format("{:04}-{:02}-{:02}", st.year, st.month, st.day);
-		}
 
 		std::string to_xmp_date() const;
 
@@ -203,48 +178,13 @@ namespace df
 
 		constexpr date_t previous_day() const
 		{
-			const auto previous = _i / intervals_per_day - 1;
-			return date_t(previous * intervals_per_day);
-		}
-
-		static constexpr bool is_leap_year(const int year)
-		{
-			return year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
-		}
-
-		constexpr int to_years() const
-		{
-			if (_i == 0)
-			{
-				return 0;
-			}
-
-			if (_i < offset_2000)
-			{
-				return year();
-			}
-
-			auto days_after_2000 = static_cast<int>((_i - offset_2000) / intervals_per_day);
-			auto year = 2000;
-
-			while (days_after_2000 > 0)
-			{
-				days_after_2000 -= is_leap_year(year) ? 366 : 365;
-				if (days_after_2000 <= 0) return year;
-				year += 1;
-			}
-
-			return year;
+			const auto days = _i / intervals_per_day;
+			return date_t(days == 0 ? 0 : (days - 1) * intervals_per_day);
 		}
 
 		constexpr date_t add_day(const int d) const
 		{
 			return from_days(to_days() + d);
-		}
-
-		static constexpr date_t from_seconds(const int64_t seconds)
-		{
-			return date_t(seconds * intervals_per_second);
 		}
 
 		constexpr uint64_t to_seconds() const
@@ -262,18 +202,16 @@ namespace df
 			if (_i == 0) return false;
 
 			static const auto min = date_t(1800, 1, 1).to_days();
-			static const auto max = platform::now().to_days();
 			static const auto null_date_cpp = date_t(1970, 1, 1).to_days();
 			static const auto null_date_mac = date_t(1904, 1, 1).to_days();
+
+			// read each call: caching the upper bound would reject anything later than process start
+			const auto max = platform::now().to_days();
 
 			const auto days = to_days();
 			return days >= min && days <= max && days != null_date_cpp && days != null_date_mac;
 		}
 
-		void shift_days(const int days)
-		{
-			_i += intervals_per_day * days;
-		}
 	};
 
 	__declspec(selectany) date_t date_t::null;

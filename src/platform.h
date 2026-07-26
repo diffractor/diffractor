@@ -58,7 +58,8 @@ struct local_folders_result
 
 namespace platform
 {
-	extern size_t static_memory_usage;
+	// Written under memory_pool::cs, read from the UI thread for the about box.
+	extern std::atomic<size_t> static_memory_usage;
 
 	std::string OS();
 
@@ -75,7 +76,6 @@ namespace platform
 
 	void trace(std::string_view message);
 	void trace(const std::string& message);
-	void trace(std::string_view message);
 
 	df::unique_folders known_folders();
 	local_folders_result local_folders();
@@ -84,9 +84,8 @@ namespace platform
 	void show_file_properties(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders);
 
 	bool has_burner();
-	void burn_to_cd(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders);
+	bool burn_to_cd(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders);
 	void print(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders);
-	void remove_metadata(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders);
 
 	std::string format_number(const std::string& num_text);
 	std::string number_dec_sep();
@@ -119,6 +118,13 @@ namespace platform
 	{
 		std::vector<folder_info> folders;
 		std::vector<file_info> files;
+		bool success = false;
+
+		folder_contents() noexcept = default;
+		folder_contents(const folder_contents&) = delete;
+		folder_contents& operator=(const folder_contents&) = delete;
+		folder_contents(folder_contents&&) noexcept = default;
+		folder_contents& operator=(folder_contents&&) noexcept = default;
 	};
 
 	enum class drive_type
@@ -144,7 +150,7 @@ namespace platform
 	};
 
 	using drives = std::vector<drive_t>;
-	drives scan_drives(bool scan_contents);
+	drives scan_drives();
 
 	class file
 	{
@@ -185,6 +191,11 @@ namespace platform
 	std::wstring to_file_system_path(df::file_path path);
 	std::wstring to_file_system_path(df::folder_path path);
 
+	// Shell and common-dialog APIs reject the \\?\ prefix that to_file_system_path adds for long
+	// paths, so they take the plain form and accept the MAX_PATH limit those APIs already impose.
+	std::wstring to_shell_path(df::file_path path);
+	std::wstring to_shell_path(df::folder_path path);
+
 	enum class known_folder
 	{
 		running_app_folder,
@@ -207,6 +218,7 @@ namespace platform
 	df::folder_path known_path(known_folder f);
 	file_ptr open_file(df::file_path path, file_open_mode mode);
 	uint32_t file_crc32(df::file_path path);
+	uint32_t file_crc32(df::file_path path, const df::cancel_token& token);
 	ui::const_surface_ptr create_segoe_md2_icon(wchar_t ch);
 	bool eject(df::folder_path path);
 
@@ -223,6 +235,16 @@ namespace platform
 		std::string error_message;
 		df::paths created_files;
 
+		// Set only by replace_file when it renames the replacement into place through a
+		// retained handle. This is that same still-open, cache-coherent handle, positioned at
+		// the start of the freshly-swapped file, so the file can be re-scanned immediately
+		// without a stale by-name reopen. Null when replace_file fell back to a plain move.
+		// When set, `modified` holds the file's modified time (in df::date_t ticks, i.e. the
+		// value df::date_t wraps) read back from the handle. Stored as a raw tick count rather
+		// than a df::date_t because date_t is only forward-declared here (see pch.h include order).
+		file_ptr coherent_handle;
+		uint64_t modified = 0;
+
 		bool success() const
 		{
 			return code == file_op_result_code::OK;
@@ -236,8 +258,16 @@ namespace platform
 		std::string format_error(std::string_view text = {}, std::string_view more_text = {}) const;
 	};
 
+#ifdef _DEBUG
+	ui::surface_ptr capture_window_surface(const std::any& window_handle);
+#endif
+
 	file_op_result delete_items(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders,
 	                            bool allow_undo);
+	// Returns true if deleting the given paths would move them to the Recycle Bin.
+	// Returns false when any path is on a location that bypasses the Recycle Bin
+	// (for example a UNC network path), causing a permanent, unrecoverable delete.
+	bool can_recycle(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders);
 	file_op_result move_or_copy(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders,
 	                            df::folder_path target, bool is_move);
 
@@ -248,14 +278,20 @@ namespace platform
 	                         bool can_create_folder);
 	file_op_result move_file(df::file_path existing, df::file_path destination, bool fail_if_exists);
 	file_op_result move_file(df::folder_path existing, df::folder_path destination);
+	file_op_result replacement_flush_result(bool flushed, std::string error_message = {});
 	file_op_result replace_file(df::file_path destination, df::file_path existing, bool create_originals = false);
 	bool exists(df::file_path path);
 	bool exists(df::folder_path path);
 	file_op_result create_folder(df::folder_path path);
+	// True when a new file can be created in the folder. Store package folders are read-only and
+	// per-machine installs are read-only without elevation, so writable data must live elsewhere.
+	bool is_writable(df::folder_path path);
 	bool open(df::file_path path);
 	bool open(std::string_view path);
 	bool run(std::string_view cmd);
-	void show_text_in_notepad(std::string_view s);
+	// Preferred over run(cmd): naming the image removes any ambiguity about which prefix of the
+	// command line is the executable (CWE-428).
+	bool run(df::file_path exe, std::string_view cmd);
 	void show_in_file_browser(df::file_path path);
 	void show_in_file_browser(df::folder_path path);
 	bool working_set(int64_t& current, int64_t& peak);
@@ -265,7 +301,7 @@ namespace platform
 	uint32_t file_attributes(const df::folder_path path);*/
 	df::file_path resolve_link(df::file_path path);
 	bool created_date(df::file_path path, df::date_t dt);
-	bool set_files_dates(df::file_path path, uint64_t dt_created, uint64_t dt_modified);
+
 
 	struct metadata_result
 	{
@@ -274,16 +310,22 @@ namespace platform
 		std::optional<int> rating;
 	};
 
-	bool write_shell_tags(df::file_path path, const std::vector<std::string>& tags);
+	// Fails for containers Windows has no property handler for, and transiently on a UNC path
+	// under load, so the result names the step that failed rather than collapsing to a bool.
+	file_op_result write_shell_tags(df::file_path path, const std::vector<std::string>& tags);
 	metadata_result read_shell_metadata(df::file_path path);
 
-	df::blob from_file(df::file_path path);
 	bool save_to_file(df::file_path path, df::cspan data);
 
 	df::count_and_size calc_folder_summary(df::folder_path folder, bool show_hidden, const df::cancel_token& token);
 	folder_contents iterate_file_items(df::folder_path folder, bool show_hidden);
 	std::vector<folder_info> select_folders(const df::item_selector& selector, bool show_hidden);
 	std::vector<file_info> select_files(const df::item_selector& selector, bool show_hidden);
+
+	// Test seam: when set, this predicate overrides cloud-placeholder (offline) detection so
+	// unit tests can simulate OneDrive Files On-Demand online-only files without real cloud
+	// storage. Returning true marks the given path as offline during folder enumeration.
+	extern std::function<bool(const df::file_path&)> test_offline_predicate;
 
 	struct scan_result
 	{
@@ -304,10 +346,21 @@ namespace platform
 	get_cached_file_properties_response get_cached_file_properties(df::file_path path,
 	                                                               prop::item_metadata& properties_out,
 	                                                               ui::const_image_ptr& thumbnail_out);
-	get_cached_file_properties_response get_shell_thumbnail(df::file_path path, ui::const_image_ptr& thumbnail_out);
+	// Fetch a thumbnail via the Windows Shell (IShellItemImageFactory) -- the same path Explorer
+	// uses. For a cloud-only placeholder this returns the provider's thumbnail WITHOUT hydrating.
+	// allow_network=false restricts to the local thumbnail cache; true permits a cloud fetch.
+	get_cached_file_properties_response get_shell_thumbnail(df::file_path path, sizei requested_extent,
+	                                                        bool allow_network, ui::const_image_ptr& thumbnail_out);
 
 	std::string user_name();
 	std::string last_os_error();
+
+	// Returns a human-readable reason why the file cannot currently be opened for writing
+	// (e.g. locked by another process, read-only, access denied), or an empty string if it
+	// can be opened. Used to turn opaque metadata-write failures into an actionable message.
+	std::string file_write_error(df::file_path path);
+	// Bounded wait for a transient lock on an existing file to clear. True when it became writable.
+	bool wait_for_unlocked_write(df::file_path path);
 	void set_thread_description(std::string_view name);
 	df::file_path temp_file(std::string_view ext = ".tmp", df::folder_path folder = {});
 
@@ -323,6 +376,53 @@ namespace platform
 	// normalization form (e.g. Korean Hangul as precomposed syllables vs decomposed
 	// conjoining jamo) compare and search as equal. ASCII input is returned as-is.
 	std::string normalize_nfc(std::string_view text);
+
+	// What the system font stack knows about one character in two named font families.
+	// Exposed so tests can assert the glyph-fallback contract (issue #219) without
+	// reaching into the platform text API themselves.
+	struct glyph_fallback_probe
+	{
+		// False when the query could not run at all (no text engine, or a family is
+		// not installed on this machine). Callers must treat the rest as meaningless.
+		bool available = false;
+		// Glyph index the primary family maps the character to; 0 means "not covered",
+		// which is what makes fallback mandatory.
+		uint16_t primary_glyph = 0;
+		// Glyph index in the fallback family. Non-zero when that family covers it.
+		uint16_t fallback_glyph = 0;
+		// True when metrics for fallback_glyph read from the fallback face succeeded.
+		bool fallback_metrics_ok = false;
+		// True when reading metrics for fallback_glyph from the PRIMARY face either
+		// fails or returns different metrics -- i.e. the face confusion is real.
+		bool primary_metrics_differ = false;
+	};
+
+	glyph_fallback_probe probe_glyph_fallback(std::string_view primary_family, std::string_view fallback_family,
+	                                          char32_t code_point);
+
+	// What the font-face cache does with repeated requests. Exposed so tests can assert the
+	// caching contract without reaching into the renderer: a repeat request must be served
+	// from the cache rather than re-running the family lookup and re-logging its failures
+	// (issue #232), and a font-size change must produce a distinct face so glyphs cached for
+	// the old size cannot be reused (issue #189).
+	struct font_cache_probe
+	{
+		// False when no text engine could be created; the rest is then meaningless.
+		bool available = false;
+		// Entries held after the first request. One request must add exactly one entry.
+		int entries_after_first = 0;
+		// True when the identical request returned the same face and added no entry.
+		bool same_request_is_cached = false;
+		// True when the same face at a different size returned a different instance.
+		bool size_change_is_distinct = false;
+		// True when a different face type at the same size returned a different instance.
+		bool face_change_is_distinct = false;
+		// True when resetting the fonts emptied the cache, so a settings change cannot
+		// leave stale faces behind.
+		bool reset_clears_cache = false;
+	};
+
+	font_cache_probe probe_font_cache(int base_font_size);
 
 #ifndef WINSTORE
 	void download_and_verify(const std::function<void(df::file_path)>& complete);
@@ -368,7 +468,6 @@ namespace platform
 	df::blob load_resource(resource_item i);
 	df::file_path running_app_path();
 	bool is_server(std::string_view path);
-	size_t calc_optimal_read_size(df::file_path path);
 
 	enum class drop_effect
 	{
@@ -419,17 +518,33 @@ namespace platform
 	};
 
 	data_object_probe probe_drag_data_object(const std::vector<df::file_path>& files,
-	                                          const std::vector<df::folder_path>& folders);
+	                                         const std::vector<df::folder_path>& folders);
+
+	// Test-only probe of the double-buffered paint applied to native common controls. The buffering
+	// relies on the control drawing itself on demand into a supplied device context. If a control
+	// class ignored that request the control would blit an empty buffer and appear blank, so the
+	// probe reports what each class actually drew into a pre-filled buffer.
+	struct control_paint_probe
+	{
+		int trackbar_painted_pixels = 0; // pixels the trackbar changed from the pre-fill
+		int trackbar_colors = 0; // distinct colors the trackbar left in the buffer
+		int toolbar_painted_pixels = 0;
+		int toolbar_colors = 0;
+		int button_painted_pixels = 0;
+		int button_colors = 0;
+	};
+
+	control_paint_probe probe_buffered_control_paint();
 
 
 	using clipboard_data_ptr = std::shared_ptr<clipboard_data>;
 
 	clipboard_data_ptr clipboard();
-	bool clipboard_has_files_or_image();
 
 	void set_clipboard(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders,
 	                   const file_load_result& loaded, bool is_move);
 	void set_clipboard(std::string_view text);
+	std::string clipboard_text();
 
 	class setting_file
 	{
@@ -449,20 +564,41 @@ namespace platform
 
 	using setting_file_ptr = std::shared_ptr<setting_file>;
 
-	setting_file_ptr create_default_settings();
+	// The single, process-wide settings store: the backend (registry vs INI) is resolved once
+	// and all access is synchronised. This is the store all persistence should use.
+	setting_file_ptr settings();
+
+	// Low-level settings backends. Prefer settings() above; these are exposed only so tests can
+	// exercise each backend directly.
 	setting_file_ptr create_registry_settings();
 	setting_file_ptr create_ini_file_settings();
+	setting_file_ptr create_ini_file_settings(df::folder_path folder);
 
-	extern size_t static_memory_usage;
-
-	class mutex : public df::no_copy
+	// Crash watchdog: a persisted marker recording that a graphics subsystem was active.
+	// Set at safe times (subsystem start), cleared on clean shutdown; if a flag is still
+	// set at the next launch the previous run crashed while that subsystem was in use, so
+	// the app falls back (see apply_gpu_crash_guard). gpu_render disables GPU UI rendering;
+	// hw_video_decode disables only hardware video decoding, leaving GPU rendering on.
+	enum class crash_guard
 	{
+		gpu_render,
+		hw_video_decode,
+	};
+
+	void set_crash_guard(crash_guard g, bool active);
+	bool read_crash_guard(crash_guard g);
+	void fail_crash_guard(crash_guard g);
+	bool crash_guard_failed(crash_guard g);
+	void suppress_crash_guard(crash_guard g, bool suppress);
+	bool crash_guard_suppressed(crash_guard g);
+
+	class mutex final : public df::no_copy
+	{
+		// Opaque OS lock (a Win32 SRWLOCK). Zero is its documented initialised state, so the type
+		// is constant-initialised and needs neither a constructor nor a destructor.
 		mutable uintptr_t _cs = 0;
 
 	public:
-		mutex();
-		~mutex() override;
-
 		_Acquires_exclusive_lock_(this)
 		void ex_lock() const;
 
@@ -543,7 +679,9 @@ namespace platform
 	class thread_event
 	{
 	public:
-		std::any _h;
+		// Opaque OS event handle (a Win32 HANDLE), null until create() succeeds. Held as void*
+		// rather than std::any so the noexcept signalling path can neither throw nor type-check.
+		void* _h = nullptr;
 
 		thread_event() = default;
 		~thread_event();
@@ -572,17 +710,25 @@ namespace platform
 			return true;
 		}
 
-		void enqueue(T f)
+		bool enqueue(T f)
 		{
 			exclusive_lock lock_dec(_rw);
+			const auto was_empty = _storage.empty();
 			_storage.emplace_back(std::move(f));
+			return was_empty;
 		}
 
 		void reset_and_enqueue(T f)
 		{
-			exclusive_lock lock_dec(_rw);
-			_storage.clear();
-			_storage.emplace_back(std::move(f));
+			// Superseded tasks own captured surfaces, item lists and shared state, so they are swapped
+			// out and destroyed after the lock is released rather than run down inside it.
+			std::deque<T> discarded;
+
+			{
+				exclusive_lock lock_dec(_rw);
+				std::swap(discarded, _storage);
+				_storage.emplace_back(std::move(f));
+			}
 		}
 
 		std::deque<T> dequeue_all()
@@ -621,8 +767,11 @@ namespace platform
 
 		void enqueue(task_t f)
 		{
-			_q.enqueue(std::move(f));
-			_event.set();
+			// Signal only the empty-to-nonempty transition; the worker drains the complete batch.
+			if (_q.enqueue(std::move(f)))
+			{
+				_event.set();
+			}
 		}
 
 		void reset_and_enqueue(task_t f)
@@ -689,9 +838,18 @@ namespace platform
 	uint32_t wait_for(const std::vector<std::reference_wrapper<thread_event>>& events, uint32_t timeout_ms,
 	                  bool wait_all);
 	using attachments_t = std::vector<std::pair<std::string, df::file_path>>;
-	bool mapi_send(std::string_view to, std::string_view subject, std::string_view text,
-	               const attachments_t& attachments);
+	enum class mapi_send_result
+	{
+		sent,
+		canceled,
+		failed
+	};
+	mapi_send_result classify_mapi_send_result(uint32_t result_code);
+	mapi_send_result mapi_send(std::string_view to, std::string_view subject, std::string_view text,
+	                           const attachments_t& attachments);
+	void sync_app_window_enabled();
 	uint32_t tick_count();
+	uint32_t caret_blink_time();
 	uint32_t current_thread_id();
 	extern thread_event event_exit;
 
@@ -713,15 +871,7 @@ namespace platform
 		memory_pool _pool;
 
 	public:
-		static void deallocate(T* const p, const size_t count)
-		{
-			// no-op
-		}
 
-		T* allocate(const size_t count)
-		{
-			return static_cast<T*>(_pool.alloc(sizeof(T) * count));
-		}
 	};
 
 

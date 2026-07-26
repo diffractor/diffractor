@@ -1,8 +1,15 @@
-"""Load every Diffractor translation file and compare them side by side.
+"""Validate Diffractor translations end to end.
 
-This reads all of ``exe/languages/*.po`` and builds a per-string view across
-every language so the translations can be reviewed for consistency. It is meant
-to give a human (or an agent) an easy way to spot:
+This runs two phases:
+
+  * **Phase 1 - app_text registration** (formerly ``check_app_text.py``): every
+    ``text_t`` / ``plural_text`` member declared in ``src/app_text.h`` must be
+    registered exactly once, in the correct vector, in ``src/app_text.cpp``. A
+    broken registration is always fatal.
+  * **Phase 2 - translation (.po) consistency**: read all of
+    ``exe/languages/*.po`` and build a per-string view across every language so
+    the translations can be reviewed for consistency. It is meant to give a
+    human (or an agent) an easy way to spot:
 
   * untranslated / absent strings - a source string that exists in the union of
     all ``.po`` files but is empty or missing in one or more languages;
@@ -16,10 +23,11 @@ to give a human (or an agent) an easy way to spot:
     the UI), embedded newline count, a dropped trailing colon, or a dropped
     sentence-ending ``.``/``?``/``!`` (the last is skipped for CJK text, where
     omitting the period on labels is the normal convention);
-  * ``msgstr[2]`` usage - Diffractor uses a binary ``msgstr[0]`` / ``msgstr[1]``
-    (one / plural) model, so any third plural form (used by e.g. Czech) is
-    ignored by ``load_po`` and never shown. The report notes which strings carry
-    one so the unused form is not mistaken for a translation that takes effect.
+    * extra plural-form tokens - Slavic languages (Czech, Polish, Russian,
+        Ukrainian) declare additional forms at index 2 and above (``msgstr[2]``,
+        ``msgstr[3]``). ``load_po`` parses them and the app selects them at runtime
+        for the relevant counts, so the report only flags an extra form whose
+        placeholder tokens are not present in the singular or plural source.
 
 The English source text *is* the ``msgid`` in each ``.po`` file (Diffractor's
 ``gen_po`` test generates the msgids from the in-code strings), so the union of
@@ -32,6 +40,11 @@ Usage (from the repo root, using the project virtual environment)::
 A full Markdown report grouped by source string is written to
 ``tmp/translation_report.md`` and a summary plus the list of problems is printed
 to stdout. Pass ``--full`` to also dump every string to stdout.
+
+Exit code: non-zero when phase 1 finds a registration error or phase 2 finds a
+placeholder/token mismatch (both real bugs). Untranslated, quality and extra
+plural-form issues are reported as warnings and only fail the run under
+``--strict`` (many languages are intentionally incomplete).
 
 The parser is intentionally self-contained (no third-party dependency) and
 tolerant in the same way Diffractor's own ``load_po`` is - e.g. it accepts the
@@ -49,6 +62,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_LANG_DIR = REPO_ROOT / "exe" / "languages"
 DEFAULT_REPORT = REPO_ROOT / "tmp" / "translation_report.md"
+
+# Source files for the app_text registration check (phase 1).
+APP_TEXT_HEADER = REPO_ROOT / "src" / "app_text.h"
+APP_TEXT_IMPL = REPO_ROOT / "src" / "app_text.cpp"
 
 # Runtime placeholders look like {count}, {first-name}, {total}, {} ...
 TOKEN_RE = re.compile(r"\{[^{}]*\}")
@@ -128,7 +145,13 @@ def quality_issues(src: str, got: str) -> list[str]:
 
     if src.startswith((" ", "\t")) != got.startswith((" ", "\t")):
         issues.append("leading-space mismatch")
-    if src.endswith((" ", "\t")) != got.endswith((" ", "\t")):
+    src_space = src.endswith((" ", "\t"))
+    got_space = got.endswith((" ", "\t"))
+    # CJK text conventionally omits ASCII separator spaces, so a CJK translation
+    # dropping the source's trailing separator space is a deliberate, correct
+    # typographic choice - not a defect. A translation that ADDS an unexpected
+    # trailing space is still flagged.
+    if src_space != got_space and not (src_space and not got_space and _has_cjk(got)):
         issues.append("trailing-space mismatch")
     if src.count("\n") != got.count("\n"):
         issues.append(f"newline mismatch (src {src.count(chr(10))} / got {got.count(chr(10))})")
@@ -177,8 +200,8 @@ def _is_empty(entry: dict) -> bool:
 
 def parse_po(path: Path) -> list[dict]:
     """Parse a .po file into raw entries, mirroring Diffractor's load_po state
-    machine but keeping ``msgstr[2]`` in its own ``str_extra`` field so the
-    report can show both the correct value and the value Diffractor would load.
+    machine but keeping forms at index 2 and above in ``str_extra`` so the
+    report can distinguish them from the two forms Diffractor loads.
     """
     entries: list[dict] = []
     entry = _new_entry()
@@ -194,7 +217,7 @@ def parse_po(path: Path) -> list[dict]:
                 state = "str_plural"
             elif line.startswith("msgstr[0]"):
                 state = "str"
-            elif line.startswith("msgstr[2]"):
+            elif line.startswith("msgstr["):
                 state = "str_extra"
             elif line.startswith("msgid_plural"):
                 state = "id_plural"
@@ -221,9 +244,9 @@ def parse_po(path: Path) -> list[dict]:
 def load_po_file(path: Path) -> "OrderedDict[str, dict]":
     """Parse one .po file into an ordered map: msgid -> entry data.
 
-    ``msgstr`` is the singular (``msgstr`` or ``msgstr[0]``) and ``msgstr_plural``
-    is ``msgstr[1]``. ``msgstr_extra`` holds ``msgstr[2]`` (only Czech uses it);
-    Diffractor's load_po would fold this into the singular form.
+    ``msgstr`` is the singular (``msgstr`` or ``msgstr[0]``), ``msgstr_plural``
+    is ``msgstr[1]``, and ``msgstr_extra`` holds the higher indexes (the extra
+    Slavic forms), which are selected at runtime for the relevant counts.
     """
     out: "OrderedDict[str, dict]" = OrderedDict()
     for entry in parse_po(path):
@@ -289,7 +312,16 @@ def analyse(languages: "OrderedDict[str, OrderedDict]"):
                         )
 
                 if data["msgstr_extra"].strip():
-                    issues.append("has msgstr[2] (extra plural form; ignored by load_po)")
+                    # Extra Slavic plural forms (msgstr[2..]) are used at runtime.
+                    # They legitimately draw tokens from the singular or plural
+                    # source; only an unexpected token is a real defect.
+                    got_extra = tokens(data["msgstr_extra"])
+                    allowed = set(src_singular_tokens) | set(src_plural_tokens)
+                    unexpected = sorted({t for t in got_extra if t not in allowed})
+                    if unexpected:
+                        issues.append(
+                            f"extra plural token mismatch: {unexpected} not in {sorted(allowed)}"
+                        )
 
             if issues:
                 row_issues[code] = issues
@@ -316,7 +348,7 @@ def compute_stats(languages, source, problems):
         extra_issues = sum(
             1
             for ri in problem_map.values()
-            if code in ri and any("msgstr[2]" in issue for issue in ri[code])
+            if code in ri and any("extra plural" in issue for issue in ri[code])
         )
         quality = sum(
             1
@@ -333,7 +365,7 @@ def compute_stats(languages, source, problems):
             "missing": total - translated,
             "token_issues": token_issues,
             "quality": quality,
-            "msgstr2": extra_issues,
+            "extra_plurals": extra_issues,
         }
 
     return stats
@@ -374,15 +406,37 @@ def write_report(report_path, languages, source, stats, problems):
     lines.append(f"Source strings (union of all msgids): **{len(source)}**")
     lines.append("")
 
+    # Notes for reviewers
+    lines.append("## Notes for reviewers")
+    lines.append("")
+    lines.append(
+        "- **`//` disambiguation operator**: a msgid may contain a `//` marker, "
+        "for example `Country//genre`. Everything **before** `//` is the text "
+        "shown to the user (`Country`); everything **after** `//` is "
+        "disambiguation context for translators (`genre`) and is **stripped at "
+        "runtime** by `tt_prep` in `src/app_text.cpp`. This lets two identical "
+        "display strings (e.g. the *Country* location field vs. the *Country* "
+        "music genre) exist as distinct msgids with separate translations. When "
+        "translating, translate only the part before `//` and keep the `//...` "
+        "suffix unchanged in the msgid."
+    )
+    lines.append(
+        "- **Plural forms**: `msgstr[0]` is the singular, `msgstr[1]` the general "
+        "plural, and `msgstr[2]`/`msgstr[3]` the extra Slavic forms (Czech, "
+        "Polish, Russian, Ukrainian). The extra forms are selected at runtime "
+        "for the relevant counts; other languages use only `msgstr[0]`/`msgstr[1]`."
+    )
+    lines.append("")
+
     # Summary table
     lines.append("## Coverage summary")
     lines.append("")
-    lines.append("| Code | Language | Source | Translated | Missing | Token issues | Quality | msgstr[2] |")
+    lines.append("| Code | Language | Source | Translated | Missing | Token issues | Quality | Extra plurals |")
     lines.append("|------|----------|-------:|-----------:|--------:|-------------:|--------:|----------:|")
     for code, s in stats.items():
         lines.append(
             f"| {code} | {language_name(code)} | {s['total']} | {s['translated']} "
-            f"| {s['missing']} | {s['token_issues']} | {s['quality']} | {s['msgstr2']} |"
+            f"| {s['missing']} | {s['token_issues']} | {s['quality']} | {s['extra_plurals']} |"
         )
     lines.append("")
 
@@ -390,12 +444,12 @@ def write_report(report_path, languages, source, stats, problems):
     lines.append(f"## Problems ({len(problems)} strings)")
     lines.append("")
     if not problems:
-        lines.append("No missing translations, token mismatches or msgstr[2] entries found.")
+        lines.append("No missing translations, token mismatches or extra plural forms found.")
     else:
         lines.append(
             "Each entry below has a missing translation, a placeholder/token "
             "mismatch, a structural quality mismatch (whitespace / newline / "
-            "punctuation) or a msgstr[2] form in at least one language."
+            "punctuation) or an extra plural form in at least one language."
         )
         lines.append("")
         for msgid, row_issues in problems:
@@ -420,14 +474,14 @@ def print_summary(languages, source, stats, problems, report_path):
     print()
     header = (
         f"{'Code':<5} {'Language':<12} {'Source':>7} {'Translated':>11} "
-        f"{'Missing':>8} {'Tokens':>7} {'Quality':>8} {'msgstr[2]':>10}"
+        f"{'Missing':>8} {'Tokens':>7} {'Quality':>8} {'Extra':>10}"
     )
     print(header)
     print("-" * len(header))
     for code, s in stats.items():
         print(
             f"{code:<5} {language_name(code):<12} {s['total']:>7} {s['translated']:>11} "
-            f"{s['missing']:>8} {s['token_issues']:>7} {s['quality']:>8} {s['msgstr2']:>10}"
+            f"{s['missing']:>8} {s['token_issues']:>7} {s['quality']:>8} {s['extra_plurals']:>10}"
         )
     print()
     print(f"Strings with at least one problem: {len(problems)}")
@@ -438,6 +492,86 @@ def print_full(languages, source):
     for msgid in source:
         print(format_string_block(msgid, source, languages))
         print()
+
+
+# ---------------------------------------------------------------------------
+# Phase 1: app_text registration integrity (formerly check_app_text.py)
+#
+# Verify that every ``text_t`` / ``plural_text`` member declared in app_text.h
+# is registered exactly once, in the correct vector, in app_text.cpp. A broken
+# registration is a hard build/runtime bug, so these are always fatal.
+# ---------------------------------------------------------------------------
+
+_DECLARATION_RE = re.compile(
+    r"^\s*(text_t|plural_text)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:=|\{)",
+    re.MULTILINE,
+)
+
+
+def _app_text_declarations(source: str) -> dict:
+    result = {"text_t": set(), "plural_text": set()}
+    for type_name, member_name in _DECLARATION_RE.findall(source):
+        result[type_name].add(member_name)
+    return result
+
+
+def _app_text_registrations(source: str, vector_name: str) -> list:
+    vector_re = re.compile(
+        rf"{re.escape(vector_name)}\s*=\s*"
+        r"std::vector<std::reference_wrapper<(?:text_t|plural_text)>>\s*"
+        r"\{(?P<body>.*?)^\s*\};",
+        re.MULTILINE | re.DOTALL,
+    )
+    match = vector_re.search(source)
+    if match is None:
+        raise ValueError(f"Could not find the {vector_name} initializer")
+
+    names: list = []
+    for raw_line in match.group("body").splitlines():
+        line = raw_line.split("//", 1)[0].strip().rstrip(",")
+        if not line:
+            continue
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", line):
+            raise ValueError(f"Unexpected entry in {vector_name}: {raw_line.strip()}")
+        names.append(line)
+    return names
+
+
+def _first_duplicates(names: list) -> set:
+    seen: set = set()
+    return {name for name in names if name in seen or seen.add(name)}
+
+
+def check_app_text_registration() -> list:
+    """Return a list of human-readable error lines; empty means everything is OK."""
+    declared = _app_text_declarations(APP_TEXT_HEADER.read_text(encoding="utf-8"))
+    implementation = APP_TEXT_IMPL.read_text(encoding="utf-8")
+
+    try:
+        text_entries = _app_text_registrations(implementation, "_all_texts")
+        plural_entries = _app_text_registrations(implementation, "_all_plurals")
+    except ValueError as error:
+        return [f"ERROR: {error}"]
+
+    registered_texts = set(text_entries)
+    registered_plurals = set(plural_entries)
+
+    problems: list = []
+
+    def add(label: str, names: set) -> None:
+        if names:
+            problems.append(f"{label} ({len(names)}): " + ", ".join(sorted(names)))
+
+    add("Missing from _all_texts", declared["text_t"] - registered_texts)
+    add("Missing from _all_plurals", declared["plural_text"] - registered_plurals)
+    add("Unknown entries in _all_texts", registered_texts - declared["text_t"])
+    add("Unknown entries in _all_plurals", registered_plurals - declared["plural_text"])
+    add("text_t members registered as plurals", declared["text_t"] & registered_plurals)
+    add("plural_text members registered as singulars", declared["plural_text"] & registered_texts)
+    add("Duplicate entries in _all_texts", _first_duplicates(text_entries))
+    add("Duplicate entries in _all_plurals", _first_duplicates(plural_entries))
+
+    return problems
 
 
 def main(argv=None) -> int:
@@ -457,8 +591,24 @@ def main(argv=None) -> int:
         "--full", action="store_true",
         help="also print the full per-string comparison to stdout",
     )
+    parser.add_argument(
+        "--strict", action="store_true",
+        help="also fail on warnings (untranslated, quality and extra plural forms), "
+             "not just on registration errors and token mismatches",
+    )
     args = parser.parse_args(argv)
 
+    # Phase 1: app_text registration integrity (always fatal on error).
+    print("== Phase 1: app_text registration ==")
+    app_text_errors = check_app_text_registration()
+    for line in app_text_errors:
+        print(f"  {line}", file=sys.stderr)
+    if not app_text_errors:
+        print("  app_text registration OK")
+    print()
+
+    # Phase 2: translation (.po) consistency.
+    print("== Phase 2: translation (.po) consistency ==")
     po_paths = sorted(args.lang_dir.glob("*.po"))
     if not po_paths:
         print(f"No .po files found in {args.lang_dir}", file=sys.stderr)
@@ -474,6 +624,31 @@ def main(argv=None) -> int:
         print()
         print_full(languages, source)
 
+    # Aggregate failures. Token/placeholder mismatches are real runtime bugs and
+    # always fail. Registration errors always fail. Untranslated, quality and
+    # extra-plural issues are expected incompleteness and only fail under --strict.
+    token_failures = sum(s["token_issues"] for s in stats.values())
+    quality_failures = sum(
+        s["missing"] + s["quality"] + s["extra_plurals"] for s in stats.values()
+    )
+
+    hard_fail = bool(app_text_errors) or token_failures > 0
+    if args.strict:
+        hard_fail = hard_fail or quality_failures > 0
+
+    print()
+    if hard_fail:
+        reasons = []
+        if app_text_errors:
+            reasons.append(f"{len(app_text_errors)} app_text registration error(s)")
+        if token_failures:
+            reasons.append(f"{token_failures} token mismatch(es)")
+        if args.strict and quality_failures:
+            reasons.append(f"{quality_failures} warning(s) (strict)")
+        print(f"FAILED: {', '.join(reasons)}", file=sys.stderr)
+        return 1
+
+    print("Translation validation OK")
     return 0
 
 

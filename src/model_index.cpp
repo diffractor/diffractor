@@ -27,13 +27,18 @@
 
 constexpr auto max_folders_to_index = 100000;
 
-static_assert(std::is_trivially_copyable_v<df::file_path>);
-static_assert(std::is_trivially_copyable_v<df::file_group_histogram>);
-static_assert(std::is_trivially_copyable_v<bloom_bits>);
-static_assert(std::is_trivially_copyable_v<key_val>);
-static_assert(std::is_move_constructible_v<df::index_file_item>);
+df_assert_pod(df::file_path);
+df_assert_pod(df::file_group_histogram);
+df_assert_pod(search_presence_mask);
+df_assert_pod(key_val);
+df_assert_movable(df::index_file_item);
+df_assert_movable(folder_scan_item);
+df_assert_movable(index_state::query_item);
+df_assert_movable(index_state::item_scan_request);
+df_assert_movable(index_state::thumbnail_result);
+df_assert_movable(index_state::validate_folder_result);
 
-static_assert(sizeof(bloom_bits) == 4);
+static_assert(sizeof(search_presence_mask) == 4);
 static_assert(sizeof(df::file_path) == sizeof(void*) * 2);
 static_assert(sizeof(key_val) == sizeof(void*) * 2);
 //static_assert(sizeof(df::index_folder_info) == 88);
@@ -111,32 +116,16 @@ static __forceinline uint32_t x64to32(const uint64_t n)
 
 struct query_items_result
 {
-	const df::unique_items& existing;
-	df::item_set results;
+	index_state::query_item_results results;
 
 	void match_item(const df::file_path id, const df::index_file_item& file, const df::search_result& match)
 	{
-		auto found = existing.find(id);
-
-		if (found)
-		{
-			found->update(id, file);
-		}
-		else
-		{
-			found = std::make_shared<df::item_element>(id, file);
-		}
-
-		found->search(match);
-		results.add(found);
+		results.push_back({index_state::query_item_kind::file, id, file, {}, {}, match});
 	}
 
 	void match_folder(const df::folder_path folder_path, const df::index_folder_item_ptr& folder)
 	{
-		const auto path = folder_path;
-		const auto found = existing.find(path);
-		const auto ii = found ? found : std::make_shared<df::item_element>(folder_path, folder);
-		results.add(ii);
+		results.push_back({index_state::query_item_kind::folder, {}, {}, folder_path, folder, {}});
 	}
 };
 
@@ -146,7 +135,7 @@ struct count_items_result
 
 	void match_item(const df::file_path id, const df::index_file_item& file, const df::search_result& match)
 	{
-		summary.record(file);
+		summary.record(file, id);
 	}
 
 	static void match_folder(const df::folder_path folder_path, const df::index_folder_item_ptr& folder)
@@ -154,8 +143,55 @@ struct count_items_result
 	}
 };
 
+// A related search written as text - typed, or restored from a favorite or saved search -
+// carries only the path, so the fields the duplicate rules compare are recovered from the
+// index before any matching happens. Files outside the collection fall back to the path.
+static const df::search_t& resolve_related(const df::search_t& search, const index_state& state,
+                                           df::search_t& storage)
+{
+	if (!search.has_related() || search.related().is_loaded)
+	{
+		return search;
+	}
+
+	const auto path = search.related().path;
+	const auto found = state.find_item(path);
+
+	df::related_info r;
+	r.path = path;
+
+	if (found.ft)
+	{
+		r.name = found.name;
+		r.size = found.size;
+		r.file_created = found.file_created;
+		r.ft = found.ft;
+		r.crc32c = found.crc32c.load();
+		r.group = found.duplicates.load().group;
+
+		const auto md = found.metadata.load();
+
+		if (md)
+		{
+			r.gps = md->coordinate;
+			r.metadata_created = md->created();
+		}
+	}
+	else
+	{
+		r.name = str::cache(path.name());
+		r.ft = files::file_type_from_name(path);
+	}
+
+	r.is_loaded = true;
+
+	storage = search;
+	storage.related(r);
+	return storage;
+}
+
 template <typename T>
-static void iterate_items(const df::search_t& search,
+static void iterate_items(const df::search_t& search_in,
                           T& results,
                           index_state& state,
                           df::cancel_token token,
@@ -163,7 +199,10 @@ static void iterate_items(const df::search_t& search,
                           bool refresh_from_file_system,
                           bool show_sidecars)
 {
-	df::search_matcher matcher(search);
+	df::search_t resolved_related;
+	const auto& search = resolve_related(search_in, state, resolved_related);
+
+	df::search_matcher matcher(search, platform::now().to_days(), &state.locations());
 
 	const auto now = platform::now();
 	const auto& selectors = search.selectors();
@@ -200,7 +239,7 @@ static void iterate_items(const df::search_t& search,
 
 					if (found_node.folder)
 					{
-						for (const auto& folder_entry : found_node.folder->folders)
+						for (const auto& folder_entry : *found_node.folder->folders_snapshot())
 						{
 							if (token.is_cancelled()) break;
 
@@ -231,12 +270,12 @@ static void iterate_items(const df::search_t& search,
 								if (token.is_cancelled())
 									break;
 
-								state.scan_item(found_node.folder, {current_folder, f.name}, false, false, nullptr,
-								                f.ft);
+								state.scan_item(found_node.folder, {current_folder, f.name}, false, false, false, false,
+								                {}, false, f.ft);
 							}
 						}
 
-						if (matcher.potential_match(found_node.folder->bloom_filter))
+						if (matcher.can_contain(found_node.folder->search_presence_summary))
 						{
 							for (const auto& file_node : found_node.folder->files)
 							{
@@ -276,9 +315,11 @@ static void iterate_items(const df::search_t& search,
 
 			if (folder_node.second->is_in_collection)
 			{
+				// Folder masks are an early rejection only; each surviving item is checked
+				// against its own mask and then by the authoritative exact matcher.
 				if (has_related ||
 					matcher.can_match_folder ||
-					matcher.potential_match(folder_node.second->bloom_filter))
+					matcher.can_contain(folder_node.second->search_presence_summary))
 				{
 					for (const auto& file_node : folder_node.second->files)
 					{
@@ -308,8 +349,8 @@ static void iterate_items(const df::search_t& search,
 	}
 }
 
-void index_state::query_items(const df::search_t& search, const df::unique_items& existing,
-                              const std::function<void(df::item_set, bool)>& found_callback,
+void index_state::query_items(const df::search_t& search,
+							  const std::function<void(query_item_results, bool)>& found_callback,
                               const df::cancel_token token)
 {
 	df::scope_locked_inc l(searching);
@@ -318,7 +359,6 @@ void index_state::query_items(const df::search_t& search, const df::unique_items
 
 	if (search.has_related())
 	{
-		df::assert_true(search.related().is_loaded);
 		record_feature_use(features::search_related);
 	}
 
@@ -343,23 +383,23 @@ void index_state::query_items(const df::search_t& search, const df::unique_items
 		}
 	}
 
-	query_items_result results{existing, {}};
-	iterate_items(search, results, *this, token, _items, true, search.has_related());
+	query_items_result results;
+	{
+		df::bump(df::query_perf.queries);
+		df::perf_timer timer(df::query_perf.query_us, &df::query_perf.query_max_us);
+		iterate_items(search, results, *this, token, _items, true, search.has_related());
+	}
+
+	df::bump(df::query_perf.query_items, results.results.size());
 
 	if (search.has_related())
 	{
 		const auto id = search.related().path;
-		const auto found_related = existing.find(id);
-
-		if (found_related)
+		const auto folder = _items.find(id.folder());
+		if (!(folder && folder->is_in_collection))
 		{
-			const auto folder = _items.find(id.folder());
-
-			if (!(folder && folder->is_in_collection))
-			{
-				found_related->search({df::search_result_type::similar});
-				results.results.add(found_related);
-			}
+			results.results.push_back({query_item_kind::existing, id, {}, {}, {},
+			                           {df::search_result_type::similar}});
 		}
 	}
 
@@ -381,6 +421,51 @@ void index_state::query_items(const df::search_t& search, const df::unique_items
 	found_callback(std::move(results.results), true);
 }
 
+df::item_set index_state::materialize_query_items(query_item_results items, const df::unique_items& existing) const
+{
+	df::assert_true(ui::is_ui_thread());
+	df::bump(df::query_perf.materializations);
+	df::bump(df::query_perf.materialize_items, items.size());
+	df::perf_timer timer(df::query_perf.materialize_us, &df::query_perf.materialize_max_us);
+	df::item_set results;
+	results.reserve(items.size());
+
+	for (auto& result : items)
+	{
+		df::item_element_ptr item;
+		if (result.kind == query_item_kind::file)
+		{
+			item = existing.find(result.path);
+			if (item)
+			{
+				item->update(result.path, result.file);
+			}
+			else
+			{
+				item = std::make_shared<df::item_element>(result.path, result.file);
+			}
+			item->search(result.match);
+		}
+		else if (result.kind == query_item_kind::folder)
+		{
+			item = existing.find(result.folder_path);
+			if (!item)
+			{
+				item = std::make_shared<df::item_element>(result.folder_path, std::move(result.folder));
+			}
+		}
+		else
+		{
+			item = existing.find(result.path);
+			if (item) item->search(result.match);
+		}
+
+		if (item) results.add(item);
+	}
+
+	return results;
+}
+
 df::file_group_histogram index_state::count_matches(const df::search_t& search, const df::cancel_token token)
 {
 	count_items_result result;
@@ -388,6 +473,8 @@ df::file_group_histogram index_state::count_matches(const df::search_t& search, 
 	if (is_collection_search(search))
 	{
 		df::measure_ms ms(stats.count_matches_ms);
+		df::bump(df::query_perf.counts);
+		df::perf_timer timer(df::query_perf.count_us);
 		iterate_items(search, result, *this, token, _items, false, search.has_related());
 	}
 
@@ -405,17 +492,27 @@ index_state::index_state(async_strategy& as, const location_cache& locations) : 
 {
 }
 
+void index_state::enqueue_db_write(item_db_write write)
+{
+	if (_db_writes.enqueue(std::move(write)))
+	{
+		// The database worker flushes writes after every task batch. One no-op task on the
+		// empty-to-nonempty transition gives the write queue an explicit wake without flooding it.
+		_async.queue_database([](database&) {});
+	}
+}
+
 void index_state::init_item_index()
 {
-	platform::exclusive_lock lock(_summary_rw);
+	auto summary = std::make_shared<index_metadata_summary>();
 
 	for (const auto& f : all_file_groups())
 	{
-		++_summary._distinct_words[str::cache(std::format("@{}", f->name))];
-		++_summary._distinct_words[str::cache(std::format("@{}", f->plural_name))];
+		++summary->_distinct_words[str::cache(std::format("@{}", f->name))];
+		++summary->_distinct_words[str::cache(std::format("@{}", f->plural_name))];
 	}
 
-	_summary._distinct_text[prop::genre] = df::dense_unique_strings
+	summary->_distinct_text[prop::genre] = df::dense_unique_strings
 	{
 		"Abstract"_c,
 		"Action & Adventure"_c,
@@ -449,6 +546,7 @@ void index_state::init_item_index()
 		"Electronic"_c,
 		"Family"_c,
 		"Fashion"_c,
+		"Film Noir"_c,
 		"Film still"_c,
 		"Fine-art"_c,
 		"Fire"_c,
@@ -490,7 +588,6 @@ void index_state::init_item_index()
 		"Opera"_c,
 		"Panorama"_c,
 		"Panoramic"_c,
-		"Pellier Noir"_c,
 		"Photo op"_c,
 		"Photobiography"_c,
 		"Photojournalism"_c,
@@ -533,11 +630,50 @@ void index_state::init_item_index()
 		"Western"_c,
 		"World"_c
 	};
+
+	rebuild_sorted_words(*summary);
+
+	index_metadata_summary_const_ptr published = std::move(summary);
+	{
+		platform::exclusive_lock lock(_summary_rw);
+		_summary._metadata.swap(published);
+	}
 }
 
 void index_state::reset()
 {
 	_items.clear();
+}
+
+void index_state::add_distinct_other_folders(df::unique_folders folders)
+{
+	for (;;)
+	{
+		std::shared_ptr<const df::unique_folders> current;
+		{
+			platform::shared_lock lock(_summary_rw);
+			current = _summary._distinct_other_folders;
+		}
+
+		if (std::ranges::all_of(folders, [&](const auto& folder) { return current->contains(folder); }))
+		{
+			return;
+		}
+
+		// Build the immutable replacement outside the write lock, then publish only if current is unchanged.
+		auto next = std::make_shared<df::unique_folders>(folders);
+		next->insert(current->begin(), current->end());
+
+		{
+			std::shared_ptr<const df::unique_folders> published = next;
+			platform::exclusive_lock lock(_summary_rw);
+			if (_summary._distinct_other_folders == current)
+			{
+				_summary._distinct_other_folders.swap(published);
+				return;
+			}
+		}
+	}
 }
 
 void index_state::invalidate_view(const view_invalid invalid) const
@@ -598,12 +734,12 @@ static df::index_folder_item_ptr find_or_create_folder(index_items& items, const
 {
 	df::assert_true(!is_empty(fd.name));
 
-	auto entry = items.find_or_create(path);
-	entry->name = fd.name;
-	entry->modified = fd.attributes.modified;
-	entry->created = fd.attributes.created;
-	entry->is_read_only = fd.attributes.is_readonly;
-	return entry;
+	auto candidate = std::make_shared<df::index_folder_item>();
+	candidate->name = fd.name;
+	candidate->modified = fd.attributes.modified;
+	candidate->created = fd.attributes.created;
+	candidate->is_read_only = fd.attributes.is_readonly;
+	return items.find_or_create(path, std::move(candidate));
 }
 
 void populate_file_info(df::index_file_item& file_node, const platform::file_info& fd, const bool cache_items_loaded)
@@ -611,10 +747,15 @@ void populate_file_info(df::index_file_item& file_node, const platform::file_inf
 	df::assert_true(!is_empty(fd.name));
 
 	const auto name = fd.name;
-	file_node.file_modified = fd.attributes.modified;
+	file_node.file_modified = df::date_t(fd.attributes.modified);
 	file_node.file_created = fd.attributes.created;
+	// Set or CLEAR these flags to reflect the current filesystem state. Clearing matters
+	// for cloud-only placeholders: when OneDrive hydrates a file (offline -> online) the
+	// is_offline flag must drop so the file is re-scanned via the normal (thumbnail) path.
 	if (fd.attributes.is_readonly) file_node.flags |= df::index_item_flags::is_read_only;
+	else file_node.flags &= ~df::index_item_flags::is_read_only;
 	if (fd.attributes.is_offline) file_node.flags |= df::index_item_flags::is_offline;
+	else file_node.flags &= ~df::index_item_flags::is_offline;
 	file_node.size = fd.attributes.size;
 
 	auto md = file_node.metadata.load();
@@ -632,7 +773,7 @@ void populate_file_info(df::index_file_item& file_node, const platform::file_inf
 
 			if (ext_pos != std::string_view::npos)
 			{
-				md = file_node.safe_ps();
+				md = std::make_shared<prop::item_metadata>();
 				const auto name_props = scan_info_from_title(name.substr(0, ext_pos));
 
 				if (!str::is_empty(name_props.show)) md->show = str::cache(name_props.show);
@@ -640,13 +781,17 @@ void populate_file_info(df::index_file_item& file_node, const platform::file_inf
 				if (name_props.year != 0) md->year = name_props.year;
 				if (name_props.episode != 0) md->episode = df::xy8::make(name_props.episode, name_props.episode_of);
 				if (name_props.season != 0) md->season = name_props.season;
+				md->file_name = name;
+				file_node.metadata.store(md);
 			}
 		}
 	}
 
-	if (md)
+	if (md && md->file_name.sv() != name)
 	{
-		md->file_name = name;
+		auto updated = std::make_shared<prop::item_metadata>(*md);
+		updated->file_name = name;
+		file_node.metadata.store(std::move(updated));
 	}
 }
 
@@ -672,6 +817,14 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 
 		auto contents = platform::iterate_file_items(folder_path, setting.show_hidden);
 
+		if (!contents.success)
+		{
+			// Enumeration failed (offline volume, denied access, network drop). Rebuilding from
+			// the empty listing would erase this branch of the index and expire its database rows.
+			add_distinct_other_folders({folder_path});
+			return {existing_folder, false};
+		}
+
 		updated_folders.reserve(contents.folders.size());
 		updated_files.reserve(contents.files.size());
 
@@ -683,17 +836,18 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 
 		if (existing_folder)
 		{
+			const auto existing_folders = existing_folder->folders_snapshot();
 			df::assert_true(std::ranges::is_sorted(contents.folders, less_name));
-			df::assert_true(std::ranges::is_sorted(existing_folder->folders, less_ptr_name));
+			df::assert_true(std::ranges::is_sorted(*existing_folders, less_ptr_name));
 
 			if (contents.files.size() != existing_folder->files.size() ||
-				contents.folders.size() != existing_folder->folders.size())
+				contents.folders.size() != existing_folders->size())
 			{
 				changes_detected = true;
 			}
 
-			auto old_first = existing_folder->folders.begin();
-			const auto old_last = existing_folder->folders.end();
+			auto old_first = existing_folders->begin();
+			const auto old_last = existing_folders->end();
 
 			while (folder_first != folder_last && old_first != old_last)
 			{
@@ -777,9 +931,31 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 					// copy: in both
 					df::index_file_item info = *old_first;
 					info.metadata.store(old_first->metadata);
-					info.metadata_scanned = old_first->metadata_scanned;
-					info.crc32c = old_first->crc32c;
+					info.metadata_scanned = old_first->metadata_scanned.load();
+					info.crc32c = old_first->crc32c.load();
+
+					const auto was_offline = old_first->flags && df::index_item_flags::is_offline;
 					populate_file_info(info, *file_first, _cache_items_loaded);
+					const auto now_offline = info.flags && df::index_item_flags::is_offline;
+
+					if (was_offline != now_offline)
+					{
+						// The cloud (offline) status flipped. OneDrive hydration preserves the
+						// file's modified time, so this is often the ONLY change -- it must mark the
+						// folder dirty, otherwise the updated node (with the cleared is_offline flag)
+						// is discarded and the file is never re-scanned online.
+						changes_detected = true;
+					}
+
+					if (was_offline && !now_offline)
+					{
+						// A cloud-only placeholder was just hydrated (downloaded). Force a full
+						// re-scan so it gets a real thumbnail, content hash and full metadata (tags,
+						// camera, etc.) that the offline shell path could not provide.
+						info.metadata_scanned = df::date_t{};
+						info.crc32c = 0;
+					}
+
 					updated_files.emplace_back(info);
 					++file_first;
 					++old_first;
@@ -823,16 +999,21 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 
 					if (str::icmp(ext, "xmp") == 0)
 					{
-						auto ps = f.safe_ps();
+						auto ps = f.metadata.load();
 
 						if (f.metadata_scanned < f.file_modified)
 						{
-							metadata_xmp::parse(*ps, path);
+							auto updated = ps
+								? std::make_shared<prop::item_metadata>(*ps)
+								: std::make_shared<prop::item_metadata>();
+							metadata_xmp::parse(*updated, path);
+							f.metadata.store(updated);
+							ps = std::move(updated);
 							f.metadata_scanned = timestamp;
 							changes_detected = true;
 						}
 
-						const auto raw_file = ps->raw_file_name;
+						const auto raw_file = ps ? ps->raw_file_name : str::cached{};
 
 						if (!is_empty(raw_file))
 						{
@@ -869,15 +1050,9 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 						updated_sidecars.emplace(it->second);
 					}
 
-					auto ps = file.safe_ps();
-					auto combined = str::combine(updated_sidecars);
-
-					if (icmp(ps->sidecars, combined) != 0)
-					{
-						ps->sidecars = str::cache(combined);
-						changes_detected = true;
-					}
-
+					const auto ps = file.metadata.load();
+					const auto combined = str::combine(updated_sidecars);
+					str::cached xmp;
 
 					for (const auto& sc_name : updated_sidecars)
 					{
@@ -885,7 +1060,7 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 
 						if (str::icmp(ext, ".xmp") == 0)
 						{
-							ps->xmp = str::cache(sc_name);
+							xmp = str::cache(sc_name);
 						}
 
 						const auto found = find_file(updated_files, sc_name);
@@ -895,13 +1070,24 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 							found->flags |= df::index_item_flags::is_sidecar;
 						}
 					}
+
+					if (!ps || icmp(ps->sidecars, combined) != 0 || icmp(ps->xmp, xmp) != 0)
+					{
+						auto updated = ps
+							? std::make_shared<prop::item_metadata>(*ps)
+							: std::make_shared<prop::item_metadata>();
+						updated->sidecars = str::cache(combined);
+						updated->xmp = xmp;
+						file.metadata.store(std::move(updated));
+						changes_detected = true;
+					}
 				}
 			}
 		}
 
 		for (const auto& f : updated_files)
 		{
-			f.calc_bloom_bits();
+			f.calc_search_presence();
 		}
 
 		if (changes_detected)
@@ -916,10 +1102,9 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 			{
 				folder_node->name = existing_folder->name;
 				folder_node->is_read_only = existing_folder->is_read_only;
-				folder_node->is_excluded = existing_folder->is_excluded;
-				folder_node->is_in_collection = existing_folder->is_in_collection;
+				folder_node->is_excluded = existing_folder->is_excluded.load();
+				folder_node->is_in_collection = existing_folder->is_in_collection.load();
 				folder_node->volume = existing_folder->volume;
-				folder_node->bloom_filter = existing_folder->bloom_filter;
 				folder_node->created = existing_folder->created;
 				folder_node->modified = existing_folder->modified;
 			}
@@ -929,7 +1114,7 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 			}
 
 			df::assert_true(!is_empty(folder_node->name));
-			folder_node->reset_bloom_bits();
+			folder_node->reset_search_presence();
 
 			_items.replace(folder_path, folder_node);
 			_items.erase(removed_folders);
@@ -938,10 +1123,7 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 		}
 	}
 
-	{
-		platform::exclusive_lock lock(_summary_rw);
-		_summary._distinct_other_folders.emplace(folder_path);
-	}
+	add_distinct_other_folders({folder_path});
 
 	return {existing_folder, false};
 }
@@ -957,7 +1139,7 @@ std::vector<std::pair<df::file_path, df::index_file_item>> index_state::duplicat
 		{
 			for (const auto& file : ifn.second->files)
 			{
-				if (file.duplicates.group == group)
+				if (file.duplicates.load().group == group)
 				{
 					result.emplace_back(df::file_path(ifn.first, file.name), file);
 				}
@@ -981,9 +1163,27 @@ void index_state::update_predictions()
 	// crc32c
 
 
-	//std::unordered_multimap<uint32_t, const df::index_file_item*, dup_index_hash, dup_index_eq> dups;
-	std::vector<std::pair<uint32_t, const df::index_file_item*>> dups;
-	dups.reserve(1000000);
+	struct duplicate_candidate
+	{
+		const df::index_folder_item_ptr& folder;
+		const df::index_file_item* file;
+	};
+
+	std::vector<duplicate_candidate> files;
+	std::vector<std::pair<uint32_t, size_t>> dups;
+
+	{
+		// four candidate keys per file - reserve from the real count rather than a fixed guess
+		size_t indexed_file_count = 0;
+
+		for (const auto& ifn : folders)
+		{
+			if (ifn.second->is_in_collection) indexed_file_count += ifn.second->files.size();
+		}
+
+		dups.reserve(indexed_file_count * 4);
+		files.reserve(indexed_file_count);
+	}
 
 	int indexed_crc_count = 0;
 
@@ -994,7 +1194,8 @@ void index_state::update_predictions()
 			for (const auto& file : ifn.second->files)
 			{
 				if (df::is_closing) return;
-				const auto file_item_p = &file;
+				const auto file_index = files.size();
+				files.push_back({ifn.second, &file});
 				const auto md = file.metadata.load(); // important to hold ref
 
 				if (md)
@@ -1003,21 +1204,21 @@ void index_state::update_predictions()
 
 					if (cd.is_valid())
 					{
-						dups.emplace_back(x64to32(cd.to_int64()), file_item_p);
+						dups.emplace_back(x64to32(cd.to_int64()), file_index);
 					}
 				}
 
-				dups.emplace_back(crypto::fnv1a_i(file.name), file_item_p);
-				dups.emplace_back(x64to32(file.file_created.to_int64()), file_item_p);
+				dups.emplace_back(crypto::fnv1a_i(file.name), file_index);
+				dups.emplace_back(x64to32(file.file_created.to_int64()), file_index);
 
 				if (file.crc32c)
 				{
-					dups.emplace_back(file.crc32c, file_item_p);
+					dups.emplace_back(file.crc32c, file_index);
 					++indexed_crc_count;
 				}
 				else
 				{
-					dups.emplace_back(x64to32(file.size.to_int64()), file_item_p);
+					dups.emplace_back(x64to32(file.size.to_int64()), file_index);
 				}
 			}
 		}
@@ -1025,8 +1226,31 @@ void index_state::update_predictions()
 
 	std::ranges::sort(dups, [](auto&& left, auto&& right) { return left.first < right.first; });
 
-	df::hash_map<uint32_t, df::int_counter> group_counts;
-	df::hash_map<uint32_t, uint32_t> group_coalesce;
+	std::vector<size_t> parents(files.size());
+	std::vector<uint8_t> ranks(files.size());
+	std::iota(parents.begin(), parents.end(), 0);
+
+	const auto find_root = [&parents](size_t item)
+	{
+		while (parents[item] != item)
+		{
+			parents[item] = parents[parents[item]];
+			item = parents[item];
+		}
+		return item;
+	};
+
+	const auto unite = [&parents, &ranks, &find_root](const size_t left, const size_t right)
+	{
+		auto left_root = find_root(left);
+		auto right_root = find_root(right);
+		if (left_root == right_root) return;
+
+		if (ranks[left_root] < ranks[right_root]) std::swap(left_root, right_root);
+		parents[right_root] = left_root;
+		if (ranks[left_root] == ranks[right_root]) ++ranks[left_root];
+	};
+
 	const auto& cdups = dups;
 
 	int max_compare_count = 0;
@@ -1049,95 +1273,49 @@ void index_state::update_predictions()
 				break;
 			}
 
+			// a hash bucket can be arbitrarily large, so shutdown must be observed here too
+			if (df::is_closing) return;
+
 			compare_count += 1;
 
-			const auto* const file = it.second;
-			const auto* const other_file = hit.second;
+			const auto* const file = files[it.second].file;
+			const auto* const other_file = files[hit.second].file;
 
 			if (file != other_file && is_dup_match(file, other_file))
 			{
-				if (file->duplicates.group == other_file->duplicates.group)
-				{
-					if (file->duplicates.group == 0)
-					{
-						other_file->duplicates.group = file->duplicates.group = ++next_dup_group;
-					}
-				}
-				else
-				{
-					if (file->duplicates.group == 0)
-					{
-						file->duplicates.group = other_file->duplicates.group;
-					}
-					else if (other_file->duplicates.group == 0)
-					{
-						other_file->duplicates.group = file->duplicates.group;
-					}
-					else
-					{
-						if (!group_coalesce.contains(other_file->duplicates.group))
-						{
-							group_coalesce[file->duplicates.group] = other_file->duplicates.group;
-						}
-						else if (!group_coalesce.contains(file->duplicates.group))
-						{
-							group_coalesce[other_file->duplicates.group] = file->duplicates.group;
-						}
-					}
-				}
+				unite(it.second, hit.second);
 			}
 		}
 	}
 
-	for (const auto& ifn : folders)
+	df::hash_map<size_t, df::int_counter> component_counts;
+	for (auto i = 0u; i < files.size(); ++i)
 	{
-		if (ifn.second->is_in_collection)
-		{
-			for (const auto& file : ifn.second->files)
-			{
-				if (df::is_closing) return;
-
-				if (file.duplicates.group)
-				{
-					// Follow coalesce chain transitively (group A may map to B which maps to C).
-					auto resolved = file.duplicates.group;
-					auto found = group_coalesce.find(resolved);
-
-					while (found != group_coalesce.end() && found->second != resolved)
-					{
-						resolved = found->second;
-						found = group_coalesce.find(resolved);
-					}
-
-					file.duplicates.group = resolved;
-				}
-
-				++group_counts[file.duplicates.group];
-			}
-		}
+		++component_counts[find_root(i)];
 	}
 
-	group_counts[0] = 1;
-
-	for (const auto& ifn : folders)
+	df::hash_map<size_t, uint32_t> component_groups;
+	for (const auto& [root, count] : component_counts)
 	{
-		if (ifn.second->is_in_collection)
-		{
-			for (const auto& file : ifn.second->files)
-			{
-				if (df::is_closing) return;
-				const auto count = static_cast<uint32_t>(group_counts[file.duplicates.group]);
-				file.update_duplicates(ifn.second, {file.duplicates.group, count});
-			}
-		}
+		if (count > 1) component_groups[root] = ++next_dup_group;
 	}
 
-	stats.indexed_dup_folder_count = static_cast<int>(group_counts.size()) - 1;
+	for (auto i = 0u; i < files.size(); ++i)
+	{
+		if (df::is_closing) return;
+		const auto root = find_root(i);
+		const auto count = static_cast<uint32_t>(component_counts[root]);
+		const auto found_group = component_groups.find(root);
+		const auto group = found_group == component_groups.end() ? 0u : found_group->second;
+		files[i].file->update_duplicates(files[i].folder, {group, count});
+	}
+
+	stats.indexed_dup_folder_count = static_cast<int>(component_groups.size());
 	stats.indexed_crc_count = indexed_crc_count;
 	stats.indexed_max_compare_count = max_compare_count;
-	stats.update_presence_ms = static_cast<int>(df::now_ms() - start_ms);
+	stats.predictions_ms = static_cast<int>(df::now_ms() - start_ms);
 
-	df::trace(std::format("Index update predictions: {} folders in {} ms", folder_count, stats.update_presence_ms));
+	df::trace(std::format("Index update predictions: {} folders in {} ms", folder_count, stats.predictions_ms));
 }
 
 
@@ -1149,13 +1327,125 @@ static void add_words(df::dense_string_counts& distinct_words, strings_by_prop& 
 }
 
 
-void index_state::update_summary()
+bool location_matrix_params::contains(const gps_coordinate coordinate) const
+{
+	return coordinate.is_valid() &&
+		coordinate.latitude() >= min_latitude && coordinate.latitude() <= max_latitude &&
+		coordinate.longitude() >= min_longitude && coordinate.longitude() <= max_longitude;
+}
+
+pointi location_matrix_params::cell(const gps_coordinate coordinate) const
+{
+	if (projection == location_matrix_projection::location_heat_map)
+	{
+		const auto location = df::location_heat_map::calc_map_loc(coordinate);
+		const auto span = std::max(1, area_cell_span);
+		return {location.x / span * span, location.y / span * span};
+	}
+
+	constexpr auto max_mercator_latitude = 85.05112878;
+	const auto scale = std::pow(2.0, zoom) * 256.0 / std::max(1, cell_size);
+	const auto latitude = std::clamp(coordinate.latitude(), -max_mercator_latitude, max_mercator_latitude);
+	const auto latitude_radians = latitude * M_PI / 180.0;
+	return {
+		static_cast<int>(std::floor((coordinate.longitude() + 180.0) / 360.0 * scale)),
+		static_cast<int>(std::floor((1.0 - std::asinh(std::tan(latitude_radians)) / M_PI) / 2.0 * scale))
+	};
+}
+
+void location_matrix::add(df::file_path path, const gps_coordinate coordinate, const bool can_thumbnail,
+	const int rating)
+{
+	if (!params.contains(coordinate)) return;
+	const auto index = params.cell(coordinate);
+	const auto key = std::make_pair(index.x, index.y);
+	const uint8_t representative_rank = can_thumbnail ? (rating >= 4 ? 2 : 1) : 0;
+	const auto found = _cell_lookup.find(key);
+	if (found == _cell_lookup.end())
+	{
+		_cell_lookup.emplace(key, cells.size());
+		_representative_ranks.push_back(representative_rank);
+		cells.push_back({index, std::move(path), {}, 1,
+			coordinate.latitude(), coordinate.longitude(),
+			coordinate.latitude(), coordinate.longitude(), coordinate.latitude(), coordinate.longitude()});
+	}
+	else
+	{
+		const auto cell_index = found->second;
+		auto& cell = cells[cell_index];
+		++cell.count;
+		cell.latitude_sum += coordinate.latitude();
+		cell.longitude_sum += coordinate.longitude();
+		cell.min_latitude = std::min(cell.min_latitude, coordinate.latitude());
+		cell.min_longitude = std::min(cell.min_longitude, coordinate.longitude());
+		cell.max_latitude = std::max(cell.max_latitude, coordinate.latitude());
+		cell.max_longitude = std::max(cell.max_longitude, coordinate.longitude());
+		if (representative_rank > _representative_ranks[cell_index] ||
+			(representative_rank == _representative_ranks[cell_index] && path.icmp(cell.representative_path) < 0))
+		{
+			_representative_ranks[cell_index] = representative_rank;
+			cell.representative_path = std::move(path);
+		}
+	}
+}
+
+void location_matrix::finalize()
+{
+	for (auto& cell : cells)
+	{
+		cell.centroid = {cell.latitude_sum / cell.count, cell.longitude_sum / cell.count};
+	}
+	std::ranges::sort(cells, [](const cell& left, const cell& right)
+	{
+		return left.index.y == right.index.y ? left.index.x < right.index.x : left.index.y < right.index.y;
+	});
+	_cell_lookup.clear();
+	_representative_ranks.clear();
+}
+
+location_matrix index_state::build_location_matrix(const location_matrix_params& params,
+	const df::unique_paths& excluded) const
+{
+	location_matrix result{params};
+
+	for (const auto& [folder, folder_item] : _items.all_folders())
+	{
+		if (!folder_item->is_in_collection.load()) continue;
+
+		for (const auto& file : folder_item->files)
+		{
+			const auto metadata = file.metadata.load();
+			if (!metadata || !metadata->coordinate.is_valid()) continue;
+
+			auto path = df::file_path(folder, file.name);
+			const auto visual_media = file.ft &&
+				(file.ft->has_trait(file_traits::bitmap) || file.ft->has_trait(file_traits::video_metadata));
+			const auto can_thumbnail = visual_media && file.ft->has_trait(file_traits::thumbnail);
+			if (!excluded.contains(path))
+			{
+				result.add(std::move(path), metadata->coordinate, can_thumbnail, metadata->rating);
+			}
+		}
+	}
+
+	result.finalize();
+	return result;
+}
+
+
+void index_state::update_summary(const uint64_t generation)
 {
 	const auto start_ms = df::now_ms();
+
+	{
+		platform::shared_lock lock(_summary_rw);
+		if (generation != 0 && generation != _summary_generation) return;
+	}
 
 	prop_text_summary distinct_labels;
 	prop_num_summary distinct_ratings;
 	prop_text_summary distinct_tags;
+	tag_companion_counts tag_companions;
 
 	df::dense_string_counts distinct_words;
 	strings_by_prop distinct_text;
@@ -1164,32 +1454,58 @@ void index_state::update_summary()
 	index_histograms histograms;
 
 	auto& distinct_tag_texts = distinct_text[prop::tag];
-
 	const auto folders = _items.all_folders();
+	auto files_until_currency_check = 256u;
 
 	for (const auto& ifn : folders)
 	{
-		const auto is_indexed = ifn.second->is_in_collection;
+		if (generation != 0)
+		{
+			platform::shared_lock lock(_summary_rw);
+			if (generation != _summary_generation) return;
+		}
+
+		const auto is_indexed = ifn.second->is_in_collection.load();
 
 		if (is_indexed)
 		{
 			for (const auto& file : ifn.second->files)
 			{
 				if (df::is_closing) return;
+				if (generation != 0 && --files_until_currency_check == 0)
+				{
+					files_until_currency_check = 256;
+					platform::shared_lock lock(_summary_rw);
+					if (generation != _summary_generation) return;
+				}
 
-				histograms.record(_locations, file);
+				const auto path = df::file_path(ifn.first, file.name);
+				histograms.record(_locations, file, path);
 				const auto md = file.metadata.load();
 
 				if (md)
 				{
+					std::vector<std::string> item_tags;
 					split2(md->tags, true,
-					       [&distinct_words, &distinct_tags, &distinct_tag_texts, &file](const std::string_view part)
+					       [&distinct_words, &distinct_tags, &distinct_tag_texts, &item_tags, &file, &path](const std::string_view part)
 					       {
 						       const auto cached_tag = str::cache(part);
+						       item_tags.emplace_back(part);
 						       distinct_tag_texts.emplace(cached_tag);
 						       distinct_words[str::cache(std::format("#{}", part))] += 1;
-						       distinct_tags[cached_tag].record(file);
+						       distinct_tags[cached_tag].record(file, path);
 					       });
+
+					for (const auto& tag : item_tags)
+					{
+						for (const auto& companion : item_tags)
+						{
+							if (str::icmp(tag, companion) != 0)
+							{
+								++tag_companions[tag][str::cache(companion)];
+							}
+						}
+					}
 
 					if (!prop::is_null(md->album)) add_words(distinct_words, distinct_text, md->album, prop::album);
 					if (!prop::is_null(md->album_artist))
@@ -1280,14 +1596,14 @@ void index_state::update_summary()
 						add_words(distinct_words, distinct_text, md->raw_file_name,
 						          prop::raw_file_name);
 
-					if (!prop::is_null(md->label)) distinct_labels[md->label].record(file);
+					if (!prop::is_null(md->label)) distinct_labels[md->label].record(file, path);
 
 					auto r = md->rating;
 
 					if (r != 0 && r < 6)
 					{
 						if (r == -1) r = 0;
-						distinct_ratings[r].record(file);
+						distinct_ratings[r].record(file, path);
 					}
 				}
 			}
@@ -1299,33 +1615,38 @@ void index_state::update_summary()
 		}
 	}
 
+	auto summary = std::make_shared<index_metadata_summary>();
+
+	// This walk visits every indexed folder, so it is authoritative. Seeding from the previous
+	// snapshot and only inserting would keep words from items that have since been deleted or
+	// renamed, and grow without bound for as long as the session lasts.
+	summary->_distinct_text = std::move(distinct_text);
+	summary->_distinct_words = std::move(distinct_words);
+
+	summary->_distinct_labels = std::move(distinct_labels);
+	summary->_distinct_ratings = distinct_ratings;
+	summary->_distinct_tags = std::move(distinct_tags);
+	summary->_tag_companions = std::move(tag_companions);
+	if (generation != 0)
+	{
+		platform::shared_lock lock(_summary_rw);
+		if (generation != _summary_generation) return;
+	}
+	if (!rebuild_sorted_words(*summary, generation)) return;
+
+	index_metadata_summary_const_ptr published_summary = std::move(summary);
+	index_histograms_const_ptr histogram_snapshot = std::make_shared<index_histograms>(std::move(histograms));
+
 	{
 		platform::exclusive_lock lock(_summary_rw);
-
-		for (const auto& v : distinct_other_folders)
-		{
-			_summary._distinct_other_folders.insert(v);
-		}
-
-		for (const auto& kv : distinct_text)
-		{
-			auto& dest = _summary._distinct_text[kv.first];
-
-			for (const auto& v : kv.second)
-			{
-				dest.insert(v);
-			}
-		}
-
-		for (const auto& kv : distinct_words)
-		{
-			_summary._distinct_words[kv.first] = kv.second;
-		}
-
-		_summary._distinct_labels = std::move(distinct_labels);
-		_summary._distinct_ratings = distinct_ratings;
-		_summary._distinct_tags = std::move(distinct_tags);
-		_summary._histograms = std::move(histograms);
+		if (generation != 0 && generation != _summary_generation) return;
+		distinct_other_folders.insert(_summary._distinct_other_folders->begin(),
+		                              _summary._distinct_other_folders->end());
+		std::shared_ptr<const df::unique_folders> other_folders_snapshot =
+			std::make_shared<df::unique_folders>(std::move(distinct_other_folders));
+		_summary._metadata.swap(published_summary);
+		_summary._histograms.swap(histogram_snapshot);
+		_summary._distinct_other_folders.swap(other_folders_snapshot);
 	}
 
 	_async.invalidate_view(view_invalid::sidebar | view_invalid::tooltip);
@@ -1333,14 +1654,17 @@ void index_state::update_summary()
 	df::trace(std::format("Index update summary in {} ms", df::now_ms() - start_ms));
 }
 
-static bool needs_scan_impl(const df::index_folder_item_ptr& f, const df::index_file_item& file, const bool load_thumb,
-                            const bool scan_if_offline, const df::item_element_ptr& item)
+static bool needs_scan_impl(const df::index_folder_item_ptr& f, const df::index_file_item& file,
+							const bool thumbnail_needed, const bool scan_if_offline)
 {
-	const auto is_offline = file.flags && df::index_item_flags::is_offline;
+	// Offline (cloud-only) files are also eligible for scanning: scan_item routes them
+	// through the Windows Shell property store, which reads cached metadata WITHOUT
+	// hydrating (downloading) the file. scan_if_offline is retained for API stability.
+	(void)scan_if_offline;
 
-	if ((scan_if_offline || !is_offline) && file.ft->is_media())
+	if (file.ft->is_media())
 	{
-		if (item && load_thumb && item->should_load_thumbnail())
+		if (thumbnail_needed)
 		{
 			return true;
 		}
@@ -1372,6 +1696,7 @@ static bool needs_scan_impl(const df::index_folder_item_ptr& f, const df::index_
 void index_state::scan_uncached(const df::cancel_token token)
 {
 	df::scope_locked_inc l(indexing);
+	_fully_loaded = false;
 	std::vector<df::file_path> uncached;
 
 	size_t items_in_index = 0;
@@ -1390,7 +1715,7 @@ void index_state::scan_uncached(const df::cancel_token token)
 					{
 						items_in_index += 1;
 
-						if (needs_scan_impl(folder.second, file, false, false, nullptr))
+						if (needs_scan_impl(folder.second, file, false, false))
 						{
 							uncached.emplace_back(folder.first, file.name);
 						}
@@ -1413,7 +1738,7 @@ void index_state::scan_uncached(const df::cancel_token token)
 
 		if (f)
 		{
-			scan_item(f, id, false, false, nullptr, files::file_type_from_name(id.name()));
+			scan_item(f, id, false, false, false, false, {}, false, files::file_type_from_name(id.name()));
 		}
 
 		--stats.index_item_remaining;
@@ -1422,7 +1747,7 @@ void index_state::scan_uncached(const df::cancel_token token)
 	stats.index_item_remaining = 0;
 
 	_async.invalidate_view(view_invalid::view_layout | view_invalid::group_layout);
-	_fully_loaded = true;
+	_fully_loaded = !token.is_cancelled();
 }
 
 std::vector<folder_scan_item> index_state::scan_items(const df::index_roots& roots, const bool recursive,
@@ -1449,13 +1774,14 @@ std::vector<folder_scan_item> index_state::scan_items(const df::index_roots& roo
 			for (const auto& file : node.folder->files)
 			{
 				if (token.is_cancelled()) break;
-				scan_item(node.folder, folder_path.combine_file(file.name), false, scan_if_offline, nullptr, file.ft);
+				scan_item(node.folder, folder_path.combine_file(file.name), false, false, false, scan_if_offline, {},
+				          false, file.ft);
 				results.emplace_back(folder_path, file);
 			}
 
 			if (recursive)
 			{
-				for (const auto& sub_folder : node.folder->folders)
+				for (const auto& sub_folder : *node.folder->folders_snapshot())
 				{
 					folders_to_scan.emplace_back(folder_path.combine(sub_folder->name));
 				}
@@ -1474,7 +1800,7 @@ std::vector<folder_scan_item> index_state::scan_items(const df::index_roots& roo
 
 		if (found_file != node.folder->files.end())
 		{
-			scan_item(node.folder, file_path, false, scan_if_offline, nullptr, found_file->ft);
+			scan_item(node.folder, file_path, false, false, false, scan_if_offline, {}, false, found_file->ft);
 			results.emplace_back(file_path.folder(), *found_file);
 		}
 	}
@@ -1487,27 +1813,361 @@ std::vector<folder_scan_item> index_state::scan_items(const df::index_roots& roo
 	return results;
 }
 
-struct scope_locked_loading_thumbnail
+void index_state::scan_offline_item(const df::index_folder_item_ptr& folder,
+                                    const df::file_path file_path,
+									const bool thumbnail_needed,
+									std::weak_ptr<df::item_element> item,
+									const bool publish_to_item,
+                                    const df::index_file_item& file,
+                                    const df::date_t now,
+									const bool invalidate_summary)
 {
-	df::item_element_ptr _i;
+	// Cloud-only placeholder (OneDrive Files On-Demand, GVFS, etc.). Read cached metadata
+	// (and, when the shell has one, a cached thumbnail) via the Windows Shell property
+	// store WITHOUT hydrating (downloading) the file. Verified empirically that this does
+	// not trigger a download for online-only files. We never compute a content hash
+	// (crc32c) for these items, so they are excluded from hash-based duplicate matching.
+	// Full hydration only happens when the user explicitly opens/accesses the file.
+	const auto want_thumb = thumbnail_needed && publish_to_item;
 
-	scope_locked_loading_thumbnail(df::item_element_ptr i) : _i(std::move(i))
+	auto metadata = std::make_shared<prop::item_metadata>();
+	ui::const_image_ptr shell_thumbnail;
+	const auto resp = platform::get_cached_file_properties(file_path, *metadata, shell_thumbnail);
+
+	item_db_write write;
+	write.path = file_path;
+	write.metadata_scanned = now;
+	write.modified = file.file_modified;
+
+	if (resp == platform::get_cached_file_properties_response::ok)
 	{
-		_i->is_loading_thumbnail(true);
+		df::scope_locked_inc l(scanning_items);
+
+		metadata->file_name = file_path.name();
+
+		ui::const_image_ptr thumbnail_image;
+
+		if (is_valid(shell_thumbnail))
+		{
+			files ff;
+			file_encode_params encode_params;
+			encode_params.jpeg_save_quality = thumbnail_quality;
+
+			thumbnail_image = shell_thumbnail;
+			const auto max_extent = setting.thumbnail_max_dimension;
+			const auto thumb_extent = thumbnail_image->dimensions();
+
+			if (max_extent.cx < thumb_extent.cx || max_extent.cy < thumb_extent.cy)
+			{
+				const auto surf = ff.image_to_surface(thumbnail_image, max_extent);
+				thumbnail_image = ff.surface_to_image(surf, {}, encode_params, ui::image_format::Unknown);
+			}
+
+			if (is_valid(thumbnail_image) && thumbnail_image->data().size() < df::two_fifty_six_k)
+			{
+				write.thumb = thumbnail_image;
+				write.thumb_scanned = file.file_modified;
+			}
+			else
+			{
+				thumbnail_image.reset();
+			}
+		}
+		else if (want_thumb)
+		{
+			// Metadata came back but no cached thumbnail is available offline.
+			publish_thumbnail_failure(item, file_path);
+		}
+
+		const auto existing_metadata = file.metadata.load();
+
+		if (existing_metadata)
+		{
+			metadata->sidecars = existing_metadata->sidecars;
+			metadata->xmp = existing_metadata->xmp;
+			metadata->media_position = existing_metadata->media_position;
+		}
+
+		file.metadata_scanned = now;
+		file.metadata.store(metadata);
+		write.md = metadata;
+
+		if (publish_to_item && is_valid(thumbnail_image))
+		{
+			publish_thumbnail(item, file_path, thumbnail_image, {}, file.file_modified, false, true);
+		}
+	}
+	else
+	{
+		// Shell had no cached data. Still persist a properties row (with metadata_scanned)
+		// so we do not re-scan this file on every startup. We write the (empty) metadata via
+		// write.md so perform_writes performs an insert-or-replace that creates the row -- a
+		// bare metadata_scanned update would affect zero rows when no row exists yet.
+		metadata->file_name = file_path.name();
+		file.metadata_scanned = now;
+		file.metadata.store(metadata);
+		write.md = metadata;
+
+		if (want_thumb)
+		{
+			publish_thumbnail_failure(item, file_path);
+		}
 	}
 
-	~scope_locked_loading_thumbnail()
+	enqueue_db_write(std::move(write));
+
+	if (invalidate_summary && folder->is_in_collection)
 	{
-		_i->is_loading_thumbnail(false);
+		_async.invalidate_view(view_invalid::index_summary);
 	}
-};
+}
+
+void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
+                                    const df::file_path file_path,
+                                    const file_scan_result& sr,
+                                    const df::date_t now,
+                                    const df::date_t thumbnail_version,
+                                    const bool load_thumb,
+                                    const bool thumbnail_needed,
+                                    const bool had_thumbnail,
+                                    const std::weak_ptr<df::item_element>& item,
+                                    const bool publish_to_item,
+                                    const bool publish_item_update_immediately,
+                                    const bool invalidate_summary)
+{
+	const auto found_file = find_file(folder->files, file_path.name());
+
+	if (found_file == folder->files.end())
+	{
+		return;
+	}
+
+	files ff;
+
+	if (sr.success)
+	{
+		df::scope_locked_inc l(scanning_items);
+		const auto* const mt = files::file_type_from_name(file_path);
+		const auto metadata = sr.to_props();
+		const auto thumbnail_was_loaded = is_valid(sr.thumbnail_surface) ||
+			is_valid(sr.thumbnail_image);
+
+		if (mt->has_trait(file_traits::video_metadata))
+		{
+			const auto name_props = scan_info_from_title(file_path.file_name_without_extension());
+
+			if (is_empty(metadata->show) && !str::is_empty(name_props.show))
+				metadata->show = str::cache(
+					name_props.show);
+			if (is_empty(metadata->title) && !str::is_empty(name_props.title))
+				metadata->title = str::cache(
+					name_props.title);
+			if (metadata->year == 0 && name_props.year != 0) metadata->year = name_props.year;
+			if (metadata->episode == df::xy8::make(0, 0) && name_props.episode != 0)
+				metadata->episode =
+					df::xy8::make(name_props.episode, name_props.episode_of);
+			if (metadata->season == 0 && name_props.season != 0) metadata->season = name_props.season;
+		}
+
+		item_db_write write;
+		write.path = file_path;
+		write.md = metadata;
+		write.metadata_scanned = now;
+
+		file_encode_params encode_params;
+		encode_params.jpeg_save_quality = thumbnail_quality;
+
+		ui::const_image_ptr cover_art;
+		ui::const_image_ptr thumbnail_image;
+		ui::const_surface_ptr thumbnail_surface;
+
+		if (is_valid(sr.cover_art))
+		{
+			cover_art = sr.cover_art;
+			const auto max_extent = setting.thumbnail_max_dimension;
+			const auto cover_art_extent = cover_art->dimensions();
+
+			if (max_extent.cx < cover_art_extent.cx || max_extent.cy < cover_art_extent.cy)
+			{
+				auto surf = ff.image_to_surface(cover_art, max_extent);
+				cover_art = ff.surface_to_image(surf, {}, encode_params,
+				                                ui::image_format::Unknown);
+			}
+
+			df::assert_true(cover_art->data().size() < df::two_fifty_six_k);
+
+			if (is_valid(cover_art))
+			{
+				write.cover_art = cover_art;
+			}
+		}
+
+		if (is_valid(sr.thumbnail_surface))
+		{
+			const auto max_extent = setting.thumbnail_max_dimension;
+			const auto thumb_extent = sr.thumbnail_surface->dimensions();
+
+			if (max_extent.cx < thumb_extent.cx || max_extent.cy < thumb_extent.cy)
+			{
+				av_scaler scaler;
+				const auto dims = ui::scale_dimensions(thumb_extent, max_extent, true);
+				auto surf = std::make_shared<ui::surface>();
+				scaler.scale_surface(sr.thumbnail_surface, surf, dims);
+				thumbnail_image = ff.surface_to_image(surf, {}, encode_params,
+				                                      ui::image_format::Unknown);
+				thumbnail_surface = surf;
+			}
+			else
+			{
+				auto surf = sr.thumbnail_surface;
+				thumbnail_image = ff.surface_to_image(surf, {}, encode_params,
+				                                      ui::image_format::Unknown);
+				thumbnail_surface = surf;
+			}
+
+			df::assert_true(thumbnail_image->data().size() < df::two_fifty_six_k);
+
+			if (is_valid(thumbnail_image))
+			{
+				write.thumb = thumbnail_image;
+			}
+		}
+		else if (is_valid(sr.thumbnail_image))
+		{
+			thumbnail_image = sr.thumbnail_image;
+
+			if (is_valid(thumbnail_image))
+			{
+				const auto max_extent = setting.thumbnail_max_dimension;
+				const auto thumb_extent = thumbnail_image->dimensions();
+
+				if (max_extent.cx < thumb_extent.cx || max_extent.cy < thumb_extent.cy)
+				{
+					auto surf = ff.image_to_surface(thumbnail_image, max_extent);
+					thumbnail_image = ff.surface_to_image(surf, {}, encode_params,
+					                                      ui::image_format::Unknown);
+					thumbnail_surface = surf;
+				}
+
+				df::assert_true(thumbnail_image->data().size() < df::two_fifty_six_k);
+
+				if (is_valid(thumbnail_image))
+				{
+					write.thumb = thumbnail_image;
+				}
+			}
+			else
+			{
+				// Thumbnail decode produced an invalid image (corrupt file, unsupported format, etc.)
+				thumbnail_image.reset();
+
+				if (publish_to_item)
+				{
+					publish_thumbnail_failure(item, file_path);
+				}
+			}
+		}
+		else if (load_thumb)
+		{
+			if (publish_to_item)
+			{
+				publish_thumbnail_failure(item, file_path);
+			}
+		}
+
+		if (sr.crc32c)
+		{
+			write.crc32c = sr.crc32c;
+		}
+
+		if (load_thumb && thumbnail_was_loaded)
+		{
+			write.thumb_scanned = thumbnail_version;
+		}
+
+		const auto existing_metadata = found_file->metadata.load();
+
+		if (existing_metadata && metadata)
+		{
+			metadata->sidecars = existing_metadata->sidecars;
+			metadata->xmp = existing_metadata->xmp;
+			// Playback position lives only in the index and database, so a rescan that
+			// did not read it must carry it or the resume point is lost.
+			metadata->media_position = existing_metadata->media_position;
+		}
+
+		metadata->file_name = file_path.name();
+		found_file->metadata_scanned = now;
+		found_file->metadata.store(metadata);
+		found_file->crc32c = sr.crc32c;
+
+		// search_presence is a hard rejection filter, so it must be refreshed with every
+		// published metadata snapshot or a newly matching item stays invisible to search
+		found_file->calc_search_presence();
+		folder->update_search_presence(*found_file);
+
+		// For the immediate post-edit scan, metadata_scanned is stamped with the file's own
+		// (handle-read) modified time. That makes needs_scan_impl (metadata_scanned <
+		// file_modified) false both now - the cached file_modified is the older pre-edit mtime -
+		// and after the background validate_folder refreshes file_modified to the same post-edit
+		// mtime, so the queued background rescan is a no-op and never reopens the file BY NAME
+		// (which could read stale SMB-cached bytes).
+
+		write.modified = found_file->file_modified;
+
+		if (publish_to_item)
+		{
+			if ((thumbnail_was_loaded || !had_thumbnail) && (is_valid(thumbnail_image) || is_valid(
+				cover_art)))
+			{
+				df::assert_true(
+					!is_valid(thumbnail_image) || thumbnail_image->data().size() < df::two_fifty_six_k);
+				df::assert_true(!is_valid(cover_art) || cover_art->data().size() < df::two_fifty_six_k);
+
+				// Stage as soon as the item that asked for this thumbnail has it: an unstaged
+				// thumbnail cannot draw, so deferring to the end of the batch made a whole
+				// screenful appear at once instead of filling in as each one decoded.
+				publish_thumbnail(item, file_path, thumbnail_image, cover_art,
+				                  thumbnail_was_loaded ? thumbnail_version : df::date_t::null,
+				                  thumbnail_was_loaded,
+				                  thumbnail_needed || publish_item_update_immediately);
+			}
+		}
+
+		enqueue_db_write(std::move(write));
+
+		if (invalidate_summary && folder->is_in_collection)
+		{
+			_async.invalidate_view(view_invalid::index_summary);
+		}
+	}
+	else
+	{
+		item_db_write write;
+		write.path = file_path;
+		write.metadata_scanned = now;
+		write.modified = found_file->file_modified;
+		enqueue_db_write(std::move(write));
+
+		if (load_thumb && publish_to_item)
+		{
+			publish_thumbnail_failure(item, file_path);
+		}
+	}
+}
 
 void index_state::scan_item(const df::index_folder_item_ptr& folder,
                             const df::file_path file_path,
                             const bool load_thumb,
+							const bool thumbnail_needed,
+							const bool had_thumbnail,
                             const bool scan_if_offline,
-                            const df::item_element_ptr& item,
-                            const file_type_ref ft)
+							std::weak_ptr<df::item_element> item,
+							const bool publish_to_item,
+                            const file_type_ref ft,
+                            const bool force,
+							const bool publish_item_update_immediately,
+							const bool invalidate_summary)
 {
 	const auto now = platform::now();
 	const auto found_file = find_file(folder->files, file_path.name());
@@ -1515,236 +2175,39 @@ void index_state::scan_item(const df::index_folder_item_ptr& folder,
 	if (found_file != folder->files.end())
 	{
 		const auto& file = *found_file;
+		const auto thumbnail_version = file.file_modified.load();
 
-		if (needs_scan_impl(folder, file, load_thumb, scan_if_offline, item))
+		if (force || needs_scan_impl(folder, file, thumbnail_needed, scan_if_offline))
 		{
 			if (!crash_files.is_known_crash_file(file_path))
 			{
 				df::assert_true(ft->is_media());
 
 				record_open_path record(crash_files, file_path, str::utf8_cast(__FUNCTION__));
-				std::shared_ptr<scope_locked_loading_thumbnail> loading_lock;
 
-				if (load_thumb && item && item->should_load_thumbnail())
+				if (file.flags && df::index_item_flags::is_offline)
 				{
-					loading_lock = std::make_shared<scope_locked_loading_thumbnail>(item);
-				}
-
-				files ff;
-				const auto sr = ff.scan_file(file_path, load_thumb, ft, file.xmp(), setting.thumbnail_max_dimension);
-
-				if (sr.success)
-				{
-					df::scope_locked_inc l(scanning_items);
-					const auto* const mt = files::file_type_from_name(file_path);
-					const auto metadata = sr.to_props();
-					const auto thumbnail_was_loaded = is_valid(sr.thumbnail_surface) || is_valid(sr.thumbnail_image);
-
-					if (mt->has_trait(file_traits::video_metadata))
-					{
-						const auto name_props = scan_info_from_title(file_path.file_name_without_extension());
-
-						if (is_empty(metadata->show) && !str::is_empty(name_props.show))
-							metadata->show = str::cache(
-								name_props.show);
-						if (is_empty(metadata->title) && !str::is_empty(name_props.title))
-							metadata->title = str::cache(
-								name_props.title);
-						if (metadata->year == 0 && name_props.year != 0) metadata->year = name_props.year;
-						if (metadata->episode == df::xy8::make(0, 0) && name_props.episode != 0)
-							metadata->episode =
-								df::xy8::make(name_props.episode, name_props.episode_of);
-						if (metadata->season == 0 && name_props.season != 0) metadata->season = name_props.season;
-					}
-
-					item_db_write write;
-					write.path = file_path;
-					write.md = metadata;
-					write.metadata_scanned = now;
-
-					file_encode_params encode_params;
-					encode_params.jpeg_save_quality = thumbnail_quality;
-
-					ui::const_image_ptr cover_art;
-					ui::const_image_ptr thumbnail_image;
-					ui::const_surface_ptr thumbnail_surface;
-
-					if (is_valid(sr.cover_art))
-					{
-						cover_art = sr.cover_art;
-						const auto max_extent = setting.thumbnail_max_dimension;
-						const auto cover_art_extent = cover_art->dimensions();
-
-						if (max_extent.cx < cover_art_extent.cx || max_extent.cy < cover_art_extent.cy)
-						{
-							auto surf = ff.image_to_surface(cover_art, max_extent);
-							cover_art = ff.surface_to_image(surf, {}, encode_params,
-							                                ui::image_format::Unknown);
-						}
-
-						df::assert_true(cover_art->data().size() < df::two_fifty_six_k);
-
-						if (is_valid(cover_art))
-						{
-							write.cover_art = cover_art;
-						}
-					}
-
-					if (is_valid(sr.thumbnail_surface))
-					{
-						const auto max_extent = setting.thumbnail_max_dimension;
-						const auto thumb_extent = sr.thumbnail_surface->dimensions();
-
-						if (max_extent.cx < thumb_extent.cx || max_extent.cy < thumb_extent.cy)
-						{
-							av_scaler scaler;
-							const auto dims = ui::scale_dimensions(thumb_extent, max_extent, true);
-							auto surf = std::make_shared<ui::surface>();
-							scaler.scale_surface(sr.thumbnail_surface, surf, dims);
-							thumbnail_image = ff.surface_to_image(surf, {}, encode_params, ui::image_format::Unknown);
-							thumbnail_surface = surf;
-						}
-						else
-						{
-							auto surf = sr.thumbnail_surface;
-							thumbnail_image = ff.surface_to_image(surf, {}, encode_params, ui::image_format::Unknown);
-							thumbnail_surface = surf;
-						}
-
-						df::assert_true(thumbnail_image->data().size() < df::two_fifty_six_k);
-
-						if (is_valid(thumbnail_image))
-						{
-							write.thumb = thumbnail_image;
-						}
-					}
-					else if (is_valid(sr.thumbnail_image))
-					{
-						thumbnail_image = sr.thumbnail_image;
-
-						if (is_valid(thumbnail_image))
-						{
-							const auto max_extent = setting.thumbnail_max_dimension;
-							const auto thumb_extent = thumbnail_image->dimensions();
-
-							if (max_extent.cx < thumb_extent.cx || max_extent.cy < thumb_extent.cy)
-							{
-								auto surf = ff.image_to_surface(thumbnail_image, max_extent);
-								thumbnail_image = ff.surface_to_image(surf, {}, encode_params,
-								                                      ui::image_format::Unknown);
-								thumbnail_surface = surf;
-							}
-
-							df::assert_true(thumbnail_image->data().size() < df::two_fifty_six_k);
-
-							if (is_valid(thumbnail_image))
-							{
-								write.thumb = thumbnail_image;
-							}
-						}
-						else
-						{
-							// Thumbnail decode produced an invalid image (corrupt file, unsupported format, etc.)
-							thumbnail_image.reset();
-
-							if (item)
-							{
-								item->failed_loading_thumbnail(true);
-							}
-						}
-					}
-					else if (load_thumb)
-					{
-						if (item)
-						{
-							item->failed_loading_thumbnail(true);
-						}
-					}
-
-					if (sr.crc32c)
-					{
-						write.crc32c = sr.crc32c;
-					}
-
-					if (load_thumb && thumbnail_was_loaded)
-					{
-						write.thumb_scanned = now;
-					}
-
-					const auto item_has_no_thumb = item && !item->has_thumb();
-					const auto existing_metadata = found_file->metadata.load();
-
-					if (existing_metadata && metadata)
-					{
-						metadata->sidecars = existing_metadata->sidecars;
-						metadata->xmp = existing_metadata->xmp;
-					}
-
-					found_file->metadata_scanned = now;
-					found_file->metadata.store(metadata);
-					found_file->crc32c = sr.crc32c;
-					metadata->file_name = file_path.name();
-
-					write.modified = found_file->file_modified;
-
-					if (item)
-					{
-						if ((thumbnail_was_loaded || item_has_no_thumb) && (is_valid(thumbnail_image) || is_valid(
-							cover_art)))
-						{
-							df::assert_true(
-								!is_valid(thumbnail_image) || thumbnail_image->data().size() < df::two_fifty_six_k);
-							df::assert_true(!is_valid(cover_art) || cover_art->data().size() < df::two_fifty_six_k);
-
-							item->thumbnail(thumbnail_image, cover_art, thumbnail_was_loaded ? now : df::date_t::null);
-							_async.invalidate_view(view_invalid::view_redraw);
-						}
-					}
-
-					_db_writes.enqueue(std::move(write));
-
-					if (metadata->coordinate.is_valid() &&
-						prop::is_null(metadata->location_country) &&
-						prop::is_null(metadata->location_state) &&
-						prop::is_null(metadata->location_place))
-					{
-						_async.queue_location(
-							[this, folder, file_path, coord = metadata->coordinate](const location_cache& locations)
-							{
-								const auto loc = locations.find_closest(coord.latitude(), coord.longitude());
-								save_location(file_path, loc);
-
-								if (folder->is_in_collection)
-								{
-									_async.invalidate_view(view_invalid::index_summary);
-								}
-							});
-					}
-
-					if (folder->is_in_collection)
-					{
-						_async.invalidate_view(view_invalid::index_summary);
-					}
+					// Cloud-only placeholder: never hydrate during indexing. Read cached
+					// shell metadata/thumbnail instead. See scan_offline_item().
+					scan_offline_item(folder, file_path, thumbnail_needed, item, publish_to_item, *found_file, now,
+					                  invalidate_summary);
 				}
 				else
 				{
-					item_db_write write;
-					write.path = file_path;
-					write.metadata_scanned = now;
-					write.modified = found_file->file_modified;
-					_db_writes.enqueue(std::move(write));
+					files ff;
+					const auto sr = ff.scan_file(file_path, load_thumb, ft, file.xmp(),
+					                             setting.thumbnail_max_dimension);
 
-					if (load_thumb && item)
-					{
-						item->failed_loading_thumbnail(true);
-					}
+					apply_scan_result(folder, file_path, sr, now, thumbnail_version, load_thumb, thumbnail_needed,
+					                  had_thumbnail, item, publish_to_item, publish_item_update_immediately,
+					                  invalidate_summary);
 				}
 			}
 		}
 
-		if (item)
+		if (publish_to_item && publish_item_update_immediately)
 		{
-			item->update(file_path, file);
+			publish_item_update(item, file_path);
 		}
 	}
 }
@@ -1752,7 +2215,63 @@ void index_state::scan_item(const df::index_folder_item_ptr& folder,
 void index_state::scan_item(const df::item_element_ptr& i, const bool load_thumb, const bool scan_if_offline)
 {
 	const auto node = validate_folder(i->folder(), true, platform::now());
-	scan_item(node.folder, i->path(), load_thumb, scan_if_offline, i, i->file_type());
+	scan_item(node.folder, i->path(), load_thumb, load_thumb && i->should_load_thumbnail(), i->has_thumb(),
+	          scan_if_offline, i, true, i->file_type());
+}
+
+rescan_spec index_state::make_rescan_spec(const item_scan_request& request, const std::string_view xmp_sidecar,
+                                          const bool want_image, const bool want_handle)
+{
+	rescan_spec spec;
+	spec.wanted = true;
+	spec.load_thumbnail = request.load_thumbnail;
+	spec.want_image = want_image;
+	spec.want_handle = want_handle;
+	spec.file_type = request.file_type;
+	spec.xmp_sidecar = xmp_sidecar;
+	spec.max_thumb_size = setting.thumbnail_max_dimension;
+	return spec;
+}
+
+void index_state::apply_scan_now(const item_scan_request& request, const file_scan_result& sr, const bool coherent,
+                                 const df::date_t known_modified)
+{
+	// Reuse the cached folder node - do NOT refresh from the filesystem here. A by-name refresh is
+	// exactly the stale-read window we are avoiding; the scan already carries the authoritative
+	// post-edit content.
+	const auto node = validate_folder(request.folder, false, platform::now());
+	const auto found_file = find_file(node.folder->files, request.path.name());
+
+	if (found_file == node.folder->files.end())
+	{
+		return;
+	}
+
+	// A coherent scan came through the post-swap handle, so stamping both times from the file's own
+	// modified time makes the later background rescan a no-op. The record's own modified time has to
+	// advance with them: leaving it at the pre-edit value makes thumbnail_timestamp != file_modified,
+	// which is what should_load_thumbnail() tests, so the "no-op" background rescan would re-read and
+	// re-decode the file we just wrote.
+	if (coherent) found_file->file_modified = known_modified;
+
+	const auto now = coherent ? known_modified : platform::now();
+	const auto thumbnail_version = coherent ? known_modified : found_file->file_modified.load();
+
+	apply_scan_result(node.folder, request.path, sr, now, thumbnail_version, request.load_thumbnail,
+	                  request.thumbnail_needed, request.had_thumbnail, request.lifetime, true, true, true);
+
+	publish_item_update(request.lifetime, request.path);
+}
+
+bool index_state::apply_write_scan(const item_scan_request& request, const file_update_result& result)
+{
+	if (!result.success() || !result.scanned)
+	{
+		return true;
+	}
+
+	apply_scan_now(request, result.scan, result.coherent, df::date_t(result.modified));
+	return false;
 }
 
 bool index_state::needs_scan(const df::item_element_ptr& item) const
@@ -1766,7 +2285,7 @@ bool index_state::needs_scan(const df::item_element_ptr& item) const
 
 		if (found_file != found_folder->files.end())
 		{
-			return needs_scan_impl(found_folder, *found_file, false, false, item);
+			return needs_scan_impl(found_folder, *found_file, false, false);
 		}
 	}
 
@@ -1790,9 +2309,9 @@ df::index_file_item index_state::find_item(const df::file_path id) const
 	return {};
 }
 
-void index_histograms::record(const location_cache& locations, const df::index_file_item& file)
+void index_histograms::record(const location_cache&, const df::index_file_item& file, const df::file_path& path)
 {
-	static auto year = platform::now().year();
+	const auto year = _year;
 	constexpr auto map_width = static_cast<int>(df::location_heat_map::map_width);
 	constexpr auto map_height = static_cast<int>(df::location_heat_map::map_height);
 
@@ -1819,21 +2338,37 @@ void index_histograms::record(const location_cache& locations, const df::index_f
 		if (coord.is_valid())
 		{
 			const auto map_loc = df::location_heat_map::calc_map_loc(coord);
-			_locations.coordinates[map_loc.y * map_width + map_loc.x] = 1;
+			const auto map_index = map_loc.y * map_width + map_loc.x;
+			_locations.coordinates[map_index] += 1;
+			_location_latitude_sums[map_index] += coord.latitude();
+			_location_longitude_sums[map_index] += coord.longitude();
+			_location_min_latitudes[map_index] = std::min(_location_min_latitudes[map_index], coord.latitude());
+			_location_min_longitudes[map_index] = std::min(_location_min_longitudes[map_index], coord.longitude());
+			_location_max_latitudes[map_index] = std::max(_location_max_latitudes[map_index], coord.latitude());
+			_location_max_longitudes[map_index] = std::max(_location_max_longitudes[map_index], coord.longitude());
 
-			const auto country = locations.find_country(coord.latitude(), coord.longitude());
-			const auto country_code = country.code;
-			const auto found = _location_groups.find(country_code);
+			const auto place_name = md->location_place;
+			const auto state_name = md->location_state;
+			const auto country_name = md->location_country;
+			if (!str::is_empty(place_name) || !str::is_empty(state_name) || !str::is_empty(country_name))
+			{
+				const auto group_id = crypto::hash_gen(country_name.sv()).append(state_name.sv()).append(place_name.sv()).result();
+				const auto found = _location_groups.find(group_id);
 
-			if (found != _location_groups.end())
-			{
-				found->second.count += 1;
-			}
-			else
-			{
-				_location_groups[country_code] = {
-					country.name, 1, df::location_heat_map::calc_map_loc(country.centroid)
-				};
+				if (found != _location_groups.end())
+				{
+					found->second.count += 1;
+					found->second.latitude_sum += coord.latitude();
+					found->second.longitude_sum += coord.longitude();
+					found->second.loc = df::location_heat_map::calc_map_loc(found->second.centroid());
+				}
+				else
+				{
+					const auto name = !str::is_empty(place_name) ? place_name : country_name;
+					_location_groups[group_id] = {
+						name, state_name, country_name, 1, map_loc, coord.latitude(), coord.longitude()
+					};
+				}
 			}
 		}
 	}
@@ -1847,16 +2382,128 @@ void index_histograms::record(const location_cache& locations, const df::index_f
 
 	if (created_year_offset >= 0 && created_year_offset < df::max_history_years)
 	{
-		_dates.dates[created_year_offset * 12 + created_date_parts.month - 1].created += 1;
+		const auto date_index = created_year_offset * 12 + created_date_parts.month - 1;
+		_dates.dates[date_index].created += 1;
+		_dates.record_representative(date_index, file, path);
 	}
 
-	const auto modified_date_parts = file.file_modified.date();
+	const auto modified_date_parts = file.file_modified.load().date();
 	const auto modified_date_parts_year_offset = year - modified_date_parts.year;
 
 	if (modified_date_parts_year_offset >= 0 && modified_date_parts_year_offset < df::max_history_years)
 	{
-		_dates.dates[modified_date_parts_year_offset * 12 + modified_date_parts.month - 1].modified += 1;
+		const auto date_index = modified_date_parts_year_offset * 12 + modified_date_parts.month - 1;
+		_dates.dates[date_index].modified += 1;
+		_dates.record_representative(date_index, file, path);
 	}
+}
+
+std::vector<map_location_area> index_histograms::map_locations(const int requested_cell_span) const
+{
+	constexpr auto map_width = static_cast<int>(df::location_heat_map::map_width);
+	constexpr auto map_height = static_cast<int>(df::location_heat_map::map_height);
+	const auto cell_span = std::clamp(std::bit_ceil(static_cast<unsigned>(std::max(requested_cell_span, 1))), 1u, 64u);
+
+	struct area_build
+	{
+		uint32_t count = 0;
+		double latitude_sum = 0.0;
+		double longitude_sum = 0.0;
+		double min_latitude = std::numeric_limits<double>::max();
+		double min_longitude = std::numeric_limits<double>::max();
+		double max_latitude = std::numeric_limits<double>::lowest();
+		double max_longitude = std::numeric_limits<double>::lowest();
+	};
+
+	df::hash_map<uint32_t, area_build> builds;
+	for (auto cell_index = 0u; cell_index < _locations.coordinates.size(); ++cell_index)
+	{
+		const auto count = _locations.coordinates[cell_index];
+		if (count == 0) continue;
+		const auto x = static_cast<int>(cell_index % map_width);
+		const auto y = static_cast<int>(cell_index / map_width);
+		const auto area_x = x / static_cast<int>(cell_span) * static_cast<int>(cell_span);
+		const auto area_y = y / static_cast<int>(cell_span) * static_cast<int>(cell_span);
+		const auto area_key = static_cast<uint32_t>(area_y * map_width + area_x);
+		auto& area = builds[area_key];
+		area.count += count;
+		area.latitude_sum += _location_latitude_sums[cell_index];
+		area.longitude_sum += _location_longitude_sums[cell_index];
+		area.min_latitude = std::min(area.min_latitude, _location_min_latitudes[cell_index]);
+		area.min_longitude = std::min(area.min_longitude, _location_min_longitudes[cell_index]);
+		area.max_latitude = std::max(area.max_latitude, _location_max_latitudes[cell_index]);
+		area.max_longitude = std::max(area.max_longitude, _location_max_longitudes[cell_index]);
+	}
+
+	std::vector<map_location_area> result;
+	result.reserve(builds.size());
+	for (const auto& [area_key, build] : builds)
+	{
+		const auto area_x = static_cast<int>(area_key % map_width);
+		const auto area_y = static_cast<int>(area_key / map_width);
+		result.push_back({
+			.count = build.count,
+			.cell = {area_x, area_y},
+			.cell_span = static_cast<int>(cell_span),
+			.position = {build.latitude_sum / build.count, build.longitude_sum / build.count},
+			.min_latitude = build.min_latitude,
+			.min_longitude = build.min_longitude,
+			.max_latitude = build.max_latitude,
+			.max_longitude = build.max_longitude
+		});
+	}
+
+	std::ranges::sort(result, [](const auto& left, const auto& right)
+	{
+		return left.cell.y == right.cell.y ? left.cell.x < right.cell.x : left.cell.y < right.cell.y;
+	});
+
+	return result;
+}
+
+std::optional<map_location_area> index_histograms::find_map_location(const std::string_view name,
+	const location_cache& locations, const gps_coordinate default_location) const
+{
+	std::vector<location_t> named_locations;
+	for (const auto& match : locations.auto_complete(name, 32, default_location))
+	{
+		if (str::icmp(match.location.place, name) == 0)
+		{
+			named_locations.emplace_back(match.location);
+		}
+	}
+
+	for (const auto cell_span : {1, 2, 4, 8, 16, 32, 64})
+	{
+		const auto areas = map_locations(cell_span);
+		for (const auto& named_location : named_locations)
+		{
+			const auto map_cell = df::location_heat_map::calc_map_loc(named_location.position);
+			const auto found = std::ranges::find_if(areas, [map_cell](const map_location_area& area)
+			{
+				return area.contains(map_cell);
+			});
+			if (found == areas.end()) continue;
+
+			auto selected = locations.find_largest(found->min_latitude, found->min_longitude,
+				found->max_latitude, found->max_longitude);
+			if (selected.id == 0)
+			{
+				selected = locations.find_closest(found->position.latitude(), found->position.longitude());
+			}
+			if (str::icmp(selected.place, name) == 0)
+			{
+				auto result = *found;
+				result.name = selected.place;
+				result.state = selected.state;
+				result.country = selected.country;
+				result.population = selected.population;
+				return result;
+			}
+		}
+	}
+
+	return {};
 }
 
 inline bool index_state::is_collection_search(const df::search_t& search) const
@@ -1872,17 +2519,18 @@ inline bool index_state::is_collection_search(const df::search_t& search) const
 	return true;
 }
 
-void index_state::calc_folder_summary(const df::index_folder_info_const_ptr& folder, df::file_group_histogram& result,
-                                      const df::cancel_token token)
+void index_state::calc_folder_summary(const df::folder_path& path, const df::index_folder_info_const_ptr& folder,
+	                                  df::file_group_histogram& result, const df::cancel_token token)
 {
-	for (const auto& sub_folder : folder->folders)
+	const auto child_folders = folder->folders_snapshot();
+	for (const auto& sub_folder : *child_folders)
 	{
-		calc_folder_summary(sub_folder, result, token);
+		calc_folder_summary(path.combine(sub_folder->name), sub_folder, result, token);
 	}
 
 	for (const auto& file : folder->files)
 	{
-		result.record(file);
+		result.record(file, df::file_path(path, file.name));
 	}
 }
 
@@ -1894,14 +2542,15 @@ df::file_group_histogram index_state::calc_folder_summary(const df::folder_path 
 
 	if (folder)
 	{
-		for (const auto& sub_folder : folder->folders)
+		const auto child_folders = folder->folders_snapshot();
+		for (const auto& sub_folder : *child_folders)
 		{
-			calc_folder_summary(sub_folder, result, token);
+			calc_folder_summary(path.combine(sub_folder->name), sub_folder, result, token);
 		}
 
 		for (const auto& file : folder->files)
 		{
-			result.record(file);
+			result.record(file, df::file_path(path, file.name));
 		}
 	}
 
@@ -1913,7 +2562,7 @@ void index_state::save_media_position(const df::file_path id, const double media
 	item_db_write write;
 	write.path = id;
 	write.media_position = media_position;
-	_db_writes.enqueue(std::move(write));
+	enqueue_db_write(std::move(write));
 }
 
 void index_state::save_crc(const df::file_path id, const uint32_t crc)
@@ -1929,8 +2578,8 @@ void index_state::save_crc(const df::file_path id, const uint32_t crc)
 			if (found_file != f->files.end())
 			{
 				found_file->crc32c = crc;
-				found_file->calc_bloom_bits();
-				f->update_bloom_bits(*found_file);
+				found_file->calc_search_presence();
+				f->update_search_presence(*found_file);
 			}
 		}
 	});
@@ -1938,40 +2587,7 @@ void index_state::save_crc(const df::file_path id, const uint32_t crc)
 	item_db_write write;
 	write.path = id;
 	write.crc32c = crc;
-	_db_writes.enqueue(std::move(write));
-}
-
-void index_state::save_location(const df::file_path id, const location_t& loc)
-{
-	_async.queue_async(async_queue::work, [this, id, loc]
-	{
-		const auto found_folder = _items.find(id.folder());
-
-		if (found_folder)
-		{
-			const auto found_file = find_file(found_folder->files, id.name());
-
-			if (found_file != found_folder->files.end())
-			{
-				auto md = found_file->safe_ps();
-
-				if (!md->coordinate.is_valid())
-				{
-					md->coordinate = loc.position;
-				}
-
-				md->location_place = loc.place;
-				md->location_state = loc.state;
-				md->location_country = loc.country;
-
-				item_db_write write;
-				write.path = id;
-				write.md = md;
-				write.metadata_scanned = found_file->metadata_scanned;
-				_db_writes.enqueue(std::move(write));
-			}
-		}
-	});
+	enqueue_db_write(std::move(write));
 }
 
 void index_state::save_thumbnail(const df::file_path id, const ui::const_image_ptr& thumbnail_image,
@@ -1991,7 +2607,7 @@ void index_state::save_thumbnail(const df::file_path id, const ui::const_image_p
 	}
 
 	write.thumb_scanned = scan_timestamp;
-	_db_writes.enqueue(std::move(write));
+	enqueue_db_write(std::move(write));
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -2009,8 +2625,11 @@ void index_state::save_thumbnail(const df::file_path id, const ui::const_image_p
 
 void index_state::index_roots(df::index_roots roots)
 {
-	platform::exclusive_lock lock(_summary_rw);
-	_summary._roots = std::move(roots);
+	_fully_loaded = false;
+	{
+		platform::exclusive_lock lock(_summary_rw);
+		std::swap(_summary._roots, roots);
+	}
 }
 
 void index_state::index_folders(df::cancel_token token)
@@ -2019,7 +2638,7 @@ void index_state::index_folders(df::cancel_token token)
 	df::index_roots roots;
 
 	{
-		platform::exclusive_lock lock(_summary_rw);
+		platform::shared_lock lock(_summary_rw);
 		roots = _summary._roots;
 	}
 
@@ -2031,6 +2650,7 @@ void index_state::index_folders(df::cancel_token token)
 	items_by_folder_t indexed;
 	int count = 0;
 	stats.index_folder_count = 0;
+	auto next_histogram_publish_ms = df::now_ms();
 
 	for (const auto& f : _items.all_folders())
 	{
@@ -2055,7 +2675,7 @@ void index_state::index_folders(df::cancel_token token)
 
 			for (const auto& file : node.folder->files)
 			{
-				histograms.record(_locations, file);
+				histograms.record(_locations, file, df::file_path(folder_path, file.name));
 
 				if (file.ft->is_media())
 				{
@@ -2063,7 +2683,7 @@ void index_state::index_folders(df::cancel_token token)
 				}
 			}
 
-			for (const auto& sub_folder : node.folder->folders)
+			for (const auto& sub_folder : *node.folder->folders_snapshot())
 			{
 				const auto sub_folder_path = folder_path.combine(sub_folder->name);
 				const auto is_excluded = df::is_excluded(roots, sub_folder_path);
@@ -2081,11 +2701,17 @@ void index_state::index_folders(df::cancel_token token)
 			}
 		}
 
+		// Histogram snapshots are large; rate-limit progress copies while always publishing the final state below.
+		const auto current_ms = df::now_ms();
+		if (current_ms >= next_histogram_publish_ms)
 		{
-			platform::exclusive_lock lock(_summary_rw);
-			_summary._histograms._file_types = histograms._file_types;
-			_summary._histograms._dates = histograms._dates;
+			index_histograms_const_ptr histogram_snapshot = std::make_shared<index_histograms>(histograms);
+			{
+				platform::exclusive_lock lock(_summary_rw);
+				_summary._histograms.swap(histogram_snapshot);
+			}
 			_async.invalidate_view(view_invalid::sidebar_file_types_and_dates | view_invalid::tooltip);
+			next_histogram_publish_ms = current_ms + 100;
 		}
 	}
 
@@ -2100,9 +2726,11 @@ void index_state::index_folders(df::cancel_token token)
 	}
 
 	{
+		stats.index_folder_count = static_cast<int>(unique_folder_paths.size());
+		std::shared_ptr<const df::unique_folders> folders_snapshot =
+			std::make_shared<df::unique_folders>(std::move(unique_folder_paths));
 		platform::exclusive_lock lock(_summary_rw);
-		_summary._distinct_folders = std::move(unique_folder_paths);
-		stats.index_folder_count = static_cast<int>(_summary._distinct_folders.size());
+		_summary._distinct_folders.swap(folders_snapshot);
 	}
 
 	df::unique_folders distinct_prime_folders;
@@ -2117,10 +2745,14 @@ void index_state::index_folders(df::cancel_token token)
 		distinct_prime_folders.emplace(df::folder_path(d.name));
 	}
 
+	std::shared_ptr<const df::unique_folders> prime_folders_snapshot =
+		std::make_shared<df::unique_folders>(std::move(distinct_prime_folders));
+	index_histograms_const_ptr histogram_snapshot = std::make_shared<index_histograms>(std::move(histograms));
+
 	{
 		platform::exclusive_lock lock(_summary_rw);
-		_summary._distinct_prime_folders = std::move(distinct_prime_folders);
-		_summary._histograms = std::move(histograms);
+		_summary._distinct_prime_folders.swap(prime_folders_snapshot);
+		_summary._histograms.swap(histogram_snapshot);
 	}
 
 	_folders_indexed = true;
@@ -2179,22 +2811,49 @@ media_name_props scan_info_from_title(const std::string_view name8)
 		"720",
 		"1080p",
 		"1080",
+		"1440p",
+		"1440",
+		"2160p",
+		"2160",
+		"4320p",
+		"4320",
+		"4k",
+		"8k",
+		"uhd",
 		"hdtv",
 		"x264",
 		"x265",
 		"h264",
 		"h265",
+		"hevc",
+		"av1",
 		"ac3",
+		"eac3",
+		"ddp",
 		"dts",
 		"aac",
 		"brrip",
 		"bdrip",
 		"bluray",
 		"hdrip",
-		"hdtv",
 		"dvdrip",
+		"web",
+		"webdl",
 		"webrip",
+		"pdtv",
+		"dvdscr",
 		"xvid",
+		"hdr",
+		"hdr10",
+		"hdr10plus",
+		"dv",
+		"dolbyvision",
+		"remux",
+		"proper",
+		"repack",
+		"internal",
+		"unrated",
+		"10bit",
 		"extended",
 		"5.1",
 		"7.1"
@@ -2202,15 +2861,9 @@ media_name_props scan_info_from_title(const std::string_view name8)
 
 	static const df::hash_set<std::string_view, df::ihash, df::ieq> pre_title_stop_words
 	{
-		"internal",
-		"web",
 		"(",
 		"[",
 		"-",
-		"PDTV",
-		"DVDScr",
-		"10bit",
-		"UNRATED",
 	};
 
 	static const df::hash_set<std::string_view, df::ihash, df::ieq> pre_show_stop_words
@@ -2218,7 +2871,7 @@ media_name_props scan_info_from_title(const std::string_view name8)
 		"-",
 	};
 
-	static const auto split_rx = std::regex{R"([\s]+|\-|\.|\(|\[|\]|\))"s, std::regex_constants::icase};
+	static const auto split_rx = std::regex{R"([\s]+|_|\-|\.|\(|\[|\]|\))"s};
 
 	const auto name = std::string_view(std::bit_cast<const char*>(name8.data()), name8.size());
 
@@ -2227,19 +2880,53 @@ media_name_props scan_info_from_title(const std::string_view name8)
 		std::regex_token_iterator<std::string_view::const_iterator>{}
 	);
 
-	static const auto space_rx = std::regex{R"([\s]+|\.)"s, std::regex_constants::icase};
+	static const auto separator_rx = std::regex{R"([\s]+|_|\.)"s};
 
-	std::erase_if(tokens, [](auto&& i) { return i.empty() || std::regex_match(i, space_rx); });
+	std::erase_if(tokens, [](auto&& i) { return i.empty() || std::regex_match(i, separator_rx); });
 
-	static std::regex episode_rx("s([0-9]+)e([0-9]+)"s, std::regex_constants::icase);
-	static std::regex episode_of_rx("([0-9]+)of([0-9]+)"s, std::regex_constants::icase);
-	static std::regex episode_x_rx("([0-9]+)x([0-9]+)"s, std::regex_constants::icase);
-	static std::regex year_rx("(19|20)[0-9][0-9]"s, std::regex_constants::icase);
+	static const auto episode_rx = std::regex{"s([0-9]{1,2})e([0-9]{1,3})"s, std::regex_constants::icase};
+	static const auto episode_of_rx = std::regex{"([0-9]{1,3})of([0-9]{1,3})"s, std::regex_constants::icase};
+	static const auto episode_x_rx = std::regex{"([0-9]{1,2})x([0-9]{1,3})"s, std::regex_constants::icase};
+	static const auto year_rx = std::regex{"(19|20)[0-9]{2}"s};
+	static const auto dimensions_rx = std::regex{"([0-9]{3,5})x([0-9]{3,5})"s, std::regex_constants::icase};
 
-	const auto found_episode_num = std::ranges::find_if(tokens, [](auto&& i)
+	struct episode_info
 	{
-		return std::regex_match(i, episode_rx) || std::regex_match(i, episode_of_rx) || std::regex_match(
-			i, episode_x_rx);
+		int season = 0;
+		int episode = 0;
+		int episode_of = 0;
+	};
+
+	const auto parse_episode = [&](const std::string& token) -> std::optional<episode_info>
+	{
+		std::smatch match;
+
+		if (std::regex_match(token, match, episode_rx))
+		{
+			const auto season = str::to_int(match[1].str());
+			const auto episode = str::to_int(match[2].str());
+			if (season <= 99 && episode > 0 && episode <= 255) return episode_info{season, episode, 0};
+		}
+		else if (std::regex_match(token, match, episode_of_rx))
+		{
+			const auto episode = str::to_int(match[1].str());
+			const auto episode_of = str::to_int(match[2].str());
+			if (episode > 0 && episode <= episode_of && episode_of <= 255)
+				return episode_info{0, episode, episode_of};
+		}
+		else if (std::regex_match(token, match, episode_x_rx))
+		{
+			const auto season = str::to_int(match[1].str());
+			const auto episode = str::to_int(match[2].str());
+			if (season <= 99 && episode > 0 && episode <= 255) return episode_info{season, episode, 0};
+		}
+
+		return std::nullopt;
+	};
+
+	const auto found_episode_num = std::ranges::find_if(tokens, [&](const auto& token)
+	{
+		return parse_episode(token).has_value();
 	});
 
 	auto end_show = found_episode_num;
@@ -2267,15 +2954,22 @@ media_name_props scan_info_from_title(const std::string_view name8)
 				end_show != tokens.end() &&
 				*(end_show - 1) == "(")
 			{
-				result.year = std::stoi(*end_show);
+				result.year = str::to_int(*end_show);
 				--end_show;
 			}
 		}
 	}
 
-	auto end_title = std::ranges::find_if(tokens, [](auto&& i)
+	auto end_title = std::ranges::find_if(tokens, [&](const auto& token)
 	{
-		return stop_words.contains(i);
+		if (stop_words.contains(token)) return true;
+
+		std::smatch match;
+		if (!std::regex_match(token, match, dimensions_rx)) return false;
+
+		const auto width = str::to_int(match[1].str());
+		const auto height = str::to_int(match[2].str());
+		return width >= 320 && height >= 200;
 	});
 
 	/*for (auto t : tokens)
@@ -2290,49 +2984,42 @@ media_name_props scan_info_from_title(const std::string_view name8)
 		--end_title;
 	}
 
-	if ((end_title != tokens.end() && end_title != tokens.begin()) ||
-		found_episode_num != tokens.end() && found_episode_num != tokens.begin())
+	if (found_episode_num != tokens.end() && found_episode_num != tokens.begin())
 	{
-		if (found_episode_num != tokens.end())
+		result.show = build_result_string(tokens, tokens.begin(), end_show);
+
+		const auto episode = parse_episode(*found_episode_num);
+		if (episode)
 		{
-			result.show = build_result_string(tokens, tokens.begin(), end_show);
-
-			std::smatch match;
-			auto i = found_episode_num;
-
-			if (std::regex_search(*i, match, episode_rx) && match.size() == 3)
-			{
-				result.season = std::stoi(match[1]);
-				result.episode = std::stoi(match[2]);
-			}
-			else if (std::regex_search(*i, match, episode_of_rx) && match.size() == 3)
-			{
-				result.episode = std::stoi(match[1]);
-				result.episode_of = std::stoi(match[2]);
-			}
-			else if (std::regex_search(*i, match, episode_x_rx) && match.size() == 3)
-			{
-				result.season = std::stoi(match[1]);
-				result.episode = std::stoi(match[2]);
-			}
-
-			++i;
-
-			result.title = build_result_string(tokens, i, end_title);
+			result.season = episode->season;
+			result.episode = episode->episode;
+			result.episode_of = episode->episode_of;
 		}
-		else if (end_title != tokens.end())
+
+		result.title = build_result_string(tokens, found_episode_num + 1, end_title);
+	}
+	else
+	{
+		auto movie_title_end = end_title;
+		auto found_year = false;
+
+		if (movie_title_end != tokens.begin() && std::regex_match(*(movie_title_end - 1), year_rx))
 		{
-			// ok it does have movie info
-			auto i_year = end_title;
-			--i_year;
+			result.year = str::to_int(*(movie_title_end - 1));
+			--movie_title_end;
+			found_year = true;
+		}
+		else if (movie_title_end - tokens.begin() >= 3 && *(movie_title_end - 1) == ")" &&
+			std::regex_match(*(movie_title_end - 2), year_rx) && *(movie_title_end - 3) == "(")
+		{
+			result.year = str::to_int(*(movie_title_end - 2));
+			movie_title_end -= 3;
+			found_year = true;
+		}
 
-			if (std::regex_match(*i_year, year_rx))
-			{
-				result.year = std::stoi(*i_year);
-				--end_title;
-			}
-
-			result.title = build_result_string(tokens, tokens.begin(), end_title);
+		if ((end_title != tokens.end() || found_year) && movie_title_end != tokens.begin())
+		{
+			result.title = build_result_string(tokens, tokens.begin(), movie_title_end);
 		}
 	}
 
@@ -2342,38 +3029,101 @@ media_name_props scan_info_from_title(const std::string_view name8)
 	return result;
 }
 
-static void items_possible_hashes_contains(df::hash_map<df::item_element_ptr, item_presence>& item_presence,
-                                           const std::vector<std::pair<unsigned, df::item_element_ptr>>& possible,
-                                           const df::index_file_item& indexed_file, const uint32_t hash)
+struct presence_match
+{
+	item_presence state = item_presence::unknown;
+	df::duplicate_info duplicates = {};
+};
+
+struct presence_request
+{
+	std::weak_ptr<df::item_element> lifetime;
+	df::file_path path;
+	df::file_size size;
+	df::date_t file_modified;
+	df::date_t media_created;
+	uint32_t crc32c = 0;
+	bool is_folder = false;
+};
+
+struct presence_result
+{
+	presence_request source;
+	presence_match match;
+};
+
+static int presence_rank(const item_presence presence)
+{
+	switch (presence)
+	{
+	case item_presence::newer_in: return 3;
+	case item_presence::similar_in: return 2;
+	case item_presence::older_in: return 1;
+	default: return 0;
+	}
+}
+
+static bool prefer_duplicate_info(const df::duplicate_info candidate, const df::duplicate_info current)
+{
+	if (current.group == 0) return candidate.group != 0;
+	if (candidate.group == 0) return false;
+	if (candidate.group != current.group) return candidate.group < current.group;
+	return candidate.count > current.count;
+}
+
+static bool is_dup_match(const df::index_file_item& file, const presence_request& other)
+{
+	if (file.crc32c != 0 && file.size == other.size && file.crc32c == other.crc32c)
+	{
+		return true;
+	}
+
+	const auto name_match = icmp(file.name, other.path.name()) == 0;
+	if (file.ft->has_trait(file_traits::av) && name_match && file.size == other.size)
+	{
+		return true;
+	}
+
+	return name_match && file.created() == other.media_created;
+}
+
+static void items_possible_hashes_contains(std::vector<presence_match>& matches,
+	                                       const std::vector<std::pair<unsigned, size_t>>& possible,
+	                                       const std::vector<presence_request>& requests,
+	                                       const df::index_file_item& indexed_file, const uint32_t hash)
 {
 	auto lb = std::lower_bound(possible.begin(), possible.end(), hash, [](auto&& l, auto&& r) { return l.first < r; });
 
 	while (lb != possible.end() && lb->first == hash)
 	{
-		const auto i = lb->second;
+		const auto request_index = lb->second;
+		const auto& request = requests[request_index];
 
-		if (is_dup_match(indexed_file, i))
+		if (is_dup_match(indexed_file, request))
 		{
-			i->duplicates(indexed_file.duplicates);
+			auto candidate = item_presence::unknown;
 
-			if (indexed_file.file_modified == i->file_modified() ||
-				(indexed_file.crc32c != 0 && indexed_file.crc32c == i->crc32c()))
+			if (indexed_file.file_modified == request.file_modified ||
+				(indexed_file.crc32c != 0 && indexed_file.crc32c == request.crc32c))
 			{
-				if (item_presence[i] != item_presence::newer_in)
-				{
-					item_presence[i] = item_presence::similar_in;
-				}
+				candidate = item_presence::similar_in;
 			}
-			else if (indexed_file.file_modified < i->file_modified())
+			else if (indexed_file.file_modified < request.file_modified)
 			{
-				if (item_presence[i] == item_presence::unknown)
-				{
-					item_presence[i] = item_presence::older_in;
-				}
+				candidate = item_presence::older_in;
 			}
-			else if (indexed_file.file_modified > i->file_modified())
+			else if (indexed_file.file_modified > request.file_modified)
 			{
-				item_presence[i] = item_presence::newer_in;
+				candidate = item_presence::newer_in;
+			}
+
+			const auto duplicates = indexed_file.duplicates.load();
+			auto& current = matches[request_index];
+			if (presence_rank(candidate) > presence_rank(current.state) ||
+				(candidate == current.state && prefer_duplicate_info(duplicates, current.duplicates)))
+			{
+				current.state = candidate;
+				current.duplicates = duplicates;
 			}
 		}
 
@@ -2381,78 +3131,68 @@ static void items_possible_hashes_contains(df::hash_map<df::item_element_ptr, it
 	}
 }
 
-void index_state::update_presence(const df::item_set& items)
+void index_state::queue_update_presence(const df::item_set& items)
 {
+	df::assert_true(ui::is_ui_thread());
+	if (items.empty()) return;
+
+	std::vector<presence_request> requests;
+	requests.reserve(items.size());
+	for (const auto& item : items.items())
+	{
+		requests.emplace_back(item, item->path(), item->file_size(), item->file_modified(),
+		                      item->media_created(), item->crc32c(), item->is_folder());
+	}
+
+	_async.queue_async(async_queue::index_presence_single, [this, requests = std::move(requests)]() mutable
 	{
 		df::measure_ms ms(stats.update_presence_ms);
-		df::file_items_by_folder items_by_folder;
 		df::index_folder_info_map indexed_folders;
+		std::vector<presence_match> matches(requests.size());
 
-		for (const auto& i : items.items())
+		for (const auto& request : requests)
 		{
-			items_by_folder[i->folder()].emplace_back(i);
-		}
-
-		for (const auto& ff : items_by_folder)
-		{
-			const auto folder = _items.find(ff.first);
-
-			if (folder)
+			if (!request.is_folder)
 			{
-				for (const auto& i : ff.second)
+				const auto folder = _items.find(request.path.folder());
+				if (folder && folder->is_in_collection)
 				{
-					const auto file = find_file(folder->files, i->path().name());
-
-					if (file != folder->files.end())
-					{
-						i->update(i->path(), *file);
-					}
-				}
-
-				if (folder->is_in_collection)
-				{
-					indexed_folders[ff.first] = folder;
+					indexed_folders[request.path.folder()] = folder;
 				}
 			}
 		}
 
-		std::vector<std::pair<uint32_t, df::item_element_ptr>> items_possible_hashes;
-		df::hash_map<df::item_element_ptr, item_presence> item_presence;
+		std::vector<std::pair<uint32_t, size_t>> items_possible_hashes;
 
-		for (const auto& i : items.items())
+		for (size_t index = 0; index < requests.size(); ++index)
 		{
-			const auto is_indexed_folder = indexed_folders.contains(i->folder());
+			const auto& request = requests[index];
+			if (request.is_folder) continue;
+
+			const auto is_indexed_folder = indexed_folders.contains(request.path.folder());
 
 			if (is_indexed_folder)
 			{
-				item_presence[i] = item_presence::this_in;
+				auto& match = matches[index];
+				match.state = item_presence::this_in;
+
+				const auto& folder = indexed_folders.at(request.path.folder());
+				const auto file = find_file(folder->files, request.path.name());
+				if (file != folder->files.end()) match.duplicates = file->duplicates.load();
 			}
 			else
 			{
-				if (i->crc32c())
+				if (request.crc32c)
 				{
-					items_possible_hashes.emplace_back(i->crc32c(), i);
+					items_possible_hashes.emplace_back(request.crc32c, index);
 				}
 
-				const auto md = i->metadata();
-
-				if (md)
+				if (request.media_created.is_valid())
 				{
-					const auto created_date = md->created();
-
-					if (created_date.is_valid())
-					{
-						items_possible_hashes.emplace_back(x64to32(created_date.to_int64()), i);
-					}
-				}
-				else
-				{
-					auto d = i->file_created().system_to_local();
-					items_possible_hashes.emplace_back(x64to32(d.to_int64()), i);
+					items_possible_hashes.emplace_back(x64to32(request.media_created.to_int64()), index);
 				}
 
-				items_possible_hashes.emplace_back(crypto::fnv1a_i(i->path().name()), i);
-				item_presence[i] = item_presence::unknown;
+				items_possible_hashes.emplace_back(crypto::fnv1a_i(request.path.name()), index);
 			}
 		}
 
@@ -2472,60 +3212,150 @@ void index_state::update_presence(const df::item_set& items)
 					{
 						if (file.crc32c)
 						{
-							items_possible_hashes_contains(item_presence, items_possible_hashes, file, file.crc32c);
+							items_possible_hashes_contains(matches, items_possible_hashes, requests, file,
+							                               file.crc32c);
 						}
 
 						const auto created_date = file.created();
 
 						if (created_date.is_valid())
 						{
-							items_possible_hashes_contains(item_presence, items_possible_hashes, file,
+							items_possible_hashes_contains(matches, items_possible_hashes, requests, file,
 							                               x64to32(created_date.to_int64()));
 						}
 
-						items_possible_hashes_contains(item_presence, items_possible_hashes, file,
+						items_possible_hashes_contains(matches, items_possible_hashes, requests, file,
 						                               crypto::fnv1a_i(file.name));
 					}
 				}
 			}
 		}
 
-		for (const auto& i : item_presence)
+		for (size_t index = 0; index < matches.size(); ++index)
 		{
-			const auto pres = i.second;
-
-			if (pres == item_presence::unknown)
+			auto& match = matches[index];
+			const auto& request = requests[index];
+			if (request.is_folder)
 			{
-				i.first->presence(item_presence::not_in);
-				i.first->duplicates({0, 0});
+				match = {};
+				continue;
 			}
-			else
+
+			if (match.state == item_presence::unknown)
 			{
-				i.first->presence(pres);
+				auto evidence_complete = false;
+				if (_fully_loaded)
+				{
+					const auto folder = _items.find(request.path.folder());
+					if (folder)
+					{
+						const auto file = find_file(folder->files, request.path.name());
+						evidence_complete = file != folder->files.end() &&
+							!needs_scan_impl(folder, *file, false, false);
+					}
+				}
+				match.state = evidence_complete ? item_presence::not_in : item_presence::unknown;
+				match.duplicates = {};
 			}
 		}
-	}
 
-	df::trace(std::format("Index update presence {} items in {} ms", items.size(), stats.update_presence_ms));
+		const auto result_count = requests.size();
+		std::vector<presence_result> results;
+		results.reserve(result_count);
+		for (size_t index = 0; index < result_count; ++index)
+		{
+			results.emplace_back(std::move(requests[index]), matches[index]);
+		}
+
+		_async.queue_ui([this, results = std::move(results)]
+		{
+			auto changed = false;
+			for (const auto& result : results)
+			{
+				const auto item = result.source.lifetime.lock();
+				if (!item || item->path() != result.source.path || item->file_size() != result.source.size ||
+					item->file_modified() != result.source.file_modified ||
+					item->media_created() != result.source.media_created || item->crc32c() != result.source.crc32c)
+				{
+					continue;
+				}
+
+				if (item->presence() == result.match.state && item->duplicates() == result.match.duplicates)
+				{
+					continue;
+				}
+
+				item->presence(result.match.state);
+				item->duplicates(result.match.duplicates);
+				changed = true;
+			}
+
+			if (changed)
+			{
+				_async.invalidate_view(view_invalid::view_layout | view_invalid::group_layout);
+			}
+		});
+
+		df::trace(std::format("Index update presence {} items in {} ms", result_count, stats.update_presence_ms));
+	});
 }
 
-void index_state::scan_items(const df::item_set& items_to_scan,
-                             const bool load_thumbs,
+	index_state::item_scan_request index_state::make_scan_request(const df::item_element_ptr& item,
+		const bool load_thumbnail, const bool claim_loading)
+{
+	df::assert_true(ui::is_ui_thread());
+	const auto is_folder = item->is_folder();
+	const auto thumbnail_needed = load_thumbnail && !is_folder && item->should_load_thumbnail();
+	if (thumbnail_needed && claim_loading) item->is_loading_thumbnail(true);
+	return {item, item->path(), item->folder(), item->file_type(), is_folder, load_thumbnail && !is_folder,
+		thumbnail_needed, item->has_thumb()};
+}
+
+index_state::item_scan_requests index_state::make_scan_requests(const df::item_set& items,
+	const bool load_thumbnails)
+{
+	df::assert_true(ui::is_ui_thread());
+	item_scan_requests requests;
+	requests.reserve(items.size());
+
+	for (const auto& item : items.items())
+	{
+		requests.emplace_back(make_scan_request(item, load_thumbnails));
+	}
+
+	return requests;
+}
+
+bool index_state::scan_items(const df::item_set& items_to_scan, const bool load_thumbs,
+							 const bool refresh_from_file_system, const bool only_if_needed,
+							 const bool scan_if_offline, const df::cancel_token token, const bool force)
+{
+	return scan_items(make_scan_requests(items_to_scan, load_thumbs), refresh_from_file_system, only_if_needed,
+	                  scan_if_offline, token, force);
+}
+
+bool index_state::scan_items(const item_scan_requests& requests,
                              const bool refresh_from_file_system,
                              const bool only_if_needed,
                              const bool scan_if_offline,
-                             const df::cancel_token token)
+                             const df::cancel_token token,
+                             const bool force,
+                             scan_batch_stats* stats_out)
 {
+	auto metadata_refresh_needed = false;
+	uint64_t thumbs_scanned = 0;
+	std::vector<std::pair<std::weak_ptr<df::item_element>, df::file_path>> updated_items;
+	updated_items.reserve(requests.size());
 	{
 		df::measure_ms ms(stats.scan_items_ms);
 		df::scope_locked_inc l(scanning_items);
-		df::file_items_by_folder items_by_folder;
+		df::hash_map<df::folder_path, item_scan_requests, df::ihash, df::ieq> items_by_folder;
 
-		for (const auto& i : items_to_scan.items())
+		for (const auto& request : requests)
 		{
-			if (!i->is_folder())
+			if (!request.is_folder)
 			{
-				items_by_folder[i->folder()].emplace_back(i);
+				items_by_folder[request.folder].emplace_back(request);
 			}
 		}
 
@@ -2537,43 +3367,156 @@ void index_state::scan_items(const df::item_set& items_to_scan,
 
 			const auto node = validate_folder(ff.first, refresh_from_file_system, now);
 
-			for (const auto& i : ff.second)
+			for (const auto& request : ff.second)
 			{
 				if (token.is_cancelled()) break;
 
-				if (!only_if_needed || i->should_load_thumbnail())
+				if (!only_if_needed || request.thumbnail_needed)
 				{
-					scan_item(node.folder, i->path(), load_thumbs, scan_if_offline, i, i->file_type());
+					const auto found_file = find_file(node.folder->files, request.path.name());
+					const auto is_new = found_file == node.folder->files.end();
+					// Thumbnail generation on its own is not a metadata refresh, so it must not force a regroup.
+					const auto metadata_scan_wanted = is_new || force ||
+						needs_scan_impl(node.folder, *found_file, false, scan_if_offline);
+					const auto scan_possible = metadata_scan_wanted || request.thumbnail_needed;
+					const auto scanned_before = is_new ? df::date_t{} : found_file->metadata_scanned.load();
+
+					scan_item(node.folder, request.path, request.load_thumbnail, request.thumbnail_needed,
+					          request.had_thumbnail, scan_if_offline, request.lifetime, true, request.file_type, force,
+					          false, false);
+
+					if (request.thumbnail_needed) ++thumbs_scanned;
+
+					if (metadata_scan_wanted)
+					{
+						// A file that cannot be scanned never advances metadata_scanned, so it reports
+						// needs_scan on every pass - summarise on effect, not on intent.
+						const auto found_after = find_file(node.folder->files, request.path.name());
+						metadata_refresh_needed |= found_after != node.folder->files.end() &&
+							!(found_after->metadata_scanned.load() == scanned_before);
+					}
+
+					// Items already carry the index record the query materialised them from, so a republish
+					// is only worth a UI hop when a scan could run or validate_folder refreshed the folder.
+					if (scan_possible || node.was_updated)
+					{
+						updated_items.emplace_back(request.lifetime, request.path);
+					}
 				}
 			}
 		}
 
-		for (const auto& i : items_to_scan.items())
+		struct folder_update
+		{
+			std::weak_ptr<df::item_element> lifetime;
+			df::folder_path folder;
+			df::index_folder_item_ptr info;
+			df::count_and_size total;
+		};
+
+		std::vector<folder_update> folder_updates;
+
+		for (const auto& request : requests)
 		{
 			if (token.is_cancelled()) break;
 
-			if (i->is_folder())
+			if (request.is_folder)
 			{
-				const auto node = validate_folder(i->folder(), refresh_from_file_system, now);
-				i->info(node.folder);
-				i->calc_folder_summary(token);
+				const auto folder_path = request.folder;
+				const auto node = validate_folder(folder_path, refresh_from_file_system, now);
+				// Re-summarising a folder is not a metadata refresh. Reporting one unconditionally made
+				// every scan of a listing that contains a folder re-invalidate index_summary (and
+				// group_layout via queue_scan_displayed_items), which never settled.
+				metadata_refresh_needed |= node.was_updated;
+				folder_updates.emplace_back(request.lifetime, folder_path, node.folder,
+				                            platform::calc_folder_summary(folder_path, setting.show_hidden, token));
 			}
+		}
+
+		// One publication for the whole batch rather than a UI hop per folder.
+		if (!folder_updates.empty())
+		{
+			_async.queue_ui([folder_updates = std::move(folder_updates)]
+			{
+				for (const auto& update : folder_updates)
+				{
+					const auto item = update.lifetime.lock();
+					if (item && item->is_folder() && item->folder() == update.folder)
+					{
+						item->update_folder(update.info, update.total);
+					}
+				}
+			});
 		}
 	}
 
-	df::trace(std::format("Index scan {} items (thumbs={} refresh-fs={}) in {} ms", items_to_scan.size(),
+	std::vector<std::pair<std::weak_ptr<df::item_element>, df::file_path>> completed;
+	completed.reserve(requests.size());
+	for (const auto& request : requests)
+	{
+		if (request.thumbnail_needed) completed.emplace_back(request.lifetime, request.path);
+	}
+
+	if (stats_out)
+	{
+		stats_out->thumbs_requested = completed.size();
+		stats_out->thumbs_scanned = thumbs_scanned;
+	}
+
+	if (!completed.empty() || !updated_items.empty())
+	{
+		_async.queue_ui([this, completed = std::move(completed), updated_items = std::move(updated_items), token]
+		{
+			for (const auto& [item, path] : completed)
+			{
+				const auto current_item = item.lock();
+				if (current_item && current_item->path() == path)
+				{
+					current_item->is_loading_thumbnail(false);
+					// Staging must run even when the batch was cancelled: this path publishes with
+					// stage_surface false, so anything loaded before the cancel would stay unstaged and
+					// the item would never ask for its thumbnail again.
+					current_item->stage_thumbnail_surface(_async);
+				}
+				else
+				{
+					df::bump(df::thumbnail_perf.scan_completions_stale);
+				}
+			}
+
+			for (const auto& [item, path] : updated_items)
+			{
+				const auto current_item = item.lock();
+				if (!current_item || current_item->path() != path) continue;
+
+				const auto current_info = find_item(path);
+				if (current_info.name == path.name()) current_item->update(path, current_info);
+			}
+		});
+	}
+
+	const auto load_thumbs = std::ranges::any_of(requests, [](const auto& request)
+	{
+		return request.load_thumbnail;
+	});
+	df::trace(std::format("Index scan {} items (thumbs={} refresh-fs={}) in {} ms", requests.size(),
 	                      load_thumbs,
 	                      refresh_from_file_system, stats.scan_items_ms));
+	if (metadata_refresh_needed)
+	{
+		_async.invalidate_view(view_invalid::index_summary);
+	}
+	return metadata_refresh_needed;
 }
 
 void index_state::scan_folder(const df::folder_path folder_path, const df::index_folder_item_ptr& folder)
 {
 	for (const auto& f : folder->files)
 	{
-		scan_item(folder, {folder_path, f.name}, false, false, nullptr, f.ft);
+		scan_item(folder, {folder_path, f.name}, false, false, false, false, {}, false, f.ft);
 	}
 
-	for (const auto& f : folder->folders)
+	for (const auto& f : *folder->folders_snapshot())
 	{
 		queue_scan_folder(folder_path.combine(f->name));
 	}
@@ -2592,95 +3535,629 @@ void index_state::scan_folder(const df::folder_path folder_path, const bool mark
 	}
 }
 
-void index_state::queue_scan_listed_items(df::item_set listed_items)
+void index_state::queue_scan_listed_items(const df::item_set& listed_items)
 {
 	static std::atomic_int version;
 	df::cancel_token token(version);
+	auto requests = make_scan_requests(listed_items, false);
 
-	_async.queue_async(async_queue::scan_folder, [this, listed_items = std::move(listed_items), token]
+	_async.queue_async(async_queue::scan_folder, [this, requests = std::move(requests), token]
 	{
-		scan_items(listed_items, false, false, false, false, token);
+		// Presence matching walks every file in every indexed folder for every listed item, so it is only
+		// worth doing when this scan actually moved an index record.
+		if (scan_items(requests, false, false, false, token))
+		{
+			_async.invalidate_view(view_invalid::presence);
+		}
 	});
 }
 
-void index_state::queue_scan_modified_items(df::item_set items_to_scan)
+void index_state::claim_for_write(const std::vector<df::file_path>& paths)
 {
-	_async.queue_async(async_queue::scan_modified_items, [this, items_to_scan = std::move(items_to_scan)]
+	df::assert_true(ui::is_ui_thread());
+
+	for (const auto& path : paths)
+	{
+		++_write_claims[path];
+	}
+}
+
+void index_state::release_write_claim(const std::vector<df::file_path>& paths)
+{
+	df::assert_true(ui::is_ui_thread());
+
+	for (const auto& path : paths)
+	{
+		const auto found = _write_claims.find(path);
+		if (found == _write_claims.end()) continue;
+		if (--found->second <= 0) _write_claims.erase(found);
+	}
+
+	if (_deferred_modified_scans.empty()) return;
+
+	df::item_set still_claimed;
+	df::item_set ready;
+
+	for (const auto& i : _deferred_modified_scans.items())
+	{
+		if (_write_claims.contains(i->path())) still_claimed.add(i);
+		else ready.add(i);
+	}
+
+	_deferred_modified_scans = std::move(still_claimed);
+
+	// Deferred because a write was running, so the index record is stale by construction.
+	if (!ready.empty()) queue_scan_modified_items(std::move(ready), true);
+}
+
+void index_state::queue_scan_modified_items(df::item_set items_to_scan, const bool force)
+{
+	df::assert_true(ui::is_ui_thread());
+
+	if (!_write_claims.empty())
+	{
+		df::item_set unclaimed;
+
+		for (const auto& i : items_to_scan.items())
+		{
+			if (_write_claims.contains(i->path())) _deferred_modified_scans.add(i);
+			else unclaimed.add(i);
+		}
+
+		if (unclaimed.empty()) return;
+		items_to_scan = std::move(unclaimed);
+	}
+
+	auto requests = make_scan_requests(items_to_scan, true);
+	_async.queue_async(async_queue::scan_modified_items, [this, requests = std::move(requests), force]
 	{
 		const auto start_ms = df::now_ms();
-		scan_items(items_to_scan, true, true, false, false, {});
-		_async.invalidate_view(view_invalid::index_summary | view_invalid::media_elements);
-		df::trace(std::format("Index scan modified {} items in {} ms", items_to_scan.size(),
+		scan_items(requests, true, false, false, {}, force);
+		_async.invalidate_view(view_invalid::index_summary | view_invalid::media_elements |
+			view_invalid::presence);
+		df::trace(std::format("Index scan modified {} items in {} ms", requests.size(),
 		                      df::now_ms() - start_ms));
 	});
 }
 
 void index_state::queue_scan_displayed_items(df::item_set visible)
 {
+	df::assert_true(ui::is_ui_thread());
+
+	if (!_write_claims.empty())
+	{
+		df::item_set unclaimed;
+
+		// No loading claim has been made yet, so a skipped item is simply re-offered by
+		// items_view::retry_visible_thumbnails once the write releases it.
+		for (const auto& i : visible.items())
+		{
+			if (!_write_claims.contains(i->path())) unclaimed.add(i);
+		}
+
+		if (unclaimed.empty()) return;
+		visible = std::move(unclaimed);
+	}
+
+	// Visible-thumbnail cancellation invariant (see also queue_scan_offline_thumbnails): a batch may
+	// EITHER use a cancel token OR mark items with a batch-wide "pending" flag up front, never both --
+	// a cancelled batch that pre-marked a batch flag would leave unprocessed items stuck forever.
+	// This (local) path uses a cancel token: a fresh token per call cancels the previous in-flight
+	// batch so scrolling abandons work for items scrolled past. It marks NO batch-wide flag; the only
+	// per-item loading claim is made on UI while building the immutable request batch and is cleared
+	// by path-checked UI completion even under cancellation. That release is why the batch must still
+	// reach the worker; items_view::retry_visible_thumbnails re-requests whatever a cancelled batch
+	// abandoned, since the visible set stops changing once scrolling stops.
 	static std::atomic_int version;
 	df::cancel_token token(version);
+	auto requests = make_scan_requests(visible, true);
 
-	_async.queue_async(async_queue::scan_displayed_items, [this, visible = std::move(visible), token]
+	// Depth is the gauge that shows whether scroll enqueues batches faster than the worker drains
+	// them - the cost this queue pays for using enqueue rather than reset_and_enqueue.
+	df::bump(df::thumbnail_perf.scan_batches_queued);
+	df::record_peak(df::thumbnail_perf.scan_batches_pending_peak,
+	                df::thumbnail_perf.scan_batches_pending.fetch_add(1, std::memory_order_relaxed) + 1);
+
+	_async.queue_async(async_queue::scan_displayed_items, [this, requests = std::move(requests), token]
 	{
 		df::scope_locked_inc thumbnailing(thumbnailing_items);
+		df::thumbnail_perf.scan_batches_pending.fetch_sub(1, std::memory_order_relaxed);
 
-		if (!visible.empty())
+		if (!requests.empty())
 		{
-			scan_items(visible, true, false, true, false, token);
-			_async.invalidate_view(view_invalid::view_layout | view_invalid::group_layout);
+			scan_batch_stats stats;
+			const auto metadata_refresh_needed = scan_items(requests, false, true, false, token, false, &stats);
+
+			df::bump(df::thumbnail_perf.scan_batches);
+			if (token.is_cancelled()) df::bump(df::thumbnail_perf.scan_batches_cancelled);
+			df::bump(df::thumbnail_perf.scan_thumbs_requested, stats.thumbs_requested);
+			df::bump(df::thumbnail_perf.scan_thumbs_scanned, stats.thumbs_scanned);
+
+			_async.queue_ui([this, token, metadata_refresh_needed]
+			{
+				if (token.is_cancelled()) return;
+				_async.invalidate_view(metadata_refresh_needed
+					? view_invalid::view_layout | view_invalid::group_layout
+					: view_invalid::view_redraw);
+			});
 		}
 	});
 }
 
-void index_state::queue_update_presence(df::item_set items)
+void index_state::queue_stage_thumbnails(df::item_elements items)
 {
-	if (!items.empty())
+	if (items.empty()) return;
+
+	df::assert_true(ui::is_ui_thread());
+	for (const auto& item : items)
 	{
-		_async.queue_async(async_queue::index_presence_single, [this, items = std::move(items)]
+		item->stage_thumbnail_surface(_async, true);
+	}
+}
+
+void index_state::publish_thumbnail(std::weak_ptr<df::item_element> item, df::file_path path,
+	ui::const_image_ptr thumbnail, ui::const_image_ptr cover_art, const df::date_t timestamp,
+	const bool fade_in, const bool stage_surface) const
+{
+	_async.queue_ui([this, item = std::move(item), path = std::move(path), thumbnail = std::move(thumbnail),
+	                 cover_art = std::move(cover_art), timestamp, fade_in, stage_surface]() mutable
+	{
+		const auto current_item = item.lock();
+		if (!current_item || current_item->path() != path) return;
+
+		const auto previous_dims = current_item->layout_dims();
+		const auto previous_orientation = current_item->layout_orientation();
+		current_item->thumbnail(std::move(thumbnail), std::move(cover_art), timestamp, fade_in);
+		const auto geometry_changed = previous_dims != current_item->layout_dims() ||
+			previous_orientation != current_item->layout_orientation();
+		if (stage_surface)
 		{
-			const auto start_ms = df::now_ms();
-			update_presence(items);
-			_async.invalidate_view(view_invalid::view_layout | view_invalid::group_layout);
-			df::trace(std::format("Index update presence in {} ms", df::now_ms() - start_ms));
+			current_item->stage_thumbnail_surface(_async, true);
+		}
+		else
+		{
+			_async.invalidate_view(view_invalid::view_redraw);
+		}
+		if (geometry_changed) _async.invalidate_view(view_invalid::view_layout);
+	});
+}
+
+void index_state::publish_thumbnails(thumbnail_results results, const bool invalidate_group_layout) const
+{
+	if (results.empty() && !invalidate_group_layout) return;
+
+	_async.queue_ui([this, results = std::move(results), invalidate_group_layout]() mutable
+	{
+		auto geometry_changed = false;
+		df::bump(df::thumbnail_perf.published_db, results.size());
+
+		for (auto& result : results)
+		{
+			const auto item = result.lifetime.lock();
+			if (!item || item->path() != result.path) continue;
+
+			const auto previous_dims = item->layout_dims();
+			const auto previous_orientation = item->layout_orientation();
+			item->thumbnail(std::move(result.thumbnail), std::move(result.cover_art), result.timestamp);
+			geometry_changed = geometry_changed || previous_dims != item->layout_dims() ||
+				previous_orientation != item->layout_orientation();
+		}
+
+		_async.invalidate_view(invalidate_group_layout || geometry_changed
+			? view_invalid::view_redraw | view_invalid::view_layout
+			: view_invalid::view_redraw);
+	});
+}
+
+void index_state::publish_item_update(std::weak_ptr<df::item_element> item, df::file_path path) const
+{
+	_async.queue_ui([this, item = std::move(item), path = std::move(path)]
+	{
+		const auto current_item = item.lock();
+		if (!current_item || current_item->path() != path) return;
+
+		const auto current_info = find_item(path);
+		if (current_info.name != path.name()) return;
+
+		current_item->update(path, current_info);
+	});
+}
+
+void index_state::publish_thumbnail_failure(std::weak_ptr<df::item_element> item, df::file_path path) const
+{
+	_async.queue_ui([item = std::move(item), path = std::move(path)]
+	{
+		const auto current_item = item.lock();
+		if (!current_item || current_item->path() != path) return;
+
+		df::bump(df::thumbnail_perf.load_failures);
+		current_item->failed_loading_thumbnail(true);
+	});
+}
+
+void index_state::publish_crc(std::weak_ptr<df::item_element> item, df::file_path path, const df::file_size size,
+	const df::item_online_status online_status, const uint32_t existing_crc, const uint32_t crc)
+{
+	_async.queue_ui([this, item = std::move(item), path = std::move(path), size, online_status, existing_crc, crc]
+	{
+		const auto current_item = item.lock();
+		if (!current_item || current_item->path() != path || current_item->file_size() != size ||
+			current_item->online_status() != online_status || current_item->crc32c() != existing_crc)
+		{
+			return;
+		}
+
+		save_crc(path, crc);
+		current_item->crc32c(crc);
+		// A checksum changes no tile geometry, so a redraw is enough; relayout here re-wrapped the
+		// grid under the pointer while duplicate detection worked through a folder.
+		_async.invalidate_view(view_invalid::view_redraw | view_invalid::presence);
+	});
+}
+
+void index_state::queue_load_visible_thumbnails(df::item_elements visible)
+{
+	df::assert_true(ui::is_ui_thread());
+	if (visible.empty()) return;
+
+	queue_stage_thumbnails(visible);
+
+	auto queue_sources = [this](const df::item_elements& items)
+	{
+		df::item_elements local;
+		df::item_elements offline;
+		for (const auto& item : items)
+		{
+			item->add_if_thumbnail_load_needed(local);
+			item->add_if_shell_thumbnail_needed(offline);
+		}
+		if (!local.empty()) queue_scan_displayed_items(std::move(local));
+		if (!offline.empty()) queue_scan_offline_thumbnails(std::move(offline));
+	};
+
+	database::thumbnail_requests requests;
+	df::item_elements resolved;
+	for (const auto& item : visible)
+	{
+		if (item->begin_db_thumbnail_query())
+		{
+			requests.emplace_back(item, item->path(), item->folder(), item->is_folder(), item->has_thumb());
+		}
+		else
+		{
+			resolved.emplace_back(item);
+		}
+	}
+
+	if (!requests.empty())
+	{
+		_async.queue_database([this, requests = std::move(requests)](const database& db)
+		{
+			db.load_thumbnails(*this, requests);
+			_async.queue_ui([this, requests = std::move(requests)]
+			{
+				df::item_elements current_visible;
+				current_visible.reserve(requests.size());
+				for (const auto& request : requests)
+				{
+					auto item = request.lifetime.lock();
+					if (item && item->path() == request.path && item->is_visible())
+						current_visible.emplace_back(std::move(item));
+				}
+				queue_load_visible_thumbnails(std::move(current_visible));
+			});
 		});
 	}
+
+	queue_sources(resolved);
+}
+
+void index_state::queue_load_thumbnail(df::item_element_ptr item)
+{
+	if (!item || item->has_thumb()) return;
+
+	auto load_from_source = [this, item]
+	{
+		if (item->has_thumb())
+		{
+			queue_stage_thumbnails({item});
+			_async.invalidate_view(view_invalid::tooltip | view_invalid::view_redraw);
+			return;
+		}
+
+		df::item_set items;
+		item->add_to(items);
+
+		if (item->online_status() == df::item_online_status::offline)
+		{
+			queue_scan_offline_thumbnails(std::move(items), false);
+		}
+		else if (item->should_load_thumbnail())
+		{
+			auto requests = make_scan_requests(items, true);
+			_async.queue_async(async_queue::scan_folder, [this, requests = std::move(requests)]
+			{
+				df::scope_locked_inc thumbnailing(thumbnailing_items);
+				scan_items(requests, false, true, false, {});
+				_async.invalidate_view(view_invalid::tooltip | view_invalid::view_redraw);
+			});
+		}
+	};
+
+	if (item->begin_db_thumbnail_query())
+	{
+		df::item_set items;
+		item->add_to(items);
+		auto requests = database::make_thumbnail_requests(items);
+		_async.queue_database([this, requests = std::move(requests), load_from_source](const database& db)
+		{
+			db.load_thumbnails(*this, requests);
+			_async.queue_ui(load_from_source);
+		});
+	}
+	else
+	{
+		load_from_source();
+	}
+}
+
+void index_state::queue_scan_offline_thumbnails(df::item_set items, const bool visible_only)
+{
+	// Cloud (OneDrive) thumbnail fetch for VISIBLE offline placeholders. Unlike the local
+	// displayed-items path (queue_scan_displayed_items), this does NOT use a cancel token: it is
+	// re-enqueued on every layout to drive the view_state::tick retry of icon-only items, and a
+	// cancel token would let each re-enqueue cancel the in-flight batch and strand its pre-marked
+	// items. Instead, staying on the visible set is done PER ITEM: each item carries an is_visible()
+	// flag maintained by items_view::update_visible_items_list, and the batch skips (and re-arms) any
+	// item that has scrolled out of view since it was queued -- so scrolling around a large folder
+	// abandons stale screenfuls instead of grinding through them. The worker cannot read that
+	// UI-owned flag, so a batch counter tells it when a newer visible set has been queued and the
+	// rest of its own items are stale. Items are marked shell_thumbnail_pending up front to
+	// de-duplicate concurrent batches; that flag is cleared on every exit path (fetched, skipped or
+	// failed) so nothing is ever left stuck pending.
+
+	df::assert_true(ui::is_ui_thread());
+
+	struct request
+	{
+		std::weak_ptr<df::item_element> lifetime;
+		df::file_path path;
+		df::date_t modified;
+		uint64_t generation = 0;
+		bool eligible = false;
+		bool abandoned = false;
+	};
+
+	struct result
+	{
+		request source;
+		platform::get_cached_file_properties_response response =
+			platform::get_cached_file_properties_response::fail;
+		ui::const_image_ptr thumbnail;
+	};
+
+	std::vector<request> requests;
+	requests.reserve(items.size());
+	for (const auto& i : items.items())
+	{
+		const auto eligible = (!visible_only || i->is_visible()) && !i->is_folder() &&
+			i->online_status() == df::item_online_status::offline;
+		requests.emplace_back(i, i->path(), i->file_modified(), i->begin_thumbnail_request(), eligible);
+	}
+
+	// The single-item hover path does not supersede a visible batch.
+	const auto batch = visible_only ? ++_offline_thumbnail_batch : _offline_thumbnail_batch.load();
+
+	_async.queue_async(async_queue::cloud, [this, requests = std::move(requests), visible_only, batch]() mutable
+	{
+		df::scope_locked_inc thumbnailing(thumbnailing_items);
+		std::vector<result> results;
+		results.reserve(requests.size());
+
+		for (auto& request : requests)
+		{
+			// On shutdown the UI publication pass will not run at all, so there is nothing left to
+			// clear and the remaining requests are simply dropped.
+			if (df::is_closing) break;
+
+			// A newer visible set has been queued, so the rest of this batch is stale. Report it as
+			// abandoned rather than breaking out: the UI pass must still clear every pending claim, and
+			// items that are still visible are re-armed for the next retry pass.
+			if (visible_only && batch != _offline_thumbnail_batch.load(std::memory_order_relaxed))
+			{
+				request.abandoned = true;
+			}
+
+			if (!request.eligible || request.abandoned)
+			{
+				results.emplace_back(request, platform::get_cached_file_properties_response::pending, nullptr);
+				continue;
+			}
+
+			ui::const_image_ptr shell_thumb;
+			const auto response = platform::get_shell_thumbnail(
+				request.path, setting.thumbnail_max_dimension, true, shell_thumb);
+			result completed{request, response, {}};
+
+			if (response == platform::get_cached_file_properties_response::ok && is_valid(shell_thumb))
+			{
+				// Downscale/re-encode to the thumbnail size budget, matching scan_offline_item.
+				files ff;
+				file_encode_params encode_params;
+				encode_params.jpeg_save_quality = thumbnail_quality;
+
+				auto thumbnail_image = shell_thumb;
+				const auto max_extent = setting.thumbnail_max_dimension;
+				const auto thumb_extent = thumbnail_image->dimensions();
+
+				if (max_extent.cx < thumb_extent.cx || max_extent.cy < thumb_extent.cy)
+				{
+					auto surf = ff.image_to_surface(thumbnail_image, max_extent);
+					thumbnail_image = ff.surface_to_image(surf, {}, encode_params, ui::image_format::Unknown);
+				}
+
+				if (is_valid(thumbnail_image) && thumbnail_image->data().size() < df::two_fifty_six_k)
+				{
+					completed.thumbnail = thumbnail_image;
+					save_thumbnail(request.path, thumbnail_image, {}, request.modified);
+				}
+			}
+
+			results.emplace_back(std::move(completed));
+		}
+
+		_async.queue_ui([this, results = std::move(results), visible_only]() mutable
+		{
+			auto geometry_changed = false;
+			for (auto& completed : results)
+			{
+				const auto item = completed.source.lifetime.lock();
+				if (!item || !item->is_current_thumbnail_request(completed.source.generation)) continue;
+
+				item->shell_thumbnail_pending(false);
+				if (!completed.source.eligible || (visible_only && !item->is_visible()) || item->is_folder() ||
+					item->online_status() != df::item_online_status::offline)
+				{
+					continue;
+				}
+
+				if (completed.source.abandoned)
+				{
+					// Superseded by a newer visible set before it was fetched - re-arm it for the retry
+					// pass without spending one of its bounded provider attempts.
+					item->shell_thumbnail_retry_pending(true, false);
+					continue;
+				}
+
+				if (is_valid(completed.thumbnail))
+				{
+					df::bump(df::thumbnail_perf.published_shell);
+					const auto previous_dims = item->layout_dims();
+					const auto previous_orientation = item->layout_orientation();
+					item->thumbnail(std::move(completed.thumbnail), {}, completed.source.modified, true);
+					geometry_changed = geometry_changed || previous_dims != item->layout_dims() ||
+						previous_orientation != item->layout_orientation();
+					item->stage_thumbnail_surface(_async);
+				}
+				else if (completed.response == platform::get_cached_file_properties_response::pending)
+				{
+					df::bump(df::thumbnail_perf.shell_retries);
+					item->shell_thumbnail_retry_pending(true);
+				}
+				else
+				{
+					df::bump(df::thumbnail_perf.load_failures);
+					item->failed_loading_thumbnail(true);
+				}
+			}
+
+			_async.invalidate_view(view_invalid::tooltip | view_invalid::view_redraw |
+				(geometry_changed ? view_invalid::view_layout : view_invalid::none));
+		});
+	});
+}
+
+// Debounce wait that observes shutdown, so a queued refresh cannot hold a worker queue open
+// for a third of a second while the application is closing.
+static bool debounce_wait(const int total_ms)
+{
+	constexpr auto slice_ms = 25;
+
+	for (auto remaining = total_ms; remaining > 0; remaining -= slice_ms)
+	{
+		if (df::is_closing) return false;
+		std::this_thread::sleep_for(std::chrono::milliseconds(std::min(slice_ms, remaining)));
+	}
+
+	return !df::is_closing;
 }
 
 void index_state::queue_update_predictions()
 {
-	_async.queue_async(async_queue::index_predictions_single, [this]
+	const auto generation = ++_predictions_generation;
+
+	_async.queue_async(async_queue::index_predictions_single, [this, generation]
 	{
+		if (!debounce_wait(333)) return;
+		if (generation != _predictions_generation.load()) return;
+
 		update_predictions();
+		if (generation != _predictions_generation.load()) return;
+
+		// Predictions only feed the sidebar; asking for refresh_items here closed a cycle that never
+		// reached a steady state.
 		_async.invalidate_view(view_invalid::sidebar);
 	});
 }
 
 void index_state::queue_update_summary()
 {
-	_async.queue_async(async_queue::index_summary_single, [this]
+	uint64_t generation;
 	{
-		update_summary();
+		platform::exclusive_lock lock(_summary_rw);
+		generation = ++_summary_generation;
+	}
+
+	_async.queue_async(async_queue::index_summary_single, [this, generation]
+	{
+		if (!debounce_wait(333)) return;
+		{
+			platform::shared_lock lock(_summary_rw);
+			if (generation != _summary_generation) return;
+		}
+
+		update_summary(generation);
+		{
+			platform::shared_lock lock(_summary_rw);
+			if (generation != _summary_generation) return;
+		}
 		_async.invalidate_view(view_invalid::sidebar);
-		std::this_thread::sleep_for(std::chrono::milliseconds(333));
 	});
 }
 
 std::vector<str::cached> index_state::distinct_genres() const
 {
-	platform::shared_lock lock(_summary_rw);
-	const auto found = _summary._distinct_text.find(prop::genre);
-	return found != _summary._distinct_text.end()
+	index_metadata_summary_const_ptr summary;
+	{
+		platform::shared_lock lock(_summary_rw);
+		summary = _summary._metadata;
+	}
+	const auto found = summary->_distinct_text.find(prop::genre);
+	return found != summary->_distinct_text.end()
 		       ? std::vector<str::cached>{found->second.begin(), found->second.end()}
 		       : std::vector<str::cached>{};
 }
 
 std::vector<std::string> index_state::auto_complete_text(const prop::key_ref key)
 {
-	platform::shared_lock lock(_summary_rw);
-	const auto found = _summary._distinct_text.find(key);
-	return found != _summary._distinct_text.end()
+	index_metadata_summary_const_ptr summary;
+	{
+		platform::shared_lock lock(_summary_rw);
+		summary = _summary._metadata;
+	}
+	const auto found = summary->_distinct_text.find(key);
+	return found != summary->_distinct_text.end()
 		       ? std::vector<std::string>{found->second.begin(), found->second.end()}
 		       : std::vector<std::string>{};
+}
+
+void index_state::queue_validate_changed_folders(df::unique_folders paths)
+{
+	_async.queue_async(async_queue::scan_folder, [this, paths = std::move(paths)]
+	{
+		const auto now = platform::now();
+		auto changed = false;
+
+		for (const auto& path : paths)
+		{
+			changed |= validate_folder(path, true, now).was_updated;
+		}
+
+		if (changed)
+		{
+			_async.invalidate_view(view_invalid::refresh_items);
+		}
+	});
 }
 
 void index_state::queue_scan_folder(const df::folder_path path)
@@ -2743,10 +4220,15 @@ void index_state::merge_folder(const df::folder_path folder_path, const db_items
 				old_first->metadata = file_first->metadata;
 				old_first->metadata_scanned = file_first->metadata_scanned;
 				old_first->crc32c = file_first->crc32c;
+				old_first->calc_search_presence();
 				++file_first;
 				++old_first;
 			}
 		}
+
+		// the merged metadata can both add and remove bits, so rebuild the summary rather than
+		// OR-ing into the stale one
+		folder_node->reset_search_presence();
 	}
 	else
 	{
@@ -2767,26 +4249,37 @@ void index_state::merge_folder(const df::folder_path folder_path, const db_items
 			file_node.crc32c = i->crc32c;
 			file_node.metadata_scanned = i->metadata_scanned;
 
-			file_node.calc_bloom_bits();
+			file_node.calc_search_presence();
 			++node;
 		}
 
 		df::assert_true(std::is_sorted(files.begin(), files.end()));
 
-		folder_node = std::make_shared<df::index_folder_item>(files);
+		folder_node = std::make_shared<df::index_folder_item>(std::move(files));
 		folder_node->name = folder_path.name();
-		folder_node->reset_bloom_bits();
+
+		if (found_in_index)
+		{
+			// the replacement stands in for the same folder, so it must keep what the scan learned
+			folder_node->is_in_collection = found_in_index->is_in_collection.load();
+			folder_node->is_excluded = found_in_index->is_excluded.load();
+			folder_node->is_read_only = found_in_index->is_read_only;
+			folder_node->volume = found_in_index->volume;
+			folder_node->created = found_in_index->created;
+			folder_node->modified = found_in_index->modified;
+			folder_node->child_folders = found_in_index->folders_snapshot();
+		}
+
+		folder_node->reset_search_presence();
 		_items.replace(folder_path, folder_node);
 	}
-
-	_cache_items_loaded = true;
 }
 
 static df::count_and_size sum_items(const df::index_folder_info_const_ptr& folder)
 {
 	df::count_and_size result;
 
-	for (const auto& sub_folder : folder->folders)
+	for (const auto& sub_folder : *folder->folders_snapshot())
 	{
 		result += sum_items(sub_folder);
 	}
@@ -2831,39 +4324,248 @@ std::vector<index_state::folder_total> index_state::includes_with_totals() const
 	return results;
 }
 
+// Rebuilds the case-insensitively-sorted vocabulary lookup before its immutable publication.
+bool index_state::rebuild_sorted_words(index_metadata_summary& summary, const uint64_t generation) const
+{
+	auto& sorted = summary._sorted_words;
+	sorted.clear();
+	sorted.reserve(summary._distinct_words.size());
+
+	for (const auto& kv : summary._distinct_words) sorted.emplace_back(kv.first);
+
+	std::ranges::sort(sorted, [](const std::string_view a, const std::string_view b) { return str::icmp(a, b) < 0; });
+	if (generation != 0)
+	{
+		platform::shared_lock lock(_summary_rw);
+		if (generation != _summary_generation) return false;
+	}
+
+	// Trigram index over the vocabulary (term-id == index into _sorted_words). This accelerates
+	// the per-keystroke *substring* prediction path, which would otherwise scan every term.
+	summary._word_trigrams = df::trigram_index{};
+
+	for (uint32_t i = 0; i < sorted.size(); ++i)
+	{
+		if (generation != 0 && (i & 255u) == 0)
+		{
+			platform::shared_lock lock(_summary_rw);
+			if (generation != _summary_generation) return false;
+		}
+		summary._word_trigrams.add(i, sorted[i]);
+	}
+
+	return true;
+}
+
 std::vector<index_state::auto_complete_word> index_state::auto_complete_words(
 	const std::string_view query, const size_t max_results)
 {
 	df::assert_true(!ui::is_ui_thread());
 
 	std::vector<auto_complete_word> result;
-	platform::shared_lock lock(_summary_rw);
-
-	if (query.size() > 2)
+	index_metadata_summary_const_ptr summary;
 	{
-		for (const auto& word : _summary._distinct_words)
-		{
-			const auto found = str::ifind2(word.first, query, 0);
+		platform::shared_lock lock(_summary_rw);
+		summary = _summary._metadata;
+	}
 
-			if (found.found)
+	// Prefix matches first: a binary search over the sorted snapshot (O(log N + k)) rather
+	// than a full scan of the vocabulary. Prefix hits are the strongest predictions and are
+	// returned ahead of interior substring matches.
+	const auto [prefix_first, prefix_last] = word_prefix_range(summary->_sorted_words, query);
+
+	for (auto it = prefix_first; it != prefix_last && result.size() < max_results; ++it)
+	{
+		const auto count = summary->_distinct_words.find(*it);
+		result.emplace_back(std::string(*it), std::vector<str::part_t>{{0, query.size()}},
+		                    count == summary->_distinct_words.end() ? 0 : count->second.i);
+	}
+
+	// For longer queries, top up with interior substring matches the prefix pass cannot find,
+	// skipping words already added as prefix matches. A single-token query (no spaces) matches
+	// as a contiguous substring, so the vocabulary trigram index can supply the candidates and
+	// we verify each with str::ifind2 - identical results to a full scan, but far fewer checks.
+	// Multi-word queries use ifind2's word-gap semantics, which trigrams cannot bound, so those
+	// (and queries too short for a trigram) fall back to a full scan.
+	if (query.size() > 2 && result.size() < max_results)
+	{
+		// str::normalze_for_compare folds every whitespace form to a word gap, not just a space,
+		// so any of them means the query has to take the full-scan path.
+		const auto candidates = query.find_first_of(" \t\n\v\f\r") == std::string_view::npos
+			                        ? summary->_word_trigrams.candidates(query)
+			                        : std::nullopt;
+
+		if (candidates)
+		{
+			for (const auto id : *candidates)
 			{
-				result.emplace_back(std::string(word.first), found.parts);
-				if (result.size() > max_results) break;
+				if (result.size() >= max_results) break;
+				if (id >= summary->_sorted_words.size()) continue;
+
+				const auto word = summary->_sorted_words[id];
+				if (str::starts(word, query)) continue; // already added by the prefix pass
+
+				const auto found = str::ifind2(word, query, 0);
+				if (found.found)
+				{
+					const auto count = summary->_distinct_words.find(word);
+					result.emplace_back(std::string(word), found.parts,
+					                    count == summary->_distinct_words.end() ? 0 : count->second.i);
+				}
+			}
+		}
+		else
+		{
+			for (const auto& word : summary->_distinct_words)
+			{
+				if (result.size() >= max_results) break;
+				if (str::starts(word.first, query)) continue; // already added by the prefix pass
+
+				const auto found = str::ifind2(word.first, query, 0);
+				if (found.found) result.emplace_back(std::string(word.first), found.parts, word.second.i);
 			}
 		}
 	}
-	else
+
+	return result;
+}
+
+std::vector<index_state::auto_complete_word> index_state::auto_complete_tag_companions(
+	const std::vector<std::string>& tags, const std::string_view prefix, const size_t max_results) const
+{
+	std::vector<auto_complete_word> result;
+	df::hash_map<std::string, int, df::ihash, df::ieq> scores;
+	index_metadata_summary_const_ptr summary;
 	{
-		for (const auto& word : _summary._distinct_words)
+		platform::shared_lock lock(_summary_rw);
+		summary = _summary._metadata;
+	}
+
+	for (const auto& tag : tags)
+	{
+		const auto found = summary->_tag_companions.find(tag);
+		if (found == summary->_tag_companions.end()) continue;
+
+		for (const auto& [companion, count] : found->second)
 		{
-			if (str::starts(word.first, query))
+			if ((prefix.empty() || str::starts(companion, prefix)) &&
+				std::ranges::none_of(tags, [&companion](const auto& existing)
+				{
+					return str::icmp(existing, companion) == 0;
+				}))
 			{
-				result.emplace_back(std::string(word.first), std::vector<str::part_t>{{0, query.size()}});
-				if (result.size() > max_results) break;
+				scores[std::string(companion)] += count.i;
 			}
 		}
 	}
 
+	std::vector<std::pair<std::string, int>> ranked(scores.begin(), scores.end());
+	std::ranges::sort(ranked, [](const auto& left, const auto& right)
+	{
+		return left.second == right.second
+			       ? str::icmp(left.first, right.first) < 0
+			       : left.second > right.second;
+	});
+
+	for (const auto& [tag, count] : ranked)
+	{
+		if (result.size() >= max_results) break;
+		result.emplace_back(std::format("#{}", tag),
+		                    prefix.empty() ? std::vector<str::part_t>{} : std::vector<str::part_t>{{1, prefix.size()}},
+		                    count);
+	}
+
+	return result;
+}
+
+// locations.md 3.4: a completion the collection has no photos anywhere near is noise. The heat
+// map is coordinate-based, so unlike the location groups it also counts GPS-only items that
+// carry no place text -- which is the majority of a camera roll. One cell plus its neighbours is
+// about the coarsest area a single place name can plausibly stand for.
+static uint32_t collection_items_near(const df::location_heat_map& heat_map, const gps_coordinate coord)
+{
+	if (!coord.is_valid()) return 0;
+
+	constexpr auto map_width = static_cast<int>(df::location_heat_map::map_width);
+	constexpr auto map_height = static_cast<int>(df::location_heat_map::map_height);
+
+	const auto cell = df::location_heat_map::calc_map_loc(coord);
+	uint32_t total = 0;
+
+	for (auto dy = -1; dy <= 1; ++dy)
+	{
+		const auto y = cell.y + dy;
+		if (y < 0 || y >= map_height) continue;
+
+		for (auto dx = -1; dx <= 1; ++dx)
+		{
+			// Longitude wraps, latitude does not.
+			const auto x = ((cell.x + dx) % map_width + map_width) % map_width;
+			total += heat_map.coordinates[y * map_width + x];
+		}
+	}
+
+	return total;
+}
+
+// locations.md 3.4 + 3.5: a place completion commits the canonical location term, never the bare
+// name. A bare name would run a text search over stored fields, which is exactly the empty result
+// the one-location-vocabulary rule exists to remove.
+std::vector<index_state::auto_complete_word> index_state::auto_complete_locations(
+	const std::string_view query, const size_t max_results, const df::location_level level) const
+{
+	std::vector<auto_complete_word> result;
+	if (query.empty()) return result;
+
+	const auto summary = histograms();
+	df::hash_set<std::string, df::ihash, df::ieq> seen;
+
+	for (const auto& match : _locations.auto_complete(query, static_cast<uint32_t>(max_results * 4),
+	                                                  setting.default_location))
+	{
+		std::string name;
+
+		switch (level)
+		{
+		case df::location_level::state: name = std::string(match.location.state.sv());
+			break;
+		case df::location_level::country: name = std::string(match.location.country.sv());
+			break;
+		default: name = qualified_name(match.location);
+			break;
+		}
+
+		if (name.empty() || !seen.emplace(name).second) continue;
+
+		// A level-qualified scope collapses many gazetteer rows onto one label, so the row has to
+		// have matched THAT label: "Frankfurt" is a fine hit for `loc:franc` and a wrong one for
+		// `country:franc`, where the answer is France.
+		if ((level == df::location_level::state || level == df::location_level::country) &&
+			str::ifind(name, query) == std::string_view::npos)
+		{
+			continue;
+		}
+
+		auto text = df::search_t().location(name, level).text();
+		std::vector<str::part_t> highlights;
+
+		if (const auto found = str::ifind(text, query); found != std::string_view::npos)
+		{
+			highlights.emplace_back(found, query.size());
+		}
+
+		result.emplace_back(std::move(text), std::move(highlights),
+		                    static_cast<int>(collection_items_near(summary->_locations, match.location.position)));
+	}
+
+	// A place the collection actually holds photos near is the one the user meant; the gazetteer
+	// order (exact spelling, then population) decides the rest.
+	std::ranges::stable_sort(result, [](const auto& left, const auto& right)
+	{
+		return left.occurrences > right.occurrences;
+	});
+
+	if (result.size() > max_results) result.resize(max_results);
 	return result;
 }
 
@@ -2874,13 +4576,21 @@ std::vector<index_state::auto_complete_folder> index_state::auto_complete_folder
 
 	std::vector<auto_complete_folder> result;
 
-	for (const auto& folders : {
-		     _summary._distinct_prime_folders, _summary._distinct_folders, _summary._distinct_other_folders
-	     })
+	// Retain the immutable folder snapshots under a shared lock, then match unlocked.
+	std::array<std::shared_ptr<const df::unique_folders>, 3> folder_sets;
+
+	{
+		platform::shared_lock lock(_summary_rw);
+		folder_sets[0] = _summary._distinct_prime_folders;
+		folder_sets[1] = _summary._distinct_folders;
+		folder_sets[2] = _summary._distinct_other_folders;
+	}
+
+	for (const auto& folders : folder_sets)
 	{
 		if (query.size() > 2)
 		{
-			for (const auto& folder : folders)
+			for (const auto& folder : *folders)
 			{
 				auto name_pos = folder.is_root() ? 0u : folder.find_last_slash() + 1;
 				if (name_pos == std::string_view::npos) name_pos = 0;
@@ -2900,7 +4610,7 @@ std::vector<index_state::auto_complete_folder> index_state::auto_complete_folder
 		}
 		else
 		{
-			for (const auto& folder : folders)
+			for (const auto& folder : *folders)
 			{
 				const auto name_pos = folder.is_root() ? 0u : folder.find_last_slash() + 1;
 

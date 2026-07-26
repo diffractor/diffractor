@@ -86,10 +86,9 @@ public:
 
 	void on_mouse_left_button_up(const pointi loc, const ui::key_state keys) override
 	{
-		const auto can_invoke = _tracking && _hover && _can_click;
-
 		_last_loc = loc;
 		_hover = _bounds.contains(loc);
+		const auto can_invoke = _tracking && _hover && _can_click;
 		_tracking = false;
 		interaction_context ic{loc, _element_offset, _tracking};
 		update_highlight();
@@ -151,7 +150,8 @@ static view_controller_ptr default_controller_from_location(T& this_element, con
                                                             const pointi loc, const pointi element_offset,
                                                             const std::vector<recti>& excluded_bounds)
 {
-	if ((this_element.can_invoke() || this_element.has_tooltip()) && this_element.bounds.contains(loc - element_offset))
+	if (this_element.is_visible() && (this_element.can_invoke() || this_element.has_tooltip()) &&
+		this_element.bounds.contains(loc - element_offset))
 	{
 		auto e = this_element.shared_from_this();
 		auto bounds = e->bounds;
@@ -257,9 +257,8 @@ public:
 
 	handle_move_controller(const view_host_ptr& host, TParent& parent, const rectd& start, const bool l, const bool t,
 	                       const bool r,
-	                       const bool b) : view_controller(host, _handle_bounds.round()), _parent(parent)
+	                       const bool b) : view_controller(host, start.round()), _parent(parent), _handle_bounds(start)
 	{
-		_handle_bounds = start;
 		_left = l;
 		_top = t;
 		_right = r;

@@ -70,13 +70,6 @@ namespace df
 		return last;
 	}
 
-	constexpr std::string_view::size_type find_filename(const std::string_view path)
-	{
-		const auto last_slash = path.find_last_of("/\\");
-		if (last_slash != std::string_view::npos && path.size() > last_slash) return last_slash;
-		return std::string_view::npos;
-	}
-
 	constexpr bool is_illegal_name(const std::string_view name)
 	{
 		if (name.size() > 215)
@@ -422,7 +415,9 @@ namespace df
 		          const std::string_view ext_in) : _folder(folder)
 		{
 			auto name = std::string(name_in);
-			if (ext_in.front() != '.' && name.back() != '.') name += '.';
+			const auto ext_has_dot = !ext_in.empty() && ext_in.front() == '.';
+			const auto name_has_dot = !name.empty() && name.back() == '.';
+			if (!ext_in.empty() && !ext_has_dot && !name_has_dot) name += '.';
 			name += ext_in;
 
 			_name = str::cache(name);

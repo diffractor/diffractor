@@ -14,6 +14,8 @@
 #include "model_location.h"
 #include "util_interfaces.h"
 
+enum class group_key_type : uint32_t;
+
 constexpr auto default_custom_folder_structure = "{year}\\{created}";
 
 // Volume boost above 100%. The device volume caps at 100%, so the 100%..200%
@@ -21,6 +23,18 @@ constexpr auto default_custom_folder_structure = "{year}\\{created}";
 // enough to lift very quiet sources well above unity.
 constexpr int media_volume_boost = 2000;
 constexpr double media_volume_boost_gain = 8.0;
+
+enum class zoom_navigator_mode : uint32_t
+{
+	auto_hide,
+	pinned,
+	off
+};
+
+constexpr bool is_valid_zoom_navigator_mode(const uint32_t value) noexcept
+{
+	return value <= static_cast<uint32_t>(zoom_navigator_mode::off);
+}
 
 namespace features
 {
@@ -55,9 +69,67 @@ namespace features
 	constexpr uint64_t print = 1ull << 42;
 	constexpr uint64_t scan = 1ull << 43;
 	constexpr uint64_t import = 1ull << 44;
-	constexpr uint64_t pdf = 1ull << 45;
-	constexpr uint64_t remove_metadata = 1ull << 46;
+	// bit 45 is retired (was an unimplemented pdf tool that never recorded)
+	// bit 46 is retired (was the shell Remove Metadata tool, withdrawn for rework)
 	constexpr uint64_t sync = 1ull << 47;
+
+	// One bit per view. The tool bits above only record a completed run, so they cannot
+	// distinguish a view that is opened and abandoned from one that is never opened at all.
+	constexpr uint64_t view_items = 1ull << 48;
+	constexpr uint64_t view_media = 1ull << 49;
+	constexpr uint64_t view_edit = 1ull << 50;
+	constexpr uint64_t view_rename = 1ull << 51;
+	constexpr uint64_t view_batch = 1ull << 52;
+	constexpr uint64_t view_import = 1ull << 53;
+	constexpr uint64_t view_sync = 1ull << 54;
+	constexpr uint64_t view_locate = 1ull << 55;
+	constexpr uint64_t view_tags = 1ull << 56;
+
+	constexpr uint64_t view_bit(const view_type v)
+	{
+		switch (v)
+		{
+		case view_type::items: return view_items;
+		case view_type::media: return view_media;
+		case view_type::edit: return view_edit;
+		case view_type::rename: return view_rename;
+		case view_type::batch: return view_batch;
+		case view_type::import: return view_import;
+		case view_type::sync: return view_sync;
+		case view_type::locate: return view_locate;
+		case view_type::tags: return view_tags;
+		case view_type::none: break;
+		}
+		return 0;
+	}
+}
+
+// Feature use accumulates from several threads: the UI thread (views, display, slideshow),
+// the query worker (search terms) and file workers (burn), while the web worker reads and
+// clears it after a successful report. It is therefore a single process-wide atomic rather
+// than a settings_t member - settings_t is value-copied by the options dialog, which would
+// otherwise silently roll the mask back to whatever it was when the dialog opened.
+void record_feature_use(uint64_t f);
+uint64_t features_used_since_last_report();
+void load_feature_use(uint64_t f);
+
+// Clears only the bits that were actually reported so features recorded while the report
+// was in flight survive to the next one.
+void clear_reported_feature_use(uint64_t reported);
+
+
+// Issue #227: the default sidebar (favorite) tags must be seeded only on the very first
+// run, never again. `favorite_tags` is persisted as a single string, so an empty saved
+// value is otherwise indistinguishable from "never configured" and the defaults get
+// re-injected on every launch, resurrecting tags the user deliberately removed. The
+// persisted `favorite_tags_initialized` flag records that the user has configured
+// favorites at least once; after that an empty list is respected. Existing installations
+// created before the flag was added are also treated as initialized, including when their
+// saved list is empty. Returns true only for a newly-created settings root with no favorites.
+constexpr bool should_seed_default_favorite_tags(const bool initialized, const bool current_is_empty,
+                                                 const bool settings_root_created)
+{
+	return !initialized && current_is_empty && settings_root_created;
 }
 
 
@@ -66,39 +138,55 @@ class settings_t
 public:
 	settings_t();
 
-	void read(const platform::setting_file_ptr& store);
-	void write(const platform::setting_file_ptr& store) const;
+	void read();
+	void write() const;
 
 	// Constants
 	static constexpr int item_splitter_max = 10000;
 	static constexpr int item_scale_count = 8;
+	static constexpr int item_scale_position_max = 100;
 	static int item_scale_snaps[item_scale_count];
+	int item_scale_dimension() const;
+	void set_item_scale_position(int position);
+	void step_item_scale(int direction);
+
+	// Width of a tool view's controls panel, as a share of the resizable width in
+	// view_splitter_max units. Each view keeps its own position; zero means never dragged, so
+	// the view still gets its default proportion.
+	static constexpr int view_splitter_max = 10000;
+	static constexpr int view_splitter_count = 7;
+	std::array<int, view_splitter_count> view_splitter_positions{};
+	int view_splitter(view_type view) const;
+	bool set_view_splitter(view_type view, int pos);
+
+	// A zero delay would advance the slideshow every tick and divide by zero when drawing progress.
+	static constexpr int min_slideshow_delay = 1;
+	static constexpr int max_slideshow_delay = 30;
 
 	sizei thumbnail_max_dimension;
 	int resize_max_dimension = 0;
 	int media_volume = 0;
 	int slideshow_delay = 0;
 	int item_scale = 5;
+	int item_scale_position = -1;
 	int item_splitter_pos = 5;
 	int min_show_update_day = 0;
 
 	int jpeg_save_quality = 0;
 	int webp_quality = 0;
 	bool webp_lossless = false;
-	uint64_t features_used_since_last_report = 0;
 	uint32_t instantiations = 0;
 
 	std::string write_folder;
 	std::string write_name;
 	std::string available_version;
 	std::string available_test_version;
-	std::string last_tags;
 	std::string favorite_tags;
+	bool favorite_tags_initialized = false;
 	std::string language;
 	std::string sound_device;
-
-	bool set_copyright_credit = false;
 	std::string copyright_credit;
+	bool set_copyright_credit = false;
 	bool set_copyright_source = false;
 	std::string copyright_source;
 	bool set_copyright_creator = false;
@@ -135,7 +223,9 @@ public:
 #endif
 	bool can_animate = false;
 	repeat_mode repeat = repeat_mode::repeat_none;
+	zoom_navigator_mode zoom_navigator = zoom_navigator_mode::auto_hide;
 	bool auto_play = false;
+	bool auto_advance = false;
 	bool scale_up = false;
 	bool highlight_large_items = false;
 	bool sort_dates_descending = false;
@@ -148,8 +238,14 @@ public:
 	bool verbose_metadata = false;
 	bool raw_preview = true;
 	uint32_t detail_items = true;
+
+	// Whether items of this media type draw as a detail list rather than thumbnails. Held as a
+	// bitmask over group_key_type so the choice survives both a search that recreates the groups
+	// and a restart (issue #229). Every reader and writer goes through these two accessors so the
+	// bit rule cannot drift between the command, the group and the settings store.
+	bool is_detail_display(group_key_type type) const;
+	void set_detail_display(group_key_type type, bool detail);
 	bool show_shadow = true;
-	bool update_modified = true;
 	bool last_played_pos = true;
 	bool show_help_tooltips = true;
 
@@ -165,7 +261,8 @@ public:
 		bool show_ratings = false;
 		bool show_labels = false;
 		bool show_favorite_tags_only = false;
-		int history_years = 10;
+		int history_start_year = 0;
+		int width = 0; // user-set sidebar width in logical pixels; 0 = auto (preferred width)
 	} sidebar;
 
 	struct import_t
@@ -179,6 +276,7 @@ public:
 		bool ignore_previous = false;
 		bool overwrite_if_newer = false;
 		bool rename_different_attributes = false;
+		collision_policy collision = collision_policy::skip;
 	} import;
 
 	struct sync_t
@@ -190,6 +288,7 @@ public:
 		bool sync_remote_local = false;
 		bool sync_delete_local = false;
 		bool sync_delete_remote = false;
+		collision_policy collision = collision_policy::skip;
 	} sync;
 
 	struct
@@ -219,12 +318,14 @@ public:
 		bool webp_lossless = false;
 		bool limit_dimension = false;
 		int max_side = 0;
+		collision_policy collision = collision_policy::block_run;
 	} convert;
 
 	struct rename_t
 	{
 		std::string name_template;
 		std::string start_seq;
+		collision_policy collision = collision_policy::block_run;
 	} rename;
 
 	struct index_t
@@ -249,14 +350,12 @@ public:
 	} search;
 
 	gps_coordinate default_location;
+
+	// Locate view: restrict the selector strip to items still missing a location.
+	bool locate_only_without_location = false;
 };
 
 
 extern settings_t setting;
-
-static void record_feature_use(const uint64_t f)
-{
-	setting.features_used_since_last_report |= f;
-}
 
 std::vector<std::string_view> split_collection_folders(std::string_view text);

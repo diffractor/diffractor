@@ -380,12 +380,12 @@ public:
 		return result;
 	}
 
-	constexpr recti offset(const pointi pt) const noexcept
+	[[nodiscard]] constexpr recti offset(const pointi pt) const noexcept
 	{
 		return {left + pt.x, top + pt.y, right + pt.x, bottom + pt.y};
 	}
 
-	constexpr recti offset(const int x, const int y) const noexcept
+	[[nodiscard]] constexpr recti offset(const int x, const int y) const noexcept
 	{
 		return {left + x, top + y, right + x, bottom + y};
 	}
@@ -436,6 +436,17 @@ public:
 	}
 };
 
+constexpr int64_t distance_squared(const pointi point, const recti bounds) noexcept
+{
+	const auto dx = point.x < bounds.left
+		                ? static_cast<int64_t>(bounds.left) - point.x
+		                : point.x > bounds.right ? static_cast<int64_t>(point.x) - bounds.right : 0;
+	const auto dy = point.y < bounds.top
+		                ? static_cast<int64_t>(bounds.top) - point.y
+		                : point.y > bounds.bottom ? static_cast<int64_t>(point.y) - bounds.bottom : 0;
+	return dx * dx + dy * dy;
+}
+
 constexpr sizei::sizei(const pointi other) noexcept : cx(other.x), cy(other.y)
 {
 }
@@ -482,12 +493,6 @@ constexpr recti center_rect(const recti r, const recti limit) noexcept
 {
 	return center_rect(r.extent(), limit);
 }
-
-constexpr recti round_rect(const double x, const double y, const double cx, const double cy) noexcept
-{
-	return {df::round(x), df::round(y), df::round(x + cx), df::round(y + cy)};
-}
-
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -750,16 +755,6 @@ public:
 	constexpr rectd(const rectd& other) noexcept = default;
 	constexpr rectd& operator=(const rectd& other) noexcept = default;
 
-	constexpr rectd round_d() const noexcept
-	{
-		return {
-			static_cast<double>(df::round(X)),
-			static_cast<double>(df::round(Y)),
-			static_cast<double>(df::round(Width)),
-			static_cast<double>(df::round(Height))
-		};
-	}
-
 	constexpr recti round() const noexcept
 	{
 		return {df::round(X), df::round(Y), df::round(X + Width), df::round(Y + Height)};
@@ -947,12 +942,12 @@ public:
 			bottom() > rect.top();
 	}
 
-	constexpr rectd offset(const pointd point) const noexcept
+	[[nodiscard]] constexpr rectd offset(const pointd point) const noexcept
 	{
 		return offset(point.X, point.Y);
 	}
 
-	constexpr rectd offset(const double dx, const double dy) const noexcept
+	[[nodiscard]] constexpr rectd offset(const double dx, const double dy) const noexcept
 	{
 		return {X + dx, Y + dy, Width, Height};
 	}
@@ -1065,17 +1060,12 @@ public:
 
 	affined invert() const noexcept
 	{
-		//const auto r_det = 1.0 / (_trans[0] * _trans[3] - _trans[1] * _trans[2]);
-
 		affined result;
-		//result._trans[0] = _trans[3] * r_det;
-		//result._trans[1] = -_trans[1] * r_det;
-		//result._trans[2] = -_trans[2] * r_det;
-		//result._trans[3] = _trans[0] * r_det;
-		//result._trans[4] = -_trans[4] * result._trans[0] - _trans[5] * result._trans[2];
-		//result._trans[5] = -_trans[4] * result._trans[1] - _trans[5] * result._trans[3];
 
 		const auto det = _trans[0] * _trans[3] - _trans[1] * _trans[2];
+
+		if (df::equiv(det, 0.0)) return result; // singular - identity is the safe fallback
+
 		result._trans[0] = _trans[3] / det;
 		result._trans[1] = -_trans[1] / det;
 		result._trans[2] = -_trans[2] / det;
@@ -1096,12 +1086,6 @@ public:
 		result._trans[4] = horiz ? -_trans[4] : _trans[4];
 		result._trans[5] = vert ? -_trans[5] : _trans[5];
 		return result;
-	}
-
-	bool is_rectilinear() const noexcept
-	{
-		return (df::equiv(_trans[1], 0.0) && df::equiv(_trans[2], 0.0)) ||
-			(df::equiv(_trans[0], 0.0) && df::equiv(_trans[3], 0.0));
 	}
 
 	affined rotate(const double theta) const noexcept
@@ -1132,16 +1116,6 @@ public:
 		return translate(p.Width, p.Height);
 	}
 
-	affined shear(const double theta) const noexcept
-	{
-		const auto t = tan(to_radian(theta));
-		return mult(affined(1, 0, t, 1, 0, 0));
-	}
-
-	affined shear(const double x, const double y) const noexcept
-	{
-		return mult(affined(1, 0, x, 1, 0, y));
-	}
 };
 
 enum class simple_transform
@@ -1329,14 +1303,6 @@ public:
 	quadd crop(const rectd& limit, int active_point = -1) const noexcept;
 	quadd limit(const rectd& limit) const noexcept;
 
-	static double grad(const pointd p1, const pointd p2) noexcept
-	{
-		const auto dx = std::abs(p2.X - p1.X);
-		const auto dy = std::abs(p2.Y - p1.Y);
-
-		return dx / dy;
-	}
-
 	pointd center_point() const noexcept
 	{
 		const auto x = (pts[0].X + pts[1].X + pts[2].X + pts[3].X) / 4.0;
@@ -1391,25 +1357,6 @@ public:
 		return {width(), height()};
 	}
 
-	int origin_point() const
-	{
-		auto cur_dist = pts[0].dist({0, 0});
-		auto result = 0;
-
-		for (int i = 1; i < 4; ++i)
-		{
-			const auto d = pts[i].dist({0, 0});
-
-			if (d < cur_dist)
-			{
-				cur_dist = d;
-				result = i;
-			}
-		}
-
-		return result;
-	}
-
 	double angle(const int n = 0) const noexcept
 	{
 		const auto x = pts[(n + 1) % 4].X - pts[n].X;
@@ -1432,5 +1379,4 @@ public:
 		return pts[i];
 	}
 
-	affined calc_transform(const quadd& other) const noexcept;
 };

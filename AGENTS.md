@@ -1,168 +1,125 @@
 # Diffractor Codebase
 
-This is the Diffractor application codebase. Diffractor is the fastest photo and video organizer for Windows. It indexes your files to allow duplicate detection and fast search.
+Diffractor is a C++20 Windows media organizer with a custom Direct2D/Direct3D UI, SQLite index, and local file/metadata processing.
 
-For build instructions, dependencies, and contribution guidelines, see the main [README.md](README.md).
-For detailed implementation documentation, see [implementation.md](implementation.md).
+## Primary design drivers
 
-Place temporary files in a tmp/ folder (test output etc.)
+1. **Fast, lightweight performance:** start and respond quickly, scale to large collections, bound resource use, and keep expensive work off the UI thread.
+2. **A clear user mental model:** make scope, contents, target, effect, and recovery predictable; avoid hidden state and context-dependent surprises.
 
-Always build using df.sln
+Both are product requirements. Make tradeoffs explicit and validate behavior and performance where affected.
 
-## Quick Reference
+## Information ownership
 
-- **Language**: C++20 for Windows
-- **UI Framework**: Custom Direct2D/Direct3D 11 rendering
-- **Database**: SQLite for metadata persistence
-- **Media Decoding**: FFmpeg, LibRaw, libheif, libjpeg-turbo, libpng, libwebp
-- **Metadata**: libexif, XMP SDK, IPTC support
+GitHub issues own work, status, discussion, and follow-up. Source owns exact APIs, enums, and file lists. Every other subject has exactly one owning document:
 
-## Code Architecture
+| Document | Owns |
+|---|---|
+| [design](docs/design.md) | Durable user concepts and behavior; the scope/contents/target/effect ontology; view, mode, and presentation naming |
+| [implementation](docs/implementation.md) | Architecture, data flow, threading, ownership, invalidation, index/search internals |
+| [collections](docs/collections.md) | The collection: membership, what it earns, and its edge |
+| [locations](docs/locations.md) | Places, location search, distance, map-driven queries, visits |
+| [metadata](docs/metadata.md) | Property-to-tag mapping across XMP, EXIF, IPTC, and container tags |
+| [file I/O](docs/file-io.md) | Read and write paths: decode ladder, staging, patching, sidecars, backups, rollback, failure contract |
+| [rendering](docs/rendering.md) | Backends and parity, device/swap-chain, frame and resize lifecycle, batching, text, video pipeline |
+| [zoom](docs/zoom.md) | The zoom model, laws, rendering tiers, and how zoom is judged |
+| [selection controls](docs/selection-controls.md) | The selection panel: form classification, content, ordering, density, responsive behavior |
+| [third-party](docs/third-party.md) | Vendored dependencies, upgrade procedure, integration patches |
+| [README](README.md) | Product overview, build prerequisites, command line |
+| [version plan](docs/v-1.27.0.md) | Release contract, verification evidence, gates, then concise history |
+| [post-release context](docs/v-next.md) | Durable cross-issue knowledge that would otherwise be lost between releases |
 
-The source code in `src/` is organized into modules identified by filename prefixes. Files with the same prefix before the underscore belong to the same logical module.
+Move information to its owner; link rather than duplicate volatile detail.
 
-### Module Overview
+## Source directory map
 
-| Prefix | Module | Purpose |
-|--------|--------|---------|
-| `app*` | Application | Main app logic, commands, settings, text/localization, sidebar, toolbar |
-| `av*` | Audio/Video | FFmpeg integration, media playback, audio output, visualizer |
-| `crypto*` | Cryptography | Hashing (MD5, SHA, CRC32), AES encryption, HMAC |
-| `files*` | File Formats | Format-specific loaders/savers (JPEG, PNG, RAW, HEIF, WebP, PSD) |
-| `metadata*` | Metadata | EXIF, IPTC, XMP, ICC profile parsing and writing |
-| `model*` | Data Model | Index, database, items, search, tags, locations, properties |
-| `platform*` | Platform | Windows API abstraction (UI, D3D11, fonts, sound, networking, WIC) |
-| `render*` | Rendering | Image surfaces, color adjustments, pixel operations |
-| `ui*` | User Interface | Controls, dialogs, views, layout elements, controllers |
-| `util*` | Utilities | Strings, geometry, dates, ZIP, base64, spell check, helpers |
-| `view*` | Views | Specific UI views (items grid, edit, import, rename, sync, test) |
-| `test*` | Tests | Unit and integration tests |
+Start from the concrete failing behavior, symbol, test, or file, then route to the owning prefix in `src/`. Do not scan unrelated modules to build general context.
 
+- `app*`: application coordination; `view*`/`ui*`: views, controls, layout, drawing.
+- `model*`: state, index, search, SQLite, properties; `files*`/`metadata*`: I/O, codecs, EXIF/IPTC/XMP/ICC.
+- `av*`: audio/video; `render*`: surfaces/color/transforms; `platform_win_d3d11.cpp`/`platform_win_software.cpp`: draw backends.
+- `platform*`: Windows/system integration; `util*`: shared utilities; `test*`: tests.
 
-## Third-Party Dependencies
+## Working rules
 
-Files in the `third-party` folder are external dependencies included in the repository for convenience. **Do not edit these files** as they are overwritten when libraries are upgraded.
+- Build with `df.sln`; normal validation is `.\dd.ps1 test`. App source belongs in `src/`; temporary output belongs in `tmp/`.
+- System, OS, Windows API, and other platform-specific implementation code MUST exist only in `platform*.*` files. Other modules use platform abstractions.
+- Keep `// Purpose:` comments accurate in modified `src/*.h` and `src/*.cpp` files.
+- Preserve [product design](docs/design.md), especially targeting, recovery, navigation restoration, and preview-before-run.
 
-Key dependencies include:
-- **FFmpeg** - Audio/video decoding
-- **SQLite** - Database storage
-- **libexif, XMP SDK** - Metadata handling
-- **libjpeg-turbo, libpng, libwebp, libheif, LibRaw** - Image formats
-- **zlib-ng, minizip-ng** - Compression
-- **Hunspell** - Spell checking
+## Mandatory pre-flight validation
 
-See [README.md](README.md) for the complete list with versions, folder paths, dependency types, and update source URLs.
+Before generating or modifying C++ code, an AI agent MUST declare a change class and output exactly the fields that class requires. Placeholders are invalid. Do not output both schemas.
 
-### Upgrading a Source-Copy Dependency
+**Change class `User-visible behavior`** — the change alters what a user can observe: scope, contents, target, effect, presentation, or recovery. Populate from the closed [design ontology](docs/design.md#user-mental-model).
 
-No package manager is used. Source code is manually copied and built via custom `.vcxproj` files.
-
-1. **Download** the new release source from the GitHub repo listed in the README dependencies table.
-2. **Replace** the source files in the corresponding `third-party/<folder>` (or `Include/<folder>` for header-only libs), preserving the existing `.vcxproj` and `.vcxproj.filters` files.
-3. **Update version headers** if the library requires it (e.g., `de265-version.h`, `heif_version.h`, `jconfig.h`, `vcs_version.h`).
-4. **Diff the `.vcxproj`** against the new source file list. If `.c`/`.cpp`/`.h` files were added or removed upstream, update the `<ClCompile>` and `<ClInclude>` items in the `.vcxproj` accordingly. Do not regenerate the vcxproj from scratch.
-5. **Build** the solution (`df.sln`) for both Win32 and x64 Debug/Release to verify compilation.
-6. **Run tests** via the built-in test runner (toolbar checkmark button) to verify nothing is broken.
-7. **Update the version** in the README dependencies table.
-
-### Upgrading a Fork Dependency (FFmpeg, XMP SDK)
-
-FFmpeg and XMP SDK are maintained as Diffractor forks and included as git submodules.
-
-- **FFmpeg** fork: [diffractor/FFmpeg](https://github.com/diffractor/FFmpeg), upstream: [FFmpeg/FFmpeg](https://github.com/FFmpeg/FFmpeg)
-  - Fork adds a custom `ffmpeg.vcxproj` for MSVC builds.
-  - To update: rebase the fork on latest upstream master, resolve conflicts in the vcxproj, then update the submodule pointer in this repo.
-
-- **XMP SDK** fork: [diffractor/XMP-Toolkit-SDK](https://github.com/diffractor/XMP-Toolkit-SDK), upstream: [adobe/XMP-Toolkit-SDK](https://github.com/adobe/XMP-Toolkit-SDK)
-  - Fork adds: POPM/TPE2 reconciliation for MP3, Windows tag support, C++17 fixes, WebP support from Exempi, and a custom `xmp.vcxproj`.
-  - To update: rebase the fork on latest upstream, resolve conflicts preserving the Diffractor-specific changes, then update the submodule pointer.
-
-### Upgrading a Header-Only Dependency
-
-For `parallel-hashmap` (in `Include/parallel_hashmap/`) and `utf-cpp` (in `Include/utf8-cpp/`): download the new release and replace the header files in the corresponding `Include/` subfolder. No vcxproj changes needed.
-
-## Source File Comments
-
-Each `.h` and `.cpp` file in the `src` folder contains a concise comment at the top explaining what the file does. These comments appear after the copyright header and before the `#pragma once` directive (for headers) or includes (for source files). **Keep these comments up to date** when modifying files to ensure they accurately describe the file's purpose. These comments should have a `// Purpose:` marker to identify them and be updated when files change.
-
-Example format for `.cpp` files:
-```cpp
-// This file is part of the Diffractor photo and video organizer
-// Copyright 2026  Zac Walker
-// ... (rest of license header)
-
-// Purpose: Brief description of what this file implements.
-
-#include "pch.h"
+```json
+{
+	"Change class": "User-visible behavior",
+	"Scope": "Indexed collection | Folder | Recursive folder | External folder | Search | All scopes",
+	"Contents": "What visible or derived contents the change reads or changes",
+	"Target": "Focused item | Singular displayed item | Complete visibly selected set | Visible items",
+	"Effect": "The exact behavior, affected count or class, destinations/collisions when applicable, retained originals, and recovery"
+}
 ```
 
-## Building
+`All scopes` is earned, not default: use it only when the behavior is provably identical in every concrete scope, and say why in the `Contents` field. If the change belongs to one concrete scope, name that scope.
 
-1. Recursively clone the repository (includes FFmpeg and XMP SDK submodules)
-2. Open `df.sln` in Visual Studio
-3. Build the solution
+**Change class `Internal`** — the change alters no observable behavior: rendering backends, threading and ownership, indexing internals, codecs, build configuration, tests, or refactors. Naming a user scope or target here is a gate violation.
 
-### Test Runner
-
-Run tests after changes from the command line:
-
-```
-diffractor64.exe /test
-```
-
-A wildcard filter can be used to run a subset of tests by name:
-
-```
-diffractor64.exe /test:wildcard
+```json
+{
+	"Change class": "Internal",
+	"Component": "The owning src/ prefix and the specific files or subsystem",
+	"Invariant": "The correctness, ownership, or performance property the change must preserve or restore",
+	"Effect": "The exact implementation change and its blast radius",
+	"Observable behavior": "Unchanged, plus the check that proves it"
+}
 ```
 
-The filter uses case-insensitive wildcard matching (`*` and `?`). Examples:
-- `/test` or `/test:*` — run all tests (default)
-- `/test:*scan*` — run tests with "scan" in the name
+If an `Internal` change turns out to shift observable behavior, stop and restate it as `User-visible behavior` before continuing.
 
-## Running under Wine (Linux / WSL)
+Before editing, explicitly confirm both [implementation boundaries](docs/implementation.md):
 
-Diffractor is a Windows-only app, but it can be run under Wine (e.g. for reproducing
-Linux/CrossOver/Proton user reports) inside WSL2. This is useful for debugging shutdown
-crashes and rendering issues that only appear under Wine's Direct3D translation.
+1. UI-thread execution remains disjoint from I/O, decoding, database access, and network use.
+2. Paint invalidation remains disjoint from Source work; no Paint-layer function contains or calls SQLite access or file scanning.
 
-### One-time setup (Ubuntu 24.04 on WSL2)
+This is a gate. If a `User-visible behavior` change cannot map unambiguously to the schema and enums, HALT and ask the user; never invent, alias, or infer a state, and never reclassify it as `Internal` to avoid the question.
 
-```bash
-# WineHQ stable (10.x/11.x); the distro 'wine' 9.0 also works but is older
-sudo dpkg --add-architecture i386
-sudo mkdir -pm755 /etc/apt/keyrings
-sudo wget -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key
-sudo wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/ubuntu/dists/noble/winehq-noble.sources
-sudo apt-get update && sudo apt-get install --install-recommends winehq-stable
+## Iteration and loop protocol
 
-# Create a dedicated 64-bit prefix (avoids needing the 32-bit loader)
-WINEARCH=win64 WINEPREFIX=$HOME/.wine-diff wineboot -i
-```
+1. After each substantive edit, run the narrowest relevant check before editing again: prefer `.\exe\diffractor64-d.exe /test:*module* | Out-Host`, otherwise a focused compile/lint.
+2. Cap one failing check/hypothesis at three correction attempts. After the third failure, HALT and report the hypothesis, attempts, exact failure, and request guidance; cosmetic changes do not reset the count.
+3. If an edit breaks unrelated modules, remove only the agent's causal changes before changing approach. Preserve user work; never use blanket `git checkout`, `git reset`, or file replacement.
+4. Once the owner, falsifiable hypothesis, and discriminating check are known, edit and validate; stop broad exploration.
 
-### CRITICAL: run from the Linux filesystem, not `/mnt/c`
+## Strict code anti-patterns
 
-Running the exe directly from `/mnt/c/...` **crashes at the process entry point**. `/mnt/c` is a
-9p/DrvFs filesystem that does not honour the memory mappings Wine uses to load the PE, so the
-code pages come back zero-filled and Wine jumps into zero bytes (`add [rax],al`, write to NULL).
-This is a Wine/WSL filesystem issue, **not** an app bug. Copy the app to an ext4 path first:
+- **Threads:** no application `std::thread`; use `async_strategy` or an existing queue. Direct threads are limited to platform queue/thread implementation and focused concurrency tests.
+- **Locks:** no I/O, SQLite, decoding, callbacks, sorting, or large/unbounded allocations under an index lock.
+- **UI thread:** no filesystem, database, decoding, indexing, hashing, querying, thumbnail, map, or network work.
+- **Invalidation:** Paint functions never access SQLite or scan files, directly or indirectly; request Source work.
+- **Vendors:** never edit `third-party/`; use owned wrappers or build configuration.
+- **Animation:** alpha fades are disabled in CPU software rendering mode (`ui::animations_enabled`, mirroring `setting.can_animate`); never bypass the gate or animate alpha outside `ui::animate_alpha`.
+- **Exceptions:** every `catch` propagates, logs, returns a bounded error, or implements a documented bounded fallback; no unexplained swallowing.
 
-```bash
-rsync -a --delete --exclude='*.pdb' --exclude='diffractor32.exe' --exclude='diffractor64-d.exe' \
-      /mnt/c/code/diffractor/exe/ $HOME/diffapp/
-cd $HOME/diffapp
-WINEARCH=win64 WINEPREFIX=$HOME/.wine-diff WINEDEBUG=-all DISPLAY=:0 wine diffractor64.exe
-```
+## Thread ownership and result publication
 
-### Notes
+- Every mutable object has one owning execution context unless its qualified type is documented as a synchronized type in [implementation](docs/implementation.md).
+- Views, controls, hosts, controllers, and `view_element` instances are UI-thread-owned. Their mutable state is read and written only on the UI thread.
+- Background callbacks must not capture `this`, raw pointers, references, or owning `shared_ptr`s to UI-owned objects. A `weak_ptr` may cross a worker queue only as an opaque lifetime token: do not lock or dereference it until execution has returned to `queue_ui`.
+- Workers consume moved values or immutable snapshots and produce detached result values. Apply results on the owning context in one bounded batch; do not publish partially initialized objects.
+- UI publication checks both lifetime and currency. A successful `weak_ptr::lock()` does not replace a generation, request-ID, scope, path, or current-identity check.
+- Do not use `const_pointer_cast` to publish worker results or make a mutable object appear safe to share.
+- `df::item_element` is entirely UI-owned, including its immutable metadata snapshot and playback position. Never read or mutate an item on a worker. Queue detached values or immutable requests, then publish through path/generation-checked UI results; do not reintroduce per-field atomics.
+- `df::index_file_item` remains a synchronized index record. Its atomic metadata pointer publishes complete snapshots only: clone an existing payload when needed, finish every mutation, then replace the pointer. Never mutate a published metadata payload in place or publish a new payload before initialization is complete.
+- Do not add an atomic, mutex, event, lock, or synchronized mutable field to a new type unless the implementation documentation names the owning threads, protected invariant, and reason single-context ownership is insufficient.
 
-- **Rendering**: under WSLg, Mesa often can't get accelerated GL (`DRI3 error: Could not get DRI3
-  device`), so wined3d's D3D11→OpenGL runs on software (llvmpipe). Expect artifacts/slowness that
-  are environmental, not necessarily app bugs. Force the software/WARP path with `-no-gpu`.
-- **Screenshots**: WSLg runs Xwayland *rootless*, so `scrot` of the X root captures black. Capture
-  the specific window instead (e.g. `import -window <id>`), or grab it on the host.
-- **Debugging crashes**: `WINEDEBUG=+seh` prints the first-chance exception record (code, address,
-  registers). For a symbolic backtrace, run under `winedbg diffractor64.exe` (the on-disk
-  `diffractor64.pdb` next to the exe is auto-loaded). Wine's own DLLs have no symbols (expected).
-- **Minidumps** written by the app's crash handler can be analysed on Windows with `cdb`
-  (from the Store "WinDbg" package: `%LOCALAPPDATA%\Microsoft\WindowsApps\cdbX64.exe`).
+## Post-flight checklist
+
+Before completion, verify every applicable item:
+
+- [ ] Narrowest relevant tests pass; run `.\dd.ps1 test` for shared behavior or release completion.
+- [ ] Modified source retains accurate `// Purpose:` comments.
+- [ ] The diff is task-only and preserves user work.
+- [ ] The final response lists checks, outcomes, and unavailable/skipped checks accurately.

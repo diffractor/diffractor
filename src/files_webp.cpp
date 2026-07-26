@@ -21,16 +21,20 @@
 ui::surface_ptr load_webp(const df::cspan data)
 {
 	ui::surface_ptr result;
-	int32_t width = 0;
-	int32_t height = 0;
+	WebPBitstreamFeatures features;
 
-	if (WebPGetInfo(data.data, data.size, &width, &height))
+	if (WebPGetFeatures(data.data, data.size, &features) == VP8_STATUS_OK)
 	{
+		const auto width = features.width;
+		const auto height = features.height;
+
 		result = std::make_shared<ui::surface>();
-		auto* const buffer = result->alloc(width, height, ui::texture_format::ARGB);
+		// Opaque images decode into the ignored X byte, so tag them RGB and let the renderer skip blending.
+		auto* const buffer = result->alloc(width, height,
+		                                   features.has_alpha ? ui::texture_format::ARGB : ui::texture_format::RGB);
 
 		if (buffer && WebPDecodeBGRAInto(data.data, data.size, buffer, static_cast<int>(height * result->stride()),
-		                       static_cast<int>(result->stride())))
+		                                 static_cast<int>(result->stride())))
 		{
 			WebPData wp_data;
 			wp_data.bytes = data.data;
@@ -93,11 +97,12 @@ webp_parts scan_webp(df::cspan data, bool decode_surface)
 			const bool icc = flags & ICCP_FLAG;
 			const bool exif = flags & EXIF_FLAG;
 			const bool xmp = flags & XMP_FLAG;
-			const bool has_alpha = flags & ALPHA_FLAG;
 
 			WebPBitstreamFeatures features;
-			const bool lossless = WebPGetFeatures(data.data, data.size, &features) == VP8_STATUS_OK
-				                      && features.format == 2; // 2 = lossless (VP8L)
+			const bool has_features = WebPGetFeatures(data.data, data.size, &features) == VP8_STATUS_OK;
+			const bool lossless = has_features && features.format == 2; // 2 = lossless (VP8L)
+			// The bitstream is authoritative; the VP8X flag is only a fallback because it can over-report alpha.
+			const bool has_alpha = has_features ? features.has_alpha != 0 : (flags & ALPHA_FLAG) != 0;
 
 			if (lossless)
 			{
@@ -106,7 +111,8 @@ webp_parts scan_webp(df::cspan data, bool decode_surface)
 			}
 			else
 			{
-				result.pixel_format = has_alpha ? "rgba"_c : "yuv420"_c;
+				// Lossy WebP is always 4:2:0; alpha rides alongside it in its own plane.
+				result.pixel_format = has_alpha ? "yuva420"_c : "yuv420"_c;
 			}
 
 			if (decode_surface)
@@ -114,10 +120,13 @@ webp_parts scan_webp(df::cspan data, bool decode_surface)
 				if (!animation)
 				{
 					auto surface = std::make_shared<ui::surface>();
-					auto* buffer = surface->alloc(width, height, ui::texture_format::ARGB);
+					// Opaque images decode into the ignored X byte, so tag them RGB and let the renderer skip blending.
+					auto* buffer = surface->alloc(width, height,
+					                              has_alpha ? ui::texture_format::ARGB : ui::texture_format::RGB);
 
-					if (buffer && WebPDecodeBGRAInto(data.data, data.size, buffer, static_cast<int>(height * surface->stride()),
-					                       static_cast<int>(surface->stride())))
+					if (buffer && WebPDecodeBGRAInto(data.data, data.size, buffer,
+					                                 static_cast<int>(height * surface->stride()),
+					                                 static_cast<int>(surface->stride())))
 					{
 						result.frames.emplace_back(surface);
 					}
@@ -134,9 +143,16 @@ webp_parts scan_webp(df::cspan data, bool decode_surface)
 
 						if (dec)
 						{
+							const df::releaser<WebPAnimDecoder> dec_releaser(dec, [](auto* i) { WebPAnimDecoderDelete(i); });
+
 							if (WebPAnimDecoderGetInfo(dec, &anim_info))
 							{
-								while (WebPAnimDecoderHasMoreFrames(dec))
+								// frame_count comes from the file, so bound the work a crafted
+								// animation can ask us to do.
+								constexpr uint32_t max_frames = 1024;
+								const auto frame_count = std::min(anim_info.frame_count, max_frames);
+
+								while (result.frames.size() < frame_count && WebPAnimDecoderHasMoreFrames(dec))
 								{
 									uint8_t* frame_data = nullptr;
 									int timestamp = 0;
@@ -144,6 +160,8 @@ webp_parts scan_webp(df::cspan data, bool decode_surface)
 									if (WebPAnimDecoderGetNext(dec, &frame_data, &timestamp))
 									{
 										auto surface = std::make_shared<ui::surface>();
+										// Always ARGB: the composited canvas is transparent wherever a frame rect
+										// does not cover it, even when the container reports no alpha.
 										auto* buffer = surface->alloc(anim_info.canvas_width, anim_info.canvas_height,
 										                              ui::texture_format::ARGB);
 
@@ -166,8 +184,6 @@ webp_parts scan_webp(df::cspan data, bool decode_surface)
 									}
 								}
 							}
-
-							WebPAnimDecoderDelete(dec);
 						}
 					}
 				}
@@ -189,8 +205,10 @@ webp_parts scan_webp(df::cspan data, bool decode_surface)
 
 				if (WEBP_MUX_OK == WebPMuxGetChunk(mux, "EXIF", &chunk))
 				{
-					const auto exif_skip = is_exif_signature({chunk.bytes, chunk.size}) ? 6u : 0u;
-					result.metadata.exif.assign(chunk.bytes + exif_skip, chunk.bytes + chunk.size - exif_skip);
+					const auto exif_skip = is_exif_signature({chunk.bytes, chunk.size}) ? exif_signature_len : 0u;
+					// The skip trims the leading "Exif\0\0" signature only - the end of the
+					// chunk is unchanged.
+					result.metadata.exif.assign(chunk.bytes + exif_skip, chunk.bytes + chunk.size);
 
 					if (!result.frames.empty())
 					{
@@ -230,7 +248,7 @@ ui::image_ptr save_webp(const ui::const_surface_ptr& surface_in, const metadata_
 
 	if (mux)
 	{
-		std::vector<uint8_t> rotate_exif;
+		df::blob rotate_exif;
 
 		const auto dimensions = surface_in->dimensions();
 		const auto use_alpha = surface_in->format() == ui::texture_format::ARGB;
@@ -291,28 +309,26 @@ ui::image_ptr save_webp(const ui::const_surface_ptr& surface_in, const metadata_
 						WebPData chunk_data;
 						chunk_data.bytes = metadata.icc.data();
 						chunk_data.size = metadata.icc.size();
-						WebPMuxError chunk_err = WebPMuxSetChunk(mux, "ICCP", &chunk_data, 0);
-						// Note: ICC profile errors are not critical, continue processing
+						// Metadata chunk errors are not critical - the image is still valid without them.
+						WebPMuxSetChunk(mux, "ICCP", &chunk_data, 0);
 					}
 
 					if (!metadata.exif.empty())
 					{
-						const auto exif_skip = is_exif_signature(metadata.exif) ? 6u : 0u;
+						const auto exif_skip = is_exif_signature(metadata.exif) ? exif_signature_len : 0u;
 						WebPData chunk_data;
 						chunk_data.bytes = metadata.exif.data() + exif_skip;
 						chunk_data.size = metadata.exif.size() - exif_skip;
-						WebPMuxError chunk_err = WebPMuxSetChunk(mux, "EXIF", &chunk_data, 0);
-						// Note: EXIF errors are not critical, continue processing
+						WebPMuxSetChunk(mux, "EXIF", &chunk_data, 0);
 					}
 					else if (surface_in->orientation() != ui::orientation::top_left)
 					{
 						rotate_exif = make_orientation_exif(surface_in->orientation());
-						const auto exif_skip = is_exif_signature(rotate_exif) ? 6u : 0u;
+						const auto exif_skip = is_exif_signature(rotate_exif) ? exif_signature_len : 0u;
 						WebPData chunk_data;
 						chunk_data.bytes = rotate_exif.data() + exif_skip;
 						chunk_data.size = rotate_exif.size() - exif_skip;
-						WebPMuxError chunk_err = WebPMuxSetChunk(mux, "EXIF", &chunk_data, 0);
-						// Note: EXIF errors are not critical, continue processing
+						WebPMuxSetChunk(mux, "EXIF", &chunk_data, 0);
 					}
 
 					if (!metadata.xmp.empty())
@@ -320,8 +336,7 @@ ui::image_ptr save_webp(const ui::const_surface_ptr& surface_in, const metadata_
 						WebPData chunk_data;
 						chunk_data.bytes = metadata.xmp.data();
 						chunk_data.size = metadata.xmp.size();
-						WebPMuxError chunk_err = WebPMuxSetChunk(mux, "XMP ", &chunk_data, 0);
-						// Note: XMP errors are not critical, continue processing
+						WebPMuxSetChunk(mux, "XMP ", &chunk_data, 0);
 					}
 
 					WebPData output_data;

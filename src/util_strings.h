@@ -118,7 +118,7 @@ namespace str
 	// String Storage Structure for Interning
 	////////////////////////////////////////////////////////////////////////////////////////////////////
 	// Stores the length and UTF-8 data for an interned string. Uses the C "flexible array member"
-	// pattern - actual allocation size is sizeof(chached_string_storage_t) + len + 1 bytes.
+	// pattern - actual allocation size is offsetof(chached_string_storage_t, sz) + len + 1 bytes.
 	// Once allocated, the storage is immutable and persists for the application lifetime.
 	////////////////////////////////////////////////////////////////////////////////////////////////////
 	struct chached_string_storage_t
@@ -263,7 +263,7 @@ namespace str
 
 		bool operator <(const cached other) const
 		{
-			return storage < other.storage;
+			return std::less<const chached_string_storage_t*>{}(storage, other.storage);
 		}
 
 		const char* sz() const
@@ -385,15 +385,6 @@ namespace str
 		return result;
 	}
 
-	inline std::u32string utf8_to_utf32(const std::string_view s)
-	{
-		std::u32string result;
-		result.reserve(s.size());
-		auto i = s.begin();
-		while (i < s.end()) result += pop_utf8_char(i, s.end());
-		return result;
-	}
-
 	std::string utf8_to_a(std::string_view utf8);
 
 	inline std::string_view utf8_cast(const std::string_view val)
@@ -469,7 +460,8 @@ namespace str
 
 	inline int icmp(const std::string_view ll, const std::string_view rr)
 	{
-		if (ll.data() == rr.data() || (ll.empty() && rr.empty())) return 0;
+		if (ll.data() == rr.data() && ll.size() == rr.size()) return 0;
+		if (ll.empty() && rr.empty()) return 0;
 		if (ll.empty()) return 1;
 		if (rr.empty()) return -1;
 
@@ -496,7 +488,8 @@ namespace str
 
 	inline int icmp(const std::wstring_view ll, const std::wstring_view rr)
 	{
-		if (ll.data() == rr.data() || (ll.empty() && rr.empty())) return 0;
+		if (ll.data() == rr.data() && ll.size() == rr.size()) return 0;
+		if (ll.empty() && rr.empty()) return 0;
 		if (ll.empty()) return 1;
 		if (rr.empty()) return -1;
 
@@ -527,7 +520,8 @@ namespace str
 	// Case-insensitive and UTF-8 aware.
 	inline int icmp_natural(const std::string_view ll, const std::string_view rr)
 	{
-		if (ll.data() == rr.data() || (ll.empty() && rr.empty())) return 0;
+		if (ll.data() == rr.data() && ll.size() == rr.size()) return 0;
+		if (ll.empty() && rr.empty()) return 0;
 		if (ll.empty()) return 1;
 		if (rr.empty()) return -1;
 
@@ -674,15 +668,20 @@ namespace str
 	// the existing interned reference is returned. Thread-safe for concurrent calls.
 	//
 	// The global string pool uses:
-	// - parallel_flat_hash_map with 4 shards for concurrent access
-	// - CRC32C hash for O(1) lookup
+	// - an append-only sharded open-addressing table (no deletes, so no tombstones)
+	// - CRC32C hash for shard selection and probing
 	// - platform::memory_pool for contiguous allocation
 	//
-	// Note: Very long strings (> memory_pool::block_size) are not interned and return empty cached.
+	// Note: Strings whose complete storage record cannot fit in a memory-pool block return empty cached.
 	////////////////////////////////////////////////////////////////////////////////////////////////////
 	cached cache(std::wstring_view r); // Converts UTF-16 to UTF-8, then interns
 	cached cache(std::string_view r); // Interns UTF-8 string directly
-	cached cache(cached r); // Returns input unchanged (already interned)
+
+	// Already interned - return unchanged rather than round-tripping through the table.
+	inline cached cache(const cached r)
+	{
+		return r;
+	}
 
 	inline cached trim_and_cache(const std::string_view r)
 	{
@@ -704,18 +703,8 @@ namespace str
 		return cache(trim(utf16_to_utf8(r)));
 	}
 
-	inline std::string cp_to_utf8(const std::string_view sv)
-	{
-		return std::string(sv);
-	}
-
 	std::string print(const char* szFormat, ...);
 	std::string print(std::string_view format, ...);
-
-	constexpr bool is_cr_or_lf(const wchar_t c)
-	{
-		return c == L'\r' || c == L'\n';
-	}
 
 	constexpr bool is_separator(const wchar_t c)
 	{
@@ -739,19 +728,9 @@ namespace str
 		return c == L' ' || c == L'\t';
 	}
 
-	constexpr bool is_comma(const wchar_t c)
-	{
-		return c == L';' || c == L',';
-	}
-
 	constexpr bool is_slash(const wchar_t c)
 	{
 		return c == L'\\' || c == L'/';
-	}
-
-	constexpr bool is_colon(const wchar_t c)
-	{
-		return c == L':';
 	}
 
 	constexpr bool is_exclude(const std::string_view r)
@@ -920,6 +899,9 @@ namespace str
 		return result;
 	}
 
+	// Payloads are listed up to this length; beyond it the dump stops rather than filling the pane.
+	inline constexpr size_t max_hex_dump_bytes = 4096;
+
 	inline std::string to_hex(const uint64_t v, const bool remove_leading_zeros = true)
 	{
 		return to_hex(std::bit_cast<const uint8_t*>(&v), sizeof(v), true, remove_leading_zeros);
@@ -928,27 +910,6 @@ namespace str
 	inline std::string to_hex(const uint32_t v, const bool remove_leading_zeros = true)
 	{
 		return to_hex(std::bit_cast<const uint8_t*>(&v), sizeof(v), true, remove_leading_zeros);
-	}
-
-	inline uint32_t hex_char_to_num(const char input)
-	{
-		if (input >= '0' && input <= '9')
-			return input - '0';
-		if (input >= 'A' && input <= 'F')
-			return input - 'A' + 10;
-		if (input >= 'a' && input <= 'f')
-			return input - 'a' + 10;
-		throw std::invalid_argument("Invalid input string"s);
-	}
-
-	inline void hex_to_data(const std::string_view src, uint8_t* dst, const size_t dst_len)
-	{
-		const auto limit = std::min(src.size() / 2, src.size());
-
-		for (auto i = 0u; i < limit; i++)
-		{
-			*dst++ = (hex_char_to_num(src[i * 2_z]) << 4) + hex_char_to_num(src[i * 2_z + 1_z]);
-		}
 	}
 
 	inline uint32_t hex_to_num(const std::string_view src)
@@ -992,7 +953,8 @@ namespace str
 				}
 				else
 				{
-					result << text.substr(offset);
+					// unterminated token - emit the rest verbatim
+					result << text.substr(start_token);
 					offset = std::string_view::npos;
 				}
 			}

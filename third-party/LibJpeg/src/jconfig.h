@@ -6,7 +6,6 @@
 #define C_ARITH_CODING_SUPPORTED 1
 #define D_ARITH_CODING_SUPPORTED 1
 #define MEM_SRCDST_SUPPORTED 1
-#define WITH_SIMD 1
 #define HAVE_PROTOTYPES 1
 #define HAVE_UNSIGNED_CHAR 1
 #define HAVE_UNSIGNED_SHORT 1
@@ -14,6 +13,12 @@
 
 #ifndef BITS_IN_JSAMPLE
 #define BITS_IN_JSAMPLE 8
+#endif
+
+/* The jsimd routines are 8-bit only; enabling them for the 12- and 16-bit
+   libraries silently substitutes 8-bit IDCT, upsample and colour convert. */
+#if BITS_IN_JSAMPLE == 8
+#define WITH_SIMD 1
 #endif
 
 

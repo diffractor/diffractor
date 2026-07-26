@@ -6,8 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
-// Purpose: Geographic location cache and reverse geocoding. Uses KD-tree for efficient
-// nearest-location lookups and provides place name auto-complete from city database.
+// Purpose: Gazetteer index and reverse geocoding. Declares location_cache, which loads the
+// place database into a KD-tree plus name and ngram indexes, reads full records back from the
+// source file by offset, and answers bounded attribution, name search and auto-complete.
 
 #pragma once
 
@@ -36,6 +37,18 @@ struct country_loc
 str::cached normalize_county_abbreviation(str::cached country);
 str::cached normalize_county_name(str::cached country);
 
+// True when the token is an ISO 3166-1 country code (or a well-known alias such as UK).
+// Used to recognise a country qualifier in unquoted location search input, where the
+// gazetteer is not available because it is owned by the location worker.
+bool is_country_code(std::string_view token);
+
+// Issue #119: returns the record column offset for a display-language bit relative to the
+// default name column (0 = default name, 1 = first localized name, ...). A place record
+// stores one localized name per set bit in langmask, ordered by ascending bit index; the
+// name for bit N therefore sits after popcount(langmask below N) earlier localized names.
+// Returns 0 (use the default name) when the bit is unset or the language is not selected.
+int location_localized_name_offset(uint32_t langmask, int lang_bit);
+
 class country_t
 {
 	char _code[3]{};
@@ -43,6 +56,11 @@ class country_t
 	std::vector<str::cached> _alt_names;
 	df::hash_map<uint32_t, str::cached> _states;
 	gps_coordinate _centroid;
+
+	// Issue #119: localized country names ordered by language bit index, one per set bit in
+	// _langmask (mirrors the place-name scheme). Empty when no translations were available.
+	std::vector<str::cached> _localized;
+	uint32_t _langmask = 0;
 
 public:
 	static country_t null;
@@ -55,7 +73,9 @@ public:
 	country_t& operator=(country_t&&) noexcept = default;
 
 	country_t(const std::string_view code, const str::cached name,
-	          std::vector<str::cached> alt_names) noexcept : _name(name), _alt_names(std::move(alt_names))
+	          std::vector<str::cached> alt_names, const uint32_t langmask = 0,
+	          std::vector<str::cached> localized = {}) noexcept
+		: _name(name), _alt_names(std::move(alt_names)), _localized(std::move(localized)), _langmask(langmask)
 	{
 		_code[0] = code[0];
 		_code[1] = code[1];
@@ -82,9 +102,24 @@ public:
 		return _name;
 	}
 
+	// Issue #119: country name in the given display-language bit, or the default name when the
+	// language has no translation (or none is selected, i.e. lang_bit < 0).
+	str::cached localized_name(const int lang_bit) const
+	{
+		const auto offset = location_localized_name_offset(_langmask, lang_bit);
+		if (offset == 0 || offset > static_cast<int>(_localized.size())) return _name;
+		const auto localized = _localized[offset - 1];
+		return str::is_empty(localized) ? _name : localized;
+	}
+
 	const std::vector<str::cached>& alt_names() const
 	{
 		return _alt_names;
+	}
+
+	const std::vector<str::cached>& localized_names() const
+	{
+		return _localized;
 	}
 
 	str::cached state(const uint32_t code) const
@@ -118,6 +153,11 @@ public:
 };
 
 struct csv_entry;
+
+// locations.md 2.1: index of the default name column in a current location-places.txt
+// (id, latitude, longitude, stateCode, countryCode, population, langmask, flags, name).
+// model_locations.cpp static_asserts this against the Cols enum.
+constexpr int location_cache_default_name_col = 8;
 
 struct location_match_part
 {
@@ -233,11 +273,44 @@ class location_cache final : public df::no_copy
 	_Guarded_by_(_rw) std::vector<location_id_and_offset> _locations_by_id;
 	_Guarded_by_(_rw) std::vector<location_ngram_and_offset> _locations_by_ngram;
 
+	// Issue #119: bit index (into location_language_codes) of the UI display language,
+	// or -1 for none. Selects the localized place name from a record's language bitmap.
+	std::atomic<int> _display_lang_bit = -1;
+
+	// locations.md 2.1: column index of the default name in location-places.txt. A current
+	// file carries the fixed-width flags column before the name, so the name sits one column
+	// later. A stale pre-flags file is detected once during load_index and read with the old
+	// offsets, so it degrades to over-qualified names rather than wrong names.
+	_Guarded_by_(_rw) int _place_name_col = location_cache_default_name_col;
+
 	void load_countries();
 	void load_states();
 
 	static int scan_entries(std::string_view line, csv_entry* entries);
 	static int scan_entries(std::ifstream& file, std::string& line, std::streamoff offset, csv_entry* entries);
+
+	// Every record lookup is a seek plus a getline, so opening the gazetteer each time makes a
+	// single attribution cost a file open. Records are read by absolute offset (scan_entries
+	// clears and seeks), so one handle per thread can be reused for the life of a loaded index.
+	// The generation invalidates those handles when the index is reloaded from a different file.
+	std::ifstream& record_stream() const;
+	std::atomic<uint32_t> _load_generation = 0;
+
+	// Shared locks here are not recursive: re-acquiring one while a writer waits deadlocks. Every
+	// internal caller already holds _rw, so they use these and only the public entry points lock.
+	const country_t& find_country_locked(const uint32_t code) const
+	{
+		const auto found = _countries.find(code);
+		return found != _countries.cend() ? found->second : country_t::null;
+	}
+
+	location_t find_closest_locked(double x, double y, country_loc* country) const;
+
+	// Collects every place within max_km of (x, y). Latitude is clamped: a box reaching past a
+	// pole covers no places the clamped box misses. Longitude wraps, so a box crossing the
+	// antimeridian is asked as two - left as one it would be empty and an item near the date
+	// line would get no candidates at all. Caller holds _rw.
+	void collect_within_km(double x, double y, double max_km, std::vector<kd_coordinates_t>& candidates) const;
 
 	location_t build_location(std::ifstream& file, int offset) const;
 	location_t build_location(const csv_entry* entries) const;
@@ -248,6 +321,17 @@ public:
 
 	void load_index();
 
+	// Issue #119: select the UI display language for localized place names. Accepts a
+	// .po language code (e.g. "de", "es"); unknown codes fall back to the default name.
+	void set_display_language(std::string_view code);
+
+	// Issue #119: bit index of the active display language (or -1 for the default names).
+	// Consumers that cache resolved place names watch this to drop stale-language entries.
+	int display_language_bit() const
+	{
+		return _display_lang_bit.load(std::memory_order_relaxed);
+	}
+
 	bool is_index_loaded() const
 	{
 		platform::shared_lock lock(_rw);
@@ -256,7 +340,32 @@ public:
 
 	country_loc find_country(double x, double y) const;
 	location_t find_closest(double x, double y) const;
+	location_t find_closest(double x, double y, country_loc* country) const;
 	location_t find_by_id(uint32_t id) const;
+
+	// locations.md 3.1: resolve a place query to its canonical record. Exact name match,
+	// optionally qualified by region or country, largest population wins.
+	location_t find_by_name(std::string_view query) const;
+	location_t find_largest(double min_latitude, double min_longitude,
+	                         double max_latitude, double max_longitude) const;
+
+	// A map cluster needs a recognizable landmark rather than the nearest small feature.
+	// Returns the highest-population place whose normal `At` radius contains the coordinate.
+	location_t find_largest_attributed(double x, double y) const;
+	location_t find_largest_attributed(const gps_coordinate coord) const
+	{
+		return find_largest_attributed(coord.latitude(), coord.longitude());
+	}
+
+	// locations.md 2.5: bounded attribution. Unlike find_closest this refuses to name a place
+	// that is too far away to be a truthful answer, and says Remote instead. The optional
+	// country is canonical (English) for the same reason find_country's is: it doubles as a
+	// search term, while located_place::place carries the localized display names.
+	located_place find_attributed(double x, double y, country_loc* country = nullptr) const;
+	located_place find_attributed(const gps_coordinate coord, country_loc* country = nullptr) const
+	{
+		return find_attributed(coord.latitude(), coord.longitude(), country);
+	}
 
 	location_matches auto_complete(std::string_view query, uint32_t max_results,
 	                               gps_coordinate default_location) const;
@@ -264,7 +373,6 @@ public:
 	const country_t& find_country(const uint32_t code) const
 	{
 		platform::shared_lock lock(_rw);
-		const auto found = _countries.find(code);
-		return found != _countries.cend() ? found->second : country_t::null;
+		return find_country_locked(code);
 	}
 };

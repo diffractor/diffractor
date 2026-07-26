@@ -28,6 +28,26 @@
 #include "metadata_exif.h"
 #include "XMP.incl_cpp" // Needed otherwise undefined externs
 
+// A malformed sidecar or a bad batch of files repeats the same failure for every scanned item, so
+// each distinct message is written once and the total is capped; the session total lands in the
+// exit perf summary.
+static void record_xmp_error(const std::string_view context, const std::string_view message)
+{
+	static std::mutex mutex;
+	static df::hash_set<std::string> seen;
+
+	df::bump(df::file_perf.metadata_errors);
+
+	{
+		constexpr size_t max_distinct_logged = 32;
+		const std::scoped_lock lock(mutex);
+		if (seen.size() >= max_distinct_logged) return;
+		if (!seen.emplace(std::format("{}|{}", context, message)).second) return;
+	}
+
+	df::log(context, message);
+}
+
 static df::date_t xmp_parse_date(const std::string_view str)
 {
 	if (!str.empty())
@@ -44,12 +64,12 @@ static df::date_t xmp_parse_date(const std::string_view str)
 	return {};
 }
 
-static double xmp_decode_gps_coordinate(const std::string_view str)
+static bool xmp_decode_gps_coordinate(const std::string_view str, double& result)
 {
 	const auto len = str.size();
 	const auto* const sz = std::bit_cast<const char*>(str.data());
 
-	if (len < 4) return 0;
+	if (len < 4) return false;
 
 	// DDD,MM,SSk
 	// DDD,MM.mmk
@@ -74,7 +94,8 @@ static double xmp_decode_gps_coordinate(const std::string_view str)
 	if (3 == _snscanf_s(sz, parse_len, "%d,%d,%d", &degrees, &mins, &seconds))
 	{
 		const auto coordinate = gps_coordinate::dms_to_decimal(degrees, mins, seconds);
-		return neg ? -coordinate : coordinate;
+		result = neg ? -coordinate : coordinate;
+		return true;
 	}
 
 	float degrees2 = 0;
@@ -83,10 +104,11 @@ static double xmp_decode_gps_coordinate(const std::string_view str)
 	if (2 == _snscanf_s(sz, parse_len, "%f,%f", &degrees2, &mins2))
 	{
 		const auto coordinate = gps_coordinate::dms_to_decimal(degrees2, mins2, 0.0);
-		return neg ? -coordinate : coordinate;
+		result = neg ? -coordinate : coordinate;
+		return true;
 	}
 
-	return 0;
+	return false;
 }
 
 static bool xmp_decode_rational(const std::string_view text, metadata_exif::urational32_t& result)
@@ -117,6 +139,12 @@ static bool xmp_decode_rational(const std::string_view text, metadata_exif::urat
 }
 
 std::string microsoft_photo_prefix;
+
+// xmp:Rating is -1 (rejected) through 5. Anything else came from a broken writer.
+static int xmp_safe_rating(const int r)
+{
+	return std::clamp(r, -1, 5);
+}
 
 static str::cached xmp_load_array(const SXMPMeta& xmp, const char* schema_ns, const char* array_name)
 {
@@ -184,14 +212,18 @@ static void parse_xmp(const SXMPMeta& xmp, prop::item_metadata& md)
 		if (d.is_valid()) md.created_exif = d;
 	}
 
+	// A coordinate that failed to decode must not be applied - a zeroed half pins the item to the
+	// Gulf of Guinea instead of leaving the location unknown.
 	if (xmp.GetProperty(kXMP_NS_EXIF, "GPSLatitude", &utf8, &flags))
 	{
-		md.coordinate.latitude(xmp_decode_gps_coordinate(str::utf8_cast(utf8)));
+		double v = 0;
+		if (xmp_decode_gps_coordinate(str::utf8_cast(utf8), v)) md.coordinate.latitude(v);
 	}
 
 	if (xmp.GetProperty(kXMP_NS_EXIF, "GPSLongitude", &utf8, &flags))
 	{
-		md.coordinate.longitude(xmp_decode_gps_coordinate(str::utf8_cast(utf8)));
+		double v = 0;
+		if (xmp_decode_gps_coordinate(str::utf8_cast(utf8), v)) md.coordinate.longitude(v);
 	}
 
 	if (xmp.GetProperty(kXMP_NS_Photoshop, "City", &utf8, &flags))
@@ -224,7 +256,11 @@ static void parse_xmp(const SXMPMeta& xmp, prop::item_metadata& md)
 		md.copyright_source = str::strip_and_cache(utf8);
 	}
 
-	md.copyright_creator = xmp_load_array(xmp, kXMP_NS_DC, "creator");
+	// Xmp is parsed last, so an absent array must not erase what Exif or Iptc supplied.
+	if (const auto creator = xmp_load_array(xmp, kXMP_NS_DC, "creator"); !str::is_empty(creator))
+	{
+		md.copyright_creator = creator;
+	}
 
 	if (xmp.GetLocalizedText(kXMP_NS_DC, "rights", "", "x-default", nullptr, &utf8, &flags))
 	{
@@ -253,12 +289,12 @@ static void parse_xmp(const SXMPMeta& xmp, prop::item_metadata& md)
 
 	if (xmp.GetProperty(kXMP_NS_XMP, "Rating", &utf8, &flags))
 	{
-		md.rating = str::to_int(str::utf8_cast(utf8));
+		md.rating = xmp_safe_rating(str::to_int(str::utf8_cast(utf8)));
 	}
 	else if (xmp.GetProperty(kXMP_NS_MicrosoftPhoto, "Rating", &utf8, &flags))
 	{
 		//MicrosoftPhoto:Rating
-		md.rating = df::round_up(str::to_int(str::utf8_cast(utf8)), 20);
+		md.rating = xmp_safe_rating(df::round_up(str::to_int(str::utf8_cast(utf8)), 20));
 	}
 
 	if (xmp.GetProperty(kXMP_NS_XMP, "Label", &utf8, &flags))
@@ -266,7 +302,10 @@ static void parse_xmp(const SXMPMeta& xmp, prop::item_metadata& md)
 		md.label = str::strip_and_cache(utf8);
 	}
 
-	md.tags = xmp_load_array(xmp, kXMP_NS_DC, "subject");
+	if (const auto subject = xmp_load_array(xmp, kXMP_NS_DC, "subject"); !str::is_empty(subject))
+	{
+		md.tags = subject;
+	}
 
 	if (xmp.GetProperty(kXMP_NS_TIFF, "Make", &utf8, &flags))
 	{
@@ -364,7 +403,9 @@ static void parse_xmp(const SXMPMeta& xmp, prop::item_metadata& md)
 
 	if (xmp.GetProperty(kXMP_NS_TIFF, "Orientation", &utf8, &flags))
 	{
-		md.orientation = static_cast<ui::orientation>(str::to_int(str::utf8_cast(utf8)));
+		// An out of range value would index the rotation tables with an undefined enumerator.
+		const auto o = str::to_int(str::utf8_cast(utf8));
+		if (o >= 1 && o <= 8) md.orientation = static_cast<ui::orientation>(o);
 	}
 
 	if (xmp.GetProperty(kXMP_NS_EXIF_Aux, "Lens", &utf8, &flags))
@@ -470,7 +511,22 @@ void metadata_edits::apply(SXMPMeta& meta) const
 
 	if (copyright_creator.has_value())
 	{
-		meta.SetLocalizedText(kXMP_NS_DC, "creator", "", "x-default", str::utf8_cast2(copyright_creator.value()));
+		// dc:creator is an ordered array of names, and that is how it is read back. Writing it as
+		// alt-lang text produces a packet Adobe tools will not show.
+		meta.DeleteProperty(kXMP_NS_DC, "creator");
+
+		if (str::is_empty(copyright_creator.value()))
+		{
+			meta.SetProperty(kXMP_NS_DC, "creator", nullptr, kXMP_PropArrayIsOrdered);
+		}
+		else
+		{
+			// Names are separated by punctuation, never by the space inside "Jane Doe".
+			for (const auto& part : str::split(copyright_creator.value(), true, str::is_artist_separator))
+			{
+				meta.AppendArrayItem(kXMP_NS_DC, "creator", kXMP_PropArrayIsOrdered, str::utf8_cast2(part));
+			}
+		}
 	}
 
 	if (title.has_value())
@@ -492,7 +548,7 @@ void metadata_edits::apply(SXMPMeta& meta) const
 	{
 		const int r = std::clamp(rating.value(), -1, 5);
 		meta.SetProperty_Int(kXMP_NS_XMP, "Rating", r);
-		meta.SetProperty_Int(kXMP_NS_MicrosoftPhoto, "Rating", std::clamp(r * 20, 0, 99));
+		meta.SetProperty_Int(kXMP_NS_MicrosoftPhoto, "Rating", rating_to_percent(r));
 	}
 
 	if (label.has_value())
@@ -593,42 +649,80 @@ void metadata_edits::apply(SXMPMeta& meta) const
 
 		meta.DeleteProperty(kXMP_NS_DC, "subject");
 
-		for (auto i = 0u; i < tags.size(); i++)
+		if (tags.is_empty())
+		{
+			meta.SetProperty(kXMP_NS_DC, "subject", nullptr, kXMP_PropArrayIsUnordered);
+		}
+		else for (auto i = 0u; i < tags.size(); i++)
 		{
 			meta.AppendArrayItem(kXMP_NS_DC, "subject", kXMP_PropValueIsArray, str::utf8_cast2(tags[i]));
 		}
 
-		// Sync exif:XPKeywords (Windows Explorer tag) with dc:subject
-		if (tags.is_empty())
-		{
-			meta.DeleteProperty(kXMP_NS_EXIF, "XPKeywords");
-		}
-		else
-		{
-			meta.SetProperty(kXMP_NS_EXIF, "XPKeywords", str::utf8_cast2(tags.to_string(";", false)));
-		}
+		// Sync exif:XPKeywords (Windows Explorer tag) with dc:subject. Cleared tags are written
+		// as an empty value rather than a deleted property: the TIFF export leaves tags that are
+		// simply absent from XMP alone, so deleting here would leave the old keywords in place.
+		meta.SetProperty(kXMP_NS_EXIF, "XPKeywords",
+		                 tags.is_empty() ? std::string() : str::utf8_cast2(tags.to_string(";", false)));
 	}
 
 	if (remove_rating)
 	{
-		meta.DeleteProperty(kXMP_NS_XMP, "Rating");
-		meta.DeleteProperty(kXMP_NS_MicrosoftPhoto, "Rating");
+		meta.SetProperty_Int(kXMP_NS_XMP, "Rating", 0);
+		meta.SetProperty_Int(kXMP_NS_MicrosoftPhoto, "Rating", 0);
 	}
+}
+
+metadata_xmp::property_presence metadata_xmp::properties(const df::cspan xmp)
+{
+	property_presence result;
+
+	try
+	{
+		// xmp_signature already ends in the NUL that terminates the JPEG APP1 header.
+		constexpr auto xmp_sig_len = xmp_signature.size();
+		if (xmp.size == 0) return result;
+
+		const auto* data = xmp.data;
+		SXMPMeta meta;
+		if (xmp.size > xmp_sig_len && memcmp(data, xmp_signature.data(), xmp_sig_len) == 0)
+		{
+			data += xmp_sig_len;
+			meta.ParseFromBuffer(std::bit_cast<const char*>(data), static_cast<uint32_t>(xmp.size - xmp_sig_len));
+		}
+		else
+		{
+			meta.ParseFromBuffer(std::bit_cast<const char*>(data), static_cast<uint32_t>(xmp.size));
+		}
+
+		result.tags = meta.DoesPropertyExist(kXMP_NS_DC, "subject");
+		result.rating = meta.DoesPropertyExist(kXMP_NS_XMP, "Rating") ||
+			meta.DoesPropertyExist(kXMP_NS_MicrosoftPhoto, "Rating");
+	}
+	catch (const std::exception& e)
+	{
+		record_xmp_error(__FUNCTION__, e.what());
+	}
+	catch (const XMP_Error& e)
+	{
+		record_xmp_error(__FUNCTION__, e.GetErrMsg());
+	}
+
+	return result;
 }
 
 void metadata_xmp::parse(prop::item_metadata& pd, const df::cspan xmp)
 {
 	try
 	{
-		constexpr auto xmp_sig_len = xmp_signature.size() + 1;
+		constexpr auto xmp_sig_len = xmp_signature.size();
 		const auto size = xmp.size;
 		const auto* const data = xmp.data;
 
-		if (size > xmp_sig_len)
+		if (size > 0)
 		{
 			SXMPMeta meta;
 
-			if (memcmp(data, xmp_signature.data(), xmp_sig_len) == 0)
+			if (size > xmp_sig_len && memcmp(data, xmp_signature.data(), xmp_sig_len) == 0)
 			{
 				meta.ParseFromBuffer(std::bit_cast<const char*>(data + xmp_sig_len),
 				                     static_cast<uint32_t>(size - xmp_sig_len));
@@ -641,13 +735,13 @@ void metadata_xmp::parse(prop::item_metadata& pd, const df::cspan xmp)
 			parse_xmp(meta, pd);
 		}
 	}
-	catch (std::exception& e)
+	catch (const std::exception& e)
 	{
-		df::log(__FUNCTION__, e.what());
+		record_xmp_error(__FUNCTION__, e.what());
 	}
 	catch (const XMP_Error& e)
 	{
-		df::log(__FUNCTION__, e.GetErrMsg());
+		record_xmp_error(__FUNCTION__, e.GetErrMsg());
 	}
 }
 
@@ -665,42 +759,14 @@ void metadata_xmp::parse(prop::item_metadata& pd, const df::file_path path)
 			parse_xmp(xmp, pd);
 		}
 	}
-	catch (std::exception& e)
+	catch (const std::exception& e)
 	{
-		df::log(__FUNCTION__, e.what());
+		record_xmp_error(__FUNCTION__, e.what());
 	}
 	catch (const XMP_Error& e)
 	{
-		df::log(__FUNCTION__, e.GetErrMsg());
+		record_xmp_error(__FUNCTION__, e.GetErrMsg());
 	}
-}
-
-file_scan_result scan_xmp(const df::file_path path)
-{
-	file_scan_result result;
-
-	try
-	{
-		SXMPFiles f;
-
-		if (f.OpenFile(str::utf8_to_a(path.str()), kXMP_UnknownFile,
-		               kXMPFiles_OpenForRead | kXMPFiles_OpenOnlyXMP | kXMPFiles_OpenUseSmartHandler))
-		{
-			SXMPMeta meta;
-			std::string packet;
-
-			result.success = f.GetXMP(&meta, &packet);
-			result.metadata.xmp.assign(packet.data(), packet.data() + packet.size());
-			f.CloseFile();
-		}
-	}
-	catch (XMP_Error& e)
-	{
-		df::log(__FUNCTION__, e.GetErrMsg());
-		result.success = false;
-	}
-
-	return result;
 }
 
 df::file_path probe_xmp_path(const df::file_path src_path, const std::string_view xmp_name)
@@ -713,17 +779,59 @@ df::file_path probe_xmp_path(const df::file_path src_path, const std::string_vie
 	return src_path.extension(".xmp");
 }
 
+bool metadata_xmp::has_embedded_xmp(const df::file_path path)
+{
+	try
+	{
+		const auto* const ft = files::file_type_from_name(path);
+
+		if (!ft->has_trait(file_traits::embedded_xmp))
+		{
+			return false;
+		}
+
+		SXMPFiles f;
+		const auto w = platform::to_file_system_path(path);
+
+		if (!f.OpenFile(str::utf8_cast2(str::utf16_to_utf8(w)), kXMP_UnknownFile,
+		                kXMPFiles_OpenForRead | kXMPFiles_OpenUseSmartHandler))
+		{
+			return false;
+		}
+
+		XMP_PacketInfo packet_info;
+		const auto found = f.GetXMP(nullptr, nullptr, &packet_info) && packet_info.length > 0;
+		f.CloseFile();
+
+		return found;
+	}
+	catch (const std::exception& e)
+	{
+		record_xmp_error(__FUNCTION__, e.what());
+	}
+	catch (const XMP_Error& e)
+	{
+		record_xmp_error(__FUNCTION__, e.GetErrMsg());
+	}
+
+	return false;
+}
+
 xmp_update_result metadata_xmp::update(const df::file_path update_path, const df::file_path src_path,
-                                       const metadata_edits& edits, const std::string_view xmp_name)
+									   const metadata_edits& edits, const std::string_view src_xmp_name,
+									   const df::file_path dst_xmp_path)
 {
 	xmp_update_result result;
+
+	// Which file a toolkit error refers to; the read source and the write target differ.
+	auto failing_path = src_path;
 
 	try
 	{
 		const auto* const src_ft = files::file_type_from_name(src_path);
 		const auto* const dst_ft = files::file_type_from_name(update_path);
-		const auto is_embedded_src = src_ft->traits && file_traits::embedded_xmp;
-		const auto is_embedded_dst = dst_ft->traits && file_traits::embedded_xmp;
+		const auto is_embedded_src = src_ft->has_trait(file_traits::embedded_xmp);
+		const auto is_embedded_dst = dst_ft->has_trait(file_traits::embedded_xmp);
 
 		SXMPMeta xmp;
 
@@ -731,16 +839,30 @@ xmp_update_result metadata_xmp::update(const df::file_path update_path, const df
 		{
 			SXMPFiles f;
 			const auto w = platform::to_file_system_path(src_path);
+			// Read only - the source is never modified here. If it cannot be read the existing
+			// packet is unknown, and applying the edits to an empty one would write away every
+			// property the file already holds.
 			if (f.OpenFile(str::utf8_cast2(str::utf16_to_utf8(w)), kXMP_UnknownFile,
-			               kXMPFiles_OpenForUpdate | kXMPFiles_OpenUseSmartHandler))
+			               kXMPFiles_OpenForRead | kXMPFiles_OpenUseSmartHandler))
 			{
 				f.GetXMP(&xmp);
 				f.CloseFile();
 			}
+			else if (open_file(src_path, platform::file_open_mode::read))
+			{
+				// The file itself reads fine, so the toolkit simply has no handler for this
+				// format. Reporting a read failure would send the user looking for a permission
+				// or locking problem that does not exist.
+				throw app_exception("this file format is not supported for metadata edits");
+			}
+			else
+			{
+				throw app_exception("the existing metadata could not be read");
+			}
 		}
 		else
 		{
-			const auto path_xmp = probe_xmp_path(src_path, xmp_name);
+			const auto path_xmp = probe_xmp_path(src_path, src_xmp_name);
 
 			if (path_xmp.exists())
 			{
@@ -755,6 +877,8 @@ xmp_update_result metadata_xmp::update(const df::file_path update_path, const df
 
 		edits.apply(xmp);
 
+		failing_path = update_path;
+
 		if (is_embedded_dst)
 		{
 			SXMPFiles xmp_dst_file;
@@ -763,34 +887,78 @@ xmp_update_result metadata_xmp::update(const df::file_path update_path, const df
 			if (xmp_dst_file.OpenFile(str::utf8_cast2(str::utf16_to_utf8(w)), kXMP_UnknownFile,
 			                          kXMPFiles_OpenForUpdate | kXMPFiles_OpenUseSmartHandler))
 			{
-				if (xmp_dst_file.CanPutXMP(xmp))
+				const auto can_put = xmp_dst_file.CanPutXMP(xmp);
+
+				if (can_put) xmp_dst_file.PutXMP(xmp);
+
+				// PutXMP only stages the packet - the handler writes on close. Deliberately not
+				// kXMPFiles_UpdateSafely: that always copies the whole file to a temp and swaps,
+				// which is the cost an in-place caller is here to avoid. Choosing between a
+				// patch and an atomic replace is the caller's decision, not this function's.
+				xmp_dst_file.CloseFile();
+
+				// OpenFile succeeded but the format cannot hold the metadata. Report it rather
+				// than silently leaving the tags unwritten (#231).
+				if (!can_put)
 				{
-					xmp_dst_file.PutXMP(xmp);
-					result.success = true;
+					throw app_exception("this file format cannot store the metadata");
 				}
 
-				xmp_dst_file.CloseFile();
+				result.success = true;
+			}
+			else
+			{
+				// OpenFile returned false without throwing - common when the file is locked by
+				// another process or read-only. Explain why instead of failing opaquely (#231).
+				const auto reason = platform::file_write_error(update_path);
+				throw app_exception(reason.empty() ? "the file could not be opened for writing" : reason);
 			}
 		}
 		else
 		{
+			failing_path = dst_xmp_path;
+
 			std::string buffer;
 			xmp.SerializeToBuffer(&buffer, kXMP_OmitPacketWrapper);
 
-			const auto path_xmp = probe_xmp_path(update_path, xmp_name);
+			const auto path_xmp = dst_xmp_path;
 			const auto f = open_file(path_xmp, platform::file_open_mode::create);
 
 			if (f)
 			{
-				f->write(std::bit_cast<const uint8_t*>(buffer.data()), buffer.size());
+				const auto written = f->write(std::bit_cast<const uint8_t*>(buffer.data()), buffer.size());
+
+				// A short write leaves a truncated sidecar. Reporting success here would present
+				// a full disk or a dropped network share as a saved edit.
+				if (written != buffer.size())
+				{
+					const auto reason = platform::file_write_error(path_xmp);
+					throw app_exception(reason.empty() ? "the metadata sidecar could not be written" : reason);
+				}
+
 				result.success = true;
 				result.xmp_path = path_xmp;
+			}
+			else
+			{
+				const auto reason = platform::file_write_error(path_xmp);
+				throw app_exception(reason.empty() ? "the metadata sidecar could not be created" : reason);
 			}
 		}
 	}
 	catch (XMP_Error& e)
 	{
 		df::log(__FUNCTION__, e.GetErrMsg());
+
+		// The XMP toolkit's own message (e.g. "Open, other failure") is opaque; prepend the
+		// concrete OS reason when the file simply cannot be opened for writing (#231).
+		const auto reason = platform::file_write_error(failing_path);
+
+		if (!reason.empty())
+		{
+			throw app_exception(std::format("{} ({})", reason, e.GetErrMsg()));
+		}
+
 		throw app_exception(e.GetErrMsg());
 	}
 
@@ -816,6 +984,64 @@ void metadata_xmp::update(std::string& buffer, const metadata_edits& edits)
 	}
 }
 
+// The namespace URI is what the packet carries; the short name is what makes the section legible.
+static std::string_view xmp_schema_title(const std::string_view ns)
+{
+	if (ns == "http://purl.org/dc/elements/1.1/") return "Dublin Core";
+	if (ns == "http://ns.adobe.com/xap/1.0/") return "XMP Basic";
+	if (ns == "http://ns.adobe.com/xap/1.0/rights/") return "XMP Rights";
+	if (ns == "http://ns.adobe.com/xap/1.0/mm/") return "XMP Media Management";
+	if (ns == "http://ns.adobe.com/xap/1.0/sType/ResourceEvent#") return "Resource Event";
+	if (ns == "http://ns.adobe.com/xap/1.0/sType/ResourceRef#") return "Resource Reference";
+	if (ns == "http://ns.adobe.com/photoshop/1.0/") return "Photoshop";
+	if (ns == "http://ns.adobe.com/camera-raw-settings/1.0/") return "Camera Raw";
+	if (ns == "http://ns.adobe.com/exif/1.0/") return "Exif";
+	if (ns == "http://ns.adobe.com/exif/1.0/aux/") return "Exif Auxiliary";
+	if (ns == "http://ns.adobe.com/tiff/1.0/") return "TIFF";
+	if (ns == "http://iptc.org/std/Iptc4xmpCore/1.0/xmlns/") return "IPTC Core";
+	if (ns == "http://iptc.org/std/Iptc4xmpExt/2008-02-29/") return "IPTC Extension";
+	if (ns == "http://ns.adobe.com/xmp/1.0/DynamicMedia/") return "Dynamic Media";
+	if (ns == "http://ns.microsoft.com/photo/1.0/") return "Microsoft Photo";
+	if (ns == "http://ns.google.com/photos/1.0/camera/") return "Google Camera";
+	return {};
+}
+
+// The pane draws the packet's own tree, and the iterator reports position only through the path,
+// so depth is read back from the path's structure.
+static int xmp_path_depth(const std::string_view path)
+{
+	auto depth = 0;
+	for (const auto c : path) if (c == '/' || c == '[') ++depth;
+	return depth;
+}
+
+static std::string xmp_shape(const XMP_OptionBits options, const int array_count)
+{
+	std::string result;
+
+	if (XMP_PropIsArray(options))
+	{
+		if (XMP_ArrayIsAltText(options)) result = "Alt (language)";
+		else if (XMP_ArrayIsAlternate(options)) result = "Alt";
+		else if (XMP_ArrayIsOrdered(options)) result = "Seq";
+		else result = "Bag";
+
+		result += std::format(" ({})", array_count);
+	}
+	else if (XMP_PropIsStruct(options))
+	{
+		result = "Struct";
+	}
+
+	if (XMP_PropIsQualifier(options))
+	{
+		if (!result.empty()) result += ", ";
+		result += "qualifier";
+	}
+
+	return result;
+}
+
 metadata_kv_list metadata_xmp::to_info(const df::cspan xmp)
 {
 	metadata_kv_list result;
@@ -824,7 +1050,7 @@ metadata_kv_list metadata_xmp::to_info(const df::cspan xmp)
 	{
 		SXMPMeta meta;
 
-		constexpr auto xmp_sig_len = xmp_signature.size() + 1;
+		constexpr auto xmp_sig_len = xmp_signature.size();
 		const auto* data = std::bit_cast<const char*>(xmp.data);
 		auto size = xmp.size;
 
@@ -837,20 +1063,58 @@ metadata_kv_list metadata_xmp::to_info(const df::cspan xmp)
 		meta.ParseFromBuffer(data, static_cast<uint32_t>(size));
 
 		std::string schema_ns, prop_path, prop_val;
+		XMP_OptionBits options = 0;
 		SXMPIterator itr(meta);
+		std::string current_schema;
 
-		while (itr.Next(&schema_ns, &prop_path, &prop_val))
+		// Containers and empty properties are part of what the packet holds, so every node is
+		// listed; the tree shape is carried on the row rather than used to filter it.
+		while (itr.Next(&schema_ns, &prop_path, &prop_val, &options))
 		{
-			result.emplace_back(str::cache(prop_path), str::utf8_cast(prop_val));
+			if (XMP_NodeIsSchema(options) || prop_path.empty()) continue;
+
+			if (schema_ns != current_schema)
+			{
+				current_schema = schema_ns;
+				const auto title = xmp_schema_title(schema_ns);
+
+				auto& section = result.emplace_back(title.empty() ? schema_ns : std::string(title), std::string{});
+				section.container = true;
+				section.id = std::format("xmp.ns.{}", schema_ns);
+				if (!title.empty()) section.shape = schema_ns;
+			}
+
+			const auto is_container = XMP_PropIsArray(options) || XMP_PropIsStruct(options);
+			const auto array_count = XMP_PropIsArray(options)
+				                         ? static_cast<int>(meta.CountArrayItems(
+					                         schema_ns.c_str(), prop_path.c_str()))
+				                         : 0;
+
+			auto& row = result.emplace_back(prop_path, str::utf8_cast(prop_val));
+			row.depth = xmp_path_depth(prop_path) + 1;
+			row.container = is_container;
+			row.id = std::format("xmp.{}", prop_path);
+
+			const auto shape = xmp_shape(options, array_count);
+			if (!shape.empty()) row.shape = shape;
+
+			// A long value is kept whole behind the row rather than trimmed away.
+			constexpr auto inline_value_limit = 200_z;
+
+			if (row.value.size() > inline_value_limit)
+			{
+				row.detail = metadata_text_detail{row.value};
+				row.value = row.value.substr(0, inline_value_limit) + "\xE2\x80\xA6";
+			}
 		}
 	}
-	catch (std::exception& e)
+	catch (const std::exception& e)
 	{
-		df::log(__FUNCTION__, e.what());
+		record_xmp_error(__FUNCTION__, e.what());
 	}
 	catch (const XMP_Error& e)
 	{
-		df::log(__FUNCTION__, e.GetErrMsg());
+		record_xmp_error(__FUNCTION__, e.GetErrMsg());
 	}
 
 	return result;

@@ -61,6 +61,12 @@ public:
 		_open_files.erase(path);
 	}
 
+	// The following two readers run from the crash / application-recovery handler
+	// (see app_frame::crash and recover_callback). They deliberately do NOT take _mtx:
+	// a blocking acquire would deadlock the handler if the crashing thread happened to
+	// hold the lock inside add_open/remove_open. Those mutators hold the lock only for a
+	// brief map insert/erase, so a best-effort lock-free read here is the safer trade-off
+	// for diagnostic output produced while the process is already failing.
 	void flush_open_files() const
 	{
 		if (!_open_files.empty())
@@ -87,17 +93,6 @@ public:
 		}
 	}
 
-	std::string open_files_list() const
-	{
-		std::ostringstream result;
-
-		for (const auto& path : _open_files)
-		{
-			result << path.first.str() << " [" << path.second << "] " << '\n';
-		}
-
-		return result.str();
-	}
 };
 
 

@@ -32,6 +32,7 @@ static std::atomic_int index_version;
 platform::thread_event media_preview_event(false, false);
 static platform::mutex media_preview_mutex;
 static _Guarded_by_(media_preview_mutex) std::function<void(media_preview_state&)> next_media_preview;
+static _Guarded_by_(media_preview_mutex) std::deque<std::function<void(media_preview_state&)>> media_preview_must_run;
 
 df::index_roots index_folders()
 {
@@ -61,25 +62,57 @@ df::index_roots index_folders()
 	return result;
 }
 
-void app_frame::queue_media_preview(std::function<void(media_preview_state&)> f)
+void app_frame::queue_media_preview(std::function<void(media_preview_state&)> f, const bool must_run)
 {
-	platform::exclusive_lock media_lock(media_preview_mutex);
-	next_media_preview = std::move(f);
+	// A superseded preview owns decoded surfaces and item references, so it is released after the
+	// lock rather than destroyed inside it.
+	std::function<void(media_preview_state&)> superseded;
+
+	{
+		platform::exclusive_lock media_lock(media_preview_mutex);
+
+		// Only speculative preview work may be superseded. Teardown must still run: a caller waiting on
+		// a dropped close blocks for its whole timeout, and any pending preview is stale once teardown
+		// has been requested.
+		std::swap(superseded, next_media_preview);
+
+		if (must_run) media_preview_must_run.emplace_back(std::move(f));
+		else next_media_preview = std::move(f);
+	}
+
 	media_preview_event.set();
 }
 
 void app_frame::update_index()
 {
+	queue_index_update(false);
+}
+
+void app_frame::rebuild_index()
+{
+	queue_index_update(true);
+}
+
+void app_frame::queue_index_update(const bool forget_cached_metadata)
+{
 	auto token = df::cancel_token(index_version);
 
-	index_task_queue.reset_and_enqueue([this, token]
+	index_task_queue.reset_and_enqueue([this, token, forget_cached_metadata]
 	{
+		// Forgetting runs on this queue, not the caller's, so it cannot interleave with the
+		// scan_uncached it is meant to feed.
+		if (forget_cached_metadata)
+		{
+			_state.item_index.forget_cached_metadata();
+		}
+
 		_state.item_index.index_roots(index_folders());
 		_state.item_index.index_folders(token);
-		invalidate_view(view_invalid::sidebar);
+		invalidate_view(view_invalid::sidebar | view_invalid::presence);
 
 		_state.item_index.scan_uncached(token);
-		invalidate_view(view_invalid::sidebar | view_invalid::item_scan | view_invalid::refresh_items);
+		invalidate_view(view_invalid::sidebar | view_invalid::item_scan | view_invalid::presence |
+			view_invalid::refresh_items);
 	});
 
 	_state.update_search_is_favorite_or_collection_root();
@@ -116,6 +149,7 @@ static void start_database(database& db, platform::task_queue& database_task_que
 {
 	log_func lf(__FUNCTION__);
 	platform::set_thread_description("database");
+	auto* const perf = df::register_queue("database");
 
 	try
 	{
@@ -123,40 +157,62 @@ static void start_database(database& db, platform::task_queue& database_task_que
 		db.open(known_path(platform::known_folder::app_cache_data), "diffractor-cache");
 		async.queue_ui(std::move(index_loaded_func));
 
-		if (db.is_open())
+		// The loop runs whether or not the database opened. Its tasks carry the continuations that
+		// close dialogs, release thumbnail queries, and answer web-cache lookups, and it is what
+		// drains the write queue - which holds encoded thumbnails and would otherwise grow for the
+		// whole session against a database that can never accept it.
+		async.invalidate_view(view_invalid::refresh_items);
+		const std::vector<std::reference_wrapper<platform::thread_event>> events = {
+			database_task_queue._event, platform::event_exit
+		};
+
+		while (!df::is_closing)
 		{
-			async.invalidate_view(view_invalid::refresh_items);
-			const std::vector<std::reference_wrapper<platform::thread_event>> events = {
-				database_task_queue._event, platform::event_exit
-			};
-
-			while (!df::is_closing)
+			if (wait_for(events, 1000, false) == 0)
 			{
-				if (wait_for(events, 1000, false) == 0)
-				{
-					try
-					{
-						df::scope_locked_inc l(df::jobs_running);
-
-						for (const auto& t : database_task_queue.dequeue_all())
-						{
-							t();
-						}
-					}
-					catch (std::exception& e)
-					{
-						df::log(__FUNCTION__, e.what());
-					}
-				}
-				else
+				try
 				{
 					df::scope_locked_inc l(df::jobs_running);
-					db.perform_writes();
+					const auto tasks = database_task_queue.dequeue_all();
+
+					if (!tasks.empty())
+					{
+						df::bump(perf->batches);
+						df::bump(perf->tasks, tasks.size());
+						df::record_peak(perf->batch_peak, static_cast<uint32_t>(tasks.size()));
+					}
+
+					for (const auto& t : tasks)
+					{
+						try
+						{
+							df::perf_timer timer(perf->busy_us, &perf->task_max_us);
+							t();
+						}
+						catch (const std::exception& e)
+						{
+							df::log(__FUNCTION__, e.what());
+						}
+					}
+				}
+				catch (std::exception& e)
+				{
+					df::log(__FUNCTION__, e.what());
 				}
 			}
 
-			db.perform_writes();
+			try
+			{
+				df::scope_locked_inc l(df::jobs_running);
+				db.perform_writes();
+			}
+			catch (std::exception& e)
+			{
+				df::log(__FUNCTION__, e.what());
+			}
 		}
+
+		db.perform_writes();
 	}
 	catch (std::exception& e)
 	{
@@ -172,6 +228,7 @@ static void start_database(database& db, platform::task_queue& database_task_que
 	}
 	catch (...)
 	{
+		// Shutdown path: nothing left to report to, and the queue is discarded either way.
 	}
 
 	try
@@ -190,8 +247,11 @@ static void start_database(database& db, platform::task_queue& database_task_que
 
 void app_frame::queue_ui(std::function<void()> f)
 {
-	_ui_queue.enqueue(std::move(f));
-	_pa->queue_idle();
+	// One idle wake drains the queued UI batch, so additional callbacks need no extra context switch.
+	if (_ui_queue.enqueue(std::move(f)))
+	{
+		_pa->queue_idle();
+	}
 }
 
 void app_frame::queue_async(const async_queue q, std::function<void()> f)
@@ -208,6 +268,10 @@ void app_frame::queue_async(const async_queue q, std::function<void()> f)
 		scan_modified_items_task_queue.enqueue(std::move(f));
 		break;
 	case async_queue::scan_displayed_items:
+		// Not reset_and_enqueue: each batch releases the loading claim its items were marked with on
+		// enqueue, so a dropped batch would leave them claimed forever. The cancel token retires
+		// superseded batches instead, and measurement says that is cheap - a retired batch breaks on
+		// its first token check, so it costs a queue hop rather than a decode. See thumbnail_state.
 		scan_displayed_items_task_queue.enqueue(std::move(f));
 		break;
 	case async_queue::load:
@@ -219,7 +283,14 @@ void app_frame::queue_async(const async_queue q, std::function<void()> f)
 	case async_queue::render:
 		render_task_queue.enqueue(std::move(f));
 		break;
+	case async_queue::render_display:
+		render_display_task_queue.enqueue(std::move(f));
+		break;
 	case async_queue::query:
+		// Not reset_and_enqueue: this queue carries two unrelated producers. Dropping a pending task
+		// would either lose a search's only publication hop (view_state::open) or strand a day in
+		// _counting_days forever, so it would never be counted again. Superseded work retires itself
+		// instead - a stale search breaks on its cancel token and a stale count on its generation.
 		query_task_queue.enqueue(std::move(f));
 		break;
 	case async_queue::index_predictions_single:
@@ -232,7 +303,7 @@ void app_frame::queue_async(const async_queue q, std::function<void()> f)
 		presence_task_queue.reset_and_enqueue(std::move(f));
 		break;
 	case async_queue::auto_complete:
-		auto_complete_task_queue.enqueue(std::move(f));
+		auto_complete_task_queue.reset_and_enqueue(std::move(f));
 		break;
 	case async_queue::cloud:
 		cloud_task_queue.enqueue(std::move(f));
@@ -285,16 +356,41 @@ static void start_media_preview()
 
 			if (0 == w)
 			{
+				std::deque<std::function<void(media_preview_state&)>> must_run;
 				std::function<void(media_preview_state&)> f;
 
 				{
 					platform::exclusive_lock media_lock(media_preview_mutex);
+					std::swap(media_preview_must_run, must_run);
 					std::swap(next_media_preview, f);
+				}
+
+				// Teardown first: it releases the file handles a waiting caller needs before it can
+				// rename, replace or delete.
+				// Each task is isolated: this is the only worker draining these queues, so letting one
+				// throw past the loop would strand every later teardown with no consumer.
+				for (const auto& r : must_run)
+				{
+					try
+					{
+						r(preview_decoder);
+					}
+					catch (const std::exception& e)
+					{
+						df::log(__FUNCTION__, e.what());
+					}
 				}
 
 				if (f)
 				{
-					f(preview_decoder);
+					try
+					{
+						f(preview_decoder);
+					}
+					catch (const std::exception& e)
+					{
+						df::log(__FUNCTION__, e.what());
+					}
 				}
 			}
 			else if (platform::wait_for_timeout == w)
@@ -314,6 +410,9 @@ void start_worker(platform::task_queue& q, const std::string_view name)
 	log_func lf(__FUNCTION__, name);
 	platform::set_thread_description(name);
 
+	// One slot per worker thread, so the shared loop can account every queue without knowing which.
+	auto* const perf = df::register_queue(name);
+
 	if (!df::is_closing)
 	{
 		try
@@ -330,9 +429,24 @@ void start_worker(platform::task_queue& q, const std::string_view name)
 						df::scope_locked_inc l(df::jobs_running);
 						const auto tasks = q.dequeue_all();
 
+						if (!tasks.empty())
+						{
+							df::bump(perf->batches);
+							df::bump(perf->tasks, tasks.size());
+							df::record_peak(perf->batch_peak, static_cast<uint32_t>(tasks.size()));
+						}
+
 						for (const auto& t : tasks)
 						{
-							t();
+							try
+							{
+								df::perf_timer timer(perf->busy_us, &perf->task_max_us);
+								t();
+							}
+							catch (const std::exception& e)
+							{
+								df::log(__FUNCTION__, e.what());
+							}
 						}
 					}
 					catch (std::exception& e)
@@ -351,12 +465,59 @@ void start_worker(platform::task_queue& q, const std::string_view name)
 	// On shutdown: truncate any remaining queued tasks. Lambdas hold references
 	// (this, view_state, etc.) that may become invalid as teardown progresses;
 	// destroying them now while the owning objects are still alive is safe.
+	// Tasks holding the last reference to UI-owned state do not die here - ui_owned_ptr hands those
+	// back to _ui_queue, which ~app_frame drains on the UI thread after joining this thread.
 	try
 	{
 		(void)q.dequeue_all();
 	}
 	catch (...)
 	{
+		// Shutdown path: nothing left to report to, and the queue is discarded either way.
+	}
+}
+
+void start_map_worker(platform::task_queue& q)
+{
+	log_func lf(__FUNCTION__, "map");
+	platform::set_thread_description("map");
+	auto* const perf = df::register_queue("map_tile");
+
+	try
+	{
+		platform::thread_init c;
+		const std::vector<std::reference_wrapper<platform::thread_event>> events = {q._event, platform::event_exit};
+
+		while (!df::is_closing)
+		{
+			if (wait_for(events, 10000, false) == 0)
+			{
+				platform::task_queue::task_t task;
+
+				if (q.dequeue(task))
+				{
+					// Wake another map worker for the next queued tile before this worker blocks on I/O.
+					q._event.set();
+
+					try
+					{
+						df::scope_locked_inc l(df::jobs_running);
+						df::bump(perf->batches);
+						df::bump(perf->tasks);
+						df::perf_timer timer(perf->busy_us, &perf->task_max_us);
+						task();
+					}
+					catch (std::exception& e)
+					{
+						df::log(__FUNCTION__, e.what());
+					}
+				}
+			}
+		}
+	}
+	catch (std::exception& e)
+	{
+		df::log(__FUNCTION__, e.what());
 	}
 }
 
@@ -373,8 +534,15 @@ void app_frame::start_workers()
 
 	auto scan_uncached_func = [this]
 	{
-		if (!df::is_closing && _state.item_index.is_init_complete())
+		// Runs on the UI thread from two completions - the database open and the folder discovery -
+		// whichever observes init as complete first. Starting the workers twice would put two
+		// consumers on every index queue: concurrent reads against the one disk this pipeline is
+		// deliberately serialised on, and concurrent mutation of the shared index by two prediction,
+		// summary and presence passes.
+		if (!df::is_closing && !_index_workers_started && _state.item_index.is_init_complete())
 		{
+			_index_workers_started = true;
+
 			auto token = df::cancel_token(index_version);
 
 			index_task_queue.enqueue([this, token]
@@ -384,6 +552,7 @@ void app_frame::start_workers()
 				invalidate_view(view_invalid::sidebar |
 					view_invalid::command_state |
 					view_invalid::item_scan |
+					view_invalid::presence |
 					view_invalid::refresh_items |
 					view_invalid::index_summary);
 			});
@@ -399,7 +568,6 @@ void app_frame::start_workers()
 
 		invalidate_view(view_invalid::sidebar |
 			view_invalid::item_scan |
-			view_invalid::presence |
 			view_invalid::refresh_items |
 			view_invalid::command_state |
 			view_invalid::index_summary);
@@ -421,24 +589,45 @@ void app_frame::start_workers()
 	_threads.start([&q = load_task_queue] { start_worker(q, "load"); });
 	_threads.start([&q = load_raw_task_queue] { start_worker(q, "load_raw"); });
 	_threads.start([&q = render_task_queue] { start_worker(q, "render"); });
+	_threads.start([&q = render_display_task_queue] { start_worker(q, "render_display"); });
 	_threads.start([&q = query_task_queue] { start_worker(q, "query"); });
 	_threads.start([&q = auto_complete_task_queue] { start_worker(q, "auto_complete"); });
 	_threads.start([&q = location_task_queue] { start_worker(q, "locations"); });
 	_threads.start([&q = sidebar_task_queue] { start_worker(q, "sidebar"); });
 	_threads.start([&q = web_task_queue] { start_worker(q, "web"); });
-	_threads.start([&q = map_tile_task_queue] { start_worker(q, "map"); });
+	for (auto i = 0; i < 2; ++i)
+	{
+		_threads.start([&q = map_tile_task_queue] { start_map_worker(q); });
+	}
 	_threads.start([&q = cloud_task_queue] { start_worker(q, "cloud"); });
 	_threads.start([&q = index_task_queue] { start_worker(q, "index"); });
 
 	index_task_queue.enqueue([this, scan_uncached_func]
 	{
+		// Wait for the database cache to finish loading before validating folders. The cache
+		// loader (merge_folder) and folder validation (validate_folder) both mutate the same
+		// folder nodes; if validation of a large folder races ahead of the loader it writes back
+		// nodes with metadata_scanned=0, causing that whole folder to be re-scanned on every
+		// startup. Bounded so a failed/absent database cannot hang indexing.
+		for (auto i = 0; i < 3000 && !_state.item_index.is_cache_loaded() && !df::is_closing; ++i)
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		}
+
 		_state.item_index.index_roots(index_folders());
 
 		const auto token = df::cancel_token(index_version);
 		_state.item_index.index_folders(token);
 		queue_ui(scan_uncached_func);
-		invalidate_view(view_invalid::sidebar | view_invalid::command_state | view_invalid::index_summary);
+		invalidate_view(view_invalid::sidebar | view_invalid::command_state | view_invalid::presence |
+			view_invalid::index_summary);
 	});
 
-	location_task_queue.enqueue([&lc = _locations] { lc.load_index(); });
+	// Issue #119: pick the location display language from the UI language before loading.
+	_locations.set_display_language(setting.language);
+	location_task_queue.enqueue([this]
+	{
+		_locations.load_index();
+		invalidate_view(view_invalid::sidebar);
+	});
 }

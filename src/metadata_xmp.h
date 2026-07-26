@@ -21,14 +21,28 @@ struct xmp_update_result
 
 namespace metadata_xmp
 {
+	struct property_presence
+	{
+		bool tags = false;
+		bool rating = false;
+	};
+
 	void initialise();
 	void term();
 
 	void parse(prop::item_metadata& pd, df::cspan xmp);
 	void parse(prop::item_metadata& pd, df::file_path path);
+	property_presence properties(df::cspan xmp);
 
+	// True when the file already carries an embedded XMP packet. Such a file can be updated
+	// where it lies, because the toolkit rewrites the existing packet instead of restructuring
+	// the format to make room for a first one.
+	bool has_embedded_xmp(df::file_path path);
+
+	// dst_xmp_path is the exact sidecar file to write. The caller stages it next to the media
+	// file actually being written so a failure can never touch the live sidecar.
 	xmp_update_result update(df::file_path file_path, df::file_path src_path, const metadata_edits& edits,
-	                         std::string_view xmp_name);
+	                         std::string_view src_xmp_name, df::file_path dst_xmp_path);
 	void update(std::string& buffer, const metadata_edits& edits);
 	metadata_kv_list to_info(df::cspan xmp);
 };

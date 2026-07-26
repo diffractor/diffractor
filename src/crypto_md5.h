@@ -36,13 +36,6 @@ public:
 
 	void finalize();
 
-	std::string hex_digest() const; // digest as a 33-byte ascii-hex string
-
-	std::vector<uint8_t> bin_digest() const
-	{
-		return std::vector<uint8_t>(digest, digest + 16);
-	};
-
 private:
 	bool _finalized = false;
 

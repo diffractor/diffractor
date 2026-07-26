@@ -48,7 +48,7 @@ namespace df
 				is_match = icmp(path.folder().text(), _root.text()) == 0;
 			}
 
-			if (str::icmp(_wildcard, "*.*") != 0)
+			if (is_match && str::icmp(_wildcard, "*.*") != 0)
 			{
 				is_match = wildcard_icmp(path.name(), _wildcard);
 			}
@@ -58,6 +58,8 @@ namespace df
 
 		static int count_ending_stars(const std::string_view sv, size_t& star_start)
 		{
+			if (sv.empty()) return 0;
+
 			auto stars = 0;
 			auto n = sv.size() - 1;
 
@@ -106,7 +108,7 @@ namespace df
 
 						if (tail.find_first_of("*?") != std::string_view::npos)
 						{
-							_wildcard = str::cache(tail);
+							_wildcard = tail;
 							root = sv.substr(0, last_slash);
 							stars = count_ending_stars(root, star_start);
 						}
@@ -135,13 +137,13 @@ namespace df
 
 			if (_recursive)
 			{
-				if (result.back() != '\\') result += '\\';
+				if (result.empty() || result.back() != '\\') result += '\\';
 				result += "**";
 			}
 
 			if (has_wildcard())
 			{
-				if (result.back() != '\\') result += '\\';
+				if (result.empty() || result.back() != '\\') result += '\\';
 				result += _wildcard;
 			}
 
@@ -208,8 +210,6 @@ namespace df
 		{
 			return _root.is_valid();
 		}
-
-		bool has_media() const;
 
 		friend bool operator==(const item_selector& lhs, const item_selector& rhs)
 		{

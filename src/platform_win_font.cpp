@@ -25,10 +25,7 @@ InterfaceType* SafeAcquire(InterfaceType* newObject)
 }
 
 static constexpr uint32_t icon_font_collection_id = 19;
-static constexpr uint32_t icon_font_collection_id2 = 33;
 static const auto icon_font_name = L"Segoe MDL2 Assets";
-//static const auto petscii_font_name = L"Basic Engine ASCII 8x8";
-static const auto petscii_font_name = L"C64 Pro Mono";
 
 class resource_font_file_stream final : public IDWriteFontFileStream
 {
@@ -303,8 +300,7 @@ public:
 		auto result = S_FALSE;
 
 		uint32_t font_id = 0;
-		if (_index == 1) font_id = IDF_ICONS;
-		if (_index == 0) font_id = IDF_PETSCII;
+		if (_index == 0) font_id = IDF_ICONS;
 
 		if (font_id != 0)
 		{
@@ -506,39 +502,6 @@ font_renderer_ptr factories::create_icon_font_face(const int font_height)
 	return result;
 }
 
-font_renderer_ptr factories::create_petscii_font_face(const int font_height)
-{
-	font_renderer_ptr result;
-	ComPtr<IDWriteFontCollection> custom_collection;
-
-	const auto hr = dwrite->CreateCustomFontCollection(
-		&font_collection_loader,
-		&icon_font_collection_id2,
-		sizeof(icon_font_collection_id2),
-		&custom_collection);
-
-	if (SUCCEEDED(hr))
-	{
-		result = create_font_renderer(dwrite.Get(), custom_collection.Get(), petscii_font_name, font_height);
-	}
-	else
-	{
-		df::log(__FUNCTION__, std::format("CreateCustomFontCollection failed {:x}", static_cast<uint32_t>(hr)));
-	}
-
-	if (!result)
-	{
-		result = create_font_face(petscii_font_name, font_height);
-	}
-
-	if (!result)
-	{
-		result = create_font_face(L"Consolas", font_height);
-	}
-
-	return result;
-}
-
 font_renderer_ptr factories::create_font_face(const wchar_t* font_name, const int font_height) const
 {
 	return create_font_renderer(dwrite.Get(), font_collection.Get(), font_name, font_height);
@@ -566,9 +529,76 @@ void factories::unregister_fonts() const
 	}
 }
 
+platform::glyph_fallback_probe platform::probe_glyph_fallback(const std::string_view primary_family,
+                                                              const std::string_view fallback_family,
+                                                              const char32_t code_point)
+{
+	glyph_fallback_probe result;
+
+	ComPtr<IDWriteFactory> factory;
+
+	if (FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
+	                               reinterpret_cast<IUnknown**>(factory.GetAddressOf()))) || !factory)
+	{
+		return result;
+	}
+
+	ComPtr<IDWriteFontCollection> system_fonts;
+	factory->GetSystemFontCollection(system_fonts.GetAddressOf());
+	if (!system_fonts) return result;
+
+	const auto make_face = [&system_fonts](const std::string_view family) -> ComPtr<IDWriteFontFace>
+	{
+		const auto name = platform::utf8_to_utf16(family);
+		ComPtr<IDWriteFontFace> face;
+		uint32_t index = 0;
+		BOOL exists = FALSE;
+
+		if (SUCCEEDED(system_fonts->FindFamilyName(name.c_str(), &index, &exists)) && exists)
+		{
+			ComPtr<IDWriteFontFamily> font_family;
+			ComPtr<IDWriteFont> font;
+
+			if (SUCCEEDED(system_fonts->GetFontFamily(index, font_family.GetAddressOf())) &&
+				SUCCEEDED(font_family->GetFirstMatchingFont(DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+				                                           DWRITE_FONT_STYLE_NORMAL, font.GetAddressOf())))
+			{
+				font->CreateFontFace(face.GetAddressOf());
+			}
+		}
+
+		return face;
+	};
+
+	const auto primary = make_face(primary_family);
+	const auto fallback = make_face(fallback_family);
+	if (!primary || !fallback) return result;
+
+	const auto cp = static_cast<uint32_t>(code_point);
+	primary->GetGlyphIndices(&cp, 1, &result.primary_glyph);
+	fallback->GetGlyphIndices(&cp, 1, &result.fallback_glyph);
+
+	DWRITE_GLYPH_METRICS from_fallback{};
+	result.fallback_metrics_ok = SUCCEEDED(
+		fallback->GetDesignGlyphMetrics(&result.fallback_glyph, 1, &from_fallback));
+
+	// The latent render_glyph bug: metrics read from the primary face for a glyph index
+	// that belongs to the fallback face describe a different glyph, or fail outright.
+	DWRITE_GLYPH_METRICS from_primary{};
+	const auto primary_hr = primary->GetDesignGlyphMetrics(&result.fallback_glyph, 1, &from_primary);
+	result.primary_metrics_differ = FAILED(primary_hr) ||
+		from_primary.advanceWidth != from_fallback.advanceWidth ||
+		from_primary.verticalOriginY != from_fallback.verticalOriginY;
+
+	result.available = true;
+	return result;
+}
+
 font_renderer_ptr factories::font_face(const ui::style::font_face type, const int base_font_size)
 {
-	const auto key = static_cast<uint32_t>(type) | static_cast<uint32_t>(base_font_size << 16);
+	// Shift as unsigned: `base_font_size << 16` on a signed int is undefined once the size exceeds
+	// 32767, which a very large DPI plus the large-font setting can reach.
+	const auto key = static_cast<uint32_t>(type) | static_cast<uint32_t>(base_font_size) << 16;
 	const auto found = font_renderers.find(key);
 
 	if (found != font_renderers.end())
@@ -581,36 +611,37 @@ font_renderer_ptr factories::font_face(const ui::style::font_face type, const in
 		dwrite->GetSystemFontCollection(font_collection.GetAddressOf());
 	}
 
+	if (!font_collection)
+	{
+		// Could not obtain the system font collection yet - do not cache a negative
+		// result so this key can be retried once the collection becomes available.
+		return nullptr;
+	}
+
 	font_renderer_ptr result;
 
-	if (font_collection)
+	switch (type)
 	{
-		switch (type)
-		{
-		case ui::style::font_face::dialog:
-			result = create_font_face(L"Calibri", base_font_size);
-			break;
-		case ui::style::font_face::code:
-			result = create_font_face(L"Consolas", base_font_size * 4 / 5);
-			break;
-		case ui::style::font_face::icons:
-			result = create_icon_font_face(base_font_size);
-			break;
-		case ui::style::font_face::small_icons:
-			result = create_icon_font_face(base_font_size * 10 / 16);
-			break;
-		case ui::style::font_face::title:
-			result = create_font_face(L"Calibri", base_font_size * 3 / 2);
-			break;
-		case ui::style::font_face::mega:
-			result = create_font_face(L"Calibri", base_font_size * 9 / 4);
-			break;
-		case ui::style::font_face::petscii:
-			result = create_petscii_font_face(base_font_size);
-			break;
-		default:
-			break;
-		}
+	case ui::style::font_face::dialog:
+		result = create_font_face(L"Calibri", base_font_size);
+		break;
+	case ui::style::font_face::code:
+		result = create_font_face(L"Consolas", base_font_size * 4 / 5);
+		break;
+	case ui::style::font_face::icons:
+		result = create_icon_font_face(base_font_size);
+		break;
+	case ui::style::font_face::small_icons:
+		result = create_icon_font_face(base_font_size * 10 / 16);
+		break;
+	case ui::style::font_face::title:
+		result = create_font_face(L"Calibri", base_font_size * 3 / 2);
+		break;
+	case ui::style::font_face::mega:
+		result = create_font_face(L"Calibri", base_font_size * 9 / 4);
+		break;
+	default:
+		break;
 	}
 
 	if (!result)
@@ -625,12 +656,53 @@ font_renderer_ptr factories::font_face(const ui::style::font_face type, const in
 		result = create_font_face(L"Tahoma", base_font_size);
 	}
 
-	// Cache the backup font result to avoid repeated fallback attempts and log spam
-	if (result)
+	// Issue #232: cache the outcome for this key - including a null result - so a
+	// known-bad key (requested font and all fallbacks unavailable) is never retried.
+	// This stops the per-draw software renderer path from repeatedly re-running the
+	// font lookups and flooding the log with "font family not found" messages.
+	font_renderers[key] = result;
+
+	return result;
+}
+
+platform::font_cache_probe platform::probe_font_cache(const int base_font_size)
+{
+	font_cache_probe result;
+
+	// A private factories instance: font_face only needs the text engine, so this never
+	// touches the app's renderer or its cache.
+	factories f;
+
+	if (FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
+	                               reinterpret_cast<IUnknown**>(f.dwrite.GetAddressOf()))) || !f.dwrite)
 	{
-		font_renderers[key] = result;
+		return result;
 	}
 
+	constexpr auto face = ui::style::font_face::dialog;
+
+	const auto first = f.font_face(face, base_font_size);
+	if (!first) return result;
+
+	result.entries_after_first = static_cast<int>(f.font_renderers.size());
+
+	// Issue #232: the repeat must come from the cache, so no family lookup and no log line.
+	const auto repeat = f.font_face(face, base_font_size);
+	result.same_request_is_cached = repeat == first &&
+		static_cast<int>(f.font_renderers.size()) == result.entries_after_first;
+
+	// Issue #189: the size is part of the key, so a Large Font toggle cannot hand back the
+	// old-size face (and with it the glyph cache built at that size).
+	const auto resized = f.font_face(face, base_font_size * 2);
+	result.size_change_is_distinct = resized && resized != first;
+
+	const auto other_face = f.font_face(ui::style::font_face::code, base_font_size);
+	result.face_change_is_distinct = other_face && other_face != first;
+
+	f.reset_fonts();
+	result.reset_clears_cache = f.font_renderers.empty();
+
+	result.available = true;
 	return result;
 }
 
@@ -657,56 +729,6 @@ uint32_t font_renderer::calc_base_line_height() const
 		return _font_size; // Fallback to font size if metrics are invalid
 	}
 	return df::mul_div(_metrics.ascent + _metrics.lineGap, _font_size, _metrics.designUnitsPerEm);
-}
-
-calc_text_extent_result font_renderer::calc_glyph_extent(const std::u32string_view code_points) const
-{
-	calc_text_extent_result result;
-
-	if (code_points.empty() || code_points.size() > INT_MAX)
-	{
-		return result; // Return empty result for invalid input
-	}
-
-	std::vector<uint16_t> glyph_indices(code_points.size());
-
-	if (SUCCEEDED(
-		_face->GetGlyphIndices(reinterpret_cast<const uint32_t*>(code_points.data()), static_cast<int>(code_points.size(
-			)),
-			glyph_indices.data())))
-	{
-		std::vector<DWRITE_GLYPH_METRICS> glyph_metrics(glyph_indices.size());
-
-		if (SUCCEEDED(
-			_face->GetDesignGlyphMetrics(glyph_indices.data(), static_cast<int>(glyph_indices.size()), glyph_metrics.
-				data())))
-		{
-			result.pos.reserve(glyph_metrics.size());
-
-			auto xx = 0;
-			auto xmax = 0.0f;
-
-			for (const auto& gm : glyph_metrics)
-			{
-				const auto x = static_cast<float>(xx /*+ gm.leftSideBearing*/) * _font_size / _metrics.designUnitsPerEm;
-				xmax = static_cast<float>(xx + gm.advanceWidth) * _font_size / _metrics.designUnitsPerEm;
-
-				result.pos.emplace_back(
-					x,
-					0.0f, //static_cast<float>(gm.topSideBearing) * _font_size /  _metrics.designUnitsPerEm,
-					static_cast<float>(gm.advanceWidth) * _font_size / _metrics.designUnitsPerEm);
-
-				xx += gm.advanceWidth;
-			}
-
-			result.cx = df::round_up(xmax);
-			result.cy = df::round_up(
-				static_cast<float>(_metrics.ascent + _metrics.descent + _metrics.lineGap) * _font_size / _metrics.
-				designUnitsPerEm);
-		}
-	}
-
-	return result;
 }
 
 // https://stackoverflow.com/questions/5995293/get-single-glyph-metrics-net
@@ -896,6 +918,9 @@ void text_layout_impl::update(const std::string_view text, const ui::style::text
 {
 	const auto textw = str::utf8_to_utf16(text);
 
+	for (auto& m : _measured) m.valid = false;
+	_measured_next = 0;
+
 	ComPtr<IDWriteTextLayout> layout;
 	const auto hr = _renderer->_factory->CreateTextLayout(textw.data(), static_cast<int>(textw.size()),
 	                                                      _renderer->_text_format.Get(), 0, 0, &layout);
@@ -915,6 +940,11 @@ sizei text_layout_impl::measure_text(const int cx, const int cy)
 {
 	df::assert_true(_layout);
 
+	for (const auto& m : _measured)
+	{
+		if (m.valid && m.limit.cx == cx && m.limit.cy == cy) return m.extent;
+	}
+
 	if (_layout)
 	{
 		_layout->SetMaxWidth(static_cast<float>(cx));
@@ -925,7 +955,10 @@ sizei text_layout_impl::measure_text(const int cx, const int cy)
 
 		if (SUCCEEDED(hr))
 		{
-			return {df::round_up(metrics.width), df::round_up(metrics.height)};
+			const sizei extent{df::round_up(metrics.width), df::round_up(metrics.height)};
+			_measured[_measured_next] = {{cx, cy}, extent, true};
+			_measured_next = (_measured_next + 1) % std::size(_measured);
+			return extent;
 		}
 	}
 

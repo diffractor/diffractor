@@ -48,6 +48,7 @@
 #include <iomanip>
 #include <optional>
 #include <span>
+#include <variant>
 #include <format>
 
 #include <thread>

@@ -238,19 +238,6 @@ uint32_t crypto::crc32c(const std::string_view sv)
 static constexpr uint32_t FNV_PRIME_32 = 16777619u;
 static constexpr uint32_t OFFSET_BASIS_32 = 2166136261u;
 
-uint32_t crypto::fnv1a(const void* data, const size_t len)
-{
-	const auto* p = static_cast<const uint8_t*>(data);
-	uint32_t result = OFFSET_BASIS_32;
-
-	for (size_t i = 0; i < len; ++i)
-	{
-		result ^= p[i];
-		result *= FNV_PRIME_32;
-	}
-	return result;
-}
-
 uint32_t crypto::fnv1a_i(const std::string_view sv)
 {
 	auto p = sv.begin();

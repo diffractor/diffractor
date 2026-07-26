@@ -88,6 +88,8 @@ IDC_HANDDOWN            CURSOR                  "res\\hand_down.cur"
 
 IDC_HANDUP              CURSOR                  "res\\hand_up.cur"
 
+IDC_ZOOM                CURSOR                  "res\\zoom.cur"
+
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -114,11 +116,10 @@ IDB_INVERSE_SHADOW      PNG                     "Res\\inverse_shadow.png"
 IDB_LOGO                PNG                     "Res\\logo.png"
 IDB_LOGO30              PNG                   "Res\\logo30.png"
 IDB_LOGO15              PNG                   "Res\\logo15.png"
-IDB_MAP                 PNG                      "Res\\map.png"
+IDB_MAP                 PNG                      "Res\\map-hires.png"
 IDB_TITLE               PNG                    "Res\\title.png"
 
 IDF_ICONS               BINARY                 "Res\\segmdl2.ttf"
-IDF_PETSCII             BINARY                 "Res\\c64-pro-mono.ttf" 
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -149,8 +150,8 @@ IDR_MANIFEST            RT_MANIFEST             "platform_win.manifest"
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1, 26, 4, 1212
- PRODUCTVERSION 1, 26, 4, 1212
+ FILEVERSION 1, 27, 0, 1256
+ PRODUCTVERSION 1, 27, 0, 1256
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -167,12 +168,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "Diffractor"
             VALUE "FileDescription", "Diffractor"
-            VALUE "FileVersion", "1.26.4.1212"
+            VALUE "FileVersion", "1.27.0.1256"
             VALUE "InternalName", "Diffractor.exe"
             VALUE "LegalCopyright", "Copyright (C) 2024 Diffractor - Zac Walker"
             VALUE "OriginalFilename", "Diffractor.exe"
             VALUE "ProductName", "Diffractor"
-            VALUE "ProductVersion", "1.26.4.1212"
+            VALUE "ProductVersion", "1.27.0.1256"
         END
     END
     BLOCK "VarFileInfo"

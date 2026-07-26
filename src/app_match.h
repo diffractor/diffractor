@@ -11,6 +11,7 @@
 
 #pragma once
 #include "ui_controllers.h"
+#include "ui_dialog.h"
 
 static std::string_view strip_quotes(const std::string_view str)
 {
@@ -205,6 +206,36 @@ static std::vector<ui::text_highlight_t> make_highlights(const ui::match_highlig
 	return highlights;
 }
 
+static std::string auto_complete_lead(std::string lead)
+{
+	if (!lead.empty() && !str::is_white_space(lead.back())) lead.push_back(' ');
+	return lead;
+}
+
+static icon_index search_icon(const std::string_view text)
+{
+	if (df::is_path(str::trim(text))) return icon_index::folder;
+
+	const auto search = df::search_t::parse(text);
+	if (search.has_recursive_selector()) return icon_index::recursive;
+	if (search.has_selector()) return icon_index::folder;
+
+	for (const auto& term : search.terms())
+	{
+		if ((term.type == df::search_term_type::value || term.type == df::search_term_type::has_type) &&
+			term.key != prop::null)
+		{
+			return term.key->icon;
+		}
+		if (term.type == df::search_term_type::date) return icon_index::time;
+		if (term.type == df::search_term_type::location || term.type == df::search_term_type::area)
+			return icon_index::location;
+		if (term.type == df::search_term_type::media_type && term.fg_val) return term.fg_val->icon;
+	}
+
+	return icon_index::search;
+}
+
 class folder_match final : public ui::auto_complete_match, public std::enable_shared_from_this<folder_match>
 {
 public:
@@ -229,7 +260,7 @@ public:
 
 	std::string edit_text() const override
 	{
-		return combine2(lead, folder.text());
+		return combine2(auto_complete_lead(lead), folder.text());
 	}
 
 	void render(ui::draw_context& dc, const pointi element_offset) const override
@@ -247,14 +278,20 @@ public:
 		const auto clr = ui::color(dc.colors.foreground, dc.colors.alpha);
 
 		auto rr = logical_bounds;
+		const auto icon_width = dc.measure_text("X", ui::style::font_face::dialog,
+		                                        ui::style::text_style::single_line, bounds.width()).cy;
+		auto icon_bounds = rr;
+		icon_bounds.right = icon_bounds.left + icon_width;
+		xdraw_icon(dc, icon_index::folder, icon_bounds, clr, {});
+		rr.left = icon_bounds.right + dc.padding2;
 
 		if (!str::is_empty(lead))
 		{
-			constexpr auto dots = " ... ";
-			const auto dots_extent = dc.measure_text(dots, ui::style::font_face::dialog,
+			const auto lead_text = auto_complete_lead(lead);
+			const auto lead_extent = dc.measure_text(lead_text, ui::style::font_face::dialog,
 			                                         ui::style::text_style::single_line, bounds.width());
-			dc.draw_text(dots, {}, rr, ui::style::font_face::dialog, ui::style::text_style::single_line, clr, {});
-			rr.left += dots_extent.cx + dc.padding2;
+			dc.draw_text(lead_text, {}, rr, ui::style::font_face::dialog, ui::style::text_style::single_line, clr, {});
+			rr.left += lead_extent.cx;
 		}
 
 
@@ -290,18 +327,20 @@ public:
 	std::string lead;
 	std::string text;
 	ui::match_highlights match;
+	icon_index icon;
 
 	text_match(ui::complete_strategy_t& parent, std::string t, std::string l, ui::match_highlights m = {},
-	           const int w = 1) : auto_complete_match(view_element_style::can_invoke), _parent(parent),
+	           const int w = 1, const icon_index icon_in = icon_index::search) :
+		auto_complete_match(view_element_style::can_invoke), _parent(parent),
 	                              lead(std::move(l)),
-	                              text(std::move(t)), match(std::move(m))
+	                              text(std::move(t)), match(std::move(m)), icon(icon_in)
 	{
 		weight = w;
 	}
 
 	std::string edit_text() const override
 	{
-		return str::combine2(lead, text);
+		return str::combine2(auto_complete_lead(lead), text);
 	}
 
 	void render(ui::draw_context& dc, const pointi element_offset) const override
@@ -319,14 +358,20 @@ public:
 		const auto clr = ui::color(dc.colors.foreground, dc.colors.alpha);
 
 		auto rr = logical_bounds;
+		const auto icon_width = dc.measure_text("X", ui::style::font_face::dialog,
+		                                        ui::style::text_style::single_line, bounds.width()).cy;
+		auto icon_bounds = rr;
+		icon_bounds.right = icon_bounds.left + icon_width;
+		xdraw_icon(dc, icon, icon_bounds, clr, {});
+		rr.left = icon_bounds.right + dc.padding2;
 
 		if (!str::is_empty(lead))
 		{
-			constexpr auto dots = " ... ";
-			const auto dots_extent = dc.measure_text(dots, ui::style::font_face::dialog,
+			const auto lead_text = auto_complete_lead(lead);
+			const auto lead_extent = dc.measure_text(lead_text, ui::style::font_face::dialog,
 			                                         ui::style::text_style::single_line, bounds.width());
-			dc.draw_text(dots, {}, rr, ui::style::font_face::dialog, ui::style::text_style::single_line, clr, {});
-			rr.left += dots_extent.cx + dc.padding2;
+			dc.draw_text(lead_text, {}, rr, ui::style::font_face::dialog, ui::style::text_style::single_line, clr, {});
+			rr.left += lead_extent.cx;
 		}
 
 		const auto highlights = make_highlights(match, highlight_clr);

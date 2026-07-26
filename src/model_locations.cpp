@@ -6,25 +6,40 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
-// Purpose: Geographic location database. Manages country and city lookups for
-// GPS coordinates, provides reverse geocoding from latitude/longitude.
+// Purpose: Gazetteer index and reverse geocoding implementation. Loads and indexes the place
+// and country files, reads records back by offset, and implements bounded coordinate
+// attribution, name and id lookup, auto-complete and bounds queries over the KD-tree.
 
 #include "pch.h"
 #include "model_locations.h"
 #include "model_location.h"
 #include "model_property.h"
+#include "app_text.h"
 
 country_t country_t::null;
 
-static_assert(std::is_trivially_copyable_v<location_t>);
-static_assert(std::is_move_constructible_v<country_t>);
-static_assert(std::is_move_constructible_v<location_match>);
+df_assert_pod(location_t);
+df_assert_movable(country_t);
+df_assert_movable(location_match);
 
 static constexpr auto countries_file_name = "location-countries.txt";
 static constexpr auto states_file_name = "location-states.txt";
 static constexpr auto places_file_name = "location-places.txt";
 
-constexpr auto max_location_cols = 32;
+constexpr auto max_location_cols = 64;
+
+// Issue #119: location display-language table. Each entry's array index is its stable bit
+// position in a place record's language bitmap (the langmask column). The generator
+// (tools/generate_locations.py, LANGUAGE_BITS) writes one localized name per set bit,
+// ordered by bit index, immediately after the default name column. NEVER reorder or remove
+// entries - bit positions are baked into location-places.txt. Codes are geonames isolanguage
+// values (ISO-639-1), which match Diffractor's .po language codes for the shipped UI languages.
+static constexpr std::string_view location_language_codes[] = {
+	"en", "es", "de", "fr", "it", "pt", "nl", "ru", "uk", "pl", "cs", "tr", "ja", "ko", "zh", "ar",
+	"he", "hi", "th", "vi", "id", "sv", "no", "da", "fi", "el", "hu", "ro", "bg", "sr", "hr", "ca",
+};
+
+static_assert(std::size(location_language_codes) <= 32, "language bitmap is 32-bit");
 
 // Lookup on google
 // https://maps.googleapis.com/maps/api/geocode/json?search=wc1x8jy&sensor=false
@@ -73,7 +88,30 @@ struct csv_entry
 	{
 		return static_cast<float>(to_double());
 	}
+
+	uint32_t to_uint32() const
+	{
+		uint32_t v = 0;
+
+		for (const auto c : _s)
+		{
+			if (c < '0' || c > '9') break;
+			v = v * 10u + static_cast<uint32_t>(c - '0');
+		}
+
+		return v;
+	}
 };
+
+int location_localized_name_offset(const uint32_t langmask, const int lang_bit)
+{
+	if (lang_bit < 0 || lang_bit >= 32) return 0;
+
+	const auto bit = 1u << lang_bit;
+	if ((langmask & bit) == 0) return 0;
+
+	return 1 + std::popcount(langmask & (bit - 1));
+}
 
 void location_t::clear()
 {
@@ -82,15 +120,95 @@ void location_t::clear()
 	state = {};
 	country = {};
 	position.clear();
+	population = 0.0;
+	flags = 0;
+}
+
+std::string format_distance_km(const double km)
+{
+	// SI symbols, not words, so the string reads the same as the `loc:"London, 10km"` a user types.
+	if (km < 1.0) return std::format("{} m", df::round(km * 1000.0));
+	if (km < 10.0 && std::fabs(km - std::round(km)) > 0.05) return std::format("{:.1f} km", km);
+	return std::format("{} km", df::round(km));
+}
+
+std::string qualified_name(const location_t& loc)
+{
+	const auto level = loc.qualification();
+
+	str::cached parts[3] = {};
+	auto count = 0;
+
+	parts[count++] = loc.place;
+	if (level == location_qualification::name_region_country) parts[count++] = loc.state;
+	if (level != location_qualification::name) parts[count++] = loc.country;
+
+	std::string result;
+
+	for (auto i = 0; i < count; ++i)
+	{
+		if (str::is_empty(parts[i])) continue;
+
+		// A city-state, or a place whose name equals its region, must not repeat itself.
+		auto repeated = false;
+		for (auto j = 0; j < i && !repeated; ++j) repeated = icmp(parts[j], parts[i]) == 0;
+		if (repeated) continue;
+
+		join(result, parts[i], ", ", false);
+	}
+
+	// A record with no place name -- a country or region hit -- still needs a label.
+	if (result.empty())
+	{
+		join(result, loc.state, ", ", false);
+		join(result, loc.country, ", ", false);
+	}
+
+	return result;
+}
+
+double location_bearing_degrees(const gps_coordinate& from, const gps_coordinate& to)
+{
+	const auto lat1 = gps_coordinate::deg2rad(from.latitude());
+	const auto lat2 = gps_coordinate::deg2rad(to.latitude());
+	const auto delta_lon = gps_coordinate::deg2rad(to.longitude() - from.longitude());
+
+	const auto y = std::sin(delta_lon) * std::cos(lat2);
+	const auto x = std::cos(lat1) * std::sin(lat2) - std::sin(lat1) * std::cos(lat2) * std::cos(delta_lon);
+
+	return gps_coordinate::rad2deg(std::atan2(y, x));
+}
+
+std::string bearing_descriptor(const located_place& lp)
+{
+	// locations.md 2.7: only steps 3-5 get a bearing. An item that is `at` a place is already
+	// answered by the place name, and a bearing there would only add noise.
+	if (lp.attribution == location_attribution::none || lp.attribution == location_attribution::at) return {};
+
+	const auto place = qualified_name(lp.nearest);
+	if (place.empty() || lp.nearest_km <= 0.0) return {};
+
+	// tt.compass_points holds the eight abbreviations, north first and clockwise, comma separated.
+	// Translators space them out after the comma, so each one has to be trimmed.
+	const auto index = std::clamp(static_cast<int>(lp.nearest_bearing), 0, 7);
+	auto remaining = tt.compass_points.sv();
+	std::string_view compass = remaining;
+
+	for (auto i = 0; i <= index; ++i)
+	{
+		const auto comma = remaining.find(',');
+		compass = remaining.substr(0, comma);
+		if (comma == std::string_view::npos) break;
+		remaining = remaining.substr(comma + 1);
+	}
+
+	compass = str::trim(compass);
+	return str_format(tt.bearing_fmt.sv(), format_distance_km(lp.nearest_km), compass, place);
 }
 
 std::string location_t::str() const
 {
-	std::string result;
-	join(result, place, ", ", false);
-	join(result, state, ", ", false);
-	join(result, country, ", ", false);
-	return result;
+	return qualified_name(*this);
 }
 
 std::string gps_coordinate::str() const
@@ -156,7 +274,23 @@ location_cache::location_cache() : _locations_path(df::probe_data_file(places_fi
 	static_assert(sizeof(ngram_t) == 4);
 	static_assert(sizeof(location_ngram_and_offset) == 8);
 	static_assert(sizeof(location_id_and_offset) == 8);
-	static_assert(sizeof(kd_coordinates_t) == 16);
+	static_assert(sizeof(kd_coordinates_t) == 24);
+}
+
+void location_cache::set_display_language(const std::string_view code)
+{
+	int bit = -1;
+
+	for (auto i = 0; i < static_cast<int>(std::size(location_language_codes)); ++i)
+	{
+		if (str::icmp(location_language_codes[i], code) == 0)
+		{
+			bit = i;
+			break;
+		}
+	}
+
+	_display_lang_bit.store(bit, std::memory_order_relaxed);
 }
 
 static void skip_bom(std::ifstream& file)
@@ -190,6 +324,56 @@ str::cached normalize_county_name(const str::cached country)
 	platform::exclusive_lock abbreviation_lock(normalize_mutex);
 	const auto found = county_names.find(country);
 	return found != county_names.end() ? found->second : country;
+}
+
+// ISO 3166-1 alpha-2 codes, plus common alpha-3 codes and the UK/USA/UAE aliases. Codes that
+// are also ordinary English words (CAN, PER, NOR, FIN, MAR, KEN) are deliberately omitted so
+// that unquoted search text is not mistaken for a country.
+static constexpr std::string_view country_codes[] = {
+	"AD", "AE", "AF", "AG", "AI", "AL", "AM", "AO", "AQ", "AR", "AS", "AT", "AU", "AW", "AX", "AZ",
+	"BA", "BB", "BD", "BE", "BF", "BG", "BH", "BI", "BJ", "BL", "BM", "BN", "BO", "BQ", "BR", "BS",
+	"BT", "BV", "BW", "BY", "BZ",
+	"CA", "CC", "CD", "CF", "CG", "CH", "CI", "CK", "CL", "CM", "CN", "CO", "CR", "CU", "CV", "CW",
+	"CX", "CY", "CZ",
+	"DE", "DJ", "DK", "DM", "DO", "DZ",
+	"EC", "EE", "EG", "EH", "ER", "ES", "ET",
+	"FI", "FJ", "FK", "FM", "FO", "FR",
+	"GA", "GB", "GD", "GE", "GF", "GG", "GH", "GI", "GL", "GM", "GN", "GP", "GQ", "GR", "GS", "GT",
+	"GU", "GW", "GY",
+	"HK", "HM", "HN", "HR", "HT", "HU",
+	"ID", "IE", "IL", "IM", "IN", "IO", "IQ", "IR", "IS", "IT",
+	"JE", "JM", "JO", "JP",
+	"KE", "KG", "KH", "KI", "KM", "KN", "KP", "KR", "KW", "KY", "KZ",
+	"LA", "LB", "LC", "LI", "LK", "LR", "LS", "LT", "LU", "LV", "LY",
+	"MA", "MC", "MD", "ME", "MF", "MG", "MH", "MK", "ML", "MM", "MN", "MO", "MP", "MQ", "MR", "MS",
+	"MT", "MU", "MV", "MW", "MX", "MY", "MZ",
+	"NA", "NC", "NE", "NF", "NG", "NI", "NL", "NO", "NP", "NR", "NU", "NZ",
+	"OM",
+	"PA", "PE", "PF", "PG", "PH", "PK", "PL", "PM", "PN", "PR", "PS", "PT", "PW", "PY",
+	"QA",
+	"RE", "RO", "RS", "RU", "RW",
+	"SA", "SB", "SC", "SD", "SE", "SG", "SH", "SI", "SJ", "SK", "SL", "SM", "SN", "SO", "SR", "SS",
+	"ST", "SV", "SX", "SY", "SZ",
+	"TC", "TD", "TF", "TG", "TH", "TJ", "TK", "TL", "TM", "TN", "TO", "TR", "TT", "TV", "TW", "TZ",
+	"UA", "UG", "UM", "US", "UY", "UZ",
+	"VA", "VC", "VE", "VG", "VI", "VN", "VU",
+	"WF", "WS",
+	"YE", "YT",
+	"ZA", "ZM", "ZW",
+	"UK", "USA", "UAE",
+	"ARG", "AUS", "AUT", "BEL", "BGD", "BRA", "CHE", "CHL", "CHN", "COL", "CUB", "CYP", "CZE", "DEU",
+	"DNK", "DZA", "EGY", "ESP", "ETH", "FRA", "GBR", "GHA", "GRC", "HKG", "HRV", "HUN", "IDN", "IND",
+	"IRL", "IRN", "IRQ", "ISL", "ISR", "ITA", "JOR", "JPN", "KOR", "KWT", "LBN", "LKA", "LUX", "MEX",
+	"MLT", "MYS", "NGA", "NLD", "NPL", "NZL", "PAK", "PHL", "POL", "PRT", "QAT", "ROU", "RUS", "SAU",
+	"SGP", "SRB", "SWE", "THA", "TUN", "TUR", "TWN", "TZA", "UGA", "UKR", "VEN", "VNM", "ZAF",
+};
+
+bool is_country_code(const std::string_view token)
+{
+	if (token.size() < 2 || token.size() > 3) return false;
+
+	const auto code = to_code2(token);
+	return std::ranges::any_of(country_codes, [code](const std::string_view known) { return to_code2(known) == code; });
 }
 
 void location_cache::load_countries()
@@ -453,11 +637,33 @@ void location_cache::load_countries()
 				const auto code_text = entries[0].cached_string();
 				const auto name = entries[1].cached_string();
 
+				// Issue #119: langmask + localized country names (ordered by bit) precede the
+				// untagged search alt names. Localized names feed both display and the
+				// abbreviation/name normalization maps so a country can be matched by any name.
+				const auto langmask = entries[2].to_uint32();
+				const auto localized_count = std::popcount(langmask);
+
+				std::vector<str::cached> localized;
+				localized.reserve(localized_count);
+
+				for (auto i = 0; i < localized_count && (3 + i) < entry_count; i++)
+				{
+					auto&& csv_entry = entries[3 + i];
+					const auto localized_name = csv_entry.cached_string();
+					localized.emplace_back(localized_name);
+
+					if (!csv_entry.is_empty())
+					{
+						abbreviations[localized_name] = code_text;
+						names[localized_name] = name;
+					}
+				}
+
 				std::vector<str::cached> alt_names;
 
-				for (int i = 0; i < max_country_alt_names; i++)
+				for (auto i = 3 + localized_count; i < entry_count; i++)
 				{
-					auto&& csv_entry = entries[i + 2];
+					auto&& csv_entry = entries[i];
 
 					if (!csv_entry.is_empty())
 					{
@@ -473,7 +679,7 @@ void location_cache::load_countries()
 				names[name] = name;
 				names[code_text] = name;
 
-				_countries[code] = country_t(code_text, name, alt_names);
+				_countries[code] = country_t(code_text, name, std::move(alt_names), langmask, std::move(localized));
 			}
 		}
 
@@ -531,6 +737,9 @@ void location_cache::load_states()
 
 namespace Cols
 {
+	// locations.md 2.1: the flags column is fixed width and sits immediately BEFORE the name
+	// column, because the name is followed by a variable-length run of localized names. Mirrors
+	// the layout written by tools/generate_locations.py (CityRecord.__str__).
 	enum GeoNamesCols
 	{
 		id = 0,
@@ -539,9 +748,30 @@ namespace Cols
 		stateCode,
 		countryCode,
 		population,
+		langmask,
+		flags,
 		name
 	};
+
+	// The name column of a stale file that predates the flags column.
+	constexpr int legacy_name = flags;
 };
+
+static_assert(Cols::name == location_cache_default_name_col,
+              "location_cache::_place_name_col default must match the current layout");
+
+// locations.md 2.1: a record from a current file has an all-digit flags column where a stale
+// file has the place name. Detected once per load; a stale file is then read with the legacy
+// offsets so it degrades to over-qualified names rather than wrong names.
+static bool is_flags_column(const std::string_view s)
+{
+	if (s.empty()) return false;
+	for (const auto c : s)
+	{
+		if (c < '0' || c > '9') return false;
+	}
+	return true;
+}
 
 int location_cache::scan_entries(const std::string_view line, csv_entry* entries)
 {
@@ -594,6 +824,28 @@ int location_cache::scan_entries(std::ifstream& file, std::string& line, const s
 	return 0;
 }
 
+std::ifstream& location_cache::record_stream() const
+{
+	// One handle per thread. scan_entries clears the stream and seeks to an absolute offset, so a
+	// reused handle needs no BOM skip and carries no state between lookups.
+	thread_local std::ifstream stream;
+	thread_local df::file_path open_path;
+	thread_local uint32_t open_generation = 0;
+
+	const auto generation = _load_generation.load();
+
+	if (!stream.is_open() || open_path != _locations_path || open_generation != generation)
+	{
+		stream.close();
+		stream.clear();
+		stream.open(platform::to_file_system_path(_locations_path), std::ifstream::binary);
+		open_path = _locations_path;
+		open_generation = generation;
+	}
+
+	return stream;
+}
+
 location_t location_cache::build_location(std::ifstream& file, const int offset) const
 {
 	location_t result;
@@ -612,13 +864,32 @@ location_t location_cache::build_location(std::ifstream& file, const int offset)
 location_t location_cache::build_location(const csv_entry* entries) const
 {
 	const auto country_code = entries[Cols::countryCode].to_code2();
-	const auto country = find_country(country_code);
+	const auto country = find_country_locked(country_code);
 	const auto state = country.state(entries[Cols::stateCode].to_code2());
 	const auto population = entries[Cols::population].to_double();
+	const auto lang_bit = _display_lang_bit.load(std::memory_order_relaxed);
+	const auto name_col = _place_name_col;
+
+	// locations.md 2.1: bits 0-1 are the qualification level, bit 2 marks an extent feature.
+	// A stale file has no flags column, so the record reads as level 0; location_t treats an
+	// absent level conservatively where it matters.
+	const auto flags = name_col == Cols::name ? entries[Cols::flags].to_uint32() : 0u;
+
+	// Issue #119: prefer the place name in the selected UI language. langmask has one bit set
+	// per localized name that follows the default name column, ordered by bit index; the
+	// helper resolves the column offset. Offset 0 means fall back to the default name.
+	auto place = entries[name_col].cached_string();
+	const auto offset = location_localized_name_offset(entries[Cols::langmask].to_uint32(), lang_bit);
+
+	if (offset != 0)
+	{
+		const auto localized = entries[name_col + offset].cached_string();
+		if (!str::is_empty(localized)) place = localized;
+	}
 
 	const gps_coordinate position(entries[Cols::latitude].to_double(), entries[Cols::longitude].to_double());
-	return location_t(entries[Cols::id].to_int(), entries[Cols::name].cached_string(), state, country.name(), position,
-	                  population);
+	return location_t(entries[Cols::id].to_int(), place, state, country.localized_name(lang_bit), position,
+	                  population, flags);
 }
 
 void location_cache::load_index()
@@ -644,22 +915,63 @@ void location_cache::load_index()
 		auto pos = file.tellg();
 
 		std::string line;
+		auto first_record = true;
+		auto abandoned = false;
+
 		while (std::getline(file, line))
 		{
-			if (df::is_closing) return;
+			if (df::is_closing)
+			{
+				// Returning here would publish a half-built index that never gets sorted or
+				// tree-built, so every later lookup would be wrong rather than simply empty.
+				abandoned = true;
+				break;
+			}
 
 			const auto entry_count = scan_entries(line, entries);
+
+			if (first_record)
+			{
+				first_record = false;
+
+				// locations.md 2.1: decide the layout once from the first record. A file without
+				// the flags column is a stale file, not a supported variant - read it with the
+				// legacy offsets so names stay correct, and say so once.
+				_place_name_col = entry_count > Cols::name && is_flags_column(entries[Cols::flags].to_range())
+					                  ? static_cast<int>(Cols::name)
+					                  : static_cast<int>(Cols::legacy_name);
+
+				if (_place_name_col != Cols::name)
+				{
+					df::log(__FUNCTION__,
+					        std::format("{} predates the qualification-level column; place names will be over-qualified",
+					                    places_file_name));
+				}
+			}
+
 			const auto id = static_cast<uint32_t>(entries[Cols::id].to_int());
 			const auto country = entries[Cols::countryCode].to_code2();
 			const auto offset = static_cast<uint32_t>(pos);
 			const auto x = entries[Cols::latitude].to_float();
 			const auto y = entries[Cols::longitude].to_float();
+			const auto population = entries[Cols::population].to_float();
 
-			_coords.emplace_back(x, y, offset, country);
+			// A short, unidentified or off-globe record would still be indexed and would still be
+			// returned by find_closest, so an attribution could name a place that has no record to
+			// read back. Skip it instead; the rest of the file is still good.
+			if (entry_count <= _place_name_col || id == 0 ||
+				!std::isfinite(x) || !std::isfinite(y) ||
+				std::abs(x) > 90.0f || std::abs(y) > 180.0f)
+			{
+				pos = file.tellg();
+				continue;
+			}
+
+			_coords.emplace_back(x, y, offset, country, id, population);
 			_locations_by_id.emplace_back(id, offset);
 
-			const auto name_entry_count = entry_count - Cols::name;
-			const auto* const name_entries = entries + Cols::name;
+			const auto name_entry_count = entry_count - _place_name_col;
+			const auto* const name_entries = entries + _place_name_col;
 
 			for (auto i = 0; i < name_entry_count; i++)
 			{
@@ -673,6 +985,13 @@ void location_cache::load_index()
 
 			pos = file.tellg();
 		}
+
+		if (abandoned)
+		{
+			_locations_by_id.clear();
+			_locations_by_ngram.clear();
+			_coords.clear();
+		}
 	}
 
 	std::sort(_locations_by_id.begin(), _locations_by_id.end());
@@ -683,6 +1002,7 @@ void location_cache::load_index()
 	_coords.shrink_to_fit();
 
 	_tree.build(_coords);
+	++_load_generation;
 }
 
 struct location_match_possible
@@ -692,9 +1012,18 @@ struct location_match_possible
 	location_match_part state;
 	location_match_part country;
 	double distance_away{};
+	double population{};
 
+	// 0 the typed name is the whole place name, 1 it is a prefix of it, 2 it appears anywhere.
+	int name_rank = 2;
+
+	// locations.md 2.2 + 3.4: the record a bare name should resolve to is the one the user means,
+	// which is the exact spelling first and then the largest place. Ordering by proximity to the
+	// default location alone answered "London" with whichever hamlet happened to be nearest.
 	bool operator<(const location_match_possible& other) const
 	{
+		if (name_rank != other.name_rank) return name_rank < other.name_rank;
+		if (population != other.population) return population > other.population;
 		return distance_away < other.distance_away;
 	}
 };
@@ -762,6 +1091,13 @@ static bool find_match(const country_t& country, const std::string_view query, s
 			return true;
 	}
 
+	// Issue #119: also match localized country names so a country can be found in any language.
+	for (const auto& ln : country.localized_names())
+	{
+		if (find_match(ln, query, text_result, highlight_result))
+			return true;
+	}
+
 	return false;
 }
 
@@ -774,7 +1110,7 @@ location_matches location_cache::auto_complete(const std::string_view query, con
 	std::vector<uint32_t> ngram_matches;
 	std::vector<location_match_possible> possible_matches;
 
-	const auto closest = find_closest(default_location.latitude(), default_location.longitude());
+	const auto closest = find_closest_locked(default_location.latitude(), default_location.longitude(), nullptr);
 	const auto query_lower = str::to_lower(query);
 	auto query_parts = str::split(query_lower, true);
 
@@ -786,6 +1122,19 @@ location_matches location_cache::auto_complete(const std::string_view query, con
 	if (!query_parts.empty())
 	{
 		const auto short_query = query_parts.size() == 1 && query_parts[0].size() < 3;
+		if (query_parts.size() == 1 && query_parts[0].size() == 2)
+		{
+			const auto found_country = _countries.find(to_code2(query_parts[0]));
+			if (found_country != _countries.end())
+			{
+				location_match country_match;
+				country_match.location.country = found_country->second.localized_name(_display_lang_bit.load());
+				country_match.country.text = country_match.location.country;
+				country_match.country.highlights.emplace_back(0, query_parts[0].size());
+				result.emplace_back(std::move(country_match));
+			}
+		}
+
 		const auto ngram = ngram_t(query_parts[0]);
 		auto found_ngram = std::lower_bound(_locations_by_ngram.begin(), _locations_by_ngram.end(),
 		                                    location_ngram_and_offset{ngram, 0});
@@ -799,21 +1148,20 @@ location_matches location_cache::auto_complete(const std::string_view query, con
 		std::ranges::sort(ngram_matches);
 		ngram_matches.erase(std::ranges::unique(ngram_matches).begin(), ngram_matches.end());
 
-		std::ifstream file;
-		file.open(platform::to_file_system_path(_locations_path), std::ifstream::binary);
+		auto& file = record_stream();
 
 		if (file.is_open())
 		{
-			skip_bom(file);
 			std::string line;
 
 			for (const auto& line_offset : ngram_matches)
 			{
 				csv_entry entries[max_location_cols];
 				const auto entry_count = scan_entries(file, line, line_offset, entries);
-				const auto country = find_country(entries[Cols::countryCode].to_code2());
+				const auto country = find_country_locked(entries[Cols::countryCode].to_code2());
+				const auto state = country.state(entries[Cols::stateCode].to_code2());
 				const auto is_same_country = closest.country == country.code();
-				const auto name_col_count = entry_count - Cols::name;
+				const auto name_col_count = entry_count - _place_name_col;
 
 				auto match_count = 0u;
 				location_match_possible possible;
@@ -828,7 +1176,7 @@ location_matches location_cache::auto_complete(const std::string_view query, con
 
 						if (is_empty(possible.city.text))
 						{
-							if (find_match(entries + Cols::name, name_col_count, part, text_result, highlight_result))
+							if (find_match(entries + _place_name_col, name_col_count, part, text_result, highlight_result))
 							{
 								possible.city.text = text_result;
 								possible.city.highlights.emplace_back(highlight_result);
@@ -873,7 +1221,7 @@ location_matches location_cache::auto_complete(const std::string_view query, con
 						{
 							if (is_empty(possible.state.text))
 							{
-								if (find_match(country, part, text_result, highlight_result))
+								if (find_match(state, part, text_result, highlight_result))
 								{
 									possible.state.text = text_result;
 									possible.state.highlights.emplace_back(highlight_result);
@@ -903,6 +1251,15 @@ location_matches location_cache::auto_complete(const std::string_view query, con
 				{
 					gps_coordinate position(entries[Cols::latitude].to_double(), entries[Cols::longitude].to_double());
 					possible.distance_away = default_location.magnitude_between_locations(position);
+					possible.population = entries[Cols::population].to_double();
+
+					if (const auto matched_name = possible.city.text.sv(); !matched_name.empty())
+					{
+						const auto& primary = query_parts.front();
+						if (str::icmp(matched_name, primary) == 0) possible.name_rank = 0;
+						else if (str::starts(matched_name, primary)) possible.name_rank = 1;
+					}
+
 					possible.line = line;
 					possible_matches.emplace_back(possible);
 				}
@@ -942,6 +1299,93 @@ location_matches location_cache::auto_complete(const std::string_view query, con
 	return result;
 }
 
+location_t location_cache::find_by_name(const std::string_view query) const
+{
+	platform::shared_lock lock(_rw);
+
+	location_t result;
+	if (query.empty()) return result;
+
+	// locations.md 3.1: a place query is a name, optionally qualified by region and country.
+	auto query_parts = str::split(query, true, [](const wchar_t c) { return c == ','; });
+
+	for (auto&& part : query_parts)
+	{
+		part = str::trim(part);
+	}
+
+	std::erase_if(query_parts, [](const std::string_view p) { return p.empty(); });
+	if (query_parts.empty()) return result;
+
+	const auto name = query_parts[0];
+
+	std::vector<uint32_t> ngram_matches;
+	const auto ngram = ngram_t(name);
+	auto found_ngram = std::lower_bound(_locations_by_ngram.begin(), _locations_by_ngram.end(),
+	                                    location_ngram_and_offset{ngram, 0});
+
+	while (found_ngram != _locations_by_ngram.end() && found_ngram->ngram.is_possible_match(ngram))
+	{
+		ngram_matches.emplace_back(found_ngram->offset);
+		++found_ngram;
+	}
+
+	std::ranges::sort(ngram_matches);
+	ngram_matches.erase(std::ranges::unique(ngram_matches).begin(), ngram_matches.end());
+
+	auto& file = record_stream();
+	if (!file.is_open()) return result;
+
+	std::string line;
+
+	// The canonical record is the exact-name match with the largest population, so a bare
+	// name never resolves to an unrelated substring completion (locations.md defect 1).
+	auto best_population = -1.0;
+
+	for (const auto& line_offset : ngram_matches)
+	{
+		csv_entry entries[max_location_cols];
+		const auto entry_count = scan_entries(file, line, line_offset, entries);
+		if (entry_count <= _place_name_col) continue;
+
+		auto name_matched = false;
+
+		for (auto i = _place_name_col; i < entry_count && !name_matched; ++i)
+		{
+			name_matched = str::icmp(str::trim(entries[i].to_range()), name) == 0;
+		}
+
+		if (!name_matched) continue;
+
+		const auto country = find_country_locked(entries[Cols::countryCode].to_code2());
+		const auto state = country.state(entries[Cols::stateCode].to_code2());
+		auto qualifiers_matched = true;
+
+		for (size_t i = 1; i < query_parts.size() && qualifiers_matched; ++i)
+		{
+			const auto qualifier = query_parts[i];
+			qualifiers_matched = str::icmp(state.sv(), qualifier) == 0 ||
+				str::icmp(country.localized_name(_display_lang_bit.load()).sv(), qualifier) == 0 ||
+				str::icmp(country.name().sv(), qualifier) == 0;
+		}
+
+		if (!qualifiers_matched) continue;
+
+		const auto population = entries[Cols::population].to_double();
+
+		if (population > best_population)
+		{
+			best_population = population;
+
+			// entries already describes this line, so re-scanning it into a second 1 KB array
+			// only copied work that was just done.
+			result = build_location(entries);
+		}
+	}
+
+	return result;
+}
+
 location_t location_cache::find_by_id(const uint32_t id) const
 {
 	platform::shared_lock lock(_rw);
@@ -951,12 +1395,10 @@ location_t location_cache::find_by_id(const uint32_t id) const
 
 	if (found != _locations_by_id.end() && found->id == id)
 	{
-		std::ifstream file;
-		file.open(platform::to_file_system_path(_locations_path), std::ifstream::binary);
+		auto& file = record_stream();
 
 		if (file.is_open())
 		{
-			skip_bom(file);
 			result = build_location(file, found->offset);
 		}
 	}
@@ -970,6 +1412,9 @@ country_loc location_cache::find_country(const double x, const double y) const
 	const kd_coordinates_t xy = {static_cast<float>(x), static_cast<float>(y)};
 	const auto closest = _tree.find_closest(_coords, xy);
 	const auto found = _countries.find(closest.country);
+	// NOTE: returns the canonical (English) name deliberately. This feeds the map/heat-map
+	// country grouping whose label doubles as a search term (sidebar .with(name)); the search
+	// must match the canonical country name stored in the index, so it is NOT localized here.
 	return found != _countries.end()
 		       ? country_loc{found->second.code2(), found->second.name(), found->second.centroid()}
 		       : country_loc{};
@@ -977,19 +1422,239 @@ country_loc location_cache::find_country(const double x, const double y) const
 
 location_t location_cache::find_closest(const double x, const double y) const
 {
+	return find_closest(x, y, nullptr);
+}
+
+location_t location_cache::find_closest(const double x, const double y, country_loc* country) const
+{
 	platform::shared_lock lock(_rw);
+	return find_closest_locked(x, y, country);
+}
+
+location_t location_cache::find_closest_locked(const double x, const double y, country_loc* country) const
+{
 	location_t result;
-	std::ifstream file;
-	file.open(platform::to_file_system_path(_locations_path), std::ifstream::binary);
+	const kd_coordinates_t xy = {static_cast<float>(x), static_cast<float>(y)};
+	const auto closest = _tree.find_closest(_coords, xy);
+
+	if (country)
+	{
+		const auto found = _countries.find(closest.country);
+		*country = found != _countries.end()
+			? country_loc{found->second.code2(), found->second.name(), found->second.centroid()}
+			: country_loc{};
+	}
+
+	auto& file = record_stream();
 
 	if (file.is_open())
 	{
-		skip_bom(file);
-
-		const kd_coordinates_t xy = {static_cast<float>(x), static_cast<float>(y)};
-		const auto closest = _tree.find_closest(_coords, xy);
 		result = build_location(file, closest.offset);
 	}
 
 	return result;
+}
+
+void location_cache::collect_within_km(const double x, const double y, const double max_km,
+                                       std::vector<kd_coordinates_t>& candidates) const
+{
+	const auto lat_span = max_km / 111.0;
+	const auto lon_scale = std::max(0.05, std::cos(gps_coordinate::deg2rad(x)));
+	const auto lon_span = std::min(180.0, max_km / (111.0 * lon_scale));
+	const auto min_lat = std::max(-90.0, x - lat_span);
+	const auto max_lat = std::min(90.0, x + lat_span);
+	const auto min_lon = y - lon_span;
+	const auto max_lon = y + lon_span;
+
+	const auto collect = [&](const double lon_low, const double lon_high)
+	{
+		_tree.find_in_bounds(_coords,
+		                     static_cast<float>(min_lat), static_cast<float>(lon_low),
+		                     static_cast<float>(max_lat), static_cast<float>(lon_high),
+		                     candidates);
+	};
+
+	if (min_lon < -180.0)
+	{
+		collect(-180.0, max_lon);
+		collect(min_lon + 360.0, 180.0);
+	}
+	else if (max_lon > 180.0)
+	{
+		collect(min_lon, 180.0);
+		collect(-180.0, max_lon - 360.0);
+	}
+	else
+	{
+		collect(min_lon, max_lon);
+	}
+}
+
+location_t location_cache::find_largest_attributed(const double x, const double y) const
+{
+	const gps_coordinate at(x, y);
+	if (!at.is_valid()) return {};
+
+	platform::shared_lock lock(_rw);
+	if (_tree.is_empty()) return {};
+
+	std::vector<kd_coordinates_t> candidates;
+	collect_within_km(x, y, location_attribution_radius_km(1000000.0), candidates);
+
+	const kd_coordinates_t* largest = nullptr;
+	auto largest_km = std::numeric_limits<double>::max();
+
+	for (const auto& candidate : candidates)
+	{
+		const auto km = at.distance_in_kilometers(gps_coordinate(candidate.x, candidate.y));
+		if (km > location_attribution_radius_km(candidate.population)) continue;
+
+		if (!largest || candidate.population > largest->population ||
+			(candidate.population == largest->population && km < largest_km))
+		{
+			largest = &candidate;
+			largest_km = km;
+		}
+	}
+
+	if (!largest) return {};
+
+	auto& file = record_stream();
+	return file.is_open() ? build_location(file, largest->offset) : location_t{};
+}
+
+// locations.md 2.5: the attribution ladder. Step 1 (stored text) belongs to the caller; step 4
+// (water bodies) arrives with location-waters.txt in 2.6 and currently falls through to remote.
+located_place location_cache::find_attributed(const double x, const double y, country_loc* country) const
+{
+	if (country) *country = {};
+
+	const gps_coordinate at(x, y);
+	if (!at.is_valid()) return {};
+
+	platform::shared_lock lock(_rw);
+	if (_tree.is_empty()) return {};
+
+	const kd_coordinates_t xy = {static_cast<float>(x), static_cast<float>(y)};
+	const auto closest = _tree.find_closest(_coords, xy);
+	const auto closest_km = at.distance_in_kilometers(gps_coordinate(closest.x, closest.y));
+
+	auto winner = closest;
+	auto winner_km = closest_km;
+	auto attribution = location_attribution::remote;
+
+	if (closest_km <= location_attribution_radius_km(closest.population))
+	{
+		// The common case: the nearest place is close enough to stand for the item.
+		attribution = location_attribution::at;
+	}
+	else
+	{
+		// The nearest place is not the best answer -- a city 40 km away beats a hamlet 12 km
+		// away -- so widen to every place that could possibly reach this coordinate.
+		std::vector<kd_coordinates_t> candidates;
+		collect_within_km(x, y, location_max_attribution_km, candidates);
+
+		auto best_at_km = std::numeric_limits<double>::max();
+		auto best_near_km = std::numeric_limits<double>::max();
+		const kd_coordinates_t* best_at = nullptr;
+		const kd_coordinates_t* best_near = nullptr;
+
+		for (const auto& candidate : candidates)
+		{
+			const auto km = at.distance_in_kilometers(gps_coordinate(candidate.x, candidate.y));
+			const auto radius = location_attribution_radius_km(candidate.population);
+
+			if (km <= radius && km < best_at_km)
+			{
+				best_at_km = km;
+				best_at = &candidate;
+			}
+			else if (km <= radius * 3.0 && km < best_near_km)
+			{
+				best_near_km = km;
+				best_near = &candidate;
+			}
+		}
+
+		if (best_at)
+		{
+			winner = *best_at;
+			winner_km = best_at_km;
+			attribution = location_attribution::at;
+		}
+		else if (best_near)
+		{
+			winner = *best_near;
+			winner_km = best_near_km;
+			attribution = location_attribution::near;
+		}
+	}
+
+	located_place result;
+	result.attribution = attribution;
+	result.distance_km = attribution == location_attribution::remote ? closest_km : winner_km;
+	result.nearest_km = closest_km;
+	result.nearest_bearing = location_bearing_from_degrees(
+		location_bearing_degrees(gps_coordinate(closest.x, closest.y), at));
+
+	// Nothing may be named when remote, but a country is a large enough target to still be
+	// true when the nearest place is within the widest reach any place is ever granted.
+	const auto country_code = attribution == location_attribution::remote
+		                          ? (closest_km <= location_max_attribution_km ? closest.country : 0u)
+		                          : winner.country;
+
+	if (country_code != 0)
+	{
+		if (const auto found = _countries.find(country_code); found != _countries.end())
+		{
+			if (country) *country = {found->second.code2(), found->second.name(), found->second.centroid()};
+
+			if (attribution == location_attribution::remote)
+			{
+				result.place.country = found->second.localized_name(_display_lang_bit.load());
+			}
+		}
+	}
+
+	auto& file = record_stream();
+
+	if (file.is_open())
+	{
+		// locations.md 2.7 needs the nearest record even when it was too far to attribute, so a
+		// remote item can still say what it was 410 km north-west of.
+		result.nearest = build_location(file, closest.offset);
+
+		if (attribution != location_attribution::remote)
+		{
+			result.place = winner.offset == closest.offset ? result.nearest : build_location(file, winner.offset);
+		}
+	}
+
+	return result;
+}
+
+location_t location_cache::find_largest(const double min_latitude, const double min_longitude,
+	const double max_latitude, const double max_longitude) const
+{
+	platform::shared_lock lock(_rw);
+	std::vector<kd_coordinates_t> candidates;
+	_tree.find_in_bounds(_coords, static_cast<float>(min_latitude), static_cast<float>(min_longitude),
+	                     static_cast<float>(max_latitude), static_cast<float>(max_longitude), candidates);
+
+	const kd_coordinates_t* largest = nullptr;
+	for (const auto& candidate : candidates)
+	{
+		if (!largest || candidate.population > largest->population ||
+			(df::equiv(candidate.population, largest->population) && candidate.id < largest->id))
+		{
+			largest = &candidate;
+		}
+	}
+
+	if (!largest) return {};
+
+	auto& file = record_stream();
+	if (!file.is_open()) return {};
+	return build_location(file, largest->offset);
 }

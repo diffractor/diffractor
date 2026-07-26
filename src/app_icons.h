@@ -38,6 +38,7 @@ enum class icon_index
 	preview = 0xEDAD,
 	color = 0xE793,
 	convert = 0xE8AB,
+	swap = 0xE8AB,
 	crop = 0xE7A8,
 	del = 0xE74D,
 	sdcard = 0xE7F1,

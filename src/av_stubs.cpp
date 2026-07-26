@@ -17,6 +17,7 @@
 ////////////////////////////////////////////////
 
 extern "C" {
+#ifdef DF_AUDIT_STUBS_ENABLED
 #ifdef _M_IX86
 
 void ff_yuv2rgb_init_tables_ppc()
@@ -14923,4 +14924,5 @@ void ff_hevc_put_hevc_qpel_hv8_8_avx512icl()
 void ff_hevc_put_hevc_qpel_h64_8_avx512icl()
 {
 };
+#endif
 }

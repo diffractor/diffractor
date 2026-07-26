@@ -30,6 +30,7 @@ using view_host_base_ptr = std::shared_ptr<view_host_base>;
 enum class menu_type
 {
 	view,
+	sidebar,
 	media,
 	items
 };
@@ -52,6 +53,8 @@ enum class view_invalid
 	none = 0,
 
 	view_layout = 1 << 1,
+	// The selector strip's membership rule changed, so rebuild the strip without re-grouping.
+	selector_filter = 1 << 2,
 	group_layout = 1 << 3,
 	app_layout = 1 << 4,
 	view_redraw = 1 << 5,
@@ -70,12 +73,25 @@ enum class view_invalid
 	screen_saver = 1 << 18,
 	options_save = 1 << 19,
 	index_summary = 1 << 20,
-	filters = 1 << 21,
+	group_layout_complete = 1 << 21,
 	animations = 1 << 22,
 	selection_list = 1 << 23,
 	font_size = 1 << 24,
 	image_compare = 1 << 25,
 	status = 1 << 26,
+	// Like index, but first forgets every cached scan result so the collection is re-read from the files.
+	index_rebuild = 1 << 27,
+
+	visual_options = view_layout |
+	group_layout |
+	app_layout |
+	options_save |
+	sidebar |
+	command_state |
+	tooltip |
+	address |
+	font_size |
+	media_elements,
 
 	options = view_layout |
 	group_layout |
@@ -126,13 +142,13 @@ struct interaction_context
 
 constexpr ui::color view_handle_color(const bool selected, const bool hover, const bool tracking,
                                       const bool view_has_focus, const bool text_over,
-                                      const ui::color bg_clr = ui::style::color::group_background)
+                                      const ui::color bg_clr = ui::color(ui::style::color::group_background))
 {
 	if (tracking)
 	{
 		const auto clr = selected
 			                 ? ui::color(ui::style::color::view_selected_background)
-			                 : bg_clr.average(ui::style::color::view_text);
+			                 : bg_clr.average(ui::color(ui::style::color::view_text));
 
 		return clr.scale(hover ? 1.22f : 1.0f).aa(0.9f);
 	}
@@ -141,17 +157,45 @@ constexpr ui::color view_handle_color(const bool selected, const bool hover, con
 	{
 		const auto clr = view_has_focus
 			                 ? ui::color(ui::style::color::view_selected_background).scale(hover ? 1.22f : 1.0f)
-			                 : bg_clr.average(ui::style::color::view_selected_background).scale(hover ? 1.33f : 1.0f);
+			                 : bg_clr.average(ui::color(ui::style::color::view_selected_background)).scale(hover ? 1.33f : 1.0f);
 		return clr.aa(0.9f);
 	}
 
 	if (hover)
 	{
-		const auto clr = bg_clr.average(ui::style::color::view_text);
+		const auto clr = bg_clr.average(ui::color(ui::style::color::view_text));
 		return text_over ? clr.scale(0.8f).aa(0.9f) : clr.aa(0.9f);
 	}
 
 	return bg_clr.scale(text_over ? 1.22f : 1.44f).aa(0.9f);
+}
+
+// Every draggable splitter draws through this so the handle and its hover and drag highlights
+// are identical wherever a pane can be resized.
+inline void draw_splitter_handle(ui::draw_context& dc, const recti bounds, const int splitter_width,
+                                 const bool active, const bool tracking)
+{
+	const auto scale1 = df::round(1 * dc.scale_factor);
+	const auto visual_width = std::max(scale1, splitter_width);
+	const auto visual_left = bounds.left + (bounds.width() - visual_width) / 2;
+	const auto handle_margin = tracking || active ? scale1 : std::max(scale1, df::mul_div(visual_width, 2, 9));
+
+	recti draw_bounds;
+	draw_bounds.left = visual_left + handle_margin;
+	draw_bounds.right = visual_left + visual_width - handle_margin;
+	draw_bounds.top = bounds.top + dc.handle_cxy;
+	draw_bounds.bottom = bounds.bottom - dc.handle_cxy;
+
+	if (draw_bounds.height() > 8)
+	{
+		dc.draw_rounded_rect(draw_bounds, ui::color(0x000000, dc.colors.alpha * dc.colors.bg_alpha), dc.padding1);
+	}
+
+	if (active)
+	{
+		const auto clr = view_handle_color(false, active, tracking, dc.frame_has_focus, false).aa(dc.colors.alpha);
+		dc.draw_rounded_rect(draw_bounds.inflate(-scale1), clr, dc.padding1);
+	}
 }
 
 class view_controller
@@ -197,9 +241,21 @@ public:
 	virtual void on_mouse_left_button_up(const pointi loc, const ui::key_state keys)
 	{
 	}
+	virtual void on_mouse_middle_button_down(const pointi loc, const ui::key_state keys)
+	{
+	}
+
+	virtual void on_mouse_middle_button_up(const pointi loc, const ui::key_state keys)
+	{
+	}
 
 	virtual void on_mouse_left_button_double_click(const pointi loc, const ui::key_state keys)
 	{
+	}
+
+	virtual bool key_down(const char32_t key, const ui::key_state keys)
+	{
+		return false;
 	}
 
 	virtual void on_mouse_leave()
@@ -208,11 +264,6 @@ public:
 
 	virtual void escape()
 	{
-	}
-
-	bool over_min_time() const
-	{
-		return _first_tic + 200 < platform::tick_count();
 	}
 
 	virtual void popup_from_location(view_hover_element& hover)
@@ -297,8 +348,8 @@ public:
 
 	void on_mouse_left_button_down(const pointi loc, const ui::key_state keys) override
 	{
-		update_tracking(loc, true);
 		update_controller(loc);
+		update_tracking(loc, true);
 
 		const auto c = _active_controller;
 
@@ -325,6 +376,17 @@ public:
 		// it is best to fetch the current cursor location
 		update_controller(frame()->cursor_location());
 	}
+	void on_mouse_middle_button_down(const pointi loc, const ui::key_state keys) override
+	{
+		update_controller(loc);
+		if (_active_controller) _active_controller->on_mouse_middle_button_down(loc, keys);
+		update_cursor();
+	}
+
+	void on_mouse_middle_button_up(const pointi loc, const ui::key_state keys) override
+	{
+		if (_active_controller) _active_controller->on_mouse_middle_button_up(loc, keys);
+	}
 
 	void on_mouse_left_button_double_click(const pointi loc, const ui::key_state keys) override
 	{
@@ -341,6 +403,23 @@ public:
 	{
 		_hover = recti(_extent).contains(loc);
 		_tracking = is_tracking;
+	}
+
+	bool escape_controller()
+	{
+		if (!_tracking || !_active_controller) return false;
+
+		_active_controller->escape();
+		update_tracking(frame()->cursor_location(), false);
+		_controller_invalid = true;
+		update_controller(frame()->cursor_location());
+		update_cursor();
+		return true;
+	}
+
+	bool key_down_controller(const char32_t key, const ui::key_state keys) const
+	{
+		return _tracking && _active_controller && _active_controller->key_down(key, keys);
 	}
 
 	void on_mouse_move(const pointi loc, const bool is_tracking) override
@@ -392,6 +471,13 @@ public:
 class view_base : public df::no_copy
 {
 public:
+	struct progress_state
+	{
+		bool active = false;
+		int64_t position = 0;
+		int64_t total = 0;
+	};
+
 	bool _view_has_focus = false;
 	bool _show_render_window = true;
 
@@ -448,6 +534,37 @@ public:
 	{
 	}
 
+	// Raised before a left button press is dispatched to a controller, so a view can release text
+	// focus the press did not land in. Keyboard commands are inert while a rendered edit holds
+	// focus, so that focus must not survive a press somewhere else in the view.
+	virtual void mouse_down(const pointi loc)
+	{
+	}
+
+	virtual void mouse_hwheel(const pointi loc, const int zDelta, const ui::key_state keys)
+	{
+	}
+
+	virtual bool key_down(char32_t key, ui::key_state keys)
+	{
+		return false;
+	}
+
+	virtual bool text_input(std::string_view text)
+	{
+		return false;
+	}
+
+	virtual ui::focus_mode focus_mode() const
+	{
+		return ui::focus_mode::view;
+	}
+
+	virtual bool is_caption_area(const pointi loc) const
+	{
+		return false;
+	}
+
 	virtual void pan_start(const pointi start_loc)
 	{
 	}
@@ -458,6 +575,12 @@ public:
 
 	virtual void pan_end(const pointi start_loc, const pointi final_loc)
 	{
+	}
+
+	// Returns false when the tap has no touch-specific meaning, so the caller runs the normal double-click.
+	virtual bool touch_double_tap(const pointi location)
+	{
+		return false;
 	}
 
 	virtual void focus(const bool has_focus)
@@ -486,12 +609,34 @@ public:
 	{
 	}
 
+	// Stops any task the view is running and leaves the view open. Distinct from exit().
+	virtual void cancel_operation()
+	{
+	}
+
+	// Human name of the task this view runs, used when reporting that it is still running.
+	virtual std::string_view operation_name() const
+	{
+		return {};
+	}
+
+	// Asked before the application closes. Unlike can_exit() this may prompt the user.
+	virtual bool confirm_exit()
+	{
+		return can_exit();
+	}
+
 	virtual std::string_view title()
 	{
 		return {};
 	}
 
 	virtual std::string_view status()
+	{
+		return {};
+	}
+
+	virtual progress_state progress() const
 	{
 		return {};
 	}
@@ -504,6 +649,15 @@ struct view_scroller_section
 	int y = 0;
 };
 
+struct view_scroll_anchor
+{
+	view_element_ptr element;
+	int device_top = 0;
+	double scroll_ratio = 0.0;
+	bool was_at_start = true;
+	bool valid = false;
+};
+
 class view_scroller
 {
 public:
@@ -511,9 +665,16 @@ public:
 	sizei _scroll_extent;
 	recti _client_bounds;
 	recti _scroll_bounds;
+	// The base of the column handed to an action by layout_with_footer. Held here so a scroll
+	// repaints the whole column, including an action whose appearance depends on the position.
+	recti _footer_bounds;
 	std::vector<view_scroller_section> _sections;
 	std::function<void(view_hover_element&, pointi)> popup_func;
 	std::function<void()> changed_func;
+
+	// Device y of the pointer over the column, or -1. Lights the band it falls in so the column
+	// can be read directly instead of only through the hover popup.
+	int _hover_y = -1;
 
 	bool _active = false;
 	bool _tracking = false;
@@ -522,6 +683,90 @@ public:
 	const recti scroll_bounds() const
 	{
 		return _scroll_bounds;
+	}
+
+	// The painted track. Every mapping between list position and scrollbar position goes through
+	// it, so the thumb, the section bands and the hit tests cannot disagree -- in particular once
+	// layout_with_footer has given the base of the column away.
+	recti track_bounds() const
+	{
+		constexpr auto inset = 2;
+		return _scroll_bounds.height() > inset * 2 ? _scroll_bounds.inflate(0, -inset) : _scroll_bounds;
+	}
+
+	// Shared so anything drawn in line with the track sits in the same column as it.
+	int track_inset() const
+	{
+		return !_sections.empty() || _active ? 1 : df::mul_div(_scroll_bounds.width(), 2, 9);
+	}
+
+	// Section bands in track-relative coordinates, in paint order. Shared by painting and hit
+	// testing so the band that lights up is the band the popup names.
+	template <class F>
+	void for_each_band(F&& f) const
+	{
+		const auto track_height = track_bounds().height();
+		if (track_height <= 0) return;
+
+		if (_sections.empty())
+		{
+			f(0, track_height, static_cast<const view_scroller_section*>(nullptr));
+			return;
+		}
+
+		constexpr auto band_gap = 2;
+		auto top = 0;
+
+		for (const auto& so : _sections)
+		{
+			const auto bottom = std::clamp(logical_to_scrollbar_pos(so.y), top, track_height);
+			if (bottom > top) f(top, bottom, &so);
+			top = bottom + band_gap;
+		}
+
+		// The list runs past its last group -- footer, actions, trailing space -- so the track is
+		// closed off rather than stopping short of the position the thumb can reach.
+		top = std::min(top, track_height);
+		if (track_height > top) f(top, track_height, static_cast<const view_scroller_section*>(nullptr));
+	}
+
+	int band_index_at(const int device_y) const
+	{
+		const auto y = device_y - track_bounds().top;
+		auto found = -1;
+		auto index = 0;
+
+		for_each_band([&](const int top, const int bottom, const view_scroller_section*)
+		{
+			if (y >= top && y < bottom) found = index;
+			++index;
+		});
+
+		return found;
+	}
+
+	// Device y the thumb starts at before it is padded out to a usable size. A drag measures its
+	// grab from here so scrollbar_pos_to_logical inverts it exactly.
+	int thumb_origin() const
+	{
+		return track_bounds().top + logical_to_scrollbar_pos(_offset.y);
+	}
+
+	// The painted thumb. Hit testing shares it so a press lands on what the user aimed at.
+	recti thumb_bounds() const
+	{
+		const auto track = track_bounds();
+		if (!can_scroll() || track.height() <= 0) return {};
+
+		const auto cy = df::mul_div(track.height(), _client_bounds.height(), _scroll_extent.cy);
+		const auto pad = cy >= 20 ? 1 : 10;
+		const auto origin = thumb_origin();
+		const auto inset = track_inset() + 1;
+
+		return {
+			track.left + inset, std::clamp(origin - pad, track.top, track.bottom),
+			track.right - inset, std::clamp(origin + cy + pad, track.top, track.bottom)
+		};
 	}
 
 	void scroll_offset(const view_host_ptr& host, const int x, const int y)
@@ -542,7 +787,9 @@ public:
 				host->frame()->scroll(0, delta, _client_bounds, _scroll_child_controls);
 			}
 
-			host->frame()->invalidate(_scroll_bounds);
+			host->frame()->invalidate(_footer_bounds.is_empty()
+				                          ? _scroll_bounds
+				                          : _scroll_bounds.make_union(_footer_bounds));
 
 			if (changed_func)
 			{
@@ -565,6 +812,8 @@ public:
 		_offset.x = cx > 0 ? std::clamp(_offset.x, 0, cx) : 0;
 		_offset.y = cy > 0 ? std::clamp(_offset.y, 0, cy) : 0;
 	}
+	recti layout_with_footer(sizei scroll_extent, recti client_bounds, recti scroll_bounds,
+	                         int footer_extent, int gap);
 
 	void sections(std::vector<view_scroller_section> section_offsets)
 	{
@@ -581,21 +830,31 @@ public:
 		return _client_bounds;
 	}
 
+	view_scroll_anchor capture_anchor(const view_element_ptr& element) const;
+	int anchor_offset(const view_scroll_anchor& anchor, bool element_is_current) const;
+	void restore_anchor(const view_host_ptr& host, const view_scroll_anchor& anchor, bool element_is_current);
+
 	void reset()
 	{
 		_offset.x = 0;
 		_offset.y = 0;
 	}
 
-	void scrollbar_to(const view_host_ptr& host, const int pos, const int height)
+	// Centres the thumb on a device y. Takes a device y so the caller never has to know where the
+	// track begins or how much of the column an action at its base has taken.
+	void scrollbar_to(const view_host_ptr& host, const int device_y)
 	{
-		const auto cy = df::mul_div(_client_bounds.height(), height, _scroll_extent.cy) / 2;
-		scroll_offset(host, 0, df::mul_div(pos - cy, _scroll_extent.cy, height));
+		const auto track = track_bounds();
+		if (track.height() <= 0 || _scroll_extent.cy <= 0) return;
+		const auto half_handle = df::mul_div(_client_bounds.height(), track.height(), _scroll_extent.cy) / 2;
+		scroll_offset(host, 0, scrollbar_pos_to_logical(device_y - half_handle));
 	}
 
-	pointi scroll_pos() const
+	// Puts the thumb origin on a device y, so a drag keeps the point it was grabbed by.
+	void scrollbar_thumb_to(const view_host_ptr& host, const int device_y)
 	{
-		return {0, _scroll_extent.cy};
+		if (track_bounds().height() <= 0 || _scroll_extent.cy <= 0) return;
+		scroll_offset(host, 0, scrollbar_pos_to_logical(device_y));
 	}
 
 	pointi device_to_logical(const pointi loc) const
@@ -639,13 +898,21 @@ public:
 		_scroll_extent = {};
 		_client_bounds.clear();
 		_scroll_bounds.clear();
+		_footer_bounds.clear();
 		_sections.clear();
+		_hover_y = -1;
 		popup_func = {};
 	}
 
 	int logical_to_scrollbar_pos(const int y) const
 	{
-		return df::mul_div(y, _client_bounds.height(), _scroll_extent.cy);
+		return _scroll_extent.cy > 0 ? df::mul_div(y, track_bounds().height(), _scroll_extent.cy) : 0;
+	}
+
+	int scrollbar_pos_to_logical(const int device_y) const
+	{
+		const auto track = track_bounds();
+		return track.height() > 0 ? df::mul_div(device_y - track.top, _scroll_extent.cy, track.height()) : 0;
 	}
 };
 
@@ -657,6 +924,9 @@ class scroll_controller final : public view_controller
 public:
 	view_scroller& _parent;
 	pointi _start;
+	// Where in the thumb the drag took hold, so the list does not jump under the pointer.
+	int _grab_offset = 0;
+	int _hover_band = -1;
 
 
 	scroll_controller(const view_host_ptr& host, view_scroller& parent, const recti bounds) :
@@ -673,6 +943,7 @@ public:
 		}
 
 		_parent._active = false;
+		_parent._hover_y = -1;
 	}
 
 	void draw(ui::draw_context& rc) override
@@ -687,15 +958,36 @@ public:
 
 	void update_pos(const int y) const
 	{
-		_parent.scrollbar_to(_host, y - _bounds.top, _bounds.height());
+		_parent.scrollbar_thumb_to(_host, y - _grab_offset);
+	}
+
+	void update_hover(const int y)
+	{
+		_parent._hover_y = y;
+		const auto band = _parent.band_index_at(y);
+
+		if (_hover_band != band)
+		{
+			_hover_band = band;
+			_host->frame()->invalidate(_parent.scroll_bounds());
+		}
 	}
 
 	void on_mouse_left_button_down(const pointi loc, const ui::key_state keys) override
 	{
 		_last_loc = loc;
 		_parent._tracking = true;
-		_start = _parent.scroll_pos();
-		update_pos(loc.y);
+		_start = _parent.scroll_offset();
+
+		// Only a press on bare track jumps. A press on the thumb drags it from where it was held.
+		const auto thumb = _parent.thumb_bounds();
+
+		if (thumb.is_empty() || loc.y < thumb.top || loc.y >= thumb.bottom)
+		{
+			_parent.scrollbar_to(_host, loc.y);
+		}
+
+		_grab_offset = loc.y - _parent.thumb_origin();
 		_host->frame()->invalidate();
 	}
 
@@ -707,13 +999,24 @@ public:
 		{
 			update_pos(loc.y);
 		}
+		else
+		{
+			update_hover(loc.y);
+		}
 	}
 
 	void on_mouse_left_button_up(const pointi loc, const ui::key_state keys) override
 	{
 		_last_loc = loc;
-		_parent._tracking = false;
-		update_pos(loc.y);
+
+		// Escape may already have ended the drag and restored the position; do not re-apply it.
+		if (_parent._tracking)
+		{
+			update_pos(loc.y);
+			_parent._tracking = false;
+		}
+
+		update_hover(loc.y);
 		_host->frame()->invalidate();
 	}
 

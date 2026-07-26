@@ -201,8 +201,8 @@ enum cannon_tag
 //}
 //GpsTag;
 
-static_assert(std::is_trivially_copyable_v<metadata_exif::urational32_t>);
-static_assert(std::is_trivially_copyable_v<metadata_exif::srational32_t>);
+df_assert_pod(metadata_exif::urational32_t);
+df_assert_pod(metadata_exif::srational32_t);
 
 enum maker_note_type
 {
@@ -293,7 +293,9 @@ public:
 					size_t pos = 0;
 
 
-					while (pos < length)
+					// length is not forced even, so stopping at pos < length could read one byte
+					// past the tag payload on a malformed record.
+					while (pos + 1 < length)
 					{
 						dst[pos] = p[pos + 1];
 						dst[pos + 1] = p[pos];
@@ -308,7 +310,9 @@ public:
 				if (len > 8)
 				{
 					p = p + 8;
-					return is_junk(p, len)
+					// The remaining length is what is left after the 8 byte type prefix; passing the
+					// original len let the junk marker compare read past the payload.
+					return is_junk(p, len - 8)
 						       ? str::cached{}
 						       : str::strip_and_cache({std::bit_cast<const char*>(p), len - 8});
 				}
@@ -359,15 +363,6 @@ public:
 			return *std::bit_cast<const int16_t*>(_data + i);
 		}
 		return static_cast<int16_t>(df::byteswap16(_data + i));
-	}
-
-	int32_t get_int32(const uint32_t i) const
-	{
-		if (_is_intel)
-		{
-			return *std::bit_cast<const int32_t*>(_data + i);
-		}
-		return static_cast<int32_t>(df::byteswap32(_data + i));
 	}
 
 	metadata_exif::srational32_t get_srational(const uint32_t i) const
@@ -490,6 +485,12 @@ struct exif_dir_entry
 		const auto len = size();
 		const auto* const sz = std::bit_cast<const char*>(_data.data(data_offset(), len));
 		return sz ? std::string_view{sz, len} : std::string_view{};
+	}
+
+	uint8_t get_uint8() const
+	{
+		const auto t = text();
+		return t.empty() ? 0u : static_cast<uint8_t>(t.front());
 	}
 
 	bool is_intel() const
@@ -1067,6 +1068,10 @@ class exif_camera_settings_processor
 	prop::item_metadata& _metadata;
 	exif_gps_coordinate_builder _gps_coordinate;
 	bool _created_date_set;
+	bool _created_date_is_original = false;
+	bool _below_sea_level = false;
+	float _gps_speed = 0.0f;
+	float _speed_to_kmh = 1.0f;
 
 public:
 	explicit exif_camera_settings_processor(prop::item_metadata& pd) : _metadata(pd), _created_date_set(false)
@@ -1079,6 +1084,9 @@ public:
 		{
 			_metadata.coordinate = _gps_coordinate.build();
 		}
+
+		if (_below_sea_level) _metadata.altitude = -_metadata.altitude;
+		_metadata.gps_speed = _gps_speed * _speed_to_kmh;
 	}
 
 	void tag(const exif_dir_entry& entry)
@@ -1291,16 +1299,34 @@ public:
 			break;
 
 		case EXIF_TAG_DATE_TIME:
-		case EXIF_TAG_DATE_TIME_ORIGINAL:
 			{
 				df::date_t ft;
 
+				// DateTime (0x0132) is the file/container change date and lives in IFD0, which is
+				// walked before the Exif SubIFD holding DateTimeOriginal (0x9003). Take it only as a
+				// provisional value so the authoritative capture time can still override it (#184).
 				if (!_created_date_set &&
 					ft.parse_exif_date(entry.text()) &&
 					ft.is_valid())
 				{
 					_metadata.created_exif = ft;
 					_created_date_set = true;
+				}
+			}
+			break;
+		case EXIF_TAG_DATE_TIME_ORIGINAL:
+			{
+				df::date_t ft;
+
+				// DateTimeOriginal is the authoritative capture time and always wins over a value
+				// provisionally taken from DateTime, regardless of IFD enumeration order (#184).
+				if (!_created_date_is_original &&
+					ft.parse_exif_date(entry.text()) &&
+					ft.is_valid())
+				{
+					_metadata.created_exif = ft;
+					_created_date_set = true;
+					_created_date_is_original = true;
 				}
 			}
 			break;
@@ -1370,6 +1396,27 @@ public:
 				_gps_coordinate.longitude_east_west(exif_gps_coordinate_builder::EastWest::East);
 			}
 			break;
+
+		case EXIF_TAG_GPS_ALTITUDE:
+			_metadata.altitude = static_cast<float>(entry.get_urational().to_real());
+			break;
+
+		case EXIF_TAG_GPS_ALTITUDE_REF:
+			// A byte, not text: 1 means below sea level. The sign is applied after parsing
+			// because the reference may appear either side of the value.
+			_below_sea_level = entry.get_uint8() == 1;
+			break;
+
+		case EXIF_TAG_GPS_SPEED:
+			_gps_speed = static_cast<float>(entry.get_urational().to_real());
+			break;
+
+		case EXIF_TAG_GPS_SPEED_REF:
+			// 'K' kilometres per hour (the default), 'M' miles per hour, 'N' knots.
+			if (first_char_is(entry.text(), 'M')) _speed_to_kmh = 1.609344f;
+			else if (first_char_is(entry.text(), 'N')) _speed_to_kmh = 1.852f;
+			else _speed_to_kmh = 1.0f;
+			break;
 		}
 	}
 };
@@ -1384,102 +1431,8 @@ void metadata_exif::parse(prop::item_metadata& pd, const df::cspan cs)
 	}
 }
 
-static void set_uint16(const exif_dir_entry& e, const df::span cs, const uint16_t value)
-{
-	const auto offset = e.data_offset();
-
-	if (e.is_intel())
-	{
-		cs.data[offset] = static_cast<uint8_t>(value);
-		cs.data[offset + 1] = static_cast<uint8_t>(value >> 8);
-	}
-	else
-	{
-		cs.data[offset] = static_cast<uint8_t>(value >> 8);
-		cs.data[offset + 1] = static_cast<uint8_t>(value);
-	}
-}
-
-void metadata_exif::fix_exif_dimensions(df::span data, const sizei dimensions)
-{
-	if (data > 16)
-	{
-		const auto h = [dimensions, data](const exif_dir_entry& e)
-		{
-			if (e._tag_type == tag_type::exif)
-			{
-				switch (e._tag)
-				{
-				case EXIF_TAG_PIXEL_X_DIMENSION:
-					set_uint16(e, data, dimensions.cx);
-					break;
-
-				case EXIF_TAG_PIXEL_Y_DIMENSION:
-					set_uint16(e, data, dimensions.cy);
-					break;
-
-				case EXIF_TAG_ORIENTATION:
-					set_uint16(e, data, static_cast<int>(ui::orientation::top_left));
-					break;
-				}
-			}
-		};
-
-		exif_enumerate(h, data);
-	}
-}
-
-void metadata_exif::fix_exif_rating(df::span data, int rating)
-{
-	if (data > 16)
-	{
-		const auto h = [rating, data](const exif_dir_entry& e)
-		{
-			if (e._tag_type == tag_type::exif)
-			{
-				switch (e._tag)
-				{
-				case EXIF_TAG_IMAGE_RATING:
-					set_uint16(e, data, rating);
-					break;
-
-				case EXIF_TAG_IMAGE_RATING_PERCENT:
-					set_uint16(e, data, rating * 20);
-					break;
-				}
-			}
-		};
-
-		exif_enumerate(h, data);
-	}
-}
-
-
-static long get_int(ExifData* ed, const ExifEntry* ee)
-{
-	const ExifByteOrder o = exif_data_get_byte_order(ed);
-	long value;
-
-	switch (ee->format)
-	{
-	case EXIF_FORMAT_SHORT:
-		value = exif_get_short(ee->data, o);
-		break;
-	case EXIF_FORMAT_LONG:
-		value = exif_get_long(ee->data, o);
-		break;
-	case EXIF_FORMAT_SLONG:
-		value = exif_get_slong(ee->data, o);
-		break;
-	default:
-		{
-			constexpr auto message = "Invalid Exif byte order";
-			df::log(__FUNCTION__, message);
-			throw app_exception(std::string(message));
-		}
-	}
-	return value;
-}
+// PixelXDimension and friends are SHORT or LONG. Writing two bytes into a LONG leaves the old
+// high half behind on Intel order, and overwrites the high half on Motorola order.
 
 static void update_tag(ExifData* ed, const int ifd, const ExifTag tag, const int value)
 {
@@ -1510,6 +1463,19 @@ struct exif_free
 	void operator()(ExifData* x) const { exif_data_unref(x); }
 };
 
+static std::string_view exif_ifd_title(const ExifIfd ifd)
+{
+	switch (ifd)
+	{
+	case EXIF_IFD_0: return "Main image (IFD0)";
+	case EXIF_IFD_1: return "Thumbnail (IFD1)";
+	case EXIF_IFD_EXIF: return "Exif";
+	case EXIF_IFD_GPS: return "GPS";
+	case EXIF_IFD_INTEROPERABILITY: return "Interoperability";
+	default: return "Other";
+	}
+}
+
 metadata_kv_list metadata_exif::to_info(const df::cspan data)
 {
 	metadata_kv_list result;
@@ -1532,27 +1498,66 @@ metadata_kv_list metadata_exif::to_info(const df::cspan data)
 
 	if (ed)
 	{
-		char buffer[df::sixty_four_k];
+		constexpr auto buffer_size = df::sixty_four_k;
+		const auto buffer_alloc = df::unique_alloc<char>(buffer_size);
+		auto* const buffer = buffer_alloc.get();
 
-		for (const auto& i : ed->ifd)
+		// Exif is a set of image file directories, and which directory a tag lives in is part of what
+		// the block contains, so each is listed as its own section rather than flattened together.
+		for (auto ifd_index = 0; ifd_index < EXIF_IFD_COUNT; ++ifd_index)
 		{
-			if (i && i->count)
+			const auto* const content = ed->ifd[ifd_index];
+
+			if (!content || !content->count) continue;
+
+			const auto ifd = static_cast<ExifIfd>(ifd_index);
+			const auto title = exif_ifd_title(ifd);
+
+			auto& section = result.emplace_back(std::format("{} ({})", title, content->count),
+			                                    std::string{});
+			section.container = true;
+			section.id = std::format("exif.ifd.{}", ifd_index);
+			// The Exif directory holds the capture settings most readers came for, so it opens
+			// however many tags the camera wrote.
+			section.open_by_default = ifd == EXIF_IFD_EXIF;
+
+			for (auto j = 0u; j < content->count; j++)
 			{
-				const auto* const content = i;
+				auto* const e = content->entries[j];
+				buffer[0] = 0;
+				const auto* const text = exif_entry_get_value(e, buffer, buffer_size);
+				const auto len = text ? strnlen(text, buffer_size) : 0;
+				const auto readable = text && !is_junk(std::bit_cast<const uint8_t*>(text),
+				                                       static_cast<uint32_t>(len));
 
-				for (auto j = 0u; j < content->count; j++)
+				auto& row = result.emplace_back(
+					str::cache(exif_tag_get_name_in_ifd(e->tag, ifd)),
+					readable
+						? std::string(str::utf8_cast(std::string_view{text, len}))
+						: std::format("binary, {} bytes", e->size));
+
+				row.depth = 1;
+				row.shape = std::format("{} x{}, 0x{:04x}", exif_format_get_name(e->format),
+				                        e->components, static_cast<unsigned>(e->tag));
+				row.id = std::format("exif.{}.{:04x}", ifd_index, static_cast<unsigned>(e->tag));
+
+				// The bytes stay reachable whether or not libexif could render them; the hex listing
+				// is built only when the row is opened.
+				if (e->data && e->size > 0)
 				{
-					constexpr auto buffer_size = df::sixty_four_k;
-					auto* const e = content->entries[j];
-					const auto* const text = exif_entry_get_value(e, buffer, buffer_size);
-
-					if (!is_junk(std::bit_cast<const uint8_t*>(text), 4))
-					{
-						result.emplace_back(str::cache(exif_tag_get_name_in_ifd(e->tag, exif_entry_get_ifd(e))),
-						                    std::string(str::utf8_cast(text)));
-					}
+					const auto kept = std::min<size_t>(e->size, str::max_hex_dump_bytes);
+					row.detail = metadata_binary_detail{std::vector<uint8_t>(e->data, e->data + kept)};
 				}
 			}
+		}
+
+		if (ed->data && ed->size > 0)
+		{
+			auto& row = result.emplace_back("Embedded thumbnail"_c, std::format("{} bytes", ed->size));
+			row.id = "exif.thumbnail";
+			row.shape = "binary"_c;
+			const auto kept = std::min<size_t>(ed->size, str::max_hex_dump_bytes);
+			row.detail = metadata_binary_detail{std::vector<uint8_t>(ed->data, ed->data + kept)};
 		}
 	}
 
@@ -1578,128 +1583,162 @@ df::blob metadata_exif::fix_dims(const df::span cs, const int image_width, const
 		uint8_t* data = nullptr;
 		uint32_t size = 0;
 		exif_data_save_data(ed.get(), &data, &size);
-		result.assign(data, data + size);
-		free(data);
+
+		if (data)
+		{
+			result.assign(data, data + size);
+			free(data);
+		}
 	}
 	return result;
 }
 
 #define FILE_BYTE_ORDER EXIF_BYTE_ORDER_INTEL
-#define ASCII_COMMENT "ASCII\0\0\0"
 
-void add_tag(const ExifData* exif, const ExifTag tag, const str::cached val)
+// Exif requires an 8 byte character code ahead of UserComment text.
+static constexpr std::string_view ascii_comment_prefix{"ASCII\0\0\0", 8};
+
+// Allocates a zeroed entry of exactly size bytes and hands it to the IFD, returning it so the
+// caller can fill entry->data. Returns null if the entry could not be attached.
+static ExifEntry* create_tag(ExifData* exif, const ExifIfd ifd, const ExifTag tag, const ExifFormat format,
+                             const uint32_t components, const uint32_t size)
 {
+	auto* const content = exif->ifd[ifd];
+
+	if (!content || size == 0)
+	{
+		return nullptr;
+	}
+
+	// exif_data_fix() may already have created the tag, and libexif refuses a duplicate.
+	if (auto* const existing = exif_content_get_entry(content, tag))
+	{
+		exif_content_remove_entry(content, existing);
+	}
+
 	auto* const mem = exif_mem_new_default();
 
-	if (mem)
+	if (!mem)
 	{
-		auto* const entry = exif_entry_new_mem(mem);
+		return nullptr;
+	}
 
-		if (entry)
-		{
-			const auto len = static_cast<uint32_t>(val.size() + 1);
-			constexpr auto ifd = EXIF_IFD_EXIF;
-			auto* const buf = static_cast<uint8_t*>(exif_mem_alloc(mem, len));
+	auto* const entry = exif_entry_new_mem(mem);
+	auto* const buf = entry ? static_cast<uint8_t*>(exif_mem_alloc(mem, size)) : nullptr;
 
-			if (buf)
-			{
-				entry->data = buf;
-				entry->size = len;
-				entry->tag = tag;
-				entry->components = len;
-				entry->format = EXIF_FORMAT_UNDEFINED;
+	if (buf)
+	{
+		memset(buf, 0, size);
+		entry->data = buf;
+		entry->size = size;
+		entry->tag = tag;
+		entry->components = components;
+		entry->format = format;
 
-				memcpy(entry->data, val.sz(), len);
+		exif_content_add_entry(content, entry);
+	}
 
-				exif_content_add_entry(exif->ifd[ifd], entry);
-			}
-			exif_entry_unref(entry);
-		}
+	const auto attached = entry && entry->parent;
 
-		exif_mem_unref(mem);
+	if (entry) exif_entry_unref(entry);
+	exif_mem_unref(mem);
+
+	return attached ? entry : nullptr;
+}
+
+static void add_ascii(ExifData* exif, const ExifIfd ifd, const ExifTag tag, const std::string_view val)
+{
+	const auto len = static_cast<uint32_t>(val.size() + 1);
+	auto* const entry = create_tag(exif, ifd, tag, EXIF_FORMAT_ASCII, len, len);
+
+	if (entry)
+	{
+		memcpy(entry->data, val.data(), val.size());
 	}
 }
 
-void add_tag(ExifData* exif, ExifTag tag, const float val)
+static void add_short(ExifData* exif, const ExifIfd ifd, const ExifTag tag, const uint16_t val)
 {
-	/*const auto mem = exif_mem_new_default();
+	auto* const entry = create_tag(exif, ifd, tag, EXIF_FORMAT_SHORT, 1, exif_format_get_size(EXIF_FORMAT_SHORT));
 
-	if (mem)
+	if (entry)
 	{
-		const auto entry = exif_entry_new_mem(mem);
-
-		if (entry)
-		{
-			update_tag(exif, EXIF_IFD_0, EXIF_TAG_ORIENTATION, 1);
-
-			const auto len = val.size() + 1;
-			const auto ifd = EXIF_IFD_EXIF;
-			const auto buf = static_cast<uint8_t*>(exif_mem_alloc(mem, len));
-
-			if (buf)
-			{
-				entry->data = buf;
-				entry->size = len;
-				entry->tag = tag;
-				entry->components = len;
-				entry->format = EXIF_FORMAT_UNDEFINED;
-
-				entry = create_tag(exif, EXIF_IFD_EXIF, EXIF_TAG_SUBJECT_AREA, 4 * exif_format_get_size(EXIF_FORMAT_SHORT));
-				entry->format = EXIF_FORMAT_SHORT;
-				entry->components = 4;
-				exif_set_rational(uint8_t* b, ExifByteOrder order,
-					ExifRational value);
-
-				memcpy(entry->data, val.sz(), len);
-
-				exif_content_add_entry(exif->ifd[ifd], entry);
-			}
-			exif_entry_unref(entry);
-		}
-
-		exif_mem_unref(mem);
-	}*/
+		exif_set_short(entry->data, FILE_BYTE_ORDER, val);
+	}
 }
 
-void add_tag(ExifData* exif, ExifTag tag, const int val)
+static void add_rational(ExifData* exif, const ExifIfd ifd, const ExifTag tag, const uint32_t numerator,
+                         const uint32_t denominator)
 {
-	/*const auto mem = exif_mem_new_default();
+	auto* const entry = create_tag(exif, ifd, tag, EXIF_FORMAT_RATIONAL, 1,
+	                               exif_format_get_size(EXIF_FORMAT_RATIONAL));
 
-	if (mem)
+	if (entry)
 	{
-		const auto entry = exif_entry_new_mem(mem);
+		exif_set_rational(entry->data, FILE_BYTE_ORDER, ExifRational{numerator, denominator});
+	}
+}
 
-		if (entry)
+// Exif rationals are 32 bit, so scale by a fixed denominator and reduce rather than search for
+// the closest fraction.
+static void add_real(ExifData* exif, const ExifIfd ifd, const ExifTag tag, const double val)
+{
+	constexpr uint32_t scale = 10000u;
+
+	if (val <= 0.0 || val > static_cast<double>(std::numeric_limits<uint32_t>::max()) / scale)
+	{
+		return;
+	}
+
+	auto numerator = static_cast<uint32_t>(std::llround(val * scale));
+	auto denominator = scale;
+	const auto divisor = std::gcd(numerator, denominator);
+
+	if (divisor > 1)
+	{
+		numerator /= divisor;
+		denominator /= divisor;
+	}
+
+	add_rational(exif, ifd, tag, numerator, denominator);
+}
+
+// Sub-second exposures are conventionally recorded as 1/n.
+static void add_exposure_time(ExifData* exif, const double seconds)
+{
+	if (seconds <= 0.0) return;
+
+	if (seconds < 1.0)
+	{
+		const auto denominator = std::llround(1.0 / seconds);
+
+		if (denominator > 0 && denominator <= std::numeric_limits<uint32_t>::max())
 		{
-			update_tag(exif, EXIF_IFD_0, EXIF_TAG_ORIENTATION, 1);
-
-			const auto len = val.size() + 1;
-			const auto ifd = EXIF_IFD_EXIF;
-			const auto buf = static_cast<uint8_t*>(exif_mem_alloc(mem, len));
-
-			if (buf)
-			{
-				entry->data = buf;
-				entry->size = len;
-				entry->tag = tag;
-				entry->components = len;
-				entry->format = EXIF_FORMAT_UNDEFINED;
-
-				entry = create_tag(exif, EXIF_IFD_EXIF, EXIF_TAG_SUBJECT_AREA, 4 * exif_format_get_size(EXIF_FORMAT_SHORT));
-				entry->format = EXIF_FORMAT_SHORT;
-				entry->components = 4;
-				exif_set_rational(uint8_t* b, ExifByteOrder order,
-					ExifRational value);
-
-				memcpy(entry->data, val.sz(), len);
-
-				exif_content_add_entry(exif->ifd[ifd], entry);
-			}
-			exif_entry_unref(entry);
+			add_rational(exif, EXIF_IFD_EXIF, EXIF_TAG_EXPOSURE_TIME, 1u, static_cast<uint32_t>(denominator));
+			return;
 		}
+	}
 
-		exif_mem_unref(mem);
-	}*/
+	add_real(exif, EXIF_IFD_EXIF, EXIF_TAG_EXPOSURE_TIME, seconds);
+}
+
+static void add_date(ExifData* exif, const ExifIfd ifd, const ExifTag tag, const df::date_t date)
+{
+	const auto d = date.date();
+	add_ascii(exif, ifd, tag,
+	          std::format("{:04}:{:02}:{:02} {:02}:{:02}:{:02}", d.year, d.month, d.day, d.hour, d.minute, d.second));
+}
+
+static void add_user_comment(ExifData* exif, const std::string_view val)
+{
+	const auto len = static_cast<uint32_t>(ascii_comment_prefix.size() + val.size());
+	auto* const entry = create_tag(exif, EXIF_IFD_EXIF, EXIF_TAG_USER_COMMENT, EXIF_FORMAT_UNDEFINED, len, len);
+
+	if (entry)
+	{
+		memcpy(entry->data, ascii_comment_prefix.data(), ascii_comment_prefix.size());
+		memcpy(entry->data + ascii_comment_prefix.size(), val.data(), val.size());
+	}
 }
 
 df::blob metadata_exif::make_exif(const prop::item_metadata_ptr& md)
@@ -1717,23 +1756,38 @@ df::blob metadata_exif::make_exif(const prop::item_metadata_ptr& md)
 		//  Create the mandatory EXIF fields with default data 
 		exif_data_fix(exif);
 
-		//if (md->orientation != ui::orientation::none) add_tag(exif, EXIF_TAG_ORIENTATION, md->orientation);
-		if (!prop::is_null(md->f_number)) add_tag(exif, EXIF_TAG_FNUMBER, md->f_number);
-		if (!prop::is_null(md->exposure_time)) add_tag(exif, EXIF_TAG_EXPOSURE_TIME, md->exposure_time);
-		if (!prop::is_null(md->iso_speed)) add_tag(exif, EXIF_TAG_ISO_SPEED_RATINGS, md->iso_speed);
-		if (!prop::is_null(md->focal_length)) add_tag(exif, EXIF_TAG_FOCAL_LENGTH, md->focal_length);
+		if (md->orientation != ui::orientation::none)
+			add_short(exif, EXIF_IFD_0, EXIF_TAG_ORIENTATION, static_cast<uint16_t>(md->orientation));
+		if (!prop::is_null(md->f_number)) add_real(exif, EXIF_IFD_EXIF, EXIF_TAG_FNUMBER, md->f_number);
+		if (!prop::is_null(md->exposure_time)) add_exposure_time(exif, md->exposure_time);
+		if (!prop::is_null(md->iso_speed))
+			add_short(exif, EXIF_IFD_EXIF, EXIF_TAG_ISO_SPEED_RATINGS, md->iso_speed);
+		if (!prop::is_null(md->focal_length)) add_real(exif, EXIF_IFD_EXIF, EXIF_TAG_FOCAL_LENGTH, md->focal_length);
 		if (!prop::is_null(md->focal_length_35mm_equivalent))
-			add_tag(exif, EXIF_TAG_FOCAL_LENGTH_IN_35MM_FILM,
-			        md->focal_length_35mm_equivalent);
-		if (!prop::is_null(md->camera_manufacturer)) add_tag(exif, EXIF_TAG_MAKE, md->camera_manufacturer);
-		if (!prop::is_null(md->camera_model)) add_tag(exif, EXIF_TAG_MODEL, md->camera_model);
-		if (!prop::is_null(md->lens)) add_tag(exif, EXIF_TAG_LENS_MODEL, md->lens);
-		if (!prop::is_null(md->copyright_notice)) add_tag(exif, EXIF_TAG_COPYRIGHT, md->copyright_notice);
-		if (!prop::is_null(md->description)) add_tag(exif, EXIF_TAG_IMAGE_DESCRIPTION, md->description);
-		if (!prop::is_null(md->comment)) add_tag(exif, EXIF_TAG_USER_COMMENT, md->comment);
-		//if (!prop::is_null(md->rating)) add_tag(exif, EXIF_TAG_IMAGE_RATING, md->rating);
-		//if (!prop::is_null(md->created_exif)) add_tag(exif, EXIF_TAG_DATE_TIME, md->created_exif);
-		//if (!prop::is_null(md->created_digitized)) add_tag(exif, EXIF_TAG_DATE_TIME_DIGITIZED, md->created_digitized);
+			add_short(exif, EXIF_IFD_EXIF, EXIF_TAG_FOCAL_LENGTH_IN_35MM_FILM, md->focal_length_35mm_equivalent);
+		if (!prop::is_null(md->camera_manufacturer))
+			add_ascii(exif, EXIF_IFD_0, EXIF_TAG_MAKE, md->camera_manufacturer.sv());
+		if (!prop::is_null(md->camera_model)) add_ascii(exif, EXIF_IFD_0, EXIF_TAG_MODEL, md->camera_model.sv());
+		if (!prop::is_null(md->artist)) add_ascii(exif, EXIF_IFD_0, EXIF_TAG_ARTIST, md->artist.sv());
+		if (!prop::is_null(md->lens)) add_ascii(exif, EXIF_IFD_EXIF, EXIF_TAG_LENS_MODEL, md->lens.sv());
+		if (!prop::is_null(md->copyright_notice))
+			add_ascii(exif, EXIF_IFD_0, EXIF_TAG_COPYRIGHT, md->copyright_notice.sv());
+		if (!prop::is_null(md->description))
+			add_ascii(exif, EXIF_IFD_0, EXIF_TAG_IMAGE_DESCRIPTION, md->description.sv());
+		if (!prop::is_null(md->comment)) add_user_comment(exif, md->comment.sv());
+
+		const auto created = md->created();
+
+		if (created.is_valid())
+		{
+			add_date(exif, EXIF_IFD_0, EXIF_TAG_DATE_TIME, created);
+			add_date(exif, EXIF_IFD_EXIF, EXIF_TAG_DATE_TIME_ORIGINAL, created);
+		}
+
+		if (md->created_digitized.is_valid())
+		{
+			add_date(exif, EXIF_IFD_EXIF, EXIF_TAG_DATE_TIME_DIGITIZED, md->created_digitized);
+		}
 
 		////  All these tags are created with default values by exif_data_fix() 
 		////  Change the data to the correct values for this image. 

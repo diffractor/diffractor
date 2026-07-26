@@ -11,29 +11,89 @@
 
 #include "pch.h"
 #include "app_text.h"
+#include "av_format.h"
+#include "model_property.h"
 
 std::string language_name(const std::string_view code)
 {
 	static const df::hash_map<std::string_view, std::string_view> code_to_name = {
 		{"en", "English"},
+		{"eng", "English"},
 		{"de", "Deutsch (German)"},
+		{"deu", "Deutsch (German)"},
+		{"ger", "Deutsch (German)"},
 		{"br", "brezhoneg (Breton)"},
+		{"bre", "brezhoneg (Breton)"},
 		{"cs", "čeština (Czech)"},
+		{"ces", "čeština (Czech)"},
+		{"cze", "čeština (Czech)"},
 		{"es", "Español (Spanish)"},
+		{"spa", "Español (Spanish)"},
 		{"fr", "Français (French)"},
+		{"fra", "Français (French)"},
+		{"fre", "Français (French)"},
 		{"it", "Italiano (Italian)"},
+		{"ita", "Italiano (Italian)"},
 		{"ja", "日本語 (Japanese)"},
+		{"jpn", "日本語 (Japanese)"},
+		{"ko", "한국어 (Korean)"},
+		{"kor", "한국어 (Korean)"},
 		{"lv", "Latviešu Valoda (Latvian)"},
+		{"lav", "Latviešu Valoda (Latvian)"},
 		{"nl", "Nederlands (Dutch)"},
+		{"nld", "Nederlands (Dutch)"},
+		{"dut", "Nederlands (Dutch)"},
 		{"pl", "Polszczyzna (Polish)"},
+		{"pol", "Polszczyzna (Polish)"},
 		{"pt", "Português (Portuguese)"},
+		{"por", "Português (Portuguese)"},
 		{"ru", "Русский (Russian)"},
+		{"rus", "Русский (Russian)"},
 		{"sr", "српски језик (Serbian)"},
+		{"srp", "српски језик (Serbian)"},
+		{"tr", "Türkçe (Turkish)"},
+		{"tur", "Türkçe (Turkish)"},
+		{"uk", "Українська (Ukrainian)"},
+		{"ukr", "Українська (Ukrainian)"},
 		{"zh", "中文 (Chinese)"},
+		{"zho", "中文 (Chinese)"},
+		{"chi", "中文 (Chinese)"},
 	};
 
 	const auto found = code_to_name.find(code);
 	return found == code_to_name.end() ? std::string(code) : std::string(found->second);
+}
+
+std::string format_audio_stream_name(const av_stream_info& stream, const int audio_track_number)
+{
+	std::vector<std::string> parts;
+
+	if (!stream.title.empty()) parts.emplace_back(stream.title);
+	if (!stream.language.empty() && stream.language != "und") parts.emplace_back(language_name(stream.language));
+	if (stream.is_commentary) parts.emplace_back(tt.audio_role_commentary.sv());
+	if (stream.is_audio_description) parts.emplace_back(tt.audio_role_description.sv());
+
+	if (parts.empty())
+	{
+		parts.emplace_back(str_format(tt.audio_track_fmt.sv(), audio_track_number));
+	}
+
+	if (stream.audio_channels > 0)
+	{
+		parts.emplace_back(prop::format_audio_channels(stream.audio_channels));
+	}
+	else if (!stream.codec.empty())
+	{
+		parts.emplace_back(stream.codec);
+	}
+
+	std::string result;
+	for (const auto& part : parts)
+	{
+		if (!result.empty()) result += " - ";
+		result += part;
+	}
+	return result;
 }
 
 static std::string un_escape(const std::string_view text)
@@ -45,10 +105,45 @@ static std::string un_escape(const std::string_view text)
 	if (end == std::string_view::npos) return {};
 	if (start >= end) return {};
 
-	auto result = std::string(text.substr(start + 1, end - start - 1));
-	result = str::replace(result, "\\n", "\n");
-	result = str::replace(result, "\\\"", "\"");
-	result = str::replace(result, "\\\\", "\\");
+	const auto body = text.substr(start + 1, end - start - 1);
+
+	std::string result;
+	result.reserve(body.size());
+
+	// Single left-to-right pass so an escaped backslash (\\) is not re-interpreted
+	// together with the following character. A sequential replace of "\\n" -> newline
+	// before "\\\\" -> "\\" would corrupt strings such as "\\\\nas" (an escaped \\nas).
+	for (size_t i = 0; i < body.size(); ++i)
+	{
+		if (body[i] == '\\' && i + 1 < body.size())
+		{
+			switch (body[i + 1])
+			{
+			case 'n': result += '\n';
+				++i;
+				break;
+			case 't': result += '\t';
+				++i;
+				break;
+			case 'r': result += '\r';
+				++i;
+				break;
+			case '"': result += '"';
+				++i;
+				break;
+			case '\\': result += '\\';
+				++i;
+				break;
+			default: result += body[i];
+				break;
+			}
+		}
+		else
+		{
+			result += body[i];
+		}
+	}
+
 	return result;
 }
 
@@ -76,10 +171,12 @@ std::vector<po_entry> load_po(const df::file_path lang_file)
 		str1,
 		str,
 		id_plural,
+		extra,
 		ignore,
 	};
 
 	auto parse_state = parse_po_state::none;
+	int extra_index = 0;
 	po_entry entry;
 
 	while (fs)
@@ -97,9 +194,26 @@ std::vector<po_entry> load_po(const df::file_path lang_file)
 		{
 			try
 			{
-				if (str::starts(line, "msgstr[1]")) parse_state = parse_po_state::str1;
-				else if (str::starts(line, "msgstr[0]")) parse_state = parse_po_state::str;
-				else if (str::starts(line, "msgstr[")) parse_state = parse_po_state::ignore;
+				if (str::starts(line, "msgstr["))
+				{
+					// Parse the form index N from msgstr[N]. Forms 0 and 1 map to
+					// str/str_plural; forms >= 2 (Slavic "many" etc.) go to str_extra.
+					const auto open = line.find('[');
+					const int form = (open != std::string::npos) ? std::atoi(line.c_str() + open + 1) : -1;
+
+					if (form == 0) parse_state = parse_po_state::str;
+					else if (form == 1) parse_state = parse_po_state::str1;
+					else if (form >= 2)
+					{
+						parse_state = parse_po_state::extra;
+						extra_index = form - 2;
+						if (static_cast<int>(entry.str_extra.size()) <= extra_index)
+						{
+							entry.str_extra.resize(extra_index + 1);
+						}
+					}
+					else parse_state = parse_po_state::ignore;
+				}
 				else if (str::starts(line, "msgid_plural")) parse_state = parse_po_state::id_plural;
 				else if (str::starts(line, "msgstr")) parse_state = parse_po_state::str;
 				else if (str::starts(line, "msgid")) parse_state = parse_po_state::id;
@@ -114,11 +228,13 @@ std::vector<po_entry> load_po(const df::file_path lang_file)
 
 				if (parse_state == parse_po_state::str1) entry.str_plural += value;
 				else if (parse_state == parse_po_state::str) entry.str += value;
+				else if (parse_state == parse_po_state::extra) entry.str_extra[extra_index] += value;
 				else if (parse_state == parse_po_state::id_plural) entry.id_plural += value;
 				else if (parse_state == parse_po_state::id) entry.id += value;
 			}
 			catch (std::invalid_argument&)
 			{
+				// Malformed msgstr[N] index: skip the line rather than reject the whole catalog.
 			}
 		}
 	}
@@ -132,6 +248,71 @@ std::vector<po_entry> load_po(const df::file_path lang_file)
 }
 
 
+namespace
+{
+	// Lightweight plural-form rule table. Each function maps a count to a
+	// gettext-style form index, matching the Plural-Forms header in the .po
+	// files. Only languages whose grammar needs more than a binary one/plural
+	// split are listed here; every other language uses plural_binary and behaves
+	// exactly as before this table existed.
+	//
+	// NOTE (Slavic form 0): CLDR form 0 also covers 21, 31, 101 ... in Russian
+	// and Ukrainian. Some singular sources use a literal "1" (e.g. "1 folder"),
+	// whose translation msgstr[0] is only correct for count == 1. To avoid
+	// rendering "1 folder" for 21 items, app_text_t::plural_form re-maps form 0
+	// to form 1 whenever count != 1. Czech and Polish put only n == 1 in form 0,
+	// so that clamp never affects them and they keep the full CLDR distinction.
+
+	int plural_binary(const int64_t n) { return n == 1 ? 0 : 1; }
+
+	int plural_cs(int64_t n)
+	{
+		if (n < 0) n = -n;
+		if (n == 1) return 0;
+		if (n >= 2 && n <= 4) return 1;
+		return 2;
+	}
+
+	int plural_pl(int64_t n)
+	{
+		if (n < 0) n = -n;
+		if (n == 1) return 0;
+		if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) return 1;
+		return 2;
+	}
+
+	// Russian and Ukrainian share the same three integer forms (Ukrainian's
+	// fourth CLDR form only applies to fractions, which counts never are).
+	int plural_ru_uk(int64_t n)
+	{
+		if (n < 0) n = -n;
+		if (n % 10 == 1 && n % 100 != 11) return 0;
+		if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) return 1;
+		return 2;
+	}
+
+	using plural_rule_fn = int(*)(int64_t);
+
+	plural_rule_fn plural_rule_for(const std::string_view code)
+	{
+		if (code == "cs") return plural_cs;
+		if (code == "pl") return plural_pl;
+		if (code == "ru" || code == "uk") return plural_ru_uk;
+		return plural_binary;
+	}
+}
+
+int app_text_t::plural_form(const int64_t count) const
+{
+	const auto rule = _plural_rule ? _plural_rule : plural_binary;
+	int idx = rule(count);
+	// Never reuse the singular (msgstr[0]) form for counts other than 1; see the
+	// rule-table note above.
+	if (idx == 0 && count != 1) idx = 1;
+	return idx;
+}
+
+
 app_text_t::app_text_t()
 {
 	calc_text_mapping();
@@ -142,7 +323,15 @@ void app_text_t::load_lang(const std::string_view lang_file, const std::vector<p
 	// default
 	clear();
 
+	// Select the plural rule from the language code (the file name without the
+	// ".po" extension). Unlisted languages fall back to the binary rule.
+	auto code = lang_file;
+	const auto dot = code.find('.');
+	if (dot != std::string_view::npos) code = code.substr(0, dot);
+	_plural_rule = plural_rule_for(code);
+
 	df::hash_map<std::string_view, std::string_view> text_map;
+	df::hash_map<std::string_view, const std::vector<std::string>*> extra_map;
 
 	for (const auto& entry : entries)
 	{
@@ -154,6 +343,11 @@ void app_text_t::load_lang(const std::string_view lang_file, const std::vector<p
 		if (!entry.id_plural.empty() && !entry.str_plural.empty())
 		{
 			text_map[entry.id_plural] = entry.str_plural;
+		}
+
+		if (!entry.id_plural.empty() && !entry.str_extra.empty())
+		{
+			extra_map[entry.id_plural] = &entry.str_extra;
 		}
 	}
 
@@ -198,46 +392,30 @@ void app_text_t::load_lang(const std::string_view lang_file, const std::vector<p
 			df::log(__FUNCTION__, std::format("{} missing: msgid_plural \"{}\"", lang_file, p.get().plural.text));
 			p.get().plural.trans.clear();
 		}
-	}
-}
 
-std::vector<po_entry> app_text_t::gen_po() const
-{
-	std::vector<po_entry> result;
-	df::hash_set<std::string_view> written;
-
-	for (const auto& t : _all_texts)
-	{
-		if (!written.contains(t.get().text))
+		// Extra Slavic plural forms (msgstr[2..]); empty for binary languages.
+		p.get().extra_forms.clear();
+		const auto found_extra = extra_map.find(p.get().plural.text);
+		if (found_extra != extra_map.end())
 		{
-			result.emplace_back(
-				std::string{t.get().text},
-				std::string{t.get().trans},
-				std::string{},
-				std::string{});
-
-			written.insert(t.get().text);
+			p.get().extra_forms = *found_extra->second;
 		}
 	}
-
-	for (const auto& p : _all_plurals)
-	{
-		result.emplace_back(
-			std::string{p.get().one.text},
-			std::string{p.get().one.trans},
-			std::string{p.get().plural.text},
-			std::string{p.get().plural.trans});
-	}
-
-	return result;
 }
 
-void app_text_t::clear() const
+void app_text_t::clear()
 {
 	for (auto&& m : _text_mapping)
 	{
 		m.second.get().clear();
 	}
+
+	for (auto&& p : _all_plurals)
+	{
+		p.get().extra_forms.clear();
+	}
+
+	_plural_rule = nullptr;
 }
 
 void app_text_t::calc_text_mapping()
@@ -249,28 +427,36 @@ void app_text_t::calc_text_mapping()
 		adjust_date_help1,
 		adjust_date_help2,
 		adjust_date_help3,
+		adjust_date_required,
 		after,
 		album_artist,
 		analyzing,
 		archive,
 		archives,
-		ask_question,
+		aspect_ratio_other_landscape,
+		aspect_ratio_other_portrait,
 		audio,
+		audio_output_title,
+		audio_role_commentary,
+		audio_role_description,
+		audio_track_current_fmt,
+		audio_track_fmt,
+		audio_tracks_title,
 		audio_title,
-		authorized,
 		before,
 		brightness,
+		burn_failed,
+		burn_help,
+		burn_stage,
 		burn_title,
 		analyze,
 		button_analyze,
-		button_background,
 		button_cancel,
 		button_change,
 		button_close,
 		button_convert,
 		button_delete,
 		button_dont_save,
-		button_import,
 		button_ok,
 		button_rotate,
 		button_save,
@@ -282,46 +468,33 @@ void app_text_t::calc_text_mapping()
 		donate,
 		donate_help,
 		donate_link,
+		diagnostics_sent,
+		diagnostics_send_failed,
 		cancel_was_pressed_after,
-		cannot_edit,
+		cannot_edit_fmt,
 		changes,
-		click_collection_options,
 		map_instructions,
-		click_to_search_similar,
-		click_to_search,
-		click_to_open,
 		collection_contains,
 		collection_contains2,
 		items_created_fmt,
 		items_modified_fmt,
-		click_to_open_created_modified,
+		open_created_modified,
 		click_items_from_fmt,
+		map_items_close_to_fmt,
 		filter,
 		close,
-		collection_options,
 		collection_options_custom_folders_help,
 		collection_options_custom_folders_title,
 		collection_options_custom_locations_help,
-		collection_options_desktop,
-		collection_options_documents,
-		collection_options_downloads,
-		collection_options_dropbox,
-		collection_options_google_drive,
-		collection_options_help,
 		collection_options_info,
 		collection_options_local_folders_title,
 		collection_options_more_folders,
 		more_collection_options_information,
 		more_template_information,
-		collection_options_music,
-		collection_options_onedrive,
-		collection_options_pictures,
-		collection_options_videos,
 		collection_title,
 		color,
 		command_adjust_date,
 		command_advanced_search,
-		command_album_artist,
 		command_app_exit,
 		command_browse_back,
 		command_browse_forward,
@@ -335,22 +508,36 @@ void app_text_t::calc_text_mapping()
 		command_browse_previous_item,
 		command_browse_previous_item_extend,
 		command_burn,
+		command_auto_color,
+		command_auto_document,
+		tooltip_auto_document,
+		command_auto_straighten,
+		edit_original,
+		edit_info,
+		convert_info,
+		edit_metadata_info,
+		adjust_date_info,
+		tag_info,
+		command_edit_preview,
 		command_capture,
 		command_close,
+		command_cancel,
 		command_collection_options,
 		command_color_reset,
 		command_convert_or_resize,
+		command_convert,
+		convert_preparing,
 		command_copy,
-		command_copyright,
 		command_customise,
 		command_delete,
 		command_desktop_background,
 		command_display_options,
-		command_download,
 		command_edit,
 		command_edit_copy,
+		command_edit_copy_item_path,
 		command_edit_cut,
 		command_edit_metadata,
+		command_update_metadata,
 		command_edit_paste,
 		command_eject,
 		command_favorite,
@@ -359,6 +546,7 @@ void app_text_t::calc_text_mapping()
 		command_flatten,
 		command_fullscreen,
 		command_group_album,
+		command_group_aspect_ratio,
 		command_group_camera,
 		command_group_created,
 		command_group_extension,
@@ -373,6 +561,7 @@ void app_text_t::calc_text_mapping()
 		command_group_folder,
 		command_highlight_large_items,
 		command_import,
+		import_preparing,
 		command_keyboard,
 		command_label_approved,
 		command_label_none,
@@ -412,7 +601,6 @@ void app_text_t::calc_text_mapping()
 		command_rename_files,
 		command_repeat_toggle,
 		command_restore,
-		command_revert,
 		command_rotate_anticlockwise,
 		command_rotate_clockwise,
 		command_rotate_reset,
@@ -421,17 +609,22 @@ void app_text_t::calc_text_mapping()
 		command_save_and_back_tooltip,
 		command_save_and_next,
 		command_save_and_next_tooltip,
+		command_locate_and_back,
+		command_locate_and_next,
 		command_save_as,
-		command_save_options,
+		tooltip_auto_color,
+		tooltip_auto_straighten,
+		tooltip_edit_preview,
 		command_scale_up,
 		command_scan,
 		command_select_all,
 		command_select_invert,
 		command_select_nothing,
 		command_share_email,
+		email_preparing,
 		command_show_in_file_browser,
 		command_show_in_folder,
-		command_show_thumbnails,
+		command_sort_date_created,
 		command_sort_date_modified,
 		command_sort_dates_ascending,
 		command_sort_dates_descending,
@@ -442,6 +635,8 @@ void app_text_t::calc_text_mapping()
 		command_toggle_details,
 		command_toggle_group_by,
 		command_toggle_item_size,
+		tooltip_thumbnail_size,
+		tooltip_scroll_to_top,
 		command_tools,
 		command_view_help,
 		command_view_items,
@@ -452,6 +647,17 @@ void app_text_t::calc_text_mapping()
 		command_view_sort,
 		command_toggle_volume,
 		command_zoom,
+		command_zoom_fit,
+		command_zoom_fit_width,
+		command_zoom_fill,
+		command_zoom_presets,
+		command_zoom_in,
+		command_zoom_flip,
+		command_zoom_out,
+		command_zoom_100,
+		command_zoom_navigator,
+		command_zoom_navigator_auto_hide,
+		command_zoom_navigator_off,
 		compare,
 		compare_tooltip,
 		contrast,
@@ -470,8 +676,7 @@ void app_text_t::calc_text_mapping()
 		customise_sidebar_desc,
 		customise_tags_help,
 		customise_tags_title,
-		customize_display_title,
-		customize_history_years,
+		customize_history_start_year,
 		customize_labels,
 		customize_ratings,
 		customize_show_drives,
@@ -493,11 +698,9 @@ void app_text_t::calc_text_mapping()
 		defragmenting,
 		delete_error,
 		delete_fmt,
+		delete_no_recycle_warning,
 		desktop_background_info,
-		dest_folder_label,
-		dest_name_label,
 		destination_folder,
-		detecting_folders,
 		disk_capacity,
 		disk_free,
 		disk_label,
@@ -510,8 +713,10 @@ void app_text_t::calc_text_mapping()
 		eject_close_info,
 		eject_failed_fmt,
 		eject_help,
+		eject_none_found,
 		eject_title_fmt,
 		email_connecting_to_mapi,
+		email_canceled,
 		email_convert_to_jpeg,
 		email_failed,
 		email_limit_dimensions,
@@ -522,7 +727,7 @@ void app_text_t::calc_text_mapping()
 		empty,
 		ending_fmt,
 		error_access_denied_src,
-		error_atl_failed,
+		error_atl_direct3d,
 		error_cannot_continue,
 		error_connect_scanner,
 		error_create_file_failed_fmt,
@@ -540,21 +745,19 @@ void app_text_t::calc_text_mapping()
 		error_filename_too_long,
 		error_fld_dest_is_file,
 		error_index_database_failed,
-		error_internet,
 		error_invalid_files,
 		error_invalid_path_fmt,
 		error_invalid_path,
 		error_many_dest,
 		error_many_src_1_dest,
-		error_mapi_failed,
 		error_max,
 		error_ole_failed,
 		error_on_dest,
 		error_op_cancelled,
+		error_analysis_cancelled,
 		error_path_too_deep,
 		error_rename_failed,
 		error_same_file,
-		error_save_failed,
 		error_save_image,
 		error_scanner,
 		error_src_is_cd_record,
@@ -567,7 +770,6 @@ void app_text_t::calc_text_mapping()
 		error_windows_common_controls_failed,
 		error_winsock_failed,
 		exif_metadata_title,
-		failed_connect_internet,
 		failed_to_create_folder_fmt,
 		favorite_add_fmt,
 		favorite_failed_to_add,
@@ -724,7 +926,7 @@ void app_text_t::calc_text_mapping()
 		genre_other,
 		genre_panorama,
 		genre_panoramic,
-		genre_pellier_noir,
+		genre_film_noir,
 		genre_photo_op,
 		genre_photobiography,
 		genre_photojournalism,
@@ -807,10 +1009,10 @@ void app_text_t::calc_text_mapping()
 		genre_war,
 		genre_western,
 		genre_world,
-		group_sort_click,
 		group_sort_tooltip,
 		group_title_items,
 		group_title_no_album_or_show,
+		group_title_no_aspect_ratio,
 		group_title_no_camera,
 		group_title_no_extension,
 		group_title_no_location,
@@ -829,36 +1031,27 @@ void app_text_t::calc_text_mapping()
 		help_tag1,
 		help_tag2,
 		hide_verbose_metadata,
+		image_display_failed,
+		image_too_large,
 		import_dest_folder,
-		import_detecting,
 		import_from,
-		import_src_filter,
-		import_ignore,
 		import_ignore_previous,
 		import_overwrite_if_newer,
 		import_info,
 		import_other_folder,
-		import_overwrite,
 		import_dest_folder_structure,
-		import_rename_different_attributes,
 		import_set_created_date,
-		index_later,
 		index_maintenance_help,
 		index_maintenance_reset_recommended,
 		index_maintenance_title,
 		index_size_fmt,
 		indexing,
 		indexing_message,
-		install_welcome_text1,
-		install_welcome_text2,
 		invalid,
 		iptc_metadata_title,
 		is_not_valid_folder_fmt,
-		item_noun,
-		item_noun_plural,
 		item_oriented,
 		item_oriented_tooltip_fmt,
-		item_show_oriented,
 		items_identical,
 		items_not_identical,
 		jpeg_best,
@@ -879,6 +1072,8 @@ void app_text_t::calc_text_mapping()
 		keyboard_ctrl_left_right_desc,
 		keyboard_del,
 		keyboard_down,
+		keyboard_edit_title,
+		keyboard_end,
 		keyboard_enter,
 		keyboard_enter_desc,
 		keyboard_escape,
@@ -895,7 +1090,10 @@ void app_text_t::calc_text_mapping()
 		keyboard_f8,
 		keyboard_f9,
 		keyboard_file_management_title,
+		keyboard_group_title,
 		keyboard_help_title,
+		keyboard_home,
+		keyboard_home_end_desc,
 		keyboard_insert,
 		keyboard_left,
 		keyboard_left_right_desc,
@@ -907,9 +1105,10 @@ void app_text_t::calc_text_mapping()
 		keyboard_next,
 		keyboard_oem_4,
 		keyboard_oem_6,
+		keyboard_oem_minus,
 		keyboard_oem_plus,
 		keyboard_open_title,
-		keyboard_options_title,
+		options_title,
 		keyboard_or,
 		keyboard_playback_title,
 		keyboard_prior,
@@ -923,25 +1122,27 @@ void app_text_t::calc_text_mapping()
 		keyboard_tab,
 		keyboard_tools_title,
 		keyboard_up,
+		keyboard_up_down_desc,
 		keyboard_volume_down,
 		keyboard_volume_mute,
 		keyboard_volume_up,
+		keyboard_zoom_keys_desc,
 		km_from,
 		learn_more_diffractor_com,
 		lights,
+		dimension_must_be_positive,
 		limit_output_dimensions,
 		lossless_compression,
 		list_of_accelerators,
-		listed,
-		listed_sub_folders,
 		loading,
-		location_not_loaded,
 		location_not_selected,
 		location_overwrite_gps,
 		location_title,
 		maximize_image,
-		maybe_later,
 		media_metadata_title,
+		metadata_title,
+		metadata_select_field,
+		genre_separator_help,
 		menu_add_fmt,
 		menu_copy,
 		menu_cut,
@@ -977,29 +1178,24 @@ void app_text_t::calc_text_mapping()
 		month_short_oct,
 		month_short_sep,
 		move_items,
-		nav_countries_title,
-		nav_drives_title,
-		nav_folders_title,
 		nav_history_title,
 		nav_search_title,
-		nav_tags_title,
-		need_some_maintenance,
 		new_folder_name,
 		new_folder_title,
 		no_items_are_selected,
-		no_results,
 		none,
 		not_supported_cloud,
 		not_supported_folder,
 		not_supported_photo,
+		not_supported_photo_edit,
 		not_supported_readonly,
 		not_supported_readonly_metadata,
 		not_supported_save_format,
 		nothing_found1,
 		nothing_found2,
+		nothing_found_add_folders,
+		empty_folder,
 		num_of,
-		ok_all_done,
-		ok_got_it,
 		open_dest,
 		open_in_browser_title,
 		open_properties_title,
@@ -1010,9 +1206,8 @@ void app_text_t::calc_text_mapping()
 		open_with_fmt,
 		open_with_title,
 		open_with_tool,
-		optimize,
-		option_overwrite_gps,
 		option_slideshow_delay,
+		option_slideshow_title,
 		options_advanced,
 		options_app_options,
 		options_backup_copy,
@@ -1030,7 +1225,6 @@ void app_text_t::calc_text_mapping()
 		options_use_gpu_video,
 		options_use_yuv_tex,
 		options_show_shadow,
-		options_update_modified,
 		options_last_played_pos,
 		options_show_help_tooltips,
 		orientation_bottom_left,
@@ -1070,6 +1264,7 @@ void app_text_t::calc_text_mapping()
 		preview_showing,
 		print_title,
 		processing,
+		processing_files,
 		prop_name_35mmequivalent,
 		prop_name_album,
 		prop_name_albumartist,
@@ -1106,6 +1301,31 @@ void app_text_t::calc_text_mapping()
 		prop_name_genre,
 		prop_name_id,
 		prop_name_iso,
+		prop_name_altitude,
+		prop_name_gps_speed,
+		height_in_flight,
+		height_altitude_fmt,
+		height_underwater_fmt,
+		distance_label_fmt,
+		tooltip_search_distance,
+		compass_points,
+		bearing_fmt,
+		location_near_fmt,
+		location_remote,
+		nothing_within_fmt,
+		nothing_at_place_fmt,
+		widen_to_fmt,
+		search_all_named_fmt,
+		show_without_location,
+		search_within_fmt,
+		height_high_altitude,
+		timeline_title,
+		places_title,
+		visit_range_fmt,
+		visit_items_fmt,
+		grouped_by_fmt,
+		grouped_and_sorted_fmt,
+		clear_timeline_selection,
 		prop_name_label,
 		prop_name_latitude,
 		prop_name_lens,
@@ -1149,6 +1369,11 @@ void app_text_t::calc_text_mapping()
 		rate_title,
 		rating_keys,
 		rating_remove_fmt,
+		rating_replaces_reject,
+		label_click_apply,
+		label_click_clear,
+		label_replaces_fmt,
+		label_reject_replaces_rating,
 		raw_metadata_title,
 		remove_metadata_title,
 		rename_label,
@@ -1162,22 +1387,23 @@ void app_text_t::calc_text_mapping()
 		rename_info,
 		rename_template_label,
 		rename_template_start_label,
+		releases,
 		repeat_help,
 		repeat_off_help,
 		repeat_one_help,
 		reset_database,
 		resetting,
-		resized_max_label,
 		retro,
 		retro_title,
 		saturation,
+		perspective_horizontal,
+		perspective_vertical,
 		save_as_jpeg_fmt,
 		save_changes,
 		save_new_photo,
 		saving_file_name,
 		scan_failed,
 		search_all_terms,
-		search_any_terms,
 		search_audio,
 		search_christmas,
 		search_collection,
@@ -1187,12 +1413,11 @@ void app_text_t::calc_text_mapping()
 		search_last_7_days,
 		search_located_within,
 		search_none_terms,
-		search_not_in_collection,
 		search_or_folder,
 		search_photos,
 		search_select_term,
+		search_no_criteria,
 		search_sub_folders,
-		search_top_rated,
 		search_videos,
 		searching_text,
 		select_folder,
@@ -1205,6 +1430,7 @@ void app_text_t::calc_text_mapping()
 		show_verbose_metadata,
 		size_title,
 		sort_by_album_show,
+		sort_by_aspect_ratio,
 		sort_by_def,
 		sort_by_extension,
 		sort_by_file_type,
@@ -1216,21 +1442,24 @@ void app_text_t::calc_text_mapping()
 		sort_by_rating_label,
 		sort_by_shuffle,
 		sort_by_size,
-		space_used,
 		staring,
 		starting_date_label,
 		starting_fmt,
 		straighten,
+		temperature,
+		tint,
 		stream_name_fmt,
-		stream_select_fmt,
 		subtitle,
 		support,
 		sync_collection,
+		sync_analysis_changed,
+		sync_preparing,
 		sync_copy_local_action,
 		sync_copy_remote_action,
+		sync_delete_count_fmt,
 		sync_delete_local_action,
 		sync_delete_remote_action,
-		sync_details,
+		sync_delete_warning,
 		sync_delete_local,
 		sync_delete_remote,
 		sync_info_1,
@@ -1239,7 +1468,6 @@ void app_text_t::calc_text_mapping()
 		sync_local_remote,
 		sync_other_folder,
 		sync_remote,
-		sync_remote_folder,
 		sync_remote_local,
 		tag_add_or_remove_label,
 		tag_add_remove,
@@ -1248,6 +1476,32 @@ void app_text_t::calc_text_mapping()
 		tags_favorite_label,
 		tags_remove_label,
 		tags_title,
+		command_apply_tags,
+		tags_column_item,
+		tags_column_result,
+		tags_nothing_to_do,
+		tags_unchanged,
+		tags_view_empty_message,
+		command_cancel_operation,
+		cancel_operation_title,
+		cancel_operation_fmt,
+		button_cancel_operation,
+		button_keep_running,
+		scope_unavailable_title,
+		scope_unavailable_fmt,
+		scope_unavailable_retry,
+		scope_unavailable_parent,
+		scope_busy_fmt,
+		collision_policy_label,
+		collision_policy_sync,
+		collision_replace,
+		collision_skip,
+		collision_rename,
+		collision_block,
+		collision_blocked_fmt,
+		collision_skipped_fmt,
+		collision_replaced_fmt,
+		collision_renamed_fmt,
 		text_false,
 		text_true,
 		title_error,
@@ -1256,14 +1510,13 @@ void app_text_t::calc_text_mapping()
 		title_updating,
 		tooltip_color_reset,
 		tooltip_edit1,
-		tooltip_edit2,
-		tooltip_flag_for_delete,
 		tooltip_fullscreen,
 		tooltip_language,
 		tooltip_nav_bar,
 		tooltip_open,
 		tooltip_pin,
 		tooltip_play,
+		tooltip_slideshow,
 		tooltip_rotate_reset,
 		tooltip_scale_up,
 		tooltip_tag_with,
@@ -1280,6 +1533,7 @@ void app_text_t::calc_text_mapping()
 		update_install_now,
 		update_checking,
 		update_up_to_date_fmt,
+		update_check_failed,
 		update_avail_version_fmt,
 		update_available,
 		update_current_version_fmt,
@@ -1300,7 +1554,6 @@ void app_text_t::calc_text_mapping()
 		xmp_metadata_title,
 		icc_metadata_title,
 		zoom_kb,
-		zoom_tooltip,
 		scope,
 		value,
 		command_volume200,
@@ -1310,22 +1563,27 @@ void app_text_t::calc_text_mapping()
 		command_volume25,
 		command_volume0,
 		command_autoplay,
+		command_auto_advance,
+		auto_advance_help,
 		command_last_played_pos,
-		command_repeat_toggle,
 		command_repeat_one,
 		command_repeat_all,
 		command_repeat_none,
 		command_playback_menu,
 		command_playback_toolbar,
+		command_slideshow,
+		command_filter_items,
 		command_filter_photos,
 		command_filter_videos,
 		command_filter_audio,
-		all_items_filtered,
+		some_items_filtered_fmt,
 		items_created_on_fmt,
 		command_all_tags,
 		command_favorite_tags,
 		option_favorite_tags,
-		collection_add,
+		tags_workflow_label,
+		configure_favorite_tags,
+		file,
 		source,
 		destination,
 		action,
@@ -1339,7 +1597,6 @@ void app_text_t::calc_text_mapping()
 		exists,
 		previously_imported,
 		ignore,
-		test,
 		view_empty_message,
 	};
 
@@ -1348,6 +1605,7 @@ void app_text_t::calc_text_mapping()
 		rotate_info_fmt,
 		title_folder_count_fmt,
 		title_item_count_fmt,
+		map_items_here_fmt,
 		rating_set_fmt,
 		cannot_process_fmt,
 		rename_fmt,
@@ -1357,18 +1615,20 @@ void app_text_t::calc_text_mapping()
 		processed_fmt,
 		failed_items_fmt,
 		ignored_fmt,
+		canceled_items_fmt,
 		ignored_exist_already_fmt,
 		ignored_previous_fmt,
 		delete_info_fmt,
+		delete_info_permanent_fmt,
+		delete_many_warning_fmt,
 		copy_fmt,
 		move_fmt,
 		be_updated_fmt,
 		edit_metadata_fmt,
+		burn_info_fmt,
 		convert_info_fmt,
 		tag_info_fmt,
 		adjust_date_info_fmt,
-		shared_fmt,
-		import_copy_fmt,
 		email_info_fmt,
 		would_overwrite_fmt,
 		gps_overwrite_count_fmt,
@@ -1427,6 +1687,91 @@ std::vector<std::string> app_text_t::add_translate_text(const std::vector<str::c
 	}
 
 	return {result.begin(), result.end()};
+}
+
+// Classification of the built-in genre names. A genre is offered for a selection only when it
+// belongs to media of that kind, so a photo selection is not asked to choose between Death Metal
+// and Euro-Techno. Names that are ordinary words in every medium are marked for all three.
+std::vector<std::string> app_text_t::known_genres(const genre_kind kinds) const
+{
+	constexpr auto ga = genre_kind::audio;
+	constexpr auto gv = genre_kind::video;
+	constexpr auto gp = genre_kind::photo;
+
+	const std::pair<std::reference_wrapper<const text_t>, genre_kind> table[] = {
+		{genre_a_capella, ga}, {genre_abstract, gp}, {genre_acidjazz, ga}, {genre_acidpunk, ga},
+		{genre_acid, ga}, {genre_acoustic, ga}, {genre_action_adventure, gv}, {genre_action, gv},
+		{genre_aerial, gp}, {genre_alternative, ga}, {genre_alternrock, ga}, {genre_ambient, ga},
+		{genre_analog, gp}, {genre_animation, gv}, {genre_anime, gv}, {genre_architectural, gp},
+		{genre_avantgarde, ga}, {genre_aviation, gp}, {genre_ballad, ga}, {genre_bass, ga},
+		{genre_bebob, ga}, {genre_bigband, ga}, {genre_bluegrass, ga}, {genre_blues, ga},
+		{genre_booty_bass, ga}, {genre_brazilian, ga}, {genre_cabaret, ga}, {genre_candid, gp},
+		{genre_celtic, ga}, {genre_chambermusic, ga}, {genre_chanson, ga}, {genre_childrens, ga | gv},
+		{genre_chorus, ga}, {genre_christian_gospel, ga}, {genre_christianran_reap, ga},
+		{genre_classic_rock, ga}, {genre_classic, ga}, {genre_classical, ga}, {genre_close_up, gp},
+		{genre_cloudscape, gp}, {genre_club, ga}, {genre_comedy, ga | gv}, {genre_conceptual, gp},
+		{genre_concert_films, gv}, {genre_concert, gv | gp}, {genre_conservation, gp},
+		{genre_country, ga}, {genre_cult, gv}, {genre_dance_hall, ga}, {genre_dance, ga},
+		{genre_darkwave, ga}, {genre_death_metal, ga}, {genre_disco, ga}, {genre_documentary, gv},
+		{genre_drama, gv}, {genre_dream, ga}, {genre_drum_solo, ga}, {genre_duet, ga},
+		{genre_easylistening, ga}, {genre_electronic, ga}, {genre_ethnic, ga}, {genre_euro_dance, ga},
+		{genre_euro_house, ga}, {genre_euro_techno, ga}, {genre_family, gv}, {genre_fashion, gp},
+		{genre_fast_fusion, ga}, {genre_film_still, gp}, {genre_fine_art, gp}, {genre_fire, gp},
+		{genre_fireworks, gp}, {genre_fitness_workout, gv}, {genre_folk, ga}, {genre_folklore, ga},
+		{genre_folk_rock, ga}, {genre_food, gp}, {genre_foreign, gv}, {genre_forensic, gp},
+		{genre_freestyle, ga}, {genre_funk, ga}, {genre_fusion, ga}, {genre_game, ga | gv},
+		{genre_gangsta, ga}, {genre_geophotography, gp}, {genre_glamour, gp}, {genre_gospel, ga},
+		{genre_gothic_rock, ga}, {genre_gothic, ga}, {genre_grunge, ga}, {genre_hardrock, ga},
+		{genre_highke, gp}, {genre_high_speed, gp}, {genre_hip_hop, ga}, {genre_hip_hop_rap, ga},
+		{genre_holiday, genre_kind::any}, {genre_horror, gv}, {genre_house, ga},
+		{genre_humour, genre_kind::any}, {genre_independent, gv}, {genre_industrial, ga},
+		{genre_instrumental_pop, ga}, {genre_instrumental_rock, ga}, {genre_instrumental, ga},
+		{genre_jazz, ga}, {genre_jazzfun, ga}, {genre_jungle, ga}, {genre_kids_family, gv},
+		{genre_kids, gv}, {genre_kirlian, gp}, {genre_landscape, gp}, {genre_latin, ga},
+		{genre_lifestyle, gp}, {genre_lo_fi, ga}, {genre_lomography, gp}, {genre_long_exposure, gp},
+		{genre_low_key, gp}, {genre_macro, gp}, {genre_medical, gp}, {genre_meditative, ga},
+		{genre_metal, ga}, {genre_monochrome, gp}, {genre_music_documentaries, gv},
+		{genre_music_feature_films, gv}, {genre_musical, ga | gv}, {genre_musicals, gv},
+		{genre_narrative, gv | gp}, {genre_nationa_folk, ga}, {genre_native_american, ga},
+		{genre_new_age, ga}, {genre_new_wave, ga}, {genre_night, gp}, {genre_noise, ga},
+		{genre_nonfiction, gv}, {genre_oldies, ga}, {genre_opera, ga}, {genre_other, genre_kind::any},
+		{genre_panorama, gp}, {genre_panoramic, gp}, {genre_film_noir, gv}, {genre_photo_op, gp},
+		{genre_photobiography, gp}, {genre_photojournalism, gp}, {genre_photowalking, gp},
+		{genre_podcast, ga | gv}, {genre_polaroid, gp}, {genre_polka, ga}, {genre_pop, ga},
+		{genre_pop_funk, ga}, {genre_pop_folk, ga}, {genre_porn_groove, ga}, {genre_portrait, gp},
+		{genre_power_ballad, ga}, {genre_pranks, gv}, {genre_primus, ga}, {genre_progressive_rock, ga},
+		{genre_psychadelic, ga}, {genre_psychedelic_rock, ga}, {genre_punk_rock, ga}, {genre_punk, ga},
+		{genre_randb, ga}, {genre_rap, ga}, {genre_rave, ga}, {genre_reality_tv, gv},
+		{genre_reggae, ga}, {genre_retro, ga | gp}, {genre_revival, ga}, {genre_rhythmic_soul, ga},
+		{genre_rock_and_roll, ga}, {genre_rock, ga}, {genre_romance, gv}, {genre_samba, ga},
+		{genre_satellite, gp}, {genre_satire, gv}, {genre_scifi_and_fantasy, gv},
+		{genre_short_films, gv}, {genre_show_tunes, ga}, {genre_singer_songwriter, ga}, {genre_ska, ga},
+		{genre_slow_jam, ga}, {genre_slow_rock, ga}, {genre_social, gp}, {genre_soft_focus, gp},
+		{genre_sonata, ga}, {genre_soul, ga}, {genre_sound_clip, ga}, {genre_soundtrack, ga | gv},
+		{genre_southern_rock, ga}, {genre_space, gp}, {genre_special_interest, gv}, {genre_speech, ga},
+		{genre_sports, gv | gp}, {genre_star_trail, gp}, {genre_still_life, gp}, {genre_stock, gp},
+		{genre_street, gp}, {genre_subminiature, gp}, {genre_swing, ga}, {genre_symphonic_rock, ga},
+		{genre_symphony, ga}, {genre_tango, ga}, {genre_techno, ga}, {genre_techno_industrial, ga},
+		{genre_teens, gv}, {genre_thriller, gv}, {genre_time_lapse, gv | gp}, {genre_top40, ga},
+		{genre_trailer, gv}, {genre_trance, ga}, {genre_travel, gv | gp}, {genre_tribal, ga},
+		{genre_trip_hop, ga}, {genre_ultraviolet, gp}, {genre_underwater, gp},
+		{genre_unknown, genre_kind::any}, {genre_urban, ga | gp}, {genre_vernacular, gp},
+		{genre_vintage, gp}, {genre_vocal, ga}, {genre_war, gv}, {genre_western, gv}, {genre_world, ga},
+	};
+
+	std::vector<std::string> result;
+	result.reserve(std::size(table));
+
+	for (const auto& entry : table)
+	{
+		if (entry.second && kinds)
+		{
+			result.emplace_back(entry.first.get().sv());
+		}
+	}
+
+	std::ranges::sort(result, str::iless());
+	return result;
 }
 
 

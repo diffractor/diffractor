@@ -132,9 +132,6 @@ void ui::surface::fill_pie(const pointi center, const int radius, const color32 
 			if (r < inner_radius_limit1)
 			{
 				c = color_center;
-				const auto ff = (static_cast<float>(r) / static_cast<float>(outer_radius_limit2) + dither_matrix[x %
-					4][y % 4]) * 0.25f;
-				c = lighten(c, ff);
 			}
 			else if (r < outer_radius_limit2)
 			{
@@ -191,40 +188,129 @@ static simple_transform to_simple_transform(const image_edits& pe)
 	return simple_transform::none;
 }
 
-static __forceinline ui::color32 blend_colors(const ui::color32 start, const ui::color32 end, const double position,
-                                              const bool has_alpha)
+// get_pixel returns transparent black outside the surface, so an interpolated edge sample would drag
+// every rotated, straightened or perspective-corrected border toward black. Clamp to the edge instead.
+static __forceinline ui::color32 sample_clamped(const ui::surface& src, const int x, const int y)
 {
-	const auto pos = df::round(position * 0xff);
+	return src.get_pixel(std::clamp(x, 0, static_cast<int>(src.width()) - 1),
+	                     std::clamp(y, 0, static_cast<int>(src.height()) - 1));
+}
 
-	if (has_alpha)
+static __forceinline double catmull_rom_weight(const double t)
+{
+	const auto a = std::abs(t);
+	if (a < 1.0) return ((1.5 * a - 2.5) * a) * a + 1.0;
+	if (a < 2.0) return ((-0.5 * a + 2.5) * a - 4.0) * a + 2.0;
+	return 0.0;
+}
+
+// Catmull-Rom, the same sampler the edit preview draws with, so a saved straighten keeps the detail
+// the preview showed rather than the extra softening bilinear leaves behind.
+static ui::color32 sample_catmull_rom(const ui::surface& src, const double x, const double y, const bool has_alpha)
+{
+	const auto left_f = floor(x);
+	const auto top_f = floor(y);
+	const auto left = static_cast<int>(left_f);
+	const auto top = static_cast<int>(top_f);
+	const auto offset_x = x - left_f;
+	const auto offset_y = y - top_f;
+
+	double weights_x[4];
+	double weights_y[4];
+
+	for (auto i = 0; i < 4; ++i)
 	{
-		const auto start_a = (start >> 24 & 0xff) * (pos ^ 0xff);
-		const auto end_a = (end >> 24 & 0xff) * pos;
-		const auto final_a = start_a + end_a;
-
-		if (final_a < 0xff) return 0;
-
-		return (final_a / 0xff) << 24 |
-			(((start >> 16 & 0xff) * start_a + (end >> 16 & 0xff) * end_a) / final_a) << 16 |
-			(((start >> 8 & 0xff) * start_a + (end >> 8 & 0xff) * end_a) / final_a) << 8 |
-			((start & 0xff) * start_a + (end & 0xff) * end_a) / final_a;
+		weights_x[i] = catmull_rom_weight(offset_x - (i - 1));
+		weights_y[i] = catmull_rom_weight(offset_y - (i - 1));
 	}
-	const auto start_a = 0xff * (pos ^ 0xff);
-	const auto end_a = 0xff * pos;
-	const auto final_a = start_a + end_a;
 
-	return
-		(((start >> 16 & 0xff) * start_a + (end >> 16 & 0xff) * end_a) / final_a) << 16 |
-		(((start >> 8 & 0xff) * start_a + (end >> 8 & 0xff) * end_a) / final_a) << 8 |
-		((start & 0xff) * start_a + (end & 0xff) * end_a) / final_a;
+	auto red = 0.0;
+	auto green = 0.0;
+	auto blue = 0.0;
+	auto alpha = 0.0;
+
+	for (auto j = 0; j < 4; ++j)
+	{
+		for (auto i = 0; i < 4; ++i)
+		{
+			const auto c = sample_clamped(src, left + i - 1, top + j - 1);
+			const auto weight = weights_x[i] * weights_y[j];
+			// Filtering straight alpha would let a transparent pixel pull its colour into the result.
+			const auto coverage = has_alpha ? weight * (ui::get_a(c) / 255.0) : weight;
+
+			red += ui::get_r(c) * coverage;
+			green += ui::get_g(c) * coverage;
+			blue += ui::get_b(c) * coverage;
+			alpha += coverage;
+		}
+	}
+
+	if (alpha > 1e-6)
+	{
+		red /= alpha;
+		green /= alpha;
+		blue /= alpha;
+	}
+
+	return ui::saturate_rgba(df::round(red), df::round(green), df::round(blue),
+	                         has_alpha ? df::round(alpha * 255.0) : 255);
 }
 
 ui::const_surface_ptr ui::surface::transform(const image_edits& photo_edits) const
-{
-	const_surface_ptr surface_result;
 
-	static std::atomic_int version;
-	const df::cancel_token token(version);
+{
+	const df::cancel_token token;
+	return transform(photo_edits, token);
+}
+
+ui::const_surface_ptr ui::surface::transform(const image_edits& photo_edits, const df::cancel_token& token) const
+{
+	if (photo_edits.has_perspective())
+	{
+		auto canvas = std::make_shared<surface>();
+
+		if (!canvas->alloc(_dimensions, _format)) return {};
+
+		const auto display_angle = to_radian(-photo_edits.crop_bounds(_dimensions).angle());
+		const auto angle_sin = sin(display_angle);
+		const auto angle_cos = cos(display_angle);
+		const auto horizontal = photo_edits.perspective_horizontal() * angle_cos -
+			photo_edits.perspective_vertical() * angle_sin;
+		const auto vertical = photo_edits.perspective_horizontal() * angle_sin +
+			photo_edits.perspective_vertical() * angle_cos;
+		const auto has_alpha = _format == texture_format::ARGB;
+
+		for (auto y = 0u; y < canvas->height(); ++y)
+		{
+			if (token.is_cancelled()) return {};
+			auto* const dst_line = std::bit_cast<color32*>(canvas->pixels_line(y));
+			const auto normalized_y = (y + 0.5) / canvas->height() - 0.5;
+
+			for (auto x = 0u; x < canvas->width(); ++x)
+			{
+				const auto normalized_x = (x + 0.5) / canvas->width() - 0.5;
+				const auto denominator = 1.0 + horizontal * normalized_x + vertical * normalized_y;
+				// A vanishing denominator produces infinite or NaN source coordinates, and the sampling
+				// below indexes with them.
+				if (std::abs(denominator) < 1e-12) continue;
+				const auto source_x = (0.5 + normalized_x / denominator) * _dimensions.cx - 0.5;
+				const auto source_y = (0.5 + normalized_y / denominator) * _dimensions.cy - 0.5;
+
+				dst_line[x] = sample_catmull_rom(*this, source_x, source_y, has_alpha);
+			}
+		}
+
+		auto remaining_edits = photo_edits;
+		remaining_edits.perspective_horizontal(0);
+		remaining_edits.perspective_vertical(0);
+		if (photo_edits.has_crop_bounds())
+		{
+			remaining_edits.crop_bounds(photo_edits.effective_crop_bounds(_dimensions));
+		}
+		return canvas->transform(remaining_edits, token);
+	}
+
+	const_surface_ptr surface_result;
 
 	const auto rot_angle = photo_edits.rotation_angle();
 	const auto is_flip_rotate = !df::is_zero(rot_angle) &&
@@ -235,6 +321,31 @@ ui::const_surface_ptr ui::surface::transform(const image_edits& photo_edits) con
 	if (is_flip_rotate)
 	{
 		surface_result = transform(to_simple_transform(photo_edits));
+	}
+	else if (!photo_edits.has_rotation() && !photo_edits.has_scale() && photo_edits.has_crop(_dimensions))
+	{
+		// A crop must not resample. The rectangle arrives from device coordinates and lands on
+		// fractional source pixels, so interpolating would shift and soften every pixel it keeps.
+		const auto crop = photo_edits.crop_bounds(_dimensions).crop(rectd(0, 0, _dimensions.cx, _dimensions.cy)).
+		                              bounding_rect();
+		const auto extent = crop.extent().round();
+		const auto canvas_extent = sizei(std::clamp(extent.cx, 1, _dimensions.cx),
+		                                 std::clamp(extent.cy, 1, _dimensions.cy));
+		const auto left = std::clamp(df::round(crop.left()), 0, _dimensions.cx - canvas_extent.cx);
+		const auto top = std::clamp(df::round(crop.top()), 0, _dimensions.cy - canvas_extent.cy);
+
+		auto canvas = std::make_shared<surface>();
+
+		if (canvas->alloc(canvas_extent, _format))
+		{
+			for (auto y = 0; y < canvas_extent.cy; ++y)
+			{
+				memcpy(canvas->pixels_line(y), _pixels.get() + (top + y) * _stride + left * 4,
+				       static_cast<size_t>(canvas_extent.cx) * 4);
+			}
+
+			surface_result = std::move(canvas);
+		}
 	}
 	else if (photo_edits.has_crop(_dimensions) || photo_edits.has_scale() || photo_edits.has_rotation())
 	{
@@ -297,16 +408,7 @@ ui::const_surface_ptr ui::surface::transform(const image_edits& photo_edits) con
 					}
 					else
 					{
-						const auto topleft = get_pixel(leftx, topy);
-						const auto topright = get_pixel(rightx, topy);
-						const auto bottomleft = get_pixel(leftx, bottomy);
-						const auto bottomright = get_pixel(rightx, bottomy);
-
-						const auto x_offset = src_pointf.X - leftxf;
-						const auto top = blend_colors(topleft, topright, x_offset, has_alpha);
-						const auto bottom = blend_colors(bottomleft, bottomright, x_offset, has_alpha);
-
-						dst_line[x] = blend_colors(top, bottom, src_pointf.Y - topyf, has_alpha);
+						dst_line[x] = sample_catmull_rom(*this, src_pointf.X, src_pointf.Y, has_alpha);
 					}
 				}
 			}
@@ -324,7 +426,8 @@ ui::const_surface_ptr ui::surface::transform(const image_edits& photo_edits) con
 		color_adjust adjust;
 		adjust.color_params(photo_edits.vibrance(), photo_edits.saturation(), photo_edits.darks(),
 		                    photo_edits.midtones(),
-		                    photo_edits.lights(), photo_edits.contrast(), photo_edits.brightness());
+		                    photo_edits.lights(), photo_edits.contrast(), photo_edits.brightness(),
+		                    photo_edits.temperature(), photo_edits.tint());
 
 		auto canvas = std::make_shared<surface>();
 
@@ -379,22 +482,6 @@ recti ui::scale_dimensions(const sizei dims, const recti limit, const bool dont_
 
 	const auto x = (limit.width() - scaled.cx) / 2;
 	const auto y = (limit.height() - scaled.cy) / 2;
-
-	return {limit.left + x, limit.top + y, limit.left + x + scaled.cx, limit.top + y + scaled.cy};
-}
-
-recti ui::scale_dimensions_up(const sizei dims, const recti limit) noexcept
-{
-	const auto sx = df::mul_div(limit.width(), denom, dims.cx);
-	const auto sy = df::mul_div(limit.height(), denom, dims.cy);
-	const auto s = std::max(sx, sy);
-
-	sizei scaled;
-	scaled.cx = std::max(1, df::mul_div(dims.cx, s, denom));
-	scaled.cy = std::max(1, df::mul_div(dims.cy, s, denom));
-
-	const int x = (limit.width() - scaled.cx) / 2;
-	const int y = (limit.height() - scaled.cy) / 2;
 
 	return {limit.left + x, limit.top + y, limit.left + x + scaled.cx, limit.top + y + scaled.cy};
 }

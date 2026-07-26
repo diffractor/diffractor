@@ -27,6 +27,7 @@ private:
 	//overlap hugely, but hey.
 	float sintable[FFT_BUFFER_SIZE / 2];
 	float costable[FFT_BUFFER_SIZE / 2];
+	float window[FFT_BUFFER_SIZE];
 
 	// Prepare data to perform an FFT on
 	void prepare(const sound_sample* input, float* re, float* im) const
@@ -37,7 +38,7 @@ private:
 		/* Get input, in reverse bit order */
 		for (const auto i : reversed)
 		{
-			*realptr++ = input[i];
+			*realptr++ = input[i] * window[i];
 			*imagptr++ = 0;
 		}
 	}
@@ -140,6 +141,7 @@ public:
 		for (auto i = 0; i < FFT_BUFFER_SIZE; i++)
 		{
 			reversed[i] = reverse_bits(i);
+			window[i] = static_cast<float>(0.5 - 0.5 * cos(2.0 * M_PI * i / (FFT_BUFFER_SIZE - 1)));
 		}
 
 		for (auto i = 0; i < FFT_BUFFER_SIZE / 2; i++)
@@ -175,10 +177,14 @@ public:
 class av_visualizer
 {
 	static constexpr int num_bars = 64;
-	const double time_offset = 0.01;
+	static constexpr double animation_lead = 0.030;
+	static constexpr double attack_seconds = 0.025;
+	static constexpr double release_seconds = 0.150;
 
 	static fast_fft fft;
 	static int xscale[num_bars + 1];
+	friend void should_compact_consumed_audio_only_when_needed();
+	friend void should_time_visualizer_independently_of_refresh_rate();
 
 	struct frame
 	{
@@ -205,18 +211,38 @@ class av_visualizer
 			return *this;
 		}
 
-		bool merge(const frame& other)
+		void include_peak(const frame& other)
+		{
+			for (auto ch = 0; ch < 2; ++ch)
+			{
+				for (auto i = 0; i < num_bars; ++i)
+				{
+					_data[ch][i] = std::max(_data[ch][i], other._data[ch][i]);
+				}
+			}
+		}
+
+		bool animate(const frame& latest, const frame& peak, const double elapsed)
 		{
 			auto changed = false;
+			const auto attack = 1.0 - exp(-elapsed / attack_seconds);
+			const auto release = 1.0 - exp(-elapsed / release_seconds);
 
-			for (auto i = 0; i < num_bars; i++)
+			for (auto ch = 0; ch < 2; ++ch)
 			{
-				if (_data[0][i] != other._data[0][i] ||
-					_data[1][i] != other._data[1][i])
+				for (auto i = 0; i < num_bars; ++i)
 				{
-					_data[0][i] = (3 * _data[0][i] + other._data[0][i]) / 4;
-					_data[1][i] = (3 * _data[1][i] + other._data[1][i]) / 4;
-					changed = true;
+					const auto current = _data[ch][i];
+					const auto target = peak._data[ch][i] > current ? peak._data[ch][i] : latest._data[ch][i];
+
+					if (current != target)
+					{
+						const auto alpha = target > current ? attack : release;
+						auto next = df::round(current + (target - current) * alpha);
+						if (next == current) next += target > current ? 1 : -1;
+						_data[ch][i] = next;
+						changed = true;
+					}
 				}
 			}
 
@@ -251,6 +277,11 @@ class av_visualizer
 
 		void push(frame& frame)
 		{
+			// Backstop against an undrained queue: the visualisation only ever looks a little way
+			// ahead, so anything beyond this is unbounded growth rather than useful lookahead.
+			constexpr size_t max_queued_frames = 1024;
+			if (_q.size() >= max_queued_frames) _q.pop_front();
+
 			//df::assert_true(std::find_if(_q.begin(), _q.end(), [t = frame._time](auto&& f) { return f._time > t; }) == _q.end());
 
 			//if (!_q.empty() && _q.back()._time > frame._time)
@@ -269,30 +300,27 @@ class av_visualizer
 			//df::log(__FUNCTION__, "frame_queue.push " << frame._time;
 		}
 
-		bool pop_merge(frame& f, const double time)
+		bool pop_animate(frame& output, const double time, const double elapsed)
 		{
-			bool invalid = false;
 			bool popped = false;
+			frame peak = _current;
 
 			while (!_q.empty() && _q.front()._time <= time)
 			{
 				_current = _q.front();
+				peak.include_peak(_current);
 				_q.pop_front();
 				popped = true;
 			}
 
-			if (popped)
-			{
-				invalid = f.merge(_current);
-			}
-
-			return invalid;
+			return elapsed > 0.0 && output.animate(_current, popped ? peak : _current, elapsed);
 		}
 	};
 
 	mutable platform::mutex _mutex;
 	_Guarded_by_(_mutex) frame_queue _frames;
 	_Guarded_by_(_mutex) frame _frame;
+	_Guarded_by_(_mutex) double _last_step_time = -1.0;
 
 public:
 	av_visualizer()
@@ -303,12 +331,13 @@ public:
 		{
 			xscale[i] = df::round(0.5 + pow(FFT_BUFFER_SIZE / 2.0, static_cast<double>(i) / num_bars));
 			if (i > 0 && xscale[i] <= xscale[i - 1]) xscale[i] = xscale[i - 1] + 1;
+			xscale[i] = std::min(xscale[i], static_cast<int>(FFT_BUFFER_SIZE / 2 - 1));
 		}
 	}
 
 	void update(audio_buffer& buffer_in)
 	{
-		auto* data = buffer_in.data;
+		auto* data = buffer_in.data + buffer_in.start_pos;
 		auto data_avail = buffer_in.used_bytes() / 4;
 		auto time_in = buffer_in.time;
 		auto bytes_processed = 0;
@@ -328,7 +357,9 @@ public:
 				*r++ = *p++;
 			}
 
-			frame frame(time_in + time_offset);
+			const auto sample_rate = buffer_in.format.sample_rate;
+			const auto window_center = sample_rate > 0 ? FFT_BUFFER_SIZE * 0.5 / sample_rate : 0.0;
+			frame frame(time_in + window_center);
 
 			calc_bars(lBuffer, frame._data[0]);
 			calc_bars(rBuffer, frame._data[1]);
@@ -355,18 +386,17 @@ public:
 	bool step(const double time)
 	{
 		platform::exclusive_lock lock(_mutex);
-		return _frames.pop_merge(_frame, time);
+		const auto elapsed = _last_step_time < 0.0 ? 1.0 / 60.0 : std::clamp(time - _last_step_time, 0.0, 0.1);
+		_last_step_time = time;
+		return _frames.pop_animate(_frame, time + animation_lead, elapsed);
 	}
 
 	void clear()
 	{
 		platform::exclusive_lock lock(_mutex);
 		_frames.clear();
-	}
-
-	static double calc_cosinus(const double i)
-	{
-		return cos(i * M_PI / 0.25) + 0.5;
+		_frame = frame(0.0);
+		_last_step_time = -1.0;
 	}
 
 	void render(const ui::vertices_ptr& verts, const recti rect, const pointi offset, const float alpha,
@@ -420,20 +450,6 @@ public:
 	}
 
 private:
-	static int mix_chanel(const int c1, const int c2, const int n, const int d)
-	{
-		return (c2 * n + c1 * (d - n)) / d;
-	}
-
-	static ui::color32 mix_color(const ui::color32 c1, const ui::color32 c2, int n, const int d, const int a)
-	{
-		if (n > d) n = d;
-
-		const auto r = mix_chanel(ui::get_r(c2), ui::get_r(c1), n, d);
-		const auto g = mix_chanel(ui::get_g(c2), ui::get_g(c1), n, d);
-		const auto b = mix_chanel(ui::get_b(c2), ui::get_b(c1), n, d);
-		return ui::rgba(r, g, b, a);
-	}
 
 	static void calc_bars(const int16_t* src, int* bars)
 	{
