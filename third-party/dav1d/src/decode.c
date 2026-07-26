@@ -413,17 +413,17 @@ static void order_palette(const uint8_t *pal_idx, const ptrdiff_t stride,
 
 static void read_pal_indices(Dav1dTaskContext *const t,
                              uint8_t *const pal_idx,
-                             const Av1Block *const b, const int pl,
+                             const int pal_sz, const int pl,
                              const int w4, const int h4,
                              const int bw4, const int bh4)
 {
     Dav1dTileState *const ts = t->ts;
     const ptrdiff_t stride = bw4 * 4;
     assert(pal_idx);
-    pixel *const pal_tmp = t->scratch.pal_idx_uv;
-    pal_tmp[0] = dav1d_msac_decode_uniform(&ts->msac, b->pal_sz[pl]);
+    uint8_t *const pal_tmp = t->scratch.pal_idx_uv;
+    pal_tmp[0] = dav1d_msac_decode_uniform(&ts->msac, pal_sz);
     uint16_t (*const color_map_cdf)[8] =
-        ts->cdf.m.color_map[pl][b->pal_sz[pl] - 2];
+        ts->cdf.m.color_map[pl][pal_sz - 2];
     uint8_t (*const order)[8] = t->scratch.pal_order;
     uint8_t *const ctx = t->scratch.pal_ctx;
     for (int i = 1; i < 4 * (w4 + h4) - 1; i++) {
@@ -433,7 +433,7 @@ static void read_pal_indices(Dav1dTaskContext *const t,
         order_palette(pal_tmp, stride, i, first, last, order, ctx);
         for (int j = first, m = 0; j >= last; j--, m++) {
             const int color_idx = dav1d_msac_decode_symbol_adapt8(&ts->msac,
-                                      color_map_cdf[ctx[m]], b->pal_sz[pl] - 1);
+                                      color_map_cdf[ctx[m]], pal_sz - 1);
             pal_tmp[(i - j) * stride + j] = order[m][color_idx];
         }
     }
@@ -739,7 +739,7 @@ static int decode_b(Dav1dTaskContext *const t,
             if (IS_INTER_OR_SWITCH(f->frame_hdr) /* not intrabc */ &&
                 b->comp_type == COMP_INTER_NONE && b->motion_mode == MM_WARP)
             {
-                if (b->matrix[0] == SHRT_MIN) {
+                if (b->matrix[0] == INT16_MIN) {
                     t->warpmv.type = DAV1D_WM_TYPE_IDENTITY;
                 } else {
                     t->warpmv.type = DAV1D_WM_TYPE_AFFINE;
@@ -783,15 +783,17 @@ static int decode_b(Dav1dTaskContext *const t,
 
             if (IS_INTER_OR_SWITCH(f->frame_hdr)) {
                 refmvs_block *const r = &t->rt.r[(t->by & 31) + 5 + bh4 - 1][t->bx];
+                const int ref1 = b->ref[0] + 1;
+                const union mv mv1 = b->mv[0];
                 for (int x = 0; x < bw4; x++) {
-                    r[x].ref.ref[0] = b->ref[0] + 1;
-                    r[x].mv.mv[0] = b->mv[0];
+                    r[x].ref.ref[0] = ref1;
+                    r[x].mv.mv[0] = mv1;
                     r[x].bs = bs;
                 }
                 refmvs_block *const *rr = &t->rt.r[(t->by & 31) + 5];
                 for (int y = 0; y < bh4 - 1; y++) {
-                    rr[y][t->bx + bw4 - 1].ref.ref[0] = b->ref[0] + 1;
-                    rr[y][t->bx + bw4 - 1].mv.mv[0] = b->mv[0];
+                    rr[y][t->bx + bw4 - 1].ref.ref[0] = ref1;
+                    rr[y][t->bx + bw4 - 1].mv.mv[0] = mv1;
                     rr[y][t->bx + bw4 - 1].bs = bs;
                 }
             }
@@ -958,9 +960,7 @@ static int decode_b(Dav1dTaskContext *const t,
     }
 
     // delta-q/lf
-    if (!(t->bx & (31 >> !f->seq_hdr->sb128)) &&
-        !(t->by & (31 >> !f->seq_hdr->sb128)))
-    {
+    if (!((t->bx | t->by) & (31 >> !f->seq_hdr->sb128))) {
         const int prev_qidx = ts->last_qidx;
         const int have_delta_q = f->frame_hdr->delta.q.present &&
             (bs != (f->seq_hdr->sb128 ? BS_128x128 : BS_64x64) || !b->skip);
@@ -1165,7 +1165,7 @@ static int decode_b(Dav1dTaskContext *const t,
                 ts->frame_thread[p].pal_idx += bw4 * bh4 * 8;
             } else
                 pal_idx = t->scratch.pal_idx_y;
-            read_pal_indices(t, pal_idx, b, 0, w4, h4, bw4, bh4);
+            read_pal_indices(t, pal_idx, b->pal_sz[0], 0, w4, h4, bw4, bh4);
             if (DEBUG_BLOCK_INFO)
                 printf("Post-y-pal-indices: r=%d\n", ts->msac.rng);
         }
@@ -1179,7 +1179,7 @@ static int decode_b(Dav1dTaskContext *const t,
                 ts->frame_thread[p].pal_idx += cbw4 * cbh4 * 8;
             } else
                 pal_idx = t->scratch.pal_idx_uv;
-            read_pal_indices(t, pal_idx, b, 1, cw4, ch4, cbw4, cbh4);
+            read_pal_indices(t, pal_idx, b->pal_sz[1], 1, cw4, ch4, cbw4, cbh4);
             if (DEBUG_BLOCK_INFO)
                 printf("Post-uv-pal-indices: r=%d\n", ts->msac.rng);
         }
@@ -1821,7 +1821,7 @@ static int decode_b(Dav1dTaskContext *const t,
                             b->matrix[2] = t->warpmv.matrix[4];
                             b->matrix[3] = t->warpmv.matrix[5] - 0x10000;
                         } else {
-                            b->matrix[0] = SHRT_MIN;
+                            b->matrix[0] = INT16_MIN;
                         }
                     }
                 }
@@ -1982,7 +1982,7 @@ static int decode_b(Dav1dTaskContext *const t,
             if (has_chroma) {
                 // sub8x8 derivation
                 int is_sub8x8 = bw4 == ss_hor || bh4 == ss_ver;
-                refmvs_block *const *r = NULL;
+                refmvs_block *const *r;
                 if (is_sub8x8) {
                     assert(ss_hor == 1);
                     r = &t->rt.r[(t->by & 31) + 5];
@@ -2130,7 +2130,7 @@ static int decode_sb(Dav1dTaskContext *const t, const enum BlockLevel bl,
         return decode_sb(t, bl + 1, INTRA_EDGE_SPLIT(node, 0));
     }
 
-    uint16_t *pc = NULL;
+    uint16_t *pc;
     enum BlockPartition bp;
     int ctx, bx8, by8;
     if (t->frame_thread.pass != 2) {
@@ -2516,6 +2516,7 @@ static void read_restoration_info(Dav1dTaskContext *const t,
 {
     const Dav1dFrameContext *const f = t->f;
     Dav1dTileState *const ts = t->ts;
+    const Av1RestorationUnit *const lr_ref = ts->lr_ref[p];
 
     if (frame_type == DAV1D_RESTORATION_SWITCHABLE) {
         const int filter = dav1d_msac_decode_symbol_adapt4(&ts->msac,
@@ -2532,24 +2533,24 @@ static void read_restoration_info(Dav1dTaskContext *const t,
     if (lr->type == DAV1D_RESTORATION_WIENER) {
         lr->filter_v[0] = p ? 0 :
             dav1d_msac_decode_subexp(&ts->msac,
-                ts->lr_ref[p]->filter_v[0] + 5, 16, 1) - 5;
+                lr_ref->filter_v[0] + 5, 16, 1) - 5;
         lr->filter_v[1] =
             dav1d_msac_decode_subexp(&ts->msac,
-                ts->lr_ref[p]->filter_v[1] + 23, 32, 2) - 23;
+                lr_ref->filter_v[1] + 23, 32, 2) - 23;
         lr->filter_v[2] =
             dav1d_msac_decode_subexp(&ts->msac,
-                ts->lr_ref[p]->filter_v[2] + 17, 64, 3) - 17;
+                lr_ref->filter_v[2] + 17, 64, 3) - 17;
 
         lr->filter_h[0] = p ? 0 :
             dav1d_msac_decode_subexp(&ts->msac,
-                ts->lr_ref[p]->filter_h[0] + 5, 16, 1) - 5;
+                lr_ref->filter_h[0] + 5, 16, 1) - 5;
         lr->filter_h[1] =
             dav1d_msac_decode_subexp(&ts->msac,
-                ts->lr_ref[p]->filter_h[1] + 23, 32, 2) - 23;
+                lr_ref->filter_h[1] + 23, 32, 2) - 23;
         lr->filter_h[2] =
             dav1d_msac_decode_subexp(&ts->msac,
-                ts->lr_ref[p]->filter_h[2] + 17, 64, 3) - 17;
-        memcpy(lr->sgr_weights, ts->lr_ref[p]->sgr_weights, sizeof(lr->sgr_weights));
+                lr_ref->filter_h[2] + 17, 64, 3) - 17;
+        memcpy(lr->sgr_weights, lr_ref->sgr_weights, sizeof(lr->sgr_weights));
         ts->lr_ref[p] = lr;
         if (DEBUG_BLOCK_INFO)
             printf("Post-lr_wiener[pl=%d,v[%d,%d,%d],h[%d,%d,%d]]: r=%d\n",
@@ -2561,11 +2562,11 @@ static void read_restoration_info(Dav1dTaskContext *const t,
         const uint16_t *const sgr_params = dav1d_sgr_params[idx];
         lr->type += idx;
         lr->sgr_weights[0] = sgr_params[0] ? dav1d_msac_decode_subexp(&ts->msac,
-            ts->lr_ref[p]->sgr_weights[0] + 96, 128, 4) - 96 : 0;
+            lr_ref->sgr_weights[0] + 96, 128, 4) - 96 : 0;
         lr->sgr_weights[1] = sgr_params[1] ? dav1d_msac_decode_subexp(&ts->msac,
-            ts->lr_ref[p]->sgr_weights[1] + 32, 128, 4) - 32 : 95;
-        memcpy(lr->filter_v, ts->lr_ref[p]->filter_v, sizeof(lr->filter_v));
-        memcpy(lr->filter_h, ts->lr_ref[p]->filter_h, sizeof(lr->filter_h));
+            lr_ref->sgr_weights[1] + 32, 128, 4) - 32 : 95;
+        memcpy(lr->filter_v, lr_ref->filter_v, sizeof(lr->filter_v));
+        memcpy(lr->filter_h, lr_ref->filter_h, sizeof(lr->filter_h));
         ts->lr_ref[p] = lr;
         if (DEBUG_BLOCK_INFO)
             printf("Post-lr_sgrproj[pl=%d,idx=%d,w[%d,%d]]: r=%d\n",
@@ -3331,7 +3332,7 @@ int dav1d_submit_frame(Dav1dContext *const c) {
     int res = -1;
 
     // wait for c->out_delayed[next] and move into c->out if visible
-    Dav1dThreadPicture *out_delayed = NULL;
+    Dav1dThreadPicture *out_delayed;
     if (c->n_fc > 1) {
         pthread_mutex_lock(&c->task_thread.lock);
         const unsigned next = c->frame_thread.next++;

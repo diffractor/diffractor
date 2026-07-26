@@ -43,15 +43,8 @@
 #define HWCAP2_AARCH64_I8MM   (1 << 13)
 
 COLD unsigned dav1d_get_cpu_flags_arm(void) {
-#if HAVE_GETAUXVAL
-    unsigned long hw_cap = getauxval(AT_HWCAP);
-    unsigned long hw_cap2 = getauxval(AT_HWCAP2);
-#else
-    unsigned long hw_cap = 0;
-    unsigned long hw_cap2 = 0;
-    elf_aux_info(AT_HWCAP, &hw_cap, sizeof(hw_cap));
-    elf_aux_info(AT_HWCAP2, &hw_cap2, sizeof(hw_cap2));
-#endif
+    unsigned long hw_cap = dav1d_getauxval(AT_HWCAP);
+    unsigned long hw_cap2 = dav1d_getauxval(AT_HWCAP2);
 
     unsigned flags = dav1d_get_default_cpu_flags();
     flags |= (hw_cap & HWCAP_AARCH64_ASIMDDP) ? DAV1D_ARM_CPU_FLAG_DOTPROD : 0;
@@ -69,12 +62,7 @@ COLD unsigned dav1d_get_cpu_flags_arm(void) {
 #define HWCAP_ARM_I8MM    (1 << 27)
 
 COLD unsigned dav1d_get_cpu_flags_arm(void) {
-#if HAVE_GETAUXVAL
-    unsigned long hw_cap = getauxval(AT_HWCAP);
-#else
-    unsigned long hw_cap = 0;
-    elf_aux_info(AT_HWCAP, &hw_cap, sizeof(hw_cap));
-#endif
+    unsigned long hw_cap = dav1d_getauxval(AT_HWCAP);
 
     unsigned flags = dav1d_get_default_cpu_flags();
     flags |= (hw_cap & HWCAP_ARM_NEON) ? DAV1D_ARM_CPU_FLAG_NEON : 0;
@@ -160,17 +148,14 @@ COLD unsigned dav1d_get_cpu_flags_arm(void) {
     if (IsProcessorFeaturePresent(PF_ARM_SVE2_INSTRUCTIONS_AVAILABLE))
         flags |= DAV1D_ARM_CPU_FLAG_SVE2;
 #endif
-#ifdef PF_ARM_SVE_I8MM_INSTRUCTIONS_AVAILABLE
-    /* There's no PF_* flag that indicates whether plain I8MM is available
-     * or not. But if SVE_I8MM is available, that also implies that
-     * regular I8MM is available. */
-    if (IsProcessorFeaturePresent(PF_ARM_SVE_I8MM_INSTRUCTIONS_AVAILABLE))
+#ifdef PF_ARM_V82_I8MM_INSTRUCTIONS_AVAILABLE
+    if (IsProcessorFeaturePresent(PF_ARM_V82_I8MM_INSTRUCTIONS_AVAILABLE))
         flags |= DAV1D_ARM_CPU_FLAG_I8MM;
 #endif
     return flags;
 }
 
-#elif defined(__ANDROID__)
+#elif defined(__ANDROID__) || defined(__linux__)
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>

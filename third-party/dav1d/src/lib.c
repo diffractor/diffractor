@@ -88,9 +88,9 @@ COLD void dav1d_default_settings(Dav1dSettings *const s) {
 
 static void close_internal(Dav1dContext **const c_out, int flush);
 
+#if defined(__linux__) && HAVE_DLSYM && defined(__GLIBC__)
 NO_SANITIZE("cfi-icall") // CFI is broken with dlsym()
 static COLD size_t get_stack_size_internal(const pthread_attr_t *const thread_attr) {
-#if defined(__linux__) && HAVE_DLSYM && defined(__GLIBC__)
     /* glibc has an issue where the size of the TLS is subtracted from the stack
      * size instead of allocated separately. As a result the specified stack
      * size may be insufficient when used in an application with large amounts
@@ -100,9 +100,11 @@ static COLD size_t get_stack_size_internal(const pthread_attr_t *const thread_at
         dlsym(RTLD_DEFAULT, "__pthread_get_minstack");
     if (get_minstack)
         return get_minstack(thread_attr) - PTHREAD_STACK_MIN;
-#endif
     return 0;
 }
+#else
+#define get_stack_size_internal(attr) (0)
+#endif
 
 static COLD void get_num_threads(Dav1dContext *const c, const Dav1dSettings *const s,
                                  unsigned *n_tc, unsigned *n_fc)
@@ -555,9 +557,9 @@ void dav1d_flush(Dav1dContext *const c) {
     if (c->n_fc == 1 && c->n_tc == 1) return;
     atomic_store(c->flush, 1);
 
-    // stop running tasks in worker threads
     if (c->n_tc > 1) {
         pthread_mutex_lock(&c->task_thread.lock);
+        // stop running tasks in worker threads
         for (unsigned i = 0; i < c->n_tc; i++) {
             Dav1dTaskContext *const tc = &c->tc[i];
             while (!tc->task_thread.flushed) {
@@ -579,7 +581,6 @@ void dav1d_flush(Dav1dContext *const c) {
         pthread_mutex_unlock(&c->task_thread.lock);
     }
 
-    // wait for threads to complete flushing
     if (c->n_fc > 1) {
         for (unsigned n = 0, next = c->frame_thread.next; n < c->n_fc; n++, next++) {
             if (next == c->n_fc) next = 0;
@@ -587,6 +588,7 @@ void dav1d_flush(Dav1dContext *const c) {
             dav1d_decode_frame_exit(f, -1);
             f->n_tile_data = 0;
             f->task_thread.retval = 0;
+            f->task_thread.error = 0;
             Dav1dThreadPicture *out_delayed = &c->frame_thread.out_delayed[next];
             if (out_delayed->p.frame_hdr) {
                 dav1d_thread_picture_unref(out_delayed);
