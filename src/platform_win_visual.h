@@ -77,13 +77,18 @@ using font_renderer_ptr = std::shared_ptr<font_renderer>;
 // to another face's raster. The face pointer alone is not a safe key either, because a released
 // face can be reallocated at the same address, so each keyed face keeps a reference for as long
 // as its id is in use.
+//
+// The em size is part of the key as well. A face carries no size - the size lives on the glyph
+// run - so a renderer that ever sees two sizes (a text layout built before a font-size change,
+// drawn after it) would otherwise serve the earlier size's raster for the later size's text and
+// mix glyph sizes within a single string.
 class glyph_face_keys
 {
 	std::unordered_map<IDWriteFontFace*, uint32_t> _ids;
 	std::vector<ComPtr<IDWriteFontFace>> _faces;
 
 public:
-	uint64_t key(IDWriteFontFace* face, const uint16_t glyph_index)
+	uint64_t key(IDWriteFontFace* face, const float em_size, const uint16_t glyph_index)
 	{
 		uint32_t id = 0;
 
@@ -103,7 +108,9 @@ public:
 			}
 		}
 
-		return static_cast<uint64_t>(id) << 32 | glyph_index;
+		const auto em = std::clamp(std::lround(em_size), 0l, 0xFFFFl);
+
+		return static_cast<uint64_t>(id) << 32 | static_cast<uint64_t>(em) << 16 | glyph_index;
 	}
 
 	void clear()

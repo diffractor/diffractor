@@ -29,9 +29,9 @@ static constexpr auto s_favorite_tags_old = "FavoriteTags";
 static constexpr auto s_favorite_tags = "favorite_tags";
 static constexpr auto s_favorite_tags_initialized = "favorite_tags_initialized";
 static constexpr auto s_out_folder = "out_folder";
-static constexpr auto s_resize_size = "resize_size";
 static constexpr auto s_volume = "volume";
 static constexpr auto s_create_originals = "create_originals";
+static constexpr auto s_confirm_rotate = "confirm_rotate";
 static constexpr auto s_show_rotated = "show_rotated";
 static constexpr auto s_show_results = "show_results";
 static constexpr auto s_check_for_updates = "check_for_updates";
@@ -45,7 +45,6 @@ static constexpr auto s_drop_box = "dropbox";
 static constexpr auto s_title = "title";
 static constexpr auto s_path = "path";
 static constexpr auto s_more = "more";
-static constexpr auto s_out_name = "out_name";
 static constexpr auto s_convert = "convert";
 static constexpr auto s_available_version = "available_version";
 static constexpr auto s_available_test_version = "available_test_version";
@@ -100,8 +99,17 @@ static constexpr auto s_set_album = "set_album";
 static constexpr auto s_set_album_artist = "set_album_artist";
 static constexpr auto s_set_genre = "set_genre";
 static constexpr auto s_set_tv_show = "set_tv_show";
+static constexpr auto s_set_title = "set_title";
+static constexpr auto s_set_comment = "set_comment";
+static constexpr auto s_set_synopsis = "set_synopsis";
+static constexpr auto s_set_rating = "set_rating";
+static constexpr auto s_set_year = "set_year";
+static constexpr auto s_set_created = "set_created";
+static constexpr auto s_set_episode = "set_episode";
+static constexpr auto s_set_season = "set_season";
+static constexpr auto s_set_track = "set_track";
+static constexpr auto s_set_disk = "set_disk";
 static constexpr auto s_ignore_previous = "ignore_previous";
-static constexpr auto s_overwrite_if_newer = "overwrite_if_newer";
 static constexpr auto s_hidden = "hidden";
 static constexpr auto s_email = "email";
 static constexpr auto s_rename = "rename";
@@ -229,7 +237,7 @@ static int item_scale_snap_position(const int index)
 	const auto min_dimension = settings_t::item_scale_snaps[0];
 	const auto dimension_range = settings_t::item_scale_snaps[settings_t::item_scale_count - 1] - min_dimension;
 	return df::round(static_cast<double>(settings_t::item_scale_snaps[clamped_index] - min_dimension) *
-	                 settings_t::item_scale_position_max / std::max(1, dimension_range));
+		settings_t::item_scale_position_max / std::max(1, dimension_range));
 }
 
 int settings_t::item_scale_dimension() const
@@ -238,7 +246,7 @@ int settings_t::item_scale_dimension() const
 	const auto dimension_range = item_scale_snaps[item_scale_count - 1] - min_dimension;
 	const auto position = item_scale_position < 0 ? item_scale_snap_position(item_scale) : item_scale_position;
 	return min_dimension + df::round(static_cast<double>(std::clamp(position, 0, item_scale_position_max)) *
-	                                 dimension_range / item_scale_position_max);
+		dimension_range / item_scale_position_max);
 }
 
 void settings_t::set_item_scale_position(const int position)
@@ -331,7 +339,6 @@ settings_t::settings_t()
 	init_item_scale_snaps();
 
 	language = "en";
-	write_name = "results";
 	show_rotated = true;
 	show_results = true;
 	create_originals = true;
@@ -345,6 +352,7 @@ settings_t::settings_t()
 	use_d3d11va = true;
 	use_yuv = true;
 	confirm_deletions = true;
+	confirm_rotations = true;
 	first_run_today = true;
 	first_run_ever = true;
 	can_animate = false;
@@ -370,7 +378,6 @@ settings_t::settings_t()
 	artist = platform::user_name();
 
 	thumbnail_max_dimension = {320, 256};
-	resize_max_dimension = 2048;
 	media_volume = 1000;
 	jpeg_save_quality = 90;
 	webp_quality = 70;
@@ -458,6 +465,16 @@ settings_t::settings_t()
 	set_album_artist = false;
 	set_genre = false;
 	set_tv_show = false;
+	set_title = false;
+	set_comment = false;
+	set_synopsis = false;
+	set_rating = false;
+	set_year = false;
+	set_created = false;
+	set_episode = false;
+	set_season = false;
+	set_track = false;
+	set_disk = false;
 
 	available_version = s_app_version;
 };
@@ -722,6 +739,7 @@ void settings_t::read()
 	store.read({}, s_use_d3d11_va, use_d3d11va);
 	store.read({}, s_use_yuv, use_yuv);
 	store.read({}, s_confirm, confirm_deletions);
+	store.read({}, s_confirm_rotate, confirm_rotations);
 	store.read({}, s_repeat, repeat);
 	store.read({}, s_zoom_navigator, zoom_navigator);
 	store.read({}, s_auto_play, auto_play);
@@ -731,7 +749,6 @@ void settings_t::read()
 	store.read({}, s_sort_dates_descending, sort_dates_descending);
 	store.read({}, g_show_navigation_bar, show_sidebar);
 	store.read({}, g_detail_items, detail_items);
-	store.read({}, s_resize_size, resize_max_dimension);
 	store.read({}, s_volume, media_volume);
 	store.read({}, s_quality, jpeg_save_quality);
 	store.read({}, s_webp_quality, webp_quality);
@@ -755,7 +772,6 @@ void settings_t::read()
 	store.read({}, s_raw_preview, raw_preview);
 	store.read({}, s_lang, language);
 	store.read({}, s_sound_device, sound_device);
-	store.read({}, s_out_name, write_name);
 	store.read({}, s_out_folder, write_folder);
 	store.read({}, s_show_rotated, show_rotated);
 	store.read({}, s_show_results, show_results);
@@ -803,6 +819,16 @@ void settings_t::read()
 	store.read({}, s_set_album_artist, set_album_artist);
 	store.read({}, s_set_genre, set_genre);
 	store.read({}, s_set_tv_show, set_tv_show);
+	store.read({}, s_set_title, set_title);
+	store.read({}, s_set_comment, set_comment);
+	store.read({}, s_set_synopsis, set_synopsis);
+	store.read({}, s_set_rating, set_rating);
+	store.read({}, s_set_year, set_year);
+	store.read({}, s_set_created, set_created);
+	store.read({}, s_set_episode, set_episode);
+	store.read({}, s_set_season, set_season);
+	store.read({}, s_set_track, set_track);
+	store.read({}, s_set_disk, set_disk);
 
 	uint64_t stored_feature_use = 0;
 	store.read({}, s_features, stored_feature_use);
@@ -824,15 +850,9 @@ void settings_t::read()
 	store.read(s_import, s_move, import.is_move);
 	store.read(s_import, s_set_created_date, import.set_created_date);
 	store.read(s_import, s_ignore_previous, import.ignore_previous);
-	store.read(s_import, s_overwrite_if_newer, import.overwrite_if_newer);
 	store.read(s_import, s_custom_folder_structure, import.dest_folder_structure);
 	store.read(s_import, s_rename_different_attributes, import.rename_different_attributes);
-
-	if (!store.read(s_import, s_collision, import.collision) && import.overwrite_if_newer)
-	{
-		// Migrate the previous unnamed "overwrite if newer" option onto the named policy.
-		import.collision = collision_policy::replace;
-	}
+	store.read(s_import, s_collision, import.collision);
 
 	store.read(s_sync, s_local_path, sync.local_path);
 	store.read(s_sync, s_remote_path, sync.remote_path);
@@ -909,6 +929,7 @@ void settings_t::write() const
 	store.write({}, s_use_d3d11_va, use_d3d11va);
 	store.write({}, s_use_yuv, use_yuv);
 	store.write({}, s_confirm, confirm_deletions);
+	store.write({}, s_confirm_rotate, confirm_rotations);
 	store.write({}, s_repeat, static_cast<int>(repeat));
 	store.write({}, s_zoom_navigator, zoom_navigator);
 	store.write({}, s_auto_play, auto_play);
@@ -918,7 +939,6 @@ void settings_t::write() const
 	store.write({}, s_sort_dates_descending, sort_dates_descending);
 	store.write({}, g_show_navigation_bar, show_sidebar);
 	store.write({}, g_detail_items, detail_items);
-	store.write({}, s_resize_size, resize_max_dimension);
 	store.write({}, s_volume, media_volume);
 	store.write({}, s_quality, jpeg_save_quality);
 	store.write({}, s_webp_quality, webp_quality);
@@ -939,7 +959,6 @@ void settings_t::write() const
 	store.write({}, s_raw_preview, raw_preview);
 	store.write({}, s_lang, language);
 	store.write({}, s_sound_device, sound_device);
-	store.write({}, s_out_name, write_name);
 	store.write({}, s_out_folder, write_folder);
 	store.write({}, s_show_rotated, show_rotated);
 	store.write({}, s_show_results, show_results);
@@ -980,6 +999,16 @@ void settings_t::write() const
 	store.write({}, s_set_album_artist, set_album_artist);
 	store.write({}, s_set_genre, set_genre);
 	store.write({}, s_set_tv_show, set_tv_show);
+	store.write({}, s_set_title, set_title);
+	store.write({}, s_set_comment, set_comment);
+	store.write({}, s_set_synopsis, set_synopsis);
+	store.write({}, s_set_rating, set_rating);
+	store.write({}, s_set_year, set_year);
+	store.write({}, s_set_created, set_created);
+	store.write({}, s_set_episode, set_episode);
+	store.write({}, s_set_season, set_season);
+	store.write({}, s_set_track, set_track);
+	store.write({}, s_set_disk, set_disk);
 
 	store.write({}, s_features, features_used_since_last_report());
 	store.write({}, s_instantiations, instantiations);
@@ -994,7 +1023,6 @@ void settings_t::write() const
 	store.write(s_import, s_move, import.is_move);
 	store.write(s_import, s_set_created_date, import.set_created_date);
 	store.write(s_import, s_ignore_previous, import.ignore_previous);
-	store.write(s_import, s_overwrite_if_newer, import.overwrite_if_newer);
 	store.write(s_import, s_custom_folder_structure, import.dest_folder_structure);
 	store.write(s_import, s_rename_different_attributes, import.rename_different_attributes);
 	store.write(s_import, s_collision, import.collision);

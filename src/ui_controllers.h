@@ -66,7 +66,7 @@ public:
 
 		if (ic.invalidate_view)
 		{
-			_host->frame()->invalidate(_bounds);
+			_host->frame()->invalidate(_element->invalidate_bounds(_element_offset));
 		}
 	}
 
@@ -80,7 +80,7 @@ public:
 
 		if (ic.invalidate_view)
 		{
-			_host->frame()->invalidate(_bounds);
+			_host->frame()->invalidate(_element->invalidate_bounds(_element_offset));
 		}
 	}
 
@@ -96,7 +96,7 @@ public:
 
 		if (ic.invalidate_view)
 		{
-			_host->frame()->invalidate(_bounds);
+			_host->frame()->invalidate(_element->invalidate_bounds(_element_offset));
 		}
 
 		if (can_invoke)
@@ -133,13 +133,11 @@ public:
 		if (_element)
 		{
 			const auto hover = _element->is_style_bit_set(view_element_style::hover);
-			//const auto tracking = _element->is_style_bit_set(view_element_style::tracking);
 
 			if (hover != _hover) // || _tracking != tracking)
 			{
 				_element->set_style_bit(view_element_style::hover, _hover, _host, _element);
-				//_element->set_style_bit(view_element_style::tracking, _tracking);
-				_host->frame()->invalidate(_bounds);
+				_host->frame()->invalidate(_element->invalidate_bounds(_element_offset));
 			}
 		}
 	}
@@ -230,13 +228,12 @@ public:
 		}
 	}
 
-	void escape() override
+	bool escape() override
 	{
-		if (_tracking)
-		{
-			_tracking = false;
-			_parent.selection(_existing_selection);
-		}
+		if (!_tracking) return false;
+		_tracking = false;
+		_parent.selection(_existing_selection);
+		return true;
 	}
 };
 
@@ -312,11 +309,6 @@ public:
 		if (_right) rr.right = std::max(rr.right - offset.x, rr.left + 1);
 		if (_bottom) rr.bottom = std::max(rr.bottom - offset.y, rr.top + 1);
 
-		/*if (_left) rr.left = rr.left - offset.cx;
-		if (_top) rr.top = rr.top - offset.cy;
-		if (_right) rr.right = rr.right - offset.cx;
-		if (_bottom) rr.bottom = rr.bottom - offset.cy;*/
-
 		// 0 2
 		// 3 2
 		int active_point = 0;
@@ -337,12 +329,11 @@ public:
 		}
 	}
 
-	void escape() override
+	bool escape() override
 	{
-		if (_tracking)
-		{
-			_tracking = false;
-			_parent.selection(_existing_selection);
-		}
+		if (!_tracking) return false;
+		_tracking = false;
+		_parent.selection(_existing_selection);
+		return true;
 	}
 };

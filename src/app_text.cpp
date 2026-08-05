@@ -352,9 +352,15 @@ void app_text_t::load_lang(const std::string_view lang_file, const std::vector<p
 	}
 
 
+	// A partly-translated catalog is missing hundreds of strings, which would otherwise be one log
+	// line each on every launch. The count is what a bug report needs; app_validate_po lists them.
+	auto missing = 0;
+	auto total = 0;
+
 	for (const auto& t : _all_texts)
 	{
 		auto found = text_map.find(t.get().text);
+		++total;
 
 		if (found != text_map.end())
 		{
@@ -362,7 +368,8 @@ void app_text_t::load_lang(const std::string_view lang_file, const std::vector<p
 		}
 		else
 		{
-			df::log(__FUNCTION__, std::format("{} missing: msgid \"{}\"", lang_file, t.get().text));
+			++missing;
+			df::trace(std::format("{} missing: msgid \"{}\"", lang_file, t.get().text));
 			t.get().trans.clear();
 		}
 	}
@@ -370,6 +377,7 @@ void app_text_t::load_lang(const std::string_view lang_file, const std::vector<p
 	for (const auto& p : _all_plurals)
 	{
 		auto found = text_map.find(p.get().one.text);
+		total += 2;
 
 		if (found != text_map.end())
 		{
@@ -377,7 +385,8 @@ void app_text_t::load_lang(const std::string_view lang_file, const std::vector<p
 		}
 		else
 		{
-			df::log(__FUNCTION__, std::format("{} missing: msgid \"{}\"", lang_file, p.get().one.text));
+			++missing;
+			df::trace(std::format("{} missing: msgid \"{}\"", lang_file, p.get().one.text));
 			p.get().one.trans.clear();
 		}
 
@@ -389,7 +398,8 @@ void app_text_t::load_lang(const std::string_view lang_file, const std::vector<p
 		}
 		else
 		{
-			df::log(__FUNCTION__, std::format("{} missing: msgid_plural \"{}\"", lang_file, p.get().plural.text));
+			++missing;
+			df::trace(std::format("{} missing: msgid_plural \"{}\"", lang_file, p.get().plural.text));
 			p.get().plural.trans.clear();
 		}
 
@@ -401,6 +411,8 @@ void app_text_t::load_lang(const std::string_view lang_file, const std::vector<p
 			p.get().extra_forms = *found_extra->second;
 		}
 	}
+
+	df::log(__FUNCTION__, std::format("{}: {} of {} strings translated", lang_file, total - missing, total));
 }
 
 void app_text_t::clear()
@@ -620,6 +632,12 @@ void app_text_t::calc_text_mapping()
 		command_select_all,
 		command_select_invert,
 		command_select_nothing,
+		tooltip_related,
+		related_group_duplicates,
+		related_group_album,
+		related_group_series,
+		related_group_time,
+		related_group_location,
 		command_share_email,
 		email_preparing,
 		command_show_in_file_browser,
@@ -662,6 +680,8 @@ void app_text_t::calc_text_mapping()
 		compare_tooltip,
 		contrast,
 		open_link_fmt,
+		open_link_choose,
+		duplicate_text,
 		copy_to_clipboard,
 		copy_to_join,
 		copyright_creator,
@@ -693,7 +713,6 @@ void app_text_t::calc_text_mapping()
 		dates_metadata_created,
 		dates_title,
 		default_favorite_tags,
-		default_write_name,
 		defragment_and_compact,
 		defragmenting,
 		delete_error,
@@ -1036,9 +1055,9 @@ void app_text_t::calc_text_mapping()
 		import_dest_folder,
 		import_from,
 		import_ignore_previous,
-		import_overwrite_if_newer,
 		import_info,
 		import_other_folder,
+		import_replace_warning,
 		import_dest_folder_structure,
 		import_set_created_date,
 		index_maintenance_help,
@@ -1213,6 +1232,7 @@ void app_text_t::calc_text_mapping()
 		options_backup_copy,
 		options_check_for_update,
 		options_confirm_del,
+		options_confirm_rotate,
 		options_jpeg_quality,
 		options_webp_quality,
 		options_save_options,
@@ -1395,6 +1415,7 @@ void app_text_t::calc_text_mapping()
 		resetting,
 		retro,
 		retro_title,
+		rotate_confirm_single,
 		saturation,
 		perspective_horizontal,
 		perspective_vertical,
@@ -1493,7 +1514,6 @@ void app_text_t::calc_text_mapping()
 		scope_unavailable_parent,
 		scope_busy_fmt,
 		collision_policy_label,
-		collision_policy_sync,
 		collision_replace,
 		collision_skip,
 		collision_rename,

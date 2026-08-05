@@ -37,7 +37,9 @@ enum class group_by
 	album_show,
 	presence,
 	folder,
-	aspect_ratio
+	aspect_ratio,
+	// Not a user choice: a related search always groups by how each item is related.
+	related
 };
 
 enum class sort_by
@@ -276,10 +278,30 @@ namespace df
 		item_presence presence = item_presence::unknown;
 	};
 
+	// How a copy claim was reached, strongest first. Two bits, because it is packed into
+	// duplicate_info to keep that atomic lock-free (docs/collections.md section 7.1).
+	enum class copy_grade : uint32_t
+	{
+		none = 0,
+		identical = 1,
+		same_file = 2,
+		same_picture = 3,
+	};
+
+	// Strongest wins: none is weakest, and among the rest the lowest value is the strongest evidence.
+	constexpr copy_grade strongest(const copy_grade left, const copy_grade right)
+	{
+		if (left == copy_grade::none) return right;
+		if (right == copy_grade::none) return left;
+		return left < right ? left : right;
+	}
+
 	struct duplicate_info
 	{
 		uint32_t group = 0;
-		uint32_t count = 0;
+		uint32_t count : 30 = 0;
+		// How this item joined its set, not how the set as a whole was reached.
+		copy_grade grade : 2 = copy_grade::none;
 
 		auto operator<=>(const duplicate_info&) const = default;
 	};
@@ -370,6 +392,9 @@ namespace df
 
 		mutable std::atomic<search_presence_mask> search_presence;
 		mutable std::atomic<uint32_t> crc32c = 0;
+		// Published exactly like crc32c: a derived value computed off the index walk and stored back
+		// on the record it describes. 0 means not computed or declined, never "matches another 0".
+		mutable std::atomic<uint64_t> phash = 0;
 
 		index_file_item() = default;
 
@@ -384,7 +409,8 @@ namespace df
 			  metadata(other.metadata.load()),
 			  duplicates(other.duplicates.load()),
 			  search_presence(other.search_presence.load()),
-			  crc32c(other.crc32c.load())
+			  crc32c(other.crc32c.load()),
+			  phash(other.phash.load())
 		{
 		}
 
@@ -399,7 +425,8 @@ namespace df
 			  metadata(other.metadata.load()),
 			  duplicates(other.duplicates.load()),
 			  search_presence(other.search_presence.load()),
-			  crc32c(other.crc32c.load())
+			  crc32c(other.crc32c.load()),
+			  phash(other.phash.load())
 		{
 			other.metadata.store(nullptr);
 		}
@@ -419,6 +446,7 @@ namespace df
 			search_presence = other.search_presence.load();
 			duplicates = other.duplicates.load();
 			crc32c = other.crc32c.load();
+			phash = other.phash.load();
 			return *this;
 		}
 
@@ -438,6 +466,7 @@ namespace df
 			search_presence = other.search_presence.load();
 			duplicates = other.duplicates.load();
 			crc32c = other.crc32c.load();
+			phash = other.phash.load();
 			return *this;
 		}
 
@@ -562,15 +591,15 @@ namespace df
 			{
 				auto updated = std::make_shared<index_folder_infos>(*existing);
 				const auto found = std::lower_bound(updated->begin(), updated->end(), folder_name,
-				                                  [](const index_folder_item_ptr& left, const std::string_view right)
-				                                  {
-					                                  return icmp(left->name, right) < 0;
-				                                  });
+				                                    [](const index_folder_item_ptr& left, const std::string_view right)
+				                                    {
+					                                    return icmp(left->name, right) < 0;
+				                                    });
 
 				if (found == updated->end() || icmp((*found)->name, folder_name) != 0) return;
 				*found = replacement;
 
-				std::shared_ptr<const index_folder_infos> published = std::move(updated);
+				const std::shared_ptr<const index_folder_infos> published = std::move(updated);
 				if (child_folders.compare_exchange_weak(existing, published)) return;
 			}
 		}
@@ -638,7 +667,7 @@ namespace df
 	}
 
 	inline bool should_replace_thumbnail_representative(const file_path& candidate, const uint8_t candidate_rank,
-		const file_path& current, const uint8_t current_rank)
+	                                                    const file_path& current, const uint8_t current_rank)
 	{
 		return candidate_rank > 0 && (candidate_rank > current_rank ||
 			(candidate_rank == current_rank && (current.is_empty() || candidate.icmp(current) < 0)));
@@ -758,7 +787,7 @@ namespace df
 				counts[i].count += other.counts[i].count;
 			}
 			if (should_replace_thumbnail_representative(other.representative_path, other._representative_rank,
-				representative_path, _representative_rank))
+			                                            representative_path, _representative_rank))
 			{
 				representative_path = other.representative_path;
 				_representative_rank = other._representative_rank;
@@ -822,7 +851,7 @@ namespace df
 		// metadata, which is stable for the life of the file, and only falls back to a decoded
 		// image's pixel size while no metadata dimensions are known.
 		sizei _layout_dims = {};
-		bool _layout_dims_from_metadata = false;
+		bool _layout_aspect_known = false;
 		duplicate_info _duplicates = {};
 		uint64_t _total_count = 0;
 		mutable ui::animate_alpha _thumbnail_alpha{1.0f};
@@ -862,7 +891,14 @@ namespace df
 			_is_folder = true;
 		}
 
-		void update(file_path path, const index_file_item& info) noexcept;
+		// Returns whether anything the layout depends on changed, so the caller can ask for the layout
+		// pass rather than leaving the tile at its previous geometry.
+		bool update(file_path path, const index_file_item& info) noexcept;
+
+		// Shapes the tile from the image it actually draws. Cover art wins because that is what is
+		// shown; the media's own indexed size is next; a thumbnail is only a guess until one of those
+		// arrives, and never earns the justification that a known aspect does.
+		void refresh_layout_dims();
 
 
 		item_element(const item_element& other) = delete;
@@ -1063,12 +1099,13 @@ namespace df
 			return _layout_orientation;
 		}
 
-		// True once the tile's aspect is known from the index rather than guessed or borrowed from a
-		// decoded image, which is what makes it safe to justify the tile to fill its row.
-		bool layout_dims_from_metadata() const
+		// True once the tile's aspect is the one it will keep - taken from the image the tile draws or
+		// from the indexed media size, rather than guessed. That is what makes it safe to size the tile
+		// from the row's solved height instead of holding a nominal width.
+		bool layout_aspect_known() const
 		{
 			assert_true(ui::is_ui_thread());
-			return _layout_dims_from_metadata;
+			return _layout_aspect_known;
 		}
 
 		void thumbnail(ui::const_image_ptr i, ui::const_image_ptr ca, const date_t timestamp = date_t::null,
@@ -1081,25 +1118,10 @@ namespace df
 			const auto had_visual = is_valid(_thumbnail) || is_valid(_cover_art);
 			const auto has_visual = is_valid(i) || is_valid(ca);
 
-			// A thumbnail is a downscaled representation, so its pixel size must never decide the tile
-			// size - that made every tile jump as thumbnails arrived. It is only a fallback for items
-			// whose intrinsic dimensions the index does not know, such as album art on an audio file.
-			if (_ft != file_type::folder && !_layout_dims_from_metadata)
-			{
-				if (is_valid(ca))
-				{
-					_layout_dims = ca->dimensions();
-					_layout_orientation = ca->orientation();
-				}
-				else if (is_valid(i))
-				{
-					_layout_dims = i->dimensions();
-					_layout_orientation = i->orientation();
-				}
-			}
-
 			_thumbnail = std::move(i);
 			_cover_art = std::move(ca);
+			refresh_layout_dims();
+
 			set_thumbnail_state(thumbnail_state::fade_pending,
 			                    fade_in && !had_visual && has_visual && _is_visible);
 			row_layout_valid = false;
@@ -1475,7 +1497,6 @@ namespace df
 			set_thumbnail_state(thumbnail_state::db_query_pending, false);
 			return true;
 		}
-
 	};
 
 	struct unique_items
@@ -1904,16 +1925,6 @@ namespace df
 			                                          ui::style::text_style::single_line, max_width).cx);
 		}
 
-		/*recti calc_bg_bounds(const recti row_bounds, const int line_height, const int text_x, const int text_y) const
-		{
-			recti result;
-			result.left = text_x +text_padding;
-			result.right = result.left + width;
-			result.top = (row_bounds.top + row_bounds.bottom - line_height) / 2 - 1;
-			result.bottom = result.top + line_height + 2;
-			return result;
-		}*/
-
 		recti calc_bounds(const recti row_bounds, const int text_x, const int text_y, const int text_padding) const
 		{
 			auto bounds = row_bounds;
@@ -1930,7 +1941,6 @@ namespace df
 
 			if (val_min < val_max && setting.highlight_large_items)
 			{
-				//const auto bg_bounds = calc_bg_bounds(row_bounds, rc.text_line_height(text_font), text_x, text_y);
 				const auto importance_alpha = std::min(
 					color.a, static_cast<float>(0.7 * (val - val_min) / (val_max - val_min)));
 				rank_color = ui::color(ui::style::color::rank_background, importance_alpha);

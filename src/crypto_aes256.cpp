@@ -122,7 +122,12 @@ size_t aes256::encrypt(const byte_array& key, const byte_array& plain, byte_arra
 {
 	aes256 aes(key);
 
-	aes.encrypt_start(plain.size(), encrypted);
+	if (aes.encrypt_start(plain.size(), encrypted) == 0)
+	{
+		encrypted.clear();
+		return 0;
+	}
+
 	aes.encrypt_continue(plain, encrypted);
 	aes.encrypt_end(encrypted);
 
@@ -133,7 +138,12 @@ size_t aes256::encrypt(const byte_array& key, const df::cspan plain, byte_array&
 {
 	aes256 aes(key);
 
-	aes.encrypt_start(plain.size, encrypted);
+	if (aes.encrypt_start(plain.size, encrypted) == 0)
+	{
+		encrypted.clear();
+		return 0;
+	}
+
 	aes.encrypt_continue(plain, encrypted);
 	aes.encrypt_end(encrypted);
 
@@ -167,11 +177,12 @@ size_t aes256::encrypt_start(const size_t plain_length, byte_array& encrypted)
 	m_remainingLength = plain_length;
 
 	// Generate salt using cryptographically secure RNG
-	if (!m_salt.empty())
-		platform::generate_random_bytes(m_salt.data(), m_salt.size());
+	if (!m_salt.empty() && !platform::generate_random_bytes(m_salt.data(), m_salt.size()))
+		return 0;
 
 	// Generate IV using cryptographically secure RNG
-	platform::generate_random_bytes(m_iv, BLOCK_SIZE);
+	if (!platform::generate_random_bytes(m_iv, BLOCK_SIZE))
+		return 0;
 
 	// Calculate padding
 	size_t padding = 0;

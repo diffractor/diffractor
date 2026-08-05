@@ -16,17 +16,17 @@
 
 namespace
 {
-struct media_entry
-{
-	uint8_t file_type = 0;
-	std::vector<uint8_t> pet_name;
-	uint32_t file_size = 0;
-};
+	struct media_entry
+	{
+		uint8_t file_type = 0;
+		std::vector<uint8_t> pet_name;
+		uint32_t file_size = 0;
+	};
 
-struct d64_media
-{
-	std::vector<media_entry> entries;
-};
+	struct d64_media
+	{
+		std::vector<media_entry> entries;
+	};
 }
 
 // 8x8 bitmaps of the C64 uppercase/graphics character set, indexed by screen
@@ -513,6 +513,7 @@ ui::const_surface_ptr files::c64_listing_surface(const std::vector<d64_item>& li
 
 	auto surface = std::make_shared<ui::surface>();
 	auto* const pixels = surface->alloc(w, h, ui::texture_format::RGB);
+	if (!pixels) return {};
 	const auto stride = surface->stride();
 
 	// RGB textures upload as B8G8R8X8, so pixels are written in BGR order.

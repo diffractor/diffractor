@@ -51,7 +51,7 @@ std::atomic_int df::loading_media = 0;
 std::atomic_int df::command_active = 0;
 std::atomic_int df::dragging_items = 0;
 std::atomic_int df::handling_crash = 0;
-auto df::rendering_func = "";
+std::atomic<const char*> df::rendering_func = "";
 
 auto df::gpu_desc = "unknown"s;
 auto df::gpu_id = "unknown"s;
@@ -79,7 +79,60 @@ df::file_path df::previous_log_path = s_log_folder.combine_file("diffractor.prev
 
 static platform::mutex log_mutex;
 _Guarded_by_(log_mutex) static std::ofstream log_file;
+_Guarded_by_(log_mutex) static bool log_truncated = false;
 
+// A repeating per-item failure logs once per file, so a long session over a large collection would
+// otherwise grow the log without bound. One rotation is kept, so the worst case on disk is twice this.
+constexpr std::streamoff max_log_bytes = 4ll * 1024 * 1024;
+
+namespace
+{
+	size_t ifind_from(const std::string_view text, const std::string_view sub, const size_t from)
+	{
+		if (from >= text.size()) return std::string::npos;
+		const auto found = str::ifind(text.substr(from), sub);
+		return found == std::string_view::npos ? std::string::npos : found + from;
+	}
+
+	// The log is attached to support reports and crash uploads, so it must not carry the account
+	// name. Everything else about a path is kept - the folder shape is what makes a report
+	// reproducible. Deliberately pattern-based rather than a platform::user_name() comparison:
+	// that call logs on failure, and this runs holding the log lock. It also catches the 8.3 short
+	// form (ZACWAL~1) and names embedded in OS and third-party error strings.
+	std::string scrub_user_identity(const std::string_view message)
+	{
+		std::string result(message);
+
+		for (const auto users : {"\\users\\"sv, "/users/"sv})
+		{
+			for (size_t at = 0; (at = ifind_from(result, users, at)) != std::string::npos;)
+			{
+				const auto begin = at + users.size();
+				auto end = begin;
+				while (end < result.size() && result[end] != '\\' && result[end] != '/') ++end;
+
+				if (end == begin)
+				{
+					at = begin;
+					continue;
+				}
+
+				constexpr auto token = "%user%"sv;
+				result.replace(begin, end - begin, token);
+				at = begin + token.size();
+			}
+		}
+
+		return result;
+	}
+
+	// The end-of-session summaries are the highest-value lines in the file and are written last, so
+	// they stay exempt from the cap. Each is emitted once per session, so the exemption is bounded.
+	bool is_session_summary(const std::string_view context)
+	{
+		return context.starts_with("perf") || context == "main";
+	}
+}
 
 void df::log(const std::string_view context, const std::string_view message)
 {
@@ -105,7 +158,7 @@ void df::log(const std::string_view context, const std::string_view message)
 		log_file.open(platform::to_file_system_path(log_path), std::ios::out | std::ios::trunc);
 	}
 
-	if (log_file.is_open())
+	if (log_file.is_open() && (!log_truncated || is_session_summary(context)))
 	{
 		const auto time = platform::tick_count() - start_time;
 		const auto thread_id = platform::current_thread_id();
@@ -116,7 +169,14 @@ void df::log(const std::string_view context, const std::string_view message)
 			<< " "
 			<< std::setfill(' ')
 			<< std::left << std::setw(33) << context
-			<< message << '\n';
+			<< scrub_user_identity(message) << '\n';
+
+		if (!log_truncated && log_file.tellp() >= max_log_bytes)
+		{
+			log_truncated = true;
+			log_file << "*** log truncated at " << max_log_bytes
+				<< " bytes - only end-of-session summaries follow ***\n";
+		}
 	}
 }
 
@@ -125,6 +185,24 @@ void df::trace(const std::string_view message)
 #ifdef _DEBUG
 	platform::trace(std::format("{}\n", message));
 #endif
+}
+
+// One malformed batch repeats the same codec message for every item scanned. The distinct-message
+// ceiling bounds the other direction, where a library emits a message that varies every time.
+void df::log_once(const std::string_view context, const std::string_view message)
+{
+	constexpr size_t max_distinct = 128;
+
+	static platform::mutex mutex;
+	_Guarded_by_(mutex) static hash_set<std::string> seen;
+
+	{
+		platform::exclusive_lock lock(mutex);
+		if (seen.size() >= max_distinct) return;
+		if (!seen.emplace(std::format("{}|{}", context, message)).second) return;
+	}
+
+	log(context, message);
 }
 
 df::thumbnail_counters df::thumbnail_perf;
@@ -339,6 +417,21 @@ std::string df::url_extract(const std::string_view text)
 	return {};
 }
 
+std::vector<std::string> df::url_extract_all(const std::string_view text)
+{
+	static const std::regex url_regex(R"((https?:\/\/[^\s\"\']+))");
+	std::vector<std::string> result;
+
+	for (std::regex_iterator<std::string_view::const_iterator> i(text.begin(), text.end(), url_regex), end;
+	     i != end; ++i)
+	{
+		auto found = (*i)[1].str();
+		if (std::ranges::find(result, found) == result.end()) result.emplace_back(std::move(found));
+	}
+
+	return result;
+}
+
 std::string df::date_t::to_xmp_date() const
 {
 	const auto st = date();
@@ -546,7 +639,7 @@ df::blob df::blob_from_file(const file_path path, const size_t max_load)
 			throw app_exception(message);
 		}
 
-		return f.read_blob(load_len);
+		return f.read_blob(static_cast<size_t>(load_len));
 	}
 
 	return {};
@@ -560,7 +653,7 @@ bool df::blob_save_to_file(const cspan data, const file_path path)
 
 	if (file)
 	{
-		written = file->write(data.data, len);
+		written = static_cast<size_t>(file->write(data.data, len));
 	}
 
 	return written == len;

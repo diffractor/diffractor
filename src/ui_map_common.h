@@ -8,12 +8,13 @@
 
 // Purpose: Common map tile types, coordinate math, and rendering engine shared
 // by map_view (full view) and map_control (dialog widget). Handles tile
-// fetching (with an on-disk tile cache and OSM tile-usage-policy compliance),
+// fetching (through the SQLite tile store and OSM tile-usage-policy compliance),
 // caching, GPS math, panning, zooming, marker clustering, picked-marker highlight,
 // and crosshair rendering.
 
 #pragma once
 
+#include "model_tile_cache.h"
 #include "ui.h"
 #include "util_kdtree.h"
 
@@ -165,121 +166,6 @@ inline std::string tile_user_agent()
 	return std::format("Diffractor/{} (+https://diffractor.com)", s_app_version);
 }
 
-// Flat cache file name for a tile: "{z}_{x}_{y}.png".
-inline std::string tile_cache_file_name(const map_tile_id& coord)
-{
-	return std::format("{}_{}_{}.png", coord.z, coord.x, coord.y);
-}
-
-// Resolves the on-disk tile cache folder as a peer to the "dictionaries" folder,
-// mirroring spell_check::spell_check: dictionaries live in the app install folder
-// when present, otherwise in app-data. The tile cache is kept as a sibling of that
-// "dictionaries" folder (created if missing). Store packages and per-machine installs
-// have a read-only install folder, so those fall back to app-data.
-inline df::folder_path resolve_tile_cache_folder()
-{
-	const auto module_folder = known_path(platform::known_folder::running_app_folder);
-	const auto module_dictionaries = module_folder.combine("dictionaries");
-
-	const auto base = (module_dictionaries.exists() && platform::is_writable(module_folder))
-		                  ? module_folder
-		                  : known_path(platform::known_folder::app_data);
-
-	const auto tiles = base.combine("tiles");
-
-	if (!tiles.exists())
-	{
-		platform::create_folder(tiles);
-	}
-
-	return tiles;
-}
-
-// On-disk cache of downloaded map tiles. The OSM tile usage policy requires
-// clients to cache tiles locally (honouring cache headers, or at least 7 days)
-// so that repeat views do not re-download. Tiles are stored as raw PNG files
-// keyed by zoom/x/y and kept between sessions.
-class map_tile_cache
-{
-	df::folder_path _folder;
-	static constexpr size_t max_file_count = 4096;
-	static constexpr uint32_t min_retention_days = 7;
-	static constexpr uint32_t trim_write_interval = 256;
-
-public:
-	map_tile_cache() : _folder(resolve_tile_cache_folder())
-	{
-	}
-
-	explicit map_tile_cache(df::folder_path folder) : _folder(std::move(folder))
-	{
-	}
-
-	const df::folder_path& folder() const { return _folder; }
-
-	df::file_path path_for(const map_tile_id& coord) const
-	{
-		return _folder.combine_file(tile_cache_file_name(coord));
-	}
-
-	bool contains(const map_tile_id& coord) const
-	{
-		return path_for(coord).exists();
-	}
-
-	df::blob load(const map_tile_id& coord) const
-	{
-		const auto path = path_for(coord);
-		return path.exists() ? df::blob_from_file(path) : df::blob{};
-	}
-
-	void store(const map_tile_id& coord, const df::cspan data) const
-	{
-		if (data.size == 0)
-			return;
-
-		if (!_folder.exists())
-		{
-			platform::create_folder(_folder);
-		}
-
-		df::blob_save_to_file(data, path_for(coord));
-
-		static std::atomic_uint32_t writes_since_trim;
-		if ((writes_since_trim.fetch_add(1) + 1) % trim_write_interval == 0)
-		{
-			trim();
-		}
-	}
-
-	void trim(const size_t max_files = max_file_count,
-	          const uint32_t retention_days = min_retention_days) const
-	{
-		auto contents = platform::iterate_file_items(_folder, false);
-		if (!contents.success || contents.files.size() <= max_files)
-			return;
-
-		std::ranges::sort(contents.files, {}, [](const platform::file_info& file) { return file.attributes.modified; });
-		const auto now = static_cast<uint64_t>(platform::now().to_int64());
-		const auto retention = static_cast<uint64_t>(retention_days) * df::date_t::intervals_per_day;
-		// Zero retention means trim purely by count. Deriving a cutoff from the local clock would
-		// then protect every file on a volume whose clock runs ahead of ours, so nothing is trimmed.
-		const uint64_t oldest_allowed = retention_days == 0
-			                                ? std::numeric_limits<uint64_t>::max()
-			                                : (now > retention ? now - retention : 0);
-		auto remaining = contents.files.size();
-
-		for (const auto& file : contents.files)
-		{
-			if (remaining <= max_files || file.attributes.modified > oldest_allowed)
-				break;
-
-			if (platform::delete_file(file.folder.combine_file(file.name)).success())
-				--remaining;
-		}
-	}
-};
-
 // Tile levels the shared tile source actually serves. Anything outside is a blank map.
 inline constexpr int map_min_zoom = 3;
 inline constexpr int map_max_zoom = 18;
@@ -387,8 +273,6 @@ private:
 
 	std::map<map_tile_id, cache_entry_ptr> _tile_cache;
 	std::map<map_tile_id, ui::texture_ptr> _texture_cache;
-
-	map_tile_cache _tile_disk_cache;
 
 	// Item-location markers, indexed spatially so only the visible ones are
 	// projected/clustered each view change.
@@ -887,153 +771,146 @@ private:
 		             ui::color(1.0f, 1.0f, 1.0f, 0.9f), {});
 	}
 
+	// A plain cross, semi-transparent: two unbroken lines whose intersection is the coordinate
+	// that will be written. No ring and no centre disc - either would read as one more cluster
+	// bubble, and either would hide the bubble the user has just centred on.
 	void render_crosshair(ui::draw_context& dc, const sizei& extent) const
 	{
 		const int center_x = extent.cx / 2;
 		const int center_y = extent.cy / 2;
-		const pointi center_point(center_x, center_y);
 
-		constexpr int crosshair_size = 20;
-		constexpr int inner_gap = 4;
-		constexpr int line_width = 2;
-		constexpr int outer_circle_radius = 15;
-		constexpr int inner_circle_radius = 3;
+		constexpr int arm = 48;
+		constexpr int line_width = 3;
+		constexpr int half = line_width / 2;
 
-		const auto crosshair_color = ui::color(ui::style::color::dialog_selected_background, 0.7);
-		const auto outline_color = ui::color(1.0f, 1.0f, 1.0f, 0.5f);
+		const auto crosshair_color = ui::color(ui::style::color::important_background, 0.6);
+		// A thin lighter underlay keeps the cross readable over both dark and pale tiles.
+		const auto outline_color = ui::color(1.0f, 1.0f, 1.0f, 0.35f);
 
-		const recti outer_circle_outline(center_point - pointi(outer_circle_radius + 1, outer_circle_radius + 1),
-		                                 sizei((outer_circle_radius + 1) * 2, (outer_circle_radius + 1) * 2));
-		dc.draw_rounded_rect(outer_circle_outline, outline_color, outer_circle_radius + 1);
+		const recti horizontal(center_x - arm, center_y - half, center_x + arm, center_y - half + line_width);
+		dc.draw_rect(horizontal.inflate(0, 1), outline_color);
+		dc.draw_rect(horizontal, crosshair_color);
 
-		const recti outer_circle(center_point - pointi(outer_circle_radius, outer_circle_radius),
-		                         sizei(outer_circle_radius * 2, outer_circle_radius * 2));
-		dc.draw_rounded_rect(outer_circle, crosshair_color, outer_circle_radius);
+		const recti vertical(center_x - half, center_y - arm, center_x - half + line_width, center_y + arm);
+		dc.draw_rect(vertical.inflate(1, 0), outline_color);
+		dc.draw_rect(vertical, crosshair_color);
+	}
 
-		const recti left_line_outline(pointi(center_x - crosshair_size, center_y - line_width / 2 - 1),
-		                              sizei(crosshair_size - inner_gap, line_width + 2));
-		dc.draw_rect(left_line_outline, outline_color);
-		const recti left_line(pointi(center_x - crosshair_size, center_y - line_width / 2),
-		                      sizei(crosshair_size - inner_gap, line_width));
-		dc.draw_rect(left_line, crosshair_color);
+	// Decodes and hands the result to the UI, then releases the request claim. Every path through
+	// the fetch below ends here exactly once, so a tile can always be asked for again.
+	static void publish_tile(async_strategy& async, const cache_entry_ptr& e,
+	                         const std::function<void()>& invalidate,
+	                         const std::shared_ptr<std::atomic_bool>& alive, const df::blob& data)
+	{
+		ui::surface_ptr surface;
 
-		const recti right_line_outline(pointi(center_x + inner_gap, center_y - line_width / 2 - 1),
-		                               sizei(crosshair_size - inner_gap, line_width + 2));
-		dc.draw_rect(right_line_outline, outline_color);
-		const recti right_line(pointi(center_x + inner_gap, center_y - line_width / 2),
-		                       sizei(crosshair_size - inner_gap, line_width));
-		dc.draw_rect(right_line, crosshair_color);
+		if (!data.empty())
+		{
+			files ff;
+			surface = ff.image_to_surface(df::cspan(data.data(), data.size()));
+		}
 
-		const recti top_line_outline(pointi(center_x - line_width / 2 - 1, center_y - crosshair_size),
-		                             sizei(line_width + 2, crosshair_size - inner_gap));
-		dc.draw_rect(top_line_outline, outline_color);
-		const recti top_line(pointi(center_x - line_width / 2, center_y - crosshair_size),
-		                     sizei(line_width, crosshair_size - inner_gap));
-		dc.draw_rect(top_line, crosshair_color);
+		bool publish = false;
+		{
+			platform::exclusive_lock lock(e->mutex);
+			e->requested = false;
 
-		const recti bottom_line_outline(pointi(center_x - line_width / 2 - 1, center_y + inner_gap),
-		                                sizei(line_width + 2, crosshair_size - inner_gap));
-		dc.draw_rect(bottom_line_outline, outline_color);
-		const recti bottom_line(pointi(center_x - line_width / 2, center_y + inner_gap),
-		                        sizei(line_width, crosshair_size - inner_gap));
-		dc.draw_rect(bottom_line, crosshair_color);
+			if (surface && e->in_view && !e->surface)
+			{
+				e->surface = std::move(surface);
+				publish = true;
+			}
+		}
 
-		const recti inner_circle_outline(center_point - pointi(inner_circle_radius + 1, inner_circle_radius + 1),
-		                                 sizei((inner_circle_radius + 1) * 2, (inner_circle_radius + 1) * 2));
-		dc.draw_rounded_rect(inner_circle_outline, outline_color, inner_circle_radius + 1);
+		if (publish)
+		{
+			async.queue_ui(
+				[invalidate, alive]
+				{
+					if (alive->load())
+					{
+						invalidate();
+					}
+				});
+		}
+	}
 
-		const recti inner_circle(center_point - pointi(inner_circle_radius, inner_circle_radius),
-		                         sizei(inner_circle_radius * 2, inner_circle_radius * 2));
-		dc.draw_rounded_rect(inner_circle, crosshair_color, inner_circle_radius);
+	static void download_tile(async_strategy& async, const cache_entry_ptr& e,
+	                          const std::function<void()>& invalidate,
+	                          const std::shared_ptr<std::atomic_bool>& alive, const map_tile_id& coord,
+	                          const int64_t key)
+	{
+		// Fetch from the canonical OSM host with a compliant User-Agent.
+		platform::web_request req;
+		req.path = generate_tile_path(coord);
+		req.headers.emplace_back("User-Agent", tile_user_agent());
+
+		thread_local platform::web_host_ptr s_osm_con;
+		if (!s_osm_con)
+		{
+			s_osm_con = platform::connect_to_host(osm_tile_host);
+		}
+
+		const auto response = send_request(s_osm_con, req);
+		const auto data = std::make_shared<df::blob>();
+
+		if (response.status_code == 200 && !response.body.empty())
+		{
+			data->assign(response.body.begin(), response.body.end());
+
+			async.queue_tile_db([key, data](tile_cache_db& db)
+			{
+				db.store(key, df::cspan(data->data(), data->size()));
+			});
+		}
+		else
+		{
+			// Hard failure: drop the shared connection so the next task reconnects rather than
+			// reusing a broken handle forever.
+			s_osm_con.reset();
+		}
+
+		publish_tile(async, e, invalidate, alive, *data);
 	}
 
 	void fetch_tile(const cache_entry_ptr& e, const map_tile_id& coord)
 	{
-		// Capture the cache folder by value (df::folder_path is a lightweight cached
-		// string) and a shared liveness flag so the task is safe even if this engine
-		// is destroyed while the task is queued or running.
-		_async.queue_async(async_queue::map_tile,
-		                   [&async = _async, coord, e, invalidate = _invalidate, alive = _alive,
-			                   cache_folder = _tile_disk_cache.folder()]
-		                   {
-			                   {
-				                   platform::exclusive_lock lock(e->mutex);
-				                   if (!e->in_view || e->surface)
-				                   {
-					                   e->requested = false;
-					                   return;
-				                   }
-			                   }
+		// A shared liveness flag keeps every hop safe if this engine is destroyed while the request
+		// is still in the pipeline.
+		const auto key = map_tile_db_key(coord.z, coord.x, coord.y);
 
-			                   const map_tile_cache cache(cache_folder);
-			                   static std::once_flag s_disk_cache_trimmed;
-			                   std::call_once(s_disk_cache_trimmed, [&cache] { cache.trim(); });
+		_async.queue_tile_db(
+			[&async = _async, coord, key, e, invalidate = _invalidate, alive = _alive](tile_cache_db& db)
+			{
+				{
+					platform::exclusive_lock lock(e->mutex);
+					if (!e->in_view || e->surface)
+					{
+						e->requested = false;
+						return;
+					}
+				}
 
-			                   // 1. Serve from the on-disk cache when present (no network).
-			                   auto data = cache.load(coord);
+				// Decoding a PNG on this thread would stall every following lookup, and downloading on
+				// it would stall them for a network round trip, so both hand back to the map workers.
+				auto data = std::make_shared<df::blob>(db.load(key));
 
-			                   if (data.empty())
-			                   {
-				                   // 2. Fetch from the canonical OSM host with a compliant User-Agent.
-				                   platform::web_request req;
-				                   req.path = generate_tile_path(coord);
-				                   req.headers.emplace_back("User-Agent", tile_user_agent());
+				if (!data->empty())
+				{
+					async.queue_async(async_queue::map_tile,
+					                  [&async, e, invalidate, alive, data]
+					                  {
+						                  publish_tile(async, e, invalidate, alive, *data);
+					                  });
+					return;
+				}
 
-				                   static thread_local platform::web_host_ptr s_osm_con;
-				                   if (!s_osm_con)
-				                   {
-					                   s_osm_con = platform::connect_to_host(osm_tile_host);
-				                   }
-
-				                   const auto response = send_request(s_osm_con, req);
-
-				                   if (response.status_code == 200 && !response.body.empty())
-				                   {
-					                   const df::cspan body(std::bit_cast<const uint8_t*>(response.body.data()),
-					                                        response.body.size());
-					                   cache.store(coord, body);
-					                   data.assign(response.body.begin(), response.body.end());
-				                   }
-				                   else
-				                   {
-					                   // Hard failure: drop the shared connection so the next task
-					                   // reconnects rather than reusing a broken handle forever.
-					                   s_osm_con.reset();
-				                   }
-			                   }
-
-			                   ui::surface_ptr surface;
-
-			                   if (!data.empty())
-			                   {
-				                   files ff;
-				                   surface = ff.image_to_surface(df::cspan(data.data(), data.size()));
-			                   }
-
-			                   bool publish = false;
-			                   {
-				                   platform::exclusive_lock lock(e->mutex);
-				                   e->requested = false;
-
-				                   if (surface && e->in_view && !e->surface)
-				                   {
-					                   e->surface = std::move(surface);
-					                   publish = true;
-				                   }
-			                   }
-
-			                   if (publish)
-			                   {
-				                   async.queue_ui(
-					                   [invalidate, alive]
-					                   {
-						                   if (alive->load())
-						                   {
-							                   invalidate();
-						                   }
-					                   });
-			                   }
-		                   });
+				async.queue_async(async_queue::map_tile,
+				                  [&async, coord, key, e, invalidate, alive]
+				                  {
+					                  download_tile(async, e, invalidate, alive, coord, key);
+				                  });
+			});
 	}
 
 	void fetch_tiles(const recti& bounds, const pointi scroll_offset)

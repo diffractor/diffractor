@@ -142,7 +142,7 @@ namespace
 }
 
 flex_layout_result calc_flex_layout(const std::vector<view_element_ptr>& elements, ui::measure_context& mc,
-	const sizei available, const flex_container_layout& container)
+                                    const sizei available, const flex_container_layout& container)
 {
 	flex_layout_result result;
 	result.layout_bounds.resize(elements.size());
@@ -212,8 +212,8 @@ flex_layout_result calc_flex_layout(const std::vector<view_element_ptr>& element
 
 		const auto line_main = current_line.items.empty() ? 0 : current_line.used_main + main_gap;
 		const auto should_wrap = !current_line.items.empty() &&
-			(items[item_index].style.break_before ||
-				(container.wrap == flex_wrap::wrap && main_is_constrained && line_main + group_main > available_main));
+		(items[item_index].style.break_before ||
+			(container.wrap == flex_wrap::wrap && main_is_constrained && line_main + group_main > available_main));
 		if (should_wrap)
 		{
 			lines.emplace_back(std::move(current_line));
@@ -295,7 +295,10 @@ flex_layout_result calc_flex_layout(const std::vector<view_element_ptr>& element
 		}
 
 		const auto all_centered = !line.items.empty() && std::ranges::all_of(line.items,
-			[&items](const size_t item_index) { return items[item_index].center_line; });
+		                                                                     [&items](const size_t item_index)
+		                                                                     {
+			                                                                     return items[item_index].center_line;
+		                                                                     });
 		auto justify = all_centered ? flex_justify::center : container.justify;
 		if (auto_margin_index != line.items.size())
 		{
@@ -317,8 +320,8 @@ flex_layout_result calc_flex_layout(const std::vector<view_element_ptr>& element
 		// A line that spends free space to position its items occupies the whole main axis. Reporting
 		// only the content would let an ancestor centre the same content a second time.
 		const auto line_fills_main = main_is_constrained && auto_margin_index == line.items.size() &&
-			(container.justify == flex_justify::center || container.justify == flex_justify::end ||
-				(container.justify == flex_justify::space_between && line.items.size() > 1));
+		(container.justify == flex_justify::center || container.justify == flex_justify::end ||
+			(container.justify == flex_justify::space_between && line.items.size() > 1));
 
 		for (auto line_index = 0u; line_index < line.items.size(); ++line_index)
 		{
@@ -348,12 +351,14 @@ flex_layout_result calc_flex_layout(const std::vector<view_element_ptr>& element
 			if (direction == flex_direction::row)
 			{
 				result.layout_bounds[item.element_index] = recti(item_main_position, cross_position,
-					item_main_position + item.main_size, cross_position + item_cross_size);
+				                                                 item_main_position + item.main_size,
+				                                                 cross_position + item_cross_size);
 			}
 			else
 			{
 				result.layout_bounds[item.element_index] = recti(cross_position, item_main_position,
-					cross_position + item_cross_size, item_main_position + item.main_size);
+				                                                 cross_position + item_cross_size,
+				                                                 item_main_position + item.main_size);
 			}
 
 			main_cursor += outer_main_size(item);
@@ -380,7 +385,7 @@ flex_layout_result calc_flex_layout(const std::vector<view_element_ptr>& element
 }
 
 sizei layout_flex_elements(const std::vector<view_element_ptr>& elements, ui::measure_context& mc,
-	ui::control_layouts& positions, const recti bounds, const flex_container_layout& container)
+                           ui::control_layouts& positions, const recti bounds, const flex_container_layout& container)
 {
 	df::assert_true(elements.size() == std::unordered_set<view_element_ptr>(elements.begin(), elements.end()).size());
 	const auto calculated = calc_flex_layout(elements, mc, bounds.extent(), container);

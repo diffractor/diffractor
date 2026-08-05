@@ -52,10 +52,11 @@ std::vector<recti> ui::layout_collage(const recti draw_bounds, const std::vector
 
 	const auto canvas_aspect = static_cast<double>(draw_bounds.width()) / draw_bounds.height();
 	const auto feature = static_cast<size_t>(std::min_element(aspect_ratios.begin(), aspect_ratios.end(),
-		[canvas_aspect](const double left, const double right)
-		{
-			return std::abs(std::log(left / canvas_aspect)) < std::abs(std::log(right / canvas_aspect));
-		}) - aspect_ratios.begin());
+	                                                          [canvas_aspect](const double left, const double right)
+	                                                          {
+		                                                          return std::abs(std::log(left / canvas_aspect)) <
+			                                                          std::abs(std::log(right / canvas_aspect));
+	                                                          }) - aspect_ratios.begin());
 
 	std::vector<double> weights(cell_count, 1.0);
 	weights[feature] = golden_ratio * golden_ratio;
@@ -176,10 +177,12 @@ public:
 		_parent->compare(loc.x, _tracking);
 	}
 
-	void escape() override
+	bool escape() override
 	{
+		if (!_tracking) return false;
 		_tracking = false;
 		_parent->compare(0, _tracking);
+		return true;
 	}
 
 	void popup_from_location(view_hover_element& hover) override
@@ -382,20 +385,21 @@ public:
 		return false;
 	}
 
-	void escape() override
+	bool escape() override
 	{
+		if (!_tracking && !_region_select && !_inspect_active) return false;
 		_parent_element->_display->restore_zoom_state(_start_zoom_state);
 		_region_select = false;
 		_tracking = false;
 		_inspect_active = false;
+		return true;
 	}
-
 };
 
 static void render_zoom_overlay(ui::draw_context& dc, const display_state_ptr& display,
-	const texture_state_ptr& texture_state, const recti bounds, const pointi element_offset,
-	recti& navigator_bounds, recti& fit_bounds, recti& out_bounds, recti& actual_bounds,
-	recti& in_bounds, recti& options_bounds)
+                                const texture_state_ptr& texture_state, const recti bounds, const pointi element_offset,
+                                recti& navigator_bounds, recti& fit_bounds, recti& out_bounds, recti& actual_bounds,
+                                recti& in_bounds, recti& options_bounds)
 {
 	navigator_bounds.clear();
 	fit_bounds.clear();
@@ -423,11 +427,12 @@ static void render_zoom_overlay(ui::draw_context& dc, const display_state_ptr& d
 		const auto source_orientation = texture_state->display_orientation();
 		const auto source_dims = texture_state->display_dimensions();
 		const auto zoom_dims = ui::scale_dimensions(flips_xy(source_orientation) ? source_dims.flip() : source_dims,
-		                                           zoom_dim);
+		                                            zoom_dim);
 		const auto panel_width = inspect ? zoom_dims.cx : zoom_dim;
 		const auto panel_bounds = recti(client_bounds.left, client_bounds.top + label_height,
-		                                client_bounds.left + panel_width, client_bounds.top + label_height + zoom_dims.cy)
-		                          .crop(client_bounds);
+		                                client_bounds.left + panel_width,
+		                                client_bounds.top + label_height + zoom_dims.cy)
+			.crop(client_bounds);
 		const auto zoom_left = panel_bounds.left + (panel_bounds.width() - zoom_dims.cx) / 2;
 		const auto zoom_bounds = recti({zoom_left, panel_bounds.top}, zoom_dims).crop(panel_bounds);
 		navigator_bounds = zoom_bounds;
@@ -440,7 +445,8 @@ static void render_zoom_overlay(ui::draw_context& dc, const display_state_ptr& d
 			zoom_bounds.top;
 		const auto r = df::mul_div(client_bounds.right - media_bounds.left, zoom_bounds.width(), media_bounds.width()) +
 			zoom_bounds.left;
-		const auto b = df::mul_div(client_bounds.bottom - media_bounds.top, zoom_bounds.height(), media_bounds.height()) +
+		const auto b = df::mul_div(client_bounds.bottom - media_bounds.top, zoom_bounds.height(),
+		                           media_bounds.height()) +
 			zoom_bounds.top;
 		const auto shown_bounds = recti(l, t, r, b).crop(zoom_bounds);
 		const auto zoom_texture = texture_state->zoom_texture(dc, df::zoom_view_state::navigator_surface_extent);
@@ -449,18 +455,20 @@ static void render_zoom_overlay(ui::draw_context& dc, const display_state_ptr& d
 		const auto alpha = std::min(dc.colors.overlay_alpha, display->_zoom_overlay_alpha);
 		const auto thumb_alpha = alpha;
 		const auto control_bounds = panel_bounds;
-		const auto label_width = inspect ? std::min(panel_bounds.width(), text_extent.cx + label_padding * 2) : panel_bounds.width();
+		const auto label_width = inspect
+			                         ? std::min(panel_bounds.width(), text_extent.cx + label_padding * 2)
+			                         : panel_bounds.width();
 		const auto label_bounds = recti(panel_bounds.left, client_bounds.top, panel_bounds.left + label_width,
 		                                client_bounds.top + label_height).crop(client_bounds);
 		const auto button_width = std::min(label_height, label_bounds.width() / 5);
 		if (!inspect)
 		{
 			fit_bounds = recti(label_bounds.left, label_bounds.top,
-			                         std::min(label_bounds.right, label_bounds.left + button_width), label_bounds.bottom);
+			                   std::min(label_bounds.right, label_bounds.left + button_width), label_bounds.bottom);
 			out_bounds = recti(fit_bounds.right, label_bounds.top,
 			                   std::min(label_bounds.right, fit_bounds.right + button_width), label_bounds.bottom);
 			options_bounds = recti(std::max(label_bounds.left, label_bounds.right - button_width), label_bounds.top,
-			                             label_bounds.right, label_bounds.bottom);
+			                       label_bounds.right, label_bounds.bottom);
 			in_bounds = recti(std::max(label_bounds.left, options_bounds.left - button_width), label_bounds.top,
 			                  options_bounds.left, label_bounds.bottom);
 			actual_bounds = recti(out_bounds.right, label_bounds.top, in_bounds.left, label_bounds.bottom);
@@ -551,9 +559,11 @@ public:
 		if (invoke) _host->invoke(_command);
 	}
 
-	void escape() override
+	bool escape() override
 	{
+		if (!_tracking) return false;
 		_tracking = false;
+		return true;
 	}
 };
 
@@ -588,9 +598,11 @@ public:
 		if (!menu.empty()) _host->track_menu(_bounds, menu);
 	}
 
-	void escape() override
+	bool escape() override
 	{
+		if (!_tracking) return false;
 		_tracking = false;
+		return true;
 	}
 };
 
@@ -627,9 +639,11 @@ public:
 		_tracking = false;
 	}
 
-	void escape() override
+	bool escape() override
 	{
+		if (!_tracking) return false;
 		_tracking = false;
+		return true;
 	}
 
 	void move_to(const pointi loc) const
@@ -756,13 +770,15 @@ public:
 		return false;
 	}
 
-	void escape() override
+	bool escape() override
 	{
+		if (!_tracking && !_region_select && !_inspect_active && !_pan_active) return false;
 		if (_tracking) _display->restore_zoom_state(_start_zoom_state);
 		_tracking = false;
 		_region_select = false;
 		_inspect_active = false;
 		_pan_active = false;
+		return true;
 	}
 };
 
@@ -790,7 +806,12 @@ public:
 		if (invoke) _display->active_zoom_pane(_pane);
 	}
 
-	void escape() override { _tracking = false; }
+	bool escape() override
+	{
+		if (!_tracking) return false;
+		_tracking = false;
+		return true;
+	}
 };
 
 class pan_controller final : public view_controller, public std::enable_shared_from_this<pan_controller>
@@ -852,7 +873,7 @@ public:
 		if (_auto_pan)
 		{
 			_auto_velocity = df::zoom_view_state::auto_pan_velocity(pointd(loc - _start_loc),
-			                                                              12.0 * _host->owner()->scale_factor());
+			                                                        12.0 * _host->owner()->scale_factor());
 			return;
 		}
 		if (_tracking)
@@ -907,19 +928,21 @@ public:
 		_host->invalidate_view(view_invalid::animations);
 	}
 
-	void escape() override
+	bool escape() override
 	{
 		if (_auto_pan)
 		{
 			stop_auto_pan();
-			return;
+			return true;
 		}
 		if (_tracking)
 		{
 			_tracking = false;
 			if (!_region_select) _parent->_display->restore_zoom_state(_start_zoom_state);
 			_region_select = false;
+			return true;
 		}
+		return false;
 	}
 
 	void stop_auto_pan()
@@ -1156,8 +1179,6 @@ void view_element::set_style_bit(const view_element_style mask, const bool state
 		{
 			if (_bg_target != bg && e)
 			{
-				//_bg_color.merge(bg);
-
 				if (ui::is_alpha_zero(_bg_color.a))
 				{
 					_bg_color.r = bg.r;
@@ -1526,7 +1547,7 @@ void rate_label_control::render(ui::draw_context& dc, const pointi element_offse
 
 static ui::command_ptr def_menu_command(const icon_index icon, const std::string_view text, const ui::color32 clr,
                                         std::function<void()> invoke, const bool is_checked,
-	                                    const bool is_enabled = true)
+                                        const bool is_enabled = true)
 {
 	auto c = std::make_shared<ui::command>();
 	c->icon = icon;
@@ -1757,25 +1778,27 @@ void view_scroller::draw_scroll(ui::draw_context& dc) const
 		const auto clr = view_handle_color(false, _active, _tracking, dc.frame_has_focus, false,
 		                                   ui::color(dc.colors.background));
 		const auto bg_clr = ui::color(0x000000, dc.colors.alpha * dc.colors.bg_alpha);
-		const auto hover_clr = ui::color(dc.colors.foreground, dc.colors.alpha * dc.colors.bg_alpha * 0.25f);
 		const auto handle_margin = track_inset();
 		const auto left = sb.left + handle_margin;
 		const auto right = sb.right - handle_margin;
-		const auto text_alpha = dc.colors.alpha * (_active ? 1.0f : 0.66f);
+		// The bands are a fixed map of the list, so they read the same whether or not the pointer
+		// is over the column. Only the thumb answers the pointer.
+		const auto label_color = ui::color(dc.colors.foreground, dc.colors.alpha);
+
+		// The thumb is the backdrop of the column, not an overlay on it. It grows with the share of
+		// the list on screen, so a short list puts it over most of the sections; drawn last it wiped
+		// them out, worst of all under the pointer where it is at its brightest.
+		dc.draw_rounded_rect(thumb_bounds(), clr, dc.padding1);
 
 		for_each_band([&](const int band_top, const int band_bottom, const view_scroller_section* so)
 		{
 			const recti rr(left, sb.top + band_top, right, sb.top + band_bottom);
-			const auto hovered = _hover_y >= rr.top && _hover_y < rr.bottom;
 
 			dc.draw_rounded_rect(rr, bg_clr, dc.padding1);
-			if (hovered) dc.draw_rounded_rect(rr, hover_clr, dc.padding1);
 
 			if (!so) return;
 
 			// An icon needs less room than a text line, so gate each on what it actually costs.
-			const auto label_color = ui::color(dc.colors.foreground, hovered ? dc.colors.alpha : text_alpha);
-
 			if (so->icon != icon_index::none)
 			{
 				if (band_bottom - band_top > dc.icon_cxy) xdraw_icon(dc, so->icon, rr, label_color, {});
@@ -1786,8 +1809,6 @@ void view_scroller::draw_scroll(ui::draw_context& dc) const
 				             ui::style::text_style::single_line_center, label_color, {});
 			}
 		});
-
-		dc.draw_rounded_rect(thumb_bounds(), clr, dc.padding1);
 	}
 }
 
@@ -1814,14 +1835,16 @@ view_scroll_anchor view_scroller::capture_anchor(const view_element_ptr& element
 }
 
 recti view_scroller::layout_with_footer(const sizei scroll_extent, const recti client_bounds,
-	                                    recti scroll_bounds, const int footer_extent, const int gap)
+                                        recti scroll_bounds, const int footer_extent, const int gap)
 {
 	recti footer_bounds;
 	if (footer_extent > 0 && !scroll_bounds.is_empty())
 	{
 		const auto height = std::min(footer_extent, scroll_bounds.height());
-		footer_bounds = {scroll_bounds.left, scroll_bounds.bottom - height,
-		                 scroll_bounds.right, scroll_bounds.bottom};
+		footer_bounds = {
+			scroll_bounds.left, scroll_bounds.bottom - height,
+			scroll_bounds.right, scroll_bounds.bottom
+		};
 		scroll_bounds.bottom = std::max(scroll_bounds.top, footer_bounds.top - std::max(0, gap));
 	}
 
@@ -1840,7 +1863,7 @@ int view_scroller::anchor_offset(const view_scroll_anchor& anchor, const bool el
 }
 
 void view_scroller::restore_anchor(const view_host_ptr& host, const view_scroll_anchor& anchor,
-	                                const bool element_is_current)
+                                   const bool element_is_current)
 {
 	if (!anchor.valid) return;
 	scroll_offset(host, _offset.x, anchor_offset(anchor, element_is_current));

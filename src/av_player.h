@@ -269,7 +269,9 @@ public:
 
 		// A handle handed over by the write that just replaced this file. Opening the path again is
 		// the read-after-write the hand-over exists to avoid.
-		const auto result = file ? _decoder.open(file, path) : _decoder.open(path);
+		const auto result = file
+			                    ? _decoder.open(file, path, media_intent::playback)
+			                    : _decoder.open(path, media_intent::playback);
 
 		if (result)
 		{
@@ -284,9 +286,6 @@ public:
 			const auto start_time = _decoder.start_time();
 			const auto end_time = _decoder.end_time();
 			const auto duration = end_time - start_time;
-
-			//df::log(__FUNCTION__, "start_time " << start_time;
-			//df::log(__FUNCTION__, "end_time" << end_time;
 
 			_audio_buffer_time = 0;
 			_end_time = end_time;
@@ -310,9 +309,6 @@ public:
 			_audio_unavailable = false;
 			_seek_gen = 1;
 
-			/*file_scanner sr;
-			_decoder.extract_metadata(sr);
-			_metadata = sr.to_props();*/
 			_default_orientation = _decoder.calc_orientation();
 
 			_playback_resampler.store(nullptr);
@@ -434,7 +430,8 @@ public:
 
 				auto popped_frame = false;
 
-				if (playback_buffer.should_fill() || _seek_gen != playback_buffer.generation())				{
+				if (playback_buffer.should_fill() || _seek_gen != playback_buffer.generation())
+				{
 					av_frame_ptr frame;
 
 					if (_audio_frames.pop(frame))
@@ -715,7 +712,8 @@ public:
 				_settling = false;
 			}
 		}
-		else if (!seek_ver_invalid && _state == av_play_state::playing && !_pending_time_sync && !_reset_time_offset)		{
+		else if (!seek_ver_invalid && _state == av_play_state::playing && !_pending_time_sync && !_reset_time_offset)
+		{
 			const auto front_time = _video_frames.front_time();
 
 			if (time_distance(current_ft, time) > time_distance(front_time, time) || df::equiv(current_ft, front_time))
@@ -856,12 +854,12 @@ public:
 		const auto file_type = item->file_type();
 		const auto starting_position = item->media_position();
 		queue([path, file_type, starting_position, auto_play, video_track, audio_track, can_use_hw,
-		       use_last_played_pos, cb, file = std::move(file)](
+				use_last_played_pos, cb, file = std::move(file)](
 			const std::shared_ptr<av_player>& p)
 			{
 				df::scope_locked_inc l(df::loading_media);
 				auto ses = p->open_impl(path, file_type, starting_position, auto_play, video_track, audio_track,
-				                            can_use_hw, use_last_played_pos, file);
+				                        can_use_hw, use_last_played_pos, file);
 				if (cb) p->_host.queue_ui([cb, ses] { cb(ses); });
 			});
 	}
@@ -917,8 +915,6 @@ private:
 
 	void close_impl(const std::shared_ptr<av_session>& ses, const std::function<void()>& cb)
 	{
-		//platform::lock lock(_read_mutex);
-
 		if (ses)
 		{
 			ses->close();
@@ -969,13 +965,12 @@ public:
 	void decode_video() const
 	{
 		const std::vector<std::reference_wrapper<platform::thread_event>> events = {platform::event_exit, _video_event};
-		std::shared_ptr<av_session> session;
 
 		while (!df::is_closing)
 		{
 			wait_for(events, 50, false);
 
-			session = _thread_session.load();
+			std::shared_ptr<av_session> session = _thread_session.load();
 
 			if (session)
 			{
@@ -1004,6 +999,7 @@ public:
 		auto base_time = 0.0;
 		auto playback_gen = 0;
 		auto vis_gen = 0;
+		auto pending_fade_in = false;
 		auto need_create_device = false;
 
 		std::shared_ptr<av_session> session;
@@ -1020,8 +1016,8 @@ public:
 			else
 			{
 				const auto idle_timeout = need_create_device
-					? 1000u
-					: std::numeric_limits<uint32_t>::max();
+					                          ? 1000u
+					                          : std::numeric_limits<uint32_t>::max();
 				wait_for(events, idle_timeout, false);
 			}
 
@@ -1144,6 +1140,11 @@ public:
 							ds->reset();
 							session->_pending_time_sync = true;
 							session->_time_offset = df::now() - base_time;
+
+							// reset() empties the endpoint ring, so the next write is the
+							// first audio the restarted device plays. Ramp it, but not here -
+							// the buffer may hold a single decoded frame at this point.
+							pending_fade_in = true;
 						}
 
 						if (should_play)
@@ -1160,6 +1161,16 @@ public:
 
 							if (primed)
 							{
+								if (pending_fade_in)
+								{
+									// Nothing has been written since the reset, so the head of
+									// the buffer is what the device plays first: ramp it up or
+									// the output steps from silence to an arbitrary sample and
+									// pops the speaker.
+									playback_buffer.apply_fade_in(0.010);
+									pending_fade_in = false;
+								}
+
 								ds->write(playback_buffer);
 
 								if (ds->is_stopped())
@@ -1170,7 +1181,6 @@ public:
 								if (session->_pending_time_sync)
 								{
 									const auto time = base_time + ds->time();
-									//df::log(__FUNCTION__, std::format("sound.clock {}", time));
 									session->_time_offset = df::now() - time;
 									session->_pending_time_sync = false;
 								}

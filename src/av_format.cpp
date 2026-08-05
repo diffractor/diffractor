@@ -58,10 +58,8 @@ static void av_log(void*, const int level, const char* format, const va_list arg
 
 void av_initialise(file_type_by_extension& file_types)
 {
-	//#ifdef _DEBUG
 	av_log_set_level(AV_LOG_WARNING);
 	av_log_set_callback(av_log);
-	//#endif
 }
 
 std::vector<av_codec_doc> av_supported_codecs()
@@ -386,7 +384,7 @@ static void populate_audio_properties(const AVStream* const s, file_scan_result&
 
 static void populate_video_properties(const AVStream* const s, file_scan_result& result)
 {
-	auto* codec = s->codecpar;
+	const auto* codec = s->codecpar;
 
 	if (codec && codec->codec_type == AVMEDIA_TYPE_VIDEO)
 	{
@@ -458,13 +456,11 @@ public:
 	av_frame() noexcept
 	{
 		memset(&frm, 0, sizeof(frm));
-		//av_init_frame(&avpkt);
 	}
 
 	av_frame(av_frame&& other) noexcept
 	{
 		memset(&frm, 0, sizeof(frm));
-		//av_init_frame(&avpkt);
 		av_frame_move_ref(&frm, &other.frm);
 		gen = other.gen;
 		time = other.time;
@@ -475,7 +471,6 @@ public:
 	av_frame(const av_frame& other) noexcept
 	{
 		memset(&frm, 0, sizeof(frm));
-		//av_init_frame(&avpkt);
 		av_frame_ref(&frm, &other.frm);
 		gen = other.gen;
 		time = other.time;
@@ -599,6 +594,11 @@ public:
 		return pkt->data == nullptr;
 	};
 };
+
+size_t av_queued_payload_bytes(const av_packet_ptr& p)
+{
+	return p && p->pkt && p->pkt->size > 0 ? static_cast<size_t>(p->pkt->size) : 0;
+}
 
 
 av_pts_correction::av_pts_correction()
@@ -991,13 +991,6 @@ void av_format_decoder::extract_metadata(file_scan_result& sr) const
 
 				if (stream->codecpar)
 				{
-					/*AVDictionaryEntry* tag = nullptr;
-
-					while (stream->metadata && (tag = av_dict_get(stream->metadata, {}, tag, AV_DICT_IGNORE_SUFFIX)))
-					{
-						if (is_key(tag->key, "title")) md.store(prop::title, str::cache(tag->value));
-					}*/
-
 					const auto ct = stream->codecpar->codec_type;
 					// An attached-picture (cover art) stream reports as AVMEDIA_TYPE_VIDEO but is a
 					// still image, not a real video track. Never treat it as the video stream, or an
@@ -1132,7 +1125,82 @@ std::unique_ptr<audio_resampler> av_format_decoder::make_audio_resampler() const
 	return std::make_unique<audio_resampler>(audio_info());
 }
 
-bool av_format_decoder::open(const df::file_path path)
+// True when the container header alone already named every playable stream and sized every picture,
+// so the demuxer has a real header rather than a raw or transport stream that must be discovered by
+// reading it. Only video and audio are judged: MOV and MP4 timecode (tmcd) and Apple metadata (mebx)
+// tracks legitimately reach the app with no codec id at all, and camera and phone footage almost
+// always carries one, so counting them as an incomplete header disqualified most real video.
+static bool has_header_codec_parameters(const AVFormatContext* fc)
+{
+	if (!fc || fc->nb_streams == 0) return false;
+	if (fc->ctx_flags & AVFMTCTX_NOHEADER) return false;
+
+	auto described_streams = 0;
+
+	for (unsigned i = 0; i < fc->nb_streams; ++i)
+	{
+		const auto* const stream = fc->streams[i];
+		if (!stream) return false;
+
+		const auto* const codec = stream->codecpar;
+		if (!codec) return false;
+
+		if (codec->codec_type == AVMEDIA_TYPE_VIDEO)
+		{
+			if (codec->codec_id == AV_CODEC_ID_NONE || codec->width <= 0 || codec->height <= 0) return false;
+			++described_streams;
+		}
+		else if (codec->codec_type == AVMEDIA_TYPE_AUDIO)
+		{
+			if (codec->codec_id == AV_CODEC_ID_NONE || codec->sample_rate <= 0 ||
+				codec->ch_layout.nb_channels <= 0)
+			{
+				return false;
+			}
+
+			++described_streams;
+		}
+	}
+
+	return described_streams > 0;
+}
+
+// True when probing found at least one stream the app could actually show, play or list. FFmpeg
+// falls back to matching a demuxer on the file extension alone, so any file carrying a media
+// extension - a TypeScript index.ts picked up by the MPEG-TS demuxer, say - opens cleanly and then
+// describes nothing. Judged after avformat_find_stream_info, when a raw or transport stream that
+// had to be discovered by reading has had its chance to name its streams.
+static bool has_presentable_stream(const AVFormatContext* fc)
+{
+	if (!fc) return false;
+
+	for (unsigned i = 0; i < fc->nb_streams; ++i)
+	{
+		const auto* const stream = fc->streams[i];
+		if (!stream) continue;
+
+		const auto* const codec = stream->codecpar;
+		if (!codec || codec->codec_id == AV_CODEC_ID_NONE) continue;
+
+		switch (codec->codec_type)
+		{
+		case AVMEDIA_TYPE_VIDEO:
+			if (codec->width > 0 && codec->height > 0) return true;
+			break;
+		case AVMEDIA_TYPE_AUDIO:
+			if (codec->sample_rate > 0 && codec->ch_layout.nb_channels > 0) return true;
+			break;
+		case AVMEDIA_TYPE_SUBTITLE:
+			return true;
+		default:
+			break;
+		}
+	}
+
+	return false;
+}
+
+bool av_format_decoder::open(const df::file_path path, const media_intent intent)
 {
 	const auto file = open_file(path, platform::file_open_mode::read);
 
@@ -1143,16 +1211,31 @@ bool av_format_decoder::open(const df::file_path path)
 
 	df::trace(std::format("av_format_decoder::open {}", path.name()));
 
-	return open(file, path);
+	return open(file, path, intent);
 }
 
-bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path path)
+bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path path, const media_intent intent)
 {
 	close();
 
 	// The AVIOContext assumes the stream starts at zero, and a handed-over handle has already been
 	// read - by the write that produced it, or by the scan that inspected it.
 	file->seek(0, platform::file::whence::begin);
+
+	// An extension shared with a text format is settled by the header before ffmpeg probes it, so a
+	// TypeScript .ts is refused outright rather than part-opening as a stream with nothing in it.
+	if (files::has_media_header_rule(path.extension()))
+	{
+		uint8_t header[files::media_header_probe_bytes];
+		const auto header_read = file->read(header, sizeof(header));
+		file->seek(0, platform::file::whence::begin);
+
+		if (!files::media_header_matches(path.extension(), {header, static_cast<size_t>(header_read)}))
+		{
+			df::trace(std::format("av_format_decoder::open header mismatch {}", path.name()));
+			return false;
+		}
+	}
 
 	static constexpr int io_buffer_size = df::two_fifty_six_k;
 	auto* const io_buffer = static_cast<uint8_t*>(av_mallocz(io_buffer_size + 16));
@@ -1162,16 +1245,8 @@ bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path
 	fc->pb = pb;
 	fc->flags |= AVFMT_FLAG_GENPTS;
 
-	/*if (thumbnail) // slow for gopro videos
-	{
-		fc->flags |= AVFMT_FLAG_NOBUFFER;
-	}*/
-
 	AVDictionary* opts = nullptr;
 	av_dict_set_int(&opts, "export_xmp", 1, 0);
-	// av_dict_set_int(&opts, "analyzeduration", 100, 0);
-	// av_dict_set_int(&opts, "probesize", 10000000, 0);
-	// Consider increasing the value for the 'analyzeduration' (0) and 'probesize' (5000000) options
 
 	if (avformat_open_input(&fc, str::utf8_to_a(path.str()).c_str(), nullptr, &opts) != 0)
 	{
@@ -1189,7 +1264,61 @@ bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path
 	_path = path;
 	_file = file;
 
-	avformat_find_stream_info(fc, nullptr);
+	// avformat_find_stream_info keeps entropy-decoding H.264 until it has guessed the reorder delay -
+	// 7 frames, up to 20 - and nothing a metadata scan reports uses that answer. Two separate bounds
+	// hold it back, both applied AFTER open_input so container metadata is already gathered and
+	// demuxers that consume probesize in their own header read (mpeg-ts) are untouched.
+	AVDictionary** stream_opts = nullptr;
+	const auto opts_stream_count = fc->nb_streams;
+
+	if (intent == media_intent::metadata)
+	{
+		// The probe decoder is the only entropy decoding an index scan performs, and H.264 is the one
+		// codec the probe keeps decoding after the stream is already characterised. AVDISCARD_ALL drops
+		// each slice once its header is read; the fork applies the SPS on that path, so width, height,
+		// pixel format and frame rate still land. This bounds decoding, not reading, so unlike the read
+		// bound below it needs no guarantee about the header - a stream the demuxer has to discover is
+		// still discovered, just without the entropy decode. find_stream_info takes one dictionary per
+		// stream and hands it to that stream's probe decoder at avcodec_open2.
+		stream_opts = static_cast<AVDictionary**>(av_calloc(opts_stream_count, sizeof(AVDictionary*)));
+
+		if (stream_opts)
+		{
+			for (unsigned i = 0; i < opts_stream_count; ++i)
+			{
+				const auto* const stream = fc->streams[i];
+
+				if (stream && stream->codecpar && stream->codecpar->codec_id == AV_CODEC_ID_H264)
+				{
+					av_dict_set(&stream_opts[i], "skip_frame", "all", 0);
+				}
+			}
+		}
+
+		// The read bound is the narrower of the two: it truncates the probe, so it is only safe for a
+		// container that already named its streams. Anything that must be discovered by reading still
+		// gets the full probe. Probe cost is roughly linear in bytes read, so probesize is the budget.
+		if (has_header_codec_parameters(fc))
+		{
+			fc->probesize = df::two_fifty_six_k * 2;
+			fc->max_analyze_duration = AV_TIME_BASE;
+		}
+	}
+
+	avformat_find_stream_info(fc, stream_opts);
+
+	if (stream_opts)
+	{
+		for (unsigned i = 0; i < opts_stream_count; ++i) av_dict_free(&stream_opts[i]);
+		av_freep(&stream_opts);
+	}
+
+	if (!has_presentable_stream(fc))
+	{
+		df::log(__FUNCTION__, std::format("no media stream in {}", path.name()));
+		close();
+		return false;
+	}
 
 	// Read the bit rate only after probing: many containers (and every stream that
 	// needs its rate estimating) report 0 until avformat_find_stream_info has run.
@@ -1251,7 +1380,6 @@ bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path
 				const auto codec_name = std::string(str::utf8_cast(avcodec_get_name(codec->codec_id)));
 				if (s.codec.empty()) s.codec = codec_name;
 				s.metadata.emplace_back("codec"_c, codec_name);
-				//s.metadata.emplace_back( "profile", av_get_profile_name(avcodec_find_decoder(stream->codecpar->codec_id), stream->codecpar->profile) });
 
 				if (codec->codec_tag)
 				{
@@ -1314,10 +1442,8 @@ void av_format_decoder::init_streams(int video_track, int audio_track, const boo
                                      const bool can_use_threads)
 {
 	auto* const fc = _format_context;
-	//std::format2(fc->url, sizeof(fc->url), "{}", path.str());
 
 #ifdef _DEBUG
-	//av_dump_format(fc, 0, fc->url, 0);
 #endif
 
 
@@ -1337,7 +1463,7 @@ void av_format_decoder::init_streams(int video_track, int audio_track, const boo
 
 		if (video_stream && video_stream->codecpar && video_codec)
 		{
-			auto* const vc = avcodec_alloc_context3(video_codec);
+			auto* vc = avcodec_alloc_context3(video_codec);
 
 			if (vc)
 			{
@@ -1401,14 +1527,25 @@ void av_format_decoder::init_streams(int video_track, int audio_track, const boo
 				vc->pkt_timebase = video_stream->time_base;
 				vc->framerate = av_guess_frame_rate(fc, fc->streams[video_stream_index], nullptr);
 
-				_has_video = avcodec_open2(vc, video_codec, nullptr) == 0;
-				_video_base = {video_stream->time_base.num, video_stream->time_base.den};
-				_video_stream_index = video_stream_index;
-				_video_context = vc;
-				_video_stream_aspect_ratio = {
-					video_stream->sample_aspect_ratio.num, video_stream->sample_aspect_ratio.den
-				};
-				_rotation = df::round(get_rotation(video_stream));
+				if (avcodec_open2(vc, video_codec, nullptr) == 0)
+				{
+					_has_video = true;
+					_video_base = {video_stream->time_base.num, video_stream->time_base.den};
+					_video_stream_index = video_stream_index;
+					_video_context = vc;
+					_video_stream_aspect_ratio = {
+						video_stream->sample_aspect_ratio.num, video_stream->sample_aspect_ratio.den
+					};
+					_rotation = df::round(get_rotation(video_stream));
+				}
+				else
+				{
+					// Publishing the index would route every packet of this stream into a queue
+					// nothing drains; publishing the context would hand receive_frames a context
+					// that was never opened.
+					avcodec_free_context(&vc);
+					video_stream = nullptr;
+				}
 
 				// Hardware decode is now live for this decoder. Raise the process-wide crash
 				// guard so a fault during HW decode is detected on the next launch and only HW
@@ -1451,10 +1588,18 @@ void av_format_decoder::init_streams(int video_track, int audio_track, const boo
 					// by that delay and every video frame is matched against it.
 					ac->pkt_timebase = audio_stream->time_base;
 
-					_has_audio = avcodec_open2(ac, aud_decoder, nullptr) == 0;
-					_audio_base = {audio_stream->time_base.num, audio_stream->time_base.den};
-					_audio_stream_index = aud_stream;
-					_audio_context = ac;
+					if (avcodec_open2(ac, aud_decoder, nullptr) == 0)
+					{
+						_has_audio = true;
+						_audio_base = {audio_stream->time_base.num, audio_stream->time_base.den};
+						_audio_stream_index = aud_stream;
+						_audio_context = ac;
+					}
+					else
+					{
+						avcodec_free_context(&ac);
+						audio_stream = nullptr;
+					}
 				}
 			}
 		}
@@ -1755,8 +1900,8 @@ bool av_format_decoder::extract_seek_frame(ui::surface_ptr& dest_surface, const 
 
 bool av_format_decoder::extract_thumbnail(ui::surface_ptr& dest_surface, const sizei max_dim,
                                           const double pos_numerator,
-	                                      const double pos_denominator,
-	                                      const bool exact_frame)
+                                          const double pos_denominator,
+                                          const bool exact_frame)
 {
 	auto success = false;
 
@@ -2127,54 +2272,6 @@ av_scaler::~av_scaler()
 	}
 }
 
-
-bool av_scaler::scale_surface(const ui::const_surface_ptr& surface_in, ui::surface_ptr& surface_out,
-	                          const sizei dimensions_out, const bool high_quality)
-{
-	const auto source_extent = surface_in->dimensions();
-	const auto fmt = surface_in->format();
-	const auto source_fmt = fmt == ui::texture_format::NV12 ? AV_PIX_FMT_NV12 :
-		fmt == ui::texture_format::P010 ? AV_PIX_FMT_P010LE :
-		fmt == ui::texture_format::RGB || fmt == ui::texture_format::ARGB ? AV_PIX_FMT_BGRA : AV_PIX_FMT_NONE;
-	if (source_fmt == AV_PIX_FMT_NONE) return false;
-
-	constexpr auto output_fmt = AV_PIX_FMT_BGRA;
-	_scaler = sws_getCachedContext(_scaler, source_extent.cx, source_extent.cy, source_fmt, dimensions_out.cx,
-	                               dimensions_out.cy, output_fmt,
-	                               high_quality ? SWS_BICUBIC : SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
-
-	if (_scaler)
-	{
-		surface_out = std::make_shared<ui::surface>();
-		// YUV carries no alpha, so a converted frame is opaque RGB - flagging it ARGB would force the
-		// software canvas down its per-pixel Porter-Duff path for every draw.
-		const auto destination_format = source_fmt == AV_PIX_FMT_BGRA ? fmt : ui::texture_format::RGB;
-		surface_out->alloc(dimensions_out.cx, dimensions_out.cy, destination_format, surface_in->orientation());
-		surface_out->color_space(surface_in->color_space());
-
-		const auto stride = static_cast<int>(surface_in->stride());
-		const auto* const pixels = surface_in->pixels();
-		const auto is_yuv = source_fmt == AV_PIX_FMT_NV12 || source_fmt == AV_PIX_FMT_P010LE;
-		const uint8_t* src_data[4] = {
-			pixels,
-			is_yuv ? pixels + static_cast<ptrdiff_t>(stride) * source_extent.cy : nullptr,
-			nullptr,
-			nullptr
-		};
-		const int src_stride[4] = {stride, is_yuv ? stride : 0, 0, 0};
-
-		uint8_t* dst_data[4] = {surface_out->pixels(), nullptr, nullptr, nullptr};
-		const int dst_stride[4] = {static_cast<int>(surface_out->stride()), 0, 0, 0};
-
-		const auto scaled = sws_scale(_scaler, src_data, src_stride, 0, source_extent.cy,
-		                              dst_data, dst_stride);
-
-		return scaled == dimensions_out.cy && is_valid(surface_out);
-	}
-
-	return false;
-}
-
 // swscale defaults to BT.601 limited range for any YUV source, which is wrong for most HD and for
 // anything full range, so the signalled matrix has to be pushed into the context explicitly.
 static void apply_colorspace_details(SwsContext* scaler, const ui::color_space cs)
@@ -2206,12 +2303,76 @@ static void apply_colorspace_details(SwsContext* scaler, const ui::color_space c
 	sws_setColorspaceDetails(scaler, coefficients, full_range, coefficients, true, 0, 1 << 16, 1 << 16);
 }
 
+bool av_scaler::scale_surface(const ui::const_surface_ptr& surface_in, ui::surface_ptr& surface_out,
+                              const sizei dimensions_out, const bool high_quality)
+{
+	const auto source_extent = surface_in->dimensions();
+	const auto fmt = surface_in->format();
+	const auto source_fmt = fmt == ui::texture_format::NV12
+		                        ? AV_PIX_FMT_NV12
+		                        : fmt == ui::texture_format::P010
+		                        ? AV_PIX_FMT_P010LE
+		                        : fmt == ui::texture_format::RGB || fmt == ui::texture_format::ARGB
+		                        ? AV_PIX_FMT_BGRA
+		                        : AV_PIX_FMT_NONE;
+	if (source_fmt == AV_PIX_FMT_NONE) return false;
+
+	constexpr auto output_fmt = AV_PIX_FMT_BGRA;
+	_scaler = sws_getCachedContext(_scaler, source_extent.cx, source_extent.cy, source_fmt, dimensions_out.cx,
+	                               dimensions_out.cy, output_fmt,
+	                               high_quality ? SWS_BICUBIC : SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
+
+	if (_scaler)
+	{
+		// Without this a full-range JPEG NV12 surface would be converted as limited range here while the
+		// GPU sampler converts it as full range, so the same image shifts colour between scales.
+		apply_colorspace_details(_scaler, surface_in->color_space());
+
+		surface_out = std::make_shared<ui::surface>();
+		// YUV carries no alpha, so a converted frame is opaque RGB - flagging it ARGB would force the
+		// software canvas down its per-pixel Porter-Duff path for every draw.
+		const auto destination_format = source_fmt == AV_PIX_FMT_BGRA ? fmt : ui::texture_format::RGB;
+
+		if (!surface_out->alloc(dimensions_out.cx, dimensions_out.cy, destination_format, surface_in->orientation()))
+		{
+			surface_out.reset();
+			return false;
+		}
+
+		surface_out->color_space(surface_in->color_space());
+
+		const auto stride = static_cast<int>(surface_in->stride());
+		const auto* const pixels = surface_in->pixels();
+		const auto is_yuv = source_fmt == AV_PIX_FMT_NV12 || source_fmt == AV_PIX_FMT_P010LE;
+		const uint8_t* src_data[4] = {
+			pixels,
+			is_yuv ? pixels + static_cast<ptrdiff_t>(stride) * source_extent.cy : nullptr,
+			nullptr,
+			nullptr
+		};
+		const int src_stride[4] = {stride, is_yuv ? stride : 0, 0, 0};
+
+		uint8_t* dst_data[4] = {surface_out->pixels(), nullptr, nullptr, nullptr};
+		const int dst_stride[4] = {static_cast<int>(surface_out->stride()), 0, 0, 0};
+
+		const auto scaled = sws_scale(_scaler, src_data, src_stride, 0, source_extent.cy,
+		                              dst_data, dst_stride);
+
+		return scaled == dimensions_out.cy && is_valid(surface_out);
+	}
+
+	return false;
+}
+
 bool av_scaler::convert_yuv_surface(const ui::surface& surface_in, const ui::surface_ptr& surface_out)
 {
 	const auto source_extent = surface_in.dimensions();
 	const auto fmt = surface_in.format();
-	const auto source_fmt = fmt == ui::texture_format::NV12 ? AV_PIX_FMT_NV12 :
-		fmt == ui::texture_format::P010 ? AV_PIX_FMT_P010LE : AV_PIX_FMT_NONE;
+	const auto source_fmt = fmt == ui::texture_format::NV12
+		                        ? AV_PIX_FMT_NV12
+		                        : fmt == ui::texture_format::P010
+		                        ? AV_PIX_FMT_P010LE
+		                        : AV_PIX_FMT_NONE;
 	if (source_fmt == AV_PIX_FMT_NONE || !surface_out) return false;
 
 	constexpr auto render_fmt = AV_PIX_FMT_BGRA;
@@ -2230,8 +2391,10 @@ bool av_scaler::convert_yuv_surface(const ui::surface& surface_in, const ui::sur
 
 	const auto stride = static_cast<int>(surface_in.stride());
 	const auto* const y_plane = surface_in.pixels();
-	const uint8_t* src_data[4] = {y_plane, y_plane + static_cast<ptrdiff_t>(stride) * source_extent.cy,
-	                              nullptr, nullptr};
+	const uint8_t* src_data[4] = {
+		y_plane, y_plane + static_cast<ptrdiff_t>(stride) * source_extent.cy,
+		nullptr, nullptr
+	};
 	const int src_stride[4] = {stride, stride, 0, 0};
 	uint8_t* dst_data[4] = {surface_out->pixels(), nullptr, nullptr, nullptr};
 	const int dst_stride[4] = {static_cast<int>(surface_out->stride()), 0, 0, 0};
@@ -2315,7 +2478,12 @@ bool av_scaler::scale_frame(const AVFrame& frame, ui::surface_ptr& surface, cons
 		apply_colorspace_details(_scaler, av_frame_color_space(frame));
 
 		surface = std::make_shared<ui::surface>();
-		surface->alloc(dst_dims.cx, dst_dims.cy, ui::texture_format::RGB, orientation, time);
+
+		if (!surface->alloc(dst_dims.cx, dst_dims.cy, ui::texture_format::RGB, orientation, time))
+		{
+			surface.reset();
+			return false;
+		}
 
 		uint8_t* data[4] = {(surface->pixels()), nullptr, nullptr, nullptr};
 		const int linesize[4] = {static_cast<int>(surface->stride()), 0, 0, 0};
@@ -2342,6 +2510,13 @@ void av_session::process_io(const platform::thread_event& video_event, const pla
 
 	while ((has_audio && _audio_packets.should_receive()) || (has_video && _video_packets.should_receive()))
 	{
+		// The condition above is an OR, so a queue that never drains keeps the loop alive.
+		// The ceiling is what stops the other stream buffering the rest of the file.
+		if ((has_video && _video_packets.is_full()) || (has_audio && _audio_packets.is_full()))
+		{
+			break;
+		}
+
 		platform::shared_lock lock(_decoder_rw);
 		const auto packet = _decoder.read_packet();
 
@@ -2374,13 +2549,13 @@ void av_session::process_io(const platform::thread_event& video_event, const pla
 				video_event.set();
 				break;
 			}
-			if (packet->pkt->stream_index == video_stream)
+			if (has_video && packet->pkt->stream_index == video_stream)
 			{
 				packet->seek_ver = _seek_gen;
 				_video_packets.push(packet);
 				video_event.set();
 			}
-			else if (packet->pkt->stream_index == audio_stream)
+			else if (has_audio && packet->pkt->stream_index == audio_stream)
 			{
 				packet->seek_ver = _seek_gen;
 				_audio_packets.push(packet);

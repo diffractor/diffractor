@@ -7,145 +7,13 @@
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 // Purpose: Sidebar navigation panel. Contains collection overview charts, folder list,
-// favorite searches, tags, ratings, labels, and drive information displays.
+// favorite searches, tags, ratings, labels, and drive information displays. Also holds the
+// application logo lockup shared by the top bar and the About box.
 
 #pragma once
 #include "ui_controls.h"
+#include "ui_plasma.h"
 #include "app_util.h"
-
-struct plasma
-{
-	uint32_t _palette[256];
-	std::unique_ptr<uint8_t, df::free_delete> _pixels = nullptr;
-
-	int _fade = 0;
-	int _stride = 0;
-	bool _show_color = false;
-	bool _hover = false;
-	int _cosinus[256];
-
-	constexpr static int fade_max = 40;
-	constexpr static int _width = 96;
-	constexpr static int _height = 96;
-
-	plasma()
-	{
-		for (auto i = 0; i < 256; ++i)
-		{
-			_cosinus[i] = static_cast<int>(127.0 * cos(i * M_PI / 64.0) + 128.0);
-		}
-
-		_stride = calc_stride(_width, 32);
-		_pixels = df::unique_alloc<uint8_t>(_height * _stride);
-
-		init_plasma();
-		step_plasma();
-	}
-
-	~plasma()
-	{
-		_pixels.reset();
-	}
-
-
-	void step_plasma() const
-	{
-		static uint32_t p1 = 0, p2 = 0, p3 = 0, p4 = 0;
-
-		uint8_t t1 = p1 / 2;
-		uint8_t t2 = p2 / 2;
-
-		for (auto y = 0; y < _height; ++y)
-		{
-			uint8_t t3 = p3 / 2;
-			uint8_t t4 = p4 / 2;
-
-			const auto t = _cosinus[t1] + _cosinus[t2];
-			auto d = std::bit_cast<uint32_t*>(_pixels.get() + y * _stride);
-
-			for (auto x = 0; x < _width; ++x)
-			{
-				*d++ = _palette[(t + _cosinus[t3++] + _cosinus[t4]) >> 2 & 0x000000ff];
-				t4 += 2;
-			}
-
-			t1 += 2;
-			t2 += 1;
-		}
-
-		p1 += 1;
-		p2 -= 1;
-		p3 += 2;
-		p4 -= 2;
-	}
-
-
-	void init_plasma()
-	{
-		const auto fc = fade_max - _fade;
-
-		// Optimize using XMScalarSinCosEst?
-
-		// tone the color to be blue like the app 
-		const auto fr = _fade * 0x24;
-		const auto fg = _fade * 0x22;
-		const auto fb = _fade * 0x20;
-		constexpr auto cd = fade_max * 3 * 0x24;
-
-		for (int i = 0; i < 256; ++i)
-		{
-			const auto r = _cosinus[i];
-			const auto g = _cosinus[i + 32 & 0x0ff];
-			const auto b = _cosinus[i + 64 & 0x0ff];
-
-			const auto c = b + g + r;
-			const auto rr = df::mul_div(r, fc, fade_max) + df::mul_div(c, fr, cd);
-			const auto gg = df::mul_div(g, fc, fade_max) + df::mul_div(c, fg, cd);
-			const auto bb = df::mul_div(b, fc, fade_max) + df::mul_div(c, fb, cd);
-
-			_palette[i] = ui::average(ui::style::color::sidebar_background, ui::rgb(rr, gg, bb));
-		}
-	}
-
-	void step()
-	{
-		_show_color = df::jobs_running > 0 || _hover;
-
-		if (_show_color && _fade > 0)
-		{
-			--_fade;
-			init_plasma();
-		}
-		else if (!_show_color && _fade < fade_max)
-		{
-			++_fade;
-			init_plasma();
-		}
-
-		step_plasma();
-	}
-
-	void render(const ui::texture_ptr& tex, const sizei dims) const
-	{
-		df::assert_true(dims.cx <= _width);
-		df::assert_true(dims.cy <= _height);
-
-		tex->update({_height, _width}, ui::texture_format::RGB, ui::orientation::top_left, _pixels.get(), _stride,
-		            _height * _stride);
-	}
-
-	bool is_active() const
-	{
-		return _show_color || _fade < fade_max;
-	}
-
-	static int calc_stride(const int width, const int bpp) noexcept
-	{
-		const int bpp_width = width * bpp;
-		return (bpp_width + (bpp_width % 8 ? 8 : 0)) / 8 + 3 & ~3;
-	}
-};
-
 
 static std::string format_total_text(const df::count_and_size total, const bool multi_line)
 {
@@ -226,7 +94,7 @@ struct sidebar_tooltip_thumbnail
 	df::item_element_ptr item;
 	bool requested = false;
 
-	void add(view_hover_element& hover, view_state& state, const df::file_path& representative_path)
+	void add(const view_hover_element& hover, const view_state& state, const df::file_path& representative_path)
 	{
 		if (representative_path.is_empty()) return;
 		if (path != representative_path)
@@ -593,7 +461,7 @@ public:
 			i->tooltip_icon = i->icon = calc_folder_icon(folder);
 			i->title_layout.text = folder.name();
 			i->search = df::search_t().add_selector(df::item_selector(folder));
-			i->calc_sum = [folder](const view_state& s, const df::cancel_token token)
+			i->calc_sum = [folder](const view_state& s, const df::cancel_token& token)
 			{
 				return s.item_index.calc_folder_summary(folder, token);
 			};
@@ -639,7 +507,7 @@ public:
 				item->tooltip_icon = item->icon = search.has_selector() ? icon_index::folder : icon_index::search;
 				item->title_layout.text = tt.translate_text(title);
 				item->search = search;
-				item->calc_sum = [search](const view_state& s, const df::cancel_token token)
+				item->calc_sum = [search](const view_state& s, const df::cancel_token& token)
 				{
 					return s.item_index.count_matches(search, token);
 				};
@@ -757,7 +625,7 @@ public:
 		i->title_layout.text = name;
 		i->tooltip_text = tooltip;
 		i->search = df::search_t::parse(key);
-		i->calc_sum = [search = i->search](const view_state& s, const df::cancel_token token)
+		i->calc_sum = [search = i->search](const view_state& s, const df::cancel_token& token)
 		{
 			return s.item_index.count_matches(search, token);
 		};
@@ -992,26 +860,6 @@ public:
 			}
 		}
 
-		/*for (auto i = 1; i < file_group::max_count; ++i)
-		{
-			const auto& c = summary.counts[i];
-
-			if (c.count > 0)
-			{
-				const auto ft = file_group_from_index(i);
-				const auto count = std::cbrt(static_cast<double>(c.size.to_int64()));
-
-				pie_chart_entry e;
-				e.id = i;
-				e.amount = count;
-				e.clr = ft->color;
-				_file_type_entries.emplace_back(e);
-
-				total += count;
-			}
-		}
-		*/
-
 		double start = -M_PI;
 
 		for (auto&& e : _file_type_entries)
@@ -1239,7 +1087,6 @@ public:
 
 		if (_pie_invalid)
 		{
-			//render_background(rc, element_offset, clr);
 			auto center_clr = ui::color32{};
 
 			const auto tracking = is_style_bit_set(view_element_style::tracking);
@@ -1248,7 +1095,8 @@ public:
 
 			if (_center_hover)
 			{
-				center_clr = view_handle_color(selected, hover || _center_hover, tracking, dc.frame_has_focus, true).rgba();
+				center_clr = view_handle_color(selected, hover || _center_hover, tracking, dc.frame_has_focus, true).
+					rgba();
 			}
 
 			const auto is_detecting = _state.item_index.detecting > 0;
@@ -1357,7 +1205,6 @@ struct sidebar_history_element final : view_element, std::enable_shared_from_thi
 	void render(ui::draw_context& dc, const pointi element_offset) const override
 	{
 		const auto logical_bounds = bounds.offset(element_offset);
-		//render_background(dc, element_offset, clr);
 
 		for (auto y = 0; y < _year_count; y++)
 		{
@@ -1528,11 +1375,13 @@ class sidebar_map_element final : public view_element, public std::enable_shared
 
 	std::vector<map_location_area> _locations;
 	df::hash_map<uint32_t, map_location_area> _resolved_areas;
+
 	struct representative_item
 	{
 		df::file_path path;
 		df::item_element_ptr item;
 	};
+
 	mutable df::hash_map<uint32_t, representative_item> _representatives;
 	mutable df::unique_paths _thumbnail_requests;
 	int _hover_location = -1;
@@ -1602,7 +1451,7 @@ class sidebar_map_element final : public view_element, public std::enable_shared
 		if (bounds.height() > 0)
 		{
 			width = std::max(1, std::min(width,
-				df::mul_div(_source_bounds.height(), bounds.width(), bounds.height())));
+			                             df::mul_div(_source_bounds.height(), bounds.width(), bounds.height())));
 		}
 
 		const auto max_left = _surface_original->dimensions().cx - width;
@@ -1750,7 +1599,7 @@ public:
 	{
 		const auto dims = _surface_original->dimensions();
 		const auto visible_cells = df::mul_div(view_source_bounds().width(),
-			df::location_heat_map::map_width, dims.cx);
+		                                       df::location_heat_map::map_width, dims.cx);
 		return map_location_cell_span(visible_cells, bounds.width());
 	}
 
@@ -1832,8 +1681,10 @@ public:
 								summary.coordinates[yp1 + heat_x] * 2 +
 								summary.coordinates[yp1 + heat_x + 1];
 							heat_strength[y0 + heat_x] = value == 0
-								? 0.0f
-								: std::clamp(static_cast<float>(std::log1p(value) / denominator), 0.0f, 1.0f);
+								                             ? 0.0f
+								                             : std::clamp(
+									                             static_cast<float>(std::log1p(value) / denominator),
+									                             0.0f, 1.0f);
 						}
 					}
 
@@ -1852,8 +1703,8 @@ public:
 							const auto heat_x = static_cast<size_t>(x) * df::location_heat_map::map_width / dims.cx;
 							const auto strength = heat_strength[heat_y * df::location_heat_map::map_width + heat_x];
 							surf_line[x] = strength == 0.0f
-								? map_line[x]
-								: ui::lerp(map_line[x], heat_color, strength);
+								               ? map_line[x]
+								               : ui::lerp(map_line[x], heat_color, strength);
 						}
 					}
 
@@ -1979,7 +1830,6 @@ public:
 				ic.invalidate_view = true;
 				_state.invalidate_view(view_invalid::tooltip);
 			}
-
 		}
 	}
 
@@ -2085,15 +1935,23 @@ class app_logo_element final : public std::enable_shared_from_this<app_logo_elem
 	std::string_view _text = s_app_name;
 	ui::style::font_face _font = ui::style::font_face::title;
 	ui::style::text_style _text_style = ui::style::text_style::single_line;
+	bool _interactive = true;
+	bool _show_plasma = true;
+	double _logo_scale = 1.0;
 
 	mutable plasma logo_plasma;
 	mutable ui::texture_ptr _plasma_tex;
 	mutable ui::texture_ptr _logo_tex;
+	mutable int _logo_size = 0;
 
 public:
-	app_logo_element(view_state& state) noexcept : view_element(
-		                                                   view_element_style::has_tooltip |
-		                                                   view_element_style::can_invoke), _state(state)
+	app_logo_element(view_state& state, const ui::style::font_face font = ui::style::font_face::title,
+	                 const bool interactive = true, const bool show_plasma = true, const double logo_scale = 1.0,
+	                 const view_element_options& options = {}) noexcept :
+		view_element(options | (interactive
+			                        ? view_element_style::has_tooltip | view_element_style::can_invoke
+			                        : view_element_style::none)),
+		_state(state), _font(font), _interactive(interactive), _show_plasma(show_plasma), _logo_scale(logo_scale)
 	{
 	}
 
@@ -2107,64 +1965,75 @@ public:
 		const auto logical_bounds = bounds.offset(element_offset);
 		render_background(dc, element_offset);
 
-		auto logical_plasma_bounds = logical_bounds;
-		logical_plasma_bounds.right = logical_plasma_bounds.left + logical_plasma_bounds.height();
+		auto logo_bounds = logical_bounds;
+		logo_bounds.right = logo_bounds.left + logo_bounds.height();
 
-		if (!_plasma_tex)
+		if (_show_plasma)
 		{
-			_plasma_tex = dc.create_texture();
+			if (!_plasma_tex)
+			{
+				_plasma_tex = dc.create_texture();
+			}
+
+			if (_plasma_tex)
+			{
+				logo_plasma.render(_plasma_tex, logo_bounds.extent());
+				dc.draw_texture(_plasma_tex, logo_bounds, logo_bounds.extent());
+			}
 		}
 
-		if (_plasma_tex)
-		{
-			logo_plasma.render(_plasma_tex, logical_plasma_bounds.extent());
-			dc.draw_texture(_plasma_tex, logical_plasma_bounds, logical_plasma_bounds.extent());
-		}
+		// Drawn at the exact size it is shown at, so it stays sharp at every scale factor. Over the
+		// plasma the mark is inset so the backdrop reads as a border around it.
+		const auto logo_box = std::min(logo_bounds.width(), logo_bounds.height());
+		const auto logo_size = _show_plasma ? df::round(logo_box * 0.8) : logo_box;
 
-		if (!_logo_tex)
+		if (logo_size > 0 && (!_logo_tex || _logo_size != logo_size))
 		{
-			const auto t = dc.create_texture();
+			const auto t = _logo_tex ? _logo_tex : dc.create_texture();
 
 			if (t)
 			{
-				auto res = platform::resource_item::logo15;
-				if (logical_bounds.height() >= 40) res = platform::resource_item::logo30;
-				if (logical_bounds.height() >= 60) res = platform::resource_item::logo;
+				const auto logo_surface = std::make_shared<ui::surface>();
 
-				files ff;
-				const auto logo_surface = ff.image_to_surface(load_resource(res));
-
-				_logo_tex = t;
-				_logo_tex->update(logo_surface);
+				if (logo_surface->alloc(logo_size, logo_size, ui::texture_format::ARGB))
+				{
+					logo_surface->fill_logo();
+					_logo_tex = t;
+					_logo_tex->update(logo_surface);
+					_logo_size = logo_size;
+				}
 			}
 		}
 
 		if (_logo_tex)
 		{
-			dc.draw_texture(_logo_tex, center_rect(_logo_tex->dimensions(), logical_plasma_bounds),
+			dc.draw_texture(_logo_tex, center_rect(_logo_tex->dimensions(), logo_bounds),
 			                _logo_tex->dimensions(), dc.colors.alpha);
 		}
 
-		const auto plasma_border_clr = ui::color(0.25f, 0.25f, 0.25f, 1.0f);
-		const auto pad = df::round(1 * dc.scale_factor);
-		dc.draw_border(logical_plasma_bounds, logical_plasma_bounds.inflate(pad), plasma_border_clr, plasma_border_clr);
+		if (_show_plasma)
+		{
+			const auto plasma_border_clr = ui::color(0.25f, 0.25f, 0.25f, 1.0f);
+			const auto pad = df::round(1 * dc.scale_factor);
+			dc.draw_border(logo_bounds, logo_bounds.inflate(pad), plasma_border_clr, plasma_border_clr);
+		}
 
 		auto text_bounds = logical_bounds;
-		text_bounds.left = logical_plasma_bounds.right + dc.padding2;
+		text_bounds.left = logo_bounds.right + dc.padding2;
 		dc.draw_text(_text, text_bounds, _font, _text_style, ui::color(dc.colors.foreground, dc.colors.alpha), {});
 	}
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		const auto height = mc.text_line_height(_font) + mc.padding2;
-		const auto text_width_limit = std::max(0, width_limit - height - mc.padding2);
+		const auto logo_box = df::round((mc.text_line_height(_font) + mc.padding2) * _logo_scale);
+		const auto text_width_limit = std::max(0, width_limit - logo_box - mc.padding2);
 		const auto text_extent = mc.measure_text(_text, _font, _text_style, text_width_limit);
-		return {std::min(width_limit, height + mc.padding2 + text_extent.cx), std::max(height, text_extent.cy)};
+		return {std::min(width_limit, logo_box + mc.padding2 + text_extent.cx), std::max(logo_box, text_extent.cy)};
 	}
 
 	void dispatch_event(const view_element_event& event) override
 	{
-		if (event.type == view_element_event_type::invoke)
+		if (event.type == view_element_event_type::invoke && _interactive)
 		{
 			_state.invoke(commands::view_help);
 		}
@@ -2176,12 +2045,13 @@ public:
 	                                             const pointi element_offset,
 	                                             const std::vector<recti>& excluded_bounds) override
 	{
+		if (!_interactive) return {};
 		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 	}
 
-	void step_plasma() const
+	bool step_plasma(const double time_now) const
 	{
-		logo_plasma.step();
+		return logo_plasma.step(time_now);
 	}
 
 	bool plasma_is_active() const
@@ -2232,6 +2102,7 @@ public:
 	{
 		_plasma_tex.reset();
 		_logo_tex.reset();
+		_logo_size = 0;
 	}
 };
 
@@ -2376,98 +2247,102 @@ public:
 			existing[i->key] = i->summary;
 		}
 
-		_state.queue_async(async_queue::sidebar, [t = ui_owned(_state._async, shared_from_this()), &s = _state, existing]
-		{
-			constexpr search_item_factory f;
-			std::vector<search_item_ptr> items;
-			std::vector<drive_item_ptr> drives;
-			std::vector<view_element_ptr> item_elements;
-			std::unordered_set<search_item_ptr> added_elements;
+		_state.queue_async(async_queue::sidebar,
+		                   [t = ui_owned(_state._async, shared_from_this()), &s = _state, existing]
+		                   {
+			                   constexpr search_item_factory f;
+			                   std::vector<search_item_ptr> items;
+			                   std::vector<drive_item_ptr> drives;
+			                   std::vector<view_element_ptr> item_elements;
+			                   std::unordered_set<search_item_ptr> added_elements;
 
-			auto add_elements = [&items, &item_elements, &added_elements](
-				const std::vector<search_item_ptr>& items_to_add)
-			{
-				if (!items_to_add.empty() && !item_elements.empty())
-					item_elements.emplace_back(
-						std::make_shared<divider_element>());
+			                   auto add_elements = [&items, &item_elements, &added_elements](
+				                   const std::vector<search_item_ptr>& items_to_add)
+			                   {
+				                   if (!items_to_add.empty() && !item_elements.empty())
+					                   item_elements.emplace_back(
+						                   std::make_shared<divider_element>());
 
-				for (const auto i : items_to_add)
-				{
-					if (!added_elements.contains(i))
-					{
-						added_elements.insert(i);
-						items.push_back(i);
-						item_elements.push_back(i);
-					}
-				}
-			};
+				                   for (const auto i : items_to_add)
+				                   {
+					                   if (!added_elements.contains(i))
+					                   {
+						                   added_elements.insert(i);
+						                   items.push_back(i);
+						                   item_elements.push_back(i);
+					                   }
+				                   }
+			                   };
 
-			if (setting.sidebar.show_indexed_folders)
-			{
-				add_elements(f.create_folder_items(s, existing));
-			}
+			                   if (setting.sidebar.show_indexed_folders)
+			                   {
+				                   add_elements(f.create_folder_items(s, existing));
+			                   }
 
-			if (setting.sidebar.show_favorite_searches)
-			{
-				add_elements(f.create_search_items(s, existing));
-			}
+			                   if (setting.sidebar.show_favorite_searches)
+			                   {
+				                   add_elements(f.create_search_items(s, existing));
+			                   }
 
-			if (setting.sidebar.show_drives)
-			{
-				drives = f.create_drive_items(s, existing);
-				if (!drives.empty() && !item_elements.empty())
-					item_elements.emplace_back(
-						std::make_shared<divider_element>());
-				item_elements.insert(item_elements.end(), drives.begin(), drives.end());
-			}
+			                   if (setting.sidebar.show_drives)
+			                   {
+				                   drives = f.create_drive_items(s, existing);
+				                   if (!drives.empty() && !item_elements.empty())
+					                   item_elements.emplace_back(
+						                   std::make_shared<divider_element>());
+				                   item_elements.insert(item_elements.end(), drives.begin(), drives.end());
+			                   }
 
-			if (setting.sidebar.show_ratings)
-			{
-				add_elements(f.create_ratings(s, existing));
-			}
+			                   if (setting.sidebar.show_ratings)
+			                   {
+				                   add_elements(f.create_ratings(s, existing));
+			                   }
 
-			if (setting.sidebar.show_labels)
-			{
-				add_elements(f.create_labels(s, existing));
-			}
+			                   if (setting.sidebar.show_labels)
+			                   {
+				                   add_elements(f.create_labels(s, existing));
+			                   }
 
-			if (setting.sidebar.show_tags)
-			{
-				add_elements(f.create_tags(s, existing));
-			}
+			                   if (setting.sidebar.show_tags)
+			                   {
+				                   add_elements(f.create_tags(s, existing));
+			                   }
 
 
-			item_elements.emplace_back(std::make_shared<divider_element>());
+			                   item_elements.emplace_back(std::make_shared<divider_element>());
 
-			const auto tag_show_text = setting.sidebar.show_favorite_tags_only
-				                           ? tt.command_all_tags
-				                           : tt.command_favorite_tags;
+			                   const auto tag_show_text = setting.sidebar.show_favorite_tags_only
+				                                              ? tt.command_all_tags
+				                                              : tt.command_favorite_tags;
 
-			auto tags_element = std::make_shared<link_element>(tag_show_text, commands::view_favorite_tags,
-			                                                   ui::style::font_face::dialog,
-			                                                   ui::style::text_style::multiline_center,
-			                                                   flex_item::center);
+			                   auto tags_element = std::make_shared<link_element>(
+				                   tag_show_text, commands::view_favorite_tags,
+				                   ui::style::font_face::dialog,
+				                   ui::style::text_style::multiline_center,
+				                   flex_item::center);
 
-			auto customise_element = std::make_shared<link_element>(tt.command_customise, commands::options_sidebar,
-			                                                        ui::style::font_face::dialog,
-			                                                        ui::style::text_style::multiline_center,
-			                                                        flex_item::center);
-			auto favorite_tags_element = std::make_shared<link_element>(tt.customise_tags_title,
-			                                                              commands::favorite_tags,
-			                                                              ui::style::font_face::dialog,
-			                                                              ui::style::text_style::multiline_center,
-			                                                              flex_item::center);
+			                   auto customise_element = std::make_shared<link_element>(
+				                   tt.command_customise, commands::options_sidebar,
+				                   ui::style::font_face::dialog,
+				                   ui::style::text_style::multiline_center,
+				                   flex_item::center);
+			                   auto favorite_tags_element = std::make_shared<link_element>(tt.customise_tags_title,
+				                   commands::favorite_tags,
+				                   ui::style::font_face::dialog,
+				                   ui::style::text_style::multiline_center,
+				                   flex_item::center);
 
-			item_elements.emplace_back(tags_element);
-			item_elements.emplace_back(favorite_tags_element);
-			item_elements.emplace_back(customise_element);
+			                   item_elements.emplace_back(tags_element);
+			                   item_elements.emplace_back(favorite_tags_element);
+			                   item_elements.emplace_back(customise_element);
 
-			s.queue_ui(
-				[t, items = std::move(items), drives = std::move(drives), item_elements = std::move(item_elements)]
-				{
-					t->update_content(std::move(items), std::move(drives), std::move(item_elements));
-				});
-		});
+			                   s.queue_ui(
+				                   [t, items = std::move(items), drives = std::move(drives), item_elements = std::move(
+					                   item_elements)]
+				                   {
+					                   t->update_content(std::move(items), std::move(drives), std::move(item_elements));
+				                   });
+		                   });
 	}
 
 	void on_window_layout(ui::measure_context& mc, const sizei extent, const bool is_minimized) override
@@ -2499,10 +2374,7 @@ public:
 			_active_controller->draw(dc);
 		}
 
-		if (!_scroller._active)
-		{
-			_scroller.draw_scroll(dc);
-		}
+		_scroller.draw_scroll(dc);
 
 		if (setting.show_debug_info && _active_controller)
 		{
@@ -2658,12 +2530,16 @@ public:
 		const auto content_extent = layout_flex_elements(_elements, mc, positions, avail_bounds, column);
 
 		const auto host_bounds = embedded ? _embedded_bounds : recti(_extent);
-		const recti scroll_bounds{host_bounds.right - scroll_padding,
-		                          embedded ? host_bounds.top + host_bounds.height() / 2 : host_bounds.top,
-		                          host_bounds.right,
-		                          host_bounds.bottom};
-		const recti client_bounds{host_bounds.left, host_bounds.top, host_bounds.right - scroll_padding,
-		                          host_bounds.bottom};
+		const recti scroll_bounds{
+			host_bounds.right - scroll_padding,
+			embedded ? host_bounds.top + host_bounds.height() / 2 : host_bounds.top,
+			host_bounds.right,
+			host_bounds.bottom
+		};
+		const recti client_bounds{
+			host_bounds.left, host_bounds.top, host_bounds.right - scroll_padding,
+			host_bounds.bottom
+		};
 		_scroller.layout({client_bounds.width(), content_extent.cy + mc.padding2}, client_bounds, scroll_bounds);
 	}
 

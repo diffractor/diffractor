@@ -27,12 +27,8 @@
 ///////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
-/* CRC-32 (Ethernet, ZIP, etc.) polynomial in reversed bit order. */
-// static constexpr uint32_t CRCPOLY = 0xedb88320;
-
 /* CRC-32C (iSCSI) polynomial in reversed bit order. */
 static constexpr uint32_t CRCPOLY = 0x82f63b78;
-//static constexpr uint32_t CRCPOLY = 0xEDB88320u;
 static constexpr uint32_t CRCINIT = 0xFFFFFFFF;
 
 
@@ -218,7 +214,7 @@ inline __m128 blend_bgra_sse2(const __m128 dest, const __m128 src, const __m128 
 }
 
 inline size_t blend_solid_opaque_sse2(uint8_t* dest, const size_t count, const float b, const float g,
-	                                  const float r, const float alpha) noexcept
+                                      const float r, const float alpha) noexcept
 {
 	const auto vector_count = count & ~size_t{3};
 	const auto src = _mm_set_ps(255.0f, r * 255.0f, g * 255.0f, b * 255.0f);
@@ -229,15 +225,15 @@ inline size_t blend_solid_opaque_sse2(uint8_t* dest, const size_t count, const f
 		__m128 d0, d1, d2, d3;
 		unpack_bgra_sse2(_mm_loadu_si128(std::bit_cast<const __m128i*>(dest + i * 4)), d0, d1, d2, d3);
 		_mm_storeu_si128(std::bit_cast<__m128i*>(dest + i * 4), pack_bgra_sse2(
-			blend_bgra_sse2(d0, src, a), blend_bgra_sse2(d1, src, a),
-			blend_bgra_sse2(d2, src, a), blend_bgra_sse2(d3, src, a)));
+			                 blend_bgra_sse2(d0, src, a), blend_bgra_sse2(d1, src, a),
+			                 blend_bgra_sse2(d2, src, a), blend_bgra_sse2(d3, src, a)));
 	}
 
 	return vector_count;
 }
 
 inline size_t blend_glyph_opaque_sse2(uint8_t* dest, const uint8_t* coverage, const size_t count,
-	                                  const float b, const float g, const float r, const float alpha) noexcept
+                                      const float b, const float g, const float r, const float alpha) noexcept
 {
 	const auto vector_count = count & ~size_t{3};
 	const auto src = _mm_set_ps(255.0f, r * 255.0f, g * 255.0f, b * 255.0f);
@@ -252,15 +248,15 @@ inline size_t blend_glyph_opaque_sse2(uint8_t* dest, const uint8_t* coverage, co
 		const auto a2 = _mm_set1_ps(alpha * coverage[i + 2] * byte_scale);
 		const auto a3 = _mm_set1_ps(alpha * coverage[i + 3] * byte_scale);
 		_mm_storeu_si128(std::bit_cast<__m128i*>(dest + i * 4), pack_bgra_sse2(
-			blend_bgra_sse2(d0, src, a0), blend_bgra_sse2(d1, src, a1),
-			blend_bgra_sse2(d2, src, a2), blend_bgra_sse2(d3, src, a3)));
+			                 blend_bgra_sse2(d0, src, a0), blend_bgra_sse2(d1, src, a1),
+			                 blend_bgra_sse2(d2, src, a2), blend_bgra_sse2(d3, src, a3)));
 	}
 
 	return vector_count;
 }
 
 inline size_t blend_bgra_opaque_sse2(uint8_t* dest, const uint8_t* src_bytes, const size_t count,
-	                                 const bool has_alpha, const float global_alpha) noexcept
+                                     const bool has_alpha, const float global_alpha) noexcept
 {
 	const auto vector_count = count & ~size_t{3};
 	const auto rgb_mask = _mm_set_epi32(0, -1, -1, -1);
@@ -282,8 +278,8 @@ inline size_t blend_bgra_opaque_sse2(uint8_t* dest, const uint8_t* src_bytes, co
 		s2 = _mm_castsi128_ps(_mm_or_si128(_mm_and_si128(_mm_castps_si128(s2), rgb_mask), opaque_alpha));
 		s3 = _mm_castsi128_ps(_mm_or_si128(_mm_and_si128(_mm_castps_si128(s3), rgb_mask), opaque_alpha));
 		_mm_storeu_si128(std::bit_cast<__m128i*>(dest + i * 4), pack_bgra_sse2(
-			blend_bgra_sse2(d0, s0, a0), blend_bgra_sse2(d1, s1, a1),
-			blend_bgra_sse2(d2, s2, a2), blend_bgra_sse2(d3, s3, a3)));
+			                 blend_bgra_sse2(d0, s0, a0), blend_bgra_sse2(d1, s1, a1),
+			                 blend_bgra_sse2(d2, s2, a2), blend_bgra_sse2(d3, s3, a3)));
 	}
 
 	return vector_count;

@@ -209,7 +209,14 @@ struct app_text_t
 	text_t tooltip_scale_up =
 		"Off: photos and videos smaller than the window are shown at their real size. On: they are enlarged to fit the window. Media larger than the window is always scaled down to fit.";
 	text_t command_select_all = "Select all";
-	text_t command_related = "Matching or possible copy items in the collection";
+	text_t command_related = "Related items";
+	text_t tooltip_related =
+		"Show the items in the collection most closely related to this one: possible copies, then the same album, the same series, the closest capture times, and the closest capture places.";
+	text_t related_group_duplicates = "This item and possible copies";
+	text_t related_group_album = "Same album";
+	text_t related_group_series = "Same series";
+	text_t related_group_time = "Taken at the same time";
+	text_t related_group_location = "Taken in the same place";
 	text_t command_pin = "Pin or hold item";
 	text_t tooltip_pin =
 		"Pinned items stay selected. Use this when you want to quickly compare an item to other items.";
@@ -273,6 +280,7 @@ struct app_text_t
 	text_t command_volume0 = "Mute";
 	text_t command_rotate_anticlockwise = "Rotate anticlockwise";
 	text_t command_rotate_clockwise = "Rotate clockwise";
+	text_t rotate_confirm_single = "Confirm single-item rotations";
 	text_t command_show_in_folder = "Open containing folder";
 	text_t command_show_in_file_browser = "Show in file browser";
 	text_t command_file_search = "Search";
@@ -388,7 +396,7 @@ struct app_text_t
 	text_t label_click_clear = "Click to clear";
 	text_t label_replaces_fmt = "Replaces the current label: {}";
 	text_t label_reject_replaces_rating = "Replaces the star rating";
-	text_t show_related = "press R to view matching or possible copy items in the collection";
+	text_t show_related = "press R to view the items most closely related to this one";
 	text_t item_oriented = "Show items rotated";
 	text_t show_verbose_metadata = "Show verbose metadata";
 	text_t hide_verbose_metadata = "Hide verbose metadata";
@@ -412,7 +420,6 @@ struct app_text_t
 	text_t orientation_left_bottom = "left-bottom";
 	text_t default_favorite_tags =
 		"family food friends landscape nature night portrait selfie todo travel urban viewed";
-	text_t default_write_name = "results";
 	text_t title_rate = "rate";
 	text_t title_folder = "folder:{}";
 	text_t title_error = "Diffractor ERROR";
@@ -665,7 +672,8 @@ struct app_text_t
 	text_t new_folder_name = "New Folder";
 	text_t new_folder_title = "New Folder";
 	text_t burn_title = "Burn";
-	text_t burn_help = "The selected items will be staged in Windows Disc Burning. Windows will guide you through writing the disc.";
+	text_t burn_help =
+		"The selected items will be staged in Windows Disc Burning. Windows will guide you through writing the disc.";
 	text_t burn_stage = "&Stage files";
 	text_t burn_failed = "Windows could not stage the selected items for disc burning.";
 	text_t print_title = "Print";
@@ -697,7 +705,8 @@ struct app_text_t
 	text_t button_delete = "&Delete";
 	text_t delete_error = "Failed to Delete Selected File.";
 	text_t button_update = "&Update";
-	text_t metadata_select_field = "Select at least one metadata field to update. Checked empty fields clear existing values; unchecked fields are unchanged.";
+	text_t metadata_select_field =
+		"Select at least one metadata field to update. Checked empty fields clear existing values; unchecked fields are unchanged.";
 	text_t genre_separator_help = "Use a semicolon to list more than one genre. For example: Rock; Blues";
 	text_t copyright_notice = "Notice";
 	text_t copyright_creator = "Creator";
@@ -746,7 +755,8 @@ struct app_text_t
 		"Copy or move files into a folder structure built from metadata such as date, album, or artist. If the destination is in your collection, the copies join it automatically. Analyze first to review every action before you run.";
 	text_t import_dest_folder = "Destination root folder. Structured folders will be created under this folder.";
 	text_t import_ignore_previous = "Ignore previously imported items.";
-	text_t import_overwrite_if_newer = "Overwrite if source items are newer.";
+	text_t import_replace_warning =
+		"The existing files will be overwritten. Their current contents cannot be recovered from the recycle bin.";
 	text_t import_dest_folder_structure = "Destination folder structure:";
 	text_t move_items = "Move source items.";
 	text_t import_set_created_date = "Set file date created to metadata date created.";
@@ -861,6 +871,7 @@ struct app_text_t
 	text_t options_show_rotated = "Show photos rotated based on recorded camera orientation";
 	text_t options_show_hidden = "Show hidden files";
 	text_t options_confirm_del = "Confirm when deleting items. Deleted items are moved to the recycle bin.";
+	text_t options_confirm_rotate = "Confirm when rotating one item. Rotating several items is always confirmed.";
 	text_t option_slideshow_title = "Slideshow";
 	text_t option_slideshow_delay = "Delay before showing the next item (in seconds)";
 	text_t options_check_for_update = "Check for updates by connecting to the internet";
@@ -939,8 +950,10 @@ struct app_text_t
 	text_t copy_to_join = "to";
 	text_t save_new_photo = "Save new photo";
 	text_t open_title = "Open";
+	// Names the Add location command (`command_locate`) literally rather than by substitution.
+	// Renaming that command means editing this sentence too - see locations.md 5.6.
 	text_t map_instructions =
-		"Set the location for the selected files by scrolling the map or searching for a place. Use the mouse wheel to zoom.";
+		"The crosshair at the centre of the map marks the location that will be written. Drag the map, click a photo bubble to move it under the crosshair, or search for a place by name. Use the mouse wheel to zoom. Nothing is written until you press Add location.";
 	text_t command_filter_items = "Filter items";
 	text_t command_filter_photos = "Photo filter";
 	text_t command_filter_videos = "Video filter";
@@ -1243,6 +1256,8 @@ struct app_text_t
 	text_t pixels_identical_files_not_identical = "Pixels are identical but files are different.";
 	text_t copy_to_clipboard = "Copy to clipboard";
 	text_t open_link_fmt = "Open link {}";
+	text_t open_link_choose = "Choose a link to open";
+	text_t duplicate_text = "Duplicate";
 	text_t xmp_metadata_title = "XMP";
 	text_t icc_metadata_title = "ICC";
 	text_t metadata_title = "Metadata";
@@ -1361,7 +1376,6 @@ struct app_text_t
 	text_t scope_busy_fmt = "{} is still running. Close it before browsing somewhere else.";
 
 	text_t collision_policy_label = "If the destination already exists:";
-	text_t collision_policy_sync = "If both sides have the file, the newer one replaces the older one.";
 	text_t collision_replace = "Replace";
 	text_t collision_skip = "Skip";
 	text_t collision_rename = "Auto-rename";

@@ -288,6 +288,15 @@ reports unresolved x86 kernels, the fix is rule 2, not a new stub file.
   iTunes content-advisory flag and would otherwise show as a spurious star rating. `riff.c` and
   `id3v2.c` carry similar key patches. A rebase that drops these reintroduces the defect silently,
   because nothing fails to build — see [metadata](metadata.md).
+- `h264_slice.c` applies the active SPS to `AVCodecContext` on the `skip_frame >= AVDISCARD_ALL`
+  path in `ff_h264_queue_decode_slice`, which upstream reaches only *below* the skip, in
+  `h264_field_start`. This is what codecs advertising `FF_CODEC_CAP_SKIP_FRAME_FILL_PARAM` do;
+  H.264 does not carry that capability because `has_decode_delay_been_guessed` (`demux.c`) makes it
+  the one codec `avformat_find_stream_info` keeps entropy-decoding after the stream is already
+  characterised. The index scan sets `skip_frame=all` per stream so a metadata probe never runs
+  CABAC (see `av_format_decoder::open`), and this hunk is what keeps width, height, pixel format
+  and frame rate. A rebase that drops it builds and runs, but every indexed H.264 file loses its
+  pixel format — "Should scan av metadata with a bounded probe" is the test that catches it.
 
 > **ARM64:** `config-arm64.{h,asm}` are **not** currently generated (no aarch64-mingw toolchain was
 > used). The dispatcher still references them, so an ARM64 build would fail until they are produced;

@@ -113,11 +113,7 @@ IDR_CREATE_SQL          SQL                     "Res\\create_tables.sql"
 
 IDB_SHADOW              PNG                     "Res\\shadow.png"
 IDB_INVERSE_SHADOW      PNG                     "Res\\inverse_shadow.png"
-IDB_LOGO                PNG                     "Res\\logo.png"
-IDB_LOGO30              PNG                   "Res\\logo30.png"
-IDB_LOGO15              PNG                   "Res\\logo15.png"
 IDB_MAP                 PNG                      "Res\\map-hires.png"
-IDB_TITLE               PNG                    "Res\\title.png"
 
 IDF_ICONS               BINARY                 "Res\\segmdl2.ttf"
 
@@ -150,8 +146,8 @@ IDR_MANIFEST            RT_MANIFEST             "platform_win.manifest"
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1, 27, 0, 1256
- PRODUCTVERSION 1, 27, 0, 1256
+ FILEVERSION 1, 27, 0, 1265
+ PRODUCTVERSION 1, 27, 0, 1265
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -168,12 +164,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "Diffractor"
             VALUE "FileDescription", "Diffractor"
-            VALUE "FileVersion", "1.27.0.1256"
+            VALUE "FileVersion", "1.27.0.1265"
             VALUE "InternalName", "Diffractor.exe"
             VALUE "LegalCopyright", "Copyright (C) 2024 Diffractor - Zac Walker"
             VALUE "OriginalFilename", "Diffractor.exe"
             VALUE "ProductName", "Diffractor"
-            VALUE "ProductVersion", "1.27.0.1256"
+            VALUE "ProductVersion", "1.27.0.1265"
         END
     END
     BLOCK "VarFileInfo"

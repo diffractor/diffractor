@@ -100,7 +100,7 @@ struct metadata_numeric_detail
 };
 
 using metadata_detail = std::variant<std::monostate, metadata_text_detail, metadata_binary_detail,
-	metadata_numeric_detail>;
+                                     metadata_numeric_detail>;
 
 // A metadata row. A list is held in the source block's own document order; `depth` and `container`
 // describe the hierarchy that block actually has, and `detail` holds one typed expanded presentation.
@@ -116,6 +116,9 @@ struct metadata_kv
 	int depth = 0;
 	bool container = false;
 	bool open_by_default = false; // a section worth reading before the user asks, whatever its size
+	// Detail is prose rather than a dump, so it is drawn in the reading face and replaces the
+	// value preview while open instead of repeating its first line.
+	bool prose = false;
 
 	metadata_kv() = default;
 

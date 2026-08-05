@@ -28,6 +28,21 @@ class file_scan_result;
 class audio_buffer;
 class av_frame;
 class av_packet;
+
+// What the caller will do with the container once it is open. This decides how much of the file the
+// demuxer may read before it answers, so every caller states it rather than inheriting a default.
+// Container metadata - including an XMP packet written at the end of the file - is read by the
+// demuxer's own header pass and is unaffected by the choice.
+enum class media_intent
+{
+	// Properties only, for the index. Never decodes a picture, seeks, or displays, so the stream
+	// probe is held to a byte budget instead of decoding frames to characterise the codec.
+	metadata,
+	// One frame at a chosen position.
+	thumbnail,
+	// Continuous decode with seeking and timing.
+	playback
+};
 struct av_pts_correction;
 struct audio_info_t;
 struct video_info_t;
@@ -91,6 +106,13 @@ bool av_frame_is_eof(const av_frame_ptr& f);
 // Playing time covered by an audio frame's samples; 0 when the frame is not audio.
 double av_audio_frame_duration(const av_frame_ptr& f);
 bool av_is_frame_empty(const av_frame_ptr& f);
+
+// Bytes a queued item charges against the queue's memory ceiling. Only the packet queues enforce
+// one; the frame queues are bounded by count alone.
+template <typename T>
+size_t av_queued_payload_bytes(const std::shared_ptr<T>&) { return 0; }
+
+size_t av_queued_payload_bytes(const av_packet_ptr& p);
 
 struct av_rational
 {
@@ -162,8 +184,17 @@ class av_queue final : public df::no_copy
 	// jitter, shallow enough that a seek discards little work.
 	static constexpr size_t max_queued = 16;
 
+	// Hard ceiling, distinct from the read-ahead target above. The read loop demuxes
+	// while *either* queue is below max_queued, so a stream whose queue never fills -
+	// an attached-picture cover-art "video" track, or an audio track that ends before
+	// the video - would otherwise let the other stream buffer the rest of the file.
+	// Bounded by both count and bytes: 256 4K keyframes would be hundreds of megabytes.
+	static constexpr size_t hard_max_queued = 256;
+	static constexpr size_t hard_max_bytes = 32_z * 1024 * 1024;
+
 	mutable platform::mutex _mutex;
 	_Guarded_by_(_mutex) std::deque<std::shared_ptr<T>> _q;
+	_Guarded_by_(_mutex) size_t _bytes = 0;
 
 public:
 	av_queue() = default;
@@ -177,12 +208,14 @@ public:
 	{
 		platform::exclusive_lock lock(_mutex);
 		_q.clear();
+		_bytes = 0;
 	}
 
 	template <typename U>
 	void push(U&& packet)
 	{
 		platform::exclusive_lock lock(_mutex);
+		_bytes += av_queued_payload_bytes(packet);
 		_q.emplace_back(std::forward<U>(packet));
 	}
 
@@ -206,6 +239,8 @@ public:
 		if (_q.empty()) return false;
 		result = std::move(_q.front());
 		_q.pop_front();
+		const auto bytes = av_queued_payload_bytes(result);
+		_bytes -= std::min(_bytes, bytes);
 		return true;
 	}
 
@@ -219,6 +254,12 @@ public:
 	{
 		platform::shared_lock lock(_mutex);
 		return _q.size() < max_queued;
+	}
+
+	bool is_full() const
+	{
+		platform::shared_lock lock(_mutex);
+		return _q.size() >= hard_max_queued || _bytes >= hard_max_bytes;
 	}
 };
 
@@ -355,8 +396,8 @@ public:
 		return _path;
 	}
 
-	bool open(df::file_path path);
-	bool open(const platform::file_ptr& file, df::file_path path);
+	bool open(df::file_path path, media_intent intent);
+	bool open(const platform::file_ptr& file, df::file_path path, media_intent intent);
 	void init_streams(int video_track, int audio_track, bool can_use_hw, bool video_only, bool can_use_threads);
 
 	av_packet_ptr read_packet() const;

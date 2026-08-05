@@ -251,7 +251,6 @@ void assert_metadata(const prop::item_metadata& expected, const prop::item_metad
 	assert_equal(expected.location_state, actual.location_state, "location_state", message);
 	assert_equal(expected.orientation, actual.orientation, "orientation", message);
 	assert_equal(expected.performer, actual.performer, "performer", message);
-	//assert_equal(expected.pixel_format, actual.pixel_format, "pixel_format", message);
 	assert_equal(expected.publisher, actual.publisher, "publisher", message);
 	assert_equal(expected.rating, actual.rating, "rating", message);
 	assert_equal(expected.season, actual.season, "season", message);
@@ -368,12 +367,9 @@ std::string_view detect_xmp_sidecar(const df::file_path path)
 
 int count_search_results(index_state& index, const df::search_t& search)
 {
-	//const df::item_selector folder(test_files_folder, true);
-	//const auto search = search_base.add_selector(folder);
-
 	int result = 0;
 
-	auto cb = [&result](index_state::query_item_results items, const bool completed)
+	auto cb = [&result](const index_state::query_item_results& items, const bool completed)
 	{
 		result += static_cast<int>(items.size());
 	};
@@ -539,11 +535,101 @@ static void should_calc_hashes()
 	}
 }
 
+// A synthetic 32x32 field, so the hash is tested on its own terms without a decoder in the way.
+static std::array<uint8_t, crypto::phash_pixels> make_phash_field(const int seed)
+{
+	std::array<uint8_t, crypto::phash_pixels> result{};
+
+	for (auto y = 0u; y < crypto::phash_extent; ++y)
+	{
+		for (auto x = 0u; x < crypto::phash_extent; ++x)
+		{
+			const auto v = (x * 7 + y * 13 + seed * 29) % 251;
+			result[y * crypto::phash_extent + x] = static_cast<uint8_t>((v * v) % 256);
+		}
+	}
+
+	return result;
+}
+
+static void should_calc_perceptual_hashes()
+{
+	const auto field = make_phash_field(1);
+	const auto hash = crypto::perceptual_hash(field.data(), field.size());
+
+	assert_equal(true, crypto::phash_is_usable(hash), "a detailed field hashes");
+	assert_equal(hash, crypto::perceptual_hash(field.data(), field.size()), "the same pixels hash the same");
+	assert_equal(0, crypto::phash_distance(hash, hash), "distance to itself");
+
+	// Bit 0 comes from the DC coefficient, which is excluded, so it is free to mark a declined hash.
+	assert_equal(0ull, hash & 1ull, "a real hash never sets the reserved bit");
+	assert_equal(false, crypto::phash_is_usable(crypto::phash_declined), "the declined marker is not a hash");
+	assert_equal(false, crypto::phash_is_usable(0), "not computed is not a hash");
+
+	// Brightness and contrast move every pixel but not the picture, which is what a re-encode does.
+	auto brightened = field;
+	for (auto& v : brightened) v = static_cast<uint8_t>(std::min(255, v + 20));
+	assert_equal(true, crypto::phash_distance(hash, crypto::perceptual_hash(brightened.data(), brightened.size())) <= 6,
+	             "brightness does not change the picture");
+
+	// A different picture has to land far away, or the threshold means nothing.
+	const auto other = make_phash_field(9);
+	assert_equal(true, crypto::phash_distance(hash, crypto::perceptual_hash(other.data(), other.size())) > 6,
+	             "a different picture is far away");
+
+	// Flat fields are where a 64-bit hash quietly starts matching everything.
+	std::array<uint8_t, crypto::phash_pixels> blank{};
+	blank.fill(128);
+	assert_equal(false, crypto::phash_is_usable(crypto::perceptual_hash(blank.data(), blank.size())),
+	             "a blank image has no opinion");
+
+	std::array<uint8_t, crypto::phash_pixels> almost_blank{};
+	almost_blank.fill(128);
+	almost_blank[0] = 129;
+	assert_equal(false, crypto::phash_is_usable(crypto::perceptual_hash(almost_blank.data(), almost_blank.size())),
+	             "one different pixel is not detail");
+
+	assert_equal(0ull, crypto::perceptual_hash(nullptr, crypto::phash_pixels), "no pixels");
+	assert_equal(0ull, crypto::perceptual_hash(field.data(), crypto::phash_pixels - 1), "short buffer");
+}
+
+static uint64_t phash_of_file(const std::string_view name)
+{
+	files ff;
+	file_read_stream stream;
+	if (!stream.open(test_files_folder.combine_file(name))) return 0;
+
+	df::blob owner;
+	return ff.calc_perceptual_hash(stream.view_all(owner));
+}
+
+// The point of the hash is the case a checksum cannot see: the same picture in a different file.
+static void should_recognise_the_same_picture()
+{
+	const auto original = phash_of_file("Test.jpg");
+	const auto resized = phash_of_file("Small.jpg");
+
+	assert_equal(true, crypto::phash_is_usable(original), "Test.jpg hashes");
+	assert_equal(true, crypto::phash_is_usable(resized), "Small.jpg hashes");
+
+	// Measured separation on these fixtures: 0 for the resize, 30 for a rotation, 32 for an
+	// unrelated photo. The threshold sits in that gap rather than near either side of it.
+	assert_equal(0, crypto::phash_distance(original, resized), "a resized copy is the same picture");
+
+	// A rotation is a different bitmap, and the hash must not pretend otherwise - a duplicate claim
+	// on it would offer to delete a photo the user deliberately made.
+	assert_equal(true, crypto::phash_distance(original, phash_of_file("Test90.jpg")) > 20,
+	             "a rotated copy is not the same bitmap");
+
+	const auto unrelated = phash_of_file("IMG_0096.JPG");
+	assert_equal(true, crypto::phash_is_usable(unrelated), "an unrelated photo hashes");
+	assert_equal(true, crypto::phash_distance(original, unrelated) > 20, "an unrelated photo is far away");
+}
+
 static uint8_t blend_opaque_channel(const uint8_t dest, const float src, const float alpha)
 {
 	return static_cast<uint8_t>(std::clamp(static_cast<int>(src * alpha + dest * (1.0f - alpha) + 0.5f), 0, 255));
 }
-
 static uint8_t blend_opaque_normalized_channel(const uint8_t dest, const float src, const float alpha)
 {
 	const auto value = src * alpha + (dest / 255.0f) * (1.0f - alpha);
@@ -590,13 +676,22 @@ static void should_match_simd_software_blends()
 			};
 
 			check([&](uint8_t* dest, size_t) { blend_solid_pixel(dest, sb / 255.0f, sg / 255.0f, sr / 255.0f, alpha); },
-			      [&](uint8_t* dest) { return blend_solid_opaque_sse2(dest, count, sb / 255.0f, sg / 255.0f,
-				      sr / 255.0f, alpha); }, "SIMD solid blend");
+			      [&](uint8_t* dest)
+			      {
+				      return blend_solid_opaque_sse2(dest, count, sb / 255.0f, sg / 255.0f,
+				                                     sr / 255.0f, alpha);
+			      }, "SIMD solid blend");
 
-			check([&](uint8_t* dest, const size_t i) { blend_solid_pixel(dest, sb / 255.0f, sg / 255.0f,
-				      sr / 255.0f, alpha * coverage[i] / 255.0f); },
-			      [&](uint8_t* dest) { return blend_glyph_opaque_sse2(dest, coverage.data(), count, sb / 255.0f,
-				      sg / 255.0f, sr / 255.0f, alpha); }, "SIMD glyph blend");
+			check([&](uint8_t* dest, const size_t i)
+			      {
+				      blend_solid_pixel(dest, sb / 255.0f, sg / 255.0f,
+				                        sr / 255.0f, alpha * coverage[i] / 255.0f);
+			      },
+			      [&](uint8_t* dest)
+			      {
+				      return blend_glyph_opaque_sse2(dest, coverage.data(), count, sb / 255.0f,
+				                                     sg / 255.0f, sr / 255.0f, alpha);
+			      }, "SIMD glyph blend");
 
 			for (const auto has_alpha : {false, true})
 			{
@@ -635,13 +730,13 @@ static void should_convert_yuv_surfaces_for_software_rendering()
 				assert_equal(true, std::abs(static_cast<int>(pixel[0]) - expected) <= 2, "YUV blue channel");
 				assert_equal(true, std::abs(static_cast<int>(pixel[1]) - expected) <= 2, "YUV green channel");
 				assert_equal(true, std::abs(static_cast<int>(pixel[2]) - expected) <= 2, "YUV red channel");
-				assert_equal(255, static_cast<int>(pixel[3]), "YUV alpha channel");
+				assert_equal(255, pixel[3], "YUV alpha channel");
 			}
 		}
 	};
 
 	av_scaler scaler;
-	auto output = std::make_shared<ui::surface>();
+	const auto output = std::make_shared<ui::surface>();
 	ui::surface nv12;
 	nv12.alloc(4, 2, ui::texture_format::NV12);
 	nv12.color_space(ui::color_space::rec601_limited);
@@ -656,7 +751,9 @@ static void should_convert_yuv_surfaces_for_software_rendering()
 	assert_equal(true, scaler.convert_yuv_surface(nv12, output), "convert NV12 surface");
 	check_output(output);
 	ui::surface_ptr scaled;
-	const auto nv12_view = ui::const_surface_ptr(&nv12, [](const ui::surface*) {});
+	const auto nv12_view = ui::const_surface_ptr(&nv12, [](const ui::surface*)
+	{
+	});
 	assert_equal(true, scaler.scale_surface(nv12_view, scaled, {2, 1}), "scale NV12 surface");
 	assert_equal(true, scaled->dimensions() == sizei{2, 1}, "scaled NV12 dimensions");
 	assert_equal(true, scaled->format() == ui::texture_format::RGB, "scaled NV12 format");
@@ -674,7 +771,9 @@ static void should_convert_yuv_surfaces_for_software_rendering()
 	std::fill_n(p010_chroma, p010.stride() / sizeof(uint16_t), uint16_t{512u << 6});
 	assert_equal(true, scaler.convert_yuv_surface(p010, output), "convert P010 surface");
 	check_output(output);
-	const auto p010_view = ui::const_surface_ptr(&p010, [](const ui::surface*) {});
+	const auto p010_view = ui::const_surface_ptr(&p010, [](const ui::surface*)
+	{
+	});
 	assert_equal(true, scaler.scale_surface(p010_view, scaled, {2, 1}), "scale P010 surface");
 	assert_equal(true, scaled->dimensions() == sizei{2, 1}, "scaled P010 dimensions");
 	assert_equal(true, scaled->format() == ui::texture_format::RGB, "scaled P010 format");
@@ -716,21 +815,31 @@ static void should_layout_selection_thumbnail_collage()
 	const auto aesthetic_bounds = ui::layout_collage({0, 0, 1200, 800}, std::vector<sizei>(9, sizei(256, 256)));
 	const auto first_row_top = aesthetic_bounds.front().top;
 	assert_equal(true, std::any_of(aesthetic_bounds.begin(), aesthetic_bounds.end(),
-	                              [first_row_top](const recti& bounds) { return bounds.top != first_row_top; }),
+	                               [first_row_top](const recti& bounds) { return bounds.top != first_row_top; }),
 	             "collage uses multiple rows");
 	const auto [smallest, largest] = std::minmax_element(aesthetic_bounds.begin(), aesthetic_bounds.end(),
-		[](const recti& left, const recti& right) { return left.area() < right.area(); });
+	                                                     [](const recti& left, const recti& right)
+	                                                     {
+		                                                     return left.area() < right.area();
+	                                                     });
 	assert_equal(true, largest->area() > smallest->area() * 3 / 2, "collage varies cell sizes");
 	assert_equal(800, std::max_element(aesthetic_bounds.begin(), aesthetic_bounds.end(),
-		[](const recti& left, const recti& right) { return left.bottom < right.bottom; })->bottom,
+	                                   [](const recti& left, const recti& right)
+	                                   {
+		                                   return left.bottom < right.bottom;
+	                                   })->bottom,
 	             "collage fills available height");
 
 	const auto portrait_bounds = ui::layout_collage({0, 0, 600, 1200}, std::vector<sizei>(9, sizei(256, 256)));
 	assert_equal(1200, std::max_element(portrait_bounds.begin(), portrait_bounds.end(),
-		[](const recti& left, const recti& right) { return left.bottom < right.bottom; })->bottom,
+	                                    [](const recti& left, const recti& right)
+	                                    {
+		                                    return left.bottom < right.bottom;
+	                                    })->bottom,
 	             "portrait collage fills available height");
 	assert_equal(true, std::any_of(portrait_bounds.begin(), portrait_bounds.end(),
-		[](const recti& bounds) { return bounds.height() > bounds.width(); }), "portrait collage has vertical cells");
+	                               [](const recti& bounds) { return bounds.height() > bounds.width(); }),
+	             "portrait collage has vertical cells");
 }
 
 static void should_convert_utf8()
@@ -904,6 +1013,42 @@ static void should_extract_url()
 	assert_equal("", df::url_extract(input3), "extract url");
 	assert_equal("http://bighugelabs.com/flickr/onblack.php?id=1397504988", df::url_extract(input4),
 	             "extract url");
+
+	// A description panel offering a choice of links needs every distinct one, in reading order.
+	const auto all = df::url_extract_all(
+		"See https://example.com/a and https://example.com/b then https://example.com/a again.");
+	assert_equal(size_t{2}, all.size(), "repeated url listed once");
+	assert_equal("https://example.com/a", all[0], "first url in source order");
+	assert_equal("https://example.com/b", all[1], "second url in source order");
+	assert_equal(size_t{0}, df::url_extract_all(input3).size(), "no urls found");
+}
+
+// The description panel presents one section for every prose field, so the field list drives its
+// header name, its ordering, and which entries collapse as repeats.
+static void should_collect_descriptive_fields()
+{
+	prop::item_metadata none;
+	assert_equal(size_t{0}, prop::descriptive_fields(none).size(), "no prose fields");
+
+	prop::item_metadata one;
+	one.comment = "A note"_c;
+	const auto only_comment = prop::descriptive_fields(one);
+	assert_equal(size_t{1}, only_comment.size(), "single prose field");
+	assert_equal("comment", only_comment[0].id, "lone field keeps its own identity");
+	assert_equal(false, only_comment[0].duplicate, "a lone field is never a repeat");
+
+	prop::item_metadata all;
+	all.comment = "Same text"_c;
+	all.description = "Same text"_c;
+	all.synopsis = "Different text"_c;
+	const auto ordered = prop::descriptive_fields(all);
+	assert_equal(size_t{3}, ordered.size(), "every populated field listed");
+	assert_equal("description", ordered[0].id, "description leads");
+	assert_equal("synopsis", ordered[1].id, "synopsis follows");
+	assert_equal("comment", ordered[2].id, "comment last");
+	assert_equal(false, ordered[0].duplicate, "leading field is the original");
+	assert_equal(false, ordered[1].duplicate, "distinct text is not a repeat");
+	assert_equal(true, ordered[2].duplicate, "text already shown is marked a repeat");
 }
 
 static void should_match_wildcard()
@@ -1491,8 +1636,8 @@ static void should_parse_exif_gps_height()
 
 // Issue #65 - Binary text in JPEG comment
 // Some Samsung phones (e.g. SM-G900F) store a binary blob in the EXIF UserComment
-// tag that begins with a fixed 4-byte marker instead of readable text. The parser
-// must recognise this junk and drop it, while still preserving valid comments.
+// tag, either raw or behind a valid "ASCII\0\0\0" character code. The parser must
+// recognise the junk and drop it, while still preserving valid comments.
 static void should_drop_binary_exif_comment()
 {
 	constexpr uint16_t TAG_USER_COMMENT = 0x9286;
@@ -1552,6 +1697,16 @@ static void should_drop_binary_exif_comment()
 	metadata_exif::parse(md_junk, df::cspan{exif_junk.data(), exif_junk.size()});
 	assert_equal(true, prop::is_null(md_junk.comment), "binary Samsung comment dropped");
 
+	// SM-G900F hides its blob behind a valid "ASCII\0\0\0" character code, so the marker
+	// test alone never fires; the payload is still binary and must be dropped.
+	std::vector<uint8_t> samsung = {'A', 'S', 'C', 'I', 'I', 0, 0, 0, 0x0a, 0, 0, 0};
+	for (const auto c : {'J', 'K', 'J', 'K'}) samsung.push_back(static_cast<uint8_t>(c));
+	for (const uint8_t c : {0x27, 0x03, 0xab, 0x5c, 0x46, 0x0b, 0x01, 0x00}) samsung.push_back(c);
+	prop::item_metadata md_samsung;
+	const auto exif_samsung = build_exif(TAG_USER_COMMENT, FMT_UNDEFINED, samsung);
+	metadata_exif::parse(md_samsung, df::cspan{exif_samsung.data(), exif_samsung.size()});
+	assert_equal(true, prop::is_null(md_samsung.comment), "ASCII-prefixed binary comment dropped");
+
 	// Control: a well-formed ASCII UserComment ("ASCII\0\0\0" prefix) is preserved.
 	const std::vector<uint8_t> good = {
 		'A', 'S', 'C', 'I', 'I', 0, 0, 0, 'H', 'e', 'l', 'l', 'o'
@@ -1560,6 +1715,15 @@ static void should_drop_binary_exif_comment()
 	const auto exif_good = build_exif(TAG_USER_COMMENT, FMT_UNDEFINED, good);
 	metadata_exif::parse(md_good, df::cspan{exif_good.data(), exif_good.size()});
 	assert_equal("Hello", md_good.comment, "valid ASCII comment preserved");
+
+	// Control: multi-line text with trailing nul padding survives the binary scan.
+	const std::vector<uint8_t> padded = {
+		'A', 'S', 'C', 'I', 'I', 0, 0, 0, 'L', 'i', 'n', 'e', '\n', '2', 0, 0
+	};
+	prop::item_metadata md_padded;
+	const auto exif_padded = build_exif(TAG_USER_COMMENT, FMT_UNDEFINED, padded);
+	metadata_exif::parse(md_padded, df::cspan{exif_padded.data(), exif_padded.size()});
+	assert_equal("Line\n2", md_padded.comment, "multi-line padded comment preserved");
 }
 
 static void should_copy_preserve_properties()
@@ -1585,7 +1749,7 @@ static void should_replace_item_metadata_without_resetting_playback_position()
 	df::index_file_item initial;
 	initial.name = "position.mp4"_c;
 	initial.ft = files::file_type_from_name(initial.name);
-	auto initial_metadata = std::make_shared<prop::item_metadata>();
+	const auto initial_metadata = std::make_shared<prop::item_metadata>();
 	initial_metadata->title = "Initial"_c;
 	initial_metadata->media_position = 12.0;
 	initial.metadata.store(initial_metadata);
@@ -1595,8 +1759,8 @@ static void should_replace_item_metadata_without_resetting_playback_position()
 	const auto old_snapshot = item->metadata();
 	item->media_position(24.0);
 
-	auto refreshed = initial;
-	auto refreshed_metadata = std::make_shared<prop::item_metadata>(*initial_metadata);
+	const auto refreshed = initial;
+	const auto refreshed_metadata = std::make_shared<prop::item_metadata>(*initial_metadata);
 	refreshed_metadata->title = "Refreshed"_c;
 	refreshed_metadata->media_position = 4.0;
 	refreshed.metadata.store(refreshed_metadata);
@@ -1610,7 +1774,7 @@ static void should_replace_item_metadata_without_resetting_playback_position()
 static void should_rename_with_substitutions()
 {
 	null_async_strategy as;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 
 	const df::file_path src_path(test_files_folder, "Test.jpg");
@@ -1619,14 +1783,14 @@ static void should_rename_with_substitutions()
 
 	platform::copy_file(src_path, save_path_1, false, false);
 
-	auto test_item = load_item(index, save_path_1, false);
+	const auto test_item = load_item(index, save_path_1, false);
 
 	assert_equal(true, test_item->rename(index, save_path_2.file_name_without_extension()).success(), "can rename");
 	assert_equal(save_path_2.name(), test_item->name(), "renamed");
 	assert_equal(true, save_path_2.exists(), "renamed exists");
 
 	// Verify item can be found at new path after rename
-	auto reloaded = load_item(index, save_path_2, false);
+	const auto reloaded = load_item(index, save_path_2, false);
 	assert_equal(save_path_2.name(), reloaded->name(), "index finds renamed item");
 }
 
@@ -1666,6 +1830,26 @@ static void should_rename_name_token_without_extension()
 	const auto renames = calc_item_renames(items, "{name}-edited", 1, collision_policy::block_run);
 	assert_equal(1ULL, static_cast<uint64_t>(renames.size()), "one rename planned");
 	assert_equal("Test-edited", renames.front().new_name, "name token excludes extension");
+}
+
+static void should_reject_unusable_rename_targets()
+{
+	df::item_set items;
+	items.add(std::make_shared<df::item_element>(df::file_path(test_files_folder, "Test.jpg"), df::index_file_item{}));
+
+	const auto empty_template = calc_item_renames(items, "", 1, collision_policy::block_run);
+	assert_equal(false, can_rename_items(empty_template), "an empty template names nothing");
+
+	// Windows drops a trailing space, so the file would not carry the name the preview shows.
+	const auto trailing_space = calc_item_renames(items, "photo ", 1, collision_policy::block_run);
+	assert_equal("photo ", trailing_space.front().new_name, "the preview shows the template result");
+	assert_equal(false, can_rename_items(trailing_space), "a trailing space is rejected");
+
+	const auto device_name = calc_item_renames(items, "con", 1, collision_policy::block_run);
+	assert_equal(false, can_rename_items(device_name), "a reserved device name is rejected");
+
+	const auto usable = calc_item_renames(items, "photo", 1, collision_policy::block_run);
+	assert_equal(true, can_rename_items(usable), "an ordinary name is still accepted");
 }
 
 static void should_reject_duplicate_rename_targets()
@@ -1738,8 +1922,8 @@ static void should_plan_unique_convert_outputs()
 
 static void should_adjust_item_dates_from_snapshot()
 {
-	const df::date_t original_start(100);
-	const df::date_t new_start(500);
+	constexpr df::date_t original_start(100);
+	constexpr df::date_t new_start(500);
 	assert_equal(df::date_t(510), adjusted_item_date(df::date_t(110), new_start, original_start),
 	             "dated item preserves offset");
 	assert_equal(new_start, adjusted_item_date({}, new_start, original_start),
@@ -1775,15 +1959,15 @@ static void should_create_original_before_replace()
 
 	const auto result = platform::replace_file(destination, replacement, true);
 	const auto original_path = df::file_path(destination.folder(),
-	                                        std::string(destination.file_name_without_extension()) + ".original",
-	                                        destination.extension());
+	                                         std::string(destination.file_name_without_extension()) + ".original",
+	                                         destination.extension());
 	assert_equal(true, result.success(), "replacement with backup succeeds");
 	assert_equal(true, original_path.exists(), "original backup exists");
 	assert_equal(true, df::blob_from_file(original_path) == original, "backup contains original bytes");
 	assert_equal(true, result.coherent_handle != nullptr, "replacement returns coherent handle");
 	df::blob actual(updated.size());
 	result.coherent_handle->seek(0, platform::file::whence::begin);
-	actual.resize(result.coherent_handle->read(actual.data(), actual.size()));
+	actual.resize(static_cast<size_t>(result.coherent_handle->read(actual.data(), actual.size())));
 	assert_equal(true, actual == updated, "destination contains updated bytes");
 	platform::delete_file(original_path);
 }
@@ -1871,27 +2055,137 @@ static void should_cleanup_failed_update_temps()
 	assert_equal(false, leaked, "failed update removes temporary files");
 }
 
-static void should_detect_changed_import_analysis()
+// Records what a run reported for each row so revalidation decisions can be asserted.
+struct recording_status final : df::status_i
 {
-	import_analysis_result approved;
-	const df::folder_path folder("c:\\destination");
-	approved[folder].emplace_back(df::file_path("c:\\source\\photo.jpg"),
-		df::file_path("c:\\destination\\photo.jpg"), import_action::import, df::date_t{},
-		item_import{str::cache("photo.jpg"), df::date_t{10}, df::file_size{100}, df::date_t{}}, false, "folder");
-	approved[folder].emplace_back(df::file_path("c:\\source\\video.mp4"),
-		df::file_path("c:\\destination\\video.mp4"), import_action::already_exists, df::date_t{},
-		item_import{str::cache("video.mp4"), df::date_t{20}, df::file_size{200}, df::date_t{}}, true, "folder");
+	std::vector<std::pair<std::string, item_status>> items;
 
-	auto current = approved;
-	assert_equal(true, same_import_analysis(approved, current), "unchanged import analysis matches");
-	std::ranges::reverse(current[folder]);
-	assert_equal(true, same_import_analysis(approved, current), "import comparison is order independent");
-	current = approved;
-	current[folder].front().already_exists = true;
-	assert_equal(false, same_import_analysis(approved, current), "new destination invalidates import analysis");
-	current = approved;
-	current[folder].front().import_rec.size = df::file_size{101};
-	assert_equal(false, same_import_analysis(approved, current), "changed source invalidates import analysis");
+	void start_item(std::string_view) override
+	{
+	}
+
+	void end_item(const std::string_view name, const item_status status) override
+	{
+		items.emplace_back(name, status);
+	}
+
+	bool has_failures() const override
+	{
+		return std::ranges::any_of(items, [](const auto& i) { return i.second == item_status::fail; });
+	}
+
+	void abort(std::string_view) override
+	{
+	}
+
+	void complete(std::string_view) override
+	{
+	}
+
+	void show_errors() override
+	{
+	}
+
+	void message(std::string_view, int64_t, int64_t) override
+	{
+	}
+
+	void show_message(std::string_view) override
+	{
+	}
+
+	bool is_canceled() const override { return false; }
+
+	void wait_for_complete() const override
+	{
+	}
+
+	item_status status_of(const std::string_view name) const
+	{
+		const auto found = std::ranges::find_if(items, [name](const auto& i) { return i.first == name; });
+		return found == items.end() ? item_status::cancel : found->second;
+	}
+};
+
+static void write_test_file(const df::file_path path, const std::string_view text)
+{
+	std::ofstream fs(platform::to_file_system_path(path), std::ios::binary | std::ios::trunc);
+	fs << text;
+}
+
+static std::string read_test_file(const df::file_path path)
+{
+	const auto data = df::blob_from_file(path);
+	return {std::bit_cast<const char*>(data.data()), data.size()};
+}
+
+// Run holds every reviewed row to the file that was reviewed, one row at a time. A row whose file
+// moved on is refused and reported; the rows that still match are still run.
+static void should_revalidate_sync_rows()
+{
+	const auto root = _temps.next_folder("sync-revalidate");
+	const auto local = root.combine("local");
+	const auto remote = root.combine("remote");
+	platform::create_folder(local);
+	platform::create_folder(remote);
+
+	write_test_file(local.combine_file("keep.txt"), "keep");
+	write_test_file(local.combine_file("changed.txt"), "changed");
+	write_test_file(local.combine_file("claimed.txt"), "claimed");
+
+	df::index_roots roots;
+	roots.folders.emplace(local);
+	const auto analysis = sync_analysis(roots, remote, true, false, false, false, test_token);
+	assert_equal(true, analysis.valid, "sync analysis is valid");
+	assert_equal(3, static_cast<int>(count_sync_actions(analysis)), "three files to copy out");
+
+	// The source grows after review, so copying it would send content nobody approved.
+	write_test_file(local.combine_file("changed.txt"), "changed again");
+	// A destination the review found free is claimed by something else before the run reaches it.
+	write_test_file(remote.combine_file("claimed.txt"), "not yours");
+
+	const auto status = std::make_shared<recording_status>();
+	const auto run = sync_copy(status, analysis, test_token);
+
+	assert_equal(true, status->status_of("keep.txt") == item_status::success, "unchanged row runs");
+	assert_equal(true, status->status_of("changed.txt") == item_status::fail, "changed source is refused");
+	assert_equal(true, status->status_of("claimed.txt") == item_status::fail, "claimed destination is refused");
+	assert_equal(2, static_cast<int>(run.refused), "both refusals are reported so the run can say why");
+
+	assert_equal(true, remote.combine_file("keep.txt").exists(), "unchanged row was copied");
+	assert_equal(false, remote.combine_file("changed.txt").exists(), "refused row wrote nothing");
+	assert_equal("not yours"s, read_test_file(remote.combine_file("claimed.txt")),
+	             "claimed destination was not overwritten");
+}
+
+// A delete was reviewed against the file's content, so that is what it is held to at run time.
+static void should_revalidate_sync_deletes()
+{
+	const auto root = _temps.next_folder("sync-delete-revalidate");
+	const auto local = root.combine("local");
+	const auto remote = root.combine("remote");
+	platform::create_folder(local);
+	platform::create_folder(remote);
+
+	write_test_file(remote.combine_file("stale.txt"), "stale");
+	write_test_file(remote.combine_file("touched.txt"), "touched");
+
+	df::index_roots roots;
+	roots.folders.emplace(local);
+	const auto analysis = sync_analysis(roots, remote, false, false, false, true, test_token);
+	assert_equal(true, analysis.valid, "sync analysis is valid");
+	assert_equal(2, static_cast<int>(count_sync_actions(analysis, sync_action::delete_remote)),
+	             "two remote files to delete");
+
+	write_test_file(remote.combine_file("touched.txt"), "touched after review");
+
+	const auto status = std::make_shared<recording_status>();
+	sync_copy(status, analysis, test_token);
+
+	assert_equal(true, status->status_of("stale.txt") == item_status::success, "unchanged file is deleted");
+	assert_equal(true, status->status_of("touched.txt") == item_status::fail, "changed file is not deleted");
+	assert_equal(false, remote.combine_file("stale.txt").exists(), "unchanged file is gone");
+	assert_equal(true, remote.combine_file("touched.txt").exists(), "changed file survives");
 }
 
 static void should_detect_duplicate_import_destinations()
@@ -1944,6 +2238,116 @@ static void should_detect_duplicate_import_destinations()
 
 	assert_equal(2, static_cast<int>(count_imports(renamed)), "auto-rename imports both sources");
 	assert_equal(2, static_cast<int>(destinations.size()), "auto-rename gives each source its own destination");
+}
+
+// Import holds each reviewed row to the file that was reviewed, and lets the file system prove a
+// destination is free rather than asking and then writing.
+static void should_revalidate_import_rows(shared_test_context& stc)
+{
+	const auto root = _temps.next_folder("import-revalidate");
+	const auto src = root.combine("source");
+	const auto dest = root.combine("dest");
+	platform::create_folder(src);
+	platform::create_folder(dest);
+
+	write_test_file(src.combine_file("keep.txt"), "keep");
+	write_test_file(src.combine_file("changed.txt"), "changed");
+	write_test_file(src.combine_file("claimed.txt"), "claimed");
+
+	const auto make_item = [&src](const std::string_view name)
+	{
+		const auto path = src.combine_file(name);
+		const auto fi = platform::file_attributes(path);
+		folder_scan_item item;
+		item.folder = src;
+		item.item.name = path.name();
+		item.item.file_modified = df::date_t(fi.modified);
+		item.item.file_created = fi.created;
+		item.item.size = df::file_size(fi.size);
+		item.item.ft = files::file_type_from_name(path);
+		return item;
+	};
+
+	const std::vector<folder_scan_item> items{
+		make_item("keep.txt"), make_item("changed.txt"), make_item("claimed.txt")
+	};
+
+	import_options options;
+	options.dest_folder = dest;
+	options.dest_structure = {};
+	options.collision = collision_policy::skip;
+
+	const auto analysis = import_analysis(items, options, {}, test_token);
+	assert_equal(3, static_cast<int>(count_imports(analysis)), "three files to import");
+
+	write_test_file(src.combine_file("changed.txt"), "changed after review");
+	write_test_file(dest.combine_file("claimed.txt"), "not yours");
+
+	const auto status = std::make_shared<recording_status>();
+	const auto run = import_copy(stc.empty_index, status, analysis, options, test_token);
+
+	assert_equal(true, status->status_of("keep.txt") == item_status::success, "unchanged row imports");
+	assert_equal(true, status->status_of("changed.txt") == item_status::fail, "changed source is refused");
+	assert_equal(true, status->status_of("claimed.txt") == item_status::fail, "claimed destination is refused");
+	assert_equal(2, static_cast<int>(run.refused), "both refusals are reported so the run can say why");
+
+	assert_equal(true, dest.combine_file("keep.txt").exists(), "unchanged row was imported");
+	assert_equal(false, dest.combine_file("changed.txt").exists(), "refused row wrote nothing");
+	assert_equal("not yours"s, read_test_file(dest.combine_file("claimed.txt")),
+	             "claimed destination was not overwritten");
+}
+
+// Replace is the one policy that writes over a file instead of proving the name is free, so it is
+// the one that has to prove the file is still the one that was reviewed.
+static void should_revalidate_replaced_import_destinations(shared_test_context& stc)
+{
+	const auto root = _temps.next_folder("import-replace-revalidate");
+	const auto src = root.combine("source");
+	const auto dest = root.combine("dest");
+	platform::create_folder(src);
+	platform::create_folder(dest);
+
+	write_test_file(src.combine_file("stable.txt"), "new stable");
+	write_test_file(src.combine_file("racing.txt"), "new racing");
+	write_test_file(dest.combine_file("stable.txt"), "old stable");
+	write_test_file(dest.combine_file("racing.txt"), "old racing");
+
+	const auto make_item = [&src](const std::string_view name)
+	{
+		const auto path = src.combine_file(name);
+		const auto fi = platform::file_attributes(path);
+		folder_scan_item item;
+		item.folder = src;
+		item.item.name = path.name();
+		item.item.file_modified = df::date_t(fi.modified);
+		item.item.file_created = fi.created;
+		item.item.size = df::file_size(fi.size);
+		item.item.ft = files::file_type_from_name(path);
+		return item;
+	};
+
+	const std::vector<folder_scan_item> items{make_item("stable.txt"), make_item("racing.txt")};
+
+	import_options options;
+	options.dest_folder = dest;
+	options.dest_structure = {};
+	options.collision = collision_policy::replace;
+
+	const auto analysis = import_analysis(items, options, {}, test_token);
+	assert_equal(2, static_cast<int>(count_imports(analysis)), "replace imports over both destinations");
+
+	write_test_file(dest.combine_file("racing.txt"), "edited since review");
+
+	const auto status = std::make_shared<recording_status>();
+	import_copy(stc.empty_index, status, analysis, options, test_token);
+
+	assert_equal(true, status->status_of("stable.txt") == item_status::success, "reviewed destination is replaced");
+	assert_equal(true, status->status_of("racing.txt") == item_status::fail, "changed destination is refused");
+
+	assert_equal("new stable"s, read_test_file(dest.combine_file("stable.txt")),
+	             "reviewed destination took the new file");
+	assert_equal("edited since review"s, read_test_file(dest.combine_file("racing.txt")),
+	             "changed destination was left alone");
 }
 
 static void should_reject_missing_sync_folder()
@@ -2033,45 +2437,23 @@ static void should_ignore_unclaimed_remote_files()
 static void should_select_sync_actions()
 {
 	assert_equal(true, calc_sync_action(true, false, 10, 0, 100, 0, false, false, true, false) ==
-		sync_action::delete_local, "delete local is independent");
+	             sync_action::delete_local, "delete local is independent");
 	assert_equal(true, calc_sync_action(false, true, 0, 10, 0, 100, false, false, false, true) ==
-		sync_action::delete_remote, "delete remote is independent");
+	             sync_action::delete_remote, "delete remote is independent");
 	assert_equal(true, calc_sync_action(true, false, 10, 0, 100, 0, true, false, true, false) ==
-		sync_action::copy_remote, "copy local to remote takes precedence over delete local");
+	             sync_action::copy_remote, "copy local to remote takes precedence over delete local");
 	assert_equal(true, calc_sync_action(false, true, 0, 10, 0, 100, false, true, false, true) ==
-		sync_action::copy_local, "copy remote to local takes precedence over delete remote");
+	             sync_action::copy_local, "copy remote to local takes precedence over delete remote");
 	assert_equal(true, calc_sync_action(true, true, 20, 10, 100, 100, true, true, true, true) ==
-		sync_action::copy_remote, "newer local file copies to remote");
+	             sync_action::copy_remote, "newer local file copies to remote");
 	assert_equal(true, calc_sync_action(true, true, 10, 20, 100, 100, true, true, true, true) ==
-		sync_action::copy_local, "newer remote file copies to local");
+	             sync_action::copy_local, "newer remote file copies to local");
 	assert_equal(true, calc_sync_action(true, true, 10, 10, 100, 100, true, true, true, true) ==
-		sync_action::none, "matching timestamps need no action");
+	             sync_action::none, "matching timestamps need no action");
 	assert_equal(true, calc_sync_action(true, true, 10, 10, 101, 100, true, false, false, false) ==
-		sync_action::copy_remote, "one-way sync copies unequal sizes with matching timestamps");
+	             sync_action::copy_remote, "one-way sync copies unequal sizes with matching timestamps");
 	assert_equal(true, calc_sync_action(true, true, 10, 10, 100, 101, false, true, false, false) ==
-		sync_action::copy_local, "reverse one-way sync copies unequal sizes with matching timestamps");
-}
-
-static void should_detect_changed_sync_analysis()
-{
-	sync_analysis_result approved;
-	auto& approved_item = approved["folder"]["photo.jpg"];
-	approved_item.local_path = df::file_path("c:\\local\\photo.jpg");
-	approved_item.remote_path = df::file_path("c:\\remote\\photo.jpg");
-	approved_item.local_fi.attributes.modified = 10;
-	approved_item.local_fi.attributes.size = 100;
-	approved_item.action = sync_action::copy_remote;
-
-	auto current = approved;
-	assert_equal(true, same_sync_analysis(approved, current), "unchanged sync analysis matches");
-	current["folder"]["photo.jpg"].local_fi.attributes.modified = 11;
-	assert_equal(false, same_sync_analysis(approved, current), "modified file invalidates sync analysis");
-	current = approved;
-	current["folder"]["photo.jpg"].action = sync_action::delete_local;
-	assert_equal(false, same_sync_analysis(approved, current), "changed action invalidates sync analysis");
-	current = approved;
-	current["folder"]["photo.jpg"].delete_crc = 1;
-	assert_equal(false, same_sync_analysis(approved, current), "changed delete content invalidates sync analysis");
+	             sync_action::copy_local, "reverse one-way sync copies unequal sizes with matching timestamps");
 }
 
 // Verifies the append-only string interning table: one shared immutable copy per unique
@@ -2089,7 +2471,7 @@ static void should_intern_strings()
 	assert_equal(true, str::cache(std::string_view{}).is_empty(), "empty interns to empty");
 
 	const std::string largest(platform::memory_pool::block_size -
-		offsetof(str::chached_string_storage_t, sz) - 1, 'x');
+	                          offsetof(str::chached_string_storage_t, sz) - 1, 'x');
 	assert_equal(largest.size(), str::cache(largest).size(), "largest pool record is interned");
 	const std::string too_large(largest.size() + 1, 'x');
 	assert_equal(true, str::cache(too_large).is_empty(), "oversized pool record is rejected");
@@ -2138,6 +2520,56 @@ static void should_intern_strings()
 	}
 }
 
+// A query that fails is not proof the file is gone: a caller that deletes or overwrites on
+// "not there" must be able to tell a removed file from one it simply could not read.
+static void should_report_file_presence()
+{
+	const auto scratch = _temps.next_folder("file-presence");
+	const auto present = scratch.combine_file("present.txt");
+	{
+		std::ofstream fs(platform::to_file_system_path(present));
+		fs << "content";
+	}
+
+	const auto found = platform::file_attributes(present);
+	assert_equal(true, found.exists(), "existing file is found");
+	assert_equal(false, found.confirmed_missing(), "existing file is not missing");
+
+	const auto missing = platform::file_attributes(scratch.combine_file("missing.txt"));
+	assert_equal(false, missing.exists(), "removed file does not exist");
+	assert_equal(true, missing.confirmed_missing(), "removed file is confirmed missing");
+
+	// A path under a folder that is not there is absent for the same reason, not a failure.
+	const auto missing_folder = platform::file_attributes(scratch.combine("gone").combine_file("missing.txt"));
+	assert_equal(true, missing_folder.confirmed_missing(), "file under a missing folder is confirmed missing");
+
+	// An empty file must not read as absent just because it has no bytes.
+	const auto empty_path = scratch.combine_file("empty.txt");
+	{
+		std::ofstream fs(platform::to_file_system_path(empty_path));
+	}
+	const auto empty = platform::file_attributes(empty_path);
+	assert_equal(true, empty.exists(), "empty file exists");
+	assert_equal(0, static_cast<int>(empty.size), "empty file has no bytes");
+
+	assert_equal(true, platform::file_attributes(scratch).exists(), "existing folder is found");
+	assert_equal(true, platform::file_attributes(scratch.combine("gone")).confirmed_missing(),
+	             "removed folder is confirmed missing");
+
+	// Enumeration only ever reports what it found, so those records are never left unknown.
+	const auto contents = platform::iterate_file_items(scratch, false);
+	assert_equal(2, static_cast<int>(contents.files.size()), "both files enumerated");
+	assert_equal(true, std::ranges::all_of(contents.files, [](const platform::file_info& f)
+	             {
+		             return f.attributes.exists();
+	             }),
+	             "enumerated files are found");
+
+	assert_equal(false, platform::file_attributes_t{}.exists(), "unqueried attributes do not exist");
+	assert_equal(false, platform::file_attributes_t{}.confirmed_missing(),
+	             "unqueried attributes are not confirmed missing");
+}
+
 void register_tests2(view_state& state, test_registry& tests)
 {
 	tests.add("Should natural compare"s, should_icmp_natural);
@@ -2149,16 +2581,21 @@ void register_tests2(view_state& state, test_registry& tests)
 	tests.add("Should abort result scope during exception"s, should_abort_result_scope_during_exception);
 	tests.add("Should format audio stream names"s, should_format_audio_stream_names);
 	tests.add("Should cancel superseded tokens"s, should_cancel_superseded_tokens);
+	tests.add("Should report file presence"s, should_report_file_presence);
 	tests.add("Should intern strings"s, should_intern_strings);
 	tests.add("Should calc HMAC SHA1"s, should_calc_HMACSHA1);
 	tests.add("Should calc Hashes"s, should_calc_hashes);
+	tests.add("Should calc perceptual hashes"s, should_calc_perceptual_hashes);
+	tests.add("Should recognise the same picture"s, should_recognise_the_same_picture);
 	tests.add("Should match SIMD software blends"s, should_match_simd_software_blends);
-	tests.add("Should convert YUV surfaces for software rendering"s, should_convert_yuv_surfaces_for_software_rendering);
+	tests.add("Should convert YUV surfaces for software rendering"s,
+	          should_convert_yuv_surfaces_for_software_rendering);
 	tests.add("Should layout selection thumbnail collage"s, should_layout_selection_thumbnail_collage);
 	tests.add("Should convert Utf8"s, should_convert_utf8);
 	tests.add("Should split"s, should_split);
 	tests.add("Should split genre"s, should_split_genre);
 	tests.add("Should extract url"s, should_extract_url);
+	tests.add("Should collect descriptive fields"s, should_collect_descriptive_fields);
 	tests.add("Should detect wildcard"s, should_detect_wildcard);
 	tests.add("Should match wildcard"s, should_match_wildcard);
 	tests.add("Should compare versions"s, should_compare_versions);
@@ -2183,6 +2620,7 @@ void register_tests2(view_state& state, test_registry& tests)
 	tests.add("Should Rename with substitutions"s, should_rename_with_substitutions);
 	tests.add("Should rename name token without extension"s, should_rename_name_token_without_extension);
 	tests.add("Should reject duplicate rename targets"s, should_reject_duplicate_rename_targets);
+	tests.add("Should reject unusable rename targets"s, should_reject_unusable_rename_targets);
 	tests.add("Should group Rename sidecar collisions"s, should_group_rename_sidecar_collisions);
 	tests.add("Should format plural text"s, should_format_plural_text);
 	tests.add("Should format rename"s, should_format_rename);
@@ -2195,12 +2633,14 @@ void register_tests2(view_state& state, test_registry& tests)
 	tests.add("Should report move or copy collision paths"s, should_report_move_or_copy_collision_paths);
 	tests.add("Should fail replace when flush fails"s, should_fail_replace_when_flush_fails);
 	tests.add("Should cleanup failed update temps"s, should_cleanup_failed_update_temps);
-	tests.add("Should detect changed import analysis"s, should_detect_changed_import_analysis);
 	tests.add("Should detect duplicate import destinations"s, should_detect_duplicate_import_destinations);
+	tests.add("Should revalidate import rows"s, should_revalidate_import_rows);
+	tests.add("Should revalidate replaced import destinations"s, should_revalidate_replaced_import_destinations);
 	tests.add("Should reject missing sync folder"s, should_reject_missing_sync_folder);
 	tests.add("Should reject overlapping sync folders"s, should_reject_overlapping_sync_folders);
 	tests.add("Should reject ambiguous sync roots"s, should_reject_ambiguous_sync_roots);
 	tests.add("Should ignore unclaimed remote sync files"s, should_ignore_unclaimed_remote_files);
 	tests.add("Should select sync actions"s, should_select_sync_actions);
-	tests.add("Should detect changed sync analysis"s, should_detect_changed_sync_analysis);
+	tests.add("Should revalidate sync rows"s, should_revalidate_sync_rows);
+	tests.add("Should revalidate sync deletes"s, should_revalidate_sync_deletes);
 }

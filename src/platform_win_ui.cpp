@@ -16,6 +16,7 @@
 #include "app_command_line.h"
 
 int run_console_tests(std::string_view test_filter);
+int run_duplicate_report(std::string_view folder_text, std::string_view output_text);
 int generate_wiki_docs(std::string_view output_folder);
 int validate_po_files();
 
@@ -49,7 +50,7 @@ ui::surface_ptr platform::capture_window_surface(const std::any& window_handle)
 	const auto bitmap = CreateCompatibleBitmap(screen_dc, width, height);
 	const auto previous = SelectObject(memory_dc, bitmap);
 	const auto captured = BitBlt(memory_dc, 0, 0, width, height, screen_dc, bounds.left, bounds.top,
-		SRCCOPY | CAPTUREBLT) != FALSE;
+	                             SRCCOPY | CAPTUREBLT) != FALSE;
 
 	auto surface = std::make_shared<ui::surface>();
 	const auto allocated = surface->alloc(width, height, ui::texture_format::ARGB, ui::orientation::top_left);
@@ -63,7 +64,7 @@ ui::surface_ptr platform::capture_window_surface(const std::any& window_handle)
 	const auto row_bytes = static_cast<size_t>(width) * 4;
 	std::vector<uint8_t> bitmap_pixels(row_bytes * height);
 	const auto copied = captured && allocated && GetDIBits(memory_dc, bitmap, 0, height, bitmap_pixels.data(),
-		&bitmap_info, DIB_RGB_COLORS) == height;
+	                                                       &bitmap_info, DIB_RGB_COLORS) == height;
 	if (copied)
 	{
 		for (auto y = 0; y < height; ++y)
@@ -123,14 +124,23 @@ static void setup_headless_console()
 			// Redirected: point the CRT stream at the inherited pipe/file.
 			const int fd = _open_osfhandle(reinterpret_cast<intptr_t>(h), _O_TEXT);
 
-			if (fd != -1)
+			// Either failure leaves the stream on its original handle, so the caller still
+			// needs the console fallback.
+			if (fd == -1)
 			{
-				fflush(stream);
-				_dup2(fd, _fileno(stream));
-				_close(fd);
-				setvbuf(stream, nullptr, _IONBF, 0);
+				return false;
 			}
 
+			fflush(stream);
+			const int duped = _dup2(fd, _fileno(stream));
+			_close(fd);
+
+			if (duped != 0)
+			{
+				return false;
+			}
+
+			setvbuf(stream, nullptr, _IONBF, 0);
 			return true;
 		}
 
@@ -189,10 +199,9 @@ int calc_icon_cxy(const double scale_factor)
 /////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////
 
-void ui_wait_for_signal(platform::thread_event& te, uint32_t timeout_ms, const std::function<bool(LPMSG m)>& cb);
+uint32_t ui_wait_for_signal(platform::thread_event& te, uint32_t timeout_ms, const std::function<bool(LPMSG m)>& cb);
 
 #define ABM_GETAUTOHIDEBAREX    0x0000000b // multimon aware autohide bars
-//#define WS_EX_NOREDIRECTIONBITMAP 0x00200000L
 
 
 #ifndef GET_X_LPARAM
@@ -716,11 +725,9 @@ static HFONT create_font(const ui::style::font_face type, const int base_font_si
 		break;
 	case ui::style::font_face::title:
 		lf.lfHeight = -df::mul_div(base_font_size, 3, 2);
-		//lf.lfWeight = FW_NORMAL;
 		break;
 	case ui::style::font_face::mega:
 		lf.lfHeight = -df::mul_div(base_font_size, 9, 4);
-		//lf.lfWeight = FW_BOLD;
 		break;
 	default:
 		break;
@@ -770,20 +777,6 @@ static int gdi_text_line_height(const HWND hwnd, const HFONT font)
 
 	return result;
 }
-
-//int render::text_line_height(style::font_size font)
-//{
-//	const auto i = cached_font_heights.find(font);
-//
-//	if (i == cached_font_heights.cend())
-//	{
-//		const auto height = text_line_height(app_wnd(), gdi_font(font));
-//		cached_font_heights[font] = height;
-//		return height;
-//	}
-//
-//	return i->second;
-//}
 
 static void draw_gradient(const HDC dc, const recti r, const DWORD c1, const DWORD c2)
 {
@@ -1105,7 +1098,6 @@ void draw_icon(const HDC hdc, const owner_context_ptr& ctx, const icon_index ico
 
 					SetTextColor(bm_hdc, 0xffffff);
 					SetBkMode(bm_hdc, TRANSPARENT);
-					//SetTextAlign(bm_hdc, TA_TOP);
 
 					const RECT bounds{0, 0, cx, cy};
 
@@ -1138,8 +1130,6 @@ void draw_icon(const HDC hdc, const owner_context_ptr& ctx, const icon_index ico
 
 					constexpr BLENDFUNCTION bf = {AC_SRC_OVER, 0, 0xFF, AC_SRC_ALPHA};
 					AlphaBlend(hdc, x, y, cx, cy, bm_hdc, 0, 0, cx, cy, bf);
-
-					//BitBlt(hdc, x, y, cx, cy, bm_hdc, 0, 0, SRCCOPY);
 
 					SelectObject(bm_hdc, hbm_old);
 					SelectObject(bm_hdc, old_bm_font);
@@ -1226,7 +1216,6 @@ static void erase_toolbar_seperators(const HWND tb, const HDC dc, const COLORREF
 	win_rect r;
 	GetClientRect(tb, &r); //get window rect of control relative to screen				
 
-	//fill_solid_rect(pCustomDraw->hdc, &rr, _background_clr);	
 	auto* const clip = CreateRectRgn(0, 0, r.width(), r.height());
 
 	if (!clip)
@@ -1244,7 +1233,6 @@ static void erase_toolbar_seperators(const HWND tb, const HDC dc, const COLORREF
 				CombineRgn(clip, clip, rr, RGN_XOR);
 				DeleteObject(rr);
 			}
-			//fill_solid_rect(dc, r, bg_clr);
 		}
 	}
 
@@ -1364,7 +1352,6 @@ static void draw_toolbar_button(const ui::command_ptr& command, const owner_cont
 			const auto has_text = !str::is_empty(button_info.pszText);
 			const auto text_len = str::len(button_info.pszText);
 			const auto has_image = button_info.iImage != I_IMAGENONE;
-			//const auto x_padding = has_text && has_image ? 2 : 0;
 
 			if (has_text)
 			{
@@ -1378,7 +1365,6 @@ static void draw_toolbar_button(const ui::command_ptr& command, const owner_cont
 				icon_extent.cy = icon_cxy;
 			}
 
-			//const int total_width = text_extent.cx + icon_extent.cx + x_padding;
 			int x = bounds.left + (avail_width - pos_width) / 2;
 
 			if (has_image)
@@ -1443,7 +1429,6 @@ static void draw_menu_item(const ui::command_ptr& command, const LPDRAWITEMSTRUC
 		const auto is_disabled = lpDrawItemStruct->itemState & (ODS_GRAYED | ODS_DISABLED);
 		const auto is_selected = lpDrawItemStruct->itemState & ODS_SELECTED;
 		const auto is_checked = lpDrawItemStruct->itemState & ODS_CHECKED;
-		//const auto menu_background = GetSysColor(COLOR_MENU); //render::style::color::menu_background;		
 		const auto menu_color = command->clr;
 		const auto icon = is_checked && command->icon == icon_index::none ? icon_index::check : command->icon;
 		const auto icon_cxy = calc_icon_cxy(ctx->scale_factor);
@@ -1851,7 +1836,6 @@ template <class T, class TBase>
 class ui_frame_window : public TBase
 {
 public:
-	//HWND _h = nullptr;
 	HCURSOR _cursor = resources.normal;
 	uint32_t _disable_count = 0;
 
@@ -1951,8 +1935,6 @@ public:
 	void redraw() override
 	{
 		InvalidateRect(hwnd(), nullptr, 0);
-		//::UpdateWindow(hwnd());
-		//::RedrawWindow(hwnd(), nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW);
 	}
 
 	void redraw_now() override
@@ -2136,7 +2118,7 @@ public:
 	{
 		if (ppenum == nullptr) return E_POINTER;
 		const auto offset = std::distance(_data.cbegin(), _walk);
-		auto* clone = new (std::nothrow) edit_string_enum(_data);
+		auto* clone = new(std::nothrow) edit_string_enum(_data);
 		if (clone == nullptr)
 		{
 			*ppenum = nullptr;
@@ -2285,7 +2267,6 @@ public:
 		if (uMsg == WM_ENABLE) return pt->on_window_enable(uMsg, wParam, lParam);
 		if (uMsg == WM_MOUSEWHEEL) return pt->on_mouse_wheel(uMsg, wParam, lParam);
 
-		// return DefWindowProc(hWnd, uMsg, wParam, lParam);
 		return DefSubclassProc(hWnd, uMsg, wParam, lParam);
 	}
 
@@ -2541,7 +2522,6 @@ public:
 		{
 			_background = bg;
 			full_invalidate(); // invalidate non client area
-			//Invalidate(FALSE);
 		}
 	}
 
@@ -2627,7 +2607,6 @@ void edit_impl::update_spelling(const std::wstring& text)
 
 			if (!word.empty())
 			{
-				// draw_error(word, word_start, dc);
 				auto word_a = str::utf16_to_utf8(word);
 
 				if (!spell.is_word_valid(word_a))
@@ -2726,7 +2705,6 @@ void edit_impl::on_window_nc_calc_size(const LPRECT pr) const
 LRESULT edit_impl::on_window_nc_paint(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam)
 {
 	const auto hdc = GetWindowDC(m_hWnd); // (HRGN)wParam, DCX_WINDOW | DCX_INTERSECTRGN);
-	//if (dc.IsNull()) dc = ::GetWindowDC(m_hWnd);
 
 	if (hdc)
 	{
@@ -2800,7 +2778,8 @@ LRESULT edit_impl::on_window_nc_paint(const uint32_t uMsg, const WPARAM wParam, 
 			// Horizontals
 			fill_rect(frame_dc, edge_clr,
 			          recti(outside.left + padding, outside.top, outside.right - padding, outside.top + padding));
-			fill_rect(frame_dc, edge_clr, recti(outside.left + padding, outside.bottom - padding, outside.right - padding,
+			fill_rect(frame_dc, edge_clr, recti(outside.left + padding, outside.bottom - padding,
+			                                    outside.right - padding,
 			                                    outside.bottom));
 
 			fill_rect(frame_dc, edit_colors.background, outside.inflate(-padding));
@@ -2834,7 +2813,6 @@ LRESULT edit_impl::on_window_nc_paint(const uint32_t uMsg, const WPARAM wParam, 
 		ReleaseDC(m_hWnd, hdc);
 	}
 
-	//DefWindowProc(m_hWnd, uMsg, wParam, lParam);
 	return DefSubclassProc(m_hWnd, uMsg, wParam, lParam);
 }
 
@@ -3353,8 +3331,6 @@ public:
 		                               get_resource_instance,
 		                               nullptr);
 
-		//CreateWindow(DATETIMEPICK_CLASS, m_hWnd, nullptr, nullptr, WS_CHILD | WS_VISIBLE | WS_TABSTOP | DTS_SHORTDATEFORMAT, 0, date_id);
-
 		_ctx->set_window_font(_date_control, ui::style::font_face::dialog);
 		DateTime_SetSystemtime(_date_control, _val.is_valid() ? GDT_VALID : GDT_NONE, &st);
 
@@ -3370,7 +3346,6 @@ public:
 			                               get_resource_instance,
 			                               nullptr);
 
-			//CreateWindow(DATETIMEPICK_CLASS, m_hWnd, nullptr, nullptr, WS_CHILD | WS_VISIBLE | WS_TABSTOP | DTS_TIMEFORMAT, 0, time_id);
 			_ctx->set_window_font(_time_control, ui::style::font_face::dialog);
 			DateTime_SetSystemtime(_time_control, _val.is_valid() ? GDT_VALID : GDT_NONE, &st);
 		}
@@ -3382,16 +3357,12 @@ public:
 	{
 		PAINTSTRUCT ps;
 		auto hdc = BeginPaint(m_hWnd, &ps);
-		//FillRect(hdc, &ps.rcPaint, (HBRUSH)(COLOR_WINDOW + 1));
 		EndPaint(m_hWnd, &ps);
 		return 0;
 	}
 
 	static LRESULT on_window_print_client(uint32_t /*uMsg*/, WPARAM wParam, LPARAM /*lParam*/)
 	{
-		//RECT r;
-		//GetClientRect(&r);
-		//FillRect((HDC)wParam, &r, (HBRUSH)(COLOR_WINDOW + 1));
 		return 0;
 	}
 
@@ -3534,6 +3505,10 @@ public:
 
 	void create_draw_context(const factories_ptr& f, bool is_d3d, bool use_swapchain);
 
+	// Layout metrics derived from the owner context's scale. Every window that draws has to be
+	// told again whenever that scale changes, so this is the one definition of what "again" means.
+	void update_dpi_metrics() const;
+
 	// Tears down the current swap chain and draw context and builds a new one using the same
 	// options. When the shared factories have been downgraded to software this transparently
 	// produces a CPU software draw context instead of a Direct3D one.
@@ -3541,7 +3516,7 @@ public:
 
 	LRESULT on_window_message(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) override;
 
-	void handle_render();
+	void handle_render(recti damage = {});
 	void handle_resize(sizei extent, bool is_minimised);
 	void present() const;
 	void handle_device_loss(HRESULT hr, std::string_view operation) const;
@@ -3629,7 +3604,6 @@ void frame_base::create_draw_context(const factories_ptr& f, const bool use_d3d,
 				// briefly undrawn.
 				sd.Scaling = DXGI_SCALING_NONE;
 				sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-				// DXGI_SWAP_EFFECT_FLIP_DISCARD; //'/*is_d3d ? (is_win_10 ? DXGI_SWAP_EFFECT_FLIP_DISCARD : DXGI_SWAP_EFFECT_DISCARD) :*/ DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
 				sd.BufferCount = 2;
 				sd.SampleDesc.Count = 1;
 				sd.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
@@ -3674,6 +3648,14 @@ void frame_base::create_draw_context(const factories_ptr& f, const bool use_d3d,
 		}
 	}
 
+	if (_draw_ctx && _gdi_ctx)
+	{
+		update_dpi_metrics();
+	}
+}
+
+void frame_base::update_dpi_metrics() const
+{
 	if (_draw_ctx && _gdi_ctx)
 	{
 		const auto scale_factor = _gdi_ctx->calc_ui_scale_factor();
@@ -3848,7 +3830,7 @@ void frame_base::present() const
 	}
 }
 
-void frame_base::handle_render()
+void frame_base::handle_render(const recti damage)
 {
 	df::bump(df::ui_perf.paints);
 	df::perf_timer timer(df::ui_perf.paint_us, &df::ui_perf.paint_max_us);
@@ -3856,7 +3838,7 @@ void frame_base::handle_render()
 
 	if (ctx)
 	{
-		ctx->begin_draw(_extent, _gdi_ctx->calc_base_font_size());
+		ctx->begin_draw(_extent, _gdi_ctx->calc_base_font_size(), damage);
 		on_render(ctx);
 
 		const auto hr = ctx->render();
@@ -3885,7 +3867,11 @@ LRESULT frame_base::on_window_message(const HWND hwnd, const UINT uMsg, const WP
 		return DefWindowProc(hwnd, uMsg, wParam, lParam);
 	case WM_PAINT:
 		{
-			handle_render();
+			// Read the update region before validating: it is what lets a backend repaint only the
+			// part of the window that changed.
+			RECT update{};
+			const auto has_update = GetUpdateRect(m_hWnd, &update, FALSE) != 0;
+			handle_render(has_update ? recti(update.left, update.top, update.right, update.bottom) : recti{});
 			ValidateRect(m_hWnd, nullptr);
 			return 0;
 		}
@@ -4022,6 +4008,14 @@ public:
 		if (_draw_ctx)
 		{
 			const auto scale_factor = _gdi_ctx->scale_factor;
+
+			// Before measuring: measure builds and caches the element text layouts, so a stale size
+			// here would lay the bubble out - and cache glyph rasters - at the previous font size.
+			// A bubble shares the app's owner context and so never sees a WM_DPICHANGED of its own;
+			// showing it is the only point at which it can pick up a scale change.
+			_draw_ctx->update_font_size(df::round(global_base_font_size * scale_factor));
+			update_dpi_metrics();
+
 			const auto element_extent = elements->measure(*_draw_ctx, df::round(preferred_size * scale_factor));
 			const auto cx = std::max(80, element_extent.cx) + horz_padding * 2;
 			const auto cy = std::max(36, element_extent.cy) + vert_padding * 2;
@@ -4068,7 +4062,6 @@ public:
 				}
 			}
 
-			_draw_ctx->update_font_size(df::round(global_base_font_size * scale_factor));
 			_bounds = recti(x, y, x + cx, y + cy).clamp(desktop_bounds.inflate(shadow_padding));
 			_focus_loc = focus_loc;
 			_elements = elements;
@@ -4080,7 +4073,6 @@ public:
 			SetWindowPos(m_hWnd, nullptr, _bounds.left, _bounds.top, cx, cy,
 			             SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOOWNERZORDER);
 
-			//update(bounds);
 			set_alpha(255);
 		}
 	}
@@ -4165,10 +4157,8 @@ public:
 
 	LRESULT handle_message(const HWND hwnd, const UINT uMsg, const WPARAM wParam, const LPARAM lParam) override
 	{
-		//if (uMsg == WM_SIZE) return on_window_layout(uMsg, wParam, lParam);
 		if (uMsg == WM_DESTROY) return on_window_destroy(uMsg, wParam, lParam);
 		if (uMsg == WM_ERASEBKGND) return on_window_erase_background(uMsg, wParam, lParam);
-		//if (uMsg == WM_PAINT) return on_window_paint(uMsg, wParam, lParam);
 		if (uMsg == WM_SETCURSOR) return on_window_set_cursor(uMsg, wParam, lParam);
 		if (uMsg == WM_SETFOCUS) return on_window_set_focus(uMsg, wParam, lParam);
 		if (uMsg == WM_KILLFOCUS) return on_window_kill_focus(uMsg, wParam, lParam);
@@ -4176,8 +4166,8 @@ public:
 		if (uMsg == WM_TIMER) return on_window_timer(uMsg, wParam, lParam);
 		if (uMsg == WM_LBUTTONDOWN) return on_mouse_left_button_down(uMsg, wParam, lParam);
 		if (uMsg == WM_LBUTTONUP) return on_mouse_left_button_up(uMsg, wParam, lParam);
-				if (uMsg == WM_MBUTTONDOWN) return on_mouse_middle_button_down(uMsg, wParam, lParam);
-				if (uMsg == WM_MBUTTONUP) return on_mouse_middle_button_up(uMsg, wParam, lParam);
+		if (uMsg == WM_MBUTTONDOWN) return on_mouse_middle_button_down(uMsg, wParam, lParam);
+		if (uMsg == WM_MBUTTONUP) return on_mouse_middle_button_up(uMsg, wParam, lParam);
 		if (uMsg == WM_XBUTTONUP) return on_mouse_x_button_up(uMsg, wParam, lParam);
 		if (uMsg == WM_MOUSELEAVE) return on_mouse_leave(uMsg, wParam, lParam);
 		if (uMsg == WM_MOUSEMOVE) return on_mouse_move(uMsg, wParam, lParam);
@@ -4237,7 +4227,6 @@ public:
 		auto dw_ex_style = 0; // style.child ? 0 : WS_EX_COMPOSITED;
 		if (style.no_focus) dw_ex_style |= WS_EX_NOACTIVATE;
 		if (style.can_focus) dw_style |= WS_TABSTOP;
-		//if (!style.hardware_accelerated) dw_ex_style |= WS_EX_COMPOSITED;
 
 		if (register_class(CS_DBLCLKS, nullptr, nullptr,
 		                   nullptr,
@@ -4250,7 +4239,7 @@ public:
 			if (m_hWnd)
 			{
 				create_draw_context(f, _style.hardware_accelerated, false);
-					_gdi_ctx->set_window_font(m_hWnd, ui::style::font_face::dialog);
+				_gdi_ctx->set_window_font(m_hWnd, ui::style::font_face::dialog);
 				if (_style.timer_milliseconds)
 				{
 					_timer_id = SetTimer(m_hWnd, 0, _style.timer_milliseconds, nullptr);
@@ -4279,13 +4268,6 @@ public:
 	{
 		if (_draw_ctx && !_extent.is_empty() && IsWindow(m_hWnd))
 		{
-			/*MSG m;
-
-			if (!PeekMessage(&m, m_hWnd, WM_SIZE, WM_SIZE, PM_NOREMOVE | PM_NOYIELD))
-			{
-				PostMessage(m_hWnd, WM_SIZE, 0, MAKELONG(_extent.cx, _extent.cy));
-			}*/
-
 			const auto h = _host.lock();
 
 			if (h)
@@ -4294,31 +4276,6 @@ public:
 			}
 		}
 	}
-
-	//LRESULT on_window_layout(uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam)
-	//{
-	//	_extent = { LOWORD(lParam), HIWORD(lParam) };
-
-	//	if (is_valid_device())
-	//	{
-	//		_device->resize(_extent);
-	//	}
-	//	else
-	//	{
-	//		_render.resize(_extent);
-	//	}
-
-	//	auto h = _host.lock();
-
-	//	if (h)
-	//	{
-	//		ui::measure_context& mc = _device ? static_cast<ui::measure_context&>(*_device) : _render;
-	//		h->on_window_layout(mc, _extent, wParam == SIZE_MINIMIZED);
-	//	}
-
-	//	return 0;
-	//}
-
 
 	LRESULT on_window_destroy(const uint32_t /*uMsg*/, const WPARAM /*wParam*/, const LPARAM /*lParam*/)
 	{
@@ -4379,7 +4336,6 @@ public:
 
 	LRESULT on_window_set_cursor(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam) const
 	{
-		//update_cursor();
 		SetCursor(_cursor);
 		return 1;
 	}
@@ -4389,15 +4345,14 @@ public:
 		return 1;
 	}
 
-	//LRESULT on_window_mouse_activate(uint32_t /*uMsg*/, WPARAM wParam, LPARAM /*lParam*/)
-	//{
-	//	return MA_NOACTIVATE;
-	//}
-
 	void redraw() override
 	{
 		if (is_valid_device())
 		{
+			// No begin_draw runs here, so any damage limit from the last paint is stale - the
+			// textures this re-present exists to show changed outside it.
+			_draw_ctx->reset_damage();
+
 			const auto hr = _draw_ctx->render();
 
 			if (FAILED(hr))
@@ -4477,6 +4432,7 @@ public:
 		if (h) h->on_mouse_left_button_up(loc, to_key_state(wParam));
 		return 0;
 	}
+
 	LRESULT on_mouse_middle_button_down(const uint32_t /*uMsg*/, const WPARAM wParam, const LPARAM lParam)
 	{
 		const auto h = _host.lock();
@@ -4500,7 +4456,8 @@ public:
 		constexpr ULONG_PTR touch_flag = 0x80;
 		const auto extra = static_cast<ULONG_PTR>(GetMessageExtraInfo());
 		const auto is_touch = (extra & pointer_signature_mask) == pointer_signature && (extra & touch_flag) != 0;
-		if (h && !(is_touch && h->touch_double_tap(loc))) h->on_mouse_left_button_double_click(loc, to_key_state(wParam));
+		if (h && !(is_touch && h->touch_double_tap(loc))) h->on_mouse_left_button_double_click(
+			loc, to_key_state(wParam));
 		return 0;
 	}
 
@@ -4574,7 +4531,7 @@ public:
 			{GID_PAN, wanted_gestures, 0},
 			{GID_ZOOM, GC_ZOOM, 0}
 		};
-		SetGestureConfig(m_hWnd, 0, static_cast<UINT>(std::size(gestures)), gestures, sizeof(GESTURECONFIG));
+		SetGestureConfig(m_hWnd, 0, std::size(gestures), gestures, sizeof(GESTURECONFIG));
 
 		return DefWindowProc(m_hWnd, WM_GESTURENOTIFY, wParam, lParam);
 	}
@@ -4627,7 +4584,8 @@ public:
 					{
 						POINT loc{gi.ptsLocation.x, gi.ptsLocation.y};
 						ScreenToClient(m_hWnd, &loc);
-						const auto delta = df::round(std::log(distance / static_cast<double>(_zoom_gesture_distance)) * 480.0);
+						const auto delta = df::round(
+							std::log(distance / static_cast<double>(_zoom_gesture_distance)) * 480.0);
 						bool handled = false;
 						const auto h = _host.lock();
 						if (h && delta != 0) h->on_mouse_wheel({loc.x, loc.y}, delta, {true, false, false}, handled);
@@ -4721,16 +4679,7 @@ public:
 
 	void dpi_changed() const
 	{
-		if (_draw_ctx && _gdi_ctx)
-		{
-			const auto scale_factor = _gdi_ctx->calc_ui_scale_factor();
-			_draw_ctx->scale_factor = scale_factor;
-			_draw_ctx->icon_cxy = calc_icon_cxy(scale_factor);
-			_draw_ctx->padding2 = df::round(ui_component_snap * scale_factor);
-			_draw_ctx->padding1 = df::round(ui_baseline_snap * scale_factor);
-			_draw_ctx->handle_cxy = df::round(ui_cx_resize_handle * scale_factor);
-			_draw_ctx->scroll_width = df::round(ui_scroll_width * scale_factor);
-		}
+		update_dpi_metrics();
 
 		if (is_valid_device())
 		{
@@ -5014,12 +4963,6 @@ public:
 	void sys_command(ui::sys_command_type cmd) override;
 	void full_screen(bool full) override;
 
-	/*static void CALLBACK timer_cb(LPVOID lpArgToCompletionRoutine, DWORD dwTimerLowValue, DWORD dwTimerHighValue)
-	{
-		const auto p_this = static_cast<win32_app*>(lpArgToCompletionRoutine);
-		p_this->_app->prepare_frame();
-	}*/
-
 	void frame_delay(int delay) override;
 
 	void queue_idle() override
@@ -5058,6 +5001,7 @@ public:
 	std::unordered_map<int, control_base2_ptr> _children;
 	std::unordered_map<unsigned long, std::shared_ptr<ui::command>> _menu_commands;
 	std::vector<std::weak_ptr<frame_impl>> _child_frames;
+	std::vector<std::weak_ptr<control_host_impl>> _child_hosts;
 
 	// Radio group of the most recently created radio button; used to mark the first button of each
 	// group with WS_GROUP so Windows scopes auto-radio exclusivity to that group.
@@ -5228,9 +5172,6 @@ public:
 	{
 		if (uMsg == WM_CREATE) return on_window_create(uMsg, wParam, lParam);
 		if (uMsg == WM_DESTROY) return on_window_destroy(uMsg, wParam, lParam);
-		//if (uMsg == WM_SIZE) return on_window_layout(uMsg, wParam, lParam);
-		//if (uMsg == WM_WINDOWPOSCHANGED) return on_window_pos_changed(uMsg, wParam, lParam);
-		//if (uMsg == WM_PAINT) return on_window_paint(uMsg, wParam, lParam);
 		if (uMsg == WM_PRINTCLIENT) return on_window_print_client(uMsg, wParam, lParam);
 		if (uMsg == WM_ERASEBKGND) return on_window_erase_background(uMsg, wParam, lParam);
 		if (uMsg == WM_ACTIVATE) return on_window_activate(uMsg, wParam, lParam);
@@ -5340,21 +5281,6 @@ public:
 		return 0;
 	}
 
-	//LRESULT on_window_layout(uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam)
-	//{
-	//	_extent = { LOWORD(lParam), HIWORD(lParam) };
-
-	//	if (_render)
-	//	{
-	//		_render->resize(_extent);
-
-	//		auto h = _host.lock();
-	//		if (h) h->on_window_layout(*_render, _extent, wParam == SIZE_MINIMIZED);
-	//	}
-
-	//	return 0;
-	//}
-
 	LRESULT on_window_nc_hit_test(uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam) const;
 
 	LRESULT on_get_def_id(uint32_t /*uMsg*/, WPARAM wParam, LPARAM lParam) const
@@ -5406,10 +5332,6 @@ public:
 
 	LRESULT on_window_erase_background(uint32_t /*uMsg*/, WPARAM wParam, LPARAM /*lParam*/) const
 	{
-		//const auto dc = std::bit_cast<HDC>(wParam);
-		//win_rect r;
-		//GetClipBox(dc, r);
-		//FillRect(dc, r, gdi_brush(_background_clr));
 		return 1;
 	}
 
@@ -5616,7 +5538,11 @@ public:
 	ui::close_result wait_for_close(const uint32_t timeout_ms) override
 	{
 		_close.reset();
-		ui_wait_for_signal(_close, timeout_ms, [this](const LPMSG m) { return pre_translate_message(m); });
+		const auto waited = ui_wait_for_signal(_close, timeout_ms,
+		                                       [this](const LPMSG m) { return pre_translate_message(m); });
+		// _modal_result holds ok until close() overwrites it, so a wait that never saw the close
+		// event must not be reported as a decision - a confirmation would read it as approval.
+		if (waited != 0) return ui::close_result::cancel;
 		return _modal_result.load();
 	}
 
@@ -5642,22 +5568,6 @@ public:
 	{
 		BOOL bHandled = 0;
 		if (!m_hWnd) return false;
-
-		//switch (m->message)
-		//{
-		//case WM_MOUSEWHEEL:
-		//	on_mouse_wheel(m->message, m->wParam, m->lParam, bHandled);
-		//	if (bHandled) return true;
-		//	break;
-		//case WM_KEYDOWN:
-		//	//if (handle_message(WM_KEYDOWN, m->wParam, m->lParam)) return true;
-		//	/*if (m->wParam == VK_ESCAPE)
-		//	{
-		//		close(true);
-		//		return true;
-		//	}*/
-		//	break;
-		//}
 
 		return IsDialogMessage(m_hWnd, m) != 0;
 	}
@@ -5782,8 +5692,10 @@ public:
 
 			if (!changed) continue;
 
-			moves.push_back({h, bounds, was_visible ? current_bounds : recti{}, c.visible, size_changed,
-			                 std::dynamic_pointer_cast<ui::frame>(c.control) != nullptr});
+			moves.push_back({
+				h, bounds, was_visible ? current_bounds : recti{}, c.visible, size_changed,
+				std::dynamic_pointer_cast<frame>(c.control) != nullptr
+			});
 		}
 
 		if (moves.empty()) return;
@@ -5877,7 +5789,6 @@ public:
 
 		if (hMenu)
 		{
-			//_menu.enable_menu(hMenu);
 		}
 
 		return 0;
@@ -5992,9 +5903,6 @@ public:
 				SetWindowLong(m_hWnd, GWL_EXSTYLE, restore_ex_style);
 
 				SetWindowPlacement(m_hWnd, &restore_window_placement);
-
-				//auto bounds = desktop_bounds_impl(m_hWnd);
-				//SetWindowPos(nullptr, &bounds, SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_FRAMECHANGED);
 			}
 
 			handle_composition_changed();
@@ -6068,16 +5976,7 @@ public:
 			_draw_ctx->update_font_size(_gdi_ctx->calc_base_font_size());
 		}
 
-		if (_draw_ctx && _gdi_ctx)
-		{
-			const auto scale_factor = _gdi_ctx->calc_ui_scale_factor();
-			_draw_ctx->scale_factor = scale_factor;
-			_draw_ctx->icon_cxy = calc_icon_cxy(scale_factor);
-			_draw_ctx->padding2 = df::round(ui_component_snap * scale_factor);
-			_draw_ctx->padding1 = df::round(ui_baseline_snap * scale_factor);
-			_draw_ctx->handle_cxy = df::round(ui_cx_resize_handle * scale_factor);
-			_draw_ctx->scroll_width = df::round(ui_scroll_width * scale_factor);
-		}
+		update_dpi_metrics();
 
 		if (_gdi_ctx)
 		{
@@ -6102,6 +6001,59 @@ public:
 				ff->dpi_changed();
 			}
 		}
+
+		// A child control host is not a control and not a frame, so it is in neither list above
+		// and, being a child window, never receives WM_DPICHANGED of its own. Without this its
+		// draw context keeps the scale it was created with while the controls inside it are
+		// re-fonted from the shared context.
+		for (const auto& h : _child_hosts)
+		{
+			auto hh = h.lock();
+
+			if (hh)
+			{
+				hh->dpi_changed();
+			}
+		}
+	}
+
+	// A child host shares its parent's owner context, so the GDI fonts have already been rebuilt
+	// by the parent; only this host's own draw context and contents still need the new scale.
+	void dpi_changed() const
+	{
+		if (_draw_ctx)
+		{
+			_draw_ctx->update_font_size(_gdi_ctx->calc_base_font_size());
+		}
+
+		update_dpi_metrics();
+
+		if (_gdi_ctx)
+		{
+			_gdi_ctx->set_window_font(m_hWnd, ui::style::font_face::dialog);
+		}
+
+		for (const auto& c : _children)
+		{
+			c.second->dpi_changed();
+		}
+
+		for (const auto& f : _child_frames)
+		{
+			auto ff = f.lock();
+
+			if (ff)
+			{
+				ff->dpi_changed();
+			}
+		}
+
+		const auto host = _host.lock();
+
+		if (host)
+		{
+			host->dpi_changed();
+		}
 	}
 
 	LRESULT on_window_dpi_changed(uint32_t /*uMsg*/, const WPARAM wParam, const LPARAM lParam)
@@ -6115,16 +6067,6 @@ public:
 		{
 			host->dpi_changed();
 		}
-
-		/*
-		set_font_base_size(df::round(dpi * (setting.large_font ? large_font_size : normal_font_size)));*/
-
-		/*auto app = _app.lock();
-
-		if (app && wParam == WTS_SESSION_LOCK)
-		{
-			app->system_event(ui::os_event_type::dpi_changed);
-		}*/
 
 		const auto new_bounds = reinterpret_cast<RECT*>(lParam);
 
@@ -6156,21 +6098,8 @@ public:
 
 	void layout() override
 	{
-		/*MSG m;
-
-		if (!PeekMessage(&m, m_hWnd, WM_SIZE, WM_SIZE, PM_NOREMOVE | PM_NOYIELD))
-		{
-			PostMessage(m_hWnd, WM_SIZE, 0, MAKELONG(_extent.cx, _extent.cy));
-		}*/
 		if (_draw_ctx && IsWindow(m_hWnd))
 		{
-			/*MSG m;
-
-			if (!PeekMessage(&m, m_hWnd, WM_SIZE, WM_SIZE, PM_NOREMOVE | PM_NOYIELD))
-			{
-				PostMessage(m_hWnd, WM_SIZE, 0, MAKELONG(_extent.cx, _extent.cy));
-			}*/
-
 			const auto h = _host.lock();
 
 			if (h)
@@ -6225,7 +6154,6 @@ public:
 
 	HHOOK _hMenuHook = nullptr;
 	static this_class* _current;
-	//std::vector<HWND> _menuStack;
 	win_rect m_rcButton;
 
 
@@ -6350,8 +6278,6 @@ public:
 
 			if (::lstrcmp(L"#32768", szClassName) == 0)
 			{
-				//_current->_menuStack.emplace_back(hWndMenu);
-
 				// Subclass to a flat-looking menu
 				// No reference data: the subclass resolves the active host through _current, so
 				// nothing here can outlive the host it was installed for.
@@ -6359,7 +6285,6 @@ public:
 				SetWindowPos(hWndMenu, HWND_TOP, 0, 0, 0, 0,
 				             SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED |
 				             SWP_DRAWFRAME);
-				//current->m_rcButton = {};
 			}
 		}
 		else if (nCode == HCBT_DESTROYWND)
@@ -6427,47 +6352,47 @@ public:
 
 			const std::function<void(const win32_menu&, const std::vector<ui::command_ptr>&, int)> build_items =
 				[&](const win32_menu& parent, const std::vector<ui::command_ptr>& items, const int depth)
+			{
+				for (const auto& c : items)
 				{
-					for (const auto& c : items)
+					if (!c)
 					{
-						if (!c)
-						{
-							parent.AppendMenu(MF_OWNERDRAW | MF_SEPARATOR);
-							continue;
-						}
-
-						auto text = str::utf8_to_utf16(c->text);
-						const auto id = ++cmd_id;
-						_menu_commands[id] = c;
-
-						win32_menu sub_menu;
-
-						if (c->menu && depth < max_menu_depth && sub_menu.CreatePopupMenu())
-						{
-							build_items(sub_menu, c->menu(), depth + 1);
-
-							MENUITEMINFO mii = {};
-							mii.cbSize = sizeof(MENUITEMINFO);
-							mii.fMask = MIIM_ID | MIIM_SUBMENU | MIIM_TYPE | MIIM_DATA | MIIM_STATE;
-							mii.fType = MFT_OWNERDRAW;
-							mii.fState = c->enable ? MFS_ENABLED : (MFS_DISABLED | MFS_GRAYED);
-							mii.dwTypeData = const_cast<LPWSTR>(text.c_str());
-							mii.cch = 0;
-							mii.hSubMenu = sub_menu.Detach();
-							mii.dwItemData = id;
-							mii.wID = id;
-							parent.InsertMenuItem(parent.GetMenuItemCount(), TRUE, &mii);
-						}
-						else
-						{
-							auto style = MF_OWNERDRAW;
-							if (!c->enable) style |= MF_DISABLED;
-							if (c->checked) style |= MF_CHECKED;
-
-							parent.AppendMenu(style, id, text.c_str());
-						}
+						parent.AppendMenu(MF_OWNERDRAW | MF_SEPARATOR);
+						continue;
 					}
-				};
+
+					auto text = str::utf8_to_utf16(c->text);
+					const auto id = ++cmd_id;
+					_menu_commands[id] = c;
+
+					win32_menu sub_menu;
+
+					if (c->menu && depth < max_menu_depth && sub_menu.CreatePopupMenu())
+					{
+						build_items(sub_menu, c->menu(), depth + 1);
+
+						MENUITEMINFO mii = {};
+						mii.cbSize = sizeof(MENUITEMINFO);
+						mii.fMask = MIIM_ID | MIIM_SUBMENU | MIIM_TYPE | MIIM_DATA | MIIM_STATE;
+						mii.fType = MFT_OWNERDRAW;
+						mii.fState = c->enable ? MFS_ENABLED : (MFS_DISABLED | MFS_GRAYED);
+						mii.dwTypeData = const_cast<LPWSTR>(text.c_str());
+						mii.cch = 0;
+						mii.hSubMenu = sub_menu.Detach();
+						mii.dwItemData = id;
+						mii.wID = id;
+						parent.InsertMenuItem(parent.GetMenuItemCount(), TRUE, &mii);
+					}
+					else
+					{
+						auto style = MF_OWNERDRAW;
+						if (!c->enable) style |= MF_DISABLED;
+						if (c->checked) style |= MF_CHECKED;
+
+						parent.AppendMenu(style, id, text.c_str());
+					}
+				}
+			};
 
 			build_items(menu, commands, 0);
 
@@ -6795,7 +6720,6 @@ void control_host_impl::handle_composition_changed()
 		// The window needs a frame to show a shadow, so give it the smallest
 		// amount of frame possible 
 		const MARGINS empty_margins = {0, 0, _is_full_screen ? 0 : 1, 0};
-		//MARGINS empty_margins = { -1 };
 		DwmExtendFrameIntoClientArea(m_hWnd, &empty_margins);
 		constexpr auto at = DWMNCRP_ENABLED;
 		DwmSetWindowAttribute(m_hWnd, DWMWA_NCRENDERING_POLICY, &at, sizeof(DWORD));
@@ -6842,30 +6766,6 @@ LRESULT control_host_impl::on_window_nc_hit_test(const uint32_t uMsg, const WPAR
 		if (hit & top) return HTTOP;
 		if (hit & right) return HTRIGHT;
 		if (hit & bottom) return HTBOTTOM;
-
-		/*auto ht = DefWindowProc(m_hWnd, uMsg, wParam, lParam);
-
-		if (!_is_full_screen && ht == HTCLIENT)
-		{
-			pointi point(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
-			ScreenToClient(&point);
-
-			if (point.x >= _extent.cx - 20 && point.y >= _extent.cy - 20)
-			{
-				ht = HTBOTTOMRIGHT;
-			}
-			else
-			{
-				ht = HTCAPTION;
-			}
-		}*/
-
-		/*if (PtInRect(&_sys_button_close.close, loc))
-			return HTCLOSE;
-		if (PtInRect(&_sys_button_max.maximize, loc))
-			return HTMAXBUTTON;
-		if (PtInRect(&_sys_button_min.minimize, loc))
-			return HTMINBUTTON;*/
 
 		const auto h = _host.lock();
 		return h && h->is_caption_area({loc.x, loc.y}) ? HTCAPTION : HTCLIENT;
@@ -7226,7 +7126,6 @@ LRESULT control_host_impl::on_window_nc_calc_size(uint32_t, const WPARAM wParam,
 				//}
 				//else {
 				client_rect->top += kAutoHideTaskbarThicknessPx;
-				//}
 			}
 			if (monitor_has_autohide_taskbar_cached(ABE_RIGHT, monitor))
 				client_rect->right -= kAutoHideTaskbarThicknessPx;
@@ -7344,8 +7243,10 @@ public:
 					b->menu ? BTNS_DROPDOWN : 0) | (b->checkable ? BTNS_CHECK : 0);
 
 				const auto button_state = TBSTATE_ENABLED | (b->checked ? TBSTATE_CHECKED : 0);
-				TBBUTTON bb = {image, static_cast<int>(id), static_cast<uint8_t>(button_state),
-				               static_cast<uint8_t>(button_style), 0, 0};
+				TBBUTTON bb = {
+					image, static_cast<int>(id), static_cast<uint8_t>(button_state),
+					static_cast<uint8_t>(button_style), 0, 0
+				};
 				toolbar_buttons.emplace_back(bb);
 				_commands[id] = b;
 				id += 1;
@@ -7483,15 +7384,6 @@ public:
 			::SendMessage(m_hWnd, TB_GETMAXSIZE, 0, (LPARAM)&result);
 		}
 
-
-		/*auto extent = measure_toolbar();
-
-		if (_styles.xTBSTYLE_WRAPABLE && extent.cx > cx)
-		{
-			SetWindowPos(nullptr, 0, 0, cx, 500, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
-			AutoSize();
-			extent = measure_toolbar();
-		}*/
 
 		return {result.cx, result.cy};
 	}
@@ -7837,6 +7729,16 @@ ui::control_frame_ptr control_host_impl::create_dlg(ui::frame_host_weak_ptr host
 	}
 
 	result->_is_popup = is_popup;
+
+	if (!is_popup)
+	{
+		// A popup host owns its context and gets its own WM_DPICHANGED; a child host has neither,
+		// so the parent has to hand it every scale change. Pruned like _child_frames, since a view
+		// that rebuilds its control panel would otherwise grow this list for the session.
+		std::erase_if(_child_hosts, [](const std::weak_ptr<control_host_impl>& h) { return h.expired(); });
+		_child_hosts.push_back(result);
+	}
+
 	// The popup host owns its own context, so it must be fonted from that one - fonting it from
 	// the parent's leaves it holding a handle the parent deletes on its next font refresh.
 	ctx->set_window_font(result->m_hWnd, ui::style::font_face::dialog);
@@ -8228,16 +8130,14 @@ static void apply_gpu_crash_guard()
 	platform::set_crash_guard(platform::crash_guard::gpu_render, false);
 }
 
-void ui_wait_for_signal(platform::thread_event& te, const uint32_t timeout_ms, const std::function<bool(LPMSG m)>& cb)
+uint32_t ui_wait_for_signal(platform::thread_event& te, const uint32_t timeout_ms,
+                            const std::function<bool(LPMSG m)>& cb)
 {
 	df::assert_true(ui::is_ui_thread());
 
 	const auto app = g_app_impl.lock();
 
-	if (app)
-	{
-		app->ui_wait_for_signal({te}, false, timeout_ms, cb);
-	}
+	return app ? app->ui_wait_for_signal({te}, false, timeout_ms, cb) : platform::wait_for_timeout;
 }
 
 uint32_t platform::wait_for_timeout = WAIT_TIMEOUT - WAIT_OBJECT_0;
@@ -8265,9 +8165,9 @@ uint32_t platform::wait_for(const std::vector<std::reference_wrapper<thread_even
 		// an over-long list cannot overrun the stack array.
 		const auto count = static_cast<uint32_t>(std::min<size_t>(events.size(), max_events));
 		HANDLE handles[max_events];
-		for (auto i = 0u; i < count; ++i) handles[i] = static_cast<HANDLE>(events[i].get()._h);
+		for (auto i = 0u; i < count; ++i) handles[i] = events[i].get()._h;
 		const auto wait_result = WaitForMultipleObjects(count, handles, wait_all,
-		                                               timeout_ms ? timeout_ms : INFINITE);
+		                                                timeout_ms ? timeout_ms : INFINITE);
 		result = wait_result - WAIT_OBJECT_0;
 	}
 
@@ -8321,9 +8221,6 @@ int WINAPI wWinMain(const HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, cons
 		//SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE);
 
 		// Does not improve performance but worth testing later
-		//HANDLE heap = GetProcessHeap();
-		//ULONG heapCompatibility = HEAP_CREATE_SEGMENT_HEAP;
-		//HeapSetInformation(heap, HeapCompatibilityInformation, &heapCompatibility, sizeof(heapCompatibility));
 
 		init_color_styles();
 
@@ -8421,6 +8318,21 @@ int WINAPI wWinMain(const HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, cons
 
 				return validate_result;
 			}
+
+			// Handle /dup-report command line option: measure duplicate grouping over a
+			// real library in console mode and exit. Read-only.
+			if (command_line.dup_report)
+			{
+				setup_headless_console();
+
+				df::start_time = platform::now();
+				resources.init(get_resource_instance);
+
+				const int report_result = run_duplicate_report(command_line.dup_report_folder,
+				                                               command_line.dup_report_output);
+
+				return report_result;
+			}
 		}
 
 #if defined(_M_IX86) || defined(_M_X64)
@@ -8486,7 +8398,6 @@ int WINAPI wWinMain(const HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, cons
 	}
 
 #ifdef _DEBUG
-	//_CrtDumpMemoryLeaks(); 
 #endif // _DEBUG
 
 	return result;
@@ -8586,10 +8497,15 @@ void win32_app::update_event_handles()
 	// keeps the invariant local to the one place that builds the wait set.
 	constexpr size_t max_wait_handles = MAXIMUM_WAIT_OBJECTS - 1;
 
+	// Appended before the folder watches so that a truncation - here or in ui_wait_for_signal, which
+	// drops the tail - can only cost a live folder watch, never the idle action that drains the UI
+	// queue.
+	app_thread_events.emplace_back(static_cast<HANDLE>(_idle_event._h));
+	app_event_actions.emplace_back([this] { idle(); });
+
 	for (auto& h : _folder_changes)
 	{
-		// Reserve one slot for the idle handle appended below.
-		if (app_thread_events.size() + 1 >= max_wait_handles)
+		if (app_thread_events.size() >= max_wait_handles)
 		{
 			df::log(__FUNCTION__, "Folder-watch handles exceed the wait limit - some folders will not be live-watched");
 			break;
@@ -8602,9 +8518,6 @@ void win32_app::update_event_handles()
 			FindNextChangeNotification(h);
 		});
 	}
-
-	app_thread_events.emplace_back(static_cast<HANDLE>(_idle_event._h));
-	app_event_actions.emplace_back([this] { idle(); });
 
 	df::assert_true(app_thread_events.size() == app_event_actions.size());
 	df::assert_true(app_thread_events.size() <= max_wait_handles);
@@ -8846,7 +8759,9 @@ int win32_app::ui_message_loop()
 		}
 		else if (n < app_event_actions.size())
 		{
-			app_event_actions[n]();
+			// Copied first: the action can reach update_event_handles, which clears this vector.
+			const auto action = app_event_actions[n];
+			action();
 		}
 
 		// A ready waitable timer has a lower wait index than the Windows message queue. If frame
@@ -8887,12 +8802,15 @@ uint32_t win32_app::ui_wait_for_signal(const std::vector<std::reference_wrapper<
 		event_actions.emplace_back([&signal_set] { signal_set = true; });
 	}
 
-	thread_events.insert(thread_events.end(), app_thread_events.begin(), app_thread_events.end());
-	event_actions.insert(event_actions.end(), app_event_actions.begin(), app_event_actions.end());
-
 	// Caller events occupy the first slots of the wait set (app events are appended after), so a
 	// signalled caller event's index is the caller-relative result directly.
 	const auto caller_event_count = static_cast<uint32_t>(events.size());
+
+	// MsgWaitForMultipleObjects reserves one slot for the input queue. The app set is already near
+	// that limit (frame timer, idle, up to 60 folder watches), so the appended events are truncated
+	// to fit rather than letting the call fail with WAIT_FAILED.
+	constexpr size_t max_wait_handles = MAXIMUM_WAIT_OBJECTS - 1;
+	const auto room = caller_event_count < max_wait_handles ? max_wait_handles - caller_event_count : 0_z;
 
 	MSG msg;
 	msg.message = WM_NULL; // anything that isn't WM_QUIT
@@ -8904,6 +8822,16 @@ uint32_t win32_app::ui_wait_for_signal(const std::vector<std::reference_wrapper<
 
 	while (!df::is_closing && !signal_set)
 	{
+		// Re-copied every iteration, never snapshotted: the idle action this loop runs can reach
+		// monitor_folders, which closes the folder-watch handles and rebuilds the app set. Waiting
+		// again on the old handles fails the whole wait.
+		thread_events.resize(caller_event_count);
+		event_actions.resize(caller_event_count);
+
+		const auto appended = std::min(room, app_thread_events.size());
+		thread_events.insert(thread_events.end(), app_thread_events.begin(), app_thread_events.begin() + appended);
+		event_actions.insert(event_actions.end(), app_event_actions.begin(), app_event_actions.begin() + appended);
+
 		auto wait_ms = INFINITE;
 
 		if (timeout_ms)
@@ -8928,7 +8856,9 @@ uint32_t win32_app::ui_wait_for_signal(const std::vector<std::reference_wrapper<
 		}
 		if (n > event_actions.size())
 		{
-			return result; // unexpected failure
+			// WAIT_FAILED arrives here. Returning result (0) would be read as "the first caller
+			// event signalled", so a failed wait must be reported as one that did not complete.
+			return platform::wait_for_timeout;
 		}
 		if (n < event_actions.size())
 		{
@@ -8954,7 +8884,9 @@ uint32_t win32_app::ui_wait_for_signal(const std::vector<std::reference_wrapper<
 		}
 	}
 
-	return result;
+	// Returning result here would claim the first caller event signalled. The loop also exits on
+	// df::is_closing, so only signal_set proves a caller event was actually observed.
+	return signal_set ? result : platform::wait_for_timeout;
 }
 
 void win32_app::sys_command(const ui::sys_command_type cmd)
@@ -9184,12 +9116,16 @@ platform::control_paint_probe platform::probe_buffered_control_paint()
 		SendMessage(toolbar, TB_SETMAXTEXTROWS, 1, 0);
 
 		TBBUTTON buttons[2] = {};
-		const wchar_t* const first_text = L"Ab";
-		const wchar_t* const second_text = L"Cd";
-		buttons[0] = {I_IMAGENONE, 1, TBSTATE_ENABLED, BTNS_BUTTON | BTNS_AUTOSIZE, {}, 0,
-		              std::bit_cast<INT_PTR>(first_text)};
-		buttons[1] = {I_IMAGENONE, 2, TBSTATE_ENABLED, BTNS_BUTTON | BTNS_AUTOSIZE, {}, 0,
-		              std::bit_cast<INT_PTR>(second_text)};
+		const auto first_text = L"Ab";
+		const auto second_text = L"Cd";
+		buttons[0] = {
+			I_IMAGENONE, 1, TBSTATE_ENABLED, BTNS_BUTTON | BTNS_AUTOSIZE, {}, 0,
+			std::bit_cast<INT_PTR>(first_text)
+		};
+		buttons[1] = {
+			I_IMAGENONE, 2, TBSTATE_ENABLED, BTNS_BUTTON | BTNS_AUTOSIZE, {}, 0,
+			std::bit_cast<INT_PTR>(second_text)
+		};
 		SendMessage(toolbar, TB_ADDBUTTONS, 2, std::bit_cast<LPARAM>(&buttons[0]));
 
 		probe_control_render(toolbar, extent, result.toolbar_painted_pixels, result.toolbar_colors);

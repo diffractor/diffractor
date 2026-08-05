@@ -12,7 +12,6 @@
 #pragma once
 
 #include "view_list.h"
-#include "app_util.h"
 
 using view_controls_host_ptr = std::shared_ptr<view_controls_host>;
 
@@ -84,7 +83,7 @@ public:
 		return _status;
 	}
 
-	void activate(sizei extent) override
+	void activate(const sizei extent) override
 	{
 		list_view::activate(extent);
 		refresh();

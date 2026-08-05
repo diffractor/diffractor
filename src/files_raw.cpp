@@ -19,7 +19,14 @@
 
 #include "dng/dng_host.h"
 #include "dng/dng_tag_values.h"
+
+// LibRaw redefines the DNG SDK feature flags (qDNGUseLibJPEG, qDNGXMPFiles, qDNGThreadSafe) for its
+// own headers. Including it first would instead change the flags the SDK headers above see, which the
+// prebuilt SDK library was not compiled with, so the redefinition is left in place and only silenced.
+#pragma warning(push)
+#pragma warning(disable : 4005) // macro redefinition
 #include <LibRaw/libraw.h>
+#pragma warning(pop)
 
 // LibRaw hands DNG 1.7 JPEG-XL images (TIFF compression 52546) to the SDK only while qDNGSupportJXL
 // is visible and the SDK is 1.7 or newer - see valid_for_dngsdk in LibRaw's dngsdk_glue.cpp. In SDK
@@ -410,6 +417,21 @@ static std::string cfa_pattern(const libraw_iparams_t& P1)
 	return result;
 }
 
+// LibRaw sets gpsparsed for any non-empty GPS IFD, and many cameras (for example the Canon
+// EOS 7D) write a GPS IFD containing only GPSVersionID. Without this check those files land
+// at 0,0. Matches the zero rejection the EXIF path applies in exif_gps_coordinate_builder.
+static bool raw_has_gps_fix(const libraw_gps_info_t& gps)
+{
+	if (!gps.gpsparsed) return false;
+
+	const auto lat = gps_coordinate::dms_to_decimal(gps.latitude[0], gps.latitude[1], gps.latitude[2]);
+	const auto lon = gps_coordinate::dms_to_decimal(gps.longitude[0], gps.longitude[1], gps.longitude[2]);
+
+	return lat > 0.0 && lon > 0.0 &&
+		lat <= gps_coordinate::max_valid_latitude &&
+		lon < gps_coordinate::invalid_coordinate;
+}
+
 static void populate_raw_metadata(file_scan_result& result, const libraw_data_t& data, const scan_intent intent)
 {
 	result.width = data.sizes.width;
@@ -456,7 +478,7 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 	result.focal_length = data.other.focal_len;
 
 	const auto& gps = data.other.parsed_gps;
-	if (gps.gpsparsed)
+	if (raw_has_gps_fix(gps))
 	{
 		const auto lat = gps_coordinate::dms_to_decimal(gps.latitude[0], gps.latitude[1], gps.latitude[2]);
 		const auto lon = gps_coordinate::dms_to_decimal(gps.longitude[0], gps.longitude[1], gps.longitude[2]);
@@ -761,13 +783,13 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 
 	add_section(kv, "GPS");
 
-	if (P2.parsed_gps.gpsparsed)
+	if (raw_has_gps_fix(P2.parsed_gps))
 	{
 		const auto& G = P2.parsed_gps;
 		add_metadata(kv, "Latitude", std::format("{:.0f}° {:.0f}' {:.2f}\" {}", G.latitude[0], G.latitude[1],
-		                                          G.latitude[2], G.latref ? G.latref : '?'));
+		                                         G.latitude[2], G.latref ? G.latref : '?'));
 		add_metadata(kv, "Longitude", std::format("{:.0f}° {:.0f}' {:.2f}\" {}", G.longitude[0], G.longitude[1],
-		                                           G.longitude[2], G.longref ? G.longref : '?'));
+		                                          G.longitude[2], G.longref ? G.longref : '?'));
 		add_metadata(kv, "Altitude", std::format("{:.2f} m{}", G.altitude, G.altref ? " (below sea level)" : ""));
 		add_metadata(kv, "GPS timestamp", std::format("{:02.0f}:{:02.0f}:{:05.2f} UTC", G.gpstimestamp[0],
 		                                              G.gpstimestamp[1], G.gpstimestamp[2]));
@@ -1129,12 +1151,12 @@ struct raw_processor
 	std::unique_ptr<libraw_ex> processor;
 };
 
-static raw_processor create_processor()
+// Full-image decode only. The Adobe SDK host belongs here and nowhere else: LibRaw reaches it from
+// try_dngsdk() inside unpack(), which a header scan never calls.
+static raw_processor create_decode_processor()
 {
 	raw_processor result;
 	result.processor = std::make_unique<libraw_ex>();
-
-	//iProcessor.set_exifparser_handler(exif_callback, &context);
 
 	// Installing the host is what activates the Adobe SDK - LibRaw already defaults
 	// rawparams.use_dngsdk to LIBRAW_DNG_DEFAULT (float, linear, deflate and 8-bit DNG), and unpack()
@@ -1150,6 +1172,51 @@ static raw_processor create_processor()
 
 	return result;
 }
+
+// Borrows the calling thread's LibRaw instance for one header scan. Constructing LibRaw allocates
+// and zero-fills roughly half a megabyte a scan never reads (libraw_data_t carries
+// color.curve[0x10000], LibRaw_TLS carries ahd_data.cbrt[0x10000]), and indexing paid that twice
+// per file - once in the constructor, once in the destructor's recycle(). recycle() restores the
+// post-construction state, so one instance retained per scanning thread is equivalent and pays it
+// once. The cost of that trade is the retained instance itself, on each thread that scans RAW.
+class raw_scan_lease
+{
+public:
+	raw_scan_lease() : _slot(thread_slot())
+	{
+		// Nested leases would silently share one instance and corrupt each other's parse state.
+		df::assert_true(!_slot.in_use);
+		_slot.in_use = true;
+	}
+
+	~raw_scan_lease()
+	{
+		// recycle() also closes the datastream, so the scanned file is not left open past the lease.
+		_slot.processor.recycle();
+		_slot.in_use = false;
+	}
+
+	raw_scan_lease(const raw_scan_lease&) = delete;
+	raw_scan_lease& operator=(const raw_scan_lease&) = delete;
+
+	libraw_ex* operator->() const { return &_slot.processor; }
+	libraw_ex& operator*() const { return _slot.processor; }
+
+private:
+	struct slot
+	{
+		libraw_ex processor;
+		bool in_use = false;
+	};
+
+	static slot& thread_slot()
+	{
+		static thread_local slot s;
+		return s;
+	}
+
+	slot& _slot;
+};
 
 // Finds the index of the largest embedded JPEG thumbnail in LibRaw's thumbnail list,
 // or -1 if there is none. Used as a fallback when the default (largest) thumbnail is a
@@ -1214,31 +1281,32 @@ file_scan_result files::scan_raw(const df::file_path path, const std::string_vie
 {
 	file_scan_result result;
 	const auto w = platform::to_file_system_path(path);
-	const auto rp = create_processor();
+	const raw_scan_lease processor;
 
-	if (rp.processor->open_file(w.c_str()) == LIBRAW_SUCCESS)
+	if (processor->open_file(w.c_str()) == LIBRAW_SUCCESS)
 	{
-		if (rp.processor->adjust_sizes_info_only() == LIBRAW_SUCCESS)
+		if (processor->adjust_sizes_info_only() == LIBRAW_SUCCESS)
 		{
-			populate_raw_metadata(result, rp.processor->imgdata, intent);
+			populate_raw_metadata(result, processor->imgdata, intent);
 			result.success = true;
 		}
 
 		if (load_thumb)
 		{
-			if (unpack_decodable_thumb(*rp.processor))
+			if (unpack_decodable_thumb(*processor))
 			{
-				const auto& t = rp.processor->imgdata.thumbnail;
+				const auto& t = processor->imgdata.thumbnail;
 
 				if (LIBRAW_THUMBNAIL_JPEG == t.tformat &&
 					t.tlength > 0 &&
-					rp.processor->imgdata.sizes.width > 0 &&
-					rp.processor->imgdata.sizes.height > 0)
+					processor->imgdata.sizes.width > 0 &&
+					processor->imgdata.sizes.height > 0)
 				{
 					const auto* const data = std::bit_cast<const uint8_t*>(t.thumb);
 					const auto size = t.tlength;
 
-					result.thumbnail_surface = image_to_surface(df::cspan{data, size}, max);
+					result.thumbnail_surface = image_to_surface(df::cspan{data, size}, max, false,
+					                                           decode_intent::thumbnail);
 				}
 				else if (LIBRAW_THUMBNAIL_BITMAP == t.tformat && t.tlength > 0)
 				{
@@ -1249,7 +1317,7 @@ file_scan_result files::scan_raw(const df::file_path path, const std::string_vie
 				{
 					result.thumbnail_surface->orientation(calc_orientation(result.thumbnail_surface->dimensions(),
 					                                                       result.thumbnail_surface->orientation(),
-					                                                       rp.processor->imgdata));
+					                                                       processor->imgdata));
 				}
 			}
 		}
@@ -1269,7 +1337,7 @@ file_load_result load_raw(const df::file_path path, const bool can_load_preview)
 	file_load_result result;
 
 	const auto w = platform::to_file_system_path(path);
-	const auto rp = create_processor();
+	const auto rp = create_decode_processor();
 
 	if (rp.processor->open_file(w.c_str()) == LIBRAW_SUCCESS)
 	{
@@ -1333,7 +1401,8 @@ file_load_result load_raw(const df::file_path path, const bool can_load_preview)
 
 					if (colors != 1 && colors < 3)
 					{
-						df::log(__FUNCTION__, std::format("unsupported RAW channel count {} for {}", colors, path.name()));
+						df::log(__FUNCTION__,
+						        std::format("unsupported RAW channel count {} for {}", colors, path.name()));
 						return result;
 					}
 

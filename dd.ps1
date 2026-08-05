@@ -556,8 +556,16 @@ function Build-Store {
     Write-Host ""
     Write-Host "Cleaning previous release artifacts..." -ForegroundColor Yellow
     $msixPath = Join-Path $ScriptDir "$storePackage.msix"
-    if (Test-Path $msixPath) {
-        Remove-Item $msixPath -Force
+    $symPath = Join-Path $ScriptDir "$storePackage.appxsym"
+    $uploadPath = Join-Path $ScriptDir "$storePackage.msixupload"
+    $uploadStaging = Join-Path $ScriptDir "dist-upload"
+    foreach ($stale in $msixPath, $symPath, $uploadPath) {
+        if (Test-Path $stale) {
+            Remove-Item $stale -Force
+        }
+    }
+    if (Test-Path $uploadStaging) {
+        Remove-Item $uploadStaging -Recurse -Force
     }
     if (Test-Path $PackageRoot) {
         Remove-Item $PackageRoot -Recurse -Force
@@ -599,7 +607,7 @@ function Build-Store {
     
     # MakeAppx only checks manifest-referenced images when no resources.pri is present, and
     # this pipeline always builds one, so a partial generation would slip through to the Store.
-    foreach ($asset in "StoreLogo.png", "Square150x150Logo.png", "Square44x44Logo.png", "Wide310x150Logo.png", "SplashScreen.png", "DiffractorFile.png") {
+    foreach ($asset in "StoreLogo.png", "Square150x150Logo.png", "Square44x44Logo.png", "Wide310x150Logo.png", "SmallTile.png", "LargeTile.png", "SplashScreen.png", "DiffractorFile.png") {
         if (-not (Test-Path (Join-Path $assetsDir $asset))) {
             Write-Host "Error: store asset '$asset' was not generated" -ForegroundColor Red
             exit 1
@@ -637,6 +645,15 @@ function Build-Store {
         Pop-Location
         exit $LASTEXITCODE
     }
+
+    # The generated config auto-splits Scale/Language/DXFeatureLevel candidates into separate
+    # resource PRIs, which only a bundle can load. In a single package that leaves the main index
+    # with scale-100 only, so every tile, splash and logo renders upscaled on the 125%/150%/200%
+    # displays most users have. Drop the packaging node so one index carries all candidates.
+    [xml]$priXml = Get-Content $priConfig
+    $packagingNode = $priXml.resources.SelectSingleNode('packaging')
+    if ($packagingNode) { $priXml.resources.RemoveChild($packagingNode) | Out-Null }
+    $priXml.Save($priConfig)
     
     # Generate resources.pri
     & $makePri new /pr $PackageRoot /cf $priConfig /o
@@ -650,6 +667,19 @@ function Build-Store {
     # Remove priconfig.xml (not needed in package)
     Remove-Item $priConfig -Force -ErrorAction SilentlyContinue
     Pop-Location
+
+    if (-not (Test-Path (Join-Path $PackageRoot "resources.pri"))) {
+        Write-Host "Error: resources.pri was not generated" -ForegroundColor Red
+        exit 1
+    }
+
+    # A split index means the packaging node came back and the high-DPI assets are unreachable.
+    $splitPri = Get-ChildItem $PackageRoot -Filter "resources.*.pri" -File -ErrorAction SilentlyContinue
+    if ($splitPri) {
+        Write-Host "Error: MakePri split the resource index; high-DPI assets would not resolve." -ForegroundColor Red
+        $splitPri | ForEach-Object { Write-Host "  $($_.Name)" -ForegroundColor Red }
+        exit 1
+    }
     
     # Build MSIX package
     Write-Host ""
@@ -671,6 +701,24 @@ function Build-Store {
     # Sign MSIX package
     Write-Host ""
     Invoke-SignTool -Description "MSIX package" -Files @($msixPath) -UseThumbprint
+
+    # Build the Store upload file. The WinStore build compiles out the app's own crash reporting,
+    # so the .appxsym symbols are the only way Store crashes reach Partner Center health reports.
+    Write-Host ""
+    Write-Host "Building Store upload file..." -ForegroundColor Yellow
+    Compress-Archive -Path (Join-Path $SourceFilesDir "diffractor.pdb") -DestinationPath "$symPath.zip" -Force
+    Move-Item "$symPath.zip" $symPath -Force
+
+    New-Item -ItemType Directory -Path $uploadStaging -Force | Out-Null
+    Copy-Item $msixPath, $symPath $uploadStaging -Force
+    Compress-Archive -Path (Join-Path $uploadStaging "*") -DestinationPath "$uploadPath.zip" -Force
+    Move-Item "$uploadPath.zip" $uploadPath -Force
+    Remove-Item $uploadStaging -Recurse -Force
+
+    if (-not (Test-Path $uploadPath)) {
+        Write-Host "Error: failed to build $storePackage.msixupload" -ForegroundColor Red
+        exit 1
+    }
     
     # Add symbols to symbol store
     Write-Host ""
@@ -686,7 +734,9 @@ function Build-Store {
     Write-Host "Version: $($version.FileVersion)"
     Write-Host ""
     Write-Host "Output files:"
-    Write-Host "  $storePackage.msix    Windows Store package"
+    Write-Host "  $storePackage.msixupload  Upload this to Partner Center"
+    Write-Host "  $storePackage.msix        Windows Store package"
+    Write-Host "  $storePackage.appxsym     Public symbols for crash analytics"
     Write-Host "  exe\diffractor.exe        Store executable"
     Write-Host ""
 }

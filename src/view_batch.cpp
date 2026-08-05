@@ -58,8 +58,11 @@ std::array<text_t, list_view::max_col_count> batch_tool_view::col_titles()
 
 std::string_view batch_tool_view::title()
 {
-	const auto text = _mode == batch_tool_mode::convert ? tt.command_convert_or_resize.sv() :
-		_mode == batch_tool_mode::metadata ? tt.command_edit_metadata.sv() : tt.command_adjust_date.sv();
+	const auto text = _mode == batch_tool_mode::convert
+		                  ? tt.command_convert_or_resize.sv()
+		                  : _mode == batch_tool_mode::metadata
+		                  ? tt.command_edit_metadata.sv()
+		                  : tt.command_adjust_date.sv();
 	_title = std::format("{}: {}", s_app_name, text);
 	return _title;
 }
@@ -101,15 +104,16 @@ void batch_tool_view::deactivate()
 metadata_edits batch_tool_view::metadata_changes() const
 {
 	metadata_edits edits;
-	if (_set_title) edits.title = _metadata_title;
-	if (_set_comment) edits.comment = _metadata_comment;
-	if (_set_rating) edits.rating = _metadata_rating;
-	if (_set_year) edits.year = _metadata_year;
-	if (_set_created) edits.created = _metadata_created;
-	if (_set_episode) edits.episode = _metadata_episode;
-	if (_set_season) edits.season = _metadata_season;
-	if (_set_track) edits.track_num = _metadata_track;
-	if (_set_disk) edits.disk_num = _metadata_disk;
+	if (setting.set_title) edits.title = _metadata_title;
+	if (setting.set_comment) edits.comment = _metadata_comment;
+	if (setting.set_synopsis) edits.synopsis = _metadata_synopsis;
+	if (setting.set_rating) edits.rating = _metadata_rating;
+	if (setting.set_year) edits.year = _metadata_year;
+	if (setting.set_created) edits.created = _metadata_created;
+	if (setting.set_episode) edits.episode = _metadata_episode;
+	if (setting.set_season) edits.season = _metadata_season;
+	if (setting.set_track) edits.track_num = _metadata_track;
+	if (setting.set_disk) edits.disk_num = _metadata_disk;
 	if (setting.set_artist) edits.artist = setting.artist;
 	if (setting.set_caption) edits.description = setting.caption;
 	if (setting.set_album) edits.album = setting.album;
@@ -144,7 +148,8 @@ void batch_tool_view::refresh_convert()
 		const auto dimensions = md ? md->dimensions() : sizei{};
 		const auto max_side = setting.convert.limit_dimension ? setting.convert.max_side : 0;
 		const auto scale = max_side > 0 && std::max(dimensions.cx, dimensions.cy) > max_side
-			? ui::scale_dimensions(dimensions, max_side, true) : dimensions;
+			                   ? ui::scale_dimensions(dimensions, max_side, true)
+			                   : dimensions;
 
 		if (entry.collides) ++collisions;
 
@@ -190,15 +195,16 @@ void batch_tool_view::refresh_metadata()
 	if (!_metadata_created.is_valid()) _metadata_created = platform::now();
 
 	std::vector<std::string_view> fields;
-	if (_set_title) fields.emplace_back(tt.prop_name_title.sv());
-	if (_set_comment) fields.emplace_back(tt.prop_name_comment.sv());
-	if (_set_rating) fields.emplace_back(tt.prop_name_rating.sv());
-	if (_set_year) fields.emplace_back(tt.prop_name_year.sv());
-	if (_set_created) fields.emplace_back(tt.prop_name_created.sv());
-	if (_set_episode) fields.emplace_back(tt.prop_name_episode.sv());
-	if (_set_season) fields.emplace_back(tt.prop_name_season.sv());
-	if (_set_track) fields.emplace_back(tt.prop_name_track.sv());
-	if (_set_disk) fields.emplace_back(tt.prop_name_disk.sv());
+	if (setting.set_title) fields.emplace_back(tt.prop_name_title.sv());
+	if (setting.set_comment) fields.emplace_back(tt.prop_name_comment.sv());
+	if (setting.set_synopsis) fields.emplace_back(tt.prop_name_synopsis.sv());
+	if (setting.set_rating) fields.emplace_back(tt.prop_name_rating.sv());
+	if (setting.set_year) fields.emplace_back(tt.prop_name_year.sv());
+	if (setting.set_created) fields.emplace_back(tt.prop_name_created.sv());
+	if (setting.set_episode) fields.emplace_back(tt.prop_name_episode.sv());
+	if (setting.set_season) fields.emplace_back(tt.prop_name_season.sv());
+	if (setting.set_track) fields.emplace_back(tt.prop_name_track.sv());
+	if (setting.set_disk) fields.emplace_back(tt.prop_name_disk.sv());
 	if (setting.set_artist) fields.emplace_back(tt.prop_name_artist.sv());
 	if (setting.set_caption) fields.emplace_back(tt.prop_name_description.sv());
 	if (setting.set_album) fields.emplace_back(tt.prop_name_album.sv());
@@ -220,14 +226,17 @@ void batch_tool_view::refresh_metadata()
 		row->_text[0] = item->path().pack();
 		row->_text[1] = field_text;
 		const auto md = item->metadata();
-		const auto overwrites = md && ((_set_title && !prop::is_null(md->title)) ||
-			(_set_comment && !prop::is_null(md->comment)) || (_set_rating && md->rating != 0) ||
-			(_set_year && md->year != 0) || (_set_created && md->created().is_valid()) ||
-			(_set_episode && (md->episode.x != 0 || md->episode.y != 0)) || (_set_season && md->season != 0) ||
-			(_set_track && (md->track.x != 0 || md->track.y != 0)) ||
-			(_set_disk && (md->disk.x != 0 || md->disk.y != 0)) ||
+		const auto overwrites = md && ((setting.set_title && !prop::is_null(md->title)) ||
+			(setting.set_comment && !prop::is_null(md->comment)) ||
+			(setting.set_synopsis && !prop::is_null(md->synopsis)) || (setting.set_rating && md->rating != 0) ||
+			(setting.set_year && md->year != 0) || (setting.set_created && md->created().is_valid()) ||
+			(setting.set_episode && (md->episode.x != 0 || md->episode.y != 0)) ||
+			(setting.set_season && md->season != 0) ||
+			(setting.set_track && (md->track.x != 0 || md->track.y != 0)) ||
+			(setting.set_disk && (md->disk.x != 0 || md->disk.y != 0)) ||
 			(setting.set_artist && !prop::is_null(md->artist)) ||
-			(setting.set_caption && !prop::is_null(md->description)) || (setting.set_album && !prop::is_null(md->album)) ||
+			(setting.set_caption && !prop::is_null(md->description)) || (setting.set_album && !prop::is_null(md->album))
+			||
 			(setting.set_album_artist && !prop::is_null(md->album_artist)) ||
 			(setting.set_genre && !prop::is_null(md->genre)) || (setting.set_tv_show && !prop::is_null(md->show)) ||
 			(setting.set_copyright_notice && !prop::is_null(md->copyright_notice)) ||
@@ -236,8 +245,8 @@ void batch_tool_view::refresh_metadata()
 			(setting.set_copyright_credit && !prop::is_null(md->copyright_credit)) ||
 			(setting.set_copyright_url && !prop::is_null(md->copyright_url)));
 		row->_text[2] = overwrites
-			? std::string(tt.collision_replace.sv())
-			: std::string(tt.update.sv());
+			                ? std::string(tt.collision_replace.sv())
+			                : std::string(tt.update.sv());
 		if (overwrites) row->_text_color[2] = warning_color;
 		row->_order = order++;
 		rows.emplace_back(row);
@@ -321,18 +330,18 @@ void batch_tool_view::run()
 	else run_dates();
 }
 
-void batch_tool_view::queue_run_result(view_state& s, const std::shared_ptr<batch_tool_view>& view,
+void batch_tool_view::queue_run_result(const view_state& s, const std::shared_ptr<batch_tool_view>& view,
                                        platform::file_op_result result, const bool canceled, std::string title,
                                        std::shared_ptr<detach_file_handles> detach, std::string error)
 {
 	s.queue_ui([view, result = std::move(result), canceled, title = std::move(title), detach = std::move(detach),
-		           error = std::move(error)]
+		error = std::move(error)]
 	{
 		view->end_processing();
 		view->refresh();
 		if (!error.empty() || result.failed())
 		{
-			auto dlg = make_dlg(view->_host->owner());
+			const auto dlg = make_dlg(view->_host->owner());
 			dlg->show_message(icon_index::error, title, error.empty() ? result.format_error() : error);
 		}
 		else if (canceled)
@@ -345,7 +354,7 @@ void batch_tool_view::queue_run_result(view_state& s, const std::shared_ptr<batc
 
 void batch_tool_view::run_convert()
 {
-	auto plan = _convert_plan;
+	const auto plan = _convert_plan;
 	struct convert_request
 	{
 		df::file_path source;
@@ -373,34 +382,48 @@ void batch_tool_view::run_convert()
 	const auto cancel_source = processing_cancel_source();
 	const auto cancel_version = cancel_source->load();
 	_status = std::string(tt.processing.sv());
-	_state.queue_async(async_queue::work, [&s = _state, view = shared_from_this(), requests = std::move(requests), cancel_source, cancel_version, max_side,
-		jpeg_quality, webp_quality, webp_lossless, write_folder, detach, title]() mutable
-	{
-		platform::file_op_result result;
-		std::string error;
-		try
-		{
-			files ff;
-			result = platform::create_folder(write_folder);
-			for (size_t index = 0; result.success() && index < requests.size() && cancel_source->load() == cancel_version; ++index)
-			{
-				s.queue_ui([view, index] { view->processing_item(index); });
-				file_encode_params params;
-				params.jpeg_save_quality = jpeg_quality;
-				params.webp_quality = webp_quality;
-				params.webp_lossless = webp_lossless;
-				const auto& request = requests[index];
-				result = ff.update(request.source, request.destination, {},
-				                   max_side > 0 ? image_edits(max_side) : image_edits(), params, false, request.xmp);
-			}
-		}
-		catch (const std::exception& e)
-		{
-			error = str::utf8_cast(e.what());
-		}
-		const auto canceled = cancel_source->load() != cancel_version;
-		queue_run_result(s, view, std::move(result), canceled, title, std::move(detach), std::move(error));
-	});
+	_state.queue_async(async_queue::work,
+	                   [&s = _state, view = shared_from_this(), requests = std::move(requests), cancel_source,
+		                   cancel_version, max_side,
+		                   jpeg_quality, webp_quality, webp_lossless, write_folder, detach, title]() mutable
+	                   {
+		                   platform::file_op_result result;
+		                   std::string error;
+		                   try
+		                   {
+			                   files ff;
+			                   result = platform::create_folder(write_folder);
+			                   for (size_t index = 0; result.success() && index < requests.size() && cancel_source->
+			                        load() == cancel_version; ++index)
+			                   {
+				                   s.queue_ui([view, index] { view->processing_item(index); });
+				                   file_encode_params params;
+				                   params.jpeg_save_quality = jpeg_quality;
+				                   params.webp_quality = webp_quality;
+				                   params.webp_lossless = webp_lossless;
+				                   const auto& request = requests[index];
+				                   result = ff.update(request.source, request.destination, {},
+				                                      max_side > 0 ? image_edits(max_side) : image_edits(), params,
+				                                      false, request.xmp);
+			                   }
+
+			                   // Convert writes files nobody has told the index about; without this they
+			                   // stay invisible until something else happens to rescan that folder.
+			                   if (result.success())
+			                   {
+				                   df::unique_folders written;
+				                   written.emplace(write_folder);
+				                   s.item_index.queue_validate_changed_folders(std::move(written));
+			                   }
+		                   }
+		                   catch (const std::exception& e)
+		                   {
+			                   error = str::utf8_cast(e.what());
+		                   }
+		                   const auto canceled = cancel_source->load() != cancel_version;
+		                   queue_run_result(s, view, std::move(result), canceled, title, std::move(detach),
+		                                    std::move(error));
+	                   });
 }
 
 void batch_tool_view::run_metadata()
@@ -425,28 +448,33 @@ void batch_tool_view::run_metadata()
 	const auto cancel_source = processing_cancel_source();
 	const auto cancel_version = cancel_source->load();
 	_status = std::string(tt.processing.sv());
-	_state.queue_async(async_queue::work, [&s = _state, view = shared_from_this(), requests = std::move(requests), edits, cancel_source, cancel_version, detach, title]() mutable
-	{
-		platform::file_op_result result;
-		std::string error;
-		try
-		{
-			files ff;
-			for (size_t index = 0; index < requests.size() && cancel_source->load() == cancel_version; ++index)
-			{
-				s.queue_ui([view, index] { view->processing_item(index); });
-				const auto& request = requests[index];
-				result = ff.update(request.path, edits, {}, file_encode_params{}, false, request.xmp);
-				if (result.failed()) break;
-			}
-		}
-		catch (const std::exception& e)
-		{
-			error = str::utf8_cast(e.what());
-		}
-		const auto canceled = cancel_source->load() != cancel_version;
-		queue_run_result(s, view, std::move(result), canceled, title, std::move(detach), std::move(error));
-	});
+	_state.queue_async(async_queue::work,
+	                   [&s = _state, view = shared_from_this(), requests = std::move(requests), edits, cancel_source,
+		                   cancel_version, detach, title]() mutable
+	                   {
+		                   platform::file_op_result result;
+		                   std::string error;
+		                   try
+		                   {
+			                   files ff;
+			                   for (size_t index = 0; index < requests.size() && cancel_source->load() == cancel_version
+			                        ; ++index)
+			                   {
+				                   s.queue_ui([view, index] { view->processing_item(index); });
+				                   const auto& request = requests[index];
+				                   result = ff.update(request.path, edits, {}, file_encode_params{}, false,
+				                                      request.xmp);
+				                   if (result.failed()) break;
+			                   }
+		                   }
+		                   catch (const std::exception& e)
+		                   {
+			                   error = str::utf8_cast(e.what());
+		                   }
+		                   const auto canceled = cancel_source->load() != cancel_version;
+		                   queue_run_result(s, view, std::move(result), canceled, title, std::move(detach),
+		                                    std::move(error));
+	                   });
 }
 
 void batch_tool_view::run_dates()
@@ -474,33 +502,39 @@ void batch_tool_view::run_dates()
 	const auto cancel_source = processing_cancel_source();
 	const auto cancel_version = cancel_source->load();
 	_status = std::string(tt.processing.sv());
-	_state.queue_async(async_queue::work, [&s = _state, view = shared_from_this(), requests = std::move(requests), new_start, original_start,
-		cancel_source, cancel_version, detach, title]() mutable
-	{
-		platform::file_op_result result;
-		std::string error;
-		try
-		{
-			files ff;
-			for (size_t index = 0; index < requests.size() && cancel_source->load() == cancel_version; ++index)
-			{
-				s.queue_ui([view, index] { view->processing_item(index); });
-				const auto& request = requests[index];
-				const auto date = adjusted_item_date(request.media_created, new_start, original_start);
-				metadata_edits edits;
-				edits.created = date;
-				result = ff.update(request.path, edits, {}, file_encode_params{}, false, request.xmp);
-				if (result.success()) platform::created_date(request.path, date.local_to_system());
-				else break;
-			}
-		}
-		catch (const std::exception& e)
-		{
-			error = str::utf8_cast(e.what());
-		}
-		const auto canceled = cancel_source->load() != cancel_version;
-		queue_run_result(s, view, std::move(result), canceled, title, std::move(detach), std::move(error));
-	});
+	_state.queue_async(async_queue::work,
+	                   [&s = _state, view = shared_from_this(), requests = std::move(requests), new_start,
+		                   original_start,
+		                   cancel_source, cancel_version, detach, title]() mutable
+	                   {
+		                   platform::file_op_result result;
+		                   std::string error;
+		                   try
+		                   {
+			                   files ff;
+			                   for (size_t index = 0; index < requests.size() && cancel_source->load() == cancel_version
+			                        ; ++index)
+			                   {
+				                   s.queue_ui([view, index] { view->processing_item(index); });
+				                   const auto& request = requests[index];
+				                   const auto date = adjusted_item_date(request.media_created, new_start,
+				                                                        original_start);
+				                   metadata_edits edits;
+				                   edits.created = date;
+				                   result = ff.update(request.path, edits, {}, file_encode_params{}, false,
+				                                      request.xmp);
+				                   if (result.success()) platform::created_date(request.path, date.local_to_system());
+				                   else break;
+			                   }
+		                   }
+		                   catch (const std::exception& e)
+		                   {
+			                   error = str::utf8_cast(e.what());
+		                   }
+		                   const auto canceled = cancel_source->load() != cancel_version;
+		                   queue_run_result(s, view, std::move(result), canceled, title, std::move(detach),
+		                                    std::move(error));
+	                   });
 }
 
 view_controls_host_ptr batch_tool_view::controls(const ui::control_frame_ptr& owner)
@@ -520,33 +554,57 @@ view_controls_host_ptr batch_tool_view::controls(const ui::control_frame_ptr& ow
 		controls.emplace_back(std::make_shared<divider_element>());
 		controls.emplace_back(std::make_shared<text_element>(tt.destination_folder));
 		controls.emplace_back(std::make_shared<ui::folder_picker_control>(frame, setting.write_folder, false,
-			[this](std::string_view) { refresh(); }));
+		                                                                  [this](std::string_view) { refresh(); }));
 		auto jpeg = std::make_shared<ui::check_control>(frame, tt.jpeg_best, setting.convert.to_jpeg, true, false,
-			[this](bool checked) { if (checked) setting.convert.to_png = setting.convert.to_webp = false; refresh(); },
-			ui::radio_group_format);
-		auto jpeg_options = std::make_shared<ui::group_control>();
+		                                                [this](const bool checked)
+		                                                {
+			                                                if (checked) setting.convert.to_png = setting.convert.
+				                                                to_webp = false;
+			                                                refresh();
+		                                                },
+		                                                ui::radio_group_format);
+		const auto jpeg_options = std::make_shared<ui::group_control>();
 		jpeg_options->add(std::make_shared<text_element>(tt.options_jpeg_quality));
-		jpeg_options->add(std::make_shared<ui::slider_control>(frame, std::string_view{}, setting.convert.jpeg_quality, 1,
-			100, [this] { refresh(); }));
+		jpeg_options->add(std::make_shared<ui::slider_control>(frame, std::string_view{}, setting.convert.jpeg_quality,
+		                                                       1,
+		                                                       100, [this] { refresh(); }));
 		jpeg->child(jpeg_options);
 		controls.emplace_back(jpeg);
-		controls.emplace_back(std::make_shared<ui::check_control>(frame, tt.png_best, setting.convert.to_png, true, false,
-			[this](bool checked) { if (checked) setting.convert.to_jpeg = setting.convert.to_webp = false; refresh(); },
-			ui::radio_group_format));
+		controls.emplace_back(std::make_shared<ui::check_control>(frame, tt.png_best, setting.convert.to_png, true,
+		                                                          false,
+		                                                          [this](const bool checked)
+		                                                          {
+			                                                          if (checked) setting.convert.to_jpeg = setting.
+				                                                          convert.to_webp = false;
+			                                                          refresh();
+		                                                          },
+		                                                          ui::radio_group_format));
 		auto webp = std::make_shared<ui::check_control>(frame, tt.webp_best, setting.convert.to_webp, true, false,
-			[this](bool checked) { if (checked) setting.convert.to_jpeg = setting.convert.to_png = false; refresh(); },
-			ui::radio_group_format);
-		auto webp_options = std::make_shared<ui::group_control>();
-		webp_options->add(std::make_shared<ui::slider_control>(frame, std::string_view{}, setting.convert.webp_quality, 1,
-			100, [this] { refresh(); }));
+		                                                [this](const bool checked)
+		                                                {
+			                                                if (checked) setting.convert.to_jpeg = setting.convert.
+				                                                to_png = false;
+			                                                refresh();
+		                                                },
+		                                                ui::radio_group_format);
+		const auto webp_options = std::make_shared<ui::group_control>();
+		webp_options->add(std::make_shared<ui::slider_control>(frame, std::string_view{}, setting.convert.webp_quality,
+		                                                       1,
+		                                                       100, [this] { refresh(); }));
 		webp_options->add(std::make_shared<ui::check_control>(frame, tt.lossless_compression,
-			setting.convert.webp_lossless, false, false, [this](bool) { refresh(); }));
+		                                                      setting.convert.webp_lossless, false, false, [this](bool)
+		                                                      {
+			                                                      refresh();
+		                                                      }));
 		webp->child(webp_options);
 		controls.emplace_back(webp);
 		auto dimension = std::make_shared<ui::check_control>(frame, tt.limit_output_dimensions,
-			setting.convert.limit_dimension, false, false, [this](bool) { refresh(); });
+		                                                     setting.convert.limit_dimension, false, false, [this](bool)
+		                                                     {
+			                                                     refresh();
+		                                                     });
 		dimension->child(std::make_shared<ui::num_control>(frame, std::string_view{}, setting.convert.max_side, false,
-			[this](int) { refresh(); }));
+		                                                   [this](int) { refresh(); }));
 		controls.emplace_back(dimension);
 		controls.emplace_back(std::make_shared<divider_element>());
 		controls.emplace_back(
@@ -559,51 +617,69 @@ view_controls_host_ptr batch_tool_view::controls(const ui::control_frame_ptr& ow
 		controls.emplace_back(std::make_shared<text_element>(format_plural_text(tt.edit_metadata_fmt, items)));
 		controls.emplace_back(std::make_shared<divider_element>());
 		controls.emplace_back(std::make_shared<text_element>(tt.metadata_select_field));
-		auto add_field = [&](const text_t label, bool& selected, std::string& value, const bool multiline = false)
+		std::weak_ptr<view_controls_host> weak_controls = result;
+		// Only a checked field shows its editor, so the panel stays a readable list of field names
+		// until the user chooses what this run is about.
+		auto make_check = [&](const text_t& label, bool& selected)
 		{
 			auto check = std::make_shared<ui::check_control>(frame, label, selected, false, false,
-				[this](bool) { refresh(); });
-			if (multiline) check->child(std::make_shared<ui::multi_line_edit_control>(frame, value, 6, true,
-				[this](std::string_view) { refresh(); }));
-			else check->child(std::make_shared<ui::edit_control>(frame, std::string_view{}, value,
-				[this](std::string_view) { refresh(); }));
+			                                                 [this, weak_controls](bool)
+			                                                 {
+				                                                 refresh();
+				                                                 if (const auto host = weak_controls.lock())
+					                                                 host->scroll_controls();
+			                                                 });
+			return check;
+		};
+		auto add_field = [&](const text_t& label, bool& selected, std::string& value, const bool multiline = false)
+		{
+			auto check = make_check(label, selected);
+			if (multiline)
+				check->child(std::make_shared<ui::multi_line_edit_control>(frame, value, 6, true,
+				                                                           [this](std::string_view) { refresh(); }));
+			else
+				check->child(std::make_shared<ui::edit_control>(frame, std::string_view{}, value,
+				                                                [this](std::string_view) { refresh(); }));
+			check->collapse_child_when_unchecked();
 			controls.emplace_back(check);
 		};
-		auto add_control_field = [&](const text_t label, bool& selected, const view_element_ptr& child)
+		auto add_control_field = [&](const text_t& label, bool& selected, const view_element_ptr& child)
 		{
-			auto check = std::make_shared<ui::check_control>(frame, label, selected, false, false,
-				[this](bool) { refresh(); });
+			auto check = make_check(label, selected);
 			check->child(child);
+			check->collapse_child_when_unchecked();
 			controls.emplace_back(check);
 		};
-		add_field(tt.prop_name_title, _set_title, _metadata_title);
-		add_field(tt.prop_name_comment, _set_comment, _metadata_comment, true);
+		add_field(tt.prop_name_title, setting.set_title, _metadata_title);
+		add_field(tt.prop_name_comment, setting.set_comment, _metadata_comment, true);
+		add_field(tt.prop_name_synopsis, setting.set_synopsis, _metadata_synopsis, true);
 		add_field(tt.prop_name_artist, setting.set_artist, setting.artist);
 		add_field(tt.prop_name_description, setting.set_caption, setting.caption, true);
 		add_field(tt.prop_name_album, setting.set_album, setting.album);
 		add_field(tt.album_artist, setting.set_album_artist, setting.album_artist);
-		add_control_field(tt.prop_name_genre, setting.set_genre,
-			std::make_shared<ui::edit_picker_control>(frame, setting.genre,
-				genre_suggestions(_state, items),
-				[this](std::string_view) { refresh(); }));
-		controls.emplace_back(std::make_shared<text_element>(tt.genre_separator_help));
+		const auto genre_group = std::make_shared<ui::group_control>();
+		genre_group->add(std::make_shared<ui::edit_picker_control>(frame, setting.genre,
+		                                                           genre_suggestions(_state, items),
+		                                                           [this](std::string_view) { refresh(); }));
+		genre_group->add(std::make_shared<text_element>(tt.genre_separator_help));
+		add_control_field(tt.prop_name_genre, setting.set_genre, genre_group);
 		add_field(tt.prop_name_show, setting.set_tv_show, setting.tv_show);
-		add_control_field(tt.prop_name_rating, _set_rating,
-			std::make_shared<rating_edit_control>(_metadata_rating, [this](int) { refresh(); }));
-		add_control_field(tt.prop_name_year, _set_year,
-			std::make_shared<ui::num_control>(frame, std::string_view{}, _metadata_year, true,
-				[this](int) { refresh(); }));
-		add_control_field(tt.prop_name_created, _set_created,
-			std::make_shared<ui::date_control>(frame, _metadata_created, true, [this] { refresh(); }));
-		add_control_field(tt.prop_name_episode, _set_episode,
-			std::make_shared<ui::num_pair_control>(frame, std::string_view{}, _metadata_episode));
-		add_control_field(tt.prop_name_season, _set_season,
-			std::make_shared<ui::num_control>(frame, std::string_view{}, _metadata_season, true,
-				[this](int) { refresh(); }));
-		add_control_field(tt.prop_name_track, _set_track,
-			std::make_shared<ui::num_pair_control>(frame, std::string_view{}, _metadata_track));
-		add_control_field(tt.prop_name_disk, _set_disk,
-			std::make_shared<ui::num_pair_control>(frame, std::string_view{}, _metadata_disk));
+		add_control_field(tt.prop_name_rating, setting.set_rating,
+		                  std::make_shared<rating_edit_control>(_metadata_rating, [this](int) { refresh(); }));
+		add_control_field(tt.prop_name_year, setting.set_year,
+		                  std::make_shared<ui::num_control>(frame, std::string_view{}, _metadata_year, true,
+		                                                    [this](int) { refresh(); }));
+		add_control_field(tt.prop_name_created, setting.set_created,
+		                  std::make_shared<ui::date_control>(frame, _metadata_created, true, [this] { refresh(); }));
+		add_control_field(tt.prop_name_episode, setting.set_episode,
+		                  std::make_shared<ui::num_pair_control>(frame, std::string_view{}, _metadata_episode));
+		add_control_field(tt.prop_name_season, setting.set_season,
+		                  std::make_shared<ui::num_control>(frame, std::string_view{}, _metadata_season, true,
+		                                                    [this](int) { refresh(); }));
+		add_control_field(tt.prop_name_track, setting.set_track,
+		                  std::make_shared<ui::num_pair_control>(frame, std::string_view{}, _metadata_track));
+		add_control_field(tt.prop_name_disk, setting.set_disk,
+		                  std::make_shared<ui::num_pair_control>(frame, std::string_view{}, _metadata_disk));
 		add_field(tt.copyright_notice, setting.set_copyright_notice, setting.copyright_notice, true);
 		add_field(tt.copyright_creator, setting.set_copyright_creator, setting.copyright_creator);
 		add_field(tt.copyright_source, setting.set_copyright_source, setting.copyright_source);

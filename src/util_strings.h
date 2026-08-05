@@ -780,8 +780,6 @@ namespace str
 	inline void join(std::string& result, const std::string_view s, const std::string_view sep = " ",
 	                 const bool quote = true)
 	{
-		//trim(s);
-
 		if (!s.empty())
 		{
 			if (!result.empty()) result += sep;

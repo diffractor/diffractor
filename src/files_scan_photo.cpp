@@ -27,6 +27,11 @@ static constexpr auto XMP_APP_ID_DATA = R"(XMP DataXMP)";
 // cannot walk the entire file one byte at a time.
 static constexpr uint64_t max_gif_xmp_bytes = 8ull * 1024ull * 1024ull;
 
+// Offsets and lengths taken from IFD entries are unvalidated 32-bit file fields. Cap what they may
+// ask the scanner to read or allocate, so a crafted file cannot demand a file-sized buffer.
+static constexpr uint32_t max_embedded_thumbnail_bytes = 8u * 1024u * 1024u;
+static constexpr uint32_t max_tiff_xmp_bytes = 8u * 1024u * 1024u;
+
 enum gif_block_type
 {
 	kXMP_block_ImageDesc = 0x2C,
@@ -35,41 +40,58 @@ enum gif_block_type
 	kXMP_block_Header = 0x47
 };
 
-static file_scan_result scan_gif(read_stream& s)
+// The only two TIFF/EXIF byte-order marks. Both are byte pairs that read the same either way, so
+// the mark itself can always be read as little-endian.
+static constexpr uint16_t tiff_order_intel = 0x4949;
+static constexpr uint16_t tiff_order_motorola = 0x4D4D;
+
+// Anything else is not a TIFF header. Without this check get_uint16/get_uint32 silently treat a
+// garbage mark as big-endian and every offset read from the file is fabricated.
+static bool is_valid_tiff_order(const uint16_t order)
 {
-	file_scan_result result;
-	constexpr auto header_len = 11;
-	uint8_t header[header_len];
-	s.read(0, header, header_len);
+	return order == tiff_order_intel || order == tiff_order_motorola;
+}
 
-	const auto isGif87a = memcmp(GIF_87_Header_DATA, header, GIF_Header_LEN) == 0;
-	const auto isGif89a = memcmp(GIF_89_Header_DATA, header, GIF_Header_LEN) == 0;
+static uint16_t get_uint16(const uint16_t n, const uint16_t order)
+{
+	return order == tiff_order_intel ? n : df::byteswap16(n);
+}
 
-	if (!isGif87a && !isGif89a)
-	{
-		throw app_exception("no gif header"s);
-	}
+static uint16_t get_uint16(const uint8_t* p, const uint16_t order)
+{
+	uint16_t n;
+	std::memcpy(&n, p, sizeof(n));
+	return order == tiff_order_intel ? n : df::byteswap16(n);
+}
 
-	result.width = *std::bit_cast<const uint16_t*>(header + 6);
-	result.height = *std::bit_cast<const uint16_t*>(header + 8);
+static uint32_t get_uint32(const uint32_t n, const uint16_t order)
+{
+	return order == tiff_order_intel ? n : df::byteswap32(n);
+}
 
-	uint64_t offset = 0u;
-	offset += GIF_Header_LEN;
+static uint32_t get_uint32(const uint8_t* p, const uint16_t order)
+{
+	uint32_t n;
+	std::memcpy(&n, p, sizeof(n));
+	return order == tiff_order_intel ? n : df::byteswap32(n);
+}
 
-	// 2 bytes for Screen Width
-	// 2 bytes for Screen Height
-	// 1 byte for Packed Fields
-	// 1 byte for Background Color Index
-	// 1 byte for Pixel Aspect Ratio
-	// Look for Global Color Table if exists
-	const uint8_t fields = header[offset + 4];
-	const int table_size = (fields & 0x80) ? (1 << ((fields & 0x07) + 1)) * 3 : 0;
+// Reached only for an embedded thumbnail whose format load_image_file cannot wrap, which needs a
+// files instance to decode. Borrows the caller's rather than building a second libjpeg context.
+static ui::surface_ptr decode_thumbnail(files* const decoder, const df::cspan data)
+{
+	if (decoder) return decoder->image_to_surface(data, {}, false, decode_intent::thumbnail);
+	files ff;
+	return ff.image_to_surface(data, {}, false, decode_intent::thumbnail);
+}
 
-	offset += table_size + 7;
-
+// Walks the GIF block chain looking for the XMP Data extension. Every read is guarded against the
+// end of the file, and the caller treats a throw from here as "no XMP" rather than a failed scan:
+// the dimensions are already parsed by then, and a truncated GIF must not lose them.
+static void scan_gif_blocks(read_stream& s, file_scan_result& result, uint64_t offset)
+{
 	const auto size = s.size();
 
-	// Parsing rest of the blocks
 	while (offset + 1 < size)
 	{
 		const auto block_type = s.peek8(offset);
@@ -78,6 +100,12 @@ static file_scan_result scan_gif(read_stream& s)
 		if (block_type == kXMP_block_ImageDesc)
 		{
 			constexpr auto image_desc_len = 9;
+
+			if (offset + image_desc_len > size)
+			{
+				break;
+			}
+
 			uint8_t image_desc[image_desc_len];
 			s.read(offset, image_desc, image_desc_len);
 
@@ -106,10 +134,17 @@ static file_scan_result scan_gif(read_stream& s)
 			offset += 1;
 
 			// 1 byte compressed sub-block size
+			if (offset >= size)
+			{
+				break;
+			}
+
 			auto sub_block_size = s.peek8(offset);
 			offset += 1;
 
-			while (sub_block_size != 0 && offset + sub_block_size <= size)
+			// Strictly less than: the loop body peeks at offset after advancing, so the last
+			// sub-block must leave at least the following size byte inside the file.
+			while (sub_block_size != 0 && offset + sub_block_size < size)
 			{
 				offset += sub_block_size;
 				sub_block_size = s.peek8(offset);
@@ -118,6 +153,11 @@ static file_scan_result scan_gif(read_stream& s)
 		}
 		else if (block_type == kXMP_block_Extension)
 		{
+			if (offset + 2u > size)
+			{
+				break;
+			}
+
 			uint8_t read_buffer[256];
 			const auto sub_extension_lbl = s.peek8(offset);
 			auto sub_block_size = s.peek8(offset + 1);
@@ -126,7 +166,8 @@ static file_scan_result scan_gif(read_stream& s)
 			offset += 2;
 
 			if (sub_extension_lbl == 0xFF &&
-				sub_block_size == APP_ID_LEN)
+				sub_block_size == APP_ID_LEN &&
+				offset + APP_ID_LEN < size)
 			{
 				constexpr auto app_header_len = APP_ID_LEN;
 				uint8_t app_header[app_header_len];
@@ -156,7 +197,9 @@ static file_scan_result scan_gif(read_stream& s)
 							// Trim anything after the closing tag. find() cannot report a partial
 							// match, so a payload shorter than the tag simply keeps its full length.
 							const auto pos = text.find(end_tag);
-							const auto xmp_size = pos == std::string_view::npos ? xmp_blob.size() : pos + end_tag.size();
+							const auto xmp_size = pos == std::string_view::npos
+								                      ? xmp_blob.size()
+								                      : pos + end_tag.size();
 
 							result.metadata.xmp.assign(xmp_blob.begin(), xmp_blob.begin() + xmp_size);
 						}
@@ -170,7 +213,7 @@ static file_scan_result scan_gif(read_stream& s)
 						// rather than keeping only the last one.
 						result.metadata.xmp.clear();
 
-						while (sub_block_size != 0 && offset + sub_block_size <= size)
+						while (sub_block_size != 0 && offset + sub_block_size < size)
 						{
 							s.read(offset, read_buffer, sub_block_size);
 							result.metadata.xmp.insert(result.metadata.xmp.end(), read_buffer,
@@ -188,7 +231,7 @@ static file_scan_result scan_gif(read_stream& s)
 			if (skip_block)
 			{
 				// Extension block other than Application Extension
-				while (sub_block_size != 0 && offset + sub_block_size <= size)
+				while (sub_block_size != 0 && offset + sub_block_size < size)
 				{
 					offset += sub_block_size;
 					sub_block_size = s.peek8(offset);
@@ -206,35 +249,58 @@ static file_scan_result scan_gif(read_stream& s)
 			break;
 		}
 	}
+}
 
-	result.success = true;
+static file_scan_result scan_gif(read_stream& s)
+{
+	file_scan_result result;
+	constexpr auto header_len = 11;
+	uint8_t header[header_len];
+	s.read(0, header, header_len);
+
+	const auto isGif87a = memcmp(GIF_87_Header_DATA, header, GIF_Header_LEN) == 0;
+	const auto isGif89a = memcmp(GIF_89_Header_DATA, header, GIF_Header_LEN) == 0;
+
+	if (!isGif87a && !isGif89a)
+	{
+		throw app_exception("no gif header"s);
+	}
+
+	// GIF is little-endian, and header is a byte array: read through memcpy rather than casting
+	// the pointer, which is both unaligned and host-endian dependent.
+	result.width = get_uint16(header + 6, tiff_order_intel);
+	result.height = get_uint16(header + 8, tiff_order_intel);
+
+	uint64_t offset = 0u;
+	offset += GIF_Header_LEN;
+
+	// 2 bytes for Screen Width
+	// 2 bytes for Screen Height
+	// 1 byte for Packed Fields
+	// 1 byte for Background Color Index
+	// 1 byte for Pixel Aspect Ratio
+	// Look for Global Color Table if exists
+	const uint8_t fields = header[offset + 4];
+	const int table_size = (fields & 0x80) ? (1 << ((fields & 0x07) + 1)) * 3 : 0;
+
+	offset += table_size + 7;
+
+	try
+	{
+		scan_gif_blocks(s, result, offset);
+	}
+	catch (const std::exception& e)
+	{
+		// XMP is optional; the dimensions above are not, and they are already read.
+		df::log(__FUNCTION__, e.what());
+	}
+
+	// A truncated or corrupt GIF must not be cached as a successful 0x0 scan, or the timestamp
+	// stamped alongside it means the file is never scanned again.
+	result.success = result.width != 0 && result.height != 0;
 	return result;
 }
 
-
-static uint16_t get_uint16(const uint16_t n, const uint16_t order)
-{
-	return order == 0x4949 ? n : df::byteswap16(n);
-}
-
-static uint16_t get_uint16(const uint8_t* p, const uint16_t order)
-{
-	uint16_t n;
-	std::memcpy(&n, p, sizeof(n));
-	return order == 0x4949 ? n : df::byteswap16(n);
-}
-
-static uint32_t get_uint32(const uint32_t n, const uint16_t order)
-{
-	return order == 0x4949 ? n : df::byteswap32(n);
-}
-
-static uint32_t get_uint32(const uint8_t* p, const uint16_t order)
-{
-	uint32_t n;
-	std::memcpy(&n, p, sizeof(n));
-	return order == 0x4949 ? n : df::byteswap32(n);
-}
 
 // A RIFF chunk inventory. WebP hides quite a lot behind its feature flags - alpha, animation,
 // colour profile - and the chunk list is the plain statement of what the file actually holds.
@@ -318,12 +384,15 @@ static void scan_webp(file_scan_result& result, read_stream& s, const scan_inten
 	result.height = parts.height;
 	result.pixel_format = parts.pixel_format;
 	result.metadata = std::move(parts.metadata);
-	result.success = result.width != 0 && result.height != 0;
 
 	if (intent == scan_intent::inspect)
 	{
 		scan_webp_structure(result, data);
 	}
+
+	// Set last: this writes through a reference, so a throw in the structure walk must not leave
+	// behind a result that claims success.
+	result.success = result.width != 0 && result.height != 0;
 }
 
 enum exif_tag
@@ -341,13 +410,20 @@ enum exif_tag
 	EXIF_TAG_GPS_LONGITUDE = 0x0004,
 };
 
-static void scan_exif(file_scan_result& result, const df::cspan data)
+static void scan_exif(file_scan_result& result, const df::cspan data, const bool want_thumbnail,
+                      files* const decoder)
 {
 	if (data.size > 16)
 	{
-		const auto order = get_uint16(data.data, 0x4949);
-		const auto magic = get_uint16(data.data + 2, order);
+		const auto order = get_uint16(data.data, tiff_order_intel);
 		const auto limit = data.size - 12u;
+
+		if (!is_valid_tiff_order(order))
+		{
+			return;
+		}
+
+		const auto magic = get_uint16(data.data + 2, order);
 
 		if (magic == 42u)
 		{
@@ -361,16 +437,20 @@ static void scan_exif(file_scan_result& result, const df::cspan data)
 				{
 					const uint64_t pos = offset_ifd0 + 2ull + 12ull * i;
 
-					if (pos < limit)
+					// entry_count is an unvalidated file field; stop at the first entry that would
+					// run past the end rather than walking the remaining thousands doing nothing.
+					if (pos >= limit)
 					{
-						const auto tag = static_cast<exif_tag>(get_uint16(data.data + pos, order));
+						break;
+					}
 
-						switch (tag)
-						{
-						case EXIF_TAG_ORIENTATION:
-							result.orientation = static_cast<ui::orientation>(get_uint16(data.data + pos + 8, order));
-							break;
-						}
+					const auto tag = static_cast<exif_tag>(get_uint16(data.data + pos, order));
+
+					switch (tag)
+					{
+					case EXIF_TAG_ORIENTATION:
+						result.orientation = static_cast<ui::orientation>(get_uint16(data.data + pos + 8, order));
+						break;
 					}
 				}
 
@@ -392,33 +472,52 @@ static void scan_exif(file_scan_result& result, const df::cspan data)
 						{
 							const uint64_t pos = offset_ifd1 + 12ull * i;
 
-							if (pos < limit)
+							if (pos >= limit)
 							{
-								const auto tag = static_cast<exif_tag>(get_uint16(data.data + pos, order));
-								const auto format = static_cast<exif_format>(get_uint16(data.data + pos + 2, order));
-								const auto ifd1_components = get_uint32(data.data + pos + 4, order);
+								break;
+							}
 
-								switch (tag)
+							const auto tag = static_cast<exif_tag>(get_uint16(data.data + pos, order));
+							const auto format = static_cast<exif_format>(get_uint16(data.data + pos + 2, order));
+							const auto ifd1_components = get_uint32(data.data + pos + 4, order);
+
+							// A thumbnail pointer or length is one SHORT or LONG. Reading anything
+							// else as one yields a plausible but fabricated offset into the file.
+							const auto read_scalar = [&]() -> uint32_t
+							{
+								if (ifd1_components != 1u) return 0u;
+
+								switch (format)
 								{
-								case EXIF_TAG_JPEG_INTERCHANGE_FORMAT:
-									possible_thumbnail_offset = get_uint32(data.data + pos + 8, order);
-									break;
-
-								case EXIF_TAG_JPEG_INTERCHANGE_FORMAT_LENGTH:
-									possible_thumbnail_len = get_uint32(data.data + pos + 8, order);
-									break;
-
-								case EXIF_TAG_ORIENTATION:
-									result.orientation = static_cast<ui::orientation>(get_uint16(
-										data.data + pos + 8, order));
-									break;
+								case FMT_USHORT: return get_uint16(data.data + pos + 8, order);
+								case FMT_ULONG: return get_uint32(data.data + pos + 8, order);
+								default: return 0u;
 								}
+							};
+
+							switch (tag)
+							{
+							case EXIF_TAG_JPEG_INTERCHANGE_FORMAT:
+								possible_thumbnail_offset = read_scalar();
+								break;
+
+							case EXIF_TAG_JPEG_INTERCHANGE_FORMAT_LENGTH:
+								possible_thumbnail_len = read_scalar();
+								break;
+
+							case EXIF_TAG_ORIENTATION:
+								result.orientation = static_cast<ui::orientation>(get_uint16(
+									data.data + pos + 8, order));
+								break;
 							}
 						}
 
 						auto detected = detected_format::Unknown;
 
-						if (possible_thumbnail_offset > 0 && possible_thumbnail_offset <= data.size &&
+						// The IFD1 walk above still runs unconditionally - it carries the orientation.
+						if (want_thumbnail &&
+							possible_thumbnail_offset > 0 && possible_thumbnail_offset <= data.size &&
+							possible_thumbnail_len <= max_embedded_thumbnail_bytes &&
 							possible_thumbnail_len <= data.size - possible_thumbnail_offset)
 						{
 							const auto possible_thumbnail = data.data + possible_thumbnail_offset;
@@ -427,12 +526,13 @@ static void scan_exif(file_scan_result& result, const df::cspan data)
 							{
 								if (is_image_format(detected))
 								{
-									result.thumbnail_image = load_image_file({possible_thumbnail, possible_thumbnail_len});
+									result.thumbnail_image = load_image_file({
+										possible_thumbnail, possible_thumbnail_len
+									});
 								}
 								else
 								{
-									files ff;
-									result.thumbnail_surface = ff.image_to_surface({
+									result.thumbnail_surface = decode_thumbnail(decoder, {
 										possible_thumbnail, possible_thumbnail_len
 									});
 								}
@@ -481,22 +581,22 @@ static std::string load_text(read_stream& s, const uint64_t pos, const unsigned 
 	return result;
 }
 
-static file_scan_result scan_tiff(read_stream& s)
+static file_scan_result scan_tiff(read_stream& s, const bool want_thumbnail, files* const decoder)
 {
 	file_scan_result result;
 	uint8_t header[8];
 	s.read(0, header, 8);
 
-	const auto order = *std::bit_cast<const uint16_t*>(static_cast<const uint8_t*>(header));
-	const auto magic = get_uint16(header + 2u, order);
+	// header is a byte array, so read the mark through memcpy rather than casting the pointer.
+	const auto order = get_uint16(header, tiff_order_intel);
 	const auto size = s.size();
 
-	if (size < 12u)
+	if (size < 12u || !is_valid_tiff_order(order))
 	{
-		result.success = false;
 		return result;
 	}
 
+	const auto magic = get_uint16(header + 2u, order);
 	const auto limit = size - 12u;
 
 	if (magic == 42u)
@@ -550,12 +650,24 @@ static file_scan_result scan_tiff(read_stream& s)
 					break;
 				case TAG_XMP:
 					{
-						const uint64_t xmp_offset = get_uint32(dir_data + 8u, order);
-
-						// Both operands are already 64-bit, so this cannot wrap.
-						if (xmp_offset + components <= size)
+						if (components != 0u && components <= max_tiff_xmp_bytes)
 						{
-							result.metadata.xmp = s.read(xmp_offset, components);
+							// A TIFF value of four bytes or fewer is stored in the entry itself; only a
+							// larger one puts an offset there.
+							if (components <= 4u)
+							{
+								result.metadata.xmp.assign(dir_data + 8u, dir_data + 8u + components);
+							}
+							else
+							{
+								const uint64_t xmp_offset = get_uint32(dir_data + 8u, order);
+
+								// Both operands are already 64-bit, so this cannot wrap.
+								if (xmp_offset + components <= size)
+								{
+									result.metadata.xmp = s.read(xmp_offset, components);
+								}
+							}
 						}
 					}
 					break;
@@ -660,15 +772,31 @@ static file_scan_result scan_tiff(read_stream& s)
 
 						{
 							const auto tag = static_cast<exif_tag>(get_uint16(s.peek16(pos), order));
+							const auto format = static_cast<exif_format>(get_uint16(s.peek16(pos + 2), order));
+							const auto components = get_uint32(s.peek32(pos + 4), order);
+
+							// A thumbnail pointer or length is one SHORT or LONG. Reading anything
+							// else as one yields a plausible but fabricated offset into the file.
+							const auto read_scalar = [&]() -> uint32_t
+							{
+								if (components != 1u) return 0u;
+
+								switch (format)
+								{
+								case FMT_USHORT: return get_uint16(s.peek16(pos + 8), order);
+								case FMT_ULONG: return get_uint32(s.peek32(pos + 8), order);
+								default: return 0u;
+								}
+							};
 
 							switch (tag)
 							{
 							case EXIF_TAG_JPEG_INTERCHANGE_FORMAT:
-								possible_offset = get_uint32(s.peek32(pos + 8), order);
+								possible_offset = read_scalar();
 								break;
 
 							case EXIF_TAG_JPEG_INTERCHANGE_FORMAT_LENGTH:
-								possible_thumbnail_len = get_uint32(s.peek32(pos + 8), order);
+								possible_thumbnail_len = read_scalar();
 								break;
 
 							case EXIF_TAG_ORIENTATION:
@@ -681,10 +809,12 @@ static file_scan_result scan_tiff(read_stream& s)
 
 					// The length is an unvalidated 32-bit field; cap it so a bogus value cannot
 					// trigger a huge allocation or throw away the rest of the scan.
-					constexpr size_t max_thumbnail_bytes = 8u * 1024u * 1024u;
 
-					if (possible_offset != 0 && possible_thumbnail_len != 0 &&
-						possible_thumbnail_len <= max_thumbnail_bytes &&
+					// s.read here is a seek and a read off the file, not a view into one, so a scan
+					// that will not use the thumbnail must not reach it.
+					if (want_thumbnail &&
+						possible_offset != 0 && possible_thumbnail_len != 0 &&
+						possible_thumbnail_len <= max_embedded_thumbnail_bytes &&
 						possible_offset <= size && possible_thumbnail_len <= size - possible_offset)
 					{
 						const auto thumb = s.read(possible_offset, possible_thumbnail_len);
@@ -699,8 +829,7 @@ static file_scan_result scan_tiff(read_stream& s)
 							}
 							else
 							{
-								files ff;
-								result.thumbnail_surface = ff.image_to_surface(thumb);
+								result.thumbnail_surface = decode_thumbnail(decoder, thumb);
 							}
 						}
 					}
@@ -710,12 +839,23 @@ static file_scan_result scan_tiff(read_stream& s)
 	}
 
 	// A recognised byte order with an unusable magic (BigTIFF, truncated or corrupt) must
-	// not be cached as a successful 0x0 scan, or it will never be retried.
-	result.success = result.width != 0 && result.height != 0;
+	// not be cached as a successful 0x0 scan, or it will never be retried. The dimensions are
+	// unvalidated 32-bit fields, and a nonsense one that reaches sizei turns negative and defeats
+	// the decode budget it is later checked against.
+	result.success = result.width != 0 && result.height != 0 &&
+		result.width <= max_image_dimension && result.height <= max_image_dimension;
+
+	if (!result.success)
+	{
+		result.width = 0;
+		result.height = 0;
+	}
+
 	return result;
 }
 
-file_scan_result scan_photo(read_stream& s, const scan_intent intent)
+file_scan_result scan_photo(read_stream& s, const scan_intent intent, const bool want_thumbnail,
+                            files* const decoder)
 {
 	file_scan_result result;
 
@@ -772,7 +912,7 @@ file_scan_result scan_photo(read_stream& s, const scan_intent intent)
 		}
 		else if (expected == detected_format::JPEG) // && memcmp(p, sig_jpg, 3) == 0)
 		{
-			result = scan_jpg(s, intent);
+			result = scan_jpg(s, intent, want_thumbnail);
 			result.format = detected_format::JPEG;
 		}
 		else if (expected == detected_format::PNG) // && memcmp(p, sig_png, 3) == 0)
@@ -782,12 +922,12 @@ file_scan_result scan_photo(read_stream& s, const scan_intent intent)
 		}
 		else if (expected == detected_format::TIFF)
 		{
-			result = scan_tiff(s);
+			result = scan_tiff(s, want_thumbnail, decoder);
 			result.format = detected_format::TIFF;
 		}
 		else if (expected == detected_format::HEIF)
 		{
-			result = scan_heif(s, intent);
+			result = scan_heif(s, intent, want_thumbnail);
 			result.format = detected_format::HEIF;
 		}
 		else if (expected == detected_format::WEBP)
@@ -808,16 +948,21 @@ file_scan_result scan_photo(read_stream& s, const scan_intent intent)
 
 		if (!result.metadata.exif.empty())
 		{
-			scan_exif(result, result.metadata.exif);
+			scan_exif(result, result.metadata.exif, want_thumbnail, decoder);
+
+			// An Exif thumbnail is stored unrotated whatever the container did, so it always takes
+			// the Exif orientation; a decoded thumbnail only needs it when the decoder did not
+			// already apply that item's own transform.
+			if (result.thumbnail_image) result.thumbnail_image->orientation(result.orientation);
+
+			if (result.thumbnail_surface && !result.thumbnail_orientation_applied)
+			{
+				result.thumbnail_surface->orientation(result.orientation);
+			}
 
 			if (result.orientation_applied)
 			{
 				result.orientation = ui::orientation::top_left;
-			}
-			else
-			{
-				if (result.thumbnail_image) result.thumbnail_image->orientation(result.orientation);
-				if (result.thumbnail_surface) result.thumbnail_surface->orientation(result.orientation);
 			}
 		}
 	}

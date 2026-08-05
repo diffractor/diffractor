@@ -27,6 +27,11 @@ struct command_line_t
 
 	bool validate_po = false;
 
+	// Read-only measurement of what perceptual-hash duplicate grouping does to a real library.
+	bool dup_report = false;
+	std::string dup_report_folder;
+	std::string dup_report_output;
+
 #ifdef _DEBUG
 	std::string test_action;
 	std::string screenshot_scene;

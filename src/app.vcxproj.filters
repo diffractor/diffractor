@@ -162,6 +162,9 @@
     <ClCompile Include="model_tags.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="model_tile_cache.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="app_settings.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -341,6 +344,9 @@
     <ClInclude Include="av_player.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="model_related.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="model_search.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -443,6 +449,9 @@
     <ClInclude Include="model_tags.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="model_tile_cache.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="app_settings.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -489,6 +498,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ui_text_edit.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ui_plasma.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ui_view.h">
@@ -549,11 +561,6 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <Image Include="Res\logo.png">
-      <Filter>Resource Files</Filter>
-    </Image>
-  </ItemGroup>
-  <ItemGroup>
     <None Include="Res\color_select.cur">
       <Filter>Resource Files</Filter>
     </None>
@@ -595,9 +602,6 @@
       <Filter>Resource Files</Filter>
     </None>
     <None Include="Res\tb_small.bmp">
-      <Filter>Resource Files</Filter>
-    </None>
-    <None Include="Res\title.png">
       <Filter>Resource Files</Filter>
     </None>
     <None Include="Res\world_map.jpg">

@@ -84,7 +84,8 @@ namespace ui
 		{
 			pos = clamp_boundary(pos);
 			while (pos < _text.size() && is_word_byte(static_cast<unsigned char>(_text[pos]))) pos = next_boundary(pos);
-			while (pos < _text.size() && !is_word_byte(static_cast<unsigned char>(_text[pos]))) pos = next_boundary(pos);
+			while (pos < _text.size() && !is_word_byte(static_cast<unsigned char>(_text[pos]))) pos =
+				next_boundary(pos);
 			return pos;
 		}
 
@@ -227,7 +228,7 @@ namespace ui
 			select(start, end);
 		}
 
-		void insert(std::string_view value)
+		void insert(const std::string_view value)
 		{
 			std::string single_line;
 			single_line.reserve(value.size());

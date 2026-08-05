@@ -86,7 +86,7 @@ msgid "Album Artist"
 msgstr "Artysta albumu"
 
 msgid "Analyzing..."
-msgstr "Analizuję..."
+msgstr "Analizowanie..."
 
 msgid "archive"
 msgstr "archiwum"
@@ -95,7 +95,7 @@ msgid "archives"
 msgstr "archiwa"
 
 msgid "audio"
-msgstr "Audio"
+msgstr "audio"
 
 msgid "Audio"
 msgstr "Audio"
@@ -158,10 +158,10 @@ msgid "&Update"
 msgstr "&Aktualizuj"
 
 msgid "Donate"
-msgstr "Podarować"
+msgstr "Przekaż darowiznę"
 
 msgid "Diffractor can be used for free. If you find it useful, please help the project by donating."
-msgstr "Z dyfraktora można korzystać bezpłatnie. Jeśli uznasz to za przydatne, pomóż projektowi, przekazując darowiznę."
+msgstr "Z programu Diffractor można korzystać bezpłatnie. Jeśli uznasz to za przydatne, pomóż projektowi, przekazując darowiznę."
 
 msgid "Donate online."
 msgstr "Przekaż darowiznę online."
@@ -170,8 +170,8 @@ msgstr "Przekaż darowiznę online."
 msgid "Changes"
 msgstr "Zmiany"
 
-msgid "Set the location for the selected files by scrolling the map or searching for a place. Use the mouse wheel to zoom."
-msgstr "Przewiń mapę, aby wybrać lokalizację. Użyj kółka myszy, aby powiększyć."
+msgid "The crosshair at the centre of the map marks the location that will be written. Drag the map, click a photo bubble to move it under the crosshair, or search for a place by name. Use the mouse wheel to zoom. Nothing is written until you press Add location."
+msgstr "Celownik na środku mapy wskazuje lokalizację, która zostanie zapisana. Przeciągnij mapę, kliknij dymek zdjęcia, aby przesunąć go pod celownik, albo wyszukaj miejsce według nazwy. Powiększaj kółkiem myszy. Nic nie zostanie zapisane, dopóki nie naciśniesz Dodaj lokalizację."
 
 msgid "The collection contains {} {} ({})."
 msgstr "Kolekcja zawiera {} {} ({})."
@@ -228,7 +228,7 @@ msgid "More information about metadata templates."
 msgstr "Więcej informacji o szablonach metadanych."
 
 msgid "Videos"
-msgstr "filmy"
+msgstr "Filmy"
 
 msgid "Your collection"
 msgstr "Twoja kolekcja"
@@ -255,7 +255,7 @@ msgid "Next folder or search"
 msgstr "Następny folder lub wyszukiwanie"
 
 msgid "Next item group"
-msgstr "Następna grupa pozycji"
+msgstr "Następna grupa elementów"
 
 msgid "Select next item"
 msgstr "Wybierz następny element"
@@ -342,7 +342,7 @@ msgid "Group by Album/Show"
 msgstr "Grupuj według albumu/programu"
 
 msgid "Group by Camera"
-msgstr "Grupuj według kamery"
+msgstr "Grupuj według aparatu"
 
 msgid "Group by Date Created"
 msgstr "Grupuj według daty utworzenia"
@@ -432,7 +432,7 @@ msgid "Group or Sort"
 msgstr "Grupuj lub sortuj"
 
 msgid "Minimize"
-msgstr "Zminimalizować"
+msgstr "Minimalizuj"
 
 msgid "Move to folder"
 msgstr "Przenieś do folderu"
@@ -509,8 +509,8 @@ msgstr "Odrzuć"
 msgid "Refresh"
 msgstr "Odśwież"
 
-msgid "Matching or possible copy items in the collection"
-msgstr "Pasujące lub możliwe kopie elementów w kolekcji"
+msgid "Related items"
+msgstr "Powiązane elementy"
 
 msgid "Rename"
 msgstr "Zmień nazwę"
@@ -529,6 +529,9 @@ msgstr "Obróć w kierunku przeciwnym do ruchu wskazówek zegara"
 
 msgid "Rotate clockwise"
 msgstr "Obróć zgodnie z ruchem wskazówek zegara"
+
+msgid "Confirm single-item rotations"
+msgstr "Potwierdzaj obracanie pojedynczego elementu"
 
 msgid "Reset rotation"
 msgstr "Zresetuj obrót"
@@ -665,20 +668,26 @@ msgstr "Kontrast"
 msgid "Open link {}"
 msgstr "Otwórz link {}"
 
+msgid "Choose a link to open"
+msgstr "Wybierz link do otwarcia"
+
+msgid "Duplicate"
+msgstr "Duplikat"
+
 msgid "Copy to clipboard"
 msgstr "Skopiuj do schowka"
 
 msgid "to"
-msgstr "Do"
+msgstr "do"
 
 msgid "Creator"
 msgstr "Twórca"
 
 msgid "Credit"
-msgstr "Kredyt"
+msgstr "Autorstwo"
 
 msgid "Notice"
-msgstr "Ogłoszenie"
+msgstr "Informacja"
 
 msgid "File"
 msgstr "Plik"
@@ -753,16 +762,13 @@ msgid "File modified:"
 msgstr "Zmodyfikowano plik:"
 
 msgid "Metadata created:"
-msgstr "Utworzone metadane:"
+msgstr "Utworzono metadane:"
 
 msgid "Dates"
 msgstr "Daty"
 
 msgid "family food friends landscape nature night portrait selfie todo travel urban viewed"
 msgstr "rodzina jedzenie przyjaciele krajobraz natura noc portret selfie todo podróżowanie miejskie oglądane"
-
-msgid "results"
-msgstr "wyniki"
 
 msgid "Defragment database."
 msgstr "Defragmentuj bazę danych."
@@ -795,13 +801,13 @@ msgid "System"
 msgstr "System"
 
 msgid "Used"
-msgstr "używany"
+msgstr "Zajęte"
 
 msgid "Documentation"
 msgstr "Dokumentacja"
 
 msgid "Duplicates"
-msgstr "duplikaty"
+msgstr "Duplikaty"
 
 msgid "Matching or possible copy items in the collection."
 msgstr "Pasujące lub możliwe kopie elementów w kolekcji."
@@ -855,7 +861,7 @@ msgid "Security options denied access to the source."
 msgstr "Opcje zabezpieczeń odmówiły dostępu do źródła."
 
 msgid "Diffractor has a serious problem and cannot continue."
-msgstr "Dyfraktor ma poważny problem i nie może kontynuować pracy."
+msgstr "Diffractor ma poważny problem i nie może kontynuować pracy."
 
 msgid "Could not connect to scanner"
 msgstr "Nie można połączyć się ze skanerem"
@@ -867,7 +873,7 @@ msgid "The destination folder '{}' cannot be opened or created."
 msgstr "Nie można otworzyć ani utworzyć folderu docelowego „{}”."
 
 msgid "Diffractor cannot be started. The main window could not be created."
-msgstr "Nie można uruchomić dyfraktora. Nie można utworzyć okna głównego."
+msgstr "Nie można uruchomić programu Diffractor. Nie można utworzyć okna głównego."
 
 msgid "The destination is a writable CD-ROM, possibly unformatted."
 msgstr "Miejscem docelowym jest zapisywalna płyta CD-ROM, prawdopodobnie niesformatowana."
@@ -966,13 +972,13 @@ msgid "The source is a root directory, which cannot be moved or renamed."
 msgstr "Źródłem jest katalog główny, którego nie można przenieść ani zmienić jego nazwy."
 
 msgid "Diffractor requires a processor with sse2."
-msgstr "Dyfraktor wymaga procesora z sse2."
+msgstr "Diffractor wymaga procesora z sse2."
 
 msgid "An unknown error occurred."
 msgstr "Wystąpił nieznany błąd."
 
 msgid "Diffractor requires Windows 7 or newer."
-msgstr "Dyfraktor wymaga Windows 7 lub nowszego."
+msgstr "Diffractor wymaga systemu Windows 7 lub nowszego."
 
 msgid "Failed to register windows common control classes."
 msgstr "Nie udało się zarejestrować wspólnych klas kontrolnych systemu Windows."
@@ -1032,7 +1038,7 @@ msgid "videos"
 msgstr "filmy"
 
 msgid "A capella"
-msgstr "Capellę"
+msgstr "A cappella"
 
 msgid "Abstract"
 msgstr "Abstrakcyjny"
@@ -1041,7 +1047,7 @@ msgid "Acid"
 msgstr "Acid"
 
 msgid "Acid Jazz"
-msgstr "Kwaśny jazz"
+msgstr "Acid Jazz"
 
 msgid "Acid Punk"
 msgstr "Acid Punk"
@@ -1050,13 +1056,13 @@ msgid "Acoustic"
 msgstr "Akustyczny"
 
 msgid "Action"
-msgstr "Działanie"
+msgstr "Akcja"
 
 msgid "Action & Adventure"
 msgstr "Akcja i przygoda"
 
 msgid "Aerial"
-msgstr "Antenowy"
+msgstr "Lotnicze"
 
 msgid "Alternative"
 msgstr "Alternatywny"
@@ -1071,7 +1077,7 @@ msgid "Analog"
 msgstr "Analog"
 
 msgid "Animation"
-msgstr "Ożywienie"
+msgstr "Animacja"
 
 msgid "Anime"
 msgstr "Anime"
@@ -1092,7 +1098,7 @@ msgid "Bass"
 msgstr "Bas"
 
 msgid "Bebob"
-msgstr "Beboba"
+msgstr "Bebop"
 
 msgid "Big Band"
 msgstr "Big Band"
@@ -1113,10 +1119,10 @@ msgid "Cabaret"
 msgstr "Kabaret"
 
 msgid "Candid"
-msgstr "Szczery"
+msgstr "Spontaniczne"
 
 msgid "Celtic"
-msgstr "celtycki"
+msgstr "Celtycki"
 
 msgid "Chamber Music"
 msgstr "Muzyka kameralna"
@@ -1131,7 +1137,7 @@ msgid "Chorus"
 msgstr "Chór"
 
 msgid "Christian & Gospel"
-msgstr "Chrześcijaństwo i Ewangelia"
+msgstr "Chrześcijańska i gospel"
 
 msgid "Christian Rap"
 msgstr "Chrześcijański rap"
@@ -1185,10 +1191,10 @@ msgid "Darkwave"
 msgstr "Darkwave"
 
 msgid "Death Metal"
-msgstr "Death Metalu"
+msgstr "Death Metal"
 
 msgid "Disco"
-msgstr "Dyskoteka"
+msgstr "Disco"
 
 msgid "Documentary"
 msgstr "Dokumentalny"
@@ -1215,13 +1221,13 @@ msgid "Ethnic"
 msgstr "Etniczny"
 
 msgid "Eurodance"
-msgstr "Eurotaniec"
+msgstr "Eurodance"
 
 msgid "Euro-House"
-msgstr "Euro-Dom"
+msgstr "Euro-House"
 
 msgid "Euro-Techno"
-msgstr "EuroTechno"
+msgstr "Euro-Techno"
 
 msgid "Family"
 msgstr "Rodzina"
@@ -1230,10 +1236,10 @@ msgid "Fashion"
 msgstr "Moda"
 
 msgid "Fast Fusion"
-msgstr "Szybka fuzja"
+msgstr "Fast Fusion"
 
 msgid "Film still"
-msgstr "Film nadal"
+msgstr "Kadr filmowy"
 
 msgid "Fine-art"
 msgstr "Sztuka piękna"
@@ -1263,7 +1269,7 @@ msgid "Foreign"
 msgstr "Zagraniczny"
 
 msgid "Forensic"
-msgstr "Sądowy"
+msgstr "Kryminalistyczny"
 
 msgid "Freestyle"
 msgstr "Styl dowolny"
@@ -1284,13 +1290,13 @@ msgid "Geo-photography"
 msgstr "Geofotografia"
 
 msgid "Glamour"
-msgstr "Urok"
+msgstr "Glamour"
 
 msgid "Gospel"
 msgstr "Gospel"
 
 msgid "Gothic"
-msgstr "gotyk"
+msgstr "Gotyk"
 
 msgid "Gothic Rock"
 msgstr "Rock gotycki"
@@ -1299,7 +1305,7 @@ msgid "Grunge"
 msgstr "Grunge"
 
 msgid "Hard Rock"
-msgstr "Hard Rocka"
+msgstr "Hard Rock"
 
 msgid "High-speed"
 msgstr "Wysoka prędkość"
@@ -1317,7 +1323,7 @@ msgid "Holiday"
 msgstr "Wakacje"
 
 msgid "Horror"
-msgstr "Przerażenie"
+msgstr "Horror"
 
 msgid "House"
 msgstr "House"
@@ -1356,13 +1362,13 @@ msgid "Kids & Family"
 msgstr "Dzieci i rodzina"
 
 msgid "Kirlian"
-msgstr "Kirliana"
+msgstr "Kirlian"
 
 msgid "Landscape"
 msgstr "Krajobraz"
 
 msgid "Latin"
-msgstr "łacina"
+msgstr "Latin"
 
 msgid "Lifestyle"
 msgstr "Styl życia"
@@ -1410,13 +1416,13 @@ msgid "Narrative"
 msgstr "Narracja"
 
 msgid "National Folk"
-msgstr "Lud narodowy"
+msgstr "Folk narodowy"
 
 msgid "Native American"
 msgstr "Rdzenni Amerykanie"
 
 msgid "New Age"
-msgstr "Nowy wiek"
+msgstr "New Age"
 
 msgid "New Wave"
 msgstr "Nowa Fala"
@@ -1431,7 +1437,7 @@ msgid "Nonfiction"
 msgstr "Literatura faktu"
 
 msgid "Oldies"
-msgstr "Staruszki"
+msgstr "Stare przeboje"
 
 msgid "Opera"
 msgstr "Opera"
@@ -1449,7 +1455,7 @@ msgid "Film Noir"
 msgstr "Film Noir"
 
 msgid "Photo op"
-msgstr "Zdjęcie op"
+msgstr "Sesja zdjęciowa"
 
 msgid "Photobiography"
 msgstr "Fotobiografia"
@@ -1479,19 +1485,19 @@ msgid "Pop/Funk"
 msgstr "Pop/funk"
 
 msgid "Porn Groove"
-msgstr "porno Groove"
+msgstr "Porn Groove"
 
 msgid "Portrait"
 msgstr "Portret"
 
 msgid "Power Ballad"
-msgstr "Ballada mocy"
+msgstr "Power ballada"
 
 msgid "Pranks"
 msgstr "Żarty"
 
 msgid "Primus"
-msgstr "Prymus"
+msgstr "Primus"
 
 msgid "Progressive Rock"
 msgstr "Rock progresywny"
@@ -1506,7 +1512,7 @@ msgid "Punk"
 msgstr "Punk"
 
 msgid "Punk Rock"
-msgstr "Punku"
+msgstr "Punk Rock"
 
 msgid "R&B"
 msgstr "R&B"
@@ -1518,19 +1524,19 @@ msgid "Rave"
 msgstr "Rave"
 
 msgid "Reality TV"
-msgstr "Telewizja rzeczywistości"
+msgstr "Reality TV"
 
 msgid "Reggae"
 msgstr "Reggae"
 
 msgid "Retro"
-msgstr "retro"
+msgstr "Retro"
 
 msgid "Revival"
 msgstr "Odrodzenie"
 
 msgid "Rhythmic Soul"
-msgstr "Rytmiczna dusza"
+msgstr "Rhythmic Soul"
 
 msgid "Rock"
 msgstr "Rock"
@@ -1542,7 +1548,7 @@ msgid "Romance"
 msgstr "Romans"
 
 msgid "Samba"
-msgstr "Sambę"
+msgstr "Samba"
 
 msgid "Satellite"
 msgstr "Satelita"
@@ -1557,7 +1563,7 @@ msgid "Short Films"
 msgstr "Krótkie filmy"
 
 msgid "Show tunes"
-msgstr "Pokaż melodie"
+msgstr "Melodie z musicali"
 
 msgid "Singer/Songwriter"
 msgstr "Piosenkarz/autor tekstów"
@@ -1566,10 +1572,10 @@ msgid "Ska"
 msgstr "Ska"
 
 msgid "Slow Jam"
-msgstr "Powolny dżem"
+msgstr "Slow Jam"
 
 msgid "Slow Rock"
-msgstr "Powolny Rock"
+msgstr "Powolny rock"
 
 msgid "Social"
 msgstr "Społeczny"
@@ -1590,10 +1596,10 @@ msgid "Soundtrack"
 msgstr "Ścieżka dźwiękowa"
 
 msgid "Southern Rock"
-msgstr "Południowa Skała"
+msgstr "Southern Rock"
 
 msgid "Space"
-msgstr "przestrzeń"
+msgstr "Kosmos"
 
 msgid "Special Interest"
 msgstr "Specjalne zainteresowanie"
@@ -1602,10 +1608,10 @@ msgid "Speech"
 msgstr "Przemówienie"
 
 msgid "Sports"
-msgstr "Lekkoatletyka"
+msgstr "Sport"
 
 msgid "Star trail"
-msgstr "Szlak gwiazd"
+msgstr "Ślady gwiazd"
 
 msgid "Still life"
 msgstr "Martwa natura"
@@ -1638,16 +1644,16 @@ msgid "Techno-Industrial"
 msgstr "Techno-Industrial"
 
 msgid "Teens"
-msgstr "Wiek dojrzewania"
+msgstr "Nastolatki"
 
 msgid "Thriller"
-msgstr "Kryminał"
+msgstr "Thriller"
 
 msgid "Time-lapse"
 msgstr "Poklatkowy"
 
 msgid "Top 40"
-msgstr "Najlepsze 40"
+msgstr "Top 40"
 
 msgid "Trailer"
 msgstr "Zwiastun"
@@ -1677,7 +1683,7 @@ msgid "Urban"
 msgstr "Miejski"
 
 msgid "Vernacular"
-msgstr "Język miejscowy"
+msgstr "Fotografia wernakularna"
 
 msgid "Vintage"
 msgstr "Klasyczny"
@@ -1725,7 +1731,7 @@ msgid "random"
 msgstr "losowy"
 
 msgid "{} to {}"
-msgstr "{} Do {}"
+msgstr "{} do {}"
 
 msgid "Today"
 msgstr "Dzisiaj"
@@ -1737,7 +1743,7 @@ msgid "{} has modifications"
 msgstr "{} ma modyfikacje"
 
 msgid "Separate each artist with a comma ',' or slash '/'"
-msgstr "Oddziel każdego artystę przecinkiem „” lub ukośnikiem „/”"
+msgstr "Oddziel każdego artystę przecinkiem „,” lub ukośnikiem „/”"
 
 msgid "Help or more information"
 msgstr "Pomoc lub więcej informacji"
@@ -1764,10 +1770,7 @@ msgid "Source of import:"
 msgstr "Źródło importu:"
 
 msgid "Ignore previously imported items."
-msgstr "Ignoruj ​​wcześniej zaimportowane elementy."
-
-msgid "Overwrite if source items are newer."
-msgstr "Zastąp, jeśli elementy źródłowe są nowsze."
+msgstr "Ignoruj wcześniej zaimportowane elementy."
 
 msgid "Other folder"
 msgstr "Inny folder"
@@ -1782,7 +1785,7 @@ msgid "Defragmenting or cleaning can improve performance. The index stores a cop
 msgstr "Defragmentacja lub czyszczenie może poprawić wydajność. Indeks przechowuje kopię metadanych z plików multimedialnych. Można go odbudować z oryginalnych plików."
 
 msgid "The index is reporting errors. Restarting Diffractor is recommended."
-msgstr "Indeks zgłasza błędy. Zalecane jest ponowne uruchomienie dyfraktora."
+msgstr "Indeks zgłasza błędy. Zalecane jest ponowne uruchomienie programu Diffractor."
 
 msgid "Maintenance"
 msgstr "Konserwacja"
@@ -1833,7 +1836,7 @@ msgid "back"
 msgstr "wstecz"
 
 msgid "backspace"
-msgstr "cofnij"
+msgstr "Backspace"
 
 msgid "Basics"
 msgstr "Podstawy"
@@ -1967,7 +1970,7 @@ msgid "Media playback"
 msgstr "Odtwarzanie multimediów"
 
 msgid "page-up"
-msgstr "strona-up"
+msgstr "strona w górę"
 
 msgid "right"
 msgstr "w prawo"
@@ -2033,7 +2036,7 @@ msgid "Media"
 msgstr "Multimedia"
 
 msgid "Add '{}'"
-msgstr "Dodać '{}'"
+msgstr "Dodaj '{}'"
 
 msgid "Move"
 msgstr "Przenieś"
@@ -2206,6 +2209,12 @@ msgstr "Sprawdź dostępność aktualizacji, łącząc się z Internetem"
 msgid "Confirm when deleting items. Deleted items are moved to the recycle bin."
 msgstr "Potwierdź podczas usuwania elementów. Usunięte elementy są przenoszone do kosza."
 
+msgid ""
+"Confirm when rotating one item. Rotating several items is always confirmed."
+msgstr ""
+"Potwierdź podczas obracania jednego elementu. Obracanie wielu elementów "
+"jest zawsze potwierdzane."
+
 msgid "JPEG save quality"
 msgstr "Jakość zapisu JPEG"
 
@@ -2231,7 +2240,7 @@ msgid "Updates"
 msgstr "Aktualizacje"
 
 msgid "Use hardware acceleration to draw the Diffractor user interface (requires restart)"
-msgstr "Użyj akceleracji sprzętowej, aby narysować interfejs użytkownika dyfraktora (wymaga ponownego uruchomienia)"
+msgstr "Użyj akceleracji sprzętowej, aby narysować interfejs użytkownika Diffractor (wymaga ponownego uruchomienia)"
 
 msgid "Use hardware acceleration to decode video (when available)"
 msgstr "Użyj akceleracji sprzętowej do dekodowania wideo (jeśli jest dostępna)"
@@ -2240,7 +2249,7 @@ msgid "Use NV12 and P010 format textures (Automatically turned off if problems d
 msgstr "Użyj tekstur w formacie NV12 i P010 (automatycznie wyłączane w przypadku wykrycia problemów)"
 
 msgid "Show an inset shadow surrounding the image view panel."
-msgstr "Pokaż wstawiany cień otaczający panel widoku obrazu."
+msgstr "Pokaż wewnętrzny cień otaczający panel widoku obrazu."
 
 msgid "Resume playing media from the last position played."
 msgstr "Wznów odtwarzanie multimediów od ostatnio odtwarzanej pozycji."
@@ -2276,7 +2285,7 @@ msgid "other"
 msgstr "Inny"
 
 msgid "others"
-msgstr "inni"
+msgstr "inne"
 
 msgid "pasted"
 msgstr "wklejony"
@@ -2300,16 +2309,16 @@ msgid "Pixels"
 msgstr "Piksele"
 
 msgid "PNG - Best for non photos"
-msgstr "PNG — najlepsze dla innych niż zdjęcia"
+msgstr "PNG — najlepsze dla obrazów innych niż zdjęcia"
 
 msgid "Checking presence..."
 msgstr "Sprawdzanie obecności..."
 
 msgid "Possible newer copy in collection"
-msgstr "Możliwy nowszy egzemplarz w kolekcji"
+msgstr "Możliwa nowsza kopia w kolekcji"
 
 msgid "This item is outside the collection. One or more possible newer copies exist in the collection."
-msgstr "Ten przedmiot nie znajduje się w kolekcji. W kolekcji istnieje jeden lub więcej możliwych nowszych egzemplarzy."
+msgstr "Ten element znajduje się poza kolekcją. W kolekcji istnieje jedna lub więcej możliwych nowszych kopii."
 
 msgid "Outside collection; no possible copy identified"
 msgstr "Poza kolekcją; nie zidentyfikowano żadnej możliwej kopii"
@@ -2318,22 +2327,22 @@ msgid "This item is outside the collection. No possible copy was identified in t
 msgstr "Ten element znajduje się poza kolekcją. W kolekcji nie zidentyfikowano żadnej możliwej kopii."
 
 msgid "Possible older copy in collection"
-msgstr "Możliwy starszy egzemplarz w kolekcji"
+msgstr "Możliwa starsza kopia w kolekcji"
 
 msgid "This item is outside the collection. One or more possible older copies exist in the collection."
-msgstr "Ten przedmiot nie znajduje się w kolekcji. W kolekcji istnieje jeden lub więcej możliwych starszych egzemplarzy."
+msgstr "Ten element znajduje się poza kolekcją. W kolekcji istnieje jedna lub więcej możliwych starszych kopii."
 
 msgid "Possible copy in collection"
-msgstr "Możliwy egzemplarz w kolekcji"
+msgstr "Możliwa kopia w kolekcji"
 
 msgid "This item is outside the collection. One or more possible copies exist in the collection."
-msgstr "Ten przedmiot nie znajduje się w kolekcji. W kolekcji istnieje jedna lub więcej możliwych kopii."
+msgstr "Ten element znajduje się poza kolekcją. W kolekcji istnieje jedna lub więcej możliwych kopii."
 
 msgid "In collection"
 msgstr "W kolekcji"
 
 msgid "This item is in the collection."
-msgstr "Ten przedmiot znajduje się w kolekcji."
+msgstr "Ten element znajduje się w kolekcji."
 
 msgid "Presence"
 msgstr "Obecność w kolekcji"
@@ -2375,7 +2384,7 @@ msgid "Bitrate"
 msgstr "Szybkość transmisji"
 
 msgid "Camera"
-msgstr "Kamera"
+msgstr "Aparat"
 
 msgid "Camera manufacturer"
 msgstr "Producent aparatu"
@@ -2393,7 +2402,7 @@ msgid "Copyright creator"
 msgstr "Twórca praw autorskich"
 
 msgid "Copyright credit"
-msgstr "Kredyt praw autorskich"
+msgstr "Uznanie autorstwa"
 
 msgid "Copyright notice"
 msgstr "Informacja o prawach autorskich"
@@ -2402,7 +2411,7 @@ msgid "Copyright source"
 msgstr "Źródło praw autorskich"
 
 msgid "Copyright URL"
-msgstr "Prawa autorskie URL"
+msgstr "URL praw autorskich"
 
 msgid "Country//property"
 msgstr "Kraj"
@@ -2549,7 +2558,7 @@ msgid "age"
 msgstr "wiek"
 
 msgid "and"
-msgstr "I"
+msgstr "i"
 
 msgid "created"
 msgstr "stworzony"
@@ -2564,10 +2573,10 @@ msgid "duplicate"
 msgstr "duplikat"
 
 msgid "modified"
-msgstr "Zmodyfikowany"
+msgstr "zmodyfikowany"
 
 msgid "or"
-msgstr "Lub"
+msgstr "lub"
 
 msgid "related"
 msgstr "powiązany"
@@ -2579,7 +2588,7 @@ msgid "without"
 msgstr "bez"
 
 msgid "Rate selected items"
-msgstr "Oceń wybrane pozycje"
+msgstr "Oceń wybrane elementy"
 
 msgid "Number keys 0-5"
 msgstr "Klawisze numeryczne 0-5"
@@ -2643,7 +2652,7 @@ msgid "Saturation"
 msgstr "Nasycenie"
 
 msgid "Diffractor cannot crop, rotate or color {} files. You can save the file as a JPEG?"
-msgstr "Dyfraktor nie może przycinać, obracać ani kolorować plików {}. Możesz zapisać plik jako JPEG?"
+msgstr "Diffractor nie może przycinać, obracać ani kolorować plików {}. Możesz zapisać plik jako JPEG?"
 
 msgid "Save Changes"
 msgstr "Zapisz zmiany"
@@ -2658,7 +2667,7 @@ msgid "Failed to Scan."
 msgstr "Skanowanie nie powiodło się."
 
 msgid "All these terms"
-msgstr "Wszystkie te warunki"
+msgstr "Wszystkie te terminy"
 
 msgid "Christmas"
 msgstr "Boże Narodzenie"
@@ -2667,10 +2676,10 @@ msgid "Search in the collection"
 msgstr "Szukaj w kolekcji"
 
 msgid "From"
-msgstr "Z"
+msgstr "Od"
 
 msgid "Until"
-msgstr "Dopóki"
+msgstr "Do"
 
 msgid "Search in a folder"
 msgstr "Szukaj w folderze"
@@ -2688,7 +2697,7 @@ msgid "Search criteria or folder"
 msgstr "Kryteria wyszukiwania lub folder"
 
 msgid "Photos"
-msgstr "zdjęcia"
+msgstr "Zdjęcia"
 
 msgid "Select term"
 msgstr "Wybierz termin"
@@ -2717,14 +2726,14 @@ msgstr "Zawsze pokazuj zdjęcia RAW (wolniej)"
 msgid "Show this RAW photo"
 msgstr "Pokaż to zdjęcie RAW"
 
-msgid "press R to view matching or possible copy items in the collection"
-msgstr "naciśnij R, aby wyświetlić pasujące lub możliwe do skopiowania elementy w kolekcji"
+msgid "press R to view the items most closely related to this one"
+msgstr "naciśnij R, aby zobaczyć elementy najbardziej powiązane z tym"
 
 msgid "Show verbose metadata"
 msgstr "Pokaż szczegółowe metadane"
 
 msgid "Album-Show"
-msgstr "Pokaz albumu"
+msgstr "Album-Program"
 
 msgid "Group order (Default)"
 msgstr "Kolejność grupy (domyślnie)"
@@ -2745,7 +2754,7 @@ msgid "Rating-Label"
 msgstr "Etykieta oceny"
 
 msgid "Staring"
-msgstr "Początek"
+msgstr "Obsada"
 
 msgid "New Starting Date (local time):"
 msgstr "Nowa data rozpoczęcia (czas lokalny):"
@@ -2811,7 +2820,7 @@ msgid "Stream {}"
 msgstr "Strumień {}"
 
 msgid "subtitle"
-msgstr "podtytuł"
+msgstr "napisy"
 
 msgid "Support"
 msgstr "Wsparcie"
@@ -2839,6 +2848,9 @@ msgstr "Pliki lokalne do usunięcia: {}. Zdalne pliki do usunięcia: {}."
 
 msgid "Synchronization will permanently delete files. These files cannot be recovered from the Recycle Bin."
 msgstr "Synchronizacja trwale usunie pliki. Tych plików nie można odzyskać z Kosza."
+
+msgid "The existing files will be overwritten. Their current contents cannot be recovered from the recycle bin."
+msgstr "Istniejące pliki zostaną nadpisane. Ich bieżącej zawartości nie można odzyskać z Kosza."
 
 msgid "Delete local files that do not exist remotely"
 msgstr "Usuń pliki lokalne, które nie istnieją zdalnie"
@@ -2877,7 +2889,7 @@ msgid "Common Tags"
 msgstr "Wspólne tagi"
 
 msgid "Removable Tags"
-msgstr "Zdejmowane znaczniki"
+msgstr "Usuwalne tagi"
 
 msgid "Tags"
 msgstr "Tagi"
@@ -2922,7 +2934,7 @@ msgid "Pinned items stay selected. Use this when you want to quickly compare an 
 msgstr "Przypięte elementy pozostają zaznaczone. Użyj tej opcji, jeśli chcesz szybko porównać element z innymi elementami."
 
 msgid "Reset straighten and rotate"
-msgstr "Zresetuj, wyprostuj i obróć"
+msgstr "Zresetuj prostowanie i obrót"
 
 msgid "Tag or un-tag selected items"
 msgstr "Oznacz lub usuń oznaczenie wybranych elementów"
@@ -2940,10 +2952,10 @@ msgid "More options and controls"
 msgstr "Więcej opcji i kontroli"
 
 msgid "{} ({}) total items in {} folders."
-msgstr "Łączna liczba elementów w {} folderach: {} ({})."
+msgstr "{} ({}) elementów łącznie w {} folderach."
 
 msgid "Truncated at 1MB"
-msgstr "Obcięty o 1 MB"
+msgstr "Obcięto do 1 MB"
 
 msgid "Type to search"
 msgstr "Wpisz, aby wyszukać"
@@ -2952,7 +2964,7 @@ msgid "Unselect {}"
 msgstr "Odznacz {}"
 
 msgid "Update"
-msgstr "Aktualizacja"
+msgstr "Aktualizuj"
 
 msgid "Version {} of Diffractor is available."
 msgstr "Dostępna jest wersja {} programu Diffractor."
@@ -3144,6 +3156,7 @@ msgid "Set rating to 1 star"
 msgid_plural "Set rating to {count} stars"
 msgstr[0] "Ustaw ocenę na 1 gwiazdkę"
 msgstr[1] "Ustaw ocenę na {count} gwiazdki"
+msgstr[2] "Ustaw ocenę na {count} gwiazdek"
 
 msgid "Cannot process {first-name}."
 msgid_plural "Cannot process {first-name} and {other} other items."
@@ -3310,8 +3323,8 @@ msgstr "Wybierz co najmniej jedno pole metadanych do zaktualizowania. Zaznaczone
 msgid "{first-name} was canceled."
 msgid_plural "{count} items were canceled."
 msgstr[0] "Anulowano operację dla {first-name}."
-msgstr[1] "Anulowano operację dla następującej liczby elementów: {count}."
-msgstr[2] "Anulowano operację dla następującej liczby elementów: {count}."
+msgstr[1] "Anulowano operację dla {count} elementów."
+msgstr[2] "Anulowano operację dla {count} elementów."
 
 msgid "{first-name} will be staged for disc burning."
 msgid_plural "{count} selected items ({size}) will be staged for disc burning."
@@ -3403,9 +3416,6 @@ msgstr "{} nadal działa. Zamknij, zanim przejdziesz w inne miejsce."
 
 msgid "If the destination already exists:"
 msgstr "Jeśli cel już istnieje:"
-
-msgid "If both sides have the file, the newer one replaces the older one."
-msgstr "Jeśli plik jest po obu stronach, nowszy zastępuje starszy."
 
 msgid "Replace"
 msgstr "Zastąp"
@@ -3607,3 +3617,21 @@ msgstr "Za duży, aby wyświetlić"
 
 msgid "This image could not be displayed"
 msgstr "Nie można wyświetlić tego obrazu"
+
+msgid "Show the items in the collection most closely related to this one: possible copies, then the same album, the same series, the closest capture times, and the closest capture places."
+msgstr "Pokaż elementy w kolekcji najbardziej powiązane z tym: możliwe kopie, następnie ten sam album, tę samą serię, najbliższe czasy wykonania i najbliższe miejsca wykonania."
+
+msgid "This item and possible copies"
+msgstr "Ten element i możliwe kopie"
+
+msgid "Same album"
+msgstr "Ten sam album"
+
+msgid "Same series"
+msgstr "Ta sama seria"
+
+msgid "Taken at the same time"
+msgstr "Wykonano w tym samym czasie"
+
+msgid "Taken in the same place"
+msgstr "Wykonano w tym samym miejscu"

@@ -393,6 +393,7 @@ static item_status to_status(const platform::file_op_result_code code)
 	case platform::file_op_result_code::OK: return item_status::success;
 	case platform::file_op_result_code::CANCELLED: return item_status::cancel;
 	case platform::file_op_result_code::FAILED: return item_status::fail;
+	case platform::file_op_result_code::ALREADY_EXISTS: return item_status::fail;
 	default: ;
 	}
 

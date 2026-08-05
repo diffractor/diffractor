@@ -39,16 +39,29 @@ reproduce, are:
 - **Render-target clear.** Every frame starts by clearing to `scene_clear_shade`
   (see [../src/platform_win.h](../src/platform_win.h)) so anything the scene does
   not explicitly paint is a neutral grey rather than black. Layered windows are the
-  exception: they stay transparent where nothing is drawn.
-- **`clear` and `draw_rect`** are the same operation - a centre gradient with the
-  requested colour in the middle and `emphasize()` at the corners.
+  exception: they stay transparent where nothing is drawn. The software backend
+  skips this clear when the scene's own opening `clear` is opaque and covers the
+  region being painted, because nothing could show through it.
+- **The damage rect is a hint, not a contract.** `begin_draw` receives the window's
+  update region, and a backend may repaint more than it asks for - but the pixels
+  inside the damage rect must not depend on how much was repainted. The software
+  backend honours it (base clip, bounded pre-clear, partial `BitBlt`); the Direct3D
+  backend ignores it, because `DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL` rotates back
+  buffers so the region it did not draw holds two-frames-ago content. Partial
+  repaint is only sound because the software DIB persists between frames, so a
+  reallocated DIB, a layered window, and `redraw()` (which re-presents an existing
+  scene whose textures changed underneath it) all fall back to full damage.
+- **`clear` and `draw_rect`** are the same operation - a flat fill of the requested
+  colour. Neither derives a second colour; a rect that wants a centre gradient must
+  ask for one with `draw_rect_gradient`, which interpolates `c_centre` in the middle
+  to `c_corner` at the four corners.
 - **`draw_rounded_rect`** inflates the bounds, fills with `emphasize()` and fades
   the edge out; the visible edge is at `0.833 * (radius + 2)`.
 - **`draw_border`** is a mitred gradient from `c_outside` at the outer rectangle to
   `c_inside` at the inner one, not a flat fill.
 - **`draw_vertices`** (the audio visualizer) draws a drop shadow behind each bar
   that is taller than one pixel, then the bar as a centre gradient with the plain
-  colour at the corners - the inverse of `draw_rect`.
+  colour at the corners - the inverse of `draw_rect_gradient`.
 - **`draw_shadow`** must honour its `width` argument, and `draw_edge_shadows` sizes
   its inset as `min(cx / 2, cy / 2, 96)`.
 - **The shadow nine-slice split must match on both backends.** The shadow artwork is
@@ -284,6 +297,26 @@ exactly one owner and a defined point at which every user of it stops referencin
   in `destroy()` and in the destructor, because control panels are rebuilt on view
   changes and simply drop their controls without calling `destroy()`.
 
+### Reaching every window with a scale change
+
+A DPI change and a large-font toggle both change the scale, and each window that
+draws holds derived state that must be refreshed: its draw context's font size and
+the metrics `frame_base::update_dpi_metrics` sets — `scale_factor`, `icon_cxy`, the
+paddings, the resize-handle size and the scroll width. That state is otherwise set
+once, at draw-context creation, so a window the change does not reach keeps drawing
+at the old scale while the controls inside it are re-fonted from the shared owner
+context, which shows as mixed scaling inside one panel.
+
+Only a top-level window receives `WM_DPICHANGED`, so the refresh is delivered down
+the tree rather than assumed:
+
+- A **popup host** owns its own `owner_context` and handles `WM_DPICHANGED` itself.
+- A **child host** shares its parent's context and is neither a control nor a frame,
+  so the parent tracks it and hands it the change; it must not rebuild the shared
+  fonts, which the parent has already done.
+- A **bubble** shares the app's context and has no DPI message of its own, so it
+  refreshes both its font size and its metrics when it is shown.
+
 ## Draw context and batching
 
 The D3D draw context (`d3d11_draw_context_impl`) accumulates geometry into a list
@@ -381,6 +414,20 @@ index 42 in the primary face. Both backends key through `glyph_face_keys`
 ([../src/platform_win_visual.h](../src/platform_win_visual.h)), which assigns each
 face a small id and holds a reference to it, so a released face cannot be
 reallocated at the same address and silently alias another face's entries.
+
+**The run's em size is part of the same key.** A face carries no size - the size
+lives on the glyph run - so a renderer that ever sees two sizes would otherwise
+serve a raster made at the earlier size to text drawn at the later one, mixing
+glyph sizes inside a single string. A renderer is normally single-size, but a text
+layout built before a font-size change and drawn after it is not, so the key does
+not depend on that.
+
+A draw context therefore learns its font size before anything measures through it:
+measuring builds and caches the element text layouts, so `update_font_size` runs
+first (`bubble_impl::show`), and the software backend routes `begin_draw`'s size
+through `update_font_size` rather than recording it, which would leave the text
+renderers built at the previous size while making the later call believe it had
+nothing to do.
 
 The D3D glyph atlas grows on demand and is capped; a glyph too large for the cap is
 rendered without being cached rather than being allowed to grow the atlas without

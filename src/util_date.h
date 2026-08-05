@@ -211,7 +211,6 @@ namespace df
 			const auto days = to_days();
 			return days >= min && days <= max && days != null_date_cpp && days != null_date_mac;
 		}
-
 	};
 
 	__declspec(selectany) date_t date_t::null;

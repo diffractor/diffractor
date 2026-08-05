@@ -77,11 +77,6 @@ public:
 		return start_pos == end_pos;
 	}
 
-	/*bool has_one_second() const
-	{
-		return end_pos >= bytes_per_second;
-	}*/
-
 	bool should_fill() const
 	{
 		return used_bytes() <= format.bytes_per_second();
@@ -193,50 +188,23 @@ public:
 	// following silence (or stop) begins.
 	void apply_fade_out(const double seconds)
 	{
-		const auto bps = format.bytes_per_second();
-		const auto channels = format.channel_count();
-		const auto sample_size = format.bytes_per_sample();
+		const auto frames = ramp_frames(seconds);
 
-		if (bps == 0 || channels == 0 || sample_size == 0 || is_empty())
+		if (frames > 0)
 		{
-			return;
+			apply_ramp(data + end_pos - frames * frame_bytes(), frames, 1.0f, 0.0f);
 		}
+	}
 
-		const auto frame_bytes = channels * sample_size;
-		auto fade_bytes = std::min(used_bytes(), static_cast<uint32_t>(seconds * bps));
-		fade_bytes -= fade_bytes % frame_bytes;
+	// The same ramp at the head of the buffer: a device started on a non-zero sample
+	// steps the output away from silence, which the speaker reproduces as a pop.
+	void apply_fade_in(const double seconds)
+	{
+		const auto frames = ramp_frames(seconds);
 
-		if (fade_bytes == 0)
+		if (frames > 0)
 		{
-			return;
-		}
-
-		const auto fade_frames = fade_bytes / frame_bytes;
-		auto* p = data + (end_pos - fade_bytes);
-
-		for (uint32_t f = 0; f < fade_frames; ++f)
-		{
-			const auto gain = 1.0f - static_cast<float>(f + 1) / static_cast<float>(fade_frames);
-
-			for (uint32_t ch = 0; ch < channels; ++ch)
-			{
-				switch (format.sample_fmt)
-				{
-				case prop::audio_sample_t::signed_float:
-					reinterpret_cast<float*>(p)[ch] *= gain;
-					break;
-				case prop::audio_sample_t::signed_16bit:
-					reinterpret_cast<int16_t*>(p)[ch] = static_cast<int16_t>(reinterpret_cast<int16_t*>(p)[ch] * gain);
-					break;
-				case prop::audio_sample_t::signed_32bit:
-					reinterpret_cast<int32_t*>(p)[ch] = static_cast<int32_t>(reinterpret_cast<int32_t*>(p)[ch] * gain);
-					break;
-				default:
-					break;
-				}
-			}
-
-			p += frame_bytes;
+			apply_ramp(data + start_pos, frames, 0.0f, 1.0f);
 		}
 	}
 
@@ -257,10 +225,62 @@ public:
 		return bps > 0 ? static_cast<double>(used_bytes()) / bps : 0.0;
 	}
 
+private:
+	uint32_t frame_bytes() const
+	{
+		return format.channel_count() * format.bytes_per_sample();
+	}
+
+	// Whole frames a `seconds` ramp covers, limited to what is buffered.
+	uint32_t ramp_frames(const double seconds) const
+	{
+		const auto bps = format.bytes_per_second();
+		const auto fb = frame_bytes();
+
+		if (bps == 0 || fb == 0 || seconds <= 0.0 || is_empty())
+		{
+			return 0;
+		}
+
+		return std::min(used_bytes(), static_cast<uint32_t>(seconds * bps)) / fb;
+	}
+
+	void apply_ramp(uint8_t* p, const uint32_t frames, const float from, const float to)
+	{
+		const auto channels = format.channel_count();
+		const auto fb = frame_bytes();
+		const auto step = (to - from) / static_cast<float>(frames);
+
+		for (uint32_t f = 0; f < frames; ++f)
+		{
+			const auto gain = from + step * static_cast<float>(f + 1);
+
+			for (uint32_t ch = 0; ch < channels; ++ch)
+			{
+				switch (format.sample_fmt)
+				{
+				case prop::audio_sample_t::signed_float:
+					reinterpret_cast<float*>(p)[ch] *= gain;
+					break;
+				case prop::audio_sample_t::signed_16bit:
+					reinterpret_cast<int16_t*>(p)[ch] = static_cast<int16_t>(reinterpret_cast<int16_t*>(p)[ch] * gain);
+					break;
+				case prop::audio_sample_t::signed_32bit:
+					reinterpret_cast<int32_t*>(p)[ch] = static_cast<int32_t>(reinterpret_cast<int32_t*>(p)[ch] * gain);
+					break;
+				default:
+					break;
+				}
+			}
+
+			p += fb;
+		}
+	}
 
 	friend class wasapi_sound;
 	friend class av_visualizer;
 	friend class audio_resampler;
+	friend struct audio_ramp_probe;
 };
 
 

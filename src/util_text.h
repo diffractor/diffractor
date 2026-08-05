@@ -14,5 +14,4 @@
 namespace str
 {
 	void count_ranges(df::dense_string_counts& counts, std::string_view text);
-
 };

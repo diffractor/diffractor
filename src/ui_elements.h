@@ -249,9 +249,11 @@ struct view_element_options
 	flex_item_layout flex;
 
 	constexpr view_element_options() = default;
+
 	constexpr view_element_options(const view_element_style style_in) : style(style_in)
 	{
 	}
+
 	constexpr view_element_options(const flex_item_layout& flex_in) : flex(flex_in)
 	{
 	}
@@ -274,22 +276,22 @@ constexpr view_element_options operator|(const flex_item_layout& left, const vie
 	return view_element_options(left) | view_element_options(right);
 }
 
-constexpr view_element_options operator|(view_element_options left, const view_element_style right)
+constexpr view_element_options operator|(const view_element_options& left, const view_element_style right)
 {
 	return left | view_element_options(right);
 }
 
-constexpr view_element_options operator|(const view_element_style left, view_element_options right)
+constexpr view_element_options operator|(const view_element_style left, const view_element_options& right)
 {
 	return view_element_options(left) | right;
 }
 
-constexpr view_element_options operator|(view_element_options left, const flex_item_layout& right)
+constexpr view_element_options operator|(const view_element_options& left, const flex_item_layout& right)
 {
 	return left | view_element_options(right);
 }
 
-constexpr view_element_options operator|(const flex_item_layout& left, view_element_options right)
+constexpr view_element_options operator|(const flex_item_layout& left, const view_element_options& right)
 {
 	return view_element_options(left) | right;
 }
@@ -298,11 +300,19 @@ constexpr view_element_options operator|(const flex_item_layout& left, view_elem
 class view_element
 {
 public:
+	// invalidate_slack value meaning "not known yet, or wider than a byte can describe", which makes
+	// invalidate_bounds ask for the whole frame.
+	static constexpr uint8_t unknown_invalidate_slack = 255;
+
 	recti bounds;
 	view_element_padding padding{3, 3};
 	view_element_padding margin{0, 0};
 	flex_item_layout flex;
 	view_element_style style = view_element_style::visible;
+
+	// How far outside bounds this element paints, in device pixels. Maintained at draw time because
+	// padding is logical and only becomes device pixels once the scale factor is known.
+	mutable uint8_t invalidate_slack = unknown_invalidate_slack;
 
 	ui::color _bg_color;
 	ui::color _bg_target;
@@ -332,13 +342,29 @@ public:
 		return c;
 	}
 
+	// The rectangle a partial repaint must cover to redraw this element completely. Empty means the
+	// whole frame, which is what an unknown slack falls back to.
+	recti invalidate_bounds(const pointi element_offset = {}) const
+	{
+		if (invalidate_slack == unknown_invalidate_slack) return {};
+		return bounds.offset(element_offset).inflate(invalidate_slack);
+	}
+
 	void render_background(ui::draw_context& dc, const pointi element_offset) const
 	{
+		const auto pad = padding * dc.scale_factor;
+
+		// draw_rounded_rect grows its fill by round(0.8333 * (radius + 2) - radius), which is at most
+		// 2 for any radius. Recorded even when nothing is drawn, so the first hover already knows it.
+		const auto slack = std::max(pad.cx, pad.cy) + 2;
+		invalidate_slack = slack < unknown_invalidate_slack
+			                   ? static_cast<uint8_t>(slack)
+			                   : unknown_invalidate_slack;
+
 		const auto bg = calc_background_color(dc);
 
 		if (bg.a > 0.0f)
 		{
-			const auto pad = padding * dc.scale_factor;
 			dc.draw_rounded_rect(bounds.offset(element_offset).inflate(pad.cx, pad.cy), bg, dc.padding1);
 		}
 	}
@@ -423,10 +449,10 @@ struct flex_layout_result
 };
 
 flex_layout_result calc_flex_layout(const std::vector<view_element_ptr>& elements, ui::measure_context& mc,
-	const sizei available, const flex_container_layout& container);
+                                    sizei available, const flex_container_layout& container);
 
 sizei layout_flex_elements(const std::vector<view_element_ptr>& elements, ui::measure_context& mc,
-	ui::control_layouts& positions, const recti bounds, const flex_container_layout& container);
+                           ui::control_layouts& positions, recti bounds, const flex_container_layout& container);
 
 class view_elements : public view_element, public std::enable_shared_from_this<view_elements>
 {
@@ -996,7 +1022,6 @@ public:
 		auto logical_bounds = bounds.offset(element_offset);
 		logical_bounds.top = (logical_bounds.top + logical_bounds.bottom - line_height) / 2;
 		logical_bounds.bottom = logical_bounds.top + line_height;
-		//logical_bounds = logical_bounds.inflate(-logical_bounds.width() / 11, 0);
 
 		const auto clr = ui::color(0x000000, dc.colors.alpha / 4.44f);
 		dc.draw_rect(logical_bounds, clr);

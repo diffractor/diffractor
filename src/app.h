@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "model_tile_cache.h"
+
 class sidebar_host;
 class app_logo_element;
 class search_auto_complete;
@@ -36,6 +38,11 @@ extern icon_index volumes_icons[5];
 std::vector<std::pair<std::string_view, std::string>> calc_app_info(const index_state& index, bool include_state);
 bool is_app_installed();
 
+// Defined in app.cpp so callers do not need the whole sidebar header for the logo lockup.
+view_element_ptr create_app_logo_element(view_state& s, ui::style::font_face font, bool interactive,
+                                         bool show_plasma, double logo_scale,
+                                         const view_element_options& options);
+
 
 class view_frame;
 
@@ -46,7 +53,7 @@ class shell_file_operation_ui final : df::no_copy
 
 public:
 	shell_file_operation_ui(view_frame& view, ui::control_frame_ptr main_frame);
-	~shell_file_operation_ui();
+	~shell_file_operation_ui() override;
 };
 
 class view_frame final : public std::enable_shared_from_this<view_frame>, public view_host
@@ -462,6 +469,7 @@ public:
 	view_state _state;
 	edit_view_state _edit_view_state;
 	database _db;
+	tile_cache_db _tile_db;
 	const ui::plat_app_ptr _pa;
 	platform::setting_file_ptr _settings;
 
@@ -475,6 +483,9 @@ public:
 	platform::task_queue sidebar_task_queue;
 	platform::task_queue web_task_queue;
 	platform::task_queue map_tile_task_queue;
+	// One thread, because the SQLite build serialises nothing for us: this connection is only ever
+	// touched from here.
+	platform::task_queue tile_db_task_queue;
 	platform::task_queue predictions_task_queue;
 	platform::task_queue summary_task_queue;
 	platform::task_queue presence_task_queue;
@@ -678,6 +689,7 @@ public:
 	void queue_async(async_queue q, std::function<void()> f) override;
 	void queue_location(std::function<void(location_cache&)>) override;
 	void queue_database(std::function<void(database&)> f) override;
+	void queue_tile_db(std::function<void(tile_cache_db&)> f) override;
 	void web_service_cache(std::string key, std::function<void(const std::string&)> f) override;
 	void web_service_cache(std::string key, std::string value) override;
 	void queue_media_preview(std::function<void(media_preview_state&)> f, bool must_run) override;
@@ -700,9 +712,12 @@ public:
 	ui::command_ptr find_command(commands id) const override;
 	void tooltip(view_hover_element& hover, commands id) const;
 	void search_text_changed(std::string_view text);
-	void preview_search_prediction(std::string text);
+	void preview_search_prediction(const std::string& text);
 	void set_search_edit_text(std::string_view text);
 	void delete_items(const df::item_set& items) override;
+
+	// The run command of the task view currently shown, or none outside the task views.
+	commands task_view_run_command() const;
 
 	void focus_view() override;
 	bool can_exit() override;

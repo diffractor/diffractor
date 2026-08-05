@@ -29,7 +29,7 @@ inline const auto test_files_folder = known_path(platform::known_folder::test_fi
 inline constexpr sizei thumbnail_max_dimension = {256, 256};
 inline constexpr int expected_cached_item_count = 47;
 
-inline const auto long_text =
+inline constexpr auto long_text =
 	"The Commodore 64, also known as the C64, C-64, C= 64, or occasionally CBM 64 or VIC-64, is an 8-bit home computer introduced in January 1982 by Commodore International. "
 	"It is listed in the Guinness World Records as the highest-selling single computer model of all time, with independent estimates placing the number sold between 10 and 17 million units. "
 	"Volume production started in early 1982, with machines being released on to the market in August at a price of US $595(roughly equivalent to $1, 500 in 2015)."
@@ -182,6 +182,10 @@ public:
 	{
 	}
 
+	void queue_tile_db(const std::function<void(tile_cache_db&)> f) override
+	{
+	}
+
 	void web_service_cache(std::string key, std::function<void(const std::string&)> f) override
 	{
 	}
@@ -255,7 +259,7 @@ public:
 		const auto found = std::ranges::find(_workers, q, &std::pair<async_queue, std::function<void()>>::first);
 		if (found == _workers.end()) return false;
 
-		auto f = std::move(found->second);
+		const auto f = std::move(found->second);
 		_workers.erase(found);
 		f();
 		return true;
@@ -411,7 +415,7 @@ file_scan_result ff_scan_file(files& ff, df::file_path path, std::string_view xm
 rescan_spec ff_inspect_rescan(df::file_path path);
 // The result of that scan, falling back to a by-name scan if the write produced none.
 file_scan_result ff_scan_after_update(files& ff, file_update_result& result, df::file_path path,
-                                     std::string_view xmp_sidecar = {});
+                                      std::string_view xmp_sidecar = {});
 file_scan_result ff_scan_and_load_thumb(files& ff, df::file_path path,
                                         std::string_view xmp_sidecar = {});
 void assert_metadata(const prop::item_metadata& expected, const prop::item_metadata& actual,

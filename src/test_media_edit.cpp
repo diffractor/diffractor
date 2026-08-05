@@ -14,6 +14,10 @@
 #include "metadata_xmp.h"
 #include "view_edit.h"
 
+#include "webp/decode.h"
+#include "webp/encode.h"
+#include "webp/mux.h"
+
 
 static uint32_t read_be32(const uint8_t* p)
 {
@@ -32,8 +36,10 @@ static df::blob find_xtra_entry(const df::file_path path, const std::string_view
 		const std::string_view name(reinterpret_cast<const char*>(data.data() + pos + 8), name_size);
 		if (name == wanted_name)
 		{
-			return {data.begin() + static_cast<ptrdiff_t>(pos),
-			        data.begin() + static_cast<ptrdiff_t>(pos + entry_size)};
+			return {
+				data.begin() + static_cast<ptrdiff_t>(pos),
+				data.begin() + static_cast<ptrdiff_t>(pos + entry_size)
+			};
 		}
 	}
 	return {};
@@ -52,7 +58,7 @@ static void should_save(const std::string_view ext, const bool should_support_me
 	const auto load_path = test_files_folder.combine_file("Test.jpg");
 
 	files ff;
-	const image_edits color;
+	constexpr image_edits color;
 	ff.update(load_path, save_path, {}, color, {}, false, {});
 
 	const auto expected = extract_properties(load_path);
@@ -69,7 +75,7 @@ static void should_save(const std::string_view ext, const bool should_support_me
 
 static void should_apply_perspective_correction()
 {
-	auto source = std::make_shared<ui::surface>();
+	const auto source = std::make_shared<ui::surface>();
 	source->alloc(16, 12, ui::texture_format::RGB);
 
 	for (auto y = 0; y < 12; ++y)
@@ -129,7 +135,7 @@ static void should_apply_perspective_correction()
 
 static void should_fit_document_correction_to_controls()
 {
-	const sizei extent(400, 300);
+	constexpr sizei extent(400, 300);
 	constexpr auto horizontal = 0.30;
 	constexpr auto vertical = -0.18;
 
@@ -172,9 +178,9 @@ static void should_fit_document_correction_to_controls()
 
 static void should_detect_only_clear_document_regions()
 {
-	auto document = std::make_shared<ui::surface>();
+	const auto document = std::make_shared<ui::surface>();
 	document->alloc(160, 120, ui::texture_format::RGB);
-	const std::array<pointd, 4> corners = {pointd(24, 18), pointd(140, 12), pointd(132, 108), pointd(18, 100)};
+	constexpr std::array<pointd, 4> corners = {pointd(24, 18), pointd(140, 12), pointd(132, 108), pointd(18, 100)};
 	for (auto y = 0; y < 120; ++y)
 	{
 		for (auto x = 0; x < 160; ++x)
@@ -198,7 +204,7 @@ static void should_detect_only_clear_document_regions()
 	assert_equal(true, static_cast<bool>(detected), "detects clear document");
 	assert_equal(true, detected.extent.cx > 100 && detected.extent.cy > 80, "document extent is plausible");
 
-	auto ambiguous = std::make_shared<ui::surface>();
+	const auto ambiguous = std::make_shared<ui::surface>();
 	ambiguous->alloc(160, 120, ui::texture_format::RGB);
 	for (auto y = 0; y < 120; ++y)
 		for (auto x = 0; x < 160; ++x)
@@ -224,7 +230,7 @@ static void should_detect_photographed_document()
 
 static void should_detect_document_at_image_edge()
 {
-	auto document = std::make_shared<ui::surface>();
+	const auto document = std::make_shared<ui::surface>();
 	document->alloc(160, 120, ui::texture_format::RGB);
 	for (auto y = 0; y < 120; ++y)
 	{
@@ -241,9 +247,9 @@ static void should_detect_document_at_image_edge()
 
 static void should_detect_low_contrast_document()
 {
-	auto document = std::make_shared<ui::surface>();
+	const auto document = std::make_shared<ui::surface>();
 	document->alloc(240, 180, ui::texture_format::RGB);
-	const std::array<pointd, 4> corners = {pointd(34, 22), pointd(210, 30), pointd(202, 160), pointd(26, 152)};
+	constexpr std::array<pointd, 4> corners = {pointd(34, 22), pointd(210, 30), pointd(202, 160), pointd(26, 152)};
 
 	for (auto y = 0; y < 180; ++y)
 	{
@@ -274,7 +280,7 @@ static void should_detect_low_contrast_document()
 
 static void should_crop_without_resampling()
 {
-	auto source = std::make_shared<ui::surface>();
+	const auto source = std::make_shared<ui::surface>();
 	source->alloc(16, 12, ui::texture_format::RGB);
 
 	for (auto y = 0; y < 12; ++y)
@@ -304,7 +310,7 @@ static void should_crop_without_resampling()
 
 static void should_apply_temperature_and_tint()
 {
-	auto source = std::make_shared<ui::surface>();
+	const auto source = std::make_shared<ui::surface>();
 	source->alloc(1, 1, ui::texture_format::RGB);
 	source->set_pixel(0, 0, ui::rgba(128, 128, 128));
 
@@ -319,7 +325,7 @@ static void should_apply_temperature_and_tint()
 
 static void should_initialize_edit_rotation_from_orientation()
 {
-	const sizei landscape(120, 80);
+	constexpr sizei landscape(120, 80);
 	const auto top_left = edit_view_state::initial_crop(landscape, ui::orientation::top_left);
 	const auto right_top = edit_view_state::initial_crop(landscape, ui::orientation::right_top);
 	const auto bottom_right = edit_view_state::initial_crop(landscape, ui::orientation::bottom_right);
@@ -334,7 +340,7 @@ static void should_initialize_edit_rotation_from_orientation()
 	assert_equal(true, left_bottom.actual_extent().Height > left_bottom.actual_extent().Width,
 	             "left-bottom orientation is portrait");
 
-	auto source = std::make_shared<ui::surface>();
+	const auto source = std::make_shared<ui::surface>();
 	source->alloc(3, 2, ui::texture_format::RGB);
 	for (auto y = 0; y < 2; ++y)
 	{
@@ -380,7 +386,7 @@ static void should_build_rotated_edit_preview_surface()
 static void should_build_straightened_edit_preview_without_black_corners()
 {
 	constexpr sizei loaded_dimensions(4000, 3000);
-	auto source = std::make_shared<ui::surface>();
+	const auto source = std::make_shared<ui::surface>();
 	source->alloc(192, 144, ui::texture_format::RGB);
 	source->clear(ui::rgba(255, 255, 255));
 
@@ -602,6 +608,27 @@ static void should_update_formatted_text()
 		assert_equal(desc_text, actual_exif->description, "exif");
 		assert_equal(desc_text, actual_iptc->description, "IPTC");
 	}
+}
+
+static void should_update_synopsis()
+{
+	const auto load_path = test_files_folder.combine_file("exif-rating.jpg");
+	const auto save_path = _temps.next_path(".jpg");
+	constexpr auto synopsis_text = "A long description of what happens";
+
+	files ff;
+	metadata_edits edits;
+	edits.synopsis = synopsis_text;
+	assert_equal(true, edits.has_changes(), "synopsis counts as a change");
+
+	auto written = ff.update(load_path, save_path, edits, {}, {}, false, {}, {}, ff_inspect_rescan(save_path));
+	assert_equal(true, written.success(), std::format("synopsis written ({})", written.format_error()));
+
+	const auto actual_scanned = ff_scan_after_update(ff, written, save_path);
+	assert_equal(synopsis_text, actual_scanned.to_props()->synopsis, "to_props");
+
+	const auto actual_xmp = extract_properties(save_path, metadata_type::XMP);
+	assert_equal(synopsis_text, actual_xmp->synopsis, "XMP");
 }
 
 static void should_update_metadata(const std::string_view name)
@@ -1129,12 +1156,12 @@ static void should_stage_metadata_edit(const std::string_view name)
 
 	metadata_edits first;
 	first.rating = 3;
-	auto first_result = ff.update(path, first, {}, {}, false, {});
+	const auto first_result = ff.update(path, first, {}, {}, false, {});
 	assert_equal(true, first_result.success(), std::format("first rating saved ({})", first_result.format_error()));
 
 	metadata_edits second;
 	second.rating = 5;
-	auto result = ff.update(path, second, {}, {}, false, {});
+	const auto result = ff.update(path, second, {}, {}, false, {});
 
 	assert_equal(true, result.success(), std::format("second rating saved ({})", result.format_error()));
 	assert_equal(true, result.staged, "edit staged and swapped");
@@ -1170,6 +1197,25 @@ static void should_return_written_image()
 	assert_equal(true, result.loaded.success, "write returned the image it wrote");
 	assert_equal(before.i->width(), result.loaded.i->width(), "written image width");
 	assert_equal(before.i->height(), result.loaded.i->height(), "written image height");
+
+	// The scan only wraps the written bytes when a caller asked for them, and asking for a thumbnail
+	// is a separate request. Without this the assertions above pass on the thumbnail's half of the
+	// gate and say nothing about want_image.
+	rescan_spec image_only;
+	image_only.wanted = true;
+	image_only.load_thumbnail = false;
+	image_only.want_image = true;
+	image_only.file_type = files::file_type_from_name(path);
+
+	metadata_edits more_edits;
+	more_edits.rating = 4;
+	const auto image_only_result = ff.update(path, more_edits, {}, {}, false, {}, image_only);
+
+	assert_equal(true, image_only_result.success(),
+	             std::format("rating saved ({})", image_only_result.format_error()));
+	assert_equal(true, image_only_result.loaded.success, "want_image alone returns the written image");
+	assert_equal(before.i->width(), image_only_result.loaded.i->width(), "image-only written width");
+	assert_equal(before.i->height(), image_only_result.loaded.i->height(), "image-only written height");
 }
 
 // The AV display's share. A container can be gigabytes, so it takes the handle rather than the
@@ -1186,7 +1232,7 @@ static void should_hand_over_written_handle()
 
 	metadata_edits edits;
 	edits.rating = 3;
-	auto result = ff.update(path, edits, {}, {}, false, {}, rescan);
+	const auto result = ff.update(path, edits, {}, {}, false, {}, rescan);
 
 	assert_equal(true, result.success(), std::format("rating saved ({})", result.format_error()));
 	assert_equal(true, result.staged, "edit staged and swapped");
@@ -1196,7 +1242,7 @@ static void should_hand_over_written_handle()
 	df::blob actual;
 	actual.resize(expected.size());
 	result.display_handle->seek(0, platform::file::whence::begin);
-	actual.resize(result.display_handle->read(actual.data(), actual.size()));
+	actual.resize(static_cast<size_t>(result.display_handle->read(actual.data(), actual.size())));
 
 	assert_equal(true, expected == actual, "handle reads back the written bytes");
 }
@@ -1245,7 +1291,7 @@ static void should_edit_raw_sidecar_only()
 
 	prop::item_metadata sidecar;
 	metadata_xmp::parse(sidecar, path_xmp);
-	assert_equal(5, static_cast<int>(sidecar.rating), "sidecar rating");
+	assert_equal(5, sidecar.rating, "sidecar rating");
 
 	const auto sr = ff_scan_file(ff, path, detect_xmp_sidecar(path));
 	assert_equal(5, sr.to_props()->rating, "rating round trips");
@@ -1685,15 +1731,64 @@ static void should_refuse_imperfect_lossless_rotate()
 	const auto unaligned = ff.surface_to_image(make_gradient_surface(32, 20), {}, {}, ui::image_format::JPEG);
 
 	jpeg_encoder aligned_encoder;
-	jpeg_decoder_x aligned_decoder;
+	const jpeg_decoder_x aligned_decoder;
 	assert_equal(false, aligned_decoder.transform(aligned->data(), aligned_encoder, simple_transform::rot_90).empty(),
 	             "aligned rotate stays lossless");
 
 	jpeg_encoder unaligned_encoder;
-	jpeg_decoder_x unaligned_decoder;
+	const jpeg_decoder_x unaligned_decoder;
 	assert_equal(true,
 	             unaligned_decoder.transform(unaligned->data(), unaligned_encoder, simple_transform::rot_90).empty(),
 	             "unaligned rotate refuses rather than trimming");
+}
+
+// Offset of the start-of-scan marker, or 0 when there is none.
+static size_t sos_offset(const df::cspan jpeg)
+{
+	for (size_t i = 2; i + 4 < jpeg.size;)
+	{
+		if (jpeg.data[i] != 0xFF) break;
+
+		const auto marker = jpeg.data[i + 1];
+
+		if (marker == 0xD8 || marker == 0x01 || (marker >= 0xD0 && marker <= 0xD7))
+		{
+			i += 2;
+			continue;
+		}
+
+		if (marker == 0xDA) return i;
+
+		i += 2 + ((static_cast<size_t>(jpeg.data[i + 2]) << 8) | jpeg.data[i + 3]);
+	}
+
+	return 0;
+}
+
+// A JPEG that ends inside its entropy data makes jpeg_read_coefficients suspend and hand back a
+// null coefficient array, which transupp indexes straight into a crash. The rotate must refuse -
+// and leave both codecs usable, because files holds one decoder and one encoder for every file.
+static void should_survive_truncated_lossless_rotate()
+{
+	files ff;
+
+	const auto whole = ff.surface_to_image(make_gradient_surface(256, 256), {}, {}, ui::image_format::JPEG);
+	const auto& data = whole->data();
+	const auto sos = sos_offset(data);
+
+	assert_equal(true, sos > 0 && sos + 64 < data.size(), "test image has scan data to truncate");
+
+	const std::vector<uint8_t> truncated(data.data(), data.data() + sos + 64);
+
+	jpeg_encoder encoder;
+	const jpeg_decoder_x decoder;
+
+	assert_equal(true,
+	             decoder.transform({truncated.data(), truncated.size()}, encoder, simple_transform::rot_90).empty(),
+	             "truncated rotate refuses");
+
+	assert_equal(false, decoder.transform(data, encoder, simple_transform::rot_90).empty(),
+	             "decoder and encoder stay usable after the refusal");
 }
 
 // Every 8-bit YCbCr JPEG belongs on the GPU NV12 path; read_nv12 averages whatever chroma the
@@ -1707,7 +1802,7 @@ static bool jpeg_uses_nv12(files& ff, const char* const name)
 	assert_equal(true, decoder.read_header(loaded.i->data()), "read jpeg header");
 
 	const auto result = decoder.can_render_nv12();
-	decoder.start_decompress(1, result);
+	decoder.start_decompress(1, result, true);
 	decoder.close();
 
 	return result;
@@ -1958,8 +2053,8 @@ static void should_tag_webp_surface_alpha()
 	assert_equal(1u, static_cast<uint32_t>(opaque_scan.frames.size()), "opaque webp frame count");
 	assert_equal(true, opaque_scan.frames[0]->format() == ui::texture_format::RGB, "opaque webp scan is RGB");
 
-	auto transparent = std::make_shared<ui::surface>();
-	auto* const pixels = transparent->alloc(16, 16, ui::texture_format::ARGB);
+	const auto transparent = std::make_shared<ui::surface>();
+	const auto* const pixels = transparent->alloc(16, 16, ui::texture_format::ARGB);
 	assert_equal(true, pixels != nullptr, "alpha surface allocated");
 
 	for (auto y = 0; y < 16; ++y)
@@ -1981,6 +2076,205 @@ static void should_tag_webp_surface_alpha()
 	const auto decoded = load_webp(encoded->data());
 	assert_equal(true, is_valid(decoded), "alpha webp decoded");
 	assert_equal(true, decoded->format() == ui::texture_format::ARGB, "alpha webp surface is ARGB");
+}
+
+static void should_decode_opaque_lossy_webp_as_nv12()
+{
+	const auto data = df::blob_from_file(test_files_folder.combine_file("lake.webp"));
+	const auto rgb = load_webp(data, false);
+	const auto nv12 = load_webp(data, true);
+
+	assert_equal(true, is_valid(rgb) && rgb->format() == ui::texture_format::RGB, "webp RGB fallback decoded");
+	assert_equal(true, is_valid(nv12) && nv12->format() == ui::texture_format::NV12, "webp NV12 decoded");
+	assert_equal(true, nv12->size() * 2 < rgb->size(), "webp NV12 uses less than half the RGB surface memory");
+	assert_equal(true, nv12->color_space() == ui::color_space::rec601_limited, "webp NV12 color space");
+
+	const auto converted = std::make_shared<ui::surface>();
+	av_scaler scaler;
+	assert_equal(true, scaler.convert_yuv_surface(*nv12, converted), "webp NV12 converts for comparison");
+
+	uint64_t total_difference = 0;
+	const auto dimensions = rgb->dimensions();
+
+	for (auto y = 0; y < dimensions.cy; ++y)
+	{
+		const auto* const expected = rgb->pixels_line(y);
+		const auto* const actual = converted->pixels_line(y);
+
+		for (auto x = 0; x < dimensions.cx * 4; x += 4)
+		{
+			for (auto channel = 0; channel < 3; ++channel)
+			{
+				total_difference += std::abs(static_cast<int>(expected[x + channel]) - actual[x + channel]);
+			}
+		}
+	}
+
+	const auto average_difference = static_cast<double>(total_difference) / (dimensions.cx * dimensions.cy * 3);
+	assert_equal(true, average_difference < 3.0,
+	             std::format("webp NV12 average RGB difference: {}", average_difference));
+
+	assert_equal(true, !is_valid(save_webp(nv12, {}, {})), "webp encoder rejects NV12 rather than reading it as BGRX");
+
+	files ff;
+	const auto image = std::make_shared<ui::image>(df::cspan(data), dimensions, ui::image_format::WEBP,
+	                                              ui::orientation::top_left);
+	const auto dispatched = ff.image_to_surface(image, {}, true);
+	assert_equal(true, is_valid(dispatched) && dispatched->format() == ui::texture_format::NV12,
+	             "webp image dispatch preserves NV12");
+
+	const auto target_extent = sizei{32, 32};
+	const auto scaled = ff.image_to_surface(image, target_extent, true);
+	assert_equal(true, is_valid(scaled) && scaled->format() == ui::texture_format::RGB,
+	             "webp NV12 downscale produces target RGB");
+	assert_equal(true, ui::scale_dimensions(dimensions, target_extent) == scaled->dimensions(),
+	             "webp downscale honors target extent");
+}
+
+static void should_refuse_truncated_webp_decode()
+{
+	const auto data = df::blob_from_file(test_files_folder.combine_file("lake.webp"));
+	auto truncated_size = 0_z;
+
+	for (auto size = 12_z; size < data.size(); ++size)
+	{
+		WebPBitstreamFeatures features;
+		if (WebPGetFeatures(data.data(), size, &features) == VP8_STATUS_OK)
+		{
+			truncated_size = size;
+			break;
+		}
+	}
+
+	assert_equal(true, truncated_size > 0, "truncated webp retains a readable header");
+	assert_equal(true, !is_valid(load_webp({data.data(), truncated_size})),
+	             "truncated webp does not return an allocated partial surface");
+}
+
+static df::blob make_test_animated_webp()
+{
+	constexpr auto width = 16;
+	constexpr auto height = 16;
+	WebPAnimEncoderOptions options;
+	if (!WebPAnimEncoderOptionsInit(&options)) return {};
+
+	auto* const encoder = WebPAnimEncoderNew(width, height, &options);
+	if (!encoder) return {};
+	const df::releaser<WebPAnimEncoder> encoder_releaser(encoder, [](auto* i) { WebPAnimEncoderDelete(i); });
+
+	WebPConfig config;
+	if (!WebPConfigInit(&config)) return {};
+	config.lossless = 1;
+	config.quality = 100;
+
+	std::array<uint32_t, width * height> pixels;
+	const auto add_frame = [&](const uint32_t color, const int timestamp)
+	{
+		pixels.fill(color);
+		WebPPicture picture;
+		if (!WebPPictureInit(&picture)) return false;
+		const df::scope_exit free_picture([&picture] { WebPPictureFree(&picture); });
+		picture.width = width;
+		picture.height = height;
+		picture.use_argb = true;
+		return WebPPictureImportBGRA(&picture, std::bit_cast<const uint8_t*>(pixels.data()), width * 4) &&
+			WebPAnimEncoderAdd(encoder, &picture, timestamp, &config);
+	};
+
+	if (!add_frame(0xff102040, 0) || !add_frame(0xffc08020, 100) ||
+		!WebPAnimEncoderAdd(encoder, nullptr, 350, nullptr))
+	{
+		return {};
+	}
+
+	WebPData encoded;
+	WebPDataInit(&encoded);
+	if (!WebPAnimEncoderAssemble(encoder, &encoded)) return {};
+	const df::scope_exit clear_encoded([&encoded] { WebPDataClear(&encoded); });
+	return {encoded.bytes, encoded.bytes + encoded.size};
+}
+
+static void should_bound_and_time_animated_webp()
+{
+	const auto data = make_test_animated_webp();
+	assert_equal(true, !data.empty(), "animated webp encoded");
+
+	const auto decoded = scan_webp(data, true);
+	assert_equal(2u, static_cast<uint32_t>(decoded.frames.size()), "animated webp frame count");
+	assert_equal(true, std::abs(decoded.frames[0]->time() - 0.1) < 0.001, "animated webp first timestamp");
+	assert_equal(true, std::abs(decoded.frames[1]->time() - 0.35) < 0.001, "animated webp second timestamp");
+
+	const auto restore_budget = df::max_decode_bytes;
+	const df::scope_exit restore([restore_budget] { df::max_decode_bytes = restore_budget; });
+	const auto frame_bytes = 16ll * 16ll * 4ll;
+	df::max_decode_bytes = frame_bytes * 3;
+	const auto bounded = scan_webp(data, true);
+	assert_equal(1u, static_cast<uint32_t>(bounded.frames.size()),
+	             "animated webp budget includes two decoder canvases");
+
+	auto corrupt = data.clone();
+	auto frame = 0;
+	for (auto offset = 12_z; offset + 32 < corrupt.size();)
+	{
+		const auto chunk_size = static_cast<size_t>(corrupt[offset + 4]) |
+			(static_cast<size_t>(corrupt[offset + 5]) << 8) |
+			(static_cast<size_t>(corrupt[offset + 6]) << 16) |
+			(static_cast<size_t>(corrupt[offset + 7]) << 24);
+
+		if (memcmp(corrupt.data() + offset, "ANMF", 4) == 0 && ++frame == 2)
+		{
+			corrupt[offset + 32] ^= 0xff;
+			break;
+		}
+
+		offset += 8 + chunk_size + (chunk_size & 1);
+	}
+
+	df::max_decode_bytes = restore_budget;
+	const auto malformed = scan_webp(corrupt, true);
+	assert_equal(true, malformed.frames.size() < 2, "malformed animated webp terminates on decode failure");
+}
+
+// Guards the drawn mark against silent drift. The same artwork is drawn independently by
+// tools/generate_store_assets.py for app.ico and the Store assets.
+static void should_draw_the_logo()
+{
+	for (const auto size : {16, 32, 44, 150, 256})
+	{
+		const auto s = std::make_shared<ui::surface>();
+		assert_equal(true, s->alloc(size, size, ui::texture_format::ARGB), "logo surface allocated");
+		s->fill_logo();
+
+		const auto last = size - 1;
+		assert_equal(0u, s->get_pixel(0, 0), "logo corner is transparent");
+		assert_equal(0u, s->get_pixel(last, last), "logo opposite corner is transparent");
+
+		// The four squares sit on the vertical and horizontal axes through the centre.
+		const auto mid = size / 2;
+		const auto near_edge = std::max(1, size / 8);
+		const auto top = s->get_pixel(mid, near_edge);
+		const auto bottom = s->get_pixel(mid, last - near_edge);
+		const auto left = s->get_pixel(near_edge, mid);
+		const auto right = s->get_pixel(last - near_edge, mid);
+
+		// Surface pixels are stored blue first, so ui::get_r reads the blue channel here.
+		const auto red_of = [](const ui::color32 c) { return ui::get_b(c); };
+		const auto green_of = [](const ui::color32 c) { return ui::get_g(c); };
+		const auto blue_of = [](const ui::color32 c) { return ui::get_r(c); };
+
+		assert_equal(true, green_of(top) > red_of(top) && green_of(top) > blue_of(top), "logo top is green");
+		assert_equal(true, red_of(bottom) > green_of(bottom) && red_of(bottom) > blue_of(bottom),
+		             "logo bottom is red");
+		assert_equal(true, red_of(left) > 0x80 && green_of(left) > 0x60 && blue_of(left) < 0x40,
+		             "logo left is yellow");
+		assert_equal(true, blue_of(right) > red_of(right) && blue_of(right) > green_of(right),
+		             "logo right is blue");
+
+		for (const auto c : {top, bottom, left, right})
+		{
+			assert_equal(255u, ui::get_a(c), "logo square centres are opaque");
+		}
+	}
 }
 
 void register_tests4(view_state& state, test_registry& tests)
@@ -2049,6 +2343,7 @@ void register_tests4(view_state& state, test_registry& tests)
 	tests.add("Should save as with distinct xmp sidecar"s, should_save_as_with_distinct_xmp_sidecar);
 	tests.add("Should update exif rating"s, should_update_exif_rating);
 	tests.add("Should update formatted description"s, should_update_formatted_text);
+	tests.add("Should update synopsis"s, should_update_synopsis);
 	tests.add("Should remove shell written tags"s, should_remove_shell_written_tags);
 
 	// Windows Explorer / Media Player tag interop (#123)
@@ -2097,6 +2392,7 @@ void register_tests4(view_state& state, test_registry& tests)
 	tests.add("Should read jpeg orientation"s, should_read_jpeg_orientation);
 	tests.add("Should reuse source jpeg tables"s, should_reuse_source_jpeg_tables);
 	tests.add("Should refuse imperfect lossless rotate"s, should_refuse_imperfect_lossless_rotate);
+	tests.add("Should survive truncated lossless rotate"s, should_survive_truncated_lossless_rotate);
 	tests.add("Should render ycbcr jpeg as nv12"s, should_render_ycbcr_jpeg_as_nv12);
 	tests.add("Should report jpeg chroma subsampling"s, should_report_jpeg_chroma_subsampling);
 	tests.add("Should decode 12bit gray jpeg"s, should_decode_12bit_gray_jpeg);
@@ -2114,6 +2410,10 @@ void register_tests4(view_state& state, test_registry& tests)
 	tests.add("Should save .webp"s, [] { should_save(".webp", true); });
 	tests.add("Should honor webp save quality"s, should_honor_webp_save_quality);
 	tests.add("Should tag webp surface alpha"s, should_tag_webp_surface_alpha);
+	tests.add("Should decode opaque lossy webp as nv12"s, should_decode_opaque_lossy_webp_as_nv12);
+	tests.add("Should refuse truncated webp decode"s, should_refuse_truncated_webp_decode);
+	tests.add("Should bound and time animated webp"s, should_bound_and_time_animated_webp);
 	tests.add("Should preserve webp chunks on metadata save"s, should_preserve_webp_chunks_on_metadata_save);
 	tests.add("Should convert raw to jpeg"s, should_convert_raw_to_jpeg);
+	tests.add("Should draw the logo"s, should_draw_the_logo);
 }

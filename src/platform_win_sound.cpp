@@ -225,7 +225,6 @@ public:
 
 		if (SUCCEEDED(hr))
 		{
-			//hr = get_stream_format(_device, _audio, &_pwfx);
 			hr = audio->GetMixFormat(&pwfx_temp);
 
 			if (SUCCEEDED(hr) && pwfx_temp)
@@ -242,23 +241,9 @@ public:
 				// WAVE_FORMAT_PCM
 				// WAVE_FORMAT_EXTENSIBLE
 
-				/*if (SUCCEEDED(hr))
-						{
-							hr = _audio->SetEventHandle(static_cast<HANDLE>(data_event._h));
-
-							if (SUCCEEDED(hr))
-							{
-								hr = _audio->GetService(
-									IID_IAudioRenderClient,
-									(void**)&_render);
-
-								success = SUCCEEDED(hr);
-							}
-						}*/
-
 				if (SUCCEEDED(hr))
 				{
-					hr = audio->SetEventHandle(static_cast<HANDLE>(_data_event._h));
+					hr = audio->SetEventHandle(_data_event._h);
 				}
 
 				if (SUCCEEDED(hr))
@@ -462,10 +447,10 @@ public:
 	void wait_for_buffer(const platform::thread_event& wake_event, const uint32_t timeout_ms) override
 	{
 		const HANDLE events[] = {
-			static_cast<HANDLE>(_data_event._h),
+			(_data_event._h),
 			static_cast<HANDLE>(wake_event._h)
 		};
-		WaitForMultipleObjects(static_cast<DWORD>(std::size(events)), events, false, timeout_ms);
+		WaitForMultipleObjects(std::size(events), events, false, timeout_ms);
 	}
 
 	void write(audio_buffer& buffer) override
@@ -498,8 +483,8 @@ public:
 			if (SUCCEEDED(hr))
 			{
 				const auto available_frames = numFramesPadding < _buffer_frame_count
-					? _buffer_frame_count - numFramesPadding
-					: 0u;
+					                              ? _buffer_frame_count - numFramesPadding
+					                              : 0u;
 				const auto copy_samples = std::min(available_frames, available_in_buffer);
 
 				if (copy_samples > 0)
@@ -507,7 +492,7 @@ public:
 					hr = _render->GetBuffer(copy_samples, &pData);
 
 					if (SUCCEEDED(hr))
-				{
+					{
 						const auto copy_bytes = copy_samples * bytes_per_sample * channel_count;
 
 						if (copy_bytes <= buffer.used_bytes())

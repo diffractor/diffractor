@@ -393,6 +393,23 @@ Once playing, `_vid_tex` takes precedence over `_tex` in `draw` and the player u
 through `av_session::update_texture`. `texture_state::update(surface)` is the media-preview entry
 point and clears `_vid_tex` when a still frame is staged instead.
 
+A few extensions are claimed by both a container and a widely used text format: `.ts` is an MPEG-2
+transport stream and a TypeScript file, and the same holds for `.m2t`, `.m2ts` and `.mts`. For those,
+`av_format_decoder::open` reads the first kilobyte and applies `files::media_header_matches` before
+ffmpeg sees the file, so a source file is refused outright rather than part-opening as a stream with
+nothing in it. The rule is positive and specific — a transport stream is a run of packets each
+opening with the `0x47` sync byte at a 188, 192 or 204 stride — so extensions with no entry are
+decided by the decoder exactly as before. The run is searched for rather than assumed to start at
+offset zero, because a partial capture or a PVR dump can begin mid-packet or behind a prefix, and
+ffmpeg's own probe would find it; four aligned packet starts are required, which text cannot supply
+by accident. A refused open reaches the panel as `display_state_t::_av_open_failed`, which suppresses
+both the media element and the transport row and leaves the hex dump.
+
+A header rule is only worth writing where the format is worth keeping. Where the sole media claim on
+a contested extension is an obscure or output-only ffmpeg format, the entry is dropped from the type
+table instead, and the file is simply not media. `.raw` is the counter-case and stays: it is a real
+Panasonic and Leica raw extension, so dropping it would hide photographs, which fails the wrong way.
+
 ### 4.9 Crossfade
 
 Two animations run per `texture_state`. `_display_alpha_animation` fades the incoming representation
@@ -846,7 +863,33 @@ distinguished rather than collapsed into one opaque failure (#231).
 `files::update` converts every exception into a failed result rather than propagating one, which is
 what makes the claim release in §3.3 unconditional.
 
-Cancellation stops future work. It never claims to undo completed changes.
+Cancellation stops future work. It never claims to undo completed changes. A check that cancellation
+interrupted proves nothing, so the row it was checking is reported as canceled rather than as a file
+that changed.
+
+### 9.1 Guided operations revalidate a row, not a plan
+
+Import and Sync execute a plan the user reviewed. Between Review and Run the files can move on, so
+each row is held to the files it named, checked immediately before that row acts:
+
+| What the row does | What it must prove |
+| --- | --- |
+| Reads a source | The source still matches the reviewed size and modified time |
+| Writes where the review found nothing | Nothing — the write itself is `fail_if_exists`, so the file system decides atomically and there is no window in which a file could appear |
+| Writes over a file the review found | That file still matches the reviewed size and modified time |
+| Deletes | The target still matches the reviewed size and modified time, and still has the reviewed CRC |
+
+A failed query is never read as absence (see `platform::file_presence`): denied, offline and
+unreachable all count as changed, because a run must not write over or delete a file it could not
+look at.
+
+A row that fails its check writes nothing and is reported as failed; the run states that files
+changed after analysis alongside its counts, and the rows that still match still run. The alternative
+— re-deriving the whole plan and discarding the run if anything anywhere differs — costs a second
+full scan of both sides on every Run, which is the dominant cost against a network share or a camera
+card, and turns one changed file into a wasted run.
+
+Rename keeps its own pre-pass over the reviewed rows and its whole-run abort.
 
 ## 10. Change response
 

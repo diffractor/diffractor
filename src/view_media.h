@@ -232,15 +232,19 @@ public:
 			}
 			const auto panel_height = std::max(controls_extent.cy, description_height);
 			const auto panel_left = (control_limit.left + control_limit.right - panel_width) / 2;
-			const recti control_bounds{panel_left, control_limit.bottom - controls_extent.cy,
-			                           panel_left + controls_width, control_limit.bottom};
+			const recti control_bounds{
+				panel_left, control_limit.bottom - controls_extent.cy,
+				panel_left + controls_width, control_limit.bottom
+			};
 
 			_controls_element->layout(mc, control_bounds, positions);
 			if (show_description)
 			{
-				const recti description_bounds{control_bounds.right + panel_gap,
-				                               control_limit.bottom - description_height,
-				                               panel_left + panel_width, control_limit.bottom};
+				const recti description_bounds{
+					control_bounds.right + panel_gap,
+					control_limit.bottom - description_height,
+					panel_left + panel_width, control_limit.bottom
+				};
 				_description_element->layout(mc, description_bounds, positions);
 			}
 			else if (_description_element)
@@ -293,10 +297,6 @@ public:
 
 			_media_element->layout(mc, media_bounds, positions);
 		}
-
-		/*const auto zoom_control_extent = _zoom_element->measure(mc, avail_bounds.width());
-		_zoom_element->layout(mc, recti(pointi(mc.component_snap, mc.component_snap), zoom_control_extent), positions);
-		_zoom_element->_view_bounds = avail_bounds;		*/
 
 		_host->frame()->invalidate();
 	}

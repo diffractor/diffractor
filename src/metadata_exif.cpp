@@ -229,6 +229,39 @@ static bool is_junk(const uint8_t* p, const uint32_t s)
 	return s >= 4 && memcmp(p, junk_marker, 4) == 0;
 }
 
+// Vendors (e.g. Samsung SM-G900F) pack binary blobs into text tags such as UserComment,
+// sometimes behind a valid "ASCII\0\0\0" character code. Control characters other than
+// tab, newline and return prove the payload is not readable text.
+static bool is_binary_text(const std::string_view text)
+{
+	for (const auto c : text)
+	{
+		const auto u = static_cast<uint8_t>(c);
+		if (u < 0x20 && u != '\t' && u != '\n' && u != '\r') return true;
+		if (u == 0x7f) return true;
+	}
+
+	return false;
+}
+
+static str::cached cache_text(const std::string_view text)
+{
+	// Padding must go before the scan; trailing nuls and spaces are normal in EXIF records.
+	const auto trimmed = str::trim(text);
+	if (trimmed.empty() || is_binary_text(trimmed)) return {};
+	return str::strip_and_cache(trimmed);
+}
+
+// Samsung ISP writes a "JKJK" scene/exposure block map plus "FAFA" focus records into text tags.
+// Naming the block is more use in the verbose listing than an empty or truncated value.
+static std::string_view vendor_blob_name(const uint8_t* p, const uint32_t len)
+{
+	if (!p) return {};
+	const std::string_view sv{std::bit_cast<const char*>(p), len};
+	if (sv.find("JKJK") != std::string_view::npos) return "Samsung camera debug data";
+	return {};
+}
+
 class exif_data_buffer
 {
 	const uint8_t* const _data;
@@ -285,7 +318,10 @@ public:
 
 					if (_is_intel)
 					{
-						return str::strip_and_cache({std::bit_cast<const wchar_t*>(p), char_length});
+						// p is a file offset, so it carries no wchar_t alignment of its own.
+						std::wstring aligned(char_length, L'\0');
+						std::memcpy(aligned.data(), p, char_length * sizeof(wchar_t));
+						return str::strip_and_cache(aligned);
 					}
 
 					const auto buffer = df::unique_alloc<uint8_t>(length + 2);
@@ -314,7 +350,7 @@ public:
 					// original len let the junk marker compare read past the payload.
 					return is_junk(p, len - 8)
 						       ? str::cached{}
-						       : str::strip_and_cache({std::bit_cast<const char*>(p), len - 8});
+						       : cache_text({std::bit_cast<const char*>(p), len - 8});
 				}
 			}
 			else if (is_junk(p, len))
@@ -323,11 +359,14 @@ public:
 			}
 			else if (str::is_utf16(p, len))
 			{
-				return str::strip_and_cache({std::bit_cast<const wchar_t*>(p), len / 2});
+				const auto char_length = len / 2;
+				std::wstring aligned(char_length, L'\0');
+				std::memcpy(aligned.data(), p, char_length * sizeof(wchar_t));
+				return str::strip_and_cache(aligned);
 			}
 			else if (str::is_utf8(std::bit_cast<const char*>(p), len))
 			{
-				return str::strip_and_cache({std::bit_cast<const char*>(p), len});
+				return cache_text({std::bit_cast<const char*>(p), len});
 			}
 			else
 			{
@@ -338,11 +377,14 @@ public:
 		return {};
 	}
 
+	// Every offset here comes from the file, so no read may assume the address is aligned.
 	uint16_t get_uint16(const uint32_t i) const
 	{
 		if (_is_intel)
 		{
-			return *std::bit_cast<const uint16_t*>(_data + i);
+			uint16_t n;
+			std::memcpy(&n, _data + i, sizeof(n));
+			return n;
 		}
 		return df::byteswap16(_data + i);
 	}
@@ -351,7 +393,9 @@ public:
 	{
 		if (_is_intel)
 		{
-			return *std::bit_cast<const uint32_t*>(_data + i);
+			uint32_t n;
+			std::memcpy(&n, _data + i, sizeof(n));
+			return n;
 		}
 		return df::byteswap32(_data + i);
 	}
@@ -360,7 +404,9 @@ public:
 	{
 		if (_is_intel)
 		{
-			return *std::bit_cast<const int16_t*>(_data + i);
+			int16_t n;
+			std::memcpy(&n, _data + i, sizeof(n));
+			return n;
 		}
 		return static_cast<int16_t>(df::byteswap16(_data + i));
 	}
@@ -541,14 +587,6 @@ public:
 					{
 						parse_dir(ifd1_offset, tag_type::exif);
 					}
-
-					// entryCount = _data.UInt16(offset);
-					//offset = _data.UInt32(offset + 2 + 12 * entryCount);
-
-					//if (offset)
-					//{
-					//ParseDir<Exif::Tag>(offset);
-					//}
 				}
 			}
 		}
@@ -586,7 +624,6 @@ public:
 					}
 					else
 					{
-						//df::log(__FUNCTION__, "Invalid EXIF Tag: " << tag._tag;
 					}
 				}
 			}
@@ -706,7 +743,8 @@ static void exif_enumerate(const std::function<void(exif_dir_entry&)>& h, const 
 		// We should be past the header
 		df::assert_true(!is_exif_signature(data));
 
-		const auto ended = *std::bit_cast<const uint16_t*>(data.data);
+		uint16_t ended;
+		std::memcpy(&ended, data.data, sizeof(ended));
 
 		if (ended == 0x4949)
 		{
@@ -1108,7 +1146,6 @@ public:
 	void canon_tag(const exif_dir_entry& entry) const
 	{
 		static canon_lenses lenses;
-		//df::log(__FUNCTION__, "Canon tag %x (%d)\n", entry.tag, entry.Size());
 
 		switch (entry._tag)
 		{
@@ -1182,8 +1219,6 @@ public:
 
 	void exif_tag(const exif_dir_entry& entry)
 	{
-		//df::log(__FUNCTION__, "Exif tag %x (%d)\n", entry.tag, entry.Size());
-
 		switch (entry._tag)
 		{
 		case EXIF_TAG_ORIENTATION:
@@ -1527,14 +1562,20 @@ metadata_kv_list metadata_exif::to_info(const df::cspan data)
 				buffer[0] = 0;
 				const auto* const text = exif_entry_get_value(e, buffer, buffer_size);
 				const auto len = text ? strnlen(text, buffer_size) : 0;
-				const auto readable = text && !is_junk(std::bit_cast<const uint8_t*>(text),
-				                                       static_cast<uint32_t>(len));
+				const std::string_view rendered{text ? text : "", len};
+				const auto vendor = vendor_blob_name(e->data, e->size);
+				// An empty render over a payload of real size means libexif stopped at a nul inside
+				// a binary blob, so report the size rather than a blank value.
+				const auto readable = vendor.empty() && (!rendered.empty() || e->size <= 4) &&
+					!is_junk(std::bit_cast<const uint8_t*>(rendered.data()), static_cast<uint32_t>(len)) &&
+					!is_binary_text(rendered);
 
 				auto& row = result.emplace_back(
 					str::cache(exif_tag_get_name_in_ifd(e->tag, ifd)),
 					readable
-						? std::string(str::utf8_cast(std::string_view{text, len}))
-						: std::format("binary, {} bytes", e->size));
+						? std::string(str::utf8_cast(rendered))
+						: std::format("{}, {} bytes", vendor.empty() ? std::string_view{"binary"} : vendor,
+						              e->size));
 
 				row.depth = 1;
 				row.shape = std::format("{} x{}, 0x{:04x}", exif_format_get_name(e->format),
@@ -1600,7 +1641,7 @@ static constexpr std::string_view ascii_comment_prefix{"ASCII\0\0\0", 8};
 
 // Allocates a zeroed entry of exactly size bytes and hands it to the IFD, returning it so the
 // caller can fill entry->data. Returns null if the entry could not be attached.
-static ExifEntry* create_tag(ExifData* exif, const ExifIfd ifd, const ExifTag tag, const ExifFormat format,
+static ExifEntry* create_tag(const ExifData* exif, const ExifIfd ifd, const ExifTag tag, const ExifFormat format,
                              const uint32_t components, const uint32_t size)
 {
 	auto* const content = exif->ifd[ifd];
@@ -1649,7 +1690,7 @@ static ExifEntry* create_tag(ExifData* exif, const ExifIfd ifd, const ExifTag ta
 static void add_ascii(ExifData* exif, const ExifIfd ifd, const ExifTag tag, const std::string_view val)
 {
 	const auto len = static_cast<uint32_t>(val.size() + 1);
-	auto* const entry = create_tag(exif, ifd, tag, EXIF_FORMAT_ASCII, len, len);
+	const auto* const entry = create_tag(exif, ifd, tag, EXIF_FORMAT_ASCII, len, len);
 
 	if (entry)
 	{
@@ -1659,7 +1700,7 @@ static void add_ascii(ExifData* exif, const ExifIfd ifd, const ExifTag tag, cons
 
 static void add_short(ExifData* exif, const ExifIfd ifd, const ExifTag tag, const uint16_t val)
 {
-	auto* const entry = create_tag(exif, ifd, tag, EXIF_FORMAT_SHORT, 1, exif_format_get_size(EXIF_FORMAT_SHORT));
+	const auto* const entry = create_tag(exif, ifd, tag, EXIF_FORMAT_SHORT, 1, exif_format_get_size(EXIF_FORMAT_SHORT));
 
 	if (entry)
 	{
@@ -1670,8 +1711,8 @@ static void add_short(ExifData* exif, const ExifIfd ifd, const ExifTag tag, cons
 static void add_rational(ExifData* exif, const ExifIfd ifd, const ExifTag tag, const uint32_t numerator,
                          const uint32_t denominator)
 {
-	auto* const entry = create_tag(exif, ifd, tag, EXIF_FORMAT_RATIONAL, 1,
-	                               exif_format_get_size(EXIF_FORMAT_RATIONAL));
+	const auto* const entry = create_tag(exif, ifd, tag, EXIF_FORMAT_RATIONAL, 1,
+	                                     exif_format_get_size(EXIF_FORMAT_RATIONAL));
 
 	if (entry)
 	{
@@ -1732,7 +1773,7 @@ static void add_date(ExifData* exif, const ExifIfd ifd, const ExifTag tag, const
 static void add_user_comment(ExifData* exif, const std::string_view val)
 {
 	const auto len = static_cast<uint32_t>(ascii_comment_prefix.size() + val.size());
-	auto* const entry = create_tag(exif, EXIF_IFD_EXIF, EXIF_TAG_USER_COMMENT, EXIF_FORMAT_UNDEFINED, len, len);
+	const auto* const entry = create_tag(exif, EXIF_IFD_EXIF, EXIF_TAG_USER_COMMENT, EXIF_FORMAT_UNDEFINED, len, len);
 
 	if (entry)
 	{
@@ -1794,12 +1835,6 @@ df::blob metadata_exif::make_exif(const prop::item_metadata_ptr& md)
 		//entry = init_tag(exif, EXIF_IFD_EXIF, EXIF_TAG_PIXEL_X_DIMENSION);
 		//exif_set_long(entry->data, FILE_BYTE_ORDER, image_jpg_x);
 
-		//entry = init_tag(exif, EXIF_IFD_EXIF, EXIF_TAG_PIXEL_Y_DIMENSION);
-		//exif_set_long(entry->data, FILE_BYTE_ORDER, image_jpg_y);
-
-		//entry = init_tag(exif, EXIF_IFD_EXIF, EXIF_TAG_COLOR_SPACE);
-		//exif_set_short(entry->data, FILE_BYTE_ORDER, 1);
-
 		////  Create a EXIF_TAG_USER_COMMENT tag. This one must be handled
 		// * differently because that tag isn't automatically created and
 		// * allocated by exif_data_fix(), nor can it be created using
@@ -1815,67 +1850,6 @@ df::blob metadata_exif::make_exif(const prop::item_metadata_ptr& md)
 		//// * EXIF_TAG_USER_COMMENT, so there is nothing more to do. 
 
 		// //  Create a EXIF_TAG_SUBJECT_AREA tag 
-		//entry = create_tag(exif, EXIF_IFD_EXIF, EXIF_TAG_SUBJECT_AREA, 4 * exif_format_get_size(EXIF_FORMAT_SHORT));
-		//entry->format = EXIF_FORMAT_SHORT;
-		//entry->components = 4;
-		//exif_set_short(entry->data, FILE_BYTE_ORDER, image_jpg_x / 2);
-		//exif_set_short(entry->data + 2, FILE_BYTE_ORDER, image_jpg_y / 2);
-		//exif_set_short(entry->data + 4, FILE_BYTE_ORDER, image_jpg_x);
-		//exif_set_short(entry->data + 6, FILE_BYTE_ORDER, image_jpg_y);
-
-		/*if (!prop::is_null(md->album)) row.write(prop::album.id, md->album);
-		if (!prop::is_null(md->album_artist)) row.write(prop::album_artist.id, md->album_artist);
-		if (!prop::is_null(md->artist)) row.write(prop::artist.id, md->artist);
-		if (!prop::is_null(md->audio_codec)) row.write(prop::audio_codec.id, md->audio_codec);
-		if (!prop::is_null(md->bitrate)) row.write(prop::bitrate.id, md->bitrate);
-		if (!prop::is_null(md->camera_manufacturer)) row.write(prop::camera_manufacturer.id, md->camera_manufacturer);
-		if (!prop::is_null(md->camera_model)) row.write(prop::camera_model.id, md->camera_model);
-		if (!prop::is_null(md->location_place)) row.write(prop::location_place.id, md->location_place);
-		if (!prop::is_null(md->comment)) row.write(prop::comment.id, md->comment);
-		if (!prop::is_null(md->copyright_creator)) row.write(prop::copyright_creator.id, md->copyright_creator);
-		if (!prop::is_null(md->copyright_credit)) row.write(prop::copyright_credit.id, md->copyright_credit);
-		if (!prop::is_null(md->copyright_notice)) row.write(prop::copyright_notice.id, md->copyright_notice);
-		if (!prop::is_null(md->copyright_source)) row.write(prop::copyright_source.id, md->copyright_source);
-		if (!prop::is_null(md->copyright_url)) row.write(prop::copyright_url.id, md->copyright_url);
-		if (!prop::is_null(md->location_country)) row.write(prop::location_country.id, md->location_country);
-		if (!prop::is_null(md->description)) row.write(prop::description.id, md->description);
-		if (!prop::is_null(md->file_name)) row.write(prop::file_name.id, md->file_name);
-		if (!prop::is_null(md->raw_file_name)) row.write(prop::raw_file_name.id, md->file_name);
-		if (!prop::is_null(md->genre)) row.write(prop::genre.id, md->genre);
-		if (!prop::is_null(md->lens)) row.write(prop::lens.id, md->lens);
-		if (!prop::is_null(md->pixel_format)) row.write(prop::pixel_format.id, md->pixel_format);
-		if (!prop::is_null(md->show)) row.write(prop::show.id, md->show);
-		if (!prop::is_null(md->location_state)) row.write(prop::location_state.id, md->location_state);
-		if (!prop::is_null(md->synopsis)) row.write(prop::synopsis.id, md->synopsis);
-		if (!prop::is_null(md->composer)) row.write(prop::composer.id, md->composer);
-		if (!prop::is_null(md->encoder)) row.write(prop::encoder.id, md->encoder);
-		if (!prop::is_null(md->publisher)) row.write(prop::publisher.id, md->publisher);
-		if (!prop::is_null(md->performer)) row.write(prop::performer.id, md->performer);
-		if (!prop::is_null(md->title)) row.write(prop::title.id, md->title);
-		if (!prop::is_null(md->tags)) row.write(prop::tag.id, md->tags);
-		if (!prop::is_null(md->video_codec)) row.write(prop::video_codec.id, md->video_codec);
-		if (!prop::is_null(md->game)) row.write(prop::game.id, md->game);
-		if (!prop::is_null(md->system)) row.write(prop::system.id, md->system);
-		if (!prop::is_null(md->label)) row.write(prop::label.id, md->label);
-		if (!prop::is_null(md->doc_id)) row.write(prop::doc_id.id, md->doc_id);
-
-		if (!prop::is_null(md->width) || !prop::is_null(md->height)) row.write(prop::dimensions.id, df::xy32::make(md->width, md->height));
-		if (!prop::is_null(md->iso_speed)) row.write(prop::iso_speed.id, md->iso_speed);
-		if (!prop::is_null(md->focal_length)) row.write(prop::focal_length.id, md->focal_length);
-		if (!prop::is_null(md->focal_length_35mm_equivalent)) row.write(prop::focal_length_35mm_equivalent.id, md->focal_length_35mm_equivalent);
-		if (!prop::is_null(md->rating)) row.write(prop::rating.id, md->rating);
-		if (!prop::is_null(md->audio_sample_rate)) row.write(prop::audio_sample_rate.id, md->audio_sample_rate);
-		if (!prop::is_null(md->audio_sample_type)) row.write(prop::audio_sample_type.id, md->audio_sample_type);
-		if (!prop::is_null(md->season)) row.write(prop::season.id, md->season);
-		if (!prop::is_null(md->track)) row.write(prop::track_num.id, md->track);
-		if (!prop::is_null(md->disk)) row.write(prop::disk_num.id, md->disk);
-		if (!prop::is_null(md->duration)) row.write(prop::duration.id, md->duration);
-		if (!prop::is_null(md->episode)) row.write(prop::episode.id, md->episode);
-		if (!prop::is_null(md->exposure_time)) row.write(prop::exposure_time.id, md->exposure_time);
-		if (!prop::is_null(md->f_number)) row.write(prop::f_number.id, md->f_number);
-
-		if (!prop::is_null(md->created_exif)) row.write(prop::created_exif.id, md->created_exif.to_int64());
-		if (!prop::is_null(md->created_digitized)) row.write(prop::created_digitized.id, md->created_digitized.to_int64());*/
 
 		uint8_t* exif_data = nullptr;
 		unsigned int exif_data_len = 0;

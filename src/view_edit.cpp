@@ -97,8 +97,9 @@ public:
 		edit_bounds.left = std::min(bounds.right, split + mc.padding1);
 		slider_bounds.right = std::max(slider_bounds.left, split - mc.padding1);
 
-		if (!str::is_empty(_label)) slider_bounds.left = std::min(slider_bounds.right,
-			                                                      slider_bounds.left + mc.col_widths.c1);
+		if (!str::is_empty(_label))
+			slider_bounds.left = std::min(slider_bounds.right,
+			                              slider_bounds.left + mc.col_widths.c1);
 
 		positions.emplace_back(_slider, slider_bounds, is_visible());
 		positions.emplace_back(_edit, edit_bounds, is_visible());
@@ -246,7 +247,8 @@ static document_candidate detect_document_by_region(const ui::const_surface_ptr&
 	{
 		for (auto x = 0; x < width; ++x)
 		{
-			for (auto yy = (std::max)(0, y - 2); yy <= (std::min)(height - 1, y + 2) && !expanded[static_cast<size_t>(y) * width + x]; ++yy)
+			for (auto yy = (std::max)(0, y - 2); yy <= (std::min)(height - 1, y + 2) && !expanded[static_cast<size_t>(y)
+				     * width + x]; ++yy)
 				for (auto xx = (std::max)(0, x - 2); xx <= (std::min)(width - 1, x + 2); ++xx)
 					if (mask[static_cast<size_t>(yy) * width + xx])
 					{
@@ -365,10 +367,26 @@ static document_candidate detect_document_by_region(const ui::const_surface_ptr&
 	{
 		const auto x = static_cast<double>(index % width) + 0.5;
 		const auto y = static_cast<double>(index / width) + 0.5;
-		if (x + y < min_sum) { min_sum = x + y; top_left = {x, y}; }
-		if (x + y > max_sum) { max_sum = x + y; bottom_right = {x, y}; }
-		if (x - y > max_difference) { max_difference = x - y; top_right = {x, y}; }
-		if (x - y < min_difference) { min_difference = x - y; bottom_left = {x, y}; }
+		if (x + y < min_sum)
+		{
+			min_sum = x + y;
+			top_left = {x, y};
+		}
+		if (x + y > max_sum)
+		{
+			max_sum = x + y;
+			bottom_right = {x, y};
+		}
+		if (x - y > max_difference)
+		{
+			max_difference = x - y;
+			top_right = {x, y};
+		}
+		if (x - y < min_difference)
+		{
+			min_difference = x - y;
+			bottom_left = {x, y};
+		}
 	}
 
 	const std::array<pointd, 4> corners = {top_left, top_right, bottom_right, bottom_left};
@@ -515,7 +533,8 @@ static document_candidate detect_document_by_edges(const std::vector<float>& lum
 			for (auto bin = 0; bin < rho_bins; ++bin)
 			{
 				family_maximum = (std::max)(family_maximum,
-				                            static_cast<double>(accumulator[static_cast<size_t>(step) * rho_bins + bin]));
+				                            static_cast<double>(accumulator[static_cast<size_t>(step) * rho_bins +
+					                            bin]));
 			}
 		}
 
@@ -1189,8 +1208,9 @@ view_controls_host_ptr edit_view::controls(const ui::control_frame_ptr& owner)
 	return _edit_controls;
 }
 
-ui::const_surface_ptr edit_view::build_preview_surface(ui::const_surface_ptr source, const sizei loaded_dimensions,
-	const image_edits& edits)
+ui::const_surface_ptr edit_view::build_preview_surface(const ui::const_surface_ptr& source,
+                                                       const sizei loaded_dimensions,
+                                                       const image_edits& edits)
 {
 	if (!is_valid(source) || loaded_dimensions.is_empty()) return nullptr;
 
@@ -1202,7 +1222,7 @@ ui::const_surface_ptr edit_view::build_preview_surface(ui::const_surface_ptr sou
 	{
 		const auto crop = edits.effective_crop_bounds(edit_dimensions);
 		preview_edits.crop_bounds(crop.mult(static_cast<double>(preview_edit_dimensions.cx) / edit_dimensions.cx,
-		                                     static_cast<double>(preview_edit_dimensions.cy) / edit_dimensions.cy));
+		                                    static_cast<double>(preview_edit_dimensions.cy) / edit_dimensions.cy));
 	}
 	preview_edits.scale(128);
 	return source->transform(preview_edits);
@@ -1389,7 +1409,7 @@ view_controller_ptr edit_view::controller_from_location(const view_host_ptr& hos
 		                                                                    excluded_bounds))
 			return controller;
 		if (const auto controller = _scrubber_element->controller_from_location(host, loc, element_offset,
-		                                                                        excluded_bounds))
+			excluded_bounds))
 			return controller;
 		return _media_element->controller_from_location(host, loc, element_offset, excluded_bounds);
 	}
@@ -1590,7 +1610,7 @@ bool edit_view::has_changes() const
 }
 
 void edit_view::save(const df::file_path src_path, const df::file_path dst_path, const std::string_view xmp_name,
-	                 const ui::control_frame_ptr& owner, std::function<void(bool)> complete) const
+                     const ui::control_frame_ptr& owner, std::function<void(bool)> complete) const
 {
 	auto update_result = std::make_shared<file_update_result>();
 	const auto dlg = make_dlg(owner);
@@ -1623,11 +1643,11 @@ void edit_view::save(const df::file_path src_path, const df::file_path dst_path,
 			                   const auto create_original = is_in_place && setting.create_originals &&
 				                   pe.has_changes(dimensions);
 			                   *update_result = ff.update(src_path, dst_path, me, pe, encode_params, create_original,
-				                                              xmp_name, {},
-				                                              is_in_place
-					                                              ? index_state::make_rescan_spec(scan_request, xmp_name,
-						                                              true)
-					                                              : rescan_spec{});
+			                                              xmp_name, {},
+			                                              is_in_place
+				                                              ? index_state::make_rescan_spec(scan_request, xmp_name,
+					                                              true)
+				                                              : rescan_spec{});
 
 			                   if (update_result->success())
 			                   {
@@ -1664,36 +1684,36 @@ void edit_view::save(const df::file_path src_path, const df::file_path dst_path,
 		                   }
 
 		                   s.queue_ui([update_result, detach, dst_path, me, photo_metadata, video_metadata,
-		                                  music_metadata, has_pixel_changes, dlg,
-		                                  complete = std::move(complete)]() mutable
-		                   {
-			                   detach.reset();
-
-			                   if (update_result->success())
+				                   music_metadata, has_pixel_changes, dlg,
+				                   complete = std::move(complete)]() mutable
 			                   {
-				                   if (photo_metadata)
-				                   {
-					                   if (me.has_changes()) record_feature_use(features::edit_photo_metadata);
-					                   if (has_pixel_changes) record_feature_use(features::edit_photo_bitmap);
-				                   }
-				                   else if (video_metadata)
-				                   {
-					                   record_feature_use(features::edit_video_metadata);
-				                   }
-				                   else if (music_metadata)
-				                   {
-					                   record_feature_use(features::edit_audio_metadata);
-				                   }
-			                   }
-			                   else
-			                   {
-				                   dlg->show_message(icon_index::error, s_app_name,
-				                                     update_result->format_error(str_format(
-					                                     tt.error_create_file_failed_fmt.sv(), dst_path)));
-			                   }
+				                   detach.reset();
 
-			                   complete(update_result->success());
-		                   });
+				                   if (update_result->success())
+				                   {
+					                   if (photo_metadata)
+					                   {
+						                   if (me.has_changes()) record_feature_use(features::edit_photo_metadata);
+						                   if (has_pixel_changes) record_feature_use(features::edit_photo_bitmap);
+					                   }
+					                   else if (video_metadata)
+					                   {
+						                   record_feature_use(features::edit_video_metadata);
+					                   }
+					                   else if (music_metadata)
+					                   {
+						                   record_feature_use(features::edit_audio_metadata);
+					                   }
+				                   }
+				                   else
+				                   {
+					                   dlg->show_message(icon_index::error, s_app_name,
+					                                     update_result->format_error(str_format(
+						                                     tt.error_create_file_failed_fmt.sv(), dst_path)));
+				                   }
+
+				                   complete(update_result->success());
+			                   });
 	                   });
 }
 
@@ -2070,7 +2090,8 @@ void edit_view::auto_straighten()
 			                  double weight_sum = 0;
 			                  for (const auto& sample : samples)
 			                  {
-				                  if (sample.horizontal == horizontal && std::abs(sample.angle - initial) <= inlier_angle)
+				                  if (sample.horizontal == horizontal && std::abs(sample.angle - initial) <=
+					                  inlier_angle)
 				                  {
 					                  angle_sum += sample.angle * sample.weight;
 					                  weight_sum += sample.weight;
@@ -2100,7 +2121,8 @@ void edit_view::auto_straighten()
 				                  if (sample.horizontal == horizontal && std::abs(sample.angle - baseline_angle) <=
 					                  inlier_angle)
 				                  {
-					                  const auto bin = std::clamp(static_cast<int>((sample.position + 0.5) * bin_count), 0,
+					                  const auto bin = std::clamp(static_cast<int>((sample.position + 0.5) * bin_count),
+					                                              0,
 					                                              bin_count - 1);
 					                  bin_angle_sum[bin] += sample.angle * sample.weight;
 					                  bin_weight[bin] += sample.weight;
@@ -2131,9 +2153,10 @@ void edit_view::auto_straighten()
 		                  };
 
 		                  const auto source_horizontal = std::clamp(-perspective_slope(true, horizontal_estimate.first),
-		                                                           -0.4, 0.4);
-		                  const auto source_vertical = std::clamp(perspective_slope(false, vertical_estimate.first), -0.4,
-		                                                         0.4);
+		                                                            -0.4, 0.4);
+		                  const auto source_vertical = std::clamp(perspective_slope(false, vertical_estimate.first),
+		                                                          -0.4,
+		                                                          0.4);
 		                  const auto target_rotation = rotation_angle - current_straighten + detected_straighten;
 		                  const auto display_angle = to_radian(-target_rotation);
 		                  const auto angle_sin = sin(display_angle);
@@ -2334,9 +2357,9 @@ void edit_view_controls::create_controls()
 	_save_title = std::make_shared<ui::title_control>(icon_index::save, tt.options_save_options);
 	_backup_check = std::make_shared<ui::check_control>(_dlg, tt.options_backup_copy, setting.create_originals);
 	_jpeg_quality_slider = std::make_shared<ui::slider_control>(_dlg, tt.options_jpeg_quality,
-	                                                           setting.jpeg_save_quality, 0, 100);
+	                                                            setting.jpeg_save_quality, 0, 100);
 	_webp_quality_slider = std::make_shared<ui::slider_control>(_dlg, tt.options_webp_quality, setting.webp_quality, 1,
-	                                                           100);
+	                                                            100);
 	_webp_lossless_check = std::make_shared<ui::check_control>(_dlg, tt.lossless_compression, setting.webp_lossless);
 	_controls = {
 		_info,
@@ -2366,13 +2389,6 @@ void edit_view_controls::create_controls()
 	};
 
 	_clr = ui::color(ui::style::color::dialog_text);
-
-	/*_host->initialise();
-	_host->_max_width = _host->_extent.cx;
-	_host->_max_height = _host->_extent.cy;
-	_host->layout();
-	_host->focus_first();
-	_host->on_message(WM_HSCROLL, [this](WPARAM wParam, LPARAM lParam) { _view->changed(); return false; });*/
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2381,7 +2397,7 @@ void edit_view_controls::create_controls()
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void edit_view_state::reset(const prop::item_metadata_const_ptr& md, const sizei dimensions,
-	const ui::orientation orientation)
+                            const ui::orientation orientation)
 {
 	_edits.clear();
 
@@ -2507,7 +2523,8 @@ void edit_view::render(ui::draw_context& dc, view_controller_ptr controller)
 		const auto selection_bounds = _edit_state._edits.effective_crop_bounds(image_extent);
 		const auto selection_angle = -selection_bounds.angle();
 		const auto preview_bounds = _edit_state._preview_mode ? selection_bounds : image_bounds;
-		const auto selection_rotated_bounds = preview_bounds.transform(affined().rotate(selection_angle)).bounding_rect();
+		const auto selection_rotated_bounds = preview_bounds.transform(affined().rotate(selection_angle)).
+		                                                     bounding_rect();
 		const auto view_bounds = rectd(0, 0, _extent.cx, _extent.cy);
 		const auto view_scale = std::min((view_bounds.Width - pad30) / selection_rotated_bounds.Width,
 		                                 (view_bounds.Height - pad30) / selection_rotated_bounds.Height);
@@ -2544,12 +2561,9 @@ void edit_view::render(ui::draw_context& dc, view_controller_ptr controller)
 			return;
 		}
 
-		//auto surface = !_edits.has_color_changes() || _texture.is_empty() ? _state.texture(rc, dst.ActualSize().Round()) : _texture;
-		//const auto clr = ui::color(0x333333u, alpha);
 		const auto sampler = calc_sampler(image_view_bounds.extent().round(), _texture->dimensions(),
 		                                  ui::orientation::top_left);
 
-		//dc.draw_rect(image_view_bounds, clr, clr);
 		ui::texture_transform texture_transform;
 		if (_edit_state._edits.has_perspective())
 		{
@@ -2568,9 +2582,9 @@ void edit_view::render(ui::draw_context& dc, view_controller_ptr controller)
 		{
 			ui::color_adjust adjust;
 			adjust.color_params(_edit_state._edits.vibrance(), _edit_state._edits.saturation(),
-				_edit_state._edits.darks(), _edit_state._edits.midtones(), _edit_state._edits.lights(),
-				_edit_state._edits.contrast(), _edit_state._edits.brightness(),
-				_edit_state._edits.temperature(), _edit_state._edits.tint());
+			                    _edit_state._edits.darks(), _edit_state._edits.midtones(), _edit_state._edits.lights(),
+			                    _edit_state._edits.contrast(), _edit_state._edits.brightness(),
+			                    _edit_state._edits.temperature(), _edit_state._edits.tint());
 			adjust.populate_texture_transform(texture_transform);
 		}
 		if (_edit_state._preview_mode)
@@ -2595,8 +2609,9 @@ void edit_view::render(ui::draw_context& dc, view_controller_ptr controller)
 				const rectd target_bounds(bounds);
 				const auto scale = std::min(target_bounds.Width / selection_rotated_bounds.Width,
 				                            target_bounds.Height / selection_rotated_bounds.Height);
-				auto transform = affined().translate(-image_bounds.center_point()).rotate(selection_angle).scale(scale).
-				                           translate(target_bounds.center());
+				const auto transform = affined().
+				                       translate(-image_bounds.center_point()).rotate(selection_angle).scale(scale).
+				                       translate(target_bounds.center());
 				const auto transformed_crop = selection_bounds.transform(transform).bounding_rect();
 				return transform.translate(target_bounds.center() - transformed_crop.center());
 			};
@@ -2607,8 +2622,9 @@ void edit_view::render(ui::draw_context& dc, view_controller_ptr controller)
 					affined().rotate(original_angle)).bounding_rect();
 				const auto scale = std::min(target_bounds.Width / original_rotated_bounds.Width,
 				                            target_bounds.Height / original_rotated_bounds.Height);
-				auto transform = affined().translate(-original_image_bounds.center_point()).rotate(original_angle).
-				                           scale(scale).translate(target_bounds.center());
+				const auto transform = affined().
+				                       translate(-original_image_bounds.center_point()).rotate(original_angle).
+				                       scale(scale).translate(target_bounds.center());
 				const auto transformed_crop = original_selection_bounds.transform(transform).bounding_rect();
 				return transform.translate(target_bounds.center() - transformed_crop.center());
 			};
@@ -2618,7 +2634,7 @@ void edit_view::render(ui::draw_context& dc, view_controller_ptr controller)
 				const auto& comparison_image_bounds = edited ? image_bounds : original_image_bounds;
 				const auto transformed_image_bounds = comparison_image_bounds.transform(transform);
 				const auto crop_rect = (edited ? selection_bounds : original_selection_bounds).transform(transform).
-				                       bounding_rect();
+					bounding_rect();
 				constexpr auto rounding_tolerance = 1e-6;
 				const recti crop_clip(static_cast<int>(std::ceil(crop_rect.left() - rounding_tolerance)),
 				                      static_cast<int>(std::ceil(crop_rect.top() - rounding_tolerance)),

@@ -440,10 +440,14 @@ constexpr int64_t distance_squared(const pointi point, const recti bounds) noexc
 {
 	const auto dx = point.x < bounds.left
 		                ? static_cast<int64_t>(bounds.left) - point.x
-		                : point.x > bounds.right ? static_cast<int64_t>(point.x) - bounds.right : 0;
+		                : point.x > bounds.right
+		                ? static_cast<int64_t>(point.x) - bounds.right
+		                : 0;
 	const auto dy = point.y < bounds.top
 		                ? static_cast<int64_t>(bounds.top) - point.y
-		                : point.y > bounds.bottom ? static_cast<int64_t>(point.y) - bounds.bottom : 0;
+		                : point.y > bounds.bottom
+		                ? static_cast<int64_t>(point.y) - bounds.bottom
+		                : 0;
 	return dx * dx + dy * dy;
 }
 
@@ -1011,22 +1015,6 @@ public:
 		return affined(d0, d1, d2, d3, d4, d5);
 	}
 
-	/*void Transform(float &x, float &y) const
-	{
-	double xx = x * _trans[0] + y * _trans[2] + _trans[4];
-	double yy = x * _trans[1] + y * _trans[3] + _trans[5];
-
-	x = (float)xx;
-	y = (float)yy;
-	}*/
-
-	/*void TransformPoints(pointd pts[], int len) const
-	{
-	for(int i = 0; i < len; ++i)
-	{
-	pts[i] = Mult(pts[i]);
-	}
-	}*/
 
 	bool equal(const affined& other) const noexcept
 	{
@@ -1115,7 +1103,6 @@ public:
 	{
 		return translate(p.Width, p.Height);
 	}
-
 };
 
 enum class simple_transform
@@ -1378,5 +1365,4 @@ public:
 	{
 		return pts[i];
 	}
-
 };

@@ -198,7 +198,6 @@ namespace metadata_exif
 			i |= static_cast<uint32_t>(denominator);
 			return i;
 		}
-
 	};
 
 	using srational32_t = rational_t<int32_t>;

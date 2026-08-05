@@ -164,7 +164,6 @@ public:
 	static constexpr int max_slideshow_delay = 30;
 
 	sizei thumbnail_max_dimension;
-	int resize_max_dimension = 0;
 	int media_volume = 0;
 	int slideshow_delay = 0;
 	int item_scale = 5;
@@ -178,7 +177,6 @@ public:
 	uint32_t instantiations = 0;
 
 	std::string write_folder;
-	std::string write_name;
 	std::string available_version;
 	std::string available_test_version;
 	std::string favorite_tags;
@@ -209,9 +207,24 @@ public:
 	bool set_tv_show = false;
 	std::string tv_show;
 
+	// Metadata task field selection. The values these apply to are per-run, but which fields are in
+	// play is a working focus that should survive the view and the session.
+	bool set_title = false;
+	bool set_comment = false;
+	bool set_synopsis = false;
+	bool set_rating = false;
+	bool set_year = false;
+	bool set_created = false;
+	bool set_episode = false;
+	bool set_season = false;
+	bool set_track = false;
+	bool set_disk = false;
+
 	bool show_hidden = false;
 	bool show_debug_info = false;
 	bool confirm_deletions = false;
+	// Only single-item rotations honour this; rotating several items is always confirmed.
+	bool confirm_rotations = false;
 	bool first_run_today = false;
 	bool first_run_ever = false;
 	bool show_rotated = false;
@@ -274,7 +287,6 @@ public:
 		bool is_move = false;
 		bool set_created_date = false;
 		bool ignore_previous = false;
-		bool overwrite_if_newer = false;
 		bool rename_different_attributes = false;
 		collision_policy collision = collision_policy::skip;
 	} import;

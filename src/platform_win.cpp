@@ -49,10 +49,8 @@
 #include <avrt.h>
 #pragma comment(lib, "avrt.lib")
 
-static constexpr CLSID CLSID_ImageThumbnailProvider = {
-	0xC7657C4A, 0x9F68, 0x40fa, {0xA4, 0xDF, 0x96, 0xBC, 0x08, 0xEB, 0x35, 0x51}
-};
-
+// Values here come from third-party shell property handlers, so an unexpected type or a null
+// string must yield an empty value rather than fault or assert.
 str::cached cache_string_var(const PROPVARIANT& propVariant)
 {
 	std::wstring value;
@@ -64,24 +62,22 @@ str::cached cache_string_var(const PROPVARIANT& propVariant)
 		{
 			for (ULONG index = 0; index < numStrings; index++)
 			{
-				if (!value.empty())
+				if (strings[index])
 				{
-					value += L", ";
+					if (!value.empty())
+					{
+						value += L", ";
+					}
+					value += strings[index];
+					CoTaskMemFree(strings[index]);
 				}
-				value += strings[index];
-				CoTaskMemFree(strings[index]);
 			}
 			CoTaskMemFree(strings);
 		}
 	}
-	else if (VT_LPWSTR == propVariant.vt)
+	else if (VT_LPWSTR == propVariant.vt && propVariant.pwszVal)
 	{
 		value = propVariant.pwszVal;
-	}
-	else if (VT_UI4 == propVariant.vt)
-	{
-		//ps.store(t, static_cast<int>(propVariant.ulVal));
-		df::assert_true(false);
 	}
 
 	return str::cache(str::utf16_to_utf8(value));
@@ -95,54 +91,6 @@ platform::get_cached_file_properties_response platform::get_cached_file_properti
 {
 	auto result = get_cached_file_properties_response::fail;
 
-	/*ComPtr<IShellItem2> psi2;
-	ComPtr<IThumbnailProvider> pThumbnailProvider;
-
-	HRESULT hr = SHCreateItemFromParsingName(path.to_file_system_path().c_str(), nullptr, IID_PPV_ARGS(&psi2));
-
-	if (SUCCEEDED(hr))
-	{
-		hr = psi2->GetPropertyStore(flags, riid, ppv);
-	}
-
-	hr = psi2->BindToHandler(nullptr, BHID_ThumbnailHandler, IID_PPV_ARGS(&pThumbProvider));
-
-	if (SUCCEEDED(hr))
-	{
-	}*/
-
-	/*render::surface result;
-	ComPtr<IThumbnailProvider> pThumbnailProvider;
-	ComPtr<IInitializeWithFile> pInitFile;
-	auto hr = CoCreateInstance(CLSID_ImageThumbnailProvider, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pThumbnailProvider));
-
-	if (SUCCEEDED(hr))
-	{
-		hr = pThumbnailProvider->QueryInterface(IID_PPV_ARGS(&pInitFile));
-
-		if (SUCCEEDED(hr))
-		{
-			hr = pInitFile->Initialize(path.to_file_system_path().c_str(), STGM_READ);
-
-			if (SUCCEEDED(hr))
-			{
-				WTS_ALPHATYPE at = WTSAT_UNKNOWN;
-				HBITMAP hbm = nullptr;
-
-				hr = pThumbnailProvider->GetThumbnail(256, &hbm, &at);
-
-				if (SUCCEEDED(hr))
-				{
-					BITMAP bm;
-					GetObject(hbm, sizeof(BITMAP), &bm);
-
-					result.alloc(bm.bmWidth, bm.bmHeight, at == WTSAT_ARGB);
-
-					::DeleteObject(hbm);
-				}
-			}
-		}
-	}*/
 
 	ComPtr<IShellItem2> item;
 	HRESULT hr = SHCreateItemFromParsingName(to_shell_path(path).c_str(), nullptr /*bindContext*/,
@@ -203,15 +151,6 @@ platform::get_cached_file_properties_response platform::get_cached_file_properti
 							{
 								properties_out.comment = cache_string_var(propVar);
 							}
-							/*else if (PKEY_Audio_Format == propKey) {
-								const std::wstring value = PropertyToString(propVar);
-								if (!value.empty()) {
-									const std::wstring version = ShellMetadata::GetAudioSubType(value);
-									if (!version.empty()) {
-										tags.emplace(Handler::Tags::value_type(Handler::Tag::Version, version));
-									}
-								}
-							}*/
 							else if (PKEY_Media_Year == propKey)
 							{
 								if (VT_UI4 == propVar.vt)
@@ -324,17 +263,33 @@ platform::get_cached_file_properties_response platform::get_cached_file_properti
 										STATSTG stats = {};
 										if (SUCCEEDED(stream->Stat(&stats, STATFLAG_NONAME)))
 										{
-											if (stats.cbSize.QuadPart <= max_thumbnail_bytes)
-											{
-												ULONG bytesRead = 0;
-												df::blob blob;
-												blob.resize(stats.cbSize.QuadPart);
+											const auto thumbnail_size = stats.cbSize.QuadPart;
 
-												if (SUCCEEDED(stream->Read(blob.data(), static_cast<ULONG>(stats.
-													cbSize.QuadPart), &bytesRead)))
+											if (thumbnail_size > 0 && thumbnail_size <= max_thumbnail_bytes)
+											{
+												df::blob blob;
+												blob.resize(static_cast<size_t>(thumbnail_size));
+												size_t total_read = 0;
+
+												// Read is allowed to return short without failing, so keep
+												// asking until it stops making progress.
+												while (total_read < blob.size())
 												{
-													// Read can succeed short; never decode bytes the stream did not supply.
-													blob.resize(bytesRead);
+													ULONG bytes_read = 0;
+
+													if (FAILED(stream->Read(blob.data() + total_read,
+													                        static_cast<ULONG>(blob.size() - total_read),
+													                        &bytes_read)) || bytes_read == 0)
+													{
+														break;
+													}
+
+													total_read += bytes_read;
+												}
+
+												// Never decode bytes the stream did not supply.
+												if (total_read == blob.size())
+												{
 													thumbnail_out = load_image_file(blob);
 												}
 											}
@@ -366,62 +321,6 @@ platform::get_cached_file_properties_response platform::get_cached_file_properti
 	return result;
 }
 
-HRESULT
-QueryInterfacePropVariant(
-	REFPROPVARIANT pv,
-	REFIID riid,
-	__out void** ppv)
-{
-	*ppv = nullptr;
-
-	HRESULT hr = E_NOINTERFACE;
-	if (VT_UNKNOWN == pv.vt)
-	{
-		hr = pv.punkVal->QueryInterface(riid, ppv);
-	}
-	else if (VT_STREAM == pv.vt)
-	{
-		hr = pv.pStream->QueryInterface(riid, ppv);
-	}
-	return hr;
-}
-
-
-STDAPI IPropertyStore_GetUnknown(__in IPropertyStore* pps, __in REFPROPERTYKEY key, __in REFIID riid,
-                                 __deref_out void** ppv)
-{
-	*ppv = nullptr;
-
-	PROPVARIANT propvar;
-	HRESULT hr = pps->GetValue(key, &propvar);
-	if (SUCCEEDED(hr))
-	{
-		hr = QueryInterfacePropVariant(propvar, riid, ppv);
-		PropVariantClear(&propvar);
-	}
-	return hr;
-}
-
-MIDL_INTERFACE("4fe8a664-d045-46d8-a725-f0842f6a95ca")
-	IThumbnailStreamProvider : IUnknown
-{
-	STDMETHOD(GetThumbnailStream)(_Outptr_result_maybenull_ IStream* * ppThumbnailStream) = 0;
-};
-
-// String to identify that the IStream bind request is for the item's thumbnail.
-#define STR_BIND_THUMBNAIL_STREAM L"BindToThumbnailStream"
-
-//THUMBNAILIDInternal
-// WTS_THUMBNAILID passed in to client is opaque.  Actual content is THUMBNAILIDInternal
-struct THUMBNAILIDInternal
-{
-	ULONGLONG ullCrc64Key;
-
-	// This used to be ullLastModified, but that's included in the ullCrc64Key now.
-	// (We already shipped IThumbnailCache with a 16 byte WTS_THUMBNAILID, and cannot change it now)
-	ULONGLONG ullReserved;
-};
-
 platform::get_cached_file_properties_response platform::get_shell_thumbnail(
 	const df::file_path path, const sizei requested_extent, const bool allow_network,
 	ui::const_image_ptr& thumbnail_out)
@@ -433,7 +332,8 @@ platform::get_cached_file_properties_response platform::get_shell_thumbnail(
 	// the network); with allow_network=true a cache miss may fetch the thumbnail from the cloud.
 	auto result = get_cached_file_properties_response::fail;
 
-	const auto path_w = to_file_system_path(path);
+	// SHCreateItemFromParsingName rejects the \\?\ prefix, so this is a shell path even when it is long.
+	const auto path_w = to_shell_path(path);
 
 	ComPtr<IShellItemImageFactory> factory;
 	auto hr = SHCreateItemFromParsingName(path_w.c_str(), nullptr, IID_PPV_ARGS(&factory));
@@ -456,6 +356,8 @@ platform::get_cached_file_properties_response platform::get_shell_thumbnail(
 
 	HBITMAP hbitmap = nullptr;
 	hr = factory->GetImage(size, flags, &hbitmap);
+
+	const df::scope_exit free_bitmap([&hbitmap] { if (hbitmap) DeleteObject(hbitmap); });
 
 	if (hr == WTS_E_EXTRACTIONPENDING || hr == E_PENDING)
 	{
@@ -533,7 +435,6 @@ platform::get_cached_file_properties_response platform::get_shell_thumbnail(
 
 			if (transparent_fraction > 0.10)
 			{
-				DeleteObject(hbitmap);
 				return get_cached_file_properties_response::pending;
 			}
 
@@ -547,7 +448,6 @@ platform::get_cached_file_properties_response platform::get_shell_thumbnail(
 		}
 	}
 
-	DeleteObject(hbitmap);
 	return result;
 }
 
@@ -625,70 +525,6 @@ platform::drives platform::scan_drives()
 		}
 	}
 
-	/*if (scan_devices)
-	{
-		DWORD deviceCount = 0;
-		ComPtr<IPortableDeviceManager> deviceManager;
-
-		if (SUCCEEDED(deviceManager.CoCreateInstance(CLSID_PortableDeviceManager)))
-		{
-			if (SUCCEEDED(deviceManager->GetDevices(nullptr, &deviceCount)) && deviceCount > 0)
-			{
-				auto deviceIDs = new PWSTR[deviceCount];
-				ZeroMemory(deviceIDs, deviceCount * sizeof(PWSTR));
-
-				auto retrievedDeviceIDCount = deviceCount;
-
-				if (SUCCEEDED(deviceManager->GetDevices(deviceIDs, &retrievedDeviceIDCount)))
-				{
-					for (auto i = 0u; i < retrievedDeviceIDCount; i++)
-					{
-						const auto id = deviceIDs[i];
-						const auto bufLen = 200;
-
-						WCHAR name[bufLen];
-						DWORD nameLen = bufLen;
-
-						WCHAR description[bufLen];
-						DWORD descriptionLen = bufLen;
-
-						WCHAR manufacturer[bufLen];
-						DWORD manufacturerLen = bufLen;
-
-						if (SUCCEEDED(deviceManager->GetDeviceFriendlyName(id, name, &nameLen)) &&
-							SUCCEEDED(deviceManager->GetDeviceDescription(id, description, &descriptionLen)) &&
-							SUCCEEDED(deviceManager->GetDeviceManufacturer(id, manufacturer, &manufacturerLen)))
-						{
-							if (df::folder_path::is_drive(name))
-							{
-								std::wstring text;
-
-								if (wcscmp(name, description) != 0)
-								{
-									text = description;
-									text += L"\n";
-								}
-
-								text += manufacturer;
-
-								results.emplace_back(drive_t(drive_type::device, id, name, text, get_drive_size(id)));
-							}
-						}
-					}
-				}
-
-				for (DWORD index = 0; index < retrievedDeviceIDCount; index++)
-				{
-					CoTaskMemFree(deviceIDs[index]);
-					deviceIDs[index] = nullptr;
-				}
-
-				delete[] deviceIDs;
-				deviceIDs = nullptr;
-			}
-		}
-	}*/
-
 	return results;
 }
 
@@ -711,13 +547,13 @@ void validate_number_format()
 			// The ANSI variants return code-page bytes that the callers treat as UTF-8; separators
 			// such as the French no-break space only survive the round trip through UTF-16.
 			if (GetLocaleInfoW(default_locale, LOCALE_SDECIMAL, decimal_sep,
-			                   static_cast<int>(std::size(decimal_sep))) == 0)
+			                   std::size(decimal_sep)) == 0)
 			{
 				wcscpy_s(decimal_sep, L".");
 			}
 
 			if (GetLocaleInfoW(default_locale, LOCALE_STHOUSAND, thousand_sep,
-			                   static_cast<int>(std::size(thousand_sep))) == 0)
+			                   std::size(thousand_sep)) == 0)
 			{
 				wcscpy_s(thousand_sep, L",");
 			}
@@ -745,7 +581,7 @@ std::string platform::format_number(const std::string& num_text)
 	wchar_t result[64];
 	const auto w = str::utf8_to_utf16(num_text);
 
-	if (GetNumberFormatW(default_locale, 0, w.c_str(), &fmt, result, static_cast<int>(std::size(result))) == 0)
+	if (GetNumberFormatW(default_locale, 0, w.c_str(), &fmt, result, std::size(result)) == 0)
 	{
 		return num_text;
 	}
@@ -1017,6 +853,10 @@ uint32_t platform::file_crc32(const df::file_path path, const df::cancel_token& 
 			const auto read_size = static_cast<DWORD>(std::min<uint64_t>(max_chunk, size - total_read));
 			if (ReadFile(hFile, buffer.get(), read_size, &dwReadChunk, nullptr))
 			{
+				// A file truncated by another process reads zero bytes without failing; without this the
+				// loop would never reach the size taken when the file was opened.
+				if (dwReadChunk == 0) break;
+
 				result = crypto::crc32c(result, buffer.get(), dwReadChunk);
 				total_read += dwReadChunk;
 			}
@@ -1661,14 +1501,14 @@ std::string platform::user_language()
 
 	// Both calls return 0 on failure, otherwise the character count including the terminating null.
 	const auto language_len = GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SISO639LANGNAME, language,
-	                                        static_cast<int>(std::size(language)));
+	                                        std::size(language));
 
 	if (language_len < 2) return {};
 
 	std::wstring result(language, static_cast<size_t>(language_len) - 1);
 
 	const auto country_len = GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SISO3166CTRYNAME, country,
-	                                       static_cast<int>(std::size(country)));
+	                                       std::size(country));
 
 	if (country_len >= 2)
 	{
@@ -1687,7 +1527,7 @@ platform::mapi_send_result platform::classify_mapi_send_result(const uint32_t re
 }
 
 platform::mapi_send_result platform::mapi_send(const std::string_view to, const std::string_view subject,
-	const std::string_view text, const attachments_t& attachments)
+                                               const std::string_view text, const attachments_t& attachments)
 {
 	df::assert_true(ui::is_ui_thread());
 
@@ -1700,7 +1540,6 @@ platform::mapi_send_result platform::mapi_send(const std::string_view to, const 
 	SetFocus(nullptr);
 
 	HINSTANCE handle = LoadLibraryExA("MAPI32.DLL", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
-	//::LoadLibrary(L"MAPI32.DLL");
 	auto result = mapi_send_result::failed;
 
 	if (handle)
@@ -1733,7 +1572,6 @@ platform::mapi_send_result platform::mapi_send(const std::string_view to, const 
 			{
 				MapiFileDescW fd = {};
 
-				fd.nPosition = 0xFFFFFFFF;
 				fd.lpszPathName = const_cast<wchar_t*>(a.second.c_str());
 				fd.lpszFileName = const_cast<wchar_t*>(a.first.c_str());
 				fd.nPosition = -1;
@@ -1873,14 +1711,6 @@ platform::media_thread_priority::~media_thread_priority()
 	}
 }
 
-
-static void confirm(const HRESULT hr, const std::string_view context)
-{
-	if (FAILED(hr))
-	{
-		throw app_exception(std::format("{} hr={:x}", context, hr));
-	}
-}
 
 FILETIME ts_to_ft(const uint64_t ts)
 {
@@ -2139,26 +1969,6 @@ platform::thread_event::~thread_event()
 }
 
 //
-//bool platform::thread_event::create(LPSECURITY_ATTRIBUTES pSecurity, bool manual_reset, bool initial_state, LPCTSTR pszName) noexcept
-//{
-//	DWORD dwFlags = 0;
-//
-//	if (manual_reset)
-//		dwFlags |= CREATE_EVENT_MANUAL_RESET;
-//
-//	if (initial_state)
-//		dwFlags |= CREATE_EVENT_INITIAL_SET;
-//
-//	_h = std::bit_cast<uintptr_t>(::CreateEventEx(pSecurity, pszName, dwFlags, EVENT_ALL_ACCESS));
-//
-//	return (_h != 0);
-//}
-//
-//bool platform::thread_event::open(_In_ DWORD dwAccess, _In_ BOOL bInheritHandle, _In_z_ LPCTSTR pszName) noexcept
-//{
-//	_h = std::bit_cast<uintptr_t>(::OpenEvent(dwAccess, bInheritHandle, pszName));
-//	return (_h != 0);
-//}
 
 void platform::thread_event::reset() const noexcept
 {
@@ -2182,21 +1992,34 @@ bool platform::is_valid_file_name(const std::string_view name)
 		"LPT6", "LPT7", "LPT8", "LPT9"
 	};
 
+	if (name.empty())
+	{
+		return false;
+	}
+
+	// Windows silently drops a trailing dot or space, so the file would not carry the name shown.
+	if (name.back() == '.' || name.back() == ' ')
+	{
+		return false;
+	}
 
 	auto i = name.begin();
 	while (i < name.end())
 	{
 		const auto c = str::pop_utf8_char(i, name.end());
 
-		if (c < 128 && invalid_chars.find(static_cast<char>(c)) != std::string_view::npos)
+		if (c < 128 && (c < 32 || invalid_chars.find(static_cast<char>(c)) != std::string_view::npos))
 		{
 			return false;
 		}
 	}
 
+	// A device name stays reserved when it carries an extension: CON.txt is still the console.
+	const auto stem = name.substr(0, name.find('.'));
+
 	for (const auto& reserved : reserved_names)
 	{
-		if (str::icmp(reserved, name) == 0)
+		if (str::icmp(reserved, stem) == 0)
 		{
 			return false;
 		}

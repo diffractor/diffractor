@@ -35,6 +35,7 @@ class TXMPMeta;
 using SXMPMeta = TXMPMeta<std::string>;
 
 class read_stream;
+class files;
 class av_media_info;
 class av_scaler;
 class file_scan_result;
@@ -184,9 +185,6 @@ public:
 
 	ui::color32 text_color(const ui::color32 default_text_color) const
 	{
-		//if (ft == file_type::folder) return lighten(render::style::color::important_background, 111);
-		//if (ft == file_type::archive) return lighten(render::bgr(blue), 222);
-		//return ::is_media(ft) ? render::style::color::view_text : darken(render::style::color::view_text, 66);
 		return ui::average(default_text_color, color);
 	}
 
@@ -360,30 +358,6 @@ void record_file_op(file_type_ref ft, file_op_stat stat);
 void log_file_op_summary();
 
 //
-//constexpr bool is_playable(file_type t)
-//{
-//	return t == file_type::video || t == file_type::audio;
-//}
-//
-//constexpr bool is_photo(file_type t)
-//{
-//	return t == file_type::photo;
-//}
-//
-//constexpr bool is_video(file_type t)
-//{
-//	return t == file_type::video;
-//}
-//
-//constexpr bool is_media(file_type t)
-//{
-//	return t == file_type::photo || t == file_type::video || t == file_type::audio;
-//}
-//
-//constexpr bool is_bitmap_hash_matchable(file_type t, const sizei dims)
-//{
-//	return t == file_type::photo && dims.cx >= 8 && dims.cy >= 8;
-//}
 //
 
 struct metadata_parts
@@ -413,7 +387,11 @@ public:
 
 	str::cached pixel_format = {};
 	ui::orientation orientation = ui::orientation::top_left;
+	// The decoder already rotated the pixels for a transform stored in the container (HEIF 'irot'
+	// / 'imir'), so `orientation` describes nothing further to do. Tracked separately for the
+	// thumbnail because it is a distinct item that need not carry the same transform.
 	bool orientation_applied = false;
+	bool thumbnail_orientation_applied = false;
 
 	mutable ui::const_image_ptr thumbnail_image;
 	ui::surface_ptr thumbnail_surface;
@@ -477,6 +455,16 @@ public:
 	av_media_info to_info() const;
 };
 
+// What the decoded pixels are for. `display` is anything the user looks at full size, where cheap
+// chroma upsampling shows as blocky colour on saturated edges; `thumbnail` covers small previews,
+// hashes and scans, where speed wins. Scale alone cannot tell these apart - a display shrunk below
+// half size still deserves the better filter.
+enum class decode_intent : uint8_t
+{
+	display,
+	thumbnail
+};
+
 struct file_load_result
 {
 	// Why a load produced nothing. `too_large` is a property of the file rather than a transient
@@ -505,7 +493,8 @@ struct file_load_result
 
 	sizei dimensions() const;
 	ui::const_surface_ptr to_surface(sizei scale_hint = {}, bool can_use_yuv = false,
-	                                 const df::cancel_token& token = {}) const;
+	                                 const df::cancel_token& token = {},
+	                                 decode_intent intent = decode_intent::display) const;
 	ui::pixel_difference_result calc_pixel_difference(const file_load_result& other) const;
 
 	void clear()
@@ -623,9 +612,9 @@ struct file_update_result : platform::file_op_result
 };
 
 file_scan_result scan_png(read_stream& s);
-file_scan_result scan_jpg(read_stream& s, scan_intent intent = scan_intent::index);
+file_scan_result scan_jpg(read_stream& s, scan_intent intent = scan_intent::index, bool want_thumbnail = false);
 file_scan_result scan_psd(read_stream& s);
-file_scan_result scan_heif(read_stream& s, scan_intent intent = scan_intent::index);
+file_scan_result scan_heif(read_stream& s, scan_intent intent = scan_intent::index, bool want_thumbnail = false);
 file_scan_result scan_jxl(read_stream& s);
 webp_parts scan_webp(df::cspan data, bool decode_surface);
 
@@ -639,7 +628,7 @@ void add_structure_row(metadata_kv_list& kv, std::string_view key, std::string v
 void add_structure_bytes(metadata_kv_list& kv, std::string_view key, std::string value,
                          std::string_view shape, const uint8_t* payload, size_t payload_len);
 void add_structure_section(metadata_kv_list& kv, std::string_view key, std::string_view id,
-                          bool open_by_default = false);
+                           bool open_by_default = false);
 void finish_structure_sections(metadata_kv_list& kv);
 
 png_parts split_png(read_stream& s);
@@ -660,7 +649,7 @@ bool reject_over_budget_source(load_diagnostic* diagnostic, sizei source_dimensi
 ui::surface_ptr load_psd(read_stream& s, load_diagnostic* diagnostic = nullptr);
 file_load_result load_raw(df::file_path path, bool can_load_preview);
 ui::surface_ptr load_png(df::cspan data);
-ui::surface_ptr load_webp(df::cspan data);
+ui::surface_ptr load_webp(df::cspan data, bool can_use_yuv = false);
 ui::surface_ptr load_heif(read_stream& s, load_diagnostic* diagnostic = nullptr);
 ui::surface_ptr load_jxl(read_stream& s, load_diagnostic* diagnostic = nullptr);
 
@@ -794,7 +783,7 @@ public:
 
 	df::cspan view() const override
 	{
-		return { _data, static_cast<size_t>(_file_size) };
+		return {_data, static_cast<size_t>(_file_size)};
 	}
 
 	df::blob read_all() override
@@ -869,16 +858,9 @@ public:
 		return result;
 	}
 
-	df::blob read_all() override
-	{
-		if (_file_size > std::numeric_limits<size_t>::max())
-			throw app_exception("file too large to load"s);
-
-		const auto len = static_cast<size_t>(_file_size);
-		df::blob result(len);
-		read(0, result.data(), len);
-		return result;
-	}
+	// Reads straight off the handle: routing the whole file through the sliding window would
+	// allocate and copy it a second time.
+	df::blob read_all() override;
 };
 
 struct codec_info final : df::no_copy
@@ -1160,7 +1142,6 @@ public:
 	};
 
 	double rotation_angle() const;
-
 };
 
 class metadata_edits
@@ -1174,6 +1155,7 @@ public:
 	std::optional<std::string> copyright_url;
 	std::optional<std::string> description;
 	std::optional<std::string> comment;
+	std::optional<std::string> synopsis;
 	std::optional<std::string> artist;
 	std::optional<std::string> album;
 	std::optional<std::string> album_artist;
@@ -1221,6 +1203,7 @@ public:
 			copyright_url.has_value() ||
 			description.has_value() ||
 			comment.has_value() ||
+			synopsis.has_value() ||
 			artist.has_value() ||
 			album.has_value() ||
 			album_artist.has_value() ||
@@ -1271,7 +1254,12 @@ inline bool is_image_format(const detected_format& format)
 
 
 ui::image_ptr load_image_file(df::cspan data);
-file_scan_result scan_photo(read_stream& s, scan_intent intent = scan_intent::index);
+// want_thumbnail is opt-in because extracting an embedded thumbnail is not free: it reads the
+// thumbnail's bytes off the file and copies them, or decodes them, none of which a metadata scan
+// has any use for. decoder is the caller's own files instance, borrowed only when a thumbnail in
+// an awkward format has to be decoded; a null one makes the scan build its own.
+file_scan_result scan_photo(read_stream& s, scan_intent intent = scan_intent::index,
+                            bool want_thumbnail = false, files* decoder = nullptr);
 
 
 class files final : df::no_copy
@@ -1294,7 +1282,7 @@ class files final : df::no_copy
 	av_scaler& scaler();
 	ui::surface_ptr decode_jpeg(df::cspan data, sizei target_extent, bool can_use_yuv,
 	                            std::optional<ui::orientation> orientation_override, bool& is_yuv,
-	                            const df::cancel_token& token);
+	                            const df::cancel_token& token, decode_intent intent);
 
 public:
 	files();
@@ -1303,10 +1291,19 @@ public:
 	ui::const_image_ptr surface_to_image(const ui::const_surface_ptr& surface_in, const metadata_parts& metadata,
 	                                     const file_encode_params& params, ui::image_format format);
 	ui::surface_ptr image_to_surface(const ui::const_image_ptr& image, sizei scale_hint = {}, bool can_use_yuv = false,
-	                                 const df::cancel_token& token = {});
-	ui::surface_ptr image_to_surface(df::cspan data, sizei scale_hint = {}, bool can_use_yuv = false);
+	                                 const df::cancel_token& token = {},
+	                                 decode_intent intent = decode_intent::display);
+	ui::surface_ptr image_to_surface(df::cspan data, sizei scale_hint = {}, bool can_use_yuv = false,
+	                                 decode_intent intent = decode_intent::display);
 	ui::surface_ptr scale_if_needed(ui::surface_ptr surface_in, sizei target_extent);
 	ui::const_surface_ptr scale_if_needed(ui::const_surface_ptr surface_in, sizei target_extent);
+
+	// A 64-bit perceptual hash of the picture, or 0 when it has too little detail to identify.
+	// Reads the stored pixels, not the oriented ones, so a file whose only change is an orientation
+	// tag still hashes as the same picture. Decoding at the hash's own extent is the point: a JPEG
+	// scales in the DCT domain, so this costs a fraction of a full decode.
+	uint64_t calc_perceptual_hash(df::cspan encoded);
+	static uint64_t calc_perceptual_hash(const ui::const_surface_ptr& surface);
 
 	// Bytes a decode must allocate before its result can be scaled down. libjpeg reduces while
 	// decoding, by up to 1/8, so a JPEG never materialises its full frame; the other deferred codecs
@@ -1341,6 +1338,14 @@ public:
 	static file_type_ref file_type_from_name(df::file_path path);
 	static file_type_ref file_type_from_name(std::string_view name);
 
+	// A few media extensions are also common source extensions - .ts is both an MPEG-2 transport
+	// stream and a TypeScript file. Where the container carries a signature strong enough to settle
+	// it, the header answers before anything tries to decode the bytes as media. Only extensions
+	// has_media_header_rule accepts are covered; everything else is left to the decoder as before.
+	static constexpr size_t media_header_probe_bytes = 1024;
+	static bool has_media_header_rule(std::string_view extension);
+	static bool media_header_matches(std::string_view extension, df::cspan header);
+
 	static bool can_save(df::file_path path);
 	static bool can_save_extension(std::string_view ext);
 	static bool is_jpeg(df::file_path path);
@@ -1349,15 +1354,17 @@ public:
 	static bool is_raw(std::string_view name);
 	static bool is_jpeg(uint32_t header);
 
+	// want_image asks for `full_image`: the whole encoded file wrapped for display. It costs a second
+	// parse and a copy of the file, so a scan that will not display the bytes leaves it unset.
 	file_scan_result scan_file(df::file_path path, bool load_thumb, file_type_ref ft,
 	                           std::string_view xmp_sidecar = {}, sizei max_thumb_size = {},
-	                           scan_intent intent = scan_intent::index);
+	                           scan_intent intent = scan_intent::index, bool want_image = false);
 
 	// Scan an already-open file (see files_core.cpp). Lets a just-edited file be re-scanned
 	// through the coherent handle returned by replace_file, avoiding a stale SMB by-name reopen.
 	file_scan_result scan_file(platform::file_ptr f, df::file_path path, bool load_thumb, file_type_ref ft,
 	                           std::string_view xmp_sidecar = {}, sizei max_thumb_size = {},
-	                           scan_intent intent = scan_intent::index);
+	                           scan_intent intent = scan_intent::index, bool want_image = false);
 
 	file_load_result load(df::file_path path, bool can_load_preview);
 

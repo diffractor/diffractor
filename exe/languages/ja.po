@@ -164,14 +164,14 @@ msgid "Diffractor can be used for free. If you find it useful, please help the p
 msgstr "Diffractorは無料でお使いいただけます。もし便利だと感じられましたら、寄付によるプロジェクトへのご支援をお願いいたします。"
 
 msgid "Donate online."
-msgstr "オンラインで寄付する"
+msgstr "オンラインで寄付する。"
 
 
 msgid "Changes"
 msgstr "変更"
 
-msgid "Set the location for the selected files by scrolling the map or searching for a place. Use the mouse wheel to zoom."
-msgstr "地図をスクロールして場所を選択します。マウスホイールでズームします。"
+msgid "The crosshair at the centre of the map marks the location that will be written. Drag the map, click a photo bubble to move it under the crosshair, or search for a place by name. Use the mouse wheel to zoom. Nothing is written until you press Add location."
+msgstr "地図の中央にある十字線は、書き込まれる場所を示します。地図をドラッグする、写真のバブルをクリックして十字線の下に移動する、または名前で場所を検索してください。マウスホイールで拡大縮小できます。「場所を追加」を押すまで何も書き込まれません。"
 
 msgid "The collection contains {} {} ({})."
 msgstr "コレクションには {} {} ({}) が含まれています。"
@@ -222,10 +222,10 @@ msgid "One folder per line."
 msgstr "1 行につき 1 つのフォルダー。"
 
 msgid "More information about collection management."
-msgstr "コレクション管理の詳細"
+msgstr "コレクション管理の詳細。"
 
 msgid "More information about metadata templates."
-msgstr "メタデータテンプレートの詳細"
+msgstr "メタデータテンプレートの詳細。"
 
 msgid "Videos"
 msgstr "ビデオ"
@@ -509,8 +509,8 @@ msgstr "拒否"
 msgid "Refresh"
 msgstr "更新"
 
-msgid "Matching or possible copy items in the collection"
-msgstr "コレクション内の重複または関連アイテム"
+msgid "Related items"
+msgstr "関連アイテム"
 
 msgid "Rename"
 msgstr "名前の変更"
@@ -529,6 +529,9 @@ msgstr "反時計回りに回転"
 
 msgid "Rotate clockwise"
 msgstr "時計回りに回転"
+
+msgid "Confirm single-item rotations"
+msgstr "単一アイテムの回転を確認する"
 
 msgid "Reset rotation"
 msgstr "回転をリセット"
@@ -665,6 +668,12 @@ msgstr "コントラスト"
 msgid "Open link {}"
 msgstr "リンク {} を開く"
 
+msgid "Choose a link to open"
+msgstr "開くリンクを選択してください"
+
+msgid "Duplicate"
+msgstr "重複"
+
 msgid "Copy to clipboard"
 msgstr "クリップボードにコピー"
 
@@ -678,7 +687,7 @@ msgid "Credit"
 msgstr "クレジット"
 
 msgid "Notice"
-msgstr "注記"
+msgstr "権利表示"
 
 msgid "File"
 msgstr "ファイル"
@@ -723,7 +732,7 @@ msgid "Show history chart"
 msgstr "履歴チャートを表示"
 
 msgid "History chart start year. Empty defaults to 10 years."
-msgstr "履歴チャートの開始年。空欄の場合は既定で1０年になります。"
+msgstr "履歴チャートの開始年。空欄の場合は既定で 10 年になります。"
 
 msgid "Show collection folders"
 msgstr "コレクションフォルダーを表示"
@@ -760,9 +769,6 @@ msgstr "日付"
 
 msgid "family food friends landscape nature night portrait selfie todo travel urban viewed"
 msgstr "家族 食べ物 友達 風景 自然 夜 ポートレート 自撮り ToDo 旅行 都市 閲覧済み"
-
-msgid "results"
-msgstr "件"
 
 msgid "Defragment database."
 msgstr "データベースをデフラグします。"
@@ -1766,9 +1772,6 @@ msgstr "インポート元:"
 msgid "Ignore previously imported items."
 msgstr "以前にインポートしたアイテムを無視します。"
 
-msgid "Overwrite if source items are newer."
-msgstr "ソースアイテムが新しい場合は上書きします。"
-
 msgid "Other folder"
 msgstr "その他のフォルダー"
 
@@ -2205,6 +2208,10 @@ msgstr "インターネットに接続して更新を確認する"
 
 msgid "Confirm when deleting items. Deleted items are moved to the recycle bin."
 msgstr "アイテムを削除する際に確認する。削除されたアイテムはごみ箱に移動されます。"
+
+msgid ""
+"Confirm when rotating one item. Rotating several items is always confirmed."
+msgstr "アイテムを 1 つ回転する際に確認する。複数のアイテムの回転は常に確認されます。"
 
 msgid "JPEG save quality"
 msgstr "JPEGの保存品質"
@@ -2715,8 +2722,8 @@ msgstr "常にRAW写真を表示する (低速)"
 msgid "Show this RAW photo"
 msgstr "このRAW写真を表示"
 
-msgid "press R to view matching or possible copy items in the collection"
-msgstr "Rキーを押して、コレクション内の重複または関連アイテムを表示"
+msgid "press R to view the items most closely related to this one"
+msgstr "R キーを押すと、このアイテムに最も関連するアイテムを表示します"
 
 msgid "Show verbose metadata"
 msgstr "詳細なメタデータを表示"
@@ -2743,7 +2750,7 @@ msgid "Rating-Label"
 msgstr "評価/ラベル"
 
 msgid "Staring"
-msgstr "開始"
+msgstr "出演"
 
 msgid "New Starting Date (local time):"
 msgstr "新しい開始日時 (ローカル時刻):"
@@ -2837,6 +2844,9 @@ msgstr "削除するローカルファイル: {}。削除するリモートフ�
 
 msgid "Synchronization will permanently delete files. These files cannot be recovered from the Recycle Bin."
 msgstr "同期によってファイルが完全に削除されます。これらのファイルはごみ箱から復元できません。"
+
+msgid "The existing files will be overwritten. Their current contents cannot be recovered from the recycle bin."
+msgstr "既存のファイルは上書きされます。現在の内容はごみ箱から復元できません。"
 
 msgid "Delete local files that do not exist remotely"
 msgstr "リモートに存在しないローカルファイルを削除する"
@@ -2938,7 +2948,7 @@ msgid "More options and controls"
 msgstr "その他のオプションとコントロール"
 
 msgid "{} ({}) total items in {} folders."
-msgstr "合計 {} 個のアイテム ({})、フォルダー数: {}"
+msgstr "合計 {} 個のアイテム ({})、フォルダー数: {}。"
 
 msgid "Truncated at 1MB"
 msgstr "1MBで切り捨てられました"
@@ -3373,9 +3383,6 @@ msgstr "{} はまだ実行中です。他の場所を参照する前に閉じて
 msgid "If the destination already exists:"
 msgstr "コピー先が既に存在する場合:"
 
-msgid "If both sides have the file, the newer one replaces the older one."
-msgstr "両方にファイルがある場合は、新しい方が古い方を置き換えます。"
-
 msgid "Replace"
 msgstr "置き換える"
 
@@ -3576,3 +3583,21 @@ msgstr "大きすぎて表示できません"
 
 msgid "This image could not be displayed"
 msgstr "この画像は表示できませんでした"
+
+msgid "Show the items in the collection most closely related to this one: possible copies, then the same album, the same series, the closest capture times, and the closest capture places."
+msgstr "コレクション内でこのアイテムに最も関連するアイテムを表示します: 複製の可能性があるもの、次に同じアルバム、同じシリーズ、最も近い撮影日時、最も近い撮影場所。"
+
+msgid "This item and possible copies"
+msgstr "このアイテムと複製の可能性があるもの"
+
+msgid "Same album"
+msgstr "同じアルバム"
+
+msgid "Same series"
+msgstr "同じシリーズ"
+
+msgid "Taken at the same time"
+msgstr "同じ時間に撮影"
+
+msgid "Taken in the same place"
+msgstr "同じ場所で撮影"

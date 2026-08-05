@@ -37,7 +37,7 @@ static int rendered_toolbar_button_extent(const int chrome_height, const int mar
 
 template <typename Context>
 static int rendered_toolbar_button_width(Context& context, const ui::command_ptr& command,
-	                                      const int button_extent)
+                                         const int button_extent)
 {
 	if (command->toolbar_text.empty()) return button_extent;
 	return button_extent + context.measure_text(command->toolbar_text, ui::style::font_face::dialog,
@@ -45,7 +45,7 @@ static int rendered_toolbar_button_width(Context& context, const ui::command_ptr
 }
 
 static void render_toolbar_button(ui::draw_context& dc, const ui::command_ptr& command, const recti bounds,
-	                              const bool window_style, const bool pressed = false)
+                                  const bool window_style, const bool pressed = false)
 {
 	if (pressed || command->checked)
 	{
@@ -159,7 +159,7 @@ public:
 };
 
 static view_element_ptr find_center_scroll_element(const std::vector<view_element_ptr>& elements,
-	                                                const view_scroller& scroller)
+                                                   const view_scroller& scroller)
 {
 	const auto logical_bounds = scroller.client_bounds().offset(0, scroller.scroll_offset().y);
 	const auto center_y = logical_bounds.center().y;
@@ -231,7 +231,7 @@ public:
 };
 
 class rendered_toolbar_command_element final : public view_element,
-	public std::enable_shared_from_this<rendered_toolbar_command_element>
+                                               public std::enable_shared_from_this<rendered_toolbar_command_element>
 {
 	commands _id = commands::none;
 	ui::command_ptr _command;
@@ -360,9 +360,11 @@ protected:
 	}
 
 public:
-	void escape() override
+	bool escape() override
 	{
+		if (!_tracking) return false;
 		_cancel = true;
+		return true;
 	}
 };
 
@@ -513,10 +515,12 @@ public:
 		end_selecting();
 	}
 
-	void escape() override
+	bool escape() override
 	{
+		if (!_tracking) return false;
 		_cancel = true;
 		update_state();
+		return true;
 	}
 
 	void tick() override
@@ -548,14 +552,6 @@ public:
 	                     df::item_element_ptr i, const pointi loc) :
 		item_pointer_controller(host, parent, s, scroller, std::move(i), loc)
 	{
-	}
-
-	~item_drag_controller() override
-	{
-		if (_tracking)
-		{
-			_cancel = true;
-		}
 	}
 
 	void on_mouse_left_button_down(const pointi loc, const ui::key_state keys) override
@@ -668,10 +664,8 @@ items_view::items_view(view_state& s, view_host_ptr host) :
 	_filter_edit->request_focus = [this] { focus_rendered_filter(); };
 	_filter_edit->focus_changed = [this](const bool focused)
 	{
-		const auto bounds = rendered_filter_bounds();
-		if (_edit_focus_changed) _edit_focus_changed(false, focused, bounds);
-		_host->frame()->invalidate(bounds);
-	};	
+		_host->frame()->invalidate(rendered_filter_bounds());
+	};
 
 	_items_scroller.popup_func = [this](view_hover_element& hover, const pointi loc)
 	{
@@ -685,16 +679,25 @@ items_view::items_view(view_state& s, view_host_ptr host) :
 	_media_scroller.changed_func = [this] { _state.invalidate_view(view_invalid::view_redraw); };
 
 	_items_scroll_top = std::make_shared<scroll_to_top_element>(_items_scroller);
+
+	_metadata_tree->invalidate = [this]
+	{
+		_state.invalidate_view(view_invalid::view_layout | view_invalid::view_redraw | view_invalid::controller);
+	};
 }
 
 items_view::~items_view()
 {
+	// A listing held by a latched controller can outlive the view; without this its next toggle
+	// would call back into a destroyed view.
+	_metadata_tree->invalidate = nullptr;
 	ui::animations.erase(this);
 }
 
 bool items_view::sidebar_visible() const
 {
-	return setting.show_sidebar && _sidebar_width > 0 && _display && !_display->is_zoom_mode() && !_display->comparing();
+	return setting.show_sidebar && _sidebar_width > 0 && _display && !_display->is_zoom_mode() && !_display->
+		comparing();
 }
 
 int items_view::content_left() const
@@ -712,8 +715,10 @@ recti items_view::sidebar_bounds() const
 recti items_view::sidebar_splitter_bounds() const
 {
 	return sidebar_visible()
-		       ? recti{_sidebar_width, 0, _sidebar_width + _sidebar_splitter_width,
-		               _sidebar->can_scroll() ? _client_extent.cy / 2 : _client_extent.cy}
+		       ? recti{
+			       _sidebar_width, 0, _sidebar_width + _sidebar_splitter_width,
+			       _sidebar->can_scroll() ? _client_extent.cy / 2 : _client_extent.cy
+		       }
 		       : recti{};
 }
 
@@ -777,11 +782,13 @@ public:
 		_view._state.invalidate_view(view_invalid::options_save);
 	}
 
-	void escape() override
+	bool escape() override
 	{
+		if (!_tracking) return false;
 		_tracking = false;
 		_view.sidebar_width(_start_width);
 		_view._state.invalidate_view(view_invalid::options_save);
+		return true;
 	}
 };
 
@@ -879,46 +886,15 @@ bool items_view::text_input(const std::string_view text)
 	return false;
 }
 
-// locations.md 4.2: the row is built once and then reused, so a captured drag survives every
-// search result, item refresh and control-bar rebuild that arrives while the pointer is down.
-
-// locations.md 4.2: the settled value commits once, so the drag writes one history entry rather
-// than one per pixel.
-
 namespace
 {
-	// locations.md 6.3: the connector between node boxes. It carries no information of its own; it
-	// is there so the boxes read as points on one line rather than as unrelated buttons in a row.
-	class timeline_baseline_element final : public std::enable_shared_from_this<timeline_baseline_element>,
-	                                        public view_element
-	{
-	public:
-		timeline_baseline_element() noexcept : view_element(flex_item::grow | flex_item::center)
-		{
-		}
-
-		void render(ui::draw_context& dc, const pointi element_offset) const override
-		{
-			const auto line_height = df::round(1.1 * dc.scale_factor);
-			auto logical_bounds = bounds.offset(element_offset);
-			logical_bounds.top = (logical_bounds.top + logical_bounds.bottom - line_height) / 2;
-			logical_bounds.bottom = logical_bounds.top + line_height;
-			dc.draw_rect(logical_bounds, ui::color(0x000000, dc.colors.alpha / 4.44f));
-		}
-
-		sizei measure(ui::measure_context& mc, const int width_limit) const override
-		{
-			return {mc.padding2 * 2, mc.padding2};
-		}
-	};
-
 	std::shared_ptr<link_element> make_chip(std::string text, std::function<void()> invoke,
 	                                        std::function<void(view_hover_element&)> tooltip, const bool latched)
 	{
 		auto chip = std::make_shared<link_element>(std::move(text), std::move(invoke), std::move(tooltip),
-		                                          ui::style::font_face::dialog,
-		                                          ui::style::text_style::multiline_center,
-		                                          flex_item::center);
+		                                           ui::style::font_face::dialog,
+		                                           ui::style::text_style::multiline_center,
+		                                           flex_item::center);
 		chip->full_background(true);
 		chip->padding = {6, 4};
 		chip->margin = {3, 0};
@@ -939,55 +915,61 @@ namespace
 	}
 }
 
-// locations.md 7.3: rows collapse from the bottom of the priority order until the optional rows
-// fit the budget. The distance slider never collapses, so only the two derived rows are candidates
-// and neither can be holding a captured control while it is asked to collapse.
+// locations.md 7.3: the breakdown row is the only optional row, and it collapses to a one-line
+// header when it would otherwise bury the items the user came to see. It never holds a captured
+// control while it is asked to collapse.
 void items_view::apply_control_row_budget(ui::measure_context& mc, const int width, const int budget)
 {
-	const auto natural_height = [&mc, width](const control_row& row, const bool collapsed)
-	{
-		if (!row.element) return 0;
-		row.collapsed(collapsed);
-		return row.element->measure(mc, width).cy;
-	};
+	if (!_breakdown_row.element) return;
 
-	auto total = 0;
-
-	if (_distance_row && _state.search().single_place_term())
-	{
-		total += _distance_row->measure(mc, width).cy;
-	}
-
-	// Lowest priority is evaluated last, so it is the first row asked to give up its height.
-	auto timeline_collapsed = false;
-	auto breakdown_collapsed = false;
-
-	total += natural_height(_breakdown_row, false);
-	total += natural_height(_timeline_row, false);
-
-	if (total > budget && !_breakdown_expanded && _breakdown_row.element)
-	{
-		total -= natural_height(_breakdown_row, false);
-		total += natural_height(_breakdown_row, true);
-		breakdown_collapsed = true;
-	}
-
-	if (total > budget && !_timeline_expanded && _timeline_row.element)
-	{
-		total -= natural_height(_timeline_row, false);
-		total += natural_height(_timeline_row, true);
-		timeline_collapsed = true;
-	}
-
-	_breakdown_row.collapsed(breakdown_collapsed);
-	_timeline_row.collapsed(timeline_collapsed);
+	_breakdown_row.collapsed(false);
+	const auto natural_height = _breakdown_row.element->measure(mc, width).cy;
+	_breakdown_row.collapsed(natural_height > budget && !_breakdown_expanded);
 }
-
-// locations.md 6.3: a single strip of visit nodes under the control bar. It is presentation only:
-// clicking a node changes the query and nothing else -- never focus, selection, grouping or sort.
 
 // locations.md 7.2: the top places inside the current results. Hidden when the grouping is
 // already by location, because the group headers already say this.
+// A related search answers about one item, so the view says which item and how that item stands
+// against the collection. That explanation used to be reachable only by hovering a badge, where it
+// could not be read alongside the answer it belongs to (docs/collections.md section 7).
+view_element_ptr items_view::build_related_header_row() const
+{
+	const auto& search = _state.search();
+
+	if (!search.has_related()) return {};
+
+	const auto& related = search.related();
+	const auto name = related.path.name();
+
+	if (name.is_empty()) return {};
+
+	auto row = std::make_shared<view_elements>(flex_item::center);
+
+	auto title = std::make_shared<text_element>(std::format("{} | {}", tt.command_related.sv(), name.sv()),
+	                                            ui::style::font_face::dialog,
+	                                            ui::style::text_style::single_line_center, flex_item::center);
+	title->padding = {6, 4};
+	row->add(std::move(title));
+
+	// The anchor is part of its own answer, so its presence is read from the results rather than
+	// recomputed here. It stays absent while presence is still resolving.
+	for (const auto& item : _state.search_items().items())
+	{
+		if (item->path() != related.path) continue;
+		if (item->presence() == item_presence::unknown) break;
+
+		auto presence = std::make_shared<text_element>(item_presence_text(item->presence(), false),
+		                                               ui::style::font_face::dialog,
+		                                               ui::style::text_style::single_line_center,
+		                                               flex_item::center);
+		presence->padding = {6, 4};
+		row->add(std::move(presence));
+		break;
+	}
+
+	return row;
+}
+
 view_element_ptr items_view::build_location_breakdown_row()
 {
 	_breakdown_row.reset();
@@ -1017,12 +999,15 @@ view_element_ptr items_view::build_location_breakdown_row()
 			const auto action = df::visit_place_detail(place);
 
 			_breakdown_row.content.emplace_back(make_chip(std::move(text), [this, place]
-			{
-				_state.open(_host, df::visit_place_search(_state.search(), place), {});
-			}, [action](view_hover_element& hover)
-			{
-				hover.elements->add(std::make_shared<action_element>(action));
-			}, false));
+			                                              {
+				                                              _state.open(
+					                                              _host, df::visit_place_search(_state.search(), place),
+					                                              {});
+			                                              }, [action](const view_hover_element& hover)
+			                                              {
+				                                              hover.elements->add(
+					                                              std::make_shared<action_element>(action));
+			                                              }, false));
 		}
 	}
 
@@ -1092,7 +1077,7 @@ void items_view::items_changed(const bool path_changed)
 	auto totals = std::make_shared<link_element>(
 		format_items_totals(_state.summary_shown(), _state.item_index.is_init_complete()),
 		std::function<void()>{},
-		[this](view_hover_element& hover)
+		[this](const view_hover_element& hover)
 		{
 			hover.elements->add(std::make_shared<summary_control>(_state.summary_shown(), flex_item::line_break));
 		},
@@ -1102,8 +1087,13 @@ void items_view::items_changed(const bool path_changed)
 	filter->add(std::move(totals));
 
 	filter->add(std::make_shared<rendered_toolbar_command_element>(commands::menu_group_toolbar,
-	                                                              _state.find_command(commands::menu_group_toolbar)));
+	                                                               _state.find_command(commands::menu_group_toolbar)));
 	elements.emplace_back(filter);
+
+	if (auto related_row = build_related_header_row())
+	{
+		elements.emplace_back(std::move(related_row));
+	}
 
 	// locations.md 7.3: the breakdown strip sits above the timeline, so the rows read from
 	// "where within this" down to "when within this".
@@ -1114,10 +1104,7 @@ void items_view::items_changed(const bool path_changed)
 
 	for (const auto& g : _state.groups())
 	{
-		//elements.emplace_back(std::make_shared<padding_element>(8));
-		//if (!elements.empty()) elements.emplace_back(std::make_shared<divider_element>());
 		elements.emplace_back(build_group_title(_state, _host, g));
-		//elements.emplace_back(std::make_shared<padding_element>(4));
 		elements.emplace_back(g);
 	}
 
@@ -1236,8 +1223,8 @@ void items_view::items_changed(const bool path_changed)
 		           }));
 	}
 
-	if (has_items && (_state.group_order() == group_by::date_created ||
-		_state.group_order() == group_by::date_modified))
+	if (has_items && (_state.effective_group_order() == group_by::date_created ||
+		_state.effective_group_order() == group_by::date_modified))
 	{
 		add_action(setting.sort_dates_descending
 			           ? tt.command_sort_dates_ascending.sv()
@@ -1284,7 +1271,7 @@ void items_view::items_changed(const bool path_changed)
 }
 
 void items_view::draw_splitter(ui::draw_context& dc, const recti bounds, const bool active,
-	                           const bool tracking) const
+                               const bool tracking) const
 {
 	draw_splitter_handle(dc, bounds, _sidebar_splitter_width, active, tracking);
 }
@@ -1353,10 +1340,12 @@ public:
 		}
 	}
 
-	void escape() override
+	bool escape() override
 	{
+		if (!_tracking) return false;
 		_tracking = false;
 		_view.splitter_pos(_start, false);
+		return true;
 	}
 };
 
@@ -1385,7 +1374,7 @@ void items_view::update_regions()
 	const auto control_padding = _scroll_width / 2;
 	const auto x_max = _client_extent.cx - _scroll_width * 3;
 	const auto split_x = splitter_pos();
-	const auto top = 0;
+	constexpr auto top = 0;
 	// The item list and the media pane run to the bottom of the client: their controls are drawn
 	// inside them rather than in a fixed band, so no height is reserved here.
 	const auto bottom = std::max(top, _client_extent.cy);
@@ -1757,7 +1746,10 @@ void items_view::retry_visible_thumbnails(const double time_now)
 
 	// A cancelled batch abandons every item it had not reached, and the visible set stops changing
 	// once scrolling stops. An outstanding claim means a batch still covers these items.
-	if (std::ranges::any_of(_visible_items, [](const item_and_group& entry) { return entry.i->is_loading_thumbnail(); }))
+	if (std::ranges::any_of(_visible_items, [](const item_and_group& entry)
+	{
+		return entry.i->is_loading_thumbnail();
+	}))
 	{
 		return;
 	}
@@ -1777,9 +1769,9 @@ void items_view::render(ui::draw_context& dc, const view_controller_ptr controll
 {
 	const auto media_offset = -_media_scroller.scroll_offset();
 
-	_display->media_offset = media_offset;
+	if (_display) _display->media_offset = media_offset;
 
-	if (_display->is_zoom_mode() || _display->comparing())
+	if (_display && (_display->is_zoom_mode() || _display->comparing()))
 	{
 		if (_media_element)
 		{
@@ -1792,20 +1784,14 @@ void items_view::render(ui::draw_context& dc, const view_controller_ptr controll
 		const auto items_offset = -_items_scroller.scroll_offset();
 		const auto logical_view_bounds = calc_logical_items_bounds();
 
-		if (!_items_scroller._active)
-		{
-			_items_scroller.draw_scroll(dc);
-		}
+		_items_scroller.draw_scroll(dc);
 
 		if (!_regions.items_scroll_top.is_empty())
 		{
 			_items_scroll_top->render(dc, {});
 		}
 
-		if (!_media_scroller._active)
-		{
-			_media_scroller.draw_scroll(dc);
-		}
+		_media_scroller.draw_scroll(dc);
 
 		if (_splitter_active == 0)
 		{
@@ -1963,36 +1949,60 @@ void items_view::update_item_scroller_sections()
 		// band that follows it; a band too short for its label just goes unlabelled when drawn.
 		constexpr auto min_section_height = 8;
 
-		auto last_text = groups.front()->scroll_text;
-		auto last_icon = groups.front()->icon;
-		auto last_y = 0;
+		std::string_view run_text = groups.front()->scroll_text;
+		auto run_icon = groups.front()->icon;
+		auto run_top = groups.front()->bounds.top;
+
+		// A band that swallowed several short runs is named by whichever of them fills most of it.
+		// Naming it after the run that happens to end at the boundary let a single-item group
+		// caption a stretch of the list it barely appears in.
+		auto band_top = 0;
+		auto caption_text = run_text;
+		auto caption_icon = run_icon;
+		auto caption_height = 0;
+
+		const auto close_run = [&](const int run_bottom)
+		{
+			const auto height = run_bottom - run_top;
+
+			if (height > caption_height)
+			{
+				caption_height = height;
+				caption_text = run_text;
+				caption_icon = run_icon;
+			}
+		};
 
 		for (const auto& group : groups)
 		{
-			const auto text = group->scroll_text;
+			const std::string_view text = group->scroll_text;
 			const auto icon = group->icon;
 			const auto y = group->bounds.top;
 
-			if (str::icmp(last_text, text) != 0 ||
-				last_icon != icon)
+			if (str::icmp(run_text, text) != 0 ||
+				run_icon != icon)
 			{
-				// last_y only advances on a kept section, so this measures the painted band.
-				if (_items_scroller.logical_to_scrollbar_pos(y - last_y) > min_section_height)
-				{
-					sections.emplace_back(last_text, last_icon, y);
-					last_y = y;
-				}
+				close_run(y);
+				run_text = text;
+				run_icon = icon;
+				run_top = y;
 
-				last_text = text;
-				last_icon = icon;
+				// band_top only advances on a kept section, so this measures the painted band.
+				if (_items_scroller.logical_to_scrollbar_pos(y - band_top) > min_section_height)
+				{
+					sections.emplace_back(std::string(caption_text), caption_icon, y);
+					band_top = y;
+					caption_height = 0;
+				}
 			}
 		}
 
-		const auto yy = groups.back()->bounds.bottom;
+		const auto list_bottom = groups.back()->bounds.bottom;
+		close_run(list_bottom);
 
-		if (_items_scroller.logical_to_scrollbar_pos(yy - last_y) > min_section_height)
+		if (_items_scroller.logical_to_scrollbar_pos(list_bottom - band_top) > min_section_height)
 		{
-			sections.emplace_back(last_text, last_icon, yy);
+			sections.emplace_back(std::string(caption_text), caption_icon, list_bottom);
 		}
 	}
 
@@ -2048,7 +2058,7 @@ void items_view::layout(ui::measure_context& mc, const sizei extent)
 
 	ui::control_layouts positions;
 
-	const auto is_zoom = _display->is_zoom_mode() || _display->comparing();
+	const auto is_zoom = _display && (_display->is_zoom_mode() || _display->comparing());
 	auto avail_media_bounds = calc_media_bounds();
 
 	if (is_zoom)
@@ -2141,7 +2151,8 @@ void items_view::layout(ui::measure_context& mc, const sizei extent)
 				_item_elements, mc, positions, avail_item_bounds, item_column).cy;
 
 			const auto item_scroll_bounds = recti{
-				_client_extent.cx - scroll_padding, _top_chrome_height, _client_extent.cx, _client_extent.cy};
+				_client_extent.cx - scroll_padding, _top_chrome_height, _client_extent.cx, _client_extent.cy
+			};
 			const sizei scroll_extent = {avail_item_bounds.width(), items_height};
 			_items_scroll_top_bounds = _items_scroller.layout_with_footer(
 				scroll_extent, avail_item_bounds, item_scroll_bounds,
@@ -2200,18 +2211,10 @@ class copy_clip_element final : public std::enable_shared_from_this<copy_clip_el
 
 public:
 	copy_clip_element(std::function<std::string()> generate) : view_element(
-		                                                          flex_item::right_justified |
-		                                                          view_element_style::has_tooltip |
-		                                                          view_element_style::can_invoke),
-	                                                          _generate(std::move(generate))
-	{
-	}
-
-	copy_clip_element(const str::cached text) : view_element(
-		                                            flex_item::right_justified |
-		                                            view_element_style::has_tooltip |
-		                                            view_element_style::can_invoke),
-	                                            _generate([text] { return std::string(text.sv()); })
+		                                                           flex_item::right_justified |
+		                                                           view_element_style::has_tooltip |
+		                                                           view_element_style::can_invoke),
+	                                                           _generate(std::move(generate))
 	{
 	}
 
@@ -2253,19 +2256,22 @@ public:
 
 class url_element final : public std::enable_shared_from_this<url_element>, public view_element
 {
-	std::string _url;
+	std::vector<std::string> _urls;
+	mutable recti _device_bounds;
 
 public:
-	url_element(std::string url) noexcept : view_element(
-		                                        flex_item::right_justified |
-		                                        view_element_style::has_tooltip |
-		                                        view_element_style::can_invoke), _url(std::move(url))
+	url_element(std::vector<std::string> urls) noexcept : view_element(
+		                                                      flex_item::right_justified |
+		                                                      view_element_style::has_tooltip |
+		                                                      view_element_style::can_invoke),
+	                                                      _urls(std::move(urls))
 	{
 	}
 
 	void render(ui::draw_context& dc, const pointi element_offset) const override
 	{
 		const auto logical_bounds = bounds.offset(element_offset);
+		_device_bounds = logical_bounds;
 		const auto bg = calc_background_color(dc);
 		xdraw_icon(dc, icon_index::link, logical_bounds, ui::color(dc.colors.foreground, dc.colors.alpha), bg);
 	}
@@ -2277,19 +2283,37 @@ public:
 
 	void dispatch_event(const view_element_event& event) override
 	{
-		if (event.type == view_element_event_type::invoke)
+		if (event.type != view_element_event_type::invoke || _urls.empty()) return;
+
+		if (_urls.size() == 1)
 		{
-			if (!_url.empty())
-			{
-				platform::open(_url);
-			}
+			platform::open(_urls.front());
+			return;
 		}
+
+		// Several links means no single obvious destination, so the choice is the user's.
+		std::vector<ui::command_ptr> menu;
+		menu.reserve(_urls.size());
+
+		for (const auto& url : _urls)
+		{
+			auto c = std::make_shared<ui::command>();
+			c->icon = icon_index::link;
+			c->text = url;
+			c->invoke = [url] { platform::open(url); };
+			menu.emplace_back(std::move(c));
+		}
+
+		event.host->track_menu(_device_bounds, menu);
 	}
 
 	void tooltip(view_hover_element& hover, const pointi loc, const pointi element_offset) const override
 	{
 		hover.elements->add(make_icon_element(icon_index::link, flex_item::no_break));
-		hover.elements->add(std::make_shared<text_element>(str_format(tt.open_link_fmt.sv(), _url)));
+		hover.elements->add(std::make_shared<text_element>(
+			_urls.size() == 1
+				? str_format(tt.open_link_fmt.sv(), _urls.front())
+				: std::string(tt.open_link_choose)));
 		hover.active_bounds = hover.window_bounds = bounds.offset(element_offset);
 	}
 
@@ -2297,6 +2321,7 @@ public:
 	                                             const pointi element_offset,
 	                                             const std::vector<recti>& excluded_bounds) override
 	{
+		_device_bounds = bounds.offset(element_offset);
 		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 	}
 };
@@ -2464,23 +2489,14 @@ public:
 	}
 };
 
-static std::shared_ptr<group_title_control> create_text_title(std::string_view name, str::cached text)
-{
-	auto url = df::url_extract(text);
-	std::vector<std::shared_ptr<view_element>> buttons;
-	if (!url.empty()) buttons.emplace_back(std::make_shared<url_element>(url));
-	buttons.emplace_back(std::make_shared<copy_clip_element>(text));
-	return std::make_shared<group_title_control>(name, buttons);
-}
-
 // A container is opened by default only while it stays small enough to read at a glance; beyond
 // that the user asks for it.
 static constexpr auto metadata_auto_expand_limit = 32;
 
-static std::string metadata_row_key(const metadata_standard standard, const metadata_kv& row)
+static std::string metadata_row_key(const std::string_view prefix, const metadata_kv& row)
 {
 	const auto id = row.id.empty() ? std::string_view(row.key) : std::string_view(row.id);
-	return std::format("{}/{}", static_cast<int>(standard), id);
+	return std::format("{}/{}", prefix, id);
 }
 
 class numeric_table_control final : public view_element
@@ -2536,10 +2552,6 @@ class metadata_tree_control;
 // listing owns its own rows, measurement, hit testing and expansion rather than composing cells.
 class metadata_tree_control final : public std::enable_shared_from_this<metadata_tree_control>, public view_element
 {
-public:
-	using expanded_map = std::map<std::string, bool, std::less<>>;
-
-private:
 	static constexpr int col_padding = 8;
 
 	struct row
@@ -2556,6 +2568,7 @@ private:
 		bool last_sibling = true;
 		bool default_open = false;
 		bool is_raw = false; // detail holds the original packet text rather than a hex dump
+		bool prose = false;
 		std::shared_ptr<view_element> detail_control;
 	};
 
@@ -2570,8 +2583,7 @@ private:
 	};
 
 	std::vector<row> _rows;
-	expanded_map& _expanded;
-	std::function<void()> _invalidate;
+	metadata_tree_state_ptr _tree_state;
 
 	mutable std::vector<visible_row> _visible;
 	mutable int _line_height = 0;
@@ -2584,14 +2596,26 @@ private:
 	int _hot = -1;
 
 public:
-	metadata_tree_control(const metadata_block& block, expanded_map& expanded, std::function<void()> invalidate,
-	                      const view_element_options& options) : view_element(options), _expanded(expanded),
-	                                                            _invalidate(std::move(invalidate))
+	metadata_tree_control(const metadata_block& block, metadata_tree_state_ptr tree_state,
+	                      const view_element_options& options) : view_element(options),
+	                                                             _tree_state(std::move(tree_state))
 	{
-		const auto count = block.values.size();
-		_rows.reserve(count + 1);
+		build(block.values, std::format("{}", static_cast<int>(block.standard)), block.raw);
+	}
 
-		for (const auto& r : block.values)
+	metadata_tree_control(const metadata_kv_list& values, const std::string_view id_prefix,
+	                      metadata_tree_state_ptr tree_state, const view_element_options& options) :
+		view_element(options), _tree_state(std::move(tree_state))
+	{
+		build(values, id_prefix, {});
+	}
+
+private:
+	void build(const metadata_kv_list& values, const std::string_view id_prefix, const std::string_view raw)
+	{
+		_rows.reserve(values.size() + 1);
+
+		for (const auto& r : values)
 		{
 			auto& added = _rows.emplace_back();
 			added.key = r.key;
@@ -2602,7 +2626,7 @@ public:
 				added.detail_control = std::make_shared<hex_control>(binary->bytes, flex_item::center);
 			}
 			else if (const auto numeric = std::get_if<metadata_numeric_detail>(&r.detail);
-			         numeric && !numeric->values.empty() && numeric->columns > 0)
+				numeric && !numeric->values.empty() && numeric->columns > 0)
 			{
 				added.detail_control = std::make_shared<numeric_table_control>(numeric->values, numeric->columns);
 			}
@@ -2610,19 +2634,20 @@ public:
 			{
 				added.detail = text->text;
 			}
-			added.id = metadata_row_key(block.standard, r);
+			added.id = metadata_row_key(id_prefix, r);
 			added.depth = r.depth;
 			added.container = r.container;
 			added.default_open = r.open_by_default;
+			added.prose = r.prose;
 		}
 
-		if (!block.raw.empty())
+		if (!raw.empty())
 		{
 			auto& added = _rows.emplace_back();
 			added.key = "Raw block";
-			added.value = std::format("{} bytes", block.raw.size());
-			added.detail = block.raw;
-			added.id = std::format("{}/raw", static_cast<int>(block.standard));
+			added.value = std::format("{} bytes", raw.size());
+			added.detail = raw;
+			added.id = std::format("{}/raw", id_prefix);
 			added.is_raw = true;
 		}
 
@@ -2651,6 +2676,8 @@ public:
 		}
 	}
 
+public:
+
 	// Reproduces the listing as text: every row indented as drawn, hex dumps left out, and the
 	// original packet appended when the standard carries one.
 	std::string copy_text(const std::string_view title) const
@@ -2662,6 +2689,15 @@ public:
 		{
 			result.append(static_cast<size_t>(std::max(0, r.depth)) * 2, ' ');
 			result += r.key;
+
+			// Prose carries its whole text in the detail, so the one-line preview would truncate it.
+			if (r.prose)
+			{
+				result += ":\n";
+				result += r.detail;
+				result += '\n';
+				continue;
+			}
 
 			if (!r.value.empty())
 			{
@@ -2691,8 +2727,8 @@ public:
 
 	bool is_open(const row& r) const
 	{
-		const auto found = _expanded.find(r.id);
-		if (found != _expanded.end()) return found->second;
+		const auto found = _tree_state->expanded.find(r.id);
+		if (found != _tree_state->expanded.end()) return found->second;
 		if (r.default_open) return true;
 		return r.container && r.child_count <= metadata_auto_expand_limit;
 	}
@@ -2726,12 +2762,12 @@ public:
 	{
 		if (visible_index < 0 || visible_index >= static_cast<int>(_visible.size())) return;
 
-		auto& r = _rows[_visible[visible_index].index];
+		const auto& r = _rows[_visible[visible_index].index];
 		if (!r.expandable) return;
 
-		_expanded[r.id] = !is_open(r);
+		_tree_state->expanded[r.id] = !is_open(r);
 		_hot = -1;
-		if (_invalidate) _invalidate();
+		if (_tree_state->invalidate) _tree_state->invalidate();
 	}
 
 	void render(ui::draw_context& dc, const pointi element_offset) const override
@@ -2790,8 +2826,12 @@ public:
 			}
 
 			x = logical_bounds.left + _key_width;
-			dc.draw_text(r.value, recti(x, top, x + _value_width - col_padding, top + _line_height),
-			             ui::style::font_face::dialog, ui::style::text_style::single_line, clr, {});
+			// An open prose row shows its full text below, so the preview line is not repeated.
+			if (!(r.prose && v.open))
+			{
+				dc.draw_text(r.value, recti(x, top, x + _value_width - col_padding, top + _line_height),
+				             ui::style::font_face::dialog, ui::style::text_style::single_line, clr, {});
+			}
 
 			if (_shape_width > 0)
 			{
@@ -2806,15 +2846,16 @@ public:
 				if (r.detail_control)
 				{
 					r.detail_control->bounds = recti(_detail_left, v.top + _line_height,
-					                                      logical_bounds.width(), v.top + v.height);
+					                                 logical_bounds.width(), v.top + v.height);
 					r.detail_control->render(dc, {logical_bounds.left, logical_bounds.top});
 				}
 				else
 				{
 					dc.draw_text(r.detail,
 					             recti(logical_bounds.left + _detail_left, detail_top, logical_bounds.right,
-					                   detail_top + v.detail_height), ui::style::font_face::code,
-					             ui::style::text_style::multiline, clr_dim, {});
+					                   detail_top + v.detail_height),
+					             r.prose ? ui::style::font_face::dialog : ui::style::font_face::code,
+					             ui::style::text_style::multiline, r.prose ? clr : clr_dim, {});
 				}
 			}
 		}
@@ -2883,9 +2924,12 @@ public:
 			}
 		}
 
-		_shape_width = std::min(shape_natural, width_limit / 4);
-		_key_width = std::clamp(key_natural, 0, (width_limit - _shape_width) / 2);
-		_value_width = std::max(0, width_limit - _key_width - _shape_width);
+		// A pane narrow enough to leave no room at all still has to yield ordered, non-inverted
+		// column bounds: std::clamp is undefined when its high bound falls below its low bound.
+		const auto available = std::max(0, width_limit);
+		_shape_width = std::min(shape_natural, available / 4);
+		_key_width = std::clamp(key_natural, 0, std::max(0, (available - _shape_width) / 2));
+		_value_width = std::max(0, available - _key_width - _shape_width);
 		_detail_left = std::min(_key_width, _indent * 2);
 
 		_total_height = 0;
@@ -2901,7 +2945,10 @@ public:
 				const auto detail_width = std::max(_indent, width_limit - _detail_left);
 				v.detail_height = r.detail_control
 					                  ? r.detail_control->measure(mc, detail_width).cy
-					                  : mc.measure_text(r.detail, ui::style::font_face::code,
+					                  : mc.measure_text(r.detail,
+					                                    r.prose
+						                                    ? ui::style::font_face::dialog
+						                                    : ui::style::font_face::code,
 					                                    ui::style::text_style::multiline, detail_width).cy;
 			}
 
@@ -3017,13 +3064,7 @@ void items_view::add_metadata_elements(std::vector<view_element_ptr>& elements, 
 
 	if (!summary.empty()) title = std::format("{}  ({})", title, summary);
 
-	auto invalidate = [this]
-	{
-		_state.invalidate_view(view_invalid::view_layout | view_invalid::view_redraw | view_invalid::controller);
-	};
-
-	auto tree = std::make_shared<metadata_tree_control>(block, _metadata_expanded, std::move(invalidate),
-	                                                   flex_item::grow);
+	auto tree = std::make_shared<metadata_tree_control>(block, _metadata_tree, flex_item::grow);
 
 	elements.emplace_back(title_style(std::make_shared<group_title_control>(
 		title, std::vector<view_element_ptr>{
@@ -3031,6 +3072,126 @@ void items_view::add_metadata_elements(std::vector<view_element_ptr>& elements, 
 		})));
 
 	elements.emplace_back(margin16(std::move(tree)));
+}
+
+// Every prose field the item carries reads as one section. A lone field is just its text; a list
+// becomes a tree so the secondary fields cost one line each until the user opens them.
+
+// A collapsed row is one line, so its preview cannot keep the line breaks and runs of space that
+// would leave it looking blank or ragged.
+static std::string single_line_preview(const std::string_view text)
+{
+	std::string result;
+	result.reserve(text.size());
+	auto pending_space = false;
+
+	for (const auto c : text)
+	{
+		if (static_cast<uint8_t>(c) <= ' ')
+		{
+			pending_space = !result.empty();
+			continue;
+		}
+
+		if (pending_space)
+		{
+			result += ' ';
+			pending_space = false;
+		}
+
+		result += c;
+	}
+
+	return result;
+}
+
+void items_view::add_description_elements(std::vector<view_element_ptr>& elements, const df::item_element_ptr& item,
+                                          const prop::item_metadata_const_ptr& md)
+{
+	df::assert_true(ui::is_ui_thread());
+
+	if (!md) return;
+
+	const auto fields = prop::descriptive_fields(*md);
+	if (fields.empty()) return;
+
+	// The header names the content: the field itself while there is only one, the section once
+	// there is a list to hold together.
+	const auto title = fields.size() == 1 ? fields.front().name : std::string_view(tt.prop_name_description);
+
+	std::string all_text;
+	std::string copy_text;
+
+	for (const auto& f : fields)
+	{
+		if (!all_text.empty()) all_text += '\n';
+		all_text += f.text.sv();
+
+		if (fields.size() > 1)
+		{
+			copy_text += f.name;
+			copy_text += ":\n";
+		}
+
+		copy_text += f.text.sv();
+		copy_text += '\n';
+	}
+
+	std::vector<view_element_ptr> buttons;
+
+	if (auto urls = df::url_extract_all(all_text); !urls.empty())
+	{
+		buttons.emplace_back(std::make_shared<url_element>(std::move(urls)));
+	}
+
+	buttons.emplace_back(std::make_shared<copy_clip_element>([text = std::move(copy_text)] { return text; }));
+
+	if (auto edit_command = _state.find_command(commands::tool_edit_description))
+	{
+		buttons.emplace_back(std::make_shared<command_link_element>(std::move(edit_command)));
+	}
+
+	view_element_ptr body;
+
+	if (fields.size() == 1)
+	{
+		body = std::make_shared<text_element>(fields.front().text);
+	}
+	else
+	{
+		metadata_kv_list rows;
+		rows.reserve(fields.size());
+
+		for (const auto& f : fields)
+		{
+			// A repeat is still worth listing -- both fields really are populated -- but not worth
+			// reading twice, so it says so and opens only if asked.
+			auto& row = rows.emplace_back(f.name, f.duplicate
+				                                      ? std::string(tt.duplicate_text)
+				                                      : single_line_preview(f.text.sv()));
+			row.detail = metadata_text_detail{std::string(f.text.sv())};
+			row.id = f.id;
+			row.prose = true;
+			row.open_by_default = rows.size() == 1;
+		}
+
+		body = std::make_shared<metadata_tree_control>(rows, "description"sv, _metadata_tree, flex_item::grow);
+	}
+
+	elements.emplace_back(title_style(std::make_shared<group_title_control>(title, buttons)));
+
+	if (item->has_cover_art())
+	{
+		auto cover = std::make_shared<cover_art_control>();
+		files ff;
+		cover->add(ff.image_to_surface(item->cover_art()));
+		cover->add(margin16(std::move(body)));
+		elements.emplace_back(std::move(cover));
+	}
+	else
+	{
+		elements.emplace_back(margin16(std::move(body)));
+	}
 }
 
 void items_view::update_media_elements()
@@ -3065,6 +3226,10 @@ void items_view::update_media_elements()
 			const auto* const file_type = item->file_type();
 			const auto md = item->metadata();
 
+			// A media file the decoder could not open has nothing to play or draw, so it falls through
+			// to the hex dump rather than presenting an empty player.
+			const auto media_unavailable = display->_av_open_failed;
+
 			if (file_type->has_trait(file_traits::bitmap))
 			{
 				_media_element = std::make_shared<photo_control>(_state, display, _host);
@@ -3073,7 +3238,7 @@ void items_view::update_media_elements()
 				elements.emplace_back(media_padding(4));
 				elements.emplace_back(media_control_style(media_control_element));
 			}
-			else if (file_type->has_trait(file_traits::visualize_audio))
+			else if (file_type->has_trait(file_traits::visualize_audio) && !media_unavailable)
 			{
 				_media_element = std::make_shared<audio_control>(_state, display, _host);
 
@@ -3081,7 +3246,7 @@ void items_view::update_media_elements()
 				elements.emplace_back(media_padding(4));
 				elements.emplace_back(media_control_style(media_control_element));
 			}
-			else if (file_type->has_trait(file_traits::av))
+			else if (file_type->has_trait(file_traits::av) && !media_unavailable)
 			{
 				_media_element = std::make_shared<video_control>(_state, display, _host);
 
@@ -3178,60 +3343,7 @@ void items_view::update_media_elements()
 				priority_end_element = elements.back();
 			}
 
-			if (md)
-			{
-				if (item->has_cover_art() && has_long_form)
-				{
-					auto description = std::make_shared<cover_art_control>();
-
-					if (item->has_cover_art())
-					{
-						files ff;
-						auto surface = ff.image_to_surface(item->cover_art());
-						description->add(surface);
-					}
-
-					if (!is_empty(md->comment))
-					{
-						description->add(title_style(create_text_title(tt.prop_name_comment, md->comment)));
-						description->add(margin16(std::make_shared<text_element>(md->comment)));
-					}
-
-					if (!is_empty(md->description))
-					{
-						description->add(title_style(create_text_title(tt.prop_name_description, md->description)));
-						description->add(margin16(std::make_shared<text_element>(md->description)));
-					}
-
-					if (!is_empty(md->synopsis))
-					{
-						description->add(title_style(create_text_title(tt.prop_name_synopsis, md->synopsis)));
-						description->add(margin16(std::make_shared<text_element>(md->synopsis)));
-					}
-					elements.emplace_back(description);
-				}
-				else
-				{
-					if (!is_empty(md->comment))
-					{
-						elements.emplace_back(title_style(create_text_title(tt.prop_name_comment, md->comment)));
-						elements.emplace_back(margin16(std::make_shared<text_element>(md->comment)));
-					}
-
-					if (!is_empty(md->description))
-					{
-						elements.emplace_back(
-							title_style(create_text_title(tt.prop_name_description, md->description)));
-						elements.emplace_back(margin16(std::make_shared<text_element>(md->description)));
-					}
-
-					if (!is_empty(md->synopsis))
-					{
-						elements.emplace_back(title_style(create_text_title(tt.prop_name_synopsis, md->synopsis)));
-						elements.emplace_back(margin16(std::make_shared<text_element>(md->synopsis)));
-					}
-				}
-			}
+			add_description_elements(elements, item, md);
 
 			if (setting.verbose_metadata)
 			{

@@ -287,7 +287,6 @@ public:
 		}
 		return r;
 	}
-
 };
 
 class transaction
@@ -562,7 +561,7 @@ bool database::prepare_database(const bool can_replace)
 		throw app_exception("Failed to configure database connection"s);
 	}
 
-	if (db_mmap_size > 0)
+	if constexpr (db_mmap_size > 0)
 	{
 		db_exec(_db, std::format("PRAGMA mmap_size={};", db_mmap_size));
 	}
@@ -617,6 +616,7 @@ bool database::prepare_database(const bool can_replace)
 	// Schema upgrades must run before the index load, which selects the columns they add.
 	// Otherwise that select fails to prepare and the whole index loads empty and silent.
 	sqlite3_exec(_db, "ALTER TABLE item_properties ADD COLUMN crc INTEGER;", nullptr, nullptr, nullptr);
+	sqlite3_exec(_db, "ALTER TABLE item_properties ADD COLUMN phash INTEGER;", nullptr, nullptr, nullptr);
 	sqlite3_exec(_db, "ALTER TABLE item_thumbnails ADD COLUMN cover_art BLOB NULL;", nullptr, nullptr, nullptr);
 
 	// Those upgrades report nothing when they fail, so the schema they were meant to reach is
@@ -890,8 +890,6 @@ void metadata_unpacker::unpack(const prop::item_metadata_ptr& md)
 		else if (t == prop::created_utc) read_val(md->created_utc);
 		else if (t == prop::created_exif) read_val(md->created_exif);
 		else if (t == prop::created_digitized) read_val(md->created_digitized);
-			//else if (t == prop::modified) item.info.file_modified = df::date_t::from_time_stamp(p->n);
-			//else if (t == prop::file_size) item.info.size = df::file_size(p->d);
 		else if (t == prop::exposure_time) read_val(md->exposure_time);
 		else if (t == prop::f_number) read_val(md->f_number);
 		else if (t == prop::focal_length) read_val(md->focal_length);
@@ -934,7 +932,7 @@ void database::load_index_values() const
 
 	const db_statement items(
 		_db,
-		"select folder, name, properties, crc, media_position, last_scanned from item_properties order by folder"s);
+		"select folder, name, properties, crc, media_position, last_scanned, phash from item_properties order by folder"s);
 
 	if (!items.is_valid())
 	{
@@ -952,6 +950,7 @@ void database::load_index_values() const
 		const auto crc = static_cast<uint32_t>(items.int32(3));
 		const auto media_position = items.int32(4);
 		const auto last_scanned = df::date_t(items.int64(5));
+		const auto phash = static_cast<uint64_t>(items.int64(6));
 
 		if (last_group_name != folder)
 		{
@@ -978,6 +977,7 @@ void database::load_index_values() const
 			i.path = name;
 			i.metadata_scanned = last_scanned;
 			i.crc32c = static_cast<uint32_t>(crc);
+			i.phash = static_cast<uint64_t>(phash);
 
 			const auto has_properties = properties.size > 0;
 			const auto has_med_pos = media_position != 0;
@@ -1268,9 +1268,10 @@ void database::perform_writes(std::deque<item_db_write> writes) const
 	// write knows nothing about, where `insert or replace` used to overwrite them with zero.
 	const db_statement insert_properties(
 		_db,
-		"insert into item_properties (folder, name, properties, crc, media_position, last_scanned, last_indexed) values (?, ?, ?, ?, ?, ?, ?) "
+		"insert into item_properties (folder, name, properties, crc, media_position, last_scanned, last_indexed, phash) values (?, ?, ?, ?, ?, ?, ?, ?) "
 		"on conflict(folder, name) do update set properties = excluded.properties, "
 		"crc = coalesce(excluded.crc, item_properties.crc), "
+		"phash = coalesce(excluded.phash, item_properties.phash), "
 		"media_position = coalesce(excluded.media_position, item_properties.media_position), "
 		"last_scanned = excluded.last_scanned, last_indexed = excluded.last_indexed"s);
 	const db_statement update_metadata_scanned(
@@ -1278,6 +1279,7 @@ void database::perform_writes(std::deque<item_db_write> writes) const
 		"update item_properties set last_scanned = ?, last_indexed = ? where folder = ? and name = ?"s);
 	const db_statement update_hash(_db, "update item_properties set hash = ? where folder=? and name=?"s);
 	const db_statement update_crc(_db, "update item_properties set crc = ? where folder=? and name=?"s);
+	const db_statement update_phash(_db, "update item_properties set phash = ? where folder=? and name=?"s);
 	const db_statement update_media_position(
 		_db, "update item_properties set media_position = ? where folder=? and name=?"s);
 	const db_statement insert_thumbnails(
@@ -1303,8 +1305,6 @@ void database::perform_writes(std::deque<item_db_write> writes) const
 				packer.pack(md);
 			}
 
-			// df::log(__FUNCTION__, "write to db " << id.Name << " " << id.Modified.to_int64() << " " << properties_row.count();
-
 			insert_properties.bind(1, path.folder().text());
 			insert_properties.bind(2, path.name());
 			insert_properties.bind(3, packer.cdata());
@@ -1323,10 +1323,15 @@ void database::perform_writes(std::deque<item_db_write> writes) const
 
 			insert_properties.bind(6, write.metadata_scanned.value_or(df::date_t()).to_int64());
 			insert_properties.bind(7, today);
+
+			if (write.phash.has_value()) insert_properties.bind(8, static_cast<int64_t>(write.phash.value()));
+			else insert_properties.bind_null(8);
+
 			insert_properties.exec();
 			insert_properties.reset();
 
 			write.crc32c.reset();
+			write.phash.reset();
 			write.metadata_scanned.reset();
 			write.media_position.reset();
 
@@ -1350,6 +1355,15 @@ void database::perform_writes(std::deque<item_db_write> writes) const
 			update_crc.bind(3, path.name());
 			update_crc.exec();
 			update_crc.reset();
+		}
+
+		if (write.phash.has_value())
+		{
+			update_phash.bind(1, static_cast<int64_t>(write.phash.value()));
+			update_phash.bind(2, path.folder().text());
+			update_phash.bind(3, path.name());
+			update_phash.exec();
+			update_phash.reset();
 		}
 
 		if (write.media_position.has_value())

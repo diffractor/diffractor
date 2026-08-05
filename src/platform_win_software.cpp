@@ -17,7 +17,6 @@
 #include "platform_win_visual.h"
 
 #include "av_format.h"
-#include "files.h"
 #include "ui_elements.h"
 #include "platform_win_res.h"
 #include "util_simd.h"
@@ -271,19 +270,23 @@ public:
 		};
 	}
 
+	// Unconditional write of the clipped region: unlike fill_rect this ignores source alpha and
+	// stamps the destination, which is what a render-target clear means.
 	void clear(const ui::color c) const
 	{
+		const auto r = clamp_to_clip(recti(0, 0, _extent.cx, _extent.cy));
+		if (r.is_empty()) return;
+
 		const auto b = to_byte(c.b);
 		const auto g = to_byte(c.g);
-		const auto r = to_byte(c.r);
+		const auto red = to_byte(c.r);
 		const auto a = _opaque ? uint8_t{255} : to_byte(c.a);
 		const auto pixel_value = static_cast<uint32_t>(b) | static_cast<uint32_t>(g) << 8 |
-			static_cast<uint32_t>(r) << 16 | static_cast<uint32_t>(a) << 24;
+			static_cast<uint32_t>(red) << 16 | static_cast<uint32_t>(a) << 24;
 
-		for (auto y = 0; y < _extent.cy; ++y)
+		for (auto y = r.top; y < r.bottom; ++y)
 		{
-			auto* const p = std::bit_cast<uint32_t*>(pixel(0, y));
-			std::fill_n(p, _extent.cx, pixel_value);
+			std::fill_n(std::bit_cast<uint32_t*>(pixel(r.left, y)), r.width(), pixel_value);
 		}
 	}
 
@@ -328,7 +331,7 @@ public:
 		}
 	}
 
-	// Matches the hardware backend, which draws a solid rect as a four-triangle fan from the
+	// Matches the hardware backend's draw_rect_gradient, which draws a four-triangle fan from the
 	// centre vertex: the centre carries c_centre and all four corners c_corner, so the colour the
 	// rasteriser interpolates at a point is lerp(c_centre, c_corner, max(|dx|/hw, |dy|/hh)).
 	// Each row is split into a constant middle span (where the vertical term dominates) and a
@@ -569,7 +572,7 @@ public:
 			if (horizontal_mirror)
 			{
 				const auto* src = g.pixels.data() + static_cast<ptrdiff_t>(y - py) * g.cx +
-				                  (g.cx - 1 - (r.left - px));
+					(g.cx - 1 - (r.left - px));
 				auto* p = pixel(r.left, y);
 				for (auto x = r.left; x < r.right; ++x, p += 4, --src)
 				{
@@ -831,19 +834,19 @@ public:
 				const auto sx = src_rect.left + u * src_fw - 0.5;
 				const auto sy = src_rect.top + v * src_fh - 0.5;
 
-				const auto sampled = software_canvas::sample(src_pixels, src_stride, src_w, src_h, sx, sy, sampler);
+				const auto sampled = sample(src_pixels, src_stride, src_w, src_h, sx, sy, sampler);
 				auto [sb, sg, sr, sample_a] = sampled;
 
 				if (transform && transform->has_color_changes)
 				{
-					auto red = std::clamp(sr / 255.0f * transform->red_gain, 0.0f, 1.0f);
-					auto green = std::clamp(sg / 255.0f * transform->green_gain, 0.0f, 1.0f);
-					auto blue = std::clamp(sb / 255.0f * transform->blue_gain, 0.0f, 1.0f);
+					const auto red = std::clamp(sr / 255.0f * transform->red_gain, 0.0f, 1.0f);
+					const auto green = std::clamp(sg / 255.0f * transform->green_gain, 0.0f, 1.0f);
+					const auto blue = std::clamp(sb / 255.0f * transform->blue_gain, 0.0f, 1.0f);
 					auto luminance = 0.299f * red + 0.587f * green + 0.114f * blue;
 					auto chroma_u = -0.147f * red - 0.289f * green + 0.436f * blue;
 					auto chroma_v = 0.615f * red - 0.515f * green - 0.100f * blue;
 					const auto curve_index = std::clamp(static_cast<int>(luminance * ui::texture_transform::curve_len),
-						0, ui::texture_transform::curve_len - 1);
+					                                    0, ui::texture_transform::curve_len - 1);
 					luminance = transform->curve[curve_index];
 					if (!df::is_zero(transform->vibrance))
 					{
@@ -862,7 +865,8 @@ public:
 					chroma_u = std::clamp(chroma_u, -1.0f, 1.0f);
 					chroma_v = std::clamp(chroma_v, -1.0f, 1.0f);
 					sr = df::round(std::clamp(luminance + 1.14025f * chroma_v, 0.0f, 1.0f) * 255.0f);
-					sg = df::round(std::clamp(luminance - 0.39473f * chroma_u - 0.58081f * chroma_v, 0.0f, 1.0f) * 255.0f);
+					sg = df::round(
+						std::clamp(luminance - 0.39473f * chroma_u - 0.58081f * chroma_v, 0.0f, 1.0f) * 255.0f);
 					sb = df::round(std::clamp(luminance + 2.03252f * chroma_u, 0.0f, 1.0f) * 255.0f);
 				}
 
@@ -906,8 +910,9 @@ static ui::surface_ptr decode_png_resource_to_surface(const factories_ptr& f, co
 
 	auto hr = f->wic->CreateStream(&stream);
 	if (SUCCEEDED(hr)) hr = stream->InitializeFromMemory(static_cast<BYTE*>(data), data_size);
-	if (SUCCEEDED(hr)) hr = f->wic->CreateDecoderFromStream(stream.Get(), nullptr, WICDecodeMetadataCacheOnLoad,
-	                                                        &decoder);
+	if (SUCCEEDED(hr))
+		hr = f->wic->CreateDecoderFromStream(stream.Get(), nullptr, WICDecodeMetadataCacheOnLoad,
+		                                     &decoder);
 	if (SUCCEEDED(hr)) hr = decoder->GetFrame(0, &frame);
 	if (SUCCEEDED(hr)) hr = f->wic->CreateFormatConverter(&converter);
 	if (SUCCEEDED(hr))
@@ -1150,7 +1155,8 @@ public:
 
 		if (!_display_scaler) _display_scaler = std::make_unique<av_scaler>();
 
-		if (_display_scaler->scale_surface(_surface, _display_surface, dst, high_quality) && ui::is_valid(_display_surface))
+		if (_display_scaler->scale_surface(_surface, _display_surface, dst, high_quality) && ui::is_valid(
+			_display_surface))
 		{
 			_display_dims = dst;
 			_display_time = _surface->time();
@@ -1240,6 +1246,11 @@ public:
 	uint8_t* _bits = nullptr;
 	sizei _dib_size;
 
+	// Region this frame is allowed to touch, and whether the scene's own opening clear already
+	// covers it. Both are set by begin_draw and consumed by replay_scene / render.
+	recti _damage;
+	bool _scene_covers_damage = false;
+
 	// UpdateLayeredWindow needs premultiplied alpha in its own DIB. It is kept across presents so a
 	// layered window does not allocate a buffer, a DC and a DIB section on every frame.
 	HDC _layered_dc = nullptr;
@@ -1316,6 +1327,7 @@ public:
 		_canvas._extent = _dib_size;
 		_canvas._clip = recti(0, 0, _dib_size.cx, _dib_size.cy);
 		_canvas._opaque = !_layered;
+		_damage = _canvas._clip;
 	}
 
 	void ensure_dib(const sizei sz)
@@ -1371,12 +1383,33 @@ public:
 		return _bits != nullptr;
 	}
 
-	void begin_draw(const sizei client_extent, const int base_font_size) override
+	void reset_damage() override
 	{
-		_base_font_size = base_font_size;
+		_damage = recti(0, 0, _dib_size.cx, _dib_size.cy);
+		_scene_covers_damage = false;
+	}
+
+	void begin_draw(const sizei client_extent, const int base_font_size, const recti damage) override
+	{
+		// Through update_font_size, not a bare assignment: recording the size here without
+		// discarding the text renderers would leave them built at the previous size while
+		// making the later update_font_size call believe it had nothing to do.
+		update_font_size(base_font_size);
+		const auto had_dib = _dib != nullptr && _dib_size == client_extent && _bits != nullptr;
 		ensure_dib(client_extent);
+
+		const recti client(0, 0, _dib_size.cx, _dib_size.cy);
+
+		// A partial repaint is only sound because the DIB keeps the previous frame outside the
+		// damaged region. A reallocated DIB holds undefined pixels, and a layered window is
+		// presented whole, so both fall back to repainting everything.
+		_damage = (damage.is_empty() || !had_dib || _layered)
+			          ? client
+			          : damage.intersection(client);
+
+		_scene_covers_damage = false;
 		_clip_stack.clear();
-		_canvas._clip = recti(0, 0, _dib_size.cx, _dib_size.cy);
+		_canvas._clip = _damage;
 		_scene.clear();
 	}
 
@@ -1386,12 +1419,14 @@ public:
 	void replay_scene()
 	{
 		_clip_stack.clear();
-		_canvas._clip = recti(0, 0, _dib_size.cx, _dib_size.cy);
+		_canvas._clip = _damage;
 
 		// The hardware backend clears the render target before drawing the scene, so anything the
 		// scene does not paint shows as this neutral grey rather than black. Layered windows are
-		// composited by the shell and must stay transparent where nothing is drawn.
-		if (!_layered)
+		// composited by the shell and must stay transparent where nothing is drawn. A scene that
+		// opens by covering the damaged region opaquely leaves nothing to show through, so the
+		// pre-clear would only be overwritten.
+		if (!_layered && !_scene_covers_damage)
 		{
 			_canvas.clear(ui::color(scene_clear_shade, scene_clear_shade, scene_clear_shade, 1.0f));
 		}
@@ -1436,7 +1471,13 @@ public:
 
 			if (dc)
 			{
-				BitBlt(dc, 0, 0, _dib_size.cx, _dib_size.cy, _mem_dc, 0, 0, SRCCOPY);
+				const auto r = _damage.intersection(recti(0, 0, _dib_size.cx, _dib_size.cy));
+
+				if (!r.is_empty())
+				{
+					BitBlt(dc, r.left, r.top, r.width(), r.height(), _mem_dc, r.left, r.top, SRCCOPY);
+				}
+
 				ReleaseDC(_hwnd, dc);
 			}
 		}
@@ -1605,17 +1646,31 @@ public:
 
 	// primitives ----------------------------------------------------------------------------
 
-	// The hardware backend implements clear as a full-client draw_rect, so this must too - a flat
-	// fill would drop the centre gradient that every background in the app is drawn with.
 	void clear(const ui::color c) override
 	{
 		const recti bounds(0, 0, _dib_size.cx, _dib_size.cy);
-		record_or_run([this, bounds, c] { _canvas.fill_rect_gradient(bounds, c, c.emphasize()); });
+
+		// Recorded as the first command, opaque, and covering everything the frame may touch: the
+		// neutral pre-clear in replay_scene cannot survive it, so replay_scene skips it.
+		if (_scene.empty() && !_replaying && c.a >= 1.0f && bounds.intersection(_damage) == _damage)
+		{
+			_scene_covers_damage = true;
+		}
+
+		record_or_run([this, bounds, c] { _canvas.fill_rect(bounds, c); });
 	}
 
 	void draw_rect(const recti bounds, const ui::color c) override
 	{
-		record_or_run([this, bounds, c] { _canvas.fill_rect_gradient(bounds, c, c.emphasize()); });
+		record_or_run([this, bounds, c] { _canvas.fill_rect(bounds, c); });
+	}
+
+	void draw_rect_gradient(const recti bounds, const ui::color c_centre, const ui::color c_corner) override
+	{
+		record_or_run([this, bounds, c_centre, c_corner]
+		{
+			_canvas.fill_rect_gradient(bounds, c_centre, c_corner);
+		});
 	}
 
 	// The hardware backend inflates by 2, fills the body with c.emphasize() and lets the circle
@@ -1978,10 +2033,11 @@ public:
 
 	const render_char_result& glyph(const uint16_t index, const DWRITE_GLYPH_RUN* glyph_run)
 	{
-		// Key by the face the index belongs to as well as the index itself, so a fallback glyph
+		// Key by the face the index belongs to and by the run's em size, so a fallback glyph
 		// (e.g. Hangul from Malgun Gothic) cannot collide in the cache with a same-indexed glyph
-		// of the primary face and get drawn as the wrong character.
-		const auto key = _glyph_keys.key(glyph_run ? glyph_run->fontFace : nullptr, index);
+		// of the primary face, and a raster made for one font size is never reused at another.
+		const auto key = _glyph_keys.key(glyph_run ? glyph_run->fontFace : nullptr,
+		                                 glyph_run ? glyph_run->fontEmSize : 0.0f, index);
 		const auto found = _glyph_cache.find(key);
 		if (found != _glyph_cache.end()) return found->second;
 		return _glyph_cache[key] = _font->render_glyph(index, _spacing, glyph_run);
@@ -2134,9 +2190,9 @@ void software_draw_context::draw_text(const std::string_view text, const recti b
 }
 
 void software_draw_context::draw_text_mirrored(const std::string_view text, const recti bounds,
-	                                            const ui::style::font_face font,
-	                                            const ui::style::text_style style, const ui::color c,
-	                                            const ui::color bg)
+                                               const ui::style::font_face font,
+                                               const ui::style::text_style style, const ui::color c,
+                                               const ui::color bg)
 {
 	record_or_run([this, text = std::string(text), bounds, font, style, c, bg]
 	{

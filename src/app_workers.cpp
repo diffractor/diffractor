@@ -337,6 +337,11 @@ void app_frame::queue_database(std::function<void(database&)> f)
 	database_task_queue.enqueue([f = std::move(f), &db = _db] { f(db); });
 }
 
+void app_frame::queue_tile_db(std::function<void(tile_cache_db&)> f)
+{
+	tile_db_task_queue.enqueue([f = std::move(f), &db = _tile_db] { f(db); });
+}
+
 static void start_media_preview()
 {
 	log_func lf(__FUNCTION__);
@@ -521,6 +526,78 @@ void start_map_worker(platform::task_queue& q)
 	}
 }
 
+// The tile store gets its own thread because the SQLite build serialises nothing for us: one
+// connection, one thread, and every statement issued from here. Decoding and downloading stay on the
+// map workers, so a slow disk delays the next lookup rather than the picture on screen.
+static void start_tile_db_worker(tile_cache_db& db, platform::task_queue& queue)
+{
+	log_func lf(__FUNCTION__, "map_tile_db");
+	platform::set_thread_description("map tile database");
+	auto* const perf = df::register_queue("map_tile_db");
+
+	try
+	{
+		platform::thread_init c;
+		db.open(resolve_tile_cache_db_path());
+
+		// A cache carried in from earlier sessions is bounded before it is served, not once a few
+		// hundred writes have already grown it further.
+		db.prune();
+
+		const std::vector<std::reference_wrapper<platform::thread_event>> events = {
+			queue._event, platform::event_exit
+		};
+
+		while (!df::is_closing)
+		{
+			if (wait_for(events, 1000, false) == 0)
+			{
+				df::scope_locked_inc l(df::jobs_running);
+				const auto tasks = queue.dequeue_all();
+
+				if (!tasks.empty())
+				{
+					df::bump(perf->batches);
+					df::bump(perf->tasks, tasks.size());
+					df::record_peak(perf->batch_peak, static_cast<uint32_t>(tasks.size()));
+				}
+
+				for (const auto& t : tasks)
+				{
+					try
+					{
+						df::perf_timer timer(perf->busy_us, &perf->task_max_us);
+						t();
+					}
+					catch (std::exception& e)
+					{
+						df::log(__FUNCTION__, e.what());
+					}
+				}
+			}
+
+			// One commit per drained batch: the accessed stamps a single pan earns are worth one
+			// transaction between them, never one each. Runs on the idle tick too, so a batch that
+			// is not followed by another is still committed.
+			db.flush();
+		}
+	}
+	catch (std::exception& e)
+	{
+		df::log(__FUNCTION__, e.what());
+	}
+
+	try
+	{
+		(void)queue.dequeue_all();
+		db.close();
+	}
+	catch (std::exception& e)
+	{
+		df::log(__FUNCTION__, e.what());
+	}
+}
+
 
 void app_frame::start_workers()
 {
@@ -599,6 +676,7 @@ void app_frame::start_workers()
 	{
 		_threads.start([&q = map_tile_task_queue] { start_map_worker(q); });
 	}
+	_threads.start([&db = _tile_db, &q = tile_db_task_queue] { start_tile_db_worker(db, q); });
 	_threads.start([&q = cloud_task_queue] { start_worker(q, "cloud"); });
 	_threads.start([&q = index_task_queue] { start_worker(q, "index"); });
 

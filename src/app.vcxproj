@@ -1555,6 +1555,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="app_search.cpp" />
+    <ClCompile Include="app_dup_report.cpp" />
     <ClCompile Include="app_gen_docs.cpp" />
     <ClCompile Include="app_validate_po.cpp" />
     <ClCompile Include="app_workers.cpp" />
@@ -1884,6 +1885,14 @@
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">pch.h</PrecompiledHeaderFile>
     </ClCompile>
+    <ClCompile Include="model_tile_cache.cpp">
+      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|x64'">pch.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='WinStore|x64'">pch.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">pch.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='WinStore|ARM64'">pch.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">pch.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">pch.h</PrecompiledHeaderFile>
+    </ClCompile>
     <ClCompile Include="app_settings.cpp">
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|x64'">pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='WinStore|x64'">pch.h</PrecompiledHeaderFile>
@@ -2049,7 +2058,6 @@
     <None Include="Res\shadow.png" />
     <None Include="Res\tb_large.bmp" />
     <None Include="Res\tb_small.bmp" />
-    <None Include="Res\title.png" />
     <None Include="Res\world_map.jpg" />
     <None Include="shaders\common.hlsli" />
     <None Include="shaders\rgb_common.hlsli" />
@@ -2201,10 +2209,12 @@
     <ClInclude Include="view_media.h" />
     <ClInclude Include="util_file.h" />
     <ClInclude Include="model_tags.h" />
+    <ClInclude Include="model_tile_cache.h" />
     <ClInclude Include="app_settings.h" />
     <ClInclude Include="util_path.h" />
     <ClInclude Include="platform.h" />
     <ClInclude Include="model_property.h" />
+    <ClInclude Include="model_related.h" />
     <ClInclude Include="platform_win_res.h" />
     <ClInclude Include="crypto_sha.h" />
     <ClInclude Include="av_sound.h" />
@@ -2220,14 +2230,12 @@
     <ClInclude Include="ui_controllers.h" />
     <ClInclude Include="util_top.h" />
     <ClInclude Include="ui.h" />
+    <ClInclude Include="ui_plasma.h" />
     <ClInclude Include="ui_text_edit.h" />
     <ClInclude Include="ui_view.h" />
     <ClInclude Include="metadata_xmp.h" />
     <ClInclude Include="util_zip.h" />
     <ClInclude Include="platform_win_visual.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <Image Include="Res\logo.png" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="shaders\rgb_bicubic_ps.hlsl">

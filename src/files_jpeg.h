@@ -49,14 +49,14 @@ public:
 	jpeg_encoder();
 	~jpeg_encoder() override;
 
-	void setup(uint32_t cx, uint32_t cy, file_encode_params params);
+	void setup(uint32_t cx, uint32_t cy, const file_encode_params& params);
 	void start(uint32_t cx, uint32_t cy, ui::orientation orientation, const metadata_parts& metadata,
-	           file_encode_params params);
+	           const file_encode_params& params);
 	void encode_chunk(uint8_t** rows, uint32_t chunk) const;
 
 	df::blob complete(bool can_abort = true);
 	df::blob encode(uint32_t cx, uint32_t cy, const uint8_t* bitmap, uint32_t stride, ui::orientation orientation,
-	                const metadata_parts& metadata, file_encode_params params);
+	                const metadata_parts& metadata, const file_encode_params& params);
 
 	friend class jpeg_decoder_x;
 };
@@ -75,7 +75,7 @@ public:
 	void create();
 	bool read_header(df::cspan cs);
 	bool read_header(const ui::const_image_ptr& image);
-	bool start_decompress(int scale_hint, bool raw) const;
+	bool start_decompress(int scale_hint, bool raw, bool fancy_chroma) const;
 	bool read_nv12(uint8_t* pixels, int stride, int buffer_size, const df::cancel_token& token) const;
 	bool read_rgb(uint8_t* p, int stride, int buffer_size, const df::cancel_token& token) const;
 	void close() const;

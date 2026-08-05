@@ -56,7 +56,7 @@ int run_console_tests(const std::string_view test_filter)
 
 	null_state_strategy ss;
 	null_async_strategy as;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 	view_state state(ss, as, index, nullptr);
 
@@ -84,8 +84,9 @@ int run_console_tests(const std::string_view test_filter)
 
 		for (const auto& [name, count] : seen)
 		{
-			if (count > 1) printf("  WARN  duplicate test name '%.*s' registered %d times\n",
-			                      static_cast<int>(name.size()), name.data(), count);
+			if (count > 1)
+				printf("  WARN  duplicate test name '%.*s' registered %d times\n",
+				       static_cast<int>(name.size()), name.data(), count);
 		}
 	}
 

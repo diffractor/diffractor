@@ -17,7 +17,7 @@
 
 static void png_error_handler(png_structp png_ptr, const png_const_charp msg)
 {
-	df::log(__FUNCTION__, msg);
+	df::log_once(__FUNCTION__, msg);
 	throw app_exception(msg);
 }
 
@@ -27,7 +27,7 @@ static void png_error_handler(png_structp png_ptr, const png_const_charp msg)
 // log instead so they are still available for diagnosis but not shown.
 static void png_warning_handler(png_structp, const png_const_charp msg)
 {
-	df::log("libpng", msg);
+	df::log_once("libpng", msg);
 }
 
 static constexpr auto png_xmp_key = "XML:com.adobe.xmp";
@@ -163,6 +163,8 @@ static void png_write_callback(const png_structp png_ptr, const png_bytep data, 
 
 ui::image_ptr save_png(const ui::const_surface_ptr& surface_in, const metadata_parts& metadata)
 {
+	if (!is_valid(surface_in)) return {};
+
 	const png_writer png;
 	auto* const info_ptr = png.info();
 
@@ -267,6 +269,13 @@ ui::surface_ptr load_png(const df::cspan data)
 	int bit_depth = 0, color_type = 0;
 	png_get_IHDR(png.get(), info_ptr, &width, &height, &bit_depth, &color_type, nullptr, nullptr, nullptr);
 
+	// The df::cspan decode path carries no budget gate of its own, and IHDR dimensions cost nothing
+	// to declare: a small, highly compressible PNG can otherwise ask for gigabytes.
+	if (reject_over_budget_source(nullptr, {static_cast<int>(width), static_cast<int>(height)}, "PNG"))
+	{
+		return {};
+	}
+
 	if (bit_depth == 16)
 		png_set_scale_16(png.get());
 
@@ -280,7 +289,6 @@ ui::surface_ptr load_png(const df::cspan data)
 		png_set_gamma(png.get(), 2.2, file_gamma);
 	}
 
-	// png_set_swap_alpha(png_ptr);
 	if (color_type == PNG_COLOR_TYPE_GRAY && bit_depth < 8)
 	{
 		png_set_expand_gray_1_2_4_to_8(png.get());
@@ -305,16 +313,6 @@ ui::surface_ptr load_png(const df::cspan data)
 	{
 		png_set_filler(png.get(), 0xFF, PNG_FILLER_AFTER);
 	}
-
-	//if (png_get_valid(png.get(), info_ptr, PNG_INFO_iCCP)) 
-	//{
-	//	png_charp profile_name = nullptr;
-	//	png_bytep profile_data = nullptr;
-	//	png_uint_32 profile_length = 0;
-	//	int  compression_type = 0;
-
-	//	png_get_iCCP(png.get(), info_ptr, &profile_name, &compression_type, &profile_data, &profile_length);
-	//}
 
 	//if (color_type == PNG_COLOR_TYPE_RGB)
 	png_set_bgr(png.get());
@@ -438,7 +436,6 @@ file_scan_result scan_png(read_stream& rs)
 		result.pixel_format = "rgba"_c;
 	}
 
-	// png_set_swap_alpha(png_ptr);
 	if (color_type == PNG_COLOR_TYPE_GRAY && bit_depth < 8)
 	{
 		png_set_expand_gray_1_2_4_to_8(png.get());
@@ -477,24 +474,6 @@ file_scan_result scan_png(read_stream& rs)
 		}
 	}
 
-	//if (color_type == PNG_COLOR_TYPE_RGB)
-	/*png_set_bgr(png.get());
-
-	png_read_update_info(png.get(), info_ptr);
-
-	const bool has_alpha = color_type == PNG_COLOR_TYPE_RGB_ALPHA;
-
-	if (result.alloc(width, height, has_alpha ? ui::texture_format::ARGB : ui::texture_format::RGB))
-	{
-		std::unique_ptr<png_bytep[]> rows = std::make_unique<png_bytep[]>(height);
-
-		for (png_uint_32 y = 0; y < height; y++)
-		{
-			rows[y] = result.pixels() + y * result.stride();
-		}
-
-		png_read_image(png.get(), rows.get());
-	}*/
 
 	png_uint_32 num_exif = 0;
 	png_bytep exif_data = nullptr;

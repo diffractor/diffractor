@@ -69,6 +69,49 @@ static void should_edit_single_line_text()
 	assert_equal(true, filter.match_text(str::cache("bobcatfish")), "filter applies contains matching");
 }
 
+static void should_settle_transport_stream_extension_by_header()
+{
+	assert_equal(true, files::has_media_header_rule(".ts"), "the transport stream extension has a header rule");
+	assert_equal(true, files::has_media_header_rule("m2ts"), "the rule ignores a leading dot");
+	assert_equal(false, files::has_media_header_rule(".mp4"), "an unambiguous extension is left to the decoder");
+
+	std::array<uint8_t, files::media_header_probe_bytes> header{};
+
+	const auto write_packets = [&header](const size_t start, const size_t packet_size)
+	{
+		header.fill(0);
+		for (auto i = size_t{0}; i < 4; ++i) header[start + i * packet_size] = 0x47;
+	};
+
+	write_packets(0, 188);
+	assert_equal(true, files::media_header_matches(".ts", {header.data(), header.size()}),
+	             "a broadcast packet run is accepted");
+
+	write_packets(4, 192);
+	assert_equal(true, files::media_header_matches(".m2ts", {header.data(), header.size()}),
+	             "an M2TS timestamp prefix is accepted");
+
+	write_packets(0, 204);
+	assert_equal(true, files::media_header_matches(".ts", {header.data(), header.size()}),
+	             "a Reed-Solomon packet run is accepted");
+
+	// A capture that begins mid-packet still aligns further in, and ffmpeg would find it, so refusing
+	// it here would hide real video.
+	write_packets(97, 188);
+	assert_equal(true, files::media_header_matches(".ts", {header.data(), header.size()}),
+	             "a stream that starts mid-packet is accepted");
+
+	// A TypeScript file that opens with 'G' (0x47) matches the sync byte but not the packet run.
+	const std::string_view typescript = "Get the exported type before anything else is imported;\n";
+	header.fill(0);
+	std::memcpy(header.data(), typescript.data(), typescript.size());
+	assert_equal(false, files::media_header_matches(".ts", {header.data(), typescript.size()}),
+	             "TypeScript source is not mistaken for a transport stream");
+
+	assert_equal(true, files::media_header_matches(".mp4", {header.data(), typescript.size()}),
+	             "an extension with no rule always matches");
+}
+
 static void should_offer_every_matching_tool()
 {
 	const auto make_tool = [](const std::string_view exe, const std::string_view group)
@@ -119,8 +162,8 @@ static void should_compact_consumed_audio_only_when_needed()
 	audio_buffer buffer;
 	buffer.init(format);
 
-	std::array<uint8_t, 60> first{};
-	std::array<uint8_t, 40> second{};
+	const std::array<uint8_t, 60> first{};
+	const std::array<uint8_t, 40> second{};
 	buffer.append(first.data(), static_cast<uint32_t>(first.size()), 1.0, 1);
 	buffer.remove(40);
 	buffer.append(second.data(), static_cast<uint32_t>(second.size()), 2.0, 1);
@@ -155,7 +198,7 @@ static void should_compact_consumed_audio_only_when_needed()
 	assert_equal(true, visualizer.step(1.0),
 	             "visualizer consumes the live audio window");
 	assert_equal(true, std::any_of(std::begin(visualizer._frame._data[0]),
-	                              std::end(visualizer._frame._data[0]), [](const int bar) { return bar > 0; }),
+	                               std::end(visualizer._frame._data[0]), [](const int bar) { return bar > 0; }),
 	             "visualizer ignores consumed samples before the cursor");
 
 	audio_info_t masked;
@@ -164,6 +207,44 @@ static void should_compact_consumed_audio_only_when_needed()
 	audio_info_t fallback;
 	fallback.channel_layout = av_get_channel_layout(0, 6);
 	assert_equal(6u, fallback.channel_count(), "missing speaker mask uses endpoint channel count");
+}
+
+// audio_buffer keeps its samples private; this declared friend lets the test read them.
+struct audio_ramp_probe
+{
+	static int16_t sample(const audio_buffer& buffer, const size_t i)
+	{
+		return std::bit_cast<const int16_t*>(buffer.data + buffer.start_pos)[i];
+	}
+};
+
+static void should_ramp_audio_at_buffer_edges()
+{
+	audio_info_t format;
+	format.channel_layout = av_get_def_channel_layout(2);
+	format.sample_fmt = prop::audio_sample_t::signed_16bit;
+	format.sample_rate = 1000;
+
+	audio_buffer buffer;
+	buffer.init(format);
+
+	std::array<int16_t, 2000> samples{};
+	samples.fill(1000);
+	buffer.append(std::bit_cast<const uint8_t*>(samples.data()),
+	              static_cast<uint32_t>(samples.size() * sizeof(int16_t)), 0.0, 1);
+
+	buffer.apply_fade_in(0.010);
+	buffer.apply_fade_out(0.010);
+
+	// 1000 frames of stereo audio at 1kHz, so a 10ms ramp covers 10 frames = 20 samples.
+	const auto sample = [&buffer](const size_t i) { return audio_ramp_probe::sample(buffer, i); };
+
+	assert_equal(true, sample(0) < 200, "playback starts near silence");
+	assert_equal(1000, static_cast<int>(sample(19)), "the fade in reaches full level after 10ms");
+	assert_equal(1000, static_cast<int>(sample(1000)), "audio between the ramps is untouched");
+	assert_equal(0, static_cast<int>(sample(1999)), "playback ends at silence");
+	assert_equal(true, sample(1979) == 1000, "the fade out only covers the last 10ms");
+	assert_equal(4000u, buffer.used_bytes(), "ramping does not consume buffered audio");
 }
 
 static void should_time_visualizer_independently_of_refresh_rate()
@@ -425,14 +506,14 @@ static void should_calculate_history_span_from_start_year()
 
 static void should_group_sidebar_map_by_place()
 {
-	location_cache locations;
+	const location_cache locations;
 	index_histograms histograms;
 
 	const auto record = [&]
 	{
 		df::index_file_item file;
 		file.ft = files::file_type_from_name("test.jpg");
-		auto metadata = std::make_shared<prop::item_metadata>();
+		const auto metadata = std::make_shared<prop::item_metadata>();
 		metadata->coordinate = gps_coordinate(50.08806, 14.42083);
 		metadata->location_place = "Prague"_c;
 		metadata->location_state = "Prague"_c;
@@ -1070,19 +1151,19 @@ static void should_estimate_decode_cost()
 	};
 
 	const auto png = make_image(ui::image_format::PNG);
-	assert_equal(static_cast<uint64_t>(4000ll * 3000ll * 4), static_cast<uint64_t>(
+	assert_equal(4000ll * 3000ll * 4, static_cast<uint64_t>(
 		             files::estimate_decode_bytes(png, {400, 300})),
 	             "a PNG builds the whole frame however small a target is asked for");
 
 	const auto jpeg = make_image(ui::image_format::JPEG);
-	assert_equal(static_cast<uint64_t>(500ll * 375ll * 4), static_cast<uint64_t>(
+	assert_equal(500ll * 375ll * 4, static_cast<uint64_t>(
 		             files::estimate_decode_bytes(jpeg, {400, 300})),
 	             "libjpeg reduces by up to 1/8 while decoding");
-	assert_equal(static_cast<uint64_t>(4000ll * 3000ll * 4), static_cast<uint64_t>(
+	assert_equal(4000ll * 3000ll * 4, static_cast<uint64_t>(
 		             files::estimate_decode_bytes(jpeg, {4000, 3000})),
 	             "a full-size request costs a JPEG its whole frame");
 
-	assert_equal(static_cast<uint64_t>(1000ll * 1000ll * 4), static_cast<uint64_t>(
+	assert_equal(1000ll * 1000ll * 4, static_cast<uint64_t>(
 		             files::estimate_decode_bytes(sizei{1000, 1000})),
 	             "a bare source size costs four bytes a pixel");
 }
@@ -1117,8 +1198,11 @@ void register_tests1(view_state& state, test_registry& tests)
 {
 	tests.add("Should edit single-line text"s, should_edit_single_line_text);
 	tests.add("Should offer every matching external tool"s, should_offer_every_matching_tool);
+	tests.add("Should settle a transport stream extension by header"s,
+	          should_settle_transport_stream_extension_by_header);
 	tests.add("Should retain audio buffer timing across cursor compaction"s,
 	          should_compact_consumed_audio_only_when_needed);
+	tests.add("Should ramp audio at buffer edges"s, should_ramp_audio_at_buffer_edges);
 	tests.add("Should time visualizer independently of refresh rate"s,
 	          should_time_visualizer_independently_of_refresh_rate);
 

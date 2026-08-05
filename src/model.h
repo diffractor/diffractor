@@ -77,6 +77,7 @@ void draw_pin_badge(ui::draw_context& dc, recti logical_bounds, float alpha);
 
 class location_cache;
 class database;
+class tile_cache_db;
 class av_player;
 class av_format_decoder;
 class scrubber_element;
@@ -85,7 +86,7 @@ class display_state_t;
 using display_state_ptr = std::shared_ptr<display_state_t>;
 
 ui::texture_sampler calc_sampler(sizei draw_extent, sizei texture_extent, const ui::orientation& orientation,
-	                             bool interactive = false);
+                                 bool interactive = false);
 void draw_texture_info(ui::draw_context& rc, recti media_bounds, const ui::texture_ptr& tex,
                        ui::orientation orientation, ui::texture_sampler sampler, float alpha);
 df::unique_paths make_unique_paths(df::paths selection);
@@ -111,6 +112,8 @@ struct media_preview_state
 // - queue_async(q, f)  : Execute f on a background thread pool based on queue type q.
 // - queue_location(f)  : Execute f with access to the location_cache (reverse geocoding, city lookups).
 // - queue_database(f)  : Execute f with access to the SQLite database (thumbnails, metadata cache).
+// - queue_tile_db(f)   : Execute f with access to the map tile store. Its own connection on its own
+//   thread, so a tile lookup never queues behind index or thumbnail work.
 // - queue_media_preview(f, must_run) : Execute f for video seek preview generation. Preview requests
 //   coalesce so only the newest survives; must_run marks teardown, which is never superseded.
 //
@@ -138,6 +141,7 @@ public:
 	void queue_async(async_queue q, std::function<void()> f) override = 0;
 	virtual void queue_location(std::function<void(location_cache&)>) = 0;
 	virtual void queue_database(std::function<void(database&)> f) = 0;
+	virtual void queue_tile_db(std::function<void(tile_cache_db&)> f) = 0;
 
 	virtual void queue_media_preview(std::function<void(media_preview_state&)>, bool must_run = false) = 0;
 
@@ -723,6 +727,10 @@ public:
 	// which a previously offline item can be safely re-indexed to pick up its real metadata.
 	bool _full_metadata_loaded = false;
 
+	// The decoder could not make sense of this file, so there is nothing to play or show. The panel
+	// falls back to a hex dump of the bytes, which at least says what the file really is.
+	bool _av_open_failed = false;
+
 	ui::vertices_ptr _verts;
 	texture_state_ptr _selected_texture1;
 	texture_state_ptr _selected_texture2;
@@ -774,6 +782,7 @@ public:
 	bool _is_two = false;
 	bool _is_multi = false;
 	bool _can_zoom = false;
+
 	struct zoom_layout_state
 	{
 		sized source_extent;
@@ -783,6 +792,7 @@ public:
 		pointd pending_client_anchor;
 		bool pending_reanchor = false;
 	};
+
 	std::array<zoom_layout_state, 2> _zoom_layouts;
 	mutable bool _preview_changed = false;
 
@@ -863,7 +873,7 @@ public:
 			_comparison_zoom.active(pane);
 			mark_zoom_activity();
 			_async.invalidate_view(view_invalid::view_layout | view_invalid::view_redraw |
-			                       view_invalid::command_state | view_invalid::controller);
+				view_invalid::command_state | view_invalid::controller);
 		}
 	}
 
@@ -955,7 +965,7 @@ public:
 			});
 			mark_zoom_activity();
 			_async.invalidate_view(view_invalid::app_layout | view_invalid::view_layout | view_invalid::tooltip |
-			                       view_invalid::controller);
+				view_invalid::controller);
 		}
 	}
 
@@ -982,13 +992,13 @@ public:
 			layout.pending_reanchor = true;
 		}
 		_async.invalidate_view(view_invalid::app_layout | view_invalid::view_layout | view_invalid::view_redraw |
-		                       view_invalid::controller);
+			view_invalid::controller);
 	}
 
 	void adjust_zoom_scale(const int direction)
 	{
 		if (direction == 0) return;
-		auto& layout = current_zoom_layout();
+		const auto& layout = current_zoom_layout();
 		const pointd anchor{layout.viewport_extent.Width / 2.0, layout.viewport_extent.Height / 2.0};
 		mutate_zoom([&](df::zoom_view_state& state)
 		{
@@ -996,7 +1006,7 @@ public:
 		});
 		mark_zoom_activity();
 		_async.invalidate_view(view_invalid::app_layout | view_invalid::view_layout | view_invalid::view_redraw |
-		                       view_invalid::controller);
+			view_invalid::controller);
 	}
 
 	void zoom_100()
@@ -1020,7 +1030,7 @@ public:
 		layout.pending_client_anchor = layout.viewport_origin + anchor;
 		layout.pending_reanchor = true;
 		_async.invalidate_view(view_invalid::app_layout | view_invalid::view_layout | view_invalid::view_redraw |
-		                       view_invalid::controller);
+			view_invalid::controller);
 	}
 
 	void zoom_fit_variant(const df::zoom_scale_mode mode)
@@ -1037,7 +1047,7 @@ public:
 		});
 		mark_zoom_activity();
 		_async.invalidate_view(view_invalid::app_layout | view_invalid::view_layout | view_invalid::view_redraw |
-		                       view_invalid::controller);
+			view_invalid::controller);
 	}
 
 	void zoom_scale(const double scale)
@@ -1051,7 +1061,7 @@ public:
 		});
 		mark_zoom_activity();
 		_async.invalidate_view(view_invalid::app_layout | view_invalid::view_layout | view_invalid::view_redraw |
-		                       view_invalid::controller);
+			view_invalid::controller);
 	}
 
 	double zoom_fit_scale() const
@@ -1094,13 +1104,13 @@ public:
 		return _is_two ? _comparison_zoom.state(pane) : _common._zoom;
 	}
 
-	void restore_zoom_state(const df::zoom_view_state state)
+	void restore_zoom_state(const df::zoom_view_state& state)
 	{
 		mutate_zoom([&](df::zoom_view_state& current) { current = state; });
 		_temporary_zoom = false;
 		mark_zoom_activity();
 		_async.invalidate_view(view_invalid::app_layout | view_invalid::view_layout | view_invalid::view_redraw |
-		                       view_invalid::controller);
+			view_invalid::controller);
 	}
 
 	void inspect_at_100(const pointd anchor)
@@ -1119,7 +1129,7 @@ public:
 		layout.pending_reanchor = true;
 		_temporary_zoom = true;
 		_async.invalidate_view(view_invalid::app_layout | view_invalid::view_layout | view_invalid::view_redraw |
-		                       view_invalid::controller);
+			view_invalid::controller);
 	}
 
 	void commit_inspect()
@@ -1147,7 +1157,7 @@ public:
 
 	void pan_zoom(const pointd client_delta, const df::zoom_view_state& start)
 	{
-		auto& layout = current_zoom_layout();
+		const auto& layout = current_zoom_layout();
 		mutate_zoom([&](df::zoom_view_state& state)
 		{
 			state = start;
@@ -1161,7 +1171,7 @@ public:
 
 	void pan_zoom_by(const pointd client_delta)
 	{
-		auto& layout = current_zoom_layout();
+		const auto& layout = current_zoom_layout();
 		mutate_zoom([&](df::zoom_view_state& state)
 		{
 			const auto scale = state.effective_scale(zoom_fit_scale());
@@ -1184,16 +1194,16 @@ public:
 		_async.invalidate_view(view_invalid::view_layout | view_invalid::view_redraw);
 	}
 
-	void zoom_region(const rectd region)
+	void zoom_region(const rectd& region)
 	{
-		auto& layout = current_zoom_layout();
+		const auto& layout = current_zoom_layout();
 		mutate_zoom([&](df::zoom_view_state& state)
 		{
 			state.zoom_region(region, layout.source_extent, layout.viewport_extent, zoom_fit_scale());
 		});
 		mark_zoom_activity();
 		_async.invalidate_view(view_invalid::app_layout | view_invalid::view_layout | view_invalid::view_redraw |
-		                       view_invalid::controller);
+			view_invalid::controller);
 	}
 
 	bool can_zoom() const
@@ -1212,7 +1222,7 @@ public:
 		mutate_zoom([](df::zoom_view_state& state) { state.toggle_fit(); });
 		mark_zoom_activity();
 		_async.invalidate_view(view_invalid::app_layout | view_invalid::view_layout | view_invalid::view_redraw |
-		                       view_invalid::controller);
+			view_invalid::controller);
 	}
 
 	bool player_has_video() const
@@ -1335,6 +1345,9 @@ public:
 	}
 
 	void update_av_session(const std::shared_ptr<av_session>& ses);
+
+	// Reads the head of the display item into _selected_item_data for the hex view.
+	void load_selected_item_data();
 	// False when a teardown or a newer open has taken the display since; the caller then owns closing
 	// the session it was handed.
 	bool publish_av_session(const std::shared_ptr<av_session>& ses, uint32_t generation);
@@ -1634,16 +1647,6 @@ public:
 	// Marks (or unmarks) an item as hovered, keeping the cached hover item in sync with the style bit.
 	void hover_item(const view_host_base_ptr& view, const df::item_element_ptr& i, bool is_hover);
 
-	/*bool is_photo() const
-	{
-		return _display_item && _display_item->file_type()->is_photo;
-	}
-
-	bool is_audio() const
-	{
-		return _display_item && _display_item->file_type()->is_audio;
-	}*/
-
 	bool search_is_favorite() const
 	{
 		return _search_is_favorite;
@@ -1803,13 +1806,20 @@ public:
 	df::folder_path save_path() const;
 
 	ui::const_image_ptr first_selected_thumb() const;
-	void capture_display(std::function<void(file_load_result)> f) const;
+	void capture_display(const std::function<void(file_load_result)>& f) const;
 
 	df::string_counts selected_tags() const;
 
 	group_by group_order() const
 	{
 		return _group_order;
+	}
+
+	// What the visible groups are actually built from. A related search groups by relation whatever
+	// the user last chose, and leaves that choice intact for the next ordinary search.
+	group_by effective_group_order() const
+	{
+		return _search.has_related() ? group_by::related : _group_order;
 	}
 
 	uint32_t group_title_generation() const

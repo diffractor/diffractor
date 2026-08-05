@@ -25,7 +25,7 @@ InterfaceType* SafeAcquire(InterfaceType* newObject)
 }
 
 static constexpr uint32_t icon_font_collection_id = 19;
-static const auto icon_font_name = L"Segoe MDL2 Assets";
+static constexpr auto icon_font_name = L"Segoe MDL2 Assets";
 
 class resource_font_file_stream final : public IDWriteFontFileStream
 {
@@ -538,7 +538,7 @@ platform::glyph_fallback_probe platform::probe_glyph_fallback(const std::string_
 	ComPtr<IDWriteFactory> factory;
 
 	if (FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
-	                               reinterpret_cast<IUnknown**>(factory.GetAddressOf()))) || !factory)
+		reinterpret_cast<IUnknown**>(factory.GetAddressOf()))) || !factory)
 	{
 		return result;
 	}
@@ -549,7 +549,7 @@ platform::glyph_fallback_probe platform::probe_glyph_fallback(const std::string_
 
 	const auto make_face = [&system_fonts](const std::string_view family) -> ComPtr<IDWriteFontFace>
 	{
-		const auto name = platform::utf8_to_utf16(family);
+		const auto name = utf8_to_utf16(family);
 		ComPtr<IDWriteFontFace> face;
 		uint32_t index = 0;
 		BOOL exists = FALSE;
@@ -561,7 +561,7 @@ platform::glyph_fallback_probe platform::probe_glyph_fallback(const std::string_
 
 			if (SUCCEEDED(system_fonts->GetFontFamily(index, font_family.GetAddressOf())) &&
 				SUCCEEDED(font_family->GetFirstMatchingFont(DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-				                                           DWRITE_FONT_STYLE_NORMAL, font.GetAddressOf())))
+					DWRITE_FONT_STYLE_NORMAL, font.GetAddressOf())))
 			{
 				font->CreateFontFace(face.GetAddressOf());
 			}
@@ -674,7 +674,7 @@ platform::font_cache_probe platform::probe_font_cache(const int base_font_size)
 	factories f;
 
 	if (FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
-	                               reinterpret_cast<IUnknown**>(f.dwrite.GetAddressOf()))) || !f.dwrite)
+		reinterpret_cast<IUnknown**>(f.dwrite.GetAddressOf()))) || !f.dwrite)
 	{
 		return result;
 	}
@@ -785,8 +785,6 @@ render_char_result font_renderer::render_glyph(const uint16_t glyph_index, const
 
 			if (SUCCEEDED(analysis->GetAlphaTextureBounds(DWRITE_TEXTURE_CLEARTYPE_3x1, &bbox)))
 			{
-				//const auto char_width = bbox.right - bbox.left;
-
 				RECT bbox2; // { 0, -char_height, char_width, 0 };
 				bbox2.left = -spacing;
 				bbox2.right = bbox.right + spacing; // -bbox.left) + spacing;
@@ -796,8 +794,6 @@ render_char_result font_renderer::render_glyph(const uint16_t glyph_index, const
 				const auto char_width = bbox2.right - bbox2.left;
 				const auto char_top = df::mul_div(glyph_metrics.verticalOriginY, _font_size, _metrics.designUnitsPerEm);
 				const auto buffer_len = char_width * line_height * 3;
-
-				//df::assert_true(char_top >= 0 && (char_top + char_height) <= line_height);
 
 				if (buffer_len > 0)
 				{
@@ -857,7 +853,6 @@ sizei font_renderer::measure(const std::wstring_view text, const ui::style::text
 
 	ComPtr<IDWriteTextLayout> layout;
 	auto hr = _factory->CreateTextLayout(text.data(), static_cast<int>(text.size()), _text_format.Get(), 0, 0, &layout);
-	//auto hr = _factory->CreateGdiCompatibleTextLayout(text.data(), static_cast<int>(text.size()), _text_format.Get(), 0.0f, 0.0f, 1.0f, nullptr, TRUE, &layout);
 
 	if (SUCCEEDED(hr))
 	{
@@ -979,7 +974,6 @@ void font_renderer::draw(ui::draw_context* dc, IDWriteTextRenderer* tr, const st
 	const auto hr = _factory->CreateTextLayout(text.data(), static_cast<int>(text.size()), _text_format.Get(), 0.0f,
 	                                           0.0f,
 	                                           &layout);
-	//auto hr = _factory->CreateGdiCompatibleTextLayout(text.data(), static_cast<int>(text.size()), _text_format.Get(), 0.0f, 0.0f, 1.0f, nullptr, TRUE,  &layout);
 
 	if (SUCCEEDED(hr))
 	{

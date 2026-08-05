@@ -409,6 +409,18 @@ namespace prop
 	using item_metadata_aptr = std::atomic<std::shared_ptr<item_metadata>>;
 	using item_metadata_const_ptr = std::shared_ptr<const item_metadata>;
 
+	// One populated prose field, in the order the description panel presents them. `duplicate` marks
+	// a field repeating text an earlier field already carries, which sidecar round trips make common.
+	struct text_field
+	{
+		std::string_view id; // stable across display languages, unlike name
+		std::string_view name;
+		str::cached text;
+		bool duplicate = false;
+	};
+
+	std::vector<text_field> descriptive_fields(const item_metadata& md);
+
 	const key* from_id(uint16_t id);
 	const key* from_prefix(std::string_view scope);
 

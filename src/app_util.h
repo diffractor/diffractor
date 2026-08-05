@@ -97,7 +97,7 @@ std::vector<rename_item> calc_item_renames(const df::item_set& items, std::strin
                                            collision_policy policy);
 std::vector<rename_source> snapshot_rename_sources(const df::item_set& items);
 std::vector<rename_item> calc_item_renames(const std::vector<rename_source>& items,
-	std::string_view template_name, int start, collision_policy policy);
+                                           std::string_view template_name, int start, collision_policy policy);
 bool can_rename_items(const std::vector<rename_item>& renames);
 // Number of rows the policy had to resolve, for the Review statement.
 
@@ -135,6 +135,8 @@ struct import_result
 {
 	df::folder_path folder;
 	item_import_set imports;
+	// Rows whose files no longer matched the review. They wrote nothing and need a fresh analysis.
+	uint32_t refused = 0;
 };
 
 struct import_analysis_item
@@ -146,6 +148,11 @@ struct import_analysis_item
 	item_import import_rec;
 	bool already_exists = false;
 	std::string sub_folder;
+	// The source and destination as they stood at analysis, read through the same query the run uses
+	// so the two are directly comparable. destination_fi is only filled for Replace, the one policy
+	// that writes over a file instead of proving the name is free.
+	platform::file_attributes_t source_fi;
+	platform::file_attributes_t destination_fi;
 	// Sidecars travel with the file they describe rather than standing as rows of their own, so a
 	// partial import can never leave metadata at one end and its file at the other.
 	std::vector<std::pair<df::file_path, df::file_path>> sidecars;
@@ -153,9 +160,13 @@ struct import_analysis_item
 
 using import_analysis_result = std::map<df::folder_path, std::vector<import_analysis_item>, df::iless>;
 
+// Confirms a path still holds the file the user reviewed. A query that fails counts as changed:
+// a run must never overwrite or delete a file it could not look at.
+bool unchanged_since_analysis(df::file_path path, uint64_t modified, uint64_t size);
+
 import_analysis_result import_analysis(const std::vector<folder_scan_item>& src_items,
                                        const import_options& options, const item_import_set& previous_imported,
-                                       df::cancel_token token);
+                                       const df::cancel_token& token);
 
 import_result import_copy(index_state& index, df::results_ptr results, const import_analysis_result& src_items,
                           const import_options& options, df::cancel_token token);
@@ -165,8 +176,13 @@ std::vector<import_source> calc_import_sources(const view_state& s);
 size_t count_imports(const std::vector<import_analysis_item>& items);
 size_t count_imports(const import_analysis_result& items);
 
+// Every row whose destination already exists, whether or not the plan will write it. This is what
+// Block Run refuses on, so it must keep counting rows the policy already resolved away.
 size_t count_import_collisions(const import_analysis_result& items);
-bool same_import_analysis(const import_analysis_result& left, const import_analysis_result& right);
+
+// The subset of those the plan will actually write over. A previously imported row keeps its
+// collision but destroys nothing, so only this number belongs in a message about overwriting.
+size_t count_import_colliding_writes(const import_analysis_result& items);
 
 enum class sync_action
 {
@@ -178,10 +194,10 @@ enum class sync_action
 };
 
 sync_action calc_sync_action(bool local_exists, bool remote_exists,
-	uint64_t local_modified, uint64_t remote_modified,
-	uint64_t local_size, uint64_t remote_size,
-	bool sync_local_remote, bool sync_remote_local,
-	bool sync_delete_local, bool sync_delete_remote);
+                             uint64_t local_modified, uint64_t remote_modified,
+                             uint64_t local_size, uint64_t remote_size,
+                             bool sync_local_remote, bool sync_remote_local,
+                             bool sync_delete_local, bool sync_delete_remote);
 
 struct sync_analysis_item
 {
@@ -230,7 +246,6 @@ std::string sync_invalid_message(const sync_analysis_result& analysis);
 
 uint32_t count_sync_actions(const sync_analysis_result& analysis);
 uint32_t count_sync_actions(const sync_analysis_result& analysis, sync_action action);
-bool same_sync_analysis(const sync_analysis_result& left, const sync_analysis_result& right);
 
 sync_analysis_result sync_analysis(const df::index_roots& local_roots, df::folder_path remote_path,
                                    bool sync_local_remote, bool sync_remote_local,
@@ -239,8 +254,15 @@ sync_analysis_result sync_analysis(const df::index_roots& local_roots, df::folde
 
 // Performs the reviewed sync plan. Returns the local folders it changed so the index can be
 // brought back into agreement with what is now on disk.
-df::unique_folders sync_copy(const df::results_ptr& status, const sync_analysis_result& analysis_result,
-                             const df::cancel_token& token);
+struct sync_run_result
+{
+	df::unique_folders folders_changed;
+	// Rows whose files no longer matched the review. They wrote nothing and need a fresh analysis.
+	uint32_t refused = 0;
+};
+
+sync_run_result sync_copy(const df::results_ptr& status, const sync_analysis_result& analysis_result,
+                          const df::cancel_token& token);
 
 void toggle_collection_entry(settings_t::index_t& collection_settings, df::folder_path folder, bool is_remove);
 
@@ -260,7 +282,7 @@ struct convert_item_plan
 };
 
 std::vector<convert_item_plan> plan_convert_outputs(df::folder_path write_folder, const df::item_set& items,
-	std::string_view new_extension, collision_policy policy);
+                                                    std::string_view new_extension, collision_policy policy);
 
 // Shared by every destination-writing operation: returns the first free " (n)" variant.
 df::file_path next_free_destination(df::file_path destination);

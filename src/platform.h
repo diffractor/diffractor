@@ -72,7 +72,9 @@ namespace platform
 	extern bool arm_crc32_supported;
 
 	void secure_zero(void* ptr, size_t len);
-	void generate_random_bytes(uint8_t* buffer, size_t len);
+
+	// False leaves the buffer zeroed; callers must not fall back to its contents.
+	bool generate_random_bytes(uint8_t* buffer, size_t len);
 
 	void trace(std::string_view message);
 	void trace(const std::string& message);
@@ -91,14 +93,28 @@ namespace platform
 	std::string number_dec_sep();
 	bool is_valid_file_name(std::string_view name);
 
+	// A failed query is not proof of absence. Access denied, an offline volume or a dropped network
+	// share all fail the same call as a deleted file, so they stay `unknown` and a caller that would
+	// delete or overwrite on "not there" cannot act on a guess.
+	enum class file_presence
+	{
+		unknown,
+		not_found,
+		found,
+	};
+
 	struct file_attributes_t
 	{
+		file_presence presence = file_presence::unknown;
 		bool is_readonly = false;
 		bool is_offline = false;
 		bool is_hidden = false;
 		uint64_t modified = 0;
 		uint64_t created = 0;
 		uint64_t size = 0;
+
+		bool exists() const { return presence == file_presence::found; }
+		bool confirmed_missing() const { return presence == file_presence::not_found; }
 	};
 
 	struct file_info
@@ -226,7 +242,11 @@ namespace platform
 	{
 		OK,
 		CANCELLED,
-		FAILED
+		FAILED,
+		// A fail-if-exists write refused because the destination is there. That is the answer to the
+		// question the caller asked, not a fault, so a run can report it as a file that changed after
+		// review rather than as a disk error.
+		ALREADY_EXISTS
 	};
 
 	struct file_op_result
@@ -268,8 +288,10 @@ namespace platform
 	// Returns false when any path is on a location that bypasses the Recycle Bin
 	// (for example a UNC network path), causing a permanent, unrecoverable delete.
 	bool can_recycle(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders);
+	// Copies or moves through the shell. Collisions are auto-renamed unless replace_existing is set,
+	// which the caller may only do having named the colliding files and had the overwrite confirmed.
 	file_op_result move_or_copy(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders,
-	                            df::folder_path target, bool is_move);
+	                            df::folder_path target, bool is_move, bool replace_existing = false);
 
 	file_op_result delete_file(df::file_path path);
 	file_attributes_t file_attributes(df::file_path path);
@@ -297,8 +319,6 @@ namespace platform
 	bool working_set(int64_t& current, int64_t& peak);
 	df::folder_path temp_folder();
 	int display_frequency();
-	/*uint32_t file_attributes(const df::file_path path);
-	uint32_t file_attributes(const df::folder_path path);*/
 	df::file_path resolve_link(df::file_path path);
 	bool created_date(df::file_path path, df::date_t dt);
 
@@ -457,10 +477,6 @@ namespace platform
 
 	enum class resource_item
 	{
-		logo,
-		logo15,
-		logo30,
-		title,
 		sql,
 		map_png
 	};
@@ -838,12 +854,14 @@ namespace platform
 	uint32_t wait_for(const std::vector<std::reference_wrapper<thread_event>>& events, uint32_t timeout_ms,
 	                  bool wait_all);
 	using attachments_t = std::vector<std::pair<std::string, df::file_path>>;
+
 	enum class mapi_send_result
 	{
 		sent,
 		canceled,
 		failed
 	};
+
 	mapi_send_result classify_mapi_send_result(uint32_t result_code);
 	mapi_send_result mapi_send(std::string_view to, std::string_view subject, std::string_view text,
 	                           const attachments_t& attachments);
@@ -869,9 +887,6 @@ namespace platform
 	class pool_allocator
 	{
 		memory_pool _pool;
-
-	public:
-
 	};
 
 

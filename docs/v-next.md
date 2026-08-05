@@ -4,6 +4,16 @@ GitHub issues are authoritative for backlog, status, discussion, and reporter fo
 
 This document records only durable context that spans issues or would otherwise be lost between releases. It is not an issue list or release plan.
 
+## Collision and destruction gaps left after 1.27.0
+
+Copy and Move now name their collisions and ask (see [design](design.md)), but three paths still resolve or destroy without saying so. None loses data silently today; each is a stated-behavior gap rather than a safety hole.
+
+- **Paste and drag-drop** run through `perform_hdrop2` with `FOF_RENAMEONCOLLISION` fixed on, so a collision becomes a second copy with no prompt. Extending the Copy/Move prompt to them needs the collision test to run before the drop is performed, which is a different call path from the menu commands and has no destination folder resolved until the drop lands.
+- **Sync deletes bypass the Recycle Bin even for local files.** `platform::delete_file` is `DeleteFile`; the confirmation states the permanence honestly, but a local collection delete could be recoverable. Moving to `platform::delete_items` with `allow_undo` means adopting its batch failure model and per-row status, which the per-row sync results contract would have to absorb.
+- **Import Replace does not check sidecar destinations.** Only the primary destination carries a reviewed snapshot; a sidecar is guarded by `fail_if_exists` under every other policy, and under Replace it is overwritten unchecked. Closing it means threading per-sidecar snapshots through `import_analysis_item`, which currently holds one `destination_fi`.
+
+`check_overwrite` in `app_util.cpp` is the shared collision test. It was dead code until 1.27.0 wired it into Copy and Move; anything extending collision prompts should use it rather than adding per-item existence queries.
+
 ## Deferred live-language edge cases
 
 Language changes rebuild the visible presentation, active tool controls, metadata panel, group titles, and toolbar text. Two stateful cases remain deliberately snapshot-based: progress and completion messages created before a switch retain the language in which the operation began, and an already-open native dialog retains the labels copied into its Win32 controls. The normal language command is unavailable while a modal dialog is open, but an external settings-change path could still expose the latter. Resolving either case needs explicit language-change semantics for in-flight operation history and native dialog ownership rather than references to mutable global text.
@@ -72,6 +82,21 @@ So Windows is fast because the write is O(1) in the file, not because it takes a
 **What this implies for our own tiers.** The `WM/SharedUserRating` entry is 45 bytes, confirmed by every clear-rating operation removing exactly 45, so *changing* a rating on a file that already carries one produces an identical-length `Xtra`, an unchanged `moov` size, and the same-size in-place branch. A journal is not what makes re-rating safe; re-rating is already same-extent. It is needed for the size-changing cases, which is the boundary the inject trait already draws.
 
 Adobe is a weaker comparison than it looks: Lightroom and Premiere mostly do not write the file at all, keeping the rating in the catalog until an explicit save, so their fast path is fast by not being a file write. Bridge does write through the XMP SDK and is not fast. Deferring the write is available to us too, but it trades away the property the write path exists to protect — that the user's rating is in the user's file and not only in our database.
+
+## Deferred software gradient optimisation
+
+[Rendering](rendering.md) owns the parity contract this work must not break.
+
+`clear` and `draw_rect` were both `fill_rect_gradient(bounds, c, c.emphasize())` on both backends, so every background in the client was a centre vignette. `emphasize` is `(f - 0.5) * 0.9 + 0.5`, which on dark chrome moves a corner about 9/255 from the centre - subtle enough to read as flat while costing a full per-pixel gradient. Both are now flat fills, and a caller that wants the vignette asks for `draw_rect_gradient` explicitly. `fill_rect_gradient` therefore survives only for callers that opted in, plus `draw_vertices` and `fill_border_gradient`.
+
+A first-index CPU profile put `fill_rect_gradient` at 35.93% of the whole process and `blend_over` at 27.36% self, so what remains of that cost after the flattening is the number worth re-measuring before spending anything below.
+
+Two independent wins remain for the gradient that is still drawn, in the order they should be taken:
+
+- **Scalar, no parity risk.** `blend_over`'s general path divides each channel by `out_a`. When `_opaque` is set — every non-layered window — `da` is 1.0, so `out_a` is identically 1.0 and the three divides per pixel cannot change the answer. `/fp:fast` does not remove them because the compiler cannot prove `da == 1`. The constant-colour middle span also recomputes `c*sa` and `1-sa` per pixel when alpha is below 1. Take these first; how much they recover decides whether the rest is worth doing.
+- **SIMD.** The row splits into three spans that each have a closed form: outside the middle band `max(tx, ty)` collapses to `tx`, which is affine in x, so both ramps are straight lerps; the middle span is one constant colour. Unit stride, no per-pixel branches, no gathers. x86 baseline is already SSE2 (`EnableEnhancedInstructionSet`), so an SSE2 implementation needs no runtime dispatch, unlike `ui::surface::swap_rb` which gates on `platform::ssse3_supported` for `_mm_shuffle_epi8`. Recompute the ramp colour per 4-pixel block from x rather than accumulating a fixed-point delta, which drifts across a wide row.
+
+Two costs that are not footnotes. 8-bit fixed point differs from the float path by up to ±1 LSB, so the parity contract needs checking and possibly a tolerance. And there is no NEON path anywhere in this codebase — `util_simd.h` uses `COMPILE_ARM_INTRINSIC` only for `<arm_acle.h>` CRC — so ARM64 would be new, unvalidated ground and the scalar fallback has to stay correct.
 
 ## Deferred zoom work
 
@@ -161,11 +186,19 @@ That last point has a migration cost that must be planned rather than discovered
 
 **Order matters if this is taken in stages.** Converting to sRGB at decode time for matrix-shaper profiles only, leaving LUT profiles untouched, is small, testable with the banded-fixture approach already used by `should_decode_bands` in `test_media_edit.cpp`, and fixes the visible defect on its own. Moving the transform into the shader and software renderers is second, keeping the CPU path for edit, save and thumbnails. Reading the system profile and targeting it instead of assuming sRGB is third, and is the only stage that needs new platform surface.
 
-### HEIF depth reduction and NCLX
+### HEIF colour, depth, and the missing YUV path
 
 HEIF states its colour in either of two ways, and Diffractor currently drops both. `files_heif.cpp` extracts a `prof`/`rICC` profile into `result.icc`, where it joins the never-applied path above. It also detects `heif_color_profile_type_nclx` and names it in the properties panel as "nclx (coded primaries and transfer)" — and then does nothing with it. NCLX is not a lesser signal: it carries coded primaries, transfer characteristics and matrix coefficients, and it is what a Rec.2020 or PQ HEIF from a phone actually ships instead of an ICC profile. A file with NCLX and no ICC therefore gets no colour handling from either mechanism. Whatever design the ICC work settles on has to accept both sources, or HEIF gets fixed twice.
 
 Separately, both `heif_decode_image` calls — the thumbnail and the full image — request `heif_colorspace_RGB` with `heif_chroma_interleaved_RGBA`, which is 8-bit. A 10-bit HEIF is therefore reduced to 8 bits inside libheif, under whatever policy that version happens to implement, with no rounding or dithering choice exposed and no test asserting the result. The panel meanwhile reports the true luma and chroma depth from `heif_image_handle_get_luma_bits_per_pixel`, so it can honestly say "10 bits" about pixels that were delivered as 8. That inconsistency is the visible symptom; the underlying question is whether the decode should request a wide interleaved format and do its own reduction, as `files_jpeg.cpp` now does for 12- and 16-bit JPEG, which would also be the precondition for ever displaying HEIF at more than 8 bits.
+
+**HEIF has no NV12/P010 path, and the reason is structural rather than an oversight.** JPEG and WebP reach the GPU YUV sampler because `files::load` keeps the *encoded* bytes in `file_load_result::i` and defers the decode to `files::image_to_surface`, which is where `can_use_yuv` is answered — so the same file can yield an NV12 surface for the display and a full-chroma RGB surface for edit and save. `load_heif` instead decodes eagerly into `file_load_result::s`, and `to_surface` returns that surface verbatim, so `can_use_yuv` never reaches the HEIF decoder and could not be honoured safely if it did: one eagerly decoded surface cannot be YUV for the display and RGB for the editor at the same time. The prize is real — HEVC is natively 4:2:0, so the current path pays a CPU YUV→RGB conversion plus a whole-surface `swap_rb` to produce 4 bytes per pixel where NV12 would be 1.5, and `_pixel_shader_yuv_bicubic` already exists to upsample the chroma better than libheif does.
+
+`load_webp` is the worked example of the shape HEIF needs, and also of why HEIF cannot simply copy it. It gates on `can_use_yuv` plus lossy-VP8, no alpha, no animation and even dimensions, decodes with `WebPDecodeYUVInto`, interleaves the Cb/Cr planes into the NV12 chroma plane, and returns a surface the caller must not rescale on the CPU. Every one of those steps transfers. What does not transfer is the last line of `decode_webp_nv12`: it can hard-code `ui::color_space::rec601_limited` because VP8 defines it. HEIF cannot, because HEVC does not — the answer is in the NCLX matrix coefficients and full-range flag that the first paragraph says are currently discarded, and guessing BT.601 for a BT.709 phone photo is a visible hue shift across the whole image. **NCLX parsing is therefore a prerequisite for the HEIF YUV path, not a parallel task.**
+
+The other blocker is the seam itself. `ui::image_format` models only JPEG, PNG and WebP, which is exactly why those formats have somewhere to defer to; HEIF has no encoded-bytes form, so the work starts with either giving it one or threading `can_use_yuv` through `files::load` into `load_heif`. libheif also emits planar I420, so it needs the same interleave pass `decode_webp_nv12` already writes. 10-bit HEIF wants P010 rather than NV12, which ties this to the depth question above, and alpha, odd dimensions and monochrome all need the RGB fallback.
+
+One constraint carries over from the orientation fix. `irot`/`imir` are per-item properties that libheif applies during decode, so the surface's `orientation` and the swapped extent it implies must be established the same way on whichever decode path is taken; `has_orientation_transform` is the single answer for both the scan and the load, and a YUV path must not reintroduce a second one. NV12 also requires even dimensions, and unlike WebP — where the source extent is the final extent — the crop that enforces that has to happen in the *decoded* frame, after any transform has already swapped the axes.
 
 ## Deferred audio clock re-anchoring
 

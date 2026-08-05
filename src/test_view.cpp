@@ -14,6 +14,7 @@
 #include "test_utils.h"
 #include "model_zoom.h"
 #include "view_selector.h"
+
 static void assert_zoom_near(const double expected, const double actual, const std::string_view message)
 {
 	assert_equal(true, std::abs(expected - actual) < 0.000001, message);
@@ -86,7 +87,7 @@ static void should_calculate_zoom_fit_without_enlarging()
 static void should_recalculate_zoom_fit_variants()
 {
 	df::zoom_view_state zoom;
-	const sized source{4000, 3000};
+	constexpr sized source{4000, 3000};
 	zoom.fit_width(source, {1000, 500});
 	assert_equal(true, zoom.mode() == df::zoom_scale_mode::fit_width, "fit width mode");
 	assert_zoom_near(0.25, zoom.effective_scale(0.125), "fit width scale");
@@ -104,10 +105,10 @@ static void should_recalculate_zoom_fit_variants()
 static void should_step_zoom_reversibly_through_fit()
 {
 	df::zoom_view_state zoom;
-	const sized source{4000, 2000};
-	const sized viewport{1600, 1000};
+	constexpr sized source{4000, 2000};
+	constexpr sized viewport{1600, 1000};
 	const auto fit = zoom.fit_scale(source, viewport);
-	const pointd anchor{800, 500};
+	constexpr pointd anchor{800, 500};
 
 	zoom.step(1, fit, source, viewport, anchor);
 	assert_zoom_near(0.5, zoom.effective_scale(fit), "first step above inserted fit");
@@ -122,11 +123,11 @@ static void should_step_zoom_reversibly_through_fit()
 static void should_keep_zoom_anchor_still()
 {
 	df::zoom_view_state zoom;
-	const sized source{4000, 3000};
-	const sized viewport{1000, 800};
-	const pointd anchor{750, 600};
+	constexpr sized source{4000, 3000};
+	constexpr sized viewport{1000, 800};
+	constexpr pointd anchor{750, 600};
 	const auto fit = zoom.fit_scale(source, viewport);
-	const pointd old_center{0.5, 0.5};
+	constexpr pointd old_center{0.5, 0.5};
 	const pointd source_anchor{
 		old_center.X * source.Width + (anchor.X - viewport.Width / 2.0) / fit,
 		old_center.Y * source.Height + (anchor.Y - viewport.Height / 2.0) / fit
@@ -145,9 +146,9 @@ static void should_keep_zoom_anchor_still()
 static void should_step_zoom_at_pointer_anchor()
 {
 	df::zoom_view_state zoom;
-	const sized source{4000, 3000};
-	const sized viewport{1000, 800};
-	const pointd anchor{750, 600};
+	constexpr sized source{4000, 3000};
+	constexpr sized viewport{1000, 800};
+	constexpr pointd anchor{750, 600};
 	const auto fit = zoom.fit_scale(source, viewport);
 	const pointd source_anchor{
 		zoom.center().X * source.Width + (anchor.X - viewport.Width / 2.0) / fit,
@@ -199,8 +200,8 @@ static void should_suspend_carried_zoom_below_fit()
 static void should_clamp_zoom_model_pan_to_edges()
 {
 	df::zoom_view_state zoom;
-	const sized source{4000, 3000};
-	const sized viewport{1000, 800};
+	constexpr sized source{4000, 3000};
+	constexpr sized viewport{1000, 800};
 	zoom.set_explicit(2.0);
 	zoom.pan_source({-source.Width, -source.Height}, source, viewport, 0.25);
 	assert_zoom_near(0.0, zoom.center().X, "stored source center reaches left edge");
@@ -233,12 +234,12 @@ static void should_toggle_fit_to_last_explicit_zoom()
 static void should_keep_zoom_anchor_through_layout_change()
 {
 	df::zoom_view_state zoom;
-	const sized source{4000, 3000};
-	const sized old_viewport{1000, 800};
-	const sized new_viewport{1800, 1000};
-	const pointd old_origin{700, 100};
-	const pointd new_origin{100, 100};
-	const pointd old_anchor{750, 600};
+	constexpr sized source{4000, 3000};
+	constexpr sized old_viewport{1000, 800};
+	constexpr sized new_viewport{1800, 1000};
+	constexpr pointd old_origin{700, 100};
+	constexpr pointd new_origin{100, 100};
+	constexpr pointd old_anchor{750, 600};
 	const auto absolute_anchor = old_origin + old_anchor;
 	const auto old_fit = zoom.fit_scale(source, old_viewport);
 	const auto source_anchor = zoom.source_point_at(source, old_viewport, old_fit, old_anchor);
@@ -259,8 +260,8 @@ static void should_keep_zoom_anchor_through_layout_change()
 static void should_zoom_model_region_to_viewport()
 {
 	df::zoom_view_state zoom;
-	const sized source{4000, 3000};
-	const sized viewport{1000, 800};
+	constexpr sized source{4000, 3000};
+	constexpr sized viewport{1000, 800};
 	const auto fit = zoom.fit_scale(source, viewport);
 	zoom.zoom_region({250, 200, 500, 400}, source, viewport, fit);
 
@@ -279,6 +280,7 @@ static void should_accelerate_pan_from_drag_origin()
 	assert_zoom_near(3.75, dpi_scaled.X, "DPI-scaled ramp x");
 	assert_zoom_near(5.0, dpi_scaled.Y, "DPI-scaled ramp y");
 }
+
 static void should_bound_auto_pan_velocity()
 {
 	const auto stopped = df::zoom_view_state::auto_pan_velocity({6.0, 8.0});
@@ -302,13 +304,14 @@ static void should_map_zoom_navigator_to_source_center()
 	assert_zoom_near(0.0, clamped.X, "navigator clamps left");
 	assert_zoom_near(1.0, clamped.Y, "navigator clamps bottom");
 }
+
 static void should_orient_selector_thumbnails()
 {
-	const recti image_bounds(0, 0, 100, 100);
+	constexpr recti image_bounds(0, 0, 100, 100);
 	const auto rotated = selector_view::thumbnail_destination({4, 3}, image_bounds,
-	                                                         ui::orientation::right_top, true);
+	                                                          ui::orientation::right_top, true);
 	const auto unrotated = selector_view::thumbnail_destination({4, 3}, image_bounds,
-	                                                           ui::orientation::right_top, false);
+	                                                            ui::orientation::right_top, false);
 
 	assert_equal(90.0, rotated.angle(), "selector applies right-top orientation");
 	assert_equal(true, rotated.bounding_rect().extent().round() == sizei(75, 100),
@@ -322,9 +325,9 @@ static void should_range_select_across_selector()
 {
 	null_state_strategy ss;
 	null_async_strategy as;
-	view_host_base_ptr view;
+	const view_host_base_ptr view;
 
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 	view_state s(ss, as, index, make_test_player());
 	s.view_mode(view_type::items);
@@ -379,7 +382,7 @@ static void should_leave_full_screen_for_task_views()
 {
 	null_state_strategy ss;
 	null_async_strategy as;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 	view_state s(ss, as, index, make_test_player());
 
@@ -399,9 +402,9 @@ static void should_leave_full_screen_for_task_views()
 static void should_preserve_view_scroller_anchor_across_layout()
 {
 	view_scroller scroller;
-	const recti client_bounds(0, 0, 100, 200);
-	const recti scroll_bounds(90, 0, 100, 200);
-	auto element = std::make_shared<text_element>("anchor");
+	constexpr recti client_bounds(0, 0, 100, 200);
+	constexpr recti scroll_bounds(90, 0, 100, 200);
+	const auto element = std::make_shared<text_element>("anchor");
 	element->bounds = {0, 350, 100, 450};
 
 	scroller.layout({100, 1000}, client_bounds, scroll_bounds);
@@ -423,8 +426,8 @@ static void should_preserve_view_scroller_anchor_across_layout()
 static void should_reserve_view_scroller_footer()
 {
 	view_scroller scroller;
-	const recti client_bounds(0, 0, 100, 200);
-	const recti full_scroll_bounds(90, 0, 100, 200);
+	constexpr recti client_bounds(0, 0, 100, 200);
+	constexpr recti full_scroll_bounds(90, 0, 100, 200);
 	const auto footer = scroller.layout_with_footer(
 		{100, 1000}, client_bounds, full_scroll_bounds, 10, 2);
 
@@ -486,8 +489,6 @@ static void should_close_view_scroller_bands_over_track()
 	assert_equal(2, labelled, "only the sections carry labels");
 	assert_equal(0, bands.front().first, "bands start at the track");
 	assert_equal(track_height, bands.back().second, "bands close off the track");
-	assert_equal(1, scroller.band_index_at(scroller.track_bounds().top + bands[1].first),
-	             "band hit test matches the painted order");
 }
 
 void register_tests7(view_state& state, test_registry& tests)

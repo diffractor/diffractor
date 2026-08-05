@@ -20,6 +20,11 @@
 df_assert_movable(df::search_t);
 df_assert_movable(df::search_term);
 
+// A search result is returned by value for every candidate an ordinary search examines, and one is
+// stored per listed item. The related distance sits in padding the type already had, so relations
+// cost that path nothing; this fails if a later field pushes the type into another word.
+static_assert(sizeof(df::search_result) <= sizeof(void*) * 2 + 8);
+
 constexpr static auto sv_duplicates = "duplicates";
 constexpr static auto sv_remote = "remote";
 
@@ -130,7 +135,7 @@ namespace
 
 	bool is_distance_token(const std::string_view token)
 	{
-		auto i = size_t{ 0 };
+		auto i = size_t{0};
 		while (i < token.size() && (std::isdigit(static_cast<unsigned char>(token[i])) || token[i] == '.')) ++i;
 		if (i == 0 || i == token.size()) return false;
 
@@ -247,7 +252,9 @@ static std::string term_quote(const std::string_view term_text)
 			{
 				for (auto i = 0u; i < colon_pos; i++)
 				{
-					if (!std::iswdigit(term_text[i]))
+					const auto c = term_text[i];
+
+					if (c < '0' || c > '9')
 					{
 						// if not all digits, like a time ie 12:00
 						has_special_char = true;
@@ -377,14 +384,6 @@ static std::string format_term_value(const df::search_term& term)
 	{
 		return str::to_string(static_cast<uint32_t>(n));
 	}
-
-	/*else if (_t == Property::FocalLength35mmEquivalent || t == Property::FocalLength)
-	{
-		double fl = Find(Property::FocalLength, v) ? v.d : 0;
-		int fl35 = Find(Property::FocalLength35mmEquivalent, v) ? v.n : 0;
-
-		return Property::FormatFocalLength(fl, fl35, sz, len);
-	}*/
 
 	df::assert_true(false);
 	return {};
@@ -804,19 +803,6 @@ void df::search_t::next_date(const bool forward)
 		clear_date_properties();
 		month(parts.month, parts.target);
 	}
-	/*else
-	{
-		for (const auto& v : _terms)
-		{
-			if (v.is_date())
-			{
-				auto d = date_t::from_time_stamp(v.val.n);
-				d.shift_days(forward ? 1 : -1);
-				v.val.n = d.to_time_stamp();
-				break;
-			}
-		}
-	}*/
 }
 
 search_presence_mask df::search_t::calc_required_presence() const
@@ -934,7 +920,7 @@ namespace
 		result.name.assign(str::trim(text));
 		if (result.name.empty()) return result;
 
-		auto tail = std::string_view(result.name);
+		const auto tail = std::string_view(result.name);
 		auto unit_start = tail.size();
 		while (unit_start > 0 && std::isalpha(static_cast<unsigned char>(tail[unit_start - 1]))) --unit_start;
 		if (unit_start == tail.size()) return result;
@@ -966,9 +952,11 @@ namespace
 
 		result.km = value * scale;
 		result.name.erase(number_start);
-		while (!result.name.empty() && std::isspace(static_cast<unsigned char>(result.name.back()))) result.name.pop_back();
+		while (!result.name.empty() && std::isspace(static_cast<unsigned char>(result.name.back()))) result.name.
+			pop_back();
 		if (!result.name.empty() && result.name.back() == ',') result.name.pop_back();
-		while (!result.name.empty() && std::isspace(static_cast<unsigned char>(result.name.back()))) result.name.pop_back();
+		while (!result.name.empty() && std::isspace(static_cast<unsigned char>(result.name.back()))) result.name.
+			pop_back();
 		return result;
 	}
 
@@ -1457,7 +1445,7 @@ void df::search_t::parse_part(const search_part& part)
 				const auto y = sep == std::string_view::npos
 					               ? int16_t{0}
 					               : static_cast<int16_t>(str::to_int(part.term.substr(sep + 1)));
-				result = search_term(type, df::xy16::make(x, y), part.modifier);
+				result = search_term(type, xy16::make(x, y), part.modifier);
 			}
 			break;
 		case prop::data_type::uint32:
@@ -1488,6 +1476,13 @@ void df::related_info::load(const item_element_ptr& i)
 	{
 		gps = md->coordinate;
 		metadata_created = md->created();
+		album = md->album;
+		album_artist = md->album_artist;
+		show = md->show;
+		season = md->season;
+		episode = md->episode;
+		disk = md->disk;
+		track = md->track;
 	}
 
 	is_loaded = true;
@@ -1495,6 +1490,13 @@ void df::related_info::load(const item_element_ptr& i)
 
 bool df::search_t::needs_metadata() const
 {
+	// Every relation but the duplicate rules is read from indexed metadata, so a related search over
+	// a folder selector has to have that metadata scanned before it can answer.
+	if (has_related())
+	{
+		return true;
+	}
+
 	for (const auto& t : _terms)
 	{
 		if (t.needs_metadata())
@@ -1554,9 +1556,9 @@ df::search_matcher::attributed_location df::search_matcher::attributed(const gps
 	result.country = str::is_empty(country.name) ? resolved.place.country : country.name;
 	result.attribution = resolved.attribution;
 	result.reach_km = resolved.attribution == location_attribution::at ||
-		resolved.attribution == location_attribution::near
-			                 ? location_attribution_radius_km(resolved.place.population)
-			                 : 0.0;
+	                  resolved.attribution == location_attribution::near
+		                  ? location_attribution_radius_km(resolved.place.population)
+		                  : 0.0;
 
 	if (_locations->is_index_loaded())
 	{
@@ -1758,16 +1760,6 @@ static compare_result compare_term(const df::search_term& term, const df::xy16 r
 	return {true, res};
 }
 
-//static compare_result compare_term(const df::search_term& term, const df::file_size& r)
-//{
-//	const auto ll = term.int_val;
-//	const auto rr = r.to_int64();
-//
-//	const auto res = (ll < rr) ? -1 : (ll > rr) ? 1 : 0;
-//	return { true, res };
-//}
-
-
 inline bool contains_term(const std::string_view text, const df::search_term& term)
 {
 	std::string tb;
@@ -1802,16 +1794,12 @@ df::search_result compare_text(const df::search_term& term, const df::index_file
 
 	if (contains_term(file.name, term)) return {df::search_result_type::match_prop, prop::file_name};
 	if (same_term(prop::format_size(file.size), term)) return {df::search_result_type::match_prop, prop::file_size};
-	//if (str::contains(prop::format_date(file.file_modified, false), text)) return true;
-	//if (str::contains(prop::format_date(file.file_created, false), text)) return true;
 
 	const auto md = file.metadata.load();
 
 	if (md)
 	{
 		if (contains_term(md->album, term)) return {df::search_result_type::match_prop, prop::album};
-		//if (contains_term(md->album_artist, text)) return {df::search_result_type::match_prop, prop::album_artist};
-		//if (contains_term(md->artist, text)) return {df::search_result_type::match_prop, prop::artist};
 		if (contains_term(md->audio_codec, term)) return {df::search_result_type::match_prop, prop::audio_codec};
 		if (contains_term(md->bitrate, term)) return {df::search_result_type::match_prop, prop::bitrate};
 		if (contains_term(md->camera_manufacturer, term))
@@ -1858,7 +1846,6 @@ df::search_result compare_text(const df::search_term& term, const df::index_file
 		if (contains_term(md->label, term)) return {df::search_result_type::match_prop, prop::label};
 		if (contains_term(md->video_codec, term)) return {df::search_result_type::match_prop, prop::video_codec};
 		if (contains_term(md->raw_file_name, term)) return {df::search_result_type::match_prop, prop::raw_file_name};
-		//if (contains_term(md->tags, text)) return {df::search_result_type::match_prop, prop::tag, str::cache(text)};
 
 		if (same_term(prop::format_dimensions(md->dimensions()), term))
 			return {
@@ -1881,20 +1868,14 @@ df::search_result compare_text(const df::search_term& term, const df::index_file
 				df::search_result_type::match_prop, prop::focal_length
 			};
 
-		/*if (str::contains_term(prop::format_date(md->created_digitized, false), text)) return true;
-		if (str::contains_term(prop::format_date(md->created_exif, false), text)) return true;
-		if (str::contains_term(prop::format_date(md->created_utc, false), text)) return true;*/
 		if (same_term(prop::format_duration(md->duration), term))
 			return {
 				df::search_result_type::match_prop, prop::duration
 			};
-		//if (str::contains_term(str::to_string(md->height), text)) return df::search_result::match_x;
-		//if (str::contains_term(str::to_string(md->width), text)) return df::search_result::match_x;
 		if (same_term(prop::format_iso(md->iso_speed), term))
 			return {
 				df::search_result_type::match_prop, prop::iso_speed
 			};
-		//if (same_term(prop::format_rating(md->rating), text)) return { df::search_result_type::match_prop, prop::rating };
 		if (same_term(prop::format_audio_channels(md->audio_channels), term))
 			return {
 				df::search_result_type::match_prop, prop::audio_channels
@@ -1907,14 +1888,6 @@ df::search_result compare_text(const df::search_term& term, const df::index_file
 			return
 				{df::search_result_type::match_prop, prop::audio_sample_type};
 		if (same_term(str::to_string(md->year), term)) return {df::search_result_type::match_prop, prop::year};
-
-		//if (str::contains_term(prop::format_season(md->season), text)) return true;
-		//if (str::contains_term(prop::format_orientation(md->orientation), text)) return true;
-		//if (str::contains_term(prop::format_disk(md->disk), text)) return true;
-		//if (str::contains_term(prop::format_episode(md->episode), text)) return true;
-		//if (str::contains_term(prop::format_track(md->track), text)) return true;
-
-		//if (str::contains_term(prop::format_gps(md->coordinate), text)) return true;
 
 		compare_result comp_result;
 		prop::key_ref key = prop::null;
@@ -2599,27 +2572,109 @@ df::search_result df::search_matcher::match_term(const str::cached folder_name, 
 	return result;
 }
 
-df::search_result df::search_matcher::match_item(const file_path path, const index_file_item& file) const
+// The axes are tried in priority order, so an item that qualifies several ways is reported once
+// under its strongest relation and appears in exactly one group.
+std::optional<df::related_match> df::search_matcher::evaluate_related(const file_path path,
+                                                                     const index_file_item& file) const
 {
-	search_result result;
+	const auto& related = _search.related();
 
-	if (_search.has_related())
+	// The item the search started at is part of its own answer, and must never displace a relation:
+	// it sorts ahead of every match, so a full axis can never be the reason it disappears.
+	if (path == related.path)
 	{
-		const auto& related = _search.related();
+		return related_match{related_axis::duplicate, -1};
+	}
 
-		const auto same_signature = path == related.path ||
-			is_dup_match(related, file);
+	const auto dup_rank = dup_match_rank(related, file);
 
-		if (same_signature)
+	if (dup_rank >= 0)
+	{
+		return related_match{related_axis::duplicate, dup_rank};
+	}
+
+	const auto md = file.metadata.load();
+
+	if (!md)
+	{
+		return {};
+	}
+
+	if (!str::is_empty(related.album) && icmp(md->album, related.album) == 0)
+	{
+		// Two artists can both have a "Greatest Hits", so a named artist on both sides has to agree.
+		const auto artist_agrees = str::is_empty(related.album_artist) || str::is_empty(md->album_artist) ||
+			icmp(md->album_artist, related.album_artist) == 0;
+
+		if (artist_agrees)
 		{
-			result.type = search_result_type::similar;
-		}
-		else
-		{
-			return result;
+			const auto ordinal = static_cast<int64_t>(md->disk.x) * 1000 + md->track.x;
+			return related_match{related_axis::album, std::abs(ordinal - related.track_ordinal())};
 		}
 	}
-	else if (_search.has_selector() && _search._terms.empty())
+
+	if (!str::is_empty(related.show) && icmp(md->show, related.show) == 0)
+	{
+		const auto ordinal = static_cast<int64_t>(md->season) * 1000 + md->episode.x;
+		return related_match{related_axis::series, std::abs(ordinal - related.episode_ordinal())};
+	}
+
+	// Capture time, not file time: a collection copied in one pass shares a file time, which would
+	// make every item in it equally and meaninglessly close.
+	const auto created = md->created();
+
+	if (related.metadata_created.is_valid() && created.is_valid())
+	{
+		const auto delta = std::abs(created - related.metadata_created) /
+			static_cast<int64_t>(date_t::intervals_per_second);
+
+		if (delta <= related_time_window_seconds)
+		{
+			return related_match{related_axis::time, delta};
+		}
+	}
+
+	if (related.gps.is_valid() && md->coordinate.is_valid())
+	{
+		const auto km = related.gps.distance_in_kilometers(md->coordinate);
+
+		if (km <= related_location_window_km)
+		{
+			return related_match{related_axis::location, static_cast<int64_t>(km * 1000.0)};
+		}
+	}
+
+	return {};
+}
+
+df::search_result df::search_matcher::match_item(const file_path path, const index_file_item& file) const
+{
+	if (has_related)
+	{
+		const auto related = evaluate_related(path, file);
+
+		if (!related)
+		{
+			return {};
+		}
+
+		// Any other terms still narrow a related search, and the relation has to survive them:
+		// match_all_terms answers with its own result type and would otherwise lose the axis.
+		if (!_search._terms.empty() &&
+			(!can_contain(file.search_presence) || !match_all_terms(path.folder().text(), file).is_match()))
+		{
+			return {};
+		}
+
+		search_result result;
+		result.type = related_result_type(related->axis);
+		result.distance = static_cast<int32_t>(related->distance);
+		return result;
+	}
+
+	search_result result;
+
+	if (_search.has_selector() && _search._terms.empty())
 	{
 		result.type = search_result_type::match_folder;
 	}
@@ -2734,7 +2789,7 @@ df::search_result df::search_matcher::match_all_terms(const str::cached folder_n
 
 df::search_result df::search_matcher::match_folder(const str::cached folder_name, const str::cached name) const
 {
-	if (_search.has_related())
+	if (has_related)
 	{
 		return {};
 	}

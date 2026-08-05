@@ -339,6 +339,197 @@ def analyse_duplicates(files: list[SourceFile], min_lines: int, min_chars: int):
 
 
 # --------------------------------------------------------------------------
+# Pass 3 - commented-out code
+# --------------------------------------------------------------------------
+
+DIVIDER_RE = re.compile(r"^[-=/*_#!<>\s]+$")
+STRONG_END_RE = re.compile(r"[;{}]\s*$")
+CODE_TOKEN_RE = re.compile(r"->|::|\+\+|--|==|!=|&&|\|\||[;{}=<>()\[\]]")
+KEYWORD_RE = re.compile(
+    r"\b(if|else|for|while|switch|case|return|break|continue|const|auto|void|int|bool|float|"
+    r"double|char|unsigned|static|struct|class|template|typename|namespace|new|delete|nullptr|"
+    r"sizeof|std|df|ui|str|assert_true|override|noexcept)\b"
+)
+PREPROC_RE = re.compile(r"^#\s*(include|define|undef|if|ifdef|ifndef|else|elif|endif|pragma)\b")
+DISABLED_BLOCK_RE = re.compile(r"^[ \t]*#[ \t]*if[ \t]+0\b", re.MULTILINE)
+
+# Words that mean the line is a sentence, not source.
+PROSE_WORDS = {
+    "the", "this", "that", "these", "those", "is", "are", "was", "were", "be", "been", "being",
+    "will", "would", "should", "could", "can", "may", "might", "must", "does", "did", "has",
+    "have", "had", "its", "we", "our", "you", "your", "they", "them", "their", "there", "here",
+    "then", "because", "which", "what", "why", "how", "not", "only", "also", "just", "with",
+    "from", "into", "onto", "over", "under", "after", "before", "during", "until", "always",
+    "never", "every", "each", "both", "either", "neither", "rather", "instead", "but", "yet",
+    "however", "therefore", "thus", "hence", "see", "note", "todo", "fixme", "hack", "purpose",
+    "issue", "does", "doesn", "don", "isn", "aren", "wasn", "keep", "keeps", "kept", "still",
+    "a", "an", "of", "about", "around", "between", "through", "without", "within", "against",
+    "slight", "safety", "invalid", "rest", "same", "other", "another", "such", "way", "whether",
+}
+
+
+def looks_like_code(line: str) -> tuple[bool, bool]:
+    """Returns (looks like source, ends in a statement terminator)."""
+    s = line.strip().lstrip("*").strip()
+    if not s or DIVIDER_RE.match(s):
+        return False, False
+    if PREPROC_RE.match(s):
+        return True, True
+    if not CODE_TOKEN_RE.search(s):
+        return False, False
+    strong = bool(STRONG_END_RE.search(s))
+    words = re.findall(r"[A-Za-z_][A-Za-z_]*", s)
+    prose = sum(1 for w in words if w.lower() in PROSE_WORDS)
+    if prose >= 3 or (prose >= 2 and not strong):
+        return False, False
+    if strong or KEYWORD_RE.search(s) or re.search(r"[\w\]\)]\s*\([^()]*\)", s):
+        return True, strong
+    return False, False
+
+
+def comment_blocks(f: SourceFile) -> list[tuple[int, list[str], bool]]:
+    """Runs of consecutive whole-line comments, as (first line, bodies, all `//`)."""
+    entries: list[tuple[int, str, bool]] = []
+    text = f.text
+    i, n = 0, len(text)
+    while i < n:
+        # f.code has comments blanked, so a difference marks a comment body
+        if text[i] == "/" and i + 1 < n and text[i + 1] in "/*" and f.code[i] == " ":
+            line_start = text.rfind("\n", 0, i) + 1
+            own_line = not text[line_start:i].strip()
+            if text[i + 1] == "/":
+                end = text.find("\n", i)
+                end = n if end < 0 else end
+                if own_line:
+                    entries.append((f.line(i), text[i + 2:end], True))
+                i = end
+            else:
+                end = text.find("*/", i + 2)
+                end = n if end < 0 else end + 2
+                if own_line:
+                    body = text[i + 2:end - 2]
+                    for offset, part in enumerate(body.split("\n")):
+                        entries.append((f.line(i) + offset, part, False))
+                i = end
+        else:
+            i += 1
+
+    blocks: list[tuple[int, list[str], bool]] = []
+    for lineno, body, slashes in entries:
+        if blocks and blocks[-1][0] + len(blocks[-1][1]) == lineno:
+            blocks[-1][1].append(body)
+            if not slashes:
+                blocks[-1] = (blocks[-1][0], blocks[-1][1], False)
+        else:
+            blocks.append((lineno, [body], slashes))
+    return blocks
+
+
+def line_kind(body: str) -> str:
+    s = body.strip().lstrip("*").strip()
+    if not s or DIVIDER_RE.match(s):
+        return "blank"
+    if looks_like_code(body)[0]:
+        return "code"
+    words = re.findall(r"[A-Za-z_][A-Za-z_]*", s)
+    if sum(1 for w in words if w.lower() in PROSE_WORDS) >= 2:
+        return "prose"
+    if len(words) >= 4 and not CODE_TOKEN_RE.search(s):
+        return "prose"
+    return "neutral"
+
+
+def deletable_span(bodies: list[str]) -> tuple[int, int]:
+    """The run minus any leading and trailing prose - a stray `else` or `case x:` in the
+    middle of commented-out code belongs with it."""
+    kinds = [line_kind(b) for b in bodies]
+    first = 0
+    while first < len(kinds) and kinds[first] in ("prose", "blank"):
+        first += 1
+    last = len(kinds)
+    while last > first and kinds[last - 1] in ("prose", "blank"):
+        last -= 1
+    return first, last
+
+
+def analyse_commented_code(files: list[SourceFile]):
+    """Comment runs that are mostly source, plus any `#if 0` regions."""
+    found = []
+    for f in files:
+        for start, bodies, slashes in comment_blocks(f):
+            flags = [looks_like_code(b) for b in bodies]
+            meaningful = [b for b in bodies if b.strip().lstrip("*").strip()]
+            code_lines = sum(1 for c, _ in flags if c)
+            if not meaningful or not any(s for _, s in flags):
+                continue
+            if code_lines / len(meaningful) < 0.6:
+                continue
+            found.append((f, start, len(bodies), code_lines, bodies, "comment" if slashes else "/* */"))
+
+        for m in DISABLED_BLOCK_RE.finditer(f.code):
+            depth = 0
+            end_line = f.line(m.start())
+            for line_no, raw in enumerate(f.text.splitlines()[end_line - 1:], start=end_line):
+                stripped = raw.strip()
+                if re.match(r"#\s*if", stripped):
+                    depth += 1
+                elif re.match(r"#\s*endif", stripped):
+                    depth -= 1
+                    if depth == 0:
+                        end_line = line_no
+                        break
+            span = end_line - f.line(m.start()) + 1
+            found.append((f, f.line(m.start()), span, span, [], "#if 0"))
+
+    found.sort(key=lambda x: -x[2])
+    return found
+
+
+def delete_commented(found) -> int:
+    """Removes the code segments of `//`-only comment runs, leaving prose in place."""
+    per_file: dict[SourceFile, list[tuple[int, int]]] = defaultdict(list)
+    removed = 0
+
+    for f, start, span, _code_lines, bodies, kind in found:
+        if kind == "comment":
+            first, last = deletable_span(bodies)
+            if first >= last:
+                continue
+        elif kind == "/* */":
+            # a block comment can only go as a whole, so require it to be all code
+            if any(line_kind(b) == "prose" for b in bodies):
+                print(f"  skipped (prose inside): {f.rel.as_posix()}:{start}")
+                continue
+            first, last = 0, span
+        else:
+            continue
+
+        begin = f.starts[start - 1 + first]
+        end_line = start - 1 + last
+        end = f.starts[end_line] if end_line < len(f.starts) else len(f.text)
+        per_file[f].append((begin, end))
+        removed += last - first
+
+    for f, spans in per_file.items():
+        text = f.text
+        for begin, end in sorted(spans, reverse=True):
+            head, tail = text[:begin], text[end:]
+            # a comment between two blank lines would otherwise leave a double blank
+            if head.rstrip(" \t").endswith("\n") and not tail.split("\n", 1)[0].strip():
+                while tail[:1] in (" ", "\t"):
+                    tail = tail[1:]
+                if tail.startswith("\r\n"):
+                    tail = tail[2:]
+                elif tail.startswith("\n"):
+                    tail = tail[1:]
+            text = head + tail
+        f.path.write_text(text, encoding="utf-8", newline="")
+        print(f"  {f.rel.as_posix()}: {len(spans)} block(s)")
+
+    return removed
+
+
+# --------------------------------------------------------------------------
 # Verification - let the compiler decide
 # --------------------------------------------------------------------------
 
@@ -611,6 +802,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--delete", action="store_true",
                         help="delete the never-referenced definitions (and any "
                              "declaration left behind) from the sources")
+    parser.add_argument("--delete-comments", action="store_true",
+                        help="delete commented-out code, leaving prose comments in place")
     parser.add_argument("--only", default="",
                         help="comma-separated names or a path regex to verify")
     parser.add_argument("--build-command", default=DEFAULT_BUILD,
@@ -647,6 +840,8 @@ def main(argv: list[str]) -> int:
 
     clones = analyse_duplicates(files, args.min_lines, args.min_chars)
     duplicate_lines = sum(length * (len(occ) - 1) for length, occ, _ in clones)
+    commented = analyse_commented_code(files)
+    commented_lines = sum(c[2] for c in commented)
 
     print(f"scanned {len(files)} files, {total_lines} lines")
     print(f"function definitions found: {len(candidates)}")
@@ -658,6 +853,7 @@ def main(argv: list[str]) -> int:
     print(f"  reached only from tests:    {len(test_only)}")
     print(f"duplicate blocks (>= {args.min_lines} lines): {len(clones)}"
           f"  ({duplicate_lines} redundant lines)")
+    print(f"commented-out code blocks: {len(commented)}  ({commented_lines} lines)")
 
     if args.verify:
         subset = unused
@@ -670,6 +866,18 @@ def main(argv: list[str]) -> int:
             print("nothing to verify")
             return 0
         verify(subset, args.build_command, args.rounds)
+        return 0
+
+    if args.delete_comments:
+        subset = found = commented
+        if args.only:
+            subset = [c for c in commented if re.search(args.only, c[0].rel.as_posix())]
+        if not subset:
+            print("nothing to delete")
+            return 0
+        print(f"deleting commented-out code from {len(subset)} block(s) ...")
+        print(f"removed {delete_commented(subset)} lines")
+        print("build and run the tests before committing")
         return 0
 
     if args.delete:
@@ -752,6 +960,16 @@ def main(argv: list[str]) -> int:
                 out.write("```\n\n")
             if len(clones) > args.top:
                 out.write(f"_{len(clones) - args.top} smaller blocks omitted._\n")
+
+            out.write(f"\n## Commented-out code ({len(commented)}, {commented_lines} lines)\n\n")
+            for f, start, span, code_lines, bodies, kind in commented:
+                out.write(f"### {f.rel.as_posix()}:{start}-{start + span - 1} "
+                          f"({span} lines, {kind})\n\n```\n")
+                for body in bodies[:20]:
+                    out.write(body.rstrip() + "\n")
+                if len(bodies) > 20:
+                    out.write(f"... ({len(bodies) - 20} more lines)\n")
+                out.write("```\n\n")
         print(f"report: {report.as_posix()}")
 
     return 0

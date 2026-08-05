@@ -23,12 +23,6 @@ class sync_view final :
 	std::string _title;
 	std::string _status;
 	sync_analysis_result _analysis;
-	df::index_roots _analysis_source;
-	df::folder_path _analysis_remote;
-	bool _analysis_local_remote = false;
-	bool _analysis_remote_local = false;
-	bool _analysis_delete_local = false;
-	bool _analysis_delete_remote = false;
 	bool _analysis_valid = false;
 
 	void invalidate_analysis();
@@ -56,6 +50,10 @@ public:
 	void analyze();
 	void refresh() override;
 	void reload() override;
+
+	// Analyze needs both sides of the comparison. Without them it can only repeat the failure the
+	// dimmed button already states.
+	bool can_analyze() const;
 
 	bool can_run() const { return _analysis_valid && count_sync_actions(_analysis) > 0; }
 
@@ -88,7 +86,5 @@ public:
 		return _title;
 	}
 
-	void update_rows(const sync_analysis_result& analysis_result, const df::index_roots& source,
-	                 df::folder_path remote, bool local_remote, bool remote_local,
-	                 bool delete_local, bool delete_remote);
+	void update_rows(const sync_analysis_result& analysis_result);
 };

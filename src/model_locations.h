@@ -225,8 +225,6 @@ class location_cache final : public df::no_copy
 			{
 				*p_out++ = 0;
 			}
-
-			//df::assert_true(text[0] != 0);
 		}
 
 		bool is_possible_match(const ngram_t& other) const
@@ -347,11 +345,12 @@ public:
 	// optionally qualified by region or country, largest population wins.
 	location_t find_by_name(std::string_view query) const;
 	location_t find_largest(double min_latitude, double min_longitude,
-	                         double max_latitude, double max_longitude) const;
+	                        double max_latitude, double max_longitude) const;
 
 	// A map cluster needs a recognizable landmark rather than the nearest small feature.
 	// Returns the highest-population place whose normal `At` radius contains the coordinate.
 	location_t find_largest_attributed(double x, double y) const;
+
 	location_t find_largest_attributed(const gps_coordinate coord) const
 	{
 		return find_largest_attributed(coord.latitude(), coord.longitude());
@@ -362,6 +361,7 @@ public:
 	// country is canonical (English) for the same reason find_country's is: it doubles as a
 	// search term, while located_place::place carries the localized display names.
 	located_place find_attributed(double x, double y, country_loc* country = nullptr) const;
+
 	located_place find_attributed(const gps_coordinate coord, country_loc* country = nullptr) const
 	{
 		return find_attributed(coord.latitude(), coord.longitude(), country);

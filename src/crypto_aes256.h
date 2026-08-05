@@ -28,6 +28,7 @@ namespace crypto
 		static size_t decrypt(const byte_array& key, const byte_array& encrypted, byte_array& plain);
 		static size_t decrypt(const byte_array& key, df::cspan encrypted, byte_array& plain);
 
+		// Zero from any encrypt entry point means the RNG failed and nothing was encrypted.
 		size_t encrypt_start(size_t plain_length, byte_array& encrypted);
 		size_t encrypt_continue(const byte_array& plain, byte_array& encrypted);
 		size_t encrypt_continue(df::cspan plain, byte_array& encrypted);

@@ -69,10 +69,12 @@ public:
 		_dragging = false;
 	}
 
-	void escape() override
+	bool escape() override
 	{
+		if (!_tracking) return false;
 		_tracking = false;
 		_dragging = false;
+		return true;
 	}
 };
 
@@ -115,9 +117,11 @@ public:
 		}
 	}
 
-	void escape() override
+	bool escape() override
 	{
+		if (!_tracking) return false;
 		_tracking = false;
+		return true;
 	}
 };
 
@@ -161,7 +165,7 @@ df::item_elements selector_view::selection_range(const df::item_element_ptr& ite
 }
 
 quadd selector_view::thumbnail_destination(sizei texture_dimensions, const recti image_bounds,
-	const ui::orientation orientation, const bool show_rotated)
+                                           const ui::orientation orientation, const bool show_rotated)
 {
 	if (show_rotated && flips_xy(orientation))
 	{
@@ -303,7 +307,9 @@ void selector_view::layout(ui::measure_context& mc, const sizei extent)
 		}
 
 		_content_width = std::max(0, x - _gap + outer_padding);
-		const auto required_height = _content_width > extent.cx ? std::max(df::round(10 * mc.scale_factor), mc.padding1) : 0;
+		const auto required_height = _content_width > extent.cx
+			                             ? std::max(df::round(10 * mc.scale_factor), mc.padding1)
+			                             : 0;
 		if (required_height == _scrollbar_height) break;
 		_scrollbar_height = required_height;
 	}
@@ -498,8 +504,10 @@ bool selector_view::can_scroll() const
 recti selector_view::scrollbar_bounds() const
 {
 	const auto padding = std::max(2, _scrollbar_height / 4);
-	return {padding, _extent.cy - _scrollbar_height + padding,
-	        _extent.cx - padding, _extent.cy - padding};
+	return {
+		padding, _extent.cy - _scrollbar_height + padding,
+		_extent.cx - padding, _extent.cy - padding
+	};
 }
 
 recti selector_view::scrollbar_thumb_bounds() const

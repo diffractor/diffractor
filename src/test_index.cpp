@@ -28,7 +28,7 @@ class flex_test_measure_context final : public ui::measure_context
 {
 public:
 	sizei measure_text(std::string_view text, ui::style::font_face font, ui::style::text_style style, int cx,
-	                  int cy = 0) override
+	                   int cy = 0) override
 	{
 		return {};
 	}
@@ -261,7 +261,8 @@ static void should_create_database_schema()
 	const std::string schema(reinterpret_cast<const char*>(resource.data()), resource.size());
 	if (sqlite3_exec(database.get(), schema.c_str(), nullptr, nullptr, nullptr) != SQLITE_OK)
 	{
-		throw test_assert_exception(std::format("Failed to execute database schema: {}", sqlite3_errmsg(database.get())));
+		throw test_assert_exception(
+			std::format("Failed to execute database schema: {}", sqlite3_errmsg(database.get())));
 	}
 
 	const auto query_text = [&database](const std::string_view sql)
@@ -273,7 +274,8 @@ static void should_create_database_schema()
 
 		if (prepare_result != SQLITE_OK || sqlite3_step(statement.get()) != SQLITE_ROW)
 		{
-			throw test_assert_exception(std::format("Failed schema query '{}': {}", sql, sqlite3_errmsg(database.get())));
+			throw test_assert_exception(
+				std::format("Failed schema query '{}': {}", sql, sqlite3_errmsg(database.get())));
 		}
 
 		const auto* text = sqlite3_column_text(statement.get(), 0);
@@ -284,7 +286,7 @@ static void should_create_database_schema()
 	assert_equal("1", query_text("PRAGMA synchronous"), "schema synchronous mode");
 	assert_equal("item_imports,item_properties,item_thumbnails,web_service_cache",
 	             query_text("SELECT group_concat(name, ',') FROM (SELECT name FROM sqlite_schema "
-	                        "WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name)"),
+		             "WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name)"),
 	             "schema tables");
 	assert_equal("folder,name,properties,hash,media_position,flag,crc,last_scanned,last_indexed",
 	             query_text("SELECT group_concat(name, ',') FROM pragma_table_info('item_properties')"),
@@ -300,19 +302,19 @@ static void should_create_database_schema()
 	             "item_imports columns");
 	assert_equal("folder,name",
 	             query_text("SELECT group_concat(name, ',') FROM "
-	                        "(SELECT name FROM pragma_table_info('item_properties') WHERE pk > 0 ORDER BY pk)"),
+		             "(SELECT name FROM pragma_table_info('item_properties') WHERE pk > 0 ORDER BY pk)"),
 	             "item_properties primary key");
 	assert_equal("folder,name",
 	             query_text("SELECT group_concat(name, ',') FROM "
-	                        "(SELECT name FROM pragma_table_info('item_thumbnails') WHERE pk > 0 ORDER BY pk)"),
+		             "(SELECT name FROM pragma_table_info('item_thumbnails') WHERE pk > 0 ORDER BY pk)"),
 	             "item_thumbnails primary key");
 	assert_equal("key",
 	             query_text("SELECT group_concat(name, ',') FROM "
-	                        "(SELECT name FROM pragma_table_info('web_service_cache') WHERE pk > 0 ORDER BY pk)"),
+		             "(SELECT name FROM pragma_table_info('web_service_cache') WHERE pk > 0 ORDER BY pk)"),
 	             "web_service_cache primary key");
 	assert_equal("name,modified,size",
 	             query_text("SELECT group_concat(name, ',') FROM "
-	                        "(SELECT name FROM pragma_table_info('item_imports') WHERE pk > 0 ORDER BY pk)"),
+		             "(SELECT name FROM pragma_table_info('item_imports') WHERE pk > 0 ORDER BY pk)"),
 	             "item_imports primary key");
 	assert_equal("ok", query_text("PRAGMA integrity_check"), "schema integrity");
 }
@@ -323,16 +325,16 @@ static void should_store_thumbnails()
 	const auto file_path = test_files_folder.combine_file("Test.jpg");
 
 	null_async_strategy as;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 
 	database db(index);
 	db.open(index_path.folder(), index_path.file_name_without_extension());
 
-	auto i = load_item(index, file_path, true);
+	const auto i = load_item(index, file_path, true);
 	db.perform_writes();
 
-	auto thumb = db.load_thumbnail(i->path());
+	const auto thumb = db.load_thumbnail(i->path());
 	assert_equal(i->thumbnail(), thumb.thumb, "local loaded thumb");
 }
 
@@ -342,16 +344,16 @@ static void should_store_cover_art()
 	const auto file_path = test_files_folder.combine_file("indy.mp4");
 
 	null_async_strategy as;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 
 	database db(index);
 	db.open(index_path.folder(), index_path.file_name_without_extension());
 
-	auto i = load_item(index, file_path, true);
+	const auto i = load_item(index, file_path, true);
 	db.perform_writes();
 
-	auto thumb = db.load_thumbnail(i->path());
+	const auto thumb = db.load_thumbnail(i->path());
 	assert_equal(i->cover_art(), thumb.cover_art, "local loaded cover art");
 }
 
@@ -479,7 +481,7 @@ static void should_replace_an_unreadable_database()
 	}
 
 	null_async_strategy as;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 
 	database db(index);
@@ -513,7 +515,7 @@ static void should_run_without_a_database()
 	const auto file_path = test_files_folder.combine_file("Test.jpg");
 
 	null_async_strategy as;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 
 	database db(index);
@@ -561,7 +563,7 @@ static void should_store_webservice_results()
 	const auto index_path = _temps.next_path();
 
 	null_async_strategy as;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 	database db(index);
 	db.open(index_path.folder(), index_path.file_name_without_extension());
@@ -579,7 +581,7 @@ static void should_bound_webservice_cache()
 	const auto index_path = _temps.next_path();
 
 	null_async_strategy as;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 	database db(index);
 	db.open(index_path.folder(), index_path.file_name_without_extension());
@@ -704,9 +706,9 @@ static void should_select_items()
 {
 	null_state_strategy ss;
 	null_async_strategy as;
-	view_host_base_ptr view;
+	const view_host_base_ptr view;
 
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 	view_state s(ss, as, index, make_test_player());
 	s.view_mode(view_type::items);
@@ -828,10 +830,10 @@ static void should_toggle_rating()
 
 	null_state_strategy ss;
 	null_async_strategy as;
-	view_host_base_ptr view;
-	auto results = std::make_shared<null_item_results_ui>();
+	const view_host_base_ptr view;
+	const auto results = std::make_shared<null_item_results_ui>();
 
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 	view_state s(ss, as, index, make_test_player());
 	s.view_mode(view_type::items);
@@ -891,9 +893,9 @@ static void should_enable_based_on_selection()
 {
 	null_state_strategy ss;
 	null_async_strategy as;
-	view_host_base_ptr view;
+	const view_host_base_ptr view;
 
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 	view_state s(ss, as, index, make_test_player());
 	s.view_mode(view_type::items);
@@ -1000,7 +1002,7 @@ static void should_reuse_persisted_hover_thumbnail_until_video_changes()
 	assert_equal(true, is_valid(loaded.i), "hover thumbnail test image");
 
 	null_async_strategy as;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 	database db(index);
 	db.open(index_path.folder(), index_path.file_name_without_extension());
@@ -1034,7 +1036,7 @@ static void should_reload_thumb_after_scan()
 	files ff;
 	const auto index_path = _temps.next_path();
 	null_async_strategy as;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 
 	database db(index);
@@ -1042,7 +1044,7 @@ static void should_reload_thumb_after_scan()
 	build_index(index, db);
 
 	auto path_test = df::file_path(test_files_folder, "Test.jpg");
-	auto path_sony = df::file_path(test_files_folder, "Sony.jpg");
+	const auto path_sony = df::file_path(test_files_folder, "Sony.jpg");
 
 	const auto test_item = load_item(index, path_test, false);
 	const auto sony_item = load_item(index, path_sony, false);
@@ -1053,8 +1055,8 @@ static void should_reload_thumb_after_scan()
 	df::item_set items;
 	items._items = {test_item, sony_item};
 
-	// Stage 1: a forced metadata refresh may persist a provisional embedded thumbnail, but it is not
-	// considered the final generated thumbnail and remains eligible for the visible-item upgrade.
+	// Stage 1: a metadata refresh persists no thumbnail at all, so the item is still waiting on the
+	// visible-item pass for one.
 	const auto metadata_refreshed_initially = index.scan_items(items, false, false, false, false, test_token, true);
 	db.perform_writes();
 	assert_equal(true, metadata_refreshed_initially, "forced metadata refresh should require regrouping after scan");
@@ -1071,7 +1073,7 @@ static void should_reload_thumb_after_scan()
 	assert_equal(true, sony_item->should_load_thumbnail(),
 	             "should_load_thumbnail for sony.jpg after db load_thumbnails");
 
-	// Stage 2: loading thumbnails from the full files replaces the provisional images and persists
+	// Stage 2: loading thumbnails from the full files is what generates and stores the images, with
 	// scan timestamps that are current relative to the source modification times.
 	const auto metadata_refreshed_for_thumbnails = index.scan_items(items, true, false, false, false, test_token);
 	db.perform_writes();
@@ -1084,7 +1086,7 @@ static void should_reload_thumb_after_scan()
 	             "should_load_thumbnail for sony.jpg after index load_thumbnails");
 
 	const auto reloaded_item = std::make_shared<df::item_element>(path_test,
-	                                                            make_index_file_info(test_item->file_modified()));
+	                                                              make_index_file_info(test_item->file_modified()));
 	df::item_set reloaded_items;
 	reloaded_item->add_to(reloaded_items);
 	reloaded_items.for_all([](const auto& item) { item->begin_db_thumbnail_query(); });
@@ -1129,7 +1131,7 @@ static void should_not_reread_after_metadata_write()
 	platform::copy_file(test_files_folder.combine_file("Test.jpg"), file_path, false, false);
 
 	null_async_strategy as;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 
 	const auto item = load_item(index, file_path, true);
@@ -1176,7 +1178,7 @@ static void should_count_overlapping_write_claims()
 	platform::copy_file(test_files_folder.combine_file("Test.jpg"), file_path, false, false);
 
 	null_async_strategy as;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 
 	const auto item = load_item(index, file_path, true);
@@ -1202,7 +1204,7 @@ static void should_count_overlapping_write_claims()
 static void should_rename()
 {
 	null_async_strategy as;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 
 	const df::file_path src_path(test_files_folder, "Test.jpg");
@@ -1211,7 +1213,7 @@ static void should_rename()
 
 	platform::copy_file(src_path, save_path_1, false, false);
 
-	auto test_item = load_item(index, save_path_1, false);
+	const auto test_item = load_item(index, save_path_1, false);
 
 	assert_equal(true, test_item->rename(index, save_path_2.file_name_without_extension()).success(), "can rename");
 	assert_equal(save_path_2.name(), test_item->name(), "renamed");
@@ -1221,7 +1223,7 @@ static void should_rename()
 static void should_not_overwrite_during_rename()
 {
 	null_async_strategy as;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 
 	const df::file_path src_path(test_files_folder, "Test.jpg");
@@ -1231,7 +1233,7 @@ static void should_not_overwrite_during_rename()
 	platform::copy_file(src_path, save_path_1, false, false);
 	platform::copy_file(src_path, save_path_2, false, false);
 
-	auto test_item = load_item(index, save_path_1, false);
+	const auto test_item = load_item(index, save_path_1, false);
 
 	assert_equal(false, test_item->rename(index, save_path_2.file_name_without_extension()).success(),
 	             "should not rename");
@@ -1242,12 +1244,12 @@ static void should_not_overwrite_during_rename()
 static void should_rename_file_case()
 {
 	null_async_strategy as;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 
 	const auto source = _temps.next_path(".jpg");
 	platform::copy_file(df::file_path(test_files_folder, "Test.jpg"), source, false, false);
-	auto item = load_item(index, source, false);
+	const auto item = load_item(index, source, false);
 	auto upper_name = str::to_upper(std::string(source.file_name_without_extension()));
 	if (upper_name == source.file_name_without_extension()) upper_name = str::to_lower(upper_name);
 	const auto destination = df::file_path(source.folder(), upper_name, source.extension());
@@ -1260,7 +1262,7 @@ static void should_rename_file_case()
 static void should_rollback_rename_when_sidecar_fails()
 {
 	null_async_strategy as;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 
 	const auto primary = _temps.next_path(".jpg");
@@ -1274,15 +1276,88 @@ static void should_rollback_rename_when_sidecar_fails()
 	df::index_file_item info;
 	info.name = primary.name();
 	info.ft = files::file_type_from_name(primary);
-	auto metadata = std::make_shared<prop::item_metadata>();
+	const auto metadata = std::make_shared<prop::item_metadata>();
 	metadata->sidecars = sidecar.name();
 	info.metadata.store(metadata);
-	auto item = std::make_shared<df::item_element>(primary, info);
+	const auto item = std::make_shared<df::item_element>(primary, info);
 
 	assert_equal(false, item->rename(index, target_base).success(), "sidecar collision fails rename");
 	assert_equal(primary.name(), item->name(), "item keeps original name");
 	assert_equal(true, primary.exists(), "primary remains at original path");
 	assert_equal(true, sidecar.exists(), "sidecar remains at original path");
+}
+
+// Only selector folders are live-watched, so a search that names no folder - related items,
+// duplicates, a tag, a date - has nothing watching it. Deleting from one of those views has to tell
+// the index itself, or the view keeps listing a file that is gone.
+// The index is a cache, so an in-app change has to both correct it and ask for the search to be run
+// again. Asking unconditionally would re-open the search on every folder walked, so the request is
+// tied to a folder actually differing.
+static void should_request_a_re_query_only_when_a_folder_changed(shared_test_context& stc)
+{
+	const df::file_path source(test_files_folder, "Test.jpg");
+	const auto temp_folder = _temps.next_folder("requery");
+	const auto removed = _temps.next_path_in(temp_folder, ".jpg");
+	platform::copy_file(source, removed, false, false);
+
+	deferred_async_strategy as;
+	const location_cache locations;
+	index_state index(as, locations);
+
+	df::index_roots roots;
+	roots.folders.emplace(temp_folder);
+	index.index_roots(roots);
+	index.index_folders(test_token);
+
+	df::unique_folders touched;
+	touched.emplace(temp_folder);
+
+	// Nothing has changed on disk, so nothing needs re-running.
+	index.queue_validate_changed_folders(touched);
+	assert_equal(true, as.run_next(async_queue::scan_folder), "validate ran");
+	assert_equal(false, as.was_invalidated(view_invalid::refresh_items), "an unchanged folder asks for nothing");
+
+	assert_equal(true, platform::delete_items({removed}, {}, false).success(), "delete");
+
+	index.queue_validate_changed_folders(std::move(touched));
+	assert_equal(true, as.run_next(async_queue::scan_folder), "validate ran");
+	assert_equal(true, as.was_invalidated(view_invalid::refresh_items), "a changed folder asks for the re-query");
+}
+
+static void should_drop_deleted_items_from_a_search_with_no_folder(shared_test_context& stc)
+{
+	const df::file_path source(test_files_folder, "Test.jpg");
+	const auto temp_folder = _temps.next_folder("deleted");
+	const auto kept = _temps.next_path_in(temp_folder, ".jpg");
+	const auto removed = _temps.next_path_in(temp_folder, ".jpg");
+
+	platform::copy_file(source, kept, false, false);
+	platform::copy_file(source, removed, false, false);
+
+	null_async_strategy as;
+	const location_cache locations;
+	index_state index(as, locations);
+	auto cache_path = _temps.next_path();
+	database db(index);
+	db.open(cache_path.folder(), cache_path.file_name_without_extension());
+
+	df::index_roots roots;
+	roots.folders.emplace(temp_folder);
+	index.index_roots(roots);
+	index.index_folders(test_token);
+	index.scan_uncached(test_token);
+
+	// No selector: this is the shape every relation, duplicate and tag search has.
+	const auto search = df::search_t::parse("@photo");
+	assert_equal(2, count_search_results(index, search), "both copies are listed");
+
+	assert_equal(true, platform::delete_items({removed}, {}, false).success(), "delete");
+
+	df::unique_folders touched;
+	touched.emplace(removed.folder());
+	index.queue_validate_changed_folders(std::move(touched));
+
+	assert_equal(1, count_search_results(index, search), "the deleted copy is gone from the list");
 }
 
 static void should_detect_duplicates(shared_test_context& stc)
@@ -1323,10 +1398,96 @@ static void should_detect_duplicates(shared_test_context& stc)
 
 	index.update_predictions();
 
-	assert_equal(1u, index.find_item(test_item1->path()).duplicates.load().count, "duplicates");
+	// Small.jpg is Test.jpg resized: no shared name, size or CRC, but the same capture time and the
+	// same picture. Recognising that is the whole point of the perceptual stage.
+	const auto test_group = index.find_item(test_item1->path()).duplicates.load();
+	const auto small_group = index.find_item(test_item5->path()).duplicates.load();
+
+	assert_equal(2u, test_group.count, "a resized copy is a duplicate");
+	assert_equal(2u, small_group.count, "and so is the original");
+	assert_equal(true, test_group.group != 0 && test_group.group == small_group.group, "one duplicate group");
+
+	// The grade is the claim. A re-encode is only ever "possible", and saying so is what separates it
+	// from a byte-identical copy on a surface the user deletes from.
+	assert_equal(static_cast<int>(df::copy_grade::same_picture), static_cast<int>(test_group.grade),
+	             "a resized copy is graded as the same picture");
+	assert_equal(static_cast<int>(df::copy_grade::same_picture), static_cast<int>(small_group.grade),
+	             "and so is the original");
+
+	// A rotation is a different bitmap and must not be swept in with them.
 	assert_equal(1u, index.find_item(test_item2->path()).duplicates.load().count, "duplicates");
 	assert_equal(1u, index.find_item(test_item3->path()).duplicates.load().count, "duplicates");
 	assert_equal(1u, index.find_item(sony_item->path()).duplicates.load().count, "duplicates");
+
+	// Parity: `@duplicates` and a related search read the one duplicate group, so a picture found by
+	// the perceptual stage is reported by both rather than only by the feature that computed it.
+	assert_equal(2, count_search_results(index, "@duplicates"), "@duplicates lists the pair");
+
+	df::related_info r;
+	r.load(test_item1);
+
+	std::string related_summary;
+
+	index.query_items(df::search_t().related(r), [&related_summary, &test_item5](
+		                  const index_state::query_item_results& items, bool)
+	                  {
+		                  for (const auto& i : items)
+		                  {
+			                  if (i.path != test_item5->path()) continue;
+			                  related_summary = df::related_axis_of(i.match.type) == df::related_axis::duplicate
+				                                    ? "duplicate"
+				                                    : "other";
+		                  }
+	                  }, test_token);
+
+	assert_equal("duplicate", related_summary,
+	             "related reports the resized copy as a possible copy, not a coincidence of time");
+}
+
+// Presence, duplicate search and related items are one relation asked at three scales, so none of
+// them may see a copy the others deny. The perceptual grade is the one that was visible to duplicate
+// search and related items while presence was blind to it.
+static void should_report_a_re_encoded_copy_to_presence()
+{
+	null_async_strategy as;
+	location_cache locations;
+	index_state index(as, locations);
+	const auto cache_path = _temps.next_path();
+	database db(index);
+	db.open(cache_path.folder(), cache_path.file_name_without_extension());
+
+	// A collection holding the full-size picture only, so an outside copy of the resized one cannot
+	// match any member by name, size or checksum. The picture is the only evidence left.
+	const auto collection_folder = _temps.next_path().folder().combine("re-encode-collection");
+	const auto outside_folder = _temps.next_path().folder().combine("re-encode-outside");
+	platform::create_folder(collection_folder);
+	platform::create_folder(outside_folder);
+
+	const auto member_path = collection_folder.combine_file("original.jpg");
+	const auto outside_path = outside_folder.combine_file("resized-elsewhere.jpg");
+	platform::copy_file(test_files_folder.combine_file("Test.jpg"), member_path, false, false);
+	platform::copy_file(test_files_folder.combine_file("Small.jpg"), outside_path, false, false);
+
+	df::index_roots roots;
+	roots.folders.emplace(collection_folder);
+	index.index_roots(roots);
+	index.index_folders(test_token);
+	index.scan_uncached(test_token);
+	index.update_predictions();
+
+	const auto outside_item = std::make_shared<df::item_element>(outside_path, index.find_item(outside_path));
+	index.scan_item(outside_item, true, false);
+	index.queue_update_presence(df::item_set({outside_item}));
+
+	const auto presence = outside_item->presence();
+
+	assert_equal(true,
+	             presence == item_presence::similar_in || presence == item_presence::newer_in ||
+	             presence == item_presence::older_in,
+	             "presence reports a possible copy of a re-encode rather than an absence");
+	assert_equal(static_cast<int>(df::copy_grade::same_picture),
+	             static_cast<int>(outside_item->duplicates().grade),
+	             "presence grades it the same way duplicate search would");
 }
 
 static void should_require_equal_size_for_duplicate_crc()
@@ -1456,7 +1617,7 @@ static void should_discard_stale_scan_item_update()
 	platform::copy_file(test_files_folder.combine_file("Test.jpg"), file_path, false, true);
 
 	deferred_async_strategy async;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(async, locations);
 	index.validate_folder(file_path.folder(), true, platform::now());
 
@@ -1493,12 +1654,139 @@ static void should_discard_stale_crc_result()
 	assert_equal(0u, item->crc32c(), "stale CRC result was discarded");
 }
 
+// A video with embedded cover art draws the cover art on its tile, so the tile has to be the shape
+// of the art. Sizing it from the video's own dimensions letterboxed the art inside a frame-shaped
+// tile, and the republish that follows every scan pass used to revert it to the video shape.
+static void should_shape_the_tile_by_what_it_draws()
+{
+	df::index_file_item indexed;
+	indexed.name = str::cache("clip.mp4");
+	indexed.ft = files::file_type_from_name(indexed.name);
+
+	const auto md = std::make_shared<prop::item_metadata>();
+	md->width = 1920;
+	md->height = 1080;
+	indexed.metadata.store(md);
+
+	const auto path = df::file_path("c:\\clip.mp4");
+	const auto item = std::make_shared<df::item_element>(path, indexed);
+
+	assert_equal(1920, item->layout_dims().cx, "video width shapes the tile before cover art arrives");
+	assert_equal(1080, item->layout_dims().cy, "video height shapes the tile before cover art arrives");
+	assert_equal(true, item->layout_aspect_known(), "indexed dimensions are an exact aspect");
+
+	const auto cover_art = std::make_shared<ui::image>(df::blob(16), sizei(600, 600),
+	                                                   ui::image_format::JPEG, ui::orientation::top_left);
+	item->thumbnail({}, cover_art, {});
+
+	assert_equal(600, item->layout_dims().cx, "cover art width shapes the tile that draws it");
+	assert_equal(600, item->layout_dims().cy, "cover art height shapes the tile that draws it");
+	assert_equal(true, item->layout_aspect_known(), "a cover art aspect is exact, so the tile may justify");
+
+	// scan_items republishes every displayed item on every pass.
+	const auto republished = item->update(path, indexed);
+
+	assert_equal(600, item->layout_dims().cx, "a republish does not revert the tile to the video shape");
+	assert_equal(false, republished, "an unchanged republish asks for no layout pass");
+}
+
+// A thumbnail is a downscaled stand-in, so it may shape a tile whose real aspect is unknown but must
+// never earn the row justification that a known aspect does.
+static void should_not_justify_a_tile_shaped_by_a_thumbnail()
+{
+	df::index_file_item indexed;
+	indexed.name = str::cache("unscanned.jpg");
+	indexed.ft = files::file_type_from_name(indexed.name);
+
+	const auto path = df::file_path("c:\\unscanned.jpg");
+	const auto item = std::make_shared<df::item_element>(path, indexed);
+
+	assert_equal(false, item->layout_aspect_known(), "nothing known before a scan");
+
+	const auto thumb = std::make_shared<ui::image>(df::blob(16), sizei(160, 120),
+	                                               ui::image_format::JPEG, ui::orientation::top_left);
+	item->thumbnail(thumb, {}, {});
+
+	assert_equal(160, item->layout_dims().cx, "the thumbnail stands in for an unknown aspect");
+	assert_equal(false, item->layout_aspect_known(), "a stand-in aspect is never justified");
+
+	// The scan lands and the index now knows the real size, which outranks the thumbnail.
+	const auto md = std::make_shared<prop::item_metadata>();
+	md->width = 4000;
+	md->height = 3000;
+	indexed.metadata.store(md);
+
+	assert_equal(true, item->update(path, indexed), "a newly scanned size asks for a layout pass");
+	assert_equal(4000, item->layout_dims().cx, "the indexed size outranks the thumbnail");
+	assert_equal(true, item->layout_aspect_known(), "the real aspect is now known");
+}
+
+// A tile fills its cell by cropping, so every difference between the cell's shape and the image's
+// shape is hidden pixels. The row solves one height and takes each width from it, which is what stops
+// a row holding one or two portraits from cutting the top and bottom off them.
+static void should_keep_tile_aspect_when_laying_out_a_row()
+{
+	null_state_strategy ss;
+	null_async_strategy as;
+	const location_cache locations;
+	index_state index(as, locations);
+	view_state s(ss, as, index, make_test_player());
+
+	flex_test_measure_context mc;
+	constexpr auto width_limit = 1200;
+	constexpr auto crop_tolerance = 0.05;
+	auto next_name = 0;
+
+	const auto make_item = [&next_name](const int cx, const int cy)
+	{
+		const auto name = "item" + std::to_string(++next_name) + ".jpg";
+
+		df::index_file_item indexed;
+		indexed.name = str::cache(name);
+		indexed.ft = files::file_type_from_name(indexed.name);
+
+		const auto md = std::make_shared<prop::item_metadata>();
+		md->width = static_cast<uint16_t>(cx);
+		md->height = static_cast<uint16_t>(cy);
+		indexed.metadata.store(md);
+
+		return std::make_shared<df::item_element>(df::file_path("c:\\" + name), indexed);
+	};
+
+	const auto assert_row_aspects = [&](df::item_elements items, const std::string_view name)
+	{
+		const auto group = std::make_shared<df::item_group>(s, std::move(items), df::item_group_display::icons,
+		                                                    df::group_key{});
+		group->measure(mc, width_limit);
+
+		const auto& layout_bounds = group->_layout_bounds;
+		assert_equal(group->items().size(), layout_bounds.size(), name, "a cell for every item");
+
+		for (auto i = 0u; i < layout_bounds.size(); ++i)
+		{
+			const auto dims = group->items()[i]->layout_dims();
+			const auto image_aspect = static_cast<double>(dims.cx) / dims.cy;
+			const auto cell_aspect = static_cast<double>(layout_bounds[i].width()) / layout_bounds[i].height();
+			const auto hidden = 1.0 - std::min(image_aspect, cell_aspect) / std::max(image_aspect, cell_aspect);
+
+			assert_equal(true, hidden <= crop_tolerance + 0.01, name, "tile keeps its aspect");
+			assert_equal(true, layout_bounds[i].right <= width_limit, name, "tile stays inside the row");
+		}
+	};
+
+	assert_row_aspects({make_item(2000, 3000)}, "one portrait"sv);
+	assert_row_aspects({make_item(2000, 3000), make_item(2000, 3000)}, "two portraits"sv);
+	assert_row_aspects({make_item(3000, 2000), make_item(2000, 3000), make_item(4000, 3000)}, "mixed row"sv);
+	assert_row_aspects({make_item(400, 400), make_item(64, 64)}, "small squares"sv);
+	assert_row_aspects({make_item(12000, 1000)}, "panorama"sv);
+}
+
 static void should_detect_rotation(shared_test_context& stc)
 {
 	files ff;
 	const auto index_path = _temps.next_path();
 	null_async_strategy as;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 
 	database db(index);
@@ -1523,6 +1811,10 @@ static void should_detect_rotation(shared_test_context& stc)
 
 	assert_equal(ui::orientation::right_top, test_item->layout_orientation());
 
+	// Indexing stores no thumbnail, so the item only asks for one once it is visible - which is what
+	// clears db_query_pending. Without this the metadata scan above is the last thing that runs and
+	// the thumbnail assertion below is testing nothing.
+	items.for_all([](const auto& item) { item->begin_db_thumbnail_query(); });
 	db.load_thumbnails(index, database::make_thumbnail_requests(items));
 
 	assert_equal(ui::orientation::right_top, test_item->layout_orientation());
@@ -1531,12 +1823,14 @@ static void should_detect_rotation(shared_test_context& stc)
 	db.perform_writes();
 
 	assert_equal(ui::orientation::right_top, test_item->layout_orientation());
+	assert_equal(true, is_valid(test_item->thumbnail()), "the visible-item scan produced a thumbnail");
 	assert_equal(ui::orientation::right_top, test_item->thumbnail()->orientation());
 }
 
 static void should_record_crashes()
 {
 	const auto db_path = _temps.next_path();
+	const auto build = "test-build-1"sv;
 	const auto paths = {
 		test_files_folder.combine_file("Test.jpg"),
 		test_files_folder.combine_file("Test90.jpg"),
@@ -1547,7 +1841,7 @@ static void should_record_crashes()
 	for (auto path : paths)
 	{
 		{
-			crash_files_db test_crash_files(db_path);
+			crash_files_db test_crash_files(db_path, build);
 
 			assert_equal(test_crash_files.is_known_crash_file(path), false, "is_known_crash_file");
 
@@ -1557,7 +1851,7 @@ static void should_record_crashes()
 		}
 
 		{
-			crash_files_db test_crash_files(db_path);
+			crash_files_db test_crash_files(db_path, build);
 
 			assert_equal(test_crash_files.is_known_crash_file(path), false, "is_known_crash_file");
 
@@ -1566,10 +1860,35 @@ static void should_record_crashes()
 		}
 
 		{
-			crash_files_db test_crash_files(db_path);
+			crash_files_db test_crash_files(db_path, build);
 
 			assert_equal(test_crash_files.is_known_crash_file(path), true, "is_known_crash_file");
 		}
+	}
+
+	{
+		crash_files_db test_crash_files(db_path, build);
+		assert_equal(test_crash_files.skipped_file_count(), paths.size(), "every crash is recorded once");
+	}
+
+	// A repeating crash must not append the same file again, or the list would grow with every run.
+	{
+		crash_files_db test_crash_files(db_path, build);
+
+		for (auto path : paths) test_crash_files.add_open(path, str::utf8_cast(__FUNCTION__));
+		test_crash_files.flush_open_files();
+	}
+
+	{
+		crash_files_db test_crash_files(db_path, build);
+		assert_equal(test_crash_files.skipped_file_count(), paths.size(), "a repeated crash adds no duplicates");
+	}
+
+	// A decoder fix ships in an update, so entries earned by an earlier build must not skip files
+	// forever - the next build retries them.
+	{
+		crash_files_db next_build(db_path, "test-build-2"sv);
+		assert_equal(next_build.skipped_file_count(), 0_z, "a new build retries files an older build recorded");
 	}
 }
 
@@ -1659,7 +1978,7 @@ static void should_index_concurrently()
 	const auto index_path = _temps.next_path();
 
 	null_async_strategy as;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 
 	database db(index);
@@ -1869,14 +2188,14 @@ static void should_query_trigram_index()
 static void should_materialize_detached_query_item()
 {
 	null_async_strategy async;
-	location_cache locations;
-	index_state index(async, locations);
+	const location_cache locations;
+	const index_state index(async, locations);
 
 	df::index_file_item file;
 	file.name = "detached.jpg"_c;
 	file.ft = files::file_type_from_name(file.name);
 	file.size = df::file_size(1234);
-	auto metadata = std::make_shared<prop::item_metadata>();
+	const auto metadata = std::make_shared<prop::item_metadata>();
 	metadata->title = "Detached snapshot"_c;
 	file.metadata.store(metadata);
 
@@ -1941,7 +2260,7 @@ static void should_reuse_cached_thumbnail_surface()
 	platform::copy_file(test_files_folder.combine_file("Test.jpg"), file_path, false, true);
 
 	null_async_strategy scan_async;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(scan_async, locations);
 	const auto item = load_item(index, file_path, true);
 	assert_equal(true, item->has_cached_surface(), "scan fixture populated the thumbnail surface cache");
@@ -2175,7 +2494,7 @@ static void should_refresh_same_item_metadata_after_hydration()
 	platform::copy_file(test_files_folder.combine_file("Test.jpg"), file_path, false, true);
 
 	null_async_strategy as;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 
 	database db(index);
@@ -2225,7 +2544,7 @@ static void should_trigger_rescan_only_after_full_metadata_load()
 
 	null_state_strategy ss;
 	null_async_strategy as;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 	common_display_state_t common;
 	view_state s(ss, as, index, make_test_player());
@@ -2239,7 +2558,7 @@ static void should_trigger_rescan_only_after_full_metadata_load()
 	platform::test_offline_predicate = nullptr;
 
 	// Build a display for the item with a loaded texture, mimicking the big-view render state.
-	auto d = std::make_shared<display_state_t>(as, common);
+	const auto d = std::make_shared<display_state_t>(as, common);
 	d->_item1 = item;
 	d->_selected_texture1 = std::make_shared<texture_state>(as, item);
 	d->_selected_texture1->load_image(item); // synchronous under null_async_strategy
@@ -2298,7 +2617,7 @@ static void should_retry_after_failed_prefetch()
 	platform::copy_file(test_files_folder.combine_file("Test.jpg"), missing_path, false, true);
 
 	null_async_strategy as;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 
 	const auto good_item = load_item(index, good_path, true);
@@ -2365,7 +2684,7 @@ static void should_keep_file_handles_detached_until_last_operation()
 {
 	null_state_strategy state_strategy;
 	deferred_async_strategy async;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(async, locations);
 	view_state state(state_strategy, async, index, make_test_player());
 	const auto initial_detach_count = df::file_handles_detached.load();
@@ -2395,7 +2714,7 @@ static void should_preserve_metadata_when_dehydrated()
 	platform::copy_file(test_files_folder.combine_file("Test.jpg"), file_path, false, true);
 
 	null_async_strategy as;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 
 	// Online: a full scan produces tags and a content hash.
@@ -2442,7 +2761,7 @@ static void should_fetch_shell_thumbnail_only_for_offline_visible()
 	platform::copy_file(test_files_folder.combine_file("Test.jpg"), hidden_path, false, true);
 
 	null_async_strategy as;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 
 	// Online-only placeholders: indexed with metadata only, no thumbnail.
@@ -2505,7 +2824,7 @@ static void should_bound_shell_thumbnail_retries()
 	platform::copy_file(test_files_folder.combine_file("Test.jpg"), file_path, false, true);
 
 	null_async_strategy as;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 
 	platform::test_offline_predicate = [file_path](const df::file_path& p) { return p == file_path; };
@@ -2550,7 +2869,7 @@ static void should_discard_stale_thumbnail_surface()
 	platform::copy_file(test_files_folder.combine_file("Test.jpg"), file_path, false, true);
 
 	null_async_strategy scan_async;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(scan_async, locations);
 	const auto item = load_item(index, file_path, true);
 	assert_equal(true, item->has_thumb(), "scan produced encoded thumbnail");
@@ -2584,74 +2903,164 @@ static void should_build_tile_user_agent()
 	             "tile user agent");
 }
 
-static void should_build_tile_cache_file_name()
+static void should_pack_tile_database_keys()
 {
-	// map_tile_id is {x, y, z}; the cache file name is "{z}_{x}_{y}.png".
-	constexpr map_tile_id coord{10, 20, 16};
+	// Zoom caps at 18, so x and y stay below 2^20 and the whole address fits a positive int64 -
+	// which is what lets the store key its rows on the rowid.
+	assert_equal(true, map_tile_db_key(0, 0, 0) == 0, "origin", "tile key");
 
-	assert_equal("16_10_20.png"s, tile_cache_file_name(coord), "file name", "tile cache");
+	constexpr auto widest = 1 << map_max_zoom;
+	assert_equal(true, map_tile_db_key(map_max_zoom, widest - 1, widest - 1) > 0, "widest address stays positive",
+	             "tile key");
 
-	const map_tile_cache cache(_temps.folder());
-	assert_equal(true, cache.path_for(coord) == _temps.folder().combine_file("16_10_20.png"), "path", "tile cache");
+	std::set<int64_t> seen;
+
+	for (auto z = map_min_zoom; z <= map_max_zoom; ++z)
+	{
+		const auto span = 1 << z;
+
+		for (const auto x : {0, 1, span / 2, span - 1})
+		{
+			for (const auto y : {0, 1, span / 2, span - 1})
+			{
+				assert_equal(true, seen.insert(map_tile_db_key(z, x, y)).second, "address is unique", "tile key");
+			}
+		}
+	}
 }
 
-static void should_cache_tile_on_disk()
+static df::date_t tile_days_ago(const uint32_t days)
 {
-	const auto folder = _temps.folder().combine("tiles");
-	platform::create_folder(folder);
+	return df::date_t(platform::now().to_int64() - days * df::date_t::intervals_per_day);
+}
 
-	const map_tile_cache cache(folder);
-	const map_tile_id coord{1, 2, 3};
+static void should_cache_tiles_in_a_database()
+{
+	tile_cache_db db;
+	db.open(_temps.next_path(".db"));
 
-	assert_equal(false, cache.contains(coord), "absent before store", "tile cache");
-	assert_equal(true, cache.load(coord).empty(), "load absent returns empty", "tile cache");
+	assert_equal(true, db.is_open(), "database opened", "tile cache");
+
+	constexpr auto key = map_tile_db_key(3, 1, 2);
+	assert_equal(true, db.load(key).empty(), "load absent returns empty", "tile cache");
 
 	const df::blob bytes = {0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4};
-	cache.store(coord, df::cspan(bytes));
+	db.store(key, df::cspan(bytes));
+	db.flush();
 
-	assert_equal(true, cache.contains(coord), "present after store", "tile cache");
-	assert_equal(true, cache.path_for(coord).exists(), "png file written", "tile cache");
-
-	const auto loaded = cache.load(coord);
+	const auto loaded = db.load(key);
 	assert_equal(static_cast<int>(bytes.size()), static_cast<int>(loaded.size()), "size round-trips", "tile cache");
 	assert_equal(true, loaded == bytes, "bytes round-trip", "tile cache");
+	assert_equal(1, static_cast<int>(db.count()), "one row stored", "tile cache");
 
-	// A fresh cache over the same folder still finds it (persists between sessions).
-	const map_tile_cache reopened(folder);
-	assert_equal(true, reopened.contains(coord), "persists across instances", "tile cache");
+	const auto path = db.path();
+	db.close();
+
+	// A fresh connection over the same file still finds it (persists between sessions).
+	tile_cache_db reopened;
+	reopened.open(path);
+	assert_equal(true, reopened.load(key) == bytes, "persists across sessions", "tile cache");
+	reopened.close();
 }
 
-static void should_bound_tile_cache_on_disk()
+static void should_prune_unused_tiles()
 {
-	const auto folder = _temps.folder().combine("bounded-tiles");
-	platform::create_folder(folder);
+	tile_cache_db db;
+	db.open(_temps.next_path(".db"));
 
-	const map_tile_cache cache(folder);
 	const df::blob bytes = {1, 2, 3, 4};
-	cache.store({1, 1, 1}, df::cspan(bytes));
-	cache.store({2, 2, 2}, df::cspan(bytes));
-	cache.store({3, 3, 3}, df::cspan(bytes));
-	cache.trim(2, 0);
+	const auto long_ago = tile_days_ago(60);
 
-	assert_equal(2, static_cast<int>(platform::iterate_file_items(folder, false).files.size()),
-	             "tile disk cache bounded");
+	for (auto i = 0; i < 3; ++i)
+	{
+		db.store(map_tile_db_key(5, i, i), df::cspan(bytes), long_ago);
+	}
+
+	db.flush();
+	assert_equal(3, static_cast<int>(db.count()), "stored before prune", "tile cache");
+
+	db.prune(30, tile_cache_db::max_bytes);
+	assert_equal(0, static_cast<int>(db.count()), "tiles unused for longer than the window are dropped",
+	             "tile cache");
+
+	db.close();
 }
 
-static void should_resolve_tile_cache_folder_as_dictionaries_peer()
+static void should_bound_tile_cache_by_size()
 {
-	// Mirrors spell_check::spell_check: the tile cache is a sibling of the
-	// "dictionaries" folder under the same base (install folder or app-data),
-	// falling back to app-data when the install folder is read-only.
-	const auto tiles = resolve_tile_cache_folder();
+	tile_cache_db db;
+	db.open(_temps.next_path(".db"));
 
-	const auto module_folder = known_path(platform::known_folder::running_app_folder);
-	const auto module_dictionaries = module_folder.combine("dictionaries");
-	const auto base = (module_dictionaries.exists() && platform::is_writable(module_folder))
-		                  ? module_folder
-		                  : known_path(platform::known_folder::app_data);
+	const df::blob bytes(8192, 0x5a);
+	const auto long_ago = tile_days_ago(60);
 
-	assert_equal(true, tiles == base.combine("tiles"), "tiles under dictionaries base", "tile cache location");
-	assert_equal(true, tiles.exists(), "tiles folder created", "tile cache location");
+	for (auto i = 0; i < 8; ++i)
+	{
+		db.store(map_tile_db_key(6, i, i), df::cspan(bytes), long_ago);
+	}
+
+	db.flush();
+	assert_equal(8, static_cast<int>(db.count()), "stored before prune", "tile cache");
+
+	// A window wide enough that the age pass matches nothing, so only the size pass can evict.
+	db.prune(365, 1);
+	assert_equal(0, static_cast<int>(db.count()), "size cap evicts least recently used", "tile cache");
+
+	db.close();
+}
+
+static void should_keep_tiles_inside_the_retention_window()
+{
+	// The OSM tile usage policy asks clients to keep what they download for at least a week, so a
+	// prune that has run out of anything older must give up rather than evict a fresh tile.
+	tile_cache_db db;
+	db.open(_temps.next_path(".db"));
+
+	const df::blob bytes(8192, 0x5a);
+
+	for (auto i = 0; i < 4; ++i)
+	{
+		db.store(map_tile_db_key(7, i, i), df::cspan(bytes));
+	}
+
+	db.flush();
+	db.prune(0, 1);
+
+	assert_equal(4, static_cast<int>(db.count()), "recently fetched tiles survive any cap", "tile cache");
+
+	db.close();
+}
+
+static void should_replace_an_unreadable_tile_cache()
+{
+	const auto path = _temps.next_path(".db");
+	const df::blob junk(4096, 0x7f);
+	df::blob_save_to_file(df::cspan(junk), path);
+
+	tile_cache_db db;
+	db.open(path);
+
+	assert_equal(true, db.is_open(), "a file this build cannot read is replaced", "tile cache");
+
+	constexpr auto key = map_tile_db_key(4, 5, 6);
+	const df::blob bytes = {9, 8, 7};
+	db.store(key, df::cspan(bytes));
+	db.flush();
+
+	assert_equal(true, db.load(key) == bytes, "usable after replacement", "tile cache");
+
+	db.close();
+}
+
+static void should_resolve_tile_cache_db_beside_index_db()
+{
+	// The tile database shares the folder the index database (diffractor-cache.db) is opened from.
+	const auto db_path = resolve_tile_cache_db_path();
+	const auto base = known_path(platform::known_folder::app_cache_data);
+
+	assert_equal(true, db_path == base.combine_file("map-tiles-cache.db"sv), "database beside index database",
+	             "tile cache location");
+	assert_equal(true, base.exists(), "base folder exists", "tile cache location");
 }
 
 static void should_query_kdtree_bounds()
@@ -2703,29 +3112,31 @@ static void should_anchor_map_marker_cells_to_world()
 	const auto first_cell = map_marker_world_cell(first, 16);
 	const auto nearby_cell = map_marker_world_cell(nearby, 16);
 
-	assert_equal(true, first_cell == map_marker_world_cell(first, 16), "cell is independent of viewport center", "map markers");
+	assert_equal(true, first_cell == map_marker_world_cell(first, 16), "cell is independent of viewport center",
+	             "map markers");
 	assert_equal(true, first_cell == nearby_cell, "nearby markers aggregate in the same world cell", "map markers");
 	assert_equal(false, first_cell == map_marker_world_cell(first, 17), "zoom recalculates world cells", "map markers");
 }
 
 static void should_measure_distance_to_map_cells()
 {
-	const recti cell(10, 20, 30, 40);
-	assert_equal(0, static_cast<int>(distance_squared({20, 30}, cell)), "cursor inside cell has zero distance", "map cells");
+	constexpr recti cell(10, 20, 30, 40);
+	assert_equal(0, static_cast<int>(distance_squared({20, 30}, cell)), "cursor inside cell has zero distance",
+	             "map cells");
 	assert_equal(25, static_cast<int>(distance_squared({35, 30}, cell)), "horizontal gap is measured", "map cells");
 	assert_equal(50, static_cast<int>(distance_squared({35, 45}, cell)), "diagonal gap is measured", "map cells");
 	const auto left_distance = distance_squared({50, 30}, cell);
-	const auto right_distance = distance_squared({50, 30}, recti(60, 20, 80, 40));
+	constexpr auto right_distance = distance_squared({50, 30}, recti(60, 20, 80, 40));
 	assert_equal(true, right_distance < left_distance, "nearest occupied cell wins between cells", "map cells");
 }
 
 static void should_frame_map_on_the_box_that_holds_items()
 {
-	const sizei extent(800, 600);
+	constexpr sizei extent(800, 600);
 
 	// locations.md 5.5: the gesture is to see a hot spot and click it, so a map that opens has
 	// to show the region that holds items rather than an arbitrary coordinate inside it.
-	map_box empty;
+	const map_box empty;
 	assert_equal(false, empty.valid, "an empty box frames nothing", "map framing");
 	assert_equal(false, empty.centre().is_valid(), "an empty box has no centre", "map framing");
 
@@ -2796,7 +3207,7 @@ static void should_build_aggregate_location_matrix()
 	ranked.add(df::file_path("c:\\b.jpg"), prague1, true, 5);
 	ranked.finalize();
 	assert_equal("b.jpg", ranked.cells.front().representative_path.name(),
-		"rated visual media outranks non-visual and lower-rated items", "location matrix");
+	             "rated visual media outranks non-visual and lower-rated items", "location matrix");
 
 	location_matrix_params sidebar_params;
 	sidebar_params.projection = location_matrix_projection::location_heat_map;
@@ -2814,7 +3225,7 @@ static void should_select_thumbnail_representatives_while_counting()
 		df::index_file_item result;
 		result.name = str::cache(name);
 		result.ft = files::file_type_from_name(name);
-		auto metadata = std::make_shared<prop::item_metadata>();
+		const auto metadata = std::make_shared<prop::item_metadata>();
 		metadata->rating = rating;
 		result.metadata.store(metadata);
 		return result;
@@ -2826,17 +3237,20 @@ static void should_select_thumbnail_representatives_while_counting()
 	df::file_group_histogram first;
 	first.record(text, df::file_path("c:\\0.txt"));
 	first.record(ordinary_photo, df::file_path("c:\\a.jpg"));
-	assert_equal("a.jpg", first.representative_path.name(), "visual media outranks non-thumbnail files", "summary thumbnail");
+	assert_equal("a.jpg", first.representative_path.name(), "visual media outranks non-thumbnail files",
+	             "summary thumbnail");
 
 	df::file_group_histogram second;
 	second.record(rated_photo, df::file_path("c:\\b.jpg"));
 	first.add(second);
-	assert_equal("b.jpg", first.representative_path.name(), "rated media survives histogram merge", "summary thumbnail");
+	assert_equal("b.jpg", first.representative_path.name(), "rated media survives histogram merge",
+	             "summary thumbnail");
 
 	df::date_histogram dates;
 	dates.record_representative(0, ordinary_photo, df::file_path("c:\\a.jpg"));
 	dates.record_representative(0, rated_photo, df::file_path("c:\\b.jpg"));
-	assert_equal("b.jpg", dates.representative_paths[0].name(), "date bucket prioritises rated media", "summary thumbnail");
+	assert_equal("b.jpg", dates.representative_paths[0].name(), "date bucket prioritises rated media",
+	             "summary thumbnail");
 }
 
 // selection-controls.md: comparison is like with like, decided from stable traits alone.
@@ -2925,11 +3339,19 @@ void register_tests6(view_state& state, test_registry& tests)
 	tests.add("Should store webservice results"s, should_store_webservice_results);
 	tests.add("Should bound webservice cache"s, should_bound_webservice_cache);
 	tests.add("Should detect duplicates"s, should_detect_duplicates);
+	tests.add("Should drop deleted items from a search with no folder"s,
+	          should_drop_deleted_items_from_a_search_with_no_folder);
+	tests.add("Should request a re-query only when a folder changed"s,
+	          should_request_a_re_query_only_when_a_folder_changed);
 	tests.add("Should require equal size for duplicate CRC"s, should_require_equal_size_for_duplicate_crc);
+	tests.add("Should report a re-encoded copy to presence"s, should_report_a_re_encoded_copy_to_presence);
 	tests.add("Should update collection presence"s, should_update_collection_presence);
 	tests.add("Should discard stale presence result"s, should_discard_stale_presence_result);
 	tests.add("Should discard stale scan item update"s, should_discard_stale_scan_item_update);
 	tests.add("Should discard stale CRC result"s, should_discard_stale_crc_result);
+	tests.add("Should shape the tile by what it draws"s, should_shape_the_tile_by_what_it_draws);
+	tests.add("Should not justify a tile shaped by a thumbnail"s, should_not_justify_a_tile_shaped_by_a_thumbnail);
+	tests.add("Should keep tile aspect when laying out a row"s, should_keep_tile_aspect_when_laying_out_a_row);
 	tests.add("Should Rename"s, should_rename);
 	tests.add("Should not overwrite during rename"s, should_not_overwrite_during_rename);
 	tests.add("Should rename file case"s, should_rename_file_case);
@@ -2964,11 +3386,13 @@ void register_tests6(view_state& state, test_registry& tests)
 	// Map tiles
 	//
 	tests.add("Should build tile user agent"s, should_build_tile_user_agent);
-	tests.add("Should build tile cache file name"s, should_build_tile_cache_file_name);
-	tests.add("Should cache tile on disk"s, should_cache_tile_on_disk);
-	tests.add("Should bound tile cache on disk"s, should_bound_tile_cache_on_disk);
-	tests.add("Should resolve tile cache folder as dictionaries peer"s,
-	          should_resolve_tile_cache_folder_as_dictionaries_peer);
+	tests.add("Should pack tile database keys"s, should_pack_tile_database_keys);
+	tests.add("Should cache tiles in a database"s, should_cache_tiles_in_a_database);
+	tests.add("Should prune unused tiles"s, should_prune_unused_tiles);
+	tests.add("Should bound tile cache by size"s, should_bound_tile_cache_by_size);
+	tests.add("Should keep tiles inside the retention window"s, should_keep_tiles_inside_the_retention_window);
+	tests.add("Should replace an unreadable tile cache"s, should_replace_an_unreadable_tile_cache);
+	tests.add("Should resolve tile cache db beside index db"s, should_resolve_tile_cache_db_beside_index_db);
 	tests.add("Should query kd-tree bounds"s, should_query_kdtree_bounds);
 	tests.add("Should anchor map marker cells to world"s, should_anchor_map_marker_cells_to_world);
 	tests.add("Should measure distance to map cells"s, should_measure_distance_to_map_cells);

@@ -27,7 +27,6 @@ static std::string_view strip_quotes(const std::string_view str)
 inline bool find_auto_complete(const std::vector<std::string_view>& queries, const std::string_view text,
                                const bool is_path, ui::match_highlights& match)
 {
-	//const std::string_view value = text;
 	std::vector<str::part_t> found_subs;
 
 	for (const auto& q : queries)
@@ -69,25 +68,6 @@ inline bool find_auto_complete(const std::vector<std::string_view>& queries, con
 		}
 	}
 
-	/*if (!found_subs.empty())
-	{
-		for (auto i = 1u; i < queries.size(); i++)
-		{
-			auto q = queries[i];
-
-			for (const auto& v : value_parts)
-			{
-				auto found = str::ifind(v, q);
-
-				if (found != std::string_view::npos)
-				{
-					found_subs.emplace_back( found, q.size() });
-					break;
-				}
-			}
-		}
-	}*/
-
 	const auto is_match = queries.size() == found_subs.size();
 
 	if (is_match)
@@ -97,99 +77,6 @@ inline bool find_auto_complete(const std::vector<std::string_view>& queries, con
 
 	return is_match;
 }
-
-//bool find_auto_complete_path(const std::vector<str::range> &queries, const str::range &value, ui::match_result& match)
-//{
-//	auto match_count = 0;
-//	auto value_parts = str::split(value);
-//
-//	for (auto && part : value_parts)
-//	{
-//		auto name = platform::PathFindFileName(part.begin);
-//		auto q = queries[0];
-//
-//		str::range v(name, part.end);
-//
-//		if (!q.empty() && !v.empty())
-//		{
-//			if (q.size() == 1) // Single char?
-//			{
-//				if (str::normalze_for_compare(v[0]) == str::normalze_for_compare(q[0]))
-//				{
-//					match.text(value.str(), v.begin - value.begin, v.begin - value.begin + 1);
-//					match_count += 1;
-//					break;
-//				}
-//			}
-//			else
-//			{
-//				auto found = str::find_sub_string(v, q);
-//
-//				if (!found.empty())
-//				{
-//					match.text(value.str(), found.begin - value.begin, found.end - value.begin);
-//					match_count += 1;
-//					break;
-//				}
-//			}
-//		}
-//	}
-//
-//	for (auto i = 1; i < queries.size(); i++)
-//	{
-//		auto q = queries[i];
-//
-//		for (auto && v : value_parts)
-//		{
-//			auto found = str::find_sub_string(v, q);
-//
-//			if (!found.empty())
-//			{
-//				match_count += 1;
-//				break;
-//			}
-//		}
-//	}
-//
-//	return queries.size() == match_count;
-//
-//	//if (!q.empty() && !path.empty())
-//	//{
-//	//	auto name = platform::PathFindFileName(path.begin);
-//
-//	//	if (q.size() == 1) // Single char?
-//	//	{
-//	//		if (str::normalze_for_compare(name[0]) == str::normalze_for_compare(q[0]))
-//	//		{
-//	//			match.text(path.str(), 0, 1);
-//	//			return true;
-//	//		}
-//	//	}
-//	//	else
-//	//	{
-//	//		auto found = str::find_sub_string(name, q);
-//
-//	//		if (!found.empty())
-//	//		{
-//	//			match.text(path.str(), found.begin - path.begin, found.end - path.begin);
-//	//			return true;
-//	//		}
-//
-//	//		if (df::is_path(q.begin))
-//	//		{
-//	//			found = str::find_sub_string(path, q);
-//
-//	//			if (!found.empty())
-//	//			{
-//	//				match.text(path.str(), found.begin - path.begin, found.end - path.begin);
-//	//				return true;
-//	//			}
-//	//		}
-//	//	}
-//	//}
-//
-//	//return false;
-//}
 
 static std::vector<ui::text_highlight_t> make_highlights(const ui::match_highlights& match,
                                                          const ui::color highlight_clr)
@@ -332,8 +219,8 @@ public:
 	text_match(ui::complete_strategy_t& parent, std::string t, std::string l, ui::match_highlights m = {},
 	           const int w = 1, const icon_index icon_in = icon_index::search) :
 		auto_complete_match(view_element_style::can_invoke), _parent(parent),
-	                              lead(std::move(l)),
-	                              text(std::move(t)), match(std::move(m)), icon(icon_in)
+		lead(std::move(l)),
+		text(std::move(t)), match(std::move(m)), icon(icon_in)
 	{
 		weight = w;
 	}

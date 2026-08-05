@@ -944,8 +944,9 @@ void location_cache::load_index()
 				if (_place_name_col != Cols::name)
 				{
 					df::log(__FUNCTION__,
-					        std::format("{} predates the qualification-level column; place names will be over-qualified",
-					                    places_file_name));
+					        std::format(
+						        "{} predates the qualification-level column; place names will be over-qualified",
+						        places_file_name));
 				}
 			}
 
@@ -1176,7 +1177,8 @@ location_matches location_cache::auto_complete(const std::string_view query, con
 
 						if (is_empty(possible.city.text))
 						{
-							if (find_match(entries + _place_name_col, name_col_count, part, text_result, highlight_result))
+							if (find_match(entries + _place_name_col, name_col_count, part, text_result,
+							               highlight_result))
 							{
 								possible.city.text = text_result;
 								possible.city.highlights.emplace_back(highlight_result);
@@ -1441,8 +1443,8 @@ location_t location_cache::find_closest_locked(const double x, const double y, c
 	{
 		const auto found = _countries.find(closest.country);
 		*country = found != _countries.end()
-			? country_loc{found->second.code2(), found->second.name(), found->second.centroid()}
-			: country_loc{};
+			           ? country_loc{found->second.code2(), found->second.name(), found->second.centroid()}
+			           : country_loc{};
 	}
 
 	auto& file = record_stream();
@@ -1635,7 +1637,7 @@ located_place location_cache::find_attributed(const double x, const double y, co
 }
 
 location_t location_cache::find_largest(const double min_latitude, const double min_longitude,
-	const double max_latitude, const double max_longitude) const
+                                        const double max_latitude, const double max_longitude) const
 {
 	platform::shared_lock lock(_rw);
 	std::vector<kd_coordinates_t> candidates;

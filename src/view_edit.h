@@ -135,7 +135,7 @@ public:
 	}
 
 	view_controls_host_ptr controls(const ui::control_frame_ptr& owner);
-	static ui::const_surface_ptr build_preview_surface(ui::const_surface_ptr source, sizei loaded_dimensions,
+	static ui::const_surface_ptr build_preview_surface(const ui::const_surface_ptr& source, sizei loaded_dimensions,
 	                                                   const image_edits& edits);
 	ui::const_surface_ptr preview_surface() const;
 

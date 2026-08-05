@@ -250,7 +250,8 @@ static str::cached extract_pixel_format(const heif_image_handle* image_handle)
 static bool has_orientation_transform(const heif_context* context, const heif_image_handle* image_handle)
 {
 	const auto item_id = heif_image_handle_get_item_id(image_handle);
-	return heif_item_get_properties_of_type(context, item_id, heif_item_property_type_transform_rotation, nullptr, 0) > 0 ||
+	return heif_item_get_properties_of_type(context, item_id, heif_item_property_type_transform_rotation, nullptr, 0) >
+		0 ||
 		heif_item_get_properties_of_type(context, item_id, heif_item_property_type_transform_mirror, nullptr, 0) > 0;
 }
 
@@ -359,7 +360,7 @@ static void scan_heif_structure(file_scan_result& result, read_stream& s, heif_c
 	{
 		std::vector<heif_item_id> ids(metadata_count);
 		const auto id_count = heif_image_handle_get_list_of_metadata_block_IDs(handle, nullptr, ids.data(),
-		                                                                      metadata_count);
+		                                                                       metadata_count);
 
 		for (auto i = 0; i < id_count; ++i)
 		{
@@ -412,7 +413,7 @@ namespace
 	};
 }
 
-file_scan_result scan_heif(read_stream& s, const scan_intent intent)
+file_scan_result scan_heif(read_stream& s, const scan_intent intent, const bool want_thumbnail)
 {
 	file_scan_result result = {};
 
@@ -435,7 +436,11 @@ file_scan_result scan_heif(read_stream& s, const scan_intent intent)
 			result.orientation_applied = has_orientation_transform(src.get(), image_handle);
 
 			heif_item_id thumbnail_id = 0;
-			const auto thumbnail_count = heif_image_handle_get_list_of_thumbnail_IDs(image_handle, &thumbnail_id, 1);
+			// heif_decode_image below is a full HEVC decode, so it is never run for its own sake.
+			const auto thumbnail_count = want_thumbnail
+				                             ? heif_image_handle_get_list_of_thumbnail_IDs(
+					                             image_handle, &thumbnail_id, 1)
+				                             : 0;
 
 			if (thumbnail_count > 0)
 			{
@@ -455,6 +460,9 @@ file_scan_result scan_heif(read_stream& s, const scan_intent intent)
 					if (decode_image_result.code == heif_error_Ok)
 					{
 						result.thumbnail_surface = image_to_surface(thumbnail_handle, img);
+						// The thumbnail is a separate item with its own property list, so it is upright
+						// only if it carries its own transform - the primary's does not reach it.
+						result.thumbnail_orientation_applied = has_orientation_transform(src.get(), thumbnail_handle);
 					}
 				}
 			}
@@ -491,13 +499,15 @@ ui::surface_ptr load_heif(read_stream& s, load_diagnostic* const diagnostic)
 		if (image_handle_result.code == heif_error_Ok)
 		{
 			if (reject_over_budget_source(diagnostic,
-			                              {heif_image_handle_get_width(image_handle),
-			                               heif_image_handle_get_height(image_handle)}, "HEIF"))
+			                              {
+				                              heif_image_handle_get_width(image_handle),
+				                              heif_image_handle_get_height(image_handle)
+			                              }, "HEIF"))
 			{
 				return result;
 			}
 
-			// decode the image and convert colorspace to RGB, saved as 24bit interleaved
+			// decode the image and convert colorspace to RGB, saved as 32bit interleaved
 			heif_image* img = nullptr;
 			const auto decode_image_result = heif_decode_image(image_handle, &img, heif_colorspace_RGB,
 			                                                   heif_chroma_interleaved_RGBA, nullptr);
@@ -509,7 +519,10 @@ ui::surface_ptr load_heif(read_stream& s, load_diagnostic* const diagnostic)
 				result = image_to_surface(image_handle, img);
 			}
 
-			if (result)
+			// libheif has already rotated the pixels for the item's own 'irot'/'imir', so applying
+			// the Exif Orientation that describes the same turn would rotate the image twice. The
+			// scan path reports top_left for these files, and the display has to agree with it.
+			if (result && !has_orientation_transform(src.get(), image_handle))
 			{
 				prop::item_metadata md;
 				metadata_exif::parse(md, extract_exif(image_handle));

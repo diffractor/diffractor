@@ -170,8 +170,8 @@ msgstr "Spenden Sie online."
 msgid "Changes"
 msgstr "Änderungen"
 
-msgid "Set the location for the selected files by scrolling the map or searching for a place. Use the mouse wheel to zoom."
-msgstr "Scrollen Sie auf der Karte, um einen Ort auszuwählen. Verwenden Sie das Mausrad zum Zoomen."
+msgid "The crosshair at the centre of the map marks the location that will be written. Drag the map, click a photo bubble to move it under the crosshair, or search for a place by name. Use the mouse wheel to zoom. Nothing is written until you press Add location."
+msgstr "Das Fadenkreuz in der Mitte der Karte markiert den Standort, der geschrieben wird. Ziehen Sie die Karte, klicken Sie auf eine Fotoblase, um sie unter das Fadenkreuz zu verschieben, oder suchen Sie einen Ort nach Namen. Zoomen Sie mit dem Mausrad. Es wird nichts geschrieben, bis Sie auf Standort hinzufügen drücken."
 
 msgid "The collection contains {} {} ({})."
 msgstr "Die Kollektion enthält {} {} ({})."
@@ -509,8 +509,8 @@ msgstr "Zurückweisen"
 msgid "Refresh"
 msgstr "Aktualisieren"
 
-msgid "Matching or possible copy items in the collection"
-msgstr "Übereinstimmende oder mögliche Kopien in der Kollektion"
+msgid "Related items"
+msgstr "Verwandte Items"
 
 msgid "Rename"
 msgstr "Umbenennen"
@@ -529,6 +529,9 @@ msgstr "Entgegen dem UZS drehen"
 
 msgid "Rotate clockwise"
 msgstr "Im UZS drehen"
+
+msgid "Confirm single-item rotations"
+msgstr "Drehen einzelner Items bestätigen"
 
 msgid "Reset rotation"
 msgstr "Rotation zurücksetzen"
@@ -665,6 +668,12 @@ msgstr "Kontrast"
 msgid "Open link {}"
 msgstr "Link öffnen {}"
 
+msgid "Choose a link to open"
+msgstr "Wählen Sie einen Link zum Öffnen"
+
+msgid "Duplicate"
+msgstr "Duplikat"
+
 msgid "Copy to clipboard"
 msgstr "In Zwischenablage kopieren"
 
@@ -741,7 +750,7 @@ msgid "Show world map"
 msgstr "Weltkarte zeigen"
 
 msgid "Darks"
-msgstr "Darks"
+msgstr "Tiefen"
 
 msgid "data"
 msgstr "Daten"
@@ -760,9 +769,6 @@ msgstr "Datums- und Zeitangaben"
 
 msgid "family food friends landscape nature night portrait selfie todo travel urban viewed"
 msgstr "Familie Essen Freunde Landschaft Natur Nacht Porträt Selfie ToDo Reisen urban gesehen"
-
-msgid "results"
-msgstr "Resultate"
 
 msgid "Defragment database."
 msgstr "Datenbank defragmentieren."
@@ -1014,7 +1020,7 @@ msgid "folder"
 msgstr "Ordner"
 
 msgid "music"
-msgstr "Music"
+msgstr "Musik"
 
 msgid "folders"
 msgstr "Ordner"
@@ -1023,7 +1029,7 @@ msgid "onedrive"
 msgstr "OneDrive"
 
 msgid "picture"
-msgstr "Picture"
+msgstr "Bilder"
 
 msgid "Folder"
 msgstr "Ordner"
@@ -1362,7 +1368,7 @@ msgid "Landscape"
 msgstr "Landschaft"
 
 msgid "Latin"
-msgstr "Latein"
+msgstr "Latin"
 
 msgid "Lifestyle"
 msgstr "Lifestyle"
@@ -1443,7 +1449,7 @@ msgid "Panorama"
 msgstr "Panorama"
 
 msgid "Panoramic"
-msgstr "Panorama"
+msgstr "Panoramisch"
 
 msgid "Film Noir"
 msgstr "Film Noir"
@@ -1488,7 +1494,7 @@ msgid "Power Ballad"
 msgstr "Power-Ballade"
 
 msgid "Pranks"
-msgstr "(Lausbuben-)Streiche"
+msgstr "Streiche"
 
 msgid "Primus"
 msgstr "Primus"
@@ -1766,9 +1772,6 @@ msgstr "Quelle des Imports:"
 msgid "Ignore previously imported items."
 msgstr "Zuvor importierte Items ignorieren."
 
-msgid "Overwrite if source items are newer."
-msgstr "Überschreiben, wenn Quell-Items neuer sind."
-
 msgid "Other folder"
 msgstr "Anderer Ordner"
 
@@ -1836,7 +1839,7 @@ msgid "backspace"
 msgstr "Rücktaste"
 
 msgid "Basics"
-msgstr "Grundlegend"
+msgstr "Grundlagen"
 
 msgid "browser-back"
 msgstr "Browser - Zurück"
@@ -2003,7 +2006,7 @@ msgid "Learn more at Diffractor.com"
 msgstr "Erfahren Sie mehr auf Diffractor.com"
 
 msgid "Lights"
-msgstr "Lichtquellen"
+msgstr "Lichter"
 
 msgid "Limit output to a maximum dimension (in pixels)."
 msgstr "Ausgabe auf eine maximale Dimension (in Pixel) begrenzen."
@@ -2205,6 +2208,12 @@ msgstr "Bei Verbindung mit dem Internet nach Updates suchen"
 
 msgid "Confirm when deleting items. Deleted items are moved to the recycle bin."
 msgstr "Bestätigen beim Löschen von Items. Gelöschte Items werden in den Papierkorb verschoben."
+
+msgid ""
+"Confirm when rotating one item. Rotating several items is always confirmed."
+msgstr ""
+"Bestätigen beim Drehen eines Items. Das Drehen mehrerer Items wird immer "
+"bestätigt."
 
 msgid "JPEG save quality"
 msgstr "JPEG-Speicherqualität"
@@ -2717,8 +2726,8 @@ msgstr "RAW-Fotos immer zeigen (langsamer)"
 msgid "Show this RAW photo"
 msgstr "Dieses RAW-Foto zeigen"
 
-msgid "press R to view matching or possible copy items in the collection"
-msgstr "Drücken Sie R, um übereinstimmende oder mögliche Kopien in der Kollektion anzuzeigen"
+msgid "press R to view the items most closely related to this one"
+msgstr "Drücken Sie R, um die Items anzuzeigen, die diesem am nächsten verwandt sind"
 
 msgid "Show verbose metadata"
 msgstr "Ausführliche Metadaten anzeigen"
@@ -2840,6 +2849,9 @@ msgstr "Zu löschende lokale Dateien: {}. Zu löschende Remote-Dateien: {}."
 msgid "Synchronization will permanently delete files. These files cannot be recovered from the Recycle Bin."
 msgstr "Bei der Synchronisierung werden Dateien dauerhaft gelöscht. Diese Dateien können nicht aus dem Papierkorb wiederhergestellt werden."
 
+msgid "The existing files will be overwritten. Their current contents cannot be recovered from the recycle bin."
+msgstr "Die vorhandenen Dateien werden überschrieben. Ihr aktueller Inhalt kann nicht aus dem Papierkorb wiederhergestellt werden."
+
 msgid "Delete local files that do not exist remotely"
 msgstr "Lokale Dateien löschen, die rechnerfern (remote) nicht vorhanden sind"
 
@@ -2940,7 +2952,7 @@ msgid "More options and controls"
 msgstr "Mehr Optionen und Steuerungen"
 
 msgid "{} ({}) total items in {} folders."
-msgstr "{} ({}) Items total in {} Ordnern."
+msgstr "Insgesamt {} ({}) Items in {} Ordnern."
 
 msgid "Truncated at 1MB"
 msgstr "Gekürzt auf 1 MB"
@@ -2991,7 +3003,7 @@ msgid "Version"
 msgstr "Version"
 
 msgid "Vibrance"
-msgstr "Lebendigkeit / Dynamik"
+msgstr "Dynamik"
 
 msgid "video"
 msgstr "Video"
@@ -3015,19 +3027,19 @@ msgid "Value"
 msgstr "Wert"
 
 msgid "Volume 200%"
-msgstr "Volume 200 %"
+msgstr "Lautstärke 200 %"
 
 msgid "Volume 100%"
-msgstr "Volume 100 %"
+msgstr "Lautstärke 100 %"
 
 msgid "Volume 75%"
-msgstr "Volume 75 %"
+msgstr "Lautstärke 75 %"
 
 msgid "Volume 50%"
-msgstr "Volume 50 %"
+msgstr "Lautstärke 50 %"
 
 msgid "Volume 25%"
-msgstr "Volume 25 %"
+msgstr "Lautstärke 25 %"
 
 msgid "Mute"
 msgstr "Stummschalten"
@@ -3375,9 +3387,6 @@ msgstr "{} läuft noch. Schließen Sie es, bevor Sie woanders hin wechseln."
 msgid "If the destination already exists:"
 msgstr "Wenn das Ziel bereits vorhanden ist:"
 
-msgid "If both sides have the file, the newer one replaces the older one."
-msgstr "Wenn die Datei auf beiden Seiten vorhanden ist, ersetzt die neuere die ältere."
-
 msgid "Replace"
 msgstr "Ersetzen"
 
@@ -3578,3 +3587,21 @@ msgstr "Zu groß für die Anzeige"
 
 msgid "This image could not be displayed"
 msgstr "Dieses Bild konnte nicht angezeigt werden"
+
+msgid "Show the items in the collection most closely related to this one: possible copies, then the same album, the same series, the closest capture times, and the closest capture places."
+msgstr "Die Items in der Kollektion anzeigen, die diesem am nächsten verwandt sind: mögliche Kopien, dann dasselbe Album, dieselbe Serie, die nächstliegenden Aufnahmezeiten und die nächstliegenden Aufnahmeorte."
+
+msgid "This item and possible copies"
+msgstr "Dieses Item und mögliche Kopien"
+
+msgid "Same album"
+msgstr "Gleiches Album"
+
+msgid "Same series"
+msgstr "Gleiche Serie"
+
+msgid "Taken at the same time"
+msgstr "Zur gleichen Zeit aufgenommen"
+
+msgid "Taken in the same place"
+msgstr "Am gleichen Ort aufgenommen"

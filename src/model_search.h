@@ -7,12 +7,13 @@
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 // Purpose: Search query parsing and matching. Parses search expressions into terms,
-// handles property filters, date ranges, location queries, duplicate matching, and the
-// scope-aware autocompletion classifier.
+// handles property filters, date ranges, location queries, duplicate and related-item
+// matching, and the scope-aware autocompletion classifier.
 
 #pragma once
 #include "model_property.h"
 #include "model_location.h"
+#include "model_related.h"
 #include "files.h"
 
 struct search_part;
@@ -36,7 +37,36 @@ namespace df
 		match_ext,
 		match_location,
 		match_volume,
+		related_album,
+		related_series,
+		related_time,
+		related_location,
 	};
+
+	// `similar` carries the duplicate axis because it already means "a possible copy" everywhere else.
+	constexpr search_result_type related_result_type(const related_axis axis)
+	{
+		switch (axis)
+		{
+		case related_axis::album: return search_result_type::related_album;
+		case related_axis::series: return search_result_type::related_series;
+		case related_axis::time: return search_result_type::related_time;
+		case related_axis::location: return search_result_type::related_location;
+		default: return search_result_type::similar;
+		}
+	}
+
+	constexpr related_axis related_axis_of(const search_result_type type)
+	{
+		switch (type)
+		{
+		case search_result_type::related_album: return related_axis::album;
+		case search_result_type::related_series: return related_axis::series;
+		case search_result_type::related_time: return related_axis::time;
+		case search_result_type::related_location: return related_axis::location;
+		default: return related_axis::duplicate;
+		}
+	}
 
 	enum class search_term_type
 	{
@@ -68,8 +98,31 @@ namespace df
 	struct search_result
 	{
 		search_result_type type = search_result_type::no_match;
+		// Only a related search sets this: how far this item is from the item the search started at,
+		// in the units of its axis. It is what orders a relation group. Deliberately 32-bit and
+		// declared here - it occupies padding that already existed, so a search result carries it for
+		// free, and every axis distance (seconds, metres, track and episode gaps) fits comfortably.
+		int32_t distance = 0;
 		prop::key_ref key = prop::null;
 		str::cached text = {};
+
+		// Constructors rather than aggregate initialisation, so that placing `distance` in the
+		// padding after `type` costs the existing `{type}`, `{type, key}` and `{type, key, text}`
+		// call sites nothing.
+		constexpr search_result() noexcept = default;
+
+		constexpr search_result(const search_result_type t) noexcept : type(t)
+		{
+		}
+
+		constexpr search_result(const search_result_type t, const prop::key_ref k) noexcept : type(t), key(k)
+		{
+		}
+
+		search_result(const search_result_type t, const prop::key_ref k, const str::cached x) noexcept :
+			type(t), key(k), text(x)
+		{
+		}
 
 		bool is_match() const
 		{
@@ -94,7 +147,6 @@ namespace df
 		{
 			return find_key == key && ifind(text, find_text) != std::string_view::npos;
 		}
-
 	};
 
 	inline bool is_probably_selector(const std::string_view text)
@@ -716,16 +768,35 @@ namespace df
 		date_t metadata_created = {};
 		date_t file_created = {};
 		str::cached name = {};
+		str::cached album = {};
+		str::cached album_artist = {};
+		str::cached show = {};
 		uint32_t crc32c = 0;
 		file_size size = {};
 		file_type_ref ft = nullptr;
 		uint32_t group = 0;
+		uint8_t season = 0;
+		xy8 episode = {0, 0};
+		xy8 disk = {0, 0};
+		xy8 track = {0, 0};
 
 		bool is_loaded = false;
 
 		date_t created() const
 		{
 			return metadata_created.is_valid() ? metadata_created : file_created;
+		}
+
+		// Position within an album or a series, used to answer with the neighbouring tracks or
+		// episodes rather than with whichever ones happen to be first.
+		int64_t track_ordinal() const
+		{
+			return static_cast<int64_t>(disk.x) * 1000 + track.x;
+		}
+
+		int64_t episode_ordinal() const
+		{
+			return static_cast<int64_t>(season) * 1000 + episode.x;
 		}
 
 		related_info() noexcept = default;
@@ -1335,16 +1406,6 @@ namespace df
 			return first_type() != prop::null;
 		}
 
-		/*date_t first_date() const
-		{
-			for (const auto& t : _terms)
-			{
-				if (t.val.t->data_type == prop::data_type::date && t.type == search_term::term_type::type)
-					return date_t::from_time_stamp(t.val.n);
-			}
-			return date_t::null;
-		}*/
-
 		prop::key_ref first_type() const
 		{
 			for (const auto& t : _terms)
@@ -1424,7 +1485,8 @@ namespace df
 			_locations(locations),
 			has_terms(s.has_terms()),
 			need_metadata(s.needs_metadata()),
-			can_match_folder(_search.can_match_folder())
+			can_match_folder(_search.can_match_folder()),
+			has_related(s.has_related())
 		{
 			if (s.has_volume_term())
 			{
@@ -1465,10 +1527,17 @@ namespace df
 		const bool has_terms = false;
 		const bool need_metadata = false;
 		const bool can_match_folder = false;
+		// Hoisted out of the per-item loop: match_item tested this by inspecting the related path on
+		// every candidate, which every ordinary search paid for and none of them needed.
+		const bool has_related = false;
 
 		bool can_contain(const search_presence_mask& available_presence) const;
 		search_result match_term(str::cached folder_name, const index_file_item& file, const search_term& term) const;
 		search_result match_all_terms(str::cached folder_name, const index_file_item& file) const;
+
+		// The strongest relation this item has to the item the search started at, or nothing when it
+		// has none. Axis priority resolves an item that qualifies several ways, so it appears once.
+		std::optional<related_match> evaluate_related(file_path path, const index_file_item& file) const;
 
 		search_result match_item(file_path path, const index_file_item& file) const;
 		search_result match_folder(str::cached folder_name, str::cached name) const;

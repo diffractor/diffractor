@@ -33,19 +33,8 @@
 // exit perf summary.
 static void record_xmp_error(const std::string_view context, const std::string_view message)
 {
-	static std::mutex mutex;
-	static df::hash_set<std::string> seen;
-
 	df::bump(df::file_perf.metadata_errors);
-
-	{
-		constexpr size_t max_distinct_logged = 32;
-		const std::scoped_lock lock(mutex);
-		if (seen.size() >= max_distinct_logged) return;
-		if (!seen.emplace(std::format("{}|{}", context, message)).second) return;
-	}
-
-	df::log(context, message);
+	df::log_once(context, message);
 }
 
 static df::date_t xmp_parse_date(const std::string_view str)
@@ -282,6 +271,11 @@ static void parse_xmp(const SXMPMeta& xmp, prop::item_metadata& md)
 		md.comment = str::strip_and_cache(utf8);
 	}
 
+	if (xmp.GetProperty(kXMP_NS_DM, "synopsis", &utf8, &flags))
+	{
+		md.synopsis = str::strip_and_cache(utf8);
+	}
+
 	if (xmp.GetLocalizedText(kXMP_NS_DC, "description", "", "x-default", nullptr, &utf8, &flags))
 	{
 		md.description = str::strip_and_cache(utf8);
@@ -441,15 +435,11 @@ void metadata_edits::apply(SXMPMeta& meta) const
 	{
 		const auto position = location_coordinate.value();
 
-		//std::string v;
 		XMP_OptionBits flags = 0;
 		meta.SetProperty(kXMP_NS_EXIF, "GPSLatitude",
 		                 str::utf8_cast2(gps_coordinate::decimal_to_dms_str(position.latitude(), true)));
 		meta.SetProperty(kXMP_NS_EXIF, "GPSLongitude",
 		                 str::utf8_cast2(gps_coordinate::decimal_to_dms_str(position.longitude(), false)));
-
-		// meta.SetProperty_Float(kXMP_NS_EXIF, "GPSLatitude", position.Latitude());
-		// meta.SetProperty_Float(kXMP_NS_EXIF, "GPSLongitude", position.Longitude());
 	}
 
 
@@ -542,6 +532,11 @@ void metadata_edits::apply(SXMPMeta& meta) const
 	if (comment.has_value())
 	{
 		meta.SetProperty(kXMP_NS_DM, "logComment", str::utf8_cast2(comment.value()));
+	}
+
+	if (synopsis.has_value())
+	{
+		meta.SetProperty(kXMP_NS_DM, "synopsis", str::utf8_cast2(synopsis.value()));
 	}
 
 	if (rating.has_value())
@@ -638,11 +633,6 @@ void metadata_edits::apply(SXMPMeta& meta) const
 			}
 		}
 
-		/*while(meta.CountArrayItems(kXMP_NS_DC, "subject") > 0)
-		{
-			meta.DeleteArrayItem(kXMP_NS_DC, "subject", 1);
-		}*/
-
 		tags.remove(remove_tags);
 		tags.add(add_tags);
 		tags.make_unique();
@@ -653,10 +643,11 @@ void metadata_edits::apply(SXMPMeta& meta) const
 		{
 			meta.SetProperty(kXMP_NS_DC, "subject", nullptr, kXMP_PropArrayIsUnordered);
 		}
-		else for (auto i = 0u; i < tags.size(); i++)
-		{
-			meta.AppendArrayItem(kXMP_NS_DC, "subject", kXMP_PropValueIsArray, str::utf8_cast2(tags[i]));
-		}
+		else
+			for (auto i = 0u; i < tags.size(); i++)
+			{
+				meta.AppendArrayItem(kXMP_NS_DC, "subject", kXMP_PropValueIsArray, str::utf8_cast2(tags[i]));
+			}
 
 		// Sync exif:XPKeywords (Windows Explorer tag) with dc:subject. Cleared tags are written
 		// as an empty value rather than a deleted property: the TIFF export leaves tags that are
@@ -818,8 +809,8 @@ bool metadata_xmp::has_embedded_xmp(const df::file_path path)
 }
 
 xmp_update_result metadata_xmp::update(const df::file_path update_path, const df::file_path src_path,
-									   const metadata_edits& edits, const std::string_view src_xmp_name,
-									   const df::file_path dst_xmp_path)
+                                       const metadata_edits& edits, const std::string_view src_xmp_name,
+                                       const df::file_path dst_xmp_path)
 {
 	xmp_update_result result;
 

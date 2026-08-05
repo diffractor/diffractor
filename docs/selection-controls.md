@@ -20,7 +20,7 @@ The selection determines the user's task and therefore the panel's organization:
 
 | Form | Primary user task | Panel emphasis |
 |---|---|---|
-| Singular | View, play, inspect, rate, and act on one item | Identity, presence, viewing controls, actions, then properties |
+| Singular | View, play, inspect, rate, and act on one item | Identity, viewing controls, actions, then properties |
 | Comparison | Decide how two comparable items differ | Stable A/B identity and a compact table of high-value differences |
 | Selection summary | Understand and act on a complete selected set | Thumbnails, target summary, then applicable batch actions |
 
@@ -30,8 +30,8 @@ Consistency means predictable grouping, spacing, icon treatment, empty states, a
 
 The controls are created in [model.cpp](../src/model.cpp) and consumed in two presentations:
 
-- **Items preview:** `items_view::update_media_elements` calls the non-compact builder. For one item it may append long-form Description, Comment, Synopsis, stream details, and raw metadata below the selection panel. The selection panel ends the primary block; a Show/Hide verbose metadata affordance closes the optional detail below it, so Comment and Description are always read as detail rather than as primary content. The affordance appears only when the item actually has stream or raw metadata to reveal, and when verbose metadata is closed and nothing else would sit below the primary block it joins that block, so a lone toggle never turns a centred media pane into a scrolling one.
-- **Fullscreen:** `media_view::update_media_elements` calls the compact builder. The panel is hidden below a minimum usable width. On wide displays, a bounded long-form Description panel may appear beside it. Zoom and compare states overlay the panel on the media; otherwise the panel reserves space below the media.
+- **Items preview:** `items_view::update_media_elements` calls the non-compact builder. For one item it may append the Description section, stream details, and raw metadata below the selection panel. The selection panel ends the primary block; a Show/Hide verbose metadata affordance closes the optional detail below it, so the Description section is always read as detail rather than as primary content. The affordance appears only when the item actually has stream or raw metadata to reveal, and when verbose metadata is closed and nothing else would sit below the primary block it joins that block, so a lone toggle never turns a centred media pane into a scrolling one.
+- **Fullscreen:** `media_view::update_media_elements` calls the compact builder. The panel is hidden below a minimum usable width. On wide displays, a bounded panel holding the item's leading prose field may appear beside it. Zoom and compare states overlay the panel on the media; otherwise the panel reserves space below the media.
 
 The current top-level classification is not the intended three-form model:
 
@@ -48,10 +48,10 @@ The current top-level classification is not the intended three-form model:
 
 The non-compact panel creates these regions in order:
 
-1. AV transport: Play and scrubber for audio/video.
+1. AV transport: Play and scrubber for audio/video. Withheld when the decoder could not open the file, because the pane below is then a hex dump and a scrubber over it claims a position in something there is no way to play.
 2. Identity: metadata Title when present, otherwise filename without extension.
-3. Presence: a compact count badge, read live so a late result appears without a rebuild; its bubble states the current collection presence and lists related items.
-4. Viewing: playback options for playable media, Slideshow, Pin, orientation state, preview state, Scale up, and Fullscreen.
+3. Identity: metadata Title when present, otherwise filename without extension, followed by any count badges. Badges are read live so a late result appears without a rebuild; the bubble lists the copies and states the current collection presence.
+4. Viewing: playback options for playable media, Slideshow, Pin, orientation state, preview state, Scale up, and Fullscreen. Playback options follow the transport and are withheld on the same condition.
 5. Actions: reject/label, rating where editable, rotate, Edit, Open, and Tools.
 6. File facts: containing folder when it is not already the scope, filename, dates, and size.
 7. Technical and descriptive facts when present: dimensions, resolution, codecs, bitrate, audio format, camera, album, artist, retro system, and copyright.
@@ -59,15 +59,33 @@ The non-compact panel creates these regions in order:
 9. Tags: current tags capped at six plus a `+N` remainder, or the Edit Tags command when empty.
 10. Description: a Description label, or the Edit Metadata command when empty. The description text itself is rendered later by Items or beside the fullscreen panel.
 
-Compact density reduces region 6 to the capture date alone and removes the encoding facts within region 7 — codecs, pixel format, bitrate, and audio format. It keeps dimensions, camera, album, artist, retro system, and copyright, because fullscreen is where the picture is being read and those facts describe the subject rather than the container. The date stays for the same reason: when a photograph was taken is a fact about the subject, and dropping it with the folder, filename, and size left fullscreen unable to answer "when was this?". Long-form Description text is not a compact concern; fullscreen renders it in its own bounded panel beside the controls.
+Compact density reduces region 6 to the capture date alone and removes the encoding facts within region 7 — codecs, pixel format, bitrate, and audio format. It keeps dimensions, camera, album, artist, retro system, and copyright, because fullscreen is where the picture is being read and those facts describe the subject rather than the container. The date stays for the same reason: when a photograph was taken is a fact about the subject, and dropping it with the folder, filename, and size left fullscreen unable to answer "when was this?". Long-form prose is not a compact concern; fullscreen renders the leading field in its own bounded panel beside the controls.
 
-Presence is a live badge in singular and comparison, with the long-form explanation and related-item details in its bubble.
+### The Description section
+
+An item can carry several prose fields — `description`, `synopsis`, and `comment`. They read as one section under one header, not as a stack of headers, because a per-field header costs more height than the text it introduces.
+
+`prop::descriptive_fields` in [model_property.cpp](../src/model_property.cpp) is the single source of the section's content. It returns the populated fields in the order Description, Synopsis, Comment — Description leads because it is the field the app can write and the one most items carry — and marks any field repeating text an earlier field already holds, which sidecar round trips make common.
+
+The section has one header and one body:
+
+- **Header.** Named for the content: the field's own name while there is exactly one, the section name Description once there is a list. One button cluster serves every field in the section: open link, copy, then `tool_edit_description`. Copy takes the whole section, labelling each field only when there is more than one.
+- **Link button.** Links are gathered across all fields. One link opens directly; several offer a menu, because there is then no single obvious destination.
+- **Body, one field.** The text alone. No field label, no tree, no expander.
+- **Body, several fields.** The verbose-metadata tree, one row per field. The leading field opens by default; the rest collapse to a one-line preview and open on click, with the choice remembered per field. A field marked as a repeat shows the word Duplicate rather than its preview, so the user can see that both fields really are populated without reading the same passage twice.
+- **Cover art.** Shown to the left of the body when the item has it and it fits within half the available width.
+
+Comparison keeps one row per field instead. A table exists to align like against like, so folding three fields into one row would hide exactly the difference the form is for.
+
+Of the three, `description` is the field this section's edit command writes: the batch metadata task carries comment and synopsis fields too, but one command cannot mean three.
+
+Presence is stated in the identity bubble in singular and comparison, alongside the list of copies and separately from it.
 
 ### One non-media file
 
 This uses a different grammar:
 
-- One row holds name, Presence, Pin, the label/reject controls, then Open and Tools at its end. Open is the way out to an application that can render what Diffractor cannot; Tools is the same route to less-common actions the media panel offers, because renaming, deleting, copying, and emailing a file do not require decoding it.
+- One row holds name, Pin, the label/reject controls, then Open and Tools at its end. Open is the way out to an application that can render what Diffractor cannot; Tools is the same route to less-common actions the media panel offers, because renaming, deleting, copying, and emailing a file do not require decoding it.
 - Further rows show folder, size, created date, and modified date.
 - It does not show navigation, rotate, Edit, or Tag, none of which have a meaning for a file the viewer cannot decode. It also does not show rating, tags, Description state, or type-specific properties.
 - Nothing in the panel is held above the fold. Hex, Commodore, and archive views contribute no priority region, so the panel and the listing below it scroll as one stack.
@@ -127,21 +145,17 @@ An empty selection creates no panel.
 
 ## Singular controls
 
-The singular panel is one compact wrapping block with the following groups. The order is fixed; inapplicable controls or empty optional property groups consume no space. Title, Presence, Viewing, and Actions share a horizontal line when their natural widths fit, then wrap as complete groups under width pressure.
+The singular panel is one compact wrapping block with the following groups. The order is fixed; inapplicable controls or empty optional property groups consume no space. Title, Viewing, and Actions share a horizontal line when their natural widths fit, then wrap as complete groups under width pressure.
 
 ### 1. Title
 
 - The title is always the first item and always exactly one line high.
 - Prefer authored Title for media, otherwise use filename. Trim long text to the row and expose the full value in the tooltip; never wrap the title or increase the row height. Trimming currently clips at a character boundary; an ellipsis sign is a presentation improvement in both draw backends, not a layout requirement.
-- A sidecar count may follow as a compact badge. The related-item count and presence details belong to Presence, not the title.
+- A count badge may follow: a sidecar count, then a copy count when the item has copies. Both use the same text, colour, and shape as the badges on a thumbnail and in a detail row, so a count is recognized identically wherever it appears. The badges are part of the title control, not separate controls: the title is one target whose action is to show the items related to this one, which is what a count is for.
+- The bubble carries the identity detail the badges summarize: the sidecar files, the copies with their names, dates and sizes, and then the collection presence in the complete status vocabulary from [design.md](design.md#collection-presence), including Checking presence. Redundancy and presence are stated as separate claims rather than folded together, because they answer different questions ([collections.md](collections.md#6-the-collections-edge)).
+- Presence is informational and does not add possible copies to the target. Omit it where the concept does not apply, such as a folder.
 
-### 2. Presence
-
-- Presence is a separate compact count badge immediately after the title. It carries no leading icon: the badge is the whole control, and it uses the same text, colour, and shape as the presence badge on a thumbnail and in a detail row, so presence is recognized identically wherever it appears.
-- Its bubble uses the complete status vocabulary from [design.md](design.md#collection-presence), including Checking presence, and lists related items when available. The visible badge remains familiar and compact without duplicating that wording.
-- Omit presence only where the concept does not apply, such as a folder. Presence is informational and does not add possible copies to the target.
-
-### 3. Viewing
+### 2. Viewing
 
 This group contains only controls that change how the item is presented, or the sequence mode running over it. Nothing in it writes to the file:
 
@@ -183,10 +197,11 @@ Search-matched values retain emphasis. Optional lines are omitted when every val
 
 Location, Tags, and Description are the final three lines, in that order, so the information block ends with clear opportunities to improve the item:
 
-- A populated location or tag remains a search link and does not show an edit/add affordance.
-- Empty Location, Tags, and Description lines show only the corresponding blue edit command icon; they do not repeat a neutral field icon.
-- Each complete empty line is clickable and opens that field's own task for the singular item: `tool_locate`, `tool_tag`, or `tool_edit_description`. Routing an empty line through the shared batch Metadata task is not required.
-- Description text is not expanded inside the compact block. Show its label when populated or its edit affordance when empty; long-form text follows in the Items preview or uses the bounded fullscreen description area.
+- Location and Tags lead with their own blue edit command icon, followed by whatever values exist: `[edit] [0 or more values]`. The icon is the same whether the field is empty or full, so the line does not change shape as the item gains a value.
+- A neutral, non-clickable field icon is never drawn in front of an editable field; the clickable command icon replaces it rather than sitting beside it.
+- A populated location or tag value remains a search link. Opening the edit task is the leading icon's job, not the value's.
+- Each icon opens that field's own task for the singular item: `tool_locate`, `tool_tag`, or `tool_edit_description`. Routing through the shared batch Metadata task is not required.
+- Description has no line in this block when it is populated: its own section below the panel carries both the text and the same `tool_edit_description` icon. When it is empty the block ends with that icon alone, unlabelled.
 - Tags show at most six values followed by `+N` in both densities; activating the remainder opens the Tags task rather than expanding the panel without bound.
 
 ## Comparison controls
@@ -195,9 +210,8 @@ Comparison is an inspection task. The controls block is a compact table, not a s
 
 ### Structure
 
-- The header has stable A and B markers aligned with the media panes. Each title is single-line and trimmed independently.
-- Presence is the first table row and remains separate from identity.
-- Equality status follows presence and changes from Checking to the resolved result without changing table geometry.
+- The header has stable A and B markers aligned with the media panes. Each title is single-line and trimmed independently, and each carries its own count badges, so comparison spends no row or column on restating them.
+- Equality status is the first table row and changes from Checking to the resolved result without changing table geometry.
 - One per-item control group sits at the head of each value column and targets only that column's item: reject/flag, colour label, rating where editable, Pin, Unselect, and Delete. Column attachment is what makes the target unambiguous, and discarding the weaker of two candidates is the main reason to compare in the first place.
 - Pin, Unselect, and Delete are the three ways a comparison ends, and they belong together in that order: keep this one, drop this one, destroy this one. Exactly one item is pinned at a time, so the two Pin controls read as a pair — the held column is filled and the other is not — and pinning the other column moves the hold instead of adding a second. Holding one column is how a comparison continues into the next candidate rather than restarting from a single selection, so a user comparing one photo against several never has to reselect it.
 - The table contains no Rotate, Edit, Open, Tools, Previous, or Next commands, because those are navigation or selected-set commands with no per-column meaning. Visual comparison controls belong on the media surface.
@@ -335,7 +349,7 @@ Compact and regular presentations share region order and command placement. Comp
 
 - Pack panel regions at natural height with normal inter-region spacing. No child grows merely to distribute unused vertical space.
 - When media plus primary properties is shorter than the pane, centre that combined block as specified by product design; blank space is outside the block, not inserted between its rows.
-- Long-form Description, Comment, Synopsis, and verbose stream/raw metadata follow the primary panel. They are not duplicated inside it.
+- Long-form Description, Comment, Synopsis, and verbose stream/raw metadata follow the primary panel. They are not duplicated inside it. The prose fields share one Description section rather than a header each.
 - The verbose toggle follows primary content. Showing verbose metadata must not change the ordering or width of primary regions.
 - The toggle is omitted for items with no stream or raw metadata, because an affordance that reveals nothing is noise.
 - When Description, Comment, Synopsis, or other detail follows the primary block, the toggle trails that whole run at the base of the stack.
@@ -398,7 +412,7 @@ The form model above is the target. 1.27.0 takes only the part that removes a wr
 
 1. **Comparison eligibility.** An explicit profile predicate over file traits decides whether a pair receives comparison controls: image with image, or previewable video with previewable video. Every other pair, including any pair containing a folder, receives Selection summary. Eligibility reads stable traits only, never online status, metadata arrival, or panel width.
 2. **Presence as its own badge.** Singular and comparison show the familiar compare/count badge separately from the title. Its bubble uses the existing status vocabulary and lists related items; the badge reads the current count when it measures, so a late result appears without rebuilding the panel.
-3. **Editable metadata affordances.** Location, Tags, and Description remain the last lines of the singular panel. Each shows either its populated value or the affordance that opens `tool_locate`, `tool_tag`, or `tool_edit_description` for that item.
+3. **Editable metadata affordances.** Location and Tags are the last lines of the singular panel and each leads with the icon that opens `tool_locate` or `tool_tag` for that item, followed by whatever values exist. Description has no line here when populated, because its own section below the panel carries the text and the `tool_edit_description` icon; when empty, that icon closes the panel on its own.
 4. **Bounded tags in both densities.** The compact six-plus-`+N` cap applies to regular density as well, so one heavily tagged item cannot dominate the panel.
 5. **Comparison values from either snapshot.** Optional comparison rows render from whichever metadata snapshot has arrived rather than waiting for both, so the table is not blank while one side loads.
 6. **Pin where it is used.** Pin appears in the singular viewing group and at the head of each comparison column, so the control that starts and continues a comparison is present in the two forms that can compare. It previously existed only in the singular non-media table, where comparison is impossible. The pinned item is also marked in the items list, so the held item is distinguishable from the merely selected one.

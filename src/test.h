@@ -10,7 +10,8 @@ public:
 	std::string message;
 
 	explicit test_assert_exception(std::string m) : message(std::move(m))
-	{}
+	{
+	}
 };
 
 struct test_registry

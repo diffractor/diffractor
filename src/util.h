@@ -24,7 +24,7 @@ using namespace std::literals;
 
 constexpr std::size_t operator "" _z(const unsigned long long n)
 {
-	return n;
+	return static_cast<std::size_t>(n);
 }
 
 // Move-semantics contracts. std::is_move_constructible_v is also satisfied by a copy constructor,
@@ -119,6 +119,7 @@ namespace df
 	constexpr void assert_true_impl()
 	{
 	}
+
 #define assert_true(should_be_true) assert_true_impl()
 #endif //_DEBUG
 
@@ -188,7 +189,9 @@ namespace df
 	extern std::atomic_int command_active;
 	extern std::atomic_int dragging_items;
 	extern std::atomic_int handling_crash;
-	extern const char* rendering_func;
+	// Written by whichever thread is inside the draw backend, read by the UI debug panel and by the
+	// crash handler on its own thread, so the name of the last function entered is a published value.
+	extern std::atomic<const char*> rendering_func;
 	extern std::string gpu_desc;
 	extern std::string gpu_id;
 	extern std::string d3d_info;
@@ -203,6 +206,8 @@ namespace df
 	extern file_path log_path;
 
 	void log(std::string_view context, std::string_view message);
+	// For messages a codec can emit once per scanned item. Each distinct message reaches the log once.
+	void log_once(std::string_view context, std::string_view message);
 	void trace(std::string_view message);
 	file_path close_log();
 	std::string format_version(bool short_text);
@@ -570,7 +575,7 @@ namespace df
 		{
 		}
 
-		blob(std::initializer_list<uint8_t> il) : _v(il)
+		blob(const std::initializer_list<uint8_t> il) : _v(il)
 		{
 		}
 
@@ -1107,14 +1112,14 @@ namespace df
 		const char* _prev = "";
 
 	public:
-		scope_rendering_func(const char* f) : _prev(rendering_func)
+		scope_rendering_func(const char* f) : _prev(rendering_func.load(std::memory_order_relaxed))
 		{
-			rendering_func = f;
+			rendering_func.store(f, std::memory_order_relaxed);
 		}
 
 		~scope_rendering_func() override
 		{
-			rendering_func = _prev;
+			rendering_func.store(_prev, std::memory_order_relaxed);
 		}
 	};
 
@@ -1240,7 +1245,9 @@ namespace df
 			job_version = version->fetch_add(1, std::memory_order_relaxed) + 1;
 		}
 
-		cancel_token(std::atomic_bool& f) : flag(&f) {}
+		cancel_token(std::atomic_bool& f) : flag(&f)
+		{
+		}
 	};
 
 	inline uint32_t byteswap32(const uint32_t n)
@@ -1248,9 +1255,12 @@ namespace df
 		return _byteswap_ulong(n);
 	}
 
+	// Callers pass an offset into a file buffer, so the address carries no alignment guarantee.
 	inline uint32_t byteswap32(const uint8_t* addr)
 	{
-		return _byteswap_ulong(*std::bit_cast<const uint32_t*>(addr));
+		uint32_t n;
+		std::memcpy(&n, addr, sizeof(n));
+		return _byteswap_ulong(n);
 	}
 
 	inline uint16_t byteswap16(const uint16_t n)
@@ -1260,10 +1270,15 @@ namespace df
 
 	inline uint16_t byteswap16(const uint8_t* addr)
 	{
-		return _byteswap_ushort(*std::bit_cast<const uint16_t*>(addr));
+		uint16_t n;
+		std::memcpy(&n, addr, sizeof(n));
+		return _byteswap_ushort(n);
 	}
 
 	std::string url_extract(std::string_view text);
+
+	// Every distinct link in source order, so a caller can offer a choice rather than the first hit.
+	std::vector<std::string> url_extract_all(std::string_view text);
 
 	inline std::string url_encode(const std::string_view url)
 	{

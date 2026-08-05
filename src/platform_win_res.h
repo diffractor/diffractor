@@ -13,10 +13,6 @@
 #define IDR_DIFFRACTOR   100
 
 #define IDB_INVERSE_SHADOW   102
-#define IDB_LOGO   103
-#define IDB_LOGO30   104
-#define IDB_LOGO15   105
-#define IDB_TITLE   106
 #define IDB_MAP   107
 #define IDB_SHADOW   108
 #define IDC_COLORSELECT   109

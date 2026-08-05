@@ -235,7 +235,7 @@ public:
 		if (_controls.empty()) return;
 
 		const auto layout_padding = df::round(mc.padding1 / mc.scale_factor);
-		auto avail_bounds = recti(_extent).inflate(-layout_padding);
+		const auto avail_bounds = recti(_extent).inflate(-layout_padding);
 		mc.col_widths = {};
 		ui::control_layouts positions;
 		flex_container_layout column;
@@ -344,26 +344,26 @@ void locate_view::rebuild_markers()
 		                   }
 
 		                   state._async.queue_ui([weak_self, generation, listed_count,
-			                   markers = std::move(markers), paths = std::move(paths)]() mutable
-		                   {
-			                   const auto self = weak_self.lock();
-
-			                   // A newer rebuild has already replaced the list entries these
-			                   // collection cells were meant to sit behind.
-			                   if (!self || self->_marker_generation != generation ||
-				                   self->_marker_items.size() != listed_count)
+				                   markers = std::move(markers), paths = std::move(paths)]() mutable
 			                   {
-				                   return;
-			                   }
+				                   const auto self = weak_self.lock();
 
-			                   for (auto& path : paths)
-			                   {
-				                   self->_marker_items.push_back({std::move(path), {}});
-			                   }
+				                   // A newer rebuild has already replaced the list entries these
+				                   // collection cells were meant to sit behind.
+				                   if (!self || self->_marker_generation != generation ||
+					                   self->_marker_items.size() != listed_count)
+				                   {
+					                   return;
+				                   }
 
-			                   self->_engine.set_markers(markers);
-			                   self->_state.invalidate_view(view_invalid::view_redraw);
-		                   });
+				                   for (auto& path : paths)
+				                   {
+					                   self->_marker_items.push_back({std::move(path), {}});
+				                   }
+
+				                   self->_engine.set_markers(markers);
+				                   self->_state.invalidate_view(view_invalid::view_redraw);
+			                   });
 	                   });
 }
 
@@ -522,6 +522,23 @@ void locate_view::on_marker_hover(view_hover_element& hover, const int marker_in
 	hover.horizontal = false;
 }
 
+// Here the centre is the answer, so a picked bubble is moved under the crosshair rather than
+// marked in place. Contrast the advanced-search map, which picks without moving.
+void locate_view::on_marker_clicked(const gps_coordinate& coordinate, const int count)
+{
+	if (!coordinate.is_valid()) return;
+
+	clear_resolved_place();
+	_location->latitude = coordinate.latitude();
+	_location->longitude = coordinate.longitude();
+	set_map_location(coordinate);
+	request_reverse_geocode(coordinate);
+	refresh();
+
+	// The bubble was anchored to the old view; leaving it up would point at nothing.
+	_host->invalidate_view(view_invalid::tooltip | view_invalid::view_redraw);
+}
+
 void locate_view::request_reverse_geocode(const gps_coordinate& gps)
 {
 	const auto request_id = ++_geocode_request_id;
@@ -590,7 +607,7 @@ void locate_view::refresh()
 		_status = std::string(tt.location_not_selected);
 	}
 
-	_state.invalidate_view(view_invalid::view_layout | view_invalid::status);
+	_state.invalidate_view(view_invalid::view_layout | view_invalid::status | view_invalid::command_state);
 	if (_populate_controls) _populate_controls();
 }
 
@@ -693,13 +710,13 @@ view_controls_host_ptr locate_view::controls(const ui::control_frame_ptr& owner)
 		selection_thumbnails->selection(items.thumbs(), items.size());
 		target_summary->text(format_plural_text(tt.be_updated_fmt, items));
 		overwrite_summary->text(gps_items.empty()
-			? std::string{}
-			: format_plural_text(tt.gps_overwrite_count_fmt, df::item_set(gps_items)));
+			                        ? std::string{}
+			                        : format_plural_text(tt.gps_overwrite_count_fmt, df::item_set(gps_items)));
 		overwrite_summary->is_visible(!gps_items.empty());
 		if (const auto host = weak_host.lock()) host->scroll_controls();
 	};
 
-	
+
 	controls.emplace_back(std::make_shared<divider_element>());
 	controls.emplace_back(std::make_shared<text_element>(tt.type_to_search));
 	controls.emplace_back(search);

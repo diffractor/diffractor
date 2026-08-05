@@ -21,6 +21,16 @@ class sidebar_host;
 class items_view;
 struct metadata_block;
 
+// Shared by the view and every metadata listing it builds. A listing can outlive the rebuild that
+// replaced it -- a latched controller still holds one -- so the posture map is refcounted and the
+// view drops the hook as it goes, leaving a stranded listing inert rather than dangling.
+struct metadata_tree_state
+{
+	std::map<std::string, bool, std::less<>> expanded;
+	std::function<void()> invalidate;
+};
+
+using metadata_tree_state_ptr = std::shared_ptr<metadata_tree_state>;
 
 
 struct item_and_group
@@ -79,7 +89,7 @@ public:
 
 	// Which metadata rows the user has opened or closed. Keyed by block and stable row id so the
 	// posture survives the element rebuild that every selection change performs.
-	std::map<std::string, bool, std::less<>> _metadata_expanded;
+	metadata_tree_state_ptr _metadata_tree = std::make_shared<metadata_tree_state>();
 
 	view_element_ptr _media_element;
 	df::item_element_ptr _layout_center_item;
@@ -96,8 +106,6 @@ public:
 	int _sidebar_splitter_active = 0;
 	int _scroll_width = 20;
 	int _top_chrome_height = 0;
-	int _top_toolbar_left_width = 0;
-	int _top_toolbar_right_width = 0;
 	int _sidebar_width = 0;
 	int _sidebar_splitter_width = 0;
 	double _scale_factor = 1.0;
@@ -105,14 +113,6 @@ public:
 	// The address and filter boxes are the same control with different callbacks; sharing one
 	// element keeps their keyboard, mouse and caret behavior identical.
 	edit_element_ptr _filter_edit = std::make_shared<edit_element>();
-
-	// locations.md 4.3: the distance slider and its label survive control-bar rebuilds so a drag is
-	// never dropped by a refresh, and the slider owns _distance_detent until the drag settles.
-	std::shared_ptr<slider_element> _distance_slider;
-	std::shared_ptr<text_element> _distance_label;
-	view_element_ptr _distance_row;
-	int _distance_detent = 0;
-	double _distance_km = 0.0;
 
 	// locations.md 7.3: an optional control row that can shrink to a one-line header when the
 	// control area would otherwise bury the items the user came to see.
@@ -136,22 +136,20 @@ public:
 		}
 	};
 
-	control_row _timeline_row;
 	control_row _breakdown_row;
 
 	// An explicit expansion outranks the budget's guess and lasts the session.
-	bool _timeline_expanded = false;
 	bool _breakdown_expanded = false;
 
 	// locations.md 6.3 / 7.2: the two derived control-bar rows. Both are rebuilt from published
 	// worker results, so neither ever reads the index or the gazetteer while building.
 
 	view_element_ptr build_location_breakdown_row();
+	view_element_ptr build_related_header_row() const;
 	void apply_control_row_budget(ui::measure_context& mc, int width, int budget);
 
 	view_element_ptr _items_scroll_top;
 	recti _items_scroll_top_bounds;
-	std::function<void(bool, bool, recti)> _edit_focus_changed;
 
 	// Every interactive area of the view is a rectangle in this set. update_regions() is the only
 	// writer and runs during layout; render, hit testing, wheel routing and context menus all read
@@ -174,7 +172,6 @@ public:
 	std::shared_ptr<sidebar_host> _sidebar;
 
 	friend class splitter_controller;
-	friend class rendered_toolbar_controller;
 	friend class sidebar_splitter_controller;
 
 	std::vector<item_and_group> _visible_items;
@@ -205,10 +202,12 @@ public:
 	void focus(bool has_focus) override;
 	bool key_down(char32_t key, ui::key_state keys) override;
 	bool text_input(std::string_view text) override;
+
 	ui::focus_mode focus_mode() const override
 	{
 		return _filter_edit->focused() ? ui::focus_mode::text_edit : ui::focus_mode::view;
 	}
+
 	bool is_caption_area(pointi loc) const override;
 
 	void items_scroll_popup(view_hover_element& hover, pointi loc) const;
@@ -312,6 +311,8 @@ public:
 	void display_changed() override;
 	void update_media_elements() override;
 	void add_metadata_elements(std::vector<view_element_ptr>& elements, const metadata_block& block);
+	void add_description_elements(std::vector<view_element_ptr>& elements, const df::item_element_ptr& item,
+	                              const prop::item_metadata_const_ptr& md);
 
 	void draw_splitter(ui::draw_context& dc, recti bounds, bool active, bool tracking) const;
 

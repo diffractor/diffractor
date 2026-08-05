@@ -33,11 +33,13 @@ class locate_view final :
 	// Remote form, and the locations.md 2.7 bearing descriptor for anything not `at` a place.
 	std::string _place_label;
 	std::string _bearing;
+
 	struct marker_item
 	{
 		df::file_path path;
 		df::item_element_ptr item;
 	};
+
 	// Geotagged collection/current-list items shown as aggregated markers. Collection-only
 	// entries stay lightweight until hovered; current-list entries reuse their item element.
 	std::vector<marker_item> _marker_items;
@@ -76,6 +78,7 @@ public:
 	void on_map_panned(const gps_coordinate& new_center) override;
 	void on_map_zoomed(int zoom) override;
 	void on_marker_hover(view_hover_element& hover, int marker_index, int count, pointi anchor) override;
+	void on_marker_clicked(const gps_coordinate& coordinate, int count) override;
 
 	view_controls_host_ptr controls(const ui::control_frame_ptr& owner);
 

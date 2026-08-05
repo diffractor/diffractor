@@ -270,6 +270,74 @@ static void should_apply_video_aspect_ratio()
 	assert_equal(360, md->height, "anamorphic display height");
 }
 
+// The index scan bounds FFmpeg's stream probe; the inspect scan does not. Every property the index
+// records has to survive that bound, so the two intents are compared across the AV containers.
+static void should_scan_av_metadata_with_a_bounded_probe()
+{
+	auto fixtures_carrying_xmp = 0;
+
+	for (const auto* const name : {
+		     "gizmo.mp4", "indy.mp4", "anamorphic.mp4", "ipod.mov", "StPauls.MOV", "tagged.mkv",
+		     "Byzantium.avi", "Colorblind.mp3"
+	     })
+	{
+		const auto path = test_files_folder.combine_file(name);
+		const auto* const ft = files::file_type_from_name(path);
+
+		files ff;
+		const auto inspected = ff.scan_file(path, false, ft, {}, {}, scan_intent::inspect);
+		const auto indexed = ff.scan_file(path, false, ft, {}, {}, scan_intent::index);
+
+		assert_equal(true, indexed.success, name, "index scan succeeded");
+		assert_equal(inspected.width, indexed.width, name, "width");
+		assert_equal(inspected.height, indexed.height, name, "height");
+		assert_equal(inspected.duration, indexed.duration, name, "duration");
+		assert_equal(inspected.video_codec.sv(), indexed.video_codec.sv(), name, "video codec");
+		assert_equal(inspected.pixel_format.sv(), indexed.pixel_format.sv(), name, "pixel format");
+		assert_equal(inspected.audio_codec.sv(), indexed.audio_codec.sv(), name, "audio codec");
+		assert_equal(inspected.audio_sample_rate, indexed.audio_sample_rate, name, "audio sample rate");
+		assert_equal(inspected.audio_channels, indexed.audio_channels, name, "audio channels");
+		assert_equal(static_cast<int>(inspected.audio_sample_type), static_cast<int>(indexed.audio_sample_type),
+		             name, "audio sample type");
+		assert_equal(inspected.bitrate.sv(), indexed.bitrate.sv(), name, "bit rate");
+		assert_equal(inspected.orientation, indexed.orientation, name, "orientation");
+		assert_equal(inspected.created_utc, indexed.created_utc, name, "created");
+
+		// gizmo.mp4, ipod.mov and Byzantium.avi carry their XMP packet in the last 1% of the file,
+		// megabytes past the probe budget. It survives because container metadata is read by the
+		// demuxer's read_header, inside avformat_open_input, which the bound is applied after.
+		assert_equal(inspected.metadata.xmp.size(), indexed.metadata.xmp.size(), name, "xmp size");
+		assert_equal(true, std::ranges::equal(inspected.metadata.xmp, indexed.metadata.xmp), name, "xmp bytes");
+
+		if (!inspected.metadata.xmp.empty()) ++fixtures_carrying_xmp;
+	}
+
+	// Without this the XMP assertions above would pass on an empty packet and prove nothing.
+	assert_equal(3, fixtures_carrying_xmp, "fixtures carrying a trailing xmp packet");
+}
+
+// FFmpeg falls back to matching a demuxer on the file extension alone, so a TypeScript source file
+// named index.ts is handed to the MPEG-TS demuxer, opens without any error and then describes no
+// stream whatsoever. The scan must report that as a failure rather than publish an empty video.
+static void should_reject_a_non_media_file()
+{
+	const auto path = test_files_folder.combine("excluded1").combine_file("not-media.ts");
+	const auto* const ft = files::file_type_from_name(path);
+
+	// The extension alone still says video; only the header settles it.
+	assert_equal(true, path.exists(), "fixture is present");
+	assert_equal(true, ft->has_trait(file_traits::av), "ts is an av extension");
+	assert_equal(false, files::media_header_matches(path.extension(), df::blob_from_file(path, 1024)),
+	             "the header rule refuses it before the demuxer sees it");
+
+	av_format_decoder decoder;
+	assert_equal(false, decoder.open(path, media_intent::metadata), "decoder rejects the file");
+
+	files ff;
+	assert_equal(false, ff.scan_file(path, false, ft, {}, {}, scan_intent::inspect).success, "inspect scan fails");
+	assert_equal(false, ff.scan_file(path, false, ft, {}, {}, scan_intent::index).success, "index scan fails");
+}
+
 // A container-level seek does not flush the codec, so extract_thumbnail must flush
 // the decoder after seeking - otherwise, when the decoder is reused across calls, a
 // later-position thumbnail can be served from a frame that was buffered before the
@@ -280,7 +348,7 @@ static void should_flush_decoder_on_thumbnail_seek()
 	const auto load_path = test_files_folder.combine_file("gizmo.mp4");
 
 	av_format_decoder decoder;
-	assert_equal(true, decoder.open(load_path), "open gizmo.mp4");
+	assert_equal(true, decoder.open(load_path, media_intent::thumbnail), "open gizmo.mp4");
 	decoder.init_streams(-1, -1, false, false, false);
 	assert_equal(true, decoder.has_video(), "gizmo.mp4 has video");
 
@@ -315,7 +383,7 @@ static void should_seek_to_the_frame_at_the_requested_time()
 	const auto load_path = test_files_folder.combine_file("indy.mp4");
 
 	av_format_decoder decoder;
-	assert_equal(true, decoder.open(load_path), "open indy.mp4");
+	assert_equal(true, decoder.open(load_path, media_intent::thumbnail), "open indy.mp4");
 	decoder.init_streams(-1, -1, false, false, false);
 	assert_equal(true, decoder.has_video(), "indy.mp4 has video");
 
@@ -614,7 +682,7 @@ static void should_end_a_silent_clip_at_the_stream_end()
 		const auto candidate = test_files_folder.combine_file(name);
 
 		av_format_decoder probe;
-		if (!probe.open(candidate)) continue;
+		if (!probe.open(candidate, media_intent::playback)) continue;
 		probe.init_streams(-1, -1, false, false, false);
 
 		if (probe.has_video() && !probe.has_audio())
@@ -638,9 +706,9 @@ static void should_end_a_silent_clip_at_the_stream_end()
 	assert_equal(false, ses->has_ended(now), "a freshly opened clip has not ended");
 
 	// Drive the demux, decode and present work the player threads normally own.
-	platform::thread_event video_event(false, false);
-	platform::thread_event audio_event(false, false);
-	platform::thread_event read_event(false, false);
+	const platform::thread_event video_event(false, false);
+	const platform::thread_event audio_event(false, false);
+	const platform::thread_event read_event(false, false);
 
 	auto ended_at = -1.0;
 
@@ -696,9 +764,9 @@ static void should_land_audio_and_video_on_the_sought_position()
 	playback_buffer.init(fmt);
 	vis_buffer.init(fmt);
 
-	platform::thread_event video_event(false, false);
-	platform::thread_event audio_event(false, false);
-	platform::thread_event read_event(false, false);
+	const platform::thread_event video_event(false, false);
+	const platform::thread_event audio_event(false, false);
+	const platform::thread_event read_event(false, false);
 
 	auto now = df::now();
 
@@ -748,9 +816,9 @@ static void should_scan_raw()
 	expected.created_utc = df::date_t(2011, 9, 23, 23, 49, 16);
 
 	null_async_strategy as;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
-	auto actual = metadata_from_cache(index, load_path);
+	const auto actual = metadata_from_cache(index, load_path);
 	assert_metadata(expected, *actual, "Screws.CR2");
 }
 
@@ -835,7 +903,7 @@ static void should_scan_and_load_bitmap_psd()
 
 	constexpr uint32_t black = 0x000000;
 	constexpr uint32_t white = 0xFFFFFF;
-	const auto rgb = [](const uint32_t pixel) { return static_cast<uint32_t>(pixel & 0xFFFFFF); };
+	const auto rgb = [](const uint32_t pixel) { return pixel & 0xFFFFFF; };
 
 	assert_equal(black, rgb(row0[0]), "bitmap psd 0,0 is black");
 	assert_equal(white, rgb(row0[1]), "bitmap psd 1,0 is white");
@@ -843,6 +911,85 @@ static void should_scan_and_load_bitmap_psd()
 	assert_equal(black, rgb(row0[12]), "bitmap psd 12,0 is black");
 	assert_equal(white, rgb(row1[0]), "bitmap psd 0,1 is white");
 	assert_equal(black, rgb(row1[15]), "bitmap psd 15,1 is black");
+}
+
+static void should_keep_dimensions_from_truncated_gif()
+{
+	// A valid GIF89a header followed by an application extension declaring an 11-byte
+	// identifier the file does not contain. The block walk cannot complete, but the
+	// dimensions were read from the header before it and must survive it - otherwise the
+	// scan is recorded as a failure and the file is re-scanned on every index pass.
+	constexpr uint8_t truncated_gif[] = {
+		'G', 'I', 'F', '8', '9', 'a',
+		0x40, 0x00, // width 64
+		0x20, 0x00, // height 32
+		0x00, 0x00, 0x00, // packed fields (no global colour table), background, aspect
+		0x21, 0xFF, 0x0B, // application extension promising 11 bytes that are not there
+	};
+
+	mem_read_stream stream({truncated_gif, std::size(truncated_gif)});
+	const auto scanned = scan_photo(stream);
+
+	assert_equal(true, scanned.success, "truncated gif scanned");
+	assert_equal(64u, scanned.width, "truncated gif width");
+	assert_equal(32u, scanned.height, "truncated gif height");
+}
+
+static std::vector<uint8_t> make_tiff_with_dimensions(const uint32_t width, const uint32_t height)
+{
+	std::vector<uint8_t> buf;
+
+	const auto put16 = [&buf](const uint16_t v)
+	{
+		buf.push_back(static_cast<uint8_t>(v));
+		buf.push_back(static_cast<uint8_t>(v >> 8));
+	};
+	const auto put32 = [&buf](const uint32_t v)
+	{
+		buf.push_back(static_cast<uint8_t>(v));
+		buf.push_back(static_cast<uint8_t>(v >> 8));
+		buf.push_back(static_cast<uint8_t>(v >> 16));
+		buf.push_back(static_cast<uint8_t>(v >> 24));
+	};
+	const auto put_entry = [put16, put32](const uint16_t tag, const uint32_t value)
+	{
+		put16(tag);
+		put16(4); // FMT_ULONG
+		put32(1);
+		put32(value);
+	};
+
+	put16(0x4949);
+	put16(42);
+	put32(8); // IFD0 offset
+
+	put16(2); // entry count
+	put_entry(0x0100, width); // ImageWidth
+	put_entry(0x0101, height); // ImageLength
+	put32(0); // no IFD1
+
+	return buf;
+}
+
+static void should_reject_absurd_tiff_dimensions()
+{
+	const auto valid = make_tiff_with_dimensions(64, 32);
+	mem_read_stream valid_stream({valid.data(), valid.size()});
+	const auto scanned_valid = scan_photo(valid_stream);
+
+	assert_equal(true, scanned_valid.success, "valid tiff scanned");
+	assert_equal(64u, scanned_valid.width, "valid tiff width");
+	assert_equal(32u, scanned_valid.height, "valid tiff height");
+
+	// These are unvalidated 32-bit file fields. Cast into sizei this one turns negative, and
+	// the decode budget it is later checked against then passes.
+	const auto absurd = make_tiff_with_dimensions(0xFFFFFFFFu, 0xFFFFFFFFu);
+	mem_read_stream absurd_stream({absurd.data(), absurd.size()});
+	const auto scanned_absurd = scan_photo(absurd_stream);
+
+	assert_equal(false, scanned_absurd.success, "absurd tiff rejected");
+	assert_equal(0u, scanned_absurd.width, "absurd tiff width cleared");
+	assert_equal(0u, scanned_absurd.height, "absurd tiff height cleared");
 }
 
 static void should_scan_archive()
@@ -907,6 +1054,28 @@ static void should_not_double_apply_heif_rotation()
 	// Already upright, so no further rotation may be requested.
 	assert_equal(static_cast<int>(ui::orientation::top_left), static_cast<int>(props->orientation),
 	             "orientation", file_name);
+
+	// The display path decodes the same item, so it must agree with the scan rather than
+	// rotating a second time - a mismatch here shows as a thumbnail facing the wrong way.
+	const auto loaded = ff.load(load_path, false);
+	assert_equal(true, is_valid(loaded.s), "loaded", file_name);
+	assert_equal(static_cast<int>(ui::orientation::top_left), static_cast<int>(loaded.orientation()),
+	             "loaded orientation", file_name);
+	assert_equal(2252, loaded.dimensions().cx, "loaded width", file_name);
+	assert_equal(4000, loaded.dimensions().cy, "loaded height", file_name);
+
+	// The stored thumbnail is a separate item that need not carry the same 'irot', so its
+	// orientation is resolved from its own properties. The upright image is portrait, so the
+	// thumbnail must also be portrait once its own orientation is applied.
+	const auto* const ft = files::file_type_from_name(load_path);
+	const auto with_thumb = ff.scan_file(load_path, true, ft, {}, {}, scan_intent::index);
+	assert_equal(true, ui::is_valid(with_thumb.thumbnail_surface), "thumbnail", file_name);
+
+	const auto thumb_extent = with_thumb.thumbnail_surface->dimensions();
+	const auto thumb_upright = ui::flips_xy(with_thumb.thumbnail_surface->orientation())
+		                           ? sizei{thumb_extent.cy, thumb_extent.cx}
+		                           : thumb_extent;
+	assert_equal(true, thumb_upright.cy > thumb_upright.cx, "thumbnail is upright portrait", file_name);
 }
 
 static void should_scan_avif()
@@ -1266,6 +1435,38 @@ static void should_select_slavic_plural_forms()
 	assert_equal(0, static_cast<int>(cs.title_item_count_fmt.extra_forms.size()), "clear drops extra plural forms");
 }
 
+// Indexing must not pay for an embedded thumbnail it will not use: extracting one reads the
+// thumbnail's bytes off the file and copies them (EXIF/TIFF) or fully decodes them (HEIF). The scan
+// asks for one only when a thumbnail is wanted, and this pins both halves of that - nothing when it
+// is not, and still a thumbnail when it is.
+static void should_extract_embedded_thumbnails_only_on_demand()
+{
+	// Each is over the 256 KB in-memory limit, so the scan reaches them through the seek-and-read
+	// stream rather than a span into an already-resident blob.
+	for (const auto* const name : {"Nikon.JPG", "IMG_0096.JPG", "melnik.heic"})
+	{
+		const auto path = test_files_folder.combine_file(name);
+
+		files ff;
+		const auto indexed = ff_scan_file(ff, path);
+		const auto wanted = ff_scan_and_load_thumb(ff, path);
+
+		assert_equal(true, indexed.success, name, "metadata scan succeeded");
+		assert_equal(false, is_valid(indexed.thumbnail_image) || is_valid(indexed.thumbnail_surface),
+		             name, "metadata scan extracted no embedded thumbnail");
+
+		// The metadata a scan reports must not depend on whether a thumbnail was asked for.
+		assert_equal(wanted.width, indexed.width, name, "width");
+		assert_equal(wanted.height, indexed.height, name, "height");
+		assert_equal(static_cast<int>(wanted.orientation), static_cast<int>(indexed.orientation),
+		             name, "orientation");
+		assert_equal(wanted.created_utc, indexed.created_utc, name, "created");
+
+		assert_equal(true, is_valid(wanted.thumbnail_image) || is_valid(wanted.thumbnail_surface),
+		             name, "on-demand scan produced a thumbnail");
+	}
+}
+
 void register_tests3(view_state& state, test_registry& tests)
 {
 	//
@@ -1281,6 +1482,10 @@ void register_tests3(view_state& state, test_registry& tests)
 	tests.add("Should scan mp3 metadata"s, should_scan_mp3);
 	tests.add("Should scan mp4 metadata"s, should_scan_mp4);
 	tests.add("Issue #78: Should apply video aspect ratio"s, should_apply_video_aspect_ratio);
+	tests.add("Should scan av metadata with a bounded probe"s, should_scan_av_metadata_with_a_bounded_probe);
+	tests.add("Should reject a non media file"s, should_reject_a_non_media_file);
+	tests.add("Should extract embedded thumbnails only on demand"s,
+	          should_extract_embedded_thumbnails_only_on_demand);
 	tests.add("Should flush decoder on thumbnail seek"s, should_flush_decoder_on_thumbnail_seek);
 	tests.add("Should seek to the frame at the requested time"s, should_seek_to_the_frame_at_the_requested_time);
 	tests.add("Should end a silent clip at the stream end"s, should_end_a_silent_clip_at_the_stream_end);
@@ -1312,6 +1517,8 @@ void register_tests3(view_state& state, test_registry& tests)
 	tests.add("Should scan d64"s, should_scan_d64);
 	tests.add("Should detect tiff by version"s, should_detect_tiff_by_version);
 	tests.add("Should scan and load bitmap psd"s, should_scan_and_load_bitmap_psd);
+	tests.add("Should keep dimensions from truncated gif"s, should_keep_dimensions_from_truncated_gif);
+	tests.add("Should reject absurd tiff dimensions"s, should_reject_absurd_tiff_dimensions);
 
 	//
 	// Archive

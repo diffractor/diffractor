@@ -14,6 +14,7 @@
 
 #include "pch.h"
 #include "platform_win.h"
+#include "platform_win_visual.h"
 #include "test_utils.h"
 
 static void should_convert_extended_file_system_paths()
@@ -42,7 +43,10 @@ static void should_suppress_gpu_for_recovery_session()
 {
 	platform::suppress_crash_guard(platform::crash_guard::gpu_render, true);
 	// Suppression is process-global; a failing assertion below must not leave it on.
-	const df::scope_exit restore_guard([] { platform::suppress_crash_guard(platform::crash_guard::gpu_render, false); });
+	const df::scope_exit restore_guard([]
+	{
+		platform::suppress_crash_guard(platform::crash_guard::gpu_render, false);
+	});
 	assert_equal(true, platform::crash_guard_suppressed(platform::crash_guard::gpu_render),
 	             "GPU suppressed during recovery");
 	assert_equal(false, platform::crash_guard_suppressed(platform::crash_guard::hw_video_decode),
@@ -118,6 +122,22 @@ static void should_cache_font_faces_per_face_and_size()
 	assert_equal(true, probe.reset_clears_cache, "resetting fonts empties the cache");
 }
 
+// #189 again, one level down: a cached glyph raster belongs to a size as well as to a face.
+// IDWriteFontFace carries no size - the size lives on the glyph run - so a cache keyed on the
+// face alone serves a raster made at the previous font size to text drawn at the current one,
+// which is how a popup ended up mixing glyph sizes within one string.
+static void should_key_glyph_cache_by_size()
+{
+	glyph_face_keys keys;
+
+	assert_equal(true, keys.key(nullptr, 16.0f, 42) == keys.key(nullptr, 16.0f, 42),
+	             "the same face, size and glyph give the same key");
+	assert_equal(true, keys.key(nullptr, 16.0f, 42) != keys.key(nullptr, 24.0f, 42),
+	             "a font-size change yields a distinct glyph key");
+	assert_equal(true, keys.key(nullptr, 16.0f, 42) != keys.key(nullptr, 16.0f, 43),
+	             "a different glyph yields a distinct key");
+}
+
 static void should_persist_to_registry()
 {
 	const auto archive = platform::create_registry_settings();
@@ -151,9 +171,9 @@ static void should_validate_registry_value_types_and_sizes()
 	                                              REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, nullptr, &key, nullptr)),
 	             "create registry test section");
 
-	const wchar_t text[] = L"text";
-	const uint16_t short_number = 42;
-	const wchar_t unterminated[] = {L'r', L'a', L'w'};
+	constexpr wchar_t text[] = L"text";
+	constexpr uint16_t short_number = 42;
+	constexpr wchar_t unterminated[] = {L'r', L'a', L'w'};
 	RegSetValueExW(key, L"wrong-number-type", 0, REG_SZ, reinterpret_cast<const BYTE*>(text), sizeof(text));
 	RegSetValueExW(key, L"short-number", 0, REG_DWORD, reinterpret_cast<const BYTE*>(&short_number),
 	               sizeof(short_number));
@@ -254,6 +274,22 @@ static void should_offer_each_drag_format_once()
 // renders itself into the device context it is handed; a control that ignored the request would
 // blit an empty buffer and appear blank. This test holds comctl32 to that contract for the two
 // classes the app buffers.
+static void should_reject_unusable_file_names()
+{
+	assert_equal(true, platform::is_valid_file_name("holiday 2024.jpg"), "an ordinary name is usable");
+	assert_equal(true, platform::is_valid_file_name("caf\xc3\xa9 \xe6\x97\xa5.jpg"), "non-ascii is usable");
+	assert_equal(true, platform::is_valid_file_name("console.txt"), "a reserved name as a prefix is usable");
+
+	assert_equal(false, platform::is_valid_file_name(""), "an empty name is not usable");
+	assert_equal(false, platform::is_valid_file_name("a?b.jpg"), "a reserved character is not usable");
+	assert_equal(false, platform::is_valid_file_name("a\tb.jpg"), "a control character is not usable");
+	assert_equal(false, platform::is_valid_file_name("trailing."), "a trailing dot is not usable");
+	assert_equal(false, platform::is_valid_file_name("trailing "), "a trailing space is not usable");
+	assert_equal(false, platform::is_valid_file_name("CON"), "a device name is not usable");
+	assert_equal(false, platform::is_valid_file_name("con.txt"), "a device name with an extension is not usable");
+	assert_equal(false, platform::is_valid_file_name("Lpt9.jpeg"), "device names are case insensitive");
+}
+
 static void should_render_common_controls_into_a_buffer()
 {
 	const auto probe = platform::probe_buffered_control_paint();
@@ -274,8 +310,10 @@ void register_tests8(view_state& state, test_registry& tests)
 	tests.add("Issue #219: Should fall back for missing glyphs"s, should_fall_back_for_missing_glyphs);
 	tests.add("Issue #232/#189: Should cache font faces per face and size"s,
 	          should_cache_font_faces_per_face_and_size);
+	tests.add("Issue #189: Should key glyph cache by size"s, should_key_glyph_cache_by_size);
 	tests.add("Should persist strings in registry"s, should_persist_to_registry);
 	tests.add("Should validate registry value types and sizes"s, should_validate_registry_value_types_and_sizes);
 	tests.add("Premiere dup: drag offers each format once"s, should_offer_each_drag_format_once);
+	tests.add("Should reject unusable file names"s, should_reject_unusable_file_names);
 	tests.add("Should render common controls into a buffer"s, should_render_common_controls_into_a_buffer);
 }

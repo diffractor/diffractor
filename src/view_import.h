@@ -24,7 +24,6 @@ class import_view final :
 	std::string _status;
 	import_analysis_result _analysis;
 	import_options _analysis_options;
-	df::index_roots _analysis_root;
 	bool _analysis_valid = false;
 
 	void invalidate_analysis();
@@ -52,6 +51,10 @@ public:
 	void analyze();
 	void refresh() override;
 	void reload() override;
+
+	// Analyze needs a source to read and a destination to plan into. Without both it can only
+	// repeat the failure the dimmed button already states.
+	bool can_analyze() const;
 
 	bool can_run() const
 	{
@@ -90,6 +93,5 @@ public:
 		return _title;
 	}
 
-	void update_rows(const import_analysis_result& analysis_result, const import_options& options,
-	                 const df::index_roots& import_root);
+	void update_rows(const import_analysis_result& analysis_result, const import_options& options);
 };

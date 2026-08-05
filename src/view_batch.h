@@ -29,17 +29,9 @@ class batch_tool_view final : public list_view, public std::enable_shared_from_t
 	df::date_t _original_start;
 	df::date_t _new_start;
 	bool _new_start_seeded = false;
-	bool _set_title = false;
-	bool _set_comment = false;
-	bool _set_rating = false;
-	bool _set_year = false;
-	bool _set_created = false;
-	bool _set_episode = false;
-	bool _set_season = false;
-	bool _set_track = false;
-	bool _set_disk = false;
 	std::string _metadata_title;
 	std::string _metadata_comment;
+	std::string _metadata_synopsis;
 	int _metadata_rating = 0;
 	int _metadata_year = 0;
 	df::date_t _metadata_created;
@@ -56,14 +48,14 @@ class batch_tool_view final : public list_view, public std::enable_shared_from_t
 	void run_metadata();
 	void run_dates();
 	// Called from the worker: hands a finished run back to the UI thread.
-	static void queue_run_result(view_state& s, const std::shared_ptr<batch_tool_view>& view,
+	static void queue_run_result(const view_state& s, const std::shared_ptr<batch_tool_view>& view,
 	                             platform::file_op_result result, bool canceled, std::string title,
 	                             std::shared_ptr<detach_file_handles> detach, std::string error);
 
 public:
 	batch_tool_view(view_state& state, view_host_ptr host) : list_view(state, std::move(host)) { col_count = 3; }
 
-	void mode(batch_tool_mode value) { _mode = value; }
+	void mode(const batch_tool_mode value) { _mode = value; }
 	batch_tool_mode mode() const { return _mode; }
 	void run();
 	text_t run_text() const;

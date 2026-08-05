@@ -98,7 +98,7 @@ msgid "audio"
 msgstr "áudio"
 
 msgid "Audio"
-msgstr "áudio"
+msgstr "Áudio"
 
 msgid "Before"
 msgstr "Antes"
@@ -170,8 +170,8 @@ msgstr "Doe on-line."
 msgid "Changes"
 msgstr "Mudanças"
 
-msgid "Set the location for the selected files by scrolling the map or searching for a place. Use the mouse wheel to zoom."
-msgstr "Role o mapa para selecionar um local. Use a roda do mouse para ampliar."
+msgid "The crosshair at the centre of the map marks the location that will be written. Drag the map, click a photo bubble to move it under the crosshair, or search for a place by name. Use the mouse wheel to zoom. Nothing is written until you press Add location."
+msgstr "A mira no centro do mapa marca o local que será gravado. Arraste o mapa, clique em um balão de foto para movê-lo sob a mira ou pesquise um lugar pelo nome. Use a roda do mouse para aplicar zoom. Nada é gravado até você pressionar Adicionar local."
 
 msgid "The collection contains {} {} ({})."
 msgstr "A coleção contém {} {} ({})."
@@ -243,7 +243,7 @@ msgid "Advanced Search"
 msgstr "Pesquisa Avançada"
 
 msgid "Exit"
-msgstr "Saída"
+msgstr "Sair"
 
 msgid "Back"
 msgstr "Voltar"
@@ -264,7 +264,7 @@ msgid "Extend selection to next item"
 msgstr "Estender a seleção para o próximo item"
 
 msgid "Parent"
-msgstr "Pai"
+msgstr "Pasta pai"
 
 msgid "Previous folder or search"
 msgstr "Pasta ou pesquisa anterior"
@@ -309,10 +309,10 @@ msgid "Edit"
 msgstr "Editar"
 
 msgid "Copy"
-msgstr "Cópia"
+msgstr "Copiar"
 
 msgid "Cut"
-msgstr "Corte"
+msgstr "Recortar"
 
 msgid "Edit metadata"
 msgstr "Editar metadados"
@@ -327,10 +327,10 @@ msgid "Favorite"
 msgstr "Favorito"
 
 msgid "Open properties"
-msgstr "Propriedades abertas"
+msgstr "Abrir propriedades"
 
 msgid "Search"
-msgstr "Procurar"
+msgstr "Pesquisar"
 
 msgid "Show items in subfolders"
 msgstr "Mostrar itens em subpastas"
@@ -420,7 +420,7 @@ msgid "To Do"
 msgstr "Pendência"
 
 msgid "Language"
-msgstr "Linguagem"
+msgstr "Idioma"
 
 msgid "Add location"
 msgstr "Adicionar local"
@@ -492,16 +492,16 @@ msgid "Rate as 1 star"
 msgstr "Avalie como 1 estrela"
 
 msgid "Rate as 2 stars"
-msgstr "Classifique como 2 estrelas"
+msgstr "Avalie como 2 estrelas"
 
 msgid "Rate as 3 stars"
 msgstr "Avalie como 3 estrelas"
 
 msgid "Rate as 4 stars"
-msgstr "Classifique como 4 estrelas"
+msgstr "Avalie como 4 estrelas"
 
 msgid "Rate as 5 stars"
-msgstr "Classifique como 5 estrelas"
+msgstr "Avalie como 5 estrelas"
 
 msgid "Reject"
 msgstr "Rejeitar"
@@ -509,8 +509,8 @@ msgstr "Rejeitar"
 msgid "Refresh"
 msgstr "Atualizar"
 
-msgid "Matching or possible copy items in the collection"
-msgstr "Itens correspondentes ou possíveis cópias na coleção"
+msgid "Related items"
+msgstr "Itens relacionados"
 
 msgid "Rename"
 msgstr "Renomear"
@@ -529,6 +529,9 @@ msgstr "Girar no sentido anti-horário"
 
 msgid "Rotate clockwise"
 msgstr "Girar no sentido horário"
+
+msgid "Confirm single-item rotations"
+msgstr "Confirmar rotação de um único item"
 
 msgid "Reset rotation"
 msgstr "Redefinir rotação"
@@ -573,7 +576,7 @@ msgid "Invert selection"
 msgstr "Inverter seleção"
 
 msgid "Select none"
-msgstr "Selecione nenhum"
+msgstr "Desmarcar tudo"
 
 msgid "Email"
 msgstr "E-mail"
@@ -639,13 +642,13 @@ msgid "Menu"
 msgstr "Menu"
 
 msgid "Rate or Label"
-msgstr "Taxa ou rótulo"
+msgstr "Avaliar ou etiquetar"
 
 msgid "Select Items"
 msgstr "Selecione itens"
 
 msgid "Sort"
-msgstr "Organizar"
+msgstr "Classificar"
 
 msgid "Toggle volume"
 msgstr "Alternar volume"
@@ -665,6 +668,12 @@ msgstr "Contraste"
 msgid "Open link {}"
 msgstr "Abrir link {}"
 
+msgid "Choose a link to open"
+msgstr "Escolha um link para abrir"
+
+msgid "Duplicate"
+msgstr "Duplicata"
+
 msgid "Copy to clipboard"
 msgstr "Copiar para a área de transferência"
 
@@ -678,10 +687,10 @@ msgid "Credit"
 msgstr "Crédito"
 
 msgid "Notice"
-msgstr "Perceber"
+msgstr "Aviso"
 
 msgid "File"
-msgstr "Ficheiro"
+msgstr "Arquivo"
 
 msgid "Source"
 msgstr "Fonte"
@@ -693,7 +702,7 @@ msgid "URL"
 msgstr "URL"
 
 msgid "Count"
-msgstr "Contar"
+msgstr "Contagem"
 
 msgid "Favorite Searches"
 msgstr "Pesquisas favoritas"
@@ -741,7 +750,7 @@ msgid "Show world map"
 msgstr "Mostrar mapa mundial"
 
 msgid "Darks"
-msgstr "Escuridão"
+msgstr "Sombras"
 
 msgid "data"
 msgstr "dados"
@@ -760,9 +769,6 @@ msgstr "Datas"
 
 msgid "family food friends landscape nature night portrait selfie todo travel urban viewed"
 msgstr "família comida amigos paisagem natureza noite retrato selfie todo viagem urbano visto"
-
-msgid "results"
-msgstr "resultados"
 
 msgid "Defragment database."
 msgstr "Desfragmentar banco de dados."
@@ -1026,7 +1032,7 @@ msgid "picture"
 msgstr "foto"
 
 msgid "Folder"
-msgstr "pasta"
+msgstr "Pasta"
 
 msgid "videos"
 msgstr "Vídeos"
@@ -1035,16 +1041,16 @@ msgid "A capella"
 msgstr "A capela"
 
 msgid "Abstract"
-msgstr "Resumo"
+msgstr "Abstrato"
 
 msgid "Acid"
-msgstr "Ácido"
+msgstr "Acid"
 
 msgid "Acid Jazz"
-msgstr "Jazz ácido"
+msgstr "Acid Jazz"
 
 msgid "Acid Punk"
-msgstr "Ácido Punk"
+msgstr "Acid Punk"
 
 msgid "Acoustic"
 msgstr "Acústico"
@@ -1065,7 +1071,7 @@ msgid "AlternRock"
 msgstr "AlternRock"
 
 msgid "Ambient"
-msgstr "Ambiente"
+msgstr "Ambient"
 
 msgid "Analog"
 msgstr "Analógico"
@@ -1095,16 +1101,16 @@ msgid "Bebob"
 msgstr "Bebob"
 
 msgid "Big Band"
-msgstr "Grande banda"
+msgstr "Big Band"
 
 msgid "Bluegrass"
-msgstr "grama azul"
+msgstr "Bluegrass"
 
 msgid "Blues"
 msgstr "Blues"
 
 msgid "Booty Bass"
-msgstr "Espólio Baixo"
+msgstr "Booty Bass"
 
 msgid "Brazilian"
 msgstr "Brasileiro"
@@ -1113,10 +1119,10 @@ msgid "Cabaret"
 msgstr "Cabaré"
 
 msgid "Candid"
-msgstr "Sincero"
+msgstr "Espontâneo"
 
 msgid "Celtic"
-msgstr "céltico"
+msgstr "Céltico"
 
 msgid "Chamber Music"
 msgstr "Música de câmara"
@@ -1146,7 +1152,7 @@ msgid "Classical"
 msgstr "Clássico"
 
 msgid "Close-up"
-msgstr "Fechar-se"
+msgstr "Close-up"
 
 msgid "Cloudscape"
 msgstr "Paisagem nublada"
@@ -1185,10 +1191,10 @@ msgid "Darkwave"
 msgstr "Darkwave"
 
 msgid "Death Metal"
-msgstr "Metal mortal"
+msgstr "Death Metal"
 
 msgid "Disco"
-msgstr "Discoteca"
+msgstr "Disco"
 
 msgid "Documentary"
 msgstr "Documentário"
@@ -1197,7 +1203,7 @@ msgid "Drama"
 msgstr "Drama"
 
 msgid "Dream"
-msgstr "Sonhar"
+msgstr "Sonho"
 
 msgid "Drum Solo"
 msgstr "Solo de bateria"
@@ -1215,10 +1221,10 @@ msgid "Ethnic"
 msgstr "Étnico"
 
 msgid "Eurodance"
-msgstr "Eurodança"
+msgstr "Eurodance"
 
 msgid "Euro-House"
-msgstr "Euro-Casa"
+msgstr "Euro-House"
 
 msgid "Euro-Techno"
 msgstr "Euro-Techno"
@@ -1230,10 +1236,10 @@ msgid "Fashion"
 msgstr "Moda"
 
 msgid "Fast Fusion"
-msgstr "Fusão Rápida"
+msgstr "Fast Fusion"
 
 msgid "Film still"
-msgstr "Filme ainda"
+msgstr "Fotograma de filme"
 
 msgid "Fine-art"
 msgstr "Belas artes"
@@ -1245,7 +1251,7 @@ msgid "Fireworks"
 msgstr "Fogos de artifício"
 
 msgid "Fitness & Workout"
-msgstr "Treino de fitness &"
+msgstr "Fitness e treino"
 
 msgid "Folk"
 msgstr "Folclórico"
@@ -1272,7 +1278,7 @@ msgid "Funk"
 msgstr "Funk"
 
 msgid "Fusion"
-msgstr "Fusão"
+msgstr "Fusion"
 
 msgid "Game//genre"
 msgstr "Jogo"
@@ -1290,7 +1296,7 @@ msgid "Gospel"
 msgstr "Gospel"
 
 msgid "Gothic"
-msgstr "gótico"
+msgstr "Gótico"
 
 msgid "Gothic Rock"
 msgstr "Rock Gótico"
@@ -1299,13 +1305,13 @@ msgid "Grunge"
 msgstr "Grunge"
 
 msgid "Hard Rock"
-msgstr "Rock pesado"
+msgstr "Hard Rock"
 
 msgid "High-speed"
 msgstr "De alta velocidade"
 
 msgid "High key"
-msgstr "Tom alto"
+msgstr "High key"
 
 msgid "Hip-Hop"
 msgstr "Hip Hop"
@@ -1347,7 +1353,7 @@ msgid "Jazz + Funk"
 msgstr "Jazz + Funk"
 
 msgid "Jungle"
-msgstr "Selva"
+msgstr "Jungle"
 
 msgid "Kids"
 msgstr "Crianças"
@@ -1362,7 +1368,7 @@ msgid "Landscape"
 msgstr "Paisagem"
 
 msgid "Latin"
-msgstr "Latim"
+msgstr "Latino"
 
 msgid "Lifestyle"
 msgstr "Estilo de vida"
@@ -1377,10 +1383,10 @@ msgid "Long-exposure"
 msgstr "Exposição longa"
 
 msgid "Low key"
-msgstr "Tom baixo"
+msgstr "Low key"
 
 msgid "Macro"
-msgstr "macro"
+msgstr "Macro"
 
 msgid "Medical"
 msgstr "Médico"
@@ -1416,7 +1422,7 @@ msgid "Native American"
 msgstr "Nativo americano"
 
 msgid "New Age"
-msgstr "Nova Era"
+msgstr "New Age"
 
 msgid "New Wave"
 msgstr "Nova Onda"
@@ -1431,7 +1437,7 @@ msgid "Nonfiction"
 msgstr "Não ficção"
 
 msgid "Oldies"
-msgstr "Antigos"
+msgstr "Sucessos antigos"
 
 msgid "Opera"
 msgstr "Ópera"
@@ -1449,7 +1455,7 @@ msgid "Film Noir"
 msgstr "Film Noir"
 
 msgid "Photo op"
-msgstr "Foto"
+msgstr "Sessão de fotos"
 
 msgid "Photobiography"
 msgstr "Fotobiografia"
@@ -1485,7 +1491,7 @@ msgid "Portrait"
 msgstr "Retrato"
 
 msgid "Power Ballad"
-msgstr "Balada poderosa"
+msgstr "Power ballad"
 
 msgid "Pranks"
 msgstr "Pegadinhas"
@@ -1527,16 +1533,16 @@ msgid "Retro"
 msgstr "Retrô"
 
 msgid "Revival"
-msgstr "Reavivamento"
+msgstr "Revival"
 
 msgid "Rhythmic Soul"
-msgstr "Alma Rítmica"
+msgstr "Rhythmic Soul"
 
 msgid "Rock"
 msgstr "Rock"
 
 msgid "Rock & Roll"
-msgstr "Rolo de rocha &"
+msgstr "Rock & Roll"
 
 msgid "Romance"
 msgstr "Romance"
@@ -1551,7 +1557,7 @@ msgid "Satire"
 msgstr "Sátira"
 
 msgid "Sci-Fi & Fantasy"
-msgstr "Fantasia de ficção científica &"
+msgstr "Ficção científica e fantasia"
 
 msgid "Short Films"
 msgstr "Curtas-metragens"
@@ -1563,13 +1569,13 @@ msgid "Singer/Songwriter"
 msgstr "Cantor/Compositor"
 
 msgid "Ska"
-msgstr "Ská"
+msgstr "Ska"
 
 msgid "Slow Jam"
 msgstr "Jam Lento"
 
 msgid "Slow Rock"
-msgstr "Rocha lenta"
+msgstr "Slow Rock"
 
 msgid "Social"
 msgstr "Social"
@@ -1590,7 +1596,7 @@ msgid "Soundtrack"
 msgstr "Trilha sonora"
 
 msgid "Southern Rock"
-msgstr "Rocha do Sul"
+msgstr "Southern Rock"
 
 msgid "Space"
 msgstr "Espaço"
@@ -1605,7 +1611,7 @@ msgid "Sports"
 msgstr "Esportes"
 
 msgid "Star trail"
-msgstr "Trilha de estrelas"
+msgstr "Rastro de estrelas"
 
 msgid "Still life"
 msgstr "Natureza morta"
@@ -1641,13 +1647,13 @@ msgid "Teens"
 msgstr "Adolescentes"
 
 msgid "Thriller"
-msgstr "Filme de ação"
+msgstr "Suspense"
 
 msgid "Time-lapse"
 msgstr "Lapso de tempo"
 
 msgid "Top 40"
-msgstr "40 principais"
+msgstr "Top 40"
 
 msgid "Trailer"
 msgstr "Trailer"
@@ -1689,7 +1695,7 @@ msgid "War"
 msgstr "Guerra"
 
 msgid "Western"
-msgstr "Ocidental"
+msgstr "Faroeste"
 
 msgid "World"
 msgstr "Mundo"
@@ -1698,7 +1704,7 @@ msgid "Group and sort items"
 msgstr "Agrupar e classificar itens"
 
 msgid "Items"
-msgstr "Unid"
+msgstr "Itens"
 
 msgid "No album or show"
 msgstr "Nenhum álbum ou show"
@@ -1766,9 +1772,6 @@ msgstr "Fonte de importação:"
 msgid "Ignore previously imported items."
 msgstr "Ignore itens importados anteriormente."
 
-msgid "Overwrite if source items are newer."
-msgstr "Substitua se os itens de origem forem mais recentes."
-
 msgid "Other folder"
 msgstr "Outra pasta"
 
@@ -1824,10 +1827,10 @@ msgid "Keyboard"
 msgstr "Teclado"
 
 msgid "press"
-msgstr "imprensa"
+msgstr "pressione"
 
 msgid "alt"
-msgstr "alternativo"
+msgstr "Alt"
 
 msgid "back"
 msgstr "Voltar"
@@ -1872,13 +1875,13 @@ msgid "down"
 msgstr "abaixo"
 
 msgid "enter"
-msgstr "digitar"
+msgstr "Enter"
 
 msgid "Opens an image full screen."
 msgstr "Abre uma imagem em tela cheia."
 
 msgid "escape"
-msgstr "escapar"
+msgstr "Esc"
 
 msgid "Gets you out of full screen, zoom or other modes."
 msgstr "Tira você da tela inteira, zoom ou outros modos."
@@ -1923,7 +1926,7 @@ msgid "Help"
 msgstr "Ajuda"
 
 msgid "insert"
-msgstr "inserir"
+msgstr "Insert"
 
 msgid "left"
 msgstr "esquerda"
@@ -1970,19 +1973,19 @@ msgid "page-up"
 msgstr "página acima"
 
 msgid "right"
-msgstr "certo"
+msgstr "direita"
 
 msgid "Selection"
 msgstr "Seleção"
 
 msgid "shift"
-msgstr "mudança"
+msgstr "Shift"
 
 msgid "space"
-msgstr "Espaço"
+msgstr "espaço"
 
 msgid "tab"
-msgstr "guia"
+msgstr "Tab"
 
 msgid "up"
 msgstr "acima"
@@ -1991,7 +1994,7 @@ msgid "volume-down"
 msgstr "diminuir o volume"
 
 msgid "volume-mute"
-msgstr "volume-mudo"
+msgstr "silenciar o volume"
 
 msgid "volume-up"
 msgstr "aumentar o volume"
@@ -2003,7 +2006,7 @@ msgid "Learn more at Diffractor.com"
 msgstr "Saiba mais em Diffractor.com"
 
 msgid "Lights"
-msgstr "Luzes"
+msgstr "Realces"
 
 msgid "Limit output to a maximum dimension (in pixels)."
 msgstr "Limite a saída a uma dimensão máxima (em pixels)."
@@ -2126,7 +2129,7 @@ msgid "Move source items."
 msgstr "Mova os itens de origem."
 
 msgid "History"
-msgstr "História"
+msgstr "Histórico"
 
 msgid "No items are selected"
 msgstr "Nenhum item está selecionado"
@@ -2165,13 +2168,13 @@ msgid "of"
 msgstr "de"
 
 msgid "Open destination folder afterwards"
-msgstr "Abra a pasta de destino depois"
+msgstr "Abrir a pasta de destino depois"
 
 msgid "Open in file browser"
 msgstr "Abrir no navegador de arquivos"
 
 msgid "Open Properties"
-msgstr "Propriedades abertas"
+msgstr "Abrir propriedades"
 
 msgid "app"
 msgstr "aplicativo"
@@ -2206,11 +2209,16 @@ msgstr "Verifique se há atualizações conectando-se à Internet"
 msgid "Confirm when deleting items. Deleted items are moved to the recycle bin."
 msgstr "Confirme ao excluir itens. Os itens excluídos são movidos para a lixeira."
 
+msgid ""
+"Confirm when rotating one item. Rotating several items is always confirmed."
+msgstr ""
+"Confirme ao girar um item. A rotação de vários itens é sempre confirmada."
+
 msgid "JPEG save quality"
-msgstr "JPEG salva qualidade"
+msgstr "Qualidade ao salvar JPEG"
 
 msgid "WEBP save quality"
-msgstr "WEBP salva qualidade"
+msgstr "Qualidade ao salvar WEBP"
 
 msgid "When saving"
 msgstr "Ao salvar"
@@ -2225,7 +2233,7 @@ msgid "Show hidden files"
 msgstr "Mostrar arquivos ocultos"
 
 msgid "Show photos rotated based on recorded camera orientation"
-msgstr "Mostrar fotos giradas com base na orientação da câmera gravada"
+msgstr "Mostrar fotos giradas com base na orientação registrada da câmera"
 
 msgid "Updates"
 msgstr "Atualizações"
@@ -2351,7 +2359,7 @@ msgid "Showing a RAW photo preview."
 msgstr "Mostrando uma prévia da foto RAW."
 
 msgid "Processing..."
-msgstr "Processamento..."
+msgstr "Processando..."
 
 msgid "Processing files"
 msgstr "Processando arquivos"
@@ -2411,7 +2419,7 @@ msgid "Created"
 msgstr "Criado"
 
 msgid "Created exif"
-msgstr "Criado exif"
+msgstr "Criado (EXIF)"
 
 msgid "Description"
 msgstr "Descrição"
@@ -2447,7 +2455,7 @@ msgid "Filename"
 msgstr "Nome do arquivo"
 
 msgid "FNumber"
-msgstr "Número FN"
+msgstr "Número F"
 
 msgid "Focal length"
 msgstr "Distância focal"
@@ -2459,7 +2467,7 @@ msgid "Genre"
 msgstr "Gênero"
 
 msgid "Id"
-msgstr "Eu ia"
+msgstr "ID"
 
 msgid "ISO"
 msgstr "ISO"
@@ -2504,7 +2512,7 @@ msgid "Rating"
 msgstr "Avaliação"
 
 msgid "Raw file"
-msgstr "Arquivo Raw"
+msgstr "Arquivo RAW"
 
 msgid "Sample rate"
 msgstr "Taxa de amostragem"
@@ -2516,7 +2524,7 @@ msgid "Season"
 msgstr "Temporada"
 
 msgid "Show"
-msgstr "Mostrar"
+msgstr "Programa"
 
 msgid "Size"
 msgstr "Tamanho"
@@ -2537,7 +2545,7 @@ msgid "Title"
 msgstr "Título"
 
 msgid "Track"
-msgstr "Acompanhar"
+msgstr "Faixa"
 
 msgid "Video codec"
 msgstr "Codec de vídeo"
@@ -2558,7 +2566,7 @@ msgid "duplicates"
 msgstr "Duplicatas"
 
 msgid "dups"
-msgstr "idiotas"
+msgstr "dups"
 
 msgid "duplicate"
 msgstr "duplicado"
@@ -2567,7 +2575,7 @@ msgid "modified"
 msgstr "Modificado"
 
 msgid "or"
-msgstr "OU"
+msgstr "ou"
 
 msgid "related"
 msgstr "relacionado"
@@ -2579,7 +2587,7 @@ msgid "without"
 msgstr "sem"
 
 msgid "Rate selected items"
-msgstr "Classifique os itens selecionados"
+msgstr "Avaliar os itens selecionados"
 
 msgid "Number keys 0-5"
 msgstr "Teclas numéricas 0-5"
@@ -2627,7 +2635,7 @@ msgid "Repeat play single media item"
 msgstr "Repetir a reprodução de um único item de mídia"
 
 msgid "Clean database and reindex.\nAll data is regenerated."
-msgstr "Limpar banco de dados e reindexar.\nAtodos os dados são regenerados."
+msgstr "Limpar banco de dados e reindexar.\nTodos os dados são regenerados."
 
 msgid "Cleaning..."
 msgstr "Limpeza..."
@@ -2684,7 +2692,7 @@ msgid "Search criteria or folder"
 msgstr "Critérios de pesquisa ou pasta"
 
 msgid "Photos"
-msgstr "fotos"
+msgstr "Fotos"
 
 msgid "Select term"
 msgstr "Selecione o termo"
@@ -2711,16 +2719,16 @@ msgid "Always show RAW photos (slower)"
 msgstr "Sempre mostrar fotos RAW (mais lento)"
 
 msgid "Show this RAW photo"
-msgstr "Mostre esta foto RAW"
+msgstr "Mostrar esta foto RAW"
 
-msgid "press R to view matching or possible copy items in the collection"
-msgstr "pressione R para visualizar itens correspondentes ou possíveis cópias na coleção"
+msgid "press R to view the items most closely related to this one"
+msgstr "pressione R para ver os itens mais relacionados a este"
 
 msgid "Show verbose metadata"
 msgstr "Mostrar metadados detalhados"
 
 msgid "Album-Show"
-msgstr "Show de álbum"
+msgstr "Álbum-Programa"
 
 msgid "Group order (Default)"
 msgstr "Ordem do grupo (padrão)"
@@ -2741,7 +2749,7 @@ msgid "Rating-Label"
 msgstr "Etiqueta de classificação"
 
 msgid "Staring"
-msgstr "Olhando fixamente"
+msgstr "Elenco"
 
 msgid "New Starting Date (local time):"
 msgstr "Nova data de início (hora local):"
@@ -2810,10 +2818,10 @@ msgid "subtitle"
 msgstr "legenda"
 
 msgid "Support"
-msgstr "Apoiar"
+msgstr "Suporte"
 
 msgid "Synchronize whole collection"
-msgstr "Sincronize toda a coleção"
+msgstr "Sincronizar toda a coleção"
 
 msgid "copy local"
 msgstr "copiar local"
@@ -2836,11 +2844,14 @@ msgstr "Arquivos locais a serem excluídos: {}. Arquivos remotos a serem excluí
 msgid "Synchronization will permanently delete files. These files cannot be recovered from the Recycle Bin."
 msgstr "A sincronização excluirá arquivos permanentemente. Esses arquivos não podem ser recuperados da Lixeira."
 
+msgid "The existing files will be overwritten. Their current contents cannot be recovered from the recycle bin."
+msgstr "Os arquivos existentes serão substituídos. O conteúdo atual deles não pode ser recuperado da Lixeira."
+
 msgid "Delete local files that do not exist remotely"
-msgstr "Exclua arquivos locais que não existem remotamente"
+msgstr "Excluir arquivos locais que não existem remotamente"
 
 msgid "Delete remote files that do not exist locally"
-msgstr "Exclua arquivos remotos que não existem localmente"
+msgstr "Excluir arquivos remotos que não existem localmente"
 
 msgid "c:\\photos with \\\\nas\\\\backup"
 msgstr "c:\\photos com \\\\nas\\\\backup"
@@ -2849,16 +2860,16 @@ msgid "Local folders"
 msgstr "Pastas locais"
 
 msgid "Copy newer local files to remote folders"
-msgstr "Copie os arquivos locais mais recentes para pastas remotas"
+msgstr "Copiar os arquivos locais mais recentes para pastas remotas"
 
 msgid "Synchronize only one folder"
-msgstr "Sincronize apenas uma pasta"
+msgstr "Sincronizar apenas uma pasta"
 
 msgid "Remote folder"
 msgstr "Pasta remota"
 
 msgid "Copy newer remote files to local folders"
-msgstr "Copie arquivos remotos mais recentes para pastas locais"
+msgstr "Copiar arquivos remotos mais recentes para pastas locais"
 
 msgid "Tags to add or remove:"
 msgstr "Tags para adicionar ou remover:"
@@ -2912,13 +2923,13 @@ msgid "Contains common folders, searches and favorites"
 msgstr "Contém pastas comuns, pesquisas e favoritos"
 
 msgid "Open selected items with external app"
-msgstr "Abra itens selecionados com aplicativo externo"
+msgstr "Abrir itens selecionados com aplicativo externo"
 
 msgid "Pinned items stay selected. Use this when you want to quickly compare an item to other items."
 msgstr "Os itens fixados permanecem selecionados. Use isto quando quiser comparar rapidamente um item com outros itens."
 
 msgid "Reset straighten and rotate"
-msgstr "Redefinir, endireitar e girar"
+msgstr "Redefinir endireitamento e rotação"
 
 msgid "Tag or un-tag selected items"
 msgstr "Marcar ou desmarcar itens selecionados"
@@ -2936,7 +2947,7 @@ msgid "More options and controls"
 msgstr "Mais opções e controles"
 
 msgid "{} ({}) total items in {} folders."
-msgstr "{} ({}) total de itens em {} pastas."
+msgstr "{} ({}) itens no total em {} pastas."
 
 msgid "Truncated at 1MB"
 msgstr "Truncado em 1 MB"
@@ -3035,13 +3046,13 @@ msgid "Resume playing media from last position"
 msgstr "Retomar a reprodução de mídia da última posição"
 
 msgid "Repeat play one item"
-msgstr "Repita a reprodução de um item"
+msgstr "Repetir a reprodução de um item"
 
 msgid "Repeat play all media items"
-msgstr "Repita a reprodução de todos os itens de mídia"
+msgstr "Repetir a reprodução de todos os itens de mídia"
 
 msgid "Don't repeat"
-msgstr "Não repita"
+msgstr "Não repetir"
 
 msgid "Playback Options"
 msgstr "Opções de reprodução"
@@ -3324,25 +3335,25 @@ msgid "{} m underwater"
 msgstr "{} m debaixo de água"
 
 msgid "Cancel was pressed after {}"
-msgstr "Cancelar foi premido após {}"
+msgstr "Cancelar foi pressionado após {}"
 
 msgid "Apply tags"
-msgstr "Aplicar etiquetas"
+msgstr "Aplicar tags"
 
 msgid "Item"
 msgstr "Item"
 
 msgid "Tags after run"
-msgstr "Etiquetas após a execução"
+msgstr "Tags após a execução"
 
 msgid "Enter one or more tags to add or remove."
-msgstr "Introduza uma ou mais etiquetas a adicionar ou remover."
+msgstr "Digite uma ou mais tags para adicionar ou remover."
 
 msgid "no change"
 msgstr "sem alterações"
 
 msgid "Select items to tag"
-msgstr "Selecione os itens a etiquetar"
+msgstr "Selecione os itens para marcar com tags"
 
 msgid "Cancel operation"
 msgstr "Cancelar operação"
@@ -3351,7 +3362,7 @@ msgid "{} is still running. Cancel it and close?"
 msgstr "{} ainda está em execução. Cancelar e fechar?"
 
 msgid "Keep running"
-msgstr "Continuar a executar"
+msgstr "Continuar executando"
 
 msgid "Location unavailable"
 msgstr "Localização indisponível"
@@ -3370,9 +3381,6 @@ msgstr "{} ainda está em execução. Feche-o antes de navegar para outro local.
 
 msgid "If the destination already exists:"
 msgstr "Se o destino já existir:"
-
-msgid "If both sides have the file, the newer one replaces the older one."
-msgstr "Se o ficheiro existir de ambos os lados, o mais recente substitui o mais antigo."
 
 msgid "Replace"
 msgstr "Substituir"
@@ -3574,3 +3582,21 @@ msgstr "Grande demais para exibir"
 
 msgid "This image could not be displayed"
 msgstr "Não foi possível exibir esta imagem"
+
+msgid "Show the items in the collection most closely related to this one: possible copies, then the same album, the same series, the closest capture times, and the closest capture places."
+msgstr "Mostrar os itens da coleção mais relacionados a este: possíveis cópias, depois o mesmo álbum, a mesma série, os horários de captura mais próximos e os locais de captura mais próximos."
+
+msgid "This item and possible copies"
+msgstr "Este item e possíveis cópias"
+
+msgid "Same album"
+msgstr "Mesmo álbum"
+
+msgid "Same series"
+msgstr "Mesma série"
+
+msgid "Taken at the same time"
+msgstr "Capturado no mesmo horário"
+
+msgid "Taken in the same place"
+msgstr "Capturado no mesmo local"

@@ -408,8 +408,8 @@ static void should_classify_search_scope()
 static void should_complete_locations_as_search_terms()
 {
 	null_async_strategy as;
-	auto& locations = test_locations();
-	index_state index(as, locations);
+	const auto& locations = test_locations();
+	const index_state index(as, locations);
 
 	const auto london = index.auto_complete_locations("london", 5);
 	assert_equal(true, !london.empty(), "london predicts a location");
@@ -625,6 +625,273 @@ static void should_select_files()
 	assert_equal(false, contains(platform::select_folders(recursive_cr2, true), "raw"), "include folders");
 }
 
+// A related search answers with the closest matches on each axis, so the collector has to keep the
+// best `limit` and drop the rest whatever order the index happened to hand them over in.
+static void should_bound_related_results_by_closeness()
+{
+	df::bounded_best<int> slots;
+	slots.limit(3);
+
+	const df::folder_path folder("c:\\test");
+
+	for (const auto distance : {50, 10, 40, 20, 30})
+	{
+		slots.offer(distance, df::file_path(folder, std::format("{}.jpg", distance)), distance);
+	}
+
+	const auto best = slots.take();
+
+	assert_equal(3u, static_cast<uint32_t>(best.size()), "cap holds");
+	assert_equal(10, best[0].value, "closest first");
+	assert_equal(20, best[1].value, "then next closest");
+	assert_equal(30, best[2].value, "furthest kept is the third closest");
+	assert_equal(true, slots.empty(), "taking drains the collector");
+}
+
+// Which items survive a full axis must not depend on the order folders were walked in, or the same
+// search would answer differently each time it ran.
+static void should_break_related_ties_on_path()
+{
+	const df::folder_path folder("c:\\test");
+	const df::file_path a(folder, "a.jpg");
+	const df::file_path b(folder, "b.jpg");
+	const df::file_path c(folder, "c.jpg");
+
+	const auto survivors = [&](const df::file_paths& order)
+	{
+		df::bounded_best<int> slots;
+		slots.limit(2);
+		for (const auto& path : order) slots.offer(7, path, 0);
+
+		std::string result;
+		for (const auto& e : slots.take()) result += e.path.name();
+		return result;
+	};
+
+	assert_equal("a.jpgb.jpg", survivors({a, b, c}), "equal distances keep the first paths");
+	assert_equal("a.jpgb.jpg", survivors({c, b, a}), "and do not depend on offer order");
+	assert_equal("a.jpgb.jpg", survivors({b, c, a}), "or on which arrived first");
+}
+
+static void should_group_related_results_by_axis()
+{
+	df::related_collector<int> collector;
+	const df::folder_path folder("c:\\test");
+
+	collector.offer({df::related_axis::location, 5}, df::file_path(folder, "place.jpg"), 4);
+	collector.offer({df::related_axis::duplicate, 0}, df::file_path(folder, "copy.jpg"), 1);
+	collector.offer({df::related_axis::time, 5}, df::file_path(folder, "when.jpg"), 3);
+	collector.offer({df::related_axis::album, 5}, df::file_path(folder, "album.jpg"), 2);
+
+	assert_equal(4u, static_cast<uint32_t>(collector.size()), "every axis holds its own matches");
+	assert_equal(1u, static_cast<uint32_t>(collector.size(df::related_axis::time)), "per axis count");
+
+	std::string order;
+	collector.drain([&order](const df::file_path, int&& value) { order += std::to_string(value); });
+
+	assert_equal("1234", order, "axes drain in priority order");
+}
+
+static df::index_file_item make_related_candidate(const std::string_view name)
+{
+	df::index_file_item result;
+	result.ft = files::file_type_from_name(name);
+	result.name = str::cache(name);
+	return result;
+}
+
+static std::string_view related_axis_name(const df::related_axis axis)
+{
+	switch (axis)
+	{
+	case df::related_axis::duplicate: return "duplicate";
+	case df::related_axis::album: return "album";
+	case df::related_axis::series: return "series";
+	case df::related_axis::time: return "time";
+	default: return "location";
+	}
+}
+
+static std::string_view matched_axis(const df::search_result& match)
+{
+	return related_axis_name(df::related_axis_of(match.type));
+}
+
+// Names each result with the relation that earned it, so a related search is asserted on what it
+// found and why rather than on a bare count.
+static std::string related_result_summary(index_state& index, const df::search_t& search)
+{
+	std::vector<std::string> found;
+
+	auto cb = [&found](const index_state::query_item_results& items, const bool)
+	{
+		for (const auto& i : items)
+		{
+			found.emplace_back(std::format("{}:{}", matched_axis(i.match), i.path.name()));
+		}
+	};
+
+	index.query_items(search, cb, test_token);
+	std::ranges::sort(found);
+
+	std::string result;
+	for (const auto& text : found)
+	{
+		if (!result.empty()) result += ' ';
+		result += text;
+	}
+	return result;
+}
+
+static df::related_info make_related_anchor()
+{
+	df::related_info anchor;
+	anchor.path = df::file_path(test_files_folder, "anchor.jpg");
+	anchor.name = str::cache("anchor.jpg");
+	anchor.ft = files::file_type_from_name("anchor.jpg");
+	anchor.size = df::file_size(1000);
+	anchor.is_loaded = true;
+	return anchor;
+}
+
+static df::search_result match_related(const df::related_info& anchor, const std::string_view name,
+                                       const df::index_file_item& candidate)
+{
+	const auto search = df::search_t().related(anchor);
+	const df::search_matcher matcher(search);
+	return matcher.match_item(df::file_path(test_files_folder, name), candidate);
+}
+
+static void should_match_related_by_album()
+{
+	auto anchor = make_related_anchor();
+	anchor.album = str::cache("Album");
+	anchor.disk = df::xy8::make(1, 1);
+	anchor.track = df::xy8::make(3, 12);
+
+	auto candidate = make_related_candidate("track5.mp3");
+	candidate.safe_ps()->album = str::cache("Album");
+	candidate.safe_ps()->disk = df::xy8::make(1, 1);
+	candidate.safe_ps()->track = df::xy8::make(5, 12);
+
+	const auto match = match_related(anchor, "track5.mp3", candidate);
+	assert_equal(true, match.is_match(), "same album is related");
+	assert_equal("album", matched_axis(match), "album axis");
+	assert_equal(2, static_cast<int>(match.distance), "distance is the gap in track order");
+
+	// Two artists can both have a "Greatest Hits", so a named artist on each side has to agree.
+	anchor.album_artist = str::cache("One");
+	candidate.safe_ps()->album_artist = str::cache("Another");
+	assert_equal(false, match_related(anchor, "track5.mp3", candidate).is_match(),
+	             "a different album artist is not the same album");
+}
+
+static void should_match_related_by_series()
+{
+	auto anchor = make_related_anchor();
+	anchor.show = str::cache("Show");
+	anchor.season = 2;
+	anchor.episode = df::xy8::make(5, 10);
+
+	auto candidate = make_related_candidate("episode7.mkv");
+	candidate.safe_ps()->show = str::cache("Show");
+	candidate.safe_ps()->season = 2;
+	candidate.safe_ps()->episode = df::xy8::make(7, 10);
+
+	const auto match = match_related(anchor, "episode7.mkv", candidate);
+	assert_equal(true, match.is_match(), "same series is related");
+	assert_equal("series", matched_axis(match), "series axis");
+	assert_equal(2, static_cast<int>(match.distance), "distance is the gap in episode order");
+
+	candidate.safe_ps()->show = str::cache("Other show");
+	assert_equal(false, match_related(anchor, "episode7.mkv", candidate).is_match(), "a different show is unrelated");
+}
+
+static void should_match_related_by_capture_time()
+{
+	auto anchor = make_related_anchor();
+	anchor.metadata_created = df::date_t(2020, 5, 1, 12, 0, 0);
+
+	auto candidate = make_related_candidate("burst.jpg");
+	candidate.safe_ps()->created_exif = df::date_t(2020, 5, 1, 12, 0, 30);
+
+	const auto match = match_related(anchor, "burst.jpg", candidate);
+	assert_equal(true, match.is_match(), "a near capture time is related");
+	assert_equal("time", matched_axis(match), "time axis");
+	assert_equal(30, static_cast<int>(match.distance), "distance is the gap in seconds");
+
+	candidate.safe_ps()->created_exif = df::date_t(2020, 5, 3, 12, 0, 0);
+	assert_equal(false, match_related(anchor, "burst.jpg", candidate).is_match(),
+	             "outside the window is not the same time");
+
+	// A whole collection copied in one pass shares a file time, which would otherwise make every
+	// item in it equally and meaninglessly close.
+	auto file_time_only = make_related_candidate("copied.jpg");
+	file_time_only.file_created = anchor.metadata_created;
+	assert_equal(false, match_related(anchor, "copied.jpg", file_time_only).is_match(),
+	             "file time alone is not capture time");
+}
+
+static void should_match_related_by_capture_place()
+{
+	auto anchor = make_related_anchor();
+	anchor.gps = gps_coordinate(51.5007, -0.1246);
+
+	auto candidate = make_related_candidate("nearby.jpg");
+	candidate.safe_ps()->coordinate = gps_coordinate(51.5033, -0.1195);
+
+	const auto match = match_related(anchor, "nearby.jpg", candidate);
+	assert_equal(true, match.is_match(), "a near capture place is related");
+	assert_equal("location", matched_axis(match), "location axis");
+	assert_equal(true, match.distance > 0 && match.distance < 1000, "distance is metres apart");
+
+	candidate.safe_ps()->coordinate = gps_coordinate(48.8584, 2.2945);
+	assert_equal(false, match_related(anchor, "nearby.jpg", candidate).is_match(),
+	             "outside the window is not the same place");
+}
+
+// An item can be near in time and in place at once. It belongs to one group, so the strongest
+// relation decides which, and it is never listed twice.
+static void should_report_the_strongest_related_axis()
+{
+	auto anchor = make_related_anchor();
+	anchor.metadata_created = df::date_t(2020, 5, 1, 12, 0, 0);
+	anchor.gps = gps_coordinate(51.5007, -0.1246);
+	anchor.album = str::cache("Album");
+
+	auto candidate = make_related_candidate("everything.jpg");
+	candidate.safe_ps()->created_exif = anchor.metadata_created;
+	candidate.safe_ps()->coordinate = anchor.gps;
+	candidate.safe_ps()->album = str::cache("Album");
+
+	assert_equal("album", matched_axis(match_related(anchor, "everything.jpg", candidate)),
+	             "album outranks time and place");
+
+	candidate.safe_ps()->album.clear();
+	assert_equal("time", matched_axis(match_related(anchor, "everything.jpg", candidate)),
+	             "time outranks place");
+
+	candidate.safe_ps()->created_exif.clear();
+	assert_equal("location", matched_axis(match_related(anchor, "everything.jpg", candidate)),
+	             "place is the weakest relation");
+}
+
+// A file matched by two overlapping selectors is still one file. `folders_scanned` only stops a
+// folder being walked twice within one selector, so the result set is what has to hold the rule.
+static void should_list_an_item_once(shared_test_context& stc)
+{
+	stc.lazy_load_index();
+
+	const df::item_selector whole_tree(test_files_folder, true);
+	const df::item_selector sub_folder(test_files_folder.combine("raw"), true);
+
+	const auto tree_only = count_search_results(stc.test_index, df::search_t().add_selector(whole_tree));
+	const auto overlapping = count_search_results(stc.test_index,
+	                                              df::search_t().add_selector(whole_tree).add_selector(sub_folder));
+
+	assert_equal(tree_only, overlapping, "an overlapping selector adds no items");
+}
+
 static void should_match_related(shared_test_context& stc)
 {
 	stc.lazy_load_index();
@@ -636,7 +903,9 @@ static void should_match_related(shared_test_context& stc)
 	df::related_info r;
 	r.load(i);
 
-	assert_equal(1, count_search_results(stc.test_index, df::search_t().related(r)), "Related");
+	// The item the search started at, then the rotated variants that share its capture time.
+	assert_equal("duplicate:Test.jpg time:Small.jpg time:Test180.jpg time:Test270.jpg time:Test90.jpg",
+	             related_result_summary(stc.test_index, df::search_t().related(r)), "Related");
 
 	r.group = 0;
 	df::index_file_item different_size = stc.test_index.find_item(path);
@@ -644,7 +913,11 @@ static void should_match_related(shared_test_context& stc)
 	different_size.size = df::file_size(different_size.size.to_int64() + 1);
 	const auto related_search = df::search_t().related(r);
 	const df::search_matcher matcher(related_search);
-	assert_equal(false, matcher.match_item({}, different_size).is_match(), "Related CRC requires equal size");
+
+	// Equal CRC is evidence of a copy only when the sizes agree, so a bumped size has to fall through
+	// the duplicate rules. It is still the same photo, so capture time catches it.
+	assert_equal("time", matched_axis(matcher.match_item({}, different_size)),
+	             "Related CRC requires equal size");
 }
 
 // A related search written as text - a favorite, a saved search, or typed into the address
@@ -665,7 +938,11 @@ static void should_match_related_from_text(shared_test_context& stc)
 
 	assert_equal(true, reparsed.has_related(), "related survives a text round trip");
 	assert_equal(path.str(), reparsed.related().path.str(), "related path");
-	assert_equal(1, count_search_results(stc.test_index, reparsed), "related search from text");
+
+	// Every field the axes compare has to be recovered from the index, so a favorite answers with the
+	// same relations as the command that created it.
+	assert_equal(related_result_summary(stc.test_index, df::search_t().related(r)),
+	             related_result_summary(stc.test_index, reparsed), "related search from text");
 }
 
 static void should_parse_search()
@@ -774,8 +1051,8 @@ static void should_parse_search_input()
 
 	null_state_strategy ss;
 	null_async_strategy as;
-	view_host_base_ptr view;
-	location_cache locations;
+	const view_host_base_ptr view;
+	const location_cache locations;
 	index_state index(as, locations);
 	view_state s(ss, as, index, make_test_player());
 	s.view_mode(view_type::items);
@@ -869,8 +1146,8 @@ static void should_parent()
 	const auto folder_photo_date = find_parent_search(df::search_t::parse("c:\\windows @photo 1972-may")).parent;
 	assert_equal(true, folder_photo_date.has_media_type(), "parent keeps the media type");
 	assert_equal(true, folder_photo_date.has_selector(), "parent keeps the folder scope");
-	assert_equal(1972, static_cast<int>(folder_photo_date.find_date_parts().year), "parent steps the date first");
-	assert_equal(0, static_cast<int>(folder_photo_date.find_date_parts().month), "parent steps the date first");
+	assert_equal(1972, folder_photo_date.find_date_parts().year, "parent steps the date first");
+	assert_equal(0, folder_photo_date.find_date_parts().month, "parent steps the date first");
 
 	assert_equal("c:\\windows", find_parent_search(df::search_t::parse("c:\\windows @photo")).parent.text(),
 	             "parent then drops the media type");
@@ -895,8 +1172,8 @@ static void should_escape()
 
 	null_state_strategy ss;
 	null_async_strategy as;
-	location_cache locations;
-	view_host_base_ptr view;
+	const location_cache locations;
+	const view_host_base_ptr view;
 	index_state index(as, locations);
 	view_state s(ss, as, index, make_test_player());
 
@@ -918,7 +1195,7 @@ static void should_escape()
 
 static void should_find_closest_location()
 {
-	auto& locations = test_locations();
+	const auto& locations = test_locations();
 
 	assert_equal("Bread Street", locations.find_closest(51.5142, -000.0985).place, "City");
 	assert_equal("Armidale", locations.find_closest(-30.515, 151.665).place, "City");
@@ -1233,7 +1510,7 @@ static void should_recover_from_an_empty_location_search()
 
 	assert_equal(true, term != nullptr, "the empty state only speaks for a single place term");
 	assert_equal("London, Canada", term->text, "the resolved centre is what the message names");
-	assert_equal(2.0, static_cast<double>(term->float_val), "and the radius it searched");
+	assert_equal(2.0, term->float_val, "and the radius it searched");
 
 	// Widen to the next detent -- the single most likely fix, one click.
 	const auto wider = location_distance_at_detent(location_nearest_distance_detent(term->float_val) + 1);
@@ -1310,7 +1587,7 @@ static void should_open_a_map_area_as_a_place_and_radius()
 	const auto* const term = named.single_place_term();
 	assert_equal(true, term != nullptr, "the map produces a place term the slider can drive");
 	assert_equal("London, United Kingdom", term->text, "qualified, so the right London is searched");
-	assert_equal(km, static_cast<double>(term->float_val), "carrying the area's radius");
+	assert_equal(km, term->float_val, "carrying the area's radius");
 	assert_equal(25.0, km, "these bounds round up to the 25 km detent");
 	assert_equal("loc:\"London, United Kingdom, 25km\"", named.format_terms(),
 	             "and canonicalizes to a loc: term, never an area: term");
@@ -1532,10 +1809,10 @@ static void should_match_location_radius_and_presence()
 
 	// A component that does not parse completely stays part of the name.
 	assert_equal("Boulder City, 10 furlongs", std::string(df::search_t::parse("loc:\"Boulder City, 10 furlongs\"").
-	                                                      terms()[0].text),
+		             terms()[0].text),
 	             "an unrecognised unit is not a distance");
 	assert_equal("Nevada, United States", std::string(df::search_t::parse("loc:\"Nevada, United States\"").terms()[0].
-	                                                  text),
+		             text),
 	             "an ordinary qualifier is not a distance");
 
 	// Radius matching needs coordinates; stored text alone can never satisfy one.
@@ -1584,7 +1861,7 @@ static void should_find_location()
 	             "largest population center inside photo bounds");
 	const auto boulder_city_coord = gps_coordinate(35.9786, -114.8325);
 	assert_equal("Boulder City", locations.find_closest(boulder_city_coord.latitude(),
-	                                                   boulder_city_coord.longitude()).place,
+	                                                    boulder_city_coord.longitude()).place,
 	             "Boulder City reverse geocode");
 
 	df::index_file_item boulder_city_file;
@@ -1672,8 +1949,8 @@ static void should_average_map_location_coordinates()
 {
 	index_histograms histograms;
 	constexpr auto map_width = static_cast<int>(df::location_heat_map::map_width);
-	const auto first = 48 * map_width + 32;
-	const auto second = 49 * map_width + 33;
+	constexpr auto first = 48 * map_width + 32;
+	constexpr auto second = 49 * map_width + 33;
 	histograms._locations.coordinates[first] = 2;
 	histograms._location_latitude_sums[first] = 20.0;
 	histograms._location_longitude_sums[first] = 40.0;
@@ -1702,7 +1979,7 @@ static void should_average_map_location_coordinates()
 
 static void should_resolve_named_map_area_on_demand()
 {
-	auto& locations = test_locations();
+	const auto& locations = test_locations();
 	index_histograms histograms;
 	const gps_coordinate munich(48.137, 11.575);
 	const auto cell = df::location_heat_map::calc_map_loc(munich);
@@ -2116,7 +2393,16 @@ void register_tests5(view_state& state, test_registry& tests)
 	tests.add("Should match parsed property values"s, should_match_parsed_property_values);
 	tests.add("Should search Boolean presence terms"s, should_search_boolean_presence_terms);
 	tests.add("Should match related"s, should_match_related);
+	tests.add("Should list an item once"s, should_list_an_item_once);
 	tests.add("Should match related from text"s, should_match_related_from_text);
+	tests.add("Should bound related results by closeness"s, should_bound_related_results_by_closeness);
+	tests.add("Should break related ties on path"s, should_break_related_ties_on_path);
+	tests.add("Should group related results by axis"s, should_group_related_results_by_axis);
+	tests.add("Should match related by album"s, should_match_related_by_album);
+	tests.add("Should match related by series"s, should_match_related_by_series);
+	tests.add("Should match related by capture time"s, should_match_related_by_capture_time);
+	tests.add("Should match related by capture place"s, should_match_related_by_capture_place);
+	tests.add("Should report the strongest related axis"s, should_report_the_strongest_related_axis);
 	tests.add("Should match volume label"s, should_match_volume_label);
 	tests.add("Should match multi-value genre"s, should_match_multi_value_genre);
 	tests.add("Issue #139/#178: Should match quoted terms"s, should_match_quoted_terms);

@@ -119,13 +119,13 @@ msgid "&Cancel"
 msgstr "取消(&C)"
 
 msgid "Change..."
-msgstr "改变..."
+msgstr "更改..."
 
 msgid "&Close"
 msgstr "关闭(&C)"
 
 msgid "&Convert"
-msgstr "转变(&C)"
+msgstr "转换(&C)"
 
 msgid "&Delete"
 msgstr "删除(&D)"
@@ -134,16 +134,16 @@ msgid "&Don't Save"
 msgstr "不保存(&D)"
 
 msgid "&OK"
-msgstr "好的(&O)"
+msgstr "确定(&O)"
 
 msgid "&Rotate"
 msgstr "旋转(&R)"
 
 msgid "&Save"
-msgstr "节省(&S)"
+msgstr "保存(&S)"
 
 msgid "As &JPEG"
-msgstr "如&JPEG"
+msgstr "存为 JPEG(&J)"
 
 msgid "&Send"
 msgstr "发送(&S)"
@@ -170,8 +170,8 @@ msgstr "在线捐赠。"
 msgid "Changes"
 msgstr "更改"
 
-msgid "Set the location for the selected files by scrolling the map or searching for a place. Use the mouse wheel to zoom."
-msgstr "滚动地图以选择位置。使用鼠标滚轮进行缩放。"
+msgid "The crosshair at the centre of the map marks the location that will be written. Drag the map, click a photo bubble to move it under the crosshair, or search for a place by name. Use the mouse wheel to zoom. Nothing is written until you press Add location."
+msgstr "地图中央的十字准线标记将要写入的位置。拖动地图、点击照片气泡将其移到十字准线下方，或按名称搜索地点。使用鼠标滚轮缩放。在按下添加位置之前不会写入任何内容。"
 
 msgid "The collection contains {} {} ({})."
 msgstr "该集合包含 {} {} ({})。"
@@ -402,7 +402,7 @@ msgid "Keyboard reference"
 msgstr "键盘参考"
 
 msgid "Approved"
-msgstr "得到正式认可的"
+msgstr "已批准"
 
 msgid "No Label"
 msgstr "无标签"
@@ -509,8 +509,8 @@ msgstr "拒绝"
 msgid "Refresh"
 msgstr "刷新"
 
-msgid "Matching or possible copy items in the collection"
-msgstr "集合中匹配或可能的复制项目"
+msgid "Related items"
+msgstr "相关项目"
 
 msgid "Rename"
 msgstr "重命名"
@@ -529,6 +529,9 @@ msgstr "逆时针旋转"
 
 msgid "Rotate clockwise"
 msgstr "顺时针旋转"
+
+msgid "Confirm single-item rotations"
+msgstr "确认单个项目的旋转"
 
 msgid "Reset rotation"
 msgstr "重置旋转"
@@ -549,7 +552,7 @@ msgid "Save the current item and open the previous item."
 msgstr "保存当前项目并打开上一个项目。"
 
 msgid "Save and open next"
-msgstr "保存并打开下一步"
+msgstr "保存并打开下一个"
 
 msgid "Save the current item and open the next item."
 msgstr "保存当前项目并打开下一个项目。"
@@ -561,7 +564,7 @@ msgid "Adjust the crop, rotation, perspective, and color of a photo. Nothing is 
 msgstr "调整照片的裁剪、旋转、透视和颜色。在您保存之前，不会写入磁盘。"
 
 msgid "Scale up items"
-msgstr "扩大项目规模"
+msgstr "放大项目"
 
 msgid "Scan"
 msgstr "扫描"
@@ -573,7 +576,7 @@ msgid "Invert selection"
 msgstr "反转选择"
 
 msgid "Select none"
-msgstr "不选择"
+msgstr "取消选择"
 
 msgid "Email"
 msgstr "电子邮件"
@@ -645,7 +648,7 @@ msgid "Select Items"
 msgstr "选择项目"
 
 msgid "Sort"
-msgstr "种类"
+msgstr "排序"
 
 msgid "Toggle volume"
 msgstr "切换音量"
@@ -665,6 +668,12 @@ msgstr "对比"
 msgid "Open link {}"
 msgstr "打开链接 {}"
 
+msgid "Choose a link to open"
+msgstr "选择要打开的链接"
+
+msgid "Duplicate"
+msgstr "重复"
+
 msgid "Copy to clipboard"
 msgstr "复制到剪贴板"
 
@@ -675,10 +684,10 @@ msgid "Creator"
 msgstr "创作者"
 
 msgid "Credit"
-msgstr "信用"
+msgstr "署名"
 
 msgid "Notice"
-msgstr "注意"
+msgstr "声明"
 
 msgid "File"
 msgstr "文件"
@@ -693,7 +702,7 @@ msgid "URL"
 msgstr "网址"
 
 msgid "Count"
-msgstr "数数"
+msgstr "数量"
 
 msgid "Favorite Searches"
 msgstr "最喜欢的搜索"
@@ -741,28 +750,25 @@ msgid "Show world map"
 msgstr "显示世界地图"
 
 msgid "Darks"
-msgstr "深色"
+msgstr "暗部"
 
 msgid "data"
 msgstr "数据"
 
 msgid "File created:"
-msgstr "创建的文件："
+msgstr "文件创建时间："
 
 msgid "File modified:"
-msgstr "文件修改："
+msgstr "文件修改时间："
 
 msgid "Metadata created:"
-msgstr "创建的元数据："
+msgstr "元数据创建时间："
 
 msgid "Dates"
 msgstr "日期"
 
 msgid "family food friends landscape nature night portrait selfie todo travel urban viewed"
 msgstr "家庭 美食 朋友 风景 自然 夜间 肖像 自拍 待办事项 旅行 城市 已查看"
-
-msgid "results"
-msgstr "结果"
 
 msgid "Defragment database."
 msgstr "对数据库进行碎片整理。"
@@ -795,7 +801,7 @@ msgid "System"
 msgstr "系统"
 
 msgid "Used"
-msgstr "用过的"
+msgstr "已用"
 
 msgid "Documentation"
 msgstr "文档"
@@ -843,13 +849,13 @@ msgid "Create a draft in your desktop email client with the selected files attac
 msgstr "在桌面电子邮件客户端中创建草稿，并附上所选文件。原始文件不会更改。"
 
 msgid "Zip files in the email"
-msgstr "电子邮件中的 Zip 文件"
+msgstr "压缩电子邮件中的文件"
 
 msgid "Empty"
-msgstr "空的"
+msgstr "空"
 
 msgid "Ending {}"
-msgstr "结局{}"
+msgstr "正在结束 {}"
 
 msgid "Security options denied access to the source."
 msgstr "安全选项拒绝访问源。"
@@ -924,7 +930,7 @@ msgid "MAX_PATH was exceeded during the operation."
 msgstr "操作期间超出了 MAX_PATH。"
 
 msgid "OleInitialize Failed"
-msgstr "Ole初始化失败"
+msgstr "OleInitialize 失败"
 
 msgid "An unspecified error occurred on the destination."
 msgstr "目标上发生未指定的错误。"
@@ -1020,7 +1026,7 @@ msgid "folders"
 msgstr "文件夹"
 
 msgid "onedrive"
-msgstr "一个驱动器"
+msgstr "OneDrive"
 
 msgid "picture"
 msgstr "图片"
@@ -1035,10 +1041,10 @@ msgid "A capella"
 msgstr "阿卡贝拉"
 
 msgid "Abstract"
-msgstr "抽象的"
+msgstr "抽象"
 
 msgid "Acid"
-msgstr "酸"
+msgstr "Acid"
 
 msgid "Acid Jazz"
 msgstr "Acid Jazz"
@@ -1047,19 +1053,19 @@ msgid "Acid Punk"
 msgstr "Acid Punk"
 
 msgid "Acoustic"
-msgstr "声学"
+msgstr "原声"
 
 msgid "Action"
-msgstr "行动"
+msgstr "动作"
 
 msgid "Action & Adventure"
 msgstr "动作与冒险"
 
 msgid "Aerial"
-msgstr "天线"
+msgstr "航拍"
 
 msgid "Alternative"
-msgstr "选择"
+msgstr "另类"
 
 msgid "AlternRock"
 msgstr "另类摇滚"
@@ -1113,10 +1119,10 @@ msgid "Cabaret"
 msgstr "歌舞表演"
 
 msgid "Candid"
-msgstr "坦率"
+msgstr "抓拍"
 
 msgid "Celtic"
-msgstr "凯尔特人"
+msgstr "凯尔特"
 
 msgid "Chamber Music"
 msgstr "室内乐"
@@ -1137,7 +1143,7 @@ msgid "Christian Rap"
 msgstr "基督教说唱"
 
 msgid "Classic"
-msgstr "经典的"
+msgstr "经典"
 
 msgid "Classic Rock"
 msgstr "经典摇滚"
@@ -1158,7 +1164,7 @@ msgid "Comedy"
 msgstr "喜剧"
 
 msgid "Conceptual"
-msgstr "概念性的"
+msgstr "概念"
 
 msgid "Concert"
 msgstr "音乐会"
@@ -1191,7 +1197,7 @@ msgid "Disco"
 msgstr "迪斯科"
 
 msgid "Documentary"
-msgstr "记录"
+msgstr "纪录片"
 
 msgid "Drama"
 msgstr "戏剧"
@@ -1209,19 +1215,19 @@ msgid "Easy Listening"
 msgstr "轻松聆听"
 
 msgid "Electronic"
-msgstr "电子的"
+msgstr "电子"
 
 msgid "Ethnic"
-msgstr "种族的"
+msgstr "民族"
 
 msgid "Eurodance"
-msgstr "欧洲舞会"
+msgstr "欧陆舞曲"
 
 msgid "Euro-House"
-msgstr "欧洲之家"
+msgstr "欧陆浩室"
 
 msgid "Euro-Techno"
-msgstr "欧洲科技音乐"
+msgstr "欧陆电子舞曲"
 
 msgid "Family"
 msgstr "家庭"
@@ -1260,7 +1266,7 @@ msgid "Food"
 msgstr "食物"
 
 msgid "Foreign"
-msgstr "外国的"
+msgstr "外国"
 
 msgid "Forensic"
 msgstr "法医"
@@ -1296,7 +1302,7 @@ msgid "Gothic Rock"
 msgstr "哥特式摇滚"
 
 msgid "Grunge"
-msgstr "垃圾"
+msgstr "垃圾摇滚"
 
 msgid "Hard Rock"
 msgstr "硬摇滚"
@@ -1326,10 +1332,10 @@ msgid "Humour"
 msgstr "幽默"
 
 msgid "Independent"
-msgstr "独立的"
+msgstr "独立"
 
 msgid "Industrial"
-msgstr "工业的"
+msgstr "工业"
 
 msgid "Instrumental"
 msgstr "器乐"
@@ -1359,7 +1365,7 @@ msgid "Kirlian"
 msgstr "克里安"
 
 msgid "Landscape"
-msgstr "景观"
+msgstr "风景"
 
 msgid "Latin"
 msgstr "拉丁"
@@ -1374,16 +1380,16 @@ msgid "Lomography"
 msgstr "洛莫摄影"
 
 msgid "Long-exposure"
-msgstr "长期接触"
+msgstr "长曝光"
 
 msgid "Low key"
 msgstr "低调"
 
 msgid "Macro"
-msgstr "宏"
+msgstr "微距"
 
 msgid "Medical"
-msgstr "医疗的"
+msgstr "医疗"
 
 msgid "Meditative"
 msgstr "冥想"
@@ -1401,7 +1407,7 @@ msgid "Music Feature Films"
 msgstr "音乐故事片"
 
 msgid "Musical"
-msgstr "音乐"
+msgstr "音乐剧"
 
 msgid "Musicals"
 msgstr "音乐剧"
@@ -1416,7 +1422,7 @@ msgid "Native American"
 msgstr "美洲原住民"
 
 msgid "New Age"
-msgstr "新时代"
+msgstr "新世纪音乐"
 
 msgid "New Wave"
 msgstr "新浪潮"
@@ -1497,7 +1503,7 @@ msgid "Progressive Rock"
 msgstr "前卫摇滚"
 
 msgid "Psychadelic"
-msgstr "迷幻的"
+msgstr "迷幻"
 
 msgid "Psychedelic Rock"
 msgstr "迷幻摇滚"
@@ -1524,13 +1530,13 @@ msgid "Reggae"
 msgstr "雷鬼音乐"
 
 msgid "Retro"
-msgstr "复古的"
+msgstr "复古"
 
 msgid "Revival"
 msgstr "复兴"
 
 msgid "Rhythmic Soul"
-msgstr "韵律灵魂"
+msgstr "节奏灵魂乐"
 
 msgid "Rock"
 msgstr "摇滚"
@@ -1572,7 +1578,7 @@ msgid "Slow Rock"
 msgstr "慢摇滚"
 
 msgid "Social"
-msgstr "社会的"
+msgstr "社会"
 
 msgid "Soft focus"
 msgstr "柔焦"
@@ -1581,7 +1587,7 @@ msgid "Sonata"
 msgstr "奏鸣曲"
 
 msgid "Soul"
-msgstr "灵魂"
+msgstr "灵魂乐"
 
 msgid "Sound Clip"
 msgstr "声音片段"
@@ -1590,10 +1596,10 @@ msgid "Soundtrack"
 msgstr "原声带"
 
 msgid "Southern Rock"
-msgstr "南岩"
+msgstr "南方摇滚"
 
 msgid "Space"
-msgstr "空间"
+msgstr "太空"
 
 msgid "Special Interest"
 msgstr "特别兴趣"
@@ -1602,7 +1608,7 @@ msgid "Speech"
 msgstr "演讲"
 
 msgid "Sports"
-msgstr "运动的"
+msgstr "体育"
 
 msgid "Star trail"
 msgstr "星轨"
@@ -1662,7 +1668,7 @@ msgid "Tribal"
 msgstr "部落"
 
 msgid "Trip-Hop"
-msgstr "跳跳"
+msgstr "神游舞曲"
 
 msgid "Ultraviolet"
 msgstr "紫外线"
@@ -1674,13 +1680,13 @@ msgid "Unknown"
 msgstr "未知"
 
 msgid "Urban"
-msgstr "城市的"
+msgstr "城市"
 
 msgid "Vernacular"
-msgstr "白话"
+msgstr "民间摄影"
 
 msgid "Vintage"
-msgstr "优质的"
+msgstr "复古风格"
 
 msgid "Vocal"
 msgstr "声乐"
@@ -1689,7 +1695,7 @@ msgid "War"
 msgstr "战争"
 
 msgid "Western"
-msgstr "西"
+msgstr "西部片"
 
 msgid "World"
 msgstr "世界"
@@ -1707,7 +1713,7 @@ msgid "No camera"
 msgstr "没有相机"
 
 msgid "No extension"
-msgstr "无延期"
+msgstr "无扩展名"
 
 msgid "No location"
 msgstr "没有位置"
@@ -1719,10 +1725,10 @@ msgid "No rating"
 msgstr "无评级"
 
 msgid "No value"
-msgstr "没有价值"
+msgstr "无值"
 
 msgid "random"
-msgstr "随机的"
+msgstr "随机"
 
 msgid "{} to {}"
 msgstr "{} 至 {}"
@@ -1761,13 +1767,10 @@ msgid "Destination root folder. Structured folders will be created under this fo
 msgstr "目标根文件夹。在此文件夹下将创建结构化文件夹。"
 
 msgid "Source of import:"
-msgstr "进口来源："
+msgstr "导入来源："
 
 msgid "Ignore previously imported items."
 msgstr "忽略以前导入的项目。"
-
-msgid "Overwrite if source items are newer."
-msgstr "如果源项目较新，则覆盖。"
 
 msgid "Other folder"
 msgstr "其他文件夹"
@@ -1827,7 +1830,7 @@ msgid "press"
 msgstr "按"
 
 msgid "alt"
-msgstr "替代"
+msgstr "Alt"
 
 msgid "back"
 msgstr "后退"
@@ -1839,13 +1842,13 @@ msgid "Basics"
 msgstr "基础知识"
 
 msgid "browser-back"
-msgstr "浏览器后台"
+msgstr "浏览器后退"
 
 msgid "browser-favorites"
 msgstr "浏览器收藏夹"
 
 msgid "browser-forward"
-msgstr "浏览器转发"
+msgstr "浏览器前进"
 
 msgid "browser-home"
 msgstr "浏览器主页"
@@ -1866,19 +1869,19 @@ msgid "Extend the current item selection and allow comparing of items."
 msgstr "扩展当前项目选择并允许比较项目。"
 
 msgid "del"
-msgstr "德尔"
+msgstr "Del"
 
 msgid "down"
 msgstr "向下"
 
 msgid "enter"
-msgstr "进入"
+msgstr "回车"
 
 msgid "Opens an image full screen."
 msgstr "全屏打开图像。"
 
 msgid "escape"
-msgstr "逃脱"
+msgstr "Esc"
 
 msgid "Gets you out of full screen, zoom or other modes."
 msgstr "让您退出全屏、缩放或其他模式。"
@@ -1926,7 +1929,7 @@ msgid "insert"
 msgstr "插入"
 
 msgid "left"
-msgstr "左边"
+msgstr "左"
 
 msgid "Move to the next or previous item."
 msgstr "移至下一个或上一个项目。"
@@ -1970,19 +1973,19 @@ msgid "page-up"
 msgstr "向上翻页"
 
 msgid "right"
-msgstr "正确的"
+msgstr "右"
 
 msgid "Selection"
 msgstr "选择"
 
 msgid "shift"
-msgstr "转移"
+msgstr "Shift"
 
 msgid "space"
-msgstr "空间"
+msgstr "空格"
 
 msgid "tab"
-msgstr "选项卡"
+msgstr "Tab"
 
 msgid "up"
 msgstr "向上"
@@ -2003,7 +2006,7 @@ msgid "Learn more at Diffractor.com"
 msgstr "了解更多信息，请访问 Diffractor.com"
 
 msgid "Lights"
-msgstr "灯"
+msgstr "亮部"
 
 msgid "Limit output to a maximum dimension (in pixels)."
 msgstr "将输出限制为最大尺寸（以像素为单位）。"
@@ -2132,7 +2135,7 @@ msgid "No items are selected"
 msgstr "没有选择任何项目"
 
 msgid "None"
-msgstr "没有任何"
+msgstr "无"
 
 msgid "Cloud items are not supported."
 msgstr "不支持云项目。"
@@ -2192,7 +2195,7 @@ msgid "Delay before showing the next item (in seconds)"
 msgstr "显示下一个项目之前的延迟（以秒为单位）"
 
 msgid "Advanced"
-msgstr "先进的"
+msgstr "高级"
 
 msgid "Application options"
 msgstr "应用选项"
@@ -2205,6 +2208,10 @@ msgstr "通过连接到互联网检查更新"
 
 msgid "Confirm when deleting items. Deleted items are moved to the recycle bin."
 msgstr "删除项目时确认。已删除的项目将移至回收站。"
+
+msgid ""
+"Confirm when rotating one item. Rotating several items is always confirmed."
+msgstr "旋转一个项目时确认。旋转多个项目时始终确认。"
 
 msgid "JPEG save quality"
 msgstr "JPEG 保存质量"
@@ -2219,7 +2226,7 @@ msgid "Help make Diffractor better. If Diffractor crashes send anonymous diagnos
 msgstr "帮助 Diffractor 变得更好。如果 Diffractor 崩溃，请将匿名诊断发送到 Diffractor 总部。不会发送任何个人数据 - 仅发送崩溃诊断信息。"
 
 msgid "Show application debugging information (for the programmers)."
-msgstr "显示应用程序调试信息（对于程序员）。"
+msgstr "显示应用程序调试信息（供程序员使用）。"
 
 msgid "Show hidden files"
 msgstr "显示隐藏文件"
@@ -2276,7 +2283,7 @@ msgid "other"
 msgstr "其他"
 
 msgid "others"
-msgstr "其他的"
+msgstr "其他"
 
 msgid "pasted"
 msgstr "粘贴的"
@@ -2294,7 +2301,7 @@ msgid "Pixels are identical but files are different."
 msgstr "像素相同但文件不同。"
 
 msgid "small"
-msgstr "小的"
+msgstr "小"
 
 msgid "Pixels"
 msgstr "像素"
@@ -2468,7 +2475,7 @@ msgid "Latitude"
 msgstr "纬度"
 
 msgid "Lens"
-msgstr "镜片"
+msgstr "镜头"
 
 msgid "Longitude"
 msgstr "经度"
@@ -2480,16 +2487,16 @@ msgid "Megapixels"
 msgstr "百万像素"
 
 msgid "Modified"
-msgstr "修改的"
+msgstr "已修改"
 
 msgid "Null"
-msgstr "无效的"
+msgstr "空"
 
 msgid "Orientation"
 msgstr "方向"
 
 msgid "Performer"
-msgstr "演员"
+msgstr "表演者"
 
 msgid "Pixel format"
 msgstr "像素格式"
@@ -2501,7 +2508,7 @@ msgid "Publisher"
 msgstr "出版商"
 
 msgid "Rating"
-msgstr "等级"
+msgstr "评分"
 
 msgid "Raw file"
 msgstr "RAW 文件"
@@ -2510,16 +2517,16 @@ msgid "Sample rate"
 msgstr "采样率"
 
 msgid "Sample type"
-msgstr "样品类型"
+msgstr "样本类型"
 
 msgid "Season"
-msgstr "季节"
+msgstr "季"
 
 msgid "Show"
-msgstr "展示"
+msgstr "节目"
 
 msgid "Size"
-msgstr "尺寸"
+msgstr "大小"
 
 msgid "State"
 msgstr "省/州"
@@ -2537,7 +2544,7 @@ msgid "Title"
 msgstr "标题"
 
 msgid "Track"
-msgstr "追踪"
+msgstr "曲目"
 
 msgid "Video codec"
 msgstr "视频编解码器"
@@ -2561,16 +2568,16 @@ msgid "dups"
 msgstr "重复"
 
 msgid "duplicate"
-msgstr "复制"
+msgstr "重复"
 
 msgid "modified"
-msgstr "修改的"
+msgstr "已修改"
 
 msgid "or"
 msgstr "或者"
 
 msgid "related"
-msgstr "有关的"
+msgstr "相关"
 
 msgid "with"
 msgstr "和"
@@ -2609,7 +2616,7 @@ msgid "For example:"
 msgstr "例如："
 
 msgid "photo-###"
-msgstr "照片-＃＃＃"
+msgstr "照片-###"
 
 msgid "{year}-{month}-###"
 msgstr "{year}-{month}-###"
@@ -2630,13 +2637,13 @@ msgid "Clean database and reindex.\nAll data is regenerated."
 msgstr "清理数据库并重新索引。\n所有数据均重新生成。"
 
 msgid "Cleaning..."
-msgstr "打扫..."
+msgstr "正在清理..."
 
 msgid "retro"
-msgstr "复古的"
+msgstr "复古"
 
 msgid "Saturation"
-msgstr "饱和"
+msgstr "饱和度"
 
 msgid "Diffractor cannot crop, rotate or color {} files. You can save the file as a JPEG?"
 msgstr "Diffractor 无法对 {} 文件进行裁剪、旋转或着色。您可以将文件另存为 JPEG 吗？"
@@ -2654,7 +2661,7 @@ msgid "Failed to Scan."
 msgstr "扫描失败。"
 
 msgid "All these terms"
-msgstr "所有这些条款"
+msgstr "所有这些词语"
 
 msgid "Christmas"
 msgstr "圣诞节"
@@ -2666,7 +2673,7 @@ msgid "From"
 msgstr "从"
 
 msgid "Until"
-msgstr "直到"
+msgstr "至"
 
 msgid "Search in a folder"
 msgstr "在文件夹中搜索"
@@ -2678,7 +2685,7 @@ msgid "Located within"
 msgstr "位于"
 
 msgid "None of these terms"
-msgstr "这些条款都没有"
+msgstr "不含这些词语"
 
 msgid "Search criteria or folder"
 msgstr "搜索条件或文件夹"
@@ -2687,7 +2694,7 @@ msgid "Photos"
 msgstr "照片"
 
 msgid "Select term"
-msgstr "选择术语"
+msgstr "选择词语"
 
 msgid "Search in subfolders"
 msgstr "在子文件夹中搜索"
@@ -2713,35 +2720,35 @@ msgstr "始终显示 RAW 照片（较慢）"
 msgid "Show this RAW photo"
 msgstr "显示这张 RAW 照片"
 
-msgid "press R to view matching or possible copy items in the collection"
-msgstr "按 R 查看集合中匹配的或可能的副本项目"
+msgid "press R to view the items most closely related to this one"
+msgstr "按 R 查看与此项目最相关的项目"
 
 msgid "Show verbose metadata"
 msgstr "显示详细元数据"
 
 msgid "Album-Show"
-msgstr "专辑秀"
+msgstr "专辑-节目"
 
 msgid "Group order (Default)"
 msgstr "分组顺序（默认）"
 
 msgid "Extension"
-msgstr "扩大"
+msgstr "扩展名"
 
 msgid "Type"
 msgstr "类型"
 
 msgid "Name"
-msgstr "姓名"
+msgstr "名称"
 
 msgid "Resolution"
-msgstr "解决"
+msgstr "分辨率"
 
 msgid "Rating-Label"
 msgstr "评级标签"
 
 msgid "Staring"
-msgstr "凝视"
+msgstr "主演"
 
 msgid "New Starting Date (local time):"
 msgstr "新的开始日期（当地时间）："
@@ -2836,6 +2843,9 @@ msgstr "要删除的本地文件：{}。要删除的远程文件：{}。"
 msgid "Synchronization will permanently delete files. These files cannot be recovered from the Recycle Bin."
 msgstr "同步将永久删除文件。这些文件无法从回收站恢复。"
 
+msgid "The existing files will be overwritten. Their current contents cannot be recovered from the recycle bin."
+msgstr "现有文件将被覆盖。其当前内容无法从回收站恢复。"
+
 msgid "Delete local files that do not exist remotely"
 msgstr "删除远程不存在的本地文件"
 
@@ -2879,10 +2889,10 @@ msgid "Tags"
 msgstr "标签"
 
 msgid "false"
-msgstr "错误的"
+msgstr "假"
 
 msgid "true"
-msgstr "真的"
+msgstr "真"
 
 msgid "Diffractor ERROR"
 msgstr "Diffractor 错误"
@@ -2918,7 +2928,7 @@ msgid "Pinned items stay selected. Use this when you want to quickly compare an 
 msgstr "固定的项目保持选中状态。当您想要快速将一个项目与其他项目进行比较时，请使用此功能。"
 
 msgid "Reset straighten and rotate"
-msgstr "重置、拉直和旋转"
+msgstr "重置拉直和旋转"
 
 msgid "Tag or un-tag selected items"
 msgstr "标记或取消标记所选项目"
@@ -2936,7 +2946,7 @@ msgid "More options and controls"
 msgstr "更多选项和控制"
 
 msgid "{} ({}) total items in {} folders."
-msgstr "{} ({}) {} 文件夹中的项目总数。"
+msgstr "共 {} ({}) 个项目，位于 {} 个文件夹中。"
 
 msgid "Truncated at 1MB"
 msgstr "截断为 1MB"
@@ -2975,7 +2985,7 @@ msgid "Learn more about this update at Diffractor.com"
 msgstr "请访问 Diffractor.com 了解有关此更新的更多信息"
 
 msgid "Not now"
-msgstr "现在不要"
+msgstr "暂不"
 
 msgid "Remind me again in a week"
 msgstr "一周后再次提醒我"
@@ -3011,19 +3021,19 @@ msgid "Value"
 msgstr "值"
 
 msgid "Volume 200%"
-msgstr "体积 200%"
+msgstr "音量 200%"
 
 msgid "Volume 100%"
-msgstr "体积 100%"
+msgstr "音量 100%"
 
 msgid "Volume 75%"
-msgstr "体积 75%"
+msgstr "音量 75%"
 
 msgid "Volume 50%"
-msgstr "体积 50%"
+msgstr "音量 50%"
 
 msgid "Volume 25%"
-msgstr "体积 25%"
+msgstr "音量 25%"
 
 msgid "Mute"
 msgstr "静音"
@@ -3041,7 +3051,7 @@ msgid "Repeat play all media items"
 msgstr "重复播放所有媒体项目"
 
 msgid "Don't repeat"
-msgstr "不要重复"
+msgstr "不重复"
 
 msgid "Playback Options"
 msgstr "播放选项"
@@ -3062,10 +3072,10 @@ msgid "Audio filter"
 msgstr "音频筛选器"
 
 msgid "Show {} filtered out items"
-msgstr "显示 {} 过滤掉的项目"
+msgstr "显示 {} 个被过滤掉的项目"
 
 msgid "The collection contains {} items created on {}."
-msgstr "该集合包含在 {} 上创建的 {} 项目。"
+msgstr "该集合包含 {} 个项目，创建于 {}。"
 
 msgid "Show all tags"
 msgstr "显示所有标签"
@@ -3371,9 +3381,6 @@ msgstr "{} 仍在运行。请先关闭，再浏览其他位置。"
 msgid "If the destination already exists:"
 msgstr "如果目标已存在："
 
-msgid "If both sides have the file, the newer one replaces the older one."
-msgstr "如果两端都有该文件，较新的将替换较旧的。"
-
 msgid "Replace"
 msgstr "替换"
 
@@ -3574,3 +3581,21 @@ msgstr "太大，无法显示"
 
 msgid "This image could not be displayed"
 msgstr "无法显示此图像"
+
+msgid "Show the items in the collection most closely related to this one: possible copies, then the same album, the same series, the closest capture times, and the closest capture places."
+msgstr "显示集合中与此项目最相关的项目：可能的副本，然后是同一专辑、同一系列、最接近的拍摄时间和最接近的拍摄地点。"
+
+msgid "This item and possible copies"
+msgstr "此项目及可能的副本"
+
+msgid "Same album"
+msgstr "同一专辑"
+
+msgid "Same series"
+msgstr "同一系列"
+
+msgid "Taken at the same time"
+msgstr "同一时间拍摄"
+
+msgid "Taken in the same place"
+msgstr "同一地点拍摄"

@@ -44,9 +44,6 @@ public:
 
 			if (c < 32 || c > 127) { c = '.'; }
 			else if (std::isspace(c)) { c = ' '; }
-			//else if (std::ispunct(c)) {}
-			//else if (std::isalnum(c)) {}
-			//else { c = "."; };
 
 			result[i] = c;
 		}

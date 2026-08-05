@@ -170,8 +170,8 @@ msgstr "Dona online."
 msgid "Changes"
 msgstr "Modifiche"
 
-msgid "Set the location for the selected files by scrolling the map or searching for a place. Use the mouse wheel to zoom."
-msgstr "Scorri la mappa per selezionare una posizione. Usa la rotellina del mouse per ingrandire."
+msgid "The crosshair at the centre of the map marks the location that will be written. Drag the map, click a photo bubble to move it under the crosshair, or search for a place by name. Use the mouse wheel to zoom. Nothing is written until you press Add location."
+msgstr "Il mirino al centro della mappa indica la posizione che verrà scritta. Trascina la mappa, fai clic su una bolla foto per spostarla sotto il mirino oppure cerca un luogo per nome. Usa la rotellina del mouse per lo zoom. Non viene scritto nulla finché non premi Aggiungi posizione."
 
 msgid "The collection contains {} {} ({})."
 msgstr "La collezione contiene {} {} ({})."
@@ -509,8 +509,8 @@ msgstr "Rifiuta"
 msgid "Refresh"
 msgstr "Aggiorna"
 
-msgid "Matching or possible copy items in the collection"
-msgstr "Elementi duplicati o correlati nella collezione"
+msgid "Related items"
+msgstr "Elementi correlati"
 
 msgid "Rename"
 msgstr "Rinomina"
@@ -529,6 +529,9 @@ msgstr "Ruota in senso antiorario"
 
 msgid "Rotate clockwise"
 msgstr "Ruota in senso orario"
+
+msgid "Confirm single-item rotations"
+msgstr "Conferma la rotazione di un singolo elemento"
 
 msgid "Reset rotation"
 msgstr "Reimposta rotazione"
@@ -665,6 +668,12 @@ msgstr "Contrasto"
 msgid "Open link {}"
 msgstr "Apri collegamento {}"
 
+msgid "Choose a link to open"
+msgstr "Scegli un collegamento da aprire"
+
+msgid "Duplicate"
+msgstr "Duplicato"
+
 msgid "Copy to clipboard"
 msgstr "Copia negli appunti"
 
@@ -761,9 +770,6 @@ msgstr "Date"
 msgid "family food friends landscape nature night portrait selfie todo travel urban viewed"
 msgstr "famiglia cibo amici paesaggio natura notte ritratto selfie dafare viaggio urbano visto"
 
-msgid "results"
-msgstr "risultati"
-
 msgid "Defragment database."
 msgstr "Deframmenta database."
 
@@ -780,7 +786,7 @@ msgid "Set the desktop background to the current image."
 msgstr "Imposta l'immagine corrente come sfondo del desktop."
 
 msgid "Destination folder:"
-msgstr "Cartella di destinazione:";
+msgstr "Cartella di destinazione:"
 
 msgid "Capacity"
 msgstr "Capacità"
@@ -1038,7 +1044,7 @@ msgid "Abstract"
 msgstr "Astratto"
 
 msgid "Acid"
-msgstr "Acido"
+msgstr "Acid"
 
 msgid "Acid Jazz"
 msgstr "Acid Jazz"
@@ -1617,7 +1623,7 @@ msgid "Street"
 msgstr "Strada"
 
 msgid "Subminiature"
-msgstr "Subminiature"
+msgstr "Subminiatura"
 
 msgid "Swing"
 msgstr "Swing"
@@ -1765,9 +1771,6 @@ msgstr "Origine importazione:"
 
 msgid "Ignore previously imported items."
 msgstr "Ignora elementi importati in precedenza."
-
-msgid "Overwrite if source items are newer."
-msgstr "Sovrascrivi se gli elementi di origine sono più recenti."
 
 msgid "Other folder"
 msgstr "Altra cartella"
@@ -2205,6 +2208,12 @@ msgstr "Controlla aggiornamenti connettendosi a Internet"
 
 msgid "Confirm when deleting items. Deleted items are moved to the recycle bin."
 msgstr "Chiedi conferma prima di eliminare gli elementi. Gli elementi eliminati vengono spostati nel cestino."
+
+msgid ""
+"Confirm when rotating one item. Rotating several items is always confirmed."
+msgstr ""
+"Chiedi conferma prima di ruotare un elemento. La rotazione di più elementi "
+"viene sempre confermata."
 
 msgid "JPEG save quality"
 msgstr "Qualità salvataggio JPEG"
@@ -2717,8 +2726,8 @@ msgstr "Mostra sempre foto RAW (più lento)"
 msgid "Show this RAW photo"
 msgstr "Mostra questa foto RAW"
 
-msgid "press R to view matching or possible copy items in the collection"
-msgstr "premi R per visualizzare elementi duplicati o correlati nella collezione"
+msgid "press R to view the items most closely related to this one"
+msgstr "premi R per vedere gli elementi più correlati a questo"
 
 msgid "Show verbose metadata"
 msgstr "Mostra metadati dettagliati"
@@ -2840,6 +2849,9 @@ msgstr "File locali da eliminare: {}. File remoti da eliminare: {}."
 msgid "Synchronization will permanently delete files. These files cannot be recovered from the Recycle Bin."
 msgstr "La sincronizzazione eliminerà definitivamente i file. Questi file non possono essere recuperati dal Cestino."
 
+msgid "The existing files will be overwritten. Their current contents cannot be recovered from the recycle bin."
+msgstr "I file esistenti verranno sovrascritti. Il loro contenuto attuale non può essere recuperato dal Cestino."
+
 msgid "Delete local files that do not exist remotely"
 msgstr "Elimina i file locali che non esistono in remoto"
 
@@ -2889,13 +2901,13 @@ msgid "true"
 msgstr "vero"
 
 msgid "Diffractor ERROR"
-msgstr "ERRORE DIFFRACTOR"
+msgstr "ERRORE Diffractor"
 
 msgid "folder:{}"
 msgstr "cartella:{}"
 
 msgid "rate"
-msgstr "valuta"
+msgstr "valutazione"
 
 msgid "Updating..."
 msgstr "Aggiornamento in corso..."
@@ -3375,9 +3387,6 @@ msgstr "{} è ancora in esecuzione. Chiudilo prima di spostarti altrove."
 msgid "If the destination already exists:"
 msgstr "Se la destinazione esiste già:"
 
-msgid "If both sides have the file, the newer one replaces the older one."
-msgstr "Se il file è presente su entrambi i lati, il più recente sostituisce il più vecchio."
-
 msgid "Replace"
 msgstr "Sostituisci"
 
@@ -3578,3 +3587,21 @@ msgstr "Troppo grande da visualizzare"
 
 msgid "This image could not be displayed"
 msgstr "Impossibile visualizzare questa immagine"
+
+msgid "Show the items in the collection most closely related to this one: possible copies, then the same album, the same series, the closest capture times, and the closest capture places."
+msgstr "Mostra gli elementi della collezione più correlati a questo: possibili copie, poi lo stesso album, la stessa serie, i momenti di scatto più vicini e i luoghi di scatto più vicini."
+
+msgid "This item and possible copies"
+msgstr "Questo elemento e possibili copie"
+
+msgid "Same album"
+msgstr "Stesso album"
+
+msgid "Same series"
+msgstr "Stessa serie"
+
+msgid "Taken at the same time"
+msgstr "Scattato nello stesso momento"
+
+msgid "Taken in the same place"
+msgstr "Scattato nello stesso luogo"

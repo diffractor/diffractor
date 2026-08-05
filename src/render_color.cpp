@@ -129,8 +129,8 @@ private:
 
 void ui::color_adjust::color_params(const double vibrance, const double saturation,
                                     const double darks, const double midtones, const double lights,
-	                                const double contrast, const double brightness, const double temperature,
-	                                const double tint)
+                                    const double contrast, const double brightness, const double temperature,
+                                    const double tint)
 {
 	_saturation = saturation + 1.0;
 	_vibrance = vibrance;
@@ -195,7 +195,7 @@ ui::color32 ui::color_adjust::adjust_color(double y, double u, double v, const d
 }
 
 void ui::color_adjust::apply(const const_surface_ptr& src, uint8_t* dst, const size_t dst_stride,
-                             const df::cancel_token token) const
+                             const df::cancel_token& token) const
 {
 	const auto dims = src->dimensions();
 

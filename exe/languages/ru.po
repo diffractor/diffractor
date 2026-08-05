@@ -171,8 +171,8 @@ msgstr "Пожертвуйте онлайн."
 msgid "Changes"
 msgstr "Изменения"
 
-msgid "Set the location for the selected files by scrolling the map or searching for a place. Use the mouse wheel to zoom."
-msgstr "Прокрутите карту, чтобы выбрать местоположение. Используйте колесо мыши для масштабирования."
+msgid "The crosshair at the centre of the map marks the location that will be written. Drag the map, click a photo bubble to move it under the crosshair, or search for a place by name. Use the mouse wheel to zoom. Nothing is written until you press Add location."
+msgstr "Перекрестие в центре карты отмечает местоположение, которое будет записано. Перетащите карту, щёлкните пузырёк фотографии, чтобы переместить его под перекрестие, или найдите место по названию. Для масштабирования используйте колесо мыши. Ничего не записывается, пока вы не нажмёте Добавить местоположение."
 
 msgid "The collection contains {} {} ({})."
 msgstr "Коллекция содержит {} {} ({})."
@@ -238,7 +238,7 @@ msgid "Color"
 msgstr "Цвет"
 
 msgid "Adjust date and time"
-msgstr "Настройте дату и время"
+msgstr "Настроить дату и время"
 
 msgid "Advanced Search"
 msgstr "Расширенный поиск"
@@ -337,7 +337,7 @@ msgid "Show items in subfolders"
 msgstr "Показать элементы в подпапках"
 
 msgid "Fullscreen"
-msgstr "Полноэкранный"
+msgstr "Полный экран"
 
 msgid "Group by Album/Show"
 msgstr "Группировать по альбомам/шоу"
@@ -427,7 +427,7 @@ msgid "Add location"
 msgstr "Добавить местоположение"
 
 msgid "Maximize"
-msgstr "Максимизировать"
+msgstr "Развернуть"
 
 msgid "Group or Sort"
 msgstr "Группировать или сортировать"
@@ -484,7 +484,7 @@ msgid "Print"
 msgstr "Распечатать"
 
 msgid "Rate"
-msgstr "Оценка"
+msgstr "Оценить"
 
 msgid "Remove rating"
 msgstr "Удалить оценку"
@@ -510,8 +510,8 @@ msgstr "Отклонить"
 msgid "Refresh"
 msgstr "Обновить"
 
-msgid "Matching or possible copy items in the collection"
-msgstr "Совпадающие элементы или возможные копии в коллекции"
+msgid "Related items"
+msgstr "Связанные элементы"
 
 msgid "Rename"
 msgstr "Переименовать"
@@ -530,6 +530,9 @@ msgstr "Поворот против часовой стрелки"
 
 msgid "Rotate clockwise"
 msgstr "Повернуть по часовой стрелке"
+
+msgid "Confirm single-item rotations"
+msgstr "Подтверждать поворот одного элемента"
 
 msgid "Reset rotation"
 msgstr "Сбросить вращение"
@@ -562,7 +565,7 @@ msgid "Adjust the crop, rotation, perspective, and color of a photo. Nothing is 
 msgstr "Настройте кадрирование, поворот, перспективу и цвет фотографии. Ничего не записывается на диск, пока вы не сохраните."
 
 msgid "Scale up items"
-msgstr "Масштабируйте предметы"
+msgstr "Увеличивать элементы"
 
 msgid "Scan"
 msgstr "Сканировать"
@@ -640,7 +643,7 @@ msgid "Menu"
 msgstr "Меню"
 
 msgid "Rate or Label"
-msgstr "Оцените или отметьте"
+msgstr "Оценить или пометить"
 
 msgid "Select Items"
 msgstr "Выберите элементы"
@@ -658,13 +661,19 @@ msgid "Compare"
 msgstr "Сравнить"
 
 msgid "Hold down left mouse button to compare items."
-msgstr "Удерживайте левую кнопку мыши, чтобы сравнить предметы."
+msgstr "Удерживайте левую кнопку мыши, чтобы сравнить элементы."
 
 msgid "Contrast"
 msgstr "Контраст"
 
 msgid "Open link {}"
 msgstr "Открыть ссылку {}"
+
+msgid "Choose a link to open"
+msgstr "Выберите ссылку для открытия"
+
+msgid "Duplicate"
+msgstr "Дубликат"
 
 msgid "Copy to clipboard"
 msgstr "Скопировать в буфер обмена"
@@ -742,7 +751,7 @@ msgid "Show world map"
 msgstr "Показать карту мира"
 
 msgid "Darks"
-msgstr "Темные"
+msgstr "Тёмные тона"
 
 msgid "data"
 msgstr "данные"
@@ -761,9 +770,6 @@ msgstr "Даты"
 
 msgid "family food friends landscape nature night portrait selfie todo travel urban viewed"
 msgstr "семья еда друзья пейзаж природа ночь портрет селфи дела путешествия городской просмотр"
-
-msgid "results"
-msgstr "результаты"
 
 msgid "Defragment database."
 msgstr "Дефрагментация базы данных."
@@ -811,7 +817,7 @@ msgid "Editing"
 msgstr "Редактирование"
 
 msgid "Close without ejecting"
-msgstr "Закрыть, не выбрасывая"
+msgstr "Закрыть, не извлекая"
 
 msgid "Failed to eject {}."
 msgstr "Не удалось извлечь {}."
@@ -826,7 +832,7 @@ msgid "Connecting to MAPI..."
 msgstr "Подключение к MAPI..."
 
 msgid "Convert all photos to JPEG"
-msgstr "Конвертируйте все фотографии в JPEG"
+msgstr "Конвертировать все фотографии в JPEG"
 
 msgid "Failed to send email using MAPI."
 msgstr "Не удалось отправить электронное письмо с помощью MAPI."
@@ -844,7 +850,7 @@ msgid "Create a draft in your desktop email client with the selected files attac
 msgstr "Создать черновик в почтовом клиенте с выбранными файлами во вложении. Оригиналы останутся без изменений."
 
 msgid "Zip files in the email"
-msgstr "ZIP-файлы в электронном письме"
+msgstr "Архивировать файлы в ZIP"
 
 msgid "Empty"
 msgstr "Пустой"
@@ -958,7 +964,7 @@ msgid "The source is a writable CD-ROM, possibly unformatted."
 msgstr "Источником является записываемый компакт-диск, возможно, неформатированный."
 
 msgid "The source is a read-only CD-ROM, possibly unformatted."
-msgstr "Исходным кодом является компакт-диск, доступный только для чтения, возможно, неформатированный."
+msgstr "Источником является компакт-диск, доступный только для чтения, возможно, неформатированный."
 
 msgid "The source is a read-only DVD, possibly unformatted."
 msgstr "Источником является DVD, доступный только для чтения, возможно, неформатированный."
@@ -979,7 +985,7 @@ msgid "Failed to register windows common control classes."
 msgstr "Не удалось зарегистрировать общие классы управления Windows."
 
 msgid "Failed to initialize Winsock"
-msgstr "Не удалось инициализировать Winsock."
+msgstr "Не удалось инициализировать Winsock"
 
 msgid "EXIF"
 msgstr "EXIF"
@@ -1024,7 +1030,7 @@ msgid "onedrive"
 msgstr "OneDrive"
 
 msgid "picture"
-msgstr "картина"
+msgstr "изображения"
 
 msgid "Folder"
 msgstr "Папка"
@@ -1042,10 +1048,10 @@ msgid "Acid"
 msgstr "Эйсид"
 
 msgid "Acid Jazz"
-msgstr "Кислотный джаз"
+msgstr "Эйсид-джаз"
 
 msgid "Acid Punk"
-msgstr "Кислотный панк"
+msgstr "Эйсид-панк"
 
 msgid "Acoustic"
 msgstr "Акустический"
@@ -1114,10 +1120,10 @@ msgid "Cabaret"
 msgstr "Кабаре"
 
 msgid "Candid"
-msgstr "откровенный"
+msgstr "Репортажный"
 
 msgid "Celtic"
-msgstr "Селтик"
+msgstr "Кельтская"
 
 msgid "Chamber Music"
 msgstr "Камерная музыка"
@@ -1132,7 +1138,7 @@ msgid "Chorus"
 msgstr "Хор"
 
 msgid "Christian & Gospel"
-msgstr "Христианство и Евангелие"
+msgstr "Христианская и госпел"
 
 msgid "Christian Rap"
 msgstr "Христианский рэп"
@@ -1189,7 +1195,7 @@ msgid "Death Metal"
 msgstr "Дэт-метал"
 
 msgid "Disco"
-msgstr "Дискотека"
+msgstr "Диско"
 
 msgid "Documentary"
 msgstr "Документальный фильм"
@@ -1231,10 +1237,10 @@ msgid "Fashion"
 msgstr "Мода"
 
 msgid "Fast Fusion"
-msgstr "Быстрый фьюжн"
+msgstr "Фаст-фьюжн"
 
 msgid "Film still"
-msgstr "Фильм еще"
+msgstr "Кадр из фильма"
 
 msgid "Fine-art"
 msgstr "Файн-арт"
@@ -1264,7 +1270,7 @@ msgid "Foreign"
 msgstr "Иностранный"
 
 msgid "Forensic"
-msgstr "судебно-медицинская экспертиза"
+msgstr "Криминалистика"
 
 msgid "Freestyle"
 msgstr "Фристайл"
@@ -1318,7 +1324,7 @@ msgid "Holiday"
 msgstr "Праздничный день"
 
 msgid "Horror"
-msgstr "Ужас"
+msgstr "Ужасы"
 
 msgid "House"
 msgstr "Хаус"
@@ -1348,7 +1354,7 @@ msgid "Jazz + Funk"
 msgstr "Джаз + Фанк"
 
 msgid "Jungle"
-msgstr "Джунгли"
+msgstr "Джангл"
 
 msgid "Kids"
 msgstr "Дети"
@@ -1363,7 +1369,7 @@ msgid "Landscape"
 msgstr "Пейзаж"
 
 msgid "Latin"
-msgstr "латинский"
+msgstr "Латино"
 
 msgid "Lifestyle"
 msgstr "Образ жизни"
@@ -1414,7 +1420,7 @@ msgid "National Folk"
 msgstr "Национальный фолк"
 
 msgid "Native American"
-msgstr "коренной американец"
+msgstr "Коренной американец"
 
 msgid "New Age"
 msgstr "Нью Эйдж"
@@ -1450,7 +1456,7 @@ msgid "Film Noir"
 msgstr "Фильм-нуар"
 
 msgid "Photo op"
-msgstr "Фотооперация"
+msgstr "Фотосессия"
 
 msgid "Photobiography"
 msgstr "Фотобиография"
@@ -1486,13 +1492,13 @@ msgid "Portrait"
 msgstr "Портрет"
 
 msgid "Power Ballad"
-msgstr "Силовая баллада"
+msgstr "Пауэр-баллада"
 
 msgid "Pranks"
 msgstr "Пранки"
 
 msgid "Primus"
-msgstr "Примус"
+msgstr "Primus"
 
 msgid "Progressive Rock"
 msgstr "Прогрессивный рок"
@@ -1591,7 +1597,7 @@ msgid "Soundtrack"
 msgstr "Саундтрек"
 
 msgid "Southern Rock"
-msgstr "Южный Рок"
+msgstr "Южный рок"
 
 msgid "Space"
 msgstr "Космос"
@@ -1612,7 +1618,7 @@ msgid "Still life"
 msgstr "Натюрморт"
 
 msgid "Stock"
-msgstr "Запас"
+msgstr "Стоковая фотография"
 
 msgid "Street"
 msgstr "Улица"
@@ -1636,7 +1642,7 @@ msgid "Techno"
 msgstr "Техно"
 
 msgid "Techno-Industrial"
-msgstr "Техно-Индустриальный"
+msgstr "Техно-индустриальный"
 
 msgid "Teens"
 msgstr "Тинейджеры"
@@ -1678,7 +1684,7 @@ msgid "Urban"
 msgstr "Городской"
 
 msgid "Vernacular"
-msgstr "народный"
+msgstr "Народная фотография"
 
 msgid "Vintage"
 msgstr "Винтаж"
@@ -1690,7 +1696,7 @@ msgid "War"
 msgstr "Война"
 
 msgid "Western"
-msgstr "Западный"
+msgstr "Вестерн"
 
 msgid "World"
 msgstr "Мир"
@@ -1699,7 +1705,7 @@ msgid "Group and sort items"
 msgstr "Группировать и сортировать элементы"
 
 msgid "Items"
-msgstr "Предметы"
+msgstr "Элементы"
 
 msgid "No album or show"
 msgstr "Нет альбома или шоу"
@@ -1726,7 +1732,7 @@ msgid "random"
 msgstr "случайный"
 
 msgid "{} to {}"
-msgstr "{} к {}"
+msgstr "от {} до {}"
 
 msgid "Today"
 msgstr "Сегодня"
@@ -1765,10 +1771,7 @@ msgid "Source of import:"
 msgstr "Источник импорта:"
 
 msgid "Ignore previously imported items."
-msgstr "Игнорируйте ранее импортированные элементы."
-
-msgid "Overwrite if source items are newer."
-msgstr "Перезаписать, если исходные элементы новее."
+msgstr "Игнорировать ранее импортированные элементы."
 
 msgid "Other folder"
 msgstr "Другая папка"
@@ -1777,7 +1780,7 @@ msgid "Destination folder structure:"
 msgstr "Структура папки назначения:"
 
 msgid "Set file date created to metadata date created."
-msgstr "Установите дату создания файла на дату создания метаданных."
+msgstr "Установить дату создания файла на дату создания метаданных."
 
 msgid "Defragmenting or cleaning can improve performance. The index stores a copy of metadata from your media files. It can be rebuilt from the original files."
 msgstr "Дефрагментация или очистка могут улучшить производительность. В индексе хранится копия метаданных из ваших медиафайлов. Его можно восстановить из исходных файлов."
@@ -1801,7 +1804,7 @@ msgid "invalid"
 msgstr "неверный"
 
 msgid "IPTC"
-msgstr "ИПТК"
+msgstr "IPTC"
 
 msgid "'{}' is not a valid folder."
 msgstr "'{}' не является допустимой папкой."
@@ -1846,7 +1849,7 @@ msgid "browser-favorites"
 msgstr "избранное браузера"
 
 msgid "browser-forward"
-msgstr "пересылка браузера"
+msgstr "вперёд в браузере"
 
 msgid "browser-home"
 msgstr "главная страница браузера"
@@ -1936,7 +1939,7 @@ msgid "media-next-track"
 msgstr "медиа-следующий трек"
 
 msgid "media-play-pause"
-msgstr "медиа-игра-пауза"
+msgstr "медиа-воспроизведение-пауза"
 
 msgid "media-prev-track"
 msgstr "медиа-предыдущий-трек"
@@ -1992,7 +1995,7 @@ msgid "volume-down"
 msgstr "уменьшение громкости"
 
 msgid "volume-mute"
-msgstr "звук без звука"
+msgstr "отключение звука"
 
 msgid "volume-up"
 msgstr "увеличение громкости"
@@ -2004,7 +2007,7 @@ msgid "Learn more at Diffractor.com"
 msgstr "Узнайте больше на сайте Diffractor.com."
 
 msgid "Lights"
-msgstr "Свет"
+msgstr "Светлые тона"
 
 msgid "Limit output to a maximum dimension (in pixels)."
 msgstr "Ограничьте вывод максимальным размером (в пикселях)."
@@ -2034,7 +2037,7 @@ msgid "Media"
 msgstr "Медиа"
 
 msgid "Add '{}'"
-msgstr "Добавлять '{}'"
+msgstr "Добавить '{}'"
 
 msgid "Move"
 msgstr "Переместить"
@@ -2142,7 +2145,7 @@ msgid "Folders are not supported."
 msgstr "Папки не поддерживаются."
 
 msgid "Items must be a photo or image."
-msgstr "Предметы должны быть фотографиями или изображениями."
+msgstr "Элементы должны быть фотографиями или изображениями."
 
 msgid "Readonly items are not supported."
 msgstr "Элементы, доступные только для чтения, не поддерживаются."
@@ -2166,7 +2169,7 @@ msgid "of"
 msgstr "из"
 
 msgid "Open destination folder afterwards"
-msgstr "Открыть папку назначения позже"
+msgstr "По завершении открыть папку назначения"
 
 msgid "Open in file browser"
 msgstr "Открыть в файловом браузере"
@@ -2206,6 +2209,12 @@ msgstr "Проверьте наличие обновлений, подключи
 
 msgid "Confirm when deleting items. Deleted items are moved to the recycle bin."
 msgstr "Подтвердите удаление элементов. Удаленные элементы перемещаются в корзину."
+
+msgid ""
+"Confirm when rotating one item. Rotating several items is always confirmed."
+msgstr ""
+"Подтвердите поворот одного элемента. Поворот нескольких элементов "
+"подтверждается всегда."
 
 msgid "JPEG save quality"
 msgstr "Качество сохранения JPEG"
@@ -2334,7 +2343,7 @@ msgid "In collection"
 msgstr "В коллекции"
 
 msgid "This item is in the collection."
-msgstr "Этот предмет находится в коллекции."
+msgstr "Этот элемент находится в коллекции."
 
 msgid "Presence"
 msgstr "Присутствие"
@@ -2349,7 +2358,7 @@ msgid "Show RAW preview if available (faster)"
 msgstr "Показать предварительный просмотр RAW, если доступен (быстрее)"
 
 msgid "Showing a RAW photo preview."
-msgstr "Показываю предварительный просмотр фотографии в формате RAW."
+msgstr "Показан предварительный просмотр фотографии в формате RAW."
 
 msgid "Processing..."
 msgstr "Обработка..."
@@ -2409,7 +2418,7 @@ msgid "Country//property"
 msgstr "Страна"
 
 msgid "Created"
-msgstr "Созданный"
+msgstr "Создано"
 
 msgid "Created exif"
 msgstr "Создан exif"
@@ -2418,7 +2427,7 @@ msgid "Description"
 msgstr "Описание"
 
 msgid "Digitized"
-msgstr "Оцифрованный"
+msgstr "Оцифровано"
 
 msgid "Dimensions"
 msgstr "Размеры"
@@ -2481,7 +2490,7 @@ msgid "Megapixels"
 msgstr "Мегапиксели"
 
 msgid "Modified"
-msgstr "Модифицированный"
+msgstr "Изменено"
 
 msgid "Null"
 msgstr "Нулевой"
@@ -2505,13 +2514,13 @@ msgid "Rating"
 msgstr "Рейтинг"
 
 msgid "Raw file"
-msgstr "Необработанный файл"
+msgstr "Файл RAW"
 
 msgid "Sample rate"
 msgstr "Частота дискретизации"
 
 msgid "Sample type"
-msgstr "Тип образца"
+msgstr "Тип сэмплов"
 
 msgid "Season"
 msgstr "Сезон"
@@ -2580,7 +2589,7 @@ msgid "without"
 msgstr "без"
 
 msgid "Rate selected items"
-msgstr "Оцените выбранные элементы"
+msgstr "Оценить выбранные элементы"
 
 msgid "Number keys 0-5"
 msgstr "Цифровые клавиши 0-5"
@@ -2601,7 +2610,7 @@ msgid "When specifying a template:"
 msgstr "При указании шаблона:"
 
 msgid "Use '#' to specify position of the numeric sequence"
-msgstr "Используйте «#», чтобы указать позицию числовой последовательности."
+msgstr "Используйте «#», чтобы указать позицию числовой последовательности"
 
 msgid "Use metadata templates '{property-name}' to include file properties in the name."
 msgstr "Используйте шаблоны метаданных «{property-name}», чтобы включить свойства файла в имя."
@@ -2659,7 +2668,7 @@ msgid "Failed to Scan."
 msgstr "Не удалось выполнить сканирование."
 
 msgid "All these terms"
-msgstr "Все эти условия"
+msgstr "Все эти термины"
 
 msgid "Christmas"
 msgstr "Рождество"
@@ -2692,7 +2701,7 @@ msgid "Photos"
 msgstr "Фотографии"
 
 msgid "Select term"
-msgstr "Выберите условие"
+msgstr "Выберите термин"
 
 msgid "Search in subfolders"
 msgstr "Поиск в подпапках"
@@ -2718,8 +2727,8 @@ msgstr "Всегда показывать фотографии в формате
 msgid "Show this RAW photo"
 msgstr "Показать это фото в формате RAW"
 
-msgid "press R to view matching or possible copy items in the collection"
-msgstr "нажмите R, чтобы просмотреть совпадающие элементы или возможные копии в коллекции"
+msgid "press R to view the items most closely related to this one"
+msgstr "нажмите R, чтобы показать элементы, наиболее связанные с этим"
 
 msgid "Show verbose metadata"
 msgstr "Показать подробные метаданные"
@@ -2746,7 +2755,7 @@ msgid "Rating-Label"
 msgstr "Рейтинг-метка"
 
 msgid "Staring"
-msgstr "Смотря"
+msgstr "В ролях"
 
 msgid "New Starting Date (local time):"
 msgstr "Новая дата начала (местное время):"
@@ -2827,10 +2836,10 @@ msgid "copy remote"
 msgstr "копировать удаленно"
 
 msgid "delete local"
-msgstr "удалить локальный"
+msgstr "удалить локально"
 
 msgid "delete remote"
-msgstr "удалить удаленный"
+msgstr "удалить удаленно"
 
 msgid "Files changed after analysis. Analyze again to review the updated actions."
 msgstr "После анализа файлы изменились. Выполните анализ снова, чтобы проверить обновленные действия."
@@ -2840,6 +2849,9 @@ msgstr "Локальных файлов для удаления: {}. Удале�
 
 msgid "Synchronization will permanently delete files. These files cannot be recovered from the Recycle Bin."
 msgstr "При синхронизации файлы будут удалены безвозвратно. Их нельзя будет восстановить из Корзины."
+
+msgid "The existing files will be overwritten. Their current contents cannot be recovered from the recycle bin."
+msgstr "Существующие файлы будут перезаписаны. Их текущее содержимое нельзя будет восстановить из Корзины."
 
 msgid "Delete local files that do not exist remotely"
 msgstr "Удалить локальные файлы, которые не существуют удаленно"
@@ -2923,7 +2935,7 @@ msgid "Pinned items stay selected. Use this when you want to quickly compare an 
 msgstr "Закрепленные элементы остаются выделенными. Используйте это, если хотите быстро сравнить элемент с другими элементами."
 
 msgid "Reset straighten and rotate"
-msgstr "Сброс выпрямить и повернуть"
+msgstr "Сбросить выравнивание и поворот"
 
 msgid "Tag or un-tag selected items"
 msgstr "Отметьте или снимите теги с выбранных элементов"
@@ -2941,7 +2953,7 @@ msgid "More options and controls"
 msgstr "Больше опций и элементов управления"
 
 msgid "{} ({}) total items in {} folders."
-msgstr "{} ({}) общее количество элементов в {} папках."
+msgstr "Всего {} ({}) элементов в {} папках."
 
 msgid "Truncated at 1MB"
 msgstr "Усечено до 1 МБ"
@@ -2983,7 +2995,7 @@ msgid "Not now"
 msgstr "Не сейчас"
 
 msgid "Remind me again in a week"
-msgstr "Напомни мне еще раз через неделю"
+msgstr "Напомнить через неделю"
 
 msgid "Please wait while the update is downloaded..."
 msgstr "Пожалуйста, подождите, пока загрузится обновление..."
@@ -3016,19 +3028,19 @@ msgid "Value"
 msgstr "Значение"
 
 msgid "Volume 200%"
-msgstr "Объем 200%"
+msgstr "Громкость 200%"
 
 msgid "Volume 100%"
-msgstr "Объем 100%"
+msgstr "Громкость 100%"
 
 msgid "Volume 75%"
-msgstr "Объем 75%"
+msgstr "Громкость 75%"
 
 msgid "Volume 50%"
-msgstr "Объем 50%"
+msgstr "Громкость 50%"
 
 msgid "Volume 25%"
-msgstr "Объем 25%"
+msgstr "Громкость 25%"
 
 msgid "Mute"
 msgstr "Без звука"
@@ -3040,13 +3052,13 @@ msgid "Resume playing media from last position"
 msgstr "Возобновить воспроизведение мультимедиа с последней позиции"
 
 msgid "Repeat play one item"
-msgstr "Повторить воспроизведение одного предмета"
+msgstr "Повторное воспроизведение одного элемента"
 
 msgid "Repeat play all media items"
 msgstr "Повторное воспроизведение всех медиафайлов"
 
 msgid "Don't repeat"
-msgstr "Не повторяй"
+msgstr "Не повторять"
 
 msgid "Playback Options"
 msgstr "Параметры воспроизведения"
@@ -3061,10 +3073,10 @@ msgid "Photo filter"
 msgstr "Фотофильтр"
 
 msgid "Video filter"
-msgstr "Видео фильтр"
+msgstr "Видеофильтр"
 
 msgid "Audio filter"
-msgstr "Аудио фильтр"
+msgstr "Аудиофильтр"
 
 msgid "Show {} filtered out items"
 msgstr "Показать отфильтрованные элементы: {}"
@@ -3119,7 +3131,7 @@ msgstr "Нажмите «Анализ», чтобы просмотреть эл�
 
 msgid "Rotate {first-name}."
 msgid_plural "Rotate {count} selected items. Originals will be overwritten."
-msgstr[0] "Поверните {first-name}."
+msgstr[0] "Повернуть {first-name}."
 msgstr[1] "Повернуть {count} выбранных элемента. Оригиналы будут перезаписаны."
 msgstr[2] "Повернуть {count} выбранных элементов. Оригиналы будут перезаписаны."
 
@@ -3145,6 +3157,7 @@ msgid "Set rating to 1 star"
 msgid_plural "Set rating to {count} stars"
 msgstr[0] "Установить оценку 1 звезда"
 msgstr[1] "Установить оценку {count} звезды"
+msgstr[2] "Установить оценку {count} звезд"
 
 msgid "Cannot process {first-name}."
 msgid_plural "Cannot process {first-name} and {other} other items."
@@ -3184,7 +3197,7 @@ msgstr[2] "Обработано {count} элементов."
 
 msgid "{first-name} failed."
 msgid_plural "{count} items failed."
-msgstr[0] "{first-name} не удалось."
+msgstr[0] "Не удалось обработать {first-name}."
 msgstr[1] "Не удалось обработать {count} элемента."
 msgstr[2] "Не удалось обработать {count} элементов."
 
@@ -3247,9 +3260,9 @@ msgstr[2] "{count} элементов будут обновлены."
 
 msgid "Add or overwrite specific metadata in {first-name}."
 msgid_plural "Add or overwrite specific metadata in {count} items."
-msgstr[0] "Добавьте или перезапишите определенные метаданные в {first-name}."
-msgstr[1] "Добавьте или перезапишите определенные метаданные в {count} элементах."
-msgstr[2] "Добавьте или перезапишите определенные метаданные в {count} элементах."
+msgstr[0] "Добавить или перезаписать определенные метаданные в {first-name}."
+msgstr[1] "Добавить или перезаписать определенные метаданные в {count} элементах."
+msgstr[2] "Добавить или перезаписать определенные метаданные в {count} элементах."
 
 msgid "{first-name} will be converted and copied to a folder."
 msgid_plural "{count} items will be converted and copied to a folder."
@@ -3265,15 +3278,15 @@ msgstr[2] "Для {count} элементов будут добавлены ил�
 
 msgid "{first-name} will have the date adjusted."
 msgid_plural "{count} items will have the date adjusted."
-msgstr[0] "{first-name} будет иметь измененную дату."
+msgstr[0] "Для {first-name} будет изменена дата."
 msgstr[1] "Для {count} элементов будет изменена дата."
 msgstr[2] "Для {count} элементов будет изменена дата."
 
 msgid "A desktop email draft will be opened with {first-name} attached."
 msgid_plural "A desktop email draft will be opened with {count} selected items attached."
 msgstr[0] "В почтовом клиенте откроется черновик с вложением {first-name}."
-msgstr[1] "В почтовом клиенте откроется черновик с выбранными элементами во вложении (количество: {count})."
-msgstr[2] "В почтовом клиенте откроется черновик с выбранными элементами во вложении (количество: {count})."
+msgstr[1] "В почтовом клиенте откроется черновик с {count} выбранными элементами во вложении."
+msgstr[2] "В почтовом клиенте откроется черновик с {count} выбранными элементами во вложении."
 
 msgid "{first-name} already exists. Do you want to replace it?"
 msgid_plural "{first-name} and {other} other items already exist. Do you want to replace them?"
@@ -3311,14 +3324,14 @@ msgstr "Выберите хотя бы одно поле метаданных д
 msgid "{first-name} was canceled."
 msgid_plural "{count} items were canceled."
 msgstr[0] "Операция для {first-name} отменена."
-msgstr[1] "Операция отменена для элементов в количестве {count}."
-msgstr[2] "Операция отменена для элементов в количестве {count}."
+msgstr[1] "Операция отменена для {count} элементов."
+msgstr[2] "Операция отменена для {count} элементов."
 
 msgid "{first-name} will be staged for disc burning."
 msgid_plural "{count} selected items ({size}) will be staged for disc burning."
 msgstr[0] "Элемент {first-name} будет подготовлен к записи на диск."
-msgstr[1] "Выбранные элементы (количество: {count}, размер: {size}) будут подготовлены к записи на диск."
-msgstr[2] "Выбранные элементы (количество: {count}, размер: {size}) будут подготовлены к записи на диск."
+msgstr[1] "{count} выбранных элемента ({size}) будут подготовлены к записи на диск."
+msgstr[2] "{count} выбранных элементов ({size}) будут подготовлены к записи на диск."
 
 msgid "Detect and straighten a photographed document"
 msgstr "Распознать и выровнять сфотографированный документ"
@@ -3404,9 +3417,6 @@ msgstr "{} ещё выполняется. Закройте перед перех
 
 msgid "If the destination already exists:"
 msgstr "Если назначение уже существует:"
-
-msgid "If both sides have the file, the newer one replaces the older one."
-msgstr "Если файл есть с обеих сторон, более новый заменяет более старый."
 
 msgid "Replace"
 msgstr "Заменить"
@@ -3608,3 +3618,21 @@ msgstr "Слишком большое для отображения"
 
 msgid "This image could not be displayed"
 msgstr "Не удалось отобразить это изображение"
+
+msgid "Show the items in the collection most closely related to this one: possible copies, then the same album, the same series, the closest capture times, and the closest capture places."
+msgstr "Показать элементы коллекции, наиболее связанные с этим: возможные копии, затем тот же альбом, ту же серию, ближайшее время съёмки и ближайшие места съёмки."
+
+msgid "This item and possible copies"
+msgstr "Этот элемент и возможные копии"
+
+msgid "Same album"
+msgstr "Тот же альбом"
+
+msgid "Same series"
+msgstr "Та же серия"
+
+msgid "Taken at the same time"
+msgstr "Снято в то же время"
+
+msgid "Taken in the same place"
+msgstr "Снято в том же месте"

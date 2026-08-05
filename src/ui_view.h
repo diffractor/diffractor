@@ -157,7 +157,8 @@ constexpr ui::color view_handle_color(const bool selected, const bool hover, con
 	{
 		const auto clr = view_has_focus
 			                 ? ui::color(ui::style::color::view_selected_background).scale(hover ? 1.22f : 1.0f)
-			                 : bg_clr.average(ui::color(ui::style::color::view_selected_background)).scale(hover ? 1.33f : 1.0f);
+			                 : bg_clr.average(ui::color(ui::style::color::view_selected_background)).scale(
+				                 hover ? 1.33f : 1.0f);
 		return clr.aa(0.9f);
 	}
 
@@ -241,6 +242,7 @@ public:
 	virtual void on_mouse_left_button_up(const pointi loc, const ui::key_state keys)
 	{
 	}
+
 	virtual void on_mouse_middle_button_down(const pointi loc, const ui::key_state keys)
 	{
 	}
@@ -262,8 +264,11 @@ public:
 	{
 	}
 
-	virtual void escape()
+	// True only when something in progress was actually cancelled. Escape is shared with the view
+	// and the app, so a controller that merely sits under the pointer must not consume it.
+	virtual bool escape()
 	{
+		return false;
 	}
 
 	virtual void popup_from_location(view_hover_element& hover)
@@ -365,9 +370,10 @@ public:
 	{
 		update_tracking(loc, false);
 
-		const auto c = _active_controller;
-
-		if (c)
+		// The copy keeps the controller alive for the duration of its own handler, and is released
+		// before the controller is re-tested: a copy still held there would destroy the outgoing
+		// controller after its replacement was built, so the replacement's hover state was undone.
+		if (const auto c = _active_controller)
 		{
 			c->on_mouse_left_button_up(loc, keys);
 		}
@@ -376,6 +382,7 @@ public:
 		// it is best to fetch the current cursor location
 		update_controller(frame()->cursor_location());
 	}
+
 	void on_mouse_middle_button_down(const pointi loc, const ui::key_state keys) override
 	{
 		update_controller(loc);
@@ -408,8 +415,8 @@ public:
 	bool escape_controller()
 	{
 		if (!_tracking || !_active_controller) return false;
+		if (!_active_controller->escape()) return false;
 
-		_active_controller->escape();
 		update_tracking(frame()->cursor_location(), false);
 		_controller_invalid = true;
 		update_controller(frame()->cursor_location());
@@ -672,10 +679,6 @@ public:
 	std::function<void(view_hover_element&, pointi)> popup_func;
 	std::function<void()> changed_func;
 
-	// Device y of the pointer over the column, or -1. Lights the band it falls in so the column
-	// can be read directly instead of only through the hover popup.
-	int _hover_y = -1;
-
 	bool _active = false;
 	bool _tracking = false;
 	bool _scroll_child_controls = false;
@@ -700,8 +703,7 @@ public:
 		return !_sections.empty() || _active ? 1 : df::mul_div(_scroll_bounds.width(), 2, 9);
 	}
 
-	// Section bands in track-relative coordinates, in paint order. Shared by painting and hit
-	// testing so the band that lights up is the band the popup names.
+	// Section bands in track-relative coordinates, in paint order.
 	template <class F>
 	void for_each_band(F&& f) const
 	{
@@ -715,34 +717,37 @@ public:
 		}
 
 		constexpr auto band_gap = 2;
+		// Matches the minimum the sections are generated against. A band below it cannot be read
+		// or aimed at, and drawn against the band above it it reads as a second overlapping band.
+		constexpr auto min_band_height = 8;
+
+		const auto count = _sections.size();
 		auto top = 0;
 
-		for (const auto& so : _sections)
+		for (size_t i = 0; i < count; ++i)
 		{
-			const auto bottom = std::clamp(logical_to_scrollbar_pos(so.y), top, track_height);
+			const auto& so = _sections[i];
+			// Not std::clamp: top can already have run past the track, and clamp with lo > hi is
+			// undefined.
+			auto bottom = std::min(std::max(logical_to_scrollbar_pos(so.y), top), track_height);
+
+			// The list runs past its last group -- footer, actions, trailing space -- so the track
+			// is closed off rather than stopping short of the position the thumb can reach. What is
+			// left over only earns its own band if it is big enough to be one; otherwise the last
+			// section keeps it.
+			if (i + 1 == count && track_height - bottom - band_gap < min_band_height)
+			{
+				bottom = track_height;
+			}
+
 			if (bottom > top) f(top, bottom, &so);
 			top = bottom + band_gap;
 		}
 
-		// The list runs past its last group -- footer, actions, trailing space -- so the track is
-		// closed off rather than stopping short of the position the thumb can reach.
-		top = std::min(top, track_height);
-		if (track_height > top) f(top, track_height, static_cast<const view_scroller_section*>(nullptr));
-	}
-
-	int band_index_at(const int device_y) const
-	{
-		const auto y = device_y - track_bounds().top;
-		auto found = -1;
-		auto index = 0;
-
-		for_each_band([&](const int top, const int bottom, const view_scroller_section*)
+		if (track_height - top >= min_band_height)
 		{
-			if (y >= top && y < bottom) found = index;
-			++index;
-		});
-
-		return found;
+			f(top, track_height, static_cast<const view_scroller_section*>(nullptr));
+		}
 	}
 
 	// Device y the thumb starts at before it is padded out to a usable size. A drag measures its
@@ -795,8 +800,6 @@ public:
 			{
 				changed_func();
 			}
-
-			//host->scroll_controls();
 		}
 	}
 
@@ -812,6 +815,7 @@ public:
 		_offset.x = cx > 0 ? std::clamp(_offset.x, 0, cx) : 0;
 		_offset.y = cy > 0 ? std::clamp(_offset.y, 0, cy) : 0;
 	}
+
 	recti layout_with_footer(sizei scroll_extent, recti client_bounds, recti scroll_bounds,
 	                         int footer_extent, int gap);
 
@@ -900,7 +904,6 @@ public:
 		_scroll_bounds.clear();
 		_footer_bounds.clear();
 		_sections.clear();
-		_hover_y = -1;
 		popup_func = {};
 	}
 
@@ -926,7 +929,6 @@ public:
 	pointi _start;
 	// Where in the thumb the drag took hold, so the list does not jump under the pointer.
 	int _grab_offset = 0;
-	int _hover_band = -1;
 
 
 	scroll_controller(const view_host_ptr& host, view_scroller& parent, const recti bounds) :
@@ -943,13 +945,11 @@ public:
 		}
 
 		_parent._active = false;
-		_parent._hover_y = -1;
 	}
 
-	void draw(ui::draw_context& rc) override
-	{
-		_parent.draw_scroll(rc);
-	}
+	// The scroll bar is painted by the view that owns it, never by this controller. Splitting the
+	// paint between the two made the bar and its section bands vanish whenever the flag and the
+	// active controller disagreed.
 
 	ui::style::cursor cursor() const override
 	{
@@ -959,18 +959,6 @@ public:
 	void update_pos(const int y) const
 	{
 		_parent.scrollbar_thumb_to(_host, y - _grab_offset);
-	}
-
-	void update_hover(const int y)
-	{
-		_parent._hover_y = y;
-		const auto band = _parent.band_index_at(y);
-
-		if (_hover_band != band)
-		{
-			_hover_band = band;
-			_host->frame()->invalidate(_parent.scroll_bounds());
-		}
 	}
 
 	void on_mouse_left_button_down(const pointi loc, const ui::key_state keys) override
@@ -999,10 +987,6 @@ public:
 		{
 			update_pos(loc.y);
 		}
-		else
-		{
-			update_hover(loc.y);
-		}
 	}
 
 	void on_mouse_left_button_up(const pointi loc, const ui::key_state keys) override
@@ -1016,14 +1000,15 @@ public:
 			_parent._tracking = false;
 		}
 
-		update_hover(loc.y);
 		_host->frame()->invalidate();
 	}
 
-	void escape() override
+	bool escape() override
 	{
+		if (!_parent._tracking) return false;
 		_parent.scroll_offset(_host, _start.x, _start.y);
 		_parent._tracking = false;
+		return true;
 	}
 
 	void popup_from_location(view_hover_element& hover) override

@@ -85,6 +85,7 @@ sources supply one property they are listed in precedence order.
 | rating | `xmp:Rating`, `MicrosoftPhoto:Rating` | `IMAGE_RATING`, `IMAGE_RATING_PERCENT` | |
 | source | `photoshop:Source` | | `SOURCE` |
 | state | `photoshop:State` | | `STATE` |
+| synopsis | `xmpDM:synopsis` | | |
 | tag | `dc:subject` | `XP_KEYWORDS` | `KEYWORDS` |
 | title | `dc:title` | `XP_TITLE` | `OBJECT_NAME` |
 | year | `xmp:CreateDate` | | |

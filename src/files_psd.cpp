@@ -64,17 +64,25 @@ public:
 		return _len - _pos;
 	}
 
+	// Lengths come from untrusted file fields; read_stream takes a size_t.
+	static size_t to_len(const uint64_t size)
+	{
+		const auto result = static_cast<size_t>(size);
+		if (result != size) throw app_exception(__FUNCTION__);
+		return result;
+	}
+
 	void read(uint8_t* data, const uint64_t size)
 	{
 		if (remaining() < size) throw app_exception(__FUNCTION__);
-		_s.read(_pos, data, size);
+		_s.read(_pos, data, to_len(size));
 		_pos += size;
 	}
 
 	df::blob read_blob(const uint64_t size)
 	{
 		if (remaining() < size) throw app_exception(__FUNCTION__);
-		auto result = _s.read(_pos, size);
+		auto result = _s.read(_pos, to_len(size));
 		_pos += size;
 		return result;
 	}
@@ -163,7 +171,7 @@ static void scatter_plane(uint8_t* const dst_line, const uint8_t* const src, con
 		for (int x = 0; x < cx; x++)
 		{
 			const auto is_black = (src[x / 8] >> (7 - (x % 8))) & 1;
-			line[x] |= static_cast<uint32_t>(is_black ? 0u : 0xFFu) << channel_shift;
+			line[x] |= (is_black ? 0u : 0xFFu) << channel_shift;
 		}
 	}
 	else
@@ -174,7 +182,6 @@ static void scatter_plane(uint8_t* const dst_line, const uint8_t* const src, con
 		}
 	}
 }
-
 
 
 static void lab_to_rgb(const int L, const int a, const int b, int& R, int& G, int& B)
@@ -392,7 +399,7 @@ file_scan_result scan_psd(read_stream& s)
 			const auto name_len = stream.read_u8();
 			stream.skip((name_len & 1) ? name_len : name_len + 1u);
 
-			const auto len = stream.read_u32();
+			const uint64_t len = stream.read_u32();
 			const auto padded_len = len + (len & 1); // resource data is padded to even
 
 			if (stream.pos() + padded_len > after_resource_pos)
@@ -434,7 +441,6 @@ file_scan_result scan_psd(read_stream& s)
 
 ui::surface_ptr load_psd(read_stream& s, load_diagnostic* const diagnostic)
 {
-	ui::surface_ptr result;
 	msb_stream stream(s);
 
 	const auto signature = stream.read_u32();
@@ -539,7 +545,7 @@ ui::surface_ptr load_psd(read_stream& s, load_diagnostic* const diagnostic)
 		stream.skip(colormap_len);
 	}
 
-	result = std::make_shared<ui::surface>();
+	ui::surface_ptr result = std::make_shared<ui::surface>();
 	if (!result->alloc(cx, cy, ui::texture_format::RGB)) return {};
 	result->make_blank();
 

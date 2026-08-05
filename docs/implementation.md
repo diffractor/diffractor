@@ -76,7 +76,13 @@ Execution contexts are mathematically disjoint. Let $U$ be work executed on the 
 - Use dedicated queues for stateful or memory-heavy decoders.
 - Make user-operation cancellation operation-scoped and always publish progress and final state.
 
-`state_strategy` abstracts model-to-UI coordination. `async_strategy` abstracts UI, database, location, media-preview, and named worker queues. Tests use null strategies to exercise model behavior without a window or workers.
+`state_strategy` abstracts model-to-UI coordination. `async_strategy` abstracts UI, database, tile-database, location, media-preview, and named worker queues. Tests use null strategies to exercise model behavior without a window or workers.
+
+### SQLite connection ownership
+
+The vendored SQLite is built `SQLITE_THREADSAFE=2` (multi-thread). Global state is serialized; a *connection* is not. Each connection therefore belongs to exactly one thread for its whole life, and there are two: the index database on the database thread (`queue_database`), and the map tile store on the tile-database thread (`queue_tile_db`). Both stamp their owning thread on open and assert it on every entry point, which is a debug-build tripwire rather than a runtime guarantee — the real protection is that neither type is reachable except through its queue. Do not add a third connection without a thread of its own, and do not call a database method from any other context.
+
+The two stores share the app cache-data folder but are separate files so that neither can condemn the other: `diffractor-cache.db` holds the index, thumbnails, import history and web cache, while `map-tiles-cache.db` holds nothing that cannot be downloaded again and is replaced outright when it cannot be read.
 
 ### Synchronized-type registry
 
@@ -120,13 +126,21 @@ Item `search_presence_mask` values and folder OR summaries are conservative sear
 
 Search supports substring, wildcard, range, location, negation, and Boolean semantics. Query generations prevent stale results replacing newer searches. Candidate-generation optimizations must preserve exact matching and prove completeness.
 
-Duplicate prediction narrows candidates with names, dates, sizes, and CRC values, then applies exact rules. Presence compares outside items with indexed candidates. Neither is an authoritative deletion decision.
+A search with a folder selector re-reads that folder from the filesystem as it iterates, and those selector folders are also the only ones live-watched, up to a handle budget. A search with no selector — related items, duplicates, a tag, a date — answers from the cached index and has nothing watching it. An in-app operation that adds, removes or moves files therefore reports the folders it touched to the index rather than relying on a watch that may not exist; otherwise the view keeps listing a file the operation just deleted.
+
+Reporting a change has two halves, and both are required: correct the index, and ask for the search to be run again. `queue_validate_changed_folders` re-reads the named folders only, and `queue_scan_folders` also scans their files and recurses into their subtrees; each requests `refresh_items` once per batch, and only when a folder actually differed. The recursive single-folder path deliberately does not, because a request per folder walked would re-open the search repeatedly while a subtree was still being scanned. An operation that empties a folder must name that folder as well as its destination — a move reports both ends.
+
+Duplicate prediction narrows candidates with names, dates, sizes, and CRC values, then applies exact rules. Where those rules fail but two candidates share an exact capture time, a 64-bit DCT perceptual hash of each picture decides, within a small Hamming distance. That hash is never computed on the index walk: the walk notes a bounded batch of pairs it could not judge, a worker decodes those files at the hash's own extent and stores the result, and the pass runs again, so a large collection converges over several rounds. Every attempt is recorded, including a refusal and a file that could not be read, or the next pass would ask for it again forever. Presence compares outside items with indexed candidates. Neither is an authoritative deletion decision.
+
+The perceptual result feeds the one duplicate-group computation rather than a path of its own. `@duplicates`, presence, and a related search all read `duplicate_info`, so they cannot disagree about what is a copy.
+
+A related search scores every collection item against one anchor and keeps only the closest on each relation axis. Scoring happens on the search worker inside the one index walk; results are held in a fixed-capacity per-axis heap keyed on distance and tie-broken on path, so the surviving set does not depend on folder iteration order. Counting and displaying a related search share that walk and that collector, so a count cannot disagree with the set shown. The axes are evaluated in priority order and yield at most one relation per item, and the anchor is scored ahead of every match so a full axis can never evict it. A related search written as text carries only a path, so every field the axes compare is rebuilt from the index before matching starts; `df::related_info::load` and `resolve_related` are that pair and must stay in step.
 
 ### Thumbnail pipeline
 
 A thumbnail passes through four representations, each cheaper to rebuild than the one before it: metadata dimensions drive layout; an encoded image (JPEG, bounded to 256 KB and to `thumbnail_max_dimension`) is the durable form held per item and written to SQLite; a decoded surface is staged only for the near-viewport working set; and a GPU texture is created lazily by `render` on the UI thread. Resource cleanup drops the last two for off-screen items and Items restages visible ones without rescanning files or database rows.
 
-Acquisition is ordered cheapest-first and each stage is gated so the next one is not started needlessly. SQLite is consulted first, per visible item, batched into one database hop. Only items the query did not resolve are queued as a scan. A scan reuses an embedded EXIF thumbnail when it is already within the size limit; otherwise it decodes the source, scales, and re-encodes. Cloud-only placeholders are never scanned, because that would hydrate the file; they ask the shell for the provider's thumbnail instead, only while visible, and only after the database query has run. Prefetching the previous and next displayed image skips cloud-only neighbours for the same reason: prefetch must never download a file the user has not chosen to display.
+Acquisition is ordered cheapest-first and each stage is gated so the next one is not started needlessly. Indexing produces no visual at all: a metadata scan decodes, scales, stores and publishes neither thumbnail nor cover art, so a newly indexed item shows its shaped placeholder until it is first displayed. That is deliberate. Generating a thumbnail during the index pass stored it with no scan timestamp, which made it provisional — the visible-item pass replaced it on first display anyway — so the collection-wide decode, scale and re-encode bought a first paint and was then thrown away. Acquisition therefore begins when an item becomes visible: SQLite is consulted first, per visible item, batched into one database hop, and only items the query did not resolve are queued as a scan. A scan reuses an embedded EXIF thumbnail when it is already within the size limit; otherwise it decodes the source, scales, and re-encodes. Cloud-only placeholders are never scanned, because that would hydrate the file; they ask the shell for the provider's thumbnail instead, only while visible, and only after the database query has run. Prefetching the previous and next displayed image skips cloud-only neighbours for the same reason: prefetch must never download a file the user has not chosen to display.
 
 Two bounds keep cloud thumbnail work proportional to what the user is looking at. `index_state::_offline_thumbnail_batch` is written only on the UI thread when a visible batch is queued and read by the `async_queue::cloud` worker; when it no longer matches the batch's own value, a newer visible set exists and the remaining requests stop issuing network fetches. Its invariant is that abandonment still reports every remaining request, so the `shell_pending` claim is cleared and items still on screen are re-armed for the retry pass. It is atomic because the worker cannot read the UI-owned `is_visible` flag that the decision otherwise depends on. Separately, a provider that only ever returns its generic icon (common for video) is retried a bounded number of times per item; after that the item keeps its file-type placeholder, and hydration resets the count.
 
@@ -144,6 +158,10 @@ Measurement settled two questions that the code shape alone answers misleadingly
 ## Files and metadata
 
 Scans detect format, extract properties/thumbnails, and reconcile embedded and sidecar metadata. Writes update the media file where supported or an XMP sidecar, then refresh the index.
+
+A metadata-only AV scan bounds FFmpeg's stream probe. Left unbounded, `avformat_find_stream_info` entropy-decodes 7 to 20 H.264 frames per file purely to guess the reorder delay, which nothing Diffractor reports uses; on a first index that was the largest single consumer of CPU in the process, and the indexing thread was CPU-bound rather than disk-bound because of it. `av_format_decoder::open` therefore takes a required `media_intent` — `metadata`, `thumbnail`, or `playback` — so every caller states what it will do with the container rather than inheriting a default. The bound applies to `metadata` only. It is a `probesize` byte budget, because probe cost is roughly linear in bytes decoded, and it is applied after `avformat_open_input` and only when the container header already named every stream — so demuxers that spend `probesize` in their own header read, and streams whose parameters genuinely have to be discovered by reading, are unaffected. The probe still runs: it is what estimates duration and bit rate, and it is what resolves the pixel format that MOV and MP4 headers do not carry.
+
+Container metadata is not at risk from that bound, and the reason is structural rather than incidental. Every demuxer gathers its tags in `read_header`, inside `avformat_open_input`, which the bound is applied after. This is what makes a trailing XMP packet safe: MOV walks all top-level atoms to end of file, and the ASF reader carries a Diffractor patch that seeks past the Data object for the packet the Adobe SDK writes last. Three test fixtures — `gizmo.mp4`, `ipod.mov`, `Byzantium.avi` — hold their XMP in the final 1% of the file, `ipod.mov` megabytes beyond the probe budget, and the scan equivalence test asserts the packet round-trips byte for byte and that exactly three fixtures still carry one, so the assertion cannot pass vacuously.
 
 [File I/O](file-io.md) owns the write pipeline: staging and swap, the choice between a staged replace and an in-place patch, per-format write costs, backups, sidecars, rollback, and the failure contract.
 
@@ -166,6 +184,35 @@ Updates, crash reporting, dictionaries, maps, and location are separate network 
 Feature use is a single process-wide `std::atomic<uint64_t>` in `app_settings.cpp`, reached only through `record_feature_use`, `features_used_since_last_report`, `load_feature_use`, and `clear_reported_feature_use`. It is a synchronized value rather than a `settings_t` member for two reasons. Contributors span threads: the UI thread records views, display groups, and slideshow; the query worker records search-term kinds from `index_state::query_items`; file workers record burn; and the web worker reads and clears it after a report. And `settings_t` is value-copied by the options dialog, so a member would roll the mask back to whatever it held when that dialog opened. Like the session counters, nothing branches on the mask and increments are `memory_order_relaxed` - it is a write-only accumulation, not shared state, so it stays out of the synchronized-type registry. Reporting captures the mask once, sends that value, and on success clears only those bits with `fetch_and`, so features recorded while the request is in flight survive to the next report.
 
 Every bit in `features` must have a live recording site. Bits for retired capabilities are removed rather than left declared, since a permanently clear bit is indistinguishable from a feature nobody uses. One bit per `view_type` is recorded in `view_state::view_mode`, the single funnel for view activation; the per-tool bits only record a completed run, so without them an opened-then-abandoned view looks identical to one that was never opened.
+
+## Diagnostic log
+
+`df::log` writes `diffractor.log` beside the executable, or under app data when the install folder is read-only. The previous session's file is kept as `diffractor.previous.log`; both are attached to crash reports and to the support upload in `send_info`, so the log is treated as content that leaves the machine.
+
+Three constraints hold, all enforced in `df::log` rather than at the call sites:
+
+- **Bounded.** Writing stops at a 4 MB cap, so a failure that repeats once per scanned item cannot consume the disk. Worst case on disk is two rotations, 8 MB.
+- **Not personally identifying.** The account segment of any `\Users\<name>\` or `/users/<name>/` path is replaced with `%user%` before the line is written. Scrubbing at the choke point covers OS, SQLite, and third-party messages that embed a path, which no call-site rule would. The rest of a path is kept: folder shape is what makes a report reproducible. Content files are identified by name only where that name is needed to reproduce a decode failure, and by extension alone in the crash and recovery handlers.
+- **Worth reading.** End-of-session summary contexts (`perf*` and `main`) are exempt from the cap, because `df::log_perf_summary` and `log_file_op_summary` are written last and carry the most diagnostic value. Each is emitted once per session, so the exemption is bounded by construction.
+
+A new call site that would log once per item or per frame belongs in `df::trace`, which is compiled out of release, or behind a de-duplicating counter like `record_xmp_error`. A per-item message that reaches the file is a defect: it displaces the summaries and inflates the upload.
+
+## Crash-loop protection
+
+Two independent mechanisms stop a fault from repeating on every launch.
+
+`platform::set_crash_guard` covers risky GPU work: a durable marker is raised before the operation and cleared after it succeeds, so a marker still raised at the next launch attributes the crash and disables only that capability. See [rendering.md](rendering.md#resilience).
+
+`crash_files_db` covers media files. `record_open_path` registers each file `index_state::scan_item` is about to read; `app_frame::crash` and `recover_callback` write what was still open into `diffractor-files-that-crash.txt`, and the next launch skips those files. The list has four properties, all in `util_crash_files_db.h`:
+
+- **Attributed.** Several workers decode at once, so most open files are bystanders. The flush records only what the thread running the handler had open, and falls back to recording all of them when nothing matches — which is the recovery callback, running on its own thread.
+- **Bounded.** 512 lines total, counting lines left by other builds. Entries already listed are not appended again, so a crash that repeats does not grow the file.
+- **Recoverable.** Each line is `<build>\t<path>` and only the running build's entries skip a file. A decoder fix ships in an update, and without the tag a file blacklisted once would never be scanned again on that install. Lines from an older build are ignored, which costs at most one repeat crash after an upgrade.
+- **Stated.** `app_frame::init` logs how many files the list is skipping, because a skipped file is otherwise an unexplained absence of metadata and a thumbnail.
+
+Two limits are deliberate. The list is written from the crash handler, so a fault that bypasses it — stack overflow, a hard kill, power loss — records nothing and the loop repeats; the guard-marker pattern above is what covers that case, and applying it per file would mean a durable write per scanned item.
+
+Only unattended work consults the list, which is why `record_open_path` wraps `scan_item` and not the media-load path. A user who opens a file has asked for it, so the open is attempted; see [design.md](design.md#system-states-and-consistency). Nothing re-opens that file by itself afterwards: `format_restart_cmd_line` carries only `-no-gpu` and `-no-indexing`, and `open_default_folder` restores the saved search with an empty selection, so a restart resumes scanning the folder — which is guarded — without reopening the item.
 
 ## Build and validation
 

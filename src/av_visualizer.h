@@ -282,22 +282,12 @@ class av_visualizer
 			constexpr size_t max_queued_frames = 1024;
 			if (_q.size() >= max_queued_frames) _q.pop_front();
 
-			//df::assert_true(std::find_if(_q.begin(), _q.end(), [t = frame._time](auto&& f) { return f._time > t; }) == _q.end());
-
-			//if (!_q.empty() && _q.back()._time > frame._time)
-			//{	
-			//	// Reset q if newer frames
-			//	_q.clear();
-			//}
-
 			const auto found = std::lower_bound(_q.begin(), _q.end(), frame, [](auto&& l, auto&& r)
 			{
 				return l._time < r._time;
 			});
 
 			_q.emplace(found, frame); // .emplace_back(frame);
-
-			//df::log(__FUNCTION__, "frame_queue.push " << frame._time;
 		}
 
 		bool pop_animate(frame& output, const double time, const double elapsed)
@@ -426,12 +416,6 @@ public:
 				const double a = std::clamp((yy + scaleY / 2.0) / (scaleY * 2.0) * alpha, 0.4, 1.0);
 				const double inflate = step / 2.0 + yy * (step / 2.0) / (scaleY * 3.0);
 
-				// Lerp based colors
-				//float color_scale = std::clamp(yy / 555.0, 0.0, 1.0);
-				//static auto c1 = render::style::color::selected_background;
-				//static auto c2 = render::style::color::important_background;
-				//colors[i] = interpolate(c1, c2, color_scale, a / 255.0);
-
 				// Cosign palete based colors
 				constexpr auto pi4 = M_PI / 0.25;
 				const auto ic = (0.25 + i * 0.003 + yy * 0.04 / scaleY) * pi4;
@@ -450,7 +434,6 @@ public:
 	}
 
 private:
-
 	static void calc_bars(const int16_t* src, int* bars)
 	{
 		float tmp_out[FFT_BUFFER_SIZE / 2 + 1];

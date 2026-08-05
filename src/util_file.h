@@ -79,7 +79,7 @@ namespace df
 				const auto wanted = static_cast<uint32_t>(wanted64);
 				result.resize(wanted);
 				const auto read = _h->read(result.data(), wanted);
-				result.resize(read, 0);
+				result.resize(static_cast<size_t>(read), 0);
 			}
 
 			return result;
@@ -94,7 +94,7 @@ namespace df
 
 			constexpr auto wanted = static_cast<uint32_t>(sixty_four_k);
 			const auto read = _h->read(_buffer.get(), wanted);
-			_buffer_data_size = read;
+			_buffer_data_size = static_cast<size_t>(read);
 			return read > 0;
 		}
 

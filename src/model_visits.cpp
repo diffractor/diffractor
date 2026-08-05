@@ -58,7 +58,7 @@ namespace
 
 		// find_by_name matches case-insensitively, so the memo has to as well or the same place
 		// spelt differently misses and re-reads the gazetteer.
-		auto memo_key = query;
+		const auto memo_key = query;
 		str::to_lower(memo_key);
 
 		const auto found = memo.find(memo_key);
@@ -362,8 +362,8 @@ df::visit_timeline df::compute_visits(visit_request request, const location_cach
 		if (s.coordinate.is_valid())
 		{
 			bucket_key key;
-			key.lat = df::round(s.coordinate.latitude() / visit_bucket_degrees);
-			key.lon = df::round(s.coordinate.longitude() / visit_bucket_degrees);
+			key.lat = round(s.coordinate.latitude() / visit_bucket_degrees);
+			key.lon = round(s.coordinate.longitude() / visit_bucket_degrees);
 			buckets[key].emplace_back(i);
 		}
 		else
@@ -594,7 +594,9 @@ df::visit_timeline df::compute_visits(visit_request request, const location_cach
 		const auto density = static_cast<double>(cand.count) / std::max(1u, cand.active_days);
 		const auto neighbour = cand.gap_before == 0
 			                       ? cand.gap_after
-			                       : (cand.gap_after == 0 ? cand.gap_before : std::min(cand.gap_before, cand.gap_after));
+			                       : (cand.gap_after == 0
+				                          ? cand.gap_before
+				                          : std::min(cand.gap_before, cand.gap_after));
 		// locations.md 6.2: normalized by 4G, not G. Segmentation already split on every gap
 		// larger than G, so normalizing by G would clamp this to 1 for every candidate.
 		const auto separation = neighbour == 0 ? 1.0 : std::min(1.0, neighbour / (threshold * 4.0));
@@ -659,7 +661,7 @@ df::visit_timeline df::compute_visits(visit_request request, const location_cach
 			// reads active_months as a fraction of the span.
 			const auto shared_day = cur.first_days == prev.last_days ? 1u : 0u;
 			const auto shared_month = cur.first_days / average_days_per_month ==
-				prev.last_days / average_days_per_month
+			                          prev.last_days / average_days_per_month
 				                          ? 1u
 				                          : 0u;
 

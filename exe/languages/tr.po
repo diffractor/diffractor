@@ -101,7 +101,7 @@ msgid "Audio"
 msgstr "Ses"
 
 msgid "Before"
-msgstr "önce"
+msgstr "Önce"
 
 msgid "Brightness"
 msgstr "Parlaklık"
@@ -155,7 +155,7 @@ msgid "&Tag"
 msgstr "&Etiket"
 
 msgid "&Update"
-msgstr "&Güncelleme"
+msgstr "&Güncelle"
 
 msgid "Donate"
 msgstr "Bağış yap"
@@ -170,8 +170,8 @@ msgstr "Çevrimiçi bağış yapın."
 msgid "Changes"
 msgstr "Değişiklikler"
 
-msgid "Set the location for the selected files by scrolling the map or searching for a place. Use the mouse wheel to zoom."
-msgstr "Bir konum seçmek için haritayı kaydırın. Yakınlaştırmak için fare tekerleğini kullanın."
+msgid "The crosshair at the centre of the map marks the location that will be written. Drag the map, click a photo bubble to move it under the crosshair, or search for a place by name. Use the mouse wheel to zoom. Nothing is written until you press Add location."
+msgstr "Haritanın ortasındaki artı işareti, yazılacak konumu gösterir. Haritayı sürükleyin, bir fotoğraf balonuna tıklayarak artı işaretinin altına getirin veya bir yeri adına göre arayın. Yakınlaştırmak için fare tekerleğini kullanın. Konum ekle düğmesine basana kadar hiçbir şey yazılmaz."
 
 msgid "The collection contains {} {} ({})."
 msgstr "Koleksiyon {} {} ({}) içeriyor."
@@ -180,7 +180,7 @@ msgid "The collection contains:"
 msgstr "Koleksiyon şunları içerir:"
 
 msgid "Items created {} {}"
-msgstr "{} {} oluşturulan öğeler"
+msgstr "Oluşturulan öğeler {} {}"
 
 msgid "Items modified {} {}"
 msgstr "Değiştirilen öğeler {} {}"
@@ -264,7 +264,7 @@ msgid "Extend selection to next item"
 msgstr "Seçimi sonraki öğeye genişlet"
 
 msgid "Parent"
-msgstr "Ebeveyn"
+msgstr "Üst klasör"
 
 msgid "Previous folder or search"
 msgstr "Önceki klasör veya arama"
@@ -396,7 +396,7 @@ msgid "Highlight large items in yellow"
 msgstr "Büyük öğeleri sarı renkle vurgulayın"
 
 msgid "Import"
-msgstr "İthalat"
+msgstr "İçe aktar"
 
 msgid "Keyboard reference"
 msgstr "Klavye referansı"
@@ -462,7 +462,7 @@ msgid "You are using the latest version ({})."
 msgstr "En son sürümü ({}) kullanıyorsunuz."
 
 msgid "Open"
-msgstr "Açık"
+msgstr "Aç"
 
 msgid "Open in google maps"
 msgstr "Google haritalarda aç"
@@ -509,8 +509,8 @@ msgstr "Reddet"
 msgid "Refresh"
 msgstr "Yenile"
 
-msgid "Matching or possible copy items in the collection"
-msgstr "Koleksiyondaki eşleşen veya olası kopya öğeler"
+msgid "Related items"
+msgstr "İlgili öğeler"
 
 msgid "Rename"
 msgstr "Yeniden adlandır"
@@ -530,6 +530,9 @@ msgstr "Saat yönünün tersine döndür"
 msgid "Rotate clockwise"
 msgstr "Saat yönünde döndür"
 
+msgid "Confirm single-item rotations"
+msgstr "Tek öğe döndürmeyi onayla"
+
 msgid "Reset rotation"
 msgstr "Döndürmeyi sıfırla"
 
@@ -543,7 +546,7 @@ msgid "Add location and open next"
 msgstr "Konum ekle ve sonrakini aç"
 
 msgid "Save and open previous"
-msgstr "Öncekini kaydet ve aç"
+msgstr "Kaydet ve öncekini aç"
 
 msgid "Save the current item and open the previous item."
 msgstr "Geçerli öğeyi kaydedin ve önceki öğeyi açın."
@@ -573,7 +576,7 @@ msgid "Invert selection"
 msgstr "Seçimi tersine çevir"
 
 msgid "Select none"
-msgstr "Hiçbirini seçme"
+msgstr "Seçimi kaldır"
 
 msgid "Email"
 msgstr "E-posta"
@@ -665,6 +668,12 @@ msgstr "Kontrast"
 msgid "Open link {}"
 msgstr "{} bağlantısını aç"
 
+msgid "Choose a link to open"
+msgstr "Açılacak bir bağlantı seçin"
+
+msgid "Duplicate"
+msgstr "Kopya"
+
 msgid "Copy to clipboard"
 msgstr "Panoya kopyala"
 
@@ -675,10 +684,10 @@ msgid "Creator"
 msgstr "Yaratıcı"
 
 msgid "Credit"
-msgstr "Kredi"
+msgstr "Atıf"
 
 msgid "Notice"
-msgstr "Uyarı"
+msgstr "Bildirim"
 
 msgid "File"
 msgstr "Dosya"
@@ -741,7 +750,7 @@ msgid "Show world map"
 msgstr "Dünya haritasını göster"
 
 msgid "Darks"
-msgstr "Karanlıklar"
+msgstr "Koyu tonlar"
 
 msgid "data"
 msgstr "veri"
@@ -760,9 +769,6 @@ msgstr "Tarihler"
 
 msgid "family food friends landscape nature night portrait selfie todo travel urban viewed"
 msgstr "aile yemek arkadaşlar manzara doğa gece portre selfie yapılacaklar seyahat kentsel izlendi"
-
-msgid "results"
-msgstr "sonuçlar"
 
 msgid "Defragment database."
 msgstr "Veritabanını birleştir."
@@ -810,7 +816,7 @@ msgid "Editing"
 msgstr "Düzenleme"
 
 msgid "Close without ejecting"
-msgstr "Çıkarmadan kapatın"
+msgstr "Çıkarmadan kapat"
 
 msgid "Failed to eject {}."
 msgstr "{} çıkarılamadı."
@@ -843,7 +849,7 @@ msgid "Create a draft in your desktop email client with the selected files attac
 msgstr "Seçili dosyaların eklendiği bir taslağı masaüstü e-posta istemcinizde oluşturun. Orijinaller değiştirilmez."
 
 msgid "Zip files in the email"
-msgstr "E-postadaki dosyaları zipleyin"
+msgstr "E-postadaki dosyaları ziple"
 
 msgid "Empty"
 msgstr "Boş"
@@ -855,7 +861,7 @@ msgid "Security options denied access to the source."
 msgstr "Güvenlik seçenekleri kaynağa erişimi reddetti."
 
 msgid "Diffractor has a serious problem and cannot continue."
-msgstr "Diffractor'nin ciddi bir sorunu var ve devam edemiyor."
+msgstr "Diffractor'ın ciddi bir sorunu var ve devam edemiyor."
 
 msgid "Could not connect to scanner"
 msgstr "Tarayıcıya bağlanılamadı"
@@ -1020,7 +1026,7 @@ msgid "folders"
 msgstr "klasörler"
 
 msgid "onedrive"
-msgstr "tek sürücü"
+msgstr "OneDrive"
 
 msgid "picture"
 msgstr "resim"
@@ -1035,10 +1041,10 @@ msgid "A capella"
 msgstr "A capella"
 
 msgid "Abstract"
-msgstr "Özet"
+msgstr "Soyut"
 
 msgid "Acid"
-msgstr "Asit"
+msgstr "Acid"
 
 msgid "Acid Jazz"
 msgstr "Acid Jazz"
@@ -1047,7 +1053,7 @@ msgid "Acid Punk"
 msgstr "Acid Punk"
 
 msgid "Acoustic"
-msgstr "akustik"
+msgstr "Akustik"
 
 msgid "Action"
 msgstr "Eylem"
@@ -1062,7 +1068,7 @@ msgid "Alternative"
 msgstr "Alternatif"
 
 msgid "AlternRock"
-msgstr "Alternatif Kaya"
+msgstr "Alternatif Rock"
 
 msgid "Ambient"
 msgstr "Ambient"
@@ -1074,7 +1080,7 @@ msgid "Animation"
 msgstr "Animasyon"
 
 msgid "Anime"
-msgstr "anime"
+msgstr "Anime"
 
 msgid "Architectural"
 msgstr "Mimari"
@@ -1095,10 +1101,10 @@ msgid "Bebob"
 msgstr "Bebob"
 
 msgid "Big Band"
-msgstr "Büyük Grup"
+msgstr "Big Band"
 
 msgid "Bluegrass"
-msgstr "Mavi çim"
+msgstr "Bluegrass"
 
 msgid "Blues"
 msgstr "Blues"
@@ -1113,7 +1119,7 @@ msgid "Cabaret"
 msgstr "Kabare"
 
 msgid "Candid"
-msgstr "Samimi"
+msgstr "Doğal"
 
 msgid "Celtic"
 msgstr "Kelt"
@@ -1131,7 +1137,7 @@ msgid "Chorus"
 msgstr "Koro"
 
 msgid "Christian & Gospel"
-msgstr "Hıristiyan ve İncil"
+msgstr "Hıristiyan ve Gospel"
 
 msgid "Christian Rap"
 msgstr "Hıristiyan Rap'i"
@@ -1185,7 +1191,7 @@ msgid "Darkwave"
 msgstr "Darkwave"
 
 msgid "Death Metal"
-msgstr "Ölüm Metali"
+msgstr "Death Metal"
 
 msgid "Disco"
 msgstr "Disko"
@@ -1212,16 +1218,16 @@ msgid "Electronic"
 msgstr "Elektronik"
 
 msgid "Ethnic"
-msgstr "etnik"
+msgstr "Etnik"
 
 msgid "Eurodance"
 msgstr "Eurodance"
 
 msgid "Euro-House"
-msgstr "Avrupa Evi"
+msgstr "Euro-House"
 
 msgid "Euro-Techno"
-msgstr "Avrupa-Tekno"
+msgstr "Euro-Techno"
 
 msgid "Family"
 msgstr "Aile"
@@ -1230,10 +1236,10 @@ msgid "Fashion"
 msgstr "Moda"
 
 msgid "Fast Fusion"
-msgstr "Hızlı Füzyon"
+msgstr "Fast Fusion"
 
 msgid "Film still"
-msgstr "Hala film"
+msgstr "Film karesi"
 
 msgid "Fine-art"
 msgstr "Güzel sanatlar"
@@ -1242,7 +1248,7 @@ msgid "Fire"
 msgstr "Ateş"
 
 msgid "Fireworks"
-msgstr "havai fişek"
+msgstr "Havai fişek"
 
 msgid "Fitness & Workout"
 msgstr "Fitness ve Egzersiz"
@@ -1272,7 +1278,7 @@ msgid "Funk"
 msgstr "Funk"
 
 msgid "Fusion"
-msgstr "Füzyon"
+msgstr "Fusion"
 
 msgid "Game//genre"
 msgstr "Oyun"
@@ -1284,7 +1290,7 @@ msgid "Geo-photography"
 msgstr "Jeo-fotoğraf"
 
 msgid "Glamour"
-msgstr "Cazibe"
+msgstr "Glamour"
 
 msgid "Gospel"
 msgstr "Gospel"
@@ -1293,19 +1299,19 @@ msgid "Gothic"
 msgstr "Gotik"
 
 msgid "Gothic Rock"
-msgstr "Gotik Kaya"
+msgstr "Gotik Rock"
 
 msgid "Grunge"
 msgstr "Grunge"
 
 msgid "Hard Rock"
-msgstr "Sert Kaya"
+msgstr "Hard Rock"
 
 msgid "High-speed"
 msgstr "Yüksek hızlı"
 
 msgid "High key"
-msgstr "Yüksek anahtar"
+msgstr "High key"
 
 msgid "Hip-Hop"
 msgstr "Hip-Hop"
@@ -1332,7 +1338,7 @@ msgid "Industrial"
 msgstr "Endüstriyel"
 
 msgid "Instrumental"
-msgstr "enstrümantal"
+msgstr "Enstrümantal"
 
 msgid "Instrumental Pop"
 msgstr "Enstrümantal Pop"
@@ -1347,7 +1353,7 @@ msgid "Jazz + Funk"
 msgstr "Caz + Funk"
 
 msgid "Jungle"
-msgstr "Orman"
+msgstr "Jungle"
 
 msgid "Kids"
 msgstr "Çocuklar"
@@ -1362,7 +1368,7 @@ msgid "Landscape"
 msgstr "Manzara"
 
 msgid "Latin"
-msgstr "Latince"
+msgstr "Latin"
 
 msgid "Lifestyle"
 msgstr "Yaşam Tarzı"
@@ -1377,7 +1383,7 @@ msgid "Long-exposure"
 msgstr "Uzun pozlama"
 
 msgid "Low key"
-msgstr "Düşük anahtar"
+msgstr "Low key"
 
 msgid "Macro"
 msgstr "Makro"
@@ -1416,7 +1422,7 @@ msgid "Native American"
 msgstr "Kızılderili"
 
 msgid "New Age"
-msgstr "Yeni Çağ"
+msgstr "New Age"
 
 msgid "New Wave"
 msgstr "Yeni Dalga"
@@ -1449,7 +1455,7 @@ msgid "Film Noir"
 msgstr "Film Noir"
 
 msgid "Photo op"
-msgstr "Fotoğraf çalışması"
+msgstr "Fotoğraf çekimi"
 
 msgid "Photobiography"
 msgstr "Fotobiyografi"
@@ -1485,13 +1491,13 @@ msgid "Portrait"
 msgstr "Portre"
 
 msgid "Power Ballad"
-msgstr "Güç Baladı"
+msgstr "Power Ballad"
 
 msgid "Pranks"
 msgstr "Şakalar"
 
 msgid "Primus"
-msgstr "primus"
+msgstr "Primus"
 
 msgid "Progressive Rock"
 msgstr "Progresif Rock"
@@ -1512,25 +1518,25 @@ msgid "R&B"
 msgstr "R&B"
 
 msgid "Rap"
-msgstr "rap"
+msgstr "Rap"
 
 msgid "Rave"
 msgstr "Rave"
 
 msgid "Reality TV"
-msgstr "Gerçeklik TV"
+msgstr "Realite TV"
 
 msgid "Reggae"
 msgstr "Reggae"
 
 msgid "Retro"
-msgstr "retro"
+msgstr "Retro"
 
 msgid "Revival"
 msgstr "Canlanma"
 
 msgid "Rhythmic Soul"
-msgstr "Ritmik Ruh"
+msgstr "Ritmik Soul"
 
 msgid "Rock"
 msgstr "Rock"
@@ -1539,7 +1545,7 @@ msgid "Rock & Roll"
 msgstr "Rock'n Roll"
 
 msgid "Romance"
-msgstr "romantik"
+msgstr "Romantik"
 
 msgid "Samba"
 msgstr "Samba"
@@ -1563,7 +1569,7 @@ msgid "Singer/Songwriter"
 msgstr "Şarkıcı/Söz Yazarı"
 
 msgid "Ska"
-msgstr "Ská"
+msgstr "Ska"
 
 msgid "Slow Jam"
 msgstr "Slow Jam"
@@ -1590,7 +1596,7 @@ msgid "Soundtrack"
 msgstr "Film müziği"
 
 msgid "Southern Rock"
-msgstr "Güney Kayası"
+msgstr "Southern Rock"
 
 msgid "Space"
 msgstr "Uzay"
@@ -1617,7 +1623,7 @@ msgid "Street"
 msgstr "Sokak"
 
 msgid "Subminiature"
-msgstr "Minyatür"
+msgstr "Subminyatür"
 
 msgid "Swing"
 msgstr "Swing"
@@ -1677,7 +1683,7 @@ msgid "Urban"
 msgstr "Kentsel"
 
 msgid "Vernacular"
-msgstr "Yerel dil"
+msgstr "Yerel fotoğrafçılık"
 
 msgid "Vintage"
 msgstr "Vintage"
@@ -1689,7 +1695,7 @@ msgid "War"
 msgstr "Savaş"
 
 msgid "Western"
-msgstr "Batı"
+msgstr "Western"
 
 msgid "World"
 msgstr "Dünya"
@@ -1707,13 +1713,13 @@ msgid "No camera"
 msgstr "Kamera yok"
 
 msgid "No extension"
-msgstr "Uzatma yok"
+msgstr "Uzantı yok"
 
 msgid "No location"
 msgstr "Konum yok"
 
 msgid "No resolution"
-msgstr "Çözüm yok"
+msgstr "Çözünürlük yok"
 
 msgid "No rating"
 msgstr "Derecelendirme yok"
@@ -1761,13 +1767,10 @@ msgid "Destination root folder. Structured folders will be created under this fo
 msgstr "Hedef kök klasörü. Bu klasörün altında yapılandırılmış klasörler oluşturulacaktır."
 
 msgid "Source of import:"
-msgstr "İthalat kaynağı:"
+msgstr "İçe aktarma kaynağı:"
 
 msgid "Ignore previously imported items."
 msgstr "Daha önce içe aktarılan öğeleri yoksay."
-
-msgid "Overwrite if source items are newer."
-msgstr "Kaynak öğeler daha yeniyse üzerine yazın."
 
 msgid "Other folder"
 msgstr "Diğer klasör"
@@ -1782,7 +1785,7 @@ msgid "Defragmenting or cleaning can improve performance. The index stores a cop
 msgstr "Birleştirme veya temizleme performansı artırabilir. Dizin, medya dosyalarınızdaki meta verilerin bir kopyasını saklar. Orijinal dosyalardan yeniden oluşturulabilir."
 
 msgid "The index is reporting errors. Restarting Diffractor is recommended."
-msgstr "Dizin hatalar bildiriyor. Diffractor'nin yeniden başlatılması önerilir."
+msgstr "Dizin hatalar bildiriyor. Diffractor'ın yeniden başlatılması önerilir."
 
 msgid "Maintenance"
 msgstr "Bakım"
@@ -1827,7 +1830,7 @@ msgid "press"
 msgstr "basın"
 
 msgid "alt"
-msgstr "alternatif"
+msgstr "Alt"
 
 msgid "back"
 msgstr "geri"
@@ -1860,7 +1863,7 @@ msgid "browser-stop"
 msgstr "tarayıcı durdurma"
 
 msgid "ctrl"
-msgstr "kontrol"
+msgstr "Ctrl"
 
 msgid "Extend the current item selection and allow comparing of items."
 msgstr "Geçerli öğe seçimini genişletin ve öğelerin karşılaştırılmasına izin verin."
@@ -1872,13 +1875,13 @@ msgid "down"
 msgstr "aşağı"
 
 msgid "enter"
-msgstr "girmek"
+msgstr "Enter"
 
 msgid "Opens an image full screen."
 msgstr "Bir görüntüyü tam ekran açar."
 
 msgid "escape"
-msgstr "kaçış"
+msgstr "Esc"
 
 msgid "Gets you out of full screen, zoom or other modes."
 msgstr "Sizi tam ekran, yakınlaştırma veya diğer modlardan çıkarır."
@@ -1923,7 +1926,7 @@ msgid "Help"
 msgstr "Yardım"
 
 msgid "insert"
-msgstr "eklemek"
+msgstr "Insert"
 
 msgid "left"
 msgstr "sol"
@@ -1970,16 +1973,16 @@ msgid "page-up"
 msgstr "sayfa yukarı"
 
 msgid "right"
-msgstr "doğru"
+msgstr "sağ"
 
 msgid "Selection"
 msgstr "Seçim"
 
 msgid "shift"
-msgstr "vardiya"
+msgstr "Shift"
 
 msgid "space"
-msgstr "uzay"
+msgstr "boşluk"
 
 msgid "tab"
 msgstr "sekme"
@@ -1991,7 +1994,7 @@ msgid "volume-down"
 msgstr "ses kısma"
 
 msgid "volume-mute"
-msgstr "ses kısma"
+msgstr "ses kapatma"
 
 msgid "volume-up"
 msgstr "ses yükseltme"
@@ -2003,7 +2006,7 @@ msgid "Learn more at Diffractor.com"
 msgstr "Diffractor.com adresinde daha fazla bilgi edinin"
 
 msgid "Lights"
-msgstr "Işıklar"
+msgstr "Açık tonlar"
 
 msgid "Limit output to a maximum dimension (in pixels)."
 msgstr "Çıktıyı maksimum boyutla (piksel cinsinden) sınırlayın."
@@ -2126,7 +2129,7 @@ msgid "Move source items."
 msgstr "Kaynak öğeleri taşıyın."
 
 msgid "History"
-msgstr "Tarih"
+msgstr "Geçmiş"
 
 msgid "No items are selected"
 msgstr "Hiçbir öğe seçilmedi"
@@ -2186,7 +2189,7 @@ msgid "Open with {}"
 msgstr "{} ile aç"
 
 msgid "tool"
-msgstr "aracı"
+msgstr "araç"
 
 msgid "Delay before showing the next item (in seconds)"
 msgstr "Sonraki öğenin gösterilmesinden önceki gecikme (saniye cinsinden)"
@@ -2206,17 +2209,23 @@ msgstr "İnternete bağlanarak güncellemeleri kontrol edin"
 msgid "Confirm when deleting items. Deleted items are moved to the recycle bin."
 msgstr "Öğeleri silerken onaylayın. Silinen öğeler geri dönüşüm kutusuna taşınır."
 
+msgid ""
+"Confirm when rotating one item. Rotating several items is always confirmed."
+msgstr ""
+"Tek bir öğeyi döndürürken onaylayın. Birden fazla öğenin döndürülmesi her "
+"zaman onaylanır."
+
 msgid "JPEG save quality"
-msgstr "JPEG kaliteyi kaydet"
+msgstr "JPEG kayıt kalitesi"
 
 msgid "WEBP save quality"
-msgstr "WEBP kaliteyi kaydet"
+msgstr "WEBP kayıt kalitesi"
 
 msgid "When saving"
 msgstr "Kaydederken"
 
 msgid "Help make Diffractor better. If Diffractor crashes send anonymous diagnostics to Diffractor HQ. No personal data is sent - just crash diagnostics."
-msgstr "Diffractor'nin daha iyi olmasına yardımcı olun. Diffractor kilitlenirse anonim tanılamayı Diffractor HQ adresine gönderin. Hiçbir kişisel veri gönderilmez; yalnızca kilitlenme teşhisi sağlanır."
+msgstr "Diffractor'ın daha iyi olmasına yardımcı olun. Diffractor kilitlenirse anonim tanılamayı Diffractor HQ adresine gönderin. Hiçbir kişisel veri gönderilmez; yalnızca kilitlenme teşhisi sağlanır."
 
 msgid "Show application debugging information (for the programmers)."
 msgstr "Uygulama hata ayıklama bilgilerini göster (programcılar için)."
@@ -2240,7 +2249,7 @@ msgid "Use NV12 and P010 format textures (Automatically turned off if problems d
 msgstr "NV12 ve P010 biçim dokularını kullanın (Sorun algılanırsa otomatik olarak kapatılır)"
 
 msgid "Show an inset shadow surrounding the image view panel."
-msgstr "Resim görüntüleme panelini çevreleyen ek bir gölge gösterin."
+msgstr "Resim görüntüleme panelini çevreleyen bir iç gölge gösterin."
 
 msgid "Resume playing media from the last position played."
 msgstr "Medyayı oynatılan son konumdan oynatmaya devam edin."
@@ -2309,7 +2318,7 @@ msgid "Possible newer copy in collection"
 msgstr "Koleksiyonda olası daha yeni kopya"
 
 msgid "This item is outside the collection. One or more possible newer copies exist in the collection."
-msgstr "Bu ürün koleksiyonun dışındadır. Koleksiyonda bir veya daha fazla olası yeni kopya mevcut."
+msgstr "Bu öğe koleksiyonun dışındadır. Koleksiyonda bir veya daha fazla olası yeni kopya mevcut."
 
 msgid "Outside collection; no possible copy identified"
 msgstr "Koleksiyon dışında; olası kopya tanımlanmadı"
@@ -2321,19 +2330,19 @@ msgid "Possible older copy in collection"
 msgstr "Koleksiyondaki olası eski kopya"
 
 msgid "This item is outside the collection. One or more possible older copies exist in the collection."
-msgstr "Bu ürün koleksiyonun dışındadır. Koleksiyonda bir veya daha fazla olası eski kopya mevcuttur."
+msgstr "Bu öğe koleksiyonun dışındadır. Koleksiyonda bir veya daha fazla olası eski kopya mevcuttur."
 
 msgid "Possible copy in collection"
 msgstr "Koleksiyonda olası kopya"
 
 msgid "This item is outside the collection. One or more possible copies exist in the collection."
-msgstr "Bu ürün koleksiyonun dışındadır. Koleksiyonda bir veya daha fazla olası kopya mevcuttur."
+msgstr "Bu öğe koleksiyonun dışındadır. Koleksiyonda bir veya daha fazla olası kopya mevcuttur."
 
 msgid "In collection"
 msgstr "Koleksiyonda"
 
 msgid "This item is in the collection."
-msgstr "Bu ürün koleksiyonda yer alıyor."
+msgstr "Bu öğe koleksiyonda yer alıyor."
 
 msgid "Presence"
 msgstr "Koleksiyonda bulunma"
@@ -2393,7 +2402,7 @@ msgid "Copyright creator"
 msgstr "Telif hakkı yaratıcısı"
 
 msgid "Copyright credit"
-msgstr "Telif hakkı kredisi"
+msgstr "Telif hakkı atfı"
 
 msgid "Copyright notice"
 msgstr "Telif hakkı bildirimi"
@@ -2402,7 +2411,7 @@ msgid "Copyright source"
 msgstr "Telif hakkı kaynağı"
 
 msgid "Copyright URL"
-msgstr "Telif Hakkı URL"
+msgstr "Telif hakkı URL'si"
 
 msgid "Country//property"
 msgstr "Ülke"
@@ -2423,7 +2432,7 @@ msgid "Dimensions"
 msgstr "Boyutlar"
 
 msgid "Disk"
-msgstr "disk"
+msgstr "Disk"
 
 msgid "Document Id"
 msgstr "Belge Kimliği"
@@ -2486,7 +2495,7 @@ msgid "Null"
 msgstr "Boş"
 
 msgid "Orientation"
-msgstr "Oryantasyon"
+msgstr "Yönlendirme"
 
 msgid "Performer"
 msgstr "İcracı"
@@ -2504,7 +2513,7 @@ msgid "Rating"
 msgstr "Derecelendirme"
 
 msgid "Raw file"
-msgstr "Ham dosya"
+msgstr "RAW dosyası"
 
 msgid "Sample rate"
 msgstr "Örnekleme oranı"
@@ -2516,7 +2525,7 @@ msgid "Season"
 msgstr "Sezon"
 
 msgid "Show"
-msgstr "Göster"
+msgstr "Program"
 
 msgid "Size"
 msgstr "Boyut"
@@ -2528,7 +2537,7 @@ msgid "Streams"
 msgstr "Akışlar"
 
 msgid "Synopsis"
-msgstr "özet"
+msgstr "Özet"
 
 msgid "Tag"
 msgstr "Etiket"
@@ -2552,7 +2561,7 @@ msgid "and"
 msgstr "ve"
 
 msgid "created"
-msgstr "yaratıldı"
+msgstr "oluşturuldu"
 
 msgid "duplicates"
 msgstr "kopyalar"
@@ -2576,7 +2585,7 @@ msgid "with"
 msgstr "ile"
 
 msgid "without"
-msgstr "onsuz"
+msgstr "olmadan"
 
 msgid "Rate selected items"
 msgstr "Seçili öğeleri derecelendir"
@@ -2588,7 +2597,7 @@ msgid "Click {} to remove rating"
 msgstr "Derecelendirmeyi kaldırmak için {}'ı tıklayın"
 
 msgid "Raw"
-msgstr "Ham"
+msgstr "RAW"
 
 msgid "Remove Metadata"
 msgstr "Meta verileri kaldır"
@@ -2621,13 +2630,13 @@ msgid "Template:"
 msgstr "Şablon:"
 
 msgid "Start at:"
-msgstr "Başlangıç tarihi:"
+msgstr "Başlangıç:"
 
 msgid "Repeat play single media item"
 msgstr "Tek bir medya öğesini tekrarla"
 
 msgid "Clean database and reindex.\nAll data is regenerated."
-msgstr "Clean database and reindex.\nTüm veriler yeniden oluşturulur."
+msgstr "Veritabanını temizle ve yeniden dizinle.\nTüm veriler yeniden oluşturulur."
 
 msgid "Cleaning..."
 msgstr "Temizlik..."
@@ -2639,7 +2648,7 @@ msgid "Saturation"
 msgstr "Doygunluk"
 
 msgid "Diffractor cannot crop, rotate or color {} files. You can save the file as a JPEG?"
-msgstr "Diffractor {} dosyayı kırpamaz, döndüremez veya renklendiremez. You can save the file as a JPEG?"
+msgstr "Diffractor {} dosyalarını kırpamaz, döndüremez veya renklendiremez. Dosyayı JPEG olarak kaydedebilirsiniz?"
 
 msgid "Save Changes"
 msgstr "Değişiklikleri Kaydet"
@@ -2663,10 +2672,10 @@ msgid "Search in the collection"
 msgstr "Koleksiyonda ara"
 
 msgid "From"
-msgstr "Gönderen"
+msgstr "Başlangıç"
 
 msgid "Until"
-msgstr "kadar"
+msgstr "Bitiş"
 
 msgid "Search in a folder"
 msgstr "Bir klasörde ara"
@@ -2681,7 +2690,7 @@ msgid "None of these terms"
 msgstr "Bu terimlerin hiçbiri"
 
 msgid "Search criteria or folder"
-msgstr "Kriterleri veya klasörü arayın"
+msgstr "Arama ölçütleri veya klasör"
 
 msgid "Photos"
 msgstr "Fotoğraflar"
@@ -2713,14 +2722,14 @@ msgstr "Her zaman RAW fotoğrafı göster (daha yavaş)"
 msgid "Show this RAW photo"
 msgstr "Bu RAW fotoğrafını göster"
 
-msgid "press R to view matching or possible copy items in the collection"
-msgstr "koleksiyondaki eşleşen veya olası kopya öğelerini görüntülemek için R'ye basın"
+msgid "press R to view the items most closely related to this one"
+msgstr "bununla en yakından ilgili öğeleri görmek için R tuşuna basın"
 
 msgid "Show verbose metadata"
 msgstr "Ayrıntılı meta verileri göster"
 
 msgid "Album-Show"
-msgstr "Albüm Gösterisi"
+msgstr "Albüm-Program"
 
 msgid "Group order (Default)"
 msgstr "Grup sırası (varsayılan)"
@@ -2741,7 +2750,7 @@ msgid "Rating-Label"
 msgstr "Derecelendirme Etiketi"
 
 msgid "Staring"
-msgstr "Bakıyorum"
+msgstr "Oyuncular"
 
 msgid "New Starting Date (local time):"
 msgstr "Yeni Başlangıç Tarihi (yerel saat):"
@@ -2825,7 +2834,7 @@ msgid "delete local"
 msgstr "yereli sil"
 
 msgid "delete remote"
-msgstr "uzaktan kumandayı sil"
+msgstr "uzaktakini sil"
 
 msgid "Files changed after analysis. Analyze again to review the updated actions."
 msgstr "Dosyalar analizden sonra değiştirildi. Güncellenen eylemleri gözden geçirmek için tekrar analiz edin."
@@ -2835,6 +2844,9 @@ msgstr "Silinecek yerel dosyalar: {}. Silinecek uzak dosyalar: {}."
 
 msgid "Synchronization will permanently delete files. These files cannot be recovered from the Recycle Bin."
 msgstr "Senkronizasyon dosyaları kalıcı olarak silecektir. Bu dosyalar Geri Dönüşüm Kutusu'ndan kurtarılamaz."
+
+msgid "The existing files will be overwritten. Their current contents cannot be recovered from the recycle bin."
+msgstr "Var olan dosyaların üzerine yazılacak. Bu dosyaların geçerli içeriği Geri Dönüşüm Kutusu'ndan kurtarılamaz."
 
 msgid "Delete local files that do not exist remotely"
 msgstr "Uzaktan var olmayan yerel dosyaları silin"
@@ -2891,7 +2903,7 @@ msgid "folder:{}"
 msgstr "klasör:{}"
 
 msgid "rate"
-msgstr "oran"
+msgstr "derecelendirme"
 
 msgid "Updating..."
 msgstr "Güncelleniyor..."
@@ -2918,7 +2930,7 @@ msgid "Pinned items stay selected. Use this when you want to quickly compare an 
 msgstr "Sabitlenen öğeler seçili kalır. Bir öğeyi diğer öğelerle hızlı bir şekilde karşılaştırmak istediğinizde bunu kullanın."
 
 msgid "Reset straighten and rotate"
-msgstr "Düzeltmeyi sıfırla ve döndür"
+msgstr "Düzeltme ve döndürmeyi sıfırla"
 
 msgid "Tag or un-tag selected items"
 msgstr "Seçili öğeleri etiketleme veya etiketini kaldırma"
@@ -2936,7 +2948,7 @@ msgid "More options and controls"
 msgstr "Daha fazla seçenek ve kontrol"
 
 msgid "{} ({}) total items in {} folders."
-msgstr "{} klasördeki toplam {} ({}) öğe."
+msgstr "Toplam {} ({}) öğe, {} klasörde."
 
 msgid "Truncated at 1MB"
 msgstr "1 MB'ta kesildi"
@@ -2948,10 +2960,10 @@ msgid "Unselect {}"
 msgstr "{} seçimini kaldır"
 
 msgid "Update"
-msgstr "Güncelleme"
+msgstr "Güncelle"
 
 msgid "Version {} of Diffractor is available."
-msgstr "Diffractor sürümünün {} sürümü mevcut."
+msgstr "Diffractor'ın {} sürümü mevcut."
 
 msgid "Update available"
 msgstr "Güncelleme mevcut"
@@ -2963,10 +2975,10 @@ msgid "Update failed."
 msgstr "Güncelleme başarısız oldu."
 
 msgid "Download and install now. Diffractor will need to be closed briefly during the install."
-msgstr "Şimdi indirin ve yükleyin. Kurulum sırasında Diffractor'nin kısa süreliğine kapatılması gerekecek."
+msgstr "Şimdi indirin ve yükleyin. Kurulum sırasında Diffractor'ın kısa süreliğine kapatılması gerekecek."
 
 msgid "Version {} of Diffractor is available. You are currently using version {}."
-msgstr "Diffractor sürümünün {} sürümü mevcut. Şu anda {} sürümünü kullanıyorsunuz."
+msgstr "Diffractor'ın {} sürümü mevcut. Şu anda {} sürümünü kullanıyorsunuz."
 
 msgid "More info"
 msgstr "Daha fazla bilgi"
@@ -3011,19 +3023,19 @@ msgid "Value"
 msgstr "Değer"
 
 msgid "Volume 200%"
-msgstr "Hacim %200"
+msgstr "Ses %200"
 
 msgid "Volume 100%"
-msgstr "Hacim %100"
+msgstr "Ses %100"
 
 msgid "Volume 75%"
-msgstr "Hacim %75"
+msgstr "Ses %75"
 
 msgid "Volume 50%"
-msgstr "Hacim %50"
+msgstr "Ses %50"
 
 msgid "Volume 25%"
-msgstr "Hacim %25"
+msgstr "Ses %25"
 
 msgid "Mute"
 msgstr "Sessiz"
@@ -3038,7 +3050,7 @@ msgid "Repeat play one item"
 msgstr "Bir öğeyi tekrar oynat"
 
 msgid "Repeat play all media items"
-msgstr "Tüm medya öğelerini tekrarlayarak oynatın"
+msgstr "Tüm medya öğelerini tekrar oynat"
 
 msgid "Don't repeat"
 msgstr "Tekrarlama"
@@ -3065,7 +3077,7 @@ msgid "Show {} filtered out items"
 msgstr "Filtrelenmiş {} öğeyi göster"
 
 msgid "The collection contains {} items created on {}."
-msgstr "Koleksiyon, {} tarihinde oluşturulan {} öğeyi içeriyor."
+msgstr "Koleksiyon, {} öğe içeriyor; bunlar {} tarihinde oluşturuldu."
 
 msgid "Show all tags"
 msgstr "Tüm etiketleri göster"
@@ -3089,7 +3101,7 @@ msgid "Local"
 msgstr "Yerel"
 
 msgid "Remote"
-msgstr "Uzaktan"
+msgstr "Uzak"
 
 msgid "Status"
 msgstr "Durum"
@@ -3098,7 +3110,7 @@ msgid "Message"
 msgstr "Mesaj"
 
 msgid "import"
-msgstr "ithalat"
+msgstr "içe aktar"
 
 msgid "exists"
 msgstr "var"
@@ -3107,7 +3119,7 @@ msgid "previously imported"
 msgstr "önceden içe aktarılmış"
 
 msgid "ignore"
-msgstr "görmezden gelmek"
+msgstr "yoksay"
 
 msgid "Click analyze to show items"
 msgstr "Öğeleri göstermek için analiz et'i tıklayın"
@@ -3371,9 +3383,6 @@ msgstr "{} hâlâ çalışıyor. Başka bir yere göz atmadan önce kapatın."
 msgid "If the destination already exists:"
 msgstr "Hedef zaten varsa:"
 
-msgid "If both sides have the file, the newer one replaces the older one."
-msgstr "Dosya her iki tarafta da varsa, yeni olan eskisinin yerini alır."
-
 msgid "Replace"
 msgstr "Değiştir"
 
@@ -3574,3 +3583,21 @@ msgstr "Görüntülenemeyecek kadar büyük"
 
 msgid "This image could not be displayed"
 msgstr "Bu görüntü görüntülenemedi"
+
+msgid "Show the items in the collection most closely related to this one: possible copies, then the same album, the same series, the closest capture times, and the closest capture places."
+msgstr "Koleksiyonda bu öğeyle en yakından ilgili öğeleri gösterir: olası kopyalar, ardından aynı albüm, aynı seri, en yakın çekim zamanları ve en yakın çekim yerleri."
+
+msgid "This item and possible copies"
+msgstr "Bu öğe ve olası kopyalar"
+
+msgid "Same album"
+msgstr "Aynı albüm"
+
+msgid "Same series"
+msgstr "Aynı seri"
+
+msgid "Taken at the same time"
+msgstr "Aynı zamanda çekildi"
+
+msgid "Taken in the same place"
+msgstr "Aynı yerde çekildi"

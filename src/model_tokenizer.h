@@ -56,11 +56,23 @@ class search_tokenizer
 		return c == '#' || c == ':' || c == ',' || c == ';' || c == '|' || c == '(' || c == ')';
 	}
 
+	// The input is UTF-8 bytes, so the wide-char classifiers would sign-extend any byte >= 0x80
+	// into an unrelated code point. Only the ASCII range can be classified from a single byte.
+	static constexpr bool is_ascii_digit(const char c)
+	{
+		return c >= '0' && c <= '9';
+	}
+
+	static constexpr bool is_ascii_space(const char c)
+	{
+		return c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r';
+	}
+
 	static bool is_num(const std::string_view s)
 	{
 		for (const auto c : s)
 		{
-			if (!std::iswdigit(c))
+			if (!is_ascii_digit(c))
 				return false;
 		}
 
@@ -131,11 +143,11 @@ public:
 				{
 					st = parse_state::scanning;
 				}
-				else if (current_text.empty() && std::iswspace(c))
+				else if (current_text.empty() && is_ascii_space(c))
 				{
 					// skip over
 				}
-				else if (!current_text.empty() && std::iswspace(c))
+				else if (!current_text.empty() && is_ascii_space(c))
 				{
 					// space marks delimiter if we already have content
 					st = parse_state::scanning;
@@ -256,7 +268,7 @@ public:
 					quote_char = c;
 					current_term.literal = true;
 				}
-				else if (!std::iswspace(c))
+				else if (!is_ascii_space(c))
 				{
 					append_current_term();
 					st = parse_state::text;

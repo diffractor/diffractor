@@ -21,6 +21,7 @@ class map_pan_controller final : public view_controller
 {
 	map_view& _view;
 	bool _tracking = false;
+	bool _panned = false;
 	int _hover_marker = -1;
 
 public:
@@ -125,6 +126,12 @@ public:
 	virtual void on_marker_hover(view_hover_element& hover, int marker_index, int count, pointi anchor)
 	{
 	}
+
+	// Called when a click (not a drag) lands on a marker cluster, with the cluster's coordinate
+	// and aggregated count. Override where the centre is the answer. Default: no action.
+	virtual void on_marker_clicked(const gps_coordinate& coordinate, int count)
+	{
+	}
 };
 
 // --- map_pan_controller inline implementations (after map_view is complete) ---
@@ -138,6 +145,7 @@ inline void map_pan_controller::on_mouse_left_button_down(const pointi loc, cons
 {
 	view_controller::on_mouse_left_button_down(loc, keys);
 	_tracking = true;
+	_panned = false;
 	_view.pan_start(loc);
 }
 
@@ -147,6 +155,8 @@ inline void map_pan_controller::on_mouse_move(const pointi loc)
 
 	if (_tracking)
 	{
+		const auto drag = loc - _start_loc;
+		if (std::abs(drag.x) > 2 || std::abs(drag.y) > 2) _panned = true;
 		_view.pan(_start_loc, loc);
 		return;
 	}
@@ -188,6 +198,21 @@ inline void map_pan_controller::on_mouse_left_button_up(const pointi loc, const 
 	if (_tracking)
 	{
 		_tracking = false;
+
+		// Resolved before pan_end, which moves the map and invalidates the cluster anchors.
+		pointi anchor;
+		int count = 0;
+		const auto on_marker = !_panned && _view._engine.hit_test_marker(loc, _view._extent, anchor, count) >= 0;
+		const auto marker_gps = on_marker ? _view._engine.gps_at_screen(anchor, _view._extent) : gps_coordinate{};
+
 		_view.pan_end(_start_loc, loc);
+
+		if (on_marker && marker_gps.is_valid())
+		{
+			_hover_marker = -1;
+			_view.on_marker_clicked(marker_gps, count);
+		}
+
+		_panned = false;
 	}
 }

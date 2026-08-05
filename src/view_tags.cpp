@@ -17,7 +17,6 @@
 #include "util_top.h"
 #include "files.h"
 #include "app_command_status.h"
-#include "app_util.h"
 #include "view_tags.h"
 
 #include "ui_controls.h"
@@ -165,7 +164,10 @@ void tags_view::refresh()
 		_status = std::format("{} {}", changes, tt.changes);
 	}
 
-	_state.invalidate_view(view_invalid::view_layout | view_invalid::controller | view_invalid::status);
+	// The tag field is what decides whether the run button answers, so editing it must refresh
+	// command state; otherwise the button waits for an unrelated event such as a selection change.
+	_state.invalidate_view(view_invalid::view_layout | view_invalid::controller | view_invalid::status |
+		view_invalid::command_state);
 }
 
 void tags_view::run()
@@ -185,19 +187,29 @@ void tags_view::run()
 
 	const auto view = shared_from_this();
 	const auto results = std::make_shared<view_command_status>(_state._async, cancel_source,
-		[view, processing_generation](const size_t index)
-		{
-			if (view->is_processing_generation(processing_generation)) view->processing_exact_order_item(index, 1);
-		},
-		[view, processing_generation](std::string message, std::vector<view_operation_result> results)
-		{
-			if (!view->is_processing_generation(processing_generation)) return;
-			view->end_processing();
-			const auto result_summary = view->show_results(results);
-			if (!message.empty()) view->_status = std::move(message);
-			else if (!result_summary.empty()) view->_status = result_summary;
-			view->_state.invalidate_view(view_invalid::status | view_invalid::command_state);
-		});
+	                                                           [view, processing_generation](const size_t index)
+	                                                           {
+		                                                           if (view->is_processing_generation(
+			                                                           processing_generation)) view->
+			                                                           processing_exact_order_item(index, 1);
+	                                                           },
+	                                                           [view, processing_generation](
+	                                                           std::string message,
+	                                                           const std::vector<view_operation_result>& results)
+	                                                           {
+		                                                           if (!view->is_processing_generation(
+			                                                           processing_generation)) return;
+		                                                           view->end_processing();
+		                                                           const auto result_summary = view->show_results(
+			                                                           results);
+		                                                           if (!message.empty()) view->_status = std::move(
+			                                                           message);
+		                                                           else if (!result_summary.empty()) view->_status =
+			                                                           result_summary;
+		                                                           view->_state.invalidate_view(
+			                                                           view_invalid::status |
+			                                                           view_invalid::command_state);
+	                                                           });
 
 	metadata_edits edits;
 	edits.add_tags = tag_set(_adds);
@@ -241,7 +253,14 @@ view_controls_host_ptr tags_view::controls(const ui::control_frame_ptr& owner)
 	controls.emplace_back(std::make_shared<text_element>(tt.help_tag2));
 	controls.emplace_back(std::make_shared<text_element>(tt.help_tag_add_remove));
 
-	_favorite_words = str::split(setting.favorite_tags, true);
+	// Interned, not views into setting.favorite_tags: that string is reassigned by the
+	// options and favourite-tag commands, which do not rebuild these controls.
+	_favorite_words.clear();
+
+	for (const auto& part : str::split(setting.favorite_tags, true))
+	{
+		_favorite_words.emplace_back(str::cache(part).sv());
+	}
 
 	if (_favorite_words.size() > recommended_tag_limit)
 	{
@@ -307,5 +326,7 @@ view_controls_host_ptr tags_view::controls(const ui::control_frame_ptr& owner)
 
 	result->_controls = controls;
 	result->_frame = result->_dlg = frame;
+	// The view exists to have tags typed into it, so it opens ready for typing.
+	result->initial_focus = [edit = _edit] { edit->focus(); };
 	return result;
 }

@@ -298,9 +298,6 @@ bool is_icc_signature(const df::cspan cs)
 
 static boolean fill_input_buffer(jpeg_decompress_struct* dinfo)
 {
-	//dinfo->src->bytes_in_buffer = 0;
-	//dinfo->src->next_input_byte = nullptr;
-	//ERREXIT(dinfo, JERR_BUFFER_SIZE);
 	static JOCTET fakeEoi[] = {0xFF, JPEG_EOI};
 	dinfo->src->next_input_byte = fakeEoi;
 	dinfo->src->bytes_in_buffer = 2;
@@ -322,14 +319,14 @@ static void handle_error_exit(const j_common_ptr cinfo)
 {
 	char msg[JMSG_LENGTH_MAX];
 	(*cinfo->err->format_message)(cinfo, msg);
-	df::log(__FUNCTION__, msg);
+	df::log_once(__FUNCTION__, msg);
 	throw app_exception(msg);
 }
 
-static void handle_output_message(const j_common_ptr cinfo)
+// Only purpose is to stop libjpeg writing warnings to stderr. Nothing consumes them, and decoding
+// runs on several threads at once, so there is no shared buffer here to race over.
+static void handle_output_message(j_common_ptr)
 {
-	static char last_error[JMSG_LENGTH_MAX] = "No error";
-	(*cinfo->err->format_message)(cinfo, last_error);
 }
 
 static void init_buffer(const j_compress_ptr pi)
@@ -360,7 +357,6 @@ static boolean empty_buffer(const j_compress_ptr pi)
 jpeg_encoder::jpeg_encoder()
 {
 	_impl = std::make_unique<jpeg_encoder_impl>();
-	//memset(_impl.get(), 0, sizeof(jpeg_encoder_impl));
 
 	if (_impl)
 	{
@@ -456,7 +452,7 @@ static bool copy_source_encode_params(const j_compress_ptr cinfo, const df::cspa
 	return true;
 }
 
-void jpeg_encoder::setup(const uint32_t cx, const uint32_t cy, const file_encode_params params)
+void jpeg_encoder::setup(const uint32_t cx, const uint32_t cy, const file_encode_params& params)
 {
 	_result.clear();
 
@@ -548,8 +544,9 @@ static void check_metadata_fits(const metadata_parts& metadata)
 
 		if (icc_segments > icc_max_segments)
 		{
-			const auto message = std::format("the icc profile is {} bytes, needing {} of the {} APP2 segments JPEG allows",
-			                                 metadata.icc.size(), icc_segments, icc_max_segments);
+			const auto message = std::format(
+				"the icc profile is {} bytes, needing {} of the {} APP2 segments JPEG allows",
+				metadata.icc.size(), icc_segments, icc_max_segments);
 			df::log(__FUNCTION__, message);
 			throw app_exception(message);
 		}
@@ -557,7 +554,7 @@ static void check_metadata_fits(const metadata_parts& metadata)
 }
 
 void jpeg_encoder::start(const uint32_t cx, const uint32_t cy, const ui::orientation orientation,
-                         const metadata_parts& metadata, const file_encode_params params)
+                         const metadata_parts& metadata, const file_encode_params& params)
 {
 	check_metadata_fits(metadata);
 
@@ -635,7 +632,7 @@ df::blob jpeg_encoder::complete(const bool can_abort)
 
 df::blob jpeg_encoder::encode(const uint32_t cx, const uint32_t cy, const uint8_t* bitmap, const uint32_t stride,
                               const ui::orientation orientation, const metadata_parts& metadata,
-                              const file_encode_params params)
+                              const file_encode_params& params)
 {
 	start(cx, cy, orientation, metadata, params);
 
@@ -643,7 +640,7 @@ df::blob jpeg_encoder::encode(const uint32_t cx, const uint32_t cy, const uint8_
 
 	for (auto i = 0u; i < cy; i++)
 	{
-		rows.get()[i] = const_cast<uint8_t*>(bitmap + stride * i);
+		rows.get()[i] = const_cast<uint8_t*>(bitmap + static_cast<size_t>(stride) * i);
 	}
 
 	// jpeg_write_scanlines may consume fewer rows than offered, so always resume
@@ -687,6 +684,10 @@ bool jpeg_decoder_x::can_render_nv12() const
 
 	if (cb.h_samp_factor != cr.h_samp_factor || cb.v_samp_factor != cr.v_samp_factor) return false;
 
+	// read_nv12 pulls max_chunk lines per call, and libjpeg refuses a raw read shorter than one
+	// iMCU row, so a taller-than-2 vertical sampling factor has to take the RGB path instead.
+	if (luma.v_samp_factor * DCTSIZE > static_cast<int>(max_chunk)) return false;
+
 	return (luma.h_samp_factor == cb.h_samp_factor || luma.h_samp_factor == cb.h_samp_factor * 2) &&
 		(luma.v_samp_factor == cb.v_samp_factor || luma.v_samp_factor == cb.v_samp_factor * 2);
 }
@@ -694,8 +695,6 @@ bool jpeg_decoder_x::can_render_nv12() const
 void jpeg_decoder_x::create()
 {
 	_impl = std::make_unique<jpeg_decoder_impl>();
-
-	//memset(_impl.get(), 0, sizeof(jpeg_decoder_impl));
 
 	if (_impl)
 	{
@@ -726,6 +725,11 @@ void jpeg_decoder_x::create()
 
 bool jpeg_decoder_x::read_header(const df::cspan cs)
 {
+	// The decoder is a long-lived object reused for every image. A stream that suspended part way
+	// through its header, or was abandoned without close(), leaves parse state and a marker list
+	// behind that this read would otherwise resume into.
+	jpeg_abort_decompress(&_impl->dinfo);
+
 	_impl->mem_source.bytes_in_buffer = cs.size;
 	_impl->mem_source.next_input_byte = cs.data;
 	_impl->dinfo.src = &_impl->mem_source;
@@ -756,7 +760,7 @@ bool jpeg_decoder_x::read_header(const ui::const_image_ptr& image)
 	return read_header(image->data());
 }
 
-bool jpeg_decoder_x::start_decompress(const int scale_hint, const bool yuv) const
+bool jpeg_decoder_x::start_decompress(const int scale_hint, const bool yuv, const bool fancy_chroma) const
 {
 	if (_impl->dinfo.jpeg_color_space == JCS_YCCK || _impl->dinfo.jpeg_color_space == JCS_CMYK)
 	{
@@ -776,10 +780,10 @@ bool jpeg_decoder_x::start_decompress(const int scale_hint, const bool yuv) cons
 		_impl->dinfo.raw_data_out = yuv;
 	}
 
-	// A full-resolution RGB decode feeds display or editing, where box-filtered chroma shows as blocky
-	// colour on saturated edges. A scaled decode is a thumbnail, where speed wins. The raw NV12 path
+	// Box-filtered chroma shows as blocky colour on saturated edges, so the caller's intent decides,
+	// not the scale: a display decode pays for the triangle filter at any size. The raw NV12 path
 	// bypasses the upsampler entirely - the GPU sampler resolves its chroma.
-	_impl->dinfo.do_fancy_upsampling = (!yuv && scale_hint <= 1) ? TRUE : FALSE;
+	_impl->dinfo.do_fancy_upsampling = (!yuv && fancy_chroma) ? TRUE : FALSE;
 	_impl->dinfo.do_block_smoothing = FALSE;
 	_impl->dinfo.dct_method = JDCT_ISLOW;
 
@@ -812,7 +816,7 @@ static void clear_undecoded_rows(uint8_t* p, const int stride, const uint32_t fi
 }
 
 bool jpeg_decoder_x::read_nv12(uint8_t* pixels, const int stride, const int buffer_size,
-	                           const df::cancel_token& token) const
+                               const df::cancel_token& token) const
 {
 	const auto cx = _impl->dinfo.output_width;
 	const auto cy = _impl->dinfo.output_height;
@@ -830,7 +834,11 @@ bool jpeg_decoder_x::read_nv12(uint8_t* pixels, const int stride, const int buff
 	JSAMPROW pu[max_chunk];
 	JSAMPROW pv[max_chunk];
 
-	const auto uv_buffer_stride = ui::calc_stride(cx, 1);
+	// Rows must hold width_in_blocks * DCT_scaled_size samples: the raw path bypasses the upsampler,
+	// so libjpeg IDCTs whole blocks and the last one overruns the component width. The surface
+	// stride's 16-byte alignment already covers that for every scale this decoder asks for, but
+	// only by coincidence, so the scratch rows carry the padding explicitly.
+	const auto uv_buffer_stride = ui::calc_stride(static_cast<int>(cx) + DCTSIZE, 1);
 	const auto uv_buffer_len = uv_buffer_stride * max_chunk * 3;
 	const auto uv_buffer = df::unique_alloc<uint8_t>(uv_buffer_len);
 
@@ -859,7 +867,7 @@ bool jpeg_decoder_x::read_nv12(uint8_t* pixels, const int stride, const int buff
 
 		for (auto yy = 0u; yy < read && y + yy < cy_div2; yy++)
 		{
-			auto* const puvp = pixels + stride * (y + yy);
+			auto* const puvp = pixels + static_cast<size_t>(stride) * (y + yy);
 			memcpy(puvp, py[yy], std::min(stride, uv_buffer_stride));
 		}
 
@@ -867,7 +875,7 @@ bool jpeg_decoder_x::read_nv12(uint8_t* pixels, const int stride, const int buff
 		{
 			for (auto yy = 0u; yy < read && y + yy < cy_div2; yy += 2)
 			{
-				auto* const puvp = pixels + stride * (cy_div2 + (y + yy) / 2);
+				auto* const puvp = pixels + static_cast<size_t>(stride) * (cy_div2 + (y + yy) / 2);
 				const auto* const pup = pu[yy / 2];
 				const auto* const pvp = pv[yy / 2];
 
@@ -882,7 +890,7 @@ bool jpeg_decoder_x::read_nv12(uint8_t* pixels, const int stride, const int buff
 		{
 			for (auto yy = 0u; yy < read && y + yy < cy_div2; yy += 2)
 			{
-				auto* const puvp = pixels + stride * (cy_div2 + (y + yy) / 2);
+				auto* const puvp = pixels + static_cast<size_t>(stride) * (cy_div2 + (y + yy) / 2);
 				const auto src_row = (yy / 2) * taps_y;
 
 				for (auto xx = 0u; xx < cx_div2; xx += 2)
@@ -925,7 +933,7 @@ bool jpeg_decoder_x::read_nv12(uint8_t* pixels, const int stride, const int buff
 }
 
 bool jpeg_decoder_x::read_rgb(uint8_t* p, const int stride, const int buffer_size,
-	                          const df::cancel_token& token) const
+                              const df::cancel_token& token) const
 {
 	auto y = 0u;
 	const auto cy = _impl->dinfo.output_height;
@@ -950,7 +958,7 @@ bool jpeg_decoder_x::read_rgb(uint8_t* p, const int stride, const int buffer_siz
 
 		for (auto i = 0u; i < chunk; i++)
 		{
-			rows[i] = p + stride * (y + i);
+			rows[i] = p + static_cast<size_t>(stride) * (y + i);
 		}
 
 		auto read = 0u;
@@ -964,7 +972,7 @@ bool jpeg_decoder_x::read_rgb(uint8_t* p, const int stride, const int buffer_siz
 
 			read = precision == 12
 				       ? jpeg12_read_scanlines(&_impl->dinfo, reinterpret_cast<J12SAMPARRAY>(wide_rows), chunk)
-				       : jpeg16_read_scanlines(&_impl->dinfo, reinterpret_cast<J16SAMPARRAY>(wide_rows), chunk);
+				       : jpeg16_read_scanlines(&_impl->dinfo, wide_rows, chunk);
 
 			for (auto i = 0u; i < read; i++)
 			{
@@ -1117,6 +1125,18 @@ df::blob jpeg_decoder_x::transform(const df::cspan src, jpeg_encoder& encoder,
 {
 	df::blob result;
 
+	// Both objects are long-lived members of the caller, and every libjpeg call below can throw out
+	// of handle_error_exit. Reset on entry and on every exit so one unreadable file cannot leave the
+	// decoder or the encoder mid-operation, which would fail every later decode and save.
+	jpeg_abort_decompress(&_impl->dinfo);
+	jpeg_abort_compress(&encoder._impl->cinfo);
+
+	const df::scope_exit reset_codecs([this, &encoder]
+	{
+		jpeg_abort_decompress(&_impl->dinfo);
+		jpeg_abort_compress(&encoder._impl->cinfo);
+	});
+
 	const auto transform = to_transform(transform_in);
 	_impl->mem_source.bytes_in_buffer = src.size;
 	_impl->mem_source.next_input_byte = src.data;
@@ -1148,7 +1168,6 @@ df::blob jpeg_decoder_x::transform(const df::cspan src, jpeg_encoder& encoder,
 		if (!jtransform_request_workspace(&_impl->dinfo, &transformoption))
 		{
 			// Refused as imperfect. An empty result tells the caller to take the re-encode path.
-			jpeg_abort_decompress(&_impl->dinfo);
 			return result;
 		}
 
@@ -1158,6 +1177,13 @@ df::blob jpeg_decoder_x::transform(const df::cspan src, jpeg_encoder& encoder,
 
 		// Read source file as DCT coefficients
 		auto* const src_coef_arrays = jpeg_read_coefficients(&_impl->dinfo);
+
+		// Null means libjpeg suspended. The source manager offers the whole file at once, so that
+		// only happens when the entropy data ends early, and transupp indexes this array unchecked.
+		if (src_coef_arrays == nullptr)
+		{
+			return result;
+		}
 
 		// Initialize destination compression parameters from source values
 		jpeg_copy_critical_parameters(&_impl->dinfo, &encoder._impl->cinfo);
@@ -1196,9 +1222,8 @@ df::blob jpeg_decoder_x::transform(const df::cspan src, jpeg_encoder& encoder,
 		jtransform_execute_transform(&_impl->dinfo, &encoder._impl->cinfo, src_coef_arrays, &transformoption);
 
 		result = encoder.complete(false);
+		jpeg_finish_decompress(&_impl->dinfo);
 	}
-
-	jpeg_finish_decompress(&_impl->dinfo);
 
 	return result;
 }
@@ -1350,7 +1375,7 @@ static str::cached ycbcr_pixel_format(const int luma_h, const int luma_v)
 	return "YCbCr"_c;
 }
 
-file_scan_result scan_jpg(read_stream& s, const scan_intent intent)
+file_scan_result scan_jpg(read_stream& s, const scan_intent intent, const bool want_thumbnail)
 {
 	file_scan_result result;
 	uint8_t block_data[df::sixty_four_k];
@@ -1430,12 +1455,29 @@ file_scan_result scan_jpg(read_stream& s, const scan_intent intent)
 			break;
 		}
 
-		const auto block_marker = s.peek8(block_offset + 1);
+		auto block_marker = s.peek8(block_offset + 1);
+
+		// Any marker may be preceded by any number of 0xFF fill bytes. Reading one as a marker would
+		// take the following image data for a segment length and abandon the whole scan.
+		while (block_marker == 0xFF && file_len >= block_offset + 3u)
+		{
+			++block_offset;
+			block_marker = s.peek8(block_offset + 1);
+		}
+
+		if (block_marker == 0xFF) break;
+
+		// TEM and the restart markers stand alone - they carry no length field to skip past.
+		if (block_marker == 0x01 || (block_marker >= 0xD0 && block_marker <= 0xD7))
+		{
+			block_offset += 2u;
+			continue;
+		}
 
 		if (block_marker == M_SOS || block_marker == M_EOI)
 		{
 			// End of metadata - start of image data
-			add_segment(static_cast<uint8_t>(block_marker), block_offset, 2, {});
+			add_segment(block_marker, block_offset, 2, {});
 			sos_offset = block_offset;
 			success = true;
 			break;
@@ -1586,7 +1628,8 @@ file_scan_result scan_jpg(read_stream& s, const scan_intent intent)
 					row.depth = 1;
 					row.shape = std::format("{}-bit, {} bytes", precision ? 16 : 8, table_bytes);
 					row.detail = metadata_numeric_detail{
-						std::vector<uint16_t>(std::begin(table), std::end(table)), 8};
+						std::vector<uint16_t>(std::begin(table), std::end(table)), 8
+					};
 				}
 			}
 			break;
@@ -1676,12 +1719,15 @@ file_scan_result scan_jpg(read_stream& s, const scan_intent intent)
 
 				// Extension codes 0x11 and 0x13 carry a raw palettised/RGB raster, not a JPEG
 				// stream, so only 0x10 can be handed to the image loader.
-				if (block_data_len >= jfxx_header_len &&
+				if (want_thumbnail &&
+					block_data_len >= jfxx_header_len &&
 					memcmp(block_data, jfxx_signature, std::size(jfxx_signature)) == 0 &&
 					block_data[std::size(jfxx_signature)] == jfxx_extension_jpeg)
 				{
-					result.thumbnail_image = load_image_file({block_data + jfxx_header_len,
-						block_data_len - jfxx_header_len});
+					result.thumbnail_image = load_image_file({
+						block_data + jfxx_header_len,
+						block_data_len - jfxx_header_len
+					});
 				}
 			}
 
@@ -1750,9 +1796,6 @@ file_scan_result scan_jpg(read_stream& s, const scan_intent intent)
 					data[4] == 0x65)
 				{
 					/* Found Adobe APP14 marker */
-					auto version = (data[5] << 8) + data[6];
-					auto flags0 = (data[7] << 8) + data[8];
-					auto flags1 = (data[9] << 8) + data[10];
 					has_adobe_marker = true;
 					adobe_transform = data[11];
 				}
@@ -1774,7 +1817,7 @@ file_scan_result scan_jpg(read_stream& s, const scan_intent intent)
 			break;
 		}
 
-		add_segment(static_cast<uint8_t>(block_marker), block_offset, block_len + 2u, segment_identifier);
+		add_segment(block_marker, block_offset, block_len + 2u, segment_identifier);
 
 		block_offset += block_len + 2u;
 	}
@@ -1929,7 +1972,7 @@ file_scan_result scan_jpg(read_stream& s, const scan_intent intent)
 			                                             ? trailing_bytes == 0
 				                                               ? "present, nothing follows it"
 				                                               : std::format("present, {} bytes follow it",
-					                                               trailing_bytes)
+				                                                             trailing_bytes)
 			                                             : "not found in the last 64 KB");
 
 		add_structure_section(kv, "Segments", "jpeg.segments");

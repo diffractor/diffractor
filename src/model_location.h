@@ -210,7 +210,7 @@ split_location_result split_location(std::string_view text);
 inline constexpr double location_distance_detents_km[] = {
 	0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 25.0, 50.0, 100.0
 };
-inline constexpr int location_distance_detent_count = static_cast<int>(std::size(location_distance_detents_km));
+inline constexpr int location_distance_detent_count = std::size(location_distance_detents_km);
 
 // Where the slider starts when the term names a place but sets no radius. It matches the
 // attribution radius of an unknown population, so "nearby" means the same thing everywhere.
@@ -332,7 +332,6 @@ struct location_t
 	std::string str() const;
 
 	void clear();
-
 };
 
 // locations.md 2.3: the single composer of a place label. Group headers, map bubbles, timeline

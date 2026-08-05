@@ -56,8 +56,6 @@ std::function<bool(const df::file_path&)> platform::test_offline_predicate;
 #pragma comment(lib, "Netapi32")
 #pragma comment(lib, "Advapi32")
 
-//#pragma comment(lib, "SetupAPI")
-
 std::atomic<size_t> platform::static_memory_usage = 0;
 platform::thread_event platform::event_exit(true, false);
 
@@ -490,7 +488,6 @@ static bool can_show_file(const wchar_t* name, const DWORD attributes, const boo
 {
 	if (str::is_empty(name)) return false;
 	if (attributes == INVALID_FILE_ATTRIBUTES) return false;
-	//if (attributes & FILE_ATTRIBUTE_OFFLINE) return false;
 	if (!show_hidden && (attributes & FILE_ATTRIBUTE_HIDDEN) != 0) return false;
 	return !is_folder(attributes) && !is_dots(name);
 }
@@ -499,7 +496,6 @@ static bool can_show_folder(const wchar_t* name, const DWORD attributes, const b
 {
 	if (str::is_empty(name)) return false;
 	if (attributes == INVALID_FILE_ATTRIBUTES) return false;
-	//if (attributes & FILE_ATTRIBUTE_OFFLINE) return false;
 	if (!show_hidden && (attributes & FILE_ATTRIBUTE_HIDDEN) != 0) return false;
 	return is_folder(attributes) && !is_dots(name);
 }
@@ -970,7 +966,7 @@ data_object_client::data_object_client(IDataObject* pData) : _pData(pData)
 class locked_drop_files
 {
 public:
-	explicit locked_drop_files(HGLOBAL h) : _h(h)
+	explicit locked_drop_files(const HGLOBAL h) : _h(h)
 	{
 		if (!_h) return;
 
@@ -1072,7 +1068,7 @@ static std::string format_os_error(const DWORD error)
 	// for the HRESULT-shaped values passed in here.
 	wchar_t sz[1000]{};
 	const auto len = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr, error,
-	                                g_lLangId, sz, static_cast<DWORD>(std::size(sz)), nullptr);
+	                                g_lLangId, sz, std::size(sz), nullptr);
 	auto result = len == 0 ? std::string{} : str::utf16_to_utf8(sz);
 	return result.empty() ? std::string(tt.error_unknown) : result;
 }
@@ -1419,7 +1415,7 @@ platform::file_op_result data_object_client::save_bitmap(const df::folder_path s
 }
 
 
-void* platform::memory_pool::alloc(size_t size)
+void* platform::memory_pool::alloc(const size_t size)
 {
 	static std::bad_alloc OOM;
 	exclusive_lock lock(cs);
@@ -1489,9 +1485,19 @@ void platform::secure_zero(void* ptr, const size_t len)
 	SecureZeroMemory(ptr, len);
 }
 
-void platform::generate_random_bytes(uint8_t* buffer, const size_t len)
+bool platform::generate_random_bytes(uint8_t* buffer, const size_t len)
 {
-	BCryptGenRandom(nullptr, buffer, static_cast<ULONG>(len), BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+	const auto status = BCryptGenRandom(nullptr, buffer, static_cast<ULONG>(len), BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+
+	if (!BCRYPT_SUCCESS(status))
+	{
+		// Leaving the buffer untouched would hand the caller stale bytes that look random.
+		SecureZeroMemory(buffer, len);
+		df::log(__FUNCTION__, std::format("BCryptGenRandom failed with status {:#x}", static_cast<uint32_t>(status)));
+		return false;
+	}
+
+	return true;
 }
 
 
@@ -1511,7 +1517,7 @@ std::string platform::OS()
 	}
 
 	char result[64];
-	sprintf_s(result, "%d.%d", osvi.dwMajorVersion, osvi.dwMinorVersion);
+	sprintf_s(result, "%u.%u", osvi.dwMajorVersion, osvi.dwMinorVersion);
 	return str::utf8_cast2(result);
 }
 
@@ -1625,7 +1631,10 @@ static platform::file_op_result last_op_result(const BOOL res)
 
 	if (res == 0)
 	{
-		result.code = platform::file_op_result_code::FAILED;
+		const auto error = GetLastError();
+		result.code = error == ERROR_FILE_EXISTS || error == ERROR_ALREADY_EXISTS
+			              ? platform::file_op_result_code::ALREADY_EXISTS
+			              : platform::file_op_result_code::FAILED;
 		result.error_message = last_os_error_impl();
 	}
 	else
@@ -1642,13 +1651,6 @@ platform::file_op_result platform::delete_file(const df::file_path path)
 	return last_op_result(::DeleteFile(w.c_str()));
 }
 
-
-//bool Platform::FileAttributes(const Core::file_path& path, WIN32_FILE_ATTRIBUTE_DATA& fi)
-//{
-//    auto w = path.ToFileSystemPath();
-//    memset(&fi, 0, sizeof(fi));
-//    return GetFileAttributesEx(w.c_str(), GetFileExInfoStandard, &fi) != 0;
-//}
 
 platform::file_op_result platform::copy_file(const df::file_path existing, const df::file_path destination,
                                              const bool fail_if_exists, const bool can_create_folder)
@@ -1706,7 +1708,7 @@ static platform::file_op_result flush_file_to_disk(const df::file_path path)
 	const auto flush_error = flushed ? ERROR_SUCCESS : GetLastError();
 	CloseHandle(h);
 	return platform::replacement_flush_result(flushed,
-	                                         flushed ? std::string{} : format_os_error(flush_error));
+	                                          flushed ? std::string{} : format_os_error(flush_error));
 }
 
 platform::file_op_result platform::replacement_flush_result(const bool flushed, std::string error_message)
@@ -1754,12 +1756,12 @@ static bool rename_by_handle(const HANDLE h, const std::wstring& targetW, const 
 
 	for (auto attempt = 0; attempt < 5; ++attempt)
 	{
-		if (::SetFileInformationByHandle(h, FileRenameInfo, info, static_cast<DWORD>(buffer.size())) != 0)
+		if (SetFileInformationByHandle(h, FileRenameInfo, info, static_cast<DWORD>(buffer.size())) != 0)
 		{
 			return true;
 		}
 
-		last_error = ::GetLastError();
+		last_error = GetLastError();
 
 		if (last_error != ERROR_SHARING_VIOLATION && last_error != ERROR_LOCK_VIOLATION &&
 			last_error != ERROR_ACCESS_DENIED)
@@ -1849,7 +1851,7 @@ platform::file_op_result platform::replace_file(const df::file_path destination,
 
 	if (destination_exists)
 	{
-		const auto dst_attr = ::GetFileAttributesW(destinationW.c_str());
+		const auto dst_attr = GetFileAttributesW(destinationW.c_str());
 
 		if (dst_attr == INVALID_FILE_ATTRIBUTES ||
 			(dst_attr & (FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_REPARSE_POINT)) != 0)
@@ -1858,13 +1860,13 @@ platform::file_op_result platform::replace_file(const df::file_path destination,
 		}
 		else
 		{
-			auto* const dh = ::CreateFileW(destinationW.c_str(), FILE_READ_ATTRIBUTES,
-			                               FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-			                               OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+			auto* const dh = CreateFileW(destinationW.c_str(), FILE_READ_ATTRIBUTES,
+			                             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+			                             OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
 			if (dh != INVALID_HANDLE_VALUE)
 			{
-				have_creation = ::GetFileTime(dh, &dst_creation, nullptr, nullptr) != 0;
-				::CloseHandle(dh);
+				have_creation = GetFileTime(dh, &dst_creation, nullptr, nullptr) != 0;
+				CloseHandle(dh);
 			}
 		}
 	}
@@ -1875,15 +1877,15 @@ platform::file_op_result platform::replace_file(const df::file_path destination,
 		// GENERIC_READ (so the caller can read it back through this handle), and
 		// FILE_WRITE_ATTRIBUTES (to stamp the preserved creation time). Share every mode so a
 		// concurrent oplock/lease break can proceed.
-		auto* h = ::CreateFileW(existingW.c_str(), GENERIC_READ | DELETE | FILE_WRITE_ATTRIBUTES,
-		                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-		                        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+		auto* h = CreateFileW(existingW.c_str(), GENERIC_READ | DELETE | FILE_WRITE_ATTRIBUTES,
+		                      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+		                      OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
 
 		if (h != INVALID_HANDLE_VALUE)
 		{
 			if (have_creation)
 			{
-				::SetFileTime(h, &dst_creation, nullptr, nullptr);
+				SetFileTime(h, &dst_creation, nullptr, nullptr);
 			}
 
 			DWORD rename_error = ERROR_SUCCESS;
@@ -1897,7 +1899,7 @@ platform::file_op_result platform::replace_file(const df::file_path destination,
 				// uses this as both file_modified and metadata_scanned so a later background
 				// rescan is a no-op.
 				FILETIME modified{};
-				if (::GetFileTime(h, nullptr, nullptr, &modified))
+				if (GetFileTime(h, nullptr, nullptr, &modified))
 				{
 					result.modified = ft_to_ts(modified);
 				}
@@ -1905,12 +1907,12 @@ platform::file_op_result platform::replace_file(const df::file_path destination,
 				// The rename needed DELETE access, and holding it blocks any later by-path reader
 				// that does not itself share DELETE - LibRaw's RAW open is one. ReOpenFile drops
 				// the access without a by-name reopen, so the handle stays cache-coherent.
-				auto* const read_only = ::ReOpenFile(h, GENERIC_READ,
-				                                     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0);
+				auto* const read_only = ReOpenFile(h, GENERIC_READ,
+				                                   FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0);
 
 				if (read_only != INVALID_HANDLE_VALUE)
 				{
-					::CloseHandle(h);
+					CloseHandle(h);
 					h = read_only;
 				}
 
@@ -1918,7 +1920,7 @@ platform::file_op_result platform::replace_file(const df::file_path destination,
 				return result;
 			}
 
-			::CloseHandle(h);
+			CloseHandle(h);
 			df::log(__FUNCTION__, std::format("rename-by-handle failed with error {}, falling back to move",
 			                                  static_cast<uint32_t>(rename_error)));
 		}
@@ -1934,13 +1936,13 @@ platform::file_op_result platform::replace_file(const df::file_path destination,
 	// MoveFileEx gives the destination the replacement's creation time, so restore the captured one.
 	if (move_result.success() && have_creation)
 	{
-		auto* const rh = ::CreateFileW(destinationW.c_str(), FILE_WRITE_ATTRIBUTES,
-		                               FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-		                               OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+		auto* const rh = CreateFileW(destinationW.c_str(), FILE_WRITE_ATTRIBUTES,
+		                             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+		                             OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
 		if (rh != INVALID_HANDLE_VALUE)
 		{
-			::SetFileTime(rh, &dst_creation, nullptr, nullptr);
-			::CloseHandle(rh);
+			SetFileTime(rh, &dst_creation, nullptr, nullptr);
+			CloseHandle(rh);
 		}
 	}
 
@@ -2014,15 +2016,15 @@ bool platform::is_writable(const df::folder_path path)
 	const auto name = std::format("df-write-probe-{:08x}.tmp", static_cast<uint32_t>(GetCurrentProcessId()));
 	const auto w = to_file_system_path(path.combine_file(name));
 
-	const auto h = ::CreateFileW(w.c_str(), GENERIC_WRITE, FILE_SHARE_DELETE, nullptr, CREATE_ALWAYS,
-	                             FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE, nullptr);
+	const auto h = CreateFileW(w.c_str(), GENERIC_WRITE, FILE_SHARE_DELETE, nullptr, CREATE_ALWAYS,
+	                           FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE, nullptr);
 
 	if (h == INVALID_HANDLE_VALUE)
 	{
 		return false;
 	}
 
-	::CloseHandle(h);
+	CloseHandle(h);
 	return true;
 }
 
@@ -2045,7 +2047,7 @@ bool platform::open(const std::string_view path)
 static std::wstring windows_dir_executable_path(const std::wstring_view name)
 {
 	wchar_t dir[MAX_PATH]{};
-	const auto len = ::GetWindowsDirectoryW(dir, static_cast<UINT>(std::size(dir)));
+	const auto len = GetWindowsDirectoryW(dir, std::size(dir));
 	if (len == 0 || len >= std::size(dir)) return {};
 	return std::wstring(dir, len) + L'\\' + std::wstring(name);
 }
@@ -2084,7 +2086,7 @@ bool platform::run(const std::string_view cmd)
 bool platform::run(const df::file_path exe, const std::string_view cmd)
 {
 	if (exe.is_empty()) return false;
-	return run_command_line(platform::to_file_system_path(exe), str::utf8_to_utf16(cmd));
+	return run_command_line(to_file_system_path(exe), str::utf8_to_utf16(cmd));
 }
 
 
@@ -2257,10 +2259,6 @@ bool platform::prompt_for_save_path(df::file_path& path)
 	return success;
 }
 
-
-//#define STRSAFE_NO_DEPRECATE
-//#include <strsafe.h>
-
 // autocrop
 // https://github.com/rajbot/autocrop
 
@@ -2394,14 +2392,6 @@ df::blob platform::load_resource(const resource_item i)
 {
 	switch (i)
 	{
-	case resource_item::logo:
-		return ::load_resource(IDB_LOGO, L"PNG");
-	case resource_item::logo30:
-		return ::load_resource(IDB_LOGO30, L"PNG");
-	case resource_item::logo15:
-		return ::load_resource(IDB_LOGO15, L"PNG");
-	case resource_item::title:
-		return ::load_resource(IDB_TITLE, L"PNG");
 	case resource_item::map_png:
 		return ::load_resource(IDB_MAP, L"PNG");
 	case resource_item::sql:
@@ -2877,7 +2867,7 @@ platform::data_object_probe platform::probe_drag_data_object(const std::vector<d
 			{
 				// The CIDA is a foreign buffer, so cidl and every offset are validated against the allocation.
 				const auto cb = GlobalSize(medium.hGlobal);
-				const auto header = sizeof(UINT) * 2;
+				constexpr auto header = sizeof(UINT) * 2;
 
 				if (cb >= header && pida->cidl <= (cb - header) / sizeof(UINT))
 				{
@@ -2997,17 +2987,25 @@ bool platform::can_recycle(const std::vector<df::file_path>& files, const std::v
 
 platform::file_op_result platform::move_or_copy(const std::vector<df::file_path>& files,
                                                 const std::vector<df::folder_path>& folders,
-                                                const df::folder_path target, const bool is_move)
+                                                const df::folder_path target, const bool is_move,
+                                                const bool replace_existing)
 {
 	const auto paths = all_file_system_paths(files, folders);
 	const auto to = to_shell_path(target);
+
+	// Auto-rename is the default because it cannot destroy anything. Replace is only reached when the
+	// caller has already named the colliding files and had the overwrite confirmed, so the shell must
+	// not ask a second time in its own vocabulary.
+	const FILEOP_FLAGS flags = replace_existing
+		                           ? static_cast<FILEOP_FLAGS>(FOF_NOCONFIRMATION)
+		                           : static_cast<FILEOP_FLAGS>(FOF_RENAMEONCOLLISION | FOF_WANTMAPPINGHANDLE);
 
 	SHFILEOPSTRUCT shfo = {
 		app_wnd(),
 		static_cast<uint32_t>(is_move ? FO_MOVE : FO_COPY),
 		paths.c_str(),
 		to.c_str(),
-		FOF_RENAMEONCOLLISION | FOF_WANTMAPPINGHANDLE,
+		flags,
 		0, nullptr, nullptr
 	};
 
@@ -3097,6 +3095,7 @@ uint64_t ft_to_ts(const FILETIME& ft)
 static __forceinline void populate_file_attributes(platform::file_attributes_t& fi,
                                                    const WIN32_FILE_ATTRIBUTE_DATA& fad)
 {
+	fi.presence = platform::file_presence::found;
 	fi.created = ft_to_ts(fad.ftCreationTime);
 	fi.modified = ft_to_ts(fad.ftLastWriteTime);
 	fi.size = fs_to_i64(fad.nFileSizeHigh, fad.nFileSizeLow);
@@ -3107,12 +3106,22 @@ static __forceinline void populate_file_attributes(platform::file_attributes_t& 
 
 static __forceinline void populate_file_attributes(platform::file_attributes_t& fi, const WIN32_FIND_DATA& fad)
 {
+	fi.presence = platform::file_presence::found;
 	fi.created = ft_to_ts(fad.ftCreationTime);
 	fi.modified = ft_to_ts(fad.ftLastWriteTime);
 	fi.size = fs_to_i64(fad.nFileSizeHigh, fad.nFileSizeLow);
 	fi.is_readonly = 0 != (fad.dwFileAttributes & FILE_ATTRIBUTE_READONLY);
 	fi.is_hidden = 0 != (fad.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN);
 	fi.is_offline = 0 != is_offline_attribute(fad.dwFileAttributes);
+}
+
+// Only these two codes prove the path is gone. Everything else - denied, offline, share unreachable,
+// name too long - means the query failed, which is not the same claim.
+static platform::file_presence presence_from_query_error(const DWORD error)
+{
+	return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND
+		       ? platform::file_presence::not_found
+		       : platform::file_presence::unknown;
 }
 
 platform::file_attributes_t platform::file_attributes(const df::file_path path)
@@ -3123,6 +3132,10 @@ platform::file_attributes_t platform::file_attributes(const df::file_path path)
 	if (GetFileAttributesEx(w.c_str(), GetFileExInfoStandard, &fad) != 0)
 	{
 		populate_file_attributes(result, fad);
+	}
+	else
+	{
+		result.presence = presence_from_query_error(GetLastError());
 	}
 	return result;
 }
@@ -3135,6 +3148,10 @@ platform::file_attributes_t platform::file_attributes(const df::folder_path path
 	if (GetFileAttributesEx(w.c_str(), GetFileExInfoStandard, &fad) != 0)
 	{
 		populate_file_attributes(result, fad);
+	}
+	else
+	{
+		result.presence = presence_from_query_error(GetLastError());
 	}
 	return result;
 }
@@ -3250,7 +3267,7 @@ static bool parent_folder_is_available(const df::folder_path folder)
 		return false;
 	}
 
-	const auto attributes = ::GetFileAttributesW(platform::to_file_system_path(folder.parent()).c_str());
+	const auto attributes = GetFileAttributesW(platform::to_file_system_path(folder.parent()).c_str());
 	return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 }
 
@@ -3265,7 +3282,7 @@ platform::folder_contents platform::iterate_file_items(const df::folder_path fol
 	                                    FIND_FIRST_EX_LARGE_FETCH);
 
 	// Read before the allocations below, which are not required to preserve the thread last error.
-	const auto enumerate_error = ::GetLastError();
+	const auto enumerate_error = GetLastError();
 
 	results.files.reserve(256);
 	results.folders.reserve(64);
@@ -3333,6 +3350,7 @@ platform::folder_contents platform::iterate_file_items(const df::folder_path fol
 					{
 						folder_info i;
 						i.name = str::cache(str::utf16_to_utf8(p->shi502_netname));
+						i.attributes.presence = file_presence::found;
 						i.attributes.is_readonly = true;
 						results.folders.emplace_back(i);
 					}

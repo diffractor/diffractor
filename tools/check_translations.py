@@ -13,10 +13,20 @@ This runs two phases:
 
   * untranslated / absent strings - a source string that exists in the union of
     all ``.po`` files but is empty or missing in one or more languages;
-  * placeholder/token mismatches - the English source uses a token such as
-    ``{count}`` or ``{first-name}`` but a translation drops, adds or misspells
-    it. Diffractor substitutes these tokens at runtime, so a mismatch is a real
-    bug;
+  * placeholder mismatches - anonymous ``{}`` are substituted positionally, so
+    the *count* must match the source exactly: dropping one shifts every later
+    value and leaves the last one unfilled. Named tokens such as ``{count}`` or
+    ``{first-name}`` are substituted by name, so only their presence is checked
+    and repeating one is legitimate. (The *order* of anonymous ``{}`` cannot be
+    validated - they are textually identical, so a translation that swaps two
+    values is indistinguishable from a correct one. That stays a review
+    question.)
+  * accelerator mismatches - a ``&`` that begins a word in the English source is
+    a Win32 mnemonic marker (``&OK``, ``As &JPEG``), because dialog buttons are
+    real Win32 controls. A translation may move the marker to a different
+    letter, but must keep exactly one and must not leave it dangling. A ``&``
+    surrounded by spaces or inside a word is literal text (``Fitness &
+    Workout``, ``R&B``) and translations may render it as the local "and".
   * quality mismatches in existing translations - objective, language-agnostic
     structural differences between a source string and its translation: leading
     or trailing whitespace (matters because several strings are concatenated in
@@ -42,8 +52,8 @@ A full Markdown report grouped by source string is written to
 to stdout. Pass ``--full`` to also dump every string to stdout.
 
 Exit code: non-zero when phase 1 finds a registration error or phase 2 finds a
-placeholder/token mismatch (both real bugs). Untranslated, quality and extra
-plural-form issues are reported as warnings and only fail the run under
+placeholder or accelerator mismatch (all real bugs). Untranslated, quality and
+extra plural-form issues are reported as warnings and only fail the run under
 ``--strict`` (many languages are intentionally incomplete).
 
 The parser is intentionally self-contained (no third-party dependency) and
@@ -80,12 +90,15 @@ LANGUAGE_NAMES = {
     "fr": "French",
     "it": "Italian",
     "ja": "Japanese",
+    "ko": "Korean",
     "lv": "Latvian",
     "nl": "Dutch",
     "pl": "Polish",
     "pt": "Portuguese",
     "ru": "Russian",
     "sr": "Serbian",
+    "tr": "Turkish",
+    "uk": "Ukrainian",
     "zh": "Chinese",
 }
 
@@ -97,6 +110,80 @@ def language_name(code: str) -> str:
 def tokens(text: str) -> list[str]:
     """Return the sorted, de-duplicated set of {placeholder} tokens in text."""
     return sorted(set(TOKEN_RE.findall(text)))
+
+
+def _split_tokens(text: str) -> tuple[int, list[str]]:
+    """Split placeholders into the anonymous count and the named token list."""
+    anonymous = 0
+    named: list[str] = []
+    for token in TOKEN_RE.findall(text):
+        if token == "{}":
+            anonymous += 1
+        else:
+            named.append(token)
+    return anonymous, named
+
+
+def placeholder_issues(src: str, got: str) -> list[str]:
+    """Placeholder defects that break substitution at runtime.
+
+    Anonymous ``{}`` are filled positionally, so the *count* must match exactly:
+    a translation that drops one shifts every later value and leaves the last
+    ``{}`` unfilled. Named tokens such as ``{count}`` are filled by name, so only
+    their presence matters and repeating one is legitimate.
+
+    The order of anonymous ``{}`` cannot be validated here - they are textually
+    identical, so a translation that swaps two values is indistinguishable from
+    a correct one. That remains a review question, not a check.
+    """
+    issues: list[str] = []
+
+    src_anonymous, src_named = _split_tokens(src)
+    got_anonymous, got_named = _split_tokens(got)
+
+    if src_anonymous != got_anonymous:
+        issues.append(
+            f"placeholder count mismatch: {src_anonymous} x '{{}}' in source, {got_anonymous} in translation"
+        )
+
+    src_names, got_names = sorted(set(src_named)), sorted(set(got_named))
+    if src_names != got_names:
+        issues.append(f"placeholder token mismatch: src {src_names} != {got_names}")
+
+    return issues
+
+
+# A '&' that begins a word in the English source is a Win32 mnemonic marker
+# (&OK, As &JPEG, &Don't Save): the dialog buttons created by create_button are
+# real Win32 controls, so Alt+letter activates them. A '&' that is surrounded by
+# spaces or sits inside a word is literal text (Fitness & Workout, R&B) and a
+# translation may legitimately render it as the local word for "and".
+MNEMONIC_RE = re.compile(r"(?:^|(?<=\s))&(?=\w)")
+
+
+def accelerator_issues(src: str, got: str) -> list[str]:
+    """Mnemonic ``&`` markers dropped, duplicated or left dangling.
+
+    Only checked when the English source carries a mnemonic. A translation may
+    move the marker to a different letter - that is the translator's job - but it
+    must keep exactly one, and it must sit before a character.
+
+    Not checked: whether two commands in the same menu claim the same letter.
+    That needs the menu grouping, which is not visible in a .po file.
+    """
+    issues: list[str] = []
+
+    expected = len(MNEMONIC_RE.findall(src))
+    if expected == 0:
+        return issues
+
+    found = got.count("&")
+    if found != expected:
+        issues.append(f"accelerator mismatch: {expected} mnemonic '&' in source, {found} in translation")
+    elif re.search(r"&(\s|$)", got):
+        issues.append("accelerator marker '&' does not precede a character")
+
+    return issues
 
 
 # Phrase-terminating punctuation, ASCII plus the full-width / CJK forms used by
@@ -293,20 +380,20 @@ def analyse(languages: "OrderedDict[str, OrderedDict]"):
                 if not data["msgstr"].strip():
                     issues.append("untranslated")
                 else:
-                    got = tokens(data["msgstr"])
-                    if got != src_singular_tokens:
-                        issues.append(f"token mismatch: src {src_singular_tokens} != {got}")
+                    issues.extend(placeholder_issues(src["singular"], data["msgstr"]))
+                    issues.extend(accelerator_issues(src["singular"], data["msgstr"]))
                     issues.extend(quality_issues(src["singular"], data["msgstr"]))
 
                 if src["plural"]:
                     if not data["msgstr_plural"].strip():
                         issues.append("plural untranslated")
                     else:
-                        got_plural = tokens(data["msgstr_plural"])
-                        if got_plural != src_plural_tokens:
-                            issues.append(
-                                f"plural token mismatch: src {src_plural_tokens} != {got_plural}"
-                            )
+                        issues.extend(
+                            f"plural {i}" for i in placeholder_issues(src["plural"], data["msgstr_plural"])
+                        )
+                        issues.extend(
+                            f"plural {i}" for i in accelerator_issues(src["plural"], data["msgstr_plural"])
+                        )
                         issues.extend(
                             f"plural {i}" for i in quality_issues(src["plural"], data["msgstr_plural"])
                         )
@@ -343,7 +430,12 @@ def compute_stats(languages, source, problems):
         token_issues = sum(
             1
             for ri in problem_map.values()
-            if code in ri and any("token" in issue for issue in ri[code])
+            if code in ri and any("placeholder" in issue for issue in ri[code])
+        )
+        accelerator = sum(
+            1
+            for ri in problem_map.values()
+            if code in ri and any("accelerator" in issue for issue in ri[code])
         )
         extra_issues = sum(
             1
@@ -364,6 +456,7 @@ def compute_stats(languages, source, problems):
             "translated": translated,
             "missing": total - translated,
             "token_issues": token_issues,
+            "accelerator": accelerator,
             "quality": quality,
             "extra_plurals": extra_issues,
         }
@@ -426,17 +519,25 @@ def write_report(report_path, languages, source, stats, problems):
         "Polish, Russian, Ukrainian). The extra forms are selected at runtime "
         "for the relevant counts; other languages use only `msgstr[0]`/`msgstr[1]`."
     )
+    lines.append(
+        "- **What the checks cannot see**: the *order* of anonymous `{}` "
+        "placeholders is not verifiable - they are textually identical, so a "
+        "translation that renders a date where the count belongs looks correct "
+        "to the tool. Likewise, two commands in the same menu claiming the same "
+        "`&` mnemonic letter needs the menu grouping, which a `.po` file does "
+        "not carry. Both remain review questions."
+    )
     lines.append("")
 
     # Summary table
     lines.append("## Coverage summary")
     lines.append("")
-    lines.append("| Code | Language | Source | Translated | Missing | Token issues | Quality | Extra plurals |")
-    lines.append("|------|----------|-------:|-----------:|--------:|-------------:|--------:|----------:|")
+    lines.append("| Code | Language | Source | Translated | Missing | Placeholders | Accelerators | Quality | Extra plurals |")
+    lines.append("|------|----------|-------:|-----------:|--------:|-------------:|-------------:|--------:|----------:|")
     for code, s in stats.items():
         lines.append(
             f"| {code} | {language_name(code)} | {s['total']} | {s['translated']} "
-            f"| {s['missing']} | {s['token_issues']} | {s['quality']} | {s['extra_plurals']} |"
+            f"| {s['missing']} | {s['token_issues']} | {s['accelerator']} | {s['quality']} | {s['extra_plurals']} |"
         )
     lines.append("")
 
@@ -444,12 +545,13 @@ def write_report(report_path, languages, source, stats, problems):
     lines.append(f"## Problems ({len(problems)} strings)")
     lines.append("")
     if not problems:
-        lines.append("No missing translations, token mismatches or extra plural forms found.")
+        lines.append("No missing translations, placeholder or accelerator mismatches or extra plural forms found.")
     else:
         lines.append(
-            "Each entry below has a missing translation, a placeholder/token "
-            "mismatch, a structural quality mismatch (whitespace / newline / "
-            "punctuation) or an extra plural form in at least one language."
+            "Each entry below has a missing translation, a placeholder "
+            "mismatch, an accelerator (`&`) mismatch, a structural quality "
+            "mismatch (whitespace / newline / punctuation) or an extra plural "
+            "form in at least one language."
         )
         lines.append("")
         for msgid, row_issues in problems:
@@ -474,14 +576,15 @@ def print_summary(languages, source, stats, problems, report_path):
     print()
     header = (
         f"{'Code':<5} {'Language':<12} {'Source':>7} {'Translated':>11} "
-        f"{'Missing':>8} {'Tokens':>7} {'Quality':>8} {'Extra':>10}"
+        f"{'Missing':>8} {'Holders':>8} {'Accel':>6} {'Quality':>8} {'Extra':>10}"
     )
     print(header)
     print("-" * len(header))
     for code, s in stats.items():
         print(
             f"{code:<5} {language_name(code):<12} {s['total']:>7} {s['translated']:>11} "
-            f"{s['missing']:>8} {s['token_issues']:>7} {s['quality']:>8} {s['extra_plurals']:>10}"
+            f"{s['missing']:>8} {s['token_issues']:>8} {s['accelerator']:>6} "
+            f"{s['quality']:>8} {s['extra_plurals']:>10}"
         )
     print()
     print(f"Strings with at least one problem: {len(problems)}")
@@ -624,15 +727,16 @@ def main(argv=None) -> int:
         print()
         print_full(languages, source)
 
-    # Aggregate failures. Token/placeholder mismatches are real runtime bugs and
-    # always fail. Registration errors always fail. Untranslated, quality and
-    # extra-plural issues are expected incompleteness and only fail under --strict.
-    token_failures = sum(s["token_issues"] for s in stats.values())
+    # Aggregate failures. Placeholder and accelerator mismatches are real runtime
+    # bugs and always fail. Registration errors always fail. Untranslated, quality
+    # and extra-plural issues are expected incompleteness and only fail under --strict.
+    placeholder_failures = sum(s["token_issues"] for s in stats.values())
+    accelerator_failures = sum(s["accelerator"] for s in stats.values())
     quality_failures = sum(
         s["missing"] + s["quality"] + s["extra_plurals"] for s in stats.values()
     )
 
-    hard_fail = bool(app_text_errors) or token_failures > 0
+    hard_fail = bool(app_text_errors) or placeholder_failures > 0 or accelerator_failures > 0
     if args.strict:
         hard_fail = hard_fail or quality_failures > 0
 
@@ -641,8 +745,10 @@ def main(argv=None) -> int:
         reasons = []
         if app_text_errors:
             reasons.append(f"{len(app_text_errors)} app_text registration error(s)")
-        if token_failures:
-            reasons.append(f"{token_failures} token mismatch(es)")
+        if placeholder_failures:
+            reasons.append(f"{placeholder_failures} placeholder mismatch(es)")
+        if accelerator_failures:
+            reasons.append(f"{accelerator_failures} accelerator mismatch(es)")
         if args.strict and quality_failures:
             reasons.append(f"{quality_failures} warning(s) (strict)")
         print(f"FAILED: {', '.join(reasons)}", file=sys.stderr)

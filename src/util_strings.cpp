@@ -174,28 +174,6 @@ std::string str::print(__in_z __format_string const char* szFormat, ...)
 // modern CPUs via SSE4.2 instructions.
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-//struct string_index_less
-//{
-//	bool operator()(const str::chached_string_storage_t* l, const str::chached_string_storage_t* r) const
-//	{
-//		if (l->hash == r->hash) return std::string_view(l->sz, l->len).compare(std::string_view(r->sz, r->len)) < 0;
-//		return l->hash < r->hash;
-//	}
-//
-//	bool operator()(const str::chached_string_storage_t* l, const string_index_key&r) const
-//	{
-//		if (l->hash == r.hash) return std::string_view(l->sz, l->len).compare(r.sv) < 0;
-//		return l->hash < r.hash;
-//	}
-//
-//	bool operator()(const string_index_key&l, const str::chached_string_storage_t* r) const
-//	{
-//		if (l.hash == r->hash) return l.sv.compare(std::string_view(r->sz, r->len)) < 0;
-//		return l.hash < r->hash;
-//	}
-//};
-
-
 // Global string intern pool. Manages all interned strings for the application.
 //
 // Interned strings are never removed, so the table needs no tombstones or deletion
@@ -2363,7 +2341,9 @@ std::string str::utf8_to_a(const std::string_view utf8)
 
 int str::normalze_for_compare(const int c)
 {
-	if (c < 128)
+	// Unsigned compare: callers can pass a signed char, and a UTF-8 lead or continuation
+	// byte then arrives negative.
+	if (static_cast<uint32_t>(c) < 128)
 	{
 		constexpr int ascii_mapping[] = {
 			0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7,
@@ -2384,7 +2364,7 @@ int str::normalze_for_compare(const int c)
 			0x78, 0x79, 0x7a, 0x7b, 0x7c, 0x7d, 0x7e, 0x7f,
 		};
 
-		return ascii_mapping[c];
+		return ascii_mapping[static_cast<uint32_t>(c)];
 	}
 
 	static auto normalizations = make_normalizations();

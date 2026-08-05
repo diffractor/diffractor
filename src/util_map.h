@@ -114,11 +114,6 @@ namespace df
 
 	struct eq
 	{
-		/*bool operator()(const char* l, const char* r) const
-		{
-			return strcmp(l, r) == 0;
-		}*/
-
 		bool operator()(const std::string_view l, const std::string_view r) const
 		{
 			return l.compare(r) == 0;

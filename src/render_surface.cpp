@@ -7,7 +7,7 @@
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 // Purpose: Image surface management. Handles bitmap memory allocation,
-// pixel access, scaling, cropping, and format conversions.
+// pixel access, scaling, cropping, format conversions, and drawing the application mark.
 
 #include "pch.h"
 
@@ -23,6 +23,143 @@ void ui::surface::clear(const color32 clr) const
 		for (int x = 0; x < _dimensions.cx; ++x)
 		{
 			line[x] = clr;
+		}
+	}
+}
+
+namespace
+{
+	// The Diffractor mark: four interlocking squares in a pinwheel. This is the drawing of record
+	// for anything rendered at runtime. tools/generate_store_assets.py draws the same mark for the
+	// packaged artwork (app.ico and the Store assets); the two must be changed together.
+	struct logo_square
+	{
+		double cx;
+		double cy;
+		ui::color32 fill;
+		ui::color32 border;
+	};
+
+	// Supersample then box-average. Every edge is axis aligned, so this resolves them exactly and
+	// avoids the dark fringe a straight RGBA average produces around transparent pixels.
+	constexpr int logo_supersample = 4;
+
+	// Surface pixels are stored blue first (ARGB maps to DXGI_FORMAT_B8G8R8A8), while ui::rgb builds
+	// the red-first form these brand hex values are written in.
+	constexpr ui::color32 logo_color(const uint32_t r, const uint32_t g, const uint32_t b) noexcept
+	{
+		return ui::abgr(ui::rgb(r, g, b));
+	}
+
+	void logo_fill_rect(ui::color32* buffer, const int n, int x0, int y0, int x1, int y1, const ui::color32 c,
+	                    const recti clip)
+	{
+		x0 = std::max({x0, 0, clip.left});
+		y0 = std::max({y0, 0, clip.top});
+		x1 = std::min({x1, n - 1, clip.right - 1});
+		y1 = std::min({y1, n - 1, clip.bottom - 1});
+
+		for (auto y = y0; y <= y1; ++y)
+		{
+			auto* const line = buffer + static_cast<ptrdiff_t>(y) * n;
+
+			for (auto x = x0; x <= x1; ++x)
+			{
+				line[x] = c;
+			}
+		}
+	}
+
+	void logo_draw_square(ui::color32* buffer, const int n, const logo_square& sq, const double size,
+	                      const int border_width, const recti clip)
+	{
+		const auto half = size / 2.0;
+		const auto x0 = df::round(sq.cx - half);
+		const auto y0 = df::round(sq.cy - half);
+		const auto x1 = df::round(sq.cx + half);
+		const auto y1 = df::round(sq.cy + half);
+
+		logo_fill_rect(buffer, n, x0, y0, x1, y1, sq.border, clip);
+		logo_fill_rect(buffer, n, x0 + border_width, y0 + border_width, x1 - border_width, y1 - border_width, sq.fill,
+		               clip);
+	}
+}
+
+void ui::surface::fill_logo() const
+{
+	const auto cx = _dimensions.cx;
+	const auto cy = _dimensions.cy;
+	const auto extent = std::min(cx, cy);
+	if (extent <= 0) return;
+
+	const auto n = extent * logo_supersample;
+	std::vector<color32> buffer(static_cast<size_t>(n) * n, 0u);
+
+	const auto size = n * 0.45;
+	const auto offset = size * 1.11;
+	const auto middle = n / 2.0;
+	const auto border_width = std::max(1, static_cast<int>(size * 0.08));
+	const recti no_clip{0, 0, n, n};
+
+	const logo_square green{middle, middle - offset / 2.0, logo_color(0x00, 0xb0, 0x50), logo_color(0x00, 0x8a, 0x3e)};
+	const logo_square blue{middle + offset / 2.0, middle, logo_color(0x00, 0x70, 0xc0), logo_color(0x00, 0x54, 0x90)};
+	const logo_square red{middle, middle + offset / 2.0, logo_color(0xc0, 0x00, 0x00), logo_color(0x90, 0x00, 0x00)};
+	const logo_square yellow{middle - offset / 2.0, middle, logo_color(0xff, 0xc0, 0x00), logo_color(0xbf, 0x90, 0x00)};
+
+	// Painter's order gives yellow over green; the weave needs green back on top where it meets
+	// yellow, so its lower-left quadrant is redrawn last.
+	logo_draw_square(buffer.data(), n, green, size, border_width, no_clip);
+	logo_draw_square(buffer.data(), n, blue, size, border_width, no_clip);
+	logo_draw_square(buffer.data(), n, red, size, border_width, no_clip);
+	logo_draw_square(buffer.data(), n, yellow, size, border_width, no_clip);
+
+	const auto half = size / 2.0;
+	const recti green_patch{
+		df::round(green.cx - half - border_width), df::round(green.cy),
+		df::round(green.cx), df::round(green.cy + half + border_width)
+	};
+	logo_draw_square(buffer.data(), n, green, size, border_width, green_patch);
+
+	const auto left = (cx - extent) / 2;
+	const auto top = (cy - extent) / 2;
+	constexpr auto samples = logo_supersample * logo_supersample;
+
+	for (auto y = 0; y < cy; ++y)
+	{
+		auto* const line = std::bit_cast<color32*>(_pixels.get() + y * _stride);
+
+		for (auto x = 0; x < cx; ++x)
+		{
+			const auto sx = (x - left) * logo_supersample;
+			const auto sy = (y - top) * logo_supersample;
+
+			if (sx < 0 || sy < 0 || sx >= n || sy >= n)
+			{
+				line[x] = 0;
+				continue;
+			}
+
+			uint32_t r = 0, g = 0, b = 0, opaque = 0;
+
+			for (auto j = 0; j < logo_supersample; ++j)
+			{
+				const auto* const src = buffer.data() + static_cast<ptrdiff_t>(sy + j) * n + sx;
+
+				for (auto i = 0; i < logo_supersample; ++i)
+				{
+					const auto c = src[i];
+					if (c == 0) continue;
+					r += get_r(c);
+					g += get_g(c);
+					b += get_b(c);
+					++opaque;
+				}
+			}
+
+			// Channels are averaged in storage order, so this stays blue first like its source.
+			line[x] = opaque == 0
+				          ? 0
+				          : rgba(r / opaque, g / opaque, b / opaque, opaque * 255 / samples);
 		}
 	}
 }
@@ -365,7 +502,6 @@ ui::const_surface_ptr ui::surface::transform(const image_edits& photo_edits, con
 		const auto transformed_crop = crop.transform(aff).bounding_rect();
 		aff = aff.translate(-transformed_crop.top_left());
 
-		//const auto dst = bounds.transform(aff);
 		const auto inc_aff = aff.invert();
 		const auto canvas_extent = transformed_crop.extent().round();
 

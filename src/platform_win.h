@@ -27,9 +27,6 @@
 #ifndef NOKERNEL
 #define NOKERNEL
 #endif
-//#ifndef NOUSER
-//#define NOUSER
-//#endif
 #ifndef NOSERVICE
 #define NOSERVICE
 #endif
@@ -40,12 +37,13 @@
 #define NOMCX
 #endif
 
-#define STRICT 
+#ifndef STRICT
+#define STRICT
+#endif
 #define _WINSOCKAPI_    // stops windows.h including winsock.h
 
 #include <dxgi.h>
 #include <windows.h>
-//#include <wrl/client.h>
 #include <wrl.h>
 using namespace Microsoft::WRL;
 
@@ -116,12 +114,22 @@ class draw_context_device : public ui::draw_context
 public:
 	virtual void destroy() = 0;
 	virtual void update_font_size(int base_font_size) = 0;
-	virtual void begin_draw(sizei client_extent, int base_font_size) = 0;
+
+	// damage is the region the window layer knows needs repainting; empty means the whole client.
+	// It is an optimisation hint only - a backend may redraw more, but the resulting pixels inside
+	// damage must not depend on how much was redrawn.
+	virtual void begin_draw(sizei client_extent, int base_font_size, recti damage = {}) = 0;
 
 	// Flushes the accumulated scene. Returns the underlying graphics result so the window
 	// layer can detect device loss and downgrade to the CPU backend; the software backend
 	// always returns S_OK.
 	virtual HRESULT render() = 0;
+
+	// Discards any damage limit, so the next render covers the whole client. Needed by callers
+	// that re-present an existing scene whose textures changed underneath it.
+	virtual void reset_damage()
+	{
+	}
 	virtual void resize(sizei size) = 0;
 	virtual bool is_valid() const = 0;
 

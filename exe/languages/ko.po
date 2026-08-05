@@ -170,8 +170,8 @@ msgstr "온라인으로 기부하세요."
 msgid "Changes"
 msgstr "변경 사항"
 
-msgid "Set the location for the selected files by scrolling the map or searching for a place. Use the mouse wheel to zoom."
-msgstr "지도를 스크롤하여 위치를 선택하세요. 확대/축소하려면 마우스 휠을 사용하세요."
+msgid "The crosshair at the centre of the map marks the location that will be written. Drag the map, click a photo bubble to move it under the crosshair, or search for a place by name. Use the mouse wheel to zoom. Nothing is written until you press Add location."
+msgstr "지도 중앙의 십자선은 기록될 위치를 나타냅니다. 지도를 끌거나, 사진 풍선을 클릭해 십자선 아래로 옮기거나, 이름으로 장소를 검색하세요. 마우스 휠로 확대/축소할 수 있습니다. 위치 추가를 누르기 전에는 아무것도 기록되지 않습니다."
 
 msgid "The collection contains {} {} ({})."
 msgstr "컬렉션에는 {} {}({})가 포함되어 있습니다."
@@ -255,7 +255,7 @@ msgid "Next folder or search"
 msgstr "다음 폴더 또는 검색"
 
 msgid "Next item group"
-msgstr "다음 품목 그룹"
+msgstr "다음 항목 그룹"
 
 msgid "Select next item"
 msgstr "다음 항목 선택"
@@ -264,13 +264,13 @@ msgid "Extend selection to next item"
 msgstr "선택 항목을 다음 항목으로 확장"
 
 msgid "Parent"
-msgstr "부모"
+msgstr "상위 폴더"
 
 msgid "Previous folder or search"
 msgstr "이전 폴더 또는 검색"
 
 msgid "Previous item group"
-msgstr "이전 품목 그룹"
+msgstr "이전 항목 그룹"
 
 msgid "Select previous item"
 msgstr "이전 항목 선택"
@@ -312,7 +312,7 @@ msgid "Copy"
 msgstr "복사"
 
 msgid "Cut"
-msgstr "컷"
+msgstr "잘라내기"
 
 msgid "Edit metadata"
 msgstr "메타데이터 편집"
@@ -375,7 +375,7 @@ msgid "Other portrait"
 msgstr "기타 세로 방향"
 
 msgid "Group by Resolution"
-msgstr "해결 기준으로 그룹화"
+msgstr "해상도별로 그룹화"
 
 msgid "Group by Collection presence"
 msgstr "컬렉션 존재별로 그룹화"
@@ -509,8 +509,8 @@ msgstr "거부"
 msgid "Refresh"
 msgstr "새로고침"
 
-msgid "Matching or possible copy items in the collection"
-msgstr "컬렉션의 일치하거나 가능한 복사 항목"
+msgid "Related items"
+msgstr "관련 항목"
 
 msgid "Rename"
 msgstr "이름 바꾸기"
@@ -530,6 +530,9 @@ msgstr "시계 반대 방향으로 회전"
 msgid "Rotate clockwise"
 msgstr "시계방향으로 회전"
 
+msgid "Confirm single-item rotations"
+msgstr "단일 항목 회전 확인"
+
 msgid "Reset rotation"
 msgstr "회전 재설정"
 
@@ -543,7 +546,7 @@ msgid "Add location and open next"
 msgstr "위치를 추가하고 다음 항목 열기"
 
 msgid "Save and open previous"
-msgstr "이전 저장 및 열기"
+msgstr "저장하고 이전 항목 열기"
 
 msgid "Save the current item and open the previous item."
 msgstr "현재 항목을 저장하고 이전 항목을 엽니다."
@@ -561,7 +564,7 @@ msgid "Adjust the crop, rotation, perspective, and color of a photo. Nothing is 
 msgstr "사진의 자르기, 회전, 원근, 색상을 조정합니다. 저장하기 전까지는 디스크에 아무것도 기록되지 않습니다."
 
 msgid "Scale up items"
-msgstr "아이템 확장"
+msgstr "항목 확대"
 
 msgid "Scan"
 msgstr "스캔"
@@ -573,7 +576,7 @@ msgid "Invert selection"
 msgstr "선택 반전"
 
 msgid "Select none"
-msgstr "없음을 선택하세요"
+msgstr "선택 해제"
 
 msgid "Email"
 msgstr "이메일"
@@ -665,6 +668,12 @@ msgstr "대비"
 msgid "Open link {}"
 msgstr "링크 열기 {}"
 
+msgid "Choose a link to open"
+msgstr "열 링크를 선택하세요"
+
+msgid "Duplicate"
+msgstr "중복"
+
 msgid "Copy to clipboard"
 msgstr "클립보드에 복사"
 
@@ -672,13 +681,13 @@ msgid "to"
 msgstr "에"
 
 msgid "Creator"
-msgstr "크리에이터"
+msgstr "작성자"
 
 msgid "Credit"
-msgstr "신용"
+msgstr "크레딧"
 
 msgid "Notice"
-msgstr "공지사항"
+msgstr "고지"
 
 msgid "File"
 msgstr "파일"
@@ -741,28 +750,25 @@ msgid "Show world map"
 msgstr "세계지도 표시"
 
 msgid "Darks"
-msgstr "다크스"
+msgstr "어두운 톤"
 
 msgid "data"
 msgstr "데이터"
 
 msgid "File created:"
-msgstr "생성된 파일:"
+msgstr "파일 생성일:"
 
 msgid "File modified:"
-msgstr "수정된 파일:"
+msgstr "파일 수정일:"
 
 msgid "Metadata created:"
-msgstr "생성된 메타데이터:"
+msgstr "메타데이터 생성일:"
 
 msgid "Dates"
 msgstr "날짜"
 
 msgid "family food friends landscape nature night portrait selfie todo travel urban viewed"
 msgstr "가족 음식 친구 경치 자연 밤 초상화 셀카 할 일 여행 도시의 본"
-
-msgid "results"
-msgstr "결과"
 
 msgid "Defragment database."
 msgstr "데이터베이스 조각 모음."
@@ -810,7 +816,7 @@ msgid "Editing"
 msgstr "편집"
 
 msgid "Close without ejecting"
-msgstr "꺼내지 않고 닫습니다."
+msgstr "꺼내지 않고 닫기"
 
 msgid "Failed to eject {}."
 msgstr "{}을 꺼내지 못했습니다."
@@ -843,7 +849,7 @@ msgid "Create a draft in your desktop email client with the selected files attac
 msgstr "선택한 파일을 첨부한 임시 보관 메일을 데스크톱 이메일 클라이언트에서 만듭니다. 원본은 변경되지 않습니다."
 
 msgid "Zip files in the email"
-msgstr "이메일의 Zip 파일"
+msgstr "이메일의 파일을 ZIP으로 압축"
 
 msgid "Empty"
 msgstr "비어 있음"
@@ -903,7 +909,7 @@ msgid "The destination path is an existing file."
 msgstr "대상 경로가 기존 파일입니다."
 
 msgid "Index database failed."
-msgstr "데이터베이스 색인에 실패했습니다."
+msgstr "인덱스 데이터베이스에 오류가 발생했습니다."
 
 msgid "The path in the source or destination or both was invalid."
 msgstr "원본이나 대상 또는 둘 다의 경로가 잘못되었습니다."
@@ -1020,7 +1026,7 @@ msgid "folders"
 msgstr "폴더"
 
 msgid "onedrive"
-msgstr "원드라이브"
+msgstr "OneDrive"
 
 msgid "picture"
 msgstr "사진"
@@ -1116,7 +1122,7 @@ msgid "Candid"
 msgstr "스냅 사진"
 
 msgid "Celtic"
-msgstr "켈트족"
+msgstr "켈틱"
 
 msgid "Chamber Music"
 msgstr "실내악"
@@ -1131,7 +1137,7 @@ msgid "Chorus"
 msgstr "합창"
 
 msgid "Christian & Gospel"
-msgstr "기독교와 복음"
+msgstr "기독교와 가스펠"
 
 msgid "Christian Rap"
 msgstr "크리스찬 랩"
@@ -1209,7 +1215,7 @@ msgid "Easy Listening"
 msgstr "이지 리스닝"
 
 msgid "Electronic"
-msgstr "전자"
+msgstr "일렉트로닉"
 
 msgid "Ethnic"
 msgstr "민족"
@@ -1230,7 +1236,7 @@ msgid "Fashion"
 msgstr "패션"
 
 msgid "Fast Fusion"
-msgstr "빠른 융합"
+msgstr "패스트 퓨전"
 
 msgid "Film still"
 msgstr "영화 스틸"
@@ -1248,7 +1254,7 @@ msgid "Fitness & Workout"
 msgstr "피트니스 및 운동"
 
 msgid "Folk"
-msgstr "민속"
+msgstr "포크"
 
 msgid "Folk-Rock"
 msgstr "포크 록"
@@ -1266,7 +1272,7 @@ msgid "Forensic"
 msgstr "법의학"
 
 msgid "Freestyle"
-msgstr "자유형"
+msgstr "프리스타일"
 
 msgid "Funk"
 msgstr "펑크"
@@ -1287,7 +1293,7 @@ msgid "Glamour"
 msgstr "글래머"
 
 msgid "Gospel"
-msgstr "복음"
+msgstr "가스펠"
 
 msgid "Gothic"
 msgstr "고딕"
@@ -1329,13 +1335,13 @@ msgid "Independent"
 msgstr "독립"
 
 msgid "Industrial"
-msgstr "산업용"
+msgstr "인더스트리얼"
 
 msgid "Instrumental"
 msgstr "기악"
 
 msgid "Instrumental Pop"
-msgstr "악기 팝"
+msgstr "인스트루멘탈 팝"
 
 msgid "Instrumental Rock"
 msgstr "인스트루멘탈 록"
@@ -1362,7 +1368,7 @@ msgid "Landscape"
 msgstr "풍경"
 
 msgid "Latin"
-msgstr "라틴어"
+msgstr "라틴"
 
 msgid "Lifestyle"
 msgstr "라이프 스타일"
@@ -1389,7 +1395,7 @@ msgid "Meditative"
 msgstr "명상적"
 
 msgid "Metal"
-msgstr "금속"
+msgstr "메탈"
 
 msgid "Monochrome"
 msgstr "흑백"
@@ -1410,7 +1416,7 @@ msgid "Narrative"
 msgstr "내러티브"
 
 msgid "National Folk"
-msgstr "국립 민속"
+msgstr "내셔널 포크"
 
 msgid "Native American"
 msgstr "아메리카 원주민"
@@ -1431,7 +1437,7 @@ msgid "Nonfiction"
 msgstr "논픽션"
 
 msgid "Oldies"
-msgstr "옛날 옛적에"
+msgstr "올디스"
 
 msgid "Opera"
 msgstr "오페라"
@@ -1449,7 +1455,7 @@ msgid "Film Noir"
 msgstr "필름 누아르"
 
 msgid "Photo op"
-msgstr "사진 작업"
+msgstr "포토 세션"
 
 msgid "Photobiography"
 msgstr "사진 전기"
@@ -1482,7 +1488,7 @@ msgid "Porn Groove"
 msgstr "포르노 그루브"
 
 msgid "Portrait"
-msgstr "초상화"
+msgstr "인물 사진"
 
 msgid "Power Ballad"
 msgstr "파워 발라드"
@@ -1509,7 +1515,7 @@ msgid "Punk Rock"
 msgstr "펑크 록"
 
 msgid "R&B"
-msgstr "RB(&B)"
+msgstr "R&B"
 
 msgid "Rap"
 msgstr "랩"
@@ -1527,10 +1533,10 @@ msgid "Retro"
 msgstr "복고풍"
 
 msgid "Revival"
-msgstr "부흥"
+msgstr "리바이벌"
 
 msgid "Rhythmic Soul"
-msgstr "리듬감 넘치는 소울"
+msgstr "리드믹 소울"
 
 msgid "Rock"
 msgstr "록"
@@ -1557,7 +1563,7 @@ msgid "Short Films"
 msgstr "단편영화"
 
 msgid "Show tunes"
-msgstr "음악 표시"
+msgstr "뮤지컬 넘버"
 
 msgid "Singer/Songwriter"
 msgstr "싱어송라이터"
@@ -1635,7 +1641,7 @@ msgid "Techno"
 msgstr "테크노"
 
 msgid "Techno-Industrial"
-msgstr "기술 산업"
+msgstr "테크노 인더스트리얼"
 
 msgid "Teens"
 msgstr "십대"
@@ -1659,7 +1665,7 @@ msgid "Travel"
 msgstr "여행"
 
 msgid "Tribal"
-msgstr "부족"
+msgstr "트라이벌"
 
 msgid "Trip-Hop"
 msgstr "트립홉"
@@ -1677,7 +1683,7 @@ msgid "Urban"
 msgstr "도시"
 
 msgid "Vernacular"
-msgstr "모국어"
+msgstr "버내큘러"
 
 msgid "Vintage"
 msgstr "빈티지"
@@ -1689,7 +1695,7 @@ msgid "War"
 msgstr "전쟁"
 
 msgid "Western"
-msgstr "서양식"
+msgstr "서부극"
 
 msgid "World"
 msgstr "세계"
@@ -1698,7 +1704,7 @@ msgid "Group and sort items"
 msgstr "항목 그룹화 및 정렬"
 
 msgid "Items"
-msgstr "아이템"
+msgstr "항목"
 
 msgid "No album or show"
 msgstr "앨범이나 프로그램 없음"
@@ -1707,13 +1713,13 @@ msgid "No camera"
 msgstr "카메라 없음"
 
 msgid "No extension"
-msgstr "확장 없음"
+msgstr "확장자 없음"
 
 msgid "No location"
 msgstr "위치 없음"
 
 msgid "No resolution"
-msgstr "해결 방법 없음"
+msgstr "해상도 없음"
 
 msgid "No rating"
 msgstr "평가 없음"
@@ -1752,7 +1758,7 @@ msgid "Separate each tag with a space: Australia holiday camping."
 msgstr "각 태그를 공백으로 구분하세요: 호주 휴가 캠핑."
 
 msgid "Join 2 words together in one tag using quotes: \"national park\"."
-msgstr "\"국립공원\"이라는 따옴표를 사용하여 두 단어를 하나의 태그에 결합하세요."
+msgstr "따옴표를 사용하여 두 단어를 하나의 태그로 묶으세요: \"국립공원\"."
 
 msgid "Hide verbose metadata"
 msgstr "자세한 메타데이터 숨기기"
@@ -1761,13 +1767,10 @@ msgid "Destination root folder. Structured folders will be created under this fo
 msgstr "대상 루트 폴더. 이 폴더 아래에 구조화된 폴더가 생성됩니다."
 
 msgid "Source of import:"
-msgstr "수입원:"
+msgstr "가져오기 원본:"
 
 msgid "Ignore previously imported items."
 msgstr "이전에 가져온 항목을 무시합니다."
-
-msgid "Overwrite if source items are newer."
-msgstr "소스 항목이 최신이면 덮어씁니다."
 
 msgid "Other folder"
 msgstr "기타 폴더"
@@ -1824,10 +1827,10 @@ msgid "Keyboard"
 msgstr "키보드"
 
 msgid "press"
-msgstr "언론"
+msgstr "누르기"
 
 msgid "alt"
-msgstr "대체"
+msgstr "Alt"
 
 msgid "back"
 msgstr "뒤로"
@@ -1839,7 +1842,7 @@ msgid "Basics"
 msgstr "기본사항"
 
 msgid "browser-back"
-msgstr "브라우저백"
+msgstr "브라우저 뒤로"
 
 msgid "browser-favorites"
 msgstr "브라우저 즐겨찾기"
@@ -1866,19 +1869,19 @@ msgid "Extend the current item selection and allow comparing of items."
 msgstr "현재 항목 선택을 확장하고 항목 비교를 허용합니다."
 
 msgid "del"
-msgstr "델"
+msgstr "Del"
 
 msgid "down"
 msgstr "아래로"
 
 msgid "enter"
-msgstr "들어가다"
+msgstr "Enter"
 
 msgid "Opens an image full screen."
 msgstr "이미지를 전체 화면으로 엽니다."
 
 msgid "escape"
-msgstr "탈출"
+msgstr "Esc"
 
 msgid "Gets you out of full screen, zoom or other modes."
 msgstr "전체 화면, 확대/축소 또는 기타 모드를 종료합니다."
@@ -1923,7 +1926,7 @@ msgid "Help"
 msgstr "도움말"
 
 msgid "insert"
-msgstr "삽입하다"
+msgstr "Insert"
 
 msgid "left"
 msgstr "왼쪽"
@@ -1970,16 +1973,16 @@ msgid "page-up"
 msgstr "페이지업"
 
 msgid "right"
-msgstr "맞아"
+msgstr "오른쪽"
 
 msgid "Selection"
 msgstr "선택"
 
 msgid "shift"
-msgstr "교대"
+msgstr "Shift"
 
 msgid "space"
-msgstr "공간"
+msgstr "스페이스"
 
 msgid "tab"
 msgstr "탭"
@@ -2003,7 +2006,7 @@ msgid "Learn more at Diffractor.com"
 msgstr "Diffractor.com에서 자세히 알아보세요."
 
 msgid "Lights"
-msgstr "조명"
+msgstr "밝은 톤"
 
 msgid "Limit output to a maximum dimension (in pixels)."
 msgstr "출력을 최대 크기(픽셀 단위)로 제한합니다."
@@ -2206,6 +2209,10 @@ msgstr "인터넷에 연결하여 업데이트 확인"
 msgid "Confirm when deleting items. Deleted items are moved to the recycle bin."
 msgstr "항목을 삭제할 때 확인하세요. 삭제된 항목은 휴지통으로 이동됩니다."
 
+msgid ""
+"Confirm when rotating one item. Rotating several items is always confirmed."
+msgstr "항목 하나를 회전할 때 확인하세요. 여러 항목의 회전은 항상 확인됩니다."
+
 msgid "JPEG save quality"
 msgstr "JPEG 저장 품질"
 
@@ -2276,7 +2283,7 @@ msgid "other"
 msgstr "기타"
 
 msgid "others"
-msgstr "다른 사람"
+msgstr "기타"
 
 msgid "pasted"
 msgstr "붙여넣은"
@@ -2324,13 +2331,13 @@ msgid "This item is outside the collection. One or more possible older copies ex
 msgstr "이 항목은 컬렉션 외부에 있습니다. 컬렉션에 하나 이상의 가능한 이전 복사본이 있습니다."
 
 msgid "Possible copy in collection"
-msgstr "컬렉션에 가능한 사본"
+msgstr "컬렉션에 사본이 있을 수 있음"
 
 msgid "This item is outside the collection. One or more possible copies exist in the collection."
 msgstr "이 항목은 컬렉션 외부에 있습니다. 컬렉션에 가능한 복사본이 하나 이상 있습니다."
 
 msgid "In collection"
-msgstr "컬렉션 중"
+msgstr "컬렉션에 있음"
 
 msgid "This item is in the collection."
 msgstr "이 항목은 컬렉션에 있습니다."
@@ -2411,7 +2418,7 @@ msgid "Created"
 msgstr "생성됨"
 
 msgid "Created exif"
-msgstr "EXIF를 생성했습니다."
+msgstr "EXIF 생성 시간"
 
 msgid "Description"
 msgstr "설명"
@@ -2420,7 +2427,7 @@ msgid "Digitized"
 msgstr "디지털화됨"
 
 msgid "Dimensions"
-msgstr "치수"
+msgstr "이미지 크기"
 
 msgid "Disk"
 msgstr "디스크"
@@ -2429,7 +2436,7 @@ msgid "Document Id"
 msgstr "문서 ID"
 
 msgid "Duration"
-msgstr "기간"
+msgstr "재생 시간"
 
 msgid "Encoder"
 msgstr "인코더"
@@ -2459,7 +2466,7 @@ msgid "Genre"
 msgstr "장르"
 
 msgid "Id"
-msgstr "이드"
+msgstr "ID"
 
 msgid "ISO"
 msgstr "ISO"
@@ -2486,7 +2493,7 @@ msgid "Null"
 msgstr "널"
 
 msgid "Orientation"
-msgstr "오리엔테이션"
+msgstr "방향"
 
 msgid "Performer"
 msgstr "출연자"
@@ -2501,7 +2508,7 @@ msgid "Publisher"
 msgstr "출판사"
 
 msgid "Rating"
-msgstr "등급"
+msgstr "평점"
 
 msgid "Raw file"
 msgstr "RAW 파일"
@@ -2516,7 +2523,7 @@ msgid "Season"
 msgstr "시즌"
 
 msgid "Show"
-msgstr "쇼"
+msgstr "프로그램"
 
 msgid "Size"
 msgstr "크기"
@@ -2558,7 +2565,7 @@ msgid "duplicates"
 msgstr "중복"
 
 msgid "dups"
-msgstr "바보"
+msgstr "중복"
 
 msgid "duplicate"
 msgstr "중복"
@@ -2621,7 +2628,7 @@ msgid "Template:"
 msgstr "템플릿:"
 
 msgid "Start at:"
-msgstr "시작 시간:"
+msgstr "시작 번호:"
 
 msgid "Repeat play single media item"
 msgstr "단일 미디어 항목 반복 재생"
@@ -2630,7 +2637,7 @@ msgid "Clean database and reindex.\nAll data is regenerated."
 msgstr "데이터베이스를 정리하고 다시 색인을 생성합니다.\n모든 데이터가 재생성됩니다."
 
 msgid "Cleaning..."
-msgstr "청소 중..."
+msgstr "정리 중..."
 
 msgid "retro"
 msgstr "복고풍"
@@ -2663,10 +2670,10 @@ msgid "Search in the collection"
 msgstr "컬렉션에서 검색"
 
 msgid "From"
-msgstr "에서"
+msgstr "시작"
 
 msgid "Until"
-msgstr "까지"
+msgstr "종료"
 
 msgid "Search in a folder"
 msgstr "폴더에서 검색"
@@ -2711,22 +2718,22 @@ msgid "Always show RAW photos (slower)"
 msgstr "항상 RAW 사진 표시(느림)"
 
 msgid "Show this RAW photo"
-msgstr "이 RAW 사진을 보여주세요"
+msgstr "이 RAW 사진 표시"
 
-msgid "press R to view matching or possible copy items in the collection"
-msgstr "컬렉션에서 일치하거나 복사 가능한 항목을 보려면 R을 누르세요."
+msgid "press R to view the items most closely related to this one"
+msgstr "R 키를 누르면 이 항목과 가장 관련이 깊은 항목을 표시합니다"
 
 msgid "Show verbose metadata"
 msgstr "자세한 메타데이터 표시"
 
 msgid "Album-Show"
-msgstr "앨범쇼"
+msgstr "앨범-프로그램"
 
 msgid "Group order (Default)"
 msgstr "그룹 순서(기본값)"
 
 msgid "Extension"
-msgstr "확장"
+msgstr "확장자"
 
 msgid "Type"
 msgstr "유형"
@@ -2741,7 +2748,7 @@ msgid "Rating-Label"
 msgstr "등급 라벨"
 
 msgid "Staring"
-msgstr "노려보는"
+msgstr "출연"
 
 msgid "New Starting Date (local time):"
 msgstr "새로운 시작일(현지 시간):"
@@ -2762,7 +2769,7 @@ msgid "Preparing to synchronize files..."
 msgstr "파일 동기화 준비 중..."
 
 msgid "Straighten"
-msgstr "곧게 펴다"
+msgstr "기울기 보정"
 
 msgid "Auto color"
 msgstr "자동 색상"
@@ -2836,6 +2843,9 @@ msgstr "삭제할 로컬 파일: {}. 삭제할 원격 파일: {}."
 msgid "Synchronization will permanently delete files. These files cannot be recovered from the Recycle Bin."
 msgstr "동기화하면 파일이 영구적으로 삭제됩니다. 이러한 파일은 휴지통에서 복구할 수 없습니다."
 
+msgid "The existing files will be overwritten. Their current contents cannot be recovered from the recycle bin."
+msgstr "기존 파일을 덮어씁니다. 현재 내용은 휴지통에서 복구할 수 없습니다."
+
 msgid "Delete local files that do not exist remotely"
 msgstr "원격에 존재하지 않는 로컬 파일 삭제"
 
@@ -2873,7 +2883,7 @@ msgid "Common Tags"
 msgstr "공통 태그"
 
 msgid "Removable Tags"
-msgstr "이동식 태그"
+msgstr "제거 가능한 태그"
 
 msgid "Tags"
 msgstr "태그"
@@ -2882,7 +2892,7 @@ msgid "false"
 msgstr "거짓"
 
 msgid "true"
-msgstr "사실"
+msgstr "참"
 
 msgid "Diffractor ERROR"
 msgstr "Diffractor 오류"
@@ -2891,7 +2901,7 @@ msgid "folder:{}"
 msgstr "폴더:{}"
 
 msgid "rate"
-msgstr "요금"
+msgstr "평가"
 
 msgid "Updating..."
 msgstr "업데이트 중..."
@@ -2918,7 +2928,7 @@ msgid "Pinned items stay selected. Use this when you want to quickly compare an 
 msgstr "고정된 항목은 선택된 상태로 유지됩니다. 특정 항목을 다른 항목과 빠르게 비교하고 싶을 때 사용하세요."
 
 msgid "Reset straighten and rotate"
-msgstr "직선화 및 회전 재설정"
+msgstr "기울기 보정 및 회전 재설정"
 
 msgid "Tag or un-tag selected items"
 msgstr "선택한 항목에 태그 지정 또는 태그 해제"
@@ -2936,7 +2946,7 @@ msgid "More options and controls"
 msgstr "추가 옵션 및 컨트롤"
 
 msgid "{} ({}) total items in {} folders."
-msgstr "{} 폴더의 총 항목 수는 {}({})개입니다."
+msgstr "총 {}({})개 항목, {}개 폴더."
 
 msgid "Truncated at 1MB"
 msgstr "1MB에서 잘림"
@@ -3008,7 +3018,7 @@ msgid "Scope"
 msgstr "범위"
 
 msgid "Value"
-msgstr "가치"
+msgstr "값"
 
 msgid "Volume 200%"
 msgstr "볼륨 200%"
@@ -3041,7 +3051,7 @@ msgid "Repeat play all media items"
 msgstr "모든 미디어 항목 반복 재생"
 
 msgid "Don't repeat"
-msgstr "반복하지 마세요"
+msgstr "반복 안 함"
 
 msgid "Playback Options"
 msgstr "재생 옵션"
@@ -3065,7 +3075,7 @@ msgid "Show {} filtered out items"
 msgstr "필터링된 항목 {}개 표시"
 
 msgid "The collection contains {} items created on {}."
-msgstr "컬렉션에는 {}에서 생성된 {} 항목이 포함되어 있습니다."
+msgstr "컬렉션에는 {}개 항목이 있으며 {}에 생성되었습니다."
 
 msgid "Show all tags"
 msgstr "모든 태그 표시"
@@ -3080,7 +3090,7 @@ msgid "Destination"
 msgstr "대상"
 
 msgid "Old name"
-msgstr "옛 이름"
+msgstr "이전 이름"
 
 msgid "New name"
 msgstr "새 이름"
@@ -3371,9 +3381,6 @@ msgstr "{}이(가) 아직 실행 중입니다. 다른 곳을 탐색하기 전에
 msgid "If the destination already exists:"
 msgstr "대상이 이미 있는 경우:"
 
-msgid "If both sides have the file, the newer one replaces the older one."
-msgstr "양쪽에 파일이 있으면 최신 파일이 이전 파일을 대체합니다."
-
 msgid "Replace"
 msgstr "바꾸기"
 
@@ -3574,3 +3581,21 @@ msgstr "너무 커서 표시할 수 없음"
 
 msgid "This image could not be displayed"
 msgstr "이 이미지를 표시할 수 없습니다"
+
+msgid "Show the items in the collection most closely related to this one: possible copies, then the same album, the same series, the closest capture times, and the closest capture places."
+msgstr "컬렉션에서 이 항목과 가장 관련이 깊은 항목을 표시합니다: 사본일 수 있는 항목, 그다음 같은 앨범, 같은 시리즈, 가장 가까운 촬영 시각, 가장 가까운 촬영 장소."
+
+msgid "This item and possible copies"
+msgstr "이 항목 및 사본일 수 있는 항목"
+
+msgid "Same album"
+msgstr "같은 앨범"
+
+msgid "Same series"
+msgstr "같은 시리즈"
+
+msgid "Taken at the same time"
+msgstr "같은 시각에 촬영됨"
+
+msgid "Taken in the same place"
+msgstr "같은 장소에서 촬영됨"

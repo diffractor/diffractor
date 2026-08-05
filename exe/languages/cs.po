@@ -104,7 +104,7 @@ msgid "archive"
 msgstr "archiv"
 
 msgid "archives"
-msgstr "archiv"
+msgstr "archivy"
 
 msgid "audio"
 msgstr "zvuk"
@@ -164,7 +164,7 @@ msgid "&Synchronize"
 msgstr "&Synchronizovat"
 
 msgid "&Tag"
-msgstr "&Štítek"
+msgstr "&Označit"
 
 msgid "&Update"
 msgstr "&Aktualizovat"
@@ -186,12 +186,11 @@ msgstr "Darujte online."
 msgid "Changes"
 msgstr "Změny"
 
-msgid "Set the location for the selected files by scrolling the map or searching for a place. Use the mouse wheel to zoom."
-msgstr ""
-"Posouváním mapy vyberte umístění. Pro přiblížení použijte kolečko myši."
+msgid "The crosshair at the centre of the map marks the location that will be written. Drag the map, click a photo bubble to move it under the crosshair, or search for a place by name. Use the mouse wheel to zoom. Nothing is written until you press Add location."
+msgstr "Nitkový kříž uprostřed mapy označuje umístění, které bude zapsáno. Přetáhněte mapu, kliknutím na bublinu s fotografií ji přesuňte pod nitkový kříž nebo vyhledejte místo podle názvu. Přibližujte kolečkem myši. Nic se nezapíše, dokud nestisknete Přidat umístění."
 
 msgid "The collection contains {} {} ({})."
-msgstr "Kolekce obsahuje {} {} ({})."
+msgstr "Sbírka obsahuje {} {} ({})."
 
 msgid "The collection contains:"
 msgstr "Sbírka obsahuje:"
@@ -251,7 +250,7 @@ msgid "More information about metadata templates."
 msgstr "Další informace o šablonách metadat."
 
 msgid "Videos"
-msgstr "videa"
+msgstr "Videa"
 
 msgid "Your collection"
 msgstr "Vaše sbírka"
@@ -281,7 +280,7 @@ msgid "Next item group"
 msgstr "Další skupina položek"
 
 msgid "Select next item"
-msgstr "Vyberte další položku"
+msgstr "Vybrat další položku"
 
 msgid "Extend selection to next item"
 msgstr "Rozšířit výběr na další položku"
@@ -296,7 +295,7 @@ msgid "Previous item group"
 msgstr "Předchozí skupina položek"
 
 msgid "Select previous item"
-msgstr "Vyberte předchozí položku"
+msgstr "Vybrat předchozí položku"
 
 msgid "Extend selection to previous item"
 msgstr "Rozšířit výběr na předchozí položku"
@@ -317,7 +316,7 @@ msgid "Copy to folder"
 msgstr "Kopírovat do složky"
 
 msgid "Customise sidebar"
-msgstr "Přizpůsobte postranní panel"
+msgstr "Přizpůsobit postranní panel"
 
 msgid "Delete"
 msgstr "Smazat"
@@ -350,7 +349,7 @@ msgid "Favorite"
 msgstr "Oblíbený"
 
 msgid "Open properties"
-msgstr "Otevřete vlastnosti"
+msgstr "Otevřít vlastnosti"
 
 msgid "Search"
 msgstr "Hledat"
@@ -365,7 +364,7 @@ msgid "Group by Album/Show"
 msgstr "Seskupit podle alba/show"
 
 msgid "Group by Camera"
-msgstr "Skupina podle fotoaparátu"
+msgstr "Seskupit podle fotoaparátu"
 
 msgid "Group by Date Created"
 msgstr "Seskupit podle data vytvoření"
@@ -416,7 +415,7 @@ msgid "Group by Folder"
 msgstr "Seskupit podle složky"
 
 msgid "Highlight large items in yellow"
-msgstr "Velké položky zvýrazněte žlutou barvou"
+msgstr "Zvýraznit velké položky žlutou barvou"
 
 msgid "Import"
 msgstr "Importovat"
@@ -532,8 +531,8 @@ msgstr "Odmítnout"
 msgid "Refresh"
 msgstr "Aktualizovat"
 
-msgid "Matching or possible copy items in the collection"
-msgstr "Duplicitní nebo související položky ve sbírce"
+msgid "Related items"
+msgstr "Související položky"
 
 msgid "Rename"
 msgstr "Přejmenovat"
@@ -548,13 +547,16 @@ msgid "Restore"
 msgstr "Obnovit"
 
 msgid "Rotate anticlockwise"
-msgstr "Otočte proti směru hodinových ručiček"
+msgstr "Otočit proti směru hodinových ručiček"
 
 msgid "Rotate clockwise"
-msgstr "Otočte po směru hodinových ručiček"
+msgstr "Otočit po směru hodinových ručiček"
+
+msgid "Confirm single-item rotations"
+msgstr "Potvrzovat otáčení jedné položky"
 
 msgid "Reset rotation"
-msgstr "Resetujte rotaci"
+msgstr "Resetovat rotaci"
 
 msgid "Save"
 msgstr "Uložit"
@@ -596,7 +598,7 @@ msgid "Invert selection"
 msgstr "Invertovat výběr"
 
 msgid "Select none"
-msgstr "Vybrat nic"
+msgstr "Zrušit výběr"
 
 msgid "Email"
 msgstr "Email"
@@ -662,10 +664,10 @@ msgid "Menu"
 msgstr "Nabídka"
 
 msgid "Rate or Label"
-msgstr "Ohodnoťte nebo Označte"
+msgstr "Ohodnotit nebo označit"
 
 msgid "Select Items"
-msgstr "Vyberte položky"
+msgstr "Vybrat položky"
 
 msgid "Sort"
 msgstr "Seřadit"
@@ -677,7 +679,7 @@ msgid "Zoom mode"
 msgstr "Režim přiblížení"
 
 msgid "Compare"
-msgstr "Porovnejte"
+msgstr "Porovnat"
 
 msgid "Hold down left mouse button to compare items."
 msgstr "Chcete-li porovnat položky, podržte levé tlačítko myši."
@@ -687,6 +689,12 @@ msgstr "Kontrast"
 
 msgid "Open link {}"
 msgstr "Otevřít odkaz {}"
+
+msgid "Choose a link to open"
+msgstr "Vyberte odkaz, který chcete otevřít"
+
+msgid "Duplicate"
+msgstr "Duplikát"
 
 msgid "Copy to clipboard"
 msgstr "Kopírovat do schránky"
@@ -698,10 +706,10 @@ msgid "Creator"
 msgstr "Tvůrce"
 
 msgid "Credit"
-msgstr "Zásluhy"
+msgstr "Autorství"
 
 msgid "Notice"
-msgstr "Oznámení"
+msgstr "Upozornění"
 
 msgid "File"
 msgstr "Soubor"
@@ -766,7 +774,7 @@ msgid "Show world map"
 msgstr "Zobrazit mapu světa"
 
 msgid "Darks"
-msgstr "Tmavé"
+msgstr "Tmavé tóny"
 
 msgid "data"
 msgstr "data"
@@ -787,11 +795,8 @@ msgid ""
 "family food friends landscape nature night portrait selfie todo travel urban"
 " viewed"
 msgstr ""
-"rodina jídlo přátelé krajina přírodě noční portrét selfie úkol cestování "
-"městských viewed"
-
-msgid "results"
-msgstr "Výsledky"
+"rodina jídlo přátelé krajina příroda noční portrét selfie úkol cestování "
+"městské zhlédnuto"
 
 msgid "Defragment database."
 msgstr "Defragmentovat databázi."
@@ -824,7 +829,7 @@ msgid "System"
 msgstr "Systém"
 
 msgid "Used"
-msgstr "Použitý"
+msgstr "Využité"
 
 msgid "Documentation"
 msgstr "Dokumentace"
@@ -839,7 +844,7 @@ msgid "Editing"
 msgstr "Editace"
 
 msgid "Close without ejecting"
-msgstr "Zavřete bez vysunutí"
+msgstr "Zavřít bez vysunutí"
 
 msgid "Failed to eject {}."
 msgstr "Nepodařilo se vysunout {}."
@@ -858,7 +863,7 @@ msgid "Connecting to MAPI..."
 msgstr "Připojování k MAPI..."
 
 msgid "Convert all photos to JPEG"
-msgstr "Převeďte všechny fotografie do JPEG"
+msgstr "Převést všechny fotografie do JPEG"
 
 msgid "Failed to send email using MAPI."
 msgstr "Odeslání e-mailu pomocí MAPI se nezdařilo."
@@ -890,7 +895,7 @@ msgid "Empty"
 msgstr "Prázdný"
 
 msgid "Ending {}"
-msgstr "Končící {}"
+msgstr "Ukončuje se {}"
 
 msgid "Security options denied access to the source."
 msgstr "Možnosti zabezpečení odepřely přístup ke zdroji."
@@ -1071,7 +1076,7 @@ msgid "folder"
 msgstr "Složka"
 
 msgid "music"
-msgstr "muzika"
+msgstr "hudba"
 
 msgid "folders"
 msgstr "Složky"
@@ -1080,7 +1085,7 @@ msgid "onedrive"
 msgstr "onedrive"
 
 msgid "picture"
-msgstr "Obrázek"
+msgstr "obrázky"
 
 msgid "Folder"
 msgstr "Složka"
@@ -1092,7 +1097,7 @@ msgid "A capella"
 msgstr "A capella"
 
 msgid "Abstract"
-msgstr "Shrnutí"
+msgstr "Abstraktní"
 
 msgid "Acid"
 msgstr "Acid"
@@ -1107,7 +1112,7 @@ msgid "Acoustic"
 msgstr "Akustická"
 
 msgid "Action"
-msgstr "Činnost"
+msgstr "Akční"
 
 msgid "Action & Adventure"
 msgstr "Akční & Dobrodružné"
@@ -1149,7 +1154,7 @@ msgid "Bass"
 msgstr "Basy"
 
 msgid "Bebob"
-msgstr "Bebobe"
+msgstr "Bebop"
 
 msgid "Big Band"
 msgstr "Big Band"
@@ -1170,7 +1175,7 @@ msgid "Cabaret"
 msgstr "Kabaret"
 
 msgid "Candid"
-msgstr "Upřímný"
+msgstr "Momentka"
 
 msgid "Celtic"
 msgstr "Keltský"
@@ -1182,13 +1187,13 @@ msgid "Chanson"
 msgstr "Šanson"
 
 msgid "Children's"
-msgstr "Dětech"
+msgstr "Dětské"
 
 msgid "Chorus"
 msgstr "Sbor"
 
 msgid "Christian & Gospel"
-msgstr "Křesťan a evangelium"
+msgstr "Křesťanská & gospel"
 
 msgid "Christian Rap"
 msgstr "Křesťanský rap"
@@ -1215,7 +1220,7 @@ msgid "Comedy"
 msgstr "Komedie"
 
 msgid "Conceptual"
-msgstr "Pojmový"
+msgstr "Konceptuální"
 
 msgid "Concert"
 msgstr "Koncert"
@@ -1224,7 +1229,7 @@ msgid "Concert Films"
 msgstr "Koncertní filmy"
 
 msgid "Conservation"
-msgstr "Zachování"
+msgstr "Ochrana přírody"
 
 msgid "Country//genre"
 msgstr "Country"
@@ -1275,7 +1280,7 @@ msgid "Eurodance"
 msgstr "Eurodance"
 
 msgid "Euro-House"
-msgstr "Euro-Dům"
+msgstr "Euro-House"
 
 msgid "Euro-Techno"
 msgstr "Euro-Techno"
@@ -1290,7 +1295,7 @@ msgid "Fast Fusion"
 msgstr "Fast-Fusion"
 
 msgid "Film still"
-msgstr "Stále film"
+msgstr "Filmový snímek"
 
 msgid "Fine-art"
 msgstr "Výtvarné umění"
@@ -1311,7 +1316,7 @@ msgid "Folk-Rock"
 msgstr "Folk/Rock"
 
 msgid "Folklore"
-msgstr "Folk"
+msgstr "Folklór"
 
 msgid "Food"
 msgstr "Jídlo"
@@ -1329,7 +1334,7 @@ msgid "Funk"
 msgstr "Funk"
 
 msgid "Fusion"
-msgstr "Fúze"
+msgstr "Fusion"
 
 msgid "Game//genre"
 msgstr "Hra"
@@ -1341,7 +1346,7 @@ msgid "Geo-photography"
 msgstr "Zeměpisná fotografie"
 
 msgid "Glamour"
-msgstr "Půvab"
+msgstr "Glamour"
 
 msgid "Gospel"
 msgstr "Gospel"
@@ -1353,7 +1358,7 @@ msgid "Gothic Rock"
 msgstr "Gotický rock"
 
 msgid "Grunge"
-msgstr "grunge"
+msgstr "Grunge"
 
 msgid "Hard Rock"
 msgstr "Hard Rock"
@@ -1374,7 +1379,7 @@ msgid "Holiday"
 msgstr "Dovolená"
 
 msgid "Horror"
-msgstr "Hrůza"
+msgstr "Horor"
 
 msgid "House"
 msgstr "House"
@@ -1416,13 +1421,13 @@ msgid "Kirlian"
 msgstr "Kirlian"
 
 msgid "Landscape"
-msgstr "Na šířku"
+msgstr "Krajina"
 
 msgid "Latin"
 msgstr "Latinský"
 
 msgid "Lifestyle"
-msgstr "životní styl"
+msgstr "Životní styl"
 
 msgid "Lo-fi"
 msgstr "Lo-Fi"
@@ -1506,7 +1511,7 @@ msgid "Film Noir"
 msgstr "Film Noir"
 
 msgid "Photo op"
-msgstr "Foto op"
+msgstr "Focení"
 
 msgid "Photobiography"
 msgstr "Fotobiografie"
@@ -1518,7 +1523,7 @@ msgid "Photowalking"
 msgstr "Photowalking"
 
 msgid "Podcast"
-msgstr "podcast"
+msgstr "Podcast"
 
 msgid "Polaroid"
 msgstr "Polaroid"
@@ -1539,7 +1544,7 @@ msgid "Porn Groove"
 msgstr "Porno Groove"
 
 msgid "Portrait"
-msgstr "Na výšku"
+msgstr "Portrét"
 
 msgid "Power Ballad"
 msgstr "Power Balada"
@@ -1584,7 +1589,7 @@ msgid "Retro"
 msgstr "Retro"
 
 msgid "Revival"
-msgstr "Obrození"
+msgstr "Revival"
 
 msgid "Rhythmic Soul"
 msgstr "Rytmický soul"
@@ -1650,7 +1655,7 @@ msgid "Southern Rock"
 msgstr "Jižanský rock"
 
 msgid "Space"
-msgstr "Plocha"
+msgstr "Vesmír"
 
 msgid "Special Interest"
 msgstr "Zvláštní zájem"
@@ -1662,13 +1667,13 @@ msgid "Sports"
 msgstr "Sport"
 
 msgid "Star trail"
-msgstr "Hvězdná stezka"
+msgstr "Stopy hvězd"
 
 msgid "Still life"
 msgstr "Zátiší"
 
 msgid "Stock"
-msgstr "Sklad"
+msgstr "Stocková fotografie"
 
 msgid "Street"
 msgstr "Ulice"
@@ -1695,7 +1700,7 @@ msgid "Techno-Industrial"
 msgstr "Techno-industriální"
 
 msgid "Teens"
-msgstr "dospívající"
+msgstr "Dospívající"
 
 msgid "Thriller"
 msgstr "Thriller"
@@ -1713,10 +1718,10 @@ msgid "Trance"
 msgstr "Trans"
 
 msgid "Travel"
-msgstr "Cestovat"
+msgstr "Cestování"
 
 msgid "Tribal"
-msgstr "Domorodá"
+msgstr "Tribal"
 
 msgid "Trip-Hop"
 msgstr "Trip-Hop"
@@ -1734,10 +1739,10 @@ msgid "Urban"
 msgstr "Městský"
 
 msgid "Vernacular"
-msgstr "Lidový jazyk"
+msgstr "Lidová fotografie"
 
 msgid "Vintage"
-msgstr "Vinobraní"
+msgstr "Vintage"
 
 msgid "Vocal"
 msgstr "Vokál"
@@ -1746,7 +1751,7 @@ msgid "War"
 msgstr "Válka"
 
 msgid "Western"
-msgstr "Západní"
+msgstr "Western"
 
 msgid "World"
 msgstr "Svět"
@@ -1755,13 +1760,13 @@ msgid "Group and sort items"
 msgstr "Seskupování a řazení položek"
 
 msgid "Items"
-msgstr "položek"
+msgstr "Položky"
 
 msgid "No album or show"
 msgstr "Žádné album ani pořad"
 
 msgid "No camera"
-msgstr "Žádná kamera"
+msgstr "Žádný fotoaparát"
 
 msgid "No extension"
 msgstr "Bez přípony"
@@ -1779,7 +1784,7 @@ msgid "No value"
 msgstr "Žádná hodnota"
 
 msgid "random"
-msgstr "Zamíchat"
+msgstr "náhodně"
 
 msgid "{} to {}"
 msgstr "{} až {}"
@@ -1803,7 +1808,7 @@ msgid "Send anonymous log information to Diffractor HQ."
 msgstr "Odeslat anonymní informace protokolu do Diffractor HQ."
 
 msgid "Tags can be removed by prefixing with a minus: -remove"
-msgstr "Štítky lze odstranit přidáním předpony mínus: -odstranit"
+msgstr "Štítky lze odstranit přidáním předpony mínus: -remove"
 
 msgid "Separate each tag with a space: Australia holiday camping."
 msgstr "Každý štítek oddělte mezerou: Austrálie prázdninové kempování."
@@ -1825,9 +1830,6 @@ msgstr "Zdroj importu:"
 
 msgid "Ignore previously imported items."
 msgstr "Ignorovat dříve importované položky."
-
-msgid "Overwrite if source items are newer."
-msgstr "Přepište, pokud jsou zdrojové položky novější."
 
 msgid "Other folder"
 msgstr "Jiná složka"
@@ -1875,7 +1877,7 @@ msgid "'{}' is not a valid folder."
 msgstr "'{}' není platná složka."
 
 msgid "Show items rotated"
-msgstr "Ukázat otočené soubory"
+msgstr "Ukázat otočené položky"
 
 msgid "This item is shown oriented based on camera information. [{}]"
 msgstr ""
@@ -1909,7 +1911,7 @@ msgid "Basics"
 msgstr "Základy"
 
 msgid "browser-back"
-msgstr "prohlížeč-back"
+msgstr "prohlížeč-zpět"
 
 msgid "browser-favorites"
 msgstr "oblíbené v prohlížeči"
@@ -1918,7 +1920,7 @@ msgid "browser-forward"
 msgstr "prohlížeč-dopředu"
 
 msgid "browser-home"
-msgstr "domovský prohlížeč"
+msgstr "prohlížeč-domů"
 
 msgid "browser-refresh"
 msgstr "prohlížeč-obnovit"
@@ -1948,7 +1950,7 @@ msgid "Opens an image full screen."
 msgstr "Otevře obrázek na celé obrazovce."
 
 msgid "escape"
-msgstr "uniknout"
+msgstr "Esc"
 
 msgid "Gets you out of full screen, zoom or other modes."
 msgstr "Dostane vás z režimu celé obrazovky, zoomu nebo jiných režimů."
@@ -1993,7 +1995,7 @@ msgid "Help"
 msgstr "Nápověda"
 
 msgid "insert"
-msgstr "Vložit"
+msgstr "Insert"
 
 msgid "left"
 msgstr "Vlevo"
@@ -2046,10 +2048,10 @@ msgid "Selection"
 msgstr "Výběr"
 
 msgid "shift"
-msgstr "Posun"
+msgstr "Shift"
 
 msgid "space"
-msgstr "plocha"
+msgstr "Mezerník"
 
 msgid "tab"
 msgstr "Tabulátor"
@@ -2073,7 +2075,7 @@ msgid "Learn more at Diffractor.com"
 msgstr "Více se dozvíte na Diffractor.com"
 
 msgid "Lights"
-msgstr "Světla"
+msgstr "Světlé tóny"
 
 msgid "Limit output to a maximum dimension (in pixels)."
 msgstr "Omezte výstup na maximální rozměr (v pixelech)."
@@ -2097,7 +2099,7 @@ msgid "Location"
 msgstr "Umístění"
 
 msgid "Maximize image"
-msgstr "Maximalizujte obrázek"
+msgstr "Maximalizovat obrázek"
 
 msgid "Media"
 msgstr "Média"
@@ -2237,19 +2239,19 @@ msgid "of"
 msgstr "z"
 
 msgid "Open destination folder afterwards"
-msgstr "Poté otevřete cílovou složku"
+msgstr "Poté otevřít cílovou složku"
 
 msgid "Open in file browser"
 msgstr "Otevřít v prohlížeči souborů"
 
 msgid "Open Properties"
-msgstr "Otevřete Vlastnosti"
+msgstr "Otevřít vlastnosti"
 
 msgid "app"
 msgstr "aplikace"
 
 msgid "Open with app or tool"
-msgstr "Otevřete pomocí aplikace nebo nástroje"
+msgstr "Otevřít pomocí aplikace nebo nástroje"
 
 msgid "Failed to open selected items."
 msgstr "Vybrané položky se nepodařilo otevřít."
@@ -2258,7 +2260,7 @@ msgid "Open with {}"
 msgstr "Otevřít pomocí {}"
 
 msgid "tool"
-msgstr "Nástroj"
+msgstr "nástroj"
 
 msgid "Delay before showing the next item (in seconds)"
 msgstr "Prodleva před zobrazením další položky (v sekundách)"
@@ -2283,11 +2285,16 @@ msgid ""
 "Confirm when deleting items. Deleted items are moved to the recycle bin."
 msgstr "Potvrďte při mazání položek. Smazané položky se přesunou do koše."
 
+msgid ""
+"Confirm when rotating one item. Rotating several items is always confirmed."
+msgstr ""
+"Potvrďte při otáčení jedné položky. Otáčení více položek se potvrzuje vždy."
+
 msgid "JPEG save quality"
 msgstr "Kvalita uložení JPEG"
 
 msgid "WEBP save quality"
-msgstr "WEBP uložit kvalitu"
+msgstr "Kvalita uložení WEBP"
 
 msgid "When saving"
 msgstr "Při ukládání"
@@ -2308,7 +2315,7 @@ msgid "Show hidden files"
 msgstr "Zobrazit skryté soubory"
 
 msgid "Show photos rotated based on recorded camera orientation"
-msgstr "Zobrazit fotografie otočené na základě natočené orientace fotoaparátu"
+msgstr "Zobrazit fotografie otočené podle zaznamenané orientace fotoaparátu"
 
 msgid "Updates"
 msgstr "Aktualizace"
@@ -2337,7 +2344,7 @@ msgid "Resume playing media from the last position played."
 msgstr "Obnovit přehrávání média od poslední přehrávané pozice."
 
 msgid "Show tooltips with help on buttons and links."
-msgstr "Zobrazit nápovědu s nápovědou k tlačítkům a odkazům."
+msgstr "Zobrazit tipy s nápovědou k tlačítkům a odkazům."
 
 msgid "bottom-left"
 msgstr "Vlevo dole"
@@ -2370,7 +2377,7 @@ msgid "others"
 msgstr "ostatní"
 
 msgid "pasted"
-msgstr "vložit"
+msgstr "vložený"
 
 msgid "photo"
 msgstr "fotografie"
@@ -2388,7 +2395,7 @@ msgid "small"
 msgstr "Malá"
 
 msgid "Pixels"
-msgstr "pixelů"
+msgstr "Pixely"
 
 msgid "PNG - Best for non photos"
 msgstr "PNG – Nejlepší pro jiné než fotografie"
@@ -2454,7 +2461,7 @@ msgid "Album"
 msgstr "Album"
 
 msgid "Album artist"
-msgstr "Umělec alba"
+msgstr "Interpret alba"
 
 msgid "Artist"
 msgstr "Interpret"
@@ -2484,7 +2491,7 @@ msgid "Copyright creator"
 msgstr "Tvůrce autorských práv"
 
 msgid "Copyright credit"
-msgstr "Autorský kredit"
+msgstr "Uvedení autora"
 
 msgid "Copyright notice"
 msgstr "Upozornění na autorská práva"
@@ -2607,7 +2614,7 @@ msgid "Season"
 msgstr "Řada"
 
 msgid "Show"
-msgstr "Show"
+msgstr "Pořad"
 
 msgid "Size"
 msgstr "Velikost"
@@ -2670,10 +2677,10 @@ msgid "without"
 msgstr "bez"
 
 msgid "Rate selected items"
-msgstr "Ohodnoťte vybrané položky"
+msgstr "Ohodnotit vybrané položky"
 
 msgid "Number keys 0-5"
-msgstr "Čísla 0-5"
+msgstr "Číselné klávesy 0-5"
 
 msgid "Click {} to remove rating"
 msgstr "Kliknutím na {} odeberete hodnocení"
@@ -2685,7 +2692,7 @@ msgid "Remove Metadata"
 msgstr "Odebrat metadata"
 
 msgid "New name:"
-msgstr "Nové jméno:"
+msgstr "Nový název:"
 
 msgid "When specifying a template:"
 msgstr "Při zadávání šablony:"
@@ -2716,7 +2723,7 @@ msgid "Template:"
 msgstr "Šablona:"
 
 msgid "Start at:"
-msgstr "Začátek v:"
+msgstr "Začít od:"
 
 msgid "Repeat play single media item"
 msgstr "Opakované přehrávání jedné mediální položky"
@@ -2763,7 +2770,7 @@ msgid "Christmas"
 msgstr "Vánoce"
 
 msgid "Search in the collection"
-msgstr "Hledejte ve sbírce"
+msgstr "Hledat ve sbírce"
 
 msgid "From"
 msgstr "Od"
@@ -2772,7 +2779,7 @@ msgid "Until"
 msgstr "Do"
 
 msgid "Search in a folder"
-msgstr "Hledejte ve složce"
+msgstr "Hledat ve složce"
 
 msgid "Last 7 days"
 msgstr "Posledních 7 dní"
@@ -2784,7 +2791,7 @@ msgid "None of these terms"
 msgstr "Žádný z těchto termínů"
 
 msgid "Search criteria or folder"
-msgstr "Hledat kritéria nebo složky"
+msgstr "Kritéria hledání nebo složka"
 
 msgid "Photos"
 msgstr "Fotografie"
@@ -2814,23 +2821,22 @@ msgid "Always show RAW photos (slower)"
 msgstr "Vždy zobrazovat fotografie RAW (pomalejší)"
 
 msgid "Show this RAW photo"
-msgstr "Ukaž tuto RAW fotku"
+msgstr "Zobrazit tuto RAW fotografii"
 
-msgid "press R to view matching or possible copy items in the collection"
-msgstr ""
-"stiskněte R pro zobrazení duplicitních nebo souvisejících položek v kolekci"
+msgid "press R to view the items most closely related to this one"
+msgstr "stisknutím R zobrazíte položky nejvíce související s touto"
 
 msgid "Show verbose metadata"
 msgstr "Zobrazit podrobná metadata"
 
 msgid "Album-Show"
-msgstr "Album-Show"
+msgstr "Album-Pořad"
 
 msgid "Group order (Default)"
 msgstr "Pořadí skupiny (výchozí)"
 
 msgid "Extension"
-msgstr "Rozšíření"
+msgstr "Přípona"
 
 msgid "Type"
 msgstr "Typ"
@@ -2845,7 +2851,7 @@ msgid "Rating-Label"
 msgstr "Hodnocení-štítek"
 
 msgid "Staring"
-msgstr "Zírání"
+msgstr "Obsazení"
 
 msgid "New Starting Date (local time):"
 msgstr "Nové datum zahájení (místní čas):"
@@ -2917,7 +2923,7 @@ msgid "Support"
 msgstr "Podpora"
 
 msgid "Synchronize whole collection"
-msgstr "Synchronizujte celou sbírku"
+msgstr "Synchronizovat celou sbírku"
 
 msgid "copy local"
 msgstr "kopírovat do místního umístění"
@@ -2940,11 +2946,14 @@ msgstr "Místní soubory k odstranění: {}. Vzdálené soubory k odstranění: 
 msgid "Synchronization will permanently delete files. These files cannot be recovered from the Recycle Bin."
 msgstr "Synchronizace soubory trvale odstraní. Tyto soubory nelze obnovit z koše."
 
+msgid "The existing files will be overwritten. Their current contents cannot be recovered from the recycle bin."
+msgstr "Stávající soubory budou přepsány. Jejich současný obsah nelze obnovit z koše."
+
 msgid "Delete local files that do not exist remotely"
-msgstr "Odstraňte místní soubory, které vzdáleně neexistují"
+msgstr "Odstranit místní soubory, které vzdáleně neexistují"
 
 msgid "Delete remote files that do not exist locally"
-msgstr "Odstraňte vzdálené soubory, které lokálně neexistují"
+msgstr "Odstranit vzdálené soubory, které lokálně neexistují"
 
 msgid "c:\\photos with \\\\nas\\\\backup"
 msgstr "c:\\photos s \\\\nas\\\\backup"
@@ -2953,16 +2962,16 @@ msgid "Local folders"
 msgstr "Místní složky"
 
 msgid "Copy newer local files to remote folders"
-msgstr "Zkopírujte novější místní soubory do vzdálených složek"
+msgstr "Kopírovat novější místní soubory do vzdálených složek"
 
 msgid "Synchronize only one folder"
-msgstr "Synchronizujte pouze jednu složku"
+msgstr "Synchronizovat pouze jednu složku"
 
 msgid "Remote folder"
 msgstr "Vzdálená složka"
 
 msgid "Copy newer remote files to local folders"
-msgstr "Zkopírujte novější vzdálené soubory do místních složek"
+msgstr "Kopírovat novější vzdálené soubory do místních složek"
 
 msgid "Tags to add or remove:"
 msgstr "Štítky k přidání nebo odebrání:"
@@ -2971,19 +2980,19 @@ msgid "Add or remove Tags"
 msgstr "Přidat nebo odebrat štítky"
 
 msgid "Tag selected items"
-msgstr "Označte vybrané položky"
+msgstr "Označit vybrané položky"
 
 msgid "Common Tags"
-msgstr "Společné značky"
+msgstr "Společné štítky"
 
 msgid "Removable Tags"
-msgstr "Odnímatelné štítky"
+msgstr "Odebratelné štítky"
 
 msgid "Tags"
-msgstr "Tagy"
+msgstr "Štítky"
 
 msgid "false"
-msgstr "falešný"
+msgstr "nepravda"
 
 msgid "true"
 msgstr "pravda"
@@ -2995,7 +3004,7 @@ msgid "folder:{}"
 msgstr "složka:{}"
 
 msgid "rate"
-msgstr "Míra"
+msgstr "hodnocení"
 
 msgid "Updating..."
 msgstr "Aktualizace..."
@@ -3004,7 +3013,7 @@ msgid "Reset color adjustments"
 msgstr "Resetovat úpravy barev"
 
 msgid "Color, straighten or crop photos."
-msgstr "Upravte barvy, narovnejte nebo ořízněte fotografie."
+msgstr "Upravit barvy, narovnat nebo oříznout fotografie."
 
 msgid "Toggle full screen for media-items or open non-media-items."
 msgstr ""
@@ -3012,13 +3021,13 @@ msgstr ""
 " položky."
 
 msgid "Change language"
-msgstr "Změňte jazyk"
+msgstr "Změnit jazyk"
 
 msgid "Contains common folders, searches and favorites"
 msgstr "Obsahuje běžné složky, vyhledávání a oblíbené položky"
 
 msgid "Open selected items with external app"
-msgstr "Otevřete vybrané položky pomocí externí aplikace"
+msgstr "Otevřít vybrané položky pomocí externí aplikace"
 
 msgid ""
 "Pinned items stay selected. Use this when you want to quickly compare an "
@@ -3028,10 +3037,10 @@ msgstr ""
 "položku s jinými položkami."
 
 msgid "Reset straighten and rotate"
-msgstr "Reset narovnejte a otočte"
+msgstr "Resetovat narovnání a otočení"
 
 msgid "Tag or un-tag selected items"
-msgstr "Označte nebo zrušte označení vybraných položek"
+msgstr "Označit nebo zrušit označení vybraných položek"
 
 msgid "Toggle between thumbnails or details for selected item group"
 msgstr ""
@@ -3053,7 +3062,7 @@ msgid "Truncated at 1MB"
 msgstr "Zkráceno na 1 MB"
 
 msgid "Type to search"
-msgstr "Zadejte a vyhledejte"
+msgstr "Pište pro vyhledávání"
 
 msgid "Unselect {}"
 msgstr "Zrušit výběr {}"
@@ -3127,19 +3136,19 @@ msgid "Value"
 msgstr "Hodnota"
 
 msgid "Volume 200%"
-msgstr "objem 200 %"
+msgstr "Hlasitost 200 %"
 
 msgid "Volume 100%"
-msgstr "objem 100 %"
+msgstr "Hlasitost 100 %"
 
 msgid "Volume 75%"
-msgstr "Objem 75 %"
+msgstr "Hlasitost 75 %"
 
 msgid "Volume 50%"
-msgstr "objem 50 %"
+msgstr "Hlasitost 50 %"
 
 msgid "Volume 25%"
-msgstr "objem 25 %"
+msgstr "Hlasitost 25 %"
 
 msgid "Mute"
 msgstr "Ztlumit"
@@ -3172,7 +3181,7 @@ msgid "Photo filter"
 msgstr "Fotografický filtr"
 
 msgid "Video filter"
-msgstr "Video filtr"
+msgstr "Videofiltr"
 
 msgid "Audio filter"
 msgstr "Zvukový filtr"
@@ -3196,10 +3205,10 @@ msgid "Destination"
 msgstr "Cíl"
 
 msgid "Old name"
-msgstr "Staré jméno"
+msgstr "Starý název"
 
 msgid "New name"
-msgstr "Nové jméno"
+msgstr "Nový název"
 
 msgid "Local"
 msgstr "Místní"
@@ -3231,48 +3240,49 @@ msgstr "Kliknutím na analyzovat zobrazíte položky"
 msgid "Rotate {first-name}."
 msgid_plural "Rotate {count} selected items. Originals will be overwritten."
 msgstr[0] "Otočit {first-name}."
-msgstr[1] "Otočit {count} vybraných položek. Originály budou přepsány."
+msgstr[1] "Otočit {count} vybrané položky. Originály budou přepsány."
 msgstr[2] "Otočit {count} vybraných položek. Originály budou přepsány."
 
 msgid "1 folder"
 msgid_plural "{count} folders"
 msgstr[0] "1 složka"
-msgstr[1] "{count} složek"
+msgstr[1] "{count} složky"
 msgstr[2] "{count} složek"
 
 msgid "{count} item"
 msgid_plural "{count} items"
 msgstr[0] "{count} položka"
-msgstr[1] "{count} položek"
+msgstr[1] "{count} položky"
 msgstr[2] "{count} položek"
 
 msgid "1 item here"
 msgid_plural "{count} items here"
 msgstr[0] "1 položka zde"
-msgstr[1] "{count} položek zde"
+msgstr[1] "{count} položky zde"
 msgstr[2] "{count} položek zde"
 
 msgid "Set rating to 1 star"
 msgid_plural "Set rating to {count} stars"
 msgstr[0] "Nastavit hodnocení na 1 hvězdičku"
 msgstr[1] "Nastavit hodnocení na {count} hvězdičky"
+msgstr[2] "Nastavit hodnocení na {count} hvězdiček"
 
 msgid "Cannot process {first-name}."
 msgid_plural "Cannot process {first-name} and {other} other items."
 msgstr[0] "{first-name} nelze zpracovat."
 msgstr[1] "Nelze zpracovat {first-name} a {other} další položky."
-msgstr[2] "Nelze zpracovat {first-name} a {other} další položky."
+msgstr[2] "Nelze zpracovat {first-name} a {other} dalších položek."
 
 msgid "{first-name} will be renamed."
 msgid_plural "{count} items will be renamed."
 msgstr[0] "{first-name} bude přejmenováno."
-msgstr[1] "{count} položek bude přejmenováno."
+msgstr[1] "{count} položky budou přejmenovány."
 msgstr[2] "{count} položek bude přejmenováno."
 
 msgid "1 duplicate item"
 msgid_plural "{count} duplicate items"
 msgstr[0] "1 duplicitní položka"
-msgstr[1] "{count} duplicitních položek"
+msgstr[1] "{count} duplicitní položky"
 msgstr[2] "{count} duplicitních položek"
 
 msgid "1 sidecar item"
@@ -3290,19 +3300,19 @@ msgstr[2] "Bylo zpracováno {count} z {total} položek."
 msgid "1 item was processed."
 msgid_plural "{count} items were processed."
 msgstr[0] "1 položka byla zpracována."
-msgstr[1] "Bylo zpracováno {count} položek."
+msgstr[1] "{count} položky byly zpracovány."
 msgstr[2] "Bylo zpracováno {count} položek."
 
 msgid "{first-name} failed."
 msgid_plural "{count} items failed."
 msgstr[0] "{first-name} se nezdařilo."
-msgstr[1] "{count} položek se nezdařilo."
+msgstr[1] "{count} položky se nezdařily."
 msgstr[2] "{count} položek se nezdařilo."
 
 msgid "{first-name} was ignored."
 msgid_plural "{count} items were ignored."
 msgstr[0] "{first-name} bylo ignorováno."
-msgstr[1] "{count} položek bylo ignorováno."
+msgstr[1] "{count} položky byly ignorovány."
 msgstr[2] "{count} položek bylo ignorováno."
 
 msgid ""
@@ -3314,7 +3324,7 @@ msgid_plural ""
 msgstr[0] ""
 "{first-name} bylo ignorováno, protože v cílovém umístění již existuje."
 msgstr[1] ""
-"{count} položek bylo ignorováno, protože již v cílovém umístění existují."
+"{count} položky byly ignorovány, protože již v cílovém umístění existují."
 msgstr[2] ""
 "{count} položek bylo ignorováno, protože již v cílovém umístění existují."
 
@@ -3322,13 +3332,13 @@ msgid "{first-name} was ignored because it was previously imported."
 msgid_plural ""
 "{count} items were ignored because they were previously imported."
 msgstr[0] "{first-name} bylo ignorováno, protože bylo dříve importováno."
-msgstr[1] "Položky ({count}) byly ignorovány, protože byly dříve importovány."
-msgstr[2] "Položky ({count}) byly ignorovány, protože byly dříve importovány."
+msgstr[1] "{count} položky byly ignorovány, protože byly dříve importovány."
+msgstr[2] "{count} položek bylo ignorováno, protože byly dříve importovány."
 
 msgid "{first-name} will be moved to the recycle bin."
 msgid_plural "{count} items ({size}) will be moved to the recycle bin."
 msgstr[0] "{first-name} bude přesunuto do koše."
-msgstr[1] "{count} položek ({size}) bude přesunuto do koše."
+msgstr[1] "{count} položky ({size}) budou přesunuty do koše."
 msgstr[2] "{count} položek ({size}) bude přesunuto do koše."
 
 msgid "{first-name} will be permanently deleted."
@@ -3349,19 +3359,19 @@ msgstr "Tyto položky se nacházejí na síťové cestě (UNC). Budou trvale ods
 msgid "{first-name} will be copied."
 msgid_plural "{count} items ({size}) will be copied."
 msgstr[0] "{first-name} bude zkopírováno."
-msgstr[1] "Bude zkopírováno {count} položek ({size})."
+msgstr[1] "{count} položky ({size}) budou zkopírovány."
 msgstr[2] "Bude zkopírováno {count} položek ({size})."
 
 msgid "{first-name} will be moved."
 msgid_plural "{count} items ({size}) will be moved."
 msgstr[0] "{first-name} bude přesunuto."
-msgstr[1] "{count} položek ({size}) bude přesunuto."
+msgstr[1] "{count} položky ({size}) budou přesunuty."
 msgstr[2] "{count} položek ({size}) bude přesunuto."
 
 msgid "{first-name} will be updated."
 msgid_plural "{count} items will be updated."
 msgstr[0] "{first-name} bude aktualizováno."
-msgstr[1] "{count} položek bude aktualizováno."
+msgstr[1] "{count} položky budou aktualizovány."
 msgstr[2] "{count} položek bude aktualizováno."
 
 msgid "Add or overwrite specific metadata in {first-name}."
@@ -3373,7 +3383,7 @@ msgstr[2] "Přidejte nebo přepište konkrétní metadata v {count} položkách.
 msgid "{first-name} will be converted and copied to a folder."
 msgid_plural "{count} items will be converted and copied to a folder."
 msgstr[0] "{first-name} bude převedeno a zkopírováno do složky."
-msgstr[1] "{count} položek bude převedeno a zkopírováno do složky."
+msgstr[1] "{count} položky budou převedeny a zkopírovány do složky."
 msgstr[2] "{count} položek bude převedeno a zkopírováno do složky."
 
 msgid "{first-name} will have tags added or removed."
@@ -3391,18 +3401,18 @@ msgstr[2] "U {count} položek bude datum upraveno."
 msgid "A desktop email draft will be opened with {first-name} attached."
 msgid_plural "A desktop email draft will be opened with {count} selected items attached."
 msgstr[0] "V e-mailovém klientovi se otevře koncept s přílohou {first-name}."
-msgstr[1] "V e-mailovém klientovi se otevře koncept s vybranými položkami v počtu {count}."
-msgstr[2] "V e-mailovém klientovi se otevře koncept s vybranými položkami v počtu {count}."
+msgstr[1] "V e-mailovém klientovi se otevře koncept s {count} vybranými položkami v příloze."
+msgstr[2] "V e-mailovém klientovi se otevře koncept s {count} vybranými položkami v příloze."
 
 msgid "{first-name} already exists. Do you want to replace it?"
 msgid_plural ""
 "{first-name} and {other} other items already exist. Do you want to replace "
 "them?"
-msgstr[0] "{first-name} již existuje. Chcete jej vyměnit?"
+msgstr[0] "{first-name} již existuje. Chcete jej nahradit?"
 msgstr[1] ""
-"{first-name} a {other} další položky již existují. Chcete je vyměnit?"
+"{first-name} a {other} další položky již existují. Chcete je nahradit?"
 msgstr[2] ""
-"{first-name} a {other} další položky již existují. Chcete je vyměnit?"
+"{first-name} a {other} dalších položek již existuje. Chcete je nahradit?"
 
 msgid "{first-name} will have existing GPS position metadata overwritten."
 msgid_plural ""
@@ -3410,10 +3420,10 @@ msgid_plural ""
 "metadata overwritten."
 msgstr[0] "{first-name} bude mít přepsána stávající metadata polohy GPS."
 msgstr[1] ""
-"{first-name} a {other} další položky budou mít přepsány stávající metadata "
+"{first-name} a {other} další položky budou mít přepsána stávající metadata "
 "polohy GPS."
 msgstr[2] ""
-"{first-name} a {other} další položky budou mít přepsány stávající metadata "
+"{first-name} a {other} dalších položek bude mít přepsána stávající metadata "
 "polohy GPS."
 
 msgid "Choose a valid new starting date and time."
@@ -3440,8 +3450,8 @@ msgstr "Vyberte alespoň jedno pole metadat, které chcete aktualizovat. Zaškrt
 msgid "{first-name} was canceled."
 msgid_plural "{count} items were canceled."
 msgstr[0] "Operace pro {first-name} byla zrušena."
-msgstr[1] "Operace byla zrušena pro tento počet položek: {count}."
-msgstr[2] "Operace byla zrušena pro tento počet položek: {count}."
+msgstr[1] "Operace pro {count} položky byla zrušena."
+msgstr[2] "Operace pro {count} položek byla zrušena."
 
 msgid "{first-name} will be staged for disc burning."
 msgid_plural "{count} selected items ({size}) will be staged for disc burning."
@@ -3533,9 +3543,6 @@ msgstr "{} stále běží. Zavřete jej, než přejdete jinam."
 
 msgid "If the destination already exists:"
 msgstr "Pokud cíl již existuje:"
-
-msgid "If both sides have the file, the newer one replaces the older one."
-msgstr "Pokud soubor mají obě strany, novější nahradí starší."
 
 msgid "Replace"
 msgstr "Nahradit"
@@ -3737,3 +3744,21 @@ msgstr "Příliš velké pro zobrazení"
 
 msgid "This image could not be displayed"
 msgstr "Tento obrázek nelze zobrazit"
+
+msgid "Show the items in the collection most closely related to this one: possible copies, then the same album, the same series, the closest capture times, and the closest capture places."
+msgstr "Zobrazit položky ve sbírce nejvíce související s touto: možné kopie, poté stejné album, stejnou sérii, nejbližší časy pořízení a nejbližší místa pořízení."
+
+msgid "This item and possible copies"
+msgstr "Tato položka a možné kopie"
+
+msgid "Same album"
+msgstr "Stejné album"
+
+msgid "Same series"
+msgstr "Stejná série"
+
+msgid "Taken at the same time"
+msgstr "Pořízeno ve stejnou dobu"
+
+msgid "Taken in the same place"
+msgstr "Pořízeno na stejném místě"

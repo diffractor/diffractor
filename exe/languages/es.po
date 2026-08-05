@@ -170,8 +170,8 @@ msgstr "Donar en línea."
 msgid "Changes"
 msgstr "Cambios"
 
-msgid "Set the location for the selected files by scrolling the map or searching for a place. Use the mouse wheel to zoom."
-msgstr "Desplaza el mapa para seleccionar una ubicación. Usa la rueda del ratón para hacer zoom."
+msgid "The crosshair at the centre of the map marks the location that will be written. Drag the map, click a photo bubble to move it under the crosshair, or search for a place by name. Use the mouse wheel to zoom. Nothing is written until you press Add location."
+msgstr "La cruz en el centro del mapa marca la ubicación que se escribirá. Arrastre el mapa, haga clic en una burbuja de foto para moverla bajo la cruz o busque un lugar por nombre. Use la rueda del ratón para acercar. No se escribe nada hasta que pulse Agregar ubicación."
 
 msgid "The collection contains {} {} ({})."
 msgstr "La colección contiene {} {} ({})."
@@ -509,8 +509,8 @@ msgstr "Rechazar"
 msgid "Refresh"
 msgstr "Actualizar"
 
-msgid "Matching or possible copy items in the collection"
-msgstr "Elementos coincidentes o posibles copias en la colección"
+msgid "Related items"
+msgstr "Elementos relacionados"
 
 msgid "Rename"
 msgstr "Renombrar"
@@ -529,6 +529,9 @@ msgstr "Rotar en sentido antihorario"
 
 msgid "Rotate clockwise"
 msgstr "Rotar en sentido horario"
+
+msgid "Confirm single-item rotations"
+msgstr "Confirmar la rotación de un solo elemento"
 
 msgid "Reset rotation"
 msgstr "Restablecer rotación"
@@ -665,6 +668,12 @@ msgstr "Contraste"
 msgid "Open link {}"
 msgstr "Abrir enlace {}"
 
+msgid "Choose a link to open"
+msgstr "Elija un enlace para abrir"
+
+msgid "Duplicate"
+msgstr "Duplicado"
+
 msgid "Copy to clipboard"
 msgstr "Copiar al portapapeles"
 
@@ -760,9 +769,6 @@ msgstr "Fechas"
 
 msgid "family food friends landscape nature night portrait selfie todo travel urban viewed"
 msgstr "familia comida amigos paisaje naturaleza noche retrato selfie pendiente viaje urbano visto"
-
-msgid "results"
-msgstr "resultados"
 
 msgid "Defragment database."
 msgstr "Desfragmentar base de datos."
@@ -1766,9 +1772,6 @@ msgstr "Origen de importación:"
 msgid "Ignore previously imported items."
 msgstr "Ignorar elementos importados previamente."
 
-msgid "Overwrite if source items are newer."
-msgstr "Sobrescribir si los elementos de origen son más nuevos."
-
 msgid "Other folder"
 msgstr "Otra carpeta"
 
@@ -2205,6 +2208,12 @@ msgstr "Buscar actualizaciones conectándose a Internet"
 
 msgid "Confirm when deleting items. Deleted items are moved to the recycle bin."
 msgstr "Confirmar al eliminar elementos. Los elementos eliminados se mueven a la papelera de reciclaje."
+
+msgid ""
+"Confirm when rotating one item. Rotating several items is always confirmed."
+msgstr ""
+"Confirmar al rotar un elemento. La rotación de varios elementos siempre se "
+"confirma."
 
 msgid "JPEG save quality"
 msgstr "Calidad de guardado JPEG"
@@ -2717,8 +2726,8 @@ msgstr "Mostrar siempre fotos RAW (más lento)"
 msgid "Show this RAW photo"
 msgstr "Mostrar esta foto RAW"
 
-msgid "press R to view matching or possible copy items in the collection"
-msgstr "presiona R para ver elementos coincidentes o posibles copias en la colección"
+msgid "press R to view the items most closely related to this one"
+msgstr "pulse R para ver los elementos más relacionados con este"
 
 msgid "Show verbose metadata"
 msgstr "Mostrar metadatos detallados"
@@ -2745,7 +2754,7 @@ msgid "Rating-Label"
 msgstr "Valoración-Etiqueta"
 
 msgid "Staring"
-msgstr "Iniciando"
+msgstr "Reparto"
 
 msgid "New Starting Date (local time):"
 msgstr "Nueva fecha de inicio (hora local):"
@@ -2840,6 +2849,9 @@ msgstr "Archivos locales que se eliminarán: {}. Archivos remotos que se elimina
 msgid "Synchronization will permanently delete files. These files cannot be recovered from the Recycle Bin."
 msgstr "La sincronización eliminará archivos de forma permanente. Estos archivos no se pueden recuperar de la Papelera de reciclaje."
 
+msgid "The existing files will be overwritten. Their current contents cannot be recovered from the recycle bin."
+msgstr "Los archivos existentes se sobrescribirán. Su contenido actual no se puede recuperar de la Papelera de reciclaje."
+
 msgid "Delete local files that do not exist remotely"
 msgstr "Eliminar archivos locales que no existen remotamente"
 
@@ -2922,7 +2934,7 @@ msgid "Pinned items stay selected. Use this when you want to quickly compare an 
 msgstr "Los elementos fijados permanecen seleccionados. Usa esto cuando quieras comparar rápidamente un elemento con otros elementos."
 
 msgid "Reset straighten and rotate"
-msgstr "Restablecer enderezar y rotar"
+msgstr "Restablecer enderezamiento y rotación"
 
 msgid "Tag or un-tag selected items"
 msgstr "Etiquetar o quitar etiquetas de elementos seleccionados"
@@ -3375,9 +3387,6 @@ msgstr "{} sigue en ejecución. Ciérrelo antes de ir a otro sitio."
 msgid "If the destination already exists:"
 msgstr "Si el destino ya existe:"
 
-msgid "If both sides have the file, the newer one replaces the older one."
-msgstr "Si el archivo está en ambos lados, el más reciente sustituye al más antiguo."
-
 msgid "Replace"
 msgstr "Reemplazar"
 
@@ -3578,3 +3587,21 @@ msgstr "Demasiado grande para mostrarse"
 
 msgid "This image could not be displayed"
 msgstr "No se pudo mostrar esta imagen"
+
+msgid "Show the items in the collection most closely related to this one: possible copies, then the same album, the same series, the closest capture times, and the closest capture places."
+msgstr "Mostrar los elementos de la colección más relacionados con este: posibles copias, luego el mismo álbum, la misma serie, los momentos de captura más cercanos y los lugares de captura más cercanos."
+
+msgid "This item and possible copies"
+msgstr "Este elemento y posibles copias"
+
+msgid "Same album"
+msgstr "Mismo álbum"
+
+msgid "Same series"
+msgstr "Misma serie"
+
+msgid "Taken at the same time"
+msgstr "Tomado al mismo tiempo"
+
+msgid "Taken in the same place"
+msgstr "Tomado en el mismo lugar"

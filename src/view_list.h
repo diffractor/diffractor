@@ -30,9 +30,12 @@ struct view_operation_result
 // One named CollisionPolicy control (docs/design.md) shared by every destination-writing
 // operation so the vocabulary, ordering and behavior are identical everywhere.
 // Storage for the radio flags is owned by the callbacks held by the returned element.
+// A prompt raised because collisions were already found offers only the choices that resolve one:
+// Block run would repeat the Cancel button beside it, and Skip is not always expressible.
 inline view_element_ptr create_collision_policy_control(const ui::control_frame_ptr& frame, collision_policy& value,
                                                         std::function<void()> changed,
-                                                        const bool allow_auto_rename = true)
+                                                        const bool allow_auto_rename = true,
+                                                        const bool allow_block_and_skip = true)
 {
 	struct policy_flags
 	{
@@ -46,6 +49,8 @@ inline view_element_ptr create_collision_policy_control(const ui::control_frame_
 
 	// Auto-rename is not offered by every operation; fall back rather than leave nothing selected.
 	if (!allow_auto_rename && value == collision_policy::auto_rename) value = collision_policy::skip;
+	if (!allow_block_and_skip && (value == collision_policy::block_run || value == collision_policy::skip))
+		value = allow_auto_rename ? collision_policy::auto_rename : collision_policy::replace;
 
 	flags->block_run = value == collision_policy::block_run;
 	flags->skip = value == collision_policy::skip;
@@ -55,20 +60,25 @@ inline view_element_ptr create_collision_policy_control(const ui::control_frame_
 	auto group = std::make_shared<ui::group_control>();
 	group->add(std::make_shared<text_element>(tt.collision_policy_label));
 
-	auto apply = [flags, &value, changed = std::move(changed)](const bool)
+	auto apply = [flags, &value, allow_block_and_skip, changed = std::move(changed)](const bool)
 	{
 		if (flags->skip) value = collision_policy::skip;
 		else if (flags->replace) value = collision_policy::replace;
 		else if (flags->auto_rename) value = collision_policy::auto_rename;
-		else value = collision_policy::block_run;
+		// Nothing selected can only mean Block run where it is offered; where it is not, the safe
+		// default stands rather than a policy the prompt never showed.
+		else value = allow_block_and_skip ? collision_policy::block_run : collision_policy::auto_rename;
 
 		if (changed) changed();
 	};
 
-	group->add(std::make_shared<ui::check_control>(frame, tt.collision_block, flags->block_run, true, false, apply,
-	                                              ui::radio_group_collision));
-	group->add(std::make_shared<ui::check_control>(frame, tt.collision_skip, flags->skip, true, false, apply,
-	                                              ui::radio_group_collision));
+	if (allow_block_and_skip)
+	{
+		group->add(std::make_shared<ui::check_control>(frame, tt.collision_block, flags->block_run, true, false, apply,
+		                                               ui::radio_group_collision));
+		group->add(std::make_shared<ui::check_control>(frame, tt.collision_skip, flags->skip, true, false, apply,
+		                                               ui::radio_group_collision));
+	}
 
 	if (allow_auto_rename)
 	{
@@ -78,7 +88,7 @@ inline view_element_ptr create_collision_policy_control(const ui::control_frame_
 	}
 
 	group->add(std::make_shared<ui::check_control>(frame, tt.collision_replace, flags->replace, true, false, apply,
-	                                              ui::radio_group_collision));
+	                                               ui::radio_group_collision));
 	return group;
 }
 
@@ -353,7 +363,8 @@ public:
 
 		_rows = std::move(rows);
 		_showing_results = true;
-		_state.invalidate_view(view_invalid::view_layout | view_invalid::controller | view_invalid::status);
+		_state.invalidate_view(view_invalid::view_layout | view_invalid::controller | view_invalid::status |
+			view_invalid::command_state);
 		return summary;
 	}
 
@@ -375,7 +386,7 @@ public:
 	{
 		if (!_progress.active) return true;
 
-		auto dlg = make_dlg(_host->owner());
+		const auto dlg = make_dlg(_host->owner());
 
 		const std::vector<view_element_ptr> controls = {
 			set_margin(std::make_shared<ui::title_control2>(dlg->_frame, icon_index::question,
@@ -614,11 +625,7 @@ public:
 			}
 
 			render_headers(rc);
-
-			if (!_scroller._active)
-			{
-				_scroller.draw_scroll(rc);
-			}
+			_scroller.draw_scroll(rc);
 		}
 		else
 		{
@@ -676,7 +683,9 @@ public:
 	                    std::function<void(std::string, std::vector<view_operation_result>)> completed) :
 		_async(async), _cancel_source(std::move(cancel_source)),
 		_cancel_version(_cancel_source ? _cancel_source->load() : 0),
-		_started(std::move(started)), _completed(std::move(completed)) {}
+		_started(std::move(started)), _completed(std::move(completed))
+	{
+	}
 
 	void start_item(std::string_view) override
 	{
@@ -706,16 +715,24 @@ public:
 	}
 
 	bool has_failures() const override { return _has_failures; }
+
 	bool is_canceled() const override
 	{
 		return _cancel_source && _cancel_source->load() != _cancel_version;
 	}
+
 	void abort(const std::string_view message) override { finish(std::string(message)); }
 	void complete(const std::string_view message = {}) override { finish(std::string(message)); }
 	void show_errors() override { finish({}); }
 	void show_message(const std::string_view message) override { finish(std::string(message)); }
-	void message(std::string_view, int64_t, int64_t) override {}
-	void wait_for_complete() const override {}
+
+	void message(std::string_view, int64_t, int64_t) override
+	{
+	}
+
+	void wait_for_complete() const override
+	{
+	}
 
 private:
 	void publish_progress()
@@ -738,10 +755,11 @@ private:
 			platform::exclusive_lock lock(_progress_mutex);
 			results = std::move(_results);
 		}
-		_async.queue_ui([self = shared_from_this(), message = std::move(message), results = std::move(results)]() mutable
-		{
-			if (self->_completed) self->_completed(std::move(message), std::move(results));
-		});
+		_async.queue_ui(
+			[self = shared_from_this(), message = std::move(message), results = std::move(results)]() mutable
+			{
+				if (self->_completed) self->_completed(std::move(message), std::move(results));
+			});
 	}
 };
 
@@ -757,6 +775,9 @@ public:
 	long _layout_height = 0;
 	long _layout_width = 0;
 	ui::coll_widths _label_width;
+	// Set by a view whose panel exists to be typed into. Applied after the first layout because the
+	// child controls are not shown, and so cannot take focus, until their positions are applied.
+	std::function<void()> initial_focus;
 
 	view_controls_host(view_state& s) : _state(s)
 	{
@@ -818,6 +839,13 @@ public:
 	{
 		_extent = extent;
 		layout_controls(mc);
+
+		if (initial_focus && !is_minimized && !_controls.empty())
+		{
+			const auto claim = std::move(initial_focus);
+			initial_focus = {};
+			claim();
+		}
 	}
 
 	void on_window_paint(ui::draw_context& dc) override
@@ -839,10 +867,7 @@ public:
 			_active_controller->draw(dc);
 		}
 
-		if (!_scroller._active)
-		{
-			_scroller.draw_scroll(dc);
-		}
+		_scroller.draw_scroll(dc);
 	}
 
 	void tick() override
@@ -1022,9 +1047,11 @@ public:
 		_host->frame()->invalidate();
 	}
 
-	void escape() override
+	bool escape() override
 	{
+		if (!_parent._header_tracking) return false;
 		_parent._header_tracking = false;
+		return true;
 	}
 
 	void popup_from_location(view_hover_element& hover) override

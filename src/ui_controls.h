@@ -50,8 +50,10 @@ public:
 		const auto handle_size = std::max(dc.padding2, df::round(12 * dc.scale_factor));
 		const auto track_height = std::max(2, df::round(4 * dc.scale_factor));
 		const auto center_y = logical_bounds.center().y;
-		_track_bounds = {logical_bounds.left + handle_size / 2, center_y - track_height / 2,
-		                 logical_bounds.right - handle_size / 2, center_y + (track_height + 1) / 2};
+		_track_bounds = {
+			logical_bounds.left + handle_size / 2, center_y - track_height / 2,
+			logical_bounds.right - handle_size / 2, center_y + (track_height + 1) / 2
+		};
 
 		const auto range = std::max(1, _max - _min);
 		const auto value = std::clamp(_value(), _min, _max);
@@ -76,7 +78,7 @@ public:
 		{
 			const auto pos = std::clamp(ic.loc.x, _slider_bounds.left, _slider_bounds.right) - _slider_bounds.left;
 			const auto value = _min + df::round(static_cast<double>(pos) * (_max - _min) /
-			                                  std::max(1, _slider_bounds.width()));
+				std::max(1, _slider_bounds.width()));
 			if (value != _value()) _changed(value);
 		}
 
@@ -655,7 +657,9 @@ private:
 	{
 		if (_widths.empty()) return 0;
 		const auto found = std::ranges::lower_bound(_offsets, offset);
-		const auto index = found == _offsets.end() ? _offsets.size() - 1 : static_cast<size_t>(found - _offsets.begin());
+		const auto index = found == _offsets.end()
+			                   ? _offsets.size() - 1
+			                   : static_cast<size_t>(found - _offsets.begin());
 		return _widths[index];
 	}
 
@@ -773,15 +777,16 @@ class rating_control final : public std::enable_shared_from_this<rating_control>
 
 public:
 	rating_control(view_state& s, df::item_element_ptr i, const bool show_accelerator,
-	               const view_element_options& style_in) noexcept : view_element(style_in), _state(s), show_accelerator(show_accelerator),
-	                                                             _item(std::move(i)),
-	                                                             _can_edit([this]
-	                                                             {
-		                                                             const df::item_set items = {{_item}};
-		                                                             return items.can_process(
-			                                                             df::process_items_type::can_save_metadata,
-			                                                             false, {}).success();
-	                                                             }())
+	               const view_element_options& style_in) noexcept : view_element(style_in), _state(s),
+	                                                                show_accelerator(show_accelerator),
+	                                                                _item(std::move(i)),
+	                                                                _can_edit([this]
+	                                                                {
+		                                                                const df::item_set items = {{_item}};
+		                                                                return items.can_process(
+			                                                                df::process_items_type::can_save_metadata,
+			                                                                false, {}).success();
+	                                                                }())
 	{
 		style |= view_element_style::has_tooltip;
 		if (_can_edit) style |= view_element_style::can_invoke;
@@ -884,9 +889,9 @@ public:
 	static constexpr int cell_count = 6;
 
 	rating_edit_control(int& val, std::function<void(int)> changed) noexcept : view_element(
-		                                                                          view_element_style::can_invoke |
-		                                                                          view_element_style::has_tooltip),
-	                                                                          _val(val), _changed(std::move(changed))
+		                                                                           view_element_style::can_invoke |
+		                                                                           view_element_style::has_tooltip),
+	                                                                           _val(val), _changed(std::move(changed))
 	{
 	}
 
@@ -911,7 +916,7 @@ public:
 		auto reject_bounds = logical_bounds;
 		reject_bounds.right = reject_bounds.left + cxy;
 
-		const wchar_t reject_text[2] = {static_cast<wchar_t>(rate_label_reject.icon), 0};
+		constexpr wchar_t reject_text[2] = {static_cast<wchar_t>(rate_label_reject.icon), 0};
 		const auto reject_clr = rating < 0
 			                        ? ui::color(rate_label_reject.clr, dc.colors.alpha)
 			                        : ui::color(dc.colors.foreground, dc.colors.alpha / 3.0f);
@@ -988,17 +993,17 @@ public:
 
 	rate_label_control(view_state& s, df::item_element_ptr i, const bool show_accelerator,
 	                   const view_element_options& style_in) noexcept : view_element(
-		                                                                 style_in | view_element_style::has_tooltip |
-		                                                                 view_element_style::can_invoke), _state(s),
-	                                                                 _item(std::move(i)),
-	                                                                 show_accelerator(show_accelerator),
-	                                                                 _can_edit([this]
-	                                                                 {
-		                                                                 const df::item_set items = {{_item}};
-		                                                                 return items.can_process(
-			                                                                 df::process_items_type::can_save_metadata,
-			                                                                 false, {}).success();
-	                                                                 }())
+		                                                                    style_in | view_element_style::has_tooltip |
+		                                                                    view_element_style::can_invoke), _state(s),
+	                                                                    _item(std::move(i)),
+	                                                                    show_accelerator(show_accelerator),
+	                                                                    _can_edit([this]
+	                                                                    {
+		                                                                    const df::item_set items = {{_item}};
+		                                                                    return items.can_process(
+			                                                                    df::process_items_type::can_save_metadata,
+			                                                                    false, {}).success();
+	                                                                    }())
 	{
 	}
 
@@ -1028,8 +1033,9 @@ class preview_control final : public std::enable_shared_from_this<preview_contro
 
 public:
 	preview_control(view_state& s, texture_state_ptr ts, const bool show_accelerator,
-	                const view_element_options& style_in) noexcept : view_element(style_in), _state(s), _ts(std::move(ts)),
-	                                                              show_accelerator(show_accelerator)
+	                const view_element_options& style_in) noexcept : view_element(style_in), _state(s),
+	                                                                 _ts(std::move(ts)),
+	                                                                 show_accelerator(show_accelerator)
 	{
 		style |= view_element_style::has_tooltip | view_element_style::can_invoke;
 	}
@@ -1355,7 +1361,7 @@ class stream_element final : public std::enable_shared_from_this<stream_element>
 public:
 	stream_element(view_state& state, df::item_element_ptr i, av_stream_info stream,
 	               const int audio_track_number) noexcept : _state(state),
-		_item(std::move(i)), _stream(std::move(stream))
+	                                                        _item(std::move(i)), _stream(std::move(stream))
 	{
 		if (stream.type == av_stream_type::audio)
 		{
@@ -1571,7 +1577,8 @@ class file_list_control final : public std::enable_shared_from_this<file_list_co
 	ui::style::font_face _font = ui::style::font_face::dialog;
 
 public:
-	file_list_control(display_state_ptr display, const view_element_options& style_in) noexcept : view_element(style_in),
+	file_list_control(display_state_ptr display, const view_element_options& style_in) noexcept :
+		view_element(style_in),
 		_display(std::move(display))
 	{
 		populate();
@@ -1747,7 +1754,6 @@ public:
 			if (c == 32u || c == u8'\t')
 			{
 				c = u8' ';
-				//clr = ui::style::color::view_text;
 			}
 			else if (c < 32)
 			{
@@ -1759,10 +1765,6 @@ public:
 				c = u8'.';
 				clr = ch;
 			}
-
-			//else if (std::ispunct(c)) {}
-			//else if (std::isalnum(c)) {}
-			//else { c = "."; };
 
 			result[i] = {c, clr};
 		}
@@ -1788,23 +1790,23 @@ public:
 			const auto first_line = (clip_bounds.top - logical_bounds.top) / _line_height;
 			const auto last_line = first_line + (clip_bounds.height() + _line_height) / _line_height;
 			auto x_ascii = 0u;
-			//const auto clr = ui::color(dc.colors.foreground, dc.colors.alpha);
 
 			std::string line(_chars_per_line, ' ');
 			std::vector<ui::text_highlight_t> highlights;
 			highlights.reserve(static_cast<size_t>(_bytes_per_line) * 2 + 1);
 
 			const auto left = (logical_bounds.left + logical_bounds.right - _line_width) / 2;
+			const auto data_size = static_cast<int>(bytes.size);
 
 			for (auto i = first_line; i < last_line; ++i)
 			{
 				const auto start_address = i * _bytes_per_line;
 
-				if (start_address < bytes.size)
+				if (start_address < data_size)
 				{
 					line.assign(line.size(), ' ');
 
-					const auto limit = std::min(_bytes_per_line, static_cast<int>(bytes.size) - start_address);
+					const auto limit = std::min(_bytes_per_line, data_size - start_address);
 					const auto* const line_data = bytes.data + start_address;
 
 					auto x = 0u;
@@ -2272,6 +2274,7 @@ public:
 
 		return _children;
 	}
+
 	void render(ui::draw_context& dc, const pointi element_offset) const override
 	{
 		render_background(dc, element_offset);
@@ -2312,7 +2315,7 @@ public:
 		const auto calculated = calc_flex_layout(children(), mc, bounds.extent(), row);
 		for (auto i = 0u; i < elements.size(); ++i)
 		{
-			auto& element = elements[i];
+			const auto& element = elements[i];
 			const auto child_bounds = calculated.layout_bounds[i].offset(bounds.top_left());
 			element.visible = child_bounds.right <= bounds.right;
 			if (element.visible) element.v->layout(mc, child_bounds, positions);
@@ -2470,9 +2473,11 @@ public:
 			{
 				const auto grading_limit = bounds.inflate(-mc.padding2);
 				const auto grading_extent = _zoom_grading_element->measure(mc, grading_limit.width());
-				const recti grading_bounds{grading_limit.right - grading_extent.cx,
-				                           grading_limit.bottom - grading_extent.cy,
-				                           grading_limit.right, grading_limit.bottom};
+				const recti grading_bounds{
+					grading_limit.right - grading_extent.cx,
+					grading_limit.bottom - grading_extent.cy,
+					grading_limit.right, grading_limit.bottom
+				};
 				_zoom_grading_element->layout(mc, grading_bounds, positions);
 			}
 		}
@@ -2800,7 +2805,8 @@ public:
 						                  client.left + df::mul_div(i + 1, client.width(), 2), marker_bottom);
 						dc.draw_text(text, label, ui::style::font_face::title,
 						             ui::style::text_style::single_line_center,
-						             ui::color(dc.colors.foreground, is_active || !can_zoom ? alpha : alpha * 0.5f), {});
+						             ui::color(dc.colors.foreground, is_active || !can_zoom ? alpha : alpha * 0.5f),
+						             {});
 
 						const auto extent = dc.measure_text(text, ui::style::font_face::title,
 						                                    ui::style::text_style::single_line_center, 200);
@@ -2873,10 +2879,14 @@ public:
 
 					const auto elapsed = df::mul_div(std::clamp(_display->_compare_video_pos, 0, scrubber.width()),
 					                                 max_duration, std::max(1, scrubber.width()));
-					const auto playhead = track.left + df::mul_div(std::min(elapsed, duration), track.width(), duration);
+					const auto playhead = track.left +
+						df::mul_div(std::min(elapsed, duration), track.width(), duration);
 					auto progress = track;
 					progress.left += scale1;
-					progress.right = std::clamp(playhead, progress.left + scale1 * 2, track.right - scale1);
+					// A much shorter clip scales its track down to a few pixels, so the high bound
+					// can fall below the low one - inverted bounds are undefined for std::clamp.
+					const auto progress_low = progress.left + scale1 * 2;
+					progress.right = std::clamp(playhead, progress_low, std::max(progress_low, track.right - scale1));
 					progress.top += scale1;
 					progress.bottom -= scale1;
 					dc.draw_rounded_rect(progress, handle_color, dc.padding1);
@@ -2906,13 +2916,15 @@ public:
 		if (_display->is_two())
 		{
 			const auto ww = _display->_comparing ? width_limit : (width_limit - 10) / 2;
-			const auto reserved_height = (_display->_is_compare_video ? compare_timeline_height : 0) + _pane_marker_height;
+			const auto reserved_height = (_display->_is_compare_video ? compare_timeline_height : 0) +
+				_pane_marker_height;
 			const auto selected_textures = {_display->_selected_texture1, _display->_selected_texture2};
 
 			for (const auto& st : selected_textures)
 			{
 				const auto dimensions = sized(st->calc_display_dimensions());
-				auto image_scale = calc_thumb_scale(dimensions, sized(ww, std::max(1, height_limit - reserved_height)), false);
+				auto image_scale = calc_thumb_scale(dimensions, sized(ww, std::max(1, height_limit - reserved_height)),
+				                                    false);
 				if (!setting.scale_up && image_scale > 1.0) image_scale = 1.0;
 				const auto cx = std::max(1.0, dimensions.Width * image_scale);
 				const auto cy = std::max(1.0, dimensions.Height * image_scale);
@@ -2999,7 +3011,7 @@ public:
 					const auto viewport = sized(tex_bounds.extent());
 					_display->zoom_layout(source, viewport, pointd(tex_bounds.top_left()), pane);
 					const auto geometry = _display->zoom_state(pane).geometry(source, viewport,
-					                                                        _display->zoom_fit_scale(pane));
+					                                                          _display->zoom_fit_scale(pane));
 					selected_textures[i]->layout(mc,
 					                             geometry.destination.offset(pointd(tex_bounds.top_left())).round(),
 					                             selected_items[i]);
@@ -3022,7 +3034,7 @@ public:
 				_display->_compare_video_control_bounds = bounds;
 				_display->_compare_video_control_bounds.top = bounds.bottom - compare_timeline_height;
 				_display->_compare_video_scrubber_bounds = _display->_compare_video_control_bounds.inflate(-mc.padding2,
-				                                                                                          -mc.padding2);
+					-mc.padding2);
 				_display->_compare_video_scrubber_bounds.top += compare_timeline_top_padding;
 				_display->_compare_video_scrubber_bounds.right -= _display->_time_width + mc.padding1;
 			}
@@ -3040,9 +3052,11 @@ public:
 				{
 					const auto grading_limit = bounds.inflate(-mc.padding2);
 					const auto grading_extent = grading->measure(mc, grading_limit.width());
-					const recti grading_bounds{grading_limit.right - grading_extent.cx,
-					                           grading_limit.bottom - grading_extent.cy,
-					                           grading_limit.right, grading_limit.bottom};
+					const recti grading_bounds{
+						grading_limit.right - grading_extent.cx,
+						grading_limit.bottom - grading_extent.cy,
+						grading_limit.right, grading_limit.bottom
+					};
 					grading->layout(mc, grading_bounds, positions);
 				}
 			}
@@ -3099,7 +3113,8 @@ public:
 	int calc_compare_pos() const
 	{
 		if (!_display || !_display->_comparing) return 0;
-		if (_display->_compare_limits.is_empty())
+		// is_empty() only rejects zero width, so widths of 1..7 would invert the clamp bounds.
+		if (_display->_compare_limits.width() < 8)
 			return (_display->_compare_limits.left + _display->_compare_limits.
 			                                                   right) / 2;
 		return std::clamp(_display->_compare_hover_loc, _display->_compare_limits.left + 4,
@@ -3163,7 +3178,8 @@ public:
 		_panel_bounds = bounds_in.inflate(-mc.padding1);
 		const auto collage_bounds = _panel_bounds.inflate(-mc.padding2);
 		const auto minimum_cell = std::max(1, df::round(96 * mc.scale_factor));
-		const auto area_capacity = static_cast<size_t>(std::max(1, collage_bounds.area() / (minimum_cell * minimum_cell)));
+		const auto area_capacity = static_cast<size_t>(std::max(
+			1, collage_bounds.area() / (minimum_cell * minimum_cell)));
 		const auto cell_capacity = std::clamp(area_capacity, 6_z, display_state_t::max_surfaces);
 		const auto visible_without_overflow = std::min(_display->_surfaces.size(), cell_capacity);
 		const auto has_overflow = _display->_selection_item_count > visible_without_overflow;
@@ -3231,11 +3247,13 @@ public:
 		if (_display->_selection_overflow_count > 0 &&
 			_display->_surface_bounds.size() > _display->_collage_image_count)
 		{
-			const auto overflow_bounds = _display->_surface_bounds[_display->_collage_image_count].offset(element_offset);
+			const auto overflow_bounds = _display->_surface_bounds[_display->_collage_image_count].offset(
+				element_offset);
 			const auto text = std::format("+{}", _display->_selection_overflow_count);
 			dc.draw_rect(overflow_bounds, ui::color(ui::style::color::group_background, dc.colors.alpha));
 			dc.draw_text(text, overflow_bounds, ui::style::font_face::dialog,
-			             ui::style::text_style::single_line_center, ui::color(dc.colors.foreground, dc.colors.alpha), {});
+			             ui::style::text_style::single_line_center, ui::color(dc.colors.foreground, dc.colors.alpha),
+			             {});
 		}
 
 		if (!_pin_badge_bounds.is_empty())
@@ -3375,7 +3393,7 @@ class bullet_element final : public view_element, public std::enable_shared_from
 public:
 	bullet_element(const icon_index i, view_element_ptr child,
 	               const view_element_options& style_in = {}) noexcept : view_element(style_in),
-		_icon(i), _child(std::move(child))
+	                                                                     _icon(i), _child(std::move(child))
 	{
 	}
 

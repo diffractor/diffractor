@@ -468,7 +468,8 @@ public:
 			row.id = std::format("icc.tag.{}", sig_text);
 			const auto kept = std::min(tag.data_.size(), str::max_hex_dump_bytes);
 			row.detail = metadata_binary_detail{
-				std::vector<uint8_t>(tag.data_.begin(), tag.data_.begin() + kept)};
+				std::vector<uint8_t>(tag.data_.begin(), tag.data_.begin() + kept)
+			};
 		}
 
 		if (!unread_.empty())

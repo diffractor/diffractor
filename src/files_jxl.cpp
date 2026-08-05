@@ -219,9 +219,12 @@ ui::surface_ptr load_jxl(read_stream& s, load_diagnostic* const diagnostic)
 
 				auto surface = std::make_shared<ui::surface>();
 
-				surface->alloc(info.xsize, info.ysize,
-				               info.alpha_bits > 0 ? ui::texture_format::ARGB : ui::texture_format::RGB,
-				               to_orientation(info.orientation));
+				if (!surface->alloc(info.xsize, info.ysize,
+				                    info.alpha_bits > 0 ? ui::texture_format::ARGB : ui::texture_format::RGB,
+				                    to_orientation(info.orientation)))
+				{
+					break;
+				}
 
 				// libjxl writes interleaved RGBA; the surface stores BGRA, so swap once decoded.
 				JxlPixelFormat format = {

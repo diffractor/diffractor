@@ -59,6 +59,7 @@ void app_frame::create_toolbars()
 #endif
 		find_command(commands::browse_back),
 		find_command(commands::browse_forward),
+		find_command(commands::refresh),
 	};
 
 	const std::vector<ui::command_ptr> tbButtonsNav2 =
@@ -242,6 +243,8 @@ static std::string format_items_summary(const group_by grouping, const sort_by o
 		break;
 	case group_by::folder: group_text = tt.sort_by_Folder;
 		break;
+	case group_by::related: group_text = tt.command_related;
+		break;
 	}
 
 	switch (order)
@@ -363,6 +366,24 @@ bool app_frame::update_toolbar_text(const commands cc, const std::string& text)
 	return changed;
 }
 
+// One place that names which run command each task view answers to. While a command dialog is up
+// it owns the keyboard, so the task view claims nothing.
+commands app_frame::task_view_run_command() const
+{
+	if (df::command_active != 0) return commands::none;
+
+	switch (_state.view_mode())
+	{
+	case view_type::rename:
+	case view_type::batch: return commands::tool_run;
+	case view_type::import: return commands::import_run;
+	case view_type::sync: return commands::sync_run;
+	case view_type::locate: return commands::locate_run;
+	case view_type::tags: return commands::tags_run;
+	default: return commands::none;
+	}
+}
+
 void app_frame::update_button_state(const bool resize)
 {
 	// Not cached: the update snooze is measured in days, so a session left open overnight has to
@@ -461,9 +482,13 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::edit_item_save_and_prev]->text = previous_text;
 	_commands[commands::edit_item_save_and_next]->text = next_text;
 	_commands[commands::edit_item_save_and_prev]->tooltip_text = locate_view
-		? std::string{} : std::string(tt.command_save_and_back_tooltip.sv());
+		                                                             ? std::string{}
+		                                                             : std::string(
+			                                                             tt.command_save_and_back_tooltip.sv());
 	_commands[commands::edit_item_save_and_next]->tooltip_text = locate_view
-		? std::string{} : std::string(tt.command_save_and_next_tooltip.sv());
+		                                                             ? std::string{}
+		                                                             : std::string(
+			                                                             tt.command_save_and_next_tooltip.sv());
 	_commands[commands::edit_item_save_as]->enable = is_edit_view;
 	_commands[commands::edit_paste]->enable = is_items_view && has_save_folder;
 	_commands[commands::english]->enable = true;
@@ -473,22 +498,26 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::filter_audio]->enable = is_items_view;
 	_commands[commands::filter_photos]->enable = is_items_view;
 	_commands[commands::filter_videos]->enable = is_items_view;
-	_commands[commands::group_album]->enable = is_items_view;
-	_commands[commands::group_aspect_ratio]->enable = is_items_view;
-	_commands[commands::group_camera]->enable = is_items_view;
-	_commands[commands::group_created]->enable = is_items_view;
-	_commands[commands::group_extension]->enable = is_items_view;
-	_commands[commands::group_file_type]->enable = is_items_view;
-	_commands[commands::group_folder]->enable = is_items_view;
-	_commands[commands::group_location]->enable = is_items_view;
-	_commands[commands::group_modified]->enable = is_items_view;
-	_commands[commands::group_pixels]->enable = is_items_view;
-	_commands[commands::group_presence]->enable = is_items_view;
-	_commands[commands::group_rating]->enable = is_items_view;
-	_commands[commands::group_shuffle]->enable = is_items_view;
-	_commands[commands::group_size]->enable = is_items_view;
-	_commands[commands::group_toggle]->enable = is_items_view;
-	_commands[commands::import_analyze]->enable = view_mode == view_type::import && !view_processing;
+	// A related search groups by relation, so choosing a grouping would change nothing visible.
+	const auto can_group = is_items_view && _state.effective_group_order() == _state.group_order();
+
+	_commands[commands::group_album]->enable = can_group;
+	_commands[commands::group_aspect_ratio]->enable = can_group;
+	_commands[commands::group_camera]->enable = can_group;
+	_commands[commands::group_created]->enable = can_group;
+	_commands[commands::group_extension]->enable = can_group;
+	_commands[commands::group_file_type]->enable = can_group;
+	_commands[commands::group_folder]->enable = can_group;
+	_commands[commands::group_location]->enable = can_group;
+	_commands[commands::group_modified]->enable = can_group;
+	_commands[commands::group_pixels]->enable = can_group;
+	_commands[commands::group_presence]->enable = can_group;
+	_commands[commands::group_rating]->enable = can_group;
+	_commands[commands::group_shuffle]->enable = can_group;
+	_commands[commands::group_size]->enable = can_group;
+	_commands[commands::group_toggle]->enable = can_group;
+	_commands[commands::import_analyze]->enable = view_mode == view_type::import && !view_processing && _view_import &&
+		_view_import->can_analyze();
 	_commands[commands::import_run]->enable = view_mode == view_type::import && !view_processing && _view_import &&
 		_view_import->can_run();
 #ifndef WINSTORE
@@ -528,7 +557,7 @@ void app_frame::update_button_state(const bool resize)
 			if (stream.is_playing)
 			{
 				playback_toolbar_text = str_format(tt.audio_track_current_fmt.sv(),
-				                                  format_audio_stream_name(stream, audio_track_number));
+				                                   format_audio_stream_name(stream, audio_track_number));
 				break;
 			}
 		}
@@ -591,9 +620,7 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::select_all]->enable = is_media_or_items_view;
 	_commands[commands::select_invert]->enable = is_media_or_items_view;
 	_commands[commands::select_nothing]->enable = is_media_or_items_view && has_selection;
-	//_commands[commands::show_raw_always]->enable = is_media_or_items_view;
 	_commands[commands::show_raw_preview]->enable = is_media_or_items_view;
-	//_commands[commands::show_raw_this_only]->enable = is_media_or_items_view;
 	_commands[commands::sort_date_created]->enable = is_media_or_items_view;
 	_commands[commands::sort_date_modified]->enable = is_media_or_items_view;
 	_commands[commands::sort_dates_ascending]->enable = is_media_or_items_view;
@@ -601,7 +628,8 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::sort_def]->enable = is_media_or_items_view;
 	_commands[commands::sort_name]->enable = is_media_or_items_view;
 	_commands[commands::sort_size]->enable = is_media_or_items_view;
-	_commands[commands::sync_analyze]->enable = view_mode == view_type::sync && !view_processing;
+	_commands[commands::sync_analyze]->enable = view_mode == view_type::sync && !view_processing && _view_sync &&
+		_view_sync->can_analyze();
 	_commands[commands::sync_run]->enable = view_mode == view_type::sync && !view_processing && _view_sync &&
 		_view_sync->can_run();
 	_commands[commands::tags_run]->enable = view_mode == view_type::tags && !view_processing && _view_tags &&
@@ -673,7 +701,9 @@ void app_frame::update_button_state(const bool resize)
 		for (const auto id : ids)
 		{
 			const auto found = _commands.find(id);
-			if (found != _commands.end()) found->second->disabled_reason = found->second->enable ? std::string{} : reason;
+			if (found != _commands.end()) found->second->disabled_reason = found->second->enable
+				                                                               ? std::string{}
+				                                                               : reason;
 		}
 	};
 
@@ -697,8 +727,18 @@ void app_frame::update_button_state(const bool resize)
 
 	// Photo editing is singular, so its refusal is about the displayed item, not the whole selection.
 	_commands[commands::tool_edit]->disabled_reason = _commands[commands::tool_edit]->enable
-		                                                     ? std::string{}
-		                                                     : std::string(tt.not_supported_photo_edit.sv());
+		                                                  ? std::string{}
+		                                                  : std::string(tt.not_supported_photo_edit.sv());
+
+	// Analyze refuses only because a path is missing, so it names the same cause the analysis used
+	// to report after the fact. While a task is running the refusal is the task, not the paths.
+	const auto analyze_reason = view_processing ? std::string{} : std::string(tt.error_invalid_files.sv());
+
+	for (const auto id : {commands::import_analyze, commands::sync_analyze})
+	{
+		const auto command = _commands[id];
+		command->disabled_reason = command->enable ? std::string{} : analyze_reason;
+	}
 
 
 	_commands[commands::playback_auto_play]->checked = setting.auto_play;
@@ -778,7 +818,8 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::options_collection]->icon = icon_index::media_options;
 
 
-	const auto summary_text = format_items_summary(_state.group_order(), _state.sort_order(), _state.summary_shown(),
+	const auto summary_text = format_items_summary(_state.effective_group_order(), _state.sort_order(),
+	                                               _state.summary_shown(),
 	                                               _state.item_index.is_init_complete());
 
 	update_toolbar_text(commands::menu_group_toolbar, summary_text);
@@ -908,14 +949,16 @@ void app_frame::update_command_text()
 	def_command(commands::rate_4, command_group::rate_flag, icon_index::none, tt.command_rate_4);
 	def_command(commands::rate_5, command_group::rate_flag, icon_index::none, tt.command_rate_5);
 	def_command(commands::rate_rejected, command_group::rate_flag, rate_label_reject.icon, tt.command_rate_rejected);
-	def_command(commands::label_approved, command_group::rate_flag, rate_label_approved.icon, tt.command_label_approved);
+	def_command(commands::label_approved, command_group::rate_flag, rate_label_approved.icon,
+	            tt.command_label_approved);
 	def_command(commands::label_to_do, command_group::rate_flag, rate_label_to_do.icon, tt.command_label_to_do);
 	def_command(commands::label_select, command_group::rate_flag, rate_label_select.icon, tt.command_label_select);
 	def_command(commands::label_review, command_group::rate_flag, rate_label_review.icon, tt.command_label_review);
 	def_command(commands::label_second, command_group::rate_flag, rate_label_second.icon, tt.command_label_second);
 	def_command(commands::label_none, command_group::rate_flag, icon_index::none, tt.command_label_none);
 	def_command(commands::refresh, command_group::navigation, icon_index::refresh, tt.command_refresh);
-	def_command(commands::search_related, command_group::tools, icon_index::compare, tt.command_related);
+	def_command(commands::search_related, command_group::tools, icon_index::compare, tt.command_related,
+	            tt.tooltip_related);
 	def_command(commands::tool_rename, command_group::file_management, icon_index::rename, tt.command_rename);
 	def_command(commands::playback_repeat_none, command_group::options, icon_index::repeat_none, tt.command_repeat_none,
 	            tt.repeat_off_help);

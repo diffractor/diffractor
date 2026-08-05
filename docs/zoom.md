@@ -433,23 +433,23 @@ bounded decoded retention, adjacent prefetch, provisional quality mark, and inte
 sampling tiers are implemented. The software backend uses the same point, bilinear, and
 Catmull-Rom sampler choices as Direct3D and samples only the clipped viewport.
 
+The zoom-mode vocabulary is also implemented: key dispatch is gated on zoom mode and admits
+only the zoom commands, the grading group, pane flip and fullscreen, swallowing every other key
+rather than letting it reach a command. Zoom mode has the single `Ctrl+Space` entry —
+`Ctrl`+wheel magnifies only once already in it, and the `100%` and toggle-fit commands carry no
+accelerator. `Escape` peels one layer per press through `view_state::escape`, so a magnified
+view returns to `Fit` before it closes, and the page keys move through the sequence rather than
+paging the view.
+
 ### 16.1 Outstanding for 1.27.0
 
-\u00a72.1, \u00a72.2, and the \u00a711 key model describe the agreed target. The following parts of it
-are specified but not yet built, and each is a defect against a named law until it is:
+The following part of §9 is specified but not yet built, and is a defect against a named law
+until it is:
 
-- **Every command is still live in zoom mode (\u00a72.2).** Key dispatch runs a flat scan over all
-    accelerators with no state gate, so delete, copy, and the task views remain reachable
-    behind the immersive layout.
-- **Zoom mode has more than one entry (\u00a72.1).** `Ctrl`+wheel over a fitted image still enters
-    it, and the `100%` and toggle-fit accelerators remain bound.
-- **`Escape` does not peel (L5).** It is bound unconditionally to closing the view, so the
-    first press of a magnified user closes rather than returning to `Fit`.
-- **The page keys still page the view (\u00a711)**, and do not move through the sequence.
-- **The navigator setting is still a two-way auto-hide/off choice (\u00a79)** rather than the
-    single on/off switch, and auto-hide still fades the navigator. The unreachable `pinned`
-    option has been removed from the menu; settings continue to coerce a stored `pinned` value
-    to auto-hide.
+- **The navigator setting is still a two-way auto-hide/off choice (§9)** rather than the
+    single on/off switch, and auto-hide still fades the navigator with the other overlays in
+    zoom mode. The unreachable `pinned` option has been removed from the menu; settings
+    continue to coerce a stored `pinned` value to auto-hide.
 
 ### 16.2 Deferred beyond 1.27.0
 

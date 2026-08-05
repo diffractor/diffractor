@@ -312,12 +312,6 @@ namespace ui
 		return r;
 	}
 
-	/*struct BITMAPINFOANDPALETTE
-	{
-		BITMAPINFOHEADER bmiHeader;
-		DWORD bmiColors[256];
-	};*/
-
 	enum class orientation : uint8_t
 	{
 		none = 0,
@@ -476,13 +470,11 @@ namespace ui
 	constexpr color32 abgr(const color32 c, const uint32_t a = 0xFF) noexcept
 	{
 		return c >> 16 & 0xFF | c << 16 & 0xFF0000 | c & 0x0000FF00 | static_cast<uint32_t>(a) << 24;
-		//return rgba(get_b(c), get_g(c), get_r(c), a);
 	}
 
 	constexpr color32 bgr(const color32 c) noexcept
 	{
 		return c >> 16 & 0xFF | c << 16 & 0xFF0000 | c & 0x0000FF00;
-		// return rgb(get_b(c), get_g(c), get_r(c));
 	}
 
 	constexpr color32 average(const color32 c1, const color32 c2) noexcept
@@ -803,6 +795,7 @@ namespace ui
 		surface_ptr transform(simple_transform t) const;
 
 		void fill_pie(pointi center, int radius, const color32 color[64], color32 color_center, color32 color_bg) const;
+		void fill_logo() const;
 
 		const_surface_ptr transform(const image_edits& photo_edits) const;
 		const_surface_ptr transform(const image_edits& photo_edits, const df::cancel_token& token) const;
@@ -1229,7 +1222,7 @@ namespace ui
 	public:
 		void color_params(double vibrance, double saturation, double darks, double midtones, double lights,
 		                  double contrast, double brightness, double temperature = 0, double tint = 0);
-		void apply(const const_surface_ptr& src, uint8_t* dst, size_t dst_stride, df::cancel_token token) const;
+		void apply(const const_surface_ptr& src, uint8_t* dst, size_t dst_stride, const df::cancel_token& token) const;
 		void populate_texture_transform(struct texture_transform& transform) const;
 
 	private:
@@ -1368,6 +1361,8 @@ namespace ui
 
 		virtual void draw_rounded_rect(recti bounds, color c, int radius) = 0;
 		virtual void draw_rect(recti bounds, color c) = 0;
+		// Centre-to-corner gradient. Opt in explicitly; draw_rect and clear are flat.
+		virtual void draw_rect_gradient(recti bounds, color c_centre, color c_corner) = 0;
 		virtual void draw_text(std::string_view text, recti bounds, style::font_face font, style::text_style style,
 		                       color c, color bg) = 0;
 		virtual void draw_text_mirrored(std::string_view text, recti bounds, style::font_face font,
@@ -1411,7 +1406,7 @@ namespace ui
 			_dc.clip_bounds(bounds);
 		}
 
-		~scoped_clip()
+		~scoped_clip() override
 		{
 			_dc.restore_clip();
 		}
@@ -1627,6 +1622,7 @@ namespace ui
 		virtual void on_mouse_left_button_up(const pointi loc, const key_state keys)
 		{
 		}
+
 		virtual void on_mouse_middle_button_down(const pointi loc, const key_state keys)
 		{
 		}
@@ -1915,7 +1911,7 @@ namespace ui
 			_target = _val = v;
 		}
 
-		void reset(float v, const float t)
+		void reset(const float v, const float t)
 		{
 			_target = t;
 			_val = animations_enabled ? v : t;
