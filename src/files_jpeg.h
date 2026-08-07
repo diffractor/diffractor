@@ -14,20 +14,25 @@
 class file_scan_result;
 class read_stream;
 
-static constexpr auto xmp_signature = "http://ns.adobe.com/xap/1.0/\0"sv;
-static constexpr auto icc_signature = "ICC_PROFILE\0"sv;
-static constexpr auto iptc_signature = "Photoshop 3.0\08BIM\04\04\0\0\0\0"sv;
-static constexpr std::array<uint8_t, 6> exif_signature = {0x45, 0x78, 0x69, 0x66, 0x00, 0x00};
+inline constexpr auto xmp_signature = "http://ns.adobe.com/xap/1.0/\0"sv;
+inline constexpr auto icc_signature = "ICC_PROFILE\0"sv;
+inline constexpr auto iptc_signature = "Photoshop 3.0\08BIM\04\04\0\0\0\0"sv;
+inline constexpr std::array<uint8_t, 6> exif_signature = {0x45, 0x78, 0x69, 0x66, 0x00, 0x00};
 
 bool is_exif_signature(df::cspan cs);
 bool is_iptc_signature(df::cspan cs);
 bool is_xmp_signature(df::cspan cs);
 bool is_icc_signature(df::cspan cs);
 
-extern size_t exif_signature_len;
-extern size_t iptc_signature_len;
-extern size_t icc_signature_len;
-extern size_t xmp_signature_len;
+// Strips the ISO/IEC 23008-12 ExifDataBlock header (a 4-byte big-endian count of the bytes
+// between that field and the TIFF header) and any following "Exif\0\0" signature, leaving a
+// bare TIFF stream. Used by the HEIF and JXL box readers, which share this container format.
+df::blob strip_exif_tiff_prefix(df::blob data);
+
+inline constexpr size_t exif_signature_len = exif_signature.size();
+inline constexpr size_t iptc_signature_len = iptc_signature.size();
+inline constexpr size_t icc_signature_len = icc_signature.size() + 2; // + sequence number and count
+inline constexpr size_t xmp_signature_len = xmp_signature.size();
 
 struct metadata_parts;
 struct jpeg_encoder_impl;
@@ -41,20 +46,17 @@ public:
 	df::blob _result;
 	sizei _result_dimensions;
 
-	static uint32_t max_chunk;
-
 	jpeg_encoder();
 	~jpeg_encoder() override;
 
-	void setup(uint32_t cx, uint32_t cy, file_encode_params params);
+	void setup(uint32_t cx, uint32_t cy, const file_encode_params& params);
 	void start(uint32_t cx, uint32_t cy, ui::orientation orientation, const metadata_parts& metadata,
-	           file_encode_params params);
+	           const file_encode_params& params);
 	void encode_chunk(uint8_t** rows, uint32_t chunk) const;
 
 	df::blob complete(bool can_abort = true);
 	df::blob encode(uint32_t cx, uint32_t cy, const uint8_t* bitmap, uint32_t stride, ui::orientation orientation,
-	                const metadata_parts& metadata, file_encode_params params);
-	df::blob result() const;
+	                const metadata_parts& metadata, const file_encode_params& params);
 
 	friend class jpeg_decoder_x;
 };
@@ -68,14 +70,14 @@ public:
 	jpeg_decoder_x();
 	~jpeg_decoder_x() override;
 
-	bool can_render_yuv420() const;
+	bool can_render_nv12() const;
 
 	void create();
 	bool read_header(df::cspan cs);
 	bool read_header(const ui::const_image_ptr& image);
-	bool start_decompress(int scale_hint, bool raw) const;
-	void read_nv12(uint8_t* pixels, int stride, int buffer_size) const;
-	bool read_rgb(uint8_t* p, int stride, int buffer_size) const;
+	bool start_decompress(int scale_hint, bool raw, bool fancy_chroma) const;
+	bool read_nv12(uint8_t* pixels, int stride, int buffer_size, const df::cancel_token& token) const;
+	bool read_rgb(uint8_t* p, int stride, int buffer_size, const df::cancel_token& token) const;
 	void close() const;
 	sizei dimensions() const;
 	sizei dimensions_out() const;

@@ -27,10 +27,13 @@ namespace ui
 	enum class orientation : uint8_t;
 }
 
-struct bloom_bits
+// Compact category-presence mask used only to reject impossible search candidates.
+// It is not a probabilistic hash: shared category bits may produce false positives,
+// and the exact search matcher must always decide whether a candidate matches.
+struct search_presence_mask
 {
-	static constexpr uint32_t flag = 1 << 30u;
-	static constexpr uint32_t hash = 1 << 29u;
+	static constexpr uint32_t duplicates = 1 << 30u;
+	static constexpr uint32_t crc32c = 1 << 29u;
 
 	static constexpr uint32_t album = 1 << 8u;
 	static constexpr uint32_t artist = 1 << 9u;
@@ -54,22 +57,22 @@ struct bloom_bits
 
 	uint32_t types = 0;
 
-	bloom_bits() noexcept = default;
-	~bloom_bits() noexcept = default;
-	bloom_bits(const bloom_bits&) noexcept = default;
-	bloom_bits& operator=(const bloom_bits&) noexcept = default;
-	bloom_bits(bloom_bits&&) noexcept = default;
-	bloom_bits& operator=(bloom_bits&&) noexcept = default;
+	search_presence_mask() noexcept = default;
+	~search_presence_mask() noexcept = default;
+	search_presence_mask(const search_presence_mask&) noexcept = default;
+	search_presence_mask& operator=(const search_presence_mask&) noexcept = default;
+	search_presence_mask(search_presence_mask&&) noexcept = default;
+	search_presence_mask& operator=(search_presence_mask&&) noexcept = default;
 
-	const bloom_bits& operator|=(const bloom_bits& other)
+	const search_presence_mask& operator|=(const search_presence_mask& other)
 	{
 		types |= other.types;
 		return *this;
 	}
 
-	bool potential_match(const bloom_bits& other) const
+	bool contains_required(const search_presence_mask& required) const
 	{
-		return (types & other.types) == types;
+		return (types & required.types) == required.types;
 	}
 };
 
@@ -153,7 +156,7 @@ namespace prop
 		text_t& text_key;
 		data_type data_type = {};
 		uint32_t flags = 0;
-		uint32_t bloom_bit = 0;
+		uint32_t search_presence_bit = 0;
 
 		friend bool operator==(const key& lhs, const key& rhs)
 		{
@@ -168,26 +171,6 @@ namespace prop
 		constexpr bool operator<(const key& other) const
 		{
 			return id < other.id;
-		}
-
-		constexpr bool is_multi_value() const
-		{
-			return (flags & style::multi_value) != 0;
-		}
-
-		constexpr bool is_fuzzy_search() const
-		{
-			return (flags & style::fuzzy_search) != 0;
-		}
-
-		constexpr bool is_groupable() const
-		{
-			return (flags & style::groupable) != 0;
-		}
-
-		constexpr bool is_auto_complete() const
-		{
-			return (flags & style::auto_complete) != 0;
 		}
 
 		constexpr operator key_ref() const
@@ -235,6 +218,8 @@ namespace prop
 	extern key pixel_format;
 	extern key genre;
 	extern key iso_speed;
+	extern key altitude;
+	extern key gps_speed;
 	extern key latitude;
 	extern key lens;
 	extern key longitude;
@@ -366,6 +351,11 @@ namespace prop
 		float f_number = 0.0f;
 		float focal_length = 0.0f;
 
+		// locations.md 2.8: metres relative to sea level, negative below it, and km/h. Zero means
+		// unknown, which reads the same as sea level or standing still and so claims nothing.
+		float altitude = 0.0f;
+		float gps_speed = 0.0f;
+
 		uint16_t duration = 0;
 		uint16_t focal_length_35mm_equivalent = 0;
 		uint16_t height = 0;
@@ -389,17 +379,21 @@ namespace prop
 
 		df::date_t created() const
 		{
-			auto d = created_utc.system_to_local();
+			// Prefer the true capture time (EXIF DateTimeOriginal) over the
+			// container/file creation time so "group by / sort by date created"
+			// and the displayed creation date reflect when the media was
+			// captured rather than when the file was written (#184).
+			auto d = created_exif;
 
 			if (!d.is_valid())
 			{
-				d = created_exif;
+				d = created_utc.system_to_local();
 			}
 
 			return d;
 		}
 
-		bloom_bits calc_bloom_bits() const;
+		search_presence_mask calc_search_presence() const;
 
 		bool has_gps() const
 		{
@@ -414,6 +408,18 @@ namespace prop
 	using item_metadata_ptr = std::shared_ptr<item_metadata>;
 	using item_metadata_aptr = std::atomic<std::shared_ptr<item_metadata>>;
 	using item_metadata_const_ptr = std::shared_ptr<const item_metadata>;
+
+	// One populated prose field, in the order the description panel presents them. `duplicate` marks
+	// a field repeating text an earlier field already carries, which sidecar round trips make common.
+	struct text_field
+	{
+		std::string_view id; // stable across display languages, unlike name
+		std::string_view name;
+		str::cached text;
+		bool duplicate = false;
+	};
+
+	std::vector<text_field> descriptive_fields(const item_metadata& md);
 
 	const key* from_id(uint16_t id);
 	const key* from_prefix(std::string_view scope);
@@ -450,13 +456,12 @@ namespace prop
 	size_rounded round_size(uint64_t s);
 
 	std::string format_f_num(double d);
-	std::string format_fstop(double d);
 	std::string format_date(df::date_t d);
-	std::string format_polish_date(df::date_t ft);
+
 	std::string format_duration(int d);
 	std::string format_exposure(double d);
 	std::string format_focal_length(double d, int filmEquivalent);
-	std::string format_four_cc(uint32_t f);
+
 	std::string format_gps(double d);
 	std::string format_gps(double lat, double lon);
 	std::string format_iso(int i);
@@ -467,8 +472,9 @@ namespace prop
 	std::string format_size(const df::file_size& s);
 	std::string format_magnitude(const df::file_size& s);
 	std::string format_streams(int s);
-	std::string format_white_balance(int i);
+
 	std::string format_rating(int i);
+	std::string format_label(std::string_view label);
 	std::string format_bit_rate(int64_t i);
 	std::string format_dimensions(sizei v);
 	std::string format_pixels(sizei v, file_type_ref ft);
@@ -476,11 +482,6 @@ namespace prop
 
 	std::string replace_tokens(std::string_view name_template, const item_metadata_const_ptr& md,
 	                           std::string_view name, df::date_t created);
-
-	inline double to_apex_val(const double d)
-	{
-		return std::log(d) * 2.0 / std::log(2.0);
-	}
 
 	inline double aperture_to_fstop(const double d)
 	{

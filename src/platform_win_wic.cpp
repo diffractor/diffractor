@@ -59,7 +59,7 @@ HGLOBAL image_to_handle(const file_load_result& loaded)
 		throw std::invalid_argument("Invalid image dimensions");
 	}
 
-	BITMAPINFOHEADER bi;
+	BITMAPINFOHEADER bi{};
 	bi.biSize = sizeof(BITMAPINFOHEADER);
 	bi.biWidth = dimensions.cx;
 	bi.biHeight = dimensions.cy;
@@ -67,15 +67,14 @@ HGLOBAL image_to_handle(const file_load_result& loaded)
 	bi.biBitCount = 32;
 	bi.biCompression = BI_RGB;
 
-	// Check for potential overflow in image size calculation
 	const size_t pixel_count = static_cast<size_t>(dimensions.cx) * dimensions.cy;
-	if (pixel_count > SIZE_MAX / 4)
+	if (pixel_count > MAXDWORD / sizeof(uint32_t))
 	{
-		df::log(__FUNCTION__, "Image too large, potential overflow");
+		df::log(__FUNCTION__, "Image exceeds the DIB size limit");
 		throw std::invalid_argument("Image too large");
 	}
 
-	bi.biSizeImage = static_cast<DWORD>(pixel_count * 4);
+	bi.biSizeImage = static_cast<DWORD>(pixel_count * sizeof(uint32_t));
 
 	const auto alloc_size = sizeof(bi) + bi.biSizeImage;
 	auto* const h = GlobalAlloc(GMEM_MOVEABLE | GMEM_DDESHARE, alloc_size);
@@ -91,6 +90,7 @@ HGLOBAL image_to_handle(const file_load_result& loaded)
 	if (buffer_out == nullptr)
 	{
 		df::log(__FUNCTION__, "GlobalLock failed");
+		GlobalFree(h);
 		throw std::bad_alloc();
 	}
 
@@ -115,6 +115,7 @@ HGLOBAL image_to_handle(const file_load_result& loaded)
 			throw std::invalid_argument("Invalid pixel buffers");
 		}
 
+		bool copied_all_rows = true;
 		for (auto y = 0; y < dimensions.cy; ++y)
 		{
 			const auto src_offset = stride_in * y;
@@ -125,10 +126,18 @@ HGLOBAL image_to_handle(const file_load_result& loaded)
 				dest_offset + copy_len > bi.biSizeImage)
 			{
 				df::log(__FUNCTION__, "Buffer bounds exceeded");
+				copied_all_rows = false;
 				break;
 			}
 
 			memcpy(pixels_out + dest_offset, pixels_in + src_offset, copy_len);
+		}
+
+		if (!copied_all_rows)
+		{
+			GlobalUnlock(h);
+			GlobalFree(h);
+			throw std::invalid_argument("Invalid pixel buffer size");
 		}
 
 		flip_buffer_vertically(reinterpret_cast<uint32_t*>(pixels_out), dimensions.cx, dimensions.cy);
@@ -244,7 +253,7 @@ platform::file_op_result save_bitmap_info(const df::folder_path save_path, const
 			}
 
 			WICPixelFormatGUID pixelFormat = {0};
-			UINT width, height = 0;
+			UINT width = 0, height = 0;
 			ComPtr<IWICBitmapFrameEncode> piFrameEncode;
 
 			if (SUCCEEDED(hr))
@@ -277,7 +286,7 @@ platform::file_op_result save_bitmap_info(const df::folder_path save_path, const
 
 			if (SUCCEEDED(hr))
 			{
-				decoder->GetPixelFormat(&pixelFormat);
+				hr = decoder->GetPixelFormat(&pixelFormat);
 			}
 			if (SUCCEEDED(hr))
 			{
@@ -383,8 +392,8 @@ namespace
 			ComPtr<IDWriteGlyphRunAnalysis> analysis;
 
 			if (FAILED(_factory->CreateGlyphRunAnalysis(glyphRun, 1.0f, nullptr, DWRITE_RENDERING_MODE_NATURAL,
-			                                            DWRITE_MEASURING_MODE_NATURAL, baselineOriginX, baselineOriginY,
-			                                            &analysis)))
+				DWRITE_MEASURING_MODE_NATURAL, baselineOriginX, baselineOriginY,
+				&analysis)))
 			{
 				return S_OK;
 			}
@@ -399,7 +408,7 @@ namespace
 			std::vector<uint8_t> coverage(static_cast<size_t>(w) * h * 3);
 
 			if (FAILED(analysis->CreateAlphaTexture(DWRITE_TEXTURE_CLEARTYPE_3x1, &bounds, coverage.data(),
-			                                        static_cast<uint32_t>(coverage.size()))))
+				static_cast<uint32_t>(coverage.size()))))
 			{
 				return S_OK;
 			}
@@ -440,7 +449,8 @@ namespace
 			return S_OK;
 		}
 
-		HRESULT STDMETHODCALLTYPE DrawStrikethrough(void*, FLOAT, FLOAT, const DWRITE_STRIKETHROUGH*, IUnknown*) override
+		HRESULT STDMETHODCALLTYPE
+		DrawStrikethrough(void*, FLOAT, FLOAT, const DWRITE_STRIKETHROUGH*, IUnknown*) override
 		{
 			return S_OK;
 		}
@@ -597,6 +607,15 @@ ui::surface_ptr platform::image_to_surface(const df::cspan image_buffer_in, cons
 			{
 				hr = E_INVALIDARG;
 			}
+
+			// WIC decodes the whole frame at native size, so this is the last point before the
+			// allocation at which an oversized source can be refused.
+			if (SUCCEEDED(hr) && files::exceeds_decode_budget({static_cast<int>(uiWidth), static_cast<int>(uiHeight)}))
+			{
+				df::log(__FUNCTION__, std::format("decode of {} x {} is over the {} budget", uiWidth, uiHeight,
+				                                  df::file_size(df::max_decode_bytes).str()));
+				hr = E_OUTOFMEMORY;
+			}
 		}
 
 		if (SUCCEEDED(hr))
@@ -609,7 +628,7 @@ ui::surface_ptr platform::image_to_surface(const df::cspan image_buffer_in, cons
 			ComPtr<IWICComponentInfo> componentInfo;
 			ComPtr<IWICPixelFormatInfo2> pixelFormatInfo;
 
-			HRESULT hr = wic->CreateComponentInfo(pixel_format, &componentInfo);
+			hr = wic->CreateComponentInfo(pixel_format, &componentInfo);
 
 			if (SUCCEEDED(hr))
 			{
@@ -655,16 +674,18 @@ ui::surface_ptr platform::image_to_surface(const df::cspan image_buffer_in, cons
 					rc.Height = uiHeight;
 
 					// Validate buffer size before copy
+					const auto stride = surface_result->stride();
+					const auto buffer_size = surface_result->size();
 					const auto required_size = static_cast<size_t>(uiWidth) * uiHeight * 4;
-					if (surface_result->size() < required_size)
+					if (surface_result->size() < required_size || stride > MAXUINT || buffer_size > MAXUINT)
 					{
 						hr = E_OUTOFMEMORY;
 					}
 					else
 					{
 						hr = pSource->CopyPixels(&rc,
-						                         static_cast<uint32_t>(surface_result->stride()),
-						                         static_cast<uint32_t>(surface_result->size()),
+						                         static_cast<UINT>(stride),
+						                         static_cast<UINT>(buffer_size),
 						                         surface_result->pixels());
 					}
 				}
@@ -675,6 +696,8 @@ ui::surface_ptr platform::image_to_surface(const df::cspan image_buffer_in, cons
 			}
 		}
 	}
+
+	if (FAILED(hr)) surface_result.reset();
 
 	return surface_result;
 }

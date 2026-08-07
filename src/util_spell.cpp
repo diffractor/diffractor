@@ -104,11 +104,11 @@ void spell_check::lazy_download(df::async_i& async) const
 		"ru_RU",
 		"sk_SK",
 		"sl_SI",
-		"_SE",
+		"sv_SE",
 		"ta_IN",
-		"tg_TG",
+		"tg_TJ",
 		"uk_UA",
-		"vi_VI",
+		"vi_VN",
 	};
 
 	const auto language = platform::user_language();
@@ -173,11 +173,11 @@ void spell_check::lazy_load()
 				}
 			}
 		}
-		catch (const std::exception&)
+		catch (const std::exception& e)
 		{
 			// If Hunspell construction fails, ensure _hunspell remains nullptr
 			_hunspell.reset();
-			// Optionally log the error here
+			df::log(__FUNCTION__, std::format("failed to load dictionary: {}", e.what()));
 		}
 	}
 }
@@ -236,14 +236,15 @@ void spell_check::add_word(const std::string_view word) const
 				f.flush(); // Ensure data is written
 				// f.close() is called automatically by destructor
 			}
-			// If file opening fails, we silently continue (word is still added to runtime dictionary)
-			// Optionally log the error here
+			else
+			{
+				df::log(__FUNCTION__, std::format("could not open {}", _custom_dic_path));
+			}
 		}
-		catch (const std::exception&)
+		catch (const std::exception& e)
 		{
-			// Handle file I/O errors gracefully
-			// Word is still added to runtime dictionary even if file write fails
-			// Optionally log the error here
+			// the word stays in the runtime dictionary even when the file write fails
+			df::log(__FUNCTION__, std::format("failed to persist custom word: {}", e.what()));
 		}
 	}
 }

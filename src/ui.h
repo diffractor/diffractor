@@ -77,6 +77,7 @@ namespace keys
 	extern char32_t NEXT;
 	extern char32_t OEM_4;
 	extern char32_t OEM_6;
+	extern char32_t OEM_MINUS;
 	extern char32_t OEM_PLUS;
 	extern char32_t PRIOR;
 	extern char32_t RETURN;
@@ -91,6 +92,19 @@ namespace keys
 	extern char32_t END;
 
 	std::string_view format(int key);
+
+	// Numeric keypad digit virtual-key codes (VK_NUMPAD0..VK_NUMPAD9 = 0x60..0x69) are
+	// distinct from the top-row digit codes ('0'..'9' = 0x30..0x39). With NumLock on, the
+	// keypad sends the VK_NUMPAD* codes, so keyboard accelerators bound to '0'..'9' (rating
+	// and label shortcuts) never fired from the numeric keypad (issue #135). Map the keypad
+	// digits onto the equivalent top-row digit; all other keys pass through unchanged.
+	constexpr char32_t numpad0 = 0x60;
+	constexpr char32_t numpad9 = 0x69;
+
+	constexpr char32_t normalize_numpad(const char32_t key)
+	{
+		return (key >= numpad0 && key <= numpad9) ? U'0' + (key - numpad0) : key;
+	}
 };
 
 struct keyboard_accelerator_t
@@ -192,7 +206,7 @@ namespace ui
 	// Selects the YUV->RGB conversion applied to NV12/P010 textures. A single value
 	// encodes both the colour matrix (BT.601/709/2020) and the signal range: the
 	// *_limited variants are the usual video ranges (Y 16-235), rec601_full is
-	// JPEG/JFIF (Y 0-255). See compute_yuv_matrix() in the D3D11 backend.
+	// JPEG/JFIF (Y 0-255). See compute_yuv_matrix().
 	enum class color_space : uint8_t
 	{
 		rec601_limited,
@@ -203,11 +217,100 @@ namespace ui
 		rec2020_full,
 	};
 
-	/*struct BITMAPINFOANDPALETTE
+	// Affine YUV->RGB transform: a 3x3 matrix plus a bias column, stored row-major.
+	struct yuv_rgb_matrix
 	{
-		BITMAPINFOHEADER bmiHeader;
-		DWORD bmiColors[256];
-	};*/
+		float m[12];
+	};
+
+	// Builds the transform for the requested colour space and range, so one matrix handles
+	// BT.601/709/2020 and limited/full range. Both draw backends share it: the D3D11 path
+	// feeds it to the yuv_params constant buffer, the software path applies it per pixel.
+	// The limited-range BT.601 case reproduces the previously hard-coded coefficients.
+	inline yuv_rgb_matrix compute_yuv_matrix(const color_space cs, const bool is_p010 = false) noexcept
+	{
+		double kr, kb;
+		bool full;
+
+		switch (cs)
+		{
+		case color_space::rec709_limited: kr = 0.2126;
+			kb = 0.0722;
+			full = false;
+			break;
+		case color_space::rec709_full: kr = 0.2126;
+			kb = 0.0722;
+			full = true;
+			break;
+		case color_space::rec2020_limited: kr = 0.2627;
+			kb = 0.0593;
+			full = false;
+			break;
+		case color_space::rec2020_full: kr = 0.2627;
+			kb = 0.0593;
+			full = true;
+			break;
+		case color_space::rec601_full: kr = 0.299;
+			kb = 0.114;
+			full = true;
+			break;
+		case color_space::rec601_limited:
+		default: kr = 0.299;
+			kb = 0.114;
+			full = false;
+			break;
+		}
+
+		const double kg = 1.0 - kr - kb;
+		const double vr = 2.0 * (1.0 - kr);
+		const double ug = -2.0 * kb * (1.0 - kb) / kg;
+		const double vg = -2.0 * kr * (1.0 - kr) / kg;
+		const double ub = 2.0 * (1.0 - kb);
+
+		const double y_scale = full ? 1.0 : (255.0 / 219.0);
+		const double y_off = full ? 0.0 : (16.0 / 255.0);
+		const double c_scale = full ? 1.0 : (255.0 / 224.0);
+		constexpr double c_off = 0.5;
+
+		const double a = y_scale;
+		const double ay = -y_scale * y_off;
+
+		yuv_rgb_matrix r{};
+		// R = a*Y + (vr*c_scale)*V + bias
+		r.m[0] = static_cast<float>(a);
+		r.m[1] = 0.0f;
+		r.m[2] = static_cast<float>(vr * c_scale);
+		r.m[3] = static_cast<float>(ay - vr * c_scale * c_off);
+		// G = a*Y + (ug*c_scale)*U + (vg*c_scale)*V + bias
+		r.m[4] = static_cast<float>(a);
+		r.m[5] = static_cast<float>(ug * c_scale);
+		r.m[6] = static_cast<float>(vg * c_scale);
+		r.m[7] = static_cast<float>(ay - (ug + vg) * c_scale * c_off);
+		// B = a*Y + (ub*c_scale)*U + bias
+		r.m[8] = static_cast<float>(a);
+		r.m[9] = static_cast<float>(ub * c_scale);
+		r.m[10] = 0.0f;
+		r.m[11] = static_cast<float>(ay - ub * c_scale * c_off);
+
+		// P010 stores its 10 significant bits at the top of each 16 bit word, so a R16_UNORM /
+		// R16G16_UNORM view returns code * 64 / 65535 where the coefficients above expect
+		// code / 1023 - every sample arrives 0.096% low. The transform is affine, so the
+		// correction is a scale of the three sample columns; the bias column stays put.
+		// Callers that already normalise by 65472 must leave is_p010 false.
+		if (is_p010)
+		{
+			constexpr auto p010_scale = static_cast<float>(65535.0 / 65472.0);
+
+			for (auto row = 0; row < 3; ++row)
+			{
+				r.m[row * 4 + 0] *= p010_scale;
+				r.m[row * 4 + 1] *= p010_scale;
+				r.m[row * 4 + 2] *= p010_scale;
+			}
+		}
+
+		return r;
+	}
 
 	enum class orientation : uint8_t
 	{
@@ -274,8 +377,6 @@ namespace ui
 	sizei scale_dimensions(sizei dims, sizei limit, bool dont_scale_up = false) noexcept;
 	recti scale_dimensions(sizei dims, recti limit, bool dont_scale_up = false) noexcept;
 
-	recti scale_dimensions_up(sizei dims, recti limit) noexcept;
-
 	////////////////////////////////////////////////////////////////////////////////////
 	// Pixels Conversions
 
@@ -339,11 +440,6 @@ namespace ui
 		return 0xffu & c >> 16;
 	}
 
-	constexpr uint32_t mul_div_u32(const uint32_t n, const uint32_t num, const uint32_t den)
-	{
-		return den ? (n * num + den / 2) / den : -1;
-	}
-
 	constexpr color32 darken(const color32 c, const float ff) noexcept
 	{
 		const auto rr = static_cast<float>(get_r(c)) / 255.0f;
@@ -374,18 +470,11 @@ namespace ui
 	constexpr color32 abgr(const color32 c, const uint32_t a = 0xFF) noexcept
 	{
 		return c >> 16 & 0xFF | c << 16 & 0xFF0000 | c & 0x0000FF00 | static_cast<uint32_t>(a) << 24;
-		//return rgba(get_b(c), get_g(c), get_r(c), a);
 	}
 
 	constexpr color32 bgr(const color32 c) noexcept
 	{
 		return c >> 16 & 0xFF | c << 16 & 0xFF0000 | c & 0x0000FF00;
-		// return rgb(get_b(c), get_g(c), get_r(c));
-	}
-
-	constexpr color32 adjust_a(const color32 c, const uint32_t a = 0xFF) noexcept
-	{
-		return rgba(get_r(c), get_g(c), get_b(c), a);
 	}
 
 	constexpr color32 average(const color32 c1, const color32 c2) noexcept
@@ -432,14 +521,6 @@ namespace ui
 		return cx * bytes_per_pixel + 15 & ~15;
 	}
 
-	inline sizei round_div2(const sizei extent)
-	{
-		auto x = extent.cx & ~1;
-		auto y = extent.cy & ~1;
-
-		return {x, y};
-	}
-
 	inline double calc_mega_pixels(const double x, const double y) noexcept
 	{
 		return x * y / df::one_mega_pixel;
@@ -483,25 +564,6 @@ namespace ui
 			memset(_r, 0, alloc_size);
 			memset(_g, 0, alloc_size);
 			memset(_b, 0, alloc_size);
-		}
-
-		void add_color(const color32 c) noexcept
-		{
-			_r[get_r(c)]++;
-			_g[get_g(c)]++;
-			_b[get_b(c)]++;
-		}
-
-		void calc_max() noexcept
-		{
-			int m = 0;
-
-			for (int i = 0; i < max_value; ++i)
-			{
-				m = std::max(std::max(m, _r[i]), std::max(_g[i], _b[i]));
-			}
-
-			_max = m;
 		}
 
 		int _r[max_value];
@@ -604,7 +666,7 @@ namespace ui
 			_orientation = ori;
 		}
 
-		ui::color_space color_space() const noexcept
+		color_space color_space() const noexcept
 		{
 			return _cs;
 		}
@@ -677,15 +739,23 @@ namespace ui
 
 		void copy(const surface& s, const recti r)
 		{
+			if (s.format() == texture_format::NV12 || s.format() == texture_format::P010 ||
+				r.left < 0 || r.top < 0 || r.right > s._dimensions.cx || r.bottom > s._dimensions.cy ||
+				r.width() < 1 || r.height() < 1)
+			{
+				throw app_exception("invalid surface crop"s);
+			}
+
 			alloc(r.extent(), s.format(), s.orientation(), s.time());
 
 			const ptrdiff_t stride_out = _stride;
 			const ptrdiff_t stride_in = s._stride;
+			const auto copy_bytes = r.width() * 4_z;
 			const auto* const p = s._pixels.get() + r.left * 4_z + r.top * stride_in;
 
 			for (int y = 0; y < _dimensions.cy; ++y)
 			{
-				memcpy_s(_pixels.get() + y * stride_out, stride_out, p + y * stride_in, stride_in);
+				memcpy_s(_pixels.get() + y * stride_out, stride_out, p + y * stride_in, copy_bytes);
 			}
 		}
 
@@ -725,8 +795,10 @@ namespace ui
 		surface_ptr transform(simple_transform t) const;
 
 		void fill_pie(pointi center, int radius, const color32 color[64], color32 color_center, color32 color_bg) const;
+		void fill_logo() const;
 
 		const_surface_ptr transform(const image_edits& photo_edits) const;
+		const_surface_ptr transform(const image_edits& photo_edits, const df::cancel_token& token) const;
 
 		pixel_difference_result pixel_difference(const const_surface_ptr& image) const;
 	};
@@ -743,8 +815,9 @@ namespace ui
 		image() noexcept = default;
 		~image() noexcept = default;
 
-		image(const image&) noexcept = default;
-		image& operator=(const image&) noexcept = default;
+		// Images are only ever owned through const_image_ptr; a copy would deep-copy the encoded blob.
+		image(const image&) = delete;
+		image& operator=(const image&) = delete;
 		image(image&&) noexcept = default;
 		image& operator=(image&&) noexcept = default;
 
@@ -869,8 +942,11 @@ namespace ui
 			none,
 			normal,
 			link,
+			zoom,
 			select,
+			text_select,
 			move,
+			size_all,
 			left_right,
 			up_down,
 			hand_up,
@@ -911,6 +987,7 @@ namespace ui
 			extern color32 desktop_background;
 			extern color32 important_background;
 			extern color32 warning_background;
+			extern color32 success_background;
 			extern color32 info_background;
 
 			extern color32 rank_background;
@@ -925,8 +1002,7 @@ namespace ui
 			title,
 			mega,
 			icons,
-			small_icons,
-			petscii
+			small_icons
 		};
 
 		enum class text_style
@@ -952,7 +1028,7 @@ namespace ui
 
 		color() = default;
 
-		color(const color32 rgb) :
+		explicit color(const color32 rgb) :
 			r(get_r(rgb) / 255.0f),
 			g(get_g(rgb) / 255.0f),
 			b(get_b(rgb) / 255.0f),
@@ -1081,11 +1157,6 @@ namespace ui
 			return can_emphasize ? color(femphasize(r), femphasize(g), femphasize(b), a) : *this;
 		}
 
-		uint16_t get_r16() const { return static_cast<uint16_t>(r * 0xffff); }
-		uint16_t get_g16() const { return static_cast<uint16_t>(g * 0xffff); }
-		uint16_t get_b16() const { return static_cast<uint16_t>(b * 0xffff); }
-		uint16_t get_a16() const { return static_cast<uint16_t>(a * 0xffff); }
-
 		static color from_a(const float a)
 		{
 			df::assert_true(a < 1.1f);
@@ -1146,14 +1217,46 @@ namespace ui
 		double _curve[curve_len];
 		double _saturation = 0;
 		double _vibrance = 0;
+		double _temperature = 0;
+		double _tint = 0;
 
 	public:
 		void color_params(double vibrance, double saturation, double darks, double midtones, double lights,
-		                  double contrast, double brightness);
-		void apply(const const_surface_ptr& src, uint8_t* dst, size_t dst_stride, df::cancel_token token) const;
+		                  double contrast, double brightness, double temperature = 0, double tint = 0);
+		void apply(const const_surface_ptr& src, uint8_t* dst, size_t dst_stride, const df::cancel_token& token) const;
+		void populate_texture_transform(struct texture_transform& transform) const;
 
 	private:
 		color32 adjust_color(double y, double u, double v, double a) const;
+	};
+
+	struct texture_transform
+	{
+		static constexpr int curve_len = 0x100;
+
+		std::array<float, curve_len> curve{};
+		float perspective_horizontal = 0;
+		float perspective_vertical = 0;
+		float saturation = 1;
+		float vibrance = 0;
+		float red_gain = 1;
+		float green_gain = 1;
+		float blue_gain = 1;
+		bool has_perspective = false;
+		bool has_color_changes = false;
+
+		texture_transform()
+		{
+			for (auto index = 0; index < curve_len; ++index)
+			{
+				curve[index] = index / static_cast<float>(curve_len - 1);
+			}
+		}
+
+		bool has_changes() const
+		{
+			return has_perspective || has_color_changes;
+		}
 	};
 
 	enum class texture_update_result
@@ -1259,8 +1362,12 @@ namespace ui
 
 		virtual void draw_rounded_rect(recti bounds, color c, int radius) = 0;
 		virtual void draw_rect(recti bounds, color c) = 0;
+		// Centre-to-corner gradient. Opt in explicitly; draw_rect and clear are flat.
+		virtual void draw_rect_gradient(recti bounds, color c_centre, color c_corner) = 0;
 		virtual void draw_text(std::string_view text, recti bounds, style::font_face font, style::text_style style,
 		                       color c, color bg) = 0;
+		virtual void draw_text_mirrored(std::string_view text, recti bounds, style::font_face font,
+		                                style::text_style style, color c, color bg) = 0;
 		virtual void draw_text(std::string_view text, const std::vector<text_highlight_t>& highlights, recti bounds,
 		                       style::font_face font, style::text_style style, color clr, color bg) = 0;
 		virtual void draw_text(const text_layout_ptr& tl, recti bounds, color clr, color bg) = 0;
@@ -1272,6 +1379,8 @@ namespace ui
 		                          texture_sampler sampler = texture_sampler::point, float radius = 0.0) = 0;
 		virtual void draw_texture(const texture_ptr& t, const quadd& dst, recti src, float alpha,
 		                          texture_sampler sampler) = 0;
+		virtual void draw_texture(const texture_ptr& t, const quadd& dst, recti src, float alpha,
+		                          texture_sampler sampler, const texture_transform& transform) = 0;
 		virtual void draw_vertices(const vertices_ptr& v) = 0;
 		virtual void draw_edge_shadows(float alpha) = 0;
 
@@ -1286,6 +1395,22 @@ namespace ui
 		virtual recti clip_bounds() const = 0;
 		virtual void clip_bounds(recti) = 0;
 		virtual void restore_clip() = 0;
+	};
+
+	class scoped_clip final : public df::no_copy
+	{
+		draw_context& _dc;
+
+	public:
+		scoped_clip(draw_context& dc, const recti bounds) : _dc(dc)
+		{
+			_dc.clip_bounds(bounds);
+		}
+
+		~scoped_clip() override
+		{
+			_dc.restore_clip();
+		}
 	};
 
 
@@ -1320,6 +1445,7 @@ namespace ui
 	public:
 		virtual sizei measure_toolbar(int cx) = 0;
 		virtual void update_button_state(bool resize, bool text_changed) = 0;
+		virtual recti button_bounds(const command_ptr& command) const = 0;
 	};
 
 	class edit : public control_base
@@ -1344,6 +1470,8 @@ namespace ui
 
 	class button : public control_base
 	{
+	public:
+		virtual void set_checked(bool checked) = 0;
 	};
 
 	class date_time_control : public control_base
@@ -1412,12 +1540,17 @@ namespace ui
 		std::string text;
 		std::string toolbar_text;
 		std::string tooltip_text;
+		// Why the command is dimmed right now; empty while it is enabled.
+		std::string disabled_reason;
 		std::string keyboard_accelerator_text;
 		std::vector<keyboard_accelerator_t> kba;
 
 		bool visible = true;
 		bool enable = true;
 		bool checked = false;
+		bool checkable = false;
+		// Paints the toolbar button with the accent fill so it reads as the one thing asking to be pressed.
+		bool highlight = false;
 
 		bool text_can_change = false;
 		bool icon_can_change = false;
@@ -1446,6 +1579,7 @@ namespace ui
 		virtual void invalidate(recti bounds = {}, bool erase = false) = 0;
 		virtual void layout() = 0;
 		virtual void redraw() = 0;
+		virtual void redraw_now() = 0;
 		virtual void scroll(int dx, int dy, recti bounds, bool scroll_child_controls) = 0;
 		virtual void track_menu(recti button_bounds, const std::vector<command_ptr>& buttons) = 0;
 		virtual void close(bool is_cancel = false) = 0;
@@ -1490,11 +1624,23 @@ namespace ui
 		{
 		}
 
+		virtual void on_mouse_middle_button_down(const pointi loc, const key_state keys)
+		{
+		}
+
+		virtual void on_mouse_middle_button_up(const pointi loc, const key_state keys)
+		{
+		}
+
 		virtual void on_mouse_leave(const pointi loc)
 		{
 		}
 
 		virtual void on_mouse_wheel(const pointi loc, const int delta, const key_state keys, bool& was_handled)
+		{
+		}
+
+		virtual void on_mouse_hwheel(const pointi loc, const int delta, const key_state keys, bool& was_handled)
 		{
 		}
 
@@ -1516,6 +1662,12 @@ namespace ui
 
 		virtual void pan_end(const pointi start_loc, const pointi final_loc)
 		{
+		}
+
+		// Returns false when the tap has no touch-specific meaning, so the caller runs the normal double-click.
+		virtual bool touch_double_tap(const pointi location)
+		{
+			return false;
 		}
 
 		virtual void focus_changed(const bool has_focus, const control_base_ptr& child)
@@ -1564,6 +1716,11 @@ namespace ui
 			return true;
 		}
 
+		virtual bool is_caption_area(const pointi loc) const
+		{
+			return false;
+		}
+
 		virtual void dpi_changed()
 		{
 		}
@@ -1602,6 +1759,14 @@ namespace ui
 	};
 
 
+	// Independent sets of radio buttons hosted by one control frame must declare distinct groups.
+	// Platforms scope radio exclusivity by sibling order, so without a group id a collision-policy
+	// choice would clear the scope or format choice in the same host (and the reverse).
+	constexpr int radio_group_default = 0;
+	constexpr int radio_group_scope = 1;
+	constexpr int radio_group_format = 2;
+	constexpr int radio_group_collision = 3;
+
 	class control_frame : public frame
 	{
 	public:
@@ -1614,7 +1779,8 @@ namespace ui
 		virtual button_ptr create_button(icon_index icon, std::string_view title, std::string_view details,
 		                                 std::function<void()> invoke, bool default_button = false) = 0;
 		virtual button_ptr create_check_button(bool val, std::string_view text, bool is_radio,
-		                                       std::function<void(bool)> changed) = 0;
+		                                       std::function<void(bool)> changed,
+		                                       int radio_group = radio_group_default) = 0;
 		virtual date_time_control_ptr create_date_time_control(df::date_t text, std::function<void(df::date_t)> changed,
 		                                                       bool include_time) = 0;
 		virtual control_frame_ptr create_dlg(frame_host_weak_ptr host, bool is_popup) = 0;
@@ -1645,7 +1811,29 @@ namespace ui
 		options_changed,
 		dpi_changed,
 		screen_locked,
-		system_device_change
+		system_device_change,
+
+		// The machine is about to suspend. A suspend is not guaranteed to be followed by a
+		// resume, so this is the last chance to persist state, and audio must not survive it.
+		system_suspending,
+
+		// Woken from suspend. Volumes, displays and the index may all have moved on.
+		system_resumed,
+
+		// The Windows session is ending (shutdown, restart, log off). Persist state without
+		// prompting: UI shown here is ignored or force-closed by the shutdown sequence.
+		session_ending,
+
+		// The Direct3D device was lost. Release every GPU-backed resource; rendering
+		// continues on the CPU software backend for the rest of the session.
+		graphics_device_lost
+	};
+
+	enum class focus_mode
+	{
+		none,
+		view,
+		text_edit
 	};
 
 	class app
@@ -1654,6 +1842,7 @@ namespace ui
 		virtual ~app() = default;
 
 		virtual bool pre_init() = 0;
+		virtual bool load_settings(const platform::setting_file_ptr& store) = 0;
 		virtual bool init(std::string_view command_line) = 0;
 		virtual void final_exit() = 0;
 		virtual void app_fail(std::string_view message, std::string_view more_text) = 0;
@@ -1663,8 +1852,10 @@ namespace ui
 		virtual void system_event(os_event_type ost) = 0;
 		virtual bool can_exit() = 0;
 		virtual void prepare_frame() = 0;
-		virtual void folder_changed() = 0;
+		virtual void folder_changed(df::folder_path folder) = 0;
 		virtual bool key_down(char32_t c, key_state keys) = 0;
+		virtual bool text_input(std::string_view text) = 0;
+		virtual focus_mode focus_mode() const = 0;
 		virtual void track_menu(const frame_ptr& parent, recti button_bounds,
 		                        const std::vector<command_ptr>& buttons) = 0;
 		virtual std::string restart_cmd_line() = 0;
@@ -1687,6 +1878,10 @@ namespace ui
 		virtual void set_font_base_size(int i) = 0;
 		virtual int get_font_base_size() const = 0;
 	};
+
+	// False when the CPU software renderer is active, or the system asks for no client-area
+	// animation. animate_alpha then jumps straight to its target instead of fading.
+	extern bool animations_enabled;
 
 	class animate_alpha
 	{
@@ -1717,10 +1912,10 @@ namespace ui
 			_target = _val = v;
 		}
 
-		void reset(float v, const float t)
+		void reset(const float v, const float t)
 		{
 			_target = t;
-			_val = t;
+			_val = animations_enabled ? v : t;
 		}
 
 		void val(const float v)
@@ -1731,20 +1926,21 @@ namespace ui
 		void target(const float v)
 		{
 			_target = v;
-			_val = v;
+			if (!animations_enabled) _val = v;
 		}
 
 		bool step()
 		{
 			const auto dd = _target - _val;
 
-			if (abs(dd) < 0.001f)
+			if (!animations_enabled || abs(dd) < 0.001f)
 			{
+				const auto changed = _val != _target;
 				_val = _target;
-				return false;
+				return changed;
 			}
 
-			_val += dd * 0.12345f;
+			_val += dd * 0.333f;
 			return true;
 		}
 	};

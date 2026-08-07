@@ -16,10 +16,10 @@
 #include "model_index.h"
 #include "model_locations.h"
 #include "files.h"
-#include "view_test.h"
 #include "test.h"
 #include "av_player.h"
 #include "ui_controls.h"
+#include "app_command_line.h"
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Shared constants
@@ -27,9 +27,9 @@
 
 inline const auto test_files_folder = known_path(platform::known_folder::test_files_folder);
 inline constexpr sizei thumbnail_max_dimension = {256, 256};
-inline constexpr int expected_cached_item_count = 38;
+inline constexpr int expected_cached_item_count = 47;
 
-inline const auto long_text =
+inline constexpr auto long_text =
 	"The Commodore 64, also known as the C64, C-64, C= 64, or occasionally CBM 64 or VIC-64, is an 8-bit home computer introduced in January 1982 by Commodore International. "
 	"It is listed in the Guinness World Records as the highest-selling single computer model of all time, with independent estimates placing the number sold between 10 and 17 million units. "
 	"Volume production started in early 1982, with machines being released on to the market in August at a price of US $595(roughly equivalent to $1, 500 in 2015)."
@@ -42,6 +42,9 @@ inline const auto long_text =
 class null_item_results_ui final : public df::status_i
 {
 public:
+	int abort_count = 0;
+	int complete_count = 0;
+
 	void start_item(const std::string_view name) override
 	{
 	}
@@ -54,10 +57,12 @@ public:
 
 	void abort(const std::string_view error_message) override
 	{
+		++abort_count;
 	}
 
 	void complete(const std::string_view message) override
 	{
+		++complete_count;
 	}
 
 	void show_errors() override
@@ -82,13 +87,20 @@ public:
 class null_state_strategy final : public state_strategy
 {
 public:
+	int toggle_full_screen_count = 0;
+
 	explicit null_state_strategy() = default;
 
 	void toggle_full_screen() override
 	{
+		++toggle_full_screen_count;
 	}
 
 	bool can_open_search(const df::search_t& path) override { return true; }
+
+	void report_scope_unavailable(const df::search_t& path) override
+	{
+	}
 
 	void element_broadcast(const view_element_event& event) override
 	{
@@ -128,6 +140,8 @@ public:
 
 	bool is_command_checked(const commands cmd) override { return false; }
 
+	ui::command_ptr find_command(const commands cmd) const override { return nullptr; }
+
 	void focus_view() override
 	{
 	}
@@ -150,18 +164,25 @@ public:
 	}
 };
 
-class null_async_strategy final : public async_strategy
+// The one gazetteer shared by every test: loading a 24 MB index per context is not affordable.
+location_cache& test_locations();
+
+class null_async_strategy : public async_strategy
 {
 public:
-	location_cache locations;
+	location_cache& locations = test_locations();
 
 	void queue_ui(const std::function<void()> f) override { f(); }
 
-	void queue_media_preview(std::function<void(media_preview_state&)>) override
+	void queue_media_preview(std::function<void(media_preview_state&)>, bool) override
 	{
 	}
 
 	void queue_database(const std::function<void(database&)> f) override
+	{
+	}
+
+	void queue_tile_db(const std::function<void(tile_cache_db&)> f) override
 	{
 	}
 
@@ -175,6 +196,9 @@ public:
 
 	void queue_async(async_queue q, const std::function<void()> f) override { f(); }
 
+	// The delay is a scheduling concession to the running application; a test wants the result.
+	void queue_async_after(async_queue q, uint32_t, const std::function<void()> f) override { f(); }
+
 	void queue_location(const std::function<void(location_cache&)> f) override
 	{
 		if (!locations.is_index_loaded()) locations.load_index();
@@ -186,15 +210,103 @@ public:
 	}
 };
 
-class temp_files
+class deferred_async_strategy final : public null_async_strategy
 {
-	df::folder_path _folder;
-	df::file_paths _paths;
+	std::deque<std::function<void()>> _ui;
+	std::deque<std::pair<async_queue, std::function<void()>>> _workers;
+	view_invalid _invalids = view_invalid::none;
 
 public:
-	temp_files() : _folder(platform::temp_folder().combine(std::format("diffractor-{}", platform::tick_count())))
+	void queue_ui(const std::function<void()> f) override
 	{
+		_ui.emplace_back(f);
 	}
+
+	void queue_async(const async_queue q, const std::function<void()> f) override
+	{
+		_workers.emplace_back(q, f);
+	}
+
+	// Deferred like any other worker task; run_next drives it, so the debounce is not a test's problem.
+	void queue_async_after(const async_queue q, uint32_t, const std::function<void()> f) override
+	{
+		_workers.emplace_back(q, f);
+	}
+
+	void invalidate_view(const view_invalid invalid) override
+	{
+		_invalids |= invalid;
+	}
+
+	void drain_ui()
+	{
+		while (!_ui.empty())
+		{
+			auto f = std::move(_ui.front());
+			_ui.pop_front();
+			f();
+		}
+	}
+
+	size_t pending_ui_count() const
+	{
+		return _ui.size();
+	}
+
+	size_t pending_worker_count(const async_queue q) const
+	{
+		return std::ranges::count(_workers, q, &std::pair<async_queue, std::function<void()>>::first);
+	}
+
+	bool was_invalidated(const view_invalid invalid) const
+	{
+		return (_invalids & invalid) != view_invalid::none;
+	}
+
+	bool run_next(const async_queue q)
+	{
+		const auto found = std::ranges::find(_workers, q, &std::pair<async_queue, std::function<void()>>::first);
+		if (found == _workers.end()) return false;
+
+		const auto f = std::move(found->second);
+		_workers.erase(found);
+		f();
+		return true;
+	}
+};
+
+class temp_files
+{
+	mutable df::folder_path _folder;
+	df::file_paths _paths;
+	int _folder_seq = 0;
+
+	// Base folder for temp files. Overridable via the /test-temp:<path> command
+	// line option so round-trip tests can be run against a network drive.
+	static df::folder_path temp_base()
+	{
+		if (!command_line.test_temp_folder.empty())
+		{
+			return df::folder_path(command_line.test_temp_folder);
+		}
+
+		return platform::temp_folder();
+	}
+
+	// Resolved lazily so the /test-temp override (parsed after this global is
+	// constructed) is honoured on first use.
+	df::folder_path resolve_folder() const
+	{
+		if (_folder.is_empty())
+		{
+			_folder = temp_base().combine(std::format("diffractor-{}", platform::tick_count()));
+		}
+
+		return _folder;
+	}
+
+public:
+	temp_files() = default;
 
 	~temp_files()
 	{
@@ -219,17 +331,46 @@ public:
 
 	df::folder_path folder() const
 	{
-		return _folder;
+		return resolve_folder();
 	}
 
 	df::file_path next_path(const std::string_view ext = ".jpg")
 	{
-		if (!_folder.exists())
+		const auto folder = resolve_folder();
+
+		if (!folder.exists())
 		{
-			platform::create_folder(_folder);
+			platform::create_folder(folder);
 		}
 
-		auto result = platform::temp_file(ext, _folder);
+		auto result = platform::temp_file(ext, folder);
+		_paths.emplace_back(result);
+		return result;
+	}
+
+	// A private subfolder for tests that open a folder as a search scope. Such a test must not use
+	// folder(): that is shared by the whole run, so its cost and its result counts would depend on
+	// whatever files earlier tests happened to leave behind.
+	df::folder_path next_folder(const std::string_view name)
+	{
+		const auto result = resolve_folder().combine(std::format("{}-{}", name, ++_folder_seq));
+
+		if (!result.exists())
+		{
+			platform::create_folder(result);
+		}
+
+		return result;
+	}
+
+	df::file_path next_path_in(const df::folder_path folder, const std::string_view ext = ".jpg")
+	{
+		if (!folder.exists())
+		{
+			platform::create_folder(folder);
+		}
+
+		auto result = platform::temp_file(ext, folder);
 		_paths.emplace_back(result);
 		return result;
 	}
@@ -244,7 +385,7 @@ struct metadata_type
 };
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-// Shared mutable globals (defined in tests1.cpp)
+// Shared mutable globals (defined in test_runner.cpp)
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 extern temp_files _temps;
@@ -258,7 +399,9 @@ extern df::cancel_token test_token;
 struct shared_test_context
 {
 	null_async_strategy as;
-	location_cache locations;
+	// Searches resolve against the same loaded gazetteer the async strategy uses, so read-time
+	// attribution is exercised rather than silently answering from an empty index.
+	location_cache& locations = test_locations();
 	index_state test_index;
 	index_state empty_index;
 	bool loaded = false;
@@ -271,10 +414,17 @@ struct shared_test_context
 };
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-// Shared helper functions (defined in tests1.cpp)
+// Shared helper functions (defined in tests_core_utils.cpp)
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 file_scan_result ff_scan_file(files& ff, df::file_path path, std::string_view xmp_sidecar = {});
+// Ask files::update to re-scan what it wrote, the way the app does: through the coherent handle
+// replace_file kept open, so a by-name reopen cannot return pre-swap content over SMB. The sidecar
+// is left unset so the write resolves the one it just created.
+rescan_spec ff_inspect_rescan(df::file_path path);
+// The result of that scan, falling back to a by-name scan if the write produced none.
+file_scan_result ff_scan_after_update(files& ff, file_update_result& result, df::file_path path,
+                                      std::string_view xmp_sidecar = {});
 file_scan_result ff_scan_and_load_thumb(files& ff, df::file_path path,
                                         std::string_view xmp_sidecar = {});
 void assert_metadata(const prop::item_metadata& expected, const prop::item_metadata& actual,
@@ -289,6 +439,12 @@ void build_index(index_state& index, database& db);
 int count_search_results(index_state& index, const df::search_t& search);
 int count_search_results(index_state& index, std::string_view query);
 std::shared_ptr<av_player> make_test_player();
+// Never opened, so it holds no file and no decoder threads; only its identity is of interest.
+std::shared_ptr<av_session> make_test_session();
+
+// The gazetteer costs seconds to load, so every test that needs real place data shares one
+// loaded instance. A test that mutates it (set_display_language) must restore it before returning.
+location_cache& test_locations();
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Shared prop_test helper for search matching tests
@@ -339,6 +495,30 @@ public:
 	prop_test& rate(const int16_t n)
 	{
 		_f.safe_ps()->rating = n;
+		return *this;
+	}
+
+	prop_test& track(const uint8_t n, const uint8_t of = 0)
+	{
+		_f.safe_ps()->track = df::xy8::make(n, of);
+		return *this;
+	}
+
+	prop_test& iso(const uint16_t n)
+	{
+		_f.safe_ps()->iso_speed = n;
+		return *this;
+	}
+
+	prop_test& duration(const uint16_t seconds)
+	{
+		_f.safe_ps()->duration = seconds;
+		return *this;
+	}
+
+	prop_test& digitized(const int y, const int m, const int d)
+	{
+		_f.safe_ps()->created_digitized = df::date_t(y, m, d);
 		return *this;
 	}
 

@@ -10,7 +10,5 @@
 
 float4 main(PS_INPUT input) : SV_Target
 {
-	const float rr = nrand(input.pos);
-	const float4 cc = float4(input.c.r + rr, input.c.g + rr, input.c.b + rr, input.c.a);
-	return cc;
+	return dither_color(input.c, input.pos.xy);
 }

@@ -12,8 +12,7 @@ Texture2D tx : register(t0);
 
 float4 main(PS_INPUT input) : SV_Target
 {
-	//return tx.Sample(tex_sampler, input.uv) * input.c;
-
-	float4 c = tx.Sample(tex_sampler, input.uv);
-	return float4(input.c.rgb, c.a * input.c.a);
+	// The glyph atlas is A8 - only the alpha channel carries coverage.
+	const float coverage = tx.Sample(tex_sampler, input.uv).a;
+	return float4(input.c.rgb, coverage * input.c.a);
 }

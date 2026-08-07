@@ -129,17 +129,6 @@ void md5::finalize()
 	_finalized = true;
 }
 
-std::string md5::hex_digest() const
-{
-	if (!_finalized)
-	{
-		throw app_exception("MD5 hex_digest Failed to get digest because un-finalized."s);
-	}
-
-	return str::to_hex(digest, 16, false);
-}
-
-
 // Constants for MD5Transform routine.
 // Although we could use C++ style constants, defines are actually better,
 // since they let us easily evade scope clashes.

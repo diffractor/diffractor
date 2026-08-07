@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include <variant>
+
 class LoadJob;
 
 enum class view_type
@@ -19,11 +21,12 @@ enum class view_type
 	items,
 	media,
 	edit,
-	test,
 	rename,
+	batch,
 	import,
 	sync,
-	locate
+	locate,
+	tags
 };
 
 enum class repeat_mode
@@ -31,6 +34,17 @@ enum class repeat_mode
 	repeat_none = 0,
 	repeat_all,
 	repeat_one
+};
+
+// Closed product ontology (docs/design.md): every destination-writing operation resolves
+// destination collisions with exactly one explicitly named policy. Block Run is the
+// conservative default - the run is refused and the reason is stated.
+enum class collision_policy
+{
+	block_run = 0,
+	skip,
+	replace,
+	auto_rename
 };
 
 enum class item_status
@@ -54,6 +68,7 @@ enum class async_queue
 	load,
 	load_raw,
 	render,
+	render_display,
 	query,
 	sidebar,
 	index,
@@ -68,7 +83,70 @@ enum class async_queue
 constexpr auto thumbnail_quality = 85;
 
 
-using metadata_kv = std::pair<str::cached, std::string>;
+struct metadata_text_detail
+{
+	std::string text;
+};
+
+struct metadata_binary_detail
+{
+	std::vector<uint8_t> bytes;
+};
+
+struct metadata_numeric_detail
+{
+	std::vector<uint16_t> values;
+	int columns = 0;
+};
+
+using metadata_detail = std::variant<std::monostate, metadata_text_detail, metadata_binary_detail,
+                                     metadata_numeric_detail>;
+
+// A metadata row. A list is held in the source block's own document order; `depth` and `container`
+// describe the hierarchy that block actually has, and `detail` holds one typed expanded presentation.
+// Metadata belongs to the displayed scan result, so none of its text enters the process-lifetime
+// intern pool.
+struct metadata_kv
+{
+	std::string key;
+	std::string value;
+	std::string shape;
+	metadata_detail detail;
+	std::string id;
+	int depth = 0;
+	bool container = false;
+	bool open_by_default = false; // a section worth reading before the user asks, whatever its size
+	// Detail is prose rather than a dump, so it is drawn in the reading face and replaces the
+	// value preview while open instead of repeating its first line.
+	bool prose = false;
+
+	metadata_kv() = default;
+
+	metadata_kv(std::string k, std::string v) noexcept : key(std::move(k)), value(std::move(v))
+	{
+	}
+
+	metadata_kv(const std::string_view k, const std::string_view v) : key(k), value(v)
+	{
+	}
+
+	metadata_kv(const std::string_view k, const char* v) : key(k), value(v)
+	{
+	}
+
+	metadata_kv(const str::cached k, std::string v) : key(k.sv()), value(std::move(v))
+	{
+	}
+
+	metadata_kv(const str::cached k, const std::string_view v) : key(k.sv()), value(v)
+	{
+	}
+
+	metadata_kv(const str::cached k, const char* v) : key(k.sv()), value(v)
+	{
+	}
+};
+
 using metadata_kv_list = std::vector<metadata_kv>;
 
 namespace df

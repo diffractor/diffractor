@@ -11,16 +11,21 @@
 
 #pragma once
 
+#include "model_tile_cache.h"
+
 class sidebar_host;
+class app_logo_element;
 class search_auto_complete;
 class view_state;
 class edit_view_controls;
-class test_view;
 class items_view;
+class selector_view;
 class edit_view;
 class media_view;
 class rename_view;
+class batch_tool_view;
 class sync_view;
+class tags_view;
 class import_view;
 class locate_view;
 class view_controls_host;
@@ -33,6 +38,23 @@ extern icon_index volumes_icons[5];
 std::vector<std::pair<std::string_view, std::string>> calc_app_info(const index_state& index, bool include_state);
 bool is_app_installed();
 
+// Defined in app.cpp so callers do not need the whole sidebar header for the logo lockup.
+view_element_ptr create_app_logo_element(view_state& s, ui::style::font_face font, bool interactive,
+                                         bool show_plasma, double logo_scale,
+                                         const view_element_options& options);
+
+
+class view_frame;
+
+class shell_file_operation_ui final : df::no_copy
+{
+	view_frame& _view;
+	ui::control_frame_ptr _main_frame;
+
+public:
+	shell_file_operation_ui(view_frame& view, ui::control_frame_ptr main_frame);
+	~shell_file_operation_ui() override;
+};
 
 class view_frame final : public std::enable_shared_from_this<view_frame>, public view_host
 {
@@ -145,6 +167,8 @@ public:
 			_active_controller->draw(dc);
 		}
 
+		const auto display = _state.display_state();
+		if (!display || !display->is_zoom_mode()) draw_view_status(dc);
 		draw_status(dc);
 
 		if (setting.show_debug_info && _active_controller)
@@ -152,11 +176,6 @@ public:
 			const auto c = ui::color(1.0f, 0.0f, 0.0f, 1.0f);
 			const auto pad = df::round(2 * dc.scale_factor);
 			dc.draw_border(_controller_bounds, _controller_bounds.inflate(pad), c, c);
-		}
-
-		if (setting.show_shadow)
-		{
-			dc.draw_edge_shadows(dc.colors.alpha);
 		}
 
 		frame_render_time = (frame_render_time + df::now() - time_now) / 2.0;
@@ -169,9 +188,29 @@ public:
 		update_controller(loc);
 	}
 
+	void on_mouse_hwheel(const pointi loc, const int delta, const ui::key_state keys, bool& was_handled) override
+	{
+		_view->mouse_hwheel(loc, delta / 2, keys);
+		was_handled = true;
+		update_controller(loc);
+	}
+
+	// The view sees the press before the controller does, so it can release text focus the press
+	// did not land in. A rendered edit that kept focus would swallow every keyboard command.
+	void on_mouse_left_button_down(const pointi loc, const ui::key_state keys) override
+	{
+		if (_view) _view->mouse_down(loc);
+		view_host::on_mouse_left_button_down(loc, keys);
+	}
+
 	bool key_down(const int c, const ui::key_state keys) override
 	{
 		return false;
+	}
+
+	bool is_caption_area(const pointi loc) const override
+	{
+		return _view && _view->is_caption_area(loc);
 	}
 
 	void pan_start(const pointi start_loc) override
@@ -188,6 +227,11 @@ public:
 	void pan_end(const pointi start_loc, const pointi final_loc) override
 	{
 		_view->pan_end(_pan_start_loc, final_loc);
+	}
+
+	bool touch_double_tap(const pointi location) override
+	{
+		return _view->touch_double_tap(location);
 	}
 
 	void on_mouse_other_button_up(const ui::other_mouse_button& button, const pointi loc,
@@ -266,13 +310,16 @@ public:
 
 	std::string _status_title;
 	std::string _status_text;
+	int _status_padding = 8;
 
-	void update_status(std::string_view title, std::string_view text);
+	void update_status(std::string_view title, std::string_view text, int padding = 8);
 	void clear_status();
+	void draw_view_status(ui::draw_context& dc) const;
 	void draw_status(ui::draw_context& dc) const;
+	void redraw_now() const { _frame->redraw_now(); }
 
-	platform::drop_effect
-	drag_over(const platform::clipboard_data& data, const ui::key_state keys, const pointi loc) override
+	platform::drop_effect drag_over(const platform::clipboard_data& data, const ui::key_state keys,
+	                                const pointi loc) override
 	{
 		auto result = platform::drop_effect::none;
 
@@ -334,10 +381,13 @@ public:
 						const auto drop_action = is_copy ? platform::drop_effect::copy : platform::drop_effect::move;
 
 						detach_file_handles detach(_state);
+						shell_file_operation_ui processing(*this, _owner);
 						const auto drop_result = data.drop_files(save_path, drop_action);
 
 						if (drop_result.success())
 						{
+							if (!drop_result.created_files.files.empty() || !drop_result.created_files.folders.empty())
+								detach.keep_display_closed();
 							_state.open(shared_from_this(), _state.search(),
 							            make_unique_paths(drop_result.created_files));
 							result = drop_action;
@@ -370,9 +420,7 @@ public:
 
 	void drag_leave() override
 	{
-		update_status({}, {});
-		_status_title.clear();
-		_status_text.clear();
+		clear_status();
 	}
 
 	void invalidate_view(const view_invalid invalid) override
@@ -415,13 +463,15 @@ class app_frame final :
 public:
 	using this_type = app_frame;
 
-	std::shared_ptr<av_player> _player;
 	location_cache _locations;
 	index_state _item_index;
+	std::shared_ptr<av_player> _player;
 	view_state _state;
 	edit_view_state _edit_view_state;
 	database _db;
+	tile_cache_db _tile_db;
 	const ui::plat_app_ptr _pa;
+	platform::setting_file_ptr _settings;
 
 	platform::queue<std::function<void()>> _ui_queue;
 	platform::task_queue cloud_task_queue;
@@ -433,12 +483,18 @@ public:
 	platform::task_queue sidebar_task_queue;
 	platform::task_queue web_task_queue;
 	platform::task_queue map_tile_task_queue;
+	// One thread, because the SQLite build serialises nothing for us: this connection is only ever
+	// touched from here.
+	platform::task_queue tile_db_task_queue;
 	platform::task_queue predictions_task_queue;
 	platform::task_queue summary_task_queue;
 	platform::task_queue presence_task_queue;
 	platform::task_queue auto_complete_task_queue;
 	platform::task_queue query_task_queue;
 	platform::task_queue render_task_queue;
+	// Separate from render so the image being viewed is never queued behind background thumbnail
+	// staging, which reaches hundreds of tasks deep while stepping through a folder.
+	platform::task_queue render_display_task_queue;
 	platform::task_queue scan_folder_task_queue;
 	platform::task_queue scan_modified_items_task_queue;
 	platform::task_queue scan_displayed_items_task_queue;
@@ -446,23 +502,36 @@ public:
 	platform::task_queue work_task_queue;
 	platform::threads _threads;
 
-	ui::control_frame_ptr _app_frame;
+	// UI-thread owned. Both the database-open and the folder-discovery completions ask to bring the
+	// index workers up, and either can win, so the bring-up is claimed once.
+	bool _index_workers_started = false;
 
+	// These workers are created on first use rather than at startup, so a session that never opens the
+	// map, never reaches the network and never types in search pays for none of them. Claimed once by
+	// claim_worker_start, which runs on whichever thread first queues to that queue.
+	std::atomic_bool _web_worker_started = false;
+	std::atomic_bool _cloud_worker_started = false;
+	std::atomic_bool _auto_complete_worker_started = false;
+	std::atomic_bool _map_tile_workers_started = false;
+	std::atomic_bool _tile_db_worker_started = false;
+	std::atomic_bool _media_preview_worker_started = false;
+
+	ui::control_frame_ptr _app_frame;
+	std::shared_ptr<app_logo_element> _app_logo;
+
+	// Shared native top-bar controls remain available independently of the primary renderer.
 	ui::toolbar_ptr _navigate1;
+	ui::edit_ptr _search_edit;
 	ui::toolbar_ptr _navigate2;
 	ui::toolbar_ptr _navigate3;
 
 	ui::toolbar_ptr _media_edit_commands;
-	ui::toolbar_ptr _rename_commands;
+	ui::toolbar_ptr _tool_commands;
 	ui::toolbar_ptr _import_commands;
 	ui::toolbar_ptr _locate_commands;
 	ui::toolbar_ptr _sync_commands;
-	ui::toolbar_ptr _test_commands;
-
-	ui::edit_ptr _search_edit;
-	ui::edit_ptr _filter_edit;
-	ui::toolbar_ptr _tools;
-	ui::toolbar_ptr _sorting;
+	ui::toolbar_ptr _tags_commands;
+	ui::toolbar_ptr _busy_commands;
 
 	std::string _last_favorite_tags;
 
@@ -470,23 +539,30 @@ public:
 	ui::list_window_ptr _search_predictions_frame;
 
 	bool _search_has_focus = false;
-	bool _filter_has_focus = false;
+	std::string _search_original_text;
+	std::string _search_typed_text;
+	bool _search_setting_text = false;
+	bool _search_previewing_prediction = false;
+	bool _app_logo_hover = false;
+
+	// The item full screen selected on the user's behalf, so leaving full screen can undo it.
+	df::item_element_ptr _full_screen_auto_selected;
 	bool _view_has_focus = false;
-	bool _toolbar_has_focus = false;
-	bool _nav_has_focus = false;
 	bool _view_controls_have_focus = false;
 
 	view_controls_host_ptr _view_controls;
-	std::shared_ptr<sidebar_host> _sidebar;
 	std::shared_ptr<view_frame> _view_frame;
+	std::shared_ptr<view_frame> _selector_frame;
 
-	std::shared_ptr<test_view> _view_test;
 	std::shared_ptr<rename_view> _view_rename;
+	std::shared_ptr<batch_tool_view> _view_batch;
 	std::shared_ptr<import_view> _view_import;
 	std::shared_ptr<locate_view> _view_locate;
 	std::shared_ptr<sync_view> _view_sync;
+	std::shared_ptr<tags_view> _view_tags;
 
 	std::shared_ptr<items_view> _view_items;
+	std::shared_ptr<selector_view> _view_selector;
 	std::shared_ptr<edit_view> _view_edit;
 	std::shared_ptr<media_view> _view_media;
 	std::shared_ptr<view_base> _view;
@@ -494,16 +570,44 @@ public:
 	ui::bubble_window_ptr _bubble;
 
 	int _frame_delay = 0;
+	lerp_animate _search_color_lerp;
 	group_by _starting_group_order = group_by::file_type;
 	sort_by _starting_sort_order = sort_by::def;
+	std::vector<file_group_ref> _starting_media_filter;
 
 	sizei _extent;
 	recti _view_bounds;
-	recti _status_bounds;
+	recti _top_bar_bounds;
 	recti _title_bounds;
-	int _sorting_width = 0;
+	std::optional<recti> _last_texture_eviction_bounds;
+
+	// Written only by layout so the drag can map a pointer position straight back to a stored
+	// proportion, and read only on the UI thread by paint and the mouse handlers.
+	struct view_controls_splitter_t
+	{
+		recti bounds;
+		int client_left = 0;
+		int client_right = 0;
+		int width = 0;
+		int min_pane = 0;
+		bool hover = false;
+		bool tracking = false;
+	} _controls_splitter;
+
+	void drag_controls_splitter(pointi loc);
+	void update_controls_splitter_hover(bool hover);
+
+	// Time of the most recent folder-watch notification that has not yet produced a response, and the
+	// folders that signalled during that burst. UI thread only.
+	double _folder_change_time = 0.0;
+	df::unique_folders _folders_changed;
 	std::string saved_current_search;
 	bool _is_active = false;
+
+#ifdef _DEBUG
+	double _screenshot_ready_time = 0;
+	int _screenshot_stage = 0;
+#endif
 
 	commands_map _commands;
 	ui::command_ptr _hover_command;
@@ -511,12 +615,20 @@ public:
 
 	std::atomic<view_invalid> _invalids = view_invalid::none;
 
-	lerp_animate _search_color_lerp;
-	std::atomic_int _pin_search;
+	// Guards against re-entrant draining of pending UI work. complete_pending_events can be reached
+	// again while it is already running, because a UI-thread wait (ui_wait_for_signal) pumps messages
+	// and re-runs the idle action. A nested drain would run more queued callbacks on the same stack -
+	// unbounded growth if any of them wait again - so nested calls return immediately and the queued
+	// work is picked up on the next idle pass instead.
+	std::atomic_int _completing_pending_events = 0;
+
+	// Set when the cap above skipped a drain. queue_ui only wakes idle on the empty-to-nonempty
+	// transition, so a skipped drain leaves an already-nonempty queue with no wake pending; the
+	// outermost drain re-arms idle on its way out. Re-arming from the nested call instead would
+	// spin, because the wait that re-entered us would wake straight back into the same cap.
+	std::atomic_bool _pending_events_deferred = false;
 
 	view_hover_element _hover;
-
-	ui::texture_ptr _logo_tex;
 
 	app_frame(ui::plat_app_ptr pa);
 	~app_frame() override;
@@ -526,6 +638,8 @@ public:
 	void idle() override;
 	void hide_search_predictions();
 	bool key_down(char32_t key, ui::key_state keys) override;
+	bool text_input(std::string_view text) override;
+	ui::focus_mode focus_mode() const override;
 	void create_toolbars();
 	void crash(df::file_path dump_file_path) override;
 	std::string restart_cmd_line() override;
@@ -535,24 +649,44 @@ public:
 	void invoke(const command_info_ptr& c);
 	void toggle_full_screen() override;
 	bool can_open_search(const df::search_t& path) override;
-	void folder_changed() override;
+	void report_scope_unavailable(const df::search_t& path) override;
+	void folder_changed(df::folder_path folder) override;
 	void dpi_changed() override;
 	void on_window_layout(ui::measure_context& mc, sizei extent, bool is_minimized) override;
 	void on_window_paint(ui::draw_context& dc) override;
+	bool is_caption_area(pointi loc) const override;
 	void activate(bool is_active) override;
 	void app_fail(std::string_view message, std::string_view more_text) override;
 	void invalidate_status() const;
 	void update_overlay();
 	void tick() override;
+#ifdef _DEBUG
+	void run_test_action(std::string_view action);
+	void tick_screenshot();
+#endif
 	void prepare_frame() override;
 	void update_tooltip();
 	void item_focus_changed(const df::item_element_ptr& focus, const df::item_element_ptr& previous) override;
+
+	// One test decides whether a view shows the selector strip, what it offers and what a click on it
+	// does, so the three cannot disagree.
+	enum class selector_strip
+	{
+		none,
+		photo,
+		metadata
+	};
+
+	selector_strip selector_strip_for_view(view_type m) const;
+	void select_from_selector(const df::item_element_ptr& item, ui::key_state keys);
+	void reset_selector_selection_anchor();
 	void make_visible(const df::item_element_ptr& i) override;
 	bool is_command_checked(commands cmd) override;
 	void element_broadcast(const view_element_event& event) override;
 	recti calc_search_popup_bounds() const;
 	void layout(ui::measure_context& mc);
 	void complete_pending_events();
+	bool load_settings(const platform::setting_file_ptr& store) override;
 	void load_options(const platform::setting_file_ptr& store);
 	void display_changed() override;
 	void open_default_folder();
@@ -563,34 +697,45 @@ public:
 	void reload();
 	void queue_ui(std::function<void()> f) override;
 	void queue_async(async_queue q, std::function<void()> f) override;
+	void queue_async_after(async_queue q, uint32_t delay_ms, std::function<void()> f) override;
 	void queue_location(std::function<void(location_cache&)>) override;
 	void queue_database(std::function<void(database&)> f) override;
+	void queue_tile_db(std::function<void(tile_cache_db&)> f) override;
 	void web_service_cache(std::string key, std::function<void(const std::string&)> f) override;
 	void web_service_cache(std::string key, std::string value) override;
-	void queue_media_preview(std::function<void(media_preview_state&)> f) override;
+	void queue_media_preview(std::function<void(media_preview_state&)> f, bool must_run) override;
 	static icon_index repeat_toggle_icon();
 	bool update_toolbar_text(commands cc, const std::string& text);
 	void update_button_state(bool resize);
-	void update_address() const;
+	bool edit_has_changes() const;
 	void update_index();
+	void rebuild_index();
+	void queue_index_update(bool forget_cached_metadata);
 	void toggle_volume();
 	static icon_index sound_icon();
 	void def_command(commands id, command_group group, icon_index icon, std::string_view text,
 	                 std::string_view tooltip = {});
+	void language_changed(std::string_view lang_code);
 	void update_command_text();
 	void initialise_commands();
 	command_info_ptr find_or_create_command_info(commands id);
 	void add_command_invoke(commands id, std::function<void()> invoke);
-	ui::command_ptr find_command(commands id) const;
+	ui::command_ptr find_command(commands id) const override;
 	void tooltip(view_hover_element& hover, commands id) const;
-	void search_edit_change(const std::string& text) const;
-	void filter_edit_change(const std::string& text);
+	void search_text_changed(std::string_view text);
+	void preview_search_prediction(const std::string& text);
+	void set_search_edit_text(std::string_view text);
 	void delete_items(const df::item_set& items) override;
+
+	// The run command of the task view currently shown, or none outside the task views.
+	commands task_view_run_command() const;
 
 	void focus_view() override;
 	bool can_exit() override;
 	bool pre_init() override;
 	void start_workers();
+	bool claim_worker_start(std::atomic_bool& started);
+	void ensure_worker(std::atomic_bool& started, platform::task_queue& q, std::string_view name);
 	void update_font_size() const;
 	bool init(std::string_view command_line) override;
 	void init_search();
@@ -598,22 +743,16 @@ public:
 	void exit() override;
 	void system_event(ui::os_event_type ost) override;
 	void search_enter();
+	void cancel_search_edit();
+	bool search_accept_selected();
 
-	void on_mouse_move(const pointi loc, const bool is_tracking) override
-	{
-	}
+	void on_mouse_move(pointi loc, bool is_tracking) override;
 
-	void on_mouse_left_button_down(const pointi loc, const ui::key_state keys) override
-	{
-	}
+	void on_mouse_left_button_down(pointi loc, ui::key_state keys) override;
 
-	void on_mouse_left_button_up(const pointi loc, const ui::key_state keys) override
-	{
-	}
+	void on_mouse_left_button_up(pointi loc, ui::key_state keys) override;
 
-	void on_mouse_leave(const pointi loc) override
-	{
-	}
+	void on_mouse_leave(pointi loc) override;
 
 	void on_mouse_wheel(const pointi loc, const int delta, const ui::key_state keys, bool& was_handled) override
 	{

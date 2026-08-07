@@ -46,12 +46,6 @@ namespace df
 			return _h != nullptr;
 		}
 
-		bool open_read_write(const file_path path)
-		{
-			_h = open_file(path, platform::file_open_mode::read_write);
-			return _h != nullptr;
-		}
-
 		bool write(const void* data, const uint64_t write64) const
 		{
 			if (!is_int32(write64) || !_h)
@@ -62,11 +56,6 @@ namespace df
 
 			const size_t write = static_cast<uint32_t>(write64);
 			return _h->write(static_cast<const uint8_t*>(data), write) == write;
-		}
-
-		bool is_valid_read(const uint64_t offset, const uint64_t size) const
-		{
-			return is_int32(size) && size < one_meg && file_size() >= offset + size;
 		}
 
 		bool read(void* result, const int64_t wanted64) const
@@ -90,7 +79,7 @@ namespace df
 				const auto wanted = static_cast<uint32_t>(wanted64);
 				result.resize(wanted);
 				const auto read = _h->read(result.data(), wanted);
-				result.resize(read, 0);
+				result.resize(static_cast<size_t>(read), 0);
 			}
 
 			return result;
@@ -105,7 +94,7 @@ namespace df
 
 			constexpr auto wanted = static_cast<uint32_t>(sixty_four_k);
 			const auto read = _h->read(_buffer.get(), wanted);
-			_buffer_data_size = read;
+			_buffer_data_size = static_cast<size_t>(read);
 			return read > 0;
 		}
 
@@ -119,36 +108,19 @@ namespace df
 			return _buffer_data_size;
 		}
 
-		str::cached load_and_cache_string(const uint32_t size_in) const
-		{
-			const auto size = std::min(size_in, sixty_four_k);
-			const auto buffer = df::unique_alloc<char>(size + 2_z);
-
-			if (buffer)
-			{
-				auto* const dst = buffer.get();
-				memset(dst, 0, size);
-				const auto read = _h->read(std::bit_cast<uint8_t*>(dst), size);
-				if (read == 0) return {};
-				dst[read] = 0;
-				return str::cache({dst, std::min(static_cast<size_t>(read), str::len(dst))});
-			}
-
-			return {};
-		}
-
 		blob read_blob(const size_t size) const
 		{
 			blob result(size);
-			memset(result.data(), 0, size);
-			return _h->read(result.data(), size) == size ? result : blob{};
+			// Deliberately not a ternary: that copy-initializes result into a prvalue instead of moving it.
+			if (_h->read(result.data(), size) != size) return {};
+			return result;
 		}
 
 		bool insert(const uint8_t* data, const int64_t dataSize, const int64_t start = 0,
 		            const int64_t replace = 0) const
 		{
 			const auto size = file_size();
-			const auto delta = static_cast<int>(dataSize) - static_cast<int>(replace);
+			const auto delta = dataSize - replace;
 
 			constexpr uint64_t buffer_size = sixty_four_k;
 			const auto buffer = df::unique_alloc<char>(buffer_size);

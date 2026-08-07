@@ -21,12 +21,9 @@
 
 namespace ui
 {
-	bool browse_for_location(view_state& vs, const control_frame_ptr& parent, gps_coordinate& position);
 	bool browse_for_term(view_state& vs, const control_frame_ptr& parent, std::string& result);
 
-	extern std::atomic_int cancel_gen;
-
-	std::vector<recti> layout_images(recti draw_bounds, const std::vector<sizei>& dims);
+	std::vector<recti> layout_collage(recti draw_bounds, const std::vector<sizei>& dimensions);
 
 	static int default_control_height(measure_context& mc, const int lines = 1)
 	{
@@ -40,7 +37,7 @@ namespace ui
 
 		auto_complete_match() noexcept = default;
 
-		explicit auto_complete_match(const view_element_style style_in) noexcept : view_element(style_in)
+		explicit auto_complete_match(const view_element_options& style_in) noexcept : view_element(style_in)
 		{
 		}
 
@@ -82,13 +79,17 @@ namespace ui
 	{
 		trackbar_ptr _slider;
 		edit_ptr _edit;
+		std::string _label;
 
 		int& _val;
 		int _min;
 		int _max;
+		std::function<void()> _changed;
 
 	public:
-		slider_control(const control_frame_ptr& h, int& v, const int min, const int max) : _val(v), _min(min), _max(max)
+		slider_control(const control_frame_ptr& h, const std::string_view label, int& v, const int min, const int max,
+		               std::function<void()> changed = {}) :
+			_label(label), _val(v), _min(min), _max(max), _changed(std::move(changed))
 		{
 			edit_styles style;
 			style.number = true;
@@ -100,6 +101,11 @@ namespace ui
 			update_edit();
 		}
 
+		void label(const std::string_view label)
+		{
+			_label = label;
+		}
+
 		void visit_controls(const std::function<void(const control_base_ptr&)>& handler) override
 		{
 			handler(_slider);
@@ -108,6 +114,13 @@ namespace ui
 
 		sizei measure(measure_context& mc, const int cx) const override
 		{
+			if (!str::is_empty(_label))
+			{
+				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
+				                                          style::text_style::single_line, cx);
+				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx);
+			}
+
 			return {cx, default_control_height(mc)};
 		}
 
@@ -119,13 +132,28 @@ namespace ui
 			                                        style::text_style::single_line, bounds.width());
 			auto slider_bounds = bounds;
 			auto edit_bounds = bounds;
-			const auto split = bounds.right - (num_extent.cx + mc.padding2 * 2);
+			const auto edit_width = std::min(bounds.width(), num_extent.cx + mc.padding2 * 2);
+			const auto split = bounds.right - edit_width;
 
-			edit_bounds.left = split + mc.padding1;
-			slider_bounds.right = split - mc.padding1;
+			edit_bounds.left = std::min(bounds.right, split + mc.padding1);
+			slider_bounds.right = std::max(slider_bounds.left, split - mc.padding1);
+
+			if (!str::is_empty(_label))
+				slider_bounds.left = std::min(slider_bounds.right, slider_bounds.left + mc.col_widths.c1);
 
 			positions.emplace_back(_slider, slider_bounds, is_visible());
 			positions.emplace_back(_edit, edit_bounds, is_visible());
+		}
+
+		void render(draw_context& dc, const pointi element_offset) const override
+		{
+			if (!str::is_empty(_label))
+			{
+				const auto text_color = color(dc.colors.foreground, dc.colors.alpha);
+				auto r = bounds.offset(element_offset);
+				r.right = r.left + dc.col_widths.c1;
+				dc.draw_text(_label, r, style::font_face::dialog, style::text_style::single_line, text_color, {});
+			}
 		}
 
 		void update_edit() const
@@ -151,26 +179,117 @@ namespace ui
 		{
 			_val = str::to_int(text);
 			update_slider();
+			if (_changed) _changed();
 		}
 
 		void slider_change(const int pos)
 		{
 			_val = pos;
 			update_edit();
+			if (_changed) _changed();
 		}
 	};
 
-	class edit_control final : public view_element, public std::enable_shared_from_this<edit_control>
+	// A dialog row that reserves column 1 for a label and gives the rest to its control.
+	class labelled_element : public view_element
+	{
+	protected:
+		std::string _label;
+
+		labelled_element() noexcept = default;
+
+		explicit labelled_element(const std::string_view label) : _label(label)
+		{
+		}
+
+		recti control_bounds(const measure_context& mc, const recti row) const
+		{
+			auto r = row;
+			if (!str::is_empty(_label)) r.left += mc.col_widths.c1;
+			return r;
+		}
+
+	public:
+		void label(const std::string_view label)
+		{
+			_label = label;
+		}
+
+		sizei measure(measure_context& mc, const int cx) const override
+		{
+			if (!str::is_empty(_label))
+			{
+				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
+				                                          style::text_style::single_line, cx);
+				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
+			}
+
+			return {cx, default_control_height(mc)};
+		}
+
+		void render(draw_context& dc, const pointi element_offset) const override
+		{
+			if (!str::is_empty(_label))
+			{
+				auto r = bounds.offset(element_offset);
+				r.right = r.left + dc.col_widths.c1 - dc.padding2;
+				dc.draw_text(_label, r, style::font_face::dialog, style::text_style::single_line,
+				             color(dc.colors.foreground, dc.colors.alpha), {});
+			}
+		}
+	};
+
+	// A labelled row whose control area is a single edit box.
+	class labelled_edit_element : public labelled_element
+	{
+	protected:
+		edit_ptr _edit;
+
+		using labelled_element::labelled_element;
+
+		// Splits the control area between the edit and a trailing toolbar button.
+		void layout_edit_and_toolbar(const measure_context& mc, const toolbar_ptr& tb,
+		                             control_layouts& positions) const
+		{
+			auto edit_bounds = control_bounds(mc, bounds);
+			auto tb_bounds = bounds;
+			const auto tb_extent = tb->measure_toolbar(50);
+			const auto split = edit_bounds.right - tb_extent.cx - mc.padding2;
+			tb_bounds.left = split + mc.padding2 / 2;
+			tb_bounds.top += (tb_bounds.height() - tb_extent.cy) / 2;
+			edit_bounds.right = split;
+
+			positions.emplace_back(_edit, edit_bounds, is_visible());
+			positions.emplace_back(tb, tb_bounds, is_visible());
+		}
+
+	public:
+		void focus() const
+		{
+			if (_edit) _edit->focus();
+		}
+
+		void visit_controls(const std::function<void(const control_base_ptr&)>& handler) override
+		{
+			handler(_edit);
+		}
+
+		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
+		{
+			bounds = bounds_in;
+			positions.emplace_back(_edit, control_bounds(mc, bounds), is_visible());
+		}
+	};
+
+	class edit_control final : public labelled_edit_element, public std::enable_shared_from_this<edit_control>
 	{
 		std::string& _val;
-		std::string _label;
-		edit_ptr _edit;
 
 	public:
 		edit_control(const control_frame_ptr& h,
 		             const std::string_view label,
 		             std::string& v,
-		             std::function<void(std::string_view)> changed = {}) : _val(v), _label(label)
+		             std::function<void(std::string_view)> changed = {}) : labelled_edit_element(label), _val(v)
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
@@ -198,22 +317,12 @@ namespace ui
 		}
 
 		edit_control(const control_frame_ptr& h, const std::string_view label, std::string& v,
-		             const std::vector<std::string>& auto_completes) : _val(v), _label(label)
+		             const std::vector<std::string>& auto_completes) : labelled_edit_element(label), _val(v)
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
 			style.auto_complete_list = auto_completes;
 			_edit = h->create_edit(style, v, [this](const std::string_view text) { _val = text; });
-		}
-
-		void label(const std::string_view label)
-		{
-			_label = label;
-		}
-
-		void visit_controls(const std::function<void(const control_base_ptr&)>& handler) override
-		{
-			handler(_edit);
 		}
 
 		void dispatch_event(const view_element_event& event) override
@@ -224,48 +333,16 @@ namespace ui
 			}
 		}
 
-		sizei measure(measure_context& mc, const int cx) const override
-		{
-			if (!str::is_empty(_label))
-			{
-				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
-				                                          style::text_style::single_line, cx);
-				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
-			}
-
-			return {cx, default_control_height(mc)};
-		}
-
-		void render(draw_context& dc, const pointi element_offset) const override
-		{
-			if (!str::is_empty(_label))
-			{
-				auto r = bounds.offset(element_offset);
-				r.right = r.left + dc.col_widths.c1 - dc.padding2;
-				dc.draw_text(_label, r, style::font_face::dialog, style::text_style::single_line,
-				             color(dc.colors.foreground, dc.colors.alpha), {});
-			}
-		}
-
-		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
-		{
-			bounds = bounds_in;
-			auto r = bounds;
-			if (!str::is_empty(_label)) r.left += mc.col_widths.c1;
-			positions.emplace_back(_edit, r, is_visible());
-		}
-
 		void auto_completes(const std::vector<std::string>& texts) const
 		{
 			_edit->auto_completes(texts);
 		}
 	};
 
-	class edit_picker_control final : public view_element, public std::enable_shared_from_this<edit_picker_control>
+	class edit_picker_control final : public labelled_edit_element,
+	                                  public std::enable_shared_from_this<edit_picker_control>
 	{
 		std::string& _val;
-		std::string _label;
-		edit_ptr _edit;
 		toolbar_ptr _tb;
 
 		std::vector<std::string> _auto_completes;
@@ -295,18 +372,13 @@ namespace ui
 		}
 
 		edit_picker_control(control_frame_ptr parent, const std::string_view label, std::string& v,
-		                    std::vector<std::string> auto_completes) : _val(v), _label(label),
+		                    std::vector<std::string> auto_completes) : labelled_edit_element(label), _val(v),
 		                                                               _auto_completes(std::move(auto_completes)),
 		                                                               _parent(std::move(parent))
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
 			_edit = _parent->create_edit(style, v, [this](const std::string_view text) { _val = text; });
-		}
-
-		void label(const std::string_view label)
-		{
-			_label = label;
 		}
 
 		void visit_controls(const std::function<void(const control_base_ptr&)>& handler) override
@@ -323,44 +395,10 @@ namespace ui
 			}
 		}
 
-		sizei measure(measure_context& mc, const int cx) const override
-		{
-			if (!str::is_empty(_label))
-			{
-				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
-				                                          style::text_style::single_line, cx);
-				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
-			}
-
-			return {cx, default_control_height(mc)};
-		}
-
-		void render(draw_context& dc, const pointi element_offset) const override
-		{
-			if (!str::is_empty(_label))
-			{
-				auto r = bounds.offset(element_offset);
-				r.right = r.left + dc.col_widths.c1 - dc.padding2;
-				dc.draw_text(_label, r, style::font_face::dialog, style::text_style::single_line,
-				             color(dc.colors.foreground, dc.colors.alpha), {});
-			}
-		}
-
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
 		{
 			bounds = bounds_in;
-			auto edit_bounds = bounds;
-			if (!str::is_empty(_label)) edit_bounds.left += mc.col_widths.c1;
-
-			auto tb_bounds = bounds;
-			const auto tb_extent = _tb->measure_toolbar(50);
-			const auto split = edit_bounds.right - tb_extent.cx - mc.padding2;
-			tb_bounds.left = split + mc.padding2 / 2;
-			tb_bounds.top += (tb_bounds.height() - tb_extent.cy) / 2;
-			edit_bounds.right = split;
-
-			positions.emplace_back(_edit, edit_bounds, is_visible());
-			positions.emplace_back(_tb, tb_bounds, is_visible());
+			layout_edit_and_toolbar(mc, _tb, positions);
 		}
 
 		void show_menu() const
@@ -384,15 +422,13 @@ namespace ui
 		}
 	};
 
-	class password_control final : public view_element, public std::enable_shared_from_this<password_control>
+	class password_control final : public labelled_edit_element, public std::enable_shared_from_this<password_control>
 	{
 		std::string& _val;
-		std::string _label;
-		edit_ptr _edit;
 
 	public:
 		password_control(const control_frame_ptr& h, const std::string_view label,
-		                 std::string& v) : _val(v), _label(label)
+		                 std::string& v) : labelled_edit_element(label), _val(v)
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
@@ -415,42 +451,6 @@ namespace ui
 				_edit->window_text(_val);
 			}
 		}
-
-		void visit_controls(const std::function<void(const control_base_ptr&)>& handler) override
-		{
-			handler(_edit);
-		}
-
-		sizei measure(measure_context& mc, const int cx) const override
-		{
-			if (!str::is_empty(_label))
-			{
-				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
-				                                          style::text_style::single_line, cx);
-				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
-			}
-
-			return {cx, default_control_height(mc)};
-		}
-
-		void render(draw_context& dc, const pointi element_offset) const override
-		{
-			if (!str::is_empty(_label))
-			{
-				auto r = bounds.offset(element_offset);
-				r.right = r.left + dc.col_widths.c1 - dc.padding2;
-				dc.draw_text(_label, r, style::font_face::dialog, style::text_style::single_line,
-				             color(dc.colors.foreground, dc.colors.alpha), {});
-			}
-		}
-
-		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
-		{
-			bounds = bounds_in;
-			auto r = bounds;
-			if (!str::is_empty(_label)) r.left += mc.col_widths.c1;
-			positions.emplace_back(_edit, r, is_visible());
-		}
 	};
 
 	class multi_line_edit_control final : public view_element,
@@ -459,27 +459,40 @@ namespace ui
 		std::string& _text;
 		edit_ptr _edit;
 		const int _edit_height;
+		std::function<void(std::string_view)> _changed;
 
 	public:
 		multi_line_edit_control(const control_frame_ptr& h, std::string& v, const int height = 6,
-		                        const bool wants_return = false) : _text(v), _edit_height(height)
+		                        const bool wants_return = false,
+		                        std::function<void(std::string_view)> changed = {}) :
+			_text(v), _edit_height(height), _changed(std::move(changed))
 		{
 			edit_styles style;
 			style.vertical_scroll = true;
 			style.multi_line = true;
 			style.want_return = wants_return;
 			style.spelling = true;
-			_edit = h->create_edit(style, v, [this](const std::string_view text) { _text = text; });
-		}
-
-		void limit_text(const int n) const
-		{
-			_edit->limit_text_len(n);
+			_edit = h->create_edit(style, v, [this](const std::string_view text)
+			{
+				_text = text;
+				if (_changed) _changed(text);
+			});
 		}
 
 		void add_word(const std::string_view s) const
 		{
 			_edit->replace_sel(s, true);
+		}
+
+		void focus() const
+		{
+			_edit->focus();
+		}
+
+		void text(const std::string_view text) const
+		{
+			_text = text;
+			_edit->window_text(text);
 		}
 
 		void dispatch_event(const view_element_event& event) override
@@ -504,7 +517,6 @@ namespace ui
 		{
 			bounds = bounds_in;
 			auto rEdit = bounds;
-			//rEdit.bottom = rEdit.top + _edit_height;
 			positions.emplace_back(_edit, rEdit, is_visible());
 		}
 	};
@@ -516,24 +528,53 @@ namespace ui
 		const std::function<void(std::string_view)> _f;
 
 	public:
+		using refresh_group = std::shared_ptr<std::vector<std::function<void()>>>;
+
 		recommended_words_control(const control_frame_ptr& h, const std::vector<std::string_view>& words,
-		                          const std::function<void(std::string_view)>& f)
+		                          const std::function<void(std::string_view)>& f,
+		                          const std::function<bool(std::string_view)>& is_checked = {},
+		                          refresh_group shared_refresh = {})
 		{
 			toolbar_styles styles;
 			styles.xTBSTYLE_WRAPABLE = true;
 			styles.xTBSTYLE_LIST = true;
 			std::vector<command_ptr> commands;
+			const auto toolbar = std::make_shared<std::weak_ptr<ui::toolbar>>();
+			const auto refresh = shared_refresh
+				                     ? std::move(shared_refresh)
+				                     : std::make_shared<refresh_group::element_type>();
+			std::vector<std::pair<std::string_view, std::weak_ptr<command>>> command_states;
 
 			for (auto word : words)
 			{
 				const auto c = std::make_shared<command>();
 				c->text = word;
 				c->toolbar_text = word;
-				c->invoke = [f, word] { f(word); };
+				c->checkable = static_cast<bool>(is_checked);
+				c->checked = is_checked && is_checked(word);
+				c->invoke = [f, is_checked, word, refresh]
+				{
+					f(word);
+					if (is_checked)
+					{
+						for (const auto& update : *refresh) update();
+					}
+				};
+				command_states.emplace_back(word, c);
 				commands.emplace_back(c);
 			}
 
 			_tb = h->create_toolbar(styles, commands);
+			*toolbar = _tb;
+			refresh->emplace_back([is_checked, command_states = std::move(command_states), toolbar]
+			{
+				for (const auto& [word, weak_command] : command_states)
+				{
+					if (const auto command = weak_command.lock()) command->checked = is_checked && is_checked(word);
+				}
+				if (const auto control = toolbar->lock()) control->update_button_state(false, false);
+			});
+			refresh->back()();
 		}
 
 		void visit_controls(const std::function<void(const control_base_ptr&)>& handler) override
@@ -565,82 +606,44 @@ namespace ui
 		}
 	};
 
-	class num_control final : public view_element, public std::enable_shared_from_this<num_control>
+	class num_control final : public labelled_edit_element, public std::enable_shared_from_this<num_control>
 	{
 		int& _val;
-		std::string _label;
-		edit_ptr _edit;
+		bool _empty_zero = false;
+		std::function<void(int)> _changed;
 
 	public:
-		num_control(const control_frame_ptr& h, const std::string_view label, int& v) : _val(v), _label(label)
+		num_control(const control_frame_ptr& h, const std::string_view label, int& v, const bool empty_zero = false,
+		            std::function<void(int)> changed = {}) :
+			labelled_edit_element(label), _val(v), _empty_zero(empty_zero), _changed(std::move(changed))
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
 			style.number = true;
-			_edit = h->create_edit(style, str::to_string(v), [this](const std::string_view text)
-			{
-				_val = str::to_int(text);
-			});
-		}
-
-		void label(const std::string_view label)
-		{
-			_label = label;
+			_edit = h->create_edit(style, empty_zero && v == 0 ? std::string{} : str::to_string(v),
+			                       [this](const std::string_view text)
+			                       {
+				                       _val = str::to_int(text);
+				                       if (_changed) _changed(_val);
+			                       });
 		}
 
 		void dispatch_event(const view_element_event& event) override
 		{
 			if (event.type == view_element_event_type::populate)
 			{
-				_edit->window_text(str::to_string(_val));
+				_edit->window_text(_empty_zero && _val == 0 ? std::string{} : str::to_string(_val));
 			}
-		}
-
-		void visit_controls(const std::function<void(const control_base_ptr&)>& handler) override
-		{
-			handler(_edit);
-		}
-
-		sizei measure(measure_context& mc, const int cx) const override
-		{
-			if (!str::is_empty(_label))
-			{
-				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
-				                                          style::text_style::single_line, cx);
-				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
-			}
-
-			return {cx, default_control_height(mc)};
-		}
-
-		void render(draw_context& dc, const pointi element_offset) const override
-		{
-			if (!str::is_empty(_label))
-			{
-				auto r = bounds.offset(element_offset);
-				r.right = r.left + dc.col_widths.c1 - 8;
-				dc.draw_text(_label, r, style::font_face::dialog, style::text_style::single_line,
-				             color(dc.colors.foreground, dc.colors.alpha), {});
-			}
-		}
-
-		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
-		{
-			bounds = bounds_in;
-			auto r = bounds;
-			if (!str::is_empty(_label)) r.left += mc.col_widths.c1;
-			positions.emplace_back(_edit, r, is_visible());
 		}
 	};
 
-	class float_control final : public view_element, public std::enable_shared_from_this<float_control>
+	class float_control final : public labelled_edit_element, public std::enable_shared_from_this<float_control>
 	{
 		double& _val;
-		std::string _label;
-		edit_ptr _edit;
 
 	public:
-		float_control(const control_frame_ptr& h, const std::string_view label, double& v) : _val(v), _label(label)
+		float_control(const control_frame_ptr& h, const std::string_view label, double& v) :
+			labelled_edit_element(label), _val(v)
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
@@ -662,11 +665,6 @@ namespace ui
 			});
 		}
 
-		void label(const std::string_view label)
-		{
-			_label = label;
-		}
-
 		void dispatch_event(const view_element_event& event) override
 		{
 			if (event.type == view_element_event_type::populate)
@@ -674,54 +672,18 @@ namespace ui
 				_edit->window_text(str::to_string(_val, 5));
 			}
 		}
-
-		void visit_controls(const std::function<void(const control_base_ptr&)>& handler) override
-		{
-			handler(_edit);
-		}
-
-		sizei measure(measure_context& mc, const int cx) const override
-		{
-			if (!str::is_empty(_label))
-			{
-				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
-				                                          style::text_style::single_line, cx);
-				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
-			}
-
-			return {cx, default_control_height(mc)};
-		}
-
-		void render(draw_context& dc, const pointi element_offset) const override
-		{
-			if (!str::is_empty(_label))
-			{
-				auto r = bounds.offset(element_offset);
-				r.right = r.left + dc.col_widths.c1 - 8;
-				dc.draw_text(_label, r, style::font_face::dialog, style::text_style::single_line,
-				             color(dc.colors.foreground, dc.colors.alpha), {});
-			}
-		}
-
-		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
-		{
-			bounds = bounds_in;
-			auto r = bounds;
-			if (!str::is_empty(_label)) r.left += mc.col_widths.c1;
-			positions.emplace_back(_edit, r, is_visible());
-		}
 	};
 
-	class num_pair_control final : public view_element, public std::enable_shared_from_this<num_pair_control>
+	class num_pair_control final : public labelled_element, public std::enable_shared_from_this<num_pair_control>
 	{
 		df::xy8& _val;
-		std::string _label;
 		edit_ptr _edit1;
 		edit_ptr _edit2;
+		mutable recti _of_bounds;
 
 	public:
 		num_pair_control(const control_frame_ptr& h, const std::string_view label,
-		                 df::xy8& v) : _val(v), _label(label)
+		                 df::xy8& v) : labelled_element(label), _val(v)
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
@@ -734,11 +696,6 @@ namespace ui
 			{
 				_val.y = str::to_int(text);
 			});
-		}
-
-		void label(const std::string_view label)
-		{
-			_label = label;
 		}
 
 		void visit_controls(const std::function<void(const control_base_ptr&)>& handler) override
@@ -757,32 +714,13 @@ namespace ui
 			}
 		}
 
-		sizei measure(measure_context& mc, const int cx) const override
-		{
-			if (!str::is_empty(_label))
-			{
-				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
-				                                          style::text_style::single_line, cx);
-				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
-			}
-
-			return {cx, default_control_height(mc)};
-		}
-
 		void render(draw_context& dc, const pointi element_offset) const override
 		{
 			if (!str::is_empty(_label))
 			{
-				auto rLabel = bounds.offset(element_offset);
-				rLabel.right = rLabel.left + dc.col_widths.c1 - dc.padding2;
-
-				auto rOf = bounds.offset(element_offset);
-				rOf.left = rOf.left + dc.col_widths.c1 + 68;
-				rOf.right = rOf.left + 24;
-
-				dc.draw_text(_label, rLabel, style::font_face::dialog, style::text_style::single_line,
-				             color(dc.colors.foreground, dc.colors.alpha), {});
-				dc.draw_text(tt.num_of, rOf, style::font_face::dialog, style::text_style::single_line,
+				labelled_element::render(dc, element_offset);
+				dc.draw_text(tt.num_of, _of_bounds.offset(element_offset), style::font_face::dialog,
+				             style::text_style::single_line,
 				             color(dc.colors.foreground, dc.colors.alpha), {});
 			}
 		}
@@ -790,14 +728,25 @@ namespace ui
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
 		{
 			bounds = bounds_in;
-			auto r = bounds;
-			if (!str::is_empty(_label)) r.left += mc.col_widths.c1;
+			const auto controls_left = bounds.left + (str::is_empty(_label) ? 0 : mc.col_widths.c1);
+			const auto of_extent = mc.measure_text(tt.num_of, style::font_face::dialog,
+			                                       style::text_style::single_line, bounds.width());
+			const auto desired_edit_width = df::round(60 * mc.scale_factor);
+			const auto available_width = std::max(0, bounds.right - controls_left - of_extent.cx - mc.padding2 * 2);
+			const auto edit_width = std::min(desired_edit_width, available_width / 2);
 
-			constexpr auto cx = 60;
-			r.right = r.left + cx;
+			const recti edit1_bounds{controls_left, bounds.top, controls_left + edit_width, bounds.bottom};
+			_of_bounds = {
+				edit1_bounds.right + mc.padding2, bounds.top,
+				edit1_bounds.right + mc.padding2 + of_extent.cx, bounds.bottom
+			};
+			const recti edit2_bounds{
+				_of_bounds.right + mc.padding2, bounds.top,
+				_of_bounds.right + mc.padding2 + edit_width, bounds.bottom
+			};
 
-			positions.emplace_back(_edit1, r, is_visible());
-			positions.emplace_back(_edit2, r.offset(cx + 40, 0), is_visible());
+			positions.emplace_back(_edit1, edit1_bounds, is_visible());
+			positions.emplace_back(_edit2, edit2_bounds, is_visible());
 		}
 	};
 
@@ -856,7 +805,7 @@ namespace ui
 		sizei measure(measure_context& mc, const int cx) const override
 		{
 			_control_height = default_control_height(mc);
-			return {cx, (_control_height + 4) * (_row_count + 1)};
+			return {cx, (_control_height + mc.padding1) * (_row_count + 1)};
 		}
 
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
@@ -866,11 +815,11 @@ namespace ui
 			for (auto i = 0; i < _row_count; i++)
 			{
 				const auto height = default_control_height(mc);
-				const auto y = bounds.top + (height + 4) * (i + 1);
+				const auto y = bounds.top + (height + mc.padding1) * (i + 1);
 				const auto x = bounds.left + df::mul_div(bounds.width(), 1, 3);
 
 				recti r1(bounds.left, y, x, y + height);
-				recti r2(x + 4, y, bounds.right, y + height);
+				recti r2(x + mc.padding1, y, bounds.right, y + height);
 
 				positions.emplace_back(_edit1[i], r1, is_visible());
 				positions.emplace_back(_edit2[i], r2, is_visible());
@@ -884,7 +833,7 @@ namespace ui
 			const auto x = r.left + df::mul_div(r.width(), 1, 3);
 
 			const recti r1(r.left, y, x, y + _control_height);
-			const recti r2(x + 4, y, r.right, y + _control_height);
+			const recti r2(x + dc.padding1, y, r.right, y + _control_height);
 
 			dc.draw_text(tt.prop_name_title, r1, style::font_face::dialog, style::text_style::single_line_center,
 			             color(dc.colors.foreground, dc.colors.alpha), {});
@@ -901,18 +850,25 @@ namespace ui
 		toolbar_ptr _tb;
 		bool _multiline = false;
 		mutable int _edit_height = 0;
+		std::function<void(std::string_view)> _changed;
 
 	public:
-		folder_picker_control(const control_frame_ptr& h, std::string& path, const bool multiline = false) :
+		folder_picker_control(const control_frame_ptr& h, std::string& path, const bool multiline = false,
+		                      std::function<void(std::string_view)> changed = {}) :
 			_text(path),
-			_multiline(multiline)
+			_multiline(multiline),
+			_changed(std::move(changed))
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
 			style.file_system_auto_complete = !_multiline;
 			style.multi_line = _multiline;
 			style.want_return = _multiline;
-			_edit = h->create_edit(style, path, [this](const std::string_view text) { _text = text; });
+			_edit = h->create_edit(style, path, [this](const std::string_view text)
+			{
+				_text = text;
+				if (_changed) _changed(text);
+			});
 
 			const auto c = std::make_shared<command>();
 			c->icon = icon_index::folder;
@@ -1011,24 +967,24 @@ namespace ui
 					_edit->select_all();
 				}
 
+				if (_changed) _changed(_text);
 				_edit->focus();
 			}
 		}
 	};
 
-	class term_picker_control final : public view_element, public std::enable_shared_from_this<term_picker_control>
+	class term_picker_control final : public labelled_edit_element,
+	                                  public std::enable_shared_from_this<term_picker_control>
 	{
 		const control_frame_ptr& _parent;
 		view_state& _state;
 
 		std::string& _val;
-		std::string _label;
-		edit_ptr _edit;
 		toolbar_ptr _tb;
 
 	public:
 		term_picker_control(view_state& state, const control_frame_ptr& h, const std::string_view label,
-		                    std::string& v) : _parent(h), _state(state), _val(v), _label(label)
+		                    std::string& v) : labelled_edit_element(label), _parent(h), _state(state), _val(v)
 		{
 			edit_styles style;
 			style.horizontal_scroll = true;
@@ -1043,16 +999,6 @@ namespace ui
 			_tb = h->create_toolbar(styles, {c});
 		}
 
-		void label(const std::string_view label)
-		{
-			_label = label;
-		}
-
-		void visit_controls(const std::function<void(const control_base_ptr&)>& handler) override
-		{
-			handler(_edit);
-		}
-
 		void dispatch_event(const view_element_event& event) override
 		{
 			if (event.type == view_element_event_type::populate)
@@ -1061,45 +1007,10 @@ namespace ui
 			}
 		}
 
-		sizei measure(measure_context& mc, const int cx) const override
-		{
-			if (!str::is_empty(_label))
-			{
-				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
-				                                          style::text_style::single_line, cx);
-				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
-			}
-
-			return {cx, default_control_height(mc)};
-		}
-
-		void render(draw_context& dc, const pointi element_offset) const override
-		{
-			if (!str::is_empty(_label))
-			{
-				auto r = bounds.offset(element_offset);
-				r.right = r.left + dc.col_widths.c1 - dc.padding2;
-				dc.draw_text(_label, r, style::font_face::dialog, style::text_style::single_line,
-				             color(dc.colors.foreground, dc.colors.alpha), {});
-			}
-		}
-
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
 		{
 			bounds = bounds_in;
-
-			auto edit_bounds = bounds;
-			if (!str::is_empty(_label)) edit_bounds.left += mc.col_widths.c1;
-
-			auto tb_bounds = bounds;
-			const auto tb_extent = _tb->measure_toolbar(50);
-			const auto split = edit_bounds.right - tb_extent.cx - mc.padding2;
-			tb_bounds.left = split + mc.padding2 / 2;
-			tb_bounds.top += (tb_bounds.height() - tb_extent.cy) / 2;
-			edit_bounds.right = split;
-
-			positions.emplace_back(_edit, edit_bounds, is_visible());
-			positions.emplace_back(_tb, tb_bounds, is_visible());
+			layout_edit_and_toolbar(mc, _tb, positions);
 		}
 
 		void auto_completes(const std::vector<std::string>& texts) const
@@ -1123,137 +1034,10 @@ namespace ui
 		}
 	};
 
-	class location_picker_control final : public view_element,
-	                                      public std::enable_shared_from_this<location_picker_control>
-	{
-		view_state& _state;
-		const control_frame_ptr _parent;
-
-		location_and_distance_t& _val;
-		std::string _gps_text = std::string(tt.km_from);
-
-		edit_ptr _edit;
-		toolbar_ptr _tb;
-		std::shared_ptr<command> _tb_command;
-
-		mutable recti _gps_bounds;
-
-	public:
-		location_picker_control(view_state& state, const control_frame_ptr& h,
-		                        location_and_distance_t& v) : _state(state), _parent(h), _val(v)
-		{
-			_tb_command = std::make_shared<command>();
-			_tb_command->icon = icon_index::location;
-			_tb_command->text = tt.select_location;
-			_tb_command->toolbar_text = _tb_command->text;
-			_tb_command->text_can_change = true;
-			_tb_command->invoke = [this] { browse_for_location(); };
-
-			toolbar_styles styles;
-			styles.xTBSTYLE_LIST = true;
-			_tb = h->create_toolbar(styles, {_tb_command});
-
-			edit_styles style;
-			style.horizontal_scroll = true;
-			style.number = true;
-			_edit = h->create_edit(style, str::to_string(_val.km, 2), [this](const std::string_view text)
-			{
-				_val.km = str::to_double(text);
-			});
-
-			update_text();
-		}
-
-		void visit_controls(const std::function<void(const control_base_ptr&)>& handler) override
-		{
-			handler(_tb);
-			handler(_edit);
-		}
-
-		void update_text() const
-		{
-			if (_val.position.is_valid())
-			{
-				_tb_command->toolbar_text = std::format("GPS {} {}", _val.position.latitude(),
-				                                        _val.position.longitude());
-			}
-			else
-			{
-				_tb_command->toolbar_text = tt.select_location;
-			}
-
-			_edit->window_text(str::to_string(_val.km, 2));
-			_parent->invalidate();
-			_tb->update_button_state(true, true);
-		}
-
-		void dispatch_event(const view_element_event& event) override
-		{
-			if (event.type == view_element_event_type::populate)
-			{
-				update_text();
-			}
-		}
-
-		sizei measure(measure_context& mc, const int cx) const override
-		{
-			return {cx, default_control_height(mc)};
-		}
-
-		void render(draw_context& dc, const pointi element_offset) const override
-		{
-			dc.draw_text(_gps_text, _gps_bounds.offset(element_offset), style::font_face::dialog,
-			             style::text_style::single_line, color(dc.colors.foreground, dc.colors.alpha), {});
-		}
-
-		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
-		{
-			bounds = bounds_in;
-
-			const auto gps_extent = mc.measure_text(_gps_text, style::font_face::dialog, style::text_style::single_line,
-			                                        bounds_in.width());
-			const auto tb_extent = _tb->measure_toolbar(50);
-
-			constexpr auto edit_width = 60;
-			constexpr auto label_padding = 10;
-
-			auto edit_bounds = bounds;
-			edit_bounds.right = edit_bounds.left + edit_width;
-
-			auto gps_bounds = bounds;
-			gps_bounds.left = edit_bounds.right + label_padding / 2;
-			gps_bounds.right = gps_bounds.left + gps_extent.cx + label_padding;
-
-			auto tb_bounds = bounds;
-			tb_bounds.left = gps_bounds.right;
-			tb_bounds.right = tb_bounds.left + tb_extent.cx;
-			tb_bounds.top += (tb_bounds.height() - tb_extent.cy) / 2;
-
-			positions.emplace_back(_tb, tb_bounds, is_visible());
-			positions.emplace_back(_edit, edit_bounds, is_visible());
-
-			_gps_bounds = gps_bounds;
-		}
-
-		void browse_for_location()
-		{
-			auto loc = _val;
-
-			if (ui::browse_for_location(_state, _parent, loc.position))
-			{
-				_val = loc;
-				update_text();
-				_parent->layout();
-				_edit->focus();
-			}
-		}
-	};
-
-	class select_control final : public view_element, public std::enable_shared_from_this<select_control>
+	class select_control final : public labelled_element, public std::enable_shared_from_this<select_control>
 	{
 		std::string& _text;
 		toolbar_ptr _tb;
-		std::string _label;
 
 		mutable recti _label_bounds;
 		mutable recti _text_bounds;
@@ -1264,7 +1048,7 @@ namespace ui
 	public:
 		select_control(const control_frame_ptr& h, const std::string_view label, std::string& text,
 		               std::function<std::vector<command_ptr>(const std::shared_ptr<select_control>&)> commands) :
-			_text(text), _label(label), _parent(h), _commands(std::move(commands))
+			labelled_element(label), _text(text), _parent(h), _commands(std::move(commands))
 		{
 			const auto c = std::make_shared<command>();
 			c->icon = icon_index::add;
@@ -1278,18 +1062,6 @@ namespace ui
 		void visit_controls(const std::function<void(const control_base_ptr&)>& handler) override
 		{
 			handler(_tb);
-		}
-
-		sizei measure(measure_context& mc, const int cx) const override
-		{
-			if (!str::is_empty(_label))
-			{
-				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
-				                                          style::text_style::single_line, cx);
-				mc.col_widths.c1 = std::max(mc.col_widths.c1, label_extent.cx + mc.padding2);
-			}
-
-			return {cx, default_control_height(mc)};
 		}
 
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
@@ -1344,34 +1116,32 @@ namespace ui
 	};
 
 
-	class date_control final : public view_element, public std::enable_shared_from_this<date_control>
+	class date_control final : public labelled_element, public std::enable_shared_from_this<date_control>
 	{
 		df::date_t& _val;
 		date_time_control_ptr _control;
-		std::string _label;
+		std::function<void()> _changed;
 
 	public:
 		date_control(const control_frame_ptr& h, const std::string_view label, df::date_t& val,
-		             const bool include_time = true) : _val(val), _label(label)
+		             const bool include_time = true, std::function<void()> changed = {}) :
+			labelled_element(label), _val(val), _changed(std::move(changed))
 		{
 			_control = h->
 				create_date_time_control(val, [this](const df::date_t val) { on_changed(val); }, include_time);
 		}
 
-		date_control(const control_frame_ptr& h, df::date_t& val, const bool include_time = true) : _val(val)
+		date_control(const control_frame_ptr& h, df::date_t& val, const bool include_time = true,
+		             std::function<void()> changed = {}) : _val(val), _changed(std::move(changed))
 		{
 			_control = h->
 				create_date_time_control(val, [this](const df::date_t val) { on_changed(val); }, include_time);
-		}
-
-		void label(const std::string_view label)
-		{
-			_label = label;
 		}
 
 		void on_changed(const df::date_t val) const
 		{
 			_val = val;
+			if (_changed) _changed();
 		}
 
 		void visit_controls(const std::function<void(const control_base_ptr&)>& handler) override
@@ -1381,8 +1151,6 @@ namespace ui
 
 		sizei measure(measure_context& mc, const int cx) const override
 		{
-			auto cx_avail = cx;
-
 			if (!str::is_empty(_label))
 			{
 				const auto label_extent = mc.measure_text(_label, style::font_face::dialog,
@@ -1397,23 +1165,7 @@ namespace ui
 		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
 		{
 			bounds = bounds_in;
-
-			auto r = bounds;
-			if (!str::is_empty(_label)) r.left += mc.col_widths.c1;
-			positions.emplace_back(_control, r, is_visible());
-		}
-
-		void render(draw_context& dc, const pointi element_offset) const override
-		{
-			const auto device_bounds = bounds.offset(element_offset);
-
-			if (!str::is_empty(_label))
-			{
-				auto r = device_bounds;
-				r.right = r.left + dc.col_widths.c1 - dc.padding2;
-				dc.draw_text(_label, r, style::font_face::dialog, style::text_style::single_line,
-				             color(dc.colors.foreground, dc.colors.alpha), {});
-			}
+			positions.emplace_back(_control, control_bounds(mc, bounds), is_visible());
 		}
 	};
 
@@ -1488,15 +1240,17 @@ namespace ui
 
 			if (!_tex_before)
 			{
-				constexpr sizei max_dims(256, 256);
-				auto t = dc.create_texture();
+				const auto t = dc.create_texture();
 
 				if (t && t->update(_before) != texture_update_result::failed)
 				{
 					_tex_before = t;
 				}
+			}
 
-				t = dc.create_texture();
+			if (!_tex_after)
+			{
+				const auto t = dc.create_texture();
 
 				if (t && t->update(_after) != texture_update_result::failed)
 				{
@@ -1514,11 +1268,11 @@ namespace ui
 
 			auto r1 = rImage;
 			r1.right = center.x - 2;
-			dc.draw_texture(_tex_before, scale_dimensions(_tex_before->dimensions(), r1));
+			if (_tex_before) dc.draw_texture(_tex_before, scale_dimensions(_tex_before->dimensions(), r1));
 
 			auto r2 = rImage;
 			r2.left = center.x + 2;
-			dc.draw_texture(_tex_after, scale_dimensions(_tex_after->dimensions(), r2));
+			if (_tex_after) dc.draw_texture(_tex_after, scale_dimensions(_tex_after->dimensions(), r2));
 
 			r1.top -= _text_height;
 			r2.top -= _text_height;
@@ -1558,7 +1312,7 @@ namespace ui
 		bool can_scroll = false;
 		bool frame_when_empty = false;
 
-		table_element(const view_element_style s) : view_element(
+		table_element(const view_element_options& s) : view_element(
 			s | view_element_style::has_tooltip | view_element_style::can_invoke)
 		{
 		}
@@ -1741,7 +1495,10 @@ namespace ui
 			for (const auto& r : _rows)
 			{
 				auto row_width = 0;
-				col_widths.resize(r.cells.size(), 0);
+				if (col_widths.size() < r.cells.size())
+				{
+					col_widths.resize(r.cells.size(), 0);
+				}
 
 				for (auto i = 0u; i < r.cells.size(); ++i)
 				{
@@ -1758,29 +1515,36 @@ namespace ui
 
 			if (max_row_width > cx_avail)
 			{
-				const auto cx_extra = max_row_width - cx_avail;
-				auto row_shrink_width = 0;
+				const auto target_width = std::max(0, cx_avail);
+				auto fixed_width = 0;
+				auto shrink_width = 0;
 
 				for (auto i = 0u; i < col_widths.size(); ++i)
 				{
-					if (!no_shrink_col[i])
-					{
-						row_shrink_width += col_widths[i];
-					}
+					const auto no_shrink = i < max_cols && no_shrink_col[i];
+					(no_shrink ? fixed_width : shrink_width) += col_widths[i];
 				}
 
-				for (auto i = 0u; i < col_widths.size(); ++i)
+				if (fixed_width < target_width && shrink_width > 0)
 				{
-					if (!no_shrink_col[i])
+					const auto shrink_avail = target_width - fixed_width;
+					for (auto i = 0u; i < col_widths.size(); ++i)
 					{
-						const auto reduce = df::mul_div(cx_extra, col_widths[i], row_shrink_width);
-						col_widths[i] = col_widths[i] - reduce;
+						const auto no_shrink = i < max_cols && no_shrink_col[i];
+						if (!no_shrink) col_widths[i] = df::mul_div(shrink_avail, col_widths[i], shrink_width);
+					}
+				}
+				else if (max_row_width > 0)
+				{
+					for (auto& width : col_widths)
+					{
+						width = df::mul_div(target_width, width, max_row_width);
 					}
 				}
 
-				max_row_width = cx_avail;
+				max_row_width = target_width;
 			}
-			else if (max_row_width < cx_avail && !col_widths.empty() && is_style_bit_set(view_element_style::grow))
+			else if (max_row_width < cx_avail && !col_widths.empty() && flex.grow > 0.0f)
 			{
 				// Expand the last column to fill available width
 				col_widths.back() += cx_avail - max_row_width;
@@ -1863,14 +1627,6 @@ namespace ui
 			const auto scroll_offset = element_offset - _scroller.scroll_offset();
 			const auto show_scroll = can_scroll && _scroller.can_scroll();
 			const auto clip_bounds = dc.clip_bounds();
-
-			/*for (const auto& e : _elements)
-			{
-				if (e->bounds.intersects(logical_clip_bounds))
-				{
-					e->render(dc, -offset);
-				}
-			}*/
 
 			if (show_scroll)
 			{
@@ -1981,12 +1737,6 @@ namespace ui
 
 				const auto scroll_offset = element_offset - _scroller.scroll_offset();
 
-				/*for (const auto& e : _elements)
-				{
-					auto controller = e->controller_from_location(shared_from_this(), loc, offset, {});
-					if (controller) return controller;
-				}*/
-
 				for (const auto& r : _rows)
 				{
 					for (const auto& e : r.cells)
@@ -2088,6 +1838,14 @@ namespace ui
 		{
 		}
 
+		void dispatch_event(const view_element_event& event) override
+		{
+			if (event.type == view_element_event_type::tick && _pos == 0)
+			{
+				_parent->invalidate({}, false);
+			}
+		}
+
 		sizei measure(measure_context& mc, const int cx) const override
 		{
 			measure_text(mc);
@@ -2151,7 +1909,18 @@ namespace ui
 				else
 				{
 					dc.draw_rect(progress_rect, cc);
-					dc.draw_rect(progress_rect.inflate(-2), color(style::color::important_background, dc.colors.alpha));
+
+					const auto inner = progress_rect.inflate(-2);
+					const auto segment_width = std::max(1, inner.width() / 5);
+					const auto travel_width = inner.width() + segment_width;
+					// Unsigned throughout: tick_count passes INT_MAX after ~24.8 days of uptime.
+					const auto offset = static_cast<int>(platform::tick_count() / 20u %
+						static_cast<uint32_t>(std::max(1, travel_width)));
+					auto segment = inner;
+					segment.left += offset - segment_width;
+					segment.right = segment.left + segment_width;
+					dc.draw_rect(segment.intersection(inner),
+					             color(style::color::important_background, dc.colors.alpha));
 				}
 			}
 		}
@@ -2244,6 +2013,7 @@ namespace ui
 		mutable std::vector<texture_ptr> _textures;
 		mutable std::vector<sizei> _surface_extents;
 		std::vector<recti> _surface_bounds;
+		size_t _selection_overflow_count = 0;
 
 		const size_t max_surfaces = 7;
 
@@ -2265,10 +2035,12 @@ namespace ui
 		}
 
 		title_control2(control_frame_ptr h, const icon_index& icon, const std::string_view text,
-		               const std::string_view text2, const std::vector<const_image_ptr>& images) : _text1(text),
-			_text2(text2), _icon(icon), _parent(std::move(h))
+		               const std::string_view text2, const std::vector<const_image_ptr>& images,
+		               const size_t selection_count) : _text1(text),
+		                                               _text2(text2), _icon(icon), _parent(std::move(h))
 		{
 			init(images);
+			_selection_overflow_count = selection_count - std::min(selection_count, _surfaces.size());
 		}
 
 		title_control2(control_frame_ptr h, const icon_index& icon, const std::string_view text,
@@ -2316,6 +2088,18 @@ namespace ui
 		void text(const std::string_view a)
 		{
 			_text1 = a;
+		}
+
+		void selection(const std::string_view text, const std::vector<const_image_ptr>& images,
+		               const size_t selection_count)
+		{
+			_text2 = text;
+			_surfaces.clear();
+			_textures.clear();
+			_surface_extents.clear();
+			_surface_bounds.clear();
+			init(images);
+			_selection_overflow_count = selection_count - std::min(selection_count, _surfaces.size());
 		}
 
 		sizei measure(measure_context& mc, const int cx) const override
@@ -2412,11 +2196,21 @@ namespace ui
 		std::vector<sizei> surface_dims() const
 		{
 			std::vector<sizei> results;
-			results.reserve(_surfaces.size());
+			results.reserve(_surfaces.size() + (_selection_overflow_count > 0 ? 1 : 0));
 
 			for (const auto& s : _surfaces)
 			{
-				results.emplace_back(s->dimensions());
+				auto dimensions = s->dimensions();
+				if (setting.show_rotated && flips_xy(s->orientation()))
+				{
+					std::swap(dimensions.cx, dimensions.cy);
+				}
+				results.emplace_back(dimensions);
+			}
+
+			if (_selection_overflow_count > 0)
+			{
+				results.emplace_back(results.empty() ? sizei{128, 128} : results.back());
 			}
 
 			return results;
@@ -2478,320 +2272,278 @@ namespace ui
 
 			for (auto i = 0u; i < std::min(_textures.size(), _surface_bounds.size()); ++i)
 			{
-				dc.draw_texture(_textures[i], _surface_bounds[i].offset(element_offset));
+				const auto& texture = _textures[i];
+				const auto orientation = _surfaces[i]->orientation();
+				const auto draw_bounds = _surface_bounds[i].offset(element_offset);
+				const auto destination = setting.show_rotated
+					                         ? quadd(draw_bounds).transform(to_simple_transform(orientation))
+					                         : quadd(draw_bounds);
+				const auto source_bounds = recti({}, texture->dimensions());
+				const auto sampler = draw_bounds.width() < source_bounds.width()
+					                     ? texture_sampler::bicubic
+					                     : texture_sampler::bilinear;
+				dc.draw_texture(texture, destination, source_bounds, dc.colors.alpha, sampler);
+			}
+
+			if (_selection_overflow_count > 0 && _surface_bounds.size() > _surfaces.size())
+			{
+				const auto overflow_bounds = _surface_bounds[_surfaces.size()].offset(element_offset);
+				const auto text = std::format("+{}", _selection_overflow_count);
+				dc.draw_rect(overflow_bounds, color(style::color::group_background, dc.colors.alpha));
+				dc.draw_text(text, overflow_bounds, style::font_face::dialog, style::text_style::single_line_center,
+				             color(dc.colors.foreground, dc.colors.alpha), {});
 			}
 		}
 	};
 
-	class group_control final : public view_element, public std::enable_shared_from_this<group_control>
+	class selection_thumbnails_control final : public view_element
 	{
-		std::vector<view_element_ptr> _controls;
-		mutable std::vector<sizei> _measurements;
+		control_frame_ptr _parent;
+		std::vector<const_surface_ptr> _surfaces;
+		mutable std::vector<texture_ptr> _textures;
+		mutable std::vector<sizei> _surface_extents;
+		std::vector<recti> _surface_bounds;
+		size_t _overflow_count = 0;
+		static constexpr size_t max_surfaces = 7;
 
 	public:
-		group_control() : view_element(view_element_style::has_tooltip | view_element_style::can_invoke)
+		explicit selection_thumbnails_control(control_frame_ptr parent) : _parent(std::move(parent))
 		{
 		}
 
-		group_control(view_element_style style_in) : view_element(
-			view_element_style::has_tooltip | view_element_style::can_invoke)
+		void selection(const std::vector<const_image_ptr>& images, const size_t selection_count)
 		{
-		}
+			_surfaces.clear();
+			_textures.clear();
+			_surface_extents.clear();
+			_surface_bounds.clear();
 
-		void add(const view_element_ptr& p)
-		{
-			_controls.emplace_back(p);
-		}
-
-		bool is_control_area(const pointi loc, const pointi element_offset) const override
-		{
-			for (const auto& c : _controls)
+			files ff;
+			constexpr sizei max_dims(128, 128);
+			for (const auto& image : images)
 			{
-				if (c->is_control_area(loc, element_offset))
+				if (is_valid(image))
 				{
-					return true;
+					_surfaces.emplace_back(ff.image_to_surface(image, scale_dimensions(image->dimensions(), max_dims)));
+					if (_surfaces.size() >= max_surfaces) break;
 				}
 			}
-
-			return false;
-		}
-
-		void dispatch_event(const view_element_event& event) override
-		{
-			for (const auto& c : _controls)
-			{
-				c->dispatch_event(event);
-			}
-		}
-
-		void hover(interaction_context& ic) override
-		{
-			for (const auto& c : _controls)
-			{
-				c->hover(ic);
-			}
+			_overflow_count = _surfaces.empty()
+				                  ? 0
+				                  : selection_count - std::min(selection_count, _surfaces.size());
+			is_visible(!_surfaces.empty());
 		}
 
 		sizei measure(measure_context& mc, const int cx) const override
 		{
-			_measurements.clear();
-			const auto pad = padding * mc.scale_factor;
-			const auto marg = margin * mc.scale_factor;
-			const auto scaled_padding = pad + marg;
-			const recti layout_bounds = {0, 0, cx, 10000};
-			const auto layout = calc_stack_elements(mc, layout_bounds, _controls, false, scaled_padding);
-			return {cx, layout.cy};
+			auto dimensions = surface_dims();
+			const auto slot_width = dimensions.empty() ? cx : df::mul_div(cx, 2, static_cast<int>(dimensions.size()));
+			for (auto& size : dimensions) size = scale_dimensions(size, sizei{slot_width, 72}, true);
+
+			auto total_width = 0;
+			for (const auto size : dimensions) total_width += size.cx + mc.padding1;
+			if (total_width > cx)
+			{
+				for (auto& size : dimensions)
+					size = scale_dimensions(size, sizei{df::mul_div(size.cx, cx, total_width), 72}, true);
+			}
+
+			_surface_extents = dimensions;
+			auto max_height = 0;
+			for (const auto size : dimensions) max_height = std::max(max_height, size.cy);
+			return {cx, max_height};
 		}
 
-		void layout(measure_context& mc, const recti bounds, control_layouts& positions) override
+		void layout(measure_context& mc, const recti bounds_in, control_layouts&) override
 		{
-			view_element::layout(mc, bounds, positions);
-			const auto pad = padding * mc.scale_factor;
-			const auto marg = margin * mc.scale_factor;
-			const auto scaled_padding = pad + marg;
-			const auto y = stack_elements(mc, positions, bounds, _controls, false, scaled_padding);
+			bounds = bounds_in;
+			_surface_bounds.clear();
+			auto strip_width = 0;
+			for (const auto size : _surface_extents) strip_width += size.cx;
+			if (!_surface_extents.empty()) strip_width += mc.padding1 * (static_cast<int>(_surface_extents.size()) - 1);
+
+			auto x = bounds.left + std::max(0, (bounds.width() - strip_width) / 2);
+			for (const auto size : _surface_extents)
+			{
+				_surface_bounds.emplace_back(x, bounds.top, x + size.cx, bounds.top + size.cy);
+				x += size.cx + mc.padding1;
+			}
 		}
 
 		void render(draw_context& dc, const pointi element_offset) const override
 		{
-			for (const auto& c : _controls)
+			if (_textures.empty())
 			{
-				if (c->is_visible())
+				for (const auto& surface : _surfaces)
 				{
-					c->render(dc, element_offset);
+					auto texture = dc.create_texture();
+					if (texture && texture->update(surface) != texture_update_result::failed)
+						_textures.emplace_back(texture);
 				}
 			}
 
-			if (setting.show_debug_info)
+			for (auto index = 0u; index < std::min(_textures.size(), _surface_bounds.size()); ++index)
 			{
-				const auto border_clr = color(dc.colors.foreground, dc.colors.alpha);
-				const auto bb = bounds.offset(element_offset);
-				const auto pad = df::round(2 * dc.scale_factor);
-				dc.draw_border(bb.inflate(pad), bb, border_clr, border_clr);
+				const auto draw_bounds = _surface_bounds[index].offset(element_offset);
+				const auto orientation = _surfaces[index]->orientation();
+				const auto destination = setting.show_rotated
+					                         ? quadd(draw_bounds).transform(to_simple_transform(orientation))
+					                         : quadd(draw_bounds);
+				const auto source = recti({}, _textures[index]->dimensions());
+				dc.draw_texture(_textures[index], destination, source, dc.colors.alpha,
+				                draw_bounds.width() < source.width()
+					                ? texture_sampler::bicubic
+					                : texture_sampler::bilinear);
+			}
+
+			if (_overflow_count > 0 && _surface_bounds.size() > _surfaces.size())
+			{
+				const auto overflow_bounds = _surface_bounds[_surfaces.size()].offset(element_offset);
+				dc.draw_rect(overflow_bounds, color(style::color::group_background, dc.colors.alpha));
+				dc.draw_text(std::format("+{}", _overflow_count), overflow_bounds, style::font_face::dialog,
+				             style::text_style::single_line_center, color(dc.colors.foreground, dc.colors.alpha), {});
 			}
 		}
 
-		void visit_controls(const std::function<void(const control_base_ptr&)>& handler) override
+	private:
+		std::vector<sizei> surface_dims() const
 		{
-			for (const auto& c : _controls)
+			std::vector<sizei> result;
+			result.reserve(_surfaces.size() + (_overflow_count > 0 ? 1 : 0));
+			for (const auto& surface : _surfaces)
 			{
-				c->visit_controls(handler);
+				auto dimensions = surface->dimensions();
+				if (setting.show_rotated && flips_xy(surface->orientation())) std::swap(dimensions.cx, dimensions.cy);
+				result.emplace_back(dimensions);
 			}
-		}
-
-		view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-		                                             const pointi element_offset,
-		                                             const std::vector<recti>& excluded_bounds) override
-		{
-			for (const auto& c : _controls)
-			{
-				auto result = c->controller_from_location(host, loc, element_offset, excluded_bounds);
-				if (result) return result;
-			}
-
-			return nullptr;
+			if (_overflow_count > 0) result.emplace_back(result.empty() ? sizei{128, 72} : result.back());
+			return result;
 		}
 	};
 
-	class col_control final : public view_element, public std::enable_shared_from_this<col_control>
+	// A stack of dialog controls. The surrounding flex container already reserves this element's
+	// porch, so the group adds no padding of its own.
+	class group_control final : public view_elements
 	{
 	public:
-		struct col_entry
+		group_control()
 		{
-			view_element_ptr e;
-			screen_units preferred_width = {0};
-			mutable int width = 0;
-			mutable int x = 0;
-			mutable sizei extent;
-		};
-
-		std::vector<col_entry> _controls;
-		mutable int max_x = 0;
-		bool compact = false;
-
-		col_control() : view_element(view_element_style::has_tooltip | view_element_style::can_invoke)
-		{
+			init();
 		}
 
-		col_control(const std::vector<view_element_ptr>& controls) : view_element(
-			view_element_style::has_tooltip | view_element_style::can_invoke)
+		explicit group_control(const view_element_options& style_in) : view_elements(style_in)
 		{
-			for (const auto& c : controls)
-			{
-				_controls.emplace_back(c, screen_units{0}, 0, 0);
-			}
+			init();
+		}
+
+	private:
+		void init()
+		{
+			flex_container.direction = flex_direction::column;
+			flex_container.wrap = flex_wrap::no_wrap;
+			flex_container.align_items = flex_align::start;
+		}
+	};
+
+	// Side-by-side dialog columns. A column with a preferred width keeps it and gives up space
+	// under pressure; the rest share what is left. In compact mode the sharing columns are
+	// capped at the widest content so a short list of check boxes is not stretched apart.
+	class col_control final : public view_elements
+	{
+		std::vector<screen_units> _preferred_widths;
+
+	public:
+		bool compact = false;
+
+		col_control()
+		{
+			init();
+		}
+
+		explicit col_control(const std::vector<view_element_ptr>& controls)
+		{
+			init();
+			for (const auto& c : controls) add(c);
 		}
 
 		void add(const view_element_ptr& p, const screen_units width = {0})
 		{
-			_controls.emplace_back(p, width, 0, 0);
-		}
-
-		bool is_control_area(const pointi loc, const pointi element_offset) const override
-		{
-			for (const auto& c : _controls)
-			{
-				if (c.e->is_control_area(loc, element_offset))
-				{
-					return true;
-				}
-			}
-
-			return false;
-		}
-
-		void dispatch_event(const view_element_event& event) override
-		{
-			for (const auto& c : _controls)
-			{
-				c.e->dispatch_event(event);
-			}
-		}
-
-		void hover(interaction_context& ic) override
-		{
-			for (const auto& c : _controls)
-			{
-				c.e->hover(ic);
-			}
-		}
-
-		int calc_extents(measure_context& mc, const int cx) const
-		{
-			int my = 0;
-			int mx = 0;
-
-			auto cx_split_avail = cx - mc.padding2 * (static_cast<int>(_controls.size()) - 1);
-			auto split_cols = 0;
-
-			for (const auto& c : _controls)
-			{
-				const auto preferred_width = c.preferred_width * mc.scale_factor;
-
-				if (c.e->is_visible())
-				{
-					if (preferred_width)
-					{
-						cx_split_avail -= preferred_width;
-					}
-					else
-					{
-						++split_cols;
-					}
-				}
-			}
-
-			const auto cx_split = split_cols > 1 ? cx_split_avail / split_cols : cx_split_avail;
-
-			for (const auto& c : _controls)
-			{
-				if (c.e->is_visible() && !c.e->is_style_bit_set(view_element_style::shrink))
-				{
-					const auto preferred_width = c.preferred_width * mc.scale_factor;
-					c.extent = c.e->measure(mc, preferred_width ? c.width : cx_split);
-					mx = std::max(mx, c.extent.cx);
-					my = std::max(my, c.extent.cy);
-				}
-			}
-
-			for (const auto& c : _controls)
-			{
-				if (c.e->is_visible())
-				{
-					const auto preferred_width = c.preferred_width * mc.scale_factor;
-
-					if (preferred_width > 0)
-					{
-						c.width = preferred_width ? preferred_width : cx_split;
-					}
-					else if (compact)
-					{
-						c.width = std::min(cx_split, mx);
-					}
-					else
-					{
-						c.width = cx_split;
-					}
-				}
-			}
-
-			max_x = mx;
-			return my;
+			view_elements::add(p);
+			_preferred_widths.emplace_back(width);
 		}
 
 		sizei measure(measure_context& mc, const int cx) const override
 		{
-			int y = 0;
-
-			if (!_controls.empty())
-			{
-				y = calc_extents(mc, cx);
-			}
-
-			return {cx, y};
+			if (_children.empty()) return {cx, 0};
+			apply_column_flex(mc, cx);
+			return view_elements::measure(mc, cx);
 		}
 
-		void layout(measure_context& mc, const recti bounds, control_layouts& positions) override
+		void layout(measure_context& mc, const recti bounds_in, control_layouts& positions) override
 		{
-			view_element::layout(mc, bounds, positions);
+			apply_column_flex(mc, bounds_in.width());
+			view_elements::layout(mc, bounds_in, positions);
+		}
 
-			calc_extents(mc, bounds.width());
+	private:
+		void init()
+		{
+			flex_container.direction = flex_direction::row;
+			flex_container.wrap = flex_wrap::no_wrap;
+			flex_container.justify = flex_justify::center;
+			flex_container.align_items = flex_align::stretch;
+		}
 
-			const auto y = bounds.top;
-			auto cx = 0;
+		flex_container_layout container_layout(const measure_context& mc) const override
+		{
+			auto result = flex_container;
+			result.gap.cx = df::round(mc.padding2 / mc.scale_factor);
+			return result;
+		}
 
-			for (const auto& c : _controls)
+		void apply_column_flex(measure_context& mc, const int cx) const
+		{
+			for (auto i = 0u; i < _children.size(); ++i)
 			{
-				cx += c.width + mc.padding2;
+				auto& flex = _children[i]->flex;
+
+				if (_preferred_widths[i].n > 0)
+				{
+					flex.basis = _preferred_widths[i].n * 10;
+					flex.grow = 0.0f;
+					flex.shrink = 1.0f;
+				}
+				else
+				{
+					flex.basis = 0;
+					flex.grow = 1.0f;
+					flex.shrink = 0.0f;
+				}
+
+				flex.min_size.cx = 0;
+				flex.max_size.cx = INT_MAX;
 			}
 
-			auto x = bounds.left + (bounds.left + bounds.right - cx) / 2;
+			if (!compact) return;
 
-			for (const auto& c : _controls)
+			const auto shared = calc_flex_layout(_children, mc, {cx, -1}, container_layout(mc));
+			auto max_width = 0;
+
+			for (auto i = 0u; i < _children.size(); ++i)
 			{
-				if (c.e)
+				if (_children[i]->is_visible() && _preferred_widths[i].n == 0)
 				{
-					if (c.e->is_visible())
-					{
-						const auto child_bounds = recti(x, y, x + c.width, y + bounds.height());
-						c.e->layout(mc, child_bounds, positions);
-						c.x = x;
-						x += c.width + mc.padding2;
-					}
+					max_width = std::max(max_width, _children[i]->measure(mc, shared.layout_bounds[i].width()).cx);
 				}
 			}
-		}
 
-		void render(draw_context& dc, const pointi element_offset) const override
-		{
-			for (const auto& c : _controls)
+			for (auto i = 0u; i < _children.size(); ++i)
 			{
-				if (c.e->is_visible())
+				if (_children[i]->is_visible() && _preferred_widths[i].n == 0)
 				{
-					c.e->render(dc, element_offset);
+					_children[i]->flex.max_size.cx = df::round(max_width / mc.scale_factor);
 				}
 			}
-		}
-
-		void visit_controls(const std::function<void(const control_base_ptr&)>& handler) override
-		{
-			for (const auto& c : _controls)
-			{
-				c.e->visit_controls(handler);
-			}
-		}
-
-		view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-		                                             const pointi element_offset,
-		                                             const std::vector<recti>& excluded_bounds) override
-		{
-			for (const auto& c : _controls)
-			{
-				const auto result = c.e->controller_from_location(host, loc, element_offset, excluded_bounds);
-				if (result) return result;
-			}
-
-			return {};
 		}
 	};
 
@@ -2836,7 +2588,9 @@ namespace ui
 
 			const auto inner = bounds.inflate(-2);
 			const auto cx = inner.width() / 5;
-			const auto xx = static_cast<int>(platform::tick_count()) / 20 % inner.width();
+			// Unsigned throughout: tick_count passes INT_MAX after ~24.8 days of uptime.
+			const auto xx = static_cast<int>(platform::tick_count() / 20u %
+				static_cast<uint32_t>(std::max(1, inner.width())));
 
 			auto draw_bounds = inner;
 			draw_bounds.left = draw_bounds.left + xx - cx;
@@ -2874,39 +2628,60 @@ namespace ui
 		e->visit_controls(enabler);
 	}
 
+	// Showing is left to the next layout pass, which knows where the controls belong and shows them
+	// as it positions them; only hiding has to reach the windows directly.
+	static void show_element(const view_element_ptr& e, const bool show)
+	{
+		e->is_visible(show);
+
+		if (!show)
+		{
+			const auto hider = [](const control_base_ptr& c) { c->show(false); };
+			e->visit_controls(hider);
+		}
+	}
+
 	class check_control final : public view_element, public std::enable_shared_from_this<check_control>
 	{
 		button_ptr _check;
 		bool& _val;
 		bool _is_wide_format;
+		bool _collapse_child = false;
 		mutable sizei _check_extent;
 		mutable sizei _child_extent;
 		view_element_ptr _child;
 		icon_index _icon = icon_index::none;
 		std::string _details;
 
+		bool child_shown() const
+		{
+			return _child && (!_collapse_child || _val);
+		}
+
 	public:
 		check_control(const control_frame_ptr& h, const std::string_view text, bool& val, const bool is_radio = false,
 		              const bool is_wide_format = false,
-		              std::function<void(bool checked)> f = {}) : _val(val), _is_wide_format(is_wide_format)
+		              std::function<void(bool checked)> f = {},
+		              const int radio_group = radio_group_default) : _val(val), _is_wide_format(is_wide_format)
 		{
 			_check = h->create_check_button(_val, text, is_radio, [this, f = std::move(f)](const bool checked)
 			{
 				on_check(checked);
 				if (f) f(checked);
-			});
+			}, radio_group);
 		}
 
 		check_control(const control_frame_ptr& h, const icon_index icon, const std::string_view text, bool& val,
 		              const bool is_radio = false, const bool is_wide_format = false,
-		              std::function<void(bool checked)> f = nullptr) : _val(val), _is_wide_format(is_wide_format),
-		                                                               _icon(icon)
+		              std::function<void(bool checked)> f = nullptr,
+		              const int radio_group = radio_group_default) : _val(val), _is_wide_format(is_wide_format),
+		                                                             _icon(icon)
 		{
 			_check = h->create_check_button(_val, text, is_radio, [this, f = std::move(f)](const bool checked)
 			{
 				on_check(checked);
 				if (f) f(checked);
-			});
+			}, radio_group);
 		}
 
 		void details(const std::string_view details)
@@ -2919,6 +2694,14 @@ namespace ui
 			_child = child;
 		}
 
+		// Opt in to collapsing: an unchecked box then shows only its label, so a long form of
+		// optional fields reads as a list of the fields actually in play.
+		void collapse_child_when_unchecked()
+		{
+			_collapse_child = true;
+			if (_child) show_element(_child, _val);
+		}
+
 		void visit_controls(const std::function<void(const control_base_ptr&)>& handler) override
 		{
 			if (_child) _child->visit_controls(handler);
@@ -2929,6 +2712,17 @@ namespace ui
 		{
 			_val = checked;
 			if (_child) enable_element(_child, checked);
+			if (_child && _collapse_child) show_element(_child, checked);
+		}
+
+		// Ticks the box from code, for example when another control makes the option
+		// meaningful. The bound value and any child follow, but the change callback does
+		// not run: the caller is the one making the decision.
+		void checked(const bool checked)
+		{
+			if (_val == checked) return;
+			on_check(checked);
+			_check->set_checked(checked);
 		}
 
 		sizei measure(measure_context& mc, const int cx) const override
@@ -2937,7 +2731,7 @@ namespace ui
 			{
 				_check_extent = _check->measure(cx / 2);
 
-				if (_child)
+				if (child_shown())
 				{
 					_child_extent = _child->measure(mc, cx - (_check_extent.cx + mc.padding2));
 				}
@@ -2954,7 +2748,7 @@ namespace ui
 			auto cy_result = _check_extent.cy;
 			const auto indent = mc.padding2 * 3;
 
-			if (_child)
+			if (child_shown())
 			{
 				_child_extent = _child->measure(mc, cx - (indent + mc.padding2));
 				cy_result += _child_extent.cy;
@@ -2972,37 +2766,31 @@ namespace ui
 			bounds = bounds_in;
 			positions.emplace_back(_check, recti(bounds.top_left(), _check_extent), is_visible());
 
+			// A collapsed child is left out of the layout entirely: windows absent from the applied
+			// positions keep the hidden state on_check gave them.
+			if (!child_shown()) return;
+
 			if (_is_wide_format)
 			{
-				if (_child)
-				{
-					auto child_bounds = bounds;
-					child_bounds.left += _check_extent.cx + mc.padding2;
-					_child->layout(mc, child_bounds, positions);
-				}
+				auto child_bounds = bounds;
+				child_bounds.left += _check_extent.cx + mc.padding2;
+				_child->layout(mc, child_bounds, positions);
 			}
 			else
 			{
-				if (_child)
-				{
-					const auto indent = mc.padding2 * 3;
-					auto child_bounds = bounds;
-					child_bounds.left += indent;
-					child_bounds.top += _check_extent.cy;
-					//child_bounds.bottom = child_bounds.top + _child_extent.cy;
-					_child->layout(mc, child_bounds, positions);
-				}
+				const auto indent = mc.padding2 * 3;
+				auto child_bounds = bounds;
+				child_bounds.left += indent;
+				child_bounds.top += _check_extent.cy;
+				_child->layout(mc, child_bounds, positions);
 			}
 		}
 
 		void render(draw_context& dc, const pointi element_offset) const override
 		{
-			if (_child)
+			if (child_shown() && _child->is_visible())
 			{
-				if (_child->is_visible())
-				{
-					_child->render(dc, element_offset);
-				}
+				_child->render(dc, element_offset);
 			}
 		}
 
@@ -3011,6 +2799,7 @@ namespace ui
 			if (event.type == view_element_event_type::initialise)
 			{
 				if (_child) enable_element(_child, _val);
+				if (_child && _collapse_child) show_element(_child, _val);
 			}
 		}
 	};
@@ -3065,8 +2854,9 @@ namespace ui
 		std::string _cancel_text;
 
 	public:
-		ok_cancel_control(const control_frame_ptr& h, const std::string_view text = tt.button_ok) : _ok_text(text),
-			_cancel_text(tt.button_cancel)
+		ok_cancel_control(const control_frame_ptr& h, const std::string_view text = tt.button_ok,
+		                  const std::string_view cancel_text = tt.button_cancel) : _ok_text(text),
+			_cancel_text(cancel_text)
 		{
 			_ok = h->create_button(_ok_text, [h] { h->close(false); }, true);
 			_cancel = h->create_button(_cancel_text, [h] { h->close(true); });
@@ -3129,7 +2919,7 @@ namespace ui
 		{
 			_analyze = h->create_button(_analyze_text, std::move(invoke), true);
 			_ok = h->create_button(_ok_text, [h] { h->close(false); });
-			_cancel = h->create_button(_cancel_text, [h] { ++cancel_gen, h->close(true); });
+			_cancel = h->create_button(_cancel_text, [h] { h->close(true); });
 		}
 
 		void visit_controls(const std::function<void(const control_base_ptr&)>& handler) override
@@ -3225,11 +3015,9 @@ namespace ui
 	public:
 		frame_ptr _frame;
 		control_frame_ptr _owner;
-		//auto_complete_match_ptr _selected_item;
 		auto_complete_match_ptr _hover_item;
 		auto_complete_results _results;
 		complete_strategy_ptr _completes;
-		//edit_ptr _edit;
 		view_scroller _scroller;
 		uint32_t _height = 0;
 		bool _is_popup = false;
@@ -3684,7 +3472,7 @@ public:
 	std::vector<view_element_ptr> _controls;
 	ui::control_frame_ptr _frame;
 	ui::control_frame_ptr _parent;
-	bool _parent_enabled = true;
+	bool _parent_disabled = false;
 	bool _center = false;
 	bool _resize = false;
 	std::any _parent_focus = false;
@@ -3692,10 +3480,13 @@ public:
 	int _layout_width = 0;
 	ui::screen_units _max_height = {0};
 	ui::screen_units _max_width = {0};
-	ui::color _background = ui::style::color::dialog_background;
-	ui::color _clr = ui::style::color::dialog_text;
+	ui::color _background = ui::color(ui::style::color::dialog_background);
+	ui::color _clr = ui::color(ui::style::color::dialog_text);
 	ui::coll_widths _label_width;
 	std::function<void()> _close_cb;
+	// Controls held outside the scrolling body so a title and actions such as Close stay in place.
+	size_t _pinned_header = 0;
+	size_t _pinned_footer = 0;
 
 	dialog(const dialog& other) = delete;
 	dialog& operator=(const dialog& other) = delete;
@@ -3703,22 +3494,56 @@ public:
 	dialog(ui::control_frame_ptr parent) : _parent(std::move(parent))
 	{
 		_parent_focus = ui::focus();
-		_parent_enabled = _parent->is_enabled();
-		_parent->enable(false);
+		disable_parent();
 	}
 
 	void create_frame()
 	{
 		_frame = _parent->create_dlg(shared_from_this(), true);
 		_scroller._scroll_child_controls = true;
+		_scroller.changed_func = [this]
+		{
+			// Child controls are repositioned by the layout instead of being dragged by the scroll.
+			if (is_split() && _frame) _frame->layout();
+		};
+	}
+
+	// Controls split into [0, header_end) pinned above, [header_end, body_end) scrolling, then pinned below.
+	size_t header_end() const
+	{
+		return std::min(_pinned_header, _controls.size());
+	}
+
+	size_t body_end() const
+	{
+		return std::max(header_end(), _controls.size() - std::min(_pinned_footer, _controls.size()));
+	}
+
+	bool is_split() const
+	{
+		return header_end() > 0 || body_end() < _controls.size();
 	}
 
 	~dialog() override
 	{
-		_parent->enable(_parent_enabled);
+		enable_parent();
 		_controls.clear();
 		_frame->destroy();
 		ui::focus(_parent_focus);
+	}
+
+	void disable_parent()
+	{
+		if (_parent_disabled) return;
+		_parent->enable(false);
+		_parent_disabled = true;
+	}
+
+	void enable_parent()
+	{
+		if (!_parent_disabled) return;
+		_parent->enable(true);
+		_parent_disabled = false;
 	}
 
 
@@ -3759,9 +3584,12 @@ public:
 	void show_status(icon_index icon, const std::string_view text, const ui::screen_units cx = {33},
 	                 const ui::screen_units cy = {66})
 	{
+		disable_parent();
 		const auto scale_factor = _frame->scale_factor();
 		const auto extent = sizei{cx * scale_factor, cy * scale_factor};
-		_frame->position(center_rect(extent, _parent->window_bounds()));
+		// Same anchor as show_modal, so a flow that alternates between busy and question phases
+		// keeps its window in one place instead of hopping.
+		_frame->position(center_rect(extent, ui::desktop_bounds(true)));
 
 		const std::vector<view_element_ptr> controls = {std::make_shared<ui::busy_control>(_frame, icon, text)};
 		show_controls(controls, cx, cy);
@@ -3772,6 +3600,7 @@ public:
 	void show_cancel_status(icon_index icon, const std::string_view text, const std::function<void()>& cb,
 	                        const ui::screen_units cx = {33}, const ui::screen_units cy = {66})
 	{
+		disable_parent();
 		_close_cb = [f = _frame, cb]
 		{
 			if (cb) { cb(); }
@@ -3780,7 +3609,7 @@ public:
 
 		const auto scale_factor = _frame->scale_factor();
 		const auto extent = sizei{cx * scale_factor, cy * scale_factor};
-		_frame->position(center_rect(extent, _parent->window_bounds()));
+		_frame->position(center_rect(extent, ui::desktop_bounds(true)));
 
 		const std::vector<view_element_ptr> controls = {
 			std::make_shared<ui::busy_control>(_frame, icon, text),
@@ -3805,6 +3634,7 @@ public:
 	ui::close_result show_modal(const std::vector<view_element_ptr>& controls, const ui::screen_units cx = {44},
 	                            const ui::screen_units cy = {88})
 	{
+		disable_parent();
 		const auto scale_factor = _frame->scale_factor();
 		const auto extent = sizei{cx * scale_factor, cy * scale_factor};
 		_frame->position(center_rect(extent, ui::desktop_bounds(true)));
@@ -3820,6 +3650,8 @@ public:
 		}
 
 		_controls.clear();
+		enable_parent();
+		ui::focus(_parent_focus);
 		return result;
 	}
 
@@ -3851,18 +3683,14 @@ public:
 		}
 
 		_controls = controls;
+		// SW_SCROLLCHILDREN would drag the pinned controls too, so a split dialog moves its own.
+		_scroller._scroll_child_controls = !is_split();
 
 		for (const auto& c : _controls)
 		{
 			view_element_event e{view_element_event_type::initialise, shared_from_this()};
 			c->dispatch_event(e);
 		}
-	}
-
-	void layout_and_center()
-	{
-		_center = true;
-		_frame->layout();
 	}
 
 	void invalidate_view(const view_invalid invalid) override
@@ -3890,25 +3718,78 @@ public:
 		const auto max_width = std::min(work_area.width(), _max_width * scale_factor);
 		const auto max_height = std::min(work_area.height(), _max_height * scale_factor);
 
-		const auto layout_padding = mc.padding1;
+		const auto layout_padding = df::round(mc.padding1 / mc.scale_factor);
 		auto avail_bounds = recti(0, 0, max_width, max_height);
-		avail_bounds.right -= mc.scroll_width - layout_padding;
+		avail_bounds.right -= mc.scroll_width;
 
+		mc.col_widths = {};
 		ui::control_layouts positions;
-		const auto height = stack_elements(mc, positions, avail_bounds, _controls, false,
-		                                   {layout_padding, layout_padding});
-		const auto show_scroller = height > max_height;
+		flex_container_layout column;
+		column.direction = flex_direction::column;
+		column.wrap = flex_wrap::no_wrap;
+		column.align_items = flex_align::start;
+		column.padding = {layout_padding, layout_padding};
+
+		const auto split_header = header_end();
+		const auto split_body = body_end();
+		const std::vector<view_element_ptr> header(_controls.begin(), _controls.begin() + split_header);
+		const std::vector<view_element_ptr> body(_controls.begin() + split_header, _controls.begin() + split_body);
+		const std::vector<view_element_ptr> footer(_controls.begin() + split_body, _controls.end());
+
+		auto header_height = 0;
+
+		if (!header.empty())
+		{
+			header_height = layout_flex_elements(header, mc, positions, avail_bounds, column).cy;
+			for (auto& p : positions) p.offset = false;
+		}
+
+		// The footer height has to be known before the body can be given the space that is left.
+		auto footer_height = 0;
+
+		if (!footer.empty())
+		{
+			ui::control_layouts measure_only;
+			footer_height = layout_flex_elements(footer, mc, measure_only, avail_bounds, column).cy;
+		}
+
+		auto body_bounds = avail_bounds;
+		body_bounds.top = header_height;
+		body_bounds.bottom = std::max(header_height, max_height - footer_height);
+
+		ui::control_layouts body_positions;
+		const auto height = layout_flex_elements(body, mc, body_positions, body_bounds, column).cy;
+		const auto show_scroller = height > body_bounds.height();
 		const auto padding_right = show_scroller ? mc.scroll_width : 0;
 
-		_layout_height = height;
-		_layout_width = avail_bounds.width() + padding_right;
+		const auto client_height = std::min(height, body_bounds.height());
+		positions.insert(positions.end(), body_positions.begin(), body_positions.end());
 
-		const recti scroll_bounds{_layout_width - padding_right, 0, _layout_width, _layout_height};
-		const recti client_bounds{0, 0, _layout_width - padding_right, _layout_height};
-		_scroller.layout({_layout_width, _layout_height}, client_bounds, scroll_bounds);
+		_layout_height = header_height + client_height + footer_height;
+		_layout_width = std::min(max_width, avail_bounds.width() + padding_right);
+
+		if (!footer.empty())
+		{
+			ui::control_layouts footer_positions;
+			layout_flex_elements(footer, mc, footer_positions,
+			                     {0, header_height + client_height, avail_bounds.right, _layout_height}, column);
+
+			for (auto& p : footer_positions) p.offset = false;
+			positions.insert(positions.end(), footer_positions.begin(), footer_positions.end());
+		}
+
+		const auto client_bottom = header_height + client_height;
+		const auto scroll_inset = mc.padding1;
+		// Inset so the bar sits in the gutter rather than against the dialog border.
+		const recti scroll_bounds{
+			_layout_width - padding_right + scroll_inset, header_height + scroll_inset,
+			_layout_width - scroll_inset, client_bottom - scroll_inset
+		};
+		const recti client_bounds{0, header_height, _layout_width - padding_right, client_bottom};
+		_scroller.layout({client_bounds.width(), height}, client_bounds, scroll_bounds);
 		_label_width = mc.col_widths;
 
-		_frame->apply_layout(positions, _scroller.scroll_offset());
+		_frame->apply_layout(positions, -_scroller.scroll_offset());
 		_frame->invalidate();
 
 		if (_center || _resize)
@@ -3946,15 +3827,34 @@ public:
 	{
 		dc.col_widths = _label_width;
 
-		const auto offset = _scroller.scroll_offset();
+		const auto offset = -_scroller.scroll_offset();
+		const auto split_header = header_end();
+		const auto split_body = body_end();
+		const auto clip_body = is_split();
 
-		for (const auto& c : _controls)
+		for (auto i = 0u; i < split_header; ++i)
 		{
-			if (c->is_visible())
-			{
-				c->render(dc, offset);
-			}
+			const auto& c = _controls[i];
+			if (c->is_visible()) c->render(dc, {0, 0});
 		}
+
+		if (clip_body) dc.clip_bounds(_scroller.client_bounds());
+
+		for (auto i = split_header; i < split_body; ++i)
+		{
+			const auto& c = _controls[i];
+			if (c->is_visible()) c->render(dc, offset);
+		}
+
+		if (clip_body) dc.restore_clip();
+
+		for (auto i = split_body; i < _controls.size(); ++i)
+		{
+			const auto& c = _controls[i];
+			if (c->is_visible()) c->render(dc, {0, 0});
+		}
+
+		_scroller.draw_scroll(dc);
 
 		const auto border_outside = recti(0, 0, _layout_width, _layout_height);
 		const auto clr = ui::color(0xffffff, 0.22f);
@@ -3987,6 +3887,12 @@ public:
 	bool key_down(const int c, const ui::key_state keys) override
 	{
 		return false;
+	}
+
+	void on_mouse_wheel(const pointi loc, const int delta, const ui::key_state keys, bool& was_handled) override
+	{
+		_scroller.offset(shared_from_this(), 0, -(delta / 2));
+		was_handled = _scroller.can_scroll();
 	}
 
 	void focus_changed(const bool has_focus, const ui::control_base_ptr& child) override
@@ -4024,10 +3930,18 @@ public:
 		}
 
 		const auto offset = -_scroller.scroll_offset();
+		const auto split_header = header_end();
+		const auto split_body = body_end();
+		const auto clip_body = is_split();
 
-		for (const auto& e : _controls)
+		for (auto i = 0u; i < _controls.size(); ++i)
 		{
-			auto controller = e->controller_from_location(shared_from_this(), loc, offset, {});
+			const auto& e = _controls[i];
+			if (!e->is_visible()) continue;
+			const auto in_body = i >= split_header && i < split_body;
+			// Body elements scrolled under the header or footer must not answer for them.
+			if (in_body && clip_body && !_scroller.client_bounds().contains(loc)) continue;
+			auto controller = e->controller_from_location(shared_from_this(), loc, in_body ? offset : pointi{}, {});
 			if (controller) return controller;
 		}
 
@@ -4036,9 +3950,24 @@ public:
 
 	bool is_control_area(const pointi loc) override
 	{
-		for (const auto& e : _controls)
+		// Without this the frame treats the scrollbar as caption and drags the whole dialog.
+		if (_scroller.can_scroll() && _scroller.scroll_bounds().contains(loc))
 		{
-			if (e->is_control_area(loc, {0, 0}))
+			return true;
+		}
+
+		const auto offset = -_scroller.scroll_offset();
+		const auto split_header = header_end();
+		const auto split_body = body_end();
+		const auto clip_body = is_split();
+
+		for (auto i = 0u; i < _controls.size(); ++i)
+		{
+			const auto& e = _controls[i];
+			if (!e->is_visible()) continue;
+			const auto in_body = i >= split_header && i < split_body;
+			if (in_body && clip_body && !_scroller.client_bounds().contains(loc)) continue;
+			if (e->is_control_area(loc, in_body ? offset : pointi{}))
 			{
 				return true;
 			}
@@ -4115,7 +4044,7 @@ public:
 			}
 		}
 
-		dc.draw_rect(bounds, bg);
+		dc.draw_rect(bounds, ui::color(bg, dc.colors.alpha));
 
 		if (_tex)
 		{
@@ -4152,24 +4081,3 @@ inline view_element_ptr set_margin(view_element_ptr e, const int cx = 8, const i
 	e->margin.cy = cy;
 	return e;
 }
-
-
-struct enabler
-{
-	std::any _parent_focus;
-	std::shared_ptr<ui::control_frame> _parent;
-	bool _parent_enabled = false;
-
-	enabler(ui::control_frame_ptr parent) : _parent(std::move(parent))
-	{
-		_parent_focus = ui::focus();
-		_parent_enabled = _parent->is_enabled();
-		_parent->enable(false);
-	}
-
-	~enabler()
-	{
-		_parent->enable(_parent_enabled);
-		ui::focus(_parent_focus);
-	}
-};

@@ -8,11 +8,15 @@
 
 // Purpose: Common map tile types, coordinate math, and rendering engine shared
 // by map_view (full view) and map_control (dialog widget). Handles tile
-// fetching, caching, GPS math, panning, zooming, and crosshair rendering.
+// fetching (through the SQLite tile store and OSM tile-usage-policy compliance),
+// caching, GPS math, panning, zooming, marker clustering, picked-marker highlight,
+// and crosshair rendering.
 
 #pragma once
 
+#include "model_tile_cache.h"
 #include "ui.h"
+#include "util_kdtree.h"
 
 // For M_PI on some compilers, otherwise define it manually.
 #ifndef M_PI
@@ -75,8 +79,17 @@ static double lon_to_tile_x(const double lon, const int zoom)
 // Converts latitude to a tile's Y coordinate at a given zoom level.
 static double lat_to_tile_y(const double lat, const int zoom)
 {
-	const double lat_rad = lat * M_PI / 180.0;
+	constexpr auto max_mercator_latitude = 85.05112878;
+	const double lat_rad = std::clamp(lat, -max_mercator_latitude, max_mercator_latitude) * M_PI / 180.0;
 	return (1.0 - asinh(tan(lat_rad)) / M_PI) / 2.0 * pow(2.0, zoom);
+}
+
+inline pointi map_marker_world_cell(const gps_coordinate coordinate, const int zoom, const int cell_size = 44)
+{
+	return {
+		static_cast<int>(std::floor(lon_to_tile_x(coordinate.longitude(), zoom) * TILE_SIZE / cell_size)),
+		static_cast<int>(std::floor(lat_to_tile_y(coordinate.latitude(), zoom) * TILE_SIZE / cell_size))
+	};
 }
 
 inline std::vector<map_tile> get_tiles_for_view(const recti& bounds, const pointi scroll_offset,
@@ -94,8 +107,10 @@ inline std::vector<map_tile> get_tiles_for_view(const recti& bounds, const point
 	const double offset_x = center_tile_x_f - center_tile_x;
 	const double offset_y = center_tile_y_f - center_tile_y;
 
-	const int center_tile_screen_x = bounds.width() / 2 - static_cast<int>(offset_x * TILE_SIZE) + scroll_offset.x;
-	const int center_tile_screen_y = bounds.height() / 2 - static_cast<int>(offset_y * TILE_SIZE) + scroll_offset.y;
+	const int center_tile_screen_x = bounds.left + bounds.width() / 2 - static_cast<int>(offset_x * TILE_SIZE) +
+		scroll_offset.x;
+	const int center_tile_screen_y = bounds.top + bounds.height() / 2 - static_cast<int>(offset_y * TILE_SIZE) +
+		scroll_offset.y;
 
 	int start_tile_x = center_tile_x;
 	int start_screen_x = center_tile_screen_x;
@@ -138,20 +153,118 @@ inline std::string generate_tile_path(const map_tile_id& coord)
 	return url.str();
 }
 
+// Canonical OpenStreetMap tile host. The OSM tile usage policy requires the
+// exact hostname tile.openstreetmap.org; the legacy a/b/c subdomains "may be
+// slower or withdrawn without notice".
+constexpr std::string_view osm_tile_host = "tile.openstreetmap.org";
+
+// Builds the User-Agent required by the OSM tile usage policy: it must clearly
+// identify the application (name + version) and provide a contact URL. A generic
+// or library-default User-Agent is blocked by the tile servers.
+inline std::string tile_user_agent()
+{
+	return std::format("Diffractor/{} (+https://diffractor.com)", s_app_version);
+}
+
+// Tile levels the shared tile source actually serves. Anything outside is a blank map.
+inline constexpr int map_min_zoom = 3;
+inline constexpr int map_max_zoom = 18;
+
+// A latitude/longitude box, used to frame a map on the region that actually holds items
+// instead of an arbitrary default coordinate. Invalid until at least one point is added.
+struct map_box
+{
+	double min_latitude = 0.0;
+	double min_longitude = 0.0;
+	double max_latitude = 0.0;
+	double max_longitude = 0.0;
+	bool valid = false;
+
+	void add(const gps_coordinate coordinate)
+	{
+		if (!coordinate.is_valid()) return;
+
+		if (!valid)
+		{
+			min_latitude = max_latitude = coordinate.latitude();
+			min_longitude = max_longitude = coordinate.longitude();
+			valid = true;
+			return;
+		}
+
+		min_latitude = std::min(min_latitude, coordinate.latitude());
+		max_latitude = std::max(max_latitude, coordinate.latitude());
+		min_longitude = std::min(min_longitude, coordinate.longitude());
+		max_longitude = std::max(max_longitude, coordinate.longitude());
+	}
+
+	gps_coordinate centre() const
+	{
+		return valid
+			       ? gps_coordinate((min_latitude + max_latitude) / 2.0, (min_longitude + max_longitude) / 2.0)
+			       : gps_coordinate{};
+	}
+};
+
+// The closest zoom at which the whole box still fits in `extent`. A single point has no span,
+// so it fits everywhere and yields the closest zoom; a box wider than the world yields the
+// widest. Half a tile of slack on each side keeps the outermost markers clear of the edge,
+// while never demanding more room than a small map actually has.
+inline int map_fit_zoom(const map_box& box, const sizei extent)
+{
+	if (!box.valid || extent.cx <= 0 || extent.cy <= 0) return map_min_zoom;
+
+	const auto fit_cx = std::max(TILE_SIZE / 2, extent.cx - TILE_SIZE);
+	const auto fit_cy = std::max(TILE_SIZE / 2, extent.cy - TILE_SIZE);
+
+	for (auto z = map_max_zoom; z > map_min_zoom; --z)
+	{
+		const auto cx = (lon_to_tile_x(box.max_longitude, z) - lon_to_tile_x(box.min_longitude, z)) * TILE_SIZE;
+		const auto cy = (lat_to_tile_y(box.min_latitude, z) - lat_to_tile_y(box.max_latitude, z)) * TILE_SIZE;
+
+		if (cx <= fit_cx && cy <= fit_cy) return z;
+	}
+
+	return map_min_zoom;
+}
+
 class map_engine
 {
 public:
 	struct cache_entry
 	{
+		// Guards surface, in_view and requested — these are touched by both the UI
+		// thread (render/fetch_tiles/cleanup) and the map worker thread (fetch_tile).
+		platform::mutex mutex;
 		ui::surface_ptr surface;
 		bool in_view = false;
+		bool requested = false; // a fetch task is queued/in-flight for this tile
 	};
 
 	using cache_entry_ptr = std::shared_ptr<cache_entry>;
 
+	// A single aggregated marker (cluster of nearby item locations) in screen space.
+	struct map_cluster
+	{
+		pointi screen_pos;
+		int count = 0;
+		uint32_t rep_index = 0; // index into the caller's marker array (see set_markers)
+	};
+
+	struct marker
+	{
+		gps_coordinate coordinate;
+		uint32_t count = 1;
+	};
+
 private:
 	async_strategy& _async;
 	std::function<void()> _invalidate;
+
+	// Shared with queued tile tasks so a task completing after this engine (and its
+	// owning frame) is destroyed does not invoke the now-dangling invalidate callback.
+	// Set false in the destructor, which runs on the UI thread (same thread as queue_ui).
+	std::shared_ptr<std::atomic_bool> _alive = std::make_shared<std::atomic_bool>(true);
 
 	int _zoom = 16;
 	gps_coordinate _location;
@@ -161,25 +274,41 @@ private:
 	std::map<map_tile_id, cache_entry_ptr> _tile_cache;
 	std::map<map_tile_id, ui::texture_ptr> _texture_cache;
 
+	// Item-location markers, indexed spatially so only the visible ones are
+	// projected/clustered each view change.
+	std::vector<kd_coordinates_t> _marker_coords; // x=longitude, y=latitude, offset=caller index
+	std::vector<uint32_t> _marker_counts;
+	kd_tree _marker_tree;
+	bool _has_markers = false;
+	std::vector<map_cluster> _clusters;
+	bool _clusters_dirty = false;
+	sizei _cluster_extent;
+
+	// The cluster the user picked, kept as a coordinate so it survives zooming and panning.
+	gps_coordinate _selected;
+	int _selected_count = 0;
+
+	// The centre marker only means something where the centre is the answer.
+	bool _show_crosshair = true;
+
 public:
 	map_engine(async_strategy& async, std::function<void()> invalidate)
 		: _async(async), _invalidate(std::move(invalidate))
 	{
 	}
 
+	static constexpr int min_zoom = map_min_zoom;
+	static constexpr int max_zoom = map_max_zoom;
+
 	~map_engine()
 	{
+		_alive->store(false);
 		_tile_cache.clear();
 		_texture_cache.clear();
 	}
 
 	const gps_coordinate& location() const { return _location; }
-
-	void set_location_raw(const gps_coordinate& loc)
-	{
-		_location = loc;
-		_scroll_offset = {};
-	}
+	int zoom_level() const { return _zoom; }
 
 	void set_location(const gps_coordinate& loc, const recti& bounds)
 	{
@@ -188,6 +317,7 @@ public:
 			_location = loc;
 			_scroll_offset = {};
 			_texture_cache.clear();
+			_clusters_dirty = true;
 			fetch_tiles(bounds, _scroll_offset);
 			_invalidate();
 		}
@@ -218,7 +348,7 @@ public:
 
 	void render(ui::draw_context& dc, const sizei& extent)
 	{
-		dc.clear(dc.colors.background);
+		dc.clear(ui::color(dc.colors.background, 1.0f));
 
 		const auto map_bounds = recti(extent);
 		const auto total_offset = _scroll_offset + _temp_drag_offset;
@@ -232,26 +362,45 @@ public:
 			if (found_texture != _texture_cache.end())
 			{
 				dc.draw_texture(found_texture->second, tile_rect);
+				continue;
 			}
-			else
-			{
-				auto found_surface = _tile_cache.find(tile.coord);
 
-				if (found_surface != _tile_cache.end() && found_surface->second->surface)
+			// Copy the surface shared_ptr under the entry lock; the worker thread may be
+			// publishing it concurrently (a torn shared_ptr read would corrupt refcounts).
+			ui::surface_ptr surf;
+			const auto found_surface = _tile_cache.find(tile.coord);
+
+			if (found_surface != _tile_cache.end())
+			{
+				platform::exclusive_lock lock(found_surface->second->mutex);
+				surf = found_surface->second->surface;
+			}
+
+			bool drawn = false;
+
+			if (surf)
+			{
+				const auto texture = dc.create_texture();
+
+				if (texture && texture->update(surf) != ui::texture_update_result::failed)
 				{
-					auto texture = dc.create_texture();
-					texture->update(found_surface->second->surface);
 					_texture_cache[tile.coord] = texture;
 					dc.draw_texture(texture, tile_rect);
+					drawn = true;
 				}
-				else
-				{
-					dc.draw_rect(tile_rect.inflate(-1), ui::color(0.5, 0.5, 0.5, 0.5));
-				}
+			}
+
+			if (!drawn)
+			{
+				dc.draw_rect(tile_rect.inflate(-1), ui::color(0.5, 0.5, 0.5, 0.5));
 			}
 		}
 
-		render_crosshair(dc, extent);
+		update_clusters_if_needed(extent);
+		render_selection(dc, extent);
+		render_markers(dc, extent);
+		if (_show_crosshair) render_crosshair(dc, extent);
+		render_attribution(dc, extent);
 	}
 
 	bool zoom(const int delta, const recti& bounds)
@@ -259,17 +408,39 @@ public:
 		const int zoom_change = delta > 0 ? 1 : -1;
 		const int new_zoom = _zoom + zoom_change;
 
-		if (new_zoom >= 3 && new_zoom <= 18)
+		if (new_zoom >= min_zoom && new_zoom <= max_zoom)
 		{
 			_zoom = new_zoom;
 			_texture_cache.clear();
 			_scroll_offset = {0, 0};
+			_clusters_dirty = true;
 			fetch_tiles(bounds, _scroll_offset);
 			_invalidate();
 			return true;
 		}
 
 		return false;
+	}
+
+	// Frames the view on a latitude/longitude box: the box centre at the closest zoom that
+	// still shows the whole box. A map that opens on the items is the difference between a
+	// hot spot the user can click and an arbitrary street they have to zoom out of.
+	bool fit_box(const map_box& box, const recti& bounds)
+	{
+		const auto extent = bounds.extent();
+		const auto centre = box.centre();
+
+		if (!box.valid || !centre.is_valid() || extent.cx <= 0 || extent.cy <= 0) return false;
+
+		_zoom = map_fit_zoom(box, extent);
+		_location = centre;
+		_scroll_offset = {0, 0};
+		_temp_drag_offset = {0, 0};
+		_texture_cache.clear();
+		_clusters_dirty = true;
+		fetch_tiles(bounds, _scroll_offset);
+		_invalidate();
+		return true;
 	}
 
 	void pan_start()
@@ -280,6 +451,7 @@ public:
 	gps_coordinate pan(const pointi start_loc, const pointi current_loc, const recti& bounds)
 	{
 		_temp_drag_offset = current_loc - start_loc;
+		_clusters_dirty = true;
 		fetch_tiles(bounds.inflate(TILE_SIZE), _scroll_offset + _temp_drag_offset);
 		_invalidate();
 		return calc_center_gps();
@@ -294,6 +466,7 @@ public:
 		_location = gps;
 		_scroll_offset = {};
 		_texture_cache.clear();
+		_clusters_dirty = true;
 		fetch_tiles(bounds, _scroll_offset);
 		_invalidate();
 		return gps;
@@ -305,105 +478,439 @@ public:
 		_texture_cache.clear();
 	}
 
+	// Provide the item-location markers to aggregate on the map. `markers` is indexed
+	// by the caller; hit_test_marker returns the representative coordinate's index so
+	// the caller can map a hovered cluster back to its own item array.
+	void set_markers(const std::vector<marker>& markers)
+	{
+		_marker_coords.clear();
+		_marker_coords.reserve(markers.size());
+		_marker_counts.assign(markers.size(), 0);
+
+		for (uint32_t i = 0; i < markers.size(); ++i)
+		{
+			if (markers[i].coordinate.is_valid() && markers[i].count > 0)
+			{
+				kd_coordinates_t c;
+				c.x = static_cast<float>(markers[i].coordinate.longitude());
+				c.y = static_cast<float>(markers[i].coordinate.latitude());
+				c.offset = i;
+				c.country = 0;
+				_marker_coords.push_back(c);
+				_marker_counts[i] = markers[i].count;
+			}
+		}
+
+		_has_markers = !_marker_coords.empty();
+
+		if (_has_markers)
+		{
+			_marker_tree.build(_marker_coords);
+		}
+
+		_clusters_dirty = true;
+		_invalidate();
+	}
+
+	// Marks the cluster the user picked. Purely presentational: it shows which bubble the
+	// answer came from after the map has moved on.
+	void set_selected(const gps_coordinate& loc, const int count)
+	{
+		_selected = loc;
+		_selected_count = count;
+		_invalidate();
+	}
+
+	void set_show_crosshair(const bool show)
+	{
+		if (_show_crosshair != show)
+		{
+			_show_crosshair = show;
+			_invalidate();
+		}
+	}
+
+	// The ground radius a cluster bubble covers at the current zoom, in kilometres. Web
+	// Mercator resolves 156543.03392 m/px at the equator for zoom 0, scaled by cos(latitude).
+	double cluster_radius_km(const gps_coordinate& at) const
+	{
+		const auto meters_per_pixel = 156543.03392 * std::cos(at.latitude() * M_PI / 180.0) / std::pow(2.0, _zoom);
+		return meters_per_pixel * (cluster_cell_px / 2.0) / 1000.0;
+	}
+
+	std::vector<gps_coordinate> visible_cluster_coordinates(const sizei& extent)
+	{
+		update_clusters_if_needed(extent);
+
+		std::vector<gps_coordinate> result;
+		result.reserve(_clusters.size());
+
+		for (const auto& cluster : _clusters)
+		{
+			if (cluster.screen_pos.x >= 0 && cluster.screen_pos.y >= 0 &&
+				cluster.screen_pos.x < extent.cx && cluster.screen_pos.y < extent.cy)
+			{
+				result.emplace_back(gps_from_screen(cluster.screen_pos, extent));
+			}
+		}
+
+		return result;
+	}
+
+	// The GPS coordinate at a screen point, so callers can recentre on a hit-tested cluster.
+	gps_coordinate gps_at_screen(const pointi p, const sizei& extent) const
+	{
+		return gps_from_screen(p, extent);
+	}
+
+	// Returns the representative marker index of the cluster under `loc`, or -1 if
+	// none. Fills the on-screen anchor and aggregated photo count.
+	int hit_test_marker(const pointi loc, const sizei& extent, pointi& anchor_out, int& count_out) const
+	{
+		for (const auto& c : _clusters)
+		{
+			const int radius = cluster_radius(c.count);
+			const auto dx = loc.x - c.screen_pos.x;
+			const auto dy = loc.y - c.screen_pos.y;
+
+			if (dx * dx + dy * dy <= radius * radius)
+			{
+				anchor_out = c.screen_pos;
+				count_out = c.count;
+				return static_cast<int>(c.rep_index);
+			}
+		}
+
+		return -1;
+	}
+
 	void fetch_tiles_for_bounds(const recti& bounds)
 	{
 		fetch_tiles(bounds, _scroll_offset);
 	}
 
 private:
+	// World-pixel size of the cell markers are aggregated into, and so the ground one bubble
+	// stands for.
+	static constexpr int cluster_cell_px = 44;
+
+	// Marker radius grows gently with the number of aggregated photos.
+	static int cluster_radius(const int count)
+	{
+		const int r = 10 + static_cast<int>(3.0 * std::log2(static_cast<double>(std::max(1, count)) + 1.0));
+		return std::min(r, 28);
+	}
+
+	// Project a GPS coordinate to a screen point using the current view transform.
+	pointi screen_from_gps(const gps_coordinate& g, const sizei& extent) const
+	{
+		const auto total_offset = _scroll_offset + _temp_drag_offset;
+		const double dx = (lon_to_tile_x(g.longitude(), _zoom) - lon_to_tile_x(_location.longitude(), _zoom)) *
+			TILE_SIZE;
+		const double dy = (lat_to_tile_y(g.latitude(), _zoom) - lat_to_tile_y(_location.latitude(), _zoom)) *
+			TILE_SIZE;
+
+		return pointi(
+			static_cast<int>(std::lround(extent.cx / 2.0 + dx + total_offset.x)),
+			static_cast<int>(std::lround(extent.cy / 2.0 + dy + total_offset.y)));
+	}
+
+	// Inverse of screen_from_gps: the GPS coordinate at a screen point.
+	gps_coordinate gps_from_screen(const pointi p, const sizei& extent) const
+	{
+		const auto total_offset = _scroll_offset + _temp_drag_offset;
+		const double tile_x = lon_to_tile_x(_location.longitude(), _zoom) +
+			(p.x - extent.cx / 2.0 - total_offset.x) / TILE_SIZE;
+		const double tile_y = lat_to_tile_y(_location.latitude(), _zoom) +
+			(p.y - extent.cy / 2.0 - total_offset.y) / TILE_SIZE;
+
+		const double lon = tile_x / pow(2.0, _zoom) * 360.0 - 180.0;
+		const double n = M_PI - 2.0 * M_PI * tile_y / pow(2.0, _zoom);
+		const double lat = 180.0 / M_PI * atan(0.5 * (exp(n) - exp(-n)));
+
+		return gps_coordinate(lat, lon);
+	}
+
+	void update_clusters_if_needed(const sizei& extent)
+	{
+		if (!_clusters_dirty && _cluster_extent == extent)
+		{
+			return;
+		}
+
+		_clusters_dirty = false;
+		_cluster_extent = extent;
+		recompute_clusters(extent);
+	}
+
+	// Query the kd-tree for the markers inside the visible bounds, then aggregate them
+	// into world-pixel cells. Anchoring cells to the map instead of the viewport keeps
+	// cluster membership stable while panning.
+	void recompute_clusters(const sizei& extent)
+	{
+		_clusters.clear();
+
+		if (!_has_markers || extent.is_empty() || _marker_tree.is_empty())
+		{
+			return;
+		}
+
+		constexpr int cell = cluster_cell_px;
+		const auto tl = gps_from_screen({-cell, -cell}, extent);
+		const auto br = gps_from_screen({extent.cx + cell, extent.cy + cell}, extent);
+		const auto xmin = static_cast<float>(std::min(tl.longitude(), br.longitude()));
+		const auto xmax = static_cast<float>(std::max(tl.longitude(), br.longitude()));
+		const auto ymin = static_cast<float>(std::min(tl.latitude(), br.latitude()));
+		const auto ymax = static_cast<float>(std::max(tl.latitude(), br.latitude()));
+
+		std::vector<kd_coordinates_t> found;
+		_marker_tree.find_in_bounds(_marker_coords, xmin, ymin, xmax, ymax, found);
+
+		if (found.empty())
+		{
+			return;
+		}
+
+		struct accum
+		{
+			double world_x = 0.0;
+			double world_y = 0.0;
+			int count = 0;
+			uint32_t rep = UINT32_MAX;
+		};
+
+		std::map<std::pair<int, int>, accum> cells;
+
+		for (const auto& c : found)
+		{
+			const auto world_x = lon_to_tile_x(c.x, _zoom) * TILE_SIZE;
+			const auto world_y = lat_to_tile_y(c.y, _zoom) * TILE_SIZE;
+			const auto world_cell = map_marker_world_cell(gps_coordinate(c.y, c.x), _zoom, cell);
+			const auto key = std::make_pair(world_cell.x, world_cell.y);
+			auto& a = cells[key];
+			const auto weight = _marker_counts[c.offset];
+			a.world_x += world_x * weight;
+			a.world_y += world_y * weight;
+			a.rep = std::min(a.rep, c.offset);
+			a.count += weight;
+		}
+
+		const auto center_world_x = lon_to_tile_x(_location.longitude(), _zoom) * TILE_SIZE;
+		const auto center_world_y = lat_to_tile_y(_location.latitude(), _zoom) * TILE_SIZE;
+		const auto total_offset = _scroll_offset + _temp_drag_offset;
+
+		_clusters.reserve(cells.size());
+
+		for (const auto& [key, a] : cells)
+		{
+			map_cluster mc;
+			mc.screen_pos = pointi(
+				static_cast<int>(std::lround(extent.cx / 2.0 + a.world_x / a.count - center_world_x + total_offset.x)),
+				static_cast<int>(std::lround(extent.cy / 2.0 + a.world_y / a.count - center_world_y + total_offset.y)));
+			mc.count = a.count;
+			mc.rep_index = a.rep;
+			_clusters.push_back(mc);
+		}
+	}
+
+	// A halo behind the bubble the user picked. Drawn under the markers so the bubble keeps
+	// its own shape, and anchored to the picked coordinate so it stays put as the map moves.
+	void render_selection(ui::draw_context& dc, const sizei& extent) const
+	{
+		if (!_selected.is_valid()) return;
+
+		const auto p = screen_from_gps(_selected, extent);
+		const auto r = cluster_radius(_selected_count) + 7;
+
+		if (p.x < -r || p.y < -r || p.x > extent.cx + r || p.y > extent.cy + r) return;
+
+		const recti glow(p - pointi(r, r), sizei(r * 2, r * 2));
+		dc.draw_rounded_rect(glow, ui::color(1.0f, 1.0f, 1.0f, 0.8f), r);
+	}
+
+	void render_markers(ui::draw_context& dc, const sizei& extent) const
+	{
+		for (const auto& c : _clusters)
+		{
+			const int radius = cluster_radius(c.count);
+			const recti r(c.screen_pos - pointi(radius, radius), sizei(radius * 2, radius * 2));
+
+			// Semi-transparent so the underlying map stays visible: a soft white halo
+			// plus a translucent accent fill, with the aggregated count on top.
+			const recti halo = r.inflate(1);
+			dc.draw_rounded_rect(halo, ui::color(1.0f, 1.0f, 1.0f, 0.35f), radius + 1);
+			dc.draw_rounded_rect(r, ui::color(ui::style::color::dialog_selected_background, 0.5f), radius);
+
+			if (c.count > 1)
+			{
+				dc.draw_text(std::to_string(c.count), r, ui::style::font_face::dialog,
+				             ui::style::text_style::single_line_center, ui::color(1.0f, 1.0f, 1.0f, 0.9f), {});
+			}
+		}
+	}
+
+	// The OSM tile usage policy requires visible licence attribution on the map.
+	// Draw "© OpenStreetMap contributors" in the bottom-right corner with a
+	// translucent backing so it stays legible over any tile.
+	void render_attribution(ui::draw_context& dc, const sizei& extent) const
+	{
+		constexpr std::string_view attribution = "© OpenStreetMap contributors";
+		constexpr int pad = 4;
+
+		const auto text_extent = dc.measure_text(attribution, ui::style::font_face::dialog,
+		                                         ui::style::text_style::single_line, extent.cx);
+
+		const int w = text_extent.cx + pad * 2;
+		const int h = text_extent.cy + pad;
+
+		const recti bg_rect(std::max(0, extent.cx - w), std::max(0, extent.cy - h), extent.cx, extent.cy);
+		dc.draw_rect(bg_rect, ui::color(0.0f, 0.0f, 0.0f, 0.4f));
+
+		const recti text_rect(bg_rect.left + pad, bg_rect.top, bg_rect.right - pad, bg_rect.bottom);
+		dc.draw_text(attribution, text_rect, ui::style::font_face::dialog, ui::style::text_style::single_line,
+		             ui::color(1.0f, 1.0f, 1.0f, 0.9f), {});
+	}
+
+	// A plain cross, semi-transparent: two unbroken lines whose intersection is the coordinate
+	// that will be written. No ring and no centre disc - either would read as one more cluster
+	// bubble, and either would hide the bubble the user has just centred on.
 	void render_crosshair(ui::draw_context& dc, const sizei& extent) const
 	{
 		const int center_x = extent.cx / 2;
 		const int center_y = extent.cy / 2;
-		const pointi center_point(center_x, center_y);
 
-		constexpr int crosshair_size = 20;
-		constexpr int inner_gap = 4;
-		constexpr int line_width = 2;
-		constexpr int outer_circle_radius = 15;
-		constexpr int inner_circle_radius = 3;
+		constexpr int arm = 48;
+		constexpr int line_width = 3;
+		constexpr int half = line_width / 2;
 
-		const auto crosshair_color = ui::color(ui::style::color::dialog_selected_background, 0.7);
-		const auto outline_color = ui::color(1.0f, 1.0f, 1.0f, 0.5f);
+		const auto crosshair_color = ui::color(ui::style::color::important_background, 0.6);
+		// A thin lighter underlay keeps the cross readable over both dark and pale tiles.
+		const auto outline_color = ui::color(1.0f, 1.0f, 1.0f, 0.35f);
 
-		const recti outer_circle_outline(center_point - pointi(outer_circle_radius + 1, outer_circle_radius + 1),
-		                                 sizei((outer_circle_radius + 1) * 2, (outer_circle_radius + 1) * 2));
-		dc.draw_rounded_rect(outer_circle_outline, outline_color, outer_circle_radius + 1);
+		const recti horizontal(center_x - arm, center_y - half, center_x + arm, center_y - half + line_width);
+		dc.draw_rect(horizontal.inflate(0, 1), outline_color);
+		dc.draw_rect(horizontal, crosshair_color);
 
-		const recti outer_circle(center_point - pointi(outer_circle_radius, outer_circle_radius),
-		                         sizei(outer_circle_radius * 2, outer_circle_radius * 2));
-		dc.draw_rounded_rect(outer_circle, crosshair_color, outer_circle_radius);
+		const recti vertical(center_x - half, center_y - arm, center_x - half + line_width, center_y + arm);
+		dc.draw_rect(vertical.inflate(1, 0), outline_color);
+		dc.draw_rect(vertical, crosshair_color);
+	}
 
-		const recti left_line_outline(pointi(center_x - crosshair_size, center_y - line_width / 2 - 1),
-		                              sizei(crosshair_size - inner_gap, line_width + 2));
-		dc.draw_rect(left_line_outline, outline_color);
-		const recti left_line(pointi(center_x - crosshair_size, center_y - line_width / 2),
-		                      sizei(crosshair_size - inner_gap, line_width));
-		dc.draw_rect(left_line, crosshair_color);
+	// Decodes and hands the result to the UI, then releases the request claim. Every path through
+	// the fetch below ends here exactly once, so a tile can always be asked for again.
+	static void publish_tile(async_strategy& async, const cache_entry_ptr& e,
+	                         const std::function<void()>& invalidate,
+	                         const std::shared_ptr<std::atomic_bool>& alive, const df::blob& data)
+	{
+		ui::surface_ptr surface;
 
-		const recti right_line_outline(pointi(center_x + inner_gap, center_y - line_width / 2 - 1),
-		                               sizei(crosshair_size - inner_gap, line_width + 2));
-		dc.draw_rect(right_line_outline, outline_color);
-		const recti right_line(pointi(center_x + inner_gap, center_y - line_width / 2),
-		                       sizei(crosshair_size - inner_gap, line_width));
-		dc.draw_rect(right_line, crosshair_color);
+		if (!data.empty())
+		{
+			files ff;
+			surface = ff.image_to_surface(df::cspan(data.data(), data.size()));
+		}
 
-		const recti top_line_outline(pointi(center_x - line_width / 2 - 1, center_y - crosshair_size),
-		                             sizei(line_width + 2, crosshair_size - inner_gap));
-		dc.draw_rect(top_line_outline, outline_color);
-		const recti top_line(pointi(center_x - line_width / 2, center_y - crosshair_size),
-		                     sizei(line_width, crosshair_size - inner_gap));
-		dc.draw_rect(top_line, crosshair_color);
+		bool publish = false;
+		{
+			platform::exclusive_lock lock(e->mutex);
+			e->requested = false;
 
-		const recti bottom_line_outline(pointi(center_x - line_width / 2 - 1, center_y + inner_gap),
-		                                sizei(line_width + 2, crosshair_size - inner_gap));
-		dc.draw_rect(bottom_line_outline, outline_color);
-		const recti bottom_line(pointi(center_x - line_width / 2, center_y + inner_gap),
-		                        sizei(line_width, crosshair_size - inner_gap));
-		dc.draw_rect(bottom_line, crosshair_color);
+			if (surface && e->in_view && !e->surface)
+			{
+				e->surface = std::move(surface);
+				publish = true;
+			}
+		}
 
-		const recti inner_circle_outline(center_point - pointi(inner_circle_radius + 1, inner_circle_radius + 1),
-		                                 sizei((inner_circle_radius + 1) * 2, (inner_circle_radius + 1) * 2));
-		dc.draw_rounded_rect(inner_circle_outline, outline_color, inner_circle_radius + 1);
+		if (publish)
+		{
+			async.queue_ui(
+				[invalidate, alive]
+				{
+					if (alive->load())
+					{
+						invalidate();
+					}
+				});
+		}
+	}
 
-		const recti inner_circle(center_point - pointi(inner_circle_radius, inner_circle_radius),
-		                         sizei(inner_circle_radius * 2, inner_circle_radius * 2));
-		dc.draw_rounded_rect(inner_circle, crosshair_color, inner_circle_radius);
+	static void download_tile(async_strategy& async, const cache_entry_ptr& e,
+	                          const std::function<void()>& invalidate,
+	                          const std::shared_ptr<std::atomic_bool>& alive, const map_tile_id& coord,
+	                          const int64_t key)
+	{
+		// Fetch from the canonical OSM host with a compliant User-Agent.
+		platform::web_request req;
+		req.path = generate_tile_path(coord);
+		req.headers.emplace_back("User-Agent", tile_user_agent());
+
+		thread_local platform::web_host_ptr s_osm_con;
+		if (!s_osm_con)
+		{
+			s_osm_con = platform::connect_to_host(osm_tile_host);
+		}
+
+		const auto response = send_request(s_osm_con, req);
+		const auto data = std::make_shared<df::blob>();
+
+		if (response.status_code == 200 && !response.body.empty())
+		{
+			data->assign(response.body.begin(), response.body.end());
+
+			async.queue_tile_db([key, data](tile_cache_db& db)
+			{
+				db.store(key, df::cspan(data->data(), data->size()));
+			});
+		}
+		else
+		{
+			// Hard failure: drop the shared connection so the next task reconnects rather than
+			// reusing a broken handle forever.
+			s_osm_con.reset();
+		}
+
+		publish_tile(async, e, invalidate, alive, *data);
 	}
 
 	void fetch_tile(const cache_entry_ptr& e, const map_tile_id& coord)
 	{
-		_async.queue_async(async_queue::map_tile, [&async = _async, coord, e, invalidate = _invalidate]
-		{
-			if (e->in_view && !e->surface)
+		// A shared liveness flag keeps every hop safe if this engine is destroyed while the request
+		// is still in the pipeline.
+		const auto key = map_tile_db_key(coord.z, coord.x, coord.y);
+
+		_async.queue_tile_db(
+			[&async = _async, coord, key, e, invalidate = _invalidate, alive = _alive](tile_cache_db& db)
 			{
-				platform::web_request req;
-				req.path = generate_tile_path(coord);
-
-				static platform::web_host_ptr s_osm_con;
-				if (!s_osm_con)
 				{
-					s_osm_con = platform::connect_to_host("a.tile.openstreetmap.org");
+					platform::exclusive_lock lock(e->mutex);
+					if (!e->in_view || e->surface)
+					{
+						e->requested = false;
+						return;
+					}
 				}
 
-				auto response = send_request(s_osm_con, req);
+				// Decoding a PNG on this thread would stall every following lookup, and downloading on
+				// it would stall them for a network round trip, so both hand back to the map workers.
+				auto data = std::make_shared<df::blob>(db.load(key));
 
-				if (response.status_code == 200)
+				if (!data->empty())
 				{
-					files ff;
-					const df::cspan data(std::bit_cast<const uint8_t*>(response.body.data()), response.body.size());
-					auto surface = ff.image_to_surface(data);
-
-					async.queue_ui(
-						[invalidate]
-						{
-							invalidate();
-						});
-
-					e->surface = std::move(surface);
+					async.queue_async(async_queue::map_tile,
+					                  [&async, e, invalidate, alive, data]
+					                  {
+						                  publish_tile(async, e, invalidate, alive, *data);
+					                  });
+					return;
 				}
-			}
-		});
+
+				async.queue_async(async_queue::map_tile,
+				                  [&async, coord, key, e, invalidate, alive]
+				                  {
+					                  download_tile(async, e, invalidate, alive, coord, key);
+				                  });
+			});
 	}
 
 	void fetch_tiles(const recti& bounds, const pointi scroll_offset)
@@ -416,9 +923,19 @@ private:
 			visible_tiles.insert(tile.coord);
 		}
 
+		// Update visibility and eagerly release GPU textures for tiles that scrolled
+		// out of view so the texture cache does not balloon while panning.
 		for (auto& [coord, entry] : _tile_cache)
 		{
-			entry->in_view = visible_tiles.contains(coord);
+			const bool vis = visible_tiles.contains(coord);
+			{
+				platform::exclusive_lock lock(entry->mutex);
+				entry->in_view = vis;
+			}
+			if (!vis)
+			{
+				_texture_cache.erase(coord);
+			}
 		}
 
 		for (const auto& tile : tiles)
@@ -429,13 +946,28 @@ private:
 			{
 				auto e = std::make_shared<cache_entry>();
 				e->in_view = true;
-				_tile_cache.emplace(tile.coord, e);
-				found = _tile_cache.find(tile.coord);
+				found = _tile_cache.emplace(tile.coord, e).first;
 			}
 
-			if (found != _tile_cache.end() && !found->second->surface)
+			const auto& entry = found->second;
+			bool need_fetch = false;
 			{
-				fetch_tile(found->second, tile.coord);
+				platform::exclusive_lock lock(entry->mutex);
+				entry->in_view = true;
+
+				// Only enqueue when there is no surface and no task already in flight,
+				// otherwise rapid mouse-move pans pile up duplicate requests on the
+				// single serial map queue.
+				if (!entry->surface && !entry->requested)
+				{
+					entry->requested = true;
+					need_fetch = true;
+				}
+			}
+
+			if (need_fetch)
+			{
+				fetch_tile(entry, tile.coord);
 			}
 		}
 
@@ -451,7 +983,13 @@ private:
 			auto it = _tile_cache.begin();
 			while (it != _tile_cache.end() && _tile_cache.size() > max_cache_size)
 			{
-				if (!it->second->in_view)
+				bool vis;
+				{
+					platform::exclusive_lock lock(it->second->mutex);
+					vis = it->second->in_view;
+				}
+
+				if (!vis)
 				{
 					_texture_cache.erase(it->first);
 					it = _tile_cache.erase(it);

@@ -117,11 +117,6 @@ public:
 		enum_devices();
 	}
 
-	bool has_multiple_audio_devices() const
-	{
-		return _devices.size() > 1;
-	}
-
 	const device_map& devices() const
 	{
 		return _devices;
@@ -159,8 +154,12 @@ class wasapi_sound final : public av_audio_device
 	_Guarded_by_(_rw) ComPtr<ISimpleAudioVolume> _sav;
 	_Guarded_by_(_rw) ComPtr<IAudioClock> _clock;
 	_Guarded_by_(_rw) WAVEFORMATEX* _pwfx = nullptr;
-	bool _device_lost = false;
-	bool _playing = false;
+	_Guarded_by_(_rw) uint32_t _buffer_frame_count = 0;
+	platform::thread_event _data_event{false, false};
+	// Read without a lock by is_device_lost()/is_stopped() and written from the device
+	// operations below, so these are atomic rather than plain bools.
+	std::atomic<bool> _device_lost = false;
+	std::atomic<bool> _playing = false;
 	double _vol = -1;
 
 public:
@@ -185,6 +184,8 @@ public:
 		_render.Reset();
 		_sav.Reset();
 		_clock.Reset();
+		_buffer_frame_count = 0;
+		_data_event.reset();
 
 		if (_pwfx)
 		{
@@ -216,6 +217,7 @@ public:
 		ComPtr<ISimpleAudioVolume> sav;
 		ComPtr<IAudioClock> clock;
 		WAVEFORMATEX* pwfx_temp = nullptr;
+		uint32_t buffer_frame_count = 0;
 
 		auto hr = device->Activate(
 			IID_IAudioClient, CLSCTX_ALL,
@@ -223,16 +225,15 @@ public:
 
 		if (SUCCEEDED(hr))
 		{
-			//hr = get_stream_format(_device, _audio, &_pwfx);
 			hr = audio->GetMixFormat(&pwfx_temp);
 
 			if (SUCCEEDED(hr) && pwfx_temp)
 			{
 				hr = audio->Initialize(
 					AUDCLNT_SHAREMODE_SHARED,
-					0, //AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUDCLNT_STREAMFLAGS_NOPERSIST,
-					REFTIMES_PER_SEC,
-					0, //REFTIMES_PER_SEC,
+					AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUDCLNT_STREAMFLAGS_NOPERSIST,
+					0,
+					0,
 					pwfx_temp,
 					nullptr);
 
@@ -240,23 +241,15 @@ public:
 				// WAVE_FORMAT_PCM
 				// WAVE_FORMAT_EXTENSIBLE
 
-				/*if (SUCCEEDED(hr))
-						{
-							hr = _audio->SetEventHandle(std::any_cast<HANDLE>(data_event._h));
-
-							if (SUCCEEDED(hr))
-							{
-								hr = _audio->GetService(
-									IID_IAudioRenderClient,
-									(void**)&_render);
-
-								success = SUCCEEDED(hr);
-							}
-						}*/
+				if (SUCCEEDED(hr))
+				{
+					hr = audio->SetEventHandle(_data_event._h);
+				}
 
 				if (SUCCEEDED(hr))
 				{
-					success = SUCCEEDED(audio->GetService(IID_IAudioRenderClient, &render)) &&
+					success = SUCCEEDED(audio->GetBufferSize(&buffer_frame_count)) &&
+						SUCCEEDED(audio->GetService(IID_IAudioRenderClient, &render)) &&
 						SUCCEEDED(audio->GetService(IID_ISimpleAudioVolume, &sav)) &&
 						SUCCEEDED(audio->GetService(IID_IAudioClock, &clock));
 				}
@@ -276,6 +269,7 @@ public:
 				_sav = sav;
 				_clock = clock;
 				_pwfx = pwfx_temp;
+				_buffer_frame_count = buffer_frame_count;
 				pwfx_temp = nullptr; // Ownership transferred
 			}
 			else if (pwfx_temp)
@@ -349,7 +343,15 @@ public:
 		{
 			result.sample_rate = _pwfx->nSamplesPerSec;
 			result.sample_fmt = calc_sample_fmt(_pwfx);
-			result.channel_layout = av_get_def_channel_layout(_pwfx->nChannels);
+			uint64_t channel_mask = 0;
+
+			if (_pwfx->wFormatTag == WAVE_FORMAT_EXTENSIBLE &&
+				_pwfx->cbSize >= sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX))
+			{
+				channel_mask = std::bit_cast<const WAVEFORMATEXTENSIBLE*>(_pwfx)->dwChannelMask;
+			}
+
+			result.channel_layout = av_get_channel_layout(channel_mask, _pwfx->nChannels);
 		}
 
 		return result;
@@ -386,7 +388,7 @@ public:
 
 	void stop() override
 	{
-		platform::shared_lock lock(_rw);
+		platform::exclusive_lock lock(_rw);
 
 		if (_audio)
 		{
@@ -402,19 +404,22 @@ public:
 
 	void reset() override
 	{
-		platform::shared_lock lock(_rw);
+		platform::exclusive_lock lock(_rw);
 
 		if (_audio)
 		{
-			_audio->Stop();
-			_audio->Reset();
+			auto hr = _audio->Stop();
+			if (FAILED(hr)) update_status(hr);
+			hr = _audio->Reset();
+			if (FAILED(hr)) update_status(hr);
 			_playing = false;
+			_data_event.reset();
 		}
 	}
 
 	void start() override
 	{
-		platform::shared_lock lock(_rw);
+		platform::exclusive_lock lock(_rw);
 
 		if (_audio)
 		{
@@ -430,15 +435,27 @@ public:
 
 	void update_status(const HRESULT hr)
 	{
-		if (hr == AUDCLNT_E_DEVICE_INVALIDATED)
+		if (hr == AUDCLNT_E_DEVICE_INVALIDATED ||
+			hr == AUDCLNT_E_RESOURCES_INVALIDATED ||
+			hr == AUDCLNT_E_SERVICE_NOT_RUNNING ||
+			hr == AUDCLNT_E_ENDPOINT_CREATE_FAILED)
 		{
 			_device_lost = true;
 		}
 	}
 
+	void wait_for_buffer(const platform::thread_event& wake_event, const uint32_t timeout_ms) override
+	{
+		const HANDLE events[] = {
+			(_data_event._h),
+			static_cast<HANDLE>(wake_event._h)
+		};
+		WaitForMultipleObjects(std::size(events), events, false, timeout_ms);
+	}
+
 	void write(audio_buffer& buffer) override
 	{
-		platform::shared_lock lock(_rw);
+		platform::exclusive_lock lock(_rw);
 
 		if (!_render || !buffer.data)
 		{
@@ -458,20 +475,20 @@ public:
 
 		if (available_in_buffer > 0)
 		{
-			uint32_t bufferFrameCount = 0;
 			uint32_t numFramesPadding = 0;
 			uint8_t* pData = nullptr;
 
-			auto hr = _audio->GetBufferSize(&bufferFrameCount);
+			auto hr = _audio->GetCurrentPadding(&numFramesPadding);
 
 			if (SUCCEEDED(hr))
 			{
-				hr = _audio->GetCurrentPadding(&numFramesPadding);
+				const auto available_frames = numFramesPadding < _buffer_frame_count
+					                              ? _buffer_frame_count - numFramesPadding
+					                              : 0u;
+				const auto copy_samples = std::min(available_frames, available_in_buffer);
 
-				if (SUCCEEDED(hr))
+				if (copy_samples > 0)
 				{
-					const auto copy_samples = std::min(bufferFrameCount - numFramesPadding, available_in_buffer);
-
 					hr = _render->GetBuffer(copy_samples, &pData);
 
 					if (SUCCEEDED(hr))
@@ -480,7 +497,7 @@ public:
 
 						if (copy_bytes <= buffer.used_bytes())
 						{
-							memcpy(pData, buffer.data, copy_bytes);
+							memcpy(pData, buffer.data + buffer.start_pos, copy_bytes);
 							buffer.remove(copy_bytes);
 						}
 						else
@@ -503,36 +520,27 @@ public:
 
 	void write_silence() override
 	{
-		platform::shared_lock lock(_rw);
+		platform::exclusive_lock lock(_rw);
 
 		if (!_render || !_audio)
 		{
 			return;
 		}
 
-		uint32_t bufferFrameCount = 0;
 		uint32_t numFramesPadding = 0;
 
-		auto hr = _audio->GetBufferSize(&bufferFrameCount);
+		auto hr = _audio->GetCurrentPadding(&numFramesPadding);
 
 		if (SUCCEEDED(hr))
 		{
-			hr = _audio->GetCurrentPadding(&numFramesPadding);
-		}
-
-		if (SUCCEEDED(hr))
-		{
-			// Keep a silent cushion queued so an underrun plays silence rather than
-			// looping the last buffer. Half a second gives the audio thread plenty of
-			// slack against scheduling delays (e.g. the video-decode burst when the
-			// view seeks back to the start at end of clip). The ring is one second
-			// long (see Initialize).
-			const uint32_t target = _pwfx ? _pwfx->nSamplesPerSec / 2 : 0u; // ~500 ms
+			// Fill the endpoint ring with silence so an underrun cannot replay stale
+			// audio left in a driver-managed slot.
+			const uint32_t target = _buffer_frame_count;
 
 			if (numFramesPadding < target)
 			{
 				const auto frames = std::min<uint32_t>(target - numFramesPadding,
-				                                       bufferFrameCount - numFramesPadding);
+				                                       _buffer_frame_count - numFramesPadding);
 
 				if (frames > 0)
 				{
@@ -566,16 +574,19 @@ public:
 
 	void volume(const double vol) override
 	{
-		platform::shared_lock lock(_rw);
+		platform::exclusive_lock lock(_rw);
 
 		if (_sav && !df::equiv(_vol, vol))
 		{
 			const auto hr = _sav->SetMasterVolume(static_cast<float>(vol), nullptr);
-			_vol = vol;
 
 			if (FAILED(hr))
 			{
 				update_status(hr);
+			}
+			else
+			{
+				_vol = vol;
 			}
 		}
 	}

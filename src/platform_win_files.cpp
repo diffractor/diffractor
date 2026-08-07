@@ -1,4 +1,4 @@
-﻿// This file is part of the Diffractor photo and video organizer
+// This file is part of the Diffractor photo and video organizer
 // Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
@@ -35,6 +35,9 @@
 #include "util_strings.h"
 #include "platform_win_res.h"
 
+// Test seam definition (see platform.h). Default (empty) means real cloud detection.
+std::function<bool(const df::file_path&)> platform::test_offline_predicate;
+
 #pragma comment(lib, "Wininet")
 #pragma comment(lib, "mfuuid")
 #pragma comment(lib, "dsound")
@@ -53,22 +56,13 @@
 #pragma comment(lib, "Netapi32")
 #pragma comment(lib, "Advapi32")
 
-#ifdef WINSTORE
-#include <roapi.h>
-#include <windows.storage.h>
-#include <windows.system.h>
-#pragma comment(lib, "runtimeobject")
-#endif
-
-//#pragma comment(lib, "SetupAPI")
-
-size_t platform::static_memory_usage = 0;
+std::atomic<size_t> platform::static_memory_usage = 0;
 platform::thread_event platform::event_exit(true, false);
 
 
-static_assert(std::is_trivially_copyable_v<platform::file_info>);
-static_assert(std::is_trivially_copyable_v<platform::folder_info>);
-static_assert(std::is_move_constructible_v<platform::folder_contents>);
+df_assert_pod(platform::file_info);
+df_assert_pod(platform::folder_info);
+df_assert_move_only(platform::folder_contents);
 
 struct clipboard_formats
 {
@@ -90,11 +84,6 @@ void __cdecl debug_printf(const char* fmt, ...)
 	_vsnprintf_s(buffer, sizeof(buffer), std::bit_cast<const char*>(fmt), ap);
 	OutputDebugStringA(buffer);
 	va_end(ap);
-}
-
-bool platform::clipboard_has_files_or_image()
-{
-	return IsClipboardFormatAvailable(CF_HDROP) || IsClipboardFormatAvailable(CF_DIB);
 }
 
 std::string win32_to_string(const IID& iid)
@@ -422,7 +411,7 @@ std::string platform::normalize_nfc(const std::string_view text)
 	// ASCII is already NFC - avoid the conversion round-trip entirely.
 	if (str::is_ascii(text)) return std::string(text);
 
-	const auto w = platform::utf8_to_utf16(text);
+	const auto w = utf8_to_utf16(text);
 	if (w.empty()) return std::string(text);
 
 	// First call estimates the required buffer (documented to be an upper bound).
@@ -434,7 +423,7 @@ std::string platform::normalize_nfc(const std::string_view text)
 	if (len <= 0) return std::string(text);
 
 	out.resize(static_cast<size_t>(len));
-	return platform::utf16_to_utf8(out);
+	return utf16_to_utf8(out);
 }
 
 std::string platform::utf8_to_a(const std::string_view utf8)
@@ -466,13 +455,14 @@ static bool is_folder(const DWORD attributes)
 
 static bool is_offline_attribute(const DWORD attributes)
 {
-	// Onedrive and GVFS use file attributes to denote files or directories that
-	// may not be locally present and are only available "online". These files are applied one of
-	// the two file attributes: FILE_ATTRIBUTE_RECALL_ON_OPEN or FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS.
-	// When the attribute FILE_ATTRIBUTE_RECALL_ON_OPEN is set, skip the file during enumeration because the file
-	// is not locally present at all. A file with FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS may be partially present locally.
+	// Onedrive and GVFS use file attributes to denote files or directories that
+	// may not be locally present and are only available "online". These files are applied one of
+	// the two file attributes: FILE_ATTRIBUTE_RECALL_ON_OPEN or FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS.
+	// FILE_ATTRIBUTE_RECALL_ON_OPEN means nothing is present locally; FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS
+	// may be partially present. Both are still enumerated and indexed, then read through the shell
+	// rather than opened, because opening one hydrates (downloads) it.
 	//
-	// https://stackoverflow.com/questions/49301958/how-to-detect-onedrive-online-only-files
+	// https://stackoverflow.com/questions/49301958/how-to-detect-onedrive-online-only-files	
 	//
 	constexpr auto offline_mask = FILE_ATTRIBUTE_OFFLINE |
 		FILE_ATTRIBUTE_RECALL_ON_OPEN |
@@ -498,7 +488,6 @@ static bool can_show_file(const wchar_t* name, const DWORD attributes, const boo
 {
 	if (str::is_empty(name)) return false;
 	if (attributes == INVALID_FILE_ATTRIBUTES) return false;
-	//if (attributes & FILE_ATTRIBUTE_OFFLINE) return false;
 	if (!show_hidden && (attributes & FILE_ATTRIBUTE_HIDDEN) != 0) return false;
 	return !is_folder(attributes) && !is_dots(name);
 }
@@ -507,7 +496,6 @@ static bool can_show_folder(const wchar_t* name, const DWORD attributes, const b
 {
 	if (str::is_empty(name)) return false;
 	if (attributes == INVALID_FILE_ATTRIBUTES) return false;
-	//if (attributes & FILE_ATTRIBUTE_OFFLINE) return false;
 	if (!show_hidden && (attributes & FILE_ATTRIBUTE_HIDDEN) != 0) return false;
 	return is_folder(attributes) && !is_dots(name);
 }
@@ -519,6 +507,13 @@ static bool can_show_file_or_folder(const wchar_t* name, const DWORD attributes,
 		return can_show_folder(name, attributes, show_hidden);
 	}
 	return can_show_file(name, attributes, show_hidden);
+}
+
+// Junctions and symlinks are still listed, but descending into one can point back at an ancestor and
+// turn a recursive scan into an unbounded walk of the disk.
+static bool can_descend_into_folder(const wchar_t* name, const DWORD attributes, const bool show_hidden)
+{
+	return can_show_folder(name, attributes, show_hidden) && (attributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0;
 }
 
 static uint32_t file_attributes(const df::file_path path)
@@ -533,12 +528,31 @@ static uint32_t file_attributes(const df::folder_path path)
 	return ::GetFileAttributes(w.c_str());
 }
 
+static void make_extended_path(std::wstring& path)
+{
+	if (path.size() < MAX_PATH || path.starts_with(L"\\\\?\\")) return;
+
+	if (path.starts_with(L"\\\\"))
+	{
+		path.replace(0, 2, L"\\\\?\\UNC\\");
+	}
+	else
+	{
+		path.insert(0, L"\\\\?\\");
+	}
+}
+
 std::wstring platform::to_file_system_path(const df::file_path path)
 {
 	auto result = str::utf8_to_utf16(path.pack());
-	if (result.size() >= MAX_PATH) result.insert(0, L"\\\\?\\");
+	make_extended_path(result);
 	return result;
 };
+
+std::wstring platform::to_shell_path(const df::file_path path)
+{
+	return str::utf8_to_utf16(path.pack());
+}
 
 static std::wstring parse_special_path(const std::string_view sv)
 {
@@ -566,19 +580,19 @@ static std::wstring parse_special_path(const std::string_view sv)
 
 std::wstring platform::to_file_system_path(const df::folder_path path)
 {
-	std::wstring result;
+	auto result = to_shell_path(path);
+	make_extended_path(result);
+	return result;
+}
 
+std::wstring platform::to_shell_path(const df::folder_path path)
+{
 	if (df::folder_path::is_guid_path(path.text()))
 	{
-		result = parse_special_path(path.text());
-	}
-	else
-	{
-		result = str::utf8_to_utf16(path.text());
+		return parse_special_path(path.text());
 	}
 
-	if (result.size() >= MAX_PATH) result.insert(0, L"\\\\?\\");
-	return result;
+	return str::utf8_to_utf16(path.text());
 }
 
 
@@ -613,12 +627,12 @@ static HGLOBAL create_shell_id_list(const std::vector<df::file_path>& files,
 
 	for (const auto& path : files)
 	{
-		paths.emplace_back(ILCreateFromPath(platform::to_file_system_path(path).c_str()));
+		paths.emplace_back(ILCreateFromPath(platform::to_shell_path(path).c_str()));
 	}
 
 	for (const auto& path : folders)
 	{
-		paths.emplace_back(ILCreateFromPath(platform::to_file_system_path(path).c_str()));
+		paths.emplace_back(ILCreateFromPath(platform::to_shell_path(path).c_str()));
 	}
 
 	for (const auto& i : paths)
@@ -627,11 +641,20 @@ static HGLOBAL create_shell_id_list(const std::vector<df::file_path>& files,
 	}
 
 	const auto cida_len = sizeof(CIDA) + (paths.size() + 1) * sizeof(uint32_t);
-	auto* const hGlobal = GlobalAlloc(GPTR | GMEM_SHARE,
+
+	// TYMED_HGLOBAL requires moveable memory, matching the CF_HDROP medium built below.
+	auto* const hGlobal = GlobalAlloc(GHND,
 	                                  static_cast<DWORD>(cida_len + total_pidl_len + sizeof(uint32_t) + 1));
 
 	if (!hGlobal)
+	{
+		for (const auto& i : paths)
+		{
+			ILFree(i);
+		}
+
 		return nullptr;
+	}
 
 	if (auto* pData = static_cast<LPIDA>(GlobalLock(hGlobal)))
 	{
@@ -675,13 +698,13 @@ static std::wstring all_file_system_paths(const std::vector<df::file_path>& file
 
 	for (const auto& path : folders)
 	{
-		result += platform::to_file_system_path(path);
+		result += platform::to_shell_path(path);
 		result += delim;
 	}
 
 	for (const auto& path : files)
 	{
-		result += platform::to_file_system_path(path);
+		result += platform::to_shell_path(path);
 		result += delim;
 	}
 
@@ -749,6 +772,7 @@ STDMETHODIMP items_data_object::GetData(FORMATETC* pformatetcIn, STGMEDIUM* pmed
 		if (pformatetcIn->cfFormat == clipboard_formats::SHELLIDLIST && has_paths)
 		{
 			pmedium->hGlobal = create_shell_id_list(_files, _folders);
+			if (pmedium->hGlobal == nullptr) return E_OUTOFMEMORY;
 			pmedium->tymed = TYMED_HGLOBAL;
 			pmedium->pUnkForRelease = nullptr;
 			return S_OK;
@@ -793,10 +817,13 @@ STDMETHODIMP items_data_object::GetData(FORMATETC* pformatetcIn, STGMEDIUM* pmed
 					pmedium->tymed = TYMED_HGLOBAL;
 					pmedium->hGlobal = h;
 					pmedium->pUnkForRelease = nullptr;
+					return S_OK;
 				}
+
+				GlobalFree(h);
 			}
 
-			return S_OK;
+			return E_OUTOFMEMORY;
 		}
 	}
 	catch (const std::exception& e)
@@ -934,6 +961,67 @@ data_object_client::data_object_client(IDataObject* pData) : _pData(pData)
 {
 }
 
+// CF_HDROP blocks come from another process, so pFiles and the double-NUL terminator are validated
+// against the actual allocation before anything walks the list.
+class locked_drop_files
+{
+public:
+	explicit locked_drop_files(const HGLOBAL h) : _h(h)
+	{
+		if (!_h) return;
+
+		const auto cb = GlobalSize(_h);
+		_drop = static_cast<const DROPFILES*>(GlobalLock(_h));
+
+		if (!_drop) return;
+
+		_locked = true;
+
+		if (cb < sizeof(DROPFILES) || _drop->pFiles < sizeof(DROPFILES) || _drop->pFiles >= cb) return;
+
+		const auto* const list = std::bit_cast<const uint8_t*>(_drop) + _drop->pFiles;
+		const auto char_size = _drop->fWide ? sizeof(wchar_t) : sizeof(char);
+		const auto count = (cb - _drop->pFiles) / char_size;
+		auto zeros = 0;
+
+		for (size_t i = 0; i < count; ++i)
+		{
+			const auto is_zero = _drop->fWide
+				                     ? std::bit_cast<const wchar_t*>(list)[i] == 0
+				                     : list[i] == 0;
+
+			if (!is_zero)
+			{
+				zeros = 0;
+			}
+			else if (++zeros == 2)
+			{
+				_list = list;
+				return;
+			}
+		}
+	}
+
+	~locked_drop_files()
+	{
+		if (_locked) GlobalUnlock(_h);
+	}
+
+	locked_drop_files(const locked_drop_files&) = delete;
+	locked_drop_files& operator=(const locked_drop_files&) = delete;
+
+	bool is_valid() const { return _list != nullptr; }
+	bool is_wide() const { return _drop->fWide != 0; }
+	const wchar_t* wide_list() const { return std::bit_cast<const wchar_t*>(_list); }
+	const char* narrow_list() const { return std::bit_cast<const char*>(_list); }
+
+private:
+	HGLOBAL _h = nullptr;
+	const DROPFILES* _drop = nullptr;
+	const uint8_t* _list = nullptr;
+	bool _locked = false;
+};
+
 bool data_object_client::has_data(FORMATETC* pf) const
 {
 	return _pData && _pData->QueryGetData(pf) == S_OK;
@@ -954,16 +1042,19 @@ DWORD data_object_client::preferred_drop_effect() const
 	STGMEDIUM stgMedium;
 	DWORD result = DROPEFFECT_COPY;
 
-	if (SUCCEEDED(_pData->GetData(&clipboard_formats::PDE, &stgMedium)))
+	if (_pData && SUCCEEDED(_pData->GetData(&clipboard_formats::PDE, &stgMedium)))
 	{
 		auto* const h = stgMedium.hGlobal;
+		const auto cb = GlobalSize(h);
 		const auto* const p = static_cast<DWORD*>(GlobalLock(h));
 
 		if (p)
 		{
-			result = *p;
+			if (cb >= sizeof(DWORD)) result = *p;
 			GlobalUnlock(h);
 		}
+
+		ReleaseStgMedium(&stgMedium);
 	}
 
 	return result;
@@ -973,10 +1064,12 @@ static LCID g_lLangId = MAKELCID(LANG_NEUTRAL, SORT_DEFAULT);
 
 static std::string format_os_error(const DWORD error)
 {
-	wchar_t sz[1000];
-	FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr, error, g_lLangId, sz, 1000,
-	               nullptr);
-	auto result = str::utf16_to_utf8(sz);
+	// FormatMessageW leaves the buffer untouched for codes with no system message, which is common
+	// for the HRESULT-shaped values passed in here.
+	wchar_t sz[1000]{};
+	const auto len = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr, error,
+	                                g_lLangId, sz, std::size(sz), nullptr);
+	auto result = len == 0 ? std::string{} : str::utf16_to_utf8(sz);
 	return result.empty() ? std::string(tt.error_unknown) : result;
 }
 
@@ -1033,7 +1126,7 @@ platform::file_op_result to_file_op_result(const int res, const BOOL fAnyOperati
 
 	platform::file_op_result result;
 	result.code = res == 0 ? platform::file_op_result_code::OK : platform::file_op_result_code::FAILED;
-	if (res == FO_CANCELLED || (res != 0 && fAnyOperationsAborted != 0))
+	if (res == FO_CANCELLED || fAnyOperationsAborted != 0)
 		result.code =
 			platform::file_op_result_code::CANCELLED;
 	if (res != 0) result.error_message = shell_error_string(res);
@@ -1112,17 +1205,17 @@ struct HANDLETOMAPPINGSA
 
 static platform::file_op_result perform_hdrop2(HANDLE h, const df::folder_path target, bool is_move)
 {
-	auto* const pDrop = static_cast<DROPFILES*>(GlobalLock(h));
+	const locked_drop_files drop(h);
 	platform::file_op_result result;
 
-	if (pDrop)
+	if (drop.is_valid())
 	{
 		const auto op_code = static_cast<UINT>(is_move ? FO_MOVE : FO_COPY);
 
-		if (pDrop->fWide)
+		if (drop.is_wide())
 		{
-			const auto targetW = platform::to_file_system_path(target);
-			const auto* const file_list = std::bit_cast<LPCWSTR>(std::bit_cast<uint8_t*>(pDrop) + pDrop->pFiles);
+			const auto targetW = platform::to_shell_path(target);
+			const auto* const file_list = drop.wide_list();
 
 			SHFILEOPSTRUCTW shfo = {
 				app_wnd(),
@@ -1155,7 +1248,7 @@ static platform::file_op_result perform_hdrop2(HANDLE h, const df::folder_path t
 		else
 		{
 			const auto targetA = utf8_cast2(target.text());
-			const auto* const file_list = std::bit_cast<LPCSTR>(std::bit_cast<uint8_t*>(pDrop) + pDrop->pFiles);
+			const auto* const file_list = drop.narrow_list();
 
 			SHFILEOPSTRUCTA shfo = {
 				app_wnd(),
@@ -1169,15 +1262,18 @@ static platform::file_op_result perform_hdrop2(HANDLE h, const df::folder_path t
 			result = to_file_op_result(SHFileOperationA(&shfo), shfo.fAnyOperationsAborted);
 
 			name_mapping_t name_mapping;
-			auto* const s = std::bit_cast<HANDLETOMAPPINGSW*>(shfo.hNameMappings);
+			auto* const s = std::bit_cast<HANDLETOMAPPINGSA*>(shfo.hNameMappings);
 
 			if (s)
 			{
 				for (auto i = 0u; i < s->uNumberOfMappings; i++)
 				{
 					const auto& nm = s->lpSHNameMapping[i];
-					name_mapping[df::file_path(std::wstring_view{nm.pszOldPath, static_cast<size_t>(nm.cchOldPath)})] =
-						df::file_path(std::wstring_view{nm.pszNewPath, static_cast<size_t>(nm.cchNewPath)});
+					const auto old_path = str::utf8_cast2(
+						std::string_view(nm.pszOldPath, static_cast<size_t>(nm.cchOldPath)));
+					const auto new_path = str::utf8_cast2(
+						std::string_view(nm.pszNewPath, static_cast<size_t>(nm.cchNewPath)));
+					name_mapping[df::file_path(old_path)] = df::file_path(new_path);
 				}
 			}
 
@@ -1185,8 +1281,6 @@ static platform::file_op_result perform_hdrop2(HANDLE h, const df::folder_path t
 
 			result.created_files = dest_file_list(target, str::utf8_cast2(file_list).c_str(), name_mapping);
 		}
-
-		GlobalUnlock(h);
 	}
 
 	return result;
@@ -1205,7 +1299,7 @@ platform::file_op_result data_object_client::drop_files(const df::folder_path ta
 	STGMEDIUM stgMedium;
 	platform::file_op_result result;
 
-	if (SUCCEEDED(_pData->GetData(&clipboard_formats::Drop, &stgMedium)))
+	if (_pData && SUCCEEDED(_pData->GetData(&clipboard_formats::Drop, &stgMedium)))
 	{
 		auto* const h = stgMedium.hGlobal;
 		result = perform_hdrop2(h, target, is_move);
@@ -1220,23 +1314,11 @@ df::file_path data_object_client::first_path() const
 	df::file_path result;
 	STGMEDIUM stgMedium;
 
-	if (SUCCEEDED(_pData->GetData(&clipboard_formats::Drop, &stgMedium)))
+	if (_pData && SUCCEEDED(_pData->GetData(&clipboard_formats::Drop, &stgMedium)))
 	{
-		auto* const h = stgMedium.hGlobal;
-		auto* const pDrop = static_cast<DROPFILES*>(GlobalLock(h));
-
-		if (pDrop)
+		if (const locked_drop_files drop(stgMedium.hGlobal); drop.is_valid())
 		{
-			if (pDrop->fWide)
-			{
-				result = df::file_path(std::bit_cast<LPCWSTR>(std::bit_cast<uint8_t*>(pDrop) + pDrop->pFiles));
-			}
-			else
-			{
-				result = df::file_path(std::bit_cast<const char*>(std::bit_cast<uint8_t*>(pDrop) + pDrop->pFiles));
-			}
-
-			GlobalUnlock(h);
+			result = drop.is_wide() ? df::file_path(drop.wide_list()) : df::file_path(drop.narrow_list());
 		}
 
 		ReleaseStgMedium(&stgMedium);
@@ -1268,18 +1350,15 @@ data_object_client::description data_object_client::files_description() const
 	description result;
 	STGMEDIUM stgMedium;
 
-	if (SUCCEEDED(_pData->GetData(&clipboard_formats::Drop, &stgMedium)))
+	if (_pData && SUCCEEDED(_pData->GetData(&clipboard_formats::Drop, &stgMedium)))
 	{
-		auto* const h = stgMedium.hGlobal;
-		auto* const pDrop = static_cast<DROPFILES*>(GlobalLock(h));
-
-		if (pDrop)
+		if (const locked_drop_files drop(stgMedium.hGlobal); drop.is_valid())
 		{
 			result.count = 1;
 
-			if (pDrop->fWide)
+			if (drop.is_wide())
 			{
-				const auto* sz = std::bit_cast<LPCWSTR>(std::bit_cast<const char*>(pDrop) + pDrop->pFiles);
+				const auto* sz = drop.wide_list();
 				result.first_name = str::utf16_to_utf8(sz);
 				result.has_readonly |= (file_attributes(df::folder_path(sz)) & FILE_ATTRIBUTE_READONLY) != 0;
 
@@ -1293,9 +1372,9 @@ data_object_client::description data_object_client::files_description() const
 			}
 			else
 			{
-				const auto* sz = std::bit_cast<LPCSTR>(std::bit_cast<uint8_t*>(pDrop) + pDrop->pFiles);
+				const auto* sz = drop.narrow_list();
 				result.first_name = str::utf8_cast(sz);
-				result.has_readonly |= (file_attributes(df::folder_path(std::bit_cast<const char*>(sz))) &
+				result.has_readonly |= (file_attributes(df::folder_path(sz)) &
 					FILE_ATTRIBUTE_READONLY) != 0;
 
 				while (sz[0] != 0 || sz[1] != 0)
@@ -1306,8 +1385,6 @@ data_object_client::description data_object_client::files_description() const
 					}
 				}
 			}
-
-			GlobalUnlock(h);
 		}
 
 		ReleaseStgMedium(&stgMedium);
@@ -1324,7 +1401,7 @@ platform::file_op_result data_object_client::save_bitmap(const df::folder_path s
 	platform::file_op_result result;
 	STGMEDIUM stgMedium;
 
-	const HRESULT hr = _pData->GetData(&clipboard_formats::Bitmap, &stgMedium);
+	const HRESULT hr = _pData ? _pData->GetData(&clipboard_formats::Bitmap, &stgMedium) : E_POINTER;
 
 	if (SUCCEEDED(hr))
 	{
@@ -1338,21 +1415,27 @@ platform::file_op_result data_object_client::save_bitmap(const df::folder_path s
 }
 
 
-void* platform::memory_pool::alloc(size_t size)
+void* platform::memory_pool::alloc(const size_t size)
 {
 	static std::bad_alloc OOM;
 	exclusive_lock lock(cs);
 
-	const auto align_size = size = (size + (alignment - 1)) / alignment * alignment; // Align size
+	if (size > block_size) throw OOM;
+	const auto align_size = (size + (alignment - 1)) / alignment * alignment;
 
-	if (align_size > block_size) throw OOM;
-
-	if (next_free + align_size > block_limit)
+	if (next_free == nullptr || static_cast<size_t>(block_limit - next_free) < align_size)
 	{
 		next_free = std::bit_cast<uint8_t*>(VirtualAlloc(nullptr, block_size, MEM_COMMIT, PAGE_READWRITE));
-		if (!next_free) throw OOM;
+
+		if (!next_free)
+		{
+			// Leave no stale limit paired with the null cursor if a later alloc retries.
+			block_limit = nullptr;
+			throw OOM;
+		}
+
 		block_limit = next_free + block_size;
-		static_memory_usage += block_size;
+		static_memory_usage.fetch_add(block_size, std::memory_order_relaxed);
 	}
 
 	auto* const result = next_free;
@@ -1371,9 +1454,10 @@ df::file_path platform::resolve_link(const df::file_path path)
 
 		if (SUCCEEDED(psl.As(&ppf)))
 		{
-			const auto link = to_file_system_path(path);
+			// IPersistFile is a Shell binding and rejects the \\?\ prefix.
+			const auto link = to_shell_path(path);
 
-			if (ppf && SUCCEEDED(ppf->Load(link.c_str(), STGM_WRITE)))
+			if (ppf && SUCCEEDED(ppf->Load(link.c_str(), STGM_READ)))
 			{
 				wchar_t result_path[MAX_PATH];
 				const auto success = SUCCEEDED(psl->GetPath(result_path, MAX_PATH, nullptr, 0));
@@ -1401,9 +1485,19 @@ void platform::secure_zero(void* ptr, const size_t len)
 	SecureZeroMemory(ptr, len);
 }
 
-void platform::generate_random_bytes(uint8_t* buffer, const size_t len)
+bool platform::generate_random_bytes(uint8_t* buffer, const size_t len)
 {
-	BCryptGenRandom(nullptr, buffer, static_cast<ULONG>(len), BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+	const auto status = BCryptGenRandom(nullptr, buffer, static_cast<ULONG>(len), BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+
+	if (!BCRYPT_SUCCESS(status))
+	{
+		// Leaving the buffer untouched would hand the caller stale bytes that look random.
+		SecureZeroMemory(buffer, len);
+		df::log(__FUNCTION__, std::format("BCryptGenRandom failed with status {:#x}", static_cast<uint32_t>(status)));
+		return false;
+	}
+
+	return true;
 }
 
 
@@ -1423,7 +1517,7 @@ std::string platform::OS()
 	}
 
 	char result[64];
-	sprintf_s(result, "%d.%d", osvi.dwMajorVersion, osvi.dwMinorVersion);
+	sprintf_s(result, "%u.%u", osvi.dwMajorVersion, osvi.dwMinorVersion);
 	return str::utf8_cast2(result);
 }
 
@@ -1445,19 +1539,14 @@ void platform::set_thread_description(const std::string_view name)
 
 		if (!str::is_empty(name))
 		{
-			static pfnSetThreadDescription set_thread_description_proc = nullptr;
-			static HMODULE kernel32 = nullptr;
-
-			if (!kernel32)
+			// Worker threads name themselves as they start, so the lookup is resolved exactly once.
+			static const pfnSetThreadDescription set_thread_description_proc = []
 			{
-				kernel32 = LoadLibraryW(L"kernel32.dll");
-			}
-
-			if (kernel32 && set_thread_description_proc == nullptr)
-			{
-				set_thread_description_proc = std::bit_cast<pfnSetThreadDescription>(
-					GetProcAddress(kernel32, "SetThreadDescription"));
-			}
+				auto* const kernel32 = GetModuleHandleW(L"kernel32.dll");
+				return kernel32
+					       ? std::bit_cast<pfnSetThreadDescription>(GetProcAddress(kernel32, "SetThreadDescription"))
+					       : nullptr;
+			}();
 
 			if (set_thread_description_proc != nullptr)
 			{
@@ -1471,9 +1560,14 @@ void platform::set_thread_description(const std::string_view name)
 std::string platform::user_name()
 {
 	constexpr int size = 200;
-	wchar_t w[size];
+	wchar_t w[size]{};
 	DWORD len = size;
-	GetUserName(w, &len);
+
+	if (!GetUserName(w, &len))
+	{
+		df::log(__FUNCTION__, last_os_error());
+		return {};
+	}
 
 	return str::utf16_to_utf8(w);
 }
@@ -1483,13 +1577,64 @@ std::string platform::last_os_error()
 	return last_os_error_impl();
 }
 
+std::string platform::file_write_error(const df::file_path path)
+{
+	// Probe write access the same way a metadata writer would: open the existing file for
+	// writing with no sharing. This surfaces the concrete, OS-localised reason - most often a
+	// sharing violation ("being used by another process") from an AV scanner, search indexer,
+	// cloud sync, or the app's own handle - instead of an opaque toolkit error (#231).
+	const auto w = to_file_system_path(path);
+	const auto h = CreateFileW(w.c_str(), GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+
+	if (h == INVALID_HANDLE_VALUE)
+	{
+		return format_os_error(GetLastError());
+	}
+
+	CloseHandle(h);
+	return {};
+}
+
+bool platform::wait_for_unlocked_write(const df::file_path path)
+{
+	// A reader started by an earlier edit can still hold the file when the next write arrives. Only a
+	// sharing or lock violation is worth waiting on; anything else will not clear by waiting.
+	const auto w = to_file_system_path(path);
+
+	for (auto attempt = 0; attempt < 5; ++attempt)
+	{
+		const auto h = CreateFileW(w.c_str(), GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL,
+		                           nullptr);
+
+		if (h != INVALID_HANDLE_VALUE)
+		{
+			CloseHandle(h);
+			return true;
+		}
+
+		const auto last_error = GetLastError();
+
+		if (last_error != ERROR_SHARING_VIOLATION && last_error != ERROR_LOCK_VIOLATION)
+		{
+			return false;
+		}
+
+		Sleep(50 * (attempt + 1));
+	}
+
+	return false;
+}
+
 static platform::file_op_result last_op_result(const BOOL res)
 {
 	platform::file_op_result result;
 
 	if (res == 0)
 	{
-		result.code = platform::file_op_result_code::FAILED;
+		const auto error = GetLastError();
+		result.code = error == ERROR_FILE_EXISTS || error == ERROR_ALREADY_EXISTS
+			              ? platform::file_op_result_code::ALREADY_EXISTS
+			              : platform::file_op_result_code::FAILED;
 		result.error_message = last_os_error_impl();
 	}
 	else
@@ -1506,13 +1651,6 @@ platform::file_op_result platform::delete_file(const df::file_path path)
 	return last_op_result(::DeleteFile(w.c_str()));
 }
 
-
-//bool Platform::FileAttributes(const Core::file_path& path, WIN32_FILE_ATTRIBUTE_DATA& fi)
-//{
-//    auto w = path.ToFileSystemPath();
-//    memset(&fi, 0, sizeof(fi));
-//    return GetFileAttributesEx(w.c_str(), GetFileExInfoStandard, &fi) != 0;
-//}
 
 platform::file_op_result platform::copy_file(const df::file_path existing, const df::file_path destination,
                                              const bool fail_if_exists, const bool can_create_folder)
@@ -1550,66 +1688,265 @@ platform::file_op_result platform::move_file(const df::folder_path existing, con
 	                                   MOVEFILE_COPY_ALLOWED));
 }
 
+// Commit any buffered writes for a file to the underlying volume. On network
+// drives (SMB) writes are held in a write-behind cache; if we swap the file in
+// before those bytes reach the server the destination can look unchanged even
+// though every call "succeeded". Flushing here makes the replace durable.
+// See issue #207 (updates to files on network drives do not always update).
+static platform::file_op_result flush_file_to_disk(const df::file_path path)
+{
+	const auto w = platform::to_file_system_path(path);
+	auto* const h = CreateFileW(w.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+	                            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+
+	if (h == INVALID_HANDLE_VALUE)
+	{
+		return platform::replacement_flush_result(false, format_os_error(GetLastError()));
+	}
+
+	const auto flushed = FlushFileBuffers(h) != 0;
+	const auto flush_error = flushed ? ERROR_SUCCESS : GetLastError();
+	CloseHandle(h);
+	return platform::replacement_flush_result(flushed,
+	                                          flushed ? std::string{} : format_os_error(flush_error));
+}
+
+platform::file_op_result platform::replacement_flush_result(const bool flushed, std::string error_message)
+{
+	file_op_result result;
+	result.code = flushed ? file_op_result_code::OK : file_op_result_code::FAILED;
+	result.error_message = std::move(error_message);
+	return result;
+}
+
+// Build the extended-length form of a path ("\\?\C:\..." for a drive, "\\?\UNC\server\share\..."
+// for a UNC path). SetFileInformationByHandle with FILE_RENAME_INFO wants a fully-qualified target
+// in this form; a plain "\\server\share\..." UNC target is rejected with ERROR_INVALID_NAME (123).
+// Verified on Synology SMB3 (tmp/nas_rename_probe.py). Idempotent if already extended.
+static std::wstring to_extended(const std::wstring& p)
+{
+	if (p.rfind(LR"(\\?\)", 0) == 0)
+	{
+		return p; // already extended
+	}
+
+	if (p.size() >= 2 && p[0] == L'\\' && p[1] == L'\\')
+	{
+		return LR"(\\?\UNC\)" + p.substr(2); // \\server\share\... -> \\?\UNC\server\share\...
+	}
+
+	return LR"(\\?\)" + p; // C:\... -> \\?\C:\...
+}
+
+// Rename an open handle's file to targetW via SetFileInformationByHandle(FileRenameInfo), retrying
+// the transient oplock/lease-break errors seen on a just-written SMB destination. Returns true on
+// success; on failure last_error holds the final GetLastError().
+static bool rename_by_handle(const HANDLE h, const std::wstring& targetW, const bool replace_if_exists,
+                             DWORD& last_error)
+{
+	const auto name_bytes = targetW.size() * sizeof(wchar_t);
+	std::vector<uint8_t> buffer(sizeof(FILE_RENAME_INFO) + name_bytes);
+	auto* const info = reinterpret_cast<FILE_RENAME_INFO*>(buffer.data());
+	info->ReplaceIfExists = replace_if_exists ? TRUE : FALSE;
+	info->RootDirectory = nullptr;
+	info->FileNameLength = static_cast<DWORD>(name_bytes);
+	memcpy(info->FileName, targetW.c_str(), name_bytes);
+
+	last_error = ERROR_SUCCESS;
+
+	for (auto attempt = 0; attempt < 5; ++attempt)
+	{
+		if (SetFileInformationByHandle(h, FileRenameInfo, info, static_cast<DWORD>(buffer.size())) != 0)
+		{
+			return true;
+		}
+
+		last_error = GetLastError();
+
+		if (last_error != ERROR_SHARING_VIOLATION && last_error != ERROR_LOCK_VIOLATION &&
+			last_error != ERROR_ACCESS_DENIED)
+		{
+			break;
+		}
+
+		Sleep(50 * (attempt + 1));
+	}
+
+	return false;
+}
+
+// Replace `destination` with `existing` (a freshly-written temp file in the same folder). This is a
+// clean-room reimplementation of ReplaceFileW's swap, used uniformly for local and network paths.
+//
+// Rather than call the Win32 ReplaceFileW (which cannot hand back an open handle and, on some SMB
+// servers, leaves the caller reading a stale by-name data cache after the swap), we rename the
+// replacement into place THROUGH a retained handle and return that same still-open, cache-coherent
+// handle. The caller re-scans the edited file through this handle instead of a fresh by-name open,
+// which is what fixes the SMB read-after-write staleness (proven in tmp/nas_handle_rename_test.py).
+//
+// Like ReplaceFileW we preserve ONLY the destination's creation time, set on the replacement BEFORE
+// the rename. If the handle path cannot run (e.g. a filesystem that rejects rename-by-handle, or a
+// read-only / reparse-point target) we fall back to MoveFileEx (which returns no coherent handle).
 platform::file_op_result platform::replace_file(const df::file_path destination, const df::file_path existing,
                                                 const bool create_originals)
 {
-	df::file_path backup;
-
-	if (destination.exists())
+	// Make sure the replacement's contents are actually on the volume before we swap it in
+	// (network write-behind cache); this is what makes updates stick on network drives (issue #207).
+	if (const auto flush_result = flush_file_to_disk(existing); flush_result.failed())
 	{
-		if (create_originals)
-		{
-			// Create original
-			const auto org_name = std::string(destination.file_name_without_extension()) + ".original"s;
-			const auto original_path = df::file_path(existing.folder(), org_name, destination.extension());
-
-			if (!original_path.exists())
-			{
-				backup = original_path;
-				//platform::move_file(path_src, original_path, true);
-			}
-		}
-
-		const auto existingW = to_file_system_path(existing);
-		const auto destinationW = to_file_system_path(destination);
-		const auto backupW = to_file_system_path(backup);
-
-		// Try ReplaceFileW first - this is the preferred atomic operation
-		const auto replace_success = ReplaceFileW(
-			destinationW.c_str(),
-			existingW.c_str(),
-			backup.is_empty() ? nullptr : backupW.c_str(),
-			REPLACEFILE_IGNORE_MERGE_ERRORS | REPLACEFILE_IGNORE_ACL_ERRORS,
-			nullptr,
-			nullptr);
-
-		if (replace_success)
-		{
-			return last_op_result(TRUE);
-		}
-
-		// ReplaceFileW failed - this commonly happens on network drives (SMB shares)
-		// Fall back to move with overwrite (MOVEFILE_REPLACE_EXISTING)
-		const auto last_error = GetLastError();
-		df::log(__FUNCTION__, std::format("ReplaceFileW failed with error {}, falling back to move with overwrite",
-		                                  static_cast<uint32_t>(last_error)));
-
-		// If backup was requested, try to create it first by copying destination
-		if (!backup.is_empty())
-		{
-			// Use copy instead of move so we don't lose the destination if the final move fails
-			const auto backup_result = copy_file(destination, backup, true, false);
-			if (backup_result.failed())
-			{
-				df::log(__FUNCTION__, "Failed to create backup, proceeding without backup");
-			}
-		}
-
-		// Move existing to destination, overwriting if it exists
-		return move_file(existing, destination, false);
+		return flush_result;
 	}
 
-	return move_file(existing, destination, true);
+	const auto destination_exists = destination.exists();
+
+	df::file_path backup;
+
+	if (destination_exists && create_originals)
+	{
+		const auto base_name = std::string(destination.file_name_without_extension()) + ".original"s;
+		const auto extension = destination.extension();
+
+		// A requested backup is part of the contract, so keep uniquifying instead of silently replacing
+		// the destination with no new recovery point when an earlier .original is already there.
+		for (auto attempt = 0; attempt < 1000 && backup.is_empty(); ++attempt)
+		{
+			const auto name = attempt == 0 ? base_name : std::format("{}.{}", base_name, attempt);
+			const auto candidate = df::file_path(existing.folder(), name, extension);
+
+			if (!candidate.exists())
+			{
+				backup = candidate;
+			}
+		}
+
+		if (backup.is_empty())
+		{
+			file_op_result result;
+			result.code = file_op_result_code::FAILED;
+			result.error_message = std::format("Could not create a backup of {}", destination.str());
+			df::log(__FUNCTION__, result.error_message);
+			return result;
+		}
+	}
+
+	// A requested backup is part of the operation's contract. Create it before opening or renaming
+	// the replacement so failure leaves both the destination and edited temporary file untouched.
+	if (!backup.is_empty())
+	{
+		if (const auto backup_result = copy_file(destination, backup, true, false); backup_result.failed())
+		{
+			return backup_result;
+		}
+	}
+
+	const auto existingW = to_extended(to_file_system_path(existing));
+	const auto destinationW = to_extended(to_file_system_path(destination));
+
+	// Preserve the destination's creation time (ReplaceFileW semantics). Also decide whether the
+	// handle-rename path is applicable: skip it for read-only or reparse-point (symlink/junction)
+	// targets, which ReplaceFileW itself refuses - let the move fallback surface the same outcome.
+	FILETIME dst_creation{};
+	bool have_creation = false;
+	bool can_handle_rename = true;
+
+	if (destination_exists)
+	{
+		const auto dst_attr = GetFileAttributesW(destinationW.c_str());
+
+		if (dst_attr == INVALID_FILE_ATTRIBUTES ||
+			(dst_attr & (FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_REPARSE_POINT)) != 0)
+		{
+			can_handle_rename = false;
+		}
+		else
+		{
+			auto* const dh = CreateFileW(destinationW.c_str(), FILE_READ_ATTRIBUTES,
+			                             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+			                             OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+			if (dh != INVALID_HANDLE_VALUE)
+			{
+				have_creation = GetFileTime(dh, &dst_creation, nullptr, nullptr) != 0;
+				CloseHandle(dh);
+			}
+		}
+	}
+
+	if (can_handle_rename)
+	{
+		// Open the replacement with DELETE (to rename it via SetFileInformationByHandle),
+		// GENERIC_READ (so the caller can read it back through this handle), and
+		// FILE_WRITE_ATTRIBUTES (to stamp the preserved creation time). Share every mode so a
+		// concurrent oplock/lease break can proceed.
+		auto* h = CreateFileW(existingW.c_str(), GENERIC_READ | DELETE | FILE_WRITE_ATTRIBUTES,
+		                      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+		                      OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+
+		if (h != INVALID_HANDLE_VALUE)
+		{
+			if (have_creation)
+			{
+				SetFileTime(h, &dst_creation, nullptr, nullptr);
+			}
+
+			DWORD rename_error = ERROR_SUCCESS;
+
+			if (rename_by_handle(h, destinationW, true, rename_error))
+			{
+				file_op_result result;
+				result.code = file_op_result_code::OK;
+
+				// Authoritative modified time read back through the (renamed) handle. The caller
+				// uses this as both file_modified and metadata_scanned so a later background
+				// rescan is a no-op.
+				FILETIME modified{};
+				if (GetFileTime(h, nullptr, nullptr, &modified))
+				{
+					result.modified = ft_to_ts(modified);
+				}
+
+				// The rename needed DELETE access, and holding it blocks any later by-path reader
+				// that does not itself share DELETE - LibRaw's RAW open is one. ReOpenFile drops
+				// the access without a by-name reopen, so the handle stays cache-coherent.
+				auto* const read_only = ReOpenFile(h, GENERIC_READ,
+				                                   FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0);
+
+				if (read_only != INVALID_HANDLE_VALUE)
+				{
+					CloseHandle(h);
+					h = read_only;
+				}
+
+				result.coherent_handle = make_file_from_handle(h); // takes ownership of h
+				return result;
+			}
+
+			CloseHandle(h);
+			df::log(__FUNCTION__, std::format("rename-by-handle failed with error {}, falling back to move",
+			                                  static_cast<uint32_t>(rename_error)));
+		}
+	}
+
+	// Fallback: MoveFileEx (no coherent handle). Move the replacement into place with write-through
+	// so the new file is committed on network drives.
+	const auto move_result = last_op_result(MoveFileExW(existingW.c_str(), destinationW.c_str(),
+	                                                    MOVEFILE_COPY_ALLOWED | MOVEFILE_WRITE_THROUGH |
+	                                                    (destination_exists ? MOVEFILE_REPLACE_EXISTING : 0)));
+
+	// Preserve the replaced file's creation time on the fallback path too (ReplaceFileW semantics).
+	// MoveFileEx gives the destination the replacement's creation time, so restore the captured one.
+	if (move_result.success() && have_creation)
+	{
+		auto* const rh = CreateFileW(destinationW.c_str(), FILE_WRITE_ATTRIBUTES,
+		                             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+		                             OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+		if (rh != INVALID_HANDLE_VALUE)
+		{
+			SetFileTime(rh, &dst_creation, nullptr, nullptr);
+			CloseHandle(rh);
+		}
+	}
+
+	return move_result;
 }
 
 bool platform::exists(const df::folder_path path)
@@ -1650,7 +1987,7 @@ platform::file_op_result platform::create_folder(const df::folder_path path)
 		}
 	}
 
-	const auto w = to_file_system_path(path);
+	const auto w = to_shell_path(path);
 	const auto res = SHCreateDirectoryExW(app_wnd(), w.c_str(), nullptr);
 
 	if (res == 0)
@@ -1667,72 +2004,33 @@ platform::file_op_result platform::create_folder(const df::folder_path path)
 	return result;
 }
 
+bool platform::is_writable(const df::folder_path path)
+{
+	if (path.is_empty() || !exists(path))
+	{
+		return false;
+	}
+
+	// Directory attributes do not reflect ACL-based denial (a Store package folder looks normal),
+	// so the only reliable probe is creating a file. The handle deletes itself when closed.
+	const auto name = std::format("df-write-probe-{:08x}.tmp", static_cast<uint32_t>(GetCurrentProcessId()));
+	const auto w = to_file_system_path(path.combine_file(name));
+
+	const auto h = CreateFileW(w.c_str(), GENERIC_WRITE, FILE_SHARE_DELETE, nullptr, CREATE_ALWAYS,
+	                           FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE, nullptr);
+
+	if (h == INVALID_HANDLE_VALUE)
+	{
+		return false;
+	}
+
+	CloseHandle(h);
+	return true;
+}
+
 bool platform::open(const df::file_path path)
 {
 	const auto w = to_file_system_path(path);
-#ifdef WINSTORE
-	// Use WinRT Launcher for Store apps - more reliable in sandbox
-	try
-	{
-		ComPtr<ABI::Windows::System::ILauncherStatics> launcher;
-		HRESULT hr = RoGetActivationFactory(
-			Microsoft::WRL::Wrappers::HStringReference(RuntimeClass_Windows_System_Launcher).Get(),
-			IID_PPV_ARGS(&launcher));
-
-		if (SUCCEEDED(hr))
-		{
-			// Get StorageFile from path
-			ComPtr<ABI::Windows::Storage::IStorageFileStatics> file_statics;
-			hr = RoGetActivationFactory(
-				Microsoft::WRL::Wrappers::HStringReference(RuntimeClass_Windows_Storage_StorageFile).Get(),
-				IID_PPV_ARGS(&file_statics));
-
-			if (SUCCEEDED(hr))
-			{
-				HSTRING path_hstring = nullptr;
-				WindowsCreateString(w.c_str(), static_cast<UINT32>(w.size()), &path_hstring);
-
-				ComPtr<ABI::Windows::Foundation::IAsyncOperation<ABI::Windows::Storage::StorageFile*>> file_op;
-				hr = file_statics->GetFileFromPathAsync(path_hstring, &file_op);
-				WindowsDeleteString(path_hstring);
-
-				if (SUCCEEDED(hr))
-				{
-					ComPtr<ABI::Windows::Storage::IStorageFile> storage_file;
-					// Wait for async operation (simplified - in production consider proper async handling)
-					ABI::Windows::Foundation::AsyncStatus status;
-					ComPtr<ABI::Windows::Foundation::IAsyncInfo> async_info;
-					if (SUCCEEDED(file_op.As(&async_info)))
-					{
-						for (int i = 0; i < 100; ++i)
-						{
-							async_info->get_Status(&status);
-							if (status != ABI::Windows::Foundation::AsyncStatus::Started)
-								break;
-							Sleep(10);
-						}
-
-						if (status == ABI::Windows::Foundation::AsyncStatus::Completed)
-						{
-							hr = file_op->GetResults(&storage_file);
-							if (SUCCEEDED(hr) && storage_file)
-							{
-								ComPtr<ABI::Windows::Foundation::IAsyncOperation<bool>> launch_op;
-								hr = launcher->LaunchFileAsync(storage_file.Get(), &launch_op);
-								return SUCCEEDED(hr);
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-	catch (...)
-	{
-		df::log(__FUNCTION__, "WinRT Launcher failed, falling back to ShellExecute");
-	}
-	// Fallback to ShellExecute
-#endif
 	return ShellExecute(app_wnd(), L"open", w.c_str(), L"", L"", SW_SHOWNORMAL) > std::bit_cast<HINSTANCE>(
 		static_cast<uintptr_t>(32));
 }
@@ -1740,310 +2038,73 @@ bool platform::open(const df::file_path path)
 bool platform::open(const std::string_view path)
 {
 	const auto w = str::utf8_to_utf16(path);
-#ifdef WINSTORE
-	// Use WinRT Launcher for Store apps - required for URLs and more reliable overall
-	try
-	{
-		ComPtr<ABI::Windows::System::ILauncherStatics> launcher;
-		HRESULT hr = RoGetActivationFactory(
-			Microsoft::WRL::Wrappers::HStringReference(RuntimeClass_Windows_System_Launcher).Get(),
-			IID_PPV_ARGS(&launcher));
-
-		if (SUCCEEDED(hr))
-		{
-			// Create URI from path
-			ComPtr<ABI::Windows::Foundation::IUriRuntimeClassFactory> uri_factory;
-			hr = RoGetActivationFactory(
-				Microsoft::WRL::Wrappers::HStringReference(RuntimeClass_Windows_Foundation_Uri).Get(),
-				IID_PPV_ARGS(&uri_factory));
-
-			if (SUCCEEDED(hr))
-			{
-				HSTRING uri_hstring = nullptr;
-				WindowsCreateString(w.c_str(), static_cast<UINT32>(w.size()), &uri_hstring);
-
-				ComPtr<ABI::Windows::Foundation::IUriRuntimeClass> uri;
-				hr = uri_factory->CreateUri(uri_hstring, &uri);
-				WindowsDeleteString(uri_hstring);
-
-				if (SUCCEEDED(hr) && uri)
-				{
-					ComPtr<ABI::Windows::Foundation::IAsyncOperation<bool>> launch_op;
-					hr = launcher->LaunchUriAsync(uri.Get(), &launch_op);
-					return SUCCEEDED(hr);
-				}
-			}
-		}
-	}
-	catch (...)
-	{
-		df::log(__FUNCTION__, "WinRT Launcher failed, falling back to ShellExecute");
-	}
-	// Fallback to ShellExecute
-#endif
 	return ShellExecute(app_wnd(), L"open", w.c_str(), L"", L"", SW_SHOWNORMAL) > std::bit_cast<HINSTANCE>(
 		static_cast<uintptr_t>(32));
 }
 
-static bool run_command_line(const std::wstring& command_line)
+// Resolves an executable in the Windows directory to an absolute path so CreateProcess never falls
+// back to searching the current directory for it (untrusted search path, CWE-426).
+static std::wstring windows_dir_executable_path(const std::wstring_view name)
 {
-	PROCESS_INFORMATION pi;
-	STARTUPINFO si = {0};
+	wchar_t dir[MAX_PATH]{};
+	const auto len = GetWindowsDirectoryW(dir, std::size(dir));
+	if (len == 0 || len >= std::size(dir)) return {};
+	return std::wstring(dir, len) + L'\\' + std::wstring(name);
+}
+
+// application_path may be empty only for a caller-supplied command line that names its own
+// executable; every in-app launch passes an absolute path.
+static bool run_command_line(const std::wstring& application_path, const std::wstring& command_line)
+{
+	PROCESS_INFORMATION pi = {};
+	STARTUPINFO si = {};
 	si.cb = sizeof(si);
+	si.dwFlags = STARTF_USESHOWWINDOW;
 	si.wShowWindow = SW_SHOWNORMAL;
 
-	if (CreateProcess(nullptr, const_cast<LPWSTR>(command_line.c_str()), nullptr, nullptr, FALSE,
-	                  CREATE_DEFAULT_ERROR_MODE, nullptr, nullptr, &si, &pi))
+	// CreateProcess is documented to modify lpCommandLine, so hand it a mutable copy.
+	std::vector<wchar_t> mutable_command_line(command_line.cbegin(), command_line.cend());
+	mutable_command_line.push_back(0);
+
+	if (CreateProcess(application_path.empty() ? nullptr : application_path.c_str(), mutable_command_line.data(),
+	                  nullptr, nullptr, FALSE, CREATE_DEFAULT_ERROR_MODE, nullptr, nullptr, &si, &pi))
 	{
 		CloseHandle(pi.hProcess);
 		CloseHandle(pi.hThread);
 		return true;
 	}
 
+	df::log(__FUNCTION__, platform::last_os_error());
 	return false;
 }
 
 bool platform::run(const std::string_view cmd)
 {
-	return run_command_line(str::utf8_to_utf16(cmd));
+	return run_command_line({}, str::utf8_to_utf16(cmd));
+}
+
+bool platform::run(const df::file_path exe, const std::string_view cmd)
+{
+	if (exe.is_empty()) return false;
+	return run_command_line(to_file_system_path(exe), str::utf8_to_utf16(cmd));
 }
 
 
 static bool run_explorer(const std::wstring& path)
 {
-	const auto command_line = L"explorer.exe /select,\""s + path + L"\""s;
-	return run_command_line(command_line);
-}
-
-struct pidandhwnd
-{
-	DWORD dwProcessId;
-	HWND hwnd;
-};
-
-static BOOL CALLBACK EnumWindowsProc(const HWND hwnd, const LPARAM lParam)
-{
-	auto* ppnh = (pidandhwnd*)lParam;
-	DWORD dwProcessId;
-	GetWindowThreadProcessId(hwnd, &dwProcessId);
-	if (ppnh->dwProcessId == dwProcessId)
-	{
-		ppnh->hwnd = hwnd;
-		return FALSE;
-	}
-	return TRUE;
-}
-
-// Could use a simple notepad like this -> https://github.com/estout82/Notepad/blob/master/Src/Main.cpp
-
-void platform::show_text_in_notepad(const std::string_view s)
-{
-	TCHAR szCmdline[] = TEXT("Notepad.exe");
-
-	PROCESS_INFORMATION piProcInfo = {};
-	STARTUPINFO siStartInfo = {};
-	siStartInfo.cb = sizeof(STARTUPINFO);
-	siStartInfo.hStdError = nullptr;
-	siStartInfo.hStdOutput = nullptr;
-	siStartInfo.hStdInput = nullptr;
-
-	const auto started = CreateProcess(nullptr,
-	                                   szCmdline, // command line 
-	                                   nullptr, // process security attributes 
-	                                   nullptr, // primary thread security attributes 
-	                                   TRUE, // handles are inherited 
-	                                   0, // creation flags 
-	                                   nullptr, // use parent's environment 
-	                                   nullptr, // use parent's current directory 
-	                                   &siStartInfo, // STARTUPINFO pointer 
-	                                   &piProcInfo); // receives PROCESS_INFORMATION 
-
-	if (started)
-	{
-		//df::log(__FUNCTION__, piProcInfo.dwProcessId << " Notepad Process Id";
-
-		WaitForInputIdle(piProcInfo.hProcess, 1000);
-
-		pidandhwnd pnh;
-		pnh.dwProcessId = piProcInfo.dwProcessId;
-		pnh.hwnd = nullptr;
-
-		EnumDesktopWindows(nullptr, EnumWindowsProc, (LPARAM)&pnh);
-
-		if (pnh.hwnd != nullptr)
-		{
-			constexpr int ControlId = 15; // Edit control in Notepad
-			auto* hEditWnd = GetDlgItem(pnh.hwnd, ControlId);
-
-			if (!hEditWnd)
-			{
-				hEditWnd = FindWindowEx(pnh.hwnd, nullptr, L"scintilla", nullptr);
-
-				if (!hEditWnd)
-				{
-					SendMessage(hEditWnd, WM_SETTEXT, NULL, (LPARAM)std::string(s).c_str());
-				}
-			}
-			else
-			{
-				const auto w = str::utf8_to_utf16(s);
-				SendMessage(hEditWnd, WM_SETTEXT, NULL, (LPARAM)w.c_str());
-			}
-		}
-	}
+	const auto explorer = windows_dir_executable_path(L"explorer.exe");
+	if (explorer.empty()) return false;
+	return run_command_line(explorer, L"\""s + explorer + L"\" /select,\""s + path + L"\""s);
 }
 
 void platform::show_in_file_browser(const df::file_path path)
 {
-#ifdef WINSTORE
-	// For Store apps, use WinRT Launcher to open the containing folder
-	// We open the parent folder since we can't do "select" like explorer.exe
-	try
-	{
-		ComPtr<ABI::Windows::System::ILauncherStatics> launcher;
-		HRESULT hr = RoGetActivationFactory(
-			Microsoft::WRL::Wrappers::HStringReference(RuntimeClass_Windows_System_Launcher).Get(),
-			IID_PPV_ARGS(&launcher));
-
-		if (SUCCEEDED(hr))
-		{
-			// Get the folder path
-			const auto folder_path = path.folder();
-			const auto w = to_file_system_path(folder_path);
-
-			ComPtr<ABI::Windows::Storage::IStorageFolderStatics> folder_statics;
-			hr = RoGetActivationFactory(
-				Microsoft::WRL::Wrappers::HStringReference(RuntimeClass_Windows_Storage_StorageFolder).Get(),
-				IID_PPV_ARGS(&folder_statics));
-
-			if (SUCCEEDED(hr))
-			{
-				HSTRING path_hstring = nullptr;
-				WindowsCreateString(w.c_str(), static_cast<UINT32>(w.size()), &path_hstring);
-
-				ComPtr<ABI::Windows::Foundation::IAsyncOperation<ABI::Windows::Storage::StorageFolder*>> folder_op;
-				hr = folder_statics->GetFolderFromPathAsync(path_hstring, &folder_op);
-				WindowsDeleteString(path_hstring);
-
-				if (SUCCEEDED(hr))
-				{
-					// Wait for async operation
-					ComPtr<ABI::Windows::Foundation::IAsyncInfo> async_info;
-					if (SUCCEEDED(folder_op.As(&async_info)))
-					{
-						ABI::Windows::Foundation::AsyncStatus status;
-						for (int i = 0; i < 100; ++i)
-						{
-							async_info->get_Status(&status);
-							if (status != ABI::Windows::Foundation::AsyncStatus::Started)
-								break;
-							Sleep(10);
-						}
-
-						if (status == ABI::Windows::Foundation::AsyncStatus::Completed)
-						{
-							ComPtr<ABI::Windows::Storage::IStorageFolder> storage_folder;
-							hr = folder_op->GetResults(&storage_folder);
-
-							if (SUCCEEDED(hr) && storage_folder)
-							{
-								// Use LaunchFolderAsync from ILauncherStatics3
-								ComPtr<ABI::Windows::System::ILauncherStatics3> launcher3;
-								if (SUCCEEDED(launcher.As(&launcher3)))
-								{
-									ComPtr<ABI::Windows::Foundation::IAsyncOperation<bool>> launch_op;
-									launcher3->LaunchFolderAsync(storage_folder.Get(), &launch_op);
-									return;
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-	catch (...)
-	{
-		df::log(__FUNCTION__, "WinRT Launcher failed");
-	}
-	// Fallback - shouldn't normally reach here for Store builds
-#endif
-	run_explorer(to_file_system_path(path));
+	run_explorer(to_shell_path(path));
 }
 
 void platform::show_in_file_browser(const df::folder_path path)
 {
-#ifdef WINSTORE
-	// For Store apps, use WinRT Launcher to open the folder
-	try
-	{
-		ComPtr<ABI::Windows::System::ILauncherStatics> launcher;
-		HRESULT hr = RoGetActivationFactory(
-			Microsoft::WRL::Wrappers::HStringReference(RuntimeClass_Windows_System_Launcher).Get(),
-			IID_PPV_ARGS(&launcher));
-
-		if (SUCCEEDED(hr))
-		{
-			const auto w = to_file_system_path(path);
-
-			ComPtr<ABI::Windows::Storage::IStorageFolderStatics> folder_statics;
-			hr = RoGetActivationFactory(
-				Microsoft::WRL::Wrappers::HStringReference(RuntimeClass_Windows_Storage_StorageFolder).Get(),
-				IID_PPV_ARGS(&folder_statics));
-
-			if (SUCCEEDED(hr))
-			{
-				HSTRING path_hstring = nullptr;
-				WindowsCreateString(w.c_str(), static_cast<UINT32>(w.size()), &path_hstring);
-
-				ComPtr<ABI::Windows::Foundation::IAsyncOperation<ABI::Windows::Storage::StorageFolder*>> folder_op;
-				hr = folder_statics->GetFolderFromPathAsync(path_hstring, &folder_op);
-				WindowsDeleteString(path_hstring);
-
-				if (SUCCEEDED(hr))
-				{
-					// Wait for async operation
-					ComPtr<ABI::Windows::Foundation::IAsyncInfo> async_info;
-					if (SUCCEEDED(folder_op.As(&async_info)))
-					{
-						ABI::Windows::Foundation::AsyncStatus status;
-						for (int i = 0; i < 100; ++i)
-						{
-							async_info->get_Status(&status);
-							if (status != ABI::Windows::Foundation::AsyncStatus::Started)
-								break;
-							Sleep(10);
-						}
-
-						if (status == ABI::Windows::Foundation::AsyncStatus::Completed)
-						{
-							ComPtr<ABI::Windows::Storage::IStorageFolder> storage_folder;
-							hr = folder_op->GetResults(&storage_folder);
-
-							if (SUCCEEDED(hr) && storage_folder)
-							{
-								// Use LaunchFolderAsync from ILauncherStatics2
-								ComPtr<ABI::Windows::System::ILauncherStatics3> launcher3;
-								if (SUCCEEDED(launcher.As(&launcher3)))
-								{
-									ComPtr<ABI::Windows::Foundation::IAsyncOperation<bool>> launch_op;
-									launcher3->LaunchFolderAsync(storage_folder.Get(), &launch_op);
-									return;
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-	catch (...)
-	{
-		df::log(__FUNCTION__, "WinRT Launcher failed");
-	}
-	// Fallback - shouldn't normally reach here for Store builds
-#endif
-	run_explorer(to_file_system_path(path));
+	run_explorer(to_shell_path(path));
 }
 
 int platform::display_frequency()
@@ -2079,8 +2140,15 @@ bool platform::working_set(int64_t& current, int64_t& peak)
 
 df::folder_path platform::temp_folder()
 {
-	wchar_t path[MAX_PATH + 1];
-	::GetTempPath(MAX_PATH, path);
+	wchar_t path[MAX_PATH + 1]{};
+	const auto len = ::GetTempPath(MAX_PATH, path);
+
+	// Zero means failure; a value above the buffer size means the path was not written at all.
+	if (len == 0 || len > MAX_PATH)
+	{
+		return known_path(known_folder::app_cache_data);
+	}
+
 	return df::folder_path(path);
 }
 
@@ -2104,8 +2172,16 @@ bool platform::browse_for_folder(df::folder_path& path)
 	const auto title = str::utf8_to_utf16(tt.select_folder);
 
 	wchar_t path_result[MAX_PATH];
-	wchar_t path_root[MAX_PATH];
-	wcscpy_s(path_root, to_file_system_path(path).c_str());
+	wchar_t path_root[MAX_PATH]{};
+
+	// SHBrowseForFolder cannot address a path longer than MAX_PATH, so an over-long initial
+	// selection is dropped rather than overflowing the buffer (wcscpy_s would terminate the process).
+	const auto initial_root = to_shell_path(path);
+
+	if (initial_root.size() < std::size(path_root))
+	{
+		wcscpy_s(path_root, initial_root.c_str());
+	}
 
 	BROWSEINFO bi;
 	bi.hwndOwner = GetActiveWindow();
@@ -2123,10 +2199,14 @@ bool platform::browse_for_folder(df::folder_path& path)
 
 	if (pidl_result)
 	{
-		wchar_t sz[MAX_PATH];
-		SHGetPathFromIDListW(pidl_result, sz);
+		wchar_t sz[MAX_PATH]{};
+
+		if (SHGetPathFromIDListW(pidl_result, sz))
+		{
+			path = df::folder_path(str::utf16_to_utf8(sz));
+		}
+
 		CoTaskMemFree(pidl_result);
-		path = df::folder_path(str::utf16_to_utf8(sz));
 	}
 
 	return pidl_result != nullptr;
@@ -2139,7 +2219,15 @@ bool platform::prompt_for_save_path(df::file_path& path)
 
 	wchar_t w[MAX_PATH];
 	w[0] = 0;
-	wcscpy_s(w, to_file_system_path(path).c_str());
+
+	// GetSaveFileName is limited to MAX_PATH, so an over-long suggestion is dropped rather than
+	// overflowing the buffer (wcscpy_s would terminate the process).
+	const auto initial_name = to_shell_path(path);
+
+	if (initial_name.size() < std::size(w))
+	{
+		wcscpy_s(w, initial_name.c_str());
+	}
 	const auto extension = str::utf8_to_utf16(path.extension());
 
 	std::string filter_a;
@@ -2171,10 +2259,6 @@ bool platform::prompt_for_save_path(df::file_path& path)
 	return success;
 }
 
-
-//#define STRSAFE_NO_DEPRECATE
-//#include <strsafe.h>
-
 // autocrop
 // https://github.com/rajbot/autocrop
 
@@ -2198,7 +2282,7 @@ platform::scan_result platform::scan(const df::folder_path save_path)
 	if (SUCCEEDED(hr))
 	{
 		//create a scan dialog and a select device UI
-		const bstr_t folder(to_file_system_path(save_path).c_str());
+		const bstr_t folder(to_shell_path(save_path).c_str());
 		const bstr_t name(L"scan");
 
 		hr = pWiaDevMgr2->GetImageDlg(0, nullptr, app_wnd(), folder, name, &num_files, &file_paths, &pItem);
@@ -2283,6 +2367,7 @@ std::vector<platform::open_with_entry> platform::assoc_handlers(const std::strin
 					return invoke_assoc(handler, files, folders);
 				};
 				h.weight += 1;
+				CoTaskMemFree(name);
 			}
 
 			handler = nullptr;
@@ -2307,14 +2392,6 @@ df::blob platform::load_resource(const resource_item i)
 {
 	switch (i)
 	{
-	case resource_item::logo:
-		return ::load_resource(IDB_LOGO, L"PNG");
-	case resource_item::logo30:
-		return ::load_resource(IDB_LOGO30, L"PNG");
-	case resource_item::logo15:
-		return ::load_resource(IDB_LOGO15, L"PNG");
-	case resource_item::title:
-		return ::load_resource(IDB_TITLE, L"PNG");
 	case resource_item::map_png:
 		return ::load_resource(IDB_MAP, L"PNG");
 	case resource_item::sql:
@@ -2351,9 +2428,11 @@ static std::wstring read_cert_name(const std::wstring& path)
 
 					if (cert_context)
 					{
-						wchar_t sz[1024];
-						CertGetNameString(cert_context, CERT_NAME_SIMPLE_DISPLAY_TYPE, 0, nullptr, sz, 1024);
-						result = sz;
+						wchar_t sz[1024] = {};
+						if (CertGetNameString(cert_context, CERT_NAME_SIMPLE_DISPLAY_TYPE, 0, nullptr, sz, 1024) > 1)
+						{
+							result = sz;
+						}
 
 						CertFreeCertificateContext(cert_context);
 					}
@@ -2372,13 +2451,18 @@ static std::wstring read_cert_name(const std::wstring& path)
 
 static bool verify_package(const df::file_path path_in)
 {
-	const auto path = platform::to_file_system_path(path_in);
-	const auto cert_name = read_cert_name(path);
+	constexpr std::string_view expected_signer = "Zachariah Walker";
 
-	// Pin updates to the author. Use a substring match so certificate renewals
-	// (which may carry a prefixed subject such as "Open Source Developer
-	// Zachariah Walker") continue to validate without a code change.
-	if (!str::contains(str::utf16_to_utf8(cert_name), "Zachariah Walker"))
+	const auto path = platform::to_file_system_path(path_in);
+	const auto cert_name = str::trim(str::utf16_to_utf8(read_cert_name(path)));
+
+	// Pin updates to the author. A suffix match keeps certificate renewals working when the subject
+	// carries a prefix such as "Open Source Developer Zachariah Walker", while a plain substring
+	// match would also accept an unrelated signer whose name merely contains the author's name.
+	const auto signer_matches = cert_name == expected_signer ||
+		str::ends(cert_name, std::string(" ").append(expected_signer));
+
+	if (!signer_matches)
 		return false;
 
 	WINTRUST_FILE_INFO FileData = {sizeof(WINTRUST_FILE_INFO)};
@@ -2426,19 +2510,24 @@ void platform::download_and_verify(const std::function<void(df::file_path)>& com
 platform::file_op_result platform::install(const df::file_path installer_path, const df::folder_path destination_folder,
                                            const bool silent, const bool run_app_after_install)
 {
-	auto command_line = L"\""s + to_file_system_path(installer_path) + L"\""s;
+	auto command_line = L"\""s + to_shell_path(installer_path) + L"\""s;
 	if (silent) command_line += L" /S"s;
 	if (run_app_after_install) command_line += L" /RR";
-	command_line += L" /D="s + to_file_system_path(destination_folder);
+	command_line += L" /D="s + to_shell_path(destination_folder);
 
-	const auto success = verify_package(installer_path) &&
-		run_command_line(command_line);
+	const auto is_verified = verify_package(installer_path);
+	const auto success = is_verified && run_command_line(to_shell_path(installer_path), command_line);
 
 	file_op_result result;
 
 	if (success)
 	{
 		result.code = file_op_result_code::OK;
+	}
+	else if (!is_verified)
+	{
+		// last_os_error() would report an unrelated stale error - nothing failed at the OS level.
+		result.error_message = std::format("{} is not correctly signed", installer_path.name());
 	}
 	else
 	{
@@ -2453,24 +2542,44 @@ platform::file_op_result platform::install(const df::file_path installer_path, c
 
 df::file_path platform::temp_file(const std::string_view ext, const df::folder_path folder)
 {
-	static auto counter = GetTickCount64();
-	counter += 1;
+	// Any thread can stage a temp file, and files are staged beside the user's own files, so the seed
+	// is randomised per process (a tick-based seed repeats across instances started in the same tick)
+	// and the counter is atomic so two callers are never handed the same name.
+	static const uint64_t seed = std::bit_cast<uint64_t>(df::now()) ^ (static_cast<uint64_t>(GetCurrentProcessId()) <<
+		32) ^ GetTickCount64();
+	static std::atomic<uint64_t> counter = seed;
 
-	auto name = "diffractor_"s;
-	name += str::to_hex(std::bit_cast<const uint8_t*>(&counter), 8);
+	const auto base = folder.is_empty() ? temp_folder() : folder;
+	df::file_path result;
 
-	if (!str::is_empty(ext))
+	for (auto attempt = 0; attempt < 100; ++attempt)
 	{
-		if (ext[0] != '.') name += '.';
-		name += ext;
+		const auto value = counter.fetch_add(1) + 1;
+
+		auto name = "diffractor_"s;
+		name += str::to_hex(std::bit_cast<const uint8_t*>(&value), 8);
+
+		if (!str::is_empty(ext))
+		{
+			if (ext[0] != '.') name += '.';
+			name += ext;
+		}
+
+		result = df::file_path(base, name);
+
+		if (!result.exists())
+		{
+			return result;
+		}
 	}
 
-	return {folder.is_empty() ? temp_folder() : folder, name};
+	df::log(__FUNCTION__, std::format("could not find an unused temp name in {}", base.text()));
+	return result;
 }
 
 void platform::set_desktop_wallpaper(const df::file_path file_path)
 {
-	const auto path = to_file_system_path(file_path);
+	const auto path = to_shell_path(file_path);
 
 	// IDesktopWallpaper new windows 10 API
 	ComPtr<IActiveDesktop> sAD;
@@ -2490,9 +2599,9 @@ void platform::set_desktop_wallpaper(const df::file_path file_path)
 void platform::show_file_properties(const std::vector<df::file_path>& files,
                                     const std::vector<df::folder_path>& folders)
 {
-	auto* p = new items_data_object();
+	const ComPtr<items_data_object> p = new items_data_object();
 	p->cache(files, folders);
-	SHMultiFileProperties(p, 0);
+	SHMultiFileProperties(p.Get(), 0);
 }
 
 HRESULT GetPIDLFromPath(const LPCWSTR pszPath, __out PIDLIST_ABSOLUTE* ppidl) noexcept
@@ -2520,9 +2629,10 @@ bool platform::has_burner()
 	return result;
 }
 
-void platform::burn_to_cd(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders)
+bool platform::burn_to_cd(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders)
 {
 	record_feature_use(features::burn_to_disk);
+	bool result = false;
 
 	ComPtr<ICDBurn> spBurn;
 	const auto hr = CoCreateInstance(CLSID_CDBurn, nullptr, CLSCTX_ALL, IID_PPV_ARGS(spBurn.GetAddressOf()));
@@ -2552,13 +2662,17 @@ void platform::burn_to_cd(const std::vector<df::file_path>& files, const std::ve
 						constexpr POINTL pt = {0};
 						DWORD dwEffect = DROPEFFECT_LINK | DROPEFFECT_MOVE | DROPEFFECT_COPY;
 
-						spDropTarget->DragEnter(data.Get(), MK_LBUTTON, pt, &dwEffect);
-						spDropTarget->Drop(data.Get(), MK_LBUTTON, pt, &dwEffect);
+						if (SUCCEEDED(spDropTarget->DragEnter(data.Get(), MK_LBUTTON, pt, &dwEffect)))
+						{
+							result = SUCCEEDED(spDropTarget->Drop(data.Get(), MK_LBUTTON, pt, &dwEffect));
+						}
 					}
 				}
 			}
 		}
 	}
+
+	return result;
 }
 
 void platform::print(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders)
@@ -2584,43 +2698,27 @@ void platform::print(const std::vector<df::file_path>& files, const std::vector<
 	}
 }
 
-void platform::remove_metadata(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders)
-{
-	static constexpr CLSID CLSID_RemovePropertiesDropTarget = {
-		0x09a28848, 0x0e97, 0x4cef, {0xb9, 0x50, 0xce, 0xa0, 0x37, 0x16, 0x11, 0x55}
-	};
-
-	ComPtr<IDropTarget> spDropTarget;
-
-	if (SUCCEEDED(
-		CoCreateInstance(CLSID_RemovePropertiesDropTarget, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&spDropTarget))))
-	{
-		const ComPtr<items_data_object> data = new items_data_object();
-		data->cache(files, folders);
-
-		constexpr POINTL pt = {0, 0};
-		DWORD dwEffect = DROPEFFECT_LINK | DROPEFFECT_MOVE | DROPEFFECT_COPY;
-
-		spDropTarget->DragEnter(data.Get(), MK_LBUTTON, pt, &dwEffect);
-		spDropTarget->Drop(data.Get(), MK_LBUTTON, pt, &dwEffect);
-	}
-}
-
 platform::clipboard_data_ptr platform::clipboard()
 {
 	ComPtr<IDataObject> pdo;
-	OleGetClipboard(&pdo);
+
+	// Fails while another process holds the clipboard; every accessor tolerates the resulting null object.
+	if (const auto hr = OleGetClipboard(&pdo); FAILED(hr))
+	{
+		df::log(__FUNCTION__, std::format("OleGetClipboard failed: {:x}", static_cast<uint32_t>(hr)));
+	}
+
 	return std::make_shared<data_object_client>(pdo.Get());
 }
 
 void platform::set_clipboard(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders,
                              const file_load_result& loaded, const bool is_move)
 {
-	auto* p = new items_data_object();
+	const ComPtr<items_data_object> p = new items_data_object();
 	p->set_for_move(is_move);
 	p->cache(files, folders);
 	p->cache(loaded);
-	OleSetClipboard(p);
+	OleSetClipboard(p.Get());
 }
 
 void platform::set_clipboard(const std::string_view text)
@@ -2676,15 +2774,32 @@ void platform::set_clipboard(const std::string_view text)
 	}
 }
 
+std::string platform::clipboard_text()
+{
+	std::string result;
+	if (!OpenClipboard(app_wnd())) return result;
+	if (const auto data = GetClipboardData(CF_UNICODETEXT))
+	{
+		if (const auto text = static_cast<const wchar_t*>(GlobalLock(data)))
+		{
+			result = str::utf16_to_utf8(text);
+			GlobalUnlock(data);
+		}
+	}
+	CloseClipboard();
+	return result;
+}
+
 platform::drop_effect platform::perform_drag(const std::any& frame_handle, const std::vector<df::file_path>& files,
                                              const std::vector<df::folder_path>& folders)
 {
-	auto* source = new items_drop_source();
-	auto* data = new items_data_object();
+	const ComPtr<items_drop_source> source = new items_drop_source();
+	const ComPtr<items_data_object> data = new items_data_object();
 	data->cache(files, folders);
 
 	DWORD result_effect = DROPEFFECT_NONE;
-	const auto hr = DoDragDrop(data, source, DROPEFFECT_COPY | DROPEFFECT_MOVE | DROPEFFECT_LINK, &result_effect);
+	const auto hr = DoDragDrop(data.Get(), source.Get(), DROPEFFECT_COPY | DROPEFFECT_MOVE | DROPEFFECT_LINK,
+	                           &result_effect);
 	::PostMessage(std::any_cast<HWND>(frame_handle), WM_LBUTTONUP, 0, 0);
 	return DRAGDROP_S_DROP == hr ? to_drop_effect(result_effect) : drop_effect::none;
 }
@@ -2732,7 +2847,7 @@ platform::data_object_probe platform::probe_drag_data_object(const std::vector<d
 			for (UINT i = 0; i < count; ++i)
 			{
 				wchar_t path[MAX_PATH * 4] = {};
-				if (DragQueryFileW(hdrop, i, path, static_cast<UINT>(std::size(path))))
+				if (DragQueryFileW(hdrop, i, path, std::size(path)))
 				{
 					result.hdrop_paths.emplace_back(path);
 				}
@@ -2750,23 +2865,36 @@ platform::data_object_probe platform::probe_drag_data_object(const std::vector<d
 		{
 			if (auto* const pida = static_cast<LPIDA>(GlobalLock(medium.hGlobal)))
 			{
-				result.shell_id_list_count = static_cast<int>(pida->cidl);
+				// The CIDA is a foreign buffer, so cidl and every offset are validated against the allocation.
+				const auto cb = GlobalSize(medium.hGlobal);
+				constexpr auto header = sizeof(UINT) * 2;
 
-				auto* const base = std::bit_cast<uint8_t*>(pida);
-				auto* const folder = std::bit_cast<PCIDLIST_ABSOLUTE>(base + pida->aoffset[0]);
-
-				for (uint32_t i = 0; i < pida->cidl; ++i)
+				if (cb >= header && pida->cidl <= (cb - header) / sizeof(UINT))
 				{
-					auto* const child = std::bit_cast<PCUIDLIST_RELATIVE>(base + pida->aoffset[i + 1]);
+					result.shell_id_list_count = static_cast<int>(pida->cidl);
 
-					if (auto* const full = ILCombine(folder, child))
+					auto* const base = std::bit_cast<uint8_t*>(pida);
+
+					if (pida->aoffset[0] < cb)
 					{
-						wchar_t path[MAX_PATH * 4] = {};
-						if (SHGetPathFromIDListW(full, path))
+						auto* const folder = std::bit_cast<PCIDLIST_ABSOLUTE>(base + pida->aoffset[0]);
+
+						for (uint32_t i = 0; i < pida->cidl; ++i)
 						{
-							result.shell_id_list_paths.emplace_back(path);
+							if (pida->aoffset[i + 1] >= cb) continue;
+
+							auto* const child = std::bit_cast<PCUIDLIST_RELATIVE>(base + pida->aoffset[i + 1]);
+
+							if (auto* const full = ILCombine(folder, child))
+							{
+								wchar_t path[MAX_PATH * 4] = {};
+								if (SHGetPathFromIDListW(full, path))
+								{
+									result.shell_id_list_paths.emplace_back(path);
+								}
+								ILFree(full);
+							}
 						}
-						ILFree(full);
 					}
 				}
 
@@ -2820,33 +2948,138 @@ platform::file_op_result platform::delete_items(const std::vector<df::file_path>
 	return to_file_op_result(SHFileOperation(&shfo), shfo.fAnyOperationsAborted);
 }
 
+// Files deleted from network locations bypass the Recycle Bin, including when
+// the share is exposed through a mapped drive letter.
+static bool fs_path_can_recycle(std::wstring_view w)
+{
+	if (w.starts_with(L"\\\\?\\UNC\\")) return false; // extended-length UNC prefix
+	if (w.starts_with(L"\\\\?\\")) w.remove_prefix(4); // strip extended-length prefix
+
+	// A UNC path begins with two path separators (\\server\share).
+	if (w.size() >= 2 && (w[0] == L'\\' || w[0] == L'/') && (w[1] == L'\\' || w[1] == L'/'))
+	{
+		return false;
+	}
+
+	if (w.size() >= 3 && w[1] == L':' && (w[2] == L'\\' || w[2] == L'/'))
+	{
+		const wchar_t root[]{w[0], L':', L'\\', L'\0'};
+		if (GetDriveTypeW(root) == DRIVE_REMOTE) return false;
+	}
+
+	return true;
+}
+
+bool platform::can_recycle(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders)
+{
+	for (const auto& f : files)
+	{
+		if (!fs_path_can_recycle(to_file_system_path(f))) return false;
+	}
+
+	for (const auto& f : folders)
+	{
+		if (!fs_path_can_recycle(to_file_system_path(f))) return false;
+	}
+
+	return true;
+}
+
 platform::file_op_result platform::move_or_copy(const std::vector<df::file_path>& files,
                                                 const std::vector<df::folder_path>& folders,
-                                                const df::folder_path target, const bool is_move)
+                                                const df::folder_path target, const bool is_move,
+                                                const bool replace_existing)
 {
 	const auto paths = all_file_system_paths(files, folders);
-	const auto to = to_file_system_path(target);
+	const auto to = to_shell_path(target);
+
+	// Auto-rename is the default because it cannot destroy anything. Replace is only reached when the
+	// caller has already named the colliding files and had the overwrite confirmed, so the shell must
+	// not ask a second time in its own vocabulary.
+	const FILEOP_FLAGS flags = replace_existing
+		                           ? static_cast<FILEOP_FLAGS>(FOF_NOCONFIRMATION)
+		                           : static_cast<FILEOP_FLAGS>(FOF_RENAMEONCOLLISION | FOF_WANTMAPPINGHANDLE);
 
 	SHFILEOPSTRUCT shfo = {
 		app_wnd(),
 		static_cast<uint32_t>(is_move ? FO_MOVE : FO_COPY),
 		paths.c_str(),
 		to.c_str(),
-		FOF_RENAMEONCOLLISION,
+		flags,
 		0, nullptr, nullptr
 	};
 
-	return to_file_op_result(SHFileOperation(&shfo), shfo.fAnyOperationsAborted);
-}
+	auto result = to_file_op_result(SHFileOperation(&shfo), shfo.fAnyOperationsAborted);
+	std::vector<std::pair<std::wstring, std::wstring>> name_mappings;
+	const auto* mappings = std::bit_cast<HANDLETOMAPPINGSW*>(shfo.hNameMappings);
 
-static bool folder_exists(const std::string_view path)
-{
-	if (!df::is_path(path)) return false;
+	if (mappings)
+	{
+		name_mappings.reserve(mappings->uNumberOfMappings);
+		for (auto i = 0u; i < mappings->uNumberOfMappings; ++i)
+		{
+			const auto& mapping = mappings->lpSHNameMapping[i];
+			name_mappings.emplace_back(mapping.pszOldPath, mapping.pszNewPath);
+		}
+	}
 
-	const auto attrib = file_attributes(df::folder_path(path));
+	SHFreeNameMappings(shfo.hNameMappings);
 
-	return attrib != INVALID_FILE_ATTRIBUTES &&
-		attrib & FILE_ATTRIBUTE_DIRECTORY;
+	if (result.success())
+	{
+		const auto mapped_name = [&name_mappings](const std::wstring& source_path)
+		{
+			auto found = std::ranges::find_if(name_mappings, [&source_path](const auto& mapping)
+			{
+				return _wcsicmp(mapping.first.c_str(), source_path.c_str()) == 0;
+			});
+
+			if (found == name_mappings.end())
+			{
+				const auto separator = source_path.find_last_of(L"\\/");
+				const auto source_name = source_path.c_str() +
+					(separator == std::wstring::npos ? std::wstring::size_type{} : separator + 1);
+				found = std::ranges::find_if(name_mappings, [source_name](const auto& mapping)
+				{
+					const auto mapping_separator = mapping.first.find_last_of(L"\\/");
+					const auto mapping_name = mapping.first.c_str() +
+						(mapping_separator == std::wstring::npos ? std::wstring::size_type{} : mapping_separator + 1);
+					return _wcsicmp(mapping_name, source_name) == 0;
+				});
+			}
+
+			if (found == name_mappings.end()) return std::wstring{};
+			auto result = std::move(found->second);
+			name_mappings.erase(found);
+			return result;
+		};
+		const auto mapped_path = [&mapped_name](const df::file_path source, const df::file_path requested)
+		{
+			auto mapped = mapped_name(str::utf8_to_utf16(source.pack()));
+			if (mapped.empty()) mapped = mapped_name(str::utf8_to_utf16(requested.pack()));
+			return mapped.empty() ? requested : df::file_path(std::wstring_view(mapped));
+		};
+		const auto mapped_folder = [&mapped_name](const df::folder_path source, const df::folder_path requested)
+		{
+			auto mapped = mapped_name(str::utf8_to_utf16(source.text()));
+			if (mapped.empty()) mapped = mapped_name(str::utf8_to_utf16(requested.text()));
+			return mapped.empty() ? requested : df::folder_path(std::wstring_view(mapped));
+		};
+
+		for (const auto& file : files)
+		{
+			const auto requested = target.combine_file(file.name());
+			result.created_files.files.emplace_back(mapped_path(file, requested));
+		}
+
+		for (const auto& folder : folders)
+		{
+			const auto requested = target.combine(folder.name());
+			result.created_files.folders.emplace_back(mapped_folder(folder, requested));
+		}
+	}
+
+	return result;
 }
 
 static uint64_t fs_to_i64(const DWORD nFileSizeHigh, const DWORD nFileSizeLow)
@@ -2862,6 +3095,7 @@ uint64_t ft_to_ts(const FILETIME& ft)
 static __forceinline void populate_file_attributes(platform::file_attributes_t& fi,
                                                    const WIN32_FILE_ATTRIBUTE_DATA& fad)
 {
+	fi.presence = platform::file_presence::found;
 	fi.created = ft_to_ts(fad.ftCreationTime);
 	fi.modified = ft_to_ts(fad.ftLastWriteTime);
 	fi.size = fs_to_i64(fad.nFileSizeHigh, fad.nFileSizeLow);
@@ -2872,12 +3106,22 @@ static __forceinline void populate_file_attributes(platform::file_attributes_t& 
 
 static __forceinline void populate_file_attributes(platform::file_attributes_t& fi, const WIN32_FIND_DATA& fad)
 {
+	fi.presence = platform::file_presence::found;
 	fi.created = ft_to_ts(fad.ftCreationTime);
 	fi.modified = ft_to_ts(fad.ftLastWriteTime);
 	fi.size = fs_to_i64(fad.nFileSizeHigh, fad.nFileSizeLow);
 	fi.is_readonly = 0 != (fad.dwFileAttributes & FILE_ATTRIBUTE_READONLY);
 	fi.is_hidden = 0 != (fad.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN);
 	fi.is_offline = 0 != is_offline_attribute(fad.dwFileAttributes);
+}
+
+// Only these two codes prove the path is gone. Everything else - denied, offline, share unreachable,
+// name too long - means the query failed, which is not the same claim.
+static platform::file_presence presence_from_query_error(const DWORD error)
+{
+	return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND
+		       ? platform::file_presence::not_found
+		       : platform::file_presence::unknown;
 }
 
 platform::file_attributes_t platform::file_attributes(const df::file_path path)
@@ -2888,6 +3132,10 @@ platform::file_attributes_t platform::file_attributes(const df::file_path path)
 	if (GetFileAttributesEx(w.c_str(), GetFileExInfoStandard, &fad) != 0)
 	{
 		populate_file_attributes(result, fad);
+	}
+	else
+	{
+		result.presence = presence_from_query_error(GetLastError());
 	}
 	return result;
 }
@@ -2901,48 +3149,10 @@ platform::file_attributes_t platform::file_attributes(const df::folder_path path
 	{
 		populate_file_attributes(result, fad);
 	}
-	return result;
-}
-
-
-bool df::item_selector::has_media() const
-{
-	auto result = false;
-	constexpr auto show_hidden = true;
-	const auto path = _root.combine_file(_wildcard);
-	const auto w = platform::to_file_system_path(path);
-
-	WIN32_FIND_DATA fd;
-	auto* const hh = FindFirstFileEx(w.c_str(), FindExInfoBasic, &fd, FindExSearchNameMatch, nullptr,
-	                                 FIND_FIRST_EX_LARGE_FETCH);
-
-	if (hh != INVALID_HANDLE_VALUE)
+	else
 	{
-		do
-		{
-			if (is_folder(fd.dwFileAttributes))
-			{
-				// recursive?
-			}
-			else
-			{
-				const auto name = str::utf16_to_utf8(fd.cFileName); // optimize
-
-				if (can_show_file_or_folder(fd.cFileName, fd.dwFileAttributes, show_hidden))
-				{
-					if (files::file_type_from_name(name)->is_media())
-					{
-						result = true;
-						break;
-					}
-				}
-			}
-		}
-		while (FindNextFile(hh, &fd) != 0);
-
-		FindClose(hh);
+		result.presence = presence_from_query_error(GetLastError());
 	}
-
 	return result;
 }
 
@@ -3015,7 +3225,7 @@ static df::count_and_size calc_folder_summary_impl(const std::wstring& root_path
 
 				if (is_folder(fd.dwFileAttributes))
 				{
-					if (can_show_file_or_folder(fd.cFileName, fd.dwFileAttributes, show_hidden))
+					if (can_descend_into_folder(fd.cFileName, fd.dwFileAttributes, show_hidden))
 					{
 						auto child_path = path;
 						child_path += '\\';
@@ -3048,6 +3258,19 @@ df::count_and_size platform::calc_folder_summary(const df::folder_path folder, c
 	return calc_folder_summary_impl(root_path, show_hidden, token);
 }
 
+// ERROR_PATH_NOT_FOUND is also what an ejected volume or a dropped network mapping reports, so a
+// folder only counts as deleted while its parent is still enumerable.
+static bool parent_folder_is_available(const df::folder_path folder)
+{
+	if (folder.is_root())
+	{
+		return false;
+	}
+
+	const auto attributes = GetFileAttributesW(platform::to_file_system_path(folder.parent()).c_str());
+	return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+}
+
 platform::folder_contents platform::iterate_file_items(const df::folder_path folder, bool show_hidden)
 {
 	folder_contents results;
@@ -3058,11 +3281,15 @@ platform::folder_contents platform::iterate_file_items(const df::folder_path fol
 	auto* const files = FindFirstFileEx(file_search_path.c_str(), FindExInfoBasic, &fd, FindExSearchNameMatch, nullptr,
 	                                    FIND_FIRST_EX_LARGE_FETCH);
 
+	// Read before the allocations below, which are not required to preserve the thread last error.
+	const auto enumerate_error = GetLastError();
+
 	results.files.reserve(256);
 	results.folders.reserve(64);
 
 	if (files != INVALID_HANDLE_VALUE)
 	{
+		results.success = true;
 		do
 		{
 			if (is_folder(fd.dwFileAttributes))
@@ -3083,6 +3310,13 @@ platform::folder_contents platform::iterate_file_items(const df::folder_path fol
 					i.folder = folder;
 					i.name = str::cache(str::utf16_to_utf8(fd.cFileName));
 					populate_file_attributes(i.attributes, fd);
+
+					if (test_offline_predicate &&
+						test_offline_predicate(folder.combine_file(i.name)))
+					{
+						i.attributes.is_offline = true;
+					}
+
 					results.files.emplace_back(i);
 				}
 			}
@@ -3095,16 +3329,18 @@ platform::folder_contents platform::iterate_file_items(const df::folder_path fol
 	{
 		NET_API_STATUS res;
 		auto path = to_file_system_path(folder);
+		DWORD resume = 0;
 
 		do // begin do
 		{
 			PSHARE_INFO_502 BufPtr = nullptr;
-			DWORD er = 0, tr = 0, resume = 0;
+			DWORD er = 0, tr = 0;
 			res = NetShareEnum(const_cast<wchar_t*>(path.c_str()), 502, std::bit_cast<LPBYTE*>(&BufPtr),
 			                   MAX_PREFERRED_LENGTH, &er, &tr, &resume);
 
 			if (res == ERROR_SUCCESS || res == ERROR_MORE_DATA)
 			{
+				results.success = true;
 				auto* p = BufPtr;
 
 				for (auto i = 1u; i <= er; i++)
@@ -3114,6 +3350,7 @@ platform::folder_contents platform::iterate_file_items(const df::folder_path fol
 					{
 						folder_info i;
 						i.name = str::cache(str::utf16_to_utf8(p->shi502_netname));
+						i.attributes.presence = file_presence::found;
 						i.attributes.is_readonly = true;
 						results.folders.emplace_back(i);
 					}
@@ -3125,6 +3362,14 @@ platform::folder_contents platform::iterate_file_items(const df::folder_path fol
 			}
 		}
 		while (res == ERROR_MORE_DATA);
+	}
+	else if (enumerate_error == ERROR_FILE_NOT_FOUND ||
+		(enumerate_error == ERROR_PATH_NOT_FOUND && parent_folder_is_available(folder)))
+	{
+		// The folder is genuinely gone, so an empty listing is the truth. Every other failure
+		// (offline volume, denied access, network drop) leaves success false so callers keep
+		// what they already know instead of treating the folder as emptied.
+		results.success = true;
 	}
 
 	return results;
@@ -3158,7 +3403,7 @@ std::vector<platform::file_info> platform::select_files(const df::item_selector&
 			{
 				if (is_folder(fd.dwFileAttributes))
 				{
-					if (recursive && can_show_file_or_folder(fd.cFileName, fd.dwFileAttributes, show_hidden))
+					if (recursive && can_descend_into_folder(fd.cFileName, fd.dwFileAttributes, show_hidden))
 					{
 						folders.emplace_back(current_folder.combine(str::utf16_to_utf8(fd.cFileName)));
 					}
@@ -3189,14 +3434,22 @@ std::vector<platform::file_info> platform::select_files(const df::item_selector&
 	return results;
 }
 
-bool platform::write_shell_tags(const df::file_path path, const std::vector<std::string>& tags)
+platform::file_op_result platform::write_shell_tags(const df::file_path path, const std::vector<std::string>& tags)
 {
+	const auto fail = [](const std::string_view step, const HRESULT hr)
+	{
+		return file_op_result{
+			file_op_result_code::FAILED,
+			std::format("{} failed: {}", step, format_os_error(static_cast<DWORD>(hr)))
+		};
+	};
+
 	ComPtr<IPropertyStore> propStore;
-	const auto w = to_file_system_path(path);
+	const auto w = to_shell_path(path);
 	HRESULT hr = SHGetPropertyStoreFromParsingName(w.c_str(), nullptr, GPS_READWRITE, IID_PPV_ARGS(&propStore));
 
 	if (FAILED(hr))
-		return false;
+		return fail("SHGetPropertyStoreFromParsingName"sv, hr);
 
 	PROPVARIANT propVar;
 	PropVariantInit(&propVar);
@@ -3220,17 +3473,21 @@ bool platform::write_shell_tags(const df::file_path path, const std::vector<std:
 		hr = InitPropVariantFromStringVector(ptrs.data(), static_cast<ULONG>(ptrs.size()), &propVar);
 
 		if (FAILED(hr))
-			return false;
+			return fail("InitPropVariantFromStringVector"sv, hr);
 	}
 
 	hr = propStore->SetValue(PKEY_Keywords, propVar);
 	PropVariantClear(&propVar);
 
 	if (FAILED(hr))
-		return false;
+		return fail("IPropertyStore::SetValue"sv, hr);
 
 	hr = propStore->Commit();
-	return SUCCEEDED(hr);
+
+	if (FAILED(hr))
+		return fail("IPropertyStore::Commit"sv, hr);
+
+	return {file_op_result_code::OK};
 }
 
 platform::metadata_result platform::read_shell_metadata(const df::file_path path)
@@ -3238,7 +3495,7 @@ platform::metadata_result platform::read_shell_metadata(const df::file_path path
 	metadata_result result;
 
 	ComPtr<IPropertyStore> propStore;
-	const auto w = to_file_system_path(path);
+	const auto w = to_shell_path(path);
 	HRESULT hr = SHGetPropertyStoreFromParsingName(w.c_str(), nullptr, GPS_DEFAULT, IID_PPV_ARGS(&propStore));
 
 	if (FAILED(hr))

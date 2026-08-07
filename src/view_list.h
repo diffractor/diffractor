@@ -15,10 +15,82 @@
 #include "ui_view.h"
 #include "ui_controllers.h"
 #include "ui_elements.h"
+#include "ui_dialog.h"
 
 class list_view;
 class view_controls_host;
 using view_controls_host_ptr = std::shared_ptr<view_controls_host>;
+
+struct view_operation_result
+{
+	std::string name;
+	item_status status = item_status::cancel;
+};
+
+// One named CollisionPolicy control (docs/design.md) shared by every destination-writing
+// operation so the vocabulary, ordering and behavior are identical everywhere.
+// Storage for the radio flags is owned by the callbacks held by the returned element.
+// A prompt raised because collisions were already found offers only the choices that resolve one:
+// Block run would repeat the Cancel button beside it, and Skip is not always expressible.
+inline view_element_ptr create_collision_policy_control(const ui::control_frame_ptr& frame, collision_policy& value,
+                                                        std::function<void()> changed,
+                                                        const bool allow_auto_rename = true,
+                                                        const bool allow_block_and_skip = true)
+{
+	struct policy_flags
+	{
+		bool block_run = false;
+		bool skip = false;
+		bool replace = false;
+		bool auto_rename = false;
+	};
+
+	const auto flags = std::make_shared<policy_flags>();
+
+	// Auto-rename is not offered by every operation; fall back rather than leave nothing selected.
+	if (!allow_auto_rename && value == collision_policy::auto_rename) value = collision_policy::skip;
+	if (!allow_block_and_skip && (value == collision_policy::block_run || value == collision_policy::skip))
+		value = allow_auto_rename ? collision_policy::auto_rename : collision_policy::replace;
+
+	flags->block_run = value == collision_policy::block_run;
+	flags->skip = value == collision_policy::skip;
+	flags->replace = value == collision_policy::replace;
+	flags->auto_rename = value == collision_policy::auto_rename;
+
+	auto group = std::make_shared<ui::group_control>();
+	group->add(std::make_shared<text_element>(tt.collision_policy_label));
+
+	auto apply = [flags, &value, allow_block_and_skip, changed = std::move(changed)](const bool)
+	{
+		if (flags->skip) value = collision_policy::skip;
+		else if (flags->replace) value = collision_policy::replace;
+		else if (flags->auto_rename) value = collision_policy::auto_rename;
+		// Nothing selected can only mean Block run where it is offered; where it is not, the safe
+		// default stands rather than a policy the prompt never showed.
+		else value = allow_block_and_skip ? collision_policy::block_run : collision_policy::auto_rename;
+
+		if (changed) changed();
+	};
+
+	if (allow_block_and_skip)
+	{
+		group->add(std::make_shared<ui::check_control>(frame, tt.collision_block, flags->block_run, true, false, apply,
+		                                               ui::radio_group_collision));
+		group->add(std::make_shared<ui::check_control>(frame, tt.collision_skip, flags->skip, true, false, apply,
+		                                               ui::radio_group_collision));
+	}
+
+	if (allow_auto_rename)
+	{
+		group->add(
+			std::make_shared<ui::check_control>(frame, tt.collision_rename, flags->auto_rename, true, false, apply,
+			                                    ui::radio_group_collision));
+	}
+
+	group->add(std::make_shared<ui::check_control>(frame, tt.collision_replace, flags->replace, true, false, apply,
+	                                               ui::radio_group_collision));
+	return group;
+}
 
 class list_view : public view_base
 {
@@ -31,6 +103,11 @@ protected:
 	view_scroller _scroller;
 
 	bool _rows_clickable = false;
+	progress_state _progress;
+	int _active_row = -1;
+	bool _showing_results = false;
+	size_t _processing_generation = 0;
+	std::shared_ptr<std::atomic_int> _processing_cancel;
 
 	static constexpr int max_col_count = 4;
 	int col_count = 4;
@@ -52,6 +129,7 @@ public:
 	{
 		list_view& _view;
 		std::string _text[max_col_count];
+		icon_index _icons[max_col_count] = {};
 		ui::color _bg_row;
 		ui::color32 _text_color[max_col_count] = {0, 0, 0, 0};
 		int _order = 0;
@@ -80,8 +158,15 @@ public:
 					                                  dc.colors.alpha);
 					const std::string_view text = _text[i];
 					const recti bounds(x, logical_bounds.top, x + _view.col_widths[i], logical_bounds.bottom);
-					dc.draw_text(text, bounds, ui::style::font_face::dialog, ui::style::text_style::single_line,
-					             text_color, {});
+					if (_icons[i] != icon_index::none)
+					{
+						xdraw_icon(dc, _icons[i], bounds, text_color, {});
+					}
+					else
+					{
+						dc.draw_text(text, bounds, ui::style::font_face::dialog, ui::style::text_style::single_line,
+						             text_color, {});
+					}
 					x += _view.col_widths[i] + dc.padding2;
 				}
 			}
@@ -118,6 +203,242 @@ public:
 		_rows.clear();
 	}
 
+	progress_state progress() const override
+	{
+		return _progress;
+	}
+
+	void begin_processing(const size_t total)
+	{
+		++_processing_generation;
+		_processing_cancel = std::make_shared<std::atomic_int>();
+		_progress = {true, 0, static_cast<int64_t>(total)};
+		_active_row = -1;
+		_showing_results = false;
+		_state.invalidate_view(view_invalid::view_redraw | view_invalid::status | view_invalid::command_state |
+			view_invalid::app_layout);
+	}
+
+	size_t processing_generation() const { return _processing_generation; }
+	bool is_processing_generation(const size_t generation) const { return generation == _processing_generation; }
+	std::shared_ptr<std::atomic_int> processing_cancel_source() const { return _processing_cancel; }
+
+	void processing_item(const size_t row_index, const size_t work_position)
+	{
+		if (!_progress.active || row_index >= _rows.size()) return;
+
+		if (_active_row >= 0 && _active_row < static_cast<int>(_rows.size()))
+		{
+			_rows[_active_row]->_bg_color = {};
+		}
+
+		_active_row = static_cast<int>(row_index);
+		_progress.position = static_cast<int64_t>(work_position);
+		const auto& row = _rows[_active_row];
+		row->_bg_color = ui::color(ui::style::color::important_background, 1.0f);
+
+		const auto visible_top = _scroller.scroll_offset().y;
+		const auto visible_bottom = visible_top + _scroller.client_bounds().height();
+		if (row->bounds.top < visible_top)
+		{
+			_scroller.scroll_offset(_host, 0, row->bounds.top);
+		}
+		else if (row->bounds.bottom > visible_bottom)
+		{
+			_scroller.scroll_offset(_host, 0, row->bounds.bottom - _scroller.client_bounds().height());
+		}
+
+		_state.invalidate_view(view_invalid::view_redraw | view_invalid::status);
+	}
+
+	void processing_item(const size_t row_index)
+	{
+		processing_item(row_index, row_index + 1);
+	}
+
+	void processing_order_item(const size_t work_index, const int ignored_order)
+	{
+		size_t current = 0;
+		for (size_t row_index = 0; row_index < _rows.size(); ++row_index)
+		{
+			if (_rows[row_index]->_order != ignored_order)
+			{
+				if (current == work_index)
+				{
+					processing_item(row_index, work_index + 1);
+					return;
+				}
+				++current;
+			}
+		}
+	}
+
+	void processing_exact_order_item(const size_t work_index, const int active_order)
+	{
+		size_t current = 0;
+		for (size_t row_index = 0; row_index < _rows.size(); ++row_index)
+		{
+			if (_rows[row_index]->_order == active_order)
+			{
+				if (current == work_index)
+				{
+					processing_item(row_index, work_index + 1);
+					return;
+				}
+				++current;
+			}
+		}
+	}
+
+	void end_processing()
+	{
+		if (_active_row >= 0 && _active_row < static_cast<int>(_rows.size()))
+		{
+			_rows[_active_row]->_bg_color = {};
+		}
+
+		_active_row = -1;
+		_progress = {};
+		_state.invalidate_view(view_invalid::view_redraw | view_invalid::status | view_invalid::command_state |
+			view_invalid::app_layout);
+	}
+
+	// One sentence for a finished run, whatever view drew the rows: counts first, then the classes
+	// of row that did nothing, so a partial run is never read as a whole one.
+	static std::string format_operation_summary(const std::vector<view_operation_result>& results)
+	{
+		size_t succeeded = 0;
+		size_t failed = 0;
+		size_t skipped = 0;
+		size_t canceled = 0;
+		std::string first_succeeded;
+		std::string first_failed;
+		std::string first_skipped;
+		std::string first_canceled;
+
+		for (const auto& result : results)
+		{
+			switch (result.status)
+			{
+			case item_status::success:
+				if (first_succeeded.empty()) first_succeeded = result.name;
+				++succeeded;
+				break;
+			case item_status::fail:
+				if (first_failed.empty()) first_failed = result.name;
+				++failed;
+				break;
+			case item_status::ignore:
+				if (first_skipped.empty()) first_skipped = result.name;
+				++skipped;
+				break;
+			case item_status::cancel:
+				if (first_canceled.empty()) first_canceled = result.name;
+				++canceled;
+				break;
+			}
+		}
+
+		const auto total = static_cast<int64_t>(results.size());
+		std::string summary;
+		const auto append = [&summary](std::string text)
+		{
+			if (!summary.empty()) summary += " ";
+			summary += std::move(text);
+		};
+		if (succeeded > 0) append(format_plural_text(tt.processed_fmt, first_succeeded, succeeded, {}, total));
+		if (failed > 0) append(format_plural_text(tt.failed_items_fmt, first_failed, failed, {}, total));
+		if (skipped > 0) append(format_plural_text(tt.ignored_fmt, first_skipped, skipped, {}, total));
+		if (canceled > 0) append(format_plural_text(tt.canceled_items_fmt, first_canceled, canceled, {}, total));
+		return summary;
+	}
+
+	// True while the rows describe a finished run rather than a plan waiting to be run.
+	bool showing_results() const { return _showing_results; }
+
+	std::string show_results(const std::vector<view_operation_result>& results)
+	{
+		std::vector<row_element_ptr> rows;
+		rows.reserve(results.size());
+
+		for (const auto& result : results)
+		{
+			auto row = std::make_shared<row_element>(*this);
+			row->_text[1] = result.name;
+			row->_order = static_cast<int>(rows.size());
+
+			switch (result.status)
+			{
+			case item_status::success:
+				row->_icons[0] = icon_index::check;
+				break;
+			case item_status::fail:
+				row->_icons[0] = icon_index::error;
+				break;
+			case item_status::ignore:
+				row->_icons[0] = icon_index::none;
+				break;
+			case item_status::cancel:
+				row->_icons[0] = icon_index::cancel;
+				break;
+			}
+
+			rows.emplace_back(std::move(row));
+		}
+
+		auto summary = format_operation_summary(results);
+
+		_rows = std::move(rows);
+		_showing_results = true;
+		_state.invalidate_view(view_invalid::view_layout | view_invalid::controller | view_invalid::status |
+			view_invalid::command_state);
+		return summary;
+	}
+
+	bool cancel_processing()
+	{
+		if (!_progress.active) return false;
+		if (_processing_cancel) ++(*_processing_cancel);
+		return true;
+	}
+
+	void cancel_operation() override
+	{
+		cancel_processing();
+	}
+
+	// Close always exits. When a task is running, state what will stop and let the user choose.
+	// Returns true when the view should exit.
+	bool confirm_exit_while_processing(const std::string_view operation_title)
+	{
+		if (!_progress.active) return true;
+
+		const auto dlg = make_dlg(_host->owner());
+
+		const std::vector<view_element_ptr> controls = {
+			set_margin(std::make_shared<ui::title_control2>(dlg->_frame, icon_index::question,
+			                                                tt.cancel_operation_title,
+			                                                str_format(tt.cancel_operation_fmt.sv(), operation_title))),
+			std::make_shared<divider_element>(),
+			std::make_shared<ui::ok_cancel_control>(dlg->_frame, tt.button_cancel_operation, tt.button_keep_running)
+		};
+
+		if (dlg->show_modal(controls, {44}, {33}) != ui::close_result::ok) return false;
+
+		cancel_processing();
+		return true;
+	}
+
+	bool can_exit() override
+	{
+		return !_progress.active;
+	}
+
+	bool confirm_exit() override
+	{
+		return confirm_exit_while_processing(operation_name());
+	}
+
 	void activate(const sizei extent) override
 	{
 		_extent = extent;
@@ -147,10 +468,11 @@ public:
 
 		const auto titles = col_titles();
 		const recti scroll_bounds{_extent.cx - mc.scroll_width, 0, _extent.cx, _extent.cy};
-		const recti client_bounds{0, 0, _extent.cx, _extent.cy};
+		const recti client_bounds{0, 0, std::max(0, _extent.cx - mc.scroll_width), _extent.cy};
 
 		auto y_max = 0;
 		std::string_view longest_text[max_col_count];
+		bool has_icon[max_col_count] = {};
 
 		bool odd_row = false;
 
@@ -173,6 +495,7 @@ public:
 				{
 					const std::string_view text = r->_text[i];
 					if (text.size() > longest_text[i].size()) longest_text[i] = text;
+					has_icon[i] = has_icon[i] || r->_icons[i] != icon_index::none;
 				}
 
 				r->_bg_row.a = odd_row ? 0.11f : 0.0f;
@@ -180,6 +503,10 @@ public:
 			}
 
 			y_max = y + mc.padding2;
+			if (!status().empty() && !(_progress.active && _progress.total == 0))
+			{
+				y_max += mc.text_line_height(ui::style::font_face::dialog) + mc.padding2 * 2;
+			}
 		}
 
 		auto x_max = 0;
@@ -188,20 +515,32 @@ public:
 		for (int i = 0; i < col_count; i++)
 		{
 			col_widths[i] = mc.measure_text(longest_text[i], ui::style::font_face::dialog,
-			                                ui::style::text_style::single_line, extent.cx).cx + mc.padding2;
+			                                ui::style::text_style::single_line, client_bounds.width()).cx + mc.padding2;
+			if (has_icon[i]) col_widths[i] = std::max(col_widths[i], mc.icon_cxy + mc.padding2);
 			x_max += col_widths[i] + mc.padding2;
 			if (i > 0) shrink_col_total += col_widths[i];
 		}
 
 		// Shrink if too large
-		if (x_max > extent.cx)
+		if (x_max > client_bounds.width())
 		{
-			const auto cx_avail = extent.cx - (col_count + 1) * mc.padding2;
-			const auto extra = x_max - cx_avail;
-
-			for (int i = 1; i < col_count; i++)
+			const auto cx_avail = std::max(0, client_bounds.width() - (col_count + 1) * mc.padding2);
+			const auto fixed_width = col_widths[0];
+			if (fixed_width < cx_avail && shrink_col_total > 0)
 			{
-				col_widths[i] -= df::mul_div(extra, col_widths[i], shrink_col_total);
+				const auto shrink_avail = cx_avail - fixed_width;
+				for (int i = 1; i < col_count; i++)
+				{
+					col_widths[i] = df::mul_div(shrink_avail, col_widths[i], shrink_col_total);
+				}
+			}
+			else if (x_max > 0)
+			{
+				const auto total_width = x_max - col_count * mc.padding2;
+				for (int i = 0; i < col_count; i++)
+				{
+					col_widths[i] = total_width > 0 ? df::mul_div(cx_avail, col_widths[i], total_width) : 0;
+				}
 			}
 
 			x_max = 0;
@@ -212,7 +551,7 @@ public:
 			}
 		}
 
-		coll_offset = std::max(0, extent.cx - x_max) / 2;
+		coll_offset = std::max(0, client_bounds.width() - x_max) / 2;
 
 		_scroller.layout({client_bounds.width(), y_max}, client_bounds, scroll_bounds);
 		_host->frame()->invalidate();
@@ -313,21 +652,20 @@ public:
 			}
 
 			render_headers(rc);
-
-			if (!_scroller._active)
-			{
-				_scroller.draw_scroll(rc);
-			}
+			_scroller.draw_scroll(rc);
 		}
 		else
 		{
-			const auto message = empty_message();
-
-			if (!message.sv().empty())
+			if (!(_progress.active && _progress.total == 0))
 			{
-				const auto text_color = ui::color(rc.colors.foreground, rc.colors.alpha);
-				rc.draw_text(message.sv(), recti(_extent), ui::style::font_face::dialog,
-				             ui::style::text_style::single_line_center, text_color, {});
+				const auto message = empty_message();
+
+				if (!message.sv().empty())
+				{
+					const auto text_color = ui::color(rc.colors.foreground, rc.colors.alpha);
+					rc.draw_text(message.sv(), recti(_extent), ui::style::font_face::dialog,
+					             ui::style::text_style::single_line_center, text_color, {});
+				}
 			}
 		}
 	}
@@ -351,6 +689,107 @@ public:
 	};
 };
 
+class view_command_status final : public df::status_i, public std::enable_shared_from_this<view_command_status>
+{
+	async_strategy& _async;
+	std::shared_ptr<std::atomic_int> _cancel_source;
+	int _cancel_version = 0;
+	std::function<void(size_t)> _started;
+	std::function<void(std::string, std::vector<view_operation_result>)> _completed;
+	std::atomic_size_t _position = 0;
+	std::atomic_bool _has_failures = false;
+	std::atomic_bool _is_complete = false;
+	platform::mutex _progress_mutex;
+	_Guarded_by_(_progress_mutex) size_t _pending_position = 0;
+	_Guarded_by_(_progress_mutex) bool _progress_callback_pending = false;
+	_Guarded_by_(_progress_mutex) std::vector<view_operation_result> _results;
+
+public:
+	view_command_status(async_strategy& async, std::shared_ptr<std::atomic_int> cancel_source,
+	                    std::function<void(size_t)> started,
+	                    std::function<void(std::string, std::vector<view_operation_result>)> completed) :
+		_async(async), _cancel_source(std::move(cancel_source)),
+		_cancel_version(_cancel_source ? _cancel_source->load() : 0),
+		_started(std::move(started)), _completed(std::move(completed))
+	{
+	}
+
+	void start_item(std::string_view) override
+	{
+		const auto position = _position.fetch_add(1);
+		auto queue_callback = false;
+		{
+			platform::exclusive_lock lock(_progress_mutex);
+			_pending_position = position;
+			if (!_progress_callback_pending)
+			{
+				_progress_callback_pending = true;
+				queue_callback = true;
+			}
+		}
+
+		if (queue_callback)
+		{
+			_async.queue_ui([self = shared_from_this()] { self->publish_progress(); });
+		}
+	}
+
+	void end_item(const std::string_view name, const item_status status) override
+	{
+		if (status == item_status::fail) _has_failures = true;
+		platform::exclusive_lock lock(_progress_mutex);
+		_results.emplace_back(std::string(name), status);
+	}
+
+	bool has_failures() const override { return _has_failures; }
+
+	bool is_canceled() const override
+	{
+		return _cancel_source && _cancel_source->load() != _cancel_version;
+	}
+
+	void abort(const std::string_view message) override { finish(std::string(message)); }
+	void complete(const std::string_view message = {}) override { finish(std::string(message)); }
+	void show_errors() override { finish({}); }
+	void show_message(const std::string_view message) override { finish(std::string(message)); }
+
+	void message(std::string_view, int64_t, int64_t) override
+	{
+	}
+
+	void wait_for_complete() const override
+	{
+	}
+
+private:
+	void publish_progress()
+	{
+		size_t position;
+		{
+			platform::exclusive_lock lock(_progress_mutex);
+			position = _pending_position;
+			_progress_callback_pending = false;
+		}
+
+		if (_started) _started(position);
+	}
+
+	void finish(std::string message)
+	{
+		if (_is_complete.exchange(true)) return;
+		std::vector<view_operation_result> results;
+		{
+			platform::exclusive_lock lock(_progress_mutex);
+			results = std::move(_results);
+		}
+		_async.queue_ui(
+			[self = shared_from_this(), message = std::move(message), results = std::move(results)]() mutable
+			{
+				if (self->_completed) self->_completed(std::move(message), std::move(results));
+			});
+	}
+};
+
 class view_controls_host : public view_host, public std::enable_shared_from_this<view_controls_host>
 {
 public:
@@ -359,10 +798,13 @@ public:
 	ui::control_frame_ptr _dlg;
 	ui::frame_ptr _frame;
 	std::vector<view_element_ptr> _controls;
-	ui::color _clr = ui::style::color::dialog_text;
+	ui::color _clr = ui::color(ui::style::color::dialog_text);
 	long _layout_height = 0;
 	long _layout_width = 0;
 	ui::coll_widths _label_width;
+	// Set by a view whose panel exists to be typed into. Applied after the first layout because the
+	// child controls are not shown, and so cannot take focus, until their positions are applied.
+	std::function<void()> initial_focus;
 
 	view_controls_host(view_state& s) : _state(s)
 	{
@@ -384,13 +826,18 @@ public:
 	{
 		if (!_controls.empty())
 		{
-			const auto layout_padding = mc.padding1;
+			const auto layout_padding = df::round(mc.padding1 / mc.scale_factor);
 			auto avail_bounds = recti(_extent);
 			avail_bounds.right -= mc.scroll_width + layout_padding;
 
+			mc.col_widths = {};
 			ui::control_layouts positions;
-			const auto height = stack_elements(mc, positions, avail_bounds, _controls, false,
-			                                   {layout_padding, layout_padding});
+			flex_container_layout column;
+			column.direction = flex_direction::column;
+			column.wrap = flex_wrap::no_wrap;
+			column.align_items = flex_align::start;
+			column.padding = {layout_padding, layout_padding};
+			const auto height = layout_flex_elements(_controls, mc, positions, avail_bounds, column).cy;
 
 			_layout_height = height;
 			_layout_width = avail_bounds.width();
@@ -419,6 +866,13 @@ public:
 	{
 		_extent = extent;
 		layout_controls(mc);
+
+		if (initial_focus && !is_minimized && !_controls.empty())
+		{
+			const auto claim = std::move(initial_focus);
+			initial_focus = {};
+			claim();
+		}
 	}
 
 	void on_window_paint(ui::draw_context& dc) override
@@ -440,10 +894,7 @@ public:
 			_active_controller->draw(dc);
 		}
 
-		if (!_scroller._active)
-		{
-			_scroller.draw_scroll(dc);
-		}
+		_scroller.draw_scroll(dc);
 	}
 
 	void tick() override
@@ -623,9 +1074,11 @@ public:
 		_host->frame()->invalidate();
 	}
 
-	void escape() override
+	bool escape() override
 	{
+		if (!_parent._header_tracking) return false;
 		_parent._header_tracking = false;
+		return true;
 	}
 
 	void popup_from_location(view_hover_element& hover) override
@@ -635,6 +1088,8 @@ public:
 
 inline view_controller_ptr list_view::controller_from_location(const view_host_ptr& host, const pointi loc)
 {
+	if (_progress.active) return nullptr;
+
 	for (int i = 0; i < col_count; ++i)
 	{
 		if (_col_header_bounds[i].contains(loc))

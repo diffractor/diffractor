@@ -18,12 +18,25 @@ struct command_line_t
 
 	bool no_gpu = false;
 	bool no_indexing = false;
-	bool run_tests = false;
 	bool console_test = false;
 	std::string test_filter = "*";
+	std::string test_temp_folder;
 
 	bool gen_docs = false;
 	std::string docs_path;
+
+	bool validate_po = false;
+
+	// Read-only measurement of what perceptual-hash duplicate grouping does to a real library.
+	bool dup_report = false;
+	std::string dup_report_folder;
+	std::string dup_report_output;
+
+#ifdef _DEBUG
+	std::string test_action;
+	std::string screenshot_scene;
+	std::string screenshot_output;
+#endif
 
 	void parse(std::string_view command_line_text);
 	std::string format_restart_cmd_line() const;

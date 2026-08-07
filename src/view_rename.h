@@ -21,7 +21,10 @@ class rename_view final :
 	public std::enable_shared_from_this<rename_view>
 {
 	std::vector<rename_item> _renames;
+	std::string _title;
 	std::string _status;
+	uint64_t _analysis_generation = 0;
+	bool _analysis_valid = false;
 
 public:
 	rename_view(view_state& state, view_host_ptr host) : list_view(state, std::move(host))
@@ -33,22 +36,26 @@ public:
 	{
 		return std::array<text_t, max_col_count>
 		{
-			text_t{},
 			tt.old_name,
+			text_t{},
 			tt.new_name,
 			text_t{}
 		};
 	};
 
-	text_t empty_message() override { return tt.view_empty_message; }
+	text_t empty_message() override { return tt.no_items_selected_message; }
+
+	std::string_view operation_name() const override { return tt.command_rename; }
 
 	void exit() override
 	{
+		if (!confirm_exit_while_processing(operation_name())) return;
 		_state.view_mode(view_type::items);
 	}
 
-	void run() const;
+	void run();
 	void refresh() override;
+	bool can_run() const { return _analysis_valid && can_rename_items(_renames); }
 
 	std::string_view status() override
 	{
@@ -65,11 +72,14 @@ public:
 		_rows.clear();
 		_renames.clear();
 		_status.clear();
+		_analysis_valid = false;
+		++_analysis_generation;
 	}
 
 	std::string_view title() override
 	{
-		return s_app_name;
+		_title = std::format("{}: {}", s_app_name, tt.command_rename);
+		return _title;
 	}
 
 	view_controls_host_ptr controls(const ui::control_frame_ptr& owner);

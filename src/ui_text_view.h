@@ -29,7 +29,7 @@ class text_view_control final : public view_element
 	ui::style::font_face _font = ui::style::font_face::code;
 
 public:
-	text_view_control(df::blob data, const view_element_style style_in) noexcept : view_element(style_in),
+	text_view_control(df::blob data, const view_element_options& style_in) noexcept : view_element(style_in),
 		_data(std::move(data))
 	{
 	}
@@ -44,9 +44,6 @@ public:
 
 			if (c < 32 || c > 127) { c = '.'; }
 			else if (std::isspace(c)) { c = ' '; }
-			//else if (std::ispunct(c)) {}
-			//else if (std::isalnum(c)) {}
-			//else { c = "."; };
 
 			result[i] = c;
 		}
@@ -74,6 +71,7 @@ public:
 
 			for (auto i = first_line; i < last_line; ++i)
 			{
+				line.assign(line.size(), ' ');
 				const auto start_address = i * _bytes_per_line;
 
 				if (start_address < _data.size())
@@ -83,14 +81,10 @@ public:
 
 					auto x = 0u;
 
-					for (auto j = 0u; j < sizeof(start_address); ++j)
+					for (auto j = 0u; j < sizeof(start_address) * 2; ++j)
 					{
-						const auto byte = std::bit_cast<const uint8_t*>(&start_address)[j];
-
-						line[x] = hex_chars[(byte & 0xF0) >> 4];
-						++x;
-						line[x] = hex_chars[(byte & 0x0F) >> 0];
-						++x;
+						const auto shift = static_cast<unsigned>((sizeof(start_address) * 2 - j - 1) * 4);
+						line[x++] = hex_chars[(start_address >> shift) & 0x0f];
 					}
 
 					x += 2;

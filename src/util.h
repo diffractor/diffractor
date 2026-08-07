@@ -7,7 +7,8 @@
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 // Purpose: Core utility types and functions. Defines fundamental types (file_size, date_t, blob),
-// memory helpers, logging, and common utility functions used throughout the application.
+// memory helpers, logging, session-aggregate performance diagnostics, and common utility functions
+// used throughout the application.
 
 #pragma once
 
@@ -23,8 +24,30 @@ using namespace std::literals;
 
 constexpr std::size_t operator "" _z(const unsigned long long n)
 {
-	return n;
+	return static_cast<std::size_t>(n);
 }
+
+// Move-semantics contracts. std::is_move_constructible_v is also satisfied by a copy constructor,
+// so it proves nothing; declare the role a type plays instead.
+//
+//   df_assert_pod       passed and stored by value, no move required.
+//   df_assert_movable   relocation is noexcept, so container growth moves instead of copying.
+//   df_assert_move_only as movable, and a missing std::move fails to compile rather than
+//                       silently deep-copying a decoded buffer or scan result.
+//
+// df_assert_movable cannot be used on df::hash_map / df::hash_set or anything containing one:
+// the MSVC unordered containers do not declare a noexcept move constructor.
+#define df_assert_pod(T) \
+	static_assert(std::is_trivially_copyable_v<T>, #T " must remain trivially copyable")
+
+#define df_assert_movable(T) \
+	static_assert(std::is_nothrow_move_constructible_v<T>, #T " must be nothrow move constructible"); \
+	static_assert(std::is_nothrow_move_assignable_v<T>, #T " must be nothrow move assignable")
+
+#define df_assert_move_only(T) \
+	df_assert_movable(T); \
+	static_assert(!std::is_copy_constructible_v<T>, #T " must not be copy constructible"); \
+	static_assert(!std::is_copy_assignable_v<T>, #T " must not be copy assignable")
 
 class app_exception final : public std::exception
 {
@@ -82,15 +105,23 @@ namespace df
 	class date_t;
 	class file_size;
 
-	constexpr void assert_true(const bool should_be_true)
-	{
+	// The macro prevents release builds from evaluating assertion expressions.
 #ifdef _DEBUG
+	constexpr void assert_true_impl(const bool should_be_true)
+	{
 		if (!should_be_true)
 		{
 			__debugbreak();
 		}
-#endif //_DEBUG
 	}
+#define assert_true(should_be_true) assert_true_impl(should_be_true)
+#else
+	constexpr void assert_true_impl()
+	{
+	}
+
+#define assert_true(should_be_true) assert_true_impl()
+#endif //_DEBUG
 
 	struct free_delete
 	{
@@ -103,6 +134,7 @@ namespace df
 	template <typename T>
 	unique_alloc_ptr<T> unique_alloc(const size_t alloc_size)
 	{
+		if (alloc_size > std::numeric_limits<size_t>::max() - 16) return {};
 		return std::unique_ptr<T, free_delete>(static_cast<T*>(_aligned_malloc(alloc_size + 16, 16)));
 	}
 
@@ -130,6 +162,26 @@ namespace df
 		std::function<void(T*)> destroy_func_;
 	};
 
+	// Zero-overhead scope guard: no std::function, no allocation, inlinable.
+	template <typename F>
+	class scope_exit
+	{
+	public:
+		explicit scope_exit(F f) : _f(std::move(f))
+		{
+		}
+
+		~scope_exit() { _f(); }
+
+		scope_exit(const scope_exit&) = delete;
+		scope_exit& operator=(const scope_exit&) = delete;
+		scope_exit(scope_exit&&) = delete;
+		scope_exit& operator=(scope_exit&&) = delete;
+
+	private:
+		F _f;
+	};
+
 	extern std::atomic_bool is_closing;
 	extern std::atomic_int file_handles_detached;
 	extern std::atomic_int jobs_running;
@@ -137,25 +189,246 @@ namespace df
 	extern std::atomic_int command_active;
 	extern std::atomic_int dragging_items;
 	extern std::atomic_int handling_crash;
-	extern const char* rendering_func;
+	// Written by whichever thread is inside the draw backend, read by the UI debug panel and by the
+	// crash handler on its own thread, so the name of the last function entered is a published value.
+	extern std::atomic<const char*> rendering_func;
 	extern std::string gpu_desc;
 	extern std::string gpu_id;
 	extern std::string d3d_info;
+	// Budgets for a decoded image, published once by the draw backend when it creates its device and
+	// read only on the UI thread when a decode is sized. Defaults suit a feature level 11 device.
+	extern int max_texture_dimension;
+	extern int64_t max_texture_bytes;
+	extern int64_t max_decode_bytes;
 	extern date_t start_time;
 	extern file_path last_loaded_path;
 	extern file_path previous_log_path;
 	extern file_path log_path;
 
 	void log(std::string_view context, std::string_view message);
-	void log(std::string_view context, std::string_view message);
-	void log(std::string_view context, std::string_view message);
-	void trace(std::string_view message);
+	// For messages a codec can emit once per scanned item. Each distinct message reaches the log once.
+	void log_once(std::string_view context, std::string_view message);
 	void trace(std::string_view message);
 	file_path close_log();
 	std::string format_version(bool short_text);
 
 	double now();
 	int64_t now_ms();
+	int64_t now_us();
+
+	// Session-aggregate performance diagnostics. Counters only: they publish no state, nothing
+	// branches on their value, and they are read once at exit after the worker queues have drained.
+	// Increments are relaxed and arrive from every execution context, so no single-context owner
+	// exists and no ordering guarantee is needed - only the totals matter.
+
+	inline void bump(std::atomic_uint64_t& counter, const uint64_t n = 1)
+	{
+		counter.fetch_add(n, std::memory_order_relaxed);
+	}
+
+	inline void bump(std::atomic_uint32_t& counter)
+	{
+		counter.fetch_add(1, std::memory_order_relaxed);
+	}
+
+	inline void record_peak(std::atomic_uint32_t& peak, const uint32_t value)
+	{
+		auto current = peak.load(std::memory_order_relaxed);
+		while (value > current && !peak.compare_exchange_weak(current, value, std::memory_order_relaxed))
+		{
+		}
+	}
+
+	// Totals answer "where did the session spend its time"; the paired maximum answers "did any
+	// single occurrence stall a thread", which an average hides.
+	class perf_timer
+	{
+		std::atomic_uint64_t& _total_us;
+		std::atomic_uint32_t* const _max_us;
+		const int64_t _start = now_us();
+
+	public:
+		explicit perf_timer(std::atomic_uint64_t& total_us, std::atomic_uint32_t* max_us = nullptr) noexcept
+			: _total_us(total_us), _max_us(max_us)
+		{
+		}
+
+		~perf_timer()
+		{
+			const auto elapsed = static_cast<uint64_t>(now_us() - _start);
+			bump(_total_us, elapsed);
+			if (_max_us) record_peak(*_max_us, static_cast<uint32_t>(std::min<uint64_t>(elapsed, UINT32_MAX)));
+		}
+
+		perf_timer(const perf_timer&) = delete;
+		perf_timer& operator=(const perf_timer&) = delete;
+		perf_timer(perf_timer&&) = delete;
+		perf_timer& operator=(perf_timer&&) = delete;
+	};
+
+	struct thumbnail_counters
+	{
+		std::atomic_uint32_t scan_batches = 0;
+		std::atomic_uint32_t scan_batches_cancelled = 0;
+		std::atomic_uint32_t scan_batches_queued = 0;
+		std::atomic_uint32_t scan_batches_pending = 0;
+		std::atomic_uint32_t scan_batches_pending_peak = 0;
+		std::atomic_uint64_t scan_thumbs_requested = 0;
+		std::atomic_uint64_t scan_thumbs_scanned = 0;
+		std::atomic_uint64_t scan_completions_stale = 0;
+		std::atomic_uint64_t stage_requests = 0;
+		std::atomic_uint64_t stage_skipped = 0;
+		std::atomic_uint64_t stage_coalesced = 0;
+		std::atomic_uint64_t stage_decodes = 0;
+		std::atomic_uint64_t stage_discarded = 0;
+		std::atomic_uint64_t published_db = 0;
+		std::atomic_uint64_t published_shell = 0;
+		std::atomic_uint64_t shell_retries = 0;
+		std::atomic_uint64_t load_failures = 0;
+	};
+
+	// UI-thread cost. Everything here competes with input handling, so the maxima matter more than
+	// the totals: one long drain or paint is a visible stutter.
+	struct ui_counters
+	{
+		std::atomic_uint64_t idle_drains = 0;
+		std::atomic_uint64_t idle_tasks = 0;
+		std::atomic_uint64_t idle_us = 0;
+		std::atomic_uint32_t idle_max_us = 0;
+		std::atomic_uint32_t idle_batch_peak = 0;
+		std::atomic_uint64_t paints = 0;
+		std::atomic_uint64_t paint_us = 0;
+		std::atomic_uint32_t paint_max_us = 0;
+		std::atomic_uint64_t texture_uploads = 0;
+	};
+
+	struct db_counters
+	{
+		std::atomic_uint64_t read_batches = 0;
+		std::atomic_uint64_t thumbnails_read = 0;
+		std::atomic_uint64_t read_us = 0;
+		std::atomic_uint32_t read_max_us = 0;
+		std::atomic_uint64_t write_batches = 0;
+		std::atomic_uint64_t items_written = 0;
+		std::atomic_uint64_t thumbs_written = 0;
+		std::atomic_uint64_t write_us = 0;
+		std::atomic_uint32_t write_max_us = 0;
+	};
+
+	// Query work is split because the two halves run on different threads: matching on a worker,
+	// materializing into item_elements on the UI thread where its cost is felt directly.
+	struct query_counters
+	{
+		std::atomic_uint64_t queries = 0;
+		std::atomic_uint64_t query_us = 0;
+		std::atomic_uint32_t query_max_us = 0;
+		std::atomic_uint64_t query_items = 0;
+		std::atomic_uint64_t materializations = 0;
+		std::atomic_uint64_t materialize_us = 0;
+		std::atomic_uint32_t materialize_max_us = 0;
+		std::atomic_uint64_t materialize_items = 0;
+		std::atomic_uint64_t counts = 0;
+		std::atomic_uint64_t count_us = 0;
+	};
+
+	struct file_counters
+	{
+		std::atomic_uint64_t scans = 0;
+		std::atomic_uint64_t scan_us = 0;
+		std::atomic_uint32_t scan_max_us = 0;
+		// Full-image loads for display, one per step through a folder, and the slowest thing the load
+		// queue does - a backlog here is what leaves the viewer blank.
+		std::atomic_uint64_t loads = 0;
+		std::atomic_uint64_t load_us = 0;
+		std::atomic_uint32_t load_max_us = 0;
+		std::atomic_uint64_t decodes = 0;
+		std::atomic_uint64_t decode_us = 0;
+		std::atomic_uint32_t decode_max_us = 0;
+		std::atomic_uint64_t decode_bytes = 0;
+		// Metadata parse failures on per-item paths, counted rather than logged so a bad batch of
+		// files cannot flood the log with one line each.
+		std::atomic_uint64_t metadata_errors = 0;
+	};
+
+	// Content hashing for duplicate detection. A CRC costs a full read and a perceptual hash costs a
+	// read and a decode, so what these answer is how much of that work was avoidable: a hash computed
+	// for a path that already carried one, or held by a picture that could never have matched.
+	struct index_counters
+	{
+		std::atomic_uint64_t crc_computed = 0;
+		std::atomic_uint64_t crc_failed = 0;
+		std::atomic_uint64_t crc_bytes = 0;
+		std::atomic_uint64_t crc_us = 0;
+		std::atomic_uint32_t crc_max_us = 0;
+
+		std::atomic_uint64_t phash_computed = 0;
+		std::atomic_uint64_t phash_usable = 0;
+		std::atomic_uint64_t phash_declined = 0;
+		std::atomic_uint64_t phash_unreadable = 0;
+		// Hashed, but nothing retained the result - no index item at that path, or a database update
+		// that matched no row - so the next pass over the same file pays for the decode again.
+		std::atomic_uint64_t phash_unpersisted = 0;
+		std::atomic_uint64_t phash_unwritten = 0;
+		std::atomic_uint64_t phash_presence = 0;
+		std::atomic_uint64_t phash_bytes = 0;
+		std::atomic_uint64_t phash_us = 0;
+		std::atomic_uint32_t phash_max_us = 0;
+
+		// Gauges, not totals: each holds what the most recent predictions pass saw. Summing passes
+		// would count one picture once per pass and hide whether the candidate rule is holding.
+		std::atomic_uint32_t pass_files = 0;
+		std::atomic_uint32_t pass_crc_held = 0;
+		std::atomic_uint32_t pass_dup_groups = 0;
+		std::atomic_uint32_t pass_pictures = 0;
+		std::atomic_uint32_t pass_buckets = 0;
+		std::atomic_uint32_t pass_candidates = 0;
+		std::atomic_uint32_t pass_wanted = 0;
+		std::atomic_uint32_t pass_usable_held = 0;
+		std::atomic_uint32_t pass_declined_held = 0;
+		std::atomic_uint32_t pass_uninvited = 0;
+		std::atomic_uint32_t pass_matched = 0;
+		std::atomic_uint32_t pass_crowded = 0;
+
+		// The shape narrowing applied alongside the shared capture time. Solo counts pictures refused
+		// because nothing under their timestamp shares their shape; the swap variant is the one the gate
+		// actually applies, because a quarter turn transposes the stored extent.
+		std::atomic_uint32_t pass_dims_unknown = 0;
+		std::atomic_uint32_t pass_aspect_solo = 0;
+		std::atomic_uint32_t pass_aspect_solo_swap = 0;
+		std::atomic_uint32_t pass_matched_cross_aspect = 0;
+	};
+
+	inline void set_gauge(std::atomic_uint32_t& gauge, const uint32_t value)
+	{
+		gauge.store(value, std::memory_order_relaxed);
+	}
+
+	// One slot per worker queue, claimed once by its worker thread at startup so the dispatch loop
+	// can account tasks without knowing which queue it is draining.
+	struct queue_counters
+	{
+		std::string_view name;
+		std::atomic_uint64_t tasks = 0;
+		std::atomic_uint64_t busy_us = 0;
+		std::atomic_uint32_t task_max_us = 0;
+		std::atomic_uint32_t batches = 0;
+		std::atomic_uint32_t batch_peak = 0;
+	};
+
+	// Never null: extra queues share an overflow slot rather than forcing a null check into the
+	// dispatch loop. Name must outlive the process (a literal).
+	queue_counters* register_queue(std::string_view name);
+
+	extern thumbnail_counters thumbnail_perf;
+	extern ui_counters ui_perf;
+	extern db_counters db_perf;
+	extern query_counters query_perf;
+	extern file_counters file_perf;
+	extern index_counters index_perf;
+
+	// Writes the whole-session summary as one grouped block, or nothing at all when the app did no
+	// measurable work, so an idle run adds no log noise.
+	void log_perf_summary();
 
 	class measure_ms
 	{
@@ -196,43 +469,24 @@ namespace df
 		return static_cast<int>(d < 0.0f ? std::floor(d) : std::ceil(d));
 	}
 
+	// Round half away from zero. The hand-rolled form this replaced inverted negatives:
+	// round(-100.6) gave -100 and round(-100.4) gave -101.
 	inline int32_t round(const double d)
 	{
 		if (!std::isnormal(d)) return 0;
-
-		const auto f = std::floor(d);
-
-		if (d - f >= 0.5)
-		{
-			return static_cast<int32_t>(d >= 0.0 ? std::ceil(d) : f);
-		}
-		return static_cast<int32_t>(d < 0.0 ? std::ceil(d) : f);
+		return static_cast<int32_t>(std::round(d));
 	}
 
 	inline int64_t round64(const double d)
 	{
 		if (!std::isnormal(d)) return 0;
-
-		const auto f = std::floor(d);
-
-		if (d - f >= 0.5)
-		{
-			return static_cast<int64_t>(d >= 0.0 ? std::ceil(d) : f);
-		}
-		return static_cast<int64_t>(d < 0.0 ? std::ceil(d) : f);
+		return static_cast<int64_t>(std::round(d));
 	}
 
 	inline int round(const float d)
 	{
 		if (!std::isnormal(d)) return 0;
-
-		const auto f = std::floor(d);
-
-		if (d - f >= 0.5f)
-		{
-			return static_cast<int>(d >= 0.0f ? std::ceil(d) : f);
-		}
-		return static_cast<int>(d < 0.0f ? std::ceil(d) : f);
+		return static_cast<int>(std::round(d));
 	}
 
 	constexpr int round(const int i, const int d)
@@ -317,7 +571,124 @@ namespace df
 	};
 
 	static constexpr int max_blob_size = 1024 * 1024 * 100;
-	using blob = std::vector<uint8_t>;
+
+	// Skips value-initialization. Blob buffers are sized then immediately overwritten by a
+	// read or decode, so the implicit zero-fill is a wasted pass over every byte.
+	// Any blob sized this way MUST be fully written, or trimmed to what was written.
+	template <typename T>
+	struct default_init_allocator : std::allocator<T>
+	{
+		using std::allocator<T>::allocator;
+
+		template <typename U>
+		struct rebind
+		{
+			using other = default_init_allocator<U>;
+		};
+
+		template <typename U>
+		void construct(U* p) noexcept(std::is_nothrow_default_constructible_v<U>)
+		{
+			::new(static_cast<void*>(p)) U;
+		}
+
+		template <typename U, typename... Args>
+		void construct(U* p, Args&&... args)
+		{
+			std::allocator_traits<std::allocator<T>>::construct(
+				static_cast<std::allocator<T>&>(*this), p, std::forward<Args>(args)...);
+		}
+	};
+
+	// A move-only byte buffer. Blobs hold decoded images, file contents and metadata blocks, so an
+	// accidental copy is an unbounded allocation plus a full memcpy on a hot path. Copying is spelled
+	// clone() so it cannot happen silently; everything else forwards to the underlying vector.
+	class blob
+	{
+	public:
+		using storage = std::vector<uint8_t, default_init_allocator<uint8_t>>;
+		using value_type = uint8_t;
+		using size_type = storage::size_type;
+		using iterator = storage::iterator;
+		using const_iterator = storage::const_iterator;
+
+		blob() noexcept = default;
+		~blob() noexcept = default;
+
+		blob(blob&&) noexcept = default;
+		blob& operator=(blob&&) noexcept = default;
+
+		blob(const blob&) = delete;
+		blob& operator=(const blob&) = delete;
+
+		explicit blob(const size_type n) : _v(n)
+		{
+		}
+
+		blob(const size_type n, const uint8_t fill) : _v(n, fill)
+		{
+		}
+
+		blob(const std::initializer_list<uint8_t> il) : _v(il)
+		{
+		}
+
+		template <typename Iter>
+		blob(Iter first, Iter last) : _v(first, last)
+		{
+		}
+
+		blob clone() const
+		{
+			blob result;
+			result._v = _v;
+			return result;
+		}
+
+		uint8_t* data() noexcept { return _v.data(); }
+		const uint8_t* data() const noexcept { return _v.data(); }
+		size_type size() const noexcept { return _v.size(); }
+		size_type capacity() const noexcept { return _v.capacity(); }
+		bool empty() const noexcept { return _v.empty(); }
+
+		iterator begin() noexcept { return _v.begin(); }
+		iterator end() noexcept { return _v.end(); }
+		const_iterator begin() const noexcept { return _v.begin(); }
+		const_iterator end() const noexcept { return _v.end(); }
+		const_iterator cbegin() const noexcept { return _v.cbegin(); }
+		const_iterator cend() const noexcept { return _v.cend(); }
+
+		uint8_t& operator[](const size_type i) noexcept { return _v[i]; }
+		const uint8_t& operator[](const size_type i) const noexcept { return _v[i]; }
+		uint8_t& front() noexcept { return _v.front(); }
+		const uint8_t& front() const noexcept { return _v.front(); }
+		uint8_t& back() noexcept { return _v.back(); }
+		const uint8_t& back() const noexcept { return _v.back(); }
+
+		void clear() noexcept { _v.clear(); }
+		void resize(const size_type n) { _v.resize(n); }
+		void resize(const size_type n, const uint8_t fill) { _v.resize(n, fill); }
+		void reserve(const size_type n) { _v.reserve(n); }
+		void shrink_to_fit() { _v.shrink_to_fit(); }
+		void push_back(const uint8_t v) { _v.push_back(v); }
+		void pop_back() { _v.pop_back(); }
+		void swap(blob& other) noexcept { _v.swap(other._v); }
+
+		template <typename... Args>
+		auto insert(Args&&... args) { return _v.insert(std::forward<Args>(args)...); }
+
+		template <typename... Args>
+		auto erase(Args&&... args) { return _v.erase(std::forward<Args>(args)...); }
+
+		template <typename... Args>
+		void assign(Args&&... args) { _v.assign(std::forward<Args>(args)...); }
+
+		friend bool operator==(const blob& a, const blob& b) { return a._v == b._v; }
+		friend bool operator!=(const blob& a, const blob& b) { return a._v != b._v; }
+
+	private:
+		storage _v;
+	};
 
 	struct cspan
 	{
@@ -719,11 +1090,6 @@ namespace df
 			return !(lhs < rhs);
 		}
 
-		constexpr int to_kb() const
-		{
-			return static_cast<int>(_i / 1024);
-		}
-
 		constexpr int to_int() const
 		{
 			return static_cast<int>(_i);
@@ -782,11 +1148,11 @@ namespace df
 	class scope_locked_inc final : public no_copy
 	{
 		std::atomic_int& _i;
-		const long _current;
 
 	public:
-		scope_locked_inc(std::atomic_int& i) : _i(i), _current(++i)
+		scope_locked_inc(std::atomic_int& i) : _i(i)
 		{
+			++_i;
 		}
 
 		~scope_locked_inc() override
@@ -800,14 +1166,14 @@ namespace df
 		const char* _prev = "";
 
 	public:
-		scope_rendering_func(const char* f) : _prev(rendering_func)
+		scope_rendering_func(const char* f) : _prev(rendering_func.load(std::memory_order_relaxed))
 		{
-			rendering_func = f;
+			rendering_func.store(f, std::memory_order_relaxed);
 		}
 
 		~scope_rendering_func() override
 		{
-			rendering_func = _prev;
+			rendering_func.store(_prev, std::memory_order_relaxed);
 		}
 	};
 
@@ -905,13 +1271,15 @@ namespace df
 	class cancel_token
 	{
 		static std::atomic_int empty;
-		std::atomic_int& version;
+		std::atomic_int* version = nullptr;
+		std::atomic_bool* flag = nullptr;
 		int job_version = 0;
 
 	public:
 		bool is_cancelled() const
 		{
-			return is_closing || job_version != version.load(std::memory_order_relaxed);
+			return is_closing || (flag && flag->load(std::memory_order_relaxed)) ||
+				(version && job_version != version->load(std::memory_order_relaxed));
 		}
 
 
@@ -921,36 +1289,32 @@ namespace df
 		cancel_token(const cancel_token& other) noexcept = default;
 		cancel_token(cancel_token&& other) noexcept = default;
 
-		cancel_token() noexcept : version(empty)
+		cancel_token() noexcept : version(&empty)
 		{
 			// empty version
 		}
 
-		cancel_token(std::atomic_int& v) : version(v)
+		cancel_token(std::atomic_int& v) : version(&v)
 		{
-			++v;
-			job_version = version.load(std::memory_order_relaxed);
+			job_version = version->fetch_add(1, std::memory_order_relaxed) + 1;
+		}
+
+		cancel_token(std::atomic_bool& f) : flag(&f)
+		{
 		}
 	};
-
-	inline uint64_t byteswap64(const uint64_t n)
-	{
-		return _byteswap_uint64(n);
-	}
-
-	inline uint64_t byteswap64(const uint8_t* addr)
-	{
-		return _byteswap_uint64(*std::bit_cast<const uint64_t*>(addr));
-	}
 
 	inline uint32_t byteswap32(const uint32_t n)
 	{
 		return _byteswap_ulong(n);
 	}
 
+	// Callers pass an offset into a file buffer, so the address carries no alignment guarantee.
 	inline uint32_t byteswap32(const uint8_t* addr)
 	{
-		return _byteswap_ulong(*std::bit_cast<const uint32_t*>(addr));
+		uint32_t n;
+		std::memcpy(&n, addr, sizeof(n));
+		return _byteswap_ulong(n);
 	}
 
 	inline uint16_t byteswap16(const uint16_t n)
@@ -960,10 +1324,15 @@ namespace df
 
 	inline uint16_t byteswap16(const uint8_t* addr)
 	{
-		return _byteswap_ushort(*std::bit_cast<const uint16_t*>(addr));
+		uint16_t n;
+		std::memcpy(&n, addr, sizeof(n));
+		return _byteswap_ushort(n);
 	}
 
 	std::string url_extract(std::string_view text);
+
+	// Every distinct link in source order, so a caller can offer a choice rather than the first hit.
+	std::vector<std::string> url_extract_all(std::string_view text);
 
 	inline std::string url_encode(const std::string_view url)
 	{

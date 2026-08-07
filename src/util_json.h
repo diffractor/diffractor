@@ -18,28 +18,23 @@
 
 namespace df::util::json
 {
+	// Values arrive from untrusted network responses: RapidJSON's typed getters assert rather than
+	// check, and those asserts compile out in release, so the type must be verified here.
 	inline std::string safe_string(const rapidjson::GenericValue<rapidjson::UTF8<char>>& json, const char* name)
 	{
 		const auto found = json.FindMember(name);
-		return found != json.MemberEnd() ? str::safe_string(found->value.GetString()) : std::string{};
+		return found != json.MemberEnd() && found->value.IsString()
+			       ? str::safe_string(found->value.GetString())
+			       : std::string{};
 	}
 
-	inline int safe_int(const rapidjson::GenericValue<rapidjson::UTF8<char>>& json, const char* name)
+	// Returns an empty object rather than asserting when the member is missing or not an object.
+	inline const rapidjson::GenericValue<rapidjson::UTF8<char>>& safe_object(
+		const rapidjson::GenericValue<rapidjson::UTF8<char>>& json, const char* name)
 	{
+		static const rapidjson::GenericValue<rapidjson::UTF8<char>> empty(rapidjson::kObjectType);
 		const auto found = json.FindMember(name);
-		return found != json.MemberEnd() ? found->value.GetInt() : 0;
-	}
-
-	inline float safe_float(const rapidjson::GenericValue<rapidjson::UTF8<char>>& json, const char* name)
-	{
-		const auto found = json.FindMember(name);
-		return found != json.MemberEnd() ? found->value.GetFloat() : 0.0f;
-	}
-
-	inline bool safe_bool(const rapidjson::GenericValue<rapidjson::UTF8<char>>& json, const char* name)
-	{
-		const auto found = json.FindMember(name);
-		return found != json.MemberEnd() ? found->value.GetBool() : false;
+		return found != json.MemberEnd() && found->value.IsObject() ? found->value : empty;
 	}
 
 	using json_doc = rapidjson::GenericDocument<rapidjson::UTF8<char>>;

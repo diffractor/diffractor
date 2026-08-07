@@ -6,15 +6,15 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
-// Purpose: Generates the project wiki documentation pages ("Formats and Codecs"
-// and "Metadata") from authoritative data in the codebase. Invoked from the
-// command line via /gen-docs[:folder].
+// Purpose: Generates the "Formats and Codecs" wiki page from the live file type
+// and codec tables the application itself dispatches on. Invoked from the command
+// line via /gen-docs[:folder]. The metadata mapping is maintained by hand in
+// docs/metadata.md because no single table in code describes it.
 
 #include "pch.h"
 #include "files.h"
 #include "platform.h"
 #include "av_format.h"
-#include "metadata_xmp.h"
 
 #include <cstdio>
 
@@ -62,7 +62,7 @@ namespace
 	// between them is replaced with `block`. Otherwise the full `default_page`
 	// (narrative shell + markers + block) is written.
 	bool splice_and_save(const df::folder_path folder, const std::string_view file_name,
-		const std::string& default_page, const std::string& block)
+	                     const std::string& default_page, const std::string& block)
 	{
 		const auto path = folder.combine_file(file_name);
 		const auto existing = read_text_file(path);
@@ -99,8 +99,8 @@ namespace
 	// Emits a markdown table of file types belonging to the given group, with an
 	// optional raw-trait filter, including only types with a description.
 	void write_format_table(std::string& md, const std::string_view section_title,
-		const std::vector<file_type_ref>& types, const file_group_ref group,
-		const bool require_raw, const bool exclude_raw)
+	                        const std::vector<file_type_ref>& types, const file_group_ref group,
+	                        const bool require_raw, const bool exclude_raw)
 	{
 		md += "## ";
 		md += section_title;
@@ -128,7 +128,7 @@ namespace
 	}
 
 	void write_codec_list(std::string& md, const std::string_view section_title,
-		const std::vector<av_codec_doc>& codecs, const av_codec_media_type media_type)
+	                      const std::vector<av_codec_doc>& codecs, const av_codec_media_type media_type)
 	{
 		md += "## ";
 		md += section_title;
@@ -173,119 +173,15 @@ namespace
 
 		return splice_and_save(folder, "Formats-and-Codecs.md", default_page, block);
 	}
-
-	struct metadata_row
-	{
-		std::string_view property;
-		std::string_view xmp;
-		std::string_view exif;
-		std::string_view iptc;
-		std::string_view mp4_atom;
-		std::string_view id3;
-		std::string_view riff_other;
-	};
-
-	// Consolidated metadata mapping table. This is the single source of truth in
-	// code for how Diffractor properties map onto the various metadata standards.
-	const metadata_row s_metadata_rows[] = {
-		{"album", "xmpDM:album", "", "", "©alb", "TALB", ""},
-		{"album.artist", "xmpDM:albumArtist", "", "", "aART", "TPE2", ""},
-		{"aperture", "", "APERTURE_VALUE", "", "", "", ""},
-		{"artist", "xmpDM:artist dc:creator", "", "BYLINE", "©ART", "TPE1", "IART"},
-		{"camera.manufacturer", "tiff:Make", "MAKE", "", "", "", ""},
-		{"camera.model", "tiff:Model xmpDM:cameraModel", "MODEL", "", "", "", ""},
-		{"city", "photoshop:City", "", "CITY", "", "", ""},
-		{"comment", "exif:UserComment xmpDM:logComment", "USER_COMMENT USER_COMMENT_XP", "", "©cmt", "", "ICMT"},
-		{"composer", "", "", "", "©wrt", "", ""},
-		{"copyright", "dc:rights", "COPYRIGHT", "COPYRIGHT_NOTICE", "cprt", "", "ICOP"},
-		{"country", "photoshop:Country", "", "COUNTRY_NAME", "", "", ""},
-		{"created", "", "DATE_TIME DATE_TIME_DIGITIZED", "DATE_TIME_ORIGINAL", "", "", ""},
-		{"credit", "photoshop:Credit", "", "CREDIT", "", "", ""},
-		{"description", "dc:description", "IMAGE_DESCRIPTION", "CAPTION", "desc", "", ""},
-		{"disk", "xmpDM:discNumber", "", "", "disk", "TPOS", ""},
-		{"duration", "", "", "", "", "TLEN", ""},
-		{"encoder", "", "", "", "©enc", "", ""},
-		{"encoding.tool", "", "", "", "©too", "", ""},
-		{"episode", "xmpDM:episode", "", "", "tves", "", ""},
-		{"exposure", "", "EXPOSURE_TIME", "", "", "", ""},
-		{"fnumber", "", "FNUMBER", "", "", "", ""},
-		{"focal.length", "", "FOCAL_LENGTH", "", "", "", ""},
-		{"genre", "xmpDM:genre", "", "", "gnre ©gen", "TCON", ""},
-		{"iso", "", "ISO_SPEED_RATINGS", "", "", "", ""},
-		{"latitude", "exif:GPSLatitude", "", "", "", "", ""},
-		{"lens", "aux:Lens", "LENS_MODEL MNOTE_CANON_TAG_LENS", "", "", "", ""},
-		{"longitude", "exif:GPSLongitude", "", "", "©xyz", "", ""},
-		{"media.category", "", "", "", "stik", "", ""},
-		{"orientation", "", "ORIENTATION", "", "", "", ""},
-		{"rating", "xmp:Rating", "IMAGE_RATING IMAGE_RATING_PERCENT", "", "rate", "POPM", ""},
-		{"season", "xmpDM:season", "", "", "tvsn", "", ""},
-		{"show", "xmpDM:show", "", "", "tvsh", "", ""},
-		{"source", "photoshop:Source", "", "SOURCE", "", "", ""},
-		{"state", "photoshop:State", "", "STATE", "", "", ""},
-		{"synopsis", "", "", "", "ldes", "", ""},
-		{"tag", "dc:subject", "", "KEYWORDS", "keyw", "", ""},
-		{"title", "dc:title", "", "OBJECT_NAME", "©nam", "TIT2", "INAM"},
-		{"track", "xmpDM:trackNumber", "", "", "trkn", "TRCK", ""},
-		{"year", "xmp:CreateDate", "", "", "©day", "TYER TDRC", ""},
-	};
-
-	bool generate_metadata_page(const df::folder_path folder)
-	{
-		std::string block;
-		block += k_generated_note;
-		block += "| Property | XMP | EXIF | IPTC | MP4 atom | ID3 | RIFF / Other |\n";
-		block += "| --- | --- | --- | --- | --- | --- | --- |\n";
-
-		const auto cell = [](const std::string_view s) -> std::string
-		{
-			return s.empty() ? std::string() : std::string(s);
-		};
-
-		for (const auto& row : s_metadata_rows)
-		{
-			block += "| ";
-			block += cell(row.property);
-			block += " | ";
-			block += cell(row.xmp);
-			block += " | ";
-			block += cell(row.exif);
-			block += " | ";
-			block += cell(row.iptc);
-			block += " | ";
-			block += cell(row.mp4_atom);
-			block += " | ";
-			block += cell(row.id3);
-			block += " | ";
-			block += cell(row.riff_other);
-			block += " |\n";
-		}
-
-		block += "\n";
-
-		std::string default_page;
-		default_page += "Metadata is information related to a media file. It may be embedded into the file or contained in a separate associated file.\n\n";
-		default_page += "Diffractor can add or update metadata such as tags, rating, description, or location. It can also understand metadata added by a camera. Diffractor has a database to cache these values for faster searching. However, the values are primarily stored in metadata to allow compatibility with other programs.\n\n";
-		default_page += "### Where is metadata stored?\n\n";
-		default_page += "Jpeg, Tiff, Png, and Gif files have internal EXIF, IPTC, and XMP metadata extensions. Raw photos have a separate XMP file similar to Adobe products. MOV, MP4, and MP3 files have standard tags and also include an XMP block. MKV files contain an XMP block, this is not very standard and we plan to support Matroska tags in a future version. AVI files contain an XMP block.\n\n";
-		default_page += "For advanced users, the table below describes the specific metadata fields read or updated by Diffractor:\n\n";
-		default_page += k_begin;
-		default_page += "\n";
-		default_page += block;
-		default_page += k_end;
-		default_page += "\n";
-
-		return splice_and_save(folder, "Metadata.md", default_page, block);
-	}
 }
 
 int generate_wiki_docs(const std::string_view output_folder)
 {
 	load_file_types();
-	metadata_xmp::initialise();
 
-	df::folder_path folder = output_folder.empty()
-		? platform::known_path(platform::known_folder::running_app_folder)
-		: df::folder_path(output_folder);
+	const df::folder_path folder = output_folder.empty()
+		                               ? platform::known_path(platform::known_folder::running_app_folder)
+		                               : df::folder_path(output_folder);
 
 	if (!platform::exists(folder))
 	{
@@ -300,10 +196,7 @@ int generate_wiki_docs(const std::string_view output_folder)
 
 	printf("Generating wiki documentation in %s\n", std::string(folder.text().sv()).c_str());
 
-	const bool ok_formats = generate_formats_page(folder);
-	const bool ok_metadata = generate_metadata_page(folder);
-
-	if (ok_formats && ok_metadata)
+	if (generate_formats_page(folder))
 	{
 		printf("Done.\n");
 		return 0;

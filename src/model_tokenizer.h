@@ -16,6 +16,9 @@ struct search_part
 	df::search_term_modifier modifier;
 	bool literal = false;
 
+	// the user wrote a comma before this part, which binds it to the preceding term
+	bool after_comma = false;
+
 	std::string scope;
 	std::string term;
 
@@ -27,6 +30,7 @@ struct search_part
 	void clear()
 	{
 		literal = false;
+		after_comma = false;
 		modifier.clear();
 		scope.clear();
 		term.clear();
@@ -45,23 +49,30 @@ class search_tokenizer
 	std::vector<search_part> results;
 	search_part current_term;
 	std::string current_text;
-
-	static bool is_modifier(const char c)
-	{
-		return c == '-' || c == '~' || c == '!' || c == '|' || c == '&' || c == '(' || c == ')' || c == '>' || c == '<'
-			|| c == '=';
-	}
+	bool pending_comma = false;
 
 	static bool is_delimiter(const char c)
 	{
 		return c == '#' || c == ':' || c == ',' || c == ';' || c == '|' || c == '(' || c == ')';
 	}
 
+	// The input is UTF-8 bytes, so the wide-char classifiers would sign-extend any byte >= 0x80
+	// into an unrelated code point. Only the ASCII range can be classified from a single byte.
+	static constexpr bool is_ascii_digit(const char c)
+	{
+		return c >= '0' && c <= '9';
+	}
+
+	static constexpr bool is_ascii_space(const char c)
+	{
+		return c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r';
+	}
+
 	static bool is_num(const std::string_view s)
 	{
 		for (const auto c : s)
 		{
-			if (!std::iswdigit(c))
+			if (!is_ascii_digit(c))
 				return false;
 		}
 
@@ -94,6 +105,8 @@ class search_tokenizer
 
 		if (!current_term.term.empty())
 		{
+			current_term.after_comma = pending_comma;
+			pending_comma = false;
 			results.emplace_back(current_term);
 			current_term.clear();
 		}
@@ -104,6 +117,7 @@ class search_tokenizer
 		results.clear();
 		current_term.clear();
 		current_text.clear();
+		pending_comma = false;
 	}
 
 public:
@@ -114,8 +128,10 @@ public:
 		auto st = parse_state::scanning;
 		auto quote_char = '"';
 
-		for (const auto c : text)
+		for (size_t pos = 0; pos < text.size(); ++pos)
 		{
+			const auto c = text[pos];
+
 			if (st == parse_state::text)
 			{
 				if (c == ':' && (is_num(current_text) || current_text.size() == 1))
@@ -127,11 +143,11 @@ public:
 				{
 					st = parse_state::scanning;
 				}
-				else if (current_text.empty() && std::iswspace(c))
+				else if (current_text.empty() && is_ascii_space(c))
 				{
 					// skip over
 				}
-				else if (!current_text.empty() && std::iswspace(c))
+				else if (!current_text.empty() && is_ascii_space(c))
 				{
 					// space marks delimiter if we already have content
 					st = parse_state::scanning;
@@ -151,7 +167,16 @@ public:
 			{
 				if (c == quote_char)
 				{
-					st = parse_state::scanning;
+					// a doubled delimiter is the escape for a delimiter inside the value
+					if (pos + 1 < text.size() && text[pos + 1] == quote_char)
+					{
+						current_text += c;
+						++pos;
+					}
+					else
+					{
+						st = parse_state::scanning;
+					}
 				}
 				else
 				{
@@ -219,16 +244,31 @@ public:
 				}
 				else if (c == ':')
 				{
-					if (!current_text.empty()) current_term.scope = current_text;
-					current_text.clear();
+					if (current_term.scope.empty())
+					{
+						if (!current_text.empty()) current_term.scope = current_text;
+						current_text.clear();
+					}
+					else
+					{
+						// a later colon belongs to the value (duration:1:02:03), it is not a second scope
+						current_text += c;
+						st = parse_state::text;
+					}
+				}
+				else if (c == ',')
+				{
+					append_current_term();
+					pending_comma = true;
 				}
 				else if (c == '\'' || c == '"')
 				{
 					append_current_term();
 					st = parse_state::quoted_text;
 					quote_char = c;
+					current_term.literal = true;
 				}
-				else if (!std::iswspace(c))
+				else if (!is_ascii_space(c))
 				{
 					append_current_term();
 					st = parse_state::text;

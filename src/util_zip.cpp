@@ -22,86 +22,8 @@
 #include "minizip/compat/zip.h"
 #include "minizip/compat/unzip.h"
 
-df::blob df::zlib_compress(const cspan data_in)
-{
-	if (data_in.size > std::numeric_limits<uint32_t>::max()) // overflow 
-		return {};
-
-	blob result;
-
-	constexpr auto BUFSIZE = 128_z * 1024_z;
-	const auto temp_buffer = unique_alloc<uint8_t>(BUFSIZE);
-
-	if (!temp_buffer)
-		return {}; // Handle allocation failure
-
-	z_stream strm;
-	strm.zalloc = nullptr;
-	strm.zfree = nullptr;
-	strm.next_in = data_in.data;
-	strm.avail_in = static_cast<uint32_t>(data_in.size);
-	strm.next_out = temp_buffer.get();
-	strm.avail_out = BUFSIZE;
-
-	if (deflateInit(&strm, Z_BEST_COMPRESSION) != Z_OK)
-		return {}; // Handle initialization failure
-
-	while (strm.avail_in != 0)
-	{
-		const int res = deflate(&strm, Z_NO_FLUSH);
-		assert_true(res == Z_OK);
-		if (strm.avail_out == 0)
-		{
-			try
-			{
-				result.insert(result.end(), temp_buffer.get(), temp_buffer.get() + BUFSIZE);
-			}
-			catch (const std::bad_alloc&)
-			{
-				deflateEnd(&strm);
-				return {}; // Handle memory allocation failure
-			}
-			strm.next_out = temp_buffer.get();
-			strm.avail_out = BUFSIZE;
-		}
-	}
-
-	int deflate_res = Z_OK;
-	while (deflate_res == Z_OK)
-	{
-		if (strm.avail_out == 0)
-		{
-			try
-			{
-				result.insert(result.end(), temp_buffer.get(), temp_buffer.get() + BUFSIZE);
-			}
-			catch (const std::bad_alloc&)
-			{
-				deflateEnd(&strm);
-				return {}; // Handle memory allocation failure
-			}
-			strm.next_out = temp_buffer.get();
-			strm.avail_out = BUFSIZE;
-		}
-		deflate_res = deflate(&strm, Z_FINISH);
-	}
-
-	assert_true(deflate_res == Z_STREAM_END);
-
-	try
-	{
-		result.insert(result.end(), temp_buffer.get(), temp_buffer.get() + BUFSIZE - strm.avail_out);
-	}
-	catch (const std::bad_alloc&)
-	{
-		deflateEnd(&strm);
-		return {}; // Handle memory allocation failure
-	}
-
-	deflateEnd(&strm);
-
-	return result;
-}
+// Archive entry names are attacker-controlled: reduce to a bare leaf name so an entry such as
+// "..\..\startup\evil.exe" cannot escape the destination folder. Returns empty to reject.
 
 df::zip_file::~zip_file()
 {
@@ -114,16 +36,21 @@ df::zip_file::~zip_file()
 bool df::zip_file::create(const file_path zip_file_path)
 {
 	assert_true(!_handle.has_value());
-	_handle = zipOpen64(zip_file_path.str().c_str(), 0);
-	return _handle.has_value();
+	const auto handle = zipOpen64(zip_file_path.str().c_str(), 0);
+
+	if (handle == nullptr) return false;
+
+	_handle = handle;
+	return true;
 }
 
 bool df::zip_file::close()
 {
 	if (_handle.has_value())
 	{
-		zipClose(std::any_cast<zipFile>(_handle), nullptr);
+		const auto result = zipClose(std::any_cast<zipFile>(_handle), nullptr) == ZIP_OK;
 		_handle.reset();
+		return result;
 	}
 
 	return true;
@@ -169,6 +96,7 @@ bool df::zip_file::add(const file_path path, const std::string_view name_in) con
 			{
 				//We could not write the file in the ZIP-File for whatever reason.
 				df::log(__FUNCTION__, std::format("error writing {} in zip file", name));
+				zipCloseFileInZip(std::any_cast<zipFile>(_handle));
 				return false;
 			}
 		}
@@ -192,87 +120,12 @@ bool df::zip_file::add(const file_path path)
 	return add(path, path.name());
 }
 
-size_t df::zip_file::extract(const file_path zip_file_path, const folder_path dest_folder_path)
-{
-	std::vector<std::pair<file_path, file_path>> moves;
-
-	constexpr int max_path = 256;
-	char filename[max_path];
-	const auto write_buffer = df::unique_alloc<uint8_t>(sixty_four_k);
-	auto* const hz = unzOpen2_64(zip_file_path.str().c_str(), nullptr);
-
-	if (hz)
-	{
-		unz_global_info64 info;
-		unz_file_info64 file;
-
-		if (UNZ_OK == unzGetGlobalInfo64(hz, &info) &&
-			UNZ_OK == unzGoToFirstFile(hz))
-		{
-			do
-			{
-				if (UNZ_OK == unzGetCurrentFileInfo64(hz, &file, filename, max_path, nullptr, 0, nullptr, 0))
-				{
-					if (file.uncompressed_size == 0) // Folder
-					{
-						// ?
-					}
-					else
-					{
-						if (UNZ_OK == unzOpenCurrentFile(hz))
-						{
-							auto file_path = platform::temp_file();
-							auto f = open_file(file_path, platform::file_open_mode::write);
-
-							if (f)
-							{
-								moves.emplace_back(
-									file_path, folder_path(dest_folder_path).combine_file(str::utf8_cast(filename)));
-
-								auto read = write_buffer
-									            ? unzReadCurrentFile(hz, write_buffer.get(), sixty_four_k)
-									            : 0;
-
-								while (read > 0)
-								{
-									f->write(write_buffer.get(), read);
-									read = unzReadCurrentFile(hz, write_buffer.get(), sixty_four_k);
-								}
-
-								f->set_created(platform::dos_date_to_ts(static_cast<uint16_t>(file.dosDate >> 16),
-								                                        static_cast<uint16_t>(file.dosDate)));
-							}
-						}
-					}
-				}
-				unzCloseCurrentFile(hz);
-			}
-			while (UNZ_OK == unzGoToNextFile(hz));
-		}
-
-		unzClose(hz);
-	}
-
-	for (const auto& m : moves)
-	{
-		const auto move_result = platform::move_file(m.first, m.second, true);
-
-		if (move_result.failed())
-		{
-			throw app_exception(std::format("Failed to write file {}\n{}", m.second, move_result.format_error()));
-		}
-	}
-
-	return moves.size();
-}
-
 std::vector<archive_item> df::zip_file::list(const file_path zip_file_path)
 {
 	std::vector<archive_item> results;
 
 	constexpr int max_path = 256;
 	char filename[max_path];
-	const auto write_buffer = df::unique_alloc<uint8_t>(sixty_four_k);
 	auto* const hz = unzOpen2_64(zip_file_path.str().c_str(), nullptr);
 
 	if (hz)

@@ -36,9 +36,9 @@ enum exif_format
 };
 
 
-inline std::vector<uint8_t> make_orientation_exif(ui::orientation orientation)
+inline df::blob make_orientation_exif(ui::orientation orientation)
 {
-	std::vector<uint8_t> exif_block = {
+	df::blob exif_block = {
 		0x49, 0x49,
 		0x2A, 0x00,
 		0x08, 0x00, 0x00, 0x00, // ifd0 offset
@@ -56,6 +56,14 @@ inline std::vector<uint8_t> make_orientation_exif(ui::orientation orientation)
 constexpr bool first_char_is(const std::string_view sv, const char c)
 {
 	return !sv.empty() && sv[0] == c;
+}
+
+// Windows Explorer buckets the percent rating as 1/25/50/75/99. A plain star*20 reads back into
+// Diffractor correctly but shows one star too many everywhere else.
+constexpr int rating_to_percent(const int stars)
+{
+	constexpr int percent[] = {0, 1, 25, 50, 75, 99};
+	return percent[stars < 0 ? 0 : stars > 5 ? 5 : stars];
 }
 
 class exif_gps_coordinate_builder
@@ -190,22 +198,13 @@ namespace metadata_exif
 			i |= static_cast<uint32_t>(denominator);
 			return i;
 		}
-
-		static rational_t<T> from_int64(const int64_t i)
-		{
-			rational_t result;
-			result.numerator = static_cast<T>(i >> 32);
-			result.denominator = static_cast<T>(i & 0xffffffff);
-			return result;
-		}
 	};
 
 	using srational32_t = rational_t<int32_t>;
 	using urational32_t = rational_t<uint32_t>;
 
 	void parse(prop::item_metadata& pd, df::cspan cs);
-	void fix_exif_dimensions(df::span data, sizei dimensions);
-	void fix_exif_rating(df::span data, int rating);
+
 	metadata_kv_list to_info(df::cspan data);
 	df::blob fix_dims(df::span cs, int image_width, int image_height);
 	df::blob make_exif(const prop::item_metadata_ptr& md);

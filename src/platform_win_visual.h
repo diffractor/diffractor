@@ -25,6 +25,10 @@
 constexpr int swap_buffer_count = 2;
 constexpr auto back_buffer_format = DXGI_FORMAT_B8G8R8A8_UNORM; // DXGI_FORMAT_B8G8R8A8_UNORM;
 
+// Back buffers are allocated in steps of this many pixels rather than at the exact client size, so
+// a window drag or splitter move re-uses the existing buffers instead of reallocating them.
+constexpr int back_buffer_quantum = 256;
+
 struct render_char_result
 {
 	std::vector<uint8_t> pixels;
@@ -55,7 +59,6 @@ public:
 
 	uint32_t calc_line_height() const;
 	uint32_t calc_base_line_height() const;
-	calc_text_extent_result calc_glyph_extent(std::u32string_view code_points) const;
 
 	render_char_result render_glyph(uint16_t glyph_index, int spacing, const DWRITE_GLYPH_RUN* glyph_run) const;
 	sizei measure(std::wstring_view text, ui::style::text_style style, int width, int height) const;
@@ -67,6 +70,55 @@ public:
 };
 
 using font_renderer_ptr = std::shared_ptr<font_renderer>;
+
+// A glyph cache must be keyed by the face a glyph index belongs to. Font fallback means one text
+// renderer sees several faces, and an index is only meaningful inside its own face, so keying on
+// the index alone - or on a proxy such as the face's glyph count - lets one face's glyph resolve
+// to another face's raster. The face pointer alone is not a safe key either, because a released
+// face can be reallocated at the same address, so each keyed face keeps a reference for as long
+// as its id is in use.
+//
+// The em size is part of the key as well. A face carries no size - the size lives on the glyph
+// run - so a renderer that ever sees two sizes (a text layout built before a font-size change,
+// drawn after it) would otherwise serve the earlier size's raster for the later size's text and
+// mix glyph sizes within a single string.
+class glyph_face_keys
+{
+	std::unordered_map<IDWriteFontFace*, uint32_t> _ids;
+	std::vector<ComPtr<IDWriteFontFace>> _faces;
+
+public:
+	uint64_t key(IDWriteFontFace* face, const float em_size, const uint16_t glyph_index)
+	{
+		uint32_t id = 0;
+
+		if (face)
+		{
+			const auto found = _ids.find(face);
+
+			if (found != _ids.cend())
+			{
+				id = found->second;
+			}
+			else
+			{
+				_faces.emplace_back(face);
+				id = static_cast<uint32_t>(_faces.size());
+				_ids[face] = id;
+			}
+		}
+
+		const auto em = std::clamp(std::lround(em_size), 0l, 0xFFFFl);
+
+		return static_cast<uint64_t>(id) << 32 | static_cast<uint64_t>(em) << 16 | glyph_index;
+	}
+
+	void clear()
+	{
+		_ids.clear();
+		_faces.clear();
+	}
+};
 
 class text_layout_impl final : public ui::text_layout
 {
@@ -82,6 +134,19 @@ public:
 	font_renderer_ptr _renderer;
 	ComPtr<IDWriteTextLayout> _layout;
 	ui::style::font_face _font = ui::style::font_face::dialog;
+
+private:
+	// GetMetrics re-shapes the whole string whenever SetMaxWidth or SetMaxHeight dirties the layout, and
+	// a flex pass measures against one limit then lays out against another, so both results are kept.
+	struct measured_extent
+	{
+		sizei limit;
+		sizei extent;
+		bool valid = false;
+	};
+
+	measured_extent _measured[2];
+	size_t _measured_next = 0;
 };
 
 struct factories
@@ -104,7 +169,6 @@ struct factories
 
 	font_renderer_ptr create_font_face(const wchar_t* font_name, int font_height) const;
 	font_renderer_ptr create_icon_font_face(int font_height);
-	font_renderer_ptr create_petscii_font_face(int font_height);
 	font_renderer_ptr font_face(ui::style::font_face font, int base_font_size);
 
 	void reset();
@@ -113,6 +177,11 @@ struct factories
 	D3D_FEATURE_LEVEL d3d_feature_level = D3D_FEATURE_LEVEL_1_0_CORE;
 
 	bool init(bool use_gpu);
+
+	// Releases the Direct3D device and switches every draw context created from here on to
+	// the CPU software backend. Used when the GPU device is lost at runtime.
+	void downgrade_to_software();
+
 	void register_fonts() const;
 	void unregister_fonts() const;
 	void destroy();

@@ -13,6 +13,7 @@
 
 #include "metadata_xmp.h"
 #include "test_utils.h"
+#include "test_runner.h"
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Shared global definitions
@@ -21,55 +22,6 @@
 temp_files _temps;
 std::atomic_int test_version = 0;
 df::cancel_token test_token(test_version);
-
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-// Test runner infrastructure
-///////////////////////////////////////////////////////////////////////////////////////////////////
-
-void run_test(view_state& state, const test_ptr& test)
-{
-	shared_test_context stc;
-	test->perform(state, stc);
-	state.invalidate_view(view_invalid::command_state | view_invalid::status);
-
-	state.queue_ui([&s = state]
-	{
-		_temps.delete_temps();
-		s.invalidate_view(view_invalid::command_state | view_invalid::status);
-	});
-}
-
-static std::atomic_int tests_running = 0;
-
-bool is_running_tests()
-{
-	return tests_running != 0;
-}
-
-void run_tests(view_state& state, std::vector<test_ptr> tests)
-{
-	if (tests_running == 0)
-	{
-		++tests_running;
-		state.invalidate_view(view_invalid::command_state | view_invalid::status);
-
-		state.queue_async(async_queue::work, [&s = state, tests]
-		{
-			shared_test_context stc;
-
-			for (const auto& test : tests)
-			{
-				test->perform(s, stc);
-				s.queue_ui([test] { test->update_row(); });
-			}
-
-			_temps.delete_temps();
-			--tests_running;
-			s.invalidate_view(view_invalid::command_state | view_invalid::status);
-		});
-	}
-}
 
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -104,7 +56,7 @@ int run_console_tests(const std::string_view test_filter)
 
 	null_state_strategy ss;
 	null_async_strategy as;
-	location_cache locations;
+	const location_cache locations;
 	index_state index(as, locations);
 	view_state state(ss, as, index, nullptr);
 
@@ -125,6 +77,19 @@ int run_console_tests(const std::string_view test_filter)
 	int passed = 0;
 	int failed = 0;
 
+	// Two registrations under one name make /test:<name> ambiguous and a failure report unattributable.
+	{
+		df::hash_map<std::string_view, int, df::ihash, df::ieq> seen;
+		for (const auto& entry : filtered) ++seen[entry.name];
+
+		for (const auto& [name, count] : seen)
+		{
+			if (count > 1)
+				printf("  WARN  duplicate test name '%.*s' registered %d times\n",
+				       static_cast<int>(name.size()), name.data(), count);
+		}
+	}
+
 	printf("Running %d tests...\n\n", total);
 
 	shared_test_context stc;
@@ -133,13 +98,25 @@ int run_console_tests(const std::string_view test_filter)
 	{
 		const auto t = df::now();
 		const auto name_utf8 = std::string(entry.name.data(), entry.name.size());
+		const auto asserts_before = test_assert_count;
 
 		try
 		{
 			entry.func(stc);
 			const auto elapsed_ms = df::round((df::now() - t) * 1000);
-			printf("  PASS  %s (%dms)\n", name_utf8.c_str(), elapsed_ms);
-			++passed;
+
+			// A test that asserted nothing proves nothing: it has usually been disabled by an early
+			// return or an #if, and would otherwise report PASS forever.
+			if (test_assert_count == asserts_before)
+			{
+				printf("  FAIL  %s (%dms)\n        No assertions were made\n", name_utf8.c_str(), elapsed_ms);
+				++failed;
+			}
+			else
+			{
+				printf("  PASS  %s (%dms)\n", name_utf8.c_str(), elapsed_ms);
+				++passed;
+			}
 		}
 		catch (const test_assert_exception& e)
 		{
@@ -152,6 +129,12 @@ int run_console_tests(const std::string_view test_filter)
 		{
 			const auto elapsed_ms = df::round((df::now() - t) * 1000);
 			printf("  FAIL  %s (%dms)\n        Exception: %s\n", name_utf8.c_str(), elapsed_ms, e.what());
+			++failed;
+		}
+		catch (...)
+		{
+			const auto elapsed_ms = df::round((df::now() - t) * 1000);
+			printf("  FAIL  %s (%dms)\n        Unknown exception\n", name_utf8.c_str(), elapsed_ms);
 			++failed;
 		}
 	}

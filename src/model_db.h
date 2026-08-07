@@ -70,9 +70,30 @@ class database final : public df::no_copy
 	std::unique_ptr<db_statement> find_folder_thumbnail;
 	std::unique_ptr<db_statement> find_thumbnail;
 
+	// Day of the last web-service-cache age prune, so that full-table pass runs once a day
+	// rather than on every cache write.
+	mutable uint32_t _web_cache_pruned_day = 0;
+
+	// Day of the last PRAGMA optimize, so a session-long connection re-analyses as the index grows.
+	uint32_t _optimized_day = 0;
+
 	bool is_db_thread() const;
+	bool connect();
+	bool prepare_database(bool can_replace);
+	platform::file_op_result delete_database_files() const;
 
 public:
+	struct thumbnail_request
+	{
+		std::weak_ptr<df::item_element> lifetime;
+		df::file_path path;
+		df::folder_path folder;
+		bool is_folder = false;
+		bool has_thumbnail = false;
+	};
+
+	using thumbnail_requests = std::vector<thumbnail_request>;
+
 	struct db_thumbnail
 	{
 		ui::const_image_ptr thumb;
@@ -106,9 +127,11 @@ public:
 	void clean(const std::vector<df::file_path>& indexed_items) const;
 	db_thumbnail load_thumbnail(df::file_path id) const;
 	db_thumbnail load_folder_thumbnail(str::cached folder) const;
-	void load_thumbnails(const index_state& index, const df::item_set& items) const;
+	static thumbnail_requests make_thumbnail_requests(const df::item_set& items);
+	void load_thumbnails(const index_state& index, const thumbnail_requests& requests) const;
 	void open();
 	void open(df::folder_path folder, std::string_view file_name);
+	void upgrade_cached_metadata();
 	void perform_writes();
 	void perform_writes(std::deque<item_db_write> writes) const;
 	void maintenance(bool is_reset);

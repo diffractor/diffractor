@@ -22,6 +22,7 @@
 #include "ui_controllers.h"
 #include "ui_map.h"
 #include "view_edit.h"
+#include "view_items.h"
 #include "app_match.h"
 #include "app_text.h"
 #include "app_command_status.h"
@@ -32,8 +33,9 @@
 #include "view_import.h"
 #include "view_locate.h"
 #include "view_rename.h"
+#include "view_batch.h"
 #include "view_sync.h"
-#include "view_test.h"
+#include "view_tags.h"
 
 static std::string decode_secret(const std::string_view input, const std::string_view password)
 {
@@ -52,7 +54,8 @@ static const std::string azure_maps_api_key = "";
 extern bool toggle_details_state;
 
 static constexpr auto docs_url = "https://www.diffractor.com/docs";
-static constexpr auto support_url = "https://diffractor.com/help";
+static constexpr auto releases_url = "https://www.diffractor.com/releases";
+static constexpr auto support_url = "https://github.com/diffractor/diffractor/issues";
 static constexpr auto donate_url = "https://www.paypal.com/donate/?hosted_button_id=HX5NRS9JGKLRL";
 
 static void zoom_invoke(const view_state& s, const ui::control_frame_ptr& parent)
@@ -65,20 +68,46 @@ static void zoom_invoke(const view_state& s, const ui::control_frame_ptr& parent
 	}
 };
 
+static void zoom_fit_invoke(const view_state& s)
+{
+	if (const auto display = s.display_state(); display && display->can_zoom()) display->zoom(false);
+}
+
+static void zoom_fit_variant_invoke(const view_state& s, const df::zoom_scale_mode mode)
+{
+	if (const auto display = s.display_state(); display && display->can_zoom()) display->zoom_fit_variant(mode);
+}
+
+static void zoom_100_invoke(const view_state& s)
+{
+	if (const auto display = s.display_state(); display && display->can_zoom()) display->zoom_100();
+}
+
+static void zoom_toggle_fit_invoke(const view_state& s)
+{
+	if (const auto display = s.display_state(); display && display->can_zoom()) display->toggle_zoom_fit();
+}
+
+static void zoom_step_invoke(const view_state& s, const int direction)
+{
+	if (const auto display = s.display_state(); display && display->can_zoom()) display->adjust_zoom_scale(direction);
+}
+
 static void pin_invoke(view_state& s)
 {
-	const auto focus = s.focus_item();
-
-	if (s._pin_item == focus)
+	// Only one item is ever held, so the command that reports a pin is held must also release it.
+	// Re-pointing it at whatever has focus instead would leave no way back to plain browsing
+	// without walking focus to the pinned item first.
+	if (s.has_pin())
 	{
 		s._pin_item.reset();
 	}
 	else
 	{
-		s._pin_item = focus;
+		s._pin_item = s.focus_item();
 	}
 
-	s.invalidate_view(view_invalid::view_layout);
+	s.invalidate_view(view_invalid::view_layout | view_invalid::view_redraw | view_invalid::command_state);
 }
 
 
@@ -132,6 +161,8 @@ static void open_in_file_browser_invoke(const view_state& s, const ui::control_f
 
 static void new_folder_invoke(view_state& s, const ui::control_frame_ptr& parent, const view_host_base_ptr& view)
 {
+	if (!s.search().is_showing_folder()) return;
+
 	int i = 2;
 	const auto folder = s.save_path();
 	auto new_name = std::string(tt.new_folder_name);
@@ -158,13 +189,15 @@ static void new_folder_invoke(view_state& s, const ui::control_frame_ptr& parent
 	}
 }
 
-static void burn_command_invoke(const view_state& s, const ui::control_frame_ptr& parent,
+static void burn_command_invoke(view_state& s, const ui::control_frame_ptr& parent,
                                 const view_host_base_ptr& view)
 {
 	const auto dlg = make_dlg(parent);
 	const auto title = tt.burn_title;
 	const auto can_process = s.
 		can_process_selection_and_mark_errors(view, df::process_items_type::local_file_or_folder);
+
+	pause_media pause(s);
 
 	if (can_process.fail())
 	{
@@ -173,7 +206,21 @@ static void burn_command_invoke(const view_state& s, const ui::control_frame_ptr
 	else
 	{
 		const auto items = s.selected_items();
-		platform::burn_to_cd(items.file_paths(true), items.folder_paths());
+		const std::vector<view_element_ptr> controls = {
+			set_margin(std::make_shared<ui::title_control2>(dlg->_frame, icon_index::disk, title,
+			                                                format_plural_text(tt.burn_info_fmt, items), items.thumbs(),
+			                                                items.size())),
+			std::make_shared<divider_element>(),
+			set_margin(std::make_shared<text_element>(tt.burn_help)),
+			std::make_shared<divider_element>(),
+			std::make_shared<ui::ok_cancel_control>(dlg->_frame, tt.burn_stage),
+		};
+
+		if (dlg->show_modal(controls) == ui::close_result::ok &&
+			!platform::burn_to_cd(items.file_paths(true), items.folder_paths()))
+		{
+			dlg->show_message(icon_index::error, title, tt.burn_failed);
+		}
 	}
 }
 
@@ -192,25 +239,6 @@ static void print_invoke(const view_state& s, const ui::control_frame_ptr& paren
 		const auto items = s.selected_items();
 		record_feature_use(features::print);
 		platform::print(items.file_paths(false), items.folder_paths());
-	}
-}
-
-static void remove_metadata_invoke(const view_state& s, const ui::control_frame_ptr& parent,
-                                   const view_host_base_ptr& view)
-{
-	const auto dlg = make_dlg(parent);
-	const auto title = tt.remove_metadata_title;
-	const auto can_process = s.can_process_selection_and_mark_errors(view, df::process_items_type::can_save_metadata);
-
-	if (can_process.fail())
-	{
-		dlg->show_message(icon_index::error, title, can_process.to_string());
-	}
-	else
-	{
-		const auto items = s.selected_items();
-		record_feature_use(features::remove_metadata);
-		platform::remove_metadata(items.file_paths(false), items.folder_paths());
 	}
 }
 
@@ -245,7 +273,7 @@ static void rename_invoke(view_state& s, const ui::control_frame_ptr& parent, co
 			const std::vector<view_element_ptr> controls{
 				set_margin(std::make_shared<ui::title_control2>(dlg->_frame, icon, title,
 				                                                format_plural_text(tt.rename_fmt, items),
-				                                                items.thumbs())),
+				                                                items.thumbs(), items.size())),
 				std::make_shared<divider_element>(),
 				set_margin(std::make_shared<text_element>(tt.rename_label)),
 				set_margin(std::make_shared<ui::edit_control>(dlg->_frame, name)),
@@ -291,7 +319,8 @@ static void file_properties_invoke(const view_state& s, const ui::control_frame_
 	}
 }
 
-static void edit_paste_invoke(view_state& s, const ui::control_frame_ptr& parent, const view_host_base_ptr& view)
+static void edit_paste_invoke(view_state& s, const ui::control_frame_ptr& parent,
+                              const std::shared_ptr<view_frame>& view)
 {
 	const auto dlg = make_dlg(parent);
 	const auto data = platform::clipboard();
@@ -300,12 +329,17 @@ static void edit_paste_invoke(view_state& s, const ui::control_frame_ptr& parent
 	if (data->has_drop_files())
 	{
 		detach_file_handles detach(s);
+		shell_file_operation_ui processing(*view, parent);
 		result = data->drop_files(s.save_path(), platform::drop_effect::none);
+		if (result.success() && (!result.created_files.files.empty() || !result.created_files.folders.empty()))
+			detach.keep_display_closed();
 	}
 	else if (data->has_bitmap())
 	{
 		detach_file_handles detach(s);
 		result = data->save_bitmap(s.save_path(), tt.pasted_file_name, true);
+		if (result.success() && (!result.created_files.files.empty() || !result.created_files.folders.empty()))
+			detach.keep_display_closed();
 	}
 
 	if (result.failed())
@@ -353,6 +387,13 @@ static void setting_invoke(const view_state& s, bool& val, const bool new_val)
 	s.invalidate_view(view_invalid::view_layout | view_invalid::group_layout | view_invalid::app_layout);
 }
 
+static void zoom_navigator_mode_invoke(const view_state& state, const zoom_navigator_mode mode)
+{
+	setting.zoom_navigator = mode;
+	if (const auto display = state.display_state()) display->mark_zoom_activity();
+	state.invalidate_view(view_invalid::view_redraw | view_invalid::controller | view_invalid::options_save);
+}
+
 static file_encode_params make_file_encode_params()
 {
 	file_encode_params result;
@@ -363,6 +404,9 @@ static file_encode_params make_file_encode_params()
 static void rotate_invoke(view_state& s, const ui::control_frame_ptr& parent, const view_host_base_ptr& view,
                           const simple_transform t)
 {
+	// Rotation rewrites each item in place, so it never needs a save folder. The only
+	// precondition is that the selection can be written back, which can_process checks below
+	// and which is also what enables the command.
 	auto dlg = make_dlg(parent);
 	const auto title = t == simple_transform::rot_90 ? tt.command_rotate_clockwise : tt.command_rotate_anticlockwise;
 	const auto icon = t == simple_transform::rot_90 ? icon_index::rotate_clockwise : icon_index::rotate_anticlockwise;
@@ -377,16 +421,20 @@ static void rotate_invoke(view_state& s, const ui::control_frame_ptr& parent, co
 	else
 	{
 		const auto& items = s.selected_items();
-		bool do_rotate = true;
+		const auto is_single = items.size() == 1;
 
-		if (items.size() > 1)
+		// A single-item rotation is reviewed only while the user asks for it; rotating several items
+		// overwrites several originals at once and is always reviewed.
+		if (!is_single || setting.confirm_rotations)
 		{
 			files ff;
 			const auto thumb = s.first_selected_thumb();
+			bool confirm_single = setting.confirm_rotations;
 
 			std::vector<view_element_ptr> controls;
 			controls.emplace_back(set_margin(std::make_shared<ui::title_control2>(
-				dlg->_frame, icon, title, format_plural_text(tt.rotate_info_fmt, items), items.thumbs())));
+				dlg->_frame, icon, title, format_plural_text(tt.rotate_info_fmt, items), items.thumbs(),
+				items.size())));
 			controls.emplace_back(std::make_shared<divider_element>());
 
 			if (is_valid(thumb))
@@ -395,67 +443,78 @@ static void rotate_invoke(view_state& s, const ui::control_frame_ptr& parent, co
 				controls.emplace_back(std::make_shared<ui::before_after_control>(surface, surface->transform(t)));
 			}
 
+			if (is_single)
+			{
+				controls.emplace_back(set_margin(std::make_shared<ui::check_control>(
+					dlg->_frame, tt.rotate_confirm_single, confirm_single)));
+			}
+
 			controls.emplace_back(std::make_shared<divider_element>());
 			controls.emplace_back(std::make_shared<ui::ok_cancel_control>(dlg->_frame, tt.button_rotate));
 
-			do_rotate = dlg->show_modal(controls) == ui::close_result::ok;
+			if (dlg->show_modal(controls) != ui::close_result::ok) return;
+
+			if (is_single && confirm_single != setting.confirm_rotations)
+			{
+				setting.confirm_rotations = confirm_single;
+				s.invalidate_view(view_invalid::options_save);
+			}
 		}
 
-		if (do_rotate)
 		{
 			record_feature_use(features::rotate);
 
-			detach_file_handles detach(s);
 			const auto results = std::make_shared<command_status>(s._async, dlg, icon, title, items.size());
 
-			s.queue_async(async_queue::work, [items, results, t]
+			batch_edit_spec spec;
+			spec.process_type = df::process_items_type::can_save_pixels;
+			spec.encode_params = make_file_encode_params();
+			// A rotation always changes what is drawn, whether it is stored as an orientation tag or
+			// as rotated pixels.
+			spec.changes_presentation = true;
+			spec.make_edits = [t](const df::file_path path) -> std::optional<item_edits>
 			{
-				result_scope rr(results);
-				std::string message;
+				// Only the frame size and stored orientation are needed, and load_image_file derives
+				// both from this same scan, so read the header instead of the whole file.
+				sizei dimensions{0, 0};
+				auto stored_orientation = ui::orientation::top_left;
+				file_read_stream stream;
 
-				for (const auto& i : items.items())
+				if (stream.open(path))
 				{
-					results->start_item(i->name());
-					platform::file_op_result update_result;
-					const auto path = i->path();
-
-					files ff;
-					const auto load_result = ff.load(path, false);
-
-					if (load_result.success)
-					{
-						image_edits pt_edit;
-						metadata_edits md_edits;
-
-						const auto current_orientation = setting.show_rotated
-							                                 ? load_result.orientation()
-							                                 : ui::orientation::top_left;
-						const auto crop = quadd(load_result.dimensions()).transform(
-							to_simple_transform(current_orientation)).transform(t);
-
-						if (current_orientation != ui::orientation::top_left)
-						{
-							md_edits.orientation = ui::orientation::top_left;
-						}
-
-						pt_edit.crop_bounds(crop);
-						update_result = ff.update(path, path, md_edits, pt_edit, make_file_encode_params(), false,
-						                          i->xmp());
-						if (!update_result.success()) message = update_result.format_error();
-					}
-
-					results->end_item(i->name(), to_status(update_result.code));
-
-					if (results->is_canceled())
-						break;
+					const auto info = scan_photo(stream);
+					dimensions = info.dimensions();
+					stored_orientation = info.orientation;
 				}
 
-				rr.complete(message);
-			});
+				if (dimensions.cx <= 0 || dimensions.cy <= 0)
+				{
+					// Bytes the header scan cannot describe, such as a container carrying a saveable
+					// extension; the full load still decodes them.
+					files ff;
+					const auto load_result = ff.load(path, false);
+					if (!load_result.success) return {};
+					dimensions = load_result.dimensions();
+					stored_orientation = load_result.orientation();
+				}
 
-			results->wait_for_complete();
+				item_edits result;
+				const auto current_orientation = setting.show_rotated
+					                                 ? stored_orientation
+					                                 : ui::orientation::top_left;
+				const auto crop = quadd(dimensions).transform(
+					to_simple_transform(current_orientation)).transform(t);
 
-			s.item_index.queue_scan_modified_items(items);
+				if (current_orientation != ui::orientation::top_left)
+				{
+					result.metadata.orientation = ui::orientation::top_left;
+				}
+
+				result.image.crop_bounds(crop);
+				return result;
+			};
+
+			s.modify_items(results, items.items(), spec, view);
 		}
 	}
 }
@@ -466,7 +525,8 @@ static void desktop_background_invoke(view_state& s, const ui::control_frame_ptr
 	{
 		const auto title = tt.command_desktop_background;
 		auto dlg = make_dlg(parent);
-		std::vector<view_element_ptr> controls = {
+		pause_media pause(s);
+		const std::vector<view_element_ptr> controls = {
 			set_margin(std::make_shared<ui::title_control2>(dlg->_frame, icon_index::wallpaper, title,
 			                                                tt.desktop_background_info)),
 			std::make_shared<divider_element>(),
@@ -488,34 +548,56 @@ static void desktop_background_invoke(view_state& s, const ui::control_frame_ptr
 			const auto screen_extent = bounds.extent();
 			const auto max_dim = std::max(screen_extent.cx, screen_extent.cy);
 			const auto dimensions = setting.desktop_background.maximize ? sizei(max_dim, max_dim) : screen_extent;
+			const auto encode_params = make_file_encode_params();
 
-			image_edits edits(dimensions);
-			files ff;
+			const auto results = std::make_shared<command_status>(s._async, dlg, icon_index::wallpaper, title, 1);
 
-			if (!ff.save(path_temp, loaded))
-			{
-				dlg->show_message(icon_index::error, title, tt.update_failed);
-			}
-			else
-			{
-				const auto update_result = ff.update(path_temp, write_path, {}, edits, make_file_encode_params(), false,
-				                                     {});
+			// Writing a screen-sized PNG twice is far too slow to run on the UI thread. Only the
+			// wallpaper switch comes back, and a failure is now reported instead of being
+			// described as a failed update.
+			s.queue_async(async_queue::work,
+			              [&s, results, loaded, write_path, path_temp, dimensions, encode_params]
+			              {
+				              files ff;
+				              const image_edits edits(dimensions);
+				              std::string error;
 
-				if (update_result.failed())
-				{
-					dlg->show_message(icon_index::error, title,
-					                  update_result.format_error(tt.error_create_file_failed_fmt));
-				}
-				else
-				{
-					platform::set_desktop_wallpaper(write_path);
-				}
-			}
+				              if (!ff.save(path_temp, loaded))
+				              {
+					              error = str_format(tt.error_create_file_failed_fmt.sv(), path_temp);
+				              }
+				              else
+				              {
+					              const auto update_result = ff.update(path_temp, write_path, {}, edits, encode_params,
+					                                                   false, {});
 
-			if (path_temp.exists())
-			{
-				platform::delete_file(path_temp);
-			}
+					              if (update_result.failed())
+					              {
+						              error = update_result.format_error(
+							              str_format(tt.error_create_file_failed_fmt.sv(), write_path));
+					              }
+				              }
+
+				              if (path_temp.exists())
+				              {
+					              platform::delete_file(path_temp);
+				              }
+
+				              if (error.empty())
+				              {
+					              s.queue_ui([results, write_path]
+					              {
+						              platform::set_desktop_wallpaper(write_path);
+						              results->complete();
+					              });
+				              }
+				              else
+				              {
+					              results->abort(error);
+				              }
+			              });
+
+			results->wait_for_complete();
 		}
 	});
 }
@@ -566,1115 +648,103 @@ static void related_invoke(view_state& s, const ui::control_frame_ptr& parent, c
 	}
 }
 
-static void edit_metadata_invoke(view_state& s, const ui::control_frame_ptr& parent, const view_host_base_ptr& view)
+static void favorite_tags_invoke(view_state& s, const ui::control_frame_ptr& parent)
 {
 	auto dlg = make_dlg(parent);
-	const auto title = tt.command_edit_metadata;
-	constexpr auto icon = icon_index::album_artist;
-	const auto can_process = s.can_process_selection_and_mark_errors(view, df::process_items_type::can_save_metadata);
-
-	pause_media pause(s);
-
-	if (can_process.fail())
+	auto favorite_tags = setting.favorite_tags;
+	auto edit = std::make_shared<ui::multi_line_edit_control>(dlg->_frame, favorite_tags);
+	auto content = std::make_shared<ui::group_control>();
+	const auto toolbar_refresh = std::make_shared<ui::recommended_words_control::refresh_group::element_type>();
+	const auto unique_favorites = [&favorite_tags]
 	{
-		dlg->show_message(icon_index::error, title, can_process.to_string());
-	}
-	else
-	{
-		// https://paulmaguirephoto.com/2019/how-to-customise-the-metadata-panel-in-lightroom/
-
-		const auto& items = s.selected_items();
-		std::vector<view_element_ptr> controls;
-
-		controls.emplace_back(set_margin(std::make_shared<ui::title_control2>(
-			dlg->_frame, icon, title, format_plural_text(tt.edit_metadata_fmt, items), items.thumbs())));
-		controls.emplace_back(std::make_shared<divider_element>());
-
-		const auto col0 = std::make_shared<ui::group_control>();
-		const auto col4 = std::make_shared<ui::group_control>();
-		const auto col1 = std::make_shared<ui::group_control>();
-
-		const auto artist = std::make_shared<ui::check_control>(dlg->_frame, tt.prop_name_artist, setting.set_artist);
-		artist->child(std::make_shared<ui::edit_control>(dlg->_frame, setting.artist));
-		col0->add(artist);
-
-		const auto description = std::make_shared<ui::check_control>(dlg->_frame, tt.prop_name_description,
-		                                                             setting.set_caption);
-		description->child(std::make_shared<ui::multi_line_edit_control>(dlg->_frame, setting.caption, 10, true));
-		col0->add(description);
-
-		col4->add(std::make_shared<ui::title_control>(tt.media_metadata_title));
-
-		const auto album = std::make_shared<ui::check_control>(dlg->_frame, tt.prop_name_album, setting.set_album);
-		album->child(std::make_shared<ui::edit_control>(dlg->_frame, setting.album));
-		col4->add(album);
-
-		const auto albumArtist = std::make_shared<ui::check_control>(dlg->_frame, tt.album_artist,
-		                                                             setting.set_album_artist);
-		albumArtist->child(std::make_shared<ui::edit_control>(dlg->_frame, setting.album_artist));
-		col4->add(albumArtist);
-
-		auto genres = tt.add_translate_text(s.item_index.distinct_genres(), "genre");
-		std::ranges::sort(genres, str::iless());
-
-		const auto genre = std::make_shared<ui::check_control>(dlg->_frame, tt.prop_name_genre, setting.set_genre);
-		genre->child(std::make_shared<ui::edit_picker_control>(dlg->_frame, setting.genre, genres));
-		col4->add(genre);
-
-		const auto show = std::make_shared<ui::check_control>(dlg->_frame, tt.prop_name_show, setting.set_tv_show);
-		show->child(std::make_shared<ui::edit_control>(dlg->_frame, setting.tv_show));
-		col4->add(show);
-
-		col1->add(std::make_shared<ui::title_control>(tt.copyright_title));
-
-		const auto copyright_notice = std::make_shared<ui::check_control>(dlg->_frame, tt.copyright_notice,
-		                                                                  setting.set_copyright_notice);
-		copyright_notice->child(
-			std::make_shared<ui::multi_line_edit_control>(dlg->_frame, setting.copyright_notice, 8, true));
-		col1->add(copyright_notice);
-
-		const auto copyright_creator = std::make_shared<ui::check_control>(dlg->_frame, tt.copyright_creator,
-		                                                                   setting.set_copyright_creator);
-		copyright_creator->child(std::make_shared<ui::edit_control>(dlg->_frame, setting.copyright_creator));
-		col1->add(copyright_creator);
-
-		const auto copyright_source = std::make_shared<ui::check_control>(dlg->_frame, tt.copyright_source,
-		                                                                  setting.set_copyright_source);
-		copyright_source->child(std::make_shared<ui::edit_control>(dlg->_frame, setting.copyright_source));
-		col1->add(copyright_source);
-
-		const auto copyright_credit = std::make_shared<ui::check_control>(dlg->_frame, tt.copyright_credit,
-		                                                                  setting.set_copyright_credit);
-		copyright_credit->child(std::make_shared<ui::edit_control>(dlg->_frame, setting.copyright_credit));
-		col1->add(copyright_credit);
-
-		const auto copyright_url = std::make_shared<ui::check_control>(dlg->_frame, tt.copyright_url,
-		                                                               setting.set_copyright_url);
-		copyright_url->child(std::make_shared<ui::edit_control>(dlg->_frame, setting.copyright_url));
-		col1->add(copyright_url);
-
-		auto cols = std::make_shared<ui::col_control>();
-		cols->add(col0);
-		cols->add(col1);
-		cols->add(col4);
-
-		controls.emplace_back(cols);
-		controls.emplace_back(std::make_shared<divider_element>());
-		controls.emplace_back(std::make_shared<ui::ok_cancel_control>(dlg->_frame, tt.button_update));
-
-		if (ui::close_result::ok == dlg->show_modal(controls, {111}))
+		std::vector<std::string> result;
+		df::hash_set<std::string, df::ihash, df::ieq> seen;
+		for (const auto tag : str::split(favorite_tags, true))
 		{
-			record_feature_use(features::batch_edit);
-
-			metadata_edits edits;
-			if (setting.set_artist) edits.artist = setting.artist;
-			if (setting.set_caption) edits.description = setting.caption;
-			if (setting.set_album) edits.album = setting.album;
-			if (setting.set_album_artist) edits.album_artist = setting.album_artist;
-			if (setting.set_genre) edits.genre = setting.genre;
-			if (setting.set_tv_show) edits.show = setting.tv_show;
-
-			if (setting.set_copyright_notice) edits.copyright_notice = setting.copyright_notice;
-			if (setting.set_copyright_creator) edits.copyright_creator = setting.copyright_creator;
-			if (setting.set_copyright_source) edits.copyright_source = setting.copyright_source;
-			if (setting.set_copyright_credit) edits.copyright_credit = setting.copyright_credit;
-			if (setting.set_copyright_url) edits.copyright_url = setting.copyright_url;
-
-			const auto results = std::make_shared<command_status>(s._async, dlg, icon, title, items.size());
-			s.modify_items(results, icon, title, items.items(), edits, view);
+			if (seen.emplace(tag).second) result.emplace_back(tag);
 		}
-	}
-}
-
-
-class location_auto_complete_strategy;
-
-class location_auto_complete final : public ui::auto_complete_match,
-                                     public std::enable_shared_from_this<location_auto_complete>
-{
-public:
-	location_match match;
-	ui::complete_strategy_t& _parent;
-
-	std::string _id;
-	std::string _text;
-	std::vector<str::part_t> _highlights;
-
-	explicit location_auto_complete(ui::complete_strategy_t& parent, location_match m, const int w) :
-		auto_complete_match(view_element_style::can_invoke), match(std::move(m)), _parent(parent)
+		return result;
+	};
+	const auto contains_favorite = [&unique_favorites](const std::string_view tag)
 	{
-		weight = w;
-	}
-
-	explicit location_auto_complete(ui::complete_strategy_t& parent, const location_t& loc, const int w) :
-		auto_complete_match(view_element_style::can_invoke), _parent(parent)
-	{
-		weight = w;
-		match.city.text = loc.place;
-		match.state.text = loc.state;
-		match.country.text = loc.country;
-		match.location = loc;
-	}
-
-	explicit location_auto_complete(ui::complete_strategy_t& parent, std::string id, std::string text,
-	                                std::vector<str::part_t> highlights, const int w) :
-		auto_complete_match(view_element_style::can_invoke), _parent(parent), _id(std::move(id)),
-		_text(std::move(text)), _highlights(std::move(highlights))
-	{
-		weight = w;
-	}
-
-	std::string edit_text() const override
-	{
-		return match.location.str();
-	}
-
-	void render(ui::draw_context& dc, const pointi element_offset) const override
-	{
-		const auto logical_bounds = bounds.offset(element_offset);
-		const auto bg_color = calc_background_color(dc);
-
-		if (bg_color.a > 0.0f)
+		const auto favorites = unique_favorites();
+		return std::ranges::find_if(favorites, [tag](const std::string_view favorite)
 		{
-			const auto pad = padding * dc.scale_factor;
-			dc.draw_rounded_rect(logical_bounds.inflate(pad.cx, pad.cy), bg_color, dc.padding1);
-		}
-
-		const auto highlight_clr = ui::color(ui::style::color::dialog_selected_text, dc.colors.alpha);
-		const auto clr = ui::color(dc.colors.foreground, dc.colors.alpha);
-		const auto city_extent = dc.measure_text(match.city.text, ui::style::font_face::dialog,
-		                                         ui::style::text_style::single_line, bounds.width());
-		const auto state_extent = dc.measure_text(match.state.text, ui::style::font_face::dialog,
-		                                          ui::style::text_style::single_line, bounds.width());
-		//const auto country_extent = dc.measure_text(_match.country.text, render::style::font_size::dialog, render::style::text_style::single_line, bounds.width());
-
-		if (str::is_empty(_text))
+			return str::icmp(favorite, tag) == 0;
+		}) != favorites.end();
+	};
+	const auto toggle_favorite = [&favorite_tags, edit, unique_favorites](const std::string_view tag)
+	{
+		auto favorites = unique_favorites();
+		const auto found = std::ranges::find_if(favorites, [tag](const std::string_view favorite)
 		{
-			auto rr = logical_bounds;
-			dc.draw_text(match.city.text, make_highlights(match.city.highlights, highlight_clr), rr,
-			             ui::style::font_face::dialog, ui::style::text_style::single_line, clr, {});
-			rr.left += city_extent.cx + dc.padding2;
-			dc.draw_text(match.state.text, make_highlights(match.state.highlights, highlight_clr), rr,
-			             ui::style::font_face::dialog, ui::style::text_style::single_line, clr, {});
-			rr.left += state_extent.cx + dc.padding2;
-			dc.draw_text(match.country.text, make_highlights(match.country.highlights, highlight_clr), rr,
-			             ui::style::font_face::dialog, ui::style::text_style::single_line, clr, {});
-			rr.left += state_extent.cx + dc.padding2;
-		}
+			return str::icmp(favorite, tag) == 0;
+		});
+		if (found == favorites.end())
+			favorites.emplace_back(tag);
 		else
-		{
-			dc.draw_text(_text, make_highlights(_highlights, highlight_clr), logical_bounds,
-			             ui::style::font_face::dialog, ui::style::text_style::single_line, clr, {});
-		}
-	}
-
-	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
-	{
-		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
-	}
-
-	void dispatch_event(const view_element_event& event) override
-	{
-		if (event.type == view_element_event_type::click)
-		{
-			_parent.selected(shared_from_this(), ui::complete_strategy_t::select_type::click);
-		}
-		else if (event.type == view_element_event_type::double_click)
-		{
-			_parent.selected(shared_from_this(), ui::complete_strategy_t::select_type::double_click);
-		}
-	}
-};
-
-
-static void fetch(async_strategy& async, std::string key, std::string host, std::string path,
-                  std::function<void(std::string)> f)
-{
-	async.web_service_cache(
-		key, [&async, key,
-			host = std::move(host),
-			path = std::move(path),
-			f = std::move(f)](const std::string& cache_response)
-		{
-			if (cache_response.empty())
-			{
-				platform::web_request req;
-				req.path = path;
-
-				async.queue_async(async_queue::web, [&async, req, f, key, host]
-				{
-					const auto con = platform::connect_to_host(host);
-					auto response = send_request(con, req);
-
-					// only cache if success
-					if (response.status_code == 200)
-					{
-						async.web_service_cache(key, response.body);
-					}
-
-					return f(std::move(response.body));
-				});
-			}
-			else
-			{
-				f(cache_response);
-			}
-		});
-}
-
-static void fetch_place(async_strategy& async, const std::string_view place_id, std::function<void(std::string)> f)
-{
-	const auto url = std::format("/maps/api/place/details/json?placeid={}&key={}", df::url_encode(place_id),
-	                             google_maps_api_key);
-	const auto key = std::format("place_details:{}", place_id);
-	fetch(async, key, "maps.googleapis.com"s, url, std::move(f));
-}
-
-static str::cached find_component(const rapidjson::GenericValue<rapidjson::UTF8<char>>& json,
-                                  const std::string& component_field, const std::string_view component_name)
-{
-	if (json.HasMember(component_field))
-	{
-		for (const auto& component : json[component_field].GetArray())
-		{
-			if (component.HasMember("types"))
-			{
-				for (const auto& type : component["types"].GetArray())
-				{
-					if (str::icmp(component_name, type.GetString()) == 0)
-					{
-						return str::cache(df::util::json::safe_string(component, "long_name"));
-					}
-				}
-			}
-		}
-	}
-
-	return {};
-}
-
-class location_auto_complete_strategy final : public std::enable_shared_from_this<location_auto_complete_strategy>,
-                                              public ui::complete_strategy_t
-{
-public:
-	view_state& _state;
-	ui::control_frame_ptr _parent;
-	ui::auto_complete_results _results;
-	ui::auto_complete_match_ptr _selected;
-
-	df::hash_set<std::string, df::ihash, df::ieq> _recent_location_set;
-	std::vector<std::string> _recent_locations;
-
-	bool _empty_query = true;
-	std::function<void(std::shared_ptr<location_auto_complete>)> _changed;
-
-	location_auto_complete_strategy(view_state& s, ui::control_frame_ptr parent,
-	                                std::function<void(std::shared_ptr<location_auto_complete>)> changed,
-	                                const std::vector<std::string>& recent_locations) : _state(s),
-		_parent(std::move(parent)),
-		_recent_location_set(recent_locations.begin(), recent_locations.end()), _recent_locations(recent_locations),
-		_changed(std::move(changed))
-	{
-		resize_to_show_results = false;
-		max_predictions = 15u;
-
-		std::ranges::reverse(_recent_locations);
-
-		if (_recent_locations.size() > max_predictions)
-		{
-			_recent_locations.resize(max_predictions);
-		}
-	}
-
-	~location_auto_complete_strategy() override
-	{
-	}
-
-	std::string no_results_message() override
-	{
-		return std::string(tt.type_to_search);
-	}
-
-	void initialise(std::function<void(const ui::auto_complete_results&)> complete) override
-	{
-		search({}, std::move(complete));
-	}
-
-	void show_results(const ui::auto_complete_results& found,
-	                  std::function<void(const ui::auto_complete_results&)> complete)
-	{
-		_state.queue_ui([t = shared_from_this(), complete = std::move(complete), found]
-		{
-			t->_results = found;
-			if (t->_results.size() > t->max_predictions) t->_results.resize(t->max_predictions);
-			complete(t->_results);
-		});
-	}
-
-	int calc_weight(const location_match& lm) const
-	{
-		const auto is_recent = _recent_location_set.contains(str::to_string(lm.location.id));
-		return is_recent ? 1 : 1 + df::round(lm.distance_away);
-	}
-
-	static bool compare_weight(const ui::auto_complete_match_ptr& l, const ui::auto_complete_match_ptr& r)
-	{
-		const auto diff = l->weight - r->weight;
-		return diff == 0 ? str::icmp(l->edit_text(), r->edit_text()) < 0 : diff < 0;
-	}
-
-	void search(const std::string& query, std::function<void(const ui::auto_complete_results&)> complete) override
-	{
-		_empty_query = str::is_empty(query);
-
-		_state.queue_location(
-			[t = shared_from_this(), query, complete = std::move(complete), &s = _state](
-			const location_cache& locations)
-			{
-				const auto query_len = query.size();
-
-				if (query_len > 0)
-				{
-					auto locally_found = locations.auto_complete(query, t->max_predictions, setting.default_location);
-
-					if (query_len <= 3 || locally_found.size() > 1)
-					{
-						ui::auto_complete_results found;
-
-						for (const auto& local : locally_found)
-						{
-							found.emplace_back(
-								std::make_shared<location_auto_complete>(*t, local, t->calc_weight(local)));
-						}
-
-						std::ranges::stable_sort(found, compare_weight);
-						t->show_results(found, complete);
-					}
-					else
-					{
-						// Only use google for queries over length 3
-						const auto key = std::format("auto_complete_location:{}", query);
-						const auto path = std::format(
-							"/maps/api/place/autocomplete/json?input={}&key={}",
-							df::url_encode(query), google_maps_api_key);
-
-						fetch(t->_state._async, key, "maps.googleapis.com"s, path,
-						      [t, query, complete, locally_found](const std::string& response)
-						      {
-							      ui::auto_complete_results found;
-
-							      for (const auto& local : locally_found)
-							      {
-								      found.emplace_back(
-									      std::make_shared<location_auto_complete>(
-										      *t, local, t->calc_weight(local)));
-							      }
-
-							      df::util::json::json_doc json_response;
-							      json_response.Parse(response.data(), response.size());
-
-							      if (json_response.HasMember("predictions"))
-							      {
-								      for (const auto& loc : json_response["predictions"].GetArray())
-								      {
-									      auto text = df::util::json::safe_string(loc, "description");
-									      auto place_id = df::util::json::safe_string(loc, "place_id");
-
-									      std::vector<str::part_t> selections;
-
-									      if (loc.HasMember("matched_substrings"s))
-									      {
-										      for (const auto& match : loc["matched_substrings"].GetArray())
-										      {
-											      const auto length = static_cast<size_t>(df::util::json::safe_int(
-												      match, "length"));
-											      const auto offset = static_cast<size_t>(df::util::json::safe_int(
-												      match, "offset"));
-
-											      selections.emplace_back(offset, length);
-										      }
-									      }
-
-									      const auto is_recent = t->_recent_location_set.contains(place_id);
-									      found.emplace_back(
-										      std::make_shared<location_auto_complete>(
-											      *t, place_id, text, selections, is_recent ? 2 : 1));
-								      }
-
-								      std::ranges::stable_sort(found, compare_weight);
-								      t->show_results(found, complete);
-							      }
-						      });
-					}
-				}
-				else
-				{
-					ui::auto_complete_results results;
-
-					for (const auto& recent_place_id : t->_recent_locations)
-					{
-						if (str::is_num(recent_place_id))
-						{
-							const auto id = str::to_int(recent_place_id);
-							auto loc = locations.find_by_id(id);
-
-							if (!loc.is_empty())
-							{
-								results.emplace_back(
-									std::make_shared<location_auto_complete>(
-										*t, loc, 100 - static_cast<int>(results.size())));
-							}
-						}
-						else
-						{
-							platform::thread_event event_wait(true, false);
-
-							fetch_place(t->_state._async, recent_place_id,
-							            [t, &event_wait, recent_place_id, &results](const std::string& response)
-							            {
-								            df::util::json::json_doc json_response;
-								            json_response.Parse(response);
-
-								            if (json_response.HasMember("result"))
-								            {
-									            std::vector<str::part_t> highlights;
-									            const auto formatted_search = df::util::json::safe_string(
-										            json_response["result"], "formatted_address");
-									            results.emplace_back(
-										            std::make_shared<location_auto_complete>(
-											            *t, recent_place_id, formatted_search, highlights,
-											            100 - static_cast<int>(results.size())));
-								            }
-
-								            event_wait.set();
-							            });
-
-							platform::wait_for({event_wait}, 10000, false);
-						}
-					}
-
-					if (results.empty())
-					{
-						const auto loc = locations.find_closest(setting.default_location.latitude(),
-						                                        setting.default_location.longitude());
-
-						if (!loc.is_empty())
-						{
-							results.emplace_back(
-								std::make_shared<location_auto_complete>(
-									*t, loc, 100 - static_cast<int>(results.size())));
-						}
-					}
-
-					t->show_results(results, complete);
-				}
-			});
-	}
-
-	void selected(const ui::auto_complete_match_ptr& i, const select_type st) override
-	{
-		if (i)
-		{
-			const auto ii = std::dynamic_pointer_cast<location_auto_complete>(i);
-
-			if (ii && _changed)
-			{
-				_changed(ii);
-			}
-
-			if (_selected)
-			{
-				_selected->set_style_bit(view_element_style::selected, false);
-			}
-
-			_selected = i;
-
-			if (_selected)
-			{
-				_selected->set_style_bit(view_element_style::selected, true);
-			}
-
-			if (st == select_type::double_click)
-			{
-				_parent->close(false);
-			}
-		}
-		else
-		{
-			_selected = {};
-		}
-	}
-
-	ui::auto_complete_match_ptr selected() const override
-	{
-		return _selected;
-	}
-};
-
-
-static void id_to_location(async_strategy& async, const std::string& place_id, std::function<void(location_t)> cb)
-{
-	if (str::is_num(place_id))
-	{
-		async.queue_location([&async, place_id, cb](const location_cache& locations)
-		{
-			const auto id = str::to_int(place_id);
-			auto loc = locations.find_by_id(id);
-
-			if (!loc.is_empty())
-			{
-				async.queue_ui([cb, loc] { cb(loc); });
-			}
-		});
-	}
-	else
-	{
-		fetch_place(async, place_id,
-		            [&async, place_id, cb](const std::string& response)
-		            {
-			            df::util::json::json_doc json_response;
-			            json_response.Parse(response);
-
-			            if (json_response.HasMember("result"))
-			            {
-				            const std::string component_field = "address_components";
-				            const auto& address = json_response["result"];
-				            auto place = find_component(address, component_field, "locality");
-				            if (place.is_empty()) place = find_component(address, component_field, "sublocality");
-				            if (place.is_empty()) place = find_component(address, component_field, "route");
-				            if (place.is_empty()) place = find_component(address, component_field, "postal_town");
-				            const auto state =
-					            find_component(address, component_field, "administrative_area_level_2");
-				            const auto country = find_component(address, component_field, "country");
-				            const gps_coordinate position(address["geometry"]["location"]["lat"].GetDouble(),
-				                                          address["geometry"]["location"]["lng"].GetDouble());
-
-				            location_t loc(0, place, state, country, position, 0.0);
-				            async.queue_ui([cb, loc] { cb(loc); });
-			            }
-		            });
-	}
-}
-
-bool ui::browse_for_location(view_state& vs, const control_frame_ptr& parent, gps_coordinate& position)
-{
-	auto dlg = make_dlg(parent);
-	const auto title = tt.select_location;
-	constexpr auto icon = icon_index::location;
-
-	const auto ls = std::make_shared<selected_location_t>();
-
-	const auto place_edit = std::make_shared<text_element>(ls->place_text);
-	const auto state_edit = std::make_shared<text_element>(ls->state_text);
-	const auto country_edit = std::make_shared<text_element>(ls->country_text);
-	const auto latitude_edit = std::make_shared<text_element>(str::to_string(ls->latitude, 5));
-	const auto longitude_edit = std::make_shared<text_element>(str::to_string(ls->longitude, 5));
-
-	auto populate_place = [ls, place_edit, state_edit, country_edit, latitude_edit, longitude_edit, dlg
-		](const location_t& loc)
-	{
-		df::assert_true(is_ui_thread());
-
-		ls->id = loc.id;
-		ls->place_text = loc.place;
-		ls->state_text = loc.state;
-		ls->country_text = loc.country;
-		ls->latitude = loc.position.latitude();
-		ls->longitude = loc.position.longitude();
-
-		view_element_event e{view_element_event_type::populate, dlg};
-		place_edit->text(ls->place_text);
-		state_edit->text(ls->state_text);
-		country_edit->text(ls->country_text);
-		latitude_edit->text(str::to_string(ls->latitude, 5));
-		longitude_edit->text(str::to_string(ls->longitude, 5));
-
-		dlg->_frame->invalidate();
-		dlg->layout();
+			favorites.erase(found);
+		favorite_tags = str::combine(favorites);
+		edit->text(favorite_tags);
 	};
+	favorite_tags = str::combine(unique_favorites());
+	edit->text(favorite_tags);
 
-	auto coord_changed = [&vs, populate_place](const gps_coordinate coord)
+	content->add(set_margin(std::make_shared<text_element>(tt.customise_tags_help)));
+	content->add(set_margin(std::make_shared<text_element>(tt.help_tag1)));
+	content->add(set_margin(std::make_shared<text_element>(tt.help_tag2)));
+	content->add(edit);
+
+	df::string_counts common_counts;
+	for (const auto& tag : s.item_index.distinct_tags())
 	{
-		vs._async.queue_location([&vs, coord, populate_place](const location_cache& locations)
-		{
-			auto place = locations.find_closest(coord.latitude(), coord.longitude());
-			place.position = coord;
-			vs._async.queue_ui([place, populate_place] { populate_place(place); });
-		});
-	};
+		++common_counts[tag.first];
+	}
+	s.recent_tags.count_strings(common_counts, 1000000);
 
-	auto map = std::make_shared<map_control>(vs._async, coord_changed);
-	map->init(dlg->_frame);
-
-	// Seed the map so it is never blank on open: centre on the incoming position
-	// when editing an existing location, otherwise on the user's default location.
-	// set_location_marker records the centre even before the dialog has been laid
-	// out; map_control fetches the tiles once it receives its real extent.
-	const auto initial_location = position.is_valid() ? position : setting.default_location;
-	map->set_location_marker(initial_location);
-
-	// When given an existing position, reverse-geocode it so the place/state/country
-	// and lat/long fields reflect the current selection rather than starting empty.
-	if (position.is_valid())
+	const auto common_tags = top_map(common_counts, 20);
+	if (!common_tags.empty())
 	{
-		coord_changed(position);
+		content->add(std::make_shared<ui::title_control>(tt.tags_common_label));
+		content->add(set_margin(std::make_shared<ui::recommended_words_control>(
+			dlg->_frame, common_tags, toggle_favorite, contains_favorite, toolbar_refresh)));
 	}
 
-	auto sel_changed = [&vs, map, populate_place](const std::shared_ptr<location_auto_complete>& sel)
-	{
-		if (str::is_empty(sel->_id))
-		{
-			map->set_location_marker(sel->match.location.position);
-			populate_place(sel->match.location);
-		}
-		else
-		{
-			id_to_location(vs._async, sel->_id, [map, populate_place](const location_t& loc)
-			{
-				map->set_location_marker(loc.position);
-				populate_place(loc);
-			});
-		}
+	static constexpr std::array<std::string_view, 12> workflow_tags = {
+		"Approved", "Archive", "Client", "Draft", "Final", "Progress", "Review", "Published",
+		"Rejected", "Rights", "Select", "Todo"
 	};
-
-
-	auto strategy = std::make_shared<location_auto_complete_strategy>(vs, dlg->_frame, sel_changed,
-	                                                                  vs.recent_locations.items());
-	const auto search_control = std::make_shared<ui::search_control>(dlg->_frame, ls->search_text, strategy);
-
-	const auto map_col = std::make_shared<group_control>();
-	map_col->add(map);
-
-	const auto search_col = std::make_shared<group_control>();
-	search_col->add(std::make_shared<text_element>(tt.type_to_search, view_element_style::center));
-	search_col->add(search_control);
-
-	const auto props_table = std::make_shared<table_element>();
-	props_table->add(tt.prop_name_place, place_edit);
-	props_table->add(tt.prop_name_state, state_edit);
-	props_table->add(tt_prep(tt.prop_name_country), country_edit);
-	props_table->add(tt.prop_name_latitude, latitude_edit);
-	props_table->add(tt.prop_name_longitude, longitude_edit);
-
-	const auto props_col = std::make_shared<group_control>();
-	props_col->add(std::make_shared<title_control>(tt.metadata));
-	props_col->add(props_table);
-	auto instructions = std::make_shared<text_element>(tt.map_instructions, view_element_style::info);
-	instructions->padding = {10, 10};
-	instructions->margin = {10, 10};
-	props_col->add(instructions);
-
-	const auto cols = std::make_shared<col_control>();
-	cols->add(search_col);
-	cols->add(map_col, {66});
-	cols->add(props_col);
-
-	const std::vector<view_element_ptr> controls = {
-		set_margin(std::make_shared<title_control2>(dlg->_frame, icon, title, std::string{})),
-		std::make_shared<divider_element>(),
-		cols,
-		std::make_shared<divider_element>(),
-		set_margin(std::make_shared<ok_cancel_control>(dlg->_frame)),
-	};
-
-	if (close_result::ok == dlg->show_modal(controls, {122}))
+	std::vector<std::string_view> workflow_suggestions;
+	df::hash_set<std::string_view, df::ihash, df::ieq> workflow_seen;
+	const auto append_workflow_tag = [&workflow_suggestions, &workflow_seen](const std::string_view tag)
 	{
-		position = {ls->latitude, ls->longitude};
-		return true;
-	}
+		if (workflow_seen.emplace(tag).second) workflow_suggestions.emplace_back(tag);
+	};
+	for (const auto tag : str::split(tt.default_favorite_tags, true)) append_workflow_tag(tag);
+	for (const auto tag : workflow_tags) append_workflow_tag(tag);
+	content->add(std::make_shared<ui::title_control>(tt.tags_workflow_label));
+	content->add(set_margin(std::make_shared<ui::recommended_words_control>(
+		dlg->_frame, workflow_suggestions, toggle_favorite, contains_favorite, toolbar_refresh)));
 
-	return false;
-}
-
-static void convert_resize_invoke(view_state& s, const ui::control_frame_ptr& parent, const view_host_base_ptr& view)
-{
-	auto dlg = make_dlg(parent);
-	const auto title = tt.command_convert_or_resize;
-	constexpr auto icon = icon_index::photo;
-	const auto can_process = s.can_process_selection_and_mark_errors(view, df::process_items_type::photos_only);
+	std::vector<view_element_ptr> controls;
+	controls.emplace_back(set_margin(std::make_shared<ui::title_control2>(
+		dlg->_frame, icon_index::tag, tt.customise_tags_title, tt.customise_tags_help)));
+	controls.emplace_back(std::make_shared<divider_element>());
+	controls.emplace_back(content);
+	controls.emplace_back(std::make_shared<divider_element>());
+	controls.emplace_back(std::make_shared<ui::ok_cancel_control>(dlg->_frame));
 
 	pause_media pause(s);
 
-	if (can_process.fail())
-	{
-		dlg->show_message(icon_index::error, title, can_process.to_string());
-	}
-	else
-	{
-		const auto& items = s.selected_items();
-		std::vector<view_element_ptr> controls;
+	// The edit box and the suggestion toolbars all write to the local copy, so Cancel and
+	// Escape leave the saved favourites alone.
+	if (dlg->show_modal(controls, {54}, {66}) != ui::close_result::ok) return;
 
-		controls.emplace_back(set_margin(std::make_shared<ui::title_control2>(
-			dlg->_frame, icon, title, format_plural_text(tt.convert_info_fmt, items), items.thumbs())));
-		controls.emplace_back(std::make_shared<divider_element>());
-		controls.emplace_back(set_margin(std::make_shared<text_element>(tt.destination_folder)));
-		controls.emplace_back(
-			set_margin(std::make_shared<ui::folder_picker_control>(dlg->_frame, setting.write_folder)));
-
-		auto jpeg = std::make_shared<ui::check_control>(dlg->_frame, tt.jpeg_best, setting.convert.to_jpeg, true);
-		auto jpeg_group = std::make_shared<ui::group_control>();
-		jpeg_group->add(std::make_shared<text_element>(tt.options_jpeg_quality));
-		jpeg_group->add(std::make_shared<ui::slider_control>(dlg->_frame, setting.convert.jpeg_quality, 1, 100));
-		jpeg->child(jpeg_group);
-		controls.emplace_back(jpeg);
-
-		auto png = std::make_shared<ui::check_control>(dlg->_frame, tt.png_best, setting.convert.to_png, true);
-		auto png_group = std::make_shared<ui::group_control>();
-		png->child(png_group);
-		controls.emplace_back(png);
-
-		auto webp = std::make_shared<ui::check_control>(dlg->_frame, tt.webp_best, setting.convert.to_webp, true);
-		auto webp_group = std::make_shared<ui::group_control>();
-		//webp_group->add(std::make_shared<text_element>(tt.options_jpeg_quality));
-		webp_group->add(std::make_shared<ui::slider_control>(dlg->_frame, setting.convert.webp_quality, 1, 100));
-		webp_group->add(
-			std::make_shared<ui::check_control>(dlg->_frame, tt.lossless_compression, setting.convert.webp_lossless));
-		webp->child(webp_group);
-		controls.emplace_back(webp);
-
-		auto dimension = std::make_shared<ui::check_control>(dlg->_frame, tt.limit_output_dimensions,
-		                                                     setting.convert.limit_dimension);
-		dimension->child(
-			std::make_shared<ui::num_control>(dlg->_frame, std::string_view{}, setting.convert.max_side));
-		controls.emplace_back(dimension);
-
-		controls.emplace_back(std::make_shared<ui::check_control>(dlg->_frame, tt.open_dest, setting.show_results));
-		controls.emplace_back(std::make_shared<divider_element>());
-		controls.emplace_back(std::make_shared<ui::ok_cancel_control>(dlg->_frame, tt.button_convert));
-
-
-		if (dlg->show_modal(controls) == ui::close_result::ok)
-		{
-			record_feature_use(features::convert);
-
-			const auto results = std::make_shared<command_status>(s._async, dlg, icon, title, items.size());
-			df::file_path first_successful_path;
-			df::folder_path write_folder(setting.write_folder);
-
-			bool can_process = true;
-			const auto folder = df::folder_path(setting.write_folder);
-			const auto overwrite_result = check_overwrite(folder, items, "jpg");
-
-			if (!overwrite_result.empty())
-			{
-				std::vector<view_element_ptr> controls = {
-					std::make_shared<ui::title_control2>(dlg->_frame, icon, title,
-					                                     format_plural_text(tt.would_overwrite_fmt, overwrite_result)),
-					std::make_shared<divider_element>(),
-					std::make_shared<ui::ok_cancel_control>(dlg->_frame),
-				};
-
-				can_process = dlg->show_modal(controls) == ui::close_result::ok;
-			}
-
-			if (can_process)
-			{
-				const auto create_folder_result = platform::create_folder(write_folder);
-
-				if (create_folder_result.failed())
-				{
-					results->complete(
-						create_folder_result.
-						format_error(str_format(tt.failed_to_create_folder_fmt.sv(), write_folder)));
-					results->wait_for_complete();
-				}
-				else
-				{
-					detach_file_handles detach(s);
-
-					s.queue_async(async_queue::work, [items, results, write_folder, &first_successful_path]
-					{
-						result_scope rr(results);
-						files ff;
-						std::string message;
-
-						for (const auto& i : items.items())
-						{
-							const auto mt = i->file_type();
-							platform::file_op_result update_result;
-
-							results->start_item(i->name());
-
-							try
-							{
-								if (mt->has_trait(file_traits::bitmap))
-								{
-									file_encode_params encode_params;
-									encode_params.jpeg_save_quality = setting.convert.jpeg_quality;
-									encode_params.webp_quality = setting.convert.webp_quality;
-									encode_params.webp_lossless = setting.convert.webp_lossless;
-
-									auto ext = ".jpg";
-									if (setting.convert.to_png) ext = ".png";
-									if (setting.convert.to_webp) ext = ".webp";
-
-									const auto write_path = df::file_path(
-										write_folder, i->path().file_name_without_extension(), ext);
-									const auto edits = setting.convert.limit_dimension
-										                   ? image_edits(setting.convert.max_side)
-										                   : image_edits();
-									update_result = ff.update(i->path(), write_path, {}, edits, encode_params, false,
-									                          i->xmp());
-									if (update_result.success() && first_successful_path.is_empty())
-										first_successful_path = write_path;
-									if (!update_result.success()) message = update_result.format_error();
-								}
-							}
-							catch (std::exception& e)
-							{
-								df::log(__FUNCTION__, e.what());
-							}
-
-							results->end_item(i->name(), to_status(update_result.code));
-
-							if (results->is_canceled())
-								break;
-						}
-
-
-						rr.complete(message);
-					});
-
-					results->wait_for_complete();
-
-					if (setting.show_results)
-					{
-						s.open(view, first_successful_path);
-					}
-				}
-			}
-		}
-	}
+	favorite_tags = str::combine(unique_favorites());
+	setting.favorite_tags = favorite_tags;
+	s.invalidate_view(view_invalid::sidebar | view_invalid::options_save | view_invalid::command_state |
+		view_invalid::tooltip);
 }
-
-static void tag_invoke(view_state& s, const ui::control_frame_ptr& parent, const view_host_base_ptr& view)
-{
-	auto dlg = make_dlg(parent);
-	constexpr auto icon = icon_index::tag;
-	const auto title = tt.tag_add_remove;
-	const auto can_process = s.can_process_selection_and_mark_errors(view, df::process_items_type::can_save_metadata);
-
-	pause_media pause(s);
-
-	if (can_process.fail())
-	{
-		dlg->show_message(icon_index::error, title, can_process.to_string());
-	}
-	else
-	{
-		const auto& items = s.selected_items();
-		std::vector<view_element_ptr> controls;
-		std::shared_ptr<ui::multi_line_edit_control> edit;
-
-		auto cols = std::make_shared<ui::col_control>();
-		auto edit_col = std::make_shared<ui::group_control>();
-		auto list_control = std::make_shared<ui::group_control>();
-
-		auto tags = setting.last_tags;
-		edit_col->add(set_margin(std::make_shared<text_element>(tt.tag_add_or_remove_label)));
-		edit_col->add(set_margin(edit = std::make_shared<ui::multi_line_edit_control>(dlg->_frame, tags, 10, false)));
-		edit_col->add(set_margin(std::make_shared<text_element>(tt.help_tag1)));
-		edit_col->add(set_margin(std::make_shared<text_element>(tt.help_tag2)));
-		edit_col->add(set_margin(std::make_shared<text_element>(tt.help_tag_add_remove)));
-
-		auto favorites = str::split(setting.favorite_tags, true);
-
-		if (!favorites.empty())
-		{
-			list_control->add(set_margin(std::make_shared<text_element>(
-				tt.tags_favorite_label, ui::style::font_face::title, ui::style::text_style::multiline,
-				view_element_style::line_break)));
-			list_control->add(set_margin(std::make_shared<ui::recommended_words_control>(
-				dlg->_frame, favorites, [edit](const std::string_view tag)
-				{
-					edit->add_word(str::quote_if_white_space(tag));
-				})));
-		}
-
-		auto distinct_tags = s.item_index.distinct_tags();
-
-		df::string_counts common_counts;
-
-		for (const auto& t : distinct_tags)
-		{
-			++common_counts[t.first];
-		}
-
-		s.recent_tags.count_strings(common_counts, 1000000);
-
-		for (const auto& f : favorites)
-		{
-			common_counts.erase(f);
-		}
-
-		const auto common = str::combine(top_map(common_counts, 20));
-		const auto common_tags = str::split(common, true);
-		const auto existing = top_map(s.selected_tags(), 20);
-
-		if (!common_tags.empty())
-		{
-			list_control->add(set_margin(std::make_shared<text_element>(
-				tt.tags_common_label, ui::style::font_face::title, ui::style::text_style::multiline,
-				view_element_style::line_break)));
-			list_control->add(set_margin(std::make_shared<ui::recommended_words_control>(
-				dlg->_frame, common_tags, [edit](const std::string_view tag)
-				{
-					edit->add_word(str::quote_if_white_space(tag));
-				})));
-		}
-
-		if (!existing.empty())
-		{
-			list_control->add(set_margin(std::make_shared<text_element>(
-				tt.tags_remove_label, ui::style::font_face::title, ui::style::text_style::multiline,
-				view_element_style::line_break)));
-			list_control->add(set_margin(std::make_shared<ui::recommended_words_control>(
-				dlg->_frame, existing, [edit](const std::string_view tag)
-				{
-					edit->add_word(std::format("-{}", str::quote_if_white_space(tag)));
-				})));
-		}
-
-		cols->add(edit_col);
-		cols->add(list_control);
-
-		controls.emplace_back(set_margin(std::make_shared<ui::title_control2>(
-			dlg->_frame, icon, title, format_plural_text(tt.tag_info_fmt, items), items.thumbs())));
-		controls.emplace_back(std::make_shared<divider_element>());
-		controls.emplace_back(cols);
-		controls.emplace_back(std::make_shared<divider_element>());
-		controls.emplace_back(std::make_shared<ui::ok_cancel_control>(dlg->_frame, tt.button_tag));
-
-		if (dlg->show_modal(controls, {77}) == ui::close_result::ok)
-		{
-			record_feature_use(features::tag);
-
-			setting.last_tags = tags;
-			std::vector<std::string> adds;
-			std::vector<std::string> removes;
-
-			search_tokenizer t;
-
-			for (const auto& part : t.parse(tags))
-			{
-				if (part.modifier.positive)
-				{
-					adds.emplace_back(part.term);
-				}
-				else
-				{
-					removes.emplace_back(part.term);
-				}
-			}
-
-			const auto results = std::make_shared<command_status>(s._async, dlg, icon, title, s.selected_count());
-
-			metadata_edits edits;
-			edits.add_tags = tag_set(adds);
-			edits.remove_tags = tag_set(removes);
-			s.modify_items(results, icon, title, items.items(), edits, view);
-			s.recent_tags.add_items(adds);
-		}
-	}
-}
-
-
-static void adjust_date_invoke(view_state& s, const ui::control_frame_ptr& parent, const view_host_base_ptr& view)
-{
-	auto dlg = make_dlg(parent);
-	const auto title = tt.command_adjust_date;
-	constexpr auto icon = icon_index::time;
-	const auto can_process = s.can_process_selection_and_mark_errors(view, df::process_items_type::can_save_metadata);
-
-	pause_media pause(s);
-
-	if (can_process.fail())
-	{
-		dlg->show_message(icon_index::error, title, can_process.to_string());
-	}
-	else
-	{
-		const auto& items = s.selected_items();
-
-		df::date_t start_date;
-		df::date_t end_date;
-
-		for (const auto& i : items.items())
-		{
-			auto d = i->media_created();
-
-			if (d.is_valid())
-			{
-				if (!end_date.is_valid() || end_date < d)
-				{
-					end_date = d;
-				}
-
-				if (!start_date.is_valid() || start_date > d)
-				{
-					start_date = d;
-				}
-			}
-		}
-
-		auto new_date = start_date;
-
-		const std::vector<view_element_ptr> controls = {
-			set_margin(std::make_shared<ui::title_control2>(dlg->_frame, icon, title,
-			                                                format_plural_text(tt.adjust_date_info_fmt, items),
-			                                                items.thumbs())),
-			std::make_shared<divider_element>(),
-			set_margin(std::make_shared<text_element>(tt.adjust_date_help1)),
-			set_margin(std::make_shared<text_element>(tt.adjust_date_help2)),
-			set_margin(std::make_shared<text_element>(tt.adjust_date_help3)),
-			std::make_shared<divider_element>(),
-			set_margin(std::make_shared<text_element>(tt.selected_date_range_label)),
-			set_margin(std::make_shared<bullet_element>(icon_index::bullet,
-			                                            str_format(tt.starting_fmt.sv(), start_date))),
-			set_margin(std::make_shared<bullet_element>(icon_index::bullet, str_format(tt.ending_fmt.sv(), end_date))),
-			set_margin(std::make_shared<text_element>(tt.starting_date_label)),
-			set_margin(std::make_shared<ui::date_control>(dlg->_frame, std::string_view{}, new_date)),
-			std::make_shared<divider_element>(),
-			std::make_shared<ui::ok_cancel_control>(dlg->_frame, tt.button_update),
-		};
-
-		if (dlg->show_modal(controls) == ui::close_result::ok)
-		{
-			record_feature_use(features::adjust_date);
-			const auto results = std::make_shared<command_status>(s._async, dlg, icon, title, items.size());
-
-			s.queue_async(async_queue::work, [items, results, new_date, start_date]
-			{
-				result_scope rr(results);
-				files ff;
-
-				for (const auto& i : items.items())
-				{
-					results->start_item(i->name());
-
-					auto created = i->media_created();
-					df::date_t dt = created + (new_date - start_date);
-					metadata_edits edits;
-					edits.created = dt;
-					const auto update_result = ff.update(i->path(), edits, {}, make_file_encode_params(), false,
-					                                     i->xmp());
-					platform::created_date(i->path(), dt.local_to_system());
-
-					results->end_item(i->name(), to_status(update_result.code));
-
-					if (results->is_canceled())
-						break;
-				}
-
-				rr.complete();
-			});
-
-			results->wait_for_complete();
-		}
-	}
-};
 
 static void rate_items_invoke(view_state& s, const ui::control_frame_ptr& parent, const view_host_base_ptr& view, int r)
 {
@@ -1683,7 +753,7 @@ static void rate_items_invoke(view_state& s, const ui::control_frame_ptr& parent
 	edits.rating = r;
 
 	constexpr auto icon = icon_index::star;
-	const auto title = tt.title_updating;
+	const auto title = tt.prop_name_rating;
 	const auto results = std::make_shared<command_status>(s._async, dlg, icon, title, s.selected_count());
 
 	s.modify_items(results, icon, title, s.selected_items().items(), edits, view);
@@ -1693,15 +763,25 @@ static void label_items_invoke(view_state& s, const ui::control_frame_ptr& paren
                                const std::string_view label)
 {
 	const auto selected = s.selected_items();
+	const auto& items = selected.items();
+
+	// Applying a label the whole selection already carries removes it, so a key repeats the toggle
+	// the grading control performs with the pointer and clearing never needs a separate command.
+	const auto is_set = !label.empty() && !items.empty() &&
+		std::ranges::all_of(items, [label](const df::item_element_ptr& i)
+		{
+			return str::icmp(i->label(), label) == 0;
+		});
+
 	auto dlg = make_dlg(parent);
 	metadata_edits edits;
-	edits.label = label;
+	edits.label = is_set ? std::string_view{} : label;
 
-	constexpr auto icon = icon_index::star;
-	const auto title = tt.title_updating;
-	const auto results = std::make_shared<command_status>(s._async, dlg, icon, title, selected.items().size());
+	constexpr auto icon = icon_index::flag;
+	const auto title = tt.prop_name_label;
+	const auto results = std::make_shared<command_status>(s._async, dlg, icon, title, items.size());
 
-	s.modify_items(results, icon, title, selected.items(), edits, view);
+	s.modify_items(results, icon, title, items, edits, view);
 }
 
 static void cut_copy_invoke(const view_state& s, const ui::control_frame_ptr& parent, const view_host_base_ptr& view,
@@ -1727,6 +807,20 @@ static void cut_copy_invoke(const view_state& s, const ui::control_frame_ptr& pa
 			platform::set_clipboard(item_paths, folder_paths, loaded, is_move);
 		});
 	}
+}
+
+static void copy_item_path_invoke(const view_state& s)
+{
+	const auto items = s.selected_items().items();
+	std::string paths;
+
+	for (const auto& item : items)
+	{
+		if (!paths.empty()) paths += "\r\n";
+		paths += item->path().pack();
+	}
+
+	if (!paths.empty()) platform::set_clipboard(paths);
 }
 
 class folder_auto_complete final : public std::enable_shared_from_this<folder_auto_complete>,
@@ -1873,7 +967,8 @@ public:
 	}
 };
 
-static void copy_move_invoke(view_state& s, const ui::control_frame_ptr& parent, const view_host_base_ptr& view,
+static void copy_move_invoke(view_state& s, const ui::control_frame_ptr& parent,
+                             const std::shared_ptr<view_frame>& view,
                              const bool is_move)
 {
 	const auto title = is_move ? tt.command_move : tt.command_copy;
@@ -1891,7 +986,9 @@ static void copy_move_invoke(view_state& s, const ui::control_frame_ptr& parent,
 	}
 	else
 	{
-		std::string text;
+		// Opening with an empty box means OK fails on the state the dialog itself started in,
+		// so it starts on the destination last used.
+		std::string text = s.recent_folders.items().empty() ? std::string{} : s.recent_folders.items().back();
 
 		const auto auto_complete = std::make_shared<folder_auto_complete>(s, parent);
 		const auto search_control = std::make_shared<ui::search_control>(dlg->_frame, text, auto_complete);
@@ -1901,7 +998,8 @@ static void copy_move_invoke(view_state& s, const ui::control_frame_ptr& parent,
 		const auto items_message = format_plural_text(is_move ? tt.move_fmt : tt.copy_fmt, items);
 
 		std::vector<view_element_ptr> controls = {
-			set_margin(std::make_shared<ui::title_control2>(dlg->_frame, icon, title, items_message, items.thumbs())),
+			set_margin(std::make_shared<ui::title_control2>(dlg->_frame, icon, title, items_message, items.thumbs(),
+			                                                items.size())),
 			std::make_shared<divider_element>(),
 			search_control,
 			std::make_shared<ui::check_control>(dlg->_frame, tt.open_dest, setting.show_results),
@@ -1926,14 +1024,62 @@ static void copy_move_invoke(view_state& s, const ui::control_frame_ptr& parent,
 			}
 			else
 			{
-				detach_file_handles detach(s);
-				s.recent_folders.add(write_folder.text());
-				platform::move_or_copy(items.file_paths(true), items.folder_paths(), write_folder, is_move);
-				s.item_index.queue_scan_folder(write_folder);
+				// The shell would silently auto-rename every collision, so a user who meant to replace
+				// got a second copy and no way to say otherwise. Name the collisions and let them
+				// choose, defaulting to the option that cannot destroy anything.
+				auto replace_existing = false;
+				const auto collisions = check_overwrite(write_folder, items, {});
 
-				if (setting.show_results)
+				if (!collisions.empty())
 				{
-					s.open(view, df::file_path(write_folder, items.first_name()));
+					const auto collision_dlg = make_dlg(parent);
+					auto policy = collision_policy::auto_rename;
+
+					std::vector<view_element_ptr> collision_controls;
+					collision_controls.emplace_back(set_margin(std::make_shared<ui::title_control2>(
+						collision_dlg->_frame, icon, title,
+						format_plural_text(tt.would_overwrite_fmt, collisions))));
+					collision_controls.emplace_back(create_collision_policy_control(
+						collision_dlg->_frame, policy, [] {}, true, false));
+					collision_controls.emplace_back(std::make_shared<divider_element>());
+					collision_controls.emplace_back(
+						std::make_shared<ui::ok_cancel_control>(collision_dlg->_frame));
+
+					if (collision_dlg->show_modal(collision_controls) != ui::close_result::ok) return;
+					replace_existing = policy == collision_policy::replace;
+				}
+
+				detach_file_handles detach(s);
+				shell_file_operation_ui processing(*view, parent);
+				// A move empties the folders it came from, and only the destination was ever reported.
+				// A search that names no folder is not watched, so it would keep listing what moved.
+				df::unique_folders sources;
+
+				if (is_move)
+				{
+					for (const auto& path : items.file_paths(true)) sources.emplace(path.folder());
+					for (const auto& path : items.folder_paths()) sources.emplace(path.parent());
+				}
+
+				const auto result = platform::move_or_copy(
+					items.file_paths(true), items.folder_paths(), write_folder, is_move, replace_existing);
+
+				if (result.success())
+				{
+					s.recent_folders.add(write_folder.text());
+					s.item_index.queue_scan_folder(write_folder);
+					if (!sources.empty()) s.item_index.queue_validate_changed_folders(std::move(sources));
+
+					if (setting.show_results)
+					{
+						detach.keep_display_closed();
+						s.open(view, df::search_t().add_selector(write_folder),
+						       make_unique_paths(result.created_files));
+					}
+				}
+				else if (result.code != platform::file_op_result_code::CANCELLED)
+				{
+					dlg->show_message(icon_index::error, title, result.format_error());
 				}
 			}
 		}
@@ -1964,14 +1110,12 @@ static void repeat_mode_toggle(const view_state& s, const ui::control_frame_ptr&
 static void font_invoke(const view_state& s, const ui::control_frame_ptr& parent)
 {
 	setting.large_font = !setting.large_font;
-	s.invalidate_view(view_invalid::options);
+	s.invalidate_view(view_invalid::visual_options);
 }
 
 static void toggle_layout_scale_invoke(view_state& s, const ui::control_frame_ptr& parent)
 {
-	auto scale = setting.item_scale + 1;
-	if (scale >= settings_t::item_scale_count) scale = 0;
-	setting.item_scale = scale;
+	setting.step_item_scale(1);
 }
 
 static void toggle_details_invoke(const view_state& s, const bool only_toggle_selected)
@@ -1995,6 +1139,10 @@ static void toggle_details_invoke(const view_state& s, const bool only_toggle_se
 		for (const auto& g : s.groups())
 		{
 			g->display(new_display);
+
+			// Persist the choice per media type so a subsequent search (e.g. clicking a
+			// sidebar tag) recreates the groups with the same display instead of reverting. (#229)
+			setting.set_detail_display(g->_key.type, new_display == df::item_group_display::detail);
 		}
 
 		s.invalidate_view(view_invalid::command_state);
@@ -2089,7 +1237,6 @@ class open_with_auto_complete final : public ui::complete_strategy_t,
 
 	df::hash_map<std::string, entry, df::ihash, df::ieq> _handlers;
 
-	//ui::auto_complete_results _results;
 	view_state& _state;
 	ui::auto_complete_match_ptr _result;
 	std::vector<command_info_ptr> _cmds;
@@ -2114,6 +1261,8 @@ public:
 	{
 		for (const auto& c : _cmds)
 		{
+			if (!c->enable) continue;
+
 			const auto name = c->text;
 			df::assert_true(!str::is_empty(name));
 
@@ -2273,7 +1422,31 @@ static void open_with_invoke(view_state& s, const ui::control_frame_ptr& parent,
 	}
 }
 
-static void eject_invoke(view_state& s, const ui::control_frame_ptr& parent)
+static std::string format_drive_details(const platform::drive_t& d)
+{
+	std::vector<std::string> parts;
+
+	if (!d.vol_name.empty())
+	{
+		parts.emplace_back(std::format("{}: {}", tt_prep(tt.disk_label.sv()), d.vol_name));
+	}
+
+	// Capacity is zero for a card reader or optical drive with no media inserted.
+	if (d.capacity.is_valid())
+	{
+		parts.emplace_back(std::format("{}: {}", tt_prep(tt.disk_capacity.sv()), d.capacity.str()));
+		parts.emplace_back(std::format("{}: {}", tt_prep(tt.disk_used.sv()), d.used.str()));
+	}
+
+	if (!d.file_system.empty())
+	{
+		parts.emplace_back(std::format("{}: {}", tt_prep(tt.disk_system.sv()), d.file_system));
+	}
+
+	return str::combine(parts, ", ", false);
+}
+
+static void show_eject_dialog(view_state& s, const ui::control_frame_ptr& parent, const platform::drives& drives)
 {
 	const auto title = tt.command_eject;
 	constexpr auto icon = icon_index::eject;
@@ -2284,32 +1457,48 @@ static void eject_invoke(view_state& s, const ui::control_frame_ptr& parent)
 		std::make_shared<divider_element>()
 	};
 
-	const auto drives = platform::scan_drives(false);
+	// Recorded by a drive button, reported once the dialog has closed. Showing a message from this
+	// frame while it is inside show_modal would destroy the controls of the running button.
+	const auto failed_drive = std::make_shared<std::string>();
+	const auto ejecting = std::make_shared<bool>(false);
+	auto found_removable = false;
 
 	for (const auto& d : drives)
 	{
-		if (d.type == platform::drive_type::removable)
+		if (d.type != platform::drive_type::removable)
 		{
-			auto name = str_format(tt.eject_title_fmt.sv(), d.name);
-			auto details = std::format("{} {} {} ({} {})", d.vol_name, d.file_system, d.capacity, d.used,
-			                           tt.space_used);
-			controls.emplace_back(std::make_shared<ui::button_control>(dlg->_frame, drive_icon(d.type), d.name, details,
-			                                                           [dlg, d, title]
-			                                                           {
-				                                                           if (platform::eject(df::folder_path(d.name)))
-				                                                           {
-					                                                           dlg->close(false);
-				                                                           }
-				                                                           else
-				                                                           {
-					                                                           dlg->show_message(
-						                                                           icon_index::error, title,
-						                                                           str_format(
-							                                                           tt.eject_failed_fmt.sv(),
-							                                                           d.name));
-				                                                           }
-			                                                           }));
+			continue;
 		}
+
+		found_removable = true;
+
+		controls.emplace_back(std::make_shared<ui::button_control>(
+			dlg->_frame, drive_icon(d.type), str_format(tt.eject_title_fmt.sv(), d.name), format_drive_details(d),
+			[&s, weak_frame = std::weak_ptr(dlg->_frame), path = df::folder_path(d.name), name = d.name, failed_drive,
+				ejecting]
+			{
+				if (*ejecting) return;
+				*ejecting = true;
+
+				s.queue_async(async_queue::work, [&s, weak_frame, path, name, failed_drive]
+				{
+					const auto success = platform::eject(path);
+
+					s.queue_ui([weak_frame, name, failed_drive, success]
+					{
+						const auto frame = weak_frame.lock();
+						if (!frame) return;
+
+						if (!success) *failed_drive = name;
+						frame->close(!success);
+					});
+				});
+			}));
+	}
+
+	if (!found_removable)
+	{
+		controls.emplace_back(set_margin(std::make_shared<text_element>(tt.eject_none_found)));
 	}
 
 	controls.emplace_back(std::make_shared<ui::button_control>(dlg->_frame, icon_index::close, tt.close,
@@ -2318,8 +1507,37 @@ static void eject_invoke(view_state& s, const ui::control_frame_ptr& parent)
 		                                                           f->close(false);
 	                                                           }));
 
-	pause_media pause(s);
-	dlg->show_modal(controls);
+	{
+		pause_media pause(s);
+		dlg->show_modal(controls);
+	}
+
+	if (!failed_drive->empty())
+	{
+		dlg.reset();
+		make_dlg(parent)->show_message(icon_index::error, title,
+		                               str_format(tt.eject_failed_fmt.sv(), *failed_drive));
+	}
+}
+
+static void eject_invoke(view_state& s, const ui::control_frame_ptr& parent, std::function<void()> complete)
+{
+	s.queue_async(async_queue::work, [&s, weak_parent = std::weak_ptr(parent), complete = std::move(complete)]() mutable
+	{
+		auto drives = platform::scan_drives();
+
+		s.queue_ui([&s, weak_parent, drives = std::move(drives), complete = std::move(complete)]
+		{
+			const auto parent_frame = weak_parent.lock();
+
+			if (parent_frame)
+			{
+				show_eject_dialog(s, parent_frame, drives);
+			}
+
+			if (complete) complete();
+		});
+	});
 }
 
 
@@ -2440,6 +1658,8 @@ bool ui::browse_for_term(view_state& vs, const control_frame_ptr& parent, std::s
 	const auto dlg = make_dlg(parent);
 	auto dlg_parent = dlg->_frame;
 
+	pause_media pause(vs);
+
 	std::string scope;
 	std::string text;
 
@@ -2493,6 +1713,43 @@ bool ui::browse_for_term(view_state& vs, const control_frame_ptr& parent, std::s
 }
 
 
+// UI-thread state behind the advanced search location column. Marker sets are built off
+// the UI thread and published here, so the generation counter drops results that arrive
+// after the map has moved on and the map is only reached through a weak pointer that is
+// locked back on the UI thread.
+struct advanced_search_location_state
+{
+	enum class marker_place_state : uint8_t
+	{
+		unknown,
+		pending,
+		resolved
+	};
+
+	std::weak_ptr<map_control> map;
+	std::vector<df::file_path> marker_paths;
+	std::vector<marker_place_state> marker_place_states;
+	std::vector<uint32_t> marker_place_view_generations;
+	std::vector<std::string> marker_place_names;
+	uint32_t generation = 0;
+
+	// The map is framed once, on the first thing worth looking at. Re-framing later would
+	// undo the pan and zoom the user performed to reach the hot spot they were aiming for.
+	bool framed = false;
+
+	// Names arrive from the gazetteer after the pick, so a later pick must win.
+	uint32_t pick_generation = 0;
+	std::function<void(std::string name, gps_coordinate centre, double radius_km)> apply_place;
+
+	df::file_path hover_path;
+	df::item_element_ptr hover_item;
+	df::unique_paths thumbnail_requests;
+
+	// Bounded number of bubble rebuilds spent waiting for a hover thumbnail, so a marker
+	// whose thumbnail never decodes does not rebuild its bubble forever.
+	int hover_retries = 0;
+};
+
 static void advanced_search_invoke(view_state& state, const ui::control_frame_ptr& parent,
                                    const view_host_base_ptr& view)
 {
@@ -2508,7 +1765,6 @@ static void advanced_search_invoke(view_state& state, const ui::control_frame_pt
 	static bool search_collection = true;
 	static bool search_folder = false;
 	static bool search_sub_folders = true;
-	//static bool search_not_in_collection = false;
 	static bool search_location = false;
 
 	static bool search_photos = false;
@@ -2522,29 +1778,33 @@ static void advanced_search_invoke(view_state& state, const ui::control_frame_pt
 	static df::date_t from_val;
 	static df::date_t until_val;
 
-	static location_and_distance_t location;
+	static location_and_distance_t location{{}, location_default_search_km};
+	static std::string location_name;
+	static gps_coordinate selected_location;
 
 	if (!search.selectors().empty())
 	{
+		// The dialog opens on the scope the user is already looking at. Filling the folder in
+		// while leaving "the collection" selected would show a path that plays no part in the
+		// search.
 		selected_folder = search.selectors().front().folder().text();
-		//search_sub_folders = search.selectors().front().is_recursive();
+		search_folder = true;
+		search_collection = false;
 	}
+
+	// An empty date picker cannot be read or compared, so a range starts on today and the
+	// user narrows from there.
+	if (!from_val.is_valid()) from_val = platform::now();
+	if (!until_val.is_valid()) until_val = platform::now();
 
 	auto search_collection_radio = std::make_shared<ui::check_control>(dlg->_frame, tt.search_collection,
 	                                                                   search_collection, true);
-	auto jpeg_group = std::make_shared<ui::group_control>();
-	search_collection_radio->child(jpeg_group);
 
 	auto search_folder_ratio = std::make_shared<ui::check_control>(dlg->_frame, tt.search_folder, search_folder, true);
 	auto webp_group = std::make_shared<ui::group_control>();
 	webp_group->add(std::make_shared<ui::folder_picker_control>(dlg_parent, selected_folder));
 	webp_group->add(std::make_shared<ui::check_control>(dlg_parent, tt.search_sub_folders, search_sub_folders));
-	//webp_group->add(std::make_shared<ui::check_control>(dlg_parent, tt.search_not_in_collection, search_not_in_collection));
 	search_folder_ratio->child(webp_group);
-
-	const auto location_check = std::make_shared<ui::check_control>(dlg_parent, tt.search_located_within,
-	                                                                search_location, false, true);
-	location_check->child(std::make_shared<ui::location_picker_control>(state, dlg_parent, location));
 
 	auto file_type_control = std::make_shared<ui::col_control>(std::vector<view_element_ptr>{
 		std::make_shared<ui::check_control>(dlg_parent, tt.search_photos, search_photos),
@@ -2567,29 +1827,386 @@ static void advanced_search_invoke(view_state& state, const ui::control_frame_pt
 	file_type_control->compact = true;
 	date_type_control->compact = true;
 
+	//
+	// Location. The map fills the right of the dialog and is always live, showing the
+	// collection's photo hot spots. The user pans and zooms until a hot spot they want is
+	// visible and clicks it; the line under "Located within" says what that pick means.
+	//
+
+	const auto ls = std::make_shared<advanced_search_location_state>();
+
+	const auto location_check = std::make_shared<ui::check_control>(dlg_parent, tt.search_located_within,
+	                                                                search_location);
+
+	const auto describe_location = []()
+	{
+		if (!location.position.is_valid()) return std::string{};
+
+		const auto where = location_name.empty()
+			                   ? std::format("{:.5f}, {:.5f}", location.position.latitude(),
+			                                 location.position.longitude())
+			                   : location_name;
+
+		return str_format(tt.search_within_fmt.sv(), format_distance_km(location.km), where);
+	};
+
+	const auto location_summary = std::make_shared<text_element>(describe_location());
+
+	auto map = std::make_shared<map_control>(state._async, std::function<void(gps_coordinate)>{});
+	map->init(dlg->_frame);
+	map->set_show_crosshair(false);
+	ls->map = map;
+
+	// Seed the map so it is never blank, and mark the remembered pick if there is one.
+	map->set_location_marker(location.position.is_valid() ? location.position : setting.default_location);
+
+	if (selected_location.is_valid() || location.position.is_valid())
+	{
+		map->set_selected(selected_location.is_valid() ? selected_location : location.position, 0);
+	}
+
+	if (location.position.is_valid())
+	{
+		// A remembered pick is what the dialog is about, so the map opens showing that area
+		// and the distance it covers rather than the whole collection.
+		const auto lat_span = location.km / 111.0;
+		const auto lon_span = location.km / (111.0 * std::max(
+			0.05, std::cos(gps_coordinate::deg2rad(location.position.latitude()))));
+
+		map_box box;
+		box.add(gps_coordinate(std::max(-85.0, location.position.latitude() - lat_span),
+		                       std::max(-180.0, location.position.longitude() - lon_span)));
+		box.add(gps_coordinate(std::min(85.0, location.position.latitude() + lat_span),
+		                       std::min(180.0, location.position.longitude() + lon_span)));
+		map->frame_on(box);
+		ls->framed = true;
+	}
+
+	// Applies whatever the pick resolved to, and is the only writer of the location statics.
+	ls->apply_place = [location_check, location_summary, describe_location, dlg, ls,
+			search_collection_radio, search_folder_ratio](
+		const std::string& name, const gps_coordinate centre, const double radius_km)
+		{
+			df::assert_true(ui::is_ui_thread());
+
+			location_name = name;
+			location.position = centre;
+			location.km = location_distance_at_detent(location_distance_detent_at_least(radius_km));
+			location_summary->text(describe_location());
+			location_check->checked(true);
+
+			// The hot spots are the whole collection's, so picking one under a folder scope would
+			// promise items the search then refuses to look for.
+			search_folder_ratio->checked(false);
+			search_collection_radio->checked(true);
+
+			dlg->_frame->invalidate();
+			dlg->layout();
+		};
+
+	// Clicking a hot spot is the whole gesture: it names the area and turns the option on.
+	// The coordinate answers straight away; the gazetteer then upgrades it to a place name so
+	// the search reads as `loc:Tokyo, 100km` rather than a pair of numbers.
+	map->marker_picked = [&state, ls](const gps_coordinate coord, const double radius_km, int)
+	{
+		df::assert_true(ui::is_ui_thread());
+
+		selected_location = coord;
+		ls->apply_place({}, coord, radius_km);
+
+		const auto generation = ++ls->pick_generation;
+		const std::weak_ptr<advanced_search_location_state> weak_ls = ls;
+
+		state.queue_location([&state, weak_ls, generation, coord, radius_km](const location_cache& locations)
+		{
+			const auto found = locations.find_largest_attributed(coord);
+			auto name = found.position.is_valid() ? qualified_name(found) : std::string{};
+			auto centre = found.position;
+
+			// The place centre is not the bubble, so the radius has to cover the offset too. A
+			// name that would widen the search by more than one detent is not worth the trade.
+			auto km = radius_km;
+
+			if (!name.empty())
+			{
+				km = centre.distance_in_kilometers(coord) + radius_km;
+
+				constexpr auto max_km = location_distance_at_detent(location_distance_detent_count - 1);
+
+				if (location_distance_detent_at_least(km) > location_distance_detent_at_least(radius_km) + 1)
+				{
+					name.clear();
+					centre = coord;
+					km = radius_km;
+				}
+				else
+				{
+					km = std::min(km, max_km);
+				}
+			}
+			else
+			{
+				centre = coord;
+			}
+
+			state.queue_ui([weak_ls, generation, name = std::move(name), centre, km]
+			{
+				const auto ls = weak_ls.lock();
+				if (!ls || ls->pick_generation != generation || !ls->apply_place) return;
+				ls->apply_place(name, centre, km);
+			});
+		});
+	};
+
+	// Photo hot spots. build_location_matrix reads the index, so it runs on the query
+	// queue and is published back to the map on the UI thread.
+	auto rebuild_markers = [&state, ls](const int zoom)
+	{
+		const auto generation = ++ls->generation;
+		const std::weak_ptr<advanced_search_location_state> weak_ls = ls;
+
+		state.queue_async(async_queue::query, [&state, weak_ls, generation, zoom]
+		{
+			location_matrix_params params;
+			params.zoom = zoom;
+			auto matrix = state.item_index.build_location_matrix(params);
+
+			std::vector<map_engine::marker> markers;
+			std::vector<df::file_path> paths;
+			markers.reserve(matrix.cells.size());
+			paths.reserve(matrix.cells.size());
+
+			// Where the collection actually holds photos, so the map can open on something
+			// clickable instead of the default coordinate at street level.
+			map_box box;
+
+			for (auto& cell : matrix.cells)
+			{
+				markers.push_back({cell.centroid, cell.count});
+				paths.emplace_back(cell.representative_path);
+				box.add(gps_coordinate(cell.min_latitude, cell.min_longitude));
+				box.add(gps_coordinate(cell.max_latitude, cell.max_longitude));
+			}
+
+			state._async.queue_ui(
+				[weak_ls, generation, box, markers = std::move(markers), paths = std::move(paths)]() mutable
+				{
+					const auto s = weak_ls.lock();
+					if (!s || s->generation != generation) return;
+
+					const auto m = s->map.lock();
+					if (!m) return;
+
+					s->marker_paths = std::move(paths);
+					s->marker_place_states.assign(s->marker_paths.size(),
+					                              advanced_search_location_state::marker_place_state::unknown);
+					s->marker_place_view_generations.assign(s->marker_paths.size(), 0);
+					s->marker_place_names.assign(s->marker_paths.size(), {});
+					s->hover_path = {};
+					s->hover_item.reset();
+					m->set_markers(markers);
+
+					if (!s->framed && box.valid)
+					{
+						// Framing changes the zoom, which asks for a rebuild at that zoom; the
+						// generation check drops this now-stale set when that answer arrives.
+						s->framed = true;
+						m->frame_on(box);
+					}
+				});
+		});
+	};
+
+	map->zoom_changed = [rebuild_markers](const int zoom) { rebuild_markers(zoom); };
+
+	map->marker_hover = [&state, ls](view_hover_element& hover, const int marker_index, const int count,
+	                                 const pointi anchor, bool& needs_refresh)
+	{
+		if (marker_index < 0 || marker_index >= static_cast<int>(ls->marker_paths.size())) return;
+
+		const auto map = ls->map.lock();
+		if (!map) return;
+
+		const auto view_generation = map->view_generation();
+
+		auto& place_state = ls->marker_place_states[marker_index];
+		if (ls->marker_place_view_generations[marker_index] != view_generation)
+		{
+			ls->marker_place_view_generations[marker_index] = view_generation;
+			ls->marker_place_names[marker_index].clear();
+			place_state = advanced_search_location_state::marker_place_state::unknown;
+		}
+
+		if (place_state == advanced_search_location_state::marker_place_state::unknown)
+		{
+			place_state = advanced_search_location_state::marker_place_state::pending;
+			needs_refresh = true;
+
+			const auto generation = ls->generation;
+			const auto marker_coordinate = map->gps_at_screen(anchor);
+			const auto visible_coordinates =
+				std::make_shared<const std::vector<gps_coordinate>>(map->visible_cluster_coordinates());
+			const std::weak_ptr<advanced_search_location_state> weak_ls = ls;
+
+			state.queue_location([&async = state._async, weak_ls, generation, view_generation, marker_index,
+					marker_coordinate, visible_coordinates](
+				const location_cache& locations)
+				{
+					std::string unique_name;
+					const auto found = locations.find_largest_attributed(marker_coordinate);
+
+					if (found.id != 0)
+					{
+						const auto radius_km = location_attribution_radius_km(found.population);
+						auto unique = true;
+
+						for (const auto coordinate : *visible_coordinates)
+						{
+							if (!unique) break;
+							if (coordinate == marker_coordinate ||
+								coordinate.distance_in_kilometers(found.position) > radius_km)
+								continue;
+
+							unique = locations.find_largest_attributed(coordinate).id != found.id;
+						}
+
+						if (unique) unique_name = qualified_name(found);
+					}
+
+					async.queue_ui([weak_ls, generation, view_generation, marker_index,
+						unique_name = std::move(unique_name)]
+					{
+						const auto s = weak_ls.lock();
+						if (!s || s->generation != generation ||
+							marker_index >= static_cast<int>(s->marker_place_states.size()))
+							return;
+
+						const auto map = s->map.lock();
+						if (!map || map->view_generation() != view_generation) return;
+
+						s->marker_place_states[marker_index] =
+							advanced_search_location_state::marker_place_state::resolved;
+						s->marker_place_names[marker_index] = unique_name;
+						if (const auto m = s->map.lock()) m->hover_needs_refresh = true;
+					});
+				});
+		}
+		else if (place_state == advanced_search_location_state::marker_place_state::pending)
+		{
+			needs_refresh = true;
+		}
+
+		const auto path = ls->marker_paths[marker_index];
+
+		if (ls->hover_path != path)
+		{
+			ls->hover_path = path;
+			ls->hover_item.reset();
+			ls->hover_retries = 20;
+		}
+
+		if (!ls->hover_item)
+		{
+			const auto indexed = state.item_index.find_item(path);
+			if (indexed.ft) ls->hover_item = std::make_shared<df::item_element>(path, indexed);
+		}
+
+		const auto item = ls->hover_item;
+		if (!item) return;
+
+		const auto elements = std::make_shared<view_elements>();
+		const auto thumb = item->thumbnail();
+
+		if (is_valid(thumb))
+		{
+			files ff;
+			elements->add(std::make_shared<surface_element>(ff.image_to_surface(thumb), 160, flex_item::center,
+			                                                item->layout_orientation()));
+		}
+		else if (ls->hover_retries > 0)
+		{
+			// The thumbnail decodes asynchronously; ask once and rebuild the bubble on the
+			// next tick so the preview appears without the user moving the mouse.
+			ls->hover_retries -= 1;
+			needs_refresh = true;
+
+			if (ls->thumbnail_requests.emplace(item->path()).second)
+			{
+				state.item_index.queue_load_thumbnail(item);
+			}
+		}
+
+		const auto& place_name = ls->marker_place_names[marker_index];
+		const auto caption = count <= 1
+			                     ? std::string(item->name().sv())
+			                     : place_name.empty()
+			                     ? format_plural_text(tt.map_items_here_fmt, count)
+			                     : str_format(tt.map_items_close_to_fmt.sv(),
+			                                  platform::format_number(str::to_string(count)), place_name);
+
+		elements->add(std::make_shared<text_element>(caption, flex_item::center | flex_item::new_line));
+
+		hover.elements = elements;
+		hover.window_bounds = recti(anchor.x - 8, anchor.y - 8, anchor.x + 8, anchor.y + 8);
+		hover.active_bounds = recti(anchor.x - 12, anchor.y - 12, anchor.x + 12, anchor.y + 12);
+		hover.preferred_size = 180;
+		hover.horizontal = false;
+	};
+
+	const auto criteria_col = std::make_shared<ui::group_control>();
+	criteria_col->add(set_margin(search_collection_radio));
+	criteria_col->add(set_margin(search_folder_ratio));
+	criteria_col->add(std::make_shared<divider_element>());
+	criteria_col->add(set_margin(std::make_shared<ui::term_picker_control>(state, dlg_parent, tt.search_all_terms,
+	                                                                       all_terms)));
+	criteria_col->add(set_margin(std::make_shared<ui::term_picker_control>(state, dlg_parent, tt.search_none_terms,
+	                                                                       none_terms)));
+	criteria_col->add(std::make_shared<divider_element>());
+	// "Created" and "Modified" mean nothing on their own, so the block says what the boxes
+	// are about before the user reads them.
+	criteria_col->add(set_margin(std::make_shared<text_element>(tt.dates_title, ui::style::font_face::title)));
+	criteria_col->add(set_margin(date_type_control));
+	criteria_col->add(set_margin(from_check));
+	criteria_col->add(set_margin(until_check));
+	criteria_col->add(std::make_shared<divider_element>());
+	criteria_col->add(set_margin(std::make_shared<text_element>(tt.media_metadata_title, ui::style::font_face::title)));
+	criteria_col->add(set_margin(file_type_control));
+	criteria_col->add(std::make_shared<divider_element>());
+	criteria_col->add(set_margin(location_check));
+	criteria_col->add(set_margin(location_summary));
+
+	const auto cols = std::make_shared<ui::col_control>();
+	cols->add(criteria_col);
+	cols->add(set_margin(map), {66});
+
 	std::vector<view_element_ptr> controls = {
 		set_margin(std::make_shared<ui::title_control>(icon_index::search, tt.command_advanced_search)),
 		std::make_shared<divider_element>(),
-		set_margin(search_collection_radio),
-		set_margin(search_folder_ratio),
-		std::make_shared<divider_element>(),
-		set_margin(std::make_shared<ui::term_picker_control>(state, dlg_parent, tt.search_all_terms, all_terms)),
-		set_margin(std::make_shared<ui::term_picker_control>(state, dlg_parent, tt.search_none_terms, none_terms)),
-		std::make_shared<divider_element>(),
-		set_margin(date_type_control),
-		set_margin(from_check),
-		set_margin(until_check),
-		std::make_shared<divider_element>(),
-		set_margin(location_check),
-		std::make_shared<divider_element>(),
-		set_margin(file_type_control),
+		cols,
 		std::make_shared<divider_element>(),
 		std::make_shared<ui::ok_cancel_control>(dlg->_frame)
 	};
 
+	// The first pass only has to say where the collection is, so it runs at the coarsest zoom
+	// the map can show. Framing on the answer then asks for an accurate rebuild at the zoom
+	// the user actually ends up looking at.
+	rebuild_markers(map_engine::min_zoom);
+
 	pause_media pause(state);
 
-	if (dlg->show_modal(controls, {66}) == ui::close_result::ok)
+	const auto result = dlg->show_modal(controls, {122});
+
+	// Stop late marker results from reaching a map that is about to be destroyed, and drop
+	// the callbacks that reference the dialog.
+	ls->generation += 1;
+	ls->pick_generation += 1;
+	ls->apply_place = {};
+	ls->map.reset();
+	map->marker_hover = {};
+	map->zoom_changed = {};
+	map->marker_picked = {};
+
+	if (result == ui::close_result::ok)
 	{
 		df::search_t new_search;
 
@@ -2600,8 +2217,19 @@ static void advanced_search_invoke(view_state& state, const ui::control_frame_pt
 
 		if (search_location && location.position.is_valid())
 		{
-			new_search.with(df::search_term(df::search_term_type::location, location.position, location.km,
-			                                df::search_term_modifier{}));
+			if (location_name.empty())
+			{
+				new_search.with(df::search_term(df::search_term_type::location, location.position, location.km,
+				                                df::search_term_modifier{}));
+			}
+			else
+			{
+				// A named centre keeps the search readable and retypable in the address box.
+				auto term = df::search_term(df::search_term_type::location, location_name,
+				                            df::search_term_modifier{});
+				term.float_val = location.km;
+				new_search.with(term);
+			}
 		}
 
 		if (search_photos)
@@ -2643,18 +2271,24 @@ static void advanced_search_invoke(view_state& state, const ui::control_frame_pt
 
 		search_tokenizer t;
 
-		for (const auto& part : t.parse(all_terms))
+		for (const auto& part : df::coalesce_parts(t.parse(all_terms)))
 		{
 			new_search.parse_part(part);
 		}
 
-		for (auto part : t.parse(none_terms))
+		for (auto part : df::coalesce_parts(t.parse(none_terms)))
 		{
 			part.modifier.positive = false;
 			new_search.parse_part(part);
 		}
 
-		if (!new_search.is_empty())
+		if (new_search.is_empty())
+		{
+			// Nothing was chosen, so there is no search to run. Closing on OK without changing
+			// what is on screen is indistinguishable from Cancel, so say why.
+			dlg->show_message(icon_index::search, tt.command_advanced_search, tt.search_no_criteria);
+		}
+		else
 		{
 			state.open(view, new_search, {});
 		}
@@ -2665,7 +2299,6 @@ static void advanced_search_invoke(view_state& state, const ui::control_frame_pt
 static void show_update_dialog(view_state& s, const ui::control_frame_ptr& parent)
 {
 	const auto title = tt.update_title;
-	df::file_path download_path_result;
 
 	auto dlg = make_dlg(parent);
 	std::vector<view_element_ptr> controls;
@@ -2674,13 +2307,14 @@ static void show_update_dialog(view_state& s, const ui::control_frame_ptr& paren
 
 	// Phase 1: always check online for a newer version, showing a busy indicator.
 	controls.emplace_back(
-		set_margin(std::make_shared<ui::title_control>(icon_index::lightbulb, tt.command_check_for_updates)));
+		set_margin(std::make_shared<ui::title_control>(icon_index::lightbulb, title)));
 	controls.emplace_back(std::make_shared<ui::busy_control>(dlg->_frame, icon_index::lightbulb, tt.update_checking));
-	controls.emplace_back(std::make_shared<ui::close_control>(dlg->_frame, true, tt.button_cancel));
+	controls.emplace_back(std::make_shared<ui::close_control>(dlg->_frame, true, tt.button_close));
 
 	auto found_version = std::make_shared<std::string>();
+	auto check_failed = std::make_shared<bool>(false);
 
-	s.queue_async(async_queue::web, [&s, dlg, found_version]
+	s.queue_async(async_queue::web, [&s, dlg, found_version, check_failed]
 	{
 		platform::web_request req;
 		req.path = "/ver";
@@ -2702,9 +2336,12 @@ static void show_update_dialog(view_state& s, const ui::control_frame_ptr& paren
 			version = df::util::json::safe_string(json, "current_version");
 		}
 
-		s.queue_ui([dlg, found_version, version]
+		const auto failed = version.empty();
+
+		s.queue_ui([dlg, found_version, check_failed, version, failed]
 		{
 			*found_version = version;
+			*check_failed = failed;
 			dlg->close(false);
 		});
 	});
@@ -2714,23 +2351,33 @@ static void show_update_dialog(view_state& s, const ui::control_frame_ptr& paren
 		return;
 	}
 
+	if (*check_failed)
+	{
+		// Without an answer from the server the stored version says nothing about what is
+		// available, so reporting "you are using the latest version" would be a guess.
+		dlg->show_message(icon_index::error, title, tt.update_check_failed);
+		return;
+	}
+
 	if (!found_version->empty())
 	{
 		setting.available_version = *found_version;
 		s.invalidate_view(view_invalid::view_layout | view_invalid::app_layout);
 	}
 
-	// Phase 2: always show the update dialog. If a newer version is available we
-	// prompt to upgrade; otherwise we report that this is the latest version but
-	// still allow the user to reinstall.
-	const auto up_to_date = df::version(s_app_version) >= df::version(setting.available_version);
-	const auto text = up_to_date
-		                  ? str_format(tt.update_up_to_date_fmt.sv(), s_app_version)
-		                  : str_format(tt.update_help_fmt.sv(), setting.available_version, s_app_version);
+	// Phase 2. Being up to date is news, not a decision, so it is reported as a message rather
+	// than as a list of choices; only the upgrade path offers buttons.
+	if (df::version(s_app_version) >= df::version(setting.available_version))
+	{
+		dlg->show_message(icon_index::lightbulb, title, str_format(tt.update_up_to_date_fmt.sv(), s_app_version));
+		return;
+	}
 
 	controls.clear();
 	controls.emplace_back(set_margin(std::make_shared<ui::title_control>(icon_index::lightbulb, title)));
-	controls.emplace_back(set_margin(std::make_shared<text_element>(text)));
+	controls.emplace_back(set_margin(std::make_shared<text_element>(
+		str_format(tt.update_help_fmt.sv(), setting.available_version, s_app_version))));
+
 	controls.emplace_back(std::make_shared<ui::button_control>(dlg->_frame, icon_index::import, tt.update_install_now,
 	                                                           tt.update_help, [f = dlg->_frame] { f->close(); }));
 
@@ -2759,14 +2406,28 @@ static void show_update_dialog(view_state& s, const ui::control_frame_ptr& paren
 		controls.emplace_back(set_margin(std::make_shared<ui::title_control>(icon_index::import, title)));
 		controls.emplace_back(
 			std::make_shared<ui::busy_control>(dlg->_frame, icon_index::lightbulb, tt.update_please_wait));
-		controls.emplace_back(std::make_shared<ui::close_control>(dlg->_frame, true, tt.button_cancel));
+		controls.emplace_back(std::make_shared<ui::close_control>(dlg->_frame, true, tt.button_close));
 
-		auto download_complete = [&s, dlg, &download_path_result](const df::file_path download_path)
+		struct download_state
 		{
-			s.queue_ui([dlg, &download_path_result, download_path]
+			std::atomic_bool active = true;
+			// Set on the UI thread when the download reported a result, so a dialog that closed itself
+			// can be told apart from one the user dismissed.
+			bool completed = false;
+			df::file_path path;
+		};
+
+		auto state = std::make_shared<download_state>();
+		auto download_complete = [&s, dlg, state](const df::file_path download_path)
+		{
+			s.queue_ui([dlg, state, download_path]
 			{
-				download_path_result = download_path;
-				dlg->close(download_path_result.is_empty());
+				if (state->active)
+				{
+					state->completed = true;
+					state->path = download_path;
+					dlg->close(state->path.is_empty());
+				}
 			});
 		};
 
@@ -2777,14 +2438,27 @@ static void show_update_dialog(view_state& s, const ui::control_frame_ptr& paren
 
 		if (dlg->show_modal(controls) == ui::close_result::ok)
 		{
+			state->active = false;
+
 			// Launch the downloaded installer. It is interactive and will close any
 			// running instance of Diffractor before installing over the current folder.
 			const auto module_folder = known_path(platform::known_folder::running_app_folder);
-			const auto install_result = platform::install(download_path_result, module_folder, false, false);
+			const auto install_result = platform::install(state->path, module_folder, false, false);
 
 			if (install_result.failed())
 			{
 				dlg->show_message(icon_index::error, s_app_name, install_result.format_error(tt.update_failed));
+			}
+		}
+		else
+		{
+			state->active = false;
+
+			if (state->completed)
+			{
+				// The download answered but produced nothing. Without this the dialog just vanishes
+				// and the user is left believing the update installed.
+				dlg->show_message(icon_index::error, title, tt.update_failed);
 			}
 		}
 	}
@@ -2793,22 +2467,53 @@ static void show_update_dialog(view_state& s, const ui::control_frame_ptr& paren
 #endif
 
 
-static void test_new_version_invoke(const view_state& s, const ui::control_frame_ptr& parent)
+#ifdef _DEBUG
+void app_frame::run_test_action(const std::string_view action)
 {
-	setting.force_available_version = true;
-	setting.min_show_update_day = 0;
-	s.invalidate_view(view_invalid::view_layout | view_invalid::app_layout);
+	if (action == "reset-graphics")
+	{
+		_state._events.free_graphics_resources(false, false);
+		_app_frame->reset_graphics();
+	}
+	else if (action == "crash")
+	{
+		int* value = nullptr;
+		*value = 19;
+	}
+	else if (action == "send-crash-report")
+	{
+		crash(known_path(platform::known_folder::test_files_folder).combine_file("Test.jpg"));
+		_app_frame->show(true);
+	}
+	else if (action == "new-version")
+	{
+		setting.force_available_version = true;
+		setting.min_show_update_day = 0;
+		_state.invalidate_view(view_invalid::view_layout | view_invalid::app_layout);
+	}
+}
+#endif
+
+struct keyboard_ref_row
+{
+	std::string keys;
+	std::string description;
 };
 
-static void add_keyboard_commands(const dialog_ptr& dlg, const std::shared_ptr<ui::group_control>& controls,
-                                  const commands_map& commands, const command_group group,
-                                  const std::string_view title)
+struct keyboard_ref_section
 {
-	controls->add(std::make_shared<ui::title_control>(icon_index::none, title));
+	std::string title;
+	std::vector<keyboard_ref_row> rows;
+};
 
+// The dialog and the clipboard text are both rendered from this one collection so that they
+// cannot drift apart.
+static void add_keyboard_section(std::vector<keyboard_ref_section>& sections, const commands_map& commands,
+                                 const command_group group, const std::string_view title)
+{
 	std::vector<command_info_ptr> items;
 
-	for (auto c : commands)
+	for (const auto& c : commands)
 	{
 		if (c.second->group == group && !c.second->kba.empty())
 		{
@@ -2816,19 +2521,24 @@ static void add_keyboard_commands(const dialog_ptr& dlg, const std::shared_ptr<u
 		}
 	}
 
+	// A group with no accelerators would otherwise render as a heading over nothing.
+	if (items.empty()) return;
+
 	std::ranges::sort(items, [](auto&& left, auto&& right)
 	{
 		return str::icmp(left->text, right->text) < 0;
 	});
 
-	const auto table = std::make_shared<ui::table_element>();
+	keyboard_ref_section section;
+	section.title = title;
+	section.rows.reserve(items.size());
 
-	for (const auto c : items)
+	for (const auto& c : items)
 	{
-		table->add(c->icon, c->keyboard_accelerator_text, c->text);
+		section.rows.emplace_back(c->keyboard_accelerator_text, c->text);
 	}
 
-	controls->add(table);
+	sections.emplace_back(std::move(section));
 }
 
 static bool is_not_virt_key(const int key)
@@ -2874,9 +2584,10 @@ std::string format_keyboard_accelerator(const std::vector<keyboard_accelerator_t
 		{
 			result += tt.keyboard_backspace;
 		}
-		else if (ac.key == keys::OEM_PLUS)
+		else if (ac.key == keys::OEM_PLUS || ac.key == keys::OEM_MINUS)
 		{
-			result += std::format("'{}'", tt.keyboard_oem_plus);
+			// Quoted so the key is not read as the modifier separator.
+			result += std::format("'{}'", keys::format(ac.key));
 		}
 		else if (is_not_virt_key(ac.key))
 		{
@@ -2892,90 +2603,184 @@ std::string format_keyboard_accelerator(const std::vector<keyboard_accelerator_t
 	return result;
 }
 
-static void show_keyboard_reference(view_state& s, const ui::control_frame_ptr& parent, const commands_map& commands)
+// The keyboard reference is read top to bottom, so the sections follow the order a user meets
+// them rather than the column packing the old layout needed.
+static std::vector<keyboard_ref_section> build_keyboard_reference(const commands_map& commands)
 {
-	const auto dlg = make_dlg(parent);
+	std::vector<keyboard_ref_section> sections;
 
-
-	const auto col1 = std::make_shared<ui::group_control>();
-	const auto col2 = std::make_shared<ui::group_control>();
-	const auto col3 = std::make_shared<ui::group_control>();
-	const auto col4 = std::make_shared<ui::group_control>();
-	const auto col5 = std::make_shared<ui::group_control>();
-
-	col1->add(std::make_shared<ui::title_control>(icon_index::none, tt.keyboard_basics_title));
-
-	const auto table = std::make_shared<ui::table_element>();
-	table->add(icon_index::bullet, format_keyboard_accelerator({keyboard_accelerator_t{keys::RETURN}}),
-	           tt.keyboard_enter_desc);
-	table->add(icon_index::bullet, format_keyboard_accelerator({keyboard_accelerator_t{keys::SPACE}}),
-	           tt.keyboard_space_desc);
-	table->add(icon_index::bullet, format_keyboard_accelerator({keyboard_accelerator_t{keys::ESCAPE}}),
-	           tt.keyboard_escape_desc);
-	table->add(icon_index::bullet,
-	           format_keyboard_accelerator({keyboard_accelerator_t{keys::LEFT}, keyboard_accelerator_t{keys::RIGHT}}),
-	           tt.keyboard_left_right_desc);
-	table->add(icon_index::bullet, format_keyboard_accelerator({
-		           keyboard_accelerator_t{keys::LEFT, keyboard_accelerator_t::control},
-		           keyboard_accelerator_t{keys::RIGHT, keyboard_accelerator_t::control}
-	           }), tt.keyboard_ctrl_left_right_desc);
-	col1->add(table);
+	keyboard_ref_section basics;
+	basics.title = tt.keyboard_basics_title;
+	basics.rows.emplace_back(format_keyboard_accelerator({keyboard_accelerator_t{keys::RETURN}}),
+	                         std::string(tt.keyboard_enter_desc.sv()));
+	basics.rows.emplace_back(format_keyboard_accelerator({keyboard_accelerator_t{keys::SPACE}}),
+	                         std::string(tt.keyboard_space_desc.sv()));
+	basics.rows.emplace_back(format_keyboard_accelerator({keyboard_accelerator_t{keys::ESCAPE}}),
+	                         std::string(tt.keyboard_escape_desc.sv()));
+	basics.rows.emplace_back(
+		format_keyboard_accelerator({keyboard_accelerator_t{keys::LEFT}, keyboard_accelerator_t{keys::RIGHT}}),
+		std::string(tt.keyboard_left_right_desc.sv()));
+	basics.rows.emplace_back(
+		format_keyboard_accelerator({keyboard_accelerator_t{keys::UP}, keyboard_accelerator_t{keys::DOWN}}),
+		std::string(tt.keyboard_up_down_desc.sv()));
+	basics.rows.emplace_back(
+		format_keyboard_accelerator({keyboard_accelerator_t{keys::HOME}, keyboard_accelerator_t{keys::END}}),
+		std::string(tt.keyboard_home_end_desc.sv()));
+	basics.rows.emplace_back(
+		format_keyboard_accelerator({keyboard_accelerator_t{keys::OEM_PLUS}, keyboard_accelerator_t{keys::OEM_MINUS}}),
+		std::string(tt.keyboard_zoom_keys_desc.sv()));
+	basics.rows.emplace_back(format_keyboard_accelerator({
+		                         keyboard_accelerator_t{keys::LEFT, keyboard_accelerator_t::control},
+		                         keyboard_accelerator_t{keys::RIGHT, keyboard_accelerator_t::control}
+	                         }), std::string(tt.keyboard_ctrl_left_right_desc.sv()));
+	sections.emplace_back(std::move(basics));
 
 	const auto& c = commands;
 
-	add_keyboard_commands(dlg, col1, c, command_group::file_management, tt.keyboard_file_management_title);
-	add_keyboard_commands(dlg, col2, c, command_group::media_playback, tt.keyboard_playback_title);
-	add_keyboard_commands(dlg, col2, c, command_group::tools, tt.keyboard_tools_title);
-	add_keyboard_commands(dlg, col3, c, command_group::open, tt.keyboard_open_title);
-	add_keyboard_commands(dlg, col3, c, command_group::navigation, tt.keyboard_navigation_title);
-	//add_commands(dlg, col3, c, command_group::sorting, "Sorting");
-	add_keyboard_commands(dlg, col4, c, command_group::selection, tt.keyboard_selection_title);
-	add_keyboard_commands(dlg, col4, c, command_group::rate_flag, tt.keyboard_rate_label_title);
-	add_keyboard_commands(dlg, col5, c, command_group::options, tt.keyboard_options_title);
-	add_keyboard_commands(dlg, col5, c, command_group::help, tt.keyboard_help_title);
+	add_keyboard_section(sections, c, command_group::navigation, tt.keyboard_navigation_title);
+	add_keyboard_section(sections, c, command_group::selection, tt.keyboard_selection_title);
+	add_keyboard_section(sections, c, command_group::open, tt.keyboard_open_title);
+	add_keyboard_section(sections, c, command_group::file_management, tt.keyboard_file_management_title);
+	add_keyboard_section(sections, c, command_group::edit_item, tt.keyboard_edit_title);
+	add_keyboard_section(sections, c, command_group::media_playback, tt.keyboard_playback_title);
+	add_keyboard_section(sections, c, command_group::rate_flag, tt.keyboard_rate_label_title);
+	add_keyboard_section(sections, c, command_group::group_by, tt.keyboard_group_title);
+	add_keyboard_section(sections, c, command_group::sort_by, tt.command_view_sort);
+	add_keyboard_section(sections, c, command_group::tools, tt.keyboard_tools_title);
+	add_keyboard_section(sections, c, command_group::options, tt.options_title);
+	add_keyboard_section(sections, c, command_group::help, tt.keyboard_help_title);
 
+	return sections;
+}
+
+// Tabs between the key and its description so the reference pastes into a document or a
+// spreadsheet with the same two columns the dialog shows.
+static std::string format_keyboard_reference(const std::vector<keyboard_ref_section>& sections)
+{
+	std::string result;
+	result += tt.keyboard_ref_title.sv();
+	result += "\r\n";
+
+	for (const auto& section : sections)
+	{
+		result += "\r\n";
+		result += section.title;
+		result += "\r\n";
+
+		for (const auto& row : section.rows)
+		{
+			result += "\t";
+			result += row.keys;
+			result += "\t";
+			result += row.description;
+			result += "\r\n";
+		}
+	}
+
+	return result;
+}
+
+// The dialog stacks its controls in a column, so copy and close need one element to share a row.
+class keyboard_ref_buttons final : public view_element, public std::enable_shared_from_this<keyboard_ref_buttons>
+{
+	ui::button_ptr _copy;
+	ui::button_ptr _close;
+
+	mutable int _copy_width = 100;
+	mutable int _close_width = 100;
+
+public:
+	keyboard_ref_buttons(const ui::control_frame_ptr& h, std::function<void()> copy)
+	{
+		_copy = h->create_button(tt.copy_to_clipboard, std::move(copy));
+		_close = h->create_button(tt.button_close, [h] { h->close(false); }, true);
+	}
+
+	void visit_controls(const std::function<void(const ui::control_base_ptr&)>& handler) override
+	{
+		handler(_copy);
+		handler(_close);
+	}
+
+	sizei measure(ui::measure_context& mc, const int cx) const override
+	{
+		const auto copy_extent = _copy->measure(cx);
+		const auto close_extent = _close->measure(cx);
+
+		_copy_width = std::max(cx / 5, copy_extent.cx + mc.padding2);
+		_close_width = std::max(cx / 5, close_extent.cx + mc.padding2);
+
+		return {cx, std::max(copy_extent.cy, close_extent.cy) + mc.padding2};
+	}
+
+	void layout(ui::measure_context& mc, const recti bounds_in, ui::control_layouts& positions) override
+	{
+		bounds = bounds_in;
+
+		const auto total_button_width = _copy_width + _close_width + mc.padding2;
+		const auto button_rect = center_rect(sizei{total_button_width, bounds.height()}, bounds);
+
+		auto rcopy = button_rect;
+		auto rclose = button_rect;
+
+		rcopy.right = rcopy.left + _copy_width;
+		rclose.left = rclose.right - _close_width;
+
+		positions.emplace_back(_copy, rcopy, is_visible());
+		positions.emplace_back(_close, rclose, is_visible());
+	}
+};
+
+static void show_keyboard_reference(view_state& s, const ui::control_frame_ptr& parent, const commands_map& commands)
+{
+	const auto dlg = make_dlg(parent);
+	const auto sections = build_keyboard_reference(commands);
 
 	std::vector<view_element_ptr> controls;
 	controls.emplace_back(set_margin(std::make_shared<ui::title_control>(icon_index::keyboard, tt.keyboard_ref_title)));
 	controls.emplace_back(set_margin(std::make_shared<divider_element>()));
 
-	auto cols = std::make_shared<ui::col_control>();
-	cols->add(col1);
-	cols->add(col2);
-	cols->add(col3);
-	cols->add(col4);
-	cols->add(col5);
+	for (const auto& section : sections)
+	{
+		// Shaded heading over indented rows, matching the grouping used for verbose metadata.
+		auto heading = std::make_shared<group_title_control>(section.title);
+		heading->padding(8);
+		heading->margin(4, 8);
+		heading->set_style_bit(view_element_style::background, true);
+		controls.emplace_back(std::move(heading));
 
-	controls.emplace_back(cols);
+		const auto table = std::make_shared<ui::table_element>(flex_item::grow);
+		table->no_shrink_col[0] = true;
+
+		for (const auto& row : section.rows)
+		{
+			table->add(icon_index::bullet, row.keys, row.description);
+		}
+
+		controls.emplace_back(set_margin(table, 16, 4));
+	}
+
 	controls.emplace_back(std::make_shared<divider_element>());
-	controls.emplace_back(std::make_shared<ui::close_control>(dlg->_frame));
+	controls.emplace_back(std::make_shared<keyboard_ref_buttons>(dlg->_frame, [&sections]
+	{
+		platform::set_clipboard(format_keyboard_reference(sections));
+	}));
 
 	pause_media pause(s);
-	dlg->show_modal(controls, {155}, {99});
-	dlg->_frame->destroy();
+	// Title above and actions below stay put; only the key list scrolls.
+	dlg->_pinned_header = 2;
+	dlg->_pinned_footer = 2;
+	dlg->show_modal(controls, {88}, {88});
 }
 
-void send_info(const view_state& s)
+void send_info(const view_state& s, const ui::control_frame_ptr& parent)
 {
-	const auto log_file_path = df::log_path;
-	const auto previous_log_path = df::previous_log_path;
-	const auto crash_zip_path = platform::temp_file();
-	const auto log_file_copy = platform::temp_file();
+	const auto title = tt.support;
+	const auto dlg = make_dlg(parent);
 
-	if (log_file_path.exists())
-	{
-		platform::copy_file(log_file_path, log_file_copy, true, true);
-	}
-
-	df::zip_file zip;
-
-	if (zip.create(crash_zip_path))
-	{
-		if (log_file_copy.exists()) zip.add(log_file_copy, "diffractor.log");
-		if (previous_log_path.exists()) zip.add(previous_log_path);
-		zip.close();
-	}
-
+	// Gathered here because it reads app state, then handed to the worker as a detached
+	// value. Everything after this - copying and zipping the logs, and the upload itself -
+	// runs off the UI thread.
 	std::ostringstream message;
 
 	for (const auto& i : calc_app_info(s.item_index, true))
@@ -2983,21 +2788,61 @@ void send_info(const view_state& s)
 		message << i.first << " " << i.second << '\n';
 	}
 
-	platform::web_request req;
-	req.verb = platform::web_request_verb::POST;
-	req.path = "/crash";
-	req.form_data.emplace_back("message", message.str());
-	req.form_data.emplace_back("version", platform::OS());
-	req.form_data.emplace_back("diffractor", s_app_version);
-	req.form_data.emplace_back("build", g_app_build);
-	req.form_data.emplace_back("subject", "Diffractor LOG");
-	req.form_data.emplace_back("submit", "Send Report");
-	req.file_form_data_name = "ff";
-	req.file_name = "logs.zip";
-	req.file_path = crash_zip_path;
+	const auto results = std::make_shared<command_status>(s._async, dlg, icon_index::support, title, 1);
 
-	const auto con = platform::connect_to_host("diffractor.com");
-	send_request(con, req);
+	s.queue_async(async_queue::web, [results, info = message.str()]
+	{
+		const auto log_file_path = df::log_path;
+		const auto previous_log_path = df::previous_log_path;
+		const auto crash_zip_path = platform::temp_file();
+		const auto log_file_copy = platform::temp_file();
+
+		if (log_file_path.exists())
+		{
+			platform::copy_file(log_file_path, log_file_copy, true, true);
+		}
+
+		df::zip_file zip;
+
+		if (zip.create(crash_zip_path))
+		{
+			if (log_file_copy.exists()) zip.add(log_file_copy, "diffractor.log");
+			if (previous_log_path.exists()) zip.add(previous_log_path);
+			zip.close();
+		}
+
+		platform::web_request req;
+		req.verb = platform::web_request_verb::POST;
+		req.path = "/crash";
+		req.form_data.emplace_back("message", info);
+		req.form_data.emplace_back("version", platform::OS());
+		req.form_data.emplace_back("diffractor", s_app_version);
+		req.form_data.emplace_back("build", g_app_build);
+		req.form_data.emplace_back("subject", "Diffractor LOG");
+		req.form_data.emplace_back("submit", "Send Report");
+		req.file_form_data_name = "ff";
+		req.file_name = "logs.zip";
+		req.file_path = crash_zip_path;
+
+		const auto con = platform::connect_to_host("diffractor.com");
+		const auto response = send_request(con, req);
+		const auto sent = response.status_code >= 200 && response.status_code < 300;
+
+		if (log_file_copy.exists()) platform::delete_file(log_file_copy);
+		if (crash_zip_path.exists()) platform::delete_file(crash_zip_path);
+
+		// A send that failed is reported. Silence used to be indistinguishable from success.
+		if (sent)
+		{
+			results->complete(tt.diagnostics_sent);
+		}
+		else
+		{
+			results->abort(tt.diagnostics_send_failed);
+		}
+	});
+
+	results->wait_for_complete();
 }
 
 static void about_invoke(view_state& s, const ui::control_frame_ptr& parent, commands_map& commands)
@@ -3005,14 +2850,12 @@ static void about_invoke(view_state& s, const ui::control_frame_ptr& parent, com
 	const auto dlg = make_dlg(parent);
 	auto dlg_parent = dlg->_frame;
 
-	files ff;
-	const auto title = ff.image_to_surface(load_resource(platform::resource_item::title));
-
 	std::vector<view_element_ptr> controls;
-	controls.emplace_back(std::make_shared<surface_element>(title, title->width(), view_element_style::center));
+	controls.emplace_back(create_app_logo_element(s, ui::style::font_face::mega, false, false, 1.6,
+	                                              flex_item::center));
 	controls.emplace_back(std::make_shared<text_element>(df::format_version(false), ui::style::font_face::dialog,
 	                                                     ui::style::text_style::single_line_center,
-	                                                     view_element_style::center));
+	                                                     flex_item::center));
 	controls.emplace_back(std::make_shared<divider_element>());
 
 	auto cols = std::make_shared<ui::col_control>();
@@ -3021,6 +2864,7 @@ static void about_invoke(view_state& s, const ui::control_frame_ptr& parent, com
 	learn->add(std::make_shared<ui::title_control>(icon_index::question, tt.documentation));
 	learn->add(std::make_shared<text_element>(tt.about_info));
 	learn->add(std::make_shared<link_element>(tt.learn_more_diffractor_com, [] { platform::open(docs_url); }));
+	learn->add(std::make_shared<link_element>(tt.releases, [] { platform::open(releases_url); }));
 	learn->add(std::make_shared<ui::title_control>(icon_index::keyboard, tt.keyboard));
 	learn->add(std::make_shared<link_element>(tt.list_of_accelerators, [&s, dlg_parent, &c = commands]
 	{
@@ -3033,7 +2877,7 @@ static void about_invoke(view_state& s, const ui::control_frame_ptr& parent, com
 	support->add(std::make_shared<link_element>(tt.donate_link, [] { platform::open(donate_url); }));
 	support->add(std::make_shared<ui::title_control>(icon_index::support, tt.support));
 	support->add(std::make_shared<link_element>(tt.help_more_info, [] { platform::open(support_url); }));
-	support->add(std::make_shared<link_element>(tt.help_send_info, [&s] { send_info(s); }));
+	support->add(std::make_shared<link_element>(tt.help_send_info, [&s, dlg_parent] { send_info(s, dlg_parent); }));
 
 	cols->add(set_margin(learn, 8, 8));
 	cols->add(set_margin(support, 8, 8));
@@ -3043,17 +2887,16 @@ static void about_invoke(view_state& s, const ui::control_frame_ptr& parent, com
 
 	pause_media pause(s);
 	dlg->show_modal(controls, {55});
-	dlg_parent->destroy();
 };
 
 static void settings_invoke(view_state& s, const ui::control_frame_ptr& parent)
 {
 	const auto dlg = make_dlg(parent);
 
-	std::shared_ptr<text_element> custom_index_locations_label;
+	// Edit a copy so Cancel discards and OK commits, like every other dialog.
+	settings_t edited = setting;
 
-	//std::shared_ptr<ui::folder_picker_control> custom_index_path;
-	//std::shared_ptr<ui::folder_picker_control> more_custom_index_paths;
+	std::shared_ptr<text_element> custom_index_locations_label;
 
 	std::vector<view_element_ptr> controls;
 
@@ -3062,45 +2905,48 @@ static void settings_invoke(view_state& s, const ui::control_frame_ptr& parent)
 	const auto advanced = std::make_shared<ui::group_control>();
 
 	settings->add(std::make_shared<ui::title_control>(tt.options_app_options));
-	settings->add(std::make_shared<ui::check_control>(dlg->_frame, tt.options_show_rotated, setting.show_rotated));
-	settings->add(std::make_shared<ui::check_control>(dlg->_frame, tt.options_show_hidden, setting.show_hidden));
-	settings->add(std::make_shared<ui::check_control>(dlg->_frame, tt.options_confirm_del, setting.confirm_deletions));
-	settings->add(std::make_shared<ui::check_control>(dlg->_frame, tt.options_show_shadow, setting.show_shadow));
+	settings->add(std::make_shared<ui::check_control>(dlg->_frame, tt.options_show_rotated, edited.show_rotated));
+	settings->add(std::make_shared<ui::check_control>(dlg->_frame, tt.options_show_hidden, edited.show_hidden));
+	settings->add(std::make_shared<ui::check_control>(dlg->_frame, tt.options_confirm_del, edited.confirm_deletions));
 	settings->add(
-		std::make_shared<ui::check_control>(dlg->_frame, tt.options_update_modified, setting.update_modified));
+		std::make_shared<ui::check_control>(dlg->_frame, tt.options_confirm_rotate, edited.confirm_rotations));
+	settings->add(std::make_shared<ui::check_control>(dlg->_frame, tt.options_show_shadow, edited.show_shadow));
 	settings->add(
-		std::make_shared<ui::check_control>(dlg->_frame, tt.options_last_played_pos, setting.last_played_pos));
+		std::make_shared<ui::check_control>(dlg->_frame, tt.options_last_played_pos, edited.last_played_pos));
 
 	settings->add(std::make_shared<ui::title_control>(tt.option_slideshow_title));
 	settings->add(std::make_shared<text_element>(tt.option_slideshow_delay));
-	settings->add(std::make_shared<ui::slider_control>(dlg->_frame, setting.slideshow_delay, 0, 30));
+	settings->add(std::make_shared<ui::slider_control>(dlg->_frame, std::string_view{}, edited.slideshow_delay,
+	                                                   settings_t::min_slideshow_delay,
+	                                                   settings_t::max_slideshow_delay));
 
 	settings2->add(std::make_shared<ui::title_control>(tt.options_save_options));
-	settings2->add(std::make_shared<ui::check_control>(dlg->_frame, tt.options_backup_copy, setting.create_originals));
+	settings2->add(std::make_shared<ui::check_control>(dlg->_frame, tt.options_backup_copy, edited.create_originals));
 	settings2->add(std::make_shared<text_element>(tt.options_jpeg_quality));
-	settings2->add(std::make_shared<ui::slider_control>(dlg->_frame, setting.jpeg_save_quality, 0, 100));
+	settings2->add(std::make_shared<ui::slider_control>(dlg->_frame, std::string_view{}, edited.jpeg_save_quality, 0,
+	                                                    100));
 	settings2->add(std::make_shared<text_element>(tt.options_webp_quality));
-	settings2->add(std::make_shared<ui::slider_control>(dlg->_frame, setting.webp_quality, 1, 100));
-	settings2->add(std::make_shared<ui::check_control>(dlg->_frame, tt.lossless_compression, setting.webp_lossless));
+	settings2->add(std::make_shared<ui::slider_control>(dlg->_frame, std::string_view{}, edited.webp_quality, 1, 100));
+	settings2->add(std::make_shared<ui::check_control>(dlg->_frame, tt.lossless_compression, edited.webp_lossless));
 
 #ifndef WINSTORE
 	settings2->add(std::make_shared<ui::title_control>(tt.options_updates));
 	settings2->add(
-		std::make_shared<ui::check_control>(dlg->_frame, tt.options_check_for_update, setting.check_for_updates));
+		std::make_shared<ui::check_control>(dlg->_frame, tt.options_check_for_update, edited.check_for_updates));
 #endif
 
 	advanced->add(std::make_shared<ui::title_control>(tt.options_advanced));
 	advanced->add(
-		std::make_shared<ui::check_control>(dlg->_frame, tt.options_show_help_tooltips, setting.show_help_tooltips));
-	advanced->add(std::make_shared<ui::check_control>(dlg->_frame, tt.options_use_gpu, setting.use_gpu));
-	advanced->add(std::make_shared<ui::check_control>(dlg->_frame, tt.options_use_gpu_video, setting.use_d3d11va));
-	advanced->add(std::make_shared<ui::check_control>(dlg->_frame, tt.options_use_yuv_tex, setting.use_yuv));
+		std::make_shared<ui::check_control>(dlg->_frame, tt.options_show_help_tooltips, edited.show_help_tooltips));
+	advanced->add(std::make_shared<ui::check_control>(dlg->_frame, tt.options_use_gpu, edited.use_gpu));
+	advanced->add(std::make_shared<ui::check_control>(dlg->_frame, tt.options_use_gpu_video, edited.use_d3d11va));
+	advanced->add(std::make_shared<ui::check_control>(dlg->_frame, tt.options_use_yuv_tex, edited.use_yuv));
 #ifndef WINSTORE
 	advanced->add(
-		std::make_shared<ui::check_control>(dlg->_frame, tt.options_send_crash_reports, setting.send_crash_dumps));
+		std::make_shared<ui::check_control>(dlg->_frame, tt.options_send_crash_reports, edited.send_crash_dumps));
 #endif
 	advanced->add(
-		std::make_shared<ui::check_control>(dlg->_frame, tt.options_show_debug_info, setting.show_debug_info));
+		std::make_shared<ui::check_control>(dlg->_frame, tt.options_show_debug_info, edited.show_debug_info));
 
 	auto cols = std::make_shared<ui::col_control>();
 	cols->add(set_margin(settings));
@@ -3113,11 +2959,15 @@ static void settings_invoke(view_state& s, const ui::control_frame_ptr& parent)
 	controls.emplace_back(std::make_shared<divider_element>());
 	controls.emplace_back(cols);
 	controls.emplace_back(std::make_shared<divider_element>());
-	controls.emplace_back(std::make_shared<ui::close_control>(dlg->_frame));
+	controls.emplace_back(std::make_shared<ui::ok_cancel_control>(dlg->_frame));
 
 	pause_media pause(s);
-	dlg->show_modal(controls, {111});
-	s.invalidate_view(view_invalid::options);
+
+	if (dlg->show_modal(controls, {111}) == ui::close_result::ok)
+	{
+		setting = edited;
+		s.invalidate_view(view_invalid::options);
+	}
 }
 
 
@@ -3126,8 +2976,6 @@ static std::string format_index_text(const view_state& s)
 	const auto file_types = s.item_index.file_types();
 	const auto total = file_types.total_items();
 	const auto num = platform::format_number(str::to_string(total.count));
-	//const auto num_folder = platform::format_number(str::to_string(df::stats.index_folder_count));
-	//const auto total_size = prop::format_size(total.size);
 	const auto database_size = prop::format_size(s.item_index.stats.database_size);
 	const auto text = str_format(tt.index_size_fmt.sv(), database_size, num);
 	return text;
@@ -3177,10 +3025,10 @@ public:
 
 	void tooltip(view_hover_element& result, const pointi loc, const pointi element_offset) const override
 	{
-		result.elements->add(make_icon_element(icon_index::data, view_element_style::no_break));
+		result.elements->add(make_icon_element(icon_index::data, flex_item::no_break));
 		result.elements->add(std::make_shared<text_element>(_text, ui::style::font_face::title,
 		                                                    ui::style::text_style::multiline,
-		                                                    view_element_style::line_break));
+		                                                    flex_item::line_break));
 		result.active_bounds = result.window_bounds = bounds.offset(element_offset);
 	}
 
@@ -3196,17 +3044,37 @@ static void index_maintenance(const ui::control_frame_ptr& parent, const view_st
 {
 	const auto dlg = make_dlg(parent);
 	const auto title = tt.index_maintenance_title;
-	auto dlg_parent = dlg->_frame;
 	bool is_reset = false;
 
-	bool has_db_errors = false;
-	platform::thread_event event_check(true, false);
-	s._async.queue_database([&has_db_errors, &event_check](const database& db)
+	struct database_result
 	{
-		has_db_errors = db.has_errors();
-		event_check.set();
+		bool has_errors = false;
+		std::string error;
+	};
+
+	const auto check_result = std::make_shared<database_result>();
+	// The busy window says which operation is running; "Processing..." said nothing.
+	dlg->show_status(icon_index::star, title);
+	s._async.queue_database([&s, dlg, check_result](const database& db)
+	{
+		try
+		{
+			check_result->has_errors = db.has_errors();
+		}
+		catch (const std::exception& e)
+		{
+			check_result->error = str::utf8_cast(e.what());
+		}
+
+		s.queue_ui([dlg] { dlg->close(false); });
 	});
-	platform::wait_for({event_check}, 5000, false);
+	dlg->wait_for_close();
+
+	if (!check_result->error.empty())
+	{
+		dlg->show_message(icon_index::error, title, check_result->error);
+		return;
+	}
 
 	std::vector<view_element_ptr> controls = {
 		set_margin(std::make_shared<ui::title_control2>(dlg->_frame, icon_index::settings, title,
@@ -3220,7 +3088,7 @@ static void index_maintenance(const ui::control_frame_ptr& parent, const view_st
 		std::make_shared<ui::ok_cancel_control>(dlg->_frame)
 	};
 
-	if (has_db_errors)
+	if (check_result->has_errors)
 	{
 		controls.emplace_back(set_margin(set_padding(
 			std::make_shared<text_element>(tt.index_maintenance_reset_recommended, ui::style::text_style::multiline), 8,
@@ -3229,17 +3097,34 @@ static void index_maintenance(const ui::control_frame_ptr& parent, const view_st
 
 	if (dlg->show_modal(controls) == ui::close_result::ok)
 	{
-		platform::thread_event event_wait(true, false);
 		dlg->show_status(icon_index::star, is_reset ? tt.resetting : tt.defragmenting);
+		const auto maintenance_result = std::make_shared<database_result>();
 
-		s._async.queue_database([&event_wait, is_reset](database& db)
+		s._async.queue_database([&s, dlg, maintenance_result, is_reset](database& db)
 		{
-			db.maintenance(is_reset);
-			event_wait.set();
-		});
+			try
+			{
+				db.maintenance(is_reset);
+			}
+			catch (const std::exception& e)
+			{
+				maintenance_result->error = str::utf8_cast(e.what());
+			}
 
-		platform::wait_for({event_wait}, 10000, false);
-		s.invalidate_view(view_invalid::index);
+			s.queue_ui([dlg] { dlg->close(false); });
+		});
+		dlg->wait_for_close();
+
+		if (maintenance_result->error.empty())
+		{
+			// Reset leaves an empty database, so the collection has to be re-read from the files.
+			// That runs in the background with the normal indexing progress, not behind this dialog.
+			s.invalidate_view(is_reset ? view_invalid::index_rebuild : view_invalid::index);
+		}
+		else
+		{
+			dlg->show_message(icon_index::error, title, maintenance_result->error);
+		}
 	}
 };
 
@@ -3255,9 +3140,13 @@ static void index_settings_invoke(view_state& s, const ui::control_frame_ptr& pa
 	auto dlg_parent = dlg->_frame;
 	const auto local_index = std::make_shared<ui::group_control>();
 	const auto custom_index = std::make_shared<ui::group_control>();
-	//auto cloud_index = std::make_shared<ui::group_control>();
 
 	auto index_text = format_index_text(s);
+
+	// Maintenance is immediate and irreversible, so it must not run while this dialog can
+	// still be cancelled. The link closes the dialog as OK - committing the folder choices
+	// the user can see - and maintenance starts once that has happened.
+	const auto run_maintenance = std::make_shared<bool>(false);
 
 	local_index->add(std::make_shared<text_element>(tt.collection_info));
 	local_index->add(std::make_shared<link_element>(tt.more_collection_options_information,
@@ -3293,9 +3182,10 @@ static void index_settings_invoke(view_state& s, const ui::control_frame_ptr& pa
 	local_index->add(std::make_shared<ui::title_control>(tt.index_maintenance_title));
 	local_index->add(std::make_shared<text_element>(tt.indexing_message));
 	local_index->add(std::make_shared<text_element>(index_text));
-	local_index->add(std::make_shared<link_element>(tt.defragment_and_compact, [&s, dlg_parent]
+	local_index->add(std::make_shared<link_element>(tt.defragment_and_compact, [run_maintenance, dlg_parent]
 	{
-		index_maintenance(dlg_parent, s);
+		*run_maintenance = true;
+		dlg_parent->close(false);
 	}));
 
 	custom_index->add(std::make_shared<ui::title_control>(tt.collection_options_custom_folders_title));
@@ -3336,53 +3226,57 @@ static void index_settings_invoke(view_state& s, const ui::control_frame_ptr& pa
 
 	dlg->_frame->destroy();
 	s.invalidate_view(view_invalid::index | view_invalid::options);
+
+	if (*run_maintenance)
+	{
+		index_maintenance(parent, s);
+	}
 }
 
 static void customise_invoke(view_state& s, const ui::control_frame_ptr& parent)
 {
 	const auto dlg = make_dlg(parent);
 
+	// Edit copies so Cancel discards and OK commits, like every other dialog.
+	auto search = setting.search;
+	auto sidebar_settings = setting.sidebar;
+
 	auto dlg_parent = dlg->_frame;
 	const auto searches = std::make_shared<ui::group_control>();
-	const auto tags = std::make_shared<ui::group_control>();
 	const auto sidebar = std::make_shared<ui::group_control>();
 
 	searches->add(std::make_shared<ui::title_control>(tt.customise_searches_title));
 	searches->add(
-		std::make_shared<ui::two_col_table_control>(dlg_parent, setting.search.title, setting.search.path,
-		                                            setting.search.count));
-
-	tags->add(std::make_shared<ui::title_control>(tt.customise_tags_title));
-	tags->add(set_margin(std::make_shared<text_element>(tt.customise_tags_help)));
-	tags->add(set_margin(std::make_shared<text_element>(tt.help_tag1)));
-	tags->add(set_margin(std::make_shared<text_element>(tt.help_tag2)));
-	tags->add(std::make_shared<ui::multi_line_edit_control>(dlg_parent, setting.favorite_tags));
-	tags->add(std::make_shared<ui::check_control>(dlg->_frame, tt.option_favorite_tags,
-	                                              setting.sidebar.show_favorite_tags_only));
+		std::make_shared<ui::two_col_table_control>(dlg_parent, search.title, search.path,
+		                                            search.count));
 
 	sidebar->add(std::make_shared<ui::title_control>(tt.customise_sidebar_title));
 	sidebar->add(
-		std::make_shared<ui::check_control>(dlg->_frame, tt.customize_show_total, setting.sidebar.show_total_items));
+		std::make_shared<ui::check_control>(dlg->_frame, tt.customize_show_total, sidebar_settings.show_total_items));
 	sidebar->add(
-		std::make_shared<ui::check_control>(dlg->_frame, tt.customize_show_history, setting.sidebar.show_history));
-	sidebar->add(std::make_shared<ui::num_control>(dlg->_frame, tt.customize_history_years,
-	                                               setting.sidebar.history_years));
+		std::make_shared<ui::check_control>(dlg->_frame, tt.customize_show_history, sidebar_settings.show_history));
 	sidebar->add(std::make_shared<ui::check_control>(dlg->_frame, tt.customize_show_world_map,
-	                                                 setting.sidebar.show_world_map));
+	                                                 sidebar_settings.show_world_map));
 	sidebar->add(std::make_shared<ui::check_control>(dlg->_frame, tt.customize_show_indexed_folders,
-	                                                 setting.sidebar.show_indexed_folders));
+	                                                 sidebar_settings.show_indexed_folders));
 	sidebar->add(
-		std::make_shared<ui::check_control>(dlg->_frame, tt.customize_show_drives, setting.sidebar.show_drives));
+		std::make_shared<ui::check_control>(dlg->_frame, tt.customize_show_drives, sidebar_settings.show_drives));
 	sidebar->add(std::make_shared<ui::check_control>(dlg->_frame, tt.customize_show_searches,
-	                                                 setting.sidebar.show_favorite_searches));
+	                                                 sidebar_settings.show_favorite_searches));
 	sidebar->add(
-		std::make_shared<ui::check_control>(dlg->_frame, tt.customize_show_tags, setting.sidebar.show_tags));
-	sidebar->add(std::make_shared<ui::check_control>(dlg->_frame, tt.customize_ratings, setting.sidebar.show_ratings));
-	sidebar->add(std::make_shared<ui::check_control>(dlg->_frame, tt.customize_labels, setting.sidebar.show_labels));
+		std::make_shared<ui::check_control>(dlg->_frame, tt.customize_show_tags, sidebar_settings.show_tags));
+	sidebar->add(std::make_shared<ui::check_control>(dlg->_frame, tt.option_favorite_tags,
+	                                                 sidebar_settings.show_favorite_tags_only));
+	sidebar->add(std::make_shared<ui::check_control>(dlg->_frame, tt.customize_ratings,
+	                                                 sidebar_settings.show_ratings));
+	sidebar->add(std::make_shared<ui::check_control>(dlg->_frame, tt.customize_labels,
+	                                                 sidebar_settings.show_labels));
+	sidebar->add(set_margin(std::make_shared<text_element>(tt.customize_history_start_year)));
+	sidebar->add(std::make_shared<ui::num_control>(dlg->_frame, std::string_view{},
+	                                               sidebar_settings.history_start_year, true));
 
 	auto cols = std::make_shared<ui::col_control>();
 	cols->add(set_margin(searches));
-	cols->add(set_margin(tags));
 	cols->add(set_margin(sidebar));
 
 	std::vector<view_element_ptr> controls;
@@ -3392,12 +3286,18 @@ static void customise_invoke(view_state& s, const ui::control_frame_ptr& parent)
 	controls.emplace_back(std::make_shared<divider_element>());
 	controls.emplace_back(cols);
 	controls.emplace_back(std::make_shared<divider_element>());
-	controls.emplace_back(std::make_shared<ui::close_control>(dlg->_frame));
+	controls.emplace_back(std::make_shared<ui::ok_cancel_control>(dlg->_frame));
 
 	pause_media pause(s);
-	dlg->show_modal(controls, {111});
 
-	s.invalidate_view(view_invalid::options);
+	if (dlg->show_modal(controls, {111}) == ui::close_result::ok)
+	{
+		setting.search = search;
+		setting.sidebar = sidebar_settings;
+
+		s.invalidate_view(view_invalid::sidebar | view_invalid::options_save | view_invalid::command_state |
+			view_invalid::tooltip | view_invalid::app_layout);
+	}
 };
 
 static void email_invoke(view_state& s, const ui::control_frame_ptr& parent, const view_host_base_ptr& view)
@@ -3417,59 +3317,102 @@ static void email_invoke(view_state& s, const ui::control_frame_ptr& parent, con
 	{
 		const auto& items = s.selected_items();
 
-		std::vector<view_element_ptr> controls;
-		controls.emplace_back(set_margin(std::make_shared<ui::title_control2>(
-			dlg->_frame, icon_index::mail, title, format_plural_text(tt.email_info_fmt, items), items.thumbs())));
-		controls.emplace_back(std::make_shared<divider_element>());
-		controls.emplace_back(set_margin(std::make_shared<text_element>(tt.email_small_help)));
-		controls.emplace_back(std::make_shared<ui::check_control>(dlg->_frame, tt.email_zip, setting.email.zip));
-		controls.emplace_back(
-			std::make_shared<ui::check_control>(dlg->_frame, tt.email_convert_to_jpeg, setting.email.convert));
+		// Edit a copy so Cancel discards and OK commits, matching every other options dialog.
+		auto email_settings = setting.email;
+		std::string validation_error;
 
-		auto limit = std::make_shared<ui::check_control>(dlg->_frame, tt.email_limit_dimensions, setting.email.limit);
-		limit->child(std::make_shared<ui::num_control>(dlg->_frame, std::string_view{}, setting.email.max_side));
-		controls.emplace_back(limit);
-		controls.emplace_back(std::make_shared<divider_element>());
-		controls.emplace_back(std::make_shared<ui::ok_cancel_control>(dlg->_frame, tt.button_send));
-
-		if (ui::close_result::ok == dlg->show_modal(controls))
+		for (;;)
 		{
+			std::vector<view_element_ptr> controls;
+			controls.emplace_back(set_margin(std::make_shared<ui::title_control2>(
+				dlg->_frame, icon_index::mail, title, format_plural_text(tt.email_info_fmt, items), items.thumbs(),
+				items.size())));
+			controls.emplace_back(std::make_shared<divider_element>());
+			controls.emplace_back(set_margin(std::make_shared<text_element>(tt.email_small_help)));
+			controls.emplace_back(std::make_shared<ui::check_control>(dlg->_frame, tt.email_zip, email_settings.zip));
+			controls.emplace_back(
+				std::make_shared<ui::check_control>(dlg->_frame, tt.email_convert_to_jpeg, email_settings.convert));
+
+			auto limit = std::make_shared<ui::check_control>(dlg->_frame, tt.email_limit_dimensions,
+			                                                 email_settings.limit);
+			limit->child(std::make_shared<ui::num_control>(dlg->_frame, std::string_view{}, email_settings.max_side));
+			controls.emplace_back(limit);
+
+			if (!validation_error.empty())
+			{
+				auto warning = std::make_shared<text_element>(
+					validation_error, flex_item::stretch | view_element_style::important);
+				warning->margin = {10, 10};
+				warning->padding = {10, 10};
+				warning->update_background_color();
+				controls.emplace_back(std::move(warning));
+			}
+
+			controls.emplace_back(std::make_shared<divider_element>());
+			controls.emplace_back(std::make_shared<ui::ok_cancel_control>(dlg->_frame, tt.button_send));
+
+			if (ui::close_result::ok != dlg->show_modal(controls)) return;
+
+			// A limit below one pixel would scale every attachment to nothing. The dialog
+			// reopens with the choices intact rather than discarding them.
+			if (email_settings.limit && email_settings.max_side < 1)
+			{
+				validation_error = tt.dimension_must_be_positive;
+				continue;
+			}
+
+			break;
+		}
+
+		setting.email = email_settings;
+
+		{
+			const auto zip = email_settings.zip;
+			const auto scale = email_settings.limit ? email_settings.max_side : 0;
+			const auto convert_to_jpeg = email_settings.convert;
+			const auto file_paths = items.file_paths(false);
+
 			record_feature_use(features::email);
 
-			const auto results = std::make_shared<command_status>(s._async, dlg, icon, title, items.size());
+			const auto results = std::make_shared<command_status>(s._async, dlg, icon, title, file_paths.size(),
+			                                                      tt.email_preparing);
 
-			s.queue_async(async_queue::work, [&s, results, items]
+			s.queue_async(async_queue::work, [&s, results, file_paths, zip, scale, convert_to_jpeg]
 			{
-				//auto email = std::make_shared<df::email_sender>();
-				//email->add_files(*results, items, setting.email.zip, setting.email.convert, setting.email.limit ? setting.email.max_side : 0);
-				const auto zip = setting.email.zip;
-				const auto scale = setting.email.limit ? setting.email.max_side : 0;
-				const auto convert_to_jpeg = setting.email.convert;
-
 				files _codecs;
 				platform::attachments_t attachments;
 				df::file_paths temp_file_paths;
 				df::zip_file zip_file;
 				df::file_path zip_path;
 				bool is_valid = true;
+				std::string error_message;
 
 				if (zip)
 				{
 					zip_path = platform::temp_file("zip");
-					zip_file.create(zip_path);
+					temp_file_paths.emplace_back(zip_path);
+					is_valid = zip_file.create(zip_path);
+
+					if (!is_valid)
+					{
+						error_message = std::string(tt.email_failed);
+					}
 				}
 
-				auto file_paths = items.file_paths();
 				auto pos = 0;
 
 				for (const auto& path : file_paths)
 				{
+					if (!is_valid || results->is_canceled()) break;
+
 					auto format = str_format(tt.email_processing_fmt.sv(), path.name());
 					results->message(format, pos++, file_paths.size());
+					results->start_item(path.name());
 
 					auto file_name = path.name();
 					const auto is_jpeg = files::is_jpeg(path.name());
 					auto attachment_path = path;
+					auto attachment_status = item_status::success;
 
 					if (scale || (convert_to_jpeg && !is_jpeg))
 					{
@@ -3494,66 +3437,103 @@ static void email_invoke(view_state& s, const ui::control_frame_ptr& parent, con
 								attachment_path = edited_path;
 								file_name = path.extension(ext).name();
 							}
+							else
+							{
+								is_valid = false;
+								attachment_status = item_status::fail;
+								error_message = update_result.format_error();
+							}
 
 							temp_file_paths.emplace_back(edited_path);
 						}
 					}
 
-					if (zip)
+					if (is_valid && zip)
 					{
-						zip_file.add(attachment_path, file_name);
+						is_valid = zip_file.add(attachment_path, file_name);
+
+						if (!is_valid)
+						{
+							attachment_status = item_status::fail;
+							error_message = std::string(tt.email_failed);
+						}
 					}
-					else
+					else if (is_valid)
 					{
 						attachments.emplace_back(file_name, attachment_path);
 					}
+
+					results->end_item(path.name(), attachment_status);
 				}
 
-				if (zip)
+				const auto was_canceled = results->is_canceled();
+				if (was_canceled) is_valid = false;
+
+				if (zip && is_valid)
 				{
 					if (zip_file.close())
 					{
 						attachments.emplace_back("items.zip", zip_path);
-						temp_file_paths.emplace_back(zip_path);
-						is_valid = true;
 					}
-				}
-				else
-				{
-					is_valid = true;
+					else
+					{
+						is_valid = false;
+						error_message = std::string(tt.email_failed);
+					}
 				}
 
 				if (is_valid)
 				{
 					results->message(tt.email_connecting_to_mapi);
 
-					s.queue_ui([attachments, results]
+					s.queue_ui([&s, attachments, results, temp_file_paths]
 					{
-						if (results->has_failures())
-						{
-							results->show_errors();
-						}
-						else
-						{
-							results->complete(tt.email_sending);
+						results->message(tt.email_sending);
 
-							if (!platform::mapi_send({}, {}, {}, attachments))
-							{
-								results->complete(tt.email_failed);
-							}
-							else
+						// MAPI shows the mail client's own modal UI, so it must run on the UI thread despite
+						// blocking it. The second hop exists so the message above paints before that happens.
+						s.queue_ui([attachments, results, temp_file_paths]
+						{
+							const auto send_result = platform::mapi_send({}, {}, {}, attachments);
+							if (send_result == platform::mapi_send_result::sent)
 							{
 								results->complete();
 							}
-						}
+							else if (send_result == platform::mapi_send_result::canceled)
+							{
+								results->complete(tt.email_canceled);
+							}
+							else
+							{
+								results->complete(tt.email_failed);
+							}
+
+							for (const auto& path : temp_file_paths)
+							{
+								platform::delete_file(path);
+							}
+						});
 					});
+				}
+				else
+				{
+					if (zip) zip_file.close();
+
+					for (const auto& path : temp_file_paths)
+					{
+						platform::delete_file(path);
+					}
+
+					results->complete(was_canceled
+						                  ? std::string_view{}
+						                  : error_message.empty()
+						                  ? tt.email_failed.sv()
+						                  : error_message);
 				}
 			});
 
 			results->wait_for_complete();
 		}
-
-		controls.clear();
 	}
 }
 
@@ -3561,44 +3541,21 @@ void app_frame::initialise_commands()
 {
 	update_command_text();
 
-	_commands[commands::menu_open]->toolbar_text = _commands[commands::menu_open]->text;
-	_commands[commands::menu_tag_with]->toolbar_text = _commands[commands::menu_tag_with]->text;
-	_commands[commands::menu_tools_toolbar]->toolbar_text = _commands[commands::menu_tools_toolbar]->text;
-	_commands[commands::menu_playback]->toolbar_text = _commands[commands::menu_playback]->text;
-	_commands[commands::view_close]->toolbar_text = _commands[commands::view_close]->text;
-	_commands[commands::sync_analyze]->toolbar_text = _commands[commands::sync_analyze]->text;
-	_commands[commands::sync_run]->toolbar_text = _commands[commands::sync_run]->text;
-	_commands[commands::rename_run]->toolbar_text = _commands[commands::rename_run]->text;
-	_commands[commands::import_analyze]->toolbar_text = _commands[commands::import_analyze]->text;
-	_commands[commands::import_run]->toolbar_text = _commands[commands::import_run]->text;
-	_commands[commands::locate_run]->toolbar_text = _commands[commands::locate_run]->text;
-	_commands[commands::test_send_crash_report]->toolbar_text = _commands[commands::test_send_crash_report]->text;
-	_commands[commands::test_gen_po]->toolbar_text = _commands[commands::test_gen_po]->text;
-	_commands[commands::test_reset_graphics]->toolbar_text = _commands[commands::test_reset_graphics]->text;
-	_commands[commands::test_crash]->toolbar_text = _commands[commands::test_crash]->text;
-	_commands[commands::test_new_version]->toolbar_text = _commands[commands::test_new_version]->text;
-	_commands[commands::test_run_all]->toolbar_text = _commands[commands::test_run_all]->text;
-	_commands[commands::edit_item_save]->toolbar_text = _commands[commands::edit_item_save]->text;
-	_commands[commands::edit_item_save_and_prev]->toolbar_text = _commands[commands::edit_item_save_and_prev]->text;
-	_commands[commands::edit_item_save_and_next]->toolbar_text = _commands[commands::edit_item_save_and_next]->text;
-	_commands[commands::edit_item_save_as]->toolbar_text = _commands[commands::edit_item_save_as]->text;
-	_commands[commands::edit_item_options]->toolbar_text = _commands[commands::edit_item_options]->text;
-	_commands[commands::menu_group_toolbar]->toolbar_text = _commands[commands::menu_group_toolbar]->text;
-	_commands[commands::filter_photos]->toolbar_text = _commands[commands::filter_photos]->text;
-	_commands[commands::filter_videos]->toolbar_text = _commands[commands::filter_videos]->text;
-	_commands[commands::filter_audio]->toolbar_text = _commands[commands::filter_audio]->text;
-
 	_commands[commands::filter_photos]->text_can_change = true;
 	_commands[commands::filter_videos]->text_can_change = true;
 	_commands[commands::filter_audio]->text_can_change = true;
 	_commands[commands::menu_group_toolbar]->text_can_change = true;
+	// These toolbars are shared by several views, so their run buttons are renamed per view.
+	// Without this the button keeps the text it was defined with and promises the wrong operation.
+	_commands[commands::tool_run]->text_can_change = true;
+	_commands[commands::edit_item_save_and_prev]->text_can_change = true;
+	_commands[commands::edit_item_save_and_next]->text_can_change = true;
 
 	_commands[commands::play]->icon_can_change = true;
 	_commands[commands::view_fullscreen]->icon_can_change = true;
 	_commands[commands::repeat_toggle]->icon_can_change = true;
 	_commands[commands::playback_volume_toggle]->icon_can_change = true;
 	_commands[commands::favorite]->icon_can_change = true;
-	_commands[commands::options_collection]->icon_can_change = true;
 
 	_commands[commands::option_highlight_large_items]->clr = ui::style::color::rank_background;
 	_commands[commands::rate_rejected]->clr = color_rate_rejected;
@@ -3610,14 +3567,47 @@ void app_frame::initialise_commands()
 
 	const auto t = shared_from_this();
 
-	//add_command(ID_SHARE_FACEBOOK, [this] { facebook_share_invoke(_state, _frame); });
-	//add_command(ID_SHARE_FLICKR, [this] { flickr_share_invoke(_state, _frame); });
-	//add_command(ID_SHARE_TWITTER, [this] { twitter_share_invoke(_state, _frame); });
-
-	add_command_invoke(commands::tool_adjust_date, [this] { adjust_date_invoke(_state, _app_frame, _view_frame); });
-	add_command_invoke(commands::tool_edit_metadata, [this] { edit_metadata_invoke(_state, _app_frame, _view_frame); });
+	add_command_invoke(commands::tool_adjust_date, [this]
+	{
+		_view_batch->mode(batch_tool_mode::adjust_date);
+		update_toolbar_text(commands::tool_run, std::string(_view_batch->run_text().sv()));
+		_state.view_mode(view_type::batch);
+	});
+	add_command_invoke(commands::tool_edit_metadata, [this]
+	{
+		_view_batch->mode(batch_tool_mode::metadata);
+		reset_selector_selection_anchor();
+		update_toolbar_text(commands::tool_run, std::string(_view_batch->run_text().sv()));
+		_state.view_mode(view_type::batch);
+	});
+	add_command_invoke(commands::tool_edit_description, [this]
+	{
+		setting.set_artist = false;
+		setting.set_caption = true;
+		setting.set_album = false;
+		setting.set_album_artist = false;
+		setting.set_genre = false;
+		setting.set_tv_show = false;
+		setting.set_copyright_notice = false;
+		setting.set_copyright_creator = false;
+		setting.set_copyright_source = false;
+		setting.set_copyright_credit = false;
+		setting.set_copyright_url = false;
+		setting.caption.clear();
+		const auto display = _state.display_state();
+		if (_state.selected_items().size() == 1 && display && display->is_one())
+		{
+			const auto md = display->_item1->metadata();
+			if (md && !is_empty(md->description)) setting.caption = md->description.sv();
+		}
+		_view_batch->mode(batch_tool_mode::metadata);
+		reset_selector_selection_anchor();
+		update_toolbar_text(commands::tool_run, std::string(_view_batch->run_text().sv()));
+		_state.view_mode(view_type::batch);
+	});
 	add_command_invoke(commands::exit, [this] { _app_frame->close(); });
 	add_command_invoke(commands::playback_auto_play, [this] { setting.auto_play = !setting.auto_play; });
+	add_command_invoke(commands::playback_auto_advance, [this] { setting.auto_advance = !setting.auto_advance; });
 	add_command_invoke(commands::playback_last_played_pos,
 	                   [this] { setting.last_played_pos = !setting.last_played_pos; });
 	add_command_invoke(commands::playback_repeat_one, [this] { setting.repeat = repeat_mode::repeat_one; });
@@ -3651,43 +3641,49 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::advanced_search, [this] { advanced_search_invoke(_state, _app_frame, _view_frame); });
 
 	add_command_invoke(commands::view_close, [this] { _view->exit(); });
-	add_command_invoke(commands::edit_item_save, [this] { _view_edit->save_and_close(); });
-	add_command_invoke(commands::edit_item_save_and_prev, [this] { _view_edit->save_and_next(false); });
-	add_command_invoke(commands::edit_item_save_and_next, [this] { _view_edit->save_and_next(true); });
+	add_command_invoke(commands::edit_item_save, [this]
+	{
+		if (_state.view_mode() == view_type::locate) _view_locate->run();
+		else _view_edit->save_current();
+	});
+	add_command_invoke(commands::edit_item_save_and_prev, [this]
+	{
+		if (_state.view_mode() == view_type::locate) _view_locate->run_and_next(false);
+		else _view_edit->save_and_next(false);
+	});
+	add_command_invoke(commands::edit_item_save_and_next, [this]
+	{
+		if (_state.view_mode() == view_type::locate) _view_locate->run_and_next(true);
+		else _view_edit->save_and_next(true);
+	});
 	add_command_invoke(commands::edit_item_save_as, [this] { _view_edit->save_as(); });
-	add_command_invoke(commands::edit_item_options, [this] { _view_edit->save_options(); });
-	add_command_invoke(commands::tool_remove_metadata,
-	                   [this] { remove_metadata_invoke(_state, _app_frame, _view_frame); });
-	add_command_invoke(commands::tool_convert, [this] { convert_resize_invoke(_state, _app_frame, _view_frame); });
+	add_command_invoke(commands::edit_item_auto_color, [this] { _view_edit->auto_color(); });
+	add_command_invoke(commands::edit_item_auto_document, [this] { _view_edit->auto_document(); });
+	add_command_invoke(commands::edit_item_auto_straighten, [this] { _view_edit->auto_straighten(); });
+	add_command_invoke(commands::edit_item_preview, [this] { _view_edit->toggle_preview(); });
+	add_command_invoke(commands::tool_convert, [this]
+	{
+		_view_batch->mode(batch_tool_mode::convert);
+		update_toolbar_text(commands::tool_run, std::string(_view_batch->run_text().sv()));
+		_state.view_mode(view_type::batch);
+	});
 	add_command_invoke(commands::tool_copy_to_folder,
 	                   [this] { copy_move_invoke(_state, _app_frame, _view_frame, false); });
-	add_command_invoke(commands::test_send_crash_report, [this]
-	{
-		crash(known_path(platform::known_folder::test_files_folder).combine_file("Test.jpg"));
-		_app_frame->show(true);
-	});
-	add_command_invoke(commands::test_crash, [this]
-	{
-		int* i = nullptr;
-		*i = 19; // Crash**			
-	});
-	add_command_invoke(commands::test_gen_po, [this] { _view_test->gen_po(); });
-	add_command_invoke(commands::test_reset_graphics, [this] { _view_test->reset_graphics(); });
-	add_command_invoke(commands::test_run_all, [this] { _view_test->run_all(); });
 	add_command_invoke(commands::tool_delete, [this] { delete_items(_state.selected_items()); });
 	add_command_invoke(commands::tool_desktop_background, [this] { desktop_background_invoke(_state, _app_frame); });
 	add_command_invoke(commands::tool_edit, [this] { edit_invoke(_state); });
 	add_command_invoke(commands::edit_copy, [this] { cut_copy_invoke(_state, _app_frame, _view_frame, false); });
+	add_command_invoke(commands::edit_copy_item_path, [this] { copy_item_path_invoke(_state); });
 	add_command_invoke(commands::edit_cut, [this] { cut_copy_invoke(_state, _app_frame, _view_frame, true); });
 	add_command_invoke(commands::edit_paste, [this] { edit_paste_invoke(_state, _app_frame, _view_frame); });
 	add_command_invoke(commands::tool_eject, [this]
 	{
-		eject_invoke(_state, _app_frame);
-		invalidate_view(view_invalid::sidebar);
+		eject_invoke(_state, _app_frame, [this] { invalidate_view(view_invalid::sidebar_drives); });
 	});
 	add_command_invoke(commands::tool_file_properties,
 	                   [this] { file_properties_invoke(_state, _app_frame, _view_frame); });
 	add_command_invoke(commands::browse_search, [this] { _search_edit->focus(); });
+	add_command_invoke(commands::filter_items, [this] { _view_items->focus_rendered_filter(); });
 	add_command_invoke(commands::browse_recursive, [this] { show_flatten_invoke(_state, _app_frame, _view_frame); });
 	add_command_invoke(commands::view_fullscreen, [this] { toggle_full_screen(); });
 	add_command_invoke(commands::option_highlight_large_items, [this]
@@ -3750,6 +3746,7 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::options_general, [this] { settings_invoke(_state, _app_frame); });
 	add_command_invoke(commands::pin_item, [this] { pin_invoke(_state); });
 	add_command_invoke(commands::play, [this] { _state.play(_view_frame); });
+	add_command_invoke(commands::slideshow, [this] { _state.toggle_slideshow(_view_frame); });
 	add_command_invoke(commands::print, [this] { print_invoke(_state, _app_frame, _view_frame); });
 	add_command_invoke(commands::rate_none, [this] { rate_items_invoke(_state, _app_frame, _view_frame, 0); });
 	add_command_invoke(commands::rate_1, [this] { rate_items_invoke(_state, _app_frame, _view_frame, 1); });
@@ -3757,7 +3754,14 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::rate_3, [this] { rate_items_invoke(_state, _app_frame, _view_frame, 3); });
 	add_command_invoke(commands::rate_4, [this] { rate_items_invoke(_state, _app_frame, _view_frame, 4); });
 	add_command_invoke(commands::rate_5, [this] { rate_items_invoke(_state, _app_frame, _view_frame, 5); });
-	add_command_invoke(commands::rate_rejected, [this] { rate_items_invoke(_state, _app_frame, _view_frame, -1); });
+	add_command_invoke(commands::rate_rejected, [this]
+	{
+		// Reject toggles like a flag; the stars keep 0 as their own clear.
+		const auto& items = _state.selected_items().items();
+		const auto all_rejected = !items.empty() &&
+			std::ranges::all_of(items, [](const df::item_element_ptr& i) { return i->rating() == -1; });
+		rate_items_invoke(_state, _app_frame, _view_frame, all_rejected ? 0 : -1);
+	});
 	add_command_invoke(commands::label_select, [this]
 	{
 		label_items_invoke(_state, _app_frame, _view_frame, label_select_text);
@@ -3780,6 +3784,7 @@ void app_frame::initialise_commands()
 	});
 	add_command_invoke(commands::label_none, [this] { label_items_invoke(_state, _app_frame, _view_frame, {}); });
 	add_command_invoke(commands::refresh, [this] { reload(); });
+	add_command_invoke(commands::favorite_tags, [this] { favorite_tags_invoke(_state, _app_frame); });
 	add_command_invoke(commands::search_related, [this] { related_invoke(_state, _app_frame, _view_frame); });
 	add_command_invoke(commands::tool_rename, [this] { rename_invoke(_state, _app_frame, _view_frame); });
 	add_command_invoke(commands::repeat_toggle, [this] { repeat_mode_toggle(_state, _app_frame); });
@@ -3807,11 +3812,6 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::select_invert, [this] { _state.select_inverse(_view_frame); });
 	add_command_invoke(commands::select_nothing, [this] { _state.select_nothing(_view_frame); });
 	add_command_invoke(commands::tool_email, [this] { email_invoke(_state, _app_frame, _view_frame); });
-	add_command_invoke(commands::option_show_thumbnails, [this]
-	{
-		_state.view_mode(
-			_state.view_mode() == view_type::items ? view_type::media : view_type::items);
-	});
 	add_command_invoke(commands::option_show_rotated, [this]
 	{
 		setting_invoke(_state, setting.show_rotated, !setting.show_rotated);
@@ -3826,8 +3826,7 @@ void app_frame::initialise_commands()
 		setting_invoke(_state, setting.raw_preview, !setting.raw_preview);
 		invalidate_view(view_invalid::media_elements);
 	});
-	add_command_invoke(commands::tool_tag, [this] { tag_invoke(_state, _app_frame, _view_frame); });
-	add_command_invoke(commands::test_new_version, [this] { test_new_version_invoke(_state, _app_frame); });
+	add_command_invoke(commands::tool_tag, [this] { _state.view_mode(view_type::tags); });
 	add_command_invoke(commands::option_toggle_details, [this]
 	{
 		toggle_details_invoke(_state, ui::current_key_state().shift);
@@ -3838,7 +3837,7 @@ void app_frame::initialise_commands()
 		invalidate_view(view_invalid::view_layout);
 	});
 	add_command_invoke(commands::view_help, [this] { about_invoke(_state, _app_frame, _commands); });
-	add_command_invoke(commands::view_items, [this] { _state.view_mode(view_type::items); });
+	add_command_invoke(commands::view_items, [this] { _view->exit(); });
 	add_command_invoke(commands::large_font, [this] { font_invoke(_state, _app_frame); });
 	add_command_invoke(commands::playback_volume_toggle, [this] { toggle_volume(); });
 	add_command_invoke(commands::playback_volume200, [this] { setting.media_volume = media_volume_boost; });
@@ -3848,6 +3847,23 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::playback_volume25, [this] { setting.media_volume = media_volumes[3]; });
 	add_command_invoke(commands::playback_volume0, [this] { setting.media_volume = media_volumes[4]; });
 	add_command_invoke(commands::view_zoom, [this] { zoom_invoke(_state, _app_frame); });
+	add_command_invoke(commands::view_zoom_fit, [this] { zoom_fit_invoke(_state); });
+	add_command_invoke(commands::view_zoom_fit_width,
+	                   [this] { zoom_fit_variant_invoke(_state, df::zoom_scale_mode::fit_width); });
+	add_command_invoke(commands::view_zoom_fill,
+	                   [this] { zoom_fit_variant_invoke(_state, df::zoom_scale_mode::fill); });
+	add_command_invoke(commands::view_zoom_toggle_fit, [this] { zoom_toggle_fit_invoke(_state); });
+	add_command_invoke(commands::view_zoom_100, [this] { zoom_100_invoke(_state); });
+	add_command_invoke(commands::view_zoom_in, [this] { zoom_step_invoke(_state, 1); });
+	add_command_invoke(commands::view_zoom_pane_flip, [this]
+	{
+		if (const auto display = _state.display_state()) display->flip_zoom_pane();
+	});
+	add_command_invoke(commands::view_zoom_out, [this] { zoom_step_invoke(_state, -1); });
+	add_command_invoke(commands::view_zoom_navigator_auto_hide,
+	                   [this] { zoom_navigator_mode_invoke(_state, zoom_navigator_mode::auto_hide); });
+	add_command_invoke(commands::view_zoom_navigator_off,
+	                   [this] { zoom_navigator_mode_invoke(_state, zoom_navigator_mode::off); });
 
 	add_command_invoke(commands::filter_photos, [this]
 	{
@@ -3866,6 +3882,7 @@ void app_frame::initialise_commands()
 	});
 
 	add_command_invoke(commands::group_album, [this] { _state.group_order(group_by::album_show, {}); });
+	add_command_invoke(commands::group_aspect_ratio, [this] { _state.group_order(group_by::aspect_ratio, {}); });
 	add_command_invoke(commands::group_camera, [this] { _state.group_order(group_by::camera, {}); });
 	add_command_invoke(commands::group_created, [this] { _state.group_order(group_by::date_created, {}); });
 	add_command_invoke(commands::group_presence, [this] { _state.group_order(group_by::presence, {}); });
@@ -3883,13 +3900,22 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::sort_def, [this] { _state.group_order({}, sort_by::def); });
 	add_command_invoke(commands::sort_name, [this] { _state.group_order({}, sort_by::name); });
 	add_command_invoke(commands::sort_size, [this] { _state.group_order({}, sort_by::size); });
+	add_command_invoke(commands::sort_date_created, [this] { _state.group_order({}, sort_by::date_created); });
 	add_command_invoke(commands::sort_date_modified, [this] { _state.group_order({}, sort_by::date_modified); });
 
-	add_command_invoke(commands::tool_test, [this] { _state.view_mode(view_type::test); });
 	add_command_invoke(commands::tool_import, [this] { _state.view_mode(view_type::import); });
 	add_command_invoke(commands::tool_sync, [this] { _state.view_mode(view_type::sync); });
 
-	add_command_invoke(commands::rename_run, [this] { _view_rename->run(); });
+	add_command_invoke(commands::tool_run, [this]
+	{
+		if (_state.view_mode() == view_type::batch) _view_batch->run();
+		else _view_rename->run();
+	});
+
+	add_command_invoke(commands::tool_refresh, [this]
+	{
+		if (_state.view_mode() == view_type::batch && _view_batch) _view_batch->refresh();
+	});
 
 	add_command_invoke(commands::import_analyze, [this] { _view_import->analyze(); });
 	add_command_invoke(commands::import_run, [this] { _view_import->run(); });
@@ -3899,11 +3925,16 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::sync_analyze, [this] { _view_sync->analyze(); });
 	add_command_invoke(commands::sync_run, [this] { _view_sync->run(); });
 
+	add_command_invoke(commands::tags_run, [this] { _view_tags->run(); });
+
+	// Cancel stops the running task and leaves the view open; Close always exits the view.
+	add_command_invoke(commands::view_cancel, [this] { if (_view) _view->cancel_operation(); });
+
 	add_command_invoke(commands::english, [this]
 	{
 		setting.language = "en";
 		tt.clear();
-		invalidate_view(view_invalid::options);
+		language_changed("en");
 	});
 
 	_commands[commands::menu_main]->menu = [this]
@@ -3911,6 +3942,7 @@ void app_frame::initialise_commands()
 		std::vector<ui::command_ptr> result = {
 			find_command(commands::view_fullscreen),
 			find_command(commands::play),
+			find_command(commands::slideshow),
 			find_command(commands::browse_search),
 			nullptr,
 			find_command(commands::menu_navigate),
@@ -3919,6 +3951,7 @@ void app_frame::initialise_commands()
 			find_command(commands::menu_rate_or_label),
 			find_command(commands::menu_select),
 			find_command(commands::menu_group),
+			find_command(commands::menu_options),
 			nullptr,
 			find_command(commands::tool_import),
 			find_command(commands::tool_sync),
@@ -3931,19 +3964,26 @@ void app_frame::initialise_commands()
 			find_command(commands::edit_copy),
 			find_command(commands::edit_paste),
 			nullptr,
-			find_command(commands::options_general),
-			find_command(commands::options_collection),
-			find_command(commands::options_sidebar),
-			find_command(commands::menu_display_options),
-			find_command(commands::playback_menu),
-			find_command(commands::menu_language),
-			nullptr,
 			find_command(commands::keyboard),
 			find_command(commands::view_help),
 #ifndef WINSTORE
 			find_command(commands::info_check_for_updates),
 #endif
 			find_command(commands::exit)
+		};
+		return result;
+	};
+	_commands[commands::menu_options]->menu = [this]
+	{
+		std::vector<ui::command_ptr> result = {
+			find_command(commands::options_general),
+			find_command(commands::options_collection),
+			find_command(commands::options_sidebar),
+			find_command(commands::favorite_tags),
+			nullptr,
+			find_command(commands::menu_display_options),
+			find_command(commands::playback_menu),
+			find_command(commands::menu_language)
 		};
 		return result;
 	};
@@ -4019,36 +4059,27 @@ void app_frame::initialise_commands()
 
 		result.emplace_back(find_command(commands::tool_open_with));
 		result.emplace_back(find_command(commands::browse_open_containingfolder));
-		result.emplace_back(find_command(commands::browse_open_googlemap));
-		result.emplace_back(find_command(commands::browse_open_in_file_browser));
-		result.emplace_back(find_command(commands::tool_file_properties));
-		return result;
-	};
-	_commands[commands::menu_tag_with]->menu = [this]
-	{
-		std::vector<ui::command_ptr> result;
-		const bool is_enabled = _state.can_process_selection(_view_frame, df::process_items_type::can_save_metadata);
-		const auto favorite_tags = str::split(setting.favorite_tags, true);
+		result.emplace_back(nullptr);
 
-		for (const auto& t : favorite_tags)
+		if (_state.has_gps())
 		{
-			auto tag = str::cache(t);
-			auto command = std::make_shared<ui::command>();
-			command->text = tag;
-			command->enable = is_enabled;
-			command->invoke = [this, tag]
+			for (const auto& link : all_map_links())
 			{
-				auto dlg = make_dlg(_app_frame);
-				const auto results = std::make_shared<command_status>(*this, dlg, icon_index::star, tt.tag_selected,
-				                                                      _state.selected_count());
-				_state.toggle_selected_item_tags(_view_frame, results, tag);
-			};
-
-			result.emplace_back(command);
+				auto command = std::make_shared<ui::command>();
+				command->icon = icon_index::location;
+				command->text = str_format(tt.open_with_fmt.sv(), link.text);
+				command->invoke = [link, this] { _state.open_gps_on_map(link.url); };
+				result.emplace_back(command);
+			}
+		}
+		else
+		{
+			result.emplace_back(find_command(commands::browse_open_googlemap));
 		}
 
 		result.emplace_back(nullptr);
-		result.emplace_back(find_command(commands::tool_tag));
+		result.emplace_back(find_command(commands::browse_open_in_file_browser));
+		result.emplace_back(find_command(commands::tool_file_properties));
 		return result;
 	};
 	_commands[commands::menu_language]->menu = [this]
@@ -4078,7 +4109,7 @@ void app_frame::initialise_commands()
 
 					const auto po_entries = load_po(lang_path);
 					tt.load_lang(lang_path.name(), po_entries);
-					invalidate_view(view_invalid::options);
+					language_changed(lang_code);
 				};
 
 				result.emplace_back(command);
@@ -4086,47 +4117,47 @@ void app_frame::initialise_commands()
 		}
 		return result;
 	};
-	_commands[commands::menu_tools_toolbar]->menu = [this]
+	// One definition of what a tool is. The panel affordance adds the file operations it also
+	// carries, because the context menus already list those at their own top level.
+	const auto tools_menu = [this]
 	{
 		std::vector<ui::command_ptr> result = {
+			find_command(commands::tool_edit),
+			find_command(commands::tool_tag),
 			find_command(commands::tool_locate),
 			find_command(commands::tool_adjust_date),
-			find_command(commands::tool_burn),
-			find_command(commands::tool_convert),
-			find_command(commands::tool_desktop_background),
 			find_command(commands::tool_edit_metadata),
-			find_command(commands::tool_email),
-			find_command(commands::print),
 			nullptr,
-			find_command(commands::tool_save_current_video_frame),
-			nullptr,
-			find_command(commands::tool_delete),
-			find_command(commands::tool_rename),
-			find_command(commands::tool_copy_to_folder),
-			find_command(commands::tool_move_to_folder)
-		};
-		return result;
-	};
-	_commands[commands::menu_tools]->menu = [this]
-	{
-		std::vector<ui::command_ptr> result = {
-			find_command(commands::tool_locate),
-			find_command(commands::tool_adjust_date),
-			find_command(commands::tool_burn),
-			find_command(commands::tool_convert),
-			find_command(commands::tool_desktop_background),
-			find_command(commands::tool_edit_metadata),
-			find_command(commands::tool_email),
-			find_command(commands::print),
 			find_command(commands::tool_rotate_anticlockwise),
 			find_command(commands::tool_rotate_clockwise),
+			find_command(commands::tool_convert),
+			find_command(commands::tool_save_current_video_frame),
+			nullptr,
+			find_command(commands::search_related),
+			find_command(commands::tool_desktop_background),
+			find_command(commands::tool_email),
+			find_command(commands::tool_burn),
+			find_command(commands::print),
 		};
 		return result;
 	};
-	_commands[commands::menu_group_toolbar]->menu = [this]
+	_commands[commands::menu_tools]->menu = tools_menu;
+	_commands[commands::menu_tools_toolbar]->menu = [this, tools_menu]
+	{
+		auto result = tools_menu();
+		result.emplace_back(nullptr);
+		result.emplace_back(find_command(commands::tool_delete));
+		result.emplace_back(find_command(commands::tool_rename));
+		result.emplace_back(find_command(commands::tool_copy_to_folder));
+		result.emplace_back(find_command(commands::tool_move_to_folder));
+		return result;
+	};
+	// The toolbar button and the menu entry open the same list; they only differ in their label.
+	const auto group_menu = [this]
 	{
 		std::vector<ui::command_ptr> result = {
 			find_command(commands::group_album),
+			find_command(commands::group_aspect_ratio),
 			find_command(commands::group_camera),
 			find_command(commands::group_created),
 			find_command(commands::group_modified),
@@ -4142,42 +4173,18 @@ void app_frame::initialise_commands()
 			find_command(commands::sort_def),
 			find_command(commands::sort_name),
 			find_command(commands::sort_size),
+			find_command(commands::sort_date_created),
 			find_command(commands::sort_date_modified),
-			nullptr,
-			find_command(commands::group_shuffle),
-			find_command(commands::group_toggle),
-		};
-		return result;
-	};
-	_commands[commands::menu_group]->menu = [this]
-	{
-		std::vector<ui::command_ptr> result = {
-			find_command(commands::group_album),
-			find_command(commands::group_camera),
-			find_command(commands::group_created),
-			find_command(commands::group_modified),
-			find_command(commands::group_extension),
-			find_command(commands::group_file_type),
-			find_command(commands::group_location),
-			find_command(commands::group_pixels),
-			find_command(commands::group_presence),
-			find_command(commands::group_rating),
-			find_command(commands::group_size),
-			find_command(commands::group_folder),
-			nullptr,
-			find_command(commands::sort_def),
-			find_command(commands::sort_name),
-			find_command(commands::sort_size),
-			find_command(commands::sort_date_modified),
-			nullptr,
-			find_command(commands::group_shuffle),
-			find_command(commands::group_toggle),
-			nullptr,
 			find_command(commands::sort_dates_descending),
 			find_command(commands::sort_dates_ascending),
+			nullptr,
+			find_command(commands::group_shuffle),
+			find_command(commands::group_toggle),
 		};
 		return result;
 	};
+	_commands[commands::menu_group]->menu = group_menu;
+	_commands[commands::menu_group_toolbar]->menu = group_menu;
 	_commands[commands::menu_select]->menu = [this]
 	{
 		std::vector<ui::command_ptr> result = {
@@ -4237,7 +4244,6 @@ void app_frame::initialise_commands()
 	_commands[commands::menu_display_options]->menu = [this]
 	{
 		std::vector<ui::command_ptr> result = {
-			find_command(commands::option_show_thumbnails),
 			find_command(commands::option_scale_up),
 			find_command(commands::option_show_rotated),
 			find_command(commands::option_highlight_large_items),
@@ -4253,6 +4259,47 @@ void app_frame::initialise_commands()
 
 		return result;
 	};
+	_commands[commands::menu_zoom]->menu = [this]
+	{
+		std::vector<ui::command_ptr> result{
+			find_command(commands::view_zoom),
+			nullptr,
+			find_command(commands::view_zoom_fit),
+			find_command(commands::view_zoom_fit_width),
+			find_command(commands::view_zoom_fill),
+			find_command(commands::view_zoom_100),
+			find_command(commands::view_zoom_in),
+			find_command(commands::view_zoom_out),
+			nullptr
+		};
+		const auto display = _state.display_state();
+		const auto current_scale = display ? display->zoom_scale_percent() : 0;
+		for (const auto scale : df::zoom_view_state::ladder())
+		{
+			auto command = std::make_shared<ui::command>();
+			command->text = std::format("{}%", df::round(scale * 100.0));
+			command->checked = current_scale == df::round(scale * 100.0);
+			command->enable = display && display->can_zoom();
+			command->invoke = [display, scale] { if (display) display->zoom_scale(scale); };
+			result.emplace_back(std::move(command));
+		}
+		if (display && display->is_two())
+		{
+			result.emplace_back(nullptr);
+			result.emplace_back(find_command(commands::view_zoom_pane_flip));
+		}
+		result.emplace_back(nullptr);
+		result.emplace_back(find_command(commands::menu_zoom_navigator));
+		return result;
+	};
+	_commands[commands::menu_zoom_navigator]->menu = [this]
+	{
+		std::vector<ui::command_ptr> result{
+			find_command(commands::view_zoom_navigator_auto_hide),
+			find_command(commands::view_zoom_navigator_off)
+		};
+		return result;
+	};
 	_commands[commands::menu_playback]->menu = _commands[commands::playback_menu]->menu = [this]
 	{
 		std::vector<ui::command_ptr> result = {
@@ -4264,6 +4311,7 @@ void app_frame::initialise_commands()
 			find_command(commands::playback_volume0),
 			nullptr,
 			find_command(commands::playback_auto_play),
+			find_command(commands::playback_auto_advance),
 			find_command(commands::playback_last_played_pos),
 			nullptr,
 			find_command(commands::playback_repeat_all),
@@ -4276,6 +4324,10 @@ void app_frame::initialise_commands()
 		if (!devices.empty())
 		{
 			result.emplace_back(nullptr);
+			auto heading = std::make_shared<ui::command>();
+			heading->text = tt.audio_output_title;
+			heading->enable = false;
+			result.emplace_back(std::move(heading));
 
 			const auto play_id = _player->play_audio_device_id();
 
@@ -4288,7 +4340,7 @@ void app_frame::initialise_commands()
 				{
 					_state.change_audio_device(d.id);
 					setting.sound_device = d.id;
-					invalidate_view(view_invalid::options);
+					invalidate_view(view_invalid::options_save | view_invalid::command_state);
 				};
 
 				result.emplace_back(command);
@@ -4300,15 +4352,20 @@ void app_frame::initialise_commands()
 		if (display && display->is_one() && display->_player_media_info.has_multiple_audio_streams)
 		{
 			result.emplace_back(nullptr);
+			auto heading = std::make_shared<ui::command>();
+			heading->text = tt.audio_tracks_title;
+			heading->enable = false;
+			result.emplace_back(std::move(heading));
+
+			auto audio_track_number = 0;
 			for (const auto& st : display->_player_media_info.streams)
 			{
 				if (st.type == av_stream_type::audio)
 				{
-					auto text = st.title;
-					if (text.empty()) text = str_format(tt.stream_name_fmt.sv(), st.index);
+					++audio_track_number;
 
 					auto command = std::make_shared<ui::command>();
-					command->text = text;
+					command->text = format_audio_stream_name(st, audio_track_number);
 					command->checked = st.is_playing;
 					command->invoke = [this, st]
 					{

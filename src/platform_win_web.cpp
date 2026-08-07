@@ -17,8 +17,8 @@
 
 #include <utility>
 
-static_assert(std::is_move_constructible_v<platform::web_request>);
-static_assert(std::is_move_constructible_v<platform::web_response>);
+df_assert_movable(platform::web_request);
+df_assert_movable(platform::web_response);
 
 bool platform::is_online()
 {
@@ -175,6 +175,16 @@ struct platform::web_host
 	HINTERNET session_handle = nullptr;
 	HINTERNET connection_handle = nullptr;
 	bool secure = true;
+
+	web_host() = default;
+	web_host(const web_host&) = delete;
+	web_host& operator=(const web_host&) = delete;
+
+	~web_host()
+	{
+		if (connection_handle) InternetCloseHandle(connection_handle);
+		if (session_handle) InternetCloseHandle(session_handle);
+	}
 };
 
 platform::web_host_ptr platform::connect_to_host(const std::string_view host, const bool secure_in, const int port_in)
@@ -199,7 +209,11 @@ platform::web_host_ptr platform::connect_to_host(const std::string_view host, co
 		return nullptr; // Return empty response on failure
 	}
 
-	return std::make_shared<web_host>(web_host{session_handle.detach(), conn.detach(), secure_in});
+	auto result_host = std::make_shared<web_host>();
+	result_host->session_handle = session_handle.detach();
+	result_host->connection_handle = conn.detach();
+	result_host->secure = secure_in;
+	return result_host;
 }
 
 platform::web_response platform::send_request(const web_host_ptr& host, const web_request& req)
@@ -275,6 +289,7 @@ platform::web_response platform::send_request(const web_host_ptr& host, const we
 
 	const auto headerW = str::utf8_to_utf16(header.str());
 	const auto content_data = content.str();
+	if (headerW.size() > MAXDWORD || content_data.size() > MAXDWORD) return result;
 
 	INTERNET_BUFFERS buffers = {};
 	buffers.dwStructSize = sizeof(INTERNET_BUFFERS);
@@ -329,30 +344,48 @@ platform::web_response platform::send_request(const web_host_ptr& host, const we
 
 	if (!req.download_file_path.is_empty())
 	{
-		const auto download_file = open_file(req.download_file_path, file_open_mode::create);
+		auto download_file = open_file(req.download_file_path, file_open_mode::create);
 
 		if (download_file)
 		{
 			uint8_t buffer[8192]; // Increased buffer size
-			DWORD read = 0;
-
-			while (InternetReadFile(request_handle, buffer, sizeof(buffer), &read) && read > 0)
+			bool download_complete = false;
+			for (;;)
 			{
-				if (download_file->write(buffer, read) != read)
+				DWORD read = 0;
+				if (!InternetReadFile(request_handle, buffer, sizeof(buffer), &read)) break;
+				if (read == 0)
 				{
-					// Write failed, but continue trying to read to avoid hanging
+					download_complete = true;
 					break;
 				}
+				if (download_file->write(buffer, read) != read)
+				{
+					break;
+				}
+			}
+
+			if (!download_complete)
+			{
+				result.status_code = 0;
+				download_file.reset();
+				delete_file(req.download_file_path);
 			}
 		}
 	}
 	else
 	{
 		uint8_t buffer[8192]; // Increased buffer size
-		DWORD read = 0;
-
-		while (InternetReadFile(request_handle, buffer, sizeof(buffer), &read) && read > 0)
+		for (;;)
 		{
+			DWORD read = 0;
+			if (!InternetReadFile(request_handle, buffer, sizeof(buffer), &read))
+			{
+				result.status_code = 0;
+				result.body.clear();
+				break;
+			}
+			if (read == 0) break;
 			result.body.append(buffer, buffer + read);
 		}
 	}

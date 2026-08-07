@@ -25,13 +25,6 @@ enum class av_play_state
 	detached,
 };
 
-struct av_times
-{
-	double video = 0.0;
-	double audio = 0.0;
-	double pos = 0.0;
-};
-
 enum class render_valid
 {
 	invalid,
@@ -53,7 +46,9 @@ class av_session final : public std::enable_shared_from_this<av_session>
 {
 	av_visualizer _visualizer;
 
-	file_type_ref _mt = nullptr;
+	// Read by the audio thread and the UI thread, written when the session opens and closes.
+	// Atomic so the null check and the dereference cannot straddle a close.
+	std::atomic<file_type_ref> _mt = nullptr;
 
 	av_packet_queue _audio_packets;
 	av_packet_queue _video_packets;
@@ -64,15 +59,33 @@ class av_session final : public std::enable_shared_from_this<av_session>
 	mutable platform::mutex _decoder_rw;
 	_Guarded_by_(_decoder_rw) av_format_decoder _decoder;
 
-	double _end_time = 0;
-	double _last_frame_decoded = 0;
-	double _start_time = 0;
-	double _audio_buffer_seconds = 0;
+	// Cached copies of the decoder's stream presence, set under _decoder_rw when the
+	// session opens. The decode/audio/UI threads read these on hot paths without taking
+	// the decoder lock, so they must be atomic. A session opens exactly once, so these
+	// never change after open() publishes them.
+	std::atomic<bool> _has_video = false;
+	std::atomic<bool> _has_audio = false;
+
+	// Open-time snapshots of everything a non-decode thread needs to know about the decoder.
+	// The decoder itself is only safe to touch under _decoder_rw from the read and decode
+	// threads - close() frees the format context and clears the stream table - so the UI reads
+	// these instead. Published once by open() and never changed afterwards, including by close().
+	std::atomic<int> _video_stream_id = -1;
+	std::atomic<int> _audio_stream_id = -1;
+	std::atomic<std::shared_ptr<const av_media_info>> _info;
+
+	std::atomic<double> _end_time = 0;
+	std::atomic<double> _last_frame_decoded = 0;
+	std::atomic<double> _start_time = 0;
 
 	std::atomic<int> _seek_gen = 1;
 
 
 	const int max_loop_iteration = 256;
+
+	// A gap between presents longer than this is a stall - the process suspended, the machine
+	// slept, a long modal operation - not playback. Well above the 200ms idle present rate.
+	static constexpr double present_stall_seconds = 1.0;
 
 	// Read by the audio, video and read threads and written from the read thread
 	// (and, on device loss, the audio thread); atomic so a pause/seek is seen
@@ -81,9 +94,12 @@ class av_session final : public std::enable_shared_from_this<av_session>
 
 	std::atomic<bool> _scrubbing = false;
 
-	double _last_seek = 0.0;
-	double _time_offset = 0.0;
-	double _audio_buffer_time = 0.0;
+	// Shared timing state: written by the audio/read/decode threads and read by the UI
+	// thread (pos(), times(), last_frame_time()). Atomic to avoid torn reads of the
+	// double and to publish updates promptly across threads.
+	std::atomic<double> _last_seek = 0.0;
+	std::atomic<double> _time_offset = 0.0;
+	std::atomic<double> _audio_buffer_time = 0.0;
 
 	std::atomic<bool> _reset_time_offset = false;
 	std::atomic<bool> _pending_time_sync = false;
@@ -96,6 +112,18 @@ class av_session final : public std::enable_shared_from_this<av_session>
 	// left the WASAPI ring to loop its last buffer). Re-armed on every open/seek.
 	std::atomic<bool> _audio_eof_handled = false;
 
+	// Set once the video stream's end-of-stream marker has been consumed. Re-armed on every
+	// open/seek. Without audio there is no clock but the wall clock, which a slow decode lets
+	// run past _end_time while frames are still queued - and which an unknown container
+	// duration leaves at zero from the first frame. has_ended() waits for this instead.
+	std::atomic<bool> _video_eof_handled = false;
+
+	// Set by the audio thread when the endpoint could not be opened. The audio device is the
+	// master clock, so without one the session has to fall back to the wall clock exactly as a
+	// session with no audio track does - otherwise pos() sits on the sought position for the
+	// whole clip and a slideshow never moves past it.
+	std::atomic<bool> _audio_unavailable = false;
+
 	// _audio_data_end: absolute time of the last real audio sample (captured when the
 	// EOF is handled, after the decoder tail is drained). _audio_clock: the audio
 	// device's current play position (base_time + device clock), updated each audio
@@ -104,69 +132,96 @@ class av_session final : public std::enable_shared_from_this<av_session>
 	std::atomic<double> _audio_data_end = 0.0;
 	std::atomic<double> _audio_clock = 0.0;
 
-	int _volume = 1000;
-	bool _mute = false;
+	std::atomic<int> _volume = 1000;
+	std::atomic<bool> _mute = false;
 
-	df::item_element_ptr _item;
+	mutable platform::mutex _presentation_mutex;
+	df::file_path _path;
 
-	mutable double _last_frame_time = -1;
-	mutable double _last_texture_time = -1;
-	mutable pointi _last_frame_offset;
+	// Read by the UI thread (pos(), last_frame_time()) and written by the read/decode
+	// threads (update_texture/update_visualizer); atomic to avoid a torn read.
+	mutable std::atomic<double> _last_frame_time = -1;
+	// Written by update_texture under a shared lock, which admits concurrent holders, so it
+	// carries its own atomicity rather than relying on the lock.
+	mutable std::atomic<double> _last_texture_time = -1;
 
+	// Wall clock reading at the previous present, used only to spot a gap no playback could
+	// explain. UI thread only, under _presentation_mutex.
+	_Guarded_by_(_presentation_mutex) double _last_present_time = 0.0;
+
+	_Guarded_by_(_presentation_mutex)
 	av_frame_ptr _frame;
 	ui::orientation _default_orientation = ui::orientation::none;
 
-	std::shared_ptr<audio_resampler> _playback_resampler;
-	std::shared_ptr<audio_resampler> _vis_resampler;
+	std::atomic<std::shared_ptr<audio_resampler>> _playback_resampler;
+	std::atomic<std::shared_ptr<audio_resampler>> _vis_resampler;
 
 	av_host& _host;
+	std::function<void(df::file_path, double)> _save_media_position;
 
 public:
-	av_session(av_host& host) : _host(host)
+	av_session(av_host& host, std::function<void(df::file_path, double)> save_media_position) :
+		_host(host), _save_media_position(std::move(save_media_position))
 	{
 	}
 
 	~av_session()
 	{
-		close();
+		close(false);
 	}
 
 	int video_stream_id() const
 	{
-		return _decoder.video_stream_id();
+		return _video_stream_id;
 	}
 
 	int audio_stream_id() const
 	{
-		return _decoder.audio_stream_id();
+		return _audio_stream_id;
+	}
+
+	// True when the audio device is driving the clock. A session whose endpoint could not be
+	// opened has an audio track but no device clock, and must be timed like a silent one.
+	bool has_audio_clock() const
+	{
+		return _has_audio && !_audio_unavailable;
+	}
+
+	// True when this media is presented as an audio visualisation rather than a video texture.
+	bool visualize_audio() const
+	{
+		const auto mt = _mt.load();
+		return mt != nullptr && (mt->group->traits && file_traits::visualize_audio);
 	}
 
 	double pos(const double time_now) const
 	{
+		// Read order matters: the audio thread publishes _time_offset before clearing
+		// _pending_time_sync, and seek() publishes _last_seek before setting it, so testing the
+		// flag first and reading the value second never pairs a new flag with a stale value.
 		if (_scrubbing || _pending_time_sync) return _last_seek;
 		if (_state != av_play_state::playing) return _last_frame_time;
 		return time_now - _time_offset;
 	}
 
-	void adjust_volume()
+	// Raises the known media end without losing a concurrent raise; both the audio thread and
+	// the UI thread extend it, and has_ended() reads the result.
+	void raise_end_time(const double t)
 	{
-		_volume = _scrubbing || _mute ? 0 : setting.media_volume;
+		auto current = _end_time.load();
+		while (current < t && !_end_time.compare_exchange_weak(current, t))
+		{
+		}
 	}
 
-	void toggle_mute()
+	void adjust_volume()
 	{
-		_mute = !_mute;
-		_volume = _scrubbing || _mute ? 0 : setting.media_volume;
+		_volume = _scrubbing || _mute.load() ? 0 : setting.media_volume;
 	}
 
 	bool is_open() const
 	{
 		return _state == av_play_state::playing || _state == av_play_state::paused;
-	}
-
-	bool is_closed() const
-	{
-		return _state == av_play_state::closed || _state == av_play_state::detached;
 	}
 
 	bool is_playing() const
@@ -183,85 +238,90 @@ public:
 
 	friend class av_player;
 
-	audio_info_t audio_format() const
-	{
-		return _decoder.audio_info();
-	}
-
 	av_media_info info() const
 	{
-		return _decoder.info();
+		const auto snapshot = _info.load();
+		return snapshot ? *snapshot : av_media_info{};
 	}
 
+	// Caller must hold _decoder_rw exclusively; only open() does.
 	void create_resampler()
 	{
-		if (!_playback_resampler)
+		if (!_playback_resampler.load())
 		{
 			_playback_resampler = _decoder.make_audio_resampler();
 		}
 
-		if (!_vis_resampler)
+		if (!_vis_resampler.load())
 		{
 			_vis_resampler = _decoder.make_audio_resampler();
 		}
 	}
 
-	bool open(const df::item_element_ptr& item, const bool auto_play, const int video_track, const int audio_track,
-	          const bool can_use_hw, const bool use_last_played_pos, const bool can_use_threads)
+	bool open(const df::file_path path, const file_type_ref file_type, const double starting_position,
+	          const bool auto_play, const int video_track, const int audio_track, const bool can_use_hw,
+	          const bool use_last_played_pos, const bool can_use_threads,
+	          const platform::file_ptr& file = {})
 	{
 		df::assert_true(_state == av_play_state::detached);
 
 		platform::exclusive_lock lock_dec(_decoder_rw);
 
-		const auto result = _decoder.open(item->path());
+		// A handle handed over by the write that just replaced this file. Opening the path again is
+		// the read-after-write the hand-over exists to avoid.
+		const auto result = file
+			                    ? _decoder.open(file, path, media_intent::playback)
+			                    : _decoder.open(path, media_intent::playback);
 
 		if (result)
 		{
 			_decoder.init_streams(video_track, audio_track, can_use_hw, false, can_use_threads);
 
+			_has_video = _decoder.has_video();
+			_has_audio = _decoder.has_audio();
+			_video_stream_id = _decoder.video_stream_id();
+			_audio_stream_id = _decoder.audio_stream_id();
+			_info.store(std::make_shared<const av_media_info>(_decoder.info()));
+
 			const auto start_time = _decoder.start_time();
 			const auto end_time = _decoder.end_time();
 			const auto duration = end_time - start_time;
 
-			//df::log(__FUNCTION__, "start_time " << start_time;
-			//df::log(__FUNCTION__, "end_time" << end_time;
-
 			_audio_buffer_time = 0;
 			_end_time = end_time;
-			_item = item;
+			{
+				platform::exclusive_lock lock_present(_presentation_mutex);
+				_frame.reset();
+			}
+			_path = path;
 			_last_frame_time = 0;
 			_last_seek = 0;
-			_mt = _item->file_type();
+			_mt = file_type;
 			_scrubbing = false;
 			_start_time = start_time;
 			_state = auto_play ? av_play_state::playing : av_play_state::paused;
 			_time_offset = df::now();
 			_pending_time_sync = true;
-			_reset_time_offset = !_decoder.has_audio(); // && !scrubbing;
+			_reset_time_offset = !_has_audio; // && !scrubbing;
 			_settling = true;
 			_audio_eof_handled = false;
+			_video_eof_handled = false;
+			_audio_unavailable = false;
 			_seek_gen = 1;
 
-			_frame.reset();
-
-			/*file_scanner sr;
-			_decoder.extract_metadata(sr);
-			_metadata = sr.to_props();*/
 			_default_orientation = _decoder.calc_orientation();
 
-			_playback_resampler.reset();
-			_vis_resampler.reset();
+			_playback_resampler.store(nullptr);
+			_vis_resampler.store(nullptr);
 
 			create_resampler();
 
-			if (item && use_last_played_pos)
+			if (use_last_played_pos)
 			{
-				const auto starting_pos = item->media_position();
-
-				if (starting_pos > start_time + 2.0 && starting_pos < end_time - 5.0 && duration > 10.0)
+				if (starting_position > start_time + 2.0 && starting_position < end_time - 5.0 && duration > 10.0)
 				{
-					_decoder.seek(starting_pos, _last_frame_decoded);
-					_last_seek = starting_pos;
+					_decoder.seek(starting_position);
+					_last_seek = starting_position;
 				}
 			}
 		}
@@ -274,32 +334,53 @@ public:
 		return result;
 	}
 
-	void close()
+	void close(const bool save_position = true)
 	{
-		if (_state != av_play_state::closed)
+		const auto position = _scrubbing || _pending_time_sync ? _last_seek.load() : _last_frame_time.load();
+
+		// Single-shot. A queued close and the destructor can both reach here, so the exchange -
+		// not a separate load - is what makes the position save and the decoder teardown happen
+		// exactly once.
+		const auto previous = _state.exchange(av_play_state::closed);
+
+		if (previous == av_play_state::closed) return;
+
+		// A session that never opened has nothing on screen to invalidate.
+		if (previous != av_play_state::detached)
 		{
-			state(av_play_state::closed);
-
-			platform::exclusive_lock lock(_decoder_rw);
-
-			if (_item)
-			{
-				_item->media_position(_last_frame_time);
-			}
-
-			_decoder.close();
-			_mt = nullptr;
-			_audio_packets.clear();
-			_end_time = 0;
-			_last_frame_decoded = 0;
-			_start_time = 0;
-			_video_packets.clear();
-			_frame.reset();
-			_video_frames.clear();
-			_audio_frames.clear();
-			_playback_resampler.reset();
-			_vis_resampler.reset();
+			_host.invalidate_view(view_invalid::view_layout |
+				view_invalid::screen_saver |
+				view_invalid::app_layout |
+				view_invalid::media_elements |
+				view_invalid::command_state);
 		}
+
+		platform::exclusive_lock lock(_decoder_rw);
+		const auto path = _path;
+
+		{
+			platform::exclusive_lock lock_present(_presentation_mutex);
+			_frame.reset();
+		}
+
+		_mt = nullptr;
+		_path = {};
+
+		if (save_position && !path.is_empty() && _save_media_position)
+		{
+			_save_media_position(path, position);
+		}
+
+		_decoder.close();
+		_audio_packets.clear();
+		_end_time = 0;
+		_last_frame_decoded = 0;
+		_start_time = 0;
+		_video_packets.clear();
+		_video_frames.clear();
+		_audio_frames.clear();
+		_playback_resampler.store(nullptr);
+		_vis_resampler.store(nullptr);
 	}
 
 	void seek(double pos, bool scrubbing);
@@ -308,8 +389,7 @@ public:
 	{
 		auto loop_iteration = 0;
 
-		// (_audio_buffer_seconds < 10 && _audio_frames.size() < 64)
-		if (_decoder.has_video()) // && (_audio_buffer_end_time - 10) > _last_tick_time)
+		if (_has_video)
 		{
 			while (_video_frames.should_receive())
 			{
@@ -337,7 +417,7 @@ public:
 	{
 		auto loop_iteration = 0;
 
-		if (_decoder.has_audio())
+		if (_has_audio)
 		{
 			while (_audio_frames.should_receive() || playback_buffer.should_fill() || _seek_gen != playback_buffer.
 				generation())
@@ -348,15 +428,25 @@ public:
 					_decoder.receive_frames(_audio_packets, _audio_frames);
 				}
 
+				auto popped_frame = false;
+
 				if (playback_buffer.should_fill() || _seek_gen != playback_buffer.generation())
 				{
 					av_frame_ptr frame;
 
 					if (_audio_frames.pop(frame))
 					{
+						popped_frame = true;
+
+						const auto sv = av_seek_gen_from_frame(frame);
+						const auto is_current = sv == _seek_gen;
 						const auto eof = av_frame_is_eof(frame);
 
-						if (eof)
+						// A frame decoded for a position we have already seeked away from is
+						// dropped, EOF markers included. Honouring a stale EOF would queue the
+						// silence tail and arm _audio_eof_handled for a stream that has not
+						// ended, letting has_ended() end the clip right after a seek near the end.
+						if (is_current && eof)
 						{
 							// End of the audio stream: recover any tail the resamplers
 							// still hold, fade the very end so a clip ending on a non-zero
@@ -366,8 +456,8 @@ public:
 							// _end_time without bound and the clip would never end).
 							if (!_audio_eof_handled)
 							{
-								const auto pr = _playback_resampler;
-								const auto vr = _vis_resampler;
+								const auto pr = _playback_resampler.load();
+								const auto vr = _vis_resampler.load();
 
 								if (pr) pr->drain(playback_buffer, _seek_gen);
 								if (vr) vr->drain(vis_buffer, _seek_gen);
@@ -387,46 +477,51 @@ public:
 								_audio_eof_handled = true;
 							}
 						}
-						else
+						else if (is_current)
 						{
-							const auto sv = av_seek_gen_from_frame(frame);
+							const auto pr = _playback_resampler.load();
+							const auto vr = _vis_resampler.load();
 
-							if (sv == _seek_gen)
+							// A seek can only land on a key sample, which may be a long way before
+							// the position asked for - the whole clip when a file carries a single
+							// key frame. update_for_present settles the video forward onto the
+							// target; audio has no such step, so drop the frames that end before
+							// it. Without this the buffer starts at the key sample, the device
+							// clock anchors there, and the view sits frozen on the settled frame
+							// until the clock catches back up.
+							const auto epoch_started = playback_buffer.generation() == sv;
+							const auto frame_end = av_time_from_frame(frame) + av_audio_frame_duration(frame);
+							const auto before_target = !epoch_started && frame_end <= _last_seek;
+
+							if (pr && vr && !before_target)
 							{
-								const auto pr = _playback_resampler;
-								const auto vr = _vis_resampler;
-
-								if (pr && vr)
+								if (sv != playback_buffer.generation())
 								{
-									if (sv != playback_buffer.generation())
-									{
-										pr->flush();
-										vr->flush();
+									pr->flush();
+									vr->flush();
 
-										df::trace(std::format("Player clear audio_buffer on seek_ver {}", sv));
-									}
-
-									// Volume above 100% cannot be delivered by the device
-									// (its volume is 0.0-1.0), so boost it here in software.
-									// The device handles 0-100% attenuation; the 100%..200%
-									// setting range maps onto a 1x..media_volume_boost_gain
-									// software gain so the boost is strong enough to lift very
-									// quiet sources (clamping in apply_audio_gain stops louder
-									// material distorting). 1.0 = no boost for the normal range.
-									const auto boost = std::clamp(_volume, 1000, media_volume_boost);
-									pr->set_gain(1.0 + (boost - 1000) / 1000.0 * (media_volume_boost_gain - 1.0));
-
-									pr->resample(frame, playback_buffer);
-									vr->resample(frame, vis_buffer);
+									df::trace(std::format("Player clear audio_buffer on seek_ver {}", sv));
 								}
-							}
-						}
 
-						// Keep _end_time at the media duration: do NOT let the appended
-						// silence pad push it out, or has_ended() (which waits for the
-						// media end to pass) would hold the last frame for the pad's length.
-						if (!eof) _end_time = std::max(_end_time, playback_buffer.end_time());
-						_audio_buffer_seconds = playback_buffer.seconds();
+								// Volume above 100% cannot be delivered by the device
+								// (its volume is 0.0-1.0), so boost it here in software.
+								// The device handles 0-100% attenuation; the 100%..200%
+								// setting range maps onto a 1x..media_volume_boost_gain
+								// software gain so the boost is strong enough to lift very
+								// quiet sources (clamping in apply_audio_gain stops louder
+								// material distorting). 1.0 = no boost for the normal range.
+								const auto boost = std::clamp(_volume.load(), 1000, media_volume_boost);
+								pr->set_gain(1.0 + (boost - 1000) / 1000.0 * (media_volume_boost_gain - 1.0));
+
+								pr->resample(frame, playback_buffer);
+								vr->resample(frame, vis_buffer);
+							}
+
+							// Keep _end_time at the media duration: do NOT let the appended
+							// silence pad push it out, or has_ended() (which waits for the
+							// media end to pass) would hold the last frame for the pad's length.
+							raise_end_time(playback_buffer.end_time());
+						}
 					}
 				}
 
@@ -457,12 +552,12 @@ public:
 		// resulting seek-to-start discards the EOF frame before its silence tail is
 		// produced, leaving the device to loop its last buffer. A hard +2s margin still
 		// ends a stream that never signals EOF so playback can never get stuck.
-		if (_decoder.has_audio() && !_audio_eof_handled)
+		if (has_audio_clock() && !_audio_eof_handled)
 		{
 			return pos(time_now) >= _end_time + 2.0;
 		}
 
-		if (_decoder.has_audio())
+		if (has_audio_clock())
 		{
 			// The EOF has been handled, so a silence tail is queued. End the clip when
 			// the audio device has actually played out the real audio (_audio_clock is
@@ -475,6 +570,17 @@ public:
 			return (audio_played_out && media_played_out) || pos(time_now) >= _end_time + 2.0;
 		}
 
+		if (_has_video)
+		{
+			// No audio device, so pos() is a free-running wall clock. It crosses _end_time while
+			// frames are still queued whenever decoding falls behind, and _end_time itself starts
+			// at zero when the container declares no duration - which ended such clips on their
+			// very first tick. Require the stream's end to have actually been reached; the +2s
+			// fallback still ends a file that never signals one, and presented frames keep
+			// raising _end_time so it cannot fire while the clip is still producing pictures.
+			return (pos(time_now) >= _end_time && _video_eof_handled) || pos(time_now) >= _end_time + 2.0;
+		}
+
 		return pos(time_now) >= _end_time;
 	}
 
@@ -485,15 +591,41 @@ public:
 
 	bool update_for_present(const double time_now)
 	{
+		platform::exclusive_lock lock_present(_presentation_mutex);
+
+		const auto audio_clock = has_audio_clock();
+		const auto is_playing_state = _state == av_play_state::playing;
+
+		// A gap between presents that no playback could explain - the process suspended, the
+		// machine slept, a long modal operation - must not be absorbed by the media clock, or a
+		// clip with no device to anchor to jumps forward by the whole gap and usually declares
+		// itself finished. Holding the clock still across the gap resumes where it left off.
+		// With an audio device this cannot happen: the device clock re-anchors every pass.
+		if (!audio_clock && is_playing_state && _last_present_time > 0.0)
+		{
+			const auto elapsed = time_now - _last_present_time;
+
+			if (elapsed > present_stall_seconds || elapsed < 0.0)
+			{
+				_time_offset = _time_offset + elapsed;
+			}
+		}
+
+		_last_present_time = time_now;
+
+		// Nothing will ever clear the pending sync without a device clock, so anchor the wall
+		// clock to the sought position here. A video track re-anchors more precisely below,
+		// once the settle has landed on the frame that position actually refers to.
+		if (_pending_time_sync && is_playing_state && !audio_clock && !_reset_time_offset)
+		{
+			_time_offset = time_now - _last_seek;
+			_pending_time_sync = false;
+		}
+
 		bool result = false;
 		const auto time = this->pos(time_now);
 
-		if (_item)
-		{
-			_item->media_position(time);
-		}
-
-		const auto is_playing_audio = _mt != nullptr && (_mt->group->traits && file_traits::visualize_audio);
+		const auto is_playing_audio = visualize_audio();
 
 		if (is_playing_audio)
 		{
@@ -502,6 +634,18 @@ public:
 
 		av_frame_ptr f;
 		auto frame_popped = false;
+
+		// Consume any end-of-stream marker sitting at the head of the queue. It carries no media
+		// timestamp, so front_time() reports zero for it and every distance comparison below
+		// would refuse to look past it.
+		for (auto front = _video_frames.front(); av_frame_is_eof(front); front = _video_frames.front())
+		{
+			if (av_seek_gen_from_frame(front) == _seek_gen) _video_eof_handled = true;
+
+			av_frame_ptr eof_marker;
+			if (!_video_frames.pop(eof_marker)) break;
+		}
+
 		const auto seek_ver_invalid = av_seek_gen_from_frame(_frame) != _seek_gen;
 		const auto current_ft = av_time_from_frame(_frame);
 
@@ -511,7 +655,7 @@ public:
 		// matches the scrubber preview and the position the user asked for. During
 		// audio playback the audio device stays the master clock, so we keep the
 		// existing key-frame-then-play behaviour to avoid an A/V desync.
-		const auto settling = _scrubbing || (_settling && !_decoder.has_audio());
+		const auto settling = _scrubbing || (_settling && !audio_clock);
 
 		if (seek_ver_invalid)
 		{
@@ -545,6 +689,10 @@ public:
 
 				if (av_frame_is_eof(next))
 				{
+					// Only the current epoch's EOF proves nothing further will arrive; a marker
+					// left over from before a seek is discarded and the drain continues.
+					if (av_seek_gen_from_frame(next) != _seek_gen) continue;
+
 					reached = true; // no frame beyond the target will arrive
 					break;
 				}
@@ -557,7 +705,9 @@ public:
 				}
 			}
 
-			if (reached || best_ft >= time)
+			// A settle that runs out of frames at the end of the stream would otherwise never
+			// complete, leaving pos() frozen on the sought position.
+			if (reached || best_ft >= time || _video_eof_handled)
 			{
 				_settling = false;
 			}
@@ -577,8 +727,9 @@ public:
 			result = true;
 
 			_frame = std::move(f);
-			_last_frame_decoded = av_time_from_frame(_frame);
-			_end_time = std::max(_end_time, _last_frame_decoded);
+			const auto frame_time = av_time_from_frame(_frame);
+			_last_frame_decoded = frame_time;
+			raise_end_time(frame_time);
 		}
 
 		// Lock the wall clock to the displayed frame only once the view has settled
@@ -597,6 +748,7 @@ public:
 	file_load_result capture_first_frame() const
 	{
 		platform::shared_lock lock_dec(_decoder_rw);
+		platform::shared_lock lock_present(_presentation_mutex);
 
 		if (_frame)
 		{
@@ -608,6 +760,7 @@ public:
 
 	double time() const
 	{
+		platform::shared_lock lock_present(_presentation_mutex);
 		return av_time_from_frame(_frame);
 	}
 
@@ -616,22 +769,19 @@ public:
 	{
 		const auto time = pos(time_now);
 		_last_frame_time = time;
-		_last_frame_offset = offset;
 		_visualizer.render(verts, rect, offset, alpha, time);
 	}
 
-	bool capture_frame(const av_frame& frame_in, ui::const_image_ptr& result);
-
 	render_valid update_texture(const ui::texture_ptr& texture) const
 	{
+		platform::shared_lock lock_present(_presentation_mutex);
 		auto result = render_valid::valid;
 		const auto vf = _frame;
 
 		if (vf && texture)
 		{
 			const auto time = av_time_from_frame(vf);
-			const auto timestamp_matches_last = is_equal(_last_texture_time, time);
-			const auto needs_render = !timestamp_matches_last || !texture;
+			const auto needs_render = !is_equal(_last_texture_time.load(), time);
 
 			if (needs_render)
 			{
@@ -651,15 +801,6 @@ public:
 		return result;
 	}
 
-	av_times times(const double now) const
-	{
-		av_times result;
-		result.pos = pos(now);
-		result.audio = _audio_buffer_time;
-		result.video = _last_texture_time;
-		return result;
-	}
-
 	friend class av_player;
 };
 
@@ -671,19 +812,20 @@ class av_player final : public std::enable_shared_from_this<av_player>
 
 	platform::mutex _queue_mutex;
 	platform::mutex _thread_mutex;
-	std::shared_ptr<av_session> _thread_session;
+	std::atomic<std::shared_ptr<av_session>> _thread_session;
 
 	mutable _Guarded_by_(_thread_mutex) std::string _audio_device_id;
-	mutable std::string _play_audio_device_id;
+	mutable _Guarded_by_(_thread_mutex) std::string _play_audio_device_id;
 
 	_Guarded_by_(_queue_mutex) std::deque<std::function<void(std::shared_ptr<av_player>)>> _q;
 	av_host& _host;
+	std::function<void(df::file_path, double)> _save_media_position;
 
 public:
-	av_player(av_host& host) :
+	av_player(av_host& host, std::function<void(df::file_path, double)> save_media_position = {}) :
 		_video_event(false, false),
 		_audio_event(false, false),
-		_read_event(false, false), _host(host)
+		_read_event(false, false), _host(host), _save_media_position(std::move(save_media_position))
 	{
 	}
 
@@ -705,13 +847,19 @@ public:
 	void open(const df::item_element_ptr& item, const bool auto_play, const int video_track, const int audio_track,
 	          const bool can_use_hw,
 	          const bool use_last_played_pos,
-	          const std::function<void(std::shared_ptr<av_session>)>& cb)
+	          const std::function<void(std::shared_ptr<av_session>)>& cb,
+	          platform::file_ptr file = {})
 	{
-		queue([item, auto_play, video_track, audio_track, can_use_hw, use_last_played_pos, cb](
+		const auto path = item->path();
+		const auto file_type = item->file_type();
+		const auto starting_position = item->media_position();
+		queue([path, file_type, starting_position, auto_play, video_track, audio_track, can_use_hw,
+				use_last_played_pos, cb, file = std::move(file)](
 			const std::shared_ptr<av_player>& p)
 			{
 				df::scope_locked_inc l(df::loading_media);
-				auto ses = p->open_impl(item, auto_play, video_track, audio_track, can_use_hw, use_last_played_pos);
+				auto ses = p->open_impl(path, file_type, starting_position, auto_play, video_track, audio_track,
+				                        can_use_hw, use_last_played_pos, file);
 				if (cb) p->_host.queue_ui([cb, ses] { cb(ses); });
 			});
 	}
@@ -741,24 +889,21 @@ private:
 		_audio_event.set();
 	}
 
-	std::shared_ptr<av_session> open_impl(const df::item_element_ptr& item, const bool auto_play, const int video_track,
-	                                      const int audio_track, const bool can_use_hw,
-	                                      const bool use_last_played_pos)
+	std::shared_ptr<av_session> open_impl(const df::file_path path, const file_type_ref file_type,
+	                                      const double starting_position, const bool auto_play,
+	                                      const int video_track, const int audio_track, const bool can_use_hw,
+	                                      const bool use_last_played_pos, const platform::file_ptr& file)
 	{
-		const auto ses = std::make_shared<av_session>(_host);
-		const auto open_result = ses->open(item, auto_play, video_track, audio_track, can_use_hw, use_last_played_pos,
-		                                   true);
+		const auto ses = std::make_shared<av_session>(_host, _save_media_position);
+		const auto open_result = ses->open(path, file_type, starting_position, auto_play, video_track, audio_track,
+		                                   can_use_hw, use_last_played_pos, true, file);
 		auto result = open_result ? ses : nullptr;
 
-		if (_thread_session != result)
+		// Only a successful open takes over the decode threads. Publishing a null would silently
+		// stop whatever is still playing, which the caller never asked for.
+		if (result)
 		{
-			//const auto old_session = _thread_session;
-			_thread_session = result;
-
-			/*if (old_session && old_session->is_open())
-			{
-				close_impl(old_session);
-			}*/
+			_thread_session.store(result);
 		}
 
 		_read_event.set();
@@ -770,16 +915,14 @@ private:
 
 	void close_impl(const std::shared_ptr<av_session>& ses, const std::function<void()>& cb)
 	{
-		//platform::lock lock(_read_mutex);
-
 		if (ses)
 		{
 			ses->close();
 		}
 
-		if (_thread_session == ses)
+		if (_thread_session.load() == ses)
 		{
-			_thread_session.reset();
+			_thread_session.store(nullptr);
 		}
 
 		_read_event.set();
@@ -800,7 +943,7 @@ public:
 		_audio_event.set();
 	}
 
-	std::string_view audio_device_id() const
+	std::string audio_device_id() const
 	{
 		platform::exclusive_lock lock(_thread_mutex);
 		return _audio_device_id;
@@ -813,7 +956,7 @@ public:
 		_audio_event.set();
 	}
 
-	std::string_view play_audio_device_id() const
+	std::string play_audio_device_id() const
 	{
 		platform::exclusive_lock lock(_thread_mutex);
 		return _audio_device_id.empty() ? _play_audio_device_id : _audio_device_id;
@@ -822,16 +965,12 @@ public:
 	void decode_video() const
 	{
 		const std::vector<std::reference_wrapper<platform::thread_event>> events = {platform::event_exit, _video_event};
-		std::shared_ptr<av_session> session;
 
 		while (!df::is_closing)
 		{
 			wait_for(events, 50, false);
 
-			if (session != _thread_session)
-			{
-				session = _thread_session;
-			}
+			std::shared_ptr<av_session> session = _thread_session.load();
 
 			if (session)
 			{
@@ -860,20 +999,27 @@ public:
 		auto base_time = 0.0;
 		auto playback_gen = 0;
 		auto vis_gen = 0;
+		auto pending_fade_in = false;
 		auto need_create_device = false;
 
 		std::shared_ptr<av_session> session;
 
 		while (!df::is_closing)
 		{
-			// Short idle poll. While decoding, the read thread signals _audio_event as
-			// it pushes packets so this wakes promptly. But at the very end of a clip
-			// the audio packets are exhausted (no more pushes) while the device still
-			// needs the decoded tail; a long idle wait there would let the decoder
-			// deliver only ~one frame per poll - far slower than real-time - draining
-			// the ring and looping the last buffer. A short poll keeps the tail (and
-			// the trailing silence) flowing fast enough to keep the device fed.
-			auto e = wait_for(events, 10, false);
+			const auto device_is_playing = ds && has_audio && session &&
+				session->_state == av_play_state::playing && !session->_scrubbing && !ds->is_stopped();
+
+			if (device_is_playing)
+			{
+				ds->wait_for_buffer(_audio_event, 50);
+			}
+			else
+			{
+				const auto idle_timeout = need_create_device
+					                          ? 1000u
+					                          : std::numeric_limits<uint32_t>::max();
+				wait_for(events, idle_timeout, false);
+			}
 
 			if (audio_device_id() != device_id)
 			{
@@ -887,18 +1033,19 @@ public:
 				}
 			}
 
-			if (session != _thread_session)
+			const auto thread_session = _thread_session.load();
+			if (session != thread_session)
 			{
 				playback_buffer.clear();
 				vis_buffer.clear();
 
-				session = _thread_session;
+				session = thread_session;
 				playback_gen = 0;
 				vis_gen = 0;
 
 				if (session)
 				{
-					has_audio = session->_decoder.has_audio();
+					has_audio = session->_has_audio;
 
 					if (has_audio)
 					{
@@ -934,6 +1081,7 @@ public:
 					play_audio_device_id(ds->id());
 					playback_buffer.init(ds->format());
 					need_create_device = false;
+					if (session) session->_audio_unavailable = false;
 				}
 				else
 				{
@@ -944,6 +1092,12 @@ public:
 					// the wall clock and play silently for its whole duration.
 					playback_buffer.clear();
 					need_create_device = has_audio && session != nullptr;
+
+					// There is no device clock for the session to sync to. Tell it so it can
+					// time itself off the wall clock; without that it freezes on the sought
+					// position, which on a machine with no audio endpoint at all means every
+					// video stops dead and a slideshow never advances.
+					if (session) session->_audio_unavailable = true;
 				}
 
 				playback_gen = 0;
@@ -986,6 +1140,11 @@ public:
 							ds->reset();
 							session->_pending_time_sync = true;
 							session->_time_offset = df::now() - base_time;
+
+							// reset() empties the endpoint ring, so the next write is the
+							// first audio the restarted device plays. Ramp it, but not here -
+							// the buffer may hold a single decoded frame at this point.
+							pending_fade_in = true;
 						}
 
 						if (should_play)
@@ -1002,6 +1161,16 @@ public:
 
 							if (primed)
 							{
+								if (pending_fade_in)
+								{
+									// Nothing has been written since the reset, so the head of
+									// the buffer is what the device plays first: ramp it up or
+									// the output steps from silence to an arbitrary sample and
+									// pops the speaker.
+									playback_buffer.apply_fade_in(0.010);
+									pending_fade_in = false;
+								}
+
 								ds->write(playback_buffer);
 
 								if (ds->is_stopped())
@@ -1012,7 +1181,6 @@ public:
 								if (session->_pending_time_sync)
 								{
 									const auto time = base_time + ds->time();
-									//df::log(__FUNCTION__, std::format("sound.clock {}", time));
 									session->_time_offset = df::now() - time;
 									session->_pending_time_sync = false;
 								}
@@ -1029,9 +1197,16 @@ public:
 						ds->write_silence();
 					}
 
-					if (vis_buffer.used_bytes() >= session->_visualizer.min_sample_bytes())
+					// Only the audio visualisation draws these frames, and only it drains the queue
+					// (see update_for_present). Feeding it during video playback grew the queue for
+					// the whole session because nothing ever popped from it.
+					if (session->visualize_audio() &&
+						vis_buffer.used_bytes() >= session->_visualizer.min_sample_bytes())
 					{
-						if (vis_gen != session->_seek_gen)
+						// A seek re-generations the buffer; the visualizer's accumulated
+						// samples are then from the old position, so drop them. Compare and
+						// store the same value or the clear would repeat every iteration.
+						if (vis_gen != vis_buffer.generation())
 						{
 							vis_gen = vis_buffer.generation();
 							session->_visualizer.clear();
@@ -1044,7 +1219,7 @@ public:
 					{
 						// Device volume is 0.0-1.0; anything above 100% is applied as a
 						// software gain on the decoded samples (see set_gain above).
-						ds->volume(std::min(session->_volume, 1000) / 1000.0);
+						ds->volume(std::min(session->_volume.load(), 1000) / 1000.0);
 					}
 
 					if (ds->is_device_lost())
@@ -1055,7 +1230,16 @@ public:
 					}
 
 					session->_audio_buffer_time = playback_buffer.start_time();
-					session->_audio_clock = base_time + ds->time();
+					const auto audio_time = base_time + ds->time();
+					session->_audio_clock = audio_time;
+
+					// Keep the smooth UI clock anchored to samples the endpoint has actually
+					// consumed. A one-time start anchor drifts ahead after an underrun or a
+					// device-clock stall, making video and the visualizer lead audible audio.
+					if (!ds->is_stopped() && !session->_pending_time_sync)
+					{
+						session->_time_offset = df::now() - audio_time;
+					}
 				}
 			}
 		}
@@ -1086,9 +1270,9 @@ public:
 				f(player);
 			}
 
-			if (_thread_session)
+			if (const auto session = _thread_session.load())
 			{
-				_thread_session->process_io(_video_event, _audio_event);
+				session->process_io(_video_event, _audio_event);
 			}
 		}
 	}
@@ -1105,29 +1289,38 @@ public:
 
 	void play_impl(const std::shared_ptr<av_session>& ses) const
 	{
-		if (ses->_state == av_play_state::playing && ses->_last_frame_time >= ses->_end_time - 1.0)
-		{
-			if (ses->_last_seek != ses->_start_time || ses->_start_time == 0)
-			{
-				seek_impl(ses, ses->_start_time, false);
-			}
-		}
-
+		// Note: no restart-at-end handling is needed here. view_state::tick detects
+		// the end of a clip and issues pause + seek-to-start, so a session that has
+		// played out is always already positioned at its start when play arrives.
 		ses->_pending_time_sync = true;
 		// With audio, the audio thread re-establishes the clock and clears
 		// _pending_time_sync. With no audio there is no such clock, so we must
 		// re-arm _reset_time_offset to let update_for_present rebuild the wall
 		// clock from the next frame - otherwise pos() stays frozen at _last_seek
 		// and playback appears stuck on resume.
-		ses->_reset_time_offset = !ses->_decoder.has_audio();
+		ses->_reset_time_offset = !ses->_has_audio;
 		ses->state(av_play_state::playing);
+		_audio_event.set();
+		_video_event.set();
 	}
 
 	void capture(const std::shared_ptr<av_session>& ses, const std::function<void(file_load_result)>& cb)
 	{
+		if (!cb) return;
+
+		// The display can lose its session between the caller's check and this call, notably
+		// across a file-handle detach, which leaves the media info saying there is video.
+		if (!ses)
+		{
+			_host.queue_ui([cb] { cb({}); });
+			return;
+		}
+
 		queue([ses, cb](const std::shared_ptr<av_player>& p)
 		{
-			cb(ses->capture_first_frame());
+			// Delivered on the UI thread so the callback never has to reach back into
+			// UI-owned state from the read thread.
+			p->_host.queue_ui([cb, lr = ses->capture_first_frame()]() mutable { cb(std::move(lr)); });
 		});
 	}
 

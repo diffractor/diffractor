@@ -70,13 +70,6 @@ namespace df
 		return last;
 	}
 
-	constexpr std::string_view::size_type find_filename(const std::string_view path)
-	{
-		const auto last_slash = path.find_last_of("/\\");
-		if (last_slash != std::string_view::npos && path.size() > last_slash) return last_slash;
-		return std::string_view::npos;
-	}
-
 	constexpr bool is_illegal_name(const std::string_view name)
 	{
 		if (name.size() > 215)
@@ -155,29 +148,11 @@ namespace df
 		folder_path(folder_path&&) noexcept = default;
 		folder_path& operator=(folder_path&&) noexcept = default;
 
-		/*folder_path(LPCWSTR w)
-		{
-			_s = cached_normalized_folder(str::utf16_to_utf8(w));
-			df::assert_true(is_valid());
-		}*/
-
 		folder_path(const std::wstring_view w)
 		{
 			_s = cached_normalized_folder(str::utf16_to_utf8(w));
 			assert_true(is_valid());
 		}
-
-		/*folder_path(const std::string_view str)
-		{
-			_s = cached_normalized_folder(str);
-			df::assert_true(is_valid());
-		}*/
-
-		/*folder_path(LPCSTR sz, int len = -1)
-		{
-			_s = cached_normalized_folder(sz, len);
-			df::assert_true(is_valid());
-		}*/
 
 		folder_path(const std::string_view sr) noexcept
 		{
@@ -276,16 +251,6 @@ namespace df
 			return first_char >= 'a' && first_char <= 'z';
 		}
 
-		/*static bool is_drive(const wchar_t* a)
-		{
-			const auto len = wcslen(a);
-			if (len != 3 && len != 2) return false;
-			if (a[1] != ':') return false;
-			if (len == 3 && !is_path_sep(a[2])) return false;
-			const auto first_char = str::to_lower(a[0]);
-			return first_char >= 'a' && first_char <= 'z';
-		}*/
-
 		static bool is_root(const std::string_view sv)
 		{
 			return is_drive(sv);
@@ -311,23 +276,6 @@ namespace df
 			return is_computer(_s);
 		}
 
-		/*folder_path combine(LPCSTR part) const
-		{
-			char result[dif_max_path];
-			strcpy_s(result, _s);
-			if (!str::is_empty(part))
-			{
-				if (!is_path_sep(str::last_char(result)) && !is_path_sep(part[0])) strcat_s(result, "\\");
-				strcat_s(result, part);
-			}
-			return result;
-		}*/
-
-		/*folder_path combine(LPCWSTR w) const
-		{
-			return combine(str::utf16_to_utf8(w));
-		}*/
-
 		folder_path combine(const std::string_view part) const
 		{
 			auto result = std::string(_s.sv());
@@ -345,9 +293,6 @@ namespace df
 			return combine(str::utf16_to_utf8(part));
 		}
 
-		/*file_path combine_file(LPCSTR part) const;
-		file_path combine_file(LPCWSTR part) const;
-		file_path combine_file(const std::string_view part) const;*/
 		file_path combine_file(std::string_view part) const;
 		file_path combine_file(str::cached part) const;
 		file_path combine_file(std::wstring_view part) const;
@@ -385,11 +330,6 @@ namespace df
 			return compare(other) < 0;
 		}
 
-		/*uint32_t calc_hash() const
-		{
-			return str::hash_gen(_s).result();
-		}*/
-
 		friend class file_path;
 	};
 
@@ -422,7 +362,9 @@ namespace df
 		          const std::string_view ext_in) : _folder(folder)
 		{
 			auto name = std::string(name_in);
-			if (ext_in.front() != '.' && name.back() != '.') name += '.';
+			const auto ext_has_dot = !ext_in.empty() && ext_in.front() == '.';
+			const auto name_has_dot = !name.empty() && name.back() == '.';
+			if (!ext_in.empty() && !ext_has_dot && !name_has_dot) name += '.';
 			name += ext_in;
 
 			_name = str::cache(name);
@@ -594,11 +536,6 @@ namespace df
 		{
 			return icmp(other) < 0;
 		}
-
-		/*uint32_t calc_hash() const
-		{
-			return crypto::hash_gen(_folder.text()).append(_name).result();
-		}*/
 	};
 
 	inline file_path folder_path::combine_file(const std::string_view part) const

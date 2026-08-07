@@ -22,10 +22,16 @@
 #include <propvarutil.h>// InitPropVariantFromString, needs shlwapi.lib
 #include <lm.h>
 #include <WinIoCtl.h>
+#include <SetupAPI.h>
+#include <cfgmgr32.h>
 #include <Shellapi.h>
 #include <mapi.h>
 #include <WinInet.h>
 #include <ShlObj.h>
+#include <wincodec.h> // WIC: HBITMAP -> surface conversion for shell thumbnails
+
+#pragma comment(lib, "SetupAPI")
+#pragma comment(lib, "Cfgmgr32")
 
 
 #include "files.h"
@@ -43,10 +49,8 @@
 #include <avrt.h>
 #pragma comment(lib, "avrt.lib")
 
-static constexpr CLSID CLSID_ImageThumbnailProvider = {
-	0xC7657C4A, 0x9F68, 0x40fa, {0xA4, 0xDF, 0x96, 0xBC, 0x08, 0xEB, 0x35, 0x51}
-};
-
+// Values here come from third-party shell property handlers, so an unexpected type or a null
+// string must yield an empty value rather than fault or assert.
 str::cached cache_string_var(const PROPVARIANT& propVariant)
 {
 	std::wstring value;
@@ -58,24 +62,22 @@ str::cached cache_string_var(const PROPVARIANT& propVariant)
 		{
 			for (ULONG index = 0; index < numStrings; index++)
 			{
-				if (!value.empty())
+				if (strings[index])
 				{
-					value += L", ";
+					if (!value.empty())
+					{
+						value += L", ";
+					}
+					value += strings[index];
+					CoTaskMemFree(strings[index]);
 				}
-				value += strings[index];
-				CoTaskMemFree(strings[index]);
 			}
 			CoTaskMemFree(strings);
 		}
 	}
-	else if (VT_LPWSTR == propVariant.vt)
+	else if (VT_LPWSTR == propVariant.vt && propVariant.pwszVal)
 	{
 		value = propVariant.pwszVal;
-	}
-	else if (VT_UI4 == propVariant.vt)
-	{
-		//ps.store(t, static_cast<int>(propVariant.ulVal));
-		df::assert_true(false);
 	}
 
 	return str::cache(str::utf16_to_utf8(value));
@@ -89,57 +91,9 @@ platform::get_cached_file_properties_response platform::get_cached_file_properti
 {
 	auto result = get_cached_file_properties_response::fail;
 
-	/*ComPtr<IShellItem2> psi2;
-	ComPtr<IThumbnailProvider> pThumbnailProvider;
-
-	HRESULT hr = SHCreateItemFromParsingName(path.to_file_system_path().c_str(), nullptr, IID_PPV_ARGS(&psi2));
-
-	if (SUCCEEDED(hr))
-	{
-		hr = psi2->GetPropertyStore(flags, riid, ppv);
-	}
-
-	hr = psi2->BindToHandler(nullptr, BHID_ThumbnailHandler, IID_PPV_ARGS(&pThumbProvider));
-
-	if (SUCCEEDED(hr))
-	{
-	}*/
-
-	/*render::surface result;
-	ComPtr<IThumbnailProvider> pThumbnailProvider;
-	ComPtr<IInitializeWithFile> pInitFile;
-	auto hr = CoCreateInstance(CLSID_ImageThumbnailProvider, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pThumbnailProvider));
-
-	if (SUCCEEDED(hr))
-	{
-		hr = pThumbnailProvider->QueryInterface(IID_PPV_ARGS(&pInitFile));
-
-		if (SUCCEEDED(hr))
-		{
-			hr = pInitFile->Initialize(path.to_file_system_path().c_str(), STGM_READ);
-
-			if (SUCCEEDED(hr))
-			{
-				WTS_ALPHATYPE at = WTSAT_UNKNOWN;
-				HBITMAP hbm = nullptr;
-
-				hr = pThumbnailProvider->GetThumbnail(256, &hbm, &at);
-
-				if (SUCCEEDED(hr))
-				{
-					BITMAP bm;
-					GetObject(hbm, sizeof(BITMAP), &bm);
-
-					result.alloc(bm.bmWidth, bm.bmHeight, at == WTSAT_ARGB);
-
-					::DeleteObject(hbm);
-				}
-			}
-		}
-	}*/
 
 	ComPtr<IShellItem2> item;
-	HRESULT hr = SHCreateItemFromParsingName(to_file_system_path(path).c_str(), nullptr /*bindContext*/,
+	HRESULT hr = SHCreateItemFromParsingName(to_shell_path(path).c_str(), nullptr /*bindContext*/,
 	                                         IID_PPV_ARGS(&item));
 
 	if (SUCCEEDED(hr))
@@ -153,6 +107,16 @@ platform::get_cached_file_properties_response platform::get_cached_file_properti
 			result = get_cached_file_properties_response::ok;
 			DWORD propCount = 0;
 			hr = propStore->GetCount(&propCount);
+
+			// GPS arrives as separate latitude/longitude values plus an N/S/E/W hemisphere ref;
+			// collect them here and combine into a coordinate after the loop.
+			bool has_gps_lat = false;
+			bool has_gps_lon = false;
+			double gps_lat = 0.0;
+			double gps_lon = 0.0;
+			std::wstring gps_lat_ref;
+			std::wstring gps_lon_ref;
+
 			if (SUCCEEDED(hr))
 			{
 				for (DWORD i = 0; i < propCount; i++)
@@ -187,15 +151,6 @@ platform::get_cached_file_properties_response platform::get_cached_file_properti
 							{
 								properties_out.comment = cache_string_var(propVar);
 							}
-							/*else if (PKEY_Audio_Format == propKey) {
-								const std::wstring value = PropertyToString(propVar);
-								if (!value.empty()) {
-									const std::wstring version = ShellMetadata::GetAudioSubType(value);
-									if (!version.empty()) {
-										tags.emplace(Handler::Tags::value_type(Handler::Tag::Version, version));
-									}
-								}
-							}*/
 							else if (PKEY_Media_Year == propKey)
 							{
 								if (VT_UI4 == propVar.vt)
@@ -210,33 +165,95 @@ platform::get_cached_file_properties_response platform::get_cached_file_properti
 									properties_out.track.x = static_cast<int16_t>(propVar.ulVal);
 								}
 							}
-							else if (PKEY_ThumbnailStream == propKey)
+							else if (PKEY_Image_HorizontalSize == propKey)
 							{
-								if (VT_STREAM == propVar.vt)
+								if (VT_UI4 == propVar.vt)
 								{
-									IStream* stream = propVar.pStream;
-									if (nullptr != stream)
-									{
-										STATSTG stats = {};
-										if (SUCCEEDED(stream->Stat(&stats, STATFLAG_NONAME)))
-										{
-											if (stats.cbSize.QuadPart <= max_thumbnail_bytes)
-											{
-												ULONG bytesRead = 0;
-												df::blob blob;
-												blob.resize(stats.cbSize.QuadPart);
+									properties_out.width = static_cast<uint16_t>(std::min<ULONG>(
+										propVar.ulVal, 0xffff));
+								}
+							}
+							else if (PKEY_Image_VerticalSize == propKey)
+							{
+								if (VT_UI4 == propVar.vt)
+								{
+									properties_out.height = static_cast<uint16_t>(std::min<ULONG>(
+										propVar.ulVal, 0xffff));
+								}
+							}
+							else if (PKEY_Photo_Orientation == propKey)
+							{
+								if (VT_UI2 == propVar.vt && propVar.uiVal >= 1 && propVar.uiVal <= 8)
+								{
+									properties_out.orientation = static_cast<ui::orientation>(propVar.uiVal);
+								}
+							}
+							else if (PKEY_Photo_DateTaken == propKey)
+							{
+								// PKEY_Photo_DateTaken is delivered as a UTC FILETIME. Store it as
+								// created_utc so item_metadata::created() converts it to local time.
+								if (VT_FILETIME == propVar.vt)
+								{
+									properties_out.created_utc = df::date_t(ft_to_ts(propVar.filetime));
+								}
+							}
+							else if (PKEY_Keywords == propKey)
+							{
+								// Tags/keywords. OneDrive does not expose System.Keywords on placeholders
+								// today, but read it for future support / other cloud providers, joined into
+								// Diffractor's space-separated (quoted) tag form.
+								LPWSTR* strings = nullptr;
+								ULONG numStrings = 0;
+								if (SUCCEEDED(PropVariantToStringVectorAlloc(propVar, &strings, &numStrings)))
+								{
+									std::vector<std::string> keywords;
+									keywords.reserve(numStrings);
 
-												if (SUCCEEDED(stream->Read(blob.data(), static_cast<ULONG>(stats.
-													cbSize.QuadPart), &bytesRead)))
-												{
-													thumbnail_out = load_image_file(blob);
-												}
-											}
-										}
+									for (ULONG s = 0; s < numStrings; ++s)
+									{
+										keywords.emplace_back(str::utf16_to_utf8(strings[s]));
+										CoTaskMemFree(strings[s]);
+									}
+
+									CoTaskMemFree(strings);
+
+									if (!keywords.empty() && is_empty(properties_out.tags))
+									{
+										properties_out.tags = str::cache(str::combine(keywords));
 									}
 								}
 							}
-							else if (PKEY_Thumbnail == propKey)
+							else if (PKEY_GPS_LatitudeDecimal == propKey)
+							{
+								if (VT_R8 == propVar.vt)
+								{
+									gps_lat = propVar.dblVal;
+									has_gps_lat = true;
+								}
+							}
+							else if (PKEY_GPS_LongitudeDecimal == propKey)
+							{
+								if (VT_R8 == propVar.vt)
+								{
+									gps_lon = propVar.dblVal;
+									has_gps_lon = true;
+								}
+							}
+							else if (PKEY_GPS_LatitudeRef == propKey)
+							{
+								if (VT_LPWSTR == propVar.vt && propVar.pwszVal)
+								{
+									gps_lat_ref = propVar.pwszVal;
+								}
+							}
+							else if (PKEY_GPS_LongitudeRef == propKey)
+							{
+								if (VT_LPWSTR == propVar.vt && propVar.pwszVal)
+								{
+									gps_lon_ref = propVar.pwszVal;
+								}
+							}
+							else if (PKEY_ThumbnailStream == propKey || PKEY_Thumbnail == propKey)
 							{
 								if (VT_STREAM == propVar.vt)
 								{
@@ -246,14 +263,32 @@ platform::get_cached_file_properties_response platform::get_cached_file_properti
 										STATSTG stats = {};
 										if (SUCCEEDED(stream->Stat(&stats, STATFLAG_NONAME)))
 										{
-											if (stats.cbSize.QuadPart <= max_thumbnail_bytes)
-											{
-												ULONG bytesRead = 0;
-												df::blob blob;
-												blob.resize(stats.cbSize.QuadPart);
+											const auto thumbnail_size = stats.cbSize.QuadPart;
 
-												if (SUCCEEDED(stream->Read(blob.data(), static_cast<ULONG>(stats.
-													cbSize.QuadPart), &bytesRead)))
+											if (thumbnail_size > 0 && thumbnail_size <= max_thumbnail_bytes)
+											{
+												df::blob blob;
+												blob.resize(static_cast<size_t>(thumbnail_size));
+												size_t total_read = 0;
+
+												// Read is allowed to return short without failing, so keep
+												// asking until it stops making progress.
+												while (total_read < blob.size())
+												{
+													ULONG bytes_read = 0;
+
+													if (FAILED(stream->Read(blob.data() + total_read,
+													                        static_cast<ULONG>(blob.size() - total_read),
+													                        &bytes_read)) || bytes_read == 0)
+													{
+														break;
+													}
+
+													total_read += bytes_read;
+												}
+
+												// Never decode bytes the stream did not supply.
+												if (total_read == blob.size())
 												{
 													thumbnail_out = load_image_file(blob);
 												}
@@ -267,414 +302,195 @@ platform::get_cached_file_properties_response platform::get_cached_file_properti
 					}
 				}
 			}
+
+			// Combine any GPS latitude/longitude read above into a coordinate. The N/S/E/W ref decides
+			// the hemisphere; if it is absent we fall back to the sign already on the decimal value.
+			if (has_gps_lat && has_gps_lon)
+			{
+				auto lat = std::abs(gps_lat);
+				auto lon = std::abs(gps_lon);
+				if (gps_lat_ref.empty()) lat = gps_lat;
+				else if (gps_lat_ref == L"S" || gps_lat_ref == L"s") lat = -lat;
+				if (gps_lon_ref.empty()) lon = gps_lon;
+				else if (gps_lon_ref == L"W" || gps_lon_ref == L"w") lon = -lon;
+				properties_out.coordinate = gps_coordinate(lat, lon);
+			}
 		}
 	}
 
 	return result;
 }
 
-HRESULT
-QueryInterfacePropVariant(
-	REFPROPVARIANT pv,
-	REFIID riid,
-	__out void** ppv)
+platform::get_cached_file_properties_response platform::get_shell_thumbnail(
+	const df::file_path path, const sizei requested_extent, const bool allow_network,
+	ui::const_image_ptr& thumbnail_out)
 {
-	*ppv = nullptr;
+	// Fetch a thumbnail via IShellItemImageFactory -- the same mechanism Windows Explorer uses.
+	// For a OneDrive (Files On-Demand) placeholder this returns the cloud provider's thumbnail
+	// WITHOUT hydrating (downloading) the full file. Verified empirically that on-disk bytes stay 0.
+	// allow_network=false adds SIIGBF_INCACHEONLY (local thumbnail cache only, instant, never hits
+	// the network); with allow_network=true a cache miss may fetch the thumbnail from the cloud.
+	auto result = get_cached_file_properties_response::fail;
 
-	HRESULT hr = E_NOINTERFACE;
-	if (VT_UNKNOWN == pv.vt)
+	// SHCreateItemFromParsingName rejects the \\?\ prefix, so this is a shell path even when it is long.
+	const auto path_w = to_shell_path(path);
+
+	ComPtr<IShellItemImageFactory> factory;
+	auto hr = SHCreateItemFromParsingName(path_w.c_str(), nullptr, IID_PPV_ARGS(&factory));
+
+	if (FAILED(hr))
 	{
-		hr = pv.punkVal->QueryInterface(riid, ppv);
+		return result;
 	}
-	else if (VT_STREAM == pv.vt)
+
+	const auto extent = std::max({requested_extent.cx, requested_extent.cy, 32});
+	const SIZE size{extent, extent};
+
+	// NOTE: do NOT use SIIGBF_THUMBNAILONLY here. That flag only returns an already-cached
+	// thumbnail and fails (HR 0x8004B205) for a not-yet-cached cloud placeholder, so almost
+	// nothing would load. Letting the shell ask the cloud provider's thumbnail handler returns the
+	// real thumbnail and -- verified empirically on OneDrive -- does NOT hydrate the file.
+	// SIIGBF_INCACHEONLY (when the network is not allowed) keeps it to the instant local cache.
+	int flags = SIIGBF_RESIZETOFIT;
+	if (!allow_network) flags |= SIIGBF_INCACHEONLY;
+
+	HBITMAP hbitmap = nullptr;
+	hr = factory->GetImage(size, flags, &hbitmap);
+
+	const df::scope_exit free_bitmap([&hbitmap] { if (hbitmap) DeleteObject(hbitmap); });
+
+	if (hr == WTS_E_EXTRACTIONPENDING || hr == E_PENDING)
 	{
-		hr = pv.pStream->QueryInterface(riid, ppv);
+		// Not in the local cache yet (and either network not allowed, or the fetch is in flight).
+		return get_cached_file_properties_response::pending;
 	}
-	return hr;
-}
 
+	if (FAILED(hr) || hbitmap == nullptr)
+	{
+		return result;
+	}
 
-STDAPI IPropertyStore_GetUnknown(__in IPropertyStore* pps, __in REFPROPERTYKEY key, __in REFIID riid,
-                                 __deref_out void** ppv)
-{
-	*ppv = nullptr;
+	// Convert the HBITMAP to a 32bpp BGRA surface via WIC, then encode to a PNG image so the caller
+	// receives the same ui::image type as the property-store thumbnail path.
+	ComPtr<IWICImagingFactory> wic;
+	hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&wic));
 
-	PROPVARIANT propvar;
-	HRESULT hr = pps->GetValue(key, &propvar);
+	ComPtr<IWICBitmap> wic_bitmap;
 	if (SUCCEEDED(hr))
 	{
-		hr = QueryInterfacePropVariant(propvar, riid, ppv);
-		PropVariantClear(&propvar);
+		hr = wic->CreateBitmapFromHBITMAP(hbitmap, nullptr, WICBitmapUseAlpha, &wic_bitmap);
 	}
-	return hr;
-}
 
-MIDL_INTERFACE("4fe8a664-d045-46d8-a725-f0842f6a95ca")
-	IThumbnailStreamProvider : IUnknown
-{
-	STDMETHOD(GetThumbnailStream)(_Outptr_result_maybenull_ IStream* * ppThumbnailStream) = 0;
-};
+	ComPtr<IWICFormatConverter> converter;
+	if (SUCCEEDED(hr))
+	{
+		hr = wic->CreateFormatConverter(&converter);
+	}
 
-// String to identify that the IStream bind request is for the item's thumbnail.
-#define STR_BIND_THUMBNAIL_STREAM L"BindToThumbnailStream"
+	if (SUCCEEDED(hr))
+	{
+		hr = converter->Initialize(wic_bitmap.Get(), GUID_WICPixelFormat32bppBGRA, WICBitmapDitherTypeNone,
+		                           nullptr, 0.0f, WICBitmapPaletteTypeMedianCut);
+	}
 
-//THUMBNAILIDInternal
-// WTS_THUMBNAILID passed in to client is opaque.  Actual content is THUMBNAILIDInternal
-struct THUMBNAILIDInternal
-{
-	ULONGLONG ullCrc64Key;
+	uint32_t w = 0;
+	uint32_t h = 0;
+	if (SUCCEEDED(hr))
+	{
+		hr = converter->GetSize(&w, &h);
+	}
 
-	// This used to be ullLastModified, but that's included in the ullCrc64Key now.
-	// (We already shipped IThumbnailCache with a 16 byte WTS_THUMBNAILID, and cannot change it now)
-	ULONGLONG ullReserved;
-};
+	if (SUCCEEDED(hr) && w > 0 && h > 0)
+	{
+		const auto surface = std::make_shared<ui::surface>();
 
-platform::get_cached_file_properties_response platform::get_shell_thumbnail(
-	const df::file_path path, ui::const_image_ptr& thumbnail_out)
-{
-	constexpr auto result = get_cached_file_properties_response::fail;
-	auto cxy_requested_thumb_size = 96;
-	// std::max(setting.thumbnail_max_dimension.cx, setting.thumbnail_max_dimension.cy);
+		if (surface->alloc(static_cast<int>(w), static_cast<int>(h), ui::texture_format::ARGB,
+		                   ui::orientation::top_left) &&
+			SUCCEEDED(converter->CopyPixels(nullptr, static_cast<uint32_t>(surface->stride()),
+				static_cast<uint32_t>(surface->size()), surface->pixels())))
+		{
+			// Reject the shell's generic file-type icon (returned while OneDrive has not yet
+			// produced a cloud thumbnail). A real photo/video thumbnail is fully opaque; the generic
+			// icon is drawn on a transparent background. Measuring the fraction of fully transparent
+			// pixels cleanly separates them (empirically: thumbnail ~0.00, generic icon ~0.45). When
+			// it is only an icon we return 'pending' so the item keeps its own placeholder and can be
+			// retried later, once the cloud thumbnail becomes available.
+			const auto* const px = surface->pixels();
+			const auto stride = surface->stride();
+			size_t transparent = 0;
+			size_t sampled = 0;
 
-	ComPtr<IShellItemImageFactory> spsiif;
+			for (uint32_t y = 0; y < h; y += 2)
+			{
+				const auto* const row = px + static_cast<size_t>(y) * stride;
 
-	const auto path_w = to_file_system_path(path);
+				for (uint32_t x = 0; x < w; x += 2)
+				{
+					if (row[static_cast<size_t>(x) * 4 + 3] == 0) ++transparent;
+					++sampled;
+				}
+			}
 
-	ComPtr<IShellItem2> item;
-	HRESULT hr = SHCreateItemFromParsingName(path_w.c_str(), nullptr /*bindContext*/, IID_PPV_ARGS(&item));
+			const auto transparent_fraction = sampled ? static_cast<double>(transparent) / sampled : 1.0;
 
-	//if (SUCCEEDED(hr))
-	//{
-	//	const GETPROPERTYSTOREFLAGS flags = GPS_DEFAULT;
-	//	ComPtr<IPropertyStore> propStore;
-	//	hr = item->GetPropertyStore(flags, IID_PPV_ARGS(&propStore));
+			if (transparent_fraction > 0.10)
+			{
+				return get_cached_file_properties_response::pending;
+			}
 
-	//	if (SUCCEEDED(hr))
-	//	{
-	//		PROPVARIANT pvThumbnailCacheId;
-	//		hr = item->GetProperty(PKEY_ThumbnailCacheId, &pvThumbnailCacheId);
-	//		if (SUCCEEDED(hr))
-	//		{
+			auto image = save_png(surface, {});
 
-	//			ComPtr<IThumbnailCache> spThumbCache;
-	//			hr = spThumbCache.CoCreateInstance(CLSID_LocalThumbnailCache, nullptr, CLSCTX_INPROC);
-
-	//			if (SUCCEEDED(hr))
-	//			{
-	//				ULONGLONG ullThumbcacheId = 0;
-	//				ComPtr<ISharedBitmap> spBitmap;
-	//				WTS_CACHEFLAGS OutFlags = WTS_DEFAULT;
-	//				PropVariantToUInt64(pvThumbnailCacheId, &ullThumbcacheId);
-
-	//				WTS_THUMBNAILID wtsId;
-	//				THUMBNAILIDInternal* pThumbnailIDInternal = std::bit_cast<THUMBNAILIDInternal*>(&wtsId);
-	//				pThumbnailIDInternal->ullCrc64Key = ullThumbcacheId;
-	//				pThumbnailIDInternal->ullReserved = 0ull;
-	//				
-	//				hr = spThumbCache->GetThumbnailByID(wtsId, cxy_requested_thumb_size, &spBitmap, &OutFlags);
-
-	//				if (SUCCEEDED(hr))
-	//				{
-	//					HBITMAP hBitmap = nullptr;
-	//					WTS_ALPHATYPE alpha_type = WTSAT_UNKNOWN;
-
-	//					if (SUCCEEDED(spBitmap->GetFormat(&alpha_type)) &&
-	//						SUCCEEDED(spBitmap->GetSharedBitmap(&hBitmap)))
-	//					{
-	//						df::blob data;
-	//						if (save_hbitmap_to_memory(hBitmap, data, alpha_type == WTSAT_ARGB))
-	//						{
-	//							thumbnail_out = render::image(data);
-	//							result = get_cached_file_properties_response::ok;
-	//						}
-	//					}
-	//				}
-	//				else if (hr == WTS_E_EXTRACTIONPENDING || hr == E_PENDING)
-	//				{
-	//					result = get_cached_file_properties_response::pending;
-	//				}
-	//			}
-	//			
-	//			PropVariantClear(&pvThumbnailCacheId);
-	//		}
-	//		
-	//		/*ComPtr<IPropertyStore> spps;
-	//		hr = item->GetPropertyStoreForKeys(&PKEY_ThumbnailCacheId, 1, GPS_DEFAULT, IID_PPV_ARGS(&spps));
-	//		if (SUCCEEDED(hr))
-	//		{
-	//			PROPVARIANT pvThumbnailCacheId;
-	//			hr = spps->GetProperty(PKEY_ThumbnailCacheId, &pvThumbnailCacheId);
-	//			if (SUCCEEDED(hr))
-	//			{
-	//				PropVariantClear(&pvThumbnailCacheId);
-	//			}
-	//		}*/
-	//		
-	//		/*DWORD cItems;
-	//		hr = propStore->GetCount(&cItems);
-	//		if (SUCCEEDED(hr))
-	//		{
-	//			for (int i = 0; i < cItems; i++)
-	//			{
-	//				PROPERTYKEY propKey = {};
-	//				hr = propStore->GetAt(i, &propKey);
-
-	//				if (SUCCEEDED(hr))
-	//				{
-	//					PROPVARIANT propVar;
-	//					if (SUCCEEDED(propStore->GetValue(propKey, &propVar)))
-	//					{
-	//						PropVariantClear(&propVar);
-	//					}
-	//				}
-	//			}
-	//		}*/
-	//	}
-	//}
-
-	//if (SUCCEEDED(hr))
-	//{
-	//	ComPtr<IThumbnailCache> spThumbCache;
-	//	hr = spThumbCache.CoCreateInstance(CLSID_LocalThumbnailCache);
-	//	//hr = CoCreateInstance(CLSID_LocalThumbnailCache, nullptr, CLSCTX_INPROC_SERVER, __uuidof(IThumbnailCache), (void**)&spThumbCache);
-
-	//	if (SUCCEEDED(hr))
-	//	{
-	//		ComPtr<ISharedBitmap> spBitmap;
-	//		WTS_CACHEFLAGS OutFlags = WTS_DEFAULT;
-	//		WTS_THUMBNAILID ThumbnailID = { 0 };
-	//		hr = spThumbCache->GetThumbnail(item, cxy_requested_thumb_size, WTS_EXTRACT, &spBitmap, &OutFlags, &ThumbnailID);
-
-	//		if (SUCCEEDED(hr))
-	//		{
-	//			HBITMAP hBitmap = nullptr;
-	//			WTS_ALPHATYPE alpha_type = WTSAT_UNKNOWN;
-
-	//			if (SUCCEEDED(spBitmap->GetFormat(&alpha_type)) &&
-	//				SUCCEEDED(spBitmap->GetSharedBitmap(&hBitmap)))
-	//			{
-	//				df::blob data;
-	//				if (save_hbitmap_to_memory(hBitmap, data, alpha_type == WTSAT_ARGB))
-	//				{
-	//					thumbnail_out = render::image(data);
-	//					result = get_cached_file_properties_response::ok;
-	//				}
-	//			}
-	//		}
-	//		else if (hr == WTS_E_EXTRACTIONPENDING || hr == E_PENDING)
-	//		{
-	//			result = get_cached_file_properties_response::pending;
-	//		}
-	//	}
-	//}
-
-
-	//if (SUCCEEDED(SHCreateItemFromParsingName(path_w.c_str(), NULL, IID_PPV_ARGS(&spsiif))))
-	//{
-	//	SIZE size = { cxy_requested_thumb_size, cxy_requested_thumb_size };
-	//	HBITMAP hBitmap = nullptr;
-	//	auto hr = spsiif->GetImage(size, SIIGBF_BIGGERSIZEOK | SIIGBF_THUMBNAILONLY, &hBitmap);
-
-	//	if (SUCCEEDED(hr))
-	//	{
-	//		df::blob data;
-	//		if (save_hbitmap_to_memory(hBitmap, data, false))
-	//		{
-	//			thumbnail_out = render::image(data);
-	//			result = get_cached_file_properties_response::ok;
-	//		}
-
-	//		DeleteObject(hBitmap);
-	//	}
-	//	else if (hr == WTS_E_EXTRACTIONPENDING || hr == E_PENDING)
-	//	{
-	//		result = get_cached_file_properties_response::pending;
-	//	}
-	//}
-
-	// Try alternative method if no result
-	//if (result == get_cached_file_properties_response::fail)
-	//{
-	//	ComPtr<IShellItem2> item;
-	//	HRESULT hr = SHCreateItemFromParsingName(path.to_file_system_path().c_str(), nullptr /*bindContext*/, IID_PPV_ARGS(&item));
-
-	//	if (SUCCEEDED(hr))
-	//	{
-	//		//ComPtr<IBindCtx> bindCtx;
-	//		//hr = CreateBindCtx(0, &bindCtx);		
-
-	//		//if (SUCCEEDED(hr))
-	//		//{
-	//		//	BIND_OPTS bo = { sizeof(bo) };
-	//		//	hr = bindCtx->GetBindOptions(&bo);
-	//		//	if (SUCCEEDED(hr))
-	//		//	{
-	//		//		bo.grfMode = STGM_READ | STGM_SHARE_DENY_WRITE;
-	//		//		hr = bindCtx->SetBindOptions(&bo);
-	//		//	}
-
-	//		//	//hr = bindCtx->RegisterObjectParam(const_cast<PWSTR>(STR_BIND_THUMBNAIL_STREAM), punk);
-	//		//	//hr = bindCtx.SetObject(STR_BIND_THUMBNAIL_STREAM, spThumbStreamInfo.Get());
-	//		//	//
-	//		//	if (SUCCEEDED(hr))
-	//		//	{
-	//		//		ComPtr<IStream> spstm;
-	//		//		hr = item->BindToHandler(bindCtx, BHID_Stream, IID_PPV_ARGS(&spstm));
-	//		//		if (SUCCEEDED(hr))
-	//		//		{
-	//		//		}
-	//		//	}
-	//		//}	
-
-
-	//		//ComPtr<IPropertyStore> spstore;
-	//		//static PROPERTYKEY const rgProps[] = {
-	//		//	INIT_PKEY_Thumbnail,
-	//		//	INIT_PKEY_ThumbnailStream,
-	//		//	INIT_PKEY_ImageParsingName,
-	//		//};
-	//		//hr = item->GetPropertyStoreForKeys(rgProps, ARRAYSIZE(rgProps), GPS_DEFAULT, IID_PPV_ARGS(&spstore));
-	//		//if (SUCCEEDED(hr))
-	//		//{
-	//		//	PROPVARIANT propvar;
-	//		//	hr = spstore->GetValue(PKEY_Thumbnail, &propvar);
-	//		//	if (SUCCEEDED(hr) && (propvar.vt != VT_EMPTY))
-	//		//	{
-	//		//		//hr = CreateThumbnailFromClipboardProperty(propvar, _rgSize, phbmp);
-	//		//		PropVariantClear(&propvar);
-	//		//	}
-	//		//	else
-	//		//	{
-	//		//		ComPtr<IStream> spstm;
-	//		//		hr = IPropertyStore_GetUnknown(spstore, PKEY_ThumbnailStream, IID_PPV_ARGS(&spstm));
-	//		//		if (SUCCEEDED(hr))
-	//		//		{
-	//		//			//hr = CreateHBITMAPFromStream(spstm.Get(), _rgSize, nullptr, phbmp);
-	//		//		}
-	//		//		else
-	//		//		{
-	//		//			PROPVARIANT spropvarImageParsingName;
-	//		//			hr = spstore->GetValue(PKEY_ImageParsingName, &spropvarImageParsingName);
-	//		//			if (SUCCEEDED(hr))
-	//		//			{
-	//		//				ComPtr<IShellItem> spsiParent;
-	//		//				hr = item->GetParent(&spsiParent);
-	//		//				if (SUCCEEDED(hr))
-	//		//				{
-	//		//					//hr = CreateHBITMAPFromParsingNames(spstore.Get(), spsiParent.Get(), spropvarImageParsingName, &_rgSize, IPN_Default, phbmp, pdwAlpha);
-	//		//				}
-
-	//		//				PropVariantClear(&propvar);
-	//		//			}
-	//		//		}
-	//		//	}
-	//		//}
-
-	//		/*auto x = PS_FULL_PRIMARY_STREAM_AVAILABLE;
-
-	//		ULONG ulStatus = 0;
-	//		hr = item->get_uint32(PKEY_FilePlaceholderStatus, &ulStatus);
-
-	//		if (SUCCEEDED(hr))
-	//		{
-	//			if (ulStatus == 7)
-	//			{
-	//				hr = S_OK;
-	//			}
-	//			else
-	//			{
-	//				hr = S_FALSE;
-	//			}
-	//		}
-
-	//		*/
-
-	//		/*ComPtr<IThumbnailProvider> pThumbnailProvider;
-	//		ComPtr<IThumbnailStreamProvider> pThumbnailStreamProvider;
-	//		hr = item->BindToHandler(nullptr, BHID_ThumbnailHandler, IID_PPV_ARGS(&pThumbnailProvider));
-
-	//		if (SUCCEEDED(hr))
-	//		{
-	//			WTS_ALPHATYPE at = WTSAT_UNKNOWN;
-	//			HBITMAP hbm = nullptr;
-
-	//			hr = pThumbnailProvider->GetThumbnail(cxy_requested_thumb_size, &hbm, &at);
-
-	//			if (SUCCEEDED(hr))
-	//			{
-	//				BITMAP bm;
-	//				GetObject(hbm, sizeof(BITMAP), &bm);
-
-	//				df::blob data;
-	//				if (save_hbitmap_to_memory(hbm, data, at == WTSAT_ARGB))
-	//				{
-	//					thumbnail_out = render::image(data);
-	//					result = get_cached_file_properties_response::ok;
-	//				}
-
-	//				::DeleteObject(hbm);
-	//			}
-	//			else if (hr == WTS_E_EXTRACTIONTIMEDOUT || hr == WTS_E_EXTRACTIONPENDING || hr == E_PENDING)
-	//			{
-	//				result = get_cached_file_properties_response::pending;
-	//			}
-	//		}*/
-
-	//		//ComPtr<IThumbnailCache> spThumbCache;
-	//		//hr = spThumbCache.CoCreateInstance(CLSID_LocalThumbnailCache);
-	//		////hr = CoCreateInstance(CLSID_LocalThumbnailCache, nullptr, CLSCTX_INPROC_SERVER, __uuidof(IThumbnailCache), (void**)&spThumbCache);
-
-	//		//if (SUCCEEDED(hr))
-	//		//{
-	//		//	ComPtr<ISharedBitmap> spBitmap;
-	//		//	WTS_CACHEFLAGS OutFlags = WTS_DEFAULT;
-	//		//	WTS_THUMBNAILID ThumbnailID = {0};
-	//		//	hr = spThumbCache->GetThumbnail(item, cxy_requested_thumb_size, WTS_EXTRACT, &spBitmap, &OutFlags, &ThumbnailID);
-
-	//		//	if (SUCCEEDED(hr))
-	//		//	{
-	//		//		HBITMAP hBitmap = nullptr;
-	//		//		WTS_ALPHATYPE alpha_type = WTSAT_UNKNOWN;
-
-	//		//		if (SUCCEEDED(spBitmap->GetFormat(&alpha_type)) &&
-	//		//			SUCCEEDED(spBitmap->GetSharedBitmap(&hBitmap)))
-	//		//		{
-	//		//			df::blob data;
-	//		//			if (save_hbitmap_to_memory(hBitmap, data, alpha_type == WTSAT_ARGB))
-	//		//			{
-	//		//				thumbnail_out = render::image(data);
-	//		//				result = get_cached_file_properties_response::ok;
-	//		//			}
-	//		//		}
-	//		//	}
-	//		//	else if (hr == WTS_E_EXTRACTIONPENDING || hr == E_PENDING)
-	//		//	{
-	//		//		result = get_cached_file_properties_response::pending;
-	//		//	}
-	//		//}
-	//	}
-	//}
+			if (is_valid(image))
+			{
+				thumbnail_out = std::move(image);
+				result = get_cached_file_properties_response::ok;
+			}
+		}
+	}
 
 	return result;
 }
 
 
-platform::drives platform::scan_drives(const bool scan_contents)
+platform::drives platform::scan_drives()
 {
 	drives results;
 	const auto drives = GetLogicalDrives();
+
+	// Probing a drive with no media raises a system modal ("There is no disk in the drive") unless
+	// hard-error reporting is suppressed for this thread.
+	DWORD previous_error_mode = 0;
+	const auto error_mode_set = SetThreadErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX,
+	                                               &previous_error_mode) != FALSE;
+	const df::scope_exit restore_error_mode([error_mode_set, previous_error_mode]
+	{
+		if (error_mode_set) SetThreadErrorMode(previous_error_mode, nullptr);
+	});
 
 	for (int i = 0; i < 26; ++i)
 	{
 		if (drives & 1 << i)
 		{
 			wchar_t szDrive[] = L"?:\\";
-			szDrive[0] = L'A' + i;
-
-			const auto drive_type = ::GetDriveType(szDrive);
+			szDrive[0] = static_cast<wchar_t>(L'A' + i);
 
 			drive_t d;
+			d.name = str::utf16_to_utf8(szDrive);
 
+			switch (::GetDriveType(szDrive))
+			{
+			case DRIVE_REMOVABLE: d.type = drive_type::removable;
+				break;
+			case DRIVE_REMOTE: d.type = drive_type::remote;
+				break;
+			case DRIVE_CDROM: d.type = drive_type::cdrom;
+				break;
+			default: d.type = drive_type::fixed;
+				break;
+			}
+
+			// Volume and size details are unavailable for an empty card reader or optical drive; the
+			// drive is still reported so it can be browsed once media is inserted.
 			wchar_t szFileSys[MAX_PATH];
 			wchar_t szVolNameBuff[MAX_PATH];
 			DWORD dwSerial = 0;
@@ -693,110 +509,30 @@ platform::drives platform::scan_drives(const bool scan_contents)
 				{
 					d.file_system = str::utf16_to_utf8(szFileSys);
 				}
-
-				d.type = drive_type::fixed;
-
-				switch (drive_type)
-				{
-				case DRIVE_REMOVABLE: d.type = drive_type::removable;
-					break;
-				case DRIVE_REMOTE: d.type = drive_type::remote;
-					break;
-				case DRIVE_CDROM: d.type = drive_type::cdrom;
-					break;
-				}
-
-				ULARGE_INTEGER free_bytes_available_to_caller, total_number_of_bytes, total_number_of_free_bytes;
-
-				const auto success = GetDiskFreeSpaceEx(szDrive, &free_bytes_available_to_caller,
-				                                        &total_number_of_bytes, &total_number_of_free_bytes) != FALSE;
-				df::file_size result;
-
-				if (success)
-				{
-					d.used = total_number_of_bytes.QuadPart - total_number_of_free_bytes.QuadPart;
-					d.free = free_bytes_available_to_caller.QuadPart;
-					d.capacity = total_number_of_bytes.QuadPart;
-				}
-
-				d.name = str::utf16_to_utf8(szDrive);
-				results.emplace_back(d);
 			}
+
+			ULARGE_INTEGER free_bytes_available_to_caller, total_number_of_bytes, total_number_of_free_bytes;
+
+			if (GetDiskFreeSpaceEx(szDrive, &free_bytes_available_to_caller, &total_number_of_bytes,
+			                       &total_number_of_free_bytes))
+			{
+				d.used = total_number_of_bytes.QuadPart - total_number_of_free_bytes.QuadPart;
+				d.free = free_bytes_available_to_caller.QuadPart;
+				d.capacity = total_number_of_bytes.QuadPart;
+			}
+
+			results.emplace_back(d);
 		}
 	}
-
-	/*if (scan_devices)
-	{
-		DWORD deviceCount = 0;
-		ComPtr<IPortableDeviceManager> deviceManager;
-
-		if (SUCCEEDED(deviceManager.CoCreateInstance(CLSID_PortableDeviceManager)))
-		{
-			if (SUCCEEDED(deviceManager->GetDevices(nullptr, &deviceCount)) && deviceCount > 0)
-			{
-				auto deviceIDs = new PWSTR[deviceCount];
-				ZeroMemory(deviceIDs, deviceCount * sizeof(PWSTR));
-
-				auto retrievedDeviceIDCount = deviceCount;
-
-				if (SUCCEEDED(deviceManager->GetDevices(deviceIDs, &retrievedDeviceIDCount)))
-				{
-					for (auto i = 0u; i < retrievedDeviceIDCount; i++)
-					{
-						const auto id = deviceIDs[i];
-						const auto bufLen = 200;
-
-						WCHAR name[bufLen];
-						DWORD nameLen = bufLen;
-
-						WCHAR description[bufLen];
-						DWORD descriptionLen = bufLen;
-
-						WCHAR manufacturer[bufLen];
-						DWORD manufacturerLen = bufLen;
-
-						if (SUCCEEDED(deviceManager->GetDeviceFriendlyName(id, name, &nameLen)) &&
-							SUCCEEDED(deviceManager->GetDeviceDescription(id, description, &descriptionLen)) &&
-							SUCCEEDED(deviceManager->GetDeviceManufacturer(id, manufacturer, &manufacturerLen)))
-						{
-							if (df::folder_path::is_drive(name))
-							{
-								std::wstring text;
-
-								if (wcscmp(name, description) != 0)
-								{
-									text = description;
-									text += L"\n";
-								}
-
-								text += manufacturer;
-
-								results.emplace_back(drive_t(drive_type::device, id, name, text, get_drive_size(id)));
-							}
-						}
-					}
-				}
-
-				for (DWORD index = 0; index < retrievedDeviceIDCount; index++)
-				{
-					CoTaskMemFree(deviceIDs[index]);
-					deviceIDs[index] = nullptr;
-				}
-
-				delete[] deviceIDs;
-				deviceIDs = nullptr;
-			}
-		}
-	}*/
 
 	return results;
 }
 
 
 static constexpr LCID default_locale = LOCALE_USER_DEFAULT;
-static char decimal_sep[10];
-static char thousand_sep[10];
-static NUMBERFMTA fmt;
+static wchar_t decimal_sep[8];
+static wchar_t thousand_sep[8];
+static NUMBERFMTW fmt;
 std::atomic_bool number_format_invalid = true;
 static std::mutex number_format_mutex;
 
@@ -808,14 +544,25 @@ void validate_number_format()
 
 		if (number_format_invalid)
 		{
-			GetLocaleInfoA(default_locale, LOCALE_SDECIMAL, decimal_sep, 6);
-			GetLocaleInfoA(default_locale, LOCALE_STHOUSAND, thousand_sep, 6);
+			// The ANSI variants return code-page bytes that the callers treat as UTF-8; separators
+			// such as the French no-break space only survive the round trip through UTF-16.
+			if (GetLocaleInfoW(default_locale, LOCALE_SDECIMAL, decimal_sep,
+			                   std::size(decimal_sep)) == 0)
+			{
+				wcscpy_s(decimal_sep, L".");
+			}
 
-			//GetLocaleInfoW(lcid, LOCALE_RETURN_NUMBER|LOCALE_IDIGITS, (LPSTR) &fmt.NumDigits, sizeof(uint32_t));
-			GetLocaleInfoA(default_locale, LOCALE_RETURN_NUMBER | LOCALE_ILZERO, std::bit_cast<LPSTR>(&fmt.LeadingZero),
-			               sizeof(uint32_t));
-			GetLocaleInfoA(default_locale, LOCALE_RETURN_NUMBER | LOCALE_INEGNUMBER,
-			               std::bit_cast<LPSTR>(&fmt.NegativeOrder), sizeof(uint32_t));
+			if (GetLocaleInfoW(default_locale, LOCALE_STHOUSAND, thousand_sep,
+			                   std::size(thousand_sep)) == 0)
+			{
+				wcscpy_s(thousand_sep, L",");
+			}
+
+			// LOCALE_RETURN_NUMBER writes a DWORD, and cchData counts wchar_t.
+			GetLocaleInfoW(default_locale, LOCALE_RETURN_NUMBER | LOCALE_ILZERO,
+			               std::bit_cast<LPWSTR>(&fmt.LeadingZero), sizeof(uint32_t) / sizeof(wchar_t));
+			GetLocaleInfoW(default_locale, LOCALE_RETURN_NUMBER | LOCALE_INEGNUMBER,
+			               std::bit_cast<LPWSTR>(&fmt.NegativeOrder), sizeof(uint32_t) / sizeof(wchar_t));
 
 			fmt.NumDigits = 0;
 			fmt.Grouping = 3;
@@ -831,16 +578,21 @@ std::string platform::format_number(const std::string& num_text)
 {
 	validate_number_format();
 
-	static constexpr int size = 64;
-	char result[size] = {0};
-	GetNumberFormatA(default_locale, 0, std::bit_cast<const char*>(num_text.c_str()), &fmt, result, size);
-	return str::utf8_cast2(result);
+	wchar_t result[64];
+	const auto w = str::utf8_to_utf16(num_text);
+
+	if (GetNumberFormatW(default_locale, 0, w.c_str(), &fmt, result, std::size(result)) == 0)
+	{
+		return num_text;
+	}
+
+	return str::utf16_to_utf8(result);
 }
 
 std::string platform::number_dec_sep()
 {
 	validate_number_format();
-	return str::utf8_cast2(decimal_sep);
+	return str::utf16_to_utf8(decimal_sep);
 }
 
 class file_impl final : public platform::file
@@ -874,16 +626,44 @@ public:
 
 	uint64_t read(uint8_t* buf, const uint64_t buf_size) const override
 	{
-		DWORD read = 0;
-		if (!ReadFile(_h, buf, static_cast<uint32_t>(buf_size), &read, nullptr)) return 0;
-		return read;
+		uint64_t total_read = 0;
+		while (total_read < buf_size)
+		{
+			const auto chunk_size = static_cast<DWORD>(std::min<uint64_t>(buf_size - total_read, MAXDWORD));
+			DWORD chunk_read = 0;
+
+			// A short read is normal at end of file, but a failure is not - callers only see the byte
+			// count, so the reason is logged here rather than being reported as a clean truncation.
+			if (!ReadFile(_h, buf + total_read, chunk_size, &chunk_read, nullptr))
+			{
+				df::log(__FUNCTION__, platform::last_os_error());
+				break;
+			}
+
+			total_read += chunk_read;
+			if (chunk_read < chunk_size) break;
+		}
+		return total_read;
 	}
 
 	uint64_t write(const uint8_t* data, const uint64_t size) override
 	{
-		DWORD written = 0;
-		if (!WriteFile(_h, data, static_cast<DWORD>(size), &written, nullptr)) return 0;
-		return written;
+		uint64_t total_written = 0;
+		while (total_written < size)
+		{
+			const auto chunk_size = static_cast<DWORD>(std::min<uint64_t>(size - total_written, MAXDWORD));
+			DWORD chunk_written = 0;
+
+			if (!WriteFile(_h, data + total_written, chunk_size, &chunk_written, nullptr))
+			{
+				df::log(__FUNCTION__, platform::last_os_error());
+				break;
+			}
+
+			total_written += chunk_written;
+			if (chunk_written == 0) break;
+		}
+		return total_written;
 	}
 
 	uint64_t seek(const uint64_t pos, const whence w) const override
@@ -929,8 +709,8 @@ public:
 
 	df::date_t get_created() override
 	{
-		FILETIME ftm;
-		GetFileTime(_h, &ftm, nullptr, nullptr);
+		FILETIME ftm{};
+		if (!GetFileTime(_h, &ftm, nullptr, nullptr)) return {};
 		return df::date_t(ft_to_ts(ftm));
 	}
 
@@ -942,8 +722,8 @@ public:
 
 	df::date_t get_modified() override
 	{
-		FILETIME ftm;
-		GetFileTime(_h, nullptr, nullptr, nullptr);
+		FILETIME ftm{};
+		if (!GetFileTime(_h, nullptr, nullptr, &ftm)) return {};
 		return df::date_t(ft_to_ts(ftm));
 	}
 
@@ -957,12 +737,17 @@ public:
 	{
 		if (_h != INVALID_HANDLE_VALUE)
 		{
-			wchar_t path[MAX_PATH];
-			const auto dwRet = GetFinalPathNameByHandle(_h, path, MAX_PATH, VOLUME_NAME_NT);
-
-			if (dwRet < MAX_PATH)
+			std::vector<wchar_t> path(MAX_PATH);
+			auto len = GetFinalPathNameByHandle(_h, path.data(), static_cast<DWORD>(path.size()), VOLUME_NAME_DOS);
+			if (len >= path.size())
 			{
-				return df::file_path(path);
+				path.resize(static_cast<size_t>(len) + 1);
+				len = GetFinalPathNameByHandle(_h, path.data(), static_cast<DWORD>(path.size()), VOLUME_NAME_DOS);
+			}
+
+			if (len > 0 && len < path.size())
+			{
+				return df::file_path(std::wstring_view(path.data(), len));
 			}
 		}
 
@@ -1016,10 +801,28 @@ platform::file_ptr platform::open_file(const df::file_path path, const file_open
 	return std::make_shared<file_impl>(file);
 }
 
+platform::file_ptr platform::make_file_from_handle(const HANDLE h)
+{
+	if (h == nullptr || h == INVALID_HANDLE_VALUE)
+	{
+		return {};
+	}
+
+	return std::make_shared<file_impl>(h);
+}
+
 uint32_t platform::file_crc32(const df::file_path path)
+
+{
+	return file_crc32(path, {});
+}
+
+uint32_t platform::file_crc32(const df::file_path path, const df::cancel_token& token)
 {
 	bool success = false;
 	uint32_t result = crypto::CRCINIT;
+	df::perf_timer timer(df::index_perf.crc_us, &df::index_perf.crc_max_us);
+	df::bump(df::index_perf.crc_computed);
 
 	constexpr auto desired_access = GENERIC_READ;
 	constexpr auto share_mode = FILE_SHARE_READ;
@@ -1035,6 +838,8 @@ uint32_t platform::file_crc32(const df::file_path path)
 		li.QuadPart = 0;
 		if (!GetFileSizeEx(hFile, &li))
 		{
+			CloseHandle(hFile);
+			df::bump(df::index_perf.crc_failed);
 			return 0;
 		}
 
@@ -1046,77 +851,279 @@ uint32_t platform::file_crc32(const df::file_path path)
 		uint64_t total_read = 0ULL;
 
 
-		do
+		while (total_read < size && !token.is_cancelled())
 		{
-			const auto read_size = std::min(max_chunk, static_cast<uint32_t>(size));
+			const auto read_size = static_cast<DWORD>(std::min<uint64_t>(max_chunk, size - total_read));
 			if (ReadFile(hFile, buffer.get(), read_size, &dwReadChunk, nullptr))
 			{
+				// A file truncated by another process reads zero bytes without failing; without this the
+				// loop would never reach the size taken when the file was opened.
+				if (dwReadChunk == 0) break;
+
 				result = crypto::crc32c(result, buffer.get(), dwReadChunk);
 				total_read += dwReadChunk;
 			}
 			else
 			{
 				dwReadChunk = 0;
+				break;
 			}
 		}
-		while (total_read < size && dwReadChunk > 0 && !df::is_closing);
 
 		success = total_read == size;
+		df::bump(df::index_perf.crc_bytes, total_read);
 		CloseHandle(hFile);
 	}
+
+	if (!success) df::bump(df::index_perf.crc_failed);
 
 	return success ? ~result : 0;
 }
 
-bool platform::eject(const df::folder_path path)
+// GUID_DEVINTERFACE_DISK. Defined here because the SDK only declares it and which import library
+// supplies the symbol varies between SDK versions.
+static constexpr GUID guid_devinterface_disk = {
+	0x53f56307, 0xb6bf, 0x11d0, {0x94, 0xf2, 0x00, 0xa0, 0xc9, 0x1e, 0xfb, 0x8b}
+};
+
+static bool volume_device_number(const HANDLE device, STORAGE_DEVICE_NUMBER& result)
 {
-	ULONG returned = 0, res = 0;
+	DWORD returned = 0;
+	return DeviceIoControl(device, IOCTL_STORAGE_GET_DEVICE_NUMBER, nullptr, 0, &result, sizeof(result), &returned,
+	                       nullptr) != 0;
+}
 
-	constexpr auto shareMode = FILE_SHARE_READ | FILE_SHARE_WRITE;
-	constexpr auto accessMode = GENERIC_WRITE | GENERIC_READ;
-	const auto vol = "\\\\.\\"s + path.text()[0] + path.text()[1];
-	const auto vol_w = str::utf8_to_utf16(vol);
+// Finds the device node of the disk a volume lives on, matched by storage device number because
+// that is the only identifier both the volume and the disk interface report.
+static bool find_disk_devinst(const STORAGE_DEVICE_NUMBER& volume_device, DEVINST& result)
+{
+	auto* const devices = SetupDiGetClassDevs(&guid_devinterface_disk, nullptr, nullptr,
+	                                          DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
 
-	auto* hDevice = CreateFile(vol_w.c_str(), accessMode, shareMode, nullptr, OPEN_EXISTING, 0, nullptr);
-
-	if (hDevice == INVALID_HANDLE_VALUE)
+	if (devices == INVALID_HANDLE_VALUE)
 	{
-		df::log(__FUNCTION__, std::format("IOCTL_STORAGE_EJECT_MEDIA: {}", last_os_error()));
+		df::log(__FUNCTION__, std::format("SetupDiGetClassDevs: {}", platform::last_os_error()));
 		return false;
 	}
 
-	res = DeviceIoControl(hDevice, FSCTL_DISMOUNT_VOLUME, nullptr, 0, nullptr, 0, &returned, nullptr);
+	const df::scope_exit close_devices([devices] { SetupDiDestroyDeviceInfoList(devices); });
 
-	if (!res)
+	SP_DEVICE_INTERFACE_DATA interface_data = {sizeof(interface_data)};
+
+	for (DWORD i = 0; SetupDiEnumDeviceInterfaces(devices, nullptr, &guid_devinterface_disk, i, &interface_data); ++i)
 	{
-		df::log(__FUNCTION__, std::format("FSCTL_DISMOUNT_VOLUME: {}", last_os_error()));
+		// Inline path storage keeps the detail buffer correctly aligned; a device path that does not
+		// fit simply fails the call and is skipped.
+		struct
+		{
+			SP_DEVICE_INTERFACE_DETAIL_DATA detail;
+			wchar_t path[MAX_PATH];
+		} storage = {};
+
+		storage.detail.cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA);
+
+		SP_DEVINFO_DATA info_data = {sizeof(info_data)};
+
+		if (!SetupDiGetDeviceInterfaceDetail(devices, &interface_data, &storage.detail, sizeof(storage), nullptr,
+		                                     &info_data))
+		{
+			continue;
+		}
+
+		auto* const disk = CreateFile(storage.detail.DevicePath, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+		                              OPEN_EXISTING, 0, nullptr);
+
+		if (disk == INVALID_HANDLE_VALUE)
+		{
+			continue;
+		}
+
+		STORAGE_DEVICE_NUMBER disk_device = {};
+		const auto matched = volume_device_number(disk, disk_device) &&
+			disk_device.DeviceType == volume_device.DeviceType &&
+			disk_device.DeviceNumber == volume_device.DeviceNumber;
+
+		CloseHandle(disk);
+
+		if (matched)
+		{
+			result = info_data.DevInst;
+			return true;
+		}
 	}
 
-	PREVENT_MEDIA_REMOVAL PMRBuffer;
-	PMRBuffer.PreventMediaRemoval = FALSE;
+	return false;
+}
 
-	res = DeviceIoControl(hDevice, IOCTL_STORAGE_MEDIA_REMOVAL, &PMRBuffer, sizeof(PREVENT_MEDIA_REMOVAL), nullptr, 0,
-	                      &returned, nullptr);
+// Removing a USB drive is a PnP operation on the device node the volume sits on. The storage
+// eject IOCTL only ejects media from a drive that has removable media, so it fails for the USB
+// disks and external drives this command exists to remove.
+static bool request_device_eject(const wchar_t drive_letter)
+{
+	const std::wstring volume_path = std::wstring(L"\\\\.\\") + drive_letter + L':';
 
-	if (!res)
+	// Query access only: the device cannot be removed while a handle asks for more than that.
+	auto* const volume = CreateFile(volume_path.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+	                                0, nullptr);
+
+	if (volume == INVALID_HANDLE_VALUE)
 	{
-		df::log(__FUNCTION__, std::format("IOCTL_STORAGE_MEDIA_REMOVAL: {}", last_os_error()));
+		df::log(__FUNCTION__, std::format("CreateFile: {}", platform::last_os_error()));
+		return false;
 	}
 
-	res = DeviceIoControl(hDevice, IOCTL_STORAGE_EJECT_MEDIA, nullptr, 0, nullptr, 0, &returned, nullptr);
+	STORAGE_DEVICE_NUMBER volume_device = {};
+	const auto have_device = volume_device_number(volume, volume_device);
+	const std::string device_number_error = have_device ? std::string{} : platform::last_os_error();
+	CloseHandle(volume);
 
-	if (!res)
+	if (!have_device)
 	{
-		df::log(__FUNCTION__, std::format("IOCTL_STORAGE_EJECT_MEDIA: {}", last_os_error()));
+		df::log(__FUNCTION__, std::format("IOCTL_STORAGE_GET_DEVICE_NUMBER: {}", device_number_error));
+		return false;
 	}
 
-	res = CloseHandle(hDevice);
+	DEVINST disk_devinst = 0;
 
-	return res != 0;
+	if (!find_disk_devinst(volume_device, disk_devinst))
+	{
+		df::log(__FUNCTION__, std::format("no disk device for {}:", str::utf16_to_utf8({&drive_letter, 1})));
+		return false;
+	}
+
+	// The disk node itself is not removable; the parent is the device that can be unplugged.
+	DEVINST parent_devinst = 0;
+
+	if (CM_Get_Parent(&parent_devinst, disk_devinst, 0) != CR_SUCCESS)
+	{
+		df::log(__FUNCTION__, "CM_Get_Parent failed");
+		return false;
+	}
+
+	constexpr auto attempts = 3;
+
+	for (auto attempt = 0; attempt < attempts; ++attempt)
+	{
+		auto veto_type = PNP_VetoTypeUnknown;
+		wchar_t veto_name[MAX_PATH] = {};
+
+		if (CM_Request_Device_Eject(parent_devinst, &veto_type, veto_name, MAX_PATH, 0) == CR_SUCCESS)
+		{
+			return true;
+		}
+
+		if (attempt + 1 == attempts)
+		{
+			df::log(__FUNCTION__, std::format("CM_Request_Device_Eject vetoed by {} ({})",
+			                                  str::utf16_to_utf8(veto_name), static_cast<int>(veto_type)));
+		}
+		else
+		{
+			// A veto is usually a handle that is about to close, so give it a moment.
+			Sleep(200 * (attempt + 1));
+		}
+	}
+
+	return false;
+}
+
+// Ejects the volume at path. Runs on a worker: it locks, dismounts and waits on the device.
+bool platform::eject(const df::folder_path path)
+{
+	// The device path is built from the drive letter and colon, so anything else is not a volume.
+	const auto text = path.text();
+
+	if (text.size() < 2 || !std::isalpha(static_cast<unsigned char>(text[0])) || text[1] != ':')
+	{
+		return false;
+	}
+
+	const auto drive_letter = static_cast<wchar_t>(text[0]);
+	const std::wstring vol_w = std::wstring(L"\\\\.\\") + drive_letter + L':';
+
+	constexpr auto share_mode = FILE_SHARE_READ | FILE_SHARE_WRITE;
+	constexpr auto access_mode = GENERIC_READ | GENERIC_WRITE;
+
+	auto* const device = CreateFile(vol_w.c_str(), access_mode, share_mode, nullptr, OPEN_EXISTING, 0, nullptr);
+
+	if (device == INVALID_HANDLE_VALUE)
+	{
+		df::log(__FUNCTION__, std::format("CreateFile {}: {}", str::utf16_to_utf8(vol_w), last_os_error()));
+		return false;
+	}
+
+	auto media_ejected = false;
+	auto locked = false;
+
+	{
+		const df::scope_exit close_device([device] { CloseHandle(device); });
+
+		DWORD returned = 0;
+		constexpr auto lock_attempts = 5;
+
+		// Locking is what makes the dismount safe: it fails while another handle is open instead of
+		// tearing a volume away from whoever is writing to it. Retries cover a handle mid-close.
+		for (auto attempt = 0; attempt < lock_attempts && !locked; ++attempt)
+		{
+			locked = DeviceIoControl(device, FSCTL_LOCK_VOLUME, nullptr, 0, nullptr, 0, &returned, nullptr) != 0;
+
+			if (!locked)
+			{
+				if (attempt + 1 == lock_attempts)
+				{
+					df::log(__FUNCTION__, std::format("FSCTL_LOCK_VOLUME: {}", last_os_error()));
+				}
+				else
+				{
+					Sleep(100 * (attempt + 1));
+				}
+			}
+		}
+
+		if (locked)
+		{
+			if (DeviceIoControl(device, FSCTL_DISMOUNT_VOLUME, nullptr, 0, nullptr, 0, &returned, nullptr))
+			{
+				PREVENT_MEDIA_REMOVAL allow_removal = {};
+				allow_removal.PreventMediaRemoval = FALSE;
+
+				// Drives without removable media reject this; that is not a failure to eject.
+				if (!DeviceIoControl(device, IOCTL_STORAGE_MEDIA_REMOVAL, &allow_removal, sizeof(allow_removal),
+				                     nullptr, 0, &returned, nullptr))
+				{
+					df::log(__FUNCTION__, std::format("IOCTL_STORAGE_MEDIA_REMOVAL: {}", last_os_error()));
+				}
+
+				media_ejected = DeviceIoControl(device, IOCTL_STORAGE_EJECT_MEDIA, nullptr, 0, nullptr, 0, &returned,
+				                                nullptr) != 0;
+
+				if (!media_ejected)
+				{
+					df::log(__FUNCTION__, std::format("IOCTL_STORAGE_EJECT_MEDIA: {}", last_os_error()));
+				}
+			}
+			else
+			{
+				df::log(__FUNCTION__, std::format("FSCTL_DISMOUNT_VOLUME: {}", last_os_error()));
+			}
+		}
+	}
+
+	// Media eject covers optical drives and card readers. Everything else - including a volume that
+	// could not be locked - is removed through its device node, which lets the system flush and
+	// dismount in order and report what is holding the drive instead of forcing it away.
+	return media_ejected || request_device_eject(drive_letter);
 }
 
 bool platform::is_server(const std::string_view path)
 {
+	// A drive root such as "C:\" is also a single path segment, but it is never a server name.
+	// Treating one as a server sends drive enumeration failures down the NetShareEnum path.
+	if (path.size() >= 2 && std::isalpha(static_cast<unsigned char>(path[0])) && path[1] == ':')
+	{
+		return false;
+	}
+
 	static std::regex e(R"(^[\\/]*([^\\\/]+)[\\\/]*$)");
 	std::match_results<std::string_view::const_iterator> m;
 	return std::regex_match(path.begin(), path.end(), m, e);
@@ -1124,54 +1131,30 @@ bool platform::is_server(const std::string_view path)
 
 df::file_path platform::running_app_path()
 {
-	wchar_t sz[MAX_PATH];
-	GetModuleFileName(get_resource_instance, sz, MAX_PATH);
-	return df::file_path(sz);
-}
+	// The buffer is grown until the name fits; GetModuleFileName truncates without failing on
+	// Windows Vista and later, so a full buffer is treated as truncation.
+	std::wstring result(MAX_PATH, 0);
 
-size_t platform::calc_optimal_read_size(const df::file_path path)
-{
-	const auto sz = path.folder().text();
-	wchar_t d = 0;
-
-	if (!is_empty(sz) &&
-		std::isalpha(sz[0]) &&
-		sz[1] == ':' &&
-		df::is_path_sep(sz[2]))
+	for (;;)
 	{
-		d = str::to_lower(sz[0]);
-	}
+		const auto len = GetModuleFileName(get_resource_instance, result.data(), static_cast<DWORD>(result.size()));
 
-	if (d >= 'a' && d <= 'z')
-	{
-		static size_t cached[26] = {0};
-		const auto cached_val = cached[d - 'a'];
-
-		if (cached_val)
+		if (len == 0)
 		{
-			return cached_val;
+			df::log(__FUNCTION__, last_os_error());
+			return {};
 		}
 
-		DWORD sectorsPerCluster = 0;
-		DWORD bytesPerSector = 0;
-		DWORD numberOfFreeClusters = 0;
-		DWORD totalNumberOfClusters = 0;
-
-		const wchar_t drive[] = {d, ':', '\\', 0};
-		const auto success = GetDiskFreeSpace(drive, &sectorsPerCluster, &bytesPerSector, &numberOfFreeClusters,
-		                                      &totalNumberOfClusters) != FALSE;
-
-		if (success)
+		if (len < result.size())
 		{
-			const auto block_size = bytesPerSector * sectorsPerCluster;
-			cached[d - 'a'] = block_size;
-			return block_size;
+			result.resize(len);
+			return df::file_path(result);
 		}
+
+		if (result.size() >= 32768) return {};
+		result.resize(result.size() * 2);
 	}
-
-	return 16 * 1024; // default
 }
-
 
 static void add_library_paths(REFIID libraryId, df::unique_folders& results)
 {
@@ -1224,10 +1207,12 @@ static df::folder_path app_data()
 
 static df::folder_path app_cache_data()
 {
+	// Existing users already have cache data at %LOCALAPPDATA%\Diffractor; this stays the
+	// location for desktop builds and the fallback when the Store lookup below fails.
+	const auto default_folder = path_from_csidl(CSIDL_LOCAL_APPDATA | CSIDL_FLAG_CREATE).combine(s_app_name);
+
 #ifdef WINSTORE
-	// For Store apps, use the LocalCache folder as required by Microsoft
-	// This uses raw COM to get the proper package-aware cache location
-	// Note: LocalCacheFolder is on IApplicationData3, not IApplicationData
+	// Store packages are expected to keep their index in the package LocalCache folder.
 	df::folder_path result;
 
 	ComPtr<ABI::Windows::Storage::IApplicationDataStatics> app_data_statics;
@@ -1242,14 +1227,13 @@ static df::folder_path app_cache_data()
 
 		if (SUCCEEDED(hr))
 		{
-			// LocalCacheFolder is on IApplicationData2
-			ComPtr<ABI::Windows::Storage::IApplicationData2> app_data3;
-			hr = app_data.As(&app_data3);
+			ComPtr<ABI::Windows::Storage::IApplicationData2> app_data2;
+			hr = app_data.As(&app_data2);
 
 			if (SUCCEEDED(hr))
 			{
 				ComPtr<ABI::Windows::Storage::IStorageFolder> cache_folder;
-				hr = app_data3->get_LocalCacheFolder(&cache_folder);
+				hr = app_data2->get_LocalCacheFolder(&cache_folder);
 
 				if (SUCCEEDED(hr))
 				{
@@ -1277,14 +1261,18 @@ static df::folder_path app_cache_data()
 		}
 	}
 
-	return result;
-#else
-	// For Desktop apps, preserve backwards compatibility with existing location
-	// Existing users already have cache data at %LOCALAPPDATA%\Diffractor
-	const auto folder = path_from_csidl(CSIDL_LOCAL_APPDATA | CSIDL_FLAG_CREATE).combine(s_app_name);
-	platform::create_folder(folder);
-	return folder;
+	if (result.is_empty())
+	{
+		df::log(__FUNCTION__, "LocalCacheFolder unavailable; using local app data");
+	}
+	else
+	{
+		return result;
+	}
 #endif
+
+	platform::create_folder(default_folder);
+	return default_folder;
 }
 
 static df::folder_path shell_known_folder(REFIID id)
@@ -1312,32 +1300,28 @@ static df::folder_path dropbox(const std::string_view sub_folder)
 	{
 		const auto info = df::util::json::json_from_file(info_path);
 
-		if (info.HasMember("personal"))
+		const df::folder_path personal_path(
+			df::util::json::safe_string(df::util::json::safe_object(info, "personal"), "path"));
+		if (personal_path.exists())
 		{
-			const df::folder_path personal_path(df::util::json::safe_string(info["personal"], "path"));
-			if (personal_path.exists())
-			{
-				const auto result = personal_path.combine(sub_folder);
+			const auto result = personal_path.combine(sub_folder);
 
-				if (result.exists())
-				{
-					return result;
-				}
+			if (result.exists())
+			{
+				return result;
 			}
 		}
 
-		if (info.HasMember("business"))
+		const df::folder_path business_path(
+			df::util::json::safe_string(df::util::json::safe_object(info, "business"), "path"));
+
+		if (business_path.exists())
 		{
-			const df::folder_path business_path(df::util::json::safe_string(info["business"], "path"));
+			const auto result = business_path.combine(sub_folder);
 
-			if (business_path.exists())
+			if (result.exists())
 			{
-				const auto result = business_path.combine(sub_folder);
-
-				if (result.exists())
-				{
-					return result;
-				}
+				return result;
 			}
 		}
 	}
@@ -1350,25 +1334,25 @@ static df::folder_path onedrive_root_folder()
 	df::folder_path result;
 
 	HKEY hKey;
-	DWORD dwLen = MAX_PATH;
 	wchar_t path[MAX_PATH] = {0};
+	DWORD dwLen = sizeof(path) - sizeof(wchar_t); // leave room for a terminator the value may omit
 	DWORD dwType = 0;
-	DWORD dwRetVal = 0;
 
-	if (ERROR_SUCCESS == (dwRetVal = RegOpenKeyEx(HKEY_CURRENT_USER, L"SOFTWARE\\Microsoft\\OneDrive", 0,
-	                                              KEY_QUERY_VALUE, &hKey)))
+	if (ERROR_SUCCESS == RegOpenKeyEx(HKEY_CURRENT_USER, L"SOFTWARE\\Microsoft\\OneDrive", 0,
+	                                  KEY_QUERY_VALUE, &hKey))
 	{
-		if (ERROR_SUCCESS == (dwRetVal = RegQueryValueEx(hKey, L"UserFolder", nullptr, &dwType, (LPBYTE)path, &dwLen)))
+		if (ERROR_SUCCESS == RegQueryValueEx(hKey, L"UserFolder", nullptr, &dwType, std::bit_cast<LPBYTE>(&path[0]),
+		                                     &dwLen)
+			&& dwType == REG_SZ)
 		{
-			if (dwType == REG_SZ)
-			{
-				result = df::folder_path(path);
-			}
+			result = df::folder_path(path);
 		}
 
 		RegCloseKey(hKey);
 	}
-	else
+
+	// The key exists before the value does on a fresh install, so the profile fallback covers both.
+	if (result.is_empty())
 	{
 		result = path_from_csidl(CSIDL_PROFILE).combine("OneDrive");
 	}
@@ -1456,7 +1440,7 @@ df::unique_folders platform::known_folders()
 	if (known_path(known_folder::onedrive_video).exists()) result.emplace(known_path(known_folder::onedrive_video));
 	if (known_path(known_folder::onedrive_music).exists()) result.emplace(known_path(known_folder::onedrive_music));
 
-	const auto drives = scan_drives(false);
+	const auto drives = scan_drives();
 
 	for (const auto& d : drives)
 	{
@@ -1501,14 +1485,14 @@ local_folders_result platform::local_folders()
 
 	const auto onedrive_video = known_path(known_folder::onedrive_video);
 
-	if (onedrive_pictures.exists())
+	if (onedrive_video.exists())
 	{
 		result.onedrive_video = onedrive_video;
 	}
 
 	const auto onedrive_music = known_path(known_folder::onedrive_music);
 
-	if (onedrive_pictures.exists())
+	if (onedrive_music.exists())
 	{
 		result.onedrive_music = onedrive_music;
 	}
@@ -1518,15 +1502,38 @@ local_folders_result platform::local_folders()
 
 std::string platform::user_language()
 {
-	wchar_t sz[17];
-	int ccBuf = GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SISO639LANGNAME, sz, 8) - 1;
-	sz[ccBuf++] = '_';
-	ccBuf += GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SISO3166CTRYNAME, sz + ccBuf, 8) - 1;
-	return str::utf16_to_utf8({sz, static_cast<size_t>(ccBuf)});
+	wchar_t language[16]{};
+	wchar_t country[16]{};
+
+	// Both calls return 0 on failure, otherwise the character count including the terminating null.
+	const auto language_len = GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SISO639LANGNAME, language,
+	                                        std::size(language));
+
+	if (language_len < 2) return {};
+
+	std::wstring result(language, static_cast<size_t>(language_len) - 1);
+
+	const auto country_len = GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SISO3166CTRYNAME, country,
+	                                       std::size(country));
+
+	if (country_len >= 2)
+	{
+		result += L'_';
+		result.append(country, static_cast<size_t>(country_len) - 1);
+	}
+
+	return str::utf16_to_utf8(result);
 }
 
-bool platform::mapi_send(const std::string_view to, const std::string_view subject, const std::string_view text,
-                         const attachments_t& attachments)
+platform::mapi_send_result platform::classify_mapi_send_result(const uint32_t result_code)
+{
+	if (result_code == SUCCESS_SUCCESS) return mapi_send_result::sent;
+	if (result_code == MAPI_USER_ABORT) return mapi_send_result::canceled;
+	return mapi_send_result::failed;
+}
+
+platform::mapi_send_result platform::mapi_send(const std::string_view to, const std::string_view subject,
+                                               const std::string_view text, const attachments_t& attachments)
 {
 	df::assert_true(ui::is_ui_thread());
 
@@ -1539,8 +1546,7 @@ bool platform::mapi_send(const std::string_view to, const std::string_view subje
 	SetFocus(nullptr);
 
 	HINSTANCE handle = LoadLibraryExA("MAPI32.DLL", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
-	//::LoadLibrary(L"MAPI32.DLL");
-	bool success = false;
+	auto result = mapi_send_result::failed;
 
 	if (handle)
 	{
@@ -1572,7 +1578,6 @@ bool platform::mapi_send(const std::string_view to, const std::string_view subje
 			{
 				MapiFileDescW fd = {};
 
-				fd.nPosition = 0xFFFFFFFF;
 				fd.lpszPathName = const_cast<wchar_t*>(a.second.c_str());
 				fd.lpszFileName = const_cast<wchar_t*>(a.first.c_str());
 				fd.nPosition = -1;
@@ -1595,12 +1600,9 @@ bool platform::mapi_send(const std::string_view to, const std::string_view subje
 			message_w.lpszSubject = const_cast<LPWSTR>(subject_w.c_str());
 			message_w.lpszNoteText = const_cast<LPWSTR>(text_w.c_str());
 
-			auto result_code = send_mail_w(0, std::bit_cast<ULONG_PTR>(hwndParent), &message_w,
-			                               MAPI_LOGON_UI | MAPI_DIALOG, 0);
-
-			success = result_code == SUCCESS_SUCCESS ||
-				result_code == MAPI_USER_ABORT ||
-				result_code == MAPI_E_LOGIN_FAILURE;
+			const auto result_code = send_mail_w(0, std::bit_cast<ULONG_PTR>(hwndParent), &message_w,
+			                                     MAPI_LOGON_UI | MAPI_DIALOG, 0);
+			result = classify_mapi_send_result(result_code);
 		}
 		else if (send_mail)
 		{
@@ -1649,36 +1651,35 @@ bool platform::mapi_send(const std::string_view to, const std::string_view subje
 			message_a.lpszSubject = const_cast<LPSTR>(std::bit_cast<const char*>(subject_s.c_str()));
 			message_a.lpszNoteText = const_cast<LPSTR>(std::bit_cast<const char*>(text_s.c_str()));
 
-			auto result_code = send_mail(0, std::bit_cast<ULONG_PTR>(hwndParent), &message_a,
-			                             MAPI_LOGON_UI | MAPI_DIALOG, 0);
-
-			success = result_code == SUCCESS_SUCCESS ||
-				result_code == MAPI_USER_ABORT ||
-				result_code == MAPI_E_LOGIN_FAILURE;
+			const auto result_code = send_mail(0, std::bit_cast<ULONG_PTR>(hwndParent), &message_a,
+			                                   MAPI_LOGON_UI | MAPI_DIALOG, 0);
+			result = classify_mapi_send_result(result_code);
 		}
 
 		FreeLibrary(handle);
 	}
 
 	// after returning from the MAPISendMail call, the window must
-	// be re-enabled and focus returned to the frame to undo the workaround
-	// done before the MAPI call.
+	// have its logical enabled state restored and focus returned to the frame.
 	ReleaseCapture();
 
-	EnableWindow(hwndParent, TRUE);
+	sync_app_window_enabled();
 	SetActiveWindow(nullptr);
 	SetActiveWindow(hwndParent);
 	SetFocus(hwndParent);
 
-	if (hwndParent != nullptr)
-		EnableWindow(hwndParent, TRUE);
-
-	return success;
+	return result;
 }
 
 uint32_t platform::tick_count()
 {
 	return GetTickCount();
+}
+
+uint32_t platform::caret_blink_time()
+{
+	const auto milliseconds = GetCaretBlinkTime();
+	return milliseconds == INFINITE ? 0 : milliseconds;
 }
 
 uint32_t platform::current_thread_id()
@@ -1694,9 +1695,8 @@ platform::thread_init::thread_init()
 
 platform::thread_init::~thread_init()
 {
-	if (_hr == S_OK) CoUninitialize();
+	if (SUCCEEDED(_hr)) CoUninitialize();
 }
-
 
 
 platform::media_thread_priority::media_thread_priority()
@@ -1717,91 +1717,41 @@ platform::media_thread_priority::~media_thread_priority()
 	}
 }
 
-class CPropVariant : public PROPVARIANT
-{
-public:
-	CPropVariant()
-	{
-		memset(this, 0, sizeof(this));
-	}
-
-	~CPropVariant()
-	{
-		const HRESULT hr = PropVariantClear(this);
-		df::assert_true(hr == S_OK);
-		(void)hr;
-	}
-
-	bool IsType(_In_ const VARTYPE type) const
-	{
-		return vt == type;
-	}
-
-	PROPVARIANT* operator &()
-	{
-		return this;
-	}
-};
-
-
-static void confirm(const HRESULT hr, const std::string_view context)
-{
-	if (FAILED(hr))
-	{
-		throw app_exception(std::format("{} hr={:x}", context, hr));
-	}
-}
-
-df::blob platform::from_file(const df::file_path path)
-{
-	df::file f;
-
-	if (f.open_read(path, true))
-	{
-		const auto file_len = f.file_size();
-
-		if (file_len > df::max_blob_size)
-		{
-			throw app_exception(std::format("Cannot read file into memory ({} bytes)", file_len));
-		}
-
-		return f.read_blob(file_len);
-	}
-
-	return {};
-}
-
 
 FILETIME ts_to_ft(const uint64_t ts)
 {
 	FILETIME ft;
 	ft.dwHighDateTime = static_cast<uint32_t>(ts >> 32);
-	ft.dwLowDateTime = static_cast<uint32_t>(ts & 0xffffffffffull);
+	ft.dwLowDateTime = static_cast<uint32_t>(ts & 0xffffffffull);
 	return ft;
 }
 
 uint64_t platform::utc_to_local(const uint64_t ts)
 {
 	const auto ft = ts_to_ft(ts);
-	FILETIME result;
-	FileTimeToLocalFileTime(&ft, &result);
+	FILETIME result = {};
+	// The conversion fails for timestamps outside the representable range. Returning `result`
+	// regardless would hand back an uninitialised stack value as a date.
+	if (!FileTimeToLocalFileTime(&ft, &result)) return ts;
 	return ft_to_ts(result);
 }
 
 uint64_t platform::local_to_utc(const uint64_t ts)
 {
 	const auto ft = ts_to_ft(ts);
-	FILETIME result;
-	LocalFileTimeToFileTime(&ft, &result);
+	FILETIME result = {};
+	if (!LocalFileTimeToFileTime(&ft, &result)) return ts;
 	return ft_to_ts(result);
 }
 
 df::date_t platform::dos_date_to_ts(const uint16_t dos_date, const uint16_t dos_time)
 {
-	FILETIME ft_local;
-	FILETIME ft_utc;
-	DosDateTimeToFileTime(dos_date, dos_time, &ft_local);
-	LocalFileTimeToFileTime(&ft_local, &ft_utc);
+	FILETIME ft_local = {};
+	FILETIME ft_utc = {};
+	// A zip/archive entry can carry an out-of-range DOS date; treat that as "no date" rather than
+	// reading whatever happened to be on the stack.
+	if (!DosDateTimeToFileTime(dos_date, dos_time, &ft_local)) return {};
+	if (!LocalFileTimeToFileTime(&ft_local, &ft_utc)) return {};
 	return df::date_t(ft_to_ts(ft_utc));
 }
 
@@ -1911,12 +1861,33 @@ double df::now()
 
 int64_t df::now_ms()
 {
-	LARGE_INTEGER tps = {0};
-	QueryPerformanceFrequency(&tps);
+	static const int64_t ticks_per_second = []
+	{
+		LARGE_INTEGER tps = {0};
+		QueryPerformanceFrequency(&tps);
+		return tps.QuadPart == 0 ? 1 : tps.QuadPart;
+	}();
 
 	LARGE_INTEGER pc = {0};
 	QueryPerformanceCounter(&pc);
-	return pc.QuadPart * 1000 / tps.QuadPart;
+	return pc.QuadPart * 1000 / ticks_per_second;
+}
+
+int64_t df::now_us()
+{
+	// Called per measured operation, so the frequency (fixed for the life of the process) is
+	// cached and the counter is scaled before dividing to keep the multiply inside 64 bits.
+	static const int64_t ticks_per_second = []
+	{
+		LARGE_INTEGER tps = {0};
+		QueryPerformanceFrequency(&tps);
+		return tps.QuadPart == 0 ? 1 : tps.QuadPart;
+	}();
+
+	LARGE_INTEGER pc = {0};
+	QueryPerformanceCounter(&pc);
+	return (pc.QuadPart / ticks_per_second) * 1'000'000 + (pc.QuadPart % ticks_per_second) * 1'000'000 /
+		ticks_per_second;
 }
 
 bool platform::created_date(const df::file_path path, const df::date_t dt)
@@ -1938,36 +1909,6 @@ bool platform::created_date(const df::file_path path, const df::date_t dt)
 	return result != FALSE;
 }
 
-bool platform::set_files_dates(const df::file_path path, const uint64_t dt_created, const uint64_t dt_modified)
-{
-	const auto w = to_file_system_path(path);
-
-	BOOL result = FALSE;
-	const HANDLE h = CreateFile(w.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
-	                            FILE_ATTRIBUTE_NORMAL,
-	                            nullptr);
-
-	if (h != INVALID_HANDLE_VALUE)
-	{
-		const auto ft_created = ts_to_ft(dt_created);
-		const auto ft_modified = ts_to_ft(dt_modified);
-		result = SetFileTime(h, &ft_created, nullptr, &ft_modified);
-		CloseHandle(h);
-	}
-
-	return result != FALSE;
-}
-
-
-platform::mutex::mutex()
-{
-	InitializeSRWLock(std::bit_cast<PSRWLOCK>(&_cs));
-}
-
-platform::mutex::~mutex()
-{
-	// ??
-}
 
 _Acquires_exclusive_lock_(this)
 
@@ -2013,56 +1954,36 @@ void platform::thread_event::create(const bool manual_reset, const bool initial_
 	if (initial_state)
 		flags |= CREATE_EVENT_INITIAL_SET;
 
-	auto* h = ::CreateEventEx(nullptr, nullptr, flags, EVENT_ALL_ACCESS);
+	auto* const h = ::CreateEventEx(nullptr, nullptr, flags, EVENT_ALL_ACCESS);
 
 	if (h == nullptr)
 	{
 		throw app_exception(last_os_error());
 	}
 
+	if (_h) CloseHandle(_h);
 	_h = h;
 }
 
 platform::thread_event::~thread_event()
 {
-	if (_h.has_value())
+	if (_h)
 	{
-		auto* const h = std::any_cast<HANDLE>(_h);
-		_h.reset();
-		CloseHandle(h);
+		CloseHandle(_h);
+		_h = nullptr;
 	}
 }
 
 //
-//bool platform::thread_event::create(LPSECURITY_ATTRIBUTES pSecurity, bool manual_reset, bool initial_state, LPCTSTR pszName) noexcept
-//{
-//	DWORD dwFlags = 0;
-//
-//	if (manual_reset)
-//		dwFlags |= CREATE_EVENT_MANUAL_RESET;
-//
-//	if (initial_state)
-//		dwFlags |= CREATE_EVENT_INITIAL_SET;
-//
-//	_h = std::bit_cast<uintptr_t>(::CreateEventEx(pSecurity, pszName, dwFlags, EVENT_ALL_ACCESS));
-//
-//	return (_h != 0);
-//}
-//
-//bool platform::thread_event::open(_In_ DWORD dwAccess, _In_ BOOL bInheritHandle, _In_z_ LPCTSTR pszName) noexcept
-//{
-//	_h = std::bit_cast<uintptr_t>(::OpenEvent(dwAccess, bInheritHandle, pszName));
-//	return (_h != 0);
-//}
 
 void platform::thread_event::reset() const noexcept
 {
-	ResetEvent(std::any_cast<HANDLE>(_h));
+	if (_h) ResetEvent(_h);
 }
 
 void platform::thread_event::set() const noexcept
 {
-	SetEvent(std::any_cast<HANDLE>(_h));
+	if (_h) SetEvent(_h);
 }
 
 
@@ -2077,21 +1998,34 @@ bool platform::is_valid_file_name(const std::string_view name)
 		"LPT6", "LPT7", "LPT8", "LPT9"
 	};
 
+	if (name.empty())
+	{
+		return false;
+	}
+
+	// Windows silently drops a trailing dot or space, so the file would not carry the name shown.
+	if (name.back() == '.' || name.back() == ' ')
+	{
+		return false;
+	}
 
 	auto i = name.begin();
 	while (i < name.end())
 	{
 		const auto c = str::pop_utf8_char(i, name.end());
 
-		if (c < 128 && invalid_chars.find(static_cast<char>(c)) != std::string_view::npos)
+		if (c < 128 && (c < 32 || invalid_chars.find(static_cast<char>(c)) != std::string_view::npos))
 		{
 			return false;
 		}
 	}
 
+	// A device name stays reserved when it carries an extension: CON.txt is still the console.
+	const auto stem = name.substr(0, name.find('.'));
+
 	for (const auto& reserved : reserved_names)
 	{
-		if (str::icmp(reserved, name) == 0)
+		if (str::icmp(reserved, stem) == 0)
 		{
 			return false;
 		}

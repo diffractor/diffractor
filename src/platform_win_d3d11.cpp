@@ -17,7 +17,6 @@
 
 #include <versionhelpers.h>
 
-#include "app_command_line.h"
 #include "av_format.h"
 #include "platform_win_res.h"
 #include "platform_win_visual.h"
@@ -43,6 +42,14 @@ static bool should_animate()
 	return !GetSystemMetrics(SM_REMOTESESSION);
 }
 
+// Animation is a rendering capability, so the setting and the ui gate consulted by
+// animate_alpha must always agree. The CPU software backend cannot afford per-frame fades.
+static void set_can_animate(const bool can_animate)
+{
+	setting.can_animate = can_animate;
+	ui::animations_enabled = can_animate;
+}
+
 static constexpr std::string_view to_string(const D3D_FEATURE_LEVEL fl)
 {
 	switch (fl)
@@ -62,6 +69,50 @@ static constexpr std::string_view to_string(const D3D_FEATURE_LEVEL fl)
 	}
 
 	return "?";
+}
+
+// Largest texture edge the runtime accepts at a feature level. Exceeding it fails CreateTexture2D
+// outright, so it is a hard clamp on the decode size rather than a tuning choice.
+static constexpr int texture_dimension_limit(const D3D_FEATURE_LEVEL fl)
+{
+	if (fl >= D3D_FEATURE_LEVEL_11_0) return D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION;
+	if (fl >= D3D_FEATURE_LEVEL_10_0) return 8192;
+	return D3D_FL9_3_REQ_TEXTURE2D_U_OR_V_DIMENSION;
+}
+
+// Publishes what one decoded image may cost. Both budgets only ever tighten the fixed ceilings the
+// app shipped with, so a large machine behaves exactly as before and a small one refuses earlier
+// instead of thrashing or failing the upload.
+//
+// vram_bytes is 0 when there is no GPU to ask, which leaves system memory as the only constraint.
+static void publish_image_budgets(const D3D_FEATURE_LEVEL fl, const uint64_t vram_bytes)
+{
+	constexpr int64_t texture_ceiling = 128ll * 1024ll * 1024ll; // 32 megapixels, the historical fixed cap
+	constexpr int64_t decode_ceiling = 2048ll * 1024ll * 1024ll;
+	constexpr int64_t floor_bytes = 64ll * 1024ll * 1024ll;
+
+	MEMORYSTATUSEX mem = {};
+	mem.dwLength = sizeof(mem);
+	const auto total_phys = GlobalMemoryStatusEx(&mem) ? static_cast<int64_t>(mem.ullTotalPhys) : 0;
+
+	// A displayed image is one of several textures live at once (the compared image, its fade-out,
+	// thumbnails, the glyph atlas, map tiles), so it gets a fraction of the card rather than the lot.
+	auto texture_bytes = texture_ceiling;
+	if (vram_bytes > 0) texture_bytes = std::min(texture_bytes, static_cast<int64_t>(vram_bytes / 8));
+	if (total_phys > 0) texture_bytes = std::min(texture_bytes, total_phys / 16);
+
+	// Bounds the transient full-resolution frame a codec must materialise before anything can be
+	// scaled down. Total rather than available memory, so the same file behaves the same way twice.
+	auto decode_bytes = decode_ceiling;
+	if (total_phys > 0) decode_bytes = std::min(decode_bytes, total_phys / 8);
+
+	df::max_texture_dimension = texture_dimension_limit(fl);
+	df::max_texture_bytes = std::max(floor_bytes, texture_bytes);
+	df::max_decode_bytes = std::max(floor_bytes, decode_bytes);
+
+	df::log(__FUNCTION__, std::format("image budget: {} px edge, texture {}, decode {}",
+	                                  df::max_texture_dimension, df::file_size(df::max_texture_bytes).str(),
+	                                  df::file_size(df::max_decode_bytes).str()));
 }
 
 void factories::reset_fonts()
@@ -85,8 +136,17 @@ bool factories::init(const bool use_gpu)
 	if (SUCCEEDED(hr))
 	{
 #ifdef _DEBUG
-		constexpr uint32_t dxgi_flags = DXGI_CREATE_FACTORY_DEBUG;
-		hr = CreateDXGIFactory2(dxgi_flags, __uuidof(dxgi), std::bit_cast<void**>(dxgi.GetAddressOf()));
+		// The DXGI debug layer ships in the optional "Graphics Tools" feature. Without it the call
+		// fails with DXGI_ERROR_SDK_COMPONENT_MISSING, so fall back to a plain factory instead of
+		// treating a missing developer component as a fatal startup error.
+		hr = CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG, __uuidof(dxgi),
+		                        std::bit_cast<void**>(dxgi.GetAddressOf()));
+
+		if (FAILED(hr))
+		{
+			df::log(__FUNCTION__, "DXGI debug layer unavailable - creating factory without it");
+			hr = CreateDXGIFactory1(__uuidof(dxgi), std::bit_cast<void**>(dxgi.GetAddressOf()));
+		}
 #else
 		hr = CreateDXGIFactory1(__uuidof(dxgi), std::bit_cast<void**>(dxgi.GetAddressOf()));
 #endif
@@ -108,7 +168,7 @@ bool factories::init(const bool use_gpu)
 		}
 	}
 
-	setting.can_animate = should_animate();
+	set_can_animate(should_animate());
 
 	ComPtr<ID3D11Device> device;
 	ComPtr<ID3D11DeviceContext> context;
@@ -138,10 +198,17 @@ bool factories::init(const bool use_gpu)
 			D3D_FEATURE_LEVEL_10_0,
 		};
 
-		auto driver_type = D3D_DRIVER_TYPE_HARDWARE;
+		constexpr auto driver_type = D3D_DRIVER_TYPE_HARDWARE;
 
 		if (use_gpu)
 		{
+			// Mark GPU rendering as active before creating the device so a crash during
+			// device creation or subsequent rendering is attributed to the GPU on the next
+			// launch (apply_gpu_crash_guard). A recovery session retains the marker until
+			// clean shutdown; other software fallbacks clear it immediately.
+			platform::set_crash_guard(platform::crash_guard::gpu_render, true);
+			df::log(__FUNCTION__, "GPU rendering enabled - creating Direct3D 11 device");
+
 			// Use the default adapter (nullptr) with D3D_DRIVER_TYPE_HARDWARE for the broadest
 			// compatibility - the runtime selects the primary hardware device.
 			hr = D3D11CreateDevice(nullptr, driver_type, nullptr, create_device_flags, feature_levels_11_1,
@@ -155,16 +222,39 @@ bool factories::init(const bool use_gpu)
 				                       feature_levels_11, std::size(feature_levels_11),
 				                       D3D11_SDK_VERSION, &device, &feature_level, &context);
 			}
+
+			if (FAILED(hr) && (create_device_flags & D3D11_CREATE_DEVICE_DEBUG) != 0)
+			{
+				// The D3D11 debug layer is part of the optional "Graphics Tools" feature; a Debug
+				// build must not silently drop to software rendering just because it is absent.
+				df::log(__FUNCTION__, "D3D11 debug layer unavailable - retrying without it");
+				create_device_flags &= ~static_cast<uint32_t>(D3D11_CREATE_DEVICE_DEBUG);
+
+				hr = D3D11CreateDevice(nullptr, driver_type, nullptr, create_device_flags, feature_levels_11_1,
+				                       std::size(feature_levels_11_1), D3D11_SDK_VERSION, &device,
+				                       &feature_level, &context);
+
+				if (hr == E_INVALIDARG)
+				{
+					hr = D3D11CreateDevice(nullptr, driver_type, nullptr, create_device_flags,
+					                       feature_levels_11, std::size(feature_levels_11),
+					                       D3D11_SDK_VERSION, &device, &feature_level, &context);
+				}
+			}
 		}
 
-		if (FAILED(hr) || !use_gpu)
+		if (FAILED(hr) || !use_gpu || !device || !context)
 		{
 			// Hardware Direct3D 11 is unavailable (or disabled). Rather than falling back to the
 			// WARP software rasterizer, run with the CPU software rendering backend. Leave the
 			// D3D/DXGI device objects null and mark software_mode; frames use software_draw_context.
+			if (!platform::crash_guard_suppressed(platform::crash_guard::gpu_render))
+			{
+				platform::set_crash_guard(platform::crash_guard::gpu_render, false);
+			}
 			df::log(__FUNCTION__, "D3D11 hardware unavailable - using CPU software rendering");
 			software_mode = true;
-			setting.can_animate = false;
+			set_can_animate(false);
 			device.Reset();
 			context.Reset();
 			hr = S_OK;
@@ -173,7 +263,18 @@ bool factories::init(const bool use_gpu)
 
 	if (SUCCEEDED(hr) && device)
 	{
-		hr = device.As(&dxgi_device);
+		// A device that cannot expose IDXGIDevice cannot drive a swap chain; treat that as
+		// "no usable GPU" and run on the CPU backend rather than failing to start.
+		if (FAILED(device.As(&dxgi_device)))
+		{
+			df::log(__FUNCTION__, "IDXGIDevice unavailable - using CPU software rendering");
+			platform::set_crash_guard(platform::crash_guard::gpu_render, false);
+			software_mode = true;
+			set_can_animate(false);
+			dxgi_device.Reset();
+			device.Reset();
+			context.Reset();
+		}
 	}
 
 	if (SUCCEEDED(hr) && device)
@@ -195,6 +296,7 @@ bool factories::init(const bool use_gpu)
 		df::d3d_info = to_string(feature_level);
 
 		ComPtr<IDXGIAdapter> adapter;
+		uint64_t vram_bytes = 0;
 
 		if (SUCCEEDED(dxgi_device->GetAdapter(&adapter)))
 		{
@@ -209,6 +311,12 @@ bool factories::init(const bool use_gpu)
 				df::gpu_desc = description;
 				df::gpu_id = gpu_id;
 
+				// Integrated parts report no dedicated memory and carve their working set out of the
+				// shared aperture instead.
+				vram_bytes = adapter_desc.DedicatedVideoMemory != 0
+					             ? adapter_desc.DedicatedVideoMemory
+					             : adapter_desc.SharedSystemMemory;
+
 				df::log(__FUNCTION__, "     "s + description);
 				df::log(__FUNCTION__, "     "s + gpu_id);
 				df::log(__FUNCTION__,
@@ -219,6 +327,8 @@ bool factories::init(const bool use_gpu)
 				        "     SharedSystemMemory "s + df::file_size(adapter_desc.SharedSystemMemory).str());
 			}
 		}
+
+		publish_image_budgets(feature_level, vram_bytes);
 	}
 
 	if (SUCCEEDED(hr))
@@ -226,12 +336,45 @@ bool factories::init(const bool use_gpu)
 		if (software_mode)
 		{
 			df::d3d_info = "software";
+			publish_image_budgets(D3D_FEATURE_LEVEL_11_0, 0);
 		}
 
 		register_fonts();
 	}
 
 	return SUCCEEDED(hr);
+}
+
+void factories::downgrade_to_software()
+{
+	df::scope_rendering_func rf(__FUNCTION__);
+	df::assert_true(ui::is_ui_thread());
+
+	if (software_mode)
+	{
+		return;
+	}
+
+	df::log(__FUNCTION__, "Direct3D device lost - switching to CPU software rendering");
+
+	software_mode = true;
+	set_can_animate(false);
+
+	// Drop every reference to the lost device. Draw contexts must already have been
+	// destroyed by the caller; anything still holding a device child simply keeps a dead
+	// object alive until it is released.
+	if (d3d_context)
+	{
+		d3d_context->ClearState();
+		d3d_context->Flush();
+	}
+
+	d3d_context.Reset();
+	d3d_device.Reset();
+	dxgi_device.Reset();
+	d3d_feature_level = D3D_FEATURE_LEVEL_1_0_CORE;
+	df::d3d_info = "software";
+	publish_image_budgets(D3D_FEATURE_LEVEL_11_0, 0);
 }
 
 
@@ -253,7 +396,6 @@ void factories::destroy()
 	wic.Reset();
 	d3d_device.Reset();
 	d3d_context.Reset();
-	//composition_device.Reset();
 	dxgi_device.Reset();
 }
 
@@ -435,7 +577,6 @@ static_assert(std::is_trivial_v<vertex_2d>);
 
 #pragma comment(lib, "d3d11")
 #pragma comment(lib, "dxgi")
-//#pragma comment(lib, "d3dcompiler")
 
 // vlc renderer
 // https://github.com/videolan/vlc-unity/blob/master/Assets/PluginSource/RenderAPI_D3D11.cpp
@@ -466,12 +607,14 @@ class d3d11_text_renderer final : df::no_copy, public IDWriteTextRenderer
 	};
 
 	df::hash_map<char32_t, uint16_t> _chars_to_glyphs;
-	df::hash_map<char32_t, coords> _coords;
+	df::hash_map<uint64_t, coords> _coords;
+	glyph_face_keys _glyph_keys;
 	font_renderer_ptr _font;
 	pointi _next_location;
 
 	ui::color _clr;
 	std::vector<ui::text_highlight_t> _highlights;
+	bool _horizontal_mirror = false;
 
 	coords find_glyph(uint16_t c, const DWRITE_GLYPH_RUN* glyph_run);
 	void create_a8_texture(int xy);
@@ -490,23 +633,18 @@ public:
 		return _font;
 	}
 
-	void draw_text(std::string_view text, recti bounds, ui::style::text_style style, ui::color c, ui::color bg);
+	void draw_text(std::string_view text, recti bounds, ui::style::text_style style, ui::color c, ui::color bg,
+	               bool horizontal_mirror = false);
 
 	void draw_text(std::string_view text, const std::vector<ui::text_highlight_t>& highlights, recti bounds,
 	               ui::style::text_style style, ui::color clr, ui::color bg);
 
-	void draw_text(const std::shared_ptr<text_layout_impl>& text, const recti bounds, const ui::color clr,
-	               const ui::color bg)
-	{
-		df::scope_rendering_func rf(__FUNCTION__);
-		_clr = clr;
-		text->_renderer->draw(std::bit_cast<ui::draw_context*>(_canvas.get()), this, text->_layout.Get(), bounds, clr,
-		                      bg);
-	}
+	void draw_text(const std::shared_ptr<text_layout_impl>& text, recti bounds, ui::color clr, ui::color bg);
 
 	sizei measure_text(const std::string_view text, const sizei avail, const ui::style::text_style style) const
 	{
 		df::scope_rendering_func rf(__FUNCTION__);
+		if (!_font) return {};
 		const auto text16 = str::utf8_to_utf16(text);
 		return _font->measure(text16, style, avail.cx, avail.cy);
 	}
@@ -594,7 +732,16 @@ public:
 	ComPtr<ID3D11Texture2D> _texture;
 
 	std::unique_ptr<av_scaler> _scaler;
-	ComPtr<ID3D11Texture2D> _shared_texture;
+	// Cross-device video sharing: the decoder runs on FFmpeg's own D3D11 device and the
+	// renderer on this device, so a decoded frame is bridged through a keyed-mutex shared
+	// texture. The shared texture, its render-device view, and both keyed mutexes are
+	// created once (per dimension/format) and reused every frame - opening a shared handle
+	// per frame is a heavyweight kernel operation and must not sit in the render loop.
+	ComPtr<ID3D11Texture2D> _shared_texture; // producer copy, on the video device
+	ComPtr<ID3D11Texture2D> _shared_texture_render; // same resource opened on the render device
+	ComPtr<IDXGIKeyedMutex> _shared_producer_mutex; // keyed mutex viewed from the video device
+	ComPtr<IDXGIKeyedMutex> _shared_consumer_mutex; // keyed mutex viewed from the render device
+	ComPtr<ID3D11Device> _shared_texture_device; // decode device the producer copy belongs to
 	sizei _shared_texture_dimensions;
 	ui::texture_format _shared_texture_format = ui::texture_format::None;
 
@@ -616,14 +763,6 @@ public:
 	bool is_valid() const override
 	{
 		return _texture != nullptr;
-	}
-
-	bool supports_nv12() const
-	{
-		UINT support = 0;
-
-		return SUCCEEDED(_f->d3d_device->CheckFormatSupport(DXGI_FORMAT_NV12, &support))
-			&& support & D3D11_FORMAT_SUPPORT_TEXTURE2D;
 	}
 
 	ui::texture_update_result update(const av_frame_ptr& frame) override;
@@ -653,10 +792,13 @@ struct scene_atom
 	std::shared_ptr<d3d11_vertices> verts;
 
 	ui::color_space cs = ui::color_space::rec601_limited;
+	std::shared_ptr<const ui::texture_transform> transform;
+	recti clip_bounds;
+	bool has_clip = false;
 };
 
 
-static_assert(std::is_move_constructible_v<scene_atom>);
+df_assert_movable(scene_atom);
 
 using texture_d3d11_ptr = std::shared_ptr<d3d11_texture>;
 
@@ -682,6 +824,7 @@ class d3d11_draw_context_impl final : public draw_context_device,
 {
 public:
 	recti _clip_bounds;
+	std::vector<recti> _clip_stack;
 	sizei _client_extent;
 
 	factories_ptr _f;
@@ -698,8 +841,13 @@ public:
 	ComPtr<ID3D11PixelShader> _pixel_shader_yuv;
 	ComPtr<ID3D11PixelShader> _pixel_shader_yuv_bicubic;
 	ComPtr<ID3D11Buffer> _yuv_cbuffer;
+	ComPtr<ID3D11Buffer> _texture_transform_cbuffer;
 	ComPtr<ID3D11Buffer> _vertex_buffer;
 	ComPtr<ID3D11Buffer> _index_buffer;
+	// Bytes currently allocated in the dynamic buffers above; they are reused across frames and only
+	// reallocated when a frame needs more room.
+	uint32_t _vertex_buffer_capacity = 0;
+	uint32_t _index_buffer_capacity = 0;
 	ComPtr<ID3D11BlendState> _blend_state;
 	ComPtr<ID3D11RasterizerState> _rasterizer_state;
 	ComPtr<ID3D11SamplerState> _sampler_point;
@@ -733,27 +881,17 @@ public:
 		destroy();
 	}
 
-	void create(const factories_ptr& f, const ComPtr<IDXGISwapChain>& swap_chain, int base_font_size, bool use_gpu);
+	void create(const factories_ptr& f, const ComPtr<IDXGISwapChain>& swap_chain, int base_font_size);
 
 	void resize(sizei extent) override;
 	void update_font_size(int base_font_size) override;
 
 	void build_index_and_vertex_buffers();
-	void draw_scene(const ComPtr<ID3D11DeviceContext>& context) const;
+	HRESULT draw_scene(const ComPtr<ID3D11DeviceContext>& context) const;
 
 
 	sizei measure_string(std::string_view text, sizei size_avail, ui::style::font_face, ui::style::text_style);
 	int line_height(ui::style::font_face);
-
-	bool supports_p010() const
-	{
-		return _supports_p010 && setting.use_yuv;
-	}
-
-	bool supports_nv12() const
-	{
-		return _supports_nv12 && setting.use_yuv;
-	}
 
 	bool is_valid() const override
 	{
@@ -770,64 +908,26 @@ public:
 	void add_scene_atom(const ComPtr<ID3D11Texture2D>& vv, const ComPtr<ID3D11PixelShader>& ss,
 	                    ui::texture_format tex_fmt, ui::texture_sampler sampler, const vertex_2d* vertices,
 	                    size_t vertex_count, const WORD* indexes, size_t index_count,
-	                    ui::color_space cs = ui::color_space::rec601_limited);
+	                    ui::color_space cs = ui::color_space::rec601_limited,
+	                    std::shared_ptr<const ui::texture_transform> transform = nullptr);
 	void draw_texture(const texture_d3d11_ptr& t, const quadd& dst, recti src, ui::color c,
 	                  ui::texture_sampler sampler);
 	void draw_texture(const texture_d3d11_ptr& t, recti dst, recti src, ui::color c, ui::texture_sampler sampler,
 	                  float radius);
 
 	void destroy() override;
-	void begin_draw(sizei client_extent, int base_font_size) override;
-	void render() override;
-	bool can_use_gpu() const;
-
-	void draw_rect(const recti dst, const ui::color clr1, const ui::color clr2)
-	{
-		df::scope_rendering_func rf(__FUNCTION__);
-		df::assert_true(ui::is_ui_thread());
-
-		if (clr1.a >= 0.01f || clr2.a >= 0.01f)
-		{
-			if (!dst.is_empty())
-			{
-				const auto r = rectd(dst).scale(_client_extent);
-
-				const auto center = r.center();
-				const auto dl = static_cast<float>(r.X);
-				const auto dt = static_cast<float>(r.Y);
-				const auto dr = static_cast<float>(r.right());
-				const auto db = static_cast<float>(r.bottom());
-				const auto cx = static_cast<float>(center.X);
-				const auto cy = static_cast<float>(center.Y);
-
-				const vertex_2d vertices[] = {
-
-					vertex_2d(dl, dt, clr2),
-					vertex_2d(dr, dt, clr2),
-					vertex_2d(cx, cy, clr1),
-					vertex_2d(dr, db, clr2),
-					vertex_2d(dl, db, clr2),
-				};
-
-				const WORD indexes[] = {
-
-					0, 1, 2,
-					1, 3, 2,
-					3, 4, 2,
-					4, 0, 2
-				};
-
-				add_scene_atom(nullptr, _pixel_shader_solid, ui::texture_format::None, ui::texture_sampler::point,
-				               vertices, std::size(vertices), indexes, std::size(indexes));
-			}
-		}
-	}
+	void begin_draw(sizei client_extent, int base_font_size, recti damage = {}) override;
+	HRESULT render() override;
+	void release_back_buffer_references() override;
 
 	void clear(ui::color c) override;
 	void draw_rounded_rect(recti bounds, ui::color c, int radius) override;
 	void draw_rect(recti bounds, ui::color c) override;
+	void draw_rect_gradient(recti bounds, ui::color c_centre, ui::color c_corner) override;
 	void draw_text(std::string_view text, recti bounds, ui::style::font_face font, ui::style::text_style style,
 	               ui::color c, ui::color bg) override;
+	void draw_text_mirrored(std::string_view text, recti bounds, ui::style::font_face font,
+	                        ui::style::text_style style, ui::color c, ui::color bg) override;
 	void draw_text(std::string_view text, const std::vector<ui::text_highlight_t>& highlights, recti bounds,
 	               ui::style::font_face font, ui::style::text_style style, ui::color clr, ui::color bg) override;
 	void draw_text(const ui::text_layout_ptr& tl, recti bounds, ui::color clr, ui::color bg) override;
@@ -838,6 +938,8 @@ public:
 	                  float radius) override;
 	void draw_texture(const ui::texture_ptr& t, const quadd& dst, recti src, float alpha,
 	                  ui::texture_sampler sampler) override;
+	void draw_texture(const ui::texture_ptr& t, const quadd& dst, recti src, float alpha,
+	                  ui::texture_sampler sampler, const ui::texture_transform& transform) override;
 	void draw_vertices(const ui::vertices_ptr& v) override;
 
 	ui::texture_ptr create_texture() override;
@@ -879,6 +981,10 @@ void d3d11_draw_context_impl::destroy()
 	df::scope_rendering_func rf(__FUNCTION__);
 	df::assert_true(ui::is_ui_thread());
 
+	// A destroyed context must stop reporting itself as usable, otherwise the window layer
+	// keeps presenting through it instead of recreating one.
+	_is_valid = false;
+
 	_shadow.reset();
 	_inverse_shadow.reset();
 	_scene_atoms.clear();
@@ -898,8 +1004,11 @@ void d3d11_draw_context_impl::destroy()
 	_pixel_shader_yuv.Reset();
 	_pixel_shader_yuv_bicubic.Reset();
 	_yuv_cbuffer.Reset();
+	_texture_transform_cbuffer.Reset();
 	_vertex_buffer.Reset();
 	_index_buffer.Reset();
+	_vertex_buffer_capacity = 0;
+	_index_buffer_capacity = 0;
 	_blend_state.Reset();
 	_rasterizer_state.Reset();
 	_sampler_point.Reset();
@@ -923,40 +1032,8 @@ void d3d11_draw_context_impl::update_font_size(const int base_font_size)
 		_font[ui::style::font_face::icons].reset(c, _f, _f->font_face(ui::style::font_face::icons, base_font_size));
 		_font[ui::style::font_face::small_icons].reset(
 			c, _f, _f->font_face(ui::style::font_face::small_icons, base_font_size));
-		_font[ui::style::font_face::petscii].reset(c, _f, _f->font_face(ui::style::font_face::petscii, base_font_size));
 	}
 }
-
-//HRESULT FindAdapter(IDirect3D9* pD3D9, HMONITOR hMonitor, uint32_t* puAdapterID)
-//{
-//    HRESULT hr = E_FAIL;
-//    uint32_t cAdapters = 0;
-//    uint32_t uAdapterID = static_cast<uint32_t>(-1);
-//
-//    cAdapters = pD3D9->GetAdapterCount();
-//    for (uint32_t i = 0; i < cAdapters; i++)
-//    {
-//        HMONITOR hMonitorTmp = pD3D9->GetAdapterMonitor(i);
-//
-//        if (hMonitorTmp == nullptr)
-//        {
-//            break;
-//        }
-//        if (hMonitorTmp == hMonitor)
-//        {
-//            uAdapterID = i;
-//            break;
-//        }
-//    }
-//
-//    if (uAdapterID != static_cast<uint32_t>(-1))
-//    {
-//        *puAdapterID = uAdapterID;
-//        hr = S_OK;
-//    }
-//    return hr;
-//}
-
 
 static texture_d3d11_ptr create_texture_from_resource(const factories_ptr& f, const int id, const LPCWSTR type)
 {
@@ -970,16 +1047,16 @@ static texture_d3d11_ptr create_texture_from_resource(const factories_ptr& f, co
 
 
 void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGISwapChain>& swap_chain,
-                                     const int base_font_size, const bool use_gpu)
+                                     const int base_font_size)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	df::assert_true(ui::is_ui_thread());
 	_f = f;
 	_swap_chain = swap_chain;
 
-	auto hr = S_OK;
+	auto hr = swap_chain && f && f->d3d_device ? S_OK : E_FAIL;
 
-	if (swap_chain)
+	if (SUCCEEDED(hr))
 	{
 		df::log(__FUNCTION__, std::format("D3D11CreateDevice success {}", to_string(_f->d3d_feature_level)));
 
@@ -1113,6 +1190,7 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGIS
 			D3D11_RASTERIZER_DESC desc = {};
 			desc.CullMode = D3D11_CULL_NONE;
 			desc.FillMode = D3D11_FILL_SOLID;
+			desc.ScissorEnable = true;
 
 			hr = _f->d3d_device->CreateRasterizerState(&desc, &_rasterizer_state);
 
@@ -1148,7 +1226,8 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGIS
 
 			if (FAILED(hr))
 			{
-				df::log(__FUNCTION__, std::format("CreateSamplerState bilinear failed {:x}", static_cast<uint32_t>(hr)));
+				df::log(__FUNCTION__,
+				        std::format("CreateSamplerState bilinear failed {:x}", static_cast<uint32_t>(hr)));
 			}
 		}
 
@@ -1165,26 +1244,41 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGIS
 
 			if (FAILED(hr))
 			{
-				df::log(__FUNCTION__, std::format("CreateBuffer for yuv params failed {:x}", static_cast<uint32_t>(hr)));
+				df::log(__FUNCTION__,
+				        std::format("CreateBuffer for yuv params failed {:x}", static_cast<uint32_t>(hr)));
+			}
+		}
+
+		if (SUCCEEDED(hr))
+		{
+			D3D11_BUFFER_DESC bd = {};
+			bd.ByteWidth = 1104;
+			bd.Usage = D3D11_USAGE_DYNAMIC;
+			bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+			bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+			hr = _f->d3d_device->CreateBuffer(&bd, nullptr, &_texture_transform_cbuffer);
+
+			if (FAILED(hr))
+			{
+				df::log(__FUNCTION__,
+				        std::format("CreateBuffer for texture transform failed {:x}", static_cast<uint32_t>(hr)));
 			}
 		}
 
 		update_font_size(base_font_size);
 	}
 
-	if (FAILED(hr))
+	_is_valid = SUCCEEDED(hr);
+
+	if (!_is_valid)
 	{
 		df::log(__FUNCTION__, std::format("draw_context_d3d11_impl::create failed {:x}", static_cast<uint32_t>(hr)));
 
-		if (use_gpu)
-		{
-			df::log(__FUNCTION__, "Retry without gpu.");
-			create(_f, swap_chain, base_font_size, false);
-			return;
-		}
+		// Release whatever was created before the failure so the caller can fall back to the
+		// CPU software backend without leaving half-built GPU state (and a swap chain the
+		// window layer would otherwise keep presenting to) behind.
+		destroy();
 	}
-
-	_is_valid = SUCCEEDED(hr);
 }
 
 void d3d11_draw_context_impl::resize(const sizei extent)
@@ -1196,177 +1290,130 @@ void d3d11_draw_context_impl::resize(const sizei extent)
 	{
 		_client_extent = extent;
 		_clip_bounds = extent;
-
-		//if (_swap_chain)
-		//{
-		//	//DXGI_MODE_DESC mode_desc;
-		//	//mode_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		//	//mode_desc.Height = size.cy;
-		//	//mode_desc.Width = size.cx;
-		//	//_swap_chain->ResizeTarget(&mode_desc);
-
-		//	UINT flags = 0;
-		//	_swap_chain->ResizeBuffers(swap_buffer_count, extent.cx, extent.cy, back_buffer_format, flags);
-		//}
 	}
 }
 
-void d3d11_draw_context_impl::begin_draw(const sizei client_extent, int base_font_size)
+// The damage rect is ignored: FLIP_SEQUENTIAL rotates back buffers, so the untouched region of the
+// buffer we are about to draw into holds two-frames-ago content rather than the last frame.
+// Redrawing the whole client is what keeps that correct, and is cheap on the GPU.
+void d3d11_draw_context_impl::begin_draw(const sizei client_extent, int base_font_size, recti /*damage*/)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	df::assert_true(ui::is_ui_thread());
 
-	if (is_valid())
-	{
-		_client_extent = client_extent;
-		_clip_bounds.set(0, 0, _client_extent.cx, _client_extent.cy);
+	// Always reset per-frame state, even when the device is not usable: the view still issues
+	// draw calls for the frame and the staging buffers would otherwise grow without bound.
+	_client_extent = client_extent;
+	_clip_bounds.set(0, 0, _client_extent.cx, _client_extent.cy);
+	_clip_stack.clear();
 
-		_scene_atoms.clear();
-		_scene_textures.clear();
+	_scene_atoms.clear();
+	_scene_textures.clear();
 
-		_vertex_buffer_staging.clear();
-		_index_buffer_staging.clear();
+	_vertex_buffer_staging.clear();
+	_index_buffer_staging.clear();
 
-		_vertex_buffer_staging.reserve(5000);
-		_index_buffer_staging.reserve(8000);
-		//_scene_textures.reserve(32);
-		_scene_atoms.reserve(256);
-	}
+	_vertex_buffer_staging.reserve(5000);
+	_index_buffer_staging.reserve(8000);
+	_scene_atoms.reserve(256);
 }
 
-bool d3d11_draw_context_impl::can_use_gpu() const
-{
-	return setting.use_gpu && !command_line.no_gpu && _reset_device_count <= 3;
-}
-
+// Uploads the staged geometry into the shared vertex and index buffers. They must be replaced
+// together - a frame that got one but not the other would be drawn with mismatched buffers
+// (garbage geometry or a GPU fault), so this commits both or clears both. Atoms that use their
+// own buffers (d3d11_vertices) are unaffected; draw_scene skips shared-buffer atoms when the
+// buffers are null.
+//
+// When nothing is staged the existing buffers are KEPT. frame_impl::redraw re-renders the scene
+// built by the last WM_PAINT without calling begin_draw, which is how a new video or visualiser
+// frame is presented without rebuilding the scene; resetting the buffers here would draw it blank.
 void d3d11_draw_context_impl::build_index_and_vertex_buffers()
 {
 	df::scope_rendering_func rf(__FUNCTION__);
-	if (!_vertex_buffer_staging.empty())
+
+	if (_vertex_buffer_staging.empty() && _index_buffer_staging.empty())
 	{
-		const auto buffer_size = sizeof(vertex_2d) * _vertex_buffer_staging.size();
-		if (buffer_size > UINT_MAX)
-		{
-			df::log(__FUNCTION__, "Vertex buffer size exceeds maximum allowed size");
-			return;
-		}
+		return;
+	}
 
-		ComPtr<ID3D11Buffer> buffer;
-		D3D11_BUFFER_DESC bd = {};
-		bd.ByteWidth = static_cast<uint32_t>(buffer_size);
-		bd.Usage = D3D11_USAGE_DEFAULT;
-		bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-		bd.CPUAccessFlags = 0;
-
-		D3D11_SUBRESOURCE_DATA source_data = {};
-		source_data.pSysMem = _vertex_buffer_staging.data();
-
-		const auto hr = _f->d3d_device->CreateBuffer(&bd, &source_data, &buffer);
-
-		if (SUCCEEDED(hr))
-		{
-			_vertex_buffer = buffer;
-		}
-		else
-		{
-			df::log(__FUNCTION__, std::format("CreateBuffer for vertices failed: {:x}", static_cast<uint32_t>(hr)));
-			buffer = nullptr;
-		}
-
+	if (_vertex_buffer_staging.empty() || _index_buffer_staging.empty())
+	{
+		// Vertices without indices (or the reverse) cannot describe a frame.
+		_vertex_buffer.Reset();
+		_index_buffer.Reset();
 		_vertex_buffer_staging.clear();
-	}
-
-	if (!_index_buffer_staging.empty())
-	{
-		const auto buffer_size = sizeof(WORD) * _index_buffer_staging.size();
-		if (buffer_size > UINT_MAX)
-		{
-			df::log(__FUNCTION__, "Index buffer size exceeds maximum allowed size");
-			return;
-		}
-
-		ComPtr<ID3D11Buffer> buffer;
-		D3D11_BUFFER_DESC bd = {};
-		bd.ByteWidth = static_cast<uint32_t>(buffer_size);
-		bd.Usage = D3D11_USAGE_DEFAULT;
-		bd.BindFlags = D3D11_BIND_INDEX_BUFFER;
-		bd.CPUAccessFlags = 0;
-
-		D3D11_SUBRESOURCE_DATA source_data = {};
-		source_data.pSysMem = _index_buffer_staging.data();
-
-		const auto hr = _f->d3d_device->CreateBuffer(&bd, &source_data, &buffer);
-
-		if (SUCCEEDED(hr))
-		{
-			_index_buffer = buffer;
-		}
-		else
-		{
-			df::log(__FUNCTION__, std::format("CreateBuffer for indices failed: {:x}", static_cast<uint32_t>(hr)));
-			buffer = nullptr;
-		}
-
 		_index_buffer_staging.clear();
+		return;
 	}
-}
 
-struct yuv_matrix
-{
-	float m[12];
-};
+	const auto vertex_bytes = sizeof(vertex_2d) * _vertex_buffer_staging.size();
+	const auto index_bytes = sizeof(WORD) * _index_buffer_staging.size();
 
-// Builds an affine YUV->RGB transform (3x3 matrix + bias column, row-major) for the
-// requested colour space and range. Fed to the yuv_params constant buffer; a single
-// matrix therefore handles BT.601/709/2020 and limited/full range with one shader.
-// The limited-range BT.601 case reproduces the previously hard-coded coefficients.
-static yuv_matrix compute_yuv_matrix(const ui::color_space cs)
-{
-	double kr, kb;
-	bool full;
-
-	switch (cs)
+	if (vertex_bytes > UINT_MAX || index_bytes > UINT_MAX)
 	{
-	case ui::color_space::rec709_limited: kr = 0.2126; kb = 0.0722; full = false; break;
-	case ui::color_space::rec709_full: kr = 0.2126; kb = 0.0722; full = true; break;
-	case ui::color_space::rec2020_limited: kr = 0.2627; kb = 0.0593; full = false; break;
-	case ui::color_space::rec2020_full: kr = 0.2627; kb = 0.0593; full = true; break;
-	case ui::color_space::rec601_full: kr = 0.299; kb = 0.114; full = true; break;
-	case ui::color_space::rec601_limited:
-	default: kr = 0.299; kb = 0.114; full = false; break;
+		df::log(__FUNCTION__, "Vertex or index buffer size exceeds maximum allowed size");
+		_vertex_buffer.Reset();
+		_index_buffer.Reset();
+		_vertex_buffer_staging.clear();
+		_index_buffer_staging.clear();
+		return;
 	}
 
-	const double kg = 1.0 - kr - kb;
-	const double vr = 2.0 * (1.0 - kr);
-	const double ug = -2.0 * kb * (1.0 - kb) / kg;
-	const double vg = -2.0 * kr * (1.0 - kr) / kg;
-	const double ub = 2.0 * (1.0 - kb);
+	const auto upload = [this](ComPtr<ID3D11Buffer>& buffer, uint32_t& capacity, const UINT bind_flag,
+	                           const void* data, const uint32_t bytes)
+	{
+		if (!buffer || capacity < bytes)
+		{
+			buffer.Reset();
+			capacity = 0;
 
-	const double y_scale = full ? 1.0 : (255.0 / 219.0);
-	const double y_off = full ? 0.0 : (16.0 / 255.0);
-	const double c_scale = full ? 1.0 : (255.0 / 224.0);
-	const double c_off = 0.5;
+			D3D11_BUFFER_DESC bd = {};
+			bd.ByteWidth = std::max(bytes, 64u * 1024u);
+			bd.Usage = D3D11_USAGE_DYNAMIC;
+			bd.BindFlags = bind_flag;
+			bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 
-	const double a = y_scale;
-	const double ay = -y_scale * y_off;
+			const auto hr = _f->d3d_device->CreateBuffer(&bd, nullptr, &buffer);
 
-	yuv_matrix r{};
-	// R = a*Y + (vr*c_scale)*V + bias
-	r.m[0] = static_cast<float>(a);
-	r.m[1] = 0.0f;
-	r.m[2] = static_cast<float>(vr * c_scale);
-	r.m[3] = static_cast<float>(ay - vr * c_scale * c_off);
-	// G = a*Y + (ug*c_scale)*U + (vg*c_scale)*V + bias
-	r.m[4] = static_cast<float>(a);
-	r.m[5] = static_cast<float>(ug * c_scale);
-	r.m[6] = static_cast<float>(vg * c_scale);
-	r.m[7] = static_cast<float>(ay - (ug + vg) * c_scale * c_off);
-	// B = a*Y + (ub*c_scale)*U + bias
-	r.m[8] = static_cast<float>(a);
-	r.m[9] = static_cast<float>(ub * c_scale);
-	r.m[10] = 0.0f;
-	r.m[11] = static_cast<float>(ay - ub * c_scale * c_off);
-	return r;
+			if (FAILED(hr))
+			{
+				df::log(__FUNCTION__, std::format("CreateBuffer failed: {:x}", static_cast<uint32_t>(hr)));
+				buffer.Reset();
+				return false;
+			}
+
+			capacity = bd.ByteWidth;
+		}
+
+		D3D11_MAPPED_SUBRESOURCE mapped = {};
+		const auto hr = _f->d3d_context->Map(buffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+
+		if (FAILED(hr))
+		{
+			df::log(__FUNCTION__, std::format("Map failed: {:x}", static_cast<uint32_t>(hr)));
+			return false;
+		}
+
+		memcpy(mapped.pData, data, bytes);
+		_f->d3d_context->Unmap(buffer.Get(), 0);
+		return true;
+	};
+
+	const auto uploaded = upload(_vertex_buffer, _vertex_buffer_capacity, D3D11_BIND_VERTEX_BUFFER,
+	                             _vertex_buffer_staging.data(), static_cast<uint32_t>(vertex_bytes)) &&
+		upload(_index_buffer, _index_buffer_capacity, D3D11_BIND_INDEX_BUFFER,
+		       _index_buffer_staging.data(), static_cast<uint32_t>(index_bytes));
+
+	_vertex_buffer_staging.clear();
+	_index_buffer_staging.clear();
+
+	if (!uploaded)
+	{
+		_vertex_buffer.Reset();
+		_index_buffer.Reset();
+		_vertex_buffer_capacity = 0;
+		_index_buffer_capacity = 0;
+	}
 }
 
 struct context_state final
@@ -1376,26 +1423,61 @@ struct context_state final
 	ID3D11SamplerState* sampler = nullptr;
 	ID3D11Buffer* vertex_buffer = nullptr;
 	ID3D11Buffer* index_buffer = nullptr;
+	ID3D11Buffer* pixel_cbuffer = nullptr;
 
 	ID3D11Buffer* yuv_cbuffer = nullptr;
+	ID3D11Buffer* texture_transform_cbuffer = nullptr;
 	ui::color_space uploaded_cs = ui::color_space::rec601_limited;
+	ui::texture_format uploaded_yuv_format = ui::texture_format::None;
 	bool cs_uploaded = false;
+	const ui::texture_transform* uploaded_transform = nullptr;
+	bool identity_transform_uploaded = false;
 
 	df::hash_map<ID3D11Texture2D*, ComPtr<ID3D11ShaderResourceView>> texture_views;
 
 	ID3D11DeviceContext* context;
 	ID3D11Device* device;
+	D3D11_RECT client_clip = {};
 
-	context_state(ID3D11Device* d, ID3D11DeviceContext* c) : context(c), device(d)
+	context_state(ID3D11Device* d, ID3D11DeviceContext* c, const sizei client_extent) : context(c), device(d)
 	{
+		client_clip = {0, 0, client_extent.cx, client_extent.cy};
 	}
 
-	void draw_atom(const scene_atom& a, ID3D11Buffer* vb, ID3D11Buffer* ib, ID3D11SamplerState* ss)
+	// clip_source lets a replayed vertices atom take the clip that was active when draw_vertices
+	// queued it, rather than the (unclipped) state baked in when its buffers were built.
+	void draw_atom(const scene_atom& a, ID3D11Buffer* vb, ID3D11Buffer* ib, ID3D11SamplerState* ss,
+	               const scene_atom* clip_source = nullptr)
 	{
 		df::scope_rendering_func rf(__FUNCTION__);
+		const auto& clip_from = clip_source ? *clip_source : a;
+
+		if (clip_from.has_clip)
+		{
+			const D3D11_RECT clip = {
+				clip_from.clip_bounds.left, clip_from.clip_bounds.top,
+				clip_from.clip_bounds.right, clip_from.clip_bounds.bottom
+			};
+			context->RSSetScissorRects(1, &clip);
+		}
+		else
+		{
+			context->RSSetScissorRects(1, &client_clip);
+		}
 		auto* const s = a.shader;
 		auto* const t = a.texture;
 		const auto tx_fmt = a.tex_format;
+		auto* const required_cbuffer = tx_fmt == ui::texture_format::NV12 || tx_fmt == ui::texture_format::P010
+			                               ? yuv_cbuffer
+			                               : tx_fmt != ui::texture_format::None
+			                               ? texture_transform_cbuffer
+			                               : nullptr;
+		if (required_cbuffer != pixel_cbuffer)
+		{
+			pixel_cbuffer = required_cbuffer;
+			ID3D11Buffer* buffers[] = {required_cbuffer};
+			context->PSSetConstantBuffers(0, 1, buffers);
+		}
 
 		if (s != shader)
 		{
@@ -1404,13 +1486,16 @@ struct context_state final
 		}
 
 		// For YUV shaders, upload the colour-space/range conversion matrix when it changes.
+		// The matrix also depends on the pixel format (P010 needs a level correction), so a
+		// format switch at the same colour space must still re-upload.
 		if ((tx_fmt == ui::texture_format::NV12 || tx_fmt == ui::texture_format::P010) && yuv_cbuffer &&
-			(!cs_uploaded || a.cs != uploaded_cs))
+			(!cs_uploaded || a.cs != uploaded_cs || tx_fmt != uploaded_yuv_format))
 		{
 			uploaded_cs = a.cs;
+			uploaded_yuv_format = tx_fmt;
 			cs_uploaded = true;
 
-			const auto ym = compute_yuv_matrix(a.cs);
+			const auto ym = ui::compute_yuv_matrix(a.cs, tx_fmt == ui::texture_format::P010);
 			D3D11_MAPPED_SUBRESOURCE mapped;
 
 			if (SUCCEEDED(context->Map(yuv_cbuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
@@ -1418,6 +1503,43 @@ struct context_state final
 				memcpy(mapped.pData, ym.m, sizeof(ym.m));
 				context->Unmap(yuv_cbuffer, 0);
 			}
+		}
+
+		if (tx_fmt != ui::texture_format::None && tx_fmt != ui::texture_format::NV12 &&
+			tx_fmt != ui::texture_format::P010 && texture_transform_cbuffer &&
+			(a.transform.get() != uploaded_transform || (!a.transform && !identity_transform_uploaded)))
+		{
+			struct alignas(16) shader_transform_params
+			{
+				float curve[ui::texture_transform::curve_len];
+				float perspective[4];
+				float color[4];
+				float color2[4];
+			};
+
+			static_assert(sizeof(shader_transform_params) == 1072);
+			shader_transform_params params = {};
+			const ui::texture_transform identity;
+			const auto& transform = a.transform ? *a.transform : identity;
+			std::ranges::copy(transform.curve, params.curve);
+			params.perspective[0] = transform.perspective_horizontal;
+			params.perspective[1] = transform.perspective_vertical;
+			params.perspective[2] = transform.has_perspective ? 1.0f : 0.0f;
+			params.perspective[3] = transform.has_color_changes ? 1.0f : 0.0f;
+			params.color[0] = transform.saturation;
+			params.color[1] = transform.vibrance;
+			params.color[2] = transform.red_gain;
+			params.color[3] = transform.green_gain;
+			params.color2[0] = transform.blue_gain;
+
+			D3D11_MAPPED_SUBRESOURCE mapped;
+			if (SUCCEEDED(context->Map(texture_transform_cbuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
+			{
+				memcpy(mapped.pData, &params, sizeof(params));
+				context->Unmap(texture_transform_cbuffer, 0);
+			}
+			uploaded_transform = a.transform.get();
+			identity_transform_uploaded = !a.transform;
 		}
 
 		if (ss != sampler)
@@ -1443,7 +1565,10 @@ struct context_state final
 
 		if (t != texture && t != nullptr)
 		{
-			texture = t;
+			// The cache is only updated once a view is actually bound. Recording the texture
+			// before the bind succeeds leaves the previous atom's views selected while this
+			// atom's draw runs, which samples the wrong image with no error path.
+			auto bound = false;
 
 			if (tx_fmt == ui::texture_format::NV12)
 			{
@@ -1455,17 +1580,18 @@ struct context_state final
 				srv.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
 				srv.Texture2D.MipLevels = 1;
 				srv.Texture2D.MostDetailedMip = 0;
-				auto hr = device->CreateShaderResourceView(texture, &srv, &texture_view_y);
+				auto hr = device->CreateShaderResourceView(t, &srv, &texture_view_y);
 
 				if (SUCCEEDED(hr))
 				{
 					srv.Format = DXGI_FORMAT_R8G8_UNORM;
-					hr = device->CreateShaderResourceView(texture, &srv, &texture_view_uv);
+					hr = device->CreateShaderResourceView(t, &srv, &texture_view_uv);
 
 					if (SUCCEEDED(hr))
 					{
 						ID3D11ShaderResourceView* views[] = {texture_view_y.Get(), texture_view_uv.Get()};
 						context->PSSetShaderResources(0, 2, views);
+						bound = true;
 					}
 				}
 			}
@@ -1479,17 +1605,18 @@ struct context_state final
 				srv.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
 				srv.Texture2D.MipLevels = 1;
 				srv.Texture2D.MostDetailedMip = 0;
-				HRESULT hr = device->CreateShaderResourceView(texture, &srv, &texture_view_y);
+				HRESULT hr = device->CreateShaderResourceView(t, &srv, &texture_view_y);
 
 				if (SUCCEEDED(hr))
 				{
 					srv.Format = DXGI_FORMAT_R16G16_UNORM;
-					hr = device->CreateShaderResourceView(texture, &srv, &texture_view_uv);
+					hr = device->CreateShaderResourceView(t, &srv, &texture_view_uv);
 
 					if (SUCCEEDED(hr))
 					{
 						ID3D11ShaderResourceView* views[] = {texture_view_y.Get(), texture_view_uv.Get()};
 						context->PSSetShaderResources(0, 2, views);
+						bound = true;
 					}
 				}
 			}
@@ -1511,8 +1638,25 @@ struct context_state final
 					view = found->second;
 				}
 
-				ID3D11ShaderResourceView* views[] = {view.Get()};
-				context->PSSetShaderResources(0, 1, views);
+				// Bind both slots so a shader resource view left over from a previous YUV atom
+				// does not stay bound to slot 1 - a stale binding keeps the video texture
+				// referenced and forces the runtime to unbind it on the next copy.
+				ID3D11ShaderResourceView* views[] = {view.Get(), nullptr};
+				context->PSSetShaderResources(0, 2, views);
+				bound = view != nullptr;
+			}
+
+			if (bound)
+			{
+				texture = t;
+			}
+			else
+			{
+				// Nothing is bound, so both slots are cleared rather than left pointing at the
+				// previous atom, and the cache records that so the next atom retries.
+				ID3D11ShaderResourceView* views[] = {nullptr, nullptr};
+				context->PSSetShaderResources(0, 2, views);
+				texture = nullptr;
 			}
 		}
 
@@ -1520,7 +1664,7 @@ struct context_state final
 	}
 };
 
-void d3d11_draw_context_impl::draw_scene(const ComPtr<ID3D11DeviceContext>& context) const
+HRESULT d3d11_draw_context_impl::draw_scene(const ComPtr<ID3D11DeviceContext>& context) const
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	ComPtr<ID3D11RenderTargetView> rtv;
@@ -1530,22 +1674,30 @@ void d3d11_draw_context_impl::draw_scene(const ComPtr<ID3D11DeviceContext>& cont
 
 	auto hr = _swap_chain->GetBuffer(0, __uuidof(ID3D11Texture2D), std::bit_cast<void**>(back_buffer.GetAddressOf()));
 
-	df::assert_true(SUCCEEDED(hr));
-
-	if (SUCCEEDED(hr) && back_buffer)
+	if (FAILED(hr))
 	{
-		hr = _f->d3d_device->CreateRenderTargetView(back_buffer.Get(), nullptr, &rtv);
+		df::log(__FUNCTION__, std::format("IDXGISwapChain::GetBuffer failed {:x}", static_cast<uint32_t>(hr)));
+		return hr;
 	}
 
-	if (SUCCEEDED(hr))
+	hr = _f->d3d_device->CreateRenderTargetView(back_buffer.Get(), nullptr, &rtv);
+
+	if (FAILED(hr))
+	{
+		df::log(__FUNCTION__, std::format("CreateRenderTargetView failed {:x}", static_cast<uint32_t>(hr)));
+		return hr;
+	}
+
 	{
 		ID3D11RenderTargetView* views[] = {rtv.Get()};
 		context->OMSetRenderTargets(1, views, nullptr);
 
 		const D3D11_VIEWPORT viewport = {
-			0.0f, 0.0f, static_cast<float>(_client_extent.cx), static_cast<float>(_client_extent.cy), 0.0f, 0.0f
+			0.0f, 0.0f, static_cast<float>(_client_extent.cx), static_cast<float>(_client_extent.cy), 0.0f, 1.0f
 		};
 		context->RSSetViewports(1, &viewport);
+		const D3D11_RECT client_clip = {0, 0, _client_extent.cx, _client_extent.cy};
+		context->RSSetScissorRects(1, &client_clip);
 
 		if (_rasterizer_state)
 		{
@@ -1569,17 +1721,14 @@ void d3d11_draw_context_impl::draw_scene(const ComPtr<ID3D11DeviceContext>& cont
 			context->OMSetBlendState(_blend_state.Get(), nullptr, 0xFFFFFFFF);
 		}
 
-		constexpr DirectX::XMVECTORF32 bg_color = {{0.222f, 0.222f, 0.222f, 1.0f}};
+		constexpr DirectX::XMVECTORF32 bg_color = {
+			{scene_clear_shade, scene_clear_shade, scene_clear_shade, 1.0f}
+		};
 		context->ClearRenderTargetView(rtv.Get(), bg_color);
 
-		context_state state(_f->d3d_device.Get(), context.Get());
+		context_state state(_f->d3d_device.Get(), context.Get(), _client_extent);
 		state.yuv_cbuffer = _yuv_cbuffer.Get();
-
-		if (_yuv_cbuffer)
-		{
-			ID3D11Buffer* cbs[] = {_yuv_cbuffer.Get()};
-			context->PSSetConstantBuffers(0, 1, cbs);
-		}
+		state.texture_transform_cbuffer = _texture_transform_cbuffer.Get();
 
 		for (const auto& a : _scene_atoms)
 		{
@@ -1588,35 +1737,53 @@ void d3d11_draw_context_impl::draw_scene(const ComPtr<ID3D11DeviceContext>& cont
 				const auto& vb = a.verts->_vertex_buffer;
 				const auto& ib = a.verts->_index_buffer;
 
+				if (!vb || !ib) continue;
+
 				for (const auto& aa : a.verts->_scene_atoms)
 				{
 					const auto ss = aa.sampler == ui::texture_sampler::point ? _sampler_point : _sampler_bilinear;
-					state.draw_atom(aa, vb.Get(), ib.Get(), ss.Get());
+					state.draw_atom(aa, vb.Get(), ib.Get(), ss.Get(), &a);
 				}
 			}
-			else
+			else if (_vertex_buffer && _index_buffer)
 			{
 				const auto ss = a.sampler == ui::texture_sampler::point ? _sampler_point : _sampler_bilinear;
 				state.draw_atom(a, _vertex_buffer.Get(), _index_buffer.Get(), ss.Get());
 			}
 		}
 	}
+
+	// Drop every reference to the back buffer before returning. IDXGISwapChain::ResizeBuffers
+	// fails with DXGI_ERROR_INVALID_CALL while a render target view of a back buffer is still
+	// bound to the device context, which would leave the window rendering at a stale size.
+	context->OMSetRenderTargets(0, nullptr, nullptr);
+
+	return S_OK;
 }
 
-void d3d11_draw_context_impl::render()
+void d3d11_draw_context_impl::release_back_buffer_references()
+{
+	if (_f && _f->d3d_context)
+	{
+		_f->d3d_context->OMSetRenderTargets(0, nullptr, nullptr);
+	}
+}
+
+HRESULT d3d11_draw_context_impl::render()
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	df::assert_true(ui::is_ui_thread());
 
-	if (_f->d3d_context && _swap_chain)
+	if (!is_valid() || !_swap_chain)
 	{
-		if (!_index_buffer_staging.empty())
-		{
-			build_index_and_vertex_buffers();
-		}
-
-		draw_scene(_f->d3d_context);
+		return S_OK;
 	}
+
+	// Uploads anything staged since the last render. A redraw that only updated a texture
+	// stages nothing and re-draws the scene from the buffers built by the last paint.
+	build_index_and_vertex_buffers();
+
+	return draw_scene(_f->d3d_context);
 }
 
 
@@ -1628,16 +1795,25 @@ void d3d11_draw_context_impl::add_scene_atom(const ComPtr<ID3D11Texture2D>& text
                                              const ComPtr<ID3D11PixelShader>& shader, const ui::texture_format tex_fmt,
                                              const ui::texture_sampler sampler, const vertex_2d* vertices,
                                              const size_t vertex_count, const WORD* indexes, const size_t index_count,
-                                             const ui::color_space cs)
+                                             const ui::color_space cs,
+                                             std::shared_ptr<const ui::texture_transform> transform)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	auto combine_with_last_atom = false;
 
 	if (!_scene_atoms.empty())
 	{
-		// optimise by extending exiting atom
+		// Optimise by extending the existing atom. Everything that is bound per atom must
+		// match - shader, texture, sampler, pixel format, colour space, transform and clip -
+		// otherwise the merged atom would silently render with the first atom's state.
+		// Indices are 16-bit and relative to the atom's base vertex, so a merged atom must
+		// also stay within the 16-bit range.
 		auto&& back = _scene_atoms.back();
-		combine_with_last_atom = back.texture == texture.Get() && back.shader == shader.Get();
+		combine_with_last_atom = back.texture == texture.Get() && back.shader == shader.Get() &&
+			back.tex_format == tex_fmt && back.sampler == sampler && back.cs == cs &&
+			!back.transform && !transform && back.has_clip == !_clip_stack.empty() &&
+			(!back.has_clip || back.clip_bounds == _clip_bounds) &&
+			(static_cast<size_t>(back.vertex_count) + vertex_count) <= std::numeric_limits<WORD>::max();
 	}
 
 	const auto vertex_pos = _vertex_buffer_staging.size();
@@ -1669,6 +1845,9 @@ void d3d11_draw_context_impl::add_scene_atom(const ComPtr<ID3D11Texture2D>& text
 		};
 
 		sa.cs = cs;
+		sa.transform = std::move(transform);
+		sa.clip_bounds = _clip_bounds;
+		sa.has_clip = !_clip_stack.empty();
 		_scene_atoms.emplace_back(sa);
 
 		if (!_scene_textures.contains(texture))
@@ -1694,13 +1873,15 @@ void d3d11_draw_context_impl::draw_texture(const texture_d3d11_ptr& t, const rec
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	df::assert_true(ui::is_ui_thread());
+
+	if (!t) return;
+
 	df::assert_true(t->_f->d3d_device == _f->d3d_device);
 
 	const auto alpha = c.a;
 
 	if (alpha >= 0.01f && t->_f->d3d_device == _f->d3d_device)
 	{
-		if (t)
 		{
 			const auto ex = static_cast<float>(_client_extent.cx);
 			const auto ey = static_cast<float>(_client_extent.cy);
@@ -1740,13 +1921,15 @@ void d3d11_draw_context_impl::draw_texture(const texture_d3d11_ptr& t, const qua
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	df::assert_true(ui::is_ui_thread());
+
+	if (!t) return;
+
 	df::assert_true(t->_f->d3d_device == _f->d3d_device);
 
 	const auto alpha = c.a;
 
 	if (alpha >= 0.01f && t->_f->d3d_device == _f->d3d_device)
 	{
-		if (t)
 		{
 			auto d = dst.scale(_client_extent);
 			const auto dimensions = t->dimensions();
@@ -1775,11 +1958,6 @@ void d3d11_draw_context_impl::draw_texture(const texture_d3d11_ptr& t, const qua
 	}
 }
 
-
-static recti Cr(int x, int y, const int cx, const int cy)
-{
-	return {x, y, x + cx, y + cy};
-}
 
 static rectd make_rectd(double x1, double y1, const double x2, const double y2)
 {
@@ -1813,7 +1991,6 @@ static void build_shadow_vertices(vertex_2d* vertices, WORD* indexes, const text
 {
 	const auto tex_dims = texture->dimensions();
 	const sized norm(tex_dims.cx * 2, tex_dims.cy * 2);
-	//auto r = Core::inflate(rect, sxy);
 
 	const auto ex = static_cast<float>(client_extent.cx);
 	const auto ey = static_cast<float>(client_extent.cy);
@@ -1885,6 +2062,15 @@ void d3d11_vertices::update(recti rects[], ui::color colors[], const int num_bar
 	if (num_bars != expected_num_bars)
 		return;
 
+	// The canvas is released by destroy(), and the shadow texture is only loaded once the device is ready.
+	// The device is checked explicitly because the buffer builds below dereference it directly, and after a
+	// downgrade to software the canvas can still be present with no device behind it.
+	if (!_canvas || !_canvas->_shadow || !_canvas->_shadow->is_valid() || !_canvas->_f ||
+		!_canvas->_f->d3d_device || !_canvas->_f->d3d_context)
+		return;
+
+	// ~118KB of the UI thread's 1MB stack (vertex_2d is 48 bytes). Safe while this stays a leaf
+	// call; move to a member buffer if a deeper call chain ever lands underneath it.
 	vertex_2d vertices[visualizer_vertex_count];
 	WORD indexes[visualizer_index_count];
 	auto vertex_count = 0;
@@ -1951,7 +2137,6 @@ void d3d11_vertices::update(recti rects[], ui::color colors[], const int num_bar
 		indexes[index_count++] = vi + 2;
 
 		vertex_count += rect_verex_count;
-		//index_count += rect_index_count;
 	}
 
 	if (!_vertex_buffer)
@@ -2044,49 +2229,40 @@ void d3d11_vertices::update(recti rects[], ui::color colors[], const int num_bar
 	_scene_atoms.clear();
 	_scene_atoms.emplace_back(shadow_atom);
 	_scene_atoms.emplace_back(bar_atom);
-
-	//if (!update_only)
-	//{
-	//	if (rect_vertex_pos > 0)
-	//	{
-	//		//scene_atom shadow_atom = { _shadow._texture, _pixel_shader_rgb, _visualizer_vertex_buffer, 0, rect_vertex_pos };
-	//		//_scene_atoms.emplace_back(shadow_atom);
-	//	}
-
-	//	auto rect_vertex_count = vertex_pos - rect_vertex_pos;
-
-	//	if (rect_vertex_count > 0)
-	//	{
-	//		//scene_atom rects_atom = { nullptr, _pixel_shader_solid, _visualizer_vertex_buffer, rect_vertex_pos, rect_vertex_count };
-	//		//_scene_atoms.emplace_back(rects_atom);
-	//	}
-	//}
-
-	//if (vertex_mode == 0)
-	//{
-	//	D3D11_MAPPED_SUBRESOURCE mapped;
-	//	ZeroMemory(&mapped, sizeof(D3D11_MAPPED_SUBRESOURCE));
-
-	//	if (SUCCEEDED(_f->d3d_context->Map(_visualizer_vertex_buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
-	//	{
-	//		memcpy(mapped.pData, vertices, vertex_pos * vertex_stride);
-	//		_f->d3d_context->Unmap(_visualizer_vertex_buffer, 0);
-	//	}
-	//}
-	//else if (vertex_mode == 1)
-	//{
-	//	D3D11_BOX box{};
-	//	box.left = 0;
-	//	box.right = vertex_pos * vertex_stride;
-	//	box.top = 0;
-	//	box.bottom = 1;
-	//	box.front = 0;
-	//	box.back = 1;
-
-	//	_f->d3d_context->UpdateSubresource(_visualizer_vertex_buffer, 0, &box, reinterpret_cast<const uint8_t*>(vertices), 0, 0);
-	//}
 }
 
+
+// Scoped hold of the FFmpeg D3D11VA device lock. The producer-side copy must run under it,
+// but it is released as early as possible (and on every error path) so decoding on the worker
+// thread is not serialised behind the render-device work that follows.
+class scoped_hwctx_lock final : df::no_copy
+{
+	AVD3D11VADeviceContext* _ctx;
+
+public:
+	explicit scoped_hwctx_lock(AVD3D11VADeviceContext* ctx) : _ctx(ctx)
+	{
+		_ctx->lock(_ctx->lock_ctx);
+	}
+
+	~scoped_hwctx_lock() override
+	{
+		unlock();
+	}
+
+	void unlock()
+	{
+		if (_ctx)
+		{
+			_ctx->unlock(_ctx->lock_ctx);
+			_ctx = nullptr;
+		}
+	}
+};
+
+// The keyed-mutex handoff below runs on the UI thread, so the wait is capped well inside a frame.
+// Both keys are owned by this one function, so an uncontended acquire returns immediately.
+constexpr uint32_t shared_texture_acquire_ms = 8;
 
 ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 {
@@ -2103,8 +2279,22 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 		const sizei src_extent = {(info.width), (info.height)};
 		bool shared_texture_valid = false;
 		auto* frames_ctx = info.ctx;
-		auto device_hwctx = std::bit_cast<AVD3D11VADeviceContext*>(frames_ctx->device_ctx->hwctx);
-		device_hwctx->lock(device_hwctx->lock_ctx);
+
+		// The frame must carry a usable D3D11VA device context, and the renderer must still
+		// have a live device; without either there is nothing to bridge and the caller falls
+		// back to CPU scaling below.
+		auto* const device_hwctx = frames_ctx && frames_ctx->device_ctx
+			                           ? std::bit_cast<AVD3D11VADeviceContext*>(frames_ctx->device_ctx->hwctx)
+			                           : nullptr;
+
+		if (!device_hwctx || !device_hwctx->lock || !device_hwctx->unlock || !_f->d3d_device || !_f->d3d_context)
+		{
+			return ui::texture_update_result::failed;
+		}
+
+		// Hold the FFmpeg device lock for the producer-side work only, and release it on every
+		// exit path (including the early returns below).
+		scoped_hwctx_lock hwctx_lock(device_hwctx);
 
 		auto device = _f->d3d_device;
 		auto context = _f->d3d_context;
@@ -2116,7 +2306,18 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 		ComPtr<ID3D11DeviceContext> video_context;
 
 		video_texture->GetDevice(&video_device);
+
+		if (!video_device)
+		{
+			return ui::texture_update_result::failed;
+		}
+
 		video_device->GetImmediateContext(&video_context);
+
+		if (!video_context)
+		{
+			return ui::texture_update_result::failed;
+		}
 
 		D3D11_TEXTURE2D_DESC tex_desc_src = {};
 		video_texture->GetDesc(&tex_desc_src);
@@ -2131,110 +2332,174 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 		{
 			df::log(__FUNCTION__, std::format("Video texture index {} exceeds array size {}", video_texture_index,
 			                                  tex_desc_src.ArraySize));
-			device_hwctx->unlock(device_hwctx->lock_ctx);
 			return ui::texture_update_result::failed;
 		}
 
-		if (!_shared_texture || _shared_texture_dimensions != texture_extent || _shared_texture_format !=
-			video_tex_format)
+		// The decode device is part of the key: a second video decodes on its own FFmpeg device,
+		// and reusing a producer copy owned by the previous device makes CopySubresourceRegion a
+		// cross-device call that the runtime rejects, leaving stale frames on screen.
+		if (!_shared_texture || !_shared_texture_render || _shared_texture_device != video_device ||
+			_shared_texture_dimensions != texture_extent ||
+			_shared_texture_format != video_tex_format)
 		{
-			ComPtr<ID3D11Texture2D> shared_texture;
+			_shared_texture.Reset();
+			_shared_texture_render.Reset();
+			_shared_producer_mutex.Reset();
+			_shared_consumer_mutex.Reset();
+			_shared_texture_device.Reset();
 
 			D3D11_TEXTURE2D_DESC texDesc = tex_desc_src;
 			texDesc.BindFlags = D3D11_BIND_DECODER;
 			texDesc.Usage = D3D11_USAGE_DEFAULT;
 			texDesc.ArraySize = 1;
-			texDesc.MiscFlags = D3D11_RESOURCE_MISC_SHARED | D3D11_RESOURCE_MISC_SHARED_NTHANDLE;
+			texDesc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_NTHANDLE | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
 
+			ComPtr<ID3D11Texture2D> shared_texture;
 			auto hr = video_device->CreateTexture2D(&texDesc, nullptr, &shared_texture);
 
-			if (SUCCEEDED(hr))
-			{
-				video_context->CopySubresourceRegion(shared_texture.Get(), 0, 0, 0, 0, video_texture.Get(),
-				                                     static_cast<uint32_t>(video_texture_index), nullptr);
-
-				_shared_texture = shared_texture;
-				_shared_texture_dimensions = texture_extent;
-				_shared_texture_format = video_tex_format;
-
-				shared_texture_valid = true;
-			}
-		}
-		else if (_shared_texture)
-		{
-			video_context->CopySubresourceRegion(_shared_texture.Get(), 0, 0, 0, 0, video_texture.Get(),
-			                                     static_cast<uint32_t>(video_texture_index), nullptr);
-			shared_texture_valid = true;
-		}
-
-		device_hwctx->unlock(device_hwctx->lock_ctx);
-
-		if (shared_texture_valid)
-		{
-			video_context->Flush();
-
+			// Open the shared texture on the render device once and cache the opened
+			// resource plus both keyed mutexes. CreateSharedHandle / OpenSharedResource1
+			// are expensive kernel operations - doing them here (only on resize/format
+			// change) instead of per frame is the key win over the original code.
 			ComPtr<IDXGIResource1> shared_resource;
-			auto hr = _shared_texture->QueryInterface(__uuidof(IDXGIResource1),
-			                                          std::bit_cast<LPVOID*>(shared_resource.GetAddressOf()));
+			HANDLE shared_handle = nullptr;
 
+			if (SUCCEEDED(hr)) hr = shared_texture.As(&shared_resource);
 			if (SUCCEEDED(hr))
-			{
-				HANDLE shared_handle = nullptr;
 				hr = shared_resource->CreateSharedHandle(nullptr, DXGI_SHARED_RESOURCE_READ, nullptr, &shared_handle);
 
-				if (SUCCEEDED(hr))
+			ComPtr<ID3D11Device1> device1;
+			if (SUCCEEDED(hr))
+				hr = device->QueryInterface(__uuidof(ID3D11Device1), std::bit_cast<LPVOID*>(device1.GetAddressOf()));
+
+			ComPtr<ID3D11Texture2D> render_texture;
+			if (SUCCEEDED(hr))
+				hr = device1->OpenSharedResource1(shared_handle, __uuidof(ID3D11Texture2D),
+				                                  std::bit_cast<void**>(render_texture.GetAddressOf()));
+
+			if (shared_handle) CloseHandle(shared_handle);
+
+			ComPtr<IDXGIKeyedMutex> producer_mutex;
+			ComPtr<IDXGIKeyedMutex> consumer_mutex;
+			if (SUCCEEDED(hr)) hr = shared_texture.As(&producer_mutex);
+			if (SUCCEEDED(hr)) hr = render_texture.As(&consumer_mutex);
+
+			if (SUCCEEDED(hr))
+			{
+				_shared_texture = shared_texture;
+				_shared_texture_render = render_texture;
+				_shared_producer_mutex = producer_mutex;
+				_shared_consumer_mutex = consumer_mutex;
+				_shared_texture_dimensions = texture_extent;
+				_shared_texture_format = video_tex_format;
+				_shared_texture_device = video_device;
+				_texture.Reset(); // force the render-side SRV texture to be recreated below
+			}
+		}
+
+		if (_shared_texture && _shared_producer_mutex)
+		{
+			// IDXGIKeyedMutex::AcquireSync returns WAIT_TIMEOUT (0x102) and WAIT_ABANDONED
+			// (0x80) as *success* HRESULTs, so it must be tested against S_OK - anything else
+			// means the mutex is not held and the copy below must not run.
+			//
+			// This runs on the UI thread, so the wait must stay well inside a frame. The producer
+			// and consumer keys are handed back and forth by this one function, so an uncontended
+			// acquire completes immediately; anything longer means the chain is wedged and the
+			// recovery path below is the right answer, not a stall.
+			if (_shared_producer_mutex->AcquireSync(0, shared_texture_acquire_ms) == S_OK)
+			{
+				video_context->CopySubresourceRegion(_shared_texture.Get(), 0, 0, 0, 0, video_texture.Get(),
+				                                     static_cast<uint32_t>(video_texture_index), nullptr);
+				video_context->Flush();
+				shared_texture_valid = _shared_producer_mutex->ReleaseSync(1) == S_OK;
+
+				if (!shared_texture_valid)
 				{
-					ComPtr<ID3D11Device1> device1;
-					hr = device->QueryInterface(__uuidof(ID3D11Device1),
-					                            std::bit_cast<LPVOID*>(device1.GetAddressOf()));
+					// The mutex is still held at key 0, so every later frame would block for the
+					// full acquire timeout on the UI thread. Drop the chain and rebuild it.
+					df::log(__FUNCTION__, "Video shared texture release failed - recreating");
+					_shared_texture.Reset();
+					_shared_texture_render.Reset();
+					_shared_producer_mutex.Reset();
+					_shared_consumer_mutex.Reset();
+					_shared_texture_device.Reset();
+					_shared_texture_format = ui::texture_format::None;
+				}
+			}
+			else
+			{
+				// The mutex was left in an unexpected state (timeout or abandoned). Drop the
+				// shared chain so the next frame rebuilds it instead of stalling video forever.
+				df::log(__FUNCTION__, "Video shared texture mutex unavailable - recreating");
+				_shared_texture.Reset();
+				_shared_texture_render.Reset();
+				_shared_producer_mutex.Reset();
+				_shared_consumer_mutex.Reset();
+				_shared_texture_device.Reset();
+				_shared_texture_format = ui::texture_format::None;
+			}
+		}
 
-					if (SUCCEEDED(hr))
+		hwctx_lock.unlock();
+
+		if (shared_texture_valid && _shared_texture_render && _shared_consumer_mutex)
+		{
+			// The producer released to key 1, so a failure here leaves the mutex held at a key nobody
+			// waits on. Drop the chain rather than stalling the UI thread on every later frame.
+			if (_shared_consumer_mutex->AcquireSync(1, shared_texture_acquire_ms) != S_OK)
+			{
+				df::log(__FUNCTION__, "Video shared texture consumer mutex unavailable - recreating");
+				_shared_texture.Reset();
+				_shared_texture_render.Reset();
+				_shared_producer_mutex.Reset();
+				_shared_consumer_mutex.Reset();
+				_shared_texture_device.Reset();
+				_shared_texture_format = ui::texture_format::None;
+			}
+			else
+			{
+				if (!_texture || _dimensions != _shared_texture_dimensions || _format != _shared_texture_format)
+				{
+					D3D11_TEXTURE2D_DESC tex_desc_render = {};
+					_shared_texture_render->GetDesc(&tex_desc_render);
+
+					D3D11_TEXTURE2D_DESC texDesc2 = tex_desc_render;
+					texDesc2.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+					texDesc2.ArraySize = 1;
+					texDesc2.MiscFlags = 0;
+
+					ComPtr<ID3D11Texture2D> texture2;
+					if (SUCCEEDED(device->CreateTexture2D(&texDesc2, nullptr, &texture2)))
 					{
-						ComPtr<ID3D11Texture2D> video_shared_texture;
-						hr = device1->OpenSharedResource1(shared_handle, __uuidof(ID3D11Texture2D),
-						                                  std::bit_cast<void**>(video_shared_texture.GetAddressOf()));
+						context->CopyResource(texture2.Get(), _shared_texture_render.Get());
 
-						if (SUCCEEDED(hr))
-						{
-							if (!_texture || _dimensions != _shared_texture_dimensions || _format !=
-								_shared_texture_format)
-							{
-								D3D11_TEXTURE2D_DESC tex_desc_src = {};
-								video_shared_texture->GetDesc(&tex_desc_src);
-
-								D3D11_TEXTURE2D_DESC texDesc2 = tex_desc_src;
-								texDesc2.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-								texDesc2.ArraySize = 1;
-								texDesc2.MiscFlags = 0;
-
-								ComPtr<ID3D11Texture2D> texture2;
-								hr = device->CreateTexture2D(&texDesc2, nullptr, &texture2);
-
-								if (SUCCEEDED(hr))
-								{
-									context->CopyResource(texture2.Get(), video_shared_texture.Get());
-
-									_texture = texture2;
-									_dimensions = _shared_texture_dimensions;
-									_src_extent = src_extent;
-									_format = _shared_texture_format;
-									_orientation = info.orientation;
-
-									//context->Flush();
-									result = ui::texture_update_result::tex_created;
-								}
-							}
-							else if (_texture && _dimensions == _shared_texture_dimensions && _format ==
-								_shared_texture_format)
-							{
-								context->CopyResource(_texture.Get(), video_shared_texture.Get());
-								//context->Flush();
-								result = ui::texture_update_result::tex_updated;
-							}
-						}
+						_texture = texture2;
+						_dimensions = _shared_texture_dimensions;
+						_src_extent = src_extent;
+						_format = _shared_texture_format;
+						_orientation = info.orientation;
+						result = ui::texture_update_result::tex_created;
 					}
+				}
+				else
+				{
+					context->CopyResource(_texture.Get(), _shared_texture_render.Get());
+					_src_extent = src_extent;
+					result = ui::texture_update_result::tex_updated;
+				}
 
-					CloseHandle(shared_handle);
+				// Symmetrical with the producer release above: a failed release leaves the mutex held
+				// at key 1, which the producer never waits on, so every later frame would time out.
+				if (_shared_consumer_mutex->ReleaseSync(0) != S_OK)
+				{
+					df::log(__FUNCTION__, "Video shared texture consumer release failed - recreating");
+					_shared_texture.Reset();
+					_shared_texture_render.Reset();
+					_shared_producer_mutex.Reset();
+					_shared_consumer_mutex.Reset();
+					_shared_texture_device.Reset();
+					_shared_texture_format = ui::texture_format::None;
 				}
 			}
 		}
@@ -2271,6 +2536,7 @@ sizei d3d11_draw_context_impl::measure_string(const std::string_view text, const
 int d3d11_draw_context_impl::line_height(const ui::style::font_face font)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
+	df::assert_true(ui::is_ui_thread());
 	return _font[font].line_height();
 }
 
@@ -2285,6 +2551,23 @@ static void log_update_texture_crash(const ui::texture_format fmt)
 	df::log(__FUNCTION__, std::format("UpdateSubresource {} ****** crashed ******", to_string(fmt)));
 }
 
+// Only swallow access violations from the known-problematic YUV texture driver path (see the
+// Chromium gpu_driver_bug_list reference below); let every other exception code - and all
+// non-YUV faults - propagate to the global crash handler so real bugs are not hidden.
+static int yuv_upload_seh_filter(const bool is_yuv, const unsigned int code)
+{
+	return (is_yuv && code == EXCEPTION_ACCESS_VIOLATION) ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH;
+}
+
+// Fall back to RGB video/JPEG rendering after a YUV texture driver fault. Persist the choice
+// immediately (via the same backend the app reads at startup) so the fallback survives even if
+// the app later crashes before a clean shutdown - mirroring the graphics crash-guard durability.
+static void disable_yuv_textures()
+{
+	setting.use_yuv = false;
+	setting.write();
+}
+
 static HRESULT try_create_tex(ID3D11Device* pDevice, const D3D11_TEXTURE2D_DESC& desc,
                               const D3D11_SUBRESOURCE_DATA* p_source,
                               ID3D11Texture2D** t)
@@ -2295,7 +2578,7 @@ static HRESULT try_create_tex(ID3D11Device* pDevice, const D3D11_TEXTURE2D_DESC&
 	{
 		return pDevice->CreateTexture2D(&desc, p_source, t);
 	}
-	__except (is_yuv ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH)
+	__except (yuv_upload_seh_filter(is_yuv, GetExceptionCode()))
 	{
 		// Ensure we don't return a partially initialized texture on exception
 		if (t && *t)
@@ -2303,7 +2586,7 @@ static HRESULT try_create_tex(ID3D11Device* pDevice, const D3D11_TEXTURE2D_DESC&
 			(*t)->Release();
 			*t = nullptr;
 		}
-		setting.use_yuv = false;
+		disable_yuv_textures();
 		df::log(__FUNCTION__, "Exception caught in CreateTexture2D, YUV disabled");
 	}
 
@@ -2329,10 +2612,10 @@ static HRESULT try_update_tex(ID3D11DeviceContext* context, ID3D11Texture2D* tex
 		context->UpdateSubresource(texture, 0, &box, pixels, static_cast<UINT>(stride), static_cast<UINT>(buffer_size));
 		return S_OK;
 	}
-	__except (is_yuv ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH)
+	__except (yuv_upload_seh_filter(is_yuv, GetExceptionCode()))
 	{
 		log_update_texture_crash(fmt);
-		setting.use_yuv = false;
+		disable_yuv_textures();
 	}
 
 	return E_FAIL;
@@ -2364,6 +2647,18 @@ ui::texture_update_result d3d11_texture::update(const sizei dims, const ui::text
 		}
 	}
 
+	auto* const device = _f->d3d_device.Get();
+	auto* const context = _f->d3d_context.Get();
+
+	if (!device || !context)
+	{
+		// downgrade_to_software() releases the device, so this can be reached with a null
+		// device while textures are still being updated. The access violation would be raised
+		// inside try_create_tex, where yuv_upload_seh_filter would misread it as a driver
+		// fault and durably clear setting.use_yuv.
+		return result;
+	}
+
 	D3D11_TEXTURE2D_DESC desc = {};
 	desc.Width = cx;
 	desc.Height = cy;
@@ -2392,7 +2687,7 @@ ui::texture_update_result d3d11_texture::update(const sizei dims, const ui::text
 	if (!_texture || _format != fmt || dims != _dimensions)
 	{
 		ComPtr<ID3D11Texture2D> t;
-		const auto hr = try_create_tex(_f->d3d_device.Get(), desc, p_source, &t);
+		const auto hr = try_create_tex(device, desc, p_source, &t);
 
 		if (SUCCEEDED(hr))
 		{
@@ -2411,14 +2706,15 @@ ui::texture_update_result d3d11_texture::update(const sizei dims, const ui::text
 			else
 			{
 				df::log(__FUNCTION__,
-				        std::format("CreateTexture2D {} ({} x {}) failed: {:x}", to_string(fmt), cx, cy, static_cast<uint32_t>(hr)));
+				        std::format("CreateTexture2D {} ({} x {}) failed: {:x}", to_string(fmt), cx, cy,
+				                    static_cast<uint32_t>(hr)));
 			}
 		}
 	}
 	else
 	{
-		const auto hr = SUCCEEDED(
-			try_update_tex(_f->d3d_context.Get(), _texture.Get(), _dimensions, _format, pixels, stride, buffer_size));
+		const auto hr = try_update_tex(context, _texture.Get(), _dimensions, _format, pixels, stride,
+		                               buffer_size);
 		result = SUCCEEDED(hr) ? ui::texture_update_result::tex_updated : ui::texture_update_result::failed;
 	}
 
@@ -2477,14 +2773,23 @@ void d3d11_text_renderer::create_a8_texture(const int xy)
 	}
 }
 
+// Cap the glyph atlas so a pathological font size cannot grow it without bound.
+constexpr uint32_t max_atlas_xy = 4096u;
+constexpr uint32_t initial_atlas_xy = 256u;
+
 d3d11_text_renderer::coords d3d11_text_renderer::find_glyph(const uint16_t c, const DWRITE_GLYPH_RUN* glyph_run)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	coords result = {0, 0, 0, 0, 0};
 
+	if (!glyph_run)
+	{
+		return result;
+	}
+
 	if (!_texture)
 	{
-		create_a8_texture(256);
+		create_a8_texture(initial_atlas_xy);
 	}
 
 	if (!_texture)
@@ -2492,8 +2797,7 @@ d3d11_text_renderer::coords d3d11_text_renderer::find_glyph(const uint16_t c, co
 		return result;
 	}
 
-	const auto index = glyph_run->fontFace->GetGlyphCount();
-	const auto key = index << 16 | c;
+	const auto key = _glyph_keys.key(glyph_run->fontFace, glyph_run->fontEmSize, c);
 	const auto found = _coords.find(key);
 
 	if (found != _coords.cend())
@@ -2509,15 +2813,36 @@ d3d11_text_renderer::coords d3d11_text_renderer::find_glyph(const uint16_t c, co
 			const auto cx = alpha_pixels.cx;
 			const auto cy = alpha_pixels.cy;
 
+			// The atlas only grows on the vertical test below, so a glyph that is itself wider or
+			// taller than the atlas would still be written through a D3D11_BOX outside the
+			// resource. Refuse to cache it rather than issue an out-of-bounds UpdateSubresource.
+			if (cx > static_cast<int>(max_atlas_xy) || cy > static_cast<int>(max_atlas_xy))
+			{
+				df::log(__FUNCTION__, std::format("Glyph {}x{} exceeds the font atlas - not cached", cx, cy));
+				return result;
+			}
+
 			if (_next_location.x + cx > static_cast<int>(_xy_tex))
 			{
 				_next_location.x = 0;
 				_next_location.y += _line_height;
 			}
 
+			// Grow while either axis still cannot hold this glyph; the loop below caps at max_atlas_xy.
+			while (_texture && (cx > static_cast<int>(_xy_tex) || _next_location.y + cy > static_cast<int>(_xy_tex)))
+			{
+				const auto grown = std::min(_xy_tex * 2u, max_atlas_xy);
+
+				if (grown <= _xy_tex) break;
+
+				_coords.clear();
+				_texture = nullptr;
+				create_a8_texture(grown);
+			}
+
 			if (_next_location.y + _line_height > static_cast<int>(_xy_tex)) // Out of room
 			{
-				const auto new_size = std::min(_xy_tex * 2u, 4096u); // Cap at 4096 to prevent excessive memory usage
+				const auto new_size = std::min(_xy_tex * 2u, max_atlas_xy);
 				if (new_size <= _xy_tex)
 				{
 					df::log(__FUNCTION__, "Font texture atlas reached maximum size, glyph rendering may fail");
@@ -2529,7 +2854,8 @@ d3d11_text_renderer::coords d3d11_text_renderer::find_glyph(const uint16_t c, co
 				create_a8_texture(new_size);
 			}
 
-			if (!_texture)
+			if (!_texture || _next_location.x + cx > static_cast<int>(_xy_tex) ||
+				_next_location.y + cy > static_cast<int>(_xy_tex))
 			{
 				return result;
 			}
@@ -2567,6 +2893,14 @@ d3d11_text_renderer::coords d3d11_text_renderer::find_glyph(const uint16_t c, co
 	return result;
 }
 
+void d3d11_text_renderer::draw_text(const std::shared_ptr<text_layout_impl>& text, const recti bounds,
+                                    const ui::color clr, const ui::color bg)
+{
+	df::scope_rendering_func rf(__FUNCTION__);
+	_clr = clr;
+	text->_renderer->draw(_canvas.get(), this, text->_layout.Get(), bounds, clr, bg);
+}
+
 void d3d11_text_renderer::reset(const std::shared_ptr<d3d11_draw_context_impl>& c, const factories_ptr& f,
                                 font_renderer_ptr fr)
 {
@@ -2585,6 +2919,7 @@ void d3d11_text_renderer::reset()
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	_coords.clear();
+	_glyph_keys.clear();
 	_chars_to_glyphs.clear();
 	_texture.Reset();
 	_spacing = 0;
@@ -2596,16 +2931,19 @@ void d3d11_text_renderer::reset()
 }
 
 void d3d11_text_renderer::draw_text(const std::string_view text, const recti bounds,
-                                    const ui::style::text_style style, const ui::color c, const ui::color bg)
+                                    const ui::style::text_style style, const ui::color c, const ui::color bg,
+                                    const bool horizontal_mirror)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	_clr = c;
+	_horizontal_mirror = horizontal_mirror;
 
 	if (_font)
 	{
-		_font->draw(std::bit_cast<ui::draw_context*>(_canvas.get()), this, str::utf8_to_utf16(text), bounds, style, c,
+		_font->draw(_canvas.get(), this, str::utf8_to_utf16(text), bounds, style, c,
 		            bg, {});
 	}
+	_horizontal_mirror = false;
 }
 
 void d3d11_text_renderer::draw_text(const std::string_view text, const std::vector<ui::text_highlight_t>& highlights,
@@ -2639,7 +2977,7 @@ void d3d11_text_renderer::draw_text(const std::string_view text, const std::vect
 
 	if (_font)
 	{
-		_font->draw(std::bit_cast<ui::draw_context*>(_canvas.get()), this, w, bounds, style, clr, bg, _highlights);
+		_font->draw(_canvas.get(), this, w, bounds, style, clr, bg, _highlights);
 	}
 }
 
@@ -2650,11 +2988,6 @@ void d3d11_text_renderer::draw_text(const std::string_view text, const std::vect
 
 HRESULT d3d11_text_renderer::GetPixelsPerDip(void* clientDrawingContext, FLOAT* pixelsPerDip)
 {
-	/*if (_canvas)
-	{
-		*pixelsPerDip = 96.0 * _canvas->scale_factor;
-	}
-	else*/
 	{
 		*pixelsPerDip = 96.0;
 	}
@@ -2671,16 +3004,19 @@ HRESULT d3d11_text_renderer::DrawGlyphRun(void* clientDrawingContext, const FLOA
 	df::scope_rendering_func rf(__FUNCTION__);
 	df::assert_true(ui::is_ui_thread());
 
-	if (glyphRun)
+	if (glyphRun && _canvas)
 	{
 		const auto client_extent = _canvas->client_extent();
 		auto char_pos = glyphRunDescription ? glyphRunDescription->textPosition : 0;
 		auto i_highlights = _highlights.begin();
-		//auto transparent = clr.aa(0.0f);
 
 		const pointd screen_scale(client_extent.cx, client_extent.cy);
-		const pointd tex_scale(_xy_tex, _xy_tex);
+		// find_glyph can grow the atlas, which replaces the texture and invalidates the scale used for
+		// every vertex staged so far, so this is tracked and flushed before the change is observed.
+		auto tex_scale = pointd(_xy_tex, _xy_tex);
 
+		// ~102KB of the UI thread's 1MB stack (vertex_2d is 48 bytes). Safe while this stays a leaf
+		// call; move to a member buffer if a deeper call chain ever lands underneath it.
 		vertex_2d vertices[max_vert_count];
 		WORD indexes[max_index_count];
 
@@ -2693,7 +3029,6 @@ HRESULT d3d11_text_renderer::DrawGlyphRun(void* clientDrawingContext, const FLOA
 		constexpr auto limit_char = -1;
 		auto tx = 0.0f; // -_spacing;
 		const auto is_left_to_right = (glyphRun->bidiLevel & 0x01) == 0;
-		//const int cx = xend - xbegin;
 
 		const auto len = glyphRun->glyphCount;
 		auto t = _texture;
@@ -2703,6 +3038,22 @@ HRESULT d3d11_text_renderer::DrawGlyphRun(void* clientDrawingContext, const FLOA
 			const auto c = glyphRun->glyphIndices[i];
 			const auto ax = glyphRun->glyphAdvances[i];
 			const auto coord = find_glyph(c, glyphRun);
+
+			if (t != _texture)
+			{
+				if (t && index_count > 0)
+				{
+					_canvas->add_scene_atom(t, _canvas->_pixel_shader_font, ui::texture_format::RGB,
+					                        ui::texture_sampler::point, vertices, vertex_count, indexes,
+					                        index_count);
+				}
+
+				vertex_count = 0;
+				index_count = 0;
+				t = _texture;
+				tex_scale = pointd(_xy_tex, _xy_tex);
+			}
+
 			auto sx = tx;
 			auto sy = ty - _base_line_height; // coord.x_offset;
 
@@ -2729,7 +3080,7 @@ HRESULT d3d11_text_renderer::DrawGlyphRun(void* clientDrawingContext, const FLOA
 			const auto w = tx2 - tx1;
 			const auto h = ty2 - ty1;
 
-			if (c != L' ')
+			if (w > 0 && h > 0)
 			{
 				pointd tl(sx, sy);
 				pointd tr(sx + w, sy);
@@ -2758,10 +3109,12 @@ HRESULT d3d11_text_renderer::DrawGlyphRun(void* clientDrawingContext, const FLOA
 				const auto right_color = i == limit_char ? ui::color{} : clr;
 				const auto pos = vertex_count;
 
-				vertices[vertex_count++].set(bl / screen_scale, pointd(tx1, ty2) / tex_scale, left_color);
-				vertices[vertex_count++].set(tl / screen_scale, pointd(tx1, ty1) / tex_scale, left_color);
-				vertices[vertex_count++].set(br / screen_scale, pointd(tx2, ty2) / tex_scale, right_color);
-				vertices[vertex_count++].set(tr / screen_scale, pointd(tx2, ty1) / tex_scale, right_color);
+				const auto texture_left = _horizontal_mirror ? tx2 : tx1;
+				const auto texture_right = _horizontal_mirror ? tx1 : tx2;
+				vertices[vertex_count++].set(bl / screen_scale, pointd(texture_left, ty2) / tex_scale, left_color);
+				vertices[vertex_count++].set(tl / screen_scale, pointd(texture_left, ty1) / tex_scale, left_color);
+				vertices[vertex_count++].set(br / screen_scale, pointd(texture_right, ty2) / tex_scale, right_color);
+				vertices[vertex_count++].set(tr / screen_scale, pointd(texture_right, ty1) / tex_scale, right_color);
 
 				indexes[index_count++] = pos + 0;
 				indexes[index_count++] = pos + 1;
@@ -2770,7 +3123,7 @@ HRESULT d3d11_text_renderer::DrawGlyphRun(void* clientDrawingContext, const FLOA
 				indexes[index_count++] = pos + 2;
 				indexes[index_count++] = pos + 1;
 
-				if (index_count > index_limit || i == len - 1 || t != _texture)
+				if (index_count > index_limit || vertex_count > vert_limit)
 				{
 					if (_texture)
 					{
@@ -2781,16 +3134,20 @@ HRESULT d3d11_text_renderer::DrawGlyphRun(void* clientDrawingContext, const FLOA
 
 					vertex_count = 0;
 					index_count = 0;
-
-					if (t != _texture)
-					{
-						t = _texture;
-					}
 				}
 			}
 
 			tx += ax;
 			char_pos += 1;
+		}
+
+		// The remainder is flushed here rather than on the last iteration: the last glyph in a
+		// run may contribute no geometry, and folding the flush into that case discarded it.
+		if (_texture && index_count > 0)
+		{
+			_canvas->add_scene_atom(_texture, _canvas->_pixel_shader_font, ui::texture_format::RGB,
+			                        ui::texture_sampler::point, vertices, vertex_count, indexes,
+			                        index_count);
 		}
 	}
 
@@ -2810,7 +3167,9 @@ void d3d11_draw_context_impl::draw_shadow(const recti dst, const int sxy, const 
 	WORD indexes[6 * 8];
 	const auto& texture = inverse ? _inverse_shadow : _shadow;
 
-	if (texture)
+	// create_texture_from_resource always returns an object, so the decode has to be confirmed here:
+	// an unloaded texture reports zero dimensions and build_shadow_vertices would divide by them.
+	if (texture && texture->is_valid())
 	{
 		build_shadow_vertices(vertices, indexes, texture, dst, _client_extent, sxy, alpha);
 		add_scene_atom(texture->_texture, _pixel_shader_rgb, ui::texture_format::RGB, ui::texture_sampler::point,
@@ -2831,6 +3190,20 @@ void d3d11_draw_context_impl::draw_text(const std::string_view textA, const rect
 	}
 }
 
+void d3d11_draw_context_impl::draw_text_mirrored(const std::string_view text, const recti bounds,
+                                                 const ui::style::font_face font,
+                                                 const ui::style::text_style style, const ui::color clr,
+                                                 const ui::color bg)
+{
+	df::scope_rendering_func rf(__FUNCTION__);
+	df::assert_true(ui::is_ui_thread());
+
+	if (clr.a >= 0.01f && _clip_bounds.intersects(bounds))
+	{
+		_font[font].draw_text(text, bounds, style, clr, bg, true);
+	}
+}
+
 void d3d11_draw_context_impl::draw_text(const std::string_view text,
                                         const std::vector<ui::text_highlight_t>& highlights, const recti bounds,
                                         const ui::style::font_face font, const ui::style::text_style style,
@@ -2842,7 +3215,7 @@ void d3d11_draw_context_impl::draw_text(const std::string_view text,
 
 	if (_clip_bounds.intersects(bounds))
 	{
-		_font[font].draw_text(text, highlights, bounds, style, clr, {});
+		_font[font].draw_text(text, highlights, bounds, style, clr, bg);
 	}
 }
 
@@ -2855,7 +3228,11 @@ void d3d11_draw_context_impl::draw_text(const ui::text_layout_ptr& tl, const rec
 	if (_clip_bounds.intersects(bounds))
 	{
 		const auto t = std::dynamic_pointer_cast<text_layout_impl>(tl);
-		_font[t->_font].draw_text(t, bounds, clr, bg);
+
+		if (t)
+		{
+			_font[t->_font].draw_text(t, bounds, clr, bg);
+		}
 	}
 }
 
@@ -2923,14 +3300,19 @@ recti d3d11_draw_context_impl::clip_bounds() const
 	return _clip_bounds;
 }
 
-void d3d11_draw_context_impl::clip_bounds(const recti)
+void d3d11_draw_context_impl::clip_bounds(const recti bounds)
 {
-	// nop	
+	_clip_stack.emplace_back(_clip_bounds);
+	_clip_bounds = _clip_bounds.intersection(bounds);
 }
 
 void d3d11_draw_context_impl::restore_clip()
 {
-	// nop
+	if (!_clip_stack.empty())
+	{
+		_clip_bounds = _clip_stack.back();
+		_clip_stack.pop_back();
+	}
 }
 
 void d3d11_draw_context_impl::clear(const ui::color c)
@@ -3025,22 +3407,50 @@ void d3d11_draw_context_impl::draw_rect(const recti bounds, const ui::color c)
 	df::scope_rendering_func rf(__FUNCTION__);
 	df::assert_true(ui::is_ui_thread());
 
-	const auto clr1 = c;
-	const auto clr2 = c.emphasize();
+	if (c.a < 0.01f) return;
+
+	const auto r = static_cast<quadd>(bounds).scale(_client_extent);
+
+	const vertex_2d vertices[] = {
+
+		vertex_2d(r[0], c),
+		vertex_2d(r[1], c),
+		vertex_2d(r[2], c),
+		vertex_2d(r[3], c),
+	};
+
+	constexpr WORD indexes[] = {
+
+		0, 1, 2,
+		2, 3, 0
+	};
+
+	add_scene_atom(nullptr, _pixel_shader_solid, ui::texture_format::None, ui::texture_sampler::point, vertices,
+	               std::size(vertices), indexes, std::size(indexes));
+}
+
+// Four-triangle fan from the centre vertex: the rasteriser interpolates c_centre at the middle to
+// c_corner at the four corners. software_canvas::fill_rect_gradient reproduces this on the CPU.
+void d3d11_draw_context_impl::draw_rect_gradient(const recti bounds, const ui::color c_centre,
+                                                 const ui::color c_corner)
+{
+	df::scope_rendering_func rf(__FUNCTION__);
+	df::assert_true(ui::is_ui_thread());
+
 	const auto dst = static_cast<quadd>(bounds);
 
-	if (clr1.a >= 0.01f || clr2.a >= 0.01f)
+	if (c_centre.a >= 0.01f || c_corner.a >= 0.01f)
 	{
 		const auto r = dst.scale(_client_extent);
 		const auto center = r.center_point();
 
 		const vertex_2d vertices[] = {
 
-			vertex_2d(r[0], clr2),
-			vertex_2d(r[1], clr2),
-			vertex_2d(center, clr1),
-			vertex_2d(r[2], clr2),
-			vertex_2d(r[3], clr2),
+			vertex_2d(r[0], c_corner),
+			vertex_2d(r[1], c_corner),
+			vertex_2d(center, c_centre),
+			vertex_2d(r[2], c_corner),
+			vertex_2d(r[3], c_corner),
 		};
 
 		constexpr WORD indexes[] = {
@@ -3059,6 +3469,7 @@ void d3d11_draw_context_impl::draw_rect(const recti bounds, const ui::color c)
 void d3d11_draw_context_impl::draw_texture(const ui::texture_ptr& t, const recti dst, const float alpha,
                                            const ui::texture_sampler sampler)
 {
+	if (!t) return;
 	draw_texture(t, dst, recti(pointi(0, 0), t->dimensions()), alpha, sampler);
 }
 
@@ -3067,6 +3478,31 @@ void d3d11_draw_context_impl::draw_texture(const ui::texture_ptr& t, const quadd
 {
 	const auto tt = std::dynamic_pointer_cast<d3d11_texture>(t);
 	draw_texture(tt, dst, src, ui::color::from_a(alpha), sampler);
+}
+
+void d3d11_draw_context_impl::draw_texture(const ui::texture_ptr& t, const quadd& dst, const recti src,
+                                           const float alpha, const ui::texture_sampler sampler,
+                                           const ui::texture_transform& transform)
+{
+	const auto tt = std::dynamic_pointer_cast<d3d11_texture>(t);
+	if (!tt || alpha < 0.01f) return;
+
+	auto d = dst.scale(_client_extent);
+	const auto dimensions = tt->dimensions();
+	const auto width = static_cast<float>(dimensions.cx);
+	const auto height = static_cast<float>(dimensions.cy);
+	const auto color = ui::color::from_a(alpha);
+	const vertex_2d vertices[] =
+	{
+		vertex_2d(d[0], {src.left / width, src.top / height}, color, dimensions),
+		vertex_2d(d[1], {src.right / width, src.top / height}, color, dimensions),
+		vertex_2d(d[2], {src.right / width, src.bottom / height}, color, dimensions),
+		vertex_2d(d[3], {src.left / width, src.bottom / height}, color, dimensions),
+	};
+	constexpr WORD indexes[] = {0, 1, 2, 3, 0, 2};
+	const auto shader = calc_shader(sampler == ui::texture_sampler::bicubic, tt->_format);
+	add_scene_atom(tt->_texture, shader, tt->_format, sampler, vertices, std::size(vertices), indexes,
+	               std::size(indexes), tt->_cs, std::make_shared<ui::texture_transform>(transform));
 }
 
 void d3d11_draw_context_impl::draw_texture(const ui::texture_ptr& t, const recti dst, const recti src,
@@ -3081,7 +3517,7 @@ void d3d11_draw_context_impl::draw_vertices(const ui::vertices_ptr& v)
 	df::scope_rendering_func rf(__FUNCTION__);
 	const auto vv = std::dynamic_pointer_cast<d3d11_vertices>(v);
 
-	if (vv && vv->_vertex_buffer)
+	if (vv && vv->_vertex_buffer && vv->_canvas)
 	{
 		df::assert_true(vv->_canvas->_f->d3d_device == _f->d3d_device);
 
@@ -3089,6 +3525,10 @@ void d3d11_draw_context_impl::draw_vertices(const ui::vertices_ptr& v)
 		{
 			scene_atom sa;
 			sa.verts = vv;
+			// The software backend clips the audio bars, so the GPU path must too or the two
+			// backends disagree wherever the visualizer is drawn inside a clipped element.
+			sa.clip_bounds = _clip_bounds;
+			sa.has_clip = !_clip_stack.empty();
 			_scene_atoms.emplace_back(sa);
 		}
 	}
@@ -3142,7 +3582,13 @@ draw_context_device_ptr d3d11_create_context(const factories_ptr& f, const ComPt
                                              const int base_font_size)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
+
+	if (!f || !f->d3d_device || !swap_chain)
+	{
+		return nullptr;
+	}
+
 	auto result = std::make_shared<d3d11_draw_context_impl>();
-	result->create(f, swap_chain, base_font_size, result->can_use_gpu());
+	result->create(f, swap_chain, base_font_size);
 	return result->is_valid() ? result : nullptr;
 }

@@ -27,9 +27,10 @@
 #undef min
 
 
-static_assert(std::is_move_constructible_v<file_scan_result>);
-static_assert(std::is_move_assignable_v<file_scan_result>);
-static_assert(std::is_move_assignable_v<file_load_result>);
+df_assert_move_only(file_scan_result);
+df_assert_move_only(metadata_parts);
+df_assert_movable(metadata_kv_list);
+df_assert_movable(file_load_result);
 
 
 std::string file_group::display_name(const bool is_plural) const
@@ -56,13 +57,15 @@ static file_type_config s_config;
 
 bool file_tool::invoke(const df::file_path path) const
 {
+	if (exe_path.is_empty()) return false;
+
 	auto substitute = [&](std::ostringstream& result, const std::string_view token)
 	{
 		if (token == "item-path") result << str::quote_if_white_space(path.str());
 		else if (token == "exe-path") result << str::quote_if_white_space(exe_path.str());
 	};
 
-	return platform::run(replace_tokens(invoke_text, substitute));
+	return platform::run(exe_path, replace_tokens(invoke_text, substitute));
 }
 
 file_group_ref file_group_from_index(const int from_id)
@@ -130,14 +133,16 @@ void load_file_types()
 		{file_group::video, "264", {}, {}},
 		{file_group::video, "265", {}, {}},
 		{file_group::video, "302", {}, {}},
-		{file_group::photo, "3fr", "Hasselblad Raw", file_traits::raw | file_traits::edit},
+		{file_group::photo, "3fr", "Hasselblad raw", file_traits::raw | file_traits::edit},
 		{file_group::audio, "669", {}, {}},
 		{file_group::video, "722", {}, {}},
 		{file_group::video, "A64", {}, {}},
 		{file_group::video, "aa", {}, {}},
 		{file_group::video, "aa3", {}, {}},
+		{file_group::audio, "aax", "Audible Audiobook", {}},
 		{file_group::audio, "aac,adt,adts", "Advanced Audio Coding", {}},
-		{file_group::video, "ac3", {}, {}},
+		{file_group::video, "ac3", "Dolby Digital (AC-3)", {}},
+		{file_group::video, "ac4", "Dolby AC-4", {}},
 		{file_group::video, "acm", {}, {}},
 		{file_group::video, "adf", {}, {}},
 		{file_group::video, "adp", {}, {}},
@@ -149,20 +154,22 @@ void load_file_types()
 		{file_group::audio, "au,snd", "Sun Microsystems and NeXT audio", {}},
 		{file_group::video, "aix", {}, {}},
 		{file_group::audio, "amf", {}, {}},
-		{file_group::video, "amr", "GSM and UMTS mobile phone video", {}},
+		{file_group::video, "amr", "Adaptive Multi-Rate audio", {}},
 		{file_group::audio, "ams", {}, {}},
 		{file_group::audio, "ape", "Monkey's Audio (APE)", {}},
 		{file_group::video, "apl", {}, {}},
 		{file_group::video, "apng", {}, {}},
+		{file_group::video, "apv", "Advanced Professional Video", {}},
 		{file_group::video, "aptx", {}, {}},
 		{file_group::video, "aptxhd", {}, {}},
 		{file_group::video, "aqt", {}, {}},
-		{file_group::photo, "arw,sr2,srf", "Sony Raw", file_traits::raw | file_traits::edit},
-		{file_group::photo, "bay", "Casio Raw", file_traits::raw | file_traits::edit},
-		{file_group::photo, "bmq", "NuCore Raw", file_traits::raw | file_traits::edit},
-		{file_group::photo, "cap", "Phase One Raw", file_traits::raw | file_traits::edit},
-		{file_group::photo, "cine", "Phantom Raw", file_traits::raw | file_traits::edit},
-		{file_group::video, "asf", "Windows Media", file_traits::embedded_xmp | file_traits::edit},
+		{file_group::photo, "arw,arq,sr2,srf", "Sony raw", file_traits::raw | file_traits::edit},
+		{file_group::photo, "bay", "Casio raw", file_traits::raw | file_traits::edit},
+		{file_group::photo, "cap", "Phase One raw", file_traits::raw | file_traits::edit},
+		{
+			file_group::video, "asf", "Windows Media",
+			file_traits::embedded_xmp | file_traits::edit | file_traits::in_place_metadata
+		},
 		{file_group::video, "ass", {}, {}},
 		{file_group::video, "ast", "Audio Stream", {}},
 		{
@@ -174,17 +181,13 @@ void load_file_types()
 		{file_group::video, "avs2", {}, {}},
 		{file_group::video, "bcstm", {}, {}},
 		{file_group::video, "bfstm", {}, {}},
-		{file_group::video, "bit", {}, {}},
 		{file_group::photo, "bmp", "Microsoft Windows Bitmap", {}},
 		{file_group::video, "bmv", {}, {}},
 		{file_group::video, "brstm", "Binary Revolution Stream", {}},
-		{file_group::video, "c2", {}, {}},
 		{file_group::video, "caf", {}, {}},
 		{file_group::video, "cavs", {}, {}},
 		{file_group::video, "cdata", {}, {}},
 		{file_group::video, "cdg", {}, {}},
-		{file_group::video, "cgi", {}, {}},
-		{file_group::video, "chk", {}, {}},
 		{file_group::video, "cif", {}, {}},
 		{file_group::video, "cpk", {}, {}},
 		{file_group::photo, "crw,cr2,cr3", "Canon raw", file_traits::raw | file_traits::edit},
@@ -194,14 +197,14 @@ void load_file_types()
 		{file_group::video, "dav", {}, {}},
 		{file_group::audio, "dbm", {}, {}},
 		{file_group::audio, "cda", "CD Audio Track", {}},
-		{file_group::photo, "dc2,dcr,drf,dsc,k25,kc2,kdc", "Kodak raw", file_traits::raw | file_traits::edit},
+		{file_group::photo, "dc2,dcr,dcs,drf,k25,kc2,kdc", "Kodak raw", file_traits::raw | file_traits::edit},
 		{file_group::audio, "dff", {}, {}},
 		{file_group::audio, "digi", {}, {}},
-		{file_group::video, "divx", {}, {}},
+		{file_group::video, "divx", "DivX video", {}},
 		{file_group::audio, "dmf", {}, {}},
 		{
 			file_group::photo, "dng", "Adobe Digital Negative",
-			file_traits::raw | file_traits::edit | file_traits::embedded_xmp | file_traits::edit
+			file_traits::raw | file_traits::edit | file_traits::embedded_xmp
 		},
 		{file_group::video, "dnxhd", {}, {}},
 		{file_group::video, "dnxhr", {}, {}},
@@ -213,16 +216,16 @@ void load_file_types()
 		{file_group::audio, "dtm", {}, {}},
 		{file_group::video, "dts", "DTS (sound system)", {}},
 		{file_group::video, "dtshd", "DTS (sound system)", {}},
-		{file_group::video, "dv", {}, {}},
+		{file_group::video, "dv,dif", {}, {}},
 		{file_group::video, "dvd", {}, {}},
-		{file_group::video, "eac3", {}, {}},
-		{file_group::photo, "erf", "Epson Raw", file_traits::raw | file_traits::edit},
+		{file_group::video, "eac3,ec3", "Dolby Digital Plus (E-AC-3)", {}},
+		{file_group::photo, "erf", "Epson raw", file_traits::raw | file_traits::edit},
 		{file_group::photo, "mfw", "Mamiya raw", file_traits::raw | file_traits::edit},
-		{file_group::photo, "raw", "Panasonic raw", file_traits::raw | file_traits::edit},
+		{file_group::photo, "raw", "Panasonic or Leica raw", file_traits::raw | file_traits::edit},
 		{file_group::photo, "exr", {}, {}},
 		{file_group::video, "fap", {}, {}},
 		{file_group::audio, "far", {}, {}},
-		{file_group::photo, "fff", "Imacon raw", file_traits::raw | file_traits::edit},
+		{file_group::photo, "fff", "Hasselblad or Imacon raw", file_traits::raw | file_traits::edit},
 		{file_group::video, "fits", {}, {}},
 		{file_group::audio, "flac", "Free Lossless Audio", {}},
 		{file_group::video, "flm", {}, {}},
@@ -231,6 +234,7 @@ void load_file_types()
 		{file_group::video, "fwse", {}, {}},
 		{file_group::video, "g722", {}, {}},
 		{file_group::video, "g723_1", {}, {}},
+		{file_group::video, "g728", {}, {}},
 		{file_group::video, "g729", {}, {}},
 		{file_group::audio, "gdm", {}, {}},
 		{file_group::video, "genh", {}, {}},
@@ -240,18 +244,18 @@ void load_file_types()
 		},
 		{file_group::video, "gsm", "GSM Full Rate", {}},
 		{file_group::video, "gxf", {}, {}},
-		{file_group::video, "h261", {}, {}},
-		{file_group::video, "h263", {}, {}},
-		{file_group::video, "h264", {}, {}},
-		{file_group::video, "h265", {}, {}},
+		{file_group::video, "h261", "H.261 video", {}},
+		{file_group::video, "h263", "H.263 video", {}},
+		{file_group::video, "h264", "H.264 / AVC video", {}},
+		{file_group::video, "h265", "H.265 / HEVC video", {}},
 		{file_group::video, "hca", {}, {}},
 		{file_group::photo, "hdr", {}, {}},
-		{file_group::video, "hevc", {}, {}},
+		{file_group::video, "hevc", "H.265 / HEVC video", {}},
+		{file_group::video, "evc", "MPEG-5 EVC", {}},
 		{file_group::audio, "ice", {}, {}},
 		{file_group::photo, "ico", "Microsoft Windows icon", {}},
 		{file_group::audio, "id3", {}, {}},
 		{file_group::video, "idf", {}, {}},
-		{file_group::video, "idx", {}, {}},
 		{file_group::photo, "iff", "ILBM", {}},
 		{file_group::video, "ifv", {}, {}},
 		{file_group::photo, "iiq", "Phase One raw", file_traits::raw | file_traits::edit},
@@ -274,6 +278,7 @@ void load_file_types()
 			file_traits::embedded_xmp | file_traits::edit
 		},
 		{file_group::photo, "jpx", "Jpeg 2000", file_traits::embedded_xmp | file_traits::edit},
+		{file_group::photo, "jxl", "JPEG XL", file_traits::embedded_xmp},
 		{file_group::video, "jss", {}, {}},
 		{file_group::photo, "koa", {}, {}},
 		{file_group::video, "kux", {}, {}},
@@ -316,29 +321,34 @@ void load_file_types()
 		},
 		{
 			file_group::video, "mov", {},
-			file_traits::embedded_xmp | file_traits::edit
+			file_traits::embedded_xmp | file_traits::edit | file_traits::in_place_metadata |
+			file_traits::in_place_metadata_inject
 		},
 		{
 			file_group::video, "mp4,mp4a,mp4v,m4v,m4b,f4v,3g2,3gp2,3gp,3gpp,crm", "MPEG-4",
-			file_traits::embedded_xmp | file_traits::edit
+			file_traits::embedded_xmp | file_traits::edit | file_traits::in_place_metadata |
+			file_traits::in_place_metadata_inject
 		},
 		{
 			file_group::video, "crm", "Canon Cinema RAW Light",
-			file_traits::embedded_xmp | file_traits::edit
+			file_traits::embedded_xmp | file_traits::edit | file_traits::in_place_metadata |
+			file_traits::in_place_metadata_inject
 		},
 		{
 			file_group::audio, "m4a,mp4a,m4r", "MPEG-4 Audio",
-			file_traits::embedded_xmp | file_traits::edit | file_traits::thumbnail
+			file_traits::embedded_xmp | file_traits::edit | file_traits::thumbnail |
+			file_traits::in_place_metadata | file_traits::in_place_metadata_inject
 		},
 		{
 			file_group::audio, "m4p", "MPEG-4 (DRM)",
-			file_traits::embedded_xmp | file_traits::edit | file_traits::thumbnail
+			file_traits::embedded_xmp | file_traits::edit | file_traits::thumbnail |
+			file_traits::in_place_metadata | file_traits::in_place_metadata_inject
 		},
 		{file_group::audio, "mpc", "Musepack", {}},
 		{file_group::video, "mpd", {}, {}},
 		{
-			file_group::video, "mpeg,mpg,mpe,m1v,m2v,mp2,mpv,m2p,m2t,mpe,vob,ms-pvr,dvr-ms", "MPEG",
-			file_traits::embedded_xmp | file_traits::edit
+			file_group::video, "mpeg,mpg,mpe,m1v,m2v,mp2,mpv,m2p,m2t,vob,ms-pvr,dvr-ms", "MPEG",
+			file_traits::edit
 		},
 		{file_group::audio, "mpa,m2a", "MPEG", file_traits::embedded_xmp | file_traits::edit},
 		{
@@ -352,19 +362,18 @@ void load_file_types()
 		{file_group::audio, "mt2", {}, {}},
 		{file_group::video, "mtaf", {}, {}},
 		{file_group::audio, "mtm", {}, {}},
-		{file_group::video, "mts", {}, {}},
+		{file_group::video, "mts", "AVCHD video", {}},
 		{file_group::video, "musx", {}, {}},
 		{file_group::video, "mvi", {}, {}},
 		{file_group::video, "mxf", "SMPTE Material Exchange Format", {}},
 		{file_group::video, "mxg", {}, {}},
-		{file_group::photo, "nef,nrw", "Nikon  raw", file_traits::raw | file_traits::edit},
+		{file_group::photo, "nef,nrw", "Nikon raw", file_traits::raw | file_traits::edit},
 		{file_group::video, "nist", {}, {}},
-		{file_group::photo, "nrw", {}, {}},
 		{file_group::video, "nsp", {}, {}},
 		{file_group::audio, "nst", {}, {}},
 		{file_group::video, "nut", {}, {}},
-		{file_group::video, "obu", {}, {}},
-		{file_group::audio, "oga", {}, {}},
+		{file_group::video, "obu", "AV1 video stream", {}},
+		{file_group::audio, "oga", "Ogg audio", {}},
 		{file_group::audio, "ogg", "container, multimedia", {}},
 		{file_group::video, "ogm", {}, {}},
 		{file_group::video, "ogv", {}, {}},
@@ -372,8 +381,11 @@ void load_file_types()
 		{file_group::audio, "okt", {}, {}},
 		{file_group::video, "oma", {}, {}},
 		{file_group::video, "omg", {}, {}},
-		{file_group::audio, "opus", {}, {}},
-		{file_group::photo, "orf", "Olympus raw", file_traits::raw | file_traits::edit},
+		{file_group::audio, "opus", "Opus audio", {}},
+		{file_group::audio, "qoa", "Quite OK Audio", {}},
+		{file_group::audio, "iamf", "Immersive Audio Model and Formats", {}},
+		{file_group::audio, "lc3", "Low Complexity Communication Codec", {}},
+		{file_group::photo, "orf,ori", "Olympus raw", file_traits::raw | file_traits::edit},
 		{file_group::video, "paf", {}, {}},
 		{file_group::video, "pam", {}, {}},
 		{file_group::photo, "pbm", "Portable bitmap", {}},
@@ -410,7 +422,6 @@ void load_file_types()
 		{file_group::photo, "ras", {}, {}},
 		{file_group::video, "rco", {}, {}},
 		{file_group::video, "rcv", {}, {}},
-		{file_group::photo, "rdc", "Digital Foto Maker raw", file_traits::raw | file_traits::edit},
 		{file_group::video, "rmd,r3d", "RED", {}},
 		{file_group::video, "rgb", "Silicon Graphics Image", {}},
 		{file_group::video, "rm", "RealAudio (RA, RM)", {}},
@@ -418,10 +429,8 @@ void load_file_types()
 		{file_group::video, "rsd", {}, {}},
 		{file_group::video, "rso", {}, {}},
 		{file_group::video, "rt", {}, {}},
-		{file_group::photo, "rw", {}, file_traits::raw | file_traits::edit},
 		{file_group::photo, "rw2", "Panasonic raw", file_traits::raw | file_traits::edit},
 		{file_group::photo, "rwl", "Leica raw", file_traits::raw | file_traits::edit},
-		{file_group::photo, "rwz", "Rawzor raw", file_traits::raw | file_traits::edit},
 		{file_group::audio, "s3m", {}, {}},
 		{file_group::video, "sami", {}, {}},
 		{file_group::video, "sbc", {}, {}},
@@ -465,7 +474,7 @@ void load_file_types()
 		{file_group::photo, "cin", "Kodak Cineon Image", {}},
 		{file_group::photo, "dpx", "Digital Picture Exchange", {}},
 		{file_group::video, "tod", {}, {}},
-		{file_group::video, "ts", {}, {}},
+		{file_group::video, "ts", "MPEG-2 Transport Stream", {}},
 		{file_group::audio, "tta", "True Audio", {}},
 		{file_group::video, "ty", {}, {}},
 		{file_group::video, "ty+", {}, {}},
@@ -473,8 +482,7 @@ void load_file_types()
 		{file_group::audio, "umx", {}, {}},
 		{file_group::video, "v210", {}, {}},
 		{file_group::video, "vag", {}, {}},
-		{file_group::video, "vb", {}, {}},
-		{file_group::video, "vc1", {}, {}},
+		{file_group::video, "vc1", "SMPTE VC-1 video", {}},
 		{file_group::video, "vc2", {}, {}},
 		{file_group::video, "viv", {}, {}},
 		{file_group::video, "voc", "Creative Labs Soundblaster", {}},
@@ -488,15 +496,15 @@ void load_file_types()
 		{file_group::photo, "wbm", {}, {}},
 		{file_group::photo, "wbmp", {}, file_traits::embedded_xmp | file_traits::edit},
 		{file_group::video, "web", {}, {}},
-		{file_group::video, "webm", {}, {}},
+		{file_group::video, "webm", "WebM video", {}},
 		{file_group::photo, "webp", {}, file_traits::embedded_xmp | file_traits::edit},
 		{
 			file_group::audio, "wma", "Windows Media Audio 9",
-			file_traits::embedded_xmp | file_traits::edit
+			file_traits::embedded_xmp | file_traits::edit | file_traits::in_place_metadata
 		},
 		{
 			file_group::video, "wmv,wm", "Windows Media video",
-			file_traits::embedded_xmp | file_traits::edit
+			file_traits::embedded_xmp | file_traits::edit | file_traits::in_place_metadata
 		},
 		{file_group::audio, "wow", {}, {}},
 		{file_group::video, "wsd", {}, {}},
@@ -574,14 +582,82 @@ void load_file_types()
 	av_initialise(s_config.types_by_name);
 }
 
-//static file_tool_by_name s_tools_by_name;
-//static std::vector<df::folder_path> s_tool_paths;
+static std::vector<file_map_link> s_map_links;
 
-void load_tools()
+namespace
 {
-	file_tool_by_name tools_by_name;
+	// Tools sit a few levels below the configured roots (vendor\product\app.exe). Capping the walk
+	// keeps startup bounded on machines with large Program Files trees and stops a directory
+	// junction from recursing forever.
+	constexpr int max_tool_scan_depth = 4;
+
+	using exe_path_by_name = df::hash_map<std::string_view, df::file_path, df::ihash, df::ieq>;
+
+	// Only the executables named in the config are retained, so memory stays proportional to the
+	// config and not to the number of programs installed.
+	void find_executables(const df::folder_path folder, const int depth,
+	                      const df::hash_set<std::string_view, df::ihash, df::ieq>& wanted,
+	                      exe_path_by_name& found)
+	{
+		if (found.size() >= wanted.size()) return;
+
+		const auto contents = platform::iterate_file_items(folder, true);
+
+		for (const auto& f : contents.files)
+		{
+			const auto path = folder.combine_file(f.name);
+
+			if (str::icmp(path.extension(), ".exe") == 0)
+			{
+				const auto match = wanted.find(path.file_name_without_extension());
+
+				if (match != wanted.end())
+				{
+					found.emplace(*match, path);
+				}
+			}
+		}
+
+		if (depth < max_tool_scan_depth)
+		{
+			for (const auto& sub : contents.folders)
+			{
+				find_executables(folder.combine(sub.name.sv()), depth + 1, wanted, found);
+			}
+		}
+	}
+
+	// Map links are handed to the shell, so only http(s) templates are accepted; another scheme in
+	// the config would otherwise be a way to launch an arbitrary program from a menu click.
+	bool is_web_url(const std::string_view url)
+	{
+		return str::starts(url, "https://") || str::starts(url, "http://");
+	}
+
+	std::vector<file_map_link> built_in_map_links()
+	{
+		return {
+			{str::cache("Google Maps"), str::cache("https://www.google.com/maps/place/{latitude},{longitude}")},
+			{str::cache("Google Earth"), str::cache("https://earth.google.com/web/search/{latitude},{longitude}")},
+			{str::cache("Bing Maps"), str::cache("https://www.bing.com/maps?cp={latitude}~{longitude}&lvl=17&style=h")},
+			{
+				str::cache("OpenStreetMap"),
+				str::cache(
+					"https://www.openstreetmap.org/?mlat={latitude}&mlon={longitude}#map=17/{latitude}/{longitude}")
+			},
+			{
+				str::cache("Apple Maps"),
+				str::cache("https://maps.apple.com/?ll={latitude},{longitude}&q=Photo%20Location")
+			},
+		};
+	}
+}
+
+file_tools_result scan_tools()
+{
+	file_tools_result result;
 	std::vector<df::folder_path> tool_paths;
-	file_tool_by_extension tools_by_ext;
+	std::vector<file_tool_ptr> tools;
 
 	try
 	{
@@ -592,55 +668,93 @@ void load_tools()
 			df::util::json::json_doc document;
 			document.Parse(std::bit_cast<const char*>(json.data()), json.size());
 
-			const auto& tools = document["tools"];
-
-			if (tools.IsObject())
+			if (document.HasParseError())
 			{
-				for (const auto& m : tools.GetObject())
+				df::log(__FUNCTION__, std::format("diffractor-tools.json is not valid json (offset {})",
+				                                  document.GetErrorOffset()));
+			}
+			else if (document.IsObject())
+			{
+				const auto tools_member = document.FindMember("tools");
+
+				if (tools_member != document.MemberEnd() && tools_member->value.IsObject())
 				{
-					if (str::icmp(m.name.GetString(), "folders") == 0)
+					for (const auto& m : tools_member->value.GetObject())
 					{
-						if (m.value.IsArray())
+						if (str::icmp(m.name.GetString(), "folders") == 0)
 						{
-							for (const auto& folder : m.value.GetArray())
+							if (m.value.IsArray())
 							{
-								tool_paths.emplace_back(df::folder_path(folder.GetString()));
+								for (const auto& folder : m.value.GetArray())
+								{
+									if (folder.IsString())
+									{
+										tool_paths.emplace_back(df::folder_path(folder.GetString()));
+									}
+								}
 							}
 						}
-					}
 
-					if (str::icmp(m.name.GetString(), "apps") == 0)
-					{
-						if (m.value.IsArray())
+						if (str::icmp(m.name.GetString(), "apps") == 0)
 						{
-							for (const auto& app : m.value.GetArray())
+							if (m.value.IsArray())
 							{
-								if (app.IsObject())
+								for (const auto& app : m.value.GetArray())
 								{
-									auto* tool = new file_tool();
-
-									for (const auto& a : app.GetObject())
+									if (app.IsObject())
 									{
-										if (str::icmp(a.name.GetString(), "exe") == 0)
-											tool->exe = str::cache(
-												a.value.GetString());
-										if (str::icmp(a.name.GetString(), "invoke") == 0)
-											tool->invoke_text =
-												str::cache(a.value.GetString());
-										if (str::icmp(a.name.GetString(), "text") == 0)
-											tool->text = str::cache(
-												a.value.GetString());
-										if (str::icmp(a.name.GetString(), "extensions") == 0)
-											tool->extensions =
-												str::cache(a.value.GetString());
-									}
+										auto tool = std::make_shared<file_tool>();
 
-									for (const auto& ext : split(tool->extensions, true))
+										for (const auto& a : app.GetObject())
+										{
+											if (!a.value.IsString()) continue;
+
+											if (str::icmp(a.name.GetString(), "exe") == 0)
+												tool->exe = str::cache(a.value.GetString());
+											if (str::icmp(a.name.GetString(), "invoke") == 0)
+												tool->invoke_text = str::cache(a.value.GetString());
+											if (str::icmp(a.name.GetString(), "text") == 0)
+												tool->text = str::cache(a.value.GetString());
+											if (str::icmp(a.name.GetString(), "extensions") == 0)
+												tool->extensions = str::cache(a.value.GetString());
+											if (str::icmp(a.name.GetString(), "group") == 0)
+												tool->group = str::cache(a.value.GetString());
+										}
+
+										if (!tool->exe.is_empty() && !tool->invoke_text.is_empty())
+										{
+											tools.emplace_back(std::move(tool));
+										}
+									}
+								}
+							}
+						}
+
+						if (str::icmp(m.name.GetString(), "maps") == 0)
+						{
+							if (m.value.IsArray())
+							{
+								for (const auto& map : m.value.GetArray())
+								{
+									if (map.IsObject())
 									{
-										tools_by_ext[str::cache(ext)] = tool;
-									}
+										file_map_link link;
 
-									tools_by_name[tool->exe] = tool;
+										for (const auto& a : map.GetObject())
+										{
+											if (!a.value.IsString()) continue;
+
+											if (str::icmp(a.name.GetString(), "text") == 0)
+												link.text = str::cache(a.value.GetString());
+											if (str::icmp(a.name.GetString(), "url") == 0)
+												link.url = str::cache(a.value.GetString());
+										}
+
+										if (!str::is_empty(link.text) && is_web_url(link.url.sv()))
+										{
+											result.map_links.emplace_back(link);
+										}
+									}
 								}
 							}
 						}
@@ -654,45 +768,90 @@ void load_tools()
 		df::log(__FUNCTION__, e.what());
 	}
 
-	df::hash_map<std::string, df::file_path, df::ihash, df::ieq> exe_by_name;
+	df::hash_set<std::string_view, df::ihash, df::ieq> wanted;
+
+	for (const auto& tool : tools)
+	{
+		wanted.emplace(tool->exe.sv());
+	}
+
+	exe_path_by_name exe_by_name;
 
 	for (const auto& folder : tool_paths)
 	{
-		const auto exe_selector = df::item_selector(folder, true, "*.exe");
-		const auto files = platform::select_files(exe_selector, true);
-
-		for (const auto& f : files)
-		{
-			auto path = f.folder.combine_file(f.name);
-			exe_by_name[std::string(path.file_name_without_extension())] = path;
-		}
+		find_executables(folder, 1, wanted, exe_by_name);
 	}
 
-	for (const auto& tool : tools_by_name)
+	for (const auto& tool : tools)
 	{
-		const auto found = exe_by_name.find(std::string(tool.second->exe));
+		const auto found = exe_by_name.find(tool->exe.sv());
 
-		if (found != exe_by_name.end())
+		if (found == exe_by_name.end())
 		{
-			tool.second->exe_path = found->second;
+			continue;
+		}
+
+		tool->exe_path = found->second;
+
+		str::split2(tool->extensions, true, [&result, &tool](const std::string_view ext)
+		{
+			result.by_extension[str::cache(ext)].emplace_back(tool);
+		});
+
+		if (!tool->group.is_empty())
+		{
+			result.by_group[tool->group.sv()].emplace_back(tool);
 		}
 	}
 
+	if (result.map_links.empty())
+	{
+		// Fall back to built-in map services when diffractor-tools.json has no usable "maps"
+		// section (e.g. an older config), so location links always work.
+		result.map_links = built_in_map_links();
+	}
+
+	return result;
+}
+
+void apply_tools(file_tools_result result)
+{
 	for (auto& ft : s_config.types)
 	{
+		ft.tools.clear();
+
 		if (!ft.extension.empty())
 		{
-			str::split2(ft.extension, true, [&ft, &tools_by_ext](const std::string_view ext)
+			str::split2(ft.extension, true, [&ft, &result](const std::string_view ext)
 			{
-				const auto found = tools_by_ext.find(ext);
+				const auto found = result.by_extension.find(ext);
 
-				if (found != tools_by_ext.end())
+				if (found != result.by_extension.end())
 				{
-					ft.tools.emplace_back(found->second);
+					for (const auto& tool : found->second)
+					{
+						if (std::ranges::find(ft.tools, tool) == ft.tools.end())
+						{
+							ft.tools.emplace_back(tool);
+						}
+					}
 				}
 			});
 		}
 	}
+
+	for (const auto g : s_config.groups)
+	{
+		const auto found = result.by_group.find(g->name);
+		g->tools = found != result.by_group.end() ? found->second : std::vector<file_tool_ptr>{};
+	}
+
+	s_map_links = std::move(result.map_links);
+}
+
+std::vector<file_map_link> all_map_links()
+{
+	return s_map_links;
 }
 
 std::vector<file_group_ref> all_file_groups()
@@ -721,6 +880,80 @@ std::vector<file_type_ref> all_file_types()
 	return result;
 }
 
+namespace
+{
+	constexpr auto file_op_stat_count = static_cast<size_t>(file_op_stat::count);
+	using file_op_row = std::array<uint64_t, file_op_stat_count>;
+
+	// Bumped from every queue that touches a file and read once at shutdown. Each bump accompanies
+	// an open, a decode or a swap, so one short lock costs nothing against the I/O it sits beside.
+	platform::mutex file_op_mutex;
+	_Guarded_by_(file_op_mutex) df::hash_map<file_type_ref, file_op_row> file_op_stats;
+}
+
+void record_file_op(const file_type_ref ft, const file_op_stat stat)
+{
+	if (!ft) return;
+
+	platform::exclusive_lock lock(file_op_mutex);
+	file_op_stats[ft][static_cast<size_t>(stat)] += 1;
+}
+
+void log_file_op_summary()
+{
+	std::vector<std::pair<file_type_ref, file_op_row>> rows;
+
+	{
+		platform::exclusive_lock lock(file_op_mutex);
+		rows.assign(file_op_stats.begin(), file_op_stats.end());
+	}
+
+	if (rows.empty()) return;
+
+	const auto row_total = [](const file_op_row& r)
+	{
+		uint64_t total = 0;
+		for (const auto n : r) total += n;
+		return total;
+	};
+
+	std::ranges::sort(rows, [&row_total](const auto& a, const auto& b)
+	{
+		return row_total(a.second) > row_total(b.second);
+	});
+
+	const auto format_row = [](const std::string_view name, const std::string_view caps, const file_op_row& r)
+	{
+		return std::format("{:<10} {:<9} reads={:<7} in-place={:<6} replace={:<6} sidecar={:<6} write-failed={}",
+		                   name, caps, r[0], r[1], r[2], r[3], r[4]);
+	};
+
+	// The first extension names the whole group, and the capability marker states what the traits
+	// table promises - so a row that patches when it claims it cannot, or replaces when it claims
+	// it can patch, is visible without cross-referencing the traits.
+	const auto group_name = [](const std::string_view extensions)
+	{
+		const auto comma = extensions.find(',');
+		return comma == std::string_view::npos ? extensions : extensions.substr(0, comma);
+	};
+
+	const auto capability = [](const file_type_ref ft)
+	{
+		if (!ft->has_trait(file_traits::in_place_metadata)) return "-"sv;
+		return ft->has_trait(file_traits::in_place_metadata_inject) ? "inject"sv : "if-xmp"sv;
+	};
+
+	file_op_row totals{};
+
+	for (const auto& [ft, row] : rows)
+	{
+		for (auto i = 0_z; i < file_op_stat_count; ++i) totals[i] += row[i];
+		df::log("perf file types", format_row(group_name(ft->extension), capability(ft), row));
+	}
+
+	df::log("perf file types", format_row("(total)", ""sv, totals));
+}
+
 sizei file_load_result::dimensions() const
 {
 	if (success)
@@ -731,7 +964,8 @@ sizei file_load_result::dimensions() const
 	return {};
 }
 
-ui::const_surface_ptr file_load_result::to_surface(const sizei scale_hint, const bool can_use_yuv) const
+ui::const_surface_ptr file_load_result::to_surface(const sizei scale_hint, const bool can_use_yuv,
+                                                   const df::cancel_token& token, const decode_intent intent) const
 {
 	if (success)
 	{
@@ -744,7 +978,7 @@ ui::const_surface_ptr file_load_result::to_surface(const sizei scale_hint, const
 
 		if (is_valid(i))
 		{
-			return ff.image_to_surface(i, scale_hint, can_use_yuv);
+			return ff.image_to_surface(i, scale_hint, can_use_yuv, token, intent);
 		}
 	}
 
@@ -771,10 +1005,71 @@ file_type_ref files::file_type_from_name(const df::file_path path)
 	return file_type_from_name(path.name());
 }
 
+namespace
+{
+	// Extensions claimed by both a binary container and a widely used text format. Only entries with
+	// a signature strong enough to be decisive belong here: a wrong answer either hides real media or
+	// keeps offering to play a source file. Runs once per media open, including every av file an
+	// index scan touches, so it stays a short-circuiting compare over a two-to-four character string.
+	bool is_transport_stream_extension(std::string_view ext)
+	{
+		if (!ext.empty() && ext.front() == '.') ext = ext.substr(1);
+
+		return str::icmp(ext, "ts") == 0 || str::icmp(ext, "m2t") == 0 ||
+			str::icmp(ext, "m2ts") == 0 || str::icmp(ext, "mts") == 0;
+	}
+
+	// A transport stream is a run of fixed-size packets, each opening with the 0x47 sync byte: 188
+	// bytes broadcast, 192 with the M2TS/AVCHD arrival timestamp, 204 with Reed-Solomon parity. The
+	// run is found rather than assumed to start at zero, because a partial capture or a PVR dump can
+	// begin mid-packet or behind a prefix. Requiring four aligned packet starts is what separates a
+	// stream from a TypeScript file that happens to contain 'G'.
+	bool is_mpeg_transport_stream(const df::cspan header)
+	{
+		constexpr size_t packet_sizes[] = {188, 192, 204};
+		constexpr size_t max_packet_size = 204;
+		constexpr size_t required_packets = 4;
+		constexpr uint8_t sync_byte = 0x47;
+
+		for (auto start = size_t{0}; start < max_packet_size; ++start)
+		{
+			for (const auto packet_size : packet_sizes)
+			{
+				// Anything shorter cannot show the run, and is far too short to be a stream anyway.
+				if (start + (required_packets - 1) * packet_size >= header.size) continue;
+
+				auto matched = true;
+
+				for (auto i = size_t{0}; i < required_packets && matched; ++i)
+				{
+					matched = header.data[start + i * packet_size] == sync_byte;
+				}
+
+				if (matched) return true;
+			}
+		}
+
+		return false;
+	}
+}
+
+bool files::has_media_header_rule(const std::string_view extension)
+{
+	return is_transport_stream_extension(extension);
+}
+
+bool files::media_header_matches(const std::string_view extension, const df::cspan header)
+{
+	if (is_transport_stream_extension(extension))
+	{
+		return is_mpeg_transport_stream(header);
+	}
+
+	return true;
+}
+
 file_type_ref files::file_type_from_name(const std::string_view name)
 {
-	//if (df::file_path::is_original(name)) return file_type::sidecar;
-
 	if (!str::is_empty(name))
 	{
 		auto ext = name.substr(df::find_ext(name));
@@ -793,7 +1088,108 @@ file_type_ref files::file_type_from_name(const std::string_view name)
 
 bool image_edits::has_changes(const sizei image_extent) const
 {
-	return _scale.cx != 0 || _scale.cy != 0 || has_crop(image_extent) || has_rotation() || has_color_changes();
+	return _scale.cx != 0 || _scale.cy != 0 || has_crop(image_extent) || has_rotation() || has_perspective() ||
+		has_color_changes();
+}
+
+bool image_edits::is_empty() const
+{
+	// has_changes with the crop widened to any crop at all, so this can only ever be the safer answer.
+	return !(_scale.cx != 0 || _scale.cy != 0 || has_crop_bounds() || has_rotation() || has_perspective() ||
+		has_color_changes());
+}
+
+quadd image_edits::perspective_bounds(const sizei size) const
+{
+	const auto display_angle = to_radian(-crop_bounds(size).angle());
+	const auto angle_sin = sin(display_angle);
+	const auto angle_cos = cos(display_angle);
+	const auto horizontal = perspective_horizontal() * angle_cos - perspective_vertical() * angle_sin;
+	const auto vertical = perspective_horizontal() * angle_sin + perspective_vertical() * angle_cos;
+	const quadd source(size);
+	quadd result;
+
+	for (auto index = 0; index < 4; ++index)
+	{
+		const auto point = source[index];
+		const auto normalized_x = point.X / size.cx - 0.5;
+		const auto normalized_y = point.Y / size.cy - 0.5;
+		const auto denominator = 1.0 - horizontal * normalized_x - vertical * normalized_y;
+		result[index] = {
+			(0.5 + normalized_x / denominator) * size.cx,
+			(0.5 + normalized_y / denominator) * size.cy
+		};
+	}
+
+	return result;
+}
+
+quadd image_edits::effective_crop_bounds(const sizei size) const
+{
+	const auto selection = crop_bounds(size);
+	if (!has_perspective()) return selection.crop(rectd(0, 0, size.cx, size.cy));
+
+	const auto angle = selection.angle();
+	const auto center = quadd(size).center_point();
+	const auto valid = perspective_bounds(size).rotate(-angle, center);
+	const auto selected = selection.rotate(-angle, center);
+	const auto valid_bounds = valid.bounding_rect();
+	const auto selected_bounds = selected.bounding_rect();
+	const auto scan_top = (std::max)(valid_bounds.top(), selected_bounds.top());
+	const auto scan_bottom = (std::min)(valid_bounds.bottom(), selected_bounds.bottom());
+	constexpr auto steps = 128;
+	std::array<double, steps + 1> left{};
+	std::array<double, steps + 1> right{};
+
+	for (auto step = 0; step <= steps; ++step)
+	{
+		const auto y = scan_top + (scan_bottom - scan_top) * step / steps;
+		left[step] = std::numeric_limits<double>::lowest();
+		right[step] = (std::numeric_limits<double>::max)();
+
+		for (const auto* polygon : {&valid, &selected})
+		{
+			auto polygon_left = (std::numeric_limits<double>::max)();
+			auto polygon_right = std::numeric_limits<double>::lowest();
+
+			for (auto edge = 0; edge < 4; ++edge)
+			{
+				const auto start = (*polygon)[edge];
+				const auto end = (*polygon)[(edge + 1) % 4];
+				if (y < (std::min)(start.Y, end.Y) || y > (std::max)(start.Y, end.Y) || df::equiv(start.Y, end.Y))
+					continue;
+				const auto x = start.X + (y - start.Y) * (end.X - start.X) / (end.Y - start.Y);
+				polygon_left = (std::min)(polygon_left, x);
+				polygon_right = (std::max)(polygon_right, x);
+			}
+
+			left[step] = (std::max)(left[step], polygon_left);
+			right[step] = (std::min)(right[step], polygon_right);
+		}
+	}
+
+	rectd largest;
+	auto largest_area = 0.0;
+	for (auto top = 0; top < steps; ++top)
+	{
+		auto max_left = left[top];
+		auto min_right = right[top];
+		for (auto bottom = top + 1; bottom <= steps; ++bottom)
+		{
+			max_left = (std::max)(max_left, left[bottom]);
+			min_right = (std::min)(min_right, right[bottom]);
+			const auto y1 = scan_top + (scan_bottom - scan_top) * top / steps;
+			const auto y2 = scan_top + (scan_bottom - scan_top) * bottom / steps;
+			const auto area = (std::max)(0.0, min_right - max_left) * (y2 - y1);
+			if (area > largest_area)
+			{
+				largest_area = area;
+				largest = {max_left, y1, min_right - max_left, y2 - y1};
+			}
+		}
+	}
+
+	return quadd(largest).rotate(angle, center);
 }
 
 bool image_edits::has_crop(const sizei image_extent) const
@@ -806,7 +1202,7 @@ bool image_edits::has_crop(const sizei image_extent) const
 
 bool image_edits::is_no_loss(const sizei image_extent) const
 {
-	return !has_crop(image_extent) && !has_scale() && !has_color_changes();
+	return !has_crop(image_extent) && !has_scale() && !has_perspective() && !has_color_changes();
 }
 
 double image_edits::rotation_angle() const
@@ -870,7 +1266,7 @@ static bool is_heif(const df::cspan image_buffer_in)
 	}
 
 	constexpr std::array<uint8_t, 4> ftyp_header = {'f', 't', 'y', 'p'};
-	const std::array<std::array<uint8_t, 4>, 10> brand = {
+	constexpr std::array<std::array<uint8_t, 4>, 10> brand = {
 		{
 			{'h', 'e', 'i', 'c'},
 			{'h', 'e', 'i', 'x'},
@@ -922,9 +1318,21 @@ detected_format files::detect_format(const df::cspan image_buffer_in)
 {
 	// https://en.wikipedia.org/wiki/List_of_file_signatures
 
+	// Read through memcpy: the span often points into the middle of another file - an embedded
+	// thumbnail sits at an offset taken straight from an IFD entry - so its alignment is never
+	// ours to assume. The signature constants below are little-endian host order throughout.
+	const auto* const data = image_buffer_in.data;
+
+	const auto read_u32 = [data](const size_t offset)
+	{
+		uint32_t n;
+		std::memcpy(&n, data + offset, sizeof(n));
+		return n;
+	};
+
 	if (image_buffer_in.size >= 4)
 	{
-		const auto header32 = *std::bit_cast<const uint32_t*>(image_buffer_in.data);
+		const auto header32 = read_u32(0);
 
 		if (header32 == 0x53504238)
 		{
@@ -937,17 +1345,43 @@ detected_format files::detect_format(const df::cspan image_buffer_in)
 			return detected_format::GIF;
 		}
 
-		const auto header16 = *std::bit_cast<const uint16_t*>(&header32);
+		// JPEG XL container: 00 00 00 0C 'J' 'X' 'L' ' '
+		if (header32 == 0x0C000000 && image_buffer_in.size >= 8 && read_u32(4) == 0x204C584A)
+		{
+			return detected_format::JXL;
+		}
+
+		// RIFF containers ('RIFF' .... 'WEBP'): verify the WEBP FourCC at offset 8 so
+		// other RIFF payloads (WAV, AVI) are not misidentified as WebP.
+		if (header32 == 0x46464952 && image_buffer_in.size >= 12 && read_u32(8) == 0x50424557)
+		{
+			return detected_format::WEBP;
+		}
+
+		uint16_t header16;
+		std::memcpy(&header16, data, sizeof(header16));
 
 		switch (header16)
 		{
 		case 0xD8FF: return detected_format::JPEG;
 		case 0x4D42: return detected_format::BMP;
 		case 0x5089: return detected_format::PNG;
-		case 0x4949: return detected_format::TIFF;
-		case 0x4d4d: return detected_format::TIFF;
-		//case 0x4947: return file_format2::GIF;
-		case 0x4952: return detected_format::WEBP;
+		case 0x4949: // 'II' little-endian
+		case 0x4d4d: // 'MM' big-endian
+			{
+				// The byte-order mark alone matches any file starting with those two letters, so
+				// require the version word too: 42 for classic TIFF, 43 for BigTIFF.
+				const auto version = header16 == 0x4949
+					                     ? static_cast<uint16_t>(data[2] | data[3] << 8)
+					                     : static_cast<uint16_t>(data[2] << 8 | data[3]);
+
+				if (version == 42u || version == 43u)
+				{
+					return detected_format::TIFF;
+				}
+			}
+			break;
+		case 0x0AFF: return detected_format::JXL; // JPEG XL codestream: FF 0A
 		}
 	}
 
@@ -1000,9 +1434,20 @@ ui::const_image_ptr files::surface_to_image(const ui::const_surface_ptr& surface
 	return result;
 }
 
-ui::surface_ptr files::scale_if_needed(ui::surface_ptr surface_in, const sizei target_extent)
+av_scaler& files::scaler()
 {
-	ui::surface_ptr result;
+	if (!_scaler)
+	{
+		_scaler = std::make_unique<av_scaler>();
+	}
+
+	return *_scaler;
+}
+
+template <typename Ptr>
+static Ptr scale_surface_if_needed(av_scaler& scaler, Ptr surface_in, const sizei target_extent)
+{
+	Ptr result;
 
 	if (is_valid(surface_in))
 	{
@@ -1014,13 +1459,8 @@ ui::surface_ptr files::scale_if_needed(ui::surface_ptr surface_in, const sizei t
 		}
 		else
 		{
-			if (!_scaler)
-			{
-				_scaler = std::make_unique<av_scaler>();
-			}
-
 			auto surface = std::make_shared<ui::surface>();
-			_scaler->scale_surface(surface_in, surface, dimensions_out);
+			scaler.scale_surface(surface_in, surface, dimensions_out);
 			result = surface;
 		}
 	}
@@ -1028,32 +1468,14 @@ ui::surface_ptr files::scale_if_needed(ui::surface_ptr surface_in, const sizei t
 	return result;
 }
 
+ui::surface_ptr files::scale_if_needed(ui::surface_ptr surface_in, const sizei target_extent)
+{
+	return scale_surface_if_needed(scaler(), std::move(surface_in), target_extent);
+}
+
 ui::const_surface_ptr files::scale_if_needed(ui::const_surface_ptr surface_in, const sizei target_extent)
 {
-	ui::const_surface_ptr result;
-
-	if (is_valid(surface_in))
-	{
-		const auto dimensions_out = ui::scale_dimensions(surface_in->dimensions(), target_extent);
-
-		if (surface_in->dimensions() == dimensions_out || target_extent.is_empty())
-		{
-			std::swap(surface_in, result);
-		}
-		else
-		{
-			if (!_scaler)
-			{
-				_scaler = std::make_unique<av_scaler>();
-			}
-
-			auto surface = std::make_shared<ui::surface>();
-			_scaler->scale_surface(surface_in, surface, dimensions_out);
-			result = surface;
-		}
-	}
-
-	return result;
+	return scale_surface_if_needed(scaler(), std::move(surface_in), target_extent);
 }
 
 ui::pixel_difference_result files::pixel_difference(const ui::const_image_ptr& expected,
@@ -1074,84 +1496,167 @@ ui::pixel_difference_result files::pixel_difference(const ui::const_image_ptr& e
 }
 
 
+// Single JPEG decode path shared by both image_to_surface overloads. Returns an
+// unscaled surface; NV12 results are flagged via is_yuv because the GPU sampler
+// resizes those at draw time. When orientation_override is empty the orientation
+// recovered from the embedded EXIF block is used.
+ui::surface_ptr files::decode_jpeg(const df::cspan data, const sizei target_extent, const bool can_use_yuv,
+                                   const std::optional<ui::orientation> orientation_override, bool& is_yuv,
+                                   const df::cancel_token& token, const decode_intent intent)
+{
+	ui::surface_ptr result;
+	is_yuv = false;
+
+	try
+	{
+		if (!_jpeg_decoder.read_header(data))
+			return {};
+
+		// close() aborts or finishes the decompress. _jpeg_decoder is a long-lived
+		// member reused for every image, so it must run on every exit path once the
+		// header has been read - otherwise the next decode fails with a bad state.
+		const df::scope_exit close_decoder([this] { _jpeg_decoder.close(); });
+
+		// _orientation_out is only valid once the header has been parsed.
+		const auto orientation = orientation_override.value_or(_jpeg_decoder._orientation_out);
+
+		// YCbCr JPEGs can be uploaded as an NV12 texture and converted on the
+		// GPU (smaller uploads, no CPU colour conversion). JPEG/JFIF is full-range
+		// BT.601, which the shader applies via the rec601_full matrix.
+		const auto use_yuv = can_use_yuv && _jpeg_decoder.can_render_nv12();
+		const auto scale_hint = ui::calc_scale_down_factor(_jpeg_decoder.dimensions(), target_extent);
+
+		if (!_jpeg_decoder.start_decompress(scale_hint, use_yuv, intent == decode_intent::display))
+			return {};
+
+		const auto dimensions = _jpeg_decoder.dimensions_out();
+		auto temp_surface = std::make_shared<ui::surface>();
+
+		if (use_yuv)
+		{
+			// NV12 requires even dimensions; crop at most one pixel per odd axis.
+			const sizei nv12_dims{dimensions.cx & ~1, dimensions.cy & ~1};
+
+			if (nv12_dims.cx < 2 || nv12_dims.cy < 2)
+				return {};
+
+			if (!temp_surface->alloc(nv12_dims, ui::texture_format::NV12, orientation))
+				return {};
+
+			temp_surface->color_space(ui::color_space::rec601_full);
+
+			if (!_jpeg_decoder.read_nv12(temp_surface->pixels(), static_cast<int>(temp_surface->stride()),
+			                             static_cast<int>(temp_surface->size()), token))
+				return {};
+
+			is_yuv = true;
+		}
+		else
+		{
+			if (!temp_surface->alloc(dimensions, ui::texture_format::RGB, orientation))
+				return {};
+
+			if (!_jpeg_decoder.read_rgb(temp_surface->pixels(), static_cast<int>(temp_surface->stride()),
+			                            static_cast<int>(temp_surface->size()), token))
+				return {};
+		}
+
+		result = std::move(temp_surface);
+	}
+	catch (std::exception& e)
+	{
+		df::log(__FUNCTION__, e.what());
+	}
+
+	return result;
+}
+
+int64_t files::estimate_decode_bytes(const sizei source_dimensions)
+{
+	return static_cast<int64_t>(source_dimensions.cx) * source_dimensions.cy * 4;
+}
+
+int64_t files::estimate_decode_bytes(const ui::const_image_ptr& image, const sizei scale_hint)
+{
+	if (!is_valid(image)) return 0;
+
+	const auto dims = image->dimensions();
+	auto pixels = static_cast<int64_t>(dims.cx) * dims.cy;
+
+	if (image->format() == ui::image_format::JPEG)
+	{
+		// Mirrors what image_to_surface hands libjpeg, so the estimate tracks the real allocation.
+		const auto factor = ui::calc_scale_down_factor(dims, scale_hint);
+		pixels /= static_cast<int64_t>(factor) * factor;
+	}
+
+	return pixels * 4;
+}
+
+bool files::exceeds_decode_budget(const sizei source_dimensions)
+{
+	return estimate_decode_bytes(source_dimensions) > df::max_decode_bytes;
+}
+
+bool files::exceeds_decode_budget(const ui::const_image_ptr& image, const sizei scale_hint)
+{
+	return estimate_decode_bytes(image, scale_hint) > df::max_decode_bytes;
+}
+
+bool reject_over_budget_source(load_diagnostic* const diagnostic, const sizei source_dimensions,
+                               const std::string_view format)
+{
+	if (diagnostic) diagnostic->source_dimensions = source_dimensions;
+
+	const auto bytes = files::estimate_decode_bytes(source_dimensions);
+
+	if (bytes <= df::max_decode_bytes) return false;
+
+	if (diagnostic) diagnostic->over_budget = true;
+
+	df::log(__FUNCTION__, std::format("{} {} x {} needs {} to decode, over the {} budget", format,
+	                                  source_dimensions.cx, source_dimensions.cy, df::file_size(bytes).str(),
+	                                  df::file_size(df::max_decode_bytes).str()));
+	return true;
+}
+
 ui::surface_ptr files::image_to_surface(const ui::const_image_ptr& image, const sizei target_extent,
-                                        const bool can_use_yuv)
+                                        const bool can_use_yuv, const df::cancel_token& token,
+                                        const decode_intent intent)
 {
 	ui::surface_ptr surface_result;
+
+	// Nothing downstream can produce a smaller frame than the codec does, so refusing here is what
+	// keeps a huge image from exhausting memory on whichever worker asked for it.
+	if (exceeds_decode_budget(image, target_extent))
+	{
+		df::log(__FUNCTION__, std::format("decode of {} x {} needs {}, over the {} budget",
+		                                  image->dimensions().cx, image->dimensions().cy,
+		                                  df::file_size(estimate_decode_bytes(image, target_extent)).str(),
+		                                  df::file_size(df::max_decode_bytes).str()));
+		return surface_result;
+	}
+
+	df::bump(df::file_perf.decodes);
+	df::bump(df::file_perf.decode_bytes, is_valid(image) ? image->data().size() : 0u);
+	df::perf_timer timer(df::file_perf.decode_us, &df::file_perf.decode_max_us);
 
 	try
 	{
 		if (is_valid(image))
 		{
-			const auto& image_buffer_in = image->data();
 			const auto format = image->format();
-
-			if (!_scaler)
-			{
-				_scaler = std::make_unique<av_scaler>();
-			}
 
 			if (format == ui::image_format::JPEG)
 			{
-				ui::surface_ptr temp_surface;
-				bool success = false;
 				bool is_yuv = false;
+				auto decoded = decode_jpeg(image->data(), target_extent, can_use_yuv, image->orientation(), is_yuv,
+				                           token, intent);
 
-				try
-				{
-					if (_jpeg_decoder.read_header(image_buffer_in))
-					{
-						// YCbCr JPEGs can be uploaded as an NV12 texture and converted on the
-						// GPU (smaller uploads, no CPU colour conversion). JPEG/JFIF is full-range
-						// BT.601, which the shader applies via the rec601_full matrix.
-						const auto use_yuv = can_use_yuv && _jpeg_decoder.can_render_yuv420();
-						const auto scale_hint = ui::calc_scale_down_factor(_jpeg_decoder.dimensions(), target_extent);
-
-						if (_jpeg_decoder.start_decompress(scale_hint, use_yuv))
-						{
-							const auto dimensions = _jpeg_decoder.dimensions_out();
-							temp_surface = std::make_shared<ui::surface>();
-
-							if (use_yuv)
-							{
-								// NV12 requires even dimensions; crop at most one pixel per odd axis.
-								const sizei nv12_dims{dimensions.cx & ~1, dimensions.cy & ~1};
-
-								if (nv12_dims.cx >= 2 && nv12_dims.cy >= 2)
-								{
-									temp_surface->alloc(nv12_dims, ui::texture_format::NV12, image->orientation());
-									temp_surface->color_space(ui::color_space::rec601_full);
-									_jpeg_decoder.read_nv12(temp_surface->pixels(),
-									                        static_cast<int>(temp_surface->stride()),
-									                        static_cast<int>(temp_surface->size()));
-									is_yuv = true;
-									success = true;
-								}
-							}
-							else
-							{
-								temp_surface->alloc(dimensions, ui::texture_format::RGB, image->orientation());
-								success = _jpeg_decoder.read_rgb(temp_surface->pixels(),
-								                                 static_cast<int>(temp_surface->stride()),
-								                                 static_cast<int>(temp_surface->size()));
-							}
-
-							_jpeg_decoder.close();
-						}
-					}
-				}
-				catch (std::exception& e)
-				{
-					df::log(__FUNCTION__, e.what());
-					_jpeg_decoder.close();
-				}
-
-				if (success)
+				if (is_valid(decoded))
 				{
 					// NV12 is resized by the GPU sampler at draw time; RGB is resized to the target here.
-					surface_result = is_yuv
-						                 ? std::move(temp_surface)
-						                 : scale_if_needed(std::move(temp_surface), target_extent);
+					surface_result = is_yuv ? std::move(decoded) : scale_if_needed(std::move(decoded), target_extent);
 				}
 			}
 			else if (format == ui::image_format::PNG)
@@ -1174,7 +1679,7 @@ ui::surface_ptr files::image_to_surface(const ui::const_image_ptr& image, const 
 			{
 				try
 				{
-					auto loaded = load_webp(image->data());
+					auto loaded = load_webp(image->data(), can_use_yuv);
 
 					if (is_valid(loaded))
 					{
@@ -1197,7 +1702,7 @@ ui::surface_ptr files::image_to_surface(const ui::const_image_ptr& image, const 
 }
 
 ui::surface_ptr files::image_to_surface(const df::cspan image_buffer_in, const sizei target_extent,
-                                        const bool can_use_yuv)
+                                        const bool can_use_yuv, const decode_intent intent)
 {
 	ui::surface_ptr surface_result;
 
@@ -1207,42 +1712,14 @@ ui::surface_ptr files::image_to_surface(const df::cspan image_buffer_in, const s
 		{
 			const auto format = detect_format(image_buffer_in);
 
-			if (!_scaler)
-			{
-				_scaler = std::make_unique<av_scaler>();
-			}
-
 			if (format == detected_format::JPEG)
 			{
-				auto temp_surface = std::make_shared<ui::surface>();
-				bool success = false;
+				bool is_yuv = false;
+				auto decoded = decode_jpeg(image_buffer_in, target_extent, false, {}, is_yuv, {}, intent);
 
-				try
+				if (is_valid(decoded))
 				{
-					if (_jpeg_decoder.read_header(image_buffer_in))
-					{
-						const auto scale_hint = ui::calc_scale_down_factor(_jpeg_decoder.dimensions(), target_extent);
-
-						if (_jpeg_decoder.start_decompress(scale_hint, false))
-						{
-							const auto dimensions = _jpeg_decoder.dimensions_out();
-							temp_surface->alloc(dimensions, ui::texture_format::RGB, _jpeg_decoder._orientation_out);
-							success = _jpeg_decoder.read_rgb(temp_surface->pixels(),
-							                                 static_cast<int>(temp_surface->stride()),
-							                                 static_cast<int>(temp_surface->size()));
-							_jpeg_decoder.close();
-						}
-					}
-				}
-				catch (std::exception& e)
-				{
-					df::log(__FUNCTION__, e.what());
-					_jpeg_decoder.close();
-				}
-
-				if (success)
-				{
-					surface_result = scale_if_needed(std::move(temp_surface), target_extent);
+					surface_result = scale_if_needed(std::move(decoded), target_extent);
 				}
 			}
 			else if (format == detected_format::PSD)
@@ -1275,7 +1752,7 @@ ui::surface_ptr files::image_to_surface(const df::cspan image_buffer_in, const s
 			{
 				try
 				{
-					auto loaded = load_webp(image_buffer_in);
+					auto loaded = load_webp(image_buffer_in, can_use_yuv);
 
 					if (is_valid(loaded))
 					{
@@ -1304,6 +1781,23 @@ ui::surface_ptr files::image_to_surface(const df::cspan image_buffer_in, const s
 					df::log(__FUNCTION__, e.what());
 				}
 			}
+			else if (format == detected_format::JXL)
+			{
+				try
+				{
+					mem_read_stream stream(image_buffer_in);
+					auto loaded = load_jxl(stream);
+
+					if (is_valid(loaded))
+					{
+						surface_result = scale_if_needed(std::move(loaded), target_extent);
+					}
+				}
+				catch (std::exception& e)
+				{
+					df::log(__FUNCTION__, e.what());
+				}
+			}
 
 			if (is_empty(surface_result))
 			{
@@ -1317,6 +1811,106 @@ ui::surface_ptr files::image_to_surface(const df::cspan image_buffer_in, const s
 	}
 
 	return surface_result;
+}
+
+// Reduces a decoded picture to the grayscale square the hash consumes. Separated from hashing so
+// the four orientations share one decode and one reduction.
+static bool build_phash_gray(const ui::const_surface_ptr& surface, std::array<uint8_t, crypto::phash_pixels>& gray);
+
+uint64_t files::calc_perceptual_hash(const ui::const_surface_ptr& surface)
+{
+	std::array<uint8_t, crypto::phash_pixels> gray{};
+	if (!build_phash_gray(surface, gray)) return 0;
+	return crypto::perceptual_hash(gray.data(), gray.size());
+}
+
+crypto::phash_rotations files::calc_perceptual_hash_rotations(const ui::const_surface_ptr& surface)
+{
+	std::array<uint8_t, crypto::phash_pixels> gray{};
+	if (!build_phash_gray(surface, gray)) return {};
+	return crypto::perceptual_hash_rotations(gray.data(), gray.size());
+}
+
+static bool build_phash_gray(const ui::const_surface_ptr& surface, std::array<uint8_t, crypto::phash_pixels>& gray)
+{
+	if (!is_valid(surface))
+	{
+		return false;
+	}
+
+	// RGB and ARGB are both four bytes a pixel; the planar YUV formats are not laid out this way and
+	// are never what a still decodes to here.
+	const auto format = surface->format();
+
+	if (format != ui::texture_format::RGB && format != ui::texture_format::ARGB)
+	{
+		return false;
+	}
+
+	const auto extent = static_cast<int>(crypto::phash_extent);
+	const auto width = static_cast<int>(surface->width());
+	const auto height = static_cast<int>(surface->height());
+
+	if (width <= 0 || height <= 0)
+	{
+		return false;
+	}
+
+	// Box-averaged down to the hash extent, ignoring aspect. Squashing rather than cropping is what
+	// makes the hash survive a resize, and averaging rather than sampling is what makes it survive
+	// the resampling a re-encode applies. Each cell claims its own source rectangle, so a source
+	// narrower or shorter than the hash shares pixels between cells instead of leaving them empty.
+	// Cells partition by fraction rather than by pixel count, which is what makes the grid of a
+	// rotated picture the rotated grid of the original.
+	for (auto cell_y = 0; cell_y < extent; ++cell_y)
+	{
+		const auto y0 = cell_y * height / extent;
+		auto y1 = (cell_y + 1) * height / extent;
+		if (y1 <= y0) y1 = y0 + 1;
+
+		for (auto cell_x = 0; cell_x < extent; ++cell_x)
+		{
+			const auto x0 = cell_x * width / extent;
+			auto x1 = (cell_x + 1) * width / extent;
+			if (x1 <= x0) x1 = x0 + 1;
+
+			uint32_t sum = 0;
+			uint32_t count = 0;
+
+			for (auto y = y0; y < y1 && y < height; ++y)
+			{
+				const auto* const line = std::bit_cast<const ui::color32*>(surface->pixels_line(y));
+
+				for (auto x = x0; x < x1 && x < width; ++x)
+				{
+					const auto c = line[x];
+					// Rec.601 luma in integer form; the hash needs a consistent gray, not colorimetry.
+					sum += (ui::get_r(c) * 77 + ui::get_g(c) * 151 + ui::get_b(c) * 28) >> 8;
+					count += 1;
+				}
+			}
+
+			gray[cell_y * extent + cell_x] = count == 0 ? 0 : static_cast<uint8_t>(std::min(sum / count, 255u));
+		}
+	}
+
+	return true;
+}
+
+crypto::phash_rotations files::calc_perceptual_hash_rotations(const df::cspan encoded)
+{
+	constexpr auto decode_extent = 128;
+	return calc_perceptual_hash_rotations(image_to_surface(encoded, {decode_extent, decode_extent}, false,
+	                                                       decode_intent::thumbnail));
+}
+
+uint64_t files::calc_perceptual_hash(const df::cspan encoded)
+{
+	// Decoded well above the hash extent so the reduction has real pixels to average, and still far
+	// enough below native size that a JPEG scales in the DCT domain rather than decoding in full.
+	constexpr auto decode_extent = 128;
+	return calc_perceptual_hash(image_to_surface(encoded, {decode_extent, decode_extent}, false,
+	                                             decode_intent::thumbnail));
 }
 
 static uint64_t round_up_to_multiple(const uint64_t n, const uint64_t multiple)
@@ -1340,47 +1934,54 @@ void file_read_stream::read(const uint64_t pos, uint8_t* buffer, const size_t le
 
 void file_read_stream::load_buffer(const uint64_t pos, const size_t len)
 {
+	// Overflow-safe: pos and len both originate from untrusted file fields.
+	if (pos > _file_size || len > _file_size - pos)
+	{
+		const auto message = std::format("invalid read past end of file: {}", _h->path());
+		df::log(__FUNCTION__, message);
+		throw app_exception(message);
+	}
+
 	const auto wanted_end_pos = pos + len;
 
 	if (wanted_end_pos > _loaded_end_pos || pos < _loaded_start_pos)
 	{
-		if (wanted_end_pos > _file_size)
-		{
-			const auto message = std::format("invalid read past end of file: {}", _h->path());
-			df::log(__FUNCTION__, message);
-			throw app_exception(message);
-		}
-
 		const auto new_start_pos = pos > _block_size ? round_up_to_multiple(pos - _block_size, _block_size) : 0;
 		const auto new_end_pos = std::min(round_up_to_multiple(wanted_end_pos, _block_size), _file_size);
-		const auto existing_buffer_size = _loaded_end_pos - _loaded_start_pos;
-		const auto new_buffer_size = new_end_pos - new_start_pos;
+		// The allocator takes a size_t, so a window wider than that can never be held in memory.
+		const auto new_window = new_end_pos - new_start_pos;
+		const auto new_buffer_size = static_cast<size_t>(new_window);
 
-		if (existing_buffer_size != new_buffer_size)
+		if (new_buffer_size != new_window)
 		{
-			if (_buffer == nullptr)
-			{
-				_buffer = static_cast<uint8_t*>(_aligned_malloc(new_buffer_size, 16));
-			}
-			else
-			{
-				_buffer = static_cast<uint8_t*>(_aligned_realloc(_buffer, new_buffer_size, 16));
-			}
-
-			_buffer_size = new_buffer_size;
-		}
-
-		if (!_buffer)
-		{
-			const auto message = std::format("buffer alloc failed: {}", _h->path());
+			const auto message = std::format("buffer window too large: {} {}", new_window, _h->path());
 			df::log(__FUNCTION__, message);
 			throw std::bad_alloc();
 		}
 
-		/*if (_buffer && new_start_pos != _loaded_start_pos)
+		// The window is invalid from here until the read completes; any throw in
+		// between must not leave _loaded_* describing a buffer that no longer exists.
+		_loaded_start_pos = 0;
+		_loaded_end_pos = 0;
+
+		if (_buffer_size != new_buffer_size)
 		{
-			std::memmove(_buffer, )
-		}*/
+			// realloc returns null without freeing the original, so never assign
+			// the result directly - that would leak the existing buffer.
+			auto* const new_buffer = static_cast<uint8_t*>(_buffer == nullptr
+				                                               ? _aligned_malloc(new_buffer_size, 16)
+				                                               : _aligned_realloc(_buffer, new_buffer_size, 16));
+
+			if (!new_buffer)
+			{
+				const auto message = std::format("buffer alloc failed: {}", _h->path());
+				df::log(__FUNCTION__, message);
+				throw std::bad_alloc();
+			}
+
+			_buffer = new_buffer;
+			_buffer_size = new_buffer_size;
+		}
 
 		if (_h->seek(new_start_pos, platform::file::whence::begin) != new_start_pos)
 		{
@@ -1389,11 +1990,9 @@ void file_read_stream::load_buffer(const uint64_t pos, const size_t len)
 			throw app_exception(message);
 		}
 
-		const auto wanted = new_end_pos - new_start_pos;
-
-		if (_h->read(_buffer, wanted) != wanted)
+		if (_h->read(_buffer, new_buffer_size) != new_buffer_size)
 		{
-			const auto message = std::format("invalid load_buffer read: {} {}", wanted, _h->path());
+			const auto message = std::format("invalid load_buffer read: {} {}", new_buffer_size, _h->path());
 			df::log(__FUNCTION__, message);
 			throw app_exception(message);
 		}
@@ -1438,6 +2037,38 @@ file_read_stream::~file_read_stream()
 	close();
 }
 
+df::blob file_read_stream::read_all()
+{
+	// Parenthesised: the Windows max macro is in scope here.
+	if (_file_size > (std::numeric_limits<size_t>::max)())
+		throw app_exception("file too large to load"s);
+
+	const auto len = static_cast<size_t>(_file_size);
+	df::blob result(len);
+
+	if (len != 0)
+	{
+		// Bypasses the sliding window on purpose: load_buffer would allocate the whole file and
+		// then copy it into result. load_buffer always seeks before it reads, so moving the file
+		// pointer here cannot disturb the window.
+		if (_h->seek(0, platform::file::whence::begin) != 0)
+		{
+			const auto message = std::format("invalid read_all seek: {}", _h->path());
+			df::log(__FUNCTION__, message);
+			throw app_exception(message);
+		}
+
+		if (_h->read(result.data(), len) != len)
+		{
+			const auto message = std::format("invalid read_all read: {} {}", len, _h->path());
+			df::log(__FUNCTION__, message);
+			throw app_exception(message);
+		}
+	}
+
+	return result;
+}
+
 bool files::save(const df::file_path path, const file_load_result& loaded)
 {
 	const auto save_format = extension_to_format(path.extension());
@@ -1459,38 +2090,54 @@ bool files::save(const df::file_path path, const file_load_result& loaded)
 	return is_valid(saved) && blob_save_to_file(saved->data(), path);
 }
 
-std::string normalize_string_trailing_null(std::string operand)
+file_scan_result files::scan_file(const df::file_path path, const bool load_thumb, const file_type_ref ft,
+                                  const std::string_view xmp_sidecar, const sizei max_thumb_size,
+                                  const scan_intent intent, const bool want_image)
 {
-	if (!operand.empty() && operand.back() != '\0')
-	{
-		operand.append(1, '\0');
-	}
+	// RAW goes through LibRaw, which opens by path itself, so a handle opened here would be a second
+	// open per file that nothing reads.
+	auto f = ft->has_trait(file_traits::raw)
+		         ? platform::file_ptr{}
+		         : open_file(path, platform::file_open_mode::read);
 
-	return operand;
+	return scan_file(std::move(f), path, load_thumb, ft, xmp_sidecar, max_thumb_size, intent, want_image);
 }
 
-file_scan_result files::scan_file(const df::file_path path, const bool load_thumb, const file_type_ref ft,
-                                  const std::string_view xmp_sidecar, const sizei max_thumb_size)
+// Overload that scans an ALREADY-OPEN file. Used after replace_file hands back the still-open,
+// cache-coherent handle it renamed through, so an edited file is re-scanned via the same handle
+// instead of a fresh (possibly stale over SMB) by-name open. Note: the RAW branch (scan_raw) and
+// the XMP sidecar are still read BY PATH - the handle only covers the primary media stream, and is
+// null for RAW.
+file_scan_result files::scan_file(platform::file_ptr f, const df::file_path path, const bool load_thumb,
+                                  const file_type_ref ft, const std::string_view xmp_sidecar,
+                                  const sizei max_thumb_size, const scan_intent intent, const bool want_image)
 {
 	file_scan_result result;
+	df::bump(df::file_perf.scans);
+	record_file_op(ft, file_op_stat::read);
+	df::perf_timer timer(df::file_perf.scan_us, &df::file_perf.scan_max_us);
 
 	try
 	{
-		const auto f = open_file(path, platform::file_open_mode::read);
-
-		if (f)
+		if (ft->has_trait(file_traits::raw))
 		{
+			result = scan_raw(path, xmp_sidecar, load_thumb, max_thumb_size, intent);
+		}
+		else if (f)
+		{
+			f->seek(0, platform::file::whence::begin);
 			const auto file_len = f->size();
 			const bool is_bitmap = ft->has_trait(file_traits::bitmap);
-			const auto is_raw = ft->has_trait(file_traits::raw);
 			const auto is_small_file = file_len < df::two_fifty_six_k;
-			const auto load_from_mem = load_thumb && !is_raw && is_bitmap;
+			const auto load_from_mem = load_thumb && is_bitmap;
+			// blob sizes are size_t; a longer file would be read past the end of a truncated buffer.
+			const auto fits_in_memory = file_len == static_cast<size_t>(file_len);
 
 			df::blob data;
 
-			if (is_small_file || load_from_mem)
+			if ((is_small_file || load_from_mem) && fits_in_memory)
 			{
-				data.resize(file_len);
+				data.resize(static_cast<size_t>(file_len));
 				const auto read = f->read(data.data(), file_len);
 				if (read != file_len) return result;
 				f->seek(0, platform::file::whence::begin);
@@ -1498,24 +2145,26 @@ file_scan_result files::scan_file(const df::file_path path, const bool load_thum
 
 			if (is_bitmap)
 			{
-				if (is_raw)
-				{
-					result = scan_raw(path, xmp_sidecar, load_thumb, max_thumb_size);
-				}
-				else if (!data.empty())
+				if (!data.empty())
 				{
 					mem_read_stream stream(data);
-					result = scan_photo(stream);
+					result = scan_photo(stream, intent, load_thumb, this);
 
-					if (is_image_format(detect_format(stream.peek128(0))))
+					// load_image_file re-parses the file and copies it, so it is worth it only to something
+					// that will draw or store the result.
+					if ((load_thumb || want_image) &&
+						data.size() >= sizeof(pack128) && is_image_format(detect_format(stream.peek128(0))))
 					{
 						result.thumbnail_image = load_image_file(data);
+						// The same object: these bytes are the whole file, so a display that wants the
+						// written image never has to read it back.
+						result.full_image = result.thumbnail_image;
 					}
 					else
 					{
 						if (load_thumb)
 						{
-							auto s = image_to_surface(data, max_thumb_size);
+							auto s = image_to_surface(data, max_thumb_size, false, decode_intent::thumbnail);
 
 							if (is_valid(s))
 							{
@@ -1536,20 +2185,22 @@ file_scan_result files::scan_file(const df::file_path path, const bool load_thum
 
 					if (stream.open(f))
 					{
-						result = scan_photo(stream);
+						result = scan_photo(stream, intent, load_thumb, this);
 					}
 				}
 			}
 			else if (ft->has_trait(file_traits::av))
 			{
-				/*if (ft->traits && file_type_traits::embedded_xmp)
-				{
-					result = scan_xmp(path);
-				}*/
-
 				av_format_decoder decoder;
 
-				if (decoder.open(f, path))
+				// An inspect scan reports the file's structure, so it is never held to the metadata budget.
+				const auto open_intent = load_thumb
+					                         ? media_intent::thumbnail
+					                         : (intent == scan_intent::index
+						                            ? media_intent::metadata
+						                            : media_intent::playback);
+
+				if (decoder.open(f, path, open_intent))
 				{
 					result.cover_art = decoder.cover_art();
 
@@ -1568,7 +2219,7 @@ file_scan_result files::scan_file(const df::file_path path, const bool load_thum
 						ui::surface_ptr thumbnail_surface;
 
 						if (decoder.extract_thumbnail(thumbnail_surface, max_thumb_size, pos_numerator,
-						                              pos_denominator))
+						                              pos_denominator, false))
 						{
 							result.thumbnail_surface = std::move(thumbnail_surface);
 						}
@@ -1578,19 +2229,14 @@ file_scan_result files::scan_file(const df::file_path path, const bool load_thum
 					result.success = true;
 				}
 
-				/*if (!success)
+				// Some containers store XMP only in a sidecar rather than embedded — notably
+				// MPEG-1/2 program streams, which the Adobe XMP SDK supports via a .xmp sidecar
+				// only. If the demuxer surfaced no embedded XMP, merge the sidecar so its
+				// tags/ratings/labels are shown and indexed. (#230)
+				if (result.metadata.xmp.empty() && !str::is_empty(xmp_sidecar))
 				{
-					file_scanner result;
-
-					if (result.parse(path, {}))
-					{
-						if (!result.thumbnail.is_empty())
-						{
-							surface_out = image_to_surface(ui::const_image_ptr(result.thumbnail), target_extent);
-							success = !surface_out.is_empty();
-						}
-					}
-				}*/
+					result.metadata.xmp = blob_from_file(path.folder().combine_file(xmp_sidecar));
+				}
 			}
 
 			if (!data.empty())
@@ -1618,6 +2264,9 @@ ui::image_ptr load_image_file(df::cspan file)
 
 		if (is_image_format(detected))
 		{
+			// want_thumbnail stays false here, and must. scan_exif calls this on an embedded
+			// thumbnail, so asking for one again would let a file of nested thumbnails recurse -
+			// and scan_jpg carries a 64K buffer per frame, so that ends in a blown stack.
 			const auto info = scan_photo(stream);
 			auto format = ui::image_format::Unknown;
 
@@ -1640,7 +2289,8 @@ ui::image_ptr load_image_file(df::cspan file)
 		else if (detected != detected_format::Unknown)
 		{
 			files ff;
-			result = save_png(ff.image_to_surface(file, {}), {});
+			const auto surface = ff.image_to_surface(file, {});
+			if (is_valid(surface)) result = save_png(surface, {});
 		}
 	}
 
@@ -1651,9 +2301,12 @@ ui::image_ptr load_image_file(df::cspan file)
 file_load_result files::load(const df::file_path path, const bool can_load_preview)
 {
 	df::last_loaded_path = path;
+	df::bump(df::file_perf.loads);
+	df::perf_timer timer(df::file_perf.load_us, &df::file_perf.load_max_us);
 
 	file_load_result result;
 	const auto* const mt = file_type_from_name(path);
+	record_file_op(mt, file_op_stat::read);
 
 	if (mt->has_trait(file_traits::bitmap))
 	{
@@ -1678,28 +2331,56 @@ file_load_result files::load(const df::file_path path, const bool can_load_previ
 						result.i = load_image_file(file);
 						result.success = is_valid(result.i);
 					}
-					else if (detected != detected_format::Unknown)
+					else
 					{
+						// These codecs build the whole frame before anything can be scaled down, so
+						// each refuses an oversized source at the point it reads the header and says
+						// so here rather than looking like a corrupt file.
+						load_diagnostic diagnostic;
+
 						switch (detected)
 						{
 						case detected_format::PSD:
-							result.s = load_psd(stream);
-							result.success = is_valid(result.s);
+							result.s = load_psd(stream, &diagnostic);
 							break;
 
 						case detected_format::HEIF:
-							result.s = load_heif(stream);
-							result.success = is_valid(result.s);
+							result.s = load_heif(stream, &diagnostic);
 							break;
 
-						case detected_format::GIF:
-						case detected_format::BMP:
-						case detected_format::TIFF:
-							result.s = image_to_surface(file, {});
-							result.success = is_valid(result.s);
+						case detected_format::JXL:
+							result.s = load_jxl(stream, &diagnostic);
 							break;
 
-						default: ;
+						default:
+							// GIF, BMP and TIFF, plus the bitmap types we recognise by extension but
+							// not by signature (TGA, SGI, PPM, DPX), are decoded by the platform. Its
+							// scanner reads the geometry from the header without decoding.
+							{
+								const auto scanned = scan_photo(stream);
+								const sizei scanned_dimensions{
+									static_cast<int>(scanned.width), static_cast<int>(scanned.height)
+								};
+
+								if (!scanned_dimensions.is_empty() &&
+									reject_over_budget_source(&diagnostic, scanned_dimensions, "image"))
+								{
+									break;
+								}
+
+								result.s = image_to_surface(file, {});
+							}
+							break;
+						}
+
+						result.success = is_valid(result.s);
+
+						if (!result.success)
+						{
+							result.source_dimensions = diagnostic.source_dimensions;
+							result.reason = diagnostic.over_budget
+								                ? file_load_result::failure::too_large
+								                : file_load_result::failure::unreadable;
 						}
 					}
 				}
@@ -1712,19 +2393,6 @@ file_load_result files::load(const df::file_path path, const bool can_load_previ
 	}
 
 	return result;
-}
-
-static void patch_file(const df::file_path path, const uint64_t offset, const uint8_t* data, const size_t len)
-{
-	const auto f = open_file(path, platform::file_open_mode::write);
-
-	if (f)
-	{
-		if (f->seek(offset, platform::file::whence::begin) == offset)
-		{
-			f->write(data, len);
-		}
-	}
 }
 
 static simple_transform angle_to_transform(const int a)
@@ -1794,32 +2462,51 @@ ui::image_ptr save_surface(const ui::image_format& format, const ui::const_surfa
 }
 
 
-platform::file_op_result files::update(const df::file_path path_src, const df::file_path path_dst,
-                                       const metadata_edits& metadata_edits, const image_edits& photo_edits,
-                                       const file_encode_params& params, const bool create_original,
-                                       const std::string_view xmp_name)
+platform::file_op_result files::update_impl(const df::file_path path_src, const df::file_path path_dst,
+                                            const metadata_edits& metadata_edits, const image_edits& photo_edits,
+                                            const file_encode_params& params, const bool create_original,
+                                            const std::string_view src_xmp_name, const std::string_view dst_xmp_name)
 {
 	platform::file_op_result result = {platform::file_op_result_code::OK};
 
 	bool temp_file_created = false;
 	const auto path_temp = platform::temp_file(path_dst.extension(), path_dst.folder());
+	const auto path_rollback = platform::temp_file(path_dst.extension(), path_dst.folder());
+	bool rollback_file_created = false;
+
+	// Set when the rollback copy is the last surviving copy of the original bytes, which stops
+	// the cleanup below from deleting it.
+	bool rollback_holds_sole_original = false;
+	xmp_update_result xmp_result;
+
+	// Set only once a write path is entered, so a no-op update records nothing and a failure is
+	// attributed to the path that actually produced it.
+	file_type_ref op_type = nullptr;
+	const df::scope_exit record_write_failure([&result, &op_type]
+	{
+		if (result.failed() && op_type) record_file_op(op_type, file_op_stat::write_failed);
+	});
+
+	// The sidecar the user actually keeps. Nothing writes to it until the media swap below has
+	// succeeded; the update stages its own copy beside whichever file is being written.
+	const auto path_dst_xmp = dst_xmp_name.empty()
+		                          ? path_dst.extension(".xmp")
+		                          : path_dst.folder().combine_file(dst_xmp_name);
 
 	try
 	{
-		//bool success = true;
 		bool has_photo_edits = false;
 
 		const auto* const mt = file_type_from_name(path_src);
-		const auto file_attributes = platform::file_attributes(path_src);
-		const auto file_size = file_attributes.size;
-		const auto file_modified = file_attributes.modified;
-		const auto file_created = file_attributes.created;
 		const auto extension_change = str::icmp(path_dst.extension(), path_src.extension()) != 0;
 		const auto path_change = path_dst != path_src;
 
 		file_scan_result scan_result;
 
-		if (mt->has_trait(file_traits::bitmap))
+		// The scan only ever sizes a crop and carries the source metadata into a re-encode, so it is
+		// worth its read - a full parse plus the embedded thumbnail - only where the pixels may be
+		// rewritten. A metadata-only write never rewrites them.
+		if (mt->has_trait(file_traits::bitmap) && (extension_change || !photo_edits.is_empty()))
 		{
 			file_read_stream stream;
 
@@ -1830,31 +2517,128 @@ platform::file_op_result files::update(const df::file_path path_src, const df::f
 			}
 		}
 
+		if (!path_change && !has_photo_edits && !metadata_edits.has_changes())
+		{
+			return result;
+		}
+
+		// This branch hands the LIVE file to the toolkit and lets the handler choose, so it is
+		// limited to containers whose handler patches: MP3 and RIFF move the whole payload inside
+		// the file with no temp, and JPEG rewrites whenever a rating dirties EXIF or a tag dirties
+		// the PSIR. ISO base media patches boxes even with no packet to overwrite, so it needs no
+		// existing packet; ASF only patches an existing packet and rewrites otherwise. The other
+		// exclusions cannot be a patch: a save-as or a pixel edit has to produce a second file, and
+		// a backup needs the prior bytes.
+		const auto can_patch_in_place = !path_change && !has_photo_edits && !create_original &&
+			mt->has_trait(file_traits::in_place_metadata) &&
+			(mt->has_trait(file_traits::in_place_metadata_inject) || metadata_xmp::has_embedded_xmp(path_dst));
+
+		if (can_patch_in_place)
+		{
+			op_type = mt;
+			record_file_op(mt, file_op_stat::patch_in_place);
+
+			xmp_update_result in_place;
+
+			try
+			{
+				in_place = metadata_xmp::update(path_dst, path_dst, metadata_edits, src_xmp_name, {});
+			}
+			catch (const app_exception&)
+			{
+				// The toolkit reports a lost race with a reader as an opaque open failure, so retry
+				// once, but only while the file is merely locked.
+				if (!platform::wait_for_unlocked_write(path_dst)) throw;
+				in_place = metadata_xmp::update(path_dst, path_dst, metadata_edits, src_xmp_name, {});
+			}
+
+			if (!in_place.success)
+			{
+				result.code = platform::file_op_result_code::FAILED;
+			}
+
+			return result;
+		}
+
+		// A container with no embedded XMP keeps its metadata in the sidecar, so the media file's
+		// bytes never change. Staging and swapping it would copy the whole file - a 60 MB raw for a
+		// one-star rating - only to write back what was already there. A backup still stages,
+		// because the prior bytes have to be kept before anything is replaced.
+		const auto sidecar_only = !path_change && !has_photo_edits && !create_original &&
+			!mt->has_trait(file_traits::embedded_xmp);
+
+		if (sidecar_only)
+		{
+			op_type = mt;
+			record_file_op(mt, file_op_stat::sidecar);
+
+			const auto path_temp_xmp = path_temp.extension(".xmp");
+			auto committed = false;
+
+			// Nothing outside this scope knows the staged path, so a throw would strand it.
+			const df::scope_exit discard_stage([path_temp_xmp, &committed]
+			{
+				if (!committed) platform::delete_file(path_temp_xmp);
+			});
+
+			// Staged like every other write: the live sidecar is replaced only once the new one is
+			// complete on disk.
+			const auto staged = metadata_xmp::update(path_dst, path_src, metadata_edits, src_xmp_name,
+			                                         path_temp_xmp);
+			result = platform::replace_file(path_dst_xmp, staged.xmp_path, false);
+			committed = result.success();
+
+			// This handle refers to the sidecar, and a caller uses one to re-scan the media file.
+			// With no handle the caller re-scans by name with force set, which is what the raw
+			// branch does anyway.
+			result.coherent_handle.reset();
+
+			return result;
+		}
+
 		if (has_photo_edits)
 		{
 			const auto loaded = load(path_src, false);
-			temp_file_created = true;
 
-			if (loaded.success)
+			if (!loaded.success)
+			{
+				// Without a decoded source there is nothing to write; carrying on would
+				// hand a non-existent temp file to the metadata update and the replace.
+				result.code = platform::file_op_result_code::FAILED;
+			}
+			else
 			{
 				const auto dimensions_in = loaded.dimensions();
 				const auto dst_path_is_jpeg = is_jpeg(path_dst);
+				const auto jpeg_to_jpeg = ui::is_jpeg(loaded.i) && dst_path_is_jpeg;
 
-				if (ui::is_jpeg(loaded.i) && dst_path_is_jpeg && photo_edits.is_no_loss(dimensions_in) && params.
-					jpeg_save_quality >= 75)
+				df::blob transformed;
+
+				if (jpeg_to_jpeg && photo_edits.is_no_loss(dimensions_in) && params.jpeg_save_quality >= 75)
 				{
-					const auto saved = _jpeg_decoder.transform(loaded.i->data(), _jpeg_encoder,
-					                                           angle_to_transform(
-						                                           df::round(photo_edits.rotation_angle())));
+					// Empty when the rotation would not be lossless, which the re-encode below handles.
+					transformed = _jpeg_decoder.transform(loaded.i->data(), _jpeg_encoder,
+					                                      angle_to_transform(
+						                                      df::round(photo_edits.rotation_angle())));
+				}
 
-					if (saved.empty() || !blob_save_to_file(saved, path_temp))
+				if (!transformed.empty())
+				{
+					if (!blob_save_to_file(transformed, path_temp))
 					{
 						result.code = platform::file_op_result_code::FAILED;
+					}
+					else
+					{
+						temp_file_created = true;
 					}
 				}
 				else
 				{
-					const auto temp_surface = loaded.to_surface()->transform(photo_edits);
+					const auto surface_in = loaded.to_surface();
+					const auto temp_surface = is_empty(surface_in)
+						                          ? decltype(surface_in->transform(photo_edits)){}
+						                          : surface_in->transform(photo_edits);
 
 					if (is_empty(temp_surface))
 					{
@@ -1862,12 +2646,23 @@ platform::file_op_result files::update(const df::file_path path_src, const df::f
 					}
 					else
 					{
+						auto encode_params = params;
+
+						// Re-encoding against the source's own tables costs one generation at its
+						// fidelity rather than re-quantizing to the quality slider.
+						if (jpeg_to_jpeg) encode_params.jpeg_source = loaded.i->data();
+
+						metadata_parts save_meta;
 						const auto saved = save_surface(extension_to_format(path_temp.extension()), temp_surface,
-						                                scan_result.save_metadata(), params);
+						                                scan_result.save_metadata(save_meta), encode_params);
 
 						if (is_empty(saved) || !blob_save_to_file(saved->data(), path_temp))
 						{
 							result.code = platform::file_op_result_code::FAILED;
+						}
+						else
+						{
+							temp_file_created = true;
 						}
 					}
 				}
@@ -1875,17 +2670,12 @@ platform::file_op_result files::update(const df::file_path path_src, const df::f
 		}
 		else
 		{
-			// use temp file for anything under 5 meg
-			constexpr auto ten_megabytes = 10ull * 1024ull * 1024ull;
-
-			if (file_size <= ten_megabytes || path_change)
-			{
-				result = platform::copy_file(path_src, path_temp, true, false);
-				temp_file_created = result.success();
-			}
+			// Always staged, whatever the size. Handing the original to the metadata update lets a
+			// crash, a full disk or a handler fault mid-rewrite leave the user with a corrupt file
+			// and nothing to roll back to.
+			result = platform::copy_file(path_src, path_temp, true, false);
+			temp_file_created = result.success();
 		}
-
-		xmp_update_result xmp_result;
 
 		if (result.success())
 		{
@@ -1893,28 +2683,74 @@ platform::file_op_result files::update(const df::file_path path_src, const df::f
 
 			if (has_metadata_changes || path_change || has_photo_edits)
 			{
-				const auto metadata_update_path = temp_file_created ? path_temp : path_dst;
-				xmp_result = metadata_xmp::update(metadata_update_path, path_src, metadata_edits, xmp_name);
+				// Both destinations are staged; neither the live media file nor the live sidecar
+				// is touched until the swap below.
+				xmp_result = metadata_xmp::update(path_temp, path_src, metadata_edits, src_xmp_name,
+				                                  path_temp.extension(".xmp"));
 			}
 		}
 
 		if (result.success() && temp_file_created)
 		{
-			result = platform::replace_file(path_dst, path_temp, create_original);
-
-			if (!xmp_result.xmp_path.is_empty())
+			const auto destination_existed = path_dst.exists();
+			if (!xmp_result.xmp_path.is_empty() && destination_existed)
 			{
-				const auto path_dst_xmp = xmp_name.empty()
-					                          ? path_dst.extension(".xmp")
-					                          : path_dst.folder().combine_file(xmp_result.xmp_path.name());
-				const auto path_temp_xmp = xmp_result.xmp_path;
-				result = platform::replace_file(path_dst_xmp, path_temp_xmp, create_original);
+				const auto rollback_copy = platform::copy_file(path_dst, path_rollback, true, false);
+				if (rollback_copy.failed()) result = rollback_copy;
+				else rollback_file_created = true;
 			}
-		}
 
-		if (result.success() && !setting.update_modified)
-		{
-			platform::set_files_dates(path_dst, file_created, file_modified);
+			if (result.success())
+			{
+				op_type = mt;
+				record_file_op(mt, file_op_stat::replace);
+				result = platform::replace_file(path_dst, path_temp, create_original);
+			}
+
+			if (result.success() && !xmp_result.xmp_path.is_empty())
+			{
+				// Preserve the primary media file's coherent handle (and its modified time)
+				// across the sidecar swap - the sidecar replace returns its own result and
+				// would otherwise clobber the handle the caller needs for the immediate rescan.
+				auto media_handle = result.coherent_handle;
+				const auto media_modified = result.modified;
+
+				const auto path_temp_xmp = xmp_result.xmp_path;
+				const auto xmp_replace = platform::replace_file(path_dst_xmp, path_temp_xmp, create_original);
+
+				if (xmp_replace.failed())
+				{
+					media_handle.reset();
+					auto rollback_result = platform::file_op_result{platform::file_op_result_code::OK};
+					if (rollback_file_created)
+					{
+						rollback_result = platform::replace_file(path_dst, path_rollback, false);
+						rollback_file_created = rollback_result.failed();
+
+						// The swap consumed the rollback copy on success. On failure the destination
+						// holds the new bytes and this copy is the only original left, so name it in
+						// the log - it survives under a temp name that means nothing to the user.
+						rollback_holds_sole_original = rollback_file_created;
+
+						if (rollback_holds_sole_original)
+						{
+							df::log(__FUNCTION__, std::format("could not restore {}; original retained as {}",
+							                                  path_dst, path_rollback));
+						}
+					}
+					else
+					{
+						rollback_result = platform::delete_file(path_dst);
+					}
+
+					result = rollback_result.failed() ? rollback_result : xmp_replace;
+				}
+				else
+				{
+					result.coherent_handle = std::move(media_handle);
+					result.modified = media_modified;
+				}
+			}
 		}
 	}
 	catch (std::exception& e)
@@ -1923,11 +2759,74 @@ platform::file_op_result files::update(const df::file_path path_src, const df::f
 
 		result.code = platform::file_op_result_code::FAILED;
 		result.error_message = str::utf8_cast(e.what());
+	}
 
-		if (temp_file_created)
+	if (result.failed())
+	{
+		if (temp_file_created) platform::delete_file(path_temp);
+		// Only ever a staged copy; the live sidecar is never the cleanup target.
+		if (temp_file_created && !xmp_result.xmp_path.is_empty()) platform::delete_file(xmp_result.xmp_path);
+	}
+	if (rollback_file_created && !rollback_holds_sole_original) platform::delete_file(path_rollback);
+
+	return result;
+}
+
+file_update_result files::update(const df::file_path path_src, const df::file_path path_dst,
+                                 const metadata_edits& metadata_edits, const image_edits& photo_edits,
+                                 const file_encode_params& params, const bool create_original,
+                                 const std::string_view src_xmp_name, const std::string_view dst_xmp_name,
+                                 const rescan_spec& rescan)
+{
+	file_update_result result;
+	static_cast<platform::file_op_result&>(result) = update_impl(path_src, path_dst, metadata_edits, photo_edits,
+	                                                             params, create_original, src_xmp_name, dst_xmp_name);
+
+	// Only replace_file hands back a handle, and only for the media file, so this distinguishes a
+	// staged-and-swapped write from an in-place patch or a sidecar-only write.
+	result.staged = result.coherent_handle != nullptr;
+
+	// Consumed here, so the cache-coherent handle never escapes by accident. Every reader of the new
+	// bytes is served from what follows.
+	platform::file_ptr handle = std::move(result.coherent_handle);
+	result.coherent_handle.reset();
+
+	if (result.success() && rescan.wanted && rescan.file_type)
+	{
+		// The caller's sidecar name is captured before the write, so it is empty for the write that
+		// creates the sidecar. Resolve it here or the scan reads the media file alone.
+		auto xmp_sidecar = rescan.xmp_sidecar;
+
+		if (xmp_sidecar.empty())
 		{
-			platform::delete_file(path_temp);
+			const auto path_xmp = dst_xmp_name.empty()
+				                      ? path_dst.extension(".xmp")
+				                      : path_dst.folder().combine_file(dst_xmp_name);
+			if (path_xmp.exists()) xmp_sidecar = path_xmp.name();
 		}
+
+		result.coherent = handle != nullptr;
+		result.scan = handle
+			              ? scan_file(handle, path_dst, rescan.load_thumbnail, rescan.file_type, xmp_sidecar,
+			                          rescan.max_thumb_size, rescan.intent, rescan.want_image)
+			              : scan_file(path_dst, rescan.load_thumbnail, rescan.file_type, xmp_sidecar,
+			                          rescan.max_thumb_size, rescan.intent, rescan.want_image);
+		result.scanned = result.scan.success;
+
+		// Hand the display the bytes that were just written, so nothing reads the file back to draw
+		// it. Only directly displayable formats arrive here; the rest fall back to a by-name load.
+		if (result.scanned && rescan.want_image && is_valid(result.scan.full_image))
+		{
+			result.loaded.success = true;
+			result.loaded.i = result.scan.full_image;
+		}
+	}
+
+	// The one deliberate hand-over, and a move so exactly one owner holds it: the caller reopens this
+	// file for playback next, and opening the path again is the stale read we are avoiding.
+	if (result.success() && rescan.want_handle)
+	{
+		result.display_handle = std::move(handle);
 	}
 
 	return result;
@@ -1936,44 +2835,48 @@ platform::file_op_result files::update(const df::file_path path_src, const df::f
 std::vector<archive_item> files::list_archive(const df::file_path zip_file_path)
 {
 	std::vector<archive_item> results;
-	archive_entry* entry;
-	int r;
-	const auto a = archive_read_new();
+	auto* const a = archive_read_new();
+
+	if (!a)
+		return results;
+
+	// Entries are attacker-controlled; a crafted archive can declare millions of them.
+	constexpr size_t max_entries = 100 * 1000;
+
+	// RAII so a throw from str::utf8_cast or emplace_back cannot leak the handle
+	// and libarchive's decompression buffers.
+	const df::scope_exit free_archive([a] { archive_read_free(a); });
 
 	archive_read_support_filter_all(a);
 	archive_read_support_format_all(a);
 
 	const auto w = platform::to_file_system_path(zip_file_path);
 
-	if ((r = archive_read_open_filename_w(a, w.c_str(), 10240)) == ARCHIVE_OK)
+	if (archive_read_open_filename_w(a, w.c_str(), 10240) == ARCHIVE_OK)
 	{
-		for (;;)
+		const df::scope_exit close_archive([a] { archive_read_close(a); });
+
+		archive_entry* entry = nullptr;
+
+		while (results.size() < max_entries && archive_read_next_header(a, &entry) == ARCHIVE_OK)
 		{
-			r = archive_read_next_header(a, &entry);
-			if (r == ARCHIVE_OK)
-			{
-				archive_item result_info;
-				result_info.filename = str::utf8_cast(archive_entry_pathname_utf8(entry));
-				result_info.uncompressed_size = df::file_size(archive_entry_size(entry));
-				//result_info.compressed_size = df::file_size(archive_filter_bytes(a, -1));
-				result_info.created = df::date_t(archive_entry_ctime(entry));
-				results.emplace_back(result_info);
-			}
-			else
-			{
-				break;
-			}
+			// Null for entries whose stored name is not valid UTF-8, which is common
+			// in older zip/rar archives using a local code page.
+			const auto* const pathname = archive_entry_pathname_utf8(entry);
 
-			//archive_read_data_skip(a);
+			if (!pathname)
+				continue;
+
+			archive_item result_info;
+			result_info.filename = str::utf8_cast(pathname);
+			result_info.uncompressed_size = df::file_size(archive_entry_size(entry));
+			result_info.created = df::date_t(archive_entry_ctime(entry));
+			results.emplace_back(std::move(result_info));
 		}
-		archive_read_close(a);
 	}
-
-	archive_read_free(a);
 
 	return results;
 }
-
 
 // The app UI language is a 2-letter code (app_settings::language). FFmpeg tags id3v2
 // COMM/USLT comments with a lowercase ISO 639-2 3-letter code taken verbatim from the
@@ -1983,7 +2886,11 @@ static bool comment_key_matches_ui_language(const std::string_view key, const st
 {
 	if (ui_lang.empty()) return false;
 
-	struct lang_map { std::string_view ui2; std::string_view iso3; };
+	struct lang_map
+	{
+		std::string_view ui2;
+		std::string_view iso3;
+	};
 	static constexpr lang_map map[] = {
 		{"en", "eng"}, {"de", "deu"}, {"de", "ger"}, {"cs", "ces"}, {"cs", "cze"},
 		{"es", "spa"}, {"fr", "fra"}, {"fr", "fre"}, {"it", "ita"}, {"ja", "jpn"},
@@ -1993,7 +2900,7 @@ static bool comment_key_matches_ui_language(const std::string_view key, const st
 	};
 
 	constexpr std::string_view prefix = "comment-";
-	if (key.size() != prefix.size() + 3) return false;
+	if (key.size() != prefix.size() + 3) return false; // only the plain "comment-<lang>" form
 	const auto code = key.substr(prefix.size());
 
 	for (const auto& m : map)
@@ -2007,37 +2914,45 @@ static bool comment_key_matches_ui_language(const std::string_view key, const st
 
 void file_scan_result::parse_metadata_ffmpeg_kv(prop::item_metadata& result) const
 {
+	// FFmpeg surfaces id3v2 COMM/USLT frames with a language/descriptor suffix
+	// ("comment-eng", "comment-deu", ...); untagged ("und"/"xxx") comments use the plain
+	// "comment" key. We show a single comment, preferring the plain/untagged one, then a
+	// comment in the current UI language, then any remaining comment. The full set of
+	// per-language comments stays visible in the verbose metadata panel (see to_info()).
 	const auto ui_lang = setting.language;
-	int comment_priority = 0;
+	int comment_priority = 0; // 0 none, 1 other language, 2 UI language, 3 plain/untagged
 
 	for (const auto& kv : ffmpeg_metadata)
 	{
-		if (is_key(kv.first, "album")) result.album = str::strip_and_cache(kv.second);
-		else if (is_key(kv.first, "show")) result.show = str::strip_and_cache(kv.second);
-		else if (is_key(kv.first, "programme")) result.show = str::strip_and_cache(kv.second);
-		else if (is_key(kv.first, "album_artist")) result.album_artist = str::strip_and_cache(kv.second);
-		else if (is_key(kv.first, "artist")) result.artist = str::strip_and_cache(kv.second);
-		else if (is_key(kv.first, "comment") || str::starts(kv.first, "comment-"))
+		if (is_key(kv.key, "album")) result.album = str::strip_and_cache(kv.value);
+		else if (is_key(kv.key, "show")) result.show = str::strip_and_cache(kv.value);
+		else if (is_key(kv.key, "programme")) result.show = str::strip_and_cache(kv.value);
+		else if (is_key(kv.key, "album_artist")) result.album_artist = str::strip_and_cache(kv.value);
+		else if (is_key(kv.key, "artist")) result.artist = str::strip_and_cache(kv.value);
+		else if (is_key(kv.key, "comment") || str::starts(kv.key, "comment-"))
 		{
-			const auto priority = is_key(kv.first, "comment") ? 3
-				: comment_key_matches_ui_language(kv.first, ui_lang) ? 2
-				: 1;
+			// Pick the best single comment: plain/untagged > current UI language > any other.
+			const auto priority = is_key(kv.key, "comment")
+				                      ? 3
+				                      : comment_key_matches_ui_language(kv.key, ui_lang)
+				                      ? 2
+				                      : 1;
 
 			if (priority > comment_priority)
 			{
 				comment_priority = priority;
-				result.comment = str::strip_and_cache(kv.second);
+				result.comment = str::strip_and_cache(kv.value);
 			}
 		}
-		else if (is_key(kv.first, "description")) result.description = str::strip_and_cache(kv.second);
-		else if (is_key(kv.first, "composer")) result.composer = str::strip_and_cache(kv.second);
-		else if (is_key(kv.first, "copyright")) result.copyright_notice = str::strip_and_cache(kv.second);
-		else if (is_key(kv.first, "creation_time") || is_key(kv.first, "date") || is_key(
-			kv.first, "com.apple.quicktime.creationdate"))
+		else if (is_key(kv.key, "description")) result.description = str::strip_and_cache(kv.value);
+		else if (is_key(kv.key, "composer")) result.composer = str::strip_and_cache(kv.value);
+		else if (is_key(kv.key, "copyright")) result.copyright_notice = str::strip_and_cache(kv.value);
+		else if (is_key(kv.key, "creation_time") || is_key(kv.key, "date") || is_key(
+			kv.key, "com.apple.quicktime.creationdate"))
 		{
-			if (kv.second.size() == 4 || str::ends(kv.second, "00-00"))
+			if (kv.value.size() == 4 || str::ends(kv.value, "00-00"))
 			{
-				const auto year = str::to_int(kv.second);
+				const auto year = str::to_int(kv.value);
 
 				if (year > 1800 && year < 2100)
 				{
@@ -2046,7 +2961,7 @@ void file_scan_result::parse_metadata_ffmpeg_kv(prop::item_metadata& result) con
 			}
 			else
 			{
-				const auto date = df::date_t::from(kv.second);
+				const auto date = df::date_t::from(kv.value);
 
 				if (date.is_valid())
 				{
@@ -2060,75 +2975,103 @@ void file_scan_result::parse_metadata_ffmpeg_kv(prop::item_metadata& result) con
 				}
 			}
 		}
-		else if (is_key(kv.first, "date-eng") || is_key(kv.first, "Rip date"))
+		else if (is_key(kv.key, "date-eng") || is_key(kv.key, "Rip date"))
 		{
-			const auto date = df::date_t::from(kv.second);
+			const auto date = df::date_t::from(kv.value);
 			if (date.is_valid())
 			{
 				result.created_digitized = date;
 			}
 		}
-		else if (is_key(kv.first, "id3v2_priv.Windows Media Player 9 Series"))
+		else if (is_key(kv.key, "id3v2_priv.Windows Media Player 9 Series"))
 		{
-			if (kv.second.size() >= 4)
-			{
-				const auto hex_part = kv.second.substr(2, 4);
-				const auto rating = str::hex_to_num(hex_part);
+			// FFmpeg exposes the PRIV payload with non-printable bytes escaped as \xNN and
+			// printable bytes verbatim (ff_id3v2_parse_priv_dict). WMP stores the rating as a
+			// single byte on a 0-255 scale, and the values it writes include 1 and 64 ('@'),
+			// so both the escaped and the verbatim form have to be handled.
+			int wmp_rating = 0;
 
-				if (rating)
-				{
-					result.rating = 1 + rating / 52;
-				}
+			if (kv.value.size() == 4 && kv.value[0] == '\\' && (kv.value[1] == 'x' || kv.value[1] == 'X'))
+			{
+				wmp_rating = static_cast<int>(str::hex_to_num(kv.value.substr(2, 2)));
+			}
+			else if (kv.value.size() == 1)
+			{
+				wmp_rating = static_cast<uint8_t>(kv.value[0]);
+			}
+
+			if (wmp_rating > 0)
+			{
+				result.rating = std::clamp(1 + wmp_rating / 52, 1, 5);
 			}
 		}
-		else if (is_key(kv.first, "encoder") || is_key(kv.first, "encoded_by"))
+		else if (is_key(kv.key, "encoder") || is_key(kv.key, "encoded_by"))
 			result.encoder =
-				str::strip_and_cache(kv.second);
-		else if (is_key(kv.first, "genre")) result.genre = str::strip_and_cache(kv.second);
-		else if (is_key(kv.first, "publisher")) result.publisher = str::strip_and_cache(kv.second);
-		else if (is_key(kv.first, "synopsis")) result.synopsis = str::strip_and_cache(kv.second);
-		else if (is_key(kv.first, "title")) result.title = str::strip_and_cache(kv.second);
-		else if (is_key(kv.first, "maker") || is_key(kv.first, "com.apple.quicktime.make"))
+				str::strip_and_cache(kv.value);
+		else if (is_key(kv.key, "genre")) result.genre = str::strip_and_cache(kv.value);
+		else if (is_key(kv.key, "publisher")) result.publisher = str::strip_and_cache(kv.value);
+		else if (is_key(kv.key, "synopsis")) result.synopsis = str::strip_and_cache(kv.value);
+		else if (is_key(kv.key, "title")) result.title = str::strip_and_cache(kv.value);
+		else if (is_key(kv.key, "maker") || is_key(kv.key, "make") || is_key(kv.key, "com.apple.quicktime.make"))
 		{
-			result.camera_manufacturer = str::strip_and_cache(kv.second);
+			// AVI normalises to "maker", MP4/MOV to "make"; both mean camera manufacturer.
+			result.camera_manufacturer = str::strip_and_cache(kv.value);
 		}
-		else if (is_key(kv.first, "model") || is_key(kv.first, "com.apple.quicktime.model") || is_key(
-			kv.first, "model-eng"))
+		else if (is_key(kv.key, "model") || is_key(kv.key, "com.apple.quicktime.model") || is_key(
+			kv.key, "model-eng"))
 		{
-			result.camera_model = str::strip_and_cache(kv.second);
+			result.camera_model = str::strip_and_cache(kv.value);
 		}
-		else if (is_key(kv.first, "performer")) result.performer = str::strip_and_cache(kv.second);
-		else if (is_key(kv.first, "year")) result.year = str::to_int(kv.second);
-		else if (is_key(kv.first, "disk") || is_key(kv.first, "disc")) result.disk = df::xy8::parse(kv.second);
-		else if (is_key(kv.first, "track")) result.track = df::xy8::parse(kv.second);
-		else if (is_key(kv.first, "variant_bitrate")) result.bitrate = str::strip_and_cache(kv.second);
-		else if (is_key(kv.first, "episode_sort")) result.episode = df::xy8::parse(kv.second);
-		else if (is_key(kv.first, "season_number")) result.season = str::to_int(kv.second);
-		else if (is_key(kv.first, "system")) result.system = str::strip_and_cache(kv.second);
-		else if (is_key(kv.first, "game")) result.game = str::strip_and_cache(kv.second);
-		else if (is_key(kv.first, "song") && prop::is_null(result.title))
+		else if (is_key(kv.key, "performer")) result.performer = str::strip_and_cache(kv.value);
+		else if (is_key(kv.key, "year")) result.year = str::to_int(kv.value);
+		else if (is_key(kv.key, "disk") || is_key(kv.key, "disc")) result.disk = df::xy8::parse(kv.value);
+		else if (is_key(kv.key, "track")) result.track = df::xy8::parse(kv.value);
+		else if (is_key(kv.key, "variant_bitrate")) result.bitrate = str::strip_and_cache(kv.value);
+		else if (is_key(kv.key, "episode_sort")) result.episode = df::xy8::parse(kv.value);
+		else if (is_key(kv.key, "season_number")) result.season = str::to_int(kv.value);
+		else if (is_key(kv.key, "system")) result.system = str::strip_and_cache(kv.value);
+		else if (is_key(kv.key, "game")) result.game = str::strip_and_cache(kv.value);
+		else if (is_key(kv.key, "song") && prop::is_null(result.title))
 			result.title =
-				str::strip_and_cache(kv.second);
-		else if (is_key(kv.first, "compatible_brands") || is_key(kv.first, "minor_version"))
+				str::strip_and_cache(kv.value);
+		else if (is_key(kv.key, "compatible_brands") || is_key(kv.key, "minor_version"))
 		{
 			// compatible_brands: 3gp4, avc1isom, isomavc1, isomiso2avc1mp41, isomiso2mp41, isommp42, M4A mp42isom, mp41isom, mp42mp41isomavc1, qt
 			// minor_version: 3gp4, avc1isom, isomavc1, isomiso2avc1mp41, isomiso2mp41, isommp42, M4A mp42isom, mp41isom, mp42mp41isomavc1, qt
 		}
-		else if (is_key(kv.first, "rating"))
+		else if (is_key(kv.key, "rating"))
 		{
-			result.rating = str::to_int(kv.second);
+			result.rating = std::clamp(str::to_int(kv.value), 0, 5);
 		}
-		else if (is_key(kv.first, "keywords"))
+		else if (is_key(kv.key, "WM/SharedUserRating"))
 		{
-			str::split2(kv.second, true, [this](const std::string_view text)
+			// Windows System.Rating is a 0-99 scale (Explorer / Media Player); map it to
+			// Diffractor's 0-5 stars. A corresponding XMP property, when present, is
+			// parsed afterwards and remains authoritative.
+			const auto r = str::to_int(kv.value);
+			if (r > 0)
+				result.rating = (r <= 12) ? 1 : (r <= 37) ? 2 : (r <= 62) ? 3 : (r <= 87) ? 4 : 5;
+		}
+		else if (is_key(kv.key, "keywords"))
+		{
+			str::split2(kv.value, true, [this](const std::string_view text)
 			{
 				keywords.emplace_back(str::cache(text));
 			});
 		}
-		else if (is_key(kv.first, "location-eng") || is_key(kv.first, "location") || is_key(
-			kv.first, "com.apple.quicktime.location.ISO6709"))
+		else if (is_key(kv.key, "WM/Category"))
 		{
-			const auto loc = split_location(kv.second);
+			// Windows Explorer / Media Player tags (MP4 'Xtra' atom, ASF 'WM/*').
+			// Values are ';'-delimited and may contain spaces, so split only on ';'.
+			str::split2(kv.value, true, [this](const std::string_view text)
+			            {
+				            windows_categories.emplace_back(str::cache(str::trim(text)));
+			            }, [](const wchar_t c) { return c == L';'; });
+		}
+		else if (is_key(kv.key, "location-eng") || is_key(kv.key, "location") || is_key(
+			kv.key, "com.apple.quicktime.location.ISO6709"))
+		{
+			const auto loc = split_location(kv.value);
 
 			if (loc.success)
 			{
@@ -2137,20 +3080,21 @@ void file_scan_result::parse_metadata_ffmpeg_kv(prop::item_metadata& result) con
 		}
 		else
 		{
-			//df::log(__FUNCTION__, std::format("Unknown tag: {} = {}", kv.first, kv.second));
 		}
 	}
 }
 
-metadata_parts file_scan_result::save_metadata() const
+const metadata_parts& file_scan_result::save_metadata(metadata_parts& fallback) const
 {
 	if (metadata.exif.empty() &&
 		metadata.iptc.empty() &&
 		metadata.xmp.empty())
 	{
-		metadata_parts result;
-		result.exif = metadata_exif::make_exif(to_props());
-		return result;
+		fallback.exif = metadata_exif::make_exif(to_props());
+		// An image whose only metadata is a colour profile still has to keep it, or a crop or
+		// resize silently reinterprets a wide gamut image as sRGB.
+		fallback.icc = metadata.icc.clone();
+		return fallback;
 	}
 
 	return metadata;
@@ -2170,21 +3114,6 @@ prop::item_metadata_ptr file_scan_result::to_props() const
 		metadata_iptc::parse(*result, metadata.iptc);
 	}
 
-	/*if (!moov.is_empty())
-	{
-		parse_metadata_moov(*result);
-	}
-
-	if (!id3v2.is_empty())
-	{
-		id3v2_metadata_id3v2(*result);
-	}
-
-	if (!id3v1.is_empty())
-	{
-		parse_metadata_id3v1(*result);
-	}*/
-
 	if (!ffmpeg_metadata.empty())
 	{
 		parse_metadata_ffmpeg_kv(*result);
@@ -2195,8 +3124,15 @@ prop::item_metadata_ptr file_scan_result::to_props() const
 		metadata_xmp::parse(*result, metadata.xmp);
 	}
 
+	// These fields are 16 bit in the metadata record. High ISO and 96/192 kHz audio exceed that,
+	// so saturate - wrapping would report 96000 Hz as 30464 Hz.
+	const auto to_u16 = [](const int v)
+	{
+		return static_cast<uint16_t>(std::clamp(v, 0, static_cast<int>(UINT16_MAX)));
+	};
+
 	if (prop::is_null(result->created_utc)) result->created_utc = created_utc;
-	if (prop::is_null(result->iso_speed)) result->iso_speed = iso_speed;
+	if (prop::is_null(result->iso_speed)) result->iso_speed = to_u16(iso_speed);
 	if (prop::is_null(result->exposure_time)) result->exposure_time = exposure_time;
 	if (prop::is_null(result->f_number)) result->f_number = f_number;
 	if (prop::is_null(result->focal_length)) result->focal_length = focal_length;
@@ -2211,17 +3147,33 @@ prop::item_metadata_ptr file_scan_result::to_props() const
 	if (prop::is_null(result->audio_codec)) result->audio_codec = audio_codec;
 	if (prop::is_null(result->audio_channels)) result->audio_channels = audio_channels;
 	if (prop::is_null(result->audio_sample_type)) result->audio_sample_type = static_cast<uint16_t>(audio_sample_type);
-	if (prop::is_null(result->audio_sample_rate)) result->audio_sample_rate = audio_sample_rate;
+	if (prop::is_null(result->audio_sample_rate)) result->audio_sample_rate = to_u16(audio_sample_rate);
 
 	if (!result->coordinate.is_valid())
 	{
 		result->coordinate = gps;
 	}
 
-	if (!result->tags.is_empty())
+	const auto xmp_properties = metadata_xmp::properties(metadata.xmp);
+	if (!result->tags.is_empty() || (!keywords.empty() && metadata.xmp.empty()) ||
+		(!windows_categories.empty() && !xmp_properties.tags))
 	{
 		auto tags = split(result->tags, true);
-		tags.insert(tags.end(), keywords.begin(), keywords.end());
+
+		// Native container keywords (the MP4 'KEYW' atom, or Windows Explorer /
+		// Media Player tags from the 'Xtra' atom / ASF 'WM/Category') are only
+		// merged when the file has no embedded XMP. When XMP is present, dc:subject
+		// is the authoritative tag list, so a tag removed via XMP is not resurrected
+		// by a stale native tag left behind by another app (#3).
+		if (metadata.xmp.empty())
+		{
+			tags.insert(tags.end(), keywords.begin(), keywords.end());
+		}
+		if (!xmp_properties.tags)
+		{
+			tags.insert(tags.end(), windows_categories.begin(), windows_categories.end());
+		}
+
 		std::ranges::sort(tags, str::iless());
 		tags.erase(std::ranges::unique(tags, df::ieq()).begin(), tags.end());
 		result->tags = str::cache(str::combine(tags));
@@ -2230,9 +3182,64 @@ prop::item_metadata_ptr file_scan_result::to_props() const
 	if (!prop::is_null(width)) result->width = width;
 	if (!prop::is_null(height)) result->height = height;
 	if (!prop::is_null(pixel_format)) result->pixel_format = pixel_format;
-	if (orientation != ui::orientation::top_left) result->orientation = orientation;
+	if (orientation_applied || orientation != ui::orientation::top_left) result->orientation = orientation;
 
 	return result;
+}
+
+void add_structure_row(metadata_kv_list& kv, const std::string_view key, std::string value,
+                       const std::string_view shape, std::string detail)
+{
+	auto& row = kv.emplace_back(std::string(key), std::move(value));
+	row.depth = 1;
+	if (!shape.empty()) row.shape = shape;
+	if (!detail.empty()) row.detail = metadata_text_detail{std::move(detail)};
+}
+
+void add_structure_bytes(metadata_kv_list& kv, const std::string_view key, std::string value,
+                         const std::string_view shape, const uint8_t* payload, const size_t payload_len)
+{
+	auto& row = kv.emplace_back(std::string(key), std::move(value));
+	row.depth = 1;
+	if (!shape.empty()) row.shape = shape;
+
+	if (payload && payload_len > 0)
+	{
+		// Only as much as a dump would ever list is kept, so an oversized payload costs no more.
+		const auto kept = std::min(payload_len, str::max_hex_dump_bytes);
+		row.detail = metadata_binary_detail{std::vector<uint8_t>(payload, payload + kept)};
+	}
+}
+
+void add_structure_section(metadata_kv_list& kv, const std::string_view key, const std::string_view id,
+                           const bool open_by_default)
+{
+	auto& row = kv.emplace_back(std::string(key), std::string{});
+	row.container = true;
+	row.id = id;
+	row.open_by_default = open_by_default;
+}
+
+void finish_structure_sections(metadata_kv_list& kv)
+{
+	metadata_kv_list kept;
+	kept.reserve(kv.size());
+
+	for (size_t i = 0; i < kv.size(); ++i)
+	{
+		if (kv[i].container)
+		{
+			size_t count = 0;
+			while (i + 1 + count < kv.size() && !kv[i + 1 + count].container) ++count;
+			if (count == 0) continue;
+
+			kv[i].key = std::format("{} ({})", kv[i].key, count);
+		}
+
+		kept.emplace_back(std::move(kv[i]));
+	}
+
+	kv = std::move(kept);
 }
 
 av_media_info file_scan_result::to_info() const
@@ -2251,38 +3258,44 @@ av_media_info file_scan_result::to_info() const
 
 	if (!metadata.exif.empty())
 	{
-		const auto kv = metadata_exif::to_info(metadata.exif);
-		result.metadata.emplace_back(metadata_standard::exif, kv);
+		auto kv = metadata_exif::to_info(metadata.exif);
+		const auto parsed = !kv.empty();
+		result.metadata.emplace_back(metadata_standard::exif, std::move(kv), metadata.exif.size(), parsed);
 	}
 
 	if (!metadata.iptc.empty())
 	{
-		const auto kv = metadata_iptc::to_info(metadata.iptc);
-		result.metadata.emplace_back(metadata_standard::iptc, kv);
+		auto kv = metadata_iptc::to_info(metadata.iptc);
+		const auto parsed = !kv.empty();
+		result.metadata.emplace_back(metadata_standard::iptc, std::move(kv), metadata.iptc.size(), parsed);
 	}
 
 	if (!metadata.xmp.empty())
 	{
-		const auto kv = metadata_xmp::to_info(metadata.xmp);
+		auto kv = metadata_xmp::to_info(metadata.xmp);
+		const auto parsed = !kv.empty();
 
-		if (kv.empty())
-		{
-			std::string text;
-			text.assign(std::bit_cast<const char*>(metadata.xmp.data()), metadata.xmp.size());
-			metadata_kv_list text_kv;
-			text_kv.emplace_back(""_c, text);
-			result.metadata.emplace_back(metadata_standard::xmp, text_kv);
-		}
-		else
-		{
-			result.metadata.emplace_back(metadata_standard::xmp, kv);
-		}
+		// The packet is the block's real content, so it stays reachable whether or not the toolkit
+		// could make a tree from it.
+		constexpr auto max_raw_bytes = 256_z * 1024_z;
+		std::string raw;
+		raw.assign(std::bit_cast<const char*>(metadata.xmp.data()),
+		           std::min(metadata.xmp.size(), max_raw_bytes));
+
+		result.metadata.emplace_back(metadata_standard::xmp, std::move(kv), metadata.xmp.size(), parsed,
+		                             std::move(raw));
 	}
 
 	if (!metadata.icc.empty())
 	{
-		const auto kv = metadata_icc::to_info(metadata.icc);
-		result.metadata.emplace_back(metadata_standard::icc, kv);
+		auto kv = metadata_icc::to_info(metadata.icc);
+		const auto parsed = !kv.empty();
+		result.metadata.emplace_back(metadata_standard::icc, std::move(kv), metadata.icc.size(), parsed);
+	}
+
+	if (!structure_metadata.empty())
+	{
+		result.metadata.emplace_back(metadata_standard::structure, structure_metadata);
 	}
 
 	return result;

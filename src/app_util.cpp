@@ -21,44 +21,200 @@ void view_state::modify_items(const df::results_ptr& results, icon_index icon, c
                               const df::item_elements& items_to_modify, const metadata_edits& edits,
                               const view_host_base_ptr& view)
 {
-	const auto can_process = can_process_selection_and_mark_errors(view, df::process_items_type::can_save_metadata);
+	batch_edit_spec spec;
+	spec.make_edits = [edits](df::file_path) { return item_edits{edits, {}}; };
+	spec.process_type = df::process_items_type::can_save_metadata;
+	spec.encode_params.jpeg_save_quality = setting.jpeg_save_quality;
+	// This overload never applies photo edits, so orientation is the only thing that can change what
+	// is drawn.
+	spec.changes_presentation = edits.changes_presentation();
+
+	modify_items(results, items_to_modify, spec, view);
+}
+
+void view_state::modify_items(const df::results_ptr& results, const df::item_elements& items_to_modify,
+                              const batch_edit_spec& spec, const view_host_base_ptr& view)
+{
+	clear_error_items(view);
+	const auto can_process = df::item_set(items_to_modify).can_process(spec.process_type, true, view);
 
 	if (can_process.success())
 	{
-		detach_file_handles detach(*this);
+		// Handles must stay detached for the whole write, and the destructor touches UI-owned
+		// state (display, player, selection), so the last reference is handed to the closing UI
+		// callback. A stack object would reopen the files while the background write is running
+		// whenever the caller's status does not block (view_command_status::wait_for_complete).
+		const auto detach = std::make_shared<detach_file_handles>(*this);
 
-		queue_async(async_queue::work, [this, items_to_modify, edits, results]
+		struct modify_request
 		{
-			result_scope rr(results);
-			std::string message;
-			files ff;
+			index_state::item_scan_request scan;
+			str::cached name;
+			df::file_path path;
+			str::cached xmp;
+		};
 
-			file_encode_params encode_params;
-			encode_params.jpeg_save_quality = setting.jpeg_save_quality;
+		std::vector<modify_request> requests;
+		requests.reserve(items_to_modify.size());
+		std::vector<df::file_path> claimed;
+		claimed.reserve(items_to_modify.size());
+		for (const auto& item : items_to_modify)
+		{
+			// A write that cannot change what is drawn leaves the existing thumbnail correct, so the
+			// post-write rescan must not regenerate it. Re-decoding one is slow on large video and
+			// republishing it makes the tile visibly blank and reappear.
+			const auto load_thumbnail = spec.changes_presentation || !item->has_thumb();
+			requests.emplace_back(item_index.make_scan_request(item, load_thumbnail, false), item->name(),
+			                      item->path(), item->xmp());
+			claimed.emplace_back(item->path());
+		}
 
-			for (const auto& i : items_to_modify)
+		// Declared here, on the UI thread and before the write starts, so the modified time it
+		// produces does not send the thumbnail and the displayed image back through a reload that
+		// would return the same result.
+		if (!spec.changes_presentation)
+		{
+			for (const auto& item : items_to_modify)
 			{
-				results->start_item(i->name());
-				const auto update_result = ff.update(i->path(), edits, {}, encode_params, false, i->xmp());
-				results->end_item(i->name(), to_status(update_result.code));
-
-				if (!update_result.success())
-				{
-					message = update_result.format_error();
-					break;
-				}
-
-				if (results->is_canceled())
-					break;
+				item->retain_thumbnail_across_next_write();
 			}
 
-			rr.complete(message);
-		});
+			if (const auto d = display_state())
+			{
+				const auto is_modified = [&items_to_modify](const df::item_element_ptr& i)
+				{
+					if (!i) return false;
+					for (const auto& item : items_to_modify) if (item == i) return true;
+					return false;
+				};
+
+				if (d->_selected_texture1 && is_modified(d->_item1)) d->_selected_texture1->mark_visuals_current();
+				if (d->_selected_texture2 && is_modified(d->_item2)) d->_selected_texture2->mark_visuals_current();
+			}
+		}
+
+		// No read of these files may be queued while the write runs; anything asked for meanwhile is
+		// deferred and re-requested on release.
+		item_index.claim_for_write(claimed);
+
+		queue_async(async_queue::work,
+		            [this, requests = std::move(requests), claimed = std::move(claimed), spec, results, detach,
+			            displayed_paths = spec.changes_presentation
+				                              ? displayed_photo_paths()
+				                              : std::vector<df::file_path>{},
+			            detached_av_path = detached_display_av_path()]() mutable
+		            {
+			            result_scope rr(results);
+			            std::string message;
+			            files ff;
+
+			            // Items the write already re-scanned for us vs. those whose scan failed and still need a
+			            // forced background rescan.
+			            std::vector<index_state::item_scan_request> immediate_done;
+			            std::vector<index_state::item_scan_request> needs_force;
+			            // The written bytes for each item on screen, handed over instead of read back. The modified
+			            // time travels with them so the display stamps in the file clock domain.
+			            struct written_image
+			            {
+				            df::file_path path;
+				            file_load_result loaded;
+				            df::date_t modified;
+			            };
+			            std::vector<written_image> written_images;
+			            // The open handle over the playable item the display is about to reopen.
+			            platform::file_ptr detached_av_handle;
+
+			            for (const auto& request : requests)
+			            {
+				            results->start_item(request.name);
+
+				            const auto edits = spec.make_edits(request.path);
+				            file_update_result update_result;
+				            const auto is_displayed = std::ranges::find(displayed_paths, request.path) !=
+					            displayed_paths.end();
+
+				            if (edits)
+				            {
+					            update_result = ff.update(request.path, request.path, edits->metadata, edits->image,
+					                                      spec.encode_params, false, request.xmp, request.xmp,
+					                                      index_state::make_rescan_spec(request.scan, request.xmp,
+						                                      is_displayed,
+						                                      request.path == detached_av_path));
+				            }
+
+				            results->end_item(request.name, to_status(update_result.code));
+
+				            if (!update_result.success())
+				            {
+					            message = update_result.format_error();
+					            break;
+				            }
+
+				            if (request.path == detached_av_path) detached_av_handle = std::move(
+					            update_result.display_handle);
+
+				            if (is_displayed)
+				            {
+					            written_images.emplace_back(request.path, std::move(update_result.loaded),
+					                                        df::date_t(update_result.modified));
+				            }
+
+				            if (item_index.apply_write_scan(request.scan, update_result))
+				            {
+					            needs_force.emplace_back(request.scan);
+				            }
+				            else
+				            {
+					            immediate_done.emplace_back(request.scan);
+				            }
+
+				            if (results->is_canceled())
+					            break;
+			            }
+
+			            // Background rescan: force the items whose immediate scan failed (the mtime-tie heuristic
+			            // can miss a rapid successive edit whose sidecar modified time ties with the previous scan
+			            // timestamp); the scanned items are already current, so queue them non-forced as a cheap
+			            // no-op safety net. The detach reference is handed over here so the handles stay
+			            // detached until the writes finish and the destructor runs on the UI thread.
+			            _async.queue_ui(
+				            [this, detach = std::move(detach), claimed = std::move(claimed), immediate_done =
+					            std::move(immediate_done), needs_force = std::move(needs_force), written_images =
+					            std::move(written_images), detached_av_path, detached_av_handle = std::move(
+						            detached_av_handle)]() mutable
+				            {
+					            item_index.release_write_claim(claimed);
+
+					            for (auto& written : written_images)
+					            {
+						            publish_written_image(written.path, std::move(written.loaded), written.modified);
+					            }
+
+					            // Before the guard is released below, because releasing it is what reopens the session.
+					            publish_written_handle(detached_av_path, std::move(detached_av_handle));
+
+					            df::item_set immediate_items;
+					            df::item_set force_items;
+					            for (const auto& request : immediate_done)
+					            {
+						            const auto item = request.lifetime.lock();
+						            if (item && item->path() == request.path) immediate_items.add(item);
+					            }
+					            for (const auto& request : needs_force)
+					            {
+						            const auto item = request.lifetime.lock();
+						            if (item && item->path() == request.path) force_items.add(item);
+					            }
+					            if (!force_items.empty()) item_index.queue_scan_modified_items(
+						            std::move(force_items), true);
+					            if (!immediate_items.empty()) item_index.queue_scan_modified_items(
+						            std::move(immediate_items), false);
+				            });
+
+			            rr.complete(message);
+		            });
 
 		results->wait_for_complete();
-
-		const df::item_set item_set(items_to_modify);
-		item_index.queue_scan_modified_items(item_set);
 	}
 	else
 	{
@@ -75,44 +231,164 @@ static platform::file_op_result move_or_copy(const df::file_path source_path, co
 		       : platform::copy_file(source_path, dest_path, fail_if_exists, false);
 }
 
-static bool ignore_existing(const df::file_path path_in, const df::file_path path_out, const bool already_exists,
-                            const bool overwrite_if_newer)
+static df::file_path rename_destination(const rename_source& item, const std::string_view name)
 {
-	auto result = already_exists;
+	const auto source = item.source;
+	return item.is_folder
+		       ? df::file_path(source.folder().parent(), name)
+		       : df::file_path(source.folder(), name, source.extension());
+}
 
-	if (already_exists && overwrite_if_newer)
+bool rename_path_exists(const df::file_path path, const bool is_folder)
+{
+	return is_folder ? platform::exists(path.folder().combine(path.name())) : path.exists();
+}
+
+std::vector<rename_source> snapshot_rename_sources(const df::item_set& items)
+{
+	std::vector<rename_source> result;
+	result.reserve(items.size());
+	for (const auto& item : items.items())
 	{
-		const auto source_info = platform::file_attributes(path_in);
-		const auto dest_info = platform::file_attributes(path_out);
-
-		result = source_info.modified <= dest_info.modified;
+		rename_source source;
+		source.source = item->path();
+		source.original_name = item->base_name();
+		source.metadata = item->metadata();
+		source.media_created = item->calc_media_created();
+		source.is_folder = item->is_folder();
+		if (!source.is_folder)
+			for (const auto& sidecar_name : split(item->sidecars(), true))
+				source.sidecars.emplace_back(source.source.folder().combine_file(sidecar_name));
+		result.emplace_back(std::move(source));
 	}
-
 	return result;
 }
 
-std::vector<rename_item> calc_item_renames(const df::item_set& items, const std::string_view template_name,
-                                           const int start)
+std::vector<rename_item> calc_item_renames(const std::vector<rename_source>& items,
+                                           const std::string_view template_name,
+                                           const int start, const collision_policy policy)
 {
 	std::vector<rename_item> results;
+	std::map<std::string, int, df::iless> destination_counts;
 	auto seq = start;
 
-	for (const auto& i : items.items())
+	for (const auto& i : items)
 	{
-		auto md = i->metadata();
-		auto original_name = i->base_name();
+		const auto& md = i.metadata;
+		const auto& original_name = i.original_name;
 		auto name = format_sequence(original_name, template_name, seq);
-		name = prop::replace_tokens(name, md, i->name(), i->calc_media_created());
+		name = prop::replace_tokens(name, md, original_name, i.media_created);
 
 		rename_item rename;
-		rename.item = i;
+		rename.source = i.source;
+		rename.is_folder = i.is_folder;
+		rename.policy = policy;
 		rename.original_name = original_name;
 		rename.new_name = name;
+
+		const auto source = rename.source;
+		auto destination = rename_destination(i, name);
+		rename.destination = destination;
+		// A folder path packs with a trailing separator and an empty name, so compare the
+		// folders themselves rather than the packed file paths.
+		rename.noop = rename.is_folder
+			              ? source.folder().combine(source.name()).text() ==
+			              destination.folder().combine(destination.name()).text()
+			              : source.pack() == destination.pack();
+		const auto name_is_usable = platform::is_valid_file_name(name) && destination.is_save_valid();
+		auto assign_sidecars = [&](const df::file_path primary)
+		{
+			rename.sidecars.clear();
+			rename.sidecar_destinations_exist.clear();
+			if (!i.is_folder)
+				for (const auto sidecar_source : i.sidecars)
+				{
+					auto sidecar_destination =
+						primary.folder().combine_file(primary.file_name_without_extension()).extension(
+							sidecar_source.extension());
+					rename.sidecar_destinations_exist.emplace_back(sidecar_destination.exists());
+					rename.sidecars.emplace_back(sidecar_source, sidecar_destination);
+				}
+		};
+		auto group_collides = [&]
+		{
+			rename.destination_exists = rename_path_exists(rename.destination, rename.is_folder);
+			if (!rename.noop && source.icmp(rename.destination) != 0 && rename.destination_exists) return true;
+			for (auto index = 0_z; index < rename.sidecars.size(); ++index)
+			{
+				const auto& sidecar = rename.sidecars[index];
+				if (sidecar.first.icmp(sidecar.second) != 0 && rename.sidecar_destinations_exist[index]) return true;
+			}
+			return false;
+		};
+		assign_sidecars(destination);
+		rename.collides = group_collides();
+
+		// Resolve the collision with the one named policy before validity is decided.
+		if (rename.collides && policy == collision_policy::auto_rename)
+		{
+			for (auto suffix = 2; suffix < 10000; ++suffix)
+			{
+				destination = df::file_path(destination.folder(),
+				                            std::format("{} ({})", name, suffix), destination.extension());
+				rename.destination = destination;
+				assign_sidecars(destination);
+				if (!group_collides())
+				{
+					rename.new_name = std::string(destination.file_name_without_extension());
+					rename.renamed_to_avoid_collision = true;
+					rename.collides = false;
+					break;
+				}
+			}
+		}
+		else if (rename.collides && policy == collision_policy::skip)
+		{
+			rename.skipped = true;
+			rename.noop = true;
+			// Resolved, so the row must not keep the whole batch invalid. The duplicate-destination
+			// pass below still re-sets it for collisions no policy can resolve.
+			rename.collides = false;
+		}
+
+		rename.valid = name_is_usable && (!rename.collides || policy == collision_policy::replace);
+		++destination_counts[rename.destination.pack()];
+		for (const auto& sidecar : rename.sidecars) ++destination_counts[sidecar.second.pack()];
 		seq += 1;
 		results.emplace_back(rename);
 	}
 
+	// Two rows targeting the same new name is a collision the policy cannot resolve
+	// safely without reordering, so it always blocks.
+	for (auto& rename : results)
+	{
+		const auto duplicates = destination_counts[rename.destination.pack()] > 1 ||
+			std::ranges::any_of(rename.sidecars, [&](const auto& sidecar)
+			{
+				return destination_counts[sidecar.second.pack()] > 1;
+			});
+		if (duplicates)
+		{
+			rename.valid = false;
+			rename.collides = true;
+			rename.skipped = false;
+			rename.renamed_to_avoid_collision = false;
+		}
+	}
+
 	return results;
+}
+
+std::vector<rename_item> calc_item_renames(const df::item_set& items, const std::string_view template_name,
+                                           const int start, const collision_policy policy)
+{
+	return calc_item_renames(snapshot_rename_sources(items), template_name, start, policy);
+}
+
+bool can_rename_items(const std::vector<rename_item>& renames)
+{
+	return !renames.empty() && std::ranges::all_of(renames, [](const rename_item& item) { return item.valid; }) &&
+		std::ranges::any_of(renames, [](const rename_item& item) { return !item.noop; });
 }
 
 std::string format_sequence(const std::string_view original_name, const std::string_view template_name,
@@ -129,7 +405,10 @@ std::string format_sequence(const std::string_view original_name, const std::str
 
 		const auto org_len = reverse_name.size();
 		auto i_div = seq;
-		auto i = 0u;
+		auto original_index = 0u;
+		const auto sequence_digits = static_cast<int>(
+			std::count(reverse_template.begin(), reverse_template.end(), '#'));
+		auto sequence_placeholders = sequence_digits;
 
 		for (const auto c : reverse_template)
 		{
@@ -138,28 +417,48 @@ std::string format_sequence(const std::string_view original_name, const std::str
 			case L'#':
 				result.push_back(numbers[i_div % 10]);
 				i_div /= 10;
+				--sequence_placeholders;
+				if (sequence_placeholders == 0)
+				{
+					while (i_div > 0)
+					{
+						result.push_back(numbers[i_div % 10]);
+						i_div /= 10;
+					}
+				}
 				break;
 			case L'?':
-				result.push_back(org_len > i ? reverse_name[i] : ' ');
+				result.push_back(org_len > original_index ? reverse_name[original_index] : ' ');
+				++original_index;
 				break;
 			default:
 				result.push_back(c);
 				break;
 			}
-
-			i += 1;
 		}
 	}
 
 	return std::string(result.rbegin(), result.rend());
 }
 
+bool unchanged_since_analysis(const df::file_path path, const uint64_t modified, const uint64_t size)
+{
+	const auto current = platform::file_attributes(path);
+	return current.exists() && current.modified == modified && current.size == size;
+}
+
 import_analysis_result import_analysis(const std::vector<folder_scan_item>& src_items,
                                        const import_options& options, const item_import_set& previous_imported,
-                                       const df::cancel_token token)
+                                       const df::cancel_token& token)
 {
 	import_analysis_result result;
 	const auto now = platform::now();
+
+	// Destinations already claimed by earlier items in this plan. Two sources can resolve to the
+	// same destination (the same file name in different source folders), which the file system
+	// cannot report because nothing has been written yet. Without this, Replace would silently
+	// discard one source and Auto-rename would hand both the same free name.
+	df::unique_paths planned_destinations;
 
 
 	for (const auto& i : src_items)
@@ -177,52 +476,102 @@ import_analysis_result import_analysis(const std::vector<folder_scan_item>& src_
 
 		const auto import_folder_out = replace_tokens(options.dest_structure, md, i.item.name, i.item.created());
 		const auto path_in = i.folder.combine_file(i.item.name);
-		const auto path_out = options.dest_folder.combine(import_folder_out).combine_file(path_in.name());
+		auto path_out = options.dest_folder.combine(import_folder_out).combine_file(path_in.name());
 		const auto import_rec = item_import{i.item.name, i.item.file_modified, i.item.size, now};
-		const bool already_exists = path_out.exists();
+		std::vector<df::file_path> sidecar_paths_in;
+		if (md)
+		{
+			for (const auto& file_name : split(md->sidecars, true))
+				sidecar_paths_in.emplace_back(i.folder.combine_file(file_name));
+		}
+
+		auto sidecar_destination = [](const df::file_path primary, const df::file_path sidecar)
+		{
+			return primary.folder().combine_file(primary.file_name_without_extension()).extension(sidecar.extension());
+		};
+		auto group_exists = [&](const df::file_path primary)
+		{
+			if (primary.exists() || planned_destinations.contains(primary)) return true;
+			return std::ranges::any_of(sidecar_paths_in,
+			                           [&](const auto sidecar)
+			                           {
+				                           const auto destination = sidecar_destination(primary, sidecar);
+				                           return destination.exists() || planned_destinations.contains(destination);
+			                           });
+		};
+
+		const bool already_exists = group_exists(path_out);
+
+		// One explicit collision policy decides what happens when the destination exists.
+		// Auto-rename resolves the whole media/sidecar group with one shared suffix.
+		auto blocked_by_collision = false;
+
+		if (already_exists)
+		{
+			switch (options.collision)
+			{
+			case collision_policy::auto_rename:
+				for (auto suffix = 2; suffix < 10000; ++suffix)
+				{
+					const auto candidate = df::file_path(path_out.folder(),
+					                                     std::format("{} ({})", path_out.file_name_without_extension(),
+					                                                 suffix), path_out.extension());
+					if (!group_exists(candidate))
+					{
+						path_out = candidate;
+						break;
+					}
+				}
+				break;
+			case collision_policy::replace:
+				break;
+			case collision_policy::skip:
+			case collision_policy::block_run:
+				blocked_by_collision = true;
+				break;
+			}
+		}
 
 		if (previous_imported.contains(import_rec))
 		{
 			result[path_out.folder()].emplace_back(path_in, path_out, import_action::already_imported, created,
 			                                       import_rec, already_exists, import_folder_out);
 		}
-		else if (ignore_existing(path_in, path_out, already_exists, options.overwrite_if_newer))
+		else if (blocked_by_collision)
 		{
 			result[path_out.folder()].emplace_back(path_in, path_out, import_action::already_exists, created,
 			                                       import_rec, already_exists, import_folder_out);
 		}
 		else
 		{
-			result[path_out.folder()].emplace_back(path_in, path_out, import_action::import, created, import_rec,
-			                                       already_exists, import_folder_out);
+			std::vector<std::pair<df::file_path, df::file_path>> sidecars;
+			sidecars.reserve(sidecar_paths_in.size());
 
-			if (md)
+			for (const auto sidecar_path_in : sidecar_paths_in)
 			{
-				const auto parts = split(md->sidecars, true);
-
-				for (const auto& file_name : parts)
-				{
-					const auto sidecar_path_in = i.folder.combine_file(file_name);
-					const auto sidecar_path_out = options.dest_folder.combine(import_folder_out).combine_file(
-						file_name);
-					const bool sidecar_already_exists = sidecar_path_out.exists();
-
-					if (!ignore_existing(sidecar_path_in, sidecar_path_out, sidecar_already_exists,
-					                     options.overwrite_if_newer))
-					{
-						result[sidecar_path_out.folder()].emplace_back(sidecar_path_in, sidecar_path_out,
-						                                               import_action::import, created, import_rec,
-						                                               sidecar_already_exists, import_folder_out);
-					}
-				}
+				const auto sidecar_path_out = sidecar_destination(path_out, sidecar_path_in);
+				sidecars.emplace_back(sidecar_path_in, sidecar_path_out);
+				planned_destinations.emplace(sidecar_path_out);
 			}
+
+			// Every other policy leaves the destination free, and the write itself proves that. Only
+			// Replace needs a record of what it is about to write over.
+			const auto destination_fi = options.collision == collision_policy::replace
+				                            ? platform::file_attributes(path_out)
+				                            : platform::file_attributes_t{};
+
+			result[path_out.folder()].emplace_back(path_in, path_out, import_action::import, created, import_rec,
+			                                       already_exists, import_folder_out,
+			                                       platform::file_attributes(path_in), destination_fi,
+			                                       std::move(sidecars));
+			planned_destinations.emplace(path_out);
 		}
 	}
 
 	return result;
 }
 
-import_result import_copy(index_state& index, item_results_ptr results, const import_analysis_result& src_items,
+import_result import_copy(index_state& index, df::results_ptr results, const import_analysis_result& src_items,
                           const import_options& options, df::cancel_token token)
 {
 	import_result result;
@@ -231,53 +580,176 @@ import_result import_copy(index_state& index, item_results_ptr results, const im
 	std::vector<folder_scan_item> existing;
 	std::vector<folder_scan_item> previous;
 	df::unique_folders write_folders;
+	struct import_group_state
+	{
+		bool attempted = false;
+		bool success = true;
+	};
+	df::hash_map<item_import, import_group_state, item_import_hash, item_import_eq> import_states;
+
+	for (const auto& ff_dest : src_items)
+	{
+		for (const auto& item : ff_dest.second)
+		{
+			if (item.action == import_action::import) import_states.try_emplace(item.import_rec);
+		}
+	}
 
 	for (const auto& ff_dest : src_items)
 	{
 		const auto folder_out = ff_dest.first;
-		const bool folder_out_exists = folder_out.exists();
-		const auto create_folder_result = folder_out_exists
-			                                  ? platform::file_op_result{platform::file_op_result_code::OK, {}, {}}
-			                                  : platform::create_folder(folder_out);
-
-		if (create_folder_result.failed())
+		if (token.is_cancelled())
 		{
-			results->abort(
-				create_folder_result.format_error(str_format(tt.error_create_folder_failed_fmt.sv(), folder_out)));
-		}
-		else
-		{
-			write_folders.emplace(folder_out);
-
-			for (const auto& i : ff_dest.second)
+			for (const auto& item : ff_dest.second)
 			{
-				if (results->is_canceled()) break;
-
-				if (i.action == import_action::import)
+				if (item.action == import_action::import)
 				{
-					results->start_item(i.source.name());
-
-					const auto path_in = i.source;
-					const auto path_out = i.destination;
-
-					const auto fail_if_exists = !options.overwrite_if_newer;
-					const auto move_or_copy_result = move_or_copy(path_in, path_out, options.is_move, fail_if_exists);
-
-					if (move_or_copy_result.success())
-					{
-						if (options.set_created_date)
-						{
-							platform::created_date(path_out, i.created_date);
-						}
-
-						result.folder = path_out.folder();
-						result.imports.emplace(i.import_rec);
-					}
-
-					results->end_item(i.source.name(), to_status(move_or_copy_result.code));
+					import_states[item.import_rec].success = false;
+					results->start_item(item.source.name());
+					results->end_item(item.source.name(), item_status::cancel);
+				}
+				else
+				{
+					results->end_item(item.source.name(), item_status::ignore);
 				}
 			}
+			continue;
 		}
+
+		// Nothing is written here when every item was already imported or resolved away by the
+		// collision policy, so do not create a destination folder that would stay empty.
+		const auto has_imports = std::ranges::any_of(ff_dest.second,
+		                                             [](const auto& item)
+		                                             {
+			                                             return item.action == import_action::import;
+		                                             });
+
+		if (has_imports)
+		{
+			const bool folder_out_exists = folder_out.exists();
+			const auto create_folder_result = folder_out_exists
+				                                  ? platform::file_op_result{platform::file_op_result_code::OK, {}, {}}
+				                                  : platform::create_folder(folder_out);
+
+			if (create_folder_result.failed())
+			{
+				results->abort(
+					create_folder_result.format_error(str_format(tt.error_create_folder_failed_fmt.sv(), folder_out)));
+				return result;
+			}
+
+			write_folders.emplace(folder_out);
+		}
+
+		for (const auto& i : ff_dest.second)
+		{
+			// Every reviewed row is accounted for in the results, so a file that was skipped or
+			// already imported is stated as ignored rather than dropping out of the list.
+			if (i.action != import_action::import)
+			{
+				results->end_item(i.source.name(), item_status::ignore);
+				continue;
+			}
+
+			if (results->is_canceled())
+			{
+				import_states[i.import_rec].success = false;
+				results->start_item(i.source.name());
+				results->end_item(i.source.name(), item_status::cancel);
+				continue;
+			}
+
+			results->start_item(i.source.name());
+
+			const auto path_in = i.source;
+			const auto path_out = i.destination;
+
+			// Only the Replace policy is allowed to write over an existing destination.
+			const auto fail_if_exists = options.collision != collision_policy::replace;
+
+			// ...and only over the destination the review actually saw. A Replace row whose destination
+			// was free at analysis is not a reviewed replacement, so the write itself has to prove the
+			// path is still free rather than overwriting whatever appeared since.
+			const auto primary_fail_if_exists = fail_if_exists || !i.destination_fi.exists();
+
+			// The reviewed row named a specific file. A source that no longer matches would import
+			// content nobody approved, and under Replace a changed destination would be written over
+			// without ever having been reviewed. Neither is recoverable once the write starts.
+			const auto source_unchanged = unchanged_since_analysis(path_in, i.source_fi.modified, i.source_fi.size);
+			const auto destination_unchanged = fail_if_exists || !i.destination_fi.exists() ||
+				unchanged_since_analysis(path_out, i.destination_fi.modified, i.destination_fi.size);
+
+			if (!source_unchanged || !destination_unchanged)
+			{
+				auto& state = import_states[i.import_rec];
+				state.attempted = true;
+				state.success = false;
+				results->end_item(i.source.name(), item_status::fail);
+				++result.refused;
+				continue;
+			}
+
+			// Sidecars are written before the file they describe and undone in reverse if anything in the
+			// group fails, so the group either arrives whole or is left entirely at the source. Only
+			// sidecars this run created are undone: under Replace the write can land on a file that
+			// already existed, and deleting or moving that path back would destroy the user's original.
+			auto undo_sidecar = [&](const std::pair<df::file_path, df::file_path>& moved)
+			{
+				if (options.is_move) move_or_copy(moved.second, moved.first, true, false);
+				else platform::delete_file(moved.second);
+			};
+
+			std::vector<std::pair<df::file_path, df::file_path>> moved_sidecars;
+			auto move_or_copy_result = platform::file_op_result{platform::file_op_result_code::OK, {}, {}};
+
+			for (const auto& [sidecar_in, sidecar_out] : i.sidecars)
+			{
+				const auto destination_existed = !fail_if_exists && platform::file_attributes(sidecar_out).exists();
+				move_or_copy_result = move_or_copy(sidecar_in, sidecar_out, options.is_move, fail_if_exists);
+				if (move_or_copy_result.failed()) break;
+				if (!destination_existed) moved_sidecars.emplace_back(sidecar_in, sidecar_out);
+			}
+
+			if (move_or_copy_result.success())
+			{
+				move_or_copy_result = move_or_copy(path_in, path_out, options.is_move, primary_fail_if_exists);
+			}
+
+			if (move_or_copy_result.failed())
+			{
+				for (auto s = moved_sidecars.rbegin(); s != moved_sidecars.rend(); ++s) undo_sidecar(*s);
+			}
+
+			if (move_or_copy_result.success())
+			{
+				import_states[i.import_rec].attempted = true;
+				if (options.set_created_date && i.created_date.is_valid())
+				{
+					platform::created_date(path_out, i.created_date);
+				}
+
+				// An import that moves empties the folder it took from, which is only in the index
+				// when importing from one collection folder to another.
+				if (options.is_move) write_folders.emplace(path_in.folder());
+
+				result.folder = path_out.folder();
+			}
+			else
+			{
+				auto& state = import_states[i.import_rec];
+				state.attempted = true;
+				state.success = false;
+				// A destination that appeared after the review is a file that changed, not a disk error.
+				if (move_or_copy_result.code == platform::file_op_result_code::ALREADY_EXISTS) ++result.refused;
+			}
+
+			results->end_item(i.source.name(), to_status(move_or_copy_result.code));
+		}
+	}
+
+	for (const auto& [import_rec, state] : import_states)
+	{
+		if (state.attempted && state.success) result.imports.emplace(import_rec);
 	}
 
 	index.queue_scan_folders(write_folders);
@@ -310,8 +782,7 @@ size_t count_imports(const std::vector<import_analysis_item>& items)
 
 	for (const auto& i : items)
 	{
-		if (i.action == import_action::import &&
-			!i.already_exists)
+		if (i.action == import_action::import)
 		{
 			++result;
 		}
@@ -332,37 +803,28 @@ size_t count_imports(const import_analysis_result& items)
 	return result;
 }
 
-size_t count_overwrites(const std::vector<import_analysis_item>& items)
+size_t count_import_collisions(const import_analysis_result& items)
 {
 	size_t result = 0;
-
-	for (const auto& i : items)
+	for (const auto& [folder, folder_items] : items)
 	{
-		if (i.action == import_action::import &&
-			i.already_exists)
-		{
-			++result;
-		}
+		result += std::ranges::count_if(folder_items, [](const auto& item) { return item.already_exists; });
 	}
-
 	return result;
 }
 
-size_t count_ignores(const std::vector<import_analysis_item>& items)
+size_t count_import_colliding_writes(const import_analysis_result& items)
 {
 	size_t result = 0;
-
-	for (const auto& i : items)
+	for (const auto& [folder, folder_items] : items)
 	{
-		if (i.action != import_action::import)
+		result += std::ranges::count_if(folder_items, [](const auto& item)
 		{
-			++result;
-		}
+			return item.already_exists && item.action == import_action::import;
+		});
 	}
-
 	return result;
 }
-
 
 std::vector<import_source> calc_import_sources(const view_state& s)
 {
@@ -384,7 +846,7 @@ std::vector<import_source> calc_import_sources(const view_state& s)
 		result.emplace_back(std::string(onedrive_camera_roll.text()), onedrive_camera_roll);
 	}
 
-	auto drives = platform::scan_drives(true);
+	auto drives = platform::scan_drives();
 	constexpr int drive_max = 5;
 
 	if (drives.size() > drive_max)
@@ -418,13 +880,92 @@ std::string relative_combine(const std::string& relative, const str::cached name
 	return result;
 }
 
+sync_action calc_sync_action(const bool local_exists, const bool remote_exists,
+                             const uint64_t local_modified, const uint64_t remote_modified,
+                             const uint64_t local_size, const uint64_t remote_size,
+                             const bool sync_local_remote, const bool sync_remote_local,
+                             const bool sync_delete_local, const bool sync_delete_remote)
+{
+	if (local_exists && remote_exists)
+	{
+		if (local_modified > remote_modified && sync_local_remote) return sync_action::copy_remote;
+		if (remote_modified > local_modified && sync_remote_local) return sync_action::copy_local;
+		if (local_modified == remote_modified && local_size != remote_size)
+		{
+			if (sync_local_remote && !sync_remote_local) return sync_action::copy_remote;
+			if (sync_remote_local && !sync_local_remote) return sync_action::copy_local;
+		}
+	}
+	else if (local_exists)
+	{
+		if (sync_local_remote) return sync_action::copy_remote;
+		if (sync_delete_local) return sync_action::delete_local;
+	}
+	else if (remote_exists)
+	{
+		if (sync_remote_local) return sync_action::copy_local;
+		if (sync_delete_remote) return sync_action::delete_remote;
+	}
+
+	return sync_action::none;
+}
+
+static bool path_contains(const df::folder_path parent, const df::folder_path child)
+{
+	const auto parent_text = parent.text().sv();
+	const auto child_text = child.text().sv();
+	if (parent_text.size() >= child_text.size()) return parent == child;
+	return str::icmp(parent_text, child_text.substr(0, parent_text.size())) == 0 &&
+		df::is_path_sep(child_text[parent_text.size()]);
+}
+
+std::string sync_invalid_message(const sync_analysis_result& analysis)
+{
+	if (analysis.valid) return {};
+
+	switch (analysis.reason)
+	{
+	case sync_invalid_reason::folder_unreadable:
+		return str_format(tt.is_not_valid_folder_fmt.sv(), analysis.invalid_folder.text());
+	case sync_invalid_reason::empty_paths:
+	case sync_invalid_reason::overlapping_paths:
+	case sync_invalid_reason::ambiguous_local_root:
+		return std::string(tt.error_invalid_files.sv());
+	case sync_invalid_reason::none:
+		break;
+	}
+
+	return std::string(tt.error_cannot_continue.sv());
+}
+
 sync_analysis_result sync_analysis(const df::index_roots& local_roots, const df::folder_path remote_path,
                                    const bool sync_local_remote, const bool sync_remote_local,
                                    const bool sync_delete_local, const bool sync_delete_remote,
                                    const df::cancel_token& token)
 {
 	sync_analysis_result result;
+	if (remote_path.is_empty() || local_roots.folders.empty())
+	{
+		result.valid = false;
+		result.reason = sync_invalid_reason::empty_paths;
+		return result;
+	}
+
+	for (const auto& local_root : local_roots.folders)
+	{
+		if (path_contains(local_root, remote_path) || path_contains(remote_path, local_root))
+		{
+			result.valid = false;
+			result.reason = sync_invalid_reason::overlapping_paths;
+			result.invalid_folder = remote_path;
+			return result;
+		}
+	}
+
+	// Which local root owns each relative folder, and the relative folders claimed by more than one
+	// root. A relative folder claimed twice cannot name a local destination for a remote-only file.
 	std::map<std::string, df::folder_path, df::iless> local_roots_by_relative;
+	std::set<std::string, df::iless> ambiguous_relatives;
 
 	std::vector<sync_analysis_folder> local_folders_to_scan;
 
@@ -435,7 +976,12 @@ sync_analysis_result sync_analysis(const df::index_roots& local_roots, const df:
 
 	while (!local_folders_to_scan.empty())
 	{
-		if (token.is_cancelled()) return {};
+		if (token.is_cancelled())
+		{
+			result.clear();
+			result.valid = false;
+			return result;
+		}
 
 		const auto folder = local_folders_to_scan.back();
 		local_folders_to_scan.pop_back();
@@ -443,12 +989,28 @@ sync_analysis_result sync_analysis(const df::index_roots& local_roots, const df:
 		if (!is_excluded(local_roots, folder.path))
 		{
 			const auto contents = platform::iterate_file_items(folder.path, setting.show_hidden);
+			if (!contents.success)
+			{
+				result.clear();
+				result.valid = false;
+				result.reason = sync_invalid_reason::folder_unreadable;
+				result.invalid_folder = folder.path;
+				return result;
+			}
 
 			for (const auto& file : contents.files)
 			{
 				if (token.is_cancelled()) break;
 
 				auto& i = result[folder.relative][file.name.str()];
+				if (!i.local_path.is_empty() && i.local_root != folder.root)
+				{
+					result.clear();
+					result.valid = false;
+					result.reason = sync_invalid_reason::ambiguous_local_root;
+					result.invalid_folder = folder.path;
+					return result;
+				}
 				i.local_path = folder.path.combine_file(file.name);
 				i.local_fi = file;
 				i.local_root = folder.root;
@@ -460,7 +1022,17 @@ sync_analysis_result sync_analysis(const df::index_roots& local_roots, const df:
 				auto sub_folder_path = folder.path.combine(sub_folder.name);
 				sync_analysis_folder unknown = {sub_folder_path, folder.root, relative};
 				local_folders_to_scan.emplace_back(unknown);
-				local_roots_by_relative[relative] = folder.root;
+
+				const auto claimed = local_roots_by_relative.find(relative);
+
+				if (claimed == local_roots_by_relative.end())
+				{
+					local_roots_by_relative[relative] = folder.root;
+				}
+				else if (claimed->second != folder.root)
+				{
+					ambiguous_relatives.emplace(relative);
+				}
 			}
 		}
 	}
@@ -470,7 +1042,12 @@ sync_analysis_result sync_analysis(const df::index_roots& local_roots, const df:
 
 	while (!remote_folders_to_scan.empty())
 	{
-		if (token.is_cancelled()) return {};
+		if (token.is_cancelled())
+		{
+			result.clear();
+			result.valid = false;
+			return result;
+		}
 
 		const auto folder = remote_folders_to_scan.back();
 		remote_folders_to_scan.pop_back();
@@ -478,6 +1055,14 @@ sync_analysis_result sync_analysis(const df::index_roots& local_roots, const df:
 		if (!is_excluded(local_roots, folder.path))
 		{
 			const auto contents = platform::iterate_file_items(folder.path, setting.show_hidden);
+			if (!contents.success)
+			{
+				result.clear();
+				result.valid = false;
+				result.reason = sync_invalid_reason::folder_unreadable;
+				result.invalid_folder = folder.path;
+				return result;
+			}
 
 			for (const auto& file : contents.files)
 			{
@@ -504,22 +1089,48 @@ sync_analysis_result sync_analysis(const df::index_roots& local_roots, const df:
 	{
 		for (auto&& f : i.second)
 		{
+			if (token.is_cancelled())
+			{
+				result.clear();
+				result.valid = false;
+				return result;
+			}
+
 			const auto local_exists = !f.second.local_path.is_empty();
 			const auto remote_exists = !f.second.remote_path.is_empty();
-			const auto match_exists = local_exists && remote_exists;
 
 			if (f.second.local_root.is_empty())
 			{
-				const auto found_relative = local_roots_by_relative.find(f.first);
+				// Keyed by the relative folder, not the file name. A remote-only file belongs to the
+				// local root that owns its folder; with a single root there is only one answer.
+				const auto found_relative = local_roots_by_relative.find(i.first);
 
-				if (found_relative != local_roots_by_relative.end())
+				if (found_relative != local_roots_by_relative.end() && !ambiguous_relatives.contains(i.first))
 				{
 					f.second.local_root = found_relative->second;
 				}
-				else if (!local_roots.folders.empty())
+				else if (local_roots.folders.size() == 1)
 				{
 					f.second.local_root = *local_roots.folders.begin();
 				}
+			}
+
+			const auto action = calc_sync_action(local_exists, remote_exists,
+			                                     f.second.local_fi.attributes.modified,
+			                                     f.second.remote_fi.attributes.modified,
+			                                     f.second.local_fi.attributes.size,
+			                                     f.second.remote_fi.attributes.size,
+			                                     sync_local_remote, sync_remote_local, sync_delete_local,
+			                                     sync_delete_remote);
+
+			// Only copying a remote-only file into the collection needs a local destination. Reporting
+			// a remote file the run would ignore as an invalid path fails a whole sync over nothing.
+			if (f.second.local_root.is_empty() && action == sync_action::copy_local)
+			{
+				result.clear();
+				result.valid = false;
+				result.reason = sync_invalid_reason::ambiguous_local_root;
+				return result;
 			}
 
 			if (f.second.remote_root.is_empty())
@@ -527,7 +1138,7 @@ sync_analysis_result sync_analysis(const df::index_roots& local_roots, const df:
 				f.second.remote_root = remote_path;
 			}
 
-			if (f.second.local_path.is_empty())
+			if (f.second.local_path.is_empty() && !f.second.local_root.is_empty())
 			{
 				f.second.local_path = f.second.local_root.combine(i.first).combine_file(f.first);
 			}
@@ -537,56 +1148,15 @@ sync_analysis_result sync_analysis(const df::index_roots& local_roots, const df:
 				f.second.remote_path = f.second.remote_root.combine(i.first).combine_file(f.first);
 			}
 
-			if (match_exists)
+			f.second.action = action;
+
+			if (f.second.action == sync_action::delete_local)
 			{
-				const auto same_modified = f.second.local_fi.attributes.modified == f.second.remote_fi.attributes.
-					modified;
-
-				if (!same_modified)
-				{
-					const auto local_newer = f.second.local_fi.attributes.modified > f.second.remote_fi.attributes.
-						modified;
-
-					if (local_newer)
-					{
-						if (sync_local_remote)
-						{
-							f.second.action = sync_action::copy_remote;
-						}
-					}
-					else
-					{
-						if (sync_remote_local)
-						{
-							f.second.action = sync_action::copy_local;
-						}
-					}
-				}
+				f.second.delete_crc = platform::file_crc32(f.second.local_path, token);
 			}
-			else
+			else if (f.second.action == sync_action::delete_remote)
 			{
-				if (local_exists)
-				{
-					if (sync_local_remote)
-					{
-						f.second.action = sync_action::copy_remote;
-					}
-					else if (sync_remote_local && sync_delete_local)
-					{
-						f.second.action = sync_action::delete_local;
-					}
-				}
-				else if (remote_exists)
-				{
-					if (sync_remote_local)
-					{
-						f.second.action = sync_action::copy_local;
-					}
-					else if (sync_local_remote && sync_delete_remote)
-					{
-						f.second.action = sync_action::delete_remote;
-					}
-				}
+				f.second.delete_crc = platform::file_crc32(f.second.remote_path, token);
 			}
 		}
 	}
@@ -594,47 +1164,118 @@ sync_analysis_result sync_analysis(const df::index_roots& local_roots, const df:
 	return result;
 }
 
-void sync_copy(const std::shared_ptr<command_status>& status, const sync_analysis_result& analysis_result,
-               const df::cancel_token& token)
+sync_run_result sync_copy(const df::results_ptr& status, const sync_analysis_result& analysis_result,
+                          const df::cancel_token& token)
 {
+	sync_run_result result;
+
 	for (const auto& i : analysis_result)
 	{
 		for (const auto& f : i.second)
 		{
-			if (token.is_cancelled()) return;
+			const auto local_path = f.second.local_path;
+			const auto remote_path = f.second.remote_path;
+			const auto action = f.second.action;
 
-			auto local_path = f.second.local_path;
-			auto remote_path = f.second.remote_path;
-
-			df::assert_true(!local_path.is_empty());
 			df::assert_true(!remote_path.is_empty());
+			df::assert_true(!local_path.is_empty() || action == sync_action::none ||
+				action == sync_action::delete_remote);
 
-			const auto name = local_path.name();
+			// A remote-only file that no local root claims has no local name to report.
+			const auto name = local_path.is_empty() ? remote_path.name() : local_path.name();
 
-			if (f.second.action != sync_action::none)
+			// Every reviewed row is accounted for in the results, so a file the run left alone is
+			// stated as ignored rather than disappearing from the list the user just approved.
+			if (action == sync_action::none)
 			{
-				status->start_item(name);
+				status->end_item(name, item_status::ignore);
+				continue;
 			}
 
-			switch (f.second.action)
+			status->start_item(name);
+
+			if (token.is_cancelled())
+			{
+				status->end_item(name, item_status::cancel);
+				continue;
+			}
+
+			const auto& local_attributes = f.second.local_fi.attributes;
+			const auto& remote_attributes = f.second.remote_fi.attributes;
+
+			// The source is read immediately after this, so a source that no longer matches the
+			// review would copy content nobody approved.
+			const auto source_unchanged = [&]
+			{
+				return action == sync_action::copy_local
+					       ? unchanged_since_analysis(remote_path, remote_attributes.modified, remote_attributes.size)
+					       : unchanged_since_analysis(local_path, local_attributes.modified, local_attributes.size);
+			};
+
+			// A destination the review expected to be free is proved free by the write itself, which
+			// leaves no window for it to appear. One that was already there has to still be the file
+			// the user agreed to overwrite.
+			const auto destination_unchanged = [&](const platform::file_attributes_t& reviewed,
+			                                       const df::file_path path)
+			{
+				return !reviewed.exists() || unchanged_since_analysis(path, reviewed.modified, reviewed.size);
+			};
+
+			// Deletes were reviewed against the file's content, so that is what they are held to.
+			const auto delete_content_unchanged = [&](const df::file_path path)
+			{
+				return platform::file_crc32(path, token) == f.second.delete_crc;
+			};
+
+			// A cancelled check proves nothing, so it is reported as the cancellation it was rather
+			// than as a file that changed.
+			const auto refused = [&](const bool checks_passed)
+			{
+				if (checks_passed) return false;
+				const auto cancelled = token.is_cancelled();
+				status->end_item(name, cancelled ? item_status::cancel : item_status::fail);
+				if (!cancelled) ++result.refused;
+				return true;
+			};
+
+			// A destination that appeared after the review is a file that changed, not a disk error.
+			const auto write = [&](const platform::file_op_result& op)
+			{
+				if (op.code == platform::file_op_result_code::ALREADY_EXISTS) ++result.refused;
+				status->end_item(name, to_status(op.code));
+			};
+
+			switch (action)
 			{
 			case sync_action::none:
 				break;
 			case sync_action::copy_local:
-				status->end_item(name, to_status(platform::copy_file(remote_path, local_path, false, true).code));
+				if (refused(source_unchanged() && destination_unchanged(local_attributes, local_path))) break;
+				write(platform::copy_file(remote_path, local_path, !local_attributes.exists(), true));
+				result.folders_changed.emplace(local_path.folder());
 				break;
 			case sync_action::copy_remote:
-				status->end_item(name, to_status(platform::copy_file(local_path, remote_path, false, true).code));
+				if (refused(source_unchanged() && destination_unchanged(remote_attributes, remote_path))) break;
+				write(platform::copy_file(local_path, remote_path, !remote_attributes.exists(), true));
 				break;
 			case sync_action::delete_local:
+				if (refused(unchanged_since_analysis(local_path, local_attributes.modified, local_attributes.size) &&
+					delete_content_unchanged(local_path)))
+					break;
 				status->end_item(name, to_status(platform::delete_file(local_path).code));
+				result.folders_changed.emplace(local_path.folder());
 				break;
 			case sync_action::delete_remote:
+				if (refused(unchanged_since_analysis(remote_path, remote_attributes.modified, remote_attributes.size) &&
+					delete_content_unchanged(remote_path)))
+					break;
 				status->end_item(name, to_status(platform::delete_file(remote_path).code));
 				break;
 			}
 		}
 	}
+
+	return result;
 }
 
 void toggle_collection_entry(settings_t::index_t& collection_settings, const df::folder_path folder,
@@ -686,16 +1327,22 @@ void toggle_collection_entry(settings_t::index_t& collection_settings, const df:
 std::vector<std::string> check_overwrite(const df::folder_path write_folder, const df::item_set& items,
                                          const std::string_view new_extension)
 {
+	// One enumeration of the destination rather than a query per item: the selection is unbounded and
+	// this runs before a modal, where a round trip per item over a network share would stall the
+	// window. A destination that cannot be read reports no collisions, which leaves the caller on its
+	// non-overwriting default rather than on a guess.
+	const auto contents = platform::iterate_file_items(write_folder, true);
+	if (!contents.success) return {};
+
+	std::set<std::string, df::iless> existing;
+	for (const auto& f : contents.files) existing.emplace(f.name.str());
+	for (const auto& f : contents.folders) existing.emplace(f.name.str());
+
 	std::vector<std::string> result;
 
 	for (const auto f : items.folder_paths())
 	{
-		const auto dest = write_folder.combine(f.name());
-
-		if (dest.exists())
-		{
-			result.emplace_back(dest.name());
-		}
+		if (existing.contains(std::string(f.name()))) result.emplace_back(f.name());
 	}
 
 	for (const auto f : items.file_paths())
@@ -703,13 +1350,114 @@ std::vector<std::string> check_overwrite(const df::folder_path write_folder, con
 		const auto dest = write_folder.combine_file(f.name()).extension(
 			new_extension.empty() ? f.extension() : new_extension);
 
-		if (dest.exists())
-		{
-			result.emplace_back(dest.name());
-		}
+		if (existing.contains(std::string(dest.name()))) result.emplace_back(dest.name());
 	}
 
 	return result;
+}
+
+std::string format_collision_summary(const collision_policy policy, const int count)
+{
+	if (count <= 0) return {};
+
+	const auto num = str::to_string(count);
+
+	switch (policy)
+	{
+	case collision_policy::skip: return str_format(tt.collision_skipped_fmt.sv(), num);
+	case collision_policy::replace: return str_format(tt.collision_replaced_fmt.sv(), num);
+	case collision_policy::auto_rename: return str_format(tt.collision_renamed_fmt.sv(), num);
+	case collision_policy::block_run: break;
+	}
+
+	return str_format(tt.collision_blocked_fmt.sv(), num);
+}
+
+df::file_path next_free_destination(const df::file_path destination)
+{
+	const auto folder = destination.folder();
+	const auto base_name = destination.file_name_without_extension();
+	const auto extension = destination.extension();
+
+	// Bounded: give up rather than spin if a folder is saturated with variants.
+	for (auto suffix = 2; suffix < 10000; ++suffix)
+	{
+		auto candidate = df::file_path(folder, std::format("{} ({})", base_name, suffix), extension);
+		if (!candidate.exists()) return candidate;
+	}
+
+	return destination;
+}
+
+std::vector<convert_source> snapshot_convert_sources(const df::item_set& items)
+{
+	std::vector<convert_source> result;
+	result.reserve(items.size());
+
+	for (const auto& item : items.items())
+	{
+		const auto md = item->metadata();
+		result.emplace_back(item->path(), md ? md->dimensions() : sizei{}, item->xmp());
+	}
+
+	return result;
+}
+
+std::vector<convert_item_plan> plan_convert_outputs(const df::folder_path write_folder,
+                                                    const std::vector<convert_source>& sources,
+                                                    const std::string_view new_extension, const collision_policy policy)
+{
+	auto ordered = sources;
+	std::ranges::sort(ordered, [](const auto& left, const auto& right)
+	{
+		return left.path.icmp(right.path) < 0;
+	});
+
+	df::hash_set<df::file_path, df::ihash, df::ieq> planned_paths;
+	std::vector<convert_item_plan> result;
+	result.reserve(ordered.size());
+
+	for (const auto& source : ordered)
+	{
+		const auto base_name = source.path.file_name_without_extension();
+		auto destination = df::file_path(write_folder, base_name, new_extension);
+		// Two sources can share a base name, so a destination another row already claimed is taken
+		// even when nothing is on disk yet. Use the " (n)" variant every other operation uses.
+		for (auto suffix = 2; planned_paths.contains(destination); ++suffix)
+		{
+			destination = df::file_path(write_folder, std::format("{} ({})", base_name, suffix), new_extension);
+		}
+
+		convert_item_plan plan;
+		plan.source = source;
+		plan.collides = destination.exists();
+
+		if (plan.collides && policy == collision_policy::auto_rename)
+		{
+			auto renamed = next_free_destination(destination);
+			for (auto suffix = 2; renamed.exists() || planned_paths.contains(renamed); ++suffix)
+			{
+				renamed = df::file_path(write_folder, std::format("{} ({})", base_name, suffix), new_extension);
+			}
+			destination = renamed;
+			plan.renamed_to_avoid_collision = true;
+		}
+		else if (plan.collides && policy == collision_policy::skip)
+		{
+			plan.skipped = true;
+		}
+
+		plan.destination = destination;
+		planned_paths.emplace(destination);
+		result.emplace_back(std::move(plan));
+	}
+
+	return result;
+}
+
+df::date_t adjusted_item_date(const df::date_t created, const df::date_t new_start, const df::date_t original_start)
+{
+	return created.is_valid() && original_start.is_valid() ? created + (new_start - original_start) : new_start;
 }
 
 icon_index drive_icon(const platform::drive_type d)

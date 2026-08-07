@@ -6,42 +6,64 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
-// Purpose: Crash database management. Tracks recent files for crash recovery
-// and stores application state to restore after unexpected termination.
+// Purpose: Crash-loop protection. Records which media files were open when the process faulted so
+// the next launch does not scan them again, and keeps that list bounded, attributed and recoverable.
 
 #pragma once
 
 class crash_files_db
 {
-	using path_map = df::hash_map<df::file_path, std::string_view, df::ihash, df::ieq>;
+	struct open_file
+	{
+		std::string_view context;
+		uint32_t thread_id = 0;
+	};
+
+	using path_map = df::hash_map<df::file_path, open_file, df::ihash, df::ieq>;
 	using path_set = df::hash_set<df::file_path, df::ihash, df::ieq>;
 
+	// The list only has to survive until the next launch, so a small ceiling is enough to stop a
+	// repeating crash from growing the file without bound. Lines left by other builds count toward
+	// it, because they are still occupying the file.
+	static constexpr size_t max_entries = 512;
+
 	df::file_path _crash_files_path;
-
-	static path_set load_paths(const df::file_path path)
-	{
-		path_set result;
-
-		std::ifstream file(platform::to_file_system_path(path));
-		std::string line;
-
-		while (std::getline(file, line))
-		{
-			result.emplace(df::file_path{line});
-		}
-
-		return result;
-	}
+	std::string _build_tag;
 
 	path_set _crash_files;
-	path_map _open_files;
+	size_t _lines_on_disk = 0;
 
+	path_map _open_files;
 	platform::mutex _mtx;
 
-public:
-	crash_files_db(const df::file_path path) : _crash_files_path(path)
+	// Each line is "<build>\t<path>". Only the current build's entries skip a file. A decoder fix
+	// ships in an update, and without the tag a file blacklisted once would never be scanned again on
+	// this install - a permanently missing thumbnail with nothing in the product to recover it.
+	void load()
 	{
-		_crash_files = load_paths(path);
+		std::ifstream file(platform::to_file_system_path(_crash_files_path));
+		std::string line;
+
+		while (_lines_on_disk < max_entries && std::getline(file, line))
+		{
+			++_lines_on_disk;
+
+			const std::string_view entry(line);
+			const auto tab = entry.find('\t');
+
+			if (tab == std::string_view::npos) continue;
+			if (entry.substr(0, tab) != _build_tag) continue;
+
+			const auto path = entry.substr(tab + 1);
+			if (!path.empty()) _crash_files.emplace(path);
+		}
+	}
+
+public:
+	crash_files_db(const df::file_path path, const std::string_view build_tag) :
+		_crash_files_path(path), _build_tag(build_tag)
+	{
+		load();
 	}
 
 	bool is_known_crash_file(const df::file_path path) const
@@ -49,10 +71,22 @@ public:
 		return _crash_files.contains(path);
 	}
 
+	// A skipped file is silently left without metadata or a thumbnail, so the count is reported at
+	// startup rather than left for the user to deduce.
+	size_t skipped_file_count() const
+	{
+		return _crash_files.size();
+	}
+
+	bool is_full() const
+	{
+		return _lines_on_disk >= max_entries;
+	}
+
 	void add_open(const df::file_path path, const std::string_view context)
 	{
 		platform::exclusive_lock lock(_mtx);
-		_open_files[path] = context;
+		_open_files[path] = {context, platform::current_thread_id()};
 	}
 
 	void remove_open(const df::file_path path)
@@ -61,42 +95,59 @@ public:
 		_open_files.erase(path);
 	}
 
+	// The following two readers run from the crash / application-recovery handler
+	// (see app_frame::crash and recover_callback). They deliberately do NOT take _mtx:
+	// a blocking acquire would deadlock the handler if the crashing thread happened to
+	// hold the lock inside add_open/remove_open. Those mutators hold the lock only for a
+	// brief map insert/erase, so a best-effort lock-free read here is the safer trade-off
+	// for diagnostic output produced while the process is already failing.
 	void flush_open_files() const
 	{
-		if (!_open_files.empty())
-		{
-			std::ofstream file;
-			file.open(platform::to_file_system_path(_crash_files_path), std::ios_base::app); // append 
+		if (_open_files.empty() || is_full()) return;
 
-			for (const auto& path : _open_files)
-			{
-				df::log(__FUNCTION__, std::format("Add file type to crash list {}", path.first.extension()));
-				file << path.first.str() << '\n';
-			}
+		// Several workers decode at once, so most open files are bystanders. Only the thread running
+		// this handler faulted, so record what it had open and leave the rest scannable. The recovery
+		// callback runs on its own thread and matches nothing, which falls back to recording them all.
+		const auto faulting_thread = platform::current_thread_id();
+		const auto attributed = std::ranges::any_of(_open_files, [faulting_thread](const auto& i)
+		{
+			return i.second.thread_id == faulting_thread;
+		});
+
+		auto room = max_entries - _lines_on_disk;
+		std::string appended;
+
+		for (const auto& [path, open] : _open_files)
+		{
+			if (room == 0) break;
+			if (attributed && open.thread_id != faulting_thread) continue;
+			if (_crash_files.contains(path)) continue;
+
+			df::log(__FUNCTION__, std::format("Add file type to crash list {}", path.extension()));
+			appended += std::format("{}\t{}\n", _build_tag, path.str());
+			--room;
 		}
+
+		if (appended.empty()) return;
+
+		// Appended rather than rewritten: a second fault inside this handler must not be able to
+		// truncate away the protection already earned by earlier crashes.
+		std::ofstream file(platform::to_file_system_path(_crash_files_path), std::ios_base::app);
+		file << appended;
 	}
 
 	void log_open_files() const
 	{
-		if (!_open_files.empty())
+		const auto faulting_thread = platform::current_thread_id();
+
+		for (const auto& [path, open] : _open_files)
 		{
-			for (const auto& path : _open_files)
-			{
-				df::log(__FUNCTION__, std::format("Open file {}", path.first.str()));
-			}
+			// The report is uploaded, so the file is identified by what diagnoses the fault - its type
+			// and the stage that had it open - rather than by name. The full path is recorded locally
+			// in the crash-files list, which stays on the machine.
+			df::log(__FUNCTION__, std::format("Open file {} in {}{}", path.extension(), open.context,
+			                                  open.thread_id == faulting_thread ? " (faulting thread)" : ""));
 		}
-	}
-
-	std::string open_files_list() const
-	{
-		std::ostringstream result;
-
-		for (const auto& path : _open_files)
-		{
-			result << path.first.str() << " [" << path.second << "] " << '\n';
-		}
-
-		return result.str();
 	}
 };
 

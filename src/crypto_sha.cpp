@@ -384,7 +384,8 @@ void sha256::update(const df::cspan cs)
 void sha256::final(uint8_t* digest)
 {
 	const auto block_nb = 1 + (SHA224_256_BLOCK_SIZE - 9 < m_len % SHA224_256_BLOCK_SIZE);
-	const auto len_b = static_cast<uint64_t>(m_tot_len + m_len) << 3;
+	// The padded message length is a 64-bit bit-count; size_t is only 32 bits on a 32-bit build.
+	const uint64_t len_b = (static_cast<uint64_t>(m_tot_len) + m_len) << 3;
 	const auto pm_len = block_nb << 6;
 
 	memset(m_block + m_len, 0, pm_len - m_len);

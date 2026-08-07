@@ -6,8 +6,28 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
-// Purpose: File import workflow. Scans source folders, displays import preview,
-// handles file copying/moving with rename templates and duplicate detection.
+// Purpose: File import workflow. Scans sources, previews every copy or move into a folder structure
+// built from metadata, and runs the reviewed plan.
+//
+// Analyze -> Review -> Run, per docs/design.md. Analyze reads the sources on a worker and resolves
+// every destination, including the collision policy and the auto-rename suffix, so Review states the
+// exact path each file will land at. Run executes that plan and nothing else.
+//
+// Run uses _analysis_options - the options as they stood when the plan was built - rather than the
+// current settings, so a control changed after Analyze cannot alter what Run does. Every control also
+// invalidates the plan, so that case should not arise; reading the reviewed copy makes it impossible
+// rather than merely unlikely.
+//
+// Run does not re-scan the sources or re-derive the plan. Each row is revalidated against its own
+// files immediately before that row acts - see import_copy in app_util.cpp and docs/file-io.md
+// section 9.1 - which matters most here because the source is usually the slowest device involved, a
+// card reader or a phone. The collision policy decides how much proving Run has to do: every policy
+// except Replace leaves the destination free, and a fail-if-exists write proves that atomically with
+// no window for a file to appear, so only Replace has to check that it is still overwriting the file
+// the user reviewed.
+//
+// A row whose files moved on writes nothing and is reported as failed with the reason stated, and
+// contributes no import history, so a later import still offers it. The rows that still match run.
 
 #include "pch.h"
 #include "model.h"
@@ -29,10 +49,20 @@ static import_options make_import_options()
 		                        ? default_custom_folder_structure
 		                        : setting.import.dest_folder_structure;
 	result.is_move = setting.import.is_move;
-	result.overwrite_if_newer = setting.import.overwrite_if_newer;
+	result.collision = setting.import.collision;
 	result.set_created_date = setting.import.set_created_date;
 	result.rename_different_attributes = setting.import.rename_different_attributes;
 	return result;
+}
+
+void import_view::invalidate_analysis()
+{
+	_analysis.clear();
+	_analysis_valid = false;
+	_rows.clear();
+	_status.clear();
+	_state.invalidate_view(view_invalid::view_layout | view_invalid::controller | view_invalid::status |
+		view_invalid::command_state);
 }
 
 
@@ -40,38 +70,88 @@ view_controls_host_ptr import_view::controls(const ui::control_frame_ptr& owner)
 {
 	auto result = std::make_shared<view_controls_host>(_state);
 	auto frame = owner->create_dlg(result, false);
+	result->_controls = {
+		create_view_info_element(tt.import_info),
+		std::make_shared<text_element>(tt.import_preparing)
+	};
+	result->_frame = result->_dlg = frame;
 
-	std::vector<view_element_ptr> controls;
-	controls.emplace_back(std::make_shared<text_element>(tt.command_import, ui::style::font_face::title));
-	controls.emplace_back(std::make_shared<text_element>(tt.import_info));
-	controls.emplace_back(std::make_shared<divider_element>());
+	const std::weak_ptr<import_view> weak_view = shared_from_this();
+	const std::weak_ptr<view_controls_host> weak_controls = result;
 
-	platform::thread_event event_init(true, false);
-
-
-	_state.queue_async(async_queue::work, [&s = _state, &sources = _sources, &event_init]
+	_state.queue_async(async_queue::work, [&s = _state, weak_view, weak_controls, frame]
 	{
-		auto sources_temp = calc_import_sources(s);
-
-		s.queue_ui([&sources, &event_init, sources_temp]
+		std::vector<import_source> sources_temp;
+		std::string error;
+		try
 		{
-			sources = sources_temp;
-			event_init.set();
+			sources_temp = calc_import_sources(s);
+		}
+		catch (const std::exception& e)
+		{
+			error = str::utf8_cast(e.what());
+		}
+
+		s.queue_ui([weak_view, weak_controls, frame, sources_temp = std::move(sources_temp), error = std::move(error)]
+		{
+			const auto view = weak_view.lock();
+			const auto controls = weak_controls.lock();
+			if (!view || !controls) return;
+
+			if (!error.empty())
+			{
+				controls->_controls = {std::make_shared<text_element>(error)};
+				frame->layout();
+				return;
+			}
+
+			view->_sources = sources_temp;
+			view->populate_controls(controls, frame);
 		});
 	});
 
-	platform::wait_for({event_init}, 100000, false);
+	return result;
+}
+
+void import_view::populate_controls(const view_controls_host_ptr& result, const ui::control_frame_ptr& frame)
+{
+	std::vector<view_element_ptr> controls;
+	auto selection_thumbnails = std::make_shared<ui::selection_thumbnails_control>(frame);
+	controls.emplace_back(create_view_info_element(tt.import_info));
+	controls.emplace_back(selection_thumbnails);
+	controls.emplace_back(std::make_shared<divider_element>());
 
 	auto is_first_source = true;
+	auto source_index = 0_z;
+	std::weak_ptr<view_controls_host> weak_controls = result;
 
 	controls.emplace_back(std::make_shared<text_element>(tt.import_from));
 
 	for (auto&& src : _sources)
 	{
 		src.selected = is_first_source;
-		auto check = std::make_shared<ui::check_control>(frame, src.text, src.selected, true);
+		if (is_first_source)
+		{
+			selection_thumbnails->selection(src.items.thumbs(), src.items.size());
+		}
+		auto check = std::make_shared<ui::check_control>(frame, src.text, src.selected, true, false,
+		                                                 [this, selection_thumbnails, source_index, weak_controls](
+		                                                 const bool checked)
+		                                                 {
+			                                                 invalidate_analysis();
+			                                                 if (checked && source_index < _sources.size())
+			                                                 {
+				                                                 const auto& source_items = _sources[source_index].
+					                                                 items;
+				                                                 selection_thumbnails->selection(
+					                                                 source_items.thumbs(), source_items.size());
+				                                                 if (const auto controls = weak_controls.lock())
+					                                                 controls->scroll_controls();
+			                                                 }
+		                                                 }, ui::radio_group_scope);
 		controls.emplace_back(check);
 		is_first_source = false;
+		++source_index;
 	}
 
 	const std::vector<std::string> folder_structure_completes
@@ -84,28 +164,52 @@ view_controls_host_ptr import_view::controls(const ui::control_frame_ptr& owner)
 	};
 
 	_select_other_folder = is_first_source;
-	auto limit = std::make_shared<ui::check_control>(frame, tt.import_other_folder, _select_other_folder, true);
-	limit->child(std::make_shared<ui::folder_picker_control>(frame, setting.import.source_path));
+	auto limit = std::make_shared<ui::check_control>(frame, tt.import_other_folder, _select_other_folder, true, false,
+	                                                 [this, selection_thumbnails, weak_controls](const bool checked)
+	                                                 {
+		                                                 invalidate_analysis();
+		                                                 if (checked)
+		                                                 {
+			                                                 selection_thumbnails->selection({}, 0);
+			                                                 if (const auto controls = weak_controls.lock()) controls->
+				                                                 scroll_controls();
+		                                                 }
+	                                                 }, ui::radio_group_scope);
+	limit->child(std::make_shared<ui::folder_picker_control>(frame, setting.import.source_path, false,
+	                                                         [this](const std::string_view)
+	                                                         {
+		                                                         invalidate_analysis();
+	                                                         }));
 
 	controls.emplace_back(limit);
 	controls.emplace_back(std::make_shared<divider_element>());
 	controls.emplace_back(std::make_shared<text_element>(tt.import_dest_folder));
-	controls.emplace_back(std::make_shared<ui::folder_picker_control>(frame, setting.import.destination_path));
+	controls.emplace_back(std::make_shared<ui::folder_picker_control>(frame, setting.import.destination_path, false,
+	                                                                  [this](const std::string_view)
+	                                                                  {
+		                                                                  invalidate_analysis();
+	                                                                  }));
 	controls.emplace_back(std::make_shared<text_element>(tt.import_dest_folder_structure));
 	controls.emplace_back(
 		std::make_shared<ui::edit_picker_control>(frame, setting.import.dest_folder_structure,
-		                                          folder_structure_completes));
+		                                          folder_structure_completes,
+		                                          [this](const std::string_view) { invalidate_analysis(); }));
 	controls.emplace_back(set_margin(
 		std::make_shared<link_element>(tt.more_template_information, [] { platform::open(doc_template_url); })));
 	controls.emplace_back(std::make_shared<divider_element>());
 	controls.emplace_back(
-		std::make_shared<ui::check_control>(frame, tt.import_ignore_previous, setting.import.ignore_previous));
+		std::make_shared<ui::check_control>(frame, tt.import_ignore_previous, setting.import.ignore_previous,
+		                                    false, false, [this](const bool) { invalidate_analysis(); }));
 	controls.emplace_back(
-		std::make_shared<ui::check_control>(frame, tt.import_overwrite_if_newer,
-		                                    setting.import.overwrite_if_newer));
-	controls.emplace_back(std::make_shared<ui::check_control>(frame, tt.move_items, setting.import.is_move));
+		create_collision_policy_control(frame, setting.import.collision, [this] { invalidate_analysis(); }));
+	controls.emplace_back(std::make_shared<ui::check_control>(frame, tt.move_items, setting.import.is_move,
+	                                                          false, false, [this](const bool)
+	                                                          {
+		                                                          invalidate_analysis();
+	                                                          }));
 	controls.emplace_back(
-		std::make_shared<ui::check_control>(frame, tt.import_set_created_date, setting.import.set_created_date));
+		std::make_shared<ui::check_control>(frame, tt.import_set_created_date, setting.import.set_created_date,
+		                                    false, false, [this](const bool) { invalidate_analysis(); }));
 
 	for (const auto& c : controls)
 	{
@@ -115,11 +219,11 @@ view_controls_host_ptr import_view::controls(const ui::control_frame_ptr& owner)
 
 	result->_controls = controls;
 	result->_frame = result->_dlg = frame;
-
-	return result;
+	result->populate();
+	result->scroll_controls();
 }
 
-void import_view::update_rows(const import_analysis_result& analysis_result)
+void import_view::update_rows(const import_analysis_result& analysis_result, const import_options& options)
 {
 	const auto gray_text_color = ui::darken(ui::style::color::view_text, 0.22f);
 	const auto blue_text_color = ui::lighten(ui::style::color::dialog_selected_background, 0.55f);
@@ -131,6 +235,7 @@ void import_view::update_rows(const import_analysis_result& analysis_result)
 	int imports = 0;
 	int exists = 0;
 	int already_imported = 0;
+	int collisions = 0;
 
 	for (const auto& a : analysis_result)
 	{
@@ -138,26 +243,53 @@ void import_view::update_rows(const import_analysis_result& analysis_result)
 		{
 			auto row = std::make_shared<row_element>(*this);
 			row->_text[1] = i.source.pack();
-			row->_text[2] = i.destination.pack();
+			row->_text[3] = i.destination.pack();
+
+			if (i.already_exists) collisions += 1;
 
 			switch (i.action)
 			{
 			case import_action::import:
-				row->_text[0] = tt.import;
-				row->_text_color[0] = blue_text_color;
+				row->_text[0] = options.is_move ? tt.menu_move : tt.menu_copy;
+
+				// The destination already exists; name the policy that resolved it on the row itself
+				// so an overwrite or a renamed destination is never silently implied.
+				if (i.already_exists)
+				{
+					if (options.collision == collision_policy::replace)
+					{
+						row->_text[0] = std::format("{} ({})", row->_text[0], tt.collision_replace.sv());
+						row->_text_color[0] = orange_text_color;
+					}
+					else if (options.collision == collision_policy::auto_rename)
+					{
+						row->_text[0] = std::format("{} ({})", row->_text[0], tt.collision_rename.sv());
+						row->_text_color[0] = blue_text_color;
+					}
+					else
+					{
+						row->_text_color[0] = blue_text_color;
+					}
+				}
+				else
+				{
+					row->_text_color[0] = blue_text_color;
+				}
+
+				row->_icons[2] = icon_index::next;
 				row->_order = 1;
 				imports += 1;
 				break;
 			case import_action::already_exists:
 				row->_text_color[1] = gray_text_color;
-				row->_text_color[2] = gray_text_color;
+				row->_text_color[3] = gray_text_color;
 				row->_order = 2;
 				row->_text[0] = tt.exists;
 				exists += 1;
 				break;
 			case import_action::already_imported:
 				row->_text_color[1] = gray_text_color;
-				row->_text_color[2] = gray_text_color;
+				row->_text_color[3] = gray_text_color;
 				row->_text_color[0] = orange_text_color;
 				row->_text[0] = tt.previously_imported;
 				row->_order = 3;
@@ -170,9 +302,30 @@ void import_view::update_rows(const import_analysis_result& analysis_result)
 	}
 
 	_rows = std::move(rows);
+	_analysis = analysis_result;
+	_analysis_options = options;
+	_analysis_valid = true;
 	_status = std::format("{} {}   {} {}   {} {}", imports, tt.import, exists, tt.exists, already_imported,
 	                      tt.previously_imported);
-	_state.invalidate_view(view_invalid::view_layout | view_invalid::controller | view_invalid::status);
+
+	// State the named policy that resolved the destination collisions rather than leaving it implicit.
+	// Block Run and Skip report every collision, because that is what they answer. Replace and
+	// Auto-rename report only the rows the plan will write, so the count matches what the run does and
+	// what the confirmation about to follow it states.
+	const auto collision_summary = format_collision_summary(
+		options.collision,
+		options.collision == collision_policy::replace || options.collision == collision_policy::auto_rename
+			? static_cast<int>(count_import_colliding_writes(analysis_result))
+			: collisions);
+
+	if (!collision_summary.empty())
+	{
+		_status += "   ";
+		_status += collision_summary;
+	}
+
+	_state.invalidate_view(view_invalid::view_layout | view_invalid::controller | view_invalid::status |
+		view_invalid::command_state);
 }
 
 static auto calc_import_root(const std::vector<import_source>& sources, const bool select_other_folder)
@@ -210,117 +363,215 @@ static auto calc_import_root(const std::vector<import_source>& sources, const bo
 	return result;
 };
 
+bool import_view::can_analyze() const
+{
+	if (setting.import.destination_path.empty()) return false;
+	if (_select_other_folder) return !setting.import.source_path.empty();
+
+	// Mirrors what calc_import_root would collect, without building the root set on the UI thread.
+	return std::ranges::any_of(_sources, [](const import_source& src)
+	{
+		return src.selected && (!src.path.is_empty() || !src.items.empty());
+	});
+}
+
 void import_view::run()
 {
-	detach_file_handles detach(_state);
+	if (!can_run()) return;
 
-	const auto title = tt.command_import;
-	constexpr auto icon = icon_index::import;
-	auto dlg = make_dlg(_host->owner());
+	// Replace is the one policy here that destroys content, and unlike a delete it leaves nothing to
+	// recover from. The review already marks each replacing row, so this states the total and its
+	// permanence once, immediately before the run that acts on it.
+	if (_analysis_options.collision == collision_policy::replace)
+	{
+		const auto replace_count = static_cast<int>(count_import_colliding_writes(_analysis));
+
+		if (replace_count > 0)
+		{
+			const auto confirm = make_dlg(_host->owner());
+			std::vector<view_element_ptr> controls;
+			controls.emplace_back(set_margin(std::make_shared<ui::title_control2>(
+				confirm->_frame, icon_index::import, tt.command_import,
+				format_collision_summary(collision_policy::replace, replace_count))));
+			controls.emplace_back(set_margin(std::make_shared<text_element>(tt.import_replace_warning)));
+			controls.emplace_back(std::make_shared<divider_element>());
+			controls.emplace_back(std::make_shared<ui::ok_cancel_control>(confirm->_frame, tt.collision_replace));
+			if (confirm->show_modal(controls) != ui::close_result::ok) return;
+		}
+	}
 
 	record_feature_use(features::import);
 
-	const auto import_root = calc_import_root(_sources, _select_other_folder);
 	_state.recent_folders.add(setting.import.destination_path);
+	// The plan and the options it was built from are moved out and marked invalid before any work
+	// starts, so the reviewed rows are the only thing the worker can act on and a second Run cannot
+	// reuse a plan already being run. After a run the user must Analyze again, which is also the
+	// recovery path for any row that was refused.
+	const auto analysis_result = std::move(_analysis);
+	const auto options = _analysis_options;
+	const auto completion_status = _status;
+	_analysis_valid = false;
+	const auto total = count_imports(analysis_result);
+	begin_processing(total);
+	const auto processing_generation = this->processing_generation();
+	const auto cancel_source = processing_cancel_source();
+	_status = std::string(tt.processing.sv());
+	const auto detach = std::make_shared<detach_file_handles>(_state);
+	auto token = df::cancel_token(*cancel_source);
+	const auto view = shared_from_this();
+	const auto results = std::make_shared<view_command_status>(_state._async, cancel_source,
+	                                                           [view, processing_generation](const size_t index)
+	                                                           {
+		                                                           if (view->is_processing_generation(
+			                                                           processing_generation)) view->
+			                                                           processing_exact_order_item(index, 1);
+	                                                           },
+	                                                           [view, completion_status, processing_generation](
+	                                                           std::string message,
+	                                                           const std::vector<view_operation_result>& results)
+	                                                           {
+		                                                           if (!view->is_processing_generation(
+			                                                           processing_generation)) return;
+		                                                           view->end_processing();
+		                                                           const auto result_summary = view->show_results(
+			                                                           results);
+		                                                           // The counts state what the run did; the message
+		                                                           // states why some rows did nothing. A partial run
+		                                                           // needs both.
+		                                                           view->_status = result_summary.empty()
+			                                                           ? (message.empty()
+				                                                              ? completion_status
+				                                                              : std::move(message))
+			                                                           : (message.empty()
+				                                                              ? result_summary
+				                                                              : result_summary + "  " + message);
+		                                                           view->_state.invalidate_view(
+			                                                           view_invalid::status |
+			                                                           view_invalid::command_state);
+	                                                           });
 
-	const auto options = make_import_options();
+	_state.queue_async(async_queue::work,
+	                   [&s = _state, results, view, analysis_result, options, token, detach]
+	                   {
+		                   result_scope rr(results);
+		                   const auto copy_result = import_copy(s.item_index, results, analysis_result, options,
+		                                                        token);
+		                   s._async.queue_database([copy_result](const database& db)
+		                   {
+			                   db.writes_item_imports(copy_result.imports);
+		                   });
 
-	dlg->show_status(icon, tt.processing);
+		                   s.queue_ui([&s, view, folder = copy_result.folder, detach]
+		                   {
+			                   if (!folder.is_empty())
+			                   {
+				                   detach->keep_display_closed();
+				                   s.open(view->_host, df::search_t().add_selector(folder), {});
+				                   s.invalidate_view(view_invalid::index);
+			                   }
+		                   });
 
-	auto token = df::cancel_token(ui::cancel_gen);
-	const auto results = std::make_shared<command_status>(_state._async, dlg, icon, title, 0);
-
-	_state._async.queue_database(
-		[&s = _state, results, view = shared_from_this(), import_root, options, token](const database& db)
-		{
-			const auto previous_imported = setting.import.ignore_previous ? db.load_item_imports() : item_import_set{};
-
-			s.queue_async(async_queue::work, [&s, results, view, previous_imported, import_root, options, token]
-			{
-				result_scope rr(results);
-				const auto items = s.item_index.scan_items(import_root, true, true, token);
-				const auto analysis_result = import_analysis(items, options, previous_imported, token);
-
-				if (!token.is_cancelled())
-				{
-					s.queue_ui([analysis_result, view]
-					{
-						view->update_rows(analysis_result);
-					});
-				}
-
-				results->total(count_imports(analysis_result));
-
-				const auto copy_result = import_copy(s.item_index, results, analysis_result, options, token);
-
-				s._async.queue_database([&s, copy_result](const database& db)
-				{
-					db.writes_item_imports(copy_result.imports);
-				});
-
-				if (!copy_result.folder.is_empty())
-				{
-					s.queue_ui([&s, view, folder = copy_result.folder]
-					{
-						s.open(view->_host, df::search_t().add_selector(folder), {});
-						s.invalidate_view(view_invalid::index);
-					});
-				}
-
-				rr.complete();
-			});
-		});
-
-	results->wait_for_complete();
-
-	dlg->_frame->destroy();
+		                   // A refused row is a file that moved on, not a disk error, and the two are
+		                   // indistinguishable from the row alone. Without this the user would read a
+		                   // partial run as a partly broken one.
+		                   rr.complete(copy_result.refused > 0 ? tt.sync_analysis_changed.sv() : std::string_view{});
+	                   });
 }
 
 void import_view::analyze()
 {
-	const auto title = tt.command_import;
-	constexpr auto icon = icon_index::import;
-	platform::thread_event event_analyze(true, false);
 	const auto import_root = calc_import_root(_sources, _select_other_folder);
-	auto token = df::cancel_token(ui::cancel_gen);
-
-	const auto status_dlg = make_dlg(_host->owner());
-	status_dlg->show_cancel_status(icon, tt.analyzing, [] { ++ui::cancel_gen; });
 
 	const auto options = make_import_options();
+	if (options.dest_folder.is_empty())
+	{
+		_analysis.clear();
+		_analysis_valid = false;
+		_status = std::string(tt.error_invalid_files.sv());
+		_state.invalidate_view(view_invalid::status | view_invalid::command_state);
+		return;
+	}
+
+	_analysis_valid = false;
+	begin_processing(0);
+	const auto processing_generation = this->processing_generation();
+	const auto cancel_source = processing_cancel_source();
+	auto token = df::cancel_token(*cancel_source);
+	_status = std::string(tt.analyzing.sv());
 
 	_state._async.queue_database(
-		[&s = _state, &event_analyze, import_root, view = shared_from_this(), options, token](const database& db)
+		[&s = _state, import_root, view = shared_from_this(), options, token, processing_generation](const database& db)
 		{
-			const auto previous_imported = setting.import.ignore_previous ? db.load_item_imports() : item_import_set{};
+			item_import_set previous_imported;
+			try
+			{
+				previous_imported = setting.import.ignore_previous ? db.load_item_imports() : item_import_set{};
+			}
+			catch (const std::exception& e)
+			{
+				s.queue_ui([view, processing_generation, error = str::utf8_cast(e.what())]
+				{
+					if (!view->is_processing_generation(processing_generation)) return;
+					view->end_processing();
+					view->_analysis.clear();
+					view->_analysis_valid = false;
+					view->_status = error;
+					view->_state.invalidate_view(view_invalid::status | view_invalid::command_state);
+				});
+				return;
+			}
 
 			s.queue_async(async_queue::work,
-			              [&s, &event_analyze, import_root, previous_imported, view, options, token]
+			              [&s, import_root, previous_imported, view, options, token, processing_generation]
 			              {
-				              const auto items = s.item_index.scan_items(import_root, true, true, token);
-				              const auto analysis_result = import_analysis(items, options, previous_imported, token);
+				              import_analysis_result analysis_result;
+				              try
+				              {
+					              const auto items = s.item_index.scan_items(import_root, true, true, token);
+					              analysis_result = import_analysis(items, options, previous_imported, token);
+				              }
+				              catch (const std::exception& e)
+				              {
+					              s.queue_ui([view, processing_generation, error = str::utf8_cast(e.what())]
+					              {
+						              if (!view->is_processing_generation(processing_generation)) return;
+						              view->end_processing();
+						              view->_analysis.clear();
+						              view->_analysis_valid = false;
+						              view->_status = error;
+						              view->_state.invalidate_view(view_invalid::status | view_invalid::command_state);
+					              });
+					              return;
+				              }
 
 				              if (!token.is_cancelled())
 				              {
-					              s.queue_ui([analysis_result, view]
+					              s.queue_ui([analysis_result, options, import_root, view, processing_generation]
 					              {
-						              view->update_rows(analysis_result);
+						              if (!view->is_processing_generation(processing_generation)) return;
+						              view->end_processing();
+						              view->update_rows(analysis_result, options);
 					              });
 				              }
-
-				              // Always signal completion so the modal status dialog
-				              // is dismissed even when analysis is cancelled.
-				              event_analyze.set();
+				              else
+				              {
+					              s.queue_ui([view, processing_generation]
+					              {
+						              if (!view->is_processing_generation(processing_generation)) return;
+						              view->end_processing();
+						              view->_analysis.clear();
+						              view->_analysis_valid = false;
+						              view->_status = std::string(tt.error_analysis_cancelled.sv());
+						              view->_state.invalidate_view(view_invalid::status | view_invalid::command_state);
+					              });
+				              }
 			              });
 		});
-
-	platform::wait_for({event_analyze}, 100000, false);
-	status_dlg->_frame->destroy();
 }
 
 void import_view::refresh()
 {
-	_state.invalidate_view(view_invalid::view_layout | view_invalid::controller);
+	_state.invalidate_view(view_invalid::view_layout | view_invalid::controller | view_invalid::command_state);
 }
 
 void import_view::reload()

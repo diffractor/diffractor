@@ -802,7 +802,7 @@
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg\src;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)\third-party\webp\src;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_WINDOWS;STRICT;NDEBUG;_WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WINSTORE;_WINDOWS;STRICT;NDEBUG;_WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <BufferSecurityCheck>true</BufferSecurityCheck>
@@ -1256,7 +1256,7 @@
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <AdditionalIncludeDirectories>$(SolutionDir)\third-party\LibJpeg\src;$(SolutionDir)\third-party\libheif\api;$(SolutionDir)\third-party\hunspell;$(SolutionDir)\third-party\webp\src;$(SolutionDir)\third-party\libpng;$(SolutionDir)\third-party\sqlite;$(SolutionDir)third-party\dng;$(SolutionDir)third-party;$(SolutionDir)include;$(SolutionDir)third-party\libexif;$(SolutionDir)third-party\bzip2;$(SolutionDir)third-party\zlib;$(SolutionDir)third-party\xmp\public\include;$(SolutionDir)third-party\rapidjson\include;$(SolutionDir)third-party\libraw;$(SolutionDir)third-party\ffmpeg;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_WINDOWS;WIN32;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WINSTORE;_WINDOWS;WIN32;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <BufferSecurityCheck>true</BufferSecurityCheck>
@@ -1555,7 +1555,9 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="app_search.cpp" />
+    <ClCompile Include="app_dup_report.cpp" />
     <ClCompile Include="app_gen_docs.cpp" />
+    <ClCompile Include="app_validate_po.cpp" />
     <ClCompile Include="app_workers.cpp" />
     <ClCompile Include="app_toolbar.cpp" />
     <ClCompile Include="app_commands.cpp">
@@ -1563,17 +1565,14 @@
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">pch.h</PrecompiledHeaderFile>
     </ClCompile>
     <ClCompile Include="app_util.cpp" />
-    <ClCompile Include="av_stubs.cpp">
-      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|x64'">pch.h</PrecompiledHeaderFile>
-      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='WinStore|x64'">pch.h</PrecompiledHeaderFile>
-      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">pch.h</PrecompiledHeaderFile>
-      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='WinStore|ARM64'">pch.h</PrecompiledHeaderFile>
-      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">pch.h</PrecompiledHeaderFile>
-      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">pch.h</PrecompiledHeaderFile>
-    </ClCompile>
     <ClCompile Include="files_commodore.cpp" />
     <ClCompile Include="files_heif.cpp">
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">pch.h</PrecompiledHeaderFile>
+    </ClCompile>
+    <ClCompile Include="files_jxl.cpp">
+      <AdditionalIncludeDirectories>$(SolutionDir)third-party\libjx\lib\include;$(SolutionDir)third-party\libjx;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <!-- The extra include dirs force a separate CL batch without /MP, so /FS is needed to share the PDB. -->
+      <AdditionalOptions>%(AdditionalOptions) /FS</AdditionalOptions>
     </ClCompile>
     <ClCompile Include="files_png.cpp">
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|x64'">pch.h</PrecompiledHeaderFile>
@@ -1685,13 +1684,16 @@
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">pch.h</PrecompiledHeaderFile>
     </ClCompile>
-    <ClCompile Include="tests2.cpp" />
+    <ClCompile Include="test_utils.cpp" />
     <ClCompile Include="test_runner.cpp" />
-    <ClCompile Include="tests3.cpp" />
-    <ClCompile Include="tests4.cpp" />
-    <ClCompile Include="tests5.cpp" />
-    <ClCompile Include="tests6.cpp" />
-    <ClCompile Include="tests1.cpp" />
+    <ClCompile Include="test_metadata.cpp" />
+    <ClCompile Include="test_media_edit.cpp" />
+    <ClCompile Include="test_search.cpp" />
+    <ClCompile Include="test_index.cpp" />
+    <ClCompile Include="test_regressions.cpp" />
+    <ClCompile Include="test_view.cpp" />
+    <ClCompile Include="test_platform_win.cpp" />
+    <ClCompile Include="ui_flex.cpp" />
     <ClInclude Include="test.h" />
     <ClInclude Include="test_utils.h" />
     <ClInclude Include="ui_map.h" />
@@ -1818,6 +1820,7 @@
     </ClCompile>
     <ClCompile Include="view_import.cpp" />
     <ClCompile Include="view_locate.cpp" />
+  	<ClCompile Include="view_selector.cpp" />
     <ClCompile Include="view_items.cpp">
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|x64'">pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='WinStore|x64'">pch.h</PrecompiledHeaderFile>
@@ -1835,6 +1838,14 @@
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">pch.h</PrecompiledHeaderFile>
     </ClCompile>
     <ClCompile Include="model_locations.cpp">
+      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|x64'">pch.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='WinStore|x64'">pch.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">pch.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='WinStore|ARM64'">pch.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">pch.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">pch.h</PrecompiledHeaderFile>
+    </ClCompile>
+    <ClCompile Include="model_visits.cpp">
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|x64'">pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='WinStore|x64'">pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">pch.h</PrecompiledHeaderFile>
@@ -1867,6 +1878,14 @@
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">pch.h</PrecompiledHeaderFile>
     </ClCompile>
     <ClCompile Include="model_tags.cpp">
+      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|x64'">pch.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='WinStore|x64'">pch.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">pch.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='WinStore|ARM64'">pch.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">pch.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">pch.h</PrecompiledHeaderFile>
+    </ClCompile>
+    <ClCompile Include="model_tile_cache.cpp">
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|x64'">pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='WinStore|x64'">pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">pch.h</PrecompiledHeaderFile>
@@ -1957,16 +1976,10 @@
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">pch.h</PrecompiledHeaderFile>
     </ClCompile>
+    <ClCompile Include="view_batch.cpp" />
     <ClCompile Include="view_rename.cpp" />
     <ClCompile Include="view_sync.cpp" />
-    <ClCompile Include="view_test.cpp">
-      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|x64'">pch.h</PrecompiledHeaderFile>
-      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='WinStore|x64'">pch.h</PrecompiledHeaderFile>
-      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">pch.h</PrecompiledHeaderFile>
-      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='WinStore|ARM64'">pch.h</PrecompiledHeaderFile>
-      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">pch.h</PrecompiledHeaderFile>
-      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">pch.h</PrecompiledHeaderFile>
-    </ClCompile>
+    <ClCompile Include="view_tags.cpp" />
     <ClCompile Include="app_text.cpp">
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|x64'">pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='WinStore|x64'">pch.h</PrecompiledHeaderFile>
@@ -2030,13 +2043,9 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="app_util.h" />
-    <None Include="Res\bg.png" />
-    <None Include="res\blue_circle_16.png" />
-    <None Include="res\blue_circle_50.png" />
     <None Include="Res\color_select.cur" />
     <None Include="Res\create_tables.sql" />
     <None Include="Res\default.ico" />
-    <None Include="Res\digits.png" />
     <None Include="Res\folder.ico" />
     <None Include="Res\hand.cur" />
     <None Include="Res\hand_down.cur" />
@@ -2049,9 +2058,11 @@
     <None Include="Res\shadow.png" />
     <None Include="Res\tb_large.bmp" />
     <None Include="Res\tb_small.bmp" />
-    <None Include="Res\title.png" />
     <None Include="Res\world_map.jpg" />
     <None Include="shaders\common.hlsli" />
+    <None Include="shaders\rgb_common.hlsli" />
+    <None Include="shaders\texture_transform.hlsli" />
+    <None Include="shaders\yuv_common.hlsli" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\third-party\brotli\brotli.vcxproj">
@@ -2184,10 +2195,12 @@
     <ClInclude Include="model_index.h" />
     <ClInclude Include="view_import.h" />
     <ClInclude Include="view_locate.h" />
+  	<ClInclude Include="view_selector.h" />
     <ClInclude Include="view_items.h" />
     <ClInclude Include="files_jpeg.h" />
     <ClInclude Include="util_kdtree.h" />
     <ClInclude Include="model_locations.h" />
+    <ClInclude Include="model_visits.h" />
     <ClInclude Include="app.h" />
     <ClInclude Include="crypto_md5.h" />
     <ClInclude Include="av_format.h" />
@@ -2196,10 +2209,12 @@
     <ClInclude Include="view_media.h" />
     <ClInclude Include="util_file.h" />
     <ClInclude Include="model_tags.h" />
+    <ClInclude Include="model_tile_cache.h" />
     <ClInclude Include="app_settings.h" />
     <ClInclude Include="util_path.h" />
     <ClInclude Include="platform.h" />
     <ClInclude Include="model_property.h" />
+    <ClInclude Include="model_related.h" />
     <ClInclude Include="platform_win_res.h" />
     <ClInclude Include="crypto_sha.h" />
     <ClInclude Include="av_sound.h" />
@@ -2207,20 +2222,20 @@
     <ClInclude Include="model.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="util_strings.h" />
+    <ClInclude Include="view_batch.h" />
     <ClInclude Include="view_rename.h" />
     <ClInclude Include="view_sync.h" />
-    <ClInclude Include="view_test.h" />
+    <ClInclude Include="view_tags.h" />
+    <ClInclude Include="test_runner.h" />
     <ClInclude Include="ui_controllers.h" />
     <ClInclude Include="util_top.h" />
     <ClInclude Include="ui.h" />
+    <ClInclude Include="ui_plasma.h" />
+    <ClInclude Include="ui_text_edit.h" />
     <ClInclude Include="ui_view.h" />
     <ClInclude Include="metadata_xmp.h" />
     <ClInclude Include="util_zip.h" />
     <ClInclude Include="platform_win_visual.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <Image Include="Res\logo.png" />
-    <Image Include="Res\search.png" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="shaders\rgb_bicubic_ps.hlsl">

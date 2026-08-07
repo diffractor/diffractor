@@ -152,7 +152,12 @@ std::vector<uint8_t> crypto::encrypt(const df::cspan input, const std::string_vi
 	platform::secure_zero(enc_key, sizeof(enc_key));
 
 	std::vector<uint8_t> result;
-	aes256::encrypt(key, input, result);
+
+	if (aes256::encrypt(key, input, result) == 0)
+	{
+		platform::secure_zero(mac_key, sizeof(mac_key));
+		return {};
+	}
 
 	// Encrypt-then-MAC: compute HMAC-SHA256 over ciphertext
 	auto hmac = hmac_sha256_raw(mac_key, sizeof(mac_key), result.data(), result.size());
@@ -235,21 +240,170 @@ uint32_t crypto::crc32c(const std::string_view sv)
 	return crc32c(sv.data(), sv.size());
 }
 
-static constexpr uint32_t FNV_PRIME_32 = 16777619u;
-static constexpr uint32_t OFFSET_BASIS_32 = 2166136261u;
+///////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////
+// Perceptual hash
 
-uint32_t crypto::fnv1a(const void* data, const size_t len)
+namespace
 {
-	const auto* p = static_cast<const uint8_t*>(data);
-	uint32_t result = OFFSET_BASIS_32;
+	// Side of the low-frequency DCT block kept as the hash. 8x8 is 64 coefficients, one of which is
+	// the DC term the median threshold discards, so the hash is 63 meaningful bits in a 64-bit word.
+	constexpr size_t phash_block = 8;
 
-	for (size_t i = 0; i < len; ++i)
+	// Below this spread across the kept coefficients the picture has no structure to identify it,
+	// only noise around a flat field, and any hash of it collides with every other flat field.
+	constexpr double phash_min_deviation = 1.0;
+
+	// The DCT-II basis is separable and the input extent is fixed, so the cosine table is built once
+	// rather than per image: this is called on candidate pairs, not on the whole collection.
+	const auto& phash_basis()
 	{
-		result ^= p[i];
-		result *= FNV_PRIME_32;
+		static const auto table = []
+		{
+			auto result = std::make_unique<std::array<double, crypto::phash_extent * phash_block>>();
+
+			for (size_t u = 0; u < phash_block; ++u)
+			{
+				for (size_t x = 0; x < crypto::phash_extent; ++x)
+				{
+					(*result)[u * crypto::phash_extent + x] =
+						std::cos((2.0 * x + 1.0) * u * M_PI / (2.0 * crypto::phash_extent));
+				}
+			}
+
+			return result;
+		}();
+
+		return *table;
 	}
+}
+
+uint64_t crypto::perceptual_hash(const uint8_t* gray, const size_t len)
+{
+	if (gray == nullptr || len < phash_pixels)
+	{
+		return 0;
+	}
+
+	const auto& basis = phash_basis();
+
+	// Rows first, then columns: separating the 2D transform turns 32*32*8*8 products into 2*32*32*8.
+	std::array<double, phash_extent * phash_block> rows{};
+
+	for (size_t y = 0; y < phash_extent; ++y)
+	{
+		for (size_t u = 0; u < phash_block; ++u)
+		{
+			double sum = 0.0;
+			for (size_t x = 0; x < phash_extent; ++x)
+			{
+				sum += gray[y * phash_extent + x] * basis[u * phash_extent + x];
+			}
+			rows[y * phash_block + u] = sum;
+		}
+	}
+
+	std::array<double, phash_block * phash_block> coefficients{};
+
+	for (size_t u = 0; u < phash_block; ++u)
+	{
+		for (size_t v = 0; v < phash_block; ++v)
+		{
+			double sum = 0.0;
+			for (size_t y = 0; y < phash_extent; ++y)
+			{
+				sum += rows[y * phash_block + v] * basis[u * phash_extent + y];
+			}
+			coefficients[u * phash_block + v] = sum;
+		}
+	}
+
+	// The DC term carries overall brightness, which is exactly what a re-encode or an exposure tweak
+	// changes, so it is excluded from the threshold rather than allowed to dominate it.
+	std::array<double, phash_block * phash_block - 1> ranked{};
+	std::copy(coefficients.begin() + 1, coefficients.end(), ranked.begin());
+
+	const auto middle = ranked.begin() + ranked.size() / 2;
+	std::nth_element(ranked.begin(), middle, ranked.end());
+	const auto median = *middle;
+
+	double deviation = 0.0;
+	for (size_t i = 1; i < coefficients.size(); ++i)
+	{
+		deviation += std::abs(coefficients[i] - median);
+	}
+
+	if ((deviation / (coefficients.size() - 1)) < phash_min_deviation)
+	{
+		return 0;
+	}
+
+	uint64_t result = 0;
+
+	for (size_t i = 1; i < coefficients.size(); ++i)
+	{
+		if (coefficients[i] > median)
+		{
+			result |= 1ull << i;
+		}
+	}
+
+	// A structured image can still land on an all-zero pattern. Bit 0 is reserved, so 2 is the
+	// smallest value that reads as a real hash.
+	return result == 0 ? 2ull : result;
+}
+
+namespace
+{
+	// A quarter turn clockwise: the value at row r, column c moves to row c, column N-1-r.
+	void rotate_quarter_turn(std::array<uint8_t, crypto::phash_pixels>& grid)
+	{
+		constexpr auto n = crypto::phash_extent;
+		std::array<uint8_t, crypto::phash_pixels> rotated{};
+
+		for (size_t r = 0; r < n; ++r)
+		{
+			for (size_t c = 0; c < n; ++c)
+			{
+				rotated[c * n + (n - 1 - r)] = grid[r * n + c];
+			}
+		}
+
+		grid = rotated;
+	}
+}
+
+crypto::phash_rotations crypto::perceptual_hash_rotations(const uint8_t* gray, const size_t len)
+{
+	phash_rotations result{};
+
+	if (gray == nullptr || len < phash_pixels)
+	{
+		return result;
+	}
+
+	std::array<uint8_t, phash_pixels> grid{};
+	std::copy_n(gray, phash_pixels, grid.begin());
+
+	for (auto& hash : result)
+	{
+		hash = perceptual_hash(grid.data(), grid.size());
+		rotate_quarter_turn(grid);
+	}
+
+	// The detail test is applied per orientation, so a picture near the floor could speak in one
+	// turn and decline in another. Answering only when every orientation agrees keeps the result
+	// from depending on which way round the file happened to be saved.
+	if (std::ranges::any_of(result, [](const uint64_t h) { return !phash_is_usable(h); }))
+	{
+		result.fill(0);
+	}
+
 	return result;
 }
+
+static constexpr uint32_t FNV_PRIME_32 = 16777619u;
+static constexpr uint32_t OFFSET_BASIS_32 = 2166136261u;
 
 uint32_t crypto::fnv1a_i(const std::string_view sv)
 {

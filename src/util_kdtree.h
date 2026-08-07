@@ -16,6 +16,8 @@ struct kd_coordinates_t
 	float x, y;
 	uint32_t offset;
 	uint32_t country;
+	uint32_t id;
+	float population;
 };
 
 class kd_tree
@@ -42,10 +44,10 @@ class kd_tree
 	public:
 		struct traversal_state final : no_copy
 		{
-			kd_coordinates_t p, dir;
-			kd_coordinates_t closest;
-			float closest_d, closest_d2;
-			size_t k;
+			kd_coordinates_t p{};
+			kd_coordinates_t closest{};
+			float closest_d = 0.0f;
+			float closest_d2 = 0.0f;
 		};
 
 		static constexpr int MAX_PTS_PER_NODE = 16;
@@ -151,6 +153,13 @@ class kd_tree
 				}
 			}
 
+			// A split that leaves one side empty would recurse forever on the same range; float
+			// rounding of the midpoint makes that reachable when the coordinates are near-identical.
+			if (left == offset || left == offset + n)
+			{
+				left = offset + n / 2;
+			}
+
 			child1 = std::make_unique<node_t>(data, offset, left - offset);
 			child2 = std::make_unique<node_t>(data, left, n - (left - offset));
 		}
@@ -193,6 +202,40 @@ class kd_tree
 					child1->find_closest_to_pt(data, ti);
 			}
 		}
+
+		// Collect every point inside the axis-aligned rectangle [xmin,xmax]x[ymin,ymax].
+		// Internal nodes are pruned via their bounding circle (centre x,y radius r,
+		// which encloses all descendant points).
+		void find_in_bounds(const std::vector<kd_coordinates_t>& data, const float xmin, const float ymin,
+		                    const float xmax, const float ymax, std::vector<kd_coordinates_t>& out) const
+		{
+			if (_num_points)
+			{
+				for (auto i = 0; i < _num_points; i++)
+				{
+					const auto& c = data[_offset + i];
+
+					if (c.x >= xmin && c.x <= xmax && c.y >= ymin && c.y <= ymax)
+					{
+						out.push_back(c);
+					}
+				}
+
+				return;
+			}
+
+			// Closest point of the query rect to this node's centre.
+			const auto nx = std::clamp(x, xmin, xmax);
+			const auto ny = std::clamp(y, ymin, ymax);
+
+			if (dist(x, y, nx, ny) > fast_sqr(r))
+			{
+				return; // bounding circle does not reach the rect
+			}
+
+			if (child1) child1->find_in_bounds(data, xmin, ymin, xmax, ymax, out);
+			if (child2) child2->find_in_bounds(data, xmin, ymin, xmax, ymax, out);
+		}
 	};
 
 	std::unique_ptr<node_t> root;
@@ -217,8 +260,6 @@ public:
 			node_t::traversal_state ti;
 
 			ti.p = p;
-			ti.closest.x = 0;
-			ti.closest.y = 0;
 			ti.closest_d2 = fast_sqr(root->r);
 			ti.closest_d = sqrt(ti.closest_d2);
 
@@ -228,5 +269,15 @@ public:
 		}
 
 		return {};
+	}
+
+	// Append every point within the axis-aligned bounds to `out`.
+	void find_in_bounds(const std::vector<kd_coordinates_t>& data, const float xmin, const float ymin,
+	                    const float xmax, const float ymax, std::vector<kd_coordinates_t>& out) const
+	{
+		if (root)
+		{
+			root->find_in_bounds(data, xmin, ymin, xmax, ymax, out);
+		}
 	}
 };

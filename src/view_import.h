@@ -20,12 +20,18 @@ class import_view final :
 {
 	bool _select_other_folder = false;
 	std::vector<import_source> _sources;
+	std::string _title;
 	std::string _status;
+	import_analysis_result _analysis;
+	import_options _analysis_options;
+	bool _analysis_valid = false;
+
+	void invalidate_analysis();
 
 public:
 	import_view(view_state& state, view_host_ptr host) : list_view(state, std::move(host))
 	{
-		col_count = 3;
+		col_count = 4;
 	}
 
 	std::array<text_t, max_col_count> col_titles() override
@@ -34,8 +40,8 @@ public:
 		{
 			tt.action,
 			tt.source,
+			{},
 			tt.destination,
-			{}
 		};
 	};
 
@@ -46,7 +52,15 @@ public:
 	void refresh() override;
 	void reload() override;
 
-	bool can_run() const { return !_rows.empty(); }
+	// Analyze needs a source to read and a destination to plan into. Without both it can only
+	// repeat the failure the dimmed button already states.
+	bool can_analyze() const;
+
+	bool can_run() const
+	{
+		return _analysis_valid && count_imports(_analysis) > 0 &&
+			!(_analysis_options.collision == collision_policy::block_run && count_import_collisions(_analysis) > 0);
+	}
 
 	std::string_view status() override
 	{
@@ -58,19 +72,26 @@ public:
 		_rows.clear();
 		_sources.clear();
 		_status.clear();
+		_analysis.clear();
+		_analysis_valid = false;
 	}
 
 	view_controls_host_ptr controls(const ui::control_frame_ptr& owner);
+	void populate_controls(const view_controls_host_ptr& host, const ui::control_frame_ptr& frame);
+
+	std::string_view operation_name() const override { return tt.command_import; }
 
 	void exit() override
 	{
+		if (!confirm_exit_while_processing(operation_name())) return;
 		_state.view_mode(view_type::items);
 	}
 
 	std::string_view title() override
 	{
-		return s_app_name;
+		_title = std::format("{}: {}", s_app_name, tt.command_import);
+		return _title;
 	}
 
-	void update_rows(const import_analysis_result& analysis_result);
+	void update_rows(const import_analysis_result& analysis_result, const import_options& options);
 };

@@ -12,10 +12,16 @@
 #pragma once
 #include "model_property.h"
 
+namespace platform
+{
+	class thread_event;
+}
+
 struct AVChannelLayout;
 using channel_layout_ptr = std::shared_ptr<AVChannelLayout>;
 
 channel_layout_ptr av_get_def_channel_layout(int num_channels);
+channel_layout_ptr av_get_channel_layout(uint64_t mask, int fallback_channels);
 
 struct audio_info_t
 {
@@ -41,6 +47,7 @@ class audio_buffer final : df::no_copy
 
 	uint8_t* data = nullptr;
 	uint32_t size = 0;
+	uint32_t start_pos = 0;
 	uint32_t end_pos = 0;
 
 	double time = 0.0;
@@ -56,6 +63,7 @@ public:
 		size = 4 * format.bytes_per_second();
 		data = static_cast<uint8_t*>(_aligned_realloc(
 			data, static_cast<size_t>(size) + static_cast<size_t>(data_padding), data_alignment));
+		start_pos = 0;
 		end_pos = 0;
 	}
 
@@ -66,22 +74,17 @@ public:
 
 	bool is_empty() const
 	{
-		return end_pos == 0;
+		return start_pos == end_pos;
 	}
-
-	/*bool has_one_second() const
-	{
-		return end_pos >= bytes_per_second;
-	}*/
 
 	bool should_fill() const
 	{
-		return end_pos <= format.bytes_per_second();
+		return used_bytes() <= format.bytes_per_second();
 	}
 
 	uint32_t used_bytes() const
 	{
-		return end_pos;
+		return end_pos - start_pos;
 	}
 
 	uint32_t avail_bytes() const
@@ -106,32 +109,34 @@ public:
 
 	void clear()
 	{
+		start_pos = 0;
 		end_pos = 0;
 		time = 0.0;
-		memset(data, 0, size);
+		if (data) memset(data, 0, size);
 	}
 
 	void remove(const uint32_t bytes_to_remove)
 	{
-		df::assert_true(bytes_to_remove <= end_pos);
-
-		if (bytes_to_remove < end_pos)
-		{
-			memmove_s(data, size, data + bytes_to_remove, end_pos - bytes_to_remove);
-		}
-
-		end_pos -= bytes_to_remove;
+		df::assert_true(bytes_to_remove <= used_bytes());
+		start_pos += bytes_to_remove;
 		const auto bps = format.bytes_per_second();
 		if (bps > 0) time += bytes_to_remove / static_cast<double>(bps);
+
+		if (start_pos == end_pos)
+		{
+			start_pos = 0;
+			end_pos = 0;
+		}
 	}
 
 	void append(const uint8_t* data_in, const uint32_t bytes_in, const double time_in, const int generation_in)
 	{
 		if (generation_in != gen)
 		{
-			if (bytes_in <= avail_bytes())
+			if (bytes_in <= size)
 			{
-				memcpy_s(data + end_pos, size - end_pos, data_in, bytes_in);
+				memcpy_s(data, size, data_in, bytes_in);
+				start_pos = 0;
 				end_pos = bytes_in;
 				time = time_in;
 				gen = generation_in;
@@ -139,13 +144,14 @@ public:
 		}
 		else
 		{
-			const auto original_end_pos = end_pos;
+			const auto original_used_bytes = used_bytes();
 
-			/*if (bytes_in > avail_bytes())
+			if (bytes_in > avail_bytes() && start_pos > 0)
 			{
-				data = static_cast<uint8_t*>(_aligned_realloc(data, size * 2 + data_padding, data_alignment));
-				size = size * 2;
-			}*/
+				memmove_s(data, size, data + start_pos, original_used_bytes);
+				start_pos = 0;
+				end_pos = original_used_bytes;
+			}
 
 			if (bytes_in <= avail_bytes())
 			{
@@ -153,17 +159,27 @@ public:
 				end_pos += bytes_in;
 
 				const auto bps = format.bytes_per_second();
-				time = bps > 0 ? time_in - original_end_pos / static_cast<double>(bps) : time_in;
+				time = bps > 0 ? time_in - original_used_bytes / static_cast<double>(bps) : time_in;
 			}
 		}
 	}
 
 	void append_blank_second()
 	{
-		if (format.bytes_per_second() <= avail_bytes())
+		const auto blank_bytes = format.bytes_per_second();
+
+		if (blank_bytes > avail_bytes() && start_pos > 0)
 		{
-			memset(data + end_pos, 0, format.bytes_per_second());
-			end_pos += format.bytes_per_second();
+			const auto bytes = used_bytes();
+			memmove_s(data, size, data + start_pos, bytes);
+			start_pos = 0;
+			end_pos = bytes;
+		}
+
+		if (blank_bytes <= avail_bytes())
+		{
+			memset(data + end_pos, 0, blank_bytes);
+			end_pos += blank_bytes;
 		}
 	}
 
@@ -172,30 +188,72 @@ public:
 	// following silence (or stop) begins.
 	void apply_fade_out(const double seconds)
 	{
+		const auto frames = ramp_frames(seconds);
+
+		if (frames > 0)
+		{
+			apply_ramp(data + end_pos - frames * frame_bytes(), frames, 1.0f, 0.0f);
+		}
+	}
+
+	// The same ramp at the head of the buffer: a device started on a non-zero sample
+	// steps the output away from silence, which the speaker reproduces as a pop.
+	void apply_fade_in(const double seconds)
+	{
+		const auto frames = ramp_frames(seconds);
+
+		if (frames > 0)
+		{
+			apply_ramp(data + start_pos, frames, 0.0f, 1.0f);
+		}
+	}
+
+	double end_time() const
+	{
 		const auto bps = format.bytes_per_second();
+		return bps > 0 ? time + used_bytes() / static_cast<double>(bps) : time;
+	}
+
+	double start_time() const
+	{
+		return time;
+	}
+
+	double seconds() const
+	{
+		const auto bps = format.bytes_per_second();
+		return bps > 0 ? static_cast<double>(used_bytes()) / bps : 0.0;
+	}
+
+private:
+	uint32_t frame_bytes() const
+	{
+		return format.channel_count() * format.bytes_per_sample();
+	}
+
+	// Whole frames a `seconds` ramp covers, limited to what is buffered.
+	uint32_t ramp_frames(const double seconds) const
+	{
+		const auto bps = format.bytes_per_second();
+		const auto fb = frame_bytes();
+
+		if (bps == 0 || fb == 0 || seconds <= 0.0 || is_empty())
+		{
+			return 0;
+		}
+
+		return std::min(used_bytes(), static_cast<uint32_t>(seconds * bps)) / fb;
+	}
+
+	void apply_ramp(uint8_t* p, const uint32_t frames, const float from, const float to)
+	{
 		const auto channels = format.channel_count();
-		const auto sample_size = format.bytes_per_sample();
+		const auto fb = frame_bytes();
+		const auto step = (to - from) / static_cast<float>(frames);
 
-		if (bps == 0 || channels == 0 || sample_size == 0 || end_pos == 0)
+		for (uint32_t f = 0; f < frames; ++f)
 		{
-			return;
-		}
-
-		const auto frame_bytes = channels * sample_size;
-		auto fade_bytes = std::min(end_pos, static_cast<uint32_t>(seconds * bps));
-		fade_bytes -= fade_bytes % frame_bytes;
-
-		if (fade_bytes == 0)
-		{
-			return;
-		}
-
-		const auto fade_frames = fade_bytes / frame_bytes;
-		auto* p = data + (end_pos - fade_bytes);
-
-		for (uint32_t f = 0; f < fade_frames; ++f)
-		{
-			const auto gain = 1.0f - static_cast<float>(f + 1) / static_cast<float>(fade_frames);
+			const auto gain = from + step * static_cast<float>(f + 1);
 
 			for (uint32_t ch = 0; ch < channels; ++ch)
 			{
@@ -215,31 +273,14 @@ public:
 				}
 			}
 
-			p += frame_bytes;
+			p += fb;
 		}
 	}
-
-	double end_time() const
-	{
-		const auto bps = format.bytes_per_second();
-		return bps > 0 ? time + used_bytes() / static_cast<double>(bps) : time;
-	}
-
-	double start_time() const
-	{
-		return time;
-	}
-
-	double seconds() const
-	{
-		const auto bps = format.bytes_per_second();
-		return bps > 0 ? static_cast<double>(end_pos) / bps : 0.0;
-	}
-
 
 	friend class wasapi_sound;
 	friend class av_visualizer;
 	friend class audio_resampler;
+	friend struct audio_ramp_probe;
 };
 
 
@@ -255,6 +296,7 @@ public:
 	virtual void reset() = 0;
 	virtual void start() = 0;
 	virtual void stop() = 0;
+	virtual void wait_for_buffer(const platform::thread_event& wake_event, uint32_t timeout_ms) = 0;
 	virtual void write(audio_buffer& audio_buffer) = 0;
 	// Queues a short run of silence so an underrun plays silence instead of looping
 	// the last buffer (used to keep the tail clean at end of stream).

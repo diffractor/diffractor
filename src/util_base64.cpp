@@ -12,7 +12,7 @@
 #include "pch.h"
 #include "util_base64.h"
 
-static const auto base64_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+static constexpr auto base64_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 static constexpr uint8_t base64_char_index[256] =
 {

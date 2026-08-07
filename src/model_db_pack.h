@@ -15,7 +15,7 @@
 class metadata_packer
 {
 public:
-	std::vector<uint8_t> _data;
+	df::blob _data;
 
 	void reset_to_header()
 	{
@@ -78,14 +78,20 @@ public:
 
 		const auto existing_len = _data.size();
 		_data.resize(existing_len + val_len);
-		*std::bit_cast<T*>(_data.data() + existing_len) = v;
+		std::memcpy(_data.data() + existing_len, &v, val_len);
 	}
 
 	void write(const uint16_t id, const str::cached v)
 	{
 		const auto val_len = v.size();
 
-		if (val_len > 0 && val_len < df::one_meg)
+		if (val_len >= df::one_meg)
+		{
+			df::log(__FUNCTION__, std::format("metadata value for property {} dropped: {} bytes", id, val_len));
+			return;
+		}
+
+		if (val_len > 0)
 		{
 			write_prop_id(id);
 			write_len(val_len);
@@ -121,9 +127,18 @@ public:
 		return _pos >= _data.size ? 0 : _data.size - _pos;
 	}
 
+	// True once no further (id, length, value) record can be read. Unpacking must terminate on
+	// this rather than on read_type() returning null, so that a property this build does not
+	// recognise is skipped by its length instead of truncating everything that follows it.
+	bool at_end() const
+	{
+		return _version != 1 || remaining() < 2;
+	}
+
+	// The property for the next record, or prop::null when this build does not know the id.
 	prop::key_ref read_type()
 	{
-		if (_version != 1 || remaining() < 2)
+		if (at_end())
 		{
 			return prop::null;
 		}
@@ -164,10 +179,16 @@ public:
 
 		if (sizeof(v) == ser_len && remaining() >= ser_len)
 		{
-			v = *std::bit_cast<const T*>(_data.data + _pos);
+			std::memcpy(&v, _data.data + _pos, ser_len);
 		}
 
 		_pos += ser_len;
+	}
+
+	// Consume the value of a record this build does not understand.
+	void skip_val()
+	{
+		_pos += read_len();
 	}
 
 	void read_val(str::cached& v)

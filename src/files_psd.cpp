@@ -60,20 +60,29 @@ public:
 
 	uint64_t remaining() const
 	{
+		if (_pos > _len) throw app_exception(__FUNCTION__);
 		return _len - _pos;
+	}
+
+	// Lengths come from untrusted file fields; read_stream takes a size_t.
+	static size_t to_len(const uint64_t size)
+	{
+		const auto result = static_cast<size_t>(size);
+		if (result != size) throw app_exception(__FUNCTION__);
+		return result;
 	}
 
 	void read(uint8_t* data, const uint64_t size)
 	{
 		if (remaining() < size) throw app_exception(__FUNCTION__);
-		_s.read(_pos, data, size);
+		_s.read(_pos, data, to_len(size));
 		_pos += size;
 	}
 
 	df::blob read_blob(const uint64_t size)
 	{
 		if (remaining() < size) throw app_exception(__FUNCTION__);
-		auto result = _s.read(_pos, size);
+		auto result = _s.read(_pos, to_len(size));
 		_pos += size;
 		return result;
 	}
@@ -86,6 +95,7 @@ public:
 
 	void pos(const uint64_t p)
 	{
+		if (p > _len) throw app_exception(__FUNCTION__);
 		_pos = p;
 	}
 
@@ -121,110 +131,57 @@ public:
 };
 
 
-static bool decode_rle_pane(const ui::surface_ptr& surface, msb_stream& stream, const int channel_shift)
+// PackBits. Fills exactly len bytes; the stream must hold that run and nothing else.
+static bool decode_rle_bytes(uint8_t* dst, const int len, msb_stream& stream)
 {
-	const int cx = surface->width();
-	const int cy = surface->height();
-	const auto* const pixels = surface->pixels();
-	const auto stride = surface->stride();
-
-	int number_pixels = cy * cx;
-	uint32_t pixel;
-	bool bReading = false;
-	int count = 0;
-	int x = 0, y = 0;
-
-	if (cy == 0 || cx == 0) return false;
-
-	auto* line = std::bit_cast<uint32_t*>(pixels + y * stride);
-
-	while (number_pixels > 0 && y < cy)
+	int x = 0;
+	while (x < len && stream.remaining() > 0)
 	{
-		if (count <= 0)
+		const auto control = static_cast<int8_t>(stream.read_u8());
+		if (control >= 0)
 		{
-			count = stream.read_u8();
-
-			if (count >= 128)
-				count -= 256;
-
-			if (count == -128)
+			const auto count = static_cast<int>(control) + 1;
+			if (count > len - x || static_cast<uint64_t>(count) > stream.remaining()) return false;
+			for (auto i = 0; i < count; ++i)
 			{
-				continue;
-			}
-			if (count < 0)
-			{
-				pixel = stream.read_u8();
-				count = -count + 1;
-				bReading = false;
-			}
-			else
-			{
-				count++;
-				bReading = true;
+				dst[x++] = stream.read_u8();
 			}
 		}
-
-		if (bReading)
+		else if (control != -128)
 		{
-			pixel = stream.read_u8();
-		}
-
-		if (x < cx && y < cy)
-		{
-			line[x] |= (0xFF & pixel) << channel_shift;
-		}
-
-		x++;
-		number_pixels--;
-		count--;
-
-		if (x >= cx)
-		{
-			y++;
-			x = 0;
-			if (y < cy)
-			{
-				line = std::bit_cast<uint32_t*>(pixels + y * stride);
-			}
+			const auto count = 1 - static_cast<int>(control);
+			if (count > len - x || stream.remaining() < 1) return false;
+			const auto pixel = stream.read_u8();
+			for (auto i = 0; i < count; ++i) dst[x++] = pixel;
 		}
 	}
 
-	// Guarantee the correct number of pixel packets.
-	return number_pixels == 0;
+	return x == len && stream.remaining() == 0;
 }
 
-static bool decode_uncompressed_plane(const ui::surface_ptr& surface, msb_stream& stream, const int channel_shift)
+// Merges one decoded plane into a surface row. Bitmap mode packs eight pixels per byte,
+// most-significant bit first, and a set bit means black; every other mode is a byte per pixel.
+static void scatter_plane(uint8_t* const dst_line, const uint8_t* const src, const int cx, const bool is_bitmap,
+                          const int channel_shift)
 {
-	const int cx = surface->width();
-	const int cy = surface->height();
-	const auto* const pixels = surface->pixels();
-	const auto stride = surface->stride();
-	const auto line_buffer = df::unique_alloc<uint8_t>(cx);
-	auto* const line_data = line_buffer.get();
+	auto* const line = std::bit_cast<uint32_t*>(dst_line);
 
-	// Read uncompressed pixel data as separate planes.
-	for (int y = 0; y < cy; y++)
+	if (is_bitmap)
 	{
-		stream.read(line_data, cx);
-
-		auto* const dst_line = std::bit_cast<uint32_t*>(pixels + y * stride);
-
 		for (int x = 0; x < cx; x++)
 		{
-			dst_line[x] |= (0xFF & static_cast<uint32_t>(line_data[x])) << channel_shift;
+			const auto is_black = (src[x / 8] >> (7 - (x % 8))) & 1;
+			line[x] |= (is_black ? 0u : 0xFFu) << channel_shift;
 		}
 	}
-
-	return true;
+	else
+	{
+		for (int x = 0; x < cx; x++)
+		{
+			line[x] |= static_cast<uint32_t>(src[x]) << channel_shift;
+		}
+	}
 }
-
-
-using Quantum = int;
-using IndexPacket = int;
-using PixelPacket = uint32_t;
-
-constexpr int MaxTextExtent = 300;
-constexpr int MaxRGB = 255;
 
 
 static void lab_to_rgb(const int L, const int a, const int b, int& R, int& G, int& B)
@@ -274,11 +231,13 @@ static bool lab_to_rgb(const ui::surface_ptr& imageIn)
 
 	const auto cy = imageIn->height();
 	const auto cx = imageIn->width();
-	auto* const pixels = std::bit_cast<uint32_t*>(imageIn->pixels());
+	const auto stride = imageIn->stride();
+	auto* const pixels = imageIn->pixels();
 
 	for (auto y = 0u; y < cy; y++)
 	{
-		auto* const line = pixels + y * cx;
+		// stride is padded, so it is not safe to index the surface as width-sized rows.
+		auto* const line = std::bit_cast<uint32_t*>(pixels + static_cast<size_t>(y) * stride);
 
 		for (auto x = 0u; x < cx; x++)
 		{
@@ -301,27 +260,29 @@ static bool cmy_to_rgb(const ui::surface_ptr& imageIn)
 {
 	const auto cy = imageIn->height();
 	const auto cx = imageIn->width();
-	auto* const pixels = std::bit_cast<uint32_t*>(imageIn->pixels());
+	const auto stride = imageIn->stride();
+	auto* const pixels = imageIn->pixels();
 
 	for (auto y = 0u; y < cy; y++)
 	{
-		auto* const line = pixels + y * cx;
+		auto* const line = std::bit_cast<uint32_t*>(pixels + static_cast<size_t>(y) * stride);
 
 		for (auto x = 0u; x < cx; x++)
 		{
 			const auto c = line[x];
 
-			uint32_t bb = ui::get_r(c);
-			uint32_t gg = ui::get_g(c);
-			uint32_t rr = ui::get_b(c);
-			uint32_t aa = ui::get_a(c);
+			// Signed arithmetic is required: ink + black routinely exceeds 255 and the
+			// unsigned form wrapped to a huge positive value, so byte_clamp saturated
+			// dark pixels to white instead of black.
+			const int bb = ui::get_r(c);
+			const int gg = ui::get_g(c);
+			const int rr = ui::get_b(c);
+			const int aa = ui::get_a(c);
 
-			rr = df::byte_clamp(255 - (rr + aa));
-			gg = df::byte_clamp(255 - (gg + aa));
-			bb = df::byte_clamp(255 - (bb + aa));
-			aa = 255;
-
-			line[x] = ui::rgba(bb, gg, rr, aa);
+			line[x] = ui::rgba(df::byte_clamp(255 - (bb + aa)),
+			                   df::byte_clamp(255 - (gg + aa)),
+			                   df::byte_clamp(255 - (rr + aa)),
+			                   255);
 		}
 	}
 
@@ -329,29 +290,20 @@ static bool cmy_to_rgb(const ui::surface_ptr& imageIn)
 }
 
 
-struct ChannelInfo
-{
-	short int type;
-	unsigned long size;
-};
+// Header sanity limits, shared by the scanner and the loader so an image that
+// scans successfully is one we can actually decode.
+constexpr uint32_t max_psd_dimension = 30000;
+constexpr uint64_t max_psd_pixels = 256ull * 1024ull * 1024ull;
 
-struct RectangleInfo
+static bool is_valid_psd_header(const uint32_t columns, const uint32_t rows, const uint16_t channels,
+                                const uint16_t depth, const uint16_t mode)
 {
-	uint32_t width, height;
-	int x, y;
-};
+	// Bitmap mode is the only depth besides 8 we decode: a single 1-bit-per-pixel plane.
+	const auto depth_ok = depth == 8 || (depth == 1 && mode == BitmapMode && channels == 1);
 
-struct LayerInfo
-{
-	RectangleInfo page, mask;
-	uint16_t channels;
-	ChannelInfo channel_info[24];
-	uint8_t blendkey[4];
-	Quantum opacity;
-	uint8_t clipping, visible, flags;
-	uint32_t offset_x, offset_y;
-	uint8_t name[256];
-};
+	return columns != 0 && rows != 0 && columns <= max_psd_dimension && rows <= max_psd_dimension &&
+		static_cast<uint64_t>(columns) * rows <= max_psd_pixels && channels != 0 && channels <= 56 && depth_ok;
+}
 
 
 file_scan_result scan_psd(read_stream& s)
@@ -362,100 +314,124 @@ file_scan_result scan_psd(read_stream& s)
 	const auto signature = stream.read_u32();
 	const auto version = stream.read_u16();
 
-	if (signature == 0x38425053 && version == 1)
+	if (signature != 0x38425053 || version != 1)
 	{
-		stream.skip(6); // reserved
+		return result;
+	}
 
-		const auto channels = stream.read_u16();
-		const auto rows = stream.read_u32();
-		const auto columns = stream.read_u32();
-		const auto depth = stream.read_u16();
-		const auto mode = stream.read_u16();
+	stream.skip(6); // reserved
 
-		switch (mode)
+	const auto channels = stream.read_u16();
+	const auto rows = stream.read_u32();
+	const auto columns = stream.read_u32();
+	const auto depth = stream.read_u16();
+	const auto mode = stream.read_u16();
+
+	if (!is_valid_psd_header(columns, rows, channels, depth, mode))
+	{
+		return result;
+	}
+
+	switch (mode)
+	{
+	case BitmapMode:
+		result.pixel_format = "mono"_c;
+		break;
+	case RGBMode:
+		result.pixel_format = channels >= 4 ? "argb32"_c : "rgb32"_c;
+		break;
+	case LabMode:
+		result.pixel_format = "lab"_c;
+		break;
+	case CMYKMode:
+		result.pixel_format = "cmyk"_c;
+		break;
+	case GrayscaleMode:
+		result.pixel_format = "gray8"_c;
+		break;
+	case IndexedMode:
+		result.pixel_format = "pal8"_c;
+		break;
+	case MultichannelMode:
+		result.pixel_format = "multichannel"_c;
+		break;
+	case DuotoneMode:
+		result.pixel_format = "duotone"_c;
+		break;
+	}
+
+	result.width = columns;
+	result.height = rows;
+
+	// Read PSD raster colormap only present for indexed and duotone images.
+	const auto colormap_len = stream.read_u32();
+
+	if (colormap_len != 0)
+	{
+		stream.skip(colormap_len);
+	}
+
+	// Resources
+	const auto resources_len = stream.read_u32();
+
+	// A truncated file must not throw away the dimensions already parsed, so stop before
+	// walking a resource section that runs past the end.
+	if (resources_len > stream.remaining())
+	{
+		result.success = true;
+		return result;
+	}
+
+	const auto after_resource_pos = stream.pos() + resources_len;
+
+	if (resources_len > 6)
+	{
+		auto marker = stream.read_u32();
+
+		while (marker == 0x3842494D) // 8BIM
 		{
-		case BitmapMode:
-			result.pixel_format = "mono"_c;
-			break;
-		case RGBMode:
-			result.pixel_format = channels >= 4 ? "argb32"_c : "rgb32"_c;
-			break;
-		case LabMode:
-			result.pixel_format = "lab"_c;
-			break;
-		case CMYKMode:
-			result.pixel_format = "cmyk"_c;
-			break;
-		case GrayscaleMode:
-			result.pixel_format = "gray8"_c;
-			break;
-		case IndexedMode:
-			result.pixel_format = "pal8"_c;
-			break;
-		case MultichannelMode:
-			result.pixel_format = "multichannel"_c;
-			break;
-		case DuotoneMode:
-			result.pixel_format = "duotone"_c;
-			break;
-		}
+			const auto type = stream.read_u16();
 
-		result.width = columns;
-		result.height = rows;
+			// The resource name is a Pascal string padded so the length byte plus the name
+			// occupy an even number of bytes. Photoshop leaves it empty for the standard
+			// resources, but a named one desynchronises a fixed two-byte skip and the rest
+			// of the section - including IPTC and XMP - is then read as garbage.
+			const auto name_len = stream.read_u8();
+			stream.skip((name_len & 1) ? name_len : name_len + 1u);
 
-		// Read PSD raster colormap only present for indexed and duotone images.
-		const auto colormap_len = stream.read_u32();
+			const uint64_t len = stream.read_u32();
+			const auto padded_len = len + (len & 1); // resource data is padded to even
 
-		if (colormap_len != 0)
-		{
-			stream.skip(colormap_len);
-		}
+			if (stream.pos() + padded_len > after_resource_pos)
+				break;
 
-		// Resources
-		const auto resources_len = stream.read_u32();
-		const auto after_resource_pos = stream.pos() + resources_len;
-
-		if (resources_len > 6)
-		{
-			auto marker = stream.read_u32();
-
-			while (marker == 0x3842494D) // 8BIM
+			if (type == 0x0404) // IPTC
 			{
-				const auto type = stream.read_u16();
-				stream.read_u16(); // pad - unused
-				auto len = stream.read_u32();
-
-				if (len & 0x01) len += 1; // round up to 2 
-
-				if (stream.pos() + len >= after_resource_pos)
-					break;
-
-				if (type == 0x0404) // IPTC
-				{
-					result.metadata.iptc = stream.read_blob(len);
-				}
-				else if (type == 0x0424) // XMP
-				{
-					result.metadata.xmp = stream.read_blob(len);
-				}
-				else if (type == 0x0422) // EXIF
-				{
-					result.metadata.exif = stream.read_blob(len);
-				}
-				else if (type == 0x040f) // icc
-				{
-					result.metadata.icc = stream.read_blob(len);
-				}
-				else
-				{
-					stream.skip(len);
-				}
-
-				if (stream.pos() >= after_resource_pos)
-					break;
-
-				marker = stream.read_u32();
+				result.metadata.iptc = stream.read_blob(len);
 			}
+			else if (type == 0x0424) // XMP
+			{
+				result.metadata.xmp = stream.read_blob(len);
+			}
+			else if (type == 0x0422) // EXIF
+			{
+				result.metadata.exif = stream.read_blob(len);
+			}
+			else if (type == 0x040f) // icc
+			{
+				result.metadata.icc = stream.read_blob(len);
+			}
+			else
+			{
+				stream.skip(len);
+			}
+
+			stream.skip(padded_len - len);
+
+			if (stream.pos() + 4u > after_resource_pos)
+				break;
+
+			marker = stream.read_u32();
 		}
 	}
 
@@ -463,9 +439,8 @@ file_scan_result scan_psd(read_stream& s)
 	return result;
 }
 
-ui::surface_ptr load_psd(read_stream& s)
+ui::surface_ptr load_psd(read_stream& s, load_diagnostic* const diagnostic)
 {
-	ui::surface_ptr result;
 	msb_stream stream(s);
 
 	const auto signature = stream.read_u32();
@@ -484,28 +459,32 @@ ui::surface_ptr load_psd(read_stream& s)
 	const auto depth = stream.read_u16();
 	const auto mode = stream.read_u16();
 
+	if (!is_valid_psd_header(columns, rows, channels, depth, mode))
+	{
+		return {};
+	}
+
 	const int cx = columns;
 	const int cy = rows;
-	bool has_alpha = false;
-	bool is_single_channel = false;
+
+	if (reject_over_budget_source(diagnostic, {cx, cy}, "PSD"))
+	{
+		return {};
+	}
+
+	const bool is_bitmap = mode == BitmapMode;
+	bool is_single_channel = is_bitmap;
 
 	// cannot yet handle all modes
 	switch (mode)
 	{
 	case BitmapMode:
-		break;
 	case RGBMode:
 	case LabMode:
-		has_alpha = channels >= 4;
-		break;
-
 	case CMYKMode:
-		has_alpha = channels >= 5;
 		break;
 
 	case GrayscaleMode:
-		is_single_channel = true;
-		break;
 	case IndexedMode:
 	case MultichannelMode:
 	case DuotoneMode:
@@ -516,7 +495,7 @@ ui::surface_ptr load_psd(read_stream& s)
 	// Read PSD raster colormap only present for indexed and duotone images.
 	auto colormap_len = stream.read_u32();
 	unsigned num_colors = 0;
-	uint32_t palette[256];
+	uint32_t palette[256] = {};
 
 	if (colormap_len != 0)
 	{
@@ -526,7 +505,7 @@ ui::surface_ptr load_psd(read_stream& s)
 		{
 			// Duotone image data; the format of this data is undocumented.			
 		}
-		else
+		else if (mode == IndexedMode && colormap_len == 768)
 		{
 			// Read PSD raster colormap.
 			num_colors = colormap_len / 3;
@@ -545,14 +524,15 @@ ui::surface_ptr load_psd(read_stream& s)
 			}
 		}
 	}
+	if (mode == IndexedMode && num_colors != 256) return {};
 
 	// Resources
 	const auto resources_len = stream.read_u32();
+	if (resources_len > stream.remaining()) return {};
 	const auto after_resource_pos = stream.pos() + resources_len;
 	stream.pos(after_resource_pos);
 
-	// Layer and mask block.		
-	constexpr auto number_layers = 0;
+	// Layer and mask block.
 	colormap_len = stream.read_u32();
 
 	if (colormap_len == 8)
@@ -565,61 +545,65 @@ ui::surface_ptr load_psd(read_stream& s)
 		stream.skip(colormap_len);
 	}
 
-	if constexpr (number_layers == 0)
+	ui::surface_ptr result = std::make_shared<ui::surface>();
+	if (!result->alloc(cx, cy, ui::texture_format::RGB)) return {};
+	result->make_blank();
+
+	// Read the precombined image, present for PSD < 4 compatibility
+	const auto compression = stream.read_u16();
+	if (compression > 1) return {};
+
+	// Grayscale, duotone, indexed and bitmap images are post-processed from the low byte,
+	// so their single plane must be decoded there rather than into the red lane.
+	const auto plane_shift = [is_single_channel](const int channel)
 	{
-		result = std::make_shared<ui::surface>();
-		result->alloc(cx, cy, ui::texture_format::RGB);
+		return is_single_channel ? 0 : channel_to_channel_shift(channel);
+	};
 
-		const auto* const pixels = result->pixels();
-		const auto stride = result->stride();
+	// A bitmap-mode row is packed eight pixels to the byte; every other mode is one byte each.
+	const int plane_bytes = is_bitmap ? (cx + 7) / 8 : cx;
+	const auto plane_buffer = df::unique_alloc<uint8_t>(plane_bytes);
+	auto* const plane_data = plane_buffer.get();
 
-		// Initialize pixels to zero
-		for (auto y = 0; y < cy; y++)
+	if (compression == 1)
+	{
+		const auto scanline_count = static_cast<size_t>(cy) * channels;
+		std::vector<uint16_t> scanline_lengths(scanline_count);
+		for (auto& scanline_length : scanline_lengths)
 		{
-			auto* const line = std::bit_cast<uint32_t*>(pixels + y * stride);
-
-			for (auto x = 0; x < cx; x++)
-			{
-				line[x] = 0;
-			}
+			scanline_length = stream.read_u16();
 		}
 
-		// Read the precombined image, present for PSD < 4 compatibility
-		const auto compression = stream.read_u16();
-
-		if (compression == 1)
+		const auto decoded_channels = is_single_channel ? 1u : channels;
+		for (auto channel = 0u; channel < decoded_channels; ++channel)
 		{
-			// Read Packbit encoded pixel data as separate planes.
-			for (auto i = 0; i < static_cast<long>(cy * channels); i++)
+			for (auto y = 0; y < cy; ++y)
 			{
-				stream.read_u16();
-			}
-
-			if (is_single_channel)
-			{
-				decode_rle_pane(result, stream, 0);
-			}
-			else
-			{
-				for (auto i = 0; i < channels; i++)
-				{
-					decode_rle_pane(result, stream, channel_to_channel_shift(i));
-				}
+				const auto line_length = scanline_lengths[static_cast<size_t>(channel) * cy + y];
+				if (line_length > stream.remaining()) return {};
+				const auto line_data = stream.read_blob(line_length);
+				mem_read_stream line_source(line_data);
+				msb_stream line_stream(line_source);
+				if (!decode_rle_bytes(plane_data, plane_bytes, line_stream)) return {};
+				scatter_plane(result->pixels_line(y), plane_data, cx, is_bitmap, plane_shift(channel));
 			}
 		}
-		else
+		for (auto channel = decoded_channels; channel < channels; ++channel)
 		{
-			// Read uncompressed pixel data as separate planes.
-			if (is_single_channel)
+			for (auto y = 0; y < cy; ++y) stream.skip(scanline_lengths[static_cast<size_t>(channel) * cy + y]);
+		}
+	}
+	else
+	{
+		// Read uncompressed pixel data as separate planes.
+		const auto decoded_channels = is_single_channel ? 1 : channels;
+
+		for (auto channel = 0; channel < decoded_channels; channel++)
+		{
+			for (auto y = 0; y < cy; ++y)
 			{
-				decode_uncompressed_plane(result, stream, 0);
-			}
-			else
-			{
-				for (auto i = 0; i < channels; i++)
-				{
-					decode_uncompressed_plane(result, stream, channel_to_channel_shift(i));
-				}
+				stream.read(plane_data, plane_bytes);
+				scatter_plane(result->pixels_line(y), plane_data, cx, is_bitmap, plane_shift(channel));
 			}
 		}
 	}
@@ -633,7 +617,7 @@ ui::surface_ptr load_psd(read_stream& s)
 	{
 		lab_to_rgb(result);
 	}
-	else if (mode == GrayscaleMode || mode == DuotoneMode)
+	else if (mode == GrayscaleMode || mode == DuotoneMode || mode == BitmapMode)
 	{
 		const auto* const pixels = result->pixels();
 		const auto stride = result->stride();

@@ -25,6 +25,7 @@ jobs:
     - uses: actions/checkout@v4
       with:
           submodules: recursive
+          lfs: true
           
     - name: Add MSBuild to PATH
       uses: microsoft/setup-msbuild@v3
@@ -44,9 +45,30 @@ jobs:
     - name: Run x64 tests
       if: matrix.platform == 'x64'
       working-directory: ${{ github.workspace }}\exe
-      run: .\diffractor64.exe /test
+      run: |
+        # diffractor64.exe is a GUI-subsystem app; PowerShell does not connect its
+        # stdout, so run it via cmd.exe (which does) and redirect to a log file, then
+        # print the log. cmd /c waits for completion when stdout is redirected and
+        # propagates the exit code to $LASTEXITCODE.
+        cmd /c ".\diffractor64.exe /test > test-x64.log 2>&1"
+        $code = $LASTEXITCODE
+        Get-Content test-x64.log
+        if ($code -ne 0) { exit $code }
+
+    - name: Validate translations (.po)
+      if: matrix.platform == 'x64'
+      working-directory: ${{ github.workspace }}\exe
+      run: |
+        cmd /c ".\diffractor64.exe /validate-po > validate-po.log 2>&1"
+        $code = $LASTEXITCODE
+        Get-Content validate-po.log
+        if ($code -ne 0) { exit $code }
 
     - name: Run Win32 tests
       if: matrix.platform == 'Win32'
       working-directory: ${{ github.workspace }}\exe
-      run: .\diffractor32.exe /test
+      run: |
+        cmd /c ".\diffractor32.exe /test > test-win32.log 2>&1"
+        $code = $LASTEXITCODE
+        Get-Content test-win32.log
+        if ($code -ne 0) { exit $code }

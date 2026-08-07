@@ -51,10 +51,10 @@
     <ClCompile Include="app_commands.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="av_stubs.cpp">
+    <ClCompile Include="files_heif.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="files_heif.cpp">
+    <ClCompile Include="files_jxl.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="files_png.cpp">
@@ -141,10 +141,16 @@
     <ClCompile Include="view_items.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+	<ClCompile Include="view_selector.cpp">
+	  <Filter>Source Files</Filter>
+	</ClCompile>
     <ClCompile Include="files_jpeg.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="model_locations.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="model_visits.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="crypto_md5.cpp">
@@ -154,6 +160,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="model_tags.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="model_tile_cache.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="app_settings.cpp">
@@ -183,9 +192,6 @@
     <ClCompile Include="util_strings.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="view_test.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="app_text.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -204,6 +210,9 @@
     <ClCompile Include="app_util.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="view_batch.cpp">
+      <Filter>views</Filter>
+    </ClCompile>
     <ClCompile Include="view_rename.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -216,28 +225,40 @@
     <ClCompile Include="view_sync.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="view_tags.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="test_runner.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="platform_win_settings.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="tests2.cpp">
+    <ClCompile Include="test_utils.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="tests3.cpp">
+    <ClCompile Include="test_metadata.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="tests4.cpp">
+    <ClCompile Include="test_media_edit.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="tests5.cpp">
+    <ClCompile Include="test_search.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="tests6.cpp">
+    <ClCompile Include="test_index.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="tests1.cpp">
+    <ClCompile Include="test_regressions.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="test_view.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="test_platform_win.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ui_flex.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="app.cpp">
@@ -253,6 +274,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="app_gen_docs.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app_validate_po.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="platform_win.cpp">
@@ -320,6 +344,9 @@
     <ClInclude Include="av_player.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="model_related.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="model_search.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -362,6 +389,9 @@
     <ClInclude Include="view_edit.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+	<ClInclude Include="view_selector.h">
+	  <Filter>Header Files</Filter>
+	</ClInclude>
     <ClInclude Include="metadata_exif.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -398,6 +428,9 @@
     <ClInclude Include="model_locations.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="model_visits.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="app.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -414,6 +447,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="model_tags.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="model_tile_cache.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="app_settings.h">
@@ -449,7 +485,7 @@
     <ClInclude Include="util_strings.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="view_test.h">
+    <ClInclude Include="test_runner.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ui_controllers.h">
@@ -459,6 +495,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ui.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ui_text_edit.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ui_plasma.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ui_view.h">
@@ -479,6 +521,9 @@
     <ClInclude Include="view_map.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="view_batch.h">
+      <Filter>views</Filter>
+    </ClInclude>
     <ClInclude Include="view_rename.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -489,6 +534,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="view_sync.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="view_tags.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ui_map.h">
@@ -513,31 +561,11 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <Image Include="Res\logo.png">
-      <Filter>Resource Files</Filter>
-    </Image>
-    <Image Include="Res\search.png">
-      <Filter>Resource Files</Filter>
-    </Image>
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="Res\bg.png">
-      <Filter>Resource Files</Filter>
-    </None>
-    <None Include="res\blue_circle_16.png">
-      <Filter>Resource Files</Filter>
-    </None>
-    <None Include="res\blue_circle_50.png">
-      <Filter>Resource Files</Filter>
-    </None>
     <None Include="Res\color_select.cur">
       <Filter>Resource Files</Filter>
     </None>
     <None Include="Res\create_tables.sql" />
     <None Include="Res\default.ico">
-      <Filter>Resource Files</Filter>
-    </None>
-    <None Include="Res\digits.png">
       <Filter>Resource Files</Filter>
     </None>
     <None Include="Res\folder.ico">
@@ -576,13 +604,19 @@
     <None Include="Res\tb_small.bmp">
       <Filter>Resource Files</Filter>
     </None>
-    <None Include="Res\title.png">
-      <Filter>Resource Files</Filter>
-    </None>
     <None Include="Res\world_map.jpg">
       <Filter>Resource Files</Filter>
     </None>
     <None Include="shaders\common.hlsli">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\rgb_common.hlsli">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\texture_transform.hlsli">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\yuv_common.hlsli">
       <Filter>Shaders</Filter>
     </None>
     <None Include="app_util.h">
