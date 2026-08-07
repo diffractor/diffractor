@@ -139,6 +139,10 @@ public:
 
 	void queue_ui(std::function<void()> f) override = 0;
 	void queue_async(async_queue q, std::function<void()> f) override = 0;
+	// Runs f no sooner than delay_ms from now, superseding anything already waiting on that queue. The
+	// wait happens in the worker's event wait, so it costs no thread. Only the coalescing queues
+	// support it - the deadline belongs to the queue, not to f.
+	virtual void queue_async_after(async_queue q, uint32_t delay_ms, std::function<void()> f) = 0;
 	virtual void queue_location(std::function<void(location_cache&)>) = 0;
 	virtual void queue_database(std::function<void(database&)> f) = 0;
 	virtual void queue_tile_db(std::function<void(tile_cache_db&)> f) = 0;

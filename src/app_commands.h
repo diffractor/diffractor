@@ -168,6 +168,8 @@ enum class commands
 	tool_move_to_folder,
 	tool_new_folder,
 	tool_open_with,
+	// Re-plans the active task view after a run, so its results are never mistaken for a live plan.
+	tool_refresh,
 	tool_rename,
 	tool_rotate_anticlockwise,
 	tool_rotate_clockwise,

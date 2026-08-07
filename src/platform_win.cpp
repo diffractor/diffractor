@@ -821,6 +821,8 @@ uint32_t platform::file_crc32(const df::file_path path, const df::cancel_token& 
 {
 	bool success = false;
 	uint32_t result = crypto::CRCINIT;
+	df::perf_timer timer(df::index_perf.crc_us, &df::index_perf.crc_max_us);
+	df::bump(df::index_perf.crc_computed);
 
 	constexpr auto desired_access = GENERIC_READ;
 	constexpr auto share_mode = FILE_SHARE_READ;
@@ -837,6 +839,7 @@ uint32_t platform::file_crc32(const df::file_path path, const df::cancel_token& 
 		if (!GetFileSizeEx(hFile, &li))
 		{
 			CloseHandle(hFile);
+			df::bump(df::index_perf.crc_failed);
 			return 0;
 		}
 
@@ -868,8 +871,11 @@ uint32_t platform::file_crc32(const df::file_path path, const df::cancel_token& 
 		}
 
 		success = total_read == size;
+		df::bump(df::index_perf.crc_bytes, total_read);
 		CloseHandle(hFile);
 	}
+
+	if (!success) df::bump(df::index_perf.crc_failed);
 
 	return success ? ~result : 0;
 }

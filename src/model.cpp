@@ -1972,11 +1972,11 @@ public:
 			result.emplace_back(str::to_string(sidecars), ui::style::color::sidecar_background);
 		}
 
-		const auto duplicates = _item->duplicates();
-
-		if (duplicates.count > 1)
+		// Same condition as the tile and the detail row: the zero that says "no other copy" is an
+		// answer, but a count drawn while presence is still checking would read as one.
+		if (_item->presence() != item_presence::unknown)
 		{
-			result.emplace_back(str::format_count(duplicates.count, true),
+			result.emplace_back(str::format_count(_item->duplicates().count, true),
 			                    ui::style::color::duplicate_background);
 		}
 
@@ -2779,6 +2779,9 @@ view_element_ptr view_state::create_selection_description()
 	const auto& primary = fields.front();
 
 	auto result = std::make_shared<view_elements>(flex_item::stretch);
+	// Fullscreen lays this out as its own bounded panel, so the inset is the container's rather than
+	// the surrounding view's.
+	result->flex_container.padding = {8, 8};
 	const auto title = std::make_shared<group_title_control>(primary.name);
 	title->flex.break_after = true;
 	if (auto command = find_command(commands::tool_edit_description))

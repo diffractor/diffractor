@@ -9,6 +9,31 @@
 // Purpose: Sidebar navigation panel. Contains collection overview charts, folder list,
 // favorite searches, tags, ratings, labels, and drive information displays. Also holds the
 // application logo lockup shared by the top bar and the About box.
+//
+// The sidebar is a projection of the index, so what it costs to refresh depends entirely on which
+// part of it the change actually touched. Everything used to arrive through one flag that meant
+// "rebuild all of it", which put an index query per row and a volume enumeration behind events that
+// had changed neither. The work is separated into four tiers, each with its own invalidation:
+//
+//   view_invalid::sidebar         structure - which rows exist. Rebuilds every element, so it is
+//                                 earned only by a change to the collection roots, the saved
+//                                 searches, the tag vocabulary or the sidebar's own settings.
+//   sidebar_file_types_and_dates  projection - the type and history charts, read straight from the
+//                                 index histograms. No queries, no element churn.
+//   sidebar_counts                the per-row sums. One index query per row, so it never rides
+//                                 along with a structural rebuild it did not need.
+//   sidebar_drives                volume enumeration, which blocks on unreachable network mappings.
+//
+// Two rules follow from that split, and both are load-bearing:
+//
+// Counts are not attempted before the index reports is_init_complete. Every query would answer zero
+// for a collection that is not empty, the answer is discarded at draw time, and the pass spends its
+// time contending for the index locks with the thread still building the index. Rows show the
+// loading affordance until the answer can be real; each index phase that completes asks again.
+//
+// Changing the chrome above the rows must not rebuild the rows. compose_elements() exists so that
+// showing or hiding one element - the indexing progress control appears and disappears on every
+// index run - costs a list splice rather than recreating every element, its text layout and its sum.
 
 #pragma once
 #include "ui_controls.h"
@@ -143,6 +168,8 @@ public:
 	df::search_t search;
 	std::function<df::file_group_histogram(view_state& s, df::cancel_token token)> calc_sum;
 	df::file_group_histogram summary;
+	// Distinguishes "not counted yet" from "counted, and the answer is none" - both render blank.
+	bool summary_known = false;
 	ui::color32 clr = 0;
 	int icon_repeat = 1;
 	mutable sidebar_tooltip_thumbnail _tooltip_thumbnail;
@@ -150,6 +177,14 @@ public:
 	explicit sidebar_element(view_state& state) noexcept
 		: view_element(view_element_style::has_tooltip | view_element_style::can_invoke), _state(state)
 	{
+	}
+
+	// A counted-but-empty row stays blank rather than showing a zero, so the sidebar does not become a
+	// column of noughts on a search that simply matches nothing.
+	std::string summary_text() const
+	{
+		if (!summary_known) return std::string(tt.loading.sv());
+		return format_total_text(summary.total_items(), false);
 	}
 
 	void render(ui::draw_context& dc, const pointi element_offset) const override
@@ -183,8 +218,7 @@ public:
 		auto text_bounds = logical_bounds;
 		text_bounds.left = x;
 
-		const auto total_items = summary.total_items();
-		const auto total_text = format_total_text(total_items, false);
+		const auto total_text = summary_text();
 
 		if (!str::is_empty(total_text))
 		{
@@ -205,7 +239,7 @@ public:
 	{
 		auto cy = mc.text_line_height(ui::style::font_face::dialog);
 		auto cx = width_limit;
-		const auto total_text = format_total_text(summary.total_items(), false);
+		const auto total_text = summary_text();
 
 		if (icon != icon_index::none)
 		{
@@ -434,7 +468,15 @@ using drive_item_ptr = std::shared_ptr<sidebar_drive_element>;
 // Values only. The sidebar is rebuilt on a worker while the UI thread is still rendering the
 // current elements, so the worker must never see a pointer to a live element. It carries the
 // last known summary per key so a rebuilt row can show a count before its own sum is computed.
-using search_items_by_key_t = df::hash_map<std::string, df::file_group_histogram, df::ihash, df::ieq>;
+// A rebuild recreates every element, so the counts already earned are carried across it. The known
+// flag travels with them: dropping it would flash "loading" over rows whose answer had not changed.
+struct sidebar_summary
+{
+	df::file_group_histogram counts;
+	bool known = false;
+};
+
+using search_items_by_key_t = df::hash_map<std::string, sidebar_summary, df::ihash, df::ieq>;
 
 class search_item_factory
 {
@@ -476,10 +518,8 @@ public:
 		return results;
 	}
 
-	static std::vector<drive_item_ptr> create_drive_items(view_state& s, const search_items_by_key_t& existing)
+	static std::vector<drive_item_ptr> create_drive_items(view_state& s, const platform::drives& drives)
 	{
-		const auto drives = platform::scan_drives();
-
 		std::vector<drive_item_ptr> results;
 
 		for (auto d : drives)
@@ -694,7 +734,11 @@ public:
 		result->key = key;
 
 		const auto found = existing.find(key);
-		if (found != existing.end()) result->summary = found->second;
+		if (found != existing.end())
+		{
+			result->summary = found->second.counts;
+			result->summary_known = found->second.known;
+		}
 
 		return result;
 	}
@@ -2127,6 +2171,12 @@ public:
 	std::shared_ptr<sidebar_map_element> _map;
 	std::vector<search_item_ptr> _items;
 	std::vector<drive_item_ptr> _drives;
+	// Enumerating volumes calls GetVolumeInformation and GetDiskFreeSpaceEx per drive, either of which
+	// blocks for as long as an unreachable network mapping takes to time out. Held so only a real drive
+	// event pays that, not every rebuild the index asks for.
+	platform::drives _drive_info;
+	// The rows the factories built, kept so the chrome above them can change without rebuilding them.
+	std::vector<view_element_ptr> _item_elements;
 	std::vector<view_element_ptr> _elements;
 
 	sidebar_host(view_state& s) : _state(s)
@@ -2211,6 +2261,20 @@ public:
 		}
 	}
 
+	// Which chrome sits above the rows, given the same rows. Kept apart from update_content so showing
+	// or hiding one element does not rebuild every other element, its text layout and its count.
+	void compose_elements()
+	{
+		df::assert_true(ui::is_ui_thread());
+
+		_elements.clear();
+		if (_show_indexing_control) _elements.emplace_back(_indexing_elements);
+		if (setting.sidebar.show_total_items) _elements.emplace_back(_type_chart);
+		if (setting.sidebar.show_world_map) _elements.emplace_back(_map);
+		if (setting.sidebar.show_history) _elements.emplace_back(_history_chart);
+		_elements.insert(_elements.end(), _item_elements.begin(), _item_elements.end());
+	}
+
 	void update_content(std::vector<search_item_ptr> items, std::vector<drive_item_ptr> drives,
 	                    std::vector<view_element_ptr> item_elements)
 	{
@@ -2218,19 +2282,37 @@ public:
 
 		_items = std::move(items);
 		_drives = std::move(drives);
+		_item_elements = std::move(item_elements);
 
-		_elements.clear();
-		if (_show_indexing_control) _elements.emplace_back(_indexing_elements);
-		if (setting.sidebar.show_total_items) _elements.emplace_back(_type_chart);
-		if (setting.sidebar.show_world_map) _elements.emplace_back(_map);
-		if (setting.sidebar.show_history) _elements.emplace_back(_history_chart);
-		_elements.insert(_elements.end(), item_elements.begin(), item_elements.end());
+		compose_elements();
 
 		update_current_search();
 		queue_update_predictions();
 		layout();
 	}
 
+	// The scan blocks on unreachable volumes, so it stays off the UI thread and the rebuild waits for
+	// the answer rather than the sidebar waiting for the scan on every unrelated invalidation.
+	void populate_drives()
+	{
+		df::assert_true(ui::is_ui_thread());
+
+		_state.queue_async(async_queue::sidebar,
+		                   [t = ui_owned(_state._async, shared_from_this()), &s = _state]
+		                   {
+			                   auto drives = platform::scan_drives();
+
+			                   s.queue_ui([t, drives = std::move(drives)]() mutable
+			                   {
+				                   t->_drive_info = std::move(drives);
+				                   t->populate();
+			                   });
+		                   });
+	}
+
+	// The structural tier: every element is recreated, which discards the text layout each one owns,
+	// and update_content then asks for a fresh sum per row. Raise view_invalid::sidebar only for a
+	// change to which rows exist - the cheaper tiers above cover everything else.
 	void populate()
 	{
 		df::assert_true(ui::is_ui_thread());
@@ -2244,11 +2326,12 @@ public:
 
 		for (const auto& i : _items)
 		{
-			existing[i->key] = i->summary;
+			existing[i->key] = {i->summary, i->summary_known};
 		}
 
 		_state.queue_async(async_queue::sidebar,
-		                   [t = ui_owned(_state._async, shared_from_this()), &s = _state, existing]
+		                   [t = ui_owned(_state._async, shared_from_this()), &s = _state, existing,
+			                   drive_info = _drive_info]
 		                   {
 			                   constexpr search_item_factory f;
 			                   std::vector<search_item_ptr> items;
@@ -2286,7 +2369,7 @@ public:
 
 			                   if (setting.sidebar.show_drives)
 			                   {
-				                   drives = f.create_drive_items(s, existing);
+				                   drives = f.create_drive_items(s, drive_info);
 				                   if (!drives.empty() && !item_elements.empty())
 					                   item_elements.emplace_back(
 						                   std::make_shared<divider_element>());
@@ -2414,6 +2497,13 @@ public:
 
 	void queue_update_predictions()
 	{
+		// Every sum is an index query, and before the index reports init complete every one of them
+		// answers zero for a collection that is not empty. Those answers are discarded at draw time, so
+		// the pass is spent contending for the index locks with the thread still building the index.
+		// Rows keep their loading affordance until the index can answer; each index phase that
+		// completes asks for the counts again.
+		if (!_state.item_index.is_init_complete()) return;
+
 		static std::atomic_int version;
 		df::cancel_token token(version);
 
@@ -2445,6 +2535,7 @@ public:
 								if (token.is_cancelled()) return;
 								const auto t = weak.lock();
 								if (!t) return;
+								i->summary_known = true;
 								i->summary = sum;
 								t->_frame->invalidate();
 							});
@@ -2570,8 +2661,10 @@ public:
 
 			if (_show_indexing_control != is_indexing)
 			{
+				// One element joins or leaves the head of the list; the rows below it are unchanged.
 				_show_indexing_control = is_indexing;
-				populate();
+				compose_elements();
+				layout();
 			}
 
 			if (_is_detecting != is_detecting)

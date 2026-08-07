@@ -302,6 +302,21 @@ static void should_render_common_controls_into_a_buffer()
 	assert_equal(true, probe.button_colors > 1, "button draws more than a flat fill");
 }
 
+static void should_rasterise_tiles_identically_to_the_whole_surface()
+{
+	const auto probe = platform::probe_software_tiling();
+
+	assert_equal(true, probe.tiles > 1, "the scene was split across tiles");
+	assert_equal(true, probe.painted_pixels > 1000, "the scene painted something to compare");
+	assert_equal(0, probe.mismatched_pixels, "tiled rasterisation matches the whole surface");
+	// Without this the assertion below would still pass if the buffer went back to tracking the
+	// window, which is the thing tiling exists to stop.
+	assert_equal(true, probe.grown_buffer_pixels < probe.grown_client_pixels / 4,
+	             "the buffer stayed bounded while the client grew");
+	assert_equal(probe.grown_client_pixels, probe.grown_writable_pixels,
+	             "a grown client is writable to its new edges without reallocating the tile");
+}
+
 void register_tests8(view_state& state, test_registry& tests)
 {
 	tests.add("Should convert extended file system paths"s, should_convert_extended_file_system_paths);
@@ -316,4 +331,6 @@ void register_tests8(view_state& state, test_registry& tests)
 	tests.add("Premiere dup: drag offers each format once"s, should_offer_each_drag_format_once);
 	tests.add("Should reject unusable file names"s, should_reject_unusable_file_names);
 	tests.add("Should render common controls into a buffer"s, should_render_common_controls_into_a_buffer);
+	tests.add("Should rasterise tiles identically to the whole surface"s,
+	          should_rasterise_tiles_identically_to_the_whole_surface);
 }

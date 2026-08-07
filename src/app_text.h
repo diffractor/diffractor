@@ -741,6 +741,9 @@ struct app_text_t
 	text_t adjust_date_help3 =
 		"This is useful if your camera date was set wrongly and you need to fix photo and video dates.";
 	text_t adjust_date_required = "Choose a valid new starting date and time.";
+	text_t convert_folder_required = "Choose a destination folder.";
+	text_t convert_dimension_required = "Enter a maximum dimension in pixels.";
+	text_t metadata_fields_required = "Check one or more fields to change.";
 	text_t selected_date_range_label = "Selected items are in the date range:";
 	text_t starting_fmt = "Starting {}";
 	text_t ending_fmt = "Ending {}";
@@ -1245,9 +1248,9 @@ struct app_text_t
 	text_t convert_info =
 		"Convert the selected photos to another format and optionally limit their size. The originals are kept and new files are written to the destination folder.";
 	text_t edit_metadata_info =
-		"Write the same metadata values to every selected item. Only the fields you check are changed.";
+		"Write the same metadata values to every selected item. Only the fields you check are changed; image and video data is untouched.";
 	text_t adjust_date_info =
-		"Shift the dates of the selected items so the earliest item starts at a new date and time.";
+		"Shift the dates of the selected items so the earliest item starts at a new date and time. Only metadata is changed; image and video data is untouched.";
 	text_t tag_info =
 		"Add or remove tags across the selected items. Tags you do not mention are left in place.";
 	text_t add_folder = "Add folder";
@@ -1360,6 +1363,7 @@ struct app_text_t
 	text_t previously_imported = "previously imported";
 	text_t ignore = "ignore";
 	text_t view_empty_message = "Click analyze to show items";
+	text_t no_items_selected_message = "Select items before using this tool";
 	text_t tags_view_empty_message = "Select items to tag";
 
 	text_t command_cancel_operation = "Cancel";
@@ -1380,10 +1384,19 @@ struct app_text_t
 	text_t collision_skip = "Skip";
 	text_t collision_rename = "Auto-rename";
 	text_t collision_block = "Block run";
+	// Row label stating the fact only. The policy control, not the row, asks what to do about it.
+	text_t collision_exists = "File exists";
 	text_t collision_blocked_fmt = "{} destinations already exist. Choose Replace, Skip or Auto-rename.";
 	text_t collision_skipped_fmt = "{} items will be skipped because the destination exists.";
 	text_t collision_replaced_fmt = "{} existing destinations will be replaced.";
 	text_t collision_renamed_fmt = "{} items will be given a new name to avoid a collision.";
+
+	// Row labels for a finished run. The plan words are future tense; these are what happened.
+	text_t result_success = "Success";
+	text_t result_failed = "Failed";
+	text_t result_skipped = "Skipped";
+	text_t result_not_run = "Not run";
+	text_t run_needs_refresh = "These are the results of a finished run. Refresh to plan again with the current settings.";
 
 	plural_text rotate_info_fmt = {
 		"Rotate {first-name}.", "Rotate {count} selected items. Originals will be overwritten."

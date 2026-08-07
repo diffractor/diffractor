@@ -26,10 +26,12 @@ GitHub issues own work, status, discussion, and follow-up. Source owns exact API
 | [selection controls](docs/selection-controls.md) | The selection panel: form classification, content, ordering, density, responsive behavior |
 | [third-party](docs/third-party.md) | Vendored dependencies, upgrade procedure, integration patches |
 | [README](README.md) | Product overview, build prerequisites, command line |
-| [version plan](docs/v-1.27.0.md) | Release contract, verification evidence, gates, then concise history |
-| [post-release context](docs/v-next.md) | Durable cross-issue knowledge that would otherwise be lost between releases |
+| [release notes](docs/v-1.27.0.md) | What the current release changed, as user-facing features and fixed issues, plus its verification record |
+| [post-release context](docs/v-next.md) | Deferred work and why, validation not run, open issues, and invariants that must survive a re-sync or refactor |
 
 Move information to its owner; link rather than duplicate volatile detail.
+
+The two version documents are not work logs. The release notes state what a user can now do and which reported issues are closed; anything scoped out, unfinished, unvalidated, or merely explanatory belongs in post-release context. Neither records the sequence of attempts that produced a change.
 
 ## Source directory map
 
@@ -100,6 +102,7 @@ This is a gate. If a `User-visible behavior` change cannot map unambiguously to 
 - **UI thread:** no filesystem, database, decoding, indexing, hashing, querying, thumbnail, map, or network work.
 - **Invalidation:** Paint functions never access SQLite or scan files, directly or indirectly; request Source work.
 - **Vendors:** never edit `third-party/`; use owned wrappers or build configuration.
+- **Cache keys:** a key must carry every input the cached value depends on. Invalidation is only as good as the identity it is keyed on, and a key that omits an input silently serves one caller's value to another.
 - **Animation:** alpha fades are disabled in CPU software rendering mode (`ui::animations_enabled`, mirroring `setting.can_animate`); never bypass the gate or animate alpha outside `ui::animate_alpha`.
 - **Exceptions:** every `catch` propagates, logs, returns a bounded error, or implements a documented bounded fallback; no unexplained swallowing.
 

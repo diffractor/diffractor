@@ -29,6 +29,21 @@
 
 static std::atomic_int index_version;
 
+// Declared ahead of the queueing entry points below, which start these workers on first use.
+void start_worker(platform::task_queue& q, std::string_view name);
+void start_map_worker(platform::task_queue& q);
+static void start_media_preview();
+static void start_tile_db_worker(tile_cache_db& db, platform::task_queue& queue);
+
+struct worker_queue_binding
+{
+	platform::task_queue* queue;
+	// A literal, so the view outlives the thread that registers a perf row under it.
+	std::string_view name;
+};
+
+void start_worker_group(std::vector<worker_queue_binding> bindings, std::string_view group_name);
+
 platform::thread_event media_preview_event(false, false);
 static platform::mutex media_preview_mutex;
 static _Guarded_by_(media_preview_mutex) std::function<void(media_preview_state&)> next_media_preview;
@@ -64,6 +79,11 @@ df::index_roots index_folders()
 
 void app_frame::queue_media_preview(std::function<void(media_preview_state&)> f, const bool must_run)
 {
+	if (claim_worker_start(_media_preview_worker_started))
+	{
+		_threads.start_if_running([] { start_media_preview(); });
+	}
+
 	// A superseded preview owns decoded surfaces and item references, so it is released after the
 	// lock rather than destroyed inside it.
 	std::function<void(media_preview_state&)> superseded;
@@ -168,7 +188,11 @@ static void start_database(database& db, platform::task_queue& database_task_que
 
 		while (!df::is_closing)
 		{
-			if (wait_for(events, 1000, false) == 0)
+			// 0 is infinite. A pending write already wakes this thread: enqueue_db_write posts a no-op
+			// task on the empty-to-nonempty edge, and perform_writes below runs on every pass, so a
+			// periodic tick would only find work it had already been signalled for. PRAGMA optimize
+			// rides along with the next flush, which is the only time there is anything to re-analyse.
+			if (wait_for(events, 0, false) == 0)
 			{
 				try
 				{
@@ -254,6 +278,27 @@ void app_frame::queue_ui(std::function<void()> f)
 	}
 }
 
+// Safe from any thread: exactly one caller sees the false-to-true transition and starts the worker,
+// and every later caller sees true. A refused start (shutdown has begun) is not retried - the queued
+// task is truncated with the queue instead.
+bool app_frame::claim_worker_start(std::atomic_bool& started)
+{
+	// A worker created after this point would find its loop condition already false and exit without
+	// draining anything, so the thread is never made.
+	if (df::is_closing) return false;
+
+	return !started.load(std::memory_order_acquire) && !started.exchange(true, std::memory_order_acq_rel);
+}
+
+void app_frame::ensure_worker(std::atomic_bool& started, platform::task_queue& q, const std::string_view name)
+{
+	if (claim_worker_start(started))
+	{
+		// Every name passed here is a literal, so the view outlives the thread that holds it.
+		_threads.start_if_running([&q, name] { start_worker(q, name); });
+	}
+}
+
 void app_frame::queue_async(const async_queue q, std::function<void()> f)
 {
 	switch (q)
@@ -303,9 +348,11 @@ void app_frame::queue_async(const async_queue q, std::function<void()> f)
 		presence_task_queue.reset_and_enqueue(std::move(f));
 		break;
 	case async_queue::auto_complete:
+		ensure_worker(_auto_complete_worker_started, auto_complete_task_queue, "auto_complete");
 		auto_complete_task_queue.reset_and_enqueue(std::move(f));
 		break;
 	case async_queue::cloud:
+		ensure_worker(_cloud_worker_started, cloud_task_queue, "cloud");
 		cloud_task_queue.enqueue(std::move(f));
 		break;
 	case async_queue::index:
@@ -315,14 +362,42 @@ void app_frame::queue_async(const async_queue q, std::function<void()> f)
 		sidebar_task_queue.enqueue(std::move(f));
 		break;
 	case async_queue::web:
+		ensure_worker(_web_worker_started, web_task_queue, "web");
 		web_task_queue.enqueue(std::move(f));
 		break;
 	case async_queue::map_tile:
+		if (claim_worker_start(_map_tile_workers_started))
+		{
+			// Two, so decoding one tile never delays the fetch of the next.
+			for (auto i = 0; i < 2; ++i)
+			{
+				_threads.start_if_running([&q = map_tile_task_queue] { start_map_worker(q); });
+			}
+		}
 		map_tile_task_queue.enqueue(std::move(f));
 		break;
 	case async_queue::work:
 	default:
 		work_task_queue.enqueue(std::move(f));
+		break;
+	}
+}
+
+// Only the coalescing queues support a deadline: enqueue_after stamps the queue, so a queue that
+// keeps a backlog would apply one task's delay to the tasks behind it.
+void app_frame::queue_async_after(const async_queue q, const uint32_t delay_ms, std::function<void()> f)
+{
+	switch (q)
+	{
+	case async_queue::index_predictions_single:
+		predictions_task_queue.enqueue_after(delay_ms, std::move(f));
+		break;
+	case async_queue::index_summary_single:
+		summary_task_queue.enqueue_after(delay_ms, std::move(f));
+		break;
+	default:
+		df::assert_true(false);
+		queue_async(q, std::move(f));
 		break;
 	}
 }
@@ -339,6 +414,13 @@ void app_frame::queue_database(std::function<void(database&)> f)
 
 void app_frame::queue_tile_db(std::function<void(tile_cache_db&)> f)
 {
+	if (claim_worker_start(_tile_db_worker_started))
+	{
+		// Opening and pruning the tile store is deferred with it, so a session without a map never pays
+		// either at startup.
+		_threads.start_if_running([&db = _tile_db, &q = tile_db_task_queue] { start_tile_db_worker(db, q); });
+	}
+
 	tile_db_task_queue.enqueue([f = std::move(f), &db = _tile_db] { f(db); });
 }
 
@@ -357,7 +439,11 @@ static void start_media_preview()
 
 		while (!df::is_closing)
 		{
-			const auto w = wait_for(events, 5000, false);
+			// The idle timeout exists only to release a decoder that is still open. Once it is closed
+			// there is nothing left to release, so wait for the next request (0 is infinite) rather than
+			// waking every five seconds for the rest of the session.
+			const auto idle_close_ms = (preview_decoder.decoder1 || preview_decoder.decoder2) ? 5000u : 0u;
+			const auto w = wait_for(events, idle_close_ms, false);
 
 			if (0 == w)
 			{
@@ -410,6 +496,41 @@ static void start_media_preview()
 	}
 }
 
+// Each task is isolated: the batch has already been dequeued, so letting one throw past this would
+// discard every task queued behind it.
+static void drain_queue(platform::task_queue& q, df::queue_counters* perf)
+{
+	try
+	{
+		df::scope_locked_inc l(df::jobs_running);
+		const auto tasks = q.dequeue_all();
+
+		if (!tasks.empty())
+		{
+			df::bump(perf->batches);
+			df::bump(perf->tasks, tasks.size());
+			df::record_peak(perf->batch_peak, static_cast<uint32_t>(tasks.size()));
+		}
+
+		for (const auto& t : tasks)
+		{
+			try
+			{
+				df::perf_timer timer(perf->busy_us, &perf->task_max_us);
+				t();
+			}
+			catch (const std::exception& e)
+			{
+				df::log(__FUNCTION__, e.what());
+			}
+		}
+	}
+	catch (std::exception& e)
+	{
+		df::log(__FUNCTION__, e.what());
+	}
+}
+
 void start_worker(platform::task_queue& q, const std::string_view name)
 {
 	log_func lf(__FUNCTION__, name);
@@ -427,37 +548,21 @@ void start_worker(platform::task_queue& q, const std::string_view name)
 
 			while (!df::is_closing)
 			{
-				if (wait_for(events, 10000, false) == 0)
+				// A debounced queue reports how long is left before its work is due; every other queue
+				// reports ready as soon as it holds anything. Spending the delay in this wait is what
+				// keeps it off a task, which would otherwise hold this thread for the whole debounce.
+				// event_exit is manual-reset and set before df::is_closing is observed, so an indefinite
+				// wait still ends at shutdown.
+				const auto delay = q.delay_before_ready_ms();
+
+				if (delay == 0)
 				{
-					try
-					{
-						df::scope_locked_inc l(df::jobs_running);
-						const auto tasks = q.dequeue_all();
-
-						if (!tasks.empty())
-						{
-							df::bump(perf->batches);
-							df::bump(perf->tasks, tasks.size());
-							df::record_peak(perf->batch_peak, static_cast<uint32_t>(tasks.size()));
-						}
-
-						for (const auto& t : tasks)
-						{
-							try
-							{
-								df::perf_timer timer(perf->busy_us, &perf->task_max_us);
-								t();
-							}
-							catch (const std::exception& e)
-							{
-								df::log(__FUNCTION__, e.what());
-							}
-						}
-					}
-					catch (std::exception& e)
-					{
-						df::log(__FUNCTION__, e.what());
-					}
+					drain_queue(q, perf);
+				}
+				else
+				{
+					// Either nothing pending (block on the events) or a debounce still running out.
+					wait_for(events, delay == platform::task_queue::wait_indefinitely ? 0 : delay, false);
 				}
 			}
 		}
@@ -482,6 +587,71 @@ void start_worker(platform::task_queue& q, const std::string_view name)
 	}
 }
 
+// One thread serving several queues. Each queue keeps its own identity - its own supersede-on-enqueue
+// policy, its own debounce deadline and its own perf row - so only the thread is shared. Queues are
+// drained in the order given, and a drain restarts that order, so a long task delays the queues above
+// it by one task rather than by the whole backlog.
+void start_worker_group(std::vector<worker_queue_binding> bindings, const std::string_view group_name)
+{
+	log_func lf(__FUNCTION__, group_name);
+	platform::set_thread_description(group_name);
+
+	std::vector<df::queue_counters*> perf;
+	perf.reserve(bindings.size());
+	for (const auto& b : bindings) perf.emplace_back(df::register_queue(b.name));
+
+	if (!df::is_closing)
+	{
+		try
+		{
+			platform::thread_init c;
+
+			std::vector<std::reference_wrapper<platform::thread_event>> events;
+			events.reserve(bindings.size() + 1);
+			for (const auto& b : bindings) events.emplace_back(b.queue->_event);
+			events.emplace_back(platform::event_exit);
+
+			while (!df::is_closing)
+			{
+				// wait_indefinitely is the largest uint32, so this also picks the nearest deadline.
+				auto wait_ms = platform::task_queue::wait_indefinitely;
+				auto drained = false;
+
+				for (size_t i = 0; i < bindings.size() && !df::is_closing; ++i)
+				{
+					const auto delay = bindings[i].queue->delay_before_ready_ms();
+
+					if (delay == 0)
+					{
+						drain_queue(*bindings[i].queue, perf[i]);
+						drained = true;
+						break;
+					}
+
+					if (delay < wait_ms) wait_ms = delay;
+				}
+
+				if (drained) continue;
+
+				wait_for(events, wait_ms == platform::task_queue::wait_indefinitely ? 0 : wait_ms, false);
+			}
+		}
+		catch (std::exception& e)
+		{
+			df::log(__FUNCTION__, e.what());
+		}
+	}
+
+	try
+	{
+		for (const auto& b : bindings) (void)b.queue->dequeue_all();
+	}
+	catch (...)
+	{
+		// Shutdown path: nothing left to report to, and the queues are discarded either way.
+	}
+}
+
 void start_map_worker(platform::task_queue& q)
 {
 	log_func lf(__FUNCTION__, "map");
@@ -495,7 +665,9 @@ void start_map_worker(platform::task_queue& q)
 
 		while (!df::is_closing)
 		{
-			if (wait_for(events, 10000, false) == 0)
+			// Infinite, as start_worker: the re-signal below is what keeps the siblings moving, so a
+			// timeout could only wake a worker to find nothing.
+			if (wait_for(events, 0, false) == 0)
 			{
 				platform::task_queue::task_t task;
 
@@ -607,7 +779,6 @@ void app_frame::start_workers()
 	_threads.start([&player = _player] { start_media_decode_video(player); });
 	_threads.start([&player = _player] { start_media_decode_audio(player); });
 	_threads.start([&player = _player] { start_media_reading(player); });
-	_threads.start([] { start_media_preview(); });
 
 	auto scan_uncached_func = [this]
 	{
@@ -638,9 +809,6 @@ void app_frame::start_workers()
 			_threads.start([&q = scan_folder_task_queue] { start_worker(q, "scan_folder"); });
 			_threads.start([&q = scan_modified_items_task_queue] { start_worker(q, "scan_modified_items"); });
 			_threads.start([&q = scan_displayed_items_task_queue] { start_worker(q, "scan_displayed_items"); });
-			_threads.start([&q = predictions_task_queue] { start_worker(q, "predictions"); });
-			_threads.start([&q = summary_task_queue] { start_worker(q, "summary"); });
-			_threads.start([&q = presence_task_queue] { start_worker(q, "presence"); });
 		}
 
 		invalidate_view(view_invalid::sidebar |
@@ -668,17 +836,26 @@ void app_frame::start_workers()
 	_threads.start([&q = render_task_queue] { start_worker(q, "render"); });
 	_threads.start([&q = render_display_task_queue] { start_worker(q, "render_display"); });
 	_threads.start([&q = query_task_queue] { start_worker(q, "query"); });
-	_threads.start([&q = auto_complete_task_queue] { start_worker(q, "auto_complete"); });
 	_threads.start([&q = location_task_queue] { start_worker(q, "locations"); });
-	_threads.start([&q = sidebar_task_queue] { start_worker(q, "sidebar"); });
-	_threads.start([&q = web_task_queue] { start_worker(q, "web"); });
-	for (auto i = 0; i < 2; ++i)
-	{
-		_threads.start([&q = map_tile_task_queue] { start_map_worker(q); });
-	}
-	_threads.start([&db = _tile_db, &q = tile_db_task_queue] { start_tile_db_worker(db, q); });
-	_threads.start([&q = cloud_task_queue] { start_worker(q, "cloud"); });
 	_threads.start([&q = index_task_queue] { start_worker(q, "index"); });
+
+	// One thread for the four passes that read the index and publish to the sidebar. None of them holds
+	// the thread while idle any more - the debounce lives in the queue - so sharing costs only the
+	// serialisation of work that totals a couple of seconds across a whole session. Ordered by how
+	// directly each feeds something on screen.
+	_threads.start([this]
+	{
+		start_worker_group({
+			                   {&presence_task_queue, "presence"},
+			                   {&sidebar_task_queue, "sidebar"},
+			                   {&predictions_task_queue, "predictions"},
+			                   {&summary_task_queue, "summary"},
+		                   }, "index_compute");
+	});
+
+	// auto_complete, web, cloud, map_tile, tile_db and media_preview are not started here. Each is
+	// created by the entry point that first queues to it, so a session that never searches, never
+	// reaches the network, never opens the map and never plays media runs without those threads.
 
 	index_task_queue.enqueue([this, scan_uncached_func]
 	{
@@ -686,11 +863,15 @@ void app_frame::start_workers()
 		// loader (merge_folder) and folder validation (validate_folder) both mutate the same
 		// folder nodes; if validation of a large folder races ahead of the loader it writes back
 		// nodes with metadata_scanned=0, causing that whole folder to be re-scanned on every
-		// startup. Bounded so a failed/absent database cannot hang indexing.
-		for (auto i = 0; i < 3000 && !_state.item_index.is_cache_loaded() && !df::is_closing; ++i)
-		{
-			std::this_thread::sleep_for(std::chrono::milliseconds(10));
-		}
+		// startup. The database thread reports the load - including when it opened nothing and no
+		// cache can arrive - so the timeout is a safety net rather than the normal path.
+		const std::vector<std::reference_wrapper<platform::thread_event>> cache_events = {
+			_state.item_index.cache_loaded_event(), platform::event_exit
+		};
+
+		platform::wait_for(cache_events, 30000, false);
+
+		if (df::is_closing) return;
 
 		_state.item_index.index_roots(index_folders());
 

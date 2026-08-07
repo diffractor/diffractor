@@ -3395,6 +3395,36 @@ msgstr "自動的に名前を変更"
 msgid "Block run"
 msgstr "実行をブロック"
 
+msgid "File exists"
+msgstr "ファイルが存在します"
+
+msgid "Choose a destination folder."
+msgstr "保存先フォルダーを選択してください。"
+
+msgid "Enter a maximum dimension in pixels."
+msgstr "最大サイズをピクセル単位で入力してください。"
+
+msgid "Check one or more fields to change."
+msgstr "変更するフィールドを 1 つ以上選択してください。"
+
+msgid "Select items before using this tool"
+msgstr "このツールを使う前に項目を選択してください"
+
+msgid "Success"
+msgstr "成功"
+
+msgid "Failed"
+msgstr "失敗"
+
+msgid "Skipped"
+msgstr "スキップ"
+
+msgid "Not run"
+msgstr "未実行"
+
+msgid "These are the results of a finished run. Refresh to plan again with the current settings."
+msgstr "これは完了した実行の結果です。現在の設定で再度計画するには更新してください。"
+
 msgid "{} destinations already exist. Choose Replace, Skip or Auto-rename."
 msgstr "{} 件のコピー先が既に存在します。置き換える、スキップ、自動的に名前を変更のいずれかを選んでください。"
 
@@ -3518,11 +3548,11 @@ msgstr "オフ: ウィンドウより小さい写真やビデオは実際のサ�
 msgid "Convert the selected photos to another format and optionally limit their size. The originals are kept and new files are written to the destination folder."
 msgstr "選択した写真を別の形式に変換し、必要に応じてサイズを制限します。元のファイルは保持され、新しいファイルは保存先フォルダーに書き込まれます。"
 
-msgid "Write the same metadata values to every selected item. Only the fields you check are changed."
-msgstr "選択したすべての項目に同じメタデータ値を書き込みます。チェックした項目のみが変更されます。"
+msgid "Write the same metadata values to every selected item. Only the fields you check are changed; image and video data is untouched."
+msgstr "選択したすべての項目に同じメタデータ値を書き込みます。チェックしたフィールドのみが変更され、画像と動画のデータはそのまま保持されます。"
 
-msgid "Shift the dates of the selected items so the earliest item starts at a new date and time."
-msgstr "選択した項目の日時をずらして、最も古い項目が新しい日時から始まるようにします。"
+msgid "Shift the dates of the selected items so the earliest item starts at a new date and time. Only metadata is changed; image and video data is untouched."
+msgstr "選択した項目の日付をずらし、最も古い項目が新しい日時から始まるようにします。変更されるのはメタデータのみで、画像と動画のデータはそのまま保持されます。"
 
 msgid "Add or remove tags across the selected items. Tags you do not mention are left in place."
 msgstr "選択した項目にタグを追加または削除します。指定しなかったタグはそのまま残ります。"

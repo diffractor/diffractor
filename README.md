@@ -14,9 +14,12 @@ Free, high-performance photo and video organizer for Windows. Optimized for spee
 | **Search** | Instant metadata-based search (tags, location, camera data) via local indexing |
 | **Places** | Photos and videos are placed from GPS alone, searchable by place, city, state, country, or distance, with a map and a timeline of derived visits |
 | **Metadata** | Read/write XMP, IPTC, EXIF, ID3; add tags, ratings, location |
-| **Organization** | Side-by-side comparison, duplicate detection ("Presence" feature) |
+| **Organization** | Side-by-side comparison, and duplicate detection ("Presence") that recognizes a re-encoded, resized, or rotated copy as well as an identical one |
+| **Related items** | Finds possible copies, the same album, the same series, and the closest capture times and places, each as its own group |
+| **File operations** | Rename, Import, and Sync preview every file before they run, and state how each name collision will be resolved |
 | **Sync** | Bidirectional sync to NAS/network drives for backup and collaboration |
-| **Editing** | Resize, rotate, crop, color adjustment |
+| **Editing** | Resize, rotate, crop, perspective, temperature and tint, color adjustment, and automatic color, straighten, and document correction |
+| **Languages** | English plus 13 fully translated languages |
 
 ## Quick Start
 
@@ -53,9 +56,13 @@ Use `dd.ps1` from a Developer PowerShell:
 | Command | Description |
 |---------|-------------|
 | `.\dd.ps1` | Show usage information and current version |
+| `.\dd.ps1 build` | Build x64 Debug and Release, auto-increments build number |
+| `.\dd.ps1 test` | Run the unit tests and validate the translation catalogs |
+| `.\dd.ps1 bean` | Run the tests with file-I/O scratch on an SMB share |
 | `.\dd.ps1 desktop` | Build desktop versions (Win32 + x64), auto-increments build number |
 | `.\dd.ps1 store` | Build Windows Store MSIX package, auto-increments build number |
 | `.\dd.ps1 run` | Run the recently built diffractor64.exe |
+| `.\dd.ps1 cpu` | Run diffractor64.exe with CPU software rendering |
 | `.\dd.ps1 bump-build` | Manually increment build number without building |
 | `.\dd.ps1 bump-ver` | Increment minor version (e.g., 1.26.2 -> 1.26.3) |
 
@@ -67,11 +74,16 @@ Use `dd.ps1` from a Developer PowerShell:
 |----------|---------|
 | [docs/design.md](docs/design.md) | Durable product behavior and the scope/contents/target/effect model |
 | [docs/implementation.md](docs/implementation.md) | Architecture, data flow, threading, and validation |
+| [docs/collections.md](docs/collections.md) | The collection: membership, what it earns, and its edge |
 | [docs/locations.md](docs/locations.md) | Places, location search, distance, and visits |
 | [docs/zoom.md](docs/zoom.md) | The zoom model, behavior contract, and how it is judged |
+| [docs/selection-controls.md](docs/selection-controls.md) | The selection panel: form, content, ordering, and density |
 | [docs/file-io.md](docs/file-io.md) | Reading, writing, and change response for media files |
+| [docs/metadata.md](docs/metadata.md) | Property-to-tag mapping across XMP, EXIF, IPTC, and container tags |
 | [docs/rendering.md](docs/rendering.md) | Surfaces, color, and the draw backends |
 | [docs/third-party.md](docs/third-party.md) | Vendored dependencies and how they are updated |
+| [docs/v-1.27.0.md](docs/v-1.27.0.md) | What the current release changed, and how it was verified |
+| [docs/v-next.md](docs/v-next.md) | Deferred work, open issues, and constraints that must not be lost |
 
 ## Contributing
 

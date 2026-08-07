@@ -31,7 +31,7 @@ struct item_db_write
 	std::optional<df::date_t> thumb_scanned;
 	std::optional<df::date_t> metadata_scanned;
 	std::optional<uint32_t> crc32c;
-	std::optional<uint64_t> phash;
+	std::optional<crypto::phash_rotations> phash;
 
 	item_db_write() noexcept = default;
 	item_db_write(const item_db_write&) = delete;
@@ -46,7 +46,7 @@ struct db_item_t
 	df::date_t metadata_scanned = {};
 	prop::item_metadata_ptr metadata = {};
 	uint32_t crc32c = 0;
-	uint64_t phash = 0;
+	crypto::phash_rotations phash{};
 
 	db_item_t() noexcept = default;
 	db_item_t(const db_item_t&) = delete;
@@ -119,6 +119,11 @@ struct index_statistic
 	int indexed_dup_folder_count = 0;
 	int indexed_max_compare_count = 0;
 	int indexed_crc_count = 0;
+	// Perceptual hashes the collection holds. Uninvited counts the ones whose picture shares its
+	// capture time with nothing, so it should stay near zero.
+	int indexed_phash_count = 0;
+	int indexed_phash_declined_count = 0;
+	int indexed_phash_uninvited_count = 0;
 
 	int index_load_ms = 0;
 	int predictions_ms = 0;
@@ -645,6 +650,9 @@ class index_state final : public df::no_copy
 	// (is_init_complete, folder scanning). Atomic so the transition to true is published
 	// safely rather than through a data race on a plain bool.
 	std::atomic<bool> _cache_items_loaded = false;
+	// Manual reset: the transition is terminal, so a waiter that arrives after the load has finished
+	// must still be released rather than wait for a signal that has already been consumed.
+	platform::thread_event _cache_loaded_event{true, false};
 	std::atomic<bool> _folders_indexed = false;
 	const location_cache& _locations;
 	std::atomic<bool> _fully_loaded = false;
@@ -660,6 +668,7 @@ class index_state final : public df::no_copy
 	                                df::file_group_histogram& result, const df::cancel_token& token);
 	void add_distinct_other_folders(df::unique_folders folders);
 	void enqueue_db_write(item_db_write write);
+	void enqueue_db_writes(std::vector<item_db_write> writes);
 	bool is_collection_search(const df::search_t& search) const;
 
 public:
@@ -735,13 +744,22 @@ public:
 	void cache_load_complete()
 	{
 		_cache_items_loaded = true;
+		_cache_loaded_event.set();
+	}
+
+	// Waited on by the index bring-up, which must not validate folders while merge_folder is still
+	// writing the same folder nodes. Also set when no cache can arrive, so the wait is not a timeout.
+	platform::thread_event& cache_loaded_event()
+	{
+		return _cache_loaded_event;
 	}
 
 	void merge_folder(df::folder_path folder_path, const db_items_t& items);
 
 	void save_media_position(df::file_path id, double media_position);
 	void save_crc(df::file_path id, uint32_t crc);
-	void save_phash(df::file_path id, uint64_t phash);
+	void save_phash(df::file_path id, const crypto::phash_rotations& phash);
+	void save_phashes(std::vector<std::pair<df::file_path, crypto::phash_rotations>> hashes);
 	void queue_calc_perceptual_hashes(std::vector<df::file_path> paths);
 	void save_thumbnail(df::file_path id, const ui::const_image_ptr& thumbnail_image,
 	                    const ui::const_image_ptr& cover_art, df::date_t scan_timestamp);
@@ -809,6 +827,41 @@ public:
 
 	validate_folder_result validate_folder(df::folder_path folder_path,
 	                                       bool refresh_from_file_system, df::date_t timestamp);
+
+	// A scan loop collects its rows here so the database thread is woken once per group rather than
+	// once per file. Only the hand-off is deferred; the in-memory index is still updated per file.
+	class db_write_batch : public df::no_copy
+	{
+		index_state& _index;
+		std::vector<item_db_write> _writes;
+
+		// Bounds both the memory held and the work lost if the process dies mid-folder.
+		static constexpr size_t max_pending = 64;
+
+	public:
+		explicit db_write_batch(index_state& index) : _index(index)
+		{
+		}
+
+		~db_write_batch()
+		{
+			flush();
+		}
+
+		void add(item_db_write write)
+		{
+			_writes.emplace_back(std::move(write));
+			if (_writes.size() >= max_pending) flush();
+		}
+
+		void flush()
+		{
+			if (_writes.empty()) return;
+			_index.enqueue_db_writes(std::move(_writes));
+			_writes.clear();
+		}
+	};
+
 	// The apply half of scan_item. Separate from the scan itself so a result produced where the file
 	// is already open (files::update, which owns the only cache-coherent handle) can be applied
 	// without a second open.
@@ -816,12 +869,14 @@ public:
 	                       const file_scan_result& sr, df::date_t now, df::date_t thumbnail_version,
 	                       bool load_thumb, bool thumbnail_needed, bool had_thumbnail,
 	                       const std::weak_ptr<df::item_element>& item, bool publish_to_item,
-	                       bool publish_item_update_immediately, bool invalidate_summary);
+	                       bool publish_item_update_immediately, bool invalidate_summary,
+	                       db_write_batch* writes = nullptr);
 	void scan_item(const df::index_folder_item_ptr& folder, df::file_path file_path, bool load_thumbnails,
 	               bool thumbnail_needed, bool had_thumbnail, bool scan_if_offline,
 	               const std::weak_ptr<df::item_element>& item, bool publish_to_item, file_type_ref ft,
 	               bool force = false,
-	               bool publish_item_update_immediately = true, bool invalidate_summary = true);
+	               bool publish_item_update_immediately = true, bool invalidate_summary = true,
+	               db_write_batch* writes = nullptr);
 	void scan_item(const df::item_element_ptr& i, bool load_thumb, bool scan_if_offline);
 	// Immediately (synchronously, on the caller's thread) apply the scan that files::update took
 	// through its still-open, cache-coherent handle. Reuses the cached folder node (no filesystem

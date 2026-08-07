@@ -166,7 +166,6 @@ static void setup_headless_console()
 	std::setlocale(LC_ALL, "en_US.UTF-8");
 }
 
-static constexpr auto ui_nonclient_border_thickness = 5;
 static constexpr auto ui_base_icon_cxy = 18;
 static constexpr auto ui_element_padding = 8;
 static constexpr auto ui_focus_padding = 2;
@@ -176,6 +175,13 @@ static constexpr auto ui_component_snap = 8;
 static constexpr auto ui_baseline_snap = 4;
 static constexpr auto ui_cx_resize_handle = 12;
 static constexpr auto ui_scroll_width = 20;
+
+// The frame is client-area only, so the whole resize grab band has to live inside the drawn edge.
+// The sides stay narrow enough to leave the flush-right scroll bar usable; the bottom has no
+// vertical furniture to compete with, so it can be more generous.
+static constexpr auto ui_resize_side_thickness = 9;
+static constexpr auto ui_resize_bottom_thickness = 16;
+static constexpr auto ui_resize_corner_thickness = 24;
 
 
 int ui::ticks_since_last_user_action = 0;
@@ -476,6 +482,7 @@ ui::color32 ui::style::color::menu_shortcut_text = 0;
 
 ui::color32 ui::style::color::important_background = 0;
 ui::color32 ui::style::color::warning_background = 0;
+ui::color32 ui::style::color::success_background = 0;
 ui::color32 ui::style::color::info_background = 0;
 ui::color32 ui::style::color::desktop_background = 0;
 
@@ -484,6 +491,7 @@ ui::color32 ui::style::color::sidecar_background = 0;
 ui::color32 ui::style::color::duplicate_background = 0;
 
 static constexpr ui::color32 red = 0xaa2211;
+static constexpr ui::color32 green = 0x2E8B33;
 static constexpr ui::color32 orange = 0xCC6611; // 0xCC7711; // 0x995511; 0xF57C00
 static constexpr ui::color32 blue = 0x0288D1;
 static constexpr ui::color32 blue2 = 0x117799;
@@ -505,6 +513,7 @@ static void init_color_styles()
 
 	ui::style::color::important_background = ui::bgr(orange);
 	ui::style::color::warning_background = ui::bgr(red);
+	ui::style::color::success_background = ui::bgr(green);
 	ui::style::color::info_background = ui::bgr(blue2);
 
 	ui::style::color::view_background = 0x00333333;
@@ -4306,18 +4315,19 @@ public:
 		if (_style.child)
 		{
 			const pointi screen_loc = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+			const auto parent = GetParent(m_hWnd);
 			win_rect rc;
-			GetWindowRect(GetParent(m_hWnd), &rc);
+			GetWindowRect(parent, &rc);
+
+			// Only yield where the parent actually has a resize grab band; full screen strips
+			// WS_THICKFRAME and a maximized frame cannot be edge resized.
+			const auto parent_can_resize = (GetWindowLong(parent, GWL_STYLE) & WS_THICKFRAME) != 0 &&
+				IsZoomed(parent) == 0;
 
 			const auto scale_factor = _draw_ctx ? _draw_ctx->scale_factor : 1.0;
-			const auto border_thickness = df::round(ui_nonclient_border_thickness * scale_factor);
+			const auto side = df::round(ui_resize_side_thickness * scale_factor);
 
-			if (rc.right >= screen_loc.x && rc.right - border_thickness <= screen_loc.x)
-			{
-				return HTTRANSPARENT;
-			}
-
-			if (rc.left <= screen_loc.x && rc.left + border_thickness >= screen_loc.x)
+			if (parent_can_resize && (screen_loc.x < rc.left + side || screen_loc.x >= rc.right - side))
 			{
 				return HTTRANSPARENT;
 			}
@@ -6747,25 +6757,53 @@ LRESULT control_host_impl::on_window_nc_hit_test(const uint32_t uMsg, const WPAR
 		RECT rc;
 		GetClientRect(m_hWnd, &rc);
 
-		const auto scale_factor = _draw_ctx ? _draw_ctx->scale_factor : 1.0;
-		const auto resize_handle = _draw_ctx ? _draw_ctx->handle_cxy : df::round(ui_cx_resize_handle * scale_factor);
-		const auto border_thickness = df::round(ui_nonclient_border_thickness * scale_factor);
+		// A maximized or full screen frame cannot be resized by dragging an edge, so a grab band there
+		// would only steal clicks from the content drawn under it.
+		if (!_is_full_screen && !IsZoomed(m_hWnd))
+		{
+			const auto scale_factor = _draw_ctx ? _draw_ctx->scale_factor : 1.0;
+			const auto side = df::round(ui_resize_side_thickness * scale_factor);
+			const auto bottom = df::round(ui_resize_bottom_thickness * scale_factor);
+			const auto corner = df::round(ui_resize_corner_thickness * scale_factor);
 
-		enum { left = 1, top = 2, right = 4, bottom = 8 };
-		int hit = 0;
-		if (loc.x < rc.left + border_thickness) hit |= left;
-		if (loc.x > rc.right - border_thickness) hit |= right;
-		if (loc.y < rc.top + border_thickness) hit |= top;
-		if (loc.y > rc.bottom - resize_handle) hit |= bottom;
+			const auto in_left = loc.x < rc.left + side;
+			const auto in_right = loc.x >= rc.right - side;
+			const auto in_top = loc.y < rc.top + side;
+			const auto in_bottom = loc.y >= rc.bottom - bottom;
 
-		if (hit & top && hit & left) return HTTOPLEFT;
-		if (hit & top && hit & right) return HTTOPRIGHT;
-		if (hit & bottom && loc.x < rc.left + resize_handle) return HTBOTTOMLEFT;
-		if (hit & bottom && loc.x > rc.right - resize_handle) return HTBOTTOMRIGHT;
-		if (hit & left) return HTLEFT;
-		if (hit & top) return HTTOP;
-		if (hit & right) return HTRIGHT;
-		if (hit & bottom) return HTBOTTOM;
+			const auto near_left = loc.x < rc.left + corner;
+			const auto near_right = loc.x >= rc.right - corner;
+			const auto near_top = loc.y < rc.top + corner;
+			const auto near_bottom = loc.y >= rc.bottom - corner;
+
+			if (in_top)
+			{
+				if (near_left) return HTTOPLEFT;
+				if (near_right) return HTTOPRIGHT;
+				return HTTOP;
+			}
+
+			if (in_bottom)
+			{
+				if (near_left) return HTBOTTOMLEFT;
+				if (near_right) return HTBOTTOMRIGHT;
+				return HTBOTTOM;
+			}
+
+			if (in_left)
+			{
+				if (near_top) return HTTOPLEFT;
+				if (near_bottom) return HTBOTTOMLEFT;
+				return HTLEFT;
+			}
+
+			if (in_right)
+			{
+				if (near_top) return HTTOPRIGHT;
+				if (near_bottom) return HTBOTTOMRIGHT;
+				return HTRIGHT;
+			}
+		}
 
 		const auto h = _host.lock();
 		return h && h->is_caption_area({loc.x, loc.y}) ? HTCAPTION : HTCLIENT;
@@ -7353,9 +7391,12 @@ public:
 		DestroyWindow(m_hWnd);
 	}
 
-	sizei measure_toolbar() const
+	// True when at least one button reported a rectangle. TB_GETITEMRECT skips hidden buttons, so
+	// this reflects the buttons actually laid out right now.
+	bool measure_buttons(sizei& result) const
 	{
-		sizei result(0, 0);
+		result = {0, 0};
+		auto measured_any = false;
 		const int count = static_cast<int>(::SendMessage(m_hWnd, TB_BUTTONCOUNT, 0, 0L));
 
 		for (int i = 0; i < count; ++i)
@@ -7363,12 +7404,13 @@ public:
 			win_rect r;
 			if (::SendMessage(m_hWnd, TB_GETITEMRECT, i, std::bit_cast<LPARAM>(static_cast<LPRECT>(r))))
 			{
+				measured_any = true;
 				result.cx = std::max(static_cast<int>(r.right), result.cx);
 				result.cy = std::max(static_cast<int>(r.bottom), result.cy);
 			}
 		}
 
-		return result;
+		return measured_any;
 	}
 
 	sizei measure_toolbar(const int cx) override
@@ -7378,13 +7420,15 @@ public:
 		if (_styles.xTBSTYLE_WRAPABLE)
 		{
 			::SendMessage(m_hWnd, TB_GETIDEALSIZE, TRUE, std::bit_cast<LPARAM>(&result));
-		}
-		else
-		{
-			::SendMessage(m_hWnd, TB_GETMAXSIZE, 0, (LPARAM)&result);
+			return {result.cx, result.cy};
 		}
 
+		// TB_GETMAXSIZE answers from a size the toolbar cached before the current hidden state and
+		// button text were applied, so a view switch or a maximize toggle would lay the bar out at
+		// its previous width and clip it against the window edge.
+		if (sizei measured; measure_buttons(measured)) return measured;
 
+		::SendMessage(m_hWnd, TB_GETMAXSIZE, 0, (LPARAM)&result);
 		return {result.cx, result.cy};
 	}
 

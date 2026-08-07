@@ -539,6 +539,51 @@ static void should_run_without_a_database()
 	assert_equal(false, ui::is_valid(db.load_thumbnail(file_path).thumb), "no thumbnail");
 }
 
+// The scan loops hand their rows to the database in groups. One row at a time found the write queue
+// empty every time, so it woke the database thread - and opened a transaction - once per file.
+static void should_hand_scan_results_to_the_database_in_groups()
+{
+	// Stands in for the database worker, which drains the whole write queue on every pass. That eager
+	// drain is what makes a per-row producer wake it again for the very next row.
+	class draining_async_strategy final : public null_async_strategy
+	{
+	public:
+		index_state* index = nullptr;
+		int drains = 0;
+		size_t rows = 0;
+
+		void queue_database(std::function<void(database&)> f) override
+		{
+			++drains;
+			rows += index->db_writes().dequeue_all().size();
+		}
+	};
+
+	draining_async_strategy as;
+	const location_cache locations;
+	index_state index(as, locations);
+	as.index = &index;
+
+	df::index_roots paths;
+	paths.folders.emplace(test_files_folder);
+	paths.excludes.emplace(test_files_folder.combine("excluded1"));
+	paths.exclude_wildcards.emplace("exclud*2"_c);
+
+	index.index_roots(paths);
+	index.index_folders(test_token);
+	index.scan_uncached(test_token);
+
+	as.rows += index.db_writes().dequeue_all().size();
+
+	// Without the fixtures actually being scanned the comparison below would pass vacuously.
+	assert_equal(expected_cached_item_count, index.stats.media_item_count, "cached item count");
+	assert_equal(true, as.rows >= 40, std::format("rows written: {}", as.rows));
+
+	// One drain per row is the defect. Grouping cannot need more than one per 64-row group.
+	assert_equal(true, as.drains <= static_cast<int>(as.rows / 8),
+	             std::format("database drains {} for {} rows", as.drains, as.rows));
+}
+
 static void should_pack_item_properties()
 {
 	const auto file_path = test_files_folder.combine_file("Test.jpg");
@@ -1398,13 +1443,14 @@ static void should_detect_duplicates(shared_test_context& stc)
 
 	index.update_predictions();
 
-	// Small.jpg is Test.jpg resized: no shared name, size or CRC, but the same capture time and the
-	// same picture. Recognising that is the whole point of the perceptual stage.
+	// Small.jpg is Test.jpg resized, and Test90/180/270 are the same picture turned. None share a
+	// name, size or CRC with the original, so the perceptual stage is the only thing that can see
+	// them. A quarter turn is a common grading step, so a turned copy is claimed as a copy.
 	const auto test_group = index.find_item(test_item1->path()).duplicates.load();
 	const auto small_group = index.find_item(test_item5->path()).duplicates.load();
 
-	assert_equal(2u, test_group.count, "a resized copy is a duplicate");
-	assert_equal(2u, small_group.count, "and so is the original");
+	assert_equal(5u, test_group.count, "a resized copy and three turns are duplicates");
+	assert_equal(5u, small_group.count, "and so is the original");
 	assert_equal(true, test_group.group != 0 && test_group.group == small_group.group, "one duplicate group");
 
 	// The grade is the claim. A re-encode is only ever "possible", and saying so is what separates it
@@ -1414,14 +1460,14 @@ static void should_detect_duplicates(shared_test_context& stc)
 	assert_equal(static_cast<int>(df::copy_grade::same_picture), static_cast<int>(small_group.grade),
 	             "and so is the original");
 
-	// A rotation is a different bitmap and must not be swept in with them.
-	assert_equal(1u, index.find_item(test_item2->path()).duplicates.load().count, "duplicates");
-	assert_equal(1u, index.find_item(test_item3->path()).duplicates.load().count, "duplicates");
-	assert_equal(1u, index.find_item(sony_item->path()).duplicates.load().count, "duplicates");
+	// A turned copy joins the set; an unrelated photo taken at the same second still does not.
+	assert_equal(5u, index.find_item(test_item2->path()).duplicates.load().count, "a quarter turn is a copy");
+	assert_equal(5u, index.find_item(test_item3->path()).duplicates.load().count, "a half turn is a copy");
+	assert_equal(1u, index.find_item(sony_item->path()).duplicates.load().count, "an unrelated photo is not");
 
 	// Parity: `@duplicates` and a related search read the one duplicate group, so a picture found by
 	// the perceptual stage is reported by both rather than only by the feature that computed it.
-	assert_equal(2, count_search_results(index, "@duplicates"), "@duplicates lists the pair");
+	assert_equal(5, count_search_results(index, "@duplicates"), "@duplicates lists the set");
 
 	df::related_info r;
 	r.load(test_item1);
@@ -1490,8 +1536,54 @@ static void should_report_a_re_encoded_copy_to_presence()
 	             "presence grades it the same way duplicate search would");
 }
 
-static void should_require_equal_size_for_duplicate_crc()
+// Presence and duplicate search are one relation asked at two scales, so a quarter turn has to read
+// the same from both. This is the surface that was blind to the perceptual grade before.
+static void should_report_a_rotated_copy_to_presence()
 {
+	null_async_strategy as;
+	location_cache locations;
+	index_state index(as, locations);
+	const auto cache_path = _temps.next_path();
+	database db(index);
+	db.open(cache_path.folder(), cache_path.file_name_without_extension());
+
+	const auto collection_folder = _temps.next_path().folder().combine("rotate-collection");
+	const auto outside_folder = _temps.next_path().folder().combine("rotate-outside");
+	platform::create_folder(collection_folder);
+	platform::create_folder(outside_folder);
+
+	// The collection holds the upright picture; the outside file is the same picture turned, so it
+	// shares no name, size or checksum with the member and its stored extent is transposed. The
+	// fixtures are 1024x683 and 672x1024: lossless JPEG rotation trims to the MCU grid, so a turned
+	// copy is not an exact transpose, and the shape narrowing has to survive that.
+	const auto member_path = collection_folder.combine_file("upright.jpg");
+	const auto outside_path = outside_folder.combine_file("turned-elsewhere.jpg");
+	platform::copy_file(test_files_folder.combine_file("Test.jpg"), member_path, false, false);
+	platform::copy_file(test_files_folder.combine_file("Test90.jpg"), outside_path, false, false);
+
+	df::index_roots roots;
+	roots.folders.emplace(collection_folder);
+	index.index_roots(roots);
+	index.index_folders(test_token);
+	index.scan_uncached(test_token);
+	index.update_predictions();
+
+	const auto outside_item = std::make_shared<df::item_element>(outside_path, index.find_item(outside_path));
+	index.scan_item(outside_item, true, false);
+	index.queue_update_presence(df::item_set({outside_item}));
+
+	const auto presence = outside_item->presence();
+
+	assert_equal(true,
+	             presence == item_presence::similar_in || presence == item_presence::newer_in ||
+	             presence == item_presence::older_in,
+	             "presence reports a possible copy of a rotation rather than an absence");
+	assert_equal(static_cast<int>(df::copy_grade::same_picture),
+	             static_cast<int>(outside_item->duplicates().grade),
+	             "presence grades a turned copy the same way duplicate search would");
+}
+
+static void should_require_equal_size_for_duplicate_crc(){
 	df::index_file_item first;
 	first.ft = files::file_type_from_name("first.jpg");
 	first.name = str::cache("first.jpg");
@@ -3335,6 +3427,8 @@ void register_tests6(view_state& state, test_registry& tests)
 	          should_invalidate_cached_metadata_written_by_an_older_build);
 	tests.add("Should replace an unreadable database"s, should_replace_an_unreadable_database);
 	tests.add("Should run without a database"s, should_run_without_a_database);
+	tests.add("Should hand scan results to the database in groups"s,
+	          should_hand_scan_results_to_the_database_in_groups);
 	tests.add("Should store pack properties"s, should_pack_item_properties);
 	tests.add("Should store webservice results"s, should_store_webservice_results);
 	tests.add("Should bound webservice cache"s, should_bound_webservice_cache);
@@ -3345,6 +3439,7 @@ void register_tests6(view_state& state, test_registry& tests)
 	          should_request_a_re_query_only_when_a_folder_changed);
 	tests.add("Should require equal size for duplicate CRC"s, should_require_equal_size_for_duplicate_crc);
 	tests.add("Should report a re-encoded copy to presence"s, should_report_a_re_encoded_copy_to_presence);
+	tests.add("Should report a rotated copy to presence"s, should_report_a_rotated_copy_to_presence);
 	tests.add("Should update collection presence"s, should_update_collection_presence);
 	tests.add("Should discard stale presence result"s, should_discard_stale_presence_result);
 	tests.add("Should discard stale scan item update"s, should_discard_stale_scan_item_update);

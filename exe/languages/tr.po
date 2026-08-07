@@ -3395,6 +3395,36 @@ msgstr "Otomatik yeniden adlandır"
 msgid "Block run"
 msgstr "Çalıştırmayı engelle"
 
+msgid "File exists"
+msgstr "Dosya var"
+
+msgid "Choose a destination folder."
+msgstr "Bir hedef klasör seçin."
+
+msgid "Enter a maximum dimension in pixels."
+msgstr "Piksel cinsinden en büyük boyutu girin."
+
+msgid "Check one or more fields to change."
+msgstr "Değiştirilecek bir veya daha fazla alan işaretleyin."
+
+msgid "Select items before using this tool"
+msgstr "Bu aracı kullanmadan önce öğe seçin"
+
+msgid "Success"
+msgstr "Başarılı"
+
+msgid "Failed"
+msgstr "Başarısız"
+
+msgid "Skipped"
+msgstr "Atlandı"
+
+msgid "Not run"
+msgstr "Çalıştırılmadı"
+
+msgid "These are the results of a finished run. Refresh to plan again with the current settings."
+msgstr "Bunlar tamamlanmış bir çalıştırmanın sonuçlarıdır. Geçerli ayarlarla yeniden planlamak için Yenile'ye tıklayın."
+
 msgid "{} destinations already exist. Choose Replace, Skip or Auto-rename."
 msgstr "{} hedef zaten var. Değiştir, Atla veya Otomatik yeniden adlandır seçeneklerinden birini seçin."
 
@@ -3518,11 +3548,11 @@ msgstr "Kapalı: pencereden küçük fotoğraflar ve videolar gerçek boyutunda 
 msgid "Convert the selected photos to another format and optionally limit their size. The originals are kept and new files are written to the destination folder."
 msgstr "Seçili fotoğrafları başka bir biçime dönüştürür ve isteğe bağlı olarak boyutlarını sınırlar. Orijinaller korunur ve yeni dosyalar hedef klasöre yazılır."
 
-msgid "Write the same metadata values to every selected item. Only the fields you check are changed."
-msgstr "Seçili tüm öğelere aynı meta veri değerlerini yazar. Yalnızca işaretlediğiniz alanlar değişir."
+msgid "Write the same metadata values to every selected item. Only the fields you check are changed; image and video data is untouched."
+msgstr "Seçili her öğeye aynı meta veri değerlerini yazar. Yalnızca işaretlediğiniz alanlar değişir; görüntü ve video verileri olduğu gibi kalır."
 
-msgid "Shift the dates of the selected items so the earliest item starts at a new date and time."
-msgstr "Seçili öğelerin tarihlerini, en eski öğe yeni bir tarih ve saatte başlayacak şekilde kaydırır."
+msgid "Shift the dates of the selected items so the earliest item starts at a new date and time. Only metadata is changed; image and video data is untouched."
+msgstr "Seçili öğelerin tarihlerini, en eski öğe yeni bir tarih ve saatte başlayacak şekilde kaydırır. Yalnızca meta veriler değişir; görüntü ve video verileri olduğu gibi kalır."
 
 msgid "Add or remove tags across the selected items. Tags you do not mention are left in place."
 msgstr "Seçili öğelere etiket ekler veya bunlardan etiket kaldırır. Belirtmediğiniz etiketler olduğu gibi kalır."

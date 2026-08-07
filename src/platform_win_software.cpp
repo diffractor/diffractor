@@ -6,11 +6,12 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
-// Purpose: CPU software rendering backend. Implements a draw_context_device that renders
-// into a system-memory BGRA DIB and presents it via GDI (BitBlt / UpdateLayeredWindow).
-// Used as the fallback when Direct3D 11 hardware acceleration is unavailable, and for
-// dialogs and bubble popups. Text is rasterized via DirectWrite glyph alpha bitmaps and
-// alpha-blended on the CPU.
+// Purpose: CPU software rendering backend. Implements a draw_context_device that rasterises a
+// window-sized scene through one fixed 512-square system-memory BGRA DIB, walked across the
+// damaged region a tile at a time and presented via GDI (BitBlt / UpdateLayeredWindow), so the
+// buffer does not track the window size. Used as the fallback when Direct3D 11 hardware
+// acceleration is unavailable, and for dialogs and bubble popups. Text is rasterized via
+// DirectWrite glyph alpha bitmaps and alpha-blended on the CPU.
 
 #include "pch.h"
 #include "platform_win.h"
@@ -188,7 +189,11 @@ public:
 
 	uint8_t* _bits = nullptr;
 	int _stride = 0;
-	sizei _extent;
+	// The allocation, not the window: callers pass window-space coordinates, but the buffer behind
+	// _bits is a scratch tile the context walks across the damaged region.
+	sizei _buffer_extent;
+	// Window-space position of buffer pixel (0,0).
+	pointi _origin;
 	recti _clip;
 	// When true the canvas is treated as fully opaque (non-layered windows presented with BitBlt).
 	// When false (layered bubble popups) real per-pixel alpha is preserved.
@@ -196,12 +201,19 @@ public:
 
 	uint8_t* pixel(const int x, const int y) const noexcept
 	{
-		return _bits + static_cast<ptrdiff_t>(y) * _stride + static_cast<ptrdiff_t>(x) * 4;
+		return _bits + static_cast<ptrdiff_t>(y - _origin.y) * _stride + static_cast<ptrdiff_t>(x - _origin.x) * 4;
+	}
+
+	// The buffer in window space. Every write is clamped to it, so it is the bounds check on the
+	// allocation - deriving it from the same fields pixel() uses is what stops the two drifting.
+	recti buffer_bounds() const noexcept
+	{
+		return {_origin.x, _origin.y, _origin.x + _buffer_extent.cx, _origin.y + _buffer_extent.cy};
 	}
 
 	recti clamp_to_clip(const recti r) const noexcept
 	{
-		return r.intersection(_clip).intersection(recti(0, 0, _extent.cx, _extent.cy));
+		return r.intersection(_clip).intersection(buffer_bounds());
 	}
 
 	static sampled_pixel sample(const uint8_t* pixels, const int stride, const int width, const int height,
@@ -274,7 +286,7 @@ public:
 	// stamps the destination, which is what a render-target clear means.
 	void clear(const ui::color c) const
 	{
-		const auto r = clamp_to_clip(recti(0, 0, _extent.cx, _extent.cy));
+		const auto r = clamp_to_clip(buffer_bounds());
 		if (r.is_empty()) return;
 
 		const auto b = to_byte(c.b);
@@ -1217,6 +1229,11 @@ public:
 
 class software_text_renderer;
 
+// Edge of the fixed scratch tile the software backend rasterises into. The scene is retained, so
+// render() replays it once per tile instead of keeping a buffer the size of the window: 512x512 is
+// 1 MiB, the largest power-of-two square that stays resident in a typical per-core L2.
+constexpr int software_tile_extent = 512;
+
 class software_draw_context final : public draw_context_device,
                                     public std::enable_shared_from_this<software_draw_context>
 {
@@ -1244,7 +1261,13 @@ public:
 	HBITMAP _dib = nullptr;
 	HGDIOBJ _old_bitmap = nullptr;
 	uint8_t* _bits = nullptr;
+	// The scratch tile, not the window: one tile edge of software_tile_extent unless the client is
+	// smaller, or the whole client for a layered window (which cannot be tiled - see render).
 	sizei _dib_size;
+	// Window-space position of the tile currently being rasterised.
+	pointi _dib_origin;
+	// The window client size, which is the space the recorded scene is laid out in.
+	sizei _client_extent;
 
 	// Region this frame is allowed to touch, and whether the scene's own opening clear already
 	// covers it. Both are set by begin_draw and consumed by replay_scene / render.
@@ -1292,6 +1315,7 @@ public:
 
 		_bits = nullptr;
 		_dib_size = {};
+		_dib_origin = {};
 		sync_canvas();
 
 		free_layered_dib();
@@ -1317,6 +1341,11 @@ public:
 		_layered_size = {};
 	}
 
+	recti tile_bounds() const noexcept
+	{
+		return {_dib_origin.x, _dib_origin.y, _dib_origin.x + _dib_size.cx, _dib_origin.y + _dib_size.cy};
+	}
+
 	// The canvas is a view onto the DIB, so it must be re-pointed wherever the DIB is created or
 	// released. Doing it in one place keeps a failed or zero-size allocation from leaving the canvas
 	// describing a non-empty surface backed by freed (or null) pixels.
@@ -1324,10 +1353,32 @@ public:
 	{
 		_canvas._bits = _bits;
 		_canvas._stride = _dib_size.cx * 4;
-		_canvas._extent = _dib_size;
-		_canvas._clip = recti(0, 0, _dib_size.cx, _dib_size.cy);
+		_canvas._buffer_extent = _dib_size;
+		_canvas._origin = _dib_origin;
+		_canvas._clip = tile_bounds();
 		_canvas._opaque = !_layered;
-		_damage = _canvas._clip;
+	}
+
+	void set_tile_origin(const pointi origin)
+	{
+		_dib_origin = origin;
+		_canvas._origin = origin;
+	}
+
+	sizei buffer_extent_for(const sizei client) const
+	{
+		// UpdateLayeredWindow presents the whole surface, so a layered window cannot be tiled and
+		// keeps a full-client buffer.
+		if (_layered) return client;
+
+		// Capped at the tile so the allocation never tracks the window, floored at what is already
+		// allocated so a resize drag cannot reallocate on the way back down.
+		const auto edge = [](const int want, const int have)
+		{
+			return std::max(have, std::min(software_tile_extent, std::max(want, 1)));
+		};
+
+		return {edge(client.cx, _dib_size.cx), edge(client.cy, _dib_size.cy)};
 	}
 
 	void ensure_dib(const sizei sz)
@@ -1385,7 +1436,7 @@ public:
 
 	void reset_damage() override
 	{
-		_damage = recti(0, 0, _dib_size.cx, _dib_size.cy);
+		_damage = recti(0, 0, _client_extent.cx, _client_extent.cy);
 		_scene_covers_damage = false;
 	}
 
@@ -1395,31 +1446,35 @@ public:
 		// discarding the text renderers would leave them built at the previous size while
 		// making the later update_font_size call believe it had nothing to do.
 		update_font_size(base_font_size);
-		const auto had_dib = _dib != nullptr && _dib_size == client_extent && _bits != nullptr;
-		ensure_dib(client_extent);
+		_client_extent = client_extent;
+		ensure_dib(buffer_extent_for(client_extent));
 
-		const recti client(0, 0, _dib_size.cx, _dib_size.cy);
+		const recti client(0, 0, client_extent.cx, client_extent.cy);
 
-		// A partial repaint is only sound because the DIB keeps the previous frame outside the
-		// damaged region. A reallocated DIB holds undefined pixels, and a layered window is
-		// presented whole, so both fall back to repainting everything.
-		_damage = (damage.is_empty() || !had_dib || _layered)
+		// The tile carries nothing between frames, so a partial repaint needs no retained pixels:
+		// every pixel of the damaged region is written each frame, by the scene's own opening clear
+		// or by the neutral pre-clear in replay_scene. A layered window is presented whole.
+		_damage = (damage.is_empty() || _layered)
 			          ? client
 			          : damage.intersection(client);
 
 		_scene_covers_damage = false;
 		_clip_stack.clear();
+		// Recording-phase clip: the widest region the frame may touch, so clip_bounds() queries and
+		// the clip captured by draw_texture see the window, not whichever tile replay reaches first.
 		_canvas._clip = _damage;
 		_scene.clear();
 	}
 
-	// Replay the recorded command list into the DIB. Called on every present so that redraw()
-	// (which re-presents without re-running the host paint logic) reflects textures whose contents
-	// changed in place - e.g. a new video frame decoded into the same software_texture surface.
-	void replay_scene()
+	// Replay the recorded command list into the tile. Called for every tile of every present, so that
+	// redraw() (which re-presents without re-running the host paint logic) reflects textures whose
+	// contents changed in place - e.g. a new video frame decoded into the same software_texture.
+	// Correct to run per tile because every primitive derives its colour, coverage and source mapping
+	// from its own bounds and uses the clip only as a write mask.
+	void replay_scene(const recti tile_clip)
 	{
 		_clip_stack.clear();
-		_canvas._clip = _damage;
+		_canvas._clip = tile_clip;
 
 		// The hardware backend clears the render target before drawing the scene, so anything the
 		// scene does not paint shows as this neutral grey rather than black. Layered windows are
@@ -1455,32 +1510,54 @@ public:
 		else _scene.emplace_back(std::forward<F>(f));
 	}
 
+	// Walk the scratch tile across a region, positioning the canvas for each step. Anchored to the
+	// region, not to a global grid: nothing is reused between frames, so a small repaint straddling
+	// a grid line should still cost one tile. Shared with the tiling probe so tests drive this loop.
+	template <typename F>
+	void for_each_tile(const recti region, F&& fn)
+	{
+		// The step is the tile, so a degenerate one would not advance: fail the frame, never hang.
+		if (_dib_size.cx < 1 || _dib_size.cy < 1) return;
+
+		for (auto y = region.top; y < region.bottom; y += _dib_size.cy)
+		{
+			for (auto x = region.left; x < region.right; x += _dib_size.cx)
+			{
+				const auto tile = recti(x, y, x + _dib_size.cx, y + _dib_size.cy).intersection(region);
+				if (tile.is_empty()) continue;
+
+				set_tile_origin({x, y});
+				fn(tile);
+			}
+		}
+	}
+
 	HRESULT render() override
 	{
 		if (!_bits || !_hwnd) return S_OK;
 
-		replay_scene();
+		const auto region = _damage.intersection(recti(0, 0, _client_extent.cx, _client_extent.cy));
+		if (region.is_empty()) return S_OK;
 
-		if (_layered)
+		// A layered window is presented whole by UpdateLayeredWindow, so it cannot be tiled: its
+		// buffer is the full client and begin_draw forces full damage, which makes the loop below a
+		// single tile covering everything.
+		const auto dc = _layered ? nullptr : GetDC(_hwnd);
+		if (!_layered && !dc) return S_OK;
+
+		for_each_tile(region, [&](const recti tile)
 		{
-			present_layered();
-		}
-		else
-		{
-			const auto dc = GetDC(_hwnd);
+			replay_scene(tile);
 
 			if (dc)
 			{
-				const auto r = _damage.intersection(recti(0, 0, _dib_size.cx, _dib_size.cy));
-
-				if (!r.is_empty())
-				{
-					BitBlt(dc, r.left, r.top, r.width(), r.height(), _mem_dc, r.left, r.top, SRCCOPY);
-				}
-
-				ReleaseDC(_hwnd, dc);
+				BitBlt(dc, tile.left, tile.top, tile.width(), tile.height(),
+				       _mem_dc, tile.left - _dib_origin.x, tile.top - _dib_origin.y, SRCCOPY);
 			}
-		}
+		});
+
+		if (dc) ReleaseDC(_hwnd, dc);
+		else present_layered();
 
 		return S_OK;
 	}
@@ -1565,7 +1642,8 @@ public:
 
 	void resize(const sizei client_extent) override
 	{
-		ensure_dib(client_extent);
+		_client_extent = client_extent;
+		ensure_dib(buffer_extent_for(client_extent));
 	}
 
 	void destroy() override
@@ -1648,7 +1726,7 @@ public:
 
 	void clear(const ui::color c) override
 	{
-		const recti bounds(0, 0, _dib_size.cx, _dib_size.cy);
+		const recti bounds(0, 0, _client_extent.cx, _client_extent.cy);
 
 		// Recorded as the first command, opaque, and covering everything the frame may touch: the
 		// neutral pre-clear in replay_scene cannot survive it, so replay_scene skips it.
@@ -1736,8 +1814,10 @@ public:
 		return std::make_shared<software_texture>();
 	}
 
+	// `visible` is the clip as the host saw it when the call was recorded, not the live clip: replay
+	// runs per tile, and testing the tile would reject every destination below.
 	void draw_texture_impl(const software_texture_ptr& t, const recti dst, const recti src, const float alpha,
-	                       const ui::texture_sampler sampler) const
+	                       const ui::texture_sampler sampler, const recti visible) const
 	{
 		if (!t || !ui::is_valid(t->_surface)) return;
 
@@ -1745,7 +1825,7 @@ public:
 		const auto src_dims = t->_surface->dimensions();
 		const bool full_src = src.left <= 0 && src.top <= 0 && src.right >= src_dims.cx && src.bottom >= src_dims.cy;
 		const bool scaling = dst.width() != src.width() || dst.height() != src.height();
-		const bool fully_visible = _canvas._clip.intersection(dst) == dst;
+		const bool fully_visible = visible.intersection(dst) == dst;
 
 		// Fast path: an opaque image/video scaled from its full source. Scale once with FFmpeg's SIMD
 		// swscale to a display-sized surface, then a 1:1 copy - far faster than the scalar per-pixel
@@ -1774,9 +1854,10 @@ public:
 		if (!t) return;
 		auto tt = std::dynamic_pointer_cast<software_texture>(t);
 		const recti src(pointi(0, 0), t->dimensions());
-		record_or_run([this, tt = std::move(tt), dst, src, alpha, sampler]
+		const auto visible = _canvas._clip;
+		record_or_run([this, tt = std::move(tt), dst, src, alpha, sampler, visible]
 		{
-			draw_texture_impl(tt, dst, src, alpha, sampler);
+			draw_texture_impl(tt, dst, src, alpha, sampler, visible);
 		});
 	}
 
@@ -1784,9 +1865,10 @@ public:
 	                  const ui::texture_sampler sampler, const float radius) override
 	{
 		auto tt = std::dynamic_pointer_cast<software_texture>(t);
-		record_or_run([this, tt = std::move(tt), dst, src, alpha, sampler]
+		const auto visible = _canvas._clip;
+		record_or_run([this, tt = std::move(tt), dst, src, alpha, sampler, visible]
 		{
-			draw_texture_impl(tt, dst, src, alpha, sampler);
+			draw_texture_impl(tt, dst, src, alpha, sampler, visible);
 		});
 	}
 
@@ -1794,7 +1876,8 @@ public:
 	                  const ui::texture_sampler sampler) override
 	{
 		auto tt = std::dynamic_pointer_cast<software_texture>(t);
-		record_or_run([this, tt = std::move(tt), dst, src, alpha, sampler]
+		const auto visible = _canvas._clip;
+		record_or_run([this, tt = std::move(tt), dst, src, alpha, sampler, visible]
 		{
 			if (!tt || !ui::is_valid(tt->_surface)) return;
 
@@ -1803,7 +1886,7 @@ public:
 			recti rect;
 			if (quad_upright_rect(dst, rect))
 			{
-				draw_texture_impl(tt, rect, src, alpha, sampler);
+				draw_texture_impl(tt, rect, src, alpha, sampler, visible);
 				return;
 			}
 
@@ -1896,8 +1979,8 @@ public:
 	void do_edge_shadows(const float alpha)
 	{
 		// Same geometry as the hardware backend.
-		const auto size = std::min(std::min(_dib_size.cx / 2, _dib_size.cy / 2), 96);
-		do_draw_shadow(recti(0, 0, _dib_size.cx, _dib_size.cy).inflate(-size), size, alpha, true);
+		const auto size = std::min(std::min(_client_extent.cx / 2, _client_extent.cy / 2), 96);
+		do_draw_shadow(recti(0, 0, _client_extent.cx, _client_extent.cy).inflate(-size), size, alpha, true);
 	}
 
 	void draw_edge_shadows(const float alpha) override
@@ -2278,4 +2361,139 @@ draw_context_device_ptr create_software_draw_context(const factories_ptr& f, con
                                                      const int base_font_size)
 {
 	return std::make_shared<software_draw_context>(f, hwnd, layered, base_font_size);
+}
+
+platform::software_tiling_probe platform::probe_software_tiling()
+{
+	software_tiling_probe result;
+
+	// Deliberately indivisible by the tile edge below, so tiles are clipped on both axes and no
+	// primitive lands on a tile boundary by luck.
+	constexpr sizei extent{203, 141};
+	constexpr int tile_edge = 32;
+	constexpr uint8_t fill = 0x40;
+
+	const auto source = std::make_shared<ui::surface>();
+	auto* const source_pixels = source->alloc(19, 13, ui::texture_format::ARGB, ui::orientation::top_left);
+	if (!source_pixels) return result;
+
+	for (auto y = 0; y < 13; ++y)
+	{
+		auto* const row = source_pixels + static_cast<ptrdiff_t>(y) * source->stride();
+
+		for (auto x = 0; x < 19; ++x)
+		{
+			row[x * 4 + 0] = static_cast<uint8_t>(x * 11 + y * 3);
+			row[x * 4 + 1] = static_cast<uint8_t>(x * 5 + y * 17);
+			row[x * 4 + 2] = static_cast<uint8_t>(x * 23 + y * 7);
+			row[x * 4 + 3] = static_cast<uint8_t>(128 + ((x + y) & 63));
+		}
+	}
+
+	// One glyph-shaped alpha mask, so blend_glyph is covered without needing a font.
+	render_char_result glyph;
+	glyph.cx = 21;
+	glyph.cy = 17;
+	glyph.pixels.resize(static_cast<size_t>(glyph.cx) * glyph.cy);
+	for (size_t i = 0; i < glyph.pixels.size(); ++i) glyph.pixels[i] = static_cast<uint8_t>(i * 37u + 11u);
+
+	const recti source_rect(0, 0, 19, 13);
+
+	// Every primitive that does non-trivial per-pixel arithmetic, positioned to straddle tile edges.
+	const auto draw_scene = [&](const software_canvas& canvas)
+	{
+		canvas.fill_rect(recti(5, 7, 190, 44), ui::color(0.2f, 0.4f, 0.9f, 1.0f));
+		canvas.fill_rect(recti(11, 15, 170, 39), ui::color(0.9f, 0.1f, 0.3f, 0.45f));
+		canvas.fill_rect_gradient(recti(3, 33, 199, 96), ui::color(0.9f, 0.8f, 0.2f, 1.0f),
+		                          ui::color(0.1f, 0.2f, 0.6f, 0.7f));
+		canvas.fill_rounded_rect(recti(17, 51, 145, 121), ui::color(0.3f, 0.7f, 0.4f, 0.8f), 23);
+		canvas.fill_border_gradient(recti(41, 63, 161, 111), recti(29, 55, 173, 123),
+		                            ui::color(0.95f, 0.35f, 0.15f, 0.9f), ui::color(0.05f, 0.55f, 0.85f, 0.4f));
+		canvas.fill_triangle({13.5, 97.25}, {121.75, 71.5}, {87.25, 137.75}, ui::color(0.6f, 0.2f, 0.8f, 0.55f));
+		canvas.blend_glyph(57, 19, glyph, ui::color(1.0f, 1.0f, 0.4f, 0.85f));
+		canvas.blend_glyph(131, 88, glyph, ui::color(0.2f, 0.9f, 1.0f, 0.7f), true);
+		canvas.blit_surface(*source, source_rect, recti(63, 29, 187, 119), 0.75f,
+		                    ui::texture_sampler::bilinear, true);
+		canvas.blit_surface(*source, source_rect, recti(9, 83, 101, 133), 0.6f,
+		                    ui::texture_sampler::bicubic, true);
+		canvas.blit_surface(*source, source_rect, recti(151, 5, 199, 67), 1.0f,
+		                    ui::texture_sampler::point, true);
+		canvas.blit_quad(*source, source_rect,
+		                 quadd(recti(23, 79, 119, 155)).rotate(27.0, pointd(71.0, 117.0)),
+		                 0.8f, ui::texture_sampler::bilinear, true);
+	};
+
+	std::vector<uint8_t> reference(static_cast<size_t>(extent.cx) * extent.cy * 4, fill);
+	std::vector<uint8_t> tiled(static_cast<size_t>(extent.cx) * extent.cy * 4, fill);
+
+	software_canvas whole;
+	whole._bits = reference.data();
+	whole._stride = extent.cx * 4;
+	whole._buffer_extent = extent;
+	whole._clip = recti(0, 0, extent.cx, extent.cy);
+	whole._opaque = true;
+	draw_scene(whole);
+
+	std::vector<uint8_t> tile_bits(static_cast<size_t>(tile_edge) * tile_edge * 4);
+
+	for (auto ty = 0; ty < extent.cy; ty += tile_edge)
+	{
+		for (auto tx = 0; tx < extent.cx; tx += tile_edge)
+		{
+			const auto tile = recti(tx, ty, tx + tile_edge, ty + tile_edge)
+				.intersection(recti(0, 0, extent.cx, extent.cy));
+
+			std::ranges::fill(tile_bits, fill);
+
+			software_canvas canvas;
+			canvas._bits = tile_bits.data();
+			canvas._stride = tile_edge * 4;
+			canvas._buffer_extent = {tile_edge, tile_edge};
+			canvas._origin = {tx, ty};
+			canvas._clip = tile;
+			canvas._opaque = true;
+			draw_scene(canvas);
+
+			for (auto y = tile.top; y < tile.bottom; ++y)
+			{
+				memcpy(tiled.data() + (static_cast<ptrdiff_t>(y) * extent.cx + tile.left) * 4,
+				       tile_bits.data() + static_cast<ptrdiff_t>(y - ty) * tile_edge * 4 + (tile.left - tx) * 4,
+				       static_cast<size_t>(tile.width()) * 4);
+			}
+
+			++result.tiles;
+		}
+	}
+
+	for (size_t i = 0; i < reference.size(); i += 4)
+	{
+		if (memcmp(reference.data() + i, tiled.data() + i, 4) != 0) ++result.mismatched_pixels;
+
+		const std::array untouched{fill, fill, fill, fill};
+		if (memcmp(reference.data() + i, untouched.data(), 4) != 0) ++result.painted_pixels;
+	}
+
+	// Both extents exceed the tile, so the buffer is already at its final size and ensure_dib will
+	// not reallocate across the grow - the case where the canvas last stopped following the window.
+	{
+		software_draw_context ctx(nullptr, nullptr, false, normal_font_size);
+		constexpr sizei started{software_tile_extent + 88, software_tile_extent + 88};
+		constexpr sizei grown{software_tile_extent * 2 + 376, software_tile_extent + 388};
+
+		ctx.begin_draw(started, normal_font_size, {});
+		ctx.begin_draw(grown, normal_font_size, {});
+
+		const recti client(0, 0, grown.cx, grown.cy);
+		result.grown_client_pixels = client.width() * client.height();
+		result.grown_buffer_pixels = ctx._dib_size.cx * ctx._dib_size.cy;
+
+		ctx.for_each_tile(client, [&](const recti tile)
+		{
+			ctx._canvas._clip = tile;
+			const auto writable = ctx._canvas.clamp_to_clip(client);
+			result.grown_writable_pixels += writable.width() * writable.height();
+		});
+	}
+
+	return result;
 }

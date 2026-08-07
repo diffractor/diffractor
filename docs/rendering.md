@@ -45,12 +45,13 @@ reproduce, are:
 - **The damage rect is a hint, not a contract.** `begin_draw` receives the window's
   update region, and a backend may repaint more than it asks for - but the pixels
   inside the damage rect must not depend on how much was repainted. The software
-  backend honours it (base clip, bounded pre-clear, partial `BitBlt`); the Direct3D
+  backend honours it (base clip, bounded pre-clear, per-tile `BitBlt`); the Direct3D
   backend ignores it, because `DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL` rotates back
   buffers so the region it did not draw holds two-frames-ago content. Partial
-  repaint is only sound because the software DIB persists between frames, so a
-  reallocated DIB, a layered window, and `redraw()` (which re-presents an existing
-  scene whose textures changed underneath it) all fall back to full damage.
+  repaint needs no retained pixels: every pixel of the damaged region is written
+  each frame, either by the scene's own opening opaque `clear` or by the neutral
+  pre-clear, and only that region is presented. A layered window is the exception -
+  `UpdateLayeredWindow` presents the whole surface, so it always takes full damage.
 - **`clear` and `draw_rect`** are the same operation - a flat fill of the requested
   colour. Neither derives a second colour; a rect that wants a centre gradient must
   ask for one with `draw_rect_gradient`, which interpolates `c_centre` in the middle
@@ -192,6 +193,41 @@ The cost is video memory: the allocation is at most one quantum larger than the 
 in each dimension, or up to twice it in each dimension while the shrink threshold has
 not been reached. Only the view frame is hardware accelerated, so this is one swap
 chain per window, bounded by the desktop size.
+
+### The software tile
+
+The software backend does not allocate a window-sized buffer at all. It rasterises
+through a single fixed scratch tile of `software_tile_extent` (512) square - 1 MiB,
+created once and never resized - which `render()` walks across the damaged region,
+replaying the retained scene and blitting each step
+([../src/platform_win_software.cpp](../src/platform_win_software.cpp)). This matters
+because the main window is software rendered (only `view_frame` sets
+`hardware_accelerated`), so at 4K the old full-client DIB was a permanently resident
+33 MB for a window whose centre is covered by the view frame's child HWND.
+
+Tiling is sound only because **every primitive derives its colour, coverage and source
+mapping from its own bounds and treats the clip purely as a write mask** - so a tiled
+frame is pixel-identical to an untiled one. Any new primitive must keep that property:
+`clamp_to_clip` gives the iteration range, never the geometry. `probe_software_tiling`
+guards it by drawing one representative scene whole and again tile by tile and
+comparing, and it is the only content-independent proof of no seams (a screenshot diff
+of a live window is dominated by loading content).
+
+Two consequences are easy to trip over:
+
+- **The canvas is bounded by the allocation, not the window.** `software_canvas`
+  holds `_buffer_extent` plus the tile's window-space `_origin`, and `clamp_to_clip`
+  intersects with those. It deliberately holds no copy of the client size: when it
+  did, growing the window stopped widening the clamp - the tile had already reached
+  its final size, so nothing reallocated and nothing refreshed the copy - and
+  everything outside the original window silently vanished.
+- **A clip-dependent fast path becomes a clip-dependent *result*.** `draw_texture_impl`
+  chooses the swscale path only for a wholly visible destination; that test is taken
+  against the recorded damage, not the live clip, or it would never fire under tiling
+  and every image would drop to the scalar resample.
+
+Layered windows cannot be tiled - `UpdateLayeredWindow` presents the whole surface -
+so they keep a full-client buffer and run as a single tile.
 
 ### Native controls during resize
 

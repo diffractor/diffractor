@@ -552,6 +552,27 @@ namespace platform
 
 	control_paint_probe probe_buffered_control_paint();
 
+	// Test-only probe of the software renderer's tiled rasterisation. The backend replays the
+	// retained scene once per fixed scratch tile, which is only sound while every primitive derives
+	// its colour, coverage and source mapping from its own bounds and treats the clip purely as a
+	// write mask. A primitive that read the clip instead would seam at tile edges, so the probe
+	// draws one representative scene whole and again tile by tile and compares the two.
+	struct software_tiling_probe
+	{
+		int painted_pixels = 0; // pixels the scene changed from the initial fill
+		int mismatched_pixels = 0; // pixels where the tiled result differs from the untiled one
+		int tiles = 0; // tiles the scene was rasterised in
+		// The scratch tile stops being reallocated once it reaches its final size, so growing the
+		// client no longer reallocates anything. These record how much of a grown client the canvas
+		// will actually accept writes for, summed over the tiles the real loop walks, against the
+		// buffer that stayed behind - which must not have grown with the window.
+		int grown_client_pixels = 0;
+		int grown_writable_pixels = 0;
+		int grown_buffer_pixels = 0;
+	};
+
+	software_tiling_probe probe_software_tiling();
+
 
 	using clipboard_data_ptr = std::shared_ptr<clipboard_data>;
 
@@ -734,6 +755,17 @@ namespace platform
 			return was_empty;
 		}
 
+		// One lock and one empty-to-nonempty answer for a whole group, so a producer holding a batch
+		// signals its consumer once rather than once per element.
+		template <typename C>
+		bool enqueue_all(C&& items)
+		{
+			exclusive_lock lock_dec(_rw);
+			const auto was_empty = _storage.empty();
+			for (auto&& i : items) _storage.emplace_back(std::move(i));
+			return was_empty && !_storage.empty();
+		}
+
 		void reset_and_enqueue(T f)
 		{
 			// Superseded tasks own captured surfaces, item lists and shared state, so they are swapped
@@ -758,6 +790,12 @@ namespace platform
 
 			return result;
 		}
+
+		bool empty()
+		{
+			shared_lock lock_dec(_rw);
+			return _storage.empty();
+		}
 	};
 
 	class task_queue
@@ -766,6 +804,10 @@ namespace platform
 		using task_t = std::function<void()>;
 		queue<task_t> _q;
 		thread_event _event;
+
+		// Returned by delay_before_ready_ms when there is nothing to run, so the worker blocks on its
+		// events rather than on a duration.
+		static constexpr uint32_t wait_indefinitely = ~0u;
 
 		task_queue() : _event(false, false)
 		{
@@ -795,12 +837,41 @@ namespace platform
 			_q.reset_and_enqueue(std::move(f));
 			_event.set();
 		}
+
+		// Trailing-edge debounce. A newer request pushes the deadline out, so a burst settles once, and
+		// the worker spends the delay in its event wait rather than a task spending it asleep on the
+		// thread - which is what stopped these queues sharing a worker with anything else.
+		// The deadline belongs to the queue rather than the task, so only supersede-on-enqueue queues
+		// should use this.
+		void enqueue_after(const uint32_t delay_ms, task_t f)
+		{
+			_run_after_ms.store(df::now_ms() + delay_ms, std::memory_order_relaxed);
+			_q.reset_and_enqueue(std::move(f));
+			_event.set();
+		}
+
+		// 0 means drain now. Every queue that never calls enqueue_after answers 0 whenever it holds
+		// anything, which is the behaviour it had before deadlines existed.
+		uint32_t delay_before_ready_ms()
+		{
+			if (_q.empty()) return wait_indefinitely;
+
+			const auto due = _run_after_ms.load(std::memory_order_relaxed);
+			const auto now = df::now_ms();
+			return due > now ? static_cast<uint32_t>(due - now) : 0;
+		}
+
+	private:
+		// A df::now_ms stamp; zero leaves the queue ready as soon as it is signalled.
+		std::atomic<int64_t> _run_after_ms = 0;
 	};
 
 	class threads
 	{
 		mutex _rw;
 		std::vector<std::thread> _threads;
+		// Latched by clear(), so a thread started on demand can never be created after the join.
+		bool _stopped = false;
 
 	public:
 		~threads()
@@ -815,12 +886,25 @@ namespace platform
 			_threads.emplace_back(std::thread(f));
 		}
 
+		// Refuses to start once clear() has run. That refusal is what makes an on-demand start safe from
+		// any thread: the caller learns no worker will service its queue, rather than leaking a thread
+		// that outlives the objects it captured.
+		template <typename F>
+		bool start_if_running(F&& f)
+		{
+			exclusive_lock lock_dec(_rw);
+			if (_stopped) return false;
+			_threads.emplace_back(std::thread(f));
+			return true;
+		}
+
 		void clear()
 		{
 			std::vector<std::thread> threads;
 
 			{
 				exclusive_lock lock_dec(_rw);
+				_stopped = true;
 				std::swap(threads, _threads);
 			}
 

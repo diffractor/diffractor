@@ -270,9 +270,20 @@ void toggle_collection_entry(settings_t::index_t& collection_settings, df::folde
 std::vector<std::string> check_overwrite(df::folder_path write_folder, const df::item_set& items,
                                          std::string_view new_extension);
 
+// UI-thread snapshot of one conversion source. Planning probes the filesystem, so it runs on a
+// worker and must never reach through a df::item_element to do it.
+struct convert_source
+{
+	df::file_path path;
+	sizei dimensions;
+	str::cached xmp;
+};
+
+std::vector<convert_source> snapshot_convert_sources(const df::item_set& items);
+
 struct convert_item_plan
 {
-	df::item_element_ptr item;
+	convert_source source;
 	df::file_path destination;
 	// True when the destination existed before the policy was applied.
 	bool collides = false;
@@ -281,7 +292,8 @@ struct convert_item_plan
 	bool renamed_to_avoid_collision = false;
 };
 
-std::vector<convert_item_plan> plan_convert_outputs(df::folder_path write_folder, const df::item_set& items,
+std::vector<convert_item_plan> plan_convert_outputs(df::folder_path write_folder,
+                                                    const std::vector<convert_source>& sources,
                                                     std::string_view new_extension, collision_policy policy);
 
 // Shared by every destination-writing operation: returns the first free " (n)" variant.

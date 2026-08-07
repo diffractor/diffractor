@@ -1813,11 +1813,29 @@ ui::surface_ptr files::image_to_surface(const df::cspan image_buffer_in, const s
 	return surface_result;
 }
 
+// Reduces a decoded picture to the grayscale square the hash consumes. Separated from hashing so
+// the four orientations share one decode and one reduction.
+static bool build_phash_gray(const ui::const_surface_ptr& surface, std::array<uint8_t, crypto::phash_pixels>& gray);
+
 uint64_t files::calc_perceptual_hash(const ui::const_surface_ptr& surface)
+{
+	std::array<uint8_t, crypto::phash_pixels> gray{};
+	if (!build_phash_gray(surface, gray)) return 0;
+	return crypto::perceptual_hash(gray.data(), gray.size());
+}
+
+crypto::phash_rotations files::calc_perceptual_hash_rotations(const ui::const_surface_ptr& surface)
+{
+	std::array<uint8_t, crypto::phash_pixels> gray{};
+	if (!build_phash_gray(surface, gray)) return {};
+	return crypto::perceptual_hash_rotations(gray.data(), gray.size());
+}
+
+static bool build_phash_gray(const ui::const_surface_ptr& surface, std::array<uint8_t, crypto::phash_pixels>& gray)
 {
 	if (!is_valid(surface))
 	{
-		return 0;
+		return false;
 	}
 
 	// RGB and ARGB are both four bytes a pixel; the planar YUV formats are not laid out this way and
@@ -1826,7 +1844,7 @@ uint64_t files::calc_perceptual_hash(const ui::const_surface_ptr& surface)
 
 	if (format != ui::texture_format::RGB && format != ui::texture_format::ARGB)
 	{
-		return 0;
+		return false;
 	}
 
 	const auto extent = static_cast<int>(crypto::phash_extent);
@@ -1835,15 +1853,15 @@ uint64_t files::calc_perceptual_hash(const ui::const_surface_ptr& surface)
 
 	if (width <= 0 || height <= 0)
 	{
-		return 0;
+		return false;
 	}
 
 	// Box-averaged down to the hash extent, ignoring aspect. Squashing rather than cropping is what
 	// makes the hash survive a resize, and averaging rather than sampling is what makes it survive
 	// the resampling a re-encode applies. Each cell claims its own source rectangle, so a source
 	// narrower or shorter than the hash shares pixels between cells instead of leaving them empty.
-	std::array<uint8_t, crypto::phash_pixels> gray{};
-
+	// Cells partition by fraction rather than by pixel count, which is what makes the grid of a
+	// rotated picture the rotated grid of the original.
 	for (auto cell_y = 0; cell_y < extent; ++cell_y)
 	{
 		const auto y0 = cell_y * height / extent;
@@ -1876,7 +1894,14 @@ uint64_t files::calc_perceptual_hash(const ui::const_surface_ptr& surface)
 		}
 	}
 
-	return crypto::perceptual_hash(gray.data(), gray.size());
+	return true;
+}
+
+crypto::phash_rotations files::calc_perceptual_hash_rotations(const df::cspan encoded)
+{
+	constexpr auto decode_extent = 128;
+	return calc_perceptual_hash_rotations(image_to_surface(encoded, {decode_extent, decode_extent}, false,
+	                                                       decode_intent::thumbnail));
 }
 
 uint64_t files::calc_perceptual_hash(const df::cspan encoded)
@@ -2448,6 +2473,10 @@ platform::file_op_result files::update_impl(const df::file_path path_src, const 
 	const auto path_temp = platform::temp_file(path_dst.extension(), path_dst.folder());
 	const auto path_rollback = platform::temp_file(path_dst.extension(), path_dst.folder());
 	bool rollback_file_created = false;
+
+	// Set when the rollback copy is the last surviving copy of the original bytes, which stops
+	// the cleanup below from deleting it.
+	bool rollback_holds_sole_original = false;
 	xmp_update_result xmp_result;
 
 	// Set only once a write path is entered, so a no-op update records nothing and a failure is
@@ -2697,6 +2726,17 @@ platform::file_op_result files::update_impl(const df::file_path path_src, const 
 					{
 						rollback_result = platform::replace_file(path_dst, path_rollback, false);
 						rollback_file_created = rollback_result.failed();
+
+						// The swap consumed the rollback copy on success. On failure the destination
+						// holds the new bytes and this copy is the only original left, so name it in
+						// the log - it survives under a temp name that means nothing to the user.
+						rollback_holds_sole_original = rollback_file_created;
+
+						if (rollback_holds_sole_original)
+						{
+							df::log(__FUNCTION__, std::format("could not restore {}; original retained as {}",
+							                                  path_dst, path_rollback));
+						}
 					}
 					else
 					{
@@ -2727,7 +2767,7 @@ platform::file_op_result files::update_impl(const df::file_path path_src, const 
 		// Only ever a staged copy; the live sidecar is never the cleanup target.
 		if (temp_file_created && !xmp_result.xmp_path.is_empty()) platform::delete_file(xmp_result.xmp_path);
 	}
-	if (rollback_file_created) platform::delete_file(path_rollback);
+	if (rollback_file_created && !rollback_holds_sole_original) platform::delete_file(path_rollback);
 
 	return result;
 }

@@ -31,7 +31,7 @@ Consistency means predictable grouping, spacing, icon treatment, empty states, a
 The controls are created in [model.cpp](../src/model.cpp) and consumed in two presentations:
 
 - **Items preview:** `items_view::update_media_elements` calls the non-compact builder. For one item it may append the Description section, stream details, and raw metadata below the selection panel. The selection panel ends the primary block; a Show/Hide verbose metadata affordance closes the optional detail below it, so the Description section is always read as detail rather than as primary content. The affordance appears only when the item actually has stream or raw metadata to reveal, and when verbose metadata is closed and nothing else would sit below the primary block it joins that block, so a lone toggle never turns a centred media pane into a scrolling one.
-- **Fullscreen:** `media_view::update_media_elements` calls the compact builder. The panel is hidden below a minimum usable width. On wide displays, a bounded panel holding the item's leading prose field may appear beside it. Zoom and compare states overlay the panel on the media; otherwise the panel reserves space below the media.
+- **Fullscreen:** `media_view::update_media_elements` calls the compact builder. The panel is hidden below a minimum usable width, and keeps one centred width whether or not a description exists. On wide displays a bounded panel holding the item's leading prose field occupies the free space between the controls and the right edge, so showing it never narrows or moves the controls. Zoom and compare states overlay both panels on the media; otherwise they reserve space below the media.
 
 The current top-level classification is not the intended three-form model:
 
@@ -49,17 +49,16 @@ The current top-level classification is not the intended three-form model:
 The non-compact panel creates these regions in order:
 
 1. AV transport: Play and scrubber for audio/video. Withheld when the decoder could not open the file, because the pane below is then a hex dump and a scrubber over it claims a position in something there is no way to play.
-2. Identity: metadata Title when present, otherwise filename without extension.
-3. Identity: metadata Title when present, otherwise filename without extension, followed by any count badges. Badges are read live so a late result appears without a rebuild; the bubble lists the copies and states the current collection presence.
-4. Viewing: playback options for playable media, Slideshow, Pin, orientation state, preview state, Scale up, and Fullscreen. Playback options follow the transport and are withheld on the same condition.
-5. Actions: reject/label, rating where editable, rotate, Edit, Open, and Tools.
-6. File facts: containing folder when it is not already the scope, filename, dates, and size.
-7. Technical and descriptive facts when present: dimensions, resolution, codecs, bitrate, audio format, camera, album, artist, retro system, and copyright.
-8. Location: current location, or the Add Location command when empty.
-9. Tags: current tags capped at six plus a `+N` remainder, or the Edit Tags command when empty.
-10. Description: a Description label, or the Edit Metadata command when empty. The description text itself is rendered later by Items or beside the fullscreen panel.
+2. Identity: metadata Title when present, otherwise filename without extension, followed by any count badges. Badges are read live so a late result appears without a rebuild; the bubble lists the copies and states the current collection presence.
+3. Viewing: playback options for playable media, Slideshow, Pin, orientation state, preview state, Scale up, and Fullscreen. Playback options follow the transport and are withheld on the same condition.
+4. Actions: reject/label, rating where editable, rotate, Edit, Open, and Tools.
+5. File facts: containing folder when it is not already the scope, filename, dates, and size.
+6. Technical and descriptive facts when present: dimensions, resolution, codecs, bitrate, audio format, camera, album, artist, retro system, and copyright.
+7. Location: current location, or the Add Location command when empty.
+8. Tags: current tags capped at six plus a `+N` remainder, or the Edit Tags command when empty.
+9. Description: a Description label, or the Edit Metadata command when empty. The description text itself is rendered later by Items or beside the fullscreen panel.
 
-Compact density reduces region 6 to the capture date alone and removes the encoding facts within region 7 — codecs, pixel format, bitrate, and audio format. It keeps dimensions, camera, album, artist, retro system, and copyright, because fullscreen is where the picture is being read and those facts describe the subject rather than the container. The date stays for the same reason: when a photograph was taken is a fact about the subject, and dropping it with the folder, filename, and size left fullscreen unable to answer "when was this?". Long-form prose is not a compact concern; fullscreen renders the leading field in its own bounded panel beside the controls.
+Compact density reduces region 5 to the capture date alone and removes the encoding facts within region 6 — codecs, pixel format, bitrate, and audio format. It keeps dimensions, camera, album, artist, retro system, and copyright, because fullscreen is where the picture is being read and those facts describe the subject rather than the container. The date stays for the same reason: when a photograph was taken is a fact about the subject, and dropping it with the folder, filename, and size left fullscreen unable to answer "when was this?". Long-form prose is not a compact concern; fullscreen renders the leading field in its own bounded panel beside the controls.
 
 ### The Description section
 
@@ -96,7 +95,7 @@ This uses a different grammar:
 The comparison branch creates:
 
 - Per-item label/reject, rating where editable, Pin, Delete, and Unselect controls. There is no shared navigation/action row, because Previous, Next, Rotate, Edit, Tag, Open, and Tools have no unambiguous target while two items are displayed.
-- Rows for name, presence, folder, size, created date, and modified date.
+- Rows for name, folder, size, created date, and modified date. Each name carries its own count badges, so presence spends no extra row or column.
 - Optional rows for duration, dimensions and codecs, audio, camera, album, artist, retro system, location, copyright, tags, Description, Comment, and Synopsis, rendered from whichever metadata snapshot has arrived.
 - A separate identical/not-identical result when CRC or pixel comparison has resolved.
 
@@ -151,7 +150,7 @@ The singular panel is one compact wrapping block with the following groups. The 
 
 - The title is always the first item and always exactly one line high.
 - Prefer authored Title for media, otherwise use filename. Trim long text to the row and expose the full value in the tooltip; never wrap the title or increase the row height. Trimming currently clips at a character boundary; an ellipsis sign is a presentation improvement in both draw backends, not a layout requirement.
-- A count badge may follow: a sidecar count, then a copy count when the item has copies. Both use the same text, colour, and shape as the badges on a thumbnail and in a detail row, so a count is recognized identically wherever it appears. The badges are part of the title control, not separate controls: the title is one target whose action is to show the items related to this one, which is what a count is for.
+- A count badge may follow: a sidecar count, then a copy count once presence has resolved. The copy count appears on the same condition as the badges on a thumbnail and in a detail row — as soon as the item's presence is known, including the zero that says the collection holds no other copy — and is withheld while presence is still checking, because a count drawn from incomplete evidence would read as an answer. All three use the same text, colour, and shape, so a count is recognized identically wherever it appears. The badges are part of the title control, not separate controls: the title is one target whose action is to show the items related to this one, which is what a count is for.
 - The bubble carries the identity detail the badges summarize: the sidecar files, the copies with their names, dates and sizes, and then the collection presence in the complete status vocabulary from [design.md](design.md#collection-presence), including Checking presence. Redundancy and presence are stated as separate claims rather than folded together, because they answer different questions ([collections.md](collections.md#6-the-collections-edge)).
 - Presence is informational and does not add possible copies to the target. Omit it where the concept does not apply, such as a folder.
 
@@ -411,7 +410,7 @@ The form model above is the target. 1.27.0 takes only the part that removes a wr
 ### In 1.27.0
 
 1. **Comparison eligibility.** An explicit profile predicate over file traits decides whether a pair receives comparison controls: image with image, or previewable video with previewable video. Every other pair, including any pair containing a folder, receives Selection summary. Eligibility reads stable traits only, never online status, metadata arrival, or panel width.
-2. **Presence as its own badge.** Singular and comparison show the familiar compare/count badge separately from the title. Its bubble uses the existing status vocabulary and lists related items; the badge reads the current count when it measures, so a late result appears without rebuilding the panel.
+2. **Presence as its own badge.** Singular and comparison show the familiar compare/count badge on the title itself rather than in a row or column of its own, distinct in colour but sharing the title's one target. Its bubble uses the existing status vocabulary and lists related items; the badge reads the current count when it measures, so a late result appears without rebuilding the panel.
 3. **Editable metadata affordances.** Location and Tags are the last lines of the singular panel and each leads with the icon that opens `tool_locate` or `tool_tag` for that item, followed by whatever values exist. Description has no line here when populated, because its own section below the panel carries the text and the `tool_edit_description` icon; when empty, that icon closes the panel on its own.
 4. **Bounded tags in both densities.** The compact six-plus-`+N` cap applies to regular density as well, so one heavily tagged item cannot dominate the panel.
 5. **Comparison values from either snapshot.** Optional comparison rows render from whichever metadata snapshot has arrived rather than waiting for both, so the table is not blank while one side loads.
@@ -428,13 +427,13 @@ Until the media surface reads the same predicate, two selected files still displ
 
 ## Acceptance scenarios
 
-1. Select one titled photo with presence, rating, label, tags, Description, dimensions, camera, and location. Title remains one line; the Presence badge is visibly separate and its bubble states the detailed status; Viewing precedes Actions; properties follow; Location, Tags, and Description are last.
+1. Select one titled photo with presence, rating, label, tags, Description, dimensions, camera, and location. Title remains one line; the Presence badge follows the title, is visibly distinct from it, and its bubble states the detailed status; Viewing precedes Actions; properties follow; Location, Tags, and Description are last.
 2. Select one photo with no location, tags, or Description. Each line shows only its blue edit command icon, without a neutral field icon. Other absent property groups consume no height.
 3. Select one video. Play is immediately left of the scrubber; title remains one line at narrow widths; playback and presentation controls remain separate from file-changing actions.
 4. Select one audio file, archive, ordinary document, and folder in turn. Each uses the singular hierarchy and only applicable facts; compact density is bounded for all four.
 5. Select two images with different dimensions, dates, tags, and ratings. A/B identity matches the media panes, missing values retain alignment, and differences are emphasized without implying that larger or later is better. The table contains no Rotate, Edit, Open, Tools, Previous, or Next commands.
 6. Compare two near-duplicate photos and discard the weaker one. Reject, colour label, rating, Pin, Unselect, and Delete each appear at the head of one column and act only on that column's item; after Delete or Unselect the survivor becomes the Singular panel without an intermediate empty state. Pinning the keeper and then choosing a third photo compares the keeper against it rather than starting over, and pinning the other column moves the hold instead of holding both.
-7. Select two identical images before and after CRC/pixel checks complete. The Presence bubble changes from Checking to the resolved result and its badge count updates without a panel rebuild or form change.
+7. Select two identical images before and after CRC/pixel checks complete. The Presence bubble changes from Checking to the resolved result, and the badge appears with the resolved count where Checking showed none, without a panel rebuild or form change.
 8. Select two previewable videos. The pair uses the video comparison profile even while one preview is unavailable.
 9. Select an image and a video, two audio files, two folders, and a file plus folder. Each uses Selection summary, not the comparison table.
 10. Select a large mixed set. Thumbnails appear first; the panel then shows one total count, composition, total size, common or Mixed state, and a bounded breakdown; applicable batch actions follow the information and do not include Previous or Next.

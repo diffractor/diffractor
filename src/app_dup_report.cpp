@@ -48,7 +48,7 @@ namespace
 		uint64_t created_key = 0;
 		df::date_t created;
 		bool created_from_exif = false;
-		uint64_t phash = 0;
+		crypto::phash_rotations phash{};
 	};
 
 	struct report_writer
@@ -265,11 +265,11 @@ int run_duplicate_report(const std::string_view folder_text, const std::string_v
 		if (stream.open(entry.path) && stream.size() <= max_report_file_bytes)
 		{
 			df::blob owner;
-			entry.phash = ff.calc_perceptual_hash(stream.view_all(owner));
+			entry.phash = ff.calc_perceptual_hash_rotations(stream.view_all(owner));
 		}
 
-		if (entry.phash == 0) ++hash_failed;
-		else if (!crypto::phash_is_usable(entry.phash)) ++declined;
+		if (entry.phash[0] == 0) ++hash_failed;
+		else if (!crypto::phash_is_usable(entry.phash[0])) ++declined;
 	}
 
 	printf("  hashing complete            \n\n");
@@ -289,9 +289,9 @@ int run_duplicate_report(const std::string_view folder_text, const std::string_v
 				const auto& left = photos[members[a]];
 				const auto& right = photos[members[b]];
 
-				if (!crypto::phash_is_usable(left.phash) || !crypto::phash_is_usable(right.phash)) continue;
+				if (!crypto::phash_is_usable(left.phash[0]) || !crypto::phash_is_usable(right.phash[0])) continue;
 
-				const auto distance = crypto::phash_distance(left.phash, right.phash);
+				const auto distance = crypto::phash_distance(left.phash[0], right.phash);
 				++distance_histogram[distance];
 
 				if (distance <= max_swept_threshold)
@@ -354,7 +354,7 @@ int run_duplicate_report(const std::string_view folder_text, const std::string_v
 
 		for (size_t i = 0; i < photos.size(); ++i)
 		{
-			if (photos[i].phash == 0) continue;
+			if (photos[i].phash[0] == 0) continue;
 			components[uf.root(i)].push_back(i);
 		}
 
@@ -378,7 +378,7 @@ int run_duplicate_report(const std::string_view folder_text, const std::string_v
 				for (size_t b = a + 1; b < members.size(); ++b)
 				{
 					worst_diameter = std::max(worst_diameter,
-					                          crypto::phash_distance(photos[members[a]].phash,
+					                          crypto::phash_distance(photos[members[a]].phash[0],
 					                                                 photos[members[b]].phash));
 				}
 			}
@@ -408,7 +408,7 @@ int run_duplicate_report(const std::string_view folder_text, const std::string_v
 				{
 					for (size_t b = a + 1; b < members.size(); ++b)
 					{
-						diameter = std::max(diameter, crypto::phash_distance(photos[members[a]].phash,
+						diameter = std::max(diameter, crypto::phash_distance(photos[members[a]].phash[0],
 						                                                    photos[members[b]].phash));
 					}
 				}
@@ -460,7 +460,7 @@ int run_duplicate_report(const std::string_view folder_text, const std::string_v
 
 		for (size_t i = 0; i < photos.size(); ++i)
 		{
-			if (photos[i].phash == 0) continue;
+			if (photos[i].phash[0] == 0) continue;
 			components[uf.root(i)].push_back(i);
 		}
 
@@ -482,7 +482,7 @@ int run_duplicate_report(const std::string_view folder_text, const std::string_v
 				for (size_t b = a + 1; b < members.size(); ++b)
 				{
 					worst_diameter = std::max(worst_diameter,
-					                          crypto::phash_distance(photos[members[a]].phash,
+					                          crypto::phash_distance(photos[members[a]].phash[0],
 					                                                 photos[members[b]].phash));
 				}
 			}
@@ -519,7 +519,7 @@ int run_duplicate_report(const std::string_view folder_text, const std::string_v
 
 			for (const auto m : members)
 			{
-				if (!crypto::phash_is_usable(photos[m].phash)) continue;
+				if (!crypto::phash_is_usable(photos[m].phash[0])) continue;
 				if (anchor == members.size() || photos[m].path < photos[anchor].path) anchor = m;
 			}
 
@@ -527,18 +527,27 @@ int run_duplicate_report(const std::string_view folder_text, const std::string_v
 
 			std::vector<size_t> matched;
 
+			// Mirrors the shipped crowd rule: only an untuned match is burst evidence, because
+			// continuous shooting never produces a rotated frame.
+			size_t same_orientation_matches = 0;
+
 			for (const auto m : members)
 			{
-				if (m == anchor || !crypto::phash_is_usable(photos[m].phash)) continue;
-				if (crypto::phash_distance(photos[anchor].phash, photos[m].phash) <= shipped_threshold)
+				if (m == anchor || !crypto::phash_is_usable(photos[m].phash[0])) continue;
+				if (crypto::phash_distance(photos[anchor].phash[0], photos[m].phash) <= shipped_threshold)
 				{
 					matched.push_back(m);
+
+					if (crypto::phash_distance(photos[anchor].phash[0], photos[m].phash[0]) <= shipped_threshold)
+					{
+						++same_orientation_matches;
+					}
 				}
 			}
 
 			if (matched.empty()) continue;
 
-			if (matched.size() > max_similar_pictures_at_one_capture_time)
+			if (same_orientation_matches > max_similar_pictures_at_one_capture_time)
 			{
 				++declined_capture_times;
 				declined_photos += matched.size() + 1;
@@ -558,7 +567,7 @@ int run_duplicate_report(const std::string_view folder_text, const std::string_v
 				for (size_t b = a + 1; b < matched.size(); ++b)
 				{
 					worst_diameter = std::max(worst_diameter,
-					                          crypto::phash_distance(photos[matched[a]].phash,
+					                          crypto::phash_distance(photos[matched[a]].phash[0],
 					                                                 photos[matched[b]].phash));
 				}
 			}

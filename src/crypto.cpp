@@ -353,6 +353,55 @@ uint64_t crypto::perceptual_hash(const uint8_t* gray, const size_t len)
 	return result == 0 ? 2ull : result;
 }
 
+namespace
+{
+	// A quarter turn clockwise: the value at row r, column c moves to row c, column N-1-r.
+	void rotate_quarter_turn(std::array<uint8_t, crypto::phash_pixels>& grid)
+	{
+		constexpr auto n = crypto::phash_extent;
+		std::array<uint8_t, crypto::phash_pixels> rotated{};
+
+		for (size_t r = 0; r < n; ++r)
+		{
+			for (size_t c = 0; c < n; ++c)
+			{
+				rotated[c * n + (n - 1 - r)] = grid[r * n + c];
+			}
+		}
+
+		grid = rotated;
+	}
+}
+
+crypto::phash_rotations crypto::perceptual_hash_rotations(const uint8_t* gray, const size_t len)
+{
+	phash_rotations result{};
+
+	if (gray == nullptr || len < phash_pixels)
+	{
+		return result;
+	}
+
+	std::array<uint8_t, phash_pixels> grid{};
+	std::copy_n(gray, phash_pixels, grid.begin());
+
+	for (auto& hash : result)
+	{
+		hash = perceptual_hash(grid.data(), grid.size());
+		rotate_quarter_turn(grid);
+	}
+
+	// The detail test is applied per orientation, so a picture near the floor could speak in one
+	// turn and decline in another. Answering only when every orientation agrees keeps the result
+	// from depending on which way round the file happened to be saved.
+	if (std::ranges::any_of(result, [](const uint64_t h) { return !phash_is_usable(h); }))
+	{
+		result.fill(0);
+	}
+
+	return result;
+}
+
 static constexpr uint32_t FNV_PRIME_32 = 16777619u;
 static constexpr uint32_t OFFSET_BASIS_32 = 2166136261u;
 

@@ -51,7 +51,7 @@ command_line_t command_line;
 auto s_app_name_l = L"Diffractor";
 const std::string_view s_app_name = "Diffractor";
 const std::string_view s_app_version = "127.0";
-const std::string_view g_app_build = "1265";
+const std::string_view g_app_build = "1269";
 static constexpr auto s_search = "search";
 
 extern void start_worker(platform::task_queue& q, std::string_view name);
@@ -224,7 +224,9 @@ std::vector<std::pair<std::string_view, std::string>> calc_app_info(const index_
 	                    std::format("g={} mcomp={}", index.stats.indexed_dup_folder_count,
 	                                index.stats.indexed_max_compare_count));
 	result.emplace_back("Hashes:",
-	                    std::format("crc={}", index.stats.indexed_crc_count));
+	                    std::format("crc={} phash={} declined={} uninvited={}", index.stats.indexed_crc_count,
+	                                index.stats.indexed_phash_count, index.stats.indexed_phash_declined_count,
+	                                index.stats.indexed_phash_uninvited_count));
 	result.emplace_back("DB size:", index.stats.database_size.str());
 	result.emplace_back("Saved:", std::format("{} items | {} thumbs", index.stats.items_saved,
 	                                          index.stats.thumbs_saved));
@@ -1225,7 +1227,29 @@ void app_frame::layout(ui::measure_context& mc)
 
 		_app_logo->text(view_mode == view_type::items ? s_app_name : _view->title());
 		const auto title_left = client_bounds.left + mc.padding1;
-		const auto title_available_right = std::max(title_left, nav1_bounds.left - mc.padding1);
+		// Outside the items view the address bar is not shown, so nav1 is no bound at all and a long
+		// view title would run into the command bar, which command_bounds then clips against the
+		// window edge. The commands are the view's primary affordance, so the title yields to them.
+		const auto active_commands_extent =
+			view_processing
+				? busy_commands_extent
+				: view_mode == view_type::edit
+				? media_edit_commands_extent
+				: view_mode == view_type::rename || view_mode == view_type::batch
+				? tool_commands_extent
+				: view_mode == view_type::import
+				? import_commands_extent
+				: view_mode == view_type::locate
+				? locate_commands_extent
+				: view_mode == view_type::sync
+				? sync_commands_extent
+				: view_mode == view_type::tags
+				? tags_commands_extent
+				: sizei{};
+		const auto title_limit = show_items_controls
+			                         ? nav1_bounds.left
+			                         : client_bounds.right - mc.padding2 - active_commands_extent.cx;
+		const auto title_available_right = std::max(title_left, title_limit - mc.padding1);
 		const auto title_extent = _app_logo->measure(mc, title_available_right - title_left);
 		const auto title_top = center_y(title_extent.cy);
 		_title_bounds = show_top_bar
@@ -1577,6 +1601,16 @@ void app_frame::complete_pending_events()
 				sidebar->layout();
 			}
 
+			if (pop_invalid_flag(_invalids, view_invalid::sidebar_drives))
+			{
+				_view_items->sidebar()->populate_drives();
+			}
+
+			if (pop_invalid_flag(_invalids, view_invalid::sidebar_counts))
+			{
+				_view_items->sidebar()->queue_update_predictions();
+			}
+
 			if (pop_invalid_flag(_invalids, view_invalid::index_summary))
 			{
 				_state.invalidate_day_counts();
@@ -1602,7 +1636,14 @@ void app_frame::complete_pending_events()
 
 			if (pop_invalid_flag(_invalids, view_invalid::presence))
 			{
-				_item_index.queue_update_presence(_state.display_items());
+				// Nothing to match against until the cache has merged and the folders are indexed: the
+				// pass would resolve every item to unknown and then decline to conclude anything, having
+				// contended for the index locks with the thread still building it. Each index phase that
+				// completes raises this flag again.
+				if (_item_index.is_init_complete())
+				{
+					_item_index.queue_update_presence(_state.display_items());
+				}
 			}
 
 			const auto update_groups = pop_invalid_flag(_invalids, view_invalid::group_layout);
@@ -2227,11 +2268,14 @@ void app_frame::reload()
 {
 	_view->reload();
 
+	// Refresh is the user's recovery from anything stale, so it re-reads what is otherwise only
+	// refreshed by an event: volume free space and labels change without notifying us at all.
 	invalidate_view(view_invalid::view_layout |
 		view_invalid::group_layout |
 		view_invalid::index |
 		view_invalid::refresh_items |
-		view_invalid::item_scan);
+		view_invalid::item_scan |
+		view_invalid::sidebar_drives);
 }
 
 void app_frame::view_changed(const view_type m)
@@ -2349,7 +2393,6 @@ void app_frame::view_changed(const view_type m)
 		invalidate_view(view_invalid::app_layout |
 			view_invalid::view_layout |
 			view_invalid::group_layout |
-			view_invalid::sidebar |
 			view_invalid::command_state |
 			view_invalid::media_elements |
 			view_invalid::tooltip |
@@ -2367,7 +2410,9 @@ void app_frame::language_changed(const std::string_view lang_code)
 		lc.set_display_language(lang_code);
 		invalidate_view(view_invalid::sidebar);
 	});
-	invalidate_view(view_invalid::visual_options);
+	// Explicit, because visual_options no longer carries the sidebar: every sidebar label is translated,
+	// so a language change is one of the few option changes that really does rebuild it.
+	invalidate_view(view_invalid::visual_options | view_invalid::sidebar);
 }
 
 void app_frame::invoke(const command_info_ptr& command)
@@ -2912,7 +2957,7 @@ bool app_frame::init(const std::string_view command_line_text)
 	_threads.start([&q = work_task_queue] { start_worker(q, "work"); });
 
 	open_default_folder();
-	invalidate_view(view_invalid::address);
+	invalidate_view(view_invalid::address | view_invalid::sidebar_drives);
 
 	work_task_queue.enqueue([this, app = shared_from_this()]
 	{
@@ -3102,7 +3147,8 @@ void app_frame::system_event(const ui::os_event_type ost)
 	if (ost == ui::os_event_type::system_device_change)
 	{
 		invalidate_view(
-			view_invalid::app_layout | view_invalid::view_layout | view_invalid::sidebar | view_invalid::index);
+			view_invalid::app_layout | view_invalid::view_layout | view_invalid::sidebar_drives |
+			view_invalid::index);
 	}
 	else if (ost == ui::os_event_type::options_changed)
 	{

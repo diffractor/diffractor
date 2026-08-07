@@ -152,7 +152,10 @@ public:
 			}
 			if (_description_element && !_description_element->bounds.is_empty())
 			{
-				dc.clip_bounds(_description_element->bounds);
+				// The clip caps overlong prose, so it must admit the rounded background the element
+				// paints outside its bounds or the panel loses its corners.
+				const auto pad = _description_element->padding * dc.scale_factor;
+				dc.clip_bounds(_description_element->bounds.inflate(pad.cx, pad.cy));
 				_description_element->render(dc, {0, 0});
 				dc.restore_clip();
 			}
@@ -211,45 +214,36 @@ public:
 		{
 			const auto control_limit = avail_bounds.inflate(-mc.padding2);
 			const auto panel_gap = mc.padding2;
-			const auto show_description = _description_element &&
-				control_limit.width() >= df::round(900 * scale_factor);
-			const auto panel_width = show_description
-				                         ? std::min(control_limit.width(), df::round(980 * scale_factor))
-				                         : std::min(control_limit.width(),
-				                                    std::max(df::round(360 * scale_factor),
-				                                             df::mul_div(control_limit.width(), 5, 11)));
-			const auto controls_width = show_description
-				                            ? df::mul_div(panel_width - panel_gap, 3, 5)
-				                            : panel_width;
-			const auto description_width = show_description ? panel_width - panel_gap - controls_width : 0;
+			const auto controls_width = std::min(control_limit.width(),
+			                                     std::max(df::round(360 * scale_factor),
+			                                              df::mul_div(control_limit.width(), 5, 11)));
 			const auto controls_extent = _controls_element->measure(mc, controls_width);
-			auto description_height = 0;
-			if (show_description)
-			{
-				const auto description_extent = _description_element->measure(mc, description_width);
-				const auto max_description_height = std::max(df::round(112 * scale_factor), avail_bounds.height() / 3);
-				description_height = std::min(description_extent.cy, max_description_height);
-			}
-			const auto panel_height = std::max(controls_extent.cy, description_height);
-			const auto panel_left = (control_limit.left + control_limit.right - panel_width) / 2;
+			const auto controls_left = (control_limit.left + control_limit.right - controls_width) / 2;
 			const recti control_bounds{
-				panel_left, control_limit.bottom - controls_extent.cy,
-				panel_left + controls_width, control_limit.bottom
+				controls_left, control_limit.bottom - controls_extent.cy,
+				controls_left + controls_width, control_limit.bottom
 			};
 
 			_controls_element->layout(mc, control_bounds, positions);
-			if (show_description)
+
+			// The description takes only the free space between the controls and the right edge, so
+			// showing one never narrows the controls or moves them.
+			auto panel_height = controls_extent.cy;
+			const auto description_avail = control_limit.right - control_bounds.right - panel_gap;
+			const auto min_description_width = df::round(220 * scale_factor);
+
+			if (_description_element && description_avail >= min_description_width)
 			{
+				const auto description_width = std::min(description_avail, df::round(420 * scale_factor));
+				const auto description_extent = _description_element->measure(mc, description_width);
+				const auto max_description_height = std::max(df::round(112 * scale_factor), avail_bounds.height() / 3);
+				const auto description_height = std::min(description_extent.cy, max_description_height);
 				const recti description_bounds{
-					control_bounds.right + panel_gap,
-					control_limit.bottom - description_height,
-					panel_left + panel_width, control_limit.bottom
+					control_limit.right - description_width, control_limit.bottom - description_height,
+					control_limit.right, control_limit.bottom
 				};
 				_description_element->layout(mc, description_bounds, positions);
-			}
-			else if (_description_element)
-			{
-				_description_element->bounds.clear();
+				panel_height = std::max(panel_height, description_height);
 			}
 
 			if (!overlay_media_control)

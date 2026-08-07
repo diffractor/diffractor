@@ -372,10 +372,30 @@ namespace df
 		return static_cast<index_item_flags>(~static_cast<uint32_t>(a));
 	}
 
+	// The four quarter turns of one picture. A rotation cannot be recovered from a finished hash, so
+	// the orientations are hashed together and kept together, and the set is replaced whole rather
+	// than edited, which is what lets a reader hold one pointer and see a consistent picture.
+	struct picture_hashes
+	{
+		crypto::phash_rotations rotations{};
+
+		uint64_t stored() const { return rotations[0]; }
+		bool is_usable() const { return crypto::phash_is_usable(rotations[0]); }
+	};
+
+	using picture_hashes_ptr = std::shared_ptr<const picture_hashes>;
+	using picture_hashes_aptr = std::atomic<picture_hashes_ptr>;
+
+	inline picture_hashes_ptr make_picture_hashes(const crypto::phash_rotations& rotations)
+	{
+		auto result = std::make_shared<picture_hashes>();
+		result->rotations = rotations;
+		return result;
+	}
+
 	struct index_file_item
 	{
 		index_item_flags flags = index_item_flags::none;
-
 		file_type_ref ft = nullptr;
 		str::cached name;
 		file_size size;
@@ -392,9 +412,10 @@ namespace df
 
 		mutable std::atomic<search_presence_mask> search_presence;
 		mutable std::atomic<uint32_t> crc32c = 0;
-		// Published exactly like crc32c: a derived value computed off the index walk and stored back
-		// on the record it describes. 0 means not computed or declined, never "matches another 0".
-		mutable std::atomic<uint64_t> phash = 0;
+		// Published exactly like metadata: an immutable set replaced whole, never edited in place, so a
+		// reader that holds the pointer holds four orientations of one picture. Null means not computed;
+		// a set whose first entry is crypto::phash_declined means hashed and refused.
+		mutable df::picture_hashes_aptr phash;
 
 		index_file_item() = default;
 
@@ -429,6 +450,7 @@ namespace df
 			  phash(other.phash.load())
 		{
 			other.metadata.store(nullptr);
+			other.phash.store(nullptr);
 		}
 
 		index_file_item& operator=(const index_file_item& other)
@@ -467,6 +489,7 @@ namespace df
 			duplicates = other.duplicates.load();
 			crc32c = other.crc32c.load();
 			phash = other.phash.load();
+			other.phash.store(nullptr);
 			return *this;
 		}
 

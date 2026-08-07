@@ -196,6 +196,9 @@ public:
 
 	void queue_async(async_queue q, const std::function<void()> f) override { f(); }
 
+	// The delay is a scheduling concession to the running application; a test wants the result.
+	void queue_async_after(async_queue q, uint32_t, const std::function<void()> f) override { f(); }
+
 	void queue_location(const std::function<void(location_cache&)> f) override
 	{
 		if (!locations.is_index_loaded()) locations.load_index();
@@ -220,6 +223,12 @@ public:
 	}
 
 	void queue_async(const async_queue q, const std::function<void()> f) override
+	{
+		_workers.emplace_back(q, f);
+	}
+
+	// Deferred like any other worker task; run_next drives it, so the debounce is not a test's problem.
+	void queue_async_after(const async_queue q, uint32_t, const std::function<void()> f) override
 	{
 		_workers.emplace_back(q, f);
 	}

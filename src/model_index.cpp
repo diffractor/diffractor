@@ -32,9 +32,9 @@ constexpr auto max_folders_to_index = 100000;
 constexpr auto max_duplicate_phash_distance = 6;
 
 // Capture time is recorded to the second and cameras shoot faster than that. A picture that matches
-// this many others under one timestamp is a burst frame rather than a re-save: continuous shooting
-// produces frames that match each other at any threshold. The whole capture time is then declined
-// rather than reported (docs/collections.md section 7.3).
+// this many others in the SAME orientation under one timestamp is a burst frame rather than a
+// re-save: continuous shooting produces frames that match each other at any threshold. A turned
+// match is never a burst frame, so it is not counted here (docs/collections.md section 7.3).
 constexpr size_t max_similar_pictures_at_one_capture_time = 2;
 
 // A work bound, not a judgement: past this a capture time is unambiguously continuous shooting, and
@@ -49,8 +49,44 @@ constexpr size_t max_phash_requests_per_pass = 256;
 // A picture worth this much I/O to identify. Beyond it the read costs more than the answer is worth.
 constexpr uint64_t max_phash_file_bytes = 128ull * 1024ull * 1024ull;
 
-df_assert_pod(df::file_path);
-df_assert_pod(df::file_group_histogram);
+// Shared by duplicate search and presence, so neither can claim a copy the other denies. Compared by
+// aspect rather than extent, so a resize still counts. The tolerance is an absolute block rather than
+// a percentage because lossless JPEG rotation trims to the MCU grid: a 1024x683 photograph turns into
+// 672x1024, not 683x1024, and a percentage tight enough to be useful on a large picture would reject
+// that. A quarter turn transposes the stored extent, so a transposed shape counts when rotations are
+// allowed. An unknown shape is not a different shape, so a picture with no stored extent is never
+// refused on this ground.
+static bool same_picture_shape(const sizei a, const sizei b, const bool allow_swap = true)
+{
+	if (a.is_empty() || b.is_empty()) return true;
+
+	const auto close = [](const sizei left, const sizei right)
+	{
+		constexpr double mcu_block = 16.0;
+		const auto left_aspect = static_cast<double>(left.cx) / left.cy;
+		const auto right_aspect = static_cast<double>(right.cx) / right.cy;
+		const auto shortest = std::min({left.cx, left.cy, right.cx, right.cy});
+		const auto tolerance = mcu_block / shortest + 0.01;
+		return std::abs(left_aspect - right_aspect) <= std::max(left_aspect, right_aspect) * tolerance;
+	};
+
+	if (close(a, b)) return true;
+
+	return allow_swap && close(a, {b.cy, b.cx});
+}
+
+// A row written before the quarter turns were stored carries the first hash alone. Reporting it as
+// unhashed asks for the other three, rather than leaving a rotated copy permanently unrecognisable.
+static df::picture_hashes_ptr picture_hashes_from_db(const crypto::phash_rotations& rotations)
+{
+	if (rotations[0] == 0) return nullptr;
+	if (rotations[0] == crypto::phash_declined) return df::make_picture_hashes(rotations);
+
+	const auto complete = std::ranges::all_of(rotations, [](const uint64_t h) { return crypto::phash_is_usable(h); });
+	return complete ? df::make_picture_hashes(rotations) : nullptr;
+}
+
+df_assert_pod(df::file_path);df_assert_pod(df::file_group_histogram);
 df_assert_pod(search_presence_mask);
 df_assert_pod(key_val);
 df_assert_movable(df::index_file_item);
@@ -612,6 +648,21 @@ void index_state::enqueue_db_write(item_db_write write)
 	}
 }
 
+void index_state::enqueue_db_writes(std::vector<item_db_write> writes)
+{
+	if (writes.empty()) return;
+
+	// The worker drains the write queue on every pass, so a producer that enqueues one row at a time
+	// always finds it empty and wakes the database thread once per row - and each of those wakes opens
+	// its own transaction. Handing over the whole group keeps it to one wake and one transaction.
+	if (_db_writes.enqueue_all(std::move(writes)))
+	{
+		_async.queue_database([](database&)
+		{
+		});
+	}
+}
+
 void index_state::init_item_index()
 {
 	auto summary = std::make_shared<index_metadata_summary>();
@@ -1063,7 +1114,7 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 						// camera, etc.) that the offline shell path could not provide.
 						info.metadata_scanned = df::date_t{};
 						info.crc32c = 0;
-						info.phash = 0;
+						info.phash = nullptr;
 					}
 
 					updated_files.emplace_back(info);
@@ -1422,6 +1473,7 @@ void index_state::update_predictions()
 
 	{
 		df::hash_map<uint64_t, std::vector<size_t>> capture_times;
+		uint32_t dated_pictures = 0;
 
 		for (size_t i = 0; i < files.size(); ++i)
 		{
@@ -1435,7 +1487,28 @@ void index_state::update_predictions()
 			if (!created.is_valid()) continue;
 
 			capture_times[created.to_int64()].push_back(i);
+			++dated_pictures;
 		}
+
+		// A hash is only earned by a picture that shares a capture time with another, so marking the
+		// candidates is what makes an excess measurable rather than merely suspected.
+		std::vector<uint8_t> is_candidate(files.size(), 0);
+		uint32_t candidate_count = 0;
+		uint32_t wanted_count = 0;
+		uint32_t matched_count = 0;
+		uint32_t crowded_count = 0;
+
+		// The shape narrowing the gate applies, and what a gate blind to rotation would have refused.
+		uint32_t dims_unknown = 0;
+		uint32_t aspect_solo = 0;
+		uint32_t aspect_solo_swap = 0;
+		uint32_t matched_cross_aspect = 0;
+
+		const auto dims_of = [&files](const size_t i)
+		{
+			const auto md = files[i].file->metadata.load(); // important to hold ref
+			return md ? md->dimensions() : sizei{};
+		};
 
 		for (const auto& [created, members] : capture_times)
 		{
@@ -1446,15 +1519,60 @@ void index_state::update_predictions()
 			// cannot (docs/collections.md section 7).
 			if (members.size() < 2 || members.size() > max_photos_sharing_capture_time) continue;
 
+			// Sharing a capture second is a weak claim on its own. A picture whose neighbours are all
+			// a different shape cannot be a copy of any of them, and refusing it here is a decode
+			// saved rather than a judgement made. A quarter turn transposes the stored extent, so a
+			// transposed neighbour still counts (docs/collections.md section 7.2).
+			std::vector<size_t> shaped;
+			shaped.reserve(members.size());
+
+			for (const auto member : members)
+			{
+				const auto member_dims = dims_of(member);
+
+				if (member_dims.is_empty())
+				{
+					++dims_unknown;
+					// Shape is unknown rather than different, so the picture keeps its place.
+					shaped.push_back(member);
+					continue;
+				}
+
+				auto has_peer = false;
+				auto has_peer_with_swap = false;
+
+				for (const auto other : members)
+				{
+					if (other == member) continue;
+
+					const auto other_dims = dims_of(other);
+
+					if (same_picture_shape(member_dims, other_dims, false)) has_peer = true;
+					if (same_picture_shape(member_dims, other_dims, true)) has_peer_with_swap = true;
+					if (has_peer && has_peer_with_swap) break;
+				}
+
+				if (!has_peer) ++aspect_solo;
+				if (!has_peer_with_swap) ++aspect_solo_swap;
+				if (has_peer_with_swap) shaped.push_back(member);
+			}
+
+			if (shaped.size() < 2) continue;
+
+			candidate_count += static_cast<uint32_t>(shaped.size());
+
+			for (const auto member : shaped) is_candidate[member] = 1;
+
 			// Every picture here has to be compared before any of them is reported: the crowd rule
 			// counts matches, so judging a half-hashed capture time could let a burst through it.
 			auto evidence_complete = true;
 
-			for (const auto member : members)
+			for (const auto member : shaped)
 			{
-				if (files[member].file->phash.load() != 0) continue;
+				if (files[member].file->phash.load() != nullptr) continue;
 
 				evidence_complete = false;
+				++wanted_count;
 
 				// Hashing needs the file and this walk holds the index lock, so the work is only
 				// noted here. The pass that follows the hashes will see them and compare.
@@ -1469,13 +1587,14 @@ void index_state::update_predictions()
 			// Lowest path, so which item anchors the set never depends on the order the index
 			// happened to be walked in. A picture that declined to be identified cannot anchor, and
 			// skipping it here stops one blank frame from suppressing the whole capture time.
-			// Sentinel is files.size(): members holds indices into files, so members.size() is a
+			// Sentinel is files.size(): shaped holds indices into files, so files.size() is not a
 			// value a real member can take.
 			auto anchor = files.size();
 
-			for (const auto member : members)
+			for (const auto member : shaped)
 			{
-				if (!crypto::phash_is_usable(files[member].file->phash.load())) continue;
+				const auto held = files[member].file->phash.load();
+				if (!held || !held->is_usable()) continue;
 
 				if (anchor == files.size() ||
 					df::file_path(files[member].path, files[member].file->name) <
@@ -1487,35 +1606,94 @@ void index_state::update_predictions()
 
 			if (anchor == files.size()) continue;
 
-			const auto anchor_hash = files[anchor].file->phash.load();
+			const auto anchor_hashes = files[anchor].file->phash.load();
+			const auto anchor_hash = anchor_hashes->stored();
 
 			// Collected rather than applied, because how many match decides whether any of them are
 			// reported: a crowd around one anchor is a burst.
 			std::vector<size_t> matched;
 
-			for (const auto member : members)
+			// Continuous shooting produces frames in one orientation; it never produces a turned one.
+			// So only an untuned match is evidence of a burst, and the crowd rule counts those alone.
+			size_t same_orientation_matches = 0;
+
+			for (const auto member : shaped)
 			{
 				if (member == anchor) continue;
 
-				const auto member_hash = files[member].file->phash.load();
+				const auto member_hashes = files[member].file->phash.load();
 
-				if (!crypto::phash_is_usable(member_hash)) continue;
+				if (!member_hashes || !member_hashes->is_usable()) continue;
 
-				if (crypto::phash_distance(anchor_hash, member_hash) <= max_duplicate_phash_distance)
+				// The member's four turns are the complete orbit, so this covers every relative
+				// rotation without the anchor needing its own.
+				if (crypto::phash_distance(anchor_hash, member_hashes->rotations) > max_duplicate_phash_distance)
 				{
-					matched.push_back(member);
+					continue;
+				}
+
+				matched.push_back(member);
+
+				if (crypto::phash_distance(anchor_hash, member_hashes->stored()) <= max_duplicate_phash_distance)
+				{
+					++same_orientation_matches;
 				}
 			}
 
-			if (matched.size() > max_similar_pictures_at_one_capture_time) continue;
+			if (same_orientation_matches > max_similar_pictures_at_one_capture_time)
+			{
+				++crowded_count;
+				continue;
+			}
+
+			const auto anchor_dims = dims_of(anchor);
 
 			for (const auto member : matched)
 			{
 				unite(anchor, member);
 				record_grade(anchor, df::copy_grade::same_picture);
 				record_grade(member, df::copy_grade::same_picture);
+
+				if (!same_picture_shape(anchor_dims, dims_of(member), true)) ++matched_cross_aspect;
 			}
+
+			matched_count += static_cast<uint32_t>(matched.size());
 		}
+
+		// Held against invited. A picture keeps its hash once computed, so a large uninvited count is
+		// not drift - it is hashing that was asked for by something other than the candidate rule.
+		uint32_t usable_held = 0;
+		uint32_t declined_held = 0;
+		uint32_t uninvited = 0;
+
+		for (size_t i = 0; i < files.size(); ++i)
+		{
+			const auto held = files[i].file->phash.load();
+			if (!held) continue;
+
+			if (held->is_usable()) ++usable_held;
+			else ++declined_held;
+
+			if (!is_candidate[i]) ++uninvited;
+		}
+
+		df::set_gauge(df::index_perf.pass_pictures, dated_pictures);
+		df::set_gauge(df::index_perf.pass_buckets, static_cast<uint32_t>(capture_times.size()));
+		df::set_gauge(df::index_perf.pass_candidates, candidate_count);
+		df::set_gauge(df::index_perf.pass_wanted, wanted_count);
+		df::set_gauge(df::index_perf.pass_matched, matched_count);
+		df::set_gauge(df::index_perf.pass_crowded, crowded_count);
+		df::set_gauge(df::index_perf.pass_usable_held, usable_held);
+		df::set_gauge(df::index_perf.pass_declined_held, declined_held);
+		df::set_gauge(df::index_perf.pass_uninvited, uninvited);
+		df::set_gauge(df::index_perf.pass_dims_unknown, dims_unknown);
+		df::set_gauge(df::index_perf.pass_aspect_solo, aspect_solo);
+		df::set_gauge(df::index_perf.pass_aspect_solo_swap, aspect_solo_swap);
+		df::set_gauge(df::index_perf.pass_matched_cross_aspect, matched_cross_aspect);
+
+		stats.indexed_phash_count = static_cast<int>(usable_held);
+		stats.indexed_phash_declined_count = static_cast<int>(declined_held);
+		stats.indexed_phash_uninvited_count = static_cast<int>(uninvited);
 	}
 
 	df::hash_map<size_t, df::int_counter> component_counts;
@@ -1546,6 +1724,10 @@ void index_state::update_predictions()
 	stats.indexed_max_compare_count = max_compare_count;
 	stats.predictions_ms = static_cast<int>(df::now_ms() - start_ms);
 
+	df::set_gauge(df::index_perf.pass_files, static_cast<uint32_t>(files.size()));
+	df::set_gauge(df::index_perf.pass_crc_held, static_cast<uint32_t>(indexed_crc_count));
+	df::set_gauge(df::index_perf.pass_dup_groups, static_cast<uint32_t>(component_groups.size()));
+
 	df::trace(std::format("Index update predictions: {} folders in {} ms", folder_count, stats.predictions_ms));
 
 	if (!phash_wanted.empty() && !df::is_closing)
@@ -1563,36 +1745,64 @@ void index_state::queue_calc_perceptual_hashes(std::vector<df::file_path> paths)
 	{
 		auto usable = 0;
 
+		// Results are published in groups. Hashing a file takes milliseconds, so publishing each one on
+		// its own found both the work queue and the write queue empty every time and woke two threads
+		// per file for a few microseconds of work each.
+		constexpr size_t publish_group = 32;
+		std::vector<std::pair<df::file_path, crypto::phash_rotations>> hashed;
+		hashed.reserve(publish_group);
+
 		for (const auto& path : paths)
 		{
-			if (df::is_closing) return;
+			if (df::is_closing) break;
 
-			uint64_t hash = 0;
+			crypto::phash_rotations hash{};
+			auto readable = false;
 
 			{
 				df::scope_locked_inc loading(df::loading_media);
+				df::perf_timer timer(df::index_perf.phash_us, &df::index_perf.phash_max_us);
+				df::bump(df::index_perf.phash_computed);
 				file_read_stream stream;
 
 				if (stream.open(path) && stream.size() <= max_phash_file_bytes)
 				{
 					files ff;
 					df::blob owner;
-					hash = ff.calc_perceptual_hash(stream.view_all(owner));
+					readable = true;
+					df::bump(df::index_perf.phash_bytes, stream.size());
+					hash = ff.calc_perceptual_hash_rotations(stream.view_all(owner));
+				}
+				else
+				{
+					df::bump(df::index_perf.phash_unreadable);
 				}
 			}
 
 			// Every attempt is recorded, including a refusal and a file that could not be read or
 			// decoded. Without that the next pass asks for the same file again, forever.
-			if (crypto::phash_is_usable(hash))
+			if (crypto::phash_is_usable(hash[0]))
 			{
-				save_phash(path, hash);
+				hashed.emplace_back(path, hash);
+				df::bump(df::index_perf.phash_usable);
 				++usable;
 			}
 			else
 			{
-				save_phash(path, crypto::phash_declined);
+				hashed.emplace_back(path, crypto::phash_rotations{crypto::phash_declined, 0, 0, 0});
+				if (readable) df::bump(df::index_perf.phash_declined);
+			}
+
+			if (hashed.size() >= publish_group)
+			{
+				save_phashes(std::move(hashed));
+				hashed.clear();
+				hashed.reserve(publish_group);
 			}
 		}
+
+		// Published even when shutdown cut the loop short, so attempts already made are not repeated.
+		save_phashes(std::move(hashed));
 
 		// Only a hash that can actually match is worth another pass.
 		if (usable > 0 && !df::is_closing)
@@ -2017,6 +2227,10 @@ void index_state::scan_uncached(const df::cancel_token& token)
 
 	_async.invalidate_view(view_invalid::view_layout);
 
+	// A first index walks the whole collection here, so the database hand-off is grouped: one row at
+	// a time woke the database thread and opened a transaction per file.
+	db_write_batch writes(*this);
+
 	for (const auto& id : uncached)
 	{
 		if (token.is_cancelled()) break;
@@ -2025,12 +2239,14 @@ void index_state::scan_uncached(const df::cancel_token& token)
 
 		if (f)
 		{
-			scan_item(f, id, false, false, false, false, {}, false, files::file_type_from_name(id.name()));
+			scan_item(f, id, false, false, false, false, {}, false, files::file_type_from_name(id.name()), false,
+			          true, true, &writes);
 		}
 
 		--stats.index_item_remaining;
 	}
 
+	writes.flush();
 	stats.index_item_remaining = 0;
 
 	_async.invalidate_view(view_invalid::view_layout | view_invalid::group_layout);
@@ -2046,6 +2262,7 @@ std::vector<folder_scan_item> index_state::scan_items(const df::index_roots& roo
 	std::vector<df::folder_path> folders_to_scan = {roots.folders.begin(), roots.folders.end()};
 
 	auto update_index_summary = false;
+	db_write_batch writes(*this);
 
 	while (!folders_to_scan.empty())
 	{
@@ -2066,9 +2283,12 @@ std::vector<folder_scan_item> index_state::scan_items(const df::index_roots& roo
 			{
 				if (token.is_cancelled()) break;
 				scan_item(node.folder, folder_path.combine_file(file.name), false, false, false, scan_if_offline, {},
-				          false, file.ft);
+				          false, file.ft, false, true, true, &writes);
 				results.emplace_back(folder_path, file);
 			}
+
+			// Per folder, so a long walk neither holds the rows nor loses more than one folder's work.
+			writes.flush();
 
 			if (recursive)
 			{
@@ -2092,7 +2312,8 @@ std::vector<folder_scan_item> index_state::scan_items(const df::index_roots& roo
 
 		if (found_file != node.folder->files.end())
 		{
-			scan_item(node.folder, file_path, false, false, false, scan_if_offline, {}, false, found_file->ft);
+			scan_item(node.folder, file_path, false, false, false, scan_if_offline, {}, false, found_file->ft, false,
+			          true, true, &writes);
 			results.emplace_back(file_path.folder(), *found_file);
 		}
 	}
@@ -2226,8 +2447,15 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
                                     const std::weak_ptr<df::item_element>& item,
                                     const bool publish_to_item,
                                     const bool publish_item_update_immediately,
-                                    const bool invalidate_summary)
+                                    const bool invalidate_summary,
+                                    db_write_batch* writes)
 {
+	const auto queue_write = [this, writes](item_db_write w)
+	{
+		if (writes) writes->add(std::move(w));
+		else enqueue_db_write(std::move(w));
+	};
+
 	const auto found_file = find_file(folder->files, file_path.name());
 
 	if (found_file == folder->files.end())
@@ -2432,7 +2660,7 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
 			}
 		}
 
-		enqueue_db_write(std::move(write));
+		queue_write(std::move(write));
 
 		if (invalidate_summary && folder->is_in_collection)
 		{
@@ -2445,7 +2673,7 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
 		write.path = file_path;
 		write.metadata_scanned = now;
 		write.modified = found_file->file_modified;
-		enqueue_db_write(std::move(write));
+		queue_write(std::move(write));
 
 		if (load_thumb && publish_to_item)
 		{
@@ -2465,7 +2693,8 @@ void index_state::scan_item(const df::index_folder_item_ptr& folder,
                             const file_type_ref ft,
                             const bool force,
                             const bool publish_item_update_immediately,
-                            const bool invalidate_summary)
+                            const bool invalidate_summary,
+                            db_write_batch* writes)
 {
 	const auto now = platform::now();
 	const auto found_file = find_file(folder->files, file_path.name());
@@ -2498,7 +2727,7 @@ void index_state::scan_item(const df::index_folder_item_ptr& folder,
 
 					apply_scan_result(folder, file_path, sr, now, thumbnail_version, load_thumb, thumbnail_needed,
 					                  had_thumbnail, item, publish_to_item, publish_item_update_immediately,
-					                  invalidate_summary);
+					                  invalidate_summary, writes);
 				}
 			}
 			else if (load_thumb && publish_to_item)
@@ -2897,11 +3126,12 @@ void index_state::save_crc(const df::file_path id, const uint32_t crc)
 	enqueue_db_write(std::move(write));
 }
 
-void index_state::save_phash(const df::file_path id, const uint64_t phash)
+void index_state::save_phash(const df::file_path id, const crypto::phash_rotations& phash)
 {
-	_async.queue_async(async_queue::work, [this, id, phash]
+	_async.queue_async(async_queue::work, [this, id, published = df::make_picture_hashes(phash)]
 	{
 		const auto f = _items.find(id.folder());
+		auto found = false;
 
 		if (f)
 		{
@@ -2909,15 +3139,69 @@ void index_state::save_phash(const df::file_path id, const uint64_t phash)
 
 			if (found_file != f->files.end())
 			{
-				found_file->phash = phash;
+				found_file->phash = published;
+				found = true;
 			}
 		}
+
+		// The database write is an update keyed on an existing row, so a path the collection does not
+		// hold keeps no hash and will be decoded again next time it is asked about.
+		if (!found) df::bump(df::index_perf.phash_unpersisted);
 	});
 
 	item_db_write write;
 	write.path = id;
 	write.phash = phash;
 	enqueue_db_write(std::move(write));
+}
+
+void index_state::save_phashes(std::vector<std::pair<df::file_path, crypto::phash_rotations>> hashes)
+{
+	if (hashes.empty()) return;
+
+	std::vector<item_db_write> writes;
+	writes.reserve(hashes.size());
+
+	for (const auto& [path, phash] : hashes)
+	{
+		item_db_write write;
+		write.path = path;
+		write.phash = phash;
+		writes.emplace_back(std::move(write));
+	}
+
+	enqueue_db_writes(std::move(writes));
+
+	// Published as complete sets, so the walk never sees a picture with some orientations filled in.
+	std::vector<std::pair<df::file_path, df::picture_hashes_ptr>> published;
+	published.reserve(hashes.size());
+
+	for (const auto& [path, phash] : hashes)
+	{
+		published.emplace_back(path, df::make_picture_hashes(phash));
+	}
+
+	_async.queue_async(async_queue::work, [this, published = std::move(published)]
+	{
+		for (const auto& [path, hashes_ptr] : published)
+		{
+			const auto f = _items.find(path.folder());
+			auto found = false;
+
+			if (f)
+			{
+				const auto found_file = find_file(f->files, path.name());
+
+				if (found_file != f->files.end())
+				{
+					found_file->phash = hashes_ptr;
+					found = true;
+				}
+			}
+
+			if (!found) df::bump(df::index_perf.phash_unpersisted);
+		}
+	});
 }
 
 void index_state::save_thumbnail(const df::file_path id, const ui::const_image_ptr& thumbnail_image,
@@ -3371,6 +3655,7 @@ struct presence_request
 	uint32_t crc32c = 0;
 	bool is_folder = false;
 	bool is_bitmap = false;
+	sizei dimensions;
 };
 
 struct presence_result
@@ -3423,10 +3708,12 @@ struct presence_similar_candidate
 {
 	size_t request_index = 0;
 	df::file_path path;
-	uint64_t phash = 0;
+	crypto::phash_rotations phash{};
 	df::date_t file_modified;
 	df::duplicate_info duplicates;
+	sizei dimensions;
 };
+
 
 static void items_possible_hashes_contains(std::vector<presence_match>& matches,
                                            const std::vector<std::pair<unsigned, size_t>>& possible,
@@ -3493,24 +3780,38 @@ static void resolve_similar_presence(index_state& index, const std::vector<prese
 	// A member is only hashed by the predictions pass when another member shares its capture time, so
 	// the picture an outside file is being compared against often has no hash yet. It is computed
 	// here and saved, because answering "checking" forever would be an absence in all but name.
-	const auto hash_of = [&decoder, &index](const df::file_path path, const uint64_t known) -> uint64_t
+	const auto hash_of = [&decoder, &index](const df::file_path path,
+	                                        const crypto::phash_rotations& known) -> crypto::phash_rotations
 	{
-		if (known != 0) return known;
+		if (known[0] != 0) return known;
 
-		uint64_t hash = 0;
+		crypto::phash_rotations hash{};
 
 		{
 			df::scope_locked_inc loading(df::loading_media);
+			df::perf_timer timer(df::index_perf.phash_us, &df::index_perf.phash_max_us);
+			df::bump(df::index_perf.phash_computed);
+			df::bump(df::index_perf.phash_presence);
 			file_read_stream stream;
 
 			if (stream.open(path) && stream.size() <= max_phash_file_bytes)
 			{
 				df::blob owner;
-				hash = decoder.calc_perceptual_hash(stream.view_all(owner));
+				df::bump(df::index_perf.phash_bytes, stream.size());
+				hash = decoder.calc_perceptual_hash_rotations(stream.view_all(owner));
+				df::bump(crypto::phash_is_usable(hash[0])
+					         ? df::index_perf.phash_usable
+					         : df::index_perf.phash_declined);
+			}
+			else
+			{
+				df::bump(df::index_perf.phash_unreadable);
 			}
 		}
 
-		index.save_phash(path, crypto::phash_is_usable(hash) ? hash : crypto::phash_declined);
+		if (!crypto::phash_is_usable(hash[0])) hash = {crypto::phash_declined, 0, 0, 0};
+
+		index.save_phash(path, hash);
 		return hash;
 	};
 
@@ -3530,28 +3831,39 @@ static void resolve_similar_presence(index_state& index, const std::vector<prese
 
 		if (!already_matched && member_count <= max_photos_sharing_capture_time)
 		{
-			const auto probe_hash = hash_of(request.path, 0);
+			const auto probe_hash = hash_of(request.path, {});
 
-			if (crypto::phash_is_usable(probe_hash))
+			if (crypto::phash_is_usable(probe_hash[0]))
 			{
 				// The outside file is the anchor here, so the same crowd rule applies: many members
-				// matching one picture at one capture time is a burst, not a set of copies.
+				// matching one picture in one orientation at one capture time is a burst, not a set
+				// of copies. A turned match is never burst evidence, exactly as duplicate search
+				// counts it (docs/collections.md section 7.3).
 				std::vector<const presence_similar_candidate*> matched;
+				size_t same_orientation_matches = 0;
 
 				for (auto candidate = i; candidate != group_end; ++candidate)
 				{
+					// Shape narrows before the picture is decoded, exactly as duplicate search does.
+					if (!same_picture_shape(request.dimensions, candidate->dimensions)) continue;
+
 					const auto candidate_hash = hash_of(candidate->path, candidate->phash);
 
-					if (!crypto::phash_is_usable(candidate_hash)) continue;
-					if (crypto::phash_distance(probe_hash, candidate_hash) > max_duplicate_phash_distance)
+					if (!crypto::phash_is_usable(candidate_hash[0])) continue;
+					if (crypto::phash_distance(probe_hash[0], candidate_hash) > max_duplicate_phash_distance)
 					{
 						continue;
 					}
 
 					matched.push_back(&*candidate);
+
+					if (crypto::phash_distance(probe_hash[0], candidate_hash[0]) <= max_duplicate_phash_distance)
+					{
+						++same_orientation_matches;
+					}
 				}
 
-				if (matched.size() <= max_similar_pictures_at_one_capture_time)
+				if (same_orientation_matches <= max_similar_pictures_at_one_capture_time)
 				{
 					for (const auto* const candidate : matched)
 					{
@@ -3589,9 +3901,11 @@ void index_state::queue_update_presence(const df::item_set& items)
 	for (const auto& item : items.items())
 	{
 		const auto ft = item->file_type();
+		const auto md = item->metadata();
 		requests.emplace_back(item, item->path(), item->file_size(), item->file_modified(),
 		                      item->media_created(), item->crc32c(), item->is_folder(),
-		                      ft && ft->has_trait(file_traits::bitmap));
+		                      ft && ft->has_trait(file_traits::bitmap),
+		                      md ? md->dimensions() : sizei{});
 	}
 
 	_async.queue_async(async_queue::index_presence_single, [this, requests = std::move(requests)]() mutable
@@ -3688,13 +4002,19 @@ void index_state::queue_update_presence(const df::item_set& items)
 							if (shares_time != requests_by_capture_time.end() &&
 								file.ft->has_trait(file_traits::bitmap))
 							{
+								const auto held = file.phash.load();
+								const auto rotations = held ? held->rotations : crypto::phash_rotations{};
+								const auto file_md = file.metadata.load(); // important to hold ref
+								const auto file_dims = file_md ? file_md->dimensions() : sizei{};
+
 								for (const auto request_index : shares_time->second)
 								{
 									similar_candidates.emplace_back(request_index,
 									                                df::file_path(ifn.first, file.name),
-									                                file.phash.load(),
+									                                rotations,
 									                                file.file_modified.load(),
-									                                file.duplicates.load());
+									                                file.duplicates.load(),
+									                                file_dims);
 								}
 							}
 						}
@@ -3839,6 +4159,7 @@ bool index_state::scan_items(const item_scan_requests& requests,
 		}
 
 		const auto now = platform::now();
+		db_write_batch writes(*this);
 
 		for (const auto& ff : items_by_folder)
 		{
@@ -3863,7 +4184,7 @@ bool index_state::scan_items(const item_scan_requests& requests,
 
 					scan_item(node.folder, request.path, request.load_thumbnail, request.thumbnail_needed,
 					          request.had_thumbnail, scan_if_offline, request.lifetime, true, request.file_type, force,
-					          false, false);
+					          false, false, &writes);
 
 					if (request.thumbnail_needed) ++thumbs_scanned;
 
@@ -3884,6 +4205,9 @@ bool index_state::scan_items(const item_scan_requests& requests,
 					}
 				}
 			}
+
+			// Per folder, so a long batch neither holds the rows nor loses more than one folder's work.
+			writes.flush();
 		}
 
 		struct folder_update
@@ -4350,11 +4674,13 @@ void index_state::queue_load_thumbnail(df::item_element_ptr item)
 {
 	if (!item || item->has_thumb()) return;
 
-	auto load_from_source = [this, item]
+	// The database hop copies this lambda, so the item crosses a worker queue: ui_owned_ptr hands
+	// the final reference back to the UI thread if a truncated queue drops it there.
+	auto load_from_source = [this, item = ui_owned(_async, item)]
 	{
 		if (item->has_thumb())
 		{
-			queue_stage_thumbnails({item});
+			queue_stage_thumbnails({item.shared()});
 			_async.invalidate_view(view_invalid::tooltip | view_invalid::view_redraw);
 			return;
 		}
@@ -4552,36 +4878,27 @@ void index_state::queue_scan_offline_thumbnails(const df::item_set& items, const
 	});
 }
 
-// Debounce wait that observes shutdown, so a queued refresh cannot hold a worker queue open
-// for a third of a second while the application is closing.
-static bool debounce_wait(const int total_ms)
-{
-	constexpr auto slice_ms = 25;
-
-	for (auto remaining = total_ms; remaining > 0; remaining -= slice_ms)
-	{
-		if (df::is_closing) return false;
-		std::this_thread::sleep_for(std::chrono::milliseconds(std::min(slice_ms, remaining)));
-	}
-
-	return !df::is_closing;
-}
+// Both passes walk the whole index, and apply_scan_result raises view_invalid::index_summary per
+// scanned item, so a request arrives on every UI drain while a scan is running. The delay collapses
+// that burst into one pass; the queue holds it, so no worker thread is spent waiting it out.
+constexpr uint32_t summary_debounce_ms = 333;
 
 void index_state::queue_update_predictions()
 {
 	const auto generation = ++_predictions_generation;
 
-	_async.queue_async(async_queue::index_predictions_single, [this, generation]
+	_async.queue_async_after(async_queue::index_predictions_single, summary_debounce_ms, [this, generation]
 	{
-		if (!debounce_wait(333)) return;
+		if (df::is_closing) return;
 		if (generation != _predictions_generation.load()) return;
 
 		update_predictions();
 		if (generation != _predictions_generation.load()) return;
 
 		// Predictions only feed the sidebar; asking for refresh_items here closed a cycle that never
-		// reached a steady state.
-		_async.invalidate_view(view_invalid::sidebar);
+		// reached a steady state. Counts only: nothing about which rows exist has changed, so rebuilding
+		// them would discard every sidebar text layout to publish a number.
+		_async.invalidate_view(view_invalid::sidebar_counts);
 	});
 }
 
@@ -4593,9 +4910,9 @@ void index_state::queue_update_summary()
 		generation = ++_summary_generation;
 	}
 
-	_async.queue_async(async_queue::index_summary_single, [this, generation]
+	_async.queue_async_after(async_queue::index_summary_single, summary_debounce_ms, [this, generation]
 	{
-		if (!debounce_wait(333)) return;
+		if (df::is_closing) return;
 		{
 			platform::shared_lock lock(_summary_rw);
 			if (generation != _summary_generation) return;
@@ -4606,7 +4923,9 @@ void index_state::queue_update_summary()
 			platform::shared_lock lock(_summary_rw);
 			if (generation != _summary_generation) return;
 		}
-		_async.invalidate_view(view_invalid::sidebar);
+		// update_summary already asked for the rebuild its new vocabulary needs; this only has to
+		// re-earn the counts that vocabulary changed.
+		_async.invalidate_view(view_invalid::sidebar_counts);
 	});
 }
 
@@ -4724,7 +5043,7 @@ void index_state::merge_folder(const df::folder_path folder_path, const db_items
 				old_first->metadata = file_first->metadata;
 				old_first->metadata_scanned = file_first->metadata_scanned;
 				old_first->crc32c = file_first->crc32c;
-				old_first->phash = file_first->phash;
+				old_first->phash = picture_hashes_from_db(file_first->phash);
 				old_first->calc_search_presence();
 				++file_first;
 				++old_first;
@@ -4752,7 +5071,7 @@ void index_state::merge_folder(const df::folder_path folder_path, const db_items
 			file_node.ft = mt;
 			file_node.metadata = metadata;
 			file_node.crc32c = i->crc32c;
-			file_node.phash = i->phash;
+			file_node.phash = picture_hashes_from_db(i->phash);
 			file_node.metadata_scanned = i->metadata_scanned;
 
 			file_node.calc_search_presence();

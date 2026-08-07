@@ -350,6 +350,59 @@ namespace df
 		std::atomic_uint64_t metadata_errors = 0;
 	};
 
+	// Content hashing for duplicate detection. A CRC costs a full read and a perceptual hash costs a
+	// read and a decode, so what these answer is how much of that work was avoidable: a hash computed
+	// for a path that already carried one, or held by a picture that could never have matched.
+	struct index_counters
+	{
+		std::atomic_uint64_t crc_computed = 0;
+		std::atomic_uint64_t crc_failed = 0;
+		std::atomic_uint64_t crc_bytes = 0;
+		std::atomic_uint64_t crc_us = 0;
+		std::atomic_uint32_t crc_max_us = 0;
+
+		std::atomic_uint64_t phash_computed = 0;
+		std::atomic_uint64_t phash_usable = 0;
+		std::atomic_uint64_t phash_declined = 0;
+		std::atomic_uint64_t phash_unreadable = 0;
+		// Hashed, but nothing retained the result - no index item at that path, or a database update
+		// that matched no row - so the next pass over the same file pays for the decode again.
+		std::atomic_uint64_t phash_unpersisted = 0;
+		std::atomic_uint64_t phash_unwritten = 0;
+		std::atomic_uint64_t phash_presence = 0;
+		std::atomic_uint64_t phash_bytes = 0;
+		std::atomic_uint64_t phash_us = 0;
+		std::atomic_uint32_t phash_max_us = 0;
+
+		// Gauges, not totals: each holds what the most recent predictions pass saw. Summing passes
+		// would count one picture once per pass and hide whether the candidate rule is holding.
+		std::atomic_uint32_t pass_files = 0;
+		std::atomic_uint32_t pass_crc_held = 0;
+		std::atomic_uint32_t pass_dup_groups = 0;
+		std::atomic_uint32_t pass_pictures = 0;
+		std::atomic_uint32_t pass_buckets = 0;
+		std::atomic_uint32_t pass_candidates = 0;
+		std::atomic_uint32_t pass_wanted = 0;
+		std::atomic_uint32_t pass_usable_held = 0;
+		std::atomic_uint32_t pass_declined_held = 0;
+		std::atomic_uint32_t pass_uninvited = 0;
+		std::atomic_uint32_t pass_matched = 0;
+		std::atomic_uint32_t pass_crowded = 0;
+
+		// The shape narrowing applied alongside the shared capture time. Solo counts pictures refused
+		// because nothing under their timestamp shares their shape; the swap variant is the one the gate
+		// actually applies, because a quarter turn transposes the stored extent.
+		std::atomic_uint32_t pass_dims_unknown = 0;
+		std::atomic_uint32_t pass_aspect_solo = 0;
+		std::atomic_uint32_t pass_aspect_solo_swap = 0;
+		std::atomic_uint32_t pass_matched_cross_aspect = 0;
+	};
+
+	inline void set_gauge(std::atomic_uint32_t& gauge, const uint32_t value)
+	{
+		gauge.store(value, std::memory_order_relaxed);
+	}
+
 	// One slot per worker queue, claimed once by its worker thread at startup so the dispatch loop
 	// can account tasks without knowing which queue it is draining.
 	struct queue_counters
@@ -371,6 +424,7 @@ namespace df
 	extern db_counters db_perf;
 	extern query_counters query_perf;
 	extern file_counters file_perf;
+	extern index_counters index_perf;
 
 	// Writes the whole-session summary as one grouped block, or nothing at all when the app did no
 	// measurable work, so an idle run adds no log noise.

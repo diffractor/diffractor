@@ -3399,6 +3399,36 @@ msgstr "Renombrar automáticamente"
 msgid "Block run"
 msgstr "Bloquear la ejecución"
 
+msgid "File exists"
+msgstr "El archivo ya existe"
+
+msgid "Choose a destination folder."
+msgstr "Elija una carpeta de destino."
+
+msgid "Enter a maximum dimension in pixels."
+msgstr "Introduzca una dimensión máxima en píxeles."
+
+msgid "Check one or more fields to change."
+msgstr "Marque uno o más campos para cambiar."
+
+msgid "Select items before using this tool"
+msgstr "Seleccione elementos antes de usar esta herramienta"
+
+msgid "Success"
+msgstr "Correcto"
+
+msgid "Failed"
+msgstr "Error"
+
+msgid "Skipped"
+msgstr "Omitido"
+
+msgid "Not run"
+msgstr "No ejecutado"
+
+msgid "These are the results of a finished run. Refresh to plan again with the current settings."
+msgstr "Estos son los resultados de una ejecución finalizada. Actualice para volver a planificar con la configuración actual."
+
 msgid "{} destinations already exist. Choose Replace, Skip or Auto-rename."
 msgstr "{} destinos ya existen. Elija Reemplazar, Omitir o Renombrar automáticamente."
 
@@ -3522,11 +3552,11 @@ msgstr "Desactivado: las fotos y los vídeos más pequeños que la ventana se mu
 msgid "Convert the selected photos to another format and optionally limit their size. The originals are kept and new files are written to the destination folder."
 msgstr "Convierte las fotos seleccionadas a otro formato y, opcionalmente, limita su tamaño. Los originales se conservan y los archivos nuevos se escriben en la carpeta de destino."
 
-msgid "Write the same metadata values to every selected item. Only the fields you check are changed."
-msgstr "Escribe los mismos valores de metadatos en todos los elementos seleccionados. Solo se cambian los campos que marques."
+msgid "Write the same metadata values to every selected item. Only the fields you check are changed; image and video data is untouched."
+msgstr "Escribe los mismos valores de metadatos en cada elemento seleccionado. Solo se cambian los campos que marque; los datos de imagen y vídeo no se modifican."
 
-msgid "Shift the dates of the selected items so the earliest item starts at a new date and time."
-msgstr "Desplaza las fechas de los elementos seleccionados para que el más antiguo comience en una nueva fecha y hora."
+msgid "Shift the dates of the selected items so the earliest item starts at a new date and time. Only metadata is changed; image and video data is untouched."
+msgstr "Desplaza las fechas de los elementos seleccionados para que el más antiguo empiece en una nueva fecha y hora. Solo se cambian los metadatos; los datos de imagen y vídeo no se modifican."
 
 msgid "Add or remove tags across the selected items. Tags you do not mention are left in place."
 msgstr "Agrega o elimina etiquetas en los elementos seleccionados. Las etiquetas que no menciones se conservan."

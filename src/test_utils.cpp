@@ -396,6 +396,10 @@ void build_index(index_state& index, database& db)
 	db.perform_writes();
 
 	assert_equal(expected_cached_item_count, index.stats.media_item_count, "cached item count");
+
+	// The sidebar gates its per-item counts and the item totals gate their text on this, so a built
+	// index that never reports itself complete would leave both stuck on the loading affordance.
+	assert_equal(true, index.is_init_complete(), "index reports init complete", "cached item count");
 }
 
 
@@ -603,6 +607,16 @@ static uint64_t phash_of_file(const std::string_view name)
 	return ff.calc_perceptual_hash(stream.view_all(owner));
 }
 
+static crypto::phash_rotations phash_rotations_of_file(const std::string_view name)
+{
+	files ff;
+	file_read_stream stream;
+	if (!stream.open(test_files_folder.combine_file(name))) return {};
+
+	df::blob owner;
+	return ff.calc_perceptual_hash_rotations(stream.view_all(owner));
+}
+
 // The point of the hash is the case a checksum cannot see: the same picture in a different file.
 static void should_recognise_the_same_picture()
 {
@@ -616,14 +630,53 @@ static void should_recognise_the_same_picture()
 	// unrelated photo. The threshold sits in that gap rather than near either side of it.
 	assert_equal(0, crypto::phash_distance(original, resized), "a resized copy is the same picture");
 
-	// A rotation is a different bitmap, and the hash must not pretend otherwise - a duplicate claim
-	// on it would offer to delete a photo the user deliberately made.
+	// A rotation is a different bitmap, so the single-orientation hash must still land far away: the
+	// rotations are what recognise it, and nothing else should quietly start matching.
 	assert_equal(true, crypto::phash_distance(original, phash_of_file("Test90.jpg")) > 20,
 	             "a rotated copy is not the same bitmap");
 
 	const auto unrelated = phash_of_file("IMG_0096.JPG");
 	assert_equal(true, crypto::phash_is_usable(unrelated), "an unrelated photo hashes");
 	assert_equal(true, crypto::phash_distance(original, unrelated) > 20, "an unrelated photo is far away");
+}
+
+// A quarter turn is a common grading step, so the same picture rotated has to be recognised as a
+// copy - while an unrelated photo stays clear in every orientation, not just the one it was saved in.
+static void should_recognise_a_rotated_picture()
+{
+	const auto original = phash_of_file("Test.jpg");
+
+	assert_equal(true, crypto::phash_is_usable(original), "Test.jpg hashes");
+
+	// Every quarter turn of the same photograph, and a losslessly rotated pair from a second source.
+	for (const auto name : {"Test90.jpg"sv, "Test180.jpg"sv, "Test270.jpg"sv})
+	{
+		const auto rotated = phash_rotations_of_file(name);
+		assert_equal(true, crypto::phash_is_usable(rotated[0]), "a turned copy hashes");
+		assert_equal(true, crypto::phash_distance(original, rotated) <= 6, "a turned copy is the same picture");
+	}
+
+	const auto lossless = phash_of_file("Lossless0.jpg");
+	assert_equal(true, crypto::phash_is_usable(lossless), "Lossless0.jpg hashes");
+	assert_equal(true, crypto::phash_distance(lossless, phash_rotations_of_file("Lossless90.jpg")) <= 6,
+	             "a losslessly rotated copy matches");
+
+	// Whichever side carries the turns, the pair has to meet: presence compares the outside file's
+	// stored hash against an indexed picture's turns, and duplicate search does the reverse.
+	assert_equal(true, crypto::phash_distance(phash_of_file("Test90.jpg"), phash_rotations_of_file("Test.jpg")) <= 6,
+	             "the turned file recognises the upright original");
+	assert_equal(true, crypto::phash_is_usable(phash_rotations_of_file("Test.jpg")[0]),
+	             "the upright original keeps a usable set of turns");
+
+	// The rotations must not become a way for anything to match anything.
+	assert_equal(true, crypto::phash_distance(original, phash_rotations_of_file("IMG_0096.JPG")) > 6,
+	             "an unrelated photo stays clear in every orientation");
+	assert_equal(true, crypto::phash_distance(original, phash_rotations_of_file("Lossless0.jpg")) > 6,
+	             "a second unrelated photo stays clear in every orientation");
+
+	// A resize still matches without needing a turn, so the plain comparison is not weakened.
+	assert_equal(0, crypto::phash_distance(original, phash_rotations_of_file("Small.jpg")),
+	             "a resized copy still matches at zero");
 }
 
 static uint8_t blend_opaque_channel(const uint8_t dest, const float src, const float alpha)
@@ -1908,15 +1961,15 @@ static void should_check_overwrite()
 
 static void should_plan_unique_convert_outputs()
 {
-	df::item_set items;
-	items.add(std::make_shared<df::item_element>(df::file_path("c:\\one\\photo.jpg"), df::index_file_item{}));
-	items.add(std::make_shared<df::item_element>(df::file_path("c:\\two\\photo.png"), df::index_file_item{}));
+	std::vector<convert_source> sources;
+	sources.emplace_back(df::file_path("c:\\one\\photo.jpg"), sizei{}, str::cached{});
+	sources.emplace_back(df::file_path("c:\\two\\photo.png"), sizei{}, str::cached{});
 
-	const auto plan = plan_convert_outputs(df::folder_path("c:\\destination"), items, ".webp",
+	const auto plan = plan_convert_outputs(df::folder_path("c:\\destination"), sources, ".webp",
 	                                       collision_policy::block_run);
 	assert_equal(2_z, plan.size(), "all conversion sources planned");
 	assert_equal("photo.webp", plan[0].destination.name(), "first conversion keeps basename");
-	assert_equal("photo 2.webp", plan[1].destination.name(), "duplicate conversion basename is suffixed");
+	assert_equal("photo (2).webp", plan[1].destination.name(), "duplicate conversion basename is suffixed");
 	assert_equal(false, plan[0].destination == plan[1].destination, "conversion outputs are unique");
 }
 
@@ -2587,6 +2640,7 @@ void register_tests2(view_state& state, test_registry& tests)
 	tests.add("Should calc Hashes"s, should_calc_hashes);
 	tests.add("Should calc perceptual hashes"s, should_calc_perceptual_hashes);
 	tests.add("Should recognise the same picture"s, should_recognise_the_same_picture);
+	tests.add("Should recognise a rotated picture"s, should_recognise_a_rotated_picture);
 	tests.add("Should match SIMD software blends"s, should_match_simd_software_blends);
 	tests.add("Should convert YUV surfaces for software rendering"s,
 	          should_convert_yuv_surfaces_for_software_rendering);

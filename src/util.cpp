@@ -210,6 +210,7 @@ df::ui_counters df::ui_perf;
 df::db_counters df::db_perf;
 df::query_counters df::query_perf;
 df::file_counters df::file_perf;
+df::index_counters df::index_perf;
 
 namespace
 {
@@ -274,6 +275,7 @@ void df::log_perf_summary()
 	const auto& d = db_perf;
 	const auto& q = query_perf;
 	const auto& f = file_perf;
+	const auto& x = index_perf;
 
 	if (load(u.idle_drains) == 0 && load(u.paints) == 0 && load(f.scans) == 0 && load(d.read_batches) == 0)
 	{
@@ -338,6 +340,56 @@ void df::log_perf_summary()
 			    format_count(load(f.decodes)), format_us(load(f.decode_us)),
 			    format_us(load(f.decode_max_us)), file_size(load(f.decode_bytes)).str(),
 			    format_count(load(f.metadata_errors))));
+	}
+
+	if (load(x.crc_computed) != 0 || load(x.crc_failed) != 0 || load(x.pass_files) != 0)
+	{
+		const auto files_walked = static_cast<uint64_t>(load(x.pass_files));
+		const auto crc_held = static_cast<uint64_t>(load(x.pass_crc_held));
+		const auto crc_pct = files_walked == 0 ? 0 : static_cast<int>((crc_held * 100) / files_walked);
+
+		log("perf crc", std::format(
+			    "computed={} failed={} bytes={} in={} max={} | last pass files={} held={} ({}%) dup-groups={}",
+			    format_count(load(x.crc_computed)), format_count(load(x.crc_failed)),
+			    file_size(load(x.crc_bytes)).str(), format_us(load(x.crc_us)), format_us(load(x.crc_max_us)),
+			    format_count(files_walked), format_count(crc_held), crc_pct,
+			    format_count(load(x.pass_dup_groups))));
+	}
+
+	if (load(x.phash_computed) != 0 || load(x.pass_pictures) != 0)
+	{
+		// A picture is only supposed to be hashed when another picture shares its capture time, so
+		// unpersisted and uninvited are the two numbers that say whether that rule is actually holding.
+		log("perf phash", std::format(
+			    "computed={} usable={} declined={} unreadable={} | unpersisted={} unwritten={} presence={} | "
+			    "bytes={} in={} max={}",
+			    format_count(load(x.phash_computed)), format_count(load(x.phash_usable)),
+			    format_count(load(x.phash_declined)), format_count(load(x.phash_unreadable)),
+			    format_count(load(x.phash_unpersisted)), format_count(load(x.phash_unwritten)),
+			    format_count(load(x.phash_presence)),
+			    file_size(load(x.phash_bytes)).str(), format_us(load(x.phash_us)),
+			    format_us(load(x.phash_max_us))));
+
+		const auto candidates = static_cast<uint64_t>(load(x.pass_candidates));
+		const auto uninvited = static_cast<uint64_t>(load(x.pass_uninvited));
+		const auto held = static_cast<uint64_t>(load(x.pass_usable_held)) + load(x.pass_declined_held);
+		const auto excess_pct = candidates == 0 ? 0 : static_cast<int>((uninvited * 100) / candidates);
+
+		log("perf phash", std::format(
+			    "last pass pictures={} capture-times={} candidates={} wanted={} crowded={} matched={} | "
+			    "held={} usable={} declined={} uninvited={} ({}% of candidates)",
+			    format_count(load(x.pass_pictures)), format_count(load(x.pass_buckets)),
+			    format_count(candidates), format_count(load(x.pass_wanted)), format_count(load(x.pass_crowded)),
+			    format_count(load(x.pass_matched)), format_count(held), format_count(load(x.pass_usable_held)),
+			    format_count(load(x.pass_declined_held)), format_count(uninvited), excess_pct));
+
+		// solo-with-swap is what the gate refused; solo is what a gate blind to rotation would have
+		// refused, and the gap between them is what supporting a quarter turn costs.
+		log("perf phash", std::format(
+			    "shape refused={} (strict would be {}) cross-shape-matches={} dimensions-unknown={}",
+			    format_count(load(x.pass_aspect_solo_swap)), format_count(load(x.pass_aspect_solo)),
+			    format_count(load(x.pass_matched_cross_aspect)),
+			    format_count(load(x.pass_dims_unknown))));
 	}
 
 	const auto thumbs_requested = load(t.scan_thumbs_requested);

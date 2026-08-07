@@ -3455,6 +3455,36 @@ msgstr "Перейменувати автоматично"
 msgid "Block run"
 msgstr "Заблокувати виконання"
 
+msgid "File exists"
+msgstr "Файл існує"
+
+msgid "Choose a destination folder."
+msgstr "Виберіть папку призначення."
+
+msgid "Enter a maximum dimension in pixels."
+msgstr "Укажіть максимальний розмір у пікселях."
+
+msgid "Check one or more fields to change."
+msgstr "Позначте одне або кілька полів для зміни."
+
+msgid "Select items before using this tool"
+msgstr "Спочатку виберіть елементи"
+
+msgid "Success"
+msgstr "Успішно"
+
+msgid "Failed"
+msgstr "Помилка"
+
+msgid "Skipped"
+msgstr "Пропущено"
+
+msgid "Not run"
+msgstr "Не виконано"
+
+msgid "These are the results of a finished run. Refresh to plan again with the current settings."
+msgstr "Це результати завершеного запуску. Натисніть «Оновити», щоб спланувати знову з поточними налаштуваннями."
+
 msgid "{} destinations already exist. Choose Replace, Skip or Auto-rename."
 msgstr "{} призначень уже існує. Виберіть «Замінити», «Пропустити» або «Перейменувати автоматично»."
 
@@ -3578,11 +3608,11 @@ msgstr "Вимкнено: фото та відео, менші за вікно, 
 msgid "Convert the selected photos to another format and optionally limit their size. The originals are kept and new files are written to the destination folder."
 msgstr "Перетворює вибрані фотографії в інший формат і за потреби обмежує їхній розмір. Оригінали зберігаються, а нові файли записуються в папку призначення."
 
-msgid "Write the same metadata values to every selected item. Only the fields you check are changed."
-msgstr "Записує однакові значення метаданих в усі вибрані об'єкти. Змінюються лише позначені поля."
+msgid "Write the same metadata values to every selected item. Only the fields you check are changed; image and video data is untouched."
+msgstr "Записує однакові значення метаданих у кожен вибраний елемент. Змінюються лише позначені поля; дані зображення та відео залишаються недоторканими."
 
-msgid "Shift the dates of the selected items so the earliest item starts at a new date and time."
-msgstr "Зсуває дати вибраних об'єктів так, щоб найраніший із них починався з нової дати й часу."
+msgid "Shift the dates of the selected items so the earliest item starts at a new date and time. Only metadata is changed; image and video data is untouched."
+msgstr "Зсуває дати вибраних елементів так, щоб найраніший починався з нової дати й часу. Змінюються лише метадані; дані зображення та відео залишаються недоторканими."
 
 msgid "Add or remove tags across the selected items. Tags you do not mention are left in place."
 msgstr "Додає або видаляє теги у вибраних об'єктів. Не вказані теги залишаються без змін."

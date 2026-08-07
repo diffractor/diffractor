@@ -389,6 +389,38 @@ function Add-ToSymbolStore {
     }
 }
 
+function Clear-IncrementalLink {
+    # Release builds must ship a full link, so drop the incremental LTCG state (.iobj/.ipdb)
+    # and the previous binaries that let the linker patch instead of relink.
+    param(
+        [string]$Configuration,
+        [string[]]$Platforms,
+        [string[]]$Targets
+    )
+
+    Write-Host ""
+    Write-Host "Removing incremental link artifacts for a full link..." -ForegroundColor Yellow
+
+    foreach ($platform in $Platforms) {
+        $intDir = Join-Path $ScriptDir "intermediate\$Configuration\$platform"
+        if (Test-Path $intDir) {
+            Get-ChildItem $intDir -Recurse -File -Include *.iobj, *.ipdb, *.ilk -ErrorAction SilentlyContinue |
+                Remove-Item -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    foreach ($target in $Targets) {
+        # The .pdb is left alone: the compiler and linker share it, so deleting it would
+        # strip debug info from objects that are not recompiled.
+        foreach ($ext in ".exe", ".ilk", ".iobj", ".ipdb") {
+            $path = Join-Path $SourceFilesDir "$target$ext"
+            if (Test-Path $path) {
+                Remove-Item $path -Force
+            }
+        }
+    }
+}
+
 function Build-Desktop {
     # Auto-increment build number before building
     Invoke-BumpBuild
@@ -413,6 +445,8 @@ function Build-Desktop {
             Remove-Item $path -Force
         }
     }
+
+    Clear-IncrementalLink -Configuration "Release" -Platforms @("Win32", "x64") -Targets @("diffractor32", "diffractor64")
     
     # Build Win32 and x64
     Invoke-MSBuild -Project "df.sln" -Configuration "Release" -Platform "Win32"
@@ -570,6 +604,8 @@ function Build-Store {
     if (Test-Path $PackageRoot) {
         Remove-Item $PackageRoot -Recurse -Force
     }
+
+    Clear-IncrementalLink -Configuration "WinStore" -Platforms @("x64") -Targets @("diffractor")
     
     # Build WinStore configuration
     # Invoke-MSBuild -Project "src\app.vcxproj" -Configuration "WinStore" -Platform "x64"

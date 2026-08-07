@@ -987,6 +987,7 @@ namespace ui
 			extern color32 desktop_background;
 			extern color32 important_background;
 			extern color32 warning_background;
+			extern color32 success_background;
 			extern color32 info_background;
 
 			extern color32 rank_background;

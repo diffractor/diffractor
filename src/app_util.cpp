@@ -1389,30 +1389,47 @@ df::file_path next_free_destination(const df::file_path destination)
 	return destination;
 }
 
-std::vector<convert_item_plan> plan_convert_outputs(const df::folder_path write_folder, const df::item_set& items,
+std::vector<convert_source> snapshot_convert_sources(const df::item_set& items)
+{
+	std::vector<convert_source> result;
+	result.reserve(items.size());
+
+	for (const auto& item : items.items())
+	{
+		const auto md = item->metadata();
+		result.emplace_back(item->path(), md ? md->dimensions() : sizei{}, item->xmp());
+	}
+
+	return result;
+}
+
+std::vector<convert_item_plan> plan_convert_outputs(const df::folder_path write_folder,
+                                                    const std::vector<convert_source>& sources,
                                                     const std::string_view new_extension, const collision_policy policy)
 {
-	auto sources = items.items();
-	std::ranges::sort(sources, [](const auto& left, const auto& right)
+	auto ordered = sources;
+	std::ranges::sort(ordered, [](const auto& left, const auto& right)
 	{
-		return left->path().icmp(right->path()) < 0;
+		return left.path.icmp(right.path) < 0;
 	});
 
 	df::hash_set<df::file_path, df::ihash, df::ieq> planned_paths;
 	std::vector<convert_item_plan> result;
-	result.reserve(sources.size());
+	result.reserve(ordered.size());
 
-	for (const auto& item : sources)
+	for (const auto& source : ordered)
 	{
-		const auto base_name = item->path().file_name_without_extension();
+		const auto base_name = source.path.file_name_without_extension();
 		auto destination = df::file_path(write_folder, base_name, new_extension);
+		// Two sources can share a base name, so a destination another row already claimed is taken
+		// even when nothing is on disk yet. Use the " (n)" variant every other operation uses.
 		for (auto suffix = 2; planned_paths.contains(destination); ++suffix)
 		{
-			destination = df::file_path(write_folder, std::format("{} {}", base_name, suffix), new_extension);
+			destination = df::file_path(write_folder, std::format("{} ({})", base_name, suffix), new_extension);
 		}
 
 		convert_item_plan plan;
-		plan.item = item;
+		plan.source = source;
 		plan.collides = destination.exists();
 
 		if (plan.collides && policy == collision_policy::auto_rename)

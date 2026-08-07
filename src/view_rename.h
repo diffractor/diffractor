@@ -43,7 +43,7 @@ public:
 		};
 	};
 
-	text_t empty_message() override { return tt.view_empty_message; }
+	text_t empty_message() override { return tt.no_items_selected_message; }
 
 	std::string_view operation_name() const override { return tt.command_rename; }
 

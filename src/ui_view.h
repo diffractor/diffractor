@@ -81,12 +81,19 @@ enum class view_invalid
 	status = 1 << 26,
 	// Like index, but first forgets every cached scan result so the collection is re-read from the files.
 	index_rebuild = 1 << 27,
+	// Re-run the per-item sidebar sums without rebuilding the sidebar's elements. Each sum is an index
+	// query, so what changed the counts must not also discard every element and its text layout.
+	sidebar_counts = 1 << 28,
+	// Re-enumerate volumes and rebuild with the result. Only a drive event earns this: the scan blocks
+	// on unreachable network mappings, so it must not ride along with every index invalidation.
+	sidebar_drives = 1 << 29,
 
+	// No sidebar flag: these change how the sidebar is drawn, not what it says. font_size already
+	// re-measures it, and a recount here would query the index once per row for an unchanged answer.
 	visual_options = view_layout |
 	group_layout |
 	app_layout |
 	options_save |
-	sidebar |
 	command_state |
 	tooltip |
 	address |

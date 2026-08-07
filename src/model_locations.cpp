@@ -897,6 +897,9 @@ void location_cache::load_index()
 	platform::exclusive_lock lock(_rw);
 	constexpr auto expected_number_of_locations = 500000;
 
+	// A reload tears down what readers were gated on, so retract readiness for its duration.
+	_index_loaded.store(false, std::memory_order_release);
+
 	load_countries();
 	load_states();
 
@@ -1004,6 +1007,7 @@ void location_cache::load_index()
 
 	_tree.build(_coords);
 	++_load_generation;
+	_index_loaded.store(!_tree.is_empty(), std::memory_order_release);
 }
 
 struct location_match_possible

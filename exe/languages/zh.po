@@ -3393,6 +3393,36 @@ msgstr "自动重命名"
 msgid "Block run"
 msgstr "阻止运行"
 
+msgid "File exists"
+msgstr "文件已存在"
+
+msgid "Choose a destination folder."
+msgstr "请选择目标文件夹。"
+
+msgid "Enter a maximum dimension in pixels."
+msgstr "请输入以像素为单位的最大尺寸。"
+
+msgid "Check one or more fields to change."
+msgstr "请勾选一个或多个要更改的字段。"
+
+msgid "Select items before using this tool"
+msgstr "使用此工具前请先选择项目"
+
+msgid "Success"
+msgstr "成功"
+
+msgid "Failed"
+msgstr "失败"
+
+msgid "Skipped"
+msgstr "已跳过"
+
+msgid "Not run"
+msgstr "未运行"
+
+msgid "These are the results of a finished run. Refresh to plan again with the current settings."
+msgstr "这些是已完成运行的结果。刷新以使用当前设置重新计划。"
+
 msgid "{} destinations already exist. Choose Replace, Skip or Auto-rename."
 msgstr "已存在 {} 个目标。请选择“替换”、“跳过”或“自动重命名”。"
 
@@ -3516,11 +3546,11 @@ msgstr "关闭：小于窗口的照片和视频按实际大小显示。开启：
 msgid "Convert the selected photos to another format and optionally limit their size. The originals are kept and new files are written to the destination folder."
 msgstr "将所选照片转换为其他格式，并可选择限制其尺寸。原始文件将保留，新文件将写入目标文件夹。"
 
-msgid "Write the same metadata values to every selected item. Only the fields you check are changed."
-msgstr "将相同的元数据值写入所有选定项目。仅更改您勾选的字段。"
+msgid "Write the same metadata values to every selected item. Only the fields you check are changed; image and video data is untouched."
+msgstr "将相同的元数据值写入每个选定项目。仅更改勾选的字段，图像和视频数据保持不变。"
 
-msgid "Shift the dates of the selected items so the earliest item starts at a new date and time."
-msgstr "移动所选项目的日期，使最早的项目从新的日期和时间开始。"
+msgid "Shift the dates of the selected items so the earliest item starts at a new date and time. Only metadata is changed; image and video data is untouched."
+msgstr "移动选定项目的日期，使最早的项目从新的日期和时间开始。仅更改元数据，图像和视频数据保持不变。"
 
 msgid "Add or remove tags across the selected items. Tags you do not mention are left in place."
 msgstr "在所选项目中添加或删除标签。未指定的标签保持不变。"

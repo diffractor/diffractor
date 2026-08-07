@@ -107,6 +107,7 @@ void app_frame::create_toolbars()
 
 	const std::vector<ui::command_ptr> tool_commands =
 	{
+		find_command(commands::tool_refresh),
 		find_command(commands::tool_run),
 		find_command(commands::view_cancel),
 		nullptr,
@@ -605,6 +606,12 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::rate_none]->enable = can_save_metadata;
 	_commands[commands::rate_rejected]->enable = can_save_metadata;
 	_commands[commands::refresh]->enable = true;
+	// Refresh belongs to the batch view for as long as it is open, not just after a run: it always
+	// means "re-plan from what is on disk now", and a button that appears only once is a button
+	// nobody finds. A finished run keeps its results until it is pressed.
+	const auto is_batch_view = view_mode == view_type::batch && _view_batch;
+	_commands[commands::tool_refresh]->visible = is_batch_view;
+	_commands[commands::tool_refresh]->enable = is_batch_view && _view_batch->can_refresh();
 	_commands[commands::tool_run]->enable = !view_processing && ((view_mode == view_type::rename && _view_rename &&
 		_view_rename->can_run()) || (view_mode == view_type::batch && _view_batch && _view_batch->can_run()));
 	// One toolbar serves the rename view and every batch tool, so the run button must name the
@@ -739,6 +746,12 @@ void app_frame::update_button_state(const bool resize)
 		const auto command = _commands[id];
 		command->disabled_reason = command->enable ? std::string{} : analyze_reason;
 	}
+
+	// A dimmed Run is only honest if it names what would make it work again. The batch view keeps
+	// that answer beside the test that produced it.
+	_commands[commands::tool_run]->disabled_reason = view_mode == view_type::batch && _view_batch
+		                                                 ? _view_batch->run_blocked_reason()
+		                                                 : std::string{};
 
 
 	_commands[commands::playback_auto_play]->checked = setting.auto_play;
@@ -1088,6 +1101,7 @@ void app_frame::update_command_text()
 	def_command(commands::tags_run, command_group::none, icon_index::tag, tt.command_apply_tags);
 	def_command(commands::view_cancel, command_group::none, icon_index::cancel, tt.command_cancel_operation);
 	def_command(commands::tool_run, command_group::none, icon_index::play, tt.command_rename_files);
+	def_command(commands::tool_refresh, command_group::none, icon_index::refresh, tt.command_refresh);
 	def_command(commands::import_analyze, command_group::none, icon_index::refresh, tt.analyze);
 	def_command(commands::import_run, command_group::none, icon_index::play, tt.command_import);
 	def_command(commands::locate_run, command_group::none, icon_index::play, tt.command_locate);
@@ -1202,6 +1216,7 @@ void app_frame::update_command_text()
 		     commands::menu_open, commands::menu_tools_toolbar, commands::menu_playback, commands::view_close,
 		     commands::sync_analyze, commands::sync_run, commands::tool_run, commands::import_analyze,
 		     commands::import_run, commands::locate_run, commands::tags_run, commands::view_cancel,
+		     commands::tool_refresh,
 		     commands::edit_item_save, commands::edit_item_save_and_prev, commands::edit_item_save_and_next,
 		     commands::edit_item_save_as, commands::edit_item_preview,
 		     commands::menu_group_toolbar, commands::filter_photos, commands::filter_videos,

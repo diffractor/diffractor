@@ -294,6 +294,10 @@ class location_cache final : public df::no_copy
 	std::ifstream& record_stream() const;
 	std::atomic<uint32_t> _load_generation = 0;
 
+	// Readiness is published outside _rw so a UI-thread check does not queue behind the exclusive
+	// lock load_index holds across the whole gazetteer read, sort and tree build.
+	std::atomic<bool> _index_loaded = false;
+
 	// Shared locks here are not recursive: re-acquiring one while a writer waits deadlocks. Every
 	// internal caller already holds _rw, so they use these and only the public entry points lock.
 	const country_t& find_country_locked(const uint32_t code) const
@@ -332,8 +336,7 @@ public:
 
 	bool is_index_loaded() const
 	{
-		platform::shared_lock lock(_rw);
-		return !_tree.is_empty();
+		return _index_loaded.load(std::memory_order_acquire);
 	}
 
 	country_loc find_country(double x, double y) const;

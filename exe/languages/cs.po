@@ -3556,6 +3556,36 @@ msgstr "Automaticky přejmenovat"
 msgid "Block run"
 msgstr "Zablokovat spuštění"
 
+msgid "File exists"
+msgstr "Soubor existuje"
+
+msgid "Choose a destination folder."
+msgstr "Vyberte cílovou složku."
+
+msgid "Enter a maximum dimension in pixels."
+msgstr "Zadejte maximální rozměr v pixelech."
+
+msgid "Check one or more fields to change."
+msgstr "Zaškrtněte jedno nebo více polí ke změně."
+
+msgid "Select items before using this tool"
+msgstr "Nejprve vyberte položky"
+
+msgid "Success"
+msgstr "Úspěch"
+
+msgid "Failed"
+msgstr "Selhalo"
+
+msgid "Skipped"
+msgstr "Přeskočeno"
+
+msgid "Not run"
+msgstr "Nespuštěno"
+
+msgid "These are the results of a finished run. Refresh to plan again with the current settings."
+msgstr "Toto jsou výsledky dokončeného běhu. Klepnutím na Obnovit naplánujete znovu s aktuálním nastavením."
+
 msgid "{} destinations already exist. Choose Replace, Skip or Auto-rename."
 msgstr "{} cílů již existuje. Zvolte Nahradit, Přeskočit nebo Automaticky přejmenovat."
 
@@ -3679,11 +3709,11 @@ msgstr "Vypnuto: fotografie a videa menší než okno se zobrazují ve skutečn�
 msgid "Convert the selected photos to another format and optionally limit their size. The originals are kept and new files are written to the destination folder."
 msgstr "Převede vybrané fotografie do jiného formátu a volitelně omezí jejich velikost. Originály zůstanou zachovány a nové soubory se zapíší do cílové složky."
 
-msgid "Write the same metadata values to every selected item. Only the fields you check are changed."
-msgstr "Zapíše stejné hodnoty metadat do všech vybraných položek. Změní se pouze zaškrtnutá pole."
+msgid "Write the same metadata values to every selected item. Only the fields you check are changed; image and video data is untouched."
+msgstr "Zapíše stejné hodnoty metadat do každé vybrané položky. Změní se pouze zaškrtnutá pole; obrazová a video data zůstanou nedotčena."
 
-msgid "Shift the dates of the selected items so the earliest item starts at a new date and time."
-msgstr "Posune data vybraných položek tak, aby nejstarší položka začínala novým datem a časem."
+msgid "Shift the dates of the selected items so the earliest item starts at a new date and time. Only metadata is changed; image and video data is untouched."
+msgstr "Posune data vybraných položek tak, aby nejstarší položka začínala novým datem a časem. Změní se pouze metadata; obrazová a video data zůstanou nedotčena."
 
 msgid "Add or remove tags across the selected items. Tags you do not mention are left in place."
 msgstr "Přidá nebo odebere štítky u vybraných položek. Štítky, které neuvedete, zůstanou beze změny."

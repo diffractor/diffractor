@@ -506,6 +506,16 @@ public:
 	// index workers up, and either can win, so the bring-up is claimed once.
 	bool _index_workers_started = false;
 
+	// These workers are created on first use rather than at startup, so a session that never opens the
+	// map, never reaches the network and never types in search pays for none of them. Claimed once by
+	// claim_worker_start, which runs on whichever thread first queues to that queue.
+	std::atomic_bool _web_worker_started = false;
+	std::atomic_bool _cloud_worker_started = false;
+	std::atomic_bool _auto_complete_worker_started = false;
+	std::atomic_bool _map_tile_workers_started = false;
+	std::atomic_bool _tile_db_worker_started = false;
+	std::atomic_bool _media_preview_worker_started = false;
+
 	ui::control_frame_ptr _app_frame;
 	std::shared_ptr<app_logo_element> _app_logo;
 
@@ -687,6 +697,7 @@ public:
 	void reload();
 	void queue_ui(std::function<void()> f) override;
 	void queue_async(async_queue q, std::function<void()> f) override;
+	void queue_async_after(async_queue q, uint32_t delay_ms, std::function<void()> f) override;
 	void queue_location(std::function<void(location_cache&)>) override;
 	void queue_database(std::function<void(database&)> f) override;
 	void queue_tile_db(std::function<void(tile_cache_db&)> f) override;
@@ -723,6 +734,8 @@ public:
 	bool can_exit() override;
 	bool pre_init() override;
 	void start_workers();
+	bool claim_worker_start(std::atomic_bool& started);
+	void ensure_worker(std::atomic_bool& started, platform::task_queue& q, std::string_view name);
 	void update_font_size() const;
 	bool init(std::string_view command_line) override;
 	void init_search();

@@ -123,9 +123,9 @@ A copy claim states how it was reached. There are exactly three grades, stronges
 |---|---|---|
 | **Identical** | The same bytes: equal size and equal checksum. | Certain. The files are interchangeable. |
 | **Same file** | The same name and the same capture time. For audio and video, the same name and size. | Near certain. One file in two places. |
-| **Same picture** | Different bytes, but the images match when compared as pictures, at the same capture time. | Possible. A re-encode, re-save, or resize. |
+| **Same picture** | Different bytes, but the images match when compared as pictures, at the same capture time. Every quarter turn is compared, so a rotated copy is recognised. | Possible. A re-encode, re-save, resize, or rotation. |
 
-The grade is reported rather than collapsed into the single word "duplicate". *Certain* and *possible* support different decisions, and merging them costs the user the only information that separates a safe deletion from a judgement call. A rotated or cropped version is a different picture and is not claimed as a copy.
+The grade is reported rather than collapsed into the single word "duplicate". *Certain* and *possible* support different decisions, and merging them costs the user the only information that separates a safe deletion from a judgement call. A rotated copy is claimed as a copy: a quarter turn is a common grading step, and the picture is the one the user already has. A cropped version is a different picture and is not claimed.
 
 Underneath the grades sits an explicit refusal: an image with too little detail to identify — a blank frame, a solid colour, a plain scanned page — is never claimed to match anything, because at that point every such image looks alike.
 
@@ -147,8 +147,8 @@ Capture time is recorded to the second, and cameras shoot faster than a second. 
 
 Two consequences bind:
 
-- **Frames from one burst are not copies of one another.** A picture that matches many others under a single timestamp is a burst frame, not a re-save: continuous shooting produces frames that resemble each other however strict the comparison is, so the size of the crowd — not the closeness of any pair — is what identifies it. A capture time that answers with a crowd is declined in full rather than reported in part, because reporting part of it would mean choosing which frames count.
-- **A shared capture time never stands alone.** It narrows what is worth comparing. It is never itself a claim.
+- **Frames from one burst are not copies of one another.** A picture that matches many others *in the same orientation* under a single timestamp is a burst frame, not a re-save: continuous shooting produces frames that resemble each other however strict the comparison is, so the size of the crowd — not the closeness of any pair — is what identifies it. A capture time that answers with a crowd is declined in full rather than reported in part, because reporting part of it would mean choosing which frames count. A match that needed a quarter turn is never burst evidence, because continuous shooting does not produce a rotated frame.
+- **A shared capture time never stands alone.** It narrows what is worth comparing. It is never itself a claim. Shape narrows it further: a picture whose neighbours under one timestamp are all a different shape cannot be a copy of any of them, and is not compared as a picture at all. A quarter turn transposes the stored extent, so a transposed neighbour still counts as the same shape.
 
 The refusal is symmetric: an outside file being assessed for [presence](design.md#collection-presence) is judged by the same crowd rule against the same capture time, so the boundary and the whole answer alike.
 

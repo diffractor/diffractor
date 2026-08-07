@@ -303,10 +303,10 @@ public:
 			view_invalid::app_layout);
 	}
 
-	std::string show_results(const std::vector<view_operation_result>& results)
+	// One sentence for a finished run, whatever view drew the rows: counts first, then the classes
+	// of row that did nothing, so a partial run is never read as a whole one.
+	static std::string format_operation_summary(const std::vector<view_operation_result>& results)
 	{
-		std::vector<row_element_ptr> rows;
-		rows.reserve(results.size());
 		size_t succeeded = 0;
 		size_t failed = 0;
 		size_t skipped = 0;
@@ -318,35 +318,25 @@ public:
 
 		for (const auto& result : results)
 		{
-			auto row = std::make_shared<row_element>(*this);
-			row->_text[1] = result.name;
-			row->_order = static_cast<int>(rows.size());
-
 			switch (result.status)
 			{
 			case item_status::success:
-				row->_icons[0] = icon_index::check;
 				if (first_succeeded.empty()) first_succeeded = result.name;
 				++succeeded;
 				break;
 			case item_status::fail:
-				row->_icons[0] = icon_index::error;
 				if (first_failed.empty()) first_failed = result.name;
 				++failed;
 				break;
 			case item_status::ignore:
-				row->_icons[0] = icon_index::none;
 				if (first_skipped.empty()) first_skipped = result.name;
 				++skipped;
 				break;
 			case item_status::cancel:
-				row->_icons[0] = icon_index::cancel;
 				if (first_canceled.empty()) first_canceled = result.name;
 				++canceled;
 				break;
 			}
-
-			rows.emplace_back(std::move(row));
 		}
 
 		const auto total = static_cast<int64_t>(results.size());
@@ -360,6 +350,43 @@ public:
 		if (failed > 0) append(format_plural_text(tt.failed_items_fmt, first_failed, failed, {}, total));
 		if (skipped > 0) append(format_plural_text(tt.ignored_fmt, first_skipped, skipped, {}, total));
 		if (canceled > 0) append(format_plural_text(tt.canceled_items_fmt, first_canceled, canceled, {}, total));
+		return summary;
+	}
+
+	// True while the rows describe a finished run rather than a plan waiting to be run.
+	bool showing_results() const { return _showing_results; }
+
+	std::string show_results(const std::vector<view_operation_result>& results)
+	{
+		std::vector<row_element_ptr> rows;
+		rows.reserve(results.size());
+
+		for (const auto& result : results)
+		{
+			auto row = std::make_shared<row_element>(*this);
+			row->_text[1] = result.name;
+			row->_order = static_cast<int>(rows.size());
+
+			switch (result.status)
+			{
+			case item_status::success:
+				row->_icons[0] = icon_index::check;
+				break;
+			case item_status::fail:
+				row->_icons[0] = icon_index::error;
+				break;
+			case item_status::ignore:
+				row->_icons[0] = icon_index::none;
+				break;
+			case item_status::cancel:
+				row->_icons[0] = icon_index::cancel;
+				break;
+			}
+
+			rows.emplace_back(std::move(row));
+		}
+
+		auto summary = format_operation_summary(results);
 
 		_rows = std::move(rows);
 		_showing_results = true;

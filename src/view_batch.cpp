@@ -51,9 +51,12 @@ static std::vector<std::string> genre_suggestions(const view_state& s, const df:
 
 std::array<text_t, list_view::max_col_count> batch_tool_view::col_titles()
 {
-	if (_mode == batch_tool_mode::convert) return {tt.source, tt.destination, tt.changes, {}};
+	// The last column answers a different question once the run is over: not what will change, but
+	// what happened. The columns that identify the row are the same either way.
+	if (_mode == batch_tool_mode::convert)
+		return {tt.source, tt.destination, showing_results() ? tt.status : tt.changes, {}};
 	if (_mode == batch_tool_mode::metadata) return {tt.file, tt.changes, tt.status, {}};
-	return {tt.file, tt.edit_original, tt.after, {}};
+	return {tt.file, tt.edit_original, showing_results() ? tt.status : tt.after, {}};
 }
 
 std::string_view batch_tool_view::title()
@@ -93,7 +96,11 @@ void batch_tool_view::deactivate()
 {
 	_rows.clear();
 	_convert_plan.clear();
+	_plan_valid = false;
+	++_plan_generation;
+	_row_names.clear();
 	_status.clear();
+	_showing_results = false;
 	// The next use starts from its own selection, so a date chosen for the previous selection must
 	// not survive as the starting date for a different set of items.
 	_original_start = {};
@@ -130,11 +137,42 @@ metadata_edits batch_tool_view::metadata_changes() const
 
 void batch_tool_view::refresh_convert()
 {
+	// Deciding a destination means asking the filesystem whether it is already taken, once per
+	// selected item. That is a worker's job: on a network or sleeping destination it is the
+	// difference between a responsive panel and a frozen one.
+	const auto sources = snapshot_convert_sources(_state.selected_items());
+	const auto write_folder = df::folder_path(setting.write_folder);
+	const auto extension = convert_extension();
+	const auto policy = setting.convert.collision;
+	const auto generation = ++_plan_generation;
+	_plan_valid = false;
+	_convert_plan.clear();
+	_status = std::string(tt.analyzing.sv());
+
+	const std::weak_ptr<batch_tool_view> weak_view = shared_from_this();
+	_state.queue_async(async_queue::work,
+	                   [&s = _state, weak_view, sources, write_folder, extension, policy, generation]
+	                   {
+		                   auto plan = plan_convert_outputs(write_folder, sources, extension, policy);
+
+		                   s.queue_ui([weak_view, plan = std::move(plan), generation]() mutable
+		                   {
+			                   const auto view = weak_view.lock();
+			                   if (!view || generation != view->_plan_generation) return;
+			                   view->_convert_plan = std::move(plan);
+			                   view->_plan_valid = true;
+			                   view->describe_convert_plan();
+		                   });
+	                   });
+}
+
+void batch_tool_view::describe_convert_plan()
+{
 	const auto& items = _state.selected_items();
-	_convert_plan = plan_convert_outputs(df::folder_path(setting.write_folder), items, convert_extension(),
-	                                     setting.convert.collision);
 	std::vector<row_element_ptr> rows;
 	rows.reserve(_convert_plan.size());
+	_row_names.clear();
+	_row_names.reserve(_convert_plan.size());
 	const auto error_color = ui::lighten(ui::style::color::warning_background, 0.55f);
 	const auto resolved_color = ui::lighten(ui::style::color::important_background, 0.55f);
 	int order = 0;
@@ -142,10 +180,9 @@ void batch_tool_view::refresh_convert()
 	for (const auto& entry : _convert_plan)
 	{
 		auto row = std::make_shared<row_element>(*this);
-		row->_text[0] = entry.item->path().pack();
+		row->_text[0] = entry.source.path.pack();
 		row->_text[1] = entry.destination.pack();
-		const auto md = entry.item->metadata();
-		const auto dimensions = md ? md->dimensions() : sizei{};
+		const auto dimensions = entry.source.dimensions;
 		const auto max_side = setting.convert.limit_dimension ? setting.convert.max_side : 0;
 		const auto scale = max_side > 0 && std::max(dimensions.cx, dimensions.cy) > max_side
 			                   ? ui::scale_dimensions(dimensions, max_side, true)
@@ -165,10 +202,12 @@ void batch_tool_view::refresh_convert()
 		}
 		else if (entry.collides)
 		{
-			// Replace states the overwrite; Block Run states the reason the run is refused.
-			row->_text[2] = format_plural_text(tt.would_overwrite_fmt,
-			                                   std::vector<std::string>{std::string(entry.destination.name())});
-			row->_text_color[2] = setting.convert.collision == collision_policy::replace ? resolved_color : error_color;
+			// The row states the outcome, never a question: Replace names the overwrite, and an
+			// unresolved collision names only the fact so the policy control remains the one place
+			// the user chooses what to do about it.
+			const auto replacing = setting.convert.collision == collision_policy::replace;
+			row->_text[2] = std::string(replacing ? tt.collision_replace.sv() : tt.collision_exists.sv());
+			row->_text_color[2] = replacing ? resolved_color : error_color;
 		}
 		else
 		{
@@ -177,12 +216,17 @@ void batch_tool_view::refresh_convert()
 
 		row->_order = order++;
 		rows.emplace_back(row);
+		_row_names.emplace_back(entry.destination.name());
 	}
 	_rows = std::move(rows);
 	_status = collisions > 0
 		          ? std::format("{}   {}", format_plural_text(tt.convert_info_fmt, items),
 		                        format_collision_summary(setting.convert.collision, collisions))
 		          : format_plural_text(tt.convert_info_fmt, items);
+
+	append_blocked_reason();
+	_state.invalidate_view(view_invalid::view_layout | view_invalid::controller | view_invalid::status |
+		view_invalid::command_state);
 }
 
 void batch_tool_view::refresh_metadata()
@@ -218,6 +262,8 @@ void batch_tool_view::refresh_metadata()
 	if (setting.set_copyright_url) fields.emplace_back(tt.copyright_url.sv());
 	const auto field_text = str::combine(fields, ", ", false);
 	std::vector<row_element_ptr> rows;
+	_row_names.clear();
+	_row_names.reserve(items.size());
 	const auto warning_color = ui::lighten(ui::style::color::important_background, 0.55f);
 	int order = 0;
 	for (const auto& item : items.items())
@@ -250,6 +296,7 @@ void batch_tool_view::refresh_metadata()
 		if (overwrites) row->_text_color[2] = warning_color;
 		row->_order = order++;
 		rows.emplace_back(row);
+		_row_names.emplace_back(item->path().name());
 	}
 	_rows = std::move(rows);
 	_status = format_plural_text(tt.edit_metadata_fmt, items);
@@ -280,6 +327,8 @@ void batch_tool_view::refresh_dates()
 	const auto& items = _state.selected_items();
 	update_date_start();
 	std::vector<row_element_ptr> rows;
+	_row_names.clear();
+	_row_names.reserve(items.size());
 	int order = 0;
 	for (const auto& item : items.items())
 	{
@@ -290,36 +339,188 @@ void batch_tool_view::refresh_dates()
 		row->_text[2] = platform::format_date_time(adjusted_item_date(original, _new_start, _original_start));
 		row->_order = order++;
 		rows.emplace_back(row);
+		_row_names.emplace_back(item->path().name());
 	}
 	_rows = std::move(rows);
-	// Run is disabled for a date that cannot be a capture date, so state the reason rather than
-	// leaving the button dead and the preview blank.
-	_status = _new_start.is_valid()
-		          ? format_plural_text(tt.adjust_date_info_fmt, items)
-		          : std::string(tt.adjust_date_required.sv());
+	_status = format_plural_text(tt.adjust_date_info_fmt, items);
+}
+
+void batch_tool_view::append_blocked_reason()
+{
+	// A dimmed Run is only honest if the view says what would make it work. One answer, appended
+	// after whatever the mode already stated about scope.
+	if (const auto blocked = run_blocked_reason(); !blocked.empty() && _status.find(blocked) == std::string::npos)
+	{
+		if (!_status.empty()) _status += "   ";
+		_status += blocked;
+	}
 }
 
 void batch_tool_view::refresh()
 {
-	if (_mode == batch_tool_mode::convert) refresh_convert();
-	else if (_mode == batch_tool_mode::metadata) refresh_metadata();
+	// The worker holds indexes into the reviewed plan, so re-planning under it would repoint the
+	// rows a running job is reporting against.
+	if (progress().active) return;
+	// Every settings control routes here, so a change to the plan inputs is also what leaves results
+	// mode. The finished run described the old settings and would be read as describing the new ones.
+	_showing_results = false;
+
+	// Convert plans on a worker and publishes its own rows, status and invalidation when it lands.
+	if (_mode == batch_tool_mode::convert)
+	{
+		refresh_convert();
+		_state.invalidate_view(view_invalid::status | view_invalid::command_state);
+		return;
+	}
+
+	if (_mode == batch_tool_mode::metadata) refresh_metadata();
 	else refresh_dates();
+
+	append_blocked_reason();
 	_state.invalidate_view(view_invalid::view_layout | view_invalid::controller | view_invalid::status |
 		view_invalid::command_state);
+}
+
+void batch_tool_view::refresh_encode_settings()
+{
+	if (progress().active) return;
+
+	// Results describe destinations that now exist, so returning to review has to re-plan against
+	// what is on disk rather than redraw a plan the run has already invalidated.
+	if (_mode != batch_tool_mode::convert || showing_results() || !_plan_valid)
+	{
+		refresh();
+		return;
+	}
+
+	describe_convert_plan();
+}
+
+// The reviewed rows stay in place and only their last column changes, so a finished run is read
+// against exactly the list that was approved.
+void batch_tool_view::show_run_results(const std::vector<item_status>& statuses, const std::string_view error)
+{
+	const auto success_color = ui::lighten(ui::style::color::success_background, 0.55f);
+	const auto fail_color = ui::lighten(ui::style::color::warning_background, 0.55f);
+	const auto muted_color = ui::darken(ui::style::color::view_text, 0.22f);
+
+	std::vector<view_operation_result> outcomes;
+	outcomes.reserve(_rows.size());
+
+	for (size_t index = 0; index < _rows.size(); ++index)
+	{
+		const auto status = index < statuses.size() ? statuses[index] : item_status::cancel;
+		const auto& row = _rows[index];
+		row->_text_color[1] = 0;
+
+		switch (status)
+		{
+		case item_status::success:
+			row->_text[2] = std::string(tt.result_success.sv());
+			row->_text_color[2] = success_color;
+			break;
+		case item_status::fail:
+			row->_text[2] = std::string(tt.result_failed.sv());
+			row->_text_color[2] = fail_color;
+			break;
+		case item_status::ignore:
+			row->_text[2] = std::string(tt.result_skipped.sv());
+			row->_text_color[2] = muted_color;
+			row->_text_color[1] = muted_color;
+			break;
+		case item_status::cancel:
+			row->_text[2] = std::string(tt.result_not_run.sv());
+			row->_text_color[2] = muted_color;
+			row->_text_color[1] = muted_color;
+			break;
+		}
+
+		outcomes.emplace_back(index < _row_names.size() ? _row_names[index] : row->_text[0], status);
+	}
+
+	_showing_results = true;
+	_status = format_operation_summary(outcomes);
+
+	// The counts state what the run did; the first error states why a row failed, which a red row
+	// alone cannot.
+	if (!error.empty())
+	{
+		if (!_status.empty()) _status += "   ";
+		_status += error;
+	}
+
+	_state.invalidate_view(view_invalid::view_layout | view_invalid::controller | view_invalid::status |
+		view_invalid::command_state);
+}
+
+void batch_tool_view::queue_run_results(const view_state& s, const std::shared_ptr<batch_tool_view>& view,
+                                        const size_t generation, std::vector<item_status> statuses, std::string fatal,
+                                        std::string first_error, std::shared_ptr<detach_file_handles> detach,
+                                        std::string title)
+{
+	s.queue_ui([view, generation, statuses = std::move(statuses), detach = std::move(detach), title = std::move(title),
+		fatal = std::move(fatal), first_error = std::move(first_error)]() mutable
+	{
+		if (!view->is_processing_generation(generation)) return;
+		view->end_processing();
+
+		// A fault that stopped everything before any row was attempted has no per-row story to
+		// tell, so the review is left as it was rather than filled with statuses nothing earned.
+		if (!fatal.empty())
+		{
+			view->_status = fatal;
+			view->_state.invalidate_view(view_invalid::status | view_invalid::command_state);
+			const auto dlg = make_dlg(view->_host->owner());
+			dlg->show_message(icon_index::error, title, fatal);
+			return;
+		}
+
+		view->show_run_results(statuses, first_error);
+	});
+}
+
+std::string batch_tool_view::run_blocked_reason() const
+{
+	// While a run is in flight, or before there is anything to review, the toolbar already states
+	// the situation; naming a settings problem on top of that would be noise.
+	if (progress().active || _rows.empty()) return {};
+	if (showing_results()) return std::string(tt.run_needs_refresh.sv());
+
+	if (_mode == batch_tool_mode::convert)
+	{
+		// The plan is still being computed, so nothing is wrong yet and there is nothing to name.
+		if (!_plan_valid) return {};
+		if (df::folder_path(setting.write_folder).is_empty()) return std::string(tt.convert_folder_required.sv());
+		if (setting.convert.limit_dimension && setting.convert.max_side < 1)
+			return std::string(tt.convert_dimension_required.sv());
+
+		// Only Block Run refuses the run; the other policies resolve the collision.
+		const auto collisions = static_cast<int>(std::ranges::count_if(
+			_convert_plan, [](const auto& item) { return item.collides; }));
+		if (setting.convert.collision == collision_policy::block_run && collisions > 0)
+			return format_collision_summary(collision_policy::block_run, collisions);
+
+		// Every row resolved to Skip, so running would write nothing at all.
+		const auto skipped = static_cast<int>(std::ranges::count_if(
+			_convert_plan, [](const auto& item) { return item.skipped; }));
+		if (skipped == static_cast<int>(_convert_plan.size()))
+			return format_collision_summary(collision_policy::skip, skipped);
+
+		return {};
+	}
+
+	if (_mode == batch_tool_mode::metadata)
+		return metadata_changes().has_changes() ? std::string{} : std::string(tt.metadata_fields_required.sv());
+
+	return _new_start.is_valid() ? std::string{} : std::string(tt.adjust_date_required.sv());
 }
 
 bool batch_tool_view::can_run() const
 {
 	if (progress().active || _rows.empty()) return false;
-	if (_mode == batch_tool_mode::convert)
-		return !df::folder_path(setting.write_folder).is_empty() &&
-			(!setting.convert.limit_dimension || setting.convert.max_side > 0) &&
-			// Only Block Run refuses the run; the other policies resolve the collision.
-			(setting.convert.collision != collision_policy::block_run ||
-				std::ranges::none_of(_convert_plan, [](const auto& item) { return item.collides; })) &&
-			std::ranges::any_of(_convert_plan, [](const auto& item) { return !item.skipped; });
-	if (_mode == batch_tool_mode::metadata) return metadata_changes().has_changes();
-	return _new_start.is_valid();
+	// The rows on screen describe a plan the worker has already superseded.
+	if (_mode == batch_tool_mode::convert && !_plan_valid) return false;
+	return run_blocked_reason().empty();
 }
 
 void batch_tool_view::run()
@@ -330,45 +531,27 @@ void batch_tool_view::run()
 	else run_dates();
 }
 
-void batch_tool_view::queue_run_result(const view_state& s, const std::shared_ptr<batch_tool_view>& view,
-                                       platform::file_op_result result, const bool canceled, std::string title,
-                                       std::shared_ptr<detach_file_handles> detach, std::string error)
-{
-	s.queue_ui([view, result = std::move(result), canceled, title = std::move(title), detach = std::move(detach),
-		error = std::move(error)]
-	{
-		view->end_processing();
-		view->refresh();
-		if (!error.empty() || result.failed())
-		{
-			const auto dlg = make_dlg(view->_host->owner());
-			dlg->show_message(icon_index::error, title, error.empty() ? result.format_error() : error);
-		}
-		else if (canceled)
-		{
-			view->_status = std::string(tt.error_op_cancelled.sv());
-			view->_state.invalidate_view(view_invalid::status | view_invalid::command_state);
-		}
-	});
-}
-
 void batch_tool_view::run_convert()
 {
-	const auto plan = _convert_plan;
 	struct convert_request
 	{
+		size_t plan_index = 0;
 		df::file_path source;
 		df::file_path destination;
 		str::cached xmp;
 	};
 	std::vector<convert_request> requests;
-	requests.reserve(plan.size());
-	for (const auto& entry : plan)
+	requests.reserve(_convert_plan.size());
+	std::vector<item_status> statuses(_convert_plan.size(), item_status::ignore);
+	for (size_t index = 0; index < _convert_plan.size(); ++index)
 	{
+		const auto& entry = _convert_plan[index];
 		// Skip resolved the collision by leaving the existing file alone; its destination still
 		// names that file, so converting the row would overwrite what the review said to keep.
 		if (entry.skipped) continue;
-		requests.emplace_back(entry.item->path(), entry.destination, entry.item->xmp());
+		// Nothing has been attempted yet, so a row the run never reaches reports itself as not run.
+		statuses[index] = item_status::cancel;
+		requests.emplace_back(index, entry.source.path, entry.destination, entry.source.xmp);
 	}
 	const auto title = std::string(tt.command_convert_or_resize.sv());
 	const auto max_side = setting.convert.limit_dimension ? setting.convert.max_side : 0;
@@ -379,37 +562,68 @@ void batch_tool_view::run_convert()
 	const auto write_folder = df::folder_path(setting.write_folder);
 	const auto detach = std::make_shared<detach_file_handles>(_state);
 	begin_processing(requests.size());
+	const auto generation = processing_generation();
 	const auto cancel_source = processing_cancel_source();
 	const auto cancel_version = cancel_source->load();
 	_status = std::string(tt.processing.sv());
 	_state.queue_async(async_queue::work,
-	                   [&s = _state, view = shared_from_this(), requests = std::move(requests), cancel_source,
-		                   cancel_version, max_side,
+	                   [&s = _state, view = shared_from_this(), requests = std::move(requests),
+		                   statuses = std::move(statuses), cancel_source, cancel_version, generation, max_side,
 		                   jpeg_quality, webp_quality, webp_lossless, write_folder, detach, title]() mutable
 	                   {
-		                   platform::file_op_result result;
-		                   std::string error;
+		                   std::string fatal;
+		                   std::string first_error;
+		                   auto wrote_anything = false;
 		                   try
 		                   {
 			                   files ff;
-			                   result = platform::create_folder(write_folder);
-			                   for (size_t index = 0; result.success() && index < requests.size() && cancel_source->
-			                        load() == cancel_version; ++index)
+
+			                   if (const auto folder_result = platform::create_folder(write_folder); folder_result.
+				                   failed())
 			                   {
-				                   s.queue_ui([view, index] { view->processing_item(index); });
-				                   file_encode_params params;
-				                   params.jpeg_save_quality = jpeg_quality;
-				                   params.webp_quality = webp_quality;
-				                   params.webp_lossless = webp_lossless;
-				                   const auto& request = requests[index];
-				                   result = ff.update(request.source, request.destination, {},
-				                                      max_side > 0 ? image_edits(max_side) : image_edits(), params,
-				                                      false, request.xmp);
+				                   fatal = folder_result.format_error(
+					                   str_format(tt.failed_to_create_folder_fmt.sv(), write_folder));
+			                   }
+			                   else
+			                   {
+				                   for (size_t index = 0; index < requests.size() && cancel_source->load() ==
+				                        cancel_version; ++index)
+				                   {
+					                   const auto& request = requests[index];
+					                   const auto plan_index = request.plan_index;
+					                   s.queue_ui([view, generation, plan_index, index]
+					                   {
+						                   if (view->is_processing_generation(generation))
+							                   view->processing_item(plan_index, index + 1);
+					                   });
+					                   file_encode_params params;
+					                   params.jpeg_save_quality = jpeg_quality;
+					                   params.webp_quality = webp_quality;
+					                   params.webp_lossless = webp_lossless;
+					                   const auto result = ff.update(request.source, request.destination, {},
+					                                                 max_side > 0
+						                                                 ? image_edits(max_side)
+						                                                 : image_edits(), params, false, request.xmp);
+
+					                   // One unreadable or unwritable source must not decide the fate of the rest.
+					                   // The row records the failure and the run carries on, so the result list
+					                   // says exactly which items landed.
+					                   if (result.success())
+					                   {
+						                   statuses[plan_index] = item_status::success;
+						                   wrote_anything = true;
+					                   }
+					                   else
+					                   {
+						                   statuses[plan_index] = item_status::fail;
+						                   if (first_error.empty()) first_error = result.format_error();
+					                   }
+				                   }
 			                   }
 
 			                   // Convert writes files nobody has told the index about; without this they
 			                   // stay invisible until something else happens to rescan that folder.
-			                   if (result.success())
+			                   if (wrote_anything)
 			                   {
 				                   df::unique_folders written;
 				                   written.emplace(write_folder);
@@ -418,11 +632,11 @@ void batch_tool_view::run_convert()
 		                   }
 		                   catch (const std::exception& e)
 		                   {
-			                   error = str::utf8_cast(e.what());
+			                   fatal = str::utf8_cast(e.what());
 		                   }
-		                   const auto canceled = cancel_source->load() != cancel_version;
-		                   queue_run_result(s, view, std::move(result), canceled, title, std::move(detach),
-		                                    std::move(error));
+
+		                   queue_run_results(s, view, generation, std::move(statuses), std::move(fatal),
+		                                     std::move(first_error), std::move(detach), std::move(title));
 	                   });
 }
 
@@ -445,35 +659,47 @@ void batch_tool_view::run_metadata()
 	record_feature_use(features::batch_edit);
 	const auto detach = std::make_shared<detach_file_handles>(_state);
 	begin_processing(items.size());
+	const auto generation = processing_generation();
 	const auto cancel_source = processing_cancel_source();
 	const auto cancel_version = cancel_source->load();
 	_status = std::string(tt.processing.sv());
 	_state.queue_async(async_queue::work,
 	                   [&s = _state, view = shared_from_this(), requests = std::move(requests), edits, cancel_source,
-		                   cancel_version, detach, title]() mutable
+		                   cancel_version, generation, detach, title]() mutable
 	                   {
-		                   platform::file_op_result result;
-		                   std::string error;
+		                   // Nothing has been attempted yet, so a row the run never reaches reports itself
+		                   // as not run.
+		                   std::vector<item_status> statuses(requests.size(), item_status::cancel);
+		                   std::string fatal;
+		                   std::string first_error;
 		                   try
 		                   {
 			                   files ff;
 			                   for (size_t index = 0; index < requests.size() && cancel_source->load() == cancel_version
 			                        ; ++index)
 			                   {
-				                   s.queue_ui([view, index] { view->processing_item(index); });
+				                   s.queue_ui([view, generation, index]
+				                   {
+					                   if (view->is_processing_generation(generation))
+						                   view->processing_item(index, index + 1);
+				                   });
 				                   const auto& request = requests[index];
-				                   result = ff.update(request.path, edits, {}, file_encode_params{}, false,
-				                                      request.xmp);
-				                   if (result.failed()) break;
+				                   const auto result = ff.update(request.path, edits, {}, file_encode_params{}, false,
+				                                                 request.xmp);
+
+				                   // One file that cannot be written must not decide the fate of the rest.
+				                   // The row records the failure and the run carries on.
+				                   statuses[index] = result.success() ? item_status::success : item_status::fail;
+				                   if (result.failed() && first_error.empty()) first_error = result.format_error();
 			                   }
 		                   }
 		                   catch (const std::exception& e)
 		                   {
-			                   error = str::utf8_cast(e.what());
+			                   fatal = str::utf8_cast(e.what());
 		                   }
-		                   const auto canceled = cancel_source->load() != cancel_version;
-		                   queue_run_result(s, view, std::move(result), canceled, title, std::move(detach),
-		                                    std::move(error));
+
+		                   queue_run_results(s, view, generation, std::move(statuses), std::move(fatal),
+		                                     std::move(first_error), std::move(detach), std::move(title));
 	                   });
 }
 
@@ -499,41 +725,59 @@ void batch_tool_view::run_dates()
 	const auto original_start = _original_start;
 	const auto detach = std::make_shared<detach_file_handles>(_state);
 	begin_processing(requests.size());
+	const auto generation = processing_generation();
 	const auto cancel_source = processing_cancel_source();
 	const auto cancel_version = cancel_source->load();
 	_status = std::string(tt.processing.sv());
 	_state.queue_async(async_queue::work,
 	                   [&s = _state, view = shared_from_this(), requests = std::move(requests), new_start,
-		                   original_start,
-		                   cancel_source, cancel_version, detach, title]() mutable
+		                   original_start, cancel_source, cancel_version, generation, detach, title]() mutable
 	                   {
-		                   platform::file_op_result result;
-		                   std::string error;
+		                   // Nothing has been attempted yet, so a row the run never reaches reports itself
+		                   // as not run.
+		                   std::vector<item_status> statuses(requests.size(), item_status::cancel);
+		                   std::string fatal;
+		                   std::string first_error;
 		                   try
 		                   {
 			                   files ff;
 			                   for (size_t index = 0; index < requests.size() && cancel_source->load() == cancel_version
 			                        ; ++index)
 			                   {
-				                   s.queue_ui([view, index] { view->processing_item(index); });
+				                   s.queue_ui([view, generation, index]
+				                   {
+					                   if (view->is_processing_generation(generation))
+						                   view->processing_item(index, index + 1);
+				                   });
 				                   const auto& request = requests[index];
 				                   const auto date = adjusted_item_date(request.media_created, new_start,
 				                                                        original_start);
 				                   metadata_edits edits;
 				                   edits.created = date;
-				                   result = ff.update(request.path, edits, {}, file_encode_params{}, false,
-				                                      request.xmp);
-				                   if (result.success()) platform::created_date(request.path, date.local_to_system());
-				                   else break;
+				                   const auto result = ff.update(request.path, edits, {}, file_encode_params{}, false,
+				                                                 request.xmp);
+
+				                   // One file that cannot be written must not decide the fate of the rest.
+				                   // The row records the failure and the run carries on.
+				                   if (result.success())
+				                   {
+					                   platform::created_date(request.path, date.local_to_system());
+					                   statuses[index] = item_status::success;
+				                   }
+				                   else
+				                   {
+					                   statuses[index] = item_status::fail;
+					                   if (first_error.empty()) first_error = result.format_error();
+				                   }
 			                   }
 		                   }
 		                   catch (const std::exception& e)
 		                   {
-			                   error = str::utf8_cast(e.what());
+			                   fatal = str::utf8_cast(e.what());
 		                   }
-		                   const auto canceled = cancel_source->load() != cancel_version;
-		                   queue_run_result(s, view, std::move(result), canceled, title, std::move(detach),
-		                                    std::move(error));
+
+		                   queue_run_results(s, view, generation, std::move(statuses), std::move(fatal),
+		                                     std::move(first_error), std::move(detach), std::move(title));
 	                   });
 }
 
@@ -567,7 +811,7 @@ view_controls_host_ptr batch_tool_view::controls(const ui::control_frame_ptr& ow
 		jpeg_options->add(std::make_shared<text_element>(tt.options_jpeg_quality));
 		jpeg_options->add(std::make_shared<ui::slider_control>(frame, std::string_view{}, setting.convert.jpeg_quality,
 		                                                       1,
-		                                                       100, [this] { refresh(); }));
+		                                                       100, [this] { refresh_encode_settings(); }));
 		jpeg->child(jpeg_options);
 		controls.emplace_back(jpeg);
 		controls.emplace_back(std::make_shared<ui::check_control>(frame, tt.png_best, setting.convert.to_png, true,
@@ -590,21 +834,22 @@ view_controls_host_ptr batch_tool_view::controls(const ui::control_frame_ptr& ow
 		const auto webp_options = std::make_shared<ui::group_control>();
 		webp_options->add(std::make_shared<ui::slider_control>(frame, std::string_view{}, setting.convert.webp_quality,
 		                                                       1,
-		                                                       100, [this] { refresh(); }));
+		                                                       100, [this] { refresh_encode_settings(); }));
 		webp_options->add(std::make_shared<ui::check_control>(frame, tt.lossless_compression,
 		                                                      setting.convert.webp_lossless, false, false, [this](bool)
 		                                                      {
-			                                                      refresh();
+			                                                      refresh_encode_settings();
 		                                                      }));
 		webp->child(webp_options);
 		controls.emplace_back(webp);
+		controls.emplace_back(std::make_shared<divider_element>());
 		auto dimension = std::make_shared<ui::check_control>(frame, tt.limit_output_dimensions,
 		                                                     setting.convert.limit_dimension, false, false, [this](bool)
 		                                                     {
-			                                                     refresh();
+			                                                     refresh_encode_settings();
 		                                                     });
 		dimension->child(std::make_shared<ui::num_control>(frame, std::string_view{}, setting.convert.max_side, false,
-		                                                   [this](int) { refresh(); }));
+		                                                   [this](int) { refresh_encode_settings(); }));
 		controls.emplace_back(dimension);
 		controls.emplace_back(std::make_shared<divider_element>());
 		controls.emplace_back(

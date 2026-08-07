@@ -3678,7 +3678,7 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::edit_paste, [this] { edit_paste_invoke(_state, _app_frame, _view_frame); });
 	add_command_invoke(commands::tool_eject, [this]
 	{
-		eject_invoke(_state, _app_frame, [this] { invalidate_view(view_invalid::sidebar); });
+		eject_invoke(_state, _app_frame, [this] { invalidate_view(view_invalid::sidebar_drives); });
 	});
 	add_command_invoke(commands::tool_file_properties,
 	                   [this] { file_properties_invoke(_state, _app_frame, _view_frame); });
@@ -3910,6 +3910,11 @@ void app_frame::initialise_commands()
 	{
 		if (_state.view_mode() == view_type::batch) _view_batch->run();
 		else _view_rename->run();
+	});
+
+	add_command_invoke(commands::tool_refresh, [this]
+	{
+		if (_state.view_mode() == view_type::batch && _view_batch) _view_batch->refresh();
 	});
 
 	add_command_invoke(commands::import_analyze, [this] { _view_import->analyze(); });

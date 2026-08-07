@@ -453,6 +453,9 @@ static bool schema_is_usable(sqlite3* db)
 {
 	static constexpr std::string_view statements[] = {
 		"select folder, name, properties, hash, media_position, flag, crc, last_scanned, last_indexed from item_properties",
+		// Named separately so a half-applied perceptual-hash upgrade is caught here, where replacing
+		// the database is still an option, rather than by the index load throwing.
+		"select phash, phash90, phash180, phash270 from item_properties",
 		"select folder, name, bitmap, cover_art, last_scanned from item_thumbnails",
 		"select key, created_date, value from web_service_cache",
 		"select name, modified, size, imported from item_imports",
@@ -617,6 +620,11 @@ bool database::prepare_database(const bool can_replace)
 	// Otherwise that select fails to prepare and the whole index loads empty and silent.
 	sqlite3_exec(_db, "ALTER TABLE item_properties ADD COLUMN crc INTEGER;", nullptr, nullptr, nullptr);
 	sqlite3_exec(_db, "ALTER TABLE item_properties ADD COLUMN phash INTEGER;", nullptr, nullptr, nullptr);
+	// The stored hash keeps its meaning, so existing rows stay valid for an unturned comparison. A row
+	// with phash set but phash90 null has simply not been hashed in the other orientations yet.
+	sqlite3_exec(_db, "ALTER TABLE item_properties ADD COLUMN phash90 INTEGER;", nullptr, nullptr, nullptr);
+	sqlite3_exec(_db, "ALTER TABLE item_properties ADD COLUMN phash180 INTEGER;", nullptr, nullptr, nullptr);
+	sqlite3_exec(_db, "ALTER TABLE item_properties ADD COLUMN phash270 INTEGER;", nullptr, nullptr, nullptr);
 	sqlite3_exec(_db, "ALTER TABLE item_thumbnails ADD COLUMN cover_art BLOB NULL;", nullptr, nullptr, nullptr);
 
 	// Those upgrades report nothing when they fail, so the schema they were meant to reach is
@@ -659,6 +667,10 @@ void database::open()
 
 	if (!connect())
 	{
+		// No cached values can arrive, so the load is finished in the only sense readers care about.
+		// Leaving it unreported strands everything gated on is_init_complete - the item totals and the
+		// sidebar counts would both wait for a cache that is never coming.
+		_state.cache_load_complete();
 		return;
 	}
 
@@ -932,7 +944,7 @@ void database::load_index_values() const
 
 	const db_statement items(
 		_db,
-		"select folder, name, properties, crc, media_position, last_scanned, phash from item_properties order by folder"s);
+		"select folder, name, properties, crc, media_position, last_scanned, phash, phash90, phash180, phash270 from item_properties order by folder"s);
 
 	if (!items.is_valid())
 	{
@@ -951,6 +963,12 @@ void database::load_index_values() const
 		const auto media_position = items.int32(4);
 		const auto last_scanned = df::date_t(items.int64(5));
 		const auto phash = static_cast<uint64_t>(items.int64(6));
+		const crypto::phash_rotations rotations{
+			phash,
+			static_cast<uint64_t>(items.int64(7)),
+			static_cast<uint64_t>(items.int64(8)),
+			static_cast<uint64_t>(items.int64(9))
+		};
 
 		if (last_group_name != folder)
 		{
@@ -977,7 +995,7 @@ void database::load_index_values() const
 			i.path = name;
 			i.metadata_scanned = last_scanned;
 			i.crc32c = static_cast<uint32_t>(crc);
-			i.phash = static_cast<uint64_t>(phash);
+			i.phash = rotations;
 
 			const auto has_properties = properties.size > 0;
 			const auto has_med_pos = media_position != 0;
@@ -1253,8 +1271,8 @@ void database::perform_writes()
 
 void database::perform_writes(std::deque<item_db_write> writes) const
 {
-	// The worker calls this every second. Opening a transaction and compiling seven statements to
-	// write nothing is the idle cost of the whole database layer.
+	// The worker calls this on every pass, so most calls find nothing. Opening a transaction and
+	// compiling seven statements to write nothing is the idle cost of the whole database layer.
 	if (!is_open() || writes.empty()) return;
 
 	const auto today = platform::now().to_days();
@@ -1268,10 +1286,13 @@ void database::perform_writes(std::deque<item_db_write> writes) const
 	// write knows nothing about, where `insert or replace` used to overwrite them with zero.
 	const db_statement insert_properties(
 		_db,
-		"insert into item_properties (folder, name, properties, crc, media_position, last_scanned, last_indexed, phash) values (?, ?, ?, ?, ?, ?, ?, ?) "
+		"insert into item_properties (folder, name, properties, crc, media_position, last_scanned, last_indexed, phash, phash90, phash180, phash270) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
 		"on conflict(folder, name) do update set properties = excluded.properties, "
 		"crc = coalesce(excluded.crc, item_properties.crc), "
 		"phash = coalesce(excluded.phash, item_properties.phash), "
+		"phash90 = coalesce(excluded.phash90, item_properties.phash90), "
+		"phash180 = coalesce(excluded.phash180, item_properties.phash180), "
+		"phash270 = coalesce(excluded.phash270, item_properties.phash270), "
 		"media_position = coalesce(excluded.media_position, item_properties.media_position), "
 		"last_scanned = excluded.last_scanned, last_indexed = excluded.last_indexed"s);
 	const db_statement update_metadata_scanned(
@@ -1279,7 +1300,8 @@ void database::perform_writes(std::deque<item_db_write> writes) const
 		"update item_properties set last_scanned = ?, last_indexed = ? where folder = ? and name = ?"s);
 	const db_statement update_hash(_db, "update item_properties set hash = ? where folder=? and name=?"s);
 	const db_statement update_crc(_db, "update item_properties set crc = ? where folder=? and name=?"s);
-	const db_statement update_phash(_db, "update item_properties set phash = ? where folder=? and name=?"s);
+	const db_statement update_phash(
+		_db, "update item_properties set phash = ?, phash90 = ?, phash180 = ?, phash270 = ? where folder=? and name=?"s);
 	const db_statement update_media_position(
 		_db, "update item_properties set media_position = ? where folder=? and name=?"s);
 	const db_statement insert_thumbnails(
@@ -1324,8 +1346,18 @@ void database::perform_writes(std::deque<item_db_write> writes) const
 			insert_properties.bind(6, write.metadata_scanned.value_or(df::date_t()).to_int64());
 			insert_properties.bind(7, today);
 
-			if (write.phash.has_value()) insert_properties.bind(8, static_cast<int64_t>(write.phash.value()));
-			else insert_properties.bind_null(8);
+			if (write.phash.has_value())
+			{
+				const auto& rotations = write.phash.value();
+				for (auto turn = 0; turn < 4; ++turn)
+				{
+					insert_properties.bind(8 + turn, static_cast<int64_t>(rotations[turn]));
+				}
+			}
+			else
+			{
+				for (auto turn = 0; turn < 4; ++turn) insert_properties.bind_null(8 + turn);
+			}
 
 			insert_properties.exec();
 			insert_properties.reset();
@@ -1359,11 +1391,19 @@ void database::perform_writes(std::deque<item_db_write> writes) const
 
 		if (write.phash.has_value())
 		{
-			update_phash.bind(1, static_cast<int64_t>(write.phash.value()));
-			update_phash.bind(2, path.folder().text());
-			update_phash.bind(3, path.name());
+			const auto& rotations = write.phash.value();
+			for (auto turn = 0; turn < 4; ++turn)
+			{
+				update_phash.bind(1 + turn, static_cast<int64_t>(rotations[turn]));
+			}
+			update_phash.bind(5, path.folder().text());
+			update_phash.bind(6, path.name());
 			update_phash.exec();
 			update_phash.reset();
+
+			// The update inserts no row of its own, so a file with no properties row silently keeps no
+			// hash and is decoded again on the next pass that asks about it.
+			if (sqlite3_changes(_db) == 0) df::bump(df::index_perf.phash_unwritten);
 		}
 
 		if (write.media_position.has_value())

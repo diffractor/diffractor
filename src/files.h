@@ -1305,6 +1305,11 @@ public:
 	uint64_t calc_perceptual_hash(df::cspan encoded);
 	static uint64_t calc_perceptual_hash(const ui::const_surface_ptr& surface);
 
+	// The same picture hashed in all four quarter turns, so a rotated copy can be recognised. One
+	// decode and one reduction serve all four.
+	crypto::phash_rotations calc_perceptual_hash_rotations(df::cspan encoded);
+	static crypto::phash_rotations calc_perceptual_hash_rotations(const ui::const_surface_ptr& surface);
+
 	// Bytes a decode must allocate before its result can be scaled down. libjpeg reduces while
 	// decoding, by up to 1/8, so a JPEG never materialises its full frame; the other deferred codecs
 	// build the whole thing at native size first.
