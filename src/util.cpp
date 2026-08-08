@@ -168,7 +168,8 @@ void df::log(const std::string_view context, const std::string_view message)
 			<< std::setw(8) << time
 			<< " "
 			<< std::setfill(' ')
-			<< std::left << std::setw(33) << context
+			// setw is a minimum, so a context longer than the column would otherwise abut the message.
+			<< std::left << std::setw(32) << context << ' '
 			<< scrub_user_identity(message) << '\n';
 
 		if (!log_truncated && log_file.tellp() >= max_log_bytes)
