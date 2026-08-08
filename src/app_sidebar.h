@@ -2241,7 +2241,7 @@ public:
 
 	void invalidate_file_type() const
 	{
-		_frame->invalidate(_type_chart->bounds.offset(-_scroller.scroll_offset()));
+		if (_frame) _frame->invalidate(_type_chart->bounds.offset(-_scroller.scroll_offset()));
 	}
 
 	void populate_file_types_and_dates() const
@@ -2249,7 +2249,7 @@ public:
 		const auto histograms = _state.item_index.histograms();
 		_type_chart->populate(histograms->_file_types);
 		_history_chart->populate(histograms->_dates);
-		_frame->invalidate();
+		invalidate();
 	}
 
 	void hover_file_type(const int id)
@@ -2479,7 +2479,7 @@ public:
 			if (i->is_style_bit_set(view_element_style::checked) != checked)
 			{
 				i->set_style_bit(view_element_style::checked, checked);
-				_frame->invalidate();
+				invalidate();
 			}
 		}
 
@@ -2490,7 +2490,7 @@ public:
 			if (i->is_style_bit_set(view_element_style::checked) != checked)
 			{
 				i->set_style_bit(view_element_style::checked, checked);
-				_frame->invalidate();
+				invalidate();
 			}
 		}
 	}
@@ -2537,7 +2537,7 @@ public:
 								if (!t) return;
 								i->summary_known = true;
 								i->summary = sum;
-								t->_frame->invalidate();
+								t->invalidate();
 							});
 						}
 					}
@@ -2646,7 +2646,7 @@ public:
 		df::trace(std::format("Sidebar navigation_controls::focus {}", has_focus));
 
 		_has_focus = has_focus;
-		_frame->invalidate();
+		invalidate();
 	}
 
 

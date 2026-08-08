@@ -1058,7 +1058,7 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGIS
 
 	if (SUCCEEDED(hr))
 	{
-		df::log(__FUNCTION__, std::format("D3D11CreateDevice success {}", to_string(_f->d3d_feature_level)));
+		df::log(__FUNCTION__, std::format("draw context created - feature level {}", to_string(_f->d3d_feature_level)));
 
 
 		uint32_t support = 0;
