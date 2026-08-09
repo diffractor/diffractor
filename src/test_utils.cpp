@@ -2510,14 +2510,14 @@ static void should_select_sync_actions()
 }
 
 // Verifies the append-only string interning table: one shared immutable copy per unique
-// string, identity == pointer equality, stability across table growth, and correct
+// string, identity == handle equality, stability across table growth, and correct
 // deduplication under concurrent interning from multiple threads.
 static void should_intern_strings()
 {
 	const auto a = str::cache("interned-example");
 	const auto b = str::cache(std::string("interned-example"));
 	assert_equal(true, a == b, "same content -> same handle");
-	assert_equal(true, a.storage == b.storage, "identity is pointer equality");
+	assert_equal(true, a.id == b.id, "identity is handle equality");
 	assert_equal("interned-example"s, a.str(), "round-trips content");
 	assert_equal(false, str::cache("interned-example") == str::cache("interned-different"),
 	             "different content -> different handle");
@@ -2535,13 +2535,13 @@ static void should_intern_strings()
 	handles.reserve(n);
 	for (auto i = 0; i < n; ++i) handles.emplace_back(str::cache(std::format("intern-word-{}", i)));
 
-	df::hash_set<const void*> seen;
+	df::hash_set<uint32_t> seen;
 	for (auto i = 0; i < n; ++i)
 	{
 		const auto w = std::format("intern-word-{}", i);
 		assert_equal(w, handles[i].str(), "content preserved after growth");
 		assert_equal(true, str::cache(w) == handles[i], "re-intern returns the same handle");
-		seen.insert(handles[i].storage);
+		seen.insert(handles[i].id);
 	}
 	assert_equal(n, static_cast<int>(seen.size()), "each distinct string interned exactly once");
 

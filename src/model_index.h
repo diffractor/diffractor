@@ -519,7 +519,9 @@ struct location_matrix
 	void finalize();
 
 private:
-	std::map<std::pair<int, int>, size_t> _cell_lookup;
+	// Keyed on the cell index packed into one word, so building a matrix costs no tree node per
+	// cell. Cleared by finalize(); nothing outside add()/finalize() reads it.
+	df::hash_map<uint64_t, uint32_t> _cell_lookup;
 	std::vector<uint8_t> _representative_ranks;
 };
 

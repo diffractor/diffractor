@@ -25,6 +25,7 @@ GitHub issues own work, status, discussion, and follow-up. Source owns exact API
 | [zoom](docs/zoom.md) | The zoom model, laws, rendering tiers, and how zoom is judged |
 | [selection controls](docs/selection-controls.md) | The selection panel: form classification, content, ordering, density, responsive behavior |
 | [third-party](docs/third-party.md) | Vendored dependencies, upgrade procedure, integration patches |
+| [Linux port](docs/linux.md) | Portability assessment, platform-boundary debt, staging and open decisions for a Linux build |
 | [README](README.md) | Product overview, build prerequisites, command line |
 | [release notes](docs/v-1.27.0.md) | What the current release changed, as user-facing features and fixed issues, plus its verification record |
 | [post-release context](docs/v-next.md) | Deferred work and why, validation not run, open issues, and invariants that must survive a re-sync or refactor |

@@ -2244,6 +2244,7 @@ static void should_query_trigram_index()
 
 	df::trigram_index index;
 	for (uint32_t i = 0; i < corpus.size(); ++i) index.add(i, corpus[i]);
+	index.freeze();
 
 	const auto brute = [&corpus](const std::string_view q)
 	{
@@ -2374,6 +2375,7 @@ static void should_accelerate_substring_prediction()
 
 	df::trigram_index tri;
 	for (uint32_t i = 0; i < words.size(); ++i) tri.add(i, words[i]);
+	tri.freeze();
 
 	const auto scan = [&words](const std::string_view q)
 	{

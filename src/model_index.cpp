@@ -97,8 +97,8 @@ df_assert_movable(index_state::thumbnail_result);
 df_assert_movable(index_state::validate_folder_result);
 
 static_assert(sizeof(search_presence_mask) == 4);
-static_assert(sizeof(df::file_path) == sizeof(void*) * 2);
-static_assert(sizeof(key_val) == sizeof(void*) * 2);
+static_assert(sizeof(df::file_path) == sizeof(str::cached) * 2);
+static_assert(sizeof(key_val) == sizeof(str::cached) * 2);
 
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
@@ -1852,12 +1852,12 @@ void location_matrix::add(df::file_path path, const gps_coordinate coordinate, c
 {
 	if (!params.contains(coordinate)) return;
 	const auto index = params.cell(coordinate);
-	const auto key = std::make_pair(index.x, index.y);
+	const auto key = static_cast<uint64_t>(static_cast<uint32_t>(index.x)) << 32 | static_cast<uint32_t>(index.y);
 	const uint8_t representative_rank = can_thumbnail ? (rating >= 4 ? 2 : 1) : 0;
 	const auto found = _cell_lookup.find(key);
 	if (found == _cell_lookup.end())
 	{
-		_cell_lookup.emplace(key, cells.size());
+		_cell_lookup.emplace(key, static_cast<uint32_t>(cells.size()));
 		_representative_ranks.push_back(representative_rank);
 		cells.push_back({
 			index, std::move(path), {}, 1,
@@ -5178,6 +5178,8 @@ bool index_state::rebuild_sorted_words(index_metadata_summary& summary, const ui
 		}
 		summary._word_trigrams.add(i, sorted[i]);
 	}
+
+	summary._word_trigrams.freeze();
 
 	return true;
 }

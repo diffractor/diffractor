@@ -108,10 +108,20 @@ namespace str
 		return pop_utf8_char(in_ptr, end);
 	}
 
+	// Byte range inside one displayable string (a name, a path, a search term), so 32 bits is far
+	// more than the longest text any of these can hold. The size_t constructor narrows on purpose:
+	// callers measure with string_view::size_type and every producer is bounded well below 4GB.
 	struct part_t
 	{
-		size_t offset = 0;
-		size_t length = 0;
+		uint32_t offset = 0;
+		uint32_t length = 0;
+
+		part_t() noexcept = default;
+
+		constexpr part_t(const size_t o, const size_t l) noexcept
+			: offset(static_cast<uint32_t>(o)), length(static_cast<uint32_t>(l))
+		{
+		}
 	};
 
 	////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -127,6 +137,28 @@ namespace str
 		char sz[1];
 	};
 
+	namespace detail
+	{
+		// Records are 4-byte aligned, so a handle counts 4-byte units and reaches 16GB of pool.
+		constexpr uint32_t intern_align_shift = 2;
+
+		// Resolves handle 0 before the pool exists. The pool reserves its own slot 0 so the table
+		// never hands out a zero handle for real content.
+		inline constexpr chached_string_storage_t empty_storage{0, {0}};
+
+		// Base of the single contiguous reservation holding every interned record. Assigned once,
+		// before any non-zero handle can exist, so a reader that holds a handle already
+		// synchronized-with the store; the relaxed load compiles to a plain move.
+		extern std::atomic<const chached_string_storage_t*> intern_pool_base;
+
+		inline const chached_string_storage_t* resolve(const uint32_t id) noexcept
+		{
+			const auto* const base = std::bit_cast<const uint8_t*>(intern_pool_base.load(std::memory_order_relaxed));
+			return std::bit_cast<const chached_string_storage_t*>(base + (static_cast<size_t>(id) <<
+				intern_align_shift));
+		}
+	}
+
 	////////////////////////////////////////////////////////////////////////////////////////////////////
 	// Interned String Handle (str::cached)
 	////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -136,36 +168,36 @@ namespace str
 	// BENEFITS:
 	// - Memory efficiency: Each unique string is stored exactly once, regardless of how many
 	//   index_file_item or metadata objects reference it
-	// - Fast equality: Pointer comparison (O(1)) instead of character comparison (O(n))
-	// - Thread-safe reads: The storage pointer is immutable once created
+	// - Fast equality: Handle comparison (O(1)) instead of character comparison (O(n))
+	// - Thread-safe reads: The record is immutable once created
 	// - Cache-friendly: Strings are allocated from a contiguous memory pool
 	//
 	// USAGE:
 	//   str::cached name = str::cache("example.jpg");  // Intern a string
 	//   str::cached trimmed = str::trim_and_cache(value); // Trim and intern
-	//   if (a == b) { ... }  // O(1) pointer comparison
+	//   if (a == b) { ... }  // O(1) handle comparison
 	//   process(name.sv());  // Convert to string_view for APIs
 	//
 	// THREAD SAFETY:
 	// - Creation via str::cache() is thread-safe (uses sharded hash map with locks)
-	// - Reading from a cached instance is thread-safe (storage is immutable)
-	// - Methods capture 'storage' pointer in local variable before access to prevent races
+	// - Reading from a cached instance is thread-safe (the record is immutable)
 	//
 	// LIFETIME:
 	// - Interned strings are never deallocated - they persist for app lifetime
 	// - This is acceptable because total unique strings are bounded by collection size
 	// - The memory pool provides better allocation density than heap allocation
 	//
-	// SIZE: Single pointer (8 bytes on 64-bit systems)
+	// SIZE: 4 bytes - an offset in 4-byte units from the pool's fixed base. Handle 0 is the empty
+	// string and always resolves to a zero-length record, so no accessor needs a null branch.
 	// COPYABLE: Trivially copyable - safe to pass by value or store in containers
 	////////////////////////////////////////////////////////////////////////////////////////////////////
 	struct cached
 	{
-		const chached_string_storage_t* storage = nullptr;
+		uint32_t id = 0;
 
 		cached() noexcept = default;
 
-		cached(const chached_string_storage_t* s) noexcept : storage(s)
+		explicit cached(const uint32_t i) noexcept : id(i)
 		{
 		}
 
@@ -176,49 +208,40 @@ namespace str
 
 		void clear()
 		{
-			storage = nullptr;
+			id = 0;
 		}
 
 		constexpr bool is_empty() const
 		{
-			// capture storage for better thread safety
-			const auto s = storage;
-			return s == nullptr || s->len == 0;
+			return id == 0;
 		}
 
-		constexpr size_t size() const
+		size_t size() const
 		{
-			// capture storage for better thread safety
-			const auto s = storage;
-			return s ? s->len : 0;
+			return detail::resolve(id)->len;
 		}
 
-		constexpr std::string_view substr(const size_t sub_pos) const
+		std::string_view substr(const size_t sub_pos) const
 		{
-			// capture storage for better thread safety
-			const auto s = storage;
-			const auto len = s ? s->len : 0;
-			df::assert_true(sub_pos <= len);
-			if (s == nullptr || s->len == 0 || sub_pos >= len) return {};
+			const auto* const s = detail::resolve(id);
+			df::assert_true(sub_pos <= s->len);
+			if (sub_pos >= s->len) return {};
 			return {s->sz + sub_pos, s->len - sub_pos};
 		}
 
-		constexpr std::string_view substr(const size_t sub_pos, const size_t sub_len) const
+		std::string_view substr(const size_t sub_pos, const size_t sub_len) const
 		{
-			// capture storage for better thread safety
-			const auto s = storage;
-			const auto len = s ? s->len : 0;
-			df::assert_true(sub_pos <= len && sub_len <= len - sub_pos);
-			if (s == nullptr || s->len == 0 || sub_pos >= len || sub_pos + sub_len > len) return {};
+			const auto* const s = detail::resolve(id);
+			df::assert_true(sub_pos <= s->len && sub_len <= s->len - sub_pos);
+			if (sub_pos >= s->len || sub_pos + sub_len > s->len) return {};
 			return {s->sz + sub_pos, sub_len};
 		}
 
 		char operator[](const uint32_t i) const noexcept
 		{
-			// capture storage for better thread safety
-			const auto s = storage;
-			df::assert_true(s != nullptr && s->len > i);
-			if (s == nullptr || s->len <= i) return 0;
+			const auto* const s = detail::resolve(id);
+			df::assert_true(s->len > i);
+			if (s->len <= i) return 0;
 			return s->sz[i];
 		}
 
@@ -229,26 +252,24 @@ namespace str
 
 		std::string_view sv() const
 		{
-			// capture storage for better thread safety
-			const auto s = storage;
-			return s ? std::string_view(s->sz, s->len) : std::string_view{};
+			const auto* const s = detail::resolve(id);
+			return {s->sz, s->len};
 		}
 
 		std::string str() const
 		{
-			// capture storage for better thread safety
-			const auto s = storage;
-			return s ? std::string(s->sz, s->len) : std::string{};
+			const auto* const s = detail::resolve(id);
+			return {s->sz, s->len};
 		}
 
 		bool operator==(const cached other) const
 		{
-			return storage == other.storage;
+			return id == other.id;
 		}
 
 		bool operator !=(const cached other) const
 		{
-			return storage != other.storage;
+			return id != other.id;
 		}
 
 		bool operator==(const std::string_view other) const
@@ -263,14 +284,12 @@ namespace str
 
 		bool operator <(const cached other) const
 		{
-			return std::less<const chached_string_storage_t*>{}(storage, other.storage);
+			return id < other.id;
 		}
 
 		const char* sz() const
 		{
-			// capture storage for better thread safety
-			const auto s = storage;
-			return s ? s->sz : "";
+			return detail::resolve(id)->sz;
 		}
 	};
 
@@ -670,9 +689,9 @@ namespace str
 	// The global string pool uses:
 	// - an append-only sharded open-addressing table (no deletes, so no tombstones)
 	// - CRC32C hash for shard selection and probing
-	// - platform::memory_pool for contiguous allocation
+	// - platform::memory_pool for one contiguous, never-moving reservation
 	//
-	// Note: Strings whose complete storage record cannot fit in a memory-pool block return empty cached.
+	// Note: Strings whose complete storage record exceeds a memory-pool block return empty cached.
 	////////////////////////////////////////////////////////////////////////////////////////////////////
 	cached cache(std::wstring_view r); // Converts UTF-16 to UTF-8, then interns
 	cached cache(std::string_view r); // Interns UTF-8 string directly

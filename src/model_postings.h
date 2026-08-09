@@ -249,25 +249,115 @@ namespace df
 	// to produce a superset of the true substring matches; the caller then verifies each
 	// candidate with str::contains, so results are identical to a full scan - only faster.
 	// Queries shorter than three code points cannot be indexed and return nullopt (scan).
+	//
+	// Two phases: add() every document, then freeze() once. Freezing collapses the whole index
+	// into a sorted gram table plus one contiguous posting blob, so the built index costs two
+	// allocations rather than a map node and a posting buffer per distinct trigram, and a lookup
+	// is a binary search over contiguous memory. Querying before freeze() returns nullopt, which
+	// the caller already handles by scanning.
 	class trigram_index
 	{
-		df::hash_map<uint64_t, posting_list> _grams;
+		struct gram_entry
+		{
+			uint64_t gram;
+			uint32_t offset; // start of this gram's postings within _postings
+			uint32_t count; // ids encoded there
+		};
+
+#pragma pack(push, 4)
+		// One (gram, document) pair as added. Packed because the build holds one per trigram
+		// occurrence in the whole vocabulary, and the natural layout would waste a third of that.
+		struct pending_t
+		{
+			uint64_t gram;
+			uint32_t id;
+
+			// Lexicographic on (gram, id), which is the order freeze() encodes in.
+			auto operator<=>(const pending_t&) const = default;
+		};
+#pragma pack(pop)
+
+		std::vector<pending_t> _pending;
+		std::vector<gram_entry> _grams;
+		std::vector<uint8_t> _postings;
 		uint32_t _doc_count = 0;
+
+		template <typename Fn>
+		void for_each_posting(const gram_entry& entry, Fn&& fn) const
+		{
+			size_t pos = entry.offset;
+			uint32_t prev = 0;
+
+			for (uint32_t i = 0; i < entry.count; ++i)
+			{
+				const auto delta = read_varint(_postings, pos);
+				prev = i == 0 ? delta : prev + delta;
+				fn(prev);
+			}
+		}
+
+		std::vector<uint32_t> to_vector(const gram_entry& entry) const
+		{
+			std::vector<uint32_t> result;
+			result.reserve(entry.count);
+			for_each_posting(entry, [&result](const uint32_t id) { result.emplace_back(id); });
+			return result;
+		}
 
 	public:
 		// Index document `id` (ids must be added in ascending order so postings stay sorted).
 		void add(const uint32_t id, const std::string_view text)
 		{
-			// repeated trigrams need no dedup here - posting_list::add already ignores an id it
-			// has just appended
-			for_each_trigram(text, [this, id](const uint64_t key) { _grams[key].add(id); });
+			// repeated trigrams need no dedup here - freeze() drops an id it has just emitted
+			for_each_trigram(text, [this, id](const uint64_t key) { _pending.emplace_back(key, id); });
 			_doc_count = std::max(_doc_count, id == UINT32_MAX ? id : id + 1);
+		}
+
+		// Collapse everything added so far into the queryable form. Call once, after the last add().
+		void freeze()
+		{
+			std::ranges::sort(_pending);
+
+			_grams.clear();
+			_postings.clear();
+			_postings.reserve(_pending.size()); // at least one byte per posting
+
+			for (size_t i = 0; i < _pending.size();)
+			{
+				const auto gram = _pending[i].gram;
+				const auto offset = static_cast<uint32_t>(_postings.size());
+				uint32_t count = 0;
+				uint32_t last = 0;
+
+				while (i < _pending.size() && _pending[i].gram == gram)
+				{
+					const auto id = _pending[i].id;
+					++i;
+
+					if (count != 0 && id <= last) continue; // same gram repeated within one document
+
+					append_varint(_postings, count == 0 ? id : id - last);
+					last = id;
+					++count;
+				}
+
+				_grams.emplace_back(gram, offset, count);
+			}
+
+			_pending.clear();
+			_pending.shrink_to_fit();
+			_grams.shrink_to_fit();
+			_postings.shrink_to_fit();
 		}
 
 		// Candidate ids that MAY contain `query` (a superset of true substring matches), or
 		// nullopt when the query is shorter than a trigram and a full scan is required.
 		std::optional<std::vector<uint32_t>> candidates(const std::string_view query) const
 		{
+			// Not frozen, so there is nothing to intersect: ask the caller to scan rather than
+			// claim an empty candidate set, which would silently lose matches.
+			if (!_pending.empty()) return std::nullopt;
+
 			std::vector<uint64_t> qgrams;
 			for_each_trigram(query, [&qgrams](const uint64_t key) { qgrams.push_back(key); });
 			std::ranges::sort(qgrams);
@@ -275,30 +365,31 @@ namespace df
 
 			if (qgrams.empty()) return std::nullopt;
 
-			std::vector<const posting_list*> lists;
+			std::vector<const gram_entry*> lists;
 			lists.reserve(qgrams.size());
 
 			for (const auto key : qgrams)
 			{
-				const auto found = _grams.find(key);
-				if (found == _grams.end()) return std::vector<uint32_t>{}; // trigram absent -> no matches
-				lists.emplace_back(&found->second);
+				const auto found = std::ranges::lower_bound(_grams, key, {}, &gram_entry::gram);
+				if (found == _grams.end() || found->gram != key) return std::vector<uint32_t>{};
+				// trigram absent -> no matches
+				lists.emplace_back(&*found);
 			}
 
 			// Intersect rarest first so the candidate set shrinks fastest, and stream every list
 			// but the smallest instead of materialising it. This runs per keystroke.
-			std::ranges::sort(lists, {}, [](const posting_list* l) { return l->count(); });
+			std::ranges::sort(lists, {}, [](const gram_entry* l) { return l->count; });
 
-			auto result = lists.front()->to_vector();
+			auto result = to_vector(*lists.front());
 
 			for (size_t i = 1; i < lists.size() && !result.empty(); ++i)
 			{
 				std::vector<uint32_t> next;
-				next.reserve(std::min(result.size(), static_cast<size_t>(lists[i]->count())));
+				next.reserve(std::min(result.size(), static_cast<size_t>(lists[i]->count)));
 
 				size_t r = 0;
 
-				lists[i]->for_each([&result, &next, &r](const uint32_t id)
+				for_each_posting(*lists[i], [&result, &next, &r](const uint32_t id)
 				{
 					while (r < result.size() && result[r] < id) ++r;
 

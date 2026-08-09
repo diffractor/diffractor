@@ -1421,25 +1421,30 @@ void* platform::memory_pool::alloc(const size_t size)
 	exclusive_lock lock(cs);
 
 	if (size > block_size) throw OOM;
-	const auto align_size = (size + (alignment - 1)) / alignment * alignment;
 
-	if (next_free == nullptr || static_cast<size_t>(block_limit - next_free) < align_size)
+	if (base == nullptr)
 	{
-		next_free = std::bit_cast<uint8_t*>(VirtualAlloc(nullptr, block_size, MEM_COMMIT, PAGE_READWRITE));
-
-		if (!next_free)
-		{
-			// Leave no stale limit paired with the null cursor if a later alloc retries.
-			block_limit = nullptr;
-			throw OOM;
-		}
-
-		block_limit = next_free + block_size;
-		static_memory_usage.fetch_add(block_size, std::memory_order_relaxed);
+		// Reserve once and never move: handles are offsets from this address for the process lifetime.
+		base = std::bit_cast<uint8_t*>(VirtualAlloc(nullptr, reserve_size, MEM_RESERVE, PAGE_NOACCESS));
+		if (!base) throw OOM;
 	}
 
-	auto* const result = next_free;
-	next_free += align_size;
+	const auto align_size = (size + (alignment - 1)) / alignment * alignment;
+
+	if (align_size > committed - used)
+	{
+		const auto shortfall = align_size - (committed - used);
+		const auto grow = (shortfall + block_size - 1) / block_size * block_size;
+
+		if (grow > reserve_size - committed) throw OOM;
+		if (!VirtualAlloc(base + committed, grow, MEM_COMMIT, PAGE_READWRITE)) throw OOM;
+
+		committed += grow;
+		static_memory_usage.fetch_add(grow, std::memory_order_relaxed);
+	}
+
+	auto* const result = base + used;
+	used += align_size;
 	return result;
 }
 

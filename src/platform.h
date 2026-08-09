@@ -955,14 +955,24 @@ namespace platform
 	uint32_t current_thread_id();
 	extern thread_event event_exit;
 
+	// Append-only arena for the interned string records. One reservation of virtual address space is
+	// committed a block at a time, so every record keeps a stable offset from a base that never moves -
+	// which is what lets str::cached be a 32-bit handle rather than a pointer.
 	struct memory_pool
 	{
 		mutex cs;
-		uint8_t* next_free = nullptr;
-		uint8_t* block_limit = nullptr;
+		uint8_t* base = nullptr;
+		size_t committed = 0;
+		size_t used = 0;
 
-		constexpr static size_t block_size = 1024_z * 1024_z;
+		constexpr static size_t block_size = 1024_z * 1024_z; // commit granularity, and the largest record
 		constexpr static size_t alignment = 4;
+
+		// Address space only; pages are committed on demand. A 32-bit build cannot spare a gigabyte of
+		// its 2GB user address space, and will never index a collection that needs one.
+		constexpr static size_t reserve_size = sizeof(void*) == 8
+			                                      ? 1024_z * 1024_z * 1024_z
+			                                      : 64_z * 1024_z * 1024_z;
 
 		void* alloc(size_t size);
 	};
