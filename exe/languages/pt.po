@@ -3630,3 +3630,9 @@ msgstr "Capturado no mesmo horário"
 
 msgid "Taken in the same place"
 msgstr "Capturado no mesmo local"
+
+msgid "Recovered from a startup problem"
+msgstr "Recuperado de um problema de inicialização"
+
+msgid "Diffractor closed unexpectedly before it finished starting, so this run uses the default layout with hardware acceleration turned off. Your files, collection and recent items are unchanged. You can restore your settings from Options."
+msgstr "O Diffractor fechou inesperadamente antes de concluir a inicialização, por isso esta execução usa o layout padrão com a aceleração de hardware desativada. Seus arquivos, sua coleção e os itens recentes não foram alterados. Você pode restaurar as configurações em Opções."

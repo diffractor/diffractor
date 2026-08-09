@@ -3691,3 +3691,9 @@ msgstr "Знято в той самий час"
 
 msgid "Taken in the same place"
 msgstr "Знято в тому самому місці"
+
+msgid "Recovered from a startup problem"
+msgstr "Відновлено після проблеми із запуском"
+
+msgid "Diffractor closed unexpectedly before it finished starting, so this run uses the default layout with hardware acceleration turned off. Your files, collection and recent items are unchanged. You can restore your settings from Options."
+msgstr "Diffractor несподівано закрився, не завершивши запуск, тому цей сеанс використовує типове компонування з вимкненим апаратним прискоренням. Ваші файли, колекція та останні елементи не змінилися. Відновити налаштування можна в розділі «Опції»."

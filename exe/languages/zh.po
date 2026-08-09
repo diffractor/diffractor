@@ -3629,3 +3629,9 @@ msgstr "同一时间拍摄"
 
 msgid "Taken in the same place"
 msgstr "同一地点拍摄"
+
+msgid "Recovered from a startup problem"
+msgstr "已从启动问题中恢复"
+
+msgid "Diffractor closed unexpectedly before it finished starting, so this run uses the default layout with hardware acceleration turned off. Your files, collection and recent items are unchanged. You can restore your settings from Options."
+msgstr "Diffractor 在完成启动前意外关闭，因此本次运行使用默认布局并关闭了硬件加速。您的文件、集合和最近的项目均未更改。您可以在“选项”中恢复设置。"

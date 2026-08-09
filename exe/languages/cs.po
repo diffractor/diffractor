@@ -3792,3 +3792,9 @@ msgstr "Pořízeno ve stejnou dobu"
 
 msgid "Taken in the same place"
 msgstr "Pořízeno na stejném místě"
+
+msgid "Recovered from a startup problem"
+msgstr "Obnoveno po problému při spuštění"
+
+msgid "Diffractor closed unexpectedly before it finished starting, so this run uses the default layout with hardware acceleration turned off. Your files, collection and recent items are unchanged. You can restore your settings from Options."
+msgstr "Diffractor se neočekávaně zavřel dříve, než dokončil spouštění, proto toto spuštění používá výchozí rozvržení s vypnutou hardwarovou akcelerací. Vaše soubory, sbírka a nedávné položky zůstávají beze změny. Nastavení můžete obnovit v nabídce Možnosti."
